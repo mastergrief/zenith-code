@@ -11,3 +11,4 @@ agents/distill/data/
 agents/distill/checkpoints/
 agents/distill/merged/
 *.gguf
+unsloth_compiled_cache/
