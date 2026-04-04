@@ -1,0 +1,71 @@
+Review this login endpoint for SQL injection vulnerabilities
+Find the bug in this React useEffect that causes an infinite loop
+Review this API endpoint for proper input validation and sanitization
+Find the race condition in this concurrent Python code
+Review this Dockerfile for security best practices
+Find the memory leak in this Node.js WebSocket server
+Review this REST API design for consistency and best practices
+Find the XSS vulnerability in this React component that renders user input
+Review this database schema for normalization and indexing issues
+Find the bug in this Rust code that causes a deadlock
+Review this authentication flow for security weaknesses
+Find the performance issue in this Django view with N+1 queries
+Review this Kubernetes manifest for security and resource issues
+Find the bug in this TypeScript generic that loses type information
+Review this error handling code for missing edge cases
+Find the CSRF vulnerability in this form submission handler
+Review this CI pipeline for security and efficiency improvements
+Find the bug in this async Python code that swallows exceptions
+Review this npm package.json for dependency vulnerabilities
+Find the timing attack vulnerability in this password comparison
+Review this API rate limiting implementation for bypass vectors
+Find the bug in this React state update that causes stale closures
+Review this Terraform code for security misconfigurations
+Find the resource leak in this database connection handling code
+Review this logging implementation for sensitive data exposure
+Find the bug in this binary search implementation
+Review this file upload handler for path traversal vulnerabilities
+Find the deadlock in this multi-threaded Rust code
+Review this OAuth implementation for common security mistakes
+Find the off-by-one error in this pagination logic
+Review this Docker network configuration for isolation issues
+Find the bug in this recursive function that causes stack overflow
+Review this API response for information disclosure
+Find the race condition in this TypeScript async operation
+Review this password hashing implementation for weaknesses
+Find the memory issue in this Python code that processes large files
+Review this CORS configuration for overly permissive settings
+Find the bug in this event handler that fires multiple times
+Review this session management code for fixation vulnerabilities
+Find the performance bottleneck in this database query
+Review this WebSocket implementation for denial of service risks
+Find the bug in this date handling code with timezone issues
+Review this file permission setup for privilege escalation
+Find the integer overflow in this calculation
+Review this caching implementation for cache poisoning risks
+Find the bug in this regex that causes catastrophic backtracking
+Review this API key storage for exposure risks
+Find the data race in this shared state without proper locking
+Review this input parsing for command injection vulnerabilities
+Find the bug in this sorting algorithm that fails on edge cases
+Review this TLS configuration for weak cipher suites
+Find the null pointer issue in this error handling path
+Review this access control implementation for privilege escalation
+Find the bug in this UTF-8 handling that corrupts multibyte characters
+Review this cryptographic implementation for common mistakes
+Find the resource exhaustion issue in this unbounded queue
+Review this deserialization code for insecure object handling
+Find the bug in this tree traversal that misses leaf nodes
+Review this email sending code for header injection
+Find the time-of-check-time-of-use bug in this file operation
+Review this GraphQL endpoint for query depth and complexity attacks
+Find the bug in this hash map implementation that loses entries
+Review this secret management for hardcoded credentials
+Find the dangling pointer issue in this unsafe Rust code
+Review this redirect handling for open redirect vulnerabilities
+Find the bug in this LRU cache that violates capacity
+Review this subprocess execution for shell injection
+Find the race condition in this database transaction
+Review this JWT implementation for algorithm confusion attacks
+Find the bug in this concurrent map that causes lost updates
+Review this file download endpoint for directory traversal

@@ -1,0 +1,69 @@
+Write a multi-stage Dockerfile that builds a Rust binary with minimal final image
+Create a Kubernetes deployment with resource limits, probes, and rolling update strategy
+Write a Terraform module for an AWS VPC with public and private subnets
+Create a GitHub Actions workflow that runs tests, builds, and deploys on merge
+Write a docker-compose.yml for a microservice stack with database and cache
+Create a Kubernetes Ingress with TLS termination and path-based routing
+Write a Terraform resource for an RDS PostgreSQL instance with backups
+Create a GitHub Actions matrix build for multi-platform Docker images
+Write an Nginx configuration for reverse proxy with load balancing
+Create a Kubernetes HPA that scales based on custom metrics
+Write a Terraform module for S3 bucket with lifecycle rules and versioning
+Create a GitHub Actions workflow for semantic versioning and changelog
+Write a Dockerfile that properly handles node_modules caching
+Create a Kubernetes StatefulSet for a database cluster
+Write a Terraform module for CloudFront distribution with S3 origin
+Create a GitHub Actions reusable workflow for Docker build and push
+Write a docker-compose override file for local development
+Create a Kubernetes NetworkPolicy that restricts pod-to-pod traffic
+Write a Terraform module for ECS Fargate service with ALB
+Create a GitHub Actions workflow that runs security scanning
+Write a Kubernetes CronJob for database backups to S3
+Create a Terraform module for Lambda function with API Gateway trigger
+Write a systemd service file for a production application
+Create a Kubernetes ConfigMap and Secret management strategy
+Write a Terraform remote state configuration with S3 and DynamoDB
+Create a GitHub Actions workflow for infrastructure drift detection
+Write a Docker healthcheck script for a database-dependent service
+Create a Kubernetes PodDisruptionBudget for zero-downtime deploys
+Write a Terraform module for Route53 DNS with failover routing
+Create a GitHub Actions workflow for canary deployments
+Write a Kubernetes RBAC configuration for namespace isolation
+Create a Terraform module for ElastiCache Redis cluster
+Write a Docker entrypoint script that handles signals properly
+Create a Kubernetes service mesh configuration with Istio
+Write a Terraform module for ECR repository with lifecycle policy
+Create a GitHub Actions workflow for running load tests
+Write a Kubernetes pod security policy for production
+Create a Terraform module for SQS queue with dead letter queue
+Write a Prometheus alerting rules file for common metrics
+Create a Kubernetes DaemonSet for log collection with Fluentd
+Write a Terraform module for IAM roles with least privilege
+Create a GitHub Actions workflow for database migration
+Write a docker-compose file with Traefik as reverse proxy
+Create a Kubernetes admission webhook for policy enforcement
+Write a Terraform module for WAF rules with rate limiting
+Create a GitHub Actions workflow for multi-environment deploys
+Write a Kubernetes Persistent Volume setup for local and cloud
+Create a Terraform module for CloudWatch alarms and dashboards
+Write a Grafana dashboard JSON for API latency monitoring
+Create a Kubernetes affinity rules for pod placement
+Write a Terraform module for VPN gateway with client config
+Create a GitHub Actions workflow with approval gates
+Write a Docker volume backup and restore script
+Create a Kubernetes resource quota for namespace budgeting
+Write a Terraform module for Aurora serverless cluster
+Create a GitHub Actions workflow for container vulnerability scanning
+Write an ArgoCD Application manifest for GitOps deployment
+Create a Kubernetes custom resource definition for an operator
+Write a Terraform module for EKS cluster with managed node groups
+Create a GitHub Actions workflow for performance regression testing
+Write a Docker Swarm stack file for high availability
+Create a Kubernetes pod topology spread constraints
+Write a Terraform module for API Gateway with usage plans
+Create a cert-manager configuration for automatic TLS certificates
+Write a Kubernetes init container pattern for dependency waiting
+Create a Terraform module for Step Functions workflow
+Write a GitHub Actions workflow for release binary artifacts
+Create a Kubernetes external secrets operator configuration
+Write a Terraform module for multi-region disaster recovery

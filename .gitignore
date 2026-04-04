@@ -5,3 +5,9 @@ archive/
 # Claude Code local artifacts
 .claude/settings.local.json
 .claude/sessions/
+
+# Distillation pipeline artifacts
+agents/distill/data/
+agents/distill/checkpoints/
+agents/distill/merged/
+*.gguf
