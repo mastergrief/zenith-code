@@ -12,6 +12,11 @@
 - Unsloth compiled cache stored at `unsloth_compiled_cache/` in project root (gitignored)
 - Git Bash mangles WSL paths with parentheses in PATH — use `wsl -e bash -c` or write scripts to `/tmp/`
 
+## Training Best Practices
+- Always use `train_on_responses_only` — masks instruction/prompt tokens so loss is only computed on the model's generated responses, not on system prompts or user messages
+- ~4K examples is the sweet spot for reasoning distillation (confirmed by TeichAI, Jackrong, and our own runs)
+- `nohurry/Opus-4.6-Reasoning-3000x-filtered` is the best-filtered Claude reasoning dataset on HuggingFace
+
 ## Dataset Quality
 - Claude-authored data is preferred over 9B-generated data (higher quality, faster)
 - HuggingFace datasets (TeichAI, Crownelius) provide Claude Opus reasoning traces

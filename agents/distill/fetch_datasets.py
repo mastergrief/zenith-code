@@ -13,6 +13,11 @@ from agents.distill.config import DATA_DIR
 # HuggingFace datasets to fetch (parquet URLs)
 DATASETS = [
     {
+        "name": "nohurry/Opus-4.6-Reasoning-3000x-filtered",
+        "dataset_id": "nohurry%2FOpus-4.6-Reasoning-3000x-filtered",
+        "total": 3000,
+    },
+    {
         "name": "TeichAI/Claude-Opus-4.6-Reasoning-887x",
         "dataset_id": "TeichAI%2FClaude-Opus-4.6-Reasoning-887x",
         "total": 887,

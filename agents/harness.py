@@ -11,6 +11,8 @@ from agents.agent import Agent, DEFAULT_MODEL
 from agents.coordinator import Coordinator
 from agents.swarm import Swarm
 from agents.specialist_coordinator import SpecialistCoordinator, detect_specialists
+from agents.history import HistoryLog
+from agents.session import save_session, load_session, list_sessions
 
 # ANSI colors
 BOLD = "\033[1m"
@@ -40,6 +42,10 @@ BANNER = f"""
     /reset         — clear conversation history
     /cd <path>     — change working directory
     /model <name>  — switch model (e.g. qwen3:4b)
+    /history       — show session event log
+    /save          — save active agent's session
+    /sessions      — list saved sessions
+    /load <id>     — load a saved session
     /distill status — show available specialist models
     /distill on    — enable specialist routing
     /distill off   — disable specialist routing
@@ -58,6 +64,8 @@ class Harness:
         self.coordinator: Coordinator | None = None
         self.specialist_mode: bool = False
         self.specialist_coordinator: SpecialistCoordinator | None = None
+        self.history_log = HistoryLog()
+        self._streaming_text = False  # Track whether we're mid-stream
 
         # Create default agents
         self._spawn("coder", "expert software engineer who writes clean, efficient code")
@@ -76,7 +84,35 @@ class Harness:
 
     def _on_event(self, event_type: str, data: dict):
         """Handle agent events for display."""
-        if event_type == "tool_call":
+        if event_type == "token":
+            # Streaming token — print inline
+            if not self._streaming_text:
+                print(f"\n  {GREEN}", end="")
+                self._streaming_text = True
+            print(data["text"], end="", flush=True)
+            return
+
+        elif event_type == "response":
+            if self._streaming_text:
+                # Already streamed — just close the color and newline
+                print(f"{RESET}", end="")
+                self._streaming_text = False
+            self.history_log.add("response", data.get("content", "")[:100])
+            return
+
+        elif event_type == "compact":
+            removed = data.get("removed", 0)
+            remaining = data.get("remaining", 0)
+            print(f"\n  {MAGENTA}{DIM}(compacted {removed} messages, {remaining} remaining){RESET}")
+            self.history_log.add("compact", f"removed={removed} remaining={remaining}")
+            return
+
+        elif event_type == "tool_call":
+            # End streaming if mid-stream before tool output
+            if self._streaming_text:
+                print(f"{RESET}")
+                self._streaming_text = False
+
             name = data["name"]
             args = data["args"]
             print(f"\n  {YELLOW}{BOLD}[tool]{RESET} {YELLOW}{name}{RESET}", end="")
@@ -86,12 +122,15 @@ class Harness:
                 print(f" {DIM}{args.get('path', '')}{RESET}")
             elif name == "write_file":
                 print(f" {DIM}{args.get('path', '')}{RESET}")
+            elif name == "edit_file":
+                print(f" {DIM}{args.get('path', '')}{RESET}")
             elif name == "grep":
                 print(f" {DIM}/{args.get('pattern', '')}/{RESET}")
             elif name == "list_files":
                 print(f" {DIM}{args.get('pattern', '')}{RESET}")
             else:
                 print()
+            self.history_log.add("tool_call", f"{name}({json.dumps(args)[:80]})")
 
         elif event_type == "tool_result":
             output = data["output"]
@@ -100,6 +139,7 @@ class Harness:
             if len(lines) > 10:
                 preview += f"\n    {DIM}... ({len(lines) - 10} more lines){RESET}"
             print(f"    {DIM}{preview}{RESET}")
+            self.history_log.add("tool_result", f"{data.get('name', '?')}: {output[:80]}")
 
     def _handle_command(self, cmd: str) -> bool:
         """Handle a slash command. Returns True if handled."""
@@ -166,6 +206,37 @@ class Harness:
                 for agent in self.agents.values():
                     agent.model = self.model
                 print(f"  Model set to {CYAN}{self.model}{RESET} for all agents.")
+
+        elif command == "/history":
+            print(f"\n{self.history_log.as_markdown()}")
+
+        elif command == "/save":
+            agent = self.agents[self.active_agent]
+            path = save_session(agent)
+            print(f"  {GREEN}Session saved to {path}{RESET}")
+
+        elif command == "/sessions":
+            sessions = list_sessions()
+            if not sessions:
+                print(f"  {DIM}No saved sessions.{RESET}")
+            else:
+                print(f"\n  {BOLD}Saved sessions:{RESET}")
+                for s in sessions[:20]:
+                    print(f"    {CYAN}{s['id']}{RESET} — {s['name']} ({s['messages']} msgs, {s['saved_at'][:19]})")
+
+        elif command == "/load":
+            if len(parts) < 2:
+                print(f"  {RED}Usage: /load <session_id>{RESET}")
+            else:
+                try:
+                    data = load_session(parts[1])
+                    agent = self.agents[self.active_agent]
+                    agent.history = data["history"]
+                    print(f"  {GREEN}Loaded {len(data['history'])} messages into {self.active_agent}{RESET}")
+                except FileNotFoundError:
+                    print(f"  {RED}Session '{parts[1]}' not found. Use /sessions to list.{RESET}")
+                except Exception as e:
+                    print(f"  {RED}Error loading session: {e}{RESET}")
 
         elif command == "/distill":
             subcmd = parts[1] if len(parts) > 1 else "status"
@@ -247,7 +318,13 @@ class Harness:
                 response = self._chat(user_input)
                 elapsed = time.time() - start
 
-                print(f"\n  {GREEN}{response}{RESET}")
+                if not self._streaming_text:
+                    # Non-streamed response (coordinator/swarm) — print it
+                    print(f"\n  {GREEN}{response}{RESET}")
+                else:
+                    # Streamed response already printed — just close out
+                    print(f"{RESET}")
+                    self._streaming_text = False
                 print(f"\n  {DIM}({elapsed:.1f}s){RESET}\n")
 
             except Exception as e:

@@ -147,7 +147,7 @@ def train_specialist(domain: str):
     )
 
     # Train
-    print("Starting training...")
+    print("Starting training (train_on_responses_only)...")
     trainer = SFTTrainer(
         model=model,
         tokenizer=tokenizer,
@@ -156,6 +156,14 @@ def train_specialist(domain: str):
         dataset_text_field="text",
         max_seq_length=cfg["max_seq_length"],
         packing=True,
+    )
+
+    # Mask instruction tokens — only compute loss on model responses
+    from unsloth import train_on_responses_only
+    trainer = train_on_responses_only(
+        trainer,
+        instruction_part="<|im_start|>user\n",
+        response_part="<|im_start|>assistant\n",
     )
 
     stats = trainer.train()

@@ -1,10 +1,12 @@
-"""Tools that agents can invoke: bash, read, write, grep, glob."""
+"""Tools that agents can invoke: bash, read, write, edit, grep, glob."""
 
 import json
 import os
 import subprocess
 import glob as globmod
 import re
+
+from agents.permissions import DEFAULT_PERMISSIONS
 
 
 TOOL_DEFINITIONS = [
@@ -105,11 +107,45 @@ TOOL_DEFINITIONS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "edit_file",
+            "description": "Replace a specific string in a file. Use for surgical edits instead of rewriting the whole file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the file to edit",
+                    },
+                    "old_string": {
+                        "type": "string",
+                        "description": "The exact string to find and replace",
+                    },
+                    "new_string": {
+                        "type": "string",
+                        "description": "The replacement string",
+                    },
+                    "replace_all": {
+                        "type": "boolean",
+                        "description": "Replace all occurrences (default: false, requires unique match)",
+                    },
+                },
+                "required": ["path", "old_string", "new_string"],
+            },
+        },
+    },
 ]
 
 
 def execute_tool(name: str, args: dict) -> str:
     """Execute a tool by name with given arguments."""
+    # Permission check
+    blocked = DEFAULT_PERMISSIONS.blocks(name, args)
+    if blocked:
+        return f"Blocked: {blocked}"
+
     try:
         if name == "bash":
             return _run_bash(args["command"])
@@ -117,6 +153,13 @@ def execute_tool(name: str, args: dict) -> str:
             return _read_file(args["path"])
         elif name == "write_file":
             return _write_file(args["path"], args["content"])
+        elif name == "edit_file":
+            return _edit_file(
+                args["path"],
+                args["old_string"],
+                args["new_string"],
+                args.get("replace_all", False),
+            )
         elif name == "grep":
             return _grep(
                 args["pattern"],
@@ -199,6 +242,34 @@ def _grep(pattern: str, path: str = ".", file_glob: str | None = None) -> str:
             continue
 
     return "\n".join(results) if results else "No matches found."
+
+
+def _edit_file(path: str, old_string: str, new_string: str, replace_all: bool = False) -> str:
+    """Replace a string in a file."""
+    path = os.path.expanduser(path)
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        content = f.read()
+
+    if old_string == new_string:
+        return "Error: old_string and new_string must differ"
+
+    if old_string not in content:
+        return f"Error: old_string not found in {path}"
+
+    count = content.count(old_string)
+    if not replace_all and count > 1:
+        return f"Error: old_string appears {count} times — use replace_all=true or provide a more specific string"
+
+    if replace_all:
+        updated = content.replace(old_string, new_string)
+    else:
+        updated = content.replace(old_string, new_string, 1)
+
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(updated)
+
+    n = count if replace_all else 1
+    return f"Edited {path}: replaced {n} occurrence(s)"
 
 
 def _list_files(pattern: str) -> str:

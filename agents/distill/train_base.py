@@ -121,7 +121,7 @@ def train_reasoning_base():
         report_to="none",
     )
 
-    print("Starting training (1 epoch)...")
+    print("Starting training (1 epoch, train_on_responses_only)...")
     trainer = SFTTrainer(
         model=model,
         tokenizer=tokenizer,
@@ -130,6 +130,14 @@ def train_reasoning_base():
         dataset_text_field="text",
         max_seq_length=1024,
         packing=False,  # Disable packing to save VRAM
+    )
+
+    # Mask instruction tokens — only compute loss on model responses
+    from unsloth import train_on_responses_only
+    trainer = train_on_responses_only(
+        trainer,
+        instruction_part="<|im_start|>user\n",
+        response_part="<|im_start|>assistant\n",
     )
 
     stats = trainer.train()
