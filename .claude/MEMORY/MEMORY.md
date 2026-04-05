@@ -1,0 +1,2 @@
+- [Training status](project_training_status.md) — Qwen 3.5 0.8B reasoning base needs restart, didn't finish 2026-04-04
+- [Session Handoff](SESSION_HANDOFF.md) — Full project state as of 2026-04-04
