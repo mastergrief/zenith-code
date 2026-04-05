@@ -101,6 +101,16 @@ PYTHONPATH=. python3 -m agents.distill.filter_reasoning        # filter only
 PYTHONPATH=. python3 -m agents.distill.filter_reasoning --merge # filter + merge hand-written
 ```
 
+## Training Philosophy
+
+**Data quality > data quantity > model size > training tricks.**
+
+1. Write high-quality examples — one good Claude-authored example teaches more than ten 9B-generated ones
+2. Train on responses only — don't waste gradients learning to predict prompts
+3. Match domain to task — coding reasoning data for coding models, routing data for routing models
+4. Filter aggressively — removing bad data improves results more than adding mediocre data
+5. Single epoch — multiple epochs on small datasets = memorization, not generalization
+
 ## Ollama Models
 
 Available models (run `ollama list` to verify):
