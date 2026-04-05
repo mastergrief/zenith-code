@@ -19,6 +19,7 @@ from agents.distill.config import (
 )
 
 REASONING_DATA = DATA_DIR / "claude_reasoning.jsonl"
+CODING_REASONING_DATA = DATA_DIR / "coding_reasoning_claude.jsonl"
 REASONING_CHECKPOINT = CHECKPOINTS_DIR / "reasoning_base"
 REASONING_MERGED = MERGED_DIR / "reasoning_base"
 
@@ -53,7 +54,7 @@ def train_reasoning_base():
     REASONING_CHECKPOINT.mkdir(parents=True, exist_ok=True)
     REASONING_MERGED.mkdir(parents=True, exist_ok=True)
 
-    # Load data
+    # Load data (claude_reasoning.jsonl contains filtered HF + hand-written after merge)
     examples = []
     with open(REASONING_DATA, "r", encoding="utf-8") as f:
         for line in f:
@@ -108,7 +109,7 @@ def train_reasoning_base():
         per_device_train_batch_size=1,
         gradient_accumulation_steps=16,
         warmup_ratio=0.03,
-        num_train_epochs=1,  # Single epoch to avoid catastrophic forgetting
+        num_train_epochs=3,  # 3 epochs on curated data — diverse enough to avoid memorization
         learning_rate=2e-4,
         fp16=not torch.cuda.is_bf16_supported(),
         bf16=torch.cuda.is_bf16_supported(),
