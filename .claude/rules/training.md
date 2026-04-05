@@ -1,27 +1,32 @@
 # Training Rules
 
-## VRAM Budget (8 GB RTX 4070)
+## VRAM Budget (8 GB RTX 4070 Laptop)
 - Qwen 3 0.6B QLoRA: ~2.5 GB — fits with batch=4, packing=true
 - Qwen 3.5 0.8B QLoRA: ~4 GB — requires batch=1, packing=false, seq_len=1024
 - Qwen 3.5 4B: too large for QLoRA on 8 GB
 - Always stop Ollama before training: `ollama stop <model>` or verify `ollama ps` is empty
+
+## Training Best Practices
+- Always use `train_on_responses_only` — masks instruction/prompt tokens so loss is only computed on the model's generated responses, not on system prompts or user messages. Also slightly faster.
+- ~4K examples is the sweet spot for reasoning distillation (confirmed by TeichAI, Jackrong, and our own runs)
+- `nohurry/Opus-4.6-Reasoning-3000x-filtered` is the best-filtered Claude reasoning dataset on HuggingFace
+- Single epoch prevents catastrophic forgetting
+- Filter training data before use: `python -m agents.distill.filter_reasoning --merge`
+
+## Dataset Quality
+- Claude-authored data is preferred over 9B-generated data (higher quality, more consistent)
+- HuggingFace datasets (nohurry, TeichAI, Crownelius) provide Claude Opus reasoning traces
+- Hand-written data committed to repo: `coding_reasoning_claude.jsonl` (90 examples), `orchestrator_claude.jsonl` (121 examples)
+- Filter out: hallucinated facts (Bitcoin prices, sports results), non-technical content (opinion debates, riddles), junk (<200 char responses)
+- Orchestrator domain is classification (route to specialist), not code generation
+- Specialist datasets are still small (25-53 examples) — need expansion
 
 ## Known Issues
 - Qwen 3.5 has 248K vocab which makes fused cross-entropy loss OOM on 8 GB
   - Fix: batch_size=1, max_seq_length=1024, packing=False
 - Unsloth compiled cache stored at `unsloth_compiled_cache/` in project root (gitignored)
 - Git Bash mangles WSL paths with parentheses in PATH — use `wsl -e bash -c` or write scripts to `/tmp/`
-
-## Training Best Practices
-- Always use `train_on_responses_only` — masks instruction/prompt tokens so loss is only computed on the model's generated responses, not on system prompts or user messages
-- ~4K examples is the sweet spot for reasoning distillation (confirmed by TeichAI, Jackrong, and our own runs)
-- `nohurry/Opus-4.6-Reasoning-3000x-filtered` is the best-filtered Claude reasoning dataset on HuggingFace
-
-## Dataset Quality
-- Claude-authored data is preferred over 9B-generated data (higher quality, faster)
-- HuggingFace datasets (TeichAI, Crownelius) provide Claude Opus reasoning traces
-- Orchestrator domain is classification (route to specialist), not code generation
-- Single epoch prevents catastrophic forgetting (proven by TeichAI/Qwen3.5-4B-Claude-Opus-Reasoning-Distill)
+- No Thunderbolt/eGPU on Acer Nitro AN17-42 — cloud GPUs are the path to training bigger models
 
 ## Export
 - GGUF conversion requires llama.cpp (`git clone https://github.com/ggml-org/llama.cpp`)
