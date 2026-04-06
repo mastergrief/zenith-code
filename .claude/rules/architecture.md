@@ -2,6 +2,7 @@
 
 ## Agent System
 - All agents communicate with Ollama via HTTP POST to `localhost:11434/api/chat`
+- Planned: llama.cpp backend via OpenAI-compatible API at `localhost:8080` for 4B models with 64K context
 - Use `urllib.request` (stdlib only) for Ollama communication — no `requests` dependency in core agents
 - Streaming supported: `_call_ollama_stream()` reads NDJSON lines, yields tokens via `on_event("token", ...)`
 - Agent history is append-only within a session. Use `agent.reset()` to clear
@@ -11,9 +12,9 @@
 
 ## File Organization
 - `agents/` — core harness code (12 files, ~1,400 lines). No ML dependencies. Must work on Windows + WSL2 with just Python 3.11+
-- `agents/distill/` — training pipeline (10 files). ML dependencies (torch, unsloth, transformers) only required here
-- `models/` — Ollama Modelfiles
-- `rust/` — upstream claw-code Rust port (9 crates, separate build system)
+- `agents/distill/` — training pipeline (10 Python files + 1 notebook). ML dependencies (torch, unsloth, transformers) only required here
+- `models/` — Ollama Modelfiles (3 files: qwen9b-fast, qwen4b-fast, reasoning-base)
+- `rust/` — upstream claw-code Rust port (9 crates + workspace, separate build system)
 - `src/` — upstream claw-code Python port (reference, not actively developed)
 
 ## Tools
@@ -34,10 +35,18 @@
 - **Streaming**: `Agent._call_ollama_stream()` yields tokens, harness prints them inline
 
 ## Training Pipeline
-- Stage 1 (reasoning base) runs once, creates a smarter base model
-- Stage 2 (specialists) run on top of the reasoning base
+- Stage 1 (reasoning base): 0.8B local or 4B cloud, creates a smarter base model
+- Stage 2 (specialists): run on top of the reasoning base
 - Both stages use `train_on_responses_only` — masks instruction tokens so loss is only on model responses
 - Training data format: JSONL with `{"messages": [{"role": "...", "content": "..."}]}`
-- `filter_reasoning.py` filters junk/hallucinations and merges hand-written data with HuggingFace data
-- All training runs in WSL2. Stop Ollama before training to free VRAM
-- Export pipeline: merge LoRA → GGUF (llama.cpp) → Ollama Modelfile → `ollama create`
+- `filter_reasoning.py` uses tiered keyword matching (strong + general keywords), dedup, think-block minimums to filter HuggingFace data, then merges with hand-written examples
+- 0.8B training runs locally in WSL2. 4B training requires cloud GPU (Colab A100 40GB+)
+- Stop Ollama before local training to free VRAM
+- Export pipeline: merge LoRA → GGUF (llama.cpp) → Ollama Modelfile or llama-server
+
+## Serving Architecture (Planned)
+- **llama.cpp**: serves 4B Q5_K_M at 64K context with Q4 KV cache (~6.7GB VRAM)
+- Hot-swap between orchestrator and specialist models (5-10s swap, full GPU each)
+- Orchestrator needs long context (conversation history, tool outputs)
+- Specialists need short context (focused tasks from orchestrator)
+- **Ollama**: kept for stock models and quick testing
