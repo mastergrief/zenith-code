@@ -49,6 +49,47 @@ def detect_backend() -> str:
     return "ollama"
 
 
+def _is_repeating(text: str, window: int = 100) -> bool:
+    """Detect if the end of text is repeating an earlier section.
+
+    Checks if the last `window` chars appear earlier in the text.
+    """
+    if len(text) < window * 2:
+        return False
+    tail = text[-window:]
+    # Search for tail in the text before the last window
+    earlier = text[:-window]
+    return tail in earlier
+
+
+def _dedup_blocks(text: str, min_block: int = 20) -> str:
+    """Remove repeated text blocks from model output.
+
+    Splits on double-newlines, removes consecutive duplicate blocks,
+    and catches suffix repetition (second half mirrors first half).
+    """
+    if len(text) < min_block * 2:
+        return text
+    # Check if second half is a repeat of first half
+    mid = len(text) // 2
+    # Find a paragraph boundary near the midpoint
+    for offset in range(0, min(200, mid)):
+        for pos in (mid + offset, mid - offset):
+            if pos < len(text) - 1 and text[pos:pos+2] == "\n\n":
+                first, second = text[:pos].strip(), text[pos:].strip()
+                if first and second and first == second:
+                    return first
+                break
+    # Fall back to paragraph-level dedup
+    blocks = text.split("\n\n")
+    seen = []
+    for block in blocks:
+        stripped = block.strip()
+        if stripped and stripped not in seen:
+            seen.append(stripped)
+    return "\n\n".join(seen)
+
+
 def _find_claude_md() -> str | None:
     """Walk up from cwd looking for CLAUDE.md."""
     d = os.getcwd()
@@ -188,6 +229,7 @@ class Agent:
         payload: dict[str, Any] = {
             "messages": messages,
             "max_tokens": max_tok,
+            "frequency_penalty": 0.5,
         }
         if self.enable_thinking:
             payload["enable_thinking"] = True
@@ -217,6 +259,7 @@ class Agent:
             "messages": messages,
             "max_tokens": max_tok,
             "stream": True,
+            "frequency_penalty": 0.5,
         }
         if self.enable_thinking:
             payload["enable_thinking"] = True
@@ -283,6 +326,12 @@ class Agent:
                     full_content += token
                     if on_event:
                         on_event("token", {"text": token})
+                    # Streaming repetition detection: if content is long enough,
+                    # check if recent output repeats an earlier section
+                    if len(full_content) > 200 and _is_repeating(full_content):
+                        if on_event:
+                            on_event("token", {"text": "\n\n[truncated: repetition detected]"})
+                        break
 
         if in_reasoning and on_event:
             on_event("thinking_end", {})
@@ -375,7 +424,7 @@ class Agent:
                 use_stream = stream and on_event is not None
             else:
                 # Final text response
-                reply = msg.get("content", "")
+                reply = _dedup_blocks(msg.get("content", ""))
                 reasoning = msg.get("reasoning_content", "")
                 self.history.append({"role": "assistant", "content": reply})
 
