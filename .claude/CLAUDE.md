@@ -58,27 +58,28 @@ When editing `.claude/` configs (agents, CLAUDE.md, commands, rules etc):
 ## Architecture
 
 Two systems coexist:
-1. **Python agent harness** (`agents/`) — working terminal coding assistant with streaming, permissions, sessions, and context compaction
+1. **Python agent harness** (`agents/`) — terminal coding assistant with dual backend (Ollama + llama.cpp), 3-level permissions, thinking mode, sessions, compaction, and effort control
 2. **Rust claw-code port** (`rust/`) — upstream claw-code, 9 crates, separate build system
 
-Planned: hot-swap 4B model architecture via llama.cpp — orchestrator (64K context) swaps with specialists on the same GPU.
+Serving: 4B reasoning base via llama.cpp at 64K context with Q4 KV cache (~6.3GB VRAM). Specialists planned as hot-swap on same GPU.
 
-## Python Agent Harness (`agents/`, ~1,400 lines across 12 files)
+## Python Agent Harness (`agents/`, ~2,000 lines across 13 files)
 
 ### Core Files
-- `agent.py` — Base `Agent` class, Ollama chat with streaming + tool calling loop (max 10 rounds), auto-compaction
-- `coordinator.py` — `Coordinator` delegates tasks via JSON `{"delegate": "name", "task": "..."}` protocol
-- `swarm.py` — `Swarm` runs agents in parallel via `ThreadPoolExecutor`
-- `tools.py` — 6 tools: `bash`, `read_file`, `write_file`, `edit_file`, `grep`, `list_files` (with safety limits + permission checks)
-- `harness.py` — Terminal REPL with colored output, streaming tokens, and slash commands
-- `specialist_coordinator.py` — `SpecialistCoordinator` routes to domain-specific fine-tuned models
-- `example.py` — Demo scripts for Coordinator + Swarm patterns
+- `agent.py` (449 lines) — `Agent` class with dual backend (Ollama + llama.cpp), streaming, thinking mode, tool calling loop (max 10 rounds), connection retry with backoff, system prompt builder, effort mode, output dedup
+- `coordinator.py` (76 lines) — `Coordinator` delegates tasks via JSON `{"delegate": "name", "task": "..."}` protocol
+- `swarm.py` (55 lines) — `Swarm` runs agents in parallel via `ThreadPoolExecutor`
+- `tools.py` (312 lines) — 6 tools: `bash`, `read_file`, `write_file`, `edit_file`, `grep`, `list_files`. read_file supports offset/limit windowing + binary detection. edit_file shows context preview.
+- `harness.py` (536 lines) — Terminal REPL with colored output, streaming tokens, thinking display, user confirmation prompts, readline history, 20 slash commands
+- `specialist_coordinator.py` (76 lines) — `SpecialistCoordinator` routes to domain-specific fine-tuned models
+- `example.py` (43 lines) — Demo scripts for Coordinator + Swarm patterns
 
 ### Production Features
-- `permissions.py` — Tool deny-list blocking destructive bash commands and system path writes
-- `compact.py` — Transcript compaction: auto-summarize old messages when approaching context limit
-- `history.py` — Timestamped audit log for tool calls, responses, errors, commands
-- `session.py` — Save/load agent conversations to `.claw_sessions/` as JSON
+- `permissions.py` (133 lines) — 3 permission modes (READ_ONLY/WORKSPACE_WRITE/FULL_ACCESS), 4-level bash classification (SAFE/WRITE/DESTRUCTIVE/BLOCKED), git subcommand awareness, write redirect detection, system path blocking
+- `compact.py` (215 lines) — Auto-compaction with per-model context limits (64K for llama.cpp), summary compression, env var override (`CLAW_AUTO_COMPACT_TOKENS`)
+- `config.py` (30 lines) — Config loader for `.clawrc`/`claw.json` with `CLAW_*` env var overrides
+- `history.py` (34 lines) — Timestamped audit log for tool calls, responses, errors, commands
+- `session.py` (51 lines) — Save/load agent conversations to `.claw_sessions/` as JSON, auto-save on exit
 
 ### Harness Commands
 | Command | Action |
@@ -91,28 +92,37 @@ Planned: hot-swap 4B model architecture via llama.cpp — orchestrator (64K cont
 | `/spawn <name> <role>` | Create new agent |
 | `/reset` | Clear all histories |
 | `/cd <path>` | Change working directory |
-| `/model <name>` | Switch Ollama model |
+| `/model <name>` | Switch model for all agents |
+| `/backend [ollama\|llamacpp]` | Show/switch backend |
+| `/effort [low\|medium\|max]` | Show/set reasoning effort |
 | `/history` | Show session event log |
 | `/save` | Save active agent's session |
 | `/sessions` | List saved sessions |
 | `/load <id>` | Load a saved session |
+| `/resume` | Load most recent session |
 | `/distill status` | Show available specialist models |
 | `/distill on/off` | Toggle specialist routing |
 | `/exit` | Quit |
 
 ### Running the Harness
 ```bash
-cd ~/Projects/claw-code
-PYTHONUTF8=1 PYTHONPATH=. python3 agents/harness.py --model qwen9b-fast
+# Preferred: auto-starts llama.cpp, serves 4B at 64K context
+claw
+
+# Manual: specify backend and model
+PYTHONUTF8=1 PYTHONPATH=. python3 agents/harness.py --backend llamacpp
+PYTHONUTF8=1 PYTHONPATH=. python3 agents/harness.py --model qwen3.5:0.8b --backend ollama
+
+# CLI flags: --model, --backend, --effort, --resume, --permission-mode, --cd
 ```
-WSL2 can access Ollama on Windows via `localhost:11434`. Prefer WSL-native Ollama to avoid VRAM conflicts.
+`bin/claw` launcher: auto-starts llama.cpp if not running, waits for health, passes `--backend llamacpp`. Configurable via `CLAW_MODEL`, `CLAW_PORT`, `CLAW_CTX` env vars.
 
 ## Distillation Pipeline (`agents/distill/`, 10 Python files)
 
 ### Current Status
-- **0.8B reasoning base**: trained (3 epochs, loss 1.106), eval showed format learned but substance wrong — model too small
-- **4B reasoning base**: training on Colab A100 (1,320 examples, 3 epochs, Qwen 3.5 4B QLoRA)
-- **Specialists**: not yet trained — waiting for 4B reasoning base
+- **0.8B reasoning base**: trained (3 epochs, loss 1.106), eval: format learned but substance wrong — model too small
+- **4B reasoning base**: trained on Colab A100 (1,320 examples, 3 epochs), exported to GGUF Q5_K_M, serving via llama.cpp at 64K context. Eval: 3/5 PASS with thinking enabled (race condition, OOMKilled, architecture pass; React and security partial)
+- **Specialists**: not yet trained — 4B base ready, need targeted training data expansion (React/frontend, security)
 
 ### Pipeline Scripts
 - `config.py` — Domains, model names, QLoRA params, paths
@@ -174,33 +184,27 @@ PYTHONPATH=. python3 -m agents.distill.filter_reasoning --merge # filter + merge
 4. Filter aggressively — removing bad data improves results more than adding mediocre data
 5. 3 epochs on curated data — diverse enough (1,320 unique topics) to avoid memorization; 1 epoch underfits
 
-## Serving Architecture (Planned)
+## Serving Architecture
 
-**Hot-swap via llama.cpp** — one model loaded at a time, full 8GB GPU:
-- Orchestrator: Qwen 3.5 4B Q5_K_M, 64K context, Q4 KV cache (~6.7GB VRAM)
-- Specialists: same base model with different fine-tuning, hot-swapped
-- llama.cpp server: `llama-server -m model.gguf --ctx-size 65536 --cache-type-k q4_0 -ngl 999`
-- Ollama: kept for stock models (9B teacher, quick testing)
+**llama.cpp (primary)** — 4B reasoning base, full GPU:
+- Model: `~/models/Qwen3.5-4B.Q5_K_M.gguf` (2.9GB, fine-tuned)
+- Context: 64K tokens with Q4 KV cache (~6.3GB total VRAM, pre-allocated)
+- Thinking: `enable_thinking: true` by default, reasoning in separate `reasoning_content` field
+- Launch: `claw` command auto-starts, or manually: `llama-server -m model.gguf --ctx-size 65536 --cache-type-k q4_0 --cache-type-v q4_0 -ngl 999 --port 8080`
+- Specialists: planned hot-swap on same GPU (5-10s swap time)
 
-## Ollama Models
-
-Available in WSL-native Ollama (run `ollama list` to verify):
-- `qwen3.5:0.8b` — stock Qwen 3.5 0.8B
-- `reasoning-base:latest` — 0.8B fine-tuned, FP16 (run 2, loss 1.106)
-
-Custom Modelfiles in `models/`:
-- `Modelfile.qwen9b-fast` — optimized 9B (2048 ctx, 100% GPU)
-- `Modelfile.qwen4b-fast` — optimized 4B (8192 ctx, 100% GPU)
-- `Modelfile.reasoning-base` — 0.8B fine-tuned reasoning base
-
-Note: Windows Ollama models (qwen9b-fast, qwen4b-fast, etc.) available when Windows Ollama is running. Kill Windows Ollama to free VRAM for training or llama.cpp serving.
+**Ollama (fallback)** — stock models, quick testing:
+- `qwen3.5:0.8b` — stock Qwen 3.5 0.8B (only model currently pulled)
+- Custom Modelfiles in `models/`: `Modelfile.qwen9b-fast` (2048 ctx), `Modelfile.qwen4b-fast` (8192 ctx), `Modelfile.reasoning-base` (32K ctx)
+- Kill Windows Ollama to free VRAM: `taskkill /IM ollama.exe /F`
 
 ## Local Tools
 
-- **llama.cpp**: built at `~/llama.cpp/build/bin/` (CPU-only, for GGUF conversion and serving)
+- **llama.cpp**: built at `~/llama.cpp/build/bin/` with CUDA support (RTX 4070)
   - `llama-quantize` — convert FP16 safetensors to GGUF quantized formats
-  - `llama-server` — serve models with OpenAI-compatible API, supports KV cache quantization
-- **Unsloth**: 2026.4.2 + PyTorch 2.10.0 (for local 0.8B training)
+  - `llama-server` — serve models with OpenAI-compatible API, KV cache quantization, thinking mode
+- **Unsloth**: 2026.4.2 + PyTorch 2.10.0+cu128 (for local 0.8B training)
+- **Serena MCP**: installed at `/home/gabe/serena-fork`, configured for this project
 
 ## Cloud Accounts
 

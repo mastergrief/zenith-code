@@ -15,7 +15,7 @@
 
 ## Priority Order
 - **Data quality > data quantity > model size > training tricks.** One hour writing 20 high-quality examples beats hours of hyperparameter tuning.
-- **Model size matters for correctness.** 0.8B learned the `<think>` format but gave wrong technical answers. 4B should fix this.
+- **Model size matters for correctness.** 0.8B learned `<think>` format but gave wrong answers. 4B confirmed: 3/5 eval PASS with `enable_thinking: true`.
 - Each example should demonstrate the *reasoning process* (`<think>` block), not just the answer
 - Match the training domain to the task: coding data for coding models, routing data for routing models
 
@@ -34,7 +34,7 @@
 - Merged training file: `claude_reasoning.jsonl` (1,320 examples = 832 HF + 488 hand-written)
 - Filter pipeline: tiered keyword matching (1 strong keyword + 2 general, OR 5+ general, OR code blocks), dedup by first 60 chars, think-block minimum lengths
 - Filter out: hallucinated facts, non-technical content, NLP benchmark patterns, junk (<200 char responses)
-- Specialist datasets are still small (25-53 examples) — need expansion after 4B base is ready
+- Specialist datasets are still small (25-53 examples) — need expansion, especially React/frontend and security (4B eval weak spots)
 
 ## Known Issues
 - **Qwen 3.5 248K vocab**: fused cross-entropy loss OOMs on anything under 40GB VRAM for 4B, under 8GB for 0.8B
@@ -46,9 +46,10 @@
 - RunPod SSH proxy unreliable from WSL2 — use web terminal or Colab instead
 
 ## Export & Serving
-- llama.cpp built at `~/llama.cpp/build/bin/` (CPU-only build, handles GGUF conversion)
+- llama.cpp built at `~/llama.cpp/build/bin/` with CUDA support (RTX 4070)
 - `llama-quantize`: convert FP16 safetensors → GGUF quantized (Q5_K_M recommended for 4B)
-- `llama-server`: serve with OpenAI-compatible API, supports KV cache quantization
-- For Ollama: Modelfiles in `models/`, use `ollama create` with Windows paths from WSL (`cmd.exe /c "ollama create ..."`)
-- Quantization target: Q5_K_M for 4B (best quality/size ratio at 64K context with Q4 KV cache)
+- `llama-server`: serve with OpenAI-compatible API, KV cache quantization, `enable_thinking` support
+- 4B reasoning base GGUF at `~/models/Qwen3.5-4B.Q5_K_M.gguf` (2.9GB, serving at 64K context, ~6.3GB VRAM)
+- Launch via `claw` command (auto-starts llama-server) or manually with `--ctx-size 65536 --cache-type-k q4_0 --cache-type-v q4_0 -ngl 999`
+- For Ollama: Modelfiles in `models/`, use `ollama create`
 - num_gpu=999 forces all layers to GPU
