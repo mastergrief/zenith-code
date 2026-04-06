@@ -1,6 +1,8 @@
 """Base agent that communicates with a local LLM (Ollama or llama.cpp) with tool support."""
 
 import json
+import os
+import time
 import urllib.request
 from typing import Any
 
@@ -10,6 +12,21 @@ from agents.compact import should_compact, compact_history, detect_context_limit
 OLLAMA_URL = "http://localhost:11434/api/chat"
 LLAMACPP_URL = "http://localhost:8080/v1/chat/completions"
 DEFAULT_MODEL = "qwen3.5:4b"
+
+EFFORT_LEVELS = {
+    "low": {
+        "max_tokens": 1024,
+        "prompt_prefix": "Be concise and direct. Skip lengthy reasoning.",
+    },
+    "medium": {
+        "max_tokens": 2048,
+        "prompt_prefix": "",
+    },
+    "max": {
+        "max_tokens": 8192,
+        "prompt_prefix": "Think deeply and carefully. Explore multiple approaches, consider edge cases, verify your reasoning step by step before answering.",
+    },
+}
 
 
 def detect_backend() -> str:
@@ -30,6 +47,22 @@ def detect_backend() -> str:
     except Exception:
         pass
     return "ollama"
+
+
+def _find_claude_md() -> str | None:
+    """Walk up from cwd looking for CLAUDE.md."""
+    d = os.getcwd()
+    for _ in range(5):
+        for name in ("CLAUDE.md", ".claude/CLAUDE.md"):
+            p = os.path.join(d, name)
+            if os.path.isfile(p):
+                with open(p) as f:
+                    return f.read()
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    return None
 
 
 class Agent:
@@ -56,9 +89,52 @@ class Agent:
         self.max_tool_rounds = max_tool_rounds
         self.backend = backend or detect_backend()
         self.enable_thinking = enable_thinking
+        self.effort = "medium"
         self.max_context_tokens = max_context_tokens or detect_context_limit(
             model if self.backend == "ollama" else "llamacpp"
         )
+        self._last_usage = {"input_tokens": 0, "output_tokens": 0}
+
+    # ── Shared helpers ──────────────────────────────────────────────
+
+    def _request_with_retry(self, url, payload, max_retries=3):
+        """Make HTTP request with exponential backoff."""
+        data = json.dumps(payload).encode()
+        delays = [1, 2, 4]
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+                return urllib.request.urlopen(req, timeout=120)
+            except (urllib.error.URLError, ConnectionError, OSError) as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    time.sleep(delays[attempt])
+        backend = "llama-server" if "8080" in url else "Ollama"
+        raise ConnectionError(f"{backend} unreachable after {max_retries} attempts: {last_error}")
+
+    def build_system_prompt(self) -> str:
+        """Build a ~500 token system prompt with project context."""
+        effort_prefix = EFFORT_LEVELS.get(self.effort, {}).get("prompt_prefix", "")
+        parts = [effort_prefix, self.system_prompt] if effort_prefix else [self.system_prompt]
+        parts.append(f"\nWorking directory: {os.getcwd()}")
+        parts.append(f"Date: {time.strftime('%Y-%m-%d')}")
+
+        claude_md = _find_claude_md()
+        if claude_md:
+            parts.append(f"\nProject context (from CLAUDE.md):\n{claude_md[:1000]}")
+
+        if self.tools:
+            tool_names = [t["function"]["name"] for t in TOOL_DEFINITIONS]
+            parts.append(f"\nAvailable tools: {', '.join(tool_names)}")
+
+        prompt = "\n".join(parts)
+        return prompt[:2000]
+
+    def _estimate_tokens(self, messages):
+        """Estimate token count from messages (chars / 4)."""
+        total = sum(len(m.get("content", "")) for m in messages)
+        return total // 4
 
     # ── Ollama backend ──────────────────────────────────────────────
 
@@ -72,13 +148,7 @@ class Agent:
         if self.tools:
             payload["tools"] = TOOL_DEFINITIONS
 
-        data = json.dumps(payload).encode()
-        req = urllib.request.Request(
-            OLLAMA_URL,
-            data=data,
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        with self._request_with_retry(OLLAMA_URL, payload) as resp:
             return json.loads(resp.read())
 
     def _call_ollama_stream(self, messages: list[dict], on_event=None) -> dict:
@@ -91,15 +161,8 @@ class Agent:
         if self.tools:
             payload["tools"] = TOOL_DEFINITIONS
 
-        data = json.dumps(payload).encode()
-        req = urllib.request.Request(
-            OLLAMA_URL,
-            data=data,
-            headers={"Content-Type": "application/json"},
-        )
-
         final_message = None
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        with self._request_with_retry(OLLAMA_URL, payload) as resp:
             for line in resp:
                 if not line.strip():
                     continue
@@ -121,20 +184,17 @@ class Agent:
 
     def _call_llamacpp(self, messages: list[dict]) -> dict:
         """Make a non-streaming request to the llama.cpp API."""
+        max_tok = EFFORT_LEVELS.get(self.effort, {}).get("max_tokens", 2048)
         payload: dict[str, Any] = {
             "messages": messages,
-            "max_tokens": 2048,
+            "max_tokens": max_tok,
         }
         if self.enable_thinking:
             payload["enable_thinking"] = True
+        if self.tools:
+            payload["tools"] = TOOL_DEFINITIONS
 
-        data = json.dumps(payload).encode()
-        req = urllib.request.Request(
-            LLAMACPP_URL,
-            data=data,
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        with self._request_with_retry(LLAMACPP_URL, payload) as resp:
             result = json.loads(resp.read())
 
         choice = result["choices"][0]["message"]
@@ -145,30 +205,31 @@ class Agent:
         msg: dict[str, Any] = {"role": "assistant", "content": content}
         if reasoning:
             msg["reasoning_content"] = reasoning
+        # Pass through tool_calls if present
+        if choice.get("tool_calls"):
+            msg["tool_calls"] = choice["tool_calls"]
         return {"message": msg}
 
     def _call_llamacpp_stream(self, messages: list[dict], on_event=None) -> dict:
         """Make a streaming request to llama.cpp via SSE."""
+        max_tok = EFFORT_LEVELS.get(self.effort, {}).get("max_tokens", 2048)
         payload: dict[str, Any] = {
             "messages": messages,
-            "max_tokens": 2048,
+            "max_tokens": max_tok,
             "stream": True,
         }
         if self.enable_thinking:
             payload["enable_thinking"] = True
-
-        data = json.dumps(payload).encode()
-        req = urllib.request.Request(
-            LLAMACPP_URL,
-            data=data,
-            headers={"Content-Type": "application/json"},
-        )
+        if self.tools:
+            payload["tools"] = TOOL_DEFINITIONS
 
         full_content = ""
         full_reasoning = ""
         in_reasoning = False
+        tool_calls: list[dict] = []
+        tc_index = -1
 
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        with self._request_with_retry(LLAMACPP_URL, payload) as resp:
             for raw_line in resp:
                 line = raw_line.decode("utf-8", errors="replace").strip()
                 if not line or not line.startswith("data: "):
@@ -179,6 +240,28 @@ class Agent:
 
                 chunk = json.loads(payload_str)
                 delta = chunk.get("choices", [{}])[0].get("delta", {})
+
+                # Tool call deltas
+                tc_deltas = delta.get("tool_calls")
+                if tc_deltas:
+                    if in_reasoning and on_event:
+                        on_event("thinking_end", {})
+                        in_reasoning = False
+                    for tcd in tc_deltas:
+                        idx = tcd.get("index", 0)
+                        if idx > tc_index:
+                            tc_index = idx
+                            tool_calls.append({
+                                "id": tcd.get("id", f"call_{idx}"),
+                                "type": "function",
+                                "function": {"name": "", "arguments": ""},
+                            })
+                        fn = tcd.get("function", {})
+                        if fn.get("name"):
+                            tool_calls[idx]["function"]["name"] = fn["name"]
+                        if fn.get("arguments"):
+                            tool_calls[idx]["function"]["arguments"] += fn["arguments"]
+                    continue
 
                 # Reasoning content (thinking)
                 reasoning_token = delta.get("reasoning_content", "")
@@ -207,6 +290,15 @@ class Agent:
         msg: dict[str, Any] = {"role": "assistant", "content": full_content}
         if full_reasoning:
             msg["reasoning_content"] = full_reasoning
+        if tool_calls:
+            # Parse arguments from JSON strings
+            for tc in tool_calls:
+                args_str = tc["function"]["arguments"]
+                try:
+                    tc["function"]["arguments"] = json.loads(args_str) if args_str else {}
+                except json.JSONDecodeError:
+                    tc["function"]["arguments"] = {}
+            msg["tool_calls"] = tool_calls
         return msg
 
     def chat(self, message: str, think: bool = True, on_event=None, stream: bool = True) -> str:
@@ -231,7 +323,7 @@ class Agent:
             if on_event:
                 on_event("compact", {"removed": old_len - len(self.history), "remaining": len(self.history)})
 
-        messages = [{"role": "system", "content": self.system_prompt}] + self.history
+        messages = [{"role": "system", "content": self.build_system_prompt()}] + self.history
         use_stream = stream and on_event is not None
         is_llamacpp = self.backend == "llamacpp"
 
@@ -264,12 +356,18 @@ class Agent:
                     if on_event:
                         on_event("tool_call", {"name": tool_name, "args": tool_args})
 
-                    tool_output = execute_tool(tool_name, tool_args)
+                    confirm_fn = getattr(self, 'confirm_fn', None)
+                    perm_mode = getattr(self, 'permission_mode', None)
+                    tool_output = execute_tool(tool_name, tool_args, confirm_fn=confirm_fn, mode=perm_mode)
 
                     if on_event:
                         on_event("tool_result", {"name": tool_name, "output": tool_output})
 
                     tool_msg = {"role": "tool", "content": tool_output}
+                    # llama.cpp (OpenAI API) requires tool_call_id
+                    tc_id = tc.get("id")
+                    if tc_id:
+                        tool_msg["tool_call_id"] = tc_id
                     self.history.append(tool_msg)
                     messages.append(tool_msg)
 
@@ -281,8 +379,14 @@ class Agent:
                 reasoning = msg.get("reasoning_content", "")
                 self.history.append({"role": "assistant", "content": reply})
 
+                self._last_usage = {
+                    "input_tokens": self._estimate_tokens(messages),
+                    "output_tokens": self._estimate_tokens([{"content": reply}]),
+                }
+
                 if on_event:
                     on_event("response", {"content": reply, "reasoning": reasoning})
+                    on_event("usage", self._last_usage)
 
                 return reply
 

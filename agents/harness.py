@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Claw Code Python Harness — multi-agent terminal coding assistant powered by local Qwen 3.5."""
 
+import atexit
 import os
 import sys
 import json
 import time
 from pathlib import Path
 
-from agents.agent import Agent, DEFAULT_MODEL, detect_backend
+from agents.agent import Agent, DEFAULT_MODEL, EFFORT_LEVELS, detect_backend
+from agents.permissions import PermissionMode
 from agents.coordinator import Coordinator
 from agents.swarm import Swarm
 from agents.specialist_coordinator import SpecialistCoordinator, detect_specialists
@@ -47,6 +49,7 @@ BANNER = f"""
     /save          — save active agent's session
     /sessions      — list saved sessions
     /load <id>     — load a saved session
+    /effort [low|medium|max] — show/set reasoning effort level
     /distill status — show available specialist models
     /distill on    — enable specialist routing
     /distill off   — disable specialist routing
@@ -69,6 +72,7 @@ class Harness:
         self.history_log = HistoryLog()
         self._streaming_text = False  # Track whether we're mid-stream
         self._streaming_thinking = False  # Track thinking block display
+        self.permission_mode = PermissionMode.WORKSPACE_WRITE
 
         # Create default agents
         self._spawn("coder", "expert software engineer who writes clean, efficient code")
@@ -84,6 +88,33 @@ class Harness:
     def _rebuild_coordinator(self):
         """Rebuild coordinator with current agent list."""
         self.coordinator = Coordinator(list(self.agents.values()), model=self.model)
+
+    def _auto_save(self):
+        """Auto-save active agent session on exit."""
+        agent = self.agents[self.active_agent]
+        if agent.history:
+            path = save_session(agent)
+            print(f"\n  {DIM}Session auto-saved to {path}{RESET}")
+
+    def _confirm(self, tool_name: str, tool_args: dict, reason: str) -> bool:
+        """Prompt user to confirm a risky tool call."""
+        if self._streaming_text:
+            print(f"{RESET}")
+            self._streaming_text = False
+        if self._streaming_thinking:
+            self._streaming_thinking = False
+        summary = ""
+        if tool_name == "bash":
+            summary = tool_args.get("command", "")[:80]
+        elif tool_name in ("write_file", "edit_file"):
+            summary = tool_args.get("path", "")
+        print(f"\n  {YELLOW}{BOLD}[confirm]{RESET} {reason}")
+        print(f"    {DIM}{tool_name}: {summary}{RESET}")
+        try:
+            answer = input(f"    Allow? [y/N] ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            return False
+        return answer in ("y", "yes")
 
     def _on_event(self, event_type: str, data: dict):
         """Handle agent events for display."""
@@ -132,6 +163,8 @@ class Harness:
             if self._streaming_text:
                 print(f"{RESET}")
                 self._streaming_text = False
+            if self._streaming_thinking:
+                self._streaming_thinking = False
 
             name = data["name"]
             args = data["args"]
@@ -160,6 +193,17 @@ class Harness:
                 preview += f"\n    {DIM}... ({len(lines) - 10} more lines){RESET}"
             print(f"    {DIM}{preview}{RESET}")
             self.history_log.add("tool_result", f"{data.get('name', '?')}: {output[:80]}")
+
+        elif event_type == "model_swap":
+            model = data.get("model", "?")
+            print(f"\n  {MAGENTA}{DIM}swapping to {model}...{RESET}", end="", flush=True)
+
+        elif event_type == "model_ready":
+            elapsed = data.get("elapsed", 0)
+            print(f" ready ({elapsed:.1f}s){RESET}")
+
+        elif event_type == "usage":
+            pass  # Token count displayed inline with timing
 
     def _handle_command(self, cmd: str) -> bool:
         """Handle a slash command. Returns True if handled."""
@@ -246,6 +290,22 @@ class Harness:
             else:
                 print(f"  {RED}Usage: /backend [ollama|llamacpp]{RESET}")
 
+        elif command == "/effort":
+            if len(parts) < 2:
+                current = self.agents[self.active_agent].effort
+                info = EFFORT_LEVELS[current]
+                print(f"  Effort: {CYAN}{current}{RESET} (max_tokens={info['max_tokens']})")
+                for level, cfg in EFFORT_LEVELS.items():
+                    marker = " ←" if level == current else ""
+                    print(f"    {level:8s} — {cfg['max_tokens']:5d} tokens{marker}")
+            elif parts[1] in EFFORT_LEVELS:
+                for agent in self.agents.values():
+                    agent.effort = parts[1]
+                info = EFFORT_LEVELS[parts[1]]
+                print(f"  Effort set to {CYAN}{parts[1]}{RESET} (max_tokens={info['max_tokens']}) for all agents.")
+            else:
+                print(f"  {RED}Usage: /effort [low|medium|max]{RESET}")
+
         elif command == "/history":
             print(f"\n{self.history_log.as_markdown()}")
 
@@ -276,6 +336,16 @@ class Harness:
                     print(f"  {RED}Session '{parts[1]}' not found. Use /sessions to list.{RESET}")
                 except Exception as e:
                     print(f"  {RED}Error loading session: {e}{RESET}")
+
+        elif command == "/resume":
+            sessions = list_sessions()
+            if sessions:
+                data = load_session(sessions[0]["id"])
+                agent = self.agents[self.active_agent]
+                agent.history = data["history"]
+                print(f"  {GREEN}Resumed {len(data['history'])} messages{RESET}")
+            else:
+                print(f"  {DIM}No saved sessions found{RESET}")
 
         elif command == "/distill":
             subcmd = parts[1] if len(parts) > 1 else "status"
@@ -324,10 +394,36 @@ class Harness:
             return self.coordinator.run(message)
         else:
             agent = self.agents[self.active_agent]
+            agent.confirm_fn = self._confirm
+            agent.permission_mode = self.permission_mode
             return agent.chat(message, on_event=self._on_event)
 
-    def run(self):
+    def run(self, resume: bool = False):
         """Start the interactive REPL."""
+        # Readline history
+        try:
+            import readline
+            readline.parse_and_bind("tab: complete")
+            histfile = os.path.expanduser("~/.claw_history")
+            try:
+                readline.read_history_file(histfile)
+            except FileNotFoundError:
+                pass
+            atexit.register(readline.write_history_file, histfile)
+        except ImportError:
+            pass
+
+        atexit.register(self._auto_save)
+
+        # Resume latest session if requested
+        if resume:
+            sessions = list_sessions()
+            if sessions:
+                data = load_session(sessions[0]["id"])
+                agent = self.agents[self.active_agent]
+                agent.history = data["history"]
+                print(f"  {GREEN}Resumed {len(data['history'])} messages from latest session{RESET}")
+
         print(BANNER)
         print(f"  {DIM}Working directory: {os.getcwd()}{RESET}")
         print(f"  {DIM}Backend: {self.backend}{RESET}")
@@ -335,13 +431,21 @@ class Harness:
             print(f"  {DIM}Thinking: enabled{RESET}")
         else:
             print(f"  {DIM}Model: {self.model}{RESET}")
+        effort = self.agents[self.active_agent].effort
+        if effort != "medium":
+            print(f"  {DIM}Effort: {effort}{RESET}")
         print(f"  {DIM}Active agent: {self.active_agent}{RESET}")
         print()
 
         while True:
             try:
-                prompt = f"{BLUE}{BOLD}{self.active_agent}{RESET}" if not self.team_mode else f"{MAGENTA}{BOLD}team{RESET}"
-                user_input = input(f"  {prompt} {BOLD}>{RESET} ").strip()
+                # Wrap ANSI codes in \001/\002 so readline calculates cursor position correctly
+                _s, _e = "\001", "\002"
+                if not self.team_mode:
+                    prompt = f"  {_s}{BLUE}{BOLD}{_e}{self.active_agent}{_s}{RESET}{_e} {_s}{BOLD}{_e}>{_s}{RESET}{_e} "
+                else:
+                    prompt = f"  {_s}{MAGENTA}{BOLD}{_e}team{_s}{RESET}{_e} {_s}{BOLD}{_e}>{_s}{RESET}{_e} "
+                user_input = input(prompt).strip()
             except (KeyboardInterrupt, EOFError):
                 print(f"\n  {DIM}Goodbye!{RESET}\n")
                 break
@@ -394,13 +498,38 @@ def main():
         default=None,
         help="Working directory",
     )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume latest session",
+    )
+    parser.add_argument(
+        "--permission-mode",
+        choices=["readonly", "workspace", "full"],
+        default="workspace",
+        help="Permission mode (default: workspace)",
+    )
+    parser.add_argument(
+        "--effort", "-e",
+        choices=["low", "medium", "max"],
+        default="medium",
+        help="Reasoning effort level (default: medium)",
+    )
     args = parser.parse_args()
 
     if args.cd:
         os.chdir(os.path.expanduser(args.cd))
 
     harness = Harness(model=args.model, backend=args.backend)
-    harness.run()
+
+    mode_map = {"readonly": PermissionMode.READ_ONLY, "workspace": PermissionMode.WORKSPACE_WRITE, "full": PermissionMode.FULL_ACCESS}
+    harness.permission_mode = mode_map[args.permission_mode]
+
+    if args.effort != "medium":
+        for agent in harness.agents.values():
+            agent.effort = args.effort
+
+    harness.run(resume=args.resume)
 
 
 if __name__ == "__main__":

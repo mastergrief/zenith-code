@@ -5,7 +5,7 @@ from agents.coordinator import Coordinator
 from agents.swarm import Swarm
 from agents.specialist_coordinator import SpecialistCoordinator
 from agents.history import HistoryLog
-from agents.permissions import ToolPermissions
+from agents.permissions import BashRisk, PermissionMode, classify_bash, check_permission
 from agents.compact import compact_history, should_compact
 
 __all__ = [
@@ -14,7 +14,10 @@ __all__ = [
     "Swarm",
     "SpecialistCoordinator",
     "HistoryLog",
-    "ToolPermissions",
+    "BashRisk",
+    "PermissionMode",
+    "classify_bash",
+    "check_permission",
     "compact_history",
     "should_compact",
 ]

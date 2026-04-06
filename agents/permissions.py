@@ -1,86 +1,133 @@
-"""Tool permission enforcement — deny-list for dangerous operations."""
+"""Tool permission enforcement — classification-based validation."""
 
-from dataclasses import dataclass, field
-
-
-# Destructive bash patterns from rust bash_validation.rs
-_DEFAULT_BASH_DENY = (
-    ("rm -rf /", "Recursive forced deletion at root"),
-    ("rm -rf ~", "Recursive forced deletion of home directory"),
-    ("rm -rf *", "Recursive forced deletion of all files in cwd"),
-    ("rm -rf .", "Recursive forced deletion of current directory"),
-    ("> /dev/sd", "Writing to raw disk device"),
-    (":(){ :|:& };:", "Fork bomb"),
-    ("mkfs", "Filesystem creation destroys existing data"),
-    ("dd if=", "Direct disk write"),
-    ("chmod -R 777", "Recursively setting world-writable permissions"),
-    ("chmod -R 000", "Recursively removing all permissions"),
-)
-
-_DEFAULT_WRITE_DENY_PREFIXES = (
-    "/etc/",
-    "/usr/",
-    "/sys/",
-    "/proc/",
-    "/dev/",
-    "/boot/",
-    "/sbin/",
-)
-
-_ALWAYS_DESTRUCTIVE = frozenset({"shred", "wipefs"})
+import os
+import re
+from enum import Enum
 
 
-@dataclass(frozen=True)
-class ToolPermissions:
-    """Deny-list for tool calls. Blocks known-dangerous operations."""
+class PermissionMode(Enum):
+    READ_ONLY = "readonly"        # Only read tools allowed
+    WORKSPACE_WRITE = "workspace"  # Write within project, no system paths
+    FULL_ACCESS = "full"           # Everything allowed (still blocks catastrophic)
 
-    deny_names: frozenset[str] = field(default_factory=frozenset)
-    bash_deny_patterns: tuple[tuple[str, str], ...] = _DEFAULT_BASH_DENY
-    write_deny_prefixes: tuple[str, ...] = _DEFAULT_WRITE_DENY_PREFIXES
 
-    def blocks(self, tool_name: str, tool_args: dict) -> str | None:
-        """Return reason string if blocked, None if allowed."""
-        if tool_name in self.deny_names:
-            return f"Tool '{tool_name}' is denied"
+class BashRisk(Enum):
+    SAFE = "safe"                # read-only commands (ls, cat, grep, git status)
+    WRITE = "write"              # creates/modifies files (touch, cp, mv, mkdir, npm install)
+    DESTRUCTIVE = "destructive"  # data loss risk (rm, git reset --hard, docker rm)
+    BLOCKED = "blocked"          # always blocked (rm -rf /, fork bombs, shred)
 
+
+# Commands that are always safe (read-only)
+SAFE_COMMANDS = {
+    "ls", "cat", "head", "tail", "less", "more", "wc", "file", "stat",
+    "find", "grep", "rg", "ag", "which", "whereis", "type", "echo",
+    "pwd", "env", "printenv", "date", "whoami", "hostname", "uname",
+    "df", "du", "free", "top", "ps", "id", "groups",
+}
+
+# Git subcommands: read-only vs write
+GIT_SAFE = {"status", "log", "diff", "show", "branch", "tag", "stash list", "remote", "blame"}
+GIT_WRITE = {"add", "commit", "merge", "rebase", "checkout", "switch", "stash push", "stash pop"}
+GIT_DESTRUCTIVE = {"push", "reset", "clean", "checkout --", "restore", "push --force", "stash drop"}
+
+# Always blocked patterns
+BLOCKED_PATTERNS = [
+    r"rm\s+-rf\s+/",
+    r":\(\)\{.*:\|:.*\}",  # fork bomb
+    r"mkfs\.", r"dd\s+if=", r"shred",
+    r">\s*/dev/sd", r"chmod\s+-R\s+777\s+/",
+]
+
+# Write redirect detection
+WRITE_REDIRECT_PATTERN = r"(?<![12])>{1,2}\s*[^&]"
+
+# System paths (never write to these)
+SYSTEM_PATHS = ["/etc/", "/usr/", "/var/", "/boot/", "/sys/", "/proc/", "~/.ssh/"]
+
+
+def classify_bash(command: str) -> BashRisk:
+    """Classify a bash command by risk level."""
+    # Check blocked patterns first
+    for pattern in BLOCKED_PATTERNS:
+        if re.search(pattern, command):
+            return BashRisk.BLOCKED
+
+    # Check write redirects
+    if re.search(WRITE_REDIRECT_PATTERN, command):
+        return BashRisk.WRITE
+
+    # Extract first word (the command)
+    first_word = command.strip().split()[0] if command.strip() else ""
+
+    # Git subcommand classification
+    if first_word == "git":
+        parts = command.strip().split()
+        subcmd = parts[1] if len(parts) > 1 else ""
+        # Check two-word subcommands first (e.g. "checkout --", "push --force")
+        two_word = " ".join(parts[1:3]) if len(parts) > 2 else ""
+        if two_word in GIT_DESTRUCTIVE or subcmd in GIT_DESTRUCTIVE:
+            return BashRisk.DESTRUCTIVE
+        if two_word in GIT_WRITE or subcmd in GIT_WRITE:
+            return BashRisk.WRITE
+        if two_word in GIT_SAFE or subcmd in GIT_SAFE:
+            return BashRisk.SAFE
+        return BashRisk.WRITE  # unknown git = assume write
+
+    # Safe commands
+    if first_word in SAFE_COMMANDS:
+        return BashRisk.SAFE
+
+    # Path traversal check
+    if "../" in command or command.startswith("~/."):
+        for sys_path in SYSTEM_PATHS:
+            if sys_path in command:
+                return BashRisk.DESTRUCTIVE
+
+    # Default: classify as write (ask user)
+    return BashRisk.WRITE
+
+
+def check_permission(tool_name: str, tool_args: dict, mode: PermissionMode) -> tuple[bool, str]:
+    """Returns (allowed, reason). If not allowed, reason explains why."""
+    if mode == PermissionMode.FULL_ACCESS:
+        # Still block catastrophic
         if tool_name == "bash":
-            return self._check_bash(tool_args.get("command", ""))
+            risk = classify_bash(tool_args.get("command", ""))
+            if risk == BashRisk.BLOCKED:
+                return False, "Blocked: catastrophic command"
+        # Always block system paths, even in full access
+        if tool_name in ("write_file", "edit_file"):
+            path = os.path.expanduser(tool_args.get("path", ""))
+            for sys_path in SYSTEM_PATHS:
+                expanded_sys = os.path.expanduser(sys_path)
+                if path.startswith(expanded_sys):
+                    return False, f"Blocked: system path {sys_path}"
+        return True, ""
 
-        if tool_name == "write_file":
-            return self._check_write_path(tool_args.get("path", ""))
+    if mode == PermissionMode.READ_ONLY:
+        if tool_name in ("write_file", "edit_file"):
+            return False, "Blocked: read-only mode"
+        if tool_name == "bash":
+            risk = classify_bash(tool_args.get("command", ""))
+            if risk != BashRisk.SAFE:
+                return False, f"Blocked: read-only mode (command classified as {risk.value})"
+        return True, ""
 
-        if tool_name == "edit_file":
-            return self._check_write_path(tool_args.get("path", ""))
-
-        return None
-
-    def _check_bash(self, command: str) -> str | None:
-        # Check destructive patterns
-        for pattern, reason in self.bash_deny_patterns:
-            if pattern in command:
-                return f"Destructive command blocked: {reason}"
-
-        # Check always-destructive commands
-        first = command.strip().split()[0] if command.strip() else ""
-        if first in _ALWAYS_DESTRUCTIVE:
-            return f"Command '{first}' is inherently destructive"
-
-        return None
-
-    def _check_write_path(self, path: str) -> str | None:
-        import os
-
-        expanded = os.path.expanduser(path)
-        for prefix in self.write_deny_prefixes:
-            if expanded.startswith(prefix):
-                return f"Writing to '{prefix}' is not allowed"
-
-        # Block ~/.ssh/ writes
-        ssh_dir = os.path.expanduser("~/.ssh")
-        if expanded.startswith(ssh_dir):
-            return "Writing to ~/.ssh/ is not allowed"
-
-        return None
-
-
-DEFAULT_PERMISSIONS = ToolPermissions()
+    # WORKSPACE_WRITE (default)
+    if tool_name == "bash":
+        risk = classify_bash(tool_args.get("command", ""))
+        if risk == BashRisk.BLOCKED:
+            return False, "Blocked: catastrophic command"
+        if risk == BashRisk.DESTRUCTIVE:
+            return False, "Needs confirmation: destructive command"
+        if risk == BashRisk.WRITE:
+            return False, "Needs confirmation: write command"
+    if tool_name in ("write_file", "edit_file"):
+        path = os.path.expanduser(tool_args.get("path", ""))
+        for sys_path in SYSTEM_PATHS:
+            expanded_sys = os.path.expanduser(sys_path)
+            if path.startswith(expanded_sys):
+                return False, f"Blocked: system path {sys_path}"
+        return False, "Needs confirmation: file write"
+    return True, ""

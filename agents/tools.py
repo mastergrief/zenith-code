@@ -6,7 +6,7 @@ import subprocess
 import glob as globmod
 import re
 
-from agents.permissions import DEFAULT_PERMISSIONS
+from agents.permissions import check_permission, PermissionMode
 
 
 TOOL_DEFINITIONS = [
@@ -31,14 +31,22 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Read a file and return its contents.",
+            "description": "Read a file and return its contents with line numbers.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
                         "description": "Path to the file to read",
-                    }
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Start line (0-based). Default: 0",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max lines to return. Default: 500",
+                    },
                 },
                 "required": ["path"],
             },
@@ -139,18 +147,22 @@ TOOL_DEFINITIONS = [
 ]
 
 
-def execute_tool(name: str, args: dict) -> str:
-    """Execute a tool by name with given arguments."""
-    # Permission check
-    blocked = DEFAULT_PERMISSIONS.blocks(name, args)
-    if blocked:
-        return f"Blocked: {blocked}"
+def execute_tool(name: str, args: dict, confirm_fn=None, mode=None) -> str:
+    """Execute a tool with permission checking."""
+    mode = mode or PermissionMode.WORKSPACE_WRITE
+    allowed, reason = check_permission(name, args, mode)
+    if not allowed:
+        if "Needs confirmation" in reason and confirm_fn:
+            if not confirm_fn(name, args, reason):
+                return f"Denied by user: {reason}"
+        else:
+            return reason
 
     try:
         if name == "bash":
             return _run_bash(args["command"])
         elif name == "read_file":
-            return _read_file(args["path"])
+            return _read_file(args)
         elif name == "write_file":
             return _write_file(args["path"], args["content"])
         elif name == "edit_file":
@@ -195,16 +207,29 @@ def _run_bash(command: str) -> str:
         return "Error: command timed out (30s)"
 
 
-def _read_file(path: str) -> str:
-    """Read file contents."""
-    path = os.path.expanduser(path)
+def _read_file(args: dict) -> str:
+    """Read file contents with optional windowing and binary detection."""
+    path = os.path.expanduser(args["path"])
+    offset = args.get("offset", 0)
+    limit = args.get("limit", 500)
+
+    # Binary detection: check first 8KB for NUL bytes
+    with open(path, "rb") as f:
+        sample = f.read(8192)
+        if b"\x00" in sample:
+            return f"Error: binary file detected ({path})"
+
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         lines = f.readlines()
-    if len(lines) > 500:
-        content = "".join(lines[:500])
-        content += f"\n... ({len(lines) - 500} more lines truncated)"
-        return content
-    return "".join(lines)
+    total = len(lines)
+    offset = min(offset, total)
+    selected = lines[offset:offset + limit]
+    if not selected:
+        return f"({total} lines total, no lines in range)"
+    numbered = [f"{i + offset + 1:4d} | {line.rstrip()}" for i, line in enumerate(selected)]
+    end = min(offset + limit, total)
+    header = f"({total} lines total, showing {offset+1}-{end})"
+    return header + "\n" + "\n".join(numbered)
 
 
 def _write_file(path: str, content: str) -> str:
@@ -269,7 +294,15 @@ def _edit_file(path: str, old_string: str, new_string: str, replace_all: bool = 
         f.write(updated)
 
     n = count if replace_all else 1
-    return f"Edited {path}: replaced {n} occurrence(s)"
+
+    # Context preview around edit location
+    edited_lines = updated.split("\n")
+    edit_start = updated.index(new_string)
+    edit_line = updated[:edit_start].count("\n")
+    ctx_start = max(0, edit_line - 3)
+    ctx_end = min(len(edited_lines), edit_line + new_string.count("\n") + 4)
+    context = [f"{i+1:4d} | {edited_lines[i]}" for i in range(ctx_start, ctx_end)]
+    return f"Edited {path}:{edit_line+1}: replaced {n} occurrence(s)\n" + "\n".join(context)
 
 
 def _list_files(pattern: str) -> str:

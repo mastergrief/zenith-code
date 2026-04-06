@@ -1,5 +1,6 @@
 """Transcript compaction — summarize old messages to stay within context limits."""
 
+import os
 import re
 
 COMPACT_CONTINUATION_PREAMBLE = (
@@ -27,6 +28,9 @@ DEFAULT_CONTEXT_LIMIT = 4096
 
 def detect_context_limit(model_name: str) -> int:
     """Auto-detect context limit from model name string."""
+    env_override = os.environ.get("CLAW_AUTO_COMPACT_TOKENS")
+    if env_override:
+        return int(env_override)
     # Check longer keys first to avoid "8b" matching before "0.8b"
     for key in sorted(MODEL_CONTEXT_LIMITS, key=len, reverse=True):
         if key in model_name:
@@ -137,6 +141,22 @@ def summarize_messages(messages: list[dict]) -> str:
 
     lines.append("</summary>")
     return "\n".join(lines)
+
+
+def compress_summary(text: str, max_chars: int = 1200, max_lines: int = 24) -> str:
+    """Compress a summary to fit within size limits."""
+    lines = text.split("\n")
+    headers = [l for l in lines if l.startswith("#") or l.startswith("- ")]
+    other = [l for l in lines if l not in headers]
+    seen = set()
+    deduped = []
+    for l in headers + other:
+        key = l.strip().lower()
+        if key not in seen:
+            seen.add(key)
+            deduped.append(l[:160])
+    result = "\n".join(deduped[:max_lines])
+    return result[:max_chars]
 
 
 def _compacted_prefix_len(messages: list[dict]) -> int:
