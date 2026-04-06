@@ -13,8 +13,9 @@ COMPACT_DIRECT_RESUME_INSTRUCTION = (
     "do not recap what was happening, and do not preface with continuation text."
 )
 
-# Model context limits (from Modelfiles)
+# Model context limits (from Modelfiles / server config)
 MODEL_CONTEXT_LIMITS = {
+    "llamacpp": 65536,  # llama.cpp server with Q4 KV cache
     "9b": 2048,
     "8b": 2048,
     "4b": 8192,

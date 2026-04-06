@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# claw — launch the Claw Code harness with llama.cpp auto-start
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+MODEL="${CLAW_MODEL:-$HOME/models/Qwen3.5-4B.Q5_K_M.gguf}"
+LLAMA_SERVER="${CLAW_LLAMA_SERVER:-$HOME/llama.cpp/build/bin/llama-server}"
+PORT="${CLAW_PORT:-8080}"
+CTX="${CLAW_CTX:-65536}"
+LLAMA_PID=""
+STARTED_LLAMA=false
+
+cleanup() {
+    if $STARTED_LLAMA && [ -n "$LLAMA_PID" ]; then
+        echo -e "\n  Stopping llama.cpp (pid $LLAMA_PID)..."
+        kill "$LLAMA_PID" 2>/dev/null
+        wait "$LLAMA_PID" 2>/dev/null
+    fi
+}
+trap cleanup EXIT
+
+# ── Check for model file ──────────────────────────────────────────
+if [ ! -f "$MODEL" ]; then
+    echo "Error: Model not found at $MODEL"
+    echo "Set CLAW_MODEL to your GGUF path"
+    exit 1
+fi
+
+# ── Check for llama-server binary ─────────────────────────────────
+if [ ! -x "$LLAMA_SERVER" ]; then
+    echo "Error: llama-server not found at $LLAMA_SERVER"
+    echo "Build llama.cpp with: cd ~/llama.cpp && cmake -B build -DGGML_CUDA=ON && cmake --build build -j\$(nproc)"
+    exit 1
+fi
+
+# ── Start llama.cpp if not running ────────────────────────────────
+if curl -s "localhost:$PORT/health" 2>/dev/null | grep -q '"ok"'; then
+    echo "  llama.cpp already running on :$PORT"
+else
+    echo "  Starting llama.cpp on :$PORT..."
+    "$LLAMA_SERVER" \
+        -m "$MODEL" \
+        --ctx-size "$CTX" \
+        --cache-type-k q4_0 \
+        --cache-type-v q4_0 \
+        -ngl 999 \
+        --port "$PORT" \
+        > /tmp/llama-server.log 2>&1 &
+    LLAMA_PID=$!
+    STARTED_LLAMA=true
+
+    # Wait for health (up to 60s for model load + KV cache allocation)
+    echo -n "  Waiting for model to load"
+    for i in $(seq 1 60); do
+        if curl -s "localhost:$PORT/health" 2>/dev/null | grep -q '"ok"'; then
+            echo -e "\n  llama.cpp ready (${i}s)"
+            break
+        fi
+        if ! kill -0 "$LLAMA_PID" 2>/dev/null; then
+            echo -e "\n  Error: llama.cpp exited. Check /tmp/llama-server.log"
+            exit 1
+        fi
+        echo -n "."
+        sleep 1
+    done
+
+    if ! curl -s "localhost:$PORT/health" 2>/dev/null | grep -q '"ok"'; then
+        echo -e "\n  Error: llama.cpp failed to start within 60s"
+        echo "  Check /tmp/llama-server.log"
+        exit 1
+    fi
+fi
+
+# ── Kill Windows Ollama if running (VRAM conflict) ────────────────
+if command -v tasklist.exe &>/dev/null; then
+    if tasklist.exe 2>/dev/null | grep -qi "ollama"; then
+        echo "  Warning: Windows Ollama is running — may cause VRAM conflicts"
+    fi
+fi
+
+# ── Launch harness ────────────────────────────────────────────────
+cd "$SCRIPT_DIR"
+PYTHONUTF8=1 PYTHONPATH="$SCRIPT_DIR" exec python3 agents/harness.py --backend llamacpp "$@"

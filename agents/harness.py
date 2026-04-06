@@ -7,7 +7,7 @@ import json
 import time
 from pathlib import Path
 
-from agents.agent import Agent, DEFAULT_MODEL
+from agents.agent import Agent, DEFAULT_MODEL, detect_backend
 from agents.coordinator import Coordinator
 from agents.swarm import Swarm
 from agents.specialist_coordinator import SpecialistCoordinator, detect_specialists
@@ -28,7 +28,7 @@ RESET = "\033[0m"
 BANNER = f"""
 {CYAN}{BOLD}  ╔═══════════════════════════════════════════════╗
   ║     CLAW CODE — Multi-Agent Harness            ║
-  ║     Powered by Qwen 3.5 via Ollama             ║
+  ║     Powered by Qwen 3.5 via Ollama / llama.cpp ║
   ╚═══════════════════════════════════════════════╝{RESET}
 
   {DIM}Type a message to chat with your agent team.
@@ -42,6 +42,7 @@ BANNER = f"""
     /reset         — clear conversation history
     /cd <path>     — change working directory
     /model <name>  — switch model (e.g. qwen3:4b)
+    /backend       — show/switch backend (ollama/llamacpp)
     /history       — show session event log
     /save          — save active agent's session
     /sessions      — list saved sessions
@@ -56,8 +57,9 @@ BANNER = f"""
 class Harness:
     """Terminal REPL harness for multi-agent system."""
 
-    def __init__(self, model: str = DEFAULT_MODEL):
+    def __init__(self, model: str = DEFAULT_MODEL, backend: str | None = None):
         self.model = model
+        self.backend = backend or detect_backend()
         self.agents: dict[str, Agent] = {}
         self.active_agent: str = "coder"
         self.team_mode: bool = False
@@ -66,6 +68,7 @@ class Harness:
         self.specialist_coordinator: SpecialistCoordinator | None = None
         self.history_log = HistoryLog()
         self._streaming_text = False  # Track whether we're mid-stream
+        self._streaming_thinking = False  # Track thinking block display
 
         # Create default agents
         self._spawn("coder", "expert software engineer who writes clean, efficient code")
@@ -74,7 +77,7 @@ class Harness:
 
     def _spawn(self, name: str, role: str) -> Agent:
         """Create a new agent."""
-        agent = Agent(name=name, role=role, model=self.model)
+        agent = Agent(name=name, role=role, model=self.model, backend=self.backend)
         self.agents[name] = agent
         return agent
 
@@ -84,7 +87,24 @@ class Harness:
 
     def _on_event(self, event_type: str, data: dict):
         """Handle agent events for display."""
-        if event_type == "token":
+        if event_type == "thinking_start":
+            print(f"\n  {DIM}{MAGENTA}thinking...{RESET}", end="", flush=True)
+            self._streaming_thinking = True
+            return
+
+        elif event_type == "thinking_token":
+            # Stream thinking tokens dimmed
+            if not self._streaming_thinking:
+                print(f"\n  {DIM}", end="")
+                self._streaming_thinking = True
+            return  # suppress thinking tokens from display (too verbose)
+
+        elif event_type == "thinking_end":
+            if self._streaming_thinking:
+                self._streaming_thinking = False
+            return
+
+        elif event_type == "token":
             # Streaming token — print inline
             if not self._streaming_text:
                 print(f"\n  {GREEN}", end="")
@@ -207,6 +227,25 @@ class Harness:
                     agent.model = self.model
                 print(f"  Model set to {CYAN}{self.model}{RESET} for all agents.")
 
+        elif command == "/backend":
+            if len(parts) < 2:
+                detected = detect_backend()
+                print(f"  Current backend: {CYAN}{self.backend}{RESET}")
+                print(f"  Auto-detected:   {CYAN}{detected}{RESET}")
+                if self.backend == "llamacpp":
+                    print(f"  {DIM}llama.cpp at localhost:8080, thinking enabled{RESET}")
+                else:
+                    print(f"  {DIM}Ollama at localhost:11434{RESET}")
+            elif parts[1] in ("ollama", "llamacpp"):
+                self.backend = parts[1]
+                for agent in self.agents.values():
+                    agent.backend = self.backend
+                    if self.backend == "llamacpp":
+                        agent.max_context_tokens = 65536
+                print(f"  Backend set to {CYAN}{self.backend}{RESET} for all agents.")
+            else:
+                print(f"  {RED}Usage: /backend [ollama|llamacpp]{RESET}")
+
         elif command == "/history":
             print(f"\n{self.history_log.as_markdown()}")
 
@@ -291,7 +330,11 @@ class Harness:
         """Start the interactive REPL."""
         print(BANNER)
         print(f"  {DIM}Working directory: {os.getcwd()}{RESET}")
-        print(f"  {DIM}Model: {self.model}{RESET}")
+        print(f"  {DIM}Backend: {self.backend}{RESET}")
+        if self.backend == "llamacpp":
+            print(f"  {DIM}Thinking: enabled{RESET}")
+        else:
+            print(f"  {DIM}Model: {self.model}{RESET}")
         print(f"  {DIM}Active agent: {self.active_agent}{RESET}")
         print()
 
@@ -341,6 +384,12 @@ def main():
         help=f"Ollama model to use (default: {DEFAULT_MODEL})",
     )
     parser.add_argument(
+        "--backend", "-b",
+        default=None,
+        choices=["ollama", "llamacpp"],
+        help="Backend to use (default: auto-detect, prefers llama.cpp)",
+    )
+    parser.add_argument(
         "--cd", "-C",
         default=None,
         help="Working directory",
@@ -350,7 +399,7 @@ def main():
     if args.cd:
         os.chdir(os.path.expanduser(args.cd))
 
-    harness = Harness(model=args.model)
+    harness = Harness(model=args.model, backend=args.backend)
     harness.run()
 
 
