@@ -72,8 +72,12 @@ else
 fi
 
 # ── Kill Windows Ollama if running (VRAM conflict) ────────────────
+# NOTE: redirect stdin from /dev/null — WSL's interop shim forwards parent
+# stdin to Windows binaries, which consumes it and breaks programmatic
+# `printf ... | claw` invocation. Without this, the harness's first input()
+# call gets EOFError and the session exits before reading any prompt.
 if command -v tasklist.exe &>/dev/null; then
-    if tasklist.exe 2>/dev/null | grep -qi "ollama"; then
+    if tasklist.exe < /dev/null 2>/dev/null | grep -qi "ollama"; then
         echo "  Warning: Windows Ollama is running — may cause VRAM conflicts"
     fi
 fi
