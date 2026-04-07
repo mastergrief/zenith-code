@@ -144,10 +144,12 @@ class Harness:
             return
 
         elif event_type == "response":
+            # Don't reset _streaming_text here — the main loop checks it to
+            # decide whether to re-print the response. Resetting here causes
+            # the main loop to take the "non-streamed" branch and double-print
+            # everything that was already streamed.
             if self._streaming_text:
-                # Already streamed — just close the color and newline
                 print(f"{RESET}", end="")
-                self._streaming_text = False
             self.history_log.add("response", data.get("content", "")[:100])
             return
 
