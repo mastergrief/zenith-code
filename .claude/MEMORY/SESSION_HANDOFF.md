@@ -1,147 +1,182 @@
-# Session Handoff — 2026-04-04
+# Session Handoff — 2026-04-06 (Session 4)
 
 ## Goal
-Build a local multi-agent coding assistant powered by Qwen models via Ollama, with a distillation pipeline to create a swarm of specialist 0.6-0.8B models from larger teachers (9B + Claude Opus reasoning data).
+Build enterprise-level command infrastructure, install Serena MCP, download and serve the 4B model via llama.cpp with CUDA, evaluate it, implement full harness parity with original claw-code, and update all documentation.
 
 ## Completed
 
-### Ollama Setup
-- Installed Ollama on Windows, pulled models: qwen3:0.6b, qwen3:4b, qwen3:8b, qwen3.5:4b, qwen3.5:9b, qwen3.5:0.8b
-- Created optimized Modelfiles: `qwen9b-fast` (100% GPU, 2K ctx), `qwen4b-fast` (100% GPU, 8K ctx)
-- Confirmed WSL2 Ubuntu 24.04 can reach Ollama on localhost:11434
+### Enterprise Command Infrastructure (commit `2910d90`)
+Built from scratch, modeled on zenith-fitness patterns (read DISCOVER-DEEP, DISCOVER-BACKEND, SPEC, VDD-FULL from zenith for reference).
 
-### GitHub Repo
-- Forked `ultraworkers/claw-code` → `mastergrief/claw-code`
-- Branch: `feature/multi-agent-qwen`
-- **Nothing committed yet** — all work is unstaged
+**6 custom agents** in `.claude/agents/`:
+- `explorer.md` (purple) — read-only codebase search, Serena-assisted
+- `planner.md` (yellow) — synthesis gate, devil's advocate, cross-challenge
+- `developer.md` (blue) — harness development specialist, knows all 13 files
+- `trainer.md` (teal) — training data writing, JSONL format, quality standards
+- `reviewer.md` (green) — code review against plan, read-only
+- `harness-tester.md` (orange) — live harness testing, tool calling verification
 
-### Python Agent Harness (`agents/`)
-- `agent.py` — Agent class with Ollama chat + tool calling loop
-- `coordinator.py` — Coordinator delegates via JSON protocol
-- `swarm.py` — Parallel agent execution (ThreadPoolExecutor)
-- `tools.py` — 5 tools: bash, read_file, write_file, grep, list_files
-- `harness.py` — Terminal REPL with /agents, /switch, /team, /solo, /spawn, /model, /distill commands
-- `specialist_coordinator.py` — SpecialistCoordinator with auto-detection of specialist models
-- `example.py` — Working demos (tested, all pass)
-- **All tested and working** — tool calling, swarm broadcast, coordinator delegation confirmed
+**7 commands** in `.claude/commands/`:
+- `DISCOVER.md` — single explorer, quick investigation
+- `DISCOVER-DEEP.md` — 4-agent team (explorer + trainer + harness-tester + planner), cross-challenge, Solutions Matrix
+- `SPEC.md` — post-discovery spec writing to Serena memory
+- `VDD.md` — full discover → develop → validate lifecycle, 3 phases, self-healing
+- `TRAIN-DATA.md` — training data generation/validation
+- `EVAL.md` — model evaluation against 5 standard prompts
+- `handoff.md` / `update.md` — built-in session management
 
-### Rust Ollama Provider (partial)
-- Added `Ollama` variant to `ProviderKind` enum in `rust/crates/api/src/providers/mod.rs`
-- Added `ollama()` config + `ollama_running()` check in `openai_compat.rs`
-- Registered qwen models in MODEL_REGISTRY
-- **NOT BUILT** — needs MSVC Build Tools (installed rustc 1.94.1 but no linker)
+**4 rules** in `.claude/rules/`:
+- `orchestration.md` — dispatcher role, tool restrictions, synthesis gate enforcement, failure recovery
+- `vdd.md` — single-team protocol, gates, cleanup
+- `architecture.md` — full rewrite reflecting current codebase
+- `training.md` — updated with 4B eval results
 
-### Distillation Pipeline (`agents/distill/`)
-- `config.py` — 6 domains defined (orchestrator, typescript, python, rust, devops, reviewer)
-- `generate.py` — DatasetGenerator using 9B teacher (working but slow)
-- `train_base.py` — Stage 1: reasoning base from Claude data
-- `train.py` — Stage 2: specialist fine-tuning (auto-detects reasoning base)
-- `export.py` — GGUF conversion + Ollama registration
-- `validate.py` — A/B comparison using 9B as judge
-- `fetch_datasets.py` — Downloads HuggingFace datasets (TeichAI + Crownelius)
-- `seeds/` — 50-100 seed prompts per domain (all 6 written)
+### Serena MCP Installation
+- Configured in `~/.claude.json` under `projects["/mnt/c/Users/gabes/projects/claw-code"]`
+- Uses `/home/gabe/serena-fork` with `uv run`
+- NOT in `.claude.json` (project root) — that's for project settings, MCP goes in global config under project key
+- Parity spec written to Serena memory: `specs/HARNESS_PARITY_SPEC/00_INDEX` through `03_TESTING`
 
-### Training Data
-- `orchestrator.jsonl` — 130 routing examples (Claude-authored, high quality)
-- `claude_reasoning.jsonl` — 3,047 Claude Opus reasoning traces (from HuggingFace)
-- `python.jsonl` — 10 examples (subagent still writing, slow due to large code responses)
-- `typescript.jsonl` — 11 examples (subagent still writing)
-- `rust.jsonl` — 11 examples (deprioritized for now)
+### 4B Model Download and Serving
+- Trained on Colab A100 (session 3), downloaded GGUF Q5_K_M from Colab browser download
+- Located at `~/models/Qwen3.5-4B.Q5_K_M.gguf` (2.9GB)
+- **llama.cpp rebuilt with CUDA**: `sudo apt install nvidia-cuda-toolkit` + `cmake -B build -DGGML_CUDA=ON`
+- Serving: 64K context, Q4 KV cache, all 33 layers on GPU, ~6.3GB VRAM (pre-allocated)
+- Previous CPU-only build had no GPU — key error: `warning: no usable GPU found`
 
-### Training Runs
-- **Orchestrator on Qwen 3 0.6B**: SUCCESS — 57 seconds, loss 2.16→0.50, merged to `agents/distill/merged/orchestrator/`
-- **Reasoning base on Qwen 3.5 0.8B**: IN PROGRESS — step 5/191, ~1.5 hours remaining
+### 4B Evaluation (commit after `9048406`)
+**Without thinking**: 2/5 PASS (race condition + architecture), 3 PARTIAL. No `<think>` blocks produced.
+**With `enable_thinking: true`**: 3/5 PASS (race condition, OOMKilled, architecture), 2 PARTIAL (React re-renders, file uploads). Genuine reasoning in `reasoning_content` field.
+- **Key discovery**: Qwen 3.5 chat template uses `enable_thinking` parameter, NOT system prompt instructions
+- Thinking mode fixes OOMKilled (was hallucinating tools without it)
+- Weak spots: React/frontend (wrong useEffect claim), security (extension-only validation, no virus scan)
 
-### Project Docs
-- `.claude/CLAUDE.md` — full project reference
-- `.claude/commands/update.md` — `/update` command ported from mercury
-- `.claude/commands/handoff.md` — `/handoff` command ported from mercury
-- `.claude/rules/architecture.md` — agent system + file org rules
-- `.claude/rules/training.md` — VRAM budget + known issues
+### llama.cpp Backend Integration (commit `9048406`)
+- `agents/agent.py`: `detect_backend()` auto-detects llama.cpp (preferred) → Ollama fallback
+- `_call_llamacpp()` / `_call_llamacpp_stream()`: OpenAI-compatible API, SSE streaming
+- Thinking events: `thinking_start` → `thinking_token` → `thinking_end` → regular `token`
+- `enable_thinking: true` always on by default
+- `agents/compact.py`: `llamacpp: 65536` context limit
+- `agents/harness.py`: `/backend` command, `--backend` CLI arg, thinking display
+
+### `claw` Launcher (commit `9048406`)
+- `bin/claw`: auto-starts llama.cpp if not running, waits for health (60s), launches harness
+- Symlinked to `~/.local/bin/claw` — run from anywhere
+- Env vars: `CLAW_MODEL`, `CLAW_PORT`, `CLAW_CTX`, `CLAW_LLAMA_SERVER`
+- Bug fixed: `SCRIPT_DIR` used `readlink -f` to resolve symlink to repo root
+
+### Harness Parity Implementation (commit `35287c4`)
+Full parity spec implemented (5 steps from Serena memory `specs/HARNESS_PARITY_SPEC`):
+
+1. **Bash validation pipeline** (`permissions.py`): `PermissionMode` enum (READ_ONLY/WORKSPACE_WRITE/FULL_ACCESS), `BashRisk` enum (SAFE/WRITE/DESTRUCTIVE/BLOCKED), `classify_bash()` with 33 safe commands, git subcommand awareness (9 safe, 8 write, 7 destructive), write redirect detection, path traversal detection
+2. **User confirmation** (`harness.py`): `_confirm()` prompts `[y/N]` for WRITE/DESTRUCTIVE ops, handles mid-stream cleanup
+3. **read_file windowing** (`tools.py`): `offset`/`limit` params, binary detection (NUL in first 8KB), edit context preview (lines around edit)
+4. **Connection retry** (`agent.py`): `_request_with_retry()` with 3 attempts, 1s/2s/4s backoff
+5. **Session + config + readline** (`harness.py`, `compact.py`, `config.py`): auto-save on exit, `/resume`, `.clawrc` loader, readline history at `~/.claw_history`
+
+**Beyond spec** (also in `35287c4`):
+- Effort mode: `--effort low/medium/max` controlling `max_tokens` and thinking depth
+- llama.cpp tool calling fix: tools in payload, SSE delta assembly for `tool_calls`, `tool_call_id`
+- Readline ANSI fix: `\001`/`\002` wrapping preventing prompt overwrite
+
+### Output Repetition Detection (commit `d92f7bc`)
+- `_is_repeating()`: streaming detection, breaks SSE loop if last 100 chars match earlier content
+- `_dedup_blocks()`: post-generation cleanup, removes duplicate paragraphs and half-text mirrors
+- Both only activate on output >40 chars to avoid false positives
+
+### Documentation Update (commit `67deedd`)
+- CLAUDE.md: 13 files / 2,033 lines, 20 commands, dual backend, all new features
+- architecture.md: full rewrite
+- training.md: 4B eval results, CUDA build, serving path
+
+### DISCOVER-DEEP Gap Analysis
+Ran full team-based discovery (explorer-original + explorer-harness + planner) mapping original claw-code vs our harness. Key finding: ~40% feature parity, gaps are asymmetric — strong on multi-agent/streaming, weak on safety/UX. Solutions Matrix produced with P0/P1/P2 prioritization.
 
 ## In Progress
 
-### Reasoning Base Training (Stage 1)
-- Running on Qwen 3.5 0.8B with 3,047 Claude reasoning examples
-- Settings: batch=1, grad_accum=16, seq_len=1024, packing=false, 1 epoch
-- **OOM was the main battle** — Qwen 3.5's 248K vocab makes fused CE loss hungry
-- Fix: batch=1, seq_len=1024, packing=false, stop Ollama before training
-- ETA: ~1.5 hours from session start
+### Uncommitted Changes
+- `.claude/MEMORY/SESSION_HANDOFF.md` — this file
+- `.claw_sessions/` — auto-saved session (untracked, gitignored)
+- `.serena/` — Serena project config (untracked)
+- `.env.local` — API keys (untracked, gitignored)
 
-### Training Data Generation (subagents)
-- Python and TypeScript subagents writing JSONL but slow (large code responses)
-- Rust/DevOps/Reviewer deprioritized — focus on orchestrator + python + typescript
+### `config.py` Not Wired Up
+`agents/config.py` defines `load_config()` but it's never called — harness uses argparse directly. Should be integrated or removed.
 
 ## Next Steps
 
-1. **Wait for reasoning base training to complete** — check `agents/distill/merged/reasoning_base/`
-2. **Train orchestrator on reasoning base** — retrain using the 0.8B reasoning base instead of vanilla 0.6B
-3. **Complete Python + TypeScript training data** — if subagents didn't finish, generate manually or use `generate.py` with 9B
-4. **Train Python + TypeScript specialists** (Stage 2) on top of reasoning base
-5. **Export specialists to Ollama** — `python -m agents.distill.export --domain orchestrator`
-6. **Test end-to-end** — launch harness with `/distill on` and `/team`, verify routing + specialist responses
-7. **Install MSVC Build Tools** — to build Rust claw-code: `winget install Microsoft.VisualStudio.2022.BuildTools --override "--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"`
-8. **Commit and push** — all work is uncommitted on `feature/multi-agent-qwen`
-9. **Integrate claw-code src/ features** — session persistence, permissions, cost tracking, transcript compaction (see session notes)
+1. **Wire up `config.py`** — integrate `load_config()` into harness startup, or remove dead code
+2. **Train specialists** — 4B reasoning base is ready, need:
+   - Expand React/frontend training data (4B eval weak spot)
+   - Expand security training data (4B eval weak spot)
+   - Train orchestrator specialist on 252 routing examples
+   - Train domain specialists (python, typescript, rust)
+3. **Hot-swap implementation** — serve specialists via llama.cpp, swap on delegation
+4. **Push to remote** — 5 unpushed commits on `feature/multi-agent-qwen`
+5. **Test harness end-to-end** — run `claw`, test all 20 commands, verify tool calling + thinking + permissions + session management work together
+6. **Integrate Serena tools into harness agents** — explorer/reviewer agents reference Serena but the harness's own agents don't use it
 
 ## Key Context
 
-### Failed Approaches
-- **Qwen 3.5 0.8B with batch=4, packing=true**: OOM — fused CE loss eats all 8GB VRAM
-- **Qwen 3.5 0.8B with batch=2, packing=false, seq=2048**: Still OOM
-- **Qwen 3.5 0.8B with batch=1, packing=false, seq=1024**: WORKS (current)
-- **Qwen 3 0.6B with batch=4, packing=true, 3K examples**: OOM on reasoning data (worked on 130 orchestrator examples)
-- **WSL2 bash -c with PATH expansion**: `Program Files (x86)` breaks bash. Use `wsl -e bash -c` or write script files
-- **winget from Git Bash**: Produces no output. Use PowerShell or `cmd.exe /c` for winget
+### What Failed
+- **Colab browser download for large files**: 9GB tar.gz hung indefinitely. Google Drive mount failed from MCP (needs browser auth). Solution: download GGUF directly (3GB) via `files.download()`
+- **llama.cpp CPU-only build**: first build had no CUDA toolkit installed. `warning: no usable GPU found`. Fix: `sudo apt install nvidia-cuda-toolkit` + rebuild with `-DGGML_CUDA=ON`
+- **Thinking mode via system prompt**: tried `"Think step by step in <think> blocks"` and `/think` toggle — neither worked. Qwen 3.5 uses `enable_thinking` parameter in the API request, handled by the chat template
+- **Custom agents not available as subagent_types**: `.claude/agents/*.md` files define custom agents but they can't be used as `subagent_type` in Agent tool calls. Must use built-in types (general-purpose, Explore, Plan) and inject the custom prompt manually.
 
-### Hardware State
-- GPU: RTX 4070 Laptop GPU, 8 GB VRAM, CUDA 8.9
-- Ollama: should be stopped during training, restart after
-- WSL2: Ubuntu 24.04, Python 3.13, torch 2.10.0+cu128, unsloth 2026.4.2
-- Rust: 1.94.1 installed but no MSVC linker
+### Architecture Decisions
+- **Auto-detect backend, prefer llama.cpp**: `detect_backend()` checks `:8080/health` first. If llama.cpp is up, use it. Ollama is fallback only.
+- **Suppress thinking tokens**: show "thinking..." indicator but don't stream reasoning text. Cleaner output, less noise for user.
+- **Pre-allocated KV cache**: 6.3GB VRAM is the ceiling regardless of conversation length. No surprises mid-session.
+- **Effort mode controls max_tokens**: low=1024, medium=2048, max=8192. Also prepends effort-specific system prompt prefix.
+- **Frequency penalty 0.5**: llama.cpp backend uses this to reduce repetition alongside the dedup functions.
+- **Serena MCP config location**: goes in `~/.claude.json` under `projects[path].mcpServers`, NOT in the repo's `.claude.json`. The repo file is for project settings (permissions, etc).
 
-### Discovery: TeichAI Distilled Model
-- `TeichAI/Qwen3.5-4B-Claude-Opus-Reasoning-Distill` on HuggingFace
-- Proves: ~4K examples, single epoch, full fine-tune on Qwen 3.5 4B works
-- Their datasets used in our pipeline: TeichAI/Claude-Opus-4.6-Reasoning-887x + Crownelius/Opus-4.6-Reasoning-2100x-formatted
-- Could be used as a smarter 4B base model instead of stock Qwen 3.5 4B
+### MCP Servers Configured
+- **Serena** (`~/.claude.json` project key): `uv run --directory /home/gabe/serena-fork serena start-mcp-server --context ide-assistant --project /mnt/c/Users/gabes/projects/claw-code`
+- **Chrome DevTools** (`~/.claude.json` global): custom fork at `~/chrome-devtools-mcp-fork`
+- **RunPod** (`~/.claude.json` global): pod management
+- **Colab** (`~/.claude.json` global): notebook editing (limited — can't do browser auth or file uploads)
 
-### Claw-Code Features Worth Porting
-From `src/`: session_store.py (36L), permissions.py (21L), history.py (23L), cost_tracker.py (14L), transcript.py (24L) — all small, ready to integrate
+### Claude Code Built-in Agent Prompts (extracted from binary v2.1.92)
+Extracted all 5 built-in agents from the ELF binary:
+1. **general-purpose**: model inherited, all tools, broad research
+2. **statusline-setup**: model sonnet, Read+Edit only, status line config
+3. **claude-code-guide**: model haiku, WebFetch+WebSearch, docs lookup
+4. **Explore**: model haiku, read-only, no CLAUDE.md, feature-flagged (`tengu_amber_stoat`)
+5. **Plan**: model inherited, read-only, no CLAUDE.md, feature-flagged
 
-## Files in Project
+## Files
 
 ```
-agents/
-  __init__.py                    — exports Agent, Coordinator, Swarm, SpecialistCoordinator
-  agent.py                       — base Agent class with Ollama + tool calling
-  coordinator.py                 — task delegation via JSON protocol
-  swarm.py                       — parallel agent execution
-  tools.py                       — 5 tools (bash, read, write, grep, list_files)
-  harness.py                     — terminal REPL with slash commands
-  specialist_coordinator.py      — routes to fine-tuned specialist models
-  example.py                     — demo scripts
-  distill/
-    __init__.py                  — package marker
-    config.py                    — domains, model names, QLoRA params
-    generate.py                  — teacher→JSONL data generator
-    train_base.py                — Stage 1: reasoning base training
-    train.py                     — Stage 2: specialist training
-    export.py                    — GGUF conversion + Ollama registration
-    validate.py                  — A/B specialist vs base comparison
-    fetch_datasets.py            — HuggingFace dataset downloader
-    seeds/                       — 50-100 seed prompts per domain (6 files)
-    data/                        — JSONL training data (gitignored)
-    checkpoints/                 — LoRA adapters (gitignored)
-    merged/                      — merged models (gitignored)
-models/
-  Modelfile.qwen9b-fast          — optimized 9B (100% GPU, 2K ctx)
-  Modelfile.qwen4b-fast          �� optimized 4B (100% GPU, 8K ctx)
-.claude/
-  CLAUDE.md                      — project reference doc
-  commands/update.md             — /update command
-  commands/handoff.md            — /handoff command
-  rules/architecture.md          — agent + file org rules
-  rules/training.md              — VRAM + training rules
-  MEMORY/SESSION_HANDOFF.md      — this file
+agents/                          — 13 files, ~2,033 lines
+  agent.py (449)                 — Agent class, dual backend, thinking, retry, effort, dedup
+  tools.py (312)                 — 6 tools with windowing, binary detect, edit preview
+  harness.py (536)               — REPL, 20 commands, confirmation, readline, auto-save
+  permissions.py (133)           — 3 permission modes, 4-level bash classification
+  compact.py (215)               — context compaction, per-model limits, summary compression
+  config.py (30)                 — .clawrc loader (NOT YET WIRED UP)
+  coordinator.py (76)            — JSON delegation protocol
+  swarm.py (55)                  — parallel agent execution
+  specialist_coordinator.py (76) — domain-specific routing
+  session.py (51)                — save/load/list sessions
+  history.py (34)                — timestamped event log
+  example.py (43)                — demo scripts
+  __init__.py (23)               — re-exports
+
+agents/distill/                  — 10 files, 1,770 lines
+  data/                          — 9 JSONL files, 6,070 lines total
+    coding_reasoning_claude.jsonl (488)  — hand-written (committed)
+    claude_reasoning.jsonl (1,320)       — merged training data (gitignored)
+    orchestrator.jsonl (252)             — routing examples
+
+models/                          — 3 Modelfiles (qwen9b-fast, qwen4b-fast, reasoning-base)
+bin/claw                         — launcher script, auto-starts llama.cpp
+~/models/Qwen3.5-4B.Q5_K_M.gguf — 2.9GB fine-tuned 4B (serving via llama.cpp)
+~/llama.cpp/build/bin/           — CUDA build (llama-server, llama-quantize)
+
+.claude/agents/                  — 6 custom agents
+.claude/commands/                — 8 commands (DISCOVER, DISCOVER-DEEP, SPEC, VDD, TRAIN-DATA, EVAL, handoff, update)
+.claude/rules/                   — 4 rules (architecture, orchestration, training, vdd)
+.serena/memories/specs/          — HARNESS_PARITY_SPEC (4 parts: INDEX, ARCHITECTURE, IMPLEMENTATION, TESTING)
 ```
