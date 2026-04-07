@@ -12,15 +12,18 @@
 - llama.cpp sampling: `temperature=0.7, frequency_penalty=0.8, presence_penalty=0.3, max_tokens=effort-dependent`. Same params on both streaming and non-streaming paths to keep behavior consistent.
 - Output dedup (storage layer): `_is_repeating()` catches tail-window repeats (>200 chars), `_find_halved_duplicate()` catches `A+A` patterns with any/no separator (commit `3cf1a69`), `_dedup_blocks()` removes duplicate paragraphs post-generation. **Note**: visible response duplication is almost always a *display* bug (e.g. the harness double-print fixed in `c11232a`), not model looping — check stored session state first before assuming the model is repeating.
 - Agent history is append-only within a session. Use `agent.reset()` to clear
-- Auto-compaction: when history exceeds `max_context_tokens`, old messages are summarized into a system message
+- Auto-compaction: when history exceeds `max_context_tokens`, old messages are summarized into a system message. `max_context_tokens` is computed by `Harness._compute_compact_threshold()` as `min(per-GGUF NIAH-validated limit from MODEL_CONTEXT_LIMITS, int(ctx_size * 0.85))`. The 85% safe-ctx margin leaves room for the next turn's response before hitting the llama-server hard cap.
 - Tool calling loop: up to `max_tool_rounds` iterations (default 10). Works on both Ollama and llama.cpp (SSE delta assembly for tool calls)
 - Coordinator uses JSON protocol: `{"delegate": "name", "task": "..."}` or `{"final": "answer"}`
+- SpecialistCoordinator auto-selects between **hot-swap mode** (llama.cpp + specialist GGUFs discovered on disk via `discover_specialist_models()`) and **Ollama multi-model mode** (per-agent distinct Ollama model names); falls back to single base model if neither is available
 
 ## File Organization
-- `agents/` — core harness code (13 files, ~2,000 lines). No ML dependencies. Must work on Windows + WSL2 with Python 3.11+
+- `agents/` — core harness code (14 files, ~2,870 lines; `model_swap.py` added 2026-04-07). No ML dependencies. Must work on Windows + WSL2 with Python 3.11+
 - `agents/distill/` — training pipeline (10 Python files + 1 notebook). ML dependencies (torch, unsloth, transformers) only required here
 - `models/` — Ollama Modelfiles (3 files: qwen9b-fast, qwen4b-fast, reasoning-base)
-- `bin/claw` — launcher script: auto-starts llama.cpp, configurable via `CLAW_*` env vars
+- `bin/claw` — launcher script: auto-starts llama.cpp, `--gguf PATH` first-arg flag, `CLAW_CTX=262144` default, configurable via `CLAW_*` env vars. Does NOT `cd` into repo (keeps user's cwd so `.clawrc` + CLAUDE.md auto-discovery work from anywhere).
+- `scripts/` — dev tooling (needle_test, eval_base_models, smoke_test_harness, test_model_swap, generate_react_security_examples, setup_training)
+- `.claude/MEMORY/evals/` — NIAH and A/B eval reports (authoritative for the values in `compact.py:MODEL_CONTEXT_LIMITS`)
 - `rust/` — upstream claw-code Rust port (9 crates + workspace, separate build system)
 - `src/` — upstream claw-code Python port (reference, not actively developed)
 
@@ -38,18 +41,26 @@
 
 ## Production Features
 - **Permissions** (`permissions.py`): `PermissionMode` enum + `BashRisk` enum with `classify_bash()` and `check_permission()`
-- **Compaction** (`compact.py`): summarizes old messages, preserves last 4 verbatim. Per-model context limits (64K for llama.cpp). Summary compression (1200 chars, 24 lines max). Env override: `CLAW_AUTO_COMPACT_TOKENS`
-- **Config** (`config.py`): loads `.clawrc`/`claw.json`, `CLAW_*` env var overrides
+- **Compaction** (`compact.py`): summarizes old messages, preserves last 4 verbatim. **Per-GGUF** context limits in `MODEL_CONTEXT_LIMITS` (Gemma 4 E4B 200K, Qwen 3.5 4B 130K, llama.cpp generic fallback 65K). Values are NIAH-validated against `.claude/MEMORY/evals/2026-04-07_summary_needle_comparison.md` — don't change them without re-running `scripts/needle_test.py`. Summary compression (1200 chars, 24 lines max). Env override: `CLAW_AUTO_COMPACT_TOKENS`
+- **Config** (`config.py`): loads `.clawrc`/`claw.json`, explicit `ENV_VARS` registry mapping config keys → `CLAW_*` names. `ctx_size` default 262144
 - **History** (`history.py`): `HistoryLog` with timestamped events, rendered via `/history`
 - **Sessions** (`session.py`): save/load to `.claw_sessions/`, JSON format. Auto-save on exit, `/resume` for latest
+- **Hot-swap** (`model_swap.py`): `LlamaServerManager` orchestrates llama-server subprocess lifecycle. Adopts externally-started servers via `/props` + `/proc/net/tcp` PID lookup. `swap(target)` is a no-op when the target path is already loaded (uses `Path.resolve()` for comparison, so symlinks collapse — hard links are needed to force a real kill+restart for testing). Integration tested in `scripts/test_model_swap.py`.
 - **Streaming**: dual backend streaming with thinking display. Readline integration with `~/.claw_history`
 - **`_streaming_text` flag invariant** (`harness.py`): tracks whether we're inside an open green ANSI block during a streamed response. **Do NOT reset it in the `response` event handler** — the main loop checks it to decide whether to re-print the response. Resetting in the handler causes the main loop's "non-streamed" branch to fire and double-print every streamed response (the bug fixed in commit `c11232a`). The handler may print `{RESET}` to close the color, but only the main loop should set `_streaming_text = False`.
+- **Agent context limit lookup invariant** (`agent.py:~174`, session 2026-04-07): when `backend == "llamacpp"`, `Agent.__init__` must call `detect_llamacpp_model()` (which queries `/props` for the loaded GGUF path) and pass that to `detect_context_limit()`. **Do NOT pass the literal string `"llamacpp"`** — that would always match the generic 65K fallback and skip per-GGUF lookups in `MODEL_CONTEXT_LIMITS`. The previous wiring had this bug; every session silently got 65K regardless of loaded model. The `if max_context_tokens is not None` branch is explicit so an explicit caller override takes precedence over auto-detection.
+- **Harness loaded-model cache invariant** (`harness.py`, session 2026-04-07): `Harness.__init__` queries `/props` once and caches `self._loaded_llamacpp_model`. The `/swap` command handler AND the `/backend llamacpp` handler **must** refresh this cache AND call `_compute_compact_threshold()` to update `max_context_tokens` on every agent in `self.agents`. Forgetting to refresh leaves agents compacting on the OLD model's limit (e.g., swap to Qwen after Gemma still uses 200K threshold). Both handlers currently do this — keep them in sync if you add a third path that swaps models.
+- **85% safe-ctx compaction margin** (`harness.py:_compute_compact_threshold`, session 2026-04-07): the compaction threshold is `min(per-GGUF model limit, int(ctx_size * 0.85))`. The 85% leaves headroom for the active turn's response before hitting llama-server's hard `--ctx-size` allocation. If you set the threshold equal to `ctx_size`, the next request will overflow the server because the compact summary plus the incoming turn can't fit. The 0.85 factor was chosen empirically; don't raise it without verifying that `max_tokens` in `EFFORT_LEVELS["max"]` (8192) still fits above the threshold.
 
 ## Serving Architecture
-- **llama.cpp (primary)**: 4B Q5_K_M at 64K context with Q4 KV cache (~6.3GB VRAM, pre-allocated)
-- GGUF at `~/models/Qwen3.5-4B.Q5_K_M.gguf`, built with CUDA at `~/llama.cpp/build/bin/`
-- Hot-swap planned: specialists swap onto same GPU (5-10s swap, full GPU each)
-- **Ollama (fallback)**: stock models, quick testing. `qwen3.5:0.8b` available
+- **llama.cpp (primary)**: Qwen 3.5 4B or Gemma 4 E4B Q5_K_M at **256K context** with Q4 KV cache (~6.7–7.3 GB VRAM, pre-allocated)
+- GGUFs at `~/models/Qwen3.5-4B.Q5_K_M.gguf` (fine-tuned, default) and `~/models/gemma-4-E4B-it-Q5_K_M.gguf` (stock, alternative). Pick via `claw --gguf PATH` or `CLAW_MODEL=PATH claw`, or hot-swap mid-session with `/swap`.
+- llama-server binary built with CUDA at `~/llama.cpp/build/bin/`
+- **llama-server `--parallel 1` requirement** (session 2026-04-07): without it, llama-server defaults to 4 slots and splits `--ctx-size` across them, so each slot gets only `ctx_size / 4`. For single-user workflow (the harness is always single-user) pass `--parallel 1`. `bin/claw` passes this since commit `4644051` — manual `llama-server` invocations must pass it too.
+- **Gemma 4 GGUF rope-scaling metadata override** (session 2026-04-07): Gemma 4 E4B's GGUF metadata forces `rope scaling = linear` in llama.cpp; the `--rope-scaling yarn` CLI flag is silently ignored. Extrapolating past `n_ctx_train=131072` uses raw linear RoPE extrapolation, not YaRN. Works empirically up to ~200K on single-needle (21/21 PASS at 220K), but multi-needle degrades to 4/5 at 220K. See `2026-04-07_gemma4_e4b_needle_256k_multi.md`.
+- **llama.cpp slot context cap patch** (session 2026-04-07, outside repo): the unpatched `tools/server/server-context.cpp:763-766` hardcodes per-slot context to `n_ctx_train`, silently capping `--ctx-size` at the trained max. For NIAH testing past 128K on Gemma 4 E4B we patched the cap out locally. The patch is not upstreamed; re-apply after any `git pull` on llama.cpp source.
+- **Hot-swap IMPLEMENTED** (session 2026-04-07): `agents/model_swap.py:LlamaServerManager` kills + restarts llama-server for each swap (~5–15s depending on disk page-cache warmth). Used by the `/swap` harness command and by `SpecialistCoordinator` when specialist GGUFs are discovered on disk. Specialist GGUFs don't exist yet, so hot-swap orchestration is dormant until specialists are trained.
+- **Ollama (fallback)**: stock models, quick testing. Current pulled set: `qwen3.5:4b`, `qwen3.5:9b`, `qwen3:0.6b/4b/8b`, plus custom `qwen4b-fast:latest`, `qwen9b-fast:latest`, `reasoning-base:latest` (verify with `curl -s localhost:11434/api/tags`)
 
 ## Why Q4 KV Cache (Mandatory, Not Optional)
 - KV cache scales as `2 (K+V) × num_layers × num_kv_heads × head_dim × ctx × dtype_bytes`. For 4B at 64K in FP16 the cache alone is 8–15 GB — over our 8 GB VRAM budget before the model even loads.

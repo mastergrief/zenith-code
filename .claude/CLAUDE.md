@@ -58,26 +58,27 @@ When editing `.claude/` configs (agents, CLAUDE.md, commands, rules etc):
 ## Architecture
 
 Two systems coexist:
-1. **Python agent harness** (`agents/`) — terminal coding assistant with dual backend (Ollama + llama.cpp), 3-level permissions, thinking mode, sessions, compaction, and effort control
+1. **Python agent harness** (`agents/`) — terminal coding assistant with dual backend (Ollama + llama.cpp), 3-level permissions, thinking mode, sessions, compaction, effort control, and llama.cpp hot-swap
 2. **Rust claw-code port** (`rust/`) — upstream claw-code, 9 crates, separate build system
 
-Serving: 4B reasoning base via llama.cpp at 64K context with Q4 KV cache (~6.3GB VRAM). Specialists planned as hot-swap on same GPU.
+Serving: either Qwen 3.5 4B or Gemma 4 E4B via llama.cpp at **256K context** (`CLAW_CTX=262144` default) with Q4 KV cache (~6.7–7.3 GB VRAM). Harness auto-computes compaction threshold as `min(per-GGUF NIAH-validated limit, int(ctx_size * 0.85))`. Hot-swap between bases is implemented via `agents/model_swap.py`.
 
-## Python Agent Harness (`agents/`, ~2,000 lines across 13 files)
+## Python Agent Harness (`agents/`, ~2,870 lines across 14 files)
 
 ### Core Files
-- `agent.py` (449 lines) — `Agent` class with dual backend (Ollama + llama.cpp), streaming, thinking mode, tool calling loop (max 10 rounds), connection retry with backoff, system prompt builder, effort mode, output dedup
+- `agent.py` (520 lines) — `Agent` class with dual backend (Ollama + llama.cpp), streaming, thinking mode, tool calling loop (max 10 rounds), connection retry with backoff, system prompt builder, effort mode, output dedup, `detect_llamacpp_model()` helper that queries `/props` for the loaded GGUF path
 - `coordinator.py` (76 lines) — `Coordinator` delegates tasks via JSON `{"delegate": "name", "task": "..."}` protocol
 - `swarm.py` (55 lines) — `Swarm` runs agents in parallel via `ThreadPoolExecutor`
 - `tools.py` (312 lines) — 6 tools: `bash`, `read_file`, `write_file`, `edit_file`, `grep`, `list_files`. read_file supports offset/limit windowing + binary detection. edit_file shows context preview.
-- `harness.py` (536 lines) — Terminal REPL with colored output, streaming tokens, thinking display, user confirmation prompts, readline history, 20 slash commands
-- `specialist_coordinator.py` (76 lines) — `SpecialistCoordinator` routes to domain-specific fine-tuned models
+- `harness.py` (664 lines) — Terminal REPL with colored output, streaming tokens, thinking display, user confirmation prompts, readline history, 17 slash commands including `/swap` for hot-swapping GGUFs; caches `_loaded_llamacpp_model` via `/props` query at init and recomputes compaction threshold on `/swap` or `/backend`
+- `specialist_coordinator.py` (245 lines) — `SpecialistCoordinator` auto-selects between hot-swap mode (llama.cpp + specialist GGUFs on disk via `discover_specialist_models()`) and Ollama multi-model mode; falls back to base model if neither available
+- `model_swap.py` (407 lines) — `LlamaServerManager` orchestrates llama-server subprocess lifecycle (start/stop/swap), adopts externally-started servers via `/props`, finds the listening PID via `/proc/net/tcp` for servers it doesn't own. `discover_specialist_models()` scans `~/models/` for domain-named GGUFs
 - `example.py` (43 lines) — Demo scripts for Coordinator + Swarm patterns
 
 ### Production Features
 - `permissions.py` (133 lines) — 3 permission modes (READ_ONLY/WORKSPACE_WRITE/FULL_ACCESS), 4-level bash classification (SAFE/WRITE/DESTRUCTIVE/BLOCKED), git subcommand awareness, write redirect detection, system path blocking
-- `compact.py` (215 lines) — Auto-compaction with per-model context limits (64K for llama.cpp), summary compression, env var override (`CLAW_AUTO_COMPACT_TOKENS`)
-- `config.py` (30 lines) — Config loader for `.clawrc`/`claw.json` with `CLAW_*` env var overrides
+- `compact.py` (244 lines) — Auto-compaction with per-GGUF context limits (Gemma 4 E4B 200K, Qwen 3.5 4B 130K, llama.cpp fallback 65K — NIAH-validated, see `.claude/MEMORY/evals/2026-04-07_summary_needle_comparison.md`), summary compression, env var override (`CLAW_AUTO_COMPACT_TOKENS`)
+- `config.py` (61 lines) — Config loader for `.clawrc`/`claw.json` with explicit `CLAW_*` env var registry (`CLAW_MODEL`, `CLAW_BACKEND`, `CLAW_CTX`, `CLAW_AUTO_COMPACT_TOKENS`, `CLAW_PERMISSION_MODE`, `CLAW_EFFORT`); `ctx_size` default is 262144
 - `history.py` (34 lines) — Timestamped audit log for tool calls, responses, errors, commands
 - `session.py` (51 lines) — Save/load agent conversations to `.claw_sessions/` as JSON, auto-save on exit
 
@@ -93,7 +94,8 @@ Serving: 4B reasoning base via llama.cpp at 64K context with Q4 KV cache (~6.3GB
 | `/reset` | Clear all histories |
 | `/cd <path>` | Change working directory |
 | `/model <name>` | Switch model for all agents |
-| `/backend [ollama\|llamacpp]` | Show/switch backend |
+| `/backend [ollama\|llamacpp]` | Show/switch backend (re-detects loaded GGUF + recomputes compaction threshold) |
+| `/swap [name]` | Hot-swap the loaded GGUF via `LlamaServerManager` (substring match against `~/models/*.gguf`); no arg shows current + lists available |
 | `/effort [low\|medium\|max]` | Show/set reasoning effort |
 | `/history` | Show session event log |
 | `/save` | Save active agent's session |
@@ -106,26 +108,41 @@ Serving: 4B reasoning base via llama.cpp at 64K context with Q4 KV cache (~6.3GB
 
 ### Running the Harness
 ```bash
-# Preferred: auto-starts llama.cpp, serves 4B at 64K context
+# Preferred: auto-starts llama.cpp with default ~/models/Qwen3.5-4B.Q5_K_M.gguf at 256K
 claw
 
-# Manual: specify backend and model
+# Pick a specific GGUF at launch time (new --gguf launcher flag)
+claw --gguf ~/models/gemma-4-E4B-it-Q5_K_M.gguf
+
+# Or set the env var once in your shell rc
+CLAW_MODEL=~/models/gemma-4-E4B-it-Q5_K_M.gguf claw
+
+# Hot-swap from inside an active session (no restart needed)
+> /swap gemma       # substring match in ~/models/*.gguf
+> /swap qwen        # swap back
+
+# Manual: specify backend and model (bypasses bin/claw)
 PYTHONUTF8=1 PYTHONPATH=. python3 agents/harness.py --backend llamacpp
-PYTHONUTF8=1 PYTHONPATH=. python3 agents/harness.py --model qwen3.5:0.8b --backend ollama
+PYTHONUTF8=1 PYTHONPATH=. python3 agents/harness.py --model qwen3.5:4b --backend ollama
 
 # Programmatic / smoke-test invocation — pipe prompts via stdin, capture to log
 printf "what is 2+2?\n/exit\n" | claw --effort max > /tmp/claw.log 2>&1
 
-# CLI flags: --model, --backend, --effort, --resume, --permission-mode, --cd
+# Override context (smaller if VRAM constrained, or for faster cold start)
+CLAW_CTX=65536 claw
+
+# CLI flags: --model, --backend, --ctx-size, --effort, --resume, --permission-mode, --cd
 ```
-`bin/claw` launcher: auto-starts llama.cpp if not running, waits for health, passes `--backend llamacpp`. Configurable via `CLAW_MODEL`, `CLAW_PORT`, `CLAW_CTX` env vars. The stdin pipe form works in any environment (TTY or non-TTY) because the harness uses plain `input()`; redirect output to a file to keep model token spam out of your terminal/context.
+`bin/claw` launcher: auto-starts llama.cpp if not running, waits for health, passes `--backend llamacpp`. Default `CLAW_CTX=262144` (256K). Configurable via `CLAW_MODEL`, `CLAW_PORT`, `CLAW_CTX`, `CLAW_LLAMA_SERVER` env vars, plus the `--gguf PATH` CLI flag (must be first arg). The stdin pipe form works in any environment (TTY or non-TTY) because the harness uses plain `input()`; redirect output to a file to keep model token spam out of your terminal/context. `bin/claw` does NOT `cd` into the repo root before exec'ing the harness — this keeps `.clawrc` lookup and CLAUDE.md auto-discovery honoring the user's actual cwd.
 
 ## Distillation Pipeline (`agents/distill/`, 10 Python files)
 
 ### Current Status
 - **0.8B reasoning base**: trained (3 epochs, loss 1.106), eval: format learned but substance wrong — model too small
-- **4B reasoning base**: trained on Colab A100 (1,320 examples, 3 epochs), exported to GGUF Q5_K_M, serving via llama.cpp at 64K context. Eval: 3/5 PASS with thinking enabled (race condition, OOMKilled, architecture pass; React and security partial)
-- **Specialists**: not yet trained — 4B base ready, need targeted training data expansion (React/frontend, security)
+- **4B reasoning base (Qwen)**: trained on Colab A100 (1,339 examples after 2026-04-07 React/security expansion, 3 epochs), exported to GGUF Q5_K_M, serving via llama.cpp. Earlier eval: 3/5 PASS with thinking enabled (race condition, OOMKilled, architecture pass; React and security partial). **Subsequent 5-prompt A/B vs stock Gemma 4 E4B (2026-04-07) scored fine-tuned Qwen 0/5 — the React and security failures were correctness bugs (hallucinated Node.js `beforeOOM` API, broken Postgres `FOR UPDATE SKIP LOCKED` queue, regex-on-hostname SSRF check). See `.claude/MEMORY/evals/2026-04-07_qwen4b_vs_gemma4_e4b.md`.**
+- **Gemma 4 E4B (stock)**: validated as alternative base 2026-04-07. Beats fine-tuned Qwen 5/0 on the same coding eval without any fine-tuning. NIAH effective context: 200K (vs Qwen's 130K). Multimodal (vision projector available). GGUF on disk at `~/models/gemma-4-E4B-it-Q5_K_M.gguf` (5.48 GB). Not yet fine-tuned on the distillation dataset.
+- **Hot-swap infrastructure**: IMPLEMENTED (`agents/model_swap.py` + `SpecialistCoordinator` hot-swap mode). `LlamaServerManager` handles kill+restart swap cycles (~5–15s depending on model size). Swap cost on a warm page cache is mostly PCIe transfer time.
+- **Specialists**: not yet trained — both base models are ready, specialist GGUFs don't exist on disk yet. When they do, `SpecialistCoordinator` auto-detects and switches to hot-swap mode.
 
 ### Pipeline Scripts
 - `config.py` — Domains, model names, QLoRA params, paths
@@ -150,8 +167,8 @@ printf "what is 2+2?\n/exit\n" | claw --effort max > /tmp/claw.log 2>&1
 | reviewer | specialist-reviewer | Security, bugs, perf |
 
 ### Training Data (`agents/distill/data/`, gitignored except hand-written files)
-- `claude_reasoning.jsonl` — 1,320 merged examples (832 filtered HuggingFace + 488 hand-written)
-- `coding_reasoning_claude.jsonl` — 488 hand-written coding reasoning examples (committed)
+- `claude_reasoning.jsonl` — 1,339 merged examples (832 filtered HuggingFace + 507 hand-written)
+- `coding_reasoning_claude.jsonl` — 507 hand-written coding reasoning examples (committed). +19 added 2026-04-07 via `scripts/generate_react_security_examples.py` (11 React + 8 security, targeting gaps in earlier Qwen eval)
 - `claude_reasoning_filtered.jsonl` — 832 filtered HuggingFace examples (intermediate)
 - `claude_reasoning_prefilter.jsonl` — backup of pre-filter merged data
 - `orchestrator.jsonl` — 252 routing examples (130 original + 121 Claude-authored)
@@ -189,15 +206,18 @@ PYTHONPATH=. python3 -m agents.distill.filter_reasoning --merge # filter + merge
 
 ## Serving Architecture
 
-**llama.cpp (primary)** — 4B reasoning base, full GPU:
-- Model: `~/models/Qwen3.5-4B.Q5_K_M.gguf` (2.9GB, fine-tuned)
-- Context: 64K tokens with Q4 KV cache (~6.3GB total VRAM, pre-allocated)
+**llama.cpp (primary)** — either 4B base via full GPU:
+- Default model: `~/models/Qwen3.5-4B.Q5_K_M.gguf` (2.9 GB, fine-tuned)
+- Alternative model: `~/models/gemma-4-E4B-it-Q5_K_M.gguf` (5.48 GB, stock; selectable via `--gguf` or `CLAW_MODEL`)
+- Context: **256K tokens** with Q4 KV cache (~6.7 GB for Gemma E4B, ~7.3 GB for Qwen 4B — sliding-window attention on Gemma makes its KV cache dramatically smaller). Pre-allocated at startup.
 - Thinking: `enable_thinking: true` by default, reasoning in separate `reasoning_content` field
-- Launch: `claw` command auto-starts, or manually: `llama-server -m model.gguf --ctx-size 65536 --cache-type-k q4_0 --cache-type-v q4_0 -ngl 999 --port 8080`
-- Specialists: planned hot-swap on same GPU (5-10s swap time)
+- Launch: `claw` command auto-starts, or manually: `llama-server -m model.gguf --ctx-size 262144 --parallel 1 --cache-type-k q4_0 --cache-type-v q4_0 -ngl 999 --port 8080`
+- `--parallel 1` is required — without it, llama-server splits `ctx_size` across 4 default slots, so each slot only gets `ctx_size / 4`
+- **Hot-swap: IMPLEMENTED** via `agents/model_swap.py:LlamaServerManager`. Swap cycles are ~5–15s depending on disk page-cache warmth. `/swap` command uses it directly; `SpecialistCoordinator` uses it for domain routing when specialist GGUFs exist on disk.
+- Both Qwen 3.5 4B and Gemma 4 E4B are trained at 256K native context (earlier notes had Qwen at 32K — that was wrong).
 
 **Ollama (fallback)** — stock models, quick testing:
-- Pulled models: `qwen3.5:0.8b`, `qwen3.5:4b`, `qwen3.5:9b`, `qwen3:0.6b`, `qwen3:4b`, `qwen3:8b`, plus custom Modelfiles `qwen4b-fast`, `qwen9b-fast`, `reasoning-base` (verify current with `curl -s localhost:11434/api/tags`)
+- Pulled models (verified via `curl -s localhost:11434/api/tags`): `qwen3.5:4b`, `qwen3.5:9b`, `qwen3:0.6b`, `qwen3:4b`, `qwen3:8b`, plus custom Modelfiles `qwen4b-fast:latest`, `qwen9b-fast:latest`, `reasoning-base:latest`
 - Custom Modelfiles in `models/`: `Modelfile.qwen9b-fast` (2048 ctx), `Modelfile.qwen4b-fast` (8192 ctx), `Modelfile.reasoning-base` (32K ctx)
 - Kill Windows Ollama to free VRAM: `taskkill /IM ollama.exe /F`
 
@@ -206,6 +226,7 @@ PYTHONPATH=. python3 -m agents.distill.filter_reasoning --merge # filter + merge
 - **llama.cpp**: built at `~/llama.cpp/build/bin/` with CUDA support (RTX 4070)
   - `llama-quantize` — convert FP16 safetensors to GGUF quantized formats
   - `llama-server` — serve models with OpenAI-compatible API, KV cache quantization, thinking mode
+  - **Local patch** at `tools/server/server-context.cpp:763-766` — one-line edit comments out `n_ctx_slot = n_ctx_train` to remove the per-slot training-context cap, enabling `--ctx-size` past `n_ctx_train` for extrapolation testing. Not upstreamed. Re-apply after any `git pull` on the llama.cpp source. See `.claude/MEMORY/evals/2026-04-07_summary_needle_comparison.md` for the context.
 - **Unsloth**: 2026.4.2 + PyTorch 2.10.0+cu128 (for local 0.8B training)
 - **Serena MCP**: installed at `/home/gabe/serena-fork`, configured for this project
 
@@ -226,11 +247,30 @@ PYTHONPATH=. python3 -m agents.distill.filter_reasoning --merge # filter + merge
 
 ## Key Constraints
 
-- **8 GB VRAM**: 4B Q5 fits at 64K context with Q4 KV cache (llama.cpp). 9B Q4 fits at 2K (Ollama). 0.8B FP16 fits at 32K.
+- **8 GB VRAM**: both 4B-class bases fit at **256K context** with Q4 KV cache (llama.cpp) — Qwen 3.5 4B Q5 uses ~7.3 GB, Gemma 4 E4B Q5 uses ~6.7 GB (sliding-window attention makes Gemma's KV cache dramatically smaller at long context). 9B Q4 fits at 2K (Ollama). 0.8B FP16 fits at 32K.
+- **Both 4B bases are trained at 256K context** (Qwen 3.5 4B and Gemma 4 E4B, verified via GGUF metadata `n_ctx_train=262144`). Earlier notes had Qwen at 32K — that was wrong.
 - **Qwen 3.5 4B QLoRA**: 248K vocab CE loss OOMs on anything under 40GB VRAM. Must use cloud GPU (Colab A100).
 - **Qwen 3.5 0.8B QLoRA**: fits locally at batch=1, seq_len=1024, packing=false
 - **WSL2 + Windows Ollama**: both can run Ollama. Don't run both simultaneously — VRAM conflict. Prefer WSL-native.
 - **No eGPU**: laptop has USB-C 3.2 but no Thunderbolt/USB4. Cloud GPUs for 4B+ training.
+
+## Needle-in-Haystack Validation (2026-04-07)
+
+Effective context for both base models was measured via single-needle, multi-needle, and distractor NIAH tests at 4K–220K haystack sizes. Full reports in `.claude/MEMORY/evals/2026-04-07_*_needle_256k_*.md`, summary in `2026-04-07_summary_needle_comparison.md`.
+
+| Test type | Gemma 4 E4B | Qwen 3.5 4B |
+|---|---:|---:|
+| Single-needle (21 prompts, 4K–220K) | **21/21** | **21/21** |
+| Multi-needle (7 prompts, 5 needles each) | **6/7** (fails 220K 4/5) | **5/7** (fails 180K 4/5, 220K 3/5 + hallucination) |
+| Distractor (7 prompts, 4 decoys each) | **7/7** | **5/7** (U-shape dip at 64K/100K — picks wrong decoy) |
+| **Total** | **34/35** | **31/35** |
+
+Key findings:
+- Both models handle single-needle cleanly through 220K (neither degrades on the easy test).
+- Gemma's sliding-window attention protects against the "lost in the middle" failure mode Qwen exhibits at 64K/100K on the distractor test.
+- Qwen's worst failure is **hallucination under pressure** (returns `14223-AZURE-MARTEN` when expected is `14223-CRIMSON-EAGLE` — correct number, invented suffix). Gemma's failures are silent omissions, which is a safer mode.
+- `agents/compact.py:MODEL_CONTEXT_LIMITS` is the authoritative source of NIAH-validated values (Gemma 200K = 10% safety below the first failure point at 220K; Qwen 130K = safely below the first failure point at 180K).
+- **The 256K tests required a local llama.cpp patch** to remove the per-slot training-context cap — see Local Tools above.
 
 ## Branch
 
