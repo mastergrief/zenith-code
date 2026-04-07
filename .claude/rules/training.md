@@ -47,7 +47,7 @@
 
 ## Export & Serving
 - llama.cpp built at `~/llama.cpp/build/bin/` with CUDA support (RTX 4070)
-- `llama-quantize`: convert FP16 safetensors → GGUF quantized (Q5_K_M recommended for 4B)
+- `llama-quantize`: convert FP16 safetensors → GGUF quantized — **Q5_K_M is the default across all model sizes** (best quality/size tradeoff per research). Only drop to Q4_K_M when VRAM forces it.
 - `llama-server`: serve with OpenAI-compatible API, KV cache quantization, `enable_thinking` support
 - 4B reasoning base GGUF at `~/models/Qwen3.5-4B.Q5_K_M.gguf` (2.9GB, serving at 64K context, ~6.3GB VRAM)
 - Launch via `claw` command (auto-starts llama-server) or manually with `--ctx-size 65536 --cache-type-k q4_0 --cache-type-v q4_0 -ngl 999`
