@@ -49,6 +49,15 @@
 - Hot-swap planned: specialists swap onto same GPU (5-10s swap, full GPU each)
 - **Ollama (fallback)**: stock models, quick testing. `qwen3.5:0.8b` available
 
+## Why Q4 KV Cache (Mandatory, Not Optional)
+- KV cache scales as `2 (K+V) × num_layers × num_kv_heads × head_dim × ctx × dtype_bytes`. For 4B at 64K in FP16 the cache alone is 8–15 GB — over our 8 GB VRAM budget before the model even loads.
+- `q4_0` stores ~4.5 bits/element vs FP16's 16 (~3.5–4× shrink). Brings the cache to ~3.0–3.5 GB, leaving room for weights (~2.9 GB) + compute buffers within 8 GB.
+- Without `--cache-type-k q4_0 --cache-type-v q4_0` we cap at ~8K context — too small for real coding work where files and conversations routinely exceed that.
+- Quality cost is near-zero: KV values are runtime activations (not trained parameters), and the attention softmax is contractive — small numerical noise averages out across many tokens. llama.cpp community testing confirms Q4 KV is nearly indistinguishable from FP16 for inference.
+- K is slightly more sensitive than V; we use Q4 for both as the most aggressive safe setting. Fall back to K=Q8/V=Q4 only if quality regressions appear.
+- Cache is **pre-allocated at server startup**, not on demand. Even a 100-token prompt locks the full ~6.3 GB. Trade: no surprise mid-session OOMs, ceiling known immediately at startup.
+- Specialists must use the same `--cache-type-k q4_0 --cache-type-v q4_0` when served — none fit at 64K without it. Don't drop these flags for "experimental" specialist serving.
+
 ## Training Pipeline
 - Stage 1 (reasoning base): 0.8B local or 4B cloud. 4B trained and serving.
 - Stage 2 (specialists): run on top of 4B reasoning base. Not yet trained.
