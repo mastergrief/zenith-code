@@ -49,15 +49,49 @@ def detect_backend() -> str:
     return "ollama"
 
 
+def _find_halved_duplicate(text: str, min_half: int = 40) -> str | None:
+    """Detect exact `A + A` duplication with any (or no) separator between copies.
+
+    Walks split points near the midpoint with whitespace tolerance. Returns the
+    deduplicated first half if found, else None. Catches the case where the model
+    re-emits a full response back-to-back without a paragraph boundary.
+    """
+    stripped = text.strip()
+    n = len(stripped)
+    if n < min_half * 2:
+        return None
+    mid = n // 2
+    # Allow the split to drift to tolerate small separators (spaces, newlines)
+    # between the copies. Bounded so we don't match degenerate short prefixes.
+    drift = max(8, min(n // 4, 256))
+    for offset in range(0, drift + 1):
+        for pos in (mid + offset, mid - offset) if offset else (mid,):
+            if pos < min_half or pos > n - min_half:
+                continue
+            first = stripped[:pos].rstrip()
+            second = stripped[pos:].lstrip()
+            if first and first == second:
+                return first
+    return None
+
+
 def _is_repeating(text: str, window: int = 100) -> bool:
     """Detect if the end of text is repeating an earlier section.
 
-    Checks if the last `window` chars appear earlier in the text.
+    Two signals:
+    1. Exact-half duplication: the text is an `A + A` pattern with any separator.
+       Catches the case where the backend emits the full response in 1-2 large
+       chunks, before the tail-window check has a chance to fire incrementally.
+    2. Tail repetition: the last `window` chars appear earlier in the text.
+       Catches incremental streaming loops token-by-token.
     """
     if len(text) < window * 2:
         return False
+    # Signal 1: full-response duplication (handles large-chunk deltas)
+    if _find_halved_duplicate(text, min_half=window) is not None:
+        return True
+    # Signal 2: tail repetition (handles token-by-token streaming loops)
     tail = text[-window:]
-    # Search for tail in the text before the last window
     earlier = text[:-window]
     return tail in earlier
 
@@ -65,14 +99,20 @@ def _is_repeating(text: str, window: int = 100) -> bool:
 def _dedup_blocks(text: str, min_block: int = 20) -> str:
     """Remove repeated text blocks from model output.
 
-    Splits on double-newlines, removes consecutive duplicate blocks,
-    and catches suffix repetition (second half mirrors first half).
+    Order of operations:
+    1. Exact `A + A` halving check (any separator, including none) — catches
+       the common case of the model re-emitting the full response back-to-back.
+    2. Paragraph-boundary midpoint check — legacy path for `A + \\n\\n + A`.
+    3. Paragraph-level dedup — removes duplicate paragraphs/list items.
     """
     if len(text) < min_block * 2:
         return text
-    # Check if second half is a repeat of first half
+    # 1. Exact full-response duplication regardless of separator.
+    halved = _find_halved_duplicate(text, min_half=min_block * 2)
+    if halved is not None:
+        return halved
+    # 2. Legacy: find a \n\n boundary near the midpoint and compare halves.
     mid = len(text) // 2
-    # Find a paragraph boundary near the midpoint
     for offset in range(0, min(200, mid)):
         for pos in (mid + offset, mid - offset):
             if pos < len(text) - 1 and text[pos:pos+2] == "\n\n":
@@ -80,7 +120,7 @@ def _dedup_blocks(text: str, min_block: int = 20) -> str:
                 if first and second and first == second:
                     return first
                 break
-    # Fall back to paragraph-level dedup
+    # 3. Paragraph-level dedup.
     blocks = text.split("\n\n")
     seen = []
     for block in blocks:
