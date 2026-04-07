@@ -1,4 +1,4 @@
-"""Configuration loading — .clawrc / claw.json / env vars."""
+"""Configuration loading — .zenithrc / zenith.json / env vars."""
 
 import json
 import os
@@ -7,7 +7,7 @@ from pathlib import Path
 DEFAULTS = {
     "model": "qwen3.5:4b",
     "backend": None,
-    # 262144 matches bin/claw's CLAW_CTX default — both Gemma 4 E4B and
+    # 262144 matches bin/zenith's ZENITH_CTX default — both Gemma 4 E4B and
     # Qwen 3.5 4B are trained at 256K and fit 8 GB VRAM with Q4 KV cache.
     # Harness computes the actual compaction threshold from this ctx_size
     # capped by agents.compact.MODEL_CONTEXT_LIMITS per loaded GGUF.
@@ -17,16 +17,16 @@ DEFAULTS = {
     "effort": "medium",
 }
 
-# Explicit env var names — aligned with existing conventions in bin/claw
-# (CLAW_CTX) and compact.py (CLAW_AUTO_COMPACT_TOKENS). Don't auto-build
+# Explicit env var names — aligned with existing conventions in bin/zenith
+# (ZENITH_CTX) and compact.py (ZENITH_AUTO_COMPACT_TOKENS). Don't auto-build
 # from key names; the historical conventions don't match an auto scheme.
 ENV_VARS = {
-    "model": "CLAW_MODEL",
-    "backend": "CLAW_BACKEND",
-    "ctx_size": "CLAW_CTX",
-    "auto_compact_tokens": "CLAW_AUTO_COMPACT_TOKENS",
-    "permission_mode": "CLAW_PERMISSION_MODE",
-    "effort": "CLAW_EFFORT",
+    "model": "ZENITH_MODEL",
+    "backend": "ZENITH_BACKEND",
+    "ctx_size": "ZENITH_CTX",
+    "auto_compact_tokens": "ZENITH_AUTO_COMPACT_TOKENS",
+    "permission_mode": "ZENITH_PERMISSION_MODE",
+    "effort": "ZENITH_EFFORT",
 }
 
 INT_KEYS = {"ctx_size", "auto_compact_tokens"}
@@ -35,7 +35,7 @@ INT_KEYS = {"ctx_size", "auto_compact_tokens"}
 def load_config() -> dict:
     """Load config. Precedence (high → low): env vars → file → defaults."""
     config = dict(DEFAULTS)
-    for name in (".clawrc", "claw.json"):
+    for name in (".zenithrc", "zenith.json"):
         p = Path(name)
         if p.exists():
             try:

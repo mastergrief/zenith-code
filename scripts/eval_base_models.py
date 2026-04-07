@@ -15,7 +15,7 @@ Usage (from repo root):
         --model-b ~/models/gemma-4-E4B-it-Q5_K_M.gguf \\
         --out /tmp/base_eval.md
 
-The llama-server must be installed (bin/claw would auto-start one but we
+The llama-server must be installed (bin/zenith would auto-start one but we
 manage it directly here). Each prompt has a 5-minute timeout. Total run
 time is ~5-15 minutes depending on model speed.
 """

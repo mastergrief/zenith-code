@@ -43,10 +43,10 @@
   - 4B fix: use cloud GPU (Colab A100)
 - Unsloth compiled cache stored at `unsloth_compiled_cache/` in project root (gitignored)
 - Git Bash mangles WSL paths with parentheses in PATH — use `wsl -e bash -c` or write scripts to `/tmp/`
-- **WSL Windows-binary stdin consumption**: any `*.exe` called from a bash script (e.g. `tasklist.exe`, `cmd.exe`, `winget.exe`) consumes parent stdin via WSL's interop shim, even if the binary doesn't intentionally read it. Always pass `< /dev/null` to Windows binaries in scripts that may receive piped stdin. See `bin/claw` (search for `tasklist.exe`) for the canonical fix and the inline comment explaining why. This bit `printf "..." | claw` invocation hard during the 2026-04-07 harness debugging — the harness's first `input()` call got `EOFError` immediately because `tasklist.exe` had already drained the pipe.
+- **WSL Windows-binary stdin consumption**: any `*.exe` called from a bash script (e.g. `tasklist.exe`, `cmd.exe`, `winget.exe`) consumes parent stdin via WSL's interop shim, even if the binary doesn't intentionally read it. Always pass `< /dev/null` to Windows binaries in scripts that may receive piped stdin. See `bin/zenith` (search for `tasklist.exe`) for the canonical fix and the inline comment explaining why. This bit `printf "..." | zenith` invocation hard during the 2026-04-07 harness debugging — the harness's first `input()` call got `EOFError` immediately because `tasklist.exe` had already drained the pipe.
 - **llama.cpp slot context cap** (session 2026-04-07): `tools/server/server-context.cpp:763-766` silently caps each slot's context to `n_ctx_train`, so `--ctx-size` past the trained max is invisibly truncated. Patched locally to comment out `n_ctx_slot = n_ctx_train`. Not upstreamed — re-apply after `git pull` on llama.cpp. Required for 256K-range NIAH testing on Gemma 4 E4B (trained at 128K).
 - **Gemma 4 GGUF rope-scaling metadata override** (session 2026-04-07): Gemma 4 E4B's GGUF bakes in `rope scaling = linear`; the `--rope-scaling yarn` CLI flag is silently ignored. Past the trained context is raw RoPE extrapolation (no scaling). Works empirically up to ~200K on single-needle but multi-needle drops to 4/5 at 220K.
-- **llama-server `--parallel` default** (session 2026-04-07): defaults to 4 slots; each slot gets `ctx_size / parallel`. For the harness's single-user workflow always pass `--parallel 1` to get the full `ctx_size` in one slot. `bin/claw` passes this since commit `4644051`; manual `llama-server` invocations still need it.
+- **llama-server `--parallel` default** (session 2026-04-07): defaults to 4 slots; each slot gets `ctx_size / parallel`. For the harness's single-user workflow always pass `--parallel 1` to get the full `ctx_size` in one slot. `bin/zenith` passes this since commit `4644051`; manual `llama-server` invocations still need it.
 - No Thunderbolt/eGPU on Acer Nitro AN17-42 — cloud GPUs required for 4B+ training
 - RunPod SSH proxy unreliable from WSL2 — use web terminal or Colab instead
 
@@ -56,6 +56,6 @@
 - `llama-server`: serve with OpenAI-compatible API, KV cache quantization, `enable_thinking` support
 - 4B reasoning base GGUF at `~/models/Qwen3.5-4B.Q5_K_M.gguf` (2.9 GB, serving at **256K context**, ~7.3 GB VRAM with Q4 KV)
 - Alternative: Gemma 4 E4B GGUF at `~/models/gemma-4-E4B-it-Q5_K_M.gguf` (5.48 GB, stock, ~6.7 GB VRAM at 256K thanks to sliding-window attention). Validated 2026-04-07, beats fine-tuned Qwen on coding eval.
-- Launch via `claw` command (auto-starts llama-server at `CLAW_CTX=262144`) or manually with `--ctx-size 262144 --parallel 1 --cache-type-k q4_0 --cache-type-v q4_0 -ngl 999`
+- Launch via `zenith` command (auto-starts llama-server at `ZENITH_CTX=262144`) or manually with `--ctx-size 262144 --parallel 1 --cache-type-k q4_0 --cache-type-v q4_0 -ngl 999`
 - For Ollama: Modelfiles in `models/`, use `ollama create`
 - `-ngl 999` forces all layers to GPU

@@ -14,6 +14,6 @@ agents/distill/merged/
 unsloth_compiled_cache/
 
 # Local runtime state and secrets
-.claw_sessions/
+.zenith_sessions/
 .env.local
 .serena/

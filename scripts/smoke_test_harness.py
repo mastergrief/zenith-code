@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Claw harness end-to-end smoke test.
+"""Zenith harness end-to-end smoke test.
 
-Drives the live `claw` binary via stdin to verify command handling, config
+Drives the live `zenith` binary via stdin to verify command handling, config
 loading, sessions, tool calls, and the streaming display fix from c11232a.
 
 Run from anywhere:
     python3 scripts/smoke_test_harness.py            # all tests
     python3 scripts/smoke_test_harness.py --quick    # skip model invocations
 
-Each test uses a fresh temp cwd so .claw_sessions stays out of the repo.
+Each test uses a fresh temp cwd so .zenith_sessions stays out of the repo.
 Model tests require llama-server on :8080 (auto-detected, skipped if absent).
 """
 
@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Callable
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-CLAW = REPO_ROOT / "bin" / "claw"
+ZENITH = REPO_ROOT / "bin" / "zenith"
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
@@ -58,7 +58,7 @@ def run_harness(
     if env:
         proc_env.update(env)
     result = subprocess.run(
-        [str(CLAW)],
+        [str(ZENITH)],
         input=stdin_data,
         capture_output=True,
         text=True,
@@ -94,7 +94,7 @@ def test_command_battery(cwd: str) -> None:
     rc, out, _ = run_harness(cmds, cwd=cwd)
     assert rc == 0, f"non-zero exit: {rc}"
 
-    assert "CLAW CODE" in out and "Multi-Agent Harness" in out, "missing /help banner"
+    assert "ZENITH CODE" in out and "Multi-Agent Harness" in out, "missing /help banner"
     assert "coder" in out and "reviewer" in out and "planner" in out, "missing default agents"
     assert "llamacpp" in out or "ollama" in out, "missing /backend output"
     assert "max_tokens" in out, "missing /effort output"
@@ -108,33 +108,33 @@ def test_command_battery(cwd: str) -> None:
 
 
 def test_config_env_override(cwd: str) -> None:
-    """CLAW_EFFORT env var should set startup effort."""
+    """ZENITH_EFFORT env var should set startup effort."""
     rc, out, _ = run_harness(
         ["/effort"],
         cwd=cwd,
-        env={"CLAW_EFFORT": "max"},
+        env={"ZENITH_EFFORT": "max"},
     )
     assert rc == 0
     # Banner shows "Effort: max" because effort != medium
-    assert "Effort: max" in out, "CLAW_EFFORT env var was ignored"
+    assert "Effort: max" in out, "ZENITH_EFFORT env var was ignored"
 
 
-def test_config_clawrc(cwd: str) -> None:
-    """A .clawrc file in cwd should be picked up at startup."""
-    (Path(cwd) / ".clawrc").write_text('{"effort": "low", "ctx_size": 32768}\n')
+def test_config_zenithrc(cwd: str) -> None:
+    """A .zenithrc file in cwd should be picked up at startup."""
+    (Path(cwd) / ".zenithrc").write_text('{"effort": "low", "ctx_size": 32768}\n')
     rc, out, _ = run_harness(["/effort"], cwd=cwd)
     assert rc == 0
-    assert "Effort: low" in out, ".clawrc effort=low was ignored"
+    assert "Effort: low" in out, ".zenithrc effort=low was ignored"
 
 
 def test_config_cli_overrides_env(cwd: str) -> None:
     """CLI --effort should override the env var."""
-    # Pass --effort via CLAW arguments by appending to bin/claw call.
-    # bin/claw forwards "$@" to harness, so we add --effort here.
+    # Pass --effort via ZENITH arguments by appending to bin/zenith call.
+    # bin/zenith forwards "$@" to harness, so we add --effort here.
     proc_env = dict(os.environ)
-    proc_env["CLAW_EFFORT"] = "low"
+    proc_env["ZENITH_EFFORT"] = "low"
     result = subprocess.run(
-        [str(CLAW), "--effort", "max"],
+        [str(ZENITH), "--effort", "max"],
         input="/effort\n/exit\n",
         capture_output=True,
         text=True,
@@ -144,7 +144,7 @@ def test_config_cli_overrides_env(cwd: str) -> None:
     )
     out = strip_ansi(result.stdout)
     assert result.returncode == 0
-    assert "Effort: max" in out, "--effort CLI flag did not override CLAW_EFFORT env"
+    assert "Effort: max" in out, "--effort CLI flag did not override ZENITH_EFFORT env"
 
 
 def test_session_save_and_list(cwd: str) -> None:
@@ -153,8 +153,8 @@ def test_session_save_and_list(cwd: str) -> None:
     assert rc == 0
     assert "Session saved to" in out, "missing /save confirmation"
     assert "Saved sessions" in out, "missing /sessions listing after save"
-    sessions_dir = Path(cwd) / ".claw_sessions"
-    assert sessions_dir.exists(), ".claw_sessions dir not created"
+    sessions_dir = Path(cwd) / ".zenith_sessions"
+    assert sessions_dir.exists(), ".zenith_sessions dir not created"
     files = list(sessions_dir.glob("*.json"))
     assert files, "no session files written"
 
@@ -169,13 +169,13 @@ def test_chat_no_double_print(cwd: str) -> None:
     rc, out, _ = run_harness(
         ["what is 2+2 and why? answer in one short sentence."],
         cwd=cwd,
-        env={"CLAW_EFFORT": "low"},
+        env={"ZENITH_EFFORT": "low"},
         timeout=90,
     )
     assert rc == 0, f"non-zero exit: {rc}"
     assert "auto-saved" in out, "no auto-save line — chat may not have completed"
 
-    sessions_dir = Path(cwd) / ".claw_sessions"
+    sessions_dir = Path(cwd) / ".zenith_sessions"
     files = sorted(sessions_dir.glob("*.json"))
     assert files, "no session file written after chat"
     data = json.loads(files[-1].read_text())
@@ -206,7 +206,7 @@ def test_chat_tool_call(cwd: str) -> None:
     rc, out, _ = run_harness(
         ["read marker.txt and tell me what the secret phrase is"],
         cwd=cwd,
-        env={"CLAW_EFFORT": "low"},
+        env={"ZENITH_EFFORT": "low"},
         timeout=120,
     )
     assert rc == 0
@@ -227,7 +227,7 @@ def test_swap_no_arg_shows_current_and_available(cwd: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Claw harness smoke tests")
+    parser = argparse.ArgumentParser(description="Zenith harness smoke tests")
     parser.add_argument(
         "--quick",
         action="store_true",
@@ -235,8 +235,8 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if not CLAW.exists():
-        print(f"FAIL: launcher not found at {CLAW}")
+    if not ZENITH.exists():
+        print(f"FAIL: launcher not found at {ZENITH}")
         sys.exit(2)
 
     has_llama = llama_running()
@@ -245,8 +245,8 @@ def main() -> None:
 
     fast_tests: list[tuple[str, Callable[[str], None]]] = [
         ("command battery (15 slash commands)", test_command_battery),
-        ("config: CLAW_EFFORT env var", test_config_env_override),
-        ("config: .clawrc file pickup", test_config_clawrc),
+        ("config: ZENITH_EFFORT env var", test_config_env_override),
+        ("config: .zenithrc file pickup", test_config_zenithrc),
         ("config: CLI flag overrides env", test_config_cli_overrides_env),
         ("session: /save + /sessions", test_session_save_and_list),
     ]
@@ -264,7 +264,7 @@ def main() -> None:
     failed = 0
 
     for name, fn in tests:
-        tmpdir = tempfile.mkdtemp(prefix="claw_smoke_")
+        tmpdir = tempfile.mkdtemp(prefix="zenith_smoke_")
         try:
             fn(tmpdir)
             print(f"  PASS  {name}")

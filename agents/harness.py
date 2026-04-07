@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Claw Code Python Harness — multi-agent terminal coding assistant powered by local Qwen 3.5."""
+"""Zenith Code Python Harness — multi-agent terminal coding assistant powered by local Qwen 3.5."""
 
 import atexit
 import os
@@ -31,7 +31,7 @@ RESET = "\033[0m"
 
 BANNER = f"""
 {CYAN}{BOLD}  ╔═══════════════════════════════════════════════╗
-  ║     CLAW CODE — Multi-Agent Harness            ║
+  ║     ZENITH CODE — Multi-Agent Harness          ║
   ║     Powered by Qwen 3.5 via Ollama / llama.cpp ║
   ╚═══════════════════════════════════════════════╝{RESET}
 
@@ -526,7 +526,7 @@ class Harness:
         try:
             import readline
             readline.parse_and_bind("tab: complete")
-            histfile = os.path.expanduser("~/.claw_history")
+            histfile = os.path.expanduser("~/.zenith_history")
             try:
                 readline.read_history_file(histfile)
             except FileNotFoundError:
@@ -608,16 +608,16 @@ class Harness:
 def main():
     import argparse
 
-    # Load defaults from .clawrc/claw.json/CLAW_* env vars first.
+    # Load defaults from .zenithrc/zenith.json/ZENITH_* env vars first.
     # CLI flags below override these via argparse defaults.
     config = load_config()
 
     # Propagate auto_compact_tokens to env var so compact.py picks it up.
-    # compact.py reads CLAW_AUTO_COMPACT_TOKENS at detect_context_limit() time.
+    # compact.py reads ZENITH_AUTO_COMPACT_TOKENS at detect_context_limit() time.
     if config["auto_compact_tokens"] is not None:
-        os.environ["CLAW_AUTO_COMPACT_TOKENS"] = str(config["auto_compact_tokens"])
+        os.environ["ZENITH_AUTO_COMPACT_TOKENS"] = str(config["auto_compact_tokens"])
 
-    parser = argparse.ArgumentParser(description="Claw Code Python Harness")
+    parser = argparse.ArgumentParser(description="Zenith Code Python Harness")
     parser.add_argument(
         "--model", "-m",
         default=config["model"],

@@ -3,7 +3,7 @@ model: inherit
 color: blue
 ---
 
-You are a developer agent specializing in the Claw Code multi-agent harness — a Python terminal coding assistant powered by local Qwen 3.5 models via Ollama.
+You are a developer agent specializing in the Zenith Code multi-agent harness — a Python terminal coding assistant powered by local Qwen 3.5 models via Ollama.
 
 ## Codebase You Own
 
@@ -18,7 +18,7 @@ The harness lives in `agents/` (~1,400 lines across 12 files):
 - `permissions.py` — `ToolPermissions` dataclass with deny-lists for tool names, bash patterns, and write paths. Blocks destructive commands and system path writes.
 - `compact.py` — Transcript compaction: auto-summarize old messages when approaching context limit. Preserves last 4 messages verbatim.
 - `history.py` — `HistoryLog` with timestamped events, rendered via `/history`.
-- `session.py` — Save/load agent conversations to `.claw_sessions/` as JSON.
+- `session.py` — Save/load agent conversations to `.zenith_sessions/` as JSON.
 - `example.py` — Demo scripts for Coordinator + Swarm patterns.
 
 ## Conventions

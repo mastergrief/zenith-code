@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# claw — launch the Claw Code harness with llama.cpp auto-start
+# zenith — launch the Zenith Code harness with llama.cpp auto-start
 #
 # GGUF selection precedence (high → low):
 #   1. --gguf PATH (CLI flag, must be first arg)
-#   2. CLAW_MODEL env var
+#   2. ZENITH_MODEL env var
 #   3. Default: ~/models/gemma-4-E4B-it-Q5_K_M.gguf
 #
 # Context size precedence (high → low):
-#   1. CLAW_CTX env var
+#   1. ZENITH_CTX env var
 #   2. Default: 262144 (256K — both Gemma 4 E4B and Qwen 3.5 4B are trained
 #      at this range, fits 8 GB VRAM with Q4 KV cache). The harness then
 #      auto-computes its compaction threshold as min(per-model NIAH-validated
@@ -30,15 +30,15 @@ if [[ "${1:-}" == "--gguf" ]]; then
     MODEL="$2"
     shift 2
 else
-    MODEL="${CLAW_MODEL:-$HOME/models/gemma-4-E4B-it-Q5_K_M.gguf}"
+    MODEL="${ZENITH_MODEL:-$HOME/models/gemma-4-E4B-it-Q5_K_M.gguf}"
 fi
 
 # Expand ~ in case the user passed a tilde path
 MODEL="${MODEL/#\~/$HOME}"
 
-LLAMA_SERVER="${CLAW_LLAMA_SERVER:-$HOME/llama.cpp/build/bin/llama-server}"
-PORT="${CLAW_PORT:-8080}"
-CTX="${CLAW_CTX:-262144}"
+LLAMA_SERVER="${ZENITH_LLAMA_SERVER:-$HOME/llama.cpp/build/bin/llama-server}"
+PORT="${ZENITH_PORT:-8080}"
+CTX="${ZENITH_CTX:-262144}"
 LLAMA_PID=""
 STARTED_LLAMA=false
 
@@ -54,7 +54,7 @@ trap cleanup EXIT
 # ── Check for model file ──────────────────────────────────────────
 if [ ! -f "$MODEL" ]; then
     echo "Error: Model not found at $MODEL"
-    echo "Set CLAW_MODEL to your GGUF path"
+    echo "Set ZENITH_MODEL to your GGUF path"
     exit 1
 fi
 
@@ -107,7 +107,7 @@ fi
 # ── Kill Windows Ollama if running (VRAM conflict) ────────────────
 # NOTE: redirect stdin from /dev/null — WSL's interop shim forwards parent
 # stdin to Windows binaries, which consumes it and breaks programmatic
-# `printf ... | claw` invocation. Without this, the harness's first input()
+# `printf ... | zenith` invocation. Without this, the harness's first input()
 # call gets EOFError and the session exits before reading any prompt.
 if command -v tasklist.exe &>/dev/null; then
     if tasklist.exe < /dev/null 2>/dev/null | grep -qi "ollama"; then
@@ -117,6 +117,6 @@ fi
 
 # ── Launch harness ────────────────────────────────────────────────
 # Don't cd into the repo: that would force CLAUDE.md auto-discovery and
-# .clawrc lookup to use the project root instead of the user's actual
+# .zenithrc lookup to use the project root instead of the user's actual
 # working directory. Use the absolute script path so cwd stays the user's.
 PYTHONUTF8=1 PYTHONPATH="$SCRIPT_DIR" exec python3 "$SCRIPT_DIR/agents/harness.py" --backend llamacpp "$@"

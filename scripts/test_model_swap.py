@@ -52,7 +52,7 @@ def main() -> int:
     # ── 1. Adopt existing server ──
     log("1. Checking for running llama-server on :8080...")
     if not mgr.is_running():
-        log("   No server running. Start one with `claw` first, or run:")
+        log("   No server running. Start one with `zenith` first, or run:")
         log("   ~/llama.cpp/build/bin/llama-server -m ~/models/Qwen3.5-4B.Q5_K_M.gguf \\")
         log("     --ctx-size 65536 --cache-type-k q4_0 --cache-type-v q4_0 -ngl 999 --port 8080")
         return 2

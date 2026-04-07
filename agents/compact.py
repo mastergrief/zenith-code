@@ -53,10 +53,10 @@ def detect_context_limit(model_name: str) -> int:
     """Auto-detect context limit from model name string.
 
     Match order: longer keys first (so "gemma-4-e4b" beats "4b"), then shorter
-    fallbacks. Case-sensitive substring match. The CLAW_AUTO_COMPACT_TOKENS
+    fallbacks. Case-sensitive substring match. The ZENITH_AUTO_COMPACT_TOKENS
     env var overrides everything.
     """
-    env_override = os.environ.get("CLAW_AUTO_COMPACT_TOKENS")
+    env_override = os.environ.get("ZENITH_AUTO_COMPACT_TOKENS")
     if env_override:
         return int(env_override)
     # Check longer keys first to avoid "8b" matching before "0.8b"

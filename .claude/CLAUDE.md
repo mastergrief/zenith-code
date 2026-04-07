@@ -1,4 +1,4 @@
-# Claw Code — Multi-Agent Harness + Specialist Distillation
+# Zenith Code — Multi-Agent Harness + Specialist Distillation
 
 Fork of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) with a Python multi-agent harness and distillation pipeline for fine-tuning Qwen 3.5 4B specialists from curated training data.
 
@@ -61,7 +61,7 @@ Two systems coexist:
 1. **Python agent harness** (`agents/`) — terminal coding assistant with dual backend (Ollama + llama.cpp), 3-level permissions, thinking mode, sessions, compaction, effort control, and llama.cpp hot-swap
 2. **Rust claw-code port** (`rust/`) — upstream claw-code, 9 crates, separate build system
 
-Serving: either Qwen 3.5 4B or Gemma 4 E4B via llama.cpp at **256K context** (`CLAW_CTX=262144` default) with Q4 KV cache (~6.7–7.3 GB VRAM). Harness auto-computes compaction threshold as `min(per-GGUF NIAH-validated limit, int(ctx_size * 0.85))`. Hot-swap between bases is implemented via `agents/model_swap.py`.
+Serving: either Qwen 3.5 4B or Gemma 4 E4B via llama.cpp at **256K context** (`ZENITH_CTX=262144` default) with Q4 KV cache (~6.7–7.3 GB VRAM). Harness auto-computes compaction threshold as `min(per-GGUF NIAH-validated limit, int(ctx_size * 0.85))`. Hot-swap between bases is implemented via `agents/model_swap.py`.
 
 ## Python Agent Harness (`agents/`, ~2,870 lines across 14 files)
 
@@ -77,10 +77,10 @@ Serving: either Qwen 3.5 4B or Gemma 4 E4B via llama.cpp at **256K context** (`C
 
 ### Production Features
 - `permissions.py` (133 lines) — 3 permission modes (READ_ONLY/WORKSPACE_WRITE/FULL_ACCESS), 4-level bash classification (SAFE/WRITE/DESTRUCTIVE/BLOCKED), git subcommand awareness, write redirect detection, system path blocking
-- `compact.py` (244 lines) — Auto-compaction with per-GGUF context limits (Gemma 4 E4B 200K, Qwen 3.5 4B 130K, llama.cpp fallback 65K — NIAH-validated, see `.claude/MEMORY/evals/2026-04-07_summary_needle_comparison.md`), summary compression, env var override (`CLAW_AUTO_COMPACT_TOKENS`)
-- `config.py` (61 lines) — Config loader for `.clawrc`/`claw.json` with explicit `CLAW_*` env var registry (`CLAW_MODEL`, `CLAW_BACKEND`, `CLAW_CTX`, `CLAW_AUTO_COMPACT_TOKENS`, `CLAW_PERMISSION_MODE`, `CLAW_EFFORT`); `ctx_size` default is 262144
+- `compact.py` (244 lines) — Auto-compaction with per-GGUF context limits (Gemma 4 E4B 200K, Qwen 3.5 4B 130K, llama.cpp fallback 65K — NIAH-validated, see `.claude/MEMORY/evals/2026-04-07_summary_needle_comparison.md`), summary compression, env var override (`ZENITH_AUTO_COMPACT_TOKENS`)
+- `config.py` (61 lines) — Config loader for `.zenithrc`/`zenith.json` with explicit `ZENITH_*` env var registry (`ZENITH_MODEL`, `ZENITH_BACKEND`, `ZENITH_CTX`, `ZENITH_AUTO_COMPACT_TOKENS`, `ZENITH_PERMISSION_MODE`, `ZENITH_EFFORT`); `ctx_size` default is 262144
 - `history.py` (34 lines) — Timestamped audit log for tool calls, responses, errors, commands
-- `session.py` (51 lines) — Save/load agent conversations to `.claw_sessions/` as JSON, auto-save on exit
+- `session.py` (51 lines) — Save/load agent conversations to `.zenith_sessions/` as JSON, auto-save on exit
 
 ### Harness Commands
 | Command | Action |
@@ -109,31 +109,31 @@ Serving: either Qwen 3.5 4B or Gemma 4 E4B via llama.cpp at **256K context** (`C
 ### Running the Harness
 ```bash
 # Preferred: auto-starts llama.cpp with default ~/models/Qwen3.5-4B.Q5_K_M.gguf at 256K
-claw
+zenith
 
 # Pick a specific GGUF at launch time (new --gguf launcher flag)
-claw --gguf ~/models/gemma-4-E4B-it-Q5_K_M.gguf
+zenith --gguf ~/models/gemma-4-E4B-it-Q5_K_M.gguf
 
 # Or set the env var once in your shell rc
-CLAW_MODEL=~/models/gemma-4-E4B-it-Q5_K_M.gguf claw
+ZENITH_MODEL=~/models/gemma-4-E4B-it-Q5_K_M.gguf zenith
 
 # Hot-swap from inside an active session (no restart needed)
 > /swap gemma       # substring match in ~/models/*.gguf
 > /swap qwen        # swap back
 
-# Manual: specify backend and model (bypasses bin/claw)
+# Manual: specify backend and model (bypasses bin/zenith)
 PYTHONUTF8=1 PYTHONPATH=. python3 agents/harness.py --backend llamacpp
 PYTHONUTF8=1 PYTHONPATH=. python3 agents/harness.py --model qwen3.5:4b --backend ollama
 
 # Programmatic / smoke-test invocation — pipe prompts via stdin, capture to log
-printf "what is 2+2?\n/exit\n" | claw --effort max > /tmp/claw.log 2>&1
+printf "what is 2+2?\n/exit\n" | zenith --effort max > /tmp/zenith.log 2>&1
 
 # Override context (smaller if VRAM constrained, or for faster cold start)
-CLAW_CTX=65536 claw
+ZENITH_CTX=65536 zenith
 
 # CLI flags: --model, --backend, --ctx-size, --effort, --resume, --permission-mode, --cd
 ```
-`bin/claw` launcher: auto-starts llama.cpp if not running, waits for health, passes `--backend llamacpp`. Default `CLAW_CTX=262144` (256K). Configurable via `CLAW_MODEL`, `CLAW_PORT`, `CLAW_CTX`, `CLAW_LLAMA_SERVER` env vars, plus the `--gguf PATH` CLI flag (must be first arg). The stdin pipe form works in any environment (TTY or non-TTY) because the harness uses plain `input()`; redirect output to a file to keep model token spam out of your terminal/context. `bin/claw` does NOT `cd` into the repo root before exec'ing the harness — this keeps `.clawrc` lookup and CLAUDE.md auto-discovery honoring the user's actual cwd.
+`bin/zenith` launcher: auto-starts llama.cpp if not running, waits for health, passes `--backend llamacpp`. Default `ZENITH_CTX=262144` (256K). Configurable via `ZENITH_MODEL`, `ZENITH_PORT`, `ZENITH_CTX`, `ZENITH_LLAMA_SERVER` env vars, plus the `--gguf PATH` CLI flag (must be first arg). The stdin pipe form works in any environment (TTY or non-TTY) because the harness uses plain `input()`; redirect output to a file to keep model token spam out of your terminal/context. `bin/zenith` does NOT `cd` into the repo root before exec'ing the harness — this keeps `.zenithrc` lookup and CLAUDE.md auto-discovery honoring the user's actual cwd.
 
 ## Distillation Pipeline (`agents/distill/`, 10 Python files)
 
@@ -208,10 +208,10 @@ PYTHONPATH=. python3 -m agents.distill.filter_reasoning --merge # filter + merge
 
 **llama.cpp (primary)** — either 4B base via full GPU:
 - Default model: `~/models/Qwen3.5-4B.Q5_K_M.gguf` (2.9 GB, fine-tuned)
-- Alternative model: `~/models/gemma-4-E4B-it-Q5_K_M.gguf` (5.48 GB, stock; selectable via `--gguf` or `CLAW_MODEL`)
+- Alternative model: `~/models/gemma-4-E4B-it-Q5_K_M.gguf` (5.48 GB, stock; selectable via `--gguf` or `ZENITH_MODEL`)
 - Context: **256K tokens** with Q4 KV cache (~6.7 GB for Gemma E4B, ~7.3 GB for Qwen 4B — sliding-window attention on Gemma makes its KV cache dramatically smaller). Pre-allocated at startup.
 - Thinking: `enable_thinking: true` by default, reasoning in separate `reasoning_content` field
-- Launch: `claw` command auto-starts, or manually: `llama-server -m model.gguf --ctx-size 262144 --parallel 1 --cache-type-k q4_0 --cache-type-v q4_0 -ngl 999 --port 8080`
+- Launch: `zenith` command auto-starts, or manually: `llama-server -m model.gguf --ctx-size 262144 --parallel 1 --cache-type-k q4_0 --cache-type-v q4_0 -ngl 999 --port 8080`
 - `--parallel 1` is required — without it, llama-server splits `ctx_size` across 4 default slots, so each slot only gets `ctx_size / 4`
 - **Hot-swap: IMPLEMENTED** via `agents/model_swap.py:LlamaServerManager`. Swap cycles are ~5–15s depending on disk page-cache warmth. `/swap` command uses it directly; `SpecialistCoordinator` uses it for domain routing when specialist GGUFs exist on disk.
 - Both Qwen 3.5 4B and Gemma 4 E4B are trained at 256K native context (earlier notes had Qwen at 32K — that was wrong).

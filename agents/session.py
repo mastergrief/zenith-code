@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-SESSION_DIR = Path(".claw_sessions")
+SESSION_DIR = Path(".zenith_sessions")
 
 
 def save_session(agent) -> Path:
