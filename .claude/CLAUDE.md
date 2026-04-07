@@ -274,4 +274,4 @@ Key findings:
 
 ## Branch
 
-`feature/multi-agent-qwen` on `mastergrief/claw-code` (forked from `ultraworkers/claw-code`)
+`feature/multi-agent-qwen` on `mastergrief/zenith-code` (forked from `ultraworkers/claw-code`; renamed from `mastergrief/claw-code` 2026-04-07)
