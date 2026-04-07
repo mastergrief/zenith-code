@@ -269,7 +269,9 @@ class Agent:
         payload: dict[str, Any] = {
             "messages": messages,
             "max_tokens": max_tok,
-            "frequency_penalty": 0.5,
+            "temperature": 0.7,
+            "frequency_penalty": 0.8,
+            "presence_penalty": 0.3,
         }
         if self.enable_thinking:
             payload["enable_thinking"] = True
@@ -299,7 +301,9 @@ class Agent:
             "messages": messages,
             "max_tokens": max_tok,
             "stream": True,
-            "frequency_penalty": 0.5,
+            "temperature": 0.7,
+            "frequency_penalty": 0.8,
+            "presence_penalty": 0.3,
         }
         if self.enable_thinking:
             payload["enable_thinking"] = True
