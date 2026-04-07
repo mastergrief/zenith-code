@@ -12,3 +12,8 @@ agents/distill/checkpoints/
 agents/distill/merged/
 *.gguf
 unsloth_compiled_cache/
+
+# Local runtime state and secrets
+.claw_sessions/
+.env.local
+.serena/
