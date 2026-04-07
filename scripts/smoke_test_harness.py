@@ -214,6 +214,15 @@ def test_chat_tool_call(cwd: str) -> None:
     assert "PURPLE_OWL" in out, "model did not retrieve marker file content"
 
 
+def test_swap_no_arg_shows_current_and_available(cwd: str) -> None:
+    """`/swap` with no arg should print the loaded model and list available GGUFs."""
+    rc, out, _ = run_harness(["/swap"], cwd=cwd)
+    assert rc == 0, f"non-zero exit: {rc}"
+    assert "Current:" in out, "missing 'Current:' line for loaded model"
+    assert "Available in ~/models/:" in out, "missing 'Available in ~/models/' listing"
+    assert ".gguf" in out or "loaded" in out, "no GGUF entries shown in available list"
+
+
 # ── Runner ─────────────────────────────────────────────────────────
 
 
@@ -244,6 +253,7 @@ def main() -> None:
     slow_tests: list[tuple[str, Callable[[str], None]]] = [
         ("chat: streaming display single-print", test_chat_no_double_print),
         ("chat: tool call (read_file)", test_chat_tool_call),
+        ("/swap: no-arg shows current + available", test_swap_no_arg_shows_current_and_available),
     ]
 
     tests = list(fast_tests)

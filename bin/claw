@@ -4,7 +4,7 @@
 # GGUF selection precedence (high → low):
 #   1. --gguf PATH (CLI flag, must be first arg)
 #   2. CLAW_MODEL env var
-#   3. Default: ~/models/Qwen3.5-4B.Q5_K_M.gguf
+#   3. Default: ~/models/gemma-4-E4B-it-Q5_K_M.gguf
 #
 # Context size precedence (high → low):
 #   1. CLAW_CTX env var
@@ -30,7 +30,7 @@ if [[ "${1:-}" == "--gguf" ]]; then
     MODEL="$2"
     shift 2
 else
-    MODEL="${CLAW_MODEL:-$HOME/models/Qwen3.5-4B.Q5_K_M.gguf}"
+    MODEL="${CLAW_MODEL:-$HOME/models/gemma-4-E4B-it-Q5_K_M.gguf}"
 fi
 
 # Expand ~ in case the user passed a tilde path

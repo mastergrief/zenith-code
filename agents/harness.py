@@ -423,22 +423,31 @@ class Harness:
                 target_arg = parts[1]
                 target = Path(target_arg).expanduser()
                 if not target.exists():
-                    # Try substring match in ~/models/
+                    # Try exact basename match first (with or without .gguf
+                    # extension), then fall back to substring match.
                     models_dir = Path.home() / "models"
-                    candidates = [
-                        g for g in models_dir.glob("*.gguf")
-                        if target_arg.lower() in g.stem.lower()
-                    ] if models_dir.exists() else []
-                    if len(candidates) == 1:
-                        target = candidates[0]
-                    elif len(candidates) > 1:
-                        print(f"  {RED}Ambiguous '{target_arg}':{RESET}")
-                        for c in candidates:
-                            print(f"    {DIM}{c.name}{RESET}")
-                        return True
+                    ggufs = list(models_dir.glob("*.gguf")) if models_dir.exists() else []
+                    exact = [
+                        g for g in ggufs
+                        if target_arg == g.name or target_arg == g.stem
+                    ]
+                    if len(exact) == 1:
+                        target = exact[0]
                     else:
-                        print(f"  {RED}Model not found: {target_arg}{RESET}")
-                        return True
+                        candidates = [
+                            g for g in ggufs
+                            if target_arg.lower() in g.stem.lower()
+                        ]
+                        if len(candidates) == 1:
+                            target = candidates[0]
+                        elif len(candidates) > 1:
+                            print(f"  {RED}Ambiguous '{target_arg}':{RESET}")
+                            for c in candidates:
+                                print(f"    {DIM}{c.name}{RESET}")
+                            return True
+                        else:
+                            print(f"  {RED}Model not found: {target_arg}{RESET}")
+                            return True
                 print(f"  {MAGENTA}Swapping to {target.name}...{RESET}")
                 try:
                     elapsed = mgr.swap(
@@ -548,6 +557,11 @@ class Harness:
         if effort != "medium":
             print(f"  {DIM}Effort: {effort}{RESET}")
         print(f"  {DIM}Active agent: {self.active_agent}{RESET}")
+        compact_threshold = self.agents[self.active_agent].max_context_tokens
+        if compact_threshold is None:
+            compact_threshold = self._compute_compact_threshold()
+        if compact_threshold:
+            print(f"  {DIM}Compact threshold: {compact_threshold:,} tokens{RESET}")
         print()
 
         while True:
