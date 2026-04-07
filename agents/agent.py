@@ -15,15 +15,15 @@ DEFAULT_MODEL = "qwen3.5:4b"
 
 EFFORT_LEVELS = {
     "low": {
-        "max_tokens": 1024,
+        "max_tokens": 3072,
         "prompt_prefix": "Be concise and direct. Skip lengthy reasoning.",
     },
     "medium": {
-        "max_tokens": 2048,
+        "max_tokens": 6144,
         "prompt_prefix": "",
     },
     "max": {
-        "max_tokens": 8192,
+        "max_tokens": 24576,
         "prompt_prefix": "Think deeply and carefully. Explore multiple approaches, consider edge cases, verify your reasoning step by step before answering.",
     },
 }
