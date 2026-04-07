@@ -10,7 +10,7 @@
 
 ### Cloud (Colab Pro A100 40GB)
 - Qwen 3.5 4B QLoRA: fits with batch=1, seq_len=1024, packing=false
-- Use `agents/distill/train_4b_colab.ipynb` or `train_4b_cloud.py`
+- Use `agents/distill/train_4b_colab.ipynb` — **this is the active training path**. `train_4b_cloud.py` exists for RunPod/Lambda but is not currently used (RunPod is set up but the user runs training on Colab Pro).
 - Cost: ~$0.50-1.00 per training run (~30-40 min on A100)
 
 ## Priority Order
