@@ -42,6 +42,7 @@
   - 4B fix: use cloud GPU (Colab A100)
 - Unsloth compiled cache stored at `unsloth_compiled_cache/` in project root (gitignored)
 - Git Bash mangles WSL paths with parentheses in PATH — use `wsl -e bash -c` or write scripts to `/tmp/`
+- **WSL Windows-binary stdin consumption**: any `*.exe` called from a bash script (e.g. `tasklist.exe`, `cmd.exe`, `winget.exe`) consumes parent stdin via WSL's interop shim, even if the binary doesn't intentionally read it. Always pass `< /dev/null` to Windows binaries in scripts that may receive piped stdin. See `bin/claw:80` for the canonical fix and the inline comment explaining why. This bit `printf "..." | claw` invocation hard during the 2026-04-07 harness debugging — the harness's first `input()` call got `EOFError` immediately because `tasklist.exe` had already drained the pipe.
 - No Thunderbolt/eGPU on Acer Nitro AN17-42 — cloud GPUs required for 4B+ training
 - RunPod SSH proxy unreliable from WSL2 — use web terminal or Colab instead
 

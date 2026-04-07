@@ -113,9 +113,12 @@ claw
 PYTHONUTF8=1 PYTHONPATH=. python3 agents/harness.py --backend llamacpp
 PYTHONUTF8=1 PYTHONPATH=. python3 agents/harness.py --model qwen3.5:0.8b --backend ollama
 
+# Programmatic / smoke-test invocation — pipe prompts via stdin, capture to log
+printf "what is 2+2?\n/exit\n" | claw --effort max > /tmp/claw.log 2>&1
+
 # CLI flags: --model, --backend, --effort, --resume, --permission-mode, --cd
 ```
-`bin/claw` launcher: auto-starts llama.cpp if not running, waits for health, passes `--backend llamacpp`. Configurable via `CLAW_MODEL`, `CLAW_PORT`, `CLAW_CTX` env vars.
+`bin/claw` launcher: auto-starts llama.cpp if not running, waits for health, passes `--backend llamacpp`. Configurable via `CLAW_MODEL`, `CLAW_PORT`, `CLAW_CTX` env vars. The stdin pipe form works in any environment (TTY or non-TTY) because the harness uses plain `input()`; redirect output to a file to keep model token spam out of your terminal/context.
 
 ## Distillation Pipeline (`agents/distill/`, 10 Python files)
 
@@ -194,7 +197,7 @@ PYTHONPATH=. python3 -m agents.distill.filter_reasoning --merge # filter + merge
 - Specialists: planned hot-swap on same GPU (5-10s swap time)
 
 **Ollama (fallback)** — stock models, quick testing:
-- `qwen3.5:0.8b` — stock Qwen 3.5 0.8B (only model currently pulled)
+- Pulled models: `qwen3.5:0.8b`, `qwen3.5:4b`, `qwen3.5:9b`, `qwen3:0.6b`, `qwen3:4b`, `qwen3:8b`, plus custom Modelfiles `qwen4b-fast`, `qwen9b-fast`, `reasoning-base` (verify current with `curl -s localhost:11434/api/tags`)
 - Custom Modelfiles in `models/`: `Modelfile.qwen9b-fast` (2048 ctx), `Modelfile.qwen4b-fast` (8192 ctx), `Modelfile.reasoning-base` (32K ctx)
 - Kill Windows Ollama to free VRAM: `taskkill /IM ollama.exe /F`
 

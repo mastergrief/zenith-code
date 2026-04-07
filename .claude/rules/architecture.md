@@ -9,7 +9,8 @@
 - Connection retry: 3 attempts with exponential backoff (1s/2s/4s) on both backends
 - System prompt builder: auto-discovers CLAUDE.md, adds cwd/date/tools, caps at 2000 chars
 - Effort mode: `low` (1024 tokens, concise), `medium` (2048, default), `max` (8192, deep thinking)
-- Output dedup: `_is_repeating()` detects streaming loops (100-char window), `_dedup_blocks()` removes duplicate paragraphs post-generation
+- llama.cpp sampling: `temperature=0.7, frequency_penalty=0.8, presence_penalty=0.3, max_tokens=effort-dependent`. Same params on both streaming and non-streaming paths to keep behavior consistent.
+- Output dedup (storage layer): `_is_repeating()` catches tail-window repeats (>200 chars), `_find_halved_duplicate()` catches `A+A` patterns with any/no separator (commit `3cf1a69`), `_dedup_blocks()` removes duplicate paragraphs post-generation. **Note**: visible response duplication is almost always a *display* bug (e.g. the harness double-print fixed in `c11232a`), not model looping — check stored session state first before assuming the model is repeating.
 - Agent history is append-only within a session. Use `agent.reset()` to clear
 - Auto-compaction: when history exceeds `max_context_tokens`, old messages are summarized into a system message
 - Tool calling loop: up to `max_tool_rounds` iterations (default 10). Works on both Ollama and llama.cpp (SSE delta assembly for tool calls)
@@ -42,6 +43,7 @@
 - **History** (`history.py`): `HistoryLog` with timestamped events, rendered via `/history`
 - **Sessions** (`session.py`): save/load to `.claw_sessions/`, JSON format. Auto-save on exit, `/resume` for latest
 - **Streaming**: dual backend streaming with thinking display. Readline integration with `~/.claw_history`
+- **`_streaming_text` flag invariant** (`harness.py`): tracks whether we're inside an open green ANSI block during a streamed response. **Do NOT reset it in the `response` event handler** — the main loop checks it to decide whether to re-print the response. Resetting in the handler causes the main loop's "non-streamed" branch to fire and double-print every streamed response (the bug fixed in commit `c11232a`). The handler may print `{RESET}` to close the color, but only the main loop should set `_streaming_text = False`.
 
 ## Serving Architecture
 - **llama.cpp (primary)**: 4B Q5_K_M at 64K context with Q4 KV cache (~6.3GB VRAM, pre-allocated)
