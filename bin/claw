@@ -1,12 +1,44 @@
 #!/usr/bin/env bash
 # claw — launch the Claw Code harness with llama.cpp auto-start
+#
+# GGUF selection precedence (high → low):
+#   1. --gguf PATH (CLI flag, must be first arg)
+#   2. CLAW_MODEL env var
+#   3. Default: ~/models/Qwen3.5-4B.Q5_K_M.gguf
+#
+# Context size precedence (high → low):
+#   1. CLAW_CTX env var
+#   2. Default: 262144 (256K — both Gemma 4 E4B and Qwen 3.5 4B are trained
+#      at this range, fits 8 GB VRAM with Q4 KV cache). The harness then
+#      auto-computes its compaction threshold as min(per-model NIAH-validated
+#      limit, 85% of server ctx) via agents/compact.py:MODEL_CONTEXT_LIMITS.
+#      Requires the patched llama.cpp training-context slot cap removal at
+#      tools/server/server-context.cpp:763-766 for extrapolation past trained
+#      max; otherwise llama-server silently caps to n_ctx_train.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
-MODEL="${CLAW_MODEL:-$HOME/models/Qwen3.5-4B.Q5_K_M.gguf}"
+
+# Consume --gguf PATH if provided as the first argument. Keep it distinct
+# from the harness's --model flag, which refers to the Ollama-style model
+# name (not a GGUF path).
+if [[ "${1:-}" == "--gguf" ]]; then
+    if [[ -z "${2:-}" ]]; then
+        echo "Error: --gguf requires a path argument" >&2
+        exit 1
+    fi
+    MODEL="$2"
+    shift 2
+else
+    MODEL="${CLAW_MODEL:-$HOME/models/Qwen3.5-4B.Q5_K_M.gguf}"
+fi
+
+# Expand ~ in case the user passed a tilde path
+MODEL="${MODEL/#\~/$HOME}"
+
 LLAMA_SERVER="${CLAW_LLAMA_SERVER:-$HOME/llama.cpp/build/bin/llama-server}"
 PORT="${CLAW_PORT:-8080}"
-CTX="${CLAW_CTX:-65536}"
+CTX="${CLAW_CTX:-262144}"
 LLAMA_PID=""
 STARTED_LLAMA=false
 
@@ -41,6 +73,7 @@ else
     "$LLAMA_SERVER" \
         -m "$MODEL" \
         --ctx-size "$CTX" \
+        --parallel 1 \
         --cache-type-k q4_0 \
         --cache-type-v q4_0 \
         -ngl 999 \
@@ -83,5 +116,7 @@ if command -v tasklist.exe &>/dev/null; then
 fi
 
 # ── Launch harness ────────────────────────────────────────────────
-cd "$SCRIPT_DIR"
-PYTHONUTF8=1 PYTHONPATH="$SCRIPT_DIR" exec python3 agents/harness.py --backend llamacpp "$@"
+# Don't cd into the repo: that would force CLAUDE.md auto-discovery and
+# .clawrc lookup to use the project root instead of the user's actual
+# working directory. Use the absolute script path so cwd stays the user's.
+PYTHONUTF8=1 PYTHONPATH="$SCRIPT_DIR" exec python3 "$SCRIPT_DIR/agents/harness.py" --backend llamacpp "$@"

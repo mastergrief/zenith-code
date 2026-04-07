@@ -8,7 +8,9 @@ import json
 import time
 from pathlib import Path
 
-from agents.agent import Agent, DEFAULT_MODEL, EFFORT_LEVELS, detect_backend
+from agents.agent import Agent, DEFAULT_MODEL, EFFORT_LEVELS, detect_backend, detect_llamacpp_model
+from agents.compact import detect_context_limit
+from agents.config import load_config
 from agents.permissions import PermissionMode
 from agents.coordinator import Coordinator
 from agents.swarm import Swarm
@@ -60,9 +62,10 @@ BANNER = f"""
 class Harness:
     """Terminal REPL harness for multi-agent system."""
 
-    def __init__(self, model: str = DEFAULT_MODEL, backend: str | None = None):
+    def __init__(self, model: str = DEFAULT_MODEL, backend: str | None = None, ctx_size: int | None = None):
         self.model = model
         self.backend = backend or detect_backend()
+        self.ctx_size = ctx_size
         self.agents: dict[str, Agent] = {}
         self.active_agent: str = "coder"
         self.team_mode: bool = False
@@ -74,14 +77,51 @@ class Harness:
         self._streaming_thinking = False  # Track thinking block display
         self.permission_mode = PermissionMode.WORKSPACE_WRITE
 
+        # Discover the actual loaded GGUF once, so per-model compaction limits
+        # from agents.compact.MODEL_CONTEXT_LIMITS can fire. See _compute_compact_threshold.
+        self._loaded_llamacpp_model: str | None = (
+            detect_llamacpp_model() if self.backend == "llamacpp" else None
+        )
+
         # Create default agents
         self._spawn("coder", "expert software engineer who writes clean, efficient code")
         self._spawn("reviewer", "code reviewer who finds bugs, security issues, and suggests improvements")
         self._spawn("planner", "software architect who breaks down problems and designs solutions")
 
+    def _compute_compact_threshold(self) -> int | None:
+        """Compute the compaction threshold for new Agents.
+
+        Returns the smaller of:
+          - the per-model validated limit from ``agents.compact.MODEL_CONTEXT_LIMITS``
+            (e.g. 200K for Gemma 4 E4B, 130K for Qwen 3.5 4B)
+          - 85% of the server-allocated ctx_size (so there's headroom for the
+            active turn's response before the hard cap is hit)
+
+        Returns ``None`` to let Agent auto-detect if we can't determine either:
+        no ctx_size set AND no llama.cpp model discoverable.
+        """
+        if self.backend != "llamacpp":
+            # Ollama path — let Agent's own detect_context_limit handle it
+            return None
+
+        model_name = self._loaded_llamacpp_model or "llamacpp"
+        model_limit = detect_context_limit(model_name)
+
+        if self.ctx_size:
+            # Cap at 85% of server ctx so the next request can still fit its response
+            safe_ctx = int(self.ctx_size * 0.85)
+            return min(model_limit, safe_ctx)
+        return model_limit
+
     def _spawn(self, name: str, role: str) -> Agent:
         """Create a new agent."""
-        agent = Agent(name=name, role=role, model=self.model, backend=self.backend)
+        agent = Agent(
+            name=name,
+            role=role,
+            model=self.model,
+            backend=self.backend,
+            max_context_tokens=self._compute_compact_threshold(),
+        )
         self.agents[name] = agent
         return agent
 
@@ -284,11 +324,18 @@ class Harness:
                     print(f"  {DIM}Ollama at localhost:11434{RESET}")
             elif parts[1] in ("ollama", "llamacpp"):
                 self.backend = parts[1]
+                # Re-discover loaded GGUF for the new backend and recompute the
+                # compaction threshold from the per-model limits table.
+                if self.backend == "llamacpp":
+                    self._loaded_llamacpp_model = detect_llamacpp_model()
+                new_threshold = self._compute_compact_threshold()
                 for agent in self.agents.values():
                     agent.backend = self.backend
-                    if self.backend == "llamacpp":
-                        agent.max_context_tokens = 65536
+                    if new_threshold is not None:
+                        agent.max_context_tokens = new_threshold
                 print(f"  Backend set to {CYAN}{self.backend}{RESET} for all agents.")
+                if self.backend == "llamacpp" and new_threshold:
+                    print(f"  {DIM}Compaction threshold: {new_threshold:,} tokens{RESET}")
             else:
                 print(f"  {RED}Usage: /backend [ollama|llamacpp]{RESET}")
 
@@ -348,6 +395,70 @@ class Harness:
                 print(f"  {GREEN}Resumed {len(data['history'])} messages{RESET}")
             else:
                 print(f"  {DIM}No saved sessions found{RESET}")
+
+        elif command == "/swap":
+            # Hot-swap the llama.cpp server to a different GGUF.
+            # Accepts: full path, name stem, or substring that uniquely
+            # matches one file in ~/models/*.gguf.
+            from agents.model_swap import LlamaServerManager, ModelSwapError
+            mgr = LlamaServerManager()
+            if len(parts) < 2:
+                current = mgr.current_model()
+                if current:
+                    print(f"  Current: {CYAN}{current.name}{RESET}")
+                    print(f"  {DIM}{current}{RESET}")
+                else:
+                    print(f"  {DIM}No model loaded (is llama-server running?){RESET}")
+                # List available
+                models_dir = Path.home() / "models"
+                if models_dir.exists():
+                    ggufs = sorted(models_dir.glob("*.gguf"))
+                    if ggufs:
+                        print(f"\n  {BOLD}Available in ~/models/:{RESET}")
+                        for g in ggufs:
+                            marker = f" {GREEN}<- loaded{RESET}" if current and g.resolve() == current.resolve() else ""
+                            size_gb = g.stat().st_size / 1e9
+                            print(f"    {CYAN}{g.stem}{RESET} ({size_gb:.1f} GB){marker}")
+            else:
+                target_arg = parts[1]
+                target = Path(target_arg).expanduser()
+                if not target.exists():
+                    # Try substring match in ~/models/
+                    models_dir = Path.home() / "models"
+                    candidates = [
+                        g for g in models_dir.glob("*.gguf")
+                        if target_arg.lower() in g.stem.lower()
+                    ] if models_dir.exists() else []
+                    if len(candidates) == 1:
+                        target = candidates[0]
+                    elif len(candidates) > 1:
+                        print(f"  {RED}Ambiguous '{target_arg}':{RESET}")
+                        for c in candidates:
+                            print(f"    {DIM}{c.name}{RESET}")
+                        return True
+                    else:
+                        print(f"  {RED}Model not found: {target_arg}{RESET}")
+                        return True
+                print(f"  {MAGENTA}Swapping to {target.name}...{RESET}")
+                try:
+                    elapsed = mgr.swap(
+                        target,
+                        on_event=lambda k, p: print(f"  {DIM}{k}...{RESET}", flush=True),
+                    )
+                    if elapsed == 0:
+                        print(f"  {DIM}(already loaded){RESET}")
+                    else:
+                        print(f"  {GREEN}Ready in {elapsed:.1f}s{RESET}")
+                        # Recompute compaction threshold for the newly loaded model
+                        self._loaded_llamacpp_model = detect_llamacpp_model()
+                        new_threshold = self._compute_compact_threshold()
+                        if new_threshold is not None:
+                            for agent in self.agents.values():
+                                agent.max_context_tokens = new_threshold
+                            print(f"  {DIM}Compaction threshold: {new_threshold:,} tokens{RESET}")
+                        print(f"  {DIM}Consider /reset — agent history was built with the old model{RESET}")
+                except ModelSwapError as e:
+                    print(f"  {RED}Swap failed: {e}{RESET}")
 
         elif command == "/distill":
             subcmd = parts[1] if len(parts) > 1 else "status"
@@ -483,17 +594,32 @@ class Harness:
 def main():
     import argparse
 
+    # Load defaults from .clawrc/claw.json/CLAW_* env vars first.
+    # CLI flags below override these via argparse defaults.
+    config = load_config()
+
+    # Propagate auto_compact_tokens to env var so compact.py picks it up.
+    # compact.py reads CLAW_AUTO_COMPACT_TOKENS at detect_context_limit() time.
+    if config["auto_compact_tokens"] is not None:
+        os.environ["CLAW_AUTO_COMPACT_TOKENS"] = str(config["auto_compact_tokens"])
+
     parser = argparse.ArgumentParser(description="Claw Code Python Harness")
     parser.add_argument(
         "--model", "-m",
-        default=DEFAULT_MODEL,
-        help=f"Ollama model to use (default: {DEFAULT_MODEL})",
+        default=config["model"],
+        help=f"Model to use (default: {config['model']})",
     )
     parser.add_argument(
         "--backend", "-b",
-        default=None,
+        default=config["backend"],
         choices=["ollama", "llamacpp"],
         help="Backend to use (default: auto-detect, prefers llama.cpp)",
+    )
+    parser.add_argument(
+        "--ctx-size",
+        type=int,
+        default=config["ctx_size"],
+        help=f"Context size in tokens (default: {config['ctx_size']})",
     )
     parser.add_argument(
         "--cd", "-C",
@@ -508,21 +634,21 @@ def main():
     parser.add_argument(
         "--permission-mode",
         choices=["readonly", "workspace", "full"],
-        default="workspace",
-        help="Permission mode (default: workspace)",
+        default=config["permission_mode"],
+        help=f"Permission mode (default: {config['permission_mode']})",
     )
     parser.add_argument(
         "--effort", "-e",
         choices=["low", "medium", "max"],
-        default="medium",
-        help="Reasoning effort level (default: medium)",
+        default=config["effort"],
+        help=f"Reasoning effort level (default: {config['effort']})",
     )
     args = parser.parse_args()
 
     if args.cd:
         os.chdir(os.path.expanduser(args.cd))
 
-    harness = Harness(model=args.model, backend=args.backend)
+    harness = Harness(model=args.model, backend=args.backend, ctx_size=args.ctx_size)
 
     mode_map = {"readonly": PermissionMode.READ_ONLY, "workspace": PermissionMode.WORKSPACE_WRITE, "full": PermissionMode.FULL_ACCESS}
     harness.permission_mode = mode_map[args.permission_mode]

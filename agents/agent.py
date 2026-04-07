@@ -49,6 +49,24 @@ def detect_backend() -> str:
     return "ollama"
 
 
+def detect_llamacpp_model(port: int = 8080) -> str | None:
+    """Query llama-server /props for the currently loaded GGUF path.
+
+    Returns the ``model_path`` field if the server is reachable, else None.
+    Used by Agent and Harness to feed the real model name (rather than the
+    literal string "llamacpp") into ``detect_context_limit()`` so per-model
+    compaction thresholds from ``compact.MODEL_CONTEXT_LIMITS`` actually fire.
+    """
+    try:
+        req = urllib.request.Request(f"http://localhost:{port}/props")
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            data = json.loads(resp.read())
+            model_path = data.get("model_path")
+            return str(model_path) if model_path else None
+    except Exception:
+        return None
+
+
 def _find_halved_duplicate(text: str, min_half: int = 40) -> str | None:
     """Detect exact `A + A` duplication with any (or no) separator between copies.
 
@@ -171,9 +189,18 @@ class Agent:
         self.backend = backend or detect_backend()
         self.enable_thinking = enable_thinking
         self.effort = "medium"
-        self.max_context_tokens = max_context_tokens or detect_context_limit(
-            model if self.backend == "ollama" else "llamacpp"
-        )
+        if max_context_tokens is not None:
+            # Caller explicitly overrode the limit — honor it.
+            self.max_context_tokens = max_context_tokens
+        elif self.backend == "ollama":
+            self.max_context_tokens = detect_context_limit(model)
+        else:
+            # llama.cpp: query /props to get the real GGUF path. Passing the
+            # literal "llamacpp" here would prevent per-model lookups in
+            # MODEL_CONTEXT_LIMITS from firing, so every session would get
+            # the generic 65536 fallback regardless of which GGUF is loaded.
+            loaded = detect_llamacpp_model() or "llamacpp"
+            self.max_context_tokens = detect_context_limit(loaded)
         self._last_usage = {"input_tokens": 0, "output_tokens": 0}
 
     # ── Shared helpers ──────────────────────────────────────────────
