@@ -14,7 +14,12 @@ from pathlib import Path
 
 from agents.distill.config import DATA_DIR
 
-INPUT_FILE = DATA_DIR / "claude_reasoning.jsonl"
+# INPUT_FILE is the raw HF dataset source — we read it and never overwrite it.
+# Previously pointed at claude_reasoning.jsonl, which is the filter's own merged
+# output; re-running the filter on its own output means new rules never fire on
+# already-filtered data. Point at the raw prefilter snapshot instead.
+INPUT_FILE = DATA_DIR / "claude_reasoning_prefilter.jsonl"
+OUTPUT_FILE = DATA_DIR / "claude_reasoning.jsonl"
 FILTERED_FILE = DATA_DIR / "claude_reasoning_filtered.jsonl"
 HANDWRITTEN_FILE = DATA_DIR / "coding_reasoning_claude.jsonl"
 BACKUP_FILE = DATA_DIR / "claude_reasoning.jsonl.bak"
@@ -129,6 +134,60 @@ def has_adequate_think(messages: list[dict], min_length: int = 200) -> bool:
     return False
 
 
+# Think-block tells that indicate the assistant is rationalizing fabricated
+# content on top of a fragment/incomplete user prompt. Case-insensitive.
+# Strong tells fire regardless of user prompt length — they are specific enough
+# that no legitimate reasoning trace phrases itself this way.
+FRAGMENT_HALLUCINATION_STRONG_TELLS = [
+    "from the problem fragment:",
+]
+
+# Weak tells require length corroboration (short user prompt < 200 chars) to
+# avoid false positives on legitimate long-form reasoning.
+FRAGMENT_HALLUCINATION_WEAK_TELLS = [
+    "appears to be incomplete",
+    "based on the context",
+    "appears to be a problem about",
+    "this appears to involve",
+    "i'll assume",
+]
+
+
+def is_fragment_hallucination(messages: list[dict]) -> bool:
+    """Check if a user prompt is paired with a fabricated answer.
+
+    Dataset audit found examples where the user message is a stray fragment of
+    another problem and the assistant's think block rationalizes inventing a
+    solution. Strong tells (e.g. "from the problem fragment:") are highly
+    specific and fire regardless of user prompt length. Weak tells only fire
+    when the user prompt is short (< 200 chars) to avoid false positives on
+    legitimate long-form reasoning.
+    """
+    user_msg = ""
+    for msg in messages:
+        if msg.get("role") == "user":
+            user_msg = msg.get("content", "")
+            break
+    user_is_short = len(user_msg.strip()) < 200
+
+    for msg in messages:
+        if msg.get("role") != "assistant":
+            continue
+        content = msg.get("content", "")
+        think_match = re.search(r"<think>(.*?)</think>", content, re.DOTALL)
+        if not think_match:
+            continue
+        think_text = think_match.group(1).lower()
+        for tell in FRAGMENT_HALLUCINATION_STRONG_TELLS:
+            if tell in think_text:
+                return True
+        if user_is_short:
+            for tell in FRAGMENT_HALLUCINATION_WEAK_TELLS:
+                if tell in think_text:
+                    return True
+    return False
+
+
 def assistant_length(messages: list[dict]) -> int:
     """Get total length of assistant responses."""
     return sum(
@@ -204,7 +263,7 @@ def filter_dataset():
         print(f"  (skipped {handwritten_in_file} hand-written examples)")
 
     kept = []
-    rejected = {"short": 0, "hallucination": 0, "non_technical": 0, "short_think": 0}
+    rejected = {"short": 0, "hallucination": 0, "fragment_halluc": 0, "no_code": 0, "non_technical": 0, "short_think": 0}
 
     for ex in hf_examples:
         msgs = ex.get("messages", [])
@@ -217,6 +276,20 @@ def filter_dataset():
         # Reject hallucination-prone
         if has_hallucination_risk(msgs):
             rejected["hallucination"] += 1
+            continue
+
+        # Reject fragment prompts paired with fabricated answers
+        if is_fragment_hallucination(msgs):
+            rejected["fragment_halluc"] += 1
+            continue
+
+        # Reject HF examples without any code block — coding training data
+        # without code teaches the model to talk about code instead of writing
+        # it. Spot-checking the no-code subset showed 80%+ are non-coding
+        # content (sentiment analysis, movie titles, math problems, journalism)
+        # that slipped through is_coding_related's keyword matching.
+        if not any("```" in m.get("content", "") for m in msgs):
+            rejected["no_code"] += 1
             continue
 
         # Only keep coding-related examples
@@ -245,6 +318,8 @@ def filter_dataset():
     print(f"  Rejected:")
     print(f"    Short (<200):       {rejected['short']}")
     print(f"    Hallucination:      {rejected['hallucination']}")
+    print(f"    Fragment halluc:    {rejected['fragment_halluc']}")
+    print(f"    No code blocks:     {rejected['no_code']}")
     print(f"    Non-technical:      {rejected['non_technical']}")
     print(f"    Short think (<200): {rejected['short_think']}")
     print(f"    Duplicates:         {dup_count}")
@@ -257,10 +332,10 @@ def merge_datasets():
         print(f"Error: {FILTERED_FILE} not found. Run without --merge first.")
         return
 
-    # Backup original
-    if INPUT_FILE.exists():
-        shutil.copy2(INPUT_FILE, BACKUP_FILE)
-        print(f"Backed up original to {BACKUP_FILE}")
+    # Backup existing merged output before overwriting
+    if OUTPUT_FILE.exists():
+        shutil.copy2(OUTPUT_FILE, BACKUP_FILE)
+        print(f"Backed up existing output to {BACKUP_FILE}")
 
     # Read filtered
     filtered = []
@@ -283,7 +358,7 @@ def merge_datasets():
     # Validate and write
     all_lines = filtered + handwritten
     valid = 0
-    with open(INPUT_FILE, "w", encoding="utf-8") as f:
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         for line in all_lines:
             try:
                 data = json.loads(line)
@@ -294,7 +369,7 @@ def merge_datasets():
             except json.JSONDecodeError:
                 continue
 
-    print(f"\nMerged dataset: {valid} examples written to {INPUT_FILE}")
+    print(f"\nMerged dataset: {valid} examples written to {OUTPUT_FILE}")
     print(f"  From filtered:    {len(filtered)}")
     print(f"  From hand-written: {len(handwritten)}")
 
