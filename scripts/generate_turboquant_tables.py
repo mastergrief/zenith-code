@@ -39,9 +39,16 @@ import scripts.turboquant_patches  # noqa: F401  installs compat patches
 from turboquant_gpu import TurboQuantEngine
 
 
-HEAD_DIM = 256
 BITS = 3
-SEED = 42
+
+# (head_dim, seed, name_prefix). Different seeds per head_dim so the rotation
+# matrices are independent — reusing the same Pi at different sizes would weaken
+# the ensemble of rotations the model effectively gets across heterogeneous
+# attention layers.
+TABLES = [
+    (256, 42, "TQ3_K256"),
+    (512, 43, "TQ3_K512"),
+]
 
 LLAMA_CPP_ROOT = Path(os.environ.get("LLAMA_CPP_ROOT", str(Path.home() / "llama.cpp")))
 OUT_PATH = LLAMA_CPP_ROOT / "ggml" / "src" / "turboquant_tables.h"
@@ -61,23 +68,19 @@ def _emit_array(name: str, values, per_line: int = 8) -> str:
     return "\n".join(lines)
 
 
-def main() -> int:
-    print(f"generating turboquant tables → {OUT_PATH}")
-    print(f"  head_dim={HEAD_DIM}, bits={BITS}, seed={SEED}")
+def _emit_table_block(head_dim: int, seed: int, prefix: str) -> tuple[list[str], list, list]:
+    """Generate the header lines for one (head_dim, seed) table.
 
-    if not OUT_PATH.parent.exists():
-        print(f"ERROR: target directory does not exist: {OUT_PATH.parent}", file=sys.stderr)
-        print("Set LLAMA_CPP_ROOT or pass the path explicitly.", file=sys.stderr)
-        return 1
-
+    Returns (lines, centroids, boundaries) — centroids/boundaries are returned
+    so the caller can print them for visual inspection.
+    """
+    print(f"  building table {prefix}: head_dim={head_dim}, bits={BITS}, seed={seed}")
     engine = TurboQuantEngine(
-        head_dim=HEAD_DIM, total_bits=BITS, seed=SEED, device="cpu"
+        head_dim=head_dim, total_bits=BITS, seed=seed, device="cpu"
     )
 
-    # Pi is the (d × d) rotation matrix; PiT is its transpose. We dump Pi in
-    # row-major order. The C side stores it the same way.
     Pi = engine.Pi.contiguous().cpu().float().numpy()
-    assert Pi.shape == (HEAD_DIM, HEAD_DIM), f"unexpected Pi shape {Pi.shape}"
+    assert Pi.shape == (head_dim, head_dim), f"unexpected Pi shape {Pi.shape}"
 
     centroids = engine.codebook.centroids.cpu().float().numpy()
     boundaries = engine.codebook.boundaries.cpu().float().numpy()
@@ -85,45 +88,70 @@ def main() -> int:
     assert boundaries.shape == ((1 << BITS) - 1,)
 
     n_levels = 1 << BITS
-
     pi_flat = Pi.reshape(-1).tolist()
 
-    header = []
+    lines: list[str] = []
+    lines.append(f"// ── {prefix} (head_dim={head_dim}, bits={BITS}, seed={seed}) ──")
+    lines.append("")
+    lines.append(f"#define {prefix}_HEAD_DIM   {head_dim}")
+    lines.append(f"#define {prefix}_BITS       {BITS}")
+    lines.append(f"#define {prefix}_N_LEVELS   {n_levels}")
+    lines.append(f"#define {prefix}_SEED       {seed}")
+    lines.append("")
+    lines.append("// row-major (head_dim × head_dim) rotation matrix Pi, fp32")
+    lines.append(_emit_array(f"{prefix}_PI", pi_flat))
+    lines.append("")
+    lines.append(f"// Reference Lloyd-Max codebook (n_levels = {n_levels})")
+    lines.append(_emit_array(f"{prefix}_REFERENCE_CENTROIDS", centroids.tolist()))
+    lines.append("")
+    lines.append(_emit_array(f"{prefix}_REFERENCE_BOUNDARIES", boundaries.tolist()))
+    lines.append("")
+
+    return lines, centroids.tolist(), boundaries.tolist()
+
+
+def main() -> int:
+    print(f"generating turboquant tables → {OUT_PATH}")
+    for head_dim, seed, prefix in TABLES:
+        print(f"  - {prefix}: head_dim={head_dim}, seed={seed}")
+
+    if not OUT_PATH.parent.exists():
+        print(f"ERROR: target directory does not exist: {OUT_PATH.parent}", file=sys.stderr)
+        print("Set LLAMA_CPP_ROOT or pass the path explicitly.", file=sys.stderr)
+        return 1
+
+    header: list[str] = []
     header.append("// AUTO-GENERATED — do not edit by hand.")
     header.append("// Source: scripts/generate_turboquant_tables.py in the zenith-code repo.")
-    header.append(f"// Generated for head_dim={HEAD_DIM}, bits={BITS}, seed={SEED}.")
     header.append("//")
-    header.append("// Pi is the row-major (head_dim × head_dim) random orthogonal rotation")
-    header.append("// matrix used by TurboQuant. The matching transpose PiT is recovered at")
-    header.append("// runtime by indexing the columns of Pi.")
+    header.append("// One block per (head_dim, seed) pair. Each block defines the rotation")
+    header.append("// matrix Pi (row-major, head_dim × head_dim) plus the Python-computed")
+    header.append("// Lloyd-Max codebook for N(0, 1/d) as a reference for the C runtime tests.")
     header.append("//")
-    header.append("// REFERENCE_centroids and REFERENCE_boundaries are the Python-computed")
-    header.append("// Lloyd-Max codebook for N(0, 1/d). The C runtime computes its OWN")
-    header.append("// codebook from scratch using a closed-form Gaussian E[x|a<x<b] (no RNG,")
-    header.append("// no scipy needed). These reference values are exposed here so the C unit")
-    header.append("// test can compare the runtime-computed codebook against the PyTorch one.")
+    header.append("// The C runtime computes its OWN codebook from scratch using a closed-form")
+    header.append("// Gaussian E[x|a<x<b] (no RNG, no scipy needed). The REFERENCE arrays here")
+    header.append("// exist purely so the C unit test can compare the runtime-computed codebook")
+    header.append("// against the PyTorch one for byte-exact validation.")
+    header.append("//")
+    header.append("// Different head_dims use different seeds so the rotation matrices are")
+    header.append("// independent across the heterogeneous-attention layer types in models")
+    header.append("// like Gemma 4 26B-A4B (head_dim=256 SWA layers + head_dim=512 FA layers).")
     header.append("")
     header.append("#pragma once")
     header.append("")
-    header.append(f"#define TQ3_K256_HEAD_DIM   {HEAD_DIM}")
-    header.append(f"#define TQ3_K256_BITS       {BITS}")
-    header.append(f"#define TQ3_K256_N_LEVELS   {n_levels}")
-    header.append(f"#define TQ3_K256_SEED       {SEED}")
-    header.append("")
-    header.append("// row-major (head_dim × head_dim) rotation matrix Pi, fp32")
-    header.append(_emit_array("TQ3_K256_PI", pi_flat))
-    header.append("")
-    header.append(f"// Reference Lloyd-Max codebook (n_levels = {n_levels})")
-    header.append(_emit_array("TQ3_K256_REFERENCE_CENTROIDS", centroids.tolist()))
-    header.append("")
-    header.append(_emit_array("TQ3_K256_REFERENCE_BOUNDARIES", boundaries.tolist()))
-    header.append("")
+
+    summaries: list[tuple[str, list, list]] = []
+    for head_dim, seed, prefix in TABLES:
+        lines, centroids, boundaries = _emit_table_block(head_dim, seed, prefix)
+        header.extend(lines)
+        summaries.append((prefix, centroids, boundaries))
 
     OUT_PATH.write_text("\n".join(header))
     size_kb = OUT_PATH.stat().st_size / 1024.0
     print(f"  wrote {OUT_PATH} ({size_kb:.1f} KB)")
-    print(f"  centroids: {centroids.tolist()}")
-    print(f"  boundaries: {boundaries.tolist()}")
+    for prefix, centroids, boundaries in summaries:
+        print(f"  {prefix} centroids:  {centroids}")
+        print(f"  {prefix} boundaries: {boundaries}")
 
     return 0
 
