@@ -29,11 +29,14 @@ COMPACT_DIRECT_RESUME_INSTRUCTION = (
 MODEL_CONTEXT_LIMITS = {
     # llama.cpp defaults + validated per-model overrides
     "llamacpp": 65536,            # generic fallback for unknown llama.cpp models
-    "gemma-4-e4b": 200000,        # NIAH-validated clean through 180K (multi+distractor 7/7);
-                                  #   220K drops 1 needle on multi (4/5). 200K sits
-                                  #   10% below the failure point — chosen over 180K
-                                  #   to use more of the model's available range
-    "gemma-4-E4B": 200000,        # case-insensitive match for typical filename
+    "gemma-4-e4b": 232960,        # 227.5K — explicit user override (2026-04-08).
+                                  #   NIAH-validated clean through 180K (multi+distractor 7/7);
+                                  #   220K drops 1 needle on multi (4/5). 227.5K is BEYOND
+                                  #   the validated safe range — accepts mild multi-needle
+                                  #   degradation in exchange for using ~89% of the 256K
+                                  #   server context. Pair with `Harness._compute_compact_threshold`
+                                  #   multiplier 0.89 so safe_ctx doesn't cap this value at 256K.
+    "gemma-4-E4B": 232960,        # case-insensitive match for typical filename
     "qwen3.5-4b": 130000,         # NIAH-validated clean through 130K (multi+distractor);
                                   #   180K drops to 4/5 multi, and Qwen has a 64K/100K
                                   #   distractor dip where it picked a wrong decoy

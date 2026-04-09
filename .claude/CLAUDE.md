@@ -61,7 +61,7 @@ Two systems coexist:
 1. **Python agent harness** (`agents/`) — terminal coding assistant with dual backend (Ollama + llama.cpp), 3-level permissions, thinking mode, sessions, compaction, effort control, and llama.cpp hot-swap
 2. **Rust claw-code port** (`rust/`) — upstream claw-code, 9 crates, separate build system
 
-Serving: either Qwen 3.5 4B or Gemma 4 E4B via llama.cpp at **256K context** (`ZENITH_CTX=262144` default) with Q4 KV cache (~6.7–7.3 GB VRAM). Harness auto-computes compaction threshold as `min(per-GGUF NIAH-validated limit, int(ctx_size * 0.85))`. Hot-swap between bases is implemented via `agents/model_swap.py`.
+Serving: either Qwen 3.5 4B or Gemma 4 E4B via llama.cpp at **256K context** (`ZENITH_CTX=262144` default) with Q4 KV cache (~6.7–7.3 GB VRAM). Harness auto-computes compaction threshold as `min(per-GGUF limit, int(ctx_size * 0.89))` — Gemma compacts at **227.5K tokens** (232960). Max effort budget is **32K tokens** (`EFFORT_LEVELS["max"]["max_tokens"]=32768`); headroom at default ctx is 29184, so max-effort responses near the threshold can soft-truncate by ~3.5K until the next compaction fires. Hot-swap between bases is implemented via `agents/model_swap.py`.
 
 ## Python Agent Harness (`agents/`, ~2,870 lines across 14 files)
 

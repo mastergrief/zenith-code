@@ -93,12 +93,21 @@ class Harness:
 
         Returns the smaller of:
           - the per-model validated limit from ``agents.compact.MODEL_CONTEXT_LIMITS``
-            (e.g. 200K for Gemma 4 E4B, 130K for Qwen 3.5 4B)
-          - 85% of the server-allocated ctx_size (so there's headroom for the
+            (e.g. 232960 = 227.5K for Gemma 4 E4B, 130K for Qwen 3.5 4B)
+          - 89% of the server-allocated ctx_size (so there's headroom for the
             active turn's response before the hard cap is hit)
 
         Returns ``None`` to let Agent auto-detect if we can't determine either:
         no ctx_size set AND no llama.cpp model discoverable.
+
+        The 0.89 multiplier was raised from 0.85 (2026-04-08) to allow
+        Gemma's 232960-token entry to clear the safe_ctx floor at the default
+        256K ctx_size. Headroom at default ctx is 262144 - 232960 = 29184,
+        which is BELOW EFFORT_LEVELS["max"]["max_tokens"] (32768) — max-effort
+        responses can soft-truncate by up to ~3.5K when the conversation sits
+        right at the threshold. After compaction fires, full 32K is available.
+        Smaller ctx_size still binds via safe_ctx (e.g. ZENITH_CTX=131072 →
+        safe_ctx 116654 → binds below the model limit).
         """
         if self.backend != "llamacpp":
             # Ollama path — let Agent's own detect_context_limit handle it
@@ -108,8 +117,8 @@ class Harness:
         model_limit = detect_context_limit(model_name)
 
         if self.ctx_size:
-            # Cap at 85% of server ctx so the next request can still fit its response
-            safe_ctx = int(self.ctx_size * 0.85)
+            # Cap at 89% of server ctx so the next request can still fit its response
+            safe_ctx = int(self.ctx_size * 0.89)
             return min(model_limit, safe_ctx)
         return model_limit
 
@@ -155,6 +164,40 @@ class Harness:
         except (KeyboardInterrupt, EOFError):
             return False
         return answer in ("y", "yes")
+
+    def _ask_user(self, question: str, options: list[str] | None) -> str:
+        """Prompt the user with a freeform or multiple-choice question.
+
+        Wired onto Agent instances in `_chat()` so the AskUserQuestion tool
+        in `agents.tools._run_ask_user_question` can call back into the
+        harness UI. Returns the user's answer as a string. On EOF/Ctrl-C
+        returns a sentinel string so the model gets a clear "no answer"
+        signal instead of crashing the tool loop.
+        """
+        # Close any open ANSI block before prompting
+        if self._streaming_text:
+            print(f"{RESET}")
+            self._streaming_text = False
+        if self._streaming_thinking:
+            self._streaming_thinking = False
+
+        print(f"\n  {YELLOW}{BOLD}[ask]{RESET} {question}")
+        if options:
+            for i, opt in enumerate(options, 1):
+                print(f"    {DIM}{i}.{RESET} {opt}")
+            try:
+                raw = input(f"    Choice [1-{len(options)} or freeform]: ").strip()
+            except (KeyboardInterrupt, EOFError):
+                return "(no answer — input closed)"
+            if raw.isdigit():
+                idx = int(raw)
+                if 1 <= idx <= len(options):
+                    return options[idx - 1]
+            return raw
+        try:
+            return input(f"    Answer: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            return "(no answer — input closed)"
 
     def _on_event(self, event_type: str, data: dict):
         """Handle agent events for display."""
@@ -517,6 +560,7 @@ class Harness:
         else:
             agent = self.agents[self.active_agent]
             agent.confirm_fn = self._confirm
+            agent.ask_user_fn = self._ask_user
             agent.permission_mode = self.permission_mode
             return agent.chat(message, on_event=self._on_event)
 

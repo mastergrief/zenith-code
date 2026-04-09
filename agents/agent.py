@@ -23,7 +23,7 @@ EFFORT_LEVELS = {
         "prompt_prefix": "",
     },
     "max": {
-        "max_tokens": 24576,
+        "max_tokens": 32768,
         "prompt_prefix": "Think deeply and carefully. Explore multiple approaches, consider edge cases, verify your reasoning step by step before answering.",
     },
 }
@@ -174,7 +174,7 @@ class Agent:
         model: str = DEFAULT_MODEL,
         system_prompt: str | None = None,
         tools: bool = True,
-        max_tool_rounds: int = 10,
+        max_tool_rounds: int = 32,
         max_context_tokens: int | None = None,
         backend: str | None = None,
         enable_thinking: bool = True,
@@ -189,6 +189,15 @@ class Agent:
         self.backend = backend or detect_backend()
         self.enable_thinking = enable_thinking
         self.effort = "medium"
+        # When set to a set of tool names (e.g. by the Agent tool's spawn helper
+        # in agents.tools._execute_agent_tool), restricts both the tool list sent
+        # to the model AND the system-prompt "Available tools" line. None = all
+        # tools (the default for top-level / user-facing agents).
+        self.allowed_tool_names: set[str] | None = None
+        # In-memory task list for the TodoWrite tool. Replaced wholesale on each
+        # TodoWrite call. NOT persisted to session JSON in this slice — adding
+        # session.py persistence is a tiny follow-up.
+        self.todos: list[dict] = []
         if max_context_tokens is not None:
             # Caller explicitly overrode the limit — honor it.
             self.max_context_tokens = max_context_tokens
@@ -233,11 +242,21 @@ class Agent:
             parts.append(f"\nProject context (from CLAUDE.md):\n{claude_md[:1000]}")
 
         if self.tools:
-            tool_names = [t["function"]["name"] for t in TOOL_DEFINITIONS]
+            tool_names = [t["function"]["name"] for t in self._filtered_tool_definitions()]
             parts.append(f"\nAvailable tools: {', '.join(tool_names)}")
 
         prompt = "\n".join(parts)
         return prompt[:2000]
+
+    def _filtered_tool_definitions(self) -> list[dict]:
+        """Return TOOL_DEFINITIONS filtered by self.allowed_tool_names.
+
+        None (the default) returns the full list. Sub-agents spawned via the
+        Agent tool set this to a per-subagent_type allowlist.
+        """
+        if self.allowed_tool_names is None:
+            return TOOL_DEFINITIONS
+        return [t for t in TOOL_DEFINITIONS if t["function"]["name"] in self.allowed_tool_names]
 
     def _estimate_tokens(self, messages):
         """Estimate token count from messages (chars / 4)."""
@@ -254,7 +273,7 @@ class Agent:
             "stream": False,
         }
         if self.tools:
-            payload["tools"] = TOOL_DEFINITIONS
+            payload["tools"] = self._filtered_tool_definitions()
 
         with self._request_with_retry(OLLAMA_URL, payload) as resp:
             return json.loads(resp.read())
@@ -267,7 +286,7 @@ class Agent:
             "stream": True,
         }
         if self.tools:
-            payload["tools"] = TOOL_DEFINITIONS
+            payload["tools"] = self._filtered_tool_definitions()
 
         final_message = None
         with self._request_with_retry(OLLAMA_URL, payload) as resp:
@@ -303,7 +322,7 @@ class Agent:
         if self.enable_thinking:
             payload["enable_thinking"] = True
         if self.tools:
-            payload["tools"] = TOOL_DEFINITIONS
+            payload["tools"] = self._filtered_tool_definitions()
 
         with self._request_with_retry(LLAMACPP_URL, payload) as resp:
             result = json.loads(resp.read())
@@ -316,9 +335,23 @@ class Agent:
         msg: dict[str, Any] = {"role": "assistant", "content": content}
         if reasoning:
             msg["reasoning_content"] = reasoning
-        # Pass through tool_calls if present
+        # Pass through tool_calls if present. The OpenAI-compatible API returns
+        # `arguments` as a JSON string — parse it to a dict so the downstream
+        # tool dispatcher (which does args["pattern"], args["path"], etc.) works.
+        # The streaming variant `_call_llamacpp_stream` already does this at the
+        # end of its assembly loop; mirror it here so non-streaming callers
+        # (e.g. sub-agents in `tools._execute_agent_tool`) get the same shape.
         if choice.get("tool_calls"):
-            msg["tool_calls"] = choice["tool_calls"]
+            tool_calls = choice["tool_calls"]
+            for tc in tool_calls:
+                fn = tc.get("function", {})
+                args_raw = fn.get("arguments")
+                if isinstance(args_raw, str):
+                    try:
+                        fn["arguments"] = json.loads(args_raw) if args_raw else {}
+                    except json.JSONDecodeError:
+                        fn["arguments"] = {}
+            msg["tool_calls"] = tool_calls
         return {"message": msg}
 
     def _call_llamacpp_stream(self, messages: list[dict], on_event=None) -> dict:
@@ -335,7 +368,7 @@ class Agent:
         if self.enable_thinking:
             payload["enable_thinking"] = True
         if self.tools:
-            payload["tools"] = TOOL_DEFINITIONS
+            payload["tools"] = self._filtered_tool_definitions()
 
         full_content = ""
         full_reasoning = ""
@@ -478,7 +511,17 @@ class Agent:
 
                     confirm_fn = getattr(self, 'confirm_fn', None)
                     perm_mode = getattr(self, 'permission_mode', None)
-                    tool_output = execute_tool(tool_name, tool_args, confirm_fn=confirm_fn, mode=perm_mode)
+                    ask_user_fn = getattr(self, 'ask_user_fn', None)
+                    tool_output = execute_tool(
+                        tool_name,
+                        tool_args,
+                        confirm_fn=confirm_fn,
+                        mode=perm_mode,
+                        parent_model=self.model,
+                        parent_backend=self.backend,
+                        ask_user_fn=ask_user_fn,
+                        agent=self,
+                    )
 
                     if on_event:
                         on_event("tool_result", {"name": tool_name, "output": tool_output})
