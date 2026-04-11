@@ -253,7 +253,7 @@ def run_grid_single(corpus: str, sizes: list[int], depths: list[int]) -> dict:
 
             print(f"  [{size:>6} tok, depth {depth:>2}%] expected={expected}", flush=True)
             try:
-                content, reasoning, elapsed = query_model(prompt, max_tokens=200, timeout=900)
+                content, reasoning, elapsed = query_model(prompt, max_tokens=200, timeout=2400)
             except Exception as e:
                 print(f"      ERROR: {e}")
                 results[(size, depth)] = {"pass": False, "elapsed": 0, "response": str(e), "expected": expected}
