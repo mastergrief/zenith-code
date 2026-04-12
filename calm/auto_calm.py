@@ -83,15 +83,19 @@ class AutoCalmEngine:
 
         system = self.system_prompt
         if precomputed:
-            # Cap value display to avoid huge integers crashing str conversion.
             def _safe_str(v):
                 try:
                     s = str(v)
                     return s if len(s) < 200 else s[:200] + "..."
                 except (ValueError, OverflowError):
                     return "<<too large>>"
-            facts = "; ".join(f"{k} = {_safe_str(v)}" for k, v in precomputed.items())
-            system += f"\n\nVerified facts: {facts}"
+            # Only inject the most relevant facts (cap at 5) to avoid
+            # overloading context and triggering tool-call mode.
+            relevant = dict(list(precomputed.items())[:5])
+            facts = "; ".join(f"{k} = {_safe_str(v)}" for k, v in relevant.items())
+            system += (
+                f"\n\nVerified facts (use these directly in your answer): {facts}"
+            )
             if verbose:
                 print(f"[precompute] {facts}")
 

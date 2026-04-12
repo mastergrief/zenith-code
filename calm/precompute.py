@@ -107,11 +107,10 @@ def build_system_prompt() -> str:
         lines.append(f"  {cat} ({len(funcs)}): {', '.join(shown)}{suffix}")
 
     return (
-        "You are a helpful assistant with verified compute backends.\n"
-        "Every computation you state will be checked by a CPU engine.\n"
-        "Write naturally — use function names when precise answers matter.\n"
-        "The engine verifies your claims and corrects any errors.\n\n"
-        "Available verified functions:\n" + "\n".join(lines)
+        "You are a helpful assistant. Answer questions in natural language.\n"
+        "State computed results directly in your text. Do NOT use tool calls.\n"
+        "A compute engine verifies your claims and corrects any errors.\n\n"
+        "You have access to verified functions in these domains:\n" + "\n".join(lines)
     )
 
 
