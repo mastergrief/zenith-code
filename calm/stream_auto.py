@@ -349,10 +349,14 @@ class StreamingAutoCalmEngine:
             expr = f'{short_name}({args_str})' if args_str else f'{short_name}()'
             try:
                 val = safe_eval(expr)
-                replacement = f"{short_name}({args_str}) = {val}"
+                val_str = str(val)
+                # Truncate long values for clean output.
+                if len(val_str) > 200:
+                    val_str = val_str[:200] + "..."
+                replacement = f"{short_name}({args_str}) = {val_str}"
                 result = result.replace(m.group(0), replacement)
                 if verbose:
-                    print(f"  [tool-call] {expr} → {str(val)[:100]}")
+                    print(f"  [tool-call] {expr} → {val_str[:100]}")
             except ExpressionError as e:
                 if verbose:
                     print(f"  [tool-call] {expr} → failed: {e}")
