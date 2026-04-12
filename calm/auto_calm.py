@@ -447,9 +447,72 @@ class AutoCalm:
 # Auto-CALM Engine — transparent verification without <calm> blocks
 # ---------------------------------------------------------------------------
 
-AUTO_SYSTEM_PROMPT = """\
-You are a helpful assistant. Answer questions clearly and accurately.
-Show your work when doing calculations. Be precise with numbers."""
+def _build_system_prompt() -> str:
+    """Build a system prompt that tells the model what backends are available.
+    The model writes naturally but knows its computations will be verified."""
+    from calm.expression import _FUNCTIONS
+
+    # Group functions by category for readability.
+    categories = {}
+    for name in sorted(_FUNCTIONS.keys()):
+        if '.' in name:
+            cat = name.split('.')[0]
+        elif name in ('sqrt', 'pow', 'abs', 'floor', 'ceil', 'log', 'log2',
+                       'log10', 'pi', 'e', 'min', 'max', 'round', 'factorial',
+                       'gcd', 'lcm', 'is_prime', 'next_prime', 'prev_prime',
+                       'nth_prime', 'factorize', 'divisors', 'count_divisors',
+                       'is_perfect', 'digit_sum', 'digital_root', 'fibonacci',
+                       'collatz', 'collatz_length', 'solve_quadratic',
+                       'sum_range', 'product_range'):
+            cat = 'math'
+        elif name in ('days_between', 'day_of_week', 'is_leap_year',
+                       'days_in_month', 'add_days', 'date_diff'):
+            cat = 'dates'
+        elif name in ('convert', 'celsius_to_fahrenheit', 'fahrenheit_to_celsius',
+                       'celsius_to_kelvin', 'kelvin_to_celsius'):
+            cat = 'units'
+        elif name in ('mean', 'median', 'mode', 'variance', 'stdev',
+                       'percentile', 'correlation', 'linear_regression',
+                       'normalize', 'zscore', 'histogram'):
+            cat = 'stats'
+        elif name in ('sort_list', 'unique', 'binary_search', 'nCr', 'nPr',
+                       'list_combinations', 'list_permutations', 'shortest_path',
+                       'is_connected', 'topological_sort', 'cumsum',
+                       'running_max', 'longest_increasing_subsequence'):
+            cat = 'algorithms'
+        elif name in ('cyclomatic_complexity', 'max_nesting_depth',
+                       'function_length', 'naming_check', 'dead_code',
+                       'code_quality', 'code_quality_file'):
+            cat = 'quality'
+        elif name in ('flesch_kincaid', 'jargon_density', 'vocabulary_complexity',
+                       'text_structure', 'readability_report'):
+            cat = 'readability'
+        elif name in ('len', 'sorted', 'reversed', 'sum', 'any', 'all',
+                       'zip', 'range', 'map_expr', 'filter_expr',
+                       'find_int', 'count_if'):
+            cat = 'data'
+        else:
+            cat = 'other'
+        categories.setdefault(cat, []).append(name)
+
+    # Build compact listing.
+    lines = []
+    for cat in sorted(categories.keys()):
+        if cat in ('other', 'data'):
+            continue  # Skip builtins, too noisy.
+        funcs = categories[cat]
+        lines.append(f"  {cat}: {', '.join(funcs)}")
+
+    return (
+        "You are a helpful assistant with verified compute backends.\n"
+        "Every computation you state will be checked by a CPU engine.\n"
+        "Write naturally — use function names when precise answers matter.\n"
+        "The engine verifies your claims and corrects any errors.\n\n"
+        "Available verified functions:\n" + "\n".join(lines)
+    )
+
+
+AUTO_SYSTEM_PROMPT = _build_system_prompt()
 
 
 @dataclass
@@ -488,6 +551,9 @@ class AutoCalmEngine:
         self.thinking_budget = thinking_budget
         self.precompute = precompute
         self.verifier = AutoCalm()
+        # Self-learning: track corrections, expand precompute patterns.
+        from calm.auto_learn import AutoLearner
+        self.learner = AutoLearner()
 
     def run(self, prompt: str, verbose: bool = False) -> AutoCalmResult:
         """Run a prompt, verify claims, retry if wrong (max 1 retry)."""
@@ -498,6 +564,12 @@ class AutoCalmEngine:
 
         # Layer 2: pre-compute expressions from the prompt.
         precomputed = self._precompute(prompt) if self.precompute else {}
+        # Self-learning: add precomputes from learned error patterns.
+        learned = self.learner.suggest_precomputes(prompt)
+        if learned:
+            precomputed.update(learned)
+            if verbose:
+                print(f"[learned] +{len(learned)} from error patterns")
         system = self.system_prompt
         if precomputed:
             facts = "; ".join(f"{k} = {v}" for k, v in precomputed.items())
@@ -586,13 +658,18 @@ class AutoCalmEngine:
             for c in result.corrections:
                 print(f"  FIX: {c.expression} = {c.claimed_value} → {c.actual_value}")
 
-        # Collect training data from corrections.
+        # Collect training data + learn from corrections.
         if result.claims_corrected > 0:
             from calm.auto_training import AutoTrainingCollector
             tc = AutoTrainingCollector()
             n = tc.collect_from_verify(prompt, report.claims)
             if verbose and n:
                 print(f"[training] +{n} examples generated")
+            # Self-learning: record error patterns for future precompute.
+            for c in report.claims:
+                self.learner.learn_from_correction(c)
+            if verbose:
+                print(f"[learned] patterns: {self.learner.stats()['total']}")
 
         return result
 
@@ -748,6 +825,55 @@ class AutoCalmEngine:
                         results[expr] = val
                     except ExpressionError:
                         pass
+
+        # Pronoun resolution: "Is it prime?" / "How many divisors does it have?"
+        # Link "it" / "the result" back to previously precomputed values.
+        if results:
+            primary_value = list(results.values())[0]
+            if isinstance(primary_value, (int, float)):
+                pv = int(primary_value) if isinstance(primary_value, float) and primary_value == int(primary_value) else primary_value
+                # "Is it prime?" / "Is the result prime?"
+                if re.search(r'[Ii]s\s+(?:it|the\s+result|this)\s+(?:a\s+)?prime', prompt):
+                    expr = f"is_prime({pv})"
+                    if expr not in results:
+                        try:
+                            results[expr] = safe_eval(expr)
+                        except ExpressionError:
+                            pass
+                # "How many divisors" / "number of divisors"
+                if re.search(r'(?:how many|number of)\s+divisors', prompt, re.IGNORECASE):
+                    expr = f"count_divisors({pv})"
+                    if expr not in results:
+                        try:
+                            results[expr] = safe_eval(expr)
+                        except ExpressionError:
+                            pass
+                # "Is it divisible by X?"
+                m = re.search(r'[Ii]s\s+(?:it|the\s+result)\s+divisible\s+by\s+(\d+)', prompt)
+                if m:
+                    d = m.group(1)
+                    expr = f"{pv} % {d} == 0"
+                    if expr not in results:
+                        try:
+                            results[expr] = safe_eval(expr)
+                        except ExpressionError:
+                            pass
+                # "What is its digit sum?" / "digit sum of the result"
+                if re.search(r'digit\s+sum', prompt, re.IGNORECASE):
+                    expr = f"digit_sum({pv})"
+                    if expr not in results:
+                        try:
+                            results[expr] = safe_eval(expr)
+                        except ExpressionError:
+                            pass
+                # "What are its factors?"
+                if re.search(r'(?:factor|factori[sz]e)', prompt, re.IGNORECASE) and 'factorize' not in str(results):
+                    expr = f"factorize({pv})"
+                    if expr not in results:
+                        try:
+                            results[expr] = safe_eval(expr)
+                        except ExpressionError:
+                            pass
 
         # Boolean precomputes: "Is X prime?", "Is X perfect?", "Is X divisible by Y?"
         bool_pats = [
