@@ -514,6 +514,12 @@ try:
 except ImportError:
     pass
 
+try:
+    from calm.backends.creative_ops import CREATIVE_FUNCTIONS
+    _FUNCTIONS.update(CREATIVE_FUNCTIONS)
+except ImportError:
+    pass
+
 
 class ExpressionError(Exception):
     """Raised when an expression can't be safely evaluated."""
