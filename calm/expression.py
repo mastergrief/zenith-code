@@ -539,6 +539,42 @@ except ImportError:
     pass
 
 try:
+    from calm.backends.perf_ops import PERF_FUNCTIONS
+    _FUNCTIONS.update(PERF_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.deps_ops import DEPS_FUNCTIONS
+    _FUNCTIONS.update(DEPS_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.refactor_ops import REFACTOR_FUNCTIONS
+    _FUNCTIONS.update(REFACTOR_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.type_ops import TYPE_FUNCTIONS
+    _FUNCTIONS.update(TYPE_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.test_ops import TEST_FUNCTIONS
+    _FUNCTIONS.update(TEST_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.doc_ops import DOC_FUNCTIONS
+    _FUNCTIONS.update(DOC_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
     from calm.backends.context_ops import CONTEXT_FUNCTIONS
     _FUNCTIONS.update(CONTEXT_FUNCTIONS)
 except ImportError:
