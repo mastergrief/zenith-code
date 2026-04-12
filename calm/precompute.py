@@ -48,6 +48,20 @@ def build_system_prompt() -> str:
         ("calm.backends.encoding_ops", "encoding"),
         ("calm.backends.git_ops", "git"),
         ("calm.backends.network_ops", "network"),
+        ("calm.backends.creative_ops", "creative"),
+        ("calm.backends.impact_ops", "impact"),
+        ("calm.backends.context_ops", "context"),
+        ("calm.backends.python_ops", "python"),
+        ("calm.backends.math_extended_ops", "math_ext"),
+        ("calm.backends.perf_ops", "performance"),
+        ("calm.backends.deps_ops", "dependencies"),
+        ("calm.backends.refactor_ops", "refactoring"),
+        ("calm.backends.type_ops", "typing"),
+        ("calm.backends.test_ops", "testing"),
+        ("calm.backends.doc_ops", "documentation"),
+        ("calm.backends.shell_ops", "shell"),
+        ("calm.backends.semver_ops", "semver"),
+        ("calm.backends.config_ops", "config"),
     ]
     for mod_name, cat in _backend_modules:
         try:
@@ -78,13 +92,19 @@ def build_system_prompt() -> str:
             cat = 'math'  # default for expression.py builtins
         categories.setdefault(cat, []).append(name)
 
-    # Skip noisy categories.
+    # Compact listing: category + count, not every function name.
+    # Full function names are too noisy for 4B models (~968 tokens).
+    # The precompute auto-discovery handles function resolution anyway.
     skip = {'wasm'}
-    lines = [
-        f"  {cat}: {', '.join(funcs)}"
-        for cat, funcs in sorted(categories.items())
-        if cat not in skip
-    ]
+    lines = []
+    for cat, funcs in sorted(categories.items()):
+        if cat in skip:
+            continue
+        # Show top 5 functions + count.
+        shown = funcs[:5]
+        remaining = len(funcs) - len(shown)
+        suffix = f" +{remaining} more" if remaining > 0 else ""
+        lines.append(f"  {cat} ({len(funcs)}): {', '.join(shown)}{suffix}")
 
     return (
         "You are a helpful assistant with verified compute backends.\n"

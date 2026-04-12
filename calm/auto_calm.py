@@ -83,7 +83,14 @@ class AutoCalmEngine:
 
         system = self.system_prompt
         if precomputed:
-            facts = "; ".join(f"{k} = {v}" for k, v in precomputed.items())
+            # Cap value display to avoid huge integers crashing str conversion.
+            def _safe_str(v):
+                try:
+                    s = str(v)
+                    return s if len(s) < 200 else s[:200] + "..."
+                except (ValueError, OverflowError):
+                    return "<<too large>>"
+            facts = "; ".join(f"{k} = {_safe_str(v)}" for k, v in precomputed.items())
             system += f"\n\nVerified facts: {facts}"
             if verbose:
                 print(f"[precompute] {facts}")
