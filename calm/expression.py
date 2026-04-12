@@ -472,6 +472,18 @@ try:
 except ImportError:
     pass
 
+try:
+    from calm.backends.quality_ops import QUALITY_FUNCTIONS
+    _FUNCTIONS.update(QUALITY_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.readability_ops import READABILITY_FUNCTIONS
+    _FUNCTIONS.update(READABILITY_FUNCTIONS)
+except ImportError:
+    pass
+
 
 class ExpressionError(Exception):
     """Raised when an expression can't be safely evaluated."""
