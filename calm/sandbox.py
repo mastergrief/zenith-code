@@ -111,6 +111,26 @@ _PRELUDE = textwrap.dedent("""\
 
     def sum_range(a, b): return (b - a + 1) * (a + b) // 2
 
+    # File operations
+    def code_write(path, content):
+        with open(path, 'w') as f:
+            f.write(content)
+        return f"wrote {len(content)} chars to {path}"
+
+    def code_read(path):
+        return open(path).read()
+
+    def code_edit(path, line_num, new_content):
+        lines = open(path).readlines()
+        idx = int(line_num) - 1
+        if 0 <= idx < len(lines):
+            old = lines[idx].rstrip()
+            lines[idx] = new_content + '\\n'
+            with open(path, 'w') as f:
+                f.writelines(lines)
+            return f"line {line_num}: '{old}' -> '{new_content}'"
+        return f"Error: line {line_num} out of range"
+
     # Math aliases
     sqrt = _math.sqrt
     log = _math.log
