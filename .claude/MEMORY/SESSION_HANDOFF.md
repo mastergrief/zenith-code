@@ -13,12 +13,15 @@ nervous system"** — the LLM sequences, CPU computes, TMR verifies,
 injection feeds back. A 4B model augmented with verified compute
 modules that give it frontier-level capabilities on specific tasks.
 
-**Next session targets** (user's explicit request):
-1. **Diff-based line edits** — the model says "change line 13 to X",
-   the engine applies it. Solves the multi-line code_write problem.
-2. **Structured edit protocol** — `{file, line, old, new}` JSON
-   patches the model fills in, engine applies + verifies.
-3. Continue with hypothesis-test-iterate workflow.
+**Next session target: Auto-CALM** (user's explicit pivot from
+LoRA/training to pure infrastructure). Make CALM invisible — the
+model writes naturally, the engine intercepts, verifies, and corrects
+every computational claim and code edit without the model knowing
+CALM exists. Three phases:
+1. **Claim verification** — extract `X = Y` from output, verify, correct
+2. **Computation extraction** — detect "let me compute X", evaluate, inject
+3. **Intent-to-edit** — detect "change line 13 to...", generate code, apply, test
+Hypothesis-test-iterate workflow throughout.
 
 ## Completed
 
@@ -151,62 +154,146 @@ boundary detection.
 calculator → 6/6 tests pass). The bottleneck is the model's ability
 to emit the call, not the engine's ability to execute it.
 
-## Next Steps (user's explicit direction)
+## Next Steps — Auto-CALM (user's explicit direction)
 
-### 1. Diff-Based Line Edits (START HERE)
+### The Insight: Make CALM Invisible
 
-Instead of whole-file rewrites, the model specifies single-line changes:
+The current architecture requires the model to emit `<calm>` blocks
+with correct syntax. The 4B model can't reliably do this for code
+edits (multi-line strings, quote escaping). **The fix: the model
+doesn't need to know CALM exists.**
+
+**Auto-CALM** = the engine intercepts the model's natural language
+output, extracts computational claims and edit instructions, verifies
+them, and silently corrects wrong answers. No `<calm>` tags, no
+special syntax, no training.
+
+### How Auto-CALM Works
 
 ```
-<calm>
-code.edit("/tmp/calc.py", 13, "    if b == 0: return 'Error: division by zero'")
-code.edit("/tmp/calc.py", 14, "    return a / b")
-</calm>
+Model writes naturally:
+  "17 × 23 = 401, so the total is 401 + 100 = 501"
+                           ↓
+Engine scans output for computational claims:
+  Claim 1: "17 × 23 = 401"  → engine computes 391 → WRONG
+  Claim 2: "391 + 100 = 501" → engine computes 491 → WRONG (cascaded)
+                           ↓
+Engine rewrites:
+  "17 × 23 = 391, so the total is 391 + 100 = 491"
+                           ↓
+Model sees corrected text in next turn (if multi-turn)
+OR user sees corrected text directly (if single-turn)
 ```
 
-The expression evaluator handles `code.edit(path, line, content)` if
-the content doesn't have quotes. For content with quotes, need to
-handle escaping or use the sandbox.
+### Auto-CALM for Code Edits
 
-**Approach**: extend `code.edit` to accept content via a simpler
-encoding that avoids quote escaping issues. Options:
-- Base64-encoded content: `code.edit(path, 13, b64"aWYgYiA9PSAw...")`
-- JSON-patch format: `{"file": "...", "edits": [{"line": 13, "content": "..."}]}`
-- Line-replacement by old→new: `code.replace(path, "return a / b", "if b == 0: return 'Error'\\n    return a / b")`
-
-### 2. Structured Edit Protocol
-
-Define a JSON patch format the model emits:
-```json
-{
-  "file": "/tmp/calc.py",
-  "edits": [
-    {"line": 5, "action": "replace", "content": "    if b == 0: return 'Error'"},
-    {"line": 6, "action": "insert", "content": "    return a / b"}
-  ]
-}
+```
+Model writes naturally:
+  "The bug is on line 13 of calc.py. The divide function should
+   check for zero: if b == 0, return an error message. Also line
+   20 needs a try/except around the float() call."
+                           ↓
+Engine extracts structured edits:
+  {file: "calc.py", edits: [
+    {line: 13, intent: "add zero check before division"},
+    {line: 20, intent: "wrap float() in try/except"}
+  ]}
+                           ↓
+Engine generates the actual code (using the sandbox):
+  Line 13: "    if b == 0: return 'Error: division by zero'"
+  Line 20: wraps in try/except ValueError
+                           ↓
+Engine applies edits → code.syntax_check → code.test
+                           ↓
+If tests pass: inject "[verified: 2 edits applied, 6/6 tests pass]"
+If tests fail: inject error, model retries with different description
 ```
 
-The engine parses this JSON (no quote escaping issues) and applies
-the edits atomically. If syntax check fails after edits, auto-revert.
+### Three Layers of Auto-CALM
 
-### 3. E2E Bug Fix Verification
+**Layer 1: Claim Verification (easiest, start here)**
+- Regex-extract all `X = Y` and `X is Y` patterns from model output
+- For numeric claims: evaluate X independently, check Y matches
+- For boolean claims (is_prime, is_perfect): evaluate independently
+- Wrong claims get silently corrected or flagged
+- **Already partially implemented** as `_post_verify` in engine.py
 
-Once edits work, the full loop:
-1. `code.test` → find failures
-2. `code.read` → see the code
-3. Model thinks → plans fix
-4. Structured edit → apply changes
-5. `code.syntax_check` → verify valid Python
-6. `code.test` → verify all pass
-7. If fail → model reads error → tries again
+**Layer 2: Computation Extraction**
+- Detect when the model is doing math in natural language:
+  "I need to multiply 17 by 23" → extract `17 * 23`
+- Detect function-call-like descriptions:
+  "Let me check if 391 is prime" → extract `is_prime(391)`
+- Evaluate them before the model produces the answer
+- Inject the correct result so the model doesn't need to guess
+- **This replaces explicit `<calm>` blocks entirely.**
 
-### 4. Larger Model Testing
+**Layer 3: Intent-to-Edit Translation (hardest, most impactful)**
+- Detect when the model describes code changes in natural language:
+  "Change the divide function to check for zero first"
+  "Add error handling around the float conversion on line 20"
+  "Replace the raw SQL query with parameterized query"
+- Parse the intent into structured edits
+- Generate the actual code changes (via sandbox)
+- Apply → verify → test → report
+- **This solves the file-write problem permanently** — the model
+  describes what to change in English, the engine writes the code.
 
-The 4B model's code generation is the constraint. Test with:
-- Gemma 4 E4B at full size (not the 4B variant)
-- Or run the CALM engine against a cloud API (Claude, GPT-4) to
-  verify the architecture works with a frontier model
+### Implementation Plan
+
+**Phase 1: Claim Extraction + Verification (extend _post_verify)**
+- Build `calm/auto_calm.py` with a `ClaimExtractor` class
+- Regex patterns for `X = Y`, `X is Y`, `result is Y`, etc.
+- Evaluate extracted expressions via `safe_eval` + sandbox
+- Replace wrong claims in the output text
+- Wire into both `engine.py` and `stream_engine.py`
+- Measurement: run benchmark with auto-CALM, should hit 95%+
+  because every wrong mental-math answer gets caught and fixed
+
+**Phase 2: Computation Extraction (replace <calm> blocks)**
+- Build `IntentExtractor` — detects "let me compute/check/find" patterns
+- Extracts the computation as an expression
+- Evaluates before the model produces the answer
+- Injects the result into the model's context
+- Measurement: model never needs to emit `<calm>` blocks, engine
+  handles everything. Benchmark should match or exceed explicit CALM.
+
+**Phase 3: Intent-to-Edit (the frontier unlock)**
+- Build `EditExtractor` — detects code change descriptions
+- Parses: file path, line numbers (from context), change description
+- Uses the sandbox to generate the actual code:
+  `run_python(f"generate_edit({file}, {line}, {description})")`
+  where `generate_edit` is a template-based code generator
+- Apply → syntax_check → test → report
+- Measurement: model fixes the buggy calculator by describing the
+  fix in natural language, engine applies and verifies.
+
+### Why This Works Without Training
+
+The model already does all the hard work:
+- It **identifies the bug** correctly (proven: 3,857 chars of thinking)
+- It **describes the fix** correctly in natural language
+- It **knows which line** to change (reads the code, counts lines)
+
+It just can't **format the fix as code inside a `<calm>` block**.
+
+Auto-CALM removes that last requirement. The model describes the fix
+in English. The engine converts English to code. The tests verify
+the code. No CALM syntax knowledge needed. No training needed.
+
+The `<calm>` block approach (v0.1/v0.2) remains available as an
+explicit opt-in for power users or larger models that can format
+the calls correctly. Auto-CALM is the transparent default that works
+with any model size.
+
+### Compatibility with LoRA (future)
+
+If a CALM LoRA is trained later, it stacks cleanly:
+- Auto-CALM handles what the model can't format
+- LoRA teaches the model to format correctly over time
+- As the model gets better at explicit `<calm>`, auto-CALM
+  intervenes less (it only corrects wrong answers)
+- Virtuous cycle: auto-CALM catches errors → training signal →
+  LoRA learns → fewer errors → auto-CALM intervenes less
 
 ## Key Context
 
