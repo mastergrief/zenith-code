@@ -585,6 +585,14 @@ class AutoCalmEngine:
             for c in result.corrections:
                 print(f"  FIX: {c.expression} = {c.claimed_value} → {c.actual_value}")
 
+        # Collect training data from corrections.
+        if result.claims_corrected > 0:
+            from calm.auto_training import AutoTrainingCollector
+            tc = AutoTrainingCollector()
+            n = tc.collect_from_verify(prompt, report.claims)
+            if verbose and n:
+                print(f"[training] +{n} examples generated")
+
         return result
 
     def _generate(self, messages):
@@ -982,6 +990,18 @@ class IntentToEdit:
                 result.success = self._count_passed(after) > self._count_passed(baseline)
                 if verbose:
                     print(f"[step 3] full rewrite: {after}")
+
+        # Collect training data from successful fixes.
+        if self._count_passed(after) > self._count_passed(baseline):
+            from calm.auto_training import AutoTrainingCollector
+            current_source = open(file_path).read()
+            tc = AutoTrainingCollector()
+            n = tc.collect_from_edit(
+                file_path, diagnosis, source, current_source,
+                baseline, after,
+            )
+            if verbose and n:
+                print(f"[training] +{n} code examples generated")
 
         # Self-healing: if still failing, feed remaining failures back (max 1 retry).
         if self._count_passed(after) < 10 and "failed" in after.lower():
