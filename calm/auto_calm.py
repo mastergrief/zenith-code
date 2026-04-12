@@ -479,11 +479,13 @@ class AutoCalmEngine:
         system_prompt: str = AUTO_SYSTEM_PROMPT,
         max_tokens: int = 16384,
         thinking_budget: int = 32768,
+        precompute: bool = True,
     ):
         self.server = server
         self.system_prompt = system_prompt
         self.max_tokens = max_tokens
         self.thinking_budget = thinking_budget
+        self.precompute = precompute
         self.verifier = AutoCalm()
 
     def run(self, prompt: str, verbose: bool = False) -> AutoCalmResult:
@@ -493,8 +495,17 @@ class AutoCalmEngine:
 
         result = AutoCalmResult()
 
+        # Layer 2: pre-compute expressions from the prompt.
+        precomputed = self._precompute(prompt) if self.precompute else {}
+        system = self.system_prompt
+        if precomputed:
+            facts = "; ".join(f"{k} = {v}" for k, v in precomputed.items())
+            system += f"\n\nVerified facts: {facts}"
+            if verbose:
+                print(f"[precompute] {facts}")
+
         messages = [
-            {"role": "system", "content": self.system_prompt},
+            {"role": "system", "content": system},
             {"role": "user", "content": prompt},
         ]
 
@@ -605,6 +616,74 @@ class AutoCalmEngine:
         thinking = choice["message"].get("reasoning_content", "")
         timings = data.get("timings", {})
         return content, thinking, timings
+
+    def _precompute(self, prompt: str) -> dict:
+        """
+        Extract computable expressions from the prompt and evaluate them.
+        Returns {expression: value} for injection into system prompt.
+        """
+        results = {}
+
+        # Patterns to extract from the prompt.
+        patterns = [
+            r'[Ww]hat is (.+?)[\?\.]',
+            r'[Cc]ompute (.+?)[\?\.]',
+            r'[Cc]alculate (.+?)[\?\.]',
+            r'[Ff]ind (.+?)[\?\.]',
+        ]
+
+        # NL function patterns.
+        nl_patterns = [
+            (r'the (\d+)(?:st|nd|rd|th) [Ff]ibonacci number', r'fibonacci(\1)'),
+            (r'fibonacci\((\d+)\)', r'fibonacci(\1)'),
+            (r'factorial\((\d+)\)', r'factorial(\1)'),
+            (r'the (\d+)(?:st|nd|rd|th) prime', r'nth_prime(\1)'),
+            (r'(?:the )?length of the [Cc]ollatz .+ (\d+)', r'collatz_length(\1)'),
+            (r'(?:how long|length).*[Cc]ollatz.*from (\d+)', r'collatz_length(\1)'),
+            (r'the [Cc]ollatz sequence (?:starting |)from (\d+)', r'collatz_length(\1)'),
+            (r'the digit(?:al)? (?:sum|root) of (\d+)', None),
+            (r'the smallest prime (?:greater than|>) (\d+)', r'next_prime(\1)'),
+            (r'the (?:prime )?factors of (\d+)', r'factorize(\1)'),
+            (r'the GCD of (\d+) and (\d+)', r'gcd(\1, \2)'),
+            (r'the LCM of (\d+) and (\d+)', r'lcm(\1, \2)'),
+        ]
+
+        for pat in patterns:
+            m = re.search(pat, prompt)
+            if not m:
+                continue
+            raw = m.group(1).strip()
+
+            # Try NL patterns first.
+            expr = None
+            for nl_pat, nl_repl in nl_patterns:
+                nl_m = re.search(nl_pat, raw, re.IGNORECASE)
+                if nl_m and nl_repl:
+                    expr = re.sub(nl_pat, nl_repl, raw, flags=re.IGNORECASE)
+                    break
+
+            if not expr:
+                expr = self.verifier._normalize_expr(raw)
+
+            try:
+                val = safe_eval(expr)
+                results[expr] = val
+            except ExpressionError:
+                pass
+
+        # Also look for computations not in "What is" form.
+        for nl_pat, nl_repl in nl_patterns:
+            if nl_repl:
+                for nl_m in re.finditer(nl_pat, prompt, re.IGNORECASE):
+                    expr = re.sub(nl_pat, nl_repl, nl_m.group(0), flags=re.IGNORECASE)
+                    if expr not in results:
+                        try:
+                            val = safe_eval(expr)
+                            results[expr] = val
+                        except ExpressionError:
+                            pass
+
+        return results
 
     def _verify_prompt_answer(self, prompt: str, response: str) -> Optional[Claim]:
         """
