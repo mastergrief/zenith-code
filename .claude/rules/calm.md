@@ -48,19 +48,40 @@ Planning turn (thinking ON) → stop-mode execution loop:
 **Pattern**: write pure functions → export dict → register in `expression.py`.
 Model gets smarter at that domain instantly.
 
-### Current Backends (9 modules, 70+ functions)
+### Current Backends (30 modules, 251 functions)
 
-| Backend | Functions | Domain | Verifiable? |
-|---|---|---|---|
-| `math_ops.py` | 9 | primes, GCD, factorize, fibonacci | 4-lane TMR |
-| `string_ops.py` | 7 | len, case, contains, regex | exact match |
-| `wasm_ops.py` | 17 | int/float via WebAssembly | cross-check |
-| `code_ops.py` | 16 | read, write, test, lint, search | test pass/fail |
-| `security_ops.py` | 8 | OWASP Top 10 detection | rule-based |
-| `date_ops.py` | 6 | days_between, day_of_week, leap_year | deterministic |
-| `convert_ops.py` | 5 | units (6 domains) + temperature | deterministic |
-| `data_ops.py` | 11 | mean, median, stdev, regression | deterministic |
-| `algo_ops.py` | 13 | sort, nCr, graph algos, LIS | deterministic |
+| Backend | Functions | Domain |
+|---|---|---|
+| `math_ops` | 9 | primes, GCD, factorize, fibonacci, collatz |
+| `string_ops` | 7 | len, case, contains, regex |
+| `wasm_ops` | 17 | int/float via WebAssembly cross-check |
+| `code_ops` | 16 | read, write, test, lint, search |
+| `security_ops` | 8 | OWASP Top 10 detection |
+| `date_ops` | 6 | days_between, day_of_week, leap_year |
+| `convert_ops` | 5 | units (6 domains) + temperature |
+| `data_ops` | 11 | mean, median, stdev, regression |
+| `algo_ops` | 13 | sort, nCr, graph algorithms, LIS |
+| `quality_ops` | 7 | cyclomatic complexity, naming, dead code |
+| `readability_ops` | 5 | Flesch-Kincaid, jargon, structure |
+| `regex_ops` | 7 | pattern matching, validation |
+| `json_ops` | 7 | validate, path, diff, format |
+| `encoding_ops` | 12 | base64, hex, md5, sha256 |
+| `git_ops` | 7 | log, blame, status, branches |
+| `network_ops` | 9 | URL, IP, CIDR, HTTP status |
+| `creative_ops` | 9 | brainstorm, combine, novelty |
+| `impact_ops` | 7 | call graph, blast radius, coupling |
+| `context_ops` | 7 | git archaeology, code age |
+| `python_ops` | 9 | builtin/method verification |
+| `math_extended_ops` | 15 | matrices, modular arithmetic, calculus |
+| `perf_ops` | 6 | Big-O estimation, memory analysis |
+| `deps_ops` | 6 | package versions, imports |
+| `refactor_ops` | 4 | code smells, duplicates |
+| `type_ops` | 4 | annotation coverage |
+| `test_ops` | 4 | test summary, coverage |
+| `doc_ops` | 4 | docstring coverage |
+| `shell_ops` | 7 | exit codes, dangerous commands |
+| `semver_ops` | 6 | version compare, satisfies |
+| `config_ops` | 6 | YAML, TOML, INI, dotenv |
 
 ### Adding a New Backend
 
@@ -160,16 +181,22 @@ VERIFIED = all lanes agree → safe.
 
 | File | LOC | Purpose |
 |---|---|---|
-| `auto_calm.py` | 1150 | Auto-CALM: claim verify + precompute + intent-to-edit |
-| `auto_training.py` | 300 | Training data generation from corrections |
+| `auto_calm.py` | 324 | Facade: composes layers, CLI entry |
+| `verify.py` | 284 | Layer 1: claim extraction + verification |
+| `precompute.py` | 346 | Layer 2: precomputation + system prompt |
+| `intent_edit.py` | 356 | Layer 3: NL diagnosis → template fix → verify |
+| `stream_auto.py` | 437 | Streaming verification + tool-call handler |
+| `auto_learn.py` | 215 | Self-learning from corrections |
+| `auto_training.py` | 337 | Training data generation |
 | `engine.py` | 527 | Explicit CALM v0.1: stop-mode |
 | `stream_engine.py` | 240 | Explicit CALM v0.2: SSE streaming |
 | `interceptor.py` | 479 | 4-tier parse + block detection |
-| `expression.py` | 680 | AST-safe eval, 70+ functions from all backends |
+| `expression.py` | 780 | AST-safe eval, 251 functions from all backends |
 | `verifier.py` | 560 | 4-lane TMR verification |
 | `stack_vm.py` | 522 | Reference stack machine |
 | `sandbox.py` | 250 | Subprocess Python isolation |
 | `nl_parser.py` | 168 | NL → stack code translator |
-| `backends/*.py` | ~850 | 9 modular compute backends |
+| `backends/*.py` | ~5,460 | 30 modular compute backends |
+| `learned_patterns.jsonl` | — | Self-learned error patterns (committed) |
 | `tests/` | ~3,400 | 250 tests |
-| `benchmark.py` | 227 | 40-problem eval |
+| `benchmark.py` | 227 | 40-problem eval (format-agnostic) |
