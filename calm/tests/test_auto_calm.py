@@ -1,7 +1,7 @@
 """Tests for Auto-CALM — transparent claim verification."""
 
 import pytest
-from calm.auto_calm import AutoCalm, Claim
+from calm.verify import AutoCalm, Claim
 
 
 class TestClaimExtraction:
@@ -178,45 +178,46 @@ class TestPrecompute:
     """Test precomputation extraction from prompts."""
 
     def setup_method(self):
-        self.engine = __import__("calm.auto_calm", fromlist=["AutoCalmEngine"]).AutoCalmEngine()
+        from calm.precompute import precompute
+        self._precompute = precompute
 
     def test_arithmetic(self):
-        r = self.engine._precompute("What is 17 * 23?")
+        r = self._precompute("What is 17 * 23?")
         assert "17 * 23" in r
         assert r["17 * 23"] == 391
 
     def test_factorial(self):
-        r = self.engine._precompute("What is factorial(10)?")
+        r = self._precompute("What is factorial(10)?")
         assert "factorial(10)" in r
         assert r["factorial(10)"] == 3628800
 
     def test_fibonacci(self):
-        r = self.engine._precompute("What is fibonacci(20)?")
+        r = self._precompute("What is fibonacci(20)?")
         assert "fibonacci(20)" in r
         assert r["fibonacci(20)"] == 6765
 
     def test_gcd(self):
-        r = self.engine._precompute("What is the GCD of 391 and 782?")
+        r = self._precompute("What is the GCD of 391 and 782?")
         assert "gcd(391, 782)" in r
         assert r["gcd(391, 782)"] == 391
 
     def test_collatz_length(self):
-        r = self.engine._precompute(
+        r = self._precompute(
             "How long is the Collatz sequence starting from 27?"
         )
         assert "collatz_length(27)" in r
         assert r["collatz_length(27)"] == 112
 
     def test_is_prime(self):
-        r = self.engine._precompute("Is 1000003 prime?")
+        r = self._precompute("Is 1000003 prime?")
         assert "is_prime(1000003)" in r
         assert r["is_prime(1000003)"] is True
 
     def test_is_perfect(self):
-        r = self.engine._precompute("Is 28 a perfect number?")
+        r = self._precompute("Is 28 a perfect number?")
         assert "is_perfect(28)" in r
         assert r["is_perfect(28)"] is True
 
     def test_no_precompute_for_prose(self):
-        r = self.engine._precompute("Tell me about prime numbers.")
+        r = self._precompute("Tell me about prime numbers.")
         assert len(r) == 0
