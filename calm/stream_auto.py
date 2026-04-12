@@ -383,13 +383,14 @@ class StreamingAutoCalmEngine:
         # Pattern: `expression` or inline expressions with known functions.
         for m in _re.finditer(r'`([^`]+)`', content):
             expr = m.group(1)
-            # Only try if it contains a known function name.
+            # Only try if it contains a known function call with args.
             from calm.expression import _FUNCTIONS
-            if any(fn in expr for fn in _FUNCTIONS if len(fn) > 2):
+            if any(fn + "(" in expr for fn in _FUNCTIONS if len(fn) > 2) and "(" in expr:
                 try:
                     val = safe_eval(expr)
-                    result = result.replace(m.group(0), f"`{expr}` = {val}")
-                except ExpressionError:
+                    val_str = str(val)[:200]
+                    result = result.replace(m.group(0), f"`{expr}` = {val_str}")
+                except (ExpressionError, Exception):
                     pass
 
         return result
