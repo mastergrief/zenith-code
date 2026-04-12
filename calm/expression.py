@@ -527,6 +527,18 @@ except ImportError:
     pass
 
 try:
+    from calm.backends.python_ops import PYTHON_FUNCTIONS
+    _FUNCTIONS.update(PYTHON_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.math_extended_ops import MATH_EXTENDED_FUNCTIONS
+    _FUNCTIONS.update(MATH_EXTENDED_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
     from calm.backends.context_ops import CONTEXT_FUNCTIONS
     _FUNCTIONS.update(CONTEXT_FUNCTIONS)
 except ImportError:
