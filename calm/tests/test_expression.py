@@ -113,7 +113,7 @@ class TestSafety:
             safe_eval("(lambda: 1)()")
 
     def test_unknown_function(self):
-        with pytest.raises(ExpressionError, match="simple function names"):
+        with pytest.raises(ExpressionError, match="unknown function"):
             safe_eval("os.system('ls')")
 
     def test_div_by_zero(self):

@@ -196,7 +196,7 @@ def make_verified_dispatcher() -> VerifiedDispatcher:
     Returns a VerifiedDispatcher with shadows registered for every
     word that has at least 2 independent implementations.
     """
-    from calm.backends import math_ops, string_ops, wasm_ops
+    from calm.backends import math_ops, string_ops, wasm_ops, code_ops
 
     vd = VerifiedDispatcher()
 
@@ -209,6 +209,7 @@ def make_verified_dispatcher() -> VerifiedDispatcher:
     math_ops.register(vd)
     string_ops.register(vd)
     wasm_ops.register(vd)
+    code_ops.register(vd)
 
     # Cross-check map: wasm word -> (math_ops equivalent, builtin equivalent)
     # Each entry is (wasm_word, shadow_name, shadow_callable).

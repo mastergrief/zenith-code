@@ -308,6 +308,42 @@ def _filter_expr(expr_str, items) -> list:
     return result
 
 
+# ---------------------------------------------------------------------------
+# Code operation wrappers for expression evaluator
+# These adapt the stack-based code_ops to plain function calls.
+# ---------------------------------------------------------------------------
+
+def _code_call(fn_name, *args):
+    """Call a code_ops function by simulating stack operations."""
+    from calm.backends.code_ops import CODE_WORDS
+    from calm.stack_vm import VMState, Instruction
+    fn = CODE_WORDS.get(fn_name)
+    if not fn:
+        raise ExpressionError(f"unknown code function: {fn_name}")
+    state = VMState()
+    for a in args:
+        state.stack.append(a)
+    fn(state, Instruction(word=fn_name))
+    return state.stack[-1] if state.stack else None
+
+def _code_read(path): return _code_call("code.read", path)
+def _code_write(path, content): return _code_call("code.write", path, content)
+def _code_syntax_check(path): return _code_call("code.syntax_check", path)
+def _code_run(path): return _code_call("code.run", path)
+def _code_test(path): return _code_call("code.test", path)
+def _code_lint(path): return _code_call("code.lint", path)
+def _code_search(pattern, path): return _code_call("code.search", pattern, path)
+def _code_find(pattern, path): return _code_call("code.find", pattern, path)
+def _code_diff(path): return _code_call("code.diff", path)
+def _code_edit(path, line, content): return _code_call("code.edit", path, line, content)
+def _code_insert(path, line, content): return _code_call("code.insert", path, line, content)
+def _code_delete(path, line): return _code_call("code.delete", path, line)
+def _code_count_lines(path): return _code_call("code.count_lines", path)
+def _code_functions(path): return _code_call("code.functions", path)
+def _code_classes(path): return _code_call("code.classes", path)
+def _code_imports(path): return _code_call("code.imports", path)
+
+
 # Now that all functions are defined, populate the whitelist.
 _FUNCTIONS.update({
     # Basic math
@@ -347,6 +383,23 @@ _FUNCTIONS.update({
     # Ranges
     "sum_range": _sum_range,
     "product_range": _product_range,
+    # Code operations (wrappers for calm/backends/code_ops.py)
+    "code.read": _code_read,
+    "code.write": _code_write,
+    "code.syntax_check": _code_syntax_check,
+    "code.run": _code_run,
+    "code.test": _code_test,
+    "code.lint": _code_lint,
+    "code.search": _code_search,
+    "code.find": _code_find,
+    "code.diff": _code_diff,
+    "code.edit": _code_edit,
+    "code.insert": _code_insert,
+    "code.delete": _code_delete,
+    "code.count_lines": _code_count_lines,
+    "code.functions": _code_functions,
+    "code.classes": _code_classes,
+    "code.imports": _code_imports,
     # Logic / search
     "find_int": _find_int,
     "count_if": _count_if,
@@ -434,9 +487,13 @@ def _eval_node(node: ast.AST, fns: dict) -> Any:
 
     # Function calls: sqrt(16), gcd(12, 8)
     if isinstance(node, ast.Call):
-        if not isinstance(node.func, ast.Name):
-            raise ExpressionError(f"only simple function names allowed")
-        name = node.func.id
+        # Support both simple names (sqrt) and dotted names (code.read)
+        if isinstance(node.func, ast.Name):
+            name = node.func.id
+        elif isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
+            name = f"{node.func.value.id}.{node.func.attr}"
+        else:
+            raise ExpressionError(f"only simple or dotted function names allowed")
         if name not in fns:
             raise ExpressionError(f"unknown function: {name}")
         args = [_eval_node(arg, fns) for arg in node.args]

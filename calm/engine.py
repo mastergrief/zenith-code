@@ -109,7 +109,7 @@ class CalmEngine:
         result = EngineResult()
         assembled = ""
         interceptor = Interceptor(
-            dispatcher=self.dispatcher, strict=False, persist_state=True,
+            dispatcher=self.dispatcher, strict=False, persist_state=False,
         )
 
         messages = [
@@ -473,12 +473,12 @@ class CalmEngine:
         return any(re.search(p, prompt) for p in compute_signals)
 
     def _format_injection(self, stack, output, errors, divergences):
-        """Format the injection text after a CALM block."""
+        """Format the injection text after a CALM block. Caps at 2000 chars."""
         parts = []
         if output:
-            parts.append(f"output={output}")
+            parts.append(f"output={self._truncate(output)}")
         if stack:
-            parts.append(f"stack={stack}")
+            parts.append(f"stack={self._truncate(stack)}")
         if not output and not stack:
             parts.append("stack=[]")
         if errors:
@@ -486,7 +486,40 @@ class CalmEngine:
             parts.append(f"errors={err_msgs}")
         if divergences:
             parts.append("WARNING: TMR DIVERGENCE")
-        return f"[engine: {', '.join(parts)}]"
+        result = f"[engine: {', '.join(parts)}]"
+        return result[:2000]
+
+    @staticmethod
+    def _truncate(val, max_len=800):
+        """Truncate large values (file contents, etc.) for injection."""
+        # Deep truncate: shrink dict values that contain file content
+        if isinstance(val, list):
+            val = [CalmEngine._truncate_item(v) for v in val[-5:]]  # last 5 items only
+        elif isinstance(val, dict):
+            val = CalmEngine._truncate_item(val)
+        s = str(val)
+        if len(s) <= max_len:
+            return s
+        return s[:max_len] + "..."
+
+    @staticmethod
+    def _truncate_item(v, max_str=200):
+        """Truncate individual items — strip file contents, long strings."""
+        if isinstance(v, dict):
+            out = {}
+            for k, val in v.items():
+                if k == "content" and isinstance(val, str) and len(val) > max_str:
+                    out[k] = val[:max_str] + f"... ({len(val)} chars)"
+                elif k == "output" and isinstance(val, str) and len(val) > max_str:
+                    out[k] = val[:max_str] + "..."
+                elif k == "lines" and isinstance(val, list) and len(val) > 10:
+                    out[k] = val[:10] + [f"... ({len(val)} total)"]
+                else:
+                    out[k] = val
+            return out
+        if isinstance(v, str) and len(v) > max_str:
+            return v[:max_str] + "..."
+        return v
 
 
 def run_engine(prompt: str, verbose: bool = True, **kwargs) -> EngineResult:
