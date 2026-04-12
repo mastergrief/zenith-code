@@ -14,10 +14,25 @@
 - Cost: ~$0.50-1.00 per training run (~30-40 min on A100)
 
 ## Priority Order
-- **Data quality > data quantity > model size > training tricks.** One hour writing 20 high-quality examples beats hours of hyperparameter tuning.
-- **Model size matters for correctness.** 0.8B learned `<think>` format but gave wrong answers. 4B confirmed: 3/5 eval PASS with `enable_thinking: true`.
+- **Backend coverage > data quality > data quantity > model size > training tricks.**
+  Adding a compute backend is instant, free, and deterministic. Training is
+  expensive, slow, and probabilistic. Build a backend first; only train when
+  the domain CAN'T be computed (style, creativity, judgment).
+- Auto-CALM with 9 backends scores **100% on 40-problem math benchmark**
+  without any fine-tuning. Stock Gemma 4 E4B + modular compute = frontier
+  accuracy on computable domains.
+- **When training IS needed**: data quality > quantity > model size.
+  One hour writing 20 high-quality examples beats hours of tuning.
 - Each example should demonstrate the *reasoning process* (`<think>` block), not just the answer
 - Match the training domain to the task: coding data for coding models, routing data for routing models
+
+## Auto-Training Data (from Auto-CALM corrections)
+- Every Auto-CALM correction generates a labeled training example automatically
+- Sub-collectors: `MathCollector`, `BoolCollector`, `CodeCollector`
+- Output: `.calm_training/auto/{math,bool,code}.jsonl` — distillation-compatible
+- Merge with: `AutoTrainingCollector().export_merged()`
+- Virtuous cycle: model errors → corrections → training data → (optional) fine-tune → fewer errors
+- **This is the primary training data source going forward** — zero manual labeling
 
 ## Training Best Practices
 - Always use `train_on_responses_only` — masks instruction/prompt tokens so loss is only computed on the model's generated responses

@@ -17,10 +17,25 @@
 - Coordinator uses JSON protocol: `{"delegate": "name", "task": "..."}` or `{"final": "answer"}`
 - SpecialistCoordinator auto-selects between **hot-swap mode** (llama.cpp + specialist GGUFs discovered on disk via `discover_specialist_models()`) and **Ollama multi-model mode** (per-agent distinct Ollama model names); falls back to single base model if neither is available
 
+## Modular Compute Architecture (CALM)
+
+**Model reasons, backends compute, engine verifies.** Adding a backend is
+equivalent to training — the model gets smarter at that domain instantly.
+
+- **Auto-CALM** is the default. Model writes naturally, engine verifies claims,
+  pre-computes answers, fixes code from NL descriptions. 100% on 40-problem benchmark.
+- **Explicit CALM** (`<calm>` blocks) is the power-user path. 85-98% benchmark.
+- **Backends** are modular Python files in `calm/backends/`. Each exports a `*_FUNCTIONS`
+  dict registered in `expression.py` via try/import. Missing backends degrade gracefully.
+- **9 backends, 70+ verified functions**: math, strings, wasm, code, security, dates,
+  units, statistics, algorithms. Full spec: `.claude/rules/calm.md`
+- To add a domain: write `calm/backends/X_ops.py` → export dict → register in `expression.py`
+  → (optional) add precompute patterns in `auto_calm.py`
+
 ## File Organization
 - `agents/` — core harness code (15 files, ~4,400 LOC). No ML dependencies. Must work on Windows + WSL2 with Python 3.11+
-- `agents/distill/` — training pipeline (10 Python files + 1 notebook). ML dependencies (torch, unsloth, transformers) only required here
-- `calm/` — CALM reasoning engine (28 files, ~6,500 LOC, 214 tests). Dependencies: `wasmtime` (optional, for wasm backend). Full spec: `.claude/rules/calm.md`
+- `agents/distill/` — training pipeline (10 Python files + 1 notebook). ML dependencies (torch, unsloth, transformers) only required here. **Secondary to backends** — only needed for domains that can't be computed.
+- `calm/` — CALM engine + Auto-CALM + modular backends (35+ files, ~9,500 LOC, 250 tests). Dependencies: `wasmtime` (optional, for wasm backend). Full spec: `.claude/rules/calm.md`
 - `models/` — Ollama Modelfiles (3 files: qwen9b-fast, qwen4b-fast, reasoning-base)
 - `bin/zenith` — launcher script: auto-starts llama.cpp, `--gguf PATH` first-arg flag, configurable via `ZENITH_*` env vars. Does NOT `cd` into repo.
 - `scripts/` — dev tooling (needle_test, eval_base_models, smoke_test_harness, test_model_swap, generate_react_security_examples, setup_training)

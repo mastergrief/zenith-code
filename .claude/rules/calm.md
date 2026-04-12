@@ -2,117 +2,174 @@
 
 ## Core Principle
 
-**LLM sequences, CPU computes, TMR verifies, injection feeds back.**
-The model decides WHAT to compute. The engine decides HOW and verifies the result.
-No fine-tuning required — the architecture handles everything.
+**Model reasons, backends compute, engine verifies.**
+Intelligence comes from the system, not the weights. Adding a backend
+module is equivalent to training — zero GPU cost, instant effect.
 
-## Engine Loop (`calm/engine.py`)
+The model decides WHAT to compute. Modular backends decide HOW.
+Auto-CALM makes this transparent — the model doesn't need to know
+the engine exists.
+
+## Two Modes
+
+### Auto-CALM (default) — `calm/auto_calm.py`
+
+Model writes naturally. Engine intercepts, verifies, corrects.
 
 ```
-Planning turn (thinking ON, no CALM) → stop-mode execution loop:
-  Model emits <calm> → STOP → parse → execute → TMR verify →
+Prompt → precompute expressions → inject verified facts into system prompt
+  ↓
+Model generates response (with correct values available)
+  ↓
+Layer 1: extract claims from output → verify on CPU → correct if wrong
+Layer 2: cross-check answer against precomputed value → retry if wrong
+Layer 3: (intent-to-edit) diagnose bugs → template fix → test → self-heal
+```
+
+**40/40 (100%)** on benchmark. Model uses precomputed facts directly —
+problems that took 30-165s drop to 1.7-2.3s.
+
+### Explicit CALM (power user) — `calm/engine.py`, `calm/stream_engine.py`
+
+Model emits `<calm>...</calm>` blocks. Engine stops, executes, injects.
+
+```
+Planning turn (thinking ON) → stop-mode execution loop:
+  Model emits <calm> → STOP → 4-tier parse → execute → TMR verify →
   inject [engine: stack=X] → model reads result → next block or answer
 ```
 
-- **Thinking + stop incompatible**: `stop=["</calm>"]` fires during thinking,
-  killing the response. The hybrid avoids this: think first, execute second.
-- **Assistant prefill incompatible with thinking**: llama.cpp returns 400.
-  Use multi-turn (assistant + user messages) instead.
-- **Post-verify**: if model skips CALM, engine independently computes the
-  answer and corrects if wrong. NL rewrites translate natural language
-  prompts to computable expressions.
-- **Bail-out**: 3 consecutive errored blocks OR 2 empty responses → stop.
+- **85-98%** on benchmark (nondeterminism in block usage)
+- Thinking + stop incompatible → hybrid plan-then-execute avoids this
+- Assistant prefill incompatible with thinking → multi-turn instead
 
-## Four-Tier Parse Pipeline (`calm/interceptor.py`)
+## Modular Backend Architecture
 
-Each line inside `<calm>...</calm>` tries these tiers in order:
+**Pattern**: write pure functions → export dict → register in `expression.py`.
+Model gets smarter at that domain instantly.
 
-| Tier | Module | Handles | Falls through on |
+### Current Backends (9 modules, 70+ functions)
+
+| Backend | Functions | Domain | Verifiable? |
 |---|---|---|---|
-| 1. NL parser | `nl_parser.py` | "multiply 17 by 23", "is 391 prime?" | No regex match |
-| 2. Stack VM | `stack_vm.py` | `push 17\nmul`, builtins + aliases | Unknown word |
-| 3. Expression | `expression.py` | `(17*23) + gcd(391,782)`, comprehensions | AST parse failure |
-| 4. Sandbox | `sandbox.py` | Any Python: for loops, variables, classes | Timeout or error |
+| `math_ops.py` | 9 | primes, GCD, factorize, fibonacci | 4-lane TMR |
+| `string_ops.py` | 7 | len, case, contains, regex | exact match |
+| `wasm_ops.py` | 17 | int/float via WebAssembly | cross-check |
+| `code_ops.py` | 16 | read, write, test, lint, search | test pass/fail |
+| `security_ops.py` | 8 | OWASP Top 10 detection | rule-based |
+| `date_ops.py` | 6 | days_between, day_of_week, leap_year | deterministic |
+| `convert_ops.py` | 5 | units (6 domains) + temperature | deterministic |
+| `data_ops.py` | 11 | mean, median, stdev, regression | deterministic |
+| `algo_ops.py` | 13 | sort, nCr, graph algos, LIS | deterministic |
 
-**Python compat in the interceptor** (not a separate tier):
-- `x = expr` → strips assignment, evaluates RHS, stores in `self.variables`
-- `print(expr)` → strips wrapper, evaluates inner
-- `#` comments → treated as line comments
-- `pop` → alias for `drop`, `print` → alias for `emit`
+### Adding a New Backend
+
+1. Create `calm/backends/mydom_ops.py` with pure functions
+2. Export: `MYDOM_FUNCTIONS = {"func_name": func, ...}`
+3. Register in `calm/expression.py`:
+   ```python
+   try:
+       from calm.backends.mydom_ops import MYDOM_FUNCTIONS
+       _FUNCTIONS.update(MYDOM_FUNCTIONS)
+   except ImportError:
+       pass
+   ```
+4. (Optional) Add precompute patterns in `auto_calm.py:_precompute()`
+5. (Optional) Add claim verification patterns in `auto_calm.py`
+
+Each backend is optional — missing backends degrade gracefully via try/import.
+
+## Auto-CALM Claim Verification
+
+### Layer 1: Inline Claims
+
+Extracts and verifies claims from model output:
+- Arithmetic: `17 \times 23 = 391` (LaTeX + Unicode + plain)
+- Functions: `factorial(10) = 3628800`
+- GCD/LCM: `GCD of 391 and 782 is 391`
+- Boolean: `391 is [not] prime`, `28 is a perfect number`, `X is divisible by Y`
+- Filters conditional contexts: "if X is prime" → skip (question, not claim)
+- Integer division awareness: "54 ÷ 7 = 7 remainder 5" → correct
+
+### Layer 2: Precomputation
+
+Extracts computations from the prompt BEFORE model responds:
+- `"What is X?"` → evaluate X, inject as verified fact
+- NL patterns: fibonacci(N), factorial(N), collatz_length(N), gcd(A,B), etc.
+- Boolean: "Is X prime?", "Is X a leap year?"
+- Conversions: "Convert 5 miles to km", "100 celsius to fahrenheit"
+- Stats: "mean of [1,2,3]", "10 choose 3"
+- Prompt-level answer verification with multi-turn retry
+
+### Layer 3: Intent-to-Edit
+
+3-step bug fixing: diagnose → template fix → verify.
+- Model reads code + test failures, describes bugs in NL
+- Engine applies deterministic templates:
+  - `ZeroDivisionError` → zero-check guard
+  - `ValueError` on float()/int() → try/except
+  - `IndexError` → bounds-check guard
+  - `AttributeError` on None → null guard
+- Falls back to LLM full-rewrite if templates insufficient
+- Self-healing: feeds remaining failures back (max 1 retry)
+- Verified: 6/10 → 10/10 on calc.py, 8/13 → 13/13 on unseen store.py
+
+## Auto-Training Data Collection
+
+Every correction generates distillation-compatible JSONL:
+- `MathCollector` → `.calm_training/auto/math.jsonl`
+- `BoolCollector` → `.calm_training/auto/bool.jsonl`
+- `CodeCollector` → `.calm_training/auto/code.jsonl`
+
+Virtuous cycle: corrections → training data → (optional) fine-tune →
+fewer corrections → higher-quality corrections. But backends are the
+primary path — training is supplementary.
 
 ## Verification (`calm/verifier.py`)
 
-4-lane TMR for every backend dispatch:
+4-lane TMR for math backend dispatches:
 
-| Lane | Method | Example for GCD |
+| Lane | Method | Example |
 |---|---|---|
 | Primary | Registered backend | Python `math.gcd` |
 | Cross-check | Independent impl | Wasm Euclidean GCD |
 | Algorithm | Different algorithm | Binary/Stein's GCD |
-| Proof | Inverse/property check | `g\|a AND g\|b AND gcd(a/g, b/g)==1` |
+| Proof | Inverse/property | `g\|a AND g\|b AND gcd(a/g, b/g)==1` |
 
-- Float tolerance: `1e-12` relative, `1e-15` absolute (Newton vs hardware sqrt)
-- DIVERGENCE = real failure (implementations disagree) — halts execution
-- VERIFIED = all lanes agree — safe to proceed
+DIVERGENCE = real failure (lanes disagree) → halt.
+VERIFIED = all lanes agree → safe.
 
-## Expression Evaluator Safety (`calm/expression.py`)
+## Expression Evaluator (`calm/expression.py`)
 
-- **AST-only**: `ast.parse(mode="eval")` + recursive node walker. Never `eval()`.
-- **Whitelist**: only functions in `_FUNCTIONS` dict are callable
-- **Comprehension support**: list comps execute via `_eval_comprehension` with
-  per-variable scoping and 10,000 element limit
-- **No attribute access**: `"hello".upper()` → blocked
-- **No imports**: all functions are pre-registered
+- **AST-only**: `ast.parse(mode="eval")` + recursive walker. Never `eval()`.
+- **Whitelist**: only functions in `_FUNCTIONS` dict (70+ from all backends)
+- **Comprehensions**: list/set/generator with per-variable scoping, 10K limit
+- **No attribute access, no imports** — all functions pre-registered
 
-## Sandbox Safety (`calm/sandbox.py`)
+## Benchmark
 
-- Subprocess isolation — model code can't affect parent process
-- Import blocking: `os`, `subprocess`, `socket`, `http`, `pathlib`, etc.
-- Timeout: 10s default, configurable
-- Prelude injects all CALM functions (is_prime, fibonacci, etc.)
-- **Not a security sandbox** — it's defense-in-depth, not a jail.
-  Don't run untrusted code from external sources.
+40 problems, 6 categories:
 
-## Training Signal (`calm/training.py`)
-
-Every `<calm>` block generates a labeled pair in `.calm_training/signal.jsonl`:
-- `claimed=[401], actual=[391], correct=false` → model was wrong (training signal)
-- `claimed=null, actual=[391], correct=true` → model deferred via `<pending>`
-
-## CALM Block Detection
-
-The interceptor detects two formats:
-- Standard: `<calm>...</calm>`
-- Gemma tool-call: `<|tool_call>call:calm` / `<channel|>`
-
-Model-fabricated `[engine: ...]` lines inside blocks are stripped.
-
-## Benchmark (`calm/benchmark.py`)
-
-40 problems, 6 categories. Best: 39/40 (98%). Typical: 85-90% due to
-nondeterminism in whether the model uses CALM vs answering from memory.
-
-- **100% categories**: arithmetic, number theory, algebra, reasoning, multi-step
-- **Weak spot**: sequences (model sometimes answers from memory, gets it wrong)
-- **Keywords use `|` alternatives**: `"not prime|composite|no"` to reduce false negatives
+| Mode | arithmetic | number_theory | sequences | algebra | reasoning | multi_step | Total |
+|---|---|---|---|---|---|---|---|
+| Auto-CALM + precompute | 10/10 | 10/10 | 5/5 | 5/5 | 5/5 | 5/5 | **40/40** |
+| Explicit CALM (best) | 10/10 | 10/10 | 3-5/5 | 5/5 | 5/5 | 5/5 | 85-98% |
+| Auto-CALM (no precompute) | 9/10 | 10/10 | 2/5 | 4/5 | 5/5 | 5/5 | 88% |
 
 ## File Map
 
 | File | LOC | Purpose |
 |---|---|---|
-| `engine.py` | 512 | Closed-loop execution engine |
-| `interceptor.py` | 479 | 4-tier stream parser |
-| `expression.py` | 559 | AST-safe expression evaluator |
-| `verifier.py` | 557 | 4-lane TMR verification |
+| `auto_calm.py` | 1150 | Auto-CALM: claim verify + precompute + intent-to-edit |
+| `auto_training.py` | 300 | Training data generation from corrections |
+| `engine.py` | 527 | Explicit CALM v0.1: stop-mode |
+| `stream_engine.py` | 240 | Explicit CALM v0.2: SSE streaming |
+| `interceptor.py` | 479 | 4-tier parse + block detection |
+| `expression.py` | 680 | AST-safe eval, 70+ functions from all backends |
+| `verifier.py` | 560 | 4-lane TMR verification |
 | `stack_vm.py` | 522 | Reference stack machine |
-| `sandbox.py` | 234 | Subprocess Python isolation |
+| `sandbox.py` | 250 | Subprocess Python isolation |
 | `nl_parser.py` | 168 | NL → stack code translator |
-| `grammar.py` | 110 | GBNF grammar generator |
-| `training.py` | 94 | JSONL signal collector |
-| `backends/math_ops.py` | 134 | 9 CPU math functions |
-| `backends/string_ops.py` | 92 | 7 string functions |
-| `backends/wasm_ops.py` | 174 | 17 wasm functions |
-| `backends/calm_math.wat` | 60 | WebAssembly module |
-| `reasoning.py` | 172 | Structured chain tracker |
+| `backends/*.py` | ~850 | 9 modular compute backends |
+| `tests/` | ~3,400 | 250 tests |
 | `benchmark.py` | 227 | 40-problem eval |
-| Tests (8 files) | ~3000 | 214 tests |

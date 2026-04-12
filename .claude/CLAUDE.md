@@ -85,12 +85,14 @@ When editing `.claude/` configs (agents, CLAUDE.md, commands, rules etc):
 
 ## Architecture
 
-Three systems coexist:
+**Model reasons, backends compute, engine verifies.** Intelligence comes from the system architecture, not the weights. Adding a backend module is equivalent to training — the model gets smarter at that domain instantly, with zero GPU cost.
+
+Three active systems coexist:
 1. **Python agent harness** (`agents/`, ~4,400 LOC across 15 files) — terminal coding assistant with dual backend (Ollama + llama.cpp), 3-level permissions, thinking mode, sessions, compaction, effort control, and llama.cpp hot-swap
-2. **CALM engine** (`calm/`, ~6,500 LOC across 28 files) — compute-augmented reasoning: LLM sequences → CPU computes → 4-lane TMR verifies → injection feeds back. Full spec: `.claude/rules/calm.md`
+2. **CALM engine** (`calm/`, ~9,500 LOC across 35+ files) — modular compute facade: Auto-CALM (transparent verification + precomputation, 100% benchmark) + explicit CALM (optional `<calm>` blocks) + 9 modular backends (70+ verified functions) + auto-training data collection. Full spec: `.claude/rules/calm.md`
 3. **Rust claw-code port** (`rust/`) — upstream claw-code, 9 crates, separate build system
 
-Serving: either Qwen 3.5 4B or Gemma 4 E4B via llama.cpp at **512K max context** (`ctx_size=524288` in config.py, overridable via `ZENITH_CTX`). Production: tq4+tq4 KV cache on Gemma E4B (~5.0 GB weights + ~2.0 GB KV at 256K). Harness auto-computes compaction threshold as `min(per-GGUF limit, int(ctx_size * 0.89))` — Gemma compacts at **227.5K tokens** (232960). Max effort budget is **48K tokens** (`EFFORT_LEVELS["max"]["max_tokens"]=49152`). Hot-swap between bases is implemented via `agents/model_swap.py`.
+Serving: Gemma 4 E4B (primary) or Qwen 3.5 4B via llama.cpp at **512K context** (`ctx_size=524288`), **32K thinking budget**. Production: tq4+tq4 KV cache on Gemma E4B (`~/models/gemma-4-E4B-it-tq4-aligned.gguf`, 5.0 GB). CALM/Auto-CALM runs on the same llama-server instance. Harness auto-computes compaction threshold as `min(per-GGUF limit, int(ctx_size * 0.89))` — Gemma compacts at **227.5K tokens** (232960). Hot-swap between bases via `agents/model_swap.py`.
 
 ## Python Agent Harness (`agents/`, ~4,400 LOC across 15 core files)
 
@@ -162,29 +164,60 @@ ZENITH_CTX=65536 zenith
 ```
 `bin/zenith` launcher: auto-starts llama.cpp if not running, waits for health, passes `--backend llamacpp`. Default `ZENITH_CTX=262144` (256K). Configurable via `ZENITH_MODEL`, `ZENITH_PORT`, `ZENITH_CTX`, `ZENITH_LLAMA_SERVER` env vars, plus the `--gguf PATH` CLI flag (must be first arg). The stdin pipe form works in any environment (TTY or non-TTY) because the harness uses plain `input()`; redirect output to a file to keep model token spam out of your terminal/context. `bin/zenith` does NOT `cd` into the repo root before exec'ing the harness — this keeps `.zenithrc` lookup and CLAUDE.md auto-discovery honoring the user's actual cwd.
 
-## CALM Engine (`calm/`, ~6,500 LOC, 214 tests, 98% benchmark)
+## CALM Engine (`calm/`, ~9,500 LOC, 250 tests, 100% benchmark)
 
 Full spec: `.claude/rules/calm.md`
 
-**"Deterministic brain on top of a probabilistic nervous system."** The LLM sequences operations, CPU modules compute results, 4-lane TMR verifies correctness, and injection feeds results back mid-generation. No fine-tuning required — the harness handles everything.
+**"Deterministic brain on top of a probabilistic nervous system."** The LLM reasons, modular CPU backends compute, 4-lane TMR verifies, results feed back. No fine-tuning required — add a backend, model gets smarter instantly.
 
-### Core Architecture
-- **Engine** (`engine.py`) — hybrid thinking-plan + stop-mode execution loop. Planning turn uses `enable_thinking` for reasoning; execution turns use `stop=["</calm>"]` for per-block injection. Post-verify catches wrong mental-math answers.
-- **Interceptor** (`interceptor.py`) — 4-tier parse: NL → Stack VM → Expression → Sandboxed Python. Detects `<calm>` blocks in token streams, executes, validates Option B claims.
-- **Expression evaluator** (`expression.py`) — AST-safe eval with 30+ whitelisted functions. Supports list comprehensions, comparisons, ternary. Never uses `eval()`.
-- **Sandbox** (`sandbox.py`) — subprocess Python isolation with import blocking, timeout, stdout capture.
-- **Verifier** (`verifier.py`) — 4-lane TMR: compute × 3 (wasm/math_ops/independent algorithm) + property proof (inverse verification).
-- **Backends** — `math_ops.py` (9 functions), `string_ops.py` (7), `wasm_ops.py` (17 via `calm_math.wat`)
+### Two Modes
+
+**Auto-CALM (default)** — model writes naturally, engine verifies transparently:
+- **Layer 1**: Extract `X = Y` claims from output, verify on CPU, correct if wrong
+- **Layer 2**: Pre-compute answers from the prompt, inject as verified facts
+- **Layer 3**: Model diagnoses bugs in NL, engine applies template fixes, verifies via tests
+- Score: **40/40 (100%)** on 40-problem benchmark with precompute
+
+**Explicit CALM (power user)** — model emits `<calm>...</calm>` blocks:
+- Engine stops at `</calm>`, executes via 4-tier parse, injects results
+- Score: 85-98% (nondeterminism in whether model uses blocks)
+
+### Modular Backend Architecture (9 backends, 70+ functions)
+
+| Backend | Functions | Domain |
+|---|---|---|
+| `math_ops.py` | 9 | primes, GCD, factorize, fibonacci, collatz |
+| `string_ops.py` | 7 | len, case, contains, regex |
+| `wasm_ops.py` | 17 | int/float via WebAssembly cross-check |
+| `code_ops.py` | 16 | read, write, test, lint, search |
+| `security_ops.py` | 8 | OWASP Top 10 detection |
+| `date_ops.py` | 6 | days_between, day_of_week, leap_year |
+| `convert_ops.py` | 5 | units (6 domains) + temperature |
+| `data_ops.py` | 11 | mean, median, stdev, regression, correlation |
+| `algo_ops.py` | 13 | sort, nCr, graph algorithms, LIS |
+
+**Adding a backend**: write a Python file in `calm/backends/` with pure functions, export a `*_FUNCTIONS` dict, add a `try/import` block in `expression.py`. Model gets instantly smarter at that domain — zero training.
+
+### Auto-Training Data Collection
+
+Every Auto-CALM correction generates distillation-compatible JSONL:
+- `MathCollector` — wrong arithmetic → correct reasoning with `<think>`
+- `BoolCollector` — wrong primality/divisibility → correct reasoning
+- `CodeCollector` — bug diagnosis + fix → coding examples
+- Output: `.calm_training/auto/{math,bool,code}.jsonl`
 
 ### Running CALM
 ```bash
-# Run the reasoning engine (needs llama-server on :8080)
-python3 -m calm.engine "What is 17 * 23? Is the result prime?"
+# Auto-CALM (default, transparent, 100% benchmark)
+python3 -m calm.auto_calm "What is 347 * 289? Is it prime?"
 
-# Run the 40-problem benchmark
-python3 -m calm.benchmark
+# Explicit CALM (power user, <calm> blocks)
+python3 -m calm.engine "What is 17 * 23?"
 
-# Run all 214 tests
+# Intent-to-edit (fix bugs from NL description)
+python3 -c "from calm.auto_calm import IntentToEdit; IntentToEdit().fix('app.py', 'test_app.py', verbose=True)"
+
+# Run all 250 tests
 python3 -m pytest calm/tests/ -v
 ```
 
@@ -263,9 +296,9 @@ PYTHONPATH=. python3 -m agents.distill.filter_reasoning --merge # filter + merge
 - **Production GGUF**: `~/models/gemma-4-E4B-it-tq4-aligned.gguf` (5.0 GB, TurboQuant tq4, 132-byte block alignment from session 16). **This is what CALM runs on.**
 - **Alternative GGUFs**: `~/models/gemma-4-E4B-it-Q5_K_M.gguf` (5.48 GB, stock Q5), `~/models/Qwen3.5-4B.Q5_K_M.gguf` (2.9 GB, fine-tuned Q5)
 - **TurboQuant tq4 KV cache**: `--cache-type-k tq4_k256 --cache-type-v tq4_k256`. 4.125 bpw, 16-level Lloyd-Max codebook, Pi rotation (seed=42, 256×256 orthogonal). 132-byte blocks (128 qs + 2 d + 2 pad for 4-byte aligned uint32 loads). **Old 130-byte GGUFs are incompatible — re-quantize.**
-- Context: **256K typical** with tq4 KV (~5.0 GB weights + ~2.0 GB KV = ~7 GB VRAM). Config allows up to 512K.
+- Context: **512K** with tq4 KV (~5.0 GB weights + ~2.0 GB KV = ~7 GB VRAM). 32K thinking budget. Auto-CALM + harness share the same server.
 - `--parallel 1` required — without it, llama-server splits `ctx_size` across 4 default slots
-- Launch: `llama-server -m ~/models/gemma-4-E4B-it-tq4-aligned.gguf --ctx-size 262144 --parallel 1 --cache-type-k tq4_k256 --cache-type-v tq4_k256 -ngl 999 --port 8080`
+- Launch: `llama-server -m ~/models/gemma-4-E4B-it-tq4-aligned.gguf --ctx-size 524288 --parallel 1 --cache-type-k tq4_k256 --cache-type-v tq4_k256 -ngl 999 --port 8080`
 - **~45-48 tok/s** on Gemma 4 E4B tq4 at 8K context (CALM benchmark runs)
 - Hot-swap: `agents/model_swap.py:LlamaServerManager`. `/swap gemma` / `/swap qwen` in harness.
 
