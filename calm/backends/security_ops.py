@@ -51,6 +51,7 @@ _SQL_PATTERNS = [
     (r'(?:execute|cursor\.execute|query|raw)\s*\(\s*f["\']', "f-string in SQL"),
     (r'(?:execute|cursor\.execute|query|raw)\s*\(\s*["\'].*\+', "string concat in SQL"),
     (r'(?:execute|cursor\.execute|query|raw)\s*\(\s*["\'].*\.format\(', ".format() in SQL"),
+    (r'\.execute\s*\(\s*f["\']', "execute with f-string SQL"),
     # Django/SQLAlchemy raw queries
     (r'\.raw\s*\(.*%', "raw query with format"),
     (r'\.extra\s*\(.*where.*%', "extra() with format"),
@@ -60,11 +61,18 @@ _SQL_PATTERNS = [
 
 def _check_sql_injection(content: str, lines: list) -> List[dict]:
     findings = []
+    # Line-by-line patterns
     for i, line in enumerate(lines, 1):
         for pattern, desc in _SQL_PATTERNS:
             if re.search(pattern, line, re.IGNORECASE):
                 findings.append({"line": i, "severity": "HIGH", "type": "sql_injection",
                                 "detail": desc, "code": line.strip()[:100]})
+    # Multi-line: catch .execute(\n    f"...") spanning lines
+    for m in re.finditer(r'\.execute\s*\(\s*\n\s*f["\']', content):
+        lineno = content[:m.start()].count('\n') + 1
+        if not any(f["line"] == lineno for f in findings):
+            findings.append({"line": lineno, "severity": "HIGH", "type": "sql_injection",
+                            "detail": "f-string SQL (multi-line)", "code": lines[lineno-1].strip()[:100]})
     return findings
 
 
@@ -240,6 +248,54 @@ def _check_permissions(content: str, lines: list) -> List[dict]:
 # Full Audit
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Advanced: SSRF, Timing, Format String
+# ---------------------------------------------------------------------------
+
+_SSRF_PATTERNS = [
+    (r'["\'].*["\']\s+in\s+.*(?:hostname|host|url|domain)', "SSRF — 'in' check on hostname (evil-domain.com bypasses)"),
+    (r'(?:requests\.get|urlopen|fetch)\s*\(.*(?:request|params|args|input)', "SSRF — user input in URL fetch"),
+    (r'redirect\s*\(.*(?:request|params|url)', "open redirect — user-controlled redirect target"),
+]
+
+_TIMING_PATTERNS = [
+    (r'==\s*(?:expected|signature|token|hash|hmac|digest)', "timing attack — use hmac.compare_digest() or secrets.compare_digest()"),
+    (r'(?:signature|token|hash|hmac)\s*==', "timing attack — string comparison on secret, use constant-time compare"),
+]
+
+_FORMAT_PATTERNS = [
+    (r'\.format\s*\(.*(?:user|request|input|data|param)', "format string injection — user-controlled .format() args can leak data"),
+    (r'template.*\.format\s*\(', "format string injection — user template with .format()"),
+]
+
+_PREDICTABLE_PATTERNS = [
+    (r'(?:md5|sha1)\s*\(.*(?:email|user|time|date|now)', "predictable token — MD5/SHA1 of guessable input"),
+    (r'token.*=.*(?:md5|sha1)', "predictable token generation"),
+    (r'timedelta\s*\(\s*days\s*=\s*[7-9]|days\s*=\s*[1-9]\d', "long-lived security token (>7 days)"),
+]
+
+
+def _check_advanced(content: str, lines: list) -> List[dict]:
+    findings = []
+    all_patterns = [
+        (_SSRF_PATTERNS, "ssrf"),
+        (_TIMING_PATTERNS, "timing_attack"),
+        (_FORMAT_PATTERNS, "format_injection"),
+        (_PREDICTABLE_PATTERNS, "predictable_token"),
+    ]
+    for patterns, category in all_patterns:
+        for i, line in enumerate(lines, 1):
+            stripped = line.strip()
+            if stripped.startswith("#") or stripped.startswith("//"):
+                continue
+            for pattern, desc in patterns:
+                if re.search(pattern, line, re.IGNORECASE):
+                    severity = "HIGH" if category in ("ssrf", "timing_attack") else "MEDIUM"
+                    findings.append({"line": i, "severity": severity, "type": category,
+                                    "detail": desc, "code": line.strip()[:100]})
+    return findings
+
+
 def _audit(content: str, lines: list) -> dict:
     """Run all checks and return a structured report."""
     all_findings = []
@@ -250,6 +306,7 @@ def _audit(content: str, lines: list) -> dict:
     all_findings.extend(_check_path_traversal(content, lines))
     all_findings.extend(_check_crypto(content, lines))
     all_findings.extend(_check_permissions(content, lines))
+    all_findings.extend(_check_advanced(content, lines))
 
     by_severity = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
     for f in all_findings:
