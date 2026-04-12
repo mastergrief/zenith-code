@@ -111,13 +111,31 @@ class StreamingAutoCalmEngine:
         result.thinking_chars = len(thinking)
         result.total_tokens = token_count
 
-        # Final full-text verification pass (catches anything streaming missed).
+        # Layer 3: full-text verification (catches anything streaming missed).
         corrected, report = self.verifier.verify_and_correct(content)
         if report.corrections > 0:
             result.response = corrected
+
+        # Layer 4: prompt-level answer check (same as one-shot engine).
+        prompt_check = self._verify_prompt_answer(prompt, result.response, precomputed)
+        if prompt_check:
+            report.claims.append(prompt_check)
+            if prompt_check.correct:
+                report.verified += 1
+            else:
+                report.corrections += 1
+
         result.claims_found = len(report.claims) + len(result.stream_claims)
         result.claims_corrected = report.corrections
         result.claims_verified = report.verified
+
+        # If prompt-level check failed, append correction.
+        if prompt_check and not prompt_check.correct:
+            actual_str = self.verifier._format_value(prompt_check.actual_value)
+            result.response += (
+                f"\n\n[Auto-CALM correction: {prompt_check.expression}"
+                f" = {actual_str}, not {prompt_check.claimed_value}]"
+            )
 
         elapsed = time.time() - t0
         if elapsed > 0 and token_count > 0:
@@ -139,6 +157,68 @@ class StreamingAutoCalmEngine:
                 learner.learn_from_correction(c)
 
         return result
+
+    def _verify_prompt_answer(self, prompt, response, precomputed):
+        """Check the model's answer against precomputed or evaluable expression."""
+        expr_patterns = [
+            r'[Ww]hat is (.+?)[\?\.]',
+            r'[Cc]ompute (.+?)[\?\.]',
+            r'[Cc]alculate (.+?)[\?\.]',
+        ]
+        expr = None
+        for pat in expr_patterns:
+            m = re.search(pat, prompt)
+            if m:
+                from calm.precompute import _normalize_expr
+                expr = _normalize_expr(m.group(1).strip())
+                break
+        if not expr:
+            return None
+
+        # Use precomputed value if available, otherwise compute.
+        expected = precomputed.get(expr)
+        if expected is None:
+            try:
+                expected = safe_eval(expr)
+            except ExpressionError:
+                return None
+        if expected is None:
+            return None
+
+        expected_strs = {str(expected)}
+        if isinstance(expected, float) and expected == int(expected):
+            expected_strs.add(str(int(expected)))
+        if isinstance(expected, int):
+            s = str(abs(expected))
+            if len(s) > 3:
+                formatted = ""
+                for i, c in enumerate(reversed(s)):
+                    if i > 0 and i % 3 == 0:
+                        formatted = "," + formatted
+                    formatted = c + formatted
+                if expected < 0:
+                    formatted = "-" + formatted
+                expected_strs.add(formatted)
+
+        response_clean = response.replace(",", "")
+        found = any(
+            es in response or es.replace(",", "") in response_clean
+            for es in expected_strs
+        )
+
+        answer_m = re.search(
+            r'(?:product|result|answer)\s+(?:is|=)\s+[\*]*(\d[\d,]*)',
+            response, re.IGNORECASE)
+        claimed = answer_m.group(1).replace(",", "") if answer_m else "?"
+        if claimed == "?":
+            numbers = re.findall(r'\b(\d[\d,]*\d)\b', response)
+            claimed = numbers[-1].replace(",", "") if numbers else "?"
+
+        return Claim(
+            original=f"[prompt: {expr}]", expression=expr,
+            claimed_value=claimed, actual_value=expected,
+            correct=found, span=(0, 0),
+        )
 
     def _stream_and_verify(self, messages, result, t0, verbose):
         """Stream SSE tokens, verify claims at sentence boundaries."""
