@@ -575,6 +575,24 @@ except ImportError:
     pass
 
 try:
+    from calm.backends.shell_ops import SHELL_FUNCTIONS
+    _FUNCTIONS.update(SHELL_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.semver_ops import SEMVER_FUNCTIONS
+    _FUNCTIONS.update(SEMVER_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.config_ops import CONFIG_FUNCTIONS
+    _FUNCTIONS.update(CONFIG_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
     from calm.backends.context_ops import CONTEXT_FUNCTIONS
     _FUNCTIONS.update(CONTEXT_FUNCTIONS)
 except ImportError:
