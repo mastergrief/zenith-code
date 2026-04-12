@@ -263,12 +263,22 @@ class Dispatcher:
     def __init__(self):
         self.builtins: Dict[str, Builtin] = {}
         self.backends: Dict[str, Backend] = {}
+        self.aliases: Dict[str, str] = {}
 
     def register_builtin(self, name: str, fn: Builtin) -> None:
         self.builtins[name] = fn
 
     def register_backend(self, name: str, fn: Backend) -> None:
         self.backends[name] = fn
+        # Auto-alias: "math.sqrt" also registers "sqrt" → "math.sqrt".
+        if "." in name:
+            short = name.split(".", 1)[1]
+            # Don't clobber existing aliases or builtins.
+            if short not in self.aliases and short not in self.builtins:
+                self.aliases[short] = name
+
+    def register_alias(self, alias: str, target: str) -> None:
+        self.aliases[alias] = target
 
     def execute(self, state: VMState, instr: Instruction) -> None:
         if state.halted:
@@ -286,6 +296,11 @@ class Dispatcher:
             return
 
         w = instr.word
+
+        # Resolve aliases (e.g. "sqrt" → "math.sqrt").
+        if w in self.aliases:
+            w = self.aliases[w]
+
         if w in self.builtins:
             self.builtins[w](state, instr)
             return
@@ -457,6 +472,9 @@ def default_dispatcher() -> Dispatcher:
     d.register_builtin("halt", _b_halt)
     d.register_builtin(":", _b_colon)
     d.register_builtin(";", _b_semicolon)
+    # Common aliases the model uses naturally.
+    d.register_alias("pop", "drop")
+    d.register_alias("print", "emit")
     return d
 
 
