@@ -484,6 +484,36 @@ try:
 except ImportError:
     pass
 
+try:
+    from calm.backends.regex_ops import REGEX_FUNCTIONS
+    _FUNCTIONS.update(REGEX_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.json_ops import JSON_FUNCTIONS
+    _FUNCTIONS.update(JSON_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.encoding_ops import ENCODING_FUNCTIONS
+    _FUNCTIONS.update(ENCODING_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.git_ops import GIT_FUNCTIONS
+    _FUNCTIONS.update(GIT_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.network_ops import NETWORK_FUNCTIONS
+    _FUNCTIONS.update(NETWORK_FUNCTIONS)
+except ImportError:
+    pass
+
 
 class ExpressionError(Exception):
     """Raised when an expression can't be safely evaluated."""
@@ -617,6 +647,12 @@ def _eval_node(node: ast.AST, fns: dict) -> Any:
     # List literal: [1, 2, 3]
     if isinstance(node, ast.List):
         return [_eval_node(elt, fns) for elt in node.elts]
+
+    # Dict literal: {"a": 1, "b": 2}
+    if isinstance(node, ast.Dict):
+        keys = [_eval_node(k, fns) for k in node.keys]
+        values = [_eval_node(v, fns) for v in node.values]
+        return dict(zip(keys, values))
 
     # Subscript: x[0], x[1:3]
     if isinstance(node, ast.Subscript):
