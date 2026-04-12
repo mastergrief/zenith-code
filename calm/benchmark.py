@@ -125,16 +125,21 @@ PROBLEMS = [
 
 def _check_keywords(response: str, keywords: List[str]) -> tuple:
     """
-    Check if all keywords appear in the response. Each keyword entry
-    can contain alternatives separated by |.
-    E.g. "not prime|not a prime|composite" means any of those suffice.
+    Format-agnostic keyword check. Strips formatting, normalizes commas,
+    handles tool-call results, and checks for keywords.
+
+    E.g. "not prime|not a prime|composite|False" means any of those suffice.
     Returns (passed, missing).
     """
-    response_lower = response.lower()
+    # Normalize: strip commas, LaTeX, markdown, tool-call artifacts.
+    resp = response.lower()
+    resp_clean = resp.replace(",", "").replace("$", "").replace("\\", " ")
+    resp_clean = resp_clean.replace("**", "").replace("`", "")
+
     missing = []
     for kw in keywords:
         alternatives = [a.strip().lower() for a in kw.split("|")]
-        if not any(alt in response_lower for alt in alternatives):
+        if not any(alt in resp or alt in resp_clean for alt in alternatives):
             missing.append(kw)
     return len(missing) == 0, missing
 
