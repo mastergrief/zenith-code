@@ -83,6 +83,14 @@ When editing `.claude/` configs (agents, CLAUDE.md, commands, rules etc):
 
 ---
 
+## Commercial Direction
+
+This stack is being built toward a commercial local AI coding assistant. Full spec: `.claude/rules/commercial.md`
+
+Core value proposition: **verified local AI that gets smarter without training.** tq4+tq4 quantization fits 4B models at 512K context on consumer 8GB GPUs. Auto-CALM verifies every computation on CPU. Self-learning patterns compound over time without LoRA. Modular backends make the model domain-expert instantly. All local, zero API cost, full privacy.
+
+When making decisions about architecture, features, or priorities — consider commercial viability. Prefer solutions that are modular, extensible, and user-facing over internal-only tooling.
+
 ## Architecture
 
 **Model reasons, backends compute, engine verifies.** Intelligence comes from the system architecture, not the weights. Adding a backend module is equivalent to training — the model gets smarter at that domain instantly, with zero GPU cost.
