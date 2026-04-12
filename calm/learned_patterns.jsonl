@@ -5,6 +5,6 @@
 {"pattern_type": "function", "expression": "md5(\"test\")", "frequency": 1}
 {"pattern_type": "function", "expression": "fahrenheit_to_celsius(N)", "frequency": 1}
 {"pattern_type": "arithmetic", "expression": "N + O", "frequency": 1}
-{"pattern_type": "arithmetic", "expression": "N - O", "frequency": 3}
+{"pattern_type": "arithmetic", "expression": "N - O", "frequency": 4}
 {"pattern_type": "function", "expression": "factorial(N)", "frequency": 2}
-{"pattern_type": "arithmetic", "expression": "N**O", "frequency": 1}
+{"pattern_type": "arithmetic", "expression": "N**O", "frequency": 2}
