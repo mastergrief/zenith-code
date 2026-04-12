@@ -2,200 +2,261 @@
 
 ## Goal
 
-Implement Auto-CALM — make CALM invisible. Previous session (20) built
-the explicit CALM system (7,644 LOC, 98% benchmark) but hit a wall:
-the 4B model can't reliably emit multi-line code inside `<calm>` blocks.
-Auto-CALM solves this by removing the requirement entirely — the model
-writes naturally, the engine extracts/verifies/corrects every computational
-claim without the model knowing CALM exists.
+Implement Auto-CALM — make CALM invisible, then scale it. Session 20
+built explicit CALM (7,644 LOC, 98% benchmark) but the 4B model
+can't emit multi-line code in `<calm>` blocks. Auto-CALM removes
+that requirement — the model writes naturally, the engine verifies
+everything on CPU.
 
-User directive: "implement auto-calm. hypothesis, test and iterate.
-always run gemma with tq4 512k context, 32k think etc."
+User's vision evolved during the session: started with "implement
+auto-calm" → grew to "build a nervous system for a brain" → "every
+computable domain should have a backend" → "what if creative spark
+could be computed too" → "is this a product?"
 
 ## Completed
 
-### 3 commits this session (all on `feature/multi-agent-qwen`)
+### 20 commits this session, all on `feature/multi-agent-qwen`
 
+Built the complete Auto-CALM system: 3 layers of verification,
+30 modular backends, 251 verified compute functions, streaming
+engine, self-learning, format-agnostic benchmark. Everything
+hypothesis-test-iterated through Gemma 4 E4B tq4 at 512K context.
+
+### Auto-CALM Architecture (calm/, ~14,700 LOC)
+
+**Facade pattern** — `auto_calm.py` composes 6 focused modules:
+
+| Module | LOC | Purpose |
+|---|---|---|
+| `auto_calm.py` | 324 | Facade: composes layers, CLI, re-exports |
+| `verify.py` | 284 | Layer 1: claim extraction + verification |
+| `precompute.py` | 346 | Layer 2: precomputation + system prompt |
+| `intent_edit.py` | 356 | Layer 3: NL → template fix → test |
+| `stream_auto.py` | 437 | Streaming verify + Gemma tool-call handler |
+| `auto_learn.py` | 215 | Self-learning from corrections |
+| `auto_training.py` | 337 | Training data generation |
+
+**4-layer safety net** in streaming engine:
+1. Precompute — inject verified facts before model responds
+2. Stream verify — check claims at sentence boundaries as tokens arrive
+3. Full-text verify — scan complete response post-generation
+4. Prompt check — cross-check answer against expected value
+
+**Self-learning loop** (closed):
 ```
-408cb64 auto-calm: boolean precomputation + tests (36 tests)
-52c3978 auto-calm: precomputation injection (Layer 2 complete)
-b1e8096 auto-calm: transparent compute verification (Layer 1+2)
+model error → correction → pattern generalized → precompute next time
+     ↑                                                        ↓
+     └────── model uses precomputed fact ← no error ←─────────┘
 ```
+Patterns stored in `calm/learned_patterns.jsonl` (committed to repo).
 
-### Result: 40/40 (100%) benchmark — up from 85-98% explicit CALM
+### 30 Modular Backends (calm/backends/, ~5,460 LOC)
 
-| Mode | Score | Time | Notes |
+Session 20 had 6 backends. This session added 24 more:
+
+| # | Backend | Funcs | Added this session? |
 |---|---|---|---|
-| CALM v0.1 (explicit `<calm>`) | 85-98% | ~1000s | Model must format blocks |
-| Auto-CALM (no precompute) | 35/40 (88%) | 1580s | Post-hoc only |
-| **Auto-CALM + precompute** | **40/40 (100%)** | **1097s** | Pre-computed facts |
+| 1-5 | math, string, wasm, code, security | 57 | No (session 20) |
+| 6-9 | date, convert, data, algo | 35 | No (session 20) |
+| 10 | quality_ops | 7 | Yes — code complexity metrics |
+| 11 | readability_ops | 5 | Yes — Flesch-Kincaid, jargon |
+| 12 | regex_ops | 7 | Yes — pattern matching |
+| 13 | json_ops | 7 | Yes — validate, path, diff |
+| 14 | encoding_ops | 12 | Yes — base64, hex, hashing |
+| 15 | git_ops | 7 | Yes — log, blame, status |
+| 16 | network_ops | 9 | Yes — URL, IP, CIDR, HTTP |
+| 17 | creative_ops | 9 | Yes — brainstorm, combine, novelty |
+| 18 | impact_ops | 7 | Yes — call graph, blast radius |
+| 19 | context_ops | 7 | Yes — git archaeology, code age |
+| 20 | python_ops | 9 | Yes — builtin/method verification |
+| 21 | math_extended_ops | 15 | Yes — matrices, modular arith, calculus |
+| 22 | perf_ops | 6 | Yes — Big-O estimation |
+| 23 | deps_ops | 6 | Yes — package analysis |
+| 24 | refactor_ops | 4 | Yes — code smells |
+| 25 | type_ops | 4 | Yes — annotation coverage |
+| 26 | test_ops | 4 | Yes — test summary |
+| 27 | doc_ops | 4 | Yes — docstring coverage |
+| 28 | shell_ops | 7 | Yes — exit codes, dangerous cmds |
+| 29 | semver_ops | 6 | Yes — version compare/satisfies |
+| 30 | config_ops | 6 | Yes — YAML/TOML/INI/dotenv |
 
-Per-category (all 100%): arithmetic 10/10, number_theory 10/10,
-sequences 5/5, algebra 5/5, reasoning 5/5, multi_step 5/5.
+### Key Results
 
-### What was built: `calm/auto_calm.py` (814 LOC) + tests (222 LOC)
+**Benchmark: 40/40 (100%)** — format-agnostic, prompt-independent.
+Verified 3 times this session (with 9 backends, 16, and 30).
 
-**Layer 1 — Claim Verification (`AutoCalm` class):**
-- Regex extracts `expression = value` claims from model output
-  - Arithmetic: `17 \times 23 = 391` (LaTeX + Unicode + plain)
-  - Function calls: `factorial(10) = 3628800`
-  - GCD/LCM: `GCD of 391 and 782 is 391`
-  - Boolean: `391 is [not] prime`, `28 is a perfect number`, `X is divisible by Y`
-- `_strip_formatting()` removes LaTeX (`\mathbf{}`, `\text{}`, `$`) and markdown (`**bold**`) before extraction
-- `_is_conditional_match()` excludes question contexts: "if X is prime", "whether X is perfect", "check if X is divisible"
-- `_is_integer_division_context()` detects "remainder" after division claims — treats `54 ÷ 7 = 7 remainder 5` as integer division
-- Corrections applied from end-to-start to preserve span positions
-- Boolean corrections flip `is`/`is not` instead of replacing with True/False
+**Intent-to-edit: 10/10 + 13/13** on two unseen buggy files.
+Template-based fixes (zero-check, try/except, bounds-check) +
+LLM full-rewrite fallback + self-healing retry.
 
-**Layer 2 — Precomputation + Prompt Verification (`AutoCalmEngine` class):**
-- `_precompute(prompt)` extracts computations from the prompt BEFORE the model responds
-  - Matches: "What is X?", "Compute X?", "Calculate X?", "Find X?"
-  - NL patterns: fibonacci(N), factorial(N), collatz_length(N), nth_prime(N), next_prime(N), factorize(N), gcd(A,B), lcm(A,B)
-  - Boolean: "Is X prime?", "Is X perfect?", "Is X divisible by Y?"
-- Pre-computed values injected as `"Verified facts: X = Y"` in system prompt
-- Model sees correct values upfront → uses them directly → no arithmetic errors
-- `_verify_prompt_answer()` cross-checks the model's answer against pre-computed value
-- Multi-turn correction: if prompt check fails, retries with correction message (max 1 retry)
-- Falls back to appending `[Auto-CALM correction: ...]` note if retry also fails
+**Self-analysis**: Gemma analyzed its own code using quality_ops,
+impact_ops, perf_ops — gave data-backed review citing specific
+metrics (CC=13, coupling=7/100, 42.9% documented).
 
-### Key Decisions (with reasoning)
+### Key Decisions
 
-1. **Post-hoc over mid-stream** — can't inject mid-generation with non-streaming API. Verify after the fact, retry if wrong. Works because most claims are correct; we only correct the few wrong ones.
+1. **Auto-discovery over manual registration** — precompute scans
+   prompts for any registered function name. New backends work
+   immediately with zero config in precompute.py.
 
-2. **Pre-computation is the biggest win** — injecting verified facts into the system prompt eliminates the model's arithmetic weakness entirely. fibonacci(30) goes from FAIL (model computes wrong) to PASS in 2.3s (model reads the fact). Collatz(27) goes from 165s (manual computation) to 2.3s.
+2. **Compact system prompt** — listing all 251 functions caused
+   the model to emit tool calls instead of NL. Fixed: show top 5
+   per category (~739 tokens). Auto-discovery handles the rest.
 
-3. **LaTeX stripping, not LaTeX parsing** — the model writes LaTeX math (`$17 \times 23 = 391$`, `\mathbf{100,283}`, `$$...$$`). Instead of teaching the regex to handle every LaTeX variant, strip formatting before extraction. Simpler, more robust.
+3. **Format-agnostic benchmark** — keyword checker strips commas,
+   LaTeX, markdown, backticks. Validates answers regardless of
+   output format. Removed prompt dependency.
 
-4. **Don't strip single `*`** — markdown `**bold**` stripping is safe, but single `*italic*` conflicts with multiplication `17 * 23`. Only strip `**`.
+4. **Learned patterns committed to repo** — `calm/learned_patterns.jsonl`
+   is the system's experience. Feeds precompute on CPU, not LoRA.
+   Raw training data (`.calm_training/`) is gitignored.
 
-5. **Conditional context filtering** — "if 391 is prime" is a question, not a claim. Regex lookbehinds don't work (engine matches mid-number). Solution: scan the 50 chars before each match for conditional words (if, whether, check, determine, test, verify).
+5. **Precomputed facts capped at 5** — the learner generates
+   combinatorial explosions (every N*M pair). Cap prevents context
+   bloat and huge-integer crashes.
 
-6. **Integer division awareness** — "54 ÷ 7 = 7 remainder 5" is correct (integer division). Without this, Auto-CALM "corrects" to 7.714... which corrupts the model's long division work-showing.
+6. **Gemma tool-call handling** — model naturally emits
+   `<|tool_call>call:module.func(args)`. Engine parses, executes,
+   replaces with computed result. Works for all 30 backends.
 
-7. **No cross-reference for "product is X"** — tried linking "The product is 35,818,953" back to the nearest `A × B` expression. Failed: picked wrong intermediate expression from LaTeX arrays. Deferred to prompt-level verification which is more reliable.
+### False Positive Log (claim verification)
 
-### False Positive Evolution (most instructive failures)
+| Issue | Fix |
+|---|---|
+| `391 = 17` from `391 = 17 × 20 + 51` | Require operator in LHS |
+| RHS followed by operators | Negative lookahead |
+| "if 391 is prime" (question, not claim) | Conditional word filter |
+| Comma in numbers breaks LHS | Add `,` to digit class |
+| "perfectly" matches "perfect" | Word boundary `\b` |
+| Integer division "54÷7=7 R5" | Remainder context check |
+| Single `*` stripped as markdown | Only strip `**` |
+| Large integers crash str() | `_safe_str()` with try/except |
 
-| Iteration | False Positive | Root Cause | Fix |
-|---|---|---|---|
-| 1 | `391 = 17` from `391 = 17 × 20 + 51` | Regex matched LHS without operator | Require operator in LHS |
-| 2 | RHS followed by `\times` | Equation fragment, not standalone claim | Negative lookahead on operators |
-| 3 | `391 is False` | Boolean correction replaced with value, not flipped assertion | Move boolean handler before generic handler |
-| 4 | `To determine if 391 is prime` | Question context matched as assertion | Add conditional word filter |
-| 5 | `100,283 \div 17` captured as `283 \div 17` | Comma in number broke LHS pattern | Add `,` to LHS digit class |
-| 6 | `100,283 is perfectly divisible` | "perfectly" matched "perfect" pattern | Add `\b` after "perfect" |
-| 7 | `54 \div 7 = 7 remainder 5` corrected to 7.714 | Integer division treated as float | Check "remainder" context |
-| 8 | `check if the digit sum (42) is divisible by 9` | Conditional "if" too far from match | Widen prefix scan to 50 chars |
-| 9 | `17 * 23 = 391 and 42 * 19 = 798` lost `*` | Markdown italic strip ate `*` operator | Only strip `**`, not `*` |
+## Next Steps — Hypothesis, Test & Iterate
 
-## In Progress
+### Priority 1: More OP backends (user wants it loaded before using)
 
-**Layer 3 (Intent-to-Edit) — not started.** The handoff from session 20
-describes this as: detect code change descriptions in natural language,
-generate actual code, apply + test. This would solve the "file write
-problem" — the model describes fixes in English, the engine writes the code.
+Build these next, each following hypothesis → measure → ship:
 
-The model already demonstrates the key capability: it identifies bugs
-correctly (3,857 chars of thinking in session 20), describes fixes in
-natural language, knows which lines to change. It just can't format the
-fix as code inside a `<calm>` block. Auto-CALM Layer 3 would bridge
-that gap.
+1. **SQL ops** — parse, validate, explain queries. Models write
+   broken SQL constantly. AST parsing via `sqlparse` or manual.
+   Test: have Gemma write queries and verify them.
 
-## Next Steps
+2. **Cron ops** — parse cron expressions, compute next N runs,
+   explain in English. Nobody can read `0 */4 * * 1-5`.
+   Test: have Gemma interpret cron schedules.
 
-1. **Wire Auto-CALM into the harness** — `agents/harness.py` should
-   auto-verify claims when backend is llama.cpp. Add `/auto-calm` toggle
-   command. When enabled, every model response passes through
-   `AutoCalm.verify_and_correct()`.
+3. **Bitwise ops** — masks, shifts, flags, bit counting. Pure
+   computation the model can't do mentally.
+   Test: have Gemma do bit manipulation problems.
 
-2. **Layer 3: Intent-to-Edit** — the hardest and most impactful layer.
-   Detect code change descriptions → generate code → apply → test.
-   See session 20 handoff for detailed design. Key: the model describes
-   "change the divide function to check for zero", the engine generates
-   the actual `if b == 0: return 'Error'` and applies it.
+4. **AST transform ops** — automated refactoring: rename symbol,
+   extract function, inline variable. Actual code transforms,
+   not suggestions. Test: refactor a messy file, verify syntax.
 
-3. **Streaming Auto-CALM** — currently uses non-streaming API (one-shot
-   generate → verify). Could integrate with `stream_engine.py` to verify
-   claims as tokens arrive, enabling mid-generation correction.
+5. **Diff ops** — unified diff parsing, patch application,
+   conflict detection. Test: parse a real git diff.
 
-4. **Update CLAUDE.md and rules** — add Auto-CALM section to
-   `.claude/CLAUDE.md` and `.claude/rules/calm.md`.
+6. **Package ops** — npm/pip/cargo info from local cache.
+   "What version of X do I have?" Test: query installed packages.
 
-5. **Expand precompute patterns** — currently covers arithmetic,
-   number theory functions, and boolean checks. Could add: string
-   operations, date math, unit conversions, combinatorics.
+### Priority 2: Wire into harness
+
+Once backends are "OP enough", integrate Auto-CALM into
+`agents/harness.py` so every `zenith` response is verified.
+The change is small — add `verify_and_correct()` as a
+post-processor on every model response.
+
+### Priority 3: Re-validate NIAH with tq4
+
+The 200K compaction threshold in `compact.py:MODEL_CONTEXT_LIMITS`
+was measured with Q5_K_M KV cache. tq4+tq4 KV may support
+different effective context. Re-run `scripts/needle_test.py`
+with the current tq4 serving config.
 
 ## Key Context
 
-### Engine Defaults
-
-- **Gemma 4 E4B tq4** at 512K context, 32K thinking budget
+### Serving (unchanged)
+- Gemma 4 E4B tq4 at 512K context, 32K thinking budget
 - `~/models/gemma-4-E4B-it-tq4-aligned.gguf` (5.0 GB)
 - `--cache-type-k tq4_k256 --cache-type-v tq4_k256 --parallel 1`
-- ~47-50 tok/s at 8K context on RTX 4070 Laptop
-- llama-server on port 8080
+- ~47-50 tok/s, llama-server on port 8080
+- Server crashes occasionally under heavy benchmark load — just restart
 
-### What NOT to retry
+### System prompt sensitivity
+- With 251 function names listed, model emits tool calls instead of NL
+- Compact prompt (top 5 per category, ~739 tokens) fixes this
+- Format-agnostic benchmark removes the dependency entirely
+- The correctness doesn't depend on the prompt — only presentation does
 
-- **Cross-reference "product is X"** — tried linking backward to nearest
-  `A × B`. Picks wrong expression from LaTeX arrays (intermediate steps
-  vs main expression). Prompt-level verification is more reliable.
-- **Single `*` stripping** — conflicts with multiplication operator.
-- **Regex lookbehinds for conditional context** — regex engine starts
-  matching mid-number, so lookbehind sees wrong prefix.
+### The learner generates too many precomputes
+- `N * O` pattern matches every pair of numbers in a prompt
+- Capped at 5 precomputed facts to prevent context bloat
+- Large integers (factorial of large numbers) crash Python's str()
+- `_safe_str()` truncates at 200 chars
 
-### Architecture Note
+### Architecture insight (from user)
+- "Adding a backend is equivalent to training"
+- "What if creative spark could be computed too?"
+- "It's like giving a brain a nervous system"
+- Percepta.ai is doing the opposite — putting computation inside
+  transformer weights. Our approach: wrap the LLM in computers.
+  Same result, ours is cheaper (zero training).
 
-Auto-CALM and explicit CALM coexist cleanly:
-- `engine.py` / `stream_engine.py` — explicit `<calm>` blocks (v0.1/v0.2)
-- `auto_calm.py` — transparent verification (no `<calm>` needed)
-- Both use the same `expression.py:safe_eval()` for computation
-- Both use the same `verifier.py` for TMR when applicable
-- A future unified engine could use Auto-CALM as default and fall back
-  to explicit CALM when the model emits `<calm>` blocks voluntarily
+### Commercial direction
+- `.claude/rules/commercial.md` documents product vision
+- Currently R&D, not shipping. Commercial awareness is context.
+- Key differentiators: tq4+tq4, Auto-CALM, self-learning, modular backends, fully local
 
-## Files in Project (CALM subsystem, ~8,680 LOC total)
+## Files in Project
 
 ### Auto-CALM (new this session)
-- `calm/auto_calm.py` (814) — `AutoCalm` (claim extraction + verification), `AutoCalmEngine` (precompute + multi-turn correction)
-- `calm/tests/test_auto_calm.py` (222) — 36 tests: extraction, boolean claims, conditional filtering, verification, correction, precompute
+- `calm/auto_calm.py` (324) — facade: AutoCalmEngine, re-exports, CLI
+- `calm/verify.py` (284) — Layer 1: claim extraction + verification
+- `calm/precompute.py` (346) — Layer 2: precomputation + system prompt
+- `calm/intent_edit.py` (356) — Layer 3: NL → template fix → verify
+- `calm/stream_auto.py` (437) — streaming verify + tool-call handler
+- `calm/auto_learn.py` (215) — self-learning from corrections
+- `calm/auto_training.py` (337) — training data generation
+- `calm/learned_patterns.jsonl` — self-learned error patterns (committed)
+- `calm/backends/*.py` (~5,460) — 30 modular compute backends
+- `calm/tests/test_auto_calm.py` (222) — 36 Auto-CALM tests
 
-### Core Runtime (from session 20)
-- `calm/engine.py` (527) — v0.1: hybrid thinking-plan + stop-mode
-- `calm/stream_engine.py` (240) — v0.2: SSE streaming, thinking every turn
-- `calm/interceptor.py` (479) — 4-tier parse + CALM block detection
-- `calm/expression.py` (618) — AST-safe eval, 30+ functions
-- `calm/verifier.py` (560) — 4-lane TMR verification
+### Existing CALM (session 20)
+- `calm/engine.py` (527) — explicit CALM v0.1
+- `calm/stream_engine.py` (240) — explicit CALM v0.2
+- `calm/interceptor.py` (479) — 4-tier parse
+- `calm/expression.py` (780) — AST eval, 251 registered functions
+- `calm/verifier.py` (560) — 4-lane TMR
 - `calm/stack_vm.py` (522) — reference stack machine
-- `calm/sandbox.py` (250) — subprocess Python isolation
-- `calm/nl_parser.py` (168) — NL → stack code translator
-- `calm/grammar.py` (110) — GBNF grammar generator
-- `calm/training.py` (94) — JSONL signal collector
-- `calm/reasoning.py` (172) — structured chain tracker
-
-### Backends
-- `calm/backends/math_ops.py` (134) — 9 CPU math functions
-- `calm/backends/string_ops.py` (92) — 7 string functions
-- `calm/backends/wasm_ops.py` (174) — 17 wasm functions
-- `calm/backends/code_ops.py` (310) — 16 code operations
-- `calm/backends/security_ops.py` (327) — 8 security checks
-- `calm/backends/calm_math.wat` (60) — WebAssembly module
-
-### Tests + Benchmarks
-- `calm/tests/` (9 files, ~3,200 LOC) — 242 tests (214 original + 28 auto-calm)
-- `calm/benchmark.py` (227) — 40-problem automated eval
+- `calm/sandbox.py` (250) — subprocess isolation
+- `calm/benchmark.py` (227) — 40-problem eval (format-agnostic)
 
 ## Useful Commands
 
 ```bash
-# Auto-CALM engine (precompute on by default)
-python3 -m calm.auto_calm "What is 17 * 23? Is the result prime?"
+# Auto-CALM (default)
+python3 -m calm.auto_calm "What is fibonacci(30)? Is it prime?"
 
-# Run all tests (242 tests, ~4s)
+# Streaming Auto-CALM (4-layer safety net)
+python3 -m calm.stream_auto "What is 347 * 289?"
+
+# Intent-to-edit
+python3 -c "from calm.auto_calm import IntentToEdit; IntentToEdit().fix('app.py', 'test_app.py', verbose=True)"
+
+# Run all tests (250)
 python3 -m pytest calm/tests/ -v
 
-# Run 40-problem benchmark with explicit CALM
-python3 -m calm.benchmark
+# Run 40-problem benchmark
+python3 -u -c "
+from calm.auto_calm import AutoCalmEngine
+from calm.benchmark import PROBLEMS, _check_keywords
+engine = AutoCalmEngine(thinking_budget=32768)
+for prob in PROBLEMS:
+    r = engine.run(prob.prompt, verbose=False)
+    ok, _ = _check_keywords(r.response, prob.keywords)
+    print(f'[{\"PASS\" if ok else \"FAIL\"}] #{prob.id} {prob.prompt[:50]}')
+"
 
 # Start llama-server (tq4+tq4, 512K)
 ~/llama.cpp/build/bin/llama-server \
@@ -203,4 +264,7 @@ python3 -m calm.benchmark
     --ctx-size 524288 --parallel 1 \
     --cache-type-k tq4_k256 --cache-type-v tq4_k256 \
     -ngl 999 --port 8080
+
+# Check function count
+python3 -c "from calm.expression import _FUNCTIONS; print(len(_FUNCTIONS))"
 ```
