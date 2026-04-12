@@ -326,6 +326,28 @@ def _code_call(fn_name, *args):
     fn(state, Instruction(word=fn_name))
     return state.stack[-1] if state.stack else None
 
+def _sec_call(fn_name, *args):
+    """Call a security_ops function by simulating stack operations."""
+    from calm.backends.security_ops import SECURITY_WORDS
+    from calm.stack_vm import VMState, Instruction
+    fn = SECURITY_WORDS.get(fn_name)
+    if not fn:
+        raise ExpressionError(f"unknown security function: {fn_name}")
+    state = VMState()
+    for a in args:
+        state.stack.append(a)
+    fn(state, Instruction(word=fn_name))
+    return state.stack[-1] if state.stack else None
+
+def _sec_audit(path): return _sec_call("security.audit", path)
+def _sec_sql_injection(path): return _sec_call("security.sql_injection", path)
+def _sec_xss(path): return _sec_call("security.xss", path)
+def _sec_secrets(path): return _sec_call("security.secrets", path)
+def _sec_unsafe_exec(path): return _sec_call("security.unsafe_exec", path)
+def _sec_path_traversal(path): return _sec_call("security.path_traversal", path)
+def _sec_crypto(path): return _sec_call("security.crypto", path)
+def _sec_permissions(path): return _sec_call("security.permissions", path)
+
 def _code_read(path): return _code_call("code.read", path)
 def _code_write(path, content): return _code_call("code.write", path, content)
 def _code_syntax_check(path): return _code_call("code.syntax_check", path)
@@ -383,6 +405,15 @@ _FUNCTIONS.update({
     # Ranges
     "sum_range": _sum_range,
     "product_range": _product_range,
+    # Security operations
+    "security.audit": _sec_audit,
+    "security.sql_injection": _sec_sql_injection,
+    "security.xss": _sec_xss,
+    "security.secrets": _sec_secrets,
+    "security.unsafe_exec": _sec_unsafe_exec,
+    "security.path_traversal": _sec_path_traversal,
+    "security.crypto": _sec_crypto,
+    "security.permissions": _sec_permissions,
     # Code operations (wrappers for calm/backends/code_ops.py)
     "code.read": _code_read,
     "code.write": _code_write,

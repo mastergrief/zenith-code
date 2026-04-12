@@ -83,9 +83,9 @@ class CalmEngine:
         self,
         server: str = SERVER,
         system_prompt: str = SYSTEM_PROMPT,
-        max_iterations: int = 10,
-        max_tokens_per_turn: int = 8192,
-        thinking_budget: int = 16384,
+        max_iterations: int = 30,
+        max_tokens_per_turn: int = 16384,
+        thinking_budget: int = 32768,
     ):
         self.server = server
         self.system_prompt = system_prompt
@@ -487,7 +487,7 @@ class CalmEngine:
         if divergences:
             parts.append("WARNING: TMR DIVERGENCE")
         result = f"[engine: {', '.join(parts)}]"
-        return result[:2000]
+        return result[:4000]
 
     @staticmethod
     def _truncate(val, max_len=800):
@@ -504,8 +504,15 @@ class CalmEngine:
 
     @staticmethod
     def _truncate_item(v, max_str=200):
-        """Truncate individual items — strip file contents, long strings."""
+        """Truncate individual items — strip file contents, long strings.
+        Format security/code results as readable text."""
         if isinstance(v, dict):
+            # Security audit results — format as readable list
+            if "findings" in v and "total_findings" in v:
+                lines = [f"Audit: {v.get('total_findings')} findings, severity: {v.get('by_severity', {})}"]
+                for f in v.get("findings", [])[:15]:
+                    lines.append(f"  line {f['line']}: [{f['severity']}] {f['type']} — {f['detail']}")
+                return "\n".join(lines)
             out = {}
             for k, val in v.items():
                 if k == "content" and isinstance(val, str) and len(val) > max_str:
