@@ -25,7 +25,7 @@ from typing import Dict, List, Optional
 from calm.expression import safe_eval, ExpressionError
 
 
-DEFAULT_DB = Path(".calm_training/auto/learned_patterns.jsonl")
+DEFAULT_DB = Path("calm/learned_patterns.jsonl")
 
 
 class LearnedPattern:

@@ -17,3 +17,6 @@ unsloth_compiled_cache/
 .zenith_sessions/
 .env.local
 .serena/
+
+# Auto-CALM session data (raw corrections, not distilled)
+.calm_training/
