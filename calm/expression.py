@@ -598,6 +598,42 @@ try:
 except ImportError:
     pass
 
+try:
+    from calm.backends.sql_ops import SQL_FUNCTIONS
+    _FUNCTIONS.update(SQL_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.cron_ops import CRON_FUNCTIONS
+    _FUNCTIONS.update(CRON_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.bitwise_ops import BITWISE_FUNCTIONS
+    _FUNCTIONS.update(BITWISE_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.diff_ops import DIFF_FUNCTIONS
+    _FUNCTIONS.update(DIFF_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.package_ops import PACKAGE_FUNCTIONS
+    _FUNCTIONS.update(PACKAGE_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.ast_ops import AST_FUNCTIONS
+    _FUNCTIONS.update(AST_FUNCTIONS)
+except ImportError:
+    pass
+
 
 class ExpressionError(Exception):
     """Raised when an expression can't be safely evaluated."""
