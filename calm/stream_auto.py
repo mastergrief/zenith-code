@@ -107,14 +107,15 @@ class StreamingAutoCalmEngine:
         )
 
         result.original_response = content
-        result.response = content
         result.thinking_chars = len(thinking)
         result.total_tokens = token_count
 
+        # Layer 2.5: handle tool calls in the response.
+        content = self._handle_tool_calls(content, verbose)
+
         # Layer 3: full-text verification (catches anything streaming missed).
         corrected, report = self.verifier.verify_and_correct(content)
-        if report.corrections > 0:
-            result.response = corrected
+        result.response = corrected if report.corrections > 0 else content
 
         # Layer 4: prompt-level answer check (same as one-shot engine).
         prompt_check = self._verify_prompt_answer(prompt, result.response, precomputed)
@@ -298,6 +299,71 @@ class StreamingAutoCalmEngine:
                                 self.on_claim(sc)
 
         return thinking, content, token_count
+
+    def _handle_tool_calls(self, content: str, verbose: bool) -> str:
+        """Parse and execute Gemma tool calls in the response.
+        Handles: <|tool_call>call:module.func("args")<channel|>
+                 <|tool_call>call:module.func{"key": "val"}<tool_call|>
+        Replaces the entire block with the computed result."""
+        import json as _json
+
+        # Permissive: catch any <|tool_call>call:...> block.
+        # Handles spaces after "call:", unquoted JSON, missing closing tags.
+        tool_re = re.compile(
+            r'<\|tool_call>call:\s*'       # start + optional space
+            r'([\w.]+)'                    # function name
+            r'\s*'                         # optional space
+            r'(?:\(([^)]*)\)|'             # args in parens
+            r'\{([^}]*)\})?'              # or args in braces
+            r'[^<]*'                       # trailing content
+            r'(?:<(?:channel|tool_call)\|>)?',  # optional close
+            re.DOTALL,
+        )
+
+        result = content
+        for m in tool_re.finditer(content):
+            func_name = m.group(1)
+            short_name = func_name.split(".")[-1]
+
+            # Extract args.
+            args_str = ""
+            if m.group(2) is not None:
+                # Paren args: func("hello")
+                args_str = m.group(2)
+            elif m.group(3) is not None:
+                # JSON args: func{"data": "hello"} or func{data: "hello"}
+                raw_json = m.group(3)
+                # Fix unquoted keys: {url: "..."} → {"url": "..."}
+                fixed = re.sub(r'(\w+)\s*:', r'"\1":', raw_json)
+                try:
+                    args_dict = _json.loads("{" + fixed + "}")
+                    args_str = ", ".join(
+                        f'"{v}"' if isinstance(v, str) else str(v)
+                        for v in args_dict.values()
+                    )
+                except _json.JSONDecodeError:
+                    # Last resort: extract quoted strings as args.
+                    quoted = re.findall(r'"([^"]*)"', raw_json)
+                    args_str = ", ".join(f'"{q}"' for q in quoted) if quoted else raw_json
+
+            expr = f'{short_name}({args_str})' if args_str else f'{short_name}()'
+            try:
+                val = safe_eval(expr)
+                replacement = f"{short_name}({args_str}) = {val}"
+                result = result.replace(m.group(0), replacement)
+                if verbose:
+                    print(f"  [tool-call] {expr} → {str(val)[:100]}")
+            except ExpressionError as e:
+                if verbose:
+                    print(f"  [tool-call] {expr} → failed: {e}")
+
+        # Clean any remaining tool-call artifacts.
+        result = re.sub(r'<\|tool_call>[^<]*(?:<(?:channel|tool_call)\|>)?', '', result)
+
+        if verbose and result != content:
+            print(f"  [tool-call] replaced: {repr(result[:100])}")
+
+        return result.strip()
 
     def _check_incremental(self, content: str, from_pos: int) -> List[Claim]:
         """Check the newly accumulated text for claims."""
