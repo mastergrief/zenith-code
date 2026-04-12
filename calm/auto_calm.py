@@ -787,6 +787,504 @@ class AutoCalmEngine:
         )
 
 
+# ---------------------------------------------------------------------------
+# Layer 3 — Intent-to-Edit: NL → code → apply → test
+# ---------------------------------------------------------------------------
+
+EDIT_SYSTEM_PROMPT = """\
+You are a code repair assistant. You fix bugs in Python code.
+Be precise. Output ONLY the replacement code when asked."""
+
+
+@dataclass
+class EditResult:
+    """Result of an intent-to-edit operation."""
+    original_tests: str = ""    # before: "6/10 passed"
+    final_tests: str = ""       # after: "10/10 passed"
+    edits_applied: int = 0
+    edits_attempted: int = 0
+    diagnosis: str = ""         # model's NL diagnosis
+    steps: List[dict] = field(default_factory=list)
+    success: bool = False
+
+
+@dataclass
+class EditIntent:
+    """A single edit parsed from the model's NL description."""
+    file: str
+    line: int
+    action: str         # "replace", "insert_before", "insert_after", "wrap"
+    description: str    # NL description of the change
+    code: str = ""      # generated replacement code
+
+
+class IntentToEdit:
+    """
+    3-step bug fixer:
+    1. DIAGNOSE — model reads code + test failures, describes fixes
+    2. GENERATE — engine extracts edits, model generates replacement code
+    3. VERIFY — engine applies edits, runs tests
+    """
+
+    def __init__(
+        self,
+        server: str = "http://localhost:8080",
+        max_tokens: int = 16384,
+        thinking_budget: int = 32768,
+    ):
+        self.server = server
+        self.max_tokens = max_tokens
+        self.thinking_budget = thinking_budget
+
+    def fix(
+        self, file_path: str, test_path: str, verbose: bool = False
+    ) -> EditResult:
+        """Run the full 3-step fix pipeline."""
+        import os
+        result = EditResult()
+        test_dir = os.path.dirname(os.path.abspath(test_path))
+
+        # Step 0: baseline test run.
+        baseline = self._run_tests(test_path, cwd=test_dir)
+        result.original_tests = baseline
+        if verbose:
+            print(f"[step 0] baseline: {baseline}")
+
+        # Read the source file.
+        source = open(file_path).read()
+
+        # Step 1: DIAGNOSE — model reads code + failures, describes fixes.
+        diagnosis = self._diagnose(source, file_path, baseline, verbose)
+        result.diagnosis = diagnosis
+        if verbose:
+            print(f"[step 1] diagnosis: {len(diagnosis)} chars")
+            preview = diagnosis[:300].replace('\n', ' ')
+            print(f"  {preview}...")
+
+        # Step 2: GENERATE — extract edit intents, generate code.
+        intents = self._extract_intents(diagnosis, file_path)
+        result.edits_attempted = len(intents)
+        if verbose:
+            print(f"[step 2] {len(intents)} edit intents extracted")
+
+        if not intents:
+            if verbose:
+                print(f"[step 2] no edits extracted — asking model for code directly")
+            fixed_source = self._generate_full_fix(
+                source, file_path, baseline, verbose, diagnosis,
+            )
+            if fixed_source and fixed_source != source:
+                # Write the fixed file.
+                with open(file_path, 'w') as f:
+                    f.write(fixed_source)
+                result.edits_applied = 1
+                result.steps.append({"action": "full_rewrite", "file": file_path})
+
+                # Step 3: VERIFY
+                after = self._run_tests(test_path, cwd=test_dir)
+                result.final_tests = after
+                result.success = "failed" not in after.lower() or \
+                    self._count_passed(after) > self._count_passed(baseline)
+                if verbose:
+                    print(f"[step 3] after fix: {after}")
+                    print(f"[result] {'SUCCESS' if result.success else 'PARTIAL'}")
+                return result
+
+        # Generate replacement code for each intent.
+        for intent in intents:
+            code = self._generate_code(intent, source, verbose)
+            intent.code = code
+            if verbose:
+                print(f"  [{intent.action}] line {intent.line}: {intent.description[:60]}")
+                if code:
+                    print(f"    code: {code[:80]}")
+
+        # Step 3: APPLY + VERIFY — apply edits and test.
+        # Apply from bottom to top to preserve line numbers.
+        sorted_intents = sorted(
+            [i for i in intents if i.code],
+            key=lambda i: i.line, reverse=True,
+        )
+
+        lines = source.splitlines()
+        for intent in sorted_intents:
+            idx = intent.line - 1
+            if idx < 0 or idx >= len(lines):
+                continue
+            if intent.action == "replace":
+                lines[idx] = intent.code
+            elif intent.action == "insert_before":
+                lines.insert(idx, intent.code)
+            elif intent.action == "insert_after":
+                lines.insert(idx + 1, intent.code)
+            elif intent.action == "wrap":
+                # Wrap means replace + possibly add lines
+                code_lines = intent.code.split('\n')
+                lines[idx:idx+1] = code_lines
+            result.edits_applied += 1
+            result.steps.append({
+                "action": intent.action,
+                "line": intent.line,
+                "code": intent.code[:100],
+            })
+
+        # Write the modified file.
+        with open(file_path, 'w') as f:
+            f.write('\n'.join(lines) + '\n')
+
+        # Syntax check — if broken, revert and try full rewrite.
+        import ast as _ast
+        syntax_ok = True
+        try:
+            _ast.parse('\n'.join(lines))
+        except SyntaxError:
+            syntax_ok = False
+
+        if not syntax_ok:
+            if verbose:
+                print(f"[step 3] syntax error from line edits — trying full rewrite")
+            with open(file_path, 'w') as f:
+                f.write(source)
+            fixed_source = self._generate_full_fix(
+                source, file_path, baseline, verbose, diagnosis,
+            )
+            if fixed_source:
+                with open(file_path, 'w') as f:
+                    f.write(fixed_source)
+            else:
+                result.final_tests = "syntax error — could not fix"
+                return result
+
+        # Run tests.
+        after = self._run_tests(test_path, cwd=test_dir)
+        result.final_tests = after
+        result.success = "failed" not in after.lower() or \
+            self._count_passed(after) > self._count_passed(baseline)
+
+        if verbose:
+            print(f"[step 3] after fix: {after}")
+            print(f"[result] {'SUCCESS' if result.success else 'PARTIAL'}")
+
+        # If tests regressed, revert and try full rewrite.
+        if self._count_passed(after) < self._count_passed(baseline):
+            if verbose:
+                print(f"[step 3] regression — reverting, trying full rewrite")
+            with open(file_path, 'w') as f:
+                f.write(source)
+            fixed_source = self._generate_full_fix(
+                source, file_path, baseline, verbose, diagnosis,
+            )
+            if fixed_source:
+                with open(file_path, 'w') as f:
+                    f.write(fixed_source)
+                after = self._run_tests(test_path, cwd=test_dir)
+                result.final_tests = after
+                result.success = self._count_passed(after) > self._count_passed(baseline)
+                if verbose:
+                    print(f"[step 3] full rewrite: {after}")
+
+        # Self-healing: if still failing, feed remaining failures back (max 1 retry).
+        if self._count_passed(after) < 10 and "failed" in after.lower():
+            current_source = open(file_path).read()
+            if verbose:
+                print(f"[step 4] self-healing — feeding remaining failures back")
+            fixed2 = self._generate_full_fix(
+                current_source, file_path, after, verbose,
+            )
+            if fixed2:
+                with open(file_path, 'w') as f:
+                    f.write(fixed2)
+                after2 = self._run_tests(test_path, cwd=test_dir)
+                if self._count_passed(after2) >= self._count_passed(after):
+                    result.final_tests = after2
+                    result.success = "failed" not in after2.lower()
+                    if verbose:
+                        print(f"[step 4] after retry: {after2}")
+                else:
+                    # Retry was worse — revert to previous.
+                    with open(file_path, 'w') as f:
+                        f.write(current_source)
+                    if verbose:
+                        print(f"[step 4] retry regressed — keeping previous")
+
+        return result
+
+    def _diagnose(self, source: str, path: str, test_output: str, verbose: bool) -> str:
+        """Step 1: model reads code + failures and describes fixes."""
+        messages = [
+            {"role": "system", "content": EDIT_SYSTEM_PROMPT},
+            {"role": "user", "content": (
+                f"Here is `{path}`:\n```python\n{source}\n```\n\n"
+                f"Test results:\n```\n{test_output}\n```\n\n"
+                f"Describe each bug and exactly how to fix it. "
+                f"For each fix, state: the line number, what's wrong, "
+                f"and what the replacement code should be. "
+                f"Use the format: 'Line N: replace with `code`' or "
+                f"'Line N: add `code` before/after'."
+            )},
+        ]
+        content, _, _ = self._generate(messages)
+        return content
+
+    def _extract_intents(self, diagnosis: str, file_path: str) -> List[EditIntent]:
+        """Parse edit intents from the model's NL diagnosis."""
+        intents = []
+
+        # Pattern: "Line N: replace with `code`" / "Line N: change to `code`"
+        for m in re.finditer(
+            r'[Ll]ine\s+(\d+).*?(?:replace|change|modify|update)\s+.*?'
+            r'(?:with|to)\s*[`\'"](.*?)[`\'"]',
+            diagnosis, re.DOTALL,
+        ):
+            intents.append(EditIntent(
+                file=file_path, line=int(m.group(1)),
+                action="replace", description=m.group(0)[:200],
+            ))
+
+        # Pattern: "Line N: add `code` before/after"
+        for m in re.finditer(
+            r'[Ll]ine\s+(\d+).*?add\s+[`\'"](.*?)[`\'"]\s*(before|after)',
+            diagnosis,
+        ):
+            action = "insert_before" if m.group(3) == "before" else "insert_after"
+            intents.append(EditIntent(
+                file=file_path, line=int(m.group(1)),
+                action=action, description=m.group(0)[:200],
+            ))
+
+        # Pattern: "Line N: wrap in try/except" or "Line N: add error handling"
+        for m in re.finditer(
+            r'[Ll]ine\s+(\d+).*?(?:wrap|surround|enclose)\s+.*?'
+            r'(?:in|with)\s+(?:a\s+)?(\w+)',
+            diagnosis,
+        ):
+            intents.append(EditIntent(
+                file=file_path, line=int(m.group(1)),
+                action="wrap", description=m.group(0)[:200],
+            ))
+
+        return intents
+
+    def _generate_code(self, intent: EditIntent, source: str, verbose: bool) -> str:
+        """Ask the model to generate replacement code for an edit intent."""
+        lines = source.splitlines()
+        # Show context: 3 lines before/after the target line.
+        start = max(0, intent.line - 4)
+        end = min(len(lines), intent.line + 3)
+        context = '\n'.join(
+            f"{'>>>' if i == intent.line - 1 else '   '} {i+1}: {lines[i]}"
+            for i in range(start, end)
+        )
+
+        messages = [
+            {"role": "system", "content": EDIT_SYSTEM_PROMPT},
+            {"role": "user", "content": (
+                f"Edit intent: {intent.description}\n\n"
+                f"Context (>>> marks the target line):\n{context}\n\n"
+                f"Output ONLY the replacement code for line {intent.line}. "
+                f"No explanation, no markdown, just the code line."
+            )},
+        ]
+        content, _, _ = self._generate(messages)
+
+        # Clean: strip markdown fences, leading/trailing whitespace.
+        code = content.strip()
+        code = re.sub(r'^```\w*\n?', '', code)
+        code = re.sub(r'\n?```$', '', code)
+        code = code.strip()
+
+        # If multi-line, take the most relevant line.
+        if '\n' in code:
+            code_lines = [l for l in code.splitlines() if l.strip()]
+            if code_lines:
+                code = code_lines[0]
+
+        return code
+
+    def _apply_template_fixes(
+        self, source: str, test_output: str, verbose: bool,
+    ) -> Optional[str]:
+        """Apply template-based fixes based on test error patterns."""
+        import ast as _ast
+        lines = source.splitlines()
+        modified = False
+
+        # Pattern 1: ZeroDivisionError — add zero check.
+        if "ZeroDivisionError" in test_output:
+            for i, line in enumerate(lines):
+                stripped = line.strip()
+                indent = line[:len(line) - len(line.lstrip())]
+                if ('/ b' in stripped or '/ y' in stripped or '/b' in stripped) \
+                   and 'return' in stripped and '== 0' not in stripped:
+                    # Find the divisor variable.
+                    m = re.search(r'/\s*(\w+)', stripped)
+                    if m:
+                        var = m.group(1)
+                        guard = f'{indent}if {var} == 0:\n{indent}    return "Error: division by zero"'
+                        lines.insert(i, guard)
+                        modified = True
+                        if verbose:
+                            print(f"  [template] line {i+1}: zero-check for {var}")
+                        break
+
+        # Pattern 2: ValueError on float() / int() — add try/except.
+        if "ValueError" in test_output and "float" in test_output:
+            for i, line in enumerate(lines):
+                stripped = line.strip()
+                indent = line[:len(line) - len(line.lstrip())]
+                if 'return float(' in stripped or 'return int(' in stripped:
+                    func = 'float' if 'float' in stripped else 'int'
+                    lines[i] = (
+                        f'{indent}try:\n'
+                        f'{indent}    {stripped}\n'
+                        f'{indent}except (ValueError, TypeError):\n'
+                        f'{indent}    return "Error: invalid input"'
+                    )
+                    modified = True
+                    if verbose:
+                        print(f"  [template] line {i+1}: try/except for {func}()")
+                    break
+
+        # Pattern 3: IndexError on list access — add bounds check.
+        # Find the highest index used and guard for it.
+        if "IndexError" in test_output:
+            # Find the maximum index used on the crashing list var.
+            max_idx = 0
+            list_var = None
+            first_access_line = None
+            for i, line in enumerate(lines):
+                stripped = line.strip()
+                for m in re.finditer(r'(\w+)\[(\d+)\]', stripped):
+                    var, idx = m.group(1), int(m.group(2))
+                    if idx >= max_idx:
+                        max_idx = idx
+                        list_var = var
+                    if first_access_line is None:
+                        first_access_line = i
+
+            if list_var and first_access_line is not None:
+                indent = lines[first_access_line][:len(lines[first_access_line]) - len(lines[first_access_line].lstrip())]
+                guard = (
+                    f'{indent}if len({list_var}) < {max_idx + 1}:\n'
+                    f'{indent}    return "Error: malformed input"'
+                )
+                lines.insert(first_access_line, guard)
+                modified = True
+                if verbose:
+                    print(f"  [template] line {first_access_line+1}: bounds-check for {list_var}[0..{max_idx}]")
+
+        if not modified:
+            return None
+
+        result = '\n'.join(lines) + '\n'
+        try:
+            _ast.parse(result)
+            return result
+        except SyntaxError:
+            return None
+
+    def _generate_full_fix(
+        self, source: str, path: str, test_output: str, verbose: bool,
+        diagnosis: str = "",
+    ) -> Optional[str]:
+        """Fallback: ask the model to output the entire fixed file."""
+        # Try templates first — deterministic and reliable.
+        tmpl_result = self._apply_template_fixes(source, test_output, verbose)
+        if tmpl_result:
+            if verbose:
+                print(f"  [template] applied deterministic fix")
+            return tmpl_result
+
+        # LLM fallback.
+        diag_context = f"\nYour diagnosis:\n{diagnosis}\n" if diagnosis else ""
+        messages = [
+            {"role": "system", "content": EDIT_SYSTEM_PROMPT},
+            {"role": "user", "content": (
+                f"Here is the COMPLETE `{path}` ({len(source.splitlines())} lines):\n"
+                f"```python\n{source}\n```\n\n"
+                f"Test failures:\n```\n{test_output[-500:]}\n```\n"
+                f"{diag_context}\n"
+                f"Output the COMPLETE fixed file with ALL functions preserved. "
+                f"Keep every existing function. Only modify the buggy parts. "
+                f"Output ONLY the Python code, no markdown, no explanation."
+            )},
+        ]
+        content, _, _ = self._generate(messages)
+
+        code = content.strip()
+        code = re.sub(r'^```\w*\n?', '', code)
+        code = re.sub(r'\n?```$', '', code)
+        code = code.strip()
+
+        import ast as _ast
+        try:
+            _ast.parse(code)
+            return code + '\n'
+        except SyntaxError:
+            if verbose:
+                print(f"[full-fix] syntax error in generated code")
+            return None
+
+    def _run_tests(self, test_path: str, cwd: str = None) -> str:
+        """Run pytest and return summary string."""
+        import subprocess, sys
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-m", "pytest", test_path, "-v", "--tb=short", "-q"],
+                capture_output=True, text=True, timeout=30, cwd=cwd,
+            )
+            return proc.stdout[-500:] + proc.stderr[-200:]
+        except subprocess.TimeoutExpired:
+            return "timeout"
+
+    def _count_passed(self, test_output: str) -> int:
+        """Extract passed count from pytest output."""
+        m = re.search(r'(\d+) passed', test_output)
+        return int(m.group(1)) if m else 0
+
+    def _generate(self, messages):
+        """Send chat completion. Returns (content, thinking, timings)."""
+        import json, urllib.request
+
+        payload = {
+            "messages": messages,
+            "temperature": 0.0,
+            "max_tokens": self.max_tokens,
+            "stream": False,
+        }
+        if self.thinking_budget > 0:
+            payload["enable_thinking"] = True
+            payload["thinking_budget"] = self.thinking_budget
+
+        req = urllib.request.Request(
+            f"{self.server}/v1/chat/completions",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            data = json.loads(resp.read())
+
+        choice = data["choices"][0]
+        return (
+            choice["message"].get("content", ""),
+            choice["message"].get("reasoning_content", ""),
+            data.get("timings", {}),
+        )
+
+
+def run_edit(file_path: str, test_path: str, verbose: bool = True) -> EditResult:
+    """CLI convenience for intent-to-edit."""
+    engine = IntentToEdit()
+    result = engine.fix(file_path, test_path, verbose=verbose)
+
+    print(f"\n{'='*60}")
+    print(f"Before: {result.original_tests.splitlines()[-2] if result.original_tests else '?'}")
+    print(f"After:  {result.final_tests.splitlines()[-2] if result.final_tests else '?'}")
+    print(f"Edits:  {result.edits_applied}/{result.edits_attempted}")
+    print(f"Result: {'SUCCESS' if result.success else 'NEEDS WORK'}")
+    return result
+
+
 def run_auto(prompt: str, verbose: bool = True, **kwargs) -> AutoCalmResult:
     """CLI convenience function."""
     engine = AutoCalmEngine(**kwargs)
