@@ -683,6 +683,30 @@ class AutoCalmEngine:
                         except ExpressionError:
                             pass
 
+        # Boolean precomputes: "Is X prime?", "Is X perfect?", "Is X divisible by Y?"
+        bool_pats = [
+            (r'[Ii]s\s+(\d[\d,]*)\s+(?:a\s+)?prime', lambda n: ("is_prime", f"is_prime({n})")),
+            (r'[Ii]s\s+(\d[\d,]*)\s+(?:a\s+)?perfect', lambda n: ("is_perfect", f"is_perfect({n})")),
+            (r'[Ii]s\s+(\d[\d,]*)\s+divisible\s+by\s+(\d+)', None),
+        ]
+        for pat_info in bool_pats:
+            pat = pat_info[0]
+            for m in re.finditer(pat, prompt):
+                if pat_info[1] is None:
+                    # divisibility
+                    n = m.group(1).replace(",", "")
+                    d = m.group(2)
+                    expr = f"{n} % {d} == 0"
+                else:
+                    n = m.group(1).replace(",", "")
+                    _, expr = pat_info[1](n)
+                if expr not in results:
+                    try:
+                        val = safe_eval(expr)
+                        results[expr] = val
+                    except ExpressionError:
+                        pass
+
         return results
 
     def _verify_prompt_answer(self, prompt: str, response: str) -> Optional[Claim]:
