@@ -447,6 +447,31 @@ _FUNCTIONS.update({
     "filter_expr": _filter_expr,
 })
 
+# Register new modular backends.
+try:
+    from calm.backends.date_ops import DATE_FUNCTIONS
+    _FUNCTIONS.update(DATE_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.convert_ops import CONVERT_FUNCTIONS
+    _FUNCTIONS.update(CONVERT_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.data_ops import DATA_FUNCTIONS
+    _FUNCTIONS.update(DATA_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.algo_ops import ALGO_FUNCTIONS
+    _FUNCTIONS.update(ALGO_FUNCTIONS)
+except ImportError:
+    pass
+
 
 class ExpressionError(Exception):
     """Raised when an expression can't be safely evaluated."""

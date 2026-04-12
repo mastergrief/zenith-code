@@ -61,11 +61,12 @@ class AutoCalm:
             r'([\-]?\d[\d,]*)'
             r'(?!\s*(?:[\*×÷\+\-\/%\^]|\\times|\\cdot|\\div))',
         ),
-        # "result is 391" / "answer is 391" / "product is 5481"
+        # "result is 391" / "answer is 391" / "mean is 42.5"
         # Captures the keyword and value for cross-reference.
         re.compile(
-            r'((?:result|answer|total|sum|product|difference|quotient|value)'
-            r'\s+(?:is|equals|gives|=)\s+)([\-]?\d[\d,]*)',
+            r'((?:result|answer|total|sum|product|difference|quotient|value'
+            r'|mean|median|average|mode|variance|stdev|correlation)'
+            r'\s+(?:is|equals|gives|=)\s+)([\-]?\d[\d,\.]*)',
         ),
         # "factorial(10) = 3628800" — function call = value
         re.compile(
@@ -690,6 +691,63 @@ class AutoCalmEngine:
                             results[expr] = val
                         except ExpressionError:
                             pass
+
+        # Date/conversion/stats precomputes from NL patterns.
+        extra_nl = [
+            # "convert 5 miles to km" → convert(5, "miles", "km")
+            (r'convert\s+([\d.]+)\s+(\w+)\s+to\s+(\w+)', None),
+            # "X celsius to fahrenheit"
+            (r'([\d.]+)\s+(?:celsius|C)\s+(?:to|in)\s+(?:fahrenheit|F)', None),
+            # "X fahrenheit to celsius"
+            (r'([\d.]+)\s+(?:fahrenheit|F)\s+(?:to|in)\s+(?:celsius|C)', None),
+            # "is YYYY a leap year"
+            (r'[Ii]s\s+(\d{4})\s+a?\s*leap\s+year', None),
+            # "how many days between X and Y"
+            (r'days?\s+between\s+([\d/-]+)\s+and\s+([\d/-]+)', None),
+            # "what day.*is DATE" / "day of the week"
+            (r'(?:what|which)\s+day.*?(\d{4}-\d{2}-\d{2})', None),
+            # "N choose R" or "C(N,R)"
+            (r'(\d+)\s+choose\s+(\d+)', None),
+            (r'[Cc]\((\d+)\s*,\s*(\d+)\)', None),
+            # "mean/median/mode of [list]"
+            (r'(?:mean|average)\s+of\s+\[([\d,.\s]+)\]', None),
+            (r'median\s+of\s+\[([\d,.\s]+)\]', None),
+        ]
+        for pat_tuple in extra_nl:
+            pat = pat_tuple[0]
+            for m in re.finditer(pat, prompt, re.IGNORECASE):
+                expr = None
+                try:
+                    if 'convert' in pat:
+                        val, from_u, to_u = m.group(1), m.group(2), m.group(3)
+                        expr = f'convert({val}, "{from_u}", "{to_u}")'
+                    elif 'celsius' in pat.lower() and 'fahrenheit' in pat.lower():
+                        expr = f'celsius_to_fahrenheit({m.group(1)})'
+                    elif 'fahrenheit' in pat.lower() and 'celsius' in pat.lower():
+                        expr = f'fahrenheit_to_celsius({m.group(1)})'
+                    elif 'leap' in pat:
+                        expr = f'is_leap_year({m.group(1)})'
+                    elif 'days' in pat and 'between' in pat:
+                        expr = f'days_between("{m.group(1)}", "{m.group(2)}")'
+                    elif 'day' in pat:
+                        expr = f'day_of_week("{m.group(1)}")'
+                    elif 'choose' in pat or 'C(' in pat:
+                        expr = f'nCr({m.group(1)}, {m.group(2)})'
+                    elif 'mean' in pat or 'average' in pat:
+                        nums = m.group(1)
+                        expr = f'mean([{nums}])'
+                    elif 'median' in pat:
+                        nums = m.group(1)
+                        expr = f'median([{nums}])'
+                except (IndexError, AttributeError):
+                    continue
+
+                if expr and expr not in results:
+                    try:
+                        val = safe_eval(expr)
+                        results[expr] = val
+                    except ExpressionError:
+                        pass
 
         # Boolean precomputes: "Is X prime?", "Is X perfect?", "Is X divisible by Y?"
         bool_pats = [
