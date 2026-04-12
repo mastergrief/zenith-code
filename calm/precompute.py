@@ -107,8 +107,9 @@ _NL_PATTERNS = [
     (r'the digit(?:al)? (?:sum|root) of (\d+)', None),
     (r'the smallest prime (?:greater than|>) (\d+)', r'next_prime(\1)'),
     (r'the (?:prime )?factors of (\d+)', r'factorize(\1)'),
-    (r'the GCD of (\d+) and (\d+)', r'gcd(\1, \2)'),
-    (r'the LCM of (\d+) and (\d+)', r'lcm(\1, \2)'),
+    # GCD/LCM — support function calls as args: "GCD of fibonacci(10) and fibonacci(15)"
+    (r'the GCD of (\w+\(\d+\)|\d+) and (\w+\(\d+\)|\d+)', r'gcd(\1, \2)'),
+    (r'the LCM of (\w+\(\d+\)|\d+) and (\w+\(\d+\)|\d+)', r'lcm(\1, \2)'),
 ]
 
 # Extended NL patterns for dates, conversions, stats.
@@ -241,6 +242,32 @@ def precompute(prompt: str) -> Dict[str, object]:
             else:
                 n = m.group(1).replace(",", "")
                 expr = pat_info[1](n)
+            if expr not in results:
+                try:
+                    results[expr] = safe_eval(expr)
+                except ExpressionError:
+                    pass
+
+    # Search/filter precomputes: "find all X where/whose Y"
+    # These map to list comprehensions with the registered functions.
+    search_pats = [
+        # "all primes under N whose digit sum is also prime"
+        (r'(?:find |list )?all\s+primes?\s+(?:under|below|less than)\s+(\d+)\s+whose\s+digit\s+sum\s+is\s+(?:also\s+)?prime',
+         lambda m: f'[p for p in range(2, {m.group(1)}) if is_prime(p) and is_prime(digit_sum(p))]'),
+        # "all primes between N and M"
+        (r'(?:find |list )?all\s+primes?\s+between\s+(\d+)\s+and\s+(\d+)',
+         lambda m: f'[p for p in range({m.group(1)}, {int(m.group(2))+1}) if is_prime(p)]'),
+        # "all divisors of N"
+        (r'(?:find |list )?all\s+divisors?\s+of\s+(\d+)',
+         lambda m: f'divisors({m.group(1)})'),
+        # "all fibonacci numbers under N"
+        (r'(?:find |list )?all\s+fibonacci\s+numbers?\s+(?:under|below)\s+(\d+)',
+         lambda m: f'[fibonacci(i) for i in range(1, 50) if fibonacci(i) < {m.group(1)}]'),
+    ]
+    for pat, builder in search_pats:
+        m_search = re.search(pat, prompt, re.IGNORECASE)
+        if m_search:
+            expr = builder(m_search)
             if expr not in results:
                 try:
                     results[expr] = safe_eval(expr)

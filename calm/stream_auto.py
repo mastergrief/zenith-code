@@ -113,6 +113,9 @@ class StreamingAutoCalmEngine:
         # Layer 2.5: handle tool calls in the response.
         content = self._handle_tool_calls(content, verbose)
 
+        # Layer 2.6: try evaluating inline expressions.
+        content = self._try_eval_expressions(content)
+
         # Layer 3: full-text verification (catches anything streaming missed).
         corrected, report = self.verifier.verify_and_correct(content)
         result.response = corrected if report.corrections > 0 else content
@@ -368,6 +371,28 @@ class StreamingAutoCalmEngine:
             print(f"  [tool-call] replaced: {repr(result[:100])}")
 
         return result.strip()
+
+    def _try_eval_expressions(self, content: str) -> str:
+        """Find evaluable expressions in the response and compute them.
+        If the model writes something like [p for p in range(2,50) if is_prime(p)],
+        try to evaluate it and inject the result."""
+        # Find backtick-wrapped expressions or obvious function compositions.
+        import re as _re
+        result = content
+
+        # Pattern: `expression` or inline expressions with known functions.
+        for m in _re.finditer(r'`([^`]+)`', content):
+            expr = m.group(1)
+            # Only try if it contains a known function name.
+            from calm.expression import _FUNCTIONS
+            if any(fn in expr for fn in _FUNCTIONS if len(fn) > 2):
+                try:
+                    val = safe_eval(expr)
+                    result = result.replace(m.group(0), f"`{expr}` = {val}")
+                except ExpressionError:
+                    pass
+
+        return result
 
     def _check_incremental(self, content: str, from_pos: int) -> List[Claim]:
         """Check the newly accumulated text for claims."""
