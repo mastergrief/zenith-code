@@ -1,1 +1,2 @@
-{"pattern_type": "arithmetic", "expression": "N * O", "frequency": 1}
+{"pattern_type": "arithmetic", "expression": "N * O", "frequency": 2}
+{"pattern_type": "arithmetic", "expression": "N / O", "frequency": 1}
