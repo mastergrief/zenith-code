@@ -520,6 +520,18 @@ try:
 except ImportError:
     pass
 
+try:
+    from calm.backends.impact_ops import IMPACT_FUNCTIONS
+    _FUNCTIONS.update(IMPACT_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.context_ops import CONTEXT_FUNCTIONS
+    _FUNCTIONS.update(CONTEXT_FUNCTIONS)
+except ImportError:
+    pass
+
 
 class ExpressionError(Exception):
     """Raised when an expression can't be safely evaluated."""
