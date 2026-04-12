@@ -1,6 +1,34 @@
-# Zenith Code — Multi-Agent Harness + Specialist Distillation
+# Zenith Code — Multi-Agent Harness + CALM Reasoning Engine
 
-Fork of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) with a Python multi-agent harness and distillation pipeline for fine-tuning Qwen 3.5 4B specialists from curated training data.
+Fork of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) with a Python multi-agent harness, CALM compute-augmented reasoning engine, and distillation pipeline. Three systems coexist: the Python agent harness (`agents/`), the CALM engine (`calm/`), and the Rust claw-code port (`rust/`).
+
+## Default Workflow — Hypothesis, Test, Iterate
+Full spec: `.claude/rules/workflow.md`
+
+**Core principle: it works or it doesn't, it's better or it isn't.** Every
+"done", "working", "fixed", "faster" claim must be backed by a measurement
+taken *after* the change. No vibes, no "looks right", no "should be fine".
+
+- **The loop:** state hypothesis → pick measurement first → minimal edit →
+  build → measure → binary decision (ship or revert) → log what you ruled
+  out → next hypothesis. Target: < 5 min per round.
+- **Two measurements every round:** a raw/fast path (e.g. `llama-bench`,
+  unit test, pytest) AND the user-facing path (e.g. chat API, full
+  harness run, real inference). Only ship when both move together —
+  raw-only wins are buried under overhead, user-only wins are noise.
+- **Plateau = bug, not tuning.** 3 iterations in a row < 2% each → stop
+  micro-tuning, go find the one wrong line. Session-16 example: ~6
+  micro-opts stuck at 24 tok/s, then one line (cache 16-entry const-mem
+  LUT in registers) moved +58%.
+- **One round per commit, with a before/after table in the message.**
+  `git log --oneline` becomes a readable perf changelog. Always
+  checkpoint before risky swings (re-quantize, struct layout, training
+  run) — your rollback is `git reset --hard HEAD`.
+- **Correctness check every round.** Canonical smoke test: `17×23=391`
+  via the chat API. Perf gains that break correctness are reverts.
+- **Default over orchestration:** this workflow is the default for all
+  work in this project. Orchestration (`/VDD`, subagent dispatch) only
+  applies when explicitly invoked. Everything else runs this loop.
 
 ## Orchestrator Role & Tool Restrictions
 Full spec: `.claude/rules/orchestration.md`
@@ -57,28 +85,27 @@ When editing `.claude/` configs (agents, CLAUDE.md, commands, rules etc):
 
 ## Architecture
 
-Two systems coexist:
-1. **Python agent harness** (`agents/`) — terminal coding assistant with dual backend (Ollama + llama.cpp), 3-level permissions, thinking mode, sessions, compaction, effort control, and llama.cpp hot-swap
-2. **Rust claw-code port** (`rust/`) — upstream claw-code, 9 crates, separate build system
+Three systems coexist:
+1. **Python agent harness** (`agents/`, ~4,400 LOC across 15 files) — terminal coding assistant with dual backend (Ollama + llama.cpp), 3-level permissions, thinking mode, sessions, compaction, effort control, and llama.cpp hot-swap
+2. **CALM engine** (`calm/`, ~6,500 LOC across 28 files) — compute-augmented reasoning: LLM sequences → CPU computes → 4-lane TMR verifies → injection feeds back. Full spec: `.claude/rules/calm.md`
+3. **Rust claw-code port** (`rust/`) — upstream claw-code, 9 crates, separate build system
 
-Serving: either Qwen 3.5 4B or Gemma 4 E4B via llama.cpp at **256K context** (`ZENITH_CTX=262144` default) with Q4 KV cache (~6.7–7.3 GB VRAM). Harness auto-computes compaction threshold as `min(per-GGUF limit, int(ctx_size * 0.89))` — Gemma compacts at **227.5K tokens** (232960). Max effort budget is **32K tokens** (`EFFORT_LEVELS["max"]["max_tokens"]=32768`); headroom at default ctx is 29184, so max-effort responses near the threshold can soft-truncate by ~3.5K until the next compaction fires. Hot-swap between bases is implemented via `agents/model_swap.py`.
+Serving: either Qwen 3.5 4B or Gemma 4 E4B via llama.cpp at **512K max context** (`ctx_size=524288` in config.py, overridable via `ZENITH_CTX`). Production: tq4+tq4 KV cache on Gemma E4B (~5.0 GB weights + ~2.0 GB KV at 256K). Harness auto-computes compaction threshold as `min(per-GGUF limit, int(ctx_size * 0.89))` — Gemma compacts at **227.5K tokens** (232960). Max effort budget is **48K tokens** (`EFFORT_LEVELS["max"]["max_tokens"]=49152`). Hot-swap between bases is implemented via `agents/model_swap.py`.
 
-## Python Agent Harness (`agents/`, ~2,870 lines across 14 files)
+## Python Agent Harness (`agents/`, ~4,400 LOC across 15 core files)
 
 ### Core Files
-- `agent.py` (520 lines) — `Agent` class with dual backend (Ollama + llama.cpp), streaming, thinking mode, tool calling loop (max 10 rounds), connection retry with backoff, system prompt builder, effort mode, output dedup, `detect_llamacpp_model()` helper that queries `/props` for the loaded GGUF path
-- `coordinator.py` (76 lines) — `Coordinator` delegates tasks via JSON `{"delegate": "name", "task": "..."}` protocol
-- `swarm.py` (55 lines) — `Swarm` runs agents in parallel via `ThreadPoolExecutor`
-- `tools.py` (312 lines) — 6 tools: `bash`, `read_file`, `write_file`, `edit_file`, `grep`, `list_files`. read_file supports offset/limit windowing + binary detection. edit_file shows context preview.
-- `harness.py` (664 lines) — Terminal REPL with colored output, streaming tokens, thinking display, user confirmation prompts, readline history, 17 slash commands including `/swap` for hot-swapping GGUFs; caches `_loaded_llamacpp_model` via `/props` query at init and recomputes compaction threshold on `/swap` or `/backend`
-- `specialist_coordinator.py` (245 lines) — `SpecialistCoordinator` auto-selects between hot-swap mode (llama.cpp + specialist GGUFs on disk via `discover_specialist_models()`) and Ollama multi-model mode; falls back to base model if neither available
-- `model_swap.py` (407 lines) — `LlamaServerManager` orchestrates llama-server subprocess lifecycle (start/stop/swap), adopts externally-started servers via `/props`, finds the listening PID via `/proc/net/tcp` for servers it doesn't own. `discover_specialist_models()` scans `~/models/` for domain-named GGUFs
-- `example.py` (43 lines) — Demo scripts for Coordinator + Swarm patterns
+- `agent.py` (563) — `Agent` class with dual backend, streaming, thinking mode, tool calling loop (max 10 rounds), connection retry with backoff, system prompt builder, effort mode, output dedup, `detect_llamacpp_model()`
+- `tools.py` (1622) — 20 tools: `bash`, `read_file`, `write_file`, `edit_file`, `grep`, `list_files`, `list_directory`, `Agent`, `AgentCreate`, `AgentMessage`, `AgentGet`, `AgentList`, `AgentTerminate`, `Sleep`, `WebFetch`, `WebSearch`, `AskUserQuestion`, `TodoWrite`, `TodoRead`, `MultiEdit`
+- `harness.py` (720) — Terminal REPL with colored output, streaming tokens, thinking display, readline history, 17+ slash commands including `/swap`
+- `model_swap.py` (407) — `LlamaServerManager` for llama-server subprocess lifecycle
+- `specialist_coordinator.py` (245) — auto-selects hot-swap vs Ollama multi-model mode
+- `coordinator.py` (76), `swarm.py` (55), `example.py` (43) — coordination patterns
 
 ### Production Features
 - `permissions.py` (133 lines) — 3 permission modes (READ_ONLY/WORKSPACE_WRITE/FULL_ACCESS), 4-level bash classification (SAFE/WRITE/DESTRUCTIVE/BLOCKED), git subcommand awareness, write redirect detection, system path blocking
 - `compact.py` (244 lines) — Auto-compaction with per-GGUF context limits (Gemma 4 E4B 200K, Qwen 3.5 4B 130K, llama.cpp fallback 65K — NIAH-validated, see `.claude/MEMORY/evals/2026-04-07_summary_needle_comparison.md`), summary compression, env var override (`ZENITH_AUTO_COMPACT_TOKENS`)
-- `config.py` (61 lines) — Config loader for `.zenithrc`/`zenith.json` with explicit `ZENITH_*` env var registry (`ZENITH_MODEL`, `ZENITH_BACKEND`, `ZENITH_CTX`, `ZENITH_AUTO_COMPACT_TOKENS`, `ZENITH_PERMISSION_MODE`, `ZENITH_EFFORT`); `ctx_size` default is 262144
+- `config.py` (61 lines) — Config loader for `.zenithrc`/`zenith.json` with explicit `ZENITH_*` env var registry; `ctx_size` default is **524288** (512K)
 - `history.py` (34 lines) — Timestamped audit log for tool calls, responses, errors, commands
 - `session.py` (51 lines) — Save/load agent conversations to `.zenith_sessions/` as JSON, auto-save on exit
 
@@ -135,6 +162,32 @@ ZENITH_CTX=65536 zenith
 ```
 `bin/zenith` launcher: auto-starts llama.cpp if not running, waits for health, passes `--backend llamacpp`. Default `ZENITH_CTX=262144` (256K). Configurable via `ZENITH_MODEL`, `ZENITH_PORT`, `ZENITH_CTX`, `ZENITH_LLAMA_SERVER` env vars, plus the `--gguf PATH` CLI flag (must be first arg). The stdin pipe form works in any environment (TTY or non-TTY) because the harness uses plain `input()`; redirect output to a file to keep model token spam out of your terminal/context. `bin/zenith` does NOT `cd` into the repo root before exec'ing the harness — this keeps `.zenithrc` lookup and CLAUDE.md auto-discovery honoring the user's actual cwd.
 
+## CALM Engine (`calm/`, ~6,500 LOC, 214 tests, 98% benchmark)
+
+Full spec: `.claude/rules/calm.md`
+
+**"Deterministic brain on top of a probabilistic nervous system."** The LLM sequences operations, CPU modules compute results, 4-lane TMR verifies correctness, and injection feeds results back mid-generation. No fine-tuning required — the harness handles everything.
+
+### Core Architecture
+- **Engine** (`engine.py`) — hybrid thinking-plan + stop-mode execution loop. Planning turn uses `enable_thinking` for reasoning; execution turns use `stop=["</calm>"]` for per-block injection. Post-verify catches wrong mental-math answers.
+- **Interceptor** (`interceptor.py`) — 4-tier parse: NL → Stack VM → Expression → Sandboxed Python. Detects `<calm>` blocks in token streams, executes, validates Option B claims.
+- **Expression evaluator** (`expression.py`) — AST-safe eval with 30+ whitelisted functions. Supports list comprehensions, comparisons, ternary. Never uses `eval()`.
+- **Sandbox** (`sandbox.py`) — subprocess Python isolation with import blocking, timeout, stdout capture.
+- **Verifier** (`verifier.py`) — 4-lane TMR: compute × 3 (wasm/math_ops/independent algorithm) + property proof (inverse verification).
+- **Backends** — `math_ops.py` (9 functions), `string_ops.py` (7), `wasm_ops.py` (17 via `calm_math.wat`)
+
+### Running CALM
+```bash
+# Run the reasoning engine (needs llama-server on :8080)
+python3 -m calm.engine "What is 17 * 23? Is the result prime?"
+
+# Run the 40-problem benchmark
+python3 -m calm.benchmark
+
+# Run all 214 tests
+python3 -m pytest calm/tests/ -v
+```
+
 ## Distillation Pipeline (`agents/distill/`, 10 Python files)
 
 ### Current Status
@@ -168,7 +221,7 @@ ZENITH_CTX=65536 zenith
 
 ### Training Data (`agents/distill/data/`, gitignored except hand-written files)
 - `claude_reasoning.jsonl` — 1,339 merged examples (832 filtered HuggingFace + 507 hand-written)
-- `coding_reasoning_claude.jsonl` — 507 hand-written coding reasoning examples (committed). +19 added 2026-04-07 via `scripts/generate_react_security_examples.py` (11 React + 8 security, targeting gaps in earlier Qwen eval)
+- `coding_reasoning_claude.jsonl` — 547 hand-written coding reasoning examples (committed). Includes +19 added 2026-04-07 (React + security, targeting Qwen eval gaps) and +21 added 2026-04-08
 - `claude_reasoning_filtered.jsonl` — 832 filtered HuggingFace examples (intermediate)
 - `claude_reasoning_prefilter.jsonl` — backup of pre-filter merged data
 - `orchestrator.jsonl` — 252 routing examples (130 original + 121 Claude-authored)
@@ -206,15 +259,15 @@ PYTHONPATH=. python3 -m agents.distill.filter_reasoning --merge # filter + merge
 
 ## Serving Architecture
 
-**llama.cpp (primary)** — either 4B base via full GPU:
-- Default model: `~/models/Qwen3.5-4B.Q5_K_M.gguf` (2.9 GB, fine-tuned)
-- Alternative model: `~/models/gemma-4-E4B-it-Q5_K_M.gguf` (5.48 GB, stock; selectable via `--gguf` or `ZENITH_MODEL`)
-- Context: **256K tokens** with Q4 KV cache (~6.7 GB for Gemma E4B, ~7.3 GB for Qwen 4B — sliding-window attention on Gemma makes its KV cache dramatically smaller). Pre-allocated at startup.
-- Thinking: `enable_thinking: true` by default, reasoning in separate `reasoning_content` field
-- Launch: `zenith` command auto-starts, or manually: `llama-server -m model.gguf --ctx-size 262144 --parallel 1 --cache-type-k q4_0 --cache-type-v q4_0 -ngl 999 --port 8080`
-- `--parallel 1` is required — without it, llama-server splits `ctx_size` across 4 default slots, so each slot only gets `ctx_size / 4`
-- **Hot-swap: IMPLEMENTED** via `agents/model_swap.py:LlamaServerManager`. Swap cycles are ~5–15s depending on disk page-cache warmth. `/swap` command uses it directly; `SpecialistCoordinator` uses it for domain routing when specialist GGUFs exist on disk.
-- Both Qwen 3.5 4B and Gemma 4 E4B are trained at 256K native context (earlier notes had Qwen at 32K — that was wrong).
+**llama.cpp (primary)** — Gemma 4 E4B via full GPU:
+- **Production GGUF**: `~/models/gemma-4-E4B-it-tq4-aligned.gguf` (5.0 GB, TurboQuant tq4, 132-byte block alignment from session 16). **This is what CALM runs on.**
+- **Alternative GGUFs**: `~/models/gemma-4-E4B-it-Q5_K_M.gguf` (5.48 GB, stock Q5), `~/models/Qwen3.5-4B.Q5_K_M.gguf` (2.9 GB, fine-tuned Q5)
+- **TurboQuant tq4 KV cache**: `--cache-type-k tq4_k256 --cache-type-v tq4_k256`. 4.125 bpw, 16-level Lloyd-Max codebook, Pi rotation (seed=42, 256×256 orthogonal). 132-byte blocks (128 qs + 2 d + 2 pad for 4-byte aligned uint32 loads). **Old 130-byte GGUFs are incompatible — re-quantize.**
+- Context: **256K typical** with tq4 KV (~5.0 GB weights + ~2.0 GB KV = ~7 GB VRAM). Config allows up to 512K.
+- `--parallel 1` required — without it, llama-server splits `ctx_size` across 4 default slots
+- Launch: `llama-server -m ~/models/gemma-4-E4B-it-tq4-aligned.gguf --ctx-size 262144 --parallel 1 --cache-type-k tq4_k256 --cache-type-v tq4_k256 -ngl 999 --port 8080`
+- **~45-48 tok/s** on Gemma 4 E4B tq4 at 8K context (CALM benchmark runs)
+- Hot-swap: `agents/model_swap.py:LlamaServerManager`. `/swap gemma` / `/swap qwen` in harness.
 
 **Ollama (fallback)** — stock models, quick testing:
 - Pulled models (verified via `curl -s localhost:11434/api/tags`): `qwen3.5:4b`, `qwen3.5:9b`, `qwen3:0.6b`, `qwen3:4b`, `qwen3:8b`, plus custom Modelfiles `qwen4b-fast:latest`, `qwen9b-fast:latest`, `reasoning-base:latest`
@@ -223,10 +276,13 @@ PYTHONPATH=. python3 -m agents.distill.filter_reasoning --merge # filter + merge
 
 ## Local Tools
 
-- **llama.cpp**: built at `~/llama.cpp/build/bin/` with CUDA support (RTX 4070)
-  - `llama-quantize` — convert FP16 safetensors to GGUF quantized formats
-  - `llama-server` — serve models with OpenAI-compatible API, KV cache quantization, thinking mode
-  - **Local patch** at `tools/server/server-context.cpp:763-766` — one-line edit comments out `n_ctx_slot = n_ctx_train` to remove the per-slot training-context cap, enabling `--ctx-size` past `n_ctx_train` for extrapolation testing. Not upstreamed. Re-apply after any `git pull` on the llama.cpp source. See `.claude/MEMORY/evals/2026-04-07_summary_needle_comparison.md` for the context.
+- **llama.cpp**: built at `~/llama.cpp/build/bin/` with CUDA support (RTX 4070). **Branch `zenith` at `a6218df`** with 3 custom commits:
+  - `7aae919` — `GGML_CUDA_OP_TIMING`: per-op/per-shape cudaEvent timing diagnostic. Enable: `cmake -DGGML_CUDA_OP_TIMING=ON`, `GGML_CUDA_DISABLE_GRAPHS=1 GGML_CUDA_OP_TIMING=1`
+  - `29782ec` — Gemma gate+up ordering fix: upstream fusion check at `should_fuse_mul_mat` rejected Gemma's reversed ordering. **GLU fusion was never firing on any Gemma quant type upstream.** Worth upstreaming.
+  - `a6218df` — fused gate+up+GLU tq4 kernel: `k_mmvq_tq4_k256_fused_preload_glu` in `mmvq-tq4.cu`. +0.68% avg (structural win, ships one Pi@x precompute + eliminates GLU kernel launch).
+  - `llama-quantize`, `llama-server` — standard tools
+  - **Local patch** at `tools/server/server-context.cpp:763-766` — comments out `n_ctx_slot = n_ctx_train` for >128K context on Gemma. Re-apply after `git pull`.
+  - **5 mmvq-tq4 rounds reverted** (SHFL LUT, NB template, 4-row/block, PiX memoization, 2-way accumulator). Kernel is at a deep local optimum. See `SESSION_HANDOFF.md` ruled-out log.
 - **Unsloth**: 2026.4.2 + PyTorch 2.10.0+cu128 (for local 0.8B training)
 - **Serena MCP**: installed at `/home/gabe/serena-fork`, configured for this project
 

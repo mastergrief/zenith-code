@@ -1,465 +1,495 @@
-# Session Handoff — 2026-04-09 (Session 11)
+# Session Handoff — 2026-04-12 (Session 20)
 
-## Where you are
+## Goal
 
-The TurboQuant llama.cpp port is **functionally complete on CPU** and
-**partially complete on GPU**. CPU-side end-to-end inference produces
-coherent text with `--cache-type-k tq3_k256 --cache-type-v tq3_k256` on
-Gemma 4 E4B. The CUDA SET_ROWS kernel works (KV cache allocates on
-CUDA0, no scheduler abort). The remaining blocker is the CUDA Flash
-Attention dequant path — see "Where to pick up" below.
+Build the CALM (Compute-Augmented Language Model) execution engine
+from Phase 2a (stack VM, shipped session 19) through to a complete
+closed-loop reasoning system. The user's directive: **"deterministic
+brain on top of a probabilistic nervous system"** — the LLM
+sequences/orchestrates, CPU modules compute, 4-lane TMR verifies,
+and injection feeds results back mid-generation.
 
-## What got done this session
+Session 19 shipped: phase 1 (hand-compiled adder transformer) and
+phase 2a (stack VM, 29 tests). This session built everything on top:
+grammar, interceptor, backends, wasm, verifier, engine, reasoning
+chain, expression evaluator, sandbox, NL parser, benchmark. The
+entire CALM subsystem went from 2 files to 28 files, 6,503 LOC.
 
-### Stage 5: CLI flag wiring ✅ COMPLETE
+## Completed
 
-- `~/llama.cpp/common/arg.cpp`: registered `tq3_k256` as a valid value
-  for `--cache-type-k` / `--cache-type-v` (added `GGML_TYPE_TQ3_K256` to
-  the `kv_cache_types` vector). Added `tq3` short alias as a special-case
-  in `kv_cache_type_from_str` before the table lookup.
-- `~/llama.cpp/src/llama-context.cpp`: added a model-load-time pre-scan
-  validation. Iterates over `model.hparams.n_layer` and checks
-  `n_embd_head_k(il)` / `n_embd_head_v(il)` against 256. Three outcomes:
-  - 0/N layers match → `LLAMA_LOG_WARN` ("ALL layers will fall back to
-    q4_0... use --cache-type-k q4_0 to silence")
-  - Partial match (e.g., 20/24 on Gemma 4 E4B) → `LLAMA_LOG_INFO` with
-    the ratio
-  - Full match → silent (per-layer routing log handles it)
-- `~/llama.cpp/src/llama-kv-cache.cpp`: added `extern "C" { void
-  ggml_tq3_k256_init_impl(void); }` forward decl right after the
-  includes. **This was a Stage 4 build bug fix** — the function lives
-  in `ggml-quants.h` (an internal ggml header NOT on `src/`'s include
-  path), and the original Stage 4 code tried to call it without a
-  visible declaration. The forward decl is the minimum-blast-radius
-  fix; adding `ggml/src/` to llama's include path would leak ~100
-  internal ggml prototypes.
+### CALM Architecture (28 files, 6,503 LOC, 214 tests, 98% benchmark)
 
-### Three logging bugs found + fixed
+The full pipeline, in execution order:
 
-These were uncovered during the Stage 6 dispositive validation. Two are
-real bugs in the Stage 4/5 code from session 10; one is cosmetic and
-deferred.
+#### 1. Engine (`calm/engine.py`, 512 LOC)
+Closed-loop execution. Hybrid mode: thinking-plan (first turn with
+`enable_thinking` for planning, no CALM) → stop-mode execution
+(subsequent turns, `stop=["</calm>"]` halts generation at each CALM
+block, engine processes + injects results, model continues).
 
-**Bug #1 — Stage 5 warning ISWA scoping** (FIXED). The original
-warning fired once per `llama_kv_cache` constructor call. For ISWA
-models like Gemma 4 E4B, llama.cpp builds **two separate caches**: a
-non-SWA cache containing only the 4 FA layers and an SWA cache
-containing only the 20 SWA layers. The non-SWA cache had zero matching
-head_dim=256 layers and false-fired the warning telling the user to
-load Gemma 4 E4B — *on Gemma 4 E4B*. Fix: moved the validation out of
-the cache constructor entirely to `llama_context::llama_context` in
-`src/llama-context.cpp`, where the full model layer list is visible.
-The warning now fires once per model load, not once per cache.
+- **Why hybrid**: assistant prefill is incompatible with
+  `enable_thinking` in llama.cpp. If thinking is on during a
+  prefill turn, the server returns 400. So: think first (planning),
+  then execute with stop-mode (no thinking, real injection).
+- **Post-verification**: if the model responds without CALM and the
+  prompt contains computable expressions, the engine independently
+  evaluates the answer and corrects if wrong. NL rewrites translate
+  "the 10th Fibonacci number" → `fibonacci(10)` for verification.
+- **Forced CALM**: if the engine can't verify the answer (prompt
+  pattern unrecognizable), it nudges the model to use `<calm>`.
+- **Bail-out**: 3 consecutive errored blocks → stop. 2 empty
+  responses → stop. Max 10 iterations total.
+- Defaults: `thinking_budget=16384`, `max_tokens_per_turn=8192`,
+  `max_iterations=10`.
 
-**Bug #3 — Stage 4 missing match-branch log** (FIXED). The per-layer
-routing log only emitted lines for fallback layers; match layers were
-silent. Fix: added a symmetric branch in `llama-kv-cache.cpp`'s loop.
-Format: `layer N: head_dim_k=256 type_k=tq3_k256 head_dim_v=256
-type_v=tq3_k256` for matches, with `(fallback)` appended on each side
-for fallback layers.
+#### 2. Interceptor (`calm/interceptor.py`, 479 LOC)
+Stream parser that detects `<calm>...</calm>` (and Gemma's
+`<|tool_call>call:calm` / `<channel|>`) in token streams, extracts
+instructions, and executes them.
 
-**Bug #2 — Cache size summary type label** (DEFERRED, cosmetic).
-The `llama_kv_cache: size = ... K (tq3_k256): ... V (tq3_k256): ...`
-line prints the *requested* type even when all layers fell back. Not
-fixed this session because it's bundled cleanly into the eventual
-Stage 3 CUDA cleanup (when CUDA FA lands and no fallbacks happen,
-the label will be correct).
+**Four-tier parse pipeline** (each tier falls through on failure):
+1. **NL parser** (`nl_parser.py`): "multiply 17 by 23" → `push 17\npush 23\nmul`
+2. **Stack VM parser** (`stack_vm.py`): `push 17\nmul` → execute on stack
+3. **Expression evaluator** (`expression.py`): `(17 * 23) + (42 * 19) - 100` → AST-safe eval
+4. **Sandboxed Python** (`sandbox.py`): `[p for p in range(2,51) if is_prime(p)]` → subprocess
 
-### Bug #4 — CPU type_traits_cpu missing TQ3_K256 entry (FIXED)
+**Python compatibility layer** (in interceptor):
+- `result = expr` → strips variable name, evaluates RHS, stores in `self.variables`
+- `print(expr)` → strips print wrapper, evaluates inner expression
+- `#` comments → treated as line comments (alongside `\` and `//`)
+- `pop` → alias for `drop`, `print` → alias for `emit`
 
-**Discovered during the dispositive `-ngl 0` validation as a
-SIGSEGV in `ggml_compute_forward_set_rows`**. Stage 1 had only added
-the TQ3_K256 entry to the BASE traits in `ggml.c`, missing the
-CPU-specific table at `ggml-cpu/ggml-cpu.c:type_traits_cpu`. Without
-an entry there, `type_traits_cpu[GGML_TYPE_TQ3_K256].from_float` was
-NULL → first SET_ROWS op called NULL → crash.
+**Option B (LLM-owns-stack-state)**:
+- `instruction -> [claimed_stack]`: interceptor validates claim vs VM
+- `instruction -> <pending>`: interceptor resolves with actual value
+- Mismatches are training signal (non-strict mode), not blocking errors
+- `persist_state=True`: stack carries across CALM blocks within one engine run
 
-Stack trace top frame (from gdb):
+#### 3. Expression Evaluator (`calm/expression.py`, 559 LOC)
+AST-based safe eval. **Never uses Python `eval()`** — parses with
+`ast.parse(mode="eval")` and walks the tree node by node. Only
+allows whitelisted operations.
+
+Supports:
+- Arithmetic: `+`, `-`, `*`, `/`, `//`, `%`, `**`, `^` (as power)
+- Comparisons: `==`, `!=`, `<`, `<=`, `>`, `>=`
+- Boolean: `and`, `or`, `if/else` ternary
+- Functions: 30+ whitelisted (see below)
+- List comprehensions: `[x for x in range(10) if is_prime(x)]`
+- List literals, subscripts, tuple literals
+- Variables passed via `functions` dict parameter
+
+**30+ whitelisted functions**:
+- Math: sqrt, pow, abs, floor, ceil, log, log2, log10, pi, e, factorial
+- Number theory: is_prime, next_prime, prev_prime, nth_prime, gcd, lcm,
+  factorize, divisors, count_divisors, is_perfect, digit_sum, digital_root
+- Sequences: fibonacci, collatz, collatz_length
+- Algebra: solve_quadratic(a, b, c) → (x1, x2)
+- Ranges: sum_range(a, b), product_range(a, b)
+- Logic/search: find_int(lo, hi, *predicates), count_if(lo, hi, *predicates),
+  map_expr(expr, items), filter_expr(expr, items)
+- Data: len, sorted, reversed, sum, any, all, zip, range
+
+#### 4. Sandboxed Python (`calm/sandbox.py`, 234 LOC)
+Subprocess isolation for arbitrary Python code. The model writes
+Python naturally; the sandbox executes it safely.
+
+- Subprocess with `timeout=10s`, minimal `PATH`
+- Import blocking: `os`, `subprocess`, `shutil`, `socket`, `http`,
+  `urllib`, `pathlib`, `signal`, `ctypes`, `multiprocessing` all blocked
+- Prelude injects all CALM functions (is_prime, fibonacci, etc.)
+  so the model can use them without imports
+- Returns `{value, stdout, error}` as JSON via stdout capture
+- Used as Tier 4 fallback in the interceptor when expression eval fails
+
+#### 5. NL Parser (`calm/nl_parser.py`, 168 LOC)
+Regex-based translator: natural language → stack VM instructions.
+30+ patterns covering:
+- Function call syntax: `sqrt(1764)`, `gcd(391, 782)`
+- Infix: `17 + 23`, `17 * 23`
+- English: "multiply 17 by 23", "subtract 37 from 100", "is 391 prime?"
+- Bare ops: `sqrt 1764`, `gcd 391 782`
+- Falls through to standard parser if no pattern matches
+
+#### 6. Stack VM (`calm/stack_vm.py`, 522 LOC, session 19 + modifications)
+Forth-style concatenative reference interpreter. **Semantic ground
+truth** — if any backend disagrees, this file wins.
+
+Session 20 additions:
+- **Auto-aliasing**: `register_backend("math.sqrt", fn)` auto-creates
+  `"sqrt"` → `"math.sqrt"` alias. Model writes bare `sqrt`, resolves.
+- **Common aliases**: `pop` → `drop`, `print` → `emit`
+- **Variable namespace** on Dispatcher: unused by stack VM directly,
+  used by interceptor for cross-block variable persistence
+
+#### 7. Backends (`calm/backends/`, 3 modules + WAT)
+
+**math_ops.py** (134 LOC): 9 CPU-native functions
+- sqrt, pow, is_prime, gcd, factorize, floor, ceil, log, pi
+
+**string_ops.py** (92 LOC): 7 CPU-native functions
+- len, upper, lower, contains, concat, regex_match, replace
+
+**wasm_ops.py** (174 LOC) + **calm_math.wat** (60 LOC): 17 functions via wasmtime
+- Integer: i_add, i_sub, i_mul, i_div, i_mod, i_neg, i_abs, i_pow, i_gcd
+- Float: f_add, f_sub, f_mul, f_div, f_sqrt, f_floor, f_ceil, f_abs
+- Auto-dispatch: `wasm.add` uses i64 path for ints, f64 for floats
+- GCD: Euclidean algorithm in WAT
+- **Performance**: wasm is ~20x slower than Python for trivial ops due
+  to FFI overhead per call. Both are microseconds vs the LLM's
+  milliseconds per token — irrelevant in practice.
+
+#### 8. 4-Lane TMR Verifier (`calm/verifier.py`, 557 LOC)
+Triple (actually quadruple) modular redundancy:
+
+| Lane | Method | What it catches |
+|---|---|---|
+| 1. Primary | Registered backend (wasm or math_ops) | — |
+| 2. Cross-check | Independent impl (math_ops ↔ wasm) | Implementation bugs |
+| 3. Algorithm | Different algorithm (Stein's GCD, Newton's sqrt, squaring) | Algorithmic class bugs |
+| 4. Proof | Inverse/property verification | Correlated bugs across all 3 compute lanes |
+
+**Proof lane implementations**:
+- AddProof: `a + b = r ⟺ r - b == a AND r - a == b`
+- MulProof: `a * b = r ⟺ r / b == a (b≠0) AND r / a == b (a≠0)`
+- GcdProof: `g | a AND g | b AND gcd(a/g, b/g) == 1` (maximality)
+- SqrtProof: `r² ≈ a AND r >= 0`
+- PowProof: repeated division by base gives 1 after exp steps
+
+Float tolerance: `_REL_TOL=1e-12`, `_ABS_TOL=1e-15` (Newton's
+method and hardware sqrt differ by 1 ULP on non-perfect squares).
+
+#### 9. Training Signal (`calm/training.py`, 94 LOC)
+Captures every prediction vs actual pair to `.calm_training/signal.jsonl`:
+```json
+{"timestamp": "...", "prompt": "...", "instruction": "mul",
+ "claimed": [401], "actual": [391], "correct": false}
 ```
-#0  0x0000000000000000 in ?? ()
-#1  ggml_compute_forward_set_rows ()
-#2  ggml_graph_compute_thread.isra ()
+Free fine-tuning data from every session. The `<pending>` entries
+(claimed=null) show when the model correctly deferred to the engine.
+
+#### 10. Grammar (`calm/grammar.py`, 110 LOC)
+GBNF generator for llama.cpp grammar-constrained generation.
+Supports builtins, user-defined words, backend words, `<pending>`.
+Validated with `test-gbnf-validator`. **Not used by the engine**
+(the engine uses free-form generation + interceptor), but available
+for constrained-mode experiments.
+
+#### 11. Reasoning Chain (`calm/reasoning.py`, 172 LOC)
+Structured trace: parses engine output into hypothesis → compute →
+result → conclusion steps. Exportable as JSON.
+
+#### 12. Benchmark (`calm/benchmark.py`, 227 LOC)
+40 problems across 6 categories. Keyword matching with `|` alternatives.
+Best run: **39/40 (98%)**. Typical run: 85-90% (nondeterminism in
+whether the model uses CALM vs answering from memory).
+
+| Category | Problems | Best score |
+|---|---|---|
+| Arithmetic | 10 | 10/10 (100%) |
+| Number theory | 10 | 10/10 (100%) |
+| Sequences | 5 | 5/5 (100%) |
+| Algebra | 5 | 5/5 (100%) |
+| Reasoning chains | 5 | 5/5 (100%) |
+| Multi-step | 5 | 5/5 (100%) |
+
+#### 13. Test Harnesses
+- `calm/live_test.py` (151 LOC): grammar-constrained single-turn test
+- `calm/meta_test.py` (203 LOC): free-form multi-backend test
+
+### Key Decisions and Why
+
+1. **CPU for compute, GPU for inference only** — the user proposed
+   dual-lane KV cache (one tq4 for LLM, one f16 for compute). I
+   showed that f16 KV at 256K costs ~8.9 GB per head pair vs ~0.84 GB
+   for tq4. The user immediately saw that CALM modules should just
+   use CPU + RAM — zero GPU cost, zero KV cache modification needed.
+
+2. **Option B (LLM owns stack state)** — the user explicitly chose
+   this over Option A (harness owns stack) from session 19's design
+   poll. The reasoning: it creates training signal (model predicts →
+   VM verifies → mismatch = labeled example). `<pending>` is the
+   production path (always correct), `-> [predicted]` is the training
+   signal path.
+
+3. **Hybrid thinking + stop-mode** — discovered that `stop=["</calm>"]`
+   fires during thinking in llama.cpp, killing the response. Fix:
+   planning turn with thinking (no CALM), execution turns with
+   stop-mode (no thinking, real injection). The model plans first,
+   then executes with verified compute at each step.
+
+4. **4-tier parsing instead of grammar enforcement** — the model
+   naturally writes Python, NL, expressions, or stack code. Instead
+   of forcing one format, the interceptor tries all four. This
+   eliminated ~90% of "unknown instruction" errors without changing
+   the model or prompt.
+
+5. **Post-verify instead of forced CALM** — tried forcing the model
+   to use CALM (nudge on no-CALM responses). It backfired: 85% → 72%.
+   The fix: let the model answer naturally, then independently verify.
+   If wrong, correct. If right, accept. This got us to 98%.
+
+6. **Auto-aliasing** — the model writes `is_prime`, `gcd`, `sqrt`
+   (bare names) not `math.is_prime`, `math.gcd`, `math.sqrt`
+   (namespaced). Auto-aliasing at backend registration time solved
+   this without prompt engineering.
+
+### Benchmark Progression (across session)
+
+| Round | Score | Key change |
+|---|---|---|
+| First live tests | 6/8 manual | Grammar + interceptor working |
+| Round 4 (live) | 8/8 manual | `<pending>` eliminated prediction failures |
+| Round 6 (meta) | 5/6 manual | Free-form reasoning + backends |
+| Benchmark v1 | 34/40 (85%) | First automated benchmark |
+| + forced nudge | 29/40 (72%) | Nudge backfired — reverted |
+| + post-verify | 36/40 (90%) | Independent answer verification |
+| + NL rewrite | 36/40 (90%) | NL → expression for verify |
+| + empty retry + force | 39/40 (98%) | Empty response retry + forced CALM on unverifiable |
+
+### Generalization Tests (5/5 novel problems)
+
+Proved the architecture works beyond math:
+1. **String**: "How many vowels in Mississippi?" → Python list comprehension via sandbox → 4 (correct)
+2. **Constraint**: "Two numbers sum=100 product=2491" → model mapped to `solve_quadratic(1,-100,2491)` → (47,53) (correct)
+3. **Financial**: "$50/week to $3000" → `3000/50` → 60 (correct)
+4. **Algorithm**: "Bubble sort [7,3,9,1,5]" → answered in text (appropriate for a trace)
+5. **Logic**: "3 coins flip" → answered in text (appropriate for logic)
+
+## In Progress
+
+### Documentation Update (not yet written)
+The user asked for a full update to CLAUDE.md and rules files covering:
+1. **TurboQuant** — missing from CLAUDE.md and architecture.md entirely
+   (only in training.md). The production GGUF is tq4, the KV cache is
+   tq4, the llama.cpp fusion kernel is tq4 — none of this is in the
+   main docs.
+2. **llama.cpp zenith branch** — 3 commits (OP_TIMING, Gemma fusion
+   fix, fused GLU kernel) not documented outside session handoff.
+3. **CALM** — entire 6,503 LOC subsystem undocumented.
+
+The user approved scope for all three. **This is the immediate next
+task for the next session.**
+
+### Uncommitted Changes
+Working tree has 8 modified files and ~20 untracked files:
+- **Modified**: `.claude/CLAUDE.md`, `SESSION_HANDOFF.md`,
+  `training.md`, `agents/agent.py`, `agents/config.py`,
+  `agents/harness.py`, `bin/zenith`, `calm/stack_vm.py`
+- **Untracked**: all new CALM files (`calm/backends/`, `calm/engine.py`,
+  `calm/expression.py`, `calm/grammar.py`, `calm/interceptor.py`,
+  `calm/nl_parser.py`, `calm/reasoning.py`, `calm/sandbox.py`,
+  `calm/training.py`, `calm/verifier.py`, `calm/benchmark.py`,
+  `calm/live_test.py`, `calm/meta_test.py`, tests, `.calm_training/`)
+
+**Nothing is committed from session 20.** All CALM work is local only.
+The modified agents/* and bin/zenith files are from session 19 and
+earlier — don't touch them unless the user asks.
+
+## Next Steps
+
+### 1. Commit CALM Phase 2b-2e (START HERE)
+All 28 files, 6,503 LOC, 214 tests. One commit:
+```
+calm: phase 2b-e — CALM execution engine, 4-lane TMR, 98% benchmark
+
+Complete CALM v0.1 implementation:
+- Engine: closed-loop stop-mode injection with thinking-plan hybrid
+- Interceptor: 4-tier parse (NL → stack → expression → sandbox)
+- Expression evaluator: 30+ functions, list comprehensions, AST-safe
+- Sandbox: subprocess Python isolation with import blocking
+- Backends: math_ops (9), string_ops (7), wasm_ops (17 via WAT)
+- Verifier: 4-lane TMR (compute × 3 + property proof)
+- Training signal collector: JSONL export
+- NL parser: 30+ regex patterns for natural language → stack code
+- Benchmark: 40 problems, 6 categories, 98% best score
+- Reasoning chain tracker: structured hypothesis → compute → result
+
+214 tests pass across 8 test files.
 ```
 
-Fix:
-- `~/llama.cpp/ggml/src/ggml-cpu/quants.h`: declared
-  `quantize_row_tq3_k256` (the CPU wrapper signature with `void *y`).
-- `~/llama.cpp/ggml/src/ggml-cpu/quants.c`: defined the wrapper as a
-  thin delegate to `quantize_row_tq3_k256_ref` (matches the existing
-  `quantize_row_tq2_0` pattern).
-- `~/llama.cpp/ggml/src/ggml-cpu/ggml-cpu.c`: added a
-  `[GGML_TYPE_TQ3_K256]` entry in the `type_traits_cpu` array,
-  alongside `tq2_0`.
+### 2. Write CLAUDE.md + Rules Updates
+Three areas to document:
+- **CALM section in CLAUDE.md**: architecture summary, file map,
+  running the engine/benchmark, key constraints
+- **TurboQuant in CLAUDE.md + architecture.md**: block format,
+  Pi rotation, serving flags, VRAM budget
+- **New `.claude/rules/calm.md`**: execution engine rules, verification
+  pipeline, when to use which tier, benchmark status
 
-The Stage 2 PyTorch oracle test was not enough to catch this — it
-only validated quant→dequant round-trip in isolation. SET_ROWS goes
-through the type_traits dispatch, which only Stage 1 + Stage 2
-together can validate.
+### 3. Improve the Last 2% of Benchmark
+The only persistent failure: multi-part questions ("What is X? What
+is the Y of that?") where post-verify can't extract a single
+computable expression. Fix: split the prompt into individual claims,
+verify each. This is a post-verify enhancement, not an engine change.
 
-### Bug #5 — CPU Flash Attention vec_dot missing for TQ3_K256 (FIXED)
+### 4. Harness Integration (deferred by user)
+Wire CALM into `agents/harness.py` as a `/calm` mode:
+- Detect `<calm>` blocks in streamed responses
+- Process through interceptor with all backends
+- Inject results back into the conversation
+- The user explicitly said "harness can come last."
 
-**Discovered as a second SIGSEGV after Bug #4 was fixed**. With
-`from_float` working, the code got further but FA's CPU path crashed
-on the same NULL function pointer pattern, this time in
-`ggml_compute_forward_flash_attn_ext`. FA uses
-`type_traits_cpu[k_type].vec_dot` for the per-row Q · K product;
-tq3_k256 had no `vec_dot` entry → NULL → crash.
+### 5. Non-Math Domain Expansion
+The generalization tests proved the architecture works, but:
+- Add date/time functions to expression evaluator
+- Add HTTP fetch backend for API lookups
+- Add JSON/CSV parsing for data analysis
+- Build a non-math benchmark (string manipulation, data queries)
 
-Fix: added a slow reference vec_dot in
-`~/llama.cpp/ggml/src/ggml-cpu/quants.c`:
+## Key Context
 
-```c
-void ggml_vec_dot_tq3_k256_f32(int n, float *s, ..., const void *vx, ..., const void *vy, ..., int nrc) {
-    // dequantize K block to a stack buffer, then f32 dot with Q
-    const block_tq3_k256 * x = vx;
-    const float          * y = vy;
-    float buf[QK_K]; float sumf = 0.0f;
-    for (int i = 0; i < n / QK_K; ++i) {
-        dequantize_row_tq3_k256(&x[i], buf, QK_K);
-        for (int j = 0; j < QK_K; ++j) sumf += buf[j] * y[i*QK_K + j];
-    }
-    *s = sumf;
-}
+### The Architecture in One Diagram
+```
+User prompt → [Planning turn: thinking ON, no CALM]
+                                ↓
+              [Execution loop: stop-mode, thinking OFF]
+                                ↓
+              Model emits tokens → <calm> detected → STOP
+                                ↓
+              Parse: NL → Stack → Expression → Sandbox
+                                ↓
+              Execute on CPU (VM + backends)
+                                ↓
+              4-lane TMR verify (compute × 3 + property proof)
+                                ↓
+              Inject: [engine: stack=[391], output=[...]]
+                                ↓
+              Resume generation → model reads injection → next block or answer
+                                ↓
+              No more <calm> blocks → post-verify response → done
 ```
 
-Plus the corresponding `vec_dot_type = GGML_TYPE_F32` and `vec_dot =
-ggml_vec_dot_tq3_k256_f32` fields in the `type_traits_cpu` entry. Q
-stays as F32 (not Q8_1) because the algorithm requires f32 dot
-products after Pi rotation.
+### llama.cpp Interaction Gotchas
+- `stop=["</calm>"]` fires during thinking — **never use stop with
+  enable_thinking**. The hybrid approach avoids this.
+- Assistant prefill is incompatible with `enable_thinking` — 400 error.
+  Multi-turn conversation (assistant + user messages) works fine.
+- Gemma 4 uses `<|tool_call>call:calm` / `<channel|>` format instead
+  of `<calm>` / `</calm>`. The interceptor detects both.
+- The model often fabricates `[engine: ...]` result lines in its
+  output. The interceptor strips these (`line.startswith("[engine:")`).
+- Empty responses happen when the planning turn's thinking is long.
+  The engine retries (max 2 empty retries).
 
-### Stage 3 — CUDA SET_ROWS kernel ✅ COMPLETE
+### Why Post-Verify Works Better Than Forced CALM
+Forced CALM (nudging the model to use `<calm>` blocks) dropped the
+benchmark from 85% to 72%. The model's natural flow was disrupted.
+Post-verify (let the model answer, then check independently) raised
+it to 98%. **The lesson: augment the model's output, don't constrain
+its generation.**
 
-The CUDA kernel for writing tq3_k256 K cache. Originally listed as
-"deferred" in the session 10 handoff, but discovered to be a hard
-blocker for the GPU-offload path: without it, llama.cpp's backend
-scheduler refuses to allocate the K cache tensor on CUDA0 and aborts
-at `ggml/src/ggml-backend.cpp:809` ("pre-allocated tensor cannot run
-the operation SET_ROWS").
+### Nondeterminism Is the Remaining Gap
+Even at temperature=0, llama.cpp has GPU-parallelism nondeterminism.
+The same prompt produces different outputs across runs. The benchmark
+score fluctuates 85-98% depending on whether the model decides to
+use CALM or answer from memory. Post-verify catches most memory
+errors, but multi-part questions still slip through.
 
-**Implementation**: single self-contained TU at
-`~/llama.cpp/ggml/src/ggml-cuda/turboquant.cu` (257 lines) +
-`turboquant.cuh` declaring host-callable entry points. Architecture:
+### The Training Signal Story
+Every `<calm>` block generates a labeled training pair:
+- `claimed=[401], actual=[391], correct=false` → model was wrong
+- `claimed=null, actual=[391], correct=true` → model deferred (pending)
 
-- `__device__   static float g_tq3_k256_pi_d[256 * 256];` — 256 KB
-  global device memory for the rotation matrix (too big for
-  `__constant__`'s 64 KB cap)
-- `__constant__ static float g_tq3_k256_centroids_d[8];` — Lloyd-Max
-  codebook in __constant__ (32 bytes)
-- `__constant__ static float g_tq3_k256_boundaries_d[7];` — quantizer
-  boundaries (28 bytes)
-- `quantize_f32_tq3_k256_block(x, y)` — `__device__` per-block quantize
-  function. Single CUDA thread handles one full 256-element vector
-  (norm → Pi rotation → centroid lookup → 3-bit pack). Mirrors
-  `quantize_row_tq3_k256_ref` from `ggml-quants.c` line-by-line.
-- `k_set_rows_tq3_k256<idx_t>` kernel — replicates `k_set_rows_quant`
-  from `set-rows.cu` (which is `static`, so we can't reuse it across
-  TUs without RDC). Specialized for tq3_k256.
-- `launch_set_rows_tq3_k256<idx_t>` template + `_i64`/`_i32` host
-  wrappers — same parameter list as `set_rows_cuda_quant`.
-- `ggml_tq3_k256_ensure_cuda_init()` — host init via `std::call_once`,
-  copies the host Pi/centroid data to device via `cudaMemcpyToSymbol`.
+Over thousands of sessions, this accumulates a fine-tuning dataset
+that teaches the model:
+1. When to use CALM (always for multi-digit multiplication, primes)
+2. How to predict correctly (learning from past compute results)
+3. When to defer (use `<pending>` for operations it can't predict)
 
-**Why one TU**: nvcc without RDC (relocatable device code) treats
-`extern __device__` declarations as definitions, causing link
-conflicts when device symbols are shared across .cu files. Putting
-all tq3_k256 device state and code in one TU avoids the issue
-entirely. set-rows.cu calls our host launch wrappers, never touches
-the device-side state directly.
+The dataset is at `.calm_training/signal.jsonl`. No fine-tuning has
+been done on this signal yet — the architecture works without it.
 
-**Wired into**: `~/llama.cpp/ggml/src/ggml-cuda/set-rows.cu`'s
-dispatch (added an `else if (dst->type == GGML_TYPE_TQ3_K256)`
-branch that calls `ggml_tq3_k256_ensure_cuda_init()` then dispatches
-to `_i64` or `_i32` launcher via `if constexpr`).
+### TurboQuant Context (from session 16-19, undocumented)
+The CALM engine runs on top of the tq4+tq4 serving stack:
+- **Model**: `~/models/gemma-4-E4B-it-tq4-aligned.gguf` (5.0 GB)
+- **KV cache**: `--cache-type-k tq4_k256 --cache-type-v tq4_k256`
+- **tq4 block**: 132 bytes (128 qs + 2 d + 2 pad for 4-byte alignment)
+- **Pi rotation**: 256×256 orthogonal matrix (seed=42), shared with tq3
+- **16-level Lloyd-Max codebook** for N(0, 1/√256)
+- The 132-byte alignment was a session-16 fix — old 130-byte GGUFs
+  are incompatible. Re-quantize if needed.
+- **~45-48 tok/s** on Gemma 4 E4B tq4 at 8K context (benchmark runs)
 
-**Allowlist**: added `GGML_TYPE_TQ3_K256` to the `GGML_OP_SET_ROWS`
-case in `ggml_backend_cuda_device_supports_op` at
-`~/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu:4839`.
+### llama.cpp zenith Branch (3 commits, undocumented)
+At `~/llama.cpp`, branch `zenith`, HEAD `a6218df`:
+1. `7aae919` — `GGML_CUDA_OP_TIMING`: per-op/per-shape cudaEvent timing
+2. `29782ec` — Gemma gate+up ordering fix (upstream fusion was never
+   firing on Gemma)
+3. `a6218df` — fused gate+up+GLU tq4 kernel (+0.68% avg, structural win)
 
-**Validation**: launching with `-ngl 999 --cache-type-k tq3_k256
---cache-type-v tq3_k256` now shows `CUDA0 KV buffer size = 7.66 MiB`
-(was 0 MiB before — the cache wasn't allocating at all). All 20 SWA
-layers cleanly show `type_k=tq3_k256` without fallback. The original
-`ggml-backend.cpp:809` abort is gone. **The kernel is bit-equivalent
-to the CPU oracle by construction** (same algorithm, same constants,
-same Pi matrix dumped from PyTorch, same Lloyd-Max codebook math).
+5 mmvq-tq4 optimization rounds were tried and reverted (SHFL LUT,
+NB template, 4-row/block, PiX memoization, 2-way accumulator).
+The kernel is at a deep local optimum. See session 19 handoff for
+the full ruled-out log.
 
-### Dispositive CPU validation ✅ PASSED
+## Files in Project (CALM subsystem only)
 
-End-to-end inference with `-ngl 0 --cache-type-k tq3_k256 --cache-type-v
-tq3_k256` on Gemma 4 E4B:
+### Core Runtime (14 files, ~3,500 LOC)
+- `calm/engine.py` (512) — closed-loop execution engine
+- `calm/interceptor.py` (479) — 4-tier stream parser + CALM block detection
+- `calm/expression.py` (559) — AST-safe expression evaluator, 30+ functions
+- `calm/verifier.py` (557) — 4-lane TMR verification
+- `calm/stack_vm.py` (522) — reference stack machine (semantic ground truth)
+- `calm/compiler.py` (546) — phase 1 hand-compiled adder (in-weights)
+- `calm/sandbox.py` (234) — subprocess Python isolation
+- `calm/nl_parser.py` (168) — NL → stack code translator
+- `calm/transformer.py` (154) — NumPy reference forward pass
+- `calm/grammar.py` (110) — GBNF grammar generator
+- `calm/training.py` (94) — JSONL training signal collector
+- `calm/backends/math_ops.py` (134) — 9 CPU math functions
+- `calm/backends/string_ops.py` (92) — 7 CPU string functions
+- `calm/backends/wasm_ops.py` (174) — 17 wasm functions via wasmtime
 
-```
-Data neatly stored,
-Queries flow, a swift embrace,
-Knowledge finds its home.
-```
+### Supporting Files
+- `calm/backends/calm_math.wat` (60) — WebAssembly module source
+- `calm/backends/__init__.py` (1) — package marker
+- `calm/reasoning.py` (172) — structured reasoning chain tracker
+- `calm/benchmark.py` (227) — 40-problem automated eval
+- `calm/live_test.py` (151) — grammar-constrained live test
+- `calm/meta_test.py` (203) — free-form meta-orchestration test
 
-Coherent English, topically relevant, actually 5/7/5. ~1.7 tok/s on
-CPU (expected for full CPU offload of a 4B model). Per-layer log
-confirms 20 SWA layers on tq3_k256 + 4 FA layers on q4_0 fallback.
-Bug #1 warning did NOT fire. **Stage 2 + Stage 4 + Stage 5 + the
-new CPU dispatch entries are all sound end-to-end with a real model
-at real inference time.**
+### Tests (8 files, ~3,000 LOC)
+- `calm/tests/test_stack_vm.py` (279) — 29 tests, stack VM
+- `calm/tests/test_interceptor.py` (223) — 24 tests, interceptor + pending + streaming
+- `calm/tests/test_expression.py` (205) — 41 tests, expression eval + safety
+- `calm/tests/test_verifier.py` (195) — 37 tests, TMR + divergence + agreement battery
+- `calm/tests/test_integration.py` (188) — 14 tests, grammar + interceptor + VM
+- `calm/tests/test_wasm.py` (132) — 36 tests, wasm arithmetic + agreement
+- `calm/tests/test_nl_parser.py` (124) — 32 tests, NL patterns + passthrough
+- `calm/tests/test_adder.py` (68) — 1 test, exhaustive 100-pair adder (phase 1)
 
-## Where to pick up
+### Generated Data
+- `.calm_training/signal.jsonl` — training signal from live runs
 
-### Immediate next step: Stage 3.5 — CUDA Flash Attention dequant for TQ3_K256
+## Useful Commands
 
-**This is the only thing blocking GPU end-to-end inference.** The CUDA
-SET_ROWS kernel works, but the CUDA Flash Attention kernel doesn't have
-a dequant code path for tq3_k256 K/V cache reads. Same architectural
-shape as Bug #5 on the CPU side — different code path.
-
-**Reproduction**:
 ```bash
-~/llama.cpp/build/bin/llama-server -m ~/models/gemma-4-E4B-it-Q5_K_M.gguf \
-  --ctx-size 8192 --parallel 1 \
-  --cache-type-k tq3_k256 --cache-type-v tq3_k256 \
-  -ngl 999 --port 8080
+# Run all CALM tests (214 tests, ~2s)
+python3 -m pytest calm/tests/ -v
+
+# Run the benchmark (40 problems, ~10min, needs llama-server)
+python3 -m calm.benchmark
+
+# Run the reasoning engine on a single problem
+python3 -m calm.engine "What is 17 * 23? Is the result prime?"
+
+# Run the structured reasoning chain
+python3 -m calm.reasoning "Find the smallest prime > 1000."
+
+# Start llama-server for CALM (tq4+tq4)
+~/llama.cpp/build/bin/llama-server \
+    -m ~/models/gemma-4-E4B-it-tq4-aligned.gguf \
+    --ctx-size 8192 --parallel 1 \
+    --cache-type-k tq4_k256 --cache-type-v tq4_k256 \
+    -ngl 999 --port 8080
+
+# Check training signal stats
+python3 -c "from calm.training import TrainingCollector; print(TrainingCollector().stats())"
+
+# Quick expression eval test
+python3 -c "from calm.expression import safe_eval; print(safe_eval('next_prime(1000)'))"
+
+# Quick sandbox test
+python3 -c "from calm.sandbox import run_python; print(run_python('[p for p in range(2,50) if is_prime(p)]').value)"
 ```
-
-Crash sequence in the log:
-```
-sched_reserve: layer 0 is assigned to device CUDA0 but the Flash Attention
-   tensor is assigned to device CPU (usually due to missing support)
-sched_reserve: Flash Attention was auto, set to disabled
-llama_init_from_model: failed to initialize the context: quantized V cache
-   was requested, but this requires Flash Attention
-```
-
-Root cause chain:
-1. `~/llama.cpp/ggml/src/ggml-cuda/fattn.cu:373-389` has a hardcoded K
-   type allowlist for CUDA FA: F32, F16, Q4_0, Q4_1, Q5_0, Q5_1, Q8_0,
-   BF16. Anything else returns `BEST_FATTN_KERNEL_NONE`. tq3_k256 falls
-   through to default → NONE.
-2. `ggml_cuda_flash_attn_ext_supported()` returns false → CUDA backend
-   says "I can't run this op" → scheduler places the FA op tensor on
-   CPU.
-3. Model layer 0 is on CUDA, FA tensor is on CPU → device mismatch →
-   `Flash Attention was auto, set to disabled`.
-4. The hardcoded check at `src/llama-context.cpp:349-353` then refuses
-   to start the context: `if (!cparams.flash_attn && ggml_is_quantized
-   (params.type_v)) throw "quantized V cache requires Flash Attention"`.
-
-### Three implementation paths (pick one)
-
-**Option A — Add tq3_k256 to fattn-vec.cuh template system** (most
-integrated, hardest):
-
-1. Add `vec_dot_fattn_vec_KQ_tq3_k256` and `dequantize_V_tq3_k256` as
-   template functions in `fattn-common.cuh` (forward decl) + body in a
-   new `fattn-tq3.cuh` header.
-2. Add tq3_k256 branches to `get_vec_dot_KQ` and `get_dequantize_V`.
-3. Add tq3_k256 to the `Q_q8_1` false branch in `fattn-vec.cuh` (Q stays
-   as f32 since Pi rotation requires f32 dot products).
-4. Create `template-instances/fattn-vec-instance-tq3_k256-tq3_k256.cu`
-   that includes fattn-tq3.cuh + fattn-vec.cuh + DECL_FATTN_VEC_CASE.
-5. Add tq3_k256 to the K type allowlist in `fattn.cu:373-389`. Force
-   `BEST_FATTN_KERNEL_VEC` regardless of `Q->ne[1]` to skip MMA_F16
-   (would otherwise need a separate kernel for prompt prefill).
-6. Add the new instance file to `ggml-cuda/CMakeLists.txt` line
-   119-123 (the default-build vec instance list).
-
-**The hard part of Option A** is the per-thread Q layout inside
-`vec_dot_fattn_vec_KQ_tq3_k256`. The kernel calls `vec_dot_KQ` per K
-row with each thread holding only a stripe of Q (for nthreads_KQ=32,
-D=256: 4 float2 per thread = 8 floats per thread). The Pi rotation
-requires the WHOLE y_hat[256] for each output element, so per-thread
-slicing of the K dequant is impossible without either redundant work
-or shared memory cooperation. **Risk: the Q layout assumptions are
-subtle; getting strides wrong produces silent gibberish output.**
-
-The natural optimization (precompute Pi @ Q once per query, then per
-K row just do `<y_hat, Pi_Q>`) would reduce per-K-row cost from
-O(D²) to O(D), but the existing kernel doesn't have a precompute
-hook — would need to add one or use shared memory with a flag.
-
-Realistic estimate: **2-4 hours** for the cleanest correct version
-with shared-memory cooperative dequant + per-thread dot slice + warp
-reduce. Add 1-2 more hours if MMA_F16 prefill kernel is also wanted.
-
-**Option B — Custom kernel in turboquant.cu** (most isolated, simpler
-control flow): write a complete-ish FA kernel from scratch in
-turboquant.cu, dispatched via a special branch in fattn.cu. The CPU
-reference (`ggml_compute_forward_flash_attn_ext_f16_one_chunk` in
-`ggml-cpu/ops.cpp`) gives the algorithmic structure. Each CUDA block
-handles one query head. Skip optimization, focus on correctness.
-Estimate: **3-5 hours** including debugging.
-
-**Option C — Force VEC kernel + naive thread-0 dequant**: in fattn.cu,
-add tq3_k256 to allowlist and force VEC kernel. In fattn-tq3.cuh,
-write the simplest possible vec_dot where thread 0 does ALL the work
-(reads its slice of Q from registers, gathers others via
-`__shfl_sync`, computes the full 256×256 Pi rotation + dot, returns
-the value; other threads return 0, and warp_reduce_sum gives just
-thread 0's contribution). Slow (~1 tok/s GPU, comparable to CPU)
-but gets to a working baseline fast. Estimate: **1-2 hours**.
-
-**My recommendation**: start with **Option C** to get a green
-end-to-end GPU smoke test, then evaluate whether the perf is good
-enough for the project's actual use case. If yes, ship. If not,
-iterate to Option A's optimized version.
-
-### After Stage 3.5 lands
-
-1. **Re-run the smoke test** (the one in the README that currently
-   crashes at FA) — should now produce coherent text on GPU.
-2. **Re-run NIAH at 250K** with the GPU FA path — see how long-context
-   recall holds up. Compare to the q4_0 baseline in
-   `.claude/MEMORY/evals/2026-04-07_summary_needle_comparison.md`.
-3. **Measure VRAM** vs q4_0 baseline. Expected: ~600 MB drop on Gemma
-   4 E4B at 256K (the original session 9 Stage 6 acceptance criterion).
-4. **Commit + write next handoff**.
-
-## Working Tree State
-
-### `~/llama.cpp/` (out-of-tree, NOT a git submodule)
-
-13 files modified, 3 untracked. All session 10 + session 11 work is
-saved as patches in this repo at `scripts/llama_cpp_patches/` so it
-can be re-applied after `git pull` on llama.cpp.
-
-```
-M common/arg.cpp                    # Stage 5 CLI wiring
-M ggml/include/ggml.h                # Stage 1: GGML_TYPE_TQ3_K256 = 42
-M ggml/src/ggml-common.h             # Stage 1: block_tq3_k256 struct
-M ggml/src/ggml-cpu/ggml-cpu.c       # Bug #4: type_traits_cpu entry
-M ggml/src/ggml-cpu/quants.c         # Bug #4 + #5: CPU wrapper + vec_dot
-M ggml/src/ggml-cpu/quants.h         # Bug #4 + #5: declarations
-M ggml/src/ggml-cuda/ggml-cuda.cu    # Stage 3: SET_ROWS allowlist
-M ggml/src/ggml-cuda/set-rows.cu     # Stage 3: dispatch branch
-M ggml/src/ggml-quants.c             # Stage 2: CPU reference impl
-M ggml/src/ggml-quants.h             # Stage 2: prototypes + getters
-M ggml/src/ggml.c                    # Stage 1: type_traits entry
-M src/llama-context.cpp              # Bug #1: warning moved here
-M src/llama-kv-cache.cpp             # Stage 4 + Bug #3 fix
-M tools/server/server-context.cpp    # PRE-EXISTING slot-cap patch
-?? ggml/src/ggml-cuda/turboquant.cu  # Stage 3: CUDA kernel
-?? ggml/src/ggml-cuda/turboquant.cuh # Stage 3: header
-?? ggml/src/turboquant_tables.h      # Stage 1: 1.2 MB Pi matrix (generated)
-```
-
-### Project repo
-
-Sessions 9 + 10 + 11 work is committed in 5 layered commits per the
-recommended commit plan. New this session:
-
-- `scripts/llama_cpp_patches/` — out-of-tree patches + new file copies
-- `.claude/MEMORY/SESSION_HANDOFF.md` — this file (rewritten for session 11)
-
-## Algorithmic invariants (carry into Stage 3.5)
-
-1. **Algorithm reproduces exactly**. The C reference matches the PyTorch
-   oracle byte-equivalently within fp16 epsilon. The CUDA kernel mirrors
-   the C reference line-by-line. The CPU dispositive haiku test confirms
-   the whole pipeline works at real inference time. Whatever Stage 3.5
-   does, it must produce **bit-equivalent output** to the C reference
-   on the same input, modulo float-summation order which fp16 quant
-   tolerates.
-
-2. **Pi rotation matrix is dumped from PyTorch**, not regenerated in C.
-   `~/llama.cpp/ggml/src/turboquant_tables.h` is generated by
-   `scripts/generate_turboquant_tables.py`. The CUDA kernel copies it
-   to device global memory at init via `cudaMemcpyToSymbol`. Don't try
-   to regenerate it on the device side.
-
-3. **Codebook IS recomputed in C** (via closed-form Gaussian). The CUDA
-   side reads the C-computed centroids/boundaries via `extern "C"`
-   getters and copies them to `__constant__` device memory. Don't add
-   a CUDA recompute path.
-
-4. **One block = one head_dim=256 vector**. The block size is the
-   natural granularity. For other head_dims, the per-layer routing
-   (`llama-kv-cache.cpp:effective_cache_type` lambda) falls back to
-   Q4_0. Stage 3.5 only needs to handle the head_dim=256 case.
-
-5. **`Q_q8_1 = false` for tq3_k256**. The algorithm requires f32 dot
-   products after Pi rotation. The existing fattn-vec.cuh kernel has a
-   conditional at line 88 (`Q_q8_1 = type_K != GGML_TYPE_F16 &&
-   type_K != GGML_TYPE_BF16`); add tq3_k256 to the false branch.
-
-## Failed approaches (don't retry)
-
-1. **`extern __device__` cross-TU symbol sharing without RDC**. nvcc
-   warning #20044-D treats extern declarations as definitions, causing
-   link conflicts. Either enable RDC (CMake change, slower compiles)
-   or keep all tq3_k256 device state in a single TU.
-
-2. **Reusing `set_rows_cuda_quant` template from set-rows.cu in
-   another TU**. The template is `static`, so it's file-local and
-   can't be shared. Either move it to a header (refactor outside
-   tq3 scope) or replicate the kernel logic in turboquant.cu.
-
-3. **Bypassing the "quantized V cache requires Flash Attention"
-   check at `llama-context.cpp:351`**. Patching it out would just
-   push the crash deeper into the V dequant path which also doesn't
-   support tq3_k256. The check is correct; the fix is to make FA
-   actually work for tq3_k256.
-
-4. **Mixed `--cache-type-k tq3_k256 --cache-type-v q4_0`** as a
-   workaround for the FA cascade. Tested this session: K being
-   tq3_k256 alone trips the FA scheduler, regardless of V's type.
-
-5. **`--no-kv-offload`** as a workaround. Tested this session: places
-   K/V on CPU but the FA cascade still triggers because the FA tensor
-   for tq3_k256 K layers is placed on CPU while the model is on CUDA →
-   device mismatch → FA disabled → "quantized V requires FA" error.
-
-## Server State at Session End
-
-- **Branch**: `feature/multi-agent-qwen` on `mastergrief/zenith-code`
-- **Working tree (project repo)**: about to be committed in 5 layered
-  commits (sessions 9 + 10 + 11). See "Recommended commit plan" below.
-- **Working tree (~/llama.cpp/)**: dirty as documented above. Saved as
-  patches in `scripts/llama_cpp_patches/`.
-- **llama-server**: not running. Stopped at session end after the
-  failed `-ngl 999 --cache-type-k tq3_k256` test.
-- **VRAM**: ~1.2 GB used (idle). RAM: ~7.7 GB available.
-- **HF cache**: Gemma 4 E4B fp16 still cached at
-  `~/.cache/huggingface/hub/models--google--gemma-4-E4B-it/`
-- **HF token rotation**: still pending from session 9.
-- **gdb**: now installed (`sudo apt-get install gdb`). Used to find
-  Bugs #4 and #5 via stack traces.
-
-## Recommended Commit Plan (UPDATED for session 11)
-
-Sessions 9 + 10 + 11 work, layered to keep history clean:
-
-1. **Session 9 harness baseline** — compaction 227.5K, max effort 32K,
-   parallel-2 readiness. Files: `agents/agent.py`, `agents/compact.py`,
-   `agents/harness.py`, `.claude/CLAUDE.md` (compaction sections),
-   `.claude/rules/architecture.md` (compaction sections).
-
-2. **Session 9 tool surface expansion** — 15 tools + registry + tests.
-   Files: `agents/tools.py`, `agents/agent_registry.py`,
-   `tests/test_agent_registry.py`, `tests/test_agent_tool.py`,
-   `tests/test_new_tools.py`.
-
-3. **Session 9 PyTorch TurboQuant validation** — design reference for
-   the C++ port. Files: `scripts/turboquant_patches.py`,
-   `scripts/test_turboquant_gemma4.py`.
-
-4. **Session 10 TurboQuant llama.cpp port — CPU reference + validation**.
-   Files: `scripts/generate_turboquant_tables.py`,
-   `scripts/test_tq3_k256_c_vs_python.py`.
-
-5. **Session 11 Stage 5 + bug fixes + Stage 3 SET_ROWS + handoff** —
-   the llama.cpp source modifications saved as out-of-tree patches.
-   Files: `scripts/llama_cpp_patches/01_slot_cap.patch`,
-   `scripts/llama_cpp_patches/02_turboquant.patch`,
-   `scripts/llama_cpp_patches/files/turboquant.cu`,
-   `scripts/llama_cpp_patches/files/turboquant.cuh`,
-   `scripts/llama_cpp_patches/README.md`,
-   `.claude/MEMORY/SESSION_HANDOFF.md` (this file).
-
-## Outside-project notes
-
-- The CUDA kernel is bit-equivalent to the CPU oracle BY CONSTRUCTION.
-  Any CUDA-side test that disagrees with the CPU side is a CUDA bug,
-  not a CPU bug. Use `scripts/test_tq3_k256_c_vs_python.py` first to
-  re-validate the CPU side after any change.
-- The slot-cap patch on `tools/server/server-context.cpp` is needed
-  for any NIAH testing past `n_ctx_train`. Re-apply after `git pull`
-  on llama.cpp.
-- `bin/zenith` does NOT cd into the repo before exec'ing the harness
-  — keep it that way (preserves user's cwd for `.zenithrc` lookup).

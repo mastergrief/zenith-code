@@ -18,17 +18,18 @@
 - SpecialistCoordinator auto-selects between **hot-swap mode** (llama.cpp + specialist GGUFs discovered on disk via `discover_specialist_models()`) and **Ollama multi-model mode** (per-agent distinct Ollama model names); falls back to single base model if neither is available
 
 ## File Organization
-- `agents/` — core harness code (14 files, ~2,870 lines; `model_swap.py` added 2026-04-07). No ML dependencies. Must work on Windows + WSL2 with Python 3.11+
+- `agents/` — core harness code (15 files, ~4,400 LOC). No ML dependencies. Must work on Windows + WSL2 with Python 3.11+
 - `agents/distill/` — training pipeline (10 Python files + 1 notebook). ML dependencies (torch, unsloth, transformers) only required here
+- `calm/` — CALM reasoning engine (28 files, ~6,500 LOC, 214 tests). Dependencies: `wasmtime` (optional, for wasm backend). Full spec: `.claude/rules/calm.md`
 - `models/` — Ollama Modelfiles (3 files: qwen9b-fast, qwen4b-fast, reasoning-base)
-- `bin/zenith` — launcher script: auto-starts llama.cpp, `--gguf PATH` first-arg flag, `ZENITH_CTX=262144` default, configurable via `ZENITH_*` env vars. Does NOT `cd` into repo (keeps user's cwd so `.zenithrc` + CLAUDE.md auto-discovery work from anywhere).
+- `bin/zenith` — launcher script: auto-starts llama.cpp, `--gguf PATH` first-arg flag, configurable via `ZENITH_*` env vars. Does NOT `cd` into repo.
 - `scripts/` — dev tooling (needle_test, eval_base_models, smoke_test_harness, test_model_swap, generate_react_security_examples, setup_training)
-- `.claude/MEMORY/evals/` — NIAH and A/B eval reports (authoritative for the values in `compact.py:MODEL_CONTEXT_LIMITS`)
+- `.claude/MEMORY/evals/` — NIAH and A/B eval reports (authoritative for `compact.py:MODEL_CONTEXT_LIMITS`)
 - `rust/` — upstream claw-code Rust port (9 crates + workspace, separate build system)
 - `src/` — upstream claw-code Python port (reference, not actively developed)
 
 ## Tools
-- 6 tools: `bash`, `read_file`, `write_file`, `edit_file`, `grep`, `list_files`
+- 20 tools: `bash`, `read_file`, `write_file`, `edit_file`, `grep`, `list_files`, `list_directory`, `Agent`, `AgentCreate`, `AgentMessage`, `AgentGet`, `AgentList`, `AgentTerminate`, `Sleep`, `WebFetch`, `WebSearch`, `AskUserQuestion`, `TodoWrite`, `TodoRead`, `MultiEdit`
 - Permission check via `check_permission(tool, args, mode)` runs before every tool dispatch
 - 3 permission modes: `READ_ONLY`, `WORKSPACE_WRITE` (default), `FULL_ACCESS`
 - Bash classification: `classify_bash()` returns `SAFE`/`WRITE`/`DESTRUCTIVE`/`BLOCKED` with git subcommand awareness
@@ -53,9 +54,10 @@
 - **89% safe-ctx compaction margin** (`harness.py:_compute_compact_threshold`, raised from 85% in session 2026-04-08): the compaction threshold is `min(per-GGUF model limit, int(ctx_size * 0.89))`. At default 256K ctx the binding constraint is the Gemma model entry (232960 = 227.5K), giving 29184 tokens of headroom. **This is BELOW `EFFORT_LEVELS["max"]["max_tokens"]` (32768)** — by user choice. Max-effort responses can soft-truncate by ~3.5K when conversation sits right at the threshold; the next turn compacts and full 32K is available again. Smaller `ZENITH_CTX` values still bind via `safe_ctx` (e.g. 131072 → safe_ctx 116654 → caps below model limit). If you raise `max_tokens` further, raise the safe-ctx multiplier or accept more truncation.
 
 ## Serving Architecture
-- **llama.cpp (primary)**: Qwen 3.5 4B or Gemma 4 E4B Q5_K_M at **256K context** with Q4 KV cache (~6.7–7.3 GB VRAM, pre-allocated)
-- GGUFs at `~/models/Qwen3.5-4B.Q5_K_M.gguf` (fine-tuned, default) and `~/models/gemma-4-E4B-it-Q5_K_M.gguf` (stock, alternative). Pick via `zenith --gguf PATH` or `ZENITH_MODEL=PATH zenith`, or hot-swap mid-session with `/swap`.
-- llama-server binary built with CUDA at `~/llama.cpp/build/bin/`
+- **llama.cpp (primary)**: Gemma 4 E4B tq4 or Q5_K_M at **256K context** with tq4 or Q4 KV cache (~5-7 GB VRAM, pre-allocated)
+- **Production GGUF**: `~/models/gemma-4-E4B-it-tq4-aligned.gguf` (5.0 GB, tq4, 132-byte blocks). **Alternative**: `gemma-4-E4B-it-Q5_K_M.gguf` (5.48 GB), `Qwen3.5-4B.Q5_K_M.gguf` (2.9 GB). Hot-swap via `/swap` or `ZENITH_MODEL`.
+- llama-server binary at `~/llama.cpp/build/bin/`, **branch `zenith`** with TurboQuant fusion + OP_TIMING
+- **TurboQuant tq4 KV**: `--cache-type-k tq4_k256 --cache-type-v tq4_k256`. 4.125 bpw, 16-level Lloyd-Max, Pi rotation (seed=42). 132-byte blocks for 4-byte aligned CUDA loads (session 16 alignment fix). **Old 130-byte GGUFs incompatible.**
 - **llama-server `--parallel 1` requirement** (session 2026-04-07): without it, llama-server defaults to 4 slots and splits `--ctx-size` across them, so each slot gets only `ctx_size / 4`. For single-user workflow (the harness is always single-user) pass `--parallel 1`. `bin/zenith` passes this since commit `4644051` — manual `llama-server` invocations must pass it too.
 - **Gemma 4 GGUF rope-scaling metadata override** (session 2026-04-07): Gemma 4 E4B's GGUF metadata forces `rope scaling = linear` in llama.cpp; the `--rope-scaling yarn` CLI flag is silently ignored. Extrapolating past `n_ctx_train=131072` uses raw linear RoPE extrapolation, not YaRN. Works empirically up to ~200K on single-needle (21/21 PASS at 220K), but multi-needle degrades to 4/5 at 220K. See `2026-04-07_gemma4_e4b_needle_256k_multi.md`.
 - **llama.cpp slot context cap patch** (session 2026-04-07, outside repo): the unpatched `tools/server/server-context.cpp:763-766` hardcodes per-slot context to `n_ctx_train`, silently capping `--ctx-size` at the trained max. For NIAH testing past 128K on Gemma 4 E4B we patched the cap out locally. The patch is not upstreamed; re-apply after any `git pull` on llama.cpp source.

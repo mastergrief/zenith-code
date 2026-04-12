@@ -5,13 +5,13 @@ import os
 from pathlib import Path
 
 DEFAULTS = {
-    "model": "qwen3.5:4b",
-    "backend": None,
-    # 262144 matches bin/zenith's ZENITH_CTX default — both Gemma 4 E4B and
-    # Qwen 3.5 4B are trained at 256K and fit 8 GB VRAM with Q4 KV cache.
+    "model": "~/models/gemma-4-E4B-it-tq4.gguf",
+    "backend": "llamacpp",
+    # 524288 (512K) — fits 8 GB VRAM with tq4+tq4 stack (7.6 GB at 512K).
+    # For Q5_K_M + f16 KV (6.9 GB at 256K), override: ZENITH_CTX=262144.
     # Harness computes the actual compaction threshold from this ctx_size
     # capped by agents.compact.MODEL_CONTEXT_LIMITS per loaded GGUF.
-    "ctx_size": 262144,
+    "ctx_size": 524288,
     "auto_compact_tokens": None,
     "permission_mode": "workspace",
     "effort": "medium",

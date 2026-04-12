@@ -30,7 +30,7 @@ if [[ "${1:-}" == "--gguf" ]]; then
     MODEL="$2"
     shift 2
 else
-    MODEL="${ZENITH_MODEL:-$HOME/models/gemma-4-E4B-it-Q5_K_M.gguf}"
+    MODEL="${ZENITH_MODEL:-$HOME/models/gemma-4-E4B-it-tq4.gguf}"
 fi
 
 # Expand ~ in case the user passed a tilde path
@@ -38,7 +38,7 @@ MODEL="${MODEL/#\~/$HOME}"
 
 LLAMA_SERVER="${ZENITH_LLAMA_SERVER:-$HOME/llama.cpp/build/bin/llama-server}"
 PORT="${ZENITH_PORT:-8080}"
-CTX="${ZENITH_CTX:-262144}"
+CTX="${ZENITH_CTX:-524288}"
 LLAMA_PID=""
 STARTED_LLAMA=false
 
@@ -74,8 +74,8 @@ else
         -m "$MODEL" \
         --ctx-size "$CTX" \
         --parallel 1 \
-        --cache-type-k q4_0 \
-        --cache-type-v q4_0 \
+        --cache-type-k tq4_k256 \
+        --cache-type-v tq4_k256 \
         -ngl 999 \
         --port "$PORT" \
         > /tmp/llama-server.log 2>&1 &

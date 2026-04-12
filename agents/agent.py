@@ -23,7 +23,7 @@ EFFORT_LEVELS = {
         "prompt_prefix": "",
     },
     "max": {
-        "max_tokens": 32768,
+        "max_tokens": 49152,
         "prompt_prefix": "Think deeply and carefully. Explore multiple approaches, consider edge cases, verify your reasoning step by step before answering.",
     },
 }

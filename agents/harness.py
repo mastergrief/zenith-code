@@ -102,12 +102,10 @@ class Harness:
 
         The 0.89 multiplier was raised from 0.85 (2026-04-08) to allow
         Gemma's 232960-token entry to clear the safe_ctx floor at the default
-        256K ctx_size. Headroom at default ctx is 262144 - 232960 = 29184,
-        which is BELOW EFFORT_LEVELS["max"]["max_tokens"] (32768) — max-effort
-        responses can soft-truncate by up to ~3.5K when the conversation sits
-        right at the threshold. After compaction fires, full 32K is available.
-        Smaller ctx_size still binds via safe_ctx (e.g. ZENITH_CTX=131072 →
-        safe_ctx 116654 → binds below the model limit).
+        ctx_size. With ZENITH_CTX=524288 (512K, tq4+tq4 stack), headroom is
+        524288 - 466636 = 57652, which exceeds EFFORT_LEVELS["max"]["max_tokens"]
+        (49152 = 48K). At the old 256K ctx, headroom is 29184 — max-effort
+        responses will soft-truncate by ~20K until compaction fires.
         """
         if self.backend != "llamacpp":
             # Ollama path — let Agent's own detect_context_limit handle it
