@@ -76,6 +76,10 @@ most important discipline in this workflow.
 | Config / prompt change | model output on N fixed test prompts | real conversation turn |
 | Training data filter | schema validation + dedup count | loss curve on a few hundred steps |
 | llama.cpp build flag | `llama-bench` tg + pp | actual inference of a long prompt |
+| New CALM backend | function count + `pytest calm/tests/` | Gemma `run_auto()` — does precompute fire? |
+| Cognitive module | router on flawed response (quality + issue count) | Engine V2 Gemma test — quality gap bad vs good |
+| NL pattern | NL pattern count + precompute on test prompt | Gemma test — correct value injected? |
+| Scoring/threshold | flawed response < 75%, good > 90% | self-heal trigger test on bad response |
 
 If you only have one path, say so out loud and accept the reduced
 confidence — but keep looking for the second.
@@ -167,10 +171,14 @@ first one that tells you what you need.
   24.1 this morning and 24.3 now, that's noise, not improvement. Run
   more repetitions, not more optimism.
 - **Skipping the correctness check when chasing perf.** Every perf
-  iteration must still pass the cheapest correctness test. For this
-  project the canonical check is "17 × 23 = 391" — a math prompt that
-  a working tq4 model trivially passes and a broken one garbles. Run
-  it every round.
+  iteration must still pass the cheapest correctness test. Two canonical
+  checks:
+  - **Math**: "17 × 23 = 391" via chat API — a working tq4 model
+    trivially passes, a broken one garbles.
+  - **CALM multi-domain**: `run_auto("What is sin(30°)? Is 4181 a
+    Fibonacci number? Capital of France?")` — tests precompute, NL
+    patterns, and knowledge backends in one prompt. All three should
+    be precomputed and correct with 0 corrections.
 - **Trusting a single number.** One run with r=1 can be off by 10%.
   For llama-bench, -r 3 to -r 5 is the minimum. For chat API calls,
   run the same prompt twice.
@@ -178,6 +186,33 @@ first one that tells you what you need.
   from a hypothetical starting point. Always re-bench after a pull /
   merge / environment change before claiming the next optimization
   moved anything.
+
+## CALM iteration pattern
+
+The hypothesis-test-iterate loop applied to CALM intelligence scaling:
+
+1. **Hypothesis**: "Adding backend X will make Gemma answer domain Y
+   correctly via precompute" or "Fixing module Z's triggers will catch
+   failure mode W."
+2. **Raw measurement**: function count, NL pattern count, module count,
+   `pytest calm/tests/` passing.
+3. **Build**: write the backend/module/pattern. Minimal — one domain,
+   one module, one fix per iteration.
+4. **User-facing measurement**: Gemma test via `run_auto()` or Engine
+   V2. Check: did precompute fire? Did the module catch the issue? Did
+   quality score change? Did self-heal trigger?
+5. **Quality gap test** (for cognitive work): run the router on a
+   deliberately flawed response AND a good response. Bad should score
+   < 75%, good should score > 90%. If the gap is < 15%, the modules
+   aren't discriminating — sharpen triggers or add patterns.
+6. **Commit with before/after table** including function count, pattern
+   count, module count, quality scores.
+
+The CALM loop is fast because backends are pure Python (no GPU, no
+training, no inference). A full cycle — write backend, test functions,
+check registration, run Gemma — takes 3-5 minutes. Cognitive module
+changes take slightly longer because the Gemma test needs inference
+time (~30-60s per prompt).
 
 ## When this workflow doesn't apply
 
