@@ -105,8 +105,72 @@ def cross_product(a: list, b: list) -> list:
     ]
 
 
+def matrix_subtract(a: list, b: list) -> list:
+    """Subtract matrix b from matrix a."""
+    return [[a[i][j] - b[i][j] for j in range(len(a[0]))] for i in range(len(a))]
+
+
+def matrix_power(matrix: list, power: int) -> list:
+    """Raise a square matrix to an integer power."""
+    n = len(matrix)
+    result = matrix_identity(n)
+    for _ in range(int(power)):
+        result = matrix_multiply(result, matrix)
+    return result
+
+
+def vector_magnitude(v: list) -> float:
+    """Magnitude (length) of a vector."""
+    import math
+    return round(math.sqrt(sum(float(x) ** 2 for x in v)), 6)
+
+
+def vector_normalize(v: list) -> list:
+    """Normalize a vector to unit length."""
+    mag = vector_magnitude(v)
+    if mag == 0:
+        return v
+    return [round(float(x) / mag, 6) for x in v]
+
+
+def vector_angle(a: list, b: list) -> float:
+    """Angle between two vectors in degrees."""
+    import math
+    dot = dot_product(a, b)
+    mag_a = vector_magnitude(a)
+    mag_b = vector_magnitude(b)
+    if mag_a == 0 or mag_b == 0:
+        return 0.0
+    cos_theta = max(-1, min(1, dot / (mag_a * mag_b)))
+    return round(math.degrees(math.acos(cos_theta)), 4)
+
+
+def matrix_rank(matrix: list) -> int:
+    """Rank of a matrix (number of linearly independent rows)."""
+    m = [row[:] for row in matrix]
+    rows, cols = len(m), len(m[0])
+    rank = 0
+    for col in range(cols):
+        pivot = None
+        for row in range(rank, rows):
+            if abs(m[row][col]) > 1e-10:
+                pivot = row
+                break
+        if pivot is None:
+            continue
+        m[rank], m[pivot] = m[pivot], m[rank]
+        for row in range(rank + 1, rows):
+            if abs(m[row][col]) > 1e-10:
+                factor = m[row][col] / m[rank][col]
+                for j in range(cols):
+                    m[row][j] -= factor * m[rank][j]
+        rank += 1
+    return rank
+
+
 MATRIX_FUNCTIONS = {
     "matrix_add": matrix_add,
+    "matrix_subtract": matrix_subtract,
     "matrix_multiply": matrix_multiply,
     "matrix_transpose": matrix_transpose,
     "matrix_determinant": matrix_determinant,
@@ -115,8 +179,13 @@ MATRIX_FUNCTIONS = {
     "matrix_is_symmetric": matrix_is_symmetric,
     "matrix_scalar_multiply": matrix_scalar_multiply,
     "matrix_identity": matrix_identity,
+    "matrix_power": matrix_power,
     "dot_product": dot_product,
     "cross_product": cross_product,
+    "vector_magnitude": vector_magnitude,
+    "vector_normalize": vector_normalize,
+    "vector_angle": vector_angle,
+    "matrix_rank": matrix_rank,
 }
 
 MATRIX_NL_PATTERNS = [
