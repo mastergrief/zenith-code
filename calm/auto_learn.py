@@ -109,6 +109,11 @@ class AutoLearner:
             expressions = self._instantiate(pattern, prompt)
             for expr in expressions:
                 if expr not in results:
+                    # Guard: skip expressions with huge numbers that would
+                    # hang (e.g. factorial(4532015112830366) from a CC number).
+                    nums = re.findall(r'\d+', expr)
+                    if any(int(n) > 10_000_000 for n in nums if len(n) < 20):
+                        continue
                     try:
                         val = safe_eval(expr)
                         results[expr] = val

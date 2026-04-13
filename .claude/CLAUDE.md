@@ -93,7 +93,7 @@ Long-term commercial direction documented in `.claude/rules/commercial.md`. Curr
 
 Three active systems coexist:
 1. **Python agent harness** (`agents/`, ~4,400 LOC across 15 files) — terminal coding assistant with dual backend (Ollama + llama.cpp), 3-level permissions, thinking mode, sessions, compaction, effort control, and llama.cpp hot-swap
-2. **CALM engine** (`calm/`, ~14,700 LOC across 50+ files) — modular compute facade: Auto-CALM (transparent verification + precomputation, 100% benchmark) + explicit CALM (optional `<calm>` blocks) + 30 modular backends (251 verified functions) + streaming verification + self-learning + auto-training data collection. Full spec: `.claude/rules/calm.md`
+2. **CALM engine** (`calm/`, ~16,600 LOC across 70+ files) — modular compute + knowledge facade: Auto-CALM (transparent verification + precomputation, 100% benchmark) + explicit CALM (optional `<calm>` blocks) + 52 modular backends (411 verified functions, including knowledge backends) + streaming verification + self-learning + auto-training data collection. Full spec: `.claude/rules/calm.md`
 3. **Rust claw-code port** (`rust/`) — upstream claw-code, 9 crates, separate build system
 
 Serving: Gemma 4 E4B (primary) or Qwen 3.5 4B via llama.cpp at **512K context** (`ctx_size=524288`), **32K thinking budget**. Production: tq4+tq4 KV cache on Gemma E4B (`~/models/gemma-4-E4B-it-tq4-aligned.gguf`, 5.0 GB). CALM/Auto-CALM runs on the same llama-server instance. Harness auto-computes compaction threshold as `min(per-GGUF limit, int(ctx_size * 0.89))` — Gemma compacts at **227.5K tokens** (232960). Hot-swap between bases via `agents/model_swap.py`.
@@ -168,7 +168,7 @@ ZENITH_CTX=65536 zenith
 ```
 `bin/zenith` launcher: auto-starts llama.cpp if not running, waits for health, passes `--backend llamacpp`. Default `ZENITH_CTX=262144` (256K). Configurable via `ZENITH_MODEL`, `ZENITH_PORT`, `ZENITH_CTX`, `ZENITH_LLAMA_SERVER` env vars, plus the `--gguf PATH` CLI flag (must be first arg). The stdin pipe form works in any environment (TTY or non-TTY) because the harness uses plain `input()`; redirect output to a file to keep model token spam out of your terminal/context. `bin/zenith` does NOT `cd` into the repo root before exec'ing the harness — this keeps `.zenithrc` lookup and CLAUDE.md auto-discovery honoring the user's actual cwd.
 
-## CALM Engine (`calm/`, ~14,700 LOC, 250 tests, 100% benchmark)
+## CALM Engine (`calm/`, ~16,600 LOC, 250 tests, 100% benchmark)
 
 Full spec: `.claude/rules/calm.md`
 
@@ -186,21 +186,15 @@ Full spec: `.claude/rules/calm.md`
 - Engine stops at `</calm>`, executes via 4-tier parse, injects results
 - Score: 85-98% (nondeterminism in whether model uses blocks)
 
-### Modular Backend Architecture (30 backends, 251 functions)
+### Modular Backend Architecture (52 backends, 411 functions)
 
-| Backend | Functions | Domain |
-|---|---|---|
-| `math_ops.py` | 9 | primes, GCD, factorize, fibonacci, collatz |
-| `string_ops.py` | 7 | len, case, contains, regex |
-| `wasm_ops.py` | 17 | int/float via WebAssembly cross-check |
-| `code_ops.py` | 16 | read, write, test, lint, search |
-| `security_ops.py` | 8 | OWASP Top 10 detection |
-| `date_ops.py` | 6 | days_between, day_of_week, leap_year |
-| `convert_ops.py` | 5 | units (6 domains) + temperature |
-| `data_ops.py` | 11 | mean, median, stdev, regression, correlation |
-| `algo_ops.py` | 13 | sort, nCr, graph algorithms, LIS |
+Two types: **compute backends** (deterministic functions) and **knowledge backends** (factual lookup tables). The engine doesn't care which — same contract.
 
-**Adding a backend**: write a Python file in `calm/backends/` with pure functions, export a `*_FUNCTIONS` dict, add a `try/import` block in `expression.py`. Model gets instantly smarter at that domain — zero training.
+Full backend table in `.claude/rules/calm.md`. Key additions since session 21: HTTP status codes, UUID, CSV, markdown, Unicode confusables, WCAG color contrast, JWT decode, timezones, base conversion, Luhn/ISBN checksums, byte sizes (MiB vs MB), durations, country data (195 countries), periodic table (118 elements), physical constants, algorithm complexity.
+
+**Adding a backend**: write a `*_ops.py` (compute) or `*_kb.py` (knowledge) file in `calm/backends/`, export a `*_FUNCTIONS` dict. Auto-discovery in `backends/__init__.py` registers it — zero other files to edit. Model gets instantly smarter at that domain — zero training.
+
+**Defense in depth**: Layer 2 (precompute) injects correct answers before generation. Layer 1 (verify) catches wrong claims after generation. When precompute misses a phrasing, verify is the safety net.
 
 ### Auto-Training Data Collection
 

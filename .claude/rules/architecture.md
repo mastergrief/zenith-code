@@ -27,10 +27,13 @@ equivalent to training — the model gets smarter at that domain instantly.
 - **Explicit CALM** (`<calm>` blocks) is the power-user path. 85-98% benchmark.
 - **Backends** are modular Python files in `calm/backends/`. Each exports a `*_FUNCTIONS`
   dict registered in `expression.py` via try/import. Missing backends degrade gracefully.
-- **9 backends, 70+ verified functions**: math, strings, wasm, code, security, dates,
-  units, statistics, algorithms. Full spec: `.claude/rules/calm.md`
-- To add a domain: write `calm/backends/X_ops.py` → export dict → register in `expression.py`
-  → (optional) add precompute patterns in `auto_calm.py`
+- **52 backends, 411 verified functions**: compute (math, strings, encoding, dates,
+  HTTP, JWT, timezones, checksums, etc.) + knowledge (countries, elements, constants,
+  algorithm complexity). Full spec: `.claude/rules/calm.md`
+- To add a domain: write `calm/backends/X_ops.py` (compute) or `X_kb.py` (knowledge)
+  → export `X_FUNCTIONS` dict → done (auto-discovery registers it, zero other files)
+  → (optional) add NL precompute patterns in `precompute.py`
+  → (optional) add claim verification patterns in `verify.py`
 
 ## File Organization
 - `agents/` — core harness code (15 files, ~4,400 LOC). No ML dependencies. Must work on Windows + WSL2 with Python 3.11+

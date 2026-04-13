@@ -77,6 +77,20 @@ class AutoCalm:
         re.compile(r'\(?(\d[\d,]*)\)?\s+is\s+(not\s+)?divisible\s+by\s+(\d+)', re.IGNORECASE),
     ]
 
+    # Base conversion claims: "10110011 in hexadecimal is b3", "255 in binary is 11111111"
+    _BASE_CLAIM_PATTERNS = [
+        # "X in hexadecimal/hex is Y" (input could be binary or decimal)
+        re.compile(r'(?:binary\s+(?:number\s+)?)?([01]+)\s+(?:in|to)\s+(?:hexadecimal|hex)\s+(?:is|=|equals)\s+\**([0-9a-fA-F]+)\**', re.IGNORECASE),
+        # "X in binary is Y"
+        re.compile(r'(\d+)\s+(?:in|to)\s+binary\s+(?:is|=|equals)\s+\**([01]+)\**', re.IGNORECASE),
+        # "X in octal is Y"
+        re.compile(r'(\d+)\s+(?:in|to)\s+octal\s+(?:is|=|equals)\s+\**([0-7]+)\**', re.IGNORECASE),
+        # "X in decimal/base 10 is Y" (input is binary/hex)
+        re.compile(r'(?:binary\s+(?:number\s+)?)?([01]+)\s+(?:in|to)\s+(?:decimal|base\s*10)\s+(?:is|=|equals)\s+\**(\d+)\**', re.IGNORECASE),
+        # "hexadecimal/hex representation of X is Y"
+        re.compile(r'(?:hexadecimal|hex)\s+(?:representation|conversion|value|equivalent)\s+(?:of\s+)?(?:(?:the\s+)?binary\s+(?:number\s+)?)?([01]+)\s+is\s+\**([0-9a-fA-F]+)\**', re.IGNORECASE),
+    ]
+
     _CONDITIONAL_RE = re.compile(r'\b(?:if|whether|check|determine|test|verify)\b', re.IGNORECASE)
 
     def extract_claims(self, text: str) -> List[Claim]:
@@ -116,6 +130,31 @@ class AutoCalm:
                 claimed_value=m.group(3).replace(",", ""), span=span,
             ))
             seen_spans.add(span)
+
+        # Base conversion claims
+        for i, pat in enumerate(self._BASE_CLAIM_PATTERNS):
+            for m in pat.finditer(text):
+                span = m.span()
+                if self._overlaps(span, seen_spans):
+                    continue
+                input_val = m.group(1)
+                claimed = m.group(2).lower()
+                # Determine conversion based on pattern index
+                if i == 0 or i == 4:  # binary → hex
+                    expr = f'base_convert("{input_val}", 2, 16)'
+                elif i == 1:  # decimal → binary
+                    expr = f'to_binary({input_val})'
+                elif i == 2:  # decimal → octal
+                    expr = f'to_octal({input_val})'
+                elif i == 3:  # binary → decimal
+                    expr = f'from_binary("{input_val}")'
+                else:
+                    continue
+                claims.append(Claim(
+                    original=m.group(0), expression=expr,
+                    claimed_value=claimed, span=span,
+                ))
+                seen_spans.add(span)
 
         return claims
 

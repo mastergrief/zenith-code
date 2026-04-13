@@ -24,67 +24,9 @@ def build_system_prompt() -> str:
     Auto-discovers all registered functions — no hardcoded lists."""
     from calm.expression import _FUNCTIONS
 
-    # Auto-discover categories from backend module names.
-    # Each backend exports *_FUNCTIONS from *_ops.py — the module
-    # name IS the category.
+    # Auto-discover categories from the backend registry.
+    from calm.backends import FUNCTION_CATEGORIES
     categories = {}
-
-    # Discover by scanning which backend module each function came from.
-    _MODULE_TO_CAT = {}
-    _backend_modules = [
-        ("calm.backends.math_ops", "math"),
-        ("calm.backends.string_ops", "strings"),
-        ("calm.backends.wasm_ops", "wasm"),
-        ("calm.backends.code_ops", "code"),
-        ("calm.backends.security_ops", "security"),
-        ("calm.backends.date_ops", "dates"),
-        ("calm.backends.convert_ops", "units"),
-        ("calm.backends.data_ops", "stats"),
-        ("calm.backends.algo_ops", "algorithms"),
-        ("calm.backends.quality_ops", "quality"),
-        ("calm.backends.readability_ops", "readability"),
-        ("calm.backends.regex_ops", "regex"),
-        ("calm.backends.json_ops", "json"),
-        ("calm.backends.encoding_ops", "encoding"),
-        ("calm.backends.git_ops", "git"),
-        ("calm.backends.network_ops", "network"),
-        ("calm.backends.creative_ops", "creative"),
-        ("calm.backends.impact_ops", "impact"),
-        ("calm.backends.context_ops", "context"),
-        ("calm.backends.python_ops", "python"),
-        ("calm.backends.math_extended_ops", "math_ext"),
-        ("calm.backends.perf_ops", "performance"),
-        ("calm.backends.deps_ops", "dependencies"),
-        ("calm.backends.refactor_ops", "refactoring"),
-        ("calm.backends.type_ops", "typing"),
-        ("calm.backends.test_ops", "testing"),
-        ("calm.backends.doc_ops", "documentation"),
-        ("calm.backends.shell_ops", "shell"),
-        ("calm.backends.semver_ops", "semver"),
-        ("calm.backends.config_ops", "config"),
-        ("calm.backends.sql_ops", "sql"),
-        ("calm.backends.cron_ops", "cron"),
-        ("calm.backends.bitwise_ops", "bitwise"),
-        ("calm.backends.diff_ops", "diff"),
-        ("calm.backends.package_ops", "packages"),
-        ("calm.backends.ast_ops", "ast"),
-        ("calm.backends.http_ops", "http"),
-        ("calm.backends.uuid_ops", "uuid"),
-        ("calm.backends.csv_ops", "csv"),
-        ("calm.backends.markdown_ops", "markdown"),
-        ("calm.backends.unicode_ops", "unicode"),
-        ("calm.backends.color_ops", "color"),
-    ]
-    for mod_name, cat in _backend_modules:
-        try:
-            mod = __import__(mod_name, fromlist=["x"])
-            # Find the *_FUNCTIONS dict in the module.
-            for attr in dir(mod):
-                if attr.endswith("_FUNCTIONS") and isinstance(getattr(mod, attr), dict):
-                    for func_name in getattr(mod, attr):
-                        _MODULE_TO_CAT[func_name] = cat
-        except ImportError:
-            pass
 
     # Built-in expression.py functions.
     _BUILTINS = {'len', 'sorted', 'reversed', 'sum', 'any', 'all',
@@ -96,8 +38,8 @@ def build_system_prompt() -> str:
     for name in sorted(_FUNCTIONS.keys()):
         if '.' in name:
             cat = name.split('.')[0]
-        elif name in _MODULE_TO_CAT:
-            cat = _MODULE_TO_CAT[name]
+        elif name in FUNCTION_CATEGORIES:
+            cat = FUNCTION_CATEGORIES[name]
         elif name in _BUILTINS:
             cat = 'math'
         else:
@@ -348,6 +290,44 @@ def precompute(prompt: str) -> Dict[str, object]:
         # MIME types
         (r'(?:MIME|mime)\s+type\s+(?:for|of)\s+\.?(\w+)', 'mime_type'),
         (r'(?:what|which)\s+(?:MIME|mime)\s+type\s+(?:does|is|for)\s+\.?(\w+)', 'mime_type'),
+        # Base conversion
+        # "convert binary number X to hex/decimal" — binary-aware (group 1 = number, group 2 = target base)
+        (r'(?:convert\s+)?(?:the\s+)?binary\s+(?:number\s+)?([01]+)\s+(?:to|in(?:to)?)\s+(hex|hexadecimal|decimal|base\s*10|octal)', None),
+        # Generic decimal → base
+        (r'(?:convert\s+)?(\d+)\s+(?:to|in)\s+binary', None),
+        (r'(?:convert\s+)?(\d+)\s+(?:to|in)\s+(?:hex|hexadecimal)', None),
+        (r'(?:convert\s+)?(\d+)\s+(?:to|in)\s+octal', None),
+        (r'(?:what is\s+)?([01]+)\s+in\s+(?:decimal|base\s*10)', None),
+        # Byte sizes (3-group pattern first so it matches before 1-group)
+        (r'(?:how (?:many|much)|what is|convert)\s+(\d+)\s*(KB|MB|GB|TB|KiB|MiB|GiB|TiB)\s+(?:to|in)\s+(bytes|B|KB|MB|GB|TB|KiB|MiB|GiB|TiB)', None),
+        (r'(\d+)\s*(KB|MB|GB|TB|KiB|MiB|GiB|TiB)\s+(?:to|in)\s+(bytes|B|KB|MB|GB|TB|KiB|MiB|GiB|TiB)', None),
+        # Duration
+        (r'(?:how many|convert)\s+(\d+)\s*(hours?|minutes?|days?|weeks?)\s+(?:to|in|into)\s+(seconds?|minutes?|hours?|days?)', None),
+        (r'(?:how many)\s+seconds?\s+in\s+(\d+)\s*(hours?|minutes?|days?|weeks?)', None),
+        (r'(?:parse|what is)\s+["\']?(\d+[hms]\s*(?:\d+[hms]\s*)*)["\']?\s+in\s+seconds', None),
+        # Checksum / Luhn
+        (r'(?:is\s+)?(\d{13,19})\s+(?:a\s+)?valid\s+(?:credit\s+card|Luhn|card\s+number)', None),
+        (r'(?:validate|check|verify)\s+(?:ISBN|isbn)[- ]?(?:13)?[:\s]+([0-9X-]+)', None),
+        # Timezone
+        (r'(?:convert|what is)\s+(\d{1,2}:\d{2})\s+([A-Za-z/_]+)\s+(?:to|in)\s+([A-Za-z/_]+)', None),
+        (r'(?:UTC|utc)\s+offset\s+(?:for|of|in)\s+([A-Za-z/_]+)', 'tz_offset'),
+        # Country knowledge
+        (r'(?:capital|capitol)\s+(?:of|city of)\s+([A-Z][\w\s]+)', 'capital'),
+        (r'(?:what|which)\s+(?:is\s+)?(?:the\s+)?(?:capital|capitol)\s+(?:of|city of)\s+([A-Z][\w\s]+)', 'capital'),
+        (r'(?:currency|money)\s+(?:of|in|used in)\s+([A-Z][\w\s]+)', 'country_currency'),
+        (r'(?:calling|phone|dial)\s+code\s+(?:of|for)\s+([A-Z][\w\s]+)', 'country_calling_code'),
+        (r'(?:ISO|iso)\s+code\s+(?:of|for)\s+([A-Z][\w\s]+)', 'country_iso2'),
+        # Element knowledge
+        (r'(?:atomic\s+)?(?:weight|mass)\s+of\s+(\w+)', 'atomic_weight'),
+        (r'(?:atomic\s+)?number\s+of\s+(\w+)', 'atomic_number'),
+        (r'(?:electron\s+)?config(?:uration)?\s+(?:of|for)\s+(\w+)', 'electron_config'),
+        (r'(?:symbol|chemical symbol)\s+(?:of|for)\s+(\w+)', 'element_symbol'),
+        # Physical constants
+        (r'(?:speed of light|planck.s? constant|boltzmann.s? constant|avogadro.s? number|gravitational constant|elementary charge|gas constant|fine.structure constant|bohr radius|standard gravity|standard atmosphere)', None),
+        # Algorithm complexity
+        (r'(?:time\s+)?complexity\s+of\s+(quicksort|mergesort|merge sort|heapsort|heap sort|timsort|insertion sort|bubble sort|selection sort|radix sort|counting sort|bucket sort)', 'sort_complexity'),
+        (r'worst\s+case\s+(?:of|for)\s+(\w[\w\s]*)', 'worst_case'),
+        (r'[Ii]s\s+(quicksort|mergesort|merge sort|heapsort|heap sort|timsort|insertion sort|bubble sort|selection sort)\s+stable', 'is_stable_sort'),
     ]
     for pat, func in _NL_FUNC_MAP:
         for m in re.finditer(pat, prompt, re.IGNORECASE):
@@ -364,6 +344,59 @@ def precompute(prompt: str) -> Dict[str, object]:
                     word = m.group(0).split()[0].lower()
                     fn = 'color_lighten' if 'lighten' in word else 'color_darken'
                     expr = f'{fn}("{m.group(1)}", {m.group(2)})'
+                elif func is None and '[01]' in pat and 'binary' in pat:
+                    # "binary number X to hex/decimal/octal" — 2 groups
+                    target = m.group(2).lower().strip()
+                    if 'hex' in target:
+                        expr = f'base_convert("{m.group(1)}", 2, 16)'
+                    elif 'decimal' in target or 'base' in target:
+                        expr = f'from_binary("{m.group(1)}")'
+                    elif 'octal' in target:
+                        expr = f'base_convert("{m.group(1)}", 2, 8)'
+                    else:
+                        continue
+                elif func is None and 'binary' in pat and '[01]' not in pat:
+                    expr = f'to_binary({m.group(1)})'
+                elif func is None and 'hex' in pat and 'binary' not in pat:
+                    expr = f'to_hex({m.group(1)})'
+                elif func is None and 'octal' in pat and 'binary' not in pat:
+                    expr = f'to_octal({m.group(1)})'
+                elif func is None and 'base.10' in pat.replace(' ', '.').replace('\\', '.'):
+                    expr = f'from_binary("{m.group(1)}")'
+                elif func is None and ('MB' in pat or 'GB' in pat or 'KB' in pat or 'KiB' in pat or 'MiB' in pat or 'GiB' in pat or 'TiB' in pat):
+                    # Byte size conversions
+                    groups = m.groups()
+                    if len(groups) == 3:
+                        expr = f'bytes_convert({groups[0]}, "{groups[1]}", "{groups[2]}")'
+                    elif len(groups) == 1 and 'MB' in pat and 'bytes' in pat.lower():
+                        expr = f'bytes_parse("{m.group(1)} MB")'
+                    elif len(groups) == 2:
+                        expr = f'bytes_convert({groups[0]}, "{groups[1]}", "bytes")'
+                    else:
+                        expr = f'bytes_parse("{m.group(0).strip()}")'
+                elif func is None and ('hours' in pat or 'minutes' in pat or 'days' in pat or 'weeks' in pat) and ('to' in pat or 'in' in pat):
+                    groups = m.groups()
+                    if len(groups) == 3:
+                        expr = f'duration_convert({groups[0]}, "{groups[1]}", "{groups[2]}")'
+                    elif len(groups) == 2 and 'seconds' in pat:
+                        expr = f'seconds_in({groups[0]}, "{groups[1]}")'
+                    else:
+                        expr = f'duration_parse("{m.group(1)}")'
+                elif func is None and '[hms]' in pat:
+                    expr = f'duration_parse("{m.group(1)}")'
+                elif func is None and 'Luhn' in pat:
+                    expr = f'luhn_validate("{m.group(1)}")'
+                elif func is None and 'ISBN' in pat:
+                    isbn = m.group(1).replace("-", "").replace(" ", "")
+                    fn = 'isbn13_validate' if len(isbn) == 13 else 'isbn10_validate'
+                    expr = f'{fn}("{isbn}")'
+                elif func is None and (':\\d' in pat and 'A-Za-z' in pat):
+                    # Timezone conversion: HH:MM from_tz to to_tz
+                    expr = f'tz_convert("{m.group(1)}", "{m.group(2)}", "{m.group(3)}")'
+                elif func is None and 'speed of light' in pat:
+                    # Physical constants — extract which one from the match text
+                    matched = m.group(0).lower().strip()
+                    expr = f'physical_constant("{matched}")'
                 elif func in ('http_status',):
                     expr = f'{func}({m.group(1)})'
                 else:

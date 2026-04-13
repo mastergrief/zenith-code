@@ -45,12 +45,22 @@ Planning turn (thinking ON) → stop-mode execution loop:
 
 ## Modular Backend Architecture
 
-**Pattern**: write pure functions → export dict → register in `expression.py`.
+**Pattern**: write a `*_ops.py` file in `calm/backends/`, export a `*_FUNCTIONS`
+dict. Auto-discovery registers it — zero other files to edit.
 Model gets smarter at that domain instantly.
 
-### Current Backends (30 modules, 251 functions)
+Two types of backends coexist:
+- **Compute backends** — deterministic functions (math, encoding, dates, etc.)
+- **Knowledge backends** — factual lookup tables (countries, elements, constants, algorithms)
 
-| Backend | Functions | Domain |
+The engine doesn't care which type — same contract: pure function, deterministic
+output, engine trusts it over the model.
+
+### Current Backends (52 modules, 411 functions)
+
+**Compute backends:**
+
+| Backend | Funcs | Domain |
 |---|---|---|
 | `math_ops` | 9 | primes, GCD, factorize, fibonacci, collatz |
 | `string_ops` | 7 | len, case, contains, regex |
@@ -82,23 +92,54 @@ Model gets smarter at that domain instantly.
 | `shell_ops` | 7 | exit codes, dangerous commands |
 | `semver_ops` | 6 | version compare, satisfies |
 | `config_ops` | 6 | YAML, TOML, INI, dotenv |
+| `sql_ops` | 6 | parse, validate, risk, format |
+| `cron_ops` | 6 | parse, explain, next runs, frequency |
+| `bitwise_ops` | 18 | AND/OR/XOR/NOT, shifts, popcount, masks |
+| `diff_ops` | 6 | unified diff parse, stats, apply |
+| `package_ops` | 6 | pip/npm/cargo info |
+| `ast_ops` | 7 | Python AST parse, functions, classes |
+| `http_ops` | 7 | status codes (401 vs 403), methods, MIME |
+| `uuid_ops` | 8 | generate, validate, parse, compare |
+| `csv_ops` | 9 | parse, validate, column stats |
+| `markdown_ops` | 7 | headers, TOC, code blocks, links |
+| `unicode_ops` | 7 | codepoints, categories, confusables |
+| `color_ops` | 9 | hex/RGB/HSL, WCAG contrast, complement |
+| `jwt_ops` | 7 | decode header/payload, validate structure |
+| `timezone_ops` | 7 | convert, UTC offset, DST awareness |
+| `baseconv_ops` | 9 | binary/octal/hex/arbitrary base |
+| `checksum_ops` | 8 | Luhn, ISBN-10/13, EAN, UPC |
+| `bytesize_ops` | 7 | human-readable, IEC vs SI (MiB vs MB) |
+| `duration_ops` | 7 | parse "2h30m", ISO 8601, convert |
+
+**Knowledge backends** (`*_kb.py` — factual lookups, include `_DATA_VERSION`):
+
+| Backend | Funcs | Domain |
+|---|---|---|
+| `country_kb` | 8 | capitals, ISO codes, currencies, calling codes (195 countries, 2025-01) |
+| `elements_kb` | 9 | periodic table: symbols, weights, electron config (118 elements) |
+| `constants_kb` | 5 | physical constants: speed of light, Planck, Avogadro (CODATA 2018) |
+| `complexity_kb` | 5 | sort/DS/graph algorithm complexity (the most hallucinated CS topic) |
 
 ### Adding a New Backend
 
-1. Create `calm/backends/mydom_ops.py` with pure functions
-2. Export: `MYDOM_FUNCTIONS = {"func_name": func, ...}`
-3. Register in `calm/expression.py`:
-   ```python
-   try:
-       from calm.backends.mydom_ops import MYDOM_FUNCTIONS
-       _FUNCTIONS.update(MYDOM_FUNCTIONS)
-   except ImportError:
-       pass
-   ```
-4. (Optional) Add precompute patterns in `auto_calm.py:_precompute()`
-5. (Optional) Add claim verification patterns in `auto_calm.py`
+**Naming**: `*_ops.py` for compute (functions that DO something), `*_kb.py`
+for knowledge (functions that LOOK UP something). Knowledge backends should
+include a `_DATA_VERSION` date for staleness tracking.
 
-Each backend is optional — missing backends degrade gracefully via try/import.
+1. Create `calm/backends/mydom_ops.py` (or `mydom_kb.py`) with pure functions
+2. Export: `MYDOM_FUNCTIONS = {"func_name": func, ...}`
+3. Done — auto-discovery in `calm/backends/__init__.py` registers it
+4. (Optional) Add NL precompute patterns in `precompute.py`
+5. (Optional) Add claim verification patterns in `verify.py`
+
+**Defense in depth**: Layer 2 (precompute) injects correct answers before
+generation. Layer 1 (verify) catches wrong claims after generation. Both
+should cover the same domains — when precompute misses, verify is the safety net.
+
+**Auto-learn guard**: `auto_learn.py` instantiates learned patterns with
+numbers from the prompt. Large numbers (>10M) are skipped to prevent
+combinatorial explosions (e.g. `factorial(4532015112830366)` from a credit
+card number in the prompt).
 
 ## Auto-CALM Claim Verification
 
@@ -163,7 +204,7 @@ VERIFIED = all lanes agree → safe.
 ## Expression Evaluator (`calm/expression.py`)
 
 - **AST-only**: `ast.parse(mode="eval")` + recursive walker. Never `eval()`.
-- **Whitelist**: only functions in `_FUNCTIONS` dict (70+ from all backends)
+- **Whitelist**: only functions in `_FUNCTIONS` dict (411+ from all backends)
 - **Comprehensions**: list/set/generator with per-variable scoping, 10K limit
 - **No attribute access, no imports** — all functions pre-registered
 
@@ -182,21 +223,23 @@ VERIFIED = all lanes agree → safe.
 | File | LOC | Purpose |
 |---|---|---|
 | `auto_calm.py` | 324 | Facade: composes layers, CLI entry |
-| `verify.py` | 284 | Layer 1: claim extraction + verification |
-| `precompute.py` | 346 | Layer 2: precomputation + system prompt |
+| `verify.py` | 323 | Layer 1: claim extraction + correction (incl. base conversion) |
+| `precompute.py` | 410 | Layer 2: NL→expression precomputation + system prompt |
 | `intent_edit.py` | 356 | Layer 3: NL diagnosis → template fix → verify |
 | `stream_auto.py` | 437 | Streaming verification + tool-call handler |
-| `auto_learn.py` | 215 | Self-learning from corrections |
+| `auto_learn.py` | 220 | Self-learning from corrections (>10M guard) |
 | `auto_training.py` | 337 | Training data generation |
-| `engine.py` | 527 | Explicit CALM v0.1: stop-mode |
-| `stream_engine.py` | 240 | Explicit CALM v0.2: SSE streaming |
+| `engine.py` | 552 | Explicit CALM v0.1: stop-mode |
+| `stream_engine.py` | 287 | Explicit CALM v0.2: SSE streaming |
 | `interceptor.py` | 479 | 4-tier parse + block detection |
-| `expression.py` | 780 | AST-safe eval, 251 functions from all backends |
-| `verifier.py` | 560 | 4-lane TMR verification |
+| `expression.py` | 657 | AST-safe eval, `_FUNCTIONS` dict (411 from registry) |
+| `verifier.py` | 559 | 4-lane TMR verification |
 | `stack_vm.py` | 522 | Reference stack machine |
-| `sandbox.py` | 250 | Subprocess Python isolation |
+| `sandbox.py` | 254 | Subprocess Python isolation |
 | `nl_parser.py` | 168 | NL → stack code translator |
-| `backends/*.py` | ~5,460 | 30 modular compute backends |
+| `backends/__init__.py` | 63 | Auto-discovery registry: scans `*_ops.py` + `*_kb.py` |
+| `backends/*_ops.py` | ~8,700 | 48 compute backends (functions that DO something) |
+| `backends/*_kb.py` | ~800 | 4 knowledge backends (functions that LOOK UP something) |
 | `learned_patterns.jsonl` | — | Self-learned error patterns (committed) |
 | `tests/` | ~3,400 | 250 tests |
 | `benchmark.py` | 227 | 40-problem eval (format-agnostic) |
