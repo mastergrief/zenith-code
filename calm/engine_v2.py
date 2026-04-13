@@ -136,6 +136,7 @@ class CalmEngineV2:
         result.risks_found = pre_analysis.get("risks", 0)
 
         # === PHASE 2: ENRICH SYSTEM PROMPT ===
+        pre_analysis["_raw_prompt"] = prompt
         enriched_prompt = self._enrich_system_prompt(pre_analysis)
 
         # === PHASE 2.5: ADAPTIVE THINKING BUDGET ===

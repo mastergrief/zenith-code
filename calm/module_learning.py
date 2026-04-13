@@ -89,12 +89,19 @@ class ModuleLearner:
 
     def record_from_report(self, report, prompt: str):
         """Record issues from a CognitiveReport."""
-        # Detect prompt context
         context = self._detect_context(prompt)
 
         for r in report.results:
             if r.issues_found > 0:
-                self.record(r.module_name, r.summary[:30], context)
+                # Normalize issue_type: strip variable data (percentages, counts)
+                # "well-scoped (95%)" → "well-scoped"
+                # "3 vague terms" → "vague terms"
+                # "checked 48 claims, 3 issues" → "checked claims, issues"
+                issue_type = re.sub(r'\d+\.?\d*%?', '', r.summary[:40]).strip()
+                issue_type = re.sub(r'\s+', ' ', issue_type)
+                issue_type = re.sub(r'^\s*,\s*', '', issue_type)  # strip leading comma
+                if issue_type:
+                    self.record(r.module_name, issue_type, context)
 
     def suggest_prompt_additions(self, prompt: str) -> List[str]:
         """Suggest system prompt additions based on learned patterns."""
@@ -153,6 +160,21 @@ class ModuleLearner:
             },
             "relevance": {
                 "off-topic": "Answer the question directly before adding context or background.",
+            },
+            "confidence_check": {
+                "overconfidence": "Hedge appropriately: use 'typically', 'in most cases', 'it depends on'. Avoid absolutes.",
+                "absolute": "Replace 'always/never/impossible' with qualified statements.",
+                "false_certainty": "Don't appeal to authority or obviousness. Provide evidence instead.",
+            },
+            "specificity": {
+                "platitude": "Be actionable: instead of 'use caching', specify what to cache, which cache, and TTL strategy.",
+                "generic": "Name specific tools, metrics, and thresholds instead of generic advice.",
+                "hand_wave": "Specify the concrete steps, not just the high-level pattern.",
+            },
+            "factual_check": {
+                "contradiction": "Double-check factual claims about tools, algorithms, and implementations before stating them.",
+                "suspicious": "Qualify uncertain factual claims with 'typically' or 'in most implementations'.",
+                "dynamic_cross_check": "Verify numeric claims (output sizes, port numbers, complexities) before stating them.",
             },
         }
 

@@ -167,13 +167,68 @@ _KNOWN_FACTS = [
 
 
 class FactualChecker:
-    """Check response for common factual errors using pattern matching."""
+    """Check response for common factual errors using pattern matching + dynamic backend cross-check."""
+
+    # Dynamic cross-check patterns: (regex, backend_expr_template, value_extractor, comparator)
+    # template uses {name} and {value} from match groups
+    _DYNAMIC_PATTERNS = [
+        # Hash output length: "SHA-256 output is 32 bytes" → hash_output_length("sha256") = 64
+        (re.compile(r'(SHA-?256|SHA-?512|SHA-?1|MD5|SHA-?384|blake2b|blake3)\s+(?:output|hash|digest)\s+(?:is|has|produces?)\s+(\d+)\s+(?:hex\s+)?(?:bytes?|characters?|chars?|digits?)', re.IGNORECASE),
+         'hash_output_length', lambda m: (m.group(1).lower().replace("-", "").replace(" ", ""), int(m.group(2))),
+         lambda actual, claimed: actual == claimed if actual > 0 else None),
+
+        # Data structure complexity: "hash table search is O(1)" → ds_info("hash table")["search"]
+        (re.compile(r'(hash\s+table|linked\s+list|binary\s+search\s+tree|BST|heap|trie|stack|queue|array|red.black\s+tree|B.tree|bloom\s+filter)\s+(?:search|lookup|access|insert|delete)\s+(?:is|has|takes?)\s+O\(([^)]+)\)', re.IGNORECASE),
+         'ds_info', lambda m: (m.group(1).lower(), m.group(2).strip()),
+         None),  # complex comparison, handled inline
+
+        # Sort complexity: "quicksort average is O(n log n)" → sort_info("quick sort")["average"]
+        (re.compile(r'(bubble|selection|insertion|merge|quick|heap|counting|radix|bucket|tim)\s*sort\s+(?:has\s+)?(?:average|worst|best)(?:\s+case)?\s+(?:is|of|=)\s+O\(([^)]+)\)', re.IGNORECASE),
+         'sort_info', lambda m: (m.group(1).lower() + " sort", m.group(2).strip()),
+         None),
+
+        # Protocol ports: "SSH uses port 22" → protocol_info("SSH")["default_port"]
+        (re.compile(r'(SSH|HTTP|HTTPS|FTP|SMTP|DNS|MySQL|PostgreSQL|Redis|MongoDB)\s+(?:uses?|runs?\s+on|listens?\s+on|default)\s+port\s+(\d+)', re.IGNORECASE),
+         'protocol_info', lambda m: (m.group(1).upper(), int(m.group(2))),
+         None),
+
+        # Country capitals: "capital of France is Paris" → country_capital("france")
+        (re.compile(r'capital\s+of\s+(\w+(?:\s+\w+)?)\s+is\s+(\w+(?:\s+\w+)?)', re.IGNORECASE),
+         'country_capital', lambda m: (m.group(1).lower(), m.group(2)),
+         lambda actual, claimed: actual.lower() == claimed.lower()),
+
+        # Currency decimals: "JPY has 2 decimal places" → currency_decimals("JPY")
+        (re.compile(r'(\w{3})\s+(?:has|uses?)\s+(\d+)\s+decimal\s+places?', re.IGNORECASE),
+         'currency_decimals', lambda m: (m.group(1).upper(), int(m.group(2))),
+         lambda actual, claimed: actual == claimed if actual >= 0 else None),
+
+        # Molecular weight: "glucose molecular weight is 180" → molecular_weight("glucose")
+        (re.compile(r'(?:molecular\s+weight|molar\s+mass)\s+(?:of\s+)?(\w+)\s+is\s+([\d.]+)', re.IGNORECASE),
+         'molecular_weight', lambda m: (m.group(1), float(m.group(2))),
+         lambda actual, claimed: abs(actual - claimed) < 1.0 if actual > 0 else None),
+
+        # Element atomic number: "oxygen atomic number is 8" → element_atomic_number("oxygen")
+        (re.compile(r'(\w+)\s+(?:has\s+)?atomic\s+number\s+(?:is\s+|of\s+)?(\d+)', re.IGNORECASE),
+         'element_atomic_number', lambda m: (m.group(1).lower(), int(m.group(2))),
+         lambda actual, claimed: actual == claimed if actual > 0 else None),
+
+        # OSI layer: "TCP operates at layer 4" → which_layer("TCP")
+        (re.compile(r'(TCP|UDP|HTTP|HTTPS|IP|ICMP|ARP|DNS|SSH|FTP|SMTP)\s+(?:operates?\s+at\s+|is\s+(?:at\s+)?|runs?\s+(?:at\s+)?|(?:is\s+)?(?:on\s+)?)?layer\s+(\d)', re.IGNORECASE),
+         'which_layer', lambda m: (m.group(1).upper(), int(m.group(2))),
+         lambda actual, claimed: actual == claimed if actual > 0 else None),
+
+        # Note frequency: "A4 is 440 Hz" → note_frequency("A", 4)
+        (re.compile(r'([A-G][#b]?)(\d)\s+(?:is|=|has\s+frequency)\s+([\d.]+)\s*Hz', re.IGNORECASE),
+         'note_frequency', lambda m: ((m.group(1), int(m.group(2))), float(m.group(3))),
+         lambda actual, claimed: abs(actual - claimed) < 1.0 if actual > 0 else None),
+    ]
 
     def check(self, response: str) -> FactualCheckResult:
-        """Check a response for factual issues."""
+        """Check a response for factual issues (static + dynamic)."""
         result = FactualCheckResult()
         text = str(response)
 
+        # Pass 1: Static regex patterns (fast, known misconceptions)
         for pattern, truth, category in _KNOWN_FACTS:
             result.claims_checked += 1
             match = re.search(pattern, text, re.IGNORECASE)
@@ -185,8 +240,104 @@ class FactualChecker:
                     confidence=0.9 if category == "contradiction" else 0.7,
                 ))
 
+        # Pass 2: Dynamic cross-check against backends
+        self._dynamic_cross_check(text, result)
+
         # Score: 1.0 if no issues, decreasing with each issue
         if result.issues:
             result.score = max(0, 1.0 - len(result.issues) * 0.2)
 
         return result
+
+    def _dynamic_cross_check(self, text: str, result: FactualCheckResult):
+        """Cross-check factual claims against CALM backend functions."""
+        from calm.expression import safe_eval, ExpressionError
+
+        for pattern, func_name, extractor, comparator in self._DYNAMIC_PATTERNS:
+            for match in pattern.finditer(text):
+                result.claims_checked += 1
+                try:
+                    extracted = extractor(match)
+                    if func_name == 'hash_output_length':
+                        alg, claimed_val = extracted
+                        actual = safe_eval(f'hash_output_length("{alg}")')
+                        if actual > 0 and actual != claimed_val:
+                            result.issues.append(FactualIssue(
+                                claim=match.group(0),
+                                category="dynamic_cross_check",
+                                reason=f"Backend says {func_name}(\"{alg}\") = {actual}, response claims {claimed_val}",
+                                confidence=0.9,
+                            ))
+
+                    elif func_name == 'country_capital':
+                        country, claimed_capital = extracted
+                        try:
+                            actual = safe_eval(f'country_capital("{country}")')
+                            if comparator and comparator(actual, claimed_capital) is False:
+                                result.issues.append(FactualIssue(
+                                    claim=match.group(0),
+                                    category="dynamic_cross_check",
+                                    reason=f"Backend says capital of {country} = {actual}, response claims {claimed_capital}",
+                                    confidence=0.9,
+                                ))
+                        except ExpressionError:
+                            pass
+
+                    elif func_name == 'currency_decimals':
+                        code, claimed_val = extracted
+                        try:
+                            actual = safe_eval(f'currency_decimals("{code}")')
+                            if actual >= 0 and actual != claimed_val:
+                                result.issues.append(FactualIssue(
+                                    claim=match.group(0),
+                                    category="dynamic_cross_check",
+                                    reason=f"Backend says {code} has {actual} decimal places, response claims {claimed_val}",
+                                    confidence=0.9,
+                                ))
+                        except ExpressionError:
+                            pass
+
+                    elif func_name == 'molecular_weight':
+                        name, claimed_val = extracted
+                        try:
+                            actual = safe_eval(f'molecular_weight("{name}")')
+                            if actual > 0 and abs(actual - claimed_val) > 1.0:
+                                result.issues.append(FactualIssue(
+                                    claim=match.group(0),
+                                    category="dynamic_cross_check",
+                                    reason=f"Backend says MW of {name} = {actual}, response claims {claimed_val}",
+                                    confidence=0.85,
+                                ))
+                        except ExpressionError:
+                            pass
+
+                    elif func_name == 'which_layer':
+                        protocol, claimed_layer = extracted
+                        try:
+                            actual = safe_eval(f'which_layer("{protocol}")')
+                            if actual > 0 and actual != claimed_layer:
+                                result.issues.append(FactualIssue(
+                                    claim=match.group(0),
+                                    category="dynamic_cross_check",
+                                    reason=f"Backend says {protocol} is layer {actual}, response claims layer {claimed_layer}",
+                                    confidence=0.9,
+                                ))
+                        except ExpressionError:
+                            pass
+
+                    elif func_name == 'note_frequency':
+                        (note, octave), claimed_freq = extracted
+                        try:
+                            actual = safe_eval(f'note_frequency("{note}", {octave})')
+                            if actual > 0 and abs(actual - claimed_freq) > 1.0:
+                                result.issues.append(FactualIssue(
+                                    claim=match.group(0),
+                                    category="dynamic_cross_check",
+                                    reason=f"Backend says {note}{octave} = {actual} Hz, response claims {claimed_freq} Hz",
+                                    confidence=0.9,
+                                ))
+                        except ExpressionError:
+                            pass
+
+                except (ExpressionError, ValueError, TypeError, IndexError):
+                    pass  # extraction or eval failed, skip
