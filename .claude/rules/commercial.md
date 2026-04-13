@@ -76,7 +76,7 @@ If not, deprioritize it.
 ## Metrics That Matter
 
 - **Benchmark score**: Auto-CALM + precompute on 40-problem suite (currently 40/40)
-- **Backend count**: number of verified compute + knowledge functions (currently 411)
+- **Backend count**: number of verified compute + knowledge functions (currently 500 across 64 backends)
 - **Learned patterns**: size and hit rate of learned_patterns.jsonl
 - **VRAM floor**: minimum GPU memory for useful operation (currently 8GB)
 - **tok/s**: inference speed on target hardware (currently ~47 tok/s on RTX 4070)

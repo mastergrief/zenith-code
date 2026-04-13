@@ -93,7 +93,7 @@ Long-term commercial direction documented in `.claude/rules/commercial.md`. Curr
 
 Three active systems coexist:
 1. **Python agent harness** (`agents/`, ~4,400 LOC across 15 files) — terminal coding assistant with dual backend (Ollama + llama.cpp), 3-level permissions, thinking mode, sessions, compaction, effort control, and llama.cpp hot-swap
-2. **CALM engine** (`calm/`, ~16,600 LOC across 70+ files) — modular compute + knowledge facade: Auto-CALM (transparent verification + precomputation, 100% benchmark) + explicit CALM (optional `<calm>` blocks) + 52 modular backends (411 verified functions, including knowledge backends) + streaming verification + self-learning + auto-training data collection. Full spec: `.claude/rules/calm.md`
+2. **CALM engine** (`calm/`, ~26,300 LOC across 100+ files) — modular compute + knowledge facade with cognitive intelligence layer. Auto-CALM (transparent verification + precomputation, 100% benchmark) + Engine V2 (7-phase pipeline: pre-analyze → enrich → precompute → generate → verify → cognitive route → self-heal) + 64 modular backends (500 verified functions) + 41 cognitive modules (verification, reasoning, quality, meta, planning) + adaptive thinking budget + cross-turn conversation state + module self-learning. Full spec: `.claude/rules/calm.md`
 3. **Rust claw-code port** (`rust/`) — upstream claw-code, 9 crates, separate build system
 
 Serving: Gemma 4 E4B (primary) or Qwen 3.5 4B via llama.cpp at **512K context** (`ctx_size=524288`), **32K thinking budget**. Production: tq4+tq4 KV cache on Gemma E4B (`~/models/gemma-4-E4B-it-tq4-aligned.gguf`, 5.0 GB). CALM/Auto-CALM runs on the same llama-server instance. Harness auto-computes compaction threshold as `min(per-GGUF limit, int(ctx_size * 0.89))` — Gemma compacts at **227.5K tokens** (232960). Hot-swap between bases via `agents/model_swap.py`.
@@ -168,7 +168,7 @@ ZENITH_CTX=65536 zenith
 ```
 `bin/zenith` launcher: auto-starts llama.cpp if not running, waits for health, passes `--backend llamacpp`. Default `ZENITH_CTX=262144` (256K). Configurable via `ZENITH_MODEL`, `ZENITH_PORT`, `ZENITH_CTX`, `ZENITH_LLAMA_SERVER` env vars, plus the `--gguf PATH` CLI flag (must be first arg). The stdin pipe form works in any environment (TTY or non-TTY) because the harness uses plain `input()`; redirect output to a file to keep model token spam out of your terminal/context. `bin/zenith` does NOT `cd` into the repo root before exec'ing the harness — this keeps `.zenithrc` lookup and CLAUDE.md auto-discovery honoring the user's actual cwd.
 
-## CALM Engine (`calm/`, ~16,600 LOC, 250 tests, 100% benchmark)
+## CALM Engine (`calm/`, ~26,300 LOC, 250 tests, 100% benchmark)
 
 Full spec: `.claude/rules/calm.md`
 
@@ -186,15 +186,44 @@ Full spec: `.claude/rules/calm.md`
 - Engine stops at `</calm>`, executes via 4-tier parse, injects results
 - Score: 85-98% (nondeterminism in whether model uses blocks)
 
-### Modular Backend Architecture (52 backends, 411 functions)
+### Modular Backend Architecture (64 backends, 500 functions, 120 NL patterns)
 
-Two types: **compute backends** (deterministic functions) and **knowledge backends** (factual lookup tables). The engine doesn't care which — same contract.
+Two types: **compute backends** (`*_ops.py`, deterministic functions) and **knowledge backends** (`*_kb.py`, factual lookup tables). The engine doesn't care which — same contract.
 
-Full backend table in `.claude/rules/calm.md`. Key additions since session 21: HTTP status codes, UUID, CSV, markdown, Unicode confusables, WCAG color contrast, JWT decode, timezones, base conversion, Luhn/ISBN checksums, byte sizes (MiB vs MB), durations, country data (195 countries), periodic table (118 elements), physical constants, algorithm complexity.
+Full backend table in `.claude/rules/calm.md`. 64 backends across: math, strings, encoding, dates, HTTP, JWT, timezones, base conversion, checksums, byte sizes, durations, geometry, probability, roman numerals, financial (compound interest, loan payments), ratios/fractions, CIDR/subnets, country data (195 countries), periodic table (118 elements), physical constants, algorithm complexity, well-known ports, ASCII, licenses, design patterns (22 GoF+modern), error codes (exit/errno/signals), regex reference.
 
-**Adding a backend**: write a `*_ops.py` (compute) or `*_kb.py` (knowledge) file in `calm/backends/`, export a `*_FUNCTIONS` dict. Auto-discovery in `backends/__init__.py` registers it — zero other files to edit. Model gets instantly smarter at that domain — zero training.
+**Adding a backend**: write a `*_ops.py` or `*_kb.py` file in `calm/backends/`, export a `*_FUNCTIONS` dict + optional `*_NL_PATTERNS` list. Auto-discovery registers both — zero other files to edit.
 
-**Defense in depth**: Layer 2 (precompute) injects correct answers before generation. Layer 1 (verify) catches wrong claims after generation. When precompute misses a phrasing, verify is the safety net.
+**Defense in depth**: Layer 2 (precompute + 120 NL patterns) injects correct answers before generation. Layer 1 (verify) catches wrong claims after generation. When precompute misses a phrasing, verify is the safety net.
+
+### Cognitive Intelligence Layer (41 modules, Engine V2)
+
+**Engine V2** (`calm/engine_v2.py`) — 7-phase pipeline with self-healing:
+1. **PRE-ANALYZE**: profile user expertise, detect ambiguities, decompose, assess risks
+2. **ENRICH**: inject pre-analysis into system prompt (beginner→detailed, expert→terse)
+3. **ADAPTIVE BUDGET**: trivial=2K, easy=4K, medium=8K, hard=16K, deep=32K thinking tokens
+4. **PRECOMPUTE**: inject verified backend facts
+5. **GENERATE**: model responds with enriched context
+6. **VERIFY + COGNITIVE ROUTE**: Auto-CALM claim verification + 41 cognitive modules auto-selected by router (33-70ms)
+7. **SELF-HEAL**: if quality < threshold, generate targeted correction from module feedback
+
+**Cognitive Router** (`calm/router.py`) — auto-selects relevant modules per prompt. Simple math → 6 modules. Architecture decision → 10+ modules.
+
+**41 cognitive modules** across 5 layers:
+
+| Layer | Modules |
+|-------|---------|
+| Verification | chain_verify, consistency, logic, scope |
+| Reasoning | decompose, causal, assumptions, analogy, temporal, counterfactual, hypothesis_gen |
+| Quality | creativity, nuance, evidence, relevance, completeness, explanation, density, precision, compression, error_recovery |
+| Meta-cognitive | calibration, judgment, metacognition, goal_tracking, abstraction, perspective, uncertainty, communication, prerequisites |
+| Planning | prioritize, constraints, risk, disambiguation, provenance, conflict_resolution |
+
+**Cross-turn state** (`calm/conversation.py`): consistency tracking, calibration, goal tracking, provenance accumulation persist across turns. Catches contradictions ("capital of France: Paris → Lyon").
+
+**Module learning** (`calm/module_learning.py`): learns recurring quality issues and proactively injects prevention into system prompts.
+
+**Adaptive thinking** (`calm/adaptive.py`): dynamically estimates thinking budget. Precomputed answers → 2K (8x faster). Complex design → 16K (full budget).
 
 ### Auto-Training Data Collection
 

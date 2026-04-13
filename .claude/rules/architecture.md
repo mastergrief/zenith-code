@@ -27,18 +27,20 @@ equivalent to training — the model gets smarter at that domain instantly.
 - **Explicit CALM** (`<calm>` blocks) is the power-user path. 85-98% benchmark.
 - **Backends** are modular Python files in `calm/backends/`. Each exports a `*_FUNCTIONS`
   dict registered in `expression.py` via try/import. Missing backends degrade gracefully.
-- **52 backends, 411 verified functions**: compute (math, strings, encoding, dates,
-  HTTP, JWT, timezones, checksums, etc.) + knowledge (countries, elements, constants,
-  algorithm complexity). Full spec: `.claude/rules/calm.md`
+- **64 backends, 500 verified functions, 120 NL patterns**: compute (54 `*_ops.py`)
+  + knowledge (10 `*_kb.py`). Full spec: `.claude/rules/calm.md`
+- **41 cognitive modules** in 5 layers: verification, reasoning, quality, meta, planning.
+  Auto-routed by `calm/router.py` (33-70ms overhead). Full spec: `.claude/rules/calm.md`
+- **Engine V2** (`calm/engine_v2.py`): 7-phase pipeline with self-healing quality loop,
+  adaptive thinking budget (2K→32K), cross-turn state, module learning.
 - To add a domain: write `calm/backends/X_ops.py` (compute) or `X_kb.py` (knowledge)
-  → export `X_FUNCTIONS` dict → done (auto-discovery registers it, zero other files)
-  → (optional) add NL precompute patterns in `precompute.py`
-  → (optional) add claim verification patterns in `verify.py`
+  → export `X_FUNCTIONS` dict + optional `X_NL_PATTERNS` list → done
+  (auto-discovery registers both, zero other files to edit)
 
 ## File Organization
 - `agents/` — core harness code (15 files, ~4,400 LOC). No ML dependencies. Must work on Windows + WSL2 with Python 3.11+
 - `agents/distill/` — training pipeline (10 Python files + 1 notebook). ML dependencies (torch, unsloth, transformers) only required here. **Secondary to backends** — only needed for domains that can't be computed.
-- `calm/` — CALM engine + Auto-CALM + modular backends (35+ files, ~9,500 LOC, 250 tests). Dependencies: `wasmtime` (optional, for wasm backend). Full spec: `.claude/rules/calm.md`
+- `calm/` — CALM engine + Auto-CALM + modular backends + cognitive intelligence layer (~100 files, ~26,300 LOC, 250 tests). Engine V2 pipeline with 64 backends, 41 cognitive modules, adaptive thinking, self-healing. Dependencies: `wasmtime` (optional, for wasm backend). Full spec: `.claude/rules/calm.md`
 - `models/` — Ollama Modelfiles (3 files: qwen9b-fast, qwen4b-fast, reasoning-base)
 - `bin/zenith` — launcher script: auto-starts llama.cpp, `--gguf PATH` first-arg flag, configurable via `ZENITH_*` env vars. Does NOT `cd` into repo.
 - `scripts/` — dev tooling (needle_test, eval_base_models, smoke_test_harness, test_model_swap, generate_react_security_examples, setup_training)

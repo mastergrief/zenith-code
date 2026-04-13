@@ -56,7 +56,7 @@ Two types of backends coexist:
 The engine doesn't care which type — same contract: pure function, deterministic
 output, engine trusts it over the model.
 
-### Current Backends (52 modules, 411 functions)
+### Current Backends (64 modules, 500 functions, 120 NL patterns)
 
 **Compute backends:**
 
@@ -110,15 +110,27 @@ output, engine trusts it over the model.
 | `checksum_ops` | 8 | Luhn, ISBN-10/13, EAN, UPC |
 | `bytesize_ops` | 7 | human-readable, IEC vs SI (MiB vs MB) |
 | `duration_ops` | 7 | parse "2h30m", ISO 8601, convert |
+| `geometry_ops` | 19 | circle, sphere, cone, trapezoid, distance, polygon angles |
+| `probability_ops` | 11 | dice, coin, binomial, Bayes, permutations |
+| `roman_ops` | 3 | Roman numeral ↔ decimal, validation |
+| `financial_ops` | 10 | compound interest, loan payments, NPV, ROI, rule of 72 |
+| `ratio_ops` | 9 | simplify fractions, percent change, decimal↔fraction |
+| `cidr_ops` | 8 | subnet mask, host count, IP-in-subnet, overlap, private IP |
 
 **Knowledge backends** (`*_kb.py` — factual lookups, include `_DATA_VERSION`):
 
 | Backend | Funcs | Domain |
 |---|---|---|
-| `country_kb` | 8 | capitals, ISO codes, currencies, calling codes (195 countries, 2025-01) |
+| `country_kb` | 8 | capitals, ISO codes, currencies, calling codes (195 countries) |
 | `elements_kb` | 9 | periodic table: symbols, weights, electron config (118 elements) |
 | `constants_kb` | 5 | physical constants: speed of light, Planck, Avogadro (CODATA 2018) |
-| `complexity_kb` | 5 | sort/DS/graph algorithm complexity (the most hallucinated CS topic) |
+| `complexity_kb` | 5 | sort/DS/graph algorithm complexity |
+| `port_kb` | 5 | well-known ports: SSH=22, MySQL=3306, PostgreSQL=5432 (45 ports) |
+| `ascii_kb` | 7 | control chars, escape sequences, CR vs LF, line endings |
+| `license_kb` | 5 | SPDX licenses: MIT, GPL, Apache permissions/copyleft (12 licenses) |
+| `regex_ref_kb` | 4 | common regex patterns (email, URL, IP, UUID) + syntax reference |
+| `error_code_kb` | 4 | exit codes, POSIX errno, Unix signals |
+| `design_pattern_kb` | 5 | 22 GoF + modern patterns: intent, participants, when to use |
 
 ### Adding a New Backend
 
@@ -204,7 +216,7 @@ VERIFIED = all lanes agree → safe.
 ## Expression Evaluator (`calm/expression.py`)
 
 - **AST-only**: `ast.parse(mode="eval")` + recursive walker. Never `eval()`.
-- **Whitelist**: only functions in `_FUNCTIONS` dict (411+ from all backends)
+- **Whitelist**: only functions in `_FUNCTIONS` dict (500+ from all backends)
 - **Comprehensions**: list/set/generator with per-variable scoping, 10K limit
 - **No attribute access, no imports** — all functions pre-registered
 
@@ -232,14 +244,55 @@ VERIFIED = all lanes agree → safe.
 | `engine.py` | 552 | Explicit CALM v0.1: stop-mode |
 | `stream_engine.py` | 287 | Explicit CALM v0.2: SSE streaming |
 | `interceptor.py` | 479 | 4-tier parse + block detection |
-| `expression.py` | 657 | AST-safe eval, `_FUNCTIONS` dict (411 from registry) |
+| `expression.py` | 657 | AST-safe eval, `_FUNCTIONS` dict (500 from registry) |
 | `verifier.py` | 559 | 4-lane TMR verification |
 | `stack_vm.py` | 522 | Reference stack machine |
 | `sandbox.py` | 254 | Subprocess Python isolation |
 | `nl_parser.py` | 168 | NL → stack code translator |
-| `backends/__init__.py` | 63 | Auto-discovery registry: scans `*_ops.py` + `*_kb.py` |
-| `backends/*_ops.py` | ~8,700 | 48 compute backends (functions that DO something) |
-| `backends/*_kb.py` | ~800 | 4 knowledge backends (functions that LOOK UP something) |
+| `backends/__init__.py` | 77 | Auto-discovery registry: scans `*_ops.py` + `*_kb.py` + `*_NL_PATTERNS` |
+| `backends/*_ops.py` | ~11,000 | 54 compute backends with NL patterns |
+| `backends/*_kb.py` | ~2,500 | 10 knowledge backends with `_DATA_VERSION` |
+| `engine_v2.py` | 414 | Full 7-phase cognitive pipeline with self-healing |
+| `router.py` | 507 | Cognitive router: auto-selects modules per prompt |
+| `adaptive.py` | 130 | Adaptive thinking budget (2K→32K based on complexity) |
+| `conversation.py` | 130 | Cross-turn state: consistency, goals, calibration |
+| `module_learning.py` | 165 | Learns recurring issues → prompt prevention |
+| `41 cognitive modules` | ~7,000 | See Cognitive Intelligence Layer below |
 | `learned_patterns.jsonl` | — | Self-learned error patterns (committed) |
+
+## Cognitive Intelligence Layer (41 modules)
+
+**The system that makes the LLM reliable.** Each module catches a specific
+failure mode that raw model output exhibits. The router auto-selects
+relevant modules per prompt (33-70ms overhead).
+
+### Module Categories
+
+| Layer | Modules | What they catch |
+|-------|---------|-----------------|
+| **Verification** | chain_verify, consistency, logic, scope | Multi-step errors, contradictions, invalid syllogisms, overgeneralization |
+| **Reasoning** | decompose, causal, assumptions, analogy, temporal, counterfactual, hypothesis_gen | Missing decomposition, wrong causation, hidden assumptions, bad analogies, ordering errors |
+| **Quality** | creativity, nuance, evidence, relevance, completeness, explanation, density, precision, compression, error_recovery | Redundant ideas, vague hedging, unsupported claims, tangents, incomplete answers, circular explanations, filler, vague language |
+| **Meta-cognitive** | calibration, judgment, metacognition, goal_tracking, abstraction, perspective, uncertainty, communication, prerequisites | Domain confidence, structured evaluation, quality reports, goal drift, abstraction mismatch, missing perspectives, uncertainty propagation, expertise adaptation, knowledge gaps |
+| **Planning** | prioritize, constraints, risk, disambiguation, provenance, conflict_resolution | Priority ranking, requirement tracking, risk assessment, ambiguity detection, trust tracking, module disagreement |
+
+### Engine V2 Pipeline (`calm/engine_v2.py`)
+
+```
+prompt → PRE-ANALYZE (expertise, ambiguity, decompose, risk)
+       → ENRICH system prompt (beginner→detailed, risks→mention)
+       → ADAPTIVE BUDGET (2K trivial → 32K deep)
+       → PRECOMPUTE (500 backend functions + 120 NL patterns)
+       → GENERATE (Gemma with enriched context)
+       → VERIFY (Auto-CALM claim checking)
+       → COGNITIVE ROUTE (41 modules, 33-70ms)
+       → MODULE LEARNING (record recurring issues)
+       → CROSS-TURN STATE (consistency, goals, calibration)
+       → SELF-HEAL (if quality < threshold: targeted correction → re-verify)
+       → response + quality report
+```
+
+Overhead: ~150ms on top of model inference. Self-healing only fires when
+quality drops below threshold AND the correction improves quality.
 | `tests/` | ~3,400 | 250 tests |
 | `benchmark.py` | 227 | 40-problem eval (format-agnostic) |
