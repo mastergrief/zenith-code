@@ -179,6 +179,20 @@ def _is_prime_simple(n: int) -> bool:
     return True
 
 
+def is_fibonacci(n: int) -> bool:
+    """Whether n is a Fibonacci number. Uses the property that n is Fibonacci iff
+    5n²+4 or 5n²-4 is a perfect square."""
+    n = int(n)
+    if n < 0:
+        return False
+    def is_square(x):
+        if x < 0:
+            return False
+        s = int(math.isqrt(x))
+        return s * s == x
+    return is_square(5 * n * n + 4) or is_square(5 * n * n - 4)
+
+
 NUMBER_THEORY_FUNCTIONS = {
     "euler_totient": euler_totient,
     "mobius": mobius,
@@ -193,6 +207,7 @@ NUMBER_THEORY_FUNCTIONS = {
     "is_deficient": is_deficient,
     "legendre_symbol": legendre_symbol,
     "is_carmichael": is_carmichael,
+    "is_fibonacci": is_fibonacci,
 }
 
 NUMBER_THEORY_NL_PATTERNS = [
@@ -205,4 +220,5 @@ NUMBER_THEORY_NL_PATTERNS = [
     (r'(?:is)\s+(\d+)\s+(?:a\s+)?perfect\s+number', 'is_perfect({0})'),
     (r'(?:is)\s+(\d+)\s+(?:a\s+)?(?:abundant|excessive)', 'is_abundant({0})'),
     (r'mobius\s+(?:function\s+)?(?:of|for|μ\()?\s*(\d+)', 'mobius({0})'),
+    (r'(?:is)\s+(\d+)\s+(?:a\s+)?fibonacci\s+number', 'is_fibonacci({0})'),
 ]
