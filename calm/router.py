@@ -566,15 +566,38 @@ class CognitiveRouter:
                     summary=f"error: {e}",
                 ))
 
-        # Overall quality = weighted average of module scores
+        # Overall quality: issue-finding modules weigh MORE than silent ones.
+        # A module that found 0 issues might mean "all good" or "didn't check deeply."
+        # A module that found issues has concrete evidence of problems.
+        #
+        # Weight: verification/factual modules that find issues = 3x weight.
+        # Quality/reasoning modules that find issues = 2x weight.
+        # Modules finding 0 issues = 1x weight (baseline).
         if report.results:
-            quality_scores = []
+            # Map module names to categories
+            cat_map = {m.name: m.category for m in self._modules}
+            high_weight_cats = {"verification", "planning"}
+            med_weight_cats = {"quality", "reasoning"}
+
+            weighted_scores = []
+            weighted_total = 0
             for r in report.results:
                 if r.issues_found == 0:
-                    quality_scores.append(1.0)
+                    score = 1.0
+                    weight = 1.0
                 else:
-                    quality_scores.append(max(0, 1.0 - r.issues_found * 0.15))
-            report.overall_quality = sum(quality_scores) / len(quality_scores)
+                    score = max(0, 1.0 - r.issues_found * 0.2)
+                    cat = cat_map.get(r.module_name, "")
+                    if cat in high_weight_cats:
+                        weight = 3.0
+                    elif cat in med_weight_cats:
+                        weight = 2.0
+                    else:
+                        weight = 1.5
+                weighted_scores.append(score * weight)
+                weighted_total += weight
+
+            report.overall_quality = sum(weighted_scores) / weighted_total if weighted_total > 0 else 0.0
 
         report.elapsed_ms = (time.time() - t_start) * 1000
         return report
