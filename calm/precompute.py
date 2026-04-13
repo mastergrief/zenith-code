@@ -252,6 +252,8 @@ def precompute(prompt: str) -> Dict[str, object]:
     # This is the scalable path — backends declare their own NL triggers.
     from calm.backends import NL_PATTERNS
     for compiled_pat, template in NL_PATTERNS:
+        if template is None:
+            continue  # signal-only pattern, no evaluable expression
         for m in compiled_pat.finditer(prompt):
             try:
                 expr = template.format(*m.groups())
