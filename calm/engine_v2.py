@@ -31,6 +31,8 @@ from typing import List, Optional, Dict
 from calm.auto_calm import AutoCalmEngine, AutoCalmResult, AUTO_SYSTEM_PROMPT
 from calm.router import CognitiveRouter, CognitiveReport
 from calm.verify import Claim
+from calm.adaptive import AdaptiveBudget
+from calm.conversation import ConversationState
 
 
 @dataclass
@@ -61,6 +63,11 @@ class EngineV2Result:
     user_expertise: str = ""
     ambiguities_found: int = 0
     risks_found: int = 0
+    # Adaptive thinking
+    thinking_budget_used: int = 0
+    thinking_tier: str = ""
+    # Cross-turn insights
+    cross_turn_insights: dict = field(default_factory=dict)
     # Timing
     total_ms: float = 0
     pre_analysis_ms: float = 0
@@ -110,6 +117,8 @@ class CalmEngineV2:
             max_tokens=max_tokens,
         )
         self._router = CognitiveRouter()
+        self._adaptive = AdaptiveBudget()
+        self._conversation = ConversationState()
 
     def run(self, prompt: str, verbose: bool = False) -> EngineV2Result:
         """Run the full pipeline."""
@@ -127,13 +136,27 @@ class CalmEngineV2:
         # === PHASE 2: ENRICH SYSTEM PROMPT ===
         enriched_prompt = self._enrich_system_prompt(pre_analysis)
 
+        # === PHASE 2.5: ADAPTIVE THINKING BUDGET ===
+        from calm.precompute import precompute as _precompute
+        precomputed = _precompute(prompt) if self._calm.precompute_enabled else {}
+        budget_estimate = self._adaptive.estimate(prompt, precomputed, pre_analysis)
+        adaptive_budget = budget_estimate.budget
+        result.thinking_budget_used = adaptive_budget
+        result.thinking_tier = budget_estimate.tier
+
+        if verbose:
+            print(f"[adaptive] {budget_estimate}")
+
         # === PHASE 3-5: GENERATE + VERIFY (via Auto-CALM) ===
         t0 = time.time()
-        # Temporarily override the system prompt
+        # Temporarily override the system prompt and thinking budget
         old_prompt = self._calm.system_prompt
+        old_budget = self._calm.thinking_budget
         self._calm.system_prompt = enriched_prompt
+        self._calm.thinking_budget = adaptive_budget
         calm_result = self._calm.run(prompt, verbose=verbose)
         self._calm.system_prompt = old_prompt
+        self._calm.thinking_budget = old_budget
         result.generation_ms = (time.time() - t0) * 1000
 
         result.response = calm_result.response
@@ -155,6 +178,21 @@ class CalmEngineV2:
             print(f"[router] {report.modules_run} modules, "
                   f"quality={report.overall_quality:.0%}, "
                   f"{report.total_issues} issues ({result.analysis_ms:.0f}ms)")
+
+        # === PHASE 6.5: CROSS-TURN STATE ===
+        insights = self._conversation.add_turn(
+            prompt=prompt,
+            response=result.response,
+            quality_score=report.overall_quality,
+            claims_verified=result.claims_verified,
+            claims_corrected=result.claims_corrected,
+            issues_found=report.total_issues,
+        )
+        result.cross_turn_insights = insights
+
+        if verbose and insights:
+            for key, value in insights.items():
+                print(f"[cross-turn] {key}: {value}")
 
         # === PHASE 7: SELF-HEAL ===
         if (self.self_heal and
