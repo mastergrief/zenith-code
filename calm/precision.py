@@ -80,6 +80,16 @@ _VAGUE_TERMS = {
     "small": ("quantity", "Specify: size threshold", "How small? What's the upper bound?"),
     "significant": ("quantity", "Specify: magnitude or percentage", "Significant by how much? What's the baseline?"),
     "minimal": ("quantity", "Specify: what the minimum is and why", "What's the actual minimum?"),
+    # Absolutist (overly certain, almost always wrong)
+    "always": ("absolutist", "Qualify: under what conditions? Are there exceptions?", "Always? Even under edge cases?"),
+    "never": ("absolutist", "Qualify: are there any exceptions?", "Truly never? What about edge cases?"),
+    "everything": ("absolutist", "Qualify: which specific things?", "Everything? Can you enumerate?"),
+    "nothing": ("absolutist", "Qualify: is there truly no case where this applies?", "Nothing at all? No exceptions?"),
+    "impossible": ("absolutist", "Qualify: impossible given what constraints?", "Impossible under what assumptions?"),
+    "guaranteed": ("absolutist", "Qualify: guaranteed under what conditions?", "What are the preconditions for this guarantee?"),
+    "perfectly": ("absolutist", "Qualify: within what tolerance?", "How close to perfect? What's the margin?"),
+    "trivial": ("absolutist", "Qualify: trivial for whom with what expertise?", "Trivial for a junior developer? A domain expert?"),
+    "obviously": ("absolutist", "Consider: if it were obvious, why does the user need to ask?", "Obvious to whom?"),
 }
 
 

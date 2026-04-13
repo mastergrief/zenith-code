@@ -102,11 +102,10 @@ class CognitiveRouter:
 
         self._register("consistency",
             triggers=[],
-            always_run=False,  # needs conversation history
+            always_run=True,  # check every response for internal contradictions
             category="verification",
             cost="low",
             run_fn=self._run_consistency,
-            trigger_patterns=[],
         )
 
         self._register("logic",
@@ -118,6 +117,8 @@ class CognitiveRouter:
                 r'therefore|thus|hence|so\s+\w+\s+(?:is|are|must)',
                 r'all\s+\w+\s+are|no\s+\w+\s+are|if\s+.+then',
                 r'because|since|implies|proves',
+                r'\balways\b|\bnever\b|\bimpossible\b|\bguaranteed\b',
+                r'(?:the\s+)?(?:only|best|fastest|worst)\s+(?:way|option|choice|solution)',
             ],
         )
 
@@ -127,6 +128,14 @@ class CognitiveRouter:
             category="verification",
             cost="low",
             run_fn=self._run_scope,
+        )
+
+        self._register("factual_check",
+            triggers=[],
+            always_run=True,  # always check for known factual errors
+            category="verification",
+            cost="low",
+            run_fn=self._run_factual_check,
         )
 
         # === REASONING LAYER ===
@@ -278,6 +287,8 @@ class CognitiveRouter:
                 r'deploy|release|migrate|production|prod',
                 r'delete|drop|remove|rewrite|rebuild',
                 r'security|auth|permission|credential',
+                r'should\s+(?:I|you|we)|recommend|suggest|advise',
+                r'always use|never use|instead of|replace|switch to',
             ],
         )
 
@@ -345,6 +356,9 @@ class CognitiveRouter:
             trigger_patterns=[
                 r'claim|assert|state|fact|true|false|proof|evidence',
                 r'according to|research|study|source',
+                r'(?:was|were)\s+(?:invented|created|designed|built)\s+(?:by|in|at)',
+                r'(?:is|are)\s+(?:implemented|written|built)\s+(?:as|in|using|with)',
+                r'\d{4}\b',  # years often indicate factual claims
             ],
         )
 
@@ -683,6 +697,12 @@ class CognitiveRouter:
         issues = getattr(r, 'wrong_steps', 0) or 0
         s = r.summary() if callable(getattr(r, 'summary', None)) else "chain verified"
         return s, issues, r
+
+    def _run_factual_check(self, prompt, response, thinking):
+        from calm.factual_check import FactualChecker
+        fc = FactualChecker()
+        r = fc.check(response)
+        return r.summary(), len(r.issues), r
 
     def _run_consistency(self, prompt, response, thinking):
         from calm.consistency import ConsistencyTracker
