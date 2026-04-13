@@ -8,11 +8,11 @@ needs more. This module estimates the optimal thinking budget.
 Saves time on easy questions, improves quality on hard ones.
 
 Budget tiers:
-  TRIVIAL (1024):  precompute has the full answer, just format it
-  EASY (2048):     single factual question, answer is straightforward
-  MEDIUM (4096):   comparison, explanation, moderate complexity
-  HARD (8192):     multi-part, debugging, architecture decision
-  DEEP (16384):    complex reasoning chain, novel problem, high stakes
+  TRIVIAL (2048):  precompute has the full answer, just format it
+  EASY (4096):     single factual question, answer is straightforward
+  MEDIUM (8192):   comparison, explanation, moderate complexity
+  HARD (16384):    multi-part, debugging, architecture decision
+  DEEP (32768):    complex reasoning chain, novel problem, high stakes
 
 Usage:
     from calm.adaptive import AdaptiveBudget
@@ -41,11 +41,11 @@ class BudgetEstimate:
 
 
 _TIERS = {
-    "trivial": 1024,
-    "easy": 2048,
-    "medium": 4096,
-    "hard": 8192,
-    "deep": 16384,
+    "trivial": 2048,
+    "easy": 4096,
+    "medium": 8192,
+    "hard": 16384,
+    "deep": 32768,
 }
 
 # Complexity signals
