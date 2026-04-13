@@ -680,7 +680,7 @@ class CognitiveRouter:
         if not chain:
             return "no reasoning chain found", 0, None
         r = cv.verify_chain(chain)
-        issues = r.wrong_steps
+        issues = r.wrong_steps or 0
         return r.summary(), issues, r
 
     def _run_consistency(self, prompt, response, thinking):
@@ -720,11 +720,8 @@ class CognitiveRouter:
         from calm.creativity import CreativityVerifier
         cv = CreativityVerifier()
         r = cv.verify_ideas(response)
-        issues = 0
-        if hasattr(r, 'redundant_count'):
-            issues = r.redundant_count
-        summary = getattr(r, 'summary', str(r))
-        s = summary if isinstance(summary, str) else str(summary)
+        issues = getattr(r, 'redundant_count', 0) or 0
+        s = r.summary() if callable(getattr(r, 'summary', None)) else str(r)
         return s[:60], issues, r
 
     def _run_evidence(self, prompt, response, thinking):
@@ -748,8 +745,7 @@ class CognitiveRouter:
         er = ErrorRecovery()
         r = er.assess_response(prompt, response)
         issues = len(getattr(r, 'gaps', []))
-        summary = getattr(r, 'summary', str(r))
-        s = summary if isinstance(summary, str) else str(summary)
+        s = r.summary() if callable(getattr(r, 'summary', None)) else str(r)
         return s[:60], issues, r
 
     def _run_calibration(self, prompt, response, thinking):
@@ -765,9 +761,9 @@ class CognitiveRouter:
         from calm.judgment import JudgmentEngine
         je = JudgmentEngine()
         r = je.evaluate_code(response)
-        summary = getattr(r, 'summary', str(r))
-        s = summary if isinstance(summary, str) else str(summary)
-        return s[:60], 0, r
+        verified = sum(1 for c in r.criteria if c.verified)
+        total = len(r.criteria)
+        return f"{verified}/{total} criteria verified", 0, r
 
     def _run_metacognition(self, prompt, response, thinking):
         from calm.metacognition import MetaCognition
@@ -784,8 +780,7 @@ class CognitiveRouter:
         gt.add_assistant_response(response)
         r = gt.drift_check()
         issues = 1 if r and getattr(r, 'drifted', False) else 0
-        summary = getattr(r, 'summary', str(r))
-        s = summary if isinstance(summary, str) else str(summary)
+        s = r.summary() if callable(getattr(r, 'summary', None)) else str(r)
         return s[:60], issues, r
 
     def _run_uncertainty(self, prompt, response, thinking):
@@ -793,8 +788,7 @@ class CognitiveRouter:
         ut = UncertaintyTracker()
         ut.analyze_text(response)
         r = ut.report()
-        summary = getattr(r, 'summary', str(r))
-        s = summary if isinstance(summary, str) else str(summary)
+        s = r.summary() if callable(getattr(r, 'summary', None)) else str(r)
         return s[:60], 0, r
 
     def _run_prerequisites(self, prompt, response, thinking):
@@ -802,16 +796,14 @@ class CognitiveRouter:
         pd = PrerequisiteDetector()
         r = pd.detect(prompt, response)
         gaps = len(getattr(r, 'missing', []))
-        summary = getattr(r, 'summary', str(r))
-        s = summary if isinstance(summary, str) else str(summary)
+        s = r.summary() if callable(getattr(r, 'summary', None)) else str(r)
         return s[:60], gaps, r
 
     def _run_prioritize(self, prompt, response, thinking):
         from calm.prioritize import Prioritizer
         pr = Prioritizer()
         r = pr.rank_from_text(prompt + " " + response)
-        summary = getattr(r, 'summary', str(r))
-        s = summary if isinstance(summary, str) else str(summary)
+        s = r.summary() if callable(getattr(r, 'summary', None)) else str(r)
         return s[:60], 0, r
 
     def _run_constraints(self, prompt, response, thinking):
@@ -822,11 +814,16 @@ class CognitiveRouter:
         return f"{len(constraints)} constraints, {len(violations)} violations", len(violations), ct
 
     def _run_conflict_resolution(self, prompt, response, thinking):
-        from calm.conflict_resolution import ConflictResolver
-        cr = ConflictResolver()
-        r = cr.detect(response)
-        count = len(r) if isinstance(r, list) else 0
-        return f"{count} conflicts detected", count, r
+        # Conflict resolution operates on module opinions, not raw text.
+        # In standalone mode, detect textual contradictions instead.
+        contradictions = []
+        sentences = [s.strip() for s in re.split(r'[.!?]+', response) if s.strip()]
+        for i, s1 in enumerate(sentences):
+            for s2 in sentences[i + 1:]:
+                # Check for direct negation patterns
+                if any(neg in s2.lower() for neg in ['however', 'but', 'although', 'on the other hand', 'conversely']):
+                    contradictions.append(f"{s1[:40]}... vs {s2[:40]}...")
+        return f"{len(contradictions)} potential tensions", min(len(contradictions), 2), contradictions
 
     def _run_provenance(self, prompt, response, thinking):
         from calm.provenance import ProvenanceTracker
