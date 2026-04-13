@@ -138,6 +138,25 @@ class CognitiveRouter:
             run_fn=self._run_factual_check,
         )
 
+        self._register("confidence_check",
+            triggers=[],
+            always_run=True,  # always check for overconfidence
+            category="verification",
+            cost="low",
+            run_fn=self._run_confidence_check,
+        )
+
+        self._register("specificity",
+            triggers=[],
+            category="quality",
+            cost="low",
+            run_fn=self._run_specificity,
+            trigger_patterns=[
+                r'should|recommend|suggest|advise|how\s+(?:do|should|to)',
+                r'best\s+(?:practice|way|approach)|what\s+(?:should|do)',
+            ],
+        )
+
         # === REASONING LAYER ===
 
         self._register("decompose",
@@ -703,6 +722,19 @@ class CognitiveRouter:
         fc = FactualChecker()
         r = fc.check(response)
         return r.summary(), len(r.issues), r
+
+    def _run_confidence_check(self, prompt, response, thinking):
+        from calm.confidence_check import ConfidenceChecker
+        cc = ConfidenceChecker()
+        r = cc.check(response)
+        return r.summary(), len(r.issues), r
+
+    def _run_specificity(self, prompt, response, thinking):
+        from calm.specificity import SpecificityChecker
+        sc = SpecificityChecker()
+        r = sc.check(response)
+        issues = len(r.issues)
+        return r.summary(), min(issues, 3), r
 
     def _run_consistency(self, prompt, response, thinking):
         from calm.consistency import ConsistencyTracker

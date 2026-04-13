@@ -87,6 +87,82 @@ _KNOWN_FACTS = [
      "Go has no classes or inheritance — it uses structs, interfaces, and composition", "contradiction"),
     (r'Rust\s+(?:has|uses)\s+(?:a\s+)?garbage\s+collector',
      "Rust has no GC — it uses ownership and borrowing for memory management", "contradiction"),
+
+    # Database misconceptions
+    (r'MongoDB\s+(?:is|does)\s+(?:not\s+)?(?:support|have)\s+(?:ACID|transactions)',
+     "MongoDB supports multi-document ACID transactions since 4.0 (2018)", "suspicious"),
+    (r'SQL\s+(?:databases?|is)\s+(?:can.t|cannot|don.t|do not)\s+scale\s+horizontally',
+     "SQL databases can scale horizontally (Citus, CockroachDB, Vitess, Aurora)", "contradiction"),
+    (r'NoSQL\s+(?:means?|stands?\s+for)\s+(?:\")?no\s+SQL(?:\")?',
+     "NoSQL means 'Not Only SQL' — many NoSQL DBs support SQL-like queries", "contradiction"),
+    (r'Redis\s+(?:is|has)\s+(?:only\s+)?(?:in.memory|no\s+persistence)',
+     "Redis supports persistence via RDB snapshots and AOF log — not memory-only", "suspicious"),
+    (r'PostgreSQL\s+(?:is|does)\s+(?:not\s+)?(?:support|have)\s+(?:JSON|JSONB)',
+     "PostgreSQL has native JSONB support with indexing since 9.4 (2014)", "contradiction"),
+
+    # Web/HTTP misconceptions
+    (r'(?:REST|rest)\s+(?:requires?|must\s+use|is)\s+(?:only\s+)?(?:JSON|HTTP)',
+     "REST is an architectural style, not tied to any protocol or format", "suspicious"),
+    (r'(?:GET|get)\s+requests?\s+(?:can.t|cannot|should\s+not)\s+have\s+(?:a\s+)?body',
+     "GET requests CAN have a body per HTTP spec, but many servers/clients ignore it", "suspicious"),
+    (r'(?:PUT|put)\s+(?:and|is\s+the\s+same\s+as|=)\s+(?:POST|post)',
+     "PUT is idempotent (same result on repeat), POST is not — they're different", "contradiction"),
+    (r'(?:HTTPS|https)\s+(?:encrypts?|hides?)\s+(?:the\s+)?(?:URL|url)',
+     "HTTPS encrypts the path and query string, but the domain is visible via SNI and DNS", "suspicious"),
+    (r'(?:cookies?)\s+(?:are|is)\s+(?:always\s+)?(?:insecure|unsafe|bad)',
+     "Cookies with HttpOnly + Secure + SameSite are the recommended auth transport for web apps", "suspicious"),
+
+    # Security misconceptions
+    (r'(?:bcrypt|argon2|scrypt)\s+(?:is|are)\s+(?:a\s+)?(?:encryption|cipher)',
+     "bcrypt/argon2/scrypt are password hashing (KDF) functions, not encryption", "contradiction"),
+    (r'(?:base64|Base64)\s+(?:is|provides?)\s+(?:a\s+)?(?:encryption|security|protection)',
+     "base64 is encoding (reversible), not encryption — provides zero security", "contradiction"),
+    (r'(?:JWT|jwt)\s+(?:is|are)\s+(?:encrypted|secure\s+by\s+default)',
+     "JWT payload is base64-encoded (readable), not encrypted. Use JWE for encryption.", "suspicious"),
+    (r'(?:CORS|cors)\s+(?:is|provides?)\s+(?:a\s+)?(?:security|protection)',
+     "CORS is a browser mechanism that RELAXES the same-origin policy — it's not a security feature", "suspicious"),
+    (r'(?:rate\s+limiting|captcha)\s+(?:prevents?|stops?)\s+(?:all\s+)?(?:DDoS|attacks)',
+     "Rate limiting mitigates but doesn't prevent DDoS — volumetric attacks overwhelm before rate limits help", "suspicious"),
+    (r'(?:client.side|frontend)\s+validation\s+(?:is\s+)?(?:sufficient|enough|secure)',
+     "Client-side validation is UX only — always validate on the server (client can be bypassed)", "contradiction"),
+
+    # Performance misconceptions
+    (r'(?:async|asynchronous)\s+(?:is|makes?\s+things?)\s+(?:always\s+)?faster',
+     "Async improves throughput for I/O-bound work but doesn't speed up CPU-bound work", "suspicious"),
+    (r'(?:more\s+threads?|multithreading)\s+(?:is|makes?\s+things?)\s+(?:always\s+)?faster',
+     "More threads help CPU-bound parallel work but can SLOW DOWN I/O-bound work (context switching)", "suspicious"),
+    (r'(?:garbage\s+collection|GC)\s+(?:is|makes?\s+things?)\s+(?:always\s+)?(?:slow|bad|worse)',
+     "Modern GC (Go, Java ZGC, .NET) has sub-millisecond pauses — GC overhead is often negligible", "suspicious"),
+    (r'(?:compiled|native)\s+(?:code|languages?)\s+(?:is|are)\s+(?:always\s+)?faster\s+than\s+(?:interpreted|scripting)',
+     "JIT-compiled languages (Java, C#, JS V8) often match native speed — 'compiled = faster' is oversimplified", "suspicious"),
+    (r'(?:linked\s+lists?)\s+(?:is|are)\s+(?:faster|better)\s+than\s+(?:arrays?|vectors?)\s+for\s+(?:insert|deletion)',
+     "Arrays are often faster even for insertion due to cache locality — linked lists have poor cache behavior", "suspicious"),
+    (r'O\(1\)\s+(?:is|means?\s+)\s+(?:always\s+)?(?:fast|instant)',
+     "O(1) means constant time, not fast — an O(1) operation can take 10 seconds if the constant is large", "suspicious"),
+
+    # Architecture misconceptions
+    (r'(?:monolith|monolithic)\s+(?:is|are)\s+(?:always\s+)?(?:bad|wrong|legacy|outdated)',
+     "Monoliths are the right choice for most early-stage apps — premature microservices add complexity", "suspicious"),
+    (r'(?:kubernetes|k8s)\s+(?:is\s+)?(?:needed|required|necessary)\s+for\s+(?:containers?|docker)',
+     "Docker containers run fine without K8s — K8s is for orchestrating many services at scale", "suspicious"),
+    (r'(?:serverless|lambda)\s+(?:is|means?)\s+(?:no\s+servers?|there\s+are\s+no\s+servers)',
+     "Serverless still runs on servers — you just don't manage them. Cold starts and limits still apply.", "suspicious"),
+    (r'(?:GraphQL)\s+(?:is|replaces?)\s+(?:always\s+)?(?:better|faster)\s+than\s+(?:REST|rest)',
+     "GraphQL trades over-fetching for query complexity, N+1 problems, and caching difficulty — not always better", "suspicious"),
+
+    # Git misconceptions
+    (r'git\s+pull\s+(?:is\s+the\s+same\s+as|=|equals?)\s+git\s+fetch',
+     "git pull = git fetch + git merge (or rebase). fetch alone doesn't modify working tree.", "contradiction"),
+    (r'git\s+rebase\s+(?:is|should\s+be)\s+(?:always\s+)?(?:better|preferred|used)\s+(?:over|instead\s+of)\s+(?:merge)',
+     "Rebase rewrites history — never rebase shared/pushed commits. Merge is safer for collaboration.", "suspicious"),
+
+    # OS/systems misconceptions
+    (r'(?:Linux|linux)\s+(?:is|can.t|doesn.t)\s+(?:not\s+)?(?:get|have)\s+(?:viruses?|malware)',
+     "Linux can get malware — it's less common due to market share and permissions model, not immunity", "suspicious"),
+    (r'(?:SSD|ssd)\s+(?:has|have)\s+(?:no|unlimited)\s+(?:write\s+)?(?:limit|lifespan|wear)',
+     "SSDs have finite write endurance (TBW) — enterprise workloads can wear them out", "suspicious"),
+    (r'(?:RAM|ram|memory)\s+(?:is|are)\s+(?:always\s+)?faster\s+than\s+(?:SSD|disk|storage)',
+     "True for random access, but sequential SSD reads can approach RAM bandwidth on NVMe", "suspicious"),
 ]
 
 
