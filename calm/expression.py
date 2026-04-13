@@ -634,6 +634,42 @@ try:
 except ImportError:
     pass
 
+try:
+    from calm.backends.http_ops import HTTP_FUNCTIONS
+    _FUNCTIONS.update(HTTP_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.uuid_ops import UUID_FUNCTIONS
+    _FUNCTIONS.update(UUID_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.csv_ops import CSV_FUNCTIONS
+    _FUNCTIONS.update(CSV_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.markdown_ops import MARKDOWN_FUNCTIONS
+    _FUNCTIONS.update(MARKDOWN_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.unicode_ops import UNICODE_FUNCTIONS
+    _FUNCTIONS.update(UNICODE_FUNCTIONS)
+except ImportError:
+    pass
+
+try:
+    from calm.backends.color_ops import COLOR_FUNCTIONS
+    _FUNCTIONS.update(COLOR_FUNCTIONS)
+except ImportError:
+    pass
+
 
 class ExpressionError(Exception):
     """Raised when an expression can't be safely evaluated."""

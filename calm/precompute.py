@@ -62,6 +62,18 @@ def build_system_prompt() -> str:
         ("calm.backends.shell_ops", "shell"),
         ("calm.backends.semver_ops", "semver"),
         ("calm.backends.config_ops", "config"),
+        ("calm.backends.sql_ops", "sql"),
+        ("calm.backends.cron_ops", "cron"),
+        ("calm.backends.bitwise_ops", "bitwise"),
+        ("calm.backends.diff_ops", "diff"),
+        ("calm.backends.package_ops", "packages"),
+        ("calm.backends.ast_ops", "ast"),
+        ("calm.backends.http_ops", "http"),
+        ("calm.backends.uuid_ops", "uuid"),
+        ("calm.backends.csv_ops", "csv"),
+        ("calm.backends.markdown_ops", "markdown"),
+        ("calm.backends.unicode_ops", "unicode"),
+        ("calm.backends.color_ops", "color"),
     ]
     for mod_name, cat in _backend_modules:
         try:
@@ -326,13 +338,32 @@ def precompute(prompt: str) -> Dict[str, object]:
         (r'(?:valid|validate)\s+(?:this\s+)?email[:\s]+(\S+)', 'is_valid_email'),
         (r'[Ii]s\s+(\S+@\S+\.\S+)\s+(?:a\s+)?valid\s+email', 'is_valid_email'),
         (r'(?:regex|pattern)\s+["\']([^"\']+)["\']\s+match(?:es)?\s+["\']([^"\']+)["\']', None),
+        # Color ops
+        (r'(?:WCAG|contrast|combination).*?([#][0-9a-fA-F]{3,8})\s+(?:and|on|vs\.?|over|against)\s+([#][0-9a-fA-F]{3,8})', None),
+        (r'(?:convert|change)\s+([#\w]+)\s+(?:to|into)\s+(?:RGB|rgb)', None),
+        (r'(?:complementary|complement)\s+(?:color\s+)?(?:of|for)\s+([#\w]+)', None),
+        (r'(?:lighten|darken)\s+([#\w]+)\s+(?:by\s+)?(\d+)%?', None),
+        # UUID ops
+        (r'[Ii]s\s+["\']?([0-9a-fA-F-]{36})["\']?\s+(?:a\s+)?valid\s+UUID', 'uuid_validate'),
+        # MIME types
+        (r'(?:MIME|mime)\s+type\s+(?:for|of)\s+\.?(\w+)', 'mime_type'),
+        (r'(?:what|which)\s+(?:MIME|mime)\s+type\s+(?:does|is|for)\s+\.?(\w+)', 'mime_type'),
     ]
     for pat, func in _NL_FUNC_MAP:
         for m in re.finditer(pat, prompt, re.IGNORECASE):
             try:
                 if func is None and 'regex' in pat:
-                    # Special: regex test with two args.
                     expr = f'regex_test("{m.group(1)}", "{m.group(2)}")'
+                elif func is None and 'contrast' in pat.lower():
+                    expr = f'color_contrast("{m.group(1)}", "{m.group(2)}")'
+                elif func is None and 'convert' in pat and 'RGB' in pat:
+                    expr = f'color_hex_to_rgb("{m.group(1)}")'
+                elif func is None and 'complement' in pat:
+                    expr = f'color_complementary("{m.group(1)}")'
+                elif func is None and ('lighten' in pat or 'darken' in pat):
+                    word = m.group(0).split()[0].lower()
+                    fn = 'color_lighten' if 'lighten' in word else 'color_darken'
+                    expr = f'{fn}("{m.group(1)}", {m.group(2)})'
                 elif func in ('http_status',):
                     expr = f'{func}({m.group(1)})'
                 else:
