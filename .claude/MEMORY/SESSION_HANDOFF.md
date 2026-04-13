@@ -1,217 +1,340 @@
-# Session Handoff — 2026-04-13 (Session 23)
+# Session Handoff — 2026-04-13 (Session 24)
 
 ## Goal
 
-Scale CALM's intelligence by building more backends, cognitive modules,
-and NL patterns. Then build an Engine V2 pipeline that integrates
-everything into a self-healing quality loop. User directive: "max the
-intelligence, scale the knowledge, and when we get to frontier parity
-then we wire the engine into the harness."
+Scale CALM intelligence to 1000+ functions, fix cognitive module wiring,
+sharpen quality scoring, add dynamic factual cross-checking, fix module
+learning feedback loop, add hierarchical reasoning, and prototype HRM
+(Hierarchical Reasoning Model) for latent-space reasoning. User directive:
+"max the intelligence, scale the knowledge, hypothesis, build, test with
+gemma, iterate."
 
 ## Completed
 
-### 22 commits on `feature/multi-agent-qwen`
+### 30 commits on `feature/multi-agent-qwen`
 
-Session went from 36 backends/299 functions to 65 backends/506 functions,
-plus 41 cognitive modules, Engine V2, cognitive router, adaptive thinking,
-cross-turn state, and module learning. All from scratch this session.
+Session went from 65 backends/506 functions/19 broken modules to
+116 backends/1002 functions/39 working modules, plus hierarchical routing,
+dynamic factual cross-check, weighted quality scoring, module learning
+feedback loop, and an HRM prototype.
 
-### Backends Built (29 new, 299→506 functions)
+### Backends Built (51 new, 65→116, 506→1002 functions)
 
-**Compute backends (19 new `*_ops.py`):**
-- `http_ops` (7) — status codes, methods, MIME types
-- `uuid_ops` (8) — generate, validate, parse
-- `csv_ops` (9) — parse, validate, column stats
-- `markdown_ops` (7) — headers, TOC, code blocks, links
-- `unicode_ops` (7) — codepoints, categories, confusables
-- `color_ops` (9) — hex/RGB/HSL, WCAG contrast, complement
-- `jwt_ops` (7) — decode header/payload, validate structure
-- `timezone_ops` (7) — convert, UTC offset, DST
-- `baseconv_ops` (9) — binary/octal/hex/arbitrary base
-- `checksum_ops` (8) — Luhn, ISBN-10/13, EAN, UPC
-- `bytesize_ops` (7) — human-readable, IEC vs SI
-- `duration_ops` (7) — parse "2h30m", ISO 8601, convert
-- `geometry_ops` (19) — circle, sphere, cone, trapezoid, distance
-- `probability_ops` (11) — dice, coin, binomial, Bayes
-- `roman_ops` (3) — Roman ↔ decimal, validation
-- `financial_ops` (10) — compound interest, loan payments, NPV, ROI
-- `ratio_ops` (9) — simplify fractions, percent change
-- `cidr_ops` (8) — subnet mask, host count, IP-in-subnet
-- `matrix_ops` (11) — determinant, multiply, transpose, dot/cross product
+**Compute backends (new `*_ops.py`):**
+- `coordinate_ops` (9) — haversine, DMS, bearing, midpoint
+- `statistics_ops` (16) — z-score, normal CDF/PDF, percentile, IQR, correlation
+- `phonetics_ops` (6) — Soundex, Metaphone, NYSIIS, Levenshtein
+- `linux_ops` (9) — chmod, umask, signals, process states, exit codes
+- `encryption_ops` (7) — hash info, key sizes, password strength
+- `time_ops` (12) — epoch conversion, business days, age, quarters
+- `physics_ops` (22) — kinematics, forces, energy, electricity, waves
+- `number_theory_ops` (14) — Euler totient, Catalan, partitions, Fibonacci check
+- `logic_ops` (13) — truth tables, De Morgan's, set operations
+- `graph_theory_ops` (15) — adjacency, BFS/DFS, components, cycle detection
+- `calculus_ops` (11) — numerical derivative/integral, Taylor series
+- `string_metrics_ops` (13) — Jaro-Winkler, Hamming, LCS, anagram/palindrome
+- `set_ops` (15) — union/intersection/cartesian, Jaccard, power set
+- `crypto_ops` (16) — MD5/SHA/HMAC hashing, base64, ROT13, Caesar cipher
+- `boolean_ops` (17) — logic gates, adders, Gray code, parity
+- `math_combinatorics_ops` (14) — derangements, Bell, multinomial, pigeonhole
+- `math_trig_ops` (21) — sin/cos/tan/csc/sec/cot, law of cosines/sines
+- `math_sequence_ops` (13) — arithmetic/geometric series, triangular/harmonic
+- `math_number_ops` (22) — floor/ceil, lerp, power-of-2, geometric/harmonic mean
+- `text_ops` (15) — word count, reading time, Flesch readability
+- `format_ops` (17) — number/currency/bytes/duration/ordinal/roman formatting
+- `validation_ops` (19) — email/URL/IP/UUID/credit card/ISBN validation, Luhn
+- `calendar_ops` (14) — day of week, Easter, zodiac, week number
+- `units_ops` (16) — 50+ unit conversions, BMI, Mach, dB↔ratio
 
-**Knowledge backends (10 new `*_kb.py`):**
-- `country_kb` (8) — 195 countries: capitals, ISO, currencies
-- `elements_kb` (9) — 118 elements: symbols, weights, electron config
-- `constants_kb` (5) — CODATA 2018 physical constants
-- `complexity_kb` (5) — sort/DS/graph Big-O
-- `port_kb` (5) — 45 well-known ports
-- `ascii_kb` (7) — control chars, escape sequences, CR vs LF
-- `license_kb` (5) — 12 SPDX licenses, copyleft, compatibility
-- `regex_ref_kb` (4) — 20 common patterns + syntax reference
-- `error_code_kb` (4) — exit codes, POSIX errno, Unix signals
-- `design_pattern_kb` (5) — 22 GoF + modern patterns
+**Knowledge backends (new `*_kb.py`):**
+- `currency_kb` (8) — 155 ISO 4217 codes + symbols + decimals
+- `measurement_kb` (6) — SI prefixes, base/derived units, conversions
+- `sql_ref_kb` (6) — JOIN types, window functions, isolation levels
+- `git_ref_kb` (6) — 25 commands, reset modes, merge vs rebase
+- `music_kb` (9) — note frequencies, chords, scales, intervals
+- `chemistry_kb` (7) — 36 molecules, functional groups, mole↔gram
+- `networking_kb` (6) — OSI model, 15 protocols, TCP vs UDP, DNS records
+- `data_structures_kb` (4) — 15 data structures with complexity
+- `http_ref_kb` (6) — Cache-Control, CORS, security headers, content types
+- `programming_kb` (6) — SOLID, paradigms, anti-patterns, principles
+- `docker_kb` (5) — Dockerfile instructions, compose keys, best practices
+- `regex_common_kb` (4) — 18 tested regex patterns
+- `aws_kb` (4) — 24 AWS services with details
+- `security_kb` (5) — OWASP Top 10, auth methods, vulnerability types
+- `database_kb` (7) — ACID, CAP, normal forms, index types
+- `testing_kb` (6) — 12 test types, patterns, coverage types
+- `sorting_kb` (4) — 12 sorting algorithms with complexity
+- `algorithms_kb` (7) — search, DP, greedy, graph, NP problems
+- `encoding_ref_kb` (7) — 10 encodings, escape rules, BOM, line endings
+- `api_patterns_kb` (9) — REST/GraphQL/gRPC, pagination, HTTP methods
+- `cloud_patterns_kb` (7) — circuit breaker, saga, 12-factor, fallacies
+- `compiler_kb` (7) — compilation stages, grammars, parsing, execution models
+- `devops_kb` (7) — deployment strategies, CI/CD, SRE concepts
+- `web_kb` (7) — semantic HTML, CSS layout/units, browser storage
+- `type_system_kb` (6) — type systems, variance, common type patterns
+- `concurrency_kb` (6) — concurrency models, sync primitives, async patterns
+- `color_theory_kb` (16) — named colors, models, harmonies, WCAG contrast
 
-### Architecture Improvements
+### NL Pattern Coverage: 125→550, 54%→100%
 
-1. **Auto-discovery registry** (`calm/backends/__init__.py`):
-   Scans `*_ops.py` + `*_kb.py`, registers `*_FUNCTIONS` + `*_NL_PATTERNS`.
-   Adding a backend = write the file, done. expression.py: 936→657 LOC.
+Added NL patterns to all 32 backends that were missing them (session start),
+then added patterns to all 51 new backends. Every backend now exports
+`*_NL_PATTERNS`. Precompute can fire across all 116 backends.
 
-2. **Auto-collected NL patterns**: backends export `*_NL_PATTERNS` lists.
-   Precompute iterates them. 120→125 patterns across 24 backends.
+### Cognitive Modules: 19 broken → 39 working
 
-3. **`_kb.py` naming convention**: knowledge backends include
-   `_DATA_VERSION` for staleness tracking.
+1. **Registered 17 missing modules** (commit `0eee704`): analogy, counterfactual,
+   abstraction, creativity, evidence, compression, error_recovery, calibration,
+   judgment, metacognition, goal_tracking, uncertainty, prerequisites, prioritize,
+   constraints, conflict_resolution, provenance
 
-4. **Bug fixes**:
-   - `auto_learn.py`: `factorial(credit_card_number)` infinite hang → >10M guard
-   - `verify.py`: base conversion claim patterns (Layer 1 catches hex/binary errors)
-   - `precompute.py`: binary-aware patterns ("binary 10110011 to hex" → b3, not 9a443b)
+2. **Fixed all interface mismatches** (commits `2116643`, `d13d51b`):
+   - compression: `compress` not `analyze`
+   - metacognition: 3 args not 1
+   - judgment: `JudgmentEngine` not `JudgmentFramework`
+   - prioritize: `Prioritizer.rank_from_text`
+   - counterfactual: `analyze` not `generate`
+   - error_recovery: 1 arg not 2
+   - chain_verify: guard None wrong_steps
+   - conflict_resolution: rewrote to detect textual tensions
+   - 7 modules: fixed bound-method-as-string bug in summary extraction
 
-### 41 Cognitive Modules (all new this session)
+3. **Built 3 new modules** (commits `04ae45a`, `a8bd024`):
+   - `factual_check`: 48 static misconception patterns + 10 dynamic cross-check
+     patterns that verify claims against backend functions at runtime
+   - `confidence_check`: detects overconfidence (absolutes, false certainty)
+   - `specificity`: detects generic platitudes ("use caching", "add indexes")
 
-| Layer | Modules |
-|-------|---------|
-| **Verification** | chain_verify, consistency, logic, scope |
-| **Reasoning** | decompose, causal, assumptions, analogy, temporal, counterfactual, hypothesis_gen |
-| **Quality** | creativity, nuance, evidence, relevance, completeness, explanation, density, precision, compression, error_recovery |
-| **Meta-cognitive** | calibration, judgment, metacognition, goal_tracking, abstraction, perspective, uncertainty, communication, prerequisites |
-| **Planning** | prioritize, constraints, risk, disambiguation, provenance, conflict_resolution |
+### Quality Scoring Reform (commit `4fee43a`)
 
-### Engine V2 (`calm/engine_v2.py`)
+Old: simple average where modules finding 0 issues scored 1.0. A nearly-all-wrong
+response scored 92%.
 
-7-phase pipeline with self-healing:
-1. PRE-ANALYZE: profile expertise, detect ambiguities, decompose, assess risks
-2. ENRICH: inject pre-analysis into system prompt
-3. ADAPTIVE BUDGET: trivial=2K, easy=4K, medium=8K, hard=16K, deep=32K
-4. PRECOMPUTE: inject verified backend facts (500 functions + 125 NL patterns)
-5. GENERATE: model responds with enriched context
-6. VERIFY + COGNITIVE ROUTE: Auto-CALM claims + 41 modules (33-70ms)
-7. SELF-HEAL: if quality < threshold, targeted correction → re-verify
+New: weighted scoring — verification/planning modules that find issues get 3×
+weight, quality/reasoning get 2×, meta gets 1.5×. Issue penalty increased from
+0.15 to 0.20 per issue.
 
-### Supporting Systems
+Result: bad response dropped from 92%→70%, good response 97%→93%. Gap: 23%.
+Self-heal threshold (75%) now triggers on genuinely bad responses.
 
-- **Cognitive Router** (`calm/router.py`): auto-selects relevant modules
-  per prompt. Simple math → 6 modules. Architecture → 10+.
-- **Adaptive Thinking** (`calm/adaptive.py`): 5 tiers based on complexity
-  + precompute coverage. Precomputed answer → 2K (saves 4-16x).
-- **Conversation State** (`calm/conversation.py`): cross-turn consistency,
-  calibration, goal tracking, provenance.
-- **Module Learning** (`calm/module_learning.py`): records recurring issues
-  from router outputs → proactive prompt prevention.
+### Dynamic Factual Cross-Check (commit `054d477`)
 
-### Gemma Test Results (8K thinking budget, session averages)
+`factual_check.py` now has two passes:
+1. **Static**: 48 regex patterns for known misconceptions
+2. **Dynamic**: 10 cross-check patterns that call backend functions at runtime
+   (hash_output_length, which_layer, currency_decimals, molecular_weight,
+   note_frequency, country_capital)
 
-| Prompt Type | Quality | Corrections | Avg Time |
-|-------------|---------|-------------|----------|
-| Factual with precompute | 95-100% | 0 | 9-25s |
-| Comparison (Redis vs PG) | 89-92% | 0 | 40-50s |
-| Debugging scenario | 92% | 0 | 25-40s |
-| Architecture design | 92-100% | 0 | 30-74s |
-| Math (fractions) | 97% | 2 corrected | 25s |
+Example: response says "SHA-256 output is 32 bytes" → backend computes
+`hash_output_length("sha256")` = 64 → flags the error.
 
-Key finding: pre-analysis enrichment raises first-pass quality so much
-that self-healing rarely triggers — prevention > correction.
+### Module Learning Feedback Loop (commit `054d477`)
+
+**Fixed**: `record_from_report()` was keying on raw summary strings like
+`"precise (95%), 3 vague terms"` — unique every time, frequencies never
+accumulated. Fixed: strip numbers/percentages from keys.
+
+**Added**: prevention rules for confidence_check, specificity, factual_check.
+
+**Verified**: 3 similar prompts → patterns accumulate → prevention suggestion
+injected into next prompt's system prompt.
+
+### Engine V2 — _raw_prompt Fix (commit `054d477`)
+
+`_enrich_system_prompt` was calling `suggest_prompt_additions("")` because
+`_raw_prompt` was never set in pre_analysis. Fixed: `pre_analysis["_raw_prompt"] = prompt`.
+
+### Hierarchical Reasoning (commit `34ba479`)
+
+New phase 2.7 in Engine V2: before generating, decompose multi-part prompts
+into sub-problems and route computable ones to backends.
+
+- `calm/hierarchical.py` (~180 lines): HierarchicalRouter, RoutingPlan, RoutedStep
+- Backend routing: tries direct function calls (all_acid, ds_info, sort_info, etc.)
+- Precompute matching: connects precomputed facts to sub-questions
+- `calm/decompose.py`: multi-question prompts (2+ ?) now use structural
+  decomposition instead of template matching
+
+Gemma test: "Compare Redis vs PG? ACID properties? PG port?" → 3 sub-problems:
+ACID answered by `all_acid()`, port by precompute, comparison sent to model.
+
+### HRM Prototype (latent-space reasoning)
+
+Built from scratch based on arxiv.org/abs/2506.21734 (Wang et al., 2025):
+
+- `calm/hrm/model.py` (~200 lines): HRM model with nested L/H recurrent loops,
+  RoPE, SwiGLU, RMSNorm. Standard PyTorch, no Flash Attention dependency.
+- `calm/hrm/data.py` (~100 lines): generates math problems using CALM backends,
+  character-level tokenization, masked answer format for latent prediction
+- `calm/hrm/train.py` (~150 lines): training loop with cosine LR, masked loss,
+  checkpointing
+- `calm/hrm/inference.py` (~50 lines): load checkpoint, run inference on CPU
+
+**Training results** (math domain, 101K params, RTX 4070):
+- First attempt (next-token prediction): 99.9% val accuracy but inference broken
+  — model learned to predict next token, not fill in blanks
+- Second attempt (masked answer prediction): 45% val accuracy — correct formulation
+  but needs more capacity/training
+- Third attempt (128 hidden, 2 L-layers): **interrupted by user — not completed**
+
+### Docs Updated
+
+- `CLAUDE.md`: all counts updated to 116/1002/550/39
+- `rules/architecture.md`: backend/function/module/LOC counts
+- `rules/calm.md`: backend header, file map, Engine V2 pipeline, module table
+- `rules/commercial.md`: backend count
+- `rules/workflow.md`: CALM measurement patterns, multi-domain smoke test,
+  CALM iteration pattern section
+
+### Bug Fixes
+
+- `precompute.py`: crash on None-template NL patterns (commit `a627334`)
+- `linux_ops.py`: chmod_to_symbolic treating octal as decimal (commit `a9e9f59`)
+- `chemistry_kb.py`: name-based molecule lookup (commit `fc8893d`)
+- `decompose.py`: multi-question prompts losing sub-questions to template match
 
 ## In Progress
 
-### Uncommitted
+### HRM Training — Math Domain
 
-- `calm/backends/matrix_ops.py` — written, not tested or committed (11 funcs:
-  determinant, multiply, transpose, inverse, trace, dot/cross product)
+The HRM model (`calm/hrm/`) is built and the training pipeline works.
+The masked-answer format (model predicts answer in blank positions) is
+correct but needs tuning:
+
+- **101K params (hidden=64)**: 45% accuracy — too small for the task
+- **~400K params (hidden=128, L=2)**: training was started but interrupted
+- A checkpoint exists at `calm/hrm/checkpoints/math_hrm_best.pt` (from
+  the 45% run — not useful for inference yet)
+
+**What to try next**:
+1. Hidden=128, L_layers=2, H_layers=2, epochs=2000, lr=5e-4
+2. If still low: increase to hidden=256 (~3.4M params)
+3. Consider: the masked prediction task may be too hard for this size.
+   Alternative: autoregressive generation (the model predicts answer
+   tokens one by one) — this worked at 99.9% with the first approach
+   but the inference code needs to be autoregressive too.
+
+### Uncommitted Changes
+
 - `calm/learned_patterns.jsonl` — frequency bumps from Gemma testing
+- `.claude/agents/` and `.claude/commands/` deletions (pre-existing)
 - `rust/crates/api/src/{client.rs, providers/mod.rs}` — Ollama match arms
-  from session 22 (user deferred full Ollama removal)
+  (user deferred from session 22)
 
 ## Next Steps — Priority Order
 
-### Priority 1: Keep Scaling (user directive)
+### Priority 1: Fix HRM Training
 
-More backends, modules, NL patterns. Build and test with Gemma. Ideas:
+The masked prediction approach (predict answer in blank positions) may be
+wrong for this architecture. Two options:
 
-**Backends to build next:**
-- `coordinate_ops` — lat/long, DMS conversion, haversine distance
-- `statistics_ops` — z-score, percentile, normal distribution, chi-squared
-- `phonetics_ops` — Soundex, Metaphone for fuzzy matching
-- `currency_kb` — ISO 4217 codes, symbols, decimal places
-- `measurement_kb` — SI prefixes, unit relationships
-- `sql_ref_kb` — SQL syntax reference (JOIN types, window functions)
-- `git_ref_kb` — git commands reference
+**Option A**: Make inference autoregressive — the first training run (next-token
+prediction) hit 99.9% accuracy. Fix the inference code to generate token by
+token instead of predicting all at once.
 
-**Cognitive modules to build:**
-- `attention_allocation` — which part of a long prompt matters most
-- `semantic_similarity` — measure how similar two texts are
-- `transfer_learning` — cross-domain pattern recognition
-- `socratic` — ask questions instead of answering (teaching mode)
-- `context_awareness` — warn when conclusions depend on compacted info
+**Option B**: Scale up the model for masked prediction — try hidden=128 or
+hidden=256. The masked task is harder but more "latent" (true HRM style).
 
-**NL patterns to add:** 40+ backends still missing NL patterns. Run the
-check: `python3 -c "..."` (see session for the one-liner).
+Decision point: does the user want true latent reasoning (masked, option B)
+or practical accuracy first (autoregressive, option A)?
 
 ### Priority 2: Wire Engine V2 into Harness
 
-User directive: "when we get to frontier parity, wire the engine into
-the harness." Changes needed:
+Every `zenith` conversation should run through Engine V2 (pre-analysis,
+precompute, cognitive routing, self-heal). Currently only works via
+`python3 -m calm.engine_v2`. Changes needed in `agents/harness.py` and
+`agents/agent.py`.
 
-- `agents/harness.py`: import Engine V2, wrap response generation
-- `agents/agent.py`: pass response through router post-generation
-- Add `/cognitive` command to show quality report
-- Add `/quality` toggle to enable/disable cognitive analysis
-- Wire adaptive thinking into effort modes
+### Priority 3: More Domain HRM Models
 
-### Priority 3: Cognitive Benchmark
+Once math HRM works, train domain-specific models:
+- Logic/constraints: ~650K params, 30 min training
+- Code patterns: ~3.4M params, 1-2 hours
+- Planning: ~3.4M params, 2-3 hours
 
-40-problem benchmark for cognitive modules (like the math benchmark):
-- 10 scope/generalization tests (known overgeneralized responses)
-- 10 disambiguation tests (ambiguous prompts with known interpretations)
-- 10 completeness tests (multi-part questions)
-- 10 explanation quality tests (circular, jargon-heavy)
+### Priority 4: Cognitive Benchmark
 
-### Priority 4: Update Session Handoff
+Build a 40-problem benchmark for cognitive modules (like the math benchmark).
+Known-bad responses with specific failure modes, measure detection rate.
 
-Update CLAUDE.md backend count + cognitive module table after more
-building. Currently accurate as of commit `bec0b9d`.
+### Priority 5: Push to Remote
 
-### Priority 5: Rust Cleanup
-
-- Remove `ProviderKind::Ollama` entirely (user deferred)
-- Fix warnings: unused imports in `session_control.rs`, dead code
-- Run `cargo clippy --workspace --all-targets -- -D warnings`
+76+ commits ahead of origin. User hasn't pushed yet.
 
 ## Key Context
 
-### User Preferences (from memory)
-- Works directly — no subagent dispatch (memory: feedback_no_agents.md)
-- Hypothesis → test → iterate workflow for everything
-- Test with Gemma, not just unit tests
-- Concise communication, no fluff
-- Defers non-critical work ("for another day")
+### Architecture Insight: Five-Level Intelligence Stack
 
-### Architecture Insight: "Intelligence from Architecture"
-The system produces 89-100% quality from a 4B model on 8GB VRAM by:
-1. Backends compute what the model can't (500 functions, instant)
-2. Pre-analysis tells the model things it can't see (expertise, risk, ambiguity)
-3. 41 cognitive modules catch 41 specific failure modes (33-70ms)
-4. Self-healing corrects what slips through (only when improvement is verified)
-5. Module learning prevents recurring issues proactively
+```
+Level 0: Backends (1002 functions) — instant, verified, deterministic
+Level 1: Precompute (550 NL patterns) — extract + inject before generation
+Level 2: Hierarchical routing — decompose, route computable to L0/L1
+Level 3: Model (Gemma 4B) — reasoning in token space
+Level 4: Cognitive modules (39) — verify, score, self-heal after generation
+Level 5: HRM (prototype) — latent-space reasoning for structured problems
+```
 
-Key quote from the user: "do you think its possible to build knowledge
-backends?" — YES. Knowledge backends (`_kb.py`) work identically to compute
-backends. Same contract, same verification, same precompute. The engine
-doesn't care if `f(x)` computes or looks up.
+### HRM Theory: Why It Fits (theoretical)
 
-### Bugs Found & Fixed
-- `factorial(credit_card_number)` — auto_learn tried to compute factorial
-  of 16-digit CC numbers. Fixed with >10M guard in `auto_learn.py`.
-- `to_hex(10110011)` vs `base_convert("10110011", 2, 16)` — precompute
-  treated binary numbers as decimal. Fixed with binary-aware patterns.
-- Python output buffering — even with `-u`, redirected stdout is fully
-  buffered. Need `stdbuf -oL` + `flush=True`.
-- Communication adapter misclassified experts — "amortized complexity"
-  triggered beginner signals ("what is"). Fixed: expert vocab overrides
-  beginner phrasing.
+HRM fills the gap between backends and the LLM — problems that are
+**structured enough to iterate on** but **too complex to compute directly**.
 
-### Serving (unchanged)
+```
+"What is 17 * 23?"       → Backend (deterministic, instant)
+"Solve 6-constraint CSP" → HRM (latent iteration, ~1ms, 100K-3M params)
+"Is this code buggy?"    → Gemma (token reasoning, ~30s, 4B params)
+```
+
+Backends can't do combinatorial search. The LLM approximates it in tokens
+(slow, unreliable). HRM iterates in hidden state until constraints satisfy —
+the L-module handles local computation, H-module guides the search, and
+the outer loop refines until convergence. Same pattern as CALM's verify →
+self-heal loop, but learned in a neural network instead of coded in Python.
+
+Practical value: HRM at 100K-3M params runs in <1ms on CPU. Doesn't
+compete with Gemma for VRAM. Each domain needs its own trained model, but
+CALM backends generate the training data (verified problem/solution pairs).
+The flywheel: backends generate data → HRM learns patterns → HRM handles
+novel problems backends can't solve → CALM verifies HRM outputs.
+
+In `hierarchical.py` routing:
+```
+sub-problem → computable?           → backend (L0)
+           → structured reasoning?  → HRM (latent, L5)
+           → open-ended?            → Gemma (tokens, L3)
+```
+
+### Performance Budget
+
+The entire CALM pipeline (1002 functions, 550 patterns, 39 modules) adds
+~172ms to inference. Model inference is 20-40 seconds. CALM overhead is
+0.57% — effectively free. Backends don't cost performance, they BUY it
+by preventing the model from wasting tokens on computable problems.
+
+### Quality Discrimination
+
+- Bad response (deliberate errors): 70% quality, 21 issues caught
+- Good response (correct, specific): 93% quality, 4 minor issues
+- Gap: 23% (was ~0% before weighted scoring)
+- Self-heal threshold: 75% — bad responses now trigger correction loop
+
+### Gemma Test Results (session 24)
+
+9 test prompts covering: Rust, VRAM math, git hooks, quantization,
+sliding window attention, Python async, CUDA shared memory, WSL2 memory,
+llama-server flags. Key finding: llama-server `--parallel` question was
+answered WRONG (model said "distributes across CPU cores" — actually
+divides ctx_size into slots). This is the gap that project-specific KBs
+would fix.
+
+### Module Learning Normalization
+
+Keys must be stripped of variable data before accumulating:
+`"precise (95%), 3 vague terms"` → `"precise (), vague terms"`.
+Without this, frequencies never reach threshold and suggestions never fire.
+
+### Serving (unchanged from session 23)
+
 - Gemma 4 E4B tq4 at 512K context, llama-server on port 8080
 - `~/models/gemma-4-E4B-it-tq4-aligned.gguf` (5.0 GB)
 - `--cache-type-k tq4_k256 --cache-type-v tq4_k256 --parallel 1`
@@ -226,30 +349,29 @@ python3 -c "from calm.expression import _FUNCTIONS; print(len(_FUNCTIONS))"
 # Check NL pattern count
 python3 -c "from calm.backends import NL_PATTERNS; print(len(NL_PATTERNS))"
 
-# Find backends missing NL patterns
-python3 -c "
-import os
-for f in sorted(os.listdir('calm/backends')):
-    if f.endswith(('_ops.py','_kb.py')) and '_NL_PATTERNS' not in open(f'calm/backends/{f}').read():
-        print(f'  {f}')
-"
+# Check cognitive module count
+python3 -c "from calm.router import CognitiveRouter; r=CognitiveRouter(); print(len(r._modules))"
 
 # Run Engine V2 on a prompt
 python3 -u -c "
 from calm.engine_v2 import CalmEngineV2
-engine = CalmEngineV2(thinking_budget=32768)
+engine = CalmEngineV2(thinking_budget=8192)
 r = engine.run('Your prompt here', verbose=True)
 print(r.response[:500])
 print(r.summary())
 "
 
-# Run cognitive router standalone
+# Test quality discrimination (bad vs good response)
 python3 -c "
 from calm.router import CognitiveRouter
 router = CognitiveRouter()
-report = router.analyze('prompt', 'response')
-print(report.summary())
+router._max_modules = 50
+r = router.analyze('prompt', 'bad response with always never everything', '')
+print(f'Quality: {r.overall_quality:.0%}, Issues: {r.total_issues}')
 "
+
+# Train HRM (math domain)
+python3 -m calm.hrm.train --epochs 2000 --hidden 128 --lr 5e-4
 
 # Run all tests
 python3 -m pytest calm/tests/ -v
@@ -264,10 +386,14 @@ setsid ~/llama.cpp/build/bin/llama-server \
 
 ## Session Stats
 
-- **22 commits** this session
-- **~26,400 LOC** total CALM engine (was ~15,100)
-- **65 backends** (was 36), **506 functions** (was 299)
-- **125 NL patterns** (was 39)
-- **41 cognitive modules** (was 0)
-- **Engine V2**, cognitive router, adaptive thinking, conversation state, module learning — all new
-- **250 tests pass**
+- **30 commits** this session
+- **~37,400 LOC** total CALM engine (was ~26,300)
+- **116 backends** (was 65), **1002 functions** (was 506)
+- **550 NL patterns** (was 125), **100% coverage** (was 54%)
+- **39 cognitive modules** (was 19 broken), **0 errors**
+- **48 factual patterns** + **10 dynamic cross-check** (was 0)
+- **Weighted quality scoring**: 23% gap bad vs good (was ~0%)
+- **Self-heal confirmed working**: triggers at < 75%
+- **Hierarchical routing**: decompose → route → compose (new)
+- **HRM prototype**: 101K param model built, training pipeline working
+- **250 tests pass** (no regressions)
