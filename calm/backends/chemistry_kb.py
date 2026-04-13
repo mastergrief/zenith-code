@@ -81,9 +81,13 @@ def molecule_info(formula: str) -> dict:
     key = str(formula).strip()
     entry = _MOLECULES.get(key)
     if not entry:
-        # Try case-insensitive
+        # Try case-insensitive formula match
         for k, v in _MOLECULES.items():
             if k.lower() == key.lower():
+                return {"formula": k, **v}
+        # Try name-based lookup (e.g. "glucose" → C6H12O6)
+        for k, v in _MOLECULES.items():
+            if v["name"].lower() == key.lower():
                 return {"formula": k, **v}
         return {"error": f"Unknown molecule: {formula}", "hint": "Use standard formula like H2O, NaCl, C6H12O6"}
     return {"formula": key, **entry}

@@ -171,4 +171,6 @@ ENCRYPTION_NL_PATTERNS = [
     (r'(?:compare|difference|vs)\s+(?:between\s+)?bcrypt\s+(?:and|vs)\s+argon2', 'bcrypt_vs_argon2()'),
     (r'(?:compare|difference|vs)\s+(?:between\s+)?(\w+)\s+(?:and|vs)\s+(\w+)\s+hash', 'compare_hashes("{0}", "{1}")'),
     (r'(?:key size|security level)\s+(?:of|for)\s+([\w-]+)', 'key_size_info("{0}")'),
+    (r'(?:password\s+)?strength\s+(?:of|for)\s+["\']?(\S+)["\']?', 'password_strength("{0}")'),
+    (r'(?:how\s+)?(?:strong|secure)\s+(?:is\s+)?(?:the\s+)?password\s+["\']?(\S+)["\']?', 'password_strength("{0}")'),
 ]
