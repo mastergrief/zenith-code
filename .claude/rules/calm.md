@@ -56,7 +56,7 @@ Two types of backends coexist:
 The engine doesn't care which type — same contract: pure function, deterministic
 output, engine trusts it over the model.
 
-### Current Backends (64 modules, 500 functions, 120 NL patterns)
+### Current Backends (116 modules, 1002 functions, 550 NL patterns)
 
 **Compute backends:**
 
@@ -250,21 +250,25 @@ VERIFIED = all lanes agree → safe.
 | `sandbox.py` | 254 | Subprocess Python isolation |
 | `nl_parser.py` | 168 | NL → stack code translator |
 | `backends/__init__.py` | 77 | Auto-discovery registry: scans `*_ops.py` + `*_kb.py` + `*_NL_PATTERNS` |
-| `backends/*_ops.py` | ~11,000 | 54 compute backends with NL patterns |
-| `backends/*_kb.py` | ~2,500 | 10 knowledge backends with `_DATA_VERSION` |
+| `backends/*_ops.py` | ~14,500 | 79 compute backends with NL patterns |
+| `backends/*_kb.py` | ~4,600 | 37 knowledge backends with `_DATA_VERSION` |
 | `engine_v2.py` | 414 | Full 7-phase cognitive pipeline with self-healing |
-| `router.py` | 507 | Cognitive router: auto-selects modules per prompt |
+| `router.py` | ~850 | Cognitive router: 39 modules, weighted quality scoring |
 | `adaptive.py` | 130 | Adaptive thinking budget (2K→32K based on complexity) |
 | `conversation.py` | 130 | Cross-turn state: consistency, goals, calibration |
-| `module_learning.py` | 165 | Learns recurring issues → prompt prevention |
-| `41 cognitive modules` | ~7,000 | See Cognitive Intelligence Layer below |
+| `module_learning.py` | 176 | Learns recurring issues → prompt prevention (normalized keys, commit `054d477`) |
+| `factual_check.py` | ~300 | 48 static + 10 dynamic cross-check patterns |
+| `confidence_check.py` | ~130 | Overconfidence detection (absolutes, false certainty) |
+| `specificity.py` | ~140 | Generic advice detection (platitudes, hand-waves) |
+| `39 cognitive modules` | ~7,500 | See Cognitive Intelligence Layer below |
 | `learned_patterns.jsonl` | — | Self-learned error patterns (committed) |
 
-## Cognitive Intelligence Layer (41 modules)
+## Cognitive Intelligence Layer (39 modules)
 
 **The system that makes the LLM reliable.** Each module catches a specific
 failure mode that raw model output exhibits. The router auto-selects
-relevant modules per prompt (33-70ms overhead).
+relevant modules per prompt (85-180ms overhead). Weighted quality scoring
+(commit `4fee43a`): issue-finding modules weigh 2-3× more than silent ones.
 
 ### Module Categories
 
@@ -272,7 +276,7 @@ relevant modules per prompt (33-70ms overhead).
 |-------|---------|-----------------|
 | **Verification** | chain_verify, consistency, logic, scope | Multi-step errors, contradictions, invalid syllogisms, overgeneralization |
 | **Reasoning** | decompose, causal, assumptions, analogy, temporal, counterfactual, hypothesis_gen | Missing decomposition, wrong causation, hidden assumptions, bad analogies, ordering errors |
-| **Quality** | creativity, nuance, evidence, relevance, completeness, explanation, density, precision, compression, error_recovery | Redundant ideas, vague hedging, unsupported claims, tangents, incomplete answers, circular explanations, filler, vague language |
+| **Quality** | creativity, nuance, evidence, relevance, completeness, explanation, density, precision, compression, error_recovery, specificity | Redundant ideas, vague hedging, unsupported claims, tangents, incomplete answers, circular explanations, filler, vague language, generic platitudes |
 | **Meta-cognitive** | calibration, judgment, metacognition, goal_tracking, abstraction, perspective, uncertainty, communication, prerequisites | Domain confidence, structured evaluation, quality reports, goal drift, abstraction mismatch, missing perspectives, uncertainty propagation, expertise adaptation, knowledge gaps |
 | **Planning** | prioritize, constraints, risk, disambiguation, provenance, conflict_resolution | Priority ranking, requirement tracking, risk assessment, ambiguity detection, trust tracking, module disagreement |
 
@@ -280,15 +284,15 @@ relevant modules per prompt (33-70ms overhead).
 
 ```
 prompt → PRE-ANALYZE (expertise, ambiguity, decompose, risk)
-       → ENRICH system prompt (beginner→detailed, risks→mention)
+       → ENRICH system prompt (beginner→detailed, risks→mention, learned patterns)
        → ADAPTIVE BUDGET (2K trivial → 32K deep)
-       → PRECOMPUTE (500 backend functions + 120 NL patterns)
+       → PRECOMPUTE (1002 backend functions + 550 NL patterns)
        → GENERATE (Gemma with enriched context)
-       → VERIFY (Auto-CALM claim checking)
-       → COGNITIVE ROUTE (41 modules, 33-70ms)
-       → MODULE LEARNING (record recurring issues)
-       → CROSS-TURN STATE (consistency, goals, calibration)
-       → SELF-HEAL (if quality < threshold: targeted correction → re-verify)
+       → VERIFY (Auto-CALM claim checking + factual cross-check)
+       → COGNITIVE ROUTE (39 modules, 85-180ms, weighted scoring)
+       → MODULE LEARNING (record recurring issues, normalized keys)
+       → CROSS-TURN STATE (consistency, goals, calibration, quality trend)
+       → SELF-HEAL (if weighted quality < 75%: targeted correction → re-verify)
        → response + quality report
 ```
 
