@@ -289,6 +289,189 @@ class CognitiveRouter:
             run_fn=self._run_communication,
         )
 
+        # === ADDITIONAL VERIFICATION/REASONING ===
+
+        self._register("analogy",
+            triggers=[],
+            category="reasoning",
+            cost="low",
+            run_fn=self._run_analogy,
+            trigger_patterns=[
+                r'like\s+\w+|similar to|analogy|metaphor|compared to',
+                r'just as|same as|equivalent|reminds me of',
+            ],
+        )
+
+        self._register("counterfactual",
+            triggers=[],
+            category="reasoning",
+            cost="low",
+            run_fn=self._run_counterfactual,
+            trigger_patterns=[
+                r'what if|what would happen|hypothetically|suppose|imagine',
+                r'instead of|alternatively|had we|could have',
+            ],
+        )
+
+        self._register("abstraction",
+            triggers=[],
+            category="meta",
+            cost="low",
+            run_fn=self._run_abstraction,
+            trigger_patterns=[
+                r'pattern|abstract|general|specific|concrete',
+                r'high.level|low.level|detail|overview|summary',
+            ],
+        )
+
+        # === ADDITIONAL QUALITY ===
+
+        self._register("creativity",
+            triggers=[],
+            category="quality",
+            cost="low",
+            run_fn=self._run_creativity,
+            trigger_patterns=[
+                r'ideas?|brainstorm|suggest|alternative|creative',
+                r'novel|innovative|unconventional|different approach',
+            ],
+        )
+
+        self._register("evidence",
+            triggers=[],
+            category="quality",
+            cost="low",
+            run_fn=self._run_evidence,
+            trigger_patterns=[
+                r'claim|assert|state|fact|true|false|proof|evidence',
+                r'according to|research|study|source',
+            ],
+        )
+
+        self._register("compression",
+            triggers=[],
+            always_run=True,
+            category="quality",
+            cost="low",
+            run_fn=self._run_compression,
+        )
+
+        self._register("error_recovery",
+            triggers=[],
+            category="quality",
+            cost="low",
+            run_fn=self._run_error_recovery,
+            trigger_patterns=[
+                r'error|exception|fail|crash|bug|broken|wrong',
+                r'fix|solve|resolve|debug|troubleshoot',
+            ],
+        )
+
+        # === ADDITIONAL META ===
+
+        self._register("calibration",
+            triggers=[],
+            always_run=True,
+            category="meta",
+            cost="low",
+            run_fn=self._run_calibration,
+        )
+
+        self._register("judgment",
+            triggers=[],
+            category="meta",
+            cost="low",
+            run_fn=self._run_judgment,
+            trigger_patterns=[
+                r'should|decide|choose|evaluate|assess|judge|rate',
+                r'best|worst|recommend|prefer|opinion',
+            ],
+        )
+
+        self._register("metacognition",
+            triggers=[],
+            always_run=True,
+            category="meta",
+            cost="low",
+            run_fn=self._run_metacognition,
+        )
+
+        self._register("goal_tracking",
+            triggers=[],
+            always_run=True,
+            category="meta",
+            cost="low",
+            run_fn=self._run_goal_tracking,
+        )
+
+        self._register("uncertainty",
+            triggers=[],
+            category="meta",
+            cost="low",
+            run_fn=self._run_uncertainty,
+            trigger_patterns=[
+                r'probably|maybe|might|could|uncertain|unsure',
+                r'confidence|likely|unlikely|estimate|approximate',
+            ],
+        )
+
+        self._register("prerequisites",
+            triggers=[],
+            category="meta",
+            cost="low",
+            run_fn=self._run_prerequisites,
+            trigger_patterns=[
+                r'prerequisite|require|need to know|assume|background',
+                r'before|first need|depends on knowing',
+            ],
+        )
+
+        # === PLANNING LAYER ===
+
+        self._register("prioritize",
+            triggers=[],
+            category="planning",
+            cost="low",
+            run_fn=self._run_prioritize,
+            trigger_patterns=[
+                r'priorit|important|urgent|first|order|rank|sort',
+                r'which.*first|what.*next|todo|task list',
+            ],
+        )
+
+        self._register("constraints",
+            triggers=[],
+            category="planning",
+            cost="low",
+            run_fn=self._run_constraints,
+            trigger_patterns=[
+                r'constraint|limitation|restrict|bound|require|must|cannot',
+                r'budget|deadline|limit|capacity|resource',
+            ],
+        )
+
+        self._register("conflict_resolution",
+            triggers=[],
+            category="planning",
+            cost="low",
+            run_fn=self._run_conflict_resolution,
+            trigger_patterns=[
+                r'conflict|disagree|contradiction|inconsisten|tension',
+                r'tradeoff|competing|opposing|versus|vs',
+            ],
+        )
+
+        self._register("provenance",
+            triggers=[],
+            category="planning",
+            cost="low",
+            run_fn=self._run_provenance,
+            trigger_patterns=[
+                r'source|origin|where.*from|cite|reference|who said',
+                r'trust|reliable|accurate|verified|authoritative',
+            ],
+        )
+
     def _register(self, name: str, triggers: list, category: str,
                    cost: str, run_fn: Callable,
                    always_run: bool = False,
@@ -505,3 +688,149 @@ class CognitiveRouter:
         ct = ConsistencyTracker()
         contradictions = ct.add_claims(response)
         return f"{ct.claim_count} claims, {len(contradictions)} contradictions", len(contradictions), ct
+
+    # === Additional module runners (session 24) ===
+
+    def _run_analogy(self, prompt, response, thinking):
+        from calm.analogy import AnalogyVerifier
+        av = AnalogyVerifier()
+        r = av.check(response)
+        issues = len([a for a in r if not a.is_valid]) if isinstance(r, list) else 0
+        count = len(r) if isinstance(r, list) else 0
+        return f"{count} analogies checked, {issues} weak", issues, r
+
+    def _run_counterfactual(self, prompt, response, thinking):
+        from calm.counterfactual import CounterfactualEngine
+        ce = CounterfactualEngine()
+        r = ce.analyze(prompt)
+        scenarios = getattr(r, 'scenarios', [])
+        count = len(scenarios) if isinstance(scenarios, list) else 0
+        return f"{count} counterfactual scenarios", 0, r
+
+    def _run_abstraction(self, prompt, response, thinking):
+        from calm.abstraction import AbstractionDetector
+        ad = AbstractionDetector()
+        r = ad.check_mismatch(prompt, response)
+        issues = 1 if r and getattr(r, 'mismatch', False) else 0
+        summary = getattr(r, 'summary', lambda: "ok")
+        s = summary() if callable(summary) else str(summary)
+        return s[:60], issues, r
+
+    def _run_creativity(self, prompt, response, thinking):
+        from calm.creativity import CreativityVerifier
+        cv = CreativityVerifier()
+        r = cv.verify_ideas(response)
+        issues = 0
+        if hasattr(r, 'redundant_count'):
+            issues = r.redundant_count
+        summary = getattr(r, 'summary', str(r))
+        s = summary if isinstance(summary, str) else str(summary)
+        return s[:60], issues, r
+
+    def _run_evidence(self, prompt, response, thinking):
+        from calm.evidence import EvidenceTracker
+        et = EvidenceTracker()
+        et.analyze_text(response)
+        unsupported = et.unsupported_claims()
+        score = et.strength_score()
+        return f"evidence strength {score:.0%}, {len(unsupported)} unsupported", len(unsupported), et
+
+    def _run_compression(self, prompt, response, thinking):
+        from calm.compression import SemanticCompressor
+        sc = SemanticCompressor()
+        r = sc.compress(response)
+        ratio = r.compression_ratio
+        issues = 1 if ratio < 0.5 else 0
+        return f"compression ratio {ratio:.0%}", issues, r
+
+    def _run_error_recovery(self, prompt, response, thinking):
+        from calm.error_recovery import ErrorRecovery
+        er = ErrorRecovery()
+        r = er.assess_response(prompt, response)
+        issues = len(getattr(r, 'gaps', []))
+        summary = getattr(r, 'summary', str(r))
+        s = summary if isinstance(summary, str) else str(summary)
+        return s[:60], issues, r
+
+    def _run_calibration(self, prompt, response, thinking):
+        from calm.calibration import ConfidenceCalibrator
+        cc = ConfidenceCalibrator()
+        r = cc.assess(response)
+        issues = 0
+        if hasattr(r, 'overconfident_count'):
+            issues = r.overconfident_count
+        return cc.summary()[:60], issues, r
+
+    def _run_judgment(self, prompt, response, thinking):
+        from calm.judgment import JudgmentEngine
+        je = JudgmentEngine()
+        r = je.evaluate_code(response)
+        summary = getattr(r, 'summary', str(r))
+        s = summary if isinstance(summary, str) else str(summary)
+        return s[:60], 0, r
+
+    def _run_metacognition(self, prompt, response, thinking):
+        from calm.metacognition import MetaCognition
+        mc = MetaCognition()
+        r = mc.assess(prompt, response, thinking)
+        summary = getattr(r, 'summary', str(r))
+        s = summary() if callable(summary) else str(summary)
+        return s[:60], 0, r
+
+    def _run_goal_tracking(self, prompt, response, thinking):
+        from calm.goal_tracking import GoalTracker
+        gt = GoalTracker()
+        gt.add_user_message(prompt)
+        gt.add_assistant_response(response)
+        r = gt.drift_check()
+        issues = 1 if r and getattr(r, 'drifted', False) else 0
+        summary = getattr(r, 'summary', str(r))
+        s = summary if isinstance(summary, str) else str(summary)
+        return s[:60], issues, r
+
+    def _run_uncertainty(self, prompt, response, thinking):
+        from calm.uncertainty import UncertaintyTracker
+        ut = UncertaintyTracker()
+        ut.analyze_text(response)
+        r = ut.report()
+        summary = getattr(r, 'summary', str(r))
+        s = summary if isinstance(summary, str) else str(summary)
+        return s[:60], 0, r
+
+    def _run_prerequisites(self, prompt, response, thinking):
+        from calm.prerequisites import PrerequisiteDetector
+        pd = PrerequisiteDetector()
+        r = pd.detect(prompt, response)
+        gaps = len(getattr(r, 'missing', []))
+        summary = getattr(r, 'summary', str(r))
+        s = summary if isinstance(summary, str) else str(summary)
+        return s[:60], gaps, r
+
+    def _run_prioritize(self, prompt, response, thinking):
+        from calm.prioritize import Prioritizer
+        pr = Prioritizer()
+        r = pr.rank_from_text(prompt + " " + response)
+        summary = getattr(r, 'summary', str(r))
+        s = summary if isinstance(summary, str) else str(summary)
+        return s[:60], 0, r
+
+    def _run_constraints(self, prompt, response, thinking):
+        from calm.constraints import ConstraintTracker
+        ct = ConstraintTracker()
+        constraints = ct.extract(prompt)
+        violations = ct.check_solution(response)
+        return f"{len(constraints)} constraints, {len(violations)} violations", len(violations), ct
+
+    def _run_conflict_resolution(self, prompt, response, thinking):
+        from calm.conflict_resolution import ConflictResolver
+        cr = ConflictResolver()
+        r = cr.detect(response)
+        count = len(r) if isinstance(r, list) else 0
+        return f"{count} conflicts detected", count, r
+
+    def _run_provenance(self, prompt, response, thinking):
+        from calm.provenance import ProvenanceTracker
+        pt = ProvenanceTracker()
+        r = pt.report()
+        total = getattr(r, 'total_tags', 0)
+        return f"{total} provenance tags", 0, r
