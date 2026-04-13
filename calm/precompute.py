@@ -247,6 +247,19 @@ def precompute(prompt: str) -> Dict[str, object]:
                 except ExpressionError:
                     pass
 
+    # Backend-declared NL patterns: auto-collected from *_NL_PATTERNS in backends.
+    # Each pattern is (compiled_regex, template) where template uses {0}, {1}, etc.
+    # This is the scalable path — backends declare their own NL triggers.
+    from calm.backends import NL_PATTERNS
+    for compiled_pat, template in NL_PATTERNS:
+        for m in compiled_pat.finditer(prompt):
+            try:
+                expr = template.format(*m.groups())
+                if expr not in results:
+                    results[expr] = safe_eval(expr)
+            except (ExpressionError, IndexError, KeyError):
+                pass
+
     # Auto-discovery: scan the prompt for any registered function calls.
     # If the prompt contains "sha256("hello")" or "url_parse(...)" and
     # that function exists in the registry, evaluate it.

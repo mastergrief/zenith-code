@@ -128,6 +128,15 @@ def probability_to_odds(p: float) -> str:
     return f"1:{inv:.2f}"
 
 
+PROBABILITY_NL_PATTERNS = [
+    (r'probability\s+of\s+rolling\s+(?:a\s+)?(?:sum\s+(?:of\s+)?)?(\d+)\s+with\s+(?:two|2)\s+(?:six.sided|6.sided)\s+dice', 'dice_probability({0}, 6, 2)'),
+    (r'probability\s+of\s+(?:getting\s+)?(?:exactly\s+)?(\d+)\s+heads?\s+in\s+(\d+)\s+(?:coin\s+)?flips?', 'coin_probability({0}, {1})'),
+    (r'(\d+)\s+choose\s+(\d+)', 'combinations({0}, {1})'),
+    (r'[Cc]\(\s*(\d+)\s*,\s*(\d+)\s*\)', 'combinations({0}, {1})'),
+    (r'(\d+)\s+permutations?\s+(?:of\s+)?(\d+)', 'permutations({0}, {1})'),
+    (r'[Pp]\(\s*(\d+)\s*,\s*(\d+)\s*\)', 'permutations({0}, {1})'),
+]
+
 PROBABILITY_FUNCTIONS = {
     "dice_probability": dice_probability,
     "coin_probability": coin_probability,

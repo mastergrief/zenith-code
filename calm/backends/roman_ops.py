@@ -66,6 +66,14 @@ def roman_validate(s: str) -> bool:
     return from_roman(s) > 0
 
 
+ROMAN_NL_PATTERNS = [
+    (r'(\d+)\s+in\s+[Rr]oman\s+numerals?', 'to_roman({0})'),
+    (r'(?:convert\s+)?(\d+)\s+to\s+[Rr]oman', 'to_roman({0})'),
+    (r'([MDCLXVI]+)\s+in\s+(?:decimal|arabic|base\s*10)', 'from_roman("{0}")'),
+    (r'(?:convert\s+)?([MDCLXVI]+)\s+to\s+(?:decimal|arabic|a\s+number)', 'from_roman("{0}")'),
+    (r'[Ii]s\s+([MDCLXVI]+)\s+(?:a\s+)?valid\s+[Rr]oman\s+numeral', 'roman_validate("{0}")'),
+]
+
 ROMAN_FUNCTIONS = {
     "to_roman": to_roman,
     "from_roman": from_roman,

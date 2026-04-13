@@ -112,6 +112,26 @@ def hypotenuse(a: float, b: float) -> float:
     return math.sqrt(float(a) ** 2 + float(b) ** 2)
 
 
+GEOMETRY_NL_PATTERNS = [
+    (r'area\s+of\s+(?:a\s+)?circle\s+(?:with\s+)?radius\s+([\d.]+)', 'circle_area({0})'),
+    (r'circumference\s+of\s+(?:a\s+)?circle\s+(?:with\s+)?radius\s+([\d.]+)', 'circle_circumference({0})'),
+    (r'volume\s+of\s+(?:a\s+)?sphere\s+(?:with\s+)?radius\s+([\d.]+)', 'sphere_volume({0})'),
+    (r'surface\s+area\s+of\s+(?:a\s+)?sphere\s+(?:with\s+)?radius\s+([\d.]+)', 'sphere_surface_area({0})'),
+    (r'volume\s+of\s+(?:a\s+)?cylinder\s+(?:with\s+)?radius\s+([\d.]+)\s+(?:and\s+)?height\s+([\d.]+)', 'cylinder_volume({0}, {1})'),
+    (r'volume\s+of\s+(?:a\s+)?cone\s+(?:with\s+)?radius\s+([\d.]+)\s+(?:and\s+)?height\s+([\d.]+)', 'cone_volume({0}, {1})'),
+    (r'area\s+of\s+(?:a\s+)?triangle\s+(?:with\s+)?base\s+([\d.]+)\s+(?:and\s+)?height\s+([\d.]+)', 'triangle_area({0}, {1})'),
+    (r'area\s+of\s+(?:a\s+)?trapezoid\s+.*?(?:sides?\s+)?([\d.]+)\s+and\s+([\d.]+)\s+.*?height\s+([\d.]+)', 'trapezoid_area({0}, {1}, {2})'),
+    (r'hypotenuse.*?([\d.]+)\s+and\s+([\d.]+)', 'hypotenuse({0}, {1})'),
+    (r'distance\s+(?:between|from)\s+\(?([\d.]+)\s*,\s*([\d.]+)\)?\s+(?:and|to)\s+\(?([\d.]+)\s*,\s*([\d.]+)\)?', 'distance_2d({0}, {1}, {2}, {3})'),
+    (r'(?:interior|internal)\s+angle\s+of\s+(?:a\s+)?regular\s+triangle', 'polygon_interior_angle(3)'),
+    (r'(?:interior|internal)\s+angle\s+of\s+(?:a\s+)?regular\s+square', 'polygon_interior_angle(4)'),
+    (r'(?:interior|internal)\s+angle\s+of\s+(?:a\s+)?regular\s+pentagon', 'polygon_interior_angle(5)'),
+    (r'(?:interior|internal)\s+angle\s+of\s+(?:a\s+)?regular\s+hexagon', 'polygon_interior_angle(6)'),
+    (r'(?:interior|internal)\s+angle\s+of\s+(?:a\s+)?regular\s+heptagon', 'polygon_interior_angle(7)'),
+    (r'(?:interior|internal)\s+angle\s+of\s+(?:a\s+)?regular\s+octagon', 'polygon_interior_angle(8)'),
+    (r'(?:interior|internal)\s+angle\s+of\s+(?:a\s+)?regular\s+(\d+).(?:sided|gon)', 'polygon_interior_angle({0})'),
+]
+
 GEOMETRY_FUNCTIONS = {
     "circle_area": circle_area,
     "circle_circumference": circle_circumference,

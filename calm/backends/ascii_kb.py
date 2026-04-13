@@ -116,6 +116,13 @@ def ascii_diff_cr_lf() -> str:
             "Windows uses \\r\\n (CRLF), Unix/Mac use \\n (LF only).")
 
 
+ASCII_NL_PATTERNS = [
+    (r'(?:ASCII|ascii)\s+(?:code|value)\s+(?:for|of)\s+(?:the\s+)?(?:letter\s+)?["\']?(\w)["\']?', 'ascii_code("{0}")'),
+    (r'(?:what\s+is\s+)?(?:the\s+)?(?:difference|diff)\s+(?:between\s+)?\\\\[rn]\s+(?:and|vs)\s+\\\\[rn]', 'ascii_diff_cr_lf()'),
+    (r'(?:what\s+)?line\s+ending\s+(?:does|for|on|in)\s+(\w+)', 'ascii_line_ending("{0}")'),
+    (r'(?:what\s+is\s+)?(?:the\s+)?(?:escape\s+)?(?:sequence\s+)?\\\\([nrtabfv0])', 'ascii_escape("{0}")'),
+]
+
 ASCII_FUNCTIONS = {
     "ascii_code": ascii_code,
     "ascii_char": ascii_char,

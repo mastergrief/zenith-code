@@ -121,6 +121,13 @@ def is_well_known_port(port: int) -> bool:
     return 0 <= int(port) <= 1023
 
 
+PORT_NL_PATTERNS = [
+    (r'(?:what\s+)?(?:service|program|daemon)\s+(?:runs?|listens?|is)\s+(?:on|at)\s+port\s+(\d+)', 'port_info({0})'),
+    (r'(?:what\s+)?port\s+(?:does|is|for)\s+(\w+)\s+(?:use|run|listen)', 'service_port("{0}")'),
+    (r'(?:default|standard)\s+port\s+(?:for|of)\s+(\w+)', 'service_port("{0}")'),
+    (r'(?:is\s+)?port\s+(\d+)\s+(?:a\s+)?(?:well.known|registered|ephemeral)', 'port_range({0})'),
+]
+
 PORT_FUNCTIONS = {
     "port_info": port_info,
     "service_port": service_port,

@@ -32,6 +32,11 @@ BACKEND_MODULES: Dict[str, str] = {}
 # Which functions came from which category.
 FUNCTION_CATEGORIES: Dict[str, str] = {}
 
+# NL patterns collected from backends for auto-precompute.
+# Each entry: (compiled_regex, template_string)
+# template_string uses {0}, {1}, etc. for regex groups, e.g. 'circle_area({0})'
+NL_PATTERNS: list = []
+
 
 def _discover_backends():
     """Scan calm/backends/ for *_ops.py modules and register their functions."""
@@ -50,7 +55,7 @@ def _discover_backends():
         except ImportError:
             continue
 
-        # Find the *_FUNCTIONS dict in the module.
+        # Find the *_FUNCTIONS dict and optional *_NL_PATTERNS in the module.
         for attr_name in dir(mod):
             if attr_name.endswith("_FUNCTIONS") and isinstance(getattr(mod, attr_name), dict):
                 funcs = getattr(mod, attr_name)
@@ -59,6 +64,14 @@ def _discover_backends():
                 for func_name in funcs:
                     FUNCTION_CATEGORIES[func_name] = category
                 break  # One *_FUNCTIONS dict per module.
+
+        # Collect NL patterns if present.
+        for attr_name in dir(mod):
+            if attr_name.endswith("_NL_PATTERNS") and isinstance(getattr(mod, attr_name), list):
+                import re as _re
+                for pattern, template in getattr(mod, attr_name):
+                    NL_PATTERNS.append((_re.compile(pattern, _re.IGNORECASE), template))
+                break
 
 
 _discover_backends()

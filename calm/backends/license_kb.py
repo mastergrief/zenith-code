@@ -163,6 +163,12 @@ def license_compatible(license1: str, license2: str) -> str:
     return f"{k1} → {k2}: may not be compatible (check specific use case)"
 
 
+LICENSE_NL_PATTERNS = [
+    (r'[Ii]s\s+(?:the\s+)?(\w+)\s+(?:license\s+)?copyleft', 'license_copyleft("{0}")'),
+    (r'(?:are\s+)?(\w[\w\s.-]*?)\s+and\s+(\w[\w\s.-]*?)\s+(?:licenses?\s+)?compatible', 'license_compatible("{0}", "{1}")'),
+    (r'(?:what\s+)?(?:does|permissions?|conditions?)\s+(?:the\s+)?(\w+)\s+license\s+(?:require|permit|allow)', 'license_info("{0}")'),
+]
+
 LICENSE_FUNCTIONS = {
     "license_info": license_info,
     "license_permissions": license_permissions,
