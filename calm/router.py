@@ -680,8 +680,9 @@ class CognitiveRouter:
         if not chain:
             return "no reasoning chain found", 0, None
         r = cv.verify_chain(chain)
-        issues = r.wrong_steps or 0
-        return r.summary(), issues, r
+        issues = getattr(r, 'wrong_steps', 0) or 0
+        s = r.summary() if callable(getattr(r, 'summary', None)) else "chain verified"
+        return s, issues, r
 
     def _run_consistency(self, prompt, response, thinking):
         from calm.consistency import ConsistencyTracker
@@ -743,7 +744,7 @@ class CognitiveRouter:
     def _run_error_recovery(self, prompt, response, thinking):
         from calm.error_recovery import ErrorRecovery
         er = ErrorRecovery()
-        r = er.assess_response(prompt, response)
+        r = er.assess_response(response)
         issues = len(getattr(r, 'gaps', []))
         s = r.summary() if callable(getattr(r, 'summary', None)) else str(r)
         return s[:60], issues, r
