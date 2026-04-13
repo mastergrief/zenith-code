@@ -165,7 +165,15 @@ class Decomposer:
         else:
             plan.complexity = "simple"
 
-        # Try template-based decomposition
+        # Multi-question prompts: structural decomposition takes priority
+        # over templates when there are 2+ explicit questions
+        questions = re.findall(r'([^?.!]+\?)', prompt)
+        if len(questions) >= 2:
+            plan = self._structural_decompose(prompt, plan)
+            if plan.steps:
+                return plan
+
+        # Single-question: try template-based decomposition
         for name, template_info in _DECOMPOSITION_TEMPLATES.items():
             m = template_info["pattern"].search(prompt)
             if m:

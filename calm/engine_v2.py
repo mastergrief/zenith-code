@@ -69,6 +69,10 @@ class EngineV2Result:
     thinking_tier: str = ""
     # Cross-turn insights
     cross_turn_insights: dict = field(default_factory=dict)
+    # Hierarchical routing
+    hierarchical: bool = False
+    sub_problems: int = 0
+    backend_answered: int = 0
     # Timing
     total_ms: float = 0
     pre_analysis_ms: float = 0
@@ -150,6 +154,18 @@ class CalmEngineV2:
         if verbose:
             print(f"[adaptive] {budget_estimate}")
 
+        # === PHASE 2.7: HIERARCHICAL ROUTING ===
+        from calm.hierarchical import HierarchicalRouter
+        h_router = HierarchicalRouter()
+        routing = h_router.route(prompt, precomputed, verbose=verbose)
+        generation_prompt = prompt
+
+        if routing:
+            generation_prompt = routing.model_prompt
+            result.hierarchical = True
+            result.sub_problems = len(routing.steps)
+            result.backend_answered = routing.backend_answered
+
         # === PHASE 3-5: GENERATE + VERIFY (via Auto-CALM) ===
         t0 = time.time()
         # Temporarily override the system prompt and thinking budget
@@ -157,7 +173,7 @@ class CalmEngineV2:
         old_budget = self._calm.thinking_budget
         self._calm.system_prompt = enriched_prompt
         self._calm.thinking_budget = adaptive_budget
-        calm_result = self._calm.run(prompt, verbose=verbose)
+        calm_result = self._calm.run(generation_prompt, verbose=verbose)
         self._calm.system_prompt = old_prompt
         self._calm.thinking_budget = old_budget
         result.generation_ms = (time.time() - t0) * 1000
