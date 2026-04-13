@@ -124,3 +124,10 @@ SEMVER_FUNCTIONS = {
     "semver_sort": semver_sort,
     "is_breaking_change": is_breaking_change,
 }
+
+SEMVER_NL_PATTERNS = [
+    (r'(?:compare|which is newer)\s+(?:version\s+)?v?(\d+\.\d+\.\d+\S*)\s+(?:and|vs|to|with)\s+v?(\d+\.\d+\.\d+\S*)', 'semver_compare("{0}", "{1}")'),
+    (r'(?:parse|breakdown)\s+(?:version\s+)?v?(\d+\.\d+\.\d+\S*)', 'semver_parse("{0}")'),
+    (r'(?:bump|increment)\s+(?:the\s+)?(major|minor|patch)\s+(?:of|for|version)\s+v?(\d+\.\d+\.\d+\S*)', 'semver_bump("{1}", "{0}")'),
+    (r'(?:is)\s+v?(\d+\.\d+\.\d+\S*)\s+(?:to|→)\s+v?(\d+\.\d+\.\d+\S*)\s+(?:a\s+)?breaking', 'is_breaking_change("{0}", "{1}")'),
+]

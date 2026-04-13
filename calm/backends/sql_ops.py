@@ -249,3 +249,9 @@ SQL_FUNCTIONS = {
     "sql_risk": sql_risk,
     "sql_format": sql_format,
 }
+
+SQL_NL_PATTERNS = [
+    (r'(?:validate|is valid|check)\s+(?:this\s+)?(?:SQL|sql)\s+(?:query)?', None),
+    (r'(?:what tables?|extract tables?)\s+(?:does|in|from)\s+(?:this\s+)?(?:SQL|sql)', None),
+    (r'(?:is)\s+(?:this\s+)?(?:SQL|sql)\s+(?:query\s+)?(?:risky|dangerous|safe)', None),
+]

@@ -121,3 +121,9 @@ UNICODE_FUNCTIONS = {
     "unicode_confusables": unicode_confusables,
     "unicode_string_width": unicode_string_width,
 }
+
+UNICODE_NL_PATTERNS = [
+    (r'(?:codepoint|code point|unicode)\s+(?:of|for)\s+["\']?(.)["\']?', 'unicode_codepoint("{0}")'),
+    (r'(?:what is|character at)\s+U\+([0-9A-Fa-f]{4,6})', None),
+    (r'(?:category|type)\s+(?:of\s+)?unicode\s+(?:character\s+)?["\']?(.)["\']?', 'unicode_category("{0}")'),
+]

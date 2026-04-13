@@ -193,3 +193,13 @@ ALGO_FUNCTIONS = {
     "running_max": running_max,
     "longest_increasing_subsequence": longest_increasing_subsequence,
 }
+
+ALGO_NL_PATTERNS = [
+    (r'(\d+)\s+choose\s+(\d+)', 'nCr({0}, {1})'),
+    (r'[Cc]\((\d+)\s*,\s*(\d+)\)', 'nCr({0}, {1})'),
+    (r'(\d+)\s+permute\s+(\d+)', 'nPr({0}, {1})'),
+    (r'[Pp]\((\d+)\s*,\s*(\d+)\)', 'nPr({0}, {1})'),
+    (r'sort\s+\[([-\d.,\s]+)\]', 'sort_list([{0}])'),
+    (r'unique\s+(?:values?\s+)?(?:in|of)\s+\[([-\d.,\s]+)\]', 'unique([{0}])'),
+    (r'(?:longest increasing|LIS)\s+(?:subsequence\s+)?(?:of|in)\s+\[([-\d.,\s]+)\]', 'longest_increasing_subsequence([{0}])'),
+]

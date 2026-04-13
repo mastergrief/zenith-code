@@ -132,3 +132,12 @@ CONVERT_FUNCTIONS = {
     "celsius_to_kelvin": celsius_to_kelvin,
     "kelvin_to_celsius": kelvin_to_celsius,
 }
+
+CONVERT_NL_PATTERNS = [
+    (r'convert\s+([\d.]+)\s+(\w+)\s+(?:to|in)\s+(\w+)', 'convert({0}, "{1}", "{2}")'),
+    (r'([\d.]+)\s+(\w+)\s+(?:to|in|=)\s+(?:how many\s+)?(\w+)', 'convert({0}, "{1}", "{2}")'),
+    (r'([-\d.]+)\s*(?:°|degrees?)?\s*(?:celsius|C)\s+(?:to|in)\s+(?:fahrenheit|F)', 'celsius_to_fahrenheit({0})'),
+    (r'([-\d.]+)\s*(?:°|degrees?)?\s*(?:fahrenheit|F)\s+(?:to|in)\s+(?:celsius|C)', 'fahrenheit_to_celsius({0})'),
+    (r'([-\d.]+)\s*(?:°|degrees?)?\s*(?:celsius|C)\s+(?:to|in)\s+(?:kelvin|K)', 'celsius_to_kelvin({0})'),
+    (r'([-\d.]+)\s*(?:°|degrees?)?\s*(?:kelvin|K)\s+(?:to|in)\s+(?:celsius|C)', 'kelvin_to_celsius({0})'),
+]

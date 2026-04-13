@@ -105,3 +105,9 @@ CSV_FUNCTIONS = {
     "csv_to_tsv": csv_to_tsv,
     "tsv_to_csv": tsv_to_csv,
 }
+
+CSV_NL_PATTERNS = [
+    (r'(?:validate|is valid)\s+(?:this\s+)?csv', None),
+    (r'(?:count|number of)\s+(?:rows?|lines?|records?)\s+in\s+(?:this\s+)?csv', None),
+    (r'(?:count|number of)\s+(?:columns?|fields?)\s+in\s+(?:this\s+)?csv', None),
+]

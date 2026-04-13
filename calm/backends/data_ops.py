@@ -146,3 +146,11 @@ DATA_FUNCTIONS = {
     "zscore": zscore,
     "histogram": histogram,
 }
+
+DATA_NL_PATTERNS = [
+    (r'(?:average|mean)\s+of\s+\[([-\d.,\s]+)\]', 'mean([{0}])'),
+    (r'median\s+of\s+\[([-\d.,\s]+)\]', 'median([{0}])'),
+    (r'mode\s+of\s+\[([-\d.,\s]+)\]', 'mode([{0}])'),
+    (r'(?:standard deviation|stdev|std dev)\s+of\s+\[([-\d.,\s]+)\]', 'stdev([{0}])'),
+    (r'(\d+)(?:th|st|nd|rd)\s+percentile\s+of\s+\[([-\d.,\s]+)\]', 'percentile([{1}], {0})'),
+]

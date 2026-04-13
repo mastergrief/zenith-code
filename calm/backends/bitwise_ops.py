@@ -159,3 +159,12 @@ BITWISE_FUNCTIONS = {
     "byte_swap": byte_swap,
     "mask": mask,
 }
+
+BITWISE_NL_PATTERNS = [
+    (r'(\d+)\s+(?:AND|and|&)\s+(\d+)\s+(?:bitwise|in binary)', 'bit_and({0}, {1})'),
+    (r'(\d+)\s+(?:OR|or|\|)\s+(\d+)\s+(?:bitwise|in binary)', 'bit_or({0}, {1})'),
+    (r'(\d+)\s+(?:XOR|xor|\^)\s+(\d+)\s+(?:bitwise|in binary)', 'bit_xor({0}, {1})'),
+    (r'popcount\s+(?:of\s+)?(\d+)', 'popcount({0})'),
+    (r'(?:number of|count|how many)\s+(?:set\s+)?bits?\s+in\s+(\d+)', 'popcount({0})'),
+    (r'twos?\s+complement\s+(?:of\s+)?(-?\d+)', 'twos_complement({0})'),
+]

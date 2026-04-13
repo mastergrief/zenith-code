@@ -148,3 +148,8 @@ SHELL_FUNCTIONS = {
     "env_var": env_var,
     "parse_shebang": parse_shebang,
 }
+
+SHELL_NL_PATTERNS = [
+    (r'(?:what does|explain)\s+exit\s+(?:code|status)\s+(\d+)', 'exit_code_meaning({0})'),
+    (r'(?:is)\s+["`]?(.+?)["`]?\s+(?:a\s+)?(?:dangerous|destructive)\s+(?:command|shell)', 'is_dangerous_command("{0}")'),
+]

@@ -204,3 +204,11 @@ MATH_EXTENDED_FUNCTIONS = {
     "numerical_derivative": numerical_derivative,
     "numerical_integral": numerical_integral,
 }
+
+MATH_EXTENDED_NL_PATTERNS = [
+    (r'(\d+)\s*\^\s*(\d+)\s+mod\s+(\d+)', 'mod_pow({0}, {1}, {2})'),
+    (r'modular\s+(?:exponentiation|power).*?(\d+)\s*\^\s*(\d+)\s+mod\s+(\d+)', 'mod_pow({0}, {1}, {2})'),
+    (r'modular\s+inverse\s+(?:of\s+)?(\d+)\s+mod\s+(\d+)', 'mod_inverse({0}, {1})'),
+    (r'dot\s+product\s+(?:of\s+)?\[([-\d.,\s]+)\]\s+(?:and|·)\s+\[([-\d.,\s]+)\]', 'dot_product([{0}], [{1}])'),
+    (r'cross\s+product\s+(?:of\s+)?\[([-\d.,\s]+)\]\s+(?:and|×)\s+\[([-\d.,\s]+)\]', 'cross_product([{0}], [{1}])'),
+]

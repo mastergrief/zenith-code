@@ -145,3 +145,11 @@ NETWORK_FUNCTIONS = {
     "is_valid_email": is_valid_email,
     "is_valid_domain": is_valid_domain,
 }
+
+NETWORK_NL_PATTERNS = [
+    (r'(?:is)\s+([\w@.+-]+)\s+(?:a\s+)?valid\s+email', 'is_valid_email("{0}")'),
+    (r'(?:is)\s+([\d.]+)\s+(?:a\s+)?valid\s+(?:IP|ip)', 'is_valid_ip("{0}")'),
+    (r'(?:is)\s+([\d.]+)\s+in\s+(?:subnet|CIDR)\s+([\d./]+)', 'cidr_contains("{0}", "{1}")'),
+    (r'(?:what is|info about)\s+(?:HTTP\s+)?(?:status\s+)?(\d{3})', 'http_status({0})'),
+    (r'(?:parse|breakdown)\s+(?:the\s+)?(?:URL|url)\s+(https?://\S+)', 'url_parse("{0}")'),
+]

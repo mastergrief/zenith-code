@@ -328,3 +328,8 @@ CRON_FUNCTIONS = {
     "cron_validate": cron_validate,
     "cron_frequency": cron_frequency,
 }
+
+CRON_NL_PATTERNS = [
+    (r'(?:explain|what does|parse)\s+(?:the\s+)?cron\s+(?:expression\s+)?["\']?([*\d,/-]+\s+[*\d,/-]+\s+[*\d,/-]+\s+[*\d,/-]+\s+[*\d,/-]+)["\']?', 'cron_explain("{0}")'),
+    (r'(?:is)\s+(?:the\s+)?cron\s+["\']?([*\d,/-]+\s+[*\d,/-]+\s+[*\d,/-]+\s+[*\d,/-]+\s+[*\d,/-]+)["\']?\s+(?:valid)', 'cron_validate("{0}")'),
+]

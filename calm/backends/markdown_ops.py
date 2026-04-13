@@ -83,3 +83,9 @@ MARKDOWN_FUNCTIONS = {
     "md_section_count": md_section_count,
     "md_word_count": md_word_count,
 }
+
+MARKDOWN_NL_PATTERNS = [
+    (r'(?:count|number of|how many)\s+(?:headings?|headers?|sections?)\s+in', None),
+    (r'(?:extract|list|find)\s+(?:all\s+)?links?\s+(?:in|from)', None),
+    (r'(?:generate|create|make)\s+(?:a\s+)?(?:table of contents|toc|TOC)', None),
+]
