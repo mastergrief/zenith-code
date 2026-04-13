@@ -311,6 +311,21 @@ def precompute(prompt: str) -> Dict[str, object]:
         # Timezone
         (r'(?:convert|what is)\s+(\d{1,2}:\d{2})\s+([A-Za-z/_]+)\s+(?:to|in)\s+([A-Za-z/_]+)', None),
         (r'(?:UTC|utc)\s+offset\s+(?:for|of|in)\s+([A-Za-z/_]+)', 'tz_offset'),
+        # Port lookups
+        (r'(?:what\s+)?(?:service|runs?)\s+(?:on|at)\s+port\s+(\d+)', 'port_info'),
+        (r'(?:port|default port)\s+(?:for|of)\s+(\w+)', 'service_port'),
+        # Geometry
+        (r'area\s+of\s+(?:a\s+)?circle\s+(?:with\s+)?radius\s+([\d.]+)', None),
+        (r'volume\s+of\s+(?:a\s+)?sphere\s+(?:with\s+)?radius\s+([\d.]+)', None),
+        (r'area\s+of\s+(?:a\s+)?trapezoid\s+.*?(?:sides?\s+)?([\d.]+)\s+and\s+([\d.]+)\s+.*?height\s+([\d.]+)', None),
+        (r'(?:interior|internal)\s+angle\s+of\s+(?:a\s+)?regular\s+(\w+)', None),
+        # Roman numerals
+        (r'(\d+)\s+in\s+[Rr]oman\s+numerals?', None),
+        (r'([MDCLXVI]+)\s+in\s+(?:decimal|arabic|base\s*10)', None),
+        # Probability
+        (r'(\d+)\s+choose\s+(\d+)', None),
+        # ASCII
+        (r'(?:ASCII|ascii)\s+code\s+(?:for|of)\s+(?:the\s+)?(?:letter\s+)?["\']?(\w)["\']?', 'ascii_code'),
         # Country knowledge
         (r'(?:capital|capitol)\s+(?:of|city of)\s+([A-Z][\w\s]+)', 'capital'),
         (r'(?:what|which)\s+(?:is\s+)?(?:the\s+)?(?:capital|capitol)\s+(?:of|city of)\s+([A-Z][\w\s]+)', 'capital'),
@@ -394,9 +409,31 @@ def precompute(prompt: str) -> Dict[str, object]:
                     # Timezone conversion: HH:MM from_tz to to_tz
                     expr = f'tz_convert("{m.group(1)}", "{m.group(2)}", "{m.group(3)}")'
                 elif func is None and 'speed of light' in pat:
-                    # Physical constants — extract which one from the match text
                     matched = m.group(0).lower().strip()
                     expr = f'physical_constant("{matched}")'
+                elif func is None and 'circle' in pat and 'radius' in pat:
+                    expr = f'circle_area({m.group(1)})'
+                elif func is None and 'sphere' in pat and 'radius' in pat:
+                    expr = f'sphere_volume({m.group(1)})'
+                elif func is None and 'trapezoid' in pat:
+                    expr = f'trapezoid_area({m.group(1)}, {m.group(2)}, {m.group(3)})'
+                elif func is None and 'interior' in pat and 'regular' in pat:
+                    # Map polygon name to sides
+                    shape = m.group(1).lower()
+                    sides_map = {"triangle": 3, "square": 4, "pentagon": 5,
+                                 "hexagon": 6, "heptagon": 7, "octagon": 8,
+                                 "nonagon": 9, "decagon": 10}
+                    n = sides_map.get(shape)
+                    if n:
+                        expr = f'polygon_interior_angle({n})'
+                    else:
+                        continue
+                elif func is None and 'oman' in pat and '\\d+' in pat:
+                    expr = f'to_roman({m.group(1)})'
+                elif func is None and '[MDCLXVI]' in pat:
+                    expr = f'from_roman("{m.group(1)}")'
+                elif func is None and 'choose' in pat and 'convert' not in pat:
+                    expr = f'combinations({m.group(1)}, {m.group(2)})'
                 elif func in ('http_status',):
                     expr = f'{func}({m.group(1)})'
                 else:
