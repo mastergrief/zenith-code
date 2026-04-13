@@ -33,6 +33,7 @@ from calm.router import CognitiveRouter, CognitiveReport
 from calm.verify import Claim
 from calm.adaptive import AdaptiveBudget
 from calm.conversation import ConversationState
+from calm.module_learning import ModuleLearner
 
 
 @dataclass
@@ -119,6 +120,7 @@ class CalmEngineV2:
         self._router = CognitiveRouter()
         self._adaptive = AdaptiveBudget()
         self._conversation = ConversationState()
+        self._module_learner = ModuleLearner()
 
     def run(self, prompt: str, verbose: bool = False) -> EngineV2Result:
         """Run the full pipeline."""
@@ -179,7 +181,10 @@ class CalmEngineV2:
                   f"quality={report.overall_quality:.0%}, "
                   f"{report.total_issues} issues ({result.analysis_ms:.0f}ms)")
 
-        # === PHASE 6.5: CROSS-TURN STATE ===
+        # === PHASE 6.5: MODULE LEARNING ===
+        self._module_learner.record_from_report(report, prompt)
+
+        # === PHASE 6.6: CROSS-TURN STATE ===
         insights = self._conversation.add_turn(
             prompt=prompt,
             response=result.response,
@@ -250,6 +255,8 @@ class CalmEngineV2:
         analysis["risk_level"] = risk.overall_risk
         analysis["risk_items"] = [r.description for r in risk.risks[:3]]
 
+        analysis["_raw_prompt"] = prompt
+
         if verbose:
             print(f"[pre] user={profile.expertise}, "
                   f"ambiguities={len(disamb.ambiguities)}, "
@@ -302,7 +309,14 @@ class CalmEngineV2:
                 "Risks to mention: " + "; ".join(risk_items[:2])
             )
 
-        # Quality instructions
+        # Learned quality instructions (from past module outputs)
+        learned = self._module_learner.suggest_prompt_additions(
+            pre_analysis.get("_raw_prompt", "")
+        )
+        if learned:
+            additions.extend(learned)
+
+        # Default quality instructions
         additions.append(
             "Be specific (avoid 'fast', 'easy', 'simple' without metrics). "
             "Qualify generalizations (avoid 'always', 'never' without evidence). "
