@@ -299,6 +299,14 @@ def country_info(country: str) -> str:
             f"Calling: {call}, Region: {region}, Pop: ~{pop:,}")
 
 
+COUNTRY_NL_PATTERNS = [
+    (r"(?:capital|capitol)\s+(?:of|city of)\s+([A-Z][\w\s]+)", 'capital("{0}")'),
+    (r"(?:currency|money)\s+(?:of|in|used in)\s+([A-Z][\w\s]+)", 'country_currency("{0}")'),
+    (r"(?:calling|phone|dial)\s+code\s+(?:of|for)\s+([A-Z][\w\s]+)", 'country_calling_code("{0}")'),
+    (r"(?:ISO|iso)\s+code\s+(?:of|for)\s+([A-Z][\w\s]+)", 'country_iso2("{0}")'),
+    (r"(?:population|how many people)\s+(?:of|in)\s+([A-Z][\w\s]+)", 'country_population("{0}")'),
+]
+
 COUNTRY_FUNCTIONS = {
     "capital": capital,
     "country_iso2": country_iso2,

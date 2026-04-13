@@ -204,6 +204,14 @@ def element_info(element: str) -> str:
             f"period={period}, category={cat}, config={econfig}")
 
 
+ELEMENTS_NL_PATTERNS = [
+    (r"(?:atomic\s+)?(?:weight|mass)\s+of\s+(\w+)", 'atomic_weight("{0}")'),
+    (r"(?:atomic\s+)?number\s+of\s+(\w+)", 'atomic_number("{0}")'),
+    (r"(?:electron\s+)?config(?:uration)?\s+(?:of|for)\s+(\w+)", 'electron_config("{0}")'),
+    (r"(?:symbol|chemical symbol)\s+(?:of|for)\s+(\w+)", 'element_symbol("{0}")'),
+    (r"(?:what\s+)?element\s+(?:has|is|with)\s+(?:atomic\s+)?number\s+(\d+)", 'element_info("{0}")'),
+]
+
 ELEMENTS_FUNCTIONS = {
     "element_symbol": element_symbol,
     "element_name": element_name,

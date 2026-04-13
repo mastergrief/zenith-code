@@ -106,6 +106,13 @@ def mime_category(ext: str) -> str:
     return mt.split("/")[0] if "/" in mt else "unknown"
 
 
+HTTP_NL_PATTERNS = [
+    (r"(?:HTTP|http)\s+(?:status|code)\s+(?:is\s+)?(\d{3})", 'http_status({0})'),
+    (r"(?:what|which)\s+(?:HTTP|http)\s+(?:status|code)\s+is\s+(\d{3})", 'http_status({0})'),
+    (r"(?:is|does)\s+(?:HTTP\s+)?(GET|POST|PUT|PATCH|DELETE)\s+(?:idempotent|safe)", 'http_method_info("{0}")'),
+    (r"(?:MIME|mime)\s+type\s+(?:for|of)\s+\.?(\w+)", 'mime_type("{0}")'),
+]
+
 HTTP_FUNCTIONS = {
     "http_status": http_status,
     "http_status_category": http_status_category,

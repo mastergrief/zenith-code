@@ -122,6 +122,13 @@ def worst_case(algorithm: str) -> str:
     return f"unknown algorithm: {algorithm}"
 
 
+COMPLEXITY_NL_PATTERNS = [
+    (r"(?:time\s+)?complexity\s+of\s+(quicksort|mergesort|merge sort|heapsort|heap sort|timsort|insertion sort|bubble sort|selection sort|radix sort|counting sort)", 'sort_complexity("{0}")'),
+    (r"worst\s+case\s+(?:of|for)\s+(\w[\w\s]*)", 'worst_case("{0}")'),
+    (r"[Ii]s\s+(quicksort|mergesort|merge sort|heapsort|timsort|insertion sort|bubble sort|selection sort)\s+stable", 'is_stable_sort("{0}")'),
+    (r"complexity\s+of\s+(hash.table|binary.search|bfs|dfs|dijkstra)\s+(lookup|search|insert|delete)?", 'ds_complexity("{0}")'),
+]
+
 COMPLEXITY_FUNCTIONS = {
     "sort_complexity": sort_complexity,
     "ds_complexity": ds_complexity,

@@ -133,6 +133,12 @@ def seconds_in(value: int, unit: str) -> int:
     return int(value) * mult
 
 
+DURATION_NL_PATTERNS = [
+    (r"(?:how many)\s+seconds?\s+(?:is|in|are)\s+([\d]+[hms][\d\s]*[hms]?[\d\s]*[hms]?)", 'duration_parse("{0}")'),
+    (r"convert\s+(\d+)\s*(hours?|minutes?|days?|weeks?)\s+to\s+(seconds?|minutes?|hours?|days?)", 'duration_convert({0}, "{1}", "{2}")'),
+    (r"add\s+([\d]+[hms][\d\s]*[hms]?)\s+(?:and|\+|plus)\s+([\d]+[hms][\d\s]*[hms]?)", 'duration_add("{0}", "{1}")'),
+]
+
 DURATION_FUNCTIONS = {
     "duration_parse": duration_parse,
     "duration_format": duration_format,

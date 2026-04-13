@@ -107,6 +107,12 @@ def jwt_part_count(token: str) -> int:
     return len(token.strip().split("."))
 
 
+JWT_NL_PATTERNS = [
+    (r"(?:decode|parse)\s+(?:the\s+)?(?:JWT|jwt)\s+(?:payload|header)", 'jwt_decode_payload("{0}")'),
+    (r"(?:what\s+)?algorithm\s+(?:does|in|of)\s+(?:the\s+)?(?:JWT|jwt)", 'jwt_algorithm("{0}")'),
+    (r"(?:is\s+)?(?:the\s+)?(?:JWT|jwt)\s+(?:expired|valid)", 'jwt_is_expired("{0}")'),
+]
+
 JWT_FUNCTIONS = {
     "jwt_decode_header": jwt_decode_header,
     "jwt_decode_payload": jwt_decode_payload,

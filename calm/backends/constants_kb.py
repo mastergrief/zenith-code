@@ -132,6 +132,10 @@ def list_constants() -> list:
     return result
 
 
+CONSTANTS_NL_PATTERNS = [
+    (r'(speed of light|planck.s? constant|boltzmann.s? constant|avogadro.s? number|gravitational constant|elementary charge|gas constant|fine.structure constant|bohr radius)', 'physical_constant("{0}")'),
+]
+
 CONSTANTS_FUNCTIONS = {
     "physical_constant": physical_constant,
     "constant_value": constant_value,

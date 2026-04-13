@@ -110,6 +110,13 @@ def tz_abbreviation(tz_name: str) -> str:
         return f"invalid timezone: {e}"
 
 
+TIMEZONE_NL_PATTERNS = [
+    (r"(?:UTC|utc)\s+offset\s+(?:for|of|in)\s+([A-Za-z/_]+)", 'tz_offset("{0}")'),
+    (r"(?:convert|what is)\s+(\d{1,2}:\d{2})\s+([A-Za-z/_]+)\s+(?:to|in)\s+([A-Za-z/_]+)", 'tz_convert("{0}", "{1}", "{2}")'),
+    (r"(?:current\s+)?time\s+in\s+([A-Za-z/_]+)", 'tz_now("{0}")'),
+    (r"(?:is\s+)?([A-Za-z/_]+)\s+(?:currently\s+)?(?:in\s+)?DST", 'tz_is_dst("{0}")'),
+]
+
 TIMEZONE_FUNCTIONS = {
     "tz_convert": tz_convert,
     "tz_offset": tz_offset,

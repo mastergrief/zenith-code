@@ -88,6 +88,12 @@ def date_diff(d1: str, d2: str) -> dict:
 
 
 # Registry for expression.py integration.
+DATE_NL_PATTERNS = [
+    (r"(?:days?|how many days)\s+between\s+([\d/-]+)\s+and\s+([\d/-]+)", 'days_between("{0}", "{1}")'),
+    (r"(?:what|which)\s+day.*?(\d{4}-\d{2}-\d{2})", 'day_of_week("{0}")'),
+    (r"[Ii]s\s+(\d{4})\s+(?:a\s+)?leap\s+year", 'is_leap_year({0})'),
+]
+
 DATE_FUNCTIONS = {
     "days_between": days_between,
     "day_of_week": day_of_week,

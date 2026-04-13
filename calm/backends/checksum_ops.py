@@ -90,6 +90,12 @@ def checksum_digit_sum(number: str) -> int:
     return sum(int(c) for c in str(number) if c.isdigit())
 
 
+CHECKSUM_NL_PATTERNS = [
+    (r"(?:is\s+)?(\d{13,19})\s+(?:a\s+)?valid\s+(?:credit\s+card|Luhn|card)", 'luhn_validate("{0}")'),
+    (r"(?:Luhn|luhn)\s+check\s+digit\s+(?:for|of)\s+(\d+)", 'luhn_check_digit("{0}")'),
+    (r"(?:validate|check|verify)\s+(?:ISBN|isbn)[- ]?(?:13)?[:\s]+([0-9X-]+)", 'isbn13_validate("{0}")'),
+]
+
 CHECKSUM_FUNCTIONS = {
     "luhn_validate": luhn_validate,
     "luhn_check_digit": luhn_check_digit,

@@ -100,6 +100,12 @@ def kib_to_bytes(n: int) -> int:
     return int(n) * 1024
 
 
+BYTESIZE_NL_PATTERNS = [
+    (r"(?:how (?:many|much)|convert)\s+(\d+)\s*(KB|MB|GB|TB|KiB|MiB|GiB|TiB)\s+(?:to|in)\s+(bytes|B|KB|MB|GB|TB|KiB|MiB|GiB|TiB)", 'bytes_convert({0}, "{1}", "{2}")'),
+    (r"(?:what is|how big is)\s+(\d+)\s*(?:bytes|B)\s+in\s+(?:human|readable)", 'bytes_format_si({0})'),
+    (r"(?:difference|diff)\s+(?:between\s+)?(?:MB|MiB|SI|IEC)", 'bytes_diff_si_iec(1000000)'),
+]
+
 BYTESIZE_FUNCTIONS = {
     "bytes_format_si": bytes_format_si,
     "bytes_format_iec": bytes_format_iec,

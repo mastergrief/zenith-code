@@ -80,6 +80,14 @@ def byte_length(text: str) -> int:
     return len(text.encode("utf-8"))
 
 
+ENCODING_NL_PATTERNS = [
+    (r'base64\s+(?:encode|encoding)\s+(?:of\s+)?["\']([^"\']+)["\']', 'base64_encode("{0}")'),
+    (r'(?:SHA-?256|sha256)\s+(?:hash|digest)\s+(?:of\s+)?["\']([^"\']+)["\']', 'sha256("{0}")'),
+    (r'(?:MD5|md5)\s+(?:hash|digest)\s+(?:of\s+)?["\']([^"\']+)["\']', 'md5("{0}")'),
+    (r'(?:ASCII|ascii)\s+(?:code|value)\s+(?:of|for)\s+["\']?(\w)["\']?', 'char_code("{0}")'),
+    (r'(?:UTF-?8|utf-?8)\s+(?:byte\s+)?length\s+(?:of\s+)?["\']([^"\']+)["\']', 'byte_length("{0}")'),
+]
+
 ENCODING_FUNCTIONS = {
     "base64_encode": base64_encode,
     "base64_decode": base64_decode,

@@ -81,6 +81,15 @@ def base_convert(s: str, from_base: int, to_base_num: int) -> str:
         return f"error: {e}"
 
 
+BASECONV_NL_PATTERNS = [
+    (r"(?:convert\s+)?(\d+)\s+(?:to|in)\s+binary", 'to_binary({0})'),
+    (r"(?:convert\s+)?(\d+)\s+(?:to|in)\s+(?:hex|hexadecimal)", 'to_hex({0})'),
+    (r"(?:convert\s+)?(\d+)\s+(?:to|in)\s+octal", 'to_octal({0})'),
+    (r"(?:convert\s+)?(\d+)\s+(?:to|in)\s+base\s+(\d+)", 'to_base({0}, {1})'),
+    (r"binary\s+(?:number\s+)?([01]+)\s+(?:to|in)\s+(?:decimal|base\s*10)", 'from_binary("{0}")'),
+    (r"binary\s+(?:number\s+)?([01]+)\s+(?:to|in)\s+(?:hex|hexadecimal)", 'base_convert("{0}", 2, 16)'),
+]
+
 BASECONV_FUNCTIONS = {
     "to_binary": to_binary,
     "to_octal": to_octal,

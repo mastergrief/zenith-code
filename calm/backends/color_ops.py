@@ -152,6 +152,13 @@ def color_name(color: str) -> str:
     return best_name
 
 
+COLOR_NL_PATTERNS = [
+    (r"(?:WCAG|contrast).*?([#][0-9a-fA-F]{3,8})\s+(?:and|on|vs|over|against)\s+([#][0-9a-fA-F]{3,8})", 'color_contrast("{0}", "{1}")'),
+    (r"convert\s+([#][0-9a-fA-F]{3,8})\s+to\s+(?:RGB|rgb)", 'color_hex_to_rgb("{0}")'),
+    (r"complement(?:ary)?\s+(?:color\s+)?(?:of|for)\s+([#\w]+)", 'color_complementary("{0}")'),
+    (r"(?:lighten|darken)\s+([#\w]+)\s+(?:by\s+)?(\d+)%?", 'color_lighten("{0}", {1})'),
+]
+
 COLOR_FUNCTIONS = {
     "color_hex_to_rgb": color_hex_to_rgb,
     "color_rgb_to_hex": color_rgb_to_hex,

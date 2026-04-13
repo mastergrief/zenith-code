@@ -86,6 +86,12 @@ def uuid_nil() -> str:
     return "00000000-0000-0000-0000-000000000000"
 
 
+UUID_NL_PATTERNS = [
+    (r'[Ii]s\s+["\']?([0-9a-fA-F-]{36})["\']?\s+(?:a\s+)?valid\s+UUID', 'uuid_validate("{0}")'),
+    (r'(?:generate|create|make)\s+(?:a\s+)?(?:UUID|uuid)\s*(?:v4|version 4)?', 'uuid_v4()'),
+    (r'(?:version|type)\s+of\s+(?:UUID|uuid)\s+([0-9a-fA-F-]{36})', 'uuid_version("{0}")'),
+]
+
 UUID_FUNCTIONS = {
     "uuid_v4": uuid_v4,
     "uuid_v1": uuid_v1,
