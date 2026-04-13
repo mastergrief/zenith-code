@@ -159,3 +159,9 @@ TYPE_FUNCTIONS = {
     "return_types": return_types,
     "parameter_types": parameter_types,
 }
+
+TYPE_NL_PATTERNS = [
+    (r'(?:type\s+)?annotation\s+coverage\s+(?:of|for|in)', None),
+    (r'(?:return types?|what does .+ return)\s+(?:of|for|in)', None),
+    (r'(?:parameter|arg)\s+types?\s+(?:of|for|in)', None),
+]

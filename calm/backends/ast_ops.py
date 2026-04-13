@@ -227,3 +227,10 @@ AST_FUNCTIONS = {
     "ast_rename": ast_rename,
     "ast_extract_function": ast_extract_function,
 }
+
+AST_NL_PATTERNS = [
+    (r'(?:parse|analyze)\s+(?:the\s+)?(?:AST|syntax tree|abstract syntax)', None),
+    (r'(?:list|what|extract)\s+(?:all\s+)?(?:functions?|methods?)\s+(?:in|from|of)', None),
+    (r'(?:list|what|extract)\s+(?:all\s+)?(?:classes?)\s+(?:in|from|of)', None),
+    (r'(?:list|what|extract)\s+(?:all\s+)?imports?\s+(?:in|from|of)', None),
+]

@@ -202,3 +202,9 @@ DIFF_FUNCTIONS = {
     "diff_apply": diff_apply,
     "diff_conflicts": diff_conflicts,
 }
+
+DIFF_NL_PATTERNS = [
+    (r'(?:parse|analyze)\s+(?:this\s+)?(?:diff|patch|unified diff)', None),
+    (r'(?:how many|count)\s+(?:lines?\s+)?(?:added|removed|changed)\s+in\s+(?:this\s+)?diff', None),
+    (r'(?:what files?|which files?)\s+(?:changed|modified)\s+in\s+(?:this\s+)?diff', None),
+]

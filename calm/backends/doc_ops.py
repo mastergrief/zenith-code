@@ -145,3 +145,9 @@ DOC_FUNCTIONS = {
     "docstring_quality": docstring_quality,
     "module_doc_check": module_doc_check,
 }
+
+DOC_NL_PATTERNS = [
+    (r'(?:docstring|documentation)\s+coverage\s+(?:of|for|in)', None),
+    (r'(?:are|is)\s+(?:all\s+)?(?:functions?|classes?)\s+documented', None),
+    (r'(?:quality|check)\s+(?:of\s+)?docstrings?\s+(?:in|for)', None),
+]

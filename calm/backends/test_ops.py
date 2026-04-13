@@ -164,3 +164,9 @@ TEST_FUNCTIONS = {
     "test_to_code_ratio": test_to_code_ratio,
     "run_tests_verbose": run_tests_verbose,
 }
+
+TEST_NL_PATTERNS = [
+    (r'(?:test|testing)\s+(?:summary|coverage|report)\s+(?:of|for|in)', None),
+    (r'(?:untested|missing tests?)\s+(?:functions?|methods?)', None),
+    (r'(?:test.to.code|test)\s+ratio\s+(?:of|for|in)', None),
+]

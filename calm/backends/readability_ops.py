@@ -200,3 +200,9 @@ READABILITY_FUNCTIONS = {
     "text_structure": text_structure,
     "readability_report": readability_report,
 }
+
+READABILITY_NL_PATTERNS = [
+    (r'(?:readability|reading level|Flesch)\s+(?:of|for|score)', None),
+    (r'(?:jargon|technical terms?)\s+(?:in|density|count)', None),
+    (r'(?:vocabulary|word)\s+complexity\s+(?:of|for|in)', None),
+]

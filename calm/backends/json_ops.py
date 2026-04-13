@@ -133,3 +133,10 @@ JSON_FUNCTIONS = {
     "json_format": json_format,
     "json_minify": json_minify,
 }
+
+JSON_NL_PATTERNS = [
+    (r'(?:validate|is valid|check)\s+(?:this\s+)?(?:JSON|json)', None),
+    (r'(?:format|pretty.?print|indent)\s+(?:this\s+)?(?:JSON|json)', None),
+    (r'(?:minify|compact|compress)\s+(?:this\s+)?(?:JSON|json)', None),
+    (r'(?:diff|compare)\s+(?:these\s+)?(?:two\s+)?(?:JSON|json)', None),
+]

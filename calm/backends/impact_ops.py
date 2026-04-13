@@ -278,3 +278,10 @@ IMPACT_FUNCTIONS = {
     "coupling_score": coupling_score,
     "change_risk": change_risk,
 }
+
+IMPACT_NL_PATTERNS = [
+    (r'(?:blast radius|impact|affected)\s+(?:of\s+)?(?:changing|modifying|editing)', None),
+    (r'(?:call graph|who calls|callers of)\s+(?:function\s+)?(\w+)', None),
+    (r'(?:dead|unused)\s+(?:code|functions?)', None),
+    (r'(?:coupling|dependencies)\s+(?:of|for|in|between)', None),
+]

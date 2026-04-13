@@ -157,3 +157,9 @@ GIT_FUNCTIONS = {
     "git_file_history": git_file_history,
     "git_commit_count": git_commit_count,
 }
+
+GIT_OPS_NL_PATTERNS = [
+    (r'(?:how many|count)\s+commits?\s+(?:in|on|for)', None),
+    (r'(?:who|git blame)\s+(?:last\s+)?(?:changed|modified|touched)\s+(?:line|file)', None),
+    (r'(?:what|show)\s+(?:branches?|branch list)', None),
+]

@@ -126,3 +126,9 @@ DEPS_FUNCTIONS = {
     "missing_imports": missing_imports,
     "python_path": python_path,
 }
+
+DEPS_NL_PATTERNS = [
+    (r'(?:is)\s+(\w+)\s+(?:installed|available)', 'is_installed("{0}")'),
+    (r'(?:what version|version of)\s+(\w[\w-]+)', 'installed_version("{0}")'),
+    (r'(?:missing|uninstalled)\s+imports?\s+(?:in|for)', None),
+]

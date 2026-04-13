@@ -269,3 +269,9 @@ CREATIVE_FUNCTIONS = {
     "shuffle_priority": shuffle_priority,
     "score_novelty": score_novelty,
 }
+
+CREATIVE_NL_PATTERNS = [
+    (r'(?:brainstorm|suggest|generate)\s+(?:names?|ideas?)\s+for', None),
+    (r'(?:combine|merge|mix)\s+(?:concepts?|ideas?|patterns?)', None),
+    (r'(?:invert|flip|reverse)\s+(?:the\s+)?assumptions?', None),
+]

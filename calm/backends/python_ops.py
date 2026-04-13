@@ -163,3 +163,10 @@ PYTHON_FUNCTIONS = {
     "magic_methods": magic_methods,
     "stdlib_search": stdlib_search,
 }
+
+PYTHON_NL_PATTERNS = [
+    (r'(?:is|does)\s+(\w+)\s+(?:a\s+)?(?:Python\s+)?(?:builtin|built-in)', 'builtin_exists("{0}")'),
+    (r'(?:is|does)\s+(\w+)\s+(?:a\s+)?(?:Python\s+)?(?:module|package|library)', 'module_exists("{0}")'),
+    (r'(?:what|list)\s+(?:methods?|attributes?)\s+(?:does|of|on)\s+(\w+)', 'list_methods("{0}")'),
+    (r'(?:what is|what\'s)\s+the\s+(?:exception|error)\s+hierarchy\s+(?:of|for)\s+(\w+)', 'exception_hierarchy("{0}")'),
+]

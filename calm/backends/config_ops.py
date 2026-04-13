@@ -186,3 +186,10 @@ CONFIG_FUNCTIONS = {
     "dotenv_parse_file": dotenv_parse_file,
     "config_keys": config_keys,
 }
+
+CONFIG_NL_PATTERNS = [
+    (r'(?:validate|is valid|check)\s+(?:this\s+)?(?:YAML|yaml)', None),
+    (r'(?:validate|is valid|check)\s+(?:this\s+)?(?:TOML|toml)', None),
+    (r'(?:parse|read)\s+(?:this\s+)?(?:\.env|dotenv|env file)', None),
+    (r'(?:parse|read)\s+(?:this\s+)?(?:INI|ini)\s+(?:file|config)', None),
+]

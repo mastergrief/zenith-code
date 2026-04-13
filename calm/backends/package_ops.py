@@ -182,3 +182,9 @@ PACKAGE_FUNCTIONS = {
     "cargo_info": cargo_info,
     "cargo_list": cargo_list,
 }
+
+PACKAGE_NL_PATTERNS = [
+    (r'(?:pip|pypi)\s+(?:info|show|details)\s+(?:for|about)\s+(\w[\w-]+)', 'pip_info("{0}")'),
+    (r'(?:npm)\s+(?:info|show|details)\s+(?:for|about)\s+(\w[\w-]+)', 'npm_info("{0}")'),
+    (r'(?:cargo|crate)\s+(?:info|show|details)\s+(?:for|about)\s+(\w[\w-]+)', 'cargo_info("{0}")'),
+]

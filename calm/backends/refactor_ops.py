@@ -199,3 +199,9 @@ REFACTOR_FUNCTIONS = {
     "duplicate_blocks": duplicate_blocks,
     "code_smells_file": code_smells_file,
 }
+
+REFACTOR_NL_PATTERNS = [
+    (r'(?:code smells?|anti.?patterns?)\s+(?:in|for)', None),
+    (r'(?:duplicate|duplicated|copy.?paste)\s+(?:code|blocks?)\s+(?:in|for)', None),
+    (r'(?:extract|refactor)\s+(?:candidates?|opportunities)', None),
+]

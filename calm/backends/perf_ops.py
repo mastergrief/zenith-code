@@ -240,3 +240,9 @@ PERF_FUNCTIONS = {
     "memory_estimate": memory_estimate,
     "perf_summary": perf_summary,
 }
+
+PERF_NL_PATTERNS = [
+    (r'(?:what is|estimate|analyze)\s+(?:the\s+)?(?:time\s+)?complexity\s+(?:of|for)', None),
+    (r'(?:how much|estimate)\s+memory\s+(?:does|for|used)', None),
+    (r'(?:how deep|nesting|loop)\s+depth\s+(?:of|in|for)', None),
+]

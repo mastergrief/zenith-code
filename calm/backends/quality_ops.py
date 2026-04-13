@@ -273,3 +273,11 @@ QUALITY_FUNCTIONS = {
     "code_quality": code_quality,
     "code_quality_file": code_quality_file,
 }
+
+QUALITY_NL_PATTERNS = [
+    (r'(?:cyclomatic|code)\s+complexity\s+(?:of|for|in)', None),
+    (r'(?:nesting|indentation)\s+depth\s+(?:of|for|in)', None),
+    (r'(?:function|method)\s+(?:length|size|lines)\s+(?:of|for|in)', None),
+    (r'(?:naming|variable names?)\s+(?:check|quality|convention)', None),
+    (r'(?:dead code|unused)\s+(?:in|for)', None),
+]

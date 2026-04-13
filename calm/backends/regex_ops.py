@@ -89,3 +89,10 @@ REGEX_FUNCTIONS = {
     "regex_validate": regex_validate,
     "regex_count": regex_count,
 }
+
+REGEX_NL_PATTERNS = [
+    (r'(?:does|test|check)\s+["\'](.+?)["\']\s+match\s+(?:the\s+)?(?:regex|pattern)\s+["\'](.+?)["\']', 'regex_test("{0}", "{1}")'),
+    (r'(?:find all|extract)\s+(?:matches\s+)?(?:of\s+)?(?:regex|pattern)\s+["\'](.+?)["\']\s+in\s+["\'](.+?)["\']', 'regex_find_all("{1}", "{0}")'),
+    (r'(?:is)\s+["\'](.+?)["\']\s+(?:a\s+)?valid\s+regex', 'regex_validate("{0}")'),
+    (r'(?:count)\s+(?:matches\s+)?(?:of\s+)?(?:regex|pattern)\s+["\'](.+?)["\']\s+in\s+["\'](.+?)["\']', 'regex_count("{1}", "{0}")'),
+]

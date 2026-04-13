@@ -242,3 +242,10 @@ CONTEXT_FUNCTIONS = {
     "contributor_map": contributor_map,
     "related_changes": related_changes,
 }
+
+CONTEXT_NL_PATTERNS = [
+    (r'(?:why does|why is|purpose of)\s+(?:this\s+)?(?:function|file|class|code)', None),
+    (r'(?:how old|when was|code age)\s+(?:this\s+)?(?:file|function|code)', None),
+    (r'(?:who|which developer|contributor)\s+(?:wrote|owns|maintains)', None),
+    (r'(?:hotspots?|most changed|frequently modified)\s+(?:files?|code)', None),
+]
