@@ -149,6 +149,128 @@ def test_fast_weights_change_output():
         "fast weights produce identical output to disabled — mechanism not wired in"
 
 
+def test_delta_rule_overwrites_same_key():
+    """Round 4: writing (k, v2) after (k, v1) with delta rule must retrieve v2.
+    Without the delta rule, the second write stacks, giving v1+v2."""
+    B, D = 1, 4
+    k = torch.tensor([[1.0, 0.0, 0.0, 0.0]])
+    v1 = torch.tensor([[0.0, 1.0, 0.0, 0.0]])
+    v2 = torch.tensor([[0.0, 0.0, 1.0, 0.0]])
+    zero = torch.zeros(B, D)
+
+    # --- With delta rule: second write overwrites ---
+    W_fast = torch.zeros(B, D, D)
+    W_fast, _ = FastWeightSmall2DTransformer._fast_weight_step(
+        W_fast, zero, k, v1, 1.0, 1.0, use_delta_rule=True,
+    )
+    _, read_after_1 = FastWeightSmall2DTransformer._fast_weight_step(
+        W_fast, k, zero, zero, 1.0, 0.0, use_delta_rule=True,
+    )
+    assert torch.allclose(read_after_1, v1, atol=1e-6), \
+        f"after first write, expected {v1}, got {read_after_1}"
+
+    W_fast, _ = FastWeightSmall2DTransformer._fast_weight_step(
+        W_fast, zero, k, v2, 1.0, 1.0, use_delta_rule=True,
+    )
+    _, read_after_2 = FastWeightSmall2DTransformer._fast_weight_step(
+        W_fast, k, zero, zero, 1.0, 0.0, use_delta_rule=True,
+    )
+    assert torch.allclose(read_after_2, v2, atol=1e-6), \
+        f"delta rule should overwrite: expected {v2}, got {read_after_2}"
+
+    # --- Without delta rule: second write stacks ---
+    W_no = torch.zeros(B, D, D)
+    W_no, _ = FastWeightSmall2DTransformer._fast_weight_step(
+        W_no, zero, k, v1, 1.0, 1.0,
+    )
+    W_no, _ = FastWeightSmall2DTransformer._fast_weight_step(
+        W_no, zero, k, v2, 1.0, 1.0,
+    )
+    _, read_stacked = FastWeightSmall2DTransformer._fast_weight_step(
+        W_no, k, zero, zero, 1.0, 0.0,
+    )
+    assert torch.allclose(read_stacked, v1 + v2, atol=1e-6), \
+        f"without delta, writes stack to {v1+v2}, got {read_stacked}"
+
+
+def test_write_gate_silences_updates():
+    """Round 4: gate=0 silences the update; gate=1 produces the full write."""
+    B, D = 1, 4
+    k = torch.tensor([[1.0, 0.0, 0.0, 0.0]])
+    v = torch.tensor([[0.0, 1.0, 0.0, 0.0]])
+    zero = torch.zeros(B, D)
+    W_fast = torch.zeros(B, D, D)
+
+    # gate=0
+    new_W, _ = FastWeightSmall2DTransformer._fast_weight_step(
+        W_fast, zero, k, v, 1.0, 1.0, write_gate=torch.zeros(B),
+    )
+    assert torch.allclose(new_W, torch.zeros(B, D, D), atol=1e-6), \
+        "gate=0 must fully silence the write"
+
+    # gate=1
+    new_W, _ = FastWeightSmall2DTransformer._fast_weight_step(
+        W_fast, zero, k, v, 1.0, 1.0, write_gate=torch.ones(B),
+    )
+    expected = torch.einsum("bi,bj->bij", v, k)
+    assert torch.allclose(new_W, expected, atol=1e-6), \
+        "gate=1 must produce full Schlag write"
+
+    # gate=0.5 scales linearly
+    new_W, _ = FastWeightSmall2DTransformer._fast_weight_step(
+        W_fast, zero, k, v, 1.0, 1.0, write_gate=torch.full((B,), 0.5),
+    )
+    assert torch.allclose(new_W, 0.5 * expected, atol=1e-6), \
+        "gate should scale update linearly"
+
+
+def test_gate_mlp_created_only_when_configured():
+    """Round 4: gate_mlp module is added ONLY when use_write_gate=True.
+    Ensures state_dict compat with parent for the disabled case."""
+    cfg_off = FastWeightConfig(
+        vocab_size=16, d_model=8, n_heads=4, n_layers=2, d_ffn=8,
+        max_len=10, use_write_gate=False,
+    )
+    cfg_on = FastWeightConfig(
+        vocab_size=16, d_model=8, n_heads=4, n_layers=2, d_ffn=8,
+        max_len=10, use_write_gate=True, gate_hidden=16,
+    )
+    m_off = FastWeightSmall2DTransformer(cfg_off)
+    m_on = FastWeightSmall2DTransformer(cfg_on)
+    assert not hasattr(m_off, "gate_mlp"), \
+        "gate_mlp must not exist when use_write_gate=False"
+    assert hasattr(m_on, "gate_mlp"), \
+        "gate_mlp must exist when use_write_gate=True"
+    assert len(m_on.gate_mlp) == cfg_on.n_layers, \
+        "one gate MLP per layer"
+
+
+def test_round4_forward_runs_and_differs():
+    """Round 4: model with delta+gate forward runs without error and
+    produces output different from plain fast weights."""
+    torch.manual_seed(0)
+    cfg_plain = FastWeightConfig(
+        vocab_size=16, d_model=8, n_heads=4, n_layers=2, d_ffn=8, max_len=10,
+        lambda_decay=0.9, eta_write=0.5, use_fast_weights=True,
+    )
+    cfg_r4 = FastWeightConfig(
+        vocab_size=16, d_model=8, n_heads=4, n_layers=2, d_ffn=8, max_len=10,
+        lambda_decay=0.9, eta_write=0.5, use_fast_weights=True,
+        use_delta_rule=True, use_write_gate=True, gate_hidden=8,
+    )
+    m_plain = FastWeightSmall2DTransformer(cfg_plain)
+    m_r4 = FastWeightSmall2DTransformer(cfg_r4)
+    # Load shared base params so only delta+gate differ the output.
+    m_r4.load_state_dict(m_plain.state_dict(), strict=False)
+
+    x = torch.randint(0, 16, (2, 7))
+    with torch.no_grad():
+        out_plain = m_plain(x)
+        out_r4 = m_r4(x)
+    assert not torch.allclose(out_plain, out_r4, atol=1e-5), \
+        "Round 4 forward should differ from plain fast weights"
+
+
 if __name__ == "__main__":
     test_disabled_matches_vanilla()
     print("[ok] disabled subclass matches vanilla bitwise")
@@ -160,3 +282,11 @@ if __name__ == "__main__":
     print("[ok] per-batch state is independent")
     test_fast_weights_change_output()
     print("[ok] enabled fast weights do change output vs disabled")
+    test_delta_rule_overwrites_same_key()
+    print("[ok] Round 4 delta rule overwrites same-key bindings")
+    test_write_gate_silences_updates()
+    print("[ok] Round 4 gate silences / scales writes")
+    test_gate_mlp_created_only_when_configured()
+    print("[ok] Round 4 gate MLPs only exist when use_write_gate=True")
+    test_round4_forward_runs_and_differs()
+    print("[ok] Round 4 forward runs and output differs from plain FW")
