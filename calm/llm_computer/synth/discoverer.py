@@ -89,13 +89,22 @@ class Discoverer:
         return out
 
     @staticmethod
-    def _validate(candidate: str, sample: SynthSample) -> Optional[int]:
-        """Validate candidate on all IO pairs. Returns the answer on the query
-        if passing; None otherwise."""
-        all_pairs = list(sample.examples) + [
-            (sample.query_a, sample.query_b, sample.query_out)
-        ]
-        for a_val, b_val, expected in all_pairs:
+    def _validate(candidate: str, sample: SynthSample,
+                   require_query: bool = True) -> Optional[int]:
+        """Validate candidate against IO pairs. Returns query answer if passing.
+
+        require_query=True (default): candidate must also produce
+          sample.query_out on (query_a, query_b). This is the strict
+          selection mode used during library training/evaluation.
+        require_query=False: only validate on the example IO pairs; use
+          the candidate's computed value at the query as the answer.
+          This is the user-facing inference mode where the query answer
+          is unknown until we compute it.
+        """
+        pairs = list(sample.examples)
+        if require_query:
+            pairs = pairs + [(sample.query_a, sample.query_b, sample.query_out)]
+        for a_val, b_val, expected in pairs:
             try:
                 expr_concrete = (candidate
                                  .replace("a", str(a_val))
@@ -108,8 +117,17 @@ class Discoverer:
                     return None
             except (ParseError, InterpreterError, ValueError):
                 return None
-        # All pairs passed — return the query answer (which we already computed).
-        return sample.query_out
+        # Examples passed; compute the query answer with this program.
+        try:
+            expr_q = (candidate
+                       .replace("a", str(sample.query_a))
+                       .replace("b", str(sample.query_b)))
+            val = interpret(parse_expression(expr_q))
+            if isinstance(val, float) and val == int(val):
+                val = int(val)
+            return val
+        except (ParseError, InterpreterError, ValueError):
+            return None
 
     @staticmethod
     def _signature(sample: SynthSample) -> str:
@@ -118,13 +136,23 @@ class Discoverer:
         behavior on a canonical probe set)."""
         return sample.template
 
-    def solve(self, sample: SynthSample) -> DiscoveryResult:
+    def solve(self, sample: SynthSample,
+              require_query: bool = True) -> DiscoveryResult:
+        """Solve the task — library lookup, else synth + mutation.
+
+        require_query controls whether the validator checks the query
+        output against `sample.query_out`. Strict mode (True) is used
+        in training/eval when the ground truth is known; permissive
+        mode (False) is used at inference when the user supplies only
+        examples + a query without its answer.
+        """
         key = self._signature(sample)
 
         # (1) Library lookup
         entry = self.library.lookup(key)
         if entry is not None:
-            answer = self._validate(entry.expression, sample)
+            answer = self._validate(entry.expression, sample,
+                                     require_query=require_query)
             return DiscoveryResult(
                 hit=True,
                 expression=entry.expression,
@@ -140,7 +168,7 @@ class Discoverer:
             cands = self._sample(sample, temperature=temp, n=n)
             total_sampled += len(cands)
             for c in cands:
-                ans = self._validate(c, sample)
+                ans = self._validate(c, sample, require_query=require_query)
                 if ans is not None:
                     entry = self.library.register(key, c)
                     return DiscoveryResult(
