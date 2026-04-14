@@ -226,8 +226,13 @@ def _apply_reglu(model: Small2DTransformer, node: ReGLU, cfg: Small2DConfig,
 
 
 def _apply_linear_head(model: Small2DTransformer, node: LinearHead) -> None:
+    # Accumulate like ReGLU — multiple program-level contributions to the
+    # same logit slot must sum, not overwrite. Programs with unique entries
+    # (add_one, adder, adder_tiny, threshold, read_by_key) are unaffected;
+    # programs that naturally collide (gcd and other binary-LUTs where
+    # several input pairs share an output value) rely on this accumulation.
     for k, ch, coef in node.entries:
-        model.head.weight[k, ch] = coef
+        model.head.weight[k, ch] += coef
 
 
 # ----- backward-compat: pre-session-26 API (add_one still uses this) --
