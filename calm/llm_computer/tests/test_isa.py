@@ -9,14 +9,14 @@ from __future__ import annotations
 import torch
 
 from calm.llm_computer.programs.isa import (
-    DEC, HALT, INC, V_MAX, VOCAB,
+    DBL, DEC, HALT, HLT, INC, OPCODES, V_MAX, VOCAB,
     build_isa, run_isa, simulate_expected,
 )
 
 
 def test_isa_compiles_small():
     model = build_isa()
-    assert model.param_count() < 20_000, model.param_count()
+    assert model.param_count() < 50_000, model.param_count()
 
 
 def test_isa_inc_exhaustive():
@@ -31,6 +31,29 @@ def test_isa_dec_exhaustive():
     for v in range(V_MAX + 1):
         seq = run_isa(DEC, v, model=model)
         assert seq == simulate_expected(DEC, v), (v, seq)
+
+
+def test_isa_dbl_exhaustive():
+    model = build_isa()
+    for v in range(V_MAX + 1):
+        seq = run_isa(DBL, v, model=model)
+        assert seq == simulate_expected(DBL, v), (v, seq)
+
+
+def test_isa_hlt_immediate():
+    """HLT opcode halts on the very first output regardless of v."""
+    model = build_isa()
+    for v in range(V_MAX + 1):
+        seq = run_isa(HLT, v, model=model)
+        assert seq[2] == HALT, (v, seq)
+
+
+def test_isa_all_opcodes_exhaustive():
+    """All (op, v) pairs produce correct traces."""
+    model = build_isa()
+    for op in OPCODES:
+        for v in range(V_MAX + 1):
+            assert run_isa(op, v, model=model) == simulate_expected(op, v)
 
 
 def test_isa_halts_at_boundary():

@@ -36,13 +36,16 @@ from calm.llm_computer.schedule import auto_schedule
 
 
 V_MAX = 7          # accumulator range [0, V_MAX]
-INC = 8            # opcode token
-DEC = 9            # opcode token
-HALT = 10
-VOCAB = 11         # 0..V_MAX + INC, DEC, HALT
+INC = 8            # opcode: accumulator += 1 (HALT at V_MAX)
+DEC = 9            # opcode: accumulator -= 1 (HALT at 0)
+DBL = 10           # opcode: accumulator *= 2 (HALT if overflow OR acc == 0)
+HLT = 11           # opcode: immediately emit HALT
+HALT = 11          # terminator token (same token as HLT opcode — reused)
+VOCAB = 12         # 0..V_MAX + INC, DEC, DBL, HLT
 
-N_OPCODES = 2
-KEY_MAX = (V_MAX + 1) * N_OPCODES - 1   # 15 for V_MAX=7, N_OPCODES=2
+N_OPCODES = 4
+OPCODES = (INC, DEC, DBL, HLT)
+KEY_MAX = (V_MAX + 1) * N_OPCODES - 1   # 31 for V_MAX=7, N_OPCODES=4
 
 
 def _target_token(v: int, op: int) -> int:
@@ -51,6 +54,13 @@ def _target_token(v: int, op: int) -> int:
         return v + 1 if v < V_MAX else HALT
     if op == DEC:
         return v - 1 if v > 0 else HALT
+    if op == DBL:
+        # HALT at v=0 (no progress) or overflow
+        if v == 0 or 2 * v > V_MAX:
+            return HALT
+        return 2 * v
+    if op == HLT:
+        return HALT
     raise ValueError(op)
 
 
@@ -119,7 +129,7 @@ def build_isa(max_len: int = 32) -> Small2DTransformer:
     # logits[_target_token(v, op)] += step_k - step_{k+1}.
     head_entries = []
     for v in range(V_MAX + 1):
-        for i, op in enumerate((INC, DEC)):
+        for i, op in enumerate(OPCODES):
             k = N_OPCODES * v + i
             target = _target_token(v, op)
             head_entries.append((target, 4 + k, 1.0))
@@ -144,7 +154,7 @@ def build_isa(max_len: int = 32) -> Small2DTransformer:
 def run_isa(op: int, start_value: int, max_steps: int = 30, model=None):
     """Execute ISA via autoregressive loop. Returns full token trace."""
     import torch
-    if op not in (INC, DEC):
+    if op not in OPCODES:
         raise ValueError(f"unsupported opcode: {op}")
     if not (0 <= start_value <= V_MAX):
         raise ValueError(f"start_value must be in [0, {V_MAX}], got {start_value}")
@@ -181,7 +191,7 @@ if __name__ == "__main__":
           f"{N_OPCODES} opcodes × [0, {V_MAX}] = {(V_MAX + 1) * N_OPCODES} (v, op) pairs")
 
     all_ok = True
-    for op, op_name in ((INC, "INC"), (DEC, "DEC")):
+    for op, op_name in ((INC, "INC"), (DEC, "DEC"), (DBL, "DBL"), (HLT, "HLT")):
         for v in range(V_MAX + 1):
             seq = run_isa(op, v, model=model)
             expected = simulate_expected(op, v)
