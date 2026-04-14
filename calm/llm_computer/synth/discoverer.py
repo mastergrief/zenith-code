@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Iterable
 
 import torch
 
@@ -130,37 +130,68 @@ class Discoverer:
             return None
 
     @staticmethod
+    def _canonical(expression: str) -> str:
+        """Strip whitespace so 'a + b' and 'a+b' hash to the same key."""
+        return expression.replace(" ", "")
+
+    @staticmethod
     def _signature(sample: SynthSample) -> str:
-        """The library key. For Family A we use the known template; in
-        production we'd derive a signature from IO alone (e.g., hash of
-        behavior on a canonical probe set)."""
+        """Legacy template signature — used only when the caller has ground
+        truth (training/eval). Conversational callers must use behavior
+        matching via _find_library_match instead."""
         return sample.template
 
+    def _find_library_match(self, sample: SynthSample,
+                             require_query: bool) -> Optional[Tuple[str, str]]:
+        """Iterate library; return (key, expression) for the first entry
+        whose stored program satisfies all of sample's IO pairs. O(|library|)
+        but N is small in practice."""
+        for entry in self.library:
+            if self._validate(entry.expression, sample,
+                               require_query=require_query) is not None:
+                entry.times_invoked += 1
+                return entry.key, entry.expression
+        return None
+
     def solve(self, sample: SynthSample,
-              require_query: bool = True) -> DiscoveryResult:
+              require_query: bool = True,
+              use_behavior_match: bool = False) -> DiscoveryResult:
         """Solve the task — library lookup, else synth + mutation.
 
-        require_query controls whether the validator checks the query
-        output against `sample.query_out`. Strict mode (True) is used
-        in training/eval when the ground truth is known; permissive
-        mode (False) is used at inference when the user supplies only
-        examples + a query without its answer.
+        Three modes:
+          - require_query=True, use_behavior_match=False: legacy template
+            signature + strict query validation. Used in training/eval.
+          - require_query=False, use_behavior_match=True: user-facing chat.
+            Iterates library, validates each entry on the examples only,
+            returns the first match. New programs register under their
+            canonical expression as the key so behaviorally-equivalent
+            programs dedupe naturally.
+          - require_query=False, use_behavior_match=False: example-only
+            validation but template-keyed library (original chat behavior,
+            kept for backwards compat).
         """
-        key = self._signature(sample)
-
-        # (1) Library lookup
-        entry = self.library.lookup(key)
-        if entry is not None:
-            answer = self._validate(entry.expression, sample,
-                                     require_query=require_query)
-            return DiscoveryResult(
-                hit=True,
-                expression=entry.expression,
-                answer=answer,
-                attempts=0,
-                candidates_sampled=0,
-                library_size=len(self.library),
-            )
+        # (1) Library lookup — behavior-match or by-template
+        if use_behavior_match:
+            hit = self._find_library_match(sample, require_query=require_query)
+            if hit is not None:
+                _, expr = hit
+                ans = self._validate(expr, sample, require_query=require_query)
+                return DiscoveryResult(
+                    hit=True, expression=expr, answer=ans,
+                    attempts=0, candidates_sampled=0,
+                    library_size=len(self.library),
+                )
+        else:
+            key = self._signature(sample)
+            entry = self.library.lookup(key)
+            if entry is not None:
+                answer = self._validate(entry.expression, sample,
+                                         require_query=require_query)
+                return DiscoveryResult(
+                    hit=True, expression=entry.expression, answer=answer,
+                    attempts=0, candidates_sampled=0,
+                    library_size=len(self.library),
+                )
 
         # (2) Discover via mutation schedule
         total_sampled = 0
@@ -170,11 +201,20 @@ class Discoverer:
             for c in cands:
                 ans = self._validate(c, sample, require_query=require_query)
                 if ans is not None:
-                    entry = self.library.register(key, c)
+                    canon = self._canonical(c)
+                    reg_key = canon if use_behavior_match else self._signature(sample)
+                    # Dedup: if canon already in library, just reuse existing entry.
+                    if use_behavior_match and canon in self.library:
+                        existing = self.library.lookup(canon)
+                        return DiscoveryResult(
+                            hit=True, expression=existing.expression, answer=ans,
+                            attempts=attempt_idx,
+                            candidates_sampled=total_sampled,
+                            library_size=len(self.library),
+                        )
+                    self.library.register(reg_key, c)
                     return DiscoveryResult(
-                        hit=False,
-                        expression=c,
-                        answer=ans,
+                        hit=False, expression=c, answer=ans,
                         attempts=attempt_idx,
                         candidates_sampled=total_sampled,
                         library_size=len(self.library),
@@ -182,9 +222,7 @@ class Discoverer:
 
         # (3) All attempts failed
         return DiscoveryResult(
-            hit=False,
-            expression=None,
-            answer=None,
+            hit=False, expression=None, answer=None,
             attempts=len(MUTATION_SCHEDULE),
             candidates_sampled=total_sampled,
             library_size=len(self.library),

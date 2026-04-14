@@ -24,7 +24,6 @@ the CRLM substrate.
 
 from __future__ import annotations
 
-import re
 import sys
 from pathlib import Path
 
@@ -34,43 +33,9 @@ from calm.hrm.dispatcher import DEFAULT_ROUTER_CKPT, Dispatcher
 from calm.llm_computer.programs.isa import (
     DBL, DEC, HALT, HLT, INC, run_isa,
 )
-from calm.llm_computer.synth.data import SynthSample
 from calm.llm_computer.synth.discoverer import Discoverer
 from calm.llm_computer.synth.infer import SynthFamilyAReasoner
-
-
-IO_RE = re.compile(
-    r"a=(-?\d+)\s+b=(-?\d+)\s*:\s*(-?\d+)",
-)
-QUERY_RE = re.compile(
-    r"\?\s*a=(-?\d+)\s+b=(-?\d+)",
-)
-
-
-def _parse_io_task(text: str):
-    """Parse 'a=3 b=5: 8 | a=2 b=7: 9 | ... | ? a=4 b=6' into a SynthSample."""
-    pairs = []
-    query = None
-    for part in text.split("|"):
-        part = part.strip()
-        m_q = QUERY_RE.search(part)
-        if m_q:
-            query = (int(m_q.group(1)), int(m_q.group(2)))
-            continue
-        m = IO_RE.search(part)
-        if m:
-            pairs.append((int(m.group(1)), int(m.group(2)), int(m.group(3))))
-    if len(pairs) >= 3 and query is not None:
-        qa, qb = query
-        # query_out is unknown at chat time — the discoverer will compute it
-        # from the first valid program. We pass a sentinel 0 and ignore the
-        # validator's use of it (caller accepts the answer the model gives).
-        return SynthSample(
-            template="<user>",
-            examples=pairs[:3],
-            query_a=qa, query_b=qb, query_out=0,  # sentinel
-        )
-    return None
+from calm.llm_computer.synth.nl_io import parse_nl_io
 
 
 OP_NAMES = {"INC": INC, "DEC": DEC, "DBL": DBL, "HLT": HLT}
@@ -91,6 +56,8 @@ def main():
 
     print("[crlm-chat] ready. Type a question, IO task, or !help.\n")
 
+    last_failed_sample = None
+
     while True:
         try:
             text = input("> ").strip()
@@ -103,7 +70,34 @@ def main():
             print("[bye]")
             break
         if text == "!help":
-            print("commands: !library | !isa <OP> <V> | !quit")
+            print("commands: !library | !isa <OP> <V> | !correct <expr> | !quit")
+            print("tips:")
+            print("  NL arithmetic task: '3 and 5 give 8, 2 and 7 give 9, ... what about 4 and 6?'")
+            print("  IO-style task:      'a=3 b=5: 8 | a=2 b=7: 9 | ? a=4 b=6'")
+            print("  single-argument:    '8 becomes 4, 6 becomes 3, ... what about 14?'")
+            print("  natural math:       'what is 347 times 289'")
+            continue
+        if text.startswith("!correct "):
+            if last_failed_sample is None:
+                print("  nothing to correct — no recent failure")
+                continue
+            expr = text[len("!correct "):].strip()
+            if discoverer is None:
+                print("  discoverer unavailable")
+                continue
+            # Validate user-taught expression against the examples.
+            ans = discoverer._validate(expr, last_failed_sample,
+                                        require_query=False)
+            if ans is None:
+                print(f"  {expr!r} doesn't match all examples — rejecting")
+                continue
+            canon = discoverer._canonical(expr)
+            discoverer.library.register(canon, expr)
+            q_shown = (f"{last_failed_sample.query_a},{last_failed_sample.query_b}"
+                        if last_failed_sample.query_b != 0
+                        else f"{last_failed_sample.query_a}")
+            print(f"  [TAUGHT] registered {expr!r} in library; query {q_shown} = {ans}")
+            last_failed_sample = None
             continue
         if text == "!library":
             if discoverer is None:
@@ -135,19 +129,27 @@ def main():
             print(f"  [isa {op_name}] {trace}")
             continue
 
-        # IO-example task?
-        if discoverer is not None and "|" in text and "?" in text:
-            sample = _parse_io_task(text)
+        # IO-example or NL IO task? Parse via NL parser (handles both).
+        if discoverer is not None:
+            sample = parse_nl_io(text)
             if sample is not None:
                 # User doesn't know the query answer — validate on examples only.
-                r = discoverer.solve(sample, require_query=False)
+                # Use behavior matching so equivalent programs dedupe.
+                r = discoverer.solve(sample, require_query=False,
+                                      use_behavior_match=True)
                 tag = "LIBRARY" if r.hit else "DISCOVERED"
                 if r.answer is None:
+                    last_failed_sample = sample
                     print(f"  [{tag}] failed after {r.attempts} mutation attempts "
-                          f"({r.candidates_sampled} samples)")
+                          f"({r.candidates_sampled} samples). "
+                          f"Teach me with: !correct <expression>")
                 else:
+                    last_failed_sample = None
+                    q_shown = (f"{sample.query_a},{sample.query_b}"
+                                if sample.query_b != 0
+                                else f"{sample.query_a}")
                     print(f"  [{tag}] program={r.expression!r} → "
-                          f"{sample.query_a},{sample.query_b} = {r.answer}")
+                          f"{q_shown} = {r.answer}")
                 continue
 
         # Fall through: natural language via dispatcher.
