@@ -30,12 +30,26 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Optional
+
+
+# RouterHRM always picks one of its 5 labels — no "unknown" class. Without a
+# gate at the REPL layer, open-ended inputs like "hello?" get force-classified
+# as math and the specialist hallucinates a plausible expression. Cheap
+# heuristic: only try CHRLM when the input contains a digit or an arithmetic
+# symbol. This keeps legitimate math / NL-number queries going through CHRLM
+# while sending open-ended language straight to Gemma.
+_COMPUTATIONAL_HINT = re.compile(r"[\d+\-*/=×÷^%]")
+
+
+def looks_computational(text: str) -> bool:
+    return bool(_COMPUTATIONAL_HINT.search(text))
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -87,12 +101,27 @@ def gemma_chat(messages: list[dict], temperature: float = 0.7,
 
 
 def try_chrlm(dispatcher, text: str) -> Optional[dict]:
-    """Return {label, expression, answer} if CHRLM handled; else None."""
+    """Return {label, expression, answer} if CHRLM handled; else None.
+
+    Gates on `looks_computational` first — RouterHRM has no 'unknown' class,
+    so open-ended inputs otherwise get force-classified and hallucinate
+    plausible expressions. We only route to CHRLM when the input contains
+    a digit or arithmetic symbol.
+    """
+    if not looks_computational(text):
+        return None
     try:
         result = dispatcher.run(text)
-    except Exception as e:
+    except Exception:
         return None
-    if result.answer is None:
+    if result.answer is None or not str(result.answer).strip() or result.answer == "?":
+        return None
+    # Sanity check: the verified answer should be numeric-looking. The NL
+    # specialists emit arithmetic expressions whose interpreter output is
+    # always a number. If it's anything else, the specialist misparsed.
+    try:
+        float(str(result.answer).replace(",", ""))
+    except ValueError:
         return None
     return {
         "label": result.label,
