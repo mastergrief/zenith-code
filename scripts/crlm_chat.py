@@ -24,18 +24,38 @@ the CRLM substrate.
 
 from __future__ import annotations
 
+import json
 import sys
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from pathlib import Path
+from typing import List, Optional
 
 import torch
 
 from calm.hrm.dispatcher import DEFAULT_ROUTER_CKPT, Dispatcher
+from calm.llm_computer.interpret import interpret
+from calm.llm_computer.parse import parse_expression
 from calm.llm_computer.programs.isa import (
     DBL, DEC, HALT, HLT, INC, run_isa,
 )
 from calm.llm_computer.synth.discoverer import Discoverer
 from calm.llm_computer.synth.infer import SynthFamilyAReasoner
 from calm.llm_computer.synth.nl_io import parse_nl_io
+
+
+TRANSCRIPT_PATH = Path("calm/llm_computer/synth/chat_transcript.jsonl")
+
+
+@dataclass
+class Turn:
+    """One exchange: user input + system response metadata, serializable."""
+    timestamp: str
+    user_input: str
+    kind: str            # 'dispatcher' | 'discover' | 'library' | 'isa' | 'command'
+    response: str        # human-readable answer
+    program: Optional[str] = None   # expression if applicable
+    label: Optional[str] = None     # router label if dispatcher
 
 
 OP_NAMES = {"INC": INC, "DEC": DEC, "DBL": DBL, "HLT": HLT}
@@ -54,9 +74,46 @@ def main():
     if discoverer_ckpt.exists():
         discoverer = Discoverer(SynthFamilyAReasoner(str(discoverer_ckpt)))
 
+    # Load prior transcript if exists (cross-session context).
+    history: List[Turn] = []
+    if TRANSCRIPT_PATH.exists():
+        with TRANSCRIPT_PATH.open() as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    history.append(Turn(**json.loads(line)))
+                except (json.JSONDecodeError, TypeError):
+                    continue
+    if history:
+        print(f"[crlm-chat] loaded {len(history)} prior turns from transcript "
+              f"(last: {history[-1].timestamp})")
     print("[crlm-chat] ready. Type a question, IO task, or !help.\n")
 
     last_failed_sample = None
+    last_program = None       # most recently-used program expression
+    last_label = None         # most recent router label
+    # Restore last_program/last_label from history so !repeat works across sessions.
+    for t in reversed(history):
+        if t.program is not None and last_program is None:
+            last_program = t.program
+        if t.label is not None and last_label is None:
+            last_label = t.label
+        if last_program is not None and last_label is not None:
+            break
+
+    def _record(kind, user_input, response, program=None, label=None):
+        turn = Turn(
+            timestamp=datetime.utcnow().isoformat(timespec="seconds"),
+            user_input=user_input, kind=kind, response=response,
+            program=program, label=label,
+        )
+        history.append(turn)
+        TRANSCRIPT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with TRANSCRIPT_PATH.open("a") as f:
+            f.write(json.dumps(asdict(turn)) + "\n")
+        return turn
 
     while True:
         try:
@@ -70,12 +127,49 @@ def main():
             print("[bye]")
             break
         if text == "!help":
-            print("commands: !library | !isa <OP> <V> | !correct <expr> | !quit")
+            print("commands: !library | !isa <OP> <V> | !correct <expr> | "
+                  "!history | !repeat a=X b=Y | !quit")
             print("tips:")
             print("  NL arithmetic task: '3 and 5 give 8, 2 and 7 give 9, ... what about 4 and 6?'")
             print("  IO-style task:      'a=3 b=5: 8 | a=2 b=7: 9 | ? a=4 b=6'")
             print("  single-argument:    '8 becomes 4, 6 becomes 3, ... what about 14?'")
             print("  natural math:       'what is 347 times 289'")
+            print("  follow-up:          '!repeat a=7 b=2' reuses last program")
+            continue
+        if text == "!history":
+            if not history:
+                print("  (no history)")
+            else:
+                recent = history[-10:]
+                print(f"  showing last {len(recent)} turns (total: {len(history)}):")
+                for t in recent:
+                    short = t.user_input if len(t.user_input) < 50 else t.user_input[:47] + "..."
+                    print(f"    [{t.kind:<10}] {short:<52} → {t.response}")
+            continue
+        if text.startswith("!repeat "):
+            if last_program is None:
+                print("  no previous program to repeat")
+                continue
+            rest = text[len("!repeat "):].strip()
+            import re as _re
+            m = _re.match(r"a\s*=\s*(-?\d+)(?:\s+b\s*=\s*(-?\d+))?", rest)
+            if m is None:
+                print("  usage: !repeat a=X [b=Y]")
+                continue
+            qa = int(m.group(1))
+            qb = int(m.group(2)) if m.group(2) else 0
+            try:
+                concrete = (last_program
+                            .replace("a", str(qa))
+                            .replace("b", str(qb)))
+                val = interpret(parse_expression(concrete))
+                if isinstance(val, float) and val == int(val):
+                    val = int(val)
+                response = f"[REPEAT] program={last_program!r} → {qa},{qb} = {val}"
+                print(f"  {response}")
+                _record("library", text, response, program=last_program)
+            except Exception as e:
+                print(f"  error: {e}")
             continue
         if text.startswith("!correct "):
             if last_failed_sample is None:
@@ -127,6 +221,7 @@ def main():
                 "HALT" if t == HALT else str(t) for t in seq[1:]
             )
             print(f"  [isa {op_name}] {trace}")
+            _record("isa", text, trace)
             continue
 
         # IO-example or NL IO task? Parse via NL parser (handles both).
@@ -140,16 +235,22 @@ def main():
                 tag = "LIBRARY" if r.hit else "DISCOVERED"
                 if r.answer is None:
                     last_failed_sample = sample
-                    print(f"  [{tag}] failed after {r.attempts} mutation attempts "
-                          f"({r.candidates_sampled} samples). "
-                          f"Teach me with: !correct <expression>")
+                    response = (f"[{tag}] failed after {r.attempts} attempts "
+                                f"({r.candidates_sampled} samples). "
+                                f"Teach me with: !correct <expression>")
+                    print(f"  {response}")
+                    _record("discover", text, response)
                 else:
                     last_failed_sample = None
+                    last_program = r.expression
                     q_shown = (f"{sample.query_a},{sample.query_b}"
                                 if sample.query_b != 0
                                 else f"{sample.query_a}")
-                    print(f"  [{tag}] program={r.expression!r} → "
-                          f"{q_shown} = {r.answer}")
+                    response = (f"[{tag}] program={r.expression!r} → "
+                                f"{q_shown} = {r.answer}")
+                    print(f"  {response}")
+                    _record("discover" if not r.hit else "library", text,
+                             response, program=r.expression)
                 continue
 
         # Fall through: natural language via dispatcher.
@@ -158,9 +259,15 @@ def main():
             label = result.label
             ans = result.answer or "(parse failed)"
             expr = result.expression or "(none)"
-            print(f"  [{label}] {expr} = {ans}")
+            response = f"[{label}] {expr} = {ans}"
+            print(f"  {response}")
+            last_program = result.expression
+            last_label = label
+            _record("dispatcher", text, response, program=result.expression,
+                     label=label)
         except Exception as e:
             print(f"  [error] {e}")
+            _record("error", text, str(e))
 
 
 if __name__ == "__main__":
