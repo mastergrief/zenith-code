@@ -23,6 +23,7 @@ from calm.llm_computer.programs.copy_past import build_copy_past
 from calm.llm_computer.programs.copy_past_ir import build_copy_past_ir
 from calm.llm_computer.programs.increment_counter import build_increment_counter
 from calm.llm_computer.programs.increment_counter_ir import build_increment_counter_ir
+from calm.llm_computer.programs.retrieve_by_index import build_retrieve_by_index
 from calm.llm_computer.programs.threshold import build_threshold
 from calm.llm_computer.programs.threshold_ir import build_threshold_ir
 
@@ -97,6 +98,25 @@ def test_copy_past_behavioral_match():
             f"copy_past mismatch at input={inp}"
 
 
+def test_retrieve_by_index_parabolic_keys():
+    """Parabolic-key LookUpExact: at the last position, retrieve the
+    token whose value was stored at input position `query_idx`.
+    Validates RESEARCH/02 §5's key construction."""
+    V = 4
+    N = 4  # 4 values stored at positions 0..3, query at position 4
+    model = build_retrieve_by_index(vocab_size=V, max_len=N + 1)
+    # All (values-permutation, query_idx) combinations.
+    import itertools
+    for values in itertools.product(range(V), repeat=N):
+        for q in range(N):
+            inp = list(values) + [q]
+            x = torch.tensor([inp], dtype=torch.long)
+            with torch.no_grad():
+                got = int(model(x)[0, N].argmax().item())
+            assert got == values[q], \
+                f"retrieve_by_index: values={values} q={q} got={got} exp={values[q]}"
+
+
 def test_adder_tiny_compositional():
     """1-digit adder composing LookUp + ReGLU. a, b in [0, 3]."""
     model = build_adder_tiny(vocab_size=8, max_len=4)
@@ -143,4 +163,6 @@ if __name__ == "__main__":
     print("[ok] copy_past weight diff is documented")
     test_adder_tiny_compositional()
     print("[ok] adder_tiny compositional (1-digit adder, 16 cases)")
-    print("\noverall: PASS (all 4 primitives + 1-digit adder compile from IR)")
+    test_retrieve_by_index_parabolic_keys()
+    print("[ok] retrieve_by_index parabolic keys (V=4, 256 combinations)")
+    print("\noverall: PASS (4 primitives + adder + LookUpExact all compile from IR)")

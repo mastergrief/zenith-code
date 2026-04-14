@@ -28,8 +28,8 @@ from typing import Optional, Sequence
 import torch
 
 from calm.llm_computer.gate_graph import (
-    ChannelLC, GateGraph, LinearHead, LookUp, Node, PosEmbed, ReGLU,
-    TokenEmbed, TokenInput, TokenOutput,
+    ChannelLC, GateGraph, LinearHead, LookUp, LookUpExact, Node, PosEmbed,
+    ReGLU, TokenEmbed, TokenInput, TokenOutput,
 )
 from calm.llm_computer.model import Small2DConfig, Small2DTransformer
 
@@ -86,6 +86,8 @@ def compile_program(
                 _apply_pos_embed(model, node)
             elif isinstance(node, LookUp):
                 _apply_lookup(model, node, cfg, head_counts)
+            elif isinstance(node, LookUpExact):
+                _apply_lookup_exact(model, node, cfg, head_counts)
             elif isinstance(node, ReGLU):
                 _apply_reglu(model, node, cfg, reglu_counts)
             elif isinstance(node, LinearHead):
@@ -145,6 +147,56 @@ def _apply_lookup(model: Small2DTransformer, node: LookUp, cfg: Small2DConfig,
                 f"LookUp at layer {node.layer}: head {head_idx} >= n_heads {cfg.n_heads}"
             )
         model.W_qkv[node.layer].weight[v_chunk_start + 2 * head_idx, src_ch] = 1.0
+        model.W_out[node.layer].weight[out_ch, 2 * head_idx] = 1.0
+        head_counts[node.layer] += 1
+
+
+def _apply_lookup_exact(model: Small2DTransformer, node: LookUpExact,
+                         cfg: Small2DConfig, head_counts: list) -> None:
+    """Parabolic-key attention: q · k_j = key² - (j - key)², argmax at j=key.
+
+    One head per `(value_source, out_channel)` pair. Per-head wiring:
+      - q[0] = residual[query_key_channel]
+      - q[1] = residual[bias_channel]                 (constant 1)
+      - k[0] = residual[pos_key0_channel]             (carries 2p)
+      - k[1] = residual[pos_key1_channel]             (carries -p²)
+      - v[0] = residual[value_source_channel]
+      - W_out[out_channel, 2*head_idx] = 1.0          (route attn[0] out)
+
+    d_head = 2 is the paper's architectural constraint, enforced in
+    `compile_program`.
+    """
+    if len(node.value_source_channels) != len(node.out_channels):
+        raise ValueError(
+            f"LookUpExact: value_source_channels "
+            f"({len(node.value_source_channels)}) and out_channels "
+            f"({len(node.out_channels)}) must match"
+        )
+    D = cfg.d_model
+    q_start = 0
+    k_start = D
+    v_start = 2 * D
+    for v_src, out_ch in zip(node.value_source_channels, node.out_channels):
+        head_idx = head_counts[node.layer]
+        if head_idx >= cfg.n_heads:
+            raise ValueError(
+                f"LookUpExact at layer {node.layer}: head {head_idx} >= "
+                f"n_heads {cfg.n_heads}"
+            )
+        # q projection.
+        model.W_qkv[node.layer].weight[q_start + 2 * head_idx + 0,
+                                        node.query_key_channel] = 1.0
+        model.W_qkv[node.layer].weight[q_start + 2 * head_idx + 1,
+                                        node.bias_channel] = 1.0
+        # k projection (parabolic keys read from pos_embed channels).
+        model.W_qkv[node.layer].weight[k_start + 2 * head_idx + 0,
+                                        node.pos_key0_channel] = 1.0
+        model.W_qkv[node.layer].weight[k_start + 2 * head_idx + 1,
+                                        node.pos_key1_channel] = 1.0
+        # v projection: pulls the requested value channel into v[0].
+        model.W_qkv[node.layer].weight[v_start + 2 * head_idx + 0,
+                                        v_src] = 1.0
+        # W_out: route attn[2*head] → out_ch.
         model.W_out[node.layer].weight[out_ch, 2 * head_idx] = 1.0
         head_counts[node.layer] += 1
 

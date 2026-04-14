@@ -123,12 +123,44 @@ class LookUp(Node):
     semantics deterministically picks past position 0. Values get read
     from the residual via `v_source_channels`, written to the output
     residual via `out_channels` (same length).
-
-    Session 26 ships just this form because it's what `copy_past` needs.
-    Parabolic-key exact lookups (RESEARCH/03 §4a) land in a later pass.
     """
     layer: int = 0
     v_source_channels: List[int] = field(default_factory=list)
+    out_channels: List[int] = field(default_factory=list)
+
+
+@dataclass
+class LookUpExact(Node):
+    """Attention head — parabolic-key exact retrieval (RESEARCH/02 §5).
+
+    Keys per past position `j`:  `k_j = (2j, -j²)`  (set by `PosEmbed` into
+    two dedicated residual channels).
+    Query at query position `i`:  `q = (key, 1)`  where `key` comes from
+    a residual channel holding the integer index to retrieve, and `1`
+    comes from a dedicated bias channel.
+
+    Completing the square:
+        q · k_j = 2j · key − j² = key² − (j − key)²
+    The hard-max argmax over past positions `j` is therefore exactly
+    `j = key`.
+
+    The V projection pulls the requested `value_source_channels` from
+    the selected position; `W_out` routes them into `out_channels`. One
+    attention head per (v_source, out) pair, allocated sequentially.
+
+    Requires these residual channels populated BEFORE this node runs:
+      - `pos_key0_channel`: carries `2p` at every position (PosEmbed)
+      - `pos_key1_channel`: carries `-p²` at every position (PosEmbed)
+      - `query_key_channel`: the integer key to retrieve (from tok embed
+        or an earlier node's output)
+      - `bias_channel`: constant `1` at every position (PosEmbed)
+    """
+    layer: int = 0
+    pos_key0_channel: int = 0
+    pos_key1_channel: int = 0
+    query_key_channel: int = 0
+    bias_channel: int = 0
+    value_source_channels: List[int] = field(default_factory=list)
     out_channels: List[int] = field(default_factory=list)
 
 
