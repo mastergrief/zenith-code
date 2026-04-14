@@ -34,6 +34,9 @@ impl ProviderClient {
             ProviderKind::OpenAi => Ok(Self::OpenAi(OpenAiCompatClient::from_env(
                 OpenAiCompatConfig::openai(),
             )?)),
+            ProviderKind::Ollama => Ok(Self::OpenAi(OpenAiCompatClient::from_env(
+                OpenAiCompatConfig::openai(),
+            )?)),
         }
     }
 
