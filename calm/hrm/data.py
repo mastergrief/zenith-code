@@ -312,8 +312,8 @@ class MathDataGenerator:
         problems = []
         ops = ["+", "-", "*"]
         for _ in range(n):
-            a = self._rng.randint(1, 99)
-            b = self._rng.randint(1, 99)
+            a = self._rng.randint(1, 999)
+            b = self._rng.randint(1, 999)
             op = self._rng.choice(ops)
             expr = f"{a} {op} {b}"
             try:
@@ -371,7 +371,7 @@ class MathDataGenerator:
         for _ in range(n):
             choice = self._rng.randint(0, 2)
             if choice == 0:
-                a, b = self._rng.randint(2, 100), self._rng.randint(2, 100)
+                a, b = self._rng.randint(2, 999), self._rng.randint(2, 999)
                 expr = f"gcd({a}, {b})"
             elif choice == 1:
                 k = self._rng.randint(1, 15)
