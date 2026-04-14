@@ -1,4 +1,4 @@
-{"pattern_type": "arithmetic", "expression": "N * O", "frequency": 3}
+{"pattern_type": "arithmetic", "expression": "N * O", "frequency": 4}
 {"pattern_type": "arithmetic", "expression": "N / O", "frequency": 2}
 {"pattern_type": "function", "expression": "base64_encode(\"hello world\")", "frequency": 1}
 {"pattern_type": "function", "expression": "sha256(\"hello\")", "frequency": 4}
