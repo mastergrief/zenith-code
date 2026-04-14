@@ -24,6 +24,7 @@ from calm.llm_computer.programs.copy_past_ir import build_copy_past_ir
 from calm.llm_computer.programs.increment_counter import build_increment_counter
 from calm.llm_computer.programs.increment_counter_ir import build_increment_counter_ir
 from calm.llm_computer.programs.retrieve_by_index import build_retrieve_by_index
+from calm.llm_computer.programs.retrieve_threshold import build_retrieve_threshold
 from calm.llm_computer.programs.threshold import build_threshold
 from calm.llm_computer.programs.threshold_ir import build_threshold_ir
 
@@ -115,6 +116,25 @@ def test_retrieve_by_index_parabolic_keys():
                 got = int(model(x)[0, N].argmax().item())
             assert got == values[q], \
                 f"retrieve_by_index: values={values} q={q} got={got} exp={values[q]}"
+
+
+def test_retrieve_threshold_same_layer_composition():
+    """LookUpExact (attn) → ReGLU (FFN) in one layer. Validates that the
+    transformer's attn-before-FFN ordering means FFN reads attn output
+    in the same layer, so multi-primitive programs don't need multiple
+    layers for pure data-dependency chains."""
+    import itertools
+    V, T, N = 4, 2, 4
+    model = build_retrieve_threshold(vocab_size=V, threshold=T, max_len=N + 1)
+    for values in itertools.product(range(V), repeat=N):
+        for q in range(N):
+            inp = list(values) + [q]
+            x = torch.tensor([inp], dtype=torch.long)
+            with torch.no_grad():
+                got = int(model(x)[0, N].argmax().item())
+            expected = 1 if values[q] >= T else 0
+            assert got == expected, \
+                f"retrieve_threshold: values={values} q={q} got={got} exp={expected}"
 
 
 def test_adder_tiny_compositional():
