@@ -37,10 +37,48 @@ equivalent to training — the model gets smarter at that domain instantly.
   → export `X_FUNCTIONS` dict + optional `X_NL_PATTERNS` list → done
   (auto-discovery registers both, zero other files to edit)
 
+## HRM + LLM-Computer Architecture
+
+The CRLM thesis: **partition intelligence into structure (learned, modest scale) + values (compiled, exact)**. HRM emits the problem structure; LLM-Computer recomputes every value via a deterministic interpreter backed by the CALM function registry.
+
+### HRM (`calm/hrm/`)
+
+- `HRMSeq2Seq` model: bidirectional encoder (nested L/H recurrent loops per the Wang et al. paper) + causal decoder (cross-attn to encoder memory, NO recurrence in decoder). Encoder iterates on a stable input; decoder generates tokens without fighting the recurrence.
+- Three target-format modes (selected by trainer flag in `calm/hrm/train.py`):
+  - `--scratchpad`: full step-by-step reduction trace with `<call>fn(args)<end_call>value` delegation markers around function calls. Captures learned decomposition strategy.
+  - `--structure-only`: minimal target — `problem + = + <eos>`. Model only emits the problem expression and a terminator; LLM-Computer handles every value. **Sweet spot for math** (48K params, 145s train, 96.7% verified-mode full-expression).
+  - default (no scratchpad, no structure-only): target is the raw answer with optional digit-reversal. Trains slowest, plateaus at 51%.
+- Inference: `HRMSeq2SeqReasoner.reason()` — encode prompt once, decode autoregressively. In scratchpad mode, intercepts `<end_call>` emissions and routes via `safe_eval`. In structure-only mode, the verified eval path uses `_verified_answer()` to parse the input and delegate computation to LLM-Computer.
+
+### LLM-Computer (`calm/llm_computer/`)
+
+Implementation of Percepta's March 2026 research (RESEARCH/01-03):
+
+- `Small2DTransformer` (`model.py`): vanilla PyTorch, `d_head=2`, optional `use_hard_max=True`. Standard `nn.MultiheadAttention` + gated ReLU FFN + causal mask + learned positional embeddings. Weights are compiled source code, not statistical summary.
+- `HullKVCache` (`hull_cache.py`): online 2D convex hull via Andrew's monotone chain (upper + lower hulls; `cross >= 0` removes for upper, `<= 0` for lower). Replaces `Θ(t)` linear-scan attention with `O(log t)` supporting-point query. **108× speedup** confirmed at N=2K (`tests/test_hull_cache.py`).
+- Gate-graph IR (`gate_graph.py`): two node families share the IR — compute (`Const`, `BinOp`, `Delegate`, `Result`) and hardware (`TokenInput`/`TokenOutput`). Today's interpreter walks compute nodes; tomorrow's compiler walks both.
+- Parser (`parse.py`): `parse_expression()` via Python `ast.parse` → `GateGraph`. `extract_problem_from_trace()` extracts the pre-`=` segment from HRM scratchpad and strips `<call>` markers.
+- Interpreter (`interpret.py`): topo-walks compute nodes; `Delegate` routes through `safe_eval` (full 1002-function backend registry).
+- 4 hand-wired primitive programs in `programs/`: `add_one`, `copy_past`, `increment_counter`, `threshold` — each exercises a different primitive (linear head, hard-max attention, position embedding, FFN step function).
+
+### Convergence pipeline
+
+```
+HRM emits structure → parse to GateGraph → interpret with safe_eval
+                                                       ↓
+                                              analytically-correct answer
+```
+
+Eval mode (`scripts/eval_hrm_math.py --verified`) runs this path. With the Round 1e checkpoint: **30/30 held-out, structure-emission used in 30/30, structurally-matched-input in 29/30**. The lone failure was a single mis-copied digit in `gcd(39, 39) → gcd(69, 39)`.
+
+Future direction: replace the Python interpreter with a compiled `Small2DTransformer` per query (the paper's Futamura projection). Same IR, different execution substrate.
+
 ## File Organization
 - `agents/` — core harness code (15 files, ~4,400 LOC). No ML dependencies. Must work on Windows + WSL2 with Python 3.11+
 - `agents/distill/` — training pipeline (10 Python files + 1 notebook). ML dependencies (torch, unsloth, transformers) only required here. **Secondary to backends** — only needed for domains that can't be computed.
 - `calm/` — CALM engine + Auto-CALM + modular backends + cognitive intelligence layer (~194 files, ~37,400 LOC, 250 tests). Engine V2 pipeline with 116 backends, 39 cognitive modules, adaptive thinking, self-healing, factual cross-check, module learning feedback loop. Dependencies: `wasmtime` (optional, for wasm backend). Full spec: `.claude/rules/calm.md`
+- `calm/hrm/` — HRM (Hierarchical Reasoning Model) encoder-decoder. `model.py` (HRM, HRMSeq2Seq, HRMEncoder, HRMDecoder), `data.py` (MathDataGenerator, MathSeq2SeqDataset with scratchpad / structure-only modes), `train.py` (HRMTrainer + HRMSeq2SeqTrainer + CLI), `inference.py` (HRMReasoner + HRMSeq2SeqReasoner with backend-call delegation). Sweet spot for math: 48K params via `--structure-only`.
+- `calm/llm_computer/` — Percepta LLM-Computer prototype: `Small2DTransformer` (`model.py`), `HullKVCache` (`hull_cache.py`), gate-graph IR (`gate_graph.py`), parser/interpreter (`parse.py` + `interpret.py`), 4 hand-wired primitive programs in `programs/`. CPU-only, standalone.
 - `models/` — Ollama Modelfiles (3 files: qwen9b-fast, qwen4b-fast, reasoning-base)
 - `bin/zenith` — launcher script: auto-starts llama.cpp, `--gguf PATH` first-arg flag, configurable via `ZENITH_*` env vars. Does NOT `cd` into repo.
 - `scripts/` — dev tooling (needle_test, eval_base_models, smoke_test_harness, test_model_swap, generate_react_security_examples, setup_training)

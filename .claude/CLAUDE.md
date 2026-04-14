@@ -91,10 +91,11 @@ Long-term commercial direction documented in `.claude/rules/commercial.md`. Curr
 
 **Model reasons, backends compute, engine verifies.** Intelligence comes from the system architecture, not the weights. Adding a backend module is equivalent to training — the model gets smarter at that domain instantly, with zero GPU cost.
 
-Three active systems coexist:
+Four active systems coexist:
 1. **Python agent harness** (`agents/`, ~4,400 LOC across 15 files) — terminal coding assistant with dual backend (Ollama + llama.cpp), 3-level permissions, thinking mode, sessions, compaction, effort control, and llama.cpp hot-swap
 2. **CALM engine** (`calm/`, ~37,400 LOC across 194 files) — modular compute + knowledge facade with cognitive intelligence layer. Auto-CALM (transparent verification + precomputation, 100% benchmark) + Engine V2 (7-phase pipeline: pre-analyze → enrich → precompute → generate → verify → cognitive route → self-heal) + 116 modular backends (1002 verified functions, 550 NL patterns, 100% coverage) + 39 cognitive modules (verification, reasoning, quality, meta, planning) + 48 factual check patterns + 10 dynamic cross-check patterns against backends + adaptive thinking budget + cross-turn conversation state + module self-learning with feedback loop. Full spec: `.claude/rules/calm.md`
 3. **Rust claw-code port** (`rust/`) — upstream claw-code, 9 crates, separate build system
+4. **HRM + LLM-Computer** (`calm/hrm/` + `calm/llm_computer/`) — the CRLM thesis made concrete. Tiny encoder-decoder HRM (48K params, 145s training) emits problem structure; LLM-Computer parses + interprets the structure for analytically-correct values. Result: **96.7% full-expression** on held-out math via `--verified` mode. HRM size scales with problem-language complexity (NL → math is harder than echo); compute substrate handles all values regardless of difficulty. Full spec: `.claude/rules/architecture.md` (HRM + LLM-Computer section).
 
 Serving: Gemma 4 E4B (primary) or Qwen 3.5 4B via llama.cpp at **512K context** (`ctx_size=524288`), **32K thinking budget**. Production: tq4+tq4 KV cache on Gemma E4B (`~/models/gemma-4-E4B-it-tq4-aligned.gguf`, 5.0 GB). CALM/Auto-CALM runs on the same llama-server instance. Harness auto-computes compaction threshold as `min(per-GGUF limit, int(ctx_size * 0.89))` — Gemma compacts at **227.5K tokens** (232960). Hot-swap between bases via `agents/model_swap.py`.
 
@@ -196,6 +197,8 @@ Full backend table in `.claude/rules/calm.md`. 116 backends across: math (arithm
 
 **Defense in depth**: Layer 2 (precompute + 550 NL patterns) injects correct answers before generation. Layer 1 (verify) catches wrong claims after generation. Layer 3 (factual check, commit `04ae45a`) catches known misconceptions via 48 static patterns + 10 dynamic cross-check patterns that verify claims against backend functions at runtime. When precompute misses a phrasing, verify is the safety net; when verify misses a factual error, factual_check catches it.
 
+**Adjacent track**: `calm/llm_computer/` proves the Percepta paper's analytical compile-to-weights primitives standalone (`Small2DTransformer`, `HullKVCache` with 108× speedup, gate-graph IR, hand-wired primitive programs). Future direction: route LLM-Computer outputs through the same `<call>` delegation channel CALM backends use today, or fold its 2D-head executor into the HRM decoder.
+
 ### Cognitive Intelligence Layer (39 modules, Engine V2)
 
 **Engine V2** (`calm/engine_v2.py`) — 7-phase pipeline with self-healing:
@@ -249,6 +252,61 @@ python3 -c "from calm.auto_calm import IntentToEdit; IntentToEdit().fix('app.py'
 # Run all 250 tests
 python3 -m pytest calm/tests/ -v
 ```
+
+## HRM + LLM-Computer (`calm/hrm/` + `calm/llm_computer/`)
+
+The CRLM split: HRM (learned) handles problem-structure extraction; LLM-Computer (analytically compiled) handles value computation. Full architecture spec: `.claude/rules/architecture.md`. Training rules: `.claude/rules/training.md`.
+
+### Math HRM Sweet Spot (Round 1e, session 25)
+
+- **Architecture**: `HRMSeq2Seq` — bidirectional encoder with nested L/H recurrent loops + causal decoder with cross-attention. NO recurrence in decoder.
+- **Sweet-spot config**: `hidden=32, num_heads=4, L=H=dec=1`, **48,864 params**.
+- **Training**: `--structure-only` (no scratchpad). Decoder target is `problem + = + <eos>`. Model trains only to echo input + emit `=` terminator. **Values get zero loss weight** because LLM-Computer recomputes them.
+- **Result on 30 held-out (seed 9999)**: 99.7% per-token val_acc, 97% structural-match-input, **96.7% full-expression accuracy** via `--verified` mode. Trains in ~145s on RTX 4070.
+- **Why it works**: HRM no longer asked to memorize arithmetic. The gate that matters is full-expression accuracy via the verified path, not per-token (which is inflated by trivial-copy tokens).
+- **Checkpoint**: `calm/hrm/checkpoints/math_structure_best.pt`.
+
+### LLM-Computer (`calm/llm_computer/`)
+
+Standalone subpackage proving the Percepta paper's compile-to-weights primitives:
+
+- **`Small2DTransformer`** — vanilla PyTorch, `d_head=2`, optional `use_hard_max=True`. Same forward pass as a standard transformer; what makes it a computer is the weights, not the architecture.
+- **`HullKVCache`** — online 2D convex hull (Andrew's monotone chain). **108× speedup vs linear scan** at N=2K via O(h) hull-walk where h ≪ N (`tests/test_hull_cache.py`).
+- **Primitive programs proven** (hand-wired weights, all 100% test pass):
+  - `add_one` (1,280 params): residual + linear-head, no attention/FFN
+  - `copy_past` (2,560 params): hard-max attention with zero-q/k tie-break selecting position 0
+  - `increment_counter` (2,176 params): position embedding + head reads upper-half slot
+  - `threshold` (216 params): FFN step function via `ReLU(z+1) - ReLU(z) = 1[z >= 0]`
+- **Compute IR** (`gate_graph.py`): `Const`, `BinOp`, `Delegate`, `Result` + hardware nodes (`TokenInput`/`TokenOutput`).
+- **Parser** (`parse.py`): `parse_expression()` uses Python `ast.parse` to turn an expression string into `GateGraph`. `extract_problem_from_trace()` pulls the first segment (pre-`=`) of an HRM scratchpad and strips `<call>...<end_call>` markers.
+- **Interpreter** (`interpret.py`): walks `GateGraph` in topo order; `Delegate` nodes route to `safe_eval` (full backend registry).
+
+### HRM-thinking + LLM-Compute pipeline
+
+```
+problem → HRM encoder → HRM decoder → trace string
+                                          ↓
+                              extract_problem_from_trace
+                                          ↓
+                                 parse_expression
+                                          ↓
+                                    interpret
+                                          ↓
+                                    final answer
+```
+
+Eval: `python3 scripts/eval_hrm_math.py --verified` runs this path and reports HRM emission stats (used / structurally-matched-input).
+
+### HRM training journey (sessions 24 + 25)
+
+| Round | Config | Params | Train time | Per-token | Full-expr |
+|---|---|---|---|---|---|
+| 1a | enc-dec + digit-reversal, h=64 | 244K | 8min | 51% | ~15-25% |
+| 1c | scratchpad + `<call>` delegation, h=64 | 245K | 15min | 94% | 43% |
+| 1d | 1c + place-value decomp | 245K | 16min | 94% | 37% |
+| **1e** | **structure-only, h=32** | **48K** | **145s** | **99.7%** | **96.7%** |
+
+Lesson: scratchpad with intermediate values forces memorization that small models can't deliver. **Stop asking the model to compute; let it emit structure and route values to the substrate.**
 
 ## Distillation Pipeline (`agents/distill/`, 10 Python files)
 

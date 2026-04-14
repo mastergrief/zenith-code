@@ -42,6 +42,49 @@
 - Filter training data before use: `python -m agents.distill.filter_reasoning --merge`
 - Filter aggressively — removing bad data improves results more than adding mediocre data
 
+## HRM Training (CRLM workflow)
+
+For HRMs in the HRM-thinking + LLM-Compute split (`calm/hrm/` → `calm/llm_computer/`), the training rules differ from the distillation pipeline above:
+
+### Don't make the model memorize values
+
+The single biggest training improvement in session 25: **stop asking HRM to compute values**. Use `--structure-only` in `calm/hrm/train.py`. Decoder target becomes `problem + = + <eos>`. The LLM-Computer interpreter handles every value via `safe_eval`. Result: 245K → 48K params, 15 min → 145 sec training, 43% → 96.7% full-expression accuracy.
+
+### Sweet-spot config (math, session 25)
+
+```bash
+PYTHONPATH=. python3 -m calm.hrm.train --seq2seq --structure-only \
+  --hidden 32 --num-heads 4 --l-layers 1 --h-layers 1 --dec-layers 1 \
+  --epochs 100 --lr 1e-3 --problems 2000 --batch-size 128 \
+  --max-enc 32 --max-dec 32
+```
+
+48,864 params, ~145 seconds on RTX 4070, 99.7% per-token val_acc. Checkpoint: `calm/hrm/checkpoints/math_structure_best.pt`.
+
+### Per-token vs full-expression accuracy
+
+Per-token val_acc (the trainer's number) is inflated by trivial-copy tokens — most of a scratchpad trace is operators, parens, and prefix that the model can predict from cross-attention. **The gate that matters is full-expression accuracy via the LLM-Computer verified path**, not the trainer's reported number. Always run `scripts/eval_hrm_math.py --verified` before declaring a checkpoint shippable.
+
+### Plateau pattern: memorization-without-generalization
+
+Across rounds 1a/1c/1d (session 25), scratchpad-with-intermediate-values training crashed loss to ~0.05 (perfect training fit) while val_acc froze at 50-57%. Diagnosis: model memorizes per-example answers but can't see enough of the combinatorial space to generalize. **More data helped** (10K > 2K, 70% vs 51%); **deeper decomposition didn't** (place-value decomp went 43% → 37%, longer traces, more chances to error).
+
+The fix isn't to retrain harder — it's to **stop asking for values**. Structure-only loss + LLM-Computer recompute eliminates the memorization pressure entirely.
+
+### When to scale HRM up (not down)
+
+- Pure-echo problems (math expression input → math expression output): `hidden=32`, single layer, ~50K params is enough.
+- NL → structured problems (word problem → math expression): expect 1-10M params. Untested but predicted by the structure-vs-difficulty scaling principle.
+- Open-ended creative reasoning: doesn't fit the HRM-thinking + LLM-Compute split — use a frontier model.
+
+**HRM size scales with problem-language complexity, NOT problem-difficulty.** `factorial(100)` is no harder than `factorial(2)` for the HRM — both emit 14 tokens of the same structure. The compute substrate handles values.
+
+### Pitfalls observed (session 25)
+
+- **Cosine LR scheduled to 0 too early kills learning.** A 50-epoch run ended with LR ≈ 0 at epoch 25, capped val_acc at 73%. The same model at 500 epochs hit 99.7% by epoch 100 because LR was still meaningful. Set `--epochs` generously and rely on `best_val_acc` checkpoint selection, or use a less aggressive schedule.
+- **Smoke cases failing at 3-digit numbers** (`347 * 289`) are out-of-distribution — `MathDataGenerator` caps operands at 2 digits. Not an architecture problem; widen the data range to fix.
+- **Per-token > 90% but full-expression < 50%** means model nailed structure tokens (operators, parens, function names) but mis-copied digits. Check via `_hrm_raw_emit()` in eval script — if structure is good but digits drift, train more or use `--verified` mode (LLM-Computer parses the input directly, bypassing HRM's mis-copies).
+
 ## Dataset Quality
 - Claude-authored/hand-written data >> 9B-generated data (higher quality, more consistent)
 - HuggingFace datasets (nohurry, TeichAI, Crownelius) provide Claude Opus reasoning traces — filtered to 832 examples

@@ -133,6 +133,77 @@ mean "go look for a bug", not "keep tuning the knob you were tuning".
   (you, future-you, another session) asks "what changed and why did
   it get faster?" the answer is in the log.
 
+## Long-running training supervision
+
+Training runs that emit sparse eval lines (every N epochs, every M steps)
+are the perfect use case for **Monitor + filtered tail**. The raw log
+stays on disk; only the eval/error lines arrive in context as
+notifications, so you can apply the plateau-detection loop in real time
+instead of waiting out a full run.
+
+Pattern:
+
+```bash
+# Kick off detached so CC/WSL crashes don't kill it
+setsid env PYTHONPATH=. python3 -u -m calm.hrm.train --... \
+  < /dev/null > /tmp/train.log 2>&1 &
+disown -a
+```
+
+```
+Monitor(command="tail -f /tmp/train.log | grep --line-buffered -E 'epoch|Error|Traceback'")
+```
+
+- `-u` on python to avoid stdout buffering (eval lines arrive immediately).
+- `grep --line-buffered` is mandatory — without it pipe buffering holds
+  events for minutes.
+- Redirect stdin from `/dev/null` to avoid WSL interop stdin
+  consumption (same class of bug as the `bin/zenith` tasklist.exe fix).
+
+Each monitor notification is a plateau-detection checkpoint (see the
+loop above). If training loss crashes to near-zero while val/eval
+accuracy stays flat for 2–3 consecutive eval intervals, **kill and
+intervene** on one hypothesis (data, capacity, LR, regularization).
+Don't ride out the remaining epochs. Session-25 HRM autoregressive
+retraining killed a 1000-epoch run at epoch 200 when loss=0.04 but
+val_acc=51% — classic 900-sample / 108K-param memorization gap;
+restarted with 2× data rather than waiting out 800 more epochs.
+
+The same monitor pattern caught a more subtle case later in session 25:
+a 500-epoch HRM run hit 99.7% per-token at epoch 100 → killed early
+because the structurally-relevant gate (full-expression via verified
+mode) was already saturated. Monitor lets you ship at the right
+checkpoint, not the scheduled-end checkpoint.
+
+## Sweet-spot search for tiny models
+
+When the goal is **maximum capability per parameter**, search downward
+not upward:
+
+1. Start with the smallest config that could plausibly work
+   (`hidden=16-32`, single layer).
+2. Train. If the structurally-relevant gate fails (not per-token —
+   the user-facing gate), scale the smallest knob first: more data,
+   then more epochs, then capacity.
+3. Only scale capacity (`hidden`, layers, heads) when data + epochs
+   plateau below gate.
+4. **The point isn't smallest possible — it's smallest sufficient.**
+   You're looking for the size where structure-emission becomes
+   reliable, not the size where everything is solved.
+
+Session-25 example: tried `h=64 → h=128 → h=64+scratchpad → h=64+placeval`
+first (each iteration kept memorization pressure on values), got stuck
+at 37-57% full-expression. Then switched to **`h=32 + structure-only
+loss`** (offload values to the LLM-Computer interpreter): 48K params,
+145s training, 96.7% full-expression. The unlock was redefining what
+the model is asked to learn, not making it bigger.
+
+Corollary: **Per-token accuracy is misleading on trace-shaped targets.**
+Trace targets contain a lot of trivially-predictable tokens (operators,
+parens, copies of input). Per-token can be 94% while full-expression
+sits at 43%. Always measure the user-facing gate; only use per-token
+to spot regressions during training.
+
 ## Tool priority for diagnostics
 
 In any iteration where the simple "edit + rerun" doesn't explain what
