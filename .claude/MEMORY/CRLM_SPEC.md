@@ -53,7 +53,7 @@ All 5 production checkpoints are at `calm/hrm/checkpoints/`. All use the same sw
 | `nl_math_structure_best.pt` | 48,864 | NL templates ("what is X plus Y?") | ~794s @ 500ep | 99.8% | 29/30 held-out, 5/5 smoke | 42 |
 | `word_problem_best.pt` | 48,864 | Word problems w/ names+pronouns | ~158s @ 100ep (killed early) | 99.7% | 30/30 held-out, 5/5 smoke | 42 |
 | `gsm_best.pt` | 48,864 | GSM-style multi-sentence narratives | ~603s @ 500ep | 99.6% | 28/30 held-out, 5/5 smoke — **first observed ceiling** | 42 |
-| `multi_task_best.pt` | 48,864 | All four domains pooled (Vector 2 phase 1) | in-flight at 100% val_acc by epoch 200/500 | 100% | TBD after training completes | 42 |
+| `multi_task_best.pt` | 48,864 | All four domains pooled (Vector 2 phase 1) | 1371s @ 500ep | 100% | **30/30 all four domains** — GSM ceiling broken via cross-domain exposure | 42 |
 
 Training data generators (one per domain):
 - `calm/hrm/data.py:MathDataGenerator` (operand range 1-999)
@@ -232,9 +232,19 @@ Defined in this session to organize forward work after Vector 1 became the obvio
 
 Total: 31 new tests, 2 new scripts, 1 defect fixed (pattern pollution), 0 regressions.
 
-### Vector 2 — meta-structure HRM (PHASE 1 IN PROGRESS)
+### Vector 2 — meta-structure HRM (PHASE 1 SHIPPED, STRONG RESULT)
 
-Phase 1: multi-task HRM handling all four domains in one 48K-param model. Currently training at `calm/hrm/checkpoints/multi_task_best.pt`. At epoch 200/500: loss 0.0001, val_acc 100.0%. Per-domain eval (`scripts/eval_hrm_multi.py`) pending training completion.
+Phase 1: multi-task HRM handling all four domains in one 48K-param model. **Per-domain eval: 30/30 full-expression on every domain** — including GSM where per-domain training plateaued at 93%. Cross-domain exposure (math-echo teaches precise digit copy; that discipline transfers to GSM's operand localization) breaks the ceiling without scaling parameters.
+
+```
+  domain            multi-task   per-domain
+  math-echo            100.0%        100%
+  nl-template          100.0%         97%
+  word-problem         100.0%        100%
+  gsm-style            100.0%         93%
+```
+
+Implication: the CRLM scaling ceiling observed on GSM was domain-isolation-bound, not architecture-bound. Pooling related domains extends reach without extra parameters. Open question: was the lift from cross-domain exposure or from 2× total training data (per-domain used 2000 samples @ 500ep vs multi-task 4000 @ 500ep)? Ablation needed.
 
 **Hypothesis for phase 2 (after phase 1 completes):** the multi-task HRM, having seen multiple structurally-related domains, will transfer to a held-out 5th domain with few-shot examples in-context. Untested.
 
