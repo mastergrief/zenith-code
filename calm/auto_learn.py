@@ -29,11 +29,21 @@ DEFAULT_DB = Path("calm/learned_patterns.jsonl")
 
 
 class LearnedPattern:
-    """A pattern learned from a correction."""
-    def __init__(self, pattern_type: str, expression: str, frequency: int = 1):
+    """A pattern learned from a correction.
+
+    Two counters:
+      - `frequency`: how often this pattern was LEARNED from (a correction
+        with this shape was fed in).
+      - `hits`: how often this pattern FIRED at inference time (matched a
+        prompt and produced a precompute suggestion). Cold patterns
+        (hits == 0 after many prompts) are pruning candidates.
+    """
+    def __init__(self, pattern_type: str, expression: str,
+                 frequency: int = 1, hits: int = 0):
         self.pattern_type = pattern_type  # "arithmetic", "bool", "function"
-        self.expression = expression      # e.g. "is_prime(X)" where X is a placeholder
-        self.frequency = frequency        # how often this pattern was corrected
+        self.expression = expression      # e.g. "is_prime(N)"
+        self.frequency = frequency
+        self.hits = hits
 
 
 class AutoLearner:
@@ -45,7 +55,8 @@ class AutoLearner:
         self._load()
 
     def _load(self):
-        """Load learned patterns from disk."""
+        """Load learned patterns from disk. Legacy files without `hits`
+        default to 0."""
         if not self.db_path.exists():
             return
         with open(self.db_path) as f:
@@ -59,10 +70,11 @@ class AutoLearner:
                     pattern_type=d["pattern_type"],
                     expression=d["expression"],
                     frequency=d.get("frequency", 1),
+                    hits=d.get("hits", 0),
                 )
 
     def _save(self):
-        """Persist all patterns to disk."""
+        """Persist all patterns to disk (including hit counters)."""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.db_path, "w") as f:
             for p in self._patterns.values():
@@ -70,6 +82,7 @@ class AutoLearner:
                     "pattern_type": p.pattern_type,
                     "expression": p.expression,
                     "frequency": p.frequency,
+                    "hits": p.hits,
                 }) + "\n")
 
     def learn_from_correction(self, claim) -> None:
@@ -96,8 +109,13 @@ class AutoLearner:
 
     def suggest_precomputes(self, prompt: str) -> Dict[str, object]:
         """Suggest precomputations based on learned patterns.
-        Returns {expression: computed_value} for patterns that match the prompt."""
+        Returns {expression: computed_value} for patterns that match the prompt.
+
+        Side effect: increments `hits` on every pattern that contributes
+        at least one successful precompute. Hit counters are persisted.
+        """
         results = {}
+        fired_patterns: List[LearnedPattern] = []
 
         for key, pattern in self._patterns.items():
             # Only precompute patterns that have been wrong multiple times
@@ -106,6 +124,7 @@ class AutoLearner:
                 continue
 
             # Try to instantiate the pattern with values from the prompt.
+            pattern_contributed = False
             expressions = self._instantiate(pattern, prompt)
             for expr in expressions:
                 if expr not in results:
@@ -117,10 +136,42 @@ class AutoLearner:
                     try:
                         val = safe_eval(expr)
                         results[expr] = val
+                        pattern_contributed = True
                     except ExpressionError:
                         pass
+            if pattern_contributed:
+                fired_patterns.append(pattern)
+
+        if fired_patterns:
+            for p in fired_patterns:
+                p.hits += 1
+            self._save()
 
         return results
+
+    def prune_cold_patterns(self, min_hits: int = 1, min_frequency: int = 1) -> int:
+        """Remove patterns that have never fired AND have only been
+        learned once. Returns the number of patterns pruned.
+
+        Default rules:
+          - Patterns with `hits >= min_hits` are ALWAYS kept (they proved
+            their worth at inference time).
+          - Patterns with `hits == 0` are pruned unless `frequency >
+            min_frequency` (the same error was seen multiple times, so
+            it's worth keeping even if no hit yet).
+
+        Caller controls thresholds. Callers that want aggressive pruning
+        can pass `min_frequency=99` to cull anything that hasn't fired.
+        """
+        to_remove = [
+            key for key, p in self._patterns.items()
+            if p.hits < min_hits and p.frequency <= min_frequency
+        ]
+        for key in to_remove:
+            del self._patterns[key]
+        if to_remove:
+            self._save()
+        return len(to_remove)
 
     def _generalize(self, expr: str) -> str:
         """Generalize a specific expression to a pattern.
@@ -163,8 +214,25 @@ class AutoLearner:
             return "arithmetic"
         return "other"
 
+    # Natural-language forms of each operator. Used to gate arithmetic
+    # patterns so "what is 5 plus 7?" fires '+' patterns but not '*'.
+    _OP_WORDS = {
+        "+": ("plus", "added", "sum", "total", "more"),
+        "-": ("minus", "subtract", "difference", "less", "fewer", "spent", "gave"),
+        "*": ("times", "multiplied", "product", "each", "per"),
+        "/": ("divided", "split", "over", "per"),
+    }
+
     def _instantiate(self, pattern: LearnedPattern, prompt: str) -> List[str]:
-        """Try to instantiate a pattern with values from the prompt."""
+        """Try to instantiate a pattern with values from the prompt.
+
+        Shape gates prevent pattern pollution: a function pattern only
+        fires if its function name (or a known alias) appears in the
+        prompt; an arithmetic pattern only fires if the operator or a
+        natural-language form appears. This replaces the old behavior
+        where every pattern fired on every prompt with >=1 number,
+        flooding precompute results with irrelevant suggestions.
+        """
         results = []
 
         # Extract all numbers from the prompt.
@@ -173,12 +241,30 @@ class AutoLearner:
             return results
 
         expr_template = pattern.expression
+        prompt_lower = prompt.lower()
 
         if pattern.pattern_type == "function":
-            # is_prime(N) → is_prime(391) for each number in prompt.
             func_match = re.match(r'(\w+)\(([^)]*)\)', expr_template)
             if func_match:
                 func = func_match.group(0)
+                func_name = func_match.group(1)
+                # Shape gate: function name (or a short alias) must appear
+                # in the prompt. "factorial", "fact", "prime", "gcd", etc.
+                if func_name.lower() not in prompt_lower:
+                    # Aliases for common names so "is this prime" hits is_prime.
+                    aliases = {
+                        "is_prime": ("prime",),
+                        "fibonacci": ("fib", "fibonacci"),
+                        "factorial": ("factorial",),
+                        "gcd": ("gcd",),
+                        "lcm": ("lcm",),
+                        "euler_totient": ("totient", "euler"),
+                        "digital_root": ("digital root",),
+                    }
+                    hit_alias = any(a in prompt_lower
+                                     for a in aliases.get(func_name, ()))
+                    if not hit_alias:
+                        return results
                 arg_count = len(func_match.group(2).split(','))
                 if arg_count == 1 and 'N' in func:
                     for n in numbers:
@@ -191,30 +277,49 @@ class AutoLearner:
                                 results.append(inst)
 
         elif pattern.pattern_type == "arithmetic":
-            # N * M → 17 * 23 for each pair of numbers.
             if len(numbers) >= 2:
                 ops = re.findall(r'[\+\-\*\/\%\^]+', expr_template)
                 if ops:
+                    op = ops[0].strip()
+                    # Shape gate: operator (or NL form) must appear in prompt.
+                    op_in_prompt = op in prompt
+                    word_forms = self._OP_WORDS.get(op, ())
+                    word_in_prompt = any(w in prompt_lower for w in word_forms)
+                    if not (op_in_prompt or word_in_prompt):
+                        return results
                     for i in range(len(numbers)):
                         for j in range(len(numbers)):
                             if i != j:
-                                expr = f"{numbers[i]} {ops[0].strip()} {numbers[j]}"
+                                expr = f"{numbers[i]} {op} {numbers[j]}"
                                 results.append(expr)
 
         return results[:10]  # Cap to avoid explosion.
 
     def stats(self) -> dict:
-        """Return summary of learned patterns."""
+        """Return summary of learned patterns.
+
+        Includes both learn-side counters (`frequency`) and inference-side
+        counters (`hits`). A pattern with high frequency + 0 hits means
+        the learner keeps seeing that error but the matcher never fires —
+        probably a pattern-instantiation bug or prompt-shape mismatch.
+        """
         if not self._patterns:
             return {"total": 0}
         by_type = {}
+        cold = 0
+        total_hits = 0
         for p in self._patterns.values():
             by_type[p.pattern_type] = by_type.get(p.pattern_type, 0) + 1
+            if p.hits == 0:
+                cold += 1
+            total_hits += p.hits
         return {
             "total": len(self._patterns),
             "by_type": by_type,
+            "total_hits": total_hits,
+            "cold_patterns": cold,
             "top_patterns": sorted(
-                [(p.expression, p.frequency) for p in self._patterns.values()],
-                key=lambda x: -x[1],
+                [(p.expression, p.frequency, p.hits) for p in self._patterns.values()],
+                key=lambda x: (-x[2], -x[1]),  # hits first, then frequency
             )[:10],
         }

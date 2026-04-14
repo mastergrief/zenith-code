@@ -156,18 +156,98 @@ def test_large_number_guard(tmp_db):
                     f"guard failed: computed {key}"
 
 
+def test_hit_counter_increments_on_fire(tmp_db):
+    """Every successful precompute should bump the firing pattern's hits."""
+    learner = AutoLearner(db_path=tmp_db)
+    learner.learn_from_correction(_FakeClaim(expression="17 * 23"))
+    pat = learner._patterns["N * O"]
+    assert pat.hits == 0
+
+    learner.suggest_precomputes("what is 5 * 7?")
+    assert pat.hits == 1
+    learner.suggest_precomputes("what is 100 * 200?")
+    assert pat.hits == 2
+
+
+def test_hit_counter_not_incremented_on_miss(tmp_db):
+    """Prompts with no matching numbers shouldn't bump hits."""
+    learner = AutoLearner(db_path=tmp_db)
+    learner.learn_from_correction(_FakeClaim(expression="17 * 23"))
+    pat = learner._patterns["N * O"]
+    learner.suggest_precomputes("this prompt has no numbers in it")
+    assert pat.hits == 0
+
+
+def test_hit_counter_persists(tmp_db):
+    """Hit counters should survive a save/load cycle."""
+    l1 = AutoLearner(db_path=tmp_db)
+    l1.learn_from_correction(_FakeClaim(expression="17 * 23"))
+    l1.suggest_precomputes("what is 5 * 7?")
+    l1.suggest_precomputes("what is 100 * 200?")
+    del l1
+
+    l2 = AutoLearner(db_path=tmp_db)
+    assert l2._patterns["N * O"].hits == 2
+
+
+def test_prune_cold_patterns(tmp_db):
+    """A pattern learned once and never fired should be pruned. A hot
+    one should survive."""
+    learner = AutoLearner(db_path=tmp_db)
+    learner.learn_from_correction(_FakeClaim(expression="factorial(7)"))
+    learner.learn_from_correction(_FakeClaim(expression="17 * 23"))
+    learner.suggest_precomputes("what is 5 * 7?")  # hits 'N * O' but not 'factorial(N)'
+
+    n_pruned = learner.prune_cold_patterns(min_hits=1, min_frequency=1)
+    assert n_pruned == 1
+    assert "factorial(N)" not in learner._patterns
+    assert "N * O" in learner._patterns
+
+
+def test_prune_respects_high_frequency(tmp_db):
+    """A pattern learned many times (even if never fired) should survive
+    pruning when min_frequency is lower than its frequency."""
+    learner = AutoLearner(db_path=tmp_db)
+    # Simulate the same error being seen 5 times.
+    for _ in range(5):
+        learner.learn_from_correction(_FakeClaim(expression="factorial(7)"))
+    pat = learner._patterns["factorial(N)"]
+    assert pat.frequency == 5
+    assert pat.hits == 0
+
+    # Default prune: min_frequency=1 means "frequency > 1 is safe" →
+    # frequency 5 > 1 → survives.
+    n_pruned = learner.prune_cold_patterns(min_hits=1, min_frequency=1)
+    assert n_pruned == 0
+    assert "factorial(N)" in learner._patterns
+
+
+def test_stats_reports_hits(tmp_db):
+    """stats() should surface total_hits and cold_patterns counts."""
+    learner = AutoLearner(db_path=tmp_db)
+    learner.learn_from_correction(_FakeClaim(expression="17 * 23"))
+    learner.learn_from_correction(_FakeClaim(expression="factorial(7)"))
+    learner.suggest_precomputes("what is 5 * 7?")
+
+    s = learner.stats()
+    assert s["total"] == 2
+    assert s["total_hits"] == 1
+    assert s["cold_patterns"] == 1  # factorial never fired
+
+
 def test_no_regression_in_learned_pattern_db(tmp_db):
-    """Writing patterns to disk should not corrupt existing JSON."""
+    """Writing patterns to disk should not corrupt existing JSON, and the
+    hits field should be persisted."""
     learner = AutoLearner(db_path=tmp_db)
     learner.learn_from_correction(_FakeClaim(expression="17 * 23"))
     learner.learn_from_correction(_FakeClaim(expression="is_prime(391)"))
 
-    # Verify on-disk format.
+    # Verify on-disk format (now includes hits field).
     with open(tmp_db) as f:
         lines = [json.loads(ln) for ln in f if ln.strip()]
     assert len(lines) == 2
     for entry in lines:
-        assert {"pattern_type", "expression", "frequency"} <= set(entry.keys())
+        assert {"pattern_type", "expression", "frequency", "hits"} <= set(entry.keys())
 
 
 if __name__ == "__main__":
