@@ -1,0 +1,131 @@
+"""Compiler correctness tests.
+
+For each hand-wired primitive in `programs/`, build the IR version via
+`compile_program` and verify it produces the same forward-pass output on
+every canonical input.
+
+Bit-match vs behavioral-match: `add_one`, `threshold`, and
+`increment_counter` should bit-match hand-wired weights (IR→weights is
+1:1 deterministic). `copy_past` does NOT bit-match — the hand-wired
+version packs 2 channels per upper head; the IR uses 1 channel per head.
+Both produce identical forward passes, so we test behavioral equivalence
+across all 4 and only assert bit equality where deterministic.
+"""
+
+from __future__ import annotations
+
+import torch
+
+from calm.llm_computer.programs.add_one import build_add_one
+from calm.llm_computer.programs.add_one_ir import build_add_one_ir
+from calm.llm_computer.programs.copy_past import build_copy_past
+from calm.llm_computer.programs.copy_past_ir import build_copy_past_ir
+from calm.llm_computer.programs.increment_counter import build_increment_counter
+from calm.llm_computer.programs.increment_counter_ir import build_increment_counter_ir
+from calm.llm_computer.programs.threshold import build_threshold
+from calm.llm_computer.programs.threshold_ir import build_threshold_ir
+
+
+def _argmax_decode(model, x: torch.Tensor) -> list[int]:
+    with torch.no_grad():
+        return model(x)[0].argmax(dim=-1).tolist()
+
+
+def test_add_one_behavioral_match():
+    hand = build_add_one(vocab_size=8)
+    ir = build_add_one_ir(vocab_size=8)
+    assert hand.param_count() == ir.param_count() == 1280
+    for k in range(8):
+        x = torch.tensor([[k]], dtype=torch.long)
+        assert _argmax_decode(hand, x) == _argmax_decode(ir, x), f"add_one mismatch at k={k}"
+
+
+def test_add_one_bit_match():
+    """add_one is fully deterministic IR→weights — bit-match expected."""
+    hand = build_add_one(vocab_size=8)
+    ir = build_add_one_ir(vocab_size=8)
+    for name_hand, p_hand in hand.named_parameters():
+        p_ir = dict(ir.named_parameters())[name_hand]
+        assert torch.equal(p_hand, p_ir), f"add_one bit-match failed at {name_hand}"
+
+
+def test_threshold_behavioral_match():
+    hand = build_threshold(vocab_size=8, threshold_value=4)
+    ir = build_threshold_ir(vocab_size=8, threshold_value=4)
+    assert hand.param_count() == ir.param_count() == 216
+    for k in range(8):
+        x = torch.tensor([[k]], dtype=torch.long)
+        assert _argmax_decode(hand, x) == _argmax_decode(ir, x), f"threshold mismatch at k={k}"
+
+
+def test_threshold_bit_match():
+    """FFN neuron allocation is deterministic — bit-match expected."""
+    hand = build_threshold(vocab_size=8, threshold_value=4)
+    ir = build_threshold_ir(vocab_size=8, threshold_value=4)
+    for name_hand, p_hand in hand.named_parameters():
+        p_ir = dict(ir.named_parameters())[name_hand]
+        assert torch.equal(p_hand, p_ir), f"threshold bit-match failed at {name_hand}"
+
+
+def test_increment_counter_behavioral_match():
+    hand = build_increment_counter(vocab_size=8)
+    ir = build_increment_counter_ir(vocab_size=8)
+    assert hand.param_count() == ir.param_count() == 2176
+    # Length 1..8, arbitrary input tokens.
+    for length in (1, 3, 5, 8):
+        x = torch.zeros(1, length, dtype=torch.long)
+        assert _argmax_decode(hand, x) == _argmax_decode(ir, x), \
+            f"increment_counter mismatch at length={length}"
+
+
+def test_increment_counter_bit_match():
+    hand = build_increment_counter(vocab_size=8)
+    ir = build_increment_counter_ir(vocab_size=8)
+    for name_hand, p_hand in hand.named_parameters():
+        p_ir = dict(ir.named_parameters())[name_hand]
+        assert torch.equal(p_hand, p_ir), f"increment_counter bit-match failed at {name_hand}"
+
+
+def test_copy_past_behavioral_match():
+    hand = build_copy_past(vocab_size=8)
+    ir = build_copy_past_ir(vocab_size=8)
+    assert hand.param_count() == ir.param_count() == 2560
+    for inp in ([3, 7, 2, 5, 1], [0, 1, 2, 3, 4, 5, 6, 7], [7, 0], [5]):
+        x = torch.tensor([inp], dtype=torch.long)
+        assert _argmax_decode(hand, x) == _argmax_decode(ir, x), \
+            f"copy_past mismatch at input={inp}"
+
+
+def test_copy_past_weight_diff_is_documented():
+    """Sanity-check that the 'different head packing' claim is true —
+    if a future change makes them bit-match, this test will fail and we
+    can promote copy_past to the bit-match tier."""
+    hand = build_copy_past(vocab_size=8)
+    ir = build_copy_past_ir(vocab_size=8)
+    diffs = []
+    for name_hand, p_hand in hand.named_parameters():
+        p_ir = dict(ir.named_parameters())[name_hand]
+        if not torch.equal(p_hand, p_ir):
+            diffs.append(name_hand)
+    assert "W_qkv.0.weight" in diffs, \
+        "copy_past head packing changed — remove this test and promote to bit-match"
+
+
+if __name__ == "__main__":
+    test_add_one_behavioral_match()
+    print("[ok] add_one behavioral match")
+    test_add_one_bit_match()
+    print("[ok] add_one bit match")
+    test_threshold_behavioral_match()
+    print("[ok] threshold behavioral match")
+    test_threshold_bit_match()
+    print("[ok] threshold bit match")
+    test_increment_counter_behavioral_match()
+    print("[ok] increment_counter behavioral match")
+    test_increment_counter_bit_match()
+    print("[ok] increment_counter bit match")
+    test_copy_past_behavioral_match()
+    print("[ok] copy_past behavioral match")
+    test_copy_past_weight_diff_is_documented()
+    print("[ok] copy_past weight diff is documented")
+    print("\noverall: PASS (all 4 primitives compile from IR)")

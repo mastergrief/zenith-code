@@ -13,13 +13,20 @@ Two flavors of node coexist in the same IR to support two compile targets:
 
 **Hardware nodes** (Round 4 Layer 1 — direct compile to transformer weights):
   - `TokenInput` / `TokenOutput` — for the Small2DTransformer pipeline.
-  - Later: `LookUp` (attention head) and `ReGLU` (FFN neuron) as
-    first-class nodes. Not added yet — hand-wired in `programs/*.py` for
-    now; promoted once the arithmetic path ships.
+  - `TokenEmbed` / `PosEmbed` — populate embedding tables.
+  - `LookUp` — one attention head (first-tie "copy-from-pos-0" form for
+    session 26; parabolic-key lookups in a later pass). Specifies which
+    residual channels to read as the V projection and which channels to
+    write the attention output into.
+  - `ReGLU` — one FFN neuron: `out_channel += coef · val · ReLU(gate)`,
+    where `gate` and `val` are linear combinations of residual channels.
+    Section 4c/4d of RESEARCH/03.
+  - `LinearHead` — final head weights, one `(token, channel, coef)`
+    triple per wiring.
 
 The compute-node subset is self-contained and independent of the
 hardware-node subset. Today's interpreter walks only the compute nodes;
-tomorrow's compiler walks both.
+the `compile_program` path walks the hardware nodes.
 """
 
 from __future__ import annotations
@@ -89,6 +96,62 @@ class TokenOutput(Node):
     vocab_size: int = 0
     source: Optional[Node] = None
     matrix: Optional[torch.Tensor] = None
+
+
+# Linear combination over residual channels: list of (channel_index, coef).
+# The compiler reads this as "sum_i coef_i * residual[channel_i]".
+ChannelLC = List[Tuple[int, float]]
+
+
+@dataclass
+class TokenEmbed(Node):
+    """Per-token entries `(token_id, channel, coef)` — tok.weight[k, ch] = coef."""
+    entries: List[Tuple[int, int, float]] = field(default_factory=list)
+
+
+@dataclass
+class PosEmbed(Node):
+    """Per-position entries `(position, channel, coef)` — pos.weight[p, ch] = coef."""
+    entries: List[Tuple[int, int, float]] = field(default_factory=list)
+
+
+@dataclass
+class LookUp(Node):
+    """Attention head — copy-from-pos-0 form.
+
+    Keys / queries are all zero, so hard-max argmax with first-tie
+    semantics deterministically picks past position 0. Values get read
+    from the residual via `v_source_channels`, written to the output
+    residual via `out_channels` (same length).
+
+    Session 26 ships just this form because it's what `copy_past` needs.
+    Parabolic-key exact lookups (RESEARCH/03 §4a) land in a later pass.
+    """
+    layer: int = 0
+    v_source_channels: List[int] = field(default_factory=list)
+    out_channels: List[int] = field(default_factory=list)
+
+
+@dataclass
+class ReGLU(Node):
+    """One FFN neuron: `output_channel += output_coef · val · ReLU(gate)`.
+
+    `gate` and `val` are linear combinations of residual channels. Section
+    4c/4d of RESEARCH/03 — a gated ReLU computes exact step functions on
+    integer inputs (`1[z ≥ 0] = ReLU(z+1) − ReLU(z)`) and exact products
+    (`a · b = a · ReLU(b) − a · ReLU(−b)` for signed ints).
+    """
+    layer: int = 0
+    gate: ChannelLC = field(default_factory=list)
+    val: ChannelLC = field(default_factory=list)
+    output_channel: int = 0
+    output_coef: float = 1.0
+
+
+@dataclass
+class LinearHead(Node):
+    """Final head entries `(token_id, channel, coef)` — head.weight[k, ch] = coef."""
+    entries: List[Tuple[int, int, float]] = field(default_factory=list)
 
 
 # --- Container ---
