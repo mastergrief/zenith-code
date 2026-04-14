@@ -18,6 +18,7 @@ import torch
 
 from calm.llm_computer.programs.add_one import build_add_one
 from calm.llm_computer.programs.add_one_ir import build_add_one_ir
+from calm.llm_computer.programs.adder_tiny import build_adder_tiny
 from calm.llm_computer.programs.copy_past import build_copy_past
 from calm.llm_computer.programs.copy_past_ir import build_copy_past_ir
 from calm.llm_computer.programs.increment_counter import build_increment_counter
@@ -96,6 +97,18 @@ def test_copy_past_behavioral_match():
             f"copy_past mismatch at input={inp}"
 
 
+def test_adder_tiny_compositional():
+    """1-digit adder composing LookUp + ReGLU. a, b in [0, 3]."""
+    model = build_adder_tiny(vocab_size=8, max_len=4)
+    assert model.param_count() == 1020
+    for a in range(4):
+        for b in range(4):
+            x = torch.tensor([[a, b]], dtype=torch.long)
+            with torch.no_grad():
+                got = int(model(x)[0, 1].argmax().item())
+            assert got == a + b, f"adder_tiny: {a}+{b} expected {a+b} got {got}"
+
+
 def test_copy_past_weight_diff_is_documented():
     """Sanity-check that the 'different head packing' claim is true —
     if a future change makes them bit-match, this test will fail and we
@@ -128,4 +141,6 @@ if __name__ == "__main__":
     print("[ok] copy_past behavioral match")
     test_copy_past_weight_diff_is_documented()
     print("[ok] copy_past weight diff is documented")
-    print("\noverall: PASS (all 4 primitives compile from IR)")
+    test_adder_tiny_compositional()
+    print("[ok] adder_tiny compositional (1-digit adder, 16 cases)")
+    print("\noverall: PASS (all 4 primitives + 1-digit adder compile from IR)")
