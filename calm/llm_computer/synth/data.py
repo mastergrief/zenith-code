@@ -30,17 +30,13 @@ from calm.hrm.data import _CHAR_TO_ID
 _OPS = ["+", "-", "*"]
 
 
-def _eval(expr: str, a: int, b: int) -> int:
+def _eval(expr: str, a: int, b: int):
     """Evaluate an expression with a and b substituted. Safe: no eval()."""
-    # Expressions are small — just interpret manually via Python eval on a
-    # whitelist. We use a restricted replace since our templates are simple.
-    # Safer than ast walk for this tiny grammar.
     replaced = expr.replace("a", str(a)).replace("b", str(b))
-    # Whitelist chars
+    # Whitelist chars — includes / and // for library-taught templates.
     for c in replaced:
-        if c not in "0123456789+-* ()":
+        if c not in "0123456789+-*/ ()":
             raise ValueError(f"bad char in {expr!r}: {c!r}")
-    # Python eval is acceptable here given the whitelist above.
     return eval(replaced)  # noqa: S307
 
 
