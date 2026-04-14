@@ -258,6 +258,43 @@ first one that tells you what you need.
   merge / environment change before claiming the next optimization
   moved anything.
 
+## Feedback-loop validation pattern
+
+For any system with a `learn` phase and an `apply` phase —
+AutoLearner, ModuleLearner, pattern DBs, self-tuning components —
+write three layers of tests in this order:
+
+1. **Unit tests that prove the cycle closes.** Feed in a correction;
+   assert the pattern is recorded; assert the next matching input
+   produces the right `apply`-phase output. If this fails, the loop
+   is open. See `calm/tests/test_auto_learn_loop.py::test_loop_closes_*`.
+2. **Quantitative effectiveness harness.** Script that runs N
+   corrections then measures hit rate on held-out inputs. Report the
+   delta round-over-round — does adding more corrections monotonically
+   improve coverage? `calm/closed_loop_eval.py` is the canonical
+   example (90% → 100% over 3 rounds, 10× pattern compression via
+   generalization).
+3. **End-to-end integration test with mocked dependencies.** Mock the
+   expensive component (LLM inference, external API) and exercise the
+   full pipeline through the real facade. Assert the learned patterns
+   actually get injected upstream at the next invocation. See
+   `calm/tests/test_auto_calm_integration.py` — mocks `_generate`,
+   proves `AutoCalmEngine` injects `Verified facts: 347 * 289 =
+   100283` into the system prompt on round 2 after learning from
+   round 1.
+
+Shape gates on the `apply` phase matter too. Vector 1 phase 2 found a
+real defect: function patterns were firing on every numeric prompt
+(factorial(5) instantiated for `what is 5 * 7?`), flooding the system
+prompt with irrelevant precomputes. Fix: require a shape keyword in
+the prompt (function name, operator, or NL alias like "plus"/"times").
+Add the shape-gate test alongside the loop-closes test.
+
+Visibility matters once both halves work. `scripts/learning_dashboard.py`
+prints the current state of both loops — pattern counts, hit counters,
+recurring issues — in one command. Build the equivalent for any new
+loop you add.
+
 ## CALM iteration pattern
 
 The hypothesis-test-iterate loop applied to CALM intelligence scaling:
@@ -295,4 +332,4 @@ time (~30-60s per prompt).
 - **Pure discovery reading.** Reading code to understand the system
   doesn't need a metric. Once you start *changing* it, it does.
 
-For everything else: hypothesis, test, iterate, commit, repeat.
+**IMPORTANT**: Assume nothing. Hypothesis, Build, Test & Iterate.

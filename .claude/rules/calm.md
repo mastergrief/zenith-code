@@ -199,6 +199,79 @@ Virtuous cycle: corrections → training data → (optional) fine-tune →
 fewer corrections → higher-quality corrections. But backends are the
 primary path — training is supplementary.
 
+## Feedback loops — closed, tested, measured (Vector 1, session 26)
+
+Both self-learning subsystems have full test coverage and operator
+visibility. The feedback loop is no longer "hoped to work" — it's
+proven to work and quantifiable.
+
+### AutoLearner (`calm/auto_learn.py`, 17 tests)
+
+- `learn_from_correction(claim)` generalizes expressions (`17*23`
+  → `"N * O"`, `is_prime(391)` → `"is_prime(N)"`). Frequency
+  counter bumps on repeat, hit counter persists across reloads.
+- `suggest_precomputes(prompt)` **shape-gates** pattern instantiation:
+  function patterns require the function name (or alias: "prime",
+  "fib", "factorial", "gcd", ...) in the prompt; arithmetic patterns
+  require the operator OR a natural-language form ("plus", "times",
+  "multiplied"). Before this (phase 1 defect), patterns fired on any
+  prompt with a number — injecting irrelevant precomputes alongside
+  intended ones.
+- `prune_cold_patterns(min_hits, min_frequency)` culls never-fired
+  patterns that were only seen once; high-frequency patterns survive.
+- Tests at `calm/tests/test_auto_learn_loop.py` prove the loop
+  closes: correct `17 * 23` → next `347 * 289` prompt precomputes
+  100283 correctly.
+- Effectiveness harness at `calm/closed_loop_eval.py` measured
+  **90% → 100% hit rate over 3 rounds of 20 corrections each** with
+  10× pattern compression via generalization.
+
+### ModuleLearner (`calm/module_learning.py`, 11 tests)
+
+- `record(module, issue_type, context)` tracks recurring cognitive-
+  module issues with normalized keys.
+- `suggest_prompt_additions(prompt)` returns prevention strings for
+  context-matched issues seen ≥ 3 times. Context detection routes
+  between comparison / debugging / explanation / design / operations
+  / general.
+- Tests at `calm/tests/test_module_learning_loop.py` prove the
+  3-occurrence threshold works and preventions don't leak between
+  contexts.
+
+### End-to-end integration (`calm/tests/test_auto_calm_integration.py`)
+
+Mocks `_generate` inside `AutoCalmEngine`, exercises the full
+pipeline without live Gemma. Three tests:
+- `test_loop_closes_in_auto_calm_engine` — round 1 LLM emits wrong
+  answer → verifier + learner record pattern → round 2 prompt sees
+  "Verified facts: ..." in system prompt BEFORE generation.
+- `test_loop_shape_gate_prevents_noise` — factorial pattern does
+  NOT leak into multiplication-prompt facts section. Phase-2 shape
+  gate is load-bearing end-to-end.
+- `test_verified_claim_does_not_learn` — correct first-time answer
+  → zero patterns recorded. Guard against spurious accumulation.
+
+### Operator visibility
+
+```bash
+PYTHONPATH=. python3 scripts/learning_dashboard.py
+```
+
+Prints both loops' current state — total patterns, hit counts, cold
+patterns, recurring issues by module and context. Canonical ops tool
+when diagnosing "why isn't the system precomputing my query?"
+
+### The rule
+
+When adding any new pattern-database / self-tuning component:
+1. Write the loop-closes unit test.
+2. Write the effectiveness harness (before/after on a held-out set).
+3. Write the end-to-end integration test with mocked upstream.
+4. Add to the dashboard.
+
+`.claude/rules/workflow.md` §"Feedback-loop validation pattern"
+codifies this as a project-wide rule.
+
 ## Verification (`calm/verifier.py`)
 
 4-lane TMR for math backend dispatches:

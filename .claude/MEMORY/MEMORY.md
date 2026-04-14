@@ -1,2 +1,3 @@
-- [Training status](project_training_status.md) — Qwen 3.5 0.8B reasoning base needs restart, didn't finish 2026-04-04
-- [Session Handoff](SESSION_HANDOFF.md) — Full project state as of 2026-04-04
+- [CRLM SPEC](CRLM_SPEC.md) — Post-discovery architecture snapshot (session 26): HRMs + LLM-Computer compiler + CALM feedback loops, 23+ commits, 311 tests
+- [Session Handoff](SESSION_HANDOFF.md) — Session 25 tactical handoff (superseded by CRLM SPEC for architectural state; keep for historical context)
+- [evals/](evals/) — 2026-04-07 NIAH eval reports for Gemma 4 E4B and Qwen 3.5 4B (authoritative for `agents/compact.py:MODEL_CONTEXT_LIMITS`)

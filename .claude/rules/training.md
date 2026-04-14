@@ -50,16 +50,47 @@ For HRMs in the HRM-thinking + LLM-Compute split (`calm/hrm/` → `calm/llm_comp
 
 The single biggest training improvement in session 25: **stop asking HRM to compute values**. Use `--structure-only` in `calm/hrm/train.py`. Decoder target becomes `problem + = + <eos>`. The LLM-Computer interpreter handles every value via `safe_eval`. Result: 245K → 48K params, 15 min → 145 sec training, 43% → 96.7% full-expression accuracy.
 
-### Sweet-spot config (math, session 25)
+### Sweet-spot config (all production domains, session 26)
 
 ```bash
+# Math (3-digit operands)
 PYTHONPATH=. python3 -m calm.hrm.train --seq2seq --structure-only \
   --hidden 32 --num-heads 4 --l-layers 1 --h-layers 1 --dec-layers 1 \
-  --epochs 100 --lr 1e-3 --problems 2000 --batch-size 128 \
+  --epochs 500 --lr 1e-3 --problems 2000 --batch-size 128 \
   --max-enc 32 --max-dec 32
+
+# NL templates, word problems, GSM-style, multi-task (pooled) —
+# standalone trainers at scripts/train_hrm_{nl,word,gsm,multi}.py.
+# Each uses the same 48K architecture; only --max-enc changes per domain
+# (48 / 80 / 128 / 128 respectively).
 ```
 
-48,864 params, ~145 seconds on RTX 4070, 99.7% per-token val_acc. Checkpoint: `calm/hrm/checkpoints/math_structure_best.pt`.
+All 5 production checkpoints: 48,864 params. Best-val-acc selection lands between epoch 100-300 in practice. Training time: ~145s (math) to ~800s (GSM / multi-task) on RTX 4070.
+
+### Rule: ALWAYS `--epochs 500`, never `--epochs 100`
+
+Observed 4 times across session 26: cosine LR schedule over only 100 epochs under-fits on any NL domain. The LR decays to ~0 before the model has converged on digit-copy precision. Pattern:
+
+| Domain | 100ep result (full-expression) | 500ep result | Delta |
+|---|---:|---:|---:|
+| Math 3-digit | 26.7% | 100% | +73pp |
+| NL templates | 96.7% | 97% | baseline |
+| Word problems | 100% (killed early) | — | — |
+| GSM-style | 83.3% | 93.3% | +10pp |
+
+Set `--epochs 500` generously. Rely on `best_val_acc` checkpoint selection to pick the right moment. Don't kill early unless monitored logs confirm convergence.
+
+### CRLM scaling-law empirics (session 26, 48K params each)
+
+| Input language | Max chars | Per-token | Full / structural | Note |
+|---|---:|---:|---:|---|
+| Math expression echo (3-digit) | ~20 | 100% | 30/30 | Round 1e sweet spot |
+| NL templates ("what is X plus Y?") | ~30 | 99.8% | 29/30 | Translation |
+| Word problems (names + pronouns) | 78 | 99.7% | 30/30 | Anaphora 2-3 sentences |
+| GSM-style (subordinate clauses) | 104 | 99.6% | 28/30 | **First ceiling** — digit transpositions |
+| Multi-task (all four pooled) | 104 | 100% | TBD per-domain | Vector 2 phase 1 |
+
+The 7% GSM shortfall is all 2-digit operand transposition (`21 → 12`, `15 → 51`) — encoder-side bottleneck localizing numeric spans in longer filler text. Not a computation failure, a transcription failure. If the 7% matters downstream, scale to h=64 or h=128 per "When to scale HRM up" below.
 
 ### Per-token vs full-expression accuracy
 
@@ -79,11 +110,12 @@ The fix isn't to retrain harder — it's to **stop asking for values**. Structur
 
 **HRM size scales with problem-language complexity, NOT problem-difficulty.** `factorial(100)` is no harder than `factorial(2)` for the HRM — both emit 14 tokens of the same structure. The compute substrate handles values.
 
-### Pitfalls observed (session 25)
+### Pitfalls observed (sessions 25-26)
 
-- **Cosine LR scheduled to 0 too early kills learning.** A 50-epoch run ended with LR ≈ 0 at epoch 25, capped val_acc at 73%. The same model at 500 epochs hit 99.7% by epoch 100 because LR was still meaningful. Set `--epochs` generously and rely on `best_val_acc` checkpoint selection, or use a less aggressive schedule.
-- **Smoke cases failing at 3-digit numbers** (`347 * 289`) are out-of-distribution — `MathDataGenerator` caps operands at 2 digits. Not an architecture problem; widen the data range to fix.
-- **Per-token > 90% but full-expression < 50%** means model nailed structure tokens (operators, parens, function names) but mis-copied digits. Check via `_hrm_raw_emit()` in eval script — if structure is good but digits drift, train more or use `--verified` mode (LLM-Computer parses the input directly, bypassing HRM's mis-copies).
+- **Cosine LR scheduled to 0 too early kills learning.** See the `--epochs 500` rule above — this is now elevated from pitfall to mandatory default on any NL-input HRM.
+- **Smoke cases failing at 3-digit numbers** are out-of-distribution. `MathDataGenerator`'s `_arithmetic_simple` was capped at `randint(1, 99)`; bumped to 999 in session 26 step 1. Any new domain: match the operand range to the smoke cases you care about.
+- **Per-token > 90% but structural < 50%** means the model nailed structure tokens (operators, parens, function names) but mis-copied digits. Use `_hrm_raw_emit()` from eval scripts to inspect raw output — if structure is good but digits drift, add data OR scale capacity. The `--verified` mode (LLM-Computer parses the input directly) masks this class of failure when full-expression is the gate but reveals it when structural-match is the gate.
+- **Per-domain `max_enc` is load-bearing.** Math fits in 32, NL in 48, word problems in 80, GSM in 128, multi-task in 128 (max of components). Undershoot `max_enc` and the sentence is truncated silently mid-operand; overshoot and you waste compute. The canonical trainer scripts (`scripts/train_hrm_{nl,word,gsm,multi}.py`) document the correct bound per domain.
 
 ## Dataset Quality
 - Claude-authored/hand-written data >> 9B-generated data (higher quality, more consistent)

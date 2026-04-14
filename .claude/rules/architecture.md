@@ -55,11 +55,19 @@ The CRLM thesis: **partition intelligence into structure (learned, modest scale)
 Implementation of Percepta's March 2026 research (RESEARCH/01-03):
 
 - `Small2DTransformer` (`model.py`): vanilla PyTorch, `d_head=2`, optional `use_hard_max=True`. Standard `nn.MultiheadAttention` + gated ReLU FFN + causal mask + learned positional embeddings. Weights are compiled source code, not statistical summary.
-- `HullKVCache` (`hull_cache.py`): online 2D convex hull via Andrew's monotone chain (upper + lower hulls; `cross >= 0` removes for upper, `<= 0` for lower). Replaces `Θ(t)` linear-scan attention with `O(log t)` supporting-point query. **108× speedup** confirmed at N=2K (`tests/test_hull_cache.py`).
-- Gate-graph IR (`gate_graph.py`): two node families share the IR — compute (`Const`, `BinOp`, `Delegate`, `Result`) and hardware (`TokenInput`/`TokenOutput`). Today's interpreter walks compute nodes; tomorrow's compiler walks both.
+- `HullKVCache` (`hull_cache.py`): online 2D convex hull via Andrew's monotone chain. **108× speedup** vs linear scan at N=2K (`tests/test_hull_cache.py`). Parity with batched hard-max attention validated against compiled programs (`tests/test_hull_cache_attention.py`). Not yet wired into `Small2DTransformer.forward()` — perf path for long sequences, our programs use S ≤ 5 where linear scan wins.
+- Gate-graph IR (`gate_graph.py`) — compute + hardware families:
+  - **Compute** (interpreter walks): `Const`, `BinOp`, `Delegate`, `Result`.
+  - **Hardware** (compiler walks): `TokenEmbed` (per-token entries), `PosEmbed` (per-position entries), `LookUp` (copy-from-pos-0 attention), `LookUpExact` (parabolic-key `k_j = (2j, -j²)` with per-channel coefficients — `pos_key0_coef=2.0` on a scalar key channel enables semantic-keyed retrieval without a precomputed `2·key` table), `ReGLU` (one FFN neuron: `out += coef · val · ReLU(gate)`), `LinearHead`, `TokenInput`/`TokenOutput` (legacy Layer-1 shorthand).
+- Declarative compiler (`compile.py`): `compile_program(graph, d_model, n_heads, n_layers, d_ffn, max_len, vocab_size)` zeroes every weight, walks hardware nodes, populates tok/pos/QKV/out/ffn/head tensors per-node. Per-layer head and neuron counters allocate sequentially. `d_head == 2` enforced by assert.
+- Greedy auto-scheduler (`schedule.py`): `auto_schedule(graph)` assigns each `LookUp`/`LookUpExact`/`ReGLU` node its minimum valid `(layer, phase)` based on channel availability. Phase 0 = layer 0 attn, phase 1 = layer 0 FFN, etc. Callers no longer hand-pick layers. MILP scheduling (RESEARCH/03 §6) deferred until programs hit ~30+ gates with real slot pressure.
 - Parser (`parse.py`): `parse_expression()` via Python `ast.parse` → `GateGraph`. `extract_problem_from_trace()` extracts the pre-`=` segment from HRM scratchpad and strips `<call>` markers.
 - Interpreter (`interpret.py`): topo-walks compute nodes; `Delegate` routes through `safe_eval` (full 1002-function backend registry).
-- 4 hand-wired primitive programs in `programs/`: `add_one`, `copy_past`, `increment_counter`, `threshold` — each exercises a different primitive (linear head, hard-max attention, position embedding, FFN step function).
+- **9 compiled programs in `programs/`:**
+  - Primitives: `add_one` (1,280 params), `copy_past` (2,560), `increment_counter` (2,176), `threshold` (216). Each has an `*_ir.py` IR-compiled counterpart; 3 of 4 bit-match the hand-wired version (`copy_past` differs only in head packing; behavior identical).
+  - Composition: `adder_tiny` (1,020 params, 1-digit sum via LookUp + 14 ReGLU step functions, 16/16 exhaustive), `adder` (486,012 params, 2-digit sum, **10,000/10,000 exhaustive** in 0.38s).
+  - Memory: `retrieve_by_index` (1,164 params, position-indexed parabolic-key retrieval, 256/256 exhaustive), `retrieve_threshold` (590 params, same-layer attn+FFN composition, 256/256), `read_by_key` (1,410 params, semantic KV via ReGLU key-squaring + coefficient-parametrized `LookUpExact`, 96/96 = 4! perms × 4 queries).
+- **ReGLU key-squaring trick** (enables semantic-keyed lookup): `-k² = -k · ReLU(k)` for non-negative integer `k`. One ReGLU neuron in layer-0 FFN writes `-k²` to a residual channel; a later layer's `LookUpExact` reads it as `pos_key1` with `pos_key0_coef=2.0` on the raw key channel. This lifts a scalar key into the `(2k, -k²)` parabolic form exactly.
 
 ### Convergence pipeline
 
@@ -69,16 +77,25 @@ HRM emits structure → parse to GateGraph → interpret with safe_eval
                                               analytically-correct answer
 ```
 
-Eval mode (`scripts/eval_hrm_math.py --verified`) runs this path. With the Round 1e checkpoint: **30/30 held-out, structure-emission used in 30/30, structurally-matched-input in 29/30**. The lone failure was a single mis-copied digit in `gcd(39, 39) → gcd(69, 39)`.
+Eval mode runs this path per-domain: `scripts/eval_hrm_math.py --verified`, `eval_hrm_nl.py`, `eval_hrm_word.py`, `eval_hrm_gsm.py`, `eval_hrm_multi.py`. CRLM scaling-law empirics across 4 production checkpoints (all 48K params, all `--structure-only`):
 
-Future direction: replace the Python interpreter with a compiled `Small2DTransformer` per query (the paper's Futamura projection). Same IR, different execution substrate.
+| Input language | Max chars | Per-token | Full-expression / structural |
+|---|---:|---:|---:|
+| Math expression echo (3-digit) | ~20 | 100% | 30/30, smoke 5/5 |
+| NL templates ("what is X plus Y?") | ~30 | 99.8% | 29/30, smoke 5/5 |
+| Word problems (names, pronouns, multi-step) | 78 | 99.7% | 30/30, smoke 5/5 |
+| GSM-style (subordinate clauses, 3-4 terms) | 104 | 99.6% | 28/30 — **first observed ceiling** |
+
+Multi-task HRM (`calm/hrm/checkpoints/multi_task_best.pt`) pools all four domains into one 48K model: 100% per-token val_acc; per-domain eval via `scripts/eval_hrm_multi.py`. This is Vector 2 phase 1.
+
+Future direction: replace the Python interpreter with a compiled `Small2DTransformer` per query (the paper's Futamura projection). Same IR, different execution substrate. Scoped into four phases in `.claude/MEMORY/CRLM_SPEC.md` §H.
 
 ## File Organization
 - `agents/` — core harness code (15 files, ~4,400 LOC). No ML dependencies. Must work on Windows + WSL2 with Python 3.11+
 - `agents/distill/` — training pipeline (10 Python files + 1 notebook). ML dependencies (torch, unsloth, transformers) only required here. **Secondary to backends** — only needed for domains that can't be computed.
 - `calm/` — CALM engine + Auto-CALM + modular backends + cognitive intelligence layer (~194 files, ~37,400 LOC, 250 tests). Engine V2 pipeline with 116 backends, 39 cognitive modules, adaptive thinking, self-healing, factual cross-check, module learning feedback loop. Dependencies: `wasmtime` (optional, for wasm backend). Full spec: `.claude/rules/calm.md`
-- `calm/hrm/` — HRM (Hierarchical Reasoning Model) encoder-decoder. `model.py` (HRM, HRMSeq2Seq, HRMEncoder, HRMDecoder), `data.py` (MathDataGenerator, MathSeq2SeqDataset with scratchpad / structure-only modes), `train.py` (HRMTrainer + HRMSeq2SeqTrainer + CLI), `inference.py` (HRMReasoner + HRMSeq2SeqReasoner with backend-call delegation). Sweet spot for math: 48K params via `--structure-only`.
-- `calm/llm_computer/` — Percepta LLM-Computer prototype: `Small2DTransformer` (`model.py`), `HullKVCache` (`hull_cache.py`), gate-graph IR (`gate_graph.py`), parser/interpreter (`parse.py` + `interpret.py`), 4 hand-wired primitive programs in `programs/`. CPU-only, standalone.
+- `calm/hrm/` — HRM (Hierarchical Reasoning Model) encoder-decoder. Core: `model.py` (HRM, HRMSeq2Seq, HRMEncoder, HRMDecoder), `train.py`/`inference.py`. Per-domain data generators: `data.py` (math), `nl_data.py` (NL templates), `word_data.py` (word problems), `gsm_data.py` (GSM-style narratives), `multi_data.py` (pooled). 5 production checkpoints at `calm/hrm/checkpoints/*_best.pt`, all 48K params via `--structure-only`. Dedicated tests: `calm/hrm/tests/`.
+- `calm/llm_computer/` — Percepta LLM-Computer prototype: `Small2DTransformer` (`model.py`), `HullKVCache` (`hull_cache.py`), gate-graph IR (`gate_graph.py`), declarative compiler (`compile.py`), greedy auto-scheduler (`schedule.py`), parser/interpreter (`parse.py` + `interpret.py`), 9 compiled programs in `programs/`. CPU-only, standalone. 30+ tests in `tests/` covering per-primitive bit/behavioral match, adder exhaustive, scheduler verification, HullKVCache parity.
 - `models/` — Ollama Modelfiles (3 files: qwen9b-fast, qwen4b-fast, reasoning-base)
 - `bin/zenith` — launcher script: auto-starts llama.cpp, `--gguf PATH` first-arg flag, configurable via `ZENITH_*` env vars. Does NOT `cd` into repo.
 - `scripts/` — dev tooling (needle_test, eval_base_models, smoke_test_harness, test_model_swap, generate_react_security_examples, setup_training)

@@ -11,8 +11,10 @@ verifies every answer on CPU, and gets smarter from usage without training.
 |---|---|---|
 | **tq4+tq4 hybrid** | Custom TurboQuant quantization for weights + KV cache | 4B model at 512K context in 8GB VRAM — no competitor does this |
 | **Auto-CALM** | Transparent compute verification | Every claim CPU-checked, not hallucinated. 100% math benchmark |
-| **Self-learning** | Learned patterns compound from usage | System improves without training runs. Usage = moat |
+| **Self-learning** | Tested, shape-gated feedback loop | System improves without training. 90% → 100% hit rate after 3 rounds. Usage = moat |
 | **Modular backends** | Drop-in Python compute modules | Domain experts add backends, model gets instantly smarter |
+| **CRLM split** | 48K-param HRM for structure + compiled primitives for values | One tiny model handles all 4 NL domains at 93-100%; values are compiled, not trained |
+| **Analytical compile-to-weights** | Gate-graph IR → transformer weights, no training | 2-digit adder at 486K params, 10,000/10,000 exhaustive. Zero training cost for new deterministic skills |
 | **Fully local** | No cloud, no API, no internet required | Privacy, zero cost, offline-capable |
 
 When building features, ask: **does this strengthen a differentiator?**
