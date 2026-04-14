@@ -133,33 +133,42 @@ class LookUp(Node):
 class LookUpExact(Node):
     """Attention head — parabolic-key exact retrieval (RESEARCH/02 §5).
 
-    Keys per past position `j`:  `k_j = (2j, -j²)`  (set by `PosEmbed` into
-    two dedicated residual channels).
-    Query at query position `i`:  `q = (key, 1)`  where `key` comes from
-    a residual channel holding the integer index to retrieve, and `1`
-    comes from a dedicated bias channel.
+    Keys per past position `j`: `k_j = (pos_key0_coef · residual[pos_key0_channel],
+                                         pos_key1_coef · residual[pos_key1_channel])`.
 
-    Completing the square:
-        q · k_j = 2j · key − j² = key² − (j − key)²
-    The hard-max argmax over past positions `j` is therefore exactly
-    `j = key`.
+    Two calling conventions:
+      - **Position-indexed** (default coefs 1.0): `pos_key0_channel` holds
+        `2p` and `pos_key1_channel` holds `-p²` — both populated by
+        `PosEmbed`. Query's `key` = desired position.
+      - **Semantic-keyed** (with coefs): `pos_key0_channel` holds the
+        stored key scalar (coef 2.0 so `k[0] = 2·key_stored`),
+        `pos_key1_channel` holds `-key_stored²` (precomputed by a
+        `ReGLU` earlier in the graph). Query's `key` = desired key.
+
+    Query at query position: `q = (query_key_coef · residual[query_key_channel],
+                                    bias_coef · residual[bias_channel])`.
+
+    Completing the square (with coefs baked in):
+        q · k_j = 2·key_j·query_key − key_j²
+                = query_key² − (key_j − query_key)²
+    Hard-max over past positions selects `j` with `key_j == query_key`.
 
     The V projection pulls the requested `value_source_channels` from
     the selected position; `W_out` routes them into `out_channels`. One
     attention head per (v_source, out) pair, allocated sequentially.
 
-    Requires these residual channels populated BEFORE this node runs:
-      - `pos_key0_channel`: carries `2p` at every position (PosEmbed)
-      - `pos_key1_channel`: carries `-p²` at every position (PosEmbed)
-      - `query_key_channel`: the integer key to retrieve (from tok embed
-        or an earlier node's output)
-      - `bias_channel`: constant `1` at every position (PosEmbed)
+    Latest-write perturbation (RESEARCH/02 §5) is deferred — works only
+    when keys are distinct per position.
     """
     layer: int = 0
     pos_key0_channel: int = 0
+    pos_key0_coef: float = 1.0
     pos_key1_channel: int = 0
+    pos_key1_coef: float = 1.0
     query_key_channel: int = 0
+    query_key_coef: float = 1.0
     bias_channel: int = 0
+    bias_coef: float = 1.0
     value_source_channels: List[int] = field(default_factory=list)
     out_channels: List[int] = field(default_factory=list)
 

@@ -183,16 +183,17 @@ def _apply_lookup_exact(model: Small2DTransformer, node: LookUpExact,
                 f"LookUpExact at layer {node.layer}: head {head_idx} >= "
                 f"n_heads {cfg.n_heads}"
             )
-        # q projection.
+        # q projection (with coefs so callers can scale).
         model.W_qkv[node.layer].weight[q_start + 2 * head_idx + 0,
-                                        node.query_key_channel] = 1.0
+                                        node.query_key_channel] = node.query_key_coef
         model.W_qkv[node.layer].weight[q_start + 2 * head_idx + 1,
-                                        node.bias_channel] = 1.0
-        # k projection (parabolic keys read from pos_embed channels).
+                                        node.bias_channel] = node.bias_coef
+        # k projection (coefs let semantic-keyed use scale 2.0 on a scalar
+        # key channel rather than requiring a precomputed 2*key table).
         model.W_qkv[node.layer].weight[k_start + 2 * head_idx + 0,
-                                        node.pos_key0_channel] = 1.0
+                                        node.pos_key0_channel] = node.pos_key0_coef
         model.W_qkv[node.layer].weight[k_start + 2 * head_idx + 1,
-                                        node.pos_key1_channel] = 1.0
+                                        node.pos_key1_channel] = node.pos_key1_coef
         # v projection: pulls the requested value channel into v[0].
         model.W_qkv[node.layer].weight[v_start + 2 * head_idx + 0,
                                         v_src] = 1.0

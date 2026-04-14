@@ -23,6 +23,7 @@ from calm.llm_computer.programs.copy_past import build_copy_past
 from calm.llm_computer.programs.copy_past_ir import build_copy_past_ir
 from calm.llm_computer.programs.increment_counter import build_increment_counter
 from calm.llm_computer.programs.increment_counter_ir import build_increment_counter_ir
+from calm.llm_computer.programs.read_by_key import build_read_by_key
 from calm.llm_computer.programs.retrieve_by_index import build_retrieve_by_index
 from calm.llm_computer.programs.retrieve_threshold import build_retrieve_threshold
 from calm.llm_computer.programs.threshold import build_threshold
@@ -116,6 +117,24 @@ def test_retrieve_by_index_parabolic_keys():
                 got = int(model(x)[0, N].argmax().item())
             assert got == values[q], \
                 f"retrieve_by_index: values={values} q={q} got={got} exp={values[q]}"
+
+
+def test_read_by_key_semantic_lookup():
+    """Semantic-keyed LookUpExact: retrieve position where a named key
+    was stored. Exercises ReGLU-based key-squaring and coefficient-
+    scaled K projection (pos_key0_coef=2.0 on the scalar key channel)."""
+    import itertools
+    V = 4
+    model = build_read_by_key(vocab_size=V, max_len=V + 1)
+    for perm in itertools.permutations(range(V)):
+        for query_key in range(V):
+            inp = list(perm) + [query_key]
+            expected = perm.index(query_key)
+            x = torch.tensor([inp], dtype=torch.long)
+            with torch.no_grad():
+                got = int(model(x)[0, V].argmax().item())
+            assert got == expected, \
+                f"read_by_key: keys={perm} q={query_key} got={got} exp={expected}"
 
 
 def test_retrieve_threshold_same_layer_composition():
