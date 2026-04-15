@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 
 from calm.llm_computer.gemma_style import (
-    GemmaStyleConfig, LayerwiseRMSNorm, RMSNorm, geglu,
+    GemmaStyleConfig, LayerwiseRMSNorm, RMSNorm, geglu, swiglu,
     sliding_window_mask,
 )
 
@@ -85,6 +85,23 @@ def test_geglu_zero_gate_gives_zero():
     val = torch.ones(1, 2, 4)
     out = geglu(gate, val)
     assert torch.allclose(out, torch.zeros_like(out), atol=1e-6)
+
+
+def test_swiglu_shape_and_zero():
+    gate = torch.zeros(1, 2, 4)
+    val = torch.ones(1, 2, 4)
+    out = swiglu(gate, val)
+    # SiLU(0) = 0 * sigmoid(0) = 0 * 0.5 = 0
+    assert torch.allclose(out, torch.zeros_like(out), atol=1e-6)
+
+
+def test_swiglu_differs_from_geglu():
+    gate = torch.full((1, 1, 4), -1.0)
+    val = torch.ones(1, 1, 4)
+    sw = swiglu(gate, val)
+    ge = geglu(gate, val)
+    # SiLU and GELU differ at negative inputs
+    assert not torch.allclose(sw, ge)
 
 
 def test_geglu_differs_from_reglu():

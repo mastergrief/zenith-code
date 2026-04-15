@@ -95,9 +95,18 @@ def sliding_window_mask(
 def geglu(gate: torch.Tensor, val: torch.Tensor) -> torch.Tensor:
     """GeGLU: `GELU(gate) * val`. Smoother gradient than ReGLU's
     `ReLU(gate) * val` at approximately the same compute cost.
-    Used in Gemma, PaLM, and LLaMA-style GeGLU/SwiGLU family.
+    Used in PaLM, LLaMA-style GeGLU family.
     """
     return F.gelu(gate) * val
+
+
+def swiglu(gate: torch.Tensor, val: torch.Tensor) -> torch.Tensor:
+    """SwiGLU: `SiLU(gate) * val`. SiLU = x * sigmoid(x). Used by
+    Gemma, LLaMA 2+, Mistral. Slightly different from GeGLU in
+    negative-gate region; generally preferred by recent frontier
+    models. Drop-in replacement for geglu().
+    """
+    return F.silu(gate) * val
 
 
 # ----- Config -----

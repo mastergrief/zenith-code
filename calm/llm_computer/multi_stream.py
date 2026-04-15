@@ -42,12 +42,19 @@ import torch.nn.functional as F
 
 @dataclass
 class StreamSpec:
-    """One stream's shape. d_head is derived as d_model // n_heads; must
-    equal 2 per substrate invariant."""
+    """One stream's shape.
+
+    `d_head = d_model // n_heads`. Defaults to enforcing `d_head=2`
+    (substrate invariant required for compile-to-weights programs).
+    Set `allow_any_d_head=True` when using this stream for external
+    weights (Gemma, Llama) that require larger head dimensions.
+    Compiled cards CANNOT be installed into such streams.
+    """
     name: str
     d_model: int
     n_heads: int
     d_ffn: int
+    allow_any_d_head: bool = False
 
     @property
     def d_head(self) -> int:
@@ -55,6 +62,10 @@ class StreamSpec:
             f"d_model {self.d_model} not divisible by n_heads {self.n_heads}"
         )
         return self.d_model // self.n_heads
+
+    @property
+    def supports_compiled_cards(self) -> bool:
+        return self.d_head == 2
 
 
 @dataclass(frozen=True)
@@ -100,11 +111,14 @@ class MultiStreamConfig:
     joins: tuple[JoinSpec, ...] = field(default_factory=tuple)
 
     def __post_init__(self):
-        # Validate substrate invariant
+        # Validate substrate invariant — d_head=2 unless stream opts out
         for s in self.streams:
-            assert s.d_head == 2, (
-                f"stream {s.name!r}: d_head must be 2, got {s.d_head}"
-            )
+            if not s.allow_any_d_head:
+                assert s.d_head == 2, (
+                    f"stream {s.name!r}: d_head must be 2, got {s.d_head}. "
+                    f"Set allow_any_d_head=True for streams hosting "
+                    f"external-model weights (Gemma, etc.)"
+                )
         # Validate unique stream names
         names = [s.name for s in self.streams]
         assert len(set(names)) == len(names), (
