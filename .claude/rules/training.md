@@ -33,6 +33,12 @@
 - Merge with: `AutoTrainingCollector().export_merged()`
 - Virtuous cycle: model errors → corrections → training data → (optional) fine-tune → fewer errors
 - **This is the primary training data source going forward** — zero manual labeling
+- For substrate-native cards, this feeds continuous self-distill cycles
+  into the trained portions (pattern proven by session-27
+  `self_distill_synth.py` — teach once, library accretes, fine-tune
+  folds library back into weights). The same pattern generalizes to
+  SubstrateLM / SubstrateHRLM weight updates in the Brain + Cards
+  composition model.
 
 ## Training Best Practices
 - Always use `train_on_responses_only` — masks instruction/prompt tokens so loss is only computed on the model's generated responses
@@ -116,6 +122,106 @@ The fix isn't to retrain harder — it's to **stop asking for values**. Structur
 - **Smoke cases failing at 3-digit numbers** are out-of-distribution. `MathDataGenerator`'s `_arithmetic_simple` was capped at `randint(1, 99)`; bumped to 999 in session 26 step 1. Any new domain: match the operand range to the smoke cases you care about.
 - **Per-token > 90% but structural < 50%** means the model nailed structure tokens (operators, parens, function names) but mis-copied digits. Use `_hrm_raw_emit()` from eval scripts to inspect raw output — if structure is good but digits drift, add data OR scale capacity. The `--verified` mode (LLM-Computer parses the input directly) masks this class of failure when full-expression is the gate but reveals it when structural-match is the gate.
 - **Per-domain `max_enc` is load-bearing.** Math fits in 32, NL in 48, word problems in 80, GSM in 128, multi-task in 128 (max of components). Undershoot `max_enc` and the sentence is truncated silently mid-operand; overshoot and you waste compute. The canonical trainer scripts (`scripts/train_hrm_{nl,word,gsm,multi}.py`) document the correct bound per domain.
+
+## Substrate-Native Training (SubstrateLM / SubstrateHRLM)
+
+Different from HRMSeq2Seq training above. Substrate-native cards are
+decoder-only `Small2DTransformer` instances trained on chat-formatted
+text. They become substrate-compliant `.pt` files that compose with
+compiled programs and HRM specialists at runtime.
+
+### Config (MVP scale, proven)
+
+- `d_model=96-192`, `n_heads=d_model/2` (d_head=2 invariant),
+  `n_layers=3-5`, `d_ffn=2-4× d_model`, `max_len=256-512`.
+- BPE tokenizer via `tokenizers` lib, `vocab=4096-16384`. ByteLevel
+  pre-tokenizer AND ByteLevel decoder (forgetting the decoder breaks
+  sample readability — leaves raw BPE markers `Ġ`, `Ċ`). Trained on the
+  corpus directly.
+- Special tokens: `<|sys|>`, `<|user|>`, `<|asst|>`, `<|eos|>`, `<|pad|>`
+  + mode prefixes `<|lm|>`, `<|hrm|>` for hybrids.
+- Loss masking: `train_on_responses_only` — only assistant tokens get
+  gradient. For HRM-mode examples in hybrids, the mask is the expression
+  text after `=`.
+
+### Empirics
+
+- **SubstrateLM MVP** (`scripts/train_substrate_lm.py`): 1.25M params,
+  1.5K Claude examples, 3 epochs, batch 16, 13 min on CPU → ppl
+  4096→424. Format learned (`<think>`, numbered lists, code markers);
+  content coherence needs scale (100M-500M for useful prose).
+  Checkpoint at `calm/llm_computer/checkpoints/substrate_lm_mvp.pt`.
+- **Training corpus**: reuse existing `agents/distill/data/claude_reasoning.jsonl`
+  (910 examples) + `coding_reasoning_claude.jsonl` (547 examples).
+  Claude-authored > Gemma-generated at this scale (quality dominates
+  at small sample counts).
+
+### Hybrid (SubstrateHRLM) training lessons
+
+- **v1 result** (`scripts/train_hybrid_substrate.py`): LM mode improved
+  by 8.7% (cross-task transfer from HRM's grounded data). HRM mode
+  collapsed to 0% correct (78% parseable, 0% structural match).
+- **Diagnosis**: token-count imbalance (LM ~500 tok/ex vs HRM ~30
+  tok/ex → 16:1 LM gradient dominance) + single template family from
+  `nl_data.py` only (~15 phrasings).
+- **v2 fixes** (`scripts/train_substrate_hrmlm_v2.py`): oversample HRM
+  examples (3-4×), mode-loss weighting (HRM mode ×4), pool template
+  variety (nl_data + word_data + gsm_data + multi20_data → ~50+
+  phrasings). Applies the session-26 multi20 lesson: **variety beats
+  capacity for structure tasks**.
+- **v2 architecture**: D3 mixed geometry per layer (e.g.
+  `["euclidean", "hyperbolic", "lattice", "euclidean"]`). D5 per-mode
+  iteration count (HRM at 2-3 iterations, LM at 1). D2 trace emission
+  available for eval inspection.
+
+### Cross-task transfer measurement (1+1=N)
+
+When training a hybrid card, measure each mode's accuracy separately
+against single-task baselines:
+
+- **1+1=2** → modes coexist (no degradation). Acceptable PASS.
+- **1+1>2** → cross-task transfer (one mode improves the other).
+  Strongest PASS; evidence for shared representations.
+- **1+1<2** → modes interfere. Investigate token ratios, loss
+  weighting, mode-token strength.
+
+v1 result: 1+1=2.09 on LM (positive transfer from HRM data) and
+1+1=0 on HRM (collapse). Useful diagnostic per-mode — one signal alone
+would have missed the asymmetry.
+
+### Per-mode iteration during training (D5)
+
+- HRM-mode examples in hybrid training run with `n_iterations=2-3` (more
+  thinking on structure tasks).
+- LM-mode examples run with `n_iterations=1` (one pass for fluent
+  generation).
+- At inference, `n_iterations` is dispatched per mode token.
+- Training cost: ~1.5× per-step time when batch contains HRM examples.
+
+### GPU vs CPU for substrate training
+
+Per `.claude/rules/workflow.md`:
+- CPU is fine for tiny models (<500K params), short sequences, pure-
+  Euclidean attention.
+- GPU becomes necessary when D3 (hyperbolic `acosh`) + D5 (per-iteration
+  Python loop) compound per-step cost. v2 observed: CPU 28s/step → GPU
+  4.8s/step (only 6× speedup because D5 launches kernels serially).
+- Prerequisite: Gemma must NOT be in VRAM. Kill `llama-server` before
+  launching GPU training.
+- All substrate scripts accept `--device auto` (defaults to cuda if
+  available).
+
+### Compiled-vs-trained card distinction
+
+- **Compiled cards** (gate-graph IR → weights) — no training, exact,
+  programmatic. Lives in `calm/llm_computer/programs/`.
+- **Trained cards** (substrate-native or HRMSeq2Seq) — SGD,
+  statistical. Lives in `calm/llm_computer/checkpoints/` or
+  `calm/hrm/checkpoints/`.
+- **Future: distill-to-compiled** — detect stable learned patterns and
+  replace with exact compiled equivalents. Novel research direction;
+  no other architecture supports this because no other architecture
+  has compiled-program slots in the same weight tensor as trained ones.
 
 ## Dataset Quality
 - Claude-authored/hand-written data >> 9B-generated data (higher quality, more consistent)

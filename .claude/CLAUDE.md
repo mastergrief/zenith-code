@@ -57,6 +57,34 @@ When editing `.claude/` configs (agents, CLAUDE.md, commands, rules etc):
 
 Long-term commercial direction documented in `.claude/rules/commercial.md`. Currently R&D — focus on building the best system, not shipping a product. Commercial awareness is context, not a constraint.
 
+## Substrate vs Cards vs CHRLM — vocabulary
+
+Lock-in convention. Use these terms precisely in all new prose; don't
+conflate.
+
+- **Substrate** = architectural standard. `Small2DTransformer` +
+  `d_head=2` invariant + channel allocation protocol + gate-graph IR +
+  mode tokens + D2/D3/D5 + fast weights. **The spec, not a tensor.**
+  Analogy: like x86 ISA.
+- **Card** = an individual `.pt` weight tensor compliant with the spec.
+  Compiled (gate-graph IR, exact) or trained (SGD, statistical).
+  Analogy: x86 binaries.
+- **Build** = a curated set of substrate-compliant cards orchestrated
+  together for a domain. Examples: CHRLM (general), CHRLM-Coding
+  (future), CHRLM-Math (future).
+- **CHRLM** = the current general-knowledge build. Composition of
+  cards routed by Engine V2 / Router. **NOT a single tensor.**
+
+Cards interop because they share the Small2DTransformer architecture.
+Composition is runtime via shared protocols, not compile-time via shared
+tensors. Fusion coexistence proven in commit `e9f5ecb` and Round 2.
+Full spec in `.claude/rules/architecture.md` "Substrate Pattern" section.
+
+**Brain + Cards model**: CHRLM-General brain handles NL + planning +
+reasoning + routing; dispatches to cards (compiled programs, HRM
+specialists, CALM backends) rather than implementing their capabilities.
+Thin brain (~100M-500M target), thick toolset.
+
 ## Architecture
 
 **Model reasons, backends compute, engine verifies.** Intelligence comes from the system architecture, not the weights. Adding a backend module is equivalent to training — the model gets smarter at that domain instantly, with zero GPU cost.
@@ -65,7 +93,7 @@ Four active systems coexist:
 1. **Python agent harness** (`agents/`, ~4,400 LOC across 15 files) — terminal coding assistant with dual backend (Ollama + llama.cpp), 3-level permissions, thinking mode, sessions, compaction, effort control, and llama.cpp hot-swap
 2. **CALM engine** (`calm/`, ~37,400 LOC across 194 files) — modular compute + knowledge facade with cognitive intelligence layer. Auto-CALM (transparent verification + precomputation, 100% benchmark) + Engine V2 (7-phase pipeline: pre-analyze → enrich → precompute → generate → verify → cognitive route → self-heal) + 116 modular backends (1002 verified functions, 550 NL patterns, 100% coverage) + 39 cognitive modules (verification, reasoning, quality, meta, planning) + 48 factual check patterns + 10 dynamic cross-check patterns against backends + adaptive thinking budget + cross-turn conversation state + module self-learning with feedback loop. Full spec: `.claude/rules/calm.md`
 3. **Rust claw-code port** (`rust/`) — upstream claw-code, 9 crates, separate build system
-4. **HRM + LLM-Computer** (`calm/hrm/` + `calm/llm_computer/`) — the CRLM thesis made concrete. Tiny encoder-decoder HRM (48K params) emits problem structure; LLM-Computer parses + interprets the structure for analytically-correct values. **5 production HRM checkpoints** covering math-echo (100%), NL templates (97%), word problems (100%), GSM-style narratives (93%), multi-task pooled (100% val_acc). **9 compiled programs** including a 2-digit adder at 486K params that nails 10,000/10,000 exhaustive cases. Declarative IR (TokenEmbed/PosEmbed/LookUp/LookUpExact/ReGLU/LinearHead) with a greedy auto-scheduler. HullKVCache validated against production attention (108× speedup at N=2K). HRM size scales with problem-language complexity (NL → math is harder than echo); compute substrate handles all values regardless of difficulty. Full spec: `.claude/rules/architecture.md` + `.claude/MEMORY/CRLM_SPEC.md`.
+4. **Substrate + Cards** (`calm/hrm/` + `calm/llm_computer/`) — the CHRLM architecture. Substrate = `Small2DTransformer` + d_head=2 + protocols. Cards compose on it at runtime. **15 compiled programs** (exact, gate-graph IR → weights): `adder` 10,000/10,000 exhaustive, `gcd` 256/256, `factorial` 9/9, `is_prime` 99/99, `dispatched` 279/279 opcode routing, ISA machine, countdown, etc. **5 HRM specialists** at 48K params (separate HRMSeq2Seq arch). **Substrate-native trained cards** (this session): `substrate_lm_mvp.pt` (1.25M, ppl 4096→424, hosts LM behavior), `substrate_hrm_nl_best.pt` (180K, 99.1% NL parse), `substrate_hybrid_mvp.pt` (LM+HRM v1, +8.7% cross-task transfer on LM, HRM mode curriculum-bound), `substrate_hrlm_v2.pt` (v2 in flight with D3/D5 + multi20 template variety). **Substrate extensions**: `fast_weights.py` (Round 1 PASS, 99.1% on 3-pair associative recall at d_head=2 — novel), `computation_trace.py` (D2), `mixed_geometry.py` (D3: Euclidean/hyperbolic/spherical/toroidal/lattice), `recurrent_substrate.py` (D5), `combined_substrate.py` (D2+D3+D5 bundle). HullKVCache at 108× speedup. Full spec: `.claude/rules/architecture.md` + `.claude/MEMORY/CRLM_SPEC.md`.
 
 Serving: Gemma 4 E4B (primary) or Qwen 3.5 4B via llama.cpp at **512K context** (`ctx_size=524288`), **32K thinking budget**. Production: tq4+tq4 KV cache on Gemma E4B (`~/models/gemma-4-E4B-it-tq4-aligned.gguf`, 5.0 GB). CALM/Auto-CALM runs on the same llama-server instance. Harness auto-computes compaction threshold as `min(per-GGUF limit, int(ctx_size * 0.89))` — Gemma compacts at **227.5K tokens** (232960). Hot-swap between bases via `agents/model_swap.py`.
 

@@ -175,6 +175,89 @@ because the structurally-relevant gate (full-expression via verified
 mode) was already saturated. Monitor lets you ship at the right
 checkpoint, not the scheduled-end checkpoint.
 
+**Harness shorthand**: `Bash(run_in_background=True)` launches the
+training; `Monitor` with `tail -f /tmp/train.log | grep --line-buffered
+-E "epoch.*done|eval:|DECISION:|Traceback|Error|Killed"` streams
+milestones into the conversation. Don't poll — wait for monitor
+notifications and continue other work in the meantime. This session
+used the pattern for SubstrateLM, hybrid v1, Round 3, Round 4, and
+v2 GPU runs without burning context on raw training logs.
+
+The filter MUST cover failure signatures too, not just success — a
+monitor that only matches "epoch done" stays silent through a crashloop
+or OOM, making silence indistinguishable from "still running." Include
+`Traceback|Error|Killed|OOM|FAILED|assert` in the alternation.
+
+## GPU vs CPU decision rule for substrate training
+
+All substrate training scripts (`train_substrate_lm.py`,
+`train_hybrid_substrate.py`, `train_substrate_hrmlm_v2.py`) accept
+`--device auto` — defaults to cuda if available, falls back to cpu.
+
+**Stay on CPU when**: model <500K params, sequences <128 tokens, pure-
+Euclidean attention, no D5 recurrence. Round 1-4 fast-weights experiments
+ran in minutes on CPU; SubstrateLM MVP at 1.25M params trained in 13 min.
+
+**Move to GPU when**:
+- model >2M params, or
+- sequence length >256, or
+- D3 mixed geometry (hyperbolic `acosh` and divisions don't vectorize
+  well on CPU), or
+- D5 recurrence multiplies per-step cost, or
+- any combination — effects compound.
+
+**Observed (v2 SubstrateHRLM training, session this writing)**: CPU at
+d_model=96, n_layers=4, max_len=384, D3 hyperbolic + D5 at 2 iterations
+hit **28s/step** projecting to 12 hours. GPU RTX 4070 same config:
+**4.8s/step**, projecting to ~2 hours. Only 6× speedup (not the 10-20×
+hoped) because D5 per-iteration Python loop launches kernels serially.
+
+**GPU prerequisite**: Gemma must NOT be in VRAM. `pkill llama-server`
+or verify via `curl localhost:8080/health` returns failure before
+launching training. The 8 GB VRAM on RTX 4070 is tight enough that
+Gemma + training together will OOM unpredictably.
+
+**Verify CUDA available before spending time**:
+```bash
+PYTHONPATH=. python3 -c "import torch; print('cuda:', torch.cuda.is_available())"
+```
+
+## Informative null results
+
+A null result that diagnoses the failure mode IS shippable. Commit it
+with the same before/after table discipline as a win — the diagnostic
+value is the contribution. Examples from this session:
+
+- **Round 3 fast-weights d_model scaling** (n=10 ceiling): +1.8pp on
+  4× capacity vs n=5's +32.8pp on same scaling. Concluded capacity
+  isn't the n=10 bottleneck — interference is structural.
+  Commit `b46aff3` scopes Round 4 mechanisms (delta rule, gate).
+- **Round 4 delta rule + write gate**: clean null across all 4 variants
+  at n=10 (10.5-12.2%). Ruled out both hypothesized fixes; remaining
+  candidates are normalized Schlag form, per-head FW, SRWM.
+  Commit `762ab07` gives Round 5 design inputs directly.
+- **Hybrid v1 HRM mode** (0% correct, 78% parseable): diagnosed as
+  token-count imbalance + template variety deficit. Fed directly into
+  v2's curriculum fixes (oversample, mode-loss weight, pool multi20).
+  Commit `1384373`.
+
+**Null-result commit pattern**:
+```
+<subsystem>: <mechanism> clean null (Round N)
+
+Hypothesis: <one line>
+
+Result: <metric table showing the null>
+
+Diagnosis: <what we learned about the failure mode>
+
+Next round: <specific scope change justified by the null>
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+```
+
+Rounds 3 and 4 commit bodies are the canonical templates.
+
 ## Sweet-spot search for tiny models
 
 When the goal is **maximum capability per parameter**, search downward

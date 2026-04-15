@@ -17,6 +17,44 @@
 - Coordinator uses JSON protocol: `{"delegate": "name", "task": "..."}` or `{"final": "answer"}`
 - SpecialistCoordinator auto-selects between **hot-swap mode** (llama.cpp + specialist GGUFs discovered on disk via `discover_specialist_models()`) and **Ollama multi-model mode** (per-agent distinct Ollama model names); falls back to single base model if neither is available
 
+## Substrate Pattern
+
+**The substrate is an architectural standard, not a tensor.** Every
+substrate-compliant card is its own `.pt` file; cards interop because they
+all share the same `Small2DTransformer` architecture + protocols.
+
+- **Substrate** = `Small2DTransformer` + `d_head=2` invariant + channel
+  allocation protocol + gate-graph IR + mode tokens (`<|lm|>`, `<|hrm|>`,
+  `<|sys|>`, `<|user|>`, `<|asst|>`, `<|eos|>`, `<|pad|>`) + D2/D3/D5
+  primitives + fast weights. The spec, not a tensor.
+- **Card** = an individual `.pt` weight tensor compliant with the spec.
+  Compiled (gate-graph IR → weights, no training, exact) or trained (SGD,
+  statistical). All cards live under `calm/llm_computer/programs/` (compiled)
+  or `calm/llm_computer/checkpoints/` (trained).
+- **Build / Model** = a curated set of substrate-compliant cards
+  orchestrated together for a domain. CHRLM (general), CHRLM-Coding
+  (future), CHRLM-Math (future), etc.
+- **CHRLM** = the current general-knowledge build. Composition of cards
+  routed by Engine V2 / Router. NOT a single tensor.
+
+Composition mechanics: cards interop because they share the
+`Small2DTransformer` architecture (same Q/K/V projections, same residual
+stream conventions, same forward-pass mechanics). Same-architecture analogy:
+**substrate is the x86 ISA; cards are the binaries.** Different programs,
+same machine, native composition.
+
+Channel-allocation protocol: each card writes/reads specific residual
+channels by design. Compiled programs allocate their channels at
+compile-time via the gate-graph auto-scheduler. Trained cards (SubstrateLM,
+SubstrateHRLM) use channels assigned by training. Fusion coexistence proven
+in commit `e9f5ecb` (compiled adder + empty learned layer 0 → 16/16) and
+extended in commit `677c22b` (Round 2 — fast weights stay silent when
+projections are silent, no amplification under noise).
+
+Mode tokens are soft routing without architectural switches. The model
+sees `<|hrm|>` first, attention conditions on it, output behavior diverges
+from `<|lm|>` mode without any conditional logic in the forward pass.
+
 ## Modular Compute Architecture (CALM)
 
 **Model reasons, backends compute, engine verifies.** Adding a backend is
@@ -69,6 +107,99 @@ Implementation of Percepta's March 2026 research (RESEARCH/01-03):
   - Memory: `retrieve_by_index` (1,164 params, position-indexed parabolic-key retrieval, 256/256 exhaustive), `retrieve_threshold` (590 params, same-layer attn+FFN composition, 256/256), `read_by_key` (1,410 params, semantic KV via ReGLU key-squaring + coefficient-parametrized `LookUpExact`, 96/96 = 4! perms × 4 queries).
 - **ReGLU key-squaring trick** (enables semantic-keyed lookup): `-k² = -k · ReLU(k)` for non-negative integer `k`. One ReGLU neuron in layer-0 FFN writes `-k²` to a residual channel; a later layer's `LookUpExact` reads it as `pos_key1` with `pos_key0_coef=2.0` on the raw key channel. This lifts a scalar key into the `(2k, -k²)` parabolic form exactly.
 
+### Substrate Extensions (D2/D3/D5 + Fast Weights)
+
+Four opt-in substrate primitives added this session. All are additive —
+defaults preserve base `Small2DTransformer` behavior bitwise, so the 15
+compiled programs and existing checkpoints (including `substrate_hrm_nl_best.pt`)
+work unchanged.
+
+- **D2 computation traces** (`computation_trace.py`) —
+  `TracedSmall2DTransformer` emits a `ComputationTrace` alongside logits
+  when `forward(idx, trace=...)` is called. Trace captures per-layer
+  attention weights + argmax, FFN active neuron count, peak activation,
+  optional fast-weight norm, geometry name. Foundation for
+  self-introspection and targeted online learning.
+- **D3 mixed geometry** (`mixed_geometry.py`) — per-layer
+  `layer_geometries` config. Five score functions: `euclidean` (dot
+  product, default), `hyperbolic` (Poincaré disk distance), `spherical`
+  (cosine similarity), `toroidal` (wrapped Euclidean), `lattice` (snap-
+  to-integer). At `d_head=2` these are uniquely accessible (closed-form
+  2D geometric operations). `MixedGeometrySmall2DTransformer` dispatches
+  per layer; `layer_geometries=None` falls back to parent behavior.
+- **D5 recurrent substrate** (`recurrent_substrate.py`) —
+  `n_iterations` kwarg iterates the same layers on the residual stream
+  within one forward pass. HRM-style L/H, Universal Transformer pattern.
+  Weights shared across iterations — more thinking without parameter
+  cost. `RecurrentConfig.max_iterations` clamps runaway requests.
+- **Combined** (`combined_substrate.py`) —
+  `CombinedSmall2DTransformer` bundles D2+D3+D5 for hybrid training
+  (used by `scripts/train_substrate_hrmlm_v2.py`).
+- **Fast weights** (`fast_weights.py`) —
+  `FastWeightSmall2DTransformer` Schlag-style asymmetric Hebbian writes
+  at inference: `W_fast_t = λ·W_fast_{t-1} + η·outer(v_t, k_t)/d_model`,
+  read via `W_fast @ q_t`. Runtime weight addition, no gradient descent.
+  Round 1 result: **99.1% on held-out 3-pair associative recall at
+  d_head=2** (vs vanilla 35.3% — the mechanism works at this narrow head
+  dimension, a novel empirical result with no prior literature). Round 2
+  (fusion): fast weights stay silent when projections are silent — no
+  interference with compiled programs. Rounds 3 (d_model scaling)
+  and 4 (delta rule + write gate) nulls diagnosed the n=10 ceiling
+  as structural interference (cross-key leakage), not capacity. Optional
+  `use_delta_rule` and `use_write_gate` config flags preserved for
+  ablation. Fourteen tests in `tests/test_substrate_extensions.py`.
+
+### Substrate-Compliant Card Types
+
+All cards are `.pt` files following the `Small2DTransformer` architecture.
+Types:
+
+- **Compiled programs** (15 in `programs/`) — gate-graph IR → weights,
+  no training, exact. `adder` (10,000/10,000 exhaustive), `gcd` (256/256),
+  `factorial` (9/9), `is_prime` (99/99), `dispatched` (279/279 opcode
+  routing), `countdown`, `isa`, `adder_tiny`, `add_one`, `copy_past`,
+  `increment_counter`, `threshold`, `retrieve_by_index`,
+  `retrieve_threshold`, `read_by_key`.
+- **HRM specialists** (5 in `calm/hrm/checkpoints/`) — `HRMSeq2Seq`
+  architecture (NOT on the substrate). Separate file format; migration
+  to substrate-native is proven via `substrate_hrm_nl_best.pt` (180K
+  params, 99.1% on NL templates). Five specialists kept at 48K params
+  via `--structure-only`: math, nl, word, gsm, meta (56% OOD, capacity-
+  bound).
+- **SubstrateLM** (`substrate_lm_mvp.pt`, 1.25M params) — decoder-only
+  `Small2DTransformer` trained on Claude reasoning corpus. BPE tokenizer,
+  chat formatter. MVP demonstrates substrate hosts LM behavior
+  (ppl 4096→424 in 13 min CPU). Format acquired (<think>, numbered
+  lists, code markers); content coherence requires scale (100M-500M for
+  useful prose).
+- **SubstrateHRM** (`substrate_hrm_nl_best.pt`, 180K params) — decoder-
+  only `Small2DTransformer` trained on NL→math structure. 99.1% val_acc.
+  Proves the substrate hosts HRM-equivalent behavior.
+- **SubstrateHRLM** (`substrate_hybrid_mvp.pt`, 1.25M; v2 in flight) —
+  hybrid LM+HRM trained jointly with mode prefixes. v1 PARTIAL result:
+  LM +8.7% cross-task transfer, HRM mode collapsed to 0% (token-count
+  imbalance + single template family). v2 fixes curriculum (multi20
+  template variety, oversampling, mode-loss weighting) and adds
+  D3/D5 extensions.
+- **Future domain brains** (`CHRLM-Coding`, `CHRLM-Math`, `CHRLM-Legal`,
+  etc.) — same substrate, different card configurations per domain.
+
+### Brain + Cards Composition Model
+
+CHRLM-General **brain** handles NL + planning + reasoning + routing. It
+dispatches to **cards** rather than implementing card capabilities itself
+— don't make the brain do arithmetic when compiled `adder` is available.
+
+- Thin brain (~100M-500M params target) + thick toolset (15+ compiled
+  cards + 5-7 HRM specialists + 116 CALM backends).
+- Brain's corpus = conversation + reasoning (existing) + planning
+  examples (decomposition trees) + routing examples (card selection).
+- Fractal composition: domain CHRLMs (Coding, Math, etc.) each use the
+  same substrate, each is a brain + its own toolset. Top-level brain
+  routes between domain brains.
+- Composition is runtime via shared protocols, not compile-time via
+  shared tensors. Each card is its own `.pt` file loaded on demand.
+
 ### Convergence pipeline
 
 ```
@@ -95,10 +226,10 @@ Future direction: replace the Python interpreter with a compiled `Small2DTransfo
 - `agents/distill/` — training pipeline (10 Python files + 1 notebook). ML dependencies (torch, unsloth, transformers) only required here. **Secondary to backends** — only needed for domains that can't be computed.
 - `calm/` — CALM engine + Auto-CALM + modular backends + cognitive intelligence layer (~194 files, ~37,400 LOC, 250 tests). Engine V2 pipeline with 116 backends, 39 cognitive modules, adaptive thinking, self-healing, factual cross-check, module learning feedback loop. Dependencies: `wasmtime` (optional, for wasm backend). Full spec: `.claude/rules/calm.md`
 - `calm/hrm/` — HRM (Hierarchical Reasoning Model) encoder-decoder. Core: `model.py` (HRM, HRMSeq2Seq, HRMEncoder, HRMDecoder), `train.py`/`inference.py`. Per-domain data generators: `data.py` (math), `nl_data.py` (NL templates), `word_data.py` (word problems), `gsm_data.py` (GSM-style narratives), `multi_data.py` (pooled). 5 production checkpoints at `calm/hrm/checkpoints/*_best.pt`, all 48K params via `--structure-only`. Dedicated tests: `calm/hrm/tests/`.
-- `calm/llm_computer/` — Percepta LLM-Computer prototype: `Small2DTransformer` (`model.py`), `HullKVCache` (`hull_cache.py`), gate-graph IR (`gate_graph.py`), declarative compiler (`compile.py`), greedy auto-scheduler (`schedule.py`), parser/interpreter (`parse.py` + `interpret.py`), 9 compiled programs in `programs/`. CPU-only, standalone. 30+ tests in `tests/` covering per-primitive bit/behavioral match, adder exhaustive, scheduler verification, HullKVCache parity.
+- `calm/llm_computer/` — substrate core. `Small2DTransformer` (`model.py`), `HullKVCache` (`hull_cache.py`), gate-graph IR (`gate_graph.py`), declarative compiler (`compile.py`), greedy auto-scheduler (`schedule.py`), parser/interpreter (`parse.py` + `interpret.py`), 15 compiled programs in `programs/`. **Substrate extensions (new this session)**: `fast_weights.py` (D1 runtime Hebbian writes), `computation_trace.py` (D2 traces), `mixed_geometry.py` (D3 per-layer geometries), `recurrent_substrate.py` (D5 iteration budget), `combined_substrate.py` (D2+D3+D5 bundle), `substrate_lm.py` (BPE + training pipeline for substrate-native cards). Trained substrate cards live in `checkpoints/` (substrate_lm_mvp, substrate_hybrid_mvp, substrate_hrlm_v2, substrate_hrm_nl_best, synth_familyA variants). 78+ tests in `tests/`.
 - `models/` — Ollama Modelfiles (3 files: qwen9b-fast, qwen4b-fast, reasoning-base)
 - `bin/zenith` — launcher script: auto-starts llama.cpp, `--gguf PATH` first-arg flag, configurable via `ZENITH_*` env vars. Does NOT `cd` into repo.
-- `scripts/` — dev tooling (needle_test, eval_base_models, smoke_test_harness, test_model_swap, generate_react_security_examples, setup_training)
+- `scripts/` — dev tooling. CHRLM + fast-weights + substrate-native training: `experiment_fast_weights{.py, _fusion.py, _scaling.py, _round4.py}` (Rounds 1-4), `train_substrate_lm.py` (SubstrateLM MVP), `train_hybrid_substrate.py` (SubstrateHRLM v1), `train_substrate_hrmlm_v2.py` (v2 with D3/D5 + curriculum fixes + `--device auto` GPU support), `chat_substrate_lm.py` (MVP REPL), `unified_chat.py` (CHRLM + Gemma single-conversation REPL with routing gate). Legacy: needle_test, eval_base_models, smoke_test_harness, test_model_swap, generate_react_security_examples, setup_training.
 - `.claude/MEMORY/evals/` — NIAH and A/B eval reports (authoritative for `compact.py:MODEL_CONTEXT_LIMITS`)
 - `rust/` — upstream claw-code Rust port (9 crates + workspace, separate build system)
 - `src/` — upstream claw-code Python port (reference, not actively developed)
