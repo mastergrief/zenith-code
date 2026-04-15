@@ -40,7 +40,6 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 
-from calm.hrm.nl_data import NLMathDataGenerator
 from calm.llm_computer.combined_substrate import (
     CombinedConfig, CombinedSmall2DTransformer,
 )
@@ -52,28 +51,42 @@ from calm.llm_computer.substrate_lm import (
 
 # ----- Fixed corpus -----
 
-def build_corpus(n_train: int, n_eval: int, seed: int) -> tuple[list[dict], list[dict]]:
-    """Generate NL math problems and format as chat messages.
+_TEMPLATES: list[tuple[str, str]] = [
+    ("what is {a} plus {b}",   "{a} + {b}"),
+    ("what is {a} minus {b}",  "{a} - {b}"),
+    ("what is {a} times {b}",  "{a} * {b}"),
+]
 
-    Returns (train_examples, eval_examples) where each example is a
-    messages list `[{"role": "user", ...}, {"role": "assistant", ...}]`.
-    Assistant target is `<expression> =` — the HRM structure-only format.
+
+def build_corpus(n_train: int, n_eval: int, seed: int,
+                 operand_max: int = 20) -> tuple[list[dict], list[dict]]:
+    """Generate a minimal NL→structure corpus.
+
+    Tight variant for minibench discrimination: 3 templates × operand
+    range [1, operand_max]. At operand_max=20 this is 3 × 20 × 20 = 1200
+    unique problems — small enough for a 150K-param model to saturate
+    in ~500 steps, large enough for a non-trivial structural gate.
     """
-    gen = NLMathDataGenerator(seed=seed)
-    probs = gen.generate(n_train + n_eval)
-    # Seeded shuffle for reproducible split
-    rng = random.Random(seed + 1)
-    rng.shuffle(probs)
-
-    def to_msgs(p) -> list[dict]:
-        return [
-            {"role": "user", "content": p.question},
-            {"role": "assistant", "content": f"{p.expression} ="},
-        ]
-
-    train = [to_msgs(p) for p in probs[:n_train]]
-    eval_ = [to_msgs(p) for p in probs[n_train:n_train + n_eval]]
-    return train, eval_
+    rng = random.Random(seed)
+    total = n_train + n_eval
+    msgs_list = []
+    seen = set()
+    while len(msgs_list) < total:
+        nl_tmpl, expr_tmpl = rng.choice(_TEMPLATES)
+        a = rng.randint(1, operand_max)
+        b = rng.randint(1, operand_max)
+        key = (nl_tmpl, a, b)
+        if key in seen:
+            continue
+        seen.add(key)
+        question = nl_tmpl.format(a=a, b=b)
+        expression = expr_tmpl.format(a=a, b=b)
+        msgs_list.append([
+            {"role": "user", "content": question},
+            {"role": "assistant", "content": f"{expression} ="},
+        ])
+    rng.shuffle(msgs_list)
+    return msgs_list[:n_train], msgs_list[n_train:n_train + n_eval]
 
 
 def format_chat(messages: list[dict]) -> str:
@@ -230,7 +243,7 @@ def eval_structural(
         # Build prompt up through `<|asst|>`
         user_msg = msgs[0]
         target_expr = msgs[1]["content"].rsplit("=", 1)[0].strip()
-        prompt_text = SYS_TOKEN + "" + USER_TOKEN + user_msg["content"] + ASST_TOKEN
+        prompt_text = USER_TOKEN + user_msg["content"] + ASST_TOKEN
         ids = tokenizer.encode(prompt_text).ids
         ids = torch.tensor(ids, dtype=torch.long, device=device).unsqueeze(0)
 
