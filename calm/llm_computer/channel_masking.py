@@ -110,6 +110,39 @@ def protect_residual_channels(
     return handles
 
 
+def freeze_head_rows(
+    model: Small2DTransformer,
+    rows: Iterable[int],
+) -> list[RemovableHandle]:
+    """Partial head freeze — block gradient updates to specific vocab rows.
+
+    The unified CHRLM can have a head where some rows are compiled (and
+    must not be updated) and other rows are trainable (predicting new
+    tokens). This registers a gradient hook on `model.head.weight` that
+    zeros the gradient on `rows`. Compiled rows stay exact; trainable
+    rows update normally.
+
+    Args:
+        model: unified Small2DTransformer.
+        rows: vocab-space row indices to freeze. Everything else is
+            left trainable.
+
+    Returns:
+        List of one RemovableHandle for the head's hook.
+    """
+    vocab = model.config.vocab_size
+    row_list = list(rows)
+    for r in row_list:
+        if not 0 <= r < vocab:
+            raise IndexError(f"head row {r} out of range [0, {vocab})")
+    mask = torch.ones(vocab, 1)
+    for r in row_list:
+        mask[r, 0] = 0.0
+    weight = model.head.weight  # shape (vocab, d_model)
+    w_mask = mask.to(weight.device, weight.dtype).expand_as(weight)
+    return [weight.register_hook(lambda g, m=w_mask: g * m)]
+
+
 def compiled_output_channels_adder_tiny() -> tuple[int, ...]:
     """Residual channels written by the compiled adder_tiny program.
 
