@@ -111,42 +111,130 @@ class KeyedMemoryConfig:
 # ----- Symbolic name → integer key_id -----
 
 class KeyRegistry:
-    """Maps string key names to integer IDs. Shared across cards that
-    want to agree on a name → slot convention."""
+    """Maps string key names to integer IDs with optional nested scopes.
+
+    Scopes are a stack of namespaces. `push_scope("math")` adds a new
+    frame; `register("sum")` inside that frame binds "sum" to a fresh
+    key_id in the current scope. `resolve("sum")` walks the stack from
+    top (innermost) to bottom (outermost) and returns the first match —
+    classic lexical scoping semantics.
+
+    GC: `unregister(name)` frees a key's ID for reuse. Freed IDs are
+    recycled FIFO on the next `register()` call.
+
+    Backward compatibility: with no scopes pushed, the registry behaves
+    as a single flat namespace (the "global scope").
+    """
 
     def __init__(self, max_key_id: int = 256):
         self._max_key_id = max_key_id
-        self._by_name: dict[str, int] = {}
-        self._by_id: dict[int, str] = {}
+        # One dict per scope frame; index 0 is the global scope.
+        self._scopes: list[dict[str, int]] = [{}]
+        self._by_id: dict[int, tuple[int, str]] = {}  # id -> (scope_idx, name)
         # Start at 1 so key_id=0 (parabolic key = (0,0)) means "unwritten"
         # unambiguously. Without this, the first registered name collides
         # with every zero-init position during read-by-attention.
         self._next_id = 1
+        self._free_ids: list[int] = []  # recycled ids (FIFO)
+
+    # --- Scope management ---
+
+    def push_scope(self, name: str = "") -> int:
+        """Push a new scope frame. Returns its depth (0 = global)."""
+        self._scopes.append({})
+        return len(self._scopes) - 1
+
+    def pop_scope(self) -> None:
+        """Pop the innermost scope, unregistering all its names and
+        freeing their IDs. Popping the global scope (depth 0) is a no-op."""
+        if len(self._scopes) <= 1:
+            return  # never pop global
+        frame = self._scopes.pop()
+        for name, key_id in frame.items():
+            self._by_id.pop(key_id, None)
+            self._free_ids.append(key_id)
+
+    def scope_depth(self) -> int:
+        """Current scope depth; 0 is global."""
+        return len(self._scopes) - 1
+
+    # --- Registration ---
 
     def register(self, name: str) -> int:
-        if name in self._by_name:
-            return self._by_name[name]
-        if self._next_id >= self._max_key_id:
-            raise ValueError(
-                f"key registry full (max_key_id={self._max_key_id})"
-            )
-        key_id = self._next_id
-        self._next_id += 1
-        self._by_name[name] = key_id
-        self._by_id[key_id] = name
+        """Register `name` in the current (innermost) scope. Idempotent
+        if `name` already exists in the SAME scope; shadowing across
+        scopes creates a new binding per scope."""
+        current = self._scopes[-1]
+        if name in current:
+            return current[name]
+        # Allocate an ID: recycle if any free, else take next_id.
+        if self._free_ids:
+            key_id = self._free_ids.pop(0)
+        else:
+            if self._next_id >= self._max_key_id:
+                raise ValueError(
+                    f"key registry full (max_key_id={self._max_key_id})"
+                )
+            key_id = self._next_id
+            self._next_id += 1
+        current[name] = key_id
+        self._by_id[key_id] = (len(self._scopes) - 1, name)
         return key_id
 
+    def unregister(self, name: str) -> int | None:
+        """Remove `name` from the innermost scope that contains it. Its
+        ID is recycled. Returns the freed ID, or None if name not found.
+        """
+        for depth in range(len(self._scopes) - 1, -1, -1):
+            frame = self._scopes[depth]
+            if name in frame:
+                key_id = frame.pop(name)
+                self._by_id.pop(key_id, None)
+                self._free_ids.append(key_id)
+                return key_id
+        return None
+
+    # --- Lookup ---
+
+    def resolve(self, name: str) -> int:
+        """Lexical lookup: walk scope stack from innermost to outermost.
+        Returns the first matching ID. Raises KeyError if not found."""
+        for depth in range(len(self._scopes) - 1, -1, -1):
+            if name in self._scopes[depth]:
+                return self._scopes[depth][name]
+        raise KeyError(name)
+
     def id_of(self, name: str) -> int:
-        return self._by_name[name]
+        """Alias for resolve — kept for backward compatibility."""
+        return self.resolve(name)
 
     def name_of(self, key_id: int) -> str:
-        return self._by_id[key_id]
+        """Returns the name bound to `key_id` in its defining scope."""
+        return self._by_id[key_id][1]
 
     def __contains__(self, name: str) -> bool:
-        return name in self._by_name
+        try:
+            self.resolve(name)
+            return True
+        except KeyError:
+            return False
 
     def names(self) -> list[str]:
-        return list(self._by_name.keys())
+        """All visible names (innermost wins on shadowing)."""
+        seen: dict[str, None] = {}
+        for frame in reversed(self._scopes):
+            for name in frame:
+                if name not in seen:
+                    seen[name] = None
+        return list(seen.keys())
+
+    def used_ids(self) -> list[int]:
+        """All currently-allocated IDs, sorted."""
+        return sorted(self._by_id.keys())
+
+    def free_id_count(self) -> int:
+        """Number of recycled IDs available for reuse."""
+        return len(self._free_ids)
 
 
 # ----- Write and read primitives -----

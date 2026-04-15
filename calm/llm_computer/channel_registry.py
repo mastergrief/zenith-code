@@ -219,6 +219,95 @@ def adder_tiny_allocation() -> list[ChannelAllocation]:
     ]
 
 
+class MultiStreamChannelRegistry:
+    """One ChannelRegistry per named stream in a multi-stream tensor.
+
+    The single-tensor ChannelRegistry assumes one d_model budget. Multi-
+    stream tensors have K separate d_models, and channels 0..d_model-1
+    in stream A are logically distinct from channels 0..d_model-1 in
+    stream B. This class tracks each stream's registry independently
+    while giving callers a unified stream_name-qualified interface.
+
+    Usage:
+        from calm.llm_computer.multi_stream import MultiStreamConfig, StreamSpec
+        ms_cfg = MultiStreamConfig(
+            streams=(StreamSpec("math", 10, 5, 14),
+                     StreamSpec("lm", 32, 16, 64)),
+            n_layers=2, vocab_size=16, max_len=4,
+        )
+        regs = MultiStreamChannelRegistry.from_config(ms_cfg)
+        regs.allocate("math", "adder.step_funcs", channels=range(3, 10),
+                      ch_type="int_step")
+        regs.allocate("lm", "embedding", channels=range(0, 16),
+                      ch_type="text_embed")
+        # Conflicts are per-stream:
+        regs.allocate("lm", "another", channels=range(3, 10), ...)  # OK
+    """
+
+    def __init__(self, per_stream: dict[str, int]):
+        """Args:
+            per_stream: dict mapping stream_name -> d_model.
+        """
+        self._registries: dict[str, ChannelRegistry] = {
+            name: ChannelRegistry(d_model=d)
+            for name, d in per_stream.items()
+        }
+
+    @classmethod
+    def from_config(cls, ms_config) -> "MultiStreamChannelRegistry":
+        """Build from a MultiStreamConfig. Imported lazily to avoid a
+        hard circular import."""
+        return cls({s.name: s.d_model for s in ms_config.streams})
+
+    def stream_names(self) -> list[str]:
+        return list(self._registries.keys())
+
+    def for_stream(self, stream_name: str) -> ChannelRegistry:
+        """Get the per-stream registry. Raises KeyError if unknown."""
+        return self._registries[stream_name]
+
+    def allocate(
+        self,
+        stream_name: str,
+        card_name: str,
+        channels,
+        ch_type: str,
+        purpose: str = "",
+    ) -> ChannelAllocation:
+        """Allocate in a specific stream's registry. Delegates to
+        `ChannelRegistry.allocate`.
+
+        Card names are NOT globally unique — each stream has its own
+        namespace. Use qualified names like "math.adder" if you want
+        global uniqueness.
+        """
+        if stream_name not in self._registries:
+            raise AllocationError(
+                f"unknown stream {stream_name!r}; known: "
+                f"{list(self._registries.keys())}"
+            )
+        return self._registries[stream_name].allocate(
+            card_name=card_name, channels=channels,
+            ch_type=ch_type, purpose=purpose,
+        )
+
+    def describe(self) -> str:
+        """Human-readable summary of every stream's allocations."""
+        parts = []
+        for stream_name, reg in self._registries.items():
+            parts.append(f"== stream {stream_name!r} ==")
+            parts.append(reg.describe())
+        return "\n".join(parts)
+
+    def total_allocated(self) -> int:
+        """Total channels claimed across all streams."""
+        return sum(len(r.all_allocated()) for r in self._registries.values())
+
+    def total_free(self) -> int:
+        """Total free channels across all streams."""
+        return sum(len(r.free_channels()) for r in self._registries.values())
+
+
 def register_adder_tiny(registry: ChannelRegistry) -> None:
     """Register adder_tiny's full channel allocation in the registry.
 

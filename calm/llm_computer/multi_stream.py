@@ -57,6 +57,38 @@ class StreamSpec:
         return self.d_model // self.n_heads
 
 
+@dataclass(frozen=True)
+class JoinSpec:
+    """Cross-stream data flow: after layer `at_layer` completes in every
+    stream, project `from_stream`'s residual into `to_stream`'s channel
+    space and add it to `to_stream`'s residual before layer `at_layer+1`.
+
+    Join is a learned `nn.Linear(from_d_model, to_d_model, bias=False)`.
+    Multiple joins can target the same stream at the same layer; they
+    accumulate additively.
+
+    Attributes:
+        from_stream: name of the stream supplying data.
+        to_stream: name of the stream receiving data.
+        at_layer: layer index AFTER which the join fires (0..n_layers-1).
+            Join at layer k means "read from_stream's post-layer-k
+            residual, add to to_stream's residual before layer k+1".
+        name: optional unique identifier for this join. Defaults to
+            f"{from_stream}_to_{to_stream}_at{at_layer}". Different
+            joins must have different names.
+    """
+    from_stream: str
+    to_stream: str
+    at_layer: int
+    name: str = ""
+
+    @property
+    def key(self) -> str:
+        if self.name:
+            return self.name
+        return f"{self.from_stream}_to_{self.to_stream}_at{self.at_layer}"
+
+
 @dataclass
 class MultiStreamConfig:
     """Config for a multi-stream transformer."""
@@ -65,6 +97,7 @@ class MultiStreamConfig:
     vocab_size: int
     max_len: int
     use_hard_max: bool = False
+    joins: tuple[JoinSpec, ...] = field(default_factory=tuple)
 
     def __post_init__(self):
         # Validate substrate invariant
@@ -77,6 +110,27 @@ class MultiStreamConfig:
         assert len(set(names)) == len(names), (
             f"duplicate stream names: {names}"
         )
+        # Validate joins reference existing streams and valid layers
+        stream_set = set(names)
+        join_keys = set()
+        for j in self.joins:
+            assert j.from_stream in stream_set, (
+                f"join references unknown from_stream {j.from_stream!r}"
+            )
+            assert j.to_stream in stream_set, (
+                f"join references unknown to_stream {j.to_stream!r}"
+            )
+            assert j.from_stream != j.to_stream, (
+                f"self-join not allowed: {j.from_stream!r}"
+            )
+            assert 0 <= j.at_layer < self.n_layers, (
+                f"join at_layer {j.at_layer} out of range "
+                f"[0, {self.n_layers})"
+            )
+            assert j.key not in join_keys, (
+                f"duplicate join key {j.key!r}"
+            )
+            join_keys.add(j.key)
 
     @property
     def total_d(self) -> int:
@@ -117,33 +171,47 @@ class _StreamStack(nn.Module):
             for _ in range(n_layers)
         ])
 
-    def forward(self, idx: torch.Tensor) -> torch.Tensor:
-        """Single-stream forward pass. Returns final residual (B, S, d_model)."""
+    def embed(self, idx: torch.Tensor) -> torch.Tensor:
+        """Initial residual = token + pos embedding. Separated from
+        forward so a parent module can interleave cross-stream joins
+        between layer steps."""
         B, S = idx.shape
         pos_idx = torch.arange(S, device=idx.device)
-        x = self.tok(idx) + self.pos(pos_idx)
+        return self.tok(idx) + self.pos(pos_idx)
+
+    def process_layer(self, layer: int, x: torch.Tensor) -> torch.Tensor:
+        """One layer of attention + FFN. Exposed so joins can fire
+        between layers."""
+        B, S, D = x.shape
         spec = self.spec
+        qkv = self.W_qkv[layer](x)
+        qkv = qkv.reshape(B, S, 3, spec.n_heads, spec.d_head)
+        q, k, v = qkv.permute(2, 0, 3, 1, 4)
+        scores = torch.einsum("bhid,bhjd->bhij", q, k) / (spec.d_head ** 0.5)
+        mask = torch.triu(
+            torch.ones(S, S, dtype=torch.bool, device=x.device),
+            diagonal=1,
+        )
+        scores = scores.masked_fill(mask, float("-inf"))
+        if self.use_hard_max:
+            idx_max = scores.argmax(dim=-1, keepdim=True)
+            weights = torch.zeros_like(scores)
+            weights.scatter_(-1, idx_max, 1.0)
+        else:
+            weights = F.softmax(scores, dim=-1)
+        attn = torch.einsum("bhij,bhjd->bhid", weights, v)
+        attn = attn.transpose(1, 2).reshape(B, S, spec.d_model)
+        x = x + self.W_out[layer](attn)
+        gate, val = self.ff_in[layer](x).chunk(2, dim=-1)
+        x = x + self.ff_out[layer](F.relu(gate) * val)
+        return x
+
+    def forward(self, idx: torch.Tensor) -> torch.Tensor:
+        """Single-stream forward pass. Returns final residual
+        (B, S, d_model). Equivalent to embed + process_layer loop."""
+        x = self.embed(idx)
         for layer in range(len(self.W_qkv)):
-            qkv = self.W_qkv[layer](x)
-            qkv = qkv.reshape(B, S, 3, spec.n_heads, spec.d_head)
-            q, k, v = qkv.permute(2, 0, 3, 1, 4)
-            scores = torch.einsum("bhid,bhjd->bhij", q, k) / (spec.d_head ** 0.5)
-            mask = torch.triu(
-                torch.ones(S, S, dtype=torch.bool, device=x.device),
-                diagonal=1,
-            )
-            scores = scores.masked_fill(mask, float("-inf"))
-            if self.use_hard_max:
-                idx_max = scores.argmax(dim=-1, keepdim=True)
-                weights = torch.zeros_like(scores)
-                weights.scatter_(-1, idx_max, 1.0)
-            else:
-                weights = F.softmax(scores, dim=-1)
-            attn = torch.einsum("bhij,bhjd->bhid", weights, v)
-            attn = attn.transpose(1, 2).reshape(B, S, spec.d_model)
-            x = x + self.W_out[layer](attn)
-            gate, val = self.ff_in[layer](x).chunk(2, dim=-1)
-            x = x + self.ff_out[layer](F.relu(gate) * val)
+            x = self.process_layer(layer, x)
         return x
 
 
@@ -166,21 +234,61 @@ class MultiStreamTransformer(nn.Module):
             )
             for s in config.streams
         })
+        # Cross-stream join projections: from_stream's d_model →
+        # to_stream's d_model, no bias. Keys are JoinSpec.key.
+        self.joins = nn.ModuleDict({
+            j.key: nn.Linear(
+                config.stream_by_name(j.from_stream).d_model,
+                config.stream_by_name(j.to_stream).d_model,
+                bias=False,
+            )
+            for j in config.joins
+        })
         # Shared head: takes concatenation of all stream final residuals
         self.head = nn.Linear(config.total_d, config.vocab_size, bias=False)
 
     def forward(self, idx: torch.Tensor) -> torch.Tensor:
         """Forward pass. Returns (B, S, vocab) logits.
 
-        Each stream processes `idx` independently via its own parameters.
-        Final per-stream residuals are concatenated along the channel
-        dimension, then projected to vocab via the shared head.
+        Layer-interleaved schedule so cross-stream joins can fire
+        between layers:
+          1. Each stream embeds the input (tok + pos).
+          2. For each layer k:
+             a. Every stream processes its layer k in parallel.
+             b. Any JoinSpec with at_layer=k fires: add
+                join_projection(from_stream_at_k) to to_stream.
+          3. Per-stream final residuals concatenate; shared head projects.
+
+        With empty `joins`, this behaves identically to the naive
+        parallel forward (joins-between-layers are a no-op).
         """
-        # Run each stream in declaration order and concat per-position residuals
-        stream_outs = [
-            self.streams[s.name](idx) for s in self.config.streams
-        ]
-        concat = torch.cat(stream_outs, dim=-1)  # (B, S, total_d)
+        # Step 1: initial embeddings per stream
+        states: dict[str, torch.Tensor] = {
+            s.name: self.streams[s.name].embed(idx)
+            for s in self.config.streams
+        }
+        # Step 2: layer-by-layer with joins fired after each layer
+        joins_by_layer: dict[int, list[JoinSpec]] = {}
+        for j in self.config.joins:
+            joins_by_layer.setdefault(j.at_layer, []).append(j)
+
+        for layer in range(self.config.n_layers):
+            # All streams advance one layer
+            for s in self.config.streams:
+                states[s.name] = self.streams[s.name].process_layer(
+                    layer, states[s.name],
+                )
+            # Apply joins scheduled after this layer
+            for j in joins_by_layer.get(layer, []):
+                projection = self.joins[j.key]
+                states[j.to_stream] = (
+                    states[j.to_stream] + projection(states[j.from_stream])
+                )
+
+        # Step 3: concat and project
+        concat = torch.cat(
+            [states[s.name] for s in self.config.streams], dim=-1,
+        )  # (B, S, total_d)
         return self.head(concat)
 
     def param_count(self) -> int:

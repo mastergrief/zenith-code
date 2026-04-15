@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from calm.llm_computer.multi_stream import (
-    MultiStreamConfig, MultiStreamTransformer, StreamSpec,
+    JoinSpec, MultiStreamConfig, MultiStreamTransformer, StreamSpec,
     build_empty_multistream, freeze_head, freeze_stream,
     trainable_param_count,
 )
@@ -164,6 +164,121 @@ def test_save_reload_round_trip():
     m2.eval()
     after = m2(x)
     assert torch.equal(before, after), "forward output differs after reload"
+
+
+def test_empty_joins_equivalent_to_parallel():
+    """With no joins, the layer-interleaved forward must give the same
+    output as the naive "run each stream to completion" forward."""
+    cfg = _two_stream_cfg()
+    torch.manual_seed(7)
+    m = MultiStreamTransformer(cfg)
+    with torch.no_grad():
+        for p in m.parameters():
+            p.normal_(0, 0.1)
+    m.eval()
+    x = torch.randint(0, cfg.vocab_size, (2, cfg.max_len), dtype=torch.long)
+    logits = m(x)
+    # Compute naive parallel forward: each stream to completion, concat, head
+    with torch.no_grad():
+        naive_outs = [m.streams[s.name](x) for s in cfg.streams]
+        naive_concat = torch.cat(naive_outs, dim=-1)
+        naive_logits = m.head(naive_concat)
+    assert torch.allclose(logits, naive_logits, atol=1e-5), (
+        "layer-interleaved forward diverges from naive parallel when "
+        "joins are empty"
+    )
+
+
+def test_join_spec_validation():
+    # Unknown stream name
+    with pytest.raises(AssertionError, match="unknown"):
+        MultiStreamConfig(
+            streams=(StreamSpec("a", 10, 5, 14),),
+            n_layers=2, vocab_size=8, max_len=4,
+            joins=(JoinSpec("ghost", "a", 0),),
+        )
+    # Self-join
+    with pytest.raises(AssertionError, match="self-join"):
+        MultiStreamConfig(
+            streams=(StreamSpec("a", 10, 5, 14),),
+            n_layers=2, vocab_size=8, max_len=4,
+            joins=(JoinSpec("a", "a", 0),),
+        )
+    # Out-of-range layer
+    with pytest.raises(AssertionError, match="at_layer"):
+        MultiStreamConfig(
+            streams=(
+                StreamSpec("a", 10, 5, 14),
+                StreamSpec("b", 10, 5, 14),
+            ),
+            n_layers=2, vocab_size=8, max_len=4,
+            joins=(JoinSpec("a", "b", 5),),
+        )
+    # Duplicate join
+    with pytest.raises(AssertionError, match="duplicate"):
+        MultiStreamConfig(
+            streams=(
+                StreamSpec("a", 10, 5, 14),
+                StreamSpec("b", 10, 5, 14),
+            ),
+            n_layers=2, vocab_size=8, max_len=4,
+            joins=(
+                JoinSpec("a", "b", 0),
+                JoinSpec("a", "b", 0),
+            ),
+        )
+
+
+def test_joins_register_projection_params():
+    cfg = MultiStreamConfig(
+        streams=(
+            StreamSpec("math", 10, 5, 14),
+            StreamSpec("lm", 32, 16, 64),
+        ),
+        n_layers=2, vocab_size=8, max_len=4,
+        joins=(
+            JoinSpec("math", "lm", at_layer=0),
+            JoinSpec("math", "lm", at_layer=1),
+        ),
+    )
+    m = MultiStreamTransformer(cfg)
+    # Each join should be a Linear(math_d, lm_d) = 10*32 = 320 params
+    assert "math_to_lm_at0" in m.joins
+    assert "math_to_lm_at1" in m.joins
+    for key in ("math_to_lm_at0", "math_to_lm_at1"):
+        linear = m.joins[key]
+        assert linear.weight.shape == (32, 10)
+        assert linear.bias is None
+
+
+def test_join_actually_changes_downstream_state():
+    """A non-zero join projection must alter to_stream's residual.
+    Compare: zero-init join vs identity-init join on the same inputs."""
+    torch.manual_seed(11)
+    cfg = MultiStreamConfig(
+        streams=(
+            StreamSpec("a", 10, 5, 14),
+            StreamSpec("b", 10, 5, 14),
+        ),
+        n_layers=2, vocab_size=8, max_len=4,
+        joins=(JoinSpec("a", "b", at_layer=0),),
+    )
+    m = MultiStreamTransformer(cfg)
+    # Randomize streams but zero the join projection
+    with torch.no_grad():
+        for p in m.parameters():
+            p.normal_(0, 0.2)
+        m.joins["a_to_b_at0"].weight.zero_()
+    m.eval()
+    x = torch.tensor([[1, 2, 3, 0]], dtype=torch.long)
+    logits_no_join = m(x)
+    # Now make the join project strongly
+    with torch.no_grad():
+        m.joins["a_to_b_at0"].weight.fill_(0.5)
+    logits_with_join = m(x)
+    assert not torch.allclose(logits_no_join, logits_with_join, atol=1e-4), (
+        "non-zero join should change downstream logits"
+    )
 
 
 def test_single_stream_multistream_parity_shape():

@@ -6,8 +6,10 @@ import pytest
 
 from calm.llm_computer.channel_registry import (
     AllocationError, ChannelAllocation, ChannelRegistry,
+    MultiStreamChannelRegistry,
     adder_tiny_allocation, register_adder_tiny,
 )
+from calm.llm_computer.multi_stream import MultiStreamConfig, StreamSpec
 
 
 def test_registry_accepts_non_overlapping_allocations():
@@ -96,6 +98,60 @@ def test_channel_allocation_is_frozen_dataclass():
     # frozen=True means we can't mutate fields
     with pytest.raises(Exception):
         alloc.ch_type = "other"  # type: ignore[misc]
+
+
+def test_multistream_registry_from_config():
+    cfg = MultiStreamConfig(
+        streams=(
+            StreamSpec("math", 10, 5, 14),
+            StreamSpec("lm", 32, 16, 64),
+        ),
+        n_layers=2, vocab_size=8, max_len=4,
+    )
+    regs = MultiStreamChannelRegistry.from_config(cfg)
+    assert set(regs.stream_names()) == {"math", "lm"}
+    assert regs.for_stream("math").d_model == 10
+    assert regs.for_stream("lm").d_model == 32
+
+
+def test_multistream_allocate_per_stream():
+    regs = MultiStreamChannelRegistry({"math": 10, "lm": 32})
+    # Same channel range in different streams is fine
+    regs.allocate("math", "adder", channels=range(3, 10),
+                  ch_type="int_step")
+    regs.allocate("lm", "embedding", channels=range(3, 10),
+                  ch_type="text_embed")
+    assert regs.total_allocated() == 7 + 7
+
+
+def test_multistream_overlap_caught_per_stream():
+    regs = MultiStreamChannelRegistry({"math": 10, "lm": 32})
+    regs.allocate("math", "adder", channels=range(3, 10), ch_type="int_step")
+    # Same stream, overlapping channels — caught
+    with pytest.raises(AllocationError, match="conflict"):
+        regs.allocate("math", "interloper", channels=range(5, 8),
+                      ch_type="text")
+    # Different stream, same channel range — fine
+    regs.allocate("lm", "fine", channels=range(5, 8), ch_type="text")
+
+
+def test_multistream_unknown_stream_raises():
+    regs = MultiStreamChannelRegistry({"math": 10})
+    with pytest.raises(AllocationError, match="unknown stream"):
+        regs.allocate("ghost", "c", channels=[0, 1], ch_type="int_scalar")
+
+
+def test_multistream_describe_and_counts():
+    regs = MultiStreamChannelRegistry({"math": 10, "lm": 8})
+    regs.allocate("math", "cardA", channels=[0, 1, 2], ch_type="int")
+    regs.allocate("lm", "cardB", channels=[0, 1], ch_type="text")
+    assert regs.total_allocated() == 5
+    assert regs.total_free() == (10 - 3) + (8 - 2)
+    out = regs.describe()
+    assert "math" in out
+    assert "lm" in out
+    assert "cardA" in out
+    assert "cardB" in out
 
 
 def test_describe_returns_readable_string():

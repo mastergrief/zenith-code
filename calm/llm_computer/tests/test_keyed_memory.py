@@ -156,6 +156,92 @@ def test_gradient_flows_through_soft_read():
     assert (v.grad != 0).any()
 
 
+def test_scoped_registration_shadows():
+    """Pushing a new scope allows shadowing the same name without
+    clobbering the outer binding."""
+    reg = KeyRegistry()
+    outer_id = reg.register("x")
+    assert reg.resolve("x") == outer_id
+
+    reg.push_scope("inner")
+    # Re-register 'x' in inner scope; shadowed
+    inner_id = reg.register("x")
+    assert inner_id != outer_id
+    assert reg.resolve("x") == inner_id
+
+    reg.pop_scope()
+    # After pop, outer binding is restored
+    assert reg.resolve("x") == outer_id
+    assert "x" in reg
+
+
+def test_pop_scope_recycles_ids():
+    reg = KeyRegistry()
+    reg.register("a")  # global, id=1
+    reg.push_scope()
+    b_id = reg.register("b")  # inner, id=2
+    c_id = reg.register("c")  # inner, id=3
+    assert reg.free_id_count() == 0
+    reg.pop_scope()
+    # 'b' and 'c' were in inner scope; their ids should be recycled
+    assert reg.free_id_count() == 2
+    assert b_id not in reg.used_ids()
+    assert c_id not in reg.used_ids()
+    # New registrations reuse the freed ids
+    new_id = reg.register("d")
+    assert new_id in (b_id, c_id)
+
+
+def test_unregister_frees_id():
+    reg = KeyRegistry()
+    id_a = reg.register("a")
+    id_b = reg.register("b")
+    freed = reg.unregister("a")
+    assert freed == id_a
+    assert "a" not in reg
+    # Next registration recycles a's id
+    id_c = reg.register("c")
+    assert id_c == id_a
+
+
+def test_unregister_missing_returns_none():
+    reg = KeyRegistry()
+    assert reg.unregister("nonexistent") is None
+
+
+def test_pop_global_scope_is_noop():
+    reg = KeyRegistry()
+    reg.register("a")
+    reg.pop_scope()  # trying to pop global
+    assert "a" in reg
+    assert reg.scope_depth() == 0
+
+
+def test_resolve_walks_scope_stack():
+    reg = KeyRegistry()
+    reg.register("x")    # global
+    reg.push_scope()
+    reg.register("y")    # inner only
+    # x still resolves from outer
+    assert "x" in reg
+    assert "y" in reg
+    reg.pop_scope()
+    # y gone after pop
+    assert "x" in reg
+    assert "y" not in reg
+
+
+def test_names_shows_innermost_only_on_shadow():
+    reg = KeyRegistry()
+    reg.register("a")
+    reg.register("b")
+    reg.push_scope()
+    reg.register("a")  # shadows
+    reg.register("c")
+    visible = reg.names()
+    assert set(visible) == {"a", "b", "c"}
+
+
 def test_invalid_key_id_raises():
     cfg = _simple_cfg()  # max_key_id=16
     x = torch.zeros(1, 4, 8)
