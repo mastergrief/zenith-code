@@ -47,6 +47,7 @@ class GroupedSmall2DConfig(Small2DConfig):
     layer_modes: Optional[tuple[str, ...]] = None
     layer_n_groups: Optional[tuple[int, ...]] = None
     layer_group_sizes: Optional[tuple[int, ...]] = None
+    layer_hard_max: Optional[tuple[bool, ...]] = None
 
     def __post_init__(self):
         if self.layer_modes is None:
@@ -58,10 +59,14 @@ class GroupedSmall2DConfig(Small2DConfig):
         if self.layer_group_sizes is None:
             object.__setattr__(self, "layer_group_sizes",
                                  tuple([self.n_heads] * self.n_layers))
+        if self.layer_hard_max is None:
+            object.__setattr__(self, "layer_hard_max",
+                                 tuple([False] * self.n_layers))
         # Validate per-layer config
         assert len(self.layer_modes) == self.n_layers
         assert len(self.layer_n_groups) == self.n_layers
         assert len(self.layer_group_sizes) == self.n_layers
+        assert len(self.layer_hard_max) == self.n_layers
         for i, (mode, n_g, g_s) in enumerate(zip(
             self.layer_modes, self.layer_n_groups, self.layer_group_sizes,
         )):
@@ -125,6 +130,7 @@ class GroupedSmall2DTransformer(Small2DTransformer):
                 # See calm/llm_computer/model.py:_attention
                 attn = grouped_attention_single_head_mode(
                     q_bh, k_bh, v_bh, mask=mask, scale=1.0,
+                    hard_max=cfg.layer_hard_max[layer],
                 )
             # attn is already (B, S, n_heads, d_head=2); flatten directly.
             attn = attn.reshape(B, S, cfg.d_model)

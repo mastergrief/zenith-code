@@ -101,6 +101,7 @@ def grouped_attention_single_head_mode(
     *,
     mask: Optional[torch.Tensor] = None,
     scale: Optional[float] = None,
+    hard_max: bool = False,
 ) -> torch.Tensor:
     """Pure d_head=2 attention with per-sub-head softmax — the substrate
     default mode, used by compiled programs.
@@ -108,6 +109,10 @@ def grouped_attention_single_head_mode(
     This is equivalent to grouped_attention with n_groups=H, group_size=1,
     but expressed as a convenience for callers who don't want to think
     about grouping. Shape contract matches standard multi-head attention.
+
+    `hard_max=True` replaces softmax with argmax (first-tie scatter) so
+    compiled programs hosted in the substrate get their expected
+    analytical behaviour — matches Small2DTransformer's `use_hard_max`.
     """
     B, S, H, D = Q.shape
     assert D == 2
@@ -117,7 +122,12 @@ def grouped_attention_single_head_mode(
     scores = torch.einsum("bihd, bjhd -> bihj", Q, K) * scale
     if mask is not None:
         scores = scores.masked_fill(mask.view(1, S, 1, S), float("-inf"))
-    weights = F.softmax(scores, dim=-1)
+    if hard_max:
+        idx = scores.argmax(dim=-1, keepdim=True)
+        weights = torch.zeros_like(scores)
+        weights.scatter_(-1, idx, 1.0)
+    else:
+        weights = F.softmax(scores, dim=-1)
     return torch.einsum("bihj, bjhd -> bihd", weights, V)
 
 
