@@ -32,12 +32,18 @@ Usage:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Callable, Iterable, Optional
 
 import torch
 import torch.nn as nn
 
+from calm.llm_computer.channel_registry import (
+    ChannelAllocation, ChannelRegistry, MultiStreamChannelRegistry,
+)
 from calm.llm_computer.model import Small2DConfig, Small2DTransformer
+from calm.llm_computer.multi_stream import (
+    MultiStreamConfig, MultiStreamTransformer,
+)
 
 
 @dataclass
@@ -158,6 +164,148 @@ def freeze_embeddings_and_head(model: Small2DTransformer) -> int:
 def trainable_param_count(model: Small2DTransformer) -> int:
     """Count how many parameters are still trainable."""
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
+def install_compiled_with_registry(
+    model: Small2DTransformer,
+    program_builder: Callable[..., Small2DTransformer],
+    *,
+    target_layer: int,
+    registry: ChannelRegistry,
+    allocations: Iterable[ChannelAllocation],
+    builder_kwargs: Optional[dict] = None,
+) -> None:
+    """install_compiled_program + L1 channel registry integration.
+
+    Installs the compiled program as before, AND registers each supplied
+    ChannelAllocation into the registry. Raises AllocationError if any
+    of the allocations conflict with existing registry entries (e.g.
+    another compiled program already claims those channels).
+
+    Use `allocations` to declare which channels the compiled program
+    owns. For adder_tiny, use `adder_tiny_allocation()` from
+    `channel_registry.py`.
+    """
+    # Register FIRST so allocation failures don't leave a partial install.
+    for alloc in allocations:
+        registry.allocate(
+            card_name=alloc.card_name,
+            channels=alloc.channels,
+            ch_type=alloc.ch_type,
+            purpose=alloc.purpose,
+        )
+    install_compiled_program(
+        model, program_builder, target_layer=target_layer,
+        builder_kwargs=builder_kwargs,
+    )
+
+
+def install_compiled_in_stream(
+    ms_model: MultiStreamTransformer,
+    program_builder: Callable[..., Small2DTransformer],
+    *,
+    stream_name: str,
+    target_layer: int = 0,
+    builder_kwargs: Optional[dict] = None,
+    registry: Optional[MultiStreamChannelRegistry] = None,
+    allocations: Optional[Iterable[ChannelAllocation]] = None,
+) -> None:
+    """Install a compiled program into a specific stream of a
+    multi-stream unified tensor.
+
+    Each stream is an independent `_StreamStack` with its own tok/pos
+    embeddings, per-layer parameters. This function builds the compiled
+    source via `program_builder` and copies weights into the named
+    stream's embedding + layer slots. Other streams are unchanged.
+
+    Assumes source builder's d_model/n_heads/max_len/vocab match the
+    target stream's spec. Raises AssertionError otherwise.
+
+    If `registry` and `allocations` are supplied, registers the
+    compiled program's channel claims in the stream's registry.
+    """
+    builder_kwargs = builder_kwargs or {}
+    src = program_builder(**builder_kwargs)
+    src_cfg = src.config
+    stream_spec = ms_model.config.stream_by_name(stream_name)
+    assert src_cfg.d_model == stream_spec.d_model, (
+        f"d_model mismatch: src={src_cfg.d_model} "
+        f"stream {stream_name!r}={stream_spec.d_model}"
+    )
+    assert src_cfg.n_heads == stream_spec.n_heads, (
+        f"n_heads mismatch: src={src_cfg.n_heads} "
+        f"stream {stream_name!r}={stream_spec.n_heads}"
+    )
+    assert src_cfg.max_len <= ms_model.config.max_len, (
+        f"src max_len {src_cfg.max_len} > stream max_len "
+        f"{ms_model.config.max_len}"
+    )
+    assert src_cfg.n_layers == 1, (
+        "multi-layer compiled programs not yet supported for stream install"
+    )
+
+    stream = ms_model.streams[stream_name]
+    with torch.no_grad():
+        stream.tok.weight[: src_cfg.vocab_size] += src.tok.weight
+        stream.pos.weight[: src_cfg.max_len] += src.pos.weight
+        stream.W_qkv[target_layer].weight += src.W_qkv[0].weight
+        stream.W_out[target_layer].weight += src.W_out[0].weight
+        stream.ff_in[target_layer].weight += src.ff_in[0].weight
+        stream.ff_out[target_layer].weight += src.ff_out[0].weight
+        # Shared head: multi-stream head reads concat(stream_finals);
+        # the stream's output slice of the head is offset by
+        # sum(d_model) for streams preceding this one.
+        offset = 0
+        for s in ms_model.config.streams:
+            if s.name == stream_name:
+                break
+            offset += s.d_model
+        # src.head.weight is (V, d_model). Project into (V, total_d)
+        # at the stream's offset.
+        ms_model.head.weight[: src_cfg.vocab_size, offset: offset + src_cfg.d_model] += \
+            src.head.weight
+
+    if registry is not None and allocations is not None:
+        for alloc in allocations:
+            registry.allocate(
+                stream_name=stream_name,
+                card_name=alloc.card_name,
+                channels=alloc.channels,
+                ch_type=alloc.ch_type,
+                purpose=alloc.purpose,
+            )
+
+
+def freeze_stream_layer(
+    ms_model: MultiStreamTransformer,
+    stream_name: str,
+    layer_idx: int,
+) -> int:
+    """Freeze a specific layer of a specific stream. Multi-stream
+    analog of freeze_layer_params.
+    """
+    frozen = 0
+    stream = ms_model.streams[stream_name]
+    for linear in (stream.W_qkv[layer_idx], stream.W_out[layer_idx],
+                   stream.ff_in[layer_idx], stream.ff_out[layer_idx]):
+        for p in linear.parameters():
+            p.requires_grad = False
+            frozen += p.numel()
+    return frozen
+
+
+def freeze_stream_embeddings(
+    ms_model: MultiStreamTransformer,
+    stream_name: str,
+) -> int:
+    """Freeze the token + pos embeddings of a specific stream."""
+    frozen = 0
+    stream = ms_model.streams[stream_name]
+    for module in (stream.tok, stream.pos):
+        for p in module.parameters():
+            p.requires_grad = False
+            frozen += p.numel()
+    return frozen
 
 
 def verify_compiled_preserved(
