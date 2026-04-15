@@ -74,9 +74,24 @@ def _deterministic_orthogonal(n: int, seed: int,
 
 
 def build_pi(device: torch.device = torch.device("cpu"),
-             dtype: torch.dtype = torch.float32) -> torch.Tensor:
-    """Get the Pi rotation matrix (HEAD_DIM × HEAD_DIM)."""
-    return _deterministic_orthogonal(HEAD_DIM, PI_SEED, device, dtype)
+             dtype: torch.dtype = torch.float32,
+             source: str = "torch") -> torch.Tensor:
+    """Get the Pi rotation matrix (HEAD_DIM × HEAD_DIM).
+
+    Args:
+        source: 'torch' (default) → deterministic QR via PyTorch. Fast
+            and portable but NOT bit-exact with the C reference.
+            'c_header' → parse llama.cpp's turboquant_tables.h for
+            bit-exact compat with existing tq4 GGUFs. Requires the
+            header file to be available on disk.
+    """
+    if source == "c_header":
+        from calm.llm_computer.tq4_pi_loader import load_c_reference_pi
+        pi = load_c_reference_pi()
+        return pi.to(device=device, dtype=dtype)
+    if source == "torch":
+        return _deterministic_orthogonal(HEAD_DIM, PI_SEED, device, dtype)
+    raise ValueError(f"unknown Pi source {source!r}, expected 'torch' or 'c_header'")
 
 
 # ----- Lloyd-Max codebook -----
