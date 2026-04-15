@@ -111,11 +111,23 @@ class UnifiedTensorConfig:
         # Pick the binding constraint
         self._substrate_n_heads = max(n_heads_from_sub_heads, n_heads_from_channels)
         self._substrate_d_model = self._substrate_n_heads * 2
+        # Round substrate_d_model up to a multiple of HEAD_DIM=256 so
+        # tq4 block alignment holds. This may over-allocate by up to 255
+        # channels but keeps the tq4 substrate compatible.
+        HEAD_DIM = 256
+        if self._substrate_d_model % HEAD_DIM != 0:
+            rounded = ((self._substrate_d_model + HEAD_DIM - 1) // HEAD_DIM) * HEAD_DIM
+            self._substrate_d_model = rounded
+            self._substrate_n_heads = rounded // 2
         # FFN sized proportionally, rounded to tq4 block multiple (256)
         self._substrate_d_ffn = int(
             self.gemma_d_ffn * (self._substrate_d_model / self.gemma_d_model)
         )
-        self._substrate_d_ffn = max(256, (self._substrate_d_ffn // 256) * 256)
+        # Round UP to multiple of HEAD_DIM
+        self._substrate_d_ffn = max(
+            HEAD_DIM,
+            ((self._substrate_d_ffn + HEAD_DIM - 1) // HEAD_DIM) * HEAD_DIM,
+        )
 
         # Channel allocation map
         cursor = 0
