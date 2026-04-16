@@ -632,6 +632,26 @@ class GemmaSubstrate:
         if self.per_layer_model_proj is not None:
             self.per_layer_model_proj = self.per_layer_model_proj.to(device)
 
+        # Move ALL small FP32 weights (norms, scales, rope freqs) to GPU once.
+        # Without this, every _forward_layer call does ~7 .to(device) calls
+        # for norm weights — measured at 603 ms / 3.2 sec of decode time.
+        if self.output_norm_w is not None:
+            self.output_norm_w = self.output_norm_w.to(device)
+        if self.per_layer_proj_norm_w is not None:
+            self.per_layer_proj_norm_w = self.per_layer_proj_norm_w.to(device)
+        if self.rope_freqs_global is not None:
+            self.rope_freqs_global = self.rope_freqs_global.to(device)
+        if self.rope_freqs_swa is not None:
+            self.rope_freqs_swa = self.rope_freqs_swa.to(device)
+        for layer in self.layers:
+            for attr in ("attn_norm_w", "post_attn_norm_w", "ffn_norm_w",
+                         "post_ffw_norm_w", "post_norm_w",
+                         "attn_q_norm_w", "attn_k_norm_w",
+                         "layer_output_scale"):
+                t = getattr(layer, attr, None)
+                if t is not None:
+                    setattr(layer, attr, t.to(device))
+
         print(f"[gemma-substrate] preloading tq4 weights to {device}...")
         total_bytes = 0
         for i, layer in enumerate(self.layers):
@@ -698,11 +718,11 @@ class GemmaSubstrate:
             pl_embd = pl_embd.reshape(B, S, cfg.n_layers, cfg.d_per_layer)
             # Project main embedding to per-layer space
             if self.per_layer_model_proj is not None:
-                h_proj = h @ self.per_layer_model_proj.to(device)  # (B, S, 10752)
+                h_proj = h @ self.per_layer_model_proj  # (B, S, 10752)
                 h_proj = h_proj * (1.0 / math.sqrt(cfg.d_model))
                 h_proj = h_proj.reshape(B, S, cfg.n_layers, cfg.d_per_layer)
                 if self.per_layer_proj_norm_w is not None:
-                    h_proj = _rms_norm(h_proj, self.per_layer_proj_norm_w.to(device), cfg.rms_norm_eps)
+                    h_proj = _rms_norm(h_proj, self.per_layer_proj_norm_w, cfg.rms_norm_eps)
                 pl_embd = (pl_embd + h_proj) * (1.0 / math.sqrt(2.0))
             # Store as list indexed by layer: each is (B, S, d_per_layer)
             self._per_layer_embd = [pl_embd[:, :, i, :] for i in range(cfg.n_layers)]
@@ -711,7 +731,7 @@ class GemmaSubstrate:
             h = self._forward_layer(h, layer, i, kv_cache=kv_cache,
                                      start_pos=start_pos)
 
-        h = _rms_norm(h, self.output_norm_w.to(device), cfg.rms_norm_eps)
+        h = _rms_norm(h, self.output_norm_w, cfg.rms_norm_eps)
 
         # Output head: chunked Q6_K dequant + matmul on GPU
         h_last = h[:, -1:, :]  # (B, 1, d_model) stays on GPU
@@ -734,7 +754,7 @@ class GemmaSubstrate:
         inpL = h  # save for residual
 
         # --- Attention ---
-        cur = _rms_norm(h, layer.attn_norm_w.to(device), cfg.rms_norm_eps)
+        cur = _rms_norm(h, layer.attn_norm_w, cfg.rms_norm_eps)
 
         q = layer.attn_q(cur)
         # Per-layer head dim — Q tells us SWA (256) vs global (512)
@@ -750,10 +770,10 @@ class GemmaSubstrate:
 
         q = q.reshape(B, S, cfg.n_heads_q, d_head_q).transpose(1, 2)
         if layer.attn_q_norm_w is not None:
-            q = _rms_norm(q, layer.attn_q_norm_w.to(device), cfg.rms_norm_eps)
+            q = _rms_norm(q, layer.attn_q_norm_w, cfg.rms_norm_eps)
 
         # RoPE on Q (always — every layer rotates its own Q with current pos)
-        freqs = (self.rope_freqs_global if is_global else self.rope_freqs_swa).to(device)
+        freqs = self.rope_freqs_global if is_global else self.rope_freqs_swa
         q = _apply_rope(q, freqs[start_pos:])
 
         if own_kv:
@@ -763,7 +783,7 @@ class GemmaSubstrate:
             k_new = k_new.reshape(B, S, cfg.n_heads_kv, d_head_kv).transpose(1, 2)
             v_new = v_new.reshape(B, S, cfg.n_heads_kv, d_head_kv).transpose(1, 2)
             if layer.attn_k_norm_w is not None:
-                k_new = _rms_norm(k_new, layer.attn_k_norm_w.to(device), cfg.rms_norm_eps)
+                k_new = _rms_norm(k_new, layer.attn_k_norm_w, cfg.rms_norm_eps)
             v_rms = torch.sqrt(torch.mean(v_new * v_new, dim=-1, keepdim=True) + cfg.rms_norm_eps)
             v_new = v_new / v_rms
             k_new = _apply_rope(k_new, freqs[start_pos:])
@@ -805,11 +825,11 @@ class GemmaSubstrate:
 
         # Post-attention norm THEN residual (matches gemma4-iswa.cpp line 107-112)
         if layer.post_attn_norm_w is not None:
-            cur = _rms_norm(cur, layer.post_attn_norm_w.to(device), cfg.rms_norm_eps)
+            cur = _rms_norm(cur, layer.post_attn_norm_w, cfg.rms_norm_eps)
         attn_out = cur + inpL
 
         # --- FFN ---
-        cur = _rms_norm(attn_out, layer.ffn_norm_w.to(device), cfg.rms_norm_eps)
+        cur = _rms_norm(attn_out, layer.ffn_norm_w, cfg.rms_norm_eps)
         # gate+up share input — fuse into one Triton call when possible
         if (_use_triton
             and isinstance(layer.ffn_gate, MmapTq4Linear)
@@ -833,7 +853,7 @@ class GemmaSubstrate:
 
         # Post-FFN norm THEN residual (matches gemma4-iswa.cpp line 184-190)
         if layer.post_ffw_norm_w is not None:
-            cur = _rms_norm(cur, layer.post_ffw_norm_w.to(device), cfg.rms_norm_eps)
+            cur = _rms_norm(cur, layer.post_ffw_norm_w, cfg.rms_norm_eps)
         h = cur + attn_out
 
         # --- Per-layer embedding (gemma4-iswa.cpp line 193-213) ---
@@ -846,12 +866,12 @@ class GemmaSubstrate:
             gate_out = gate_out * inp_this
             proj_out = layer.proj(gate_out)
             if layer.post_norm_w is not None:
-                proj_out = _rms_norm(proj_out, layer.post_norm_w.to(device), cfg.rms_norm_eps)
+                proj_out = _rms_norm(proj_out, layer.post_norm_w, cfg.rms_norm_eps)
             h = pe_in + proj_out
 
         # Layer output scale (gemma4-iswa.cpp line 216-219)
         if layer.layer_output_scale is not None:
-            h = h * layer.layer_output_scale.to(device)
+            h = h * layer.layer_output_scale
 
         return h
 
