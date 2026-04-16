@@ -160,13 +160,14 @@ def train(epochs=500, problems=10000, batch_size=64, lr=1e-3,
                     pred_logits = model(x)
                     preds = pred_logits.argmax(-1)  # (B, S)
                 # For expression positions, randomly swap teacher input
-                # with model prediction (shifts: pred at pos i → input at pos i+1)
-                modified_x = x.clone()
+                # with model prediction (vectorized — no Python loop).
+                # swap at pos → replace input at pos+1 with pred at pos
                 swap = (torch.rand(B, S, device=device) > tf_ratio) & m
-                for pos in range(S - 1):
-                    s = swap[:, pos]
-                    if s.any():
-                        modified_x[s, pos + 1] = preds[s, pos]
+                swap_shifted = torch.zeros_like(swap)
+                swap_shifted[:, 1:] = swap[:, :-1]
+                preds_shifted = torch.zeros_like(x)
+                preds_shifted[:, 1:] = preds[:, :-1]
+                modified_x = torch.where(swap_shifted, preds_shifted, x)
                 # Pass 2: forward on modified input, compute loss
                 logits = model(modified_x)
             else:
