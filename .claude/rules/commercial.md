@@ -2,84 +2,105 @@
 
 ## Product Vision
 
-**Zenith**: a local AI coding assistant that runs on consumer hardware,
-verifies every answer on CPU, and gets smarter from usage without training.
+**Zenith**: a general-purpose intelligence TOOL that runs on consumer
+hardware, verifies every answer via compiled programs, gets smarter from
+usage without training, and keeps the user in full control. Everything
+useful about general AI, nothing dangerous.
 
 ## Differentiators (protect these)
 
 | Differentiator | What it is | Why it matters |
 |---|---|---|
-| **tq4+tq4 hybrid** | Custom TurboQuant quantization for weights + KV cache | 4B model at 512K context in 8GB VRAM — no competitor does this |
-| **Auto-CALM** | Transparent compute verification | Every claim CPU-checked, not hallucinated. 100% math benchmark |
-| **Self-learning** | Tested, shape-gated feedback loop | System improves without training. 90% → 100% hit rate after 3 rounds. Usage = moat |
-| **Modular backends** | Drop-in Python compute modules | Domain experts add backends, model gets instantly smarter |
-| **CRLM split** | 48K-param HRM for structure + compiled primitives for values | One tiny model handles all 4 NL domains at 93-100%; values are compiled, not trained |
-| **Analytical compile-to-weights** | Gate-graph IR → transformer weights, no training | 2-digit adder at 486K params, 10,000/10,000 exhaustive. Zero training cost for new deterministic skills |
+| **Unified single tensor** | Gemma + HRMs + compiled cards + knowledge DB in ONE .pt | No other system composes trained + compiled + persistent in one forward pass |
+| **Level 5 in-Gemma** | Compiled programs inside Gemma's own attention sub-heads | Programs are part of the model, not bolted on — zero overhead |
+| **tq4+tq4 hybrid** | TurboQuant for Gemma weights + KV, FP32 for compiled cards | 5B model at 512K context in 8GB VRAM with exact compiled sub-heads |
+| **Auto-CALM verification** | 1002 backend functions verify every claim | 100% math benchmark, CPU-checked, not hallucinated |
+| **Auto-upgrade loop** | CALM corrections → compile into weights → persist | System gets smarter from usage. Zero training. Usage = moat |
+| **Facade / import system** | Module system for compiled neural programs | Domain experts author cards with imports/exports, linker resolves |
+| **Compiled reasoning** | Comparison, logic, transitivity as gate-graph programs | Exact logical inference in the model's own attention |
+| **Persistent knowledge DB** | Corrections compiled into weights, cross-session | The .pt IS the database. Grows smarter session over session |
 | **Fully local** | No cloud, no API, no internet required | Privacy, zero cost, offline-capable |
+| **Safety by architecture** | User-controlled, inspectable, reversible, scoped | Alignment without RLHF — the system can't set its own goals |
 
-When building features, ask: **does this strengthen a differentiator?**
-If not, deprioritize it.
+## Safety as a Feature
+
+This is not a concession — it's the pitch:
+- Every improvement is a compiled card or key-value fact → **inspectable**
+- Previous .pt is the rollback → **reversible**
+- Each card fires only on its declared inputs → **scoped**
+- System improves only where CALM verifies → **verified**
+- No autonomous goal-setting → **user-controlled**
+- Runs locally → **private**
+
+Competitors train opaque reward models and hope alignment holds. We
+compile verified programs and prove correctness exhaustively.
 
 ## Architecture Decisions — Commercial Lens
 
-- **Modular over monolithic** — every component should be independently
-  useful, replaceable, and extensible. Users and enterprises add backends.
+- **Unified over modular** — one tensor, one forward, one file. Users
+  don't manage card files; the substrate IS the product.
 - **Local-first** — never add a cloud dependency to the core path.
-  Cloud is an optional enhancement, not a requirement.
-- **Self-improving over trained** — prefer learned patterns (CPU, instant)
-  over LoRA (GPU, expensive). Training is supplementary, not primary.
+- **Compiled over trained** — prefer gate-graph compilation (exact, instant,
+  free) over LoRA/fine-tuning (approximate, slow, expensive).
+- **Self-improving over retrained** — auto-upgrade loop replaces model
+  retraining. Usage drives improvement; each session makes the next better.
 - **Verified over probabilistic** — when a computation CAN be checked,
-  check it. Verified answers are the brand promise.
-- **Standard interfaces** — OpenAI-compatible API, GGUF models, Python
-  backends. Don't invent proprietary formats that lock users in.
+  check it. When it can be compiled, compile it.
 
-## Business Model Candidates
+## Scaling Model
 
-- **Open core**: harness + base backends free (MIT/Apache), premium
-  backends and enterprise features paid
-- **Backend marketplace**: community publishes domain backends,
-  revenue share on paid ones
-- **Enterprise on-prem**: custom backends for company domains
-  (finance, medical, legal), deployed behind their firewall
-- **Support/SLA**: paid support tier for enterprises running in production
+| Hardware | Capacity | Use case |
+|---|---|---|
+| RTX 4070 (8 GB) | Gemma 4 E4B + 30 domains + knowledge DB | Personal tool |
+| RTX 4090 (24 GB) | Gemma 27B + 100 domains | Power user |
+| A100 (80 GB) | Gemma 27B + 500 domains + team KB | Team substrate |
+| H100 cluster | Gemma 70B+ + thousands of domains | Enterprise |
+
+Team substrate: multiple users share one .pt. Each user's CALM
+corrections compile into the same knowledge layer. Collective learning.
 
 ## Priority Order for Features
 
-1. **User-facing quality** — the harness must feel polished, not research-y.
-   Error messages, help text, onboarding, responsiveness.
-2. **Backend coverage** — more domains = more "smart" without training.
-   Each backend is a feature that sells itself.
-3. **Self-learning loop** — the longer someone uses Zenith, the better it
-   gets for their workflow. This is retention and moat.
-4. **IDE integration** — VS Code extension is the path to adoption.
-   Terminal REPL is for power users only.
-5. **Model quality** — better base models (larger, fine-tuned) improve
-   everything. But Auto-CALM means even weak models produce correct results.
+1. **Auto-upgrade pipeline** — wire CALM → compile → persist into the
+   harness so it runs automatically. This is the flywheel.
+2. **Domain card library** — more compiled ops + HRM specialists per
+   domain. Each domain is a feature that sells itself.
+3. **Harness integration** — zenith CLI invokes the substrate directly.
+   `SubstrateComputer.query()` as the verified-answer backend.
+4. **IDE integration** — VS Code extension with substrate as backend.
+5. **HRM retraining per domain** — scheduled sampling + domain data.
+   15 min per HRM on consumer GPU.
 
-## What NOT to Build (Yet)
+## Business Model Candidates
 
-- Cloud hosting / SaaS — stay local-first, don't split focus
-- Mobile / embedded — desktop + server is the market
-- Training infrastructure — the point is you DON'T need it
-- Multi-language harness rewrites — Python is fine, optimize later
-- Custom model architectures — ride llama.cpp and upstream improvements
-
-## IP and Attribution
-
-- Upstream llama.cpp is MIT. Our zenith branch patches (tq4 fusion,
-  Gemma GLU fix, OP_TIMING) are original work.
-- Auto-CALM, modular backends, self-learning loop are original.
-- CALM engine architecture (LLM sequences, CPU computes, TMR verifies)
-  is original.
-- Training data pipeline uses HuggingFace datasets under their licenses.
-  Hand-written examples are original.
-- Keep Co-Authored-By lines in commits for transparency.
+- **Open core**: substrate framework + base cards free, premium domain
+  packages (legal, medical, finance) paid
+- **Domain marketplace**: community publishes domain facades with
+  compiled ops + HRMs. Revenue share on paid domains.
+- **Enterprise on-prem**: team substrate deployed behind firewall.
+  Collective learning across the org. Custom domains.
+- **Support/SLA**: paid tier for production substrate management.
 
 ## Metrics That Matter
 
-- **Benchmark score**: Auto-CALM + precompute on 40-problem suite (currently 40/40)
-- **Backend count**: number of verified compute + knowledge functions (currently 1002 across 116 backends)
-- **Learned patterns**: size and hit rate of learned_patterns.jsonl
-- **VRAM floor**: minimum GPU memory for useful operation (currently 8GB)
-- **tok/s**: inference speed on target hardware (currently ~47 tok/s on RTX 4070)
-- **Time-to-value**: how fast a new user goes from install to useful output
+- **Autoreg accuracy**: HRM autoregressive accuracy per domain (gate metric, not teacher-forced)
+- **Compiled op count**: number of exhaustively-verified compiled programs
+- **Domain count**: number of installed domain facades (30 target for v1)
+- **Knowledge facts**: accumulated corrections in persistent DB
+- **Sub-head utilization**: % of free sub-heads used (capacity planning)
+- **End-to-end chain accuracy**: HRM × card = verified answer rate
+- **VRAM floor**: 8 GB minimum for useful operation
+- **GPU speedup**: 68× at 889M params on RTX 4070 (scales super-linearly)
+- **Session-over-session improvement**: does accuracy increase with usage?
+
+## IP and Attribution
+
+- Unified single tensor substrate architecture is original
+- Per-sub-head attention partition (Level 5) is original
+- Facade/import system for compiled neural programs is original
+- Auto-upgrade loop (CALM → compile → persist) is original
+- Compiled reasoning primitives inside LLM attention is original
+- Depth-compounding via residual channels is original
+- Hybrid FP32/tq4 per-layer dispatch is original
+- Q6_K PyTorch dequant is a port of llama.cpp (MIT)
+- Upstream llama.cpp is MIT; zenith branch patches are original

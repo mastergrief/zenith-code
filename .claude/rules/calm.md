@@ -371,5 +371,34 @@ prompt → PRE-ANALYZE (expertise, ambiguity, decompose, risk)
 
 Overhead: ~150ms on top of model inference. Self-healing only fires when
 quality drops below threshold AND the correction improves quality.
+
+## Auto-Upgrade Loop (session 30)
+
+CALM corrections feed the substrate's persistent knowledge layer:
+
+```
+User queries → CALM verifies → wrong? → correction logged
+  → end of session: compile corrections into substrate weights
+  → save .pt → next session: errors permanently fixed
+```
+
+**AutoUpgradeEngine** (`calm/llm_computer/auto_upgrade.py`):
+- `query_with_verification(prompt)` — CALM verifies, logs if wrong
+- `commit()` — compiles all corrections into knowledge card, installs
+  into substrate via `install_compiled_card_hybrid`, saves .pt
+- Each correction = 3 ReGLU neurons: `indicator(x == key)` step function
+- Proven: 0/8 correct → 8/8 → 11/11 across 3 sessions, zero retraining
+
+**KnowledgeStore** (`calm/llm_computer/persistent_knowledge.py`):
+- `add_correction(key, value)` — deduplicates, latest wins
+- `build_recall_model()` — compiles to Small2DTransformer
+- `save_corrections() / load_corrections()` — JSON persistence
+- Overrides work: key 7 changed 6→3, old fact replaced
+
+**Integration**: CALM's existing correction logs (`.calm_training/auto/`)
+feed the auto-upgrade pipeline. The same corrections that generate
+training data for optional fine-tuning ALSO compile directly into
+substrate weights for instant, verified persistence.
+
 | `tests/` | ~3,400 | 250 tests |
 | `benchmark.py` | 227 | 40-problem eval (format-agnostic) |

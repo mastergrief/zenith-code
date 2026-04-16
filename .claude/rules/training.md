@@ -211,6 +211,50 @@ Per `.claude/rules/workflow.md`:
 - All substrate scripts accept `--device auto` (defaults to cuda if
   available).
 
+### Scheduled Sampling for SubstrateHRM (session 30)
+
+**The training trick that tripled autoregressive accuracy: 33% → 90%.**
+
+The old SubstrateHRM checkpoint reported 99.1% val_acc but that was
+teacher-forced. Greedy autoregressive decode hit only 33% — the model
+never learned to recover from its own errors.
+
+Fix: **scheduled sampling**. During training, randomly replace teacher-
+forced tokens with the model's own predictions. The ratio decays linearly:
+
+```
+tf_ratio: 1.0 (pure teacher) → 0.3 (70% self-generated) over 500 epochs
+```
+
+Implementation (`scripts/train_substrate_hrm.py`):
+- 2-pass per batch: (1) no-grad forward to get predictions, (2) vectorized
+  swap via `torch.where(swap_mask, shifted_preds, x)`, (3) gradient forward
+  on modified input.
+- **Vectorize the swap** — a Python loop over positions is CPU-bound at 95%.
+  Use `torch.where` for the full batch in one op.
+- **Autoreg eval** (`_autoreg_eval`): greedy-decodes the expression from the
+  NL prompt and checks exact match. This is the gate metric. Save checkpoint
+  on best autoreg, not teacher-forced accuracy.
+
+Result on RTX 4070 (180K params, 879 seconds):
+
+```
+Epoch   1:   4% autoreg  (baseline, tf_ratio=1.00)
+Epoch  50:  84%           (scheduled sampling kicks in)
+Epoch 100:  88%           (broke through first plateau)
+Epoch 150:  90%           (peak, checkpoint saved)
+Epoch 500:  90%           (held through tf_ratio=0.30)
+```
+
+**Data distribution matters**: 90% is on the training distribution
+(operands [1, 999]). Single-digit operands ([1, 9]) are underrepresented
+(~1% of random draws) → 25% on small-operand test. Fix: include explicit
+small-operand examples in training data. Another 15 min run.
+
+**Rule: always use `--scheduled-sampling` (default ON) when training
+SubstrateHRM.** The cost is ~2× per epoch (two forwards). The benefit
+is the difference between 33% and 90% on the metric that matters.
+
 ### Compiled-vs-trained card distinction
 
 - **Compiled cards** (gate-graph IR → weights) — no training, exact,

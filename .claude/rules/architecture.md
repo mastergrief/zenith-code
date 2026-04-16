@@ -19,41 +19,52 @@
 
 ## Substrate Pattern
 
-**The substrate is an architectural standard, not a tensor.** Every
-substrate-compliant card is its own `.pt` file; cards interop because they
-all share the same `Small2DTransformer` architecture + protocols.
+**The model IS the substrate.** Session 30 validated through Level 5:
+compiled programs, trained HRMs, and persistent knowledge live INSIDE
+Gemma's own attention layers — one tensor, one forward, zero cross-talk.
+
+Full spec: `.claude/rules/Substrate.md`
 
 - **Substrate** = `Small2DTransformer` + `d_head=2` invariant + channel
-  allocation protocol + gate-graph IR + mode tokens (`<|lm|>`, `<|hrm|>`,
-  `<|sys|>`, `<|user|>`, `<|asst|>`, `<|eos|>`, `<|pad|>`) + D2/D3/D5
-  primitives + fast weights. The spec, not a tensor.
-- **Card** = an individual `.pt` weight tensor compliant with the spec.
-  Compiled (gate-graph IR → weights, no training, exact) or trained (SGD,
-  statistical). All cards live under `calm/llm_computer/programs/` (compiled)
-  or `calm/llm_computer/checkpoints/` (trained).
-- **Build / Model** = a curated set of substrate-compliant cards
-  orchestrated together for a domain. CHRLM (general), CHRLM-Coding
-  (future), CHRLM-Math (future), etc.
-- **CHRLM** = the current general-knowledge build. Composition of cards
-  routed by Engine V2 / Router. NOT a single tensor.
+  allocation + gate-graph IR + per-sub-head attention partition (3 modes:
+  grouped-softmax, single-softmax, single-hard_max). The model's weight
+  tensor IS the substrate; programs are installed into free sub-head slots.
+- **Card** = compiled (gate-graph IR → weights, exact) or trained (SGD).
+  Installed into the substrate via `install_compiled_card` at reserved
+  channel/sub-head/FFN/vocab/layer rectangles.
+- **Domain** = a facade with imports/exports (StdLib + CompiledOps) hosting
+  HRM + compiled ops + knowledge facts for one knowledge area.
+- **Unified substrate** = Gemma (tq4 layers, softmax) + N domain facades
+  (FP32 layers, mixed softmax/hard_max) + knowledge DB. One `.pt` file.
 
-Composition mechanics: cards interop because they share the
-`Small2DTransformer` architecture (same Q/K/V projections, same residual
-stream conventions, same forward-pass mechanics). Same-architecture analogy:
-**substrate is the x86 ISA; cards are the binaries.** Different programs,
-same machine, native composition.
+Key session-30 results:
+- **Level 5 validated**: 3 attention modes in one layer, zero cross-talk
+- **Real Gemma bytes**: 2 layers byte-installed from GGUF + card, one tensor
+- **GPU**: 68× speedup at 889M params on RTX 4070
+- **Auto-upgrade**: CALM → compile → persist, self-improving across sessions
+- **HRM 90% autoreg**: scheduled sampling, 15 min on RTX 4070
+- **Compiled reasoning**: comparison, logic, transitivity — exact
 
-Channel-allocation protocol: each card writes/reads specific residual
-channels by design. Compiled programs allocate their channels at
-compile-time via the gate-graph auto-scheduler. Trained cards (SubstrateLM,
-SubstrateHRLM) use channels assigned by training. Fusion coexistence proven
-in commit `e9f5ecb` (compiled adder + empty learned layer 0 → 16/16) and
-extended in commit `677c22b` (Round 2 — fast weights stay silent when
-projections are silent, no amplification under noise).
+Capacity: 1024 free sub-heads × 35 SWA layers = 35,840 compute slots.
+~32 sub-heads per domain → **30 domains** on RTX 4070 (8 GB).
 
-Mode tokens are soft routing without architectural switches. The model
-sees `<|hrm|>` first, attention conditions on it, output behavior diverges
-from `<|lm|>` mode without any conditional logic in the forward pass.
+### Facade / Import System
+
+```python
+stdlib = StdLib(exports={"a": 3, "bias": 1})
+adder = CompiledOp(imports={"x": "a"}, exports="sum")
+model = build_program(stdlib, [adder, ...], head)
+```
+
+Linker resolves imports to channels, auto-schedules layers. Bad imports
+caught at build time. File: `calm/llm_computer/program_builder.py`.
+
+### Persistent Knowledge DB
+
+Corrections compiled as step-function indicators (3 ReGLU per fact).
+Cross-session via save/reload. Auto-upgrade loop: CALM catches error →
+compile into weights → persist. 0/8 → 11/11 across 3 sessions.
+Files: `persistent_knowledge.py`, `auto_upgrade.py`.
 
 ## Modular Compute Architecture (CALM)
 
@@ -154,12 +165,18 @@ work unchanged.
 All cards are `.pt` files following the `Small2DTransformer` architecture.
 Types:
 
-- **Compiled programs** (15 in `programs/`) — gate-graph IR → weights,
-  no training, exact. `adder` (10,000/10,000 exhaustive), `gcd` (256/256),
-  `factorial` (9/9), `is_prime` (99/99), `dispatched` (279/279 opcode
-  routing), `countdown`, `isa`, `adder_tiny`, `add_one`, `copy_past`,
+- **Compiled programs** (24 in `programs/`) — gate-graph IR → weights,
+  no training, exact. Original 15: `adder` (10K/10K), `gcd` (256/256),
+  `factorial` (9/9), `is_prime` (99/99), `dispatched` (279/279),
+  `countdown`, `isa`, `adder_tiny`, `add_one`, `copy_past`,
   `increment_counter`, `threshold`, `retrieve_by_index`,
-  `retrieve_threshold`, `read_by_key`.
+  `retrieve_threshold`, `read_by_key`. Session 30 additions:
+  `compiled_router` (ADD/MUL dispatch), `dispatched_v2` (5 ops),
+  `dispatched_v3` (9 ops), `dispatched_v4` (5 ops + cross-card gating),
+  `composed_sum_threshold` (inter-slot composition),
+  `depth_compound` (3-stage pipeline), `reasoning_engine` (comparison
+  + logic + transitivity), `compiled_in_gemma` (inside Gemma layer),
+  `three_in_one_layer` (Level 5: 3 modes one layer).
 - **HRM specialists** (5 in `calm/hrm/checkpoints/`) — `HRMSeq2Seq`
   architecture (NOT on the substrate). Separate file format; migration
   to substrate-native is proven via `substrate_hrm_nl_best.pt` (180K
@@ -173,8 +190,11 @@ Types:
   lists, code markers); content coherence requires scale (100M-500M for
   useful prose).
 - **SubstrateHRM** (`substrate_hrm_nl_best.pt`, 180K params) — decoder-
-  only `Small2DTransformer` trained on NL→math structure. 99.1% val_acc.
-  Proves the substrate hosts HRM-equivalent behavior.
+  only `Small2DTransformer` trained on NL→math structure with scheduled
+  sampling. **90% autoregressive accuracy** (the metric that matters).
+  Teacher-forced val_acc 99.0%. Trained in 879s on RTX 4070. Installs
+  into the unified substrate at reserved sub-heads. Bit-identical to
+  standalone when embedded in substrate (proven Round 9: 0.00e+00 diff).
 - **SubstrateHRLM** (`substrate_hybrid_mvp.pt`, 1.25M; v2 in flight) —
   hybrid LM+HRM trained jointly with mode prefixes. v1 PARTIAL result:
   LM +8.7% cross-task transfer, HRM mode collapsed to 0% (token-count

@@ -405,6 +405,16 @@ check registration, run Gemma — takes 3-5 minutes. Cognitive module
 changes take slightly longer because the Gemma test needs inference
 time (~30-60s per prompt).
 
+### Auto-upgrade extension (session 30)
+
+CALM corrections now feed the substrate's persistent knowledge layer:
+after the CALM loop catches an error → `AutoUpgradeEngine.commit()` →
+corrections compile into substrate weights → save `.pt` → next session
+the error is permanently fixed. This closes the loop from "CALM catches
+errors" to "errors never recur" without retraining. See
+`.claude/rules/calm.md` "Auto-Upgrade Loop" and
+`calm/llm_computer/auto_upgrade.py`.
+
 ## When this workflow doesn't apply
 
 - **UI / frontend / design work.** Subjective judgment calls that
