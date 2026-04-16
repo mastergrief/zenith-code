@@ -224,6 +224,24 @@ class MmapTq4Linear:
             del w
         return result
 
+    def __getstate__(self):
+        # Drop the numpy mmap view (self.raw points into the 5 GB GGUF file).
+        # Once _gpu_qs/_gpu_d are preloaded, raw is redundant. Class-level
+        # _shared_pi/_shared_centroids are NOT instance state.
+        return {
+            "in_features": self.in_features,
+            "out_features": self.out_features,
+            "n_bytes": self.n_bytes,
+            "n_blocks": self.n_blocks,
+            "_gpu_qs": self._gpu_qs,
+            "_gpu_d": self._gpu_d,
+        }
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.raw = None
+        self._w_unrot_cache = None
+
 
 class FP32GemmaLinear:
     """FP32 weight tensor with the same call interface as MmapTq4Linear.
@@ -816,6 +834,39 @@ class GemmaSubstrate:
         # Sub-heads outside any partition use Gemma's default grouped softmax.
         # Set by install_card_in_attention(mode=...).
         self.attention_partition: dict[int, list] = {}
+
+    def __getstate__(self):
+        # Drop the GGUF mmap reader (non-picklable, and mmap-resident raw
+        # bytes are already redundant with preloaded _gpu_qs/_gpu_d). Also
+        # drop transient per-forward state.
+        state = self.__dict__.copy()
+        state["_reader"] = None
+        state["_per_layer_embd"] = None
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        # Subsequent forward passes run on the loaded GPU weights; the mmap
+        # reader is not needed to keep them alive.
+        # Rebuild the class-level Pi + centroids cache if missing — the tq4
+        # kernel path and dequant path both read these, but they're class
+        # attributes so they don't pickle with the instance.
+        if MmapTq4Linear._shared_pi is None:
+            from calm.llm_computer.tq4_torch import (
+                build_pi, compute_lloyd_max_codebook,
+            )
+            # Infer device from any loaded tq4 buffer.
+            device = "cuda"
+            for lyr in self.layers:
+                lin = getattr(lyr, "attn_q", None)
+                if isinstance(lin, MmapTq4Linear) and lin._gpu_qs is not None:
+                    device = str(lin._gpu_qs.device)
+                    break
+            pi = build_pi(device=device, source="torch")
+            centroids, _ = compute_lloyd_max_codebook()
+            MmapTq4Linear._shared_pi = pi
+            MmapTq4Linear._shared_centroids = centroids.to(device)
+            print(f"[gemma-substrate] restored Pi + centroids on {device}")
 
     @classmethod
     def from_gguf(cls, gguf_path: str, max_len: int = 8192) -> "GemmaSubstrate":
