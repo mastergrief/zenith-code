@@ -811,6 +811,11 @@ class GemmaSubstrate:
         # hook reads a CardSlot.last_output and biases specific Gemma
         # vocab logits to inject the verified value back into Gemma's output.
         self.verification_hooks: list = []
+        # Per-layer attention-mode partition. Maps layer_idx → list of
+        # (sh_lo, sh_hi, mode) entries where mode ∈ {'softmax', 'hard_max'}.
+        # Sub-heads outside any partition use Gemma's default grouped softmax.
+        # Set by install_card_in_attention(mode=...).
+        self.attention_partition: dict[int, list] = {}
 
     @classmethod
     def from_gguf(cls, gguf_path: str, max_len: int = 8192) -> "GemmaSubstrate":
@@ -1175,18 +1180,63 @@ class GemmaSubstrate:
         # Attention scores — Gemma 4 uses f_attention_scale = 1.0
         # (no /sqrt(d_head)). See llama-model.cpp:1273.
         S_kv = k_full.shape[2]
-        scores = torch.einsum("bhid,bhjd->bhij", q, k_full)
+        partitions = self.attention_partition.get(layer_idx, [])
+
+        # Build attention mask once, used by both paths
+        attn_mask = None
         if isinstance(kv_cache, KVCacheStatic):
-            # Static buffer: positions > pos are uninitialized — mask them out.
-            scores = scores.masked_fill(
-                kv_cache.valid_mask[None, None, None, :], float("-inf"))
-        elif S_kv > S:
-            pass  # generating single token — attends to all cached
+            attn_mask = kv_cache.valid_mask[None, None, None, :]
+        elif S_kv == S:
+            attn_mask = torch.triu(
+                torch.ones(S, S_kv, dtype=torch.bool, device=device),
+                diagonal=1)[None, None, :, :]
+
+        if not partitions:
+            # Fast path: pure Gemma grouped softmax.
+            scores = torch.einsum("bhid,bhjd->bhij", q, k_full)
+            if attn_mask is not None:
+                scores = scores.masked_fill(attn_mask, float("-inf"))
+            weights = F.softmax(scores, dim=-1)
+            cur = torch.einsum("bhij,bhjd->bhid", weights, v_full)
         else:
-            mask = torch.triu(torch.ones(S, S_kv, dtype=torch.bool, device=device), diagonal=1)
-            scores = scores.masked_fill(mask, float("-inf"))
-        weights = F.softmax(scores, dim=-1)
-        cur = torch.einsum("bhij,bhjd->bhid", weights, v_full)
+            # Per-sub-head dispatch. Carve out card sub-heads from the
+            # grouped-softmax sum (zero their Q contribution), compute
+            # Gemma's standard attention on the rest, then add per-sub-head
+            # attention for the card sub-heads with their own mode.
+            q_gemma = q.clone()
+            for (sh_lo, sh_hi, _mode) in partitions:
+                q_gemma[..., sh_lo:sh_hi] = 0
+            scores = torch.einsum("bhid,bhjd->bhij", q_gemma, k_full)
+            if attn_mask is not None:
+                scores = scores.masked_fill(attn_mask, float("-inf"))
+            weights = F.softmax(scores, dim=-1)
+            cur = torch.einsum("bhij,bhjd->bhid", weights, v_full)
+
+            for (sh_lo, sh_hi, mode) in partitions:
+                d_part = sh_hi - sh_lo
+                assert d_part % 2 == 0
+                n_sub = d_part // 2
+                # (B, H, S, n_sub, 2) per sub-head views
+                q_c = q[..., sh_lo:sh_hi].reshape(*q.shape[:-1], n_sub, 2)
+                k_c = k_full[..., sh_lo:sh_hi].reshape(*k_full.shape[:-1], n_sub, 2)
+                v_c = v_full[..., sh_lo:sh_hi].reshape(*v_full.shape[:-1], n_sub, 2)
+                # Per-sub-head scores: (B, H, n_sub, S_q, S_kv)
+                sc = torch.einsum("bhqni,bhkni->bhnqk", q_c, k_c)
+                if attn_mask is not None:
+                    # attn_mask shape (1, 1, S_q, S_kv) → broadcast over (n_sub)
+                    sc = sc.masked_fill(attn_mask.unsqueeze(2), float("-inf"))
+                if mode == "hard_max":
+                    am = sc.argmax(dim=-1, keepdim=True)
+                    w_c = torch.zeros_like(sc)
+                    w_c.scatter_(-1, am, 1.0)
+                elif mode == "softmax":
+                    w_c = F.softmax(sc, dim=-1)
+                else:
+                    raise ValueError(f"unknown sub-head mode {mode!r}")
+                # Apply: (B, H, S_q, n_sub, 2)
+                out_c = torch.einsum("bhnqk,bhkni->bhqni", w_c, v_c)
+                cur[..., sh_lo:sh_hi] = out_c.reshape(*out_c.shape[:-2], d_part)
+
         cur = cur.transpose(1, 2).reshape(B, S, q_total)
 
         # Output projection
@@ -1319,6 +1369,7 @@ class GemmaSubstrate:
         ch_off: int,
         d_card: int,
         card_layer: int = 0,
+        mode: str = "grouped",
     ) -> dict:
         """Install a Small2DTransformer card's attention weights INTO
         Gemma's attn_q/k/v/output tensors at a specific sub-head slot.
@@ -1395,12 +1446,22 @@ class GemmaSubstrate:
             attn_o.weight[sh_lo:sh_hi, :] = 0
             attn_o.weight[sh_lo:sh_hi, ch_off:ch_off+d_card] = c_out.T
 
+        # Register attention mode for these sub-heads (mode='grouped' = default
+        # Gemma softmax, no partition needed). 'hard_max' / 'softmax' enable
+        # per-sub-head dispatch in _forward_layer.
+        if mode in ("hard_max", "softmax"):
+            self.attention_partition.setdefault(layer_idx, []).append(
+                (sh_lo, sh_hi, mode))
+        elif mode != "grouped":
+            raise ValueError(f"unknown attention mode {mode!r}")
+
         return {
             "layer": layer_idx, "sub_heads": list(range(sub_head_offset,
                                                           sub_head_offset + n_sub_heads)),
             "ch_in": (ch_off, ch_off + d_card),
             "ch_out": (ch_off, ch_off + d_card),
             "card_d_model": d_card,
+            "mode": mode,
         }
 
     def warmup(self, device: str = "cuda", seq_lens: tuple = (1, 6, 16)):
