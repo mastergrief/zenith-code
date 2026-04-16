@@ -369,6 +369,77 @@ def _q6k_matvec_kernel(
     tl.store(y_ptr + pid, acc)
 
 
+@triton.jit
+def _q6k_lookup_kernel(
+    token_ids_ptr,
+    ql_ptr, qh_ptr, scales_ptr, d_ptr,
+    out_ptr,
+    n_tokens, d_model,
+    BPR: tl.constexpr,
+    BLOCK_ELEMENTS: tl.constexpr,
+):
+    """One program = one (token, block) pair. Writes 256 dequantized
+    elements to out[token, block*256:(block+1)*256]. Used for the
+    main token embedding and the per-layer token embedding lookups."""
+    pid_n = tl.program_id(0)
+    pid_b = tl.program_id(1)
+    if pid_n >= n_tokens or pid_b >= BPR:
+        return
+
+    token_id = tl.load(token_ids_ptr + pid_n)
+    block_idx = token_id * BPR + pid_b
+
+    pos = tl.arange(0, BLOCK_ELEMENTS)
+    half = pos // 128
+    within = pos % 128
+    quarter = within // 32
+    l = within % 32
+    ql_idx = half * 64 + l + tl.where(
+        (quarter == 1) | (quarter == 3), 32, 0)
+    ql_shift = tl.where(quarter >= 2, 4, 0)
+    qh_idx = half * 32 + l
+    qh_shift = 2 * quarter
+    scale_idx = half * 8 + (l // 16) + 2 * quarter
+
+    ql_vals = tl.load(ql_ptr + block_idx * 128 + ql_idx).to(tl.int32)
+    qh_vals = tl.load(qh_ptr + block_idx * 64 + qh_idx).to(tl.int32)
+    scale_vals = tl.load(scales_ptr + block_idx * 16 + scale_idx).to(tl.int32)
+    d_block = tl.load(d_ptr + block_idx)
+
+    ql_low = (ql_vals >> ql_shift) & 0xF
+    qh_high = (qh_vals >> qh_shift) & 0x3
+    q = ql_low | (qh_high << 4)
+    q_signed = q - 32
+
+    val = d_block * scale_vals.to(tl.float32) * q_signed.to(tl.float32)
+
+    out_offsets = pid_n * d_model + pid_b * BLOCK_ELEMENTS + pos
+    tl.store(out_ptr + out_offsets, val)
+
+
+def q6k_lookup_triton(
+    token_ids: torch.Tensor,
+    ql: torch.Tensor, qh: torch.Tensor,
+    scales: torch.Tensor, d: torch.Tensor,
+    vocab_size: int, d_model: int,
+) -> torch.Tensor:
+    """Q6_K embedding lookup. Returns (N, d_model) FP32."""
+    flat = token_ids.flatten().to(torch.int64).contiguous()
+    n_tokens = flat.numel()
+    bpr = d_model // 256
+    out = torch.empty(n_tokens, d_model,
+                       device=token_ids.device, dtype=torch.float32)
+    grid = (n_tokens, bpr)
+    _q6k_lookup_kernel[grid](
+        flat, ql.view(-1), qh.view(-1), scales.view(-1), d,
+        out.view(-1),
+        n_tokens, d_model,
+        BPR=bpr, BLOCK_ELEMENTS=256,
+        num_warps=2,
+    )
+    return out
+
+
 def q6k_matvec_triton(
     h: torch.Tensor,           # (d_model,) FP32
     ql: torch.Tensor,          # (n_blocks, 128) uint8

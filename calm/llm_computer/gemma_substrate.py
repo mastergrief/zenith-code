@@ -278,16 +278,21 @@ class GpuQ6KEmbedding:
             self.scales[block_indices], self.d[block_indices])
 
     def __getitem__(self, token_ids: torch.Tensor) -> torch.Tensor:
-        """Look up embeddings for token_ids. GPU-accelerated dequant."""
+        """Look up embeddings for token_ids. Triton-accelerated dequant."""
+        try:
+            from calm.llm_computer.tq4_triton import q6k_lookup_triton
+            result = q6k_lookup_triton(
+                token_ids, self.ql, self.qh, self.scales, self.d,
+                self.vocab_size, self.d_model)
+            return result.reshape(*token_ids.shape, self.d_model)
+        except Exception:
+            pass
+        # Fallback: PyTorch dequant
         ids = token_ids.flatten()
-        # Each row = blocks_per_row consecutive blocks
         row_starts = ids.to(self.ql.device) * self.blocks_per_row
-        # Build block indices for all rows
         offsets = torch.arange(self.blocks_per_row, device=self.ql.device)
         block_idx = (row_starts.unsqueeze(1) + offsets.unsqueeze(0)).flatten()
-        # Dequant all blocks at once on GPU
-        values = self._dequant_blocks(block_idx)  # (N*bpr, 256)
-        # Reshape to (N, d_model)
+        values = self._dequant_blocks(block_idx)
         result = values.reshape(len(ids), self.d_model)
         return result.reshape(*token_ids.shape, self.d_model)
 
