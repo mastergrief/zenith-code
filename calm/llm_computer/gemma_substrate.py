@@ -457,13 +457,19 @@ class KVCacheStatic:
         self.pos = torch.zeros((), dtype=torch.long, device=device)
         # Mask: True means position is INVALID (future or beyond pos).
         self.valid_mask = torch.ones(max_len, dtype=torch.bool, device=device)
+        # Pre-allocated arange for GPU-side mask recomputation (avoids
+        # Python-int slicing in the hot loop).
+        self._arange = torch.arange(max_len, dtype=torch.long, device=device)
 
-    def set_pos(self, p: int):
-        """Update GPU pos tensor + valid_mask for replay at position p."""
-        self.pos.fill_(p)
-        # Positions [0, p] are valid; [p+1, max_len) are masked out.
-        self.valid_mask.fill_(True)
-        self.valid_mask[: p + 1] = False
+    def set_pos(self, p):
+        """Update GPU pos tensor + valid_mask. p may be a Python int OR
+        a 0-d GPU tensor; mask recomputation is purely GPU-side either way."""
+        if isinstance(p, int):
+            self.pos.fill_(p)
+        else:
+            self.pos.copy_(p)
+        # valid_mask[i] = True if i > pos (mask out future positions)
+        torch.gt(self._arange, self.pos, out=self.valid_mask)
 
     def update(self, layer_idx: int, k_new: torch.Tensor, v_new: torch.Tensor,
                is_swa: bool = False, window_size: int = 512):
@@ -1031,20 +1037,29 @@ class GemmaSubstrate:
         static.set_pos(prefill_len)
         torch.cuda.synchronize()
 
-        # Decode loop via graph replay.
+        # Decode loop via graph replay — GPU-only state updates,
+        # one CPU sync at the end for the whole token batch.
+        n_steps = max_tokens - 1
+        tokens_buf = torch.zeros(n_steps, dtype=torch.long, device=device)
+        eos_id = tokenizer.EOS_ID
+
         t1 = time.time()
-        generated = [next_id]
-        cur_id = next_id
-        for i in range(max_tokens - 1):
-            if stop_on_eos and cur_id == tokenizer.EOS_ID:
-                break
-            input_buf.copy_(torch.tensor([[cur_id]], device=device))
+        for i in range(n_steps):
             static.set_pos(prefill_len + i)
             g.replay()
-            torch.cuda.synchronize()
-            cur_id = int(captured[0, -1].argmax().item())
-            generated.append(cur_id)
+            next_id_t = captured[0, -1].argmax()  # 0-d GPU tensor
+            tokens_buf[i] = next_id_t
+            input_buf.copy_(next_id_t.reshape(1, 1))
+        torch.cuda.synchronize()
         decode_s = time.time() - t1
+
+        # One CPU sync: pull all decoded tokens at once
+        gen_after_first = tokens_buf.tolist()
+        generated = [next_id]
+        for tid in gen_after_first:
+            if stop_on_eos and tid == eos_id:
+                break
+            generated.append(tid)
         text = tokenizer.decode(generated)
         return {"text": text, "token_ids": generated,
                 "prefill_s": prefill_s, "decode_s": decode_s}
