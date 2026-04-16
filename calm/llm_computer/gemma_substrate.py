@@ -49,6 +49,19 @@ class GemmaConfig:
     shared_kv_layers: int = 18
     max_len: int = 8192
 
+    @property
+    def n_layer_kv_from_start(self) -> int:
+        return self.n_layers - self.shared_kv_layers
+
+    def kv_source_layer(self, il: int, is_swa: bool) -> int:
+        """Layer index whose KV cache to read for attention. Layers >=
+        n_layer_kv_from_start reuse: SWA → last SWA layer below the cutoff
+        (cutoff - 2), global → last global layer below (cutoff - 1).
+        Mirrors llama-model.cpp:8358 reuse callback."""
+        if il < self.n_layer_kv_from_start:
+            return il
+        return self.n_layer_kv_from_start - (2 if is_swa else 1)
+
 
 def _rms_norm(x: torch.Tensor, weight: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     rms = torch.sqrt(torch.mean(x * x, dim=-1, keepdim=True) + eps)
@@ -63,13 +76,15 @@ def _rope_freqs(dim: int, max_len: int, base: float, device: str = "cpu") -> tor
 
 
 def _apply_rope(x: torch.Tensor, freqs: torch.Tensor) -> torch.Tensor:
+    # NEOX-style: pair is (x[i], x[i + D/2]), not (x[2i], x[2i+1]).
+    # Gemma 4 uses LLAMA_ROPE_TYPE_NEOX (llama-model.cpp:9133).
     B, H, S, D = x.shape
-    x = x.reshape(B, H, S, D // 2, 2)
-    cos = freqs[:S, :, 0].unsqueeze(0).unsqueeze(0)
+    half = D // 2
+    cos = freqs[:S, :, 0].unsqueeze(0).unsqueeze(0)  # (1, 1, S, D/2)
     sin = freqs[:S, :, 1].unsqueeze(0).unsqueeze(0)
-    x0, x1 = x[..., 0], x[..., 1]
-    out = torch.stack([x0 * cos - x1 * sin, x0 * sin + x1 * cos], dim=-1)
-    return out.reshape(B, H, S, D)
+    x0 = x[..., :half]
+    x1 = x[..., half:]
+    return torch.cat([x0 * cos - x1 * sin, x0 * sin + x1 * cos], dim=-1)
 
 
 # --- Mmap-based lazy tensor wrappers ---
@@ -107,7 +122,8 @@ class MmapTq4Linear:
         self._gpu_d = d.to(device)
 
     def dequant(self, device: str = "cpu") -> torch.Tensor:
-        """Dequant to FP32. Uses GPU-resident data if preloaded."""
+        """Dequant to (in, out) for `x @ w`. GGUF stores as math (out, in)
+        row-major; we reshape to that and transpose."""
         if self._gpu_qs is not None:
             qs, d = self._gpu_qs, self._gpu_d
         else:
@@ -117,11 +133,8 @@ class MmapTq4Linear:
         n_elements = self.n_blocks * 256
         tq4 = Tq4Tensor(qs=qs, d=d, shape=(n_elements,))
         w_flat = dequantize_tq4(tq4)
-        # Reshape: in_features rows × out_features cols
-        rows = self.in_features
-        cols = n_elements // rows
-        w = w_flat.reshape(rows, cols)
-        return w[:, :self.out_features]
+        w_math = w_flat.reshape(self.out_features, self.in_features)
+        return w_math.T.contiguous()
 
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
         w = self.dequant(device=str(x.device))
@@ -363,11 +376,12 @@ class GemmaSubstrate:
             model.per_layer_token_embd = GpuQ6KEmbedding(t_pl.data, cfg.vocab_size, d_pl)
         if "per_layer_model_proj.weight" in tensors:
             t_proj = tensors["per_layer_model_proj.weight"]
-            # FP16 → FP32
+            # GGUF shape is (in, out) but bytes are math (out, in) row-major.
             import numpy as _np
             raw = _np.frombuffer(t_proj.data, dtype=_np.float16).copy()
-            model.per_layer_model_proj = torch.from_numpy(raw.astype(_np.float32)).reshape(
-                int(t_proj.shape[0]), int(t_proj.shape[1]))
+            in_f, out_f = int(t_proj.shape[0]), int(t_proj.shape[1])
+            w_math = torch.from_numpy(raw.astype(_np.float32)).reshape(out_f, in_f)
+            model.per_layer_model_proj = w_math.T.contiguous()  # (in, out) for h @ proj
             print(f"[gemma-substrate] per_layer_model_proj: {model.per_layer_model_proj.shape}")
         if "per_layer_proj_norm.weight" in tensors:
             model.per_layer_proj_norm_w = _load_fp32(tensors, "per_layer_proj_norm.weight")
@@ -387,8 +401,8 @@ class GemmaSubstrate:
             dim = rope_dim_global
             base_freqs = 1.0 / (cfg.rope_freq_base ** (
                 torch.arange(0, dim, 2).float() / dim))
-            # Apply proportional factors: each pair gets its own scale
-            base_freqs = base_freqs * rope_freq_factors
+            # llama.cpp applies as theta_base / freq_factor (rope.cu:107).
+            base_freqs = base_freqs / rope_freq_factors
             t = torch.arange(max_len).float()
             angles = torch.outer(t, base_freqs)
             model.rope_freqs_global = torch.stack(
@@ -587,41 +601,49 @@ class GemmaSubstrate:
         cur = _rms_norm(h, layer.attn_norm_w.to(device), cfg.rms_norm_eps)
 
         q = layer.attn_q(cur)
-        k_new = layer.attn_k(cur)
-        v_new = layer.attn_v(cur)
-
-        # Per-layer head dim
+        # Per-layer head dim — Q tells us SWA (256) vs global (512)
         q_total = q.shape[-1]
-        k_total = k_new.shape[-1]
         d_head_q = q_total // cfg.n_heads_q
-        d_head_kv = k_total // cfg.n_heads_kv
         is_global = d_head_q > cfg.d_head
 
-        q = q.reshape(B, S, cfg.n_heads_q, d_head_q).transpose(1, 2)
-        k_new = k_new.reshape(B, S, cfg.n_heads_kv, d_head_kv).transpose(1, 2)
-        v_new = v_new.reshape(B, S, cfg.n_heads_kv, d_head_kv).transpose(1, 2)
+        # Determine where this layer's K/V comes from. Layers 24-41 reuse
+        # the cache of an earlier layer (last SWA or last global before the
+        # shared block) and skip their own K/V projection entirely.
+        kv_src = cfg.kv_source_layer(layer_idx, is_swa=not is_global)
+        own_kv = (kv_src == layer_idx)
 
-        # Q norm + K norm (learned weights)
+        q = q.reshape(B, S, cfg.n_heads_q, d_head_q).transpose(1, 2)
         if layer.attn_q_norm_w is not None:
             q = _rms_norm(q, layer.attn_q_norm_w.to(device), cfg.rms_norm_eps)
-        if layer.attn_k_norm_w is not None:
-            k_new = _rms_norm(k_new, layer.attn_k_norm_w.to(device), cfg.rms_norm_eps)
-        # V norm (no learned weight — plain RMSNorm)
-        v_rms = torch.sqrt(torch.mean(v_new * v_new, dim=-1, keepdim=True) + cfg.rms_norm_eps)
-        v_new = v_new / v_rms
 
-        # RoPE
+        # RoPE on Q (always — every layer rotates its own Q with current pos)
         freqs = (self.rope_freqs_global if is_global else self.rope_freqs_swa).to(device)
         q = _apply_rope(q, freqs[start_pos:])
-        k_new = _apply_rope(k_new, freqs[start_pos:])
 
-        # KV cache
-        if kv_cache is not None:
-            k_full, v_full = kv_cache.update(layer_idx, k_new, v_new,
-                                              is_swa=not is_global,
-                                              window_size=cfg.sliding_window)
+        if own_kv:
+            k_new = layer.attn_k(cur)
+            v_new = layer.attn_v(cur)
+            d_head_kv = k_new.shape[-1] // cfg.n_heads_kv
+            k_new = k_new.reshape(B, S, cfg.n_heads_kv, d_head_kv).transpose(1, 2)
+            v_new = v_new.reshape(B, S, cfg.n_heads_kv, d_head_kv).transpose(1, 2)
+            if layer.attn_k_norm_w is not None:
+                k_new = _rms_norm(k_new, layer.attn_k_norm_w.to(device), cfg.rms_norm_eps)
+            v_rms = torch.sqrt(torch.mean(v_new * v_new, dim=-1, keepdim=True) + cfg.rms_norm_eps)
+            v_new = v_new / v_rms
+            k_new = _apply_rope(k_new, freqs[start_pos:])
+            if kv_cache is not None:
+                k_full, v_full = kv_cache.update(layer_idx, k_new, v_new,
+                                                  is_swa=not is_global,
+                                                  window_size=cfg.sliding_window)
+            else:
+                k_full, v_full = k_new, v_new
         else:
-            k_full, v_full = k_new, v_new
+            # Shared-KV layer — read source layer's cache, no own projection.
+            assert kv_cache is not None and kv_src in kv_cache.k_cache, (
+                f"layer {layer_idx} expects to reuse KV from layer {kv_src} "
+                f"but cache has no entry for that layer")
+            k_full = kv_cache.k_cache[kv_src].float()
+            v_full = kv_cache.v_cache[kv_src].float()
 
         # GQA expand
         if cfg.n_heads_kv < cfg.n_heads_q:
@@ -629,9 +651,10 @@ class GemmaSubstrate:
             k_full = k_full.repeat_interleave(repeat, dim=1)
             v_full = v_full.repeat_interleave(repeat, dim=1)
 
-        # Attention scores
+        # Attention scores — Gemma 4 uses f_attention_scale = 1.0
+        # (no /sqrt(d_head)). See llama-model.cpp:1273.
         S_kv = k_full.shape[2]
-        scores = torch.einsum("bhid,bhjd->bhij", q, k_full) / math.sqrt(d_head_q)
+        scores = torch.einsum("bhid,bhjd->bhij", q, k_full)
         if S_kv > S:
             pass  # generating single token — attends to all cached
         else:
