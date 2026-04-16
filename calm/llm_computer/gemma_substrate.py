@@ -498,6 +498,154 @@ class KVCacheStatic:
         return self.v_buf
 
 
+class KVCacheTq4:
+    """KV cache with REAL tq4 byte storage — ~4x memory savings vs FP16.
+    The noise-injection KVCache(use_tq4=True) MVP proved tq4 quant noise
+    is tolerable for attention; this stores actual tq4 bytes.
+
+    Storage per layer:
+      qs: (n_blocks, 128) uint8 — packed nybbles
+      d:  (n_blocks,) FP32 — per-block scale
+    where n_blocks = ceil(max_len * n_kv_h * d_head / 256).
+
+    Memory at 512K context (gemma-4-E4B):
+      FP16: ~14 GB total KV across own-KV layers
+      tq4:  ~3.9 GB total KV (~3.6x reduction)
+
+    Not yet wired into the CUDA Graph capture path — the
+    quantize-on-write step needs static-shape op selection that the
+    graph capturer can re-execute. Use the dynamic forward for now.
+    """
+
+    def __init__(self, model: "GemmaSubstrate", max_len: int = 1024,
+                 device: str = "cuda"):
+        from calm.llm_computer.tq4_torch import build_pi, compute_lloyd_max_codebook
+        cfg = model.config
+        self.cfg = cfg
+        self.max_len = max_len
+        self.device = device
+        self._pi = build_pi(device=device, source="torch")
+        centroids, boundaries = compute_lloyd_max_codebook()
+        self._centroids = centroids.to(device)
+        self._boundaries = boundaries.to(device)
+
+        self.k_qs: list[torch.Tensor] = []
+        self.k_d: list[torch.Tensor] = []
+        self.v_qs: list[torch.Tensor] = []
+        self.v_d: list[torch.Tensor] = []
+        self._d_head: list[int] = []
+        self._bpt: list[int] = []  # blocks per token
+        for il in range(cfg.n_layers):
+            kv_total = model.layers[il].attn_k.out_features
+            d_head = kv_total // cfg.n_heads_kv
+            self._d_head.append(d_head)
+            elements_per_token = cfg.n_heads_kv * d_head
+            assert elements_per_token % 256 == 0, (
+                f"layer {il} elements/token={elements_per_token} not divisible by 256")
+            bpt = elements_per_token // 256
+            self._bpt.append(bpt)
+            n_blocks = max_len * bpt
+            self.k_qs.append(torch.zeros(n_blocks, 128, dtype=torch.uint8, device=device))
+            self.k_d.append(torch.zeros(n_blocks, dtype=torch.float32, device=device))
+            self.v_qs.append(torch.zeros(n_blocks, 128, dtype=torch.uint8, device=device))
+            self.v_d.append(torch.zeros(n_blocks, dtype=torch.float32, device=device))
+        self.pos = 0  # python int (NOT GPU): used for slicing
+
+    def memory_bytes(self) -> int:
+        """Total bytes in the tq4 KV cache (qs + d for all layers)."""
+        total = 0
+        for il in range(self.cfg.n_layers):
+            total += self.k_qs[il].numel() + self.v_qs[il].numel()
+            total += self.k_d[il].numel() * 4 + self.v_d[il].numel() * 4
+        return total
+
+    def update(self, layer_idx: int, k_new: torch.Tensor, v_new: torch.Tensor,
+               is_swa: bool = False, window_size: int = 512):
+        """Quantize one token's K/V, write at position [pos], increment pos.
+        Returns full pre-allocated dequantized cache (only valid through pos).
+        """
+        from calm.llm_computer.tq4_torch import quantize_tq4, Tq4Tensor, dequantize_tq4
+        bpt = self._bpt[layer_idx]
+        d_head = self._d_head[layer_idx]
+        # k_new: (1, n_kv_h, 1, d_head). Quantize the (n_kv_h * d_head) elements.
+        k_flat = k_new.float().reshape(-1)
+        v_flat = v_new.float().reshape(-1)
+        k_q = quantize_tq4(k_flat, pi=self._pi, boundaries=self._boundaries)
+        v_q = quantize_tq4(v_flat, pi=self._pi, boundaries=self._boundaries)
+        block_start = self.pos * bpt
+        self.k_qs[layer_idx][block_start:block_start + bpt] = k_q.qs
+        self.k_d[layer_idx][block_start:block_start + bpt] = k_q.d
+        self.v_qs[layer_idx][block_start:block_start + bpt] = v_q.qs
+        self.v_d[layer_idx][block_start:block_start + bpt] = v_q.d
+
+        # Dequant full cache up to current pos+1
+        n_blocks_used = (self.pos + 1) * bpt
+        k_dq_flat = dequantize_tq4(Tq4Tensor(
+            qs=self.k_qs[layer_idx][:n_blocks_used],
+            d=self.k_d[layer_idx][:n_blocks_used],
+            shape=(n_blocks_used * 256,),
+        ), pi=self._pi, centroids=self._centroids)
+        v_dq_flat = dequantize_tq4(Tq4Tensor(
+            qs=self.v_qs[layer_idx][:n_blocks_used],
+            d=self.v_d[layer_idx][:n_blocks_used],
+            shape=(n_blocks_used * 256,),
+        ), pi=self._pi, centroids=self._centroids)
+        # reshape to (1, n_kv_h, S, d_head) — same layout as KVCache returns
+        S = self.pos + 1
+        k_full = k_dq_flat.reshape(1, S, self.cfg.n_heads_kv, d_head).permute(0, 2, 1, 3).contiguous()
+        v_full = v_dq_flat.reshape(1, S, self.cfg.n_heads_kv, d_head).permute(0, 2, 1, 3).contiguous()
+
+        # pos advances once per generation step via step_done() (called by
+        # the caller, NOT here — multiple layers update at the same pos).
+        return k_full.float(), v_full.float()
+
+    @property
+    def k_cache(self):
+        # For shared-KV reads: return the dequantized k_buf via a getter
+        # — but kv_cache.k_cache[kv_src] in _forward_layer is dict-style.
+        # Implement as a list of CURRENT-state tensors. Slow path; the
+        # update() call also returns the dequantized form so own-KV
+        # layers don't pay the read cost twice.
+        return _Tq4ReadProxy(self, "k")
+
+    @property
+    def v_cache(self):
+        return _Tq4ReadProxy(self, "v")
+
+    def seq_len(self) -> int:
+        return self.pos
+
+    def step_done(self):
+        """Call once per generation step (after all layers processed)
+        to advance the write position."""
+        self.pos += 1
+
+
+class _Tq4ReadProxy:
+    """Lazy-dequant proxy so kv_cache.k_cache[kv_src] returns the
+    dequantized buffer for that source layer."""
+
+    def __init__(self, cache: "KVCacheTq4", which: str):
+        self.cache = cache
+        self.which = which  # "k" or "v"
+
+    def __getitem__(self, layer_idx: int):
+        from calm.llm_computer.tq4_torch import Tq4Tensor, dequantize_tq4
+        c = self.cache
+        bpt = c._bpt[layer_idx]
+        d_head = c._d_head[layer_idx]
+        n_blocks_used = (c.pos + 1) * bpt
+        qs_buf = c.k_qs[layer_idx] if self.which == "k" else c.v_qs[layer_idx]
+        d_buf = c.k_d[layer_idx] if self.which == "k" else c.v_d[layer_idx]
+        flat = dequantize_tq4(Tq4Tensor(
+            qs=qs_buf[:n_blocks_used], d=d_buf[:n_blocks_used],
+            shape=(n_blocks_used * 256,),
+        ), pi=c._pi, centroids=c._centroids)
+        S = c.pos + 1
+        out = flat.reshape(1, S, c.cfg.n_heads_kv, d_head).permute(0, 2, 1, 3).contiguous()
+        return out.half()  # to match KVCache storage dtype
+
+
 class GemmaLayer:
     """One Gemma layer — all weights are mmap views."""
 
@@ -685,11 +833,16 @@ class GemmaSubstrate:
         pi = build_pi(device=device, source="torch")
         centroids, _ = compute_lloyd_max_codebook()
         centroids = centroids.to(device)
-        # Monkey-patch dequantize_tq4 to use cached Pi+centroids
+        # Monkey-patch dequantize_tq4 to use cached Pi+centroids by default,
+        # but pass through caller-supplied kwargs (e.g. KVCacheTq4 supplies
+        # its own pi/centroids).
         import calm.llm_computer.tq4_torch as tq4_mod
         _orig_dequant = tq4_mod.dequantize_tq4
-        def _cached_dequant(q, pi_arg=None, centroids_arg=None):
-            return _orig_dequant(q, pi=pi, centroids=centroids)
+        def _cached_dequant(q, pi=None, centroids=None, **kw):
+            return _orig_dequant(q,
+                                  pi=pi if pi is not None else MmapTq4Linear._shared_pi,
+                                  centroids=centroids if centroids is not None
+                                  else MmapTq4Linear._shared_centroids)
         tq4_mod.dequantize_tq4 = _cached_dequant
         # Also update our module-level import
         global dequantize_tq4
