@@ -679,8 +679,15 @@ class CardSlot:
         # this is typically vocab_size (their forward returns logits).
         self.d_card = d_card
 
-    def attach(self, model: "GemmaSubstrate"):
-        """Resolve d_card if not given and register on the target layer."""
+    def attach(self, model: "GemmaSubstrate", preserve: bool = True):
+        """Resolve d_card if not given and register on the target layer.
+
+        If `preserve=True` (default), the channel range is added to the
+        model's reserved_channels list so subsequent layers' attn / ffn /
+        per-layer-embed contributions are masked out — card output then
+        flows through to output_norm + head intact, even when installed at
+        an earlier layer.
+        """
         if self.d_card is None:
             cfg = getattr(self.card, "config", None)
             self.d_card = (getattr(cfg, "vocab_size", None)
@@ -691,6 +698,9 @@ class CardSlot:
         if not hasattr(model.layers[self.layer_idx], "card_slots"):
             model.layers[self.layer_idx].card_slots = []
         model.layers[self.layer_idx].card_slots.append(self)
+        if preserve:
+            model.reserved_channels.append(
+                (self.ch_off, self.ch_off + self.d_card, self.layer_idx))
 
 
 class GemmaLayer:
@@ -733,6 +743,11 @@ class GemmaSubstrate:
         self.rope_freqs_swa = None
         self._reader = None  # keep reader alive (holds mmap)
         self._loaded = False
+        # Reserved channel ranges for card preservation. Each entry:
+        # (ch_off, ch_hi, install_layer). For any layer strictly AFTER
+        # install_layer, attn_output and ffn_output contributions to these
+        # channels are zeroed so the card's value flows through intact.
+        self.reserved_channels: list[tuple[int, int, int]] = []
 
     @classmethod
     def from_gguf(cls, gguf_path: str, max_len: int = 8192) -> "GemmaSubstrate":
@@ -1109,6 +1124,11 @@ class GemmaSubstrate:
         # Post-attention norm THEN residual (matches gemma4-iswa.cpp line 107-112)
         if layer.post_attn_norm_w is not None:
             cur = _rms_norm(cur, layer.post_attn_norm_w, cfg.rms_norm_eps)
+        # Mask reserved channels: zero attn contribution so card output
+        # in inpL (set by an earlier layer's card slot) is preserved.
+        for ch_lo, ch_hi, install_layer in self.reserved_channels:
+            if layer_idx > install_layer:
+                cur[..., ch_lo:ch_hi] = 0
         attn_out = cur + inpL
 
         # --- FFN ---
@@ -1137,6 +1157,11 @@ class GemmaSubstrate:
         # Post-FFN norm THEN residual (matches gemma4-iswa.cpp line 184-190)
         if layer.post_ffw_norm_w is not None:
             cur = _rms_norm(cur, layer.post_ffw_norm_w, cfg.rms_norm_eps)
+        # Mask reserved channels: zero FFN contribution so card output
+        # in attn_out is preserved.
+        for ch_lo, ch_hi, install_layer in self.reserved_channels:
+            if layer_idx > install_layer:
+                cur[..., ch_lo:ch_hi] = 0
         h = cur + attn_out
 
         # --- Per-layer embedding (gemma4-iswa.cpp line 193-213) ---
@@ -1150,6 +1175,10 @@ class GemmaSubstrate:
             proj_out = layer.proj(gate_out)
             if layer.post_norm_w is not None:
                 proj_out = _rms_norm(proj_out, layer.post_norm_w, cfg.rms_norm_eps)
+            # Mask reserved channels: zero per-layer-embed contribution.
+            for ch_lo, ch_hi, install_layer in self.reserved_channels:
+                if layer_idx > install_layer:
+                    proj_out[..., ch_lo:ch_hi] = 0
             h = pe_in + proj_out
 
         # Layer output scale (gemma4-iswa.cpp line 216-219)
