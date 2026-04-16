@@ -26,7 +26,7 @@ from calm.expression import safe_eval, ExpressionError
 # `;` is used as a step-separator in scratchpad traces
 # (`step1 ; step2 ; final`). Semicolon is a regular char in the vocab so it
 # tokenizes naturally; no special-token treatment needed.
-_CHARS = list("0123456789+-*/()=., ;abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_")
+_CHARS = list("0123456789+-*/()=., ;abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_><")
 # <call>/<end_call> bracket expressions that should be delegated to a CALM
 # backend at inference time (see HRMSeq2SeqReasoner scratchpad mode).
 _SPECIAL = {"<pad>": 0, "<bos>": 1, "<eos>": 2, "<sep>": 3, "<call>": 4, "<end_call>": 5}
