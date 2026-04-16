@@ -59,13 +59,29 @@ class NLMathDataGenerator:
     def __init__(self, seed: int = 42):
         self._rng = random.Random(seed)
 
+    def _sample_operand(self, max_val: int) -> int:
+        """Sample with uniform digit-length coverage.
+
+        Equal probability across digit-length buckets: [1-9], [10-99],
+        [100-max_val]. Ensures every digit length is well-represented.
+        """
+        if max_val <= 9:
+            return self._rng.randint(1, max_val)
+        buckets = [(1, 9)]
+        if max_val >= 10:
+            buckets.append((10, min(99, max_val)))
+        if max_val >= 100:
+            buckets.append((100, max_val))
+        lo, hi = self._rng.choice(buckets)
+        return self._rng.randint(lo, hi)
+
     def generate(self, n: int = 2000) -> List[NLMathProblem]:
         problems: List[NLMathProblem] = []
         while len(problems) < n:
             nl_tmpl, expr_tmpl, max_val = self._rng.choice(_TEMPLATES)
             vals = {
-                "a": self._rng.randint(1, max_val),
-                "b": self._rng.randint(1, max_val),
+                "a": self._sample_operand(max_val),
+                "b": self._sample_operand(max_val),
             }
             question = nl_tmpl.format(**vals)
             expression = expr_tmpl.format(**vals)
