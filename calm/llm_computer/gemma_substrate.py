@@ -75,118 +75,152 @@ def _apply_rope(x: torch.Tensor, freqs: torch.Tensor) -> torch.Tensor:
 # --- Mmap-based lazy tensor wrappers ---
 
 class MmapTq4Linear:
-    """tq4 linear layer backed by mmap view. Zero-copy load, dequant on call."""
+    """tq4 linear layer backed by mmap view. Zero-copy load, dequant on call.
+
+    Two modes:
+    - CPU: dequant from mmap each call (slow, zero resident memory)
+    - GPU: tq4 bytes preloaded to GPU, dequant on GPU (fast, 5 GB resident)
+    """
 
     def __init__(self, raw_data: np.ndarray, in_features: int, out_features: int):
-        # raw_data is a numpy view into the mmap — no heap allocation
         self.raw = raw_data
         self.in_features = in_features
         self.out_features = out_features
-        # raw_data might be a typed numpy array — get byte count correctly
         self.n_bytes = raw_data.nbytes
         self.n_blocks = self.n_bytes // 132
+        # GPU-resident tq4 data (set by preload_gpu)
+        self._gpu_qs = None
+        self._gpu_d = None
 
-    def dequant(self) -> torch.Tensor:
-        """Vectorized dequant: mmap bytes → FP32 tensor."""
+    def _parse_blocks(self) -> tuple:
+        """Parse tq4 blocks into qs and d arrays."""
         blocks = np.frombuffer(self.raw, dtype=np.uint8).reshape(self.n_blocks, 132)
         qs_np = np.ascontiguousarray(blocks[:, :128])
         d_bytes = np.ascontiguousarray(blocks[:, 128:130])
         d_np = np.frombuffer(d_bytes, dtype=np.float16).astype(np.float32)
-        # Let dequant determine shape from block count (don't impose our shape)
+        return torch.from_numpy(qs_np), torch.from_numpy(d_np)
+
+    def preload_gpu(self, device: str = "cuda"):
+        """Load tq4 bytes onto GPU. Dequant happens on GPU — no transfers."""
+        qs, d = self._parse_blocks()
+        self._gpu_qs = qs.to(device)
+        self._gpu_d = d.to(device)
+
+    def dequant(self, device: str = "cpu") -> torch.Tensor:
+        """Dequant to FP32. Uses GPU-resident data if preloaded."""
+        if self._gpu_qs is not None:
+            qs, d = self._gpu_qs, self._gpu_d
+        else:
+            qs, d = self._parse_blocks()
+            if device != "cpu":
+                qs, d = qs.to(device), d.to(device)
         n_elements = self.n_blocks * 256
-        # GGML stores (in_features, out_features) but tq4 blocks are flat
-        # Dequant to flat, then reshape to GGML orientation
-        tq4 = Tq4Tensor(
-            qs=torch.from_numpy(qs_np),
-            d=torch.from_numpy(d_np),
-            shape=(n_elements,),  # flat
-        )
+        tq4 = Tq4Tensor(qs=qs, d=d, shape=(n_elements,))
         w_flat = dequantize_tq4(tq4)
-        # Reshape to (rows, cols) where rows × cols ≤ n_elements
-        # GGML convention: weight stored as (in, out)
         rows = self.in_features
         cols = n_elements // rows
         w = w_flat.reshape(rows, cols)
         return w[:, :self.out_features]
 
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
-        w = self.dequant()
-        result = x @ w.to(x.device)
-        del w  # free immediately
+        w = self.dequant(device=str(x.device))
+        result = x @ w
+        if self._gpu_qs is None:
+            del w  # free if not using preloaded GPU data
         return result
 
 
-class MmapQ6KEmbedding:
-    """Q6_K embedding backed by mmap. Dequants only requested rows."""
+class GpuQ6KEmbedding:
+    """Q6_K embedding with GPU-accelerated dequant.
+
+    Parses raw Q6_K blocks into component tensors (ql, qh, scales, d)
+    at load time. Stores components on GPU (~553 MB as uint8/int8/fp16).
+    Dequants on GPU using vectorized torch ops — fast for both row lookup
+    and full output head multiply.
+    """
 
     BLOCK_BYTES = 210
     BLOCK_ELEMENTS = 256
 
     def __init__(self, raw_data: np.ndarray, vocab_size: int, d_model: int):
-        self.raw = raw_data
         self.vocab_size = vocab_size
         self.d_model = d_model
         self.blocks_per_row = d_model // self.BLOCK_ELEMENTS
-        self.bytes_per_row = self.blocks_per_row * self.BLOCK_BYTES
-        self._full_cache = None  # lazy full dequant for output head
+        n_blocks = vocab_size * self.blocks_per_row
+        self._device = "cpu"
 
-    def _dequant_block(self, block_bytes: np.ndarray) -> np.ndarray:
-        """Dequant one Q6_K block (210 bytes → 256 float32 values)."""
-        ql = block_bytes[:128]
-        qh = block_bytes[128:192]
-        scales = block_bytes[192:208].view(np.int8)
-        d = np.frombuffer(block_bytes[208:210], dtype=np.float16).astype(np.float32)[0]
+        # Parse all blocks at once (vectorized numpy, one-time cost)
+        print(f"[gemma-substrate] parsing {n_blocks:,} Q6_K blocks...")
+        raw_bytes = np.frombuffer(raw_data, dtype=np.uint8)
+        blocks = raw_bytes[:n_blocks * self.BLOCK_BYTES].reshape(n_blocks, self.BLOCK_BYTES)
 
-        values = np.zeros(256, dtype=np.float32)
-        for i in range(256):
-            half = i // 128
-            within = i % 128
-            quarter = within // 32
-            l = within % 32
+        self.ql = torch.from_numpy(np.ascontiguousarray(blocks[:, :128]))
+        self.qh = torch.from_numpy(np.ascontiguousarray(blocks[:, 128:192]))
+        self.scales = torch.from_numpy(
+            np.ascontiguousarray(blocks[:, 192:208]).view(np.int8).copy())
+        d_raw = np.ascontiguousarray(blocks[:, 208:210]).copy()
+        self.d = torch.from_numpy(
+            d_raw.view(np.float16).astype(np.float32).reshape(n_blocks))
 
-            ql_idx = half * 64 + l + (32 if quarter in (1, 3) else 0)
-            ql_shift = 4 if quarter >= 2 else 0
-            qh_idx = half * 32 + l
-            qh_shift = 2 * quarter
-            scale_idx = half * 8 + (l // 16) + 2 * quarter
+        self._full_cache = None
+        print(f"[gemma-substrate] Q6_K parsed: {self.ql.shape[0]:,} blocks "
+              f"({self.ql.nbytes / 1e6:.0f} MB on CPU)")
 
-            q = ((int(ql[ql_idx]) >> ql_shift) & 0xF) | (((int(qh[qh_idx]) >> qh_shift) & 3) << 4)
-            values[i] = d * float(scales[scale_idx]) * (q - 32)
-        return values
+    def to_gpu(self, device: str = "cuda"):
+        """Move parsed components to GPU. ~553 MB total."""
+        self.ql = self.ql.to(device)
+        self.qh = self.qh.to(device)
+        self.scales = self.scales.to(device)
+        self.d = self.d.to(device)
+        self._device = device
+        print(f"[gemma-substrate] Q6_K embedding on {device}")
 
-    def _dequant_rows(self, row_ids: list) -> torch.Tensor:
-        """Dequant specific rows from the embedding."""
-        result = np.zeros((len(row_ids), self.d_model), dtype=np.float32)
-        raw_bytes = np.frombuffer(self.raw, dtype=np.uint8)
-        for idx, row_id in enumerate(row_ids):
-            offset = row_id * self.bytes_per_row
-            for b in range(self.blocks_per_row):
-                blk_start = offset + b * self.BLOCK_BYTES
-                blk_data = raw_bytes[blk_start:blk_start + self.BLOCK_BYTES]
-                result[idx, b * self.BLOCK_ELEMENTS:(b + 1) * self.BLOCK_ELEMENTS] = \
-                    self._dequant_block(blk_data)
-        return torch.from_numpy(result)
+    def _dequant_blocks(self, block_indices: torch.Tensor) -> torch.Tensor:
+        """Dequant specific blocks on GPU. Returns (N, 256) FP32."""
+        from calm.llm_computer.q6k_dequant import dequantize_q6_k_blocks
+        return dequantize_q6_k_blocks(
+            self.ql[block_indices], self.qh[block_indices],
+            self.scales[block_indices], self.d[block_indices])
 
     def __getitem__(self, token_ids: torch.Tensor) -> torch.Tensor:
-        """Look up embeddings for token_ids. Dequants only needed rows."""
-        ids = token_ids.cpu().numpy().flatten().tolist()
-        unique_ids = list(set(ids))
-        # Dequant unique rows
-        rows = self._dequant_rows(unique_ids)
-        # Build lookup
-        id_to_idx = {uid: i for i, uid in enumerate(unique_ids)}
-        indices = [id_to_idx[i] for i in ids]
-        result = rows[indices].reshape(*token_ids.shape, self.d_model)
-        return result
+        """Look up embeddings for token_ids. GPU-accelerated dequant."""
+        ids = token_ids.flatten()
+        # Each row = blocks_per_row consecutive blocks
+        row_starts = ids.to(self.ql.device) * self.blocks_per_row
+        # Build block indices for all rows
+        offsets = torch.arange(self.blocks_per_row, device=self.ql.device)
+        block_idx = (row_starts.unsqueeze(1) + offsets.unsqueeze(0)).flatten()
+        # Dequant all blocks at once on GPU
+        values = self._dequant_blocks(block_idx)  # (N*bpr, 256)
+        # Reshape to (N, d_model)
+        result = values.reshape(len(ids), self.d_model)
+        return result.reshape(*token_ids.shape, self.d_model)
 
-    @property
-    def T(self):
-        """Transpose for output head (tied weights). Lazy full dequant."""
-        if self._full_cache is None:
-            print("[gemma-substrate] dequanting full embedding for output head...")
-            all_ids = list(range(self.vocab_size))
-            self._full_cache = self._dequant_rows(all_ids)
-        return self._full_cache.T
+    def output_logits(self, h: torch.Tensor, chunk_size: int = 16384) -> torch.Tensor:
+        """Compute logits via chunked GPU Q6_K dequant + matmul.
+
+        No caching, no extra memory. Q6_K components already on GPU (553 MB).
+        Each chunk: dequant 16K rows → matmul → keep scores → free.
+        Peak VRAM: ~160 MB per chunk. Total: ~16 chunks, ~160ms on GPU.
+
+        h: (B, 1, d_model) on GPU
+        Returns: (B, 1, vocab_size) on GPU
+        """
+        B = h.shape[0]
+        device = h.device
+        logits = torch.zeros(B, 1, self.vocab_size, device=device)
+        bpr = self.blocks_per_row
+
+        for start in range(0, self.vocab_size, chunk_size):
+            end = min(start + chunk_size, self.vocab_size)
+            n_rows = end - start
+            row_starts = torch.arange(start, end, device=device) * bpr
+            offsets = torch.arange(bpr, device=device)
+            block_idx = (row_starts.unsqueeze(1) + offsets.unsqueeze(0)).flatten()
+            chunk_embd = self._dequant_blocks(block_idx).reshape(n_rows, self.d_model)
+            logits[:, :, start:end] = h @ chunk_embd.T
+            del chunk_embd
+        return logits
 
     @property
     def shape(self):
@@ -207,6 +241,56 @@ class MmapFP32Tensor:
     @property
     def data(self):
         return self._data
+
+
+class KVCache:
+    """KV cache for autoregressive generation.
+
+    Supports sliding window (SWA layers keep only last `window_size` tokens)
+    and shared KV (multiple layers read from the same cache entry).
+    FP16 storage to halve memory vs FP32.
+    """
+
+    def __init__(self, n_layers: int, device: str = "cuda"):
+        self.n_layers = n_layers
+        self.device = device
+        self.k_cache: dict[int, torch.Tensor] = {}  # layer_idx → (B, H, S, D)
+        self.v_cache: dict[int, torch.Tensor] = {}
+
+    def update(self, layer_idx: int, k_new: torch.Tensor, v_new: torch.Tensor,
+               is_swa: bool = False, window_size: int = 512
+               ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Append new K/V and return full cached sequence.
+
+        For SWA layers, only the last `window_size` tokens are kept.
+        """
+        if layer_idx in self.k_cache:
+            k_full = torch.cat([self.k_cache[layer_idx], k_new.half()], dim=2)
+            v_full = torch.cat([self.v_cache[layer_idx], v_new.half()], dim=2)
+        else:
+            k_full = k_new.half()
+            v_full = v_new.half()
+
+        # Sliding window: trim to last window_size for SWA layers
+        if is_swa and k_full.shape[2] > window_size:
+            k_full = k_full[:, :, -window_size:]
+            v_full = v_full[:, :, -window_size:]
+
+        self.k_cache[layer_idx] = k_full
+        self.v_cache[layer_idx] = v_full
+
+        # Return FP32 for attention computation
+        return k_full.float(), v_full.float()
+
+    def seq_len(self) -> int:
+        """Current cached sequence length (from layer 0)."""
+        if 0 in self.k_cache:
+            return self.k_cache[0].shape[2]
+        return 0
+
+    def clear(self):
+        self.k_cache.clear()
+        self.v_cache.clear()
 
 
 class GemmaLayer:
@@ -262,10 +346,9 @@ class GemmaSubstrate:
 
         tensors = {t.name: t for t in reader.tensors}
 
-        # Token embedding — stays as Q6_K mmap view
+        # Token embedding — parse Q6_K blocks (vectorized, one-time)
         t_embd = tensors["token_embd.weight"]
-        model.token_embd = MmapQ6KEmbedding(t_embd.data, cfg.vocab_size, cfg.d_model)
-        print(f"[gemma-substrate] token_embd: mmap Q6_K ({cfg.vocab_size} × {cfg.d_model})")
+        model.token_embd = GpuQ6KEmbedding(t_embd.data, cfg.vocab_size, cfg.d_model)
 
         # Output norm
         model.output_norm_w = _load_fp32(tensors, "output_norm.weight")
@@ -341,88 +424,171 @@ class GemmaSubstrate:
               f"{len(tensors)} tensors, mmap-backed")
         return model
 
-    def forward(self, token_ids: torch.Tensor) -> torch.Tensor:
+    def preload_gpu(self, device: str = "cuda"):
+        """Load all tq4 bytes onto GPU. Eliminates CPU↔GPU transfer during
+        forward pass — dequant happens entirely on GPU.
+
+        VRAM budget: ~5 GB for tq4 bytes + ~1 GB headroom = ~6 GB.
+        Fits on RTX 4070 (8 GB) with room for activations.
+        """
+        import gc
+
+        # Pre-cache Pi rotation matrix on GPU (256×256, used by every dequant)
+        from calm.llm_computer.tq4_torch import build_pi, compute_lloyd_max_codebook
+        pi = build_pi(device=device, source="torch")
+        centroids, _ = compute_lloyd_max_codebook()
+        centroids = centroids.to(device)
+        # Monkey-patch dequantize_tq4 to use cached Pi+centroids
+        import calm.llm_computer.tq4_torch as tq4_mod
+        _orig_dequant = tq4_mod.dequantize_tq4
+        def _cached_dequant(q, pi_arg=None, centroids_arg=None):
+            return _orig_dequant(q, pi=pi, centroids=centroids)
+        tq4_mod.dequantize_tq4 = _cached_dequant
+        # Also update our module-level import
+        global dequantize_tq4
+        dequantize_tq4 = _cached_dequant
+        print(f"[gemma-substrate] cached Pi + centroids on {device}")
+
+        # Move Q6_K embedding components to GPU (~553 MB)
+        self.token_embd.to_gpu(device)
+
+        print(f"[gemma-substrate] preloading tq4 weights to {device}...")
+        total_bytes = 0
+        for i, layer in enumerate(self.layers):
+            for attr in ("attn_q", "attn_k", "attn_v", "attn_output",
+                         "ffn_gate", "ffn_up", "ffn_down",
+                         "inp_gate", "proj"):
+                linear = getattr(layer, attr, None)
+                if linear is not None and isinstance(linear, MmapTq4Linear):
+                    linear.preload_gpu(device)
+                    total_bytes += linear.n_bytes
+            if (i + 1) % 10 == 0:
+                print(f"[gemma-substrate] preloaded layer {i+1}/{self.config.n_layers} "
+                      f"({total_bytes / 1e9:.2f} GB)")
+        gc.collect()
+        if device == "cuda":
+            import torch
+            torch.cuda.empty_cache()
+            allocated = torch.cuda.memory_allocated() / 1e9
+            reserved = torch.cuda.memory_reserved() / 1e9
+            print(f"[gemma-substrate] GPU: {allocated:.2f} GB allocated, "
+                  f"{reserved:.2f} GB reserved")
+        print(f"[gemma-substrate] preloaded {total_bytes / 1e9:.2f} GB of tq4 to {device}")
+
+    def forward(self, token_ids: torch.Tensor,
+                device: str = "cpu",
+                kv_cache: Optional["KVCache"] = None,
+                start_pos: int = 0) -> torch.Tensor:
         """Forward pass: token_ids (B, S) → logits (B, S, vocab).
 
-        Dequantizes weights per-layer. Slow (~5-15s per forward at S=32)
-        but correct and memory-efficient.
+        Args:
+            token_ids: (B, S) input token IDs (full prompt or single token)
+            device: "cuda" for GPU matmuls, "cpu" for pure CPU
+            kv_cache: optional KV cache for autoregressive generation
+            start_pos: position offset for RoPE (increments during generation)
         """
         assert self._loaded
         cfg = self.config
         B, S = token_ids.shape
 
         # Token embedding (Q6_K, dequants only needed rows)
-        h = self.token_embd[token_ids]
+        h = self.token_embd[token_ids].to(device)
         h = h * math.sqrt(cfg.d_model)
 
         for i, layer in enumerate(self.layers):
-            h = self._forward_layer(h, layer, i)
+            h = self._forward_layer(h, layer, i, kv_cache=kv_cache,
+                                     start_pos=start_pos)
 
-        h = _rms_norm(h, self.output_norm_w, cfg.rms_norm_eps)
+        h = _rms_norm(h, self.output_norm_w.to(device), cfg.rms_norm_eps)
 
-        # Output: tied to token embedding (lazy full dequant on first call)
-        logits = h @ self.token_embd.T.to(h.device)
+        # Output head: chunked Q6_K dequant + matmul on GPU
+        # ~160 MB peak per chunk, no caching needed
+        h_last = h[:, -1:, :]  # (B, 1, d_model) stays on GPU
+        logits = self.token_embd.output_logits(h_last)  # (B, 1, vocab) on GPU
         return logits
 
     def _forward_layer(self, h: torch.Tensor, layer: GemmaLayer,
-                       layer_idx: int) -> torch.Tensor:
+                       layer_idx: int, kv_cache: Optional["KVCache"] = None,
+                       start_pos: int = 0) -> torch.Tensor:
         cfg = self.config
+        device = h.device
         B, S, D = h.shape
 
-        h_norm = _rms_norm(h, layer.attn_norm_w, cfg.rms_norm_eps)
+        h_norm = _rms_norm(h, layer.attn_norm_w.to(device), cfg.rms_norm_eps)
 
         q = layer.attn_q(h_norm)
-        k = layer.attn_k(h_norm)
-        v = layer.attn_v(h_norm)
+        k_new = layer.attn_k(h_norm)
+        v_new = layer.attn_v(h_norm)
 
         # Per-layer head dim: global layers use d_head=512, SWA use 256
         q_total = q.shape[-1]
-        k_total = k.shape[-1]
+        k_total = k_new.shape[-1]
         d_head_q = q_total // cfg.n_heads_q
         d_head_kv = k_total // cfg.n_heads_kv
-        is_global = d_head_q > cfg.d_head  # 512 > 256 → global attention layer
+        is_global = d_head_q > cfg.d_head
 
         q = q.reshape(B, S, cfg.n_heads_q, d_head_q).transpose(1, 2)
-        k = k.reshape(B, S, cfg.n_heads_kv, d_head_kv).transpose(1, 2)
-        v = v.reshape(B, S, cfg.n_heads_kv, d_head_kv).transpose(1, 2)
+        k_new = k_new.reshape(B, S, cfg.n_heads_kv, d_head_kv).transpose(1, 2)
+        v_new = v_new.reshape(B, S, cfg.n_heads_kv, d_head_kv).transpose(1, 2)
 
         if layer.attn_q_norm_w is not None:
-            q = _rms_norm(q, layer.attn_q_norm_w, cfg.rms_norm_eps)
+            q = _rms_norm(q, layer.attn_q_norm_w.to(device), cfg.rms_norm_eps)
         if layer.attn_k_norm_w is not None:
-            k = _rms_norm(k, layer.attn_k_norm_w, cfg.rms_norm_eps)
+            k_new = _rms_norm(k_new, layer.attn_k_norm_w.to(device), cfg.rms_norm_eps)
 
-        # RoPE: use global freqs for global layers, SWA freqs for SWA layers
-        freqs = self.rope_freqs_global if is_global else self.rope_freqs_swa
-        q = _apply_rope(q, freqs)
-        k = _apply_rope(k, freqs)
+        # RoPE with position offset for cached generation
+        freqs = (self.rope_freqs_global if is_global else self.rope_freqs_swa).to(device)
+        # Slice freqs for the current position range
+        rope_freqs = freqs[start_pos:start_pos + S].unsqueeze(0).unsqueeze(0)
+        q = _apply_rope(q, freqs[start_pos:])
+        k_new = _apply_rope(k_new, freqs[start_pos:])
 
+        # KV cache: append new K/V and get full sequence
+        if kv_cache is not None:
+            k_full, v_full = kv_cache.update(layer_idx, k_new, v_new,
+                                              is_swa=not is_global,
+                                              window_size=cfg.sliding_window)
+        else:
+            k_full, v_full = k_new, v_new
+
+        # GQA: expand KV heads
         if cfg.n_heads_kv < cfg.n_heads_q:
             repeat = cfg.n_heads_q // cfg.n_heads_kv
-            k = k.repeat_interleave(repeat, dim=1)
-            v = v.repeat_interleave(repeat, dim=1)
+            k_full = k_full.repeat_interleave(repeat, dim=1)
+            v_full = v_full.repeat_interleave(repeat, dim=1)
 
+        # Attention
         scale = 1.0 / math.sqrt(d_head_q)
-        scores = torch.einsum("bhid,bhjd->bhij", q, k) * scale
-        mask = torch.triu(torch.ones(S, S, dtype=torch.bool, device=h.device), diagonal=1)
-        scores = scores.masked_fill(mask, float("-inf"))
+        S_kv = k_full.shape[2]
+        scores = torch.einsum("bhid,bhjd->bhij", q, k_full) * scale
+
+        # Causal mask: new tokens can see all cached + themselves
+        if S_kv > S:
+            # Generating: q is (B,H,1,D), k is (B,H,S_kv,D) — no mask needed
+            # (single new token attends to all past)
+            pass
+        else:
+            mask = torch.triu(torch.ones(S, S_kv, dtype=torch.bool, device=device), diagonal=1)
+            scores = scores.masked_fill(mask, float("-inf"))
+
         weights = F.softmax(scores, dim=-1)
-        attn_out = torch.einsum("bhij,bhjd->bhid", weights, v)
+        attn_out = torch.einsum("bhij,bhjd->bhid", weights, v_full)
         attn_out = attn_out.transpose(1, 2).reshape(B, S, q_total)
         attn_out = layer.attn_output(attn_out)
 
         if layer.post_attn_norm_w is not None:
-            attn_out = _rms_norm(attn_out, layer.post_attn_norm_w, cfg.rms_norm_eps)
+            attn_out = _rms_norm(attn_out, layer.post_attn_norm_w.to(device), cfg.rms_norm_eps)
 
         h = h + attn_out
 
-        h_norm = _rms_norm(h, layer.ffn_norm_w, cfg.rms_norm_eps)
+        h_norm = _rms_norm(h, layer.ffn_norm_w.to(device), cfg.rms_norm_eps)
         gate = layer.ffn_gate(h_norm)
         up = layer.ffn_up(h_norm)
         ffn_out = F.gelu(gate, approximate="tanh") * up
         ffn_out = layer.ffn_down(ffn_out)
 
         if layer.post_ffw_norm_w is not None:
-            ffn_out = _rms_norm(ffn_out, layer.post_ffw_norm_w, cfg.rms_norm_eps)
+            ffn_out = _rms_norm(ffn_out, layer.post_ffw_norm_w.to(device), cfg.rms_norm_eps)
 
         h = h + ffn_out
         return h
@@ -454,27 +620,72 @@ def _load_tq4_auto(tensors: dict, name: str) -> MmapTq4Linear:
 
 
 def main():
-    """Load test — verify mmap loading doesn't OOM."""
+    """Load and generate — prove the substrate produces coherent text."""
     import argparse
+    import time
     p = argparse.ArgumentParser()
     p.add_argument("--gguf", default="/home/gabe/models/gemma-4-E4B-it-tq4-aligned.gguf")
     p.add_argument("--max-len", type=int, default=512)
+    p.add_argument("--device", type=str, default="auto")
+    p.add_argument("--prompt", type=str, default="The capital of France is")
+    p.add_argument("--tokens", type=int, default=10)
     args = p.parse_args()
+
+    if args.device == "auto":
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    else:
+        device = args.device
 
     model = GemmaSubstrate.from_gguf(args.gguf, max_len=args.max_len)
 
-    # Quick forward test with dummy tokens
-    print("\n[gemma-substrate] testing forward pass (3 tokens)...")
-    ids = torch.tensor([[1, 2, 3]])  # dummy token IDs
-    try:
-        logits = model.forward(ids)
-        print(f"[gemma-substrate] output: {logits.shape}")
-        print(f"[gemma-substrate] top token: {logits[0, -1].argmax().item()}")
-        print("[gemma-substrate] forward pass WORKS")
-    except Exception as e:
-        print(f"[gemma-substrate] forward failed: {e}")
-        import traceback
-        traceback.print_exc()
+    # Preload tq4 to GPU for fast dequant
+    if device == "cuda":
+        model.preload_gpu(device)
+
+    from calm.llm_computer.synth.gemma_tokenizer import GemmaTokenizer
+    tok = GemmaTokenizer.from_gguf(args.gguf)
+
+    ids = tok.encode(args.prompt)
+    print(f"\n[substrate] prompt: \"{args.prompt}\" ({len(ids)} tokens)")
+    print(f"[substrate] device: {device}")
+    print(f"[substrate] generating {args.tokens} tokens with KV cache...")
+
+    # Prefill: process entire prompt at once, populate KV cache
+    cfg = model.config
+    cache = KVCache(cfg.n_layers, device=device)
+    t0 = time.time()
+    x = torch.tensor([ids])
+    with torch.no_grad():
+        logits = model.forward(x, device=device, kv_cache=cache, start_pos=0)
+    next_id = int(logits[0, -1].argmax().item())
+    prefill_time = time.time() - t0
+    print(f"  prefill: {prefill_time:.1f}s ({len(ids)} tokens)")
+
+    generated = list(ids) + [next_id]
+    token_text = tok.id_to_token.get(next_id, "?")
+    print(f"  step 1: \"{token_text}\"")
+
+    # Decode: one token at a time using KV cache
+    for step in range(1, args.tokens):
+        x = torch.tensor([[next_id]])
+        with torch.no_grad():
+            logits = model.forward(x, device=device, kv_cache=cache,
+                                   start_pos=len(generated) - 1)
+        next_id = int(logits[0, -1].argmax().item())
+        generated.append(next_id)
+        token_text = tok.id_to_token.get(next_id, "?")
+        elapsed = time.time() - t0
+        print(f"  step {step+1}: \"{token_text}\" ({elapsed:.1f}s)")
+        if next_id == tok.EOS_ID:
+            break
+
+    output = tok.decode(generated)
+    total = time.time() - t0
+    n_gen = len(generated) - len(ids)
+    tok_per_sec = n_gen / total if total > 0 else 0
+    print(f"\n[substrate] output: \"{output}\"")
+    print(f"[substrate] {n_gen} tokens in {total:.1f}s ({tok_per_sec:.2f} tok/s)")
+    print(f"[substrate] KV cache: {cache.seq_len()} positions cached")
 
 
 if __name__ == "__main__":
