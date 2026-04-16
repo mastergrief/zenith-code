@@ -646,6 +646,47 @@ class _Tq4ReadProxy:
         return out.half()  # to match KVCache storage dtype
 
 
+class CardSlot:
+    """Reserved (layer, channel-range) slot in Gemma's residual stream
+    where a compiled card can compute alongside Gemma's attention.
+
+    MVP install model: at the END of layer `layer_idx`, the slot's card
+    receives the residual values at channels [ch_off:ch_off+d_card],
+    computes its forward pass, and ADDS the result back to the same
+    channels. This is the simplest "card alongside Gemma" pattern —
+    full Round 29 per-sub-head attention partition is a follow-up.
+
+    For preserving card output across subsequent layers, the substrate's
+    full vision requires zeroing FFN_DOWN rows at the reserved channels
+    on subsequent layers (so Gemma's FFN doesn't overwrite). For now,
+    cards are installed at the LAST useful layer (e.g., the layer right
+    before output_norm) so their output reaches the head intact.
+    """
+
+    def __init__(self, layer_idx: int, ch_off: int, card,
+                 card_input_fn=None):
+        self.layer_idx = layer_idx
+        self.ch_off = ch_off
+        self.card = card
+        # card_input_fn(h_slice) → tensor that the card forwards on.
+        # Default: pass the residual slice through unchanged.
+        self.card_input_fn = card_input_fn or (lambda x: x)
+        # Inferred at attach time
+        self.d_card = None
+
+    def attach(self, model: "GemmaSubstrate"):
+        """Resolve d_card and store self on the target layer."""
+        # Determine the card's output dim.
+        # For Small2DTransformer cards: card.config.d_model.
+        d = getattr(getattr(self.card, "config", None), "d_model", None)
+        if d is None:
+            raise ValueError("card must have .config.d_model (Small2DTransformer)")
+        self.d_card = d
+        if not hasattr(model.layers[self.layer_idx], "card_slots"):
+            model.layers[self.layer_idx].card_slots = []
+        model.layers[self.layer_idx].card_slots.append(self)
+
+
 class GemmaLayer:
     """One Gemma layer — all weights are mmap views."""
 
@@ -1108,6 +1149,25 @@ class GemmaSubstrate:
         # Layer output scale (gemma4-iswa.cpp line 216-219)
         if layer.layer_output_scale is not None:
             h = h * layer.layer_output_scale
+
+        # Card slot dispatch — additive residual write at reserved channels.
+        # The card sees its slice of the residual, runs its own forward
+        # (typically a Small2DTransformer with d_head=2 sub-heads), and the
+        # output is added back at the same channels. Preserves Gemma's
+        # forward-pass output everywhere except the reserved range.
+        slots = getattr(layer, "card_slots", None)
+        if slots:
+            for slot in slots:
+                ch_lo, ch_hi = slot.ch_off, slot.ch_off + slot.d_card
+                h_slice = h[..., ch_lo:ch_hi]
+                card_input = slot.card_input_fn(h_slice)
+                with torch.no_grad():
+                    card_out = slot.card(card_input)
+                # Card may return logits/embedding-shape; we add into residual.
+                if card_out.shape[-1] == slot.d_card:
+                    h[..., ch_lo:ch_hi] = h[..., ch_lo:ch_hi] + card_out
+                # If shape differs (e.g., card returns vocab-size logits),
+                # caller-provided card_input_fn is responsible for adapting.
 
         return h
 
