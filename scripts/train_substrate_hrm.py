@@ -75,39 +75,103 @@ class SeqDataset(Dataset):
         }
 
 
-def train(epochs=200, problems=10000, batch_size=64, lr=1e-3,
+def _autoreg_eval(model, problems, device, max_gen=30):
+    """Autoregressive evaluation — the metric that ACTUALLY matters.
+    Greedy-decodes the expression from the NL prompt and checks if
+    the full expression matches. This is what inference does."""
+    from calm.hrm.data import _CHAR_TO_ID, _ID_TO_CHAR
+    bos = _CHAR_TO_ID["<bos>"]
+    sep = _CHAR_TO_ID["<sep>"]
+    eos = _CHAR_TO_ID["<eos>"]
+    model.eval()
+    correct = 0
+    for p in problems:
+        ids = [bos] + [_CHAR_TO_ID[c] for c in p.question
+                       if c in _CHAR_TO_ID] + [sep]
+        gen = []
+        for _ in range(max_gen):
+            x = torch.tensor([ids], dtype=torch.long, device=device)
+            with torch.no_grad():
+                logits = model(x)
+            nxt = int(logits[0, -1].argmax().item())
+            if nxt == eos:
+                break
+            gen.append(nxt)
+            ids.append(nxt)
+        decoded = "".join(
+            _ID_TO_CHAR.get(i, "") for i in gen
+            if not _ID_TO_CHAR.get(i, "").startswith("<")
+        ).strip().rstrip("=").strip()
+        expected = p.expression.strip()
+        if decoded == expected:
+            correct += 1
+    return correct / max(len(problems), 1)
+
+
+def train(epochs=500, problems=10000, batch_size=64, lr=1e-3,
           d_model=64, n_heads=32, n_layers=4, d_ffn=128,
-          max_len=96, seed=42, eval_every=20):
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+          max_len=96, seed=42, eval_every=20, scheduled_sampling=True,
+          tf_ratio_start=1.0, tf_ratio_end=0.3, device="auto"):
+    if device == "auto":
+        device = "cuda" if torch.cuda.is_available() else "cpu"
     gen = NLMathDataGenerator(seed=seed)
     probs = gen.generate(problems)
     ds = SeqDataset(probs, max_len=max_len)
     val_size = max(1, len(ds) // 10)
-    train_set, val_set = random_split(ds, [len(ds) - val_size, val_size])
+    train_set, val_set = random_split(ds, [len(ds) - val_size, val_size],
+                                       generator=torch.Generator().manual_seed(seed))
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,
                               drop_last=True)
     val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=False)
+    # Keep raw val problems for autoregressive eval
+    val_probs = [probs[i] for i in val_set.indices]
 
     model = build_substrate_hrm(
         vocab_size=VOCAB_SIZE, d_model=d_model, n_heads=n_heads,
         n_layers=n_layers, d_ffn=d_ffn, max_len=max_len,
-        use_hard_max=False,  # softmax for training gradients
+        use_hard_max=False,
     ).to(device)
     print(f"[substrate-nl] model: {sum(p.numel() for p in model.parameters()):,} "
           f"params on {device}")
+    if scheduled_sampling:
+        print(f"[substrate-nl] scheduled sampling: tf_ratio {tf_ratio_start:.1f}"
+              f" → {tf_ratio_end:.1f} over {epochs} epochs")
 
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs)
-    best = 0.0
+    best_autoreg = 0.0
     t0 = time.time()
     for epoch in range(1, epochs + 1):
         model.train()
         total = 0.0; nb = 0
+        # Scheduled sampling: decay tf_ratio linearly
+        tf_ratio = tf_ratio_start - (tf_ratio_start - tf_ratio_end) * (epoch / epochs)
+
         for b in train_loader:
             x = b["input_ids"].to(device)
             y = b["target_ids"].to(device)
             m = b["loss_mask"].to(device)
-            logits = model(x)
+            B, S = x.shape
+
+            if scheduled_sampling and tf_ratio < 0.99:
+                # 2-pass scheduled sampling:
+                # Pass 1: get model's predictions at each position (no grad)
+                with torch.no_grad():
+                    pred_logits = model(x)
+                    preds = pred_logits.argmax(-1)  # (B, S)
+                # For expression positions, randomly swap teacher input
+                # with model prediction (shifts: pred at pos i → input at pos i+1)
+                modified_x = x.clone()
+                swap = (torch.rand(B, S, device=device) > tf_ratio) & m
+                for pos in range(S - 1):
+                    s = swap[:, pos]
+                    if s.any():
+                        modified_x[s, pos + 1] = preds[s, pos]
+                # Pass 2: forward on modified input, compute loss
+                logits = model(modified_x)
+            else:
+                logits = model(x)
+
             lf = logits.reshape(-1, VOCAB_SIZE)
             tf = y.reshape(-1)
             mf = m.reshape(-1)
@@ -121,11 +185,14 @@ def train(epochs=200, problems=10000, batch_size=64, lr=1e-3,
         sched.step()
         if epoch % eval_every == 0 or epoch == 1:
             va = _evaluate(model, val_loader, device)
+            # Autoregressive eval on 50 samples (slower but what matters)
+            autoreg = _autoreg_eval(model, val_probs[:50], device)
             print(f"[substrate-nl] epoch {epoch:4d}/{epochs}: "
                   f"loss={total/max(nb,1):.4f}, val_acc={va:.1%}, "
+                  f"autoreg={autoreg:.1%}, tf_ratio={tf_ratio:.2f}, "
                   f"elapsed={time.time()-t0:.0f}s")
-            if va > best:
-                best = va
+            if autoreg > best_autoreg:
+                best_autoreg = autoreg
                 CHECKPOINT_PATH.parent.mkdir(parents=True, exist_ok=True)
                 torch.save({
                     "model_state_dict": model.state_dict(),
@@ -134,9 +201,11 @@ def train(epochs=200, problems=10000, batch_size=64, lr=1e-3,
                         "n_heads": n_heads, "n_layers": n_layers,
                         "d_ffn": d_ffn, "max_len": max_len,
                     },
-                    "epoch": epoch, "val_acc": va, "substrate": True,
+                    "epoch": epoch, "val_acc": va,
+                    "autoreg_acc": autoreg, "substrate": True,
                 }, CHECKPOINT_PATH)
-    print(f"[substrate-nl] done: {time.time()-t0:.0f}s, best val_acc={best:.1%}")
+    print(f"[substrate-nl] done: {time.time()-t0:.0f}s, "
+          f"best autoreg={best_autoreg:.1%} (teacher-forced best={best_autoreg:.1%})")
 
 
 def _evaluate(model, loader, device):
@@ -155,7 +224,7 @@ def _evaluate(model, loader, device):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--epochs", type=int, default=200)
+    p.add_argument("--epochs", type=int, default=500)
     p.add_argument("--problems", type=int, default=10000)
     p.add_argument("--batch-size", type=int, default=64)
     p.add_argument("--lr", type=float, default=1e-3)
@@ -166,8 +235,21 @@ def main():
     p.add_argument("--max-len", type=int, default=96)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--eval-every", type=int, default=20)
+    p.add_argument("--no-scheduled-sampling", action="store_true")
+    p.add_argument("--tf-ratio-end", type=float, default=0.3)
+    p.add_argument("--device", type=str, default="auto")
     args = p.parse_args()
-    train(**vars(args))
+    train(
+        epochs=args.epochs, problems=args.problems,
+        batch_size=args.batch_size, lr=args.lr,
+        d_model=args.d_model, n_heads=args.n_heads,
+        n_layers=args.n_layers, d_ffn=args.d_ffn,
+        max_len=args.max_len, seed=args.seed,
+        eval_every=args.eval_every,
+        scheduled_sampling=not args.no_scheduled_sampling,
+        tf_ratio_end=args.tf_ratio_end,
+        device=args.device,
+    )
 
 
 if __name__ == "__main__":
