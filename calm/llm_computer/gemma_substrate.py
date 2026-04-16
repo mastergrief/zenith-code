@@ -665,15 +665,21 @@ class CardSlot:
 
     def __init__(self, layer_idx: int, ch_off: int, card,
                  d_card: Optional[int] = None,
-                 card_input_fn=None):
+                 card_input_fn=None,
+                 use_full_residual: bool = False,
+                 output_fn=None):
         self.layer_idx = layer_idx
         self.ch_off = ch_off
         self.card = card
-        # card_input_fn(h_slice) → tensor that the card.forward() takes.
-        # Default identity passes the residual slice unchanged (works when
-        # the card's input dim == d_card and the card expects continuous
-        # values like the synthetic test cards).
+        # card_input_fn(input) → tensor for card.forward(). When
+        # use_full_residual=False (default), input is h[..., ch_off:ch_off+d_card].
+        # When True, input is the full residual h (lets chained cards read
+        # from prior cards' output channels).
         self.card_input_fn = card_input_fn or (lambda x: x)
+        self.use_full_residual = use_full_residual
+        # output_fn(h, card_out, ch_lo, ch_hi) → updated h. If None, default
+        # is to add card_out (shape-matched) into h[..., ch_lo:ch_hi].
+        self.output_fn = output_fn
         # d_card = number of OUTPUT channels in Gemma's residual that the
         # card's output writes to. For Small2DTransformer compiled cards,
         # this is typically vocab_size (their forward returns logits).
@@ -1186,23 +1192,28 @@ class GemmaSubstrate:
             h = h * layer.layer_output_scale
 
         # Card slot dispatch — additive residual write at reserved channels.
-        # The card sees its slice of the residual, runs its own forward
-        # (typically a Small2DTransformer with d_head=2 sub-heads), and the
-        # output is added back at the same channels. Preserves Gemma's
-        # forward-pass output everywhere except the reserved range.
+        # The card sees the FULL residual h (so it can read from anywhere,
+        # not just its own write range — enables chained cards that read
+        # from an earlier card's output channels).
         slots = getattr(layer, "card_slots", None)
         if slots:
             for slot in slots:
                 ch_lo, ch_hi = slot.ch_off, slot.ch_off + slot.d_card
-                h_slice = h[..., ch_lo:ch_hi]
-                card_input = slot.card_input_fn(h_slice)
+                # Default: pass h_slice for backward compat; chained cards
+                # set use_full_residual=True to receive h instead.
+                if getattr(slot, "use_full_residual", False):
+                    card_input = slot.card_input_fn(h)
+                else:
+                    card_input = slot.card_input_fn(h[..., ch_lo:ch_hi])
                 with torch.no_grad():
                     card_out = slot.card(card_input)
-                # Card may return logits/embedding-shape; we add into residual.
-                if card_out.shape[-1] == slot.d_card:
+                # Optional output_fn lets the card map its output shape
+                # (e.g., (B, S_card, V)) back to the residual write shape
+                # (B, S_residual, d_card).
+                if getattr(slot, "output_fn", None) is not None:
+                    h = slot.output_fn(h, card_out, ch_lo, ch_hi)
+                elif card_out.shape == h[..., ch_lo:ch_hi].shape:
                     h[..., ch_lo:ch_hi] = h[..., ch_lo:ch_hi] + card_out
-                # If shape differs (e.g., card returns vocab-size logits),
-                # caller-provided card_input_fn is responsible for adapting.
 
         return h
 
