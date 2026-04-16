@@ -262,14 +262,30 @@ class KVCache:
 
     Supports sliding window (SWA layers keep only last `window_size` tokens)
     and shared KV (multiple layers read from the same cache entry).
-    FP16 storage to halve memory vs FP32.
+    Default FP16 storage (halves memory vs FP32). With `use_tq4=True`,
+    runs cached K/V through a tq4 quantize-dequantize roundtrip on every
+    return — proves tq4 quant noise (~4-bit, Lloyd-Max + Pi rotation)
+    is tolerable for attention. Storage stays FP16 for now; switching to
+    real tq4 storage is a follow-up that preserves this output behaviour.
     """
 
-    def __init__(self, n_layers: int, device: str = "cuda"):
+    def __init__(self, n_layers: int, device: str = "cuda",
+                 use_tq4: bool = False):
         self.n_layers = n_layers
         self.device = device
+        self.use_tq4 = use_tq4
         self.k_cache: dict[int, torch.Tensor] = {}  # layer_idx → (B, H, S, D)
         self.v_cache: dict[int, torch.Tensor] = {}
+
+    def _tq4_roundtrip(self, x: torch.Tensor) -> torch.Tensor:
+        """Inject tq4 quant noise. numel must be divisible by 256
+        (always true for Gemma 4 K/V: 2*256 SWA, 2*512 global per token)."""
+        from calm.llm_computer.tq4_torch import (
+            Tq4Tensor, dequantize_tq4, quantize_tq4)
+        flat = x.float().flatten()
+        assert flat.numel() % 256 == 0
+        q = quantize_tq4(flat)
+        return dequantize_tq4(q).reshape(x.shape).to(x.dtype)
 
     def update(self, layer_idx: int, k_new: torch.Tensor, v_new: torch.Tensor,
                is_swa: bool = False, window_size: int = 512
@@ -290,10 +306,14 @@ class KVCache:
             k_full = k_full[:, :, -window_size:]
             v_full = v_full[:, :, -window_size:]
 
+        if self.use_tq4:
+            # Store the noised tensor so shared-KV reads see same noise.
+            k_full = self._tq4_roundtrip(k_full)
+            v_full = self._tq4_roundtrip(v_full)
+
         self.k_cache[layer_idx] = k_full
         self.v_cache[layer_idx] = v_full
 
-        # Return FP32 for attention computation
         return k_full.float(), v_full.float()
 
     def seq_len(self) -> int:
@@ -704,13 +724,14 @@ class GemmaSubstrate:
         return h
 
     def generate(self, prompt: str, tokenizer, max_tokens: int = 64,
-                 device: str = "cuda", stop_on_eos: bool = True
-                 ) -> dict:
+                 device: str = "cuda", stop_on_eos: bool = True,
+                 use_tq4_kv: bool = False) -> dict:
         """Greedy generation. Returns {'text', 'token_ids', 'prefill_s', 'decode_s'}.
         Fresh KV cache per call — caller manages multi-turn state."""
         import time
         ids = tokenizer.encode(prompt)
-        cache = KVCache(self.config.n_layers, device=device)
+        cache = KVCache(self.config.n_layers, device=device,
+                        use_tq4=use_tq4_kv)
         t0 = time.time()
         with torch.no_grad():
             logits = self.forward(torch.tensor([ids]), device=device,
@@ -768,6 +789,8 @@ def main():
     p.add_argument("--device", type=str, default="auto")
     p.add_argument("--prompt", type=str, default="The capital of France is")
     p.add_argument("--tokens", type=int, default=10)
+    p.add_argument("--tq4-kv", action="store_true",
+                   help="Inject tq4 quant noise into KV cache (correctness check)")
     args = p.parse_args()
 
     if args.device == "auto":
@@ -791,7 +814,7 @@ def main():
 
     # Prefill: process entire prompt at once, populate KV cache
     cfg = model.config
-    cache = KVCache(cfg.n_layers, device=device)
+    cache = KVCache(cfg.n_layers, device=device, use_tq4=args.tq4_kv)
     t0 = time.time()
     x = torch.tensor([ids])
     with torch.no_grad():
