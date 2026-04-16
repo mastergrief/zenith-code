@@ -133,6 +133,50 @@ def _pick_block_m(out_features: int) -> int:
     return 1
 
 
+@triton.jit
+def _tq4_matmul_kernel(
+    x_ptr,          # (n_seq * in_features,) FP32 — flat 2D as 1D
+    qs_ptr, d_ptr, centroids_ptr,
+    y_ptr,          # (n_seq * out_features,) FP32 — flat 2D as 1D
+    in_features, out_features, n_seq,
+    BPR: tl.constexpr,
+    BLOCK_HALF: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+):
+    """One program = BLOCK_M output rows for one sequence position.
+    Grid is (out_features/BLOCK_M, n_seq) — eliminates the Python loop
+    over sequence positions during prefill (S>1)."""
+    pid_m = tl.program_id(0)
+    pid_s = tl.program_id(1)
+    row_base = pid_m * BLOCK_M
+    if row_base >= out_features:
+        return
+    if pid_s >= n_seq:
+        return
+
+    half_idx = tl.arange(0, BLOCK_HALF)
+    m_idx = tl.arange(0, BLOCK_M)
+    acc = tl.zeros((BLOCK_M,), dtype=tl.float32)
+
+    x_seq_off = pid_s * in_features
+    for b in range(BPR):
+        x_low = tl.load(x_ptr + x_seq_off + b * 256 + 2 * half_idx)
+        x_high = tl.load(x_ptr + x_seq_off + b * 256 + 2 * half_idx + 1)
+
+        block_idx_m = (row_base + m_idx) * BPR + b
+        d_m = tl.load(d_ptr + block_idx_m)
+        qs_off = block_idx_m[:, None] * BLOCK_HALF + half_idx[None, :]
+        qs_m = tl.load(qs_ptr + qs_off).to(tl.int32)
+        c_low = tl.load(centroids_ptr + (qs_m & 0xF))
+        c_high = tl.load(centroids_ptr + ((qs_m >> 4) & 0xF))
+        acc += d_m * (tl.sum(c_low * x_low[None, :], axis=1)
+                      + tl.sum(c_high * x_high[None, :], axis=1))
+
+    rows = row_base + m_idx
+    y_off = pid_s * out_features + rows
+    tl.store(y_ptr + y_off, acc, mask=rows < out_features)
+
+
 def tq4_linear_triton(
     x: torch.Tensor,
     qs: torch.Tensor,
@@ -142,32 +186,34 @@ def tq4_linear_triton(
     out_features: int,
     in_features: int,
 ) -> torch.Tensor:
-    """Full tq4 linear: rotate x by Pi.T, then fused matvec.
-    Handles arbitrary leading batch dims by flattening + looping.
-    For the (B=1, S=1) decode case this is the hot path."""
+    """Full tq4 linear: rotate x by Pi.T, then fused matvec/matmul.
+    Single batch position uses the matvec kernel; multi-position prefill
+    uses the batched matmul kernel (one launch instead of S launches)."""
     *batch, in_f = x.shape
     assert in_f == in_features and in_f % 256 == 0
     bpr = in_f // 256
-    # Pi rotation: small matmul, cheap
     x_rot = (x.reshape(*batch, bpr, 256) @ pi.T).reshape(*batch, in_f)
     if not x_rot.is_contiguous():
         x_rot = x_rot.contiguous()
 
-    if x_rot.dim() == 1 or (x_rot.dim() > 1 and x_rot.numel() == in_f):
-        # Single vector (could be (in,) or (1, 1, in) etc.)
+    n_seq = max(1, x_rot.numel() // in_f)
+    if n_seq == 1:
         y_flat = tq4_matvec_triton(
             x_rot.reshape(in_f), qs, d, centroids, out_features, in_features)
         return y_flat.reshape(*batch, out_features)
 
-    # Multi-vector: loop. Slow but correct; replace with batched kernel later.
-    flat = x_rot.reshape(-1, in_f)
-    out = torch.empty(flat.shape[0], out_features,
-                       device=x.device, dtype=torch.float32)
-    for i in range(flat.shape[0]):
-        out[i] = tq4_matvec_triton(
-            flat[i].contiguous(), qs, d, centroids,
-            out_features, in_features)
-    return out.reshape(*batch, out_features)
+    # Batched: launch (out_tiles, n_seq) grid in one shot.
+    flat = x_rot.reshape(n_seq, in_f)
+    y = torch.empty(n_seq, out_features, device=x.device, dtype=torch.float32)
+    BLOCK_M = _pick_block_m(out_features)
+    grid = ((out_features + BLOCK_M - 1) // BLOCK_M, n_seq)
+    _tq4_matmul_kernel[grid](
+        flat.view(-1), qs.view(-1), d, centroids, y.view(-1),
+        in_features, out_features, n_seq,
+        BPR=bpr, BLOCK_HALF=128, BLOCK_M=BLOCK_M,
+        num_warps=4,
+    )
+    return y.reshape(*batch, out_features)
 
 
 # --- Dual tq4 matvec: shared input, two parallel weight matrices ---

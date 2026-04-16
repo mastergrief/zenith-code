@@ -947,6 +947,23 @@ class GemmaSubstrate:
 
         return h
 
+    def warmup(self, device: str = "cuda", seq_lens: tuple = (1, 6, 16)):
+        """Trigger Triton kernel compilation for the listed sequence lengths
+        so the first real generate() call doesn't pay the compile cost.
+        Each unique (out_features, in_features, n_seq) shape needs one
+        Triton compile (~50-300 ms). Without warmup, the first prefill at
+        S=6 takes ~3.4 sec; after warmup it takes ~0.12 sec."""
+        import time
+        t0 = time.time()
+        for s_len in seq_lens:
+            dummy_ids = torch.zeros((1, s_len), dtype=torch.long, device=device)
+            cache = KVCache(self.config.n_layers, device=device)
+            with torch.no_grad():
+                _ = self.forward(dummy_ids, device=device, kv_cache=cache, start_pos=0)
+        torch.cuda.synchronize()
+        print(f"[gemma-substrate] warmup compiled kernels for "
+              f"S={list(seq_lens)} in {time.time()-t0:.1f}s")
+
     def generate_with_graph(self, prompt: str, tokenizer, max_tokens: int = 64,
                             device: str = "cuda", stop_on_eos: bool = True,
                             max_len: int = 1024) -> dict:
@@ -1130,6 +1147,9 @@ def main():
     print(f"[substrate] generating {args.tokens} tokens with KV cache...")
 
     if args.cuda_graph:
+        # Warm up Triton compile cache so prefill timing reflects steady state
+        prompt_len = len(tok.encode(args.prompt))
+        model.warmup(device=device, seq_lens=(1, prompt_len))
         t_total = time.time()
         out = model.generate_with_graph(args.prompt, tok,
                                          max_tokens=args.tokens,
