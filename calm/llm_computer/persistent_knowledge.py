@@ -88,7 +88,8 @@ class KnowledgeStore:
             self.add_correction(item["key"], item["value"])
 
     def build_recall_model(self, d_model: int = 16,
-                           max_len: int = 4) -> Small2DTransformer:
+                           max_len: int = 4,
+                           min_d_ffn: int = 4) -> Small2DTransformer:
         """Compile all corrections into a Small2DTransformer that does
         key → value lookup via step-function dispatch.
 
@@ -168,7 +169,7 @@ class KnowledgeStore:
             head_entries.append((corr.correct_value, ch, 1.0))
         graph.add(LinearHead(name="recall_head", entries=head_entries))
 
-        d_ffn = max(4, 3 * n_corrections)
+        d_ffn = max(min_d_ffn, 3 * n_corrections)
         return compile_program(
             graph, d_model=d_model, n_heads=n_heads, n_layers=1,
             d_ffn=d_ffn, max_len=max_len, vocab_size=vocab,
