@@ -48,7 +48,7 @@ class GemmaTokenizer:
         vocab = []
         parts = tokens_field.parts
         i = 1
-        while i + 1 < len(parts) and len(vocab) < 262144:
+        while i + 1 < len(parts) and len(vocab) < 262146:  # over-read slightly
             try:
                 data_part = parts[i + 1]
                 token_str = bytes(data_part).decode("utf-8", errors="replace")
@@ -57,6 +57,11 @@ class GemmaTokenizer:
             except Exception:
                 vocab.append("")
                 i += 2
+        # The GGUF string array has 2 metadata entries at the start that
+        # get parsed as garbled tokens. Skip them to align with token IDs.
+        if len(vocab) > 2 and vocab[0].startswith("\t") and vocab[2] == "<pad>":
+            vocab = vocab[2:]  # align: token ID 0 = <pad>, 1 = <eos>, 2 = <bos>
+        vocab = vocab[:262144]
         # Fix BOS/EOS based on GGUF metadata
         bos_field = reader.fields.get("tokenizer.ggml.bos_token_id")
         eos_field = reader.fields.get("tokenizer.ggml.eos_token_id")

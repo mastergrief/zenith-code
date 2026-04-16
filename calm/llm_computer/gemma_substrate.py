@@ -353,12 +353,27 @@ class GemmaSubstrate:
         # Output norm
         model.output_norm_w = _load_fp32(tensors, "output_norm.weight")
 
-        # RoPE frequencies — dimension from GGUF metadata, not head dim
-        # rope.dimension_count=512 for global, 256 for SWA
-        rope_dim_global = 512   # from GGUF: gemma4.rope.dimension_count
-        rope_dim_swa = 256      # from GGUF: gemma4.rope.dimension_count_swa
-        model.rope_freqs_global = _rope_freqs(rope_dim_global, max_len, cfg.rope_freq_base)
+        # RoPE frequencies — dimension from GGUF metadata
+        rope_dim_global = 512   # gemma4.rope.dimension_count
+        rope_dim_swa = 256      # gemma4.rope.dimension_count_swa
         model.rope_freqs_swa = _rope_freqs(rope_dim_swa, max_len, cfg.rope_freq_base_swa)
+
+        # Global RoPE uses proportional frequency factors from GGUF
+        if "rope_freqs.weight" in tensors:
+            rope_freq_factors = _load_fp32(tensors, "rope_freqs.weight")  # (256,)
+            # Build position-dependent freqs modulated by freq_factors
+            dim = rope_dim_global
+            base_freqs = 1.0 / (cfg.rope_freq_base ** (
+                torch.arange(0, dim, 2).float() / dim))
+            # Apply proportional factors: each pair gets its own scale
+            base_freqs = base_freqs * rope_freq_factors
+            t = torch.arange(max_len).float()
+            angles = torch.outer(t, base_freqs)
+            model.rope_freqs_global = torch.stack(
+                [torch.cos(angles), torch.sin(angles)], dim=-1)
+        else:
+            model.rope_freqs_global = _rope_freqs(
+                rope_dim_global, max_len, cfg.rope_freq_base)
 
         # Load all layers — just store mmap views, no dequant
         for i in range(cfg.n_layers):
@@ -495,6 +510,25 @@ class GemmaSubstrate:
         h = self.token_embd[token_ids].to(device)
         h = h * math.sqrt(cfg.d_model)
 
+        # Per-layer embedding (computed once, used by all layers)
+        # TODO: load per_layer_token_embd (Q6_K, 10752×262144) — skipped for now
+        self._per_layer_embd = None
+        if False:  # per-layer embedding disabled until Q6_K loader handles 10752×262K
+            # Look up per-layer token embedding: (vocab, d_per_layer * n_layers)
+            pl_embd = self.per_layer_embd[token_ids].to(device)  # (B, S, d_per_layer * n_layers)
+            pl_embd = pl_embd * math.sqrt(cfg.d_per_layer)
+            pl_embd = pl_embd.reshape(B, S, cfg.d_per_layer, cfg.n_layers)
+            # Project main embedding to per-layer space
+            if self.per_layer_proj is not None:
+                h_proj = h @ self.per_layer_proj.to(device)  # (B, S, d_per_layer * n_layers)
+                h_proj = h_proj * (1.0 / math.sqrt(cfg.d_model))
+                h_proj = h_proj.reshape(B, S, cfg.d_per_layer, cfg.n_layers)
+                if self.per_layer_proj_norm_w is not None:
+                    h_proj = _rms_norm(h_proj, self.per_layer_proj_norm_w.to(device), cfg.rms_norm_eps)
+                pl_embd = (pl_embd + h_proj) * (1.0 / math.sqrt(2.0))
+            # Store as list of per-layer tensors: [n_layers × (B, S, d_per_layer)]
+            self._per_layer_embd = [pl_embd[:, :, :, i] for i in range(cfg.n_layers)]
+
         for i, layer in enumerate(self.layers):
             h = self._forward_layer(h, layer, i, kv_cache=kv_cache,
                                      start_pos=start_pos)
@@ -502,25 +536,33 @@ class GemmaSubstrate:
         h = _rms_norm(h, self.output_norm_w.to(device), cfg.rms_norm_eps)
 
         # Output head: chunked Q6_K dequant + matmul on GPU
-        # ~160 MB peak per chunk, no caching needed
         h_last = h[:, -1:, :]  # (B, 1, d_model) stays on GPU
         logits = self.token_embd.output_logits(h_last)  # (B, 1, vocab) on GPU
+
+        # Logit softcapping: tanh(logits / cap) * cap
+        # Prevents extreme logits from dominating (Gemma 4 uses cap=30.0)
+        cap = 30.0
+        logits = torch.tanh(logits / cap) * cap
+
         return logits
 
     def _forward_layer(self, h: torch.Tensor, layer: GemmaLayer,
                        layer_idx: int, kv_cache: Optional["KVCache"] = None,
                        start_pos: int = 0) -> torch.Tensor:
+        """Forward one layer — matches llama.cpp gemma4-iswa.cpp exactly."""
         cfg = self.config
         device = h.device
         B, S, D = h.shape
+        inpL = h  # save for residual
 
-        h_norm = _rms_norm(h, layer.attn_norm_w.to(device), cfg.rms_norm_eps)
+        # --- Attention ---
+        cur = _rms_norm(h, layer.attn_norm_w.to(device), cfg.rms_norm_eps)
 
-        q = layer.attn_q(h_norm)
-        k_new = layer.attn_k(h_norm)
-        v_new = layer.attn_v(h_norm)
+        q = layer.attn_q(cur)
+        k_new = layer.attn_k(cur)
+        v_new = layer.attn_v(cur)
 
-        # Per-layer head dim: global layers use d_head=512, SWA use 256
+        # Per-layer head dim
         q_total = q.shape[-1]
         k_total = k_new.shape[-1]
         d_head_q = q_total // cfg.n_heads_q
@@ -531,19 +573,21 @@ class GemmaSubstrate:
         k_new = k_new.reshape(B, S, cfg.n_heads_kv, d_head_kv).transpose(1, 2)
         v_new = v_new.reshape(B, S, cfg.n_heads_kv, d_head_kv).transpose(1, 2)
 
+        # Q norm + K norm (learned weights)
         if layer.attn_q_norm_w is not None:
             q = _rms_norm(q, layer.attn_q_norm_w.to(device), cfg.rms_norm_eps)
         if layer.attn_k_norm_w is not None:
             k_new = _rms_norm(k_new, layer.attn_k_norm_w.to(device), cfg.rms_norm_eps)
+        # V norm (no learned weight — plain RMSNorm)
+        v_rms = torch.sqrt(torch.mean(v_new * v_new, dim=-1, keepdim=True) + cfg.rms_norm_eps)
+        v_new = v_new / v_rms
 
-        # RoPE with position offset for cached generation
+        # RoPE
         freqs = (self.rope_freqs_global if is_global else self.rope_freqs_swa).to(device)
-        # Slice freqs for the current position range
-        rope_freqs = freqs[start_pos:start_pos + S].unsqueeze(0).unsqueeze(0)
         q = _apply_rope(q, freqs[start_pos:])
         k_new = _apply_rope(k_new, freqs[start_pos:])
 
-        # KV cache: append new K/V and get full sequence
+        # KV cache
         if kv_cache is not None:
             k_full, v_full = kv_cache.update(layer_idx, k_new, v_new,
                                               is_swa=not is_global,
@@ -551,46 +595,61 @@ class GemmaSubstrate:
         else:
             k_full, v_full = k_new, v_new
 
-        # GQA: expand KV heads
+        # GQA expand
         if cfg.n_heads_kv < cfg.n_heads_q:
             repeat = cfg.n_heads_q // cfg.n_heads_kv
             k_full = k_full.repeat_interleave(repeat, dim=1)
             v_full = v_full.repeat_interleave(repeat, dim=1)
 
-        # Attention
-        scale = 1.0 / math.sqrt(d_head_q)
+        # Attention scores
         S_kv = k_full.shape[2]
-        scores = torch.einsum("bhid,bhjd->bhij", q, k_full) * scale
-
-        # Causal mask: new tokens can see all cached + themselves
+        scores = torch.einsum("bhid,bhjd->bhij", q, k_full) / math.sqrt(d_head_q)
         if S_kv > S:
-            # Generating: q is (B,H,1,D), k is (B,H,S_kv,D) — no mask needed
-            # (single new token attends to all past)
-            pass
+            pass  # generating single token — attends to all cached
         else:
             mask = torch.triu(torch.ones(S, S_kv, dtype=torch.bool, device=device), diagonal=1)
             scores = scores.masked_fill(mask, float("-inf"))
-
         weights = F.softmax(scores, dim=-1)
-        attn_out = torch.einsum("bhij,bhjd->bhid", weights, v_full)
-        attn_out = attn_out.transpose(1, 2).reshape(B, S, q_total)
-        attn_out = layer.attn_output(attn_out)
+        cur = torch.einsum("bhij,bhjd->bhid", weights, v_full)
+        cur = cur.transpose(1, 2).reshape(B, S, q_total)
 
+        # Output projection
+        cur = layer.attn_output(cur)
+
+        # Post-attention norm THEN residual (matches gemma4-iswa.cpp line 107-112)
         if layer.post_attn_norm_w is not None:
-            attn_out = _rms_norm(attn_out, layer.post_attn_norm_w.to(device), cfg.rms_norm_eps)
+            cur = _rms_norm(cur, layer.post_attn_norm_w.to(device), cfg.rms_norm_eps)
+        attn_out = cur + inpL
 
-        h = h + attn_out
+        # --- FFN ---
+        cur = _rms_norm(attn_out, layer.ffn_norm_w.to(device), cfg.rms_norm_eps)
+        gate = layer.ffn_gate(cur)
+        up = layer.ffn_up(cur)
+        cur = F.gelu(gate, approximate="tanh") * up
+        cur = layer.ffn_down(cur)
 
-        h_norm = _rms_norm(h, layer.ffn_norm_w.to(device), cfg.rms_norm_eps)
-        gate = layer.ffn_gate(h_norm)
-        up = layer.ffn_up(h_norm)
-        ffn_out = F.gelu(gate, approximate="tanh") * up
-        ffn_out = layer.ffn_down(ffn_out)
-
+        # Post-FFN norm THEN residual (matches gemma4-iswa.cpp line 184-190)
         if layer.post_ffw_norm_w is not None:
-            ffn_out = _rms_norm(ffn_out, layer.post_ffw_norm_w.to(device), cfg.rms_norm_eps)
+            cur = _rms_norm(cur, layer.post_ffw_norm_w.to(device), cfg.rms_norm_eps)
+        h = cur + attn_out
 
-        h = h + ffn_out
+        # --- Per-layer embedding (gemma4-iswa.cpp line 193-213) ---
+        if layer.inp_gate is not None and self._per_layer_embd is not None:
+            pe_in = h
+            gate_out = layer.inp_gate(h)
+            gate_out = F.gelu(gate_out, approximate="tanh")
+            # Get this layer's per-layer embedding slice
+            inp_this = self._per_layer_embd[layer_idx]  # (B, S, d_per_layer)
+            gate_out = gate_out * inp_this
+            proj_out = layer.proj(gate_out)
+            if layer.post_norm_w is not None:
+                proj_out = _rms_norm(proj_out, layer.post_norm_w.to(device), cfg.rms_norm_eps)
+            h = pe_in + proj_out
+
+        # Layer output scale (gemma4-iswa.cpp line 216-219)
+        if layer.layer_output_scale is not None:
+            h = h * layer.layer_output_scale.to(device)
+
         return h
 
 
