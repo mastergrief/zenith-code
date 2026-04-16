@@ -111,6 +111,7 @@ The GSM shortfall was digit transposition — **fixed by copy mechanism in sessi
 | GSM-style | 100% | 95/100 | 491s | 104 chars |
 | Funcall reasoning | 86% | 171/200 | 611s | 88 chars |
 | Logic reasoning | 86% | 88/100 | 910s | 121 chars |
+| Creative writing | 96% | 97/100 | 255s | 65 chars |
 
 **Key training rules for PT:**
 - **Balanced `_sample_operand()`**: uniform across digit-length buckets [1-9]/[10-99]/[100+]. Without this, small operands get 0%.
@@ -121,6 +122,8 @@ The GSM shortfall was digit transposition — **fixed by copy mechanism in sessi
 - **VOCAB_SIZE = 82** (added `><` in session 31). Old checkpoints use 80 and load fine.
 
 **Remaining ceiling**: 3+ operand copy accuracy (68-83%). Copy attention over prefix gets noisy with 3+ numbers. Known fix: two-stage decode via D5 recurrence.
+
+**Knowledge DB as alternative to training** (session 31 finding): for domains where the value is knowing rules, not computing values (creative writing, legal, style), a knowledge backend (`*_kb.py`) with dictionary entries is more effective than training. Each entry = 3 ReGLU neurons when compiled into substrate. The writing KB has 130 entries across 7 categories — equivalent information to billions of gradient updates but instant, exact, and inspectable.
 
 **Accuracy priority order (session 31 finding):**
 1. Data distribution — every valid input region covered? (free)

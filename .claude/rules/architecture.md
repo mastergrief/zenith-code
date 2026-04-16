@@ -135,6 +135,9 @@ Implementation of Percepta's March 2026 research (RESEARCH/01-03):
   - Composition: `adder_tiny` (1,020 params, 1-digit sum via LookUp + 14 ReGLU step functions, 16/16 exhaustive), `adder` (486,012 params, 2-digit sum, **10,000/10,000 exhaustive** in 0.38s).
   - Memory: `retrieve_by_index` (1,164 params, position-indexed parabolic-key retrieval, 256/256 exhaustive), `retrieve_threshold` (590 params, same-layer attn+FFN composition, 256/256), `read_by_key` (1,410 params, semantic KV via ReGLU key-squaring + coefficient-parametrized `LookUpExact`, 96/96 = 4! perms × 4 queries).
 - **ReGLU key-squaring trick** (enables semantic-keyed lookup): `-k² = -k · ReLU(k)` for non-negative integer `k`. One ReGLU neuron in layer-0 FFN writes `-k²` to a residual channel; a later layer's `LookUpExact` reads it as `pos_key1` with `pos_key0_coef=2.0` on the raw key channel. This lifts a scalar key into the `(2k, -k²)` parabolic form exactly.
+- **Grammar-constrained decoding** (`grammar_decode.py`): inference-time mask for valid math expressions + EOS boosting. Null result on current models but infrastructure shipped.
+- **Substrate server** (`substrate_server.py`): OpenAI-compatible API serving PTs + CALM precompute. Keyword-based routing across 7 PT domains. Optional llama-server fallback for general language.
+- **Gemma substrate loader** (`gemma_substrate.py`, session 31): full Gemma 4 E4B from GGUF in PyTorch. `MmapTq4Linear` (GPU-preloaded tq4 bytes, dequant on GPU), `GpuQ6KEmbedding` (Q6_K components on GPU, chunked dequant+matmul for output head), `KVCache` (FP16, sliding window), `GemmaTokenizer` (262K vocab from GGUF). Architecture: 42 layers, GQA 8Q/2KV, per-layer head dim, proportional RoPE, per-layer embedding injection. 5.07 GB GPU, 0.54 tok/s. Output coherence debugging in progress.
 
 ### Substrate Extensions (D2/D3/D5 + Fast Weights)
 
