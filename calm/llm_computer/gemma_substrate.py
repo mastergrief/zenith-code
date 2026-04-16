@@ -664,24 +664,30 @@ class CardSlot:
     """
 
     def __init__(self, layer_idx: int, ch_off: int, card,
+                 d_card: Optional[int] = None,
                  card_input_fn=None):
         self.layer_idx = layer_idx
         self.ch_off = ch_off
         self.card = card
-        # card_input_fn(h_slice) → tensor that the card forwards on.
-        # Default: pass the residual slice through unchanged.
+        # card_input_fn(h_slice) → tensor that the card.forward() takes.
+        # Default identity passes the residual slice unchanged (works when
+        # the card's input dim == d_card and the card expects continuous
+        # values like the synthetic test cards).
         self.card_input_fn = card_input_fn or (lambda x: x)
-        # Inferred at attach time
-        self.d_card = None
+        # d_card = number of OUTPUT channels in Gemma's residual that the
+        # card's output writes to. For Small2DTransformer compiled cards,
+        # this is typically vocab_size (their forward returns logits).
+        self.d_card = d_card
 
     def attach(self, model: "GemmaSubstrate"):
-        """Resolve d_card and store self on the target layer."""
-        # Determine the card's output dim.
-        # For Small2DTransformer cards: card.config.d_model.
-        d = getattr(getattr(self.card, "config", None), "d_model", None)
-        if d is None:
-            raise ValueError("card must have .config.d_model (Small2DTransformer)")
-        self.d_card = d
+        """Resolve d_card if not given and register on the target layer."""
+        if self.d_card is None:
+            cfg = getattr(self.card, "config", None)
+            self.d_card = (getattr(cfg, "vocab_size", None)
+                           or getattr(cfg, "d_model", None))
+            if self.d_card is None:
+                raise ValueError("d_card not provided and card has no "
+                                  "config.vocab_size/d_model to infer from")
         if not hasattr(model.layers[self.layer_idx], "card_slots"):
             model.layers[self.layer_idx].card_slots = []
         model.layers[self.layer_idx].card_slots.append(self)
