@@ -86,18 +86,36 @@ equivalent to training — the model gets smarter at that domain instantly.
   → export `X_FUNCTIONS` dict + optional `X_NL_PATTERNS` list → done
   (auto-discovery registers both, zero other files to edit)
 
-## HRM + LLM-Computer Architecture
+## Pointer Transducer + LLM-Computer Architecture
 
-The CRLM thesis: **partition intelligence into structure (learned, modest scale) + values (compiled, exact)**. HRM emits the problem structure; LLM-Computer recomputes every value via a deterministic interpreter backed by the CALM function registry.
+The CRLM thesis: **partition intelligence into structure (learned, modest scale) + values (compiled, exact)**. Pointer Transducers extract problem structure from NL via copy-augmented attention; LLM-Computer recomputes every value via a deterministic interpreter backed by the CALM function registry.
 
-### HRM (`calm/hrm/`)
+### Pointer Transducer (`calm/llm_computer/copy_augmented.py`, session 31)
 
-- `HRMSeq2Seq` model: bidirectional encoder (nested L/H recurrent loops per the Wang et al. paper) + causal decoder (cross-attn to encoder memory, NO recurrence in decoder). Encoder iterates on a stable input; decoder generates tokens without fighting the recurrence.
-- Three target-format modes (selected by trainer flag in `calm/hrm/train.py`):
-  - `--scratchpad`: full step-by-step reduction trace with `<call>fn(args)<end_call>value` delegation markers around function calls. Captures learned decomposition strategy.
-  - `--structure-only`: minimal target — `problem + = + <eos>`. Model only emits the problem expression and a terminator; LLM-Computer handles every value. **Sweet spot for math** (48K params, 145s train, 96.7% verified-mode full-expression).
-  - default (no scratchpad, no structure-only): target is the raw answer with optional digit-reversal. Trains slowest, plateaus at 51%.
-- Inference: `HRMSeq2SeqReasoner.reason()` — encode prompt once, decode autoregressively. In scratchpad mode, intercepts `<end_call>` emissions and routes via `safe_eval`. In structure-only mode, the verified eval path uses `_verified_answer()` to parse the input and delegate computation to LLM-Computer.
+- `CopyAugmentedTransformer`: subclasses `Small2DTransformer`, adds learned copy gate (1 linear → sigmoid) + pointer attention (dedicated copy Q/K projections). 1,089 extra params (0.6%). At each decode step: `p_copy * P_copy + (1-p_copy) * P_gen`. Digits → copy from input, operators → generate from vocab.
+- **Forward returns log-probs** (not logits). Use `F.nll_loss`, not `F.cross_entropy`. The copy distribution is a probability (scatter_add of attention weights), not logits.
+- **Copy gate bias initialized at -2.0** — model starts preferring generation, learns to copy. Without this, early training is unstable.
+- **`max_len` must exceed prefix + decode budget** — positional embeddings cap sequence length. Autoreg eval caps `gen_budget = min(max_gen, pos_limit - len(ids) - 1)`.
+- **One PT per output-language family**: function-call (`fn(args)`), infix arithmetic (`a + b`), boolean logic (`a > b and`). ~3-5 families cover 30+ domains. Adding a domain within a family = data-only.
+- **Training**: scheduled sampling (tf_ratio 1.0→0.3), autoreg eval as gate metric, `--epochs 500`, balanced `_sample_operand()` in all data generators. Scripts: `scripts/train_copy_*.py`.
+- **Checkpoints**: `calm/hrm/checkpoints/copy_*_best.pt` (NL math 100%, word 98%, GSM 100%, funcall 86%, logic 86%).
+- **Remaining ceiling**: 3+ operand copy accuracy (68-83%). Fix: two-stage decode via D5 recurrence (skeleton → slot fill).
+
+### Legacy HRM (`calm/hrm/model.py`, sessions 24-30)
+
+`HRMSeq2Seq`: encoder-decoder with nested L/H recurrence, 48K params, `--structure-only` mode. Superseded by PT for all new work. 5 checkpoints still functional for eval comparison. Peak: 90% autoreg (session 30, scheduled sampling).
+
+### Accuracy priority order (session 31 finding)
+
+```
+Accuracy stuck? Check:
+1. Data distribution — every valid input region covered? (free)
+2. Mechanism — right operation for the task? (cheap, e.g. copy vs generate)
+3. Output-family split — one model handling too many output languages? (moderate)
+4. Capacity — model genuinely too small? (expensive, last resort)
+```
+
+Session 31 never needed step 4. Steps 1-3 took 0%→100% (data), 68%→100% (mechanism), 74%→88% (split).
 
 ### LLM-Computer (`calm/llm_computer/`)
 

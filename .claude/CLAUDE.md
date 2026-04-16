@@ -75,7 +75,17 @@ conflate.
 - **CHRLM** = the current general-knowledge build. Session 30:
   **unified single tensor** — Gemma + HRMs + compiled cards + knowledge
   DB ALL in ONE `.pt`, ONE forward pass, per-sub-head attention partition.
-- **Domain** = a facade with imports/exports + HRM + compiled ops +
+- **PT** (Pointer Transducer) = a `CopyAugmentedTransformer` card
+  trained to transduce NL → formal expression via pointer-copy. Replaces
+  HRM for structure extraction. One PT per **output-language family**
+  (not per domain). ~185K params, ~32 sub-heads. Copies digits from
+  input; generates operators from vocabulary. Session 31: 95-100%
+  across 4 domains.
+- **Output-language family** = a class of expression syntax. Function-call
+  (`fn(args)`), infix arithmetic (`a + b`), boolean logic (`a > b and`).
+  ~3-5 families cover 30+ domains. Adding a domain within an existing
+  family is a data-only operation.
+- **Domain** = a facade with imports/exports + PT + compiled ops +
   knowledge facts. ~32 sub-heads per domain, 30 domains on 8 GB VRAM.
 
 **Session 30 validated through Level 5**: compiled programs live inside
@@ -90,13 +100,13 @@ Auto-upgrade: CALM catches errors → compile into weights → persist.
 
 ## Architecture
 
-**Model reasons, backends compute, engine verifies.** Intelligence comes from the system architecture, not the weights. Adding a backend module is equivalent to training — the model gets smarter at that domain instantly, with zero GPU cost.
+**Model understands, transducers structure, cards compute, engine verifies.** Intelligence comes from the system architecture, not the weights. No single component reasons — the pipeline produces reasoned answers through composition. Gemma understands NL and routes; Pointer Transducers extract formal structure; compiled cards compute exactly; CALM verifies. Adding a backend module is equivalent to training — the model gets smarter at that domain instantly, with zero GPU cost.
 
 Four active systems coexist:
 1. **Python agent harness** (`agents/`, ~4,400 LOC across 15 files) — terminal coding assistant with dual backend (Ollama + llama.cpp), 3-level permissions, thinking mode, sessions, compaction, effort control, and llama.cpp hot-swap
-2. **CALM engine** (`calm/`, ~37,400 LOC across 194 files) — modular compute + knowledge facade with cognitive intelligence layer. Auto-CALM (transparent verification + precomputation, 100% benchmark) + Engine V2 (7-phase pipeline: pre-analyze → enrich → precompute → generate → verify → cognitive route → self-heal) + 116 modular backends (1002 verified functions, 550 NL patterns, 100% coverage) + 39 cognitive modules (verification, reasoning, quality, meta, planning) + 48 factual check patterns + 10 dynamic cross-check patterns against backends + adaptive thinking budget + cross-turn conversation state + module self-learning with feedback loop. Full spec: `.claude/rules/calm.md`
+2. **CALM engine** (`calm/`, ~37,400 LOC across 194 files) — modular compute + knowledge facade with cognitive intelligence layer. Auto-CALM (transparent verification + precomputation, 100% benchmark) + Engine V2 (7-phase pipeline: pre-analyze → enrich → precompute → generate → verify → cognitive route → self-heal) + 118 modular backends (1013 verified functions, 569 NL patterns, 100% coverage) + 39 cognitive modules (verification, reasoning, quality, meta, planning) + 48 factual check patterns + 10 dynamic cross-check patterns against backends + adaptive thinking budget + cross-turn conversation state + module self-learning with feedback loop. Full spec: `.claude/rules/calm.md`
 3. **Rust claw-code port** (`rust/`) — upstream claw-code, 9 crates, separate build system
-4. **Unified Single Tensor** (`calm/llm_computer/`) — the CHRLM architecture. **ONE `.pt` contains Gemma (tq4) + trained HRMs (fp32) + compiled cards (fp32) + persistent knowledge DB.** Session 30 validated Level 5: all three types coexist in ONE attention layer via per-sub-head partition. **24 compiled programs** (exact): `adder` 10K/10K, `gcd` 256/256, `dispatched_v4` 791/791 (5 ops + cross-card gating), `reasoning_engine` 512/512 (comparison + logic + transitivity), plus `compiled_in_gemma` (Level 4: inside real Gemma), `three_in_one_layer` (Level 5: 3 modes), etc. **SubstrateHRM** `substrate_hrm_nl_best.pt` (180K params, **90% autoregressive** via scheduled sampling). **Auto-upgrade**: CALM → compile corrections into weights → persist across sessions (0/8 → 11/11 in 3 sessions). **Facade/import system** (`program_builder.py`): StdLib + CompiledOp + linker for domain composition. **GPU**: 68× speedup at 889M params on RTX 4070. Full spec: `.claude/rules/Substrate.md` + `.claude/rules/architecture.md`.
+4. **Unified Single Tensor** (`calm/llm_computer/`) — the CHRLM architecture. **ONE `.pt` contains Gemma (tq4) + trained PTs (fp32) + compiled cards (fp32) + persistent knowledge DB.** Session 30 validated Level 5: all three types coexist in ONE attention layer via per-sub-head partition. **24 compiled programs** (exact): `adder` 10K/10K, `gcd` 256/256, `dispatched_v4` 791/791 (5 ops + cross-card gating), `reasoning_engine` 512/512. **Pointer Transducers** (session 31): `CopyAugmentedTransformer` with learned copy gate + pointer attention (1,089 extra params, 0.6%). Validated across 4 domains: NL math 100%, word problems 96%, GSM 95% (broke 93% ceiling), reasoning 86-88%. **One PT per output-language family** (funcall, logic, arithmetic) — ~3-5 PTs cover 30+ domains. **Auto-upgrade**: CALM → compile corrections into weights → persist (0/8 → 11/11 in 3 sessions). **Facade/import system** (`program_builder.py`): StdLib + CompiledOp + linker. `/domain` command for guided domain addition. Full spec: `.claude/rules/Substrate.md` + `.claude/rules/architecture.md`.
 
 Serving: Gemma 4 E4B (primary) or Qwen 3.5 4B via llama.cpp at **512K context** (`ctx_size=524288`), **32K thinking budget**. Production: tq4+tq4 KV cache on Gemma E4B (`~/models/gemma-4-E4B-it-tq4-aligned.gguf`, 5.0 GB). CALM/Auto-CALM runs on the same llama-server instance. Harness auto-computes compaction threshold as `min(per-GGUF limit, int(ctx_size * 0.89))` — Gemma compacts at **227.5K tokens** (232960). Hot-swap between bases via `agents/model_swap.py`.
 
@@ -256,56 +266,63 @@ python3 -c "from calm.auto_calm import IntentToEdit; IntentToEdit().fix('app.py'
 python3 -m pytest calm/tests/ -v
 ```
 
-## HRM + LLM-Computer (`calm/hrm/` + `calm/llm_computer/`)
+## Pointer Transducers + LLM-Computer (`calm/hrm/` + `calm/llm_computer/`)
 
-The CRLM split: HRM (learned) handles problem-structure extraction; LLM-Computer (analytically compiled) handles value computation. Full architecture spec: `.claude/rules/architecture.md`. Training rules: `.claude/rules/training.md`.
+The CRLM split: **Pointer Transducers** (learned, ~185K params) handle NL → expression structure extraction via copy-augmented attention; **LLM-Computer** (analytically compiled) handles value computation. Full architecture spec: `.claude/rules/architecture.md`. Training rules: `.claude/rules/training.md`.
 
-### HRM Sweet Spot (48,864 params, 4 production domains)
+### Pointer Transducer (session 31, replaces HRM)
 
-- **Architecture**: `HRMSeq2Seq` — bidirectional encoder with nested L/H recurrent loops + causal decoder with cross-attention. NO recurrence in decoder.
-- **Sweet-spot config**: `hidden=32, num_heads=4, L=H=dec=1`, **48,864 params**.
-- **Training**: `--structure-only`. Decoder target is `problem + = + <eos>`. Model trains only to echo input + emit `=` terminator. **Values get zero loss weight** — LLM-Computer recomputes them.
+- **Architecture**: `CopyAugmentedTransformer` — decoder-only `Small2DTransformer` + learned copy gate + pointer attention. Subclasses base model; copy mechanism is additive (1,089 params, 0.6%). At each decode step, model chooses: generate from vocabulary OR copy from input position. Digits → copy, operators → generate.
+- **File**: `calm/llm_computer/copy_augmented.py`
+- **Forward returns log-probs** (not logits) — use `F.nll_loss`, not `F.cross_entropy`
+- **Training**: scheduled sampling (tf_ratio 1.0→0.3), autoreg eval as gate metric, `--epochs 500`
+- **Data**: all generators use `_sample_operand()` for balanced digit-length coverage (33/33/33 across [1-9]/[10-99]/[100+])
 
-**CRLM scaling-law empirics (all 48K params, all `--structure-only`, 30 held-out per domain seed 9999):**
+**Cross-domain PT results (session 31, all ~185K params):**
 
-| Checkpoint | Domain | Per-token | Full / structural | Max sentence |
+| Checkpoint | Domain | Val autoreg | Held-out | Max input |
 |---|---|---:|---:|---:|
-| `math_structure_best.pt` | Math expression echo (3-digit) | 100% | 30/30 | ~20 chars |
-| `nl_math_structure_best.pt` | NL templates ("what is X plus Y?") | 99.8% | 29/30 | ~30 chars |
-| `word_problem_best.pt` | Word problems (names + pronouns + multi-step) | 99.7% | 30/30 | 78 chars |
-| `gsm_best.pt` | GSM-style (subordinate clauses) | 99.6% | 28/30 | 104 chars — **first ceiling** |
-| `multi_task_best.pt` | All four pooled (Vector 2 phase 1) | 100% | per-domain TBD | 104 chars |
+| `copy_augmented_hrm_best.pt` | NL math (13 templates) | 100% | 200/200 | 30 chars |
+| `copy_word_best.pt` | Word problems (14 templates) | 98% | 96/100 | 78 chars |
+| `copy_gsm_best.pt` | GSM-style (10 templates) | 100% | 95/100 | 104 chars |
+| `copy_funcall_best.pt` | Funcall reasoning (percentage, ratio, etc.) | 86% | 171/200 | 88 chars |
+| `copy_logic_best.pt` | Logic reasoning (compare, conditional, syllogism) | 86% | 88/100 | 121 chars |
 
-**Rule: always `--epochs 500`** — cosine LR over 100 epochs under-fits on any NL domain. Session 26 observed this 4 times; full spec in `.claude/rules/training.md`.
+**Output-language family principle**: one PT per output syntax family, not per domain. ~3-5 PTs cover 30+ domains. Adding a domain within a family = write templates + retrain (data-only).
+
+**Old ceilings broken**: single-digit 0%→100% (balanced data), 3-digit 68%→100% (copy mechanism), GSM 93%→95% (copy), syllogism 36%→92% (family split).
+
+**Remaining ceiling**: 3+ operand copy accuracy (68-83%). Known fix: two-stage decode via D5 recurrence (emit skeleton → fill slots independently).
+
+### Legacy HRM (`HRMSeq2Seq`, session 26)
+
+Still exists at `calm/hrm/model.py`. Encoder-decoder with nested L/H recurrence, 48K params, `--structure-only` mode. 5 checkpoints (`math/nl/word/gsm/multi_task_best.pt`). Superseded by PT for all new work, but still functional for eval comparison.
 
 ### LLM-Computer (`calm/llm_computer/`)
 
-The Percepta paper's analytical compile-to-weights machinery, operational:
+- **`Small2DTransformer`** — vanilla PyTorch, `d_head=2`, optional `use_hard_max=True`.
+- **`CopyAugmentedTransformer`** — subclass with copy gate + pointer attention. The PT architecture.
+- **`HullKVCache`** — online 2D convex hull. 108× speedup vs linear scan at N=2K.
+- **Declarative IR + compiler** (`gate_graph.py` + `compile.py` + `schedule.py`): `TokenEmbed`, `PosEmbed`, `LookUp`, `LookUpExact`, `ReGLU`, `LinearHead`. Auto-scheduler assigns `(layer, phase)`.
+- **Grammar-constrained decoding** (`grammar_decode.py`): inference-time mask for valid expressions + EOS boosting. Safe (0 regressions) but null on current models.
+- **24 compiled programs** in `programs/`: `adder` (10K/10K), `gcd` (256/256), `dispatched_v4` (791/791), `reasoning_engine` (512/512), etc.
+- **Parser + interpreter** (`parse.py`, `interpret.py`): `parse_expression()` via `ast.parse`; `interpret()` walks compute nodes; `Delegate` routes through `safe_eval` (1002-function registry).
 
-- **`Small2DTransformer`** — vanilla PyTorch, `d_head=2`, optional `use_hard_max=True`. What makes it a computer is the weights, not the architecture.
-- **`HullKVCache`** — online 2D convex hull. **108× speedup vs linear scan** at N=2K. Parity with batched hard-max attention validated against compiled programs (`tests/test_hull_cache_attention.py`). Not yet wired into `forward()` (perf path for long sequences; our programs use S ≤ 5).
-- **Declarative IR + compiler** (`gate_graph.py` + `compile.py` + `schedule.py`): hardware nodes `TokenEmbed`, `PosEmbed`, `LookUp` (copy-from-pos-0), `LookUpExact` (parabolic-key, coefficient-parametrized for semantic keys), `ReGLU`, `LinearHead`. Greedy auto-scheduler assigns `(layer, phase)` based on channel availability. Per-layer sequential allocators for heads and FFN neurons.
-- **9 compiled programs:**
-  - Primitives (`add_one` 1280p, `copy_past` 2560p, `increment_counter` 2176p, `threshold` 216p) — each paired with `*_ir.py` IR-compiled counterpart; 3 of 4 bit-match.
-  - Composition: `adder_tiny` (1,020p, 1-digit, 16/16), **`adder` (486,012p, 2-digit, 10,000/10,000 exhaustive in 0.38s)**.
-  - Memory: `retrieve_by_index` (1,164p, parabolic-key position retrieval, 256/256), `retrieve_threshold` (590p, same-layer attn+FFN composition, 256/256), **`read_by_key` (1,410p, semantic KV store via ReGLU key-squaring `-k² = -k·ReLU(k)` + coefficient-parametrized `LookUpExact`, 96/96 = 4!·4)**.
-- **Parser + interpreter** (`parse.py`, `interpret.py`): `parse_expression()` via Python `ast.parse`; `interpret()` walks compute nodes; `Delegate` routes through `safe_eval` (1002-function registry). This is what `scripts/eval_hrm_*.py --verified` runs downstream of HRM.
-
-### HRM-thinking + LLM-Compute pipeline
+### CRLM Pipeline (session 31)
 
 ```
-problem → HRM encoder → HRM decoder → trace string
-                                          ↓
-                              extract_problem_from_trace
-                                          ↓
-                                 parse_expression
-                                          ↓
-                                    interpret
-                                          ↓
-                                    final answer
+NL input → Gemma (understands, routes) → PT (copies digits, generates structure)
+                                            ↓
+                                     expression string
+                                            ↓
+                                    safe_eval (1002 functions)
+                                            ↓
+                                    CALM verify (CPU cross-check)
+                                            ↓
+                                    verified answer
 ```
 
-Eval: `python3 scripts/eval_hrm_math.py --verified` runs this path and reports HRM emission stats (used / structurally-matched-input).
+Add a domain: `/domain` command walks through scope → CALM backend → compiled card → templates → train PT → evaluate → install.
 
 ### HRM training journey (sessions 24, 25, 26)
 

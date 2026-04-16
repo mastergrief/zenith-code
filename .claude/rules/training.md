@@ -96,25 +96,45 @@ Set `--epochs 500` generously. Rely on `best_val_acc` checkpoint selection to pi
 | GSM-style (subordinate clauses) | 104 | 99.6% | 28/30 | **First ceiling** — digit transpositions |
 | Multi-task (all four pooled) | 104 | 100% | TBD per-domain | Vector 2 phase 1 |
 
-The 7% GSM shortfall is all 2-digit operand transposition (`21 → 12`, `15 → 51`) — encoder-side bottleneck localizing numeric spans in longer filler text. Not a computation failure, a transcription failure. If the 7% matters downstream, scale to h=64 or h=128 per "When to scale HRM up" below.
+The GSM shortfall was digit transposition — **fixed by copy mechanism in session 31** (93%→95% held-out). See PT training below.
 
-### Per-token vs full-expression accuracy
+### Pointer Transducer training (session 31, replaces HRM for new work)
 
-Per-token val_acc (the trainer's number) is inflated by trivial-copy tokens — most of a scratchpad trace is operators, parens, and prefix that the model can predict from cross-attention. **The gate that matters is full-expression accuracy via the LLM-Computer verified path**, not the trainer's reported number. Always run `scripts/eval_hrm_math.py --verified` before declaring a checkpoint shippable.
+**Architecture**: `CopyAugmentedTransformer` (`calm/llm_computer/copy_augmented.py`). Decoder-only `Small2DTransformer` + learned copy gate + pointer attention. 1,089 extra params. Forward returns **log-probs** — use `F.nll_loss`, not CE.
 
-### Plateau pattern: memorization-without-generalization
+**Cross-domain results (all ~185K params, `--epochs 500`, scheduled sampling):**
 
-Across rounds 1a/1c/1d (session 25), scratchpad-with-intermediate-values training crashed loss to ~0.05 (perfect training fit) while val_acc froze at 50-57%. Diagnosis: model memorizes per-example answers but can't see enough of the combinatorial space to generalize. **More data helped** (10K > 2K, 70% vs 51%); **deeper decomposition didn't** (place-value decomp went 43% → 37%, longer traces, more chances to error).
+| Domain | Val autoreg | Held-out | Training time | Max input |
+|---|---|---|---|---|
+| NL math | 100% | 200/200 | 38s | 30 chars |
+| Word problems | 98% | 96/100 | 248s | 78 chars |
+| GSM-style | 100% | 95/100 | 491s | 104 chars |
+| Funcall reasoning | 86% | 171/200 | 611s | 88 chars |
+| Logic reasoning | 86% | 88/100 | 910s | 121 chars |
 
-The fix isn't to retrain harder — it's to **stop asking for values**. Structure-only loss + LLM-Computer recompute eliminates the memorization pressure entirely.
+**Key training rules for PT:**
+- **Balanced `_sample_operand()`**: uniform across digit-length buckets [1-9]/[10-99]/[100+]. Without this, small operands get 0%.
+- **`max_len` ≥ max_prefix + max_expression + decode_headroom**: positional embeddings cap sequence length. CUDA assert if autoreg exceeds it.
+- **One PT per output-language family**: function-call, infix arithmetic, boolean logic. Combined model plateaus at 74%; split recovers 86-88%.
+- **Autoreg eval is the gate**: teacher-forced val_acc is misleading (99.6% while autoreg is 74%). Always use `_autoreg_eval`.
+- **Copy gate bias = -2.0**: initializes toward generation, learns to copy.
+- **VOCAB_SIZE = 82** (added `><` in session 31). Old checkpoints use 80 and load fine.
 
-### When to scale HRM up (not down)
+**Remaining ceiling**: 3+ operand copy accuracy (68-83%). Copy attention over prefix gets noisy with 3+ numbers. Known fix: two-stage decode via D5 recurrence.
 
-- Pure-echo problems (math expression input → math expression output): `hidden=32`, single layer, ~50K params is enough.
-- NL → structured problems (word problem → math expression): expect 1-10M params. Untested but predicted by the structure-vs-difficulty scaling principle.
-- Open-ended creative reasoning: doesn't fit the HRM-thinking + LLM-Compute split — use a frontier model.
+**Accuracy priority order (session 31 finding):**
+1. Data distribution — every valid input region covered? (free)
+2. Mechanism — right operation? e.g. copy vs generate (cheap)
+3. Output-family split — too many output languages in one model? (moderate)
+4. Capacity — model genuinely too small? (expensive, last resort)
 
-**HRM size scales with problem-language complexity, NOT problem-difficulty.** `factorial(100)` is no harder than `factorial(2)` for the HRM — both emit 14 tokens of the same structure. The compute substrate handles values.
+### Legacy HRM training notes
+
+Per-token val_acc is inflated by trivial-copy tokens. **The gate that matters is full-expression accuracy**, not the trainer's reported number.
+
+Scratchpad-with-intermediate-values forces memorization that small models can't deliver. **Stop asking the model to compute; let it emit structure and route values to the substrate.**
+
+**HRM size scales with input-language complexity, NOT problem-difficulty.** PT size scales with **output-language complexity** — the number of structurally distinct expression formats. Both scale independently of value range.
 
 ### Pitfalls observed (sessions 25-26)
 

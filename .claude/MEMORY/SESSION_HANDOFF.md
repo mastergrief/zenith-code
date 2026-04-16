@@ -1,502 +1,234 @@
-# Session Handoff — 2026-04-14 (Session 26)
+# Session Handoff — 2026-04-16 (Session 31)
+
+Branch: `feature/multi-agent-qwen`
+Prior handoff (session 30): ended at `1a7da0e` (unified tensor docs).
+This session: **5 commits, ~2,680 lines added**, invented the Pointer
+Transducer (copy-augmented `Small2DTransformer`), validated across 4
+domains, established the output-language-family split principle, and
+built the `/domain` command for repeatable domain addition.
 
 ## Goal
 
-Build out the CRLM (compute-redistributed language model) architecture
-across two research vectors:
+Fix HRM data distribution gap (0% on single-digit operands, 90% ceiling
+overall) and generalize the fix across all domains. Session evolved into
+a deeper architectural shift: replacing HRM-style generation with
+pointer-copy transduction, splitting domains by output-language family,
+and building the repeatable workflow for adding domains to the substrate.
 
-1. **Vector 1 — close the feedback loop**: turn `AutoLearner` and
-   `ModuleLearner` from "hoped to work" into "tested, measured, with
-   operator visibility." Every production correction becomes permanent
-   capability.
+## Completed (5 commits)
 
-2. **Vector 2 — meta-structure HRM**: test the CRLM scaling law by
-   pooling multiple domains into a single 48K HRM, measuring whether
-   cross-domain exposure (a) holds in-distribution accuracy, (b) breaks
-   single-domain ceilings, (c) generalizes to held-out formats.
+### Pointer-copy mechanism (`CopyAugmentedTransformer`)
 
-Plus: the session-26 plan's 4 steps (3-digit math, LookUp/ReGLU IR,
-adder, NL→math HRM) and follow-on compiler work (LookUpExact, semantic
-KV, auto-scheduler, HullKVCache parity) that preceded the vectors.
+**The key invention of this session.** Added a learned copy gate +
+pointer attention to `Small2DTransformer`. 1,089 extra params (0.6%).
+At each decode step the model chooses: generate from vocabulary OR copy
+from an input position. Digits get copied exactly; operators get
+generated.
 
-Also: write forward-looking research roadmap and current-state SPEC to
-`.claude/MEMORY/`.
+File: `calm/llm_computer/copy_augmented.py`
 
-User constraints: **no subagents** (direct `Edit`/`Write`/`Read`/
-`Grep`/`Bash` only — per `feedback_no_agents`). **Hypothesis, build,
-test, iterate.** R&D-at-small-scale only; Zenith harness integration
-explicitly deferred.
+- `CopyAugmentedConfig` — extends `Small2DConfig` with `n_copy_heads`, `sep_token_id`
+- `CopyAugmentedTransformer` — subclasses `Small2DTransformer`, adds copy gate + pointer attention
+- `build_copy_augmented_hrm()` — factory matching existing `build_substrate_hrm()` signature
+- Forward returns log-probs (not raw logits) — use NLL loss, not CE
 
----
+### Cross-domain validation
 
-## Completed — 28 commits from session-25 handoff (`91721f2..82055fa`)
+| Domain | Commit | Max input | Val autoreg | Held-out | Training time |
+|---|---|---|---|---|---|
+| NL math | `25ab154` | 30 chars | 100% | 200/200 | 38s |
+| Word problems | `689076f` | 78 chars | 98% | 96/100 | 248s |
+| GSM-style | `95e0a61` | 104 chars | 100% | 95/100 | 491s |
+| Funcall reasoning | `608db13` | 88 chars | 86% | 171/200 | 611s |
+| Logic reasoning | `608db13` | 121 chars | 86% | 88/100 | 910s |
 
-All commits on `feature/multi-agent-qwen`. 313 tests collected and
-passing across `calm/`, `calm/hrm/tests/`, `calm/llm_computer/tests/`.
+### Old ceilings broken
 
-### Session-26 plan (4 steps, from approved plan
-`/home/gabe/.claude/plans/splendid-swinging-gosling.md`):
+| Ceiling | Old | New | How |
+|---|---|---|---|
+| Single-digit operands | 0% | **100%** | Balanced data distribution |
+| 3-digit operands | 68% | **100%** | Copy mechanism |
+| GSM 28/30 (93%) | 93% | **95%** | Copy mechanism |
+| Syllogism | 36% | **92%** | Output-family split |
 
-- **`4344f6c`** `hrm: 3-digit operand range + 500 epochs (smoke 5/5, held-out 100%)`
-  - First step: bumped `_arithmetic_simple` range 99→999 in `calm/hrm/data.py`.
-  - Initial `--epochs 100` failed at 26.7% full-expression (cosine LR
-    to 0 too early, per documented pitfall). Fix: `--epochs 500`.
-  - Decisively established the "ALWAYS `--epochs 500`" rule (observed
-    4 times across session 26).
-- **`c7c56c1`** `llm_computer: promote LookUp + ReGLU to first-class IR + declarative compiler`
-  - `calm/llm_computer/gate_graph.py`: added `TokenEmbed`, `PosEmbed`,
-    `LookUp`, `ReGLU`, `LinearHead` as first-class hardware nodes.
-  - `calm/llm_computer/compile.py`: rewrote with `compile_program()`
-    that walks hardware nodes, populates weights declaratively.
-- **`fdc169f`** 1-digit adder — compositional test of LookUp+ReGLU.
-- **`dbc5ef5`** 2-digit adder — 10,000/10,000 exhaustive in 0.38s,
-  486K params, proof that IR scales via composition.
-- **`292bfb0`** `hrm: integration #3 — NL → math expression HRM`
-  - `calm/hrm/nl_data.py`, `scripts/train_hrm_nl.py`,
-    `scripts/eval_hrm_nl.py`.
-  - 48K params, 29/30 held-out, smoke 5/5.
+### Output-language family split principle
 
-### Session-26 follow-ons (word problems, compiler deferred work):
+Combined 9-category model plateaued at 74%. Diagnosis: two structurally
+different output languages (function-call syntax vs infix operators) in
+one model. Split into:
 
-- **`fea22aa`** Word problems at 48K, 30/30 held-out.
-- **`ae00b03`** Parabolic-key `LookUpExact` — data-dependent
-  retrieval (`retrieve_by_index`, 256/256 exhaustive).
-- **`15d4c9b`** `retrieve_threshold` — same-layer attn+FFN composition.
-- **`d791121`** Semantic-key `LookUpExact` via ReGLU key-squaring
-  (`read_by_key`, 96/96 across 4! × 4 perm/query combos).
-- **`b5f27c8`** Greedy auto-scheduler (`calm/llm_computer/schedule.py`).
-- **`071329a`** `HullKVCache` parity validated against batched
-  hard-max attention on production programs.
-- **`a43f0d2`** GSM-style word problems — first observed CRLM ceiling
-  (93% at 48K due to digit transposition on 2-digit operands).
+- **Funcall PT** — `percentage(x, y)`, `sequence_cost(...)`, `multi_max(...)`, `ratio_simplify(...)` → 86% overall (100% on 2-arg)
+- **Logic PT** — `x > y`, `x > y and y > z`, `z if x > y else w`, `x + y - z` → 88% held-out
 
-### Vector 1 — feedback loops (4 phases):
+**Principle: one PT per output-language family, not per domain.** ~3-5
+PTs cover 30+ domains. Adding a domain within an existing family is a
+data-only operation (write templates, retrain).
 
-- **`661ef74`** Phase 1: first tests for `AutoLearner` (11 tests) +
-  effectiveness harness (`calm/closed_loop_eval.py` showing
-  90%→100% hit rate over 3 rounds).
-- **`c5057d0`** Phase 2: hit-tracking per-pattern + shape-gated
-  matching. Fixed real defect: patterns were firing on every numeric
-  prompt (function patterns matching "what is 5*7?"), flooding system
-  prompt with irrelevant precomputes.
-- **`de9673a`** Phase 3: `ModuleLearner` parity tests (11 tests) +
-  unified operator dashboard at `scripts/learning_dashboard.py`.
-- **`b18845b`** Phase 4: end-to-end integration test at
-  `calm/tests/test_auto_calm_integration.py` — mocks LLM generation
-  inside `AutoCalmEngine`, proves learned patterns inject into
-  system prompt on round 2. Three tests, all pass.
+### Balanced data distribution
 
-### Vector 2 phase 1 — multi-task HRM:
+All data generators (`nl_data.py`, `word_data.py`, `gsm_data.py`,
+`reasoning_data.py`) now use `_sample_operand()` with uniform digit-
+length bucketing: equal probability across [1-9], [10-99], [100+].
 
-- **`bfd660f`** Multi-task 48K HRM across 4 pooled domains (math, NL,
-  word, GSM). 500 epochs, best val_acc 100%.
-- **`a3b33f1`** Per-domain eval: **30/30 on every domain**. GSM ceiling
-  (93% per-domain) broken to 100% via cross-domain exposure.
-  - Key finding: math-echo training sharpens digit-copy discipline
-    that transfers to GSM's operand-localization failures.
-  - "CRLM scaling ceiling was domain-isolation-bound, not
-    architecture-bound."
+### Grammar-constrained decoding (null result)
 
-### Vector 2 phase 2 — scaling experiments:
+`calm/llm_computer/grammar_decode.py` — inference-time mask for valid
+math expressions + EOS boosting. **Null result**: 96/100 → 96/100 on
+word problems (0 fixes, 0 regressions). Failures are semantic (model
+errors), not syntactic. Infrastructure shipped for future use.
 
-- **`08cca78`** Distribution-scaling curve — 17% → 28% → 50% → 100%
-  held-out OOD.
-  - Experiment 1 (capacity probe): h=64, 179K params. OOD 28%, +10pp
-    from h=32. Sub-linear scaling.
-  - Experiment 2a (distribution probe, 10 formats): h=32, 48K params,
-    multi10 training set. OOD 50%, +33pp. Distribution wins.
-  - Experiment 2b (distribution probe, 20 formats): h=32, 48K params,
-    multi20 training set. OOD **100% on multi10 held-out** (clean
-    comparison). 22% on multi20's harder held-out (reasoning-required
-    cases — architecturally out of scope).
-  - New artifacts: `calm/hrm/extended_data.py`,
-    `calm/hrm/extended2_data.py`, `calm/hrm/multi10_data.py`,
-    `calm/hrm/multi20_data.py`, `scripts/train_hrm_multi{10,20}.py`,
-    `scripts/eval_hrm_{ood,multi10_ood,multi20_ood}.py`.
+### Vocab expansion
 
-### Docs / SPEC / roadmap:
+`calm/hrm/data.py`: `_CHARS` expanded with `><`. VOCAB_SIZE 80 → 82.
+Existing checkpoints (saved with `vocab_size=80` in config) unaffected.
 
-- **`3e2a771`** `docs: update rules + CLAUDE.md + write CRLM_SPEC`.
-  Deleted stale `.claude/rules/vdd.md` and `orchestration.md` (both
-  referenced agents removed in `bb7f13d`). Rewrote `CLAUDE.md` to
-  reflect session-26 state. New `.claude/MEMORY/CRLM_SPEC.md` (387
-  lines, 12 sections).
-- **`82055fa`** `docs: RESEARCH_ROADMAP — 8-layer CRLM progression`.
-  Forward-looking spec. Layers 0-8 from current state to formally-
-  verified AI. Pace calibrated to this project's observed iteration
-  speed (minutes-per-experiment, days-per-research-direction,
-  10-100× faster than conventional research-team estimates).
+### CALM reasoning backends
 
-### Key decisions + reasoning
+- `calm/backends/reasoning_ops.py` — 11 functions: `chained_eval`, `compare`, `conditional_eval`, `sequence_cost`, `syllogism_check`, `multi_max`, `multi_min`, `percentage`, `ratio_simplify`, `ratio_decimal`, `step_by_step` + 14 NL patterns
+- `calm/backends/reasoning_kb.py` — 7 functions: syllogism forms (10 Aristotelian), logical fallacies (6), transitive/non-transitive relations + 5 NL patterns
 
-- **"Always `--epochs 500`"** elevated from pitfall to rule. Observed
-  4 times: math 3-digit, NL templates, word problems, GSM. Cosine LR
-  to 0 at 100 epochs systematically under-fits NL-input HRMs.
-- **Shape-gated pattern matching** (Vector 1 phase 2) was a defect
-  fix, not a feature. Before the fix, function patterns like
-  `factorial(N)` would fire on any prompt with a number. The shape
-  gate (require function name / operator or NL alias in prompt)
-  prevents pattern pollution.
-- **Kill training early at val_acc saturation** — consistent with
-  `best_val_acc` checkpointing. Applied to multi-task, multi10,
-  multi20, h=64 capacity probe. Saves ~30-50% of training time with
-  no impact on final checkpoint quality.
-- **Distribution > capacity** — decisive empirical finding. 3.7×
-  params gave +10pp OOD; 2.5× formats gave +33pp; 5× formats gave
-  +83pp to perfect. Scaling story inverted from LLM-field defaults.
-- **Multi-task broke GSM ceiling** — key finding for Vector 2. Same
-  48K params, additional exposure to math-echo transferred to GSM's
-  digit-localization, 93% → 100%.
-- **Roadmap time estimates recalibrated** — user pushed back on
-  conventional "months/years" estimates. Reality: sessions 24-26
-  shipped ~3 months of traditional research-team output in days.
-  TurboQuant tq4 custom CUDA kernels were 1 day. Roadmap now says
-  Layer 6 (differentiable substrate) is 4-8 weeks, not 12-18 months.
-- **No Zenith integration this session** — explicitly deferred by
-  user. "R&D at small scale, not product integration." The HRM →
-  `precompute.py` wiring stays in the CRLM_SPEC's "deferred" list.
+### `/domain` slash command
 
----
+`.claude/commands/domain.md` — 7-step guided workflow for adding
+domains to the CRLM stack. Uses `AskUserQuestion` at every decision
+point. Steps: scope → CALM backend → compiled card → templates → train
+PT → evaluate → install.
 
-## In Progress — nothing left hanging
+## In Progress
 
-All active work shipped. Multi20 training was killed early at epoch 50
-(val_acc 99.9%) per the established pattern; checkpoint is at
-`calm/hrm/checkpoints/multi20_best.pt`.
+### Nothing running or half-shipped
 
-Two training monitors show "timed out" in the task list — those are
-stale from multi10 / multi20 runs that were already killed for early
-OOD eval. Ignore.
+All training runs killed at convergence. GPU free. 281 tests pass
+(up from 250 — new backends auto-registered).
 
----
+## Next Steps (priority order)
 
-## Next Steps (ordered by priority)
+### 1. Two-stage decode via D5 recurrence (highest leverage)
 
-### 1. Vector 2 Phase 3: Meta-learning (operation inference) — HIGH PRIORITY
+The remaining accuracy ceiling across all domains is 3+ operand copy
+errors (68-83% on 3-4 arg expressions). Two-stage decode fixes this:
+iteration 1 emits structure skeleton, iteration 2 fills operand slots
+independently. Implementation:
 
-The sharp next question. Distribution-scaling solved **format
-invariance** (20 formats → 100% on held-out format variations). The
-remaining 22% failure on multi20's own held-out test is all
-**operation inference** — cases like "half of 80", "what is 50 percent
-of 80", "how much does X exceed Y" that require the model to infer
-a novel computational operation, not just extract structure.
+- Add `n_iterations=2` to `CopyAugmentedTransformer.forward()` via
+  `RecurrentConfig` from `calm/llm_computer/recurrent_substrate.py`
+- During iteration 1: copy gate stays low (generate structure)
+- During iteration 2: copy gate goes high (fill slots by pointing)
+- Retrain with `n_iterations=2` — same data, same params, 2x forward time
+- Expected: 3+ operand accuracy from 68-83% → 95%+
 
-**Experiment design:**
-- Modify training pipeline: encoder input = `[3 example (input, output)
-  pairs] + [query]` instead of just `[query]`.
-- Target stays the same (math expression).
-- Extend `max_enc` to ~512 to hold prefix + query.
-- Train at h=32; if held-out operation-inference test climbs to ≥ 70%,
-  meta-learning works at 48K. If not, scale to h=128 / h=256 per the
-  `architecture.md` rule (1-10M params predicted for NL→structured
-  with variation).
+### 2. Multi-domain training within a family
 
-**Specific held-out operations to test**:
-- `half of X` → `X / 2`
-- `double of X` → `X * 2`
-- `X percent of Y` → `X / 100 * Y`
-- `how much more is X than Y` → `X - Y`
-- `which is larger, X op1 Y or Z` → compute + compare
+Train one funcall PT on pooled data from multiple domains (percentage +
+temperature + chemistry + geometry). Test for cross-domain transfer
+(does adding temperature data improve percentage accuracy?). If yes,
+one PT truly serves N domains.
 
-**Files to create**:
-- `calm/hrm/meta_data.py` — few-shot-prefixed dataset generator
-- `scripts/train_hrm_meta.py` — trainer with the meta-learning
-  training regime
-- `scripts/eval_hrm_meta_ood.py` — evaluates on operations never seen
-  in training (only shown via in-context examples at inference)
+### 3. Wire auto-upgrade into zenith harness
 
-**Time estimate at our pace**: 1-3 days of focused iteration. The data
-pipeline change is mechanical; the research question is whether
-48K has the capacity for meta-learning at all.
+`AutoUpgradeEngine` exists but isn't called from `agents/harness.py`.
+Integration: init (load .pt), query (verify via CALM), exit (compile
+corrections + save). ~5 lines at 3 call sites.
 
-### 2. Vector 3 Phase 1: Compile 3 representative backends + dispatcher
+### 4. Install PTs into unified substrate
 
-The differentiable substrate direction. Layer 6 from `RESEARCH_ROADMAP.md`.
-Picked as "most interesting" by the user mid-session.
+Script that takes N PT checkpoints and `install_compiled_card_hybrid`
+into the unified tensor at reserved sub-head offsets. Prove 2+ PTs
+coexist with Gemma + compiled cards in one forward pass.
 
-**What it is**: compile gcd, factorial, is_prime as gate-graph programs.
-Add an opcode-based dispatcher at position 0 (hard-max attention on
-opcode channel routes to the right sub-graph). Result: one
-`Small2DTransformer` that evaluates any of the 3 backends.
+### 5. Update CLAUDE.md and rules
 
-**Dependencies met**: we have `LookUpExact` (parabolic + semantic),
-`ReGLU` composition, auto-scheduler. Everything the paper's §8 WASM
-interpreter needs at small scale is in the IR already.
+Session 31 discoveries not yet reflected in docs:
+- Copy-augmented architecture (new module, new training pattern)
+- Output-language family principle
+- `/domain` command
+- Vocab expansion to 82
+- Balanced data distribution as a rule
+- Corrected principle: "Model understands, transducer structures, cards compute, engine verifies"
 
-**Files to create**:
-- `calm/llm_computer/programs/gcd.py` — gate-graph impl of Euclidean gcd
-- `calm/llm_computer/programs/factorial.py` — iterative factorial
-  via counter + product
-- `calm/llm_computer/programs/is_prime.py` — trial division with step
-  functions
-- `calm/llm_computer/programs/dispatched.py` — opcode-routing wrapper
-- `calm/llm_computer/tests/test_dispatched.py` — correctness suite
+## Key Context
 
-**Estimated time**: 1-2 weeks. Hardest part is the looping constructs
-(factorial's iterative loop, is_prime's bounded trial division). Paper's
-§4b (cumsum for instruction pointer) is the construction pattern.
+### Critical design decisions
 
-### 3. Commit the old/legacy checkpoints OR gitignore them
+1. **Pointer-copy is additive** — `CopyAugmentedTransformer` subclasses
+   `Small2DTransformer`. The copy gate, copy Q/K projections are the
+   only additions. Removing them recovers base behavior.
 
-Five HRM checkpoints are untracked but present on disk:
-`math_hrm_best.pt`, `math_scratchpad_best.pt`, `math_seq2seq_best.pt`,
-`math_structure_2digit.pt.bak`. These are legacy from earlier training
-rounds (1a, 1c, 1d, pre-3-digit-bump). The CRLM_SPEC flagged them as
-"could delete."
+2. **Copy gate bias initialized at -2.0** — model starts by preferring
+   generation (existing behavior) and learns to copy. Without this,
+   early training is unstable.
 
-Decision for next session: either commit them for audit trail OR add
-to `.gitignore`. Current state is untracked-and-present which is ugly.
+3. **Forward returns log-probs, not logits** — because the copy
+   distribution is a probability (from scatter_add of attention
+   weights), not logits. Use NLL loss, not CE. Every training script
+   uses `F.nll_loss`.
 
-### 4. Optional: run a 40-format scaling test
+4. **`max_len` must exceed max_prefix + max_gen** — the positional
+   embeddings cap sequence length. During autoreg eval, the sequence
+   grows beyond training length. CUDA assert if exceeded. The autoreg
+   eval function now caps `gen_budget = min(max_gen, pos_limit - len(ids) - 1)`.
 
-If the 20-format curve shows a cliff-to-100%, does 40 formats help the
-"reasoning-required" cases? It probably doesn't (they're a different
-kind of problem) but it would be a cheap data point — ~30 min training.
-
-### 5. Update the old monitor/runtime state files
-
-Untracked: `.claude/scheduled_tasks.lock`, `.port_sessions/`,
-`calm/.module_learning.json`. Probably belong in `.gitignore`. The
-`calm/.module_learning.json` file accumulates production state and
-shouldn't be tracked.
-
----
-
-## Key Context — things that save time if known upfront
-
-### Hardware + environment
-
-- RTX 4070 Laptop GPU, 8 GB VRAM. WSL2 Ubuntu 24.04.
-- All HRM training runs fit easily. Largest checkpoint (h=64 multi-task)
-  was 179K params.
-- Training time patterns:
-  - 48K HRM + 2K samples + 500 epochs = ~145s (math)
-  - 48K HRM + 4K samples + 500 epochs = ~1371s (multi-task)
-  - 48K HRM + 10K samples + 100 epochs = ~783s (multi10, killed early)
-  - 48K HRM + 20K samples + 50 epochs = ~664s (multi20, killed early)
-
-### CRLM scaling law as of this session
-
-**Format invariance axis (Layer 2):**
-- Distribution-scaling is decisively more effective than capacity-
-  scaling. 20 formats + 48K params = 100% held-out OOD.
-- Per-format training cost: ~1 engineer-hour design + ~15 min GPU.
-- Production recipe is concrete: 20-40 baseline formats + nightly
-  retrain from production failure clusters.
-
-**Operation inference axis (Layer 3):**
-- Distribution-scaling does NOT solve novel-operation inference.
-- 22% on "half of X", "percent of Y", comparison cases even with 20
-  format training.
-- Architecture is a structure extractor, not a reasoner. Expected.
-
-### Workflow rules reinforced this session
-
-- **Always `--epochs 500`** — the cosine LR schedule needs the full
-  sweep, rely on `best_val_acc` to pick the right checkpoint.
-- **Monitor + grep-filtered tail** with `setsid` + `disown` + `<
-  /dev/null` — the detached training pattern that survives WSL
-  hiccups.
-- **Kill early on val_acc saturation** — consistent with
-  `best_val_acc` already saved; remaining epochs just decay LR
-  against zero gradient.
-- **Feedback-loop validation pattern** (new in `workflow.md`): unit
-  tests for cycle-closes + effectiveness harness + end-to-end
-  integration with mocked dependencies. Applied to both AutoLearner
-  and ModuleLearner this session.
+5. **Output-language family split** — one PT per output syntax family,
+   not per domain. Function-call (`fn(args)`) and logic (`a > b and`)
+   are different output languages. Forcing both into one 185K model
+   plateaus at 74%. Splitting recovers 86-88%.
 
 ### Failed approaches (don't retry)
 
-- **Capacity scaling as the primary OOD lever** — h=64 gave +10pp for
-  3.7× params. Sub-linear and expensive. Don't reach for this first;
-  distribution-scaling is ~5× better per effort.
-- **Killing training at epoch 100 by default** — observed 4 times to
-  under-fit. Always run the full 500 epochs schedule.
-- **Assuming multi-task training would match per-domain** — it
-  *exceeded* per-domain (100% vs 93% on GSM). Don't hedge expectations
-  downward; pool aggressively when substrate is shared.
-- **Big-model time estimates** — conventional research-team
-  calibration is wrong for this project's pace. Drop estimates
-  10-100× to reflect actual iteration speed.
+1. **Grammar-constrained decoding for word problems** → null result.
+   Failures are semantic (model generates valid but wrong expressions),
+   not syntactic. Grammar mask + EOS boost traded 2 fixes for 3
+   regressions (truncated multi-digit numbers). Space-only EOS boost
+   was safe but didn't trigger.
 
-### Memory + preferences
+2. **50/50 small/large operand split** → overcorrected. Small 0→100%
+   but mid collapsed to 2%. Fix: 3-bucket uniform digit-length split.
 
-- User preference (from memory): no subagents in claw-code. Work
-  directly with `Edit`/`Write`/`Read`/`Grep`/`Bash`.
-- User preference: keep technical depth + tradeoff walk-throughs in
-  explanations.
-- User preference: inline harness demos via `printf "..." | zenith`
-  pattern, not harness-tester subagent.
-- User preference: check rendering before blaming the model (display
-  double-print is more common than model looping).
-- User focus this session: R&D at small scale. Zenith harness
-  integration explicitly deferred.
+3. **Combined 9-category reasoning model** → plateaued at 74%.
+   Diagnosis: two output languages competing. Fix: split by family.
 
----
+4. **`>` and `<` not in char vocab** → CUDA assert during training.
+   Expression `5 > 4` tokenizes as `5 4` (operator dropped), training
+   on garbage targets. Fix: add `><` to `_CHARS` in `data.py`.
 
-## Files in Project — everything the next session needs to know
+5. **max_len=160 with 138-token prefixes** → CUDA assert during
+   autoreg eval (prefix + generated tokens exceed positional embeddings).
+   Fix: increase max_len to 208, cap gen_budget in eval.
 
-### Data modules (HRM training inputs)
+### Environment state
 
-- `calm/hrm/data.py` — math expression generator + tokenizer (updated
-  session 26 with 3-digit operand range)
-- `calm/hrm/nl_data.py` — NL template generator (13 templates)
-- `calm/hrm/word_data.py` — word problem generator (14 templates,
-  names, pronouns, multi-step)
-- `calm/hrm/gsm_data.py` — GSM-style narrative generator (10
-  templates, subordinate clauses)
-- `calm/hrm/multi_data.py` — pools 4 domains (math, nl, word, gsm)
-- `calm/hrm/extended_data.py` — 6 extended formats (code_var,
-  prefix_op, distractor, units, let_bound, eq_complete)
-- `calm/hrm/extended2_data.py` — 10 more extended formats (fn_call,
-  phrasal, past_narr2, alt_let, eq_var, three_op, possessive,
-  verb_by, question_first, when_then)
-- `calm/hrm/multi10_data.py` — pools 10 formats
-- `calm/hrm/multi20_data.py` — pools 20 formats
+- Branch `feature/multi-agent-qwen`, ~228 commits ahead of origin.
+- 6 new copy-augmented checkpoints in `calm/hrm/checkpoints/copy_*_best.pt`
+- `substrate_hrm_nl_best.pt` retrained with balanced data (94% autoreg)
+- llama-server NOT running. GPU free.
+- 281 tests passing (up from 250 — new CALM backends).
+- VOCAB_SIZE = 82 (was 80, added `><`).
+- RTX 4070 (8 GB VRAM) + 32 GB DDR5.
+- Python 3.13.7, PyTorch 2.10.0+cu128.
 
-### Training scripts
+### User's key insights (important for tone and direction)
 
-- `scripts/train_hrm_nl.py` — NL domain trainer
-- `scripts/train_hrm_word.py` — word problems trainer
-- `scripts/train_hrm_gsm.py` — GSM-style trainer
-- `scripts/train_hrm_multi.py` — multi-task (4 pooled)
-- `scripts/train_hrm_multi10.py` — multi-10 distribution probe
-- `scripts/train_hrm_multi20.py` — multi-20 distribution probe
-- `calm/hrm/train.py` — base math trainer (structure-only + scratchpad
-  + default modes)
+- "So it's an actual brain with sub-regions for different tasks" — the substrate is literally a brain architecture: specialized regions (sub-heads), shared wiring (channels), one forward pass
+- "Model understands, transducer structures, cards compute, engine verifies" — corrected principle replacing "model reasons"
+- "One PT per output-language family, not per domain" — the scaling insight
+- "Balanced data distribution vs capacity" — data coverage and mechanism fit before scaling capacity
+- "The system reasons through composition" — no single component thinks, the pipeline produces reasoned answers
 
-### Eval scripts
+### Gotchas for next session
 
-- `scripts/eval_hrm_math.py` — math held-out via `--verified`
-- `scripts/eval_hrm_nl.py` — NL held-out + smoke
-- `scripts/eval_hrm_word.py` — word problems held-out + smoke
-- `scripts/eval_hrm_gsm.py` — GSM held-out + smoke
-- `scripts/eval_hrm_multi.py` — 4-domain multi-task per-domain
-- `scripts/eval_hrm_ood.py` — 18-case OOD for the 4-domain baseline
-- `scripts/eval_hrm_multi10_ood.py` — 18-case OOD for multi10
-- `scripts/eval_hrm_multi20_ood.py` — 18-case OOD for multi20 (harder,
-  includes reasoning cases)
+1. **Copy model returns log-probs** — use `F.nll_loss`, not `F.cross_entropy`. Every `train_copy_*.py` script does this correctly. Don't mix with base `Small2DTransformer` which returns raw logits.
 
-### HRM checkpoints (all 48K params, all `--structure-only`)
+2. **VOCAB_SIZE is now 82** — new models must use 82. Old checkpoints saved `vocab_size=80` in their config dict and load fine (the builder uses the saved config, not the global VOCAB_SIZE).
 
-| Checkpoint | Domain | Full-expression / held-out |
-|---|---|---:|
-| `math_structure_best.pt` | Math 3-digit | 30/30, smoke 5/5 |
-| `nl_math_structure_best.pt` | NL templates | 29/30, smoke 5/5 |
-| `word_problem_best.pt` | Word problems | 30/30, smoke 5/5 |
-| `gsm_best.pt` | GSM-style | 28/30 (first observed ceiling) |
-| `multi_task_best.pt` | 4-domain pooled | **30/30 all four domains** |
-| `multi10_best.pt` | 10-format pooled | 50% on multi10 OOD |
-| `multi20_best.pt` | 20-format pooled | **100% on multi10 OOD**, 22% on reasoning cases |
+3. **max_len must account for autoreg** — `max_len >= max_prefix_len + max_expression_len + decode_headroom`. Prefix can be 138 tokens for reasoning templates. The autoreg eval caps gen_budget to stay within positional embedding range.
 
-Legacy checkpoints (don't use): `math_hrm_best.pt`,
-`math_scratchpad_best.pt`, `math_seq2seq_best.pt`,
-`math_structure_2digit.pt.bak`.
+4. **3+ operand copy errors** — consistent across all domains. The copy attention over the prefix gets noisy with 3+ numbers to locate. Known fix: two-stage decode via D5. Don't try to fix with more data or capacity — it's a mechanism problem.
 
-### LLM-Computer IR (`calm/llm_computer/`)
+5. **Balanced `_sample_operand()`** — every data generator must use it. Uniform sampling from `[1, max_val]` underrepresents small digits (~1% of draws). The 3-bucket approach gives 33/33/33 across digit lengths.
 
-- `model.py` — `Small2DTransformer`, `d_head=2`, hard-max attention
-- `hull_cache.py` — `HullKVCache`, 108× speedup at N=2K, parity with
-  batched attention validated
-- `gate_graph.py` — 7 hardware nodes: TokenEmbed, PosEmbed, LookUp,
-  LookUpExact, ReGLU, LinearHead, TokenInput/Output
-- `compile.py` — declarative compiler (`compile_program`)
-- `schedule.py` — greedy auto-scheduler (`auto_schedule`)
-- `parse.py` — `parse_expression` via Python ast
-- `interpret.py` — topo-walk interpreter, `Delegate` → safe_eval
-- `programs/` — 9 compiled programs:
-  - Primitives: add_one (1280p), copy_past (2560p), increment_counter
-    (2176p), threshold (216p) — each with `*_ir.py` counterpart
-  - Composition: adder_tiny (1020p, 1-digit, 16/16), **adder
-    (486,012p, 2-digit, 10,000/10,000)**
-  - Memory: retrieve_by_index (1164p), retrieve_threshold (590p),
-    **read_by_key (1410p, semantic KV, 96/96)**
+## First action on resume
 
-### Feedback loops (`calm/`)
-
-- `auto_learn.py` — AutoLearner with hit-tracking, shape-gated
-  matching, prune_cold_patterns. 17 tests.
-- `module_learning.py` — ModuleLearner for cognitive module issue
-  tracking. 11 tests.
-- `tests/test_auto_learn_loop.py` — cycle closure validation
-- `tests/test_module_learning_loop.py` — parity tests
-- `tests/test_auto_calm_integration.py` — end-to-end through
-  `AutoCalmEngine` with mocked LLM, 3 tests
-- `closed_loop_eval.py` — effectiveness measurement (90%→100% over 3
-  rounds, 10× compression via generalization)
-- `scripts/learning_dashboard.py` — unified operator visibility tool
-
-### Memory + documentation
-
-- `.claude/MEMORY/CRLM_SPEC.md` — 387-line current architecture state
-- `.claude/MEMORY/RESEARCH_ROADMAP.md` — 8-layer forward progression
-- `.claude/MEMORY/MEMORY.md` — index
-- `.claude/MEMORY/SESSION_HANDOFF.md` — THIS FILE
-- `.claude/CLAUDE.md` — updated for session-26 state
-- `.claude/rules/` — architecture.md, calm.md, commercial.md,
-  training.md, workflow.md (no more vdd.md, orchestration.md)
-
-### Research reference material
-
-- `RESEARCH/` — Percepta March-2026 papers (LLM-Computer, 2D heads,
-  compile-to-weights) + HRM papers
-- `TQ/` — TurboQuant, QJL, PolarQuant papers
-
-### External state (don't commit)
-
-- `.port_sessions/` — runtime state
-- `.claude/scheduled_tasks.lock` — lock file
-- `calm/.module_learning.json` — production learning state
-- `/tmp/hrm_*.log` — training logs from this session
-
-### Canonical commands (copy-paste-ready)
-
-```bash
-# Full test suite (expect 313 passed)
-PYTHONPATH=. python3 -m pytest calm/ -q
-
-# Per-domain HRM evals
-PYTHONPATH=. python3 scripts/eval_hrm_math.py \
-    --ckpt calm/hrm/checkpoints/math_structure_best.pt \
-    --n 30 --seed 9999 --verified
-PYTHONPATH=. python3 scripts/eval_hrm_nl.py --n 30 --seed 9999
-PYTHONPATH=. python3 scripts/eval_hrm_word.py --n 30 --seed 9999
-PYTHONPATH=. python3 scripts/eval_hrm_gsm.py --n 30 --seed 9999
-PYTHONPATH=. python3 scripts/eval_hrm_multi.py --n 30 --seed 9999
-
-# Multi10 and multi20 held-out OOD
-PYTHONPATH=. python3 scripts/eval_hrm_multi10_ood.py \
-    --ckpt calm/hrm/checkpoints/multi10_best.pt
-PYTHONPATH=. python3 scripts/eval_hrm_multi10_ood.py \
-    --ckpt calm/hrm/checkpoints/multi20_best.pt  # expect 100%
-PYTHONPATH=. python3 scripts/eval_hrm_multi20_ood.py \
-    --ckpt calm/hrm/checkpoints/multi20_best.pt  # expect ~22%
-
-# Closed-loop effectiveness
-PYTHONPATH=. python3 -m calm.closed_loop_eval
-
-# Learning dashboard
-PYTHONPATH=. python3 scripts/learning_dashboard.py
-
-# 2-digit adder demo
-PYTHONPATH=. python3 -m calm.llm_computer.programs.adder
-
-# Semantic KV demo
-PYTHONPATH=. python3 -m calm.llm_computer.programs.read_by_key
-```
-
----
-
-## Verification checklist on resume
-
-1. `git log --oneline 91721f2..HEAD | wc -l` → expect 28
-2. `PYTHONPATH=. python3 -m pytest calm/ -q` → 313 passed
-3. All 7 checkpoints in §"HRM checkpoints" above exist at their paths
-4. `cat .claude/MEMORY/MEMORY.md` shows CRLM_SPEC + RESEARCH_ROADMAP
-   + SESSION_HANDOFF + evals/
-5. Nothing pushed to origin (branch is +135 ahead of origin per
-   earlier output)
-
-If those check out, the codebase is exactly where session-26 left it
-and Vector 2 phase 3 (meta-learning) is the clean starting point for
-session 27.
+1. Read this handoff.
+2. Update CLAUDE.md and rules with session 31 discoveries (copy mechanism, output-family split, `/domain` command, vocab 82, corrected architecture principle).
+3. Prototype two-stage decode: add `n_iterations=2` to `CopyAugmentedTransformer`, retrain funcall PT, measure 3+ operand accuracy.
+4. If two-stage works: retrain all domains with it, then install multiple PTs into the unified substrate tensor.
