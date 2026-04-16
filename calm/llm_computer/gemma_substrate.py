@@ -709,6 +709,35 @@ class CardSlot:
                 (self.ch_off, self.ch_off + self.d_card, self.layer_idx))
 
 
+class VerificationHook:
+    """Closes the verification loop: takes a card's verified output (e.g.,
+    adder's argmax), maps it to a Gemma BPE token via a vocab mapping,
+    and adds `boost` to that token's logit.
+
+    Effect: when the card has high confidence in answer N, Gemma's final
+    output is biased toward emitting the Gemma token corresponding to N.
+    Run after the head + softcapping (so it can override Gemma's natural
+    answer when the card disagrees).
+    """
+
+    def __init__(self, card_slot: "CardSlot", vocab_mapping: dict,
+                 boost: float = 10.0):
+        self.card_slot = card_slot
+        self.vocab_mapping = vocab_mapping  # card_token_id → gemma_token_id
+        self.boost = boost
+
+    def __call__(self, logits: torch.Tensor) -> torch.Tensor:
+        out = getattr(self.card_slot, "last_output", None)
+        if out is None:
+            return logits
+        # Take the LAST position's argmax over the card's vocab.
+        verified = int(out[0, -1].argmax().item())
+        gemma_token = self.vocab_mapping.get(verified)
+        if gemma_token is not None:
+            logits[..., -1, gemma_token] = logits[..., -1, gemma_token] + self.boost
+        return logits
+
+
 class GemmaLayer:
     """One Gemma layer — all weights are mmap views."""
 
@@ -754,6 +783,10 @@ class GemmaSubstrate:
         # install_layer, attn_output and ffn_output contributions to these
         # channels are zeroed so the card's value flows through intact.
         self.reserved_channels: list[tuple[int, int, int]] = []
+        # Verification hooks — applied AFTER the head + softcapping. Each
+        # hook reads a CardSlot.last_output and biases specific Gemma
+        # vocab logits to inject the verified value back into Gemma's output.
+        self.verification_hooks: list = []
 
     @classmethod
     def from_gguf(cls, gguf_path: str, max_len: int = 8192) -> "GemmaSubstrate":
@@ -1038,6 +1071,14 @@ class GemmaSubstrate:
         cap = 30.0
         logits = torch.tanh(logits / cap) * cap
 
+        # Verification loop: card outputs feed back into Gemma's logits.
+        # Each hook reads a CardSlot.last_output (saved during _forward_layer),
+        # picks a verified token, and adds a bias to Gemma's vocab logit
+        # for the corresponding Gemma BPE token. Closes the loop:
+        #   Gemma residual → card → Gemma logits
+        for hook in self.verification_hooks:
+            logits = hook(logits)
+
         return logits
 
     def _forward_layer(self, h: torch.Tensor, layer: GemmaLayer,
@@ -1214,6 +1255,9 @@ class GemmaSubstrate:
                     h = slot.output_fn(h, card_out, ch_lo, ch_hi)
                 elif card_out.shape == h[..., ch_lo:ch_hi].shape:
                     h[..., ch_lo:ch_hi] = h[..., ch_lo:ch_hi] + card_out
+                # Save for downstream verification hooks (closes the loop:
+                # card output → Gemma logit bias at end of forward).
+                slot.last_output = card_out
 
         return h
 
