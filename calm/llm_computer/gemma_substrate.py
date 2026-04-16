@@ -225,6 +225,30 @@ class MmapTq4Linear:
         return result
 
 
+class FP32GemmaLinear:
+    """FP32 weight tensor with the same call interface as MmapTq4Linear.
+    Used after convert_layer_to_fp32 for layers hosting in-attention card
+    installs — surgical weight edits are lossless in FP32 (no tq4 quant
+    noise on installed card weights; see Round 11 hybrid finding).
+
+    Weight is stored in (in, out) orientation so __call__ does x @ w
+    directly (matches MmapTq4Linear's dequant() output convention)."""
+
+    def __init__(self, weight: torch.Tensor, in_features: int, out_features: int):
+        assert weight.shape == (in_features, out_features), (
+            f"weight shape {weight.shape} != ({in_features}, {out_features})")
+        self.weight = weight
+        self.in_features = in_features
+        self.out_features = out_features
+        # MmapTq4Linear API compat (so existing checks like
+        # `lin._gpu_qs is not None` short-circuit cleanly to the FP32 path)
+        self._gpu_qs = None
+        self._gpu_d = None
+
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        return x @ self.weight
+
+
 class GpuQ6KEmbedding:
     """Q6_K embedding with GPU-accelerated dequant.
 
@@ -1260,6 +1284,124 @@ class GemmaSubstrate:
                 slot.last_output = card_out
 
         return h
+
+    def convert_layer_to_fp32(self, layer_idx: int, attrs: tuple = None,
+                               device: str = "cuda") -> dict:
+        """Replace selected MmapTq4Linear in `layer_idx` with FP32GemmaLinear.
+        Required before install_card_in_attention so card weights can be
+        written without tq4 quant noise (Round 11 hybrid finding).
+
+        Returns a dict mapping attr → new FP32GemmaLinear, useful for
+        the caller to inspect or modify the FP32 weights directly.
+        """
+        if attrs is None:
+            attrs = ("attn_q", "attn_k", "attn_v", "attn_output",
+                     "ffn_gate", "ffn_up", "ffn_down")
+        layer = self.layers[layer_idx]
+        out = {}
+        for attr in attrs:
+            lin = getattr(layer, attr, None)
+            if lin is None or not isinstance(lin, MmapTq4Linear):
+                continue
+            w_fp32 = lin.dequant(device=device).contiguous()
+            new_lin = FP32GemmaLinear(w_fp32,
+                                       in_features=lin.in_features,
+                                       out_features=lin.out_features)
+            setattr(layer, attr, new_lin)
+            out[attr] = new_lin
+        return out
+
+    def install_card_in_attention(
+        self,
+        card,
+        layer_idx: int,
+        sub_head_offset: int,
+        ch_off: int,
+        d_card: int,
+        card_layer: int = 0,
+    ) -> dict:
+        """Install a Small2DTransformer card's attention weights INTO
+        Gemma's attn_q/k/v/output tensors at a specific sub-head slot.
+
+        Round 29 in-attention install. Requires the layer to be FP32
+        (call convert_layer_to_fp32 first). The card occupies:
+          - INPUT channels [ch_off:ch_off+d_card] of Gemma's residual
+          - sub_head_offset .. sub_head_offset + d_card // 2 SUB-HEADS
+            of Gemma's first attention head (each sub-head = d_head=2)
+          - OUTPUT channels [ch_off:ch_off+d_card] of Gemma's residual
+
+        Card layout assumed (Small2DTransformer):
+          - W_qkv.weight: (3*d_card, d_card)   — Q, K, V stacked
+          - W_out.weight: (d_card, d_card)
+          - d_head=2 (substrate invariant)
+
+        Gemma layout (FP32 after conversion):
+          - attn_q.weight: (in=d_model, out=H*d_head)  # SWA: 2560×2048
+          - attn_k.weight: (in=d_model, out=H_kv*d_head_kv)
+          - attn_v.weight: (in=d_model, out=H_kv*d_head_kv)
+          - attn_output.weight: (in=H*d_head, out=d_model)
+
+        Surgically zeros and writes:
+          attn_q[ch_off:ch_off+d_card, sh_lo:sh_hi] = card.W_qkv[Q part].T
+          attn_k[ch_off:ch_off+d_card, sh_lo:sh_hi] = card.W_qkv[K part].T
+          attn_v[ch_off:ch_off+d_card, sh_lo:sh_hi] = card.W_qkv[V part].T
+          attn_output[sh_lo:sh_hi, ch_off:ch_off+d_card] = card.W_out.T
+        Other rows/cols at those slots are zeroed so the card's input
+        comes ONLY from the reserved residual channels and its output
+        goes ONLY to the reserved channels.
+        """
+        layer = self.layers[layer_idx]
+        for attr in ("attn_q", "attn_k", "attn_v", "attn_output"):
+            assert isinstance(getattr(layer, attr), FP32GemmaLinear), (
+                f"layer {layer_idx} {attr} must be FP32 — "
+                f"call convert_layer_to_fp32({layer_idx}) first")
+
+        assert d_card % 2 == 0, "d_card must be even (d_head=2 invariant)"
+        n_sub_heads = d_card // 2
+        sh_lo = sub_head_offset * 2
+        sh_hi = sh_lo + d_card
+
+        # Small2DTransformer uses ModuleList for per-layer weights.
+        # card.W_qkv is nn.ModuleList of Linear; pick the requested layer.
+        if hasattr(card.W_qkv, "__getitem__"):
+            c_w = card.W_qkv[card_layer].weight
+            c_out = card.W_out[card_layer].weight
+        else:
+            c_w = card.W_qkv.weight
+            c_out = card.W_out.weight
+
+        # Card Q/K/V slices
+        c_Q = c_w[0:d_card, :]              # (d_card, d_card)
+        c_K = c_w[d_card:2*d_card, :]
+        c_V = c_w[2*d_card:3*d_card, :]
+
+        with torch.no_grad():
+            # attn_q: zero target columns then write the d_card×d_card block.
+            # Gemma stores (in, out); card needs to be at rows[ch_off:+d_card],
+            # cols[sh_lo:sh_hi].
+            for attr, c_M in (("attn_q", c_Q), ("attn_k", c_K), ("attn_v", c_V)):
+                lin = getattr(layer, attr)
+                # Zero ALL rows for these columns (so card input comes only
+                # from reserved channels)
+                lin.weight[:, sh_lo:sh_hi] = 0
+                # Write card weights — transpose card (out, in) to (in, out)
+                lin.weight[ch_off:ch_off+d_card, sh_lo:sh_hi] = c_M.T
+
+            # attn_output: card's output at rows[sh_lo:sh_hi] (input dim),
+            # cols[ch_off:ch_off+d_card] (output dim).
+            # Zero ALL columns for these input rows so the card output goes
+            # only to the reserved channels.
+            attn_o = layer.attn_output
+            attn_o.weight[sh_lo:sh_hi, :] = 0
+            attn_o.weight[sh_lo:sh_hi, ch_off:ch_off+d_card] = c_out.T
+
+        return {
+            "layer": layer_idx, "sub_heads": list(range(sub_head_offset,
+                                                          sub_head_offset + n_sub_heads)),
+            "ch_in": (ch_off, ch_off + d_card),
+            "ch_out": (ch_off, ch_off + d_card),
+            "card_d_model": d_card,
+        }
 
     def warmup(self, device: str = "cuda", seq_lens: tuple = (1, 6, 16)):
         """Trigger Triton kernel compilation for the listed sequence lengths
