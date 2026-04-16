@@ -88,15 +88,23 @@ conflate.
 - **Domain** = a facade with imports/exports + PT + compiled ops +
   knowledge facts. ~32 sub-heads per domain, 30 domains on 8 GB VRAM.
 
-**Session 30 validated through Level 5**: compiled programs live inside
-Gemma's own attention layers. Per-sub-head partition: grouped-softmax
-(Gemma), single-softmax (HRM), single-hard_max (compiled). Zero cross-
-talk (0.00e+00). Full spec: `.claude/rules/Substrate.md`.
+**Session 30 validated through Level 5** (substrate-native demo):
+compiled programs live inside Gemma's own attention layers. Per-sub-
+head partition: grouped-softmax (Gemma), single-softmax (HRM),
+single-hard_max (compiled). Zero cross-talk (0.00e+00).
+**Session 32 ported the same pattern to prod Gemma 4 E4B**
+(`GemmaSubstrate.install_card_in_attention` + `attention_partition` +
+`convert_layer_to_fp32`) — three modes verified coexisting in one
+real Gemma layer with distinct non-zero diffs. Full spec:
+`.claude/rules/Substrate.md`.
 
 **Brain + Cards model**: Gemma (language + routing) dispatches to cards
-(compiled programs, HRM specialists). Cards get installed INTO Gemma's
-sub-heads, not alongside. Adding a card = weight edit, not retraining.
-Auto-upgrade: CALM catches errors → compile into weights → persist.
+(compiled programs, HRM specialists, PTs). Two install paths on prod
+Gemma: in-tensor (`install_card_in_attention`, weights live in
+`attn_q/k/v/output`) and residual-additive (`CardSlot.attach(preserve=True)`,
+card runs as separate Module — required for PTs). Adding a card =
+weight edit, not retraining. Auto-upgrade: CALM catches errors →
+compile into recall card → install via CardSlot → persist as JSON.
 
 ## Architecture
 
@@ -106,7 +114,7 @@ Four active systems coexist:
 1. **Python agent harness** (`agents/`, ~4,400 LOC across 15 files) — terminal coding assistant with dual backend (Ollama + llama.cpp), 3-level permissions, thinking mode, sessions, compaction, effort control, and llama.cpp hot-swap
 2. **CALM engine** (`calm/`, ~37,400 LOC across 194 files) — modular compute + knowledge facade with cognitive intelligence layer. Auto-CALM (transparent verification + precomputation, 100% benchmark) + Engine V2 (7-phase pipeline: pre-analyze → enrich → precompute → generate → verify → cognitive route → self-heal) + 122 modular backends (1045 verified functions, 603 NL patterns, 100% coverage) + 39 cognitive modules (verification, reasoning, quality, meta, planning) + 48 factual check patterns + 10 dynamic cross-check patterns against backends + adaptive thinking budget + cross-turn conversation state + module self-learning with feedback loop. Full spec: `.claude/rules/calm.md`
 3. **Rust claw-code port** (`rust/`) — upstream claw-code, 9 crates, separate build system
-4. **Unified Single Tensor** (`calm/llm_computer/`) — the CHRLM architecture. **ONE `.pt` contains Gemma (tq4) + trained PTs (fp32) + compiled cards (fp32) + persistent knowledge DB.** Session 30 validated Level 5: all three types coexist in ONE attention layer via per-sub-head partition. **24 compiled programs** (exact): `adder` 10K/10K, `gcd` 256/256, `dispatched_v4` 791/791 (5 ops + cross-card gating), `reasoning_engine` 512/512. **Pointer Transducers** (session 31): `CopyAugmentedTransformer` with learned copy gate + pointer attention (1,089 extra params, 0.6%). Validated across 5 domains: NL math 100%, word problems 96%, GSM 95% (broke 93% ceiling), reasoning 86-88%, creative writing 97%. **One PT per output-language family** (funcall, logic, routing) — ~3-5 PTs cover 30+ domains. **Auto-upgrade**: CALM → compile corrections into weights → persist (0/8 → 11/11 in 3 sessions). **Facade/import system** (`program_builder.py`): StdLib + CompiledOp + linker. `/domain` command for guided domain addition. **Substrate-native inference** (`gemma_substrate.py`): full Gemma 4 E4B loaded from GGUF via mmap, GPU-preloaded tq4 (5 GB), KV cache, chunked Q6_K output head, 0.54 tok/s — output coherence debugging in progress. Full spec: `.claude/rules/Substrate.md` + `.claude/rules/architecture.md`.
+4. **Unified Single Tensor** (`calm/llm_computer/`) — the CHRLM architecture. **ONE `.pt` contains Gemma (tq4) + trained PTs + compiled cards + persistent knowledge DB.** Session 30 validated Level 5 on the substrate-native demo (`HybridGroupedSmall2DTransformer`): three attention modes coexist in one layer via per-sub-head partition. **Session 32 ported the full pattern to prod Gemma 4 E4B** (`gemma_substrate.py`): coherent output at **42 tok/s decode** (160× over baseline, 90% of llama.cpp on the same GGUF) via Triton fused dequant kernels (`tq4_triton.py`) + CUDA Graph capture + real tq4 KV storage (`KVCacheTq4`, 4.4× memory). Cards install two ways on prod Gemma: residual-additive (`CardSlot.attach(preserve=True)` for PTs) and in-tensor (`install_card_in_attention` + `convert_layer_to_fp32`, with per-sub-head dispatch via `attention_partition` for `mode='hard_max'|'softmax'|'grouped'`). Verification feedback closes the loop (`VerificationHook` biases Gemma logits with the card's argmax). Learning loop end-to-end: `KnowledgeStore` corrections compile into a recall card via `build_recall_model()`, install via `CardSlot`, persist as JSON — demo at `scripts/gemma_learning_loop_demo.py` (5/5 wrong → 5/5 correct). 24 compiled programs in `programs/` (`adder` 10K/10K, `gcd` 256/256, `dispatched_v4` 791/791, `reasoning_engine` 512/512). **Pointer Transducers** (session 31, `CopyAugmentedTransformer`): one PT per output-language family (~3-5 PTs cover 30+ domains); cross-domain val acc 86-100%; checkpoints in `calm/hrm/checkpoints/copy_*_best.pt`. Domain registry: `.claude/MEMORY/substrate_registry.md`. `/domain` command for guided domain addition. Full spec: `.claude/rules/Substrate.md` + `.claude/rules/architecture.md`.
 
 Serving: Gemma 4 E4B (primary) or Qwen 3.5 4B via llama.cpp at **512K context** (`ctx_size=524288`), **32K thinking budget**. Production: tq4+tq4 KV cache on Gemma E4B (`~/models/gemma-4-E4B-it-tq4-aligned.gguf`, 5.0 GB). CALM/Auto-CALM runs on the same llama-server instance. Harness auto-computes compaction threshold as `min(per-GGUF limit, int(ctx_size * 0.89))` — Gemma compacts at **227.5K tokens** (232960). Hot-swap between bases via `agents/model_swap.py`.
 

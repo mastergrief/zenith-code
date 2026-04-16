@@ -88,6 +88,42 @@ padded to (4096, 4096) → dequant → top-left matches original to atol=1e-5.
 | tq4 + tq4 KV (production) | ~5.0 GB | ~2.0 GB | ~7.0 GB |
 | Q5_K_M + f16 KV | 5.48 GB | ~4.0 GB | ~9.5 GB (OOM) |
 | Hybrid substrate (2 tq4 + 2 fp32) | varies | N/A | ~50 MB - 10 GB |
+| **Prod Gemma substrate (Triton stack)** | **~3.5 GB tq4 + Q6_K** | tq4/FP16 | **~5.0 GB baseline** |
+
+Substrate baseline of ~5.0 GB leaves ~3 GB headroom for FP32 hosting layers
+(see `.claude/MEMORY/substrate_registry.md` for budget table) plus
+activations + KV cache.
+
+## Triton Kernels (`calm/llm_computer/tq4_triton.py`)
+
+The hot path. PyTorch dequant materialized full FP32 W per call (~26M
+elements for ffn_up) — bandwidth-bound at ~6.8 ms per linear, ~3 sec
+per token across 378 calls. Triton kernels stream tq4 bytes directly
+into the dot product, never materializing W.
+
+Math: `y = x @ W` where `W = (centroids[codes] @ Pi) * d`. Pi is
+orthogonal so `y = (x @ Pi.T) @ (centroids[codes] * d)`. Kernels take
+pre-rotated `x_rot` and the un-rotated centroid weights. Bit-equivalent
+to the PyTorch path (max abs diff ~6e-8).
+
+| Kernel | Use | Speedup |
+|---|---|---|
+| `tq4_matvec_triton` | single x vector (decode path) | 5-17× per linear |
+| `tq4_matmul_triton` | batched x (S>1, prefill path) — 2D grid `(out_tiles, n_seq)` | 1 launch instead of S |
+| `tq4_linear_dual_triton` | gate+up share x — fused dual kernel | half the Python overhead |
+| `q6k_matvec_triton` | output head (262K vocab Q6_K dequant + matmul) | 125× vs chunked |
+| `q6k_lookup_triton` | single-token Q6_K embedding lookup | minor; saves Python ops |
+
+`_pick_block_m(out_features)` heuristic: BLOCK_M=64 for `out >= 4096`,
+32 for 2048, 16 for 1024, 4 for 512, 1 otherwise. Dual kernel caps
+BLOCK_M at 32 (register pressure with two weight matrices).
+
+Toggle via `enable_triton_tq4(True)` (module-level) or `--triton`
+CLI flag on `gemma_substrate.py`. End-to-end on RTX 4070M with
+gemma-4-E4B-it-tq4: PyTorch baseline 0.25 tok/s → Triton + CUDA
+Graphs **42 tok/s** decode steady (90% of llama.cpp on the same
+GGUF). See `.claude/rules/architecture.md` "Gemma substrate loader"
+for the full perf chain.
 
 ## Quantization Commands
 

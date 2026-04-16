@@ -19,9 +19,14 @@
 
 ## Substrate Pattern
 
-**The model IS the substrate.** Session 30 validated through Level 5:
-compiled programs, trained HRMs, and persistent knowledge live INSIDE
-Gemma's own attention layers — one tensor, one forward, zero cross-talk.
+**The model IS the substrate.** Session 30 validated through Level 5
+on the substrate-native demo (`HybridGroupedSmall2DTransformer`).
+**Session 32** ported the full pattern to prod Gemma 4 E4B
+(`GemmaSubstrate`): `convert_layer_to_fp32` + `install_card_in_attention`
++ per-sub-head dispatch via `attention_partition` — three attention
+modes coexist in one Gemma layer with verified non-zero distinct
+diffs. Plus the residual-additive `CardSlot` pattern for cards with
+custom forwards (PTs).
 
 Full spec: `.claude/rules/Substrate.md`
 
@@ -100,6 +105,7 @@ The CRLM thesis: **partition intelligence into structure (learned, modest scale)
 - **Training**: scheduled sampling (tf_ratio 1.0→0.3), autoreg eval as gate metric, `--epochs 500`, balanced `_sample_operand()` in all data generators. Scripts: `scripts/train_copy_*.py`.
 - **Checkpoints**: `calm/hrm/checkpoints/copy_*_best.pt` (NL math 100%, word 98%, GSM 100%, funcall 86%, logic 86%).
 - **Remaining ceiling**: 3+ operand copy accuracy (68-83%). Fix: two-stage decode via D5 recurrence (skeleton → slot fill).
+- **Prod Gemma install (session 32)**: PTs install via `CardSlot(layer_idx, ch_off, pt, d_card=80, card_input_fn=adapter, use_full_residual=True, output_fn=writer).attach(m, preserve=True)`. PT's copy-augmented attention can't reduce to a sub-head mode, so CardSlot (separate forward + additive residual write + preservation masking) is the right pattern. Chained CRLM proven inside one Gemma forward: `copy_augmented_hrm` PT writes structure log_probs at ch[2400:2480] → adder_tiny reads those channels via `card_input_fn`, computes the answer, writes at ch[2480:2488] → `VerificationHook` biases Gemma's BPE digit logit. See commit `f5455f6`.
 
 ### Legacy HRM (`calm/hrm/model.py`, sessions 24-30)
 
@@ -137,7 +143,7 @@ Implementation of Percepta's March 2026 research (RESEARCH/01-03):
 - **ReGLU key-squaring trick** (enables semantic-keyed lookup): `-k² = -k · ReLU(k)` for non-negative integer `k`. One ReGLU neuron in layer-0 FFN writes `-k²` to a residual channel; a later layer's `LookUpExact` reads it as `pos_key1` with `pos_key0_coef=2.0` on the raw key channel. This lifts a scalar key into the `(2k, -k²)` parabolic form exactly.
 - **Grammar-constrained decoding** (`grammar_decode.py`): inference-time mask for valid math expressions + EOS boosting. Null result on current models but infrastructure shipped.
 - **Substrate server** (`substrate_server.py`): OpenAI-compatible API serving PTs + CALM precompute. Keyword-based routing across 7 PT domains. Optional llama-server fallback for general language.
-- **Gemma substrate loader** (`gemma_substrate.py`, session 31): full Gemma 4 E4B from GGUF in PyTorch. `MmapTq4Linear` (GPU-preloaded tq4 bytes, dequant on GPU), `GpuQ6KEmbedding` (Q6_K components on GPU, chunked dequant+matmul for output head), `KVCache` (FP16, sliding window), `GemmaTokenizer` (262K vocab from GGUF). Architecture: 42 layers, GQA 8Q/2KV, per-layer head dim, proportional RoPE, per-layer embedding injection. 5.07 GB GPU, 0.54 tok/s. Output coherence debugging in progress.
+- **Gemma substrate loader** (`gemma_substrate.py`, sessions 31-32): full Gemma 4 E4B from GGUF in PyTorch. `MmapTq4Linear` (GPU-preloaded tq4 bytes, dequant on GPU), `FP32GemmaLinear` (drop-in replacement for hosting in-attention card installs), `GpuQ6KEmbedding` (Q6_K components on GPU), `KVCache` / `KVCacheStatic` (CUDA-Graph-friendly fixed buffers) / `KVCacheTq4` (real tq4 storage, 4.4× memory), `GemmaTokenizer` (262K vocab from GGUF). Architecture: 42 layers, GQA 8Q/2KV, per-layer head dim, proportional RoPE, per-layer embedding injection. **42 tok/s steady decode** (160× over baseline, 90% of llama.cpp), 5.07 GB GPU. Triton fused dequant kernels (`tq4_triton.py`, see `turboquant.md`); CUDA Graph capture (`generate_with_graph`); in-attention card install (`install_card_in_attention`, `convert_layer_to_fp32`); per-sub-head attention dispatch (`attention_partition`, three modes coexist in one layer); residual-additive install (`CardSlot.attach(preserve=True)`); verification feedback (`VerificationHook`); learning loop (`KnowledgeStore` + `CardSlot` — see `scripts/gemma_learning_loop_demo.py`). Domain registry: `.claude/MEMORY/substrate_registry.md`. Full spec: `.claude/rules/Substrate.md`.
 
 ### Substrate Extensions (D2/D3/D5 + Fast Weights)
 
@@ -267,7 +273,7 @@ Future direction: replace the Python interpreter with a compiled `Small2DTransfo
 - `agents/distill/` — training pipeline (10 Python files + 1 notebook). ML dependencies (torch, unsloth, transformers) only required here. **Secondary to backends** — only needed for domains that can't be computed.
 - `calm/` — CALM engine + Auto-CALM + modular backends + cognitive intelligence layer (~194 files, ~37,400 LOC, 250 tests). Engine V2 pipeline with 116 backends, 39 cognitive modules, adaptive thinking, self-healing, factual cross-check, module learning feedback loop. Dependencies: `wasmtime` (optional, for wasm backend). Full spec: `.claude/rules/calm.md`
 - `calm/hrm/` — HRM (Hierarchical Reasoning Model) encoder-decoder. Core: `model.py` (HRM, HRMSeq2Seq, HRMEncoder, HRMDecoder), `train.py`/`inference.py`. Per-domain data generators: `data.py` (math), `nl_data.py` (NL templates), `word_data.py` (word problems), `gsm_data.py` (GSM-style narratives), `multi_data.py` (pooled). 5 production checkpoints at `calm/hrm/checkpoints/*_best.pt`, all 48K params via `--structure-only`. Dedicated tests: `calm/hrm/tests/`.
-- `calm/llm_computer/` — substrate core. `Small2DTransformer` (`model.py`), `HullKVCache` (`hull_cache.py`), gate-graph IR (`gate_graph.py`), declarative compiler (`compile.py`), greedy auto-scheduler (`schedule.py`), parser/interpreter (`parse.py` + `interpret.py`), 15 compiled programs in `programs/`. **Substrate extensions (new this session)**: `fast_weights.py` (D1 runtime Hebbian writes), `computation_trace.py` (D2 traces), `mixed_geometry.py` (D3 per-layer geometries), `recurrent_substrate.py` (D5 iteration budget), `combined_substrate.py` (D2+D3+D5 bundle), `substrate_lm.py` (BPE + training pipeline for substrate-native cards). Trained substrate cards live in `checkpoints/` (substrate_lm_mvp, substrate_hybrid_mvp, substrate_hrlm_v2, substrate_hrm_nl_best, synth_familyA variants). 78+ tests in `tests/`.
+- `calm/llm_computer/` — substrate core. `Small2DTransformer` (`model.py`), `HullKVCache` (`hull_cache.py`), gate-graph IR (`gate_graph.py`), declarative compiler (`compile.py`), greedy auto-scheduler (`schedule.py`), parser/interpreter (`parse.py` + `interpret.py`), 15 compiled programs in `programs/`. **Substrate extensions**: `fast_weights.py` (D1 runtime Hebbian writes), `computation_trace.py` (D2 traces), `mixed_geometry.py` (D3 per-layer geometries), `recurrent_substrate.py` (D5 iteration budget), `combined_substrate.py` (D2+D3+D5 bundle), `substrate_lm.py` (BPE + training pipeline for substrate-native cards). **Prod Gemma stack (session 32)**: `gemma_substrate.py` (the loaded model + install API + CardSlot/VerificationHook + KVCache variants), `tq4_triton.py` (fused dequant Triton kernels for tq4 + Q6_K). Trained substrate cards live in `checkpoints/` (substrate_lm_mvp, substrate_hybrid_mvp, substrate_hrlm_v2, substrate_hrm_nl_best, synth_familyA variants). 78+ tests in `tests/`.
 - `models/` — Ollama Modelfiles (3 files: qwen9b-fast, qwen4b-fast, reasoning-base)
 - `bin/zenith` — launcher script: auto-starts llama.cpp, `--gguf PATH` first-arg flag, configurable via `ZENITH_*` env vars. Does NOT `cd` into repo.
 - `scripts/` — dev tooling. CHRLM + fast-weights + substrate-native training: `experiment_fast_weights{.py, _fusion.py, _scaling.py, _round4.py}` (Rounds 1-4), `train_substrate_lm.py` (SubstrateLM MVP), `train_hybrid_substrate.py` (SubstrateHRLM v1), `train_substrate_hrmlm_v2.py` (v2 with D3/D5 + curriculum fixes + `--device auto` GPU support), `chat_substrate_lm.py` (MVP REPL), `unified_chat.py` (CHRLM + Gemma single-conversation REPL with routing gate). Legacy: needle_test, eval_base_models, smoke_test_harness, test_model_swap, generate_react_security_examples, setup_training.

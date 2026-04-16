@@ -13,6 +13,21 @@
 - Use `agents/distill/train_4b_colab.ipynb` — **this is the active training path**. `train_4b_cloud.py` exists for RunPod/Lambda but is not currently used (RunPod is set up but the user runs training on Colab Pro).
 - Cost: ~$0.50-1.00 per training run (~30-40 min on A100)
 
+### Substrate FP32 hosting layers (RTX 4070, 8 GB)
+
+For installing cards INTO Gemma's attention via
+`install_card_in_attention` (see `Substrate.md`), the host layer must
+be FP32 (tq4 quant noise destroys compiled coefs — Round 11). One-time
+conversion via `GemmaSubstrate.convert_layer_to_fp32(layer_idx)`.
+
+- per FP32 SWA layer: ~330 MB
+- per FP32 global layer (5, 11, 17, 23, 29, 35, 41): ~600 MB
+- Substrate baseline (Triton + tq4 + Q6_K): ~5.0 GB
+- Practical: **5-7 hosting layers** before bumping the 8 GB ceiling
+
+Track allocations in `.claude/MEMORY/substrate_registry.md` so two
+domains don't reserve overlapping channels/sub-heads in the same host.
+
 ## Priority Order
 - **Backend coverage > data quality > data quantity > model size > training tricks.**
   Adding a compute backend is instant, free, and deterministic. Training is
@@ -152,6 +167,16 @@ Different from HRMSeq2Seq training above. Substrate-native cards are
 decoder-only `Small2DTransformer` instances trained on chat-formatted
 text. They become substrate-compliant `.pt` files that compose with
 compiled programs and HRM specialists at runtime.
+
+**Compiled cards from `programs/` need NO retraining to install into
+prod Gemma**: `install_card_in_attention(card, layer, sub_head_off,
+ch_off, d_card, mode='hard_max')` writes the card's existing
+gate-graph IR weights into Gemma's FP32-converted `attn_q/k/v/output`
+at the reserved slot. Per-sub-head dispatch handles the different
+attention mode. End-to-end auto-upgrade loop: detect → log → compile
+recall card → install → persist. Demo:
+`scripts/gemma_learning_loop_demo.py` (5/5 wrong → 5/5 correct after
+loop closes). See `Substrate.md` for install patterns.
 
 ### Config (MVP scale, proven)
 

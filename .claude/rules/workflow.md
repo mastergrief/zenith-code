@@ -80,6 +80,8 @@ most important discipline in this workflow.
 | Cognitive module | router on flawed response (quality + issue count) | Engine V2 Gemma test — quality gap bad vs good |
 | NL pattern | NL pattern count + precompute on test prompt | Gemma test — correct value injected? |
 | Scoring/threshold | flawed response < 75%, good > 90% | self-heal trigger test on bad response |
+| Substrate card install | card.forward standalone == card.forward inside Gemma (hooked) | Gemma logits diff vs no-install baseline > noise |
+| Triton kernel | bit-equivalent to PyTorch path (max abs diff < 1e-5) | end-to-end tok/s on a 30+ token decode |
 
 If you only have one path, say so out loud and accept the reduced
 confidence — but keep looking for the second.
@@ -414,6 +416,34 @@ the error is permanently fixed. This closes the loop from "CALM catches
 errors" to "errors never recur" without retraining. See
 `.claude/rules/calm.md` "Auto-Upgrade Loop" and
 `calm/llm_computer/auto_upgrade.py`.
+
+## Substrate install workflow
+
+When installing a card into prod Gemma (`GemmaSubstrate`), allocate
+FROM the registry first to avoid collisions, then install, then verify,
+then update the registry. Pattern:
+
+1. **Allocate**: read `.claude/MEMORY/substrate_registry.md`. Pick a
+   `host_layer`, channel range `[ch_off : ch_off + d_card]`, and
+   `sub_head_offset` (in-attention installs) that don't collide with
+   any existing entry in the same host_layer.
+2. **Convert** (in-attention only): `m.convert_layer_to_fp32(host_layer)`
+   once per host. ~330 MB SWA / ~600 MB global.
+3. **Install**: `install_card_in_attention(card, ..., mode='hard_max')`
+   for compiled, `mode='softmax'` for HRM-style; OR
+   `CardSlot(...).attach(m, preserve=True)` for PTs and prototyping.
+4. **Verify**: hook `card.forward`, run a probe prompt, check
+   - card receives the expected input slice
+   - card produces the expected output (compare to standalone)
+   - Gemma's logits diff vs no-install baseline > noise
+   - `VerificationHook` (if used) flips argmax on the verified token
+5. **Register**: append a row to `substrate_registry.md` with
+   domain, host_layer, channels, sub_head_offset, mode,
+   vocab_mapping, install date, max abs diff vs baseline.
+6. **Commit**: one commit per domain, registry row included.
+
+End-to-end demo of detect → log → compile → install → persist:
+`scripts/gemma_learning_loop_demo.py` (5/5 wrong → 5/5 correct).
 
 ## When this workflow doesn't apply
 
