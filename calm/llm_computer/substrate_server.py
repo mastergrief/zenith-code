@@ -225,6 +225,10 @@ class SubstrateHandler(BaseHTTPRequestHandler):
 
     pt_inference: PTInference = None  # Set by server init
     fallback_url: Optional[str] = None
+    gemma = None              # Optional GemmaSubstrate (native fallback)
+    gemma_tokenizer = None
+    gemma_device: str = "cuda"
+    gemma_max_tokens: int = 64
 
     def do_POST(self):
         if self.path == "/v1/chat/completions":
@@ -311,15 +315,22 @@ class SubstrateHandler(BaseHTTPRequestHandler):
                 content = None
 
             if content is None:
-                # Fallback: forward to llama-server if configured
-                if self.fallback_url:
+                # Native Gemma substrate path takes precedence over proxy.
+                if self.gemma is not None:
+                    out = self.gemma.generate(
+                        user_msg, self.gemma_tokenizer,
+                        max_tokens=self.gemma_max_tokens,
+                        device=self.gemma_device)
+                    content = out["text"]
+                elif self.fallback_url:
                     self._proxy_to_fallback(body)
                     return
-                elapsed = time.time() - t0
-                content = (f"No computable expression found in query.\n"
-                           f"Substrate handles: math, reasoning, comparisons, "
-                           f"percentages, ratios, writing analysis.\n"
-                           f"({elapsed*1000:.0f}ms)")
+                else:
+                    elapsed = time.time() - t0
+                    content = (f"No computable expression found in query.\n"
+                               f"Substrate handles: math, reasoning, comparisons, "
+                               f"percentages, ratios, writing analysis.\n"
+                               f"({elapsed*1000:.0f}ms)")
 
         # Send response
         if stream:
@@ -370,7 +381,11 @@ class SubstrateHandler(BaseHTTPRequestHandler):
 
 
 def serve(port: int = 8081, fallback_url: str = None,
-          checkpoint_dir: str = "calm/hrm/checkpoints"):
+          checkpoint_dir: str = "calm/hrm/checkpoints",
+          gemma_gguf: Optional[str] = None,
+          gemma_max_len: int = 8192,
+          gemma_max_tokens: int = 64,
+          gemma_device: str = "cuda"):
     """Start the substrate inference server."""
     print(f"[substrate] loading PTs from {checkpoint_dir}...")
     pt = PTInference(checkpoint_dir)
@@ -378,11 +393,25 @@ def serve(port: int = 8081, fallback_url: str = None,
     SubstrateHandler.pt_inference = pt
     SubstrateHandler.fallback_url = fallback_url
 
+    if gemma_gguf:
+        from calm.llm_computer.gemma_substrate import GemmaSubstrate
+        from calm.llm_computer.synth.gemma_tokenizer import GemmaTokenizer
+        print(f"[substrate] loading Gemma substrate from {gemma_gguf}...")
+        gemma = GemmaSubstrate.from_gguf(gemma_gguf, max_len=gemma_max_len)
+        if gemma_device == "cuda":
+            gemma.preload_gpu(gemma_device)
+        SubstrateHandler.gemma = gemma
+        SubstrateHandler.gemma_tokenizer = GemmaTokenizer.from_gguf(gemma_gguf)
+        SubstrateHandler.gemma_device = gemma_device
+        SubstrateHandler.gemma_max_tokens = gemma_max_tokens
+
     server = HTTPServer(("0.0.0.0", port), SubstrateHandler)
     print(f"[substrate] serving on http://localhost:{port}")
     print(f"[substrate] endpoints: /v1/chat/completions, /health, /v1/models")
-    if fallback_url:
-        print(f"[substrate] fallback: {fallback_url}")
+    if SubstrateHandler.gemma is not None:
+        print(f"[substrate] native fallback: GemmaSubstrate (gguf={gemma_gguf})")
+    elif fallback_url:
+        print(f"[substrate] proxy fallback: {fallback_url}")
     print(f"[substrate] ready.")
     try:
         server.serve_forever()
@@ -398,9 +427,20 @@ def main():
     p.add_argument("--fallback", type=str, default=None,
                    help="Fallback LLM server URL (e.g. http://localhost:8080)")
     p.add_argument("--checkpoint-dir", type=str, default="calm/hrm/checkpoints")
+    p.add_argument("--gemma-gguf", type=str, default=None,
+                   help="Load GemmaSubstrate as native fallback (no llama-server proxy)")
+    p.add_argument("--gemma-max-len", type=int, default=8192,
+                   help="Max sequence length for Gemma KV cache (default 8192)")
+    p.add_argument("--gemma-max-tokens", type=int, default=64,
+                   help="Max generated tokens per request (default 64)")
+    p.add_argument("--gemma-device", type=str, default="cuda")
     args = p.parse_args()
     serve(port=args.port, fallback_url=args.fallback,
-          checkpoint_dir=args.checkpoint_dir)
+          checkpoint_dir=args.checkpoint_dir,
+          gemma_gguf=args.gemma_gguf,
+          gemma_max_len=args.gemma_max_len,
+          gemma_max_tokens=args.gemma_max_tokens,
+          gemma_device=args.gemma_device)
 
 
 if __name__ == "__main__":

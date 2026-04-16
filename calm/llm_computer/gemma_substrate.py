@@ -703,6 +703,35 @@ class GemmaSubstrate:
 
         return h
 
+    def generate(self, prompt: str, tokenizer, max_tokens: int = 64,
+                 device: str = "cuda", stop_on_eos: bool = True
+                 ) -> dict:
+        """Greedy generation. Returns {'text', 'token_ids', 'prefill_s', 'decode_s'}.
+        Fresh KV cache per call — caller manages multi-turn state."""
+        import time
+        ids = tokenizer.encode(prompt)
+        cache = KVCache(self.config.n_layers, device=device)
+        t0 = time.time()
+        with torch.no_grad():
+            logits = self.forward(torch.tensor([ids]), device=device,
+                                   kv_cache=cache, start_pos=0)
+        next_id = int(logits[0, -1].argmax().item())
+        prefill_s = time.time() - t0
+        generated = [next_id]
+        for _ in range(max_tokens - 1):
+            if stop_on_eos and next_id == tokenizer.EOS_ID:
+                break
+            with torch.no_grad():
+                logits = self.forward(
+                    torch.tensor([[next_id]]), device=device,
+                    kv_cache=cache, start_pos=len(ids) + len(generated) - 1)
+            next_id = int(logits[0, -1].argmax().item())
+            generated.append(next_id)
+        decode_s = time.time() - t0 - prefill_s
+        text = tokenizer.decode(generated)
+        return {"text": text, "token_ids": generated,
+                "prefill_s": prefill_s, "decode_s": decode_s}
+
 
 # --- Helpers ---
 
