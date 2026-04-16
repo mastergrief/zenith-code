@@ -117,6 +117,7 @@ class MmapTq4Linear:
         n_elements = self.n_blocks * 256
         tq4 = Tq4Tensor(qs=qs, d=d, shape=(n_elements,))
         w_flat = dequantize_tq4(tq4)
+        # Reshape: in_features rows × out_features cols
         rows = self.in_features
         cols = n_elements // rows
         w = w_flat.reshape(rows, cols)
@@ -350,6 +351,27 @@ class GemmaSubstrate:
         t_embd = tensors["token_embd.weight"]
         model.token_embd = GpuQ6KEmbedding(t_embd.data, cfg.vocab_size, cfg.d_model)
 
+        # Per-layer token embedding (Q6_K, 10752×262144)
+        # d_per_layer * n_layers = 256 * 42 = 10752 per token
+        model.per_layer_token_embd = None
+        model.per_layer_model_proj = None
+        model.per_layer_proj_norm_w = None
+        if "per_layer_token_embd.weight" in tensors:
+            d_pl = cfg.d_per_layer * cfg.n_layers  # 10752
+            print(f"[gemma-substrate] loading per-layer embedding (Q6_K, {cfg.vocab_size}×{d_pl})...")
+            t_pl = tensors["per_layer_token_embd.weight"]
+            model.per_layer_token_embd = GpuQ6KEmbedding(t_pl.data, cfg.vocab_size, d_pl)
+        if "per_layer_model_proj.weight" in tensors:
+            t_proj = tensors["per_layer_model_proj.weight"]
+            # FP16 → FP32
+            import numpy as _np
+            raw = _np.frombuffer(t_proj.data, dtype=_np.float16).copy()
+            model.per_layer_model_proj = torch.from_numpy(raw.astype(_np.float32)).reshape(
+                int(t_proj.shape[0]), int(t_proj.shape[1]))
+            print(f"[gemma-substrate] per_layer_model_proj: {model.per_layer_model_proj.shape}")
+        if "per_layer_proj_norm.weight" in tensors:
+            model.per_layer_proj_norm_w = _load_fp32(tensors, "per_layer_proj_norm.weight")
+
         # Output norm
         model.output_norm_w = _load_fp32(tensors, "output_norm.weight")
 
@@ -464,8 +486,12 @@ class GemmaSubstrate:
         dequantize_tq4 = _cached_dequant
         print(f"[gemma-substrate] cached Pi + centroids on {device}")
 
-        # Move Q6_K embedding components to GPU (~553 MB)
-        self.token_embd.to_gpu(device)
+        # Move Q6_K embedding components to GPU
+        self.token_embd.to_gpu(device)  # ~553 MB
+        if self.per_layer_token_embd is not None:
+            self.per_layer_token_embd.to_gpu(device)  # ~553 MB more
+        if self.per_layer_model_proj is not None:
+            self.per_layer_model_proj = self.per_layer_model_proj.to(device)
 
         print(f"[gemma-substrate] preloading tq4 weights to {device}...")
         total_bytes = 0
@@ -510,24 +536,26 @@ class GemmaSubstrate:
         h = self.token_embd[token_ids].to(device)
         h = h * math.sqrt(cfg.d_model)
 
-        # Per-layer embedding (computed once, used by all layers)
-        # TODO: load per_layer_token_embd (Q6_K, 10752×262144) — skipped for now
+        # Per-layer embedding (computed once from input tokens, used by all layers)
+        # Matches gemma4-iswa.cpp project_per_layer_inputs()
         self._per_layer_embd = None
-        if False:  # per-layer embedding disabled until Q6_K loader handles 10752×262K
-            # Look up per-layer token embedding: (vocab, d_per_layer * n_layers)
-            pl_embd = self.per_layer_embd[token_ids].to(device)  # (B, S, d_per_layer * n_layers)
+        if self.per_layer_token_embd is not None:
+            d_pl = cfg.d_per_layer * cfg.n_layers  # 10752
+            # Look up per-layer token embedding
+            pl_embd = self.per_layer_token_embd[token_ids]  # (B, S, 10752) on GPU
             pl_embd = pl_embd * math.sqrt(cfg.d_per_layer)
-            pl_embd = pl_embd.reshape(B, S, cfg.d_per_layer, cfg.n_layers)
+            # Reshape to (B, S, n_layers, d_per_layer) — norm applies to last dim
+            pl_embd = pl_embd.reshape(B, S, cfg.n_layers, cfg.d_per_layer)
             # Project main embedding to per-layer space
-            if self.per_layer_proj is not None:
-                h_proj = h @ self.per_layer_proj.to(device)  # (B, S, d_per_layer * n_layers)
+            if self.per_layer_model_proj is not None:
+                h_proj = h @ self.per_layer_model_proj.to(device)  # (B, S, 10752)
                 h_proj = h_proj * (1.0 / math.sqrt(cfg.d_model))
-                h_proj = h_proj.reshape(B, S, cfg.d_per_layer, cfg.n_layers)
+                h_proj = h_proj.reshape(B, S, cfg.n_layers, cfg.d_per_layer)
                 if self.per_layer_proj_norm_w is not None:
                     h_proj = _rms_norm(h_proj, self.per_layer_proj_norm_w.to(device), cfg.rms_norm_eps)
                 pl_embd = (pl_embd + h_proj) * (1.0 / math.sqrt(2.0))
-            # Store as list of per-layer tensors: [n_layers × (B, S, d_per_layer)]
-            self._per_layer_embd = [pl_embd[:, :, :, i] for i in range(cfg.n_layers)]
+            # Store as list indexed by layer: each is (B, S, d_per_layer)
+            self._per_layer_embd = [pl_embd[:, :, i, :] for i in range(cfg.n_layers)]
 
         for i, layer in enumerate(self.layers):
             h = self._forward_layer(h, layer, i, kv_cache=kv_cache,
