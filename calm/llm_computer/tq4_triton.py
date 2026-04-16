@@ -33,36 +33,49 @@ def _tq4_matvec_kernel(
     out_features,
     BPR: tl.constexpr,           # blocks per row of W (= in_features / 256)
     BLOCK_HALF: tl.constexpr,    # 128 (half block, after nybble unpack)
+    BLOCK_M: tl.constexpr,       # rows of W per program (tiling factor)
 ):
-    """One program = one output row. Loops over BPR blocks of W and
-    accumulates dot products with the corresponding x_rot segments."""
+    """One program = BLOCK_M consecutive output rows. The x_rot segment
+    for each input block is loaded ONCE per program and reused across
+    BLOCK_M dot products — saves redundant x_rot reads vs the BLOCK_M=1
+    version. Within the program, BLOCK_M dot products run in parallel."""
     pid = tl.program_id(0)
-    if pid >= out_features:
+    row_base = pid * BLOCK_M
+    if row_base >= out_features:
         return
 
-    half_idx = tl.arange(0, BLOCK_HALF)  # (128,)
-    acc = tl.zeros((), dtype=tl.float32)
+    half_idx = tl.arange(0, BLOCK_HALF)            # (128,)
+    m_idx = tl.arange(0, BLOCK_M)                  # (BLOCK_M,) row offsets
+    acc = tl.zeros((BLOCK_M,), dtype=tl.float32)
 
     for b in range(BPR):
-        block_idx = pid * BPR + b
-        d_block = tl.load(d_ptr + block_idx)
-
-        # Load 128 packed bytes
-        qs = tl.load(qs_ptr + block_idx * BLOCK_HALF + half_idx).to(tl.int32)
-        low = qs & 0xF
-        high = (qs >> 4) & 0xF
-        c_low = tl.load(centroids_ptr + low)
-        c_high = tl.load(centroids_ptr + high)
-
-        # x_rot positions for this block: low at evens, high at odds
+        # x_rot for this input block: load once, broadcast across BLOCK_M rows
         x_base = b * 256
-        x_low = tl.load(x_rot_ptr + x_base + 2 * half_idx)
+        x_low = tl.load(x_rot_ptr + x_base + 2 * half_idx)    # (128,)
         x_high = tl.load(x_rot_ptr + x_base + 2 * half_idx + 1)
 
-        block_dot = tl.sum(c_low * x_low) + tl.sum(c_high * x_high)
-        acc += block_dot * d_block
+        # Per-row block index: (row_base + m_idx) * BPR + b. Build (BLOCK_M,).
+        block_idx_m = (row_base + m_idx) * BPR + b   # (BLOCK_M,)
+        # Per-row d
+        d_m = tl.load(d_ptr + block_idx_m)            # (BLOCK_M,)
 
-    tl.store(y_ptr + pid, acc)
+        # Per-row qs: (BLOCK_M, 128) — broadcast block_idx_m over half_idx
+        qs_offsets = (block_idx_m[:, None] * BLOCK_HALF
+                      + half_idx[None, :])             # (BLOCK_M, 128)
+        qs_m = tl.load(qs_ptr + qs_offsets).to(tl.int32)
+        low_m = qs_m & 0xF
+        high_m = (qs_m >> 4) & 0xF
+        c_low_m = tl.load(centroids_ptr + low_m)      # (BLOCK_M, 128)
+        c_high_m = tl.load(centroids_ptr + high_m)
+
+        # Dot products: (BLOCK_M, 128) x (128,) → (BLOCK_M,)
+        block_dot = (tl.sum(c_low_m * x_low[None, :], axis=1)
+                     + tl.sum(c_high_m * x_high[None, :], axis=1))
+        acc += block_dot * d_m
+
+    # Store BLOCK_M outputs, masking out-of-range rows
+    rows = row_base + m_idx
+    tl.store(y_ptr + rows, acc, mask=rows < out_features)
 
 
 def tq4_matvec_triton(
@@ -89,15 +102,35 @@ def tq4_matvec_triton(
         f"qs has {n_blocks} blocks, expected {out_features * bpr}")
 
     y = torch.empty(out_features, device=x_rot.device, dtype=torch.float32)
-    grid = (out_features,)
+    BLOCK_M = _pick_block_m(out_features)
+    grid = ((out_features + BLOCK_M - 1) // BLOCK_M,)
     _tq4_matvec_kernel[grid](
         x_rot, qs.view(-1), d, centroids, y,
         in_features, out_features,
         BPR=bpr,
         BLOCK_HALF=128,
+        BLOCK_M=BLOCK_M,
         num_warps=4,
     )
     return y
+
+
+def _pick_block_m(out_features: int) -> int:
+    """Pick BLOCK_M based on out_features. Tuned on RTX 4070M for the shapes
+    used by gemma-4-E4B-it. The bigger the matmul the more rows we want to
+    bundle (amortizes x_rot loads); the smaller, the fewer (need enough
+    programs to fill the SMs)."""
+    # Heuristic from the per-shape sweep: target ~32-64 programs total when
+    # out_features is large, BLOCK_M=1 when out_features is small.
+    if out_features >= 4096:
+        return 64
+    if out_features >= 2048:
+        return 32
+    if out_features >= 1024:
+        return 16
+    if out_features >= 512:
+        return 4
+    return 1
 
 
 def tq4_linear_triton(
@@ -135,6 +168,103 @@ def tq4_linear_triton(
             flat[i].contiguous(), qs, d, centroids,
             out_features, in_features)
     return out.reshape(*batch, out_features)
+
+
+# --- Dual tq4 matvec: shared input, two parallel weight matrices ---
+#
+# Used for ffn_gate + ffn_up (same x → two outputs) and optionally for
+# attn_k + attn_v in own-KV layers (same shape, same x). Saves one full
+# Python/launch round-trip and one Pi-rotation per call.
+
+@triton.jit
+def _tq4_matvec_dual_kernel(
+    x_rot_ptr,
+    qs_a_ptr, d_a_ptr,
+    qs_b_ptr, d_b_ptr,
+    centroids_ptr,
+    y_a_ptr, y_b_ptr,
+    in_features,
+    out_features,
+    BPR: tl.constexpr,
+    BLOCK_HALF: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+):
+    pid = tl.program_id(0)
+    row_base = pid * BLOCK_M
+    if row_base >= out_features:
+        return
+
+    half_idx = tl.arange(0, BLOCK_HALF)
+    m_idx = tl.arange(0, BLOCK_M)
+    acc_a = tl.zeros((BLOCK_M,), dtype=tl.float32)
+    acc_b = tl.zeros((BLOCK_M,), dtype=tl.float32)
+
+    for b in range(BPR):
+        x_base = b * 256
+        x_low = tl.load(x_rot_ptr + x_base + 2 * half_idx)
+        x_high = tl.load(x_rot_ptr + x_base + 2 * half_idx + 1)
+
+        block_idx_m = (row_base + m_idx) * BPR + b
+
+        # Matrix A
+        d_a_m = tl.load(d_a_ptr + block_idx_m)
+        qs_a_off = block_idx_m[:, None] * BLOCK_HALF + half_idx[None, :]
+        qs_a_m = tl.load(qs_a_ptr + qs_a_off).to(tl.int32)
+        c_a_low = tl.load(centroids_ptr + (qs_a_m & 0xF))
+        c_a_high = tl.load(centroids_ptr + ((qs_a_m >> 4) & 0xF))
+        acc_a += d_a_m * (tl.sum(c_a_low * x_low[None, :], axis=1)
+                           + tl.sum(c_a_high * x_high[None, :], axis=1))
+
+        # Matrix B
+        d_b_m = tl.load(d_b_ptr + block_idx_m)
+        qs_b_off = block_idx_m[:, None] * BLOCK_HALF + half_idx[None, :]
+        qs_b_m = tl.load(qs_b_ptr + qs_b_off).to(tl.int32)
+        c_b_low = tl.load(centroids_ptr + (qs_b_m & 0xF))
+        c_b_high = tl.load(centroids_ptr + ((qs_b_m >> 4) & 0xF))
+        acc_b += d_b_m * (tl.sum(c_b_low * x_low[None, :], axis=1)
+                           + tl.sum(c_b_high * x_high[None, :], axis=1))
+
+    rows = row_base + m_idx
+    mask = rows < out_features
+    tl.store(y_a_ptr + rows, acc_a, mask=mask)
+    tl.store(y_b_ptr + rows, acc_b, mask=mask)
+
+
+def tq4_linear_dual_triton(
+    x: torch.Tensor,
+    qs_a: torch.Tensor, d_a: torch.Tensor,
+    qs_b: torch.Tensor, d_b: torch.Tensor,
+    pi: torch.Tensor,
+    centroids: torch.Tensor,
+    out_features: int,
+    in_features: int,
+):
+    """Two tq4 linears sharing the same input. Returns (y_a, y_b)."""
+    *batch, in_f = x.shape
+    assert in_f == in_features and in_f % 256 == 0
+    bpr = in_f // 256
+    x_rot = (x.reshape(*batch, bpr, 256) @ pi.T).reshape(*batch, in_f)
+    if not x_rot.is_contiguous():
+        x_rot = x_rot.contiguous()
+    flat = x_rot.reshape(-1, in_f)
+    n = flat.shape[0]
+    y_a = torch.empty(n, out_features, device=x.device, dtype=torch.float32)
+    y_b = torch.empty(n, out_features, device=x.device, dtype=torch.float32)
+    # Dual kernel has 2x register pressure vs single — cap BLOCK_M lower.
+    BLOCK_M = min(32, _pick_block_m(out_features))
+    grid = ((out_features + BLOCK_M - 1) // BLOCK_M,)
+    for i in range(n):
+        _tq4_matvec_dual_kernel[grid](
+            flat[i].contiguous(),
+            qs_a.view(-1), d_a, qs_b.view(-1), d_b,
+            centroids,
+            y_a[i], y_b[i],
+            in_features, out_features,
+            BPR=bpr, BLOCK_HALF=128, BLOCK_M=BLOCK_M,
+            num_warps=4,
+        )
+    return (y_a.reshape(*batch, out_features),
+            y_b.reshape(*batch, out_features))
 
 
 # --- Q6_K fused dequant + matvec (output head / embeddings) ---

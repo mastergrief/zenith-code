@@ -810,8 +810,24 @@ class GemmaSubstrate:
 
         # --- FFN ---
         cur = _rms_norm(attn_out, layer.ffn_norm_w.to(device), cfg.rms_norm_eps)
-        gate = layer.ffn_gate(cur)
-        up = layer.ffn_up(cur)
+        # gate+up share input — fuse into one Triton call when possible
+        if (_use_triton
+            and isinstance(layer.ffn_gate, MmapTq4Linear)
+            and isinstance(layer.ffn_up, MmapTq4Linear)
+            and layer.ffn_gate._gpu_qs is not None
+            and layer.ffn_up._gpu_qs is not None):
+            from calm.llm_computer.tq4_triton import tq4_linear_dual_triton
+            gate, up = tq4_linear_dual_triton(
+                cur,
+                layer.ffn_gate._gpu_qs, layer.ffn_gate._gpu_d,
+                layer.ffn_up._gpu_qs, layer.ffn_up._gpu_d,
+                MmapTq4Linear._shared_pi, MmapTq4Linear._shared_centroids,
+                out_features=layer.ffn_gate.out_features,
+                in_features=layer.ffn_gate.in_features,
+            )
+        else:
+            gate = layer.ffn_gate(cur)
+            up = layer.ffn_up(cur)
         cur = F.gelu(gate, approximate="tanh") * up
         cur = layer.ffn_down(cur)
 
