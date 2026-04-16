@@ -137,6 +137,18 @@ class WordProblemGenerator:
     def __init__(self, seed: int = 42):
         self._rng = random.Random(seed)
 
+    def _sample_operand(self, max_val: int) -> int:
+        """Balanced digit-length sampling (same as NLMathDataGenerator)."""
+        if max_val <= 9:
+            return self._rng.randint(1, max_val)
+        buckets = [(1, 9)]
+        if max_val >= 10:
+            buckets.append((10, min(99, max_val)))
+        if max_val >= 100:
+            buckets.append((100, max_val))
+        lo, hi = self._rng.choice(buckets)
+        return self._rng.randint(lo, hi)
+
     def generate(self, n: int = 2000) -> List[WordProblem]:
         problems: List[WordProblem] = []
         attempts = 0
@@ -144,9 +156,9 @@ class WordProblemGenerator:
             attempts += 1
             tmpl, expr_tmpl, (xmax, ymax, zmax) = self._rng.choice(_TEMPLATES)
             vals = {
-                "x": self._rng.randint(1, xmax) if xmax else 0,
-                "y": self._rng.randint(1, ymax) if ymax else 0,
-                "z": self._rng.randint(1, zmax) if zmax else 0,
+                "x": self._sample_operand(xmax) if xmax else 0,
+                "y": self._sample_operand(ymax) if ymax else 0,
+                "z": self._sample_operand(zmax) if zmax else 0,
             }
             # For subtraction templates, ensure non-absurd answers — but
             # allow negatives (HRM just echos structure; interpreter
