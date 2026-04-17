@@ -135,18 +135,50 @@ If iterate: loop back to Step 4 (templates) or Step 5 (training config).
 ## STEP 7 — INSTALL INTO PROD GEMMA SUBSTRATE
 
 Install paths into `GemmaSubstrate` (`calm/llm_computer/gemma_substrate.py`,
-gemma-4-E4B-it-tq4). Two patterns coexist; pick one per card:
+gemma-4-E4B-it-tq4). Two distinct modes coexist; pick per card based on
+the tradeoffs below.
 
-- **`install_card_in_attention(...)`** — card weights live INSIDE Gemma's
-  `attn_q/k/v/output` tensors at a (sub-head, channel) rectangle.
-  Requires `convert_layer_to_fp32(layer_idx)` first. Use for compiled
-  cards (`mode='hard_max'`) and lookup cards (`mode='softmax'`). One
-  hosting FP32 layer can host many cards. Card weights ship in the .pt.
-- **`CardSlot(...).attach(m, preserve=True)`** — card runs as a separate
-  Module forward; output added to residual at the install layer; subsequent
-  layers' attn/ffn/proj contributions to the reserved channels are masked.
-  Use for PTs (copy-augmented attention not reducible to a sub-head mode)
-  and any card with a custom forward.
+### 7.0 — Install mode tradeoffs
+
+| Aspect | **In-attention** (`install_card_in_attention`) | **Residual-additive** (`CardSlot.attach`) |
+|---|---|---|
+| Card compute lives | Inside Gemma's `attn_q/k/v/output` matmul | Separate Module, appended after layer |
+| Upgrades Gemma's attention directly | Yes — same kernel | No — runs alongside |
+| Sub-head budget | Consumes reserved sub-heads | None |
+| FP32 cost | ~330 MB SWA / ~600 MB global per host layer | Zero |
+| Supported card types | Pure-attention only today (FFN not yet migrated) | Any `nn.Module` including PT, FFN cards |
+| Custom attention (PT copy gate) | Impossible | Required |
+| Perf overhead | Zero | Small (extra matmul per slot) |
+| Composition | N cards per layer, disjoint sub-heads | N slots per layer, append order |
+
+**Known limitation**: `install_card_in_attention` writes attn tensors only.
+Compiled cards with ReGLU/FFN (`adder_tiny`, `gcd`, `reasoning_engine`)
+need the FFN migration (not yet shipped) before they can be fully
+in-attention. Until then, those cards must use CardSlot.
+
+**Rule of thumb**:
+- Pure-attention compiled card (`add_one`, `threshold`, `copy_past`,
+  `retrieve_by_index`) + VRAM budget for FP32 host → **in-attention**
+- Anything with a custom forward (PTs) or ReGLU → **CardSlot**
+- Recall cards from `KnowledgeStore` → **CardSlot** today (FFN-only
+  card; flips to in-attention once FFN migration ships)
+
+### 7.0.1 — Facade class (preferred packaging)
+
+Rather than write a one-off install script per domain, package the
+PT + compute + recall card + VerificationHook as a subclass of the
+pattern in `calm/llm_computer/facades/math_addition.py`
+(`MathAdditionFacade`). The class owns: allocation dataclass,
+per-card CardSlot / in-attention install, mutable prompt state,
+Router registry, detach reversal, save/load. New domains inherit
+the install/detach/set_prompt contract.
+
+Two install patterns become two methods:
+  - `install(gemma, mode="residual")` — all cards via CardSlot
+  - `install(gemma, mode="in_attention")` — compute cards in-attention
+    (where supported), PT + recall via CardSlot
+
+Only write a one-off install script if the facade doesn't fit yet.
 
 ### 7.1 — Allocate from the registry
 
@@ -171,21 +203,46 @@ VRAM budget (8 GB RTX 4070):
 - Per FP32 global layer (5, 11, 17, 23, 29, 35, 41): ~600 MB
 - Practical max: 5-7 FP32 layers → 5-7 hosting slots for in-attention
 
-`AskUserQuestion`: **Pick the install pattern**
-- Option A: "in-attention (hard_max for compiled, softmax for HRM-style)
-  — card ships in .pt (Recommended for compiled cards)"
-- Option B: "CardSlot — card stays as separate Module (Required for PTs)"
-- Option C: "Both — compiled card in-attention + PT via CardSlot at the
-  same host_layer (full CRLM pipeline)"
+`AskUserQuestion`: **Pick the install mode** (see 7.0 table for tradeoffs)
+- Option A: "in-attention — pure-attention compiled cards only, FP32
+  host cost, zero runtime overhead, consumes sub-head budget"
+- Option B: "CardSlot (residual-additive) — any card incl. PT + FFN
+  cards, no FP32 cost, small runtime overhead, no sub-head consumption"
+- Option C: "Hybrid — pure-attention compute card in-attention + PT /
+  recall card / FFN-using card via CardSlot at the same host_layer"
 
-### 7.2 — Write the install script
+### 7.2 — Package as a facade class (preferred)
 
-Create `scripts/install_<domain>_in_gemma.py`. Skeleton for a compiled
-card (in-attention, hard_max):
+Subclass the pattern in `calm/llm_computer/facades/math_addition.py`:
+
+```python
+# calm/llm_computer/facades/<domain>.py
+class <Domain>Facade:
+    DEFAULT_LAYER = ...          # pick host layer from registry
+    DEFAULT_CH_BASE = ...        # pick channel base from registry
+    PT_VOCAB = 80                # copy_augmented PT vocab
+    CARD_VOCAB = ...             # compute card vocab_size
+    PT_OPERATOR = "..."          # '+' or 'gcd' or 'factorial'
+
+    def __init__(self, pt_ckpt_path, layer=..., ch_base=..., device="cuda"):
+        # Load PT, compute card, build router route
+        ...
+
+    def install(self, gemma, mode="residual"):
+        # mode="residual" → CardSlot for both PT + card
+        # mode="in_attention" → CardSlot for PT, in-attention for card
+        #   (only if the card is pure-attention — see 7.0 limitation)
+        ...
+
+    def detach(self, gemma): ...
+    def set_prompt(self, nl_prompt: str): ...
+```
+
+One-off install script (only if the facade doesn't fit):
 
 ```python
 from calm.llm_computer.gemma_substrate import (
-    GemmaSubstrate, enable_triton_tq4, VerificationHook)
+    GemmaSubstrate, enable_triton_tq4, CardSlot, VerificationHook)
 from calm.llm_computer.synth.gemma_tokenizer import GemmaTokenizer
 from calm.llm_computer.programs.<domain>_card import build_<domain>
 
@@ -197,21 +254,28 @@ m.warmup(seq_lens=(1, 6))
 
 card = build_<domain>().cuda().eval()
 HOST_LAYER, CH_OFF, D_CARD, SH_OFF = 30, 2552, 8, 0    # from registry
+# In-attention path (pure-attention card only):
 m.convert_layer_to_fp32(HOST_LAYER)
 info = m.install_card_in_attention(
     card=card, layer_idx=HOST_LAYER, sub_head_offset=SH_OFF,
     ch_off=CH_OFF, d_card=D_CARD, mode="hard_max")
+# CardSlot path (any card):
+# slot = CardSlot(layer_idx=HOST_LAYER, ch_off=CH_OFF, card=card,
+#                 d_card=D_CARD, card_input_fn=..., output_fn=...)
+# slot.attach(m, preserve=True)
 
-# Optional: verification hook to bias Gemma logits on card hit
 tok = GemmaTokenizer.from_gguf(
     "/home/gabe/models/gemma-4-E4B-it-tq4-aligned.gguf")
-vocab_map = {...}                  # card_token → Gemma BPE token
-# (For PT: use CardSlot pattern — see scripts/gemma_learning_loop_demo.py)
+vocab_map = {...}          # card_token → Gemma BPE token
+hook = VerificationHook(slot_or_info, vocab_map, boost=50.0, min_margin=0.5)
+m.verification_hooks.append(hook)
 ```
 
-For PT install (CardSlot pattern), copy from `gemma_learning_loop_demo.py`
-or `gemma_substrate.py` docstrings — `card_input_fn` discretizes residual
-to char tokens, `output_fn` writes logits back to reserved channels.
+For PT install (CardSlot pattern), see
+`calm/llm_computer/facades/math_addition.py` — `card_input_fn` returns
+tokenized prompt, `output_fn` writes bounded one-hot decoded argmax to
+reserved channels (raw PT log-probs warp output_norm — always bound to
+{0, 1} before writing).
 
 ### 7.3 — Verify install end-to-end
 
