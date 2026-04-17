@@ -151,9 +151,14 @@ For each target capability X, the workflow is roughly:
 2. **Identify candidate layers** via activation patching: zero out
    each layer's contribution on the corpus, see which zeroing most
    degrades performance. Those are the load-bearing layers.
+   (Concrete example: Round 16 ran a 42-layer × 10-prompt sweep on
+   Gemma 4 E4B arithmetic and localized to L22-L30 with L23 peak.)
 3. **Identify candidate attention heads** via attention probing:
    extract each head's attention pattern on the corpus, look for
-   structure (positional, topical, causal).
+   structure (positional, topical, causal). (Rounds 17-18 ran a
+   poor-man's version on L23: per-head ablation + Q/K/V decomposition
+   localized 93% of L23's arithmetic contribution to H4's V
+   projection. Proper attention-pattern probing still pending.)
 4. **Identify candidate FFN neurons** via neuron probing: find
    neurons that fire on capability-relevant inputs and not on
    controls.
@@ -191,6 +196,49 @@ long-horizon research bet — it's what makes the substrate
 genuinely competitive with pure LM capacity, because it gives us
 the LM's own capabilities as inspectable, reversible, auditable
 compiled cards.
+
+## Validated on Gemma 4 E4B (session 33, Rounds 13-19)
+
+The first mechanistic-interpretability arc on this model. Validated
+that steps 1-2 of the tracing workflow (corpus + activation patching)
+produce clean results on capabilities whose information flow aligns
+with Gemma's architecture. Full arc details in `tracing_roadmap.md`
+§"Gemma 4 E4B tracing findings"; summary:
+
+- **Activation patching (R16)** localizes arithmetic to **L22-L30
+  cluster**, L23 peak (mean Δ=-10.18 on correct-digit logit, hurts
+  10/10 arithmetic pairs). 5B params narrowed to 9 layers via a 420-
+  forward sweep in ~15 minutes.
+- **Per-head ablation (R17)** narrows L23 (8 Q-heads) to **H1 and
+  H4** — other 6 heads have mean Δ ≈ 0.
+- **Q/K/V decomposition (R18)** identifies **V (content) as the
+  signal carrier**, not Q/K (attention pattern). H4's V ablation =
+  -9.51, accounts for 93% of L23's total arithmetic contribution.
+- **Linear probe (R19)**: V linearly encodes the product's first
+  digit at 2x chance (0.22 vs 0.11, 270 samples). Real but indirect
+  — V likely carries operand and intermediate representations, not
+  the final digit. SAE work needed for clean features.
+
+Concrete target for the full Phase-2 SAE + ACDC pipeline:
+`L23.attn_v (KV group 1)`, a 512-d projection with ~2.6M weights.
+Compact enough to train a focused SAE on.
+
+**Why it worked:** Gemma's alternating SWA/global attention forces
+cross-operand aggregation into global layers (L5, L11, L17, **L23**,
+**L29**, L35, L41). Arithmetic requires seeing both operands → must
+happen at a global layer. L23 and L29 were architecturally predicted;
+measurement confirmed. Capabilities whose information flow matches
+Gemma's structure should localize similarly; capabilities that are
+inherently distributed (open-ended semantics, long-range reasoning)
+will not.
+
+**Ruled out by this arc:**
+- Naive logit lens as a sole tracing tool (R13): noisy at middle
+  layers; use with other probes.
+- Single-prompt activation patching as a localization tool (R14→15):
+  overgeneralization risk; always aggregate.
+- L35 as the arithmetic circuit (R14→16 correction): minor
+  contributor; the real seat is L22-L30 with L23 peak.
 
 ## The corrected upper bound
 

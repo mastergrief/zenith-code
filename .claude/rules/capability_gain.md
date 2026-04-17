@@ -106,6 +106,16 @@ are the real wins. Gemma was arithmetically wrong; the compiled
 multiplier was right; step-through digit bias delivered the correct
 answer through Gemma's output. Both measurements moved.
 
+**Independently confirmed by tracing (Rounds 17-19):** the 17×23
+win is causally routed through specific weights — L23 H4's V-
+projection (~2.6M params) is the load-bearing site for arithmetic
+content in Gemma. Ablating H4's V alone drops correct-digit logit
+by -9.51 on average across 10 arithmetic pairs. See
+`.claude/rules/tracing_roadmap.md` §"Gemma 4 E4B tracing findings."
+This closes the loop: the capability gain isn't a prompt-engineering
+trick, it's a measurable intervention on identifiable weights that
+Gemma itself uses for the same task.
+
 ## When you think you have a gain but you don't
 
 Checklist — if any answer is yes, it's probably not real:
