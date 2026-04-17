@@ -21,6 +21,7 @@ useful about general AI, nothing dangerous.
 | **Persistent knowledge DB** | Corrections compiled into weights, cross-session | The .pt IS the database. Grows smarter session over session |
 | **Fully local** | No cloud, no API, no internet required | Privacy, zero cost, offline-capable |
 | **Safety by architecture** | User-controlled, inspectable, reversible, scoped | Alignment without RLHF — the system can't set its own goals |
+| **Tier 2/3 augmentation** | Mapping-guided compiled replacements (Tier 2) + from-scratch compiled capabilities (Tier 3) | Tier 1 (preserve) is free — Tiers 2 and 3 are the product. Factorial per-domain scaling; marginal cost of 100th domain ≈ 1st. See `augmentation_thesis.md` |
 
 ## Safety as a Feature
 

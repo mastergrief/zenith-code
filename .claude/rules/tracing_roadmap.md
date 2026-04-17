@@ -185,6 +185,7 @@ Ruled-out entries (from this session's rounds):
 
 ## Related rules
 
+- `augmentation_thesis.md` — strategic synthesis: circuit typology, tier framework, factorial scaling, anti-skepticism (settled positions from R20-R36)
 - `tracing_intelligence.md` — first-principles framing
 - `capability_gain.md` — measurement discipline
 - `embed_intelligence.md` — delivery mechanisms
