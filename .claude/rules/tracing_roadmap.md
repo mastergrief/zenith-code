@@ -1,0 +1,149 @@
+# Tracing Roadmap — what's compiled, what's next
+
+Concrete inventory of (a) compiled cards that exist, (b) cards that
+would be easy wins but haven't been built yet, (c) the research path
+for harder capabilities. Updates as rounds ship.
+
+See `tracing_intelligence.md` for the first-principles framing and
+`capability_gain.md` for what counts as a validated win.
+
+## State today (after Round 11)
+
+### Shipped and verified
+
+| Card | Status | Verification | Install path tested |
+|---|---|---|---|
+| `adder_tiny` | Exhaustive 16/16 | Standalone + facade | CardSlot |
+| `adder` | Exhaustive 10K/10K | Standalone only | Not yet |
+| `multiplier` (new) | Exhaustive 3390/3390 (a·b < 1000) | Standalone + facade on real failures | Step-through digit bias |
+| `add_one`, `threshold`, `copy_past`, `retrieve_by_index`, `retrieve_threshold` | Various exhaustive | Standalone | Some via in-attention |
+| `gcd`, `factorial`, `is_prime` | Exhaustive | Standalone | Not yet |
+| `dispatched_v4` | 791/791 | Standalone | In-attention verified |
+| `reasoning_engine` | 512/512 | Standalone | Not yet as facade |
+| `KnowledgeStore` recall card | 10/10 in Round 6 demo | In facade | CardSlot |
+
+### Facades built
+
+| Facade | Card(s) | Rounds | Honest result |
+|---|---|---|---|
+| `MathAdditionFacade` | PT + adder_tiny | 6-9 | Format coercion on task Gemma already solved. First reusable class (Round 8). |
+| One-off reasoning facade | PT + adder_tiny, recall card | 6, 7, 11 | R6/R7 were format coercion; R11 (multiplication) is the first real capability win. |
+
+### Install mechanisms verified
+
+- CardSlot + preservation masking: Rounds 4-11
+- Token-embedding projection at layer 33: Round 9
+- Step-through digit bias: Round 11 (multi-token answers)
+- VerificationHook with min_margin: Rounds 6-11
+- Save/load round-trip of full substrate: Round 1 (bit-identical logits)
+- CUDA Graphs × FP32 layers compat: Round 2 (4.29× speedup preserved)
+
+## Next rounds — tier 1 (trivial, ship fast)
+
+Each is hours of labor. Template: gate-graph card → exhaustive
+verification → facade with step-through bias → measure on Gemma
+baseline failures.
+
+| Round | Target | Gate-graph pattern | Expected size |
+|---|---|---|---|
+| 12 | Primality facade | `is_prime` exists; need Y/N step-through bias + `wait_marker` for Gemma's verbose prompt | Small |
+| 13 | GCD facade | `gcd` (256/256) + PT handling "gcd of A and B" | Small |
+| 14 | Factorial (7!, 8!+) | Existing `factorial` + step-through multi-digit | Medium |
+| 15 | 3-digit multiplication | Digit-decomposition (covered below) — can't fit direct table | Medium-large |
+| 16 | Modular arithmetic (`a mod b`) | New card, similar pattern to gcd | Small |
+| 17 | Exponentiation (small) | `a^b` for small b via repeated multiply | Medium |
+| 18 | Roman numeral ↔ decimal | Lookup table, compiled from CALM backend | Tiny |
+| 19 | Unit conversion (temperature, length) | Lookup + linear | Tiny |
+| 20 | Timezone offset | Per-city DB | Tiny |
+
+Rules for tier 1 rounds:
+- Must establish Gemma baseline failure BEFORE building (per
+  `capability_gain.md` §"failure-surface gate").
+- Must verify card exhaustively on its input space.
+- Must show both measurements move (raw + user-facing).
+- One round per commit with before/after table.
+
+## Next rounds — tier 2 (designed, novel circuits)
+
+Labor: days to weeks per card. Each requires designing the circuit,
+not reverse-engineering.
+
+| Target | Design approach | Motivation |
+|---|---|---|
+| **General planner** (decompose goal → track subtasks) | Channel-as-register + dispatched_v4-style opcode dispatch | First circuit that touches multi-step reasoning. ~500 gate-graph nodes. |
+| **AST parser for Python expressions** | LookUpExact over token catalog + recursive structure via depth | Enables code-aware facades |
+| **Type checker (simple)** | AST + lookup tables of type rules | Builds on AST parser |
+| **Analogy-by-structural-match** | Graph isomorphism via LookUpExact + step-function consistency checks | Tests "abstract reasoning beyond what Gemma encodes" claim |
+| **Sequential reasoner** (chain-of-thought style) | Channel-as-register state machine, step-through bias for intermediate results | General engine for multi-step arithmetic / logic |
+| **3-digit multiplication via digit decomposition** | 4 single-digit × lookup tables + carry chain across 2 layers | Path to arbitrary-digit arithmetic without table explosion |
+
+Each is a real research deliverable. Ship one every few weeks if
+prioritized. None require interpretability breakthroughs — they're
+circuit design.
+
+## Next rounds — tier 3 (reverse-engineered from Gemma)
+
+Labor: weeks to months per circuit, pending interpretability tools.
+These are the long-horizon bets that eventually give us the LM's
+capabilities as compiled cards.
+
+| Target | Prerequisite | Notes |
+|---|---|---|
+| Induction heads | Identify heads doing in-context copying on Gemma 4 E4B | Generic capability used by many tasks |
+| NL parsing circuits | Circuit probing for syntax patterns | Replace PT's learned mechanism with a compiled one |
+| Arithmetic circuits inside Gemma | Interpret how Gemma does 2-digit × (and why it's off by 10) | Could inform a better compiled card OR patch Gemma's existing circuit |
+| Factual retrieval circuits | ROME / MEMIT-style probing | Replace / augment KnowledgeStore's step-function recall |
+| Entity tracking | Feature directions for "who's the subject of this sentence" | Useful for word problems |
+
+Prerequisite research track:
+1. **Sparse Autoencoders on Gemma 4 E4B** — train SAEs on residual
+   activations across layers. Extract 10K-100K interpretable
+   features.
+2. **Automated Circuit Discovery (ACDC)** — for each target
+   capability, run ACDC on a corpus of examples to find load-bearing
+   components.
+3. **Feature labeling** — human or LM-assisted naming of SAE features
+   based on activating examples.
+4. **Circuit-to-IR translation** — convert identified circuits into
+   `gate_graph.py` nodes. Largely mechanical once the circuit is
+   understood.
+
+None of these are in scope for near-term rounds. Flag them as the
+multi-quarter R&D direction.
+
+## Rough velocity estimate
+
+Based on Round 11 (one day from "let's build a multiplier" to
+shipped facade with demonstrated capability gain):
+
+- Tier 1: ~2 rounds / week sustained pace. ~20-30 domains in 3 months.
+- Tier 2: ~1 round / month. ~3-6 novel circuits in 6 months.
+- Tier 3: pending research breakthroughs; not scheduleable.
+
+With 30 tier-1 facades + 3 tier-2 circuits installed, substrate
+covers the "verified local utility" value proposition for common
+developer/power-user questions. Commercial viability threshold.
+
+## What to update in this file
+
+Each round that ships a new card or facade appends a row to the
+"Shipped and verified" table. Each round that rules out a direction
+per `workflow.md` §"Ruled-out log" should note it here too so future
+sessions don't retry.
+
+Ruled-out entries (from this session's rounds):
+
+| Approach | Ruled out in | Reason |
+|---|---|---|
+| Token-embd projection at early layers (1, 5, 15, 25) | Round 10a | Degrades — residual at position -1 at early layers is processed as input, not as prediction pre-image |
+| Direct 2-digit × 2-digit lookup table (MAX_PRODUCT=9801) | Round 11a planning | ~4.6 GB VRAM, doesn't fit alongside Gemma. Scoped to MAX_PRODUCT=999. Future: digit decomposition |
+| Single-token bias for multi-token answers | Round 11 diagnosis | Obvious in retrospect — 391 is 4 Gemma tokens |
+
+## Related rules
+
+- `tracing_intelligence.md` — first-principles framing
+- `capability_gain.md` — measurement discipline
+- `embed_intelligence.md` — delivery mechanisms
+- `Substrate.md` — install mechanisms
+- `workflow.md` — hypothesis-test loop
+- `commercial.md` — product position this roadmap supports
