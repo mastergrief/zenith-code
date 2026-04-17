@@ -395,6 +395,19 @@ User queries → CALM verifies → wrong? → correction logged
 - `save_corrections() / load_corrections()` — JSON persistence
 - Overrides work: key 7 changed 6→3, old fact replaced
 
+**Install mode**: the recall card is FFN-only (ReGLU step functions +
+LinearHead) so it installs via `CardSlot.attach(preserve=True)` today
+— the `install_card_in_attention` path writes `attn_q/k/v/output` only
+and has no FFN migration yet. See `.claude/rules/Substrate.md` "Card
+Installation" for the mode tradeoff table and known limits.
+
+**CALM-as-verifier**: `calm/llm_computer/calm_verifier.py` (Round 5)
+wraps `safe_eval` + 1002-function registry as the oracle for the
+learning loop. Replaces per-domain hand-rolled verifiers — any domain
+CALM can evaluate automatically becomes a domain the loop can
+correct. `CalmVerifier.verify_nl(prompt)` returns `(expr, value)`;
+feed `value` to `KnowledgeStore.add_correction(make_key(prompt), ...)`.
+
 **Integration**: CALM's existing correction logs (`.calm_training/auto/`)
 feed the auto-upgrade pipeline. The same corrections that generate
 training data for optional fine-tuning ALSO compile directly into

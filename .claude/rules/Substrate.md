@@ -88,7 +88,33 @@ Files: `calm/llm_computer/hybrid_substrate.py`,
 
 ## Card Installation
 
-Two install paths on prod `GemmaSubstrate` (session 32):
+Two install modes on prod `GemmaSubstrate` (session 32). They are
+architecturally distinct, with different perf / VRAM / capability
+profiles. Pick per card.
+
+### Mode tradeoffs
+
+| Aspect | In-attention | CardSlot (residual-additive) |
+|---|---|---|
+| Card compute | Inside Gemma's `attn_q/k/v/output` matmul | Separate Module, appended after layer |
+| Upgrades attention directly | Yes (same kernel) | No (runs alongside) |
+| Sub-head budget | Consumes reserved sub-heads | None |
+| FP32 cost | ~330 MB SWA / ~600 MB global per host | Zero |
+| Card types | Pure-attention only today | Any `nn.Module` incl. PT, FFN cards |
+| Custom attention (PT copy gate) | Impossible | Required |
+| Perf | Zero overhead | Small extra matmul per slot |
+
+**Known limit**: `install_card_in_attention` writes `attn_q/k/v/output`
+only. Cards with ReGLU/FFN (`adder_tiny`, `gcd`, `reasoning_engine`)
+need an FFN migration (not yet shipped) before they can be fully
+in-attention. Pure-attention cards (`add_one`, `threshold`, `copy_past`,
+`retrieve_by_index`) work today.
+
+**Facade packaging**: `calm/llm_computer/facades/math_addition.py`
+(`MathAdditionFacade`, Round 8) is the first reusable domain class.
+New domains subclass the pattern and get install/detach/set_prompt
++ save/load + detach reversibility. Prefer facades over one-off
+install scripts.
 
 **1. In-attention** — card weights live INSIDE `attn_q/k/v/output`:
 
