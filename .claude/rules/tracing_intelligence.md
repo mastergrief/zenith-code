@@ -197,7 +197,7 @@ genuinely competitive with pure LM capacity, because it gives us
 the LM's own capabilities as inspectable, reversible, auditable
 compiled cards.
 
-## Validated on Gemma 4 E4B (session 33, Rounds 13-20)
+## Validated on Gemma 4 E4B (session 33, Rounds 13-43)
 
 The first mechanistic-interpretability arc on this model. Validated
 that steps 1-2 of the tracing workflow (corpus + activation patching)
@@ -224,6 +224,17 @@ with Gemma's architecture. Full arc details in `tracing_roadmap.md`
   Top-8 sub-heads carry only 26% of damage; top-64 needed for 80%.
   Signal is distributed across H4's V subspace, not sparse in the
   d_head=2 basis.
+- **6 capabilities mapped (R20-R40)**: arithmetic, factual recall,
+  induction, counting, comparison, SV agreement. Circuit typology:
+  concentrated (arithmetic, induction), cooperative (counting L20),
+  diffuse (factual, comparison), hybrid pipeline (SV agreement).
+- **Hub-sharing causally proven (R42/R43)**: L23 H1/H4 forced-
+  attention intervention (mirror of R28) preserves SV agreement
+  (8/10), comparison (18/18, cleanest result), counting (6/6).
+  Same heads + task-specific Q-routing proven cross-capability.
+  One compiled L23 H1/H4 replacement benefits 4 capabilities
+  simultaneously — **4-for-1 compilation ROI**. Full per-capability
+  detail: `.claude/MEMORY/atlas.md`.
 
 Concrete target for the full Phase-2 SAE + ACDC pipeline:
 `L23.attn_v (KV group 1)`, a 512-d projection with ~2.6M weights

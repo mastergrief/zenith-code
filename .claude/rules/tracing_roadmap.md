@@ -21,7 +21,7 @@ See `tracing_intelligence.md` for the first-principles framing and
 | `dispatched_v4` | 791/791 | Standalone | In-attention verified |
 | `reasoning_engine` | 512/512 | Standalone | Not yet as facade |
 | `KnowledgeStore` recall card | 10/10 in Round 6 demo | In facade | CardSlot |
-| **Tracing methodology** | Validated on Gemma 4 E4B (Rounds 13-20) | Activation patching + per-head + Q/K/V decomp + per-sub-head | Arithmetic circuit localized to L22-L30; R20 proved signal is distributed across H4's sub-heads, not localized to a few |
+| **Tracing methodology** | Validated on Gemma 4 E4B (Rounds 13-43) | Activation patching + per-head + Q/K/V decomp + per-sub-head + forced-attention validation | Arithmetic + SV + comparison + counting + induction + factual recall all mapped; 3 causal validations (R28, R42, R43); hub-sharing proven at L23 H1/H4 |
 
 ### Facades built
 
@@ -77,12 +77,17 @@ per-layer / per-head / Q-K-V ablation. Scripts in `scripts/test_*.py`.
 | R39 | SV per-head L23/L29/L35 | **Hybrid**: L23 H1+H4 concentrated (same heads as arithmetic!), L29 H7 concentrated (new specialist), L35 diffuse. |
 | R40 | L23 H1/H4 attention on SV prompts | **H4 = subject reader** (0.76 on subject complex), **H1 = distractor reader** (0.50 on distractor). Hub behavior confirmed. |
 | R41 | L23 H1/H4 attention on arithmetic prompts | **H1 reads b-operand 3× more than a** (consistent with "second content item" role on SV). H4 more mixed on arithmetic. Same heads, task-specific Q patterns. |
+| R42 | L23 H1/H4 forced attention on SV agreement | **mean \|Δ\|=0.467, 8/10 match.** Mirror of R28 at different layer + task; validates hub-sharing on linguistic capability. |
+| R43 | L23 forced attention on comparison + counting | **Comparison 18/18 (cleanest result in session, \|Δ\|=0.176), counting 6/6.** 4-for-1 compilation proven: one compiled L23 H1/H4 replacement benefits arithmetic + SV + comparison + counting simultaneously. L23 hub across 3 capabilities: **32/34 argmax matches (94%)**. |
 
-**Session 33 summary**: 29-round arc (R13-R41), 6 capabilities
-mapped at sweep + per-head resolution, 1 causally validated
-(arithmetic R28), typology validated across numeric + linguistic
-circuits, hub-and-spoke atlas structure identified (L23 H1/H4
-shared content carriers).
+**Session 33 summary**: 29-round arc (R13-R43), 6 capabilities
+mapped at sweep + per-head resolution, **3 causal validations**
+(R28 arithmetic, R42 SV agreement, R43 comparison+counting),
+typology validated across numeric + linguistic circuits, **hub-
+sharing empirically proven** — L23 H1/H4 shared content-carrier
+heads with task-specific Q routing, 32/34 argmax preservation
+rate across 3 L23-using capabilities. Full atlas + per-head
+lookup: `.claude/MEMORY/atlas.md`.
 
 **Full atlas**: `.claude/MEMORY/atlas.md` — capability/layer/head
 tables for quick reference.

@@ -38,7 +38,7 @@ reserved-channel masking in `Substrate.md`).
 | Tier | Intervention | Cost | Moat | Example |
 |---|---|---|---|---|
 | **1 — Preserve** | Leave Gemma alone where it works | 0 | none | "2+2=4" (Gemma gets it) |
-| **2 — Augment weak** | Compile replacement for specific failing circuit | Days | high | R11 multiplier 5/10→10/10, R28 causal validation |
+| **2 — Augment weak** | Compile replacement for specific failing circuit | Days | high | R11 multiplier 5/10→10/10, R28 causal validation, R42/R43 hub-sharing extended validation (4 capabilities, 32/34 match rate) |
 | **3 — Plug missing** | Compile new capability from scratch at unused slot | Days | highest | `programs/gcd`, `programs/reasoning_engine`, `KnowledgeStore` recall cards |
 
 Tier 1 is table stakes — every Gemma user gets it free. **Tiers 2 and
@@ -104,10 +104,17 @@ primitive circuits. Evidence from session 33:
 - **L37 hosts multiple specialized heads.** L37 H6 = induction
   (R33 canonical pattern), L37 H4 = numeric successor (R35). Same
   layer, distinct heads, distinct capabilities.
+- **Hub-sharing causally proven (R42/R43).** L23 H1/H4 forced-
+  attention mirror of R28 preserves SV agreement (8/10), comparison
+  (18/18), counting (6/6). Same heads with task-specific Q routing
+  serve 4 capabilities simultaneously — one compiled replacement
+  benefits all four (4-for-1 compilation ROI).
 
 Implication: **individual heads are the atoms, not layers.** Gemma
 has specialist heads running in parallel at every layer; prompts
-activate different subsets.
+activate different subsets. Shared hub heads (L23 H1/H4) carry
+task-neutral content-read mechanisms; task-specific routing
+happens via the Q projection.
 
 Atlas sparseness estimate: ~30-50 specialist heads cover most core
 capabilities (of 336 total head slots = 42 layers × 8 heads). Full
@@ -232,13 +239,13 @@ thesis mid-task.
 
 ## Empirical basis
 
-Session 33 (2026-04-17), 17 rounds in one workday (~5 hours wall
-clock on RTX 4070 Laptop, 8 GB VRAM):
+Session 33 (2026-04-17), 29-round arc (R13-R43) in one workday
+(~6-7 hours wall clock on RTX 4070 Laptop, 8 GB VRAM):
 
 - **R13-R19**: arithmetic localization to L23 H4 V (~2.6M params)
 - **R20-R28**: full arithmetic circuit mapped AND causally validated
   as compilable (L30 H4/H6 + L31-L32 FFN, forced-attention preserves
-  fd with 9/10 argmax match)
+  fd with 9/10 argmax match, mean |Δ|=0.407)
 - **R29-R30**: factual recall localizes but is diffuse at head level
   (FFN-locked)
 - **R31-R33**: induction localizes to L37 H6 (classic Olsson-2022
@@ -246,12 +253,27 @@ clock on RTX 4070 Laptop, 8 GB VRAM):
 - **R34-R35**: counting = hybrid circuit, shares L33/L37 with
   induction, adds L20 (3-way cooperative) and L31/L33/L37 H4
   (numeric-successor specialist)
-- **R36**: comparison localizes at L35 (global), shares L23 with
-  arithmetic
+- **R36-R37**: comparison localizes at L35 (global), shares L23 with
+  arithmetic; diffuse at head level
+- **R38-R40**: SV agreement is a 3-stage global pipeline
+  L23→L29→L35; L23 H1/H4 attention patterns show H4 reads subject,
+  H1 reads distractor
+- **R41**: L23 H1/H4 on arithmetic prompts — H1 reads b-operand
+  3× more than a. Same heads, task-specific Q patterns.
+- **R42**: L23 H1/H4 forced attention on SV agreement (mirror of
+  R28 at different layer + task) — mean |Δ|=0.467, 8/10 match.
+  Hub-sharing validated on linguistic capability.
+- **R43**: L23 forced attention on comparison + counting —
+  comparison 18/18 (cleanest result, |Δ|=0.176), counting 6/6.
+  **4-for-1 compilation proven**: one compiled L23 H1/H4
+  replacement benefits arithmetic + SV + comparison + counting.
+  L23 hub across 3 capabilities: 32/34 argmax matches (94%).
 
-**Five capabilities mapped, one causally validated, typology
-demonstrated across all five.** This is the evidence base. Future
-probes extend the atlas; they don't re-validate the thesis.
+**Six capabilities mapped, three causal validations (R28, R42,
+R43), typology demonstrated across numeric + linguistic capabilities,
+hub-sharing empirically proven.** This is the evidence base. Future
+probes extend the atlas; they don't re-validate the thesis. Full
+per-head / per-capability lookup: `.claude/MEMORY/atlas.md`.
 
 ## Related rules
 
