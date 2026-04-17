@@ -197,7 +197,7 @@ genuinely competitive with pure LM capacity, because it gives us
 the LM's own capabilities as inspectable, reversible, auditable
 compiled cards.
 
-## Validated on Gemma 4 E4B (session 33, Rounds 13-19)
+## Validated on Gemma 4 E4B (session 33, Rounds 13-20)
 
 The first mechanistic-interpretability arc on this model. Validated
 that steps 1-2 of the tracing workflow (corpus + activation patching)
@@ -218,10 +218,19 @@ with Gemma's architecture. Full arc details in `tracing_roadmap.md`
   digit at 2x chance (0.22 vs 0.11, 270 samples). Real but indirect
   — V likely carries operand and intermediate representations, not
   the final digit. SAE work needed for clean features.
+- **Per-sub-head ablation (R20)**: H4's 512-d output split into 256
+  d_head=2 pairs; ablate each × 10 arithmetic pairs. **0 sub-heads
+  with mean Δ < -1.0**; top sub-head = -0.583 (vs full H4 = -4.30).
+  Top-8 sub-heads carry only 26% of damage; top-64 needed for 80%.
+  Signal is distributed across H4's V subspace, not sparse in the
+  d_head=2 basis.
 
 Concrete target for the full Phase-2 SAE + ACDC pipeline:
-`L23.attn_v (KV group 1)`, a 512-d projection with ~2.6M weights.
-Compact enough to train a focused SAE on.
+`L23.attn_v (KV group 1)`, a 512-d projection with ~2.6M weights
+(or H4's 512-d read slice). R20 confirmed this is the right
+granularity — features live as distributed directions in V-space,
+so the SAE needs the full head/V output as input rather than a
+narrowed sub-head slice.
 
 **Why it worked:** Gemma's alternating SWA/global attention forces
 cross-operand aggregation into global layers (L5, L11, L17, **L23**,
@@ -239,6 +248,10 @@ will not.
   overgeneralization risk; always aggregate.
 - L35 as the arithmetic circuit (R14→16 correction): minor
   contributor; the real seat is L22-L30 with L23 peak.
+- Per-sub-head d_head=2 ablation as a *further* localization tool
+  inside a head (R20): H4's arithmetic signal is distributed across
+  its 512-d V subspace, not sparse in d_head=2 slots. The head is
+  the right granularity; go to SAE from here, not narrower ablation.
 
 ## The corrected upper bound
 

@@ -7,7 +7,7 @@ for harder capabilities. Updates as rounds ship.
 See `tracing_intelligence.md` for the first-principles framing and
 `capability_gain.md` for what counts as a validated win.
 
-## State today (after Round 19)
+## State today (after Round 20)
 
 ### Shipped and verified
 
@@ -21,7 +21,7 @@ See `tracing_intelligence.md` for the first-principles framing and
 | `dispatched_v4` | 791/791 | Standalone | In-attention verified |
 | `reasoning_engine` | 512/512 | Standalone | Not yet as facade |
 | `KnowledgeStore` recall card | 10/10 in Round 6 demo | In facade | CardSlot |
-| **Tracing methodology** | Validated on Gemma 4 E4B (Rounds 13-19) | Activation patching + per-head + Q/K/V decomp | Arithmetic circuit localized to L22-L30 |
+| **Tracing methodology** | Validated on Gemma 4 E4B (Rounds 13-20) | Activation patching + per-head + Q/K/V decomp + per-sub-head | Arithmetic circuit localized to L22-L30; R20 proved signal is distributed across H4's sub-heads, not localized to a few |
 
 ### Facades built
 
@@ -39,7 +39,7 @@ See `tracing_intelligence.md` for the first-principles framing and
 - Save/load round-trip of full substrate: Round 1 (bit-identical logits)
 - CUDA Graphs × FP32 layers compat: Round 2 (4.29× speedup preserved)
 
-## Gemma 4 E4B tracing findings (Rounds 13-19)
+## Gemma 4 E4B tracing findings (Rounds 13-20)
 
 First mechanistic-interpretability arc on prod Gemma. Validates
 that tier-3 (reverse-engineered circuits) is tractable on this
@@ -55,6 +55,7 @@ per-layer / per-head / Q-K-V ablation. Scripts in `scripts/test_*.py`.
 | R17 | L23 per-head ablation (8 Q-heads) | **H1 (-4.85) and H4 (-4.30) carry the load.** Other 6 heads: mean Δ ≈ 0. |
 | R18 | Q/K/V decomposition of H1, H4 | **V (content) carries 93% of H4's contribution.** Q and K alone have negligible effect. V-only ablation matches full QKV. |
 | R19 | Linear probe V → first-digit | 2x chance (0.22 vs 0.11, 270 samples). Real but indirect signal — V encodes operands/intermediates, not the final digit directly. SAE needed for clean features. |
+| R20 | Per-sub-head ablation on H4 (256 d_head=2 slices × 10 pairs) | **Signal is distributed, NOT localized.** 0 sub-heads with mean Δ < -1.0; top sub-head = -0.583 (vs full H4 = -4.30). Top-8 sub-heads carry only 26% of damage; need top-64 for 80%. Reshapes R22: SAE target is H4's full 512-d output or L23 residual, not a narrowed slice. |
 
 **The circuit:** `L23 attn_v (KV group 1, 512-d)` → H4's Q pattern
 reads it → ~2.6M-param V-projection is the concrete localization of
@@ -126,7 +127,7 @@ capabilities as compiled cards.
 
 | Target | Prerequisite | Notes |
 |---|---|---|
-| **Deepen L22-L30 arithmetic circuit** | R13-19 already localized — next: per-sub-head ablation on L23 H4 (128 d_head=2 sub-heads), SAE training on residual activations, ACDC for cross-layer connections | IMMEDIATE next step. We have the target (L23 attn_v group 1, ~2.6M weights). Missing: interpretable features and connection graph. |
+| **Deepen L22-L30 arithmetic circuit** | R13-20 localized to layer + head + V projection; R20 showed signal is distributed across H4's sub-heads. Next: SAE on H4's 512-d V output (or full L23 residual) across an arithmetic corpus; ACDC for cross-layer connections. | IMMEDIATE next step. Target is the 1024-d V of KV group 1 (or H4's 512-d slice); features are distributed directions in V-space, not sparse in sub-head basis. |
 | **Generalize tracing methodology** | Run R16-style ablation sweep on OTHER capability targets (syntax, anaphora, factual recall) | Tests whether arithmetic's clean localization was special or the methodology is general |
 | Induction heads | Identify heads doing in-context copying on Gemma 4 E4B | Generic capability used by many tasks |
 | NL parsing circuits | Circuit probing for syntax patterns | Replace PT's learned mechanism with a compiled one |
@@ -180,6 +181,7 @@ Ruled-out entries (from this session's rounds):
 | Naive logit lens as sole tracing tool | Round 13 | Top-5 tokens at middle layers = foreign-language / code noise. Only rank trajectories of tracked tokens give signal. Use ALONGSIDE activation patching, not alone |
 | Single-prompt activation patching for localization | Round 14→15 correction | Round 14 claimed L35 is "THE arithmetic layer" from one prompt (17×23). R15 showed it doesn't generalize. Always aggregate across multiple inputs |
 | L35 as THE arithmetic circuit | Round 15→16 correction | L35 mean Δ=-1.50, 9/10 hurts. Minor contributor. The real cluster is L22-L30 with L23 peak (-10.18, 10/10). Round 14's claim was premature |
+| Per-sub-head d_head=2 ablation as localization tool | Round 20 | 0/256 sub-heads with mean Δ < -1.0; top-8 carries only 26% of damage. The arithmetic signal in H4 is distributed across the 512-d V subspace, not sparse in the d_head=2 basis. Don't re-run this probe on other heads hoping for sparsity in d_head=2 slots — target SAE on the full head/V output instead. |
 
 ## Related rules
 
