@@ -760,17 +760,32 @@ class VerificationHook:
     output is biased toward emitting the Gemma token corresponding to N.
     Run after the head + softcapping (so it can override Gemma's natural
     answer when the card disagrees).
+
+    `min_margin` gates the bias: only fire when
+      (max card logit) - (median card logit) >= min_margin
+    This prevents the hook from firing on "no confident answer" signals
+    (e.g., a recall card whose key doesn't match any stored correction
+    returns all-zero logits → argmax=0 spuriously boosts Gemma's '0'
+    token). Default 0 matches session 32 behavior (always fire).
     """
 
     def __init__(self, card_slot: "CardSlot", vocab_mapping: dict,
-                 boost: float = 10.0):
+                 boost: float = 10.0, min_margin: float = 0.0):
         self.card_slot = card_slot
         self.vocab_mapping = vocab_mapping  # card_token_id → gemma_token_id
         self.boost = boost
+        self.min_margin = min_margin
 
     def __call__(self, logits: torch.Tensor) -> torch.Tensor:
         out = getattr(self.card_slot, "last_output", None)
         if out is None:
+            return logits
+        # Confidence gate: card's argmax must stand out above the median
+        # logit by min_margin. Prevents boosting on flat (no-match) output.
+        last = out[0, -1].float()
+        peak = last.max().item()
+        med = last.median().item()
+        if (peak - med) < self.min_margin:
             return logits
         # Take the LAST position's argmax over the card's vocab.
         verified = int(out[0, -1].argmax().item())
