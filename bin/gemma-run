@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# gemma-run — client for bin/gemma_daemon.py.
+#
+# Usage:
+#   bin/gemma-run scripts/test_xyz.py             # send + tail until DONE
+#   bin/gemma-run scripts/test_xyz.py /tmp/x.log  # tee daemon log to file
+#   bin/gemma-run --quit                          # tell daemon to exit
+#   bin/gemma-run --reset                         # RESET_GLOBALS
+#   bin/gemma-run --start                         # launch daemon (detached)
+#   bin/gemma-run --status                        # show running state
+#   bin/gemma-run --tail                          # tail -f daemon log
+#
+# Assumes project root = parent of this script. Uses:
+#   /tmp/gemma_in  — named pipe for requests (auto-created)
+#   /tmp/gemma_log — daemon combined output/stderr
+#   /tmp/gemma_daemon.pid — PID of running daemon (if any)
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PIPE=/tmp/gemma_in
+LOG=/tmp/gemma_log
+PIDFILE=/tmp/gemma_daemon.pid
+
+is_running() {
+  [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null
+}
+
+ensure_pipe() {
+  [[ -p "$PIPE" ]] || mkfifo "$PIPE"
+}
+
+case "${1:-}" in
+  --start)
+    if is_running; then
+      echo "daemon already running (PID $(cat "$PIDFILE"))" >&2
+      exit 1
+    fi
+    ensure_pipe
+    : > "$LOG"
+    # Keep a background writer open on the pipe so the daemon's
+    # stdin doesn't hit EOF after one request. We open FD 3 on the
+    # pipe in a long-running sleep.
+    ( exec 3>"$PIPE"; sleep infinity ) < /dev/null > /dev/null 2>&1 &
+    WRITER_PID=$!
+    cd "$ROOT"
+    setsid env PYTHONPATH="$ROOT" python3 -u bin/gemma_daemon.py \
+        < "$PIPE" > "$LOG" 2>&1 &
+    DAEMON_PID=$!
+    echo "$DAEMON_PID" > "$PIDFILE"
+    echo "$WRITER_PID" > "$PIDFILE.writer"
+    disown -a
+    echo "daemon launched (PID $DAEMON_PID)"
+    echo "log: $LOG"
+    echo "writer PID: $WRITER_PID"
+    echo "first-load takes ~3 min — tail $LOG to watch"
+    ;;
+
+  --stop|--quit)
+    if ! is_running; then
+      echo "daemon not running"
+      exit 0
+    fi
+    echo "QUIT" > "$PIPE"
+    sleep 1
+    if is_running; then
+      kill "$(cat "$PIDFILE")" 2>/dev/null || true
+    fi
+    [[ -f "$PIDFILE.writer" ]] && kill "$(cat "$PIDFILE.writer")" 2>/dev/null || true
+    rm -f "$PIDFILE" "$PIDFILE.writer"
+    echo "daemon stopped"
+    ;;
+
+  --reset)
+    if ! is_running; then
+      echo "daemon not running" >&2
+      exit 1
+    fi
+    echo "RESET_GLOBALS" > "$PIPE"
+    echo "sent RESET_GLOBALS"
+    ;;
+
+  --status)
+    if is_running; then
+      echo "daemon running (PID $(cat "$PIDFILE"))"
+      echo "log: $LOG"
+      tail -5 "$LOG" 2>/dev/null || true
+    else
+      echo "daemon NOT running"
+    fi
+    ;;
+
+  --tail)
+    tail -f "$LOG"
+    ;;
+
+  --help|-h)
+    sed -n '2,15p' "$0"
+    ;;
+
+  "")
+    echo "usage: gemma-run <script.py> | --start | --stop | --reset | --status | --tail" >&2
+    exit 2
+    ;;
+
+  *)
+    SCRIPT="$1"
+    if [[ ! -f "$ROOT/$SCRIPT" && ! -f "$SCRIPT" ]]; then
+      echo "script not found: $SCRIPT" >&2
+      exit 1
+    fi
+    if ! is_running; then
+      echo "daemon not running — start it first with: $0 --start" >&2
+      exit 1
+    fi
+    # Resolve to absolute path relative to project root if needed.
+    if [[ -f "$ROOT/$SCRIPT" ]]; then
+      ABS="$ROOT/$SCRIPT"
+    else
+      ABS="$(realpath "$SCRIPT")"
+    fi
+    # Mark log position so we only show output for THIS run.
+    START_LINE=$(wc -l < "$LOG")
+    echo "$ABS" > "$PIPE"
+    # Stream log until we see "^DONE$" at end of a line, starting
+    # from the mark.
+    tail -n +$((START_LINE + 1)) -f "$LOG" | while read -r line; do
+      echo "$line"
+      [[ "$line" == "DONE" ]] && break
+    done
+    ;;
+esac
