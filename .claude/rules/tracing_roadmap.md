@@ -7,7 +7,7 @@ for harder capabilities. Updates as rounds ship.
 See `tracing_intelligence.md` for the first-principles framing and
 `capability_gain.md` for what counts as a validated win.
 
-## State today (after Round 20)
+## State today (after Round 41)
 
 ### Shipped and verified
 
@@ -39,7 +39,7 @@ See `tracing_intelligence.md` for the first-principles framing and
 - Save/load round-trip of full substrate: Round 1 (bit-identical logits)
 - CUDA Graphs × FP32 layers compat: Round 2 (4.29× speedup preserved)
 
-## Gemma 4 E4B tracing findings (Rounds 13-20)
+## Gemma 4 E4B tracing findings (Rounds 13-41)
 
 First mechanistic-interpretability arc on prod Gemma. Validates
 that tier-3 (reverse-engineered circuits) is tractable on this
@@ -56,11 +56,41 @@ per-layer / per-head / Q-K-V ablation. Scripts in `scripts/test_*.py`.
 | R18 | Q/K/V decomposition of H1, H4 | **V (content) carries 93% of H4's contribution.** Q and K alone have negligible effect. V-only ablation matches full QKV. |
 | R19 | Linear probe V → first-digit | 2x chance (0.22 vs 0.11, 270 samples). Real but indirect signal — V encodes operands/intermediates, not the final digit directly. SAE needed for clean features. |
 | R20 | Per-sub-head ablation on H4 (256 d_head=2 slices × 10 pairs) | **Signal is distributed, NOT localized.** 0 sub-heads with mean Δ < -1.0; top sub-head = -0.583 (vs full H4 = -4.30). Top-8 sub-heads carry only 26% of damage; need top-64 for 80%. Reshapes R22: SAE target is H4's full 512-d output or L23 residual, not a narrowed slice. |
+| R21 | V-vector multi-label probe at L23 | V encodes operand digits (a_ones, a_tens, b_ones, b_tens) + intermediates (ones_prod, ones_carry). Operand digits decode cleanly; product high-digits don't (p_huns at chance). |
+| R22 | Layer-trace residual probe L1-L41 + shuffled-label control | fd emerges at L29→L35, not earlier. R21's ones_prod/ones_carry findings inflated by probe capacity; a_ones/p_huns clean. |
+| R23 | Fine-trace L28-L36 | fd builds cumulatively across L30-L32 pipeline; biggest step L31→L32. p_huns still climbing at L36; p_tens flat. |
+| R24 | Attn vs FFN ablation at L29-L32 | L30 ATTN gathers (+0.148), L31-L32 FFN computes (+0.185, +0.111). Parallel dissociation at L31: FFN writes fd, ATTN writes p_ones. |
+| R25 | Per-head at L30/L31/L32 | **L30 H6 is the fd-gatherer** (Δ=-1.528, 10/10). L31 H4/H5 weaker; L32 diffuse. |
+| R26 | L30 H6 attention pattern | H6 attends 61% to a_ones token (pos 3). H4 attends to b_ones (pos 7). **Clear position-selection.** |
+| R27 | V at L22 positions | V[pos=3] perfectly encodes a (1.00); V[pos=7] perfectly encodes b (1.00); no cross-contamination. |
+| R28 | **Forced-attention validation** | Forced one-hot attn at L30 H4/H6 to pos 7/3 → fd preserved, mean \|Δ\|=0.407, argmax matches 9/10. **Circuit causally validated as compilable.** |
+| R29 | Factual recall layer sweep | L11 peak -1.56 (GLB), L5 secondary. Distributed early+late pattern. Magnitudes 6× smaller than arithmetic. |
+| R30 | Factual per-head L5/L11 | **Diffuse** — no head > -0.08. FFN-locked circuit (ROME/MEMIT territory). |
+| R31 | Induction layer sweep (repeated A B C D A B C D A B) | L34 peak -1.17, 20/20. Cluster L33-L37 SWA-dominant. |
+| R32 | Induction per-head L33/L34/L37 | **L37 H6 concentrated** -0.52, 11/20. L33/L34 diffuse. Two-stage circuit. |
+| R33 | L37 H6 attention pattern | **Classic induction head** confirmed (Olsson 2022). 55% attention on answer-letter positions, 4% on query-matching positions. |
+| R34 | Counting sweep (Count: 1, 2, 3, 4, ) | L20 peak -3.93, 6/6. Shares L33/L37 with induction, adds L20/L31 new peaks. |
+| R35 | Counting per-head L20/L31/L33/L37 | **L20 cooperative** (H2/H5/H6 each ~-1.0-1.4, sum ≈ full -3.74). **L37 H4 numeric-successor** specialist (Δ=-1.02), different from L37 H6 (induction). |
+| R36 | Comparison sweep (which is larger) | L35 peak -1.77, 18/18. Shares L23 with arithmetic. |
+| R37 | Comparison per-head L23/L35 | **Diffuse** — no head > -0.4. L35 is FFN-based application layer. |
+| R38 | SV agreement sweep | **3-stage global pipeline L23→L29→L35** (each hits 14-16/16). New circuit shape. |
+| R39 | SV per-head L23/L29/L35 | **Hybrid**: L23 H1+H4 concentrated (same heads as arithmetic!), L29 H7 concentrated (new specialist), L35 diffuse. |
+| R40 | L23 H1/H4 attention on SV prompts | **H4 = subject reader** (0.76 on subject complex), **H1 = distractor reader** (0.50 on distractor). Hub behavior confirmed. |
+| R41 | L23 H1/H4 attention on arithmetic prompts | **H1 reads b-operand 3× more than a** (consistent with "second content item" role on SV). H4 more mixed on arithmetic. Same heads, task-specific Q patterns. |
 
-**The circuit:** `L23 attn_v (KV group 1, 512-d)` → H4's Q pattern
-reads it → ~2.6M-param V-projection is the concrete localization of
-arithmetic content on a 5B-param model. Compact target for SAE +
-ACDC work.
+**Session 33 summary**: 29-round arc (R13-R41), 6 capabilities
+mapped at sweep + per-head resolution, 1 causally validated
+(arithmetic R28), typology validated across numeric + linguistic
+circuits, hub-and-spoke atlas structure identified (L23 H1/H4
+shared content carriers).
+
+**Full atlas**: `.claude/MEMORY/atlas.md` — capability/layer/head
+tables for quick reference.
+
+**The arithmetic circuit:** `L23 attn_v (KV group 1, 512-d)` →
+H4's Q pattern reads it → ~2.6M-param V-projection is the concrete
+localization of arithmetic content on a 5B-param model. Compact
+target for SAE + ACDC work.
 
 **Why the localization was clean:** Gemma's alternating SWA/global
 attention forces cross-operand aggregation into the global layers
