@@ -124,20 +124,7 @@ Serving: Gemma 4 E4B (primary) or Qwen 3.5 4B via llama.cpp at **512K context** 
 
 ## Python Agent Harness (`agents/`, ~4,400 LOC across 15 core files)
 
-### Core Files
-- `agent.py` (563) — `Agent` class with dual backend, streaming, thinking mode, tool calling loop (max 10 rounds), connection retry with backoff, system prompt builder, effort mode, output dedup, `detect_llamacpp_model()`
-- `tools.py` (1622) — 20 tools: `bash`, `read_file`, `write_file`, `edit_file`, `grep`, `list_files`, `list_directory`, `Agent`, `AgentCreate`, `AgentMessage`, `AgentGet`, `AgentList`, `AgentTerminate`, `Sleep`, `WebFetch`, `WebSearch`, `AskUserQuestion`, `TodoWrite`, `TodoRead`, `MultiEdit`
-- `harness.py` (720) — Terminal REPL with colored output, streaming tokens, thinking display, readline history, 17+ slash commands including `/swap`
-- `model_swap.py` (407) — `LlamaServerManager` for llama-server subprocess lifecycle
-- `specialist_coordinator.py` (245) — auto-selects hot-swap vs Ollama multi-model mode
-- `coordinator.py` (76), `swarm.py` (55), `example.py` (43) — coordination patterns
-
-### Production Features
-- `permissions.py` (133 lines) — 3 permission modes (READ_ONLY/WORKSPACE_WRITE/FULL_ACCESS), 4-level bash classification (SAFE/WRITE/DESTRUCTIVE/BLOCKED), git subcommand awareness, write redirect detection, system path blocking
-- `compact.py` (244 lines) — Auto-compaction with per-GGUF context limits (Gemma 4 E4B 200K, Qwen 3.5 4B 130K, llama.cpp fallback 65K — NIAH-validated, see `.claude/MEMORY/evals/2026-04-07_summary_needle_comparison.md`), summary compression, env var override (`ZENITH_AUTO_COMPACT_TOKENS`)
-- `config.py` (61 lines) — Config loader for `.zenithrc`/`zenith.json` with explicit `ZENITH_*` env var registry; `ctx_size` default is **524288** (512K)
-- `history.py` (34 lines) — Timestamped audit log for tool calls, responses, errors, commands
-- `session.py` (51 lines) — Save/load agent conversations to `.zenith_sessions/` as JSON, auto-save on exit
+Terminal coding assistant with dual backend (Ollama + llama.cpp), 20 tools (`tools.py`), 3-level permissions (`permissions.py`), auto-compaction with per-GGUF limits (`compact.py`: Gemma 4 E4B 200K, Qwen 3.5 4B 130K), sessions (`session.py`), history log (`history.py`), thinking mode, effort control (low/medium/max), llama.cpp hot-swap (`model_swap.py:LlamaServerManager`), `SpecialistCoordinator` auto-selecting hot-swap vs Ollama multi-model mode. Core class is `Agent` in `agent.py` with streaming + tool-calling loop (max 10 rounds). `ctx_size` default **524288** (512K). Config via `.zenithrc`/`zenith.json` + `ZENITH_*` env vars (`config.py`). Full file-by-file breakdown: `.claude/rules/architecture.md` §"Agent System" + §"File Organization".
 
 ### Harness Commands
 | Command | Action |
@@ -212,17 +199,13 @@ Full spec: `.claude/rules/calm.md`
 
 ### Modular Backend Architecture (116 backends, 1002 functions, 550 NL patterns)
 
-Two types: **compute backends** (79 `*_ops.py`, deterministic functions) and **knowledge backends** (37 `*_kb.py`, factual lookup tables). The engine doesn't care which — same contract. **100% NL pattern coverage** — every backend exports `*_NL_PATTERNS`.
+Two types: **compute backends** (79 `*_ops.py`) + **knowledge backends** (37 `*_kb.py`). Same contract: export `*_FUNCTIONS` dict + `*_NL_PATTERNS` list. Auto-discovery registers both — zero other files to edit.
 
-Full backend table in `.claude/rules/calm.md`. 116 backends across: math (arithmetic, sequences, trig, number theory, combinatorics, calculus), strings (metrics, phonetics, text analysis), encoding, dates/time/calendar, statistics, coordinates/geospatial, HTTP/networking/CIDR, JWT, timezones, base conversion, checksums, byte sizes, durations, geometry, probability, roman numerals, financial, ratios/fractions, physics (kinematics, electricity, waves), music theory, chemistry (molecules, functional groups), logic/sets/boolean, graph theory, matrix/linear algebra, country data (195 countries), periodic table (118 elements), physical constants, algorithm complexity (sorting, search, DP, greedy, graph, NP), well-known ports, ASCII, licenses, design patterns, error codes, regex (common patterns + reference), currencies (155 ISO 4217), measurements (SI prefixes), data structures, SQL reference, git reference, Linux ops (chmod, signals, processes), encryption/security (hashing, key sizes, password strength, OWASP), databases (ACID, CAP, normal forms, indexes), testing patterns, API patterns (REST/GraphQL/gRPC), Docker, AWS services, DevOps/SRE, cloud patterns (circuit breaker, saga, 12-factor), compilers (stages, grammars, parsing), web (HTML/CSS/browser storage), type systems, concurrency, encoding reference, formatting, validation, color theory.
+**Defense in depth**: Layer 2 precompute (550 NL patterns) injects correct answers before generation. Layer 1 verify catches wrong claims after. Layer 3 factual_check catches known misconceptions (48 static + 10 dynamic cross-check patterns).
 
-**Adding a backend**: write a `*_ops.py` or `*_kb.py` file in `calm/backends/`, export a `*_FUNCTIONS` dict + `*_NL_PATTERNS` list. Auto-discovery registers both — zero other files to edit.
+**Feedback loops** (Vector 1, session 26): `AutoLearner` + `ModuleLearner` end-to-end tested, 90% → 100% hit rate over 3 rounds on `calm/closed_loop_eval.py`. Operator visibility: `scripts/learning_dashboard.py`.
 
-**Defense in depth**: Layer 2 (precompute + 550 NL patterns) injects correct answers before generation. Layer 1 (verify) catches wrong claims after generation. Layer 3 (factual check, commit `04ae45a`) catches known misconceptions via 48 static patterns + 10 dynamic cross-check patterns that verify claims against backend functions at runtime. When precompute misses a phrasing, verify is the safety net; when verify misses a factual error, factual_check catches it.
-
-**Adjacent track**: `calm/llm_computer/` ships 9 compiled programs built declaratively via gate-graph IR + auto-scheduler — primitives, 2-digit adder (10K/10K exhaustive), and semantic-keyed KV store. `HullKVCache` validated against production attention. Future direction (Vector 3): compile all 116 CALM backends into a single dispatched `Small2DTransformer`, making the compute substrate gradient-differentiable and fine-tunable on production feedback.
-
-**Feedback loops tested + measured (Vector 1, session 26)**: `AutoLearner` and `ModuleLearner` both have end-to-end tests proving the cycle closes. Shape-gated pattern matching fixes the pattern-pollution defect (function patterns were firing on every numeric prompt). Effectiveness harness at `calm/closed_loop_eval.py` measures 90% → 100% over 3 rounds. End-to-end integration test at `calm/tests/test_auto_calm_integration.py` mocks LLM inference and proves learned patterns inject into the system prompt on round 2. Operator visibility: `scripts/learning_dashboard.py`.
+Full backend table + domain list + adding-a-backend walkthrough: `.claude/rules/calm.md`. `calm/llm_computer/` ships compiled programs (gate-graph IR + auto-scheduler) as an adjacent track.
 
 ### Cognitive Intelligence Layer (39 modules, Engine V2)
 
@@ -352,74 +335,11 @@ Add a domain: `/domain` command walks through scope → CALM backend → compile
 
 Lesson: scratchpad with intermediate values forces memorization that small models can't deliver. **Stop asking the model to compute; let it emit structure and route values to the substrate.** The same 48K architecture carries across four input languages at 93-100% — validation of the CRLM scaling claim that HRM size scales with input-language complexity, not problem difficulty.
 
-## Distillation Pipeline (`agents/distill/`, 10 Python files)
+## Distillation Pipeline (`agents/distill/`)
 
-### Current Status
-- **0.8B reasoning base**: trained (3 epochs, loss 1.106), eval: format learned but substance wrong — model too small
-- **4B reasoning base (Qwen)**: trained on Colab A100 (1,339 examples after 2026-04-07 React/security expansion, 3 epochs), exported to GGUF Q5_K_M, serving via llama.cpp. Earlier eval: 3/5 PASS with thinking enabled (race condition, OOMKilled, architecture pass; React and security partial). **Subsequent 5-prompt A/B vs stock Gemma 4 E4B (2026-04-07) scored fine-tuned Qwen 0/5 — the React and security failures were correctness bugs (hallucinated Node.js `beforeOOM` API, broken Postgres `FOR UPDATE SKIP LOCKED` queue, regex-on-hostname SSRF check). See `.claude/MEMORY/evals/2026-04-07_qwen4b_vs_gemma4_e4b.md`.**
-- **Gemma 4 E4B (stock)**: validated as alternative base 2026-04-07. Beats fine-tuned Qwen 5/0 on the same coding eval without any fine-tuning. NIAH effective context: 200K (vs Qwen's 130K). Multimodal (vision projector available). GGUF on disk at `~/models/gemma-4-E4B-it-Q5_K_M.gguf` (5.48 GB). Not yet fine-tuned on the distillation dataset.
-- **Hot-swap infrastructure**: IMPLEMENTED (`agents/model_swap.py` + `SpecialistCoordinator` hot-swap mode). `LlamaServerManager` handles kill+restart swap cycles (~5–15s depending on model size). Swap cost on a warm page cache is mostly PCIe transfer time.
-- **Specialists**: not yet trained — both base models are ready, specialist GGUFs don't exist on disk yet. When they do, `SpecialistCoordinator` auto-detects and switches to hot-swap mode.
+Two-stage QLoRA training pipeline for reasoning base + domain specialists. Current state: 4B Qwen base trained (serving via llama.cpp, eval 0/5 on coding A/B vs stock Gemma 4 E4B), stock Gemma 4 E4B validated as alternative base. Specialists not yet trained. Hot-swap infrastructure shipped (`agents/model_swap.py` + `SpecialistCoordinator`).
 
-### Pipeline Scripts
-- `config.py` — Domains, model names, QLoRA params, paths
-- `generate.py` — Teacher (9B) generates JSONL training data. CLI: `python -m agents.distill.generate --domain python`
-- `train_base.py` — Stage 1: 0.8B reasoning base (local). Qwen 3.5 0.8B + QLoRA + `train_on_responses_only`, 3 epochs
-- `train_4b_cloud.py` — Stage 1: 4B reasoning base (cloud). Qwen 3.5 4B + QLoRA, requires 40GB+ VRAM (A100)
-- `train_4b_colab.ipynb` — Colab notebook for 4B training
-- `train.py` — Stage 2: domain specialist training. Auto-uses reasoning base if available
-- `export.py` — Convert merged model → GGUF → Ollama Modelfile → `ollama create`
-- `validate.py` — A/B compare specialist vs base using 9B as judge
-- `fetch_datasets.py` — Download Claude reasoning datasets from HuggingFace (nohurry, TeichAI, Crownelius)
-- `filter_reasoning.py` — Tiered keyword filtering + dedup + merge hand-written with HuggingFace data
-
-### Specialist Domains
-| Domain | Ollama Name | Focus |
-|--------|-------------|-------|
-| orchestrator | specialist-orchestrator | Task routing/classification |
-| typescript | specialist-ts | React, Node, TS, Next.js |
-| python | specialist-py | FastAPI, Django, pytest |
-| rust | specialist-rust | Ownership, tokio, serde |
-| devops | specialist-devops | Docker, K8s, Terraform |
-| reviewer | specialist-reviewer | Security, bugs, perf |
-
-### Training Data (`agents/distill/data/`, gitignored except hand-written files)
-- `claude_reasoning.jsonl` — 1,339 merged examples (832 filtered HuggingFace + 507 hand-written)
-- `coding_reasoning_claude.jsonl` — 547 hand-written coding reasoning examples (committed). Includes +19 added 2026-04-07 (React + security, targeting Qwen eval gaps) and +21 added 2026-04-08
-- `claude_reasoning_filtered.jsonl` — 832 filtered HuggingFace examples (intermediate)
-- `claude_reasoning_prefilter.jsonl` — backup of pre-filter merged data
-- `orchestrator.jsonl` — 252 routing examples (130 original + 121 Claude-authored)
-- `orchestrator_claude.jsonl` — 121 Claude-authored routing examples (committed)
-- `python.jsonl` — 25 examples (9B-generated)
-- `typescript.jsonl` — 39 examples (9B-generated)
-- `rust.jsonl` — 53 examples (9B-generated)
-
-### Training Commands
-```bash
-# Stage 1: 0.8B reasoning base (local, 8GB VRAM)
-PYTHONPATH=. python3 -m agents.distill.train_base
-
-# Stage 1: 4B reasoning base (cloud, 40GB+ VRAM)
-# Use train_4b_colab.ipynb on Google Colab with A100
-# Or: python3 train_4b_cloud.py on RunPod/Lambda
-
-# Stage 2: Specialist (on top of reasoning base)
-PYTHONPATH=. python3 -m agents.distill.train --domain orchestrator
-
-# Filter + merge reasoning data
-PYTHONPATH=. python3 -m agents.distill.filter_reasoning        # filter only
-PYTHONPATH=. python3 -m agents.distill.filter_reasoning --merge # filter + merge hand-written
-```
-
-## Training Philosophy
-
-**Data quality > data quantity > model size > training tricks.**
-
-1. Write high-quality examples — one good Claude-authored example teaches more than ten 9B-generated ones
-2. Train on responses only — don't waste gradients learning to predict prompts
-3. Match domain to task — coding reasoning data for coding models, routing data for routing models
-4. Filter aggressively — removing bad data improves results more than adding mediocre data
-5. 3 epochs on curated data — diverse enough (1,320 unique topics) to avoid memorization; 1 epoch underfits
+Full spec: `.claude/rules/distillation.md` — pipeline scripts, specialist domain table, training-data file list, training commands, training philosophy.
 
 ## Serving Architecture
 
