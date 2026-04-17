@@ -165,6 +165,75 @@ class HubInjectionCard:
             raise RuntimeError("install() first")
         return self._compute_natural_positions(token_ids)
 
+    def generate(
+        self,
+        prompt: str,
+        tokenizer,
+        max_tokens: int = 32,
+        *,
+        inject: bool = True,
+        stop_on_eos: bool = True,
+        device: str = "cuda",
+    ) -> dict:
+        """Hub-injected autoregressive greedy decode.
+
+        Mirrors GemmaSubstrate.generate but fires forced attention
+        ONLY at prefill's last query position (the position that
+        predicts the first answer token). Decode continues with the
+        cache populated by the forced prefill — no per-step injection,
+        so downstream tokens see Gemma's natural behavior conditioned
+        on the hub-biased first token.
+
+        R28/R42/R43 validated the prefill-time intervention preserves
+        argmax across 4 capabilities; this method extends that
+        validation to multi-token continuations.
+        """
+        if self._installed_on is None:
+            raise RuntimeError("install() first")
+        m = self._installed_on
+        ids = tokenizer.encode(prompt)
+        ids_tensor = torch.tensor([ids], device=device)
+        cache = KVCache(m.config.n_layers, device=device)
+        target = m.layers[self.target_layer]
+
+        if inject:
+            positions = self._compute_natural_positions(ids_tensor)
+            pos_h1 = int(positions[self.heads[0]])
+            pos_h4 = int(positions[self.heads[1]])
+            saved = target.attn_output
+            target.attn_output = _AttnOutputWrapper(
+                saved, cache, self.target_layer,
+                h1_slice=self.h1_slice, h4_slice=self.h4_slice,
+                kv_group_h1=self.kv_group_h1, kv_group_h4=self.kv_group_h4,
+                pos_h1=pos_h1, pos_h4=pos_h4,
+            )
+            try:
+                with torch.no_grad():
+                    logits = m.forward(ids_tensor, device=device,
+                                       kv_cache=cache, start_pos=0)
+            finally:
+                target.attn_output = saved
+        else:
+            with torch.no_grad():
+                logits = m.forward(ids_tensor, device=device,
+                                   kv_cache=cache, start_pos=0)
+
+        next_id = int(logits[0, -1].argmax().item())
+        generated = [next_id]
+        for _ in range(max_tokens - 1):
+            if stop_on_eos and next_id == tokenizer.EOS_ID:
+                break
+            with torch.no_grad():
+                logits = m.forward(
+                    torch.tensor([[next_id]], device=device),
+                    device=device, kv_cache=cache,
+                    start_pos=len(ids) + len(generated) - 1)
+            next_id = int(logits[0, -1].argmax().item())
+            generated.append(next_id)
+        return {"text": tokenizer.decode(generated),
+                "token_ids": generated,
+                "first_token_id": generated[0]}
+
     def forward(
         self,
         token_ids: torch.Tensor,
