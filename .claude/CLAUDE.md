@@ -2,7 +2,7 @@
 
 **IMPORTANT**: Assume nothing. Hypothesis, Build, Test & Iterate. First Principles thinking. Do not discount anything until it's built and tested!
 
-Fork of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) with a Python agent harness, CALM reasoning engine, HRM + LLM-Computer (the CRLM stack), and a Rust port. **Working policy: lead-orchestrator + one builder-worker per task. Lead (you) owns hypothesis + review + commit; worker builds + self-tests + reports via SendMessage. Rotate to a fresh worker after 2-3 iterations on the same task.**
+Fork of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) with a Python agent harness, CALM reasoning engine, HRM + LLM-Computer (the CRLM stack), and a Rust port. **Working policy: solo lead. Work directly with Edit/Write/Read/Grep/Bash. Don't spawn subagents or teams — the brief-writing + cold-start + round-trip overhead exceeds the work on fast-iteration perf tasks, which is nearly everything we do here.**
 
 ## Default Workflow — Hypothesis, Test, Iterate
 Full spec: `.claude/rules/workflow.md`
@@ -28,38 +28,6 @@ taken *after* the change. No vibes, no "looks right", no "should be fine".
   run) — your rollback is `git reset --hard HEAD`.
 - **Correctness check every round.** Canonical smoke test: `17×23=391`
   via the chat API. Perf gains that break correctness are reverts.
-## Working policy — lead + one builder-worker
-
-Default pattern (ratified session 33+):
-
-1. **Lead (you, in the user-facing session)** owns: hypothesis, architectural
-   decisions, cross-round synthesis, diff review, commits, conversation with
-   the user. Lead does NOT write implementation or run heavy scripts when a
-   worker is in flight.
-2. **Worker (general-purpose agent, named, run_in_background=True)** owns:
-   file reads, implementation, self-tests (where GPU not required). Reports
-   back via `SendMessage` to `team-lead`.
-3. **Task list is the shared surface** — `TaskCreate`/`TaskUpdate` coordinate
-   work + survive agent rotation.
-
-**Rotation rule**: after **2-3 iterations** on the same task, spawn a fresh
-worker with a tightened spec. Per `workflow.md`'s plateau principle (3 × <2%
-movement = bug, not tuning), iterations that don't converge mean the spec
-is under-defined, not the worker stuck. Fresh worker + sharper spec usually
-unblocks faster than a fourth revision cycle.
-
-**Quick single-file edits** (typo, one-line fix, config tweak): do directly,
-skip the agent — overhead isn't worth it.
-
-**What persists across worker rotations**: git commits (lead commits
-between iterations), TaskList, lead's in-session synthesis, `.claude/`
-rules + CLAUDE.md + MEMORY files. New worker's brief = pointer to recent
-commits + task list + tightened spec; no need to replay chat history.
-
-Full spec: `.claude/rules/agent_teams.md`.
-
----
-
 ## Config `.claude/` Editing Directive
 
 When editing `.claude/` configs (agents, CLAUDE.md, commands, rules etc):

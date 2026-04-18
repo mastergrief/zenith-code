@@ -469,19 +469,6 @@ then update the registry. Pattern:
 End-to-end demo of detect → log → compile → install → persist:
 `scripts/gemma_learning_loop_demo.py` (5/5 wrong → 5/5 correct).
 
-## Agent-assisted iteration (default pattern session 33+)
-
-Non-trivial coding work runs as lead + one builder-worker: lead
-states hypothesis/spec, worker implements + self-tests, lead reviews
-diff + commits, rotate worker after 2 iterations on the same task
-(plateau principle — spec is under-defined, not worker stuck).
-
-Applies to facade builds, new scripts, non-trivial refactors. Skip
-for one-line fixes, typos, config tweaks, rule-file edits. Lead
-never writes implementation while a worker is in flight.
-
-Full spec: `.claude/rules/agent_teams.md`.
-
 ## When this workflow doesn't apply
 
 - **UI / frontend / design work.** Subjective judgment calls that
