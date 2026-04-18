@@ -414,6 +414,6 @@ llama-server -m model.gguf --cache-type-k tq3_k256 --cache-type-v tq3_k256
 - 4B reasoning base GGUF at `~/models/Qwen3.5-4B.Q5_K_M.gguf` (2.9 GB, serving at **256K context**, ~7.3 GB VRAM with Q4 KV)
 - Alternative: Gemma 4 E4B GGUF at `~/models/gemma-4-E4B-it-Q5_K_M.gguf` (5.48 GB, stock, ~6.7 GB VRAM at 256K thanks to sliding-window attention). Validated 2026-04-07, beats fine-tuned Qwen on coding eval.
 - **tq4 serving GGUF** at `~/models/gemma-4-E4B-it-tq4-aligned.gguf` (5.0 GB, 132-byte-block layout, session 16). The old `~/models/gemma-4-E4B-it-tq4.gguf` (4.7 GB, 130-byte blocks) is **incompatible** with post-session-16 llama.cpp and should be ignored or deleted.
-- Launch via `zenith` command (auto-starts llama-server at `ZENITH_CTX=262144`) or manually with `--ctx-size 262144 --parallel 1 --cache-type-k q4_0 --cache-type-v q4_0 -ngl 999`
+- Launch via `zenith` command (auto-starts llama-server at `ZENITH_CTX=524288`) or manually with `--ctx-size 524288 --parallel 1 --cache-type-k tq4_k256 --cache-type-v tq4_k256 -ngl 999`
 - For Ollama: Modelfiles in `models/`, use `ollama create`
 - `-ngl 999` forces all layers to GPU

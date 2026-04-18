@@ -296,7 +296,7 @@ Future direction: replace the Python interpreter with a compiled `Small2DTransfo
 ## Production Features
 - **Permissions** (`permissions.py`): `PermissionMode` enum + `BashRisk` enum with `classify_bash()` and `check_permission()`
 - **Compaction** (`compact.py`): summarizes old messages, preserves last 4 verbatim. **Per-GGUF** context limits in `MODEL_CONTEXT_LIMITS` (Gemma 4 E4B 200K, Qwen 3.5 4B 130K, llama.cpp generic fallback 65K). Values are NIAH-validated against `.claude/MEMORY/evals/2026-04-07_summary_needle_comparison.md` — don't change them without re-running `scripts/needle_test.py`. Summary compression (1200 chars, 24 lines max). Env override: `ZENITH_AUTO_COMPACT_TOKENS`
-- **Config** (`config.py`): loads `.zenithrc`/`zenith.json`, explicit `ENV_VARS` registry mapping config keys → `ZENITH_*` names. `ctx_size` default 262144
+- **Config** (`config.py`): loads `.zenithrc`/`zenith.json`, explicit `ENV_VARS` registry mapping config keys → `ZENITH_*` names. `ctx_size` default 524288
 - **History** (`history.py`): `HistoryLog` with timestamped events, rendered via `/history`
 - **Sessions** (`session.py`): save/load to `.zenith_sessions/`, JSON format. Auto-save on exit, `/resume` for latest
 - **Hot-swap** (`model_swap.py`): `LlamaServerManager` orchestrates llama-server subprocess lifecycle. Adopts externally-started servers via `/props` + `/proc/net/tcp` PID lookup. `swap(target)` is a no-op when the target path is already loaded (uses `Path.resolve()` for comparison, so symlinks collapse — hard links are needed to force a real kill+restart for testing). Integration tested in `scripts/test_model_swap.py`.
@@ -307,7 +307,7 @@ Future direction: replace the Python interpreter with a compiled `Small2DTransfo
 - **89% safe-ctx compaction margin** (`harness.py:_compute_compact_threshold`, raised from 85% in session 2026-04-08): the compaction threshold is `min(per-GGUF model limit, int(ctx_size * 0.89))`. At default 256K ctx the binding constraint is the Gemma model entry (232960 = 227.5K), giving 29184 tokens of headroom. **This is BELOW `EFFORT_LEVELS["max"]["max_tokens"]` (32768)** — by user choice. Max-effort responses can soft-truncate by ~3.5K when conversation sits right at the threshold; the next turn compacts and full 32K is available again. Smaller `ZENITH_CTX` values still bind via `safe_ctx` (e.g. 131072 → safe_ctx 116654 → caps below model limit). If you raise `max_tokens` further, raise the safe-ctx multiplier or accept more truncation.
 
 ## Serving Architecture
-- **llama.cpp (primary)**: Gemma 4 E4B tq4 or Q5_K_M at **256K context** with tq4 or Q4 KV cache (~5-7 GB VRAM, pre-allocated)
+- **llama.cpp (primary)**: Gemma 4 E4B tq4 or Q5_K_M at **512K context** with tq4 or Q4 KV cache (~5-7 GB VRAM, pre-allocated)
 - **Production GGUF**: `~/models/gemma-4-E4B-it-tq4-aligned.gguf` (5.0 GB, tq4, 132-byte blocks). **Alternative**: `gemma-4-E4B-it-Q5_K_M.gguf` (5.48 GB), `Qwen3.5-4B.Q5_K_M.gguf` (2.9 GB). Hot-swap via `/swap` or `ZENITH_MODEL`.
 - llama-server binary at `~/llama.cpp/build/bin/`, **branch `zenith`** with TurboQuant fusion + OP_TIMING
 - **TurboQuant tq4 KV**: `--cache-type-k tq4_k256 --cache-type-v tq4_k256`. 4.125 bpw, 16-level Lloyd-Max, Pi rotation (seed=42). 132-byte blocks for 4-byte aligned CUDA loads (session 16 alignment fix). **Old 130-byte GGUFs incompatible.**

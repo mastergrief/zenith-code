@@ -4,15 +4,17 @@
 # GGUF selection precedence (high → low):
 #   1. --gguf PATH (CLI flag, must be first arg)
 #   2. ZENITH_MODEL env var
-#   3. Default: ~/models/gemma-4-E4B-it-Q5_K_M.gguf
+#   3. Default: ~/models/gemma-4-E4B-it-tq4-aligned.gguf
 #
 # Context size precedence (high → low):
 #   1. ZENITH_CTX env var
-#   2. Default: 262144 (256K — both Gemma 4 E4B and Qwen 3.5 4B are trained
-#      at this range, fits 8 GB VRAM with Q4 KV cache). The harness then
-#      auto-computes its compaction threshold as min(per-model NIAH-validated
-#      limit, 85% of server ctx) via agents/compact.py:MODEL_CONTEXT_LIMITS.
-#      Requires the patched llama.cpp training-context slot cap removal at
+#   2. Default: 524288 (512K — fits 8 GB VRAM with the tq4+tq4 stack;
+#      Gemma 4 E4B is trained at 128K but extrapolates cleanly to 200K+ on
+#      single-needle NIAH via the slot-cap-removal llama.cpp patch). The
+#      harness then auto-computes its compaction threshold as
+#      min(per-model NIAH-validated limit, 89% of server ctx) via
+#      agents/compact.py:MODEL_CONTEXT_LIMITS. Requires the patched
+#      llama.cpp training-context slot cap removal at
 #      tools/server/server-context.cpp:763-766 for extrapolation past trained
 #      max; otherwise llama-server silently caps to n_ctx_train.
 set -euo pipefail
@@ -30,7 +32,7 @@ if [[ "${1:-}" == "--gguf" ]]; then
     MODEL="$2"
     shift 2
 else
-    MODEL="${ZENITH_MODEL:-$HOME/models/gemma-4-E4B-it-tq4.gguf}"
+    MODEL="${ZENITH_MODEL:-$HOME/models/gemma-4-E4B-it-tq4-aligned.gguf}"
 fi
 
 # Expand ~ in case the user passed a tilde path

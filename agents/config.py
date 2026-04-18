@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 DEFAULTS = {
-    "model": "~/models/gemma-4-E4B-it-tq4.gguf",
+    "model": "~/models/gemma-4-E4B-it-tq4-aligned.gguf",
     "backend": "llamacpp",
     # 524288 (512K) — fits 8 GB VRAM with tq4+tq4 stack (7.6 GB at 512K).
     # For Q5_K_M + f16 KV (6.9 GB at 256K), override: ZENITH_CTX=262144.

@@ -152,7 +152,7 @@ Terminal coding assistant with dual backend (Ollama + llama.cpp), 20 tools (`too
 
 ### Running the Harness
 ```bash
-# Preferred: auto-starts llama.cpp with default ~/models/Qwen3.5-4B.Q5_K_M.gguf at 256K
+# Preferred: auto-starts llama.cpp with default ~/models/gemma-4-E4B-it-tq4-aligned.gguf at 512K
 zenith
 
 # Pick a specific GGUF at launch time (new --gguf launcher flag)
@@ -177,7 +177,7 @@ ZENITH_CTX=65536 zenith
 
 # CLI flags: --model, --backend, --ctx-size, --effort, --resume, --permission-mode, --cd
 ```
-`bin/zenith` launcher: auto-starts llama.cpp if not running, waits for health, passes `--backend llamacpp`. Default `ZENITH_CTX=262144` (256K). Configurable via `ZENITH_MODEL`, `ZENITH_PORT`, `ZENITH_CTX`, `ZENITH_LLAMA_SERVER` env vars, plus the `--gguf PATH` CLI flag (must be first arg). The stdin pipe form works in any environment (TTY or non-TTY) because the harness uses plain `input()`; redirect output to a file to keep model token spam out of your terminal/context. `bin/zenith` does NOT `cd` into the repo root before exec'ing the harness — this keeps `.zenithrc` lookup and CLAUDE.md auto-discovery honoring the user's actual cwd.
+`bin/zenith` launcher: auto-starts llama.cpp if not running, waits for health, passes `--backend llamacpp`. Default `ZENITH_CTX=524288` (512K). Configurable via `ZENITH_MODEL`, `ZENITH_PORT`, `ZENITH_CTX`, `ZENITH_LLAMA_SERVER` env vars, plus the `--gguf PATH` CLI flag (must be first arg). The stdin pipe form works in any environment (TTY or non-TTY) because the harness uses plain `input()`; redirect output to a file to keep model token spam out of your terminal/context. `bin/zenith` does NOT `cd` into the repo root before exec'ing the harness — this keeps `.zenithrc` lookup and CLAUDE.md auto-discovery honoring the user's actual cwd.
 
 ## CALM Engine (`calm/`, ~37,400 LOC, 250 tests, 100% benchmark)
 
@@ -387,7 +387,7 @@ Full spec: `.claude/rules/distillation.md` — pipeline scripts, specialist doma
 
 ## Key Constraints
 
-- **8 GB VRAM**: both 4B-class bases fit at **256K context** with Q4 KV cache (llama.cpp) — Qwen 3.5 4B Q5 uses ~7.3 GB, Gemma 4 E4B Q5 uses ~6.7 GB (sliding-window attention makes Gemma's KV cache dramatically smaller at long context). 9B Q4 fits at 2K (Ollama). 0.8B FP16 fits at 32K.
+- **8 GB VRAM**: production default is Gemma 4 E4B tq4 + tq4 KV at **512K context** (~7 GB total, see Serving Architecture). Historical Q4-KV + Q5_K_M configs fit at **256K context** — Qwen 3.5 4B Q5 uses ~7.3 GB, Gemma 4 E4B Q5 uses ~6.7 GB (sliding-window attention makes Gemma's KV cache dramatically smaller at long context). 9B Q4 fits at 2K (Ollama). 0.8B FP16 fits at 32K.
 - **Both 4B bases are trained at 256K context** (Qwen 3.5 4B and Gemma 4 E4B, verified via GGUF metadata `n_ctx_train=262144`). Earlier notes had Qwen at 32K — that was wrong.
 - **Qwen 3.5 4B QLoRA**: 248K vocab CE loss OOMs on anything under 40GB VRAM. Must use cloud GPU (Colab A100).
 - **Qwen 3.5 0.8B QLoRA**: fits locally at batch=1, seq_len=1024, packing=false
