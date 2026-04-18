@@ -125,7 +125,7 @@ Session 31 never needed step 4. Steps 1-3 took 0%→100% (data), 68%→100% (mec
 
 ### LLM-Computer (`calm/llm_computer/`)
 
-Implementation of Percepta's March 2026 research (RESEARCH/01-03):
+Implementation of Percepta's March 2026 research (see `RESEARCH/LLM-COMPUTER/` for 00-03 notes; supplementary directories `RESEARCH/HRM/`, `RESEARCH/NEURAL_COMPUTER/`, `RESEARCH/TRAINING/`):
 
 - `Small2DTransformer` (`model.py`): vanilla PyTorch, `d_head=2`, optional `use_hard_max=True`. Standard `nn.MultiheadAttention` + gated ReLU FFN + causal mask + learned positional embeddings. Weights are compiled source code, not statistical summary.
 - `HullKVCache` (`hull_cache.py`): online 2D convex hull via Andrew's monotone chain. **108× speedup** vs linear scan at N=2K (`tests/test_hull_cache.py`). Parity with batched hard-max attention validated against compiled programs (`tests/test_hull_cache_attention.py`). Not yet wired into `Small2DTransformer.forward()` — perf path for long sequences, our programs use S ≤ 5 where linear scan wins.
@@ -266,12 +266,12 @@ Eval mode runs this path per-domain: `scripts/eval_hrm_math.py --verified`, `eva
 
 Multi-task HRM (`calm/hrm/checkpoints/multi_task_best.pt`) pools all four domains into one 48K model: 100% per-token val_acc; per-domain eval via `scripts/eval_hrm_multi.py`. This is Vector 2 phase 1.
 
-Future direction: replace the Python interpreter with a compiled `Small2DTransformer` per query (the paper's Futamura projection). Same IR, different execution substrate. Scoped into four phases in `.claude/MEMORY/CRLM_SPEC.md` §H.
+Future direction: replace the Python interpreter with a compiled `Small2DTransformer` per query (the paper's Futamura projection). Same IR, different execution substrate.
 
 ## File Organization
-- `agents/` — core harness code (15 files, ~4,400 LOC). No ML dependencies. Must work on Windows + WSL2 with Python 3.11+
+- `agents/` — core harness code (15 files, ~4,423 LOC). No ML dependencies. Must work on Windows + WSL2 with Python 3.11+
 - `agents/distill/` — training pipeline (10 Python files + 1 notebook). ML dependencies (torch, unsloth, transformers) only required here. **Secondary to backends** — only needed for domains that can't be computed.
-- `calm/` — CALM engine + Auto-CALM + modular backends + cognitive intelligence layer (~194 files, ~37,400 LOC, 250 tests). Engine V2 pipeline with 116 backends, 39 cognitive modules, adaptive thinking, self-healing, factual cross-check, module learning feedback loop. Dependencies: `wasmtime` (optional, for wasm backend). Full spec: `.claude/rules/calm.md`
+- `calm/` — CALM engine + Auto-CALM + modular backends + cognitive intelligence layer (~393 .py files, ~37,400 LOC, 70 test files / 565 test functions). Engine V2 pipeline with 120 backends, 39 cognitive modules, adaptive thinking, self-healing, factual cross-check, module learning feedback loop. Dependencies: `wasmtime` (optional, for wasm backend). Full spec: `.claude/rules/calm.md`
 - `calm/hrm/` — HRM (Hierarchical Reasoning Model) encoder-decoder. Core: `model.py` (HRM, HRMSeq2Seq, HRMEncoder, HRMDecoder), `train.py`/`inference.py`. Per-domain data generators: `data.py` (math), `nl_data.py` (NL templates), `word_data.py` (word problems), `gsm_data.py` (GSM-style narratives), `multi_data.py` (pooled). 5 production checkpoints at `calm/hrm/checkpoints/*_best.pt`, all 48K params via `--structure-only`. Dedicated tests: `calm/hrm/tests/`.
 - `calm/llm_computer/` — substrate core. `Small2DTransformer` (`model.py`), `HullKVCache` (`hull_cache.py`), gate-graph IR (`gate_graph.py`), declarative compiler (`compile.py`), greedy auto-scheduler (`schedule.py`), parser/interpreter (`parse.py` + `interpret.py`), 15 compiled programs in `programs/`. **Substrate extensions**: `fast_weights.py` (D1 runtime Hebbian writes), `computation_trace.py` (D2 traces), `mixed_geometry.py` (D3 per-layer geometries), `recurrent_substrate.py` (D5 iteration budget), `combined_substrate.py` (D2+D3+D5 bundle), `substrate_lm.py` (BPE + training pipeline for substrate-native cards). **Prod Gemma stack (session 32)**: `gemma_substrate.py` (the loaded model + install API + CardSlot/VerificationHook + KVCache variants), `tq4_triton.py` (fused dequant Triton kernels for tq4 + Q6_K). Trained substrate cards live in `checkpoints/` (substrate_lm_mvp, substrate_hybrid_mvp, substrate_hrlm_v2, substrate_hrm_nl_best, synth_familyA variants). 78+ tests in `tests/`.
 - `models/` — Ollama Modelfiles (3 files: qwen9b-fast, qwen4b-fast, reasoning-base)

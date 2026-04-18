@@ -56,7 +56,7 @@ Two types of backends coexist:
 The engine doesn't care which type — same contract: pure function, deterministic
 output, engine trusts it over the model.
 
-### Current Backends (116 modules, 1002 functions, 550 NL patterns)
+### Current Backends (120 modules, 1002 functions, 550 NL patterns)
 
 **Compute backends:**
 
@@ -323,8 +323,8 @@ VERIFIED = all lanes agree → safe.
 | `sandbox.py` | 254 | Subprocess Python isolation |
 | `nl_parser.py` | 168 | NL → stack code translator |
 | `backends/__init__.py` | 77 | Auto-discovery registry: scans `*_ops.py` + `*_kb.py` + `*_NL_PATTERNS` |
-| `backends/*_ops.py` | ~14,500 | 79 compute backends with NL patterns |
-| `backends/*_kb.py` | ~4,600 | 37 knowledge backends with `_DATA_VERSION` |
+| `backends/*_ops.py` | ~14,500 | 81 compute backends with NL patterns |
+| `backends/*_kb.py` | ~4,600 | 39 knowledge backends with `_DATA_VERSION` |
 | `engine_v2.py` | 414 | Full 7-phase cognitive pipeline with self-healing |
 | `router.py` | ~850 | Cognitive router: 39 modules, weighted quality scoring |
 | `adaptive.py` | 130 | Adaptive thinking budget (2K→32K based on complexity) |
@@ -413,5 +413,5 @@ feed the auto-upgrade pipeline. The same corrections that generate
 training data for optional fine-tuning ALSO compile directly into
 substrate weights for instant, verified persistence.
 
-| `tests/` | ~3,400 | 250 tests |
+| `tests/` | ~3,400 | 70 test files / 565 test functions across calm/ |
 | `benchmark.py` | 227 | 40-problem eval (format-agnostic) |

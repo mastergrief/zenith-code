@@ -113,18 +113,18 @@ compile into recall card → install via CardSlot → persist as JSON.
 **Model understands, transducers structure, cards compute, engine verifies.** Intelligence comes from the system architecture, not the weights. No single component reasons — the pipeline produces reasoned answers through composition. Gemma understands NL and routes; Pointer Transducers extract formal structure; compiled cards compute exactly; CALM verifies. Adding a backend module is equivalent to training — the model gets smarter at that domain instantly, with zero GPU cost.
 
 Four active systems coexist:
-1. **Python agent harness** (`agents/`, ~4,400 LOC across 15 files) — terminal coding assistant with dual backend (Ollama + llama.cpp), 3-level permissions, thinking mode, sessions, compaction, effort control, and llama.cpp hot-swap
-2. **CALM engine** (`calm/`, ~37,400 LOC across 194 files) — modular compute + knowledge facade with cognitive intelligence layer. Auto-CALM (transparent verification + precomputation, 100% benchmark) + Engine V2 (7-phase pipeline: pre-analyze → enrich → precompute → generate → verify → cognitive route → self-heal) + 122 modular backends (1045 verified functions, 603 NL patterns, 100% coverage) + 39 cognitive modules (verification, reasoning, quality, meta, planning) + 48 factual check patterns + 10 dynamic cross-check patterns against backends + adaptive thinking budget + cross-turn conversation state + module self-learning with feedback loop. Full spec: `.claude/rules/calm.md`
+1. **Python agent harness** (`agents/`, ~4,423 LOC across 15 files) — terminal coding assistant with dual backend (Ollama + llama.cpp), 3-level permissions, thinking mode, sessions, compaction, effort control, and llama.cpp hot-swap
+2. **CALM engine** (`calm/`, ~37,400 LOC across 393 .py files) — modular compute + knowledge facade with cognitive intelligence layer. Auto-CALM (transparent verification + precomputation, 100% benchmark) + Engine V2 (7-phase pipeline: pre-analyze → enrich → precompute → generate → verify → cognitive route → self-heal) + 120 modular backends (1002 verified functions, 550 NL patterns, 100% coverage) + 39 cognitive modules (verification, reasoning, quality, meta, planning) + 48 factual check patterns + 10 dynamic cross-check patterns against backends + adaptive thinking budget + cross-turn conversation state + module self-learning with feedback loop. Full spec: `.claude/rules/calm.md`
 3. **Rust claw-code port** (`rust/`) — upstream claw-code, 9 crates, separate build system
 4. **Unified Single Tensor** (`calm/llm_computer/`) — the CHRLM architecture. **ONE `.pt` contains Gemma (tq4) + trained PTs + compiled cards + persistent knowledge DB.** Session 30 validated Level 5 on the substrate-native demo (`HybridGroupedSmall2DTransformer`): three attention modes coexist in one layer via per-sub-head partition. **Session 32 ported the full pattern to prod Gemma 4 E4B** (`gemma_substrate.py`): coherent output at **42 tok/s decode** (160× over baseline, 90% of llama.cpp on the same GGUF) via Triton fused dequant kernels (`tq4_triton.py`) + CUDA Graph capture + real tq4 KV storage (`KVCacheTq4`, 4.4× memory). Cards install two ways on prod Gemma: residual-additive (`CardSlot.attach(preserve=True)` for PTs) and in-tensor (`install_card_in_attention` + `convert_layer_to_fp32`, with per-sub-head dispatch via `attention_partition` for `mode='hard_max'|'softmax'|'grouped'`). Verification feedback closes the loop (`VerificationHook` biases Gemma logits with the card's argmax). Learning loop end-to-end: `KnowledgeStore` corrections compile into a recall card via `build_recall_model()`, install via `CardSlot`, persist as JSON — demo at `scripts/gemma_learning_loop_demo.py` (5/5 wrong → 5/5 correct). 25 compiled programs in `programs/` (`adder` 10K/10K, `multiplier` 3390/3390 on a·b<1000 — first compiled card to fix real Gemma arithmetic errors via step-through digit bias, `gcd` 256/256, `dispatched_v4` 791/791, `reasoning_engine` 512/512). **Pointer Transducers** (session 31, `CopyAugmentedTransformer`): one PT per output-language family (~3-5 PTs cover 30+ domains); cross-domain val acc 86-100%; checkpoints in `calm/hrm/checkpoints/copy_*_best.pt`. Domain registry: `.claude/MEMORY/substrate_registry.md`. `/domain` command for guided domain addition. Full spec: `.claude/rules/Substrate.md` + `.claude/rules/architecture.md`.
 
-Serving: Gemma 4 E4B (primary) or Qwen 3.5 4B via llama.cpp at **512K context** (`ctx_size=524288`), **32K thinking budget**. Production: tq4+tq4 KV cache on Gemma E4B (`~/models/gemma-4-E4B-it-tq4-aligned.gguf`, 5.0 GB). CALM/Auto-CALM runs on the same llama-server instance. Harness auto-computes compaction threshold as `min(per-GGUF limit, int(ctx_size * 0.89))` — Gemma compacts at **227.5K tokens** (232960). Hot-swap between bases via `agents/model_swap.py`.
+Serving: Gemma 4 E4B (primary) or Qwen 3.5 4B via llama.cpp at **512K context** (`ctx_size=524288`), **48K thinking budget** (`EFFORT["max"]["max_tokens"]=49152`). Production: tq4+tq4 KV cache on Gemma E4B (`~/models/gemma-4-E4B-it-tq4-aligned.gguf`, 5.0 GB). CALM/Auto-CALM runs on the same llama-server instance. Harness auto-computes compaction threshold as `min(per-GGUF limit, int(ctx_size * 0.89))` — Gemma compacts at **227.5K tokens** (232960). Hot-swap between bases via `agents/model_swap.py`.
 
 **Tracing track (session 33, Rounds 13-43, 29-round arc)**: full mechanistic-interpretability arc shipped on prod Gemma. 6 capabilities mapped at sweep + per-head resolution (arithmetic, factual recall, induction, counting, comparison, SV agreement). 3 causal validations: R28 (L30 H4/H6 on arithmetic, mean |Δ|=0.407, 9/10), R42 (L23 H1/H4 on SV agreement, |Δ|=0.467, 8/10), R43 (L23 on comparison + counting, 18/18 + 6/6). **Hub-sharing empirically proven**: L23 H1/H4 is a shared content-carrier head serving arithmetic + SV + comparison + counting (32/34 match rate). **4-for-1 compilation ROI validated.** Circuit typology: concentrated / cooperative / diffuse / hybrid-pipeline. Full atlas: `.claude/MEMORY/atlas.md`. Rules: `.claude/rules/augmentation_thesis.md`, `.claude/rules/tracing_intelligence.md`, `.claude/rules/tracing_roadmap.md`.
 
-## Python Agent Harness (`agents/`, ~4,400 LOC across 15 core files)
+## Python Agent Harness (`agents/`, ~4,423 LOC across 15 files)
 
-Terminal coding assistant with dual backend (Ollama + llama.cpp), 20 tools (`tools.py`), 3-level permissions (`permissions.py`), auto-compaction with per-GGUF limits (`compact.py`: Gemma 4 E4B 200K, Qwen 3.5 4B 130K), sessions (`session.py`), history log (`history.py`), thinking mode, effort control (low/medium/max), llama.cpp hot-swap (`model_swap.py:LlamaServerManager`), `SpecialistCoordinator` auto-selecting hot-swap vs Ollama multi-model mode. Core class is `Agent` in `agent.py` with streaming + tool-calling loop (max 10 rounds). `ctx_size` default **524288** (512K). Config via `.zenithrc`/`zenith.json` + `ZENITH_*` env vars (`config.py`). Full file-by-file breakdown: `.claude/rules/architecture.md` §"Agent System" + §"File Organization".
+Terminal coding assistant with dual backend (Ollama + llama.cpp), 20 tools (`tools.py`), 3-level permissions (`permissions.py`), auto-compaction with per-GGUF limits (`compact.py`: Gemma 4 E4B 200K, Qwen 3.5 4B 130K), sessions (`session.py`), history log (`history.py`), thinking mode, effort control (low/medium/max), llama.cpp hot-swap (`model_swap.py:LlamaServerManager`), `SpecialistCoordinator` auto-selecting hot-swap vs Ollama multi-model mode. Core class is `Agent` in `agent.py` with streaming + tool-calling loop (max 32 rounds, `max_tool_rounds` in `agent.py`). `ctx_size` default **524288** (512K). Config via `.zenithrc`/`zenith.json` + `ZENITH_*` env vars (`config.py`). Full file-by-file breakdown: `.claude/rules/architecture.md` §"Agent System" + §"File Organization".
 
 ### Harness Commands
 | Command | Action |
@@ -179,7 +179,7 @@ ZENITH_CTX=65536 zenith
 ```
 `bin/zenith` launcher: auto-starts llama.cpp if not running, waits for health, passes `--backend llamacpp`. Default `ZENITH_CTX=524288` (512K). Configurable via `ZENITH_MODEL`, `ZENITH_PORT`, `ZENITH_CTX`, `ZENITH_LLAMA_SERVER` env vars, plus the `--gguf PATH` CLI flag (must be first arg). The stdin pipe form works in any environment (TTY or non-TTY) because the harness uses plain `input()`; redirect output to a file to keep model token spam out of your terminal/context. `bin/zenith` does NOT `cd` into the repo root before exec'ing the harness — this keeps `.zenithrc` lookup and CLAUDE.md auto-discovery honoring the user's actual cwd.
 
-## CALM Engine (`calm/`, ~37,400 LOC, 250 tests, 100% benchmark)
+## CALM Engine (`calm/`, ~37,400 LOC, 70 test files / 565 test functions, 100% benchmark)
 
 Full spec: `.claude/rules/calm.md`
 
@@ -197,9 +197,9 @@ Full spec: `.claude/rules/calm.md`
 - Engine stops at `</calm>`, executes via 4-tier parse, injects results
 - Score: 85-98% (nondeterminism in whether model uses blocks)
 
-### Modular Backend Architecture (116 backends, 1002 functions, 550 NL patterns)
+### Modular Backend Architecture (120 backends, 1002 functions, 550 NL patterns)
 
-Two types: **compute backends** (79 `*_ops.py`) + **knowledge backends** (37 `*_kb.py`). Same contract: export `*_FUNCTIONS` dict + `*_NL_PATTERNS` list. Auto-discovery registers both — zero other files to edit.
+Two types: **compute backends** (81 `*_ops.py`) + **knowledge backends** (39 `*_kb.py`). Same contract: export `*_FUNCTIONS` dict + `*_NL_PATTERNS` list. Auto-discovery registers both — zero other files to edit.
 
 **Defense in depth**: Layer 2 precompute (550 NL patterns) injects correct answers before generation. Layer 1 verify catches wrong claims after. Layer 3 factual_check catches known misconceptions (48 static + 10 dynamic cross-check patterns).
 
@@ -257,8 +257,8 @@ python3 -m calm.engine "What is 17 * 23?"
 # Intent-to-edit (fix bugs from NL description)
 python3 -c "from calm.auto_calm import IntentToEdit; IntentToEdit().fix('app.py', 'test_app.py', verbose=True)"
 
-# Run all 250 tests
-python3 -m pytest calm/tests/ -v
+# Run all 565 tests across 70 files
+python3 -m pytest calm/ -v
 ```
 
 ## Pointer Transducers + LLM-Computer (`calm/hrm/` + `calm/llm_computer/`)
@@ -347,10 +347,10 @@ Full spec: `.claude/rules/distillation.md` — pipeline scripts, specialist doma
 - **Production GGUF**: `~/models/gemma-4-E4B-it-tq4-aligned.gguf` (5.0 GB, TurboQuant tq4, 132-byte block alignment from session 16). **This is what CALM runs on.**
 - **Alternative GGUFs**: `~/models/gemma-4-E4B-it-Q5_K_M.gguf` (5.48 GB, stock Q5), `~/models/Qwen3.5-4B.Q5_K_M.gguf` (2.9 GB, fine-tuned Q5)
 - **TurboQuant tq4 KV cache**: `--cache-type-k tq4_k256 --cache-type-v tq4_k256`. 4.125 bpw, 16-level Lloyd-Max codebook, Pi rotation (seed=42, 256×256 orthogonal). 132-byte blocks (128 qs + 2 d + 2 pad for 4-byte aligned uint32 loads). **Old 130-byte GGUFs are incompatible — re-quantize.**
-- Context: **512K** with tq4 KV (~5.0 GB weights + ~2.0 GB KV = ~7 GB VRAM). 32K thinking budget. Auto-CALM + harness share the same server.
+- Context: **512K** with tq4 KV (~5.0 GB weights + ~2.0 GB KV = ~7 GB VRAM). 48K thinking budget (`EFFORT["max"]["max_tokens"]=49152`). Auto-CALM + harness share the same server.
 - `--parallel 1` required — without it, llama-server splits `ctx_size` across 4 default slots
 - Launch: `llama-server -m ~/models/gemma-4-E4B-it-tq4-aligned.gguf --ctx-size 524288 --parallel 1 --cache-type-k tq4_k256 --cache-type-v tq4_k256 -ngl 999 --port 8080`
-- **~45-48 tok/s** on Gemma 4 E4B tq4 at 8K context (CALM benchmark runs)
+- **42 tok/s steady decode** on Gemma 4 E4B tq4 (matches architecture.md; measured via Triton + CUDA Graphs, ~90% of llama.cpp on same GGUF)
 - Hot-swap: `agents/model_swap.py:LlamaServerManager`. `/swap gemma` / `/swap qwen` in harness.
 
 **Ollama (fallback)** — stock models, quick testing:

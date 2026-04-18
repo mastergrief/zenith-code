@@ -9,8 +9,8 @@ Consult when actively training, not on general sessions.
 
 - **0.8B reasoning base**: trained (3 epochs, loss 1.106), eval:
   format learned but substance wrong — model too small.
-- **4B reasoning base (Qwen)**: trained on Colab A100 (1,339
-  examples after 2026-04-07 React/security expansion, 3 epochs),
+- **4B reasoning base (Qwen)**: trained on Colab A100 (910
+  examples after re-filter pass, 3 epochs),
   exported to GGUF Q5_K_M, serving via llama.cpp. Earlier eval:
   3/5 PASS with thinking enabled (race condition, OOMKilled,
   architecture pass; React and security partial). **Subsequent
@@ -68,8 +68,9 @@ Consult when actively training, not on general sessions.
 
 ## Training Data (`agents/distill/data/`, gitignored except hand-written files)
 
-- `claude_reasoning.jsonl` — 1,339 merged examples (832 filtered
-  HuggingFace + 507 hand-written)
+- `claude_reasoning.jsonl` — 910 merged examples (re-filtered pass
+  over HuggingFace + hand-written sources; earlier 1,339 count
+  reflected a pre-filter merge)
 - `coding_reasoning_claude.jsonl` — 547 hand-written coding
   reasoning examples (committed). Includes +19 added 2026-04-07
   (React + security, targeting Qwen eval gaps) and +21 added
