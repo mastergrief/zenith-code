@@ -2,7 +2,7 @@
 
 **IMPORTANT**: Assume nothing. Hypothesis, Build, Test & Iterate. First Principles thinking. Do not discount anything until it's built and tested!
 
-Fork of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) with a Python agent harness, CALM reasoning engine, HRM + LLM-Computer (the CRLM stack), and a Rust port. **Working policy: lead-orchestrator + one builder-worker per task. Lead (you) owns hypothesis + review + commit; worker builds + self-tests + reports via SendMessage. Rotate to a fresh worker after 2 iterations on the same task.**
+Fork of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) with a Python agent harness, CALM reasoning engine, HRM + LLM-Computer (the CRLM stack), and a Rust port. **Working policy: lead-orchestrator + one builder-worker per task. Lead (you) owns hypothesis + review + commit; worker builds + self-tests + reports via SendMessage. Rotate to a fresh worker after 2-3 iterations on the same task.**
 
 ## Default Workflow — Hypothesis, Test, Iterate
 Full spec: `.claude/rules/workflow.md`
@@ -42,11 +42,11 @@ Default pattern (ratified session 33+):
 3. **Task list is the shared surface** — `TaskCreate`/`TaskUpdate` coordinate
    work + survive agent rotation.
 
-**Rotation rule**: after **2 iterations** on the same task, spawn a fresh
+**Rotation rule**: after **2-3 iterations** on the same task, spawn a fresh
 worker with a tightened spec. Per `workflow.md`'s plateau principle (3 × <2%
-movement = bug, not tuning), 2 iterations that don't converge means the
-spec is under-defined, not the worker stuck. Fresh worker + sharper spec
-usually unblocks faster than a third iteration.
+movement = bug, not tuning), iterations that don't converge mean the spec
+is under-defined, not the worker stuck. Fresh worker + sharper spec usually
+unblocks faster than a fourth revision cycle.
 
 **Quick single-file edits** (typo, one-line fix, config tweak): do directly,
 skip the agent — overhead isn't worth it.

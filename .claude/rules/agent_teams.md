@@ -12,17 +12,24 @@ The default loop for non-trivial work:
    to read, exact deliverables (paths + line-count bounds), measurement gate,
    constraints (strictly additive, no commits, no Gemma run, etc.), and
    "what NOT to do" list.
-2. **Spawn one worker** (`Agent(subagent_type="general-purpose",
+2. **`TaskCreate` for the unit of work.** Mandatory — every agent spawn
+   requires a corresponding task row. The task is what makes in-flight
+   work visible to the user and gives the worker a handle to update.
+   Skipping this is a silent violation of the lead-orchestrator contract.
+3. **Spawn one worker** (`Agent(subagent_type="general-purpose",
    team_name=T, name="builder", run_in_background=True, prompt=<brief>)`).
-3. **Worker reads, builds, self-tests within its capability**, reports
+   Immediately `TaskUpdate({taskId, owner: <worker-name>, status:
+   "in_progress"})` so the task list reflects live ownership.
+4. **Worker reads, builds, self-tests within its capability**, reports
    back via `SendMessage({to: "team-lead", ...})`.
-4. **Lead reviews diff directly** (never trust worker's self-report —
+5. **Lead reviews diff directly** (never trust worker's self-report —
    read the actual files changed). Commits if solid. Sends corrections
-   via SendMessage if not.
-5. **Lead reports to user** + takes direction for next iteration.
-6. **After 2 iterations** on the same task, spawn fresh worker with
-   tightened spec. Don't iterate a third time on the same worker — it
-   indicates spec underspecification, not agent incompetence.
+   via SendMessage if not. `TaskUpdate` to `completed` when shipped.
+6. **Lead reports to user** + takes direction for next iteration.
+7. **After 2-3 iterations** on the same task, spawn fresh worker
+   with tightened spec. One worker carries a task through 2-3
+   revision cycles; if it hasn't converged by then the spec is
+   under-defined, not the worker incompetent.
 
 **What the lead owns** (across all rotations):
 - Conversational context with user
@@ -125,37 +132,76 @@ teammate of the right type.
 
 ## Workflow
 
+**Invariant that applies to every pattern below**: **one `TaskCreate`
+per agent, no exceptions.** The task row is the shared surface between
+lead and worker and the only channel that surfaces in-flight work to
+the user. No task → no spawn. Holds equally for single-worker and
+multi-worker; the steps below are the same rule, scaled.
+
 ### Single-worker (lead + builder — default)
 
-1. **Define hypothesis + spec.** One-sentence hypothesis, measurement
-   gate, deliverable paths, constraints, "what NOT to do" list.
-2. **`TeamCreate`** — single call, creates team + task list.
-3. **`TaskCreate`** for the unit of work.
-4. **Spawn one worker** with `run_in_background=True` and a
-   self-contained brief pointing at files to read.
-5. **Wait for notification.** Messages + idle arrive as conversation
-   turns. Don't poll.
-6. **Review diff directly.** Agent's summary describes intent; read
-   the actual files. If solid, commit.
-7. **If revision needed: send one correction round via SendMessage.**
-   Concrete file:line targets. No hand-waving.
-8. **If a second iteration doesn't converge, rotate.** Shut down the
-   current worker (`shutdown_request`), spawn a fresh worker with a
-   tightened spec. Rotation is cheaper than iterating past 2.
-9. **Shut down.** `SendMessage({to: name, message: {type:
-   "shutdown_request"}})`. Then `TeamDelete` once all idle.
+Every step below names the channel (tool) used. `SendMessage` is the
+ONLY way to talk to the worker once spawned — plain text in the lead's
+response is invisible to them. `TaskUpdate` is the ONLY way to express
+state changes — don't send `{type: "task_completed"}` messages.
+
+1. **Define hypothesis + spec.** [lead-only] One-sentence hypothesis,
+   measurement gate, deliverable paths, constraints, "what NOT to do"
+   list.
+2. **`TeamCreate`** — single call, creates team + task list (1:1).
+3. **`TaskCreate`** for the unit of work. **One task per agent, no
+   exceptions.** Use `addBlockedBy` for DAG edges on prior rounds.
+4. **Spawn one worker.** `Agent(subagent_type, team_name, name,
+   run_in_background=True, prompt=<self-contained brief>)`. The
+   brief is the ONLY channel the worker sees at spawn time — it
+   must include file paths, line numbers, deliverables, measurement
+   gate, "what NOT to do". Never "continue what we discussed."
+5. **`TaskUpdate`** immediately after spawn: `{taskId, owner:
+   <worker-name>, status: "in_progress"}`. Makes live ownership
+   visible to the user.
+6. **Wait for the worker's report** (`SendMessage` inbound arrives as
+   a conversation turn; completion + idle notifications arrive
+   automatically). Don't poll. Don't `Sleep`. Idle ≠ done —
+   teammates go idle every turn as normal flow.
+7. **Review diff directly.** Trust-but-verify — the worker's report
+   describes intent, not reality. Read the actual files changed.
+8. **Ship or revise:**
+   - **Ship**: commit (if the task description authorized commits up
+     front; otherwise confirm with user per CLAUDE.md's "only commit
+     when explicitly asked"). `TaskUpdate({taskId, status:
+     "completed"})` — but only once the downstream gate that depends
+     on this work has passed. Marking completed earlier violates
+     "Only mark completed when **fully** done" and hides work that
+     may still need revision.
+   - **Revise**: `SendMessage({to: <name>, summary, message})` with
+     concrete file:line corrections. No hand-waving. The worker is
+     idle after their last turn — the message wakes them.
+9. **Rotation after 2-3 iterations.** One worker carries a task
+   through 2-3 revision cycles; if it hasn't converged by then the
+   spec is under-defined, not the worker incompetent. Shut down the
+   current worker via `SendMessage({to: <name>, message: {type:
+   "shutdown_request"}})`; spawn a fresh worker with a tightened
+   spec (new `Agent` call, cold start, self-contained brief — don't
+   replay chat history; pointer to recent commits + task list is
+   enough).
+10. **Teardown.** Once the task list is empty and all workers idle:
+    `SendMessage({to: <name>, message: {type: "shutdown_request"}})`
+    for each, then `TeamDelete`. Team = TaskList 1:1, so delete
+    removes both.
 
 ### Multi-worker (N>1 — explicit authorization)
 
 1. **Plan the partition.** Which teammates, which files, which tasks?
    Disjoint file sets only; no race at commit time.
 2. **`TeamCreate`** — single call, creates both team and task list.
-3. **`TaskCreate`** per unit of work. `addBlockedBy` for DAG edges.
+3. **`TaskCreate`** per unit of work. **One task per agent, no
+   exceptions.** Use `addBlockedBy` for DAG edges.
 4. **Spawn in parallel** — single message, multiple `Agent` calls,
    `run_in_background: true`. Brief each teammate like a cold
    colleague: file paths, line numbers, context, expected report
    shape. Self-contained prompts.
-5. **`TaskUpdate`** to assign ownership.
+5. **`TaskUpdate`** to set `owner` + `status: "in_progress"` on each
+   task at spawn time. Update to `completed` when the diff ships.
 6. **Wait for notifications.** Messages + idle notifications arrive
    automatically. Don't poll.
 7. **Verify.** Review diffs directly — an agent's summary describes
@@ -201,17 +247,37 @@ teammate of the right type.
   Use only when everyone genuinely needs it.
 - **Trust but verify.** Read actual diffs after agents claim
   completion. Agent self-reports describe intent, not reality.
-- **2-iteration cap per worker.** If a worker needs a 3rd revision on
-  the same task, your spec is under-defined. Rotate to fresh worker
-  with a tightened brief — fresh cold-start + sharper spec is usually
-  faster than continuing to iterate on a noisy conversation.
+- **2-3 iteration cap per worker.** Budget a worker 2-3 revision
+  cycles on the same task. If they need a 4th, your spec is
+  under-defined. Rotate to fresh worker with a tightened brief —
+  fresh cold-start + sharper spec is usually faster than continuing
+  to iterate on a noisy conversation.
 - **Don't replay chat history to a new worker.** The brief is
   self-contained: pointer at recent commits + task list + remaining
   work. The commits carry the state.
-- **Lead never writes implementation when a worker is in flight.**
-  Lead is orchestrator; mid-flight implementation creates race
-  conditions with the worker's edits. Commit worker output first,
-  then if more needed, spawn next iteration.
+- **Lead never writes implementation on files the worker owns.**
+  Lead is orchestrator; mid-flight implementation on the worker's
+  claimed files creates race conditions with their edits. Commit
+  worker output first, then if more needed, spawn next iteration.
+  **Disjoint-files corollary**: lead MAY edit files outside the
+  worker's claim (different module, different script) — declare the
+  worker's claim explicitly in the brief ("you own X, Y, Z"), then
+  lead is free elsewhere. This session: builder2 owned
+  `calm/llm_computer/r51/student.py`; lead edited
+  `scripts/r51_capture_broad.py` in parallel with zero collision.
+- **Worker reports must surface design decisions, not just a diff.**
+  Require every worker brief to mandate a "Design decisions worth
+  flagging" + "Deferred / open" section in their report. The
+  diff-only handoff loses the review's most valuable data —
+  reviewer's choices, rejected alternatives, open questions.
+  Builder2's S=1 dead-attention catch came from their prose report,
+  not the code. Silent workers ship silent bugs.
+- **Downstream revisions open a new task, not silent re-edit.**
+  If worker N+1 flags an issue with worker N's shipped output,
+  create a new task row (`addBlockedBy` → original) rather than
+  reopening the completed one. Preserves audit trail + makes the
+  revision visible to the user. Silent re-edits break "Only mark
+  completed when fully done" retroactively.
 
 ## Protocol messages
 
