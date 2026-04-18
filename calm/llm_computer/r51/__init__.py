@@ -1,5 +1,10 @@
 """R51 tier-3 distillation: broad prompt bank + Small2DTransformer student."""
 
+from calm.llm_computer.r51.install import (  # noqa: F401
+    InstallHandle,
+    install_r51_student,
+    load_student_from_checkpoint,
+)
 from calm.llm_computer.r51.prompt_bank import (  # noqa: F401
     build_broad_corpus,
     sample_code,
