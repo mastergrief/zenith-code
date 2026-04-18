@@ -85,14 +85,15 @@ Compile decision flows from the classification.
 | **Concentrated** | 1-2 heads carry ≥50% of layer signal | Arithmetic L23 H1 (-4.85) + H4 (-4.30), induction L37 H6 (-0.52), counting L37 H4 (-1.02) | 1-2 `LookUpExact` gates per head. Cheap. R28-validated. |
 | **Cooperative** | 3-4 heads each -0.5 to -1.5, additive sum ≈ full-layer Δ | Counting L20 H2+H5+H6 (each -1.0 to -1.4, sum -3.74 vs full -3.93) | 3-4 `LookUpExact` gates. Moderate cost. |
 | **Diffuse** | No head > -0.2 despite full-layer Δ > -1.0; per-head sum ~20% of full | Factual recall L5 and L11 (top head -0.078, full -1.18/-1.56) | NOT compilable at attention level. Circuit is in FFN. Use ROME/MEMIT-style weight probing, or side-channel via `KnowledgeStore`. |
-| **Deep-diffuse** | Full-layer Δ large (e.g. L24 -17.23) but diffuse at attention AND FFN AND per-neuron AND SVD AND SAE-feature levels | Multi-step composition L24 (R47-R50.6). Signal distributed across pathways with non-additive interactions; rank-50 in learned SAE basis but top SAE features have zero causal effect (R50.5). | **Currently no compilable path.** All attention-level, FFN-weight-level, and SAE-feature-level installs ruled out. Compilation-worthy open problem — find architectures where reconstructed components carry causal effect. |
+| **Deep-diffuse** | Full-layer Δ large (e.g. L24 -17.23) but diffuse at attention AND FFN AND per-neuron AND SVD AND SAE-feature levels; MSE distillation reaches high variance-explained but fails token preservation | Multi-step composition L24 (R47-R50.6, R51). Signal distributed across pathways with non-additive interactions; rank-50 in learned SAE basis but top SAE features have zero causal effect (R50.5); 92.6%-var-explained Small2DTransformer student (R51.3) produces 0.19 training-dist / 0.34 off-dist mean-prefix match in live L24 replacement (R51.5), both gates fail. | **Currently no compilable path.** Attention-level, FFN-weight-level, SAE-feature-level, AND MSE-distillation installs all ruled out. Open directions: KL-divergence on downstream logits, much larger student (10M+), per-subspace distillation, or pivot to capabilities whose circuits are concentrated/cooperative (arithmetic hub, induction). |
 
 **Rule**: never attempt attention-level compilation without
 classifying via per-head ablation first. Diffuse circuits waste
 engineering effort if you target attention. Deep-diffuse circuits
-(R50.5 falsification) waste further effort if you target FFN weights
-or SAE features without first checking that reconstruction fidelity
-translates to causal effect.
+(R50.5 falsification, R51.5 falsification) waste further effort if
+you target FFN weights, SAE features, OR MSE-trained students
+without first checking that reconstruction fidelity at the chosen
+metric translates to causal effect on the user-facing task.
 
 ## Compositional hypothesis
 
@@ -290,6 +291,20 @@ Laptop, 8 GB VRAM:
   target" direction** for distributed circuits. Open problem:
   find SAE architectures where reconstruction implies causal
   localization.
+- **R51 (tier-3 first attempt)**: MSE-distilled 1.25M Small2DTransformer
+  student trained on 3000 broad-domain prompts → 92.6% aggregate
+  val variance-explained (per-domain 89.8-96.9%). Installed via
+  L24 monkey-patch on live Gemma + evaluated on 120 held-out
+  prompts with k=12 token preservation gate: training-dist mean
+  prefix = 0.19 (FAIL vs 0.80), off-dist = 0.34 (FAIL vs 0.95).
+  **Second instance of the R50.5 pattern at a different scale**:
+  high residual-space reconstruction fidelity does NOT imply
+  token-space task preservation. Counterintuitive per-domain
+  shape — arithmetic (lowest val MSE) preserves WORST (0.11),
+  code (highest val MSE) preserves BEST (0.59) — suggests the
+  missing 3-10% MSE on arithmetic contains sharp digit-selector
+  directions MSE averages over. MSE distillation added to the
+  "ruled out" set alongside SAE features for distributed circuits.
 
 **Seven capabilities mapped, three causal validations (R28, R42,
 R43), two facades shipped (HubInjectionCard 5-for-1 + MultiStep
