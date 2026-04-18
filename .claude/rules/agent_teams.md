@@ -1,12 +1,53 @@
 # Agent Teams Rules
 
-**Project default: NO subagents.** See `../CLAUDE.md` §"Working policy".
-This rule documents *how* to use teams correctly when the user has
-explicitly authorized an exception. Do not dispatch teams by default.
+**Project default: lead-orchestrator + one builder-worker per task.** See
+`../CLAUDE.md` §"Working policy". This rule documents the pattern in
+detail. Full teams (N>1 workers) require explicit user authorization.
 
-## When teams ARE appropriate
+## Lead-orchestrator pattern (default)
 
-- User explicitly asks for "a team", "agents", "parallel work", etc.
+The default loop for non-trivial work:
+
+1. **Lead states hypothesis + deliverable spec.** Must include: file paths
+   to read, exact deliverables (paths + line-count bounds), measurement gate,
+   constraints (strictly additive, no commits, no Gemma run, etc.), and
+   "what NOT to do" list.
+2. **Spawn one worker** (`Agent(subagent_type="general-purpose",
+   team_name=T, name="builder", run_in_background=True, prompt=<brief>)`).
+3. **Worker reads, builds, self-tests within its capability**, reports
+   back via `SendMessage({to: "team-lead", ...})`.
+4. **Lead reviews diff directly** (never trust worker's self-report —
+   read the actual files changed). Commits if solid. Sends corrections
+   via SendMessage if not.
+5. **Lead reports to user** + takes direction for next iteration.
+6. **After 2 iterations** on the same task, spawn fresh worker with
+   tightened spec. Don't iterate a third time on the same worker — it
+   indicates spec underspecification, not agent incompetence.
+
+**What the lead owns** (across all rotations):
+- Conversational context with user
+- Architectural decisions + trade-off rationale
+- Commit messages with before/after tables
+- Cross-round synthesis (what was ruled out, why)
+- `.claude/` rules + MEMORY files
+
+**What the worker owns** (per spawn, discarded on rotation):
+- Reading project files (saves lead context-window)
+- Writing implementation
+- Self-testing within its capability (unit tests, parse checks, not GPU
+  forwards unless lead explicitly assigns)
+- Synthesis report via SendMessage
+
+**What persists across rotations**:
+- Git commits (lead commits between iterations → new worker reads commits
+  to get state)
+- TaskList entries (shared team file)
+- Uncommitted files on disk (new worker can read + continue)
+- Lead's in-session synthesis
+
+## When teams ARE appropriate (N>1 workers)
+
+- User explicitly asks for "a team", "parallel work", etc.
 - Work partitions cleanly into disjoint file sets (two agents editing
   overlapping files will race at commit time).
 - Research/analysis that needs multiple independent reads of large
@@ -14,11 +55,13 @@ explicitly authorized an exception. Do not dispatch teams by default.
 
 ## When teams are NOT appropriate
 
-- Default coding work in this repo — work directly with
-  `Edit`/`Write`/`Read`/`Grep`/`Bash`.
 - Tightly sequential tasks with data dependencies between steps —
   serialize yourself; teammates can't share state mid-turn.
-- Quick one-off edits, typo fixes, single-file changes.
+- Quick one-off edits, typo fixes, single-file changes — lead does
+  directly, agent overhead isn't worth it.
+- GPU-heavy probing rounds where `bin/gemma-run` daemon is running —
+  lead orchestrates daemon scripts directly; worker can't hold daemon
+  state.
 
 ## Tool Inventory
 
@@ -82,6 +125,28 @@ teammate of the right type.
 
 ## Workflow
 
+### Single-worker (lead + builder — default)
+
+1. **Define hypothesis + spec.** One-sentence hypothesis, measurement
+   gate, deliverable paths, constraints, "what NOT to do" list.
+2. **`TeamCreate`** — single call, creates team + task list.
+3. **`TaskCreate`** for the unit of work.
+4. **Spawn one worker** with `run_in_background=True` and a
+   self-contained brief pointing at files to read.
+5. **Wait for notification.** Messages + idle arrive as conversation
+   turns. Don't poll.
+6. **Review diff directly.** Agent's summary describes intent; read
+   the actual files. If solid, commit.
+7. **If revision needed: send one correction round via SendMessage.**
+   Concrete file:line targets. No hand-waving.
+8. **If a second iteration doesn't converge, rotate.** Shut down the
+   current worker (`shutdown_request`), spawn a fresh worker with a
+   tightened spec. Rotation is cheaper than iterating past 2.
+9. **Shut down.** `SendMessage({to: name, message: {type:
+   "shutdown_request"}})`. Then `TeamDelete` once all idle.
+
+### Multi-worker (N>1 — explicit authorization)
+
 1. **Plan the partition.** Which teammates, which files, which tasks?
    Disjoint file sets only; no race at commit time.
 2. **`TeamCreate`** — single call, creates both team and task list.
@@ -92,11 +157,10 @@ teammate of the right type.
    shape. Self-contained prompts.
 5. **`TaskUpdate`** to assign ownership.
 6. **Wait for notifications.** Messages + idle notifications arrive
-   automatically as new conversation turns. Don't poll.
+   automatically. Don't poll.
 7. **Verify.** Review diffs directly — an agent's summary describes
-   intent, not reality. Never rely on "trust me" from an agent.
-8. **Shut down.** `SendMessage({to: name, message: {type:
-   "shutdown_request"}})`. Then `TeamDelete` once all idle.
+   intent, not reality.
+8. **Shut down.** Per single-worker pattern.
 
 ## Nuances / footguns
 
@@ -137,6 +201,17 @@ teammate of the right type.
   Use only when everyone genuinely needs it.
 - **Trust but verify.** Read actual diffs after agents claim
   completion. Agent self-reports describe intent, not reality.
+- **2-iteration cap per worker.** If a worker needs a 3rd revision on
+  the same task, your spec is under-defined. Rotate to fresh worker
+  with a tightened brief — fresh cold-start + sharper spec is usually
+  faster than continuing to iterate on a noisy conversation.
+- **Don't replay chat history to a new worker.** The brief is
+  self-contained: pointer at recent commits + task list + remaining
+  work. The commits carry the state.
+- **Lead never writes implementation when a worker is in flight.**
+  Lead is orchestrator; mid-flight implementation creates race
+  conditions with the worker's edits. Commit worker output first,
+  then if more needed, spawn next iteration.
 
 ## Protocol messages
 

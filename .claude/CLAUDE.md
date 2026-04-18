@@ -2,7 +2,7 @@
 
 **IMPORTANT**: Assume nothing. Hypothesis, Build, Test & Iterate. First Principles thinking. Do not discount anything until it's built and tested!
 
-Fork of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) with a Python agent harness, CALM reasoning engine, HRM + LLM-Computer (the CRLM stack), and a Rust port. **Working policy: no subagents — use `Edit`/`Write`/`Read`/`Grep`/`Bash` directly.**
+Fork of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) with a Python agent harness, CALM reasoning engine, HRM + LLM-Computer (the CRLM stack), and a Rust port. **Working policy: lead-orchestrator + one builder-worker per task. Lead (you) owns hypothesis + review + commit; worker builds + self-tests + reports via SendMessage. Rotate to a fresh worker after 2 iterations on the same task.**
 
 ## Default Workflow — Hypothesis, Test, Iterate
 Full spec: `.claude/rules/workflow.md`
@@ -28,17 +28,35 @@ taken *after* the change. No vibes, no "looks right", no "should be fine".
   run) — your rollback is `git reset --hard HEAD`.
 - **Correctness check every round.** Canonical smoke test: `17×23=391`
   via the chat API. Perf gains that break correctness are reverts.
-## Working policy — no subagents
+## Working policy — lead + one builder-worker
 
-Work directly with `Edit`/`Write`/`Read`/`Grep`/`Bash`. Do not dispatch
-subagents or create teams. Prior VDD/orchestration infrastructure was
-removed in commit `bb7f13d`; the agent definitions and `/VDD`, `/DISCOVER`,
-`/EVAL`, `/TRAIN-DATA` slash-commands no longer exist. Session 26 and
-Vector 1 shipped 23+ commits + 311 tests directly; this is the proven
-default for the project.
+Default pattern (ratified session 33+):
 
-If a multi-step workflow is genuinely needed, structure it as sequential
-hypothesis → build → test → commit rounds per the workflow rules above.
+1. **Lead (you, in the user-facing session)** owns: hypothesis, architectural
+   decisions, cross-round synthesis, diff review, commits, conversation with
+   the user. Lead does NOT write implementation or run heavy scripts when a
+   worker is in flight.
+2. **Worker (general-purpose agent, named, run_in_background=True)** owns:
+   file reads, implementation, self-tests (where GPU not required). Reports
+   back via `SendMessage` to `team-lead`.
+3. **Task list is the shared surface** — `TaskCreate`/`TaskUpdate` coordinate
+   work + survive agent rotation.
+
+**Rotation rule**: after **2 iterations** on the same task, spawn a fresh
+worker with a tightened spec. Per `workflow.md`'s plateau principle (3 × <2%
+movement = bug, not tuning), 2 iterations that don't converge means the
+spec is under-defined, not the worker stuck. Fresh worker + sharper spec
+usually unblocks faster than a third iteration.
+
+**Quick single-file edits** (typo, one-line fix, config tweak): do directly,
+skip the agent — overhead isn't worth it.
+
+**What persists across worker rotations**: git commits (lead commits
+between iterations), TaskList, lead's in-session synthesis, `.claude/`
+rules + CLAUDE.md + MEMORY files. New worker's brief = pointer to recent
+commits + task list + tightened spec; no need to replay chat history.
+
+Full spec: `.claude/rules/agent_teams.md`.
 
 ---
 

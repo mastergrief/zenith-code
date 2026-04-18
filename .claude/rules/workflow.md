@@ -1,4 +1,4 @@
-# Default Workflow — Hypothesis, Test, Iterate
+**IMPORTANT**: Assume nothing. Hypothesis, Build, Test & Iterate. First Principles thinking. Do not discount anything until it's built and tested!
 
 **This is the default working loop for all work in this project.** Apply
 it to CUDA kernels, Python harness changes, training scripts, quantize
@@ -53,6 +53,14 @@ The loop should be fast — under 5 minutes for small changes. If it
 takes longer, the measurement is usually too heavy; find a lighter
 proxy (a unit test, a single-function benchmark, a one-prompt chat
 call instead of a full eval).
+
+## Empirical timeline — minutes to hours, NOT "weeks to months"
+
+Project's measured pace on this stack is minutes-to-hours, not the
+weeks-to-months inherited from mechinterp literature. If a step
+looks like it'll take days, your methodology or tooling is wrong;
+revisit before committing the time. Full detail + reference points:
+`.claude/rules/probing_methodology.md` §"Empirical timeline".
 
 ## Always check two things
 
@@ -316,6 +324,22 @@ first one that tells you what you need.
    Ubuntu package. **Don't block optimization on profilers.** Fall
    back to step 3 instrumentation.
 
+## Probing-specific methodology gates
+
+Three gates from session 33's R47-R50 arc that apply when probing an
+LLM's activations. Full spec + examples:
+`.claude/rules/probing_methodology.md`.
+
+- **Prompt-format gate** (R47.2): verify baseline argmax-correct
+  rate > 50% before interpreting ablation, else you're measuring
+  shortcut circuits.
+- **Task-rank vs PCA-rank** (R49.2, R50.5): variance rank is a lower
+  bound on task-rank; validate with a projection-or-ablation test
+  that measures accuracy preservation.
+- **Superposition blinds ablation** (R48.1 → R50.3): "diffuse at
+  neurons + strong at layer" = superposition suspect. Reach for
+  TopK SAE, not L1.
+
 ## Pitfalls to avoid
 
 - **Bundling.** Two changes in one build → the bench can't attribute
@@ -445,6 +469,19 @@ then update the registry. Pattern:
 End-to-end demo of detect → log → compile → install → persist:
 `scripts/gemma_learning_loop_demo.py` (5/5 wrong → 5/5 correct).
 
+## Agent-assisted iteration (default pattern session 33+)
+
+Non-trivial coding work runs as lead + one builder-worker: lead
+states hypothesis/spec, worker implements + self-tests, lead reviews
+diff + commits, rotate worker after 2 iterations on the same task
+(plateau principle — spec is under-defined, not worker stuck).
+
+Applies to facade builds, new scripts, non-trivial refactors. Skip
+for one-line fixes, typos, config tweaks, rule-file edits. Lead
+never writes implementation while a worker is in flight.
+
+Full spec: `.claude/rules/agent_teams.md`.
+
 ## When this workflow doesn't apply
 
 - **UI / frontend / design work.** Subjective judgment calls that
@@ -455,4 +492,4 @@ End-to-end demo of detect → log → compile → install → persist:
 - **Pure discovery reading.** Reading code to understand the system
   doesn't need a metric. Once you start *changing* it, it does.
 
-**IMPORTANT**: Assume nothing. Hypothesis, Build, Test & Iterate.
+**IMPORTANT**: Assume nothing. Hypothesis, Build, Test & Iterate. First Principles thinking. Do not discount anything until it's built and tested!
