@@ -81,8 +81,8 @@ equivalent to training — the model gets smarter at that domain instantly.
 - **Explicit CALM** (`<calm>` blocks) is the power-user path. 85-98% benchmark.
 - **Backends** are modular Python files in `calm/backends/`. Each exports a `*_FUNCTIONS`
   dict registered in `expression.py` via try/import. Missing backends degrade gracefully.
-- **116 backends, 1002 verified functions, 550 NL patterns**: compute (79 `*_ops.py`)
-  + knowledge (10 `*_kb.py`). Full spec: `.claude/rules/calm.md`
+- **120 backends, 1002 verified functions, 550 NL patterns**: compute (81 `*_ops.py`)
+  + knowledge (39 `*_kb.py`). Full spec: `.claude/rules/calm.md`
 - **39 cognitive modules** in 5 layers: verification, reasoning, quality, meta, planning.
   Auto-routed by `calm/router.py` (33-70ms overhead). Full spec: `.claude/rules/calm.md`
 - **Engine V2** (`calm/engine_v2.py`): 7-phase pipeline with self-healing quality loop,

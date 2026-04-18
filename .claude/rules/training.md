@@ -319,7 +319,7 @@ is the difference between 33% and 90% on the metric that matters.
 - Claude-authored/hand-written data >> 9B-generated data (higher quality, more consistent)
 - HuggingFace datasets (nohurry, TeichAI, Crownelius) provide Claude Opus reasoning traces — filtered to 832 examples
 - Hand-written data committed to repo: `coding_reasoning_claude.jsonl` (507 examples), `orchestrator_claude.jsonl` (121 examples)
-- Merged training file: `claude_reasoning.jsonl` (1,339 examples = 832 HF + 507 hand-written)
+- Merged training file: `claude_reasoning.jsonl` (910 examples, re-filtered pass over the HF + hand-written sources; the earlier 1,339 count was a pre-filter merge)
 - 2026-04-07 addition: +19 hand-written examples (11 React + 8 security) via `scripts/generate_react_security_examples.py`, targeting gaps identified in the initial Qwen 4B eval (React hook cleanup, SSRF, CSP, IDOR, password reset, etc.)
 - Filter pipeline: tiered keyword matching (1 strong keyword + 2 general, OR 5+ general, OR code blocks), dedup by first 60 chars, think-block minimum lengths
 - Filter out: hallucinated facts, non-technical content, NLP benchmark patterns, junk (<200 char responses)
