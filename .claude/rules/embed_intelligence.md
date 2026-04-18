@@ -115,6 +115,16 @@ but Gemma's BPE tokenizes it across multiple tokens.
 Round 11 measurement: baseline 5/10 → facade 10/10 on 2-digit ×
 prompts. Three genuine arithmetic fixes (17×23, 47×19, 45×15).
 
+**R46.2 extension to N-op chains**: `MultiStepReasoningFacade` parses
+NL infix (e.g. `"2 + 3 × 5 - 7"`) with parens and mixed precedence,
+evaluates via `safe_eval` to the final answer, then emits one
+step-through digit bias per intermediate AND final value.
+**17/17 real Gemma fixes, 0 regressions on held-out prompts**
+(commit a385893). Confirms the mechanism generalizes from single-op
+to N-op composition — step-through biasing is the right embed
+mechanism for any verifier that produces a multi-token numeric
+answer, not just arithmetic cards.
+
 ## Which mechanism to use
 
 | Situation | Mechanism |

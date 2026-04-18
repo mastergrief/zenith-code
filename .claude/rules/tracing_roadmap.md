@@ -7,7 +7,7 @@ for harder capabilities. Updates as rounds ship.
 See `tracing_intelligence.md` for the first-principles framing and
 `capability_gain.md` for what counts as a validated win.
 
-## State today (after Round 41)
+## State today (after Round 50.6)
 
 ### Shipped and verified
 
@@ -21,7 +21,9 @@ See `tracing_intelligence.md` for the first-principles framing and
 | `dispatched_v4` | 791/791 | Standalone | In-attention verified |
 | `reasoning_engine` | 512/512 | Standalone | Not yet as facade |
 | `KnowledgeStore` recall card | 10/10 in Round 6 demo | In facade | CardSlot |
-| **Tracing methodology** | Validated on Gemma 4 E4B (Rounds 13-43) | Activation patching + per-head + Q/K/V decomp + per-sub-head + forced-attention validation | Arithmetic + SV + comparison + counting + induction + factual recall all mapped; 3 causal validations (R28, R42, R43); hub-sharing proven at L23 H1/H4 |
+| `HubInjectionCard` | Bit-identical to R43 inline intervention | Facade wraps R43's L23 H1/H4 forced-attention | Forced-attention facade (R44/R45) |
+| `MultiStepReasoningFacade` | 17/17 Gemma fixes, 0 regressions | NL infix parser + `safe_eval` router | Step-through digit bias N-op (R46.2) |
+| **Tracing methodology** | Validated on Gemma 4 E4B (Rounds 13-50.6) | Activation patching + per-head + Q/K/V decomp + per-sub-head + forced-attention validation + SAE (TopK) reconstruction | 7 capabilities mapped (+ multi-step composition); 3 causal validations (R28, R42, R43); hub-sharing proven at L23 H1/H4 (5-for-1 ROI); SAE reconstructs L24 composition at rank-50 in feature basis but top features have zero causal effect (R50.5) — interpretability-without-causality gap |
 
 ### Facades built
 
@@ -29,6 +31,8 @@ See `tracing_intelligence.md` for the first-principles framing and
 |---|---|---|---|
 | `MathAdditionFacade` | PT + adder_tiny | 6-9 | Format coercion on task Gemma already solved. First reusable class (Round 8). |
 | One-off reasoning facade | PT + adder_tiny, recall card | 6, 7, 11 | R6/R7 were format coercion; R11 (multiplication) is the first real capability win. |
+| `HubInjectionCard` (`calm/llm_computer/facades/hub_l23.py`) | L23 H1/H4 forced-attention | 44, 45 | Facade form of R43 intervention; bit-identical. Runtime Q/K detects natural top-position; no per-task hand-dispatch. Serves arithmetic + SV + comparison + counting + multi-step (5-for-1). `generate()` verified 5×12 decode tokens (R45). |
+| `MultiStepReasoningFacade` | NL infix parser + `safe_eval` | 46.1, 46.2 | 17/17 real Gemma fixes, 0 regressions. N-op extension of R11 step-through digit bias. Parses NL infix, routes values through `safe_eval`. |
 
 ### Install mechanisms verified
 
@@ -39,7 +43,7 @@ See `tracing_intelligence.md` for the first-principles framing and
 - Save/load round-trip of full substrate: Round 1 (bit-identical logits)
 - CUDA Graphs × FP32 layers compat: Round 2 (4.29× speedup preserved)
 
-## Gemma 4 E4B tracing findings (Rounds 13-41)
+## Gemma 4 E4B tracing findings (Rounds 13-50.6)
 
 First mechanistic-interpretability arc on prod Gemma. Validates
 that tier-3 (reverse-engineered circuits) is tractable on this
@@ -78,16 +82,46 @@ per-layer / per-head / Q-K-V ablation. Scripts in `scripts/test_*.py`.
 | R40 | L23 H1/H4 attention on SV prompts | **H4 = subject reader** (0.76 on subject complex), **H1 = distractor reader** (0.50 on distractor). Hub behavior confirmed. |
 | R41 | L23 H1/H4 attention on arithmetic prompts | **H1 reads b-operand 3× more than a** (consistent with "second content item" role on SV). H4 more mixed on arithmetic. Same heads, task-specific Q patterns. |
 | R42 | L23 H1/H4 forced attention on SV agreement | **mean \|Δ\|=0.467, 8/10 match.** Mirror of R28 at different layer + task; validates hub-sharing on linguistic capability. |
-| R43 | L23 forced attention on comparison + counting | **Comparison 18/18 (cleanest result in session, \|Δ\|=0.176), counting 6/6.** 4-for-1 compilation proven: one compiled L23 H1/H4 replacement benefits arithmetic + SV + comparison + counting simultaneously. L23 hub across 3 capabilities: **32/34 argmax matches (94%)**. |
+| R43 | L23 forced attention on comparison + counting | **Comparison 18/18 (cleanest result in session, \|Δ\|=0.176), counting 6/6.** 4-for-1 compilation proven: one compiled L23 H1/H4 replacement benefits arithmetic + SV + comparison + counting simultaneously. L23 hub across 3 capabilities: **32/34 argmax matches (94%)**. [commit b8cc655] |
+| R44 | `HubInjectionCard` shipped | Facade form of R43 intervention, bit-identical. Runtime Q/K detects natural top-position; no per-task hand-dispatch. [commit b8cc655] |
+| R45 | `HubInjectionCard.generate()` | Prefill-only injection verified across 5×12 decode tokens. Compatible with autoregressive generation. [commit 3eca6c3] |
+| R46.1 | `MultiStepReasoningFacade` parser+executor | Parses NL infix expressions, routes values via `safe_eval`. N-op extension of R11 pattern. [commit 4db3e67] |
+| R46.2 | Multi-step fix 17/17 Gemma failures | 17 real fixes, 0 regressions on held-out prompts. MultiStepReasoningFacade is the 5th beneficiary of L23 hub. [commit a385893] |
+| R47.1 | Multi-step layer sweep (initial) | 19 layers with Δ<-1.0 — INVALIDATED by R47.2 (prompt-format contamination). [commit 94fa58e] |
+| R47.2 | L34 per-head diffuse + copy-c contamination | Top H4 Δ=-0.20 (only 6% of layer's full Δ). Diagnosed prompt-format flaw: the multi-step prompts admitted a "copy c" shortcut that biased the sweep. [commit da27eee] |
+| R47.3 | Clean-prompt sweep → L24 is multi-step peak | L24 mean Δ=-17.23 (69% larger than R16 L23's -10.18). L24 is the multi-step composition layer; architecturally SWA, not global. [commit 2773409] |
+| R47.4 | L24 per-head diffuse | Top H1 Δ=-0.635 vs full-layer -17.23. Attention-level dead end — multi-step composition is not a concentrated-head circuit. [commit 3ea055e] |
+| R48.1 | L24 FFN per-neuron diffuse | 10,240 FFN neurons ablated in 20 chunks of 512; no chunk carries the signal. Rules out ROME/MEMIT-style per-neuron install. [commit faa8e36] |
+| R49.1 | L24 FFN low-rank SVD | Mean-centered rank 34 @ 90% variance; naive rank 1 is DC-dominated (offset, not signal). Composition signal is moderate-rank. [commit 324b7e7] |
+| R49.2 | L24 FFN pos(-1) task-rank 1 | At the last token position, K=1 preserves 100% of the task effect. Composition projection at pos(-1) is rank-1 in task space. [commit dc46db0] |
+| R49.3 | L24 FFN is NOT composition source | FFN activation at all non-last positions = zero for composition. Per-layer-embd injection candidate suggested. [commit fa3f957] |
+| R49.4 | L24 pathway decomposition diffuse | Signal distributed across attn + ffn + projection; significant non-additive interactions between pathways. Not cleanly decomposable. [commit 936ed35] |
+| R49.5 | L24 joint-output task-rank 1 non-last | Composition information lives at NON-last positions in the joint attn+ffn output. Different signal at different positions. [commit 1ff8b8d] |
+| R50.1 | SAE infra works, λ=5e-4 too weak | First Sparse Autoencoder trained in project. 98% reconstruction but L0 sparsity 2823 (≈target density, not sparse). [commit 11e7a33] |
+| R50.2 | SAE λ=5e-3 plateau L0~1700 | Stronger L1 doesn't break through; plateau at 5.7× target sparsity. Standard SAE L1 regularizer hits a local minimum. [commit 5e9686c] |
+| R50.3 | TopK SAE: L24 rank-50 in feature basis | K=50 TopK SAE preserves 99.1% reconstruction; effective L0 = 50, 60% of features dead. **L24 composition is rank-50 in a learned feature basis.** [commit 0e8f35f] |
+| R50.4 | 370 task-specific directions identified | K=100 SAE: 370 features with 70-1089× multi-operand vs single-operand activation ratio. Task-specific feature directions exist. [commit 848b942] |
+| R50.5 | **ZERO causal effect from top-50 SAE features** | 17/30 baseline → 17/30 after ablating top-50 composition features. **Interpretability-without-causality.** Falsifies R20's "SAE = next step" direction for compilable-intervention work. [commit ce4ce7d] |
+| R50.6 | SAE install at L24, 100% preservation | Re-installing the trained SAE at L24 with 99.6% reconstruction preserves arithmetic 100%. Infra works end-to-end; but the reconstructed basis does not recover a compilable composition circuit. [commit 0974f21] |
 
-**Session 33 summary**: 29-round arc (R13-R43), 6 capabilities
-mapped at sweep + per-head resolution, **3 causal validations**
-(R28 arithmetic, R42 SV agreement, R43 comparison+counting),
-typology validated across numeric + linguistic circuits, **hub-
-sharing empirically proven** — L23 H1/H4 shared content-carrier
-heads with task-specific Q routing, 32/34 argmax preservation
-rate across 3 L23-using capabilities. Full atlas + per-head
-lookup: `.claude/MEMORY/atlas.md`.
+**Session 33 summary (through R50.6)**: 49+ round arc (R13-R50.6),
+**7 capabilities** mapped at sweep + per-head resolution (arithmetic,
+factual recall, induction, counting, comparison, SV agreement,
+multi-step composition), **3 causal validations** (R28 arithmetic,
+R42 SV agreement, R43 comparison+counting), typology validated
+across numeric + linguistic circuits, **hub-sharing empirically
+proven** — L23 H1/H4 shared content-carrier heads with task-specific
+Q routing, 32/34 argmax preservation rate across 3 L23-using
+capabilities, **5-for-1 ROI** once `MultiStepReasoningFacade`
+joined the hub beneficiaries. **R47-R50.6 mapped multi-step
+composition at L24**: diffuse at attention + FFN + per-neuron
++ SVD levels. Rules out attention-level install (R47.4), rules out
+ROME/MEMIT FFN install (R48.1). SAE arc R50.1-6 demonstrated that
+L24 composition is rank-50 in a learned feature basis (R50.3) and
+SAE install preserves 100% arithmetic (R50.6), but top-50 features
+ablated have **zero causal effect** (R50.5) — interpretability-
+without-causality gap falsifies R20's "SAE = next step" direction.
+Full atlas + per-head lookup: `.claude/MEMORY/atlas.md`.
 
 **Full atlas**: `.claude/MEMORY/atlas.md` — capability/layer/head
 tables for quick reference.
@@ -162,28 +196,41 @@ capabilities as compiled cards.
 
 | Target | Prerequisite | Notes |
 |---|---|---|
-| **Deepen L22-L30 arithmetic circuit** | R13-20 localized to layer + head + V projection; R20 showed signal is distributed across H4's sub-heads. Next: SAE on H4's 512-d V output (or full L23 residual) across an arithmetic corpus; ACDC for cross-layer connections. | IMMEDIATE next step. Target is the 1024-d V of KV group 1 (or H4's 512-d slice); features are distributed directions in V-space, not sparse in sub-head basis. |
+| **Close the SAE → causal-effect gap** | R50.1-6 shipped SAE infra end-to-end. R50.3 reconstructs L24 composition at rank-50 in feature basis; R50.6 re-install preserves 100% arithmetic. R50.5 ablating top-50 features is **ZERO causal** — interpretability-without-causality. Next: architectures where reconstructed features DO have causal effect (transcoders, attention-SAE, cross-layer SAE), OR accept that L24 multi-step composition is not attention-or-FFN compilable and pivot to capabilities whose circuits ARE (arithmetic L23 H4 via R28-template, induction L37 H6, counting L20 cooperative). | **OPEN PROBLEM. Replaces the old "SAE on H4's V output" recommendation (R50.5 falsifies that path).** |
 | **Generalize tracing methodology** | Run R16-style ablation sweep on OTHER capability targets (syntax, anaphora, factual recall) | Tests whether arithmetic's clean localization was special or the methodology is general |
 | Induction heads | Identify heads doing in-context copying on Gemma 4 E4B | Generic capability used by many tasks |
 | NL parsing circuits | Circuit probing for syntax patterns | Replace PT's learned mechanism with a compiled one |
 | Factual retrieval circuits | ROME / MEMIT-style probing | Replace / augment KnowledgeStore's step-function recall |
 | Entity tracking | Feature directions for "who's the subject of this sentence" | Useful for word problems |
 
-Prerequisite research track:
-1. **Sparse Autoencoders on Gemma 4 E4B** — train SAEs on residual
-   activations across layers. Extract 10K-100K interpretable
-   features.
-2. **Automated Circuit Discovery (ACDC)** — for each target
-   capability, run ACDC on a corpus of examples to find load-bearing
-   components.
-3. **Feature labeling** — human or LM-assisted naming of SAE features
-   based on activating examples.
-4. **Circuit-to-IR translation** — convert identified circuits into
-   `gate_graph.py` nodes. Largely mechanical once the circuit is
-   understood.
+Research track status (updated through R50.6):
 
-None of these are in scope for near-term rounds. Flag them as the
-multi-quarter R&D direction.
+1. ~~**Sparse Autoencoders on Gemma 4 E4B**~~ **SHIPPED** (R50.1-6).
+   TopK SAE at L24 reconstructs 99.6% with effective L0=50.
+   Infra proven end-to-end (train → install → preserve task
+   accuracy). Open question is not "can we train SAEs" but "do
+   SAE features carry causal effect we can ablate/replace?" — R50.5
+   answered NO for top-50 L24 composition features.
+2. **Causal localization on distributed composition circuits** —
+   **OPEN.** R50.5 is the canonical null: reconstruction fidelity
+   ≠ causal effect under ablation. Candidates: transcoders,
+   attention-SAE (Makelov-style), cross-layer SAE, activation
+   patching on reconstructed components, feature circuits instead
+   of features.
+3. **Automated Circuit Discovery (ACDC)** — not yet attempted on
+   Gemma 4 E4B. Natural next step for capabilities that cleanly
+   localize (arithmetic already done via manual per-head +
+   forced-attention).
+4. **Feature labeling** — premature while (2) is open. Labels
+   without causal effect are descriptive, not compilable.
+5. **Circuit-to-IR translation** — mechanical once a circuit is
+   both localized AND causally validated. R28 template proved
+   this for concentrated heads; distributed circuits need (2) first.
+
+Near-term scope: either solve (2) with a different SAE
+architecture, or pivot Tier-3 work to capabilities whose circuits
+are already compilable (L23 hub already validated R42/R43; extend
+to more hub-served capabilities).
 
 ## Rough velocity estimate
 
@@ -217,6 +264,11 @@ Ruled-out entries (from this session's rounds):
 | Single-prompt activation patching for localization | Round 14→15 correction | Round 14 claimed L35 is "THE arithmetic layer" from one prompt (17×23). R15 showed it doesn't generalize. Always aggregate across multiple inputs |
 | L35 as THE arithmetic circuit | Round 15→16 correction | L35 mean Δ=-1.50, 9/10 hurts. Minor contributor. The real cluster is L22-L30 with L23 peak (-10.18, 10/10). Round 14's claim was premature |
 | Per-sub-head d_head=2 ablation as localization tool | Round 20 | 0/256 sub-heads with mean Δ < -1.0; top-8 carries only 26% of damage. The arithmetic signal in H4 is distributed across the 512-d V subspace, not sparse in the d_head=2 basis. Don't re-run this probe on other heads hoping for sparsity in d_head=2 slots — target SAE on the full head/V output instead. |
+| Mean-NOT-centered residual SVD as task-rank tool | Round 22 | Naive rank-1 SVD on residuals is DC-dominated — the top component is the mean offset, not the task signal. Mean-center before SVD, otherwise rank numbers are meaningless for composition work. |
+| Multi-step prompts admitting "copy c" shortcut | Round 47.1 → 47.2 | Initial multi-step sweep (19 layers Δ<-1.0) was contaminated by prompt format that let Gemma copy a literal operand rather than compose. Fixed in R47.3 clean-prompt sweep (L24 peak -17.23). **Always audit prompt format BEFORE a sweep**; near-miss shortcuts inflate Δ across unrelated layers. |
+| L24 per-head attention install for multi-step composition | Round 47.4 | Full-layer L24 Δ=-17.23 (69% > R16 L23). Top head H1 Δ=-0.635 — attention-level dead end. Multi-step composition is not a concentrated-head circuit; compilable-attention rules out for this capability. |
+| L24 FFN per-neuron (ROME/MEMIT-style) install | Round 48.1 | 10,240 neurons in 20 chunks of 512 ablated; no chunk carries the signal. Rules out weight-probing install for L24 composition. Consistent with R49 "distributed across pathways" and R50.5 "SAE features zero causal." |
+| SAE features as target for compilable ablation on distributed composition | Round 50.5 | **Falsifies R20's "SAE = next step" recommendation for compilable-intervention work.** Top-50 L24 composition features ablated → baseline 17/30 preserved at 17/30. Reconstruction fidelity (99.1-99.6%) is not sufficient for causal localization. Future SAE work for compilation needs architectures where reconstructed components DO have causal effect. |
 
 ## Related rules
 

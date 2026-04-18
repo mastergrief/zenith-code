@@ -197,7 +197,7 @@ genuinely competitive with pure LM capacity, because it gives us
 the LM's own capabilities as inspectable, reversible, auditable
 compiled cards.
 
-## Validated on Gemma 4 E4B (session 33, Rounds 13-43)
+## Validated on Gemma 4 E4B (session 33, Rounds 13-50.6)
 
 The first mechanistic-interpretability arc on this model. Validated
 that steps 1-2 of the tracing workflow (corpus + activation patching)
@@ -232,16 +232,42 @@ with Gemma's architecture. Full arc details in `tracing_roadmap.md`
   attention intervention (mirror of R28) preserves SV agreement
   (8/10), comparison (18/18, cleanest result), counting (6/6).
   Same heads + task-specific Q-routing proven cross-capability.
-  One compiled L23 H1/H4 replacement benefits 4 capabilities
-  simultaneously — **4-for-1 compilation ROI**. Full per-capability
+- **Facade shipped (R44/R46)**: `HubInjectionCard` wraps the R43
+  intervention (runtime Q/K dispatch, no per-task hand-coding);
+  `MultiStepReasoningFacade` (R46.2) extends R11 step-through digit
+  bias to N-op compositions → **17/17 real Gemma fixes, 0
+  regressions**. Becomes the 5th L23-hub beneficiary →
+  **5-for-1 compilation ROI**. Full per-capability
   detail: `.claude/MEMORY/atlas.md`.
+- **Multi-step composition mapped (R47-R50.6)**: 7th capability
+  on the atlas. L24 SWA Δ=-17.23. **Deep-diffuse** — ruled out
+  at attention (R47.4), FFN per-neuron (R48.1), SVD rank (R49.1-5),
+  AND top SAE features (R50.5 zero causal effect despite 99.1%
+  reconstruction). This capability is not currently compilable
+  by any known substrate mechanism.
 
-Concrete target for the full Phase-2 SAE + ACDC pipeline:
-`L23.attn_v (KV group 1)`, a 512-d projection with ~2.6M weights
-(or H4's 512-d read slice). R20 confirmed this is the right
-granularity — features live as distributed directions in V-space,
-so the SAE needs the full head/V output as input rather than a
-narrowed sub-head slice.
+**SAE arc update (R50.1-6)**: the SAE infrastructure was built
+and exercised end-to-end on L24 multi-step composition (parallel
+track to the arithmetic L23 target above). Findings:
+- R50.3: TopK SAE (K=50) reconstructs L24 at 99.1%, effective L0=50
+  → L24 composition IS low-rank in a learned feature basis.
+- R50.6: re-installing the SAE at L24 (99.6% recon) preserves
+  arithmetic 100% — end-to-end infra works.
+- R50.5 (the disconfirming result): **ablating the top-50 SAE
+  composition features has ZERO causal effect** (17/30 baseline →
+  17/30 ablated). Reconstruction fidelity does NOT imply causal
+  localization on distributed circuits.
+
+Open problem: the gap between SAE reconstruction and causal
+intervention on distributed representations. Future SAE work for
+compilable-intervention purposes needs architectures where
+reconstructed components demonstrably carry causal effect
+(transcoders, attention-SAE, cross-layer SAE, feature-circuit
+approaches). The R20 "target SAE on H4's V output" recommendation
+for the arithmetic circuit is NOT falsified — arithmetic is
+attention-concentrated and R28-validated at the attention level,
+so SAE is orthogonal. What R50.5 falsifies is "SAE = next
+compilable target for distributed circuits."
 
 **Why it worked:** Gemma's alternating SWA/global attention forces
 cross-operand aggregation into global layers (L5, L11, L17, **L23**,
@@ -263,6 +289,13 @@ will not.
   inside a head (R20): H4's arithmetic signal is distributed across
   its 512-d V subspace, not sparse in d_head=2 slots. The head is
   the right granularity; go to SAE from here, not narrower ablation.
+- Standard L1-SAE features as targets for causal ablation on
+  distributed composition circuits (R50.5): 99.1-99.6% reconstruction
+  AND 370 task-specific feature directions (R50.4) AND zero causal
+  effect under top-50 ablation (R50.5). Reconstruction fidelity
+  does not imply causal effect on deep-diffuse circuits. Before
+  targeting SAE features for compilation, verify causal effect
+  under ablation first.
 
 ## The corrected upper bound
 

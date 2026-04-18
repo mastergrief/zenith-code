@@ -1,6 +1,6 @@
 # Augmentation Thesis — the substrate is how small models match frontier
 
-Settled positions from session 33's R20-R36 arc. Future Claude Code
+Settled positions from session 33's R20-R50 arc. Future Claude Code
 sessions should treat these as baseline context, not re-argue them.
 
 ## Core thesis
@@ -85,10 +85,14 @@ Compile decision flows from the classification.
 | **Concentrated** | 1-2 heads carry ≥50% of layer signal | Arithmetic L23 H1 (-4.85) + H4 (-4.30), induction L37 H6 (-0.52), counting L37 H4 (-1.02) | 1-2 `LookUpExact` gates per head. Cheap. R28-validated. |
 | **Cooperative** | 3-4 heads each -0.5 to -1.5, additive sum ≈ full-layer Δ | Counting L20 H2+H5+H6 (each -1.0 to -1.4, sum -3.74 vs full -3.93) | 3-4 `LookUpExact` gates. Moderate cost. |
 | **Diffuse** | No head > -0.2 despite full-layer Δ > -1.0; per-head sum ~20% of full | Factual recall L5 and L11 (top head -0.078, full -1.18/-1.56) | NOT compilable at attention level. Circuit is in FFN. Use ROME/MEMIT-style weight probing, or side-channel via `KnowledgeStore`. |
+| **Deep-diffuse** | Full-layer Δ large (e.g. L24 -17.23) but diffuse at attention AND FFN AND per-neuron AND SVD AND SAE-feature levels | Multi-step composition L24 (R47-R50.6). Signal distributed across pathways with non-additive interactions; rank-50 in learned SAE basis but top SAE features have zero causal effect (R50.5). | **Currently no compilable path.** All attention-level, FFN-weight-level, and SAE-feature-level installs ruled out. Compilation-worthy open problem — find architectures where reconstructed components carry causal effect. |
 
 **Rule**: never attempt attention-level compilation without
 classifying via per-head ablation first. Diffuse circuits waste
-engineering effort if you target attention.
+engineering effort if you target attention. Deep-diffuse circuits
+(R50.5 falsification) waste further effort if you target FFN weights
+or SAE features without first checking that reconstruction fidelity
+translates to causal effect.
 
 ## Compositional hypothesis
 
@@ -104,11 +108,14 @@ primitive circuits. Evidence from session 33:
 - **L37 hosts multiple specialized heads.** L37 H6 = induction
   (R33 canonical pattern), L37 H4 = numeric successor (R35). Same
   layer, distinct heads, distinct capabilities.
-- **Hub-sharing causally proven (R42/R43).** L23 H1/H4 forced-
-  attention mirror of R28 preserves SV agreement (8/10), comparison
-  (18/18), counting (6/6). Same heads with task-specific Q routing
-  serve 4 capabilities simultaneously — one compiled replacement
-  benefits all four (4-for-1 compilation ROI).
+- **Hub-sharing causally proven (R42/R43), facade shipped (R44/R46).**
+  L23 H1/H4 forced-attention mirror of R28 preserves SV agreement
+  (8/10), comparison (18/18), counting (6/6). Same heads with
+  task-specific Q routing serve 5 capabilities simultaneously
+  (arithmetic + SV + comparison + counting + multi-step composition
+  via `MultiStepReasoningFacade` R46.2) — one compiled replacement
+  via `HubInjectionCard` (R44) benefits all five (**5-for-1
+  compilation ROI**).
 
 Implication: **individual heads are the atoms, not layers.** Gemma
 has specialist heads running in parallel at every layer; prompts
@@ -239,8 +246,8 @@ thesis mid-task.
 
 ## Empirical basis
 
-Session 33 (2026-04-17), 29-round arc (R13-R43) in one workday
-(~6-7 hours wall clock on RTX 4070 Laptop, 8 GB VRAM):
+Session 33 (2026-04-17+), 49+ round arc (R13-R50.6) on RTX 4070
+Laptop, 8 GB VRAM:
 
 - **R13-R19**: arithmetic localization to L23 H4 V (~2.6M params)
 - **R20-R28**: full arithmetic circuit mapped AND causally validated
@@ -265,15 +272,33 @@ Session 33 (2026-04-17), 29-round arc (R13-R43) in one workday
   Hub-sharing validated on linguistic capability.
 - **R43**: L23 forced attention on comparison + counting —
   comparison 18/18 (cleanest result, |Δ|=0.176), counting 6/6.
-  **4-for-1 compilation proven**: one compiled L23 H1/H4
+  Initial **4-for-1 compilation proven**: one compiled L23 H1/H4
   replacement benefits arithmetic + SV + comparison + counting.
   L23 hub across 3 capabilities: 32/34 argmax matches (94%).
+- **R44-R45**: `HubInjectionCard` facade shipped — bit-identical
+  to R43 inline intervention, `generate()` verified 5×12 decode
+  tokens.
+- **R46**: `MultiStepReasoningFacade` — N-op step-through digit
+  bias extension of R11. 17/17 real Gemma fixes, 0 regressions.
+  **Becomes the 5th L23 hub beneficiary → 5-for-1 ROI.**
+- **R47-R50.6**: multi-step composition mapped to L24 SWA
+  (Δ=-17.23, 69% > R16 L23). Diffuse at attention (R47.4), FFN
+  per-neuron (R48.1), and SAE-feature (R50.5) levels. SAE infra
+  shipped (R50.1-6): TopK K=50 reconstructs 99.1%, SAE install
+  preserves arithmetic 100%, but top-50 features have **zero
+  causal effect**. **R50.5 falsifies the "SAE = next compilable
+  target" direction** for distributed circuits. Open problem:
+  find SAE architectures where reconstruction implies causal
+  localization.
 
-**Six capabilities mapped, three causal validations (R28, R42,
-R43), typology demonstrated across numeric + linguistic capabilities,
-hub-sharing empirically proven.** This is the evidence base. Future
-probes extend the atlas; they don't re-validate the thesis. Full
-per-head / per-capability lookup: `.claude/MEMORY/atlas.md`.
+**Seven capabilities mapped, three causal validations (R28, R42,
+R43), two facades shipped (HubInjectionCard 5-for-1 + MultiStep
+17/17), typology demonstrated across numeric + linguistic +
+compositional capabilities, hub-sharing empirically proven and
+deployed, deep-diffuse shape identified and compilation path
+open.** This is the evidence base. Future probes extend the atlas;
+they don't re-validate the thesis. Full per-head / per-capability
+lookup: `.claude/MEMORY/atlas.md`.
 
 ## Related rules
 

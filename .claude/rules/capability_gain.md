@@ -121,19 +121,21 @@ intervention (replace learned softmax with one-hot at natural top
 position) preserves behavior at three distinct (layer, capability)
 pairs:
 
-| Round | Layer | Capability | mean \|Δ\| | argmax match |
-|---|---|---|---|---|
-| R28 | L30 H4/H6 | Arithmetic | 0.407 | 9/10 |
-| R42 | L23 H1/H4 | SV agreement | 0.467 | 8/10 |
-| R43a | L23 H1/H4 | Comparison | 0.176 | 18/18 |
-| R43b | L23 H1/H4 | Counting | 0.528 | 6/6 |
+| Round | Layer / Facade | Capability | Measurement |
+|---|---|---|---|
+| R28 | L30 H4/H6 forced-attn | Arithmetic | mean \|Δ\|=0.407, argmax 9/10 |
+| R42 | L23 H1/H4 forced-attn | SV agreement | mean \|Δ\|=0.467, argmax 8/10 |
+| R43a | L23 H1/H4 forced-attn | Comparison | mean \|Δ\|=0.176, argmax 18/18 |
+| R43b | L23 H1/H4 forced-attn | Counting | mean \|Δ\|=0.528, argmax 6/6 |
+| R46.2 | `MultiStepReasoningFacade` (step-through digit bias, N-op) | Multi-step infix composition | **17/17 real Gemma fixes, 0 regressions** on held-out prompts (commit a385893) |
 
-Same intervention, three layers, four capabilities, ~94% argmax
-preservation. This is the template for "causally validated
-compilable circuit" — when both the raw path (exhaustive card
-verification) AND the user-facing path (forced-attention
-preservation) land together, the circuit is ready to ship as a
-Tier-2 compiled card.
+Same intervention template, spanning four layers, five capabilities,
+~94% argmax preservation on the forced-attention rows + 17/17
+user-facing delivery on R46.2. This is the template for "causally
+validated compilable circuit" — when both the raw path (exhaustive
+card verification) AND the user-facing path (forced-attention
+preservation OR Gemma-output fix rate) land together, the circuit
+is ready to ship as a Tier-2 compiled card.
 
 ## When you think you have a gain but you don't
 

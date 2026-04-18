@@ -154,7 +154,28 @@ zeroed at runtime — card output flows through to output_norm intact.
 Used for PTs (copy-augmented attention can't reduce to a sub-head
 mode) and prototyping.
 
-**3. VerificationHook** — close the loop card → Gemma logits:
+**3. Hub-first forced-attention (HubInjectionCard)** — R44 facade
+form of R43's causal-validation intervention. For shared hub heads
+(L23 H1/H4, serving arithmetic + SV agreement + comparison +
+counting + multi-step composition), install the intervention as a
+runtime-dispatched facade: detect the natural top-position via
+live Q/K, force one-hot attention, no per-task hand-dispatch.
+
+```python
+from calm.llm_computer.facades.hub_l23 import HubInjectionCard
+card = HubInjectionCard(layer_idx=23, heads=[1, 4])
+card.install(m)                              # hooks L23 attention
+# now arithmetic + SV + comparison + counting + multi-step
+# all benefit from the same install — 5-for-1 ROI
+```
+
+Bit-identical to R43's inline intervention (R44 measurement).
+`generate()` path verified 5×12 decode tokens (R45) — compatible
+with autoregressive generation, not just single-token prediction.
+Use for hub heads with validated cross-task causal effect. Facade
+file: `calm/llm_computer/facades/hub_l23.py`.
+
+**4. VerificationHook** — close the loop card → Gemma logits:
 
 ```python
 m.verification_hooks.append(
@@ -168,6 +189,7 @@ the math benchmark this overrode Gemma's "Two plus three equals
 
 Files: `calm/llm_computer/gemma_substrate.py` (prod Gemma),
 `calm/llm_computer/card_installer.py`,
+`calm/llm_computer/facades/hub_l23.py` (HubInjectionCard),
 `calm/llm_computer/hybrid_substrate.py` (demo substrate).
 
 ## Facade / Import System (Program Builder)
