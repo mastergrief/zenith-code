@@ -96,7 +96,7 @@ def run_eval(m, tok) -> None:
     m.verification_hooks = []
     print("[r53.15] cleared prior install state", flush=True)
 
-    max_tokens = 8192
+    max_tokens = 16384
 
     # Build store + recall card
     store = KnowledgeStore(max_key=MAX_KEY, max_value=MAX_VALUE)

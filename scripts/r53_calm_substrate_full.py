@@ -39,7 +39,7 @@ import torch
 CACHE_DIR = "/mnt/c/Users/gabes/projects/claw-code/.cache/r53_code_db"
 
 MAX_ATTEMPTS = 3
-MAX_TOKENS = 8192  # was 400 — budget was too small for retrieval + reasoning + code
+MAX_TOKENS = 16384  # ceiling; EOS stops most gens well before. Was 400 starved.
 
 
 # Common import → module mapping for NameError repair

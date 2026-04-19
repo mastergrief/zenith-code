@@ -29,7 +29,7 @@ from pathlib import Path
 CACHE_DIR = "/mnt/c/Users/gabes/projects/claw-code/.cache/r53_code_db"
 
 
-def run_eval_channel(m, tok, max_tokens: int = 8192, seed: int = 0) -> None:
+def run_eval_channel(m, tok, max_tokens: int = 16384, seed: int = 0) -> None:
     # Force reimport so we pick up any code_example_db / code_verifier
     # edits from this session.
     import sys

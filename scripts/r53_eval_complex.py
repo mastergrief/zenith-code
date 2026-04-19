@@ -25,6 +25,23 @@ import re
 from typing import List, NamedTuple, Optional
 
 
+# Shared token-budget helper: adaptive-per-prompt with 16K ceiling.
+# Mirrors r53_21_import_inject.py so all R53 evals stay consistent.
+# Gemma 4 E4B trains at 131K ctx; 16K eval ceiling is safe headroom.
+MAX_TOKENS_CEILING = 16384
+
+
+def _adaptive_budget(prompt: str) -> int:
+    """Per-prompt output-token budget via AdaptiveBudget, clamped.
+    Returns the budget int (tier kept internal)."""
+    try:
+        from calm.adaptive import AdaptiveBudget
+        est = AdaptiveBudget().estimate(prompt)
+        return min(est.budget, MAX_TOKENS_CEILING)
+    except Exception:
+        return MAX_TOKENS_CEILING
+
+
 def _reload_facades():
     import sys
     for m in list(sys.modules.keys()):
@@ -443,10 +460,12 @@ def _trim_markers(text: str) -> str:
     return text
 
 
-def gen_stock(m, tok, p: ComplexProblem, max_tokens: int = 400,
+def gen_stock(m, tok, p: ComplexProblem,
+              max_tokens: Optional[int] = None,
               use_tq4_kv: bool = False) -> str:
     prompt = STOCK_PROMPT.format(system=BASE_SYSTEM, prompt=p.prompt)
-    out = m.generate(prompt, tok, max_tokens=max_tokens, device="cuda",
+    budget = max_tokens if max_tokens is not None else _adaptive_budget(p.prompt)
+    out = m.generate(prompt, tok, max_tokens=budget, device="cuda",
                      stop_on_eos=True, use_tq4_kv=use_tq4_kv)
     return _trim_markers(out["text"])
 
@@ -477,12 +496,13 @@ def _build_hints(db, rng: random.Random, p: ComplexProblem,
 
 def gen_hinted(m, tok, p: ComplexProblem, db, rng: random.Random,
                sanity_random: bool = False,
-               max_tokens: int = 400,
+               max_tokens: Optional[int] = None,
                use_tq4_kv: bool = False) -> str:
     hints = _build_hints(db, rng, p, sanity_random)
     prompt = HINTED_PROMPT.format(
         system=BASE_SYSTEM, hints=hints, prompt=p.prompt)
-    out = m.generate(prompt, tok, max_tokens=max_tokens, device="cuda",
+    budget = max_tokens if max_tokens is not None else _adaptive_budget(p.prompt)
+    out = m.generate(prompt, tok, max_tokens=budget, device="cuda",
                      stop_on_eos=True, use_tq4_kv=use_tq4_kv)
     return _trim_markers(out["text"])
 
@@ -520,7 +540,7 @@ def score(raw_output: str, p: ComplexProblem) -> tuple[int, int, str]:
 # Eval runner
 # -------------------------------------------------------------------
 
-def run_eval(m, tok, max_tokens: int = 400, seed: int = 0) -> None:
+def run_eval(m, tok, max_tokens: int = 8192, seed: int = 0) -> None:
     from calm.llm_computer.facades.code_example_db import CodeExampleDB
     db = CodeExampleDB.load_default()
     db.load_indices("/mnt/c/Users/gabes/projects/claw-code/.cache/r53_code_db")

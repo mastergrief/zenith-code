@@ -36,7 +36,7 @@ from typing import List, Tuple
 
 
 MAX_RETRIES = 2
-MAX_TOKENS = 8192   # post-SWA-fix: no 512 cap, room for retrieval+reason+code
+MAX_TOKENS = 16384  # ceiling; EOS stops most gens well before. Was 250 starved.
 
 
 # Aggressively compact retry prompt — Gemma SWA caps total tokens at 512.
