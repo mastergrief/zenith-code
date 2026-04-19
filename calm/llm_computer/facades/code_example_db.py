@@ -573,6 +573,58 @@ class CodeExampleDB:
     def has_dense(self) -> bool:
         return self._dense is not None
 
+    def export_pt_signature_jsonl(self, out_path: Path,
+                                    require_both: bool = False,
+                                    ) -> int:
+        """Export {prompt, target} pairs for PT training (R53.5).
+
+        Target is the first function or class signature parsed from
+        ex.code_fragment via AST. Format:
+          {"prompt": <problem>, "target": "def name(args)" |
+                                            "class Name(bases)",
+           "source": <source-jsonl-path>, "key": <stable-id>}
+
+        Skips examples where:
+          - code_fragment is empty
+          - AST parse fails
+          - no top-level def or class found
+          - signature contains chars outside the PT char vocab
+
+        require_both=True restricts to examples that ALSO have
+        non-empty reasoning_trace (the 1345 hand-written subset
+        with chain-of-thought reasoning attached).
+
+        Returns count of examples written.
+        """
+        import ast
+        from calm.hrm.data import _CHAR_TO_ID
+
+        vocab_chars = set(_CHAR_TO_ID.keys())
+        out_path = Path(out_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        n = 0
+        with open(out_path, "w", encoding="utf-8") as f:
+            for ex in self.examples:
+                if not ex.code_fragment:
+                    continue
+                if require_both and not ex.reasoning_trace:
+                    continue
+                sig = _extract_first_signature(ex.code_fragment, ast)
+                if sig is None:
+                    continue
+                # Vocab check — skip targets we can't tokenize losslessly
+                if any(c not in vocab_chars for c in sig):
+                    continue
+                rec = {
+                    "prompt": ex.problem,
+                    "target": sig,
+                    "source": Path(ex.source).name,
+                    "key": ex.key,
+                }
+                f.write(json.dumps(rec) + "\n")
+                n += 1
+        return n
+
     def has_channel(self, channel: str, mode: str = "tfidf") -> bool:
         """True if the (channel, mode) index has been built or loaded.
 
@@ -638,6 +690,38 @@ def _extract_reasoning_trace(solution: str) -> str:
     """Concatenated content of all <think>...</think> blocks."""
     parts = _THINK_RE.findall(solution)
     return "\n\n".join(p.strip() for p in parts if p.strip())
+
+
+def _extract_first_signature(code: str, ast_mod) -> Optional[str]:
+    """Return the first 'def name(args)' or 'class Name(bases)' from code,
+    parsed via AST so we get a clean signature regardless of formatting.
+    Returns None if no parseable function/class at module level."""
+    try:
+        tree = ast_mod.parse(code)
+    except (SyntaxError, ValueError):
+        return None
+    for node in tree.body:
+        if isinstance(node, (ast_mod.FunctionDef, ast_mod.AsyncFunctionDef)):
+            args = []
+            a = node.args
+            for arg in a.posonlyargs + a.args:
+                args.append(arg.arg)
+            if a.vararg:
+                args.append("*" + a.vararg.arg)
+            for arg in a.kwonlyargs:
+                args.append(arg.arg)
+            if a.kwarg:
+                args.append("**" + a.kwarg.arg)
+            return f"def {node.name}({', '.join(args)})"
+        if isinstance(node, ast_mod.ClassDef):
+            base_names = []
+            for b in node.bases:
+                if isinstance(b, ast_mod.Name):
+                    base_names.append(b.id)
+            if base_names:
+                return f"class {node.name}({', '.join(base_names)})"
+            return f"class {node.name}"
+    return None
 
 
 def _extract_code_fragment(solution: str) -> str:
