@@ -90,45 +90,33 @@ _STOPWORDS = frozenset({
 
 @dataclass(frozen=True)
 class CodeExample:
-    """One retrieval result."""
+    """One retrieval result.
+
+    Two-channel storage (R53 dual-path): `code_fragment` and
+    `reasoning_trace` are extracted at ingest from the raw `solution`,
+    each may be empty. ~70% of examples have a code fragment, ~45%
+    have a reasoning trace, ~15% have both. See
+    `scripts/r53_audit_dual_path.py` for the audit.
+
+    The two channels feed separate substrate paths: code → L30
+    `KnowledgeStore` (hash-gated solution lookup), reasoning →
+    L24 PT (NL → structured plan via copy-augmented attention).
+    Mixing them in one preview caused Gemma to imitate prose-style
+    output even on code tasks (R53.2b regression).
+    """
     key: int                    # stable integer hash of the problem
     problem: str
-    solution: str
+    solution: str               # raw, unprocessed
     source: str                 # path of the jsonl it came from
     tokens: frozenset[str]      # precomputed for Jaccard
+    code_fragment: str = ""     # extracted code (fence > def/class slice)
+    reasoning_trace: str = ""   # concatenated <think> block contents
 
     @property
     def solution_preview(self) -> str:
-        """Code-only view of the solution for injection as a retrieval
-        hint. Strips <think> blocks, "Verified test cases" trailers,
-        and prose — returns ONLY the code so Gemma imitates the code,
-        not the explanation style.
-
-        Fix per R53.2b eval: raw solution_preview contained <think>
-        blocks + prose headers. Prepending these as "related solution"
-        hints caused Gemma to imitate the thinking-style format and
-        emit prose instead of code, making its output unparseable.
-        """
-        s = self.solution
-        # Drop <think>...</think> blocks (may be multiple)
-        s = re.sub(r"<think>.*?</think>", "", s, flags=re.DOTALL)
-        # Drop trailing "Verified test cases" / "Sample I/O" sections
-        # (from our generators and competitive-programming corpora)
-        for trailer_pat in (r"\*\*Verified test cases",
-                             r"\*\*Sample I/O",
-                             r"\*\*Unit tests",
-                             r"\*\*Test harness"):
-            s = re.split(trailer_pat, s, maxsplit=1)[0]
-        # Prefer the first ```python-fenced block — pure code
-        m = re.search(r"```(?:python)?\s*\n(.*?)```", s, re.DOTALL)
-        if m:
-            return m.group(1).strip()
-        # Fallback: slice from first def/class
-        m = re.search(r"(^|\n)(def |class |import |from \w+ import )", s)
-        if m:
-            return s[m.start():].strip()
-        # Last resort: raw (trimmed) text
-        return s.strip()
+        """Code-only view for retrieval-hint injection. Returns the
+        cached `code_fragment` (extracted at ingest)."""
+        return self.code_fragment
 
 
 @dataclass
@@ -168,6 +156,14 @@ class CodeExampleDB:
     # Optional retrieval indices. Populated by build_* methods.
     _tfidf: Optional["TfidfIndex"] = None      # type: ignore[name-defined]
     _dense: Optional["DenseIndex"] = None      # type: ignore[name-defined]
+    # Channel-specific indices (R53 dual-path). Each only indexes the
+    # examples whose target channel is non-empty, so doc_idx in the
+    # underlying TfidfIndex maps to a subset of examples — `_*_doc_to_ex`
+    # holds the inverse mapping.
+    _tfidf_code: Optional["TfidfIndex"] = None         # type: ignore[name-defined]
+    _tfidf_reasoning: Optional["TfidfIndex"] = None    # type: ignore[name-defined]
+    _code_doc_to_ex: List[int] = field(default_factory=list)
+    _reasoning_doc_to_ex: List[int] = field(default_factory=list)
 
     # ----- construction -----
 
@@ -338,6 +334,77 @@ class CodeExampleDB:
         idx.build(_docs())
         self._tfidf = idx
 
+    def build_tfidf_channels(self, problem_weight: int = 3) -> None:
+        """Build channel-specific TF-IDF indices (R53 dual-path).
+
+        Two indices: `_tfidf_code` over (problem*W + code_fragment) for
+        examples with non-empty code, `_tfidf_reasoning` over
+        (problem*W + reasoning_trace) for examples with non-empty
+        reasoning. Each underlying TfidfIndex sees a subset of the DB,
+        so `_code_doc_to_ex` / `_reasoning_doc_to_ex` map back to the
+        full `examples` list at retrieval time.
+
+        Coverage on current 8970-DB: ~6240 code, ~3993 reasoning.
+        Run after ingest. O(channel tokens) per index.
+        """
+        from calm.llm_computer.facades.retrieval import TfidfIndex
+
+        # Code channel
+        code_idx = TfidfIndex()
+        code_docs: List[str] = []
+        code_map: List[int] = []
+        for i, ex in enumerate(self.examples):
+            if ex.code_fragment:
+                code_docs.append(
+                    (ex.problem + " ") * problem_weight + ex.code_fragment)
+                code_map.append(i)
+        code_idx.build(iter(code_docs))
+        self._tfidf_code = code_idx
+        self._code_doc_to_ex = code_map
+
+        # Reasoning channel
+        reason_idx = TfidfIndex()
+        reason_docs: List[str] = []
+        reason_map: List[int] = []
+        for i, ex in enumerate(self.examples):
+            if ex.reasoning_trace:
+                reason_docs.append(
+                    (ex.problem + " ") * problem_weight + ex.reasoning_trace)
+                reason_map.append(i)
+        reason_idx.build(iter(reason_docs))
+        self._tfidf_reasoning = reason_idx
+        self._reasoning_doc_to_ex = reason_map
+
+    def retrieve_channel(self, query: str, channel: str, k: int = 3,
+                          scorer: str = "bm25") -> List[RetrievalHit]:
+        """Channel-specific TF-IDF retrieval (R53 dual-path).
+
+        channel='code'      → uses `_tfidf_code`, hits drawn from
+                              examples with non-empty code_fragment
+        channel='reasoning' → uses `_tfidf_reasoning`, hits drawn from
+                              examples with non-empty reasoning_trace
+
+        Returns empty list if the requested channel index hasn't been
+        built. No fallback — explicit channel selection is the point.
+        """
+        if channel == "code":
+            idx, mapping = self._tfidf_code, self._code_doc_to_ex
+        elif channel == "reasoning":
+            idx, mapping = self._tfidf_reasoning, self._reasoning_doc_to_ex
+        else:
+            raise ValueError(
+                f"unknown channel: {channel!r} (expected 'code' or 'reasoning')")
+        if idx is None:
+            return []
+        ranked = idx.query(query, k=k, scorer=scorer)
+        out: List[RetrievalHit] = []
+        for doc_idx, score in ranked:
+            if 0 <= doc_idx < len(mapping):
+                ex_idx = mapping[doc_idx]
+                out.append(RetrievalHit(
+                    example=self.examples[ex_idx], score=float(score)))
+        return out
+
     def build_dense(self, m, tok, max_len: int = 256,
                     batch_size: int = 8) -> None:
         """Build dense Gemma-encoded index. Requires loaded substrate
@@ -354,7 +421,12 @@ class CodeExampleDB:
         """Persist built indices under a directory. TF-IDF as JSON,
         dense vectors as fp16 .pt. When dense_quantize=True (default),
         also writes a tq4 sibling for ~4× smaller storage; at load time
-        the tq4 dequant adds a one-off ~300 ms."""
+        the tq4 dequant adds a one-off ~300 ms.
+
+        Channel indices (R53 dual-path) saved as `tfidf_code.json`,
+        `tfidf_reasoning.json` plus `channel_maps.json` holding the
+        doc_idx → example_idx mappings.
+        """
         dirpath = Path(dirpath)
         dirpath.mkdir(parents=True, exist_ok=True)
         if self._tfidf is not None:
@@ -362,6 +434,16 @@ class CodeExampleDB:
         if self._dense is not None:
             self._dense.save(dirpath / "dense.pt",
                               quantize=dense_quantize)
+        if self._tfidf_code is not None:
+            self._tfidf_code.save(dirpath / "tfidf_code.json")
+        if self._tfidf_reasoning is not None:
+            self._tfidf_reasoning.save(dirpath / "tfidf_reasoning.json")
+        if self._tfidf_code is not None or self._tfidf_reasoning is not None:
+            with open(dirpath / "channel_maps.json", "w", encoding="utf-8") as f:
+                json.dump({
+                    "code_doc_to_ex": self._code_doc_to_ex,
+                    "reasoning_doc_to_ex": self._reasoning_doc_to_ex,
+                }, f)
 
     def load_indices(self, dirpath: Path) -> None:
         """Reload previously-saved indices. Does not rebuild on mismatch
@@ -376,12 +458,32 @@ class CodeExampleDB:
             self._tfidf = TfidfIndex.load(tfidf_path)
         if dense_path.exists():
             self._dense = DenseIndex.load(dense_path)
+        # Channel indices + mappings
+        code_path = dirpath / "tfidf_code.json"
+        reason_path = dirpath / "tfidf_reasoning.json"
+        maps_path = dirpath / "channel_maps.json"
+        if code_path.exists():
+            self._tfidf_code = TfidfIndex.load(code_path)
+        if reason_path.exists():
+            self._tfidf_reasoning = TfidfIndex.load(reason_path)
+        if maps_path.exists():
+            with open(maps_path, "r", encoding="utf-8") as f:
+                maps = json.load(f)
+            self._code_doc_to_ex = maps.get("code_doc_to_ex", [])
+            self._reasoning_doc_to_ex = maps.get("reasoning_doc_to_ex", [])
 
     def has_tfidf(self) -> bool:
         return self._tfidf is not None
 
     def has_dense(self) -> bool:
         return self._dense is not None
+
+    def has_channel(self, channel: str) -> bool:
+        if channel == "code":
+            return self._tfidf_code is not None
+        if channel == "reasoning":
+            return self._tfidf_reasoning is not None
+        return False
 
     # ----- DB stats -----
 
@@ -409,6 +511,13 @@ class CodeExampleDB:
 # ---- module-private helpers ----
 
 _TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]+")
+_THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
+_FENCE_RE = re.compile(r"```(?:python)?\s*\n(.*?)```", re.DOTALL)
+_DEFCLASS_RE = re.compile(r"(^|\n)(def |class |import |from \w+ import )")
+_TRAILER_PATS = (r"\*\*Verified test cases",
+                 r"\*\*Sample I/O",
+                 r"\*\*Unit tests",
+                 r"\*\*Test harness")
 
 
 def _tokenize(text: str) -> frozenset[str]:
@@ -423,6 +532,27 @@ def _stable_key(problem: str) -> int:
     return int.from_bytes(h, "big") & ((1 << 63) - 1)
 
 
+def _extract_reasoning_trace(solution: str) -> str:
+    """Concatenated content of all <think>...</think> blocks."""
+    parts = _THINK_RE.findall(solution)
+    return "\n\n".join(p.strip() for p in parts if p.strip())
+
+
+def _extract_code_fragment(solution: str) -> str:
+    """Code-only extract: prefer ```python fence, else slice from
+    first def/class/import. Returns empty string if no code found."""
+    s = _THINK_RE.sub("", solution)
+    for trailer_pat in _TRAILER_PATS:
+        s = re.split(trailer_pat, s, maxsplit=1)[0]
+    m = _FENCE_RE.search(s)
+    if m:
+        return m.group(1).strip()
+    m = _DEFCLASS_RE.search(s)
+    if m:
+        return s[m.start():].strip()
+    return ""
+
+
 def _make_example(problem: str, solution: str, source: str) -> CodeExample:
     return CodeExample(
         key=_stable_key(problem),
@@ -430,4 +560,6 @@ def _make_example(problem: str, solution: str, source: str) -> CodeExample:
         solution=solution,
         source=source,
         tokens=_tokenize(problem),
+        code_fragment=_extract_code_fragment(solution),
+        reasoning_trace=_extract_reasoning_trace(solution),
     )
