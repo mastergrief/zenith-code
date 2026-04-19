@@ -42,12 +42,13 @@ CACHE_DIR = "/mnt/c/Users/gabes/projects/claw-code/.cache/r53_code_db"
 MAX_ATTEMPTS = 3
 MAX_TOKENS_CEILING = 16384  # cap; AdaptiveBudget picks per-prompt
 MAX_IMPORT_INJECTIONS = 4
-USE_TQ4_KV = False  # tq4 KV storage works but has O(N²) dequant per step
-                    # until fused flash-attn kernel lands (tracked as
-                    # R53.34). At 16K ctx fp16 KVCache (~1.4 GB) fits
-                    # comfortably on 8 GB; flip to True only when
-                    # 256K+ ctx becomes the bottleneck AND the fused
-                    # kernel is in place.
+USE_TQ4_KV = True   # R53.34 fused flash-attn kernel landed; parity
+                    # validated on real Gemma (test_kvcache_tq4_parity:
+                    # mean cosine ≥ 0.99, argmax preservation ≥ 14/16).
+                    # Fused path fires for SWA layers (d_head=256); global
+                    # layers (d_head=512) fall back to the Phase 1 memoized
+                    # dequant path. At 16K ctx both are bandwidth-balanced;
+                    # long-context wins scale with N.
 
 
 COMMON_IMPORTS = {

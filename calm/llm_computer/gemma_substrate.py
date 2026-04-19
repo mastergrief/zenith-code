@@ -110,6 +110,17 @@ def _tq4_linear_kernel(x: torch.Tensor, qs: torch.Tensor, d: torch.Tensor,
 
 _compiled_tq4_linear = None  # set by enable_compile_tq4()
 _use_triton = False           # set by enable_triton_tq4()
+_use_fused_flash_attn = False  # Phase 2 fused tq4 flash-attn dispatch.
+                               # MEASURED REGRESSION at N≤1024 on RTX 4070M:
+                               # -8 to -10% vs Phase 1 memo path, because the
+                               # per-Q-head Python loop (8 kernel launches per
+                               # layer × 42 layers × decode step) costs more
+                               # than a single-wide Triton dequant + PyTorch
+                               # einsum at this context range. Math is correct
+                               # (cos=1.00000 vs fp32 ref) — keep kernel in
+                               # tree for N >> 2K where KV bandwidth starts
+                               # dominating launch overhead. Opt-in via
+                               # `enable_fused_flash_attn(True)`.
 
 
 def enable_triton_tq4(enabled: bool = True):
@@ -117,6 +128,14 @@ def enable_triton_tq4(enabled: bool = True):
     Triton wins ~5-17x per linear (ffn_up: 4.66 ms → 0.28 ms on RTX 4070M)."""
     global _use_triton
     _use_triton = bool(enabled)
+
+
+def enable_fused_flash_attn(enabled: bool = True):
+    """Toggle the Phase 2 fused tq4 flash-attn dispatch in `_forward_layer`.
+    Orthogonal to `enable_triton_tq4` — keeps FFN/attn weight kernels on
+    while A/B testing the KV-side fused path."""
+    global _use_fused_flash_attn
+    _use_fused_flash_attn = bool(enabled)
 
 
 def enable_compile_tq4():
@@ -583,23 +602,30 @@ class KVCacheTq4:
     The noise-injection KVCache(use_tq4=True) MVP proved tq4 quant noise
     is tolerable for attention; this stores actual tq4 bytes.
 
-    Storage per layer:
-      qs: (n_blocks, 128) uint8 — packed nybbles
-      d:  (n_blocks,) FP32 — per-block scale
-    where n_blocks = ceil(max_len * n_kv_h * d_head / 256).
+    Phase 2 storage layout (HEAD-MAJOR):
+      k_qs[il]: (n_kv_h, max_len * bpr, 128) uint8 — packed nybbles
+      k_d[il]:  (n_kv_h, max_len * bpr) fp32      — per-block scale
+      v_qs/v_d: same shapes as k_qs/k_d
+
+    where bpr = d_head // 256 (blocks per row, per head). Gemma E4B:
+    d_head=256 → bpr=1, so each (head, position) slot is exactly one
+    tq4 block of 256 elements.
+
+    Why head-major: the fused tq4 flash-attn kernel
+    (`tq4_flash_attn.fused_tq4_flash_attn_decode`) iterates per Q head
+    over N positions, with one program per head. Head-major puts each
+    head's N tq4 blocks contiguously so byte loads coalesce stride-1.
 
     Memory at 512K context (gemma-4-E4B):
       FP16: ~14 GB total KV across own-KV layers
       tq4:  ~3.9 GB total KV (~3.6x reduction)
 
-    Multi-token write supported (S>=1) — follows llama.cpp's per-block
-    quantization pattern. Each (head, seq_pos) slot in Gemma produces
-    d_head=256 elements = exactly 1 tq4 block, so an S-token prefill
-    writes S*n_kv_h blocks contiguously.
-
-    Per-layer position tracking — each layer's write pos is tracked
-    independently, so shared-KV read layers see the correct stored
-    length without needing a shared step_done barrier.
+    Multi-token write supported (S>=1) — quantize is run on a single
+    flat batch and the resulting blocks are scattered into per-head
+    slots in one indexed write. Per-layer position tracking — each
+    layer's write pos is tracked independently, so shared-KV read
+    layers see the correct stored length without a shared step_done
+    barrier.
     """
 
     def __init__(self, model: "GemmaSubstrate", max_len: int = 1024,
@@ -619,24 +645,33 @@ class KVCacheTq4:
         self.v_qs: list[torch.Tensor] = []
         self.v_d: list[torch.Tensor] = []
         self._d_head: list[int] = []
-        self._bpt: list[int] = []  # blocks per token
+        self._bpr: list[int] = []  # blocks per row, per head (d_head // 256)
         self.layer_pos: list[int] = [0] * cfg.n_layers
         self._is_swa: dict[int, bool] = {}
         self._swa_window: int = 512
+        # Per-step dequant memo. Key: (which: "k"|"v", layer_idx).
+        # Value: (valid_for_pos, fp32_tensor of shape (1, n_kv_h, valid_for_pos, d_head)).
+        # Hit when called repeatedly within one decode step (own-KV update +
+        # shared-KV consumer reads from the same source layer). Invalidated
+        # by update()/trim_swa_storage()/clear() on the affected layer.
+        self._memo: dict[tuple[str, int], tuple[int, torch.Tensor]] = {}
         for il in range(cfg.n_layers):
             kv_total = model.layers[il].attn_k.out_features
             d_head = kv_total // cfg.n_heads_kv
             self._d_head.append(d_head)
-            elements_per_token = cfg.n_heads_kv * d_head
-            assert elements_per_token % 256 == 0, (
-                f"layer {il} elements/token={elements_per_token} not divisible by 256")
-            bpt = elements_per_token // 256
-            self._bpt.append(bpt)
-            n_blocks = max_len * bpt
-            self.k_qs.append(torch.zeros(n_blocks, 128, dtype=torch.uint8, device=device))
-            self.k_d.append(torch.zeros(n_blocks, dtype=torch.float32, device=device))
-            self.v_qs.append(torch.zeros(n_blocks, 128, dtype=torch.uint8, device=device))
-            self.v_d.append(torch.zeros(n_blocks, dtype=torch.float32, device=device))
+            assert d_head % 256 == 0, (
+                f"layer {il} d_head={d_head} not a multiple of 256")
+            bpr = d_head // 256
+            self._bpr.append(bpr)
+            # Head-major: per head, max_len * bpr blocks of 128 bytes.
+            self.k_qs.append(torch.zeros(cfg.n_heads_kv, max_len * bpr, 128,
+                                         dtype=torch.uint8, device=device))
+            self.k_d.append(torch.zeros(cfg.n_heads_kv, max_len * bpr,
+                                        dtype=torch.float32, device=device))
+            self.v_qs.append(torch.zeros(cfg.n_heads_kv, max_len * bpr, 128,
+                                         dtype=torch.uint8, device=device))
+            self.v_d.append(torch.zeros(cfg.n_heads_kv, max_len * bpr,
+                                        dtype=torch.float32, device=device))
 
     def memory_bytes(self) -> int:
         """Total bytes in the tq4 KV cache (qs + d for all layers)."""
@@ -645,6 +680,71 @@ class KVCacheTq4:
             total += self.k_qs[il].numel() + self.v_qs[il].numel()
             total += self.k_d[il].numel() * 4 + self.v_d[il].numel() * 4
         return total
+
+    def _dequant_layer(self, layer_idx: int, which: str) -> torch.Tensor:
+        """Dequant the full stored sequence for one (layer, which) to fp32,
+        with per-step memoization. Returns shape (1, n_kv_h, layer_pos, d_head).
+
+        Memo key is (which, layer_idx); value carries the layer_pos it was
+        computed at. Stale entries (pos changed via update/trim/clear) are
+        recomputed and overwritten. Within a single decode step the entry
+        is hit by both the own-KV update path AND every shared-KV consumer
+        reading this layer through `_Tq4ReadProxy`, eliminating the
+        previous behavior where each shared-KV consumer re-dequanted the
+        entire prefix from scratch.
+        """
+        from calm.llm_computer.tq4_torch import Tq4Tensor, dequantize_tq4
+        pos = self.layer_pos[layer_idx]
+        key = (which, layer_idx)
+        cached = self._memo.get(key)
+        if cached is not None and cached[0] == pos:
+            return cached[1]
+
+        bpr = self._bpr[layer_idx]
+        d_head = self._d_head[layer_idx]
+        n_kv_h = self.cfg.n_heads_kv
+        if pos == 0:
+            out = torch.zeros(1, n_kv_h, 0, d_head,
+                              dtype=torch.float32, device=self.device)
+            self._memo[key] = (pos, out)
+            return out
+
+        # Head-major: slice per-head [:, :pos*bpr, :], flatten over heads in
+        # head-major order (already contiguous), single dequant call.
+        n_blocks_per_head = pos * bpr
+        qs_buf = self.k_qs[layer_idx] if which == "k" else self.v_qs[layer_idx]
+        d_buf = self.k_d[layer_idx] if which == "k" else self.v_d[layer_idx]
+        qs_used = qs_buf[:, :n_blocks_per_head, :].contiguous()  # (n_kv_h, pos*bpr, 128)
+        d_used = d_buf[:, :n_blocks_per_head].contiguous()        # (n_kv_h, pos*bpr)
+        total_blocks = n_kv_h * n_blocks_per_head
+        flat = dequantize_tq4(Tq4Tensor(
+            qs=qs_used.reshape(total_blocks, 128),
+            d=d_used.reshape(total_blocks),
+            shape=(total_blocks * 256,),
+        ), pi=self._pi, centroids=self._centroids)
+        # Output is head-major flat. Reshape to (n_kv_h, pos, d_head) then
+        # add batch dim to match the (1, n_kv_h, pos, d_head) contract.
+        out = flat.reshape(n_kv_h, pos, d_head).unsqueeze(0).contiguous().float()
+        self._memo[key] = (pos, out)
+        return out
+
+    def write_only(self, layer_idx: int, k_new: torch.Tensor,
+                   v_new: torch.Tensor,
+                   is_swa: bool = False, window_size: int = 512) -> None:
+        """Write S new tokens' tq4 bytes WITHOUT paying the full-prefix
+        dequant. Returns None. Used by the fused tq4 flash-attn path
+        which consumes raw bytes via `k_qs[il]` / `v_qs[il]` and does
+        not need the fp32 materialization.
+
+        Updates layer_pos and invalidates the memo so a subsequent
+        `_dequant_layer` call (e.g. from a shared-KV consumer) sees the
+        new bytes.
+        """
+        self._write_bytes(layer_idx, k_new, v_new, is_swa, window_size)
+        # Invalidate memo even though we didn't repopulate it; the next
+        # _dequant_layer read will rebuild against the new pos+S bytes.
+        self._memo.pop(("k", layer_idx), None)
+        self._memo.pop(("v", layer_idx), None)
 
     def update(self, layer_idx: int, k_new: torch.Tensor, v_new: torch.Tensor,
                is_swa: bool = False, window_size: int = 512):
@@ -657,10 +757,27 @@ class KVCacheTq4:
         Returns:
           (k_full, v_full) as fp32 tensors of shape
           (1, n_kv_h, pos+S, d_head) — the full cached sequence for
-          attention score compute.
+          attention score compute. Routed through `_dequant_layer` so
+          subsequent reads via `_Tq4ReadProxy` in the same decode step
+          hit the memo instead of re-dequanting (Phase 1 perf fix).
+
+        For the fused tq4 flash-attn path (decode, no partitions,
+        d_head==256), prefer `write_only` — it skips this method's
+        eager dequant entirely.
         """
-        from calm.llm_computer.tq4_torch import quantize_tq4, Tq4Tensor, dequantize_tq4
-        bpt = self._bpt[layer_idx]
+        self._write_bytes(layer_idx, k_new, v_new, is_swa, window_size)
+        # Drop the stale entry; _dequant_layer will recompute and rememoize.
+        self._memo.pop(("k", layer_idx), None)
+        self._memo.pop(("v", layer_idx), None)
+        return self._dequant_layer(layer_idx, "k"), self._dequant_layer(layer_idx, "v")
+
+    def _write_bytes(self, layer_idx: int, k_new: torch.Tensor,
+                     v_new: torch.Tensor, is_swa: bool,
+                     window_size: int) -> None:
+        """Quantize + scatter S new tokens' bytes into per-head slots.
+        Shared by `write_only` and `update`."""
+        from calm.llm_computer.tq4_torch import quantize_tq4
+        bpr = self._bpr[layer_idx]
         d_head = self._d_head[layer_idx]
         n_kv_h = self.cfg.n_heads_kv
         S = k_new.shape[2]
@@ -668,50 +785,41 @@ class KVCacheTq4:
         assert pos + S <= self.max_len, (
             f"layer {layer_idx}: pos {pos} + S {S} exceeds max_len {self.max_len}")
 
-        # Token-major flatten: (1, n_kv_h, S, d_head) → (1, S, n_kv_h, d_head) → flat
-        # matches the reshape used on dequant (S first then n_kv_h).
-        k_flat = k_new.permute(0, 2, 1, 3).contiguous().float().reshape(-1)
-        v_flat = v_new.permute(0, 2, 1, 3).contiguous().float().reshape(-1)
+        # Head-major flatten: (1, n_kv_h, S, d_head) → (n_kv_h, S * bpr * 256,)
+        # → flat (n_kv_h * S * bpr * 256,). Quantize once. Output blocks come
+        # out in head-major order, i.e. [head0_blocks..., head1_blocks..., ...].
+        k_flat = k_new[0].contiguous().float().reshape(-1)
+        v_flat = v_new[0].contiguous().float().reshape(-1)
         k_q = quantize_tq4(k_flat, pi=self._pi, boundaries=self._boundaries)
         v_q = quantize_tq4(v_flat, pi=self._pi, boundaries=self._boundaries)
 
-        block_start = pos * bpt
-        block_end = (pos + S) * bpt
-        self.k_qs[layer_idx][block_start:block_end] = k_q.qs
-        self.k_d[layer_idx][block_start:block_end] = k_q.d
-        self.v_qs[layer_idx][block_start:block_end] = v_q.qs
-        self.v_d[layer_idx][block_start:block_end] = v_q.d
+        # Reshape quantized output to (n_kv_h, S * bpr, 128) and (n_kv_h, S * bpr),
+        # then scatter into the per-head slot range [pos*bpr : (pos+S)*bpr].
+        s_blocks = S * bpr
+        k_qs_view = k_q.qs.reshape(n_kv_h, s_blocks, 128)
+        k_d_view = k_q.d.reshape(n_kv_h, s_blocks)
+        v_qs_view = v_q.qs.reshape(n_kv_h, s_blocks, 128)
+        v_d_view = v_q.d.reshape(n_kv_h, s_blocks)
+        slot_start = pos * bpr
+        slot_end = (pos + S) * bpr
+        self.k_qs[layer_idx][:, slot_start:slot_end, :] = k_qs_view
+        self.k_d[layer_idx][:, slot_start:slot_end] = k_d_view
+        self.v_qs[layer_idx][:, slot_start:slot_end, :] = v_qs_view
+        self.v_d[layer_idx][:, slot_start:slot_end] = v_d_view
 
-        # Advance this layer's position BEFORE dequant so seq-len views are consistent.
+        # Advance this layer's position. Memo invalidation is the caller's
+        # responsibility (both write_only and update do it).
         self.layer_pos[layer_idx] = pos + S
         self._is_swa[layer_idx] = is_swa
         if is_swa:
             self._swa_window = window_size
 
-        # Dequant the full cached sequence for this layer.
-        total_pos = pos + S
-        n_blocks_used = total_pos * bpt
-        k_dq_flat = dequantize_tq4(Tq4Tensor(
-            qs=self.k_qs[layer_idx][:n_blocks_used],
-            d=self.k_d[layer_idx][:n_blocks_used],
-            shape=(n_blocks_used * 256,),
-        ), pi=self._pi, centroids=self._centroids)
-        v_dq_flat = dequantize_tq4(Tq4Tensor(
-            qs=self.v_qs[layer_idx][:n_blocks_used],
-            d=self.v_d[layer_idx][:n_blocks_used],
-            shape=(n_blocks_used * 256,),
-        ), pi=self._pi, centroids=self._centroids)
-        k_full = k_dq_flat.reshape(1, total_pos, n_kv_h, d_head).permute(0, 2, 1, 3).contiguous()
-        v_full = v_dq_flat.reshape(1, total_pos, n_kv_h, d_head).permute(0, 2, 1, 3).contiguous()
-        return k_full.float(), v_full.float()
-
     def trim_swa_storage(self) -> None:
         """For SWA layers, trim back to last `window_size` tokens.
         Direct byte copy — no re-quantization. tq4 blocks are per-256-elt
-        with independent scales, and storage is token-major
-        ([token0_head0_dim0..255, token0_head1_dim0..255, token1_head0...]),
-        so the last `window * bpt` blocks ARE the last `window` tokens'
-        quantized bytes verbatim."""
+        with independent scales; head-major storage means the last `window`
+        positions' bytes for each head sit at slots
+        [(pos-window)*bpr : pos*bpr] and copy verbatim to [0 : window*bpr]."""
         window = self._swa_window
         for layer_idx, is_swa in self._is_swa.items():
             if not is_swa:
@@ -719,20 +827,23 @@ class KVCacheTq4:
             pos = self.layer_pos[layer_idx]
             if pos <= window:
                 continue
-            bpt = self._bpt[layer_idx]
-            keep_blocks = window * bpt
-            src_start = (pos - window) * bpt
-            src_end = pos * bpt
-            # Copy last-window blocks to front of buffer.
-            self.k_qs[layer_idx][:keep_blocks] = (
-                self.k_qs[layer_idx][src_start:src_end].clone())
-            self.k_d[layer_idx][:keep_blocks] = (
-                self.k_d[layer_idx][src_start:src_end].clone())
-            self.v_qs[layer_idx][:keep_blocks] = (
-                self.v_qs[layer_idx][src_start:src_end].clone())
-            self.v_d[layer_idx][:keep_blocks] = (
-                self.v_d[layer_idx][src_start:src_end].clone())
+            bpr = self._bpr[layer_idx]
+            keep_blocks = window * bpr
+            src_start = (pos - window) * bpr
+            src_end = pos * bpr
+            # Per-head copy (slice along the per-head block dim).
+            self.k_qs[layer_idx][:, :keep_blocks, :] = (
+                self.k_qs[layer_idx][:, src_start:src_end, :].clone())
+            self.k_d[layer_idx][:, :keep_blocks] = (
+                self.k_d[layer_idx][:, src_start:src_end].clone())
+            self.v_qs[layer_idx][:, :keep_blocks, :] = (
+                self.v_qs[layer_idx][:, src_start:src_end, :].clone())
+            self.v_d[layer_idx][:, :keep_blocks] = (
+                self.v_d[layer_idx][:, src_start:src_end].clone())
             self.layer_pos[layer_idx] = window
+            # Bytes 0..keep_blocks now hold a different sequence; invalidate.
+            self._memo.pop(("k", layer_idx), None)
+            self._memo.pop(("v", layer_idx), None)
 
     @property
     def k_cache(self):
@@ -756,6 +867,7 @@ class KVCacheTq4:
         for il in range(len(self.layer_pos)):
             self.layer_pos[il] = 0
         self._is_swa.clear()
+        self._memo.clear()
 
 
 class _Tq4ReadProxy:
@@ -767,24 +879,17 @@ class _Tq4ReadProxy:
         self.which = which  # "k" or "v"
 
     def __getitem__(self, layer_idx: int):
-        from calm.llm_computer.tq4_torch import Tq4Tensor, dequantize_tq4
+        # Route through the memoized helper. _forward_layer's shared-KV path
+        # immediately casts back to .float() at the consumer (see :1343-1344),
+        # so returning fp32 here saves a half→float round-trip vs the old
+        # eager .half() cast. The memo gives us O(1) instead of O(N) when
+        # multiple consumer layers share the same source.
         c = self.cache
-        bpt = c._bpt[layer_idx]
-        d_head = c._d_head[layer_idx]
-        total_pos = c.layer_pos[layer_idx]
-        if total_pos == 0:
-            # Empty cache — return zero-length tensor with correct shape.
+        if c.layer_pos[layer_idx] == 0:
+            d_head = c._d_head[layer_idx]
             return torch.zeros(1, c.cfg.n_heads_kv, 0, d_head,
-                                dtype=torch.float16, device=c.device)
-        n_blocks_used = total_pos * bpt
-        qs_buf = c.k_qs[layer_idx] if self.which == "k" else c.v_qs[layer_idx]
-        d_buf = c.k_d[layer_idx] if self.which == "k" else c.v_d[layer_idx]
-        flat = dequantize_tq4(Tq4Tensor(
-            qs=qs_buf[:n_blocks_used], d=d_buf[:n_blocks_used],
-            shape=(n_blocks_used * 256,),
-        ), pi=c._pi, centroids=c._centroids)
-        out = flat.reshape(1, total_pos, c.cfg.n_heads_kv, d_head).permute(0, 2, 1, 3).contiguous()
-        return out.half()  # to match KVCache storage dtype
+                                dtype=torch.float32, device=c.device)
+        return c._dequant_layer(layer_idx, self.which)
 
 
 class CardSlot:
@@ -1320,6 +1425,19 @@ class GemmaSubstrate:
             freqs_used = freqs[start_pos:]
         q = _apply_rope(q, freqs_used)
 
+        # Phase 2 fused tq4 flash-attn eligibility — checked BEFORE the cache
+        # write so own-KV layers can use `write_only` (skip the eager dequant
+        # in `KVCacheTq4.update`). Shared-KV layers read raw bytes directly.
+        partitions = self.attention_partition.get(layer_idx, [])
+        fused_tq4 = (
+            _use_triton
+            and _use_fused_flash_attn
+            and isinstance(kv_cache, KVCacheTq4)
+            and S == 1
+            and not partitions
+            and kv_cache._d_head[kv_src] == 256  # MVP: BPR=1 only
+        )
+
         if own_kv:
             k_new = layer.attn_k(cur)
             v_new = layer.attn_v(cur)
@@ -1332,27 +1450,38 @@ class GemmaSubstrate:
             v_new = v_new / v_rms
             k_new = _apply_rope(k_new, freqs_used)
             if kv_cache is not None:
-                k_full, v_full = kv_cache.update(layer_idx, k_new, v_new,
-                                                  is_swa=not is_global,
-                                                  window_size=cfg.sliding_window)
+                if fused_tq4:
+                    kv_cache.write_only(layer_idx, k_new, v_new,
+                                         is_swa=not is_global,
+                                         window_size=cfg.sliding_window)
+                    k_full = v_full = None  # not needed — fused path uses raw bytes
+                else:
+                    k_full, v_full = kv_cache.update(layer_idx, k_new, v_new,
+                                                      is_swa=not is_global,
+                                                      window_size=cfg.sliding_window)
             else:
                 k_full, v_full = k_new, v_new
         else:
             # Shared-KV layer — read source layer's cache, no own projection.
             assert kv_cache is not None
-            k_full = kv_cache.k_cache[kv_src].float()
-            v_full = kv_cache.v_cache[kv_src].float()
+            if fused_tq4:
+                k_full = v_full = None
+            else:
+                k_full = kv_cache.k_cache[kv_src].float()
+                v_full = kv_cache.v_cache[kv_src].float()
 
-        # GQA expand
-        if cfg.n_heads_kv < cfg.n_heads_q:
+        # GQA expand (slow path only — fused kernel does GQA per-program).
+        if not fused_tq4 and cfg.n_heads_kv < cfg.n_heads_q:
             repeat = cfg.n_heads_q // cfg.n_heads_kv
             k_full = k_full.repeat_interleave(repeat, dim=1)
             v_full = v_full.repeat_interleave(repeat, dim=1)
 
         # Attention scores — Gemma 4 uses f_attention_scale = 1.0
         # (no /sqrt(d_head)). See llama-model.cpp:1273.
-        S_kv = k_full.shape[2]
-        partitions = self.attention_partition.get(layer_idx, [])
+        if fused_tq4:
+            S_kv = kv_cache.layer_pos[kv_src]
+        else:
+            S_kv = k_full.shape[2]
 
         # Build attention mask once, used by both paths.
         # For SWA layers (not global), apply BOTH causal mask AND
@@ -1383,7 +1512,45 @@ class GemmaSubstrate:
                 diagonal=1)[None, None, :, :]
         # Global layer decode (S_kv > S, S=1): no mask, attend to all K
 
-        if not partitions:
+        if fused_tq4:
+            # Fused tq4 flash-attn path. Slice the head-major bytes for the
+            # active prefix length, pre-rotate Q, run kernel, reshape back.
+            from calm.llm_computer.tq4_flash_attn import (
+                fused_tq4_flash_attn_decode,
+            )
+            bpr_kv = kv_cache._bpr[kv_src]
+            n_blocks_used = S_kv * bpr_kv
+            k_qs = kv_cache.k_qs[kv_src][:, :n_blocks_used, :].contiguous()
+            k_d = kv_cache.k_d[kv_src][:, :n_blocks_used].contiguous()
+            v_qs = kv_cache.v_qs[kv_src][:, :n_blocks_used, :].contiguous()
+            v_d = kv_cache.v_d[kv_src][:, :n_blocks_used].contiguous()
+
+            # Squeeze (B=1, n_heads_q, S=1, d_head) → (n_heads_q, d_head)
+            q_2d = q[0, :, 0, :].contiguous()
+            # Pre-rotate (Pi.T applied here so the kernel can skip per-block
+            # inverse rotation; out is post-rotated by Pi back to normal).
+            q_rot = q_2d @ kv_cache._pi.T
+
+            # Build (S_kv,) additive mask from the existing bool mask.
+            if attn_mask is None:
+                fused_mask = torch.zeros(S_kv, dtype=torch.float32, device=device)
+            else:
+                # attn_mask shape (1, 1, 1, S_kv) — squeeze to (S_kv,)
+                bool_mask = attn_mask.reshape(-1)[:S_kv]
+                fused_mask = torch.where(
+                    bool_mask, torch.full_like(bool_mask, float("-inf"),
+                                                dtype=torch.float32),
+                    torch.zeros_like(bool_mask, dtype=torch.float32),
+                )
+
+            out_fused = fused_tq4_flash_attn_decode(
+                q_rot, k_qs, k_d, v_qs, v_d,
+                kv_cache._centroids, kv_cache._pi, fused_mask,
+                softcap=0.0,  # Gemma 4 doesn't softcap attention scores
+            )
+            # (n_heads_q, d_head) → (B=1, n_heads_q, S=1, d_head)
+            cur = out_fused.unsqueeze(0).unsqueeze(2)
+        elif not partitions:
             # Fast path: pure Gemma grouped softmax.
             scores = torch.einsum("bhid,bhjd->bhij", q, k_full)
             if attn_mask is not None:
