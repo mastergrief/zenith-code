@@ -21,7 +21,8 @@ from calm.llm_computer.tq4_torch import (
     build_pi, compute_lloyd_max_codebook, quantize_tq4,
 )
 from calm.llm_computer.tq4_triton import (
-    tq4_matvec_triton_v1, tq4_matvec_triton_v2,
+    tq4_matvec_triton_v1, tq4_matvec_triton_v2, tq4_matvec_triton_v3,
+    tq4_matvec_triton_v4,
 )
 
 
@@ -55,16 +56,19 @@ def prepare_shape(in_features: int, out_features: int):
     x = torch.randn(in_features, device=device, dtype=torch.float32)
     bpr = in_features // 256
     x_rot = (x.reshape(bpr, 256) @ pi.T).reshape(in_features).contiguous()
+    x_rot_fp16 = x_rot.to(torch.float16).contiguous()
 
     return {
-        "x_rot": x_rot, "qs": qs, "d": d, "centroids": centroids,
+        "x_rot": x_rot, "x_rot_fp16": x_rot_fp16,
+        "qs": qs, "d": d, "centroids": centroids,
         "in_features": in_features, "out_features": out_features,
     }
 
 
-def time_shape_events(shape_data, kernel_fn, iters: int = 2000) -> float:
+def time_shape_events(shape_data, kernel_fn, iters: int = 2000,
+                      fp16_x: bool = False) -> float:
     """Returns us/call using CUDA events."""
-    x_rot = shape_data["x_rot"]
+    x_rot = shape_data["x_rot_fp16" if fp16_x else "x_rot"]
     qs = shape_data["qs"]
     d = shape_data["d"]
     centroids = shape_data["centroids"]
@@ -99,13 +103,14 @@ def heavy_warmup(seconds: float = 3.0) -> None:
 
 def measure(shape_data_dict: dict, kernel_fn=tq4_matvec_triton_v1,
             n_runs: int = 5, iters: int = 2000,
-            label: str = "") -> dict[tuple, float]:
+            label: str = "", fp16_x: bool = False) -> dict[tuple, float]:
     results: dict[tuple, float] = {}
     for shape in SHAPES:
         times = []
         for _ in range(n_runs):
             times.append(time_shape_events(
-                shape_data_dict[shape], kernel_fn, iters=iters))
+                shape_data_dict[shape], kernel_fn,
+                iters=iters, fp16_x=fp16_x))
         results[shape] = statistics.median(times)
 
     if label:
@@ -129,17 +134,15 @@ def measure(shape_data_dict: dict, kernel_fn=tq4_matvec_triton_v1,
     return results
 
 
-def bench_ab(label_a: str = "baseline (tl.load gather)",
-             label_b: str = "v2 (tl.gather from tile)") -> None:
+def bench_ab(label_a: str = "v2 (shared-mem LUT)",
+             label_b: str = "v4 (v2 + uint32 qs loads)") -> None:
     heavy_warmup(3.0)
     shape_data = {
         (ifeat, ofeat): prepare_shape(ifeat, ofeat)
         for ifeat, ofeat in SHAPES
     }
-    # Run both variants interleaved (pair A/B per shape) to minimize
-    # clock-drift bias between runs.
-    res_a = measure(shape_data, kernel_fn=tq4_matvec_triton_v1, label=label_a)
-    res_b = measure(shape_data, kernel_fn=tq4_matvec_triton_v2, label=label_b)
+    res_a = measure(shape_data, kernel_fn=tq4_matvec_triton_v2, label=label_a)
+    res_b = measure(shape_data, kernel_fn=tq4_matvec_triton_v4, label=label_b)
 
     print(f"\n=== delta ({label_b} vs {label_a}) ===")
     print(f"{'shape':<18} {'A us':>10} {'B us':>10} {'Δ%':>10}")

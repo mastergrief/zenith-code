@@ -151,6 +151,188 @@ def _tq4_matvec_kernel_v2(
     tl.store(y_ptr + rows, acc, mask=rows < out_features)
 
 
+@triton.jit
+def _tq4_matvec_kernel_v4(
+    x_rot_ptr, qs_u32_ptr, d_ptr, centroids_ptr, y_ptr,
+    in_features, out_features,
+    BPR: tl.constexpr,
+    BLOCK_QUARTER: tl.constexpr,   # 32 = 128 bytes / 4 bytes per uint32
+    BLOCK_M: tl.constexpr,
+):
+    """V4 — v2 + vectorized uint32 weight loads.
+
+    qs is loaded as uint32 (4 bytes per load) instead of uint8 (1 byte).
+    Each uint32 packs 8 nybbles (4 low + 4 high). Trades more arithmetic
+    (bit-shift unpacks) for fewer load instructions and better coalescing.
+
+    TurboQuant commit 51481c3 reports +45% from this technique in CUDA."""
+    pid = tl.program_id(0)
+    row_base = pid * BLOCK_M
+    if row_base >= out_features:
+        return
+
+    centroid_tile = tl.load(centroids_ptr + tl.arange(0, 16))
+
+    # 32 uint32s per 128-byte half-block. Each uint32 = 4 bytes = 8 nybbles.
+    quarter_idx = tl.arange(0, BLOCK_QUARTER)   # (32,)
+    m_idx = tl.arange(0, BLOCK_M)
+    acc = tl.zeros((BLOCK_M,), dtype=tl.float32)
+
+    BLOCK_HALF: tl.constexpr = 128
+
+    for b in range(BPR):
+        x_base = b * 256
+        # x_rot — 128 low + 128 high fp32 values
+        x_low = tl.load(x_rot_ptr + x_base + 2 * tl.arange(0, BLOCK_HALF))
+        x_high = tl.load(x_rot_ptr + x_base + 2 * tl.arange(0, BLOCK_HALF) + 1)
+
+        block_idx_m = (row_base + m_idx) * BPR + b
+        d_m = tl.load(d_ptr + block_idx_m)
+
+        # qs loaded as (BLOCK_M, 32) uint32 — 32 loads × BLOCK_M rows instead of 128
+        u32_offsets = (block_idx_m[:, None] * BLOCK_QUARTER
+                       + quarter_idx[None, :])
+        qs_u32 = tl.load(qs_u32_ptr + u32_offsets).to(tl.uint32)
+
+        # Unpack 4 bytes per uint32 → 4 low-nybbles + 4 high-nybbles
+        # per byte. Byte 0 is at bits 0..7, byte 1 at 8..15, etc.
+        # Each byte has low nybble in bits 0..3, high in bits 4..7.
+        b0 = (qs_u32) & 0xFF
+        b1 = (qs_u32 >> 8) & 0xFF
+        b2 = (qs_u32 >> 16) & 0xFF
+        b3 = (qs_u32 >> 24) & 0xFF
+
+        # Shape (BLOCK_M, 32) each. Reconstruct (BLOCK_M, 128) by interleaving:
+        # byte-index in the 128-byte half = 4*quarter_idx + byte_offset_in_u32
+        # Stack into (BLOCK_M, 32, 4) then reshape (BLOCK_M, 128).
+        bytes_stack = tl.join(tl.join(b0, b1), tl.join(b2, b3))  # (BLOCK_M, 32, 4)
+        qs_m = tl.reshape(bytes_stack.to(tl.int32), (BLOCK_M, BLOCK_HALF))
+
+        low_m = qs_m & 0xF
+        high_m = (qs_m >> 4) & 0xF
+
+        low_flat = tl.reshape(low_m, (BLOCK_M * BLOCK_HALF,))
+        high_flat = tl.reshape(high_m, (BLOCK_M * BLOCK_HALF,))
+        c_low_m = tl.reshape(tl.gather(centroid_tile, low_flat, axis=0),
+                             (BLOCK_M, BLOCK_HALF))
+        c_high_m = tl.reshape(tl.gather(centroid_tile, high_flat, axis=0),
+                              (BLOCK_M, BLOCK_HALF))
+
+        block_dot = (tl.sum(c_low_m * x_low[None, :], axis=1)
+                     + tl.sum(c_high_m * x_high[None, :], axis=1))
+        acc += block_dot * d_m
+
+    rows = row_base + m_idx
+    tl.store(y_ptr + rows, acc, mask=rows < out_features)
+
+
+def tq4_matvec_triton_v4(
+    x_rot: torch.Tensor, qs: torch.Tensor, d: torch.Tensor,
+    centroids: torch.Tensor, out_features: int, in_features: int,
+) -> torch.Tensor:
+    """V4 dispatch: v2 + uint32 vectorized qs loads."""
+    assert x_rot.is_contiguous() and x_rot.dtype == torch.float32
+    assert qs.is_contiguous() and qs.dtype == torch.uint8
+    assert d.is_contiguous() and d.dtype == torch.float32
+    assert centroids.is_contiguous() and centroids.dtype == torch.float32
+    assert in_features % 256 == 0
+    bpr = in_features // 256
+    # Reinterpret qs (uint8 of shape (n_blocks, 128)) as uint32 of shape
+    # (n_blocks, 32) — view only, zero copy.
+    qs_u32 = qs.view(torch.int32)  # Triton treats int32 ptr same as uint32
+    y = torch.empty(out_features, device=x_rot.device, dtype=torch.float32)
+    BLOCK_M = _pick_block_m(out_features)
+    grid = ((out_features + BLOCK_M - 1) // BLOCK_M,)
+    _tq4_matvec_kernel_v4[grid](
+        x_rot, qs_u32.view(-1), d, centroids, y,
+        in_features, out_features,
+        BPR=bpr, BLOCK_QUARTER=32, BLOCK_M=BLOCK_M,
+        num_warps=4,
+    )
+    return y
+
+
+# NOTE: v3 (fp16 x_rot activation) tested in R53.30 — null result.
+# Upcast-inside-dot overhead offsets the BW savings on Ada; kept below
+# for future reference but not dispatched from production.
+@triton.jit
+def _tq4_matvec_kernel_v3(
+    x_rot_ptr, qs_ptr, d_ptr, centroids_ptr, y_ptr,
+    in_features, out_features,
+    BPR: tl.constexpr,
+    BLOCK_HALF: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+):
+    """V3 — v2 + fp16 activation buffer (TurboQuant fp16-activation win).
+    Expects x_rot_ptr pointing to fp16 tensor. Halves x_rot bandwidth.
+    Upcasts to fp32 inside dot product accumulation for numerical stability."""
+    pid = tl.program_id(0)
+    row_base = pid * BLOCK_M
+    if row_base >= out_features:
+        return
+
+    centroid_tile = tl.load(centroids_ptr + tl.arange(0, 16))  # fp32
+
+    half_idx = tl.arange(0, BLOCK_HALF)
+    m_idx = tl.arange(0, BLOCK_M)
+    acc = tl.zeros((BLOCK_M,), dtype=tl.float32)
+
+    for b in range(BPR):
+        x_base = b * 256
+        # fp16 loads — half the bytes of fp32
+        x_low = tl.load(x_rot_ptr + x_base + 2 * half_idx).to(tl.float32)
+        x_high = tl.load(x_rot_ptr + x_base + 2 * half_idx + 1).to(tl.float32)
+
+        block_idx_m = (row_base + m_idx) * BPR + b
+        d_m = tl.load(d_ptr + block_idx_m)
+
+        qs_offsets = (block_idx_m[:, None] * BLOCK_HALF + half_idx[None, :])
+        qs_m = tl.load(qs_ptr + qs_offsets).to(tl.int32)
+        low_m = qs_m & 0xF
+        high_m = (qs_m >> 4) & 0xF
+
+        low_flat = tl.reshape(low_m, (BLOCK_M * BLOCK_HALF,))
+        high_flat = tl.reshape(high_m, (BLOCK_M * BLOCK_HALF,))
+        c_low_m = tl.reshape(tl.gather(centroid_tile, low_flat, axis=0),
+                             (BLOCK_M, BLOCK_HALF))
+        c_high_m = tl.reshape(tl.gather(centroid_tile, high_flat, axis=0),
+                              (BLOCK_M, BLOCK_HALF))
+
+        block_dot = (tl.sum(c_low_m * x_low[None, :], axis=1)
+                     + tl.sum(c_high_m * x_high[None, :], axis=1))
+        acc += block_dot * d_m
+
+    rows = row_base + m_idx
+    tl.store(y_ptr + rows, acc, mask=rows < out_features)
+
+
+def tq4_matvec_triton_v3(
+    x_rot: torch.Tensor, qs: torch.Tensor, d: torch.Tensor,
+    centroids: torch.Tensor, out_features: int, in_features: int,
+) -> torch.Tensor:
+    """V3 dispatch: v2 + fp16 x_rot activation."""
+    assert qs.is_contiguous() and qs.dtype == torch.uint8
+    assert d.is_contiguous() and d.dtype == torch.float32
+    assert centroids.is_contiguous() and centroids.dtype == torch.float32
+    assert in_features % 256 == 0
+    # Ensure fp16 contiguous x_rot
+    if x_rot.dtype != torch.float16:
+        x_rot = x_rot.to(torch.float16).contiguous()
+    elif not x_rot.is_contiguous():
+        x_rot = x_rot.contiguous()
+    bpr = in_features // 256
+    y = torch.empty(out_features, device=x_rot.device, dtype=torch.float32)
+    BLOCK_M = _pick_block_m(out_features)
+    grid = ((out_features + BLOCK_M - 1) // BLOCK_M,)
+    _tq4_matvec_kernel_v3[grid](
+        x_rot, qs.view(-1), d, centroids, y,
+        in_features, out_features,
+        BPR=bpr, BLOCK_HALF=128, BLOCK_M=BLOCK_M,
+        num_warps=4,
+    )
+    return y
+
+
 def tq4_matvec_triton_v2(
     x_rot: torch.Tensor, qs: torch.Tensor, d: torch.Tensor,
     centroids: torch.Tensor, out_features: int, in_features: int,
