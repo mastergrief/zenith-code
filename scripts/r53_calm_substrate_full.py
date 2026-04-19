@@ -30,7 +30,6 @@ from __future__ import annotations
 import re
 import sys
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -74,11 +73,16 @@ COMMON_IMPORTS = {
 }
 
 
-@dataclass
 class FailureCategory:
-    kind: str        # NameError, TypeError, AttributeError, FAIL, SyntaxError, NoCode, Other
-    detail: str      # the captured error/message
-    repair_hint: str # specific actionable text for Gemma
+    """Plain class (not @dataclass) — daemon's exec sets __name__ to
+    '__daemon__' which isn't a real module, breaking dataclass's
+    sys.modules lookup."""
+    __slots__ = ("kind", "detail", "repair_hint")
+
+    def __init__(self, kind: str, detail: str, repair_hint: str):
+        self.kind = kind
+        self.detail = detail
+        self.repair_hint = repair_hint
 
 
 def categorize_failure(test_output: str, prev_code: str) -> FailureCategory:
