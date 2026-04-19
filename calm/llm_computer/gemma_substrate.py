@@ -419,6 +419,10 @@ class KVCache:
         self.use_tq4 = use_tq4
         self.k_cache: dict[int, torch.Tensor] = {}  # layer_idx → (B, H, S, D)
         self.v_cache: dict[int, torch.Tensor] = {}
+        # Track per-layer SWA-ness for post-forward trim. Set by
+        # update() based on its is_swa argument.
+        self._is_swa: dict[int, bool] = {}
+        self._swa_window: int = 512
 
     def _tq4_roundtrip(self, x: torch.Tensor) -> torch.Tensor:
         """Inject tq4 quant noise. numel must be divisible by 256
@@ -464,16 +468,34 @@ class KVCache:
             k_full = self._tq4_roundtrip(k_full)
             v_full = self._tq4_roundtrip(v_full)
 
-        # Store FULL (no trim). Trimming SWA layers' storage is an
-        # optimization but breaks shared-KV consumers (layers 24+
-        # reading layer 5's cache mid-forward expect full K/V for
-        # their own prefill). Proper trim needs to happen after ALL
-        # layers complete in a forward — deferred. For 8K context,
-        # full storage costs ~2 GB across SWA layers (acceptable).
+        # Store FULL during this forward (don't trim mid-forward —
+        # shared-KV consumer layers later in the same forward need
+        # the full window). Track is_swa for post-forward trim.
         self.k_cache[layer_idx] = k_full
         self.v_cache[layer_idx] = v_full
+        self._is_swa[layer_idx] = is_swa
+        if is_swa:
+            self._swa_window = window_size
 
         return k_full.float(), v_full.float()
+
+    def trim_swa_storage(self) -> None:
+        """Trim SWA layers' stored K/V to last `window_size` tokens.
+        Call AFTER all layers in a forward have run, so shared-KV
+        consumers got the full window before this trim.
+
+        Invariant: SWA attention is offset-invariant in the windowed
+        mask, so trim doesn't affect future attention correctness —
+        only memory. Long-context support depends on this trim
+        running after every forward."""
+        window = self._swa_window
+        for layer_idx, is_swa in self._is_swa.items():
+            if is_swa and layer_idx in self.k_cache:
+                k = self.k_cache[layer_idx]
+                if k.shape[2] > window:
+                    self.k_cache[layer_idx] = k[:, :, -window:].contiguous()
+                    self.v_cache[layer_idx] = (
+                        self.v_cache[layer_idx][:, :, -window:].contiguous())
 
     def seq_len(self) -> int:
         """Current cached sequence length (from layer 0)."""
@@ -1170,6 +1192,13 @@ class GemmaSubstrate:
         for i, layer in enumerate(self.layers):
             h = self._forward_layer(h, layer, i, kv_cache=kv_cache,
                                      start_pos=start_pos)
+
+        # Post-forward SWA storage trim — keep cache memory bounded
+        # by window_size for SWA layers. Safe to do here because all
+        # shared-KV consumers have already run with the full window.
+        if isinstance(kv_cache, KVCache) and hasattr(kv_cache,
+                                                      "trim_swa_storage"):
+            kv_cache.trim_swa_storage()
 
         h = _rms_norm(h, self.output_norm_w, cfg.rms_norm_eps)
 

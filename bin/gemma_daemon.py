@@ -56,10 +56,12 @@ def _boot():
         "~/models/gemma-4-E4B-it-tq4-aligned.gguf")
     print("[daemon] loading Gemma substrate...", flush=True)
     enable_triton_tq4(True)
-    # Bumped from 1024 → 8192 for R53.19 full-stack eval. KVCacheTq4
-    # (4.4× memory vs FP16) keeps VRAM in budget on 8 GB. Scripts
-    # call m.generate(..., use_tq4_kv=True) to opt into tq4 KV.
-    m = GemmaSubstrate.from_gguf(gguf, max_len=8192)
+    # Bumped 1024 → 8192 → 32768 after SWA fix + post-forward trim.
+    # SWA layers cap at window=512 storage (post-forward trim);
+    # global layers (7 of 42) grow with context. Memory at 32K:
+    # ~350 MB global KV + ~150 MB SWA + 5 GB weights = ~5.5 GB.
+    # Headroom for cards / bigger evals on 8 GB GPU.
+    m = GemmaSubstrate.from_gguf(gguf, max_len=32768)
     m.preload_gpu("cuda")
     m.warmup(seq_lens=(1, 20))
     tok = GemmaTokenizer.from_gguf(gguf)
