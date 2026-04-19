@@ -4,9 +4,23 @@ Audit the project and rewrite `.claude/CLAUDE.md`, `.claude/rules/`, and `.claud
 
 The default for a non-trivial update (session touched >1 subsystem, >3 commits, or introduced a new mechanism): launch 2 Explore agents in parallel for the audit, classify findings by priority tier, draft a plan file in plan mode, then execute one tier per commit. Fall through to inline work only for single-file trivial fixes.
 
-### Phase 1 — parallel research (2 Explore agents, ≤ 250 words each)
+### Phase 1 — parallel research (2 Explore agents)
 
-Both agents brief the session context in ≤ 50 words of preamble and have them read the actual code. Do NOT paste session-chat into the brief — point to commits / file paths / rule files.
+**The brief IS the session context.** Agents are cold-started with zero
+knowledge of the conversation. Before dispatching, run `git log --oneline
+-20` + `git status --short`, skim session memory / handoff for ruled-out
+paths, then write a brief containing:
+
+- The session's shipped commits (SHA + 1-line summary) for every
+  non-trivial change
+- Every new or modified file with its purpose (1 sentence)
+- Session's wins and nulls as a bullet list
+- Pointers to files + rules the agent should read (not pasted content)
+- Return format explicitly specified (punch-list / prioritized-list)
+
+Realistic brief size: 300-500 words. Too short = agent misses findings
+you didn't list. Too long (full transcript) = wastes tokens and
+dilutes the agent's read targets.
 
 **Agent A — rules vs current code**
 - Read `.claude/CLAUDE.md` + every `.claude/rules/*.md` + current source files listed in the brief
