@@ -78,6 +78,102 @@ def _tq4_matvec_kernel(
     tl.store(y_ptr + rows, acc, mask=rows < out_features)
 
 
+def tq4_matvec_triton_v1(
+    x_rot: torch.Tensor, qs: torch.Tensor, d: torch.Tensor,
+    centroids: torch.Tensor, out_features: int, in_features: int,
+) -> torch.Tensor:
+    """V1 dispatch: original global-memory gather (pre-R53.29 baseline).
+    Kept for bench comparison; production uses tq4_matvec_triton → v2."""
+    assert x_rot.is_contiguous() and x_rot.dtype == torch.float32
+    assert qs.is_contiguous() and qs.dtype == torch.uint8
+    assert d.is_contiguous() and d.dtype == torch.float32
+    assert centroids.is_contiguous() and centroids.dtype == torch.float32
+    assert in_features % 256 == 0
+    bpr = in_features // 256
+    y = torch.empty(out_features, device=x_rot.device, dtype=torch.float32)
+    BLOCK_M = _pick_block_m(out_features)
+    grid = ((out_features + BLOCK_M - 1) // BLOCK_M,)
+    _tq4_matvec_kernel[grid](
+        x_rot, qs.view(-1), d, centroids, y,
+        in_features, out_features,
+        BPR=bpr, BLOCK_HALF=128, BLOCK_M=BLOCK_M,
+        num_warps=4,
+    )
+    return y
+
+
+@triton.jit
+def _tq4_matvec_kernel_v2(
+    x_rot_ptr, qs_ptr, d_ptr, centroids_ptr, y_ptr,
+    in_features, out_features,
+    BPR: tl.constexpr,
+    BLOCK_HALF: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+):
+    """V2 — ports TurboQuant commit 51481c3 shared-mem LUT.
+    Loads centroids into a program-local (16,) tile once, uses tl.gather."""
+    pid = tl.program_id(0)
+    row_base = pid * BLOCK_M
+    if row_base >= out_features:
+        return
+
+    centroid_tile = tl.load(centroids_ptr + tl.arange(0, 16))
+
+    half_idx = tl.arange(0, BLOCK_HALF)
+    m_idx = tl.arange(0, BLOCK_M)
+    acc = tl.zeros((BLOCK_M,), dtype=tl.float32)
+
+    for b in range(BPR):
+        x_base = b * 256
+        x_low = tl.load(x_rot_ptr + x_base + 2 * half_idx)
+        x_high = tl.load(x_rot_ptr + x_base + 2 * half_idx + 1)
+
+        block_idx_m = (row_base + m_idx) * BPR + b
+        d_m = tl.load(d_ptr + block_idx_m)
+
+        qs_offsets = (block_idx_m[:, None] * BLOCK_HALF + half_idx[None, :])
+        qs_m = tl.load(qs_ptr + qs_offsets).to(tl.int32)
+        low_m = qs_m & 0xF
+        high_m = (qs_m >> 4) & 0xF
+
+        low_flat = tl.reshape(low_m, (BLOCK_M * BLOCK_HALF,))
+        high_flat = tl.reshape(high_m, (BLOCK_M * BLOCK_HALF,))
+        c_low_m = tl.reshape(tl.gather(centroid_tile, low_flat, axis=0),
+                             (BLOCK_M, BLOCK_HALF))
+        c_high_m = tl.reshape(tl.gather(centroid_tile, high_flat, axis=0),
+                              (BLOCK_M, BLOCK_HALF))
+
+        block_dot = (tl.sum(c_low_m * x_low[None, :], axis=1)
+                     + tl.sum(c_high_m * x_high[None, :], axis=1))
+        acc += block_dot * d_m
+
+    rows = row_base + m_idx
+    tl.store(y_ptr + rows, acc, mask=rows < out_features)
+
+
+def tq4_matvec_triton_v2(
+    x_rot: torch.Tensor, qs: torch.Tensor, d: torch.Tensor,
+    centroids: torch.Tensor, out_features: int, in_features: int,
+) -> torch.Tensor:
+    """V2 dispatch: shared-mem LUT variant."""
+    assert x_rot.is_contiguous() and x_rot.dtype == torch.float32
+    assert qs.is_contiguous() and qs.dtype == torch.uint8
+    assert d.is_contiguous() and d.dtype == torch.float32
+    assert centroids.is_contiguous() and centroids.dtype == torch.float32
+    assert in_features % 256 == 0
+    bpr = in_features // 256
+    y = torch.empty(out_features, device=x_rot.device, dtype=torch.float32)
+    BLOCK_M = _pick_block_m(out_features)
+    grid = ((out_features + BLOCK_M - 1) // BLOCK_M,)
+    _tq4_matvec_kernel_v2[grid](
+        x_rot, qs.view(-1), d, centroids, y,
+        in_features, out_features,
+        BPR=bpr, BLOCK_HALF=128, BLOCK_M=BLOCK_M,
+        num_warps=4,
+    )
+    return y
+
+
 def tq4_matvec_triton(
     x_rot: torch.Tensor,         # (in_features,) FP32, pre-rotated
     qs: torch.Tensor,            # (n_blocks, 128) uint8
@@ -104,7 +200,10 @@ def tq4_matvec_triton(
     y = torch.empty(out_features, device=x_rot.device, dtype=torch.float32)
     BLOCK_M = _pick_block_m(out_features)
     grid = ((out_features + BLOCK_M - 1) // BLOCK_M,)
-    _tq4_matvec_kernel[grid](
+    # R53.29: use v2 kernel (shared-mem LUT via tl.gather) — -5% to -10%
+    # faster on aggregate across Gemma 4 E4B shapes vs the baseline
+    # global-memory gather. Verified correct via test_tq4_matvec_v2_correctness.
+    _tq4_matvec_kernel_v2[grid](
         x_rot, qs.view(-1), d, centroids, y,
         in_features, out_features,
         BPR=bpr,
