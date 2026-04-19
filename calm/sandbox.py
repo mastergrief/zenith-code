@@ -149,6 +149,23 @@ _WRAPPER = textwrap.dedent("""\
 
     {prelude}
 
+    # Pre-import safe stdlib modules BEFORE installing the import hook.
+    # Several of these (statistics, hashlib, random, ...) transitively
+    # import `os` on first load. Pre-loading warms sys.modules so the
+    # hook never sees the `os` child-import, keeping user-code imports
+    # of these modules functional.
+    import re as _pre_re, math as _pre_math, random as _pre_random
+    import time as _pre_time, datetime as _pre_datetime
+    import hashlib as _pre_hashlib, base64 as _pre_base64
+    import collections as _pre_collections, itertools as _pre_itertools
+    import functools as _pre_functools, bisect as _pre_bisect
+    import heapq as _pre_heapq, copy as _pre_copy
+    import csv as _pre_csv, statistics as _pre_statistics
+    import typing as _pre_typing, enum as _pre_enum
+    import dataclasses as _pre_dataclasses, abc as _pre_abc
+    import struct as _pre_struct, decimal as _pre_decimal
+    import fractions as _pre_fractions, textwrap as _pre_textwrap
+
     # Block dangerous imports
     _BLOCKED = frozenset(['os', 'subprocess', 'shutil', 'socket', 'http',
         'urllib', 'requests', 'pathlib', 'glob', 'tempfile', 'signal',
