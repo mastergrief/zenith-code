@@ -39,7 +39,7 @@ import torch
 CACHE_DIR = "/mnt/c/Users/gabes/projects/claw-code/.cache/r53_code_db"
 
 MAX_ATTEMPTS = 3
-MAX_TOKENS = 250
+MAX_TOKENS = 400   # restored after SWA fix removed the 512-cap budget
 
 
 # Common import → module mapping for NameError repair
