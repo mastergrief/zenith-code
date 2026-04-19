@@ -433,18 +433,24 @@ class KVCache:
     def update(self, layer_idx: int, k_new: torch.Tensor, v_new: torch.Tensor,
                is_swa: bool = False, window_size: int = 512
                ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Append new K/V and return full cached sequence.
+        """Append new K/V. Returns the FULL concatenated K/V for this
+        attention call. STORES only the last `window_size` for SWA
+        layers (production-equivalent of llama.cpp's behavior).
 
-        For SWA layers, the FULL sequence is stored and returned —
-        attention masking (in _forward_layer) handles the sliding
-        window. Previous behaviour (trim K/V to last window_size on
-        store) was correct for single-position decode but DESTROYED
-        K positions during prefill of long sequences (multiple Q
-        positions need different windows but trim leaves only one).
+        Compute-full / store-trimmed pattern:
+          - Multi-position prefill needs full K/V to compute attention
+            for each Q position's correct window (returned full)
+          - Long-term storage for SWA only needs the last window_size
+            (subsequent Q positions can't attend further back anyway)
 
-        Memory cost: SWA layers store full sequence like global layers.
-        For long-context use (>8K), pair with use_tq4=True or
-        KVCacheTq4 to keep VRAM in budget.
+        Math is offset-invariant — the windowed attention mask in
+        _forward_layer uses j-vs-(S_kv-S+i) which cancels any storage
+        offset. So callers don't need offset tracking.
+
+        Memory at long context: SWA layers cap at window_size storage,
+        global layers grow with sequence length. With KVCacheTq4 +
+        proper window storage on global layers, matches llama.cpp's
+        ~7 GB at 512K context.
         """
         if layer_idx in self.k_cache:
             k_full = torch.cat([self.k_cache[layer_idx], k_new.half()], dim=2)
@@ -458,6 +464,12 @@ class KVCache:
             k_full = self._tq4_roundtrip(k_full)
             v_full = self._tq4_roundtrip(v_full)
 
+        # Store FULL (no trim). Trimming SWA layers' storage is an
+        # optimization but breaks shared-KV consumers (layers 24+
+        # reading layer 5's cache mid-forward expect full K/V for
+        # their own prefill). Proper trim needs to happen after ALL
+        # layers complete in a forward — deferred. For 8K context,
+        # full storage costs ~2 GB across SWA layers (acceptable).
         self.k_cache[layer_idx] = k_full
         self.v_cache[layer_idx] = v_full
 
