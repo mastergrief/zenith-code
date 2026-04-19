@@ -271,7 +271,7 @@ def _sig_no_colon(signature: str) -> str:
     return signature.rstrip().rstrip(":").strip()
 
 
-def gen_stock(m, tok, p: Problem, max_tokens: int = 200) -> str:
+def gen_stock(m, tok, p: Problem, max_tokens: int = 4096) -> str:
     prompt = STOCK_PROMPT_TEMPLATE.format(
         system=BASE_SYSTEM, prompt=p.prompt,
         signature_no_colon=_sig_no_colon(p.signature))
@@ -281,7 +281,7 @@ def gen_stock(m, tok, p: Problem, max_tokens: int = 200) -> str:
 
 
 def gen_hinted(m, tok, p: Problem, facade,
-               max_tokens: int = 200) -> str:
+               max_tokens: int = 4096) -> str:
     # Daemon's Gemma has max_len=1024 positional embeddings. Stock
     # prompt (chat-wrapped) ~120 tokens + max_tokens 200 = ~320 used.
     # Leaves ~700 tokens headroom for hint block.
@@ -312,7 +312,7 @@ def _trim_turn_markers(text: str) -> str:
 
 # ----- eval loop -----
 
-def run_eval(m, tok, max_tokens: int = 220) -> None:
+def run_eval(m, tok, max_tokens: int = 4096) -> None:
     # Load facade + attach prebuilt hybrid indices
     from calm.llm_computer.facades.code_example_db import CodeExampleDB
     from calm.llm_computer.facades.code_verifier import CodeVerifierFacade

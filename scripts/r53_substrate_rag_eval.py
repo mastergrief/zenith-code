@@ -122,7 +122,7 @@ def run_eval(m, tok) -> None:
           f"channels: tfidf+dense", flush=True)
 
     rng = random.Random(0)
-    max_tokens = 400
+    max_tokens = 8192
 
     # Override _build_hints to use channel-code-hybrid (R53.7 mode)
     def _build_hints_channel(db, rng, p, sanity_random):

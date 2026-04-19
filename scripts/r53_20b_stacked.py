@@ -41,7 +41,7 @@ import torch
 CACHE_DIR = "/mnt/c/Users/gabes/projects/claw-code/.cache/r53_code_db"
 
 MAX_ATTEMPTS = 3
-MAX_TOKENS = 400
+MAX_TOKENS = 8192
 
 RECALL_CH_OFF = 2480
 MAX_KEY = 4096
