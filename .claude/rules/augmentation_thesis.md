@@ -333,6 +333,43 @@ thesis — build R53.5 PT + R53.6 L24/L30 install and measure
 substrate-RAG vs prompt-RAG on the same 6 problems. Expected:
 substrate matches or beats prompt-RAG because it respects Tier 1.
 
+### R53.14/20a/20b — substrate L41 install REGRESSES on code (post-SWA-fix)
+
+The Tier-1 thesis holds in principle but was falsified at one specific
+install mechanism: L41 `CardSlot(preserve=True)` + per-marker
+`FirstTokenHook(boost=50)` on the R53.0 6-problem code corpus, SWA
+bug already fixed.
+
+Result (ec8887f / `scripts/r53_20b_stacked.py`):
+
+| | stock | prompt-RAG | substrate @ L41 |
+|---|---:|---:|---:|
+| log_level_counts | 6/6 | 6/6 | **0/0** |
+| lru_cache_class | 9/9 | 9/9 | **0/0** |
+| (others unchanged) | | | |
+| **TOTAL** | 25/27 | 25/27 | **10/12** (-9.3pp) |
+
+Bit-identical MISS preservation at L41. HIT prompts regressed.
+
+**Root cause — install-mechanism, not SWA**: Gemma's first-token on
+code is confidently a fence/whitespace opener (margin 6.8-9.2), so
+`min_margin=0.5` never gates, hook always fires on HIT, forces
+"def"/"class" → code-without-fence → extractor fails.
+
+**Thesis refinement**: hash-match Tier-1 holds at the OUTPUT boundary
+(`VerificationHook` with small vocab_mapping + `min_margin`, as in
+the learning-loop demo). Does NOT hold for residual-write `CardSlot`
+at arbitrary layers. Install mechanism weight matters. First-token
+bias is the wrong intervention for code.
+
+**Correct tier-2 for code** (next-session target): post-generation
+AST walker. Parse output, detect shadow bugs (token_bucket
+`self.consume = capacity`), missing-key dict access (csv_column_stats
+KeyError), mechanically rewrite. No Gemma retry — R53.19/R53.33 show
+Gemma ignores targeted hints with concrete rename examples. Prior
+dominance overwhelms in-context instruction weight (see
+`capability_gain.md` §"Gemma ignores targeted hints").
+
 For prompt-RAG systems (not substrate): add explicit confidence
 gating to `CodeVerifierFacade.compute_hints`:
 

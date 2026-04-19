@@ -1,6 +1,6 @@
 # Zenith Code — Multi-Agent Harness + CALM Reasoning Engine
 
-**IMPORTANT**: Assume nothing. Hypothesis, Build, Test & Iterate. First Principles thinking. Do not discount anything until it's built and tested!
+**IMPORTANT**: Assume nothing. Hypothesis, Build, Test, Commit & Iterate. First Principles thinking. Do not discount anything until it's built and tested!
 
 Fork of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) with a Python agent harness, CALM reasoning engine, HRM + LLM-Computer (the CRLM stack), and a Rust port. **Working policy: solo lead. Work directly with Edit/Write/Read/Grep/Bash. Don't spawn subagents or teams — the brief-writing + cold-start + round-trip overhead exceeds the work on fast-iteration perf tasks, which is nearly everything we do here.**
 
@@ -104,7 +104,7 @@ Four active systems coexist:
 1. **Python agent harness** (`agents/`, ~4,423 LOC across 15 files) — terminal coding assistant with dual backend (Ollama + llama.cpp), 3-level permissions, thinking mode, sessions, compaction, effort control, and llama.cpp hot-swap
 2. **CALM engine** (`calm/`, ~83,600 LOC across 413 .py files) — modular compute + knowledge facade with cognitive intelligence layer. Auto-CALM (transparent verification + precomputation, 100% benchmark) + Engine V2 (7-phase pipeline: pre-analyze → enrich → precompute → generate → verify → cognitive route → self-heal) + 120 modular backends (1002 verified functions, 550 NL patterns, 100% coverage) + 39 cognitive modules (verification, reasoning, quality, meta, planning) + 48 factual check patterns + 10 dynamic cross-check patterns against backends + adaptive thinking budget + cross-turn conversation state + module self-learning with feedback loop. Full spec: `.claude/rules/calm.md`
 3. **Rust claw-code port** (`rust/`) — upstream claw-code, 9 crates, separate build system
-4. **Unified Single Tensor** (`calm/llm_computer/`) — the CHRLM architecture. **ONE `.pt` contains Gemma (tq4) + trained PTs + compiled cards + persistent knowledge DB.** Session 30 validated Level 5 on the substrate-native demo (`HybridGroupedSmall2DTransformer`): three attention modes coexist in one layer via per-sub-head partition. **Session 32 ported the full pattern to prod Gemma 4 E4B** (`gemma_substrate.py`): coherent output at **42 tok/s decode** (160× over baseline, 90% of llama.cpp on the same GGUF) via Triton fused dequant kernels (`tq4_triton.py`) + CUDA Graph capture + real tq4 KV storage (`KVCacheTq4`, 4.4× memory). Cards install two ways on prod Gemma: residual-additive (`CardSlot.attach(preserve=True)` for PTs) and in-tensor (`install_card_in_attention` + `convert_layer_to_fp32`, with per-sub-head dispatch via `attention_partition` for `mode='hard_max'|'softmax'|'grouped'`). Verification feedback closes the loop (`VerificationHook` biases Gemma logits with the card's argmax). Learning loop end-to-end: `KnowledgeStore` corrections compile into a recall card via `build_recall_model()`, install via `CardSlot`, persist as JSON — demo at `scripts/gemma_learning_loop_demo.py` (5/5 wrong → 5/5 correct). 29 compiled programs in `programs/` (`adder` 10K/10K, `multiplier` 3390/3390 on a·b<1000 — first compiled card to fix real Gemma arithmetic errors via step-through digit bias, `gcd` 256/256, `dispatched_v4` 791/791, `reasoning_engine` 512/512). **Pointer Transducers** (session 31, `CopyAugmentedTransformer`): one PT per output-language family (~3-5 PTs cover 30+ domains); cross-domain val acc 86-100%; checkpoints in `calm/hrm/checkpoints/copy_*_best.pt`. Domain registry: `.claude/MEMORY/substrate_registry.md`. `/domain` command for guided domain addition. Full spec: `.claude/rules/Substrate.md` + `.claude/rules/architecture.md`.
+4. **Unified Single Tensor** (`calm/llm_computer/`) — the CHRLM architecture. **ONE `.pt` contains Gemma (tq4) + trained PTs + compiled cards + persistent knowledge DB.** Session 30 validated Level 5 on the substrate-native demo (`HybridGroupedSmall2DTransformer`): three attention modes coexist in one layer via per-sub-head partition. **Session 32 ported the full pattern to prod Gemma 4 E4B** (`gemma_substrate.py`): coherent output at **42 tok/s decode** (160× over baseline, 90% of llama.cpp on the same GGUF) via Triton fused dequant kernels (`tq4_triton.py`, v2 default as of R53.29 — shared-mem LUT via `tl.gather`, -7% aggregate) + CUDA Graph capture + real tq4 KV storage (`KVCacheTq4`, ~3.6× memory, multi-token prefill + `trim_swa_storage` byte-copy shipped in R53.28). Fused flash-attention decode kernel (`tq4_flash_attn.py`, R53.34) wires tq4 K/V into a single-pass kernel (K-side reuses `tq4_matvec_triton`; V-side `_tq4_weighted_v_kernel` with grid=(n_heads_q,)). SWA layers fused; global layers (d_head=512) fall back to memoized dequant. Cards install two ways on prod Gemma: residual-additive (`CardSlot.attach(preserve=True)` for PTs) and in-tensor (`install_card_in_attention` + `convert_layer_to_fp32`, with per-sub-head dispatch via `attention_partition` for `mode='hard_max'|'softmax'|'grouped'`). Verification feedback closes the loop (`VerificationHook` biases Gemma logits with the card's argmax). Learning loop end-to-end: `KnowledgeStore` corrections compile into a recall card via `build_recall_model()`, install via `CardSlot`, persist as JSON — demo at `scripts/gemma_learning_loop_demo.py` (5/5 wrong → 5/5 correct). 29 compiled programs in `programs/` (`adder` 10K/10K, `multiplier` 3390/3390 on a·b<1000 — first compiled card to fix real Gemma arithmetic errors via step-through digit bias, `gcd` 256/256, `dispatched_v4` 791/791, `reasoning_engine` 512/512). **Pointer Transducers** (session 31, `CopyAugmentedTransformer`): one PT per output-language family (~3-5 PTs cover 30+ domains); cross-domain val acc 86-100%; checkpoints in `calm/hrm/checkpoints/copy_*_best.pt`. Domain registry: `.claude/MEMORY/substrate_registry.md`. `/domain` command for guided domain addition. Full spec: `.claude/rules/Substrate.md` + `.claude/rules/architecture.md`.
 
 Serving: Gemma 4 E4B (primary) or Qwen 3.5 4B via llama.cpp at **512K context** (`ctx_size=524288`), **48K thinking budget** (`EFFORT["max"]["max_tokens"]=49152`). Production: tq4+tq4 KV cache on Gemma E4B (`~/models/gemma-4-E4B-it-tq4-aligned.gguf`, 5.0 GB). CALM/Auto-CALM runs on the same llama-server instance. Harness auto-computes compaction threshold as `min(per-GGUF limit, int(ctx_size * 0.89))` — Gemma compacts at **227.5K tokens** (232960). Hot-swap between bases via `agents/model_swap.py`.
 
@@ -392,14 +392,51 @@ training + L24/L30 install) pending. Full rules: `.claude/rules/retrieval.md`,
 - **R53.2b eval finding** — blanket prompt-RAG gives **+0.0pp retrieval-
   attributable gain** on complex multi-step coding (hinted = sanity-random).
   Prompt-length alone moves +7.4pp; retrieval content adds nothing on top.
-  Substrate RAG (hash-gated L30 card) expected to outperform because
-  hash-match = automatic Tier-1 preservation (pass-through when Gemma
-  has a strong prior). See `augmentation_thesis.md` §"Automatic Tier-1
-  preservation."
+- **R53.14/20a/20b (substrate-RAG on code, SWA-fix active) — NEGATIVE**.
+  L41 CardSlot(preserve=True) + per-marker FirstTokenHook(boost=50)
+  regresses **-9.3pp** on R53.0 corpus even with the SWA attention fix
+  (ec8887f, 1a85b0c, b9512ec). Root cause is install-mechanism, not SWA:
+  Gemma's first-token on code is confidently a fence/whitespace opener
+  (logit margin 6.8-9.2), so forcing "def"/"class" produces
+  code-without-fence → extractor fails. On HIT prompts only — miss
+  prompts bit-identical. **First-token bias is wrong intervention for
+  code**; AST-walker post-generation card is the correct tier-2 path.
+  Reframes the "Automatic Tier-1 preservation" thesis: holds for
+  hash-match at the output boundary (VerificationHook with `min_margin`),
+  but NOT for residual-write CardSlot at arbitrary layers.
 
-**Next (R53.5/R53.6)**: train `copy_code_best.pt` on DB's reasoning-trace
-extracts + 222 generator traces → install at L24 via `CardSlot.attach(
-preserve=True)` alongside `KnowledgeStore` recall card at L30.
+**R53 Phase 2 shipped (R53.25-R53.34)**:
+- **R53.25** — MAX_TOKENS=900 alone lifts `log_level_counts` 0/0→6/6
+  (+6 tests → 32/32, best R53 result). 4 prior null rounds were
+  budget-starved, not substrate/sandbox/import failures.
+- **R53.28** — `KVCacheTq4` multi-token prefill (S≥1) with per-layer
+  position tracking; `trim_swa_storage` via direct tq4 byte-copy (no
+  re-quant). Dense retrieval default `prefer_tq4=True`.
+- **R53.29** — tq4 matvec v2 kernel: shared-mem centroid LUT via
+  `tl.gather` from a program-local (16,) tile. **-7% matvec**
+  aggregate, production default (cbb8073). v1 retained for A/B.
+- **R53.30/R53.31/R53.32** — null ports from TurboQuant CUDA kernel:
+  fp16 x_rot activation (+0.2/+8.7%), uint32 qs loads (+9.8/+16.4%),
+  BLOCK_M sweep (heuristic holds). Lesson: Triton auto-coalesces on
+  Ada L1; `tl.join`/reshape overhead can exceed BW savings.
+- **R53.34** — fused flash-attention decode kernel
+  (`calm/llm_computer/tq4_flash_attn.py`), parity-validated on real
+  Gemma. SWA layers use fused path, global layers (d_head=512) fall
+  back to memoized dequant. `USE_TQ4_KV=True` back on in eval scripts.
+- **AdaptiveBudget + 16K ceiling** is the new default in all R53 eval
+  scripts (e7b4538); replaces fixed 200-400 tok defaults.
+- **Sandbox stdlib pre-import fix** (5dc2dc1, R53.22 diagnosis): user
+  `import statistics` triggered transitive `import os` → sandbox blocks
+  → eval 0/0. Fix pre-loads ~23 safe stdlib modules before the
+  `_safe_import` hook. User `import os` still blocked.
+
+**Open tier-3 target (logic-bug ceiling)**: csv_column_stats emits
+KeyError in Gemma's own code; token_bucket emits `self.consume =
+capacity` shadow bug. Categorizer correctly detects + emits targeted
+rename hint with example — Gemma retry emits the same bug. Prior
+dominates hint. Tier-2 compiled AST walker (parse → detect collision
+→ mechanical rename) is the defensible fix, not hint-tuning or
+bigger-model.
 
 ## Hardware
 
@@ -442,4 +479,4 @@ Key findings:
 
 `feature/multi-agent-qwen` on `mastergrief/zenith-code` (forked from `ultraworkers/claw-code`; renamed from `mastergrief/claw-code` 2026-04-07)
 
-**IMPORTANT**: Assume nothing. Hypothesis, Build, Test & Iterate. First Principles thinking. Do not discount anything until it's built and tested!
+**IMPORTANT**: Assume nothing. Hypothesis, Build, Test, Commit & Iterate. First Principles thinking. Do not discount anything until it's built and tested!

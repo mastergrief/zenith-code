@@ -1,4 +1,4 @@
-**IMPORTANT**: Assume nothing. Hypothesis, Build, Test & Iterate. First Principles thinking. Do not discount anything until it's built and tested!
+**IMPORTANT**: Assume nothing. Hypothesis, Build, Test, Commit & Iterate. First Principles thinking. Do not discount anything until it's built and tested!
 
 **This is the default working loop for all work in this project.** Apply
 it to CUDA kernels, Python harness changes, training scripts, quantize
@@ -114,6 +114,51 @@ tok/s baseline. The real fix turned out to be one line — caching a
 16-entry `__constant__` LUT in per-thread registers to avoid divergent-
 index serialization on Ada — which moved +58% by itself. Plateaus
 mean "go look for a bug", not "keep tuning the knob you were tuning".
+
+## MAX_TOKENS budget discipline (R53.25 receipt)
+
+Before diagnosing logic / substrate / sandbox / import failures,
+verify output budget isn't clipping. Gemma 4 E4B trains at 131K
+ctx, NIAH-validates at 220K — eval `max_tokens` defaults should
+be ≥ 4K, not ≤ 400. R53.19v3 through R53.24 burned four null
+rounds (substrate install, sandbox fix, import injection,
+KVCacheTq4) before R53.25 showed MAX_TOKENS 400 → 900 alone lifts
+`log_level_counts` 0/0 → 6/6 on R53.0. Budget was first-order
+cause; every other "failure" was downstream of truncation.
+
+Current defaults: `MAX_TOKENS_CEILING = 16384` +
+`AdaptiveBudget` (tier-picked per-prompt, trivial 2K → deep 32K
+clamped to 16K) in `scripts/r53_eval_complex.py` +
+`scripts/r53_21_import_inject.py`. All R53 wrapper scripts bumped
+to 4096-16384.
+
+Rule: when a Gemma failure is "no output / NoCode", check
+`max_tokens` ≥ prompt + `<think>` + expected output BEFORE any
+deeper diagnosis.
+
+## GPU bench discipline (R53.29 receipt)
+
+Triton kernel bench variance on the 4070 Laptop is 20-30%
+run-to-run without GPU stabilization. Protocol:
+
+1. `heavy_warmup(3.0s)` — dense fp16 matmul loop to steady-state
+   clock before timing.
+2. `torch.cuda.Event(enable_timing=True)` not `time.time()` —
+   GPU-side timestamps, immune to host jitter.
+3. Median of 5 × 2000 iters per shape.
+4. Same-process A/B, paired per-shape (not full-sweep × 2 — GPU
+   cools between sweeps).
+5. Correctness check (`torch.allclose`) BEFORE timing.
+
+Reference: `scripts/bench_tq4_matvec.py` +
+`scripts/test_tq4_matvec_v2_correctness.py`. Without this
+discipline, R53.29's v2 shipped at -2.8 / -11.3 / -6.3% across
+same-code runs — direction right, magnitude unknowable. With
+discipline, v2 stabilized to -5 to -10% aggregate.
+
+Rule: never declare a Triton kernel win on one run. Median ≥ 3;
+A/B deltas must agree in SIGN across runs even if magnitude
+varies. If sign flips, it's noise.
 
 ## Commit discipline — git log as progress changelog
 
@@ -503,4 +548,4 @@ End-to-end demo of detect → log → compile → install → persist:
 - **Pure discovery reading.** Reading code to understand the system
   doesn't need a metric. Once you start *changing* it, it does.
 
-**IMPORTANT**: Assume nothing. Hypothesis, Build, Test & Iterate. First Principles thinking. Do not discount anything until it's built and tested!
+**IMPORTANT**: Assume nothing. Hypothesis, Build, Test, Commit & Iterate. First Principles thinking. Do not discount anything until it's built and tested!

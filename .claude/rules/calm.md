@@ -293,6 +293,50 @@ VERIFIED = all lanes agree → safe.
 - **Comprehensions**: list/set/generator with per-variable scoping, 10K limit
 - **No attribute access, no imports** — all functions pre-registered
 
+## Sandbox stdlib pre-import (`calm/sandbox.py`, R53.22 fix, commit `5dc2dc1`)
+
+`run_python()` wraps user code in a subprocess with `_safe_import`
+replacing `builtins.__import__`. The hook blocks a set including `os`,
+`subprocess`, `pathlib`, etc. **But the hook fires on every
+`__import__`, including transitive ones from stdlib modules.**
+
+Symptom that forced the fix: `import statistics` inside user code
+triggered `statistics`'s own `import os` (for platform detection during
+first load) → hook blocked → `ImportError: blocked: os`. User couldn't
+use `statistics.mean`, `hashlib.sha256`, etc. — csv_column_stats eval
+stuck at 0/0 even with imports injected.
+
+**Fix**: pre-import safe stdlib modules BEFORE installing the hook, so
+`sys.modules` is warm and user-level `import X` hits cache without
+triggering new transitive loads:
+
+```python
+# Runs OUTSIDE the hook — pre-warms sys.modules
+import re as _pre_re, math as _pre_math, random as _pre_random
+import time as _pre_time, datetime as _pre_datetime
+import hashlib as _pre_hashlib, base64 as _pre_base64
+import collections as _pre_collections, itertools as _pre_itertools
+import functools as _pre_functools, bisect as _pre_bisect
+import heapq as _pre_heapq, copy as _pre_copy
+import csv as _pre_csv, statistics as _pre_statistics
+import typing as _pre_typing, enum as _pre_enum
+import dataclasses as _pre_dataclasses, abc as _pre_abc
+import struct as _pre_struct, decimal as _pre_decimal
+import fractions as _pre_fractions, textwrap as _pre_textwrap
+
+# Then hook installs; os/subprocess still blocked
+```
+
+**User `import os` remains blocked** — `os` is NOT in the pre-import
+list. Verification: `import statistics; statistics.mean([1,2,3])` ✓;
+`import hashlib; hashlib.sha256(...)` ✓; `import os; os.getcwd()` →
+still `ImportError: blocked: os`.
+
+**Rule**: any new sandbox-blocked module added to the hook's block
+set must be checked against the pre-import list for transitive
+collisions. If a commonly-used safe stdlib module loads it, the
+user-facing module must be pre-imported.
+
 ## Benchmark
 
 40 problems, 6 categories:
@@ -348,7 +392,7 @@ to implement it explicitly in `CodeVerifierFacade.compute_hints`.
 | `expression.py` | 657 | AST-safe eval, `_FUNCTIONS` dict (500 from registry) |
 | `verifier.py` | 559 | 4-lane TMR verification |
 | `stack_vm.py` | 522 | Reference stack machine |
-| `sandbox.py` | 254 | Subprocess Python isolation |
+| `sandbox.py` | ~280 | Subprocess Python isolation + stdlib pre-import |
 | `nl_parser.py` | 168 | NL → stack code translator |
 | `backends/__init__.py` | 77 | Auto-discovery registry: scans `*_ops.py` + `*_kb.py` + `*_NL_PATTERNS` |
 | `backends/*_ops.py` | ~14,500 | 81 compute backends with NL patterns |
