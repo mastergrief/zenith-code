@@ -56,10 +56,10 @@ def _boot():
         "~/models/gemma-4-E4B-it-tq4-aligned.gguf")
     print("[daemon] loading Gemma substrate...", flush=True)
     enable_triton_tq4(True)
-    # R53 Phase 1 eval needs headroom for facade-hints + multi-turn —
-    # 1024 position budget covers ~3K chars hints + problem + signature
-    # + up to 400 tokens of generation.
-    m = GemmaSubstrate.from_gguf(gguf, max_len=1024)
+    # Bumped from 1024 → 8192 for R53.19 full-stack eval. KVCacheTq4
+    # (4.4× memory vs FP16) keeps VRAM in budget on 8 GB. Scripts
+    # call m.generate(..., use_tq4_kv=True) to opt into tq4 KV.
+    m = GemmaSubstrate.from_gguf(gguf, max_len=8192)
     m.preload_gpu("cuda")
     m.warmup(seq_lens=(1, 20))
     tok = GemmaTokenizer.from_gguf(gguf)

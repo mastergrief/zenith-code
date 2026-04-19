@@ -435,7 +435,16 @@ class KVCache:
                ) -> tuple[torch.Tensor, torch.Tensor]:
         """Append new K/V and return full cached sequence.
 
-        For SWA layers, only the last `window_size` tokens are kept.
+        For SWA layers, the FULL sequence is stored and returned —
+        attention masking (in _forward_layer) handles the sliding
+        window. Previous behaviour (trim K/V to last window_size on
+        store) was correct for single-position decode but DESTROYED
+        K positions during prefill of long sequences (multiple Q
+        positions need different windows but trim leaves only one).
+
+        Memory cost: SWA layers store full sequence like global layers.
+        For long-context use (>8K), pair with use_tq4=True or
+        KVCacheTq4 to keep VRAM in budget.
         """
         if layer_idx in self.k_cache:
             k_full = torch.cat([self.k_cache[layer_idx], k_new.half()], dim=2)
@@ -443,11 +452,6 @@ class KVCache:
         else:
             k_full = k_new.half()
             v_full = v_new.half()
-
-        # Sliding window: trim to last window_size for SWA layers
-        if is_swa and k_full.shape[2] > window_size:
-            k_full = k_full[:, :, -window_size:]
-            v_full = v_full[:, :, -window_size:]
 
         if self.use_tq4:
             # Store the noised tensor so shared-KV reads see same noise.
@@ -1248,14 +1252,34 @@ class GemmaSubstrate:
         S_kv = k_full.shape[2]
         partitions = self.attention_partition.get(layer_idx, [])
 
-        # Build attention mask once, used by both paths
+        # Build attention mask once, used by both paths.
+        # For SWA layers (not global), apply BOTH causal mask AND
+        # sliding-window mask. K cache stores full sequence (per the
+        # update() change); attention here masks each Q position's
+        # window to the last `sliding_window` K positions.
         attn_mask = None
         if isinstance(kv_cache, KVCacheStatic):
             attn_mask = kv_cache.valid_mask[None, None, None, :]
+        elif not is_global and S_kv > 0:
+            # SWA layer — build (S, S_kv) mask with causal + window.
+            # Q index i has absolute position (S_kv - S) + i.
+            # K index j has absolute position j.
+            # Causal: K_abs > Q_abs → mask.
+            # Window: K_abs < Q_abs - window + 1 → mask.
+            offset = S_kv - S
+            i_idx = torch.arange(S, device=device).unsqueeze(1)  # (S, 1)
+            j_idx = torch.arange(S_kv, device=device).unsqueeze(0)  # (1, S_kv)
+            i_abs = i_idx + offset
+            window = cfg.sliding_window
+            causal = j_idx > i_abs
+            out_of_window = j_idx < (i_abs - window + 1)
+            attn_mask = (causal | out_of_window)[None, None, :, :]
         elif S_kv == S:
+            # Global layer prefill — causal mask only
             attn_mask = torch.triu(
                 torch.ones(S, S_kv, dtype=torch.bool, device=device),
                 diagonal=1)[None, None, :, :]
+        # Global layer decode (S_kv > S, S=1): no mask, attend to all K
 
         if not partitions:
             # Fast path: pure Gemma grouped softmax.
