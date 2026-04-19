@@ -165,9 +165,76 @@ Format coercion = substrate reformats what Gemma already does.
 
 Only the first is a moat. Don't overclaim by conflating them.
 
+## Failure-surface gate as a hard precondition (R53.2 receipt)
+
+The §"failure-surface gate" earlier in this file was a rule of thumb.
+R53 made it load-bearing. Skipping it produces uninterpretable evals.
+
+**Measured failure from violating the gate (R53.2, 12-problem simple
+eval, `scripts/r53_eval_phase1.py`):**
+
+- 6/12 problems: Gemma solves 100% stock and 100% hinted (ceiling)
+- 2/12 problems: stock extraction failed but Gemma's actual code was
+  correct (format coercion masked as capability gain)
+- Only 4/12 had any usable signal
+- Eval concluded "+2 facade wins" — all were extraction artifacts,
+  not real gains
+
+**Required procedure before building any RAG / augmentation eval:**
+
+1. **Collect candidates** — aim for 100-200 from a standard benchmark
+   (MBPP / HumanEvalPlus / BigCodeBench for code; equivalent for
+   other domains). These come with test cases already.
+2. **Score stock Gemma** — run all candidates through stock Gemma,
+   score by running the extracted code against the bundled tests.
+   Use a permissive extractor (code-fence OR bare `def ` OR AST parse
+   of whole output). The extractor must NOT be the limiting factor.
+3. **Partition** results:
+   - `solves_cleanly` (>=80% tests pass) — ceiling, skip for eval
+   - `fails_correctness` (tests run, fail) — target corpus ✓
+   - `format_fails` (extract failed) — flag separately; these are
+     extractor bugs, not capability failures
+   - `partial` (20-80% pass) — interesting, include in target corpus
+4. **Result**: a ~30-50-problem corpus where Gemma is known to have
+   headroom. THIS is the Phase 1 eval corpus.
+5. **Only then**: run the augmentation condition (hinted, substrate,
+   etc). Any delta on this corpus is real signal.
+
+### CoT-depth as a predictor of failure
+
+Gemma-4-E4B reliability drops as reasoning-chain length grows:
+
+| Task type | CoT depth | Measured Gemma reliability |
+|---|---|---|
+| Single-op (1+2, is_prime(17)) | 1 | ~99% |
+| 2-digit × (17×23) | 2-3 | ~50-70% (R11 multiplier context) |
+| (a*b)+c | 3-4 ops | fails often (R46 MultiStep fixed 17/17) |
+| Multi-step with intermediate state (DP, simulation) | N | drops fast with N |
+| Competitive programming 5+ steps | large | mostly fails (CodeContests data) |
+
+When building the candidate pool, **bias toward multi-step problems**
+(BigCodeBench's multi-library tasks, CodeContests, `bug_fix_pairs`-
+style chains). Single-function vanilla-algorithm problems are at the
+ceiling and waste budget.
+
+### Extractor asymmetry (R53.2 specific gotcha)
+
+If the extractor ONLY handles fenced code blocks and Gemma sometimes
+emits bare code, stock-vs-hinted comparison is confounded — hinted
+prompts show fenced examples that Gemma imitates (extracts cleanly);
+stock emits bare code (extract fails, scored 0/0). Any apparent
+"hinted wins" is format coercion, not capability gain.
+
+**Fix**: the extractor must be format-agnostic — try fence, try `def`,
+try `class`, try `import`, try whole-output AST parse. Return the
+first AST-valid candidate. See `scripts/r53_eval_complex.py:extract_code`.
+
 ## Related rules
 
 - `workflow.md` — the general hypothesis-test loop
 - `Substrate.md` — install modes
 - `embed_intelligence.md` — delivery path from card to Gemma's tokens
 - `tracing_intelligence.md` — first-principles bound on what's compilable
+- `retrieval.md` — hybrid retrieval used by augmentation paths
+- `augmentation_thesis.md` §"Automatic Tier-1 preservation" — why
+  blanket augmentation fails even on passing extractor

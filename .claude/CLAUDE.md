@@ -100,13 +100,13 @@ compile into recall card → install via CardSlot → persist as JSON.
 
 Four active systems coexist:
 1. **Python agent harness** (`agents/`, ~4,423 LOC across 15 files) — terminal coding assistant with dual backend (Ollama + llama.cpp), 3-level permissions, thinking mode, sessions, compaction, effort control, and llama.cpp hot-swap
-2. **CALM engine** (`calm/`, ~37,400 LOC across 393 .py files) — modular compute + knowledge facade with cognitive intelligence layer. Auto-CALM (transparent verification + precomputation, 100% benchmark) + Engine V2 (7-phase pipeline: pre-analyze → enrich → precompute → generate → verify → cognitive route → self-heal) + 120 modular backends (1002 verified functions, 550 NL patterns, 100% coverage) + 39 cognitive modules (verification, reasoning, quality, meta, planning) + 48 factual check patterns + 10 dynamic cross-check patterns against backends + adaptive thinking budget + cross-turn conversation state + module self-learning with feedback loop. Full spec: `.claude/rules/calm.md`
+2. **CALM engine** (`calm/`, ~83,600 LOC across 413 .py files) — modular compute + knowledge facade with cognitive intelligence layer. Auto-CALM (transparent verification + precomputation, 100% benchmark) + Engine V2 (7-phase pipeline: pre-analyze → enrich → precompute → generate → verify → cognitive route → self-heal) + 120 modular backends (1002 verified functions, 550 NL patterns, 100% coverage) + 39 cognitive modules (verification, reasoning, quality, meta, planning) + 48 factual check patterns + 10 dynamic cross-check patterns against backends + adaptive thinking budget + cross-turn conversation state + module self-learning with feedback loop. Full spec: `.claude/rules/calm.md`
 3. **Rust claw-code port** (`rust/`) — upstream claw-code, 9 crates, separate build system
-4. **Unified Single Tensor** (`calm/llm_computer/`) — the CHRLM architecture. **ONE `.pt` contains Gemma (tq4) + trained PTs + compiled cards + persistent knowledge DB.** Session 30 validated Level 5 on the substrate-native demo (`HybridGroupedSmall2DTransformer`): three attention modes coexist in one layer via per-sub-head partition. **Session 32 ported the full pattern to prod Gemma 4 E4B** (`gemma_substrate.py`): coherent output at **42 tok/s decode** (160× over baseline, 90% of llama.cpp on the same GGUF) via Triton fused dequant kernels (`tq4_triton.py`) + CUDA Graph capture + real tq4 KV storage (`KVCacheTq4`, 4.4× memory). Cards install two ways on prod Gemma: residual-additive (`CardSlot.attach(preserve=True)` for PTs) and in-tensor (`install_card_in_attention` + `convert_layer_to_fp32`, with per-sub-head dispatch via `attention_partition` for `mode='hard_max'|'softmax'|'grouped'`). Verification feedback closes the loop (`VerificationHook` biases Gemma logits with the card's argmax). Learning loop end-to-end: `KnowledgeStore` corrections compile into a recall card via `build_recall_model()`, install via `CardSlot`, persist as JSON — demo at `scripts/gemma_learning_loop_demo.py` (5/5 wrong → 5/5 correct). 25 compiled programs in `programs/` (`adder` 10K/10K, `multiplier` 3390/3390 on a·b<1000 — first compiled card to fix real Gemma arithmetic errors via step-through digit bias, `gcd` 256/256, `dispatched_v4` 791/791, `reasoning_engine` 512/512). **Pointer Transducers** (session 31, `CopyAugmentedTransformer`): one PT per output-language family (~3-5 PTs cover 30+ domains); cross-domain val acc 86-100%; checkpoints in `calm/hrm/checkpoints/copy_*_best.pt`. Domain registry: `.claude/MEMORY/substrate_registry.md`. `/domain` command for guided domain addition. Full spec: `.claude/rules/Substrate.md` + `.claude/rules/architecture.md`.
+4. **Unified Single Tensor** (`calm/llm_computer/`) — the CHRLM architecture. **ONE `.pt` contains Gemma (tq4) + trained PTs + compiled cards + persistent knowledge DB.** Session 30 validated Level 5 on the substrate-native demo (`HybridGroupedSmall2DTransformer`): three attention modes coexist in one layer via per-sub-head partition. **Session 32 ported the full pattern to prod Gemma 4 E4B** (`gemma_substrate.py`): coherent output at **42 tok/s decode** (160× over baseline, 90% of llama.cpp on the same GGUF) via Triton fused dequant kernels (`tq4_triton.py`) + CUDA Graph capture + real tq4 KV storage (`KVCacheTq4`, 4.4× memory). Cards install two ways on prod Gemma: residual-additive (`CardSlot.attach(preserve=True)` for PTs) and in-tensor (`install_card_in_attention` + `convert_layer_to_fp32`, with per-sub-head dispatch via `attention_partition` for `mode='hard_max'|'softmax'|'grouped'`). Verification feedback closes the loop (`VerificationHook` biases Gemma logits with the card's argmax). Learning loop end-to-end: `KnowledgeStore` corrections compile into a recall card via `build_recall_model()`, install via `CardSlot`, persist as JSON — demo at `scripts/gemma_learning_loop_demo.py` (5/5 wrong → 5/5 correct). 29 compiled programs in `programs/` (`adder` 10K/10K, `multiplier` 3390/3390 on a·b<1000 — first compiled card to fix real Gemma arithmetic errors via step-through digit bias, `gcd` 256/256, `dispatched_v4` 791/791, `reasoning_engine` 512/512). **Pointer Transducers** (session 31, `CopyAugmentedTransformer`): one PT per output-language family (~3-5 PTs cover 30+ domains); cross-domain val acc 86-100%; checkpoints in `calm/hrm/checkpoints/copy_*_best.pt`. Domain registry: `.claude/MEMORY/substrate_registry.md`. `/domain` command for guided domain addition. Full spec: `.claude/rules/Substrate.md` + `.claude/rules/architecture.md`.
 
 Serving: Gemma 4 E4B (primary) or Qwen 3.5 4B via llama.cpp at **512K context** (`ctx_size=524288`), **48K thinking budget** (`EFFORT["max"]["max_tokens"]=49152`). Production: tq4+tq4 KV cache on Gemma E4B (`~/models/gemma-4-E4B-it-tq4-aligned.gguf`, 5.0 GB). CALM/Auto-CALM runs on the same llama-server instance. Harness auto-computes compaction threshold as `min(per-GGUF limit, int(ctx_size * 0.89))` — Gemma compacts at **227.5K tokens** (232960). Hot-swap between bases via `agents/model_swap.py`.
 
-**Tracing track (session 33, Rounds 13-43, 29-round arc)**: full mechanistic-interpretability arc shipped on prod Gemma. 6 capabilities mapped at sweep + per-head resolution (arithmetic, factual recall, induction, counting, comparison, SV agreement). 3 causal validations: R28 (L30 H4/H6 on arithmetic, mean |Δ|=0.407, 9/10), R42 (L23 H1/H4 on SV agreement, |Δ|=0.467, 8/10), R43 (L23 on comparison + counting, 18/18 + 6/6). **Hub-sharing empirically proven**: L23 H1/H4 is a shared content-carrier head serving arithmetic + SV + comparison + counting (32/34 match rate). **4-for-1 compilation ROI validated.** Circuit typology: concentrated / cooperative / diffuse / hybrid-pipeline. Full atlas: `.claude/MEMORY/atlas.md`. Rules: `.claude/rules/augmentation_thesis.md`, `.claude/rules/tracing_intelligence.md`, `.claude/rules/tracing_roadmap.md`.
+**Tracing track (session 33-34, Rounds 13-52, 40-round arc)**: full mechanistic-interpretability arc shipped on prod Gemma. 7 capabilities mapped at sweep + per-head resolution (arithmetic, factual recall, induction, counting, comparison, SV agreement, multi-step composition). 3 causal validations: R28 (L30 H4/H6 on arithmetic, mean |Δ|=0.407, 9/10), R42 (L23 H1/H4 on SV agreement, |Δ|=0.467, 8/10), R43 (L23 on comparison + counting, 18/18 + 6/6). **Hub-sharing empirically proven**: L23 H1/H4 is a shared content-carrier head serving arithmetic + SV + comparison + counting + multi-step (via R46.2 `MultiStepReasoningFacade`, 17/17 real Gemma fixes). **5-for-1 compilation ROI validated.** Circuit typology: concentrated / cooperative / diffuse / hybrid-pipeline / deep-diffuse. **Session 34 (R51+R52) — tier-3 L24 distillation triple-null** (SAE features R50.5, MSE residuals R51.5, KL logits R52.3 — all fail identically: distillation-space loss improves but token preservation fails). **Reframing**: tier-2 stacking achieves tier-3-equivalent outcomes — every shipped augmentation is additive (VerificationHook, CardSlot+preserve, step-through bias). Tier-3 from-scratch distillation of deep-diffuse Gemma layers is closed as a pattern. See `.claude/rules/augmentation_thesis.md` §"Tier-2 stacking achieves tier-3-equivalent outcomes" for the reframing; `.claude/rules/tracing_roadmap.md` ruled-out log for per-round details. Full atlas: `.claude/MEMORY/atlas.md`. Rules: `.claude/rules/augmentation_thesis.md`, `.claude/rules/tracing_intelligence.md`, `.claude/rules/tracing_roadmap.md`.
 
 ## Python Agent Harness (`agents/`, ~4,423 LOC across 15 files)
 
@@ -165,7 +165,7 @@ ZENITH_CTX=65536 zenith
 ```
 `bin/zenith` launcher: auto-starts llama.cpp if not running, waits for health, passes `--backend llamacpp`. Default `ZENITH_CTX=524288` (512K). Configurable via `ZENITH_MODEL`, `ZENITH_PORT`, `ZENITH_CTX`, `ZENITH_LLAMA_SERVER` env vars, plus the `--gguf PATH` CLI flag (must be first arg). The stdin pipe form works in any environment (TTY or non-TTY) because the harness uses plain `input()`; redirect output to a file to keep model token spam out of your terminal/context. `bin/zenith` does NOT `cd` into the repo root before exec'ing the harness — this keeps `.zenithrc` lookup and CLAUDE.md auto-discovery honoring the user's actual cwd.
 
-## CALM Engine (`calm/`, ~37,400 LOC, 70 test files / 565 test functions, 100% benchmark)
+## CALM Engine (`calm/`, ~83,600 LOC, 72 test files / 565 test functions, 100% benchmark)
 
 Full spec: `.claude/rules/calm.md`
 
@@ -243,7 +243,7 @@ python3 -m calm.engine "What is 17 * 23?"
 # Intent-to-edit (fix bugs from NL description)
 python3 -c "from calm.auto_calm import IntentToEdit; IntentToEdit().fix('app.py', 'test_app.py', verbose=True)"
 
-# Run all 565 tests across 70 files
+# Run all 565 tests across 72 files
 python3 -m pytest calm/ -v
 ```
 
@@ -286,7 +286,7 @@ Still exists at `calm/hrm/model.py`. Encoder-decoder with nested L/H recurrence,
 - **`HullKVCache`** — online 2D convex hull. 108× speedup vs linear scan at N=2K.
 - **Declarative IR + compiler** (`gate_graph.py` + `compile.py` + `schedule.py`): `TokenEmbed`, `PosEmbed`, `LookUp`, `LookUpExact`, `ReGLU`, `LinearHead`. Auto-scheduler assigns `(layer, phase)`.
 - **Grammar-constrained decoding** (`grammar_decode.py`): inference-time mask for valid expressions + EOS boosting. Safe (0 regressions) but null on current models.
-- **25 compiled programs** in `programs/`: `adder` (10K/10K), `multiplier` (3390/3390, a·b < 1000, fixes Gemma's real arithmetic errors via step-through digit bias — see Round 11 in `tracing_roadmap.md`), `gcd` (256/256), `dispatched_v4` (791/791), `reasoning_engine` (512/512), etc.
+- **29 compiled programs** in `programs/`: `adder` (10K/10K), `multiplier` (3390/3390, a·b < 1000, fixes Gemma's real arithmetic errors via step-through digit bias — see Round 11 in `tracing_roadmap.md`), `gcd` (256/256), `dispatched_v4` (791/791), `reasoning_engine` (512/512), etc.
 - **Parser + interpreter** (`parse.py`, `interpret.py`): `parse_expression()` via `ast.parse`; `interpret()` walks compute nodes; `Delegate` routes through `safe_eval` (1002-function registry).
 
 ### CRLM Pipeline (session 31)
@@ -360,6 +360,44 @@ Full spec: `.claude/rules/distillation.md` — pipeline scripts, specialist doma
 
 - **RunPod**: API key in `.env.local`, `runpodctl` installed, MCP server configured in `~/.claude.json`
 - **Google Colab Pro**: 100 compute units, Colab MCP configured in `~/.claude.json`
+
+## R53 — Verified Code-Reasoning Stack (Phase 1 shipped)
+
+Phase 1 (retrieval + DB + generators) complete this session; Phase 2 (PT
+training + L24/L30 install) pending. Full rules: `.claude/rules/retrieval.md`,
+`.claude/rules/code_reasoning_db.md`, `.claude/rules/recursion.md`.
+
+- **CodeExampleDB** — `calm/llm_computer/facades/code_example_db.py` —
+  8970 unique examples across 10 corpora (MBPP, HumanEvalPlus, BigCodeBench,
+  CodeContests Python3, generators, Claude-reasoning, etc.), dedup on
+  problem hash, 4 retrieval modes (jaccard/tfidf/dense/hybrid).
+- **Hybrid retrieval** — `retrieval.py` — TF-IDF+BM25 (68K vocab) +
+  Gemma-dense (mean-pooled `token_embd`, fp16 + tq4 4× compression) +
+  RRF fusion. Trie-backed fast tokenizer gives 13,000× speedup over
+  naive `GemmaTokenizer.encode` (O(len × 262K vocab)). Indices cached
+  at `.cache/r53_code_db/`.
+- **CodeVerifierFacade** — `code_verifier.py` — intent classifier +
+  suggested imports + security flags + `compute_hints()` returns
+  prompt-prefix with retrieved examples.
+- **9 data generators** at `calm/llm_computer/facades/data_generators/`
+  (algorithm_problems, parameterized_math, stdlib_usage, bug_fix_pairs,
+  security_patterns, regex_patterns, data_structures, datetime_utils,
+  functional_patterns) — 222 sandbox-verified (problem, solution, tests)
+  examples produced by `scripts/r53_run_data_generators.py`.
+- **Rebuild pipeline**: `PYTHONPATH=. python3 scripts/r53_run_data_generators.py`
+  (CPU: TF-IDF only) + `bin/gemma-run scripts/r53_build_dense.py`
+  (daemon: dense + tq4 save).
+- **R53.2b eval finding** — blanket prompt-RAG gives **+0.0pp retrieval-
+  attributable gain** on complex multi-step coding (hinted = sanity-random).
+  Prompt-length alone moves +7.4pp; retrieval content adds nothing on top.
+  Substrate RAG (hash-gated L30 card) expected to outperform because
+  hash-match = automatic Tier-1 preservation (pass-through when Gemma
+  has a strong prior). See `augmentation_thesis.md` §"Automatic Tier-1
+  preservation."
+
+**Next (R53.5/R53.6)**: train `copy_code_best.pt` on DB's reasoning-trace
+extracts + 222 generator traces → install at L24 via `CardSlot.attach(
+preserve=True)` alongside `KnowledgeStore` recall card at L30.
 
 ## Hardware
 

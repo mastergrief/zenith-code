@@ -154,12 +154,49 @@ Scratchpad-with-intermediate-values forces memorization that small models can't 
 
 **HRM size scales with input-language complexity, NOT problem-difficulty.** PT size scales with **output-language complexity** — the number of structurally distinct expression formats. Both scale independently of value range.
 
+### HRM checkpoint inventory (`calm/hrm/checkpoints/`)
+
+**Production HRMSeq2Seq (48K params, `--structure-only`):**
+- `math_structure_best.pt` — 3-digit math (session 26 sweet spot)
+- `nl_math_structure_best.pt` — NL templates
+- `word_problem_best.pt` — word problems with names/pronouns
+- `gsm_best.pt` — GSM-style narratives
+- `multi_task_best.pt` — all four domains pooled
+
+**Production Pointer Transducer (~185K params, session 31):**
+- `copy_augmented_hrm_best.pt` — NL math (infix family)
+- `copy_word_best.pt` — word problems
+- `copy_gsm_best.pt` — GSM-style
+- `copy_funcall_best.pt` — function-call family (percentage, ratio)
+- `copy_logic_best.pt` — boolean logic family
+- `copy_reasoning_best.pt`, `copy_writing_best.pt` — bonus domains
+
+**Substrate-native (180K params, session 30):**
+- `substrate_hrm_nl_best.pt` — first HRM on Small2DTransformer substrate, 90% autoregressive on NL math (scheduled sampling)
+
+**Historical / experimental (kept for eval comparison, not
+production):**
+- `math_hrm_best.pt` — legacy encoder-decoder (pre-structure-only, round 1a-1d)
+- `math_scratchpad_best.pt` — scratchpad-with-intermediate-values variant (session 25 negative result — memorization trap)
+- `math_seq2seq_best.pt` — seq2seq baseline, round 1a
+- `math_structure_2digit.pt.bak` — backup, 2-digit operand variant
+- `multi10_best.pt`, `multi20_best.pt` — multi-task curriculum iterations (session 26, 10 and 20 template variants)
+- `meta_best.pt` — meta-reasoning experiment, session 26
+- `router_best.pt` — keyword-routing network for `substrate_server.py` (~38 KB)
+- `synth_familyA_best.pt`, `synth_familyA_distilled.pt` — session 27 self-distill experiment (teach once → library accretes → fold back via fine-tune)
+
+If you're evaluating a checkpoint whose purpose isn't obvious from
+the filename, read the git log for the script that created it
+(`scripts/train_hrm_*.py` or `scripts/train_copy_*.py` or
+`scripts/train_substrate_*.py`).
+
 ### Pitfalls observed (sessions 25-26)
 
 - **Cosine LR scheduled to 0 too early kills learning.** See the `--epochs 500` rule above — this is now elevated from pitfall to mandatory default on any NL-input HRM.
 - **Smoke cases failing at 3-digit numbers** are out-of-distribution. `MathDataGenerator`'s `_arithmetic_simple` was capped at `randint(1, 99)`; bumped to 999 in session 26 step 1. Any new domain: match the operand range to the smoke cases you care about.
 - **Per-token > 90% but structural < 50%** means the model nailed structure tokens (operators, parens, function names) but mis-copied digits. Use `_hrm_raw_emit()` from eval scripts to inspect raw output — if structure is good but digits drift, add data OR scale capacity. The `--verified` mode (LLM-Computer parses the input directly) masks this class of failure when full-expression is the gate but reveals it when structural-match is the gate.
 - **Per-domain `max_enc` is load-bearing.** Math fits in 32, NL in 48, word problems in 80, GSM in 128, multi-task in 128 (max of components). Undershoot `max_enc` and the sentence is truncated silently mid-operand; overshoot and you waste compute. The canonical trainer scripts (`scripts/train_hrm_{nl,word,gsm,multi}.py`) document the correct bound per domain.
+- **Triton-kernel custom autograd works in isolation but fails in production with mismatched forward paths (session 34, R52.1c).** Built `Tq4TritonAutogradFunction` (forward = existing `tq4_linear_triton`, backward = new `_tq4_backward_kernel` streaming tq4 bytes). Passed `torch.autograd.gradcheck` (finite-difference verified), cosine=1.0 on single-linear + 17-linear-chain tests. BUT training diverged: Triton kernel's different FP32 reduction order produces ~6e-5 forward drift vs PyTorch `F.linear`, compounds through Gemma's nonlinear ops (attention softmax, RMS norm, FFN gating) because their backward uses saved forward values. Student trained against PyTorch-captured teacher logits sees gradient for the *wrong function* — correct-for-Triton ≠ correct-for-PyTorch. **Rule**: if using Triton autograd during training, **re-capture teacher targets through the same Triton path**. Don't mix Triton-computed forwards with PyTorch-computed teacher logits. Kernels kept at `calm/llm_computer/tq4_autograd.py` and `tq4_triton.py::tq4_backward_triton` for reuse when forward consistency can be controlled.
 
 ## Substrate-Native Training (SubstrateLM / SubstrateHRLM)
 

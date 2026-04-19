@@ -198,6 +198,21 @@ monitor that only matches "epoch done" stays silent through a crashloop
 or OOM, making silence indistinguishable from "still running." Include
 `Traceback|Error|Killed|OOM|FAILED|assert` in the alternation.
 
+## Safer-config for noisy-grad training
+
+R52.2 canonical instance: (batch=1, lr=1e-3, grad_clip=1.0) diverged
+at step 75 on a loss=30.2 outlier — Adam momentum poisoned, EMA
+climbed 2.23 → 3.93 over 20 steps without recovery. Restarted with
+(batch=4, lr=3e-4, grad_clip=0.1, warmup=200) — converged cleanly
+to val 1.21 over 1000 steps.
+
+When batch is small, prompts are mixed-loss (some domains ~5-10× higher
+than others), and you're on Adam/AdamW: use **batch ≥ 4**, **grad_clip ≤ 0.1**,
+**lr ≤ 3e-4**, **warmup ≥ 200**. **Diagnose Adam momentum poisoning** by EMA:
+if loss spikes and EMA climbs 20+ steps without recovery, optimizer state is
+corrupted — Adam's second-moment compounds bad gradients indefinitely. Kill
+and restart with safer config; continued training won't recover.
+
 ## GPU vs CPU decision rule for substrate training
 
 All substrate training scripts (`train_substrate_lm.py`,

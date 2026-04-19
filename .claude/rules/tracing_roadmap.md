@@ -190,6 +190,19 @@ circuit design.
 
 ## Next rounds — tier 3 (reverse-engineered from Gemma)
 
+**Reframing (session 34, post-R52 triple-null).** Most capabilities
+previously framed as tier-3 "plug missing" are better achieved by
+tier-2 stacking — see `augmentation_thesis.md` §"Tier-2 stacking
+achieves tier-3-equivalent outcomes". Every shipped working
+augmentation (R11, R44, R46.2, HubInjectionCard, VerificationHook,
+CardSlot+preserve) is additive and leverages Gemma's existing
+NL/context/routing. R51/R52's explicit REPLACEMENT framing was the
+anomaly; three nulls confirm distillation of a deep-diffuse layer
+doesn't work. Targets below genuinely benefit from from-scratch
+compilation OR are prerequisites for tier-2 work (interpretability
+tooling). Default hypothesis for any new capability is tier-2
+stacking, not tier-3 replacement.
+
 Labor: weeks to months per circuit, pending interpretability tools.
 These are the long-horizon bets that eventually give us the LM's
 capabilities as compiled cards.
@@ -270,6 +283,9 @@ Ruled-out entries (from this session's rounds):
 | L24 FFN per-neuron (ROME/MEMIT-style) install | Round 48.1 | 10,240 neurons in 20 chunks of 512 ablated; no chunk carries the signal. Rules out weight-probing install for L24 composition. Consistent with R49 "distributed across pathways" and R50.5 "SAE features zero causal." |
 | SAE features as target for compilable ablation on distributed composition | Round 50.5 | **Falsifies R20's "SAE = next step" recommendation for compilable-intervention work.** Top-50 L24 composition features ablated → baseline 17/30 preserved at 17/30. Reconstruction fidelity (99.1-99.6%) is not sufficient for causal localization. Future SAE work for compilation needs architectures where reconstructed components DO have causal effect. |
 | MSE-only distillation of a Gemma layer (tier-3 first attempt) | Round 51.5 | **R51 hypothesis falsified.** A 1.25M-param Small2DTransformer student trained via MSE regression on 40K L24 (h_before, contribution) pairs reaches 92.6% aggregate variance-explained (per-domain 89.8-96.9%) — but dual-gate eval on 120 held-out prompts with live L24-replacement shows mean-prefix match **0.194 training-dist (FAIL vs 0.80), 0.342 off-dist (FAIL vs 0.95)**. Counterintuitively, off-dist preserves better than training-dist — arithmetic 0.11, code 0.59 — suggesting the missing 3-10% MSE on arithmetic contains load-bearing digit-selector / content-reader directions. MSE averages over all 2560 channels, washing out sharp task-critical directions. **Residual-space reconstruction fidelity does not imply token-space task preservation** (a second instance of the R50.5 pattern at a different scale). Next tier-3 rounds should try: (a) KL-divergence loss on downstream logits instead of MSE on residuals, (b) much larger student (10M+ params), (c) targeted per-head/per-subspace distillation, or (d) accept that L24 at this scale is not tier-3-distillable via MSE and pivot. |
+| KL-divergence distillation on L24 student (tier-3 second attempt) | Round 52.3 | **R52 hypothesis also falsified.** Same 1.25M student architecture, forward KL-divergence on Gemma's final next-token logits (instead of MSE on residuals). Trained on 3000-prompt broad corpus via Triton autograd path (batch=4, lr=3e-4, grad_clip=0.1, warmup=200, 1000 steps). Val KL decreased monotonically 1.96→1.21. Dual-gate eval: train-dist **0.040** / off-dist **0.080** prefix match — **WORSE than R51.5 MSE baseline (0.194 / 0.342)**. 0/20 exact-k-match on every single domain. **Third independent null for L24 distillation** (after R50.5 SAE features and R51.5 MSE residuals). Same underlying pattern: reduced distillation-space loss does NOT translate to token-space preservation. Three distinct losses (SAE ablation, MSE residuals, KL logits) all fail identically on L24. **Tier-3 distillation of L24 closed; pivot to tier-2 stacking** per `augmentation_thesis.md` §"Tier-2 stacking achieves tier-3-equivalent outcomes". R46.2 MultiStepReasoningFacade already augments L24's task (multi-step composition) at the output level (17/17 real Gemma fixes) — no L24-internal intervention needed. |
+| Triton-kernel custom autograd.Function with PyTorch-captured teacher logits | Round 52.1c | Built `Tq4TritonAutogradFunction` (forward uses existing `tq4_linear_triton`, backward uses new `_tq4_backward_kernel` streaming tq4 bytes). Passed `torch.autograd.gradcheck` (finite-difference verification) and showed cosine=1.0 on single-linear tests, but full Gemma training produced grad direction error that compounded to 0.19 cosine at 5 layers / 117× student grad attenuation at 17 layers. **Root cause**: Triton kernel's different FP32 reduction order produces ~6e-5 forward drift vs PyTorch `F.linear`. Compounds through Gemma's nonlinear ops (attention softmax, RMS norm, FFN gating) because backward uses saved forward values. The correct gradient of Triton-Gemma ≠ correct gradient of PyTorch-Gemma, so student trained against PyTorch-captured teacher logits on a Triton forward path learns the wrong function. **Rule**: don't mix Triton-computed forwards with PyTorch-captured teacher targets. If using Triton autograd, re-capture teacher logits through the same Triton path. Kernels kept in tree (`calm/llm_computer/tq4_autograd.py`, `tq4_triton.py::tq4_backward_triton`) for future use where forward consistency can be controlled. |
+| Blanket prompt-level retrieval injection | Round 53.2b | R53 Phase 1 complex eval (6 multi-step coding problems × {stock, hinted-real-retrieval, sanity-random-retrieval}): **retrieval-attributable gain = +0.0pp**. Hinted (+7.4pp) = Sanity (+7.4pp). The prompt-length "has examples in context" effect is real; retrieval content adds nothing on top. Several problems (log_level_counts, linked_list_bugs) had real retrieval HURT Gemma's native ability. **Root cause**: blanket injection violates Tier-1 preservation — when Gemma already has a strong prior, showing "similar solutions" diverts it to adapt the example instead of solving natively, introducing errors. **Implication**: substrate RAG (hash-gated at L30 `KnowledgeStore`) has a structural advantage over prompt-RAG because hash-match naturally gates injection to problems where Gemma needs the help. Build R53.5 PT + R53.6 install and measure substrate-RAG vs prompt-RAG on the same corpus. See `augmentation_thesis.md` §"Automatic Tier-1 preservation" and `retrieval.md`. |
 
 ## Related rules
 
@@ -279,4 +295,7 @@ Ruled-out entries (from this session's rounds):
 - `embed_intelligence.md` — delivery mechanisms
 - `Substrate.md` — install mechanisms
 - `workflow.md` — hypothesis-test loop
+- `retrieval.md` — hybrid retrieval architecture (R53 Phase 1)
+- `code_reasoning_db.md` — DB + generator framework (R53 Phase 1)
+- `recursion.md` — card-level self-improvement pattern
 - `commercial.md` — product position this roadmap supports

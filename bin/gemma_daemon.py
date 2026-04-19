@@ -56,7 +56,10 @@ def _boot():
         "~/models/gemma-4-E4B-it-tq4-aligned.gguf")
     print("[daemon] loading Gemma substrate...", flush=True)
     enable_triton_tq4(True)
-    m = GemmaSubstrate.from_gguf(gguf, max_len=256)
+    # R53 Phase 1 eval needs headroom for facade-hints + multi-turn —
+    # 1024 position budget covers ~3K chars hints + problem + signature
+    # + up to 400 tokens of generation.
+    m = GemmaSubstrate.from_gguf(gguf, max_len=1024)
     m.preload_gpu("cuda")
     m.warmup(seq_lens=(1, 20))
     tok = GemmaTokenizer.from_gguf(gguf)

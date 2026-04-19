@@ -31,7 +31,7 @@ DATASETS = [
 
 BATCH_SIZE = 100
 
-OUTPUT_FILE = DATA_DIR / "claude_reasoning.jsonl"
+OUTPUT_FILE = DATA_DIR / "claude_reasoning_hf_raw.jsonl"
 
 
 def fetch_dataset(dataset_id: str, name: str, total: int) -> list[dict]:

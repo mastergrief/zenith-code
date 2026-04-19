@@ -303,6 +303,34 @@ VERIFIED = all lanes agree → safe.
 | Explicit CALM (best) | 10/10 | 10/10 | 3-5/5 | 5/5 | 5/5 | 5/5 | 85-98% |
 | Auto-CALM (no precompute) | 9/10 | 10/10 | 2/5 | 4/5 | 5/5 | 5/5 | 88% |
 
+## CALM + retrieval (R53 Phase 1)
+
+CALM's Layer 2 precompute and the new `CodeExampleDB` hybrid retrieval
+(see `retrieval.md`) are complementary, not overlapping:
+
+- **Layer 2 precompute** — exact-oracle injection. Computes verified
+  answers from problem text via the 1002 backend functions. When it
+  hits, the answer is deterministically correct. Format:
+  `"Verified facts: 17 * 23 = 391"`.
+- **Hybrid retrieval** — approximate-pattern injection. Surfaces
+  similar (problem, solution) pairs from the 8970-example DB via
+  TF-IDF+BM25 + Gemma-dense + RRF. When it hits, it shows a pattern
+  Gemma can imitate; when it misses, nothing is injected.
+
+Policy (per R53.2b finding — see `augmentation_thesis.md` §"Tier-1
+preservation"):
+
+- If Layer 2 precompute returns a direct answer → inject verified
+  fact, SUPPRESS retrieval injection (the answer is exact; similar
+  patterns don't help).
+- If precompute has nothing AND retrieval top-k are all above a
+  threshold → inject retrieval (this is where it helps).
+- Otherwise → pass-through, let Gemma native-solve.
+
+This gating mimics what substrate RAG (`KnowledgeStore` at L30) does
+automatically via hash-match. For prompt-level CALM+retrieval we have
+to implement it explicitly in `CodeVerifierFacade.compute_hints`.
+
 ## File Map
 
 | File | LOC | Purpose |

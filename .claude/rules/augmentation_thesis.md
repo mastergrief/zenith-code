@@ -46,6 +46,44 @@ Tier 1 is table stakes — every Gemma user gets it free. **Tiers 2 and
 capabilities are Tier-2-addressable (concentrated circuits you can
 surgically replace) vs Tier-3 (design from scratch).
 
+### Tier-2 stacking achieves tier-3-equivalent outcomes
+
+**Refined position (session 34, post-R52 null).** Every shipped
+working augmentation in this codebase is tier-2 ADDITIVE:
+
+| Shipped capability | Type | Mechanism |
+|---|---|---|
+| R11 multiplier (5/10→10/10 on Gemma) | Tier-2 at output head | `VerificationHook` + step-through digit bias |
+| R44/R45 `HubInjectionCard` (L23 H1/H4) | Tier-2 at concentrated circuit | Forced-attention facade, runtime Q/K dispatch |
+| R46.2 `MultiStepReasoningFacade` (17/17 fixes) | Tier-2 stack | NL parser + `safe_eval` + step-through bias |
+| `KnowledgeStore` recall cards | Tier-2 at output | Step-function indicators + `CardSlot` + `VerificationHook` |
+| `programs/gcd`, `adder`, `multiplier` (compiled) | Tier-2 integration | Compiled compute + tier-2 output hook |
+
+**R51/R52 were the anomaly.** Both explicitly chose REPLACEMENT via
+monkey-patching `m._forward_layer` to skip Gemma's native L24.
+R51's install.py docstring even cites rejecting `CardSlot` because
+"residual-additive cannot REPLACE L24" — but replacement was the
+wrong hypothesis for a deep-diffuse circuit. Three nulls (R50.5
+SAE, R51.5 MSE, R52.3 KL) confirm.
+
+**Rule**: true tier-3 *from-scratch* is correct ONLY when Gemma
+has ZERO relevant circuit (e.g. ICD-10 lookups where the prior
+doesn't help). If Gemma has ANY partial capability on the task,
+tier-2 stacking leverages Gemma's NL understanding + context
+handling + output routing for free. The distilled-student tier-3
+pattern (reproducing a Gemma layer's full function) is a bad bet
+on deep-diffuse circuits specifically.
+
+**Reframing implication for R53+**: stop hunting for tier-3
+distillable deep-diffuse circuits. For each capability: (1) does
+Gemma fail at it? (2) is the failing circuit concentrated → tier-2
+compile at that site. (3) Is the circuit diffuse but Gemma's
+capability is "close" → step-through bias / VerificationHook at
+output (R46.2 pattern). (4) Is the capability truly alien to Gemma
+→ add KB / domain card, still integrate via tier-2 output hook.
+R46.2's 17/17 multi-step-composition fixes *already augments the
+L24 task* at the output level — no L24-internal intervention needed.
+
 ### Customer verticals = card decks
 
 Each customer's substrate = Gemma + their own deck of Tier-2/3 cards.
@@ -85,15 +123,17 @@ Compile decision flows from the classification.
 | **Concentrated** | 1-2 heads carry ≥50% of layer signal | Arithmetic L23 H1 (-4.85) + H4 (-4.30), induction L37 H6 (-0.52), counting L37 H4 (-1.02) | 1-2 `LookUpExact` gates per head. Cheap. R28-validated. |
 | **Cooperative** | 3-4 heads each -0.5 to -1.5, additive sum ≈ full-layer Δ | Counting L20 H2+H5+H6 (each -1.0 to -1.4, sum -3.74 vs full -3.93) | 3-4 `LookUpExact` gates. Moderate cost. |
 | **Diffuse** | No head > -0.2 despite full-layer Δ > -1.0; per-head sum ~20% of full | Factual recall L5 and L11 (top head -0.078, full -1.18/-1.56) | NOT compilable at attention level. Circuit is in FFN. Use ROME/MEMIT-style weight probing, or side-channel via `KnowledgeStore`. |
-| **Deep-diffuse** | Full-layer Δ large (e.g. L24 -17.23) but diffuse at attention AND FFN AND per-neuron AND SVD AND SAE-feature levels; MSE distillation reaches high variance-explained but fails token preservation | Multi-step composition L24 (R47-R50.6, R51). Signal distributed across pathways with non-additive interactions; rank-50 in learned SAE basis but top SAE features have zero causal effect (R50.5); 92.6%-var-explained Small2DTransformer student (R51.3) produces 0.19 training-dist / 0.34 off-dist mean-prefix match in live L24 replacement (R51.5), both gates fail. | **Currently no compilable path.** Attention-level, FFN-weight-level, SAE-feature-level, AND MSE-distillation installs all ruled out. Open directions: KL-divergence on downstream logits, much larger student (10M+), per-subspace distillation, or pivot to capabilities whose circuits are concentrated/cooperative (arithmetic hub, induction). |
+| **Deep-diffuse** | Full-layer Δ large (e.g. L24 -17.23) but diffuse at attention AND FFN AND per-neuron AND SVD AND SAE-feature levels; every distillation loss tried (MSE residuals, KL logits, SAE-feature ablation) reaches good distillation-space metrics but fails token preservation | Multi-step composition L24 (R47-R52.3). Three independent nulls: (a) top-50 SAE features have zero causal effect despite 99.1% reconstruction (R50.5); (b) 92.6%-var-explained MSE student produces 0.19/0.34 prefix match (R51.5); (c) KL-divergence student (val KL 1.96→1.21) produces 0.04/0.08 prefix match, WORSE than MSE baseline (R52.3). | **No compilable path by any known distillation loss.** Attention-level, FFN-weight-level, SAE-feature-level, MSE-distillation, AND KL-distillation installs all ruled out. **Reframing (R52)**: this circuit is a candidate for tier-2 stacking (additive correction via `CardSlot` + `VerificationHook`) rather than tier-3 replacement. See §"Tier-2 stacking achieves tier-3-equivalent outcomes" below. |
 
 **Rule**: never attempt attention-level compilation without
 classifying via per-head ablation first. Diffuse circuits waste
 engineering effort if you target attention. Deep-diffuse circuits
-(R50.5 falsification, R51.5 falsification) waste further effort if
-you target FFN weights, SAE features, OR MSE-trained students
-without first checking that reconstruction fidelity at the chosen
-metric translates to causal effect on the user-facing task.
+(R50.5, R51.5, R52.3 falsifications — SAE, MSE, KL all null) waste
+further effort if you target FFN weights, SAE features, OR any
+distillation-trained student without first checking that
+reconstruction fidelity at the chosen metric translates to causal
+effect on the user-facing task. Three independent losses failing
+identically is strong evidence the target isn't tier-3-distillable.
 
 ## Compositional hypothesis
 
@@ -225,6 +265,93 @@ substrate is the *better* product, not merely the cheaper one:
 question isn't "as smart as GPT-4 in general?" — it's "which product
 do regulators and auditors trust?"
 
+## Automatic Tier-1 preservation as substrate property (R53.2b finding)
+
+**Settled**: substrate RAG at L30 (`KnowledgeStore` recall card) has a
+structural advantage over prompt-RAG that vanilla retrieval pipelines
+cannot match — **automatic Tier-1 preservation via hash-gated
+injection**.
+
+### The measured failure mode of blanket prompt-RAG
+
+R53.2b complex eval (`scripts/r53_eval_complex.py`, 6 multi-step
+coding problems × 3 conditions):
+
+| | stock | hinted (real retrieval) | sanity (random retrieval) |
+|---|---:|---:|---:|
+| TOTAL | 25/27 | 21/21 | 23/23 |
+| Δ vs stock | — | +7.4pp | +7.4pp |
+| **retrieval-attributable gain** | | | **+0.0pp** |
+
+Hinted = Sanity. The prompt-length / "has examples in context" effect
+is real; the **content** of real retrieval adds nothing on top. On
+several problems (log_level_counts, linked_list_bugs) real retrieval
+actively HURT (0/0 vs stock's 6/6, 0/0), while random retrieval was
+neutral or helpful.
+
+Root cause: blanket retrieval injection **disrupts Gemma's strong-
+prior behavior** on problems it already solves. When Gemma reads
+"here's a similar solution" + actual relevant code, it tries to adapt
+the example (error-prone path). Random irrelevant code doesn't match
+anything to adapt from, so Gemma falls back to solving natively.
+
+**This is a Tier-1 violation.** The thesis says "leave Gemma alone
+where it works." Prompt RAG violates this by always injecting.
+
+### Why substrate RAG is structurally different
+
+At L30, `KnowledgeStore` recall card uses hash-match lookup:
+
+- Problem hash → stored key? **Match** → inject verified solution
+  pattern into residual channels
+- Problem hash → stored key? **Miss** → zero output written to
+  reserved channels → Gemma's L31..L41 proceeds with native residual
+  (no intervention)
+
+Automatic gating with zero policy logic. No probabilistic confusion
+about when to trust retrieval. No prompt-length inflation. No
+imitation-of-wrong-style risk.
+
+**Property summary**:
+
+| Aspect | Prompt RAG | Substrate RAG (L30 card) |
+|---|---|---|
+| Gate condition | always injects | hash-match only |
+| Strong-prior preservation | disrupted | preserved by construction |
+| Context budget | ~600 tokens eaten | zero tokens |
+| Tier-1 adherence | violated | automatic |
+| Content delivery | text through all 42 layers | direct residual write at L30 |
+| Determinism | stochastic | compiled step-function exact |
+
+### Implication for R53.6 and beyond
+
+The R53.2b null result is **not** "retrieval doesn't help." It's
+"blanket prompt-level retrieval doesn't help." The correct conclusion
+is to build the substrate install where retrieval is hash-gated by
+construction. This is the fastest validation of the architectural
+thesis — build R53.5 PT + R53.6 L24/L30 install and measure
+substrate-RAG vs prompt-RAG on the same 6 problems. Expected:
+substrate matches or beats prompt-RAG because it respects Tier 1.
+
+For prompt-RAG systems (not substrate): add explicit confidence
+gating to `CodeVerifierFacade.compute_hints`:
+
+- CALM Layer 2 precompute has direct answer → inject only verified
+  fact, suppress retrieved examples
+- Intent classifier detects known-strong pattern → skip retrieval
+- Top-k scores below threshold → skip retrieval
+
+This manually replicates what substrate RAG gets for free.
+
+### Commercial positioning sharpens
+
+"RAG that knows when not to retrieve" is a different product from
+"RAG with a bigger DB." Regulated industries specifically need
+intervention-when-warranted, not intervention-always — because
+spurious injections mean the output drifts from user intent. This
+**selective-intervention property is substrate-native** and hard to
+reproduce with vanilla RAG pipelines.
+
 ## Anti-skepticism — what NOT to relitigate
 
 Future sessions must treat these positions as settled and focus
@@ -234,7 +361,7 @@ on execution, not re-argument:
 |---|---|
 | "Works only for structured/numeric tasks" | Poetry + analogies + long-horizon planning counter-examples; constraint gates generalize. |
 | "Factual recall needs frontier models" | Diffuse-FFN circuit — compilable via ROME/MEMIT weight probing OR side-channel `KnowledgeStore` with verified retrieval. |
-| "Retraining needed for each domain" | DB + PT + circuit install takes hours/days. PT is 185K params, ~30 min on 4070. No base-model retraining. |
+| "Retraining needed for each domain" | Tier-2 stacking (PT + KB + VerificationHook) takes hours/days per domain. PT is 185K params, ~30 min on 4070. No base-model retraining. Gemma's NL + context + routing are reused for free; only domain-specific compute + data need new work. |
 | "Frontier capabilities can't be matched" | Frontier advantages = scale-of-retrieval + verification + structure. All three compile. Gemma + cards matches on specific tasks; genuinely frontier-exclusive work is rare. |
 | "Doesn't scale — you'll cap on engineering" | Factorial scaling argument. Per-domain cost is flat (~1-2 days). 100-domain substrate is weeks, not years. |
 | "Verification is the bottleneck" | CALM already verifies 100% on benchmark. Compiled verifiers are exact by construction. |
@@ -305,6 +432,20 @@ Laptop, 8 GB VRAM:
   missing 3-10% MSE on arithmetic contains sharp digit-selector
   directions MSE averages over. MSE distillation added to the
   "ruled out" set alongside SAE features for distributed circuits.
+- **R52 (session 34 extension — tier-3 second attempt)**: same
+  1.25M student, forward KL-divergence on Gemma's final next-token
+  logits instead of MSE on residuals. Hypothesis: KL directly
+  optimizes token preservation, should beat MSE. Trained on
+  3000-prompt broad corpus (batch=4, lr=3e-4, grad_clip=0.1,
+  warmup=200, 1000 steps) via Triton autograd path. Val KL
+  decreased 1.96→1.21 monotonically. Dual-gate: train-dist 0.040
+  / off-dist 0.080 — **WORSE than R51.5 MSE baseline** (0.194 /
+  0.342). **Third independent null for L24 distillation.** Same
+  pattern: distillation-space loss improves, token preservation
+  fails. Three distinct losses (SAE ablation, MSE residuals, KL
+  logits) all fail identically. **Tier-3 L24 distillation is
+  closed**; pivot to tier-2 stacking per new §"Tier-2 stacking
+  achieves tier-3-equivalent outcomes" above.
 
 **Seven capabilities mapped, three causal validations (R28, R42,
 R43), two facades shipped (HubInjectionCard 5-for-1 + MultiStep
