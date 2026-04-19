@@ -175,17 +175,26 @@ def run_install_demo(m, tok) -> None:
             h[..., -1:, ch_lo:ch_lo + n] + ans)
         return h
 
+    # Install at L41 (last layer) instead of L30: with no subsequent
+    # layers, preserve=True has nothing to mask → strict Tier-1 holds
+    # by construction on miss. Tradeoff: card runs after most of
+    # Gemma's reasoning, so HIT case can only directly bias output
+    # via the residual it writes, not modify Gemma's internal reasoning.
+    # For hash-gated KnowledgeStore (R53.6 plan), this is exactly the
+    # right install — we want bias-on-hit, not internal modification.
+    INSTALL_LAYER = 41
     slot = CardSlot(
-        layer_idx=30, ch_off=RECALL_CH_OFF, card=recall,
+        layer_idx=INSTALL_LAYER, ch_off=RECALL_CH_OFF, card=recall,
         d_card=RECALL_D_CARD,
         card_input_fn=recall_input,
         use_full_residual=True,
         output_fn=recall_output,
     )
     slot.attach(m, preserve=True)
-    print(f"\n[r53.10] CardSlot installed at L30, "
+    print(f"\n[r53.10] CardSlot installed at L{INSTALL_LAYER}, "
           f"ch[{RECALL_CH_OFF}:{RECALL_CH_OFF + RECALL_D_CARD}], "
-          f"preserve=True", flush=True)
+          f"preserve=True (last layer → preserve mask is no-op)",
+          flush=True)
 
     # ----- HIT TEST: stored prompts should change logits + card fires -----
     print("\n[r53.10] HIT TEST — stored prompts (expect logits to differ):",
@@ -229,13 +238,19 @@ def run_install_demo(m, tok) -> None:
             if slot.last_output is not None else -1
         # Strict: logits should be bit-identical (max diff == 0)
         identical = (max_diff < 1e-5)  # numerical tolerance
+        # Practical Tier-1: top token unchanged on miss
+        baseline_top = int(baseline_miss[i].argmax())
+        new_top = int(new_logits.argmax())
+        top_preserved = (baseline_top == new_top)
         print(f"  {name:<26}  card_argmax={card_argmax} "
               f"{'(zero ✓)' if card_argmax == 0 else '(nonzero ✗)'}  "
               f"|Δlogits|_max={max_diff:.6f}  "
               f"|Δ|_2={l2_diff:.6f}  "
-              f"identical_to_baseline={identical}",
+              f"identical={identical}  "
+              f"top_preserved={top_preserved}",
               flush=True)
-        miss_results.append((card_argmax == 0, max_diff, identical))
+        miss_results.append(
+            (card_argmax == 0, max_diff, identical, top_preserved))
 
     # ----- VERDICT -----
     print("\n" + "=" * 72, flush=True)
@@ -245,14 +260,17 @@ def run_install_demo(m, tok) -> None:
     n_hit_logits_changed = sum(1 for r in hit_results if r[2])
     n_miss_card_zero = sum(1 for r in miss_results if r[0])
     n_miss_identical = sum(1 for r in miss_results if r[2])
-    print(f"  HIT  card output correct:        "
+    n_miss_top_preserved = sum(1 for r in miss_results if r[3])
+    print(f"  HIT  card output correct:               "
           f"{n_hit_card_ok}/{len(hit_results)}", flush=True)
-    print(f"  HIT  Gemma top token changed:    "
+    print(f"  HIT  Gemma top token changed:           "
           f"{n_hit_logits_changed}/{len(hit_results)}", flush=True)
-    print(f"  MISS card output zero (gating):  "
+    print(f"  MISS card output zero (gating):         "
           f"{n_miss_card_zero}/{len(miss_results)}", flush=True)
-    print(f"  MISS logits == baseline (Tier-1):"
+    print(f"  MISS logits == baseline (strict Tier-1):"
           f" {n_miss_identical}/{len(miss_results)}", flush=True)
+    print(f"  MISS top token == baseline (practical): "
+          f"{n_miss_top_preserved}/{len(miss_results)}", flush=True)
 
     print("\nReadings:", flush=True)
     if (n_miss_identical == len(miss_results)
