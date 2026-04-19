@@ -1,54 +1,147 @@
-Audit the project and rewrite `.claude/CLAUDE.md` and `.claude/rules/` files to reflect the current state of the codebase. This is a REWRITE, not an append — replace stale information with accurate information.
+Audit the project and rewrite `.claude/CLAUDE.md`, `.claude/rules/`, and `.claude/MEMORY/SESSION_HANDOFF.md` to reflect the current state. REWRITE, not append — replace stale information. Includes a final audit pass to catch implicit/partial captures before declaring done.
 
-## Process
+## Default workflow — parallel audit → P0/P1/P2 plan → execute by tier
 
-1. **Read recent commits FIRST** (before docs):
-   - `git log --oneline -20` to see recent activity
-   - For each non-trivial commit since the last `/update` or `/handoff`, read the message and `git show <hash>`
-   - Extract: invariants exposed by fixes, sampling/config changes, environment gotchas, "wrong premise" claims that recent fixes have corrected
-   - Note commit hashes — cite them in doc updates
+The default for a non-trivial update (session touched >1 subsystem, >3 commits, or introduced a new mechanism): launch 2 Explore agents in parallel for the audit, classify findings by priority tier, draft a plan file in plan mode, then execute one tier per commit. Fall through to inline work only for single-file trivial fixes.
 
-2. **Read current docs**: Read `.claude/CLAUDE.md` and all files under `.claude/rules/`. Flag claims that might be stale or wrong-premise based on Phase 1.
+### Phase 1 — parallel research (2 Explore agents, ≤ 250 words each)
+
+Both agents brief the session context in ≤ 50 words of preamble and have them read the actual code. Do NOT paste session-chat into the brief — point to commits / file paths / rule files.
+
+**Agent A — rules vs current code**
+- Read `.claude/CLAUDE.md` + every `.claude/rules/*.md` + current source files listed in the brief
+- Return per-file punch list: STALE (contradicts code), MISSING (not yet documented), NEW SECTION (worth adding)
+- Include file:line refs where possible
+- ≤ 200 words
+
+**Agent B — git log + session findings**
+- Read `git log --oneline -20` + full commit bodies for R-tagged / perf / fix commits
+- Optionally read session transcript if `.claude/MEMORY/Augment-notes.md` or similar exists
+- Return prioritized findings list ranked P0/P1/P2
+- ≤ 250 words
+
+### Phase 2 — synthesize and classify
+
+Merge the two agent outputs. Classify each finding:
+
+| Tier | Definition | Examples |
+|---|---|---|
+| **P0** | Falsifies a standing claim in CLAUDE.md or rules OR encodes a measurement/discipline lesson that cost ≥ 2 null rounds | Substrate thesis reframed, sandbox bug, MAX_TOKENS starvation |
+| **P1** | Kernel / infrastructure / architectural change that belongs in rules but isn't ship-blocking | New kernel variant, new fused path, storage contract change |
+| **P2** | Next-session research signal — failure modes observed, tier-3 targets, ruled-out patterns for the log | Gemma-ignores-hints, confidence-gate null, new PT ceiling |
+
+### Phase 3 — plan mode
+
+Write a plan file at the path given by the plan-mode system. Structure:
+
+- **Context** (why — problem and intended outcome)
+- **Scope** — files to edit, grouped by P0 / P1 / P2
+- **Critical source files to reference** (code paths + short SHAs for traceability)
+- **Execution approach** — tier-order, one commit per tier, surgical Edit not Write, 500 LOC rule per file
+- **Verification** — grep checks + line-count checks that a post-edit run should pass
+
+Call `ExitPlanMode` when ready; do not ask "is this ok?" in prose.
+
+### Phase 4 — execute by tier
+
+- One P-tier per commit (3 commits total for a full-scope session). Each commit message cites the receipts (commits from this session, eval deltas, null-round counts).
+- Use `Edit`, not `Write` — preserve structure, tone, and terse imperative voice.
+- Match existing section depth / bullet style / table format.
+- 500 LOC hard limit per file (250-500 sweet spot). If a new section pushes past, trim older stale content in the same file before adding.
+
+### Phase 5 — verification (fail-closed)
+
+Run every verification check listed in the plan file. Typical set:
+- `grep -r "<stale claim>" .claude/` returns zero hits
+- `grep -r "<new mechanism name>" .claude/` hits all expected files
+- `for f in .claude/CLAUDE.md .claude/rules/*.md; do lines=$(wc -l <"$f"); if [ "$lines" -gt 500 ]; then echo "OVER: $f: $lines"; fi; done` is empty (or limited to inherited-over files already flagged)
+- Spot-read 2-3 edited files for coherent integration, not tacked-on appendices
+
+If verification fails, fix before declaring done. If a finding is lost, add it OR explicitly note "see <script>:<line>" in a rule.
+
+---
+
+## Underlying discipline (feeds into Phase 1-2 briefs)
+
+1. **Read recent commits + session log FIRST** (before docs):
+   - `git log --oneline -20` — recent activity
+   - For each non-trivial commit since the last `/update` or `/handoff`, read message + `git show <hash>`
+   - **If a session transcript exists** (e.g., `.claude/MEMORY/Augment-notes.md`, `.claude/MEMORY/session_log.md`), read it. Session logs capture findings that never made it to commits. Extract: invariants exposed, findings, design pivots, ruled-out paths.
+   - **Check `git status --short` for uncommitted session work** — these are at risk until committed; they MUST be flagged in the handoff even if you don't commit them.
+   - Note commit hashes — cite them in doc updates.
+
+2. **Read current docs**: `.claude/CLAUDE.md`, all `.claude/rules/*.md`, `.claude/MEMORY/SESSION_HANDOFF.md`. Flag claims that look stale or wrong-premise.
 
 3. **Audit the codebase**:
-   - `agents/` — count files, check classes, verify tools list, harness commands
-   - `agents/distill/` — pipeline status, training data counts, model configs
-   - `models/` — list Modelfiles, verify parameters match reality
-   - `rust/`, `src/`, `.gitignore` — verify against docs
-   - **Hardcoded runtime constants** — grep `agents/agent.py` and friends for sampling params (`temperature`, `frequency_penalty`, `presence_penalty`, `max_tokens`), timeouts, retry counts, thresholds. Verify current values are documented.
-   - **Load-bearing invariants** — for each recent bug fix, identify what the fix forbids ("don't reset X here", "don't call Y before Z") and check whether a doc rule captures it. Easy-to-reintroduce bugs NEED explicit invariant rules.
+   - `agents/`, `agents/distill/`, `calm/`, `scripts/`, `models/`, `rust/`, `src/` — verify counts/classes/tools against docs.
+   - **Hardcoded runtime constants** — grep for sampling params (`temperature`, `frequency_penalty`, `presence_penalty`, `max_tokens`), timeouts, retry counts, thresholds, magic numbers.
+   - **Load-bearing invariants** — for each recent bug fix, identify what the fix forbids ("don't reset X", "don't call Y before Z") and check for a doc rule capturing it. Easy-to-reintroduce bugs NEED explicit invariant rules.
+   - **New code this session** — files in `git status` not-yet-committed with non-trivial content need a rule entry OR explicit handoff note.
 
-4. **Verify external runtime state** (don't trust docs — verify the running environment):
-   - Ollama: `curl -s localhost:11434/api/tags` — actual pulled models
-   - llama.cpp: `curl -s localhost:8080/health` — server up?
-   - GPU: `nvidia-smi` if VRAM/GPU claims are doc-relevant
-   - Any other external service the docs claim about (RunPod, Colab, etc.)
+4. **Verify runtime state** (don't trust docs — verify the running environment):
+   - **Gemma substrate daemon**: `bin/gemma-run --status` — primary inference path, PyTorch + Triton stack via `bin/gemma_daemon.py` + `calm/llm_computer/gemma_substrate.py`. Check PID, max_len config, GPU residency (`nvidia-smi` for VRAM accounting).
+   - **GPU**: `nvidia-smi --query-gpu=memory.used,utilization.gpu --format=csv,noheader` — verify VRAM claims match doc. Substrate baseline is ~5.07 GB for Gemma 4 E4B tq4 + Q6_K embd.
+   - **Triton kernels**: `calm/llm_computer/tq4_triton.py` — verify shape heuristics + BLOCK_M selections haven't drifted from doc (re-run `test_tq4_triton` if spec'd).
+   - **Indices + caches**: `ls .cache/r53_code_db/` — retrieval index state (tfidf.json, dense.pt, dense.tq4.pt).
+   - **External services docs claim about** (RunPod, Colab, etc.) only if currently relevant; note: llama.cpp and Ollama are not used — do NOT add verify steps for them unless the project pivots back.
 
 5. **Classify drift** in each doc section:
-   - **Stale**: was true, now isn't (e.g., model count changed) — fix the number
-   - **Wrong-premise**: based on a misunderstanding now corrected (e.g., "rare worst case" when it actually fired every time) — rewrite the framing, not just the value
-   - **Missing**: invariant or constant exists in code but isn't documented — add a new rule
+   - **Stale**: was true, now isn't (e.g. model count changed) — fix the number
+   - **Wrong-premise**: based on a misunderstanding now corrected — rewrite the framing, not just the value
+   - **Missing**: invariant / constant / mechanism exists in code but isn't documented — add a new rule
+   - **New architectural mechanism** (distinct enough from existing rules) — create a new `.claude/rules/*.md` file. Don't force-fit it into an existing one that's off-topic.
 
 6. **Route findings to the right layer**:
-   - Project facts, architecture, defaults, conventions → `CLAUDE.md` or `.claude/rules/*.md`
-   - Environment quirks (WSL, OS, hardware, external service gotchas) → `.claude/rules/training.md` Known Issues
-   - Personal debugging lessons or preferences → `~/.claude/projects/.../memory/` (NOT docs)
-   - Heuristic: would another contributor cloning the repo benefit? → docs. Personal-only? → memory.
 
-7. **Propose before editing**: Output the full list of proposed changes with `file:line` refs and one-line justifications. Wait for explicit user approval (`ok implement` / `do all` / `yes please`) before editing. This lets the user filter, reorder, or reject. Skip this gate only if invoked with explicit `--auto` intent.
+   | Finding type | Destination |
+   |---|---|
+   | Project facts, architecture, defaults | `CLAUDE.md` + existing rule |
+   | New architectural mechanism (e.g. new subsystem / new pattern) | New `.claude/rules/<name>.md` |
+   | Extension of existing concept | Edit existing rule |
+   | Strategic synthesis / thesis-level claims | `augmentation_thesis.md` or `commercial.md` |
+   | Environment quirks (WSL, OS, hardware, service gotchas) | `.claude/rules/training.md` §Known Issues |
+   | Session-specific state, mid-flight work, uncommitted files | `.claude/MEMORY/SESSION_HANDOFF.md` |
+   | Personal debugging lessons / preferences | `~/.claude/projects/.../memory/` (NOT docs) |
+   | Conversation transcript | `.claude/MEMORY/Augment-notes.md` or similar — preserve as-is, reference from handoff |
 
-8. **Rewrite in place**: Edit each section to match reality. Delete sections that no longer apply. Update numbers, file paths, patterns. Keep the same structure and voice — just make it true. **Cite commit hashes** for invariants and bug-fix rules.
+7. **Handoff rewrite rule** — if the current `SESSION_HANDOFF.md` is from a previous session arc (different topic / older commit range), **REPLACE it entirely**. Don't append a new section to an old handoff from a different arc. New handoff must include:
+   - TL;DR
+   - Eval results / measurements if any
+   - Artifact list (new files shipped this session)
+   - **⚠ UNCOMMITTED section** with `git status --short` output — list every untracked + modified file from the session
+   - Current environment state (daemon PID, GPU memory, etc.)
+   - Next actions with rationale
+   - Pointer to session transcript if one exists
 
-9. **Report changes**: Summarize what was updated, in which file, and why. Include `git diff --stat .claude/`.
+8. **Propose before editing**: Output the full list of proposed changes with `file:line` refs + one-line justifications. Wait for explicit approval (`ok implement` / `do all` / `yes please`) before editing. Use plan mode if the session is substantial — writes a plan file the user can review. Skip this gate only with explicit `--auto` intent.
+
+9. **Rewrite in place**: Edit each section to match reality. Delete sections that no longer apply. Cite commit hashes inline (format: `` (commit `c11232a`) ``).
+
+10. **FINAL AUDIT — did we lose anything?** After writing all docs, do a second pass:
+    - **Uncommitted-files check**: re-run `git status --short`. Every untracked + modified file from the session should be accounted for in the handoff. If not, add it.
+    - **Transcript diff**: if a session log exists, scan it for topics/findings that don't appear in the new docs. Specifically check for:
+      - User questions that led to architectural insights ("what is X?", "why doesn't Y?")
+      - Debugging steps / fixes that exposed invariants
+      - Performance discoveries (e.g., trie speedup, dequant batching)
+      - Eval results partial vs final
+      - User-suggested directions / decisions that weren't just "ok proceed"
+    - **Implicit-capture flag**: findings that live ONLY in code comments or script internals aren't captured. Either document or explicitly note "see <script>:<line>" in a rule.
+    - **Modified-file check**: verify every `M` file in `git status` has a reason to be modified — `bin/gemma_daemon.py` max_len change, `fetch_datasets.py` output renamed, etc. Flag unexpected modifications.
+    - **Report findings gap**: if the audit finds something missed, add it OR explicitly note "session log §X has additional context on Y; rule intentionally omits for brevity".
+
+11. **Report changes**: Summarize updated files + `git diff --stat .claude/`. Include explicit sentence "final audit found [N] gaps, all addressed / documented as session-log references."
 
 ## Rules
 
 - **Replace, don't append**. If a section says "5 tools" and there are now 7, change the number. Don't add a note.
 - **Delete dead info**. If a feature doesn't exist yet, remove it or mark it as planned.
-- **Keep it scannable**. Bullet-point style, same section headers where possible. Fast reference, not prose.
+- **Keep it scannable**. Bullet-point style, same section headers where possible.
 - **Verify claims**. Don't trust what the docs say — read the actual files. Line counts change, features evolve.
 - **Update rules files too**. Check all rules under `.claude/rules/` against actual code state.
-- **Capture invariants, not just facts**. For fragile areas (flag state, lock ordering, event sequencing, init order, side-effecting imports), add an explicit "invariant" rule explaining what NOT to do and why. Cite the fixing commit. Goal: a contributor reading the rule should be able to avoid reintroducing the bug.
-- **Cite commits in doc updates**. When documenting a rule that came from a recent bug fix, include the commit hash inline (format: `` (commit `c11232a`) ``). Future readers can `git show <hash>` for full context.
-- **Don't put project facts in memory**. Memory is for personal preferences and debugging lessons only. Project state, architecture, and conventions belong in `CLAUDE.md` or `.claude/rules/`.
-- **Distinguish wrong-premise from stale**. A stale claim was true and is now false; a wrong-premise claim was never quite right because it was based on a misunderstanding. Wrong-premise claims need framing changes, not just value updates.
+- **New files are fine**. Creating a new `.claude/rules/<name>.md` is preferred over cramming a new mechanism into an unrelated file. Target ~150-300 lines per rule.
+- **Capture invariants, not just facts**. For fragile areas (flag state, lock ordering, event sequencing, init order, side-effecting imports, hardcoded limits), add explicit "invariant" rules explaining what NOT to do and why. Cite the fixing commit.
+- **Cite commits in doc updates**. When documenting a rule that came from a recent bug fix, include the commit hash inline.
+- **Don't put project facts in memory**. Memory = personal preferences + debugging lessons. Project state / architecture / conventions → `CLAUDE.md` or `.claude/rules/`.
+- **Distinguish wrong-premise from stale**. Stale was true and is now false; wrong-premise was never quite right. Wrong-premise needs framing changes, not just value updates.
+- **Never claim "all committed" in the handoff without verifying `git status`**. An uncommitted session is at risk. If work is uncommitted, say so explicitly and recommend `git add` + commit as the first action on resume.
+- **Session-log extraction before rule-writing**. If a transcript exists, findings there are richer than docs. Pull from transcript first, reconcile with code + commits second, write rules third.
