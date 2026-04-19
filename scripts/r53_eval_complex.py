@@ -443,10 +443,11 @@ def _trim_markers(text: str) -> str:
     return text
 
 
-def gen_stock(m, tok, p: ComplexProblem, max_tokens: int = 400) -> str:
+def gen_stock(m, tok, p: ComplexProblem, max_tokens: int = 400,
+              use_tq4_kv: bool = False) -> str:
     prompt = STOCK_PROMPT.format(system=BASE_SYSTEM, prompt=p.prompt)
     out = m.generate(prompt, tok, max_tokens=max_tokens, device="cuda",
-                     stop_on_eos=True)
+                     stop_on_eos=True, use_tq4_kv=use_tq4_kv)
     return _trim_markers(out["text"])
 
 
@@ -476,12 +477,13 @@ def _build_hints(db, rng: random.Random, p: ComplexProblem,
 
 def gen_hinted(m, tok, p: ComplexProblem, db, rng: random.Random,
                sanity_random: bool = False,
-               max_tokens: int = 400) -> str:
+               max_tokens: int = 400,
+               use_tq4_kv: bool = False) -> str:
     hints = _build_hints(db, rng, p, sanity_random)
     prompt = HINTED_PROMPT.format(
         system=BASE_SYSTEM, hints=hints, prompt=p.prompt)
     out = m.generate(prompt, tok, max_tokens=max_tokens, device="cuda",
-                     stop_on_eos=True)
+                     stop_on_eos=True, use_tq4_kv=use_tq4_kv)
     return _trim_markers(out["text"])
 
 

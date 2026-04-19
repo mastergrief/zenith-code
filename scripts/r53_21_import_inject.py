@@ -40,8 +40,9 @@ import torch
 CACHE_DIR = "/mnt/c/Users/gabes/projects/claw-code/.cache/r53_code_db"
 
 MAX_ATTEMPTS = 3
-MAX_TOKENS = 900
+MAX_TOKENS_CEILING = 16384  # cap; AdaptiveBudget picks per-prompt
 MAX_IMPORT_INJECTIONS = 4
+USE_TQ4_KV = True  # real tq4 KV cache storage (3.6× less KV memory)
 
 
 COMMON_IMPORTS = {
@@ -137,11 +138,17 @@ def categorize_failure(test_output: str, prev_code: str) -> FailureCategory:
             f"Add this line at the top: `{suggested}`. "
             f"Output the complete corrected code.",
         )
-    if "'int' object is not callable" in out:
+    mm = re.search(r"TypeError: '(\w+)' object is not callable", out)
+    if mm:
+        shadow_type = mm.group(1)
         return FailureCategory(
-            "TypeError", "TypeError: 'int' object is not callable",
-            "You're calling an integer as if it were a function. "
-            "Rename the shadowed attribute. Output complete code.",
+            "TypeError", f"TypeError: '{shadow_type}' object is not callable",
+            f"You're calling a {shadow_type} value as if it were a function. "
+            f"A method/function name was overwritten by a {shadow_type} value "
+            f"(e.g. `self.consume = capacity` shadows method `consume`). "
+            f"Rename the {shadow_type} attribute (e.g. `self.tokens = capacity`) "
+            f"and use the new name everywhere you assigned the value. "
+            f"Output complete code.",
         )
     mm = re.search(
         r"AttributeError: 'NoneType' object has no attribute '(\w+)'", out)
@@ -253,6 +260,7 @@ def run_eval(m, tok) -> None:
         CodeVerifierFacade,
     )
     from calm.sandbox import run_python
+    from calm.adaptive import AdaptiveBudget
     import random as _rng_mod
 
     # Detach any prior install state (idempotent)
@@ -262,8 +270,15 @@ def run_eval(m, tok) -> None:
     m.reserved_channels = []
     m.verification_hooks = []
     print("[r53.21] cleared prior install state", flush=True)
-    print(f"[r53.21] MAX_ATTEMPTS={MAX_ATTEMPTS}, MAX_TOKENS={MAX_TOKENS}, "
+    print(f"[r53.21] MAX_ATTEMPTS={MAX_ATTEMPTS}, "
+          f"MAX_TOKENS_CEILING={MAX_TOKENS_CEILING} (adaptive), "
           f"MAX_IMPORT_INJECTIONS={MAX_IMPORT_INJECTIONS}", flush=True)
+
+    budgeter = AdaptiveBudget()
+
+    def budget_for(prompt: str) -> int:
+        est = budgeter.estimate(prompt)
+        return min(est.budget, MAX_TOKENS_CEILING), est
 
     db = CodeExampleDB.load_default()
     db.load_indices(CACHE_DIR)
@@ -304,7 +319,7 @@ def run_eval(m, tok) -> None:
         wrapper = f"```python\n{code}\n```"
         return score(wrapper, problem)
 
-    def gen_repair(p, prev_code: str, hint: str) -> str:
+    def gen_repair(p, prev_code: str, hint: str, budget: int) -> str:
         problem_trim = p.prompt[:200]
         code_trim = prev_code[:280]
         repair_prompt = REPAIR_PROMPT_TEMPLATE.format(
@@ -312,8 +327,9 @@ def run_eval(m, tok) -> None:
             prev_code=code_trim,
             repair_hint=hint,
         )
-        out = m.generate(repair_prompt, tok, max_tokens=MAX_TOKENS,
-                         device="cuda", stop_on_eos=True)
+        out = m.generate(repair_prompt, tok, max_tokens=budget,
+                         device="cuda", stop_on_eos=True,
+                         use_tq4_kv=USE_TQ4_KV)
         return _trim_markers(out["text"])
 
     print(f"\n[r53.21] running {len(CORPUS)} problems...", flush=True)
@@ -327,9 +343,13 @@ def run_eval(m, tok) -> None:
         print(f"\n[{i+1}/{len(CORPUS)}] {p.name}", flush=True)
         t0 = time.time()
 
+        budget, est = budget_for(p.prompt)
+        print(f"  budget: {est.tier} ({budget} tok) — {est.reasoning}",
+              flush=True)
+
         # ATTEMPT 1: gen_hinted (channel-code-hybrid)
         raw = gen_hinted(m, tok, p, db, rng, sanity_random=False,
-                         max_tokens=MAX_TOKENS)
+                         max_tokens=budget, use_tq4_kv=USE_TQ4_KV)
         code = extract_code(raw, p.required)
         sp1, st1, _ = score(raw, p)
         print(f"  attempt 1 (hinted): {sp1}/{st1} ({time.time()-t0:.0f}s)",
@@ -368,7 +388,7 @@ def run_eval(m, tok) -> None:
             hint = cat.repair_hint
             code_for_prompt = prev_code if prev_code else "(no code emitted)"
             t1 = time.time()
-            new_raw = gen_repair(p, code_for_prompt, hint)
+            new_raw = gen_repair(p, code_for_prompt, hint, budget)
             new_code = extract_code(new_raw, p.required)
             new_pass, new_total, _ = score(new_raw, p)
             n_attempts += 1

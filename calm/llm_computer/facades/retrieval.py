@@ -461,10 +461,11 @@ class DenseIndex:
             }, tq4_path)
 
     @classmethod
-    def load(cls, path: Path, prefer_tq4: bool = False) -> "DenseIndex":
-        """Load dense index. If prefer_tq4=True and a sibling .tq4.pt
-        exists, dequantizes it into an fp16 tensor on load (one-time
-        cost; query-time is same as fp16)."""
+    def load(cls, path: Path, prefer_tq4: bool = True) -> "DenseIndex":
+        """Load dense index. If prefer_tq4=True (default) and a sibling
+        .tq4.pt exists, dequantizes it into an fp16 tensor on load
+        (one-time cost; query-time is same as fp16). 4x smaller on disk,
+        <1% rank flip vs fp16 on validation queries."""
         path = Path(path)
         tq4_path = path.with_suffix(".tq4.pt")
         if prefer_tq4 and tq4_path.exists():

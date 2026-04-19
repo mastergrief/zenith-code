@@ -592,9 +592,14 @@ class KVCacheTq4:
       FP16: ~14 GB total KV across own-KV layers
       tq4:  ~3.9 GB total KV (~3.6x reduction)
 
-    Not yet wired into the CUDA Graph capture path — the
-    quantize-on-write step needs static-shape op selection that the
-    graph capturer can re-execute. Use the dynamic forward for now.
+    Multi-token write supported (S>=1) — follows llama.cpp's per-block
+    quantization pattern. Each (head, seq_pos) slot in Gemma produces
+    d_head=256 elements = exactly 1 tq4 block, so an S-token prefill
+    writes S*n_kv_h blocks contiguously.
+
+    Per-layer position tracking — each layer's write pos is tracked
+    independently, so shared-KV read layers see the correct stored
+    length without needing a shared step_done barrier.
     """
 
     def __init__(self, model: "GemmaSubstrate", max_len: int = 1024,
@@ -615,6 +620,9 @@ class KVCacheTq4:
         self.v_d: list[torch.Tensor] = []
         self._d_head: list[int] = []
         self._bpt: list[int] = []  # blocks per token
+        self.layer_pos: list[int] = [0] * cfg.n_layers
+        self._is_swa: dict[int, bool] = {}
+        self._swa_window: int = 512
         for il in range(cfg.n_layers):
             kv_total = model.layers[il].attn_k.out_features
             d_head = kv_total // cfg.n_heads_kv
@@ -629,7 +637,6 @@ class KVCacheTq4:
             self.k_d.append(torch.zeros(n_blocks, dtype=torch.float32, device=device))
             self.v_qs.append(torch.zeros(n_blocks, 128, dtype=torch.uint8, device=device))
             self.v_d.append(torch.zeros(n_blocks, dtype=torch.float32, device=device))
-        self.pos = 0  # python int (NOT GPU): used for slicing
 
     def memory_bytes(self) -> int:
         """Total bytes in the tq4 KV cache (qs + d for all layers)."""
@@ -641,25 +648,49 @@ class KVCacheTq4:
 
     def update(self, layer_idx: int, k_new: torch.Tensor, v_new: torch.Tensor,
                is_swa: bool = False, window_size: int = 512):
-        """Quantize one token's K/V, write at position [pos], increment pos.
-        Returns full pre-allocated dequantized cache (only valid through pos).
+        """Quantize S new tokens' K/V and append to this layer's cache.
+
+        Args:
+          k_new, v_new: (B=1, n_kv_h, S, d_head). S>=1 supported.
+          is_swa, window_size: recorded for post-forward trim.
+
+        Returns:
+          (k_full, v_full) as fp32 tensors of shape
+          (1, n_kv_h, pos+S, d_head) — the full cached sequence for
+          attention score compute.
         """
         from calm.llm_computer.tq4_torch import quantize_tq4, Tq4Tensor, dequantize_tq4
         bpt = self._bpt[layer_idx]
         d_head = self._d_head[layer_idx]
-        # k_new: (1, n_kv_h, 1, d_head). Quantize the (n_kv_h * d_head) elements.
-        k_flat = k_new.float().reshape(-1)
-        v_flat = v_new.float().reshape(-1)
+        n_kv_h = self.cfg.n_heads_kv
+        S = k_new.shape[2]
+        pos = self.layer_pos[layer_idx]
+        assert pos + S <= self.max_len, (
+            f"layer {layer_idx}: pos {pos} + S {S} exceeds max_len {self.max_len}")
+
+        # Token-major flatten: (1, n_kv_h, S, d_head) → (1, S, n_kv_h, d_head) → flat
+        # matches the reshape used on dequant (S first then n_kv_h).
+        k_flat = k_new.permute(0, 2, 1, 3).contiguous().float().reshape(-1)
+        v_flat = v_new.permute(0, 2, 1, 3).contiguous().float().reshape(-1)
         k_q = quantize_tq4(k_flat, pi=self._pi, boundaries=self._boundaries)
         v_q = quantize_tq4(v_flat, pi=self._pi, boundaries=self._boundaries)
-        block_start = self.pos * bpt
-        self.k_qs[layer_idx][block_start:block_start + bpt] = k_q.qs
-        self.k_d[layer_idx][block_start:block_start + bpt] = k_q.d
-        self.v_qs[layer_idx][block_start:block_start + bpt] = v_q.qs
-        self.v_d[layer_idx][block_start:block_start + bpt] = v_q.d
 
-        # Dequant full cache up to current pos+1
-        n_blocks_used = (self.pos + 1) * bpt
+        block_start = pos * bpt
+        block_end = (pos + S) * bpt
+        self.k_qs[layer_idx][block_start:block_end] = k_q.qs
+        self.k_d[layer_idx][block_start:block_end] = k_q.d
+        self.v_qs[layer_idx][block_start:block_end] = v_q.qs
+        self.v_d[layer_idx][block_start:block_end] = v_q.d
+
+        # Advance this layer's position BEFORE dequant so seq-len views are consistent.
+        self.layer_pos[layer_idx] = pos + S
+        self._is_swa[layer_idx] = is_swa
+        if is_swa:
+            self._swa_window = window_size
+
+        # Dequant the full cached sequence for this layer.
+        total_pos = pos + S
+        n_blocks_used = total_pos * bpt
         k_dq_flat = dequantize_tq4(Tq4Tensor(
             qs=self.k_qs[layer_idx][:n_blocks_used],
             d=self.k_d[layer_idx][:n_blocks_used],
@@ -670,14 +701,38 @@ class KVCacheTq4:
             d=self.v_d[layer_idx][:n_blocks_used],
             shape=(n_blocks_used * 256,),
         ), pi=self._pi, centroids=self._centroids)
-        # reshape to (1, n_kv_h, S, d_head) — same layout as KVCache returns
-        S = self.pos + 1
-        k_full = k_dq_flat.reshape(1, S, self.cfg.n_heads_kv, d_head).permute(0, 2, 1, 3).contiguous()
-        v_full = v_dq_flat.reshape(1, S, self.cfg.n_heads_kv, d_head).permute(0, 2, 1, 3).contiguous()
-
-        # pos advances once per generation step via step_done() (called by
-        # the caller, NOT here — multiple layers update at the same pos).
+        k_full = k_dq_flat.reshape(1, total_pos, n_kv_h, d_head).permute(0, 2, 1, 3).contiguous()
+        v_full = v_dq_flat.reshape(1, total_pos, n_kv_h, d_head).permute(0, 2, 1, 3).contiguous()
         return k_full.float(), v_full.float()
+
+    def trim_swa_storage(self) -> None:
+        """For SWA layers, trim back to last `window_size` tokens.
+        Direct byte copy — no re-quantization. tq4 blocks are per-256-elt
+        with independent scales, and storage is token-major
+        ([token0_head0_dim0..255, token0_head1_dim0..255, token1_head0...]),
+        so the last `window * bpt` blocks ARE the last `window` tokens'
+        quantized bytes verbatim."""
+        window = self._swa_window
+        for layer_idx, is_swa in self._is_swa.items():
+            if not is_swa:
+                continue
+            pos = self.layer_pos[layer_idx]
+            if pos <= window:
+                continue
+            bpt = self._bpt[layer_idx]
+            keep_blocks = window * bpt
+            src_start = (pos - window) * bpt
+            src_end = pos * bpt
+            # Copy last-window blocks to front of buffer.
+            self.k_qs[layer_idx][:keep_blocks] = (
+                self.k_qs[layer_idx][src_start:src_end].clone())
+            self.k_d[layer_idx][:keep_blocks] = (
+                self.k_d[layer_idx][src_start:src_end].clone())
+            self.v_qs[layer_idx][:keep_blocks] = (
+                self.v_qs[layer_idx][src_start:src_end].clone())
+            self.v_d[layer_idx][:keep_blocks] = (
+                self.v_d[layer_idx][src_start:src_end].clone())
+            self.layer_pos[layer_idx] = window
 
     @property
     def k_cache(self):
@@ -693,12 +748,14 @@ class KVCacheTq4:
         return _Tq4ReadProxy(self, "v")
 
     def seq_len(self) -> int:
-        return self.pos
+        """Effective sequence length (layer 0's write position)."""
+        return self.layer_pos[0] if self.layer_pos else 0
 
-    def step_done(self):
-        """Call once per generation step (after all layers processed)
-        to advance the write position."""
-        self.pos += 1
+    def clear(self):
+        """Reset all layers to pos=0. Byte buffers preserved (overwritten on next update)."""
+        for il in range(len(self.layer_pos)):
+            self.layer_pos[il] = 0
+        self._is_swa.clear()
 
 
 class _Tq4ReadProxy:
@@ -714,15 +771,19 @@ class _Tq4ReadProxy:
         c = self.cache
         bpt = c._bpt[layer_idx]
         d_head = c._d_head[layer_idx]
-        n_blocks_used = (c.pos + 1) * bpt
+        total_pos = c.layer_pos[layer_idx]
+        if total_pos == 0:
+            # Empty cache — return zero-length tensor with correct shape.
+            return torch.zeros(1, c.cfg.n_heads_kv, 0, d_head,
+                                dtype=torch.float16, device=c.device)
+        n_blocks_used = total_pos * bpt
         qs_buf = c.k_qs[layer_idx] if self.which == "k" else c.v_qs[layer_idx]
         d_buf = c.k_d[layer_idx] if self.which == "k" else c.v_d[layer_idx]
         flat = dequantize_tq4(Tq4Tensor(
             qs=qs_buf[:n_blocks_used], d=d_buf[:n_blocks_used],
             shape=(n_blocks_used * 256,),
         ), pi=c._pi, centroids=c._centroids)
-        S = c.pos + 1
-        out = flat.reshape(1, S, c.cfg.n_heads_kv, d_head).permute(0, 2, 1, 3).contiguous()
+        out = flat.reshape(1, total_pos, c.cfg.n_heads_kv, d_head).permute(0, 2, 1, 3).contiguous()
         return out.half()  # to match KVCache storage dtype
 
 
@@ -1196,8 +1257,8 @@ class GemmaSubstrate:
         # Post-forward SWA storage trim — keep cache memory bounded
         # by window_size for SWA layers. Safe to do here because all
         # shared-KV consumers have already run with the full window.
-        if isinstance(kv_cache, KVCache) and hasattr(kv_cache,
-                                                      "trim_swa_storage"):
+        if (isinstance(kv_cache, (KVCache, KVCacheTq4))
+                and hasattr(kv_cache, "trim_swa_storage")):
             kv_cache.trim_swa_storage()
 
         h = _rms_norm(h, self.output_norm_w, cfg.rms_norm_eps)
@@ -1710,11 +1771,19 @@ class GemmaSubstrate:
                  device: str = "cuda", stop_on_eos: bool = True,
                  use_tq4_kv: bool = False) -> dict:
         """Greedy generation. Returns {'text', 'token_ids', 'prefill_s', 'decode_s'}.
-        Fresh KV cache per call — caller manages multi-turn state."""
+        Fresh KV cache per call — caller manages multi-turn state.
+
+        With use_tq4_kv=True, uses KVCacheTq4 (real tq4 byte storage,
+        ~3.6x smaller KV memory). Supports multi-token prefill.
+        """
         import time
         ids = tokenizer.encode(prompt)
-        cache = KVCache(self.config.n_layers, device=device,
-                        use_tq4=use_tq4_kv)
+        if use_tq4_kv:
+            # Allocate enough for prompt + max_tokens decode.
+            cache = KVCacheTq4(self, max_len=len(ids) + max_tokens + 8,
+                                device=device)
+        else:
+            cache = KVCache(self.config.n_layers, device=device)
         t0 = time.time()
         with torch.no_grad():
             logits = self.forward(torch.tensor([ids]), device=device,
