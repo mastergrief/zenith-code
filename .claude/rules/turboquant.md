@@ -7,10 +7,53 @@
 | tq3_k256 | 3.06 | 98 B | 8 | KV cache only |
 | tq3_k512 | 3.03 | 194 B | 8 | KV cache (head_dim=512) |
 | tq4_k256 | 4.125 | 132 B | 16 | **Weights + KV cache** |
+| tq4_qjl_k256 | 4.125 | 132 B | 8 + 1-bit | Research artifact — see below |
 
 tq4 is the recommended type. 132-byte blocks (128 qs + 2 d + 2 pad)
 for 4-byte aligned CUDA loads. Pi rotation (seed=42, 256×256 orthogonal),
 16-level Lloyd-Max codebook for N(0, 1/√256).
+
+### tq4_qjl_k256 — inner-product-optimal variant (research only)
+
+Paper: TurboQuant §3.2. Q_prod = Q_mse(3 bits) + QJL(1-bit residual).
+Theoretically unbiased inner-product estimator at the same 4 bpw as
+tq4_k256. Block layout (132 bytes total, matches tq4_k256):
+
+```
+struct tq4_qjl_block {
+    uint8_t qs_3bit[96];    // 256 codes × 3 bits, packed 8-per-3-bytes
+    uint8_t qjl_signs[32];  // 256 QJL sign bits, 8-per-byte
+    ggml_half d_mse;        // block L2 norm (MSE stage scale)
+    ggml_half d_qjl;        // residual L2 norm (QJL estimator scale)
+};
+```
+
+Encode: `x → Pi @ x_unit → Q_mse(3 bits) → residual r → sign(S @ r)`
+where S is d×d standard-Gaussian JL (seed=137 — distinct from Pi's
+seed=42 to avoid degeneracy).
+
+Decode estimator:
+```
+score ≈ d_mse · (<centroids[codes], Pi @ y>
+              + (sqrt(π/2) · d_qjl / d) · <signs, S · Pi @ y>)
+```
+
+**Unbiasedness validated**: `test_tq4_qjl_torch.py::test_qjl_unbiasedness_empirical`
+— 1.15σ from truth on n=1000 JL-realization samples.
+
+**Deployment verdict: do NOT use as default KV cache encoding.**
+Empirical measurement (`test_tq4_qjl_flash_attn.py`) shows QJL has
+worse attention-output cosine than plain tq4 at every context tested
+(N=16→4096, Δ=-0.02 to -0.17). Softmax non-linearly amplifies QJL's
+per-realization variance more than it amplifies MSE-only's small
+structural bias. Paper's distortion claim is about expected inner
+product MSE, not softmax preservation. Full ruled-out entry:
+`.claude/rules/tracing_roadmap.md` §"TurboQuant Q_prod for KV cache".
+
+Artifact kept in tree (`calm/llm_computer/tq4_qjl_torch.py`,
+`tq4_flash_attn.fused_tq4_qjl_flash_attn_decode`) for future use cases
+where unbiased `<x, y>` matters more than softmax — nearest-neighbor
+lookup, hash retrieval, cosine-similarity ranking.
 
 ## tq4 Block Format
 
@@ -108,11 +151,35 @@ to the PyTorch path (max abs diff ~6e-8).
 
 | Kernel | Use | Speedup |
 |---|---|---|
-| `tq4_matvec_triton` | single x vector (decode path) | 5-17× per linear |
+| `tq4_matvec_triton` | single x vector (decode path); dispatches v2 | 5-17× per linear |
 | `tq4_matmul_triton` | batched x (S>1, prefill path) — 2D grid `(out_tiles, n_seq)` | 1 launch instead of S |
 | `tq4_linear_dual_triton` | gate+up share x — fused dual kernel | half the Python overhead |
 | `q6k_matvec_triton` | output head (262K vocab Q6_K dequant + matmul) | 125× vs chunked |
 | `q6k_lookup_triton` | single-token Q6_K embedding lookup | minor; saves Python ops |
+
+### Matvec kernel variants (R53.29-R53.32)
+
+`tq4_matvec_triton` went through four variants this session. Only
+v2 ships in production; others live in tree as null receipts.
+
+| Variant | Technique | Δ vs v1 | Status |
+|---|---|---|---|
+| v1 | Global-memory gather of centroids via `tl.load(ptr + nybble)` | baseline | Kept for A/B (`tq4_matvec_triton_v1`) |
+| **v2** | **Shared-mem LUT: load centroids into program-local `(16,)` tile, use `tl.gather(tile, idx)`** | **-5 to -10% aggregate** | **Production default** (cbb8073) |
+| v3 | fp16 x_rot activation (halve BW, upcast in dot) | +0.2/+8.7% | Null (cfa584f) |
+| v4 | uint32 packed qs loads (32 loads vs 128 per block) | +9.8/+16.4% | Null (cfa584f) |
+
+**Lessons transferred vs not transferred** from TurboQuant CUDA
+commit 51481c3 (+89% / +45% / etc. on RTX 5090 Blackwell):
+- **Transferred**: shared-mem centroid LUT (-7% aggregate in Triton).
+  The Triton compiler places the `(16,)` tile in registers/SMEM
+  rather than the global-memory gather path.
+- **Did NOT transfer**: fp16 activations, uint32 vectorized loads.
+  Triton already auto-coalesces on Ada L1 — the hand-tuned CUDA
+  techniques overlap with what the Triton backend emits; adding
+  them manually introduces `tl.join`/reshape overhead that exceeds
+  the BW savings. BLOCK_M sweep (R53.32) — current
+  `_pick_block_m` heuristic holds.
 
 `_pick_block_m(out_features)` heuristic: BLOCK_M=64 for `out >= 4096`,
 32 for 2048, 16 for 1024, 4 for 512, 1 otherwise. Dual kernel caps
@@ -124,6 +191,86 @@ gemma-4-E4B-it-tq4: PyTorch baseline 0.25 tok/s → Triton + CUDA
 Graphs **42 tok/s** decode steady (90% of llama.cpp on the same
 GGUF). See `.claude/rules/architecture.md` "Gemma substrate loader"
 for the full perf chain.
+
+## Fused flash-attention decode with tq4 K/V (R53.34)
+
+File: `calm/llm_computer/tq4_flash_attn.py`. Entry point:
+`fused_tq4_flash_attn_decode(q_rot, k_qs, k_d, v_qs, v_d, centroids,
+pi, attn_mask, softcap=0.0)`. Decode-only (S_q=1) MVP.
+
+**Why it exists**: pre-R53.34 `KVCacheTq4.update()` dequanted the
+full cached sequence on every call. Per decode step this is O(N)
+work; across a 500-token decode that's O(N²) dequant across 42
+layers = ~10M block dequants per generation. The fused kernel
+bypasses the dequant materialization entirely.
+
+**Storage contract** (head-major — required by the fused kernel,
+differs from the interleaved token-major storage of the pre-R53.34
+`KVCacheTq4`):
+
+```
+K.qs: (n_heads_kv, N * bpr, 128) uint8 — contiguous per head
+K.d:  (n_heads_kv, N * bpr) fp32
+V.qs: same layout
+V.d:  same layout
+```
+
+where `bpr = d_head // 256` (= 1 for Gemma E4B d_head=256). For
+d_head=256 each position is exactly one tq4 block per head.
+
+**Math** (Pi orthogonal cancels in inner products):
+```
+scores[h, n] = (Pi @ Q[h]) · (Pi @ K[kv_h, n])       = Q · K
+            = q_rot[h] @ k_dequant_rotated[kv_h, n]
+out[h]       = sum_n softmax(scores[h])[n] * V[kv_h, n]
+            = Pi.T @ (sum_n p[n] * v_dequant_rotated[kv_h, n])
+```
+
+So K-side scoring runs against the rotated K codes directly (skip
+per-block Pi.T inside the kernel — saves 1 matmul per block), and
+V-side weighted sum is post-rotated once per head outside the kernel.
+
+**Two kernels**:
+- **K side**: reuses existing `tq4_matvec_triton` (K layout
+  (N, d_head) matches the kernel's `(out_features=N,
+  in_features=d_head)` contract). One call per Q head.
+- **V side**: new `_tq4_weighted_v_kernel` with `grid=(n_heads_q,)`
+  — one program per Q head, streams N tq4 V blocks, accumulates
+  fp32 `(D_HEAD,)` in registers. Output in Pi-rotated domain;
+  caller applies Pi.T once per head (cheap D_HEAD×D_HEAD matmul).
+
+**Wiring**: `generate(use_tq4_kv=True)` allocates `KVCacheTq4`
+sized to `len(prompt) + max_tokens`. Gated by
+`enable_fused_flash_attn()` flag, with the fused kernel used for
+`KVCacheTq4 AND S==1 AND d_head==256 AND not partitions`. Global
+layers (d_head=512) fall back to the Phase 1 memoized dequant path.
+
+**Correctness**: 7/7 unit tests cosine=1.0 vs fp32 ref at
+N∈{16,64,128,256,1024}; real-Gemma ablation Δmean=0.0 argmax=+0.
+
+**Perf**: `_use_fused_flash_attn=False` is shipped default. Clean
+A/B at measured N shows fused is **8-10% SLOWER** than Phase 1
+memoized dequant (N=64 5.60 vs 6.06 tok/s; N=1024 5.11 vs 5.60;
+fp16 baseline 7.0-7.5). Root cause: 8 × 42 = 336 per-Q-head kernel
+launches per decode step — launch overhead dominates at N≤1024.
+Asymptotic crossover (N≫2K) NOT measured; 20+ min/run budget.
+
+**Phase 1 memo path is the shipped win**: ~77% of fp16 tok/s at
+~50% KV memory. Fused kernel remains in tree as research artifact
+for future long-context (N>4K) work. To unlock perf at short
+context would need: (a) one Triton kernel spanning all Q heads
+(remove Python loop → 1 launch/layer), (b) parallel-over-N V
+kernel via TILE_N blocking. Both non-trivial; reconsider if N>4K
+becomes target workload.
+
+See `tracing_roadmap.md` ruled-out row (Round 53.34) for full
+A/B receipt. Adjacent null: TurboQuant Q_prod (3-bit Q_mse +
+1-bit QJL encoding) — implemented in `tq4_qjl_torch.py`, proven
+unbiased inner-product estimator, but empirical attention-output
+cosine WORSE than tq4 Q_mse alone at every N tested. Kept in
+tree (`fused_tq4_qjl_flash_attn_decode`) for future nearest-
+neighbor / retrieval use cases where unbiased <x,y> matters more
+than softmax output.
 
 ## Quantization Commands
 

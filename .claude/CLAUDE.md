@@ -420,9 +420,17 @@ training + L24/L30 install) pending. Full rules: `.claude/rules/retrieval.md`,
   BLOCK_M sweep (heuristic holds). Lesson: Triton auto-coalesces on
   Ada L1; `tl.join`/reshape overhead can exceed BW savings.
 - **R53.34** — fused flash-attention decode kernel
-  (`calm/llm_computer/tq4_flash_attn.py`), parity-validated on real
-  Gemma. SWA layers use fused path, global layers (d_head=512) fall
-  back to memoized dequant. `USE_TQ4_KV=True` back on in eval scripts.
+  (`calm/llm_computer/tq4_flash_attn.py`), cosine=1.0 parity vs fp32
+  at N∈{16…1024}. Empirically 8-10% SLOWER than Phase 1 memoized
+  dequant at N≤1024 (336 per-Q-head kernel launches dominate at short
+  ctx). Shipped with `_use_fused_flash_attn=False` default; Phase 1
+  memo path is the production winner (~77% of fp16 tok/s at ~50% KV
+  memory). Kernel kept in tree for N>4K long-context future work.
+  Adjacent null: TurboQuant Q_prod (3-bit Q_mse + 1-bit QJL) —
+  unbiased inner-product but softmax-output cosine worse than Q_mse
+  alone at every N tested (`tq4_qjl_torch.py` kept for NN/retrieval
+  research). Full A/B: `tracing_roadmap.md` Round 53.34 row.
+  `USE_TQ4_KV=True` ships in eval scripts via Phase 1 memo path.
 - **AdaptiveBudget + 16K ceiling** is the new default in all R53 eval
   scripts (e7b4538); replaces fixed 200-400 tok defaults.
 - **Sandbox stdlib pre-import fix** (5dc2dc1, R53.22 diagnosis): user
