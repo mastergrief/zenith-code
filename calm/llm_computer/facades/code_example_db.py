@@ -162,6 +162,8 @@ class CodeExampleDB:
     # holds the inverse mapping.
     _tfidf_code: Optional["TfidfIndex"] = None         # type: ignore[name-defined]
     _tfidf_reasoning: Optional["TfidfIndex"] = None    # type: ignore[name-defined]
+    _dense_code: Optional["DenseIndex"] = None         # type: ignore[name-defined]
+    _dense_reasoning: Optional["DenseIndex"] = None    # type: ignore[name-defined]
     _code_doc_to_ex: List[int] = field(default_factory=list)
     _reasoning_doc_to_ex: List[int] = field(default_factory=list)
 
@@ -376,27 +378,60 @@ class CodeExampleDB:
         self._reasoning_doc_to_ex = reason_map
 
     def retrieve_channel(self, query: str, channel: str, k: int = 3,
-                          scorer: str = "bm25") -> List[RetrievalHit]:
-        """Channel-specific TF-IDF retrieval (R53 dual-path).
+                          mode: str = "tfidf",
+                          scorer: str = "bm25",
+                          dense_m=None, dense_tok=None,
+                          sparse_k: int = 10, dense_k: int = 10,
+                          ) -> List[RetrievalHit]:
+        """Channel-specific retrieval (R53 dual-path).
 
-        channel='code'      → uses `_tfidf_code`, hits drawn from
-                              examples with non-empty code_fragment
-        channel='reasoning' → uses `_tfidf_reasoning`, hits drawn from
-                              examples with non-empty reasoning_trace
+        channel='code'      → hits drawn from examples with non-empty
+                              code_fragment
+        channel='reasoning' → hits drawn from examples with non-empty
+                              reasoning_trace
 
-        Returns empty list if the requested channel index hasn't been
-        built. No fallback — explicit channel selection is the point.
+        mode:
+          - 'tfidf':  channel TF-IDF (BM25 or cosine via `scorer`)
+          - 'dense':  channel dense (mean-pooled Gemma encoding of
+                      problem + channel_text). Requires dense_m + dense_tok.
+          - 'hybrid': RRF fusion of channel TF-IDF + channel dense.
+                      Requires dense_m + dense_tok.
+
+        Returns empty list if the requested index hasn't been built.
+        No silent fallback — explicit channel + mode is the point.
         """
         if channel == "code":
-            idx, mapping = self._tfidf_code, self._code_doc_to_ex
+            tfidf_idx = self._tfidf_code
+            dense_idx = self._dense_code
+            mapping = self._code_doc_to_ex
         elif channel == "reasoning":
-            idx, mapping = self._tfidf_reasoning, self._reasoning_doc_to_ex
+            tfidf_idx = self._tfidf_reasoning
+            dense_idx = self._dense_reasoning
+            mapping = self._reasoning_doc_to_ex
         else:
             raise ValueError(
                 f"unknown channel: {channel!r} (expected 'code' or 'reasoning')")
-        if idx is None:
-            return []
-        ranked = idx.query(query, k=k, scorer=scorer)
+
+        if mode == "tfidf":
+            if tfidf_idx is None:
+                return []
+            ranked = tfidf_idx.query(query, k=k, scorer=scorer)
+        elif mode == "dense":
+            if dense_idx is None or dense_m is None or dense_tok is None:
+                return []
+            ranked = dense_idx.query(query, dense_m, dense_tok, k=k)
+        elif mode == "hybrid":
+            if (tfidf_idx is None or dense_idx is None
+                    or dense_m is None or dense_tok is None):
+                return []
+            from calm.llm_computer.facades.retrieval import rrf_fuse
+            tfidf_ranked = tfidf_idx.query(query, k=sparse_k, scorer=scorer)
+            dense_ranked = dense_idx.query(query, dense_m, dense_tok, k=dense_k)
+            ranked = rrf_fuse([tfidf_ranked, dense_ranked], top_k=k)
+        else:
+            raise ValueError(
+                f"unknown mode: {mode!r} (expected 'tfidf', 'dense', 'hybrid')")
+
         out: List[RetrievalHit] = []
         for doc_idx, score in ranked:
             if 0 <= doc_idx < len(mapping):
@@ -404,6 +439,52 @@ class CodeExampleDB:
                 out.append(RetrievalHit(
                     example=self.examples[ex_idx], score=float(score)))
         return out
+
+    def build_dense_channels(self, m, tok, max_len: int = 64,
+                              batch_size: int = 8) -> None:
+        """Build channel-specific dense indices (R53 dual-path).
+
+        Each channel encodes (problem + "\\n" + channel_text) so the
+        vector carries both the user-intent signal (problem) AND the
+        implementation/reasoning style (channel content). Subset to
+        examples with non-empty channel; mapping is consistent with
+        `build_tfidf_channels` (skip-empty preserves order).
+
+        Encoding details: see DenseIndex._encode_texts. Inputs are
+        truncated to DenseIndex._PRE_TOKENIZE_CHAR_LIMIT chars BEFORE
+        tokenization, then to `max_len` tokens. With problem ~150 chars
+        and 400-char limit, ~250 chars of channel content participates.
+        """
+        from calm.llm_computer.facades.retrieval import DenseIndex
+
+        # Code channel
+        code_texts: List[str] = []
+        code_map: List[int] = []
+        for i, ex in enumerate(self.examples):
+            if ex.code_fragment:
+                code_texts.append(f"{ex.problem}\n{ex.code_fragment}")
+                code_map.append(i)
+        code_idx = DenseIndex(d_model=m.config.d_model)
+        code_idx.vectors = code_idx._encode_texts(
+            code_texts, m, tok, max_len=max_len, batch_size=batch_size)
+        self._dense_code = code_idx
+        # Mapping is deterministic from current examples list; if
+        # build_tfidf_channels ran first, this is identical to the
+        # existing mapping. Overwriting is safe.
+        self._code_doc_to_ex = code_map
+
+        # Reasoning channel
+        reason_texts: List[str] = []
+        reason_map: List[int] = []
+        for i, ex in enumerate(self.examples):
+            if ex.reasoning_trace:
+                reason_texts.append(f"{ex.problem}\n{ex.reasoning_trace}")
+                reason_map.append(i)
+        reason_idx = DenseIndex(d_model=m.config.d_model)
+        reason_idx.vectors = reason_idx._encode_texts(
+            reason_texts, m, tok, max_len=max_len, batch_size=batch_size)
+        self._dense_reasoning = reason_idx
+        self._reasoning_doc_to_ex = reason_map
 
     def build_dense(self, m, tok, max_len: int = 256,
                     batch_size: int = 8) -> None:
@@ -438,7 +519,15 @@ class CodeExampleDB:
             self._tfidf_code.save(dirpath / "tfidf_code.json")
         if self._tfidf_reasoning is not None:
             self._tfidf_reasoning.save(dirpath / "tfidf_reasoning.json")
-        if self._tfidf_code is not None or self._tfidf_reasoning is not None:
+        if self._dense_code is not None:
+            self._dense_code.save(dirpath / "dense_code.pt",
+                                   quantize=dense_quantize)
+        if self._dense_reasoning is not None:
+            self._dense_reasoning.save(dirpath / "dense_reasoning.pt",
+                                        quantize=dense_quantize)
+        if (self._tfidf_code is not None or self._tfidf_reasoning is not None
+                or self._dense_code is not None
+                or self._dense_reasoning is not None):
             with open(dirpath / "channel_maps.json", "w", encoding="utf-8") as f:
                 json.dump({
                     "code_doc_to_ex": self._code_doc_to_ex,
@@ -461,11 +550,17 @@ class CodeExampleDB:
         # Channel indices + mappings
         code_path = dirpath / "tfidf_code.json"
         reason_path = dirpath / "tfidf_reasoning.json"
+        dense_code_path = dirpath / "dense_code.pt"
+        dense_reason_path = dirpath / "dense_reasoning.pt"
         maps_path = dirpath / "channel_maps.json"
         if code_path.exists():
             self._tfidf_code = TfidfIndex.load(code_path)
         if reason_path.exists():
             self._tfidf_reasoning = TfidfIndex.load(reason_path)
+        if dense_code_path.exists():
+            self._dense_code = DenseIndex.load(dense_code_path)
+        if dense_reason_path.exists():
+            self._dense_reasoning = DenseIndex.load(dense_reason_path)
         if maps_path.exists():
             with open(maps_path, "r", encoding="utf-8") as f:
                 maps = json.load(f)
@@ -478,11 +573,18 @@ class CodeExampleDB:
     def has_dense(self) -> bool:
         return self._dense is not None
 
-    def has_channel(self, channel: str) -> bool:
+    def has_channel(self, channel: str, mode: str = "tfidf") -> bool:
+        """True if the (channel, mode) index has been built or loaded.
+
+        mode='tfidf' (default) — channel sparse index
+        mode='dense'           — channel dense index
+        """
         if channel == "code":
-            return self._tfidf_code is not None
+            return (self._tfidf_code is not None if mode == "tfidf"
+                    else self._dense_code is not None)
         if channel == "reasoning":
-            return self._tfidf_reasoning is not None
+            return (self._tfidf_reasoning is not None if mode == "tfidf"
+                    else self._dense_reasoning is not None)
         return False
 
     # ----- DB stats -----
