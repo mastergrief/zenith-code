@@ -36,7 +36,9 @@ MAX_KEY = 4096
 MAX_VALUE = 16
 RECALL_D_CARD = MAX_VALUE + 1
 INSTALL_LAYER = 41
-HOOK_BOOST = 20.0
+HOOK_BOOST = 50.0   # bumped from 20 — boost=20 lost on 2/6 prompts
+                    # ('\n\n' has very high natural Gemma logit at
+                    # response start; needed >20 to override)
 HOOK_MIN_MARGIN = 0.5
 
 
@@ -98,21 +100,23 @@ def gemma_logits(m, tok, prompt: str, KVCache) -> torch.Tensor:
 
 
 def find_token_id(tok, target_text: str) -> int:
-    """Find Gemma BPE id for the target string. Skip ALL special
-    tokens (anything bracketed like <bos>, <eos>, <pad>, <unk>) and
-    return the first content BPE token in the encoding."""
-    for variant in (target_text, target_text.strip()):
-        ids = tok.encode(variant)
-        for tid in ids:
-            tok_str = tok.id_to_token.get(tid, "")
-            stripped = tok_str.strip()
-            if not stripped:
-                continue
-            # Skip special tokens (Gemma uses <bos>, <eos>, etc.)
-            if stripped.startswith("<") and stripped.endswith(">"):
-                continue
-            return tid
-    raise ValueError(f"Could not find content token for {target_text!r}")
+    """Find Gemma BPE id for the target string. Tries SentencePiece-
+    style "▁<word>" first (the leading-space-marker convention Gemma
+    inherits), then bare, then any other whitespace-prefixed variant
+    via direct lookup in tok.token_to_id. Avoids tok.encode() which
+    over-segments (e.g. " def" → [BOS, "▁▁", "def"] with intermediate
+    leading-space tokens that aren't what we want)."""
+    candidates = [
+        f"\u2581{target_text}",   # ▁<text> — SP leading-space marker
+        target_text,               # bare
+        f" {target_text}",         # literal leading space
+    ]
+    for cand in candidates:
+        if cand in tok.token_to_id:
+            return tok.token_to_id[cand]
+    raise ValueError(
+        f"No Gemma BPE token for {target_text!r} "
+        f"(tried {candidates})")
 
 
 def run_hook_demo(m, tok) -> None:
@@ -135,12 +139,26 @@ def run_hook_demo(m, tok) -> None:
     m.verification_hooks = []
     print("[r53.12] cleared prior CardSlots / hooks", flush=True)
 
-    # ----- Find target Gemma BPE for " def" -----
-    target_text = " def"
-    target_token_id = find_token_id(tok, target_text)
-    target_token_str = tok.id_to_token.get(target_token_id, "?")
-    print(f"[r53.12] target Gemma BPE: id={target_token_id} "
-          f"str={target_token_str!r}", flush=True)
+    # ----- Per-marker target Gemma BPEs based on expected solution shape
+    # Each problem's verified solution starts with either `class` or `def`:
+    #   linked_list_bugs            → fixed LinkedList class       → class
+    #   date_validation_chain       → def validate_date(s)         → def
+    #   log_level_counts            → def count_levels(...)        → def
+    #   csv_column_stats            → def column_stats(...)        → def
+    #   token_bucket_rate_limiter   → class TokenBucket            → class
+    #   lru_cache_class             → class LRUCache               → class
+    PER_MARKER_TARGETS = {
+        1: "class", 2: "def", 3: "def",
+        4: "def",   5: "class", 6: "class",
+    }
+    target_ids: dict[int, int] = {}
+    print("[r53.12] per-marker target Gemma BPEs:", flush=True)
+    for marker, txt in PER_MARKER_TARGETS.items():
+        tid = find_token_id(tok, txt)
+        target_ids[marker] = tid
+        print(f"  marker={marker} → {txt!r:>8} "
+              f"(id={tid}, str={tok.id_to_token.get(tid, '?')!r})",
+              flush=True)
 
     # ----- Build store (same as R53.9/10/11) -----
     store = KnowledgeStore(max_key=MAX_KEY, max_value=MAX_VALUE)
@@ -186,11 +204,12 @@ def run_hook_demo(m, tok) -> None:
     )
     slot.attach(m, preserve=True)
 
-    # All markers map to the same target Gemma token; on miss the card
-    # outputs zeros so VerificationHook's min_margin gate suppresses
-    # the boost (peak-median < min_margin → no fire).
-    vocab_mapping = {marker: target_token_id
-                      for marker in range(1, MAX_VALUE + 1)}
+    # Per-marker → Gemma BPE token mapping. Markers 7..MAX_VALUE
+    # are unused (only 6 stored corrections); they map to a sentinel
+    # but the card never produces those argmax values on hit. On miss
+    # the card produces argmax=0 with zero peak — min_margin gates
+    # the hook silent.
+    vocab_mapping: dict[int, int] = dict(target_ids)
     hook = VerificationHook(
         slot, vocab_mapping=vocab_mapping,
         boost=HOOK_BOOST, min_margin=HOOK_MIN_MARGIN,
@@ -198,26 +217,29 @@ def run_hook_demo(m, tok) -> None:
     m.verification_hooks.append(hook)
     print(f"\n[r53.12] CardSlot @ L{INSTALL_LAYER} + VerificationHook",
           flush=True)
-    print(f"           markers 1..{MAX_VALUE} → Gemma token "
-          f"{target_token_id} ({target_token_str!r})", flush=True)
+    print(f"           per-marker mapping: {len(vocab_mapping)} entries",
+          flush=True)
     print(f"           boost={HOOK_BOOST}, min_margin={HOOK_MIN_MARGIN}",
           flush=True)
 
     # ----- HIT TEST -----
     print("\n[r53.12] HIT TEST — expect Gemma top token shifts to "
-          f"{target_token_str!r}:", flush=True)
+          "per-marker target:", flush=True)
     hit_results = []
     for i, (name, prompt, key, marker) in enumerate(eval_keys):
         current_query["key"] = key
         new_logits = gemma_logits(m, tok, prompt, KVCache)
         baseline_top = int(baseline_eval[i].argmax())
         new_top = int(new_logits.argmax())
-        hit_target = (new_top == target_token_id)
+        expected_target = target_ids[marker]
+        hit_target = (new_top == expected_target)
         baseline_str = tok.id_to_token.get(baseline_top, "?")
         new_str = tok.id_to_token.get(new_top, "?")
-        print(f"  {name:<26}  baseline={baseline_str!r:>14}  "
-              f"new={new_str!r:>14}  "
-              f"hit_target={'✓' if hit_target else '✗'}", flush=True)
+        target_str = tok.id_to_token.get(expected_target, "?")
+        print(f"  {name:<26}  baseline={baseline_str!r:>10}  "
+              f"new={new_str!r:>10}  "
+              f"target={target_str!r:>10}  "
+              f"hit={'✓' if hit_target else '✗'}", flush=True)
         hit_results.append(hit_target)
 
     # ----- MISS TEST -----
@@ -246,7 +268,7 @@ def run_hook_demo(m, tok) -> None:
     print("=" * 72, flush=True)
     n_hit = sum(hit_results)
     n_miss = sum(miss_results)
-    print(f"  HIT  top token shifted to target ({target_token_str!r}): "
+    print(f"  HIT  top token shifted to per-marker target: "
           f"{n_hit}/{len(hit_results)}", flush=True)
     print(f"  MISS top token preserved (hook stayed silent):     "
           f"{n_miss}/{len(miss_results)}", flush=True)
