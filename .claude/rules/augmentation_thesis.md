@@ -323,16 +323,6 @@ imitation-of-wrong-style risk.
 | Content delivery | text through all 42 layers | direct residual write at L30 |
 | Determinism | stochastic | compiled step-function exact |
 
-### Implication for R53.6 and beyond
-
-The R53.2b null result is **not** "retrieval doesn't help." It's
-"blanket prompt-level retrieval doesn't help." The correct conclusion
-is to build the substrate install where retrieval is hash-gated by
-construction. This is the fastest validation of the architectural
-thesis — build R53.5 PT + R53.6 L24/L30 install and measure
-substrate-RAG vs prompt-RAG on the same 6 problems. Expected:
-substrate matches or beats prompt-RAG because it respects Tier 1.
-
 ### R53.14/20a/20b — substrate L41 install REGRESSES on code (post-SWA-fix)
 
 The Tier-1 thesis holds in principle but was falsified at one specific
