@@ -444,6 +444,20 @@ llama-server -m model.gguf --cache-type-k tq3_k256 --cache-type-v tq3_k256
 | tq4 + tq4 KV | ~3.7 GB | ~2.0 GB | ~5.7 GB |
 | tq3 + tq3 KV | ~2.2 GB | ~1.5 GB | ~3.7 GB |
 
+### Substrate eval defaults (R53.28 + R53.34)
+
+- `generate(use_tq4_kv=True)` routes through real-tq4 `KVCacheTq4`
+  (multi-token prefill S≥1, ~3.6× smaller KV vs fp16 KVCache). Phase
+  1 memoized dequant path ships as the winner; Phase 2 fused
+  flash-attn kernel exists but is 8-10% slower at N≤1024 — see
+  `tq4_flash_attn.py` and `tracing_roadmap.md` Round 53.34.
+- `MAX_TOKENS_CEILING = 16384` across all R53 eval scripts (was
+  200-400 pre-R53.25). `AdaptiveBudget` picks per-prompt tier
+  (trivial 2K / easy 4K / medium 8K / hard 16K / deep 32K clamped).
+  Gemma 4 E4B trains at 131K ctx; any budget < 4K will truncate
+  real coding problems mid-function (receipt: R53.25 lifted
+  `log_level_counts` 0/0 → 6/6 purely from 400 → 900 tok bump).
+
 ## Export & Serving
 - llama.cpp built at `~/llama.cpp/build/bin/` with CUDA support (RTX 4070), local patch at `tools/server/server-context.cpp:763-766` (see Known Issues)
 - `llama-quantize`: convert FP16 safetensors → GGUF quantized — **Q5_K_M is the default across all model sizes** (best quality/size tradeoff per research). Only drop to Q4_K_M when VRAM forces it.

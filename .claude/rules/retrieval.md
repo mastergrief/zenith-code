@@ -224,6 +224,26 @@ Full pipeline rebuild: `PYTHONPATH=. python3 scripts/r53_run_data_generators.py`
 (CPU path builds TF-IDF only; pass through `bin/gemma-run` with
 `scripts/r53_build_dense.py` afterwards for dense).
 
+## Ruled-out / refined directions
+
+- **Substrate-RAG at L41 on code tasks (R53.14/20a/20b, post-SWA-fix)**
+  — `-9.3pp` regression. Tier-1 preservation thesis holds in
+  principle but the L41 install mechanism (CardSlot `preserve=True`
+  + per-marker FirstTokenHook `boost=50`) disrupts HIT prompts:
+  Gemma's first-token on code is confidently a fence/whitespace
+  opener (margin 6.8-9.2), so `min_margin=0.5` never gates, hook
+  always fires, forces "def"/"class" → code-without-fence →
+  extractor fails. First-token bias is the wrong intervention for
+  code. See `augmentation_thesis.md` §"R53.14/20a/20b" — refined
+  thesis: Tier-1 holds at output-boundary `VerificationHook` with
+  `min_margin` guard, NOT at residual-write CardSlot. Correct
+  tier-2 target: post-generation AST walker.
+
+- **`DenseIndex.load(prefer_tq4=True)` is the new default** (R53.28).
+  Loads `.tq4.pt` companion when present (4× smaller than `.pt`,
+  <1% rank flip). `bin/gemma-run scripts/r53_build_dense.py` saves
+  tq4 by default.
+
 ## Related rules
 
 - `code_reasoning_db.md` — what's in the DB + how it gets there

@@ -182,6 +182,27 @@ Not yet tested:
   (O(generation_length × PT_forward)) but would let the facade
   adapt its verified answer to what Gemma's emitted so far.
 
+## Ruled out
+
+- **FirstTokenHook (per-marker bias) on code tasks** (R53.14/20a/20b,
+  post-SWA-fix 2026-04-19). Installed as:
+  `VerificationHook(vocab_mapping=PER_MARKER_TARGETS, boost=50,
+  min_margin=0.5)` where targets are `"def"/"class"` per-problem.
+  Result: **-9.3pp regression** on R53.0 code corpus.
+  `min_margin=0.5` gate never fires because Gemma's first-token on
+  code prompts is uniformly confident (margin 6.8-9.2 on
+  whitespace/fence openers). Hook always fires on HIT, forces
+  "def"/"class" before Gemma emits the fence → code-without-fence
+  → extractor fails. See `augmentation_thesis.md` §"R53.14/20a/20b"
+  and `retrieval.md` §"Ruled-out / refined directions".
+- **Rule**: first-token bias is the wrong delivery mechanism for
+  code. Either (a) mid-generation per-token hooks that fire on
+  token patterns (e.g. bias only after `def` is emitted), or (b)
+  post-generation AST-walker rewrite (tier-2 compiled card, no
+  decode-time intervention). Confidence-gated hooks also failed
+  at this site — the measurable margin doesn't correlate with
+  "Gemma is uncertain about format."
+
 ## Related rules
 
 - `capability_gain.md` — measurement discipline

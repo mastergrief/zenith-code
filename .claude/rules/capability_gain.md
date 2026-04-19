@@ -229,6 +229,57 @@ stock emits bare code (extract fails, scored 0/0). Any apparent
 try `class`, try `import`, try whole-output AST parse. Return the
 first AST-valid candidate. See `scripts/r53_eval_complex.py:extract_code`.
 
+## Gemma ignores targeted hints (R53.19/R53.33 receipt)
+
+The R53 structured-repair pipeline detects specific runtime errors,
+classifies by regex, and emits a targeted repair hint with a concrete
+rename example. Gemma's retry rewrites the code with the SAME bug.
+This is not a prompt-engineering issue — it's a prior-dominance
+failure mode that hint-tuning cannot fix.
+
+**Concrete cases from R53.33**:
+
+- **token_bucket_rate_limiter** (`'int' object is not callable`):
+  categorizer emits `"You're calling an int value as if it were a
+  function. A method/function name was overwritten by an int value
+  (e.g. self.consume = capacity shadows method consume). Rename the
+  int attribute (e.g. self.tokens = capacity) and use the new name
+  everywhere you assigned the value."` Gemma retry emits the same
+  `self.consume = capacity` shadow. 2344s wall time on retry, 0/0.
+
+- **csv_column_stats** (runtime `KeyError: 'score'`): Gemma writes
+  code accessing a dict key it never constructed with that name.
+  Categorizer emits targeted hint; retry emits the same KeyError
+  pattern at a different access site.
+
+**Mechanism**: the prior over rate-limiter / csv-parser implementations
+is learned from millions of training-data examples (including
+tutorials where the bug IS the teaching example). Hint signal is ~200
+tokens in-context vs ~1M training instances baked into weights.
+Attention cannot reliably amplify the hint enough to flip the prior
+at the specific emission site. Token-sequence momentum from the
+opening `class TokenBucket:` cascades deterministically into the
+shadow.
+
+**Generalized TypeError categorizer**: regex matches any shadowed
+type, not just 'int':
+
+```python
+re.search(r"TypeError: '(\w+)' object is not callable", output)
+```
+
+Emits type-specific hint (float/str/list/dict/int). Correct detection
+100% of the time; Gemma's retry success rate still ~0%. **Detection
+and repair-signal are solved; the block is Gemma's
+instruction-following on code-repair prompts.**
+
+**Implication**: hint-tuning + retries will not lift this ceiling.
+The correct tier-2 intervention is a compiled **AST walker card**
+that parses Gemma's output, detects the shadow / missing-key /
+off-by-one / unused-var patterns, and mechanically rewrites — no
+Gemma in the repair loop. See `augmentation_thesis.md` §"R53.14/
+20a/20b" for the tier-2-stacking framing.
+
 ## Related rules
 
 - `workflow.md` — the general hypothesis-test loop
