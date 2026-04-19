@@ -42,7 +42,12 @@ CACHE_DIR = "/mnt/c/Users/gabes/projects/claw-code/.cache/r53_code_db"
 MAX_ATTEMPTS = 3
 MAX_TOKENS_CEILING = 16384  # cap; AdaptiveBudget picks per-prompt
 MAX_IMPORT_INJECTIONS = 4
-USE_TQ4_KV = True  # real tq4 KV cache storage (3.6× less KV memory)
+USE_TQ4_KV = False  # tq4 KV storage works but has O(N²) dequant per step
+                    # until fused flash-attn kernel lands (tracked as
+                    # R53.34). At 16K ctx fp16 KVCache (~1.4 GB) fits
+                    # comfortably on 8 GB; flip to True only when
+                    # 256K+ ctx becomes the bottleneck AND the fused
+                    # kernel is in place.
 
 
 COMMON_IMPORTS = {
