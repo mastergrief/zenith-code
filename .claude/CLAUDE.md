@@ -22,10 +22,12 @@ taken *after* the change. No vibes, no "looks right", no "should be fine".
   micro-tuning, go find the one wrong line. Session-16 example: ~6
   micro-opts stuck at 24 tok/s, then one line (cache 16-entry const-mem
   LUT in registers) moved +58%.
-- **One round per commit, with a before/after table in the message.**
-  `git log --oneline` becomes a readable perf changelog. Always
-  checkpoint before risky swings (re-quantize, struct layout, training
-  run) — your rollback is `git reset --hard HEAD`.
+- **Commit completed work before starting the next round.** One round
+  per commit with a before/after table. Never leave measured,
+  shippable work uncommitted while moving on — a crash, `git stash`,
+  or `reset --hard` loses hours. `git log --oneline` becomes the perf
+  changelog. Checkpoint before risky swings (re-quantize, struct
+  layout, training run) — rollback is `git reset --hard HEAD`.
 - **Correctness check every round.** Canonical smoke test: `17×23=391`
   via the chat API. Perf gains that break correctness are reverts.
 ## Config `.claude/` Editing Directive

@@ -117,6 +117,15 @@ mean "go look for a bug", not "keep tuning the knob you were tuning".
 
 ## Commit discipline — git log as progress changelog
 
+- **Commit completed work before starting the next round.** Default
+  rule. Once a round's measurements pass and the change is shippable,
+  commit BEFORE starting the next hypothesis. Uncommitted measured
+  work is a liability — a crash, an accidental `git stash`, a `reset
+  --hard` to recover from a bad swing, all silently destroy hours.
+  "I'll commit at the end of the session" is how R52/R53 left ~30
+  files untracked and forced a paranoid handoff section. The marginal
+  cost of `git add && git commit` is seconds; the cost of losing a
+  passed round is hours. Commit, then iterate.
 - **One round per commit.** Don't stack unrelated optimizations into
   one commit. When you bisect later, you want each commit to own one
   clear change.
