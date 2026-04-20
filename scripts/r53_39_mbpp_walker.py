@@ -208,7 +208,10 @@ def score_code(code: str, tests: List[str]) -> tuple[int, int, str]:
         harness.append(
             f"try:\n    {t}\n    print('PASS {i}')\n"
             f"except Exception as e:\n    print(f'FAIL {i} {{type(e).__name__}}: {{e}}')")
-    script = code + "\n\n" + "\n".join(harness) + "\n"
+    # Trailing "pass" protects the sandbox's last-line expr-eval wrapper
+    # from stripping our final harness print out of its except: body
+    # (leaving an empty block and triggering IndentationError).
+    script = code + "\n\n" + "\n".join(harness) + "\npass\n"
     r = run_python(script, timeout=8.0)
     out = r.stdout or ""
     err = r.error or ""
@@ -223,6 +226,12 @@ def score_code(code: str, tests: List[str]) -> tuple[int, int, str]:
 
 
 def run_mbpp_walker():
+    # Reload ast_repair in case daemon has a stale version cached
+    # (sys.modules persists across RESET_GLOBALS; new symbols like
+    # repair_cascade added this session won't be visible without reload).
+    import importlib
+    import calm.llm_computer.facades.ast_repair as _ar
+    importlib.reload(_ar)
     from calm.llm_computer.facades.ast_repair import repair_cascade
 
     # m, tok are daemon globals
