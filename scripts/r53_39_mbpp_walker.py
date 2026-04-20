@@ -34,7 +34,6 @@ import json
 import re
 import sys
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
@@ -48,15 +47,25 @@ if str(ROOT) not in sys.path:
 MBPP_PATH = ROOT / "agents/distill/data/mbpp.jsonl"
 MBPP_N = 5                    # number of problems to test
 MBPP_SKIP = 0                 # skip first K (different cut each run)
-MAX_TOKENS = 1024             # clamp budget to keep per-prob wall-time bounded
+MAX_TOKENS = 2048             # raised from 1024 after R53.39 run showed
+                              # 3/5 format_fails — MBPP problems like
+                              # max_chain_length (custom Pair class +
+                              # backtracking) need ~1500-2000 tok. Per
+                              # workflow.md §"MAX_TOKENS budget discipline",
+                              # verify budget isn't clipping before
+                              # diagnosing logic failures.
 
 
-@dataclass
 class MbppProblem:
-    idx: int
-    prompt: str
-    tests: List[str]         # `assert fn(...) == expected` lines
-    fn_name: Optional[str]   # parsed from first assert for extractor
+    """Plain container (not @dataclass — Python 3.13 + exec-in-globals
+    hits `sys.modules.get(cls.__module__).__dict__` AttributeError)."""
+
+    def __init__(self, idx: int, prompt: str, tests: List[str],
+                 fn_name: Optional[str]):
+        self.idx = idx
+        self.prompt = prompt
+        self.tests = tests
+        self.fn_name = fn_name
 
 
 def parse_mbpp_problem(rec: dict, idx: int) -> Optional[MbppProblem]:
