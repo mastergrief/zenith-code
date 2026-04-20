@@ -1,4 +1,0 @@
-- [CRLM SPEC](CRLM_SPEC.md) — Current architecture state (session 26): HRMs + LLM-Computer compiler + CALM feedback loops, 25+ commits, 311 tests
-- [Research Roadmap](RESEARCH_ROADMAP.md) — Forward-looking 8-layer progression from current state to formally-verified AI
-- [Session Handoff](SESSION_HANDOFF.md) — Session 25 tactical handoff (superseded by CRLM SPEC; kept for historical context)
-- [evals/](evals/) — 2026-04-07 NIAH eval reports for Gemma 4 E4B and Qwen 3.5 4B (authoritative for `agents/compact.py:MODEL_CONTEXT_LIMITS`)
