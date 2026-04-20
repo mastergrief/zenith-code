@@ -116,7 +116,7 @@ def _time_decode_cuda_events(m_ref, tok_ref, cache_factory, fused_on,
     return decode_ms / 1000.0
 
 
-def _correctness_check(m_ref, tok_ref, cache_factory):
+def _correctness_check(m_ref, tok_ref):
     """Verify fused vs memo produce same first-token argmax on a short
     prompt. Single-sample sanity; not exhaustive."""
     from calm.llm_computer.gemma_substrate import (
