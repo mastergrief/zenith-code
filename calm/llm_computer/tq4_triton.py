@@ -503,6 +503,158 @@ def tq4_matvec_triton_v5_prequant(
     return y
 
 
+# ----------------------------------------------------------------------
+# V6 — int8 tl.dot via Ada int8 tensor cores (IMMA).
+# NULL RESULT (iteration 2 after v5 null). Ports CUDA dp4a concept to
+# Triton via tl.dot(a_i8, b_i8). Correctness 5/5 cosine 0.99996.
+# Aggregate +4.7% SLOWER vs v2, with revealing BPR-dependent pattern:
+#   BPR=8  (2048,2560 attn_out):  -8.9% (WINS)
+#   BPR=10 (2560,2048 / 2560,10240): +3.5% to +11.4%
+#   BPR=40 (10240,2560 ffn_down):  +22.5% (LOSES hard)
+# Diagnosis: per-block tl.dot has fixed setup cost; short BPR
+# amortizes well, long BPR eats the savings. Plus N=1 padded to N=16
+# wastes 15/16 of tensor-core FLOPs.
+# Next lever if revisiting (iteration 3, not attempted):
+# widen K per tl.dot to combine multiple blocks (K=512 or K=1024),
+# cutting call count proportionally. Per-block scales (d_m, x_scale)
+# are the blocker — need pre-folding into weight preprocessing.
+# Kept for reference; not dispatched from production.
+# ----------------------------------------------------------------------
+
+
+@triton.jit
+def _tq4_matvec_kernel_v6(
+    x_rot_q8_ptr,       # (in_features,) int8
+    x_scale_ptr,        # (bpr,) fp32
+    qs_ptr,             # (n_blocks * 128,) uint8
+    d_ptr,              # (n_blocks,) fp32, pre-fused with centroid_rescale
+    centroids_i8_ptr,   # (16,) int8
+    y_ptr,
+    in_features, out_features,
+    BPR: tl.constexpr,
+    BLOCK_HALF: tl.constexpr,   # 128
+    BLOCK_FULL: tl.constexpr,   # 256 (K dim for tl.dot)
+    BLOCK_M: tl.constexpr,      # ≥ 16 required for tensor cores
+    N_PAD: tl.constexpr,        # 16 (N dim padding for tensor core min)
+):
+    """V6 — one tl.dot per block, N=16-padded, int8 tensor cores."""
+    pid = tl.program_id(0)
+    row_base = pid * BLOCK_M
+    if row_base >= out_features:
+        return
+
+    centroid_tile = tl.load(centroids_i8_ptr + tl.arange(0, 16))  # int8
+
+    half_idx = tl.arange(0, BLOCK_HALF)
+    full_idx = tl.arange(0, BLOCK_FULL)
+    m_idx = tl.arange(0, BLOCK_M)
+    n_idx = tl.arange(0, N_PAD)
+    acc = tl.zeros((BLOCK_M,), dtype=tl.float32)
+
+    for b in range(BPR):
+        x_base = b * 256
+        # Load full 256 int8 x_rot (low+high interleaved naturally by position)
+        x_full = tl.load(x_rot_q8_ptr + x_base + full_idx)  # (256,) int8
+        x_sc = tl.load(x_scale_ptr + b)  # fp32
+
+        # Per-row block index and d
+        block_idx_m = (row_base + m_idx) * BPR + b
+        d_m = tl.load(d_ptr + block_idx_m)  # (BLOCK_M,) fp32
+
+        # Load qs for all rows this block: (BLOCK_M, 128)
+        qs_offsets = (block_idx_m[:, None] * BLOCK_HALF + half_idx[None, :])
+        qs_m = tl.load(qs_ptr + qs_offsets).to(tl.int32)
+        low_m = qs_m & 0xF       # (BLOCK_M, 128)
+        high_m = (qs_m >> 4) & 0xF
+
+        # Gather int8 centroids
+        low_flat = tl.reshape(low_m, (BLOCK_M * BLOCK_HALF,))
+        high_flat = tl.reshape(high_m, (BLOCK_M * BLOCK_HALF,))
+        c_low_m = tl.reshape(tl.gather(centroid_tile, low_flat, axis=0),
+                             (BLOCK_M, BLOCK_HALF))   # int8
+        c_high_m = tl.reshape(tl.gather(centroid_tile, high_flat, axis=0),
+                              (BLOCK_M, BLOCK_HALF))
+
+        # Build full K=256 weight tile: [c_low | c_high] along K.
+        # tq4 layout: first 128 elements = low nybbles, next 128 = high.
+        # x_rot layout: interleaved (x_rot[0]=low[0], x_rot[1]=high[0], ...)
+        # So we need c_m[r, k] where k = 2*i gives low[i], k=2*i+1 gives high[i].
+        # Equivalent: construct c_m by interleaving along dim 1.
+        # tl.join doesn't stack along existing dim — instead use reshape:
+        #   stack(c_low, c_high) along new axis: (BLOCK_M, 128, 2) then
+        #   reshape to (BLOCK_M, 256). The last axis becomes innermost.
+        c_stack = tl.join(c_low_m, c_high_m)  # (BLOCK_M, 128, 2) int8
+        c_m = tl.reshape(c_stack, (BLOCK_M, BLOCK_FULL))  # (BLOCK_M, 256) int8
+
+        # Broadcast x to (256, N_PAD=16): first column = x, rest = 0
+        # Cheaper: tile x across N, multiply result by one-hot at end.
+        # But Triton's tl.zeros + assignment is awkward. Instead tile x
+        # and take [:, 0] post-dot.
+        x_tile = tl.broadcast_to(x_full[:, None], (BLOCK_FULL, N_PAD))  # (256, 16) int8
+
+        # tl.dot: (BLOCK_M, 256) × (256, 16) = (BLOCK_M, 16) int32
+        block_prod = tl.dot(c_m, x_tile, out_dtype=tl.int32)  # (BLOCK_M, 16)
+
+        # Take [:, 0] — all 16 columns are identical (x was broadcast)
+        block_sum = tl.sum(block_prod * (n_idx[None, :] == 0).to(tl.int32),
+                           axis=1)  # (BLOCK_M,) int32
+
+        acc += block_sum.to(tl.float32) * d_m * x_sc
+
+    rows = row_base + m_idx
+    tl.store(y_ptr + rows, acc, mask=rows < out_features)
+
+
+def tq4_matvec_triton_v6_prequant(
+    x_q8: torch.Tensor, x_scale: torch.Tensor,
+    qs: torch.Tensor, d_fused: torch.Tensor, centroids_i8: torch.Tensor,
+    out_features: int, in_features: int,
+) -> torch.Tensor:
+    """V6 fast path: activation pre-quantized. Requires BLOCK_M ≥ 16
+    (tensor core constraint). Caller responsible for only dispatching
+    when out_features supports BLOCK_M=16+."""
+    assert x_q8.is_contiguous() and x_q8.dtype == torch.int8
+    assert x_scale.is_contiguous() and x_scale.dtype == torch.float32
+    assert qs.is_contiguous() and qs.dtype == torch.uint8
+    assert d_fused.is_contiguous() and d_fused.dtype == torch.float32
+    assert centroids_i8.is_contiguous() and centroids_i8.dtype == torch.int8
+    assert in_features % 256 == 0
+    bpr = in_features // 256
+    BLOCK_M = _pick_block_m(out_features)
+    assert BLOCK_M >= 16, (
+        f"v6 needs BLOCK_M >= 16 for int8 tensor cores, got {BLOCK_M} "
+        f"for out_features={out_features}. Use v5 or v2 fallback.")
+
+    y = torch.empty(out_features, device=x_q8.device, dtype=torch.float32)
+    grid = ((out_features + BLOCK_M - 1) // BLOCK_M,)
+    _tq4_matvec_kernel_v6[grid](
+        x_q8, x_scale, qs.view(-1), d_fused, centroids_i8, y,
+        in_features, out_features,
+        BPR=bpr, BLOCK_HALF=128, BLOCK_FULL=256, BLOCK_M=BLOCK_M, N_PAD=16,
+        num_warps=4,
+    )
+    return y
+
+
+def tq4_matvec_triton_v6(
+    x_rot: torch.Tensor, qs: torch.Tensor, d: torch.Tensor,
+    centroids: torch.Tensor, out_features: int, in_features: int,
+) -> torch.Tensor:
+    """V6 dispatch: quantize activation inside call. Falls back to v2
+    when BLOCK_M < 16 (tensor cores unavailable)."""
+    assert x_rot.is_contiguous() and x_rot.dtype == torch.float32
+    BLOCK_M = _pick_block_m(out_features)
+    if BLOCK_M < 16:
+        return tq4_matvec_triton_v2(x_rot, qs, d, centroids,
+                                     out_features, in_features)
+    bpr = in_features // 256
+    x_q8, x_scale = _quantize_activation_q8(x_rot, bpr)
+    c_i8, c_rescale = _prep_centroids_i8(centroids)
+    d_fused = (d * c_rescale).contiguous()
+    return tq4_matvec_triton_v6_prequant(
+        x_q8, x_scale, qs, d_fused, c_i8, out_features, in_features)
+
+
 def tq4_matvec_triton_v2(
     x_rot: torch.Tensor, qs: torch.Tensor, d: torch.Tensor,
     centroids: torch.Tensor, out_features: int, in_features: int,
