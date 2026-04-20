@@ -2,7 +2,17 @@
 
 **IMPORTANT**: Assume nothing. Hypothesis, Build, Test, Commit & Iterate. First Principles thinking. Do not discount anything until it's built and tested!
 
-Fork of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) with a Python agent harness, CALM reasoning engine, HRM + LLM-Computer (the CRLM stack), and a Rust port. **Working policy: solo lead. Work directly with Edit/Write/Read/Grep/Bash. Don't spawn subagents or teams — the brief-writing + cold-start + round-trip overhead exceeds the work on fast-iteration perf tasks, which is nearly everything we do here.**
+Fork of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) with a Python agent harness, CALM reasoning engine, HRM + LLM-Computer (the CRLM stack), and a Rust port.
+
+**Working policy: solo lead by default; triaged subagent use.** Work directly with Edit/Write/Read/Grep/Bash for fast-iteration R-round hypothesis-test loops, edits within the current session's working memory, and tasks under ~10 file changes. That's most of what we do here — the brief-writing + cold-start + round-trip overhead exceeds the work (R52.1 receipt: ~400 LOC delegated cost ~2000-word brief + 30min cold-read + 1hr/iteration vs 10min solo, plus missed 500× perf regressions from missing baselines).
+
+**Spawn subagents when**:
+- **(a) Semantic exploration across an unfamiliar subsystem** — when a question is semantic not literal (e.g. "find every tier-2 install pattern across `calm/llm_computer/facades/`"). Explore agent with `thoroughness: "very thorough"` parallelizes searches that would otherwise run sequentially.
+- **(b) Independent second-opinion review on high-blast-radius changes** — code-reviewer or security-review agent AFTER a risky commit, BEFORE push. Fresh context catches what I rationalized. Candidates: Triton autograd / gradient-math commits (R52.1c-style cascade bugs), production-serve integrations, security-adjacent code.
+- **(c) Large-session `/update` or `/handoff`** — when session scope exceeds ~10 commits OR ~8 touched doc files OR transcript > 50K tokens. The 3-agent split (transcript + code + docs) pays for itself; context stays clean.
+- **(d) Context protection on high-volume searches** — when a grep would flood main context with >1000 expected matches. Agent scans in its own context, returns a summary.
+
+**Never**: spawn agents "just in case", for work that fits in one direct tool call, or as a default orchestration pattern. User's explicit ask for teams/parallel workers overrides this — if asked, spawn.
 
 ## Default Workflow — Hypothesis, Test, Iterate
 Full spec: `.claude/rules/workflow.md`
