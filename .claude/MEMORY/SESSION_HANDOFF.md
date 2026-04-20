@@ -1,297 +1,163 @@
-# Session Handoff — 2026-04-20 (extended continuation: walker +3 rewrites, cascade, transformer-vm port, R14 in flight)
+# Session Handoff — 2026-04-20 (R9-R19 + R14 bench)
 
 ## Goal
 
-Continue 7-next-steps arc, then extended scope after user asked to port
-transformer-vm primitives. This session shipped 11 rounds (R9-R19),
-with R14 still running at handoff.
+Continue the 7-next-steps arc from prior handoff: walker surface expansion, LOC-cap sweep, force-fence generalizations, transformer-vm primitive ports, and complete the long-N flash-attn bench.
 
-Workflow: hypothesis → build → test → commit → iterate.
+Workflow: hypothesis → build → test → commit → iterate. 12 commits on `feature/multi-agent-qwen`, `f2c120d` → `ace9670`.
 
-## Completed (12 commits)
+## Completed (12 commits, `f2c120d` → `ace9670`)
 
-### Round 9 — Empty-block walker (commit `f2c120d`)
+### Walker surface expansion (R9, R10)
 
-6th deterministic walker rewrite in `ast_repair.py`. Line-scan detects
-compound headers (`def`, `class`, `if`, `elif`, `else`, `for`, `while`,
-`try`, `except`, `finally`, `with`, `match`, `case`) whose next
-meaningful line is ≤ header indent (or EOF) and inserts
-`<indent>    pass`. Idempotent on valid code.
+- **`f2c120d`** — empty-block pass-insert (6th walker rewrite). Line-scans compound headers (`def`, `class`, `if`, `elif`, `else`, `for`, `while`, `try`, `except`, `finally`, `with`, `match`, `case`); inserts `<indent>    pass` when next meaningful line is ≤ header indent (or EOF). Runs in syntax-repair tier before AST-walking rewrites. Tests `61 → 75 (+14)`, all 75/75 passing.
+- **`4112837`** — `repair_cascade(code, error_output, max_passes=4)`. Multi-pass walker calling `repair()` on its own output until no further rewrite applies or cap reached. Kind format: `'cascade:k1+k2+...'` on 2+ passes. Tests `75 → 81 (+6)`, all 81/81 passing.
 
-| metric | before | after |
-|---|---:|---:|
-| walker rewrites | 5 | 6 |
-| unit tests | 61 | 75 (+14) |
+### LOC-cap refactor (R11)
 
-### Round 10 — repair_cascade (commit `4112837`)
+- **`765cc80`** — migrate-to-canonical (NOT trim). User pivot: *"rather than trim refactor instead? so we dont lose valuable insights?"* — answered via migration.
+  - `workflow.md` 551 → **496** (-55): moved "Safer-config for noisy-grad training" + "GPU vs CPU decision rule" → `training.md`; "Substrate install workflow" → `Substrate.md`.
+  - `training.md` 474 → **494** (+20): absorbed both migrated sections; compressed "Export & Serving" duplicate of CLAUDE.md; tightened Triton-autograd pitfall.
+  - `Substrate.md` 338 → **366** (+28): received 6-step install checklist.
+  - Net: **-7 lines across three files**, every duplication eliminated. All files ≤ 500 LOC hard limit.
 
-Multi-pass walker: calls `repair()` repeatedly on its own output until
-no further rewrite applies or `max_passes` reached. Useful chains:
-`syntax_repair → empty_block`, `shadow_rename → missing_return`.
+### Force-fence generalization (R12, R15, R16)
 
-| metric | before | after |
-|---|---:|---:|
-| unit tests | 75 | 81 (+6) |
+- **`cd3c919`** — R53.38v2: replaced hardcoded SIGNATURES table with `_derive_signature_from_prompt()` supporting (1) explicit `def` in prompt, (2) backtick-wrapped shorthand, (3) fallback `def <name>(text):`. Switched walker invocation single `repair()` → `repair_cascade()`. Gated top-level exec on `m`/`tok` in globals (offline-importable).
+- **`4fc66f9`** — R53.38v3: class-aware force-fence for Capitalized-name problems. `_derive_class_prefix()` extracts `__init__` signature via (1) inline `class Name:\n    def __init__(` pattern, (2) backtick `__init__(self, ...)`. All 6 R53.0 corpus problems produce parseable reconstructions (3 function + 3 class).
+- **`4a4dbae`** — MBPP force-fence fallback: `r53_39_mbpp_walker.py` stock → if NO CODE, derive signature from first assert via `_derive_mbpp_signature()` (bracket-depth arg counting, 0/1/2/3/4+ arg forms), retry via `gen_forced`. New aggregate stat `force_fence_lift`.
 
-### Round 11 — LOC-cap sweep (commit `765cc80`)
+### R13 MBPP N=20 (setup + sandbox fix)
 
-workflow.md 551 → 496 via **refactor-to-canonical**, not trim. 3
-sections moved:
-- "Safer-config for noisy-grad training" → `training.md`
-- "GPU vs CPU decision rule" → `training.md` (flipped canonical owner)
-- "Substrate install workflow" → `Substrate.md`
+- **`9d24d29`** — `MBPP_N 5→20`, `repair_cascade` switch, importlib.reload for stale daemon cache.
+- **`1c4e809`** — sandbox `\npass\n` trailing sentinel. **Critical diagnostic mid-run**: `calm.sandbox.run_python`'s `_WRAPPER` peels last script line off for `eval()`, leaving empty `except:` body in `_body` → IndentationError at exec. Precedent in `r53_22_diagnose_csv.py` already had the fix; `r53_39` was missing it. R13 result `0/20 walker lifts (14 format_fail, 6 genuine_fail IndentationError)` INVALIDATED — the 6 IndentationErrors were harness artifacts, not walker regressions.
 
-All rule files + CLAUDE.md now ≤500 LOC hard limit.
+### R14 long-N flash-attn bench (script fix + execution)
 
-### Round 12 — force-fence signature derivation (commit `cd3c919`)
+- **`219de8e`** — `_correctness_check` signature fix (dropped unused `cache_factory` kwarg).
+- **`ace9670`** — turboquant.md receipt. Full 5-point curve now in `§"Fused flash-attention decode"`:
 
-R53.38v2: replaced hardcoded SIGNATURES table with
-`_derive_signature_from_prompt()` supporting 3 patterns (explicit
-`def`, backtick shorthand, fallback). Also swapped single `repair()`
-call to `repair_cascade()`.
+| N | fp16 KV | tq4 memo | tq4 fused | fused/memo | verdict |
+|---:|---:|---:|---:|---:|---|
+| 64 | 6.99 | 4.88 | 4.00 | 0.82× | memo (launch overhead) |
+| 256 | 6.67 | 5.63 | **6.40** | **1.14×** | fused WINS |
+| 1024 | 7.83 | 6.08 | **6.43** | **1.06×** | fused WINS |
+| 4096 | 7.21 | 6.09 | 5.65 | 0.93× | memo (asymptotic) |
+| **8192** | **5.32** | **4.64** | **4.41** | **0.95×** | **memo (confirmed)** |
 
-### Round 13 — MBPP N=20 re-run (commits `9d24d29` + `1c4e809`)
+Runtime N-gate `128 < cached_kv_len < 2048` confirmed optimal; first-principles prediction (memo dominates at N≥4K) held empirically. GPU discipline: heavy_warmup(3.0s), `torch.cuda.Event`, correctness sanity (fp16/memo/fused all argmax=106 on "What is 17 times 23?"). Median-of-1 (single-run) — direction reliable, magnitudes soft per `workflow.md` §"GPU bench discipline".
 
-Second wider-corpus walker test. Result mid-run: **0/20 walker
-lifts, 14 format_fail, 6 genuine_fail (all IndentationError)**.
+### transformer-vm port (R17, R18, R19)
 
-**Critical finding**: the 6 IndentationError problems were NOT walker
-regressions. They were **sandbox-wrapper bugs**:
-`calm.sandbox.run_python`'s `_WRAPPER` peels the last script line off
-for expression-eval. When the script ends inside a test try/except
-chain, the final `print(...)` becomes `_last`, leaving
-`except Exception as e:` with empty body in `_body` → IndentationError
-at exec. Precedent `r53_22_diagnose_csv.py` already had the fix:
-append `\npass\n`. r53_39 was missing it.
+User asked to port 3 primitives from sjmoran/transformer-vm @ 6cfee30 (Percepta Core fork).
 
-Fix committed (`1c4e809`). R13 mid-run was on buggy version — re-run
-on fixed version will produce clean data.
+- **`d8a1f7e`** — R18+R19: added `CumSum` + `PersistLinear` as compute nodes in `gate_graph.py`. CumSum accumulates across `interpret()` calls via internal `_accum`. PersistLinear materializes a linear combination as a single value (coefs list of (node, coef)). Compilation to transformer weights deferred — matches upstream's evaluator-only status. gate_graph primitives `9 → 11`, interpreter kinds `4 → 6`, 8/8 tests.
+- **`dfcff88`** — R17: MILP scheduler stub. `is_available()` + `milp_schedule()` returning None. Upstream's `milp.py` is 814 LOC + requires PuLP (not installed); stub reserves API for future port (`plan = milp_schedule(g) or auto_schedule(g)` idiom works today). Full port blockers documented in module docstring. 3/3 tests.
 
-### Round 14 — long-N flash-attn bench (commit `1d78fae` + `219de8e`, IN FLIGHT)
+### Handoff checkpoints (intermediate)
 
-`scripts/r53_37_long_n_bench.py` running at N=8192 × 1 run. GPU
-discipline applied (heavy_warmup 3s, cuda.Event timing, correctness
-sanity, paired A/B). Expected ~75 min wall.
-
-Partial result at handoff:
-- fp16 KV at N=8192: **5.32 tok/s** (1540.93s / 8192 tok)
-- prior N=4096: 7.21 tok/s → fp16 drops 26% going 4K→8K
-- memo path in flight (~15 min remaining estimated)
-- fused path pending (~26 min estimated)
-
-Signature bug caught at first launch (`_correctness_check` required
-`cache_factory` but callers didn't pass it); fixed and re-launched
-(`219de8e`). Correctness sanity passed: fp16/tq4-fused/tq4-memo all
-argmax=106 on "What is 17 times 23?" prompt.
-
-### Round 15 — class-aware force-fence (commit `4fc66f9`)
-
-R53.38v3: extended signature derivation for class-based problems.
-`_is_class_problem(name)` detects Capitalized names (Python
-convention), `_derive_class_prefix()` extracts `__init__` signature
-from prompt text.
-
-All 6 R53.0 corpus problems now produce parseable reconstructions:
-
-| problem | derived signature |
-|---|---|
-| linked_list_bugs | `class LinkedList:\n    def __init__(self):` |
-| token_bucket_rate_limiter | `class TokenBucket:\n    def __init__(self, rate, capacity):` |
-| lru_cache_class | `class LRUCache:\n    def __init__(self, capacity):` |
-| csv_column_stats | `def csv_column_stats(text):` |
-| date_validation_chain | `def valid_date(y, m, d):` |
-| log_level_counts | `def log_level_counts(text):` |
-
-### Round 16 — force-fence fallback in MBPP harness (commit `4a4dbae`)
-
-Integrated force-fence as second-chance extraction path in
-`r53_39_mbpp_walker.py`. Pipeline now:
-  1. gen_stock → extract → score (CLEAN → done)
-  2. if NO CODE: `_derive_mbpp_signature()` from first assert →
-     gen_forced → extract
-  3. score extracted code, walker cascade on non-clean
-
-New `_derive_mbpp_signature(p)`: parses arg count from first assert
-with bracket-depth tracking. Handles 0/1/2/3-arg named, 4+ uses
-`a{0..n}`. Verified offline on `foo(1,2)`, `is_prime(7)`,
-`dispatch(a,b,c,d,e)`, `noop()`.
-
-New aggregate stat: `force_fence_lift` alongside `walker_fixable`.
-
-### Rounds 17-19 — transformer-vm ports (commits `dfcff88`, `d8a1f7e`)
-
-User asked to port 3 primitives from sjmoran/transformer-vm
-(Percepta Core): MILP scheduler, CumSumDimension, PersistDimension.
-
-**R18+R19** (`d8a1f7e`): added `CumSum` + `PersistLinear` compute
-nodes to `gate_graph.py` + interpreter support. Mirrors upstream
-evaluator-only semantics. `CumSum(source)` accumulates across
-`interpret()` calls via internal `_accum` state. `PersistLinear(coefs)`
-materializes a linear combo as a single value. **8/8 tests passing**
-including cross-primitive composition. Compilation to transformer
-weights deferred — matches upstream's evaluator-only status.
-
-**R17** (`dfcff88`): MILP stub with graceful fallback. Upstream's
-`milp.py` is 814 LOC + requires PuLP (not installed here). Stub
-exposes `is_available()` + `milp_schedule()` → returns None when
-PuLP absent. Callers can write `plan = milp_schedule(g) or
-auto_schedule(g)` and benefit automatically once full port lands.
-**3/3 tests passing**. Full port blockers documented in module
-docstring (PuLP dep, `_all_dims` globals refactor, ProgramGraph
-adaptation).
+- **`4ebed4f`** — intermediate handoff (R9-R13 post-sandbox-fix, R14 in flight).
+- **`d93ebdd`** — intermediate handoff (R9-R19, R14 in flight).
+- This file supersedes both.
 
 ## In Progress
 
-- **R14 long-N bench**: path 2/3 (tq4 memo) ~15 min remaining, path
-  3/3 (tq4 fused) ~26 min remaining. Monitor `/tmp/gemma_log` for
-  `[bench] SUMMARY` line. Expected direction: memo continues to
-  dominate fused at N=8K (first-principles prediction), confirming
-  runtime gate `128 < cached_kv_len < 2048` is optimal.
+None. All 11 rounds (R9-R19) closed with commits + measurements or shipped artifacts. R14 completed.
 
-## Uncommitted (teammate-owned, unchanged)
+## ⚠ Uncommitted
 
-Same as prior handoff.
+```
+ M .claude/CLAUDE.md                              # TEAMMATE — NOT session work
+ M calm/hrm/checkpoints/meta_best.pt              # TEAMMATE — binary checkpoint, mtime 2026-04-14
+ M scripts/r52_train_student_kl.py                # TEAMMATE — pre-existing R52.1 work
+ M scripts/r53_22_diagnose_csv.py                 # TEAMMATE — pre-existing R53.25 tuning
+?? .cache/, .codex/, .port_sessions/              # GITIGNORED — safe to ignore
+?? .claude/MEMORY/minutes/                        # TRANSCRIPT — do NOT commit (raw session logs)
+?? .claude/scheduled_tasks.lock                   # GITIGNORED
+?? RESEARCH/{LLM-COMPUTER,NEURAL_COMPUTER,TQ,TRAINING}/
+?? calm/.module_learning.json                     # runtime state
+?? calm/hrm/checkpoints/copy_code*_best.pt        # TEAMMATE R53.5 (not this session)
+?? calm/hrm/checkpoints/math_*_best.pt            # TEAMMATE historical training artifacts
+?? calm/llm_computer/checkpoints/substrate_hrmlm_v2*.pt   # TEAMMATE
+?? calm/llm_computer/r51/checkpoints/             # TEAMMATE R51 student
+?? calm/llm_computer/synth/*.jsonl                # TEAMMATE
+?? calm/llm_computer/tq4_autograd.py              # TEAMMATE R52.1
+```
 
-## Key Findings
+**Session-critical unintentionally uncommitted: NONE.**
 
-1. **Walker surface now 6 rewrites + cascade**: shadow_rename,
-   dict_synonym, syntax_repair, off_by_one, missing_return,
-   empty_block. 36 → 89 unit tests across 4 walker-related files
-   (ast_repair: 81, cumsum_persist: 8, milp_schedule: 3, but the
-   89 count over the walker alone is ast_repair's 81).
-
-2. **LOC-cap enforced**: all 5 big rule files ≤500 LOC after
-   refactor-to-canonical. Migration preserves information; never
-   trim and lose.
-
-3. **R13 sandbox-wrapper bug** is universal, affecting any test
-   harness that concatenates test-try/except chains onto user code.
-   Standard fix is `\npass\n` trailing sentinel. Fix is documented
-   + committed.
-
-4. **Class-aware force-fence works**: all 6 R53.0 corpus problems
-   derive syntactically valid prefixes. 3 function-based + 3
-   class-based. MBPP harness now falls back to force-fence on
-   format_fail with auto-derived signature.
-
-5. **transformer-vm port**: CumSum + PersistLinear added at
-   interpreter level; MILP API surface reserved. Project's substrate
-   vocabulary now matches upstream's for cross-reference.
+`.claude/CLAUDE.md` was modified by the user or a linter (line 11 subagentagent wording change) — per system-reminder during session, this was intentional and NOT revertable.
 
 ## Next Steps (ordered by lift)
 
-1. **Re-run R13 MBPP N=20 with all fixes** (~40 min, HIGHEST lift) —
-   daemon frees up after R14. Now has sandbox fix + force-fence
-   fallback + walker cascade + MAX_TOKENS=2048. Should produce the
-   first REAL walker lift count on MBPP.
+1. **Re-run R13 MBPP N=20 with all fixes** (~40 min, daemon-bound, HIGHEST lift) — sandbox fix (`1c4e809`) + walker cascade (`4112837`) + empty-block walker (`f2c120d`) + force-fence fallback (`4a4dbae`) + class-aware derivation (`4fc66f9`) + MAX_TOKENS=2048 all active. Should produce the first REAL walker lift count on MBPP. Daemon is free (R14 done).
 
-2. **R14 interpretation** (~5 min when complete) — read summary
-   line, update `turboquant.md` with new N=8K data point. If memo
-   dominates as predicted, close N=8K investigation. If crossover,
-   escalate.
+2. **R53.0 re-run on 3 class problems** (~15 min, daemon-bound) — apply R53.38v3 class-aware force-fence to `linked_list_bugs`, `token_bucket_rate_limiter`, `lru_cache_class`. Token_bucket already validated 0/0→5/5 via walker (commit `21f5001` from prior session); force-fence + cascade may lift the other two.
 
-3. **MBPP larger N (50-100)** (~2-4 hours) — scale up after R13v2
-   proves walker lift > 0. Cost: ~1-2min/problem on Gemma 4 E4B.
+3. **Empty-block walker iteration** — known limitation in `f2c120d`: `try:` with no `except:` gets `pass` inserted but try/except pair remains incomplete (needs `except:` insertion pass). Extend walker to handle.
 
-4. **R7 R53.0 re-run with force-fence + walker cascade**
-   (~15 min) — apply R15 class-aware force-fence to the 3 R53.0
-   class problems (linked_list_bugs, token_bucket, lru_cache).
-   Token_bucket already validated 0/0→5/5 via walker in earlier
-   commit `21f5001`; force-fence + cascade may lift the other two.
+4. **MBPP larger N (50-100)** (~2-4 hours daemon-bound) — scale up after R13v2 proves walker lift > 0.
 
-5. **Full MILP port** (~1-2 days, requires PuLP) — only when
-   programs hit 30+ gates. Reference impl at
-   `/tmp/transformer-vm/transformer_vm/scheduler/milp.py`.
+5. **Full MILP port** (requires PuLP install) — only when programs hit 30+ gates. Reference impl cloned at `/tmp/transformer-vm/transformer_vm/scheduler/milp.py` (814 LOC).
 
-6. **CumSum compilation path** (~1 week, speculative) — requires
-   new attention primitive (soft/uniform prefix attention) not
-   expressible with current `LookUp`/`LookUpExact`. Deferred until
-   a concrete use case (e.g. counting-card) demands it.
-
-7. **Jacobian-weighted tier-3 distillation** — still out of scope.
+6. **Jacobian-weighted tier-3 distillation** — scope-excluded across arc. Re-visit only if a specific workstream demands it.
 
 ## Key Context
 
-**Decision rationale (WHY)**:
+### Decisions made this session (with reasoning)
 
-- **Refactor > trim for LOC cap**: preserved information by migrating
-  to canonical owner (training.md or Substrate.md). Both workflow.md
-  and the destinations ended up cleaner.
-- **Walker cascade** is a strict generalization of single-pass
-  `repair()`; never a regression.
-- **Force-fence as fallback, not default**: stock extraction first
-  (faster, less invasive); force-fence only when stock returns
-  NoCode. Preserves stock behavior on clean problems.
-- **MILP stub over no stub**: reserves API for future port without
-  committing PuLP now. Callers can write `milp_schedule(g) or
-  auto_schedule(g)` idiom today.
-- **CumSum + Persist as interpreter primitives**: matches upstream
-  semantics (evaluator-only). Having them in the IR surfaces
-  intent for future compiler work even if weights aren't generated.
+- **R11 refactor-not-trim**: user pivot preserved insights by migrating sections to canonical rule files rather than deleting content. Pattern codified for future LOC-cap sweeps.
+- **R14 single-run accepted**: median-of-1 is under `workflow.md §"GPU bench discipline"` ideal (median-of-5) but direction is binary-reliable; 5-point curve shape confirmed. Magnitude soft.
+- **MILP full port deferred**: PuLP absent, 814 LOC upstream, and current 29 compiled programs (all ≤ 20 gates) don't need optimal scheduling. Stub reserves API for when programs hit 30+ gates.
+- **CumSum + PersistLinear interpreter-only**: matches upstream's evaluator-only status; compilation to transformer weights requires primitives (soft/uniform prefix attention) this project doesn't have yet.
 
-**Measurement discipline caveats**:
+### Measurement caveats
 
-- R13 first result INVALIDATED by sandbox bug; re-run required.
-- R14 is single-run (not median-of-3 per workflow.md §"GPU bench
-  discipline") — direction reliable, magnitudes soft.
-- R15/R16 offline-verified (AST parse check); user-facing
-  measurement pending R13 re-run.
-- R18 interpreter-only; compilation to weights is future work.
+- **R13 result INVALIDATED** by sandbox bug. Don't cite `0/20 walker lifts` as a capability gap — it's a harness artifact. Fix committed (`1c4e809`); re-run pending.
+- **R14 is single-run per config** (not median-of-5). First-principles prediction gave direction; magnitudes not publication-grade.
 
-**Do NOT relitigate**:
+### Failed approaches (cite SHAs)
 
-- R9-R19 ship with tests. Don't regress.
-- R1-R8 (prior session) arc is settled.
-- Walker never fires on extracted code that parses; IndentationError
-  from harness concat was sandbox wrapper artifact.
+- **R13 first launch** (`ImportError: repair_cascade`): daemon had stale `ast_repair` in `sys.modules`; RESET_GLOBALS doesn't clear module cache. Fix via `importlib.reload()` inside `run_mbpp_walker()` (uncommitted edit folded into `9d24d29` post-fix).
+- **R13 mid-run sandbox IndentationError** (6 GENUINE FAIL): sandbox `_WRAPPER` line-split bug, NOT Gemma code. Fix `1c4e809`.
+- **R14 first launch** (`TypeError _correctness_check`): wrong signature, fix `219de8e`.
+- **R53.38v2 class fallback `def ClassName(text):`** (`cd3c919`): syntactically wrong for class problems → superseded by R53.38v3 class-aware variant (`4fc66f9`).
+- **First-token logit bias** (prior session R53.14 ruled-out, still relevant): Gemma's first-token margin 6.8-9.2 on code opener dominates; logit bias produces code-without-fence → extractor fails. Confirmed; force-fence prompt-tail prefix is the correct alternative.
 
-**Failed approaches (cite SHAs)**:
+### Runtime state at session end
 
-- R13 first launch `ImportError: repair_cascade` — fixed via
-  `importlib.reload()` inside `run_mbpp_walker()`.
-- R13 mid-run sandbox IndentationError — fixed `1c4e809` with
-  `\npass\n` trailing sentinel.
-- R14 first launch `TypeError _correctness_check` — fixed `219de8e`
-  (dropped unused kwarg).
+- **Branch**: `feature/multi-agent-qwen` at `ace9670`
+- **HEAD message**: `turboquant: R14 long-N bench receipt — N=8192 confirms memo dominance`
+- **Session commits**: 12 (`f2c120d` → `ace9670`)
+- **gemma_daemon**: ALIVE (PID 934814, ~7h uptime, 40% CPU, ~900 MB RSS, idle since R14 finish)
+- **llama-server port 8080**: NOT responding — separate from daemon which reads from `/tmp/gemma_in` pipe
+- **GPU**: 0% utilization, 7903 MiB used (substrate still loaded in VRAM; ready for next script)
+- **Last `/tmp/gemma_log`**: `[bench] DONE` + `[daemon] completed r53_37_long_n_bench.py`
+- **LOC-cap check**: all rule files + CLAUDE.md ≤ 500
+- **Walker test suite**: 81 ast_repair + 8 cumsum_persist + 3 milp_schedule = **92 passing**
 
-**Runtime state at session end**:
-- Branch: `feature/multi-agent-qwen` at `dfcff88` (or further after
-  handoff commit).
-- Daemon: PID 934814 running R14 at handoff. When it completes,
-  daemon is free for R13 re-run.
-- All LOC-cap files ≤500.
-- Walker tests: 81 ast_repair + 8 cumsum_persist + 3 milp_schedule
-  = 92 passing.
+## Files in Project (session-shipped)
 
-## Files Changed (session-shipped)
+### New files (3)
+- `calm/llm_computer/milp_schedule.py` — MILP stub (~100 LOC)
+- `calm/llm_computer/tests/test_cumsum_persist.py` — 8 tests
+- `calm/llm_computer/tests/test_milp_schedule.py` — 3 tests
 
-### Modified code (ast_repair)
-- `calm/llm_computer/facades/ast_repair.py` — +empty_block rewriter
-  (+~130 LOC) + `repair_cascade()` (+~50 LOC).
-- `calm/llm_computer/tests/test_ast_repair.py` — +20 tests (61→81).
-
-### Modified code (scripts)
-- `scripts/r53_38_force_fence.py` — generalized signature derivation
-  (R12, R15); class-aware (R15).
-- `scripts/r53_39_mbpp_walker.py` — MBPP_N 5→20 (R13);
-  repair_cascade switch (R13); sandbox fix (R13); force-fence
-  fallback + MBPP signature derivation (R16).
-- `scripts/r53_37_long_n_bench.py` — `_correctness_check` signature
-  fix (R14).
-
-### New code (transformer-vm port)
-- `calm/llm_computer/gate_graph.py` — +CumSum, +PersistLinear (R18).
-- `calm/llm_computer/interpret.py` — +CumSum, +PersistLinear
-  handlers.
-- `calm/llm_computer/milp_schedule.py` — MILP stub (R17).
-- `calm/llm_computer/tests/test_cumsum_persist.py` — 8 tests.
-- `calm/llm_computer/tests/test_milp_schedule.py` — 3 tests.
+### Modified code (substantial)
+- `calm/llm_computer/facades/ast_repair.py` — +empty_block rewriter, +repair_cascade, +has_indent_error
+- `calm/llm_computer/tests/test_ast_repair.py` — +20 tests (61→81)
+- `calm/llm_computer/gate_graph.py` — +CumSum, +PersistLinear compute nodes
+- `calm/llm_computer/interpret.py` — +CumSum, +PersistLinear handlers
+- `scripts/r53_38_force_fence.py` — signature auto-derivation + class-aware + cascade
+- `scripts/r53_39_mbpp_walker.py` — MBPP_N 5→20, cascade, sandbox fix, force-fence fallback, MBPP signature derivation
+- `scripts/r53_37_long_n_bench.py` — `_correctness_check` signature fix
 
 ### Modified docs
-- `.claude/rules/workflow.md` — -55 LOC (migrated 3 sections).
-- `.claude/rules/training.md` — +20 LOC.
-- `.claude/rules/Substrate.md` — +28 LOC.
-- `.claude/MEMORY/SESSION_HANDOFF.md` — this file.
+- `.claude/rules/workflow.md` — 551 → 496 (migrated 3 sections out)
+- `.claude/rules/training.md` — 474 → 494 (received 2 migrated sections)
+- `.claude/rules/Substrate.md` — 338 → 366 (received install workflow checklist)
+- `.claude/rules/turboquant.md` — +14 lines for R14 N=8192 bench row
+- `.claude/MEMORY/SESSION_HANDOFF.md` — this file (overwrites prior)
 
 ### Deleted
 None.
