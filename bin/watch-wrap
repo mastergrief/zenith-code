@@ -1,0 +1,423 @@
+#!/usr/bin/env python3
+"""watch-wrap — enhancement layer for the Monitor tool.
+
+Monitor's pain points (from 2026-04-20 usage):
+- Silent timeout indistinguishable from clean process exit
+- Every matched line burns a notification/context slot
+- No heartbeat if a process goes silent
+- No category tagging (errors vs progress vs success)
+- No replay of recent matches on completion
+
+This wrapper adds all five as a filter layer. Invoke Monitor on the
+wrapper's stdout:
+
+    Monitor(command="bin/watch-wrap --heartbeat 120 \\
+                      --error 'Traceback|Error|OOM|Killed|assert' \\
+                      --progress 'tok/s|epoch' \\
+                      -- python3 myscript.py")
+
+Three input modes:
+- wrap:  `bin/watch-wrap [flags] -- CMD ARGS...`   — spawn subprocess
+- tail:  `bin/watch-wrap [flags] --log PATH`       — tail an existing file
+- both:  `bin/watch-wrap [flags] --log PATH --pid N`
+           — tail file + poll pid for exit
+
+All output goes to stdout, one event per line. Intended to be piped
+to Monitor but also readable by a human via `tail -f`.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import signal
+import subprocess
+import sys
+import time
+from collections import deque
+from dataclasses import dataclass
+from typing import Optional
+
+
+@dataclass
+class Category:
+    name: str        # "error" | "progress" | "success" | "other"
+    pattern: Optional[re.Pattern]
+    prefix: str      # emitted prefix, e.g. "[ERR]"
+
+
+def build_categories(args) -> list[Category]:
+    cats = []
+    if args.error:
+        cats.append(Category("error", re.compile(args.error), "[ERR]"))
+    if args.progress:
+        cats.append(Category("progress", re.compile(args.progress), "[PROG]"))
+    if args.success:
+        cats.append(Category("success", re.compile(args.success), "[OK]"))
+    return cats
+
+
+def classify(line: str, cats: list[Category]) -> tuple[Optional[Category], bool]:
+    """Return (matching_category, should_emit). If no category matches AND
+    no filter was provided at all, emit as "other". If filters exist but
+    none match, skip."""
+    for c in cats:
+        if c.pattern.search(line):
+            return c, True
+    if not cats:  # no filter → emit everything as other
+        return None, True
+    return None, False
+
+
+def emit(msg: str, t0: float) -> None:
+    """Write a structured event line to stdout, flushed."""
+    elapsed = int(time.time() - t0)
+    print(f"[T+{elapsed:>4d}s] {msg}", flush=True)
+
+
+def tail_loop(stream, t0: float, cats: list[Category], args) -> None:
+    """Read lines from stream, apply categorization, heartbeat,
+    coalescence. Returns when stream closes (EOF).
+
+    Uses raw os.read into a local buffer + manual line splitting —
+    NEVER uses stream.readline() because that would pull multiple
+    lines into Python's internal TextIOWrapper buffer, hiding them
+    from select.select() on the FD (classic buffered-IO vs select
+    mismatch that bit us on 2026-04-20)."""
+    last_activity = time.time()
+    coalesce_buf: list[tuple[Optional[Category], str]] = []
+    coalesce_start = None
+    replay: deque[str] = deque(maxlen=max(1, args.replay))
+
+    import select
+    fd = stream.fileno()
+    byte_buf = b""  # accumulates partial lines between reads
+    pending_lines: list[str] = []  # ready-to-process lines from last read
+
+    def ingest(data: bytes) -> None:
+        """Split new bytes into complete lines + remainder."""
+        nonlocal byte_buf
+        byte_buf += data
+        while b"\n" in byte_buf:
+            line, byte_buf = byte_buf.split(b"\n", 1)
+            pending_lines.append(line.decode(errors="replace").rstrip("\r"))
+
+    while True:
+        # Compute time to wait for next event
+        now = time.time()
+        timeout_parts = []
+        if args.heartbeat:
+            timeout_parts.append(args.heartbeat - (now - last_activity))
+        if args.coalesce and coalesce_start is not None:
+            timeout_parts.append(args.coalesce - (now - coalesce_start))
+        wait = min([t for t in timeout_parts if t > 0], default=1.0)
+        wait = max(0.1, min(wait, 60.0))
+
+        # Only block in select when pending_lines is empty (no buffered
+        # data from earlier reads). If pending_lines has content, process
+        # it immediately without waiting on the FD.
+        if not pending_lines:
+            ready, _, _ = select.select([fd], [], [], wait)
+            now = time.time()
+            if ready:
+                try:
+                    chunk = os.read(fd, 65536)
+                except OSError:
+                    chunk = b""
+                if not chunk:
+                    # EOF — flush byte_buf as final line if non-empty
+                    if byte_buf.strip():
+                        pending_lines.append(
+                            byte_buf.decode(errors="replace").rstrip("\r"))
+                        byte_buf = b""
+                    # Fall through to process any remaining pending lines,
+                    # then break when pending_lines is empty.
+                    if not pending_lines:
+                        break
+                else:
+                    ingest(chunk)
+        else:
+            now = time.time()
+            ready = True  # logical: we have data to process
+
+        # Flush coalesce buffer if window expired (check BEFORE processing
+        # new pending lines — any window-expiration takes precedence)
+        if (coalesce_start is not None
+                and args.coalesce
+                and (now - coalesce_start) >= args.coalesce):
+            if coalesce_buf:
+                cat, last_line = coalesce_buf[-1]
+                prefix = cat.prefix if cat else "[OTHER]"
+                count = len(coalesce_buf)
+                if count == 1:
+                    emit(f"{prefix} {last_line}", t0)
+                else:
+                    emit(f"[COALESCED x{count}] {prefix} {last_line}", t0)
+                coalesce_buf = []
+                coalesce_start = None
+
+        if not ready and not pending_lines:
+            # Timeout — emit heartbeat if applicable
+            if (args.heartbeat
+                    and (now - last_activity) >= args.heartbeat):
+                last_raw = replay[-1] if replay else "<no output yet>"
+                emit(f"[HEARTBEAT] silent {int(now-last_activity)}s, "
+                     f"last: {last_raw[:120]}", t0)
+                last_activity = now
+            continue
+
+        if not pending_lines:
+            continue  # ready but no complete line yet (partial data)
+
+        line = pending_lines.pop(0)
+        if not line:
+            continue
+        replay.append(line)
+        last_activity = now
+
+        cat, should_emit = classify(line, cats)
+        if not should_emit:
+            continue
+
+        # Errors always bypass coalesce (too important to delay)
+        if cat and cat.name == "error":
+            emit(f"{cat.prefix} {line}", t0)
+            continue
+
+        if args.coalesce:
+            if coalesce_start is None:
+                coalesce_start = now
+            coalesce_buf.append((cat, line))
+        else:
+            prefix = cat.prefix if cat else "[OTHER]"
+            emit(f"{prefix} {line}", t0)
+
+    # Stream closed — flush any pending coalesce
+    if coalesce_buf:
+        cat, last_line = coalesce_buf[-1]
+        prefix = cat.prefix if cat else "[OTHER]"
+        count = len(coalesce_buf)
+        emit(f"[COALESCED x{count}] {prefix} {last_line}", t0)
+
+    # Replay recent lines on completion
+    if replay and args.replay > 0:
+        emit(f"[REPLAY last {len(replay)} lines]", t0)
+        for r in replay:
+            print(f"  {r}", flush=True)
+
+
+def wrap_mode(cmd: list[str], t0: float, cats: list[Category], args) -> int:
+    """Spawn subprocess, merge stderr into stdout, tail it, report exit."""
+    emit(f"[START] {' '.join(cmd)}", t0)
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        bufsize=1,
+        text=True,
+    )
+    try:
+        tail_loop(proc.stdout, t0, cats, args)
+        rc = proc.wait()
+    except KeyboardInterrupt:
+        emit("[INTERRUPTED] sending SIGTERM", t0)
+        proc.terminate()
+        try:
+            rc = proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            rc = proc.wait()
+    emit(f"[EXIT rc={rc}] elapsed {int(time.time()-t0)}s", t0)
+    return rc
+
+
+def tail_file_mode(path: str, t0: float, cats: list[Category], args) -> int:
+    """Tail an existing log file. Optionally poll --pid for exit."""
+    emit(f"[START tail] {path}"
+         + (f" pid={args.pid}" if args.pid else ""), t0)
+
+    # Wait up to 10s for file to exist
+    for _ in range(100):
+        if os.path.exists(path):
+            break
+        time.sleep(0.1)
+    if not os.path.exists(path):
+        emit(f"[ERR] log not found: {path}", t0)
+        return 2
+
+    # Spawn `tail -F` — resilient to rotation
+    proc = subprocess.Popen(
+        ["tail", "-F", "-n", "0", path],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        bufsize=1,
+        text=True,
+    )
+
+    # Optionally monitor pid in a sidecar thread
+    import threading
+    pid_exit: dict = {"rc": None}
+
+    def watch_pid():
+        if not args.pid:
+            return
+        while True:
+            try:
+                os.kill(args.pid, 0)  # signal 0 = existence check
+            except ProcessLookupError:
+                pid_exit["rc"] = 0  # exited; real rc not recoverable
+                break
+            except PermissionError:
+                pass  # still alive, just not ours
+            time.sleep(1.0)
+
+    if args.pid:
+        t = threading.Thread(target=watch_pid, daemon=True)
+        t.start()
+
+    try:
+        # Tail loop runs until EOF (unlikely for tail -F) or pid exit
+        fd = proc.stdout.fileno()
+        last_activity = time.time()
+        coalesce_buf: list[tuple[Optional[Category], str]] = []
+        coalesce_start = None
+        replay: deque[str] = deque(maxlen=max(1, args.replay))
+
+        import select
+        while True:
+            if args.pid and pid_exit["rc"] is not None:
+                emit(f"[PID EXIT pid={args.pid}] elapsed "
+                     f"{int(time.time()-t0)}s", t0)
+                break
+
+            now = time.time()
+            timeout_parts = []
+            if args.heartbeat:
+                timeout_parts.append(args.heartbeat - (now - last_activity))
+            if args.coalesce and coalesce_start is not None:
+                timeout_parts.append(args.coalesce - (now - coalesce_start))
+            wait = min([t for t in timeout_parts if t > 0], default=1.0)
+            wait = max(0.1, min(wait, 5.0))  # short so pid-check is responsive
+
+            ready, _, _ = select.select([fd], [], [], wait)
+            now = time.time()
+
+            if (coalesce_start is not None and args.coalesce
+                    and (now - coalesce_start) >= args.coalesce):
+                if coalesce_buf:
+                    cat, last_line = coalesce_buf[-1]
+                    prefix = cat.prefix if cat else "[OTHER]"
+                    count = len(coalesce_buf)
+                    if count == 1:
+                        emit(f"{prefix} {last_line}", t0)
+                    else:
+                        emit(f"[COALESCED x{count}] {prefix} {last_line}",
+                             t0)
+                    coalesce_buf = []
+                    coalesce_start = None
+
+            if not ready:
+                if (args.heartbeat
+                        and (now - last_activity) >= args.heartbeat):
+                    last_raw = replay[-1] if replay else "<no output yet>"
+                    emit(f"[HEARTBEAT] silent {int(now-last_activity)}s, "
+                         f"last: {last_raw[:120]}", t0)
+                    last_activity = now
+                continue
+
+            line = proc.stdout.readline()
+            if not line:
+                break
+            line = line.rstrip("\n").rstrip("\r")
+            if not line:
+                continue
+            replay.append(line)
+            last_activity = now
+
+            cat, should_emit = classify(line, cats)
+            if not should_emit:
+                continue
+
+            if cat and cat.name == "error":
+                emit(f"{cat.prefix} {line}", t0)
+                continue
+
+            if args.coalesce:
+                if coalesce_start is None:
+                    coalesce_start = now
+                coalesce_buf.append((cat, line))
+            else:
+                prefix = cat.prefix if cat else "[OTHER]"
+                emit(f"{prefix} {line}", t0)
+
+        if coalesce_buf:
+            cat, last_line = coalesce_buf[-1]
+            prefix = cat.prefix if cat else "[OTHER]"
+            count = len(coalesce_buf)
+            emit(f"[COALESCED x{count}] {prefix} {last_line}", t0)
+
+        if replay and args.replay > 0:
+            emit(f"[REPLAY last {len(replay)} lines]", t0)
+            for r in replay:
+                print(f"  {r}", flush=True)
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        description="Enhancement wrapper for Monitor.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    ap.add_argument("--log", help="tail existing log file instead of "
+                                    "spawning a command")
+    ap.add_argument("--pid", type=int, default=0,
+                    help="with --log, also poll this pid and emit "
+                         "[PID EXIT] when it dies")
+    ap.add_argument("--heartbeat", type=int, default=0,
+                    help="emit [HEARTBEAT] if silent N sec (0=off)")
+    ap.add_argument("--coalesce", type=float, default=0.0,
+                    help="group matching lines within N sec into "
+                         "[COALESCED xK] events (0=off)")
+    ap.add_argument("--error", default="",
+                    help="regex for [ERR]-tagged lines — always emitted, "
+                         "never coalesced")
+    ap.add_argument("--progress", default="",
+                    help="regex for [PROG]-tagged lines")
+    ap.add_argument("--success", default="",
+                    help="regex for [OK]-tagged lines")
+    ap.add_argument("--replay", type=int, default=10,
+                    help="on completion, re-emit last N matched lines "
+                         "(default 10)")
+    ap.add_argument("cmd", nargs=argparse.REMAINDER,
+                    help="command + args to wrap (everything after --)")
+    args = ap.parse_args()
+
+    cats = build_categories(args)
+    t0 = time.time()
+
+    if args.log:
+        return tail_file_mode(args.log, t0, cats, args)
+
+    # Wrap mode: command after optional "--"
+    cmd = args.cmd
+    if cmd and cmd[0] == "--":
+        cmd = cmd[1:]
+    if not cmd:
+        ap.print_help(sys.stderr)
+        emit("[ERR] need either --log PATH or a command after --", t0)
+        return 2
+
+    return wrap_mode(cmd, t0, cats, args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
