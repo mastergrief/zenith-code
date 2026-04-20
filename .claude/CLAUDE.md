@@ -378,113 +378,30 @@ Full spec: `.claude/rules/distillation.md` — pipeline scripts, specialist doma
 - **RunPod**: API key in `.env.local`, `runpodctl` installed, MCP server configured in `~/.claude.json`
 - **Google Colab Pro**: 100 compute units, Colab MCP configured in `~/.claude.json`
 
-## R53 — Verified Code-Reasoning Stack (Phase 1 shipped)
+## R53 — Verified Code-Reasoning Stack
 
-Phase 1 (retrieval + DB + generators) complete this session; Phase 2 (PT
-training + L24/L30 install) pending. Full rules: `.claude/rules/retrieval.md`,
-`.claude/rules/code_reasoning_db.md`, `.claude/rules/recursion.md`.
+Phase 1 (retrieval + DB + generators) shipped; Phase 2 (PT training + L24/L30 install) pending. Full rules: `.claude/rules/retrieval.md`, `.claude/rules/code_reasoning_db.md`, `.claude/rules/recursion.md`.
 
-- **CodeExampleDB** — `calm/llm_computer/facades/code_example_db.py` —
-  8970 unique examples across 10 corpora (MBPP, HumanEvalPlus, BigCodeBench,
-  CodeContests Python3, generators, Claude-reasoning, etc.), dedup on
-  problem hash, 4 retrieval modes (jaccard/tfidf/dense/hybrid).
-- **Hybrid retrieval** — `retrieval.py` — TF-IDF+BM25 (68K vocab) +
-  Gemma-dense (mean-pooled `token_embd`, fp16 + tq4 4× compression) +
-  RRF fusion. Trie-backed fast tokenizer gives 13,000× speedup over
-  naive `GemmaTokenizer.encode` (O(len × 262K vocab)). Indices cached
-  at `.cache/r53_code_db/`.
-- **CodeVerifierFacade** — `code_verifier.py` — intent classifier +
-  suggested imports + security flags + `compute_hints()` returns
-  prompt-prefix with retrieved examples.
-- **9 data generators** at `calm/llm_computer/facades/data_generators/`
-  (algorithm_problems, parameterized_math, stdlib_usage, bug_fix_pairs,
-  security_patterns, regex_patterns, data_structures, datetime_utils,
-  functional_patterns) — 222 sandbox-verified (problem, solution, tests)
-  examples produced by `scripts/r53_run_data_generators.py`.
-- **Rebuild pipeline**: `PYTHONPATH=. python3 scripts/r53_run_data_generators.py`
-  (CPU: TF-IDF only) + `bin/gemma-run scripts/r53_build_dense.py`
-  (daemon: dense + tq4 save).
-- **R53.2b eval finding** — blanket prompt-RAG gives **+0.0pp retrieval-
-  attributable gain** on complex multi-step coding (hinted = sanity-random).
-  Prompt-length alone moves +7.4pp; retrieval content adds nothing on top.
-- **R53.14/20a/20b (substrate-RAG on code, SWA-fix active) — NEGATIVE**.
-  L41 CardSlot(preserve=True) + per-marker FirstTokenHook(boost=50)
-  regresses **-9.3pp** on R53.0 corpus even with the SWA attention fix
-  (ec8887f, 1a85b0c, b9512ec). Root cause is install-mechanism, not SWA:
-  Gemma's first-token on code is confidently a fence/whitespace opener
-  (logit margin 6.8-9.2), so forcing "def"/"class" produces
-  code-without-fence → extractor fails. On HIT prompts only — miss
-  prompts bit-identical. **First-token bias is wrong intervention for
-  code**; AST-walker post-generation card is the correct tier-2 path.
-  Reframes the "Automatic Tier-1 preservation" thesis: holds for
-  hash-match at the output boundary (VerificationHook with `min_margin`),
-  but NOT for residual-write CardSlot at arbitrary layers.
+**Phase 1 deliverables**:
+- **CodeExampleDB** (`calm/llm_computer/facades/code_example_db.py`) — 8970 unique examples across 10 corpora (MBPP, HumanEvalPlus, BigCodeBench, CodeContests Py3, generators, Claude-reasoning), dedup on problem hash, 4 retrieval modes.
+- **Hybrid retrieval** (`retrieval.py`) — TF-IDF+BM25 (68K vocab) + Gemma-dense (mean-pooled `token_embd`, fp16 + tq4 4× compression) + RRF fusion. Trie-backed tokenizer 13,000× faster than naive `GemmaTokenizer.encode`. Indices cached at `.cache/r53_code_db/`.
+- **CodeVerifierFacade** (`code_verifier.py`) — intent classifier + suggested imports + security flags + `compute_hints()` prompt-prefix.
+- **9 data generators** (`facades/data_generators/`) — 222 sandbox-verified (problem, solution, tests) examples. Rebuild: `PYTHONPATH=. python3 scripts/r53_run_data_generators.py` (CPU: TF-IDF) + `bin/gemma-run scripts/r53_build_dense.py` (daemon: dense + tq4).
 
-**R53 Phase 2 shipped (R53.25-R53.34)**:
-- **R53.25** — MAX_TOKENS=900 alone lifts `log_level_counts` 0/0→6/6
-  (+6 tests → 32/32, best R53 result). 4 prior null rounds were
-  budget-starved, not substrate/sandbox/import failures.
-- **R53.28** — `KVCacheTq4` multi-token prefill (S≥1) with per-layer
-  position tracking; `trim_swa_storage` via direct tq4 byte-copy (no
-  re-quant). Dense retrieval default `prefer_tq4=True`.
-- **R53.29** — tq4 matvec v2 kernel: shared-mem centroid LUT via
-  `tl.gather` from a program-local (16,) tile. **-7% matvec**
-  aggregate, production default (cbb8073). v1 retained for A/B.
-- **R53.30/R53.31/R53.32** — null ports from TurboQuant CUDA kernel:
-  fp16 x_rot activation (+0.2/+8.7%), uint32 qs loads (+9.8/+16.4%),
-  BLOCK_M sweep (heuristic holds). Lesson: Triton auto-coalesces on
-  Ada L1; `tl.join`/reshape overhead can exceed BW savings.
-- **R53.34** — fused flash-attention decode kernel
-  (`calm/llm_computer/tq4_flash_attn.py`), cosine=1.0 parity vs fp32
-  at N∈{16…1024}. Non-monotonic perf curve (2026-04-20 re-bench):
-  -18% at N=64 (launch overhead dominates), **+14% at N=256 and +6%
-  at N=1024** (mid-range sweet spot, captures 82-96% of fp16), -7% at
-  N=4096 (cuBLAS-on-memo wins asymptotic). **Shipped with
-  `_use_fused_flash_attn=True` default + runtime N-gate
-  `128 < kv_cache.layer_pos[kv_src] < 2048`** in `_forward_layer`.
-  Chat + short-eval decode runs fused; long R53 eval (AdaptiveBudget
-  up to 16K) falls back to Phase 1 memo past N=2048 — no regression
-  on long-decode workloads. Phase 1 memo remains the asymptotic
-  winner and out-of-gate fallback. Full bench + policy:
-  `.claude/rules/turboquant.md` §"Fused flash-attention decode".
-  Adjacent null: TurboQuant Q_prod (3-bit Q_mse + 1-bit QJL) —
-  unbiased inner-product but softmax-output cosine worse than Q_mse
-  alone at every N tested (`tq4_qjl_torch.py` kept for NN/retrieval
-  research). Full A/B: `tracing_roadmap.md` Round 53.34 row.
-  `USE_TQ4_KV=True` ships in eval scripts via Phase 1 memo path.
-- **AdaptiveBudget + 16K ceiling** is the new default in all R53 eval
-  scripts (e7b4538); replaces fixed 200-400 tok defaults.
-- **Sandbox stdlib pre-import fix** (5dc2dc1, R53.22 diagnosis): user
-  `import statistics` triggered transitive `import os` → sandbox blocks
-  → eval 0/0. Fix pre-loads ~23 safe stdlib modules before the
-  `_safe_import` hook. User `import os` still blocked.
+**Headline findings** (full receipts in canonical rules):
+- **R53.2b — blanket prompt-RAG = +0.0pp retrieval-attributable gain**. Prompt-length alone moves +7.4pp; content adds nothing on top. See `augmentation_thesis.md` §"Automatic Tier-1 preservation".
+- **R53.14/20a/20b — substrate-RAG at L41 regresses -9.3pp** on R53.0 even with SWA fix. First-token bias is wrong intervention for code; post-generation AST walker is the correct tier-2 path. See `augmentation_thesis.md` §"R53.14/20a/20b".
 
-**R53.35 + R53.36 shipped (this session)**: tier-2 AST walker +
-tier-3 install audit. Both load-bearing:
-
-- **AST walker** (`calm/llm_computer/facades/ast_repair.py`) — 3
-  deterministic rewrites driven by Python error text: shadow rename
-  (TypeError callable), dict-key synonym (KeyError + curated
-  synonym table), syntax repair (bracket mismatch via error offset
-  + insert-before-`:` for `for/if/def` lines). Wired into
-  `scripts/r53_21_import_inject.py`. R53.0 lifts: **token_bucket
-  0/0 → 5/5 via shadow_rename, csv_column_stats 0/0 → 8/8 via
-  syntax_repair (1 missing paren)**. Combined +13 tests on 2 of 6
-  problems, mechanical, ~1s per fix, zero LLM retries. 36/36 unit
-  tests. **Supersedes "Gemma ignores hints" framing on those two
-  problems — Gemma's output was logically correct; extractor
-  strictness hid the result.**
-- **R51/R52 install audit** (`scripts/r53_36_audit_r51_install.py`)
-  — verified install math zero-diff (`L24_installed == h_before +
-  student(h_before)` bit-identical). R51-MSE student reproduces
-  L24 at cos=0.89, scale=0.91 — 10% diffuse error cascades through
-  L25..L41 into wrong argmax. R52-KL student is garbage (cos=-0.02,
-  scale=94×) — KL-on-logits doesn't constrain residuals. **Tier-3
-  remains closed at current loss space but not in principle;
-  Jacobian-weighted loss is a credible reopen path.** Tier-2
-  stacking (R46.2) stays the priority — already delivers 17/17
-  user-facing wins without tier-3 cost. Full receipts in
-  `.claude/rules/capability_gain.md` §R53.35-R53.36.
+**Phase 2 rounds shipped (R53.22-R53.36)** — per-round receipts in `tracing_roadmap.md` ruled-out log:
+- **R53.22** — sandbox stdlib pre-import fix. `calm.md` §"Sandbox stdlib pre-import".
+- **R53.25** — MAX_TOKENS budget discipline; `log_level_counts` 0/0→6/6 purely from 400→900 bump. `workflow.md` §"MAX_TOKENS budget discipline".
+- **R53.28** — `KVCacheTq4` multi-token prefill + `trim_swa_storage` byte-copy. `Substrate.md`.
+- **R53.29** — tq4 matvec v2 kernel (shared-mem LUT via `tl.gather`), -7% aggregate, production default. `turboquant.md`.
+- **R53.30/31/32** — null ports from TurboQuant CUDA (fp16 activation, uint32 loads, BLOCK_M sweep). Triton auto-coalesces on Ada L1 — hand-tuned overhead exceeds BW savings.
+- **R53.34** — fused flash-attention decode kernel (`tq4_flash_attn.py`), shipped default-on with runtime N-gate `128 < cached_kv_len < 2048`. Mid-range sweet spot (+14% N=256, +6% N=1024); memo wins asymptotic (≥4K) and small-N (≤128). `turboquant.md` §"Fused flash-attention decode". Adjacent null: Q_prod (3-bit Q_mse + 1-bit QJL) — unbiased inner-product but worse softmax cosine.
+- **AdaptiveBudget + 16K ceiling** default in R53 eval scripts (replaces fixed 200-400 defaults). `training.md` §"Substrate eval defaults".
+- **R53.35 — AST walker tier-2 card** (`ast_repair.py`): shadow_rename + dict-key synonym + syntax_repair. R53.0 lifts: token_bucket 0/0→5/5, csv_column_stats 0/0→8/8 (+13 tests mechanical, ~1s/fix, 36/36 unit). `capability_gain.md` §R53.35.
+- **R53.36 — R51/R52 install audit**: install math zero-diff. R51-MSE reproduces L24 at cos=0.89 (close-miss cascade); R52-KL garbage (cos=-0.02, wrong loss). Tier-3 closed at current loss space; Jacobian-weighted loss is credible reopen. `capability_gain.md` §R53.36, `augmentation_thesis.md` §"Tier-2 stacking".
 
 ## Hardware
 
