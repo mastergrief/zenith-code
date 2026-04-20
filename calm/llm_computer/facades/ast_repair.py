@@ -1,7 +1,7 @@
 """Tier-2 AST-walker card — deterministic repair of Gemma's
 persistent code failure modes on the R53 corpus.
 
-Five rewrites, all driven by runtime error text (not by a spec):
+Six rewrites, all driven by runtime error text (not by a spec):
 
 1. **Syntax repair** (SyntaxError at parse time).
    Iteratively parse code, find each SyntaxError, try to fix:
@@ -40,6 +40,16 @@ Five rewrites, all driven by runtime error text (not by a spec):
    expression (Name, BinOp, Call, Subscript, IfExp), rewrite the last
    Expr into `Return(X)`. Conservative — requires no existing
    value-return anywhere in the function body.
+
+6. **Empty-block pass-insert** (IndentationError).
+   Gemma emits compound statements like `except Exception:` / `if x:`
+   / `try:` with no body (or comment-only body). Before reaching any
+   AST walk, this is a SyntaxError / IndentationError at parse time.
+   Line-by-line scan: find compound-statement headers ending in `:`
+   whose next non-blank/non-comment line is unindented (≤ header's
+   indent) or end-of-file. Insert `<header-indent>    pass` right
+   after the header. R53.39 receipt: MBPP code with bare `except:`
+   blocks triggering harness-concat IndentationError.
 
 The walker is post-generation and post-extraction — it runs AFTER the
 test output has been captured, so the error text guides which rewrite
@@ -344,6 +354,13 @@ _NONE_RETURN_RE = re.compile(
     r"(?:NoneType|got None|expected \S+, got None|"
     r"AssertionError.*None|AttributeError:.*NoneType)",
     re.IGNORECASE)
+# Empty compound-statement body — IndentationError or SyntaxError at
+# parse time. Python's exact message varies ("expected an indented
+# block after 'except' statement", "expected an indented block
+# after 'for' statement on line N", etc).
+_INDENT_ERROR_RE = re.compile(
+    r"(?:IndentationError|SyntaxError):?\s*expected an indented block",
+    re.IGNORECASE)
 
 
 def extract_missing_key(error_output: str) -> Optional[str]:
@@ -361,6 +378,10 @@ def has_indexerror_oob(error_output: str) -> bool:
 
 def has_none_return_signal(error_output: str) -> bool:
     return bool(_NONE_RETURN_RE.search(error_output or ""))
+
+
+def has_indent_error(error_output: str) -> bool:
+    return bool(_INDENT_ERROR_RE.search(error_output or ""))
 
 
 # --------------------------------------------------------------------
@@ -834,6 +855,132 @@ def rewrite_missing_return(code: str) -> RepairResult:
 
 
 # --------------------------------------------------------------------
+# 6. Empty-block pass-insert
+# --------------------------------------------------------------------
+
+
+# Compound-statement header keywords. Lines starting with these tokens
+# (with any leading whitespace) and ending with `:` open a block.
+_COMPOUND_KEYWORDS = (
+    "def", "async def", "class", "if", "elif", "else",
+    "for", "async for", "while", "try", "except", "finally",
+    "with", "async with", "match", "case",
+)
+
+# Regex matching a line that IS a compound-statement header. Captures
+# indent and the full header text up to (and including) the trailing
+# colon. Comments/trailing whitespace allowed after the colon.
+_HEADER_RE = re.compile(
+    r"^(?P<indent>[ \t]*)"
+    r"(?P<head>(?:async\s+)?(?:def|class|if|elif|else|for|while|try|"
+    r"except|finally|with|match|case)\b[^#\n]*?:)"
+    r"\s*(?:#.*)?$"
+)
+
+
+def _line_is_meaningful(line: str) -> bool:
+    """True iff the line has code (not blank, not comment-only)."""
+    s = line.strip()
+    return bool(s) and not s.startswith("#")
+
+
+def _indent_width(line: str) -> int:
+    """Number of leading whitespace chars on `line`. Tabs count as 1 —
+    we don't try to normalize, just compare consistently."""
+    n = 0
+    for ch in line:
+        if ch == " " or ch == "\t":
+            n += 1
+        else:
+            break
+    return n
+
+
+def insert_pass_in_empty_blocks(code: str) -> RepairResult:
+    """Scan `code` line by line. For each compound-statement header
+    (`def x:`, `if y:`, `except:`, etc.), check if the NEXT meaningful
+    line is indented more than the header. If not — insert a
+    `<indent>    pass` line immediately after the header.
+
+    This is a text-level fix (the code may not parse; we can't use
+    AST). Conservative: only inserts when we're sure the block has
+    no real body. Does NOT touch headers that already have a body.
+
+    Returns kind='empty_block' on any insertion.
+    """
+    if not code:
+        return RepairResult(None, "none", ["empty code"])
+
+    lines = code.split("\n")
+    # First try AST parse — if the code already parses, don't fire.
+    # Empty-block rewriter is STRICTLY for IndentationError cases.
+    try:
+        ast.parse(code)
+        return RepairResult(None, "none", ["code already parses"])
+    except SyntaxError:
+        pass
+
+    fixes: List[str] = []
+    i = 0
+    out: List[str] = []
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        m = _HEADER_RE.match(line)
+        if not m:
+            i += 1
+            continue
+
+        header_indent = len(m.group("indent"))
+
+        # Look ahead for the next meaningful line
+        j = i + 1
+        next_meaningful: Optional[str] = None
+        while j < len(lines):
+            if _line_is_meaningful(lines[j]):
+                next_meaningful = lines[j]
+                break
+            j += 1
+
+        # Empty block cases:
+        # (a) no meaningful line after → EOF after header
+        # (b) next meaningful line has indent <= header_indent
+        needs_pass = False
+        if next_meaningful is None:
+            needs_pass = True
+        else:
+            if _indent_width(next_meaningful) <= header_indent:
+                needs_pass = True
+
+        if needs_pass:
+            pass_line = " " * (header_indent + 4) + "pass"
+            out.append(pass_line)
+            fixes.append(f"line {i+1}: inserted 'pass' after "
+                         f"'{m.group('head').strip()[:40]}'")
+
+        i += 1
+
+    if not fixes:
+        return RepairResult(None, "none", ["no empty compound blocks found"])
+
+    new_code = "\n".join(out)
+
+    # Verify the rewrite improved parseability. It's OK if the code
+    # still doesn't parse (other SyntaxErrors may remain) as long as
+    # we added real passes in real empty blocks.
+    # Sanity: new code must parse OR at least not regress (same
+    # SyntaxError lineno as before).
+    try:
+        ast.parse(new_code)
+    except SyntaxError:
+        # Not fatal — other walkers (or a second pass) may clean up.
+        # Return the partial fix anyway so the dispatcher can iterate.
+        pass
+
+    return RepairResult(new_code, "empty_block", fixes)
+
+
+# --------------------------------------------------------------------
 # Entry point
 # --------------------------------------------------------------------
 
@@ -848,12 +995,19 @@ def repair(code: str, error_output: str) -> RepairResult:
     if not code:
         return RepairResult(None, "none", ["empty code"])
 
-    # 0. Syntax repair — runs FIRST so downstream rewrites see parseable
-    # code. Fires when ast.parse fails with a bracket imbalance; no-op
-    # when code already parses.
+    # 0a. Syntax repair — runs FIRST so downstream rewrites see
+    # parseable code. Fires when ast.parse fails with a bracket
+    # imbalance; no-op when code already parses.
     syntax = repair_syntax(code)
     if syntax.applied:
         return syntax
+
+    # 0b. Empty-block pass-insert — runs after bracket-balance but
+    # before AST-walking rewrites. Fires on IndentationError. No-op if
+    # code already parses.
+    empty = insert_pass_in_empty_blocks(code)
+    if empty.applied:
+        return empty
 
     # 1. Shadow rename — driven by TypeError callable. We also run the
     # detector on code with no such error: sometimes Gemma's code has

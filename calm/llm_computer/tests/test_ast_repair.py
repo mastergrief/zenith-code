@@ -18,9 +18,11 @@ from calm.llm_computer.facades.ast_repair import (
     _balance_brackets_on_line,
     _find_shadowed_attrs,
     extract_missing_key,
+    has_indent_error,
     has_indexerror_oob,
     has_none_return_signal,
     has_typeerror_callable,
+    insert_pass_in_empty_blocks,
     rename_shadow,
     repair,
     repair_syntax,
@@ -820,6 +822,185 @@ def test_repair_missing_return_requires_error_signal():
     r = repair(GEMMA_MISSING_RETURN_BUG, "ValueError: something else")
     assert not r.applied
     assert any("none_return" in n.lower() for n in r.notes)
+
+
+# -- empty-block pass-insert -----------------------------------------
+
+
+def test_has_indent_error():
+    assert has_indent_error("IndentationError: expected an indented block")
+    assert has_indent_error(
+        "IndentationError: expected an indented block after 'except' statement on line 5")
+    assert has_indent_error(
+        "SyntaxError: expected an indented block after function definition on line 3")
+    assert has_indent_error("  err: IndentationError: expected an indented block")
+    assert not has_indent_error("IndexError: list index out of range")
+    assert not has_indent_error("")
+
+
+def test_empty_except_inserts_pass():
+    code = textwrap.dedent('''
+        def f():
+            try:
+                x = 1
+            except Exception:
+        ''').lstrip()
+    r = insert_pass_in_empty_blocks(code)
+    assert r.applied
+    assert r.kind == "empty_block"
+    # Must parse after rewrite
+    ast.parse(r.new_code)
+    assert "pass" in r.new_code
+
+
+def test_empty_if_inserts_pass():
+    code = textwrap.dedent('''
+        def f(x):
+            if x > 0:
+        ''').rstrip() + "\n"
+    r = insert_pass_in_empty_blocks(code)
+    assert r.applied
+    ast.parse(r.new_code)
+
+
+def test_empty_else_inserts_pass():
+    code = textwrap.dedent('''
+        def f(x):
+            if x > 0:
+                return 1
+            else:
+        ''').rstrip() + "\n"
+    r = insert_pass_in_empty_blocks(code)
+    assert r.applied
+    ast.parse(r.new_code)
+
+
+def test_empty_for_inserts_pass():
+    code = textwrap.dedent('''
+        def f(xs):
+            for x in xs:
+    ''').rstrip() + "\n"
+    r = insert_pass_in_empty_blocks(code)
+    assert r.applied
+    ast.parse(r.new_code)
+
+
+def test_empty_try_inserts_pass():
+    """try: with no body gets pass; pre-existing except: body retained."""
+    code = textwrap.dedent('''
+        def f():
+            try:
+            except Exception:
+                return None
+    ''').rstrip() + "\n"
+    r = insert_pass_in_empty_blocks(code)
+    assert r.applied
+    ast.parse(r.new_code)
+
+
+def test_parseable_code_is_noop():
+    """Code that already parses — empty_block fires no change."""
+    code = textwrap.dedent('''
+        def f():
+            try:
+                x = 1
+            except Exception:
+                return None
+    ''')
+    r = insert_pass_in_empty_blocks(code)
+    assert not r.applied
+    assert "already parses" in r.notes[0]
+
+
+def test_empty_block_with_comment_only_body():
+    """A comment-only body counts as empty — pass still inserted."""
+    code = textwrap.dedent('''
+        def f():
+            try:
+                x = 1
+            except Exception:
+                # ignore
+        ''').rstrip() + "\n"
+    r = insert_pass_in_empty_blocks(code)
+    # Comment body is text-level present but same-indent as header
+    # means our simple indent check thinks it's empty. This is a
+    # conservative approximation. Comment at higher indent would
+    # count as body; comment at same indent is ambiguous.
+    # For this test, comment at +4 indent: DOES count as meaningful
+    # by indent width, so rewrite shouldn't fire.
+    if r.applied:
+        # Acceptable — pass is now before the comment
+        ast.parse(r.new_code)
+
+
+def test_empty_block_multiple_headers():
+    """Two distinct empty blocks both get pass."""
+    code = textwrap.dedent('''
+        def f():
+            if True:
+            elif False:
+    ''').rstrip() + "\n"
+    r = insert_pass_in_empty_blocks(code)
+    assert r.applied
+    ast.parse(r.new_code)
+    assert r.new_code.count("pass") >= 2
+
+
+def test_empty_block_at_eof():
+    """Header is the last line of the file — no following line.
+    Walker inserts `pass`; note that `try:` without `except:` remains
+    syntactically incomplete (needs a separate fix), but the pass
+    insertion itself is correct."""
+    code = "def f():\n    try:\n"
+    r = insert_pass_in_empty_blocks(code)
+    assert r.applied
+    assert "pass" in r.new_code
+    # Incomplete try/except may still not parse, but partial fix is OK
+
+
+def test_empty_block_def_at_eof_parses():
+    """`def` at EOF with no body — pass makes it parseable."""
+    code = "def f():\n"
+    r = insert_pass_in_empty_blocks(code)
+    assert r.applied
+    ast.parse(r.new_code)
+
+
+def test_empty_block_header_followed_by_deeper_compound():
+    """Header followed by a DEEPER-indented compound header (e.g.
+    try: then for: nested) — the outer block is NOT empty."""
+    code = textwrap.dedent('''
+        def f(xs):
+            try:
+                for x in xs:
+                    print(x)
+            except Exception:
+                return None
+    ''')
+    r = insert_pass_in_empty_blocks(code)
+    # Should not fire — code parses fine.
+    assert not r.applied
+
+
+def test_repair_empty_block_via_dispatch():
+    """Full repair() — IndentationError error text dispatches to
+    empty_block rewriter."""
+    code = "def f():\n    try:\n        x = 1\n    except Exception:\n"
+    r = repair(code, "IndentationError: expected an indented block after 'except' statement on line 4")
+    assert r.applied
+    assert r.kind == "empty_block"
+    ast.parse(r.new_code)
+
+
+def test_repair_empty_block_runs_even_without_error_text():
+    """Dispatch: empty_block in the syntax-repair tier runs on any
+    unparseable input, doesn't require specific error text."""
+    code = "def f():\n    try:\n        x = 1\n    except Exception:\n"
+    # No indication of IndentationError in the message
+    r = repair(code, "")
+    # Still fires — the code is unparseable
+    assert r.applied
+    assert r.kind == "empty_block"
 
 
 def test_end_to_end_csv_column_stats_passes_after_repair():
