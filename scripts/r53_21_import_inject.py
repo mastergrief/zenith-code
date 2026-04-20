@@ -28,6 +28,7 @@ Daemon-only:
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 import time
@@ -337,6 +338,27 @@ def run_eval(m, tok) -> None:
                          device="cuda", stop_on_eos=True,
                          use_tq4_kv=USE_TQ4_KV)
         return _trim_markers(out["text"])
+
+    # Filter to a single problem by name. Reads /tmp/r53_only if
+    # present (sentinel file, more reliable than env var — daemon
+    # exec() does not inherit caller-shell env). Fallback to env var
+    # for direct-run use cases.
+    only = ""
+    sentinel = "/tmp/r53_only"
+    if os.path.isfile(sentinel):
+        with open(sentinel) as _f:
+            only = _f.read().strip()
+    if not only:
+        only = os.environ.get("R53_ONLY", "").strip()
+    if only:
+        _filtered = [p for p in CORPUS if p.name == only]
+        if not _filtered:
+            print(f"[r53.21] ERROR: only={only!r} matched no CORPUS "
+                  f"problem. Known: {[p.name for p in CORPUS]}", flush=True)
+            return
+        CORPUS = _filtered
+        print(f"[r53.21] only={only} → {len(CORPUS)} problem(s)",
+              flush=True)
 
     print(f"\n[r53.21] running {len(CORPUS)} problems...", flush=True)
 
