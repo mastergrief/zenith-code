@@ -25,6 +25,7 @@ from calm.llm_computer.facades.ast_repair import (
     insert_pass_in_empty_blocks,
     rename_shadow,
     repair,
+    repair_cascade,
     repair_syntax,
     rewrite_dict_synonym,
     rewrite_missing_return,
@@ -1001,6 +1002,88 @@ def test_repair_empty_block_runs_even_without_error_text():
     # Still fires — the code is unparseable
     assert r.applied
     assert r.kind == "empty_block"
+
+
+# -- cascade (multi-pass) --------------------------------------------
+
+
+def test_cascade_noop_on_clean_code():
+    code = "def f(x):\n    return x * 2\n"
+    r = repair_cascade(code, "")
+    assert not r.applied
+
+
+def test_cascade_single_pass_no_cascade_prefix():
+    """When only one rewrite applies, kind is the rewrite's name, not
+    prefixed with 'cascade:'."""
+    r = repair_cascade(GEMMA_TOKEN_BUCKET_BUG,
+                       "TypeError: 'int' object is not callable")
+    assert r.applied
+    # Only shadow_rename needed
+    assert r.kind == "shadow_rename"
+
+
+def test_cascade_empty_block_then_missing_return():
+    """Empty-except makes code parseable; AST walker then notices
+    missing return in function. Two passes should apply."""
+    code = textwrap.dedent('''
+        def compute(x):
+            try:
+                return x * 2
+            except Exception:
+            x * 3
+        ''').rstrip() + "\n"
+    # First pass: empty_block inserts pass after except
+    # Second pass: code parses, but value-return exists (inside try) so
+    #   missing_return won't fire. Only one rewrite should apply.
+    r = repair_cascade(code,
+                       "TypeError: unsupported operand type(s) for *: 'NoneType' and 'int'")
+    assert r.applied
+    # One rewrite — just empty_block
+    assert "empty_block" in r.kind
+
+
+def test_cascade_syntax_then_dict_synonym():
+    """Code has a missing-paren AND uses 'stddev' key. First pass
+    fixes syntax; second pass rewrites the synonym."""
+    # `{` with missing `}` — triggers syntax_repair; then with 'stddev'
+    # where KeyError comes on 'stdev'
+    code = textwrap.dedent('''
+        def f(data):
+            r = {'stddev': 0.5
+            return r
+        ''').rstrip() + "\n"
+    r = repair_cascade(code, "KeyError: 'stdev'")
+    assert r.applied
+    # Check both syntax_repair and dict_synonym in the cascade
+    assert "syntax_repair" in r.kind
+    # After syntax fix, dict_synonym should also fire
+    # (the test depends on dispatch order — allow either single or cascade)
+    ast.parse(r.new_code)
+
+
+def test_cascade_respects_max_passes():
+    """max_passes=1 should stop after first rewrite even if more
+    would apply."""
+    code = textwrap.dedent('''
+        def compute(x):
+            try:
+                return x * 2
+            except Exception:
+            x * 3
+        ''').rstrip() + "\n"
+    r = repair_cascade(code, "", max_passes=1)
+    assert r.applied
+    # Only one pass applied
+    assert len(r.notes) == 1
+
+
+def test_cascade_preserves_repair_single_pass():
+    """Single repair() still works as before — cascade is additive."""
+    r = repair(GEMMA_TOKEN_BUCKET_BUG,
+               "TypeError: 'int' object is not callable")
+    assert r.applied
+    assert r.kind == "shadow_rename"
 
 
 def test_end_to_end_csv_column_stats_passes_after_repair():

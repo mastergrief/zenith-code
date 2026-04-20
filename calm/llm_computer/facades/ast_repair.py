@@ -1045,3 +1045,51 @@ def repair(code: str, error_output: str) -> RepairResult:
                          f"missing_key: {missing}",
                          f"indexerror: {has_indexerror_oob(error_output or '')}",
                          f"none_return: {has_none_return_signal(error_output or '')}"])
+
+
+def repair_cascade(code: str, error_output: str,
+                   max_passes: int = 4) -> RepairResult:
+    """Multi-pass walker: call repair() repeatedly on its own output
+    until no further rewrite applies or `max_passes` is reached.
+
+    Useful when one rewrite reveals or enables another:
+      - syntax_repair → empty_block (fix bracket, then empty body)
+      - shadow_rename → missing_return (rename exposes bare-expr tail)
+      - empty_block → shadow_rename (code parses, then walk AST)
+
+    The error_output is passed unchanged across passes — the original
+    error still drives dispatch. Each pass's applied rewrite updates
+    the code. Terminates early if repair() returns `kind='none'`.
+
+    Returns a RepairResult:
+      - new_code = code after all successful passes (None if zero
+        passes applied)
+      - kind = 'cascade:<kind1>+<kind2>+...' if >1 pass applied;
+        the single kind if only one pass applied; 'none' otherwise
+      - notes = chronological list of each pass's applied kind
+    """
+    if not code:
+        return RepairResult(None, "none", ["empty code"])
+
+    current = code
+    applied_kinds: List[str] = []
+    all_notes: List[str] = []
+
+    for pass_i in range(max_passes):
+        r = repair(current, error_output)
+        if not r.applied:
+            break
+        current = r.new_code
+        applied_kinds.append(r.kind)
+        all_notes.append(f"pass{pass_i+1}:{r.kind}: " + "; ".join(r.notes))
+
+    if not applied_kinds:
+        return RepairResult(None, "none",
+                            ["no applicable rewrite in any pass"])
+
+    if len(applied_kinds) == 1:
+        kind = applied_kinds[0]
+    else:
+        kind = "cascade:" + "+".join(applied_kinds)
+
+    return RepairResult(current, kind, all_notes)
