@@ -304,7 +304,10 @@ Symptom that forced the fix: `import statistics` inside user code
 triggered `statistics`'s own `import os` (for platform detection during
 first load) → hook blocked → `ImportError: blocked: os`. User couldn't
 use `statistics.mean`, `hashlib.sha256`, etc. — csv_column_stats eval
-stuck at 0/0 even with imports injected.
+stuck at 0/0 even with imports injected **(pre-R53.22 fix;
+post-R53.35 reaudit csv is further unblocked by the `ast_repair`
+walker's `syntax_repair` pass — 0/0 → 8/8 on live Gemma per
+`capability_gain.md` §R53.35)**.
 
 **Fix**: pre-import safe stdlib modules BEFORE installing the hook, so
 `sys.modules` is warm and user-level `import X` hits cache without

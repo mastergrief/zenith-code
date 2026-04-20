@@ -11,7 +11,7 @@ The task list expanded mid-session when the user asked (a) whether prior "Gemma 
 
 Workflow: hypothesis → build → test → commit → iterate.
 
-## Completed (11 commits, `190fe55` → `aa19c5e` + this doc push)
+## Completed (13 commits, `190fe55` → `961b351`)
 
 ### Subsystem 1 — AST walker shipped (7 commits)
 
@@ -74,6 +74,16 @@ R52-KL student FAILS to reproduce L24 (cos -0.02, scale 94× too big). KL-on-log
 
 **`aa19c5e`** — refined R51/R52 ruled-out entries in `tracing_roadmap.md` to distinguish the two failure mechanisms.
 
+### Subsystem 4 — subagent-policy refinement (2 commits)
+
+Not in original session plan. Triggered by user's observation at session end that the prior `/update` run had gone inline against the commands' own documented 3-agent / 2-agent defaults. Two commits:
+
+**`cb6a357`** — replaced blanket "Don't spawn subagents or teams" in `.claude/CLAUDE.md` with a 4-case triaged policy: (a) semantic exploration in unfamiliar subsystem, (b) independent review on high-blast-radius changes, (c) large `/update` or `/handoff` by scope threshold, (d) context protection on high-volume searches. R52.1 receipts preserved as the "why the default is still direct-tools for fast-iteration work".
+
+**`961b351`** — further refined: **slash commands with documented agent use WIN over the inline default.** `/update` ALWAYS fires 3-agent split per `.claude/commands/update.md` Phase 1 when session passes threshold (>1 subsystem, >3 commits, new mechanism). `/handoff` ALWAYS fires 2-agent grounding when session passes threshold (>3 commits, >1 subsystem, new mechanism, ≥30K transcript). Discretionary spawn list shrunk 4 → 3 (the "large /update-handoff" case is now covered by the commands' own rules). Memory updated in parallel at `~/.claude/projects/-mnt-c-Users-gabes-projects-claw-code/memory/feedback_no_agents.md` with the refinement + today's inline-mistake receipt.
+
+**Key takeaway**: the canonical policy lives in `.claude/CLAUDE.md` (architectural decision, per memory-scope rule); memory carries the receipts. For this session specifically, the shift means: next `/update` or `/handoff` invocation that passes the command's gate will spawn agents without asking.
+
 ## In Progress
 
 None. All tasks closed with commits + measurements.
@@ -134,7 +144,7 @@ None. All tasks closed with commits + measurements.
 - **Insert-before-trailing-colon**: handles `for i in range(min(a, len(row)):` where Python reports generic `invalid syntax` at the `:` offset. Strategy-2 extended to strip trailing `: / -> T:` suffix, balance, reinsert suffix.
 - **Revert on regression**: walker rewrites are static but could regress on edge cases. `try_ast_repair` snapshots `(pre_code, pre_sp, pre_st)` before each pass and reverts cleanly on any regression.
 - **R51/R52 install math verified bit-identical**: forecloses the cheapest failure mode (install boundary bug). Any tier-3 reopening must target the loss / training / student-capacity, not install.
-- **/update + /handoff kept inline (no subagents)**: project CLAUDE.md policy is solo-lead. The 3-agent /update pattern documented in `.claude/commands/update.md` is a reusable skeleton that assumes multi-collaborator context, not this project.
+- **Subagent policy refined mid-session**: the initial `/update` + `/handoff` run went inline against the commands' own documented 3-agent / 2-agent defaults. User flagged it ("on update and handoff agents should always fire as stated"), leading to commits `cb6a357` (triaged 4-case policy) + `961b351` (slash commands override inline default). **This 2nd-pass /update ran with 3 Explore agents per `.claude/commands/update.md` Phase 1.** See Subsystem 4 below.
 
 **Measurement discipline caveats**:
 
@@ -172,11 +182,15 @@ None. All tasks closed with commits + measurements.
 - `scripts/r53_21_import_inject.py` — `try_ast_repair()` wired into main loop + LLM-repair inner loop. Results tuple gained `ast_repairs` column. +151 LOC net.
 
 ### Modified docs
-- `.claude/CLAUDE.md` — R53.35 + R53.36 addendum paragraph in R53 phase section.
-- `.claude/rules/tracing_roadmap.md` — ast_repair row in shipped + facades tables; csv ruled-out entry; R51/R52 refinement.
+- `.claude/CLAUDE.md` — R53.35 + R53.36 addendum paragraph in R53 phase section (`ab52246`). Working-policy paragraph rewritten twice (`cb6a357` triaged 4-case → `961b351` slash-commands-override).
+- `.claude/rules/tracing_roadmap.md` — `ast_repair` row in shipped + facades tables (updated 2nd-pass: 21 → 36 tests, 2 → 3 rewrites, csv 0/0 → 8/8 added); csv ruled-out entry marked PARTIALLY SUPERSEDED; R51/R52 refinement (`aa19c5e`).
 - `.claude/rules/capability_gain.md` — R53.35 subsection (csv now 0/0 → 8/8 via syntax_repair, supersedes earlier NoCode framing) + R53.36 subsection (tier-3 install audit).
 - `.claude/rules/augmentation_thesis.md` — short refinement in §"Tier-2 stacking" referencing R53.36.
-- `.claude/MEMORY/SESSION_HANDOFF.md` — this file; overwrote prior 2026-04-20 walker-only handoff (previous content retained in git history at `2f5b3a7`).
+- `.claude/MEMORY/SESSION_HANDOFF.md` — this file; overwrote prior 2026-04-20 walker-only handoff (`ab52246`), refined 2nd-pass for correctness.
+
+### Memory updates (outside repo)
+- `~/.claude/projects/-mnt-c-Users-gabes-projects-claw-code/memory/feedback_no_agents.md` — rewritten to reflect slash-commands-override-inline policy. R52.1 receipts preserved + today's inline-mistake receipt added.
+- `~/.claude/projects/-mnt-c-Users-gabes-projects-claw-code/memory/MEMORY.md` — index hook updated.
 
 ### Optional artifacts
 - `.claude/MEMORY/can_be_done.md` — substrate preserve/augment/plug thesis brain-dump (committed `190fe55`).

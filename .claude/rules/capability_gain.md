@@ -237,7 +237,10 @@ rename example. Gemma's retry rewrites the code with the SAME bug.
 This is not a prompt-engineering issue — it's a prior-dominance
 failure mode that hint-tuning cannot fix.
 
-**Concrete cases from R53.33**:
+**Concrete cases from R53.33** (historical framing — both cases
+LIFTED by the R53.35 `ast_repair` walker, see §R53.35 below;
+preserved here as the original receipt for "why hint-tuning
+fails"):
 
 - **token_bucket_rate_limiter** (`'int' object is not callable`):
   categorizer emits `"You're calling an int value as if it were a
@@ -246,11 +249,18 @@ failure mode that hint-tuning cannot fix.
   int attribute (e.g. self.tokens = capacity) and use the new name
   everywhere you assigned the value."` Gemma retry emits the same
   `self.consume = capacity` shadow. 2344s wall time on retry, 0/0.
+  **Post-R53.35**: `shadow_rename` walker rewrites the shadow in
+  ~0.9s without retry, 0/0 → 5/5 (commit `8cc2ff4`).
 
 - **csv_column_stats** (runtime `KeyError: 'score'`): Gemma writes
   code accessing a dict key it never constructed with that name.
   Categorizer emits targeted hint; retry emits the same KeyError
-  pattern at a different access site.
+  pattern at a different access site. **Post-R53.35**: in practice
+  Gemma's dominant failure on csv turned out to be a single missing
+  `)` (SyntaxError), not a KeyError — the `syntax_repair` walker
+  lifts csv 0/0 → 8/8 in 0.9s without retry (commit `c81feb6`). The
+  dict-key-synonym rewrite remains available for the KeyError
+  branch if it recurs.
 
 **Mechanism**: the prior over rate-limiter / csv-parser implementations
 is learned from millions of training-data examples (including
