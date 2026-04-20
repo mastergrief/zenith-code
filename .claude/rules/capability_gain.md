@@ -280,6 +280,51 @@ off-by-one / unused-var patterns, and mechanically rewrites — no
 Gemma in the repair loop. See `augmentation_thesis.md` §"R53.14/
 20a/20b" for the tier-2-stacking framing.
 
+### R53.35 — AST walker shipped, hypothesis confirmed on shadow rename
+
+Built `calm/llm_computer/facades/ast_repair.py` — two deterministic
+rewrites driven by runtime error text (not by spec or Gemma retry):
+
+- **Shadow rename** (TypeError: 'X' object is not callable): find
+  `self.<name> = ...` assignments where `<name>` is also a method
+  on the same class; rename attribute to `_<name>`, rewrite all
+  non-call read sites, preserve method body.
+- **Dict-key synonym** (KeyError: 'X'): curated synonym table
+  (`avg` → `mean`, `std` → `stdev`, etc); rewrites Dict literals,
+  Subscript access, and `.get/.pop/.setdefault` args.
+
+Wired into `scripts/r53_21_import_inject.py` — runs after import
+injection, before LLM structured repair. Iterated up to 4 passes
+(csv may chain `mean` → `stdev` → `min` → `max`). Reverts on
+regression.
+
+Measurement (two paths, both moved):
+
+  path                                              before   after
+  ---------------------------------------------     ------   ------
+  Raw: pytest calm/llm_computer/tests/
+       test_ast_repair.py                            n/a     21/21
+  User-facing: token_bucket_rate_limiter (R53.0)     0/0     5/5
+  No-regression: lru_cache_class (R53.0)             9/9     9/9
+
+Wall time on the lift: 0.9s (AST walker) vs 117-300s per Gemma
+retry round. Zero inference cost, strict improvement.
+
+**Confirms the hypothesis** from R53.19/R53.33 receipt above: no
+Gemma in the repair loop, mechanical rewrite, and the ceiling lifts.
+Commercial framing ("auditable rewrite for regulated industries")
+is load-bearing now, not aspirational.
+
+**Bottleneck on `csv_column_stats`** at the same run: 0/0 across
+two attempts, all `NoCode` (Gemma emits prose/think but the
+extractor finds no code). Different failure class from
+`token_bucket`'s logic-bug shadow — it's upstream of the walker.
+Walker's csv test (`test_end_to_end_csv_column_stats_passes_after_repair`)
+confirms correctness-of-walker on the bug pattern; live Gemma just
+doesn't emit extractable code at the current budget. Next
+intervention is either better extractor or forced-code-fence
+prefix, not more walker work.
+
 ## Related rules
 
 - `workflow.md` — the general hypothesis-test loop

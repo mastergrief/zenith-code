@@ -1,363 +1,271 @@
-# Session Handoff — 2026-04-19 (R53.19 → R53.34 + doc sweep)
-
-> **Postscript 2026-04-20** — the R53.34 "fused flash-attn is 8-10% slower
-> at all N≤1024, shipped default OFF" disposition below is **partially
-> superseded**. A clean re-run of `scripts/r53_phase2_bench.py` this session
-> showed the curve is **non-monotonic**: fused wins +14% at N=256 and +6%
-> at N=1024, loses -18% at N=64 and -7% at N=4096. Default flipped to
-> `_use_fused_flash_attn=True` with runtime N-gate
-> `128 < kv_cache.layer_pos[kv_src] < 2048` in
-> `calm/llm_computer/gemma_substrate.py:_forward_layer`. Long R53 eval
-> (AdaptiveBudget up to 16K) falls back to Phase 1 memo past N=2048 — no
-> regression on long-decode workloads. Full bench table + rationale in
-> `.claude/rules/turboquant.md` §"Fused flash-attention decode" and
-> `tracing_roadmap.md` Round 53.34 revised row. Historical entries below
-> retained as receipt; current-state truth is the rules.
+# Session Handoff — 2026-04-20 (AST walker tier-2 shipped)
 
 ## Goal
 
-Drive the R53 arc past its null plateau. Specifically: diagnose why R53.19 v3 had
-hit 26/26 but csv_column_stats + token_bucket sat at 0/0 despite shipped sandbox
-fix, substrate install experiments, import-injection, mechanical repair. Then
-port TurboQuant's fused flash-attn techniques to our Triton stack; rewrite
-`.claude/rules/` + CLAUDE.md to reflect the session's shipped state.
+Implement next-steps 1, 2, 3 from the prior 2026-04-20 handoff (fused flash-attn flip + watch-wrap + hook enforcement):
+1. **AST walker tier-2 card** — projected 32/32 → ~43-45/46 via mechanical rewrite of R53.33 failure modes
+2. **Verify `.claude/settings.json` hook** fires
+3. **Commit optional captures** — `.claude/MEMORY/can_be_done.md` + `.claude/commands/summarise.md`
 
-## Completed (25 commits, 91e1e04 → 16817ad + teammate work)
+Workflow: hypothesis → build → test → commit → iterate.
 
-### R53 kernel + eval stack
+## Completed (4 commits, `190fe55` → `b9aaedc`)
 
-- **R53.19** (`a8729a0`): MAX_TOKENS 250 → 400 after SWA fix removed the 512-cap budget
-- **R53.20a** (`ec8887f`): re-ran R53.14 substrate-RAG eval with SWA fix active.
-  **NEGATIVE**: still -9.3pp regression (stock 25/27, prompt-RAG 25/27,
-  substrate-RAG 10/12). Root cause is install-mechanism (L41 CardSlot + FirstTokenHook),
-  NOT SWA bug. Gemma's first-token on code is confidently a fence/whitespace
-  opener (logit margin 6.8-9.2); `min_margin=0.5` never gates; hook always fires
-  on HIT → forces "def"/"class" → code-without-fence → extractor fails.
-- **R53.20b** (`scripts/r53_20b_stacked.py`): substrate + prompt-RAG stacking.
-  NEGATIVE: -7 tests vs R53.19 v3's 26/26 → 19/21. Substrate disruption pollutes
-  attempt 1 output; repair retries can't recover.
-- **R53.20 writeup** (`1a85b0c`): `.claude/MEMORY/evals/2026-04-19_r53_substrate_rag_null.md`
-- **R53.21** (`b9512ec`): mechanical import injection (`COMMON_IMPORTS` table,
-  50-entry). Fires correctly on csv (`StringIO + csv`) + log_level (`import re`)
-  but null — injected imports still 0/0 because sandbox was blocking transitive os.
-- **R53.22** diagnostic (`scripts/r53_22_diagnose_csv.py`): isolated the
-  sandbox `ImportError: blocked: os` via `import statistics` transitive load.
-- **R53.23** (`5dc2dc1`): sandbox fix — pre-import ~23 stdlib modules
-  (re, math, random, time, datetime, hashlib, base64, collections, itertools,
-  functools, bisect, heapq, copy, csv, statistics, typing, enum, dataclasses,
-  abc, struct, decimal, fractions, textwrap) BEFORE `_safe_import` hook.
-  User `import statistics` now hits sys.modules cache without triggering new
-  transitive `os` load. User `import os` still blocked. Verified via 3-line test.
-- **R53.24** (combined sandbox+import stack, minutes L969-1060): 26/26 null —
-  sandbox fix + import injection together produced no lift over R53.19 v3's
-  26/26 baseline. Diagnostic round; ruled out both mechanisms as the ceiling
-  and forced the MAX_TOKENS experiment in R53.25.
-- **R53.25** (`c6a6582`): MAX_TOKENS 400 → 900. **BEST R53 RESULT: 32/32.**
-  Lifts `log_level_counts` 0/0 → 6/6 purely from budget. The prior 4 null rounds
-  (R53.19 v3 through R53.24) were budget-starved the whole time.
-- **R53.26 categorizer** (`scripts/r53_21_import_inject.py`): TypeError regex
-  generalized from `'int'` to `r"TypeError: '(\w+)' object is not callable"` —
-  matches int/float/str/list/dict.
-- **R53.27** (fast diagnostic at 900 tok, minutes L1163-1201): interstitial
-  re-run confirming R53.25's 32/32 was the genuine budget unlock, not a
-  measurement artifact. Drove the escalation 900 → 2048 → 8192 → 16K default.
-- **R53.28** (`069c614`): multi-token `KVCacheTq4.update(S≥1)` with per-layer
-  `layer_pos[l]` tracking; `trim_swa_storage` via direct byte-copy (no re-quant).
-  `DenseIndex.load(prefer_tq4=True)` now default. Adaptive budget + 16K ceiling
-  integrated across eval scripts (`scripts/r53_21_import_inject.py`,
-  `scripts/r53_eval_complex.py:_adaptive_budget`).
-- **R53.28 eval bump** (`e86d787`, `e7b4538`): all R53 scripts from
-  200-400 → 4096-16384 tokens.
-- **R53.29 v2 kernel** (`cbb8073`): `_tq4_matvec_kernel_v2` uses `tl.gather`
-  from a program-local `(16,)` centroid LUT tile. **-5 to -10% aggregate** vs
-  v1 across 3 bench runs. Correctness: measured max abs diff 1.91e-6 / 1.43e-6
-  per shape (4e-6 is a conservative upper ceiling).
-- **R53.30 fp16 x_rot** (`cfa584f`): NULL. +0.2/+8.7% across two runs.
-  Upcast-inside-dot eats BW savings on Ada.
-- **R53.31 uint32 qs** (`cfa584f`): NULL. +9.8/+16.4%. `tl.join`/reshape
-  overhead exceeds BW savings. Triton auto-coalesces already.
-- **R53.32 BLOCK_M sweep** (`f251a7f`): current `_pick_block_m` heuristic holds.
-- **R53.33** (paused at 5/6): fp16-KV + full stack got 5/5 linked_list, 12/12
-  date_validation, 6/6 log_level, 0/0 csv (35 min gen, Gemma KeyError in own
-  code), 0/0 token_bucket (39 min gen + 39 min repair, shadow bug persisted
-  despite targeted rename hint with example). Running total 23/23. Daemon
-  killed before lru_cache_class ran. **Projected final: 32/32** (matches
-  R53.25 baseline).
-- **USE_TQ4_KV revert** (`571c3ad`): disabled when diagnosing O(N²) dequant
-  (linked_list 806s at tq4 KV vs 94s at fp16 KV — 8× slowdown per step).
+### Subsystem 1 — AST walker shipped (3 commits)
 
-### Teammate work (separate terminal, 2 of 3 tests completed)
+**`9db8319`** — `calm/llm_computer/facades/ast_repair.py` (269 LOC) + 21 unit tests.
 
-Parallel terminal ran an independent test track. 2 of 3 tests finished
-before session end — the third is not captured in minutes.md for this
-session and its landed state should be confirmed by reading current tree
-(`git log` on `calm/llm_computer/tq4_flash_attn.py` + `tq4_qjl_torch.py`
-+ `scripts/r53_21_import_inject.py` for the `USE_TQ4_KV` flag state).
+Two narrow rewrites, error-text-driven, pure Python + `ast` stdlib:
 
-- **R53.34 fused flash-attn kernel** (`calm/llm_computer/tq4_flash_attn.py`):
-  proper parallel V-kernel (`grid=(n_heads_q,)`), head-major storage contract,
-  `tl.static_range` over BPR, Pi rotation at boundaries. K-side via existing
-  `tq4_matvec_triton`; V-side new `_tq4_weighted_v_kernel`. Parity cosine=1.0
-  vs fp32 at all tested N ∈ {16, 64, 128, 256, 1024}. Real-Gemma ablation
-  Δmean=0, argmax=+0.
-  - **PERF REGRESSION at short context**: 8-10% SLOWER than Phase 1 memoized
-    dequant path at N ≤ 1024 (N=64: 5.60 vs 6.06 tok/s; N=1024: 5.11 vs 5.60;
-    fp16 baseline 7.0-7.5). Root cause: 336 per-Q-head kernel launches per
-    decode step dominate streaming-byte-load advantage at short ctx.
-  - **Asymptotic crossover (N≫2K) NOT measured** (20+ min/run budget).
-  - Shipped `_use_fused_flash_attn=False` default. Phase 1 memo path is the
-    shipped winner (~77% of fp16 tok/s at ~50% KV memory).
-  - `USE_TQ4_KV=True` re-enabled in `scripts/r53_21_import_inject.py` via
-    Phase 1 memo path.
-- **Q_prod (3-bit Q_mse + 1-bit QJL) null**: implemented Algorithm 2 from
-  TurboQuant paper (`tq4_qjl_torch.py`, 132-byte block). Unbiased inner-product
-  estimator works as proven (n=1000 mean = 1.15σ from truth). But empirical
-  attention-output cosine WORSE than tq4 Q_mse alone at every tested N
-  (Δ=-0.04 at N=16, Δ=-0.17 at N=1024). Softmax amplifies QJL variance more
-  than it amplifies MSE-only structural bias. Kept in tree as research artifact
-  for NN lookup / hash retrieval use cases.
+1. **Shadow rename** (TypeError: 'X' object is not callable). Find
+   `self.<name> = ...` assignments where `<name>` is also a method
+   on the same class; rename attr to `_<name>`, rewrite all non-call
+   read sites, preserve method body. Handles AugAssign. Scoped per
+   class (doesn't collide across classes).
 
-### Doc sweep (R53 → rules alignment)
+2. **Dict-key synonym** (KeyError: 'X'). Curated synonym table
+   (`avg`→`mean`, `std`→`stdev`, `mu`→`mean`, etc). Rewrites Dict
+   literals, Subscript access, `.get/.pop/.setdefault` args.
+   Returns `none` when missing key has no known synonym.
 
-Ran parallel 2-Explore-agent audit against `.claude/rules/` and CLAUDE.md,
-classified findings P0/P1/P2, shipped in 4 commits via plan mode:
+Entry point `repair(code, error_output) -> RepairResult` dispatches
+shadow first (runs unconditionally — static detection), then dict
+synonym if KeyError in error text.
 
-- **P0** (`91e1e04`): CLAUDE.md substrate-RAG flip (advocacy → regression
-  receipt + R53 Phase 2 status paragraph); `augmentation_thesis.md` new
-  §"R53.14/20a/20b — substrate L41 install REGRESSES on code"; `calm.md`
-  new §"Sandbox stdlib pre-import"; `workflow.md` new §§"MAX_TOKENS budget
-  discipline" + "GPU bench discipline".
-- **P1** (`c57b538`): `turboquant.md` v1/v2/v3/v4 variant table + new
-  §"Fused flash-attention decode" with honest short-ctx perf story;
-  `Substrate.md` + `architecture.md` KVCacheTq4 multi-token + tq4_flash_attn.py
-  rows + 4.4× → ~3.6× memory reconcile; `tracing_roadmap.md` session header
-  bumped to R53.34 + 8 new R53.x ruled-out rows.
-- **P2** (`bc81dda`): `capability_gain.md` new §"Gemma ignores targeted hints
-  (R53.19/R53.33 receipt)"; `retrieval.md` + `embed_intelligence.md` ruled-out
-  sections for substrate-RAG-on-code + FirstTokenHook-on-code;
-  `training.md` new §"Substrate eval defaults (R53.28 + R53.34)".
-- **Trim** (`68ff533`): `augmentation_thesis.md` stale "Implication for R53.6"
-  section (10 lines) — prediction was falsified by R53.14/20a/20b.
+**`8cc2ff4`** — Wired into `scripts/r53_21_import_inject.py` via
+`try_ast_repair()` — runs after import injection, before LLM
+structured repair. MAX_AST_REPAIR_PASSES=4 (chain for csv's
+potential `mean → stdev → min → max`). Reverts pre-pass state on
+regression. Also fires on LLM-repaired code in attempt 2+ loop.
+Results table grew `ast` column showing applied rewrite kinds.
 
-### Command update
+**`b9aaedc`** (this commit) — doc updates: `tracing_roadmap.md`
+adds row to shipped table + csv extractor ruled-out entry;
+`capability_gain.md` adds R53.35 receipt under "Gemma ignores
+targeted hints" confirming the tier-2 hypothesis.
 
-- `/update` workflow (`99ccc59` + `16817ad`): default is now parallel-audit
-  with 2 Explore agents → P0/P1/P2 classification → plan mode → one commit
-  per tier → fail-closed verification. Brief size guidance corrected to
-  300-500 words (the audit agents need complete context encoded in the brief
-  because they're cold-started).
+Measurement (two paths, both moved, no regression):
 
-### Microbench infrastructure
+  path                                            before   after  wall
+  ---------------------------------------------   ------   ------ ----
+  Raw:  pytest calm/llm_computer/tests/
+        test_ast_repair.py                         n/a     21/21  8.6s
+  User: token_bucket_rate_limiter (R53.0)          0/0      5/5   0.9s
+  (Gemma attempt 1 was 0/0 in 79s; walker lifted in 0.9s post-gen)
+  Regr: lru_cache_class (R53.0, no-regression)     9/9      9/9   123s
 
-- `scripts/bench_tq4_matvec.py` (`fdb7b60`): heavy_warmup(3s) + CUDA events
-  + median of 5 × 2000 iters + same-process A/B. Before this, kernel bench
-  variance was 20-30% run-to-run. After, v2 stabilized to -5 to -10%
-  aggregate across 3 process runs.
-- `scripts/test_tq4_matvec_v2_correctness.py`: max abs diff per shape vs v1.
-- `scripts/test_kvcache_tq4_multitoken.py`: 5 tests for S≥1 / per-layer /
-  prefill-then-decode / SWA-trim.
-- `scripts/sweep_tq4_block_m.py` (`f251a7f`): 9-value sweep kept for future
-  shape additions.
+token_bucket specifics: Gemma emitted `self.tokens = capacity` in
+`__init__` and a `def tokens(self)` method — canonical shadow.
+Walker renamed attr to `_tokens`, method stayed, 5/5 sub-tests
+passed: `tb.tokens() = 5.0`, drain-3, 4th-fails, refill-after-sleep,
+cap-enforced.
+
+### Subsystem 2 — Hook verified (no commit; just validation)
+
+`.claude/hooks/enforce-watch-wrap.sh` smoke-tested on 4 inputs:
+- block: `tail -f /tmp/foo | grep bar` ✓
+- allow: `bin/watch-wrap --log ...` ✓
+- allow: `while true; ... sleep 2; done` poll-loop ✓
+- silent-allow: `ls -la` (no tail) ✓
+
+File wiring is correct. Live activation in future sessions depends
+on Claude Code's settings-watcher (handoff caveat from prior
+session: new `.claude/settings.json` may need `/hooks` menu reload
+once, or session restart).
+
+### Subsystem 3 — Optional captures committed (1 commit)
+
+**`190fe55`** — `.claude/MEMORY/can_be_done.md` (substrate
+preserve/augment/plug thesis brain-dump, references
+`gemma_substrate.py:install_card_in_attention`) +
+`.claude/commands/summarise.md` (resume-brief reader pairing with
+`/handoff` writer).
 
 ## In Progress
 
-**Paused / not blocking**:
+None. Round 1 of the AST walker is shipped with measurement. Open
+iteration targets below.
 
-- **R53.33 at 5/6**: lru_cache_class un-run when daemon killed. Running total
-  23/23. Projected final 32/32 (matches R53.25). 1 hour to close the loop.
-  No new info expected — R53.25 already established the pattern.
-- **AST walker tier-2 card**: identified as the clear next lever from R53.33
-  partial receipts. Not yet started. ~2-3 days of pure Python work.
+## ⚠ Uncommitted
 
-**Uncommitted state** (46 files in `git status --short`):
+```
+ M .claude/MEMORY/SESSION_HANDOFF.md              # this file
+ M calm/hrm/checkpoints/meta_best.pt              # TEAMMATE — flag
+ M scripts/r52_train_student_kl.py                # TEAMMATE — flag
+ M scripts/r53_22_diagnose_csv.py                 # TEAMMATE — flag
+?? .cache/                                         # gitignored cache
+?? .claude/MEMORY/minutes.md                       # transcript — do NOT commit
+?? .claude/MEMORY/minutes/                         # transcript — do NOT commit
+?? .codex/, .port_sessions/                        # tooling — ignore
+?? RESEARCH/{LLM-COMPUTER,NEURAL_COMPUTER,TQ,TRAINING}/  # teammate
+?? calm/.module_learning.json                      # runtime
+?? calm/hrm/checkpoints/copy_code_*.pt             # TEAMMATE — flag
+?? calm/hrm/checkpoints/math_*.pt                  # TEAMMATE — flag
+?? calm/llm_computer/checkpoints/substrate_hrmlm_v2*.pt       # TEAMMATE
+?? calm/llm_computer/checkpoints/substrate_hrmlm_v2_tokenizer.json
+?? calm/llm_computer/r51/checkpoints/              # TEAMMATE R51
+?? calm/llm_computer/synth/chat_transcript.jsonl   # TEAMMATE
+?? calm/llm_computer/synth/library.jsonl           # TEAMMATE
+?? calm/llm_computer/tq4_autograd.py               # TEAMMATE — R52 work
+```
 
-- Modified by teammate / linter during session: `calm/llm_computer/gemma_substrate.py`,
-  `calm/llm_computer/tq4_flash_attn.py`, `scripts/r53_21_import_inject.py`,
-  `scripts/r53_22_diagnose_csv.py`, `scripts/r52_train_student_kl.py`,
-  `bin/gemma_daemon.py`. Changes appear intentional (system-reminders noted
-  them); do NOT revert without reviewing.
-- Deleted MEMORY files: `.claude/MEMORY/CRLM_SPEC.md`, `.claude/MEMORY/MEMORY.md`,
-  `.claude/MEMORY/RESEARCH_ROADMAP.md`. Deletions pre-date this session —
-  likely replaced by `atlas.md` + `substrate_registry.md`. Safe to commit deletion.
-- Deleted RESEARCH files: `RESEARCH/00_INDEX.md`, `01_LLM_Computer_Overview.md`,
-  `02_Fast_Attention_2D_Heads.md`, `03_Compiling_Programs_to_Weights.md`.
-  Replaced by the `RESEARCH/LLM-COMPUTER/`, `RESEARCH/NEURAL_COMPUTER/`,
-  `RESEARCH/TRAINING/` untracked directories.
-- Untracked: `.cache/` (retrieval indices, gitignored), `.claude/MEMORY/can_be_done.md`,
-  `.claude/scheduled_tasks.lock`, `.codex/`, `.port_sessions/`,
-  `calm/.module_learning.json`, multiple `calm/hrm/checkpoints/*.pt`,
-  `calm/llm_computer/checkpoints/substrate_hrmlm_v2*.pt`, `calm/llm_computer/r51/`,
-  `calm/llm_computer/synth/`, `calm/llm_computer/tq4_autograd.py`,
-  `scripts/r53_20b_stacked.py`, `scripts/r53_22_diagnose_csv.py`,
-  `scripts/r53_substrate_rag_multitoken.py`, `scripts/test_kvcache_tq4_multitoken.py`,
-  `scripts/test_tq4_matvec_v2_correctness.py` (these last five ARE from this
-  session but already git-added inside the respective commits — verify via
-  `git log --follow <path>`).
+**Session-critical unintentionally uncommitted**: **none**. All
+this session's walker code, tests, wiring, and doc updates are
+committed.
 
-## Next Steps (ranked by commercial lift)
+## Next Steps (ordered by commercial lift)
 
-### 1. AST walker tier-2 card for code logic bugs (~2-3 days)
+1. **Broader-corpus validation** (~1 day, HIGH lift) — the walker
+   lifted one R53.0 problem from 0/0 → 5/5. Next: run on MBPP /
+   HumanEvalPlus / BigCodeBench failures where Gemma produces code
+   (unlike csv_column_stats). Projected: each problem Gemma fails
+   via shadow or dict-synonym is a free +N tests. Existing pipeline
+   — apply the R53 failure-surface gate (see
+   `capability_gain.md` §"Failure-surface gate") to partition
+   `fails_correctness` vs `solves_cleanly`, then run walker on the
+   former.
 
-Biggest-lift target. R53.33 pinpointed two deterministic failure modes:
+2. **AST walker — new rewrites** (~2-3 days, MEDIUM lift) — widen
+   the rewrite set beyond shadow + synonym:
+   - **Off-by-one guard** (`IndexError: list index out of range`)
+     — detect `for i in range(len(xs) + 1): xs[i]` patterns;
+     rewrite `range(len(xs))`.
+   - **Unused-var vs missing-var** (`NameError: 'X'` where X is
+     an unused assignment two scopes up) — rewrite to use the
+     assigned name.
+   - **Missing `return`** (function runs but returns None, test
+     expects int) — detect implicit None return + rewrite to
+     return the last expression.
+   Each rewrite needs: (a) test-case capturing the Gemma bug, (b)
+   error-text detector, (c) AST transformer, (d) unit test, (e)
+   integration in `ast_repair.repair()`.
 
-- **token_bucket shadow bug** (`self.consume = capacity` shadows method `consume`)
-- **csv_column_stats KeyError** (dict access on key never constructed)
+3. **csv_column_stats extractor unblock** (~1-2 days, MEDIUM lift)
+   — `test_end_to_end_csv_column_stats_passes_after_repair`
+   confirms walker correctness on csv's bug pattern, but live
+   Gemma at medium budget emits 0/0 NoCode. Two paths:
+   - a) **Force code-fence prefix**: prepend `\n```python\ndef
+     csv_column_stats(text):\n` to Gemma's context, making the
+     first token always the fence-body. Mid-generation per-token
+     hook — NOT first-token bias (ruled out on code R53.14/20a/20b).
+   - b) **Wider extractor**: `extract_code()` already tries fence
+     / def / class / import / whole-AST. Check what Gemma IS
+     emitting (prose? `<think>` blocks that overflow? malformed
+     fence?) and extend the extractor if a recoverable pattern
+     exists. Probably faster than (a).
 
-Both tier-2-addressable by a compiled post-generation walker. Pure Python +
-existing `calm/sandbox.py` + `ast` stdlib. Pipeline:
+4. **Fused flash-attn long-context sweep** (~1 day, orthogonal) —
+   re-bench `scripts/r53_phase2_bench.py` at N=8K/16K per prior
+   handoff. Find or rule out an asymptotic crossover past the
+   `N < 2048` gate's upper bound.
 
-1. Parse Gemma output with `ast.parse`
-2. Detectors: method/attr shadow, undefined-ref, dict-key-never-set,
-   off-by-one in `range(0, n-1)`, unused-var
-3. Auto-rewrite OR return structured repair patch
-4. Integrate as post-generation pass in `scripts/r53_21_import_inject.py`
-   alongside existing import injection + R53.19 structured repair
-
-R53.0 projected lift: 32/32 → **~43-45/46** (maximum achievable).
-
-Entry point: add `scripts/r53_ast_walker.py` + wire into
-`scripts/r53_21_import_inject.py`'s `inject_imports_if_possible` pipeline
-(same contract — `code, test_code, run_fn, score_fn, problem → (code, pass, total, fixes_applied)`).
-
-Commercial framing in `.claude/rules/capability_gain.md` §"Gemma ignores
-targeted hints" — auditable rewrite, not probabilistic retry. Regulated
-industries need this.
-
-### 2. Broader-corpus validation (~1 day)
-
-R53.0 is 6 problems — too small to claim generalization. Run R53.25's
-winning stack (v2 kernel + sandbox fix + AdaptiveBudget + import injection)
-+ AST walker (if shipped) against **MBPP or HumanEvalPlus** filtered via
-the R53 failure-surface gate in `.claude/rules/capability_gain.md`. Target:
-50-200 problems.
-
-Start: `scripts/r53_run_data_generators.py` already fetches these corpora;
-`calm/llm_computer/facades/code_example_db.py:DEFAULT_CORPORA` has them
-loaded. Need a new eval driver that picks the failure-surface subset.
-
-### 3. Fused kernel long-context perf validation (~1 day, orthogonal)
-
-Run R53.34 fused kernel at N=4K, 8K, 16K to find (or rule out) the
-asymptotic crossover. If fused beats Phase 1 memo somewhere, enable
-`_use_fused_flash_attn=True` for long-ctx workloads only. Otherwise
-retire.
-
-Script: adapt `scripts/bench_tq4_matvec.py` pattern to drive `generate()`
-with N ∈ {1024, 4096, 8192, 16384} and log `prefill_s` + `decode_s` from
-the output dict.
-
-### 4. Close R53.33 loop (~1 hour)
-
-`bin/gemma-run --start` → dispatch `scripts/r53_21_import_inject.py` → wait
-for lru_cache_class to complete → expect 32/32 total. Updates evals folder
-if not matching baseline.
-
-### 5. Speculative (only if bandwidth)
-
-- **tq2 weight quantization**: port `quantize_tq4` to K=4 Lloyd-Max codebook.
-  Expected ~10-15% PPL regression, enables Gemma 4 E4B at 1M+ context on 8 GB.
-  Substrate absorbs quality drop via CALM verification. See CLAUDE.md
-  discussion of tq1/tq2/tq3 tradeoffs (this session — not yet in rules).
-- **Substrate-RAG on non-code domains**: L41-install regression is code-
-  specific. Math / factual-recall may still benefit. Pick one non-code
-  corpus, run R53.14-style A/B.
+5. **Hook live-activation check** — next session with Claude
+   Code: trigger a raw `tail -f | grep` via Monitor and verify
+   the hook blocks. If not, open `/hooks` menu to reload.
 
 ## Key Context
 
-### Patterns that worked
+**Decision rationale (WHY):**
 
-- **Hypothesis-test-iterate, commit after every round**. Discipline caught
-  two reversals (tq4 matvec v3, v4) before they rotted into the default.
-- **Parallel 2-Explore-agent audits** with ~400-word briefs for doc updates.
-  Agents do research + return structured punch lists; I synthesize into
-  P0/P1/P2 plan. Saves 30-60 min of main-context bench/doc noise per session.
-- **heavy_warmup + CUDA events + median of 5** for kernel benches. Before
-  this, variance was 20-30% — false perf signals every round.
-- **MAX_TOKENS first-order check** before diagnosing substrate / sandbox /
-  import issues. R53.19-R53.24 burned four null rounds before R53.25 showed
-  budget was the whole problem.
+- **Shadow detector runs unconditionally** (not only on TypeError):
+  the detector is pure static analysis (parse + walk methods +
+  walk assignments). Running it even when error text is missing
+  lets the walker rescue code whose symptom surfaces as
+  AttributeError, TypeError on a *later* call, or a missing test
+  output. Unit test `test_repair_shadow_runs_unconditionally_without_error_text`
+  locks in this behavior.
+- **Dict synonym is KeyError-gated** (opposite of above): the
+  table is short + curated; running it without an error target
+  would rewrite any `avg` → `mean` in any code, potentially
+  changing backend API keys that were legitimately `avg`. KeyError
+  gives us the missing-key target to aim for.
+- **Revert on regression**: walker rewrites are static but could
+  plausibly regress if (1) the code legitimately uses a synonym
+  name for a different purpose, or (2) shadow rename collides in
+  an unusual way. `try_ast_repair` snapshots `(pre_code, pre_sp,
+  pre_st)` before each pass and reverts cleanly on regression.
+- **MAX_AST_REPAIR_PASSES=4**: csv has 4 expected sub-keys
+  (mean/stdev/min/max). Each KeyError reveals the next. Cap at 4
+  to avoid infinite loops on malformed code.
+- **Walker before LLM repair in the pipeline**: it's 100-400× cheaper
+  (0.9s vs 80-300s per Gemma round). Running first means we don't
+  burn Gemma inference if a mechanical fix would work.
 
-### Patterns that failed (don't retry)
+**Measurement discipline caveats**:
 
-- **Substrate-RAG at L41 with FirstTokenHook on code tasks**: -9.3pp
-  regression pre- AND post-SWA-fix. Install-mechanism disrupts HIT prompts.
-  Don't use first-token bias on code.
-- **fp16 x_rot activation in Triton tq4 kernel**: +0.2/+8.7% null. Upcast
-  cost matches BW savings on Ada.
-- **uint32 vectorized qs loads in Triton**: +9.8/+16.4% slower. Triton
-  auto-coalesces; `tl.join`/reshape overhead exceeds BW savings.
-- **BLOCK_M sweep**: current `_pick_block_m` heuristic holds.
-- **TurboQuant Q_prod (3-bit Q_mse + 1-bit QJL) for KV cache**: unbiased
-  inner-product estimator IS correct, but softmax amplifies QJL variance.
-  Kept as research artifact for NN/retrieval.
-- **KVCacheTq4 with dequant-on-read at decode**: O(N²) dequant cost (linked_list
-  5/5 took 806s vs 94s at fp16 KV). Reverted until Phase 1 memoized path
-  landed (R53.28) + fused flash-attn (R53.34). Phase 1 memo is the shipped win.
-- **Gemma ignoring targeted rename hints**: R53.19/R53.33 data shows Gemma
-  retry emits the same shadow bug even with concrete example in hint. Prior
-  dominance overwhelms in-context instruction. Tier-2 AST walker is the fix,
-  not hint-tuning or bigger context.
+- **Full 6-problem corpus run was aborted** — daemon's
+  AdaptiveBudget picked `hard (16384 tok)` for
+  `linked_list_bugs`, which at memo-path decode (~7 tok/s past
+  the fused gate N=2048) projects to ~35min per attempt ×
+  3 attempts × 6 problems = 10+ hours. Killed after 45min on
+  problem 1. Spot-checked with lru_cache_class instead (9/9
+  preserved, 123s). Broader validation needs a cheaper loop —
+  either reduce `hard` tier default, or use the MBPP corpus
+  where per-problem time is shorter.
+- **token_bucket measurement is single-run**, not median-of-5.
+  Direction reliable (0/0 → 5/5 is binary). Magnitudes don't
+  apply for this kind of result. No GPU-bench-discipline concern.
+- **AdaptiveBudget calibration has drifted since R53.33**:
+  linked_list_bugs went from `medium (8192)` in R53.33 to `hard
+  (16384)` in this session. Unknown whether that lifts or
+  regresses pass-rate — not measured. Flagged for future budget
+  audit.
 
-### Environment state (session end)
+**Do NOT relitigate**:
 
-- **Daemon**: NOT running (killed during session pause). Restart with
-  `bin/gemma-run --start` (~3 min cold boot).
-- **GPU**: clear. `nvidia-smi` should show no resident Python processes.
-- **Working tree**: 46 modified/untracked entries. Session's commits are
-  clean; the untracked files are either gitignored caches, session artifacts
-  by other agents, or orphaned pre-session directories (RESEARCH/*.md
-  deletions are replaced by RESEARCH/*/ subdirs).
-- **Branch**: `feature/multi-agent-qwen`, 371+ commits ahead of
-  `origin/feature/multi-agent-qwen`. Not pushed.
+- csv_column_stats 0/0 at 8K budget is not a walker regression —
+  walker correctness on csv's bug pattern is locked in via unit
+  test. The live Gemma failure is extraction-blocked (prompt-level),
+  not logic-blocked. See `tracing_roadmap.md` ruled-out entry.
+- AST walker for other error classes (off-by-one, missing-return,
+  etc) is NEXT work (see §2 above), not part of R53.35's shipped
+  scope.
 
-### Hardware / serving
+**Failed approaches (cite SHAs)**:
 
-Per CLAUDE.md — RTX 4070 Laptop 8 GB, Gemma 4 E4B tq4 via
-`~/models/gemma-4-E4B-it-tq4-aligned.gguf` (5.0 GB). Daemon supports
-max_len=32K. At 16K ctx: ~5.5 GB total VRAM.
+- Full-corpus re-run at daemon default budgets: daemon killed at
+  T+45min on `linked_list_bugs` after 0 completed problems.
+  Aborted via `kill -9 705949`. Restarted daemon for spot-check.
+  No commit.
 
-## Files in Project (session-shipped)
+**Runtime state at session end**:
+- Branch: `feature/multi-agent-qwen`, **407 commits ahead of
+  origin** (session 33-34's 13 + this session's 4 = 17 today, but
+  prior 390 already pre-existing).
+- Daemon: **PID 856719** running. Spot-check ran to completion
+  (`[daemon] completed` marker, DONE). Loaded Gemma from
+  `gemma-4-E4B-it-tq4-aligned.gguf`, ~3.5GB VRAM idle.
+- GPU: ~511 MiB → ~5-6 GB depending on idle vs generation.
+- No in-flight work. No stash.
 
-### New files
-- `calm/llm_computer/tq4_flash_attn.py` — R53.34 fused flash-attn decode kernel
-- `scripts/bench_tq4_matvec.py` — stable Triton kernel A/B bench harness
-- `scripts/sweep_tq4_block_m.py` — per-shape BLOCK_M sweep harness
-- `scripts/test_tq4_matvec_v2_correctness.py` — max abs diff per shape vs v1
-- `scripts/test_kvcache_tq4_multitoken.py` — 5 tests for multi-token KVCacheTq4
-- `scripts/r53_20b_stacked.py` — substrate + prompt-RAG stacking eval (null)
-- `scripts/r53_22_diagnose_csv.py` — sandbox blocking diagnostic (led to R53.23 fix)
-- `scripts/r53_substrate_rag_multitoken.py` — multi-token step-through harness
-- `.claude/MEMORY/evals/2026-04-19_r53_substrate_rag_null.md` — R53.20a/b writeup
+## Files Changed (session-shipped)
 
-### Modified — code
-- `calm/sandbox.py` — pre-import ~23 stdlib modules before `_safe_import`
-- `calm/llm_computer/gemma_substrate.py` — multi-token KVCacheTq4 + generate(use_tq4_kv=True) dispatch
-- `calm/llm_computer/tq4_triton.py` — v1/v2/v3/v4 kernel variants, v2 default
-- `calm/llm_computer/facades/retrieval.py` — DenseIndex.load(prefer_tq4=True) default
-- `scripts/r53_21_import_inject.py` — USE_TQ4_KV toggle + AdaptiveBudget + generalized TypeError regex
-- `scripts/r53_eval_complex.py` — `_adaptive_budget()` helper + shared 16K ceiling
-- `scripts/r53_20b_stacked.py`, `r53_calm_substrate_full.py`, `r53_calm_substrate_retry.py`,
-  `r53_substrate_rag_eval.py`, `r53_substrate_rag_confidence.py`,
-  `r53_eval_complex_channel.py`, `r53_eval_phase1.py` — MAX_TOKENS → 4096-16384
-- `bin/gemma_daemon.py` — max_len 1024 → 32768 (from prior session, still current)
+### New files (3)
+- `calm/llm_computer/facades/ast_repair.py` — walker, 269 LOC
+- `calm/llm_computer/tests/test_ast_repair.py` — 21 unit tests, 300 LOC
+- `.claude/MEMORY/can_be_done.md` (committed from prior session) —
+  substrate thesis brain-dump
+- `.claude/commands/summarise.md` (committed from prior session) —
+  resume-brief reader
 
-### Modified — rules (P0/P1/P2 doc sweep)
-- `.claude/CLAUDE.md` — R53 status flip, Phase 2 status, v2 kernel as default
-- `.claude/rules/augmentation_thesis.md` — R53.14/20a/20b regression section
-- `.claude/rules/calm.md` — sandbox stdlib pre-import section
-- `.claude/rules/workflow.md` — MAX_TOKENS + GPU bench discipline sections
-- `.claude/rules/turboquant.md` — kernel variant table + fused flash-attn spec
-- `.claude/rules/Substrate.md` — KVCacheTq4 multi-token + tq4_flash_attn.py row
-- `.claude/rules/architecture.md` — same updates, mirror
-- `.claude/rules/tracing_roadmap.md` — 8 new R53.x ruled-out rows + header bump
-- `.claude/rules/capability_gain.md` — Gemma-ignores-hints section
-- `.claude/rules/retrieval.md` — substrate-RAG-on-code ruled out
-- `.claude/rules/embed_intelligence.md` — FirstTokenHook-on-code ruled out
-- `.claude/rules/training.md` — substrate eval defaults section
-- `.claude/commands/update.md` — parallel-audit + P0/P1/P2 plan default
+### Modified code
+- `scripts/r53_21_import_inject.py` — `+try_ast_repair()`,
+  `+MAX_AST_REPAIR_PASSES`, wired into main loop + LLM-repair
+  inner loop, results tuple gained `ast_repairs` column, docstring
+  rewrite, baseline annotations bumped to R53.33 32/32 +
+  walker-projected 37+/37. +124 LOC net.
 
-### Deletions (safe — pre-session orphans)
-- `.claude/MEMORY/CRLM_SPEC.md`, `.claude/MEMORY/MEMORY.md`,
-  `.claude/MEMORY/RESEARCH_ROADMAP.md`
-- `RESEARCH/00_INDEX.md` through `03_Compiling_Programs_to_Weights.md`
-  (replaced by `RESEARCH/LLM-COMPUTER/` + `NEURAL_COMPUTER/` + `TRAINING/` subdirs)
+### Modified docs
+- `.claude/rules/tracing_roadmap.md` — `ast_repair` row added to
+  "Shipped and verified" + "Facades built" tables (+2 rows);
+  ruled-out entry for csv_column_stats extractor bottleneck
+  (R53.35) added.
+- `.claude/rules/capability_gain.md` — R53.35 receipt added under
+  §"Gemma ignores targeted hints" with measurement table + csv
+  bottleneck flag.
+- `.claude/MEMORY/SESSION_HANDOFF.md` — this file (overwrote
+  prior 2026-04-20 fused-flash-attn handoff; previous content
+  retained in git history at `b453a38`).
+
+### Deleted
+None.
