@@ -59,12 +59,16 @@ MANUAL_OVERRIDES = {
 }
 
 
-def _derive_signature_from_prompt(prompt: str, fn_name: str) -> Optional[str]:
-    """Find the function signature in the problem prompt. Looks for
-    `def <fn_name>(<args>):` explicit pattern, or backtick-wrapped
-    `<fn_name>(<args>)` shorthand. Returns the full `def ...:` line,
-    or None when neither pattern matches.
-    """
+def _is_class_problem(name: str) -> bool:
+    """Heuristic: required name is a class if first char is uppercase.
+    Matches Python convention (PascalCase classes, snake_case functions)."""
+    return bool(name) and name[0].isupper()
+
+
+def _derive_function_signature(prompt: str, fn_name: str) -> Optional[str]:
+    """Extract `def <fn_name>(<args>):` signature from prompt. Looks for
+    explicit `def <fn>(...):` or backtick-wrapped `<fn>(...)` shorthand.
+    Returns the full `def ...:` line, or None."""
     # Pattern 1: explicit `def fn_name(args):` in prompt
     m = re.search(
         rf"def\s+{re.escape(fn_name)}\s*\([^)]*\)\s*(?:->\s*[^\s:]+\s*)?:",
@@ -82,21 +86,65 @@ def _derive_signature_from_prompt(prompt: str, fn_name: str) -> Optional[str]:
     return None
 
 
-def _signature_for(prob, fn_name: str) -> str:
+def _derive_class_prefix(prompt: str, class_name: str) -> Optional[str]:
+    """Extract `class <Name>:\n    def __init__(<args>):` prefix from
+    prompt. Sources:
+    1. Inline code block containing `class <Name>:\n    def __init__(`
+       (e.g. linked_list_bugs has full skeleton inline)
+    2. Backtick-wrapped `__init__(self, <args>)` shorthand
+       (e.g. token_bucket_rate_limiter + lru_cache_class)
+
+    Returns the multi-line class+init prefix ending in `\n`, or None.
+    """
+    # Pattern 1: full `class Name:` + `def __init__(` pair in prompt
+    m = re.search(
+        rf"class\s+{re.escape(class_name)}\s*(?:\([^)]*\))?\s*:\s*\n"
+        rf"\s+def\s+__init__\s*\(([^)]*)\)\s*:",
+        prompt)
+    if m:
+        init_args = m.group(1)
+        # No trailing \n — FORCED_PROMPT template adds one. Prompt ends
+        # with `def __init__(...):\n`, Gemma's continuation is indented
+        # body tokens.
+        return (f"class {class_name}:\n"
+                f"    def __init__({init_args}):")
+
+    # Pattern 2: backtick-wrapped `__init__(self, <args>)` shorthand
+    m = re.search(r"`__init__\s*\(([^)]*)\)`", prompt)
+    if m:
+        init_args = m.group(1)
+        return (f"class {class_name}:\n"
+                f"    def __init__({init_args}):")
+
+    return None
+
+
+def _derive_signature_from_prompt(prompt: str, name: str) -> Optional[str]:
+    """Route between function / class derivation based on name shape."""
+    if _is_class_problem(name):
+        return _derive_class_prefix(prompt, name)
+    return _derive_function_signature(prompt, name)
+
+
+def _signature_for(prob, name: str) -> str:
     """Best-effort signature. Priority:
     1. MANUAL_OVERRIDES table
-    2. Parse from prompt text
-    3. Fallback: `def <fn_name>(text):` (csv-style default)
+    2. Parse from prompt text (class-aware)
+    3. Fallback by shape:
+       - class: `class <Name>:\n    def __init__(self):\n`
+       - function: `def <name>(text):`
     """
-    if fn_name in MANUAL_OVERRIDES:
-        return MANUAL_OVERRIDES[fn_name]
+    if name in MANUAL_OVERRIDES:
+        return MANUAL_OVERRIDES[name]
 
-    sig = _derive_signature_from_prompt(prob.prompt, fn_name)
+    sig = _derive_signature_from_prompt(prob.prompt, name)
     if sig:
         return sig
 
-    # Generic fallback for string-input problems
-    return f"def {fn_name}(text):"
+    # Shape-appropriate fallback
+    if _is_class_problem(name):
+        return f"class {name}:\n    def __init__(self):"
+    return f"def {name}(text):"
 
 
 def run_force_fence(target_name: str, max_tokens: int = 2048):
