@@ -415,87 +415,47 @@ thesis mid-task.
 
 ## Empirical basis
 
-Session 33 (2026-04-17+), 49+ round arc (R13-R50.6) on RTX 4070
-Laptop, 8 GB VRAM:
+Session 33-34 (2026-04-17+), 52-round arc (R13-R52.3) on RTX 4070 Laptop,
+8 GB VRAM. Full per-round table + per-head/layer lookup:
+`.claude/rules/tracing_roadmap.md` §"Gemma 4 E4B tracing findings"
++ `.claude/MEMORY/atlas.md`.
 
-- **R13-R19**: arithmetic localization to L23 H4 V (~2.6M params)
-- **R20-R28**: full arithmetic circuit mapped AND causally validated
-  as compilable (L30 H4/H6 + L31-L32 FFN, forced-attention preserves
-  fd with 9/10 argmax match, mean |Δ|=0.407)
-- **R29-R30**: factual recall localizes but is diffuse at head level
-  (FFN-locked)
-- **R31-R33**: induction localizes to L37 H6 (classic Olsson-2022
-  pattern confirmed — reads position after prior occurrence)
-- **R34-R35**: counting = hybrid circuit, shares L33/L37 with
-  induction, adds L20 (3-way cooperative) and L31/L33/L37 H4
-  (numeric-successor specialist)
-- **R36-R37**: comparison localizes at L35 (global), shares L23 with
-  arithmetic; diffuse at head level
-- **R38-R40**: SV agreement is a 3-stage global pipeline
-  L23→L29→L35; L23 H1/H4 attention patterns show H4 reads subject,
-  H1 reads distractor
-- **R41**: L23 H1/H4 on arithmetic prompts — H1 reads b-operand
-  3× more than a. Same heads, task-specific Q patterns.
-- **R42**: L23 H1/H4 forced attention on SV agreement (mirror of
-  R28 at different layer + task) — mean |Δ|=0.467, 8/10 match.
-  Hub-sharing validated on linguistic capability.
-- **R43**: L23 forced attention on comparison + counting —
-  comparison 18/18 (cleanest result, |Δ|=0.176), counting 6/6.
-  Initial **4-for-1 compilation proven**: one compiled L23 H1/H4
-  replacement benefits arithmetic + SV + comparison + counting.
-  L23 hub across 3 capabilities: 32/34 argmax matches (94%).
-- **R44-R45**: `HubInjectionCard` facade shipped — bit-identical
-  to R43 inline intervention, `generate()` verified 5×12 decode
-  tokens.
-- **R46**: `MultiStepReasoningFacade` — N-op step-through digit
-  bias extension of R11. 17/17 real Gemma fixes, 0 regressions.
-  **Becomes the 5th L23 hub beneficiary → 5-for-1 ROI.**
-- **R47-R50.6**: multi-step composition mapped to L24 SWA
-  (Δ=-17.23, 69% > R16 L23). Diffuse at attention (R47.4), FFN
-  per-neuron (R48.1), and SAE-feature (R50.5) levels. SAE infra
-  shipped (R50.1-6): TopK K=50 reconstructs 99.1%, SAE install
-  preserves arithmetic 100%, but top-50 features have **zero
-  causal effect**. **R50.5 falsifies the "SAE = next compilable
-  target" direction** for distributed circuits. Open problem:
-  find SAE architectures where reconstruction implies causal
-  localization.
-- **R51 (tier-3 first attempt)**: MSE-distilled 1.25M Small2DTransformer
-  student trained on 3000 broad-domain prompts → 92.6% aggregate
-  val variance-explained (per-domain 89.8-96.9%). Installed via
-  L24 monkey-patch on live Gemma + evaluated on 120 held-out
-  prompts with k=12 token preservation gate: training-dist mean
-  prefix = 0.19 (FAIL vs 0.80), off-dist = 0.34 (FAIL vs 0.95).
-  **Second instance of the R50.5 pattern at a different scale**:
-  high residual-space reconstruction fidelity does NOT imply
-  token-space task preservation. Counterintuitive per-domain
-  shape — arithmetic (lowest val MSE) preserves WORST (0.11),
-  code (highest val MSE) preserves BEST (0.59) — suggests the
-  missing 3-10% MSE on arithmetic contains sharp digit-selector
-  directions MSE averages over. MSE distillation added to the
-  "ruled out" set alongside SAE features for distributed circuits.
-- **R52 (session 34 extension — tier-3 second attempt)**: same
-  1.25M student, forward KL-divergence on Gemma's final next-token
-  logits instead of MSE on residuals. Hypothesis: KL directly
-  optimizes token preservation, should beat MSE. Trained on
-  3000-prompt broad corpus (batch=4, lr=3e-4, grad_clip=0.1,
-  warmup=200, 1000 steps) via Triton autograd path. Val KL
-  decreased 1.96→1.21 monotonically. Dual-gate: train-dist 0.040
-  / off-dist 0.080 — **WORSE than R51.5 MSE baseline** (0.194 /
-  0.342). **Third independent null for L24 distillation.** Same
-  pattern: distillation-space loss improves, token preservation
-  fails. Three distinct losses (SAE ablation, MSE residuals, KL
-  logits) all fail identically. **Tier-3 L24 distillation is
-  closed**; pivot to tier-2 stacking per new §"Tier-2 stacking
-  achieves tier-3-equivalent outcomes" above.
+**7 capabilities mapped** (cluster summary — full sweep + per-head
+ablation detail in tracing_roadmap.md per-round rows):
 
-**Seven capabilities mapped, three causal validations (R28, R42,
-R43), two facades shipped (HubInjectionCard 5-for-1 + MultiStep
-17/17), typology demonstrated across numeric + linguistic +
-compositional capabilities, hub-sharing empirically proven and
-deployed, deep-diffuse shape identified and compilation path
-open.** This is the evidence base. Future probes extend the atlas;
-they don't re-validate the thesis. Full per-head / per-capability
-lookup: `.claude/MEMORY/atlas.md`.
+| Capability | Cluster | Typology | Key validation |
+|---|---|---|---|
+| Arithmetic | L22-L30, L23 peak | Concentrated | R28 forced-attn L30 H4/H6: \|Δ\|=0.407, 9/10 |
+| Factual recall | L5, L11 | Diffuse (FFN-locked) | — (ROME/MEMIT territory) |
+| Induction | L33-L37, L37 H6 peak | Concentrated | R33 Olsson-2022 pattern confirmed |
+| Counting | L20, L31-L37 | Cooperative | R43 forced-attn L23: 6/6 |
+| Comparison | L35, L23 shared | Diffuse (at heads) | R43 forced-attn L23: 18/18 \|Δ\|=0.176 (cleanest) |
+| SV agreement | L23→L29→L35 | Hybrid pipeline | R42 forced-attn L23 H1/H4: \|Δ\|=0.467, 8/10 |
+| Multi-step composition | L24 SWA Δ=-17.23 | Deep-diffuse | NO causal validation — see tier-3 nulls below |
+
+**3 causal validations** (R28 arithmetic + R42 SV + R43 comparison+counting)
+— same forced-attention template across 4 (layer, capability) pairs.
+L23 H1/H4 proven hub-shared: 32/34 argmax matches across arithmetic + SV
++ comparison + counting.
+
+**2 facades shipped**:
+- `HubInjectionCard` (R44-R45): bit-identical to R43 inline; `generate()`
+  verified. Runtime Q/K dispatch — no per-task hand-coding.
+- `MultiStepReasoningFacade` (R46.2): N-op step-through digit bias,
+  17/17 real Gemma fixes, 0 regressions. **5-for-1 L23 hub ROI.**
+
+**3 tier-3 L24 distillation nulls** (R50.5 SAE / R51.5 MSE / R52.3 KL)
+— same pattern in each: distillation-space loss improves, token
+preservation fails. R53.36 install-audit refinement (`capability_gain.md`
+§R53.36): R51-MSE reproduces L24 at cos=0.89 (close-miss cascade through
+17 downstream layers); R52-KL never learned L24 at all (cos=-0.02, wrong
+loss silent on residuals). Install math zero-diff both students. **Tier-3
+L24 closed at current loss space**; Jacobian-weighted loss a credible
+reopen path (~30% probability). Pivot to tier-2 stacking per §"Tier-2
+stacking achieves tier-3-equivalent outcomes" above.
+
+This is the evidence base. Future probes extend the atlas; they don't
+re-validate the thesis.
 
 ## Related rules
 
