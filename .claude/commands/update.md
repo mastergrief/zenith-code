@@ -1,4 +1,6 @@
-Audit the project and rewrite `.claude/CLAUDE.md`, `.claude/rules/`, and `.claude/MEMORY/SESSION_HANDOFF.md` to reflect the current state. REWRITE, not append — replace stale information. Includes a final audit pass to catch implicit/partial captures before declaring done.
+Audit the project and rewrite `.claude/CLAUDE.md` + `.claude/rules/` to reflect the current state. REWRITE, not append — replace stale information. Includes a final audit pass to catch implicit/partial captures before declaring done.
+
+**Handoff rewriting is owned by `.claude/commands/handoff.md`, not here.** After `/update` ships CLAUDE.md + rules updates, run `/handoff` to rewrite `.claude/MEMORY/SESSION_HANDOFF.md` with its own 2-agent grounding. The two commands compose — they don't duplicate. `/update` validates handoff coherence during its audit phase (e.g. uncommitted files are listed); handoff-content editing happens under `/handoff`.
 
 ## Default workflow — parallel audit → P0/P1/P2 plan → execute by tier
 
@@ -129,21 +131,14 @@ If verification fails, fix before declaring done. If a finding is lost, add it O
    | Personal debugging lessons / preferences | `~/.claude/projects/.../memory/` (NOT docs) |
    | Conversation transcript | `.claude/MEMORY/Augment-notes.md` or similar — preserve as-is, reference from handoff |
 
-7. **Handoff rewrite rule** — if the current `SESSION_HANDOFF.md` is from a previous session arc (different topic / older commit range), **REPLACE it entirely**. Don't append a new section to an old handoff from a different arc. New handoff must include:
-   - TL;DR
-   - Eval results / measurements if any
-   - Artifact list (new files shipped this session)
-   - **⚠ UNCOMMITTED section** with `git status --short` output — list every untracked + modified file from the session
-   - Current environment state (daemon PID, GPU memory, etc.)
-   - Next actions with rationale
-   - Pointer to session transcript if one exists
+7. **Handoff rewriting is delegated to `.claude/commands/handoff.md`.** Do NOT duplicate handoff structure or authorship discipline here. If this session was non-trivial (per the `/handoff` gate: >3 commits, >1 subsystem, new mechanism, or transcript >30K tokens), run `/handoff` after `/update` completes. The two commands compose — `/update` owns `CLAUDE.md` + `rules/`, `/handoff` owns `SESSION_HANDOFF.md`.
 
 8. **Propose before editing**: Output the full list of proposed changes with `file:line` refs + one-line justifications. Wait for explicit approval (`ok implement` / `do all` / `yes please`) before editing. Use plan mode if the session is substantial — writes a plan file the user can review. Skip this gate only with explicit `--auto` intent.
 
 9. **Rewrite in place**: Edit each section to match reality. Delete sections that no longer apply. Cite commit hashes inline (format: `` (commit `c11232a`) ``).
 
 10. **FINAL AUDIT — did we lose anything?** After writing all docs, do a second pass:
-    - **Uncommitted-files check**: re-run `git status --short`. Every untracked + modified file from the session should be accounted for in the handoff. If not, add it.
+    - **Uncommitted-files check**: re-run `git status --short`. Verify every untracked + modified file from the session is reflected in the current `SESSION_HANDOFF.md`'s ⚠ UNCOMMITTED section. If missing, flag for the next `/handoff` run — do NOT hand-edit handoff content from `/update`.
     - **Transcript diff**: if a session log exists, scan it for topics/findings that don't appear in the new docs. Specifically check for:
       - User questions that led to architectural insights ("what is X?", "why doesn't Y?")
       - Debugging steps / fixes that exposed invariants
@@ -168,5 +163,4 @@ If verification fails, fix before declaring done. If a finding is lost, add it O
 - **Cite commits in doc updates**. When documenting a rule that came from a recent bug fix, include the commit hash inline.
 - **Don't put project facts in memory**. Memory = personal preferences + debugging lessons. Project state / architecture / conventions → `CLAUDE.md` or `.claude/rules/`.
 - **Distinguish wrong-premise from stale**. Stale was true and is now false; wrong-premise was never quite right. Wrong-premise needs framing changes, not just value updates.
-- **Never claim "all committed" in the handoff without verifying `git status`**. An uncommitted session is at risk. If work is uncommitted, say so explicitly and recommend `git add` + commit as the first action on resume.
 - **Session-log extraction before rule-writing**. If a transcript exists, findings there are richer than docs. Pull from transcript first, reconcile with code + commits second, write rules third.
