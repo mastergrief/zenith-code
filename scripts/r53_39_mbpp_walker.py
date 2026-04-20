@@ -147,6 +147,21 @@ STOCK_PROMPT = (
 )
 
 
+# Force-fence variant: prepends a code-fence + signature to the prompt
+# tail so Gemma's emission is indented-body by construction.
+FORCED_PROMPT = (
+    "<start_of_turn>user\n"
+    "You are a careful, correct Python coding assistant.\n\n"
+    "{prompt}\n\n"
+    "Write ONLY the Python function in a ```python fenced block. "
+    "No tests, no prose.\n"
+    "<end_of_turn>\n"
+    "<start_of_turn>model\n"
+    "```python\n"
+    "{signature}\n"
+)
+
+
 def gen_stock(m_ref, tok_ref, p: MbppProblem, max_tokens: int = MAX_TOKENS) -> str:
     prompt = STOCK_PROMPT.format(prompt=p.prompt)
     out = m_ref.generate(prompt, tok_ref, max_tokens=max_tokens,
@@ -157,6 +172,65 @@ def gen_stock(m_ref, tok_ref, p: MbppProblem, max_tokens: int = MAX_TOKENS) -> s
         if i >= 0:
             text = text[:i]
     return text
+
+
+def gen_forced(m_ref, tok_ref, p: MbppProblem, signature: str,
+               max_tokens: int = MAX_TOKENS) -> str:
+    """Force-fence fallback: same as gen_stock but with the code-fence
+    and signature already in context. Returns the reconstructed output
+    (sig prepended so extractor sees complete function)."""
+    prompt = FORCED_PROMPT.format(prompt=p.prompt, signature=signature)
+    out = m_ref.generate(prompt, tok_ref, max_tokens=max_tokens,
+                         device="cuda", stop_on_eos=True)
+    text = out["text"]
+    for mark in ("<end_of_turn>", "<start_of_turn>"):
+        i = text.find(mark)
+        if i >= 0:
+            text = text[:i]
+    # Prepend fence + sig back — that was in Gemma's context but not
+    # in its output stream; extractor needs the full sequence.
+    return f"```python\n{signature}\n{text}"
+
+
+def _derive_mbpp_signature(p: MbppProblem) -> str:
+    """Derive a signature for an MBPP problem. Simpler than R53.38v3
+    because MBPP fn_names are all function-based (lowercase). Try to
+    peek at the first assert for arg count:
+      `assert foo(arg1, arg2) == ...`
+    Infer `def foo(a, b):` from that. Fallback: `def foo(*args):`.
+    """
+    if not p.tests:
+        return f"def {p.fn_name}(*args):"
+    first = p.tests[0]
+    m = re.match(rf"assert\s+{re.escape(p.fn_name)}\s*\((.*?)\)\s*(?:==|!=|\s)",
+                 first)
+    if not m:
+        return f"def {p.fn_name}(*args):"
+    args_str = m.group(1)
+    # Rough arg count — count top-level commas (doesn't handle nested
+    # tuples/calls perfectly, but good enough for derivation)
+    depth = 0
+    n_commas = 0
+    for ch in args_str:
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            n_commas += 1
+    n_args = n_commas + 1 if args_str.strip() else 0
+    # Generate placeholder arg names
+    if n_args == 0:
+        return f"def {p.fn_name}():"
+    if n_args == 1:
+        return f"def {p.fn_name}(x):"
+    if n_args == 2:
+        return f"def {p.fn_name}(x, y):"
+    if n_args == 3:
+        return f"def {p.fn_name}(x, y, z):"
+    # 4+: generic
+    args = ", ".join(f"a{i}" for i in range(n_args))
+    return f"def {p.fn_name}({args}):"
 
 
 def extract_code(raw: str, required_name: Optional[str]) -> Optional[str]:
@@ -247,7 +321,7 @@ def run_mbpp_walker():
     print("=" * 80, flush=True)
 
     stats = {"clean": 0, "walker_fixable": 0, "genuine_fail": 0,
-             "format_fail": 0}
+             "format_fail": 0, "force_fence_lift": 0}
     per_problem = []
 
     for pi, p in enumerate(problems):
@@ -260,18 +334,41 @@ def run_mbpp_walker():
         dt = time.time() - t0
 
         code = extract_code(raw, p.fn_name)
+        used_force_fence = False
+
+        # Force-fence fallback when stock extraction fails (R16)
         if not code:
-            stats["format_fail"] += 1
-            print(f"  [{dt:.0f}s] NO CODE (extraction failed)", flush=True)
-            per_problem.append((p.idx, "format_fail", 0, len(p.tests),
-                                None, ""))
-            continue
+            sig = _derive_mbpp_signature(p)
+            print(f"  [{dt:.0f}s] stock NO CODE — trying force-fence "
+                  f"with sig={sig!r}", flush=True)
+            t1 = time.time()
+            raw_forced = gen_forced(m, tok, p, sig)
+            dt_forced = time.time() - t1
+            code = extract_code(raw_forced, p.fn_name)
+            dt += dt_forced
+            used_force_fence = True
+            if not code:
+                stats["format_fail"] += 1
+                print(f"  [+{dt_forced:.0f}s] force-fence ALSO NO CODE",
+                      flush=True)
+                per_problem.append((p.idx, "format_fail", 0, len(p.tests),
+                                    None, ""))
+                continue
+            else:
+                print(f"  [+{dt_forced:.0f}s] force-fence EXTRACTED "
+                      f"{len(code)} chars", flush=True)
 
         passed, total, diag = score_code(code, p.tests)
         if passed == total:
             stats["clean"] += 1
-            print(f"  [{dt:.0f}s] CLEAN {passed}/{total}", flush=True)
-            per_problem.append((p.idx, "clean", passed, total, None, ""))
+            if used_force_fence:
+                stats["force_fence_lift"] += 1
+            tag = "CLEAN (force-fence)" if used_force_fence else "CLEAN"
+            print(f"  [{dt:.0f}s] {tag} {passed}/{total}", flush=True)
+            per_problem.append(
+                (p.idx, "clean_force_fence" if used_force_fence else "clean",
+                 passed, total, "force_fence" if used_force_fence else None,
+                 ""))
             continue
 
         # Try walker cascade (R10) — allows empty_block → AST-walker
@@ -302,15 +399,18 @@ def run_mbpp_walker():
     # Summary
     print("\n" + "=" * 80, flush=True)
     print("[r53.39] AGGREGATE", flush=True)
-    print(f"  clean          : {stats['clean']:3d}/{len(problems)}",
+    print(f"  clean             : {stats['clean']:3d}/{len(problems)}  "
+          f"(force-fence-lift: {stats['force_fence_lift']})",
           flush=True)
-    print(f"  walker_fixable : {stats['walker_fixable']:3d}/{len(problems)}",
+    print(f"  walker_fixable    : {stats['walker_fixable']:3d}/{len(problems)}",
           flush=True)
-    print(f"  genuine_fail   : {stats['genuine_fail']:3d}/{len(problems)}",
+    print(f"  genuine_fail      : {stats['genuine_fail']:3d}/{len(problems)}",
           flush=True)
-    print(f"  format_fail    : {stats['format_fail']:3d}/{len(problems)}",
+    print(f"  format_fail       : {stats['format_fail']:3d}/{len(problems)}",
           flush=True)
-    print(f"\n  walker-attributable lift: {stats['walker_fixable']} problems",
+    print(f"\n  walker-attributable lift:      {stats['walker_fixable']} problems",
+          flush=True)
+    print(f"  force-fence-attributable lift: {stats['force_fence_lift']} problems",
           flush=True)
 
     print("\n[r53.39] per-problem:", flush=True)
@@ -322,4 +422,6 @@ def run_mbpp_walker():
     print("[r53.39] DONE", flush=True)
 
 
-run_mbpp_walker()
+# Daemon exec at top-level — skip when imported (no m/tok globals).
+if "m" in globals() and "tok" in globals():
+    run_mbpp_walker()
