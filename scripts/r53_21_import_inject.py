@@ -1,26 +1,34 @@
-"""R53.21 — Mechanical import injection on NameError.
+"""R53.21 — Mechanical import injection + AST walker repair.
 
 R53.19's structured repair told Gemma "add `from io import StringIO`"
-and Gemma ignored it. Stop asking. Inject the import ourselves.
+and Gemma ignored it. R53.33 categorizer detected `self.consume =
+capacity` shadow, Gemma's retry emitted the same bug. Stop asking.
 
-Pipeline per problem:
+Three deterministic repair layers stack in front of LLM retries:
+
   1. gen_hinted (channel-code-hybrid, R53.7 pattern)
   2. Extract code, run tests in sandbox
   3. If pass → done
-  4. If NameError on a symbol in COMMON_IMPORTS:
-     prepend the import, re-run, iterate up to 4 times
-  5. If still failing → fall back to R53.19 structured repair
+  4. Import injection — NameError on COMMON_IMPORTS symbol → prepend
+     import, re-run, up to MAX_IMPORT_INJECTIONS
+  5. AST walker — deterministic rewrites for R53.33 failure modes:
+     (a) shadow rename (TypeError: 'X' object is not callable)
+     (b) dict-key synonym (KeyError: 'mean' ← 'avg', etc)
+     See calm/llm_computer/facades/ast_repair.py
+  6. If still failing → R53.19 LLM structured repair (with another
+     round of import injection + AST walker on the repaired code)
 
-Hypothesis: csv_column_stats at the Gemma ceiling is often
-"emits correct csv+StringIO code but forgot the from-io import".
-Mechanical injection lifts that without Gemma cooperation.
+The three mechanical layers have zero inference cost and ~200ms
+total latency. They run before spending 100-400s on a Gemma repair
+round.
 
-Baseline: R53.19 v3 = 26/26 (tests that ran, all passed).
-csv_column_stats contributes 0/0 to that total (no code extracts or
-code crashes pre-first-test). If injection makes csv's code run at
-all, we get a lift.
+Baseline lineage (on same R53.0 6-problem corpus):
+  R53.19 v3:          26/26   (imports injection off, no ast walker)
+  R53.25 + R53.33:    32/32   (import injection + MAX_TOKENS=16K)
+  R53.26+ target:     ~43-45/46  (add AST walker — projected)
 
-No substrate install. Pure retrieval + mechanical + optional repair.
+No substrate install. Pure retrieval + mechanical + optional LLM
+repair.
 
 Daemon-only:
   bin/gemma-run scripts/r53_21_import_inject.py
@@ -228,6 +236,60 @@ def inject_imports_if_possible(
     return current, sp, st, injected
 
 
+MAX_AST_REPAIR_PASSES = 4   # csv may need 'mean' → 'stdev' → 'min' → 'max'
+
+
+def try_ast_repair(
+    code: str,
+    test_code: str,
+    run_fn,
+    score_fn,
+    problem,
+) -> Tuple[str, int, int, List[str]]:
+    """Apply the tier-2 AST walker iteratively. Each pass runs tests,
+    reads the error, and rewrites once (shadow rename OR dict-key
+    synonym). Iteration handles the csv case where fixing 'mean'
+    reveals 'stdev' as the next missing key.
+
+    Returns (final_code, passed, total, applied_kinds). No-op when
+    the walker has nothing to fix — returns original code with an
+    empty list.
+    """
+    from calm.llm_computer.facades.ast_repair import repair as ast_walker
+
+    current = code
+    applied: List[str] = []
+    sp, st, _ = score_fn(current, problem)
+    if st > 0 and sp == st:
+        return current, sp, st, applied
+
+    for _ in range(MAX_AST_REPAIR_PASSES):
+        output = run_fn(current, test_code)
+        result = ast_walker(current, output)
+        if not result.applied:
+            break
+        # Snapshot pre-pass state so we can revert cleanly on regression
+        pre_code = current
+        pre_sp, pre_st = sp, st
+        current = result.new_code
+        new_sp, new_st, _ = score_fn(current, problem)
+        # Only keep the rewrite if it improved (or matched) the score.
+        # Walker rewrites are static, but could plausibly regress on
+        # edge cases — e.g. if Gemma's code legitimately used 'avg'
+        # as a backend key name and the test expects both forms.
+        if new_st < pre_st or (new_st == pre_st and new_sp < pre_sp):
+            # Regression — revert this pass and stop
+            current = pre_code
+            sp, st = pre_sp, pre_st
+            break
+        applied.append(result.kind)
+        sp, st = new_sp, new_st
+        if st > 0 and sp == st:
+            return current, sp, st, applied
+
+    return current, sp, st, applied
+
+
 REPAIR_PROMPT_TEMPLATE = """\
 Fix this Python code based on the SPECIFIC issue identified.
 
@@ -363,9 +425,10 @@ def run_eval(m, tok) -> None:
     print(f"\n[r53.21] running {len(CORPUS)} problems...", flush=True)
 
     # Track per-problem breakdown
-    results: List[Tuple[str, int, int, int, int, int, str, List[str]]] = []
+    results: List[Tuple[str, int, int, int, int, int, str,
+                        List[str], List[str]]] = []
     # (name, att1_pass, att1_total, final_pass, final_total, n_attempts,
-    #  last_kind, injected_imports)
+    #  last_kind, injected_imports, ast_repairs)
 
     for i, p in enumerate(CORPUS):
         print(f"\n[{i+1}/{len(CORPUS)}] {p.name}", flush=True)
@@ -385,6 +448,7 @@ def run_eval(m, tok) -> None:
 
         # IMPORT INJECTION (if code extracted but tests failed)
         injected_imports: List[str] = []
+        ast_repairs: List[str] = []
         best_pass, best_total = sp1, st1
         best_code = code
         if code and not (st1 > 0 and sp1 == st1):
@@ -400,6 +464,20 @@ def run_eval(m, tok) -> None:
                                               and new_pass > best_pass):
                     best_pass, best_total = new_pass, new_total
                     best_code = new_code
+
+        # AST WALKER REPAIR — cheap, deterministic. Runs after import
+        # injection but before LLM repair. Shadow rename + dict synonym.
+        if best_code and not (best_total > 0 and best_pass == best_total):
+            t1 = time.time()
+            ast_code, ast_pass, ast_total, ast_repairs = try_ast_repair(
+                best_code, p.test_code, run_sandbox, score_code, p)
+            if ast_repairs:
+                print(f"  ast-walker {ast_repairs} → {ast_pass}/{ast_total} "
+                      f"({time.time()-t1:.1f}s)", flush=True)
+                if ast_total > best_total or (ast_total == best_total
+                                              and ast_pass > best_pass):
+                    best_pass, best_total = ast_pass, ast_total
+                    best_code = ast_code
 
         last_kind = "ok" if (best_total > 0 and best_pass == best_total) else "n/a"
         n_attempts = 1
@@ -437,6 +515,20 @@ def run_eval(m, tok) -> None:
                           flush=True)
                     new_pass, new_total = inj_pass, inj_total
                     injected_imports.extend(inj_imports)
+                    new_code = inj_code
+
+            # AST walker on LLM-repaired code too
+            if new_code and not (new_total > 0 and new_pass == new_total):
+                ast_code2, ast_pass2, ast_total2, ast_repairs2 = (
+                    try_ast_repair(new_code, p.test_code,
+                                   run_sandbox, score_code, p))
+                if ast_repairs2 and (
+                        ast_total2 > new_total or
+                        (ast_total2 == new_total and ast_pass2 > new_pass)):
+                    print(f"    + ast-walker {ast_repairs2} → "
+                          f"{ast_pass2}/{ast_total2}", flush=True)
+                    new_pass, new_total = ast_pass2, ast_total2
+                    ast_repairs.extend(ast_repairs2)
 
             if new_total > best_total or (new_total == best_total
                                           and new_pass > best_pass):
@@ -446,31 +538,36 @@ def run_eval(m, tok) -> None:
                 break
 
         results.append((p.name, sp1, st1, best_pass, best_total,
-                        n_attempts, last_kind, injected_imports))
+                        n_attempts, last_kind, injected_imports,
+                        ast_repairs))
 
     # ------------- AGGREGATE -------------
-    print("\n" + "=" * 130, flush=True)
+    print("\n" + "=" * 140, flush=True)
     print(f"  {'name':<28} {'attempt 1':>11} {'final':>11} "
-          f"{'attempts':>9} {'last err':>16} {'injected'}", flush=True)
-    print("-" * 130, flush=True)
+          f"{'attempts':>9} {'last err':>16}   {'injected':<26} {'ast'}",
+          flush=True)
+    print("-" * 140, flush=True)
     s_total = (0, 0)
     f_total = (0, 0)
-    for name, sp, st, fp, ft, na, kind, inj in results:
+    for name, sp, st, fp, ft, na, kind, inj, ast_r in results:
         improved = "✓" if (fp/max(ft, 1) > sp/max(st, 1)) else (
             "=" if fp/max(ft, 1) == sp/max(st, 1) else "↓")
-        inj_str = ",".join(inj)[:40] if inj else "—"
+        inj_str = ",".join(inj)[:24] if inj else "—"
+        ast_str = ",".join(ast_r)[:24] if ast_r else "—"
         print(f"  {name:<28} {sp:>4}/{st:<4}    {fp:>4}/{ft:<4}    "
-              f"{na:>4}      {kind:>15}  {improved}  {inj_str}",
+              f"{na:>4}      {kind:>15}  {improved}  "
+              f"{inj_str:<24}  {ast_str}",
               flush=True)
         s_total = (s_total[0] + sp, s_total[1] + st)
         f_total = (f_total[0] + fp, f_total[1] + ft)
-    print("-" * 130, flush=True)
+    print("-" * 140, flush=True)
     print(f"  {'TOTAL':<28} {s_total[0]:>4}/{s_total[1]:<4}    "
           f"{f_total[0]:>4}/{f_total[1]:<4}", flush=True)
     if s_total[1] and f_total[1]:
         delta = (f_total[0]/f_total[1] - s_total[0]/s_total[1]) * 100
         print(f"  Δ final-vs-attempt-1: {delta:+.1f}pp", flush=True)
     print(f"  Baseline (R53.19 v3): 26/26", flush=True)
+    print(f"  Baseline (R53.33 session-end): 32/32", flush=True)
 
 
 if __name__ == "__main__":
