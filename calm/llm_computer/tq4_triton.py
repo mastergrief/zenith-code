@@ -333,6 +333,176 @@ def tq4_matvec_triton_v3(
     return y
 
 
+# ----------------------------------------------------------------------
+# V5 — int8 activation + int8 centroid LUT + int32 accumulation.
+# NULL RESULT (iteration 1). Attempted port of TurboQuant CUDA commit
+# 51481c3's dp4a path to Triton. Correctness OK (cosine 0.99996, max
+# rel err ≤1.01%) but perf +9.4% SLOWER on aggregate vs v2:
+#   (2560, 2048): -0.3%   (2560, 512): +42.6%   (2048, 2560): -5.8%
+#   (2560, 10240): +0.7%  (10240, 2560): +12.0%
+# Diagnosis: v2 already hits 284-364 GB/s on large shapes (L2-resident,
+# above HBM peak). Compute-bound on L2, not BW-bound on HBM, so v5's
+# 4× activation BW reduction doesn't help. Meanwhile int8→int32 cast +
+# int32 mul emits more Triton instructions than fp32 FMA (same IPC on
+# Ada), so compute increases. CUDA's 3.5× came from __dp4a intrinsic
+# (4 int8 MACs/cycle); Triton's `a.to(int32) * b.to(int32)` pattern
+# does NOT emit IDP4A — compiler falls back to scalar int32.
+# Next lever if revisiting: tl.dot with int8 inputs + tensor cores,
+# or explicit packed-uint32 dp4a emulation.
+# Kept for reference; not dispatched from production.
+# ----------------------------------------------------------------------
+
+
+@triton.jit
+def _tq4_matvec_kernel_v5(
+    x_rot_q8_ptr,       # (in_features,) int8, pre-quantized per 256-block
+    x_scale_ptr,        # (bpr,) fp32, per-block activation scale (max_abs/127)
+    qs_ptr,             # (n_blocks * 128,) uint8
+    d_ptr,              # (n_blocks,) fp32 — fused d * centroid_rescale
+    centroids_i8_ptr,   # (16,) int8, centroids rounded to int8
+    y_ptr,
+    in_features, out_features,
+    BPR: tl.constexpr,
+    BLOCK_HALF: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+):
+    """V5 — int8 path. `d_ptr` must be pre-fused: d_fused = d_tq4 *
+    centroid_rescale where centroid_rescale = centroid_max_abs / 127.
+    `x_scale_ptr` holds per-block activation max_abs/127. Final output:
+    y = sum(int8_centroid * int8_activation) * d_fused * x_scale (fp32)."""
+    pid = tl.program_id(0)
+    row_base = pid * BLOCK_M
+    if row_base >= out_features:
+        return
+
+    centroid_tile = tl.load(centroids_i8_ptr + tl.arange(0, 16))  # int8
+
+    half_idx = tl.arange(0, BLOCK_HALF)
+    m_idx = tl.arange(0, BLOCK_M)
+    acc = tl.zeros((BLOCK_M,), dtype=tl.float32)
+
+    for b in range(BPR):
+        x_base = b * 256
+        # int8 activation loads — 1 byte each vs 4 for fp32
+        x_low = tl.load(x_rot_q8_ptr + x_base + 2 * half_idx)    # int8
+        x_high = tl.load(x_rot_q8_ptr + x_base + 2 * half_idx + 1)
+        x_sc = tl.load(x_scale_ptr + b)  # fp32
+
+        block_idx_m = (row_base + m_idx) * BPR + b
+        d_m = tl.load(d_ptr + block_idx_m)  # fp32, pre-fused with centroid_rescale
+
+        qs_offsets = (block_idx_m[:, None] * BLOCK_HALF + half_idx[None, :])
+        qs_m = tl.load(qs_ptr + qs_offsets).to(tl.int32)
+        low_m = qs_m & 0xF
+        high_m = (qs_m >> 4) & 0xF
+
+        # Gather int8 centroids
+        low_flat = tl.reshape(low_m, (BLOCK_M * BLOCK_HALF,))
+        high_flat = tl.reshape(high_m, (BLOCK_M * BLOCK_HALF,))
+        c_low_m = tl.reshape(tl.gather(centroid_tile, low_flat, axis=0),
+                             (BLOCK_M, BLOCK_HALF))  # int8
+        c_high_m = tl.reshape(tl.gather(centroid_tile, high_flat, axis=0),
+                              (BLOCK_M, BLOCK_HALF))
+
+        # int8 × int8 → int32 product, sum along contraction dim.
+        # Max block sum magnitude: 128 * 127 * 127 = 2.06M — fits in int32.
+        prod_low = c_low_m.to(tl.int32) * x_low[None, :].to(tl.int32)
+        prod_high = c_high_m.to(tl.int32) * x_high[None, :].to(tl.int32)
+        block_sum = (tl.sum(prod_low, axis=1)
+                     + tl.sum(prod_high, axis=1))  # (BLOCK_M,) int32
+
+        acc += block_sum.to(tl.float32) * d_m * x_sc
+
+    rows = row_base + m_idx
+    tl.store(y_ptr + rows, acc, mask=rows < out_features)
+
+
+def _quantize_activation_q8(x_rot: torch.Tensor, bpr: int
+                             ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Per-256-block max-abs int8 quantization. Returns (int8_vals, fp32_scale).
+    scale[b] = max_abs[b] / 127. Recover fp32 as int8_val * scale[b]."""
+    x_blocks = x_rot.reshape(bpr, 256)
+    max_abs = x_blocks.abs().amax(dim=1)                        # (bpr,)
+    scale = max_abs / 127.0
+    # Avoid div-by-zero — zero blocks produce zero output anyway
+    inv_scale = torch.where(max_abs > 0,
+                            127.0 / max_abs.clamp(min=1e-30),
+                            torch.zeros_like(max_abs))
+    q8 = (x_blocks * inv_scale.unsqueeze(1)).round().clamp(-127, 127).to(torch.int8)
+    return q8.reshape(-1).contiguous(), scale.contiguous()
+
+
+def _prep_centroids_i8(centroids_fp32: torch.Tensor
+                        ) -> tuple[torch.Tensor, float]:
+    """Quantize fp32 centroids to int8. Returns (int8_centroids, rescale).
+    rescale = max_abs / 127 so fp32_centroid ≈ int8_val * rescale."""
+    max_abs = float(centroids_fp32.abs().max().item())
+    if max_abs == 0:
+        return torch.zeros(16, dtype=torch.int8, device=centroids_fp32.device), 1.0
+    rescale = max_abs / 127.0
+    c_i8 = (centroids_fp32 / rescale).round().clamp(-127, 127).to(torch.int8)
+    return c_i8.contiguous(), rescale
+
+
+def tq4_matvec_triton_v5(
+    x_rot: torch.Tensor, qs: torch.Tensor, d: torch.Tensor,
+    centroids: torch.Tensor, out_features: int, in_features: int,
+) -> torch.Tensor:
+    """V5 dispatch: int8 activation + int8 centroid + int32 accumulation.
+    Activation is quantized per-block inside this call. In production
+    the caller should cache x_rot_q8/x_scale across Q/K/V/output or
+    gate/up to amortize quant cost."""
+    assert x_rot.is_contiguous() and x_rot.dtype == torch.float32
+    assert qs.is_contiguous() and qs.dtype == torch.uint8
+    assert d.is_contiguous() and d.dtype == torch.float32
+    assert centroids.is_contiguous() and centroids.dtype == torch.float32
+    assert in_features % 256 == 0
+    bpr = in_features // 256
+
+    # Per-block int8 activation + scale
+    x_q8, x_scale = _quantize_activation_q8(x_rot, bpr)
+    # int8 centroids + rescale folded into d
+    c_i8, c_rescale = _prep_centroids_i8(centroids)
+    d_fused = (d * c_rescale).contiguous()
+
+    y = torch.empty(out_features, device=x_rot.device, dtype=torch.float32)
+    BLOCK_M = _pick_block_m(out_features)
+    grid = ((out_features + BLOCK_M - 1) // BLOCK_M,)
+    _tq4_matvec_kernel_v5[grid](
+        x_q8, x_scale, qs.view(-1), d_fused, c_i8, y,
+        in_features, out_features,
+        BPR=bpr, BLOCK_HALF=128, BLOCK_M=BLOCK_M,
+        num_warps=4,
+    )
+    return y
+
+
+def tq4_matvec_triton_v5_prequant(
+    x_q8: torch.Tensor, x_scale: torch.Tensor,
+    qs: torch.Tensor, d_fused: torch.Tensor, centroids_i8: torch.Tensor,
+    out_features: int, in_features: int,
+) -> torch.Tensor:
+    """V5 fast path: activation already quantized, d already fused with
+    centroid rescale. For apples-to-apples perf bench against v2."""
+    assert x_q8.is_contiguous() and x_q8.dtype == torch.int8
+    assert x_scale.is_contiguous() and x_scale.dtype == torch.float32
+    assert qs.is_contiguous() and qs.dtype == torch.uint8
+    assert d_fused.is_contiguous() and d_fused.dtype == torch.float32
+    assert centroids_i8.is_contiguous() and centroids_i8.dtype == torch.int8
+    assert in_features % 256 == 0
+    bpr = in_features // 256
+    y = torch.empty(out_features, device=x_q8.device, dtype=torch.float32)
+    BLOCK_M = _pick_block_m(out_features)
+    grid = ((out_features + BLOCK_M - 1) // BLOCK_M,)
+    _tq4_matvec_kernel_v5[grid](
+        x_q8, x_scale, qs.view(-1), d_fused, centroids_i8, y,
+        in_features, out_features,
+        BPR=bpr, BLOCK_HALF=128, BLOCK_M=BLOCK_M,
+        num_warps=4,
+    )
+    return y
+
+
 def tq4_matvec_triton_v2(
     x_rot: torch.Tensor, qs: torch.Tensor, d: torch.Tensor,
     centroids: torch.Tensor, out_features: int, in_features: int,
