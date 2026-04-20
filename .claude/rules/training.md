@@ -196,7 +196,7 @@ the filename, read the git log for the script that created it
 - **Smoke cases failing at 3-digit numbers** are out-of-distribution. `MathDataGenerator`'s `_arithmetic_simple` was capped at `randint(1, 99)`; bumped to 999 in session 26 step 1. Any new domain: match the operand range to the smoke cases you care about.
 - **Per-token > 90% but structural < 50%** means the model nailed structure tokens (operators, parens, function names) but mis-copied digits. Use `_hrm_raw_emit()` from eval scripts to inspect raw output — if structure is good but digits drift, add data OR scale capacity. The `--verified` mode (LLM-Computer parses the input directly) masks this class of failure when full-expression is the gate but reveals it when structural-match is the gate.
 - **Per-domain `max_enc` is load-bearing.** Math fits in 32, NL in 48, word problems in 80, GSM in 128, multi-task in 128 (max of components). Undershoot `max_enc` and the sentence is truncated silently mid-operand; overshoot and you waste compute. The canonical trainer scripts (`scripts/train_hrm_{nl,word,gsm,multi}.py`) document the correct bound per domain.
-- **Triton-kernel custom autograd works in isolation but fails in production with mismatched forward paths (session 34, R52.1c).** Built `Tq4TritonAutogradFunction` (forward = existing `tq4_linear_triton`, backward = new `_tq4_backward_kernel` streaming tq4 bytes). Passed `torch.autograd.gradcheck` (finite-difference verified), cosine=1.0 on single-linear + 17-linear-chain tests. BUT training diverged: Triton kernel's different FP32 reduction order produces ~6e-5 forward drift vs PyTorch `F.linear`, compounds through Gemma's nonlinear ops (attention softmax, RMS norm, FFN gating) because their backward uses saved forward values. Student trained against PyTorch-captured teacher logits sees gradient for the *wrong function* — correct-for-Triton ≠ correct-for-PyTorch. **Rule**: if using Triton autograd during training, **re-capture teacher targets through the same Triton path**. Don't mix Triton-computed forwards with PyTorch-computed teacher logits. Kernels kept at `calm/llm_computer/tq4_autograd.py` and `tq4_triton.py::tq4_backward_triton` for reuse when forward consistency can be controlled.
+- **Triton-autograd works in isolation but fails against PyTorch-captured teacher targets (R52.1c).** `Tq4TritonAutogradFunction` passed `gradcheck` and cosine=1.0 on 17-linear chain, BUT training diverged: Triton's different FP32 reduction order produces ~6e-5 forward drift vs PyTorch `F.linear`; compounds through Gemma nonlinearities. **Rule**: if using Triton autograd, re-capture teacher targets through the same Triton path — don't mix. Kernels kept at `tq4_autograd.py` + `tq4_triton.py::tq4_backward_triton`.
 
 ## Substrate-Native Training (SubstrateLM / SubstrateHRLM)
 
@@ -285,16 +285,36 @@ would have missed the asymmetry.
 
 ### GPU vs CPU for substrate training
 
-Per `.claude/rules/workflow.md`:
-- CPU is fine for tiny models (<500K params), short sequences, pure-
-  Euclidean attention.
-- GPU becomes necessary when D3 (hyperbolic `acosh`) + D5 (per-iteration
-  Python loop) compound per-step cost. v2 observed: CPU 28s/step → GPU
-  4.8s/step (only 6× speedup because D5 launches kernels serially).
-- Prerequisite: Gemma must NOT be in VRAM. Kill `llama-server` before
-  launching GPU training.
-- All substrate scripts accept `--device auto` (defaults to cuda if
-  available).
+All substrate training scripts accept `--device auto` (default cuda if
+available, else cpu).
+
+**Stay on CPU**: model <500K params AND seq <128 tok AND pure-Euclidean
+AND no D5. SubstrateLM MVP at 1.25M params trained in 13 min CPU.
+
+**Move to GPU**: model >2M params, seq >256, D3 mixed geometry (hyperbolic
+`acosh` doesn't vectorize well on CPU), D5 recurrence (serial kernel
+launches), or any combination — effects compound.
+
+**Observed** (v2 SubstrateHRLM): CPU 28s/step projecting 12h; GPU RTX 4070
+same config 4.8s/step → 2h. Only 6× speedup (not 10-20×) because D5 serial
+Python loop bottlenecks.
+
+**GPU prerequisite**: Gemma must NOT be in VRAM (8 GB ceiling too tight
+for Gemma + training). `pkill llama-server` before launching; verify CUDA
+via `python3 -c "import torch; print(torch.cuda.is_available())"`.
+
+### Safer-config for noisy-grad training
+
+R52.2 canonical instance: (batch=1, lr=1e-3, grad_clip=1.0) diverged at
+step 75 on a loss=30.2 outlier — Adam momentum poisoned, EMA climbed 2.23 →
+3.93 over 20 steps. Restarted with (batch=4, lr=3e-4, grad_clip=0.1,
+warmup=200) — converged cleanly to val 1.21 over 1000 steps.
+
+When batch is small, prompts are mixed-loss, and you're on Adam/AdamW: use
+**batch ≥ 4**, **grad_clip ≤ 0.1**, **lr ≤ 3e-4**, **warmup ≥ 200**.
+**Diagnose Adam momentum poisoning** by EMA: if loss spikes and EMA climbs
+20+ steps without recovery, optimizer state is corrupted — kill and
+restart; continued training won't recover.
 
 ### Scheduled Sampling for SubstrateHRM (session 30)
 
@@ -463,12 +483,12 @@ llama-server -m model.gguf --cache-type-k tq3_k256 --cache-type-v tq3_k256
   `log_level_counts` 0/0 → 6/6 purely from 400 → 900 tok bump).
 
 ## Export & Serving
-- llama.cpp built at `~/llama.cpp/build/bin/` with CUDA support (RTX 4070), local patch at `tools/server/server-context.cpp:763-766` (see Known Issues)
-- `llama-quantize`: convert FP16 safetensors → GGUF quantized — **Q5_K_M is the default across all model sizes** (best quality/size tradeoff per research). Only drop to Q4_K_M when VRAM forces it.
-- `llama-server`: serve with OpenAI-compatible API, KV cache quantization, `enable_thinking` support
-- 4B reasoning base GGUF at `~/models/Qwen3.5-4B.Q5_K_M.gguf` (2.9 GB, serving at **256K context**, ~7.3 GB VRAM with Q4 KV)
-- Alternative: Gemma 4 E4B GGUF at `~/models/gemma-4-E4B-it-Q5_K_M.gguf` (5.48 GB, stock, ~6.7 GB VRAM at 256K thanks to sliding-window attention). Validated 2026-04-07, beats fine-tuned Qwen on coding eval.
-- **tq4 serving GGUF** at `~/models/gemma-4-E4B-it-tq4-aligned.gguf` (5.0 GB, 132-byte-block layout, session 16). The old `~/models/gemma-4-E4B-it-tq4.gguf` (4.7 GB, 130-byte blocks) is **incompatible** with post-session-16 llama.cpp and should be ignored or deleted.
-- Launch via `zenith` command (auto-starts llama-server at `ZENITH_CTX=524288`) or manually with `--ctx-size 524288 --parallel 1 --cache-type-k tq4_k256 --cache-type-v tq4_k256 -ngl 999`
-- For Ollama: Modelfiles in `models/`, use `ollama create`
-- `-ngl 999` forces all layers to GPU
+
+Canonical serving docs in `.claude/CLAUDE.md` §"Serving Architecture".
+Quantization-specific details in `.claude/rules/turboquant.md`. Default:
+Q5_K_M weights + Q4/tq4 KV; `Q5_K_M` over Q4 unless VRAM forces; for
+Gemma use tq4 + tq4-KV at 512K context.
+
+Training-output path: merge LoRA → GGUF via `llama-quantize` → serve
+via `llama-server` (OpenAI-compatible API) or `ollama create` from a
+Modelfile in `models/`.

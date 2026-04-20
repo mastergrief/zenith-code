@@ -252,54 +252,21 @@ monitor that only matches "epoch done" stays silent through a crashloop
 or OOM, making silence indistinguishable from "still running." Include
 `Traceback|Error|Killed|OOM|FAILED|assert` in the alternation.
 
-## Safer-config for noisy-grad training
+## Training-specific discipline (see `training.md`)
 
-R52.2 canonical instance: (batch=1, lr=1e-3, grad_clip=1.0) diverged
-at step 75 on a loss=30.2 outlier — Adam momentum poisoned, EMA
-climbed 2.23 → 3.93 over 20 steps without recovery. Restarted with
-(batch=4, lr=3e-4, grad_clip=0.1, warmup=200) — converged cleanly
-to val 1.21 over 1000 steps.
+Two training disciplines live in `.claude/rules/training.md` to keep
+them with other training content:
 
-When batch is small, prompts are mixed-loss (some domains ~5-10× higher
-than others), and you're on Adam/AdamW: use **batch ≥ 4**, **grad_clip ≤ 0.1**,
-**lr ≤ 3e-4**, **warmup ≥ 200**. **Diagnose Adam momentum poisoning** by EMA:
-if loss spikes and EMA climbs 20+ steps without recovery, optimizer state is
-corrupted — Adam's second-moment compounds bad gradients indefinitely. Kill
-and restart with safer config; continued training won't recover.
+- **Safer-config for noisy-grad training** — `training.md` §"Safer-
+  config for noisy-grad training". Canonical receipt: R52.2 divergence
+  (batch=1 + lr=1e-3 + grad_clip=1.0) vs recovered config (batch=4 +
+  lr=3e-4 + grad_clip=0.1 + warmup=200). Diagnose Adam momentum
+  poisoning via EMA climb over 20+ steps.
 
-## GPU vs CPU decision rule for substrate training
-
-All substrate training scripts (`train_substrate_lm.py`,
-`train_hybrid_substrate.py`, `train_substrate_hrmlm_v2.py`) accept
-`--device auto` — defaults to cuda if available, falls back to cpu.
-
-**Stay on CPU when**: model <500K params, sequences <128 tokens, pure-
-Euclidean attention, no D5 recurrence. Round 1-4 fast-weights experiments
-ran in minutes on CPU; SubstrateLM MVP at 1.25M params trained in 13 min.
-
-**Move to GPU when**:
-- model >2M params, or
-- sequence length >256, or
-- D3 mixed geometry (hyperbolic `acosh` and divisions don't vectorize
-  well on CPU), or
-- D5 recurrence multiplies per-step cost, or
-- any combination — effects compound.
-
-**Observed (v2 SubstrateHRLM training, session this writing)**: CPU at
-d_model=96, n_layers=4, max_len=384, D3 hyperbolic + D5 at 2 iterations
-hit **28s/step** projecting to 12 hours. GPU RTX 4070 same config:
-**4.8s/step**, projecting to ~2 hours. Only 6× speedup (not the 10-20×
-hoped) because D5 per-iteration Python loop launches kernels serially.
-
-**GPU prerequisite**: Gemma must NOT be in VRAM. `pkill llama-server`
-or verify via `curl localhost:8080/health` returns failure before
-launching training. The 8 GB VRAM on RTX 4070 is tight enough that
-Gemma + training together will OOM unpredictably.
-
-**Verify CUDA available before spending time**:
-```bash
-PYTHONPATH=. python3 -c "import torch; print('cuda:', torch.cuda.is_available())"
-```
+- **GPU vs CPU decision rule for substrate training** — `training.md`
+  §"GPU vs CPU for substrate training". CPU < 500K params / 128 tok /
+  pure-Euclidean; GPU above. Observed 6× speedup (not 10-20×) because
+  D5 launches kernels serially.
 
 ## Informative null results
 
@@ -510,33 +477,11 @@ errors" to "errors never recur" without retraining. See
 `.claude/rules/calm.md` "Auto-Upgrade Loop" and
 `calm/llm_computer/auto_upgrade.py`.
 
-## Substrate install workflow
+## Substrate install workflow (see `Substrate.md`)
 
-When installing a card into prod Gemma (`GemmaSubstrate`), allocate
-FROM the registry first to avoid collisions, then install, then verify,
-then update the registry. Pattern:
-
-1. **Allocate**: read `.claude/MEMORY/substrate_registry.md`. Pick a
-   `host_layer`, channel range `[ch_off : ch_off + d_card]`, and
-   `sub_head_offset` (in-attention installs) that don't collide with
-   any existing entry in the same host_layer.
-2. **Convert** (in-attention only): `m.convert_layer_to_fp32(host_layer)`
-   once per host. ~330 MB SWA / ~600 MB global.
-3. **Install**: `install_card_in_attention(card, ..., mode='hard_max')`
-   for compiled, `mode='softmax'` for HRM-style; OR
-   `CardSlot(...).attach(m, preserve=True)` for PTs and prototyping.
-4. **Verify**: hook `card.forward`, run a probe prompt, check
-   - card receives the expected input slice
-   - card produces the expected output (compare to standalone)
-   - Gemma's logits diff vs no-install baseline > noise
-   - `VerificationHook` (if used) flips argmax on the verified token
-5. **Register**: append a row to `substrate_registry.md` with
-   domain, host_layer, channels, sub_head_offset, mode,
-   vocab_mapping, install date, max abs diff vs baseline.
-6. **Commit**: one commit per domain, registry row included.
-
-End-to-end demo of detect → log → compile → install → persist:
-`scripts/gemma_learning_loop_demo.py` (5/5 wrong → 5/5 correct).
+Checklist for installing a card into prod Gemma lives in
+`.claude/rules/Substrate.md` §"Install Workflow (checklist)".
+6-step Allocate → Convert → Install → Verify → Register → Commit.
 
 ## When this workflow doesn't apply
 

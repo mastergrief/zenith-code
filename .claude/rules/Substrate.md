@@ -278,6 +278,34 @@ Files: `calm/llm_computer/auto_upgrade.py`,
 `calm/llm_computer/persistent_knowledge.py`,
 `scripts/gemma_learning_loop_demo.py`.
 
+## Install Workflow (checklist)
+
+When installing a card into prod Gemma (`GemmaSubstrate`), allocate FROM
+the registry first to avoid collisions, then install, then verify, then
+update the registry. Pattern:
+
+1. **Allocate**: read `.claude/MEMORY/substrate_registry.md`. Pick a
+   `host_layer`, channel range `[ch_off : ch_off + d_card]`, and
+   `sub_head_offset` (in-attention installs) that don't collide with
+   any existing entry in the same host_layer.
+2. **Convert** (in-attention only): `m.convert_layer_to_fp32(host_layer)`
+   once per host. ~330 MB SWA / ~600 MB global.
+3. **Install**: `install_card_in_attention(card, ..., mode='hard_max')`
+   for compiled, `mode='softmax'` for HRM-style; OR
+   `CardSlot(...).attach(m, preserve=True)` for PTs and prototyping.
+4. **Verify**: hook `card.forward`, run a probe prompt, check
+   - card receives the expected input slice
+   - card produces the expected output (compare to standalone)
+   - Gemma's logits diff vs no-install baseline > noise
+   - `VerificationHook` (if used) flips argmax on the verified token
+5. **Register**: append a row to `substrate_registry.md` with
+   domain, host_layer, channels, sub_head_offset, mode,
+   vocab_mapping, install date, max abs diff vs baseline.
+6. **Commit**: one commit per domain, registry row included.
+
+End-to-end demo of detect → log → compile → install → persist:
+`scripts/gemma_learning_loop_demo.py` (5/5 wrong → 5/5 correct).
+
 ## Level Cascade (all validated)
 
 ```
