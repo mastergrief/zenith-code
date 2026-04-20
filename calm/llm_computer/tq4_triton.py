@@ -655,6 +655,231 @@ def tq4_matvec_triton_v6(
         x_q8, x_scale, qs, d_fused, c_i8, out_features, in_features)
 
 
+# ----------------------------------------------------------------------
+# V7 — widen K per tl.dot (combine 2 blocks into K=512).
+# NULL RESULT (iteration 3a). Approximation-required (per-block
+# scales can't fold exactly into wider K), cos 0.995-0.996 with
+# max rel err 8-11%. Perf aggregate +13.2% SLOWER. Structural win
+# on (2048, 2560) attn_output (-32.4%) offset by losses elsewhere.
+# Fixing correctness would re-introduce v6's per-block scale
+# overhead, negating the widen-K win.
+# Kept for reference; not dispatched from production.
+# ----------------------------------------------------------------------
+
+
+@triton.jit
+def _tq4_matvec_kernel_v7(
+    x_rot_q8_ptr, x_scale_ptr, qs_ptr, d_ptr, centroids_i8_ptr, y_ptr,
+    in_features, out_features,
+    BPR: tl.constexpr,           # must be even (we pair blocks)
+    BPR_HALF: tl.constexpr,      # = BPR / 2
+    BLOCK_HALF: tl.constexpr,    # 128
+    BLOCK_FULL: tl.constexpr,    # 256 per block
+    K_EXT: tl.constexpr,         # 512 (= 2 * 256)
+    BLOCK_M: tl.constexpr,
+    N_PAD: tl.constexpr,         # 16
+):
+    """Each tl.dot processes 2 blocks. BPR_HALF iterations total.
+    Scales approximated as arithmetic mean of paired blocks."""
+    pid = tl.program_id(0)
+    row_base = pid * BLOCK_M
+    if row_base >= out_features:
+        return
+
+    centroid_tile = tl.load(centroids_i8_ptr + tl.arange(0, 16))
+
+    half_idx = tl.arange(0, BLOCK_HALF)
+    full_idx = tl.arange(0, BLOCK_FULL)
+    m_idx = tl.arange(0, BLOCK_M)
+    n_idx = tl.arange(0, N_PAD)
+    acc = tl.zeros((BLOCK_M,), dtype=tl.float32)
+
+    for pair in range(BPR_HALF):
+        b0 = 2 * pair
+        b1 = 2 * pair + 1
+        x_base0 = b0 * 256
+        x_base1 = b1 * 256
+        # Load 2×256 int8 x
+        x_full_0 = tl.load(x_rot_q8_ptr + x_base0 + full_idx)
+        x_full_1 = tl.load(x_rot_q8_ptr + x_base1 + full_idx)
+        x_sc_0 = tl.load(x_scale_ptr + b0)
+        x_sc_1 = tl.load(x_scale_ptr + b1)
+        x_sc_mean = 0.5 * (x_sc_0 + x_sc_1)  # APPROXIMATION
+
+        # Per-row d for both blocks
+        idx_0 = (row_base + m_idx) * BPR + b0
+        idx_1 = (row_base + m_idx) * BPR + b1
+        d_0 = tl.load(d_ptr + idx_0)
+        d_1 = tl.load(d_ptr + idx_1)
+        d_mean = 0.5 * (d_0 + d_1)  # APPROXIMATION
+
+        # Load qs for both blocks
+        qs_off_0 = (idx_0[:, None] * BLOCK_HALF + half_idx[None, :])
+        qs_off_1 = (idx_1[:, None] * BLOCK_HALF + half_idx[None, :])
+        qs_0 = tl.load(qs_ptr + qs_off_0).to(tl.int32)
+        qs_1 = tl.load(qs_ptr + qs_off_1).to(tl.int32)
+        low_0 = qs_0 & 0xF; high_0 = (qs_0 >> 4) & 0xF
+        low_1 = qs_1 & 0xF; high_1 = (qs_1 >> 4) & 0xF
+
+        c_low_0 = tl.reshape(tl.gather(
+            centroid_tile, tl.reshape(low_0, (BLOCK_M * BLOCK_HALF,)), axis=0),
+            (BLOCK_M, BLOCK_HALF))
+        c_high_0 = tl.reshape(tl.gather(
+            centroid_tile, tl.reshape(high_0, (BLOCK_M * BLOCK_HALF,)), axis=0),
+            (BLOCK_M, BLOCK_HALF))
+        c_low_1 = tl.reshape(tl.gather(
+            centroid_tile, tl.reshape(low_1, (BLOCK_M * BLOCK_HALF,)), axis=0),
+            (BLOCK_M, BLOCK_HALF))
+        c_high_1 = tl.reshape(tl.gather(
+            centroid_tile, tl.reshape(high_1, (BLOCK_M * BLOCK_HALF,)), axis=0),
+            (BLOCK_M, BLOCK_HALF))
+
+        # Interleave within each block, then concat blocks along K
+        c_b0 = tl.reshape(tl.join(c_low_0, c_high_0), (BLOCK_M, BLOCK_FULL))
+        c_b1 = tl.reshape(tl.join(c_low_1, c_high_1), (BLOCK_M, BLOCK_FULL))
+        c_ext = tl.join(c_b0, c_b1)                      # (BLOCK_M, 256, 2)
+        c_ext = tl.reshape(c_ext, (BLOCK_M, K_EXT))      # wrong interleave but reduces fine
+        # Actually we need (BLOCK_M, K_EXT) where K spans [b0_full | b1_full]
+        # tl.join on last axis then reshape doesn't give that layout.
+        # Use tl.cat-equivalent instead — manual via arange gather.
+        # SHORTCUT: we're approximating scales anyway, so the order
+        # within K doesn't affect correctness (both x_ext and c_ext
+        # just need to match). Same reshape on x:
+        x_stack = tl.join(x_full_0, x_full_1)            # (256, 2)
+        x_ext = tl.reshape(x_stack, (K_EXT,))            # matches c_ext layout
+
+        x_tile = tl.broadcast_to(x_ext[:, None], (K_EXT, N_PAD))
+        block_prod = tl.dot(c_ext, x_tile, out_dtype=tl.int32)
+        block_sum = tl.sum(block_prod * (n_idx[None, :] == 0).to(tl.int32),
+                           axis=1)
+
+        acc += block_sum.to(tl.float32) * d_mean * x_sc_mean
+
+    rows = row_base + m_idx
+    tl.store(y_ptr + rows, acc, mask=rows < out_features)
+
+
+def tq4_matvec_triton_v7_prequant(
+    x_q8, x_scale, qs, d_fused, centroids_i8,
+    out_features: int, in_features: int,
+):
+    """V7 fast path. Requires BPR even AND BLOCK_M ≥ 16."""
+    assert in_features % 256 == 0
+    bpr = in_features // 256
+    assert bpr % 2 == 0, f"v7 needs even BPR, got {bpr}"
+    BLOCK_M = _pick_block_m(out_features)
+    assert BLOCK_M >= 16
+    y = torch.empty(out_features, device=x_q8.device, dtype=torch.float32)
+    grid = ((out_features + BLOCK_M - 1) // BLOCK_M,)
+    _tq4_matvec_kernel_v7[grid](
+        x_q8, x_scale, qs.view(-1), d_fused, centroids_i8, y,
+        in_features, out_features,
+        BPR=bpr, BPR_HALF=bpr // 2,
+        BLOCK_HALF=128, BLOCK_FULL=256, K_EXT=512,
+        BLOCK_M=BLOCK_M, N_PAD=16,
+        num_warps=4,
+    )
+    return y
+
+
+# ----------------------------------------------------------------------
+# V8 — accumulator reuse across all BPR blocks (one global scale).
+# NULL RESULT (iteration 3b). Max rel err 139-3898% (math-wrong as
+# expected — global mean scale loses per-block per-row resolution).
+# Perf +168% SLOWER — mean-scale preprocessing dominates. Double null:
+# even if math were correct, scale-prep overhead kills the win.
+# Kept for reference; not dispatched.
+# Plateau-detection rule fires here: v5/v6/v7/v8 all null, stop
+# iterating int8 path. v2 (fp32 + shared-mem LUT) is the local
+# optimum for Triton+Ada on this use case.
+# ----------------------------------------------------------------------
+
+
+@triton.jit
+def _tq4_matvec_kernel_v8(
+    x_rot_q8_ptr, x_scale_ptr, qs_ptr, d_ptr, centroids_i8_ptr, y_ptr,
+    mean_combined_scale_ptr,   # (out_features,) fp32 — per-row mean(d * x_sc)
+    in_features, out_features,
+    BPR: tl.constexpr,
+    BLOCK_HALF: tl.constexpr,
+    BLOCK_FULL: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    N_PAD: tl.constexpr,
+):
+    """Accumulate int32 across all BPR blocks, apply ONE per-row
+    scale at end (mean(d[r,:] * x_sc[:]) approximation)."""
+    pid = tl.program_id(0)
+    row_base = pid * BLOCK_M
+    if row_base >= out_features:
+        return
+
+    centroid_tile = tl.load(centroids_i8_ptr + tl.arange(0, 16))
+
+    half_idx = tl.arange(0, BLOCK_HALF)
+    full_idx = tl.arange(0, BLOCK_FULL)
+    m_idx = tl.arange(0, BLOCK_M)
+    n_idx = tl.arange(0, N_PAD)
+    acc_i32 = tl.zeros((BLOCK_M, N_PAD), dtype=tl.int32)
+
+    for b in range(BPR):
+        x_base = b * 256
+        x_full = tl.load(x_rot_q8_ptr + x_base + full_idx)
+
+        block_idx_m = (row_base + m_idx) * BPR + b
+        qs_offsets = (block_idx_m[:, None] * BLOCK_HALF + half_idx[None, :])
+        qs_m = tl.load(qs_ptr + qs_offsets).to(tl.int32)
+        low_m = qs_m & 0xF
+        high_m = (qs_m >> 4) & 0xF
+
+        low_flat = tl.reshape(low_m, (BLOCK_M * BLOCK_HALF,))
+        high_flat = tl.reshape(high_m, (BLOCK_M * BLOCK_HALF,))
+        c_low_m = tl.reshape(tl.gather(centroid_tile, low_flat, axis=0),
+                             (BLOCK_M, BLOCK_HALF))
+        c_high_m = tl.reshape(tl.gather(centroid_tile, high_flat, axis=0),
+                              (BLOCK_M, BLOCK_HALF))
+        c_m = tl.reshape(tl.join(c_low_m, c_high_m), (BLOCK_M, BLOCK_FULL))
+        x_tile = tl.broadcast_to(x_full[:, None], (BLOCK_FULL, N_PAD))
+        # Accumulator reuse — no intermediate fp32
+        acc_i32 = tl.dot(c_m, x_tile, acc=acc_i32, out_dtype=tl.int32)
+
+    # Take col 0, apply per-row scale
+    mask = (n_idx[None, :] == 0).to(tl.int32)
+    total_i32 = tl.sum(acc_i32 * mask, axis=1)   # (BLOCK_M,) int32
+    rows = row_base + m_idx
+    scale = tl.load(mean_combined_scale_ptr + rows,
+                    mask=rows < out_features, other=0.0)
+    out_f32 = total_i32.to(tl.float32) * scale
+    tl.store(y_ptr + rows, out_f32, mask=rows < out_features)
+
+
+def tq4_matvec_triton_v8_prequant(
+    x_q8, x_scale, qs, d_fused, centroids_i8,
+    out_features: int, in_features: int,
+):
+    """V8 fast path. Requires BLOCK_M ≥ 16. Caller must supply d_fused
+    and x_scale; this computes per-row mean scale internally."""
+    assert in_features % 256 == 0
+    bpr = in_features // 256
+    BLOCK_M = _pick_block_m(out_features)
+    assert BLOCK_M >= 16
+    # Per-row mean(d[r, b] * x_scale[b]) across blocks
+    d_2d = d_fused.view(out_features, bpr)                # (out, bpr)
+    mean_scale = (d_2d * x_scale.unsqueeze(0)).mean(dim=1).contiguous()
+    y = torch.empty(out_features, device=x_q8.device, dtype=torch.float32)
+    grid = ((out_features + BLOCK_M - 1) // BLOCK_M,)
+    _tq4_matvec_kernel_v8[grid](
+        x_q8, x_scale, qs.view(-1), d_fused, centroids_i8, y,
+        mean_scale,
+        in_features, out_features,
+        BPR=bpr, BLOCK_HALF=128, BLOCK_FULL=256,
+        BLOCK_M=BLOCK_M, N_PAD=16,
+        num_warps=4,
+    )
+    # Rescale by BPR (we averaged per-block; true sum needs BPR× multiplier)
+    y.mul_(bpr)
+    return y
+
+
 def tq4_matvec_triton_v2(
     x_rot: torch.Tensor, qs: torch.Tensor, d: torch.Tensor,
     centroids: torch.Tensor, out_features: int, in_features: int,
