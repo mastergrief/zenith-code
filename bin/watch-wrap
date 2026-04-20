@@ -76,6 +76,24 @@ def emit(msg: str, t0: float) -> None:
     print(f"[T+{elapsed:>4d}s] {msg}", flush=True)
 
 
+def maybe_emit_heartbeat(now: float, last_activity: float, replay: deque,
+                          hb_mult: int, hb_last_line: Optional[str],
+                          args, t0: float) -> tuple[float, int, Optional[str]]:
+    """If silent >= args.heartbeat * hb_mult, emit HEARTBEAT and apply
+    exponential backoff on unchanged last-line. Returns new
+    (last_activity, hb_mult, hb_last_line)."""
+    if not args.heartbeat:
+        return last_activity, hb_mult, hb_last_line
+    if (now - last_activity) < args.heartbeat * hb_mult:
+        return last_activity, hb_mult, hb_last_line
+    last_raw = replay[-1] if replay else "<no output yet>"
+    suffix = f" (x{hb_mult})" if hb_mult > 1 else ""
+    emit(f"[HEARTBEAT{suffix}] silent {int(now-last_activity)}s, "
+         f"last: {last_raw[:120]}", t0)
+    new_mult = min(hb_mult * 2, 8) if last_raw == hb_last_line else 2
+    return now, new_mult, last_raw
+
+
 def tail_loop(stream, t0: float, cats: list[Category], args) -> None:
     """Read lines from stream, apply categorization, heartbeat,
     coalescence. Returns when stream closes (EOF).
@@ -89,6 +107,11 @@ def tail_loop(stream, t0: float, cats: list[Category], args) -> None:
     coalesce_buf: list[tuple[Optional[Category], str]] = []
     coalesce_start = None
     replay: deque[str] = deque(maxlen=max(1, args.replay))
+    # Heartbeat exponential backoff: when consecutive heartbeats report
+    # the same last-line, double the interval (cap at 8×). Reset to 1×
+    # when a new real event arrives. Cuts idle-noise ~3× in practice.
+    hb_mult = 1
+    hb_last_line = None
 
     import select
     fd = stream.fileno()
@@ -108,7 +131,7 @@ def tail_loop(stream, t0: float, cats: list[Category], args) -> None:
         now = time.time()
         timeout_parts = []
         if args.heartbeat:
-            timeout_parts.append(args.heartbeat - (now - last_activity))
+            timeout_parts.append(args.heartbeat * hb_mult - (now - last_activity))
         if args.coalesce and coalesce_start is not None:
             timeout_parts.append(args.coalesce - (now - coalesce_start))
         wait = min([t for t in timeout_parts if t > 0], default=1.0)
@@ -158,13 +181,8 @@ def tail_loop(stream, t0: float, cats: list[Category], args) -> None:
                 coalesce_start = None
 
         if not ready and not pending_lines:
-            # Timeout — emit heartbeat if applicable
-            if (args.heartbeat
-                    and (now - last_activity) >= args.heartbeat):
-                last_raw = replay[-1] if replay else "<no output yet>"
-                emit(f"[HEARTBEAT] silent {int(now-last_activity)}s, "
-                     f"last: {last_raw[:120]}", t0)
-                last_activity = now
+            last_activity, hb_mult, hb_last_line = maybe_emit_heartbeat(
+                now, last_activity, replay, hb_mult, hb_last_line, args, t0)
             continue
 
         if not pending_lines:
@@ -175,6 +193,10 @@ def tail_loop(stream, t0: float, cats: list[Category], args) -> None:
             continue
         replay.append(line)
         last_activity = now
+        # New real event → reset heartbeat backoff so next quiet period
+        # starts fresh at 1× interval.
+        hb_mult = 1
+        hb_last_line = None
 
         cat, should_emit = classify(line, cats)
         if not should_emit:
@@ -283,6 +305,8 @@ def tail_file_mode(path: str, t0: float, cats: list[Category], args) -> int:
         coalesce_buf: list[tuple[Optional[Category], str]] = []
         coalesce_start = None
         replay: deque[str] = deque(maxlen=max(1, args.replay))
+        hb_mult = 1
+        hb_last_line: Optional[str] = None
 
         import select
         while True:
@@ -294,7 +318,7 @@ def tail_file_mode(path: str, t0: float, cats: list[Category], args) -> int:
             now = time.time()
             timeout_parts = []
             if args.heartbeat:
-                timeout_parts.append(args.heartbeat - (now - last_activity))
+                timeout_parts.append(args.heartbeat * hb_mult - (now - last_activity))
             if args.coalesce and coalesce_start is not None:
                 timeout_parts.append(args.coalesce - (now - coalesce_start))
             wait = min([t for t in timeout_parts if t > 0], default=1.0)
@@ -318,12 +342,9 @@ def tail_file_mode(path: str, t0: float, cats: list[Category], args) -> int:
                     coalesce_start = None
 
             if not ready:
-                if (args.heartbeat
-                        and (now - last_activity) >= args.heartbeat):
-                    last_raw = replay[-1] if replay else "<no output yet>"
-                    emit(f"[HEARTBEAT] silent {int(now-last_activity)}s, "
-                         f"last: {last_raw[:120]}", t0)
-                    last_activity = now
+                last_activity, hb_mult, hb_last_line = maybe_emit_heartbeat(
+                    now, last_activity, replay, hb_mult, hb_last_line,
+                    args, t0)
                 continue
 
             line = proc.stdout.readline()
@@ -334,6 +355,9 @@ def tail_file_mode(path: str, t0: float, cats: list[Category], args) -> int:
                 continue
             replay.append(line)
             last_activity = now
+            # Reset heartbeat backoff — new real event
+            hb_mult = 1
+            hb_last_line = None
 
             cat, should_emit = classify(line, cats)
             if not should_emit:
