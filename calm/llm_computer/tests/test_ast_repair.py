@@ -18,11 +18,13 @@ from calm.llm_computer.facades.ast_repair import (
     _balance_brackets_on_line,
     _find_shadowed_attrs,
     extract_missing_key,
+    has_indexerror_oob,
     has_typeerror_callable,
     rename_shadow,
     repair,
     repair_syntax,
     rewrite_dict_synonym,
+    rewrite_off_by_one,
 )
 
 
@@ -483,6 +485,171 @@ def test_repair_dispatches_syntax_first():
     r = repair(code, "SyntaxError: '(' was never closed")
     assert r.applied
     assert r.kind == "syntax_repair"
+
+
+# -- off-by-one range ------------------------------------------------
+
+
+GEMMA_OFF_BY_ONE_BUG = textwrap.dedent('''
+    def sum_list(xs):
+        total = 0
+        for i in range(len(xs) + 1):
+            total += xs[i]
+        return total
+''').strip() + "\n"
+
+
+def test_has_indexerror_oob():
+    assert has_indexerror_oob("IndexError: list index out of range")
+    assert has_indexerror_oob("IndexError: tuple index out of range")
+    assert has_indexerror_oob("IndexError: string index out of range")
+    assert has_indexerror_oob("  IndexError: index out of range")
+    assert not has_indexerror_oob("KeyError: 'foo'")
+    assert not has_indexerror_oob("")
+
+
+def test_off_by_one_basic_rewrite():
+    r = rewrite_off_by_one(GEMMA_OFF_BY_ONE_BUG)
+    assert r.applied
+    assert r.kind == "off_by_one"
+    # The rewritten range() must no longer contain `+ 1`
+    assert "range(len(xs) + 1)" not in r.new_code
+    assert "range(len(xs))" in r.new_code
+    # Code must parse + run without IndexError
+    ns: dict = {}
+    exec(r.new_code, ns)
+    assert ns["sum_list"]([1, 2, 3]) == 6
+
+
+def test_off_by_one_two_arg_range_rewrite():
+    """range(0, len(X) + 1) is the same bug in two-arg form."""
+    code = textwrap.dedent('''
+        def f(xs):
+            out = []
+            for i in range(0, len(xs) + 1):
+                out.append(xs[i])
+            return out
+    ''')
+    r = rewrite_off_by_one(code)
+    assert r.applied
+    assert "range(0, len(xs))" in r.new_code
+    ns: dict = {}
+    exec(r.new_code, ns)
+    assert ns["f"]([1, 2, 3]) == [1, 2, 3]
+
+
+def test_off_by_one_no_subscript_noop():
+    """Body never indexes xs[i] — this +1 might be intentional
+    (e.g. iterating one past). Don't rewrite."""
+    code = textwrap.dedent('''
+        def count(xs):
+            n = 0
+            for i in range(len(xs) + 1):
+                n += i
+            return n
+    ''')
+    r = rewrite_off_by_one(code)
+    assert not r.applied
+    assert r.kind == "none"
+
+
+def test_off_by_one_correct_range_noop():
+    """Code that already uses range(len(xs)) — no change."""
+    code = textwrap.dedent('''
+        def f(xs):
+            total = 0
+            for i in range(len(xs)):
+                total += xs[i]
+            return total
+    ''')
+    r = rewrite_off_by_one(code)
+    assert not r.applied
+
+
+def test_off_by_one_not_len_noop():
+    """`range(N + 1)` where N isn't `len(...)` — unrelated pattern."""
+    code = textwrap.dedent('''
+        def f(n, xs):
+            for i in range(n + 1):
+                print(xs[i])
+    ''')
+    r = rewrite_off_by_one(code)
+    assert not r.applied
+
+
+def test_off_by_one_nested_container_subscript():
+    """Subscript is d[i], not self.xs[i] — we only track simple Name
+    containers. Don't rewrite to be safe."""
+    code = textwrap.dedent('''
+        class C:
+            def f(self):
+                for i in range(len(self.xs) + 1):
+                    print(self.xs[i])
+    ''')
+    r = rewrite_off_by_one(code)
+    # `len(self.xs)` — arg is Attribute, not Name → conservative no-op
+    assert not r.applied
+
+
+def test_off_by_one_one_plus_len_form():
+    """`1 + len(X)` (reversed) also triggers the rewrite."""
+    code = textwrap.dedent('''
+        def f(xs):
+            for i in range(1 + len(xs)):
+                print(xs[i])
+    ''')
+    r = rewrite_off_by_one(code)
+    assert r.applied
+    assert "range(len(xs))" in r.new_code
+
+
+def test_off_by_one_multiple_loops():
+    """Two separate buggy loops both get rewritten in one pass."""
+    code = textwrap.dedent('''
+        def g(xs, ys):
+            a = 0
+            for i in range(len(xs) + 1):
+                a += xs[i]
+            b = 0
+            for j in range(len(ys) + 1):
+                b += ys[j]
+            return a + b
+    ''')
+    r = rewrite_off_by_one(code)
+    assert r.applied
+    assert "rewrote 2" in r.notes[0]
+    assert "range(len(xs) + 1)" not in r.new_code
+    assert "range(len(ys) + 1)" not in r.new_code
+    ns: dict = {}
+    exec(r.new_code, ns)
+    assert ns["g"]([1, 2, 3], [4, 5]) == 15
+
+
+def test_repair_off_by_one_via_dispatch():
+    """Full repair() entry — IndexError in error text + pattern in code."""
+    r = repair(GEMMA_OFF_BY_ONE_BUG, "IndexError: list index out of range")
+    assert r.applied
+    assert r.kind == "off_by_one"
+
+
+def test_repair_off_by_one_requires_indexerror_in_error_text():
+    """Without IndexError in error text, dispatch skips off_by_one
+    even though pattern exists. Belt+suspenders against false positives."""
+    r = repair(GEMMA_OFF_BY_ONE_BUG, "ValueError: something else")
+    assert not r.applied
+    # dispatch notes mention indexerror gate was false
+    assert any("indexerror" in n.lower() for n in r.notes)
+
+
+def test_repair_syntax_still_first_in_dispatch():
+    """Broken syntax code with IndexError hint must still go to
+    syntax_repair first — can't AST-walk unparseable code."""
+    # Syntactically broken, but includes IndexError hint:
+    code = "def f(xs):\n    for i in range(len(xs) + 1:\n        print(xs[i])\n"
+    r = repair(code, "IndexError: list index out of range")
+    # Note: can't predict exactly what syntax_repair does here (might
+    # succeed or fail), but off_by_one must NOT run on unparseable code.
+    assert r.kind in ("syntax_repair", "none")
 
 
 def test_end_to_end_csv_column_stats_passes_after_repair():

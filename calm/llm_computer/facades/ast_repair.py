@@ -1,9 +1,16 @@
 """Tier-2 AST-walker card — deterministic repair of Gemma's
 persistent code failure modes on the R53 corpus.
 
-Two rewrites, both driven by runtime error text (not by a spec):
+Four rewrites, all driven by runtime error text (not by a spec):
 
-1. **Shadow rename** (TypeError: 'X' object is not callable).
+1. **Syntax repair** (SyntaxError at parse time).
+   Iteratively parse code, find each SyntaxError, try to fix:
+   (a) mismatch — `closing X doesn't match opening Y` → insert Y's
+   matching closer at the mismatch offset; (b) append-at-end —
+   line has unbalanced brackets → append or insert-before-colon.
+   R53.35 receipt: csv_column_stats missing `)` before `:`, 0/0 → 8/8.
+
+2. **Shadow rename** (TypeError: 'X' object is not callable).
    Gemma writes `self.tokens = capacity` in __init__ but the test
    calls `tb.tokens()` as a method. Find every class-attribute assign
    `self.<name> = ...` where <name> is also a method on the same
@@ -11,12 +18,19 @@ Two rewrites, both driven by runtime error text (not by a spec):
    read sites. The method body stays intact, callers see the method.
    R53.33 receipt: this exact pattern on `token_bucket_rate_limiter`.
 
-2. **Dict-key synonym rewrite** (KeyError: 'X').
+3. **Dict-key synonym rewrite** (KeyError: 'X').
    Test does `r['age']['mean']`; Gemma emitted `{'age': {'avg': ...}}`.
    Walk every Dict literal in the tree, find a key that's a known
    synonym of the missing key, rename it. Conservative: only rewrites
    string-literal keys with a synonym from a small curated table.
    R53.33 receipt: `csv_column_stats` emits 'avg' for 'mean', etc.
+
+4. **Off-by-one range** (IndexError: list index out of range).
+   Gemma writes `for i in range(len(xs) + 1): xs[i]`. The `+1` is a
+   fencepost bug. Conservative: require both (a) an IndexError in the
+   error text and (b) an actual `container[loopvar]` subscript inside
+   the loop body before rewriting. Handles `range(len(X)+1)` and
+   `range(0, len(X)+1)`.
 
 The walker is post-generation and post-extraction — it runs AFTER the
 test output has been captured, so the error text guides which rewrite
@@ -312,6 +326,8 @@ def rewrite_dict_synonym(code: str, missing_key: str) -> RepairResult:
 _KEYERROR_RE = re.compile(r"KeyError:\s*['\"]([^'\"]+)['\"]")
 _TYPEERROR_CALLABLE_RE = re.compile(
     r"TypeError:\s*'(\w+)' object is not callable")
+_INDEXERROR_OOB_RE = re.compile(
+    r"IndexError:\s*(?:list |tuple |string |)index out of range")
 
 
 def extract_missing_key(error_output: str) -> Optional[str]:
@@ -321,6 +337,10 @@ def extract_missing_key(error_output: str) -> Optional[str]:
 
 def has_typeerror_callable(error_output: str) -> bool:
     return bool(_TYPEERROR_CALLABLE_RE.search(error_output or ""))
+
+
+def has_indexerror_oob(error_output: str) -> bool:
+    return bool(_INDEXERROR_OOB_RE.search(error_output or ""))
 
 
 # --------------------------------------------------------------------
@@ -535,13 +555,147 @@ def repair_syntax(code: str) -> RepairResult:
 
 
 # --------------------------------------------------------------------
+# 4. Off-by-one range rewrite (IndexError-driven)
+# --------------------------------------------------------------------
+
+
+def _len_plus_one_call(node: ast.AST) -> Optional[ast.Call]:
+    """If `node` is `len(X) + 1` or `1 + len(X)`, return the `len(X)`
+    Call node. Otherwise None."""
+    if not (isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add)):
+        return None
+    left, right = node.left, node.right
+
+    def _is_len_call(n):
+        return (isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Name) and n.func.id == "len"
+                and len(n.args) == 1)
+
+    def _is_one(n):
+        return isinstance(n, ast.Constant) and n.value == 1
+
+    if _is_len_call(left) and _is_one(right):
+        return left
+    if _is_len_call(right) and _is_one(left):
+        return right
+    return None
+
+
+def _body_subscripts_container_by_loopvar(
+    body: List[ast.stmt], container_name: str, loopvar: str
+) -> bool:
+    """True iff any `container_name[loopvar]` subscript appears in
+    `body` (recursively)."""
+    for stmt in body:
+        for node in ast.walk(stmt):
+            if not isinstance(node, ast.Subscript):
+                continue
+            val = node.value
+            idx = node.slice  # Python 3.9+: slice is the expr directly
+            if (isinstance(val, ast.Name) and val.id == container_name
+                    and isinstance(idx, ast.Name) and idx.id == loopvar):
+                return True
+    return False
+
+
+class _OffByOneRewriter(ast.NodeTransformer):
+    """For each For-loop of form
+       `for <loopvar> in range(len(<container>) + 1):`
+       (or `range(0, len(<container>) + 1)`) where
+       `<container>[<loopvar>]` appears in the body, rewrite the
+       `len(X) + 1` subexpression to `len(X)`.
+
+    Conservative: the body-subscript check filters loops where the
+    `+1` is intentional (e.g. fencepost iteration without indexing).
+    """
+
+    def __init__(self):
+        self.n_replaced = 0
+
+    def visit_For(self, node):
+        # Depth-first so nested loops rewrite first.
+        self.generic_visit(node)
+
+        # Loop var must be a simple Name
+        if not isinstance(node.target, ast.Name):
+            return node
+        loopvar = node.target.id
+
+        # Iter must be range(...) call
+        if not (isinstance(node.iter, ast.Call)
+                and isinstance(node.iter.func, ast.Name)
+                and node.iter.func.id == "range"):
+            return node
+
+        args = node.iter.args
+        # Supported forms:
+        #   range(len(X) + 1)       — args=[BinOp]
+        #   range(0, len(X) + 1)    — args=[0, BinOp]
+        if len(args) == 1:
+            idx = 0
+        elif (len(args) == 2
+              and isinstance(args[0], ast.Constant)
+              and args[0].value == 0):
+            idx = 1
+        else:
+            return node
+
+        len_call = _len_plus_one_call(args[idx])
+        if len_call is None:
+            return node
+
+        # len() arg must be a simple Name (container identifier)
+        if not (len_call.args and isinstance(len_call.args[0], ast.Name)):
+            return node
+        container_name = len_call.args[0].id
+
+        # Body must actually subscript container[loopvar] — gate signal
+        if not _body_subscripts_container_by_loopvar(
+                node.body, container_name, loopvar):
+            return node
+
+        # Rewrite: replace the `len(X) + 1` BinOp with the len() Call
+        args[idx] = len_call
+        self.n_replaced += 1
+        return node
+
+
+def rewrite_off_by_one(code: str) -> RepairResult:
+    """If the code has any `for i in range(len(X) + 1):` loop with
+    `X[i]` in the body, rewrite `range(len(X) + 1)` → `range(len(X))`.
+
+    Returns RepairResult with kind='off_by_one' when a rewrite fires,
+    'none' otherwise.
+    """
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return RepairResult(None, "none", ["parse failed"])
+
+    writer = _OffByOneRewriter()
+    tree = writer.visit(tree)
+    if writer.n_replaced == 0:
+        return RepairResult(None, "none", ["no off-by-one pattern found"])
+
+    ast.fix_missing_locations(tree)
+    try:
+        new_code = ast.unparse(tree)
+    except Exception as e:
+        return RepairResult(None, "none", [f"unparse failed: {e}"])
+
+    return RepairResult(
+        new_code, "off_by_one",
+        [f"rewrote {writer.n_replaced} range(len(X)+1) → range(len(X))"])
+
+
+# --------------------------------------------------------------------
 # Entry point
 # --------------------------------------------------------------------
 
 
 def repair(code: str, error_output: str) -> RepairResult:
     """Dispatch on error kind. Returns first successful repair, or
-    RepairResult(None, 'none', ...) if neither applies.
+    RepairResult(None, 'none', ...) if none applies.
 
     Caller responsibility: re-run tests on the returned code. Walker
     does no sandboxing itself.
@@ -571,7 +725,16 @@ def repair(code: str, error_output: str) -> RepairResult:
         if syn.applied:
             return syn
 
+    # 3. Off-by-one — driven by IndexError OOB text. Gated on both the
+    # error text and a body-subscript signal (in the walker) to avoid
+    # breaking legitimate `range(len(X)+1)` loops.
+    if has_indexerror_oob(error_output or ""):
+        obo = rewrite_off_by_one(code)
+        if obo.applied:
+            return obo
+
     return RepairResult(None, "none",
                         ["no applicable rewrite",
                          f"shadow: {shadow.notes}",
-                         f"missing_key: {missing}"])
+                         f"missing_key: {missing}",
+                         f"indexerror: {has_indexerror_oob(error_output or '')}"])
