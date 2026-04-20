@@ -84,6 +84,20 @@ output (R46.2 pattern). (4) Is the capability truly alien to Gemma
 R46.2's 17/17 multi-step-composition fixes *already augments the
 L24 task* at the output level — no L24-internal intervention needed.
 
+**R53.36 audit refinement** (2026-04-20, `capability_gain.md`
+§R53.36): the three distillation nulls that close tier-3 are NOT
+the same mechanism. R50.5 SAE is interpretability-without-causality
+on an attribution-picked basis. R51.5 MSE is a close-miss at
+cos=0.89 scale=0.91 where 10% diffuse residual error cascades
+through 17 downstream layers into wrong argmax. R52.3 KL is a
+wrong-loss failure where the student output is uncorrelated with
+L24's contribution (cos=-0.02, scale=94×). Install math verified
+bit-identical on both students, so tier-3 is not install-bug-
+blocked. **Tier-2 stacking stays the priority** — but tier-3 has a
+credible reopen path via Jacobian-weighted loss (weight residual
+error by downstream causal effect on head logits) if an active
+workstream ever needs single-card L24 replacement. Not priority.
+
 ### Customer verticals = card decks
 
 Each customer's substrate = Gemma + their own deck of Tier-2/3 cards.

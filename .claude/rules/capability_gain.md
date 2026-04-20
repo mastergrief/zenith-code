@@ -315,15 +315,103 @@ Gemma in the repair loop, mechanical rewrite, and the ceiling lifts.
 Commercial framing ("auditable rewrite for regulated industries")
 is load-bearing now, not aspirational.
 
-**Bottleneck on `csv_column_stats`** at the same run: 0/0 across
-two attempts, all `NoCode` (Gemma emits prose/think but the
-extractor finds no code). Different failure class from
-`token_bucket`'s logic-bug shadow — it's upstream of the walker.
-Walker's csv test (`test_end_to_end_csv_column_stats_passes_after_repair`)
-confirms correctness-of-walker on the bug pattern; live Gemma just
-doesn't emit extractable code at the current budget. Next
-intervention is either better extractor or forced-code-fence
-prefix, not more walker work.
+**csv update — reaudit confirmed walker-fixable** (R53.35 reaudit,
+`scripts/r53_35_reaudit.py`, `scripts/r53_diag_csv_raw.py`):
+
+The initial R53.35 csv run reported `NoCode` because Gemma emitted
+code inside a fenced block with a SyntaxError — a single unclosed
+paren (`for i in range(min(num_cols, len(row)):` missing `)`
+before the `:`). The format-agnostic extractor's final AST-validate
+step correctly rejected 1742 tokens of otherwise-correct code.
+Initial diagnosis as "extraction bottleneck / NoCode" conflated the
+fence presence with parse validity.
+
+Walker's third rewrite — **syntax_repair** — closes this:
+
+  phase                                            result
+  ----------------------------------------         ------
+  Gemma raw (1742 tokens, parse)                   SyntaxError L42
+  + syntax_repair (1 mismatch fix)                 OK
+  exec + test_code                                 8/8 PASS
+
+Measured end-to-end:
+
+  pipeline step              csv_column_stats   token_bucket
+  -------------              ----------------   ------------
+  pre-walker                 0/0                0/0
+  + ast_repair               **8/8** (syntax)   **5/5** (shadow)
+  wall time                  ~0.9s              ~0.9s
+
+Combined R53.0 lift: **+13 tests across 2 of 6 problems**,
+mechanically, zero LLM retries. Receipt file:
+`/tmp/r53_reaudit/csv_column_stats.txt`. Commit: `c81feb6`.
+
+**The re-audit receipt redefines what "Gemma failed" means**: on
+both token_bucket and csv, Gemma produced correct logic with a
+single-character mechanical bug that the extractor's strict
+AST-validate hid. Prior rules should be read with that
+refinement — not all "Gemma failed on X" conclusions were
+capability gaps; some were extractor-strictness artifacts.
+
+### R53.36 — tier-3 install audit (R51/R52 revisit)
+
+Question: are the R51.5 (MSE) and R52.3 (KL) tier-3 nulls the
+same class of extractor-hidden artifact the csv reaudit revealed?
+
+Audit (`scripts/r53_36_audit_r51_install.py`): three diagnostic
+questions × 4 held-out prompts (multi/single/factual/code) × 2
+student checkpoints.
+
+**Q1 — training fidelity** (does the student reproduce L24?):
+
+  prompt        R51-MSE cos  R51-MSE scale  R52-KL cos  R52-KL scale
+  -----------   -----------  -------------  ----------  -------------
+  multi-step    0.944        0.955          -0.020      91.68×
+  single-op     0.962        0.962          -0.021      94.45×
+  factual       0.954        0.944          -0.020      98.47×
+  code          0.714        0.760          -0.030      91.12×
+  -----------   -----------  -------------  ----------  -------------
+  aggregate     **0.8935**   **0.9052**     **-0.0227** **93.93×**
+
+**Q2 — install boundary** (`L24_installed == h_before +
+student(h_before)`?): **max abs diff = mean abs diff = 0.00e+00**
+on all 4 prompts × 2 students. **Install math is bit-identical.**
+Not an install bug.
+
+**Interpretation**:
+
+- **R52-KL is a wrong-loss training failure.** Cos=-0.02 means
+  the student's output is uncorrelated with L24's contribution;
+  scale=94× means it's ~100× too big in magnitude. KL-on-final-
+  logits never constrains residual reconstruction. The student
+  learned to output something that makes L25..L41+head produce
+  roughly-right logits via alternate pathways, without computing
+  L24's function.
+- **R51-MSE is NOT a csv-style artifact but is a close-miss.**
+  Cos=0.89, scale=0.91 means the student DOES reproduce L24 on
+  average. Yet R51.5 dual-gate reported 0.19 prefix match. The
+  10% residual error is diffuse in channel basis but cascades
+  through 17 downstream layers + head, amplifying into wrong
+  argmax. MSE loss averages over 2560 channels — can't concentrate
+  penalty on task-critical directions (digit-selectors, content-
+  readers). That's why R51.5 noted arithmetic (sharp digits)
+  preserves worst (0.11) and code (diffuse) preserves best (0.59).
+
+**Implication**: tier-3 L24 distillation is closed **at current
+loss space** but not in principle. A loss that weights by
+downstream causal effect — e.g. `||J · (pred - contribution)||²`
+where `J = d(head_logits) / d(h_L24)` — would concentrate
+student training on task-critical directions. Speculative but
+credible reopen path. Estimated ~1-2 weeks of work; commercial
+lift is moderate since tier-2 stacking (R46.2 MultiStepReasoningFacade
+17/17 real fixes) already augments L24's task at the output
+level without tier-3 cost.
+
+**Tier-3 is not reopened as an active workstream.** Tier-2
+stacking remains the priority per `augmentation_thesis.md`
+§"Tier-2 stacking achieves tier-3-equivalent outcomes". R53.36
+refined *why* tier-3 was hard (sharp-direction miss + wrong-loss),
+not *whether* tier-2 is correct.
 
 ## Related rules
 

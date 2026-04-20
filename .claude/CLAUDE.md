@@ -444,13 +444,32 @@ training + L24/L30 install) pending. Full rules: `.claude/rules/retrieval.md`,
   → eval 0/0. Fix pre-loads ~23 safe stdlib modules before the
   `_safe_import` hook. User `import os` still blocked.
 
-**Open tier-3 target (logic-bug ceiling)**: csv_column_stats emits
-KeyError in Gemma's own code; token_bucket emits `self.consume =
-capacity` shadow bug. Categorizer correctly detects + emits targeted
-rename hint with example — Gemma retry emits the same bug. Prior
-dominates hint. Tier-2 compiled AST walker (parse → detect collision
-→ mechanical rename) is the defensible fix, not hint-tuning or
-bigger-model.
+**R53.35 + R53.36 shipped (this session)**: tier-2 AST walker +
+tier-3 install audit. Both load-bearing:
+
+- **AST walker** (`calm/llm_computer/facades/ast_repair.py`) — 3
+  deterministic rewrites driven by Python error text: shadow rename
+  (TypeError callable), dict-key synonym (KeyError + curated
+  synonym table), syntax repair (bracket mismatch via error offset
+  + insert-before-`:` for `for/if/def` lines). Wired into
+  `scripts/r53_21_import_inject.py`. R53.0 lifts: **token_bucket
+  0/0 → 5/5 via shadow_rename, csv_column_stats 0/0 → 8/8 via
+  syntax_repair (1 missing paren)**. Combined +13 tests on 2 of 6
+  problems, mechanical, ~1s per fix, zero LLM retries. 36/36 unit
+  tests. **Supersedes "Gemma ignores hints" framing on those two
+  problems — Gemma's output was logically correct; extractor
+  strictness hid the result.**
+- **R51/R52 install audit** (`scripts/r53_36_audit_r51_install.py`)
+  — verified install math zero-diff (`L24_installed == h_before +
+  student(h_before)` bit-identical). R51-MSE student reproduces
+  L24 at cos=0.89, scale=0.91 — 10% diffuse error cascades through
+  L25..L41 into wrong argmax. R52-KL student is garbage (cos=-0.02,
+  scale=94×) — KL-on-logits doesn't constrain residuals. **Tier-3
+  remains closed at current loss space but not in principle;
+  Jacobian-weighted loss is a credible reopen path.** Tier-2
+  stacking (R46.2) stays the priority — already delivers 17/17
+  user-facing wins without tier-3 cost. Full receipts in
+  `.claude/rules/capability_gain.md` §R53.35-R53.36.
 
 ## Hardware
 
