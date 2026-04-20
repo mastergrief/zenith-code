@@ -324,6 +324,193 @@ def has_typeerror_callable(error_output: str) -> bool:
 
 
 # --------------------------------------------------------------------
+# 3. Balanced-paren syntax repair (pre-walker, pre-extractor)
+# --------------------------------------------------------------------
+
+
+_BRACKET_PAIRS = {"(": ")", "[": "]", "{": "}"}
+_CLOSERS = {")", "]", "}"}
+
+
+def _balance_brackets_on_line(line: str) -> Optional[str]:
+    """If `line` has more openers than closers of some bracket class,
+    append the missing closers (in reverse-stack order) before any
+    trailing comment or whitespace. Returns the fixed line, or None
+    if no fix applicable (e.g. more closers than openers, or already
+    balanced).
+
+    Assumes lexically naive parsing: brackets inside strings are NOT
+    distinguished. False positives on code like `s = "("` are possible
+    but rare in practice; safer than letting the whole file fail to
+    parse.
+    """
+    # Strip trailing comment and trailing whitespace to preserve original
+    # indentation at comment boundary.
+    code_part = line
+    comment = ""
+    # Very naive comment split — ignores strings. Good enough for the
+    # end-of-line comment case common in Gemma output.
+    hash_idx = code_part.find("#")
+    if hash_idx >= 0 and hash_idx > code_part.rfind('"'):
+        comment = code_part[hash_idx:]
+        code_part = code_part[:hash_idx]
+
+    stripped = code_part.rstrip()
+    trailing_ws = code_part[len(stripped):]
+
+    stack: List[str] = []
+    in_str: Optional[str] = None  # None | "'" | '"'
+    for ch in stripped:
+        if in_str:
+            if ch == in_str:
+                in_str = None
+            continue
+        if ch in ("'", '"'):
+            in_str = ch
+            continue
+        if ch in _BRACKET_PAIRS:
+            stack.append(ch)
+        elif ch in _CLOSERS:
+            if stack and _BRACKET_PAIRS[stack[-1]] == ch:
+                stack.pop()
+            else:
+                # Unmatched closer — don't attempt repair on this line
+                return None
+
+    if not stack:
+        return None   # balanced; no-op
+
+    # Append closers in reverse stack order
+    fix = "".join(_BRACKET_PAIRS[b] for b in reversed(stack))
+    return stripped + fix + trailing_ws + comment
+
+
+MAX_SYNTAX_REPAIR_LINES = 10
+
+
+_MISMATCH_RE = re.compile(
+    r"closing parenthesis '([)}\]])' does not match "
+    r"opening parenthesis '([({\[])'"
+)
+
+
+def _repair_mismatch(line: str, offset: int, closer: str, opener: str) -> Optional[str]:
+    """Python says the bracket at `offset` (`closer`, e.g. '}') doesn't
+    match a preceding unclosed `opener` (e.g. '('). Insert the correct
+    closer for `opener` right BEFORE the mismatched closer.
+
+    Canonical R53.35 csv case:
+      `{h[i]: [] for i in range(len(h)}`  — `}` at offset 40
+      Python: "closing '}' does not match opening '('"
+      Fix: insert `)` at offset 39 → `{h[i]: [] for i in range(len(h))}`.
+
+    Returns None if offset is out of bounds.
+    """
+    if opener not in _BRACKET_PAIRS:
+        return None
+    need = _BRACKET_PAIRS[opener]
+    # Python's offset is 1-based for column; index into line is offset-1.
+    # Sanity: check the char at offset-1 is the reported closer.
+    idx = offset - 1
+    if idx < 0 or idx >= len(line):
+        return None
+    if line[idx] != closer:
+        # Offset may differ by 1 in some Python versions; try offset
+        if 0 <= offset < len(line) and line[offset] == closer:
+            idx = offset
+        else:
+            return None
+    return line[:idx] + need + line[idx:]
+
+
+def repair_syntax(code: str) -> RepairResult:
+    """Iteratively parse `code`, find each SyntaxError, and try to
+    auto-fix it. Two strategies:
+
+    1. **Mismatch**: error says `closing X does not match opening Y` —
+       insert Y's matching closer before X. Handles the canonical
+       R53.35 csv pattern (`{... range(len(h)}` missing `)`).
+    2. **Unclosed-at-end**: error's line has more openers than closers
+       of some bracket class — append the missing closers. Handles
+       the simpler `func(a, b` case.
+
+    Stops when ast.parse succeeds or repair can't make progress.
+
+    Returns RepairResult with kind='syntax_repair' when any fix was
+    applied, 'none' otherwise.
+    """
+    if not code:
+        return RepairResult(None, "none", ["empty code"])
+
+    try:
+        ast.parse(code)
+        return RepairResult(None, "none", ["code already parses"])
+    except SyntaxError:
+        pass
+
+    lines = code.split("\n")
+    fixes: List[str] = []
+    # Line numbers where each strategy has already been attempted
+    # (some lines may need both passes).
+    seen_mismatch: set = set()
+    seen_append: set = set()
+
+    for _ in range(MAX_SYNTAX_REPAIR_LINES):
+        try:
+            ast.parse("\n".join(lines))
+            break
+        except SyntaxError as e:
+            lineno = e.lineno or 0
+            offset = e.offset or 0
+            msg = e.msg or ""
+            if lineno < 1 or lineno > len(lines):
+                break
+
+            fixed_this_round = False
+
+            # Strategy 1: mismatch repair
+            mm = _MISMATCH_RE.search(msg)
+            if mm and lineno not in seen_mismatch:
+                seen_mismatch.add(lineno)
+                closer, opener = mm.group(1), mm.group(2)
+                fixed = _repair_mismatch(
+                    lines[lineno - 1], offset, closer, opener)
+                if fixed is not None and fixed != lines[lineno - 1]:
+                    fixes.append(
+                        f"line {lineno}: inserted '{_BRACKET_PAIRS[opener]}' "
+                        f"before mismatched '{closer}'")
+                    lines[lineno - 1] = fixed
+                    fixed_this_round = True
+
+            # Strategy 2: append-at-end repair (only if mismatch didn't fire)
+            if not fixed_this_round and lineno not in seen_append:
+                seen_append.add(lineno)
+                fixed = _balance_brackets_on_line(lines[lineno - 1])
+                if fixed is not None and fixed != lines[lineno - 1]:
+                    fixes.append(
+                        f"line {lineno}: closed unbalanced brackets")
+                    lines[lineno - 1] = fixed
+                    fixed_this_round = True
+
+            if not fixed_this_round:
+                break
+
+    if not fixes:
+        return RepairResult(None, "none",
+                            ["syntax error not fixable by bracket balancing"])
+
+    new_code = "\n".join(lines)
+    try:
+        ast.parse(new_code)
+    except SyntaxError as e:
+        return RepairResult(None, "none",
+                            [f"post-repair parse still failed: {e.msg}"]
+                            + fixes)
+
+    return RepairResult(new_code, "syntax_repair", fixes)
+
+
+# --------------------------------------------------------------------
 # Entry point
 # --------------------------------------------------------------------
 
@@ -337,6 +524,13 @@ def repair(code: str, error_output: str) -> RepairResult:
     """
     if not code:
         return RepairResult(None, "none", ["empty code"])
+
+    # 0. Syntax repair — runs FIRST so downstream rewrites see parseable
+    # code. Fires when ast.parse fails with a bracket imbalance; no-op
+    # when code already parses.
+    syntax = repair_syntax(code)
+    if syntax.applied:
+        return syntax
 
     # 1. Shadow rename — driven by TypeError callable. We also run the
     # detector on code with no such error: sometimes Gemma's code has

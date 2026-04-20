@@ -15,11 +15,13 @@ import pytest
 from calm.llm_computer.facades.ast_repair import (
     DICT_KEY_SYNONYMS,
     RepairResult,
+    _balance_brackets_on_line,
     _find_shadowed_attrs,
     extract_missing_key,
     has_typeerror_callable,
     rename_shadow,
     repair,
+    repair_syntax,
     rewrite_dict_synonym,
 )
 
@@ -334,6 +336,128 @@ def test_end_to_end_token_bucket_passes_after_repair():
     successes = sum(tb2.allow() for _ in range(3))
     assert successes == 3
     assert not tb2.allow()
+
+
+# -- syntax repair (balanced brackets) ------------------------------
+
+
+def test_balance_mid_expression_imbalance_returns_none():
+    """_balance_brackets_on_line is naive append-at-end only. A
+    mid-expression imbalance where `}` closes a `{` before all inner
+    `(` are closed returns None — let _repair_mismatch handle it via
+    the SyntaxError offset path."""
+    line = "    column_data = {header[i]: [] for i in range(len(header)}"
+    fixed = _balance_brackets_on_line(line)
+    # `}` with an unclosed `(` ahead of it → naive balancer bails.
+    assert fixed is None
+
+
+def test_balance_append_missing_closer_at_end():
+    line = "x = func(a, b, c"
+    fixed = _balance_brackets_on_line(line)
+    assert fixed == "x = func(a, b, c)"
+
+
+def test_balance_nested_missing():
+    line = "y = f(g(h(z"
+    fixed = _balance_brackets_on_line(line)
+    assert fixed == "y = f(g(h(z)))"
+
+
+def test_balance_already_balanced_is_noop():
+    line = "x = func(a, b)"
+    fixed = _balance_brackets_on_line(line)
+    assert fixed is None
+
+
+def test_balance_preserves_trailing_comment():
+    line = "x = func(a  # missing close"
+    fixed = _balance_brackets_on_line(line)
+    assert fixed is not None
+    assert fixed.endswith("# missing close")
+    assert "func(a)" in fixed
+
+
+def test_balance_returns_none_on_excess_closer():
+    line = "x = func(a))"
+    fixed = _balance_brackets_on_line(line)
+    assert fixed is None
+
+
+def test_balance_ignores_brackets_in_strings():
+    line = "msg = 'this has ( unmatched paren in string'"
+    fixed = _balance_brackets_on_line(line)
+    # String-internal `(` doesn't count as an opener
+    assert fixed is None
+
+
+def test_repair_syntax_single_missing_paren():
+    code = "def f():\n    x = func(a, b\n    return x\n"
+    r = repair_syntax(code)
+    assert r.applied
+    assert r.kind == "syntax_repair"
+    ast.parse(r.new_code)
+
+
+def test_repair_syntax_noop_on_valid():
+    code = "def f():\n    return 42\n"
+    r = repair_syntax(code)
+    assert not r.applied
+    assert "already parses" in r.notes[0]
+
+
+def test_repair_syntax_unfixable_returns_none():
+    # Legit syntax error that isn't a bracket imbalance
+    code = "def f(:\n    pass\n"
+    r = repair_syntax(code)
+    assert not r.applied
+
+
+def test_repair_syntax_gemma_csv_pattern():
+    """The exact R53.35 bug pattern — dict comp with unclosed paren.
+    `{header[i]: [] for i in range(len(header)}`: the `{/}` pair is
+    balanced but the inner `range(len(header)` is missing its `)`.
+
+    Python's parser reports: "closing parenthesis '}' does not match
+    opening parenthesis '('" at the `}` offset. _repair_mismatch
+    inserts `)` before the `}` → `range(len(header))}`, which parses."""
+    code = (
+        "def f(header, rows):\n"
+        "    column_data = {header[i]: [] for i in range(len(header)}\n"
+        "    return column_data\n"
+    )
+    r = repair_syntax(code)
+    assert r.applied, f"expected mismatch repair to fire: {r.notes}"
+    assert r.kind == "syntax_repair"
+    assert "inserted ')'" in r.notes[0]
+    ast.parse(r.new_code)   # parses now
+    # Confirm the fix is minimal — only one `)` added on line 2
+    assert "range(len(header))" in r.new_code
+
+
+def test_repair_syntax_gemma_csv_three_copies():
+    """Gemma's actual raw output had THREE identical unclosed parens.
+    Repair must iterate through all of them."""
+    code = (
+        "def f(h, data):\n"
+        "    a = {h[i]: [] for i in range(len(h)}\n"
+        "    b = {h[i]: [] for i in range(len(h)}\n"
+        "    c = {h[i]: [] for i in range(len(h)}\n"
+        "    return a, b, c\n"
+    )
+    r = repair_syntax(code)
+    assert r.applied
+    assert len(r.notes) == 3   # one fix per duplicated bug line
+    ast.parse(r.new_code)
+
+
+def test_repair_dispatches_syntax_first():
+    """Syntax repair runs before shadow/synonym — broken code can't
+    be walked for shadow anyway."""
+    code = "def f():\n    x = func(a, b\n    return x\n"
+    r = repair(code, "SyntaxError: '(' was never closed")
+    assert r.applied
+    assert r.kind == "syntax_repair"
 
 
 def test_end_to_end_csv_column_stats_passes_after_repair():
