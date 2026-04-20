@@ -2,41 +2,52 @@ Audit the project and rewrite `.claude/CLAUDE.md`, `.claude/rules/`, and `.claud
 
 ## Default workflow — parallel audit → P0/P1/P2 plan → execute by tier
 
-The default for a non-trivial update (session touched >1 subsystem, >3 commits, or introduced a new mechanism): launch 2 Explore agents in parallel for the audit, classify findings by priority tier, draft a plan file in plan mode, then execute one tier per commit. Fall through to inline work only for single-file trivial fixes.
+The default for a non-trivial update (session touched >1 subsystem, >3 commits, or introduced a new mechanism): launch **3 Explore agents in parallel** for the audit (transcript / code / docs), classify findings by priority tier, draft a plan file in plan mode, then execute one tier per commit. Fall through to inline work only for single-file trivial fixes.
 
-### Phase 1 — parallel research (2 Explore agents)
+Case-study receipt: the 2026-04-20 fused flash-attn flip (commit `ad1469e`) used this exact 3-agent split. Agent 1 extracted verbatim bench numbers from the minutes transcript; Agent 2 mapped the flag + dispatch + N-gate feasibility to 5 specific line numbers; Agent 3 enumerated 14 doc locations across 7 files with fix-category tags. Synthesis + plan + commit took ~30 min end-to-end.
+
+### Phase 1 — parallel research (3 Explore agents)
 
 **The brief IS the session context.** Agents are cold-started with zero
 knowledge of the conversation. Before dispatching, run `git log --oneline
 -20` + `git status --short`, skim session memory / handoff for ruled-out
-paths, then write a brief containing:
+paths, then write three focused briefs — one per agent — each containing:
 
-- The session's shipped commits (SHA + 1-line summary) for every
-  non-trivial change
-- Every new or modified file with its purpose (1 sentence)
-- Session's wins and nulls as a bullet list
-- Pointers to files + rules the agent should read (not pasted content)
-- Return format explicitly specified (punch-list / prioritized-list)
+- The subject area for this audit (what subsystem / mechanism / claim is in play)
+- The session's shipped commits (SHA + 1-line summary) for the relevant changes
+- Pointers to files / line ranges / transcript sections the agent should read (not pasted content)
+- Return format explicitly specified (punch-list / prioritized-list / file:line inventory)
 
-Realistic brief size: 300-500 words. Too short = agent misses findings
-you didn't list. Too long (full transcript) = wastes tokens and
-dilutes the agent's read targets.
+Realistic brief size: 300-500 words per agent. Each agent owns ONE
+domain — don't blur scopes. Synthesis happens in main context.
 
-**Agent A — rules vs current code**
-- Read `.claude/CLAUDE.md` + every `.claude/rules/*.md` + current source files listed in the brief
-- Return per-file punch list: STALE (contradicts code), MISSING (not yet documented), NEW SECTION (worth adding)
-- Include file:line refs where possible
-- ≤ 200 words
+**Agent 1 — transcript + measurements**
+- Read session minutes (`.claude/MEMORY/minutes/*.md`), handoff, and full commit bodies for session-tagged perf / fix / eval commits
+- Extract verbatim numbers, decisions, caveats — no summarization where raw data is needed (bench tables, eval deltas, measured failure rates)
+- Flag ruled-out paths, user corrections, methodology caveats (single-run vs median-of-5, etc.)
+- Return: ≤ 300 words including a verbatim numbers block, decision log, and any explicitly-deferred policy choices
 
-**Agent B — git log + session findings**
-- Read `git log --oneline -20` + full commit bodies for R-tagged / perf / fix commits
-- Optionally read session transcript if `.claude/MEMORY/Augment-notes.md` or similar exists
-- Return prioritized findings list ranked P0/P1/P2
-- ≤ 250 words
+**Agent 2 — code surface**
+- Walk modified / new source files listed in the brief
+- Surface: flags + defaults, dispatch conditionals, invariants, shape-heuristic constants
+- Locate gating / threshold points for any policy the update will touch
+- Return per-site: `file:line` refs, 3-5 lines of context, and (if a change is planned) the cleanest spot to make it
+- ≤ 400 words
+
+**Agent 3 — docs inventory**
+- Read `.claude/CLAUDE.md` + every `.claude/rules/*.md` + `.claude/MEMORY/SESSION_HANDOFF.md`
+- Exhaustive search for every claim/number/policy statement related to the subject area
+- Per hit: `file:line`, exact quote (3-5 lines context), **fix category** — one of:
+  - **correct the claim** (was wrong, rewrite)
+  - **tighten / add gate** (still mostly right, needs qualifier)
+  - **keep as historical receipt** (session-specific, mark PARTIALLY SUPERSEDED not delete)
+  - **new section** (mechanism is new, needs fresh doc)
+- Group findings by file; include edit-priority ordering
+- ≤ 500 words
 
 ### Phase 2 — synthesize and classify
 
-Merge the two agent outputs. Classify each finding:
+Merge the three agent outputs. Cross-reference: transcript findings (Agent 1) should ground claims in measurements; code-surface findings (Agent 2) should identify the edit sites; docs-inventory findings (Agent 3) should map every downstream update. Classify each finding:
 
 | Tier | Definition | Examples |
 |---|---|---|
