@@ -448,9 +448,13 @@ llama-server -m model.gguf --cache-type-k tq3_k256 --cache-type-v tq3_k256
 
 - `generate(use_tq4_kv=True)` routes through real-tq4 `KVCacheTq4`
   (multi-token prefill S≥1, ~3.6× smaller KV vs fp16 KVCache). Phase
-  1 memoized dequant path ships as the winner; Phase 2 fused
-  flash-attn kernel exists but is 8-10% slower at N≤1024 — see
-  `tq4_flash_attn.py` and `tracing_roadmap.md` Round 53.34.
+  2 fused flash-attn kernel ships default-on (`_use_fused_flash_attn=True`)
+  with runtime N-gate `128 < cached_kv_len < 2048` — the measured
+  winning band. Outside the band (small prompts + first ~128 decode
+  steps, or decode past 2048) it falls back to Phase 1 memoized
+  dequant. Long R53 eval with AdaptiveBudget up to 16K uses memo past
+  2048 — no regression. See `tq4_flash_attn.py`, `tracing_roadmap.md`
+  Round 53.34, and `turboquant.md` for the bench table.
 - `MAX_TOKENS_CEILING = 16384` across all R53 eval scripts (was
   200-400 pre-R53.25). `AdaptiveBudget` picks per-prompt tier
   (trivial 2K / easy 4K / medium 8K / hard 16K / deep 32K clamped).

@@ -421,11 +421,17 @@ training + L24/L30 install) pending. Full rules: `.claude/rules/retrieval.md`,
   Ada L1; `tl.join`/reshape overhead can exceed BW savings.
 - **R53.34** — fused flash-attention decode kernel
   (`calm/llm_computer/tq4_flash_attn.py`), cosine=1.0 parity vs fp32
-  at N∈{16…1024}. Empirically 8-10% SLOWER than Phase 1 memoized
-  dequant at N≤1024 (336 per-Q-head kernel launches dominate at short
-  ctx). Shipped with `_use_fused_flash_attn=False` default; Phase 1
-  memo path is the production winner (~77% of fp16 tok/s at ~50% KV
-  memory). Kernel kept in tree for N>4K long-context future work.
+  at N∈{16…1024}. Non-monotonic perf curve (2026-04-20 re-bench):
+  -18% at N=64 (launch overhead dominates), **+14% at N=256 and +6%
+  at N=1024** (mid-range sweet spot, captures 82-96% of fp16), -7% at
+  N=4096 (cuBLAS-on-memo wins asymptotic). **Shipped with
+  `_use_fused_flash_attn=True` default + runtime N-gate
+  `128 < kv_cache.layer_pos[kv_src] < 2048`** in `_forward_layer`.
+  Chat + short-eval decode runs fused; long R53 eval (AdaptiveBudget
+  up to 16K) falls back to Phase 1 memo past N=2048 — no regression
+  on long-decode workloads. Phase 1 memo remains the asymptotic
+  winner and out-of-gate fallback. Full bench + policy:
+  `.claude/rules/turboquant.md` §"Fused flash-attention decode".
   Adjacent null: TurboQuant Q_prod (3-bit Q_mse + 1-bit QJL) —
   unbiased inner-product but softmax-output cosine worse than Q_mse
   alone at every N tested (`tq4_qjl_torch.py` kept for NN/retrieval

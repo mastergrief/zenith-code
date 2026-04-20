@@ -110,17 +110,25 @@ def _tq4_linear_kernel(x: torch.Tensor, qs: torch.Tensor, d: torch.Tensor,
 
 _compiled_tq4_linear = None  # set by enable_compile_tq4()
 _use_triton = False           # set by enable_triton_tq4()
-_use_fused_flash_attn = False  # Phase 2 fused tq4 flash-attn dispatch.
-                               # MEASURED REGRESSION at N≤1024 on RTX 4070M:
-                               # -8 to -10% vs Phase 1 memo path, because the
-                               # per-Q-head Python loop (8 kernel launches per
-                               # layer × 42 layers × decode step) costs more
-                               # than a single-wide Triton dequant + PyTorch
-                               # einsum at this context range. Math is correct
-                               # (cos=1.00000 vs fp32 ref) — keep kernel in
-                               # tree for N >> 2K where KV bandwidth starts
-                               # dominating launch overhead. Opt-in via
-                               # `enable_fused_flash_attn(True)`.
+_use_fused_flash_attn = True   # Phase 2 fused tq4 flash-attn dispatch.
+                               # NON-MONOTONIC perf curve vs Phase 1 memo on
+                               # RTX 4070M (bench 2026-04-20 median-of-5):
+                               #   N=64   -18% (launch overhead dominates)
+                               #   N=256  +14%  <-- sweet spot
+                               #   N=1024 +6%
+                               #   N=4096 -7%  (cuBLAS-on-memo wins asymptotic)
+                               # Flag enables the FUSED path; the runtime
+                               # conditional in `_forward_layer` further
+                               # restricts it to `128 < cached_kv_len < 2048`
+                               # (the measured winning band). Outside that
+                               # band the gate falls back to Phase 1 memo.
+                               # Math is correct (cos=1.00000 vs fp32 ref).
+                               # Full bench + gate rationale:
+                               # `.claude/rules/turboquant.md` §"Fused
+                               # flash-attention decode" and tracing_roadmap
+                               # Round 53.34 reconciliation row.
+                               # Disable entirely via
+                               # `enable_fused_flash_attn(False)`.
 
 
 def enable_triton_tq4(enabled: bool = True):
@@ -1429,6 +1437,8 @@ class GemmaSubstrate:
         # write so own-KV layers can use `write_only` (skip the eager dequant
         # in `KVCacheTq4.update`). Shared-KV layers read raw bytes directly.
         partitions = self.attention_partition.get(layer_idx, [])
+        # N-gate: fused wins empirically at 128 < cached_kv_len < 2048
+        # (bench 2026-04-20). Outside that band, Phase 1 memo is faster.
         fused_tq4 = (
             _use_triton
             and _use_fused_flash_attn
@@ -1436,6 +1446,7 @@ class GemmaSubstrate:
             and S == 1
             and not partitions
             and kv_cache._d_head[kv_src] == 256  # MVP: BPR=1 only
+            and 128 < kv_cache.layer_pos[kv_src] < 2048  # sweet-spot gate
         )
 
         if own_kv:

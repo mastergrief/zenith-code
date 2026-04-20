@@ -1,271 +1,363 @@
-# Session Handoff — 2026-04-19 (R53 Phase 1: retrieval + DB + complex eval)
+# Session Handoff — 2026-04-19 (R53.19 → R53.34 + doc sweep)
 
-Branch: `feature/multi-agent-qwen`. Session ran R53 Phase 1 end-to-end:
-hybrid retrieval stack, 8970-example DB, 9 data generators, complex
-multi-step coding eval. Completed with the clearest null result we've
-had in the session arc.
+> **Postscript 2026-04-20** — the R53.34 "fused flash-attn is 8-10% slower
+> at all N≤1024, shipped default OFF" disposition below is **partially
+> superseded**. A clean re-run of `scripts/r53_phase2_bench.py` this session
+> showed the curve is **non-monotonic**: fused wins +14% at N=256 and +6%
+> at N=1024, loses -18% at N=64 and -7% at N=4096. Default flipped to
+> `_use_fused_flash_attn=True` with runtime N-gate
+> `128 < kv_cache.layer_pos[kv_src] < 2048` in
+> `calm/llm_computer/gemma_substrate.py:_forward_layer`. Long R53 eval
+> (AdaptiveBudget up to 16K) falls back to Phase 1 memo past N=2048 — no
+> regression on long-decode workloads. Full bench table + rationale in
+> `.claude/rules/turboquant.md` §"Fused flash-attention decode" and
+> `tracing_roadmap.md` Round 53.34 revised row. Historical entries below
+> retained as receipt; current-state truth is the rules.
 
-Full conversation transcript preserved at `.claude/MEMORY/Augment-notes.md`
-(94 KB). Treat that as the raw log; extract stable findings from it and
-the rules updated this session.
+## Goal
 
-## TL;DR
+Drive the R53 arc past its null plateau. Specifically: diagnose why R53.19 v3 had
+hit 26/26 but csv_column_stats + token_bucket sat at 0/0 despite shipped sandbox
+fix, substrate install experiments, import-injection, mechanical repair. Then
+port TurboQuant's fused flash-attn techniques to our Triton stack; rewrite
+`.claude/rules/` + CLAUDE.md to reflect the session's shipped state.
 
-- **Retrieval-attributable gain = +0.0pp** on complex multi-step coding
-  eval. Hinted (real retrieval) = Sanity (random retrieval) = +7.4pp
-  over stock. Prompt-length effect is real; retrieval content adds
-  nothing on top of blanket injection.
-- **Root cause of the null**: blanket retrieval injection disrupts
-  Gemma's strong-prior behavior on problems it already solves. Tier 1
-  preservation is violated.
-- **Substrate-RAG has a structural advantage** over prompt-RAG:
-  hash-gated injection (L30 KnowledgeStore fires only on hash match)
-  naturally preserves Tier 1. This was proposed in R53 already; the
-  eval makes it empirically sharp.
-- **DB + retrieval infrastructure works end-to-end.** 8970 unique
-  examples, TF-IDF+BM25 (68K vocab) + Gemma-dense (fp16 + tq4) + RRF
-  fusion + tq4-quantized persistence. Cached at `.cache/r53_code_db/`.
-  Rebuild via `scripts/r53_run_data_generators.py` (CPU) +
-  `bin/gemma-run scripts/r53_build_dense.py` (daemon).
-- **Solution-preview format contamination fixed** mid-eval: extract
-  only ```python fences, strip <think> blocks and test trailers.
-  Moved date_validation from hinted 0/0 → 12/12.
-- **Next step is NOT more retrieval work.** It's build the substrate
-  install (R53.5 PT training + R53.6 L24/L30 CardSlot) so the
-  hash-gated delivery path is real, not prompt-level.
+## Completed (25 commits, 91e1e04 → 16817ad + teammate work)
 
-## Complex eval final results (6 problems × 3 conditions)
+### R53 kernel + eval stack
 
-| problem | category | stock | hinted | sanity |
-|---|---|---:|---:|---:|
-| linked_list_bugs | multi_bug | 0/0 | 0/0 | 5/5 |
-| date_validation_chain | multi_bug | 10/12 | **12/12** | 12/12 |
-| log_level_counts | lib_compose | 6/6 | 0/0 | 6/6 |
-| csv_column_stats | lib_compose | 0/0 | 0/0 | 0/0 |
-| token_bucket_rate_limiter | plan_code | 0/0 | 0/0 | 0/0 |
-| lru_cache_class | plan_code | 9/9 | 9/9 | 0/0 |
-| **TOTAL** | | **25/27** | **21/21** | **23/23** |
+- **R53.19** (`a8729a0`): MAX_TOKENS 250 → 400 after SWA fix removed the 512-cap budget
+- **R53.20a** (`ec8887f`): re-ran R53.14 substrate-RAG eval with SWA fix active.
+  **NEGATIVE**: still -9.3pp regression (stock 25/27, prompt-RAG 25/27,
+  substrate-RAG 10/12). Root cause is install-mechanism (L41 CardSlot + FirstTokenHook),
+  NOT SWA bug. Gemma's first-token on code is confidently a fence/whitespace
+  opener (logit margin 6.8-9.2); `min_margin=0.5` never gates; hook always fires
+  on HIT → forces "def"/"class" → code-without-fence → extractor fails.
+- **R53.20b** (`scripts/r53_20b_stacked.py`): substrate + prompt-RAG stacking.
+  NEGATIVE: -7 tests vs R53.19 v3's 26/26 → 19/21. Substrate disruption pollutes
+  attempt 1 output; repair retries can't recover.
+- **R53.20 writeup** (`1a85b0c`): `.claude/MEMORY/evals/2026-04-19_r53_substrate_rag_null.md`
+- **R53.21** (`b9512ec`): mechanical import injection (`COMMON_IMPORTS` table,
+  50-entry). Fires correctly on csv (`StringIO + csv`) + log_level (`import re`)
+  but null — injected imports still 0/0 because sandbox was blocking transitive os.
+- **R53.22** diagnostic (`scripts/r53_22_diagnose_csv.py`): isolated the
+  sandbox `ImportError: blocked: os` via `import statistics` transitive load.
+- **R53.23** (`5dc2dc1`): sandbox fix — pre-import ~23 stdlib modules
+  (re, math, random, time, datetime, hashlib, base64, collections, itertools,
+  functools, bisect, heapq, copy, csv, statistics, typing, enum, dataclasses,
+  abc, struct, decimal, fractions, textwrap) BEFORE `_safe_import` hook.
+  User `import statistics` now hits sys.modules cache without triggering new
+  transitive `os` load. User `import os` still blocked. Verified via 3-line test.
+- **R53.24** (combined sandbox+import stack, minutes L969-1060): 26/26 null —
+  sandbox fix + import injection together produced no lift over R53.19 v3's
+  26/26 baseline. Diagnostic round; ruled out both mechanisms as the ceiling
+  and forced the MAX_TOKENS experiment in R53.25.
+- **R53.25** (`c6a6582`): MAX_TOKENS 400 → 900. **BEST R53 RESULT: 32/32.**
+  Lifts `log_level_counts` 0/0 → 6/6 purely from budget. The prior 4 null rounds
+  (R53.19 v3 through R53.24) were budget-starved the whole time.
+- **R53.26 categorizer** (`scripts/r53_21_import_inject.py`): TypeError regex
+  generalized from `'int'` to `r"TypeError: '(\w+)' object is not callable"` —
+  matches int/float/str/list/dict.
+- **R53.27** (fast diagnostic at 900 tok, minutes L1163-1201): interstitial
+  re-run confirming R53.25's 32/32 was the genuine budget unlock, not a
+  measurement artifact. Drove the escalation 900 → 2048 → 8192 → 16K default.
+- **R53.28** (`069c614`): multi-token `KVCacheTq4.update(S≥1)` with per-layer
+  `layer_pos[l]` tracking; `trim_swa_storage` via direct byte-copy (no re-quant).
+  `DenseIndex.load(prefer_tq4=True)` now default. Adaptive budget + 16K ceiling
+  integrated across eval scripts (`scripts/r53_21_import_inject.py`,
+  `scripts/r53_eval_complex.py:_adaptive_budget`).
+- **R53.28 eval bump** (`e86d787`, `e7b4538`): all R53 scripts from
+  200-400 → 4096-16384 tokens.
+- **R53.29 v2 kernel** (`cbb8073`): `_tq4_matvec_kernel_v2` uses `tl.gather`
+  from a program-local `(16,)` centroid LUT tile. **-5 to -10% aggregate** vs
+  v1 across 3 bench runs. Correctness: measured max abs diff 1.91e-6 / 1.43e-6
+  per shape (4e-6 is a conservative upper ceiling).
+- **R53.30 fp16 x_rot** (`cfa584f`): NULL. +0.2/+8.7% across two runs.
+  Upcast-inside-dot eats BW savings on Ada.
+- **R53.31 uint32 qs** (`cfa584f`): NULL. +9.8/+16.4%. `tl.join`/reshape
+  overhead exceeds BW savings. Triton auto-coalesces already.
+- **R53.32 BLOCK_M sweep** (`f251a7f`): current `_pick_block_m` heuristic holds.
+- **R53.33** (paused at 5/6): fp16-KV + full stack got 5/5 linked_list, 12/12
+  date_validation, 6/6 log_level, 0/0 csv (35 min gen, Gemma KeyError in own
+  code), 0/0 token_bucket (39 min gen + 39 min repair, shadow bug persisted
+  despite targeted rename hint with example). Running total 23/23. Daemon
+  killed before lru_cache_class ran. **Projected final: 32/32** (matches
+  R53.25 baseline).
+- **USE_TQ4_KV revert** (`571c3ad`): disabled when diagnosing O(N²) dequant
+  (linked_list 806s at tq4 KV vs 94s at fp16 KV — 8× slowdown per step).
 
-- Δ hinted-vs-stock: **+7.4pp** (but numerator is smaller — hinted has
-  FEWER tests running because extraction fails more often)
-- Δ sanity-vs-stock: **+7.4pp** (identical — so prompt length alone
-  is driving it)
-- **Retrieval-attributable gain: +0.0pp**
+### Teammate work (separate terminal, 2 of 3 tests completed)
 
-Reading the per-row data, the honest story:
-- Stock was actually the strongest path on 3/6 (logged_level, lru_cache_class, token_bucket close)
-- Hinted broke extraction on 3/6 (linked_list_bugs, log_level_counts, csv)
-- Sanity (random retrieval) was strongest because it didn't match-and-
-  break Gemma's prior, just gave it a non-empty "related" section to
-  imitate code-fence format
+Parallel terminal ran an independent test track. 2 of 3 tests finished
+before session end — the third is not captured in minutes.md for this
+session and its landed state should be confirmed by reading current tree
+(`git log` on `calm/llm_computer/tq4_flash_attn.py` + `tq4_qjl_torch.py`
++ `scripts/r53_21_import_inject.py` for the `USE_TQ4_KV` flag state).
 
-## Artifacts shipped this session
+- **R53.34 fused flash-attn kernel** (`calm/llm_computer/tq4_flash_attn.py`):
+  proper parallel V-kernel (`grid=(n_heads_q,)`), head-major storage contract,
+  `tl.static_range` over BPR, Pi rotation at boundaries. K-side via existing
+  `tq4_matvec_triton`; V-side new `_tq4_weighted_v_kernel`. Parity cosine=1.0
+  vs fp32 at all tested N ∈ {16, 64, 128, 256, 1024}. Real-Gemma ablation
+  Δmean=0, argmax=+0.
+  - **PERF REGRESSION at short context**: 8-10% SLOWER than Phase 1 memoized
+    dequant path at N ≤ 1024 (N=64: 5.60 vs 6.06 tok/s; N=1024: 5.11 vs 5.60;
+    fp16 baseline 7.0-7.5). Root cause: 336 per-Q-head kernel launches per
+    decode step dominate streaming-byte-load advantage at short ctx.
+  - **Asymptotic crossover (N≫2K) NOT measured** (20+ min/run budget).
+  - Shipped `_use_fused_flash_attn=False` default. Phase 1 memo path is the
+    shipped winner (~77% of fp16 tok/s at ~50% KV memory).
+  - `USE_TQ4_KV=True` re-enabled in `scripts/r53_21_import_inject.py` via
+    Phase 1 memo path.
+- **Q_prod (3-bit Q_mse + 1-bit QJL) null**: implemented Algorithm 2 from
+  TurboQuant paper (`tq4_qjl_torch.py`, 132-byte block). Unbiased inner-product
+  estimator works as proven (n=1000 mean = 1.15σ from truth). But empirical
+  attention-output cosine WORSE than tq4 Q_mse alone at every tested N
+  (Δ=-0.04 at N=16, Δ=-0.17 at N=1024). Softmax amplifies QJL variance more
+  than it amplifies MSE-only structural bias. Kept in tree as research artifact
+  for NN lookup / hash retrieval use cases.
 
-### Code (all committed unless noted)
+### Doc sweep (R53 → rules alignment)
 
-- `calm/llm_computer/facades/code_example_db.py` — CodeExampleDB with
-  dedup, Jaccard/TF-IDF/dense/hybrid retrieval, tq4 save/load
-- `calm/llm_computer/facades/retrieval.py` — TfidfIndex (TF-IDF + BM25),
-  DenseIndex (Gemma token-embd mean-pool), rrf_fuse, trie-backed fast
-  tokenizer (13,000× speedup over naive BPE scan)
-- `calm/llm_computer/facades/code_verifier.py` — CodeVerifierFacade
-  with intent classifier + suggested-lib/security flags + compute_hints
-- `calm/llm_computer/facades/data_generators/` — base.py +
-  algorithm_problems, stdlib_usage, bug_fix_pairs, security_patterns,
-  parameterized_math, regex_patterns, data_structures, datetime_utils,
-  functional_patterns (9 generators, 222 verified examples)
-- `scripts/r53_fetch_corpora.py` — MBPP / HumanEvalPlus / BigCodeBench
-  / CodeContests (Python3 only) / Crownelius / Nohurry (code-category
-  filter) fetcher with quality gates
-- `scripts/r53_run_data_generators.py` — one-command pipeline:
-  generators → DB → TF-IDF. Daemon variant adds dense build.
-- `scripts/r53_build_dense.py` — dense index build via daemon (assumes
-  `m`, `tok` pre-loaded)
-- `scripts/r53_eval_phase1.py` — simple 12-problem eval (obsolete,
-  kept for comparison; mostly at Gemma's ceiling)
-- `scripts/r53_eval_complex.py` — 6 complex multi-step problems with
-  3 conditions (stock / hinted / sanity-random)
-- `scripts/generate_multi_step_code_data.py` — original 29-template
-  catalog used by AlgorithmProblemsGenerator
-- `scripts/r53_debug_gemma_output.py` — utility for debugging raw
-  Gemma outputs
+Ran parallel 2-Explore-agent audit against `.claude/rules/` and CLAUDE.md,
+classified findings P0/P1/P2, shipped in 4 commits via plan mode:
 
-### Corpora fetched (at `agents/distill/data/`)
+- **P0** (`91e1e04`): CLAUDE.md substrate-RAG flip (advocacy → regression
+  receipt + R53 Phase 2 status paragraph); `augmentation_thesis.md` new
+  §"R53.14/20a/20b — substrate L41 install REGRESSES on code"; `calm.md`
+  new §"Sandbox stdlib pre-import"; `workflow.md` new §§"MAX_TOKENS budget
+  discipline" + "GPU bench discipline".
+- **P1** (`c57b538`): `turboquant.md` v1/v2/v3/v4 variant table + new
+  §"Fused flash-attention decode" with honest short-ctx perf story;
+  `Substrate.md` + `architecture.md` KVCacheTq4 multi-token + tq4_flash_attn.py
+  rows + 4.4× → ~3.6× memory reconcile; `tracing_roadmap.md` session header
+  bumped to R53.34 + 8 new R53.x ruled-out rows.
+- **P2** (`bc81dda`): `capability_gain.md` new §"Gemma ignores targeted hints
+  (R53.19/R53.33 receipt)"; `retrieval.md` + `embed_intelligence.md` ruled-out
+  sections for substrate-RAG-on-code + FirstTokenHook-on-code;
+  `training.md` new §"Substrate eval defaults (R53.28 + R53.34)".
+- **Trim** (`68ff533`): `augmentation_thesis.md` stale "Implication for R53.6"
+  section (10 lines) — prediction was falsified by R53.14/20a/20b.
 
-- `mbpp.jsonl` (974), `humanevalplus.jsonl` (164),
-  `bigcodebench.jsonl` (1140), `codecontests.jsonl` (2498 Python3),
-  `crownelius.jsonl` (265), `nohurry_code.jsonl` (106),
-  `claude_reasoning_hf_raw.jsonl` (886 from TeichAI),
-  `multi_step_code.jsonl` (48), `generated/*.jsonl` (222 total across
-  9 generators)
+### Command update
 
-### Cached indices (at `.cache/r53_code_db/`)
+- `/update` workflow (`99ccc59` + `16817ad`): default is now parallel-audit
+  with 2 Explore agents → P0/P1/P2 classification → plan mode → one commit
+  per tier → fail-closed verification. Brief size guidance corrected to
+  300-500 words (the audit agents need complete context encoded in the brief
+  because they're cold-started).
 
-- `tfidf.json` (36 MB, 68,334 vocab, BM25-ready format)
-- `dense.pt` (46 MB, fp16, shape [8970, 2560])
-- `dense.tq4.pt` (12 MB, 4× smaller via TurboQuant)
+### Microbench infrastructure
 
-## Conceptual findings codified this session
+- `scripts/bench_tq4_matvec.py` (`fdb7b60`): heavy_warmup(3s) + CUDA events
+  + median of 5 × 2000 iters + same-process A/B. Before this, kernel bench
+  variance was 20-30% run-to-run. After, v2 stabilized to -5 to -10%
+  aggregate across 3 process runs.
+- `scripts/test_tq4_matvec_v2_correctness.py`: max abs diff per shape vs v1.
+- `scripts/test_kvcache_tq4_multitoken.py`: 5 tests for S≥1 / per-layer /
+  prefill-then-decode / SWA-trim.
+- `scripts/sweep_tq4_block_m.py` (`f251a7f`): 9-value sweep kept for future
+  shape additions.
 
-See `.claude/rules/retrieval.md`, `.claude/rules/code_reasoning_db.md`,
-`.claude/rules/recursion.md` (new files) and the updated
-`augmentation_thesis.md`, `capability_gain.md`, `calm.md`.
+## In Progress
 
-1. **Automatic Tier-1 preservation via hash-gated injection** —
-   substrate RAG fires on match, pass-through on miss. Prompt RAG
-   always fires → blanket injection violates Tier 1.
-2. **Failure-surface gate** — must filter eval corpora to Gemma-
-   failures first. Ceiling effect kills signal on simple problems.
-3. **Retrieved content must be code-only** — `<think>` blocks leak
-   into hints, Gemma imitates thinking-style instead of code-style.
-4. **Two separate retrieval channels**: code for imitation, reasoning
-   traces for planning. Maps to PT (L24) + KnowledgeStore (L30).
-5. **Complex multi-step > simple single-shot** for measuring
-   augmentation. CoT depth × per-step error rate compounds.
-6. **GemmaTokenizer.encode pathology** — naive O(len × vocab) scan
-   replaced with trie-backed encoder (13,000× speedup, monkey-patched
-   at `retrieval.py:_monkey_patch_fast_encode`).
-7. **tq4 dense embeddings** — 4× smaller storage, rank-preserving,
-   one-time dequant on load.
-8. **Card-level recursion via CALM oracle** — cards can self-distill
-   because CALM is a deterministic verifier (not a model judge), no
-   bias amplification.
+**Paused / not blocking**:
 
-## Current environment state at handoff
+- **R53.33 at 5/6**: lru_cache_class un-run when daemon killed. Running total
+  23/23. Projected final 32/32 (matches R53.25). 1 hour to close the loop.
+  No new info expected — R53.25 already established the pattern.
+- **AST walker tier-2 card**: identified as the clear next lever from R53.33
+  partial receipts. Not yet started. ~2-3 days of pure Python work.
 
-- Daemon running (PID 92430 at handoff time; may be killed by now)
-- Gemma 4 E4B tq4 loaded with max_len=1024
-  (edited in `bin/gemma_daemon.py` from 256 for R53 eval headroom)
-- 6.3 GB VRAM used, ~2 GB free
+**Uncommitted state** (46 files in `git status --short`):
 
-## ⚠ UNCOMMITTED — commit these before any risky git ops
+- Modified by teammate / linter during session: `calm/llm_computer/gemma_substrate.py`,
+  `calm/llm_computer/tq4_flash_attn.py`, `scripts/r53_21_import_inject.py`,
+  `scripts/r53_22_diagnose_csv.py`, `scripts/r52_train_student_kl.py`,
+  `bin/gemma_daemon.py`. Changes appear intentional (system-reminders noted
+  them); do NOT revert without reviewing.
+- Deleted MEMORY files: `.claude/MEMORY/CRLM_SPEC.md`, `.claude/MEMORY/MEMORY.md`,
+  `.claude/MEMORY/RESEARCH_ROADMAP.md`. Deletions pre-date this session —
+  likely replaced by `atlas.md` + `substrate_registry.md`. Safe to commit deletion.
+- Deleted RESEARCH files: `RESEARCH/00_INDEX.md`, `01_LLM_Computer_Overview.md`,
+  `02_Fast_Attention_2D_Heads.md`, `03_Compiling_Programs_to_Weights.md`.
+  Replaced by the `RESEARCH/LLM-COMPUTER/`, `RESEARCH/NEURAL_COMPUTER/`,
+  `RESEARCH/TRAINING/` untracked directories.
+- Untracked: `.cache/` (retrieval indices, gitignored), `.claude/MEMORY/can_be_done.md`,
+  `.claude/scheduled_tasks.lock`, `.codex/`, `.port_sessions/`,
+  `calm/.module_learning.json`, multiple `calm/hrm/checkpoints/*.pt`,
+  `calm/llm_computer/checkpoints/substrate_hrmlm_v2*.pt`, `calm/llm_computer/r51/`,
+  `calm/llm_computer/synth/`, `calm/llm_computer/tq4_autograd.py`,
+  `scripts/r53_20b_stacked.py`, `scripts/r53_22_diagnose_csv.py`,
+  `scripts/r53_substrate_rag_multitoken.py`, `scripts/test_kvcache_tq4_multitoken.py`,
+  `scripts/test_tq4_matvec_v2_correctness.py` (these last five ARE from this
+  session but already git-added inside the respective commits — verify via
+  `git log --follow <path>`).
 
-**All R53 code is untracked.** `git status --short` at handoff shows:
+## Next Steps (ranked by commercial lift)
 
-```
-?? calm/llm_computer/facades/code_example_db.py       ~350 LOC
-?? calm/llm_computer/facades/code_verifier.py         ~310 LOC
-?? calm/llm_computer/facades/retrieval.py             ~530 LOC
-?? calm/llm_computer/facades/data_generators/         9 files
-?? scripts/generate_multi_step_code_data.py           ~900 LOC
-?? scripts/r53_fetch_corpora.py
-?? scripts/r53_run_data_generators.py
-?? scripts/r53_build_dense.py
-?? scripts/r53_eval_phase1.py
-?? scripts/r53_eval_complex.py
-?? scripts/r53_debug_gemma_output.py
-?? .claude/rules/retrieval.md                         235 LOC (this session)
-?? .claude/rules/code_reasoning_db.md                 220 LOC (this session)
-?? .claude/rules/recursion.md                         165 LOC (this session)
-?? .claude/MEMORY/Augment-notes.md                    94 KB conversation log
-```
+### 1. AST walker tier-2 card for code logic bugs (~2-3 days)
 
-**Modified (staged-able):**
+Biggest-lift target. R53.33 pinpointed two deterministic failure modes:
 
-```
- M bin/gemma_daemon.py                max_len=256 → 1024 (REQUIRED for R53 evals)
- M .claude/CLAUDE.md                  R53 section added
- M .claude/MEMORY/SESSION_HANDOFF.md  this file — replaced R52 content
- M .claude/rules/augmentation_thesis.md  + Tier-1 preservation section
- M .claude/rules/calm.md                 + retrieval gating note
- M .claude/rules/capability_gain.md      + failure-surface-gate section
- M .claude/rules/tracing_roadmap.md      + R53.2b row
- M agents/distill/fetch_datasets.py      OUTPUT_FILE renamed to hf_raw
- M calm/llm_computer/tq4_triton.py       (prior R52 session — keep or revert per R52 handoff)
- M scripts/r52_train_student_kl.py       (prior R52 — see R52 handoff decision)
-```
+- **token_bucket shadow bug** (`self.consume = capacity` shadows method `consume`)
+- **csv_column_stats KeyError** (dict access on key never constructed)
 
-**Also present and untracked but easily regenerable:**
+Both tier-2-addressable by a compiled post-generation walker. Pure Python +
+existing `calm/sandbox.py` + `ast` stdlib. Pipeline:
 
-- `.cache/r53_code_db/` (94 MB — tfidf.json, dense.pt, dense.tq4.pt).
-  Rebuild time: ~15 min via `r53_run_data_generators.py` + dense build.
-- `agents/distill/data/mbpp.jsonl`, `humanevalplus.jsonl`,
-  `bigcodebench.jsonl`, `codecontests.jsonl`, `crownelius.jsonl`,
-  `nohurry_code.jsonl`, `claude_reasoning_hf_raw.jsonl`,
-  `multi_step_code.jsonl`, `generated/*.jsonl` — all regenerable via
-  `r53_fetch_corpora.py` + `r53_run_data_generators.py`.
+1. Parse Gemma output with `ast.parse`
+2. Detectors: method/attr shadow, undefined-ref, dict-key-never-set,
+   off-by-one in `range(0, n-1)`, unused-var
+3. Auto-rewrite OR return structured repair patch
+4. Integrate as post-generation pass in `scripts/r53_21_import_inject.py`
+   alongside existing import injection + R53.19 structured repair
 
-**Suggested first action in new terminal**: `git add` the R53 code +
-new rules + handoff + CLAUDE.md, commit with message referencing this
-handoff, THEN continue with R53.5 work. This protects against
-accidental `git stash` / `reset --hard` losing hours of work.
+R53.0 projected lift: 32/32 → **~43-45/46** (maximum achievable).
 
-## Next actions
+Entry point: add `scripts/r53_ast_walker.py` + wire into
+`scripts/r53_21_import_inject.py`'s `inject_imports_if_possible` pipeline
+(same contract — `code, test_code, run_fn, score_fn, problem → (code, pass, total, fixes_applied)`).
 
-### Default recommendation: R53.5 PT training
+Commercial framing in `.claude/rules/capability_gain.md` §"Gemma ignores
+targeted hints" — auditable rewrite, not probabilistic retry. Regulated
+industries need this.
 
-Skip further Phase-1 retrieval iteration. The +0.0pp retrieval-
-attributable gain at Phase-1 **is the signal to build the substrate
-install** (where injection is hash-gated by construction).
+### 2. Broader-corpus validation (~1 day)
 
-1. **R53.5**: Train `copy_code_best.pt` (CopyAugmentedTransformer)
-   on the 222 generator `pt_*.jsonl` files + reasoning-trace extracts
-   from the 8970-example DB. ~185K params, ~30 min RTX 4070.
-   - Target: NL → structured plan (`signature | algorithm`)
-   - Gate: ≥85% autoregressive accuracy on held-out
-2. **R53.6**: Install
-   - PT at L24 via `CardSlot.attach(preserve=True)` — writes plan
-     into reserved channels
-   - KnowledgeStore recall card at L30 via `CardSlot` — hash-gated
-     solution-pattern lookup
-   - `CodeVerifierFacade` as `VerificationHook` — biases logits
-     toward verified tokens
-3. **R53.7**: Re-run complex eval with substrate install. Compare:
-   - stock Gemma
-   - prompt-RAG (this session's hinted)
-   - substrate-RAG (R53.6 install)
-   - Expected: substrate matches or beats prompt-RAG because hash
-     gating skips injection on strong-prior problems (automatic
-     Tier 1 preservation).
+R53.0 is 6 problems — too small to claim generalization. Run R53.25's
+winning stack (v2 kernel + sandbox fix + AdaptiveBudget + import injection)
++ AST walker (if shipped) against **MBPP or HumanEvalPlus** filtered via
+the R53 failure-surface gate in `.claude/rules/capability_gain.md`. Target:
+50-200 problems.
 
-### Alternative: iterate on retrieval gating in prompt-RAG
+Start: `scripts/r53_run_data_generators.py` already fetches these corpora;
+`calm/llm_computer/facades/code_example_db.py:DEFAULT_CORPORA` has them
+loaded. Need a new eval driver that picks the failure-surface subset.
 
-If you want to validate the gating hypothesis BEFORE committing to
-the substrate install: add a confidence gate to
-`CodeVerifierFacade.compute_hints` — skip retrieval injection when
-the problem matches a known-strong pattern (e.g. "write is_prime",
-"write gcd"). Rerun complex eval. Prediction: hinted now ≥ stock on
-every problem.
+### 3. Fused kernel long-context perf validation (~1 day, orthogonal)
 
-### Known open issues
+Run R53.34 fused kernel at N=4K, 8K, 16K to find (or rule out) the
+asymptotic crossover. If fused beats Phase 1 memo somewhere, enable
+`_use_fused_flash_attn=True` for long-ctx workloads only. Otherwise
+retire.
 
-- `csv_column_stats` problem (all 0/0): neither condition produced
-  passing code. `from io import StringIO` import missed by Gemma.
-  DB doesn't have a complete-code example showing this pattern.
-  **Implication**: DB completeness matters. Partial code (missing
-  imports) in retrieved examples propagates into Gemma's output.
-- `token_bucket_rate_limiter` (all 0/0): TypeError at runtime in
-  stock and sanity conditions. Class design is harder than Gemma
-  handles reliably without cards.
+Script: adapt `scripts/bench_tq4_matvec.py` pattern to drive `generate()`
+with N ∈ {1024, 4096, 8192, 16384} and log `prefill_s` + `decode_s` from
+the output dict.
 
-## First action on resume
+### 4. Close R53.33 loop (~1 hour)
 
-1. Read this handoff.
-2. Read `.claude/rules/retrieval.md`, `code_reasoning_db.md`,
-   `recursion.md` (new).
-3. Verify DB state: `ls .cache/r53_code_db/` and
-   `PYTHONPATH=. python3 -c "from calm.llm_computer.facades.code_example_db import CodeExampleDB; print(len(CodeExampleDB.load_default()))"`
-   should print 8970.
-4. Decide: R53.5 PT training (default) or prompt-gating iteration.
-5. If R53.5: `bin/gemma-run --status`; if daemon down, start it
-   (~3 min cold start). Then design the training script — reuse
-   `scripts/train_copy_*.py` as templates.
+`bin/gemma-run --start` → dispatch `scripts/r53_21_import_inject.py` → wait
+for lru_cache_class to complete → expect 32/32 total. Updates evals folder
+if not matching baseline.
 
-## Session commits
+### 5. Speculative (only if bandwidth)
 
-- (pre-session) R52 arc complete (R52.3 null: KL-divergence
-  distillation of L24 failed identically to MSE and SAE features)
-- R53 code artifacts all committed this session (retrieval.py,
-  code_example_db.py, code_verifier.py, data_generators/*, r53_*.py)
-- Conceptual findings captured into rules via this handoff
+- **tq2 weight quantization**: port `quantize_tq4` to K=4 Lloyd-Max codebook.
+  Expected ~10-15% PPL regression, enables Gemma 4 E4B at 1M+ context on 8 GB.
+  Substrate absorbs quality drop via CALM verification. See CLAUDE.md
+  discussion of tq1/tq2/tq3 tradeoffs (this session — not yet in rules).
+- **Substrate-RAG on non-code domains**: L41-install regression is code-
+  specific. Math / factual-recall may still benefit. Pick one non-code
+  corpus, run R53.14-style A/B.
 
-## Related rules
+## Key Context
 
-- `retrieval.md` — hybrid retrieval architecture (new)
-- `code_reasoning_db.md` — DB + generators (new)
-- `recursion.md` — card-level self-improvement (new)
-- `augmentation_thesis.md` — Tier-1 preservation property (edited)
-- `capability_gain.md` — failure-surface-gate concretized (edited)
-- `calm.md` — retrieval reference (edited)
-- `tracing_roadmap.md` — R53 row appended (edited)
-- `CLAUDE.md` — R53 subsection + links (edited)
+### Patterns that worked
+
+- **Hypothesis-test-iterate, commit after every round**. Discipline caught
+  two reversals (tq4 matvec v3, v4) before they rotted into the default.
+- **Parallel 2-Explore-agent audits** with ~400-word briefs for doc updates.
+  Agents do research + return structured punch lists; I synthesize into
+  P0/P1/P2 plan. Saves 30-60 min of main-context bench/doc noise per session.
+- **heavy_warmup + CUDA events + median of 5** for kernel benches. Before
+  this, variance was 20-30% — false perf signals every round.
+- **MAX_TOKENS first-order check** before diagnosing substrate / sandbox /
+  import issues. R53.19-R53.24 burned four null rounds before R53.25 showed
+  budget was the whole problem.
+
+### Patterns that failed (don't retry)
+
+- **Substrate-RAG at L41 with FirstTokenHook on code tasks**: -9.3pp
+  regression pre- AND post-SWA-fix. Install-mechanism disrupts HIT prompts.
+  Don't use first-token bias on code.
+- **fp16 x_rot activation in Triton tq4 kernel**: +0.2/+8.7% null. Upcast
+  cost matches BW savings on Ada.
+- **uint32 vectorized qs loads in Triton**: +9.8/+16.4% slower. Triton
+  auto-coalesces; `tl.join`/reshape overhead exceeds BW savings.
+- **BLOCK_M sweep**: current `_pick_block_m` heuristic holds.
+- **TurboQuant Q_prod (3-bit Q_mse + 1-bit QJL) for KV cache**: unbiased
+  inner-product estimator IS correct, but softmax amplifies QJL variance.
+  Kept as research artifact for NN/retrieval.
+- **KVCacheTq4 with dequant-on-read at decode**: O(N²) dequant cost (linked_list
+  5/5 took 806s vs 94s at fp16 KV). Reverted until Phase 1 memoized path
+  landed (R53.28) + fused flash-attn (R53.34). Phase 1 memo is the shipped win.
+- **Gemma ignoring targeted rename hints**: R53.19/R53.33 data shows Gemma
+  retry emits the same shadow bug even with concrete example in hint. Prior
+  dominance overwhelms in-context instruction. Tier-2 AST walker is the fix,
+  not hint-tuning or bigger context.
+
+### Environment state (session end)
+
+- **Daemon**: NOT running (killed during session pause). Restart with
+  `bin/gemma-run --start` (~3 min cold boot).
+- **GPU**: clear. `nvidia-smi` should show no resident Python processes.
+- **Working tree**: 46 modified/untracked entries. Session's commits are
+  clean; the untracked files are either gitignored caches, session artifacts
+  by other agents, or orphaned pre-session directories (RESEARCH/*.md
+  deletions are replaced by RESEARCH/*/ subdirs).
+- **Branch**: `feature/multi-agent-qwen`, 371+ commits ahead of
+  `origin/feature/multi-agent-qwen`. Not pushed.
+
+### Hardware / serving
+
+Per CLAUDE.md — RTX 4070 Laptop 8 GB, Gemma 4 E4B tq4 via
+`~/models/gemma-4-E4B-it-tq4-aligned.gguf` (5.0 GB). Daemon supports
+max_len=32K. At 16K ctx: ~5.5 GB total VRAM.
+
+## Files in Project (session-shipped)
+
+### New files
+- `calm/llm_computer/tq4_flash_attn.py` — R53.34 fused flash-attn decode kernel
+- `scripts/bench_tq4_matvec.py` — stable Triton kernel A/B bench harness
+- `scripts/sweep_tq4_block_m.py` — per-shape BLOCK_M sweep harness
+- `scripts/test_tq4_matvec_v2_correctness.py` — max abs diff per shape vs v1
+- `scripts/test_kvcache_tq4_multitoken.py` — 5 tests for multi-token KVCacheTq4
+- `scripts/r53_20b_stacked.py` — substrate + prompt-RAG stacking eval (null)
+- `scripts/r53_22_diagnose_csv.py` — sandbox blocking diagnostic (led to R53.23 fix)
+- `scripts/r53_substrate_rag_multitoken.py` — multi-token step-through harness
+- `.claude/MEMORY/evals/2026-04-19_r53_substrate_rag_null.md` — R53.20a/b writeup
+
+### Modified — code
+- `calm/sandbox.py` — pre-import ~23 stdlib modules before `_safe_import`
+- `calm/llm_computer/gemma_substrate.py` — multi-token KVCacheTq4 + generate(use_tq4_kv=True) dispatch
+- `calm/llm_computer/tq4_triton.py` — v1/v2/v3/v4 kernel variants, v2 default
+- `calm/llm_computer/facades/retrieval.py` — DenseIndex.load(prefer_tq4=True) default
+- `scripts/r53_21_import_inject.py` — USE_TQ4_KV toggle + AdaptiveBudget + generalized TypeError regex
+- `scripts/r53_eval_complex.py` — `_adaptive_budget()` helper + shared 16K ceiling
+- `scripts/r53_20b_stacked.py`, `r53_calm_substrate_full.py`, `r53_calm_substrate_retry.py`,
+  `r53_substrate_rag_eval.py`, `r53_substrate_rag_confidence.py`,
+  `r53_eval_complex_channel.py`, `r53_eval_phase1.py` — MAX_TOKENS → 4096-16384
+- `bin/gemma_daemon.py` — max_len 1024 → 32768 (from prior session, still current)
+
+### Modified — rules (P0/P1/P2 doc sweep)
+- `.claude/CLAUDE.md` — R53 status flip, Phase 2 status, v2 kernel as default
+- `.claude/rules/augmentation_thesis.md` — R53.14/20a/20b regression section
+- `.claude/rules/calm.md` — sandbox stdlib pre-import section
+- `.claude/rules/workflow.md` — MAX_TOKENS + GPU bench discipline sections
+- `.claude/rules/turboquant.md` — kernel variant table + fused flash-attn spec
+- `.claude/rules/Substrate.md` — KVCacheTq4 multi-token + tq4_flash_attn.py row
+- `.claude/rules/architecture.md` — same updates, mirror
+- `.claude/rules/tracing_roadmap.md` — 8 new R53.x ruled-out rows + header bump
+- `.claude/rules/capability_gain.md` — Gemma-ignores-hints section
+- `.claude/rules/retrieval.md` — substrate-RAG-on-code ruled out
+- `.claude/rules/embed_intelligence.md` — FirstTokenHook-on-code ruled out
+- `.claude/rules/training.md` — substrate eval defaults section
+- `.claude/commands/update.md` — parallel-audit + P0/P1/P2 plan default
+
+### Deletions (safe — pre-session orphans)
+- `.claude/MEMORY/CRLM_SPEC.md`, `.claude/MEMORY/MEMORY.md`,
+  `.claude/MEMORY/RESEARCH_ROADMAP.md`
+- `RESEARCH/00_INDEX.md` through `03_Compiling_Programs_to_Weights.md`
+  (replaced by `RESEARCH/LLM-COMPUTER/` + `NEURAL_COMPUTER/` + `TRAINING/` subdirs)

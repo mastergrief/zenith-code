@@ -248,20 +248,52 @@ layers (d_head=512) fall back to the Phase 1 memoized dequant path.
 **Correctness**: 7/7 unit tests cosine=1.0 vs fp32 ref at
 N∈{16,64,128,256,1024}; real-Gemma ablation Δmean=0.0 argmax=+0.
 
-**Perf**: `_use_fused_flash_attn=False` is shipped default. Clean
-A/B at measured N shows fused is **8-10% SLOWER** than Phase 1
-memoized dequant (N=64 5.60 vs 6.06 tok/s; N=1024 5.11 vs 5.60;
-fp16 baseline 7.0-7.5). Root cause: 8 × 42 = 336 per-Q-head kernel
-launches per decode step — launch overhead dominates at N≤1024.
-Asymptotic crossover (N≫2K) NOT measured; 20+ min/run budget.
+**Perf (2026-04-20 bench re-run, `scripts/r53_phase2_bench.py`)**:
+the initial R53.34 single-run read said "8-10% slower at all
+N≤1024" and shipped `_use_fused_flash_attn=False`. A clean re-run
+showed the curve is **non-monotonic** — fused has a mid-range
+sweet spot:
 
-**Phase 1 memo path is the shipped win**: ~77% of fp16 tok/s at
-~50% KV memory. Fused kernel remains in tree as research artifact
-for future long-context (N>4K) work. To unlock perf at short
-context would need: (a) one Triton kernel spanning all Q heads
-(remove Python loop → 1 launch/layer), (b) parallel-over-N V
-kernel via TILE_N blocking. Both non-trivial; reconsider if N>4K
-becomes target workload.
+| N | fp16 KV | tq4 memo | tq4 fused | fused/memo | fused/fp16 |
+|---:|---:|---:|---:|---:|---:|
+| 64 | 6.99 | 4.88 | 4.00 | 0.82× | 57.1% |
+| 256 | 6.67 | 5.63 | **6.40** | **1.14×** | **95.9%** |
+| 1024 | 7.83 | 6.08 | **6.43** | **1.06×** | 82.1% |
+| 4096 | 7.21 | 6.09 | 5.65 | 0.93× | 78.4% |
+
+**Two distinct regimes, two distinct bottlenecks:**
+- Small N (≤128): launch overhead dominates. Fused issues 336
+  per-Q-head kernel launches per decode step (42 layers × 8 heads);
+  at N=64 total step work is ~20-50 ms and the ~1 ms launch
+  overhead is a meaningful fraction.
+- Large N (≥4K): cuBLAS-on-memoized-fp16 beats Triton streaming.
+  Memo amortizes dequant over all subsequent steps (materialize
+  once on insertion, reuse via one cuBLAS matmul per layer);
+  cuBLAS is near-peak on `(1, 2560) @ (N, 2560)`, fused's
+  per-Q-head Triton tiles aren't.
+
+**Shipped policy (as of 2026-04-20)**: `_use_fused_flash_attn=True`
+default, with runtime conditional in `_forward_layer` gating on
+`128 < kv_cache.layer_pos[kv_src] < 2048`. Inside the gate fused
+runs; outside it falls back to Phase 1 memo. Caveats: bench is
+single-run per config (not median-of-5 per `workflow.md` §"GPU
+bench discipline"); direction is reliable, magnitudes soft. Gate
+thresholds chosen with ~2× safety margin for driver/clock variance.
+Disable everything via `enable_fused_flash_attn(False)`.
+
+**Realistic workload coverage**:
+- Chat turns (50-500 decode tok): entirely in the gate → captures
+  6-14% decode speedup vs memo-only.
+- Short eval problems: mostly in the gate.
+- Long R53 eval (AdaptiveBudget up to 16K): first ~2K steps in
+  gate, then falls back to memo for the asymptotic regime → no
+  regression on long-decode workloads.
+
+**Unlock potential at short N would need**: (a) one Triton kernel
+spanning all Q heads (remove Python loop → 1 launch/layer instead
+of 8), (b) parallel-over-N V kernel via TILE_N blocking. Both
+non-trivial; not pursued because the gated default already
+captures the measured win.
 
 See `tracing_roadmap.md` ruled-out row (Round 53.34) for full
 A/B receipt. Adjacent null: TurboQuant Q_prod (3-bit Q_mse +
