@@ -248,11 +248,13 @@ layers (d_head=512) fall back to the Phase 1 memoized dequant path.
 **Correctness**: 7/7 unit tests cosine=1.0 vs fp32 ref at
 N∈{16,64,128,256,1024}; real-Gemma ablation Δmean=0.0 argmax=+0.
 
-**Perf (2026-04-20 bench re-run, `scripts/r53_phase2_bench.py`)**:
+**Perf (2026-04-20 bench re-run, `scripts/r53_phase2_bench.py`
++ R14 long-N via `scripts/r53_37_long_n_bench.py`)**:
 the initial R53.34 single-run read said "8-10% slower at all
 N≤1024" and shipped `_use_fused_flash_attn=False`. A clean re-run
 showed the curve is **non-monotonic** — fused has a mid-range
-sweet spot:
+sweet spot. R14 (same session) extended to N=8192 with proper GPU
+discipline (heavy_warmup 3s + cuda.Event + correctness sanity):
 
 | N | fp16 KV | tq4 memo | tq4 fused | fused/memo | fused/fp16 |
 |---:|---:|---:|---:|---:|---:|
@@ -260,6 +262,16 @@ sweet spot:
 | 256 | 6.67 | 5.63 | **6.40** | **1.14×** | **95.9%** |
 | 1024 | 7.83 | 6.08 | **6.43** | **1.06×** | 82.1% |
 | 4096 | 7.21 | 6.09 | 5.65 | 0.93× | 78.4% |
+| 8192 | 5.32 | 4.64 | 4.41 | 0.95× | 83.0% |
+
+R14 confirms the first-principles prediction: memo continues to
+dominate fused past N=4K. No asymptotic crossover observed — fused
+kernel's fixed 336 per-step Triton launches (42 layers × 8 Q heads)
+vs memo's single cuBLAS matmul scaling linearly with N. The runtime
+N-gate `128 < cached_kv_len < 2048` is confirmed optimal; no change
+needed. Note fp16 itself degrades 26% going 4K→8K (cache memory
+pressure from 4096-token KV at fp16 ≈ 840 MB); memo/fused degrade
+in step.
 
 **Two distinct regimes, two distinct bottlenecks:**
 - Small N (≤128): launch overhead dominates. Fused issues 336
