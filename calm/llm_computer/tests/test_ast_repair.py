@@ -407,10 +407,35 @@ def test_repair_syntax_noop_on_valid():
 
 
 def test_repair_syntax_unfixable_returns_none():
-    # Legit syntax error that isn't a bracket imbalance
-    code = "def f(:\n    pass\n"
+    # Genuine syntax error that isn't a bracket imbalance — missing colon
+    code = "def f()\n    pass\n"
     r = repair_syntax(code)
     assert not r.applied
+
+
+def test_repair_syntax_missing_paren_before_colon():
+    """The R53.35v2 csv pattern: `for i in range(min(a, len(row)):` —
+    missing `)` before the `:`. Python reports "invalid syntax" with
+    offset at the `:`. Balancer must insert `)` BEFORE the trailing
+    colon, not append at end."""
+    code = (
+        "def f(a, data):\n"
+        "    for i in range(min(a, len(data)):\n"
+        "        pass\n"
+    )
+    r = repair_syntax(code)
+    assert r.applied, f"expected syntax_repair: {r.notes}"
+    ast.parse(r.new_code)
+    assert "range(min(a, len(data)))" in r.new_code
+
+
+def test_repair_syntax_def_with_missing_close_paren():
+    """def f(: pattern — fixed to def f(): by insert-before-colon."""
+    code = "def f(:\n    pass\n"
+    r = repair_syntax(code)
+    assert r.applied
+    ast.parse(r.new_code)
+    assert "def f():" in r.new_code
 
 
 def test_repair_syntax_gemma_csv_pattern():

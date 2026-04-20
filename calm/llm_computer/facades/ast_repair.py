@@ -332,24 +332,41 @@ _BRACKET_PAIRS = {"(": ")", "[": "]", "{": "}"}
 _CLOSERS = {")", "]", "}"}
 
 
+_TRAILING_SUFFIX_RE = re.compile(
+    r"""
+    (?P<suffix>
+        (?:\s*->\s*\w+)?   # return-type annotation (-> Foo)
+        \s*:\s*$           # mandatory trailing colon
+      |
+        \s*:\s*$           # or just colon
+    )
+    """,
+    re.VERBOSE,
+)
+
+
 def _balance_brackets_on_line(line: str) -> Optional[str]:
     """If `line` has more openers than closers of some bracket class,
-    append the missing closers (in reverse-stack order) before any
-    trailing comment or whitespace. Returns the fixed line, or None
-    if no fix applicable (e.g. more closers than openers, or already
-    balanced).
+    insert the missing closers (in reverse-stack order). Returns the
+    fixed line, or None if no fix applicable (more closers than
+    openers, or already balanced).
+
+    Insertion point: BEFORE any trailing `:`/`->:` (statement-opener
+    suffixes that commonly appear on `for`/`if`/`def`/`with`/`while`
+    lines where Gemma missed a paren). This handles the canonical
+    R53.35v2 pattern: `for i in range(min(a, len(row)):` with missing
+    `)` before the `:`.
+
+    Falls back to append-at-end for lines without a trailing suffix
+    (e.g. `x = func(a, b` expression without terminator).
 
     Assumes lexically naive parsing: brackets inside strings are NOT
     distinguished. False positives on code like `s = "("` are possible
-    but rare in practice; safer than letting the whole file fail to
-    parse.
+    but rare.
     """
-    # Strip trailing comment and trailing whitespace to preserve original
-    # indentation at comment boundary.
+    # Strip trailing comment first (naive — ignores strings).
     code_part = line
     comment = ""
-    # Very naive comment split — ignores strings. Good enough for the
-    # end-of-line comment case common in Gemma output.
     hash_idx = code_part.find("#")
     if hash_idx >= 0 and hash_idx > code_part.rfind('"'):
         comment = code_part[hash_idx:]
@@ -358,9 +375,18 @@ def _balance_brackets_on_line(line: str) -> Optional[str]:
     stripped = code_part.rstrip()
     trailing_ws = code_part[len(stripped):]
 
+    # Identify trailing statement-suffix (`:` or `-> T:`) to insert before
+    suffix_match = _TRAILING_SUFFIX_RE.search(stripped)
+    if suffix_match:
+        suffix = suffix_match.group(0)
+        code_head = stripped[:-len(suffix)]
+    else:
+        suffix = ""
+        code_head = stripped
+
     stack: List[str] = []
-    in_str: Optional[str] = None  # None | "'" | '"'
-    for ch in stripped:
+    in_str: Optional[str] = None
+    for ch in code_head:
         if in_str:
             if ch == in_str:
                 in_str = None
@@ -374,15 +400,13 @@ def _balance_brackets_on_line(line: str) -> Optional[str]:
             if stack and _BRACKET_PAIRS[stack[-1]] == ch:
                 stack.pop()
             else:
-                # Unmatched closer — don't attempt repair on this line
                 return None
 
     if not stack:
-        return None   # balanced; no-op
+        return None   # balanced
 
-    # Append closers in reverse stack order
     fix = "".join(_BRACKET_PAIRS[b] for b in reversed(stack))
-    return stripped + fix + trailing_ws + comment
+    return code_head + fix + suffix + trailing_ws + comment
 
 
 MAX_SYNTAX_REPAIR_LINES = 10
