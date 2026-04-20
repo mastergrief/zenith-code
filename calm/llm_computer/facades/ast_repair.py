@@ -1,7 +1,7 @@
 """Tier-2 AST-walker card — deterministic repair of Gemma's
 persistent code failure modes on the R53 corpus.
 
-Four rewrites, all driven by runtime error text (not by a spec):
+Five rewrites, all driven by runtime error text (not by a spec):
 
 1. **Syntax repair** (SyntaxError at parse time).
    Iteratively parse code, find each SyntaxError, try to fix:
@@ -31,6 +31,15 @@ Four rewrites, all driven by runtime error text (not by a spec):
    error text and (b) an actual `container[loopvar]` subscript inside
    the loop body before rewriting. Handles `range(len(X)+1)` and
    `range(0, len(X)+1)`.
+
+5. **Missing return** (AssertionError / NoneType).
+   Gemma computes the answer as a bare expression at the end of the
+   function (e.g. `result` on its own line) and forgets to return it.
+   If the function has zero `return <value>` statements AND its last
+   statement is `Expr(value=X)` where X is a plausible return
+   expression (Name, BinOp, Call, Subscript, IfExp), rewrite the last
+   Expr into `Return(X)`. Conservative — requires no existing
+   value-return anywhere in the function body.
 
 The walker is post-generation and post-extraction — it runs AFTER the
 test output has been captured, so the error text guides which rewrite
@@ -328,6 +337,13 @@ _TYPEERROR_CALLABLE_RE = re.compile(
     r"TypeError:\s*'(\w+)' object is not callable")
 _INDEXERROR_OOB_RE = re.compile(
     r"IndexError:\s*(?:list |tuple |string |)index out of range")
+# Signals that a function returned None when the caller / test expected
+# a value. Covers: AssertionError referencing None, TypeError on
+# NoneType operations, "got None", generic AttributeError on NoneType.
+_NONE_RETURN_RE = re.compile(
+    r"(?:NoneType|got None|expected \S+, got None|"
+    r"AssertionError.*None|AttributeError:.*NoneType)",
+    re.IGNORECASE)
 
 
 def extract_missing_key(error_output: str) -> Optional[str]:
@@ -341,6 +357,10 @@ def has_typeerror_callable(error_output: str) -> bool:
 
 def has_indexerror_oob(error_output: str) -> bool:
     return bool(_INDEXERROR_OOB_RE.search(error_output or ""))
+
+
+def has_none_return_signal(error_output: str) -> bool:
+    return bool(_NONE_RETURN_RE.search(error_output or ""))
 
 
 # --------------------------------------------------------------------
@@ -689,6 +709,131 @@ def rewrite_off_by_one(code: str) -> RepairResult:
 
 
 # --------------------------------------------------------------------
+# 5. Missing-return rewrite (None-return-signal-driven)
+# --------------------------------------------------------------------
+
+
+# Expressions that plausibly represent a function's return value.
+# Deliberately narrow — bare literals alone (e.g. `42`) are excluded
+# because a trailing constant on its own line is usually dead code
+# or an interactive-style expression, not a forgotten return.
+_RETURN_EXPR_TYPES = (
+    ast.Name, ast.BinOp, ast.Call, ast.Subscript, ast.IfExp,
+    ast.BoolOp, ast.UnaryOp, ast.Compare, ast.List, ast.Tuple,
+    ast.Set, ast.Dict, ast.ListComp, ast.SetComp, ast.DictComp,
+    ast.GeneratorExp, ast.Attribute,
+)
+
+
+def _function_has_value_return(fn: ast.AST) -> bool:
+    """True iff `fn` (FunctionDef/AsyncFunctionDef) contains any
+    `return <value>` statement (bare `return` doesn't count — that's
+    still an implicit None return).
+
+    Excludes returns inside nested function/lambda definitions.
+    """
+    for node in ast.walk(fn):
+        if node is fn:
+            continue
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            # Don't descend into nested scopes
+            continue
+    # ast.walk doesn't let us skip subtrees. Do an explicit recursive
+    # walk that respects scope boundaries.
+    stack: List[ast.AST] = [fn]
+    while stack:
+        cur = stack.pop()
+        for child in ast.iter_child_nodes(cur):
+            if child is fn:
+                continue
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                  ast.Lambda)):
+                continue   # nested scope: skip
+            if isinstance(child, ast.Return) and child.value is not None:
+                return True
+            stack.append(child)
+    return False
+
+
+def _last_stmt_as_expression(fn_body: List[ast.stmt]) -> Optional[ast.Expr]:
+    """If the last statement of `fn_body` is an `Expr(value=X)` where
+    X is a plausible return expression, return that Expr. Else None.
+    """
+    if not fn_body:
+        return None
+    last = fn_body[-1]
+    if not isinstance(last, ast.Expr):
+        return None
+    if not isinstance(last.value, _RETURN_EXPR_TYPES):
+        return None
+    # Skip docstring-like standalone strings (unlikely at function tail
+    # but defensive)
+    if isinstance(last.value, ast.Constant) and isinstance(last.value.value, str):
+        return None
+    return last
+
+
+class _MissingReturnRewriter(ast.NodeTransformer):
+    """Walk every FunctionDef / AsyncFunctionDef. If it has zero
+    value-returns AND its last stmt is `Expr(plausible_expr)`, convert
+    that last stmt to `Return(plausible_expr)`.
+    """
+
+    def __init__(self):
+        self.n_replaced = 0
+
+    def _maybe_rewrite(self, node):
+        # Recurse into nested defs first
+        self.generic_visit(node)
+
+        if _function_has_value_return(node):
+            return node
+        last_expr = _last_stmt_as_expression(node.body)
+        if last_expr is None:
+            return node
+
+        new_return = ast.copy_location(
+            ast.Return(value=last_expr.value), last_expr)
+        node.body[-1] = new_return
+        self.n_replaced += 1
+        return node
+
+    def visit_FunctionDef(self, node):
+        return self._maybe_rewrite(node)
+
+    def visit_AsyncFunctionDef(self, node):
+        return self._maybe_rewrite(node)
+
+
+def rewrite_missing_return(code: str) -> RepairResult:
+    """Find functions whose last stmt is a bare expression and whose
+    body has no `return <value>` anywhere, and convert that last stmt
+    into `Return(...)`.
+
+    Returns RepairResult with kind='missing_return' on any change.
+    """
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return RepairResult(None, "none", ["parse failed"])
+
+    writer = _MissingReturnRewriter()
+    tree = writer.visit(tree)
+    if writer.n_replaced == 0:
+        return RepairResult(None, "none", ["no missing-return pattern found"])
+
+    ast.fix_missing_locations(tree)
+    try:
+        new_code = ast.unparse(tree)
+    except Exception as e:
+        return RepairResult(None, "none", [f"unparse failed: {e}"])
+
+    return RepairResult(
+        new_code, "missing_return",
+        [f"added return to {writer.n_replaced} function(s)"])
+
+
+# --------------------------------------------------------------------
 # Entry point
 # --------------------------------------------------------------------
 
@@ -733,8 +878,16 @@ def repair(code: str, error_output: str) -> RepairResult:
         if obo.applied:
             return obo
 
+    # 4. Missing return — driven by None-return signal in error text.
+    # Gated on both error text and walker's no-existing-return check.
+    if has_none_return_signal(error_output or ""):
+        mret = rewrite_missing_return(code)
+        if mret.applied:
+            return mret
+
     return RepairResult(None, "none",
                         ["no applicable rewrite",
                          f"shadow: {shadow.notes}",
                          f"missing_key: {missing}",
-                         f"indexerror: {has_indexerror_oob(error_output or '')}"])
+                         f"indexerror: {has_indexerror_oob(error_output or '')}",
+                         f"none_return: {has_none_return_signal(error_output or '')}"])

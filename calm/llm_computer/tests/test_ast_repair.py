@@ -19,11 +19,13 @@ from calm.llm_computer.facades.ast_repair import (
     _find_shadowed_attrs,
     extract_missing_key,
     has_indexerror_oob,
+    has_none_return_signal,
     has_typeerror_callable,
     rename_shadow,
     repair,
     repair_syntax,
     rewrite_dict_synonym,
+    rewrite_missing_return,
     rewrite_off_by_one,
 )
 
@@ -650,6 +652,174 @@ def test_repair_syntax_still_first_in_dispatch():
     # Note: can't predict exactly what syntax_repair does here (might
     # succeed or fail), but off_by_one must NOT run on unparseable code.
     assert r.kind in ("syntax_repair", "none")
+
+
+# -- missing return --------------------------------------------------
+
+
+GEMMA_MISSING_RETURN_BUG = textwrap.dedent('''
+    def add(a, b):
+        result = a + b
+        result
+''').strip() + "\n"
+
+
+def test_has_none_return_signal():
+    assert has_none_return_signal("TypeError: unsupported operand type(s) for +: 'NoneType' and 'int'")
+    assert has_none_return_signal("AssertionError: expected 5, got None")
+    assert has_none_return_signal("got None")
+    assert has_none_return_signal("AttributeError: 'NoneType' object has no attribute 'foo'")
+    assert not has_none_return_signal("KeyError: 'x'")
+    assert not has_none_return_signal("IndexError: list index out of range")
+    assert not has_none_return_signal("")
+
+
+def test_missing_return_basic_rewrite():
+    r = rewrite_missing_return(GEMMA_MISSING_RETURN_BUG)
+    assert r.applied
+    assert r.kind == "missing_return"
+    ns: dict = {}
+    exec(r.new_code, ns)
+    assert ns["add"](2, 3) == 5
+
+
+def test_missing_return_binop_inline():
+    """Last stmt is a BinOp directly, no named variable."""
+    code = textwrap.dedent('''
+        def mul(a, b):
+            a * b
+    ''')
+    r = rewrite_missing_return(code)
+    assert r.applied
+    ns: dict = {}
+    exec(r.new_code, ns)
+    assert ns["mul"](3, 4) == 12
+
+
+def test_missing_return_call_inline():
+    code = textwrap.dedent('''
+        def shout(s):
+            s.upper()
+    ''')
+    r = rewrite_missing_return(code)
+    assert r.applied
+    ns: dict = {}
+    exec(r.new_code, ns)
+    assert ns["shout"]("hi") == "HI"
+
+
+def test_missing_return_skips_existing_return():
+    """Function with a real return — don't touch."""
+    code = textwrap.dedent('''
+        def f(x):
+            if x > 0:
+                return x
+            x
+    ''')
+    r = rewrite_missing_return(code)
+    assert not r.applied
+
+
+def test_missing_return_skips_bare_return():
+    """`return` alone counts as existing None-return, but our gate
+    says only `return <value>` counts as having a real return. So a
+    function with `return` (bare) + trailing expression should still
+    trigger — bare return is implicit None just like trailing expr.
+    """
+    code = textwrap.dedent('''
+        def f(x):
+            if x < 0:
+                return
+            x * 2
+    ''')
+    r = rewrite_missing_return(code)
+    # With our definition (value-return only), this triggers.
+    assert r.applied
+    ns: dict = {}
+    exec(r.new_code, ns)
+    assert ns["f"](5) == 10
+    assert ns["f"](-1) is None
+
+
+def test_missing_return_skips_non_expression_last_stmt():
+    """Last stmt is an assignment / if / for / while — not a bare
+    expression — don't touch."""
+    code = textwrap.dedent('''
+        def f(xs):
+            total = 0
+            for x in xs:
+                total += x
+    ''')
+    r = rewrite_missing_return(code)
+    # last stmt is a For, not an Expr — no rewrite
+    assert not r.applied
+
+
+def test_missing_return_skips_bare_literal():
+    """Trailing bare literal (e.g. `42` on its own line) looks like
+    dead code more than a forgotten return. Don't touch."""
+    code = textwrap.dedent('''
+        def f():
+            42
+    ''')
+    r = rewrite_missing_return(code)
+    assert not r.applied
+
+
+def test_missing_return_skips_string_docstring_like():
+    """Trailing plain string literal — docstring-like artifact. Skip."""
+    code = textwrap.dedent('''
+        def f():
+            x = 1
+            "some note"
+    ''')
+    r = rewrite_missing_return(code)
+    assert not r.applied
+
+
+def test_missing_return_nested_function_independent():
+    """Outer has no return but inner does. Inner's return doesn't
+    count for the outer's gate — outer should still rewrite."""
+    code = textwrap.dedent('''
+        def outer(xs):
+            def inner(x):
+                return x * 2
+            [inner(x) for x in xs]
+    ''')
+    r = rewrite_missing_return(code)
+    assert r.applied
+    ns: dict = {}
+    exec(r.new_code, ns)
+    assert ns["outer"]([1, 2, 3]) == [2, 4, 6]
+
+
+def test_missing_return_method_in_class():
+    """Inside a class, method bodies are also walked."""
+    code = textwrap.dedent('''
+        class C:
+            def compute(self, x):
+                x + 1
+    ''')
+    r = rewrite_missing_return(code)
+    assert r.applied
+    ns: dict = {}
+    exec(r.new_code, ns)
+    assert ns["C"]().compute(5) == 6
+
+
+def test_repair_missing_return_via_dispatch():
+    r = repair(GEMMA_MISSING_RETURN_BUG,
+               "TypeError: unsupported operand type(s) for +: 'NoneType' and 'int'")
+    assert r.applied
+    assert r.kind == "missing_return"
+
+
+def test_repair_missing_return_requires_error_signal():
+    """Without None-return error signal, dispatch skips missing_return
+    even though pattern exists."""
+    r = repair(GEMMA_MISSING_RETURN_BUG, "ValueError: something else")
+    assert not r.applied
+    assert any("none_return" in n.lower() for n in r.notes)
 
 
 def test_end_to_end_csv_column_stats_passes_after_repair():
