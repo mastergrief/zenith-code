@@ -84,6 +84,53 @@ class Result(Node):
     source: Optional[Node] = None
 
 
+# --- Sequence-valued compute nodes (R18, ported from transformer-vm) ---
+
+
+@dataclass
+class CumSum(Node):
+    """Cumulative-sum accumulator over a stream of scalar values.
+
+    Interpreter semantics: at each evaluation step `t`, the node's value
+    is `sum(source.value at steps 0..t)`. Useful for compiled counting /
+    prefix-sum / scanning cards.
+
+    Compilation status: INTERPRETER-ONLY. Realizing cumsum in transformer
+    weights requires soft/uniform attention across the full prefix — not
+    expressible with the current `LookUp` / `LookUpExact` hard-max
+    primitives. Future work tracked in `tracing_roadmap.md`.
+
+    Mirrors `transformer_vm.graph.core.CumSumDimension` (upstream is
+    evaluator-only too).
+    """
+    source: Optional[Node] = None
+    # Interpreter state — initialized lazily by interpret()
+    _accum: float = 0.0
+
+
+@dataclass
+class PersistLinear(Node):
+    """Linear combination over source nodes materialized into one slot.
+
+    `coefs` is a list of `(source_node, coefficient)` pairs. Value is
+    `sum(coef_i * source_i.value)`. Purely linear — no gating.
+
+    Compiler intent: consolidate multiple source dims into a single
+    residual channel via FFN `ff_out`, letting sources die earlier and
+    reducing `d_model` pressure. Upstream `transformer_vm` treats this
+    as a schedulable phase (persist1 post-attention, persist2 post-FFN)
+    for register-allocation / pathwidth purposes.
+
+    Compilation status: INTERPRETER-ONLY in this port. The dim is
+    redundant with a sequence of `BinOp` add/mul nodes for the compute
+    path, but as an explicit graph annotation it makes the consolidation
+    intent visible to a future MILP scheduler (R17).
+
+    Mirrors `transformer_vm.graph.core.PersistDimension`.
+    """
+    coefs: List[Tuple[Node, float]] = field(default_factory=list)
+
+
 # --- Hardware nodes (Small2DTransformer direct-compile path) ---
 
 @dataclass

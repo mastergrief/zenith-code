@@ -20,7 +20,7 @@ from typing import Any, Dict
 
 from calm.expression import ExpressionError, safe_eval
 from calm.llm_computer.gate_graph import (
-    BinOp, Const, Delegate, GateGraph, Node, Result,
+    BinOp, Const, CumSum, Delegate, GateGraph, Node, PersistLinear, Result,
 )
 
 
@@ -76,6 +76,25 @@ def interpret(graph: GateGraph) -> Any:
             if node.source is None:
                 raise InterpreterError(f"Result {node.name!r} has no source")
             values[node.name] = val_of(node.source)
+        elif isinstance(node, CumSum):
+            # R18 port: interpret as single-step accumulator. The node
+            # holds running state in `_accum`; evaluating it adds
+            # `source.value` to the accumulator and returns the new
+            # total. Reset across calls to `interpret()` by re-
+            # instantiating the graph or resetting `_accum` externally.
+            if node.source is None:
+                raise InterpreterError(
+                    f"CumSum {node.name!r} missing source")
+            node._accum = float(node._accum) + float(val_of(node.source))
+            values[node.name] = node._accum
+        elif isinstance(node, PersistLinear):
+            # R18 port: linear combination over sources. Interpreter
+            # just evaluates `sum(coef * source.value)`; the graph-level
+            # dim hint is for scheduler consumption.
+            total: Any = 0
+            for src, coef in node.coefs:
+                total = total + coef * val_of(src)
+            values[node.name] = total
         else:
             # Unknown or hardware node — skip for compute interpretation.
             continue
