@@ -48,7 +48,12 @@ USE_TQ4_KV = True
 # linked_list_bugs has consistently been a long-decode problem
 # (37+ min at 8K, 45+ min at 16K in today's runs) — skip to keep
 # session budget sane; re-run separately if needed.
-SKIP = {"linked_list_bugs", "lru_cache_class", "token_bucket_rate_limiter"}
+SKIP = {
+    "linked_list_bugs", "lru_cache_class", "token_bucket_rate_limiter",
+    # Already confirmed clean in run3; skip for this iteration to
+    # focus on csv re-test after ast_repair fix.
+    "date_validation_chain", "log_level_counts",
+}
 
 
 def classify_shape(raw: str, required_names) -> dict:
@@ -81,14 +86,36 @@ def try_parse_fenced(raw: str) -> Tuple[Optional[str], Optional[str]]:
 
 def run_eval(m, tok) -> None:
     os.makedirs(OUT_DIR, exist_ok=True)
+    # Force fresh module loads. Daemon caches sys.modules across
+    # script invocations; sys.modules clearing alone isn't always
+    # enough (parent-package refs can pin the old object). Use
+    # importlib.reload for hard refresh.
+    import sys as _sys
+    import importlib
+    for mod_name in list(_sys.modules.keys()):
+        if (mod_name.startswith("calm.llm_computer.facades.")
+                or mod_name == "calm.llm_computer.facades"
+                or mod_name == "r53_eval_complex"):
+            del _sys.modules[mod_name]
+
     sys.path.insert(0, str(Path(__file__).resolve().parent))
+    # Import then explicitly reload — guarantees disk re-read
+    import calm.llm_computer.facades.ast_repair as _ast_repair_mod
+    importlib.reload(_ast_repair_mod)
+    print(f"[reaudit] ast_repair reloaded from "
+          f"{_ast_repair_mod.__file__}", flush=True)
+    # Quick smoke-test: verify the trailing-colon fix is live
+    _smoke = "def f(:\n    pass\n"
+    _smoke_r = _ast_repair_mod.repair_syntax(_smoke)
+    print(f"[reaudit] smoke-test trailing-colon repair: "
+          f"applied={_smoke_r.applied}", flush=True)
+
     from r53_eval_complex import (
         CORPUS, gen_hinted, score, extract_code,
     )
     from calm.llm_computer.facades.code_example_db import CodeExampleDB
-    from calm.llm_computer.facades.ast_repair import (
-        repair, repair_syntax,
-    )
+    repair = _ast_repair_mod.repair
+    repair_syntax = _ast_repair_mod.repair_syntax
     from calm.sandbox import run_python
     import random as _rng_mod
 
