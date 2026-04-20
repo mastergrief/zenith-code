@@ -94,6 +94,14 @@ def maybe_emit_heartbeat(now: float, last_activity: float, replay: deque,
     return now, new_mult, last_raw
 
 
+def _check_stop(line: str, stop_re: Optional[re.Pattern], t0: float) -> bool:
+    """Return True if line matches the stop pattern (caller should exit)."""
+    if stop_re and stop_re.search(line):
+        emit(f"[STOP-TRIGGER] {line}", t0)
+        return True
+    return False
+
+
 def tail_loop(stream, t0: float, cats: list[Category], args) -> None:
     """Read lines from stream, apply categorization, heartbeat,
     coalescence. Returns when stream closes (EOF).
@@ -112,6 +120,7 @@ def tail_loop(stream, t0: float, cats: list[Category], args) -> None:
     # when a new real event arrives. Cuts idle-noise ~3× in practice.
     hb_mult = 1
     hb_last_line = None
+    stop_re = re.compile(args.stop_on) if args.stop_on else None
 
     import select
     fd = stream.fileno()
@@ -199,21 +208,26 @@ def tail_loop(stream, t0: float, cats: list[Category], args) -> None:
         hb_last_line = None
 
         cat, should_emit = classify(line, cats)
-        if not should_emit:
-            continue
+        if should_emit:
+            if cat and cat.name == "error":
+                emit(f"{cat.prefix} {line}", t0)
+            elif args.coalesce:
+                if coalesce_start is None:
+                    coalesce_start = now
+                coalesce_buf.append((cat, line))
+            else:
+                prefix = cat.prefix if cat else "[OTHER]"
+                emit(f"{prefix} {line}", t0)
 
-        # Errors always bypass coalesce (too important to delay)
-        if cat and cat.name == "error":
-            emit(f"{cat.prefix} {line}", t0)
-            continue
-
-        if args.coalesce:
-            if coalesce_start is None:
-                coalesce_start = now
-            coalesce_buf.append((cat, line))
-        else:
-            prefix = cat.prefix if cat else "[OTHER]"
-            emit(f"{prefix} {line}", t0)
+        # Check --stop-on against the RAW line (works even when filters
+        # suppress it). Trigger exit cleanly — flush pending buf first.
+        if _check_stop(line, stop_re, t0):
+            if coalesce_buf:
+                cat, last_line = coalesce_buf[-1]
+                prefix = cat.prefix if cat else "[OTHER]"
+                emit(f"[COALESCED x{len(coalesce_buf)}] {prefix} "
+                     f"{last_line}", t0)
+            break
 
     # Stream closed — flush any pending coalesce
     if coalesce_buf:
@@ -239,9 +253,22 @@ def wrap_mode(cmd: list[str], t0: float, cats: list[Category], args) -> int:
         bufsize=1,
         text=True,
     )
+    stop_triggered = False
     try:
         tail_loop(proc.stdout, t0, cats, args)
-        rc = proc.wait()
+        # If tail_loop returned and the subprocess is still running, the
+        # stop-trigger fired — terminate cleanly rather than waiting for
+        # natural exit (which may never come for daemon-style processes).
+        if proc.poll() is None:
+            stop_triggered = True
+            proc.terminate()
+            try:
+                rc = proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                rc = proc.wait()
+        else:
+            rc = proc.wait()
     except KeyboardInterrupt:
         emit("[INTERRUPTED] sending SIGTERM", t0)
         proc.terminate()
@@ -250,8 +277,11 @@ def wrap_mode(cmd: list[str], t0: float, cats: list[Category], args) -> int:
         except subprocess.TimeoutExpired:
             proc.kill()
             rc = proc.wait()
-    emit(f"[EXIT rc={rc}] elapsed {int(time.time()-t0)}s", t0)
-    return rc
+    # stop-trigger = clean completion from wrapper's POV, translate to 0
+    wrapper_rc = 0 if stop_triggered else rc
+    emit(f"[EXIT rc={rc}{' (stop-triggered)' if stop_triggered else ''}] "
+         f"elapsed {int(time.time()-t0)}s", t0)
+    return wrapper_rc
 
 
 def tail_file_mode(path: str, t0: float, cats: list[Category], args) -> int:
@@ -307,6 +337,7 @@ def tail_file_mode(path: str, t0: float, cats: list[Category], args) -> int:
         replay: deque[str] = deque(maxlen=max(1, args.replay))
         hb_mult = 1
         hb_last_line: Optional[str] = None
+        stop_re = re.compile(args.stop_on) if args.stop_on else None
 
         import select
         while True:
@@ -360,20 +391,24 @@ def tail_file_mode(path: str, t0: float, cats: list[Category], args) -> int:
             hb_last_line = None
 
             cat, should_emit = classify(line, cats)
-            if not should_emit:
-                continue
+            if should_emit:
+                if cat and cat.name == "error":
+                    emit(f"{cat.prefix} {line}", t0)
+                elif args.coalesce:
+                    if coalesce_start is None:
+                        coalesce_start = now
+                    coalesce_buf.append((cat, line))
+                else:
+                    prefix = cat.prefix if cat else "[OTHER]"
+                    emit(f"{prefix} {line}", t0)
 
-            if cat and cat.name == "error":
-                emit(f"{cat.prefix} {line}", t0)
-                continue
-
-            if args.coalesce:
-                if coalesce_start is None:
-                    coalesce_start = now
-                coalesce_buf.append((cat, line))
-            else:
-                prefix = cat.prefix if cat else "[OTHER]"
-                emit(f"{prefix} {line}", t0)
+            # Stop-on trigger checks RAW line (works past filters)
+            if _check_stop(line, stop_re, t0):
+                if coalesce_buf:
+                    c, ll = coalesce_buf[-1]
+                    pfx = c.prefix if c else "[OTHER]"
+                    emit(f"[COALESCED x{len(coalesce_buf)}] {pfx} {ll}", t0)
+                break
 
         if coalesce_buf:
             cat, last_line = coalesce_buf[-1]
@@ -421,6 +456,11 @@ def main() -> int:
     ap.add_argument("--replay", type=int, default=10,
                     help="on completion, re-emit last N matched lines "
                          "(default 10)")
+    ap.add_argument("--stop-on", default="",
+                    help="regex — when a line matches, emit [STOP-TRIGGER] "
+                         "and exit cleanly. Useful for tail-file mode "
+                         "where the process doesn't die (e.g. 'DONE$' "
+                         "for gemma daemon script completion)")
     ap.add_argument("cmd", nargs=argparse.REMAINDER,
                     help="command + args to wrap (everything after --)")
     args = ap.parse_args()
