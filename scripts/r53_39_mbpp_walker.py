@@ -45,7 +45,7 @@ if str(ROOT) not in sys.path:
 
 # ---- Bench config ----
 MBPP_PATH = ROOT / "agents/distill/data/mbpp.jsonl"
-MBPP_N = 5                    # number of problems to test
+MBPP_N = 20                   # number of problems to test (R13 bump 5 → 20)
 MBPP_SKIP = 0                 # skip first K (different cut each run)
 MAX_TOKENS = 2048             # raised from 1024 after R53.39 run showed
                               # 3/5 format_fails — MBPP problems like
@@ -223,7 +223,7 @@ def score_code(code: str, tests: List[str]) -> tuple[int, int, str]:
 
 
 def run_mbpp_walker():
-    from calm.llm_computer.facades.ast_repair import repair
+    from calm.llm_computer.facades.ast_repair import repair_cascade
 
     # m, tok are daemon globals
     global m, tok
@@ -265,11 +265,11 @@ def run_mbpp_walker():
             per_problem.append((p.idx, "clean", passed, total, None, ""))
             continue
 
-        # Try walker
-        # Assemble error text from the actual sandbox run for walker
-        # dispatch — use both diag and the raw test failure messages.
+        # Try walker cascade (R10) — allows empty_block → AST-walker
+        # chaining when e.g. syntax_repair fires first then downstream
+        # rewrites catch additional bugs.
         error_text = diag
-        rr = repair(code, error_text)
+        rr = repair_cascade(code, error_text, max_passes=4)
         if rr.applied:
             # Re-score
             p2, t2, d2 = score_code(rr.new_code, p.tests)
