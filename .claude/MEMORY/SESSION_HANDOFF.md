@@ -11,7 +11,7 @@ The task list expanded mid-session when the user asked (a) whether prior "Gemma 
 
 Workflow: hypothesis → build → test → commit → iterate.
 
-## Completed (13 commits, `190fe55` → `961b351`)
+## Completed (14 commits, `190fe55` → `ad3fdae`)
 
 ### Subsystem 1 — AST walker shipped (7 commits)
 
@@ -135,6 +135,8 @@ None. All tasks closed with commits + measurements.
 
 6. **Hook live-activation check** — next session, trigger a raw `tail -f | grep` via Monitor and confirm the PreToolUse hook blocks. If not, open `/hooks` menu to reload settings-watcher (new `.claude/settings.json` from prior session may need that).
 
+7. **LOC-cap violation trim** (~30 min, LOW lift but overdue) — `.claude/CLAUDE.md` is **529 LOC** and `.claude/rules/augmentation_thesis.md` is **509 LOC**, both over the self-imposed **500-LOC hard limit** in CLAUDE.md's "Config `.claude/` Editing Directive". Flagged in commit `ad3fdae`. On next `/update`: either trim stale sections from each or split one of them into a new focused rule file. CLAUDE.md has accumulated paragraphs across the R53 phase track; some early rounds (R53.14/20a/20b) could shrink to a pointer into `tracing_roadmap.md` ruled-out log.
+
 ## Key Context
 
 **Decision rationale (WHY):**
@@ -165,7 +167,7 @@ None. All tasks closed with commits + measurements.
 - Initial sys.modules clearing for daemon module-cache — not sufficient alone (parent-package refs pin old bytecode). Fixed by explicit `importlib.reload(_ast_repair_mod)` + smoke-test print.
 
 **Runtime state at session end**:
-- Branch: `feature/multi-agent-qwen`, at `aa19c5e` (+ this doc push). ~17 commits ahead of prior session's start (`b453a38`).
+- Branch: `feature/multi-agent-qwen`, at `ad3fdae`. ~19 commits ahead of prior session's start (`b453a38`).
 - Daemon: PID 934814 running, loaded `gemma-4-E4B-it-tq4-aligned.gguf`.
 - GPU: ~5-7 GB depending on idle vs generation. R51/R52 student checkpoints fit alongside Gemma.
 
