@@ -117,14 +117,29 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         out = torch.einsum("bij,bj->bi", S_new, q_t)
         return S_new, out
 
-    def forward(self, idx: torch.Tensor) -> torch.Tensor:
-        """idx: (B, S). Returns logits (B, S, vocab).
+    def _forward_backbone(self, idx: torch.Tensor) -> torch.Tensor:
+        """Run the DeltaNet backbone; return pre-head hidden states x (B, S, D).
 
-        If use_delta_net=False, delegates to parent for bitwise-equivalent
-        vanilla Small2DTransformer output (regression test hook).
+        Factored out so subclasses (e.g. CopyAugmentedDeltaNet) can use the
+        DeltaNet recurrence without the final vocab projection. Has the same
+        use_delta_net=False fallback as forward().
         """
         if not getattr(self.config, "use_delta_net", True):
-            return super().forward(idx)
+            # Vanilla path — replicate Small2DTransformer.forward minus the head
+            B, S = idx.shape
+            cfg = self.config
+            pos_idx = torch.arange(S, device=idx.device)
+            x = self.tok(idx) + self.pos(pos_idx)
+            for layer in range(cfg.n_layers):
+                qkv = self.W_qkv[layer](x)
+                qkv = qkv.reshape(B, S, 3, cfg.n_heads, cfg.d_head)
+                q, k, v = qkv.permute(2, 0, 3, 1, 4)
+                attn = self._attention(q, k, v, hard_max=cfg.use_hard_max)
+                attn = attn.transpose(1, 2).reshape(B, S, cfg.d_model)
+                x = x + self.W_out[layer](attn)
+                gate, val = self.ff_in[layer](x).chunk(2, dim=-1)
+                x = x + self.ff_out[layer](F.relu(gate) * val)
+            return x
 
         B, S = idx.shape
         cfg = self.config
@@ -188,4 +203,8 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             gate, val = self.ff_in[layer](x).chunk(2, dim=-1)
             x = x + self.ff_out[layer](F.relu(gate) * val)
 
-        return self.head(x)
+        return x
+
+    def forward(self, idx: torch.Tensor) -> torch.Tensor:
+        """idx: (B, S). Returns logits (B, S, vocab)."""
+        return self.head(self._forward_backbone(idx))
