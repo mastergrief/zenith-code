@@ -108,6 +108,205 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
 
         return torch.log(blended + 1e-10)
 
+    def decode_greedy_cached(
+        self,
+        prefix_ids: torch.Tensor,
+        max_gen: int = 30,
+        eos_token: int | None = None,
+    ) -> torch.Tensor:
+        """Cached autoregressive greedy decode. Returns (B, L_gen) of ids.
+
+        Closes the inference gap vs plain-PT by:
+        1. Running the prefix forward once (prefill), saving per-layer
+           DeltaNet state + cached copy-K for prefix positions.
+        2. Each decode step processes ONE new token using the cached
+           state (O(1) per step vs uncached O(L) forward).
+
+        Produces identical output to repeated `forward(idx)` calls up
+        to float32 numerical epsilon (both paths use the same delta
+        rule; cached just skips the recompute of prior positions).
+        """
+        cfg = self.config
+        copy_cfg = self.copy_config
+        device = prefix_ids.device
+        B, S = prefix_ids.shape
+        assert B == 1, "cached decode supports batch=1 for now"
+
+        sep_id = copy_cfg.sep_token_id
+        n_layers = cfg.n_layers
+        n_heads = cfg.n_heads
+        d_head = cfg.d_head
+        d_model = cfg.d_model
+        n_ch = copy_cfg.n_copy_heads
+        dh_copy = d_head
+
+        # --- Prefill: full forward, capture per-layer state ---
+        pos_idx = torch.arange(S, device=device)
+        x = self.tok(prefix_ids) + self.pos(pos_idx)
+
+        # Running buffers: prefix x-per-layer-input (needed for copy K later),
+        # plus per-layer S_state after processing prefix.
+        layer_states: list[torch.Tensor] = []
+        # We'll also remember the residual x at EVERY prefix position after ALL
+        # layers, for computing copy-K over prefix via copy_k_proj(x).
+        for layer in range(n_layers):
+            qkv = self.W_qkv[layer](x)
+            qkv = qkv.reshape(B, S, 3, n_heads, d_head)
+            q, k, v = qkv.permute(2, 0, 3, 1, 4)
+            q_flat = q.transpose(1, 2).reshape(B, S, d_model)
+            k_flat = k.transpose(1, 2).reshape(B, S, d_model)
+            v_flat = v.transpose(1, 2).reshape(B, S, d_model)
+
+            if cfg.use_silu_feat:
+                q_feat = F.silu(q_flat)
+                k_feat = F.silu(k_flat)
+            else:
+                q_feat = q_flat
+                k_feat = k_flat
+            if cfg.use_l2_norm:
+                q_feat = F.normalize(q_feat, p=2, dim=-1, eps=1e-6)
+                k_feat = F.normalize(k_feat, p=2, dim=-1, eps=1e-6)
+
+            beta = torch.sigmoid(self.beta_head[layer](x))
+
+            S_state = torch.zeros(B, d_model, d_model, device=device, dtype=x.dtype)
+            if getattr(cfg, "use_chunkwise", False):
+                S_state, delta_out = self._delta_chunkwise(
+                    S_state, q_feat, k_feat, v_flat, beta,
+                    chunk_size=getattr(cfg, "chunk_size", 32),
+                )
+            else:
+                reads = []
+                for t in range(S):
+                    S_state, out_t = self._delta_step(
+                        S_state, q_feat[:, t, :], k_feat[:, t, :],
+                        v_flat[:, t, :], beta[:, t, :],
+                    )
+                    reads.append(out_t)
+                delta_out = torch.stack(reads, dim=1)
+
+            x = x + self.W_out[layer](delta_out)
+            gate, val = self.ff_in[layer](x).chunk(2, dim=-1)
+            x = x + self.ff_out[layer](F.relu(gate) * val)
+
+            layer_states.append(S_state)
+
+        # Cache copy-K over the ENTIRE prefix.
+        # Only positions before <sep> are copyable; we mask scores later.
+        cached_copy_k = self.copy_k_proj(x).reshape(B, S, n_ch, dh_copy)
+
+        # Prefix mask (which prefix positions are eligible to copy from).
+        prefix_mask = self._build_prefix_mask(prefix_ids, sep_id)  # (B, S)
+
+        # Prefix token ids — scatter_add target for copy distribution.
+        prefix_ids_buf = prefix_ids  # (B, S)
+
+        # --- Phase 1 output: argmax at last prefix position ---
+        current_x = x[:, -1:, :]  # (B, 1, D)
+        last_id = self._predict_next_token(
+            current_x, cached_copy_k, prefix_ids_buf, prefix_mask,
+        )
+
+        # --- Decode loop: process one new token at a time ---
+        gen_ids: list[int] = []
+        if eos_token is not None and int(last_id.item()) == eos_token:
+            return torch.tensor([gen_ids], dtype=torch.long, device=device)
+        gen_ids.append(int(last_id.item()))
+
+        current_pos = S  # next position index
+        for _ in range(max_gen - 1):
+            if eos_token is not None and gen_ids[-1] == eos_token:
+                gen_ids.pop()
+                break
+
+            # Embed last generated token.
+            new_id = torch.tensor([[gen_ids[-1]]], dtype=torch.long, device=device)
+            pos_t = torch.tensor([current_pos], device=device)
+            new_x = self.tok(new_id) + self.pos(pos_t).unsqueeze(0)  # (B, 1, D)
+            current_pos += 1
+
+            # One-step through all layers, updating cached S per layer.
+            for layer in range(n_layers):
+                qkv = self.W_qkv[layer](new_x)
+                qkv = qkv.reshape(B, 1, 3, n_heads, d_head)
+                q, k, v = qkv.permute(2, 0, 3, 1, 4)
+                q_flat = q.transpose(1, 2).reshape(B, 1, d_model)
+                k_flat = k.transpose(1, 2).reshape(B, 1, d_model)
+                v_flat = v.transpose(1, 2).reshape(B, 1, d_model)
+
+                if cfg.use_silu_feat:
+                    q_feat = F.silu(q_flat)
+                    k_feat = F.silu(k_flat)
+                else:
+                    q_feat = q_flat
+                    k_feat = k_flat
+                if cfg.use_l2_norm:
+                    q_feat = F.normalize(q_feat, p=2, dim=-1, eps=1e-6)
+                    k_feat = F.normalize(k_feat, p=2, dim=-1, eps=1e-6)
+
+                beta_t = torch.sigmoid(self.beta_head[layer](new_x))
+
+                S_prev = layer_states[layer]
+                S_new, out_t = self._delta_step(
+                    S_prev, q_feat[:, 0, :], k_feat[:, 0, :],
+                    v_flat[:, 0, :], beta_t[:, 0, :],
+                )
+                layer_states[layer] = S_new
+                delta_out_t = out_t.unsqueeze(1)  # (B, 1, D)
+
+                new_x = new_x + self.W_out[layer](delta_out_t)
+                gate, val = self.ff_in[layer](new_x).chunk(2, dim=-1)
+                new_x = new_x + self.ff_out[layer](F.relu(gate) * val)
+
+            # Predict next token from new_x using cached copy K.
+            # (Decode-phase positions are NOT added to copy-K cache since they're
+            # past <sep> — prefix_mask already zeros them out in the uncached path.)
+            next_id = self._predict_next_token(
+                new_x, cached_copy_k, prefix_ids_buf, prefix_mask,
+            )
+            gen_ids.append(int(next_id.item()))
+
+        # Strip trailing eos if present.
+        if eos_token is not None and gen_ids and gen_ids[-1] == eos_token:
+            gen_ids = gen_ids[:-1]
+        return torch.tensor([gen_ids], dtype=torch.long, device=device)
+
+    def _predict_next_token(
+        self,
+        x_last: torch.Tensor,             # (B, 1, D)
+        cached_copy_k: torch.Tensor,       # (B, L_prefix, n_copy_heads, d_head)
+        prefix_ids: torch.Tensor,          # (B, L_prefix)
+        prefix_mask: torch.Tensor,         # (B, L_prefix)
+    ) -> torch.Tensor:
+        """Compute log-probs at one position using cached copy K; return argmax id."""
+        B = x_last.shape[0]
+        cfg = self.config
+        cfg_copy = self.copy_config
+
+        gen_logits = self.head(x_last)                              # (B, 1, V)
+        p_copy = torch.sigmoid(self.copy_gate(x_last))              # (B, 1, 1)
+
+        n_ch = cfg_copy.n_copy_heads
+        dh = cfg.d_head
+        cq = self.copy_q_proj(x_last).reshape(B, 1, n_ch, dh)       # (B, 1, H, dh)
+        # Score: cq @ cached_copy_k^T across L_prefix — per-head-then-avg.
+        copy_scores = torch.einsum("bihd,bjhd->bhij", cq, cached_copy_k)
+        # Mask non-prefix positions.
+        prefix_block = ~prefix_mask.unsqueeze(1).unsqueeze(1).expand_as(copy_scores)
+        copy_scores = copy_scores.masked_fill(prefix_block, float("-inf"))
+        copy_scores_avg = copy_scores.mean(dim=1)                   # (B, 1, L_prefix)
+        copy_attn = F.softmax(copy_scores_avg, dim=-1)              # (B, 1, L_prefix)
+
+        copy_logits = torch.zeros_like(gen_logits)
+        src_tokens = prefix_ids.unsqueeze(1)                         # (B, 1, L_prefix)
+        copy_logits.scatter_add_(2, src_tokens, copy_attn)
+
+        gen_probs = F.softmax(gen_logits, dim=-1)
+        blended = p_copy * copy_logits + (1 - p_copy) * gen_probs
+        log_probs = torch.log(blended + 1e-10)
+
+        return log_probs[0, 0].argmax()
+
     @staticmethod
     def _build_prefix_mask(idx: torch.Tensor, sep_id: int) -> torch.Tensor:
         """Positions before first <sep> marked True (copyable input prefix)."""
