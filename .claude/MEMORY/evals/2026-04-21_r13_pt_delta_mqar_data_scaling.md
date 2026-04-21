@@ -27,6 +27,19 @@ only flags.
 | R13-med-2k | 2000 | 50 (killed ep15) | 80 | 5,10 | ~16 min | 100% | **100%** | — | — |
 | R13-c | 2000 | 50 (killed ep25) | 128 | 15,20 | ~26 min | — | — | **19%** | **22%** |
 | R13-d | 5000 | 20 | 128 | 15 | ~17 min | — | — | **99%** | — |
+| R14 | 5000 | 20 | 128 | 20 | ~25 min | — | — | — | **58%** |
+
+R14 (N=20 @ 5K/N) plateaus at 58%. Extrapolates the per-N data
+requirement: +5 on N needs ~2.5× data.
+
+  N     data-to-saturate
+  5,10  2K/N
+  15    5K/N
+  20    ~10-15K/N (untested; R14 still climbing at 55%→58% ep14-20)
+
+58% is well above random (~5%) and still trending, so the plateau is
+training-budget-bound, not architectural. To confirm and crack N=20
+cleanly, R14-b would need 10K/N × 20ep (~2 hrs GPU, not run).
 
 ## Plain PT comparison (same budgets, best-epoch accuracy)
 
@@ -37,6 +50,7 @@ only flags.
 | R13-med-2k (2000/N) | 81% | 38% | — | — |
 | R13-c (2000/N, high-N) | — | — | 21% | 23% |
 | R13-d (5000/N, N=15) | — | — | 24% | — |
+| R14 (5000/N, N=20) | — | — | — | 31% |
 
 Plain PT memorizes train and overfits — final-epoch numbers are lower
 than best-epoch (e.g. R13-c N15 ends at 14% after peaking at 21%).
@@ -138,8 +152,12 @@ substrate-card receipt.
 
 ## Still open (promoted to next rounds)
 
-- **R14**: N=20 at 5K/N — the capacity-edge test. If solves,
-  card scales to ≥N=20. If plateaus, gives concrete ceiling.
+- **R14 (DONE)**: N=20 at 5K/N → plateau 58%, not solved. Data
+  still helping (R13-c 22% → R14 58% at same N, 2.5× data) but
+  budget insufficient. Data-bound, not capacity-bound.
+- **R14-b (deferred)**: N=20 at 10-15K/N to confirm data fixes it.
+  ~2 hrs GPU, not run — commercial priority is N≤15 which already
+  saturates at 5K/N.
 - **R15**: reassign generator (`calm/hrm/memory_tasks.py:gen_reassign_batch`)
   — tests Householder overwrite on mutation-heavy patterns.
   Real-code relevant.
