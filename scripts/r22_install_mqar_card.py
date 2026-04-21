@@ -69,17 +69,28 @@ _QUERY_RES = [
 
 
 def parse_mqar_prompt(prompt: str) -> str | None:
-    """Extract <mem>...</mem> + query key. Returns 'a 3 b 7 c 1 ; b' or None."""
+    """Extract <mem>...</mem> + query key. Returns 'a 3 b 7 c 1 ; b' or None.
+
+    Anchors the query-key extraction on the LAST 'Question:' marker in
+    the prompt — without this, confusing-distractor prose containing
+    phrases like 'value of q rose to 2' would be matched first, picking
+    the wrong query key. Bug found in r22e sanity (2026-04-21).
+    """
     mem = _MEM_RE.search(prompt)
     if not mem:
         return None
     pairs = _KV_RE.findall(mem.group(1))
     if not pairs:
         return None
+    # Search only AFTER the last 'Question:' marker. Falls back to
+    # post-mem slice if no marker (preserves old behavior for simple
+    # prompts without distractor preambles).
     post_mem = prompt[mem.end():]
+    question_idx = post_mem.lower().rfind("question:")
+    search_region = post_mem[question_idx:] if question_idx >= 0 else post_mem
     q_key = None
     for q_re in _QUERY_RES:
-        m = q_re.search(post_mem)
+        m = q_re.search(search_region)
         if m:
             q_key = m.group(1).lower()
             break
