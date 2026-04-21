@@ -1,236 +1,321 @@
-# Session Handoff — 2026-04-21 (PT+Delta R13-R21 arc + /update docs pass)
+# Session Handoff — 2026-04-21 (R22 arc: decode-path wins + adapter bug find + R22 shipped)
 
 ## Goal
 
-User opened with "so how does delta fit in now?" after reading the prior
-SESSION_HANDOFF.md (PT+Delta R5-R11 arc). Session evolved into a 9-round
-R13-R21 arc that solved MQAR N=5-20 via data scaling, shipped chunkwise
-parallel DeltaNet + cached decode, consolidated PT+Delta as the default
-trained-card architecture, and produced a deployable MQAR card
-(`copy_augmented_delta_mqar_best.pt`). User then ran `/update` to absorb
-both this session's Track B + an earlier session's Track A (decode
-speedup) into `.claude/` docs.
+Opened with "what's next?" after prior-session `/handoff` committed the
+PT+Delta R13-R21 arc. Session evolved into:
 
-Ended at a clean stopping point with R21 artifact shipped + /update 4
-commits landed. Next round is R22 Gemma CardSlot install.
+1. **Housekeeping** — committed prior SESSION_HANDOFF.md + decode
+   rebench validating 25.00 tok/s D-path (42 tok/s claim
+   unreproducible across 2 sessions 72h apart).
+2. **R22 arc** — installed R21 deployable MQAR card on prod Gemma.
+   7-round debug arc (R22a mechanism → R22b rounds 1-7) + R22e
+   standalone-card sanity diagnostic revealed the entire "67% fired
+   precision" narrative was an adapter-regex bug, not calibration.
+   **TRUE result: +9/60 (21% relative lift), zero regressions.**
+3. **Decode-path compute facades** — R22c `BaseConversionFacade`
+   generalized R46.2's parse+safe_eval+step-through pattern to a new
+   domain. 30% clean lift in 119s. Pattern-as-product validated.
+4. **/update docs pass** — 3 commits (P0/P1/P2+fixup) rewriting stale
+   CardSlot/R22 claims across 7 rule files + new
+   `.claude/rules/compute_facades.md`.
 
-## Completed (18 commits, `7110990` → `65ced1f`)
+Ended at a clean stopping point: 15 commits, no in-flight work, all
+receipts + rule updates landed. "Mega session tomorrow" is set up
+with 3 ordered queues (see Next Steps).
 
-### PT+Delta DeltaNet arc (14 commits, Track B)
+## Completed (15 commits, `946652c` → `c52cadc`)
 
-| SHA | Round | Result |
-|---|---|---|
-| `7110990` | R13 | MQAR N=10 cracked at 2K/N → 100% (plain PT caps 34%). "+5 on N needs 2× data" rule discovered. Ruled out R10/R11a/R11b architectural nulls as undertrained. |
-| `e61c2bc` | infra | `--task {mqar,reassign,scratchpad}` flag in `experiment_r10_mqar.py` |
-| `c3c1569` | R14 | N=20 at 5K/N plateau 58% (plain PT 31%, +27pp). Data-bound signal: more data would lift, deferred R14-b |
-| `bc52c87` | fix | Reassign generator positional-shortcut bug — `_gen_reassign` forced step n-1 to target_var, placing answer at -3 from query. Plain PT solved in 3 epochs, caught as diagnostic signal |
-| `5abc2f5` | infra | `gen_reassign_hard_batch` + `_VARS_HARD = "abcdefghijklmnopqrst"` 20-char vocab |
-| `2a62675` | R15/R15-b | Reassign moat scales with vocab size: 0pp at 5 vars (plain PT 100%), +12pp at 20 vars (PT+Δ 98% vs PT 86%), 10× convergence speedup. Refined commercial claim to "sparse-key retrieval" |
-| `187203d` | R16 | Scratchpad null — both PT and PT+Δ at 0% full-expression match. State-carry ≠ arithmetic; 185K capacity can't internalize 243 single-digit facts. Brain+Cards thesis reinforced |
-| `56fa281` | R17 | **Chunkwise parallel DeltaNet** (UT transform, paper §3-4). Bit-equivalent to per-position (max\|Δ\|=1.9e-6). Forward-only: 4.65-7.52× at L=32-256. e2e training: 322s→52s at 2K/N × N=[5,10] (~6×) |
-| `49c13d7` | R14-b | N=20 at 10K/N solves 99% in 6 epochs (~7 min chunkwise). Closes MQAR scaling curve through N=20. Gap vs plain PT widens to +84pp |
-| `78b5dfb` | R18 | Multi-head H=4 **null** — PT+Δ 21% vs plain PT 27% (-6pp). Per-head state (16,16) = 256 scalars, D/log(D) capacity ~6 << N=15. Aggregate drop 4096→1024. Reopen only at d_model ≥128 |
-| `65fb148` | R19 | D5 refinement n_iters=2 **null** — 21% best/16% final. ARC Prize's "+13pp from refinement" is grid-reasoning-specific, MQAR has nothing to iteratively refine |
-| `63a49fc` | R20 | **PT+Delta consolidated as default** — 200-ex held-out parity on NL math (99.5% both, +0.0pp). Functional superset + 3-10× epoch efficiency. Plain PT stays as ablation baseline |
-| `e6f2d5c` | R20b | **Cached autoreg decode** — `decode_greedy_cached` on `CopyAugmentedDeltaNet`. 50/50 token-exact parity with uncached. Closes 5× inference gap to **1.18×** plain PT |
-| `7bc13f1` | R21 | **Deployable MQAR card** — `copy_augmented_delta_mqar_best.pt` (748 KB, 183,877 params). 100% on N=5/10/15 held-out (fresh seed=777777+N), 0% on N=20 (OOD — not trained). `scripts/train_pt_delta_mqar.py` saves checkpoint |
+### Session + housekeeping (2 commits)
 
-### /update docs pass (4 commits)
+| SHA | Purpose |
+|---|---|
+| `946652c` | Commit prior R13-R21 SESSION_HANDOFF.md |
+| `6c66ffa` | Decode 4-path rebench — D=25.00 tok/s bit-identical to prior session (72h gap), 42 tok/s / 90% llama unreproducible. Receipt: `.claude/MEMORY/evals/2026-04-21_decode_paths_rebench.md` |
+
+### R22 arc (10 commits)
+
+| SHA | Round | Δ | Receipt |
+|---|---|---|---|
+| `8150e97` | R22a mechanism | 3/3 sanity | `2026-04-21_r22a_mqar_card_install.md` |
+| `17024b8` | R22b r1 | -2 null (500-tok too easy) | `2026-04-21_r22b_round1_no_failure_surface.md` |
+| `bcdf5d9` | R22b r2 | -2 (2W 4R, failure surface found) | `2026-04-21_r22b_round2_mixed_signal.md` |
+| `ff2ddf6` | R22b r3 | "+2" post-hoc (FLAWED) | `2026-04-21_r22b_round3_margin_threshold.md` |
+| `36de25d` | R22b r4 | 0 held-out | `2026-04-21_r22b_round4_holdout.md` |
+| `7a7f347` | R22b r5 | -4 (residual-write bug exposed) | `2026-04-21_r22b_round5_6_gate_fix.md` |
+| `e169d6d` | R22b r6 | 0 (write-gate fix) | same |
+| `7db6eb9` | R22 close | r7 +1 + R22c +3 + R22d +1 + noise scaffolding | `2026-04-21_r22b_r7_r22cd_summary.md` |
+| `c3eac18` | R22e sanity | **Adapter bug diagnosed** (100% standalone after 5-line regex fix) | summary receipt |
+| `73df738` | **R22 TRUE result** | **+9/60 (21% rel), 0 regr** | `2026-04-21_r22b_r7_rerun_adapter_fixed.md` |
+
+### Final R22 install config (deployable)
+
+```python
+install(m, card, layer_idx=30, ch_off=2480,
+        write_margin=22.0, preserve=False)
+hook.min_margin = 22.0
+# Adapter: CARD_N_RANGE = {5, 10, 15}  (training distribution gate)
+```
+
+Four aligned gates. Per-cell on 60-prompt pooled distractor-confused
+corpus:
+
+```
+   N    dist   mode              base    card    Δ
+   5    500   confusing          5/10   10/10   +5
+   5   1500   confusing_long     8/10   10/10   +2
+  10    500   confusing          7/10    7/10    0   ← open follow-up
+  10   1500   confusing_long     9/10    9/10    0   ← open follow-up
+  15    500   confusing          7/10    8/10   +1
+  15   1500   confusing_long     6/10    7/10   +1
+                        OVERALL: 42/60 -> 51/60  Δ=+9 (21% rel, 0 regr)
+```
+
+### /update docs pass (3 commits)
 
 | SHA | Tier | Files |
 |---|---|---|
-| `394716a` | P0 | Falsified "42 tok/s / 90% llama.cpp" in CLAUDE.md + architecture.md + turboquant.md (clean bench 25-33 tok/s). Added MQAR data-scaling rule to capability_gain.md as measurement-discipline receipt (4 null rounds → 1 flag change) |
-| `63e9f86` | P1 | New `.claude/rules/delta_rule.md` (224 LOC). Track A sections in architecture.md + turboquant.md. Walker 7th-rewrite note in calm_part_2.md + augmentation_thesis.md. Eval_defaults extension in training_part_2.md. Cross-refs in Substrate.md + training.md |
-| `90db4dd` | P2 | Tracing_roadmap.md gets R-delta ruled-out log (6 Track B nulls + 2 Track A nulls). R-number disambiguation header (Track B R5-R21 ≠ tracing-arc R13-R21) |
-| `65ced1f` | P1-fixup | Phase-5 grep caught missing PT+Delta cross-refs in CLAUDE.md + architecture.md + augmentation_thesis.md. Added minimal pointers to delta_rule.md |
-
-### Verbatim benchmark receipts
-
-**MQAR data-scaling curve** (commits `7110990`, `49c13d7`):
-```
-N    per-N to saturate PT+Δ    PT+Δ vs plain PT gap
-5     2K                         +21pp
-10    2K                         +66pp
-15    5K                         +75pp
-20   10K                         +84pp
-```
-
-**R17 chunkwise speedup** (forward-only, B=16, fp32, RTX 4070):
-```
-L    per-pos   chunkwise(C=32)  speedup
-32   46.2ms     9.9ms            4.65×
-64   81.3ms    11.8ms            6.90×
-128  147.9ms   23.8ms            6.22×
-256  262.6ms   34.9ms            7.52×
-```
-End-to-end training: R13-med-2k 100% at ep10 t=52s chunkwise vs per-position ep10 t=322s → **~6× e2e**. Bit-equiv max\|Δ\|=1.907e-06.
-
-**R20b inference gap** (200 NL math, max_gen=30):
-```
-Path                       acc    wall    vs plain PT
-PT+Δ per-position          99.5%  45.6s   5.92×
-PT+Δ chunkwise, uncached   99.5%  15.1s   1.96×
-PT+Δ chunkwise, cached     99.5%   9.1s   1.18×
-Plain PT baseline          99.5%   7.7s   1.00×
-```
-50/50 token-exact parity cached vs uncached.
-
-**R21 deployable card held-out** (fresh seed=777777+N, 100 problems each):
-```
-N=5   100/100   2.0s (cached decode)
-N=10  100/100   1.7s
-N=15  100/100   1.9s
-N=20    0/100   4.7s  (OOD — not in training)
-```
+| `a2bade0` | P0 | `delta_rule.md` R22 section rewritten with TRUE result + R-delta-22 CANCELLED; `CLAUDE.md` three-install typology; `Substrate.md` preserve=True legacy caveat + R22 4-gate install workflow |
+| `3a05198` | P1 | NEW `.claude/rules/compute_facades.md` (122 LOC); `workflow_part_1.md` adapter-robustness lesson; `augmentation_thesis.md` Tier-2 table updated; `embed_intelligence.md` min_margin tuning + write_margin alignment |
+| `c52cadc` | P1-fixup + P2 | `CLAUDE.md` + `architecture.md` three-install cleanups; `tracing_roadmap.md` R-delta-22 CANCELLED row |
 
 ## In Progress
 
-**None.** Arc closed cleanly at R21 (deployable card) + /update docs pass. No orphan training runs, no uncommitted session work at risk.
+**None.** All 15 commits landed cleanly. Daemon running (`bin/gemma-run
+--status` = PID 929999, warm), no orphan scripts, no uncommitted session
+work at risk.
 
 ## ⚠ Uncommitted
 
-### Session-critical (HIGH — needs attention before next session)
+All non-session (runtime caches + gitignored-adjacent). No
+session-critical uncommitted files:
 
-- `.claude/MEMORY/SESSION_HANDOFF.md` [HIGH] — **THIS FILE** after I write it. Commit it before ending session.
+```
+?? .cache/                       runtime cache (retrieval index, tq4 blocks, r22b JSONLs)
+?? .claude/MEMORY/minutes/       auto-rotated session transcripts (3 files from today)
+?? .claude/scheduled_tasks.lock  runtime lock
+?? .codex/                       runtime
+?? .port_sessions/               runtime
+?? calm/.module_learning.json    runtime state
+```
 
-### Pre-existing user/teammate work (MEDIUM — user owns, do not touch)
+**Risk: NONE.** All shipped code, docs, and receipts are committed.
 
-- `.claude/rules/calm.md` (D), `.claude/rules/workflow.md` (D) — user's ongoing doc-reorg from session start
-- `.claude/rules/calm_part_1.md`, `.claude/rules/workflow_part_1.md`, `.claude/rules/workflow_part_2.md` [untracked] — user's doc-reorg drafts. User said "i've just fixed calm 1" mid-session (shortened 494→264 lines). Not this session's work.
-- `.claude/MEMORY/SESSION_HANDOFF_1.md` — earlier session's handoff (decode-speedup track)
-- `.claude/MEMORY/notesd.md` — teammate notes
-- `scripts/r52_train_student_kl.py` (M) — pre-existing R52 refactor, teammate track
-- `calm/hrm/checkpoints/meta_best.pt` (M) — binary re-save by teammate, same size
-- `calm/llm_computer/tq4_autograd.py` [untracked] — R52.1 teammate work
-- `calm/llm_computer/checkpoints/substrate_hrmlm_v2*`, `r51/checkpoints/` — teammate R51/R52 checkpoints
-- `calm/llm_computer/synth/*.jsonl` — teammate synth corpus
+## Next Steps (ordered for mega session tomorrow)
 
-### Research artifacts (MEDIUM — teammate-owned)
+### 1. N=10 flat — the one remaining R22 diagnostic (15 min)
 
-- `RESEARCH/LLM-COMPUTER/`, `RESEARCH/NEURAL_COMPUTER/`, `RESEARCH/TQ/`, `RESEARCH/TRAINING/` — teammate research dumps. LLM-COMPUTER was touched by `8df1f5f` (DeltaNet paper split from prior-to-this-session) but remaining untracked content is teammate work.
+R22 shipped +9 with all gains in N=5 and N=15. N=10 cells completely
+flat (7/10 and 9/10, unchanged by card). Three possible causes:
 
-### Low-risk (safe to ignore)
+- (a) card's margin < 22.0 on those specific prompts — gate stays
+  silent, Gemma's wrong answer unchanged
+- (b) Gemma's wrong-answer logit gap > 50 boost — hook fires but
+  can't override
+- (c) adapter-regex remnant bug specific to N=10 key patterns
 
-- `.cache/`, `.codex/`, `.port_sessions/`, `.claude/scheduled_tasks.lock`, `calm/.module_learning.json` — runtime caches, gitignored-adjacent
-- `calm/hrm/checkpoints/copy_code_*.pt, math_*.pt, unified_substrate_best.pt` — teammate checkpoint zoo
-- `.claude/MEMORY/minutes/` — session transcripts (auto-rotated)
+Diagnostic: write `scripts/r22f_n10_diag.py` that runs the card
+standalone on r22b corpus's 20 N=10 prompts + logs card's argmax +
+margin + parse_ok. 5 min script + 1 min run on warm daemon.
 
-**Risk for this session's work: NONE.** All 18 commits landed cleanly.
+### 2. Add a second compute facade (1-3 hours)
 
-## Next Steps
+`compute_facades.md` lists candidate queue. Pick ONE:
+- **Modular arithmetic** (simplest — extends R46.2's `%` support
+  with NL alias `mod` → `%`)
+- **GCD/LCM of multi-digit ints** (new domain, clean Gemma failure
+  surface)
+- **Days-between dates** (new domain, uses `date_ops` backend)
 
-1. **R22 — Gemma CardSlot install** (the product step, ~half-day next session)
-   - Card artifact ready: `calm/hrm/checkpoints/copy_augmented_delta_mqar_best.pt` (solves MQAR N=5-15 to 100% held-out, cached decode 1.18× plain PT)
-   - Install via `CardSlot.attach(gemma, preserve=True)` at L30 (session 32 pattern, mechanics proven)
-   - **Novel design piece: NL-context → 82-char-vocab adapter.** Three candidate adapters:
-     - AST walker over Gemma's emitted Python code → extract `name = value` assignments → hash to PT+Delta's vocab
-     - NER over NL → "Alice is 30" patterns → entity_hash + value_hash
-     - Structured prompt format `<mem>k1=v1 k2=v2...</mem>` — the cheapest to prototype
-   - `VerificationHook` with `vocab_mapping` + `min_margin=0.5` to close loop (prevents firing on unmatched prompts — R44 `HubInjectionCard` pattern)
-   - Measure on multi-needle NIAH prompts (`.claude/MEMORY/evals/2026-04-07_*_needle_256k_*.md` baseline: Gemma 4/5 at 220K multi-needle, Qwen 3/5 + hallucination)
-   - Regression guard on pure-Gemma prompts (hash-match gate should miss → Gemma output unchanged)
-   - Decision rule: if card install preserves ≥80% on prompts Gemma hits <80% on, first real deployment win
+Build pattern: copy `base_conversion.py`, swap parser + evaluate, 10-
+probe A/B. Target Δ ≥ 20% with zero regressions. Commit as P1
+with before/after table. Reinforces compute-facade-as-product line.
 
-2. **Re-bench "42 tok/s / 90% llama" claim in idle environment** (Track A's unfinished — user's open question post-/update)
-   - Current clean bench: A 7.14 / B 5.56 / C 33.35 / D 25.02 tok/s
-   - Architecture.md doc now says "unreproducible in current bench"; if idle rebench hits 42, restore the claim with date gate. If still 25-33, that's the new canonical number.
-   - Pre-req: `pgrep -c rustc == 0 && pgrep -c cargo == 0 && ! pgrep codex_tui` (session log §"Bench-session variance" flagged rustc contamination)
+### 3. R22c + R22d RERUN with fixed adapter (30 min)
 
-3. **Track A unfinished work** (from SESSION_HANDOFF_1.md, still parked)
-   - Clean e2e bench of Round 5 k+v fusion (microbench 1.65×, projected +4.4% e2e, never verified due to rustc contention)
-   - R13 MBPP walker at ITERATION_N=5 baseline (rotation rotation via `bin/mbpp-rotate 0`, r53_39_mbpp_walker.py ready)
-   - Round 6-9 kernel queue (q+k+v triple fusion, per-shape autotune, flash-attn TILE_N, fused mega-kernel)
+- R22c BaseConversionFacade didn't use the buggy adapter (uses its
+  own parser), so no rerun needed for correctness — but worth
+  confirming its 10/10 on a fresh run with this daemon.
+- R22d N-fold retrieval test DID use the buggy adapter; needs rerun.
+  Expected with fixed adapter: card lift across many more keys, not
+  just the surgical 1 mem / 1 key result we saw.
 
-4. **R-delta-16 scratchpad retry** (low priority, research-interest)
-   - Pair PT+Delta state-carry with compiled arithmetic card (safe_eval) → should solve scratchpad via Brain+Cards composition
-   - R20's `MultiStepReasoningFacade` already does this for Gemma; same pattern could drive standalone card
+### 4. (DEFERRED) Track A decode kernel queue
 
-### Blockers / open policy questions
+From `SESSION_HANDOFF_1.md` (pre-this-session):
+- Round 6: q+k+v triple fusion (+3-5% expected)
+- Round 7: per-shape autotune (BLOCK_M/num_warps/num_stages) (+5-10%)
+- Round 8: fused flash-attn TILE_N blocking (+5-15% at large N)
+- Round 9 (weeks): fused attention-layer mega-kernel
 
-- None that block R22.
-- User's doc-reorg (calm.md/workflow.md split) is pending commit but not blocking — user owns the cadence.
+These remain parked. Decode bench stable at 25.00 tok/s across 2
+sessions; no regression pressure. Revisit after product wins from
+R22-follow-ups + compute facades compound enough commercial surface
+to justify kernel deep dives.
 
-## Key Context
+### 5. (CANCELLED) R-delta-22 noise-augmented training
 
-### Discoveries (save hours if known upfront)
+R22e invalidated this work stream. Scaffolding stays in tree
+(`calm/hrm/memory_tasks.py::_gen_mqar_noisy` +
+`scripts/train_pt_delta_mqar.py --noisy-frac`) for FUTURE cards
+that genuinely show distribution shift AFTER adapter verification.
+Do NOT retrain R21 — card is 100% standalone on clean adapter
+outputs.
 
-1. **"Chunkwise must be set AFTER checkpoint load"** — existing `copy_augmented_delta_best.pt` config predates the `use_chunkwise` flag so defaults to per-position. `model.config.use_chunkwise = True` after load gives 3× inference speedup. Forgetting this was the source of R20's 5× misattribution (diagnosed in R20b). The new `copy_augmented_delta_mqar_best.pt` has `use_chunkwise=True` baked into its saved config.
+## Key Context (for cold-start tomorrow)
 
-2. **Loss-accuracy decoupling is the signal for capacity ceiling** — both R16 and R18 showed training loss dropping 3+ orders of magnitude while val accuracy stays flat/drops. Classic over-capacity memorization. Distinct from undertraining (both loss and acc climb).
+### The adapter-bug finding (the session's pivotal discovery)
 
-3. **"Fast plain-PT solve + decisive loss drop = likely generator bug"** (R15 diagnostic rule). Reassign at 5-var vocab solved in 3 epochs because `_gen_reassign` forced step n-1 to target_var — positional shortcut, not mutation tracking. Caught by comparing against expected capability difficulty. Lesson codified in `workflow_part_1.md`.
+R22b rounds 1-7 debugged the wrong thing. "Card confident-wrong at
+67% precision" was actually "adapter picked wrong query key from
+distractor prose". `parse_mqar_prompt`'s `_QUERY_RES` regex
+`r"value of\s+([a-z])"` matched `"Previously the value of q rose to
+2..."` inside distractor sentences BEFORE the real
+`Question: What is the value of d?` at prompt tail. Adapter fed the
+card the wrong question → card gave the right answer for the wrong
+question → looked like a calibration gap.
 
-4. **R-number collision** — this session's PT+Delta arc used R5-R21 which collides with the tracing-arc R13-R21 in `tracing_roadmap.md` / `atlas.md` (logit lens / activation patching / per-head / SAE / V probe). Resolution: PT+Delta numbering now uses "R-delta-NN" prefix in cross-file references; the arc stays scoped inside `.claude/rules/delta_rule.md`.
+Fix (commit `c3eac18`, 5 lines):
+```python
+question_idx = post_mem.lower().rfind("question:")
+search_region = post_mem[question_idx:] if question_idx >= 0 else post_mem
+# ... run query regexes on search_region, not full post_mem
+```
+
+30-second standalone diagnostic (`r22e_card_standalone_sanity.py`)
+exposed it: card 14/33 before fix, 60/60 after. This lesson is now
+canonical in `workflow_part_1.md` §"Adapter-robustness — the R22e
+lesson".
+
+### The decode-path vs CardSlot vs in-tensor typology
+
+Session clarified three distinct install paths — documented in
+`compute_facades.md` + `Substrate.md` §CardSlot + `CLAUDE.md`
+§Brain+Cards. Rule for tomorrow:
+
+- **Deterministic compute** (arithmetic, hex/binary, GCD, dates,
+  financial) → decode-path facade. Zero VRAM, zero training,
+  stacks freely, ~2-4 hours per new domain. **Ship first.**
+- **Retrieval** (key→value lookup, NIAH-style) → CardSlot with
+  R22 4-gate install. Days per card (train + adapter + tune +
+  install).
+- **Attention-circuit replacement** (R28/R42/R43 forced-attn
+  compiled cards) → in-tensor `install_card_in_attention`.
+  Requires FP32 host (~600 MB per layer).
+
+### R22 TRUE result vs interim receipts
+
+R22b rounds 1-7 receipts (kept as per-round debugging history)
+report pre-adapter-fix numbers: -2/0/+2-post-hoc/0/-4/0/+1. All
+superseded by `73df738`'s rerun-with-fixed-adapter result:
+**+9/60, 21% rel, 0 regressions**. Agent-3 audit 2026-04-21
+cross-referenced all files for stale numbers; 0 remain after
+P0/P1/P2 commits.
+
+### Methodology lesson banked
+
+**Always run raw path (card standalone) on REAL adapter outputs,
+not hand-crafted sanity strings.** R22a's `"a 3 b 7 c 1 ; b"`
+sanity was fine but skipped the adapter. Had I run the card on
+60 actual r22b prompts at round 2, the adapter bug would have
+been visible immediately and the entire 6-round debug arc
+avoided. Codified in `workflow_part_1.md` §"Always check two
+things" card-install row + dedicated subsection §"Adapter-
+robustness — the R22e lesson".
 
 ### Failed approaches (cite SHAs, don't retry)
 
-- `dba270e` R-delta-5 pure DeltaNet at substrate scale — 19.7% @ n=5 (paper's d_head=128 regime doesn't transfer to d_head=2)
-- `3b9087f` R-delta-8 sub-head partition — 44% plateau (convex-combo dilutes over heads)
-- `1e9925e` R-delta-9 soft-gate dispatch — 46% plateau (convex-combo over mechanisms)
-- `97fba23` R-delta-6b plain PT chain test — task too easy to distinguish mechanisms
-- `6617a48` R-delta-11a/b capacity scaling (d_model 64→128, d_head 2→16) — both null at undertrained budget; data-scaling cracked it later
-- `187203d` R-delta-16 scratchpad single card — state-carry ≠ arithmetic at 185K params
-- `78b5dfb` R-delta-18 multi-head H=4 at d_model=64 — per-head state too small (-6pp vs plain PT)
-- `65fb148` R-delta-19 D5 n_iters=2 on MQAR — ARC Prize finding is task-specific, doesn't transfer
+- `17024b8` R22b r1: 500-tok neutral distractor doesn't break Gemma
+- `ff2ddf6` R22b r3: post-hoc threshold sweep assumed hook-silent
+  == no-card-installed. **Wrong assumption**; CardSlot's residual
+  write fires independently. Only trust LIVE A/B at each threshold
+  tested.
+- `7a7f347` R22b r5: pre-adapter-fix "preserve=True pins channels"
+  diagnosis was correct as far as it went (r6 fixed residual write,
+  r7 fixed preserve). BUT the dominant effect was the adapter bug;
+  fixing install alone would have topped out at Δ=+1 forever.
+- R-delta-22 noise-augmented training: CANCELLED. Scaffolding
+  kept; do not run on R21 card.
 
-### Methodology caveats
+### Runtime state at session end
 
-- **R14-b/R16/R18/R19 receipts bundled into R13's eval receipt** (`.claude/MEMORY/evals/2026-04-21_r13_pt_delta_mqar_data_scaling.md` appended rather than separate files). 9 receipt files in evals/, not 10 as my /update plan specified. Not a bug — deliberate scoping. R14 receipt exists within R13's arc receipt.
-- **ARC Prize HRM analysis read mid-session** — confirmed refinement-loop finding is grid-specific; architecture contributes only ~5pp; memorization-not-generalization at small scale. Validates our substrate-composition bet (Brain+Cards > architecture lottery).
-- **No GPU contention during this session** — R21 training + inference benches are reliable. SESSION_HANDOFF_1 flagged rustc contamination affecting Track A's end-of-session bench; that's parked, not active.
+- Branch: `feature/multi-agent-qwen` at `c52cadc`
+- HEAD: "docs(P1-fixup + P2): three-install typology in CLAUDE/architecture + R-delta-22 ruled-out"
+- Gemma daemon: RUNNING (PID 929999, warm from today's runs)
+- GPU: 12% util, 7863 MiB used / 86 MiB free (mostly model weights
+  + tq4 preload at 5.17 GB + daemon activations)
+- `/tmp/gemma_log`: ~26 KB accumulated from today's R22 arc
+- `.cache/r22b/` present with results jsonls from 7 rounds + sanity
 
-### Hardware / environment state at session end
+### Architecture.md claims that were validated
 
-- Branch: `feature/multi-agent-qwen` at `65ced1f` (P1-fixup)
-- GPU: 1161 MiB used / 6788 MiB free / 18% util — clean idle (no resident card)
-- Gemma daemon: NOT RUNNING (no `gemma_daemon` process)
-- No orphan training processes
-- `.cache/r53_code_db/`: intact, 180 MB (pre-session, untouched)
-- Rotation state (`/tmp/substrate_eval_rotation.json`): absent (window unset)
+- 25.00 tok/s D-path decode (2026-04-21, 72h-stable across sessions)
+- Gemma 4 E4B + R22 MQAR card at 4-gate config delivers +9/60 on
+  distractor-confused retrieval
+- R46.2 parse+safe_eval+step-through pattern generalizes (R22c
+  BaseConversionFacade clean +3/10)
 
 ## Files in Project (session-shipped)
 
-### New files — code
+### New files
 
-- `calm/llm_computer/delta_rule.py` — `DeltaNetConfig`, `DeltaNetSmall2DTransformer`, `_delta_step`, `_delta_chunkwise`, `_delta_chunkwise_multihead`, `_delta_layer_stack`. Landed with R-delta-5 (`dba270e`), extended across R17/R18/R19.
-- `calm/llm_computer/copy_augmented_delta.py` — `CopyAugmentedDeltaNet`, `CopyAugmentedDeltaConfig`, **`decode_greedy_cached`** (R20b, `e6f2d5c`), `_predict_next_token`, `build_copy_augmented_delta`.
-- `scripts/train_pt_delta_mqar.py` — R21 checkpoint trainer (`7bc13f1`). Defaults: 5K/N × N=[5,10,15] × 20ep, chunkwise, scheduled sampling, batch=64.
+- `calm/llm_computer/facades/base_conversion.py` — R22c
+  BaseConversionFacade (hex/binary → decimal)
+- `.claude/rules/compute_facades.md` — new rule (decode-path facade
+  typology + two proven instances + candidate queue)
+- `scripts/r22_install_mqar_card.py` — R22 adapter + install
+  helpers (280 LOC; `install()` + `parse_mqar_prompt()` + closures)
+- `scripts/r22b_round{2..7}_preserve_false.py` — per-round test
+  scripts; round 7 is the final canonical config
+- `scripts/r22c_base_conversion.py` — 10-probe A/B test
+- `scripts/r22d_nfold_retrieval.py` — 60-probe N-fold diagnostic
+- `scripts/r22e_card_standalone_sanity.py` — **the 30-second
+  diagnostic that exposed the adapter bug**. Keep as template.
 
-### New files — checkpoints (tracked in git)
+### Receipts (`.claude/MEMORY/evals/`)
 
-- `calm/hrm/checkpoints/copy_augmented_delta_best.pt` — R-delta-6a NL math card (pre-session, `31337f3`).
-- **`calm/hrm/checkpoints/copy_augmented_delta_mqar_best.pt`** (748 KB, 183,877 params) — R21 deployable MQAR card (`7bc13f1`). 100% held-out on N=5/10/15. **This is the artifact R22 installs on Gemma.**
-
-### New files — docs
-
-- `.claude/rules/delta_rule.md` (224 LOC) — the PT+Delta arc canonical rule file. Architecture, chunkwise, cached decode, scaling curve, task-shape moat, R20 consolidation, R21 artifact, nulls, R22 install plan.
-- `.claude/MEMORY/evals/2026-04-21_*.md` — 9 receipt files for R13/R15/R16/R17/R18/R19/R20/R20b/R21. R14 + R14-b bundled into R13.
+Eight new receipts for this session:
+- `2026-04-21_decode_paths_rebench.md`
+- `2026-04-21_r22a_mqar_card_install.md`
+- `2026-04-21_r22b_round1_no_failure_surface.md`
+- `2026-04-21_r22b_round2_mixed_signal.md`
+- `2026-04-21_r22b_round3_margin_threshold.md`
+- `2026-04-21_r22b_round4_holdout.md`
+- `2026-04-21_r22b_round5_6_gate_fix.md`
+- `2026-04-21_r22b_r7_r22cd_summary.md` (interim r7/r22c/r22d)
+- **`2026-04-21_r22b_r7_rerun_adapter_fixed.md`** — TRUE result
+  receipt (superseding all interim r7 claims)
 
 ### Modified code
 
-- `scripts/experiment_r10_mqar.py` — added `--task`, `--chunkwise`, `--chunk-size`, `--n-delta-heads`, `--n-iterations` flags.
-- `calm/hrm/memory_tasks.py` — fixed `_gen_reassign` positional shortcut (`bc52c87`) + added `_VARS_HARD` + `gen_reassign_hard_batch` (`5abc2f5`).
+- `scripts/train_pt_delta_mqar.py` — `--noisy-frac` flag (scaffolding)
+- `calm/hrm/memory_tasks.py` — `_gen_mqar_noisy` + `gen_mqar_batch_noisy`
+  (scaffolding, R-delta-22 CANCELLED but code kept)
 
-### Modified docs (via /update)
+### Modified docs (via /update, 3 commits)
 
-- `.claude/CLAUDE.md` — 42 tok/s falsified + PT+Delta Pointer Transducer section
-- `.claude/rules/architecture.md` — 42 tok/s falsified + graph-captured tq4 decode section + PT+Delta bullet
-- `.claude/rules/turboquant.md` — 42 tok/s falsified + bench table + Track A kernel sections (KVCacheTq4Static + k+v fusion)
-- `.claude/rules/Substrate.md` — trained-cards default architecture section
-- `.claude/rules/training.md` — PT+Delta production checkpoint list + recipe differences
-- `.claude/rules/augmentation_thesis.md` — walker 7-rewrite update + R-delta-21 card row
-- `.claude/rules/capability_gain.md` — MQAR data-scaling measurement-discipline receipt
-- `.claude/rules/tracing_roadmap.md` — R-delta + Track A ruled-out rows + disambiguation header
-- `.claude/rules/calm_part_2.md` — 7th walker rewrite (fuzzy_rename_function) note
-- `.claude/rules/training_part_2.md` — eval_defaults extended with ITERATION_N/FINAL_N/resolve_problem_window
-
-### Planning artifacts
-
-- `/home/gabe/.claude/plans/first-lets-run-update-vectorized-ritchie.md` — the /update pre-execution plan (written in plan mode, approved)
+- `.claude/CLAUDE.md` — three-install typology
+- `.claude/rules/delta_rule.md` — R22 shipped section rewritten with
+  TRUE result + R-delta-22 CANCELLED section
+- `.claude/rules/Substrate.md` — preserve=True legacy caveat + R22
+  4-gate install workflow
+- `.claude/rules/architecture.md` — R22 install references updated
+- `.claude/rules/augmentation_thesis.md` — Tier-2 table updated with
+  R22 shipped + BaseConversionFacade row
+- `.claude/rules/workflow_part_1.md` — adapter-robustness lesson
+- `.claude/rules/embed_intelligence.md` — min_margin tuning +
+  write_margin alignment
+- `.claude/rules/tracing_roadmap.md` — R-delta-22 CANCELLED row
 
 ## Handoff verification
 
-- Main context claims vs git state: **match.** All 18 commits confirmed via `git log --oneline`.
-- Main context claims vs transcript: **match** for all verbatim numbers (agent 1 extracted same tables).
-- Uncommitted state: flagged with risk tiers; this HANDOFF is the only session-critical pending file.
-- R14/R14-b receipt absent as separate files — **not a bug**, bundled into R13's receipt with appended R14-b section (verified in `2026-04-21_r13_pt_delta_mqar_data_scaling.md`).
+- Main context claims vs git state: **match.** All 15 commits
+  confirmed via `git log --oneline -15`.
+- `.claude/` line counts: all files under 500 LOC ceiling.
+- `compute_facades.md` (new) referenced from CLAUDE.md,
+  augmentation_thesis.md.
+- `R-delta-22` CANCELLED in 2 places (delta_rule.md, tracing_roadmap.md).
+- No stale `+1` / `43/60` / `2W 1R` claims remain; `+9` / `51/60` /
+  `21% rel` / `9W 0R` is canonical.
+- Final audit found 0 gaps from session → docs (3-agent audit
+  pass + verification grep confirmed).
