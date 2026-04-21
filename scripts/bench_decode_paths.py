@@ -1,11 +1,12 @@
 """bench_decode_paths — measure end-to-end decode tok/s across
 current substrate paths.
 
-Three paths compared:
+Four paths compared:
 
   (A) generate(use_tq4_kv=False)           — tq4 weights + fp16 KV, no CUDA Graphs
   (B) generate(use_tq4_kv=True)            — tq4 weights + tq4 KV, no CUDA Graphs
   (C) generate_with_graph(max_len=...)     — tq4 weights + fp16 KVCacheStatic + CUDA Graphs
+  (D) generate_with_graph_tq4(max_len=...) — tq4 weights + tq4 KVCacheTq4Static + CUDA Graphs (NEW)
 
 Goal: establish baseline tok/s at a realistic decode length (256 tok)
 from a fixed prompt. The numbers guide the decode-speedup work:
@@ -127,6 +128,11 @@ def main() -> None:
                                    device="cuda", stop_on_eos=False,
                                    max_len=MAX_LEN_GRAPH)
 
+    print("[jit warmup] generate_with_graph_tq4 64 tok...", flush=True)
+    _ = m_ref.generate_with_graph_tq4(PROMPT, tok_ref, max_tokens=64,
+                                       device="cuda", stop_on_eos=False,
+                                       max_len=MAX_LEN_GRAPH)
+
     print("\n[bench path A] generate() fp16 KV, no graphs", flush=True)
     path_a = bench_path(
         "A-fp16-KV",
@@ -152,6 +158,15 @@ def main() -> None:
             stop_on_eos=False, max_len=MAX_LEN_GRAPH),
     )
 
+    print("\n[bench path D] generate_with_graph_tq4() tq4 static + graphs",
+          flush=True)
+    path_d = bench_path(
+        "D-graph-tq4",
+        lambda: m_ref.generate_with_graph_tq4(
+            PROMPT, tok_ref, max_tokens=DECODE_TOKENS, device="cuda",
+            stop_on_eos=False, max_len=MAX_LEN_GRAPH),
+    )
+
     # ---- Report ----
     print("\n" + "=" * 72, flush=True)
     print("RESULTS", flush=True)
@@ -159,7 +174,7 @@ def main() -> None:
     header = f"{'path':<18} {'tokens':>7} {'median_s':>10} {'tok/s':>8}"
     print(header, flush=True)
     print("-" * len(header), flush=True)
-    for r in (path_a, path_b, path_c):
+    for r in (path_a, path_b, path_c, path_d):
         print(f"{r['name']:<18} {r['tokens']:>7d} "
               f"{r['median_s']:>10.2f} {r['tok_per_s']:>8.2f}",
               flush=True)
@@ -170,10 +185,19 @@ def main() -> None:
     print(f"  C/A = {path_c['tok_per_s']/path_a['tok_per_s']:.3f}  "
           f"(CUDA Graphs lift for fp16 KV)", flush=True)
     print(f"  C/B = {path_c['tok_per_s']/path_b['tok_per_s']:.3f}  "
-          f"(current fastest path)", flush=True)
-    print("\nheadroom (target: tq4 KV + CUDA Graphs ≈ C × k):", flush=True)
-    print("  if we wire graphs into tq4 KV path, expected tok/s ≈",
-          f"{path_c['tok_per_s']:.1f} × (tq4/fp16 overhead)", flush=True)
+          f"(graphs+fp16 vs no-graphs+tq4)", flush=True)
+    print(f"  D/B = {path_d['tok_per_s']/path_b['tok_per_s']:.3f}  "
+          f"(GRAPHS LIFT FOR TQ4 KV — main result)", flush=True)
+    print(f"  D/C = {path_d['tok_per_s']/path_c['tok_per_s']:.3f}  "
+          f"(tq4+graphs vs fp16+graphs — cost of tq4 dequant)", flush=True)
+
+    llama_target = 42.0
+    print(f"\nllama.cpp target (~{llama_target} tok/s on same GGUF):",
+          flush=True)
+    for r in (path_a, path_b, path_c, path_d):
+        gap = r['tok_per_s'] / llama_target * 100
+        print(f"  {r['name']:<18} {r['tok_per_s']:>6.2f} tok/s "
+              f"= {gap:5.1f}% of llama", flush=True)
     print("\n[r53.bench_decode] DONE", flush=True)
 
 

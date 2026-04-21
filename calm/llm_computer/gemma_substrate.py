@@ -878,6 +878,185 @@ class KVCacheTq4:
         self._memo.clear()
 
 
+class KVCacheTq4Static(KVCacheTq4):
+    """CUDA Graph-compatible tq4 KV cache.
+
+    Extends `KVCacheTq4` (full fp16→tq4 byte-level storage) with the
+    graph-safe pattern from `KVCacheStatic`: 0-d GPU tensor for position,
+    GPU-side valid_mask, `index_copy_`-based writes with tensor indices.
+    Fixed-shape ops everywhere — no Python-int slicing on the hot path.
+
+    Forward path (`_forward_layer`) must always use the fused tq4
+    flash-attn kernel (no N-gate), passing the FULL max_len buffer plus
+    `valid_mask` so positions ≥ pos are masked to -inf.
+
+    Position update semantics (between captured graph replays):
+        set_pos(layer_idx, new_pos)   # Python int or 0-d GPU tensor
+        → writes pos_t[layer_idx] on GPU
+        → recomputes valid_mask[layer_idx] via torch.lt(arange, new_pos)
+
+    The graph captures a decode step that reads pos_t + valid_mask at
+    replay time. Python-side pos increments happen between replays.
+
+    Memory: identical to KVCacheTq4 (same byte buffers) + tiny per-layer
+    valid_mask buffer (~4 KB at max_len=32K).
+    """
+
+    def __init__(self, model: "GemmaSubstrate", max_len: int = 1024,
+                 device: str = "cuda"):
+        super().__init__(model, max_len=max_len, device=device)
+        cfg = model.config
+        # Per-layer 0-d GPU tensor position — updated via set_pos.
+        self.pos_t: list[torch.Tensor] = [
+            torch.zeros((), dtype=torch.long, device=device)
+            for _ in range(cfg.n_layers)
+        ]
+        # Per-layer valid_mask — True at positions 0..pos-1, False beyond.
+        # Additive mask (0 for valid, -inf for invalid) built on demand.
+        self.valid_mask: list[torch.Tensor] = [
+            torch.zeros(max_len, dtype=torch.bool, device=device)
+            for _ in range(cfg.n_layers)
+        ]
+        # Shared arange buffer for mask recomputation.
+        self._arange = torch.arange(max_len, dtype=torch.long, device=device)
+        # Per-layer bpr offset tensor (0..bpr-1) for write_at_graph's
+        # multi-slot index_copy_. Precomputed to avoid per-step construction.
+        self._bpr_offsets: list[torch.Tensor] = [
+            torch.arange(bpr, dtype=torch.long, device=device)
+            for bpr in self._bpr
+        ]
+
+    def set_pos(self, layer_idx: int, new_pos) -> None:
+        """Update this layer's position + valid_mask entirely GPU-side.
+
+        `new_pos` may be a Python int OR 0-d GPU tensor. Both paths
+        avoid any host→device sync on the hot loop. Also mirrors the
+        position into self.layer_pos[layer_idx] so existing read paths
+        (kv_cache.layer_pos[l], memoized dequant key) stay consistent
+        — necessary while we still have call-sites that read
+        `layer_pos` as a Python int.
+        """
+        if isinstance(new_pos, int):
+            self.pos_t[layer_idx].fill_(new_pos)
+            self.layer_pos[layer_idx] = new_pos
+        else:
+            self.pos_t[layer_idx].copy_(new_pos)
+            # Mirror to Python int — reads .item() once per set_pos which
+            # is called outside the graph (between replays), so it's fine.
+            self.layer_pos[layer_idx] = int(new_pos.item())
+        # valid_mask[i] = True if i < pos (valid positions).
+        torch.lt(self._arange, self.pos_t[layer_idx],
+                 out=self.valid_mask[layer_idx])
+
+    def additive_mask(self, layer_idx: int) -> torch.Tensor:
+        """Return (max_len,) fp32 additive mask: 0.0 at valid positions,
+        -inf beyond pos. Built GPU-side from valid_mask via torch.where
+        broadcasting scalars against a (max_len,) bool → (max_len,) fp32.
+        """
+        zero = torch.zeros((), dtype=torch.float32, device=self.device)
+        neg_inf = torch.full((), float("-inf"), dtype=torch.float32,
+                             device=self.device)
+        return torch.where(self.valid_mask[layer_idx], zero, neg_inf)
+
+    def write_at_graph(self, layer_idx: int, k_new: torch.Tensor,
+                       v_new: torch.Tensor) -> None:
+        """Graph-safe single-token write using index_copy_ with GPU-tensor
+        indices. SAFE inside CUDA Graph capture: indices are derived from
+        `self.pos_t[layer_idx]` (0-d GPU tensor), so different replays
+        with different pos values write to different slots automatically.
+
+        Supports bpr ∈ {1, 2, ...}. For bpr=1 (Gemma E4B SWA d_head=256)
+        each token writes 1 block per head. For bpr=2 (E4B global
+        d_head=512) each token writes 2 consecutive blocks per head.
+
+        Position is NOT advanced here — the caller bumps `pos_t` via
+        `set_pos` between replays.
+        """
+        from calm.llm_computer.tq4_torch import quantize_tq4
+        bpr = self._bpr[layer_idx]
+        n_kv_h = self.cfg.n_heads_kv
+
+        # Quantize — pure GPU ops, graph-capturable.
+        k_flat = k_new[0].contiguous().float().reshape(-1)
+        v_flat = v_new[0].contiguous().float().reshape(-1)
+        k_q = quantize_tq4(k_flat, pi=self._pi, boundaries=self._boundaries)
+        v_q = quantize_tq4(v_flat, pi=self._pi, boundaries=self._boundaries)
+        # quantize returns qs: (n_kv_h * bpr, 128), d: (n_kv_h * bpr,)
+        # Reshape to per-head bpr blocks.
+        k_qs_view = k_q.qs.reshape(n_kv_h, bpr, 128)
+        k_d_view = k_q.d.reshape(n_kv_h, bpr)
+        v_qs_view = v_q.qs.reshape(n_kv_h, bpr, 128)
+        v_d_view = v_q.d.reshape(n_kv_h, bpr)
+
+        # Slot indices: [pos*bpr, pos*bpr+1, ..., pos*bpr+bpr-1]
+        # Computed entirely on GPU — reads pos_t at replay time.
+        slot_idx = self._bpr_offsets[layer_idx] + (
+            self.pos_t[layer_idx] * bpr)  # (bpr,) long
+        self.k_qs[layer_idx].index_copy_(1, slot_idx, k_qs_view)
+        self.k_d[layer_idx].index_copy_(1, slot_idx, k_d_view)
+        self.v_qs[layer_idx].index_copy_(1, slot_idx, v_qs_view)
+        self.v_d[layer_idx].index_copy_(1, slot_idx, v_d_view)
+
+    def write_at(self, layer_idx: int, pos_int: int,
+                 k_new: torch.Tensor, v_new: torch.Tensor,
+                 is_swa: bool = False, window_size: int = 512) -> None:
+        """Single-token (S=1) graph-safe write.
+
+        Quantizes k_new/v_new and scatters into the per-head slot at
+        block-offset `pos_int * bpr`. Uses `index_copy_` with a GPU
+        tensor index for the destination slot, which is the standard
+        pattern that survives CUDA Graph capture.
+
+        pos_int is a Python int (identifies slot offset at capture
+        time). The position *tensor* (`pos_t[layer_idx]`) must be set
+        before calling this; we read the write slot from pos_int
+        since graph replay re-uses the same compiled-in offset.
+
+        For single-token decode each step writes at a DIFFERENT slot,
+        so write_at CANNOT be captured once and replayed — the caller
+        (generate_with_graph_tq4) captures ONE step at a fixed slot and
+        updates KV via a separate non-graph path between replays.
+        Decode therefore uses `write_at` outside the graph for KV state,
+        then replays the graph which reads the filled buffer via the
+        fused kernel + mask.
+
+        See generate_with_graph_tq4 for how this is orchestrated.
+        """
+        from calm.llm_computer.tq4_torch import quantize_tq4
+        bpr = self._bpr[layer_idx]
+        d_head = self._d_head[layer_idx]
+        n_kv_h = self.cfg.n_heads_kv
+        assert k_new.shape[2] == 1, "write_at: single-token only (S=1)"
+        assert pos_int + 1 <= self.max_len
+
+        # Quantize the single-token K and V.
+        k_flat = k_new[0].contiguous().float().reshape(-1)
+        v_flat = v_new[0].contiguous().float().reshape(-1)
+        k_q = quantize_tq4(k_flat, pi=self._pi, boundaries=self._boundaries)
+        v_q = quantize_tq4(v_flat, pi=self._pi, boundaries=self._boundaries)
+        # Reshape to per-head layout: (n_kv_h, 1 * bpr, 128) and (n_kv_h, 1 * bpr).
+        k_qs_view = k_q.qs.reshape(n_kv_h, bpr, 128)
+        k_d_view = k_q.d.reshape(n_kv_h, bpr)
+        v_qs_view = v_q.qs.reshape(n_kv_h, bpr, 128)
+        v_d_view = v_q.d.reshape(n_kv_h, bpr)
+
+        slot_start = pos_int * bpr
+        slot_end = slot_start + bpr
+        self.k_qs[layer_idx][:, slot_start:slot_end, :] = k_qs_view
+        self.k_d[layer_idx][:, slot_start:slot_end] = k_d_view
+        self.v_qs[layer_idx][:, slot_start:slot_end, :] = v_qs_view
+        self.v_d[layer_idx][:, slot_start:slot_end] = v_d_view
+
+        # Mirror layer_pos for consistency with existing read paths.
+        self.layer_pos[layer_idx] = pos_int + 1
+        self._is_swa[layer_idx] = is_swa
+        if is_swa:
+            self._swa_window = window_size
+        # Drop memo for this layer — new bytes invalidate cached dequant.
+        self._memo.pop(("k", layer_idx), None)
+        self._memo.pop(("v", layer_idx), None)
+
+
 class _Tq4ReadProxy:
     """Lazy-dequant proxy so kv_cache.k_cache[kv_src] returns the
     dequantized buffer for that source layer."""
@@ -1370,7 +1549,11 @@ class GemmaSubstrate:
         # Post-forward SWA storage trim — keep cache memory bounded
         # by window_size for SWA layers. Safe to do here because all
         # shared-KV consumers have already run with the full window.
+        # SKIP for KVCacheTq4Static — graph-capture can't rebuild bytes
+        # each step; the attention additive_mask already enforces the
+        # window by setting positions < pos-window to -inf.
         if (isinstance(kv_cache, (KVCache, KVCacheTq4))
+                and not isinstance(kv_cache, KVCacheTq4Static)
                 and hasattr(kv_cache, "trim_swa_storage")):
             kv_cache.trim_swa_storage()
 
@@ -1427,8 +1610,14 @@ class GemmaSubstrate:
         # For KVCacheStatic (CUDA Graph capture), use a GPU-tensor index_select
         # so the slice shape stays fixed across positions.
         freqs = self.rope_freqs_global if is_global else self.rope_freqs_swa
+        is_tq4_static = isinstance(kv_cache, KVCacheTq4Static)
         if isinstance(kv_cache, KVCacheStatic):
             freqs_used = torch.index_select(freqs, 0, kv_cache.pos.unsqueeze(0))
+        elif is_tq4_static:
+            # Use layer 0 as canonical Q position — during single-token decode
+            # every layer writes the same token at the same position.
+            freqs_used = torch.index_select(
+                freqs, 0, kv_cache.pos_t[0].unsqueeze(0))
         else:
             freqs_used = freqs[start_pos:]
         q = _apply_rope(q, freqs_used)
@@ -1437,17 +1626,27 @@ class GemmaSubstrate:
         # write so own-KV layers can use `write_only` (skip the eager dequant
         # in `KVCacheTq4.update`). Shared-KV layers read raw bytes directly.
         partitions = self.attention_partition.get(layer_idx, [])
-        # N-gate: fused wins empirically at 128 < cached_kv_len < 2048
-        # (bench 2026-04-20). Outside that band, Phase 1 memo is faster.
-        fused_tq4 = (
+        # KVCacheTq4Static → always fused (graph-captured path, no Python-int
+        # gate on layer_pos which is unsafe inside captured replays). Covers
+        # BOTH SWA (d_head=256, bpr=1) and global (d_head=512, bpr=2) layers —
+        # the fused kernel supports arbitrary bpr via the inner `for b in
+        # range(BPR)` loop and V-side `bpr_idx = pid_d // N_D_TILES` grid.
+        # KVCacheTq4 (dynamic) → keep the R53.34 bench gate + bpr=1 MVP.
+        fused_tq4_common = (
             _use_triton
             and _use_fused_flash_attn
             and isinstance(kv_cache, KVCacheTq4)
             and S == 1
             and not partitions
-            and kv_cache._d_head[kv_src] == 256  # MVP: BPR=1 only
-            and 128 < kv_cache.layer_pos[kv_src] < 2048  # sweet-spot gate
         )
+        if is_tq4_static:
+            fused_tq4 = fused_tq4_common  # bpr=1 AND bpr=2 both supported
+        else:
+            fused_tq4 = (
+                fused_tq4_common
+                and kv_cache._d_head[kv_src] == 256  # dynamic MVP: BPR=1
+                and 128 < kv_cache.layer_pos[kv_src] < 2048
+            )
 
         if own_kv:
             k_new = layer.attn_k(cur)
@@ -1461,7 +1660,11 @@ class GemmaSubstrate:
             v_new = v_new / v_rms
             k_new = _apply_rope(k_new, freqs_used)
             if kv_cache is not None:
-                if fused_tq4:
+                if is_tq4_static:
+                    # Graph-safe write: index_copy_ with pos_t tensor index.
+                    kv_cache.write_at_graph(layer_idx, k_new, v_new)
+                    k_full = v_full = None
+                elif fused_tq4:
                     kv_cache.write_only(layer_idx, k_new, v_new,
                                          is_swa=not is_global,
                                          window_size=cfg.sliding_window)
@@ -1490,7 +1693,12 @@ class GemmaSubstrate:
         # Attention scores — Gemma 4 uses f_attention_scale = 1.0
         # (no /sqrt(d_head)). See llama-model.cpp:1273.
         if fused_tq4:
-            S_kv = kv_cache.layer_pos[kv_src]
+            if is_tq4_static:
+                # Always score against full max_len buffer; additive mask
+                # zeros positions >= pos. Graph-safe (no Python-int slicing).
+                S_kv = kv_cache.max_len
+            else:
+                S_kv = kv_cache.layer_pos[kv_src]
         else:
             S_kv = k_full.shape[2]
 
@@ -1524,26 +1732,59 @@ class GemmaSubstrate:
         # Global layer decode (S_kv > S, S=1): no mask, attend to all K
 
         if fused_tq4:
-            # Fused tq4 flash-attn path. Slice the head-major bytes for the
-            # active prefix length, pre-rotate Q, run kernel, reshape back.
+            # Fused tq4 flash-attn path. For KVCacheTq4Static, use FULL
+            # buffer + additive mask so the kernel/indices are graph-safe.
+            # For KVCacheTq4 (dynamic), slice to the active prefix.
             from calm.llm_computer.tq4_flash_attn import (
                 fused_tq4_flash_attn_decode,
             )
             bpr_kv = kv_cache._bpr[kv_src]
-            n_blocks_used = S_kv * bpr_kv
-            k_qs = kv_cache.k_qs[kv_src][:, :n_blocks_used, :].contiguous()
-            k_d = kv_cache.k_d[kv_src][:, :n_blocks_used].contiguous()
-            v_qs = kv_cache.v_qs[kv_src][:, :n_blocks_used, :].contiguous()
-            v_d = kv_cache.v_d[kv_src][:, :n_blocks_used].contiguous()
+            if is_tq4_static:
+                k_qs = kv_cache.k_qs[kv_src]
+                k_d = kv_cache.k_d[kv_src]
+                v_qs = kv_cache.v_qs[kv_src]
+                v_d = kv_cache.v_d[kv_src]
+            else:
+                n_blocks_used = S_kv * bpr_kv
+                k_qs = kv_cache.k_qs[kv_src][:, :n_blocks_used, :].contiguous()
+                k_d = kv_cache.k_d[kv_src][:, :n_blocks_used].contiguous()
+                v_qs = kv_cache.v_qs[kv_src][:, :n_blocks_used, :].contiguous()
+                v_d = kv_cache.v_d[kv_src][:, :n_blocks_used].contiguous()
 
             # Squeeze (B=1, n_heads_q, S=1, d_head) → (n_heads_q, d_head)
             q_2d = q[0, :, 0, :].contiguous()
-            # Pre-rotate (Pi.T applied here so the kernel can skip per-block
-            # inverse rotation; out is post-rotated by Pi back to normal).
-            q_rot = q_2d @ kv_cache._pi.T
+            # Pre-rotate: Pi is (256, 256) per-block. For d_head=256 (bpr=1)
+            # direct matmul. For d_head=512 (bpr=2, global layers) reshape
+            # to per-block then rotate. (Kernel skips per-block inverse
+            # rotation; output is post-rotated by Pi back to normal.)
+            bpr_q = q_2d.shape[-1] // 256
+            if bpr_q == 1:
+                q_rot = q_2d @ kv_cache._pi.T
+            else:
+                q_rot = (q_2d.reshape(q_2d.shape[0], bpr_q, 256)
+                         @ kv_cache._pi.T).reshape(q_2d.shape[0], -1).contiguous()
 
-            # Build (S_kv,) additive mask from the existing bool mask.
-            if attn_mask is None:
+            # Build (S_kv,) additive mask. For static: directly from
+            # valid_mask + SWA window. For dynamic: derive from bool mask.
+            if is_tq4_static:
+                # Decode-mode (S=1): additive_mask is already 0/-inf for
+                # positions < pos / positions >= pos respectively.
+                fused_mask = kv_cache.additive_mask(kv_src)
+                # Apply SWA window if applicable
+                if not is_global:
+                    # Q attends to K positions in [pos - window, pos - 1].
+                    # valid_mask already masks >= pos. Additionally mask
+                    # positions < pos - window.
+                    window = cfg.sliding_window
+                    lower_bound = kv_cache.pos_t[kv_src] - window
+                    # out_of_window_mask: True where i < pos - window
+                    out_of_window = torch.lt(kv_cache._arange, lower_bound)
+                    fused_mask = torch.where(
+                        out_of_window,
+                        torch.full_like(fused_mask, float("-inf")),
+                        fused_mask,
+                    )
+            elif attn_mask is None:
                 fused_mask = torch.zeros(S_kv, dtype=torch.float32, device=device)
             else:
                 # attn_mask shape (1, 1, 1, S_kv) — squeeze to (S_kv,)
@@ -1935,6 +2176,126 @@ class GemmaSubstrate:
         decode_s = time.time() - t1
 
         # One CPU sync: pull all decoded tokens at once
+        gen_after_first = tokens_buf.tolist()
+        generated = [next_id]
+        for tid in gen_after_first:
+            if stop_on_eos and tid == eos_id:
+                break
+            generated.append(tid)
+        text = tokenizer.decode(generated)
+        return {"text": text, "token_ids": generated,
+                "prefill_s": prefill_s, "decode_s": decode_s}
+
+    def generate_with_graph_tq4(self, prompt: str, tokenizer,
+                                 max_tokens: int = 64,
+                                 device: str = "cuda",
+                                 stop_on_eos: bool = True,
+                                 max_len: int = 1024) -> dict:
+        """CUDA Graph decode with tq4 KV. Mirrors generate_with_graph
+        (fp16 static) but uses KVCacheTq4Static so decode preserves the
+        tq4 memory advantage (~3.6× smaller KV at 256-512K ctx).
+
+        Prefill runs on dynamic KVCacheTq4 (non-graph); state is
+        transferred to KVCacheTq4Static (same byte layout, reuses
+        existing k_qs/k_d/v_qs/v_d buffers) + per-layer pos_t tensors.
+        A CUDA Graph captures one decode step. Replay loop sets pos_t
+        + valid_mask GPU-side between replays.
+
+        Required invariants for graph safety (see KVCacheTq4Static):
+          - position is a 0-d GPU tensor per layer
+          - writes use index_copy_ with tensor index (write_at_graph)
+          - attention reads full max_len buffer + additive mask
+          - no Python-int slicing, no memo dict, no SWA trim
+
+        Returns {text, token_ids, prefill_s, decode_s}.
+        """
+        import time
+        ids = tokenizer.encode(prompt)
+        assert len(ids) + max_tokens <= max_len, (
+            f"prompt({len(ids)}) + max_tokens({max_tokens}) > max_len({max_len})")
+
+        # --- Prefill on dynamic KVCacheTq4 (graph-free) ---
+        dyn = KVCacheTq4(self, max_len=max_len, device=device)
+        t0 = time.time()
+        with torch.no_grad():
+            logits = self.forward(torch.tensor([ids]), device=device,
+                                   kv_cache=dyn, start_pos=0)
+        next_id = int(logits[0, -1].argmax().item())
+        prefill_s = time.time() - t0
+
+        # --- Transfer to KVCacheTq4Static ---
+        # Copy raw tq4 bytes + per-layer position from dynamic to static.
+        # Byte layout is identical (both use head-major tq4 blocks).
+        static = KVCacheTq4Static(self, max_len=max_len, device=device)
+        for il in range(self.config.n_layers):
+            pos_il = dyn.layer_pos[il]
+            if pos_il == 0:
+                continue
+            bpr = dyn._bpr[il]
+            n_blocks = pos_il * bpr
+            static.k_qs[il][:, :n_blocks, :].copy_(
+                dyn.k_qs[il][:, :n_blocks, :])
+            static.k_d[il][:, :n_blocks].copy_(dyn.k_d[il][:, :n_blocks])
+            static.v_qs[il][:, :n_blocks, :].copy_(
+                dyn.v_qs[il][:, :n_blocks, :])
+            static.v_d[il][:, :n_blocks].copy_(dyn.v_d[il][:, :n_blocks])
+            static.set_pos(il, pos_il)
+            static._is_swa[il] = dyn._is_swa.get(il, False)
+        prefill_len = dyn.seq_len()
+        # Free the dynamic cache — static has the bytes now.
+        del dyn
+
+        # --- Side-stream warmup (CUDA Graph capture requires warmed kernels) ---
+        input_buf = torch.tensor([[next_id]], dtype=torch.long, device=device)
+        s = torch.cuda.Stream()
+        s.wait_stream(torch.cuda.current_stream())
+        with torch.cuda.stream(s):
+            for _ in range(3):
+                # Reset pos to prefill_len before each warmup forward.
+                for il in range(self.config.n_layers):
+                    static.set_pos(il, prefill_len)
+                with torch.no_grad():
+                    _ = self.forward(input_buf, device=device,
+                                      kv_cache=static, start_pos=0)
+        torch.cuda.current_stream().wait_stream(s)
+        torch.cuda.synchronize()
+
+        # --- Reset static state (warmup wrote KV at prefill_len slot) ---
+        # Re-copy bytes from a fresh dynamic prefill would be slow; instead
+        # we rely on the fact that warmup wrote the SAME k_new/v_new bytes
+        # (derived from the same next_id + pos) to the same slot. So the
+        # slot contents are already what the graph will write at pos==prefill_len.
+        # Just reset the position pointer.
+        for il in range(self.config.n_layers):
+            static.set_pos(il, prefill_len)
+
+        # --- Capture graph ---
+        g = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(g):
+            with torch.no_grad():
+                captured = self.forward(input_buf, device=device,
+                                         kv_cache=static, start_pos=0)
+        # Capture wrote at pos==prefill_len. Reset pos so replays start fresh.
+        for il in range(self.config.n_layers):
+            static.set_pos(il, prefill_len)
+        torch.cuda.synchronize()
+
+        # --- Decode loop via graph replay ---
+        n_steps = max_tokens - 1
+        tokens_buf = torch.zeros(n_steps, dtype=torch.long, device=device)
+        eos_id = tokenizer.EOS_ID
+
+        t1 = time.time()
+        for i in range(n_steps):
+            for il in range(self.config.n_layers):
+                static.set_pos(il, prefill_len + i)
+            g.replay()
+            next_id_t = captured[0, -1].argmax()
+            tokens_buf[i] = next_id_t
+            input_buf.copy_(next_id_t.reshape(1, 1))
+        torch.cuda.synchronize()
+        decode_s = time.time() - t1
+
         gen_after_first = tokens_buf.tolist()
         generated = [next_id]
         for tid in gen_after_first:

@@ -371,7 +371,15 @@ def fused_tq4_flash_attn_decode(
         centroids, n_heads_q, n_heads_kv, d_head,
     )
 
-    # Unrotate per head: out = out_rotated @ Pi (Pi orthogonal ⇒ Pi.T = Pi^-1
-    # applied as `out_rotated @ Pi` matches dequantize_tq4's convention).
-    out = out_rotated @ pi
+    # Unrotate per head. Pi is (256, 256) and rotates per-256-element block.
+    # For d_head=256 (bpr=1) this is a direct (H, 256) @ (256, 256) matmul.
+    # For d_head=512 (bpr=2, Gemma global layers) reshape to (H, 2, 256),
+    # apply Pi per-block, flatten back. Pi orthogonal ⇒ Pi.T = Pi^-1
+    # applied as `out_rotated @ Pi` matches dequantize_tq4's convention.
+    bpr = d_head // 256
+    if bpr == 1:
+        out = out_rotated @ pi
+    else:
+        out = (out_rotated.reshape(n_heads_q, bpr, 256) @ pi).reshape(
+            n_heads_q, d_head)
     return out
