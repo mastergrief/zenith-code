@@ -162,6 +162,60 @@ that genuinely show distribution shift AFTER adapter verification.
 Do NOT retrain R21 — card is 100% standalone on clean adapter
 outputs.
 
+### 6. Tier-3 validation: ICD-10 recall card (4-6 hours, the moat demo)
+
+R22 + R22c are both **tier-2** (augmenting weak Gemma circuits).
+The substrate's moat claim requires **tier-3**: a capability where
+Gemma has ZERO relevant prior. ICD-10 medical coding is the ideal
+first demo:
+- Gemma has no reliable mapping from specific codes (`J45.909`) to
+  diagnoses — it fabricates plausibly-wrong answers. Per
+  `augmentation_thesis.md §"Customer verticals = card decks"`,
+  hospital stack = ICD-10 validator + drug-interaction DB + exact
+  dosage.
+- Pure memorization task — no compute, no reasoning. Perfect fit
+  for `KnowledgeStore` + `build_recall_model()` compiled recall
+  card (step-function indicators, 3 ReGLU per fact, proven pattern
+  from session 30).
+- Zero-shot Gemma failure rate on non-common codes is expected to
+  be 60-80%. Card at 100% recall = **50pp+ absolute lift**,
+  dwarfing R22's 15pp and R22c's 30%.
+
+Canonical workflow:
+1. **Failure-surface gate** (45 min) — pick 100 real ICD-10 codes
+   from the public CMS 2024 code set (mix common + rare). Score
+   stock Gemma on `"What is ICD-10 code <CODE>?"`. Keep prompts
+   Gemma fails on. Target: ≥ 50 fail cases.
+2. **Build recall card** (15 min) — `KnowledgeStore` with (code, diagnosis)
+   pairs for the fail corpus. `build_recall_model()` compiles to
+   `Small2DTransformer` recall card (d_model tuned to code-hash
+   space). Install via `CardSlot(preserve=False, ...)` at L30 with
+   `VerificationHook` biasing the DIAGNOSIS output (multi-token
+   step-through bias per R11/R46.2 pattern).
+3. **Adapter** (~1 hour) — pattern: `/ICD-10 code (\w\d+(?:\.\d+)?)/i`
+   extracts the code from NL prompt. Hash to KnowledgeStore key.
+   Simpler adapter than R22's MQAR — no distractor issue, single
+   literal extraction.
+4. **Live A/B** (~1 hour) — baseline Gemma on the 50-fail corpus,
+   then with card. Expected: **50/50 card vs ~0/50 baseline** since
+   card is exact on the failure set by construction.
+5. **Commit with receipt**: "tier-3 validation, ICD-10 recall card
+   50/50 on Gemma-fail corpus." Doc update: `commercial.md`
+   §Customer verticals hospital stack now has concrete receipt;
+   `augmentation_thesis.md` Tier-2/3 table gets a shipped tier-3
+   row.
+
+Risk: code-to-diagnosis text is long and tokenizes across many
+Gemma BPE tokens. Step-through bias over 20-token diagnoses needs
+the output sequence pre-computed. R11/R46.2 mechanism extends to
+this but hasn't been tested at that length — may need
+`max_tokens=80+` and careful start-bias timing.
+
+If tier-3 ships tomorrow, we have: (a) tier-1 preserve free, (b)
+tier-2 atlas across 2 install patterns with 4 shipped wins, (c)
+tier-3 demo on a commercial-critical domain. That's the commercial
+pitch deck complete.
+
 ## Key Context (for cold-start tomorrow)
 
 ### The adapter-bug finding (the session's pivotal discovery)
