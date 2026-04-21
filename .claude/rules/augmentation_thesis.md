@@ -58,6 +58,7 @@ working augmentation in this codebase is tier-2 ADDITIVE:
 | R46.2 `MultiStepReasoningFacade` (17/17 fixes) | Tier-2 stack | NL parser + `safe_eval` + step-through bias |
 | `KnowledgeStore` recall cards | Tier-2 at output | Step-function indicators + `CardSlot` + `VerificationHook` |
 | `programs/gcd`, `adder`, `multiplier` (compiled) | Tier-2 integration | Compiled compute + tier-2 output hook |
+| R-delta-21 `CopyAugmentedDeltaNet` MQAR card (100% N=5-15) | Tier-2/3 retrieval card | DeltaNet Householder fast-weight state + cached decode (R-delta-20b), ready for CardSlot install on Gemma (R22). Full spec: `delta_rule.md`. |
 
 **R51/R52 were the anomaly.** Both explicitly chose REPLACEMENT via
 monkey-patching `m._forward_layer` to skip Gemma's native L24.
