@@ -101,27 +101,46 @@ _VARS = list("abcde")
 
 def _gen_reassign(n_reassigns: int, rng: random.Random,
                   max_op: int = 9) -> MemProblem:
-    """Variable reassigned n_reassigns times; query picks one reassigned var."""
+    """Variable reassigned n_reassigns times; query picks one reassigned var.
+
+    Structure (breaks the positional-shortcut: answer is NEVER at
+    position -3 from query):
+      step 0:        target_var = v0              # guarantees defined
+      steps 1..n-2:  random (40% target, 60% other)
+      step n-1:      non-target var = v'          # breaks shortcut
+      query:         target_var
+      answer:        latest value of target_var (could be buried mid-prefix)
+    """
+    assert n_reassigns >= 2, "reassign needs n_reassigns >= 2"
     target_var = rng.choice(_VARS)
-    # Track each var's current value (for computing ground truth).
     values = {}
     parts = []
-    for i in range(n_reassigns):
-        # Each step either reassigns target_var or assigns/reassigns another var.
-        if i == n_reassigns - 1 or rng.random() < 0.4:
-            # Reassign target_var.
-            val = rng.randint(1, max_op)
-            parts.append(f"{target_var} = {val}")
-            values[target_var] = val
+
+    # Step 0: always target_var (guarantees definition).
+    v0 = rng.randint(1, max_op)
+    parts.append(f"{target_var} = {v0}")
+    values[target_var] = v0
+
+    # Steps 1..n-2: random mix.
+    for _ in range(n_reassigns - 2):
+        if rng.random() < 0.4:
+            var = target_var
         else:
-            other = rng.choice([v for v in _VARS if v != target_var])
-            val = rng.randint(1, max_op)
-            parts.append(f"{other} = {val}")
-            values[other] = val
+            var = rng.choice([v for v in _VARS if v != target_var])
+        val = rng.randint(1, max_op)
+        parts.append(f"{var} = {val}")
+        values[var] = val
+
+    # Step n-1: always non-target (prevents the trivial positional shortcut
+    # where the answer is just "the number 2 tokens before query").
+    other = rng.choice([v for v in _VARS if v != target_var])
+    val = rng.randint(1, max_op)
+    parts.append(f"{other} = {val}")
+    values[other] = val
 
     parts.append(target_var)
     question = " ; ".join(parts)
-    # Target = latest value of target_var.
+    # Target = latest value of target_var (may be from step 0 if never reassigned).
     target_val = values[target_var]
     expression = str(target_val)
 
