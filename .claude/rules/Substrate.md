@@ -364,3 +364,23 @@ Prod Gemma (session 32):
 | `reasoning_engine.py` | Comparison + logic + transitivity (Round 30) |
 | `compiled_in_gemma.py` | Card inside Gemma layer (Round 22A) |
 | `three_in_one_layer.py` | Level 5: 3 modes one layer (Round 29) |
+
+## Trained cards — default architecture
+
+As of R-delta-20 (commit `63a49fc`, 2026-04-21), new trained cards
+default to **`CopyAugmentedDeltaNet`** (PT + Householder fast-weight
+backbone) rather than plain `CopyAugmentedTransformer` (PT). Held-
+out parity on copy-dominant structure tasks (NL math 99.5% both),
++21-84pp on retrieval-shaped tasks (MQAR N=5-20), 3-10× faster
+training convergence, 1.18× inference overhead via `decode_greedy_cached`
+(commit `e6f2d5c`).
+
+Deployable card artifact: `calm/hrm/checkpoints/copy_augmented_delta_mqar_best.pt`
+(748 KB, 183K params, MQAR N=5-15 @ 100% held-out). Trained with
+chunkwise UT transform (3-7× training speedup). See
+`.claude/rules/delta_rule.md` for the full arc + install mechanics.
+
+Plain PT (`copy_augmented.py`) stays as ablation baseline; existing
+PT checkpoints (`copy_augmented_hrm_best.pt`, `copy_word_best.pt`,
+`copy_gsm_best.pt`, `copy_funcall_best.pt`, `copy_logic_best.pt`)
+preserved — no benefit to retraining as PT+Delta.

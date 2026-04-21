@@ -145,6 +145,39 @@ Implementation of Percepta's March 2026 research (see `RESEARCH/LLM-COMPUTER/` f
 - **Substrate server** (`substrate_server.py`): OpenAI-compatible API serving PTs + CALM precompute. Keyword-based routing across 7 PT domains. Optional llama-server fallback for general language.
 - **Gemma substrate loader** (`gemma_substrate.py`, sessions 31-34): full Gemma 4 E4B from GGUF in PyTorch. `MmapTq4Linear` (GPU-preloaded tq4 bytes, dequant on GPU), `FP32GemmaLinear` (drop-in replacement for hosting in-attention card installs), `GpuQ6KEmbedding` (Q6_K components on GPU), `KVCache` / `KVCacheStatic` (CUDA-Graph-friendly fixed buffers) / `KVCacheTq4` (real tq4 storage ~3.6× memory, R53.28 multi-token prefill S≥1 + per-layer `layer_pos[l]` tracking + `trim_swa_storage` direct byte-copy), `GemmaTokenizer` (262K vocab from GGUF). Architecture: 42 layers, GQA 8Q/2KV, per-layer head dim, proportional RoPE, per-layer embedding injection. **Decode bench (2026-04-21 clean, median-of-5, RTX 4070):** 7.14 tok/s tq4 no-graphs → 25.02 tok/s tq4+graphs (`bdf67ee`, 4.5× lift) / 33.35 tok/s fp16+graphs. **60% / 79% of llama.cpp ~42 tok/s.** Historical "42 tok/s / 90% llama" from session 32 unreproducible in current bench — hardware/driver state dependent. 5.07 GB GPU baseline. Triton fused dequant kernels (`tq4_triton.py` — v2 matvec default as of R53.29, shared-mem LUT via `tl.gather`, -7% aggregate; see `turboquant.md`); **fused flash-attention decode** (`tq4_flash_attn.py`, R53.34 — head-major tq4 K/V storage, reuses `tq4_matvec_triton` for scoring, parallel `_tq4_weighted_v_kernel` grid=(n_heads_q,) for V-side, parity ≥ 0.99 cosine vs fp16 KVCache; **default-on (`_use_fused_flash_attn=True`) with runtime N-gate `128 < cached_kv_len < 2048`** per 2026-04-20 re-bench — wins +6 to +14% in band, out-of-band falls back to Phase 1 memo; SWA layers fused / global d_head=512 fall back to memoized dequant always); `generate(use_tq4_kv=True)` dispatches `KVCacheTq4` + fused path; CUDA Graph capture (`generate_with_graph`); in-attention card install (`install_card_in_attention`, `convert_layer_to_fp32`); per-sub-head attention dispatch (`attention_partition`, three modes coexist in one layer); residual-additive install (`CardSlot.attach(preserve=True)`); verification feedback (`VerificationHook`); learning loop (`KnowledgeStore` + `CardSlot` — see `scripts/gemma_learning_loop_demo.py`). Domain registry: `.claude/MEMORY/substrate_registry.md`. Full spec: `.claude/rules/Substrate.md`.
 
+### Graph-captured tq4 decode (Track A, 2026-04-21)
+
+Prefilled-then-replayed decode path that ships the 4.5× lift over
+dynamic-KV decode (commit `bdf67ee`):
+
+- **`KVCacheTq4Static`** — graph-safe subclass of `KVCacheTq4`.
+  Shared `pos_t: (n_layers,)` long tensor, `valid_mask_all: (n_layers,
+  max_len)` bool, per-layer `_bpr_offsets`. Position is a 0-d GPU
+  tensor; writes use `index_copy_`; attention reads full `max_len`
+  with additive mask — no Python-int slicing breaks graph capture.
+  `set_pos_all()` coalesces 42 per-layer pos writes into one GPU op.
+- **`GemmaLayer.attn_kv_fused`** — single Triton launch
+  (`tq4_linear_dual_triton`) for K and V projections (commit
+  `da382d7` / `f59ae73`). Falls back to separate `ak(x), av(x)`
+  when `_gpu_qs` unset or Pi buffer unset. Microbench: 1.65×
+  per-kernel aggregate (74% on global layers, 51% SWA); e2e
+  +4.4% projected, **unverified** due to rustc contention at
+  session end.
+- **Pi bpr=2 extension** — `tq4_flash_attn.py:fused_tq4_flash_attn_decode`
+  Pi-unrotate now handles bpr=2 via `(H, bpr, 256) @ pi` reshape.
+  Gemma global layers (d_head=512) now work in the fused path.
+- **`generate_with_graph_tq4()`** — prefill on dynamic
+  `KVCacheTq4`, byte-copy transfer into `KVCacheTq4Static`, 3-iter
+  side-stream warmup (warmup-slot invariant: warmup writes the same
+  bytes the graph will write at prefill_len), capture one-step
+  graph, replay `max_tokens-1` times.
+- **`generate(..., kv_max_len)`** parameter — pre-allocates tq4 KV
+  to `kv_max_len`; raises if `< len(ids) + max_tokens + 8`. Used by
+  eval scripts pinned to `EVAL_CTX_SIZE=32768` from
+  `calm/llm_computer/eval_defaults.py`.
+
+Full bench receipt + methodology in `.claude/rules/turboquant.md`.
+
 ### Substrate Extensions (D2/D3/D5 + Fast Weights)
 
 Four opt-in substrate primitives added this session. All are additive —

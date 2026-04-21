@@ -203,6 +203,58 @@ in current bench — hardware/driver state dependent; reserve for
 matching conditions or rebench. See `.claude/rules/architecture.md`
 "Gemma substrate loader" for the full perf chain.
 
+## Graph-captured tq4 KV decode (Track A, 2026-04-21)
+
+The D-path (tq4+graphs, 25.02 tok/s) is enabled by two additions
+to `gemma_substrate.py`:
+
+1. **`KVCacheTq4Static`** (graph-safe) — shared `pos_t: (n_layers,)`
+   long tensor, `valid_mask_all: (n_layers, max_len)` bool,
+   per-layer `_bpr_offsets`. Writes via `index_copy_` (graph-safe)
+   at `_bpr_offsets + pos_t*bpr`; attention reads the full
+   pre-allocated `max_len` with an additive valid-mask — no
+   Python-int slicing inside the graph.
+2. **`generate_with_graph_tq4()`** — prefill on dynamic
+   `KVCacheTq4`, byte-copy transfer into static, 3-iter side-stream
+   warmup, capture one-step graph, replay `max_tokens-1` times.
+   Warmup-slot invariant: warmup writes same bytes graph will write
+   at prefill_len (else capture would bake a wrong dependency).
+
+Pi bpr=2 extension in `fused_tq4_flash_attn_decode` — global
+layers (d_head=512) are now supported via `q_2d.reshape(H, bpr,
+256) @ pi` reshape around the Pi-unrotate.
+
+Static-path fused flash-attn is **always-on** for graph capture —
+bypasses the dynamic `128 < layer_pos < 2048` bench gate the
+non-static path uses. A bpr=2 regression would therefore only
+surface under graph decode.
+
+## Fused k+v tq4 projection (Track A, 2026-04-21)
+
+`GemmaLayer.attn_kv_fused` routes K and V projections through
+**one Triton launch** (`tq4_linear_dual_triton`, same primitive
+behind gate+up FFN fusion). Commits `da382d7` (shipped) +
+`f59ae73` (microbench validation).
+
+Microbench (median-of-5 × 200 iters, cudaEvent timing):
+
+| Layer | d_head | sep μs | fuse μs | speedup |
+|---:|---:|---:|---:|---:|
+| 0 (SWA) | 256 (bpr=1) | 202.96 | 134.38 | **1.51×** |
+| 5 (GLB) | 512 (bpr=2) | 177.45 | 102.15 | **1.74×** |
+| 23 (GLB) | 512 (bpr=2) | 179.09 | 102.70 | **1.74×** |
+| **aggregate** | | **559.50** | **339.24** | **1.65×** (+64.9%) |
+
+Correctness: max \|Δ\| ≤ 1e-6 (FP noise). Per-step save:
+73.42 μs × 24 own-KV layers = 1.76 ms/step → **+4.4% e2e
+projected**. End-to-end validation is **unverified** — rustc +
+codex_tui CPU contention at session end contaminated the D-path
+bench (21.01 vs clean-baseline 25.02). Rebench in idle
+environment pending.
+
+Invariant: fallback to separate `ak(x), av(x)` when `_gpu_qs`
+unset, Pi buffer unset, or `_use_triton=False`.
+
 ## Fused flash-attention decode with tq4 K/V (R53.34)
 
 File: `calm/llm_computer/tq4_flash_attn.py`. Entry point:

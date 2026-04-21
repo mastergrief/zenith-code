@@ -366,13 +366,25 @@ the learning-loop demo). Does NOT hold for residual-write `CardSlot`
 at arbitrary layers. Install mechanism weight matters. First-token
 bias is the wrong intervention for code.
 
-**Correct tier-2 for code** (next-session target): post-generation
-AST walker. Parse output, detect shadow bugs (token_bucket
-`self.consume = capacity`), missing-key dict access (csv_column_stats
-KeyError), mechanically rewrite. No Gemma retry — R53.19/R53.33 show
-Gemma ignores targeted hints with concrete rename examples. Prior
+**Correct tier-2 for code** (shipped): post-generation AST walker.
+Parse output, detect shadow bugs (token_bucket `self.consume =
+capacity`), missing-key dict access (csv_column_stats KeyError),
+mechanically rewrite. No Gemma retry — R53.19/R53.33 show Gemma
+ignores targeted hints with concrete rename examples. Prior
 dominance overwhelms in-context instruction weight (see
 `capability_gain.md` §"Gemma ignores targeted hints").
+
+`calm/llm_computer/facades/ast_repair.py` ships **7 rewrites as of
+2026-04-21** — shadow_rename, dict-key synonym, syntax_repair (3
+original in R53.35 `8cc2ff4`/`c81feb6`), plus `fuzzy_rename_function`
+(commit `805e539`, Track A walker expansion). Dispatches on
+categorized runtime errors: `TypeError: 'int' object is not callable`
+→ shadow_rename; `KeyError: 'X'` → dict-key synonym; `SyntaxError`
+offset → bracket-mismatch or insert-before-colon repair;
+`NameError: name 'X' is not defined` → fuzzy_rename (Jaccard ≥ 0.5
+against defined FunctionDefs). Tier-2 stacking thesis reinforced:
+**mechanical post-gen rewrite at Gemma's output beats in-context
+hint-tuning or tier-3 distillation of deep-diffuse circuits.**
 
 For prompt-RAG systems (not substrate): add explicit confidence
 gating to `CodeVerifierFacade.compute_hints`:
