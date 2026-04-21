@@ -906,17 +906,14 @@ class KVCacheTq4Static(KVCacheTq4):
                  device: str = "cuda"):
         super().__init__(model, max_len=max_len, device=device)
         cfg = model.config
-        # Per-layer 0-d GPU tensor position — updated via set_pos.
-        self.pos_t: list[torch.Tensor] = [
-            torch.zeros((), dtype=torch.long, device=device)
-            for _ in range(cfg.n_layers)
-        ]
-        # Per-layer valid_mask — True at positions 0..pos-1, False beyond.
-        # Additive mask (0 for valid, -inf for invalid) built on demand.
-        self.valid_mask: list[torch.Tensor] = [
-            torch.zeros(max_len, dtype=torch.bool, device=device)
-            for _ in range(cfg.n_layers)
-        ]
+        # Single shared position tensor (n_layers,) — updated via set_pos_all
+        # in one GPU op rather than per-layer Python loop. pos_t[layer_idx]
+        # returns a 0-d view that remains graph-capturable.
+        self.pos_t = torch.zeros(cfg.n_layers, dtype=torch.long, device=device)
+        # Per-layer valid_mask packed as (n_layers, max_len) — batched
+        # recompute via broadcast: valid_mask = arange < pos[:, None].
+        self.valid_mask_all = torch.zeros(
+            cfg.n_layers, max_len, dtype=torch.bool, device=device)
         # Shared arange buffer for mask recomputation.
         self._arange = torch.arange(max_len, dtype=torch.long, device=device)
         # Per-layer bpr offset tensor (0..bpr-1) for write_at_graph's
@@ -929,34 +926,45 @@ class KVCacheTq4Static(KVCacheTq4):
     def set_pos(self, layer_idx: int, new_pos) -> None:
         """Update this layer's position + valid_mask entirely GPU-side.
 
-        `new_pos` may be a Python int OR 0-d GPU tensor. Both paths
-        avoid any host→device sync on the hot loop. Also mirrors the
-        position into self.layer_pos[layer_idx] so existing read paths
-        (kv_cache.layer_pos[l], memoized dequant key) stay consistent
-        — necessary while we still have call-sites that read
-        `layer_pos` as a Python int.
+        Accepts Python int or 0-d tensor. Writes into the shared pos_t
+        tensor at position [layer_idx], and recomputes that row's
+        valid_mask. Use `set_pos_all` when updating every layer to the
+        same value (the common decode case) — coalesces 42 host→device
+        writes into one.
         """
         if isinstance(new_pos, int):
-            self.pos_t[layer_idx].fill_(new_pos)
+            self.pos_t[layer_idx] = new_pos
             self.layer_pos[layer_idx] = new_pos
         else:
-            self.pos_t[layer_idx].copy_(new_pos)
-            # Mirror to Python int — reads .item() once per set_pos which
-            # is called outside the graph (between replays), so it's fine.
+            self.pos_t[layer_idx] = new_pos
             self.layer_pos[layer_idx] = int(new_pos.item())
-        # valid_mask[i] = True if i < pos (valid positions).
+        # Row-wise valid_mask update.
         torch.lt(self._arange, self.pos_t[layer_idx],
-                 out=self.valid_mask[layer_idx])
+                 out=self.valid_mask_all[layer_idx])
+
+    def set_pos_all(self, new_pos: int) -> None:
+        """Set every layer's position to `new_pos` with ONE GPU op.
+
+        Coalesces 42 layer set_pos calls (Python loop, ~20 μs each =
+        ~0.8 ms/step) into a single `.fill_()` on a (n_layers,) tensor
+        + single broadcast `torch.lt` on the (n_layers, max_len) mask.
+        """
+        self.pos_t.fill_(new_pos)
+        # Broadcast: (max_len,) < (n_layers, 1) → (n_layers, max_len)
+        torch.lt(self._arange[None, :], self.pos_t[:, None],
+                 out=self.valid_mask_all)
+        # Mirror to Python layer_pos — used by existing read paths.
+        for il in range(len(self.layer_pos)):
+            self.layer_pos[il] = new_pos
 
     def additive_mask(self, layer_idx: int) -> torch.Tensor:
         """Return (max_len,) fp32 additive mask: 0.0 at valid positions,
-        -inf beyond pos. Built GPU-side from valid_mask via torch.where
-        broadcasting scalars against a (max_len,) bool → (max_len,) fp32.
+        -inf beyond pos. Built GPU-side from valid_mask_all[layer_idx].
         """
         zero = torch.zeros((), dtype=torch.float32, device=self.device)
         neg_inf = torch.full((), float("-inf"), dtype=torch.float32,
                              device=self.device)
-        return torch.where(self.valid_mask[layer_idx], zero, neg_inf)
+        return torch.where(self.valid_mask_all[layer_idx], zero, neg_inf)
 
     def write_at_graph(self, layer_idx: int, k_new: torch.Tensor,
                        v_new: torch.Tensor) -> None:
@@ -2252,8 +2260,7 @@ class GemmaSubstrate:
         with torch.cuda.stream(s):
             for _ in range(3):
                 # Reset pos to prefill_len before each warmup forward.
-                for il in range(self.config.n_layers):
-                    static.set_pos(il, prefill_len)
+                static.set_pos_all(prefill_len)
                 with torch.no_grad():
                     _ = self.forward(input_buf, device=device,
                                       kv_cache=static, start_pos=0)
@@ -2266,8 +2273,7 @@ class GemmaSubstrate:
         # (derived from the same next_id + pos) to the same slot. So the
         # slot contents are already what the graph will write at pos==prefill_len.
         # Just reset the position pointer.
-        for il in range(self.config.n_layers):
-            static.set_pos(il, prefill_len)
+        static.set_pos_all(prefill_len)
 
         # --- Capture graph ---
         g = torch.cuda.CUDAGraph()
@@ -2276,8 +2282,7 @@ class GemmaSubstrate:
                 captured = self.forward(input_buf, device=device,
                                          kv_cache=static, start_pos=0)
         # Capture wrote at pos==prefill_len. Reset pos so replays start fresh.
-        for il in range(self.config.n_layers):
-            static.set_pos(il, prefill_len)
+        static.set_pos_all(prefill_len)
         torch.cuda.synchronize()
 
         # --- Decode loop via graph replay ---
@@ -2287,8 +2292,7 @@ class GemmaSubstrate:
 
         t1 = time.time()
         for i in range(n_steps):
-            for il in range(self.config.n_layers):
-                static.set_pos(il, prefill_len + i)
+            static.set_pos_all(prefill_len + i)
             g.replay()
             next_id_t = captured[0, -1].argmax()
             tokens_buf[i] = next_id_t
