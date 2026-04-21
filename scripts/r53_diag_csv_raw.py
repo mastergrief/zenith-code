@@ -50,12 +50,13 @@ def run_diag(m, tok) -> None:
 
     rng = _rng_mod.Random(0)
 
-    # Generate with large budget (16K ceiling) so we see what Gemma
-    # would emit if not truncated at all. If it runs to 16K without
-    # code, that's a different finding than hitting EOS at 3800.
+    # Generate with centralized EVAL_MAX_TOKENS ceiling so we see what
+    # Gemma would emit if not truncated at all. gen_hinted passes
+    # kv_max_len=EVAL_CTX_SIZE internally when use_tq4_kv=True.
+    from calm.llm_computer.eval_defaults import EVAL_MAX_TOKENS
     t0 = time.time()
     raw = gen_hinted(m, tok, csv_problem, db, rng, sanity_random=False,
-                     max_tokens=16384, use_tq4_kv=True)
+                     max_tokens=EVAL_MAX_TOKENS, use_tq4_kv=True)
     wall = time.time() - t0
 
     # Stats

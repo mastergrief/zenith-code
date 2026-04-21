@@ -25,21 +25,11 @@ import re
 from typing import List, NamedTuple, Optional
 
 
-# Shared token-budget helper: adaptive-per-prompt with 16K ceiling.
-# Mirrors r53_21_import_inject.py so all R53 evals stay consistent.
-# Gemma 4 E4B trains at 131K ctx; 16K eval ceiling is safe headroom.
-MAX_TOKENS_CEILING = 16384
-
-
-def _adaptive_budget(prompt: str) -> int:
-    """Per-prompt output-token budget via AdaptiveBudget, clamped.
-    Returns the budget int (tier kept internal)."""
-    try:
-        from calm.adaptive import AdaptiveBudget
-        est = AdaptiveBudget().estimate(prompt)
-        return min(est.budget, MAX_TOKENS_CEILING)
-    except Exception:
-        return MAX_TOKENS_CEILING
+# Centralized substrate eval defaults — see calm/llm_computer/eval_defaults.py
+from calm.llm_computer.eval_defaults import (
+    EVAL_CTX_SIZE, EVAL_MAX_TOKENS, budget_only as _adaptive_budget,
+)
+MAX_TOKENS_CEILING = EVAL_MAX_TOKENS  # legacy alias
 
 
 def _reload_facades():
@@ -466,7 +456,8 @@ def gen_stock(m, tok, p: ComplexProblem,
     prompt = STOCK_PROMPT.format(system=BASE_SYSTEM, prompt=p.prompt)
     budget = max_tokens if max_tokens is not None else _adaptive_budget(p.prompt)
     out = m.generate(prompt, tok, max_tokens=budget, device="cuda",
-                     stop_on_eos=True, use_tq4_kv=use_tq4_kv)
+                     stop_on_eos=True, use_tq4_kv=use_tq4_kv,
+                     kv_max_len=EVAL_CTX_SIZE if use_tq4_kv else None)
     return _trim_markers(out["text"])
 
 
@@ -503,7 +494,8 @@ def gen_hinted(m, tok, p: ComplexProblem, db, rng: random.Random,
         system=BASE_SYSTEM, hints=hints, prompt=p.prompt)
     budget = max_tokens if max_tokens is not None else _adaptive_budget(p.prompt)
     out = m.generate(prompt, tok, max_tokens=budget, device="cuda",
-                     stop_on_eos=True, use_tq4_kv=use_tq4_kv)
+                     stop_on_eos=True, use_tq4_kv=use_tq4_kv,
+                     kv_max_len=EVAL_CTX_SIZE if use_tq4_kv else None)
     return _trim_markers(out["text"])
 
 

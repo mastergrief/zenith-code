@@ -104,7 +104,9 @@ def run_eval(m, tok) -> None:
     m.verification_hooks = []
     print("[r53.16] cleared prior install state", flush=True)
 
-    max_tokens = 400
+    from calm.llm_computer.eval_defaults import EVAL_MAX_TOKENS
+    max_tokens = EVAL_MAX_TOKENS  # was 400 — bumped to centralized 16K ceiling
+                                   # per workflow.md §"MAX_TOKENS budget discipline"
 
     # Encode all templates upfront, print for verification
     template_ids: dict[int, List[int]] = {}

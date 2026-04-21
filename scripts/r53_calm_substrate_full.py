@@ -39,7 +39,8 @@ import torch
 CACHE_DIR = "/mnt/c/Users/gabes/projects/claw-code/.cache/r53_code_db"
 
 MAX_ATTEMPTS = 3
-MAX_TOKENS = 16384  # ceiling; EOS stops most gens well before. Was 400 starved.
+from calm.llm_computer.eval_defaults import EVAL_CTX_SIZE, EVAL_MAX_TOKENS
+MAX_TOKENS = EVAL_MAX_TOKENS  # centralized ceiling (was 400 pre-R53.25)
 
 
 # Common import → module mapping for NameError repair
@@ -299,7 +300,8 @@ def run_eval(m, tok) -> None:
             repair_hint=hint,
         )
         out = m.generate(repair_prompt, tok, max_tokens=MAX_TOKENS,
-                         device="cuda", stop_on_eos=True)
+                         device="cuda", stop_on_eos=True,
+                         use_tq4_kv=True, kv_max_len=EVAL_CTX_SIZE)
         return _trim_markers(out["text"])
 
     print(f"\n[r53.19] running {len(CORPUS)} problems with full stack...",

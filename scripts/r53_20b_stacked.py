@@ -41,7 +41,8 @@ import torch
 CACHE_DIR = "/mnt/c/Users/gabes/projects/claw-code/.cache/r53_code_db"
 
 MAX_ATTEMPTS = 3
-MAX_TOKENS = 16384
+from calm.llm_computer.eval_defaults import EVAL_CTX_SIZE, EVAL_MAX_TOKENS
+MAX_TOKENS = EVAL_MAX_TOKENS
 
 RECALL_CH_OFF = 2480
 MAX_KEY = 4096
@@ -373,7 +374,8 @@ def run_eval(m, tok) -> None:
         # Gemma runs unmodified. set_key to something not in store.
         current_query["key"] = 0  # 0 is not in store (enrolled keys hash to nonzero)
         out = m.generate(repair_prompt, tok, max_tokens=MAX_TOKENS,
-                         device="cuda", stop_on_eos=True)
+                         device="cuda", stop_on_eos=True,
+                         use_tq4_kv=True, kv_max_len=EVAL_CTX_SIZE)
         return _trim_markers(out["text"])
 
     # ------------- Eval loop -------------

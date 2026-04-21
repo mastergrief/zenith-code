@@ -108,9 +108,11 @@ def run_eval(m, tok) -> None:
     print("\n" + "=" * 80, flush=True)
     print("STEP 1 — Gemma generation (channel-code-hybrid hints)", flush=True)
     print("=" * 80, flush=True)
+    from calm.llm_computer.eval_defaults import EVAL_MAX_TOKENS
     t0 = time.time()
     raw_output = gen_hinted(m, tok, csv_problem, db, rng,
-                            sanity_random=False, max_tokens=400)
+                            sanity_random=False,
+                            max_tokens=EVAL_MAX_TOKENS)
     print(f"Gemma output ({time.time()-t0:.0f}s):", flush=True)
     print("-" * 80, flush=True)
     print(raw_output, flush=True)

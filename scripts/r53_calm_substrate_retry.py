@@ -36,7 +36,8 @@ from typing import List, Tuple
 
 
 MAX_RETRIES = 2
-MAX_TOKENS = 16384  # ceiling; EOS stops most gens well before. Was 250 starved.
+from calm.llm_computer.eval_defaults import EVAL_CTX_SIZE, EVAL_MAX_TOKENS
+MAX_TOKENS = EVAL_MAX_TOKENS  # centralized ceiling (was 250 pre-R53.25)
 
 
 # Aggressively compact retry prompt — Gemma SWA caps total tokens at 512.
@@ -110,7 +111,8 @@ def run_eval(m, tok) -> None:
             test_output=out_trim,
         )
         out = m.generate(retry_prompt, tok, max_tokens=MAX_TOKENS,
-                         device="cuda", stop_on_eos=True)
+                         device="cuda", stop_on_eos=True,
+                         use_tq4_kv=True, kv_max_len=EVAL_CTX_SIZE)
         return _trim_markers(out["text"])
 
     # Per-problem run with retry loop

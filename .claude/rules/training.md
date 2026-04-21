@@ -464,23 +464,47 @@ llama-server -m model.gguf --cache-type-k tq3_k256 --cache-type-v tq3_k256
 | tq4 + tq4 KV | ~3.7 GB | ~2.0 GB | ~5.7 GB |
 | tq3 + tq3 KV | ~2.2 GB | ~1.5 GB | ~3.7 GB |
 
-### Substrate eval defaults (R53.28 + R53.34)
+### Substrate eval defaults (R53.28 + R53.34 + centralized)
 
+**Canonical module**: `calm/llm_computer/eval_defaults.py`. Two
+constants govern every substrate eval; change them in one place and
+all R-series scripts pick them up on next run.
+
+```python
+from calm.llm_computer.eval_defaults import (
+    EVAL_CTX_SIZE,       # 32768 — pre-allocated tq4 KV ceiling
+    EVAL_MAX_TOKENS,     # 16384 — AdaptiveBudget output clamp
+    get_adaptive_budget, # per-prompt budget + estimate metadata
+)
+
+budget, est = get_adaptive_budget(prompt)
+out = m.generate(prompt, tok, max_tokens=budget,
+                 use_tq4_kv=True, kv_max_len=EVAL_CTX_SIZE)
+```
+
+- `EVAL_CTX_SIZE=32768` pre-allocates `KVCacheTq4` regardless of
+  prompt length. tq4 storage is ~3.6× smaller than fp16 so 32K costs
+  only ~700 MB added VRAM on top of the ~5 GB substrate baseline.
+  Leaves headroom under the 8 GB ceiling for 1-2 FP32 host layers.
+- `EVAL_MAX_TOKENS=16384` is the AdaptiveBudget clamp. Tiered
+  (trivial 2K / easy 4K / medium 8K / hard 16K / deep 32K) but
+  always clamped here. Gemma 4 E4B trains at 131K ctx; any budget
+  < 4K truncates real coding problems mid-function (receipt: R53.25
+  lifted `log_level_counts` 0/0 → 6/6 purely from 400 → 900 tok bump).
 - `generate(use_tq4_kv=True)` routes through real-tq4 `KVCacheTq4`
-  (multi-token prefill S≥1, ~3.6× smaller KV vs fp16 KVCache). Phase
-  2 fused flash-attn kernel ships default-on (`_use_fused_flash_attn=True`)
-  with runtime N-gate `128 < cached_kv_len < 2048` — the measured
-  winning band. Outside the band (small prompts + first ~128 decode
-  steps, or decode past 2048) it falls back to Phase 1 memoized
-  dequant. Long R53 eval with AdaptiveBudget up to 16K uses memo past
-  2048 — no regression. See `tq4_flash_attn.py`, `tracing_roadmap.md`
-  Round 53.34, and `turboquant.md` for the bench table.
-- `MAX_TOKENS_CEILING = 16384` across all R53 eval scripts (was
-  200-400 pre-R53.25). `AdaptiveBudget` picks per-prompt tier
-  (trivial 2K / easy 4K / medium 8K / hard 16K / deep 32K clamped).
-  Gemma 4 E4B trains at 131K ctx; any budget < 4K will truncate
-  real coding problems mid-function (receipt: R53.25 lifted
-  `log_level_counts` 0/0 → 6/6 purely from 400 → 900 tok bump).
+  (multi-token prefill S≥1). Phase 2 fused flash-attn kernel ships
+  default-on (`_use_fused_flash_attn=True`) with runtime N-gate
+  `128 < cached_kv_len < 2048` — the measured winning band. Outside
+  the band (small prompts + first ~128 decode steps, or decode past
+  2048) it falls back to Phase 1 memoized dequant. Long R53 eval
+  with AdaptiveBudget up to 16K uses memo past 2048 — no regression.
+  See `tq4_flash_attn.py`, `tracing_roadmap.md` Round 53.34, and
+  `turboquant.md` for the bench table.
+- **Exception**: `scripts/r51_eval_dual_gate.py` and
+  `scripts/r52_eval_dual_gate.py` use `K_TOKENS=12` as a measurement
+  design (prefix-match on teacher-vs-student first-K tokens), not an
+  eval budget. Don't migrate those to EVAL_MAX_TOKENS — K is the
+  metric, not a cap.
 
 ## Export & Serving
 

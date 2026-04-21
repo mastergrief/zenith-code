@@ -43,17 +43,18 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
+from calm.llm_computer.eval_defaults import EVAL_CTX_SIZE, EVAL_MAX_TOKENS
+
 # ---- Bench config ----
 MBPP_PATH = ROOT / "agents/distill/data/mbpp.jsonl"
 MBPP_N = 20                   # number of problems to test (R13 bump 5 → 20)
 MBPP_SKIP = 0                 # skip first K (different cut each run)
-MAX_TOKENS = 2048             # raised from 1024 after R53.39 run showed
-                              # 3/5 format_fails — MBPP problems like
-                              # max_chain_length (custom Pair class +
-                              # backtracking) need ~1500-2000 tok. Per
-                              # workflow.md §"MAX_TOKENS budget discipline",
-                              # verify budget isn't clipping before
-                              # diagnosing logic failures.
+MAX_TOKENS = EVAL_MAX_TOKENS  # centralized — 16K ceiling. Was 2048 after
+                              # R53.39 3/5 format_fail diagnosis; EVAL_MAX_TOKENS
+                              # gives comfortable headroom for multi-step MBPP
+                              # (max_chain_length, etc.) without clipping.
+                              # Per workflow.md §"MAX_TOKENS budget discipline".
+USE_TQ4_KV = True
 
 
 class MbppProblem:
@@ -165,7 +166,9 @@ FORCED_PROMPT = (
 def gen_stock(m_ref, tok_ref, p: MbppProblem, max_tokens: int = MAX_TOKENS) -> str:
     prompt = STOCK_PROMPT.format(prompt=p.prompt)
     out = m_ref.generate(prompt, tok_ref, max_tokens=max_tokens,
-                         device="cuda", stop_on_eos=True)
+                         device="cuda", stop_on_eos=True,
+                         use_tq4_kv=USE_TQ4_KV,
+                         kv_max_len=EVAL_CTX_SIZE if USE_TQ4_KV else None)
     text = out["text"]
     for mark in ("<end_of_turn>", "<start_of_turn>"):
         i = text.find(mark)
@@ -181,7 +184,9 @@ def gen_forced(m_ref, tok_ref, p: MbppProblem, signature: str,
     (sig prepended so extractor sees complete function)."""
     prompt = FORCED_PROMPT.format(prompt=p.prompt, signature=signature)
     out = m_ref.generate(prompt, tok_ref, max_tokens=max_tokens,
-                         device="cuda", stop_on_eos=True)
+                         device="cuda", stop_on_eos=True,
+                         use_tq4_kv=USE_TQ4_KV,
+                         kv_max_len=EVAL_CTX_SIZE if USE_TQ4_KV else None)
     text = out["text"]
     for mark in ("<end_of_turn>", "<start_of_turn>"):
         i = text.find(mark)

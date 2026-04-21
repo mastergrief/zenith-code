@@ -1947,19 +1947,33 @@ class GemmaSubstrate:
 
     def generate(self, prompt: str, tokenizer, max_tokens: int = 64,
                  device: str = "cuda", stop_on_eos: bool = True,
-                 use_tq4_kv: bool = False) -> dict:
+                 use_tq4_kv: bool = False,
+                 kv_max_len: Optional[int] = None) -> dict:
         """Greedy generation. Returns {'text', 'token_ids', 'prefill_s', 'decode_s'}.
         Fresh KV cache per call — caller manages multi-turn state.
 
         With use_tq4_kv=True, uses KVCacheTq4 (real tq4 byte storage,
         ~3.6x smaller KV memory). Supports multi-token prefill.
+
+        kv_max_len: pre-allocate the KV cache to this size regardless of
+        prompt+output length. Used by substrate eval scripts to pin a
+        fixed 32K ctx via calm.llm_computer.eval_defaults.EVAL_CTX_SIZE.
+        Must be >= len(prompt_ids) + max_tokens + 8; smaller values raise.
         """
         import time
         ids = tokenizer.encode(prompt)
+        needed = len(ids) + max_tokens + 8
+        if kv_max_len is not None:
+            if kv_max_len < needed:
+                raise ValueError(
+                    f"kv_max_len={kv_max_len} < needed={needed} "
+                    f"(prompt={len(ids)} + max_tokens={max_tokens} + 8)"
+                )
+            cache_len = kv_max_len
+        else:
+            cache_len = needed
         if use_tq4_kv:
-            # Allocate enough for prompt + max_tokens decode.
-            cache = KVCacheTq4(self, max_len=len(ids) + max_tokens + 8,
-                                device=device)
+            cache = KVCacheTq4(self, max_len=cache_len, device=device)
         else:
             cache = KVCache(self.config.n_layers, device=device)
         t0 = time.time()

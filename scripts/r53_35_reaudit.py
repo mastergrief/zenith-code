@@ -38,7 +38,9 @@ from typing import Optional, Tuple
 import torch
 
 
-MAX_TOKENS = 8192
+from calm.llm_computer.eval_defaults import EVAL_MAX_TOKENS
+
+MAX_TOKENS = EVAL_MAX_TOKENS  # 16K centralized ceiling
 OUT_DIR = "/tmp/r53_reaudit"
 USE_TQ4_KV = True
 

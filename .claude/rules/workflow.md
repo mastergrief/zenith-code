@@ -126,15 +126,18 @@ KVCacheTq4) before R53.25 showed MAX_TOKENS 400 → 900 alone lifts
 `log_level_counts` 0/0 → 6/6 on R53.0. Budget was first-order
 cause; every other "failure" was downstream of truncation.
 
-Current defaults: `MAX_TOKENS_CEILING = 16384` +
-`AdaptiveBudget` (tier-picked per-prompt, trivial 2K → deep 32K
-clamped to 16K) in `scripts/r53_eval_complex.py` +
-`scripts/r53_21_import_inject.py`. All R53 wrapper scripts bumped
-to 4096-16384.
+**Centralized**: `calm/llm_computer/eval_defaults.py` exports
+`EVAL_CTX_SIZE=32768` (pre-allocated tq4 KV) and `EVAL_MAX_TOKENS=16384`
+(AdaptiveBudget clamp). Every R-series script imports from here —
+changing the two numbers changes every eval consistently. Full spec
++ exception list (r51/r52 dual-gate `K_TOKENS=12` is a measurement
+design, not a budget): `training.md` §"Substrate eval defaults".
 
 Rule: when a Gemma failure is "no output / NoCode", check
 `max_tokens` ≥ prompt + `<think>` + expected output BEFORE any
-deeper diagnosis.
+deeper diagnosis. When adding a new eval script, import from
+`eval_defaults` rather than picking a number locally — the
+pre-R53.25 200-400 defaults cost four null rounds of misdiagnosis.
 
 ## GPU bench discipline (R53.29 receipt)
 

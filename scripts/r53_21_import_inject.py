@@ -48,8 +48,10 @@ import torch
 
 CACHE_DIR = "/mnt/c/Users/gabes/projects/claw-code/.cache/r53_code_db"
 
+from calm.llm_computer.eval_defaults import EVAL_CTX_SIZE, EVAL_MAX_TOKENS
+
 MAX_ATTEMPTS = 3
-MAX_TOKENS_CEILING = 16384  # cap; AdaptiveBudget picks per-prompt
+MAX_TOKENS_CEILING = EVAL_MAX_TOKENS  # cap; AdaptiveBudget picks per-prompt
 MAX_IMPORT_INJECTIONS = 4
 USE_TQ4_KV = True   # R53.34 fused flash-attn kernel landed; parity
                     # validated on real Gemma (test_kvcache_tq4_parity:
@@ -398,7 +400,8 @@ def run_eval(m, tok) -> None:
         )
         out = m.generate(repair_prompt, tok, max_tokens=budget,
                          device="cuda", stop_on_eos=True,
-                         use_tq4_kv=USE_TQ4_KV)
+                         use_tq4_kv=USE_TQ4_KV,
+                         kv_max_len=EVAL_CTX_SIZE if USE_TQ4_KV else None)
         return _trim_markers(out["text"])
 
     # Filter to a single problem by name. Reads /tmp/r53_only if

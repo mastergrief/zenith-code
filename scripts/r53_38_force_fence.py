@@ -151,6 +151,7 @@ def run_force_fence(target_name: str, max_tokens: int = 2048):
     from scripts.r53_eval_complex import (
         CORPUS, BASE_SYSTEM, score, extract_code,
     )
+    from calm.llm_computer.eval_defaults import EVAL_CTX_SIZE
     from calm.sandbox import run_python
     from calm.llm_computer.facades.ast_repair import repair_cascade
 
@@ -175,7 +176,8 @@ def run_force_fence(target_name: str, max_tokens: int = 2048):
 
     t0 = time.time()
     out = m.generate(prompt, tok, max_tokens=max_tokens, device="cuda",
-                     stop_on_eos=True)
+                     stop_on_eos=True, use_tq4_kv=True,
+                     kv_max_len=EVAL_CTX_SIZE)
     dt = time.time() - t0
     raw = out["text"]
     print(f"\n[r53.38] gen took {dt:.0f}s, {len(raw)} chars", flush=True)
