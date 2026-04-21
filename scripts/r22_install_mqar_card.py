@@ -131,8 +131,15 @@ def load_mqar_card(ckpt_path: str | Path, device="cuda"):
 # Install
 # ============================================================================
 
-def install(m, card, layer_idx=30, ch_off=2480):
-    """Attach card + VerificationHook. Returns (slot, state) closure handle."""
+def install(m, card, layer_idx=30, ch_off=2480, write_margin: float = 0.0):
+    """Attach card + VerificationHook. Returns (slot, state) closure handle.
+
+    `write_margin`: if > 0, card_output_fn skips the residual-stream write
+    when card's (peak - median) margin is below this threshold. Prevents
+    low-confidence card outputs from shifting Gemma's head projection via
+    the reserved channels. Round 5 showed that without this gate, the
+    residual write affects Gemma even when VerificationHook is silent.
+    """
     # Remove any stale slots + hooks from prior daemon runs — the daemon's
     # globals persist, so `m.layers[layer_idx].card_slots` and
     # `m.verification_hooks` accumulate across script reloads unless cleaned.
@@ -167,6 +174,16 @@ def install(m, card, layer_idx=30, ch_off=2480):
             # _forward_layer, so in-place zero propagates.
             logits.zero_()
             return h  # leave residual untouched
+        # Margin gate the residual write (R22b round 6 fix): without this,
+        # card's log-probs are written to [ch_off:ch_hi] regardless of
+        # confidence, shifting Gemma's head projection. Gate mirrors
+        # VerificationHook's margin check.
+        if write_margin > 0.0:
+            last = logits[0, -1].float()
+            margin = (last.max() - last.median()).item()
+            if margin < write_margin:
+                logits.zero_()
+                return h
         ans = logits[:, -1:, :]  # (B, 1, vocab=82)
         # Clamp to actual residual width (ch_hi may exceed d_model if the
         # card vocab is larger than available channels).
