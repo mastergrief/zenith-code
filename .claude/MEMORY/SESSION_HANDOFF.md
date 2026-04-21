@@ -101,7 +101,24 @@ session-critical uncommitted files:
 
 **Risk: NONE.** All shipped code, docs, and receipts are committed.
 
-## Next Steps (ordered for mega session tomorrow)
+## Next Steps — two-phase arc, "ship frontier coding primitive → bootstrap recursive self-improvement"
+
+**User direction (2026-04-21 end-of-session):** "i think we do it all,
+ship frontier coding as first primitive then we use gemma for
+recursive self improvement"
+
+The full arc has two phases. Phase A ships the substrate capabilities
+that collectively constitute "frontier coding primitive" on verifiable
+workflows. Phase B uses the shipped primitive to recursively improve
+the substrate itself (per `recursion.md`). Phase B requires Phase A
+complete.
+
+**Realistic scope**: Phase A is 15-25 hours = 1 long mega session or
+2 normal ones. Phase B is another 8-15 hours once Phase A unlocks it.
+Total: 2-3 sessions to go from today's state to shipping recursive
+self-improvement demo.
+
+### Phase A — frontier coding primitive (ordered by unlock dependency)
 
 ### 1. N=10 flat — the one remaining R22 diagnostic (15 min)
 
@@ -294,6 +311,85 @@ demo is faster to prove out), then #7 planner. Combined, they
 ship as the "Brain + Cards orchestration" story: tier-2 + tier-3
 + orchestration layer = frontier-competitive surface on
 verifiable workflows.
+
+### Phase A complete = frontier coding primitive shipped
+
+Once items 1-3, 6, 7 ship (skip 4 parked + 5 cancelled), the
+substrate has:
+- R22 retrieval card (tier-2, CardSlot)
+- R22c + 2nd compute facade (tier-2, decode-path)
+- ICD-10 recall card (tier-3, CardSlot)
+- PlannerFacade orchestration (tier-2 stacking composition)
+- + pre-existing: CodeExampleDB, ast_repair walker, CALM 1002
+  backends, sandbox, R46.2 multi-step math, R11 multiplier
+
+**Integrated narrative**: given an NL task, PlannerFacade
+decomposes → per sub-step invokes the right facade (compute /
+retrieval / AST repair / recall) → CALM verifies each step →
+outputs verifiable sequence diagram instead of opaque
+`<think>` block. That's the frontier-multi-step-coding primitive
+on **verifiable** workflows. Match GPT-4 on open-ended no, beat it
+on auditable yes.
+
+### Phase B — recursive self-improvement (follow-on session)
+
+Per `.claude/rules/recursion.md`. Once Phase A primitives ship,
+the substrate can use its OWN coding capability to extend itself.
+Level 1 (card self-distill) already exists (`auto_upgrade.py`).
+Level 2 (cards build cards, or MetaCard) is unshipped.
+
+**Minimum viable recursive loop (Phase B MVP, ~8-12 hours):**
+
+```
+1. Substrate fails at domain X (CALM catches wrong answer)
+2. Substrate retrieves similar existing facades from CodeExampleDB
+   (8970 examples already indexed, hybrid retrieval already built)
+3. Substrate generates new facade code via Gemma + PlannerFacade
+   (uses Phase A's orchestration to write the facade)
+4. Substrate runs new facade in sandbox (run_python exists)
+5. Substrate validates via CALM oracle (safe_eval + tests)
+6. If valid: add to facade registry, persist. If invalid:
+   AST repair walker retries; if still bad, defer to human.
+```
+
+Integration targets:
+- `AutoUpgradeEngine.commit()` already compiles recall cards;
+  extend to commit NEW FACADE FILES to
+  `calm/llm_computer/facades/*.py` with test corpus receipts
+- `PlannerFacade` orchestrates the write-verify-install loop
+- `CodeVerifierFacade` becomes the CALM oracle for new facades
+
+**Why safe**: every card in the recursion chain is gated by
+deterministic CALM tests (`recursion.md §"Why this is safe where
+Self-Instruct / RLAIF fails"`). Cannot amplify drift the way
+self-instruct / RLAIF does. Whatever survives has PASSED
+objective correctness checks.
+
+**Capability-completeness fixed point**: as recursion continues,
+card library grows → each card covers more of its domain → Meta
+gets better at spotting gaps → MetaMeta gets better at designing
+meta variants. Asymptotically: for every task with verifiable
+success criterion, substrate has a card that solves it exactly.
+Per `recursion.md §"Capability completeness as a fixed point"`.
+
+**Phase B queue (not numbered yet — activate after Phase A ships):**
+
+- **B1**: Extend `AutoUpgradeEngine.commit()` to write facade
+  files (not just recall card weights)
+- **B2**: `MetaFacade` that given a failure trace proposes a new
+  facade template (decode-path skeleton adaptation)
+- **B3**: End-to-end Phase B demo: pick a domain Gemma fails at
+  AND no facade exists for, run Phase B loop, measure if
+  substrate self-builds a working facade. **This is the "it's
+  self-improving" demo**.
+- **B4**: Level 2 MetaCard — automate circuit probing from failure
+  traces, route to appropriate tier (2 or 3)
+- **B5**: Level 3 MetaMetaCard — watch MetaCard's failure modes,
+  design variants. Speculative but tractable once B3 lands.
+
+**Realistic timing**: each B-step is 1-3 hours. B1-B3 together =
+~8-12 hours, shippable in one post-Phase-A session. B4-B5 are
+weeks-scale research.
 
 ## Key Context (for cold-start tomorrow)
 
