@@ -28,18 +28,20 @@ only flags.
 | R13-c | 2000 | 50 (killed ep25) | 128 | 15,20 | ~26 min | — | — | **19%** | **22%** |
 | R13-d | 5000 | 20 | 128 | 15 | ~17 min | — | — | **99%** | — |
 | R14 | 5000 | 20 | 128 | 20 | ~25 min | — | — | — | **58%** |
+| R14-b | 10000 | 20 (killed ep6) | 128 | 20 | ~7 min (chunkwise) | — | — | — | **99%** |
 
-R14 (N=20 @ 5K/N) plateaus at 58%. Extrapolates the per-N data
-requirement: +5 on N needs ~2.5× data.
+R14 (N=20 @ 5K/N) plateaued at 58%. R14-b (2026-04-21, after
+chunkwise landed in R17) cracks N=20 at 10K/N → 99% in 6 epochs.
+Closes the scaling curve:
 
   N     data-to-saturate
   5,10  2K/N
   15    5K/N
-  20    ~10-15K/N (untested; R14 still climbing at 55%→58% ep14-20)
+  20    10K/N   (R14-b confirmed)
 
-58% is well above random (~5%) and still trending, so the plateau is
-training-budget-bound, not architectural. To confirm and crack N=20
-cleanly, R14-b would need 10K/N × 20ep (~2 hrs GPU, not run).
+**Rule**: +5 on N needs 2× data, cleanly across N=5, 10, 15, 20.
+Capacity at d_model=64 was never the wall; data is the sole knob
+through N=20.
 
 ## Plain PT comparison (same budgets, best-epoch accuracy)
 
@@ -51,6 +53,7 @@ cleanly, R14-b would need 10K/N × 20ep (~2 hrs GPU, not run).
 | R13-c (2000/N, high-N) | — | — | 21% | 23% |
 | R13-d (5000/N, N=15) | — | — | 24% | — |
 | R14 (5000/N, N=20) | — | — | — | 31% |
+| R14-b (10000/N, N=20) | — | — | — | 15% (flat) |
 
 Plain PT memorizes train and overfits — final-epoch numbers are lower
 than best-epoch (e.g. R13-c N15 ends at 14% after peaking at 21%).
