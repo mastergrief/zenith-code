@@ -1,0 +1,5 @@
+{"timestamp": "2026-04-14T18:41:20", "user_input": "what is 17 plus 23", "kind": "dispatcher", "response": "[nl] 17 + 23 = 40", "program": "17 + 23", "label": "nl"}
+{"timestamp": "2026-04-14T18:41:21", "user_input": "!isa DEC 4", "kind": "isa", "response": "4 \u2192 3 \u2192 2 \u2192 1 \u2192 0 \u2192 HALT", "program": null, "label": null}
+{"timestamp": "2026-04-14T18:41:28", "user_input": "3 and 5 give 8, 2 and 7 give 9, 4 and 6 give 10, what about 7 and 3?", "kind": "discover", "response": "[DISCOVERED] program='a + b' \u2192 7,3 = 10", "program": "a + b", "label": null}
+{"timestamp": "2026-04-14T18:41:28", "user_input": "!repeat a=2 b=9", "kind": "library", "response": "[REPEAT] program='a + b' \u2192 2,9 = 11", "program": "a + b", "label": null}
+{"timestamp": "2026-04-14T18:42:06", "user_input": "!repeat a=100 b=50", "kind": "library", "response": "[REPEAT] program='a + b' \u2192 100,50 = 150", "program": "a + b", "label": null}

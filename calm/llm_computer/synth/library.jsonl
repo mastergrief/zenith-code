@@ -1,0 +1,2 @@
+{"key": "a/2", "expression": "a / 2", "discovered_at": "2026-04-14T18:23:25", "times_invoked": 0}
+{"key": "a+b", "expression": "a + b", "discovered_at": "2026-04-14T18:41:28", "times_invoked": 0}

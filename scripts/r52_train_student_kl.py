@@ -192,12 +192,13 @@ def eval_val(
     with torch.no_grad():
         for p_idx in val_ids:
             ids = token_ids_list[p_idx].to("cuda", dtype=torch.long).unsqueeze(0)
-            with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+            with torch.amp.autocast(device_type="cuda",
+                                    dtype=torch.bfloat16):
                 s_logits = forward_one_prompt_grad(m, ids)
-                t_logits = teacher_logits_all[p_idx].to(
-                    "cuda", dtype=torch.float32
-                )
-                loss = compute_kl_loss(s_logits.float(), t_logits)
+            t_logits = teacher_logits_all[p_idx].to(
+                "cuda", dtype=torch.float32
+            )
+            loss = compute_kl_loss(s_logits.float(), t_logits)
             v = float(loss.item())
             dom = labels[p_idx]
             per_dom_sum[dom] += v
@@ -220,31 +221,28 @@ def main() -> None:
     args = parse_args()
     set_seed(args.seed)
 
-    # Triton autograd is uncertain — disable for training. The PyTorch
-    # fast path + torch.compile below is autograd-compatible.
-    from calm.llm_computer.gemma_substrate import (
-        enable_triton_tq4, enable_compile_tq4,
+    # Triton tq4 autograd wrapper with MATCHED Triton backward kernel.
+    # Forward streams tq4 bytes (no materialized W); backward uses
+    # tq4_backward_triton kernel — same tq4 access pattern + fp32
+    # reduction, so forward/backward are self-consistent despite
+    # diverging from PyTorch fast path by ~6e-5 per linear (different
+    # reduction order). Training on Triton-Gemma stays consistent.
+    from calm.llm_computer.gemma_substrate import enable_triton_tq4
+    from calm.llm_computer.tq4_autograd import (
+        install_tq4_autograd, restore_tq4_autograd,
     )
-    prior_triton = getattr(
-        sys.modules["calm.llm_computer.gemma_substrate"], "_use_triton", False
-    )
-    enable_triton_tq4(False)
-    print(
-        f"[r52.1] Triton tq4 disabled for training "
-        f"(prior state: {prior_triton})",
-        flush=True,
-    )
+    enable_triton_tq4(True)
+    install_tq4_autograd()
+    print("[r52.1] Triton tq4 ENABLED + autograd.Function (w/ Triton backward)",
+          flush=True)
 
-    # torch.compile was tried and DISABLED — on RTX 4070 Laptop we hit
-    # "Not enough SMs to use max_autotune_gemm mode" and compile falls
-    # back to slower paths than uncompiled eager. Explicit module-state
-    # reset because RESET_GLOBALS doesn't touch the gemma_substrate
-    # module globals — a prior enable_compile_tq4() in this daemon
-    # persists across script invocations.
+    # torch.compile stays OFF — "Not enough SMs for max_autotune_gemm"
+    # on 4070M falls back slower than uncompiled. Explicit reset in
+    # case a prior script enabled it.
     import calm.llm_computer.gemma_substrate as _gs
     _gs._compiled_tq4_linear = None
-    print("[r52.1] torch.compile for tq4 DISABLED + module state reset "
-          "(SM-limited on 4070M)", flush=True)
+    print("[r52.1] torch.compile for tq4 DISABLED + module state reset",
+          flush=True)
 
     # Speed fix 2 — pre-dequant the Q6_K output head to FP16 once. The head
     # is 262144 x 2560 Q6_K = 1.34 GB in FP16, static during training. The
@@ -435,20 +433,17 @@ def main() -> None:
                 ids = token_ids_list[p_idx].to(
                     "cuda", dtype=torch.long
                 ).unsqueeze(0)
-                # Mixed-precision: BF16 matmuls via tensor cores. BF16
-                # has FP32 range (safe for wide activations) with less
-                # precision. FP16 + loss scaling is an alternative but
-                # BF16 is simpler and tensor cores handle both.
-                with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+                # BF16 autocast — tensor cores + regularization noise
+                # help convergence. Triton autograd uses custom_fwd
+                # cast_inputs=fp32 so Triton runs fp32 internally while
+                # downstream ops auto-cast to bf16.
+                with torch.amp.autocast(device_type="cuda",
+                                        dtype=torch.bfloat16):
                     s_logits = forward_one_prompt_grad(m, ids)
-                    t_logits = teacher_logits_all[p_idx].to(
-                        "cuda", dtype=torch.float32
-                    )
-                    # Cast s_logits back to FP32 for numerically stable
-                    # log_softmax + KL (262K vocab amplifies bf16 noise).
-                    loss = compute_kl_loss(s_logits.float(), t_logits)
-                # Grad accumulation: divide by batch size so opt.step()
-                # effectively averages.
+                t_logits = teacher_logits_all[p_idx].to(
+                    "cuda", dtype=torch.float32
+                )
+                loss = compute_kl_loss(s_logits.float(), t_logits)
                 (loss / args.batch_size).backward()
                 batch_loss_sum += float(loss.item())
 
@@ -527,7 +522,7 @@ def main() -> None:
                     os.replace(tmp_path, out_path)
     finally:
         restore_layer()
-        enable_triton_tq4(True)
+        restore_tq4_autograd()
         q6k_embd.output_logits = original_output_logits
         try:
             del HEAD_FP16
@@ -535,7 +530,7 @@ def main() -> None:
             pass
         torch.cuda.empty_cache()
         print(
-            "[r52.1] detached student; Triton tq4 re-enabled; "
+            "[r52.1] detached student; Triton tq4 autograd restored; "
             "output_logits restored; HEAD_FP16 freed",
             flush=True,
         )
