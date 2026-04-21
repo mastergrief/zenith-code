@@ -97,10 +97,16 @@ def gen_mqar_batch(n_pairs: int, count: int, seed: int) -> List[MemProblem]:
 # -----------------------------------------------------------------------------
 
 _VARS = list("abcde")
+# Hard variant: 20 distinct identifiers. At N=10 reassignments across
+# this vocab, each var typically appears 0-1 times, reducing the softmax
+# "find last X =" shortcut. Stresses PT+Delta's fast-weight state vs
+# plain PT's small-vocab pattern-match.
+_VARS_HARD = list("abcdefghijklmnopqrst")
 
 
 def _gen_reassign(n_reassigns: int, rng: random.Random,
-                  max_op: int = 9) -> MemProblem:
+                  max_op: int = 9,
+                  vars_pool: List[str] = None) -> MemProblem:
     """Variable reassigned n_reassigns times; query picks one reassigned var.
 
     Structure (breaks the positional-shortcut: answer is NEVER at
@@ -110,9 +116,13 @@ def _gen_reassign(n_reassigns: int, rng: random.Random,
       step n-1:      non-target var = v'          # breaks shortcut
       query:         target_var
       answer:        latest value of target_var (could be buried mid-prefix)
+
+    Pass vars_pool=_VARS_HARD for a harder variant with 20 distinct
+    identifiers (stresses softmax's small-vocab content-match advantage).
     """
     assert n_reassigns >= 2, "reassign needs n_reassigns >= 2"
-    target_var = rng.choice(_VARS)
+    pool = vars_pool if vars_pool is not None else _VARS
+    target_var = rng.choice(pool)
     values = {}
     parts = []
 
@@ -126,14 +136,14 @@ def _gen_reassign(n_reassigns: int, rng: random.Random,
         if rng.random() < 0.4:
             var = target_var
         else:
-            var = rng.choice([v for v in _VARS if v != target_var])
+            var = rng.choice([v for v in pool if v != target_var])
         val = rng.randint(1, max_op)
         parts.append(f"{var} = {val}")
         values[var] = val
 
     # Step n-1: always non-target (prevents the trivial positional shortcut
     # where the answer is just "the number 2 tokens before query").
-    other = rng.choice([v for v in _VARS if v != target_var])
+    other = rng.choice([v for v in pool if v != target_var])
     val = rng.randint(1, max_op)
     parts.append(f"{other} = {val}")
     values[other] = val
@@ -154,7 +164,23 @@ def gen_reassign_batch(n_reassigns: int, count: int, seed: int) -> List[MemProbl
     rng = random.Random(seed)
     out = []
     for _ in range(count):
-        p = _gen_reassign(n_reassigns, rng)
+        p = _gen_reassign(n_reassigns, rng, vars_pool=_VARS)
+        if _valid_chars(p.question) and _valid_chars(p.expression):
+            out.append(p)
+    return out
+
+
+def gen_reassign_hard_batch(n_reassigns: int, count: int, seed: int) -> List[MemProblem]:
+    """Large-vocab reassign (20 identifiers). Stresses softmax content-match.
+
+    Same structure as gen_reassign_batch but draws from _VARS_HARD.
+    At N=10 across 20 variables, each var appears ~0.5× on average,
+    making 'find last target_var =' harder for softmax attention.
+    """
+    rng = random.Random(seed)
+    out = []
+    for _ in range(count):
+        p = _gen_reassign(n_reassigns, rng, vars_pool=_VARS_HARD)
         if _valid_chars(p.question) and _valid_chars(p.expression):
             out.append(p)
     return out

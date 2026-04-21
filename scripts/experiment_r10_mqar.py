@@ -31,12 +31,14 @@ from calm.hrm.memory_tasks import (
     MemProblem,
     gen_mqar_batch,
     gen_reassign_batch,
+    gen_reassign_hard_batch,
     gen_scratchpad_batch,
 )
 
 _TASK_GENERATORS = {
     "mqar": gen_mqar_batch,
     "reassign": gen_reassign_batch,
+    "reassign_hard": gen_reassign_hard_batch,
     "scratchpad": gen_scratchpad_batch,
 }
 from calm.llm_computer.copy_augmented import (
