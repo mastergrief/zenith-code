@@ -1216,6 +1216,33 @@ class GemmaLayer:
         self.proj = None
         self.layer_output_scale = None
 
+    def attn_kv_fused(self, x: torch.Tensor) -> "tuple[torch.Tensor, torch.Tensor]":
+        """Fuse k + v tq4 projections in ONE Triton kernel.
+
+        attn_k and attn_v have identical shapes on Gemma (same n_kv_h *
+        d_head_kv output), so tq4_linear_dual_triton can compute both
+        from the same input x with one kernel launch. Shared x_rot
+        read + shared centroid load cut the memory bandwidth per layer.
+
+        Falls back to two separate calls when tq4 isn't preloaded
+        (CPU / tests) or shared Pi isn't set. Identical numerical
+        output to separate calls by construction — same kernel per path.
+        """
+        ak, av = self.attn_k, self.attn_v
+        if (ak._gpu_qs is None or av._gpu_qs is None
+                or MmapTq4Linear._shared_pi is None
+                or not _use_triton):
+            return ak(x), av(x)
+        from calm.llm_computer.tq4_triton import tq4_linear_dual_triton
+        return tq4_linear_dual_triton(
+            x,
+            ak._gpu_qs, ak._gpu_d,
+            av._gpu_qs, av._gpu_d,
+            MmapTq4Linear._shared_pi,
+            MmapTq4Linear._shared_centroids,
+            ak.out_features, ak.in_features,
+        )
+
 
 class GemmaSubstrate:
     """Full Gemma 4 E4B from GGUF — mmap-based, zero-copy loading.
@@ -1657,8 +1684,10 @@ class GemmaSubstrate:
             )
 
         if own_kv:
-            k_new = layer.attn_k(cur)
-            v_new = layer.attn_v(cur)
+            # Fused k + v tq4 projection — shared x_rot read + shared
+            # centroid load in one Triton kernel. Numerically identical
+            # to `layer.attn_k(cur); layer.attn_v(cur)`.
+            k_new, v_new = layer.attn_kv_fused(cur)
             d_head_kv = k_new.shape[-1] // cfg.n_heads_kv
             k_new = k_new.reshape(B, S, cfg.n_heads_kv, d_head_kv).transpose(1, 2)
             v_new = v_new.reshape(B, S, cfg.n_heads_kv, d_head_kv).transpose(1, 2)
