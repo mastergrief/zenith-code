@@ -37,6 +37,70 @@ EVAL_CTX_SIZE: int = 32768
 # AdaptiveBudget clamp — cap the per-prompt output-token budget here.
 EVAL_MAX_TOKENS: int = 16384
 
+# Problem-count tiers for hypothesis-test-iterate loop discipline.
+# workflow.md §"The loop should be fast — under 5 min per round":
+# use ITERATION_N during fix rounds (fast feedback), FINAL_N for
+# the commit-ready baseline measurement. Every eval script with a
+# configurable N parameter should default to ITERATION_N and bump
+# to FINAL_N only for the round that goes into a commit receipt.
+ITERATION_N: int = 5      # fast iteration — ~10 min wall time target
+FINAL_N: int = 20         # commit-ready baseline — ~40 min wall time
+
+# Rotation-state config file (daemon-friendly — no env var needed since
+# the gemma daemon execs scripts with a fresh namespace but doesn't
+# inherit env vars set by `bin/gemma-run`). Eval scripts read this
+# file at exec time to pick their problem window. Empty / missing
+# file ⇒ window 0 (first ITERATION_N problems, clean deltas across
+# rounds). Set window=1,2,3... to rotate for generalization checks.
+ROTATION_STATE_PATH: str = "/tmp/substrate_eval_rotation.json"
+
+
+def read_rotation_state() -> dict:
+    """Return {'window': int, 'n': Optional[int], 'final': bool}.
+    Missing file or parse error ⇒ defaults (window=0, n=None, final=False).
+    """
+    import json
+    from pathlib import Path
+    p = Path(ROTATION_STATE_PATH)
+    if not p.exists():
+        return {"window": 0, "n": None, "final": False}
+    try:
+        cfg = json.loads(p.read_text())
+        return {
+            "window": int(cfg.get("window", 0)),
+            "n": cfg.get("n"),
+            "final": bool(cfg.get("final", False)),
+        }
+    except Exception:
+        return {"window": 0, "n": None, "final": False}
+
+
+def write_rotation_state(window: int = 0, n=None,
+                         final: bool = False) -> None:
+    """Set the rotation state for the next eval run."""
+    import json
+    from pathlib import Path
+    Path(ROTATION_STATE_PATH).write_text(
+        json.dumps({"window": window, "n": n, "final": final})
+    )
+
+
+def resolve_problem_window(default_n: int = ITERATION_N,
+                           final_n: int = FINAL_N) -> tuple:
+    """Return (n, skip) for the next eval run, reading rotation state.
+
+    Semantics:
+      final=True       → (final_n, 0)            full-size baseline
+      n overridden     → (n, window * n)         explicit N + offset
+      default          → (default_n, window * default_n)
+    """
+    cfg = read_rotation_state()
+    if cfg["final"]:
+        return (final_n, 0)
+    n = cfg["n"] if cfg["n"] is not None else default_n
+    skip = cfg["window"] * n
+    return (n, skip)
+
 
 def get_adaptive_budget(prompt: str,
                         precomputed: Optional[dict] = None,

@@ -43,17 +43,28 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
-from calm.llm_computer.eval_defaults import EVAL_CTX_SIZE, EVAL_MAX_TOKENS
+from calm.llm_computer.eval_defaults import (
+    EVAL_CTX_SIZE, EVAL_MAX_TOKENS, ITERATION_N, FINAL_N,
+    resolve_problem_window,
+)
 
 # ---- Bench config ----
 MBPP_PATH = ROOT / "agents/distill/data/mbpp.jsonl"
-MBPP_N = 20                   # number of problems to test (R13 bump 5 → 20)
-MBPP_SKIP = 0                 # skip first K (different cut each run)
-MAX_TOKENS = EVAL_MAX_TOKENS  # centralized — 16K ceiling. Was 2048 after
-                              # R53.39 3/5 format_fail diagnosis; EVAL_MAX_TOKENS
-                              # gives comfortable headroom for multi-step MBPP
-                              # (max_chain_length, etc.) without clipping.
-                              # Per workflow.md §"MAX_TOKENS budget discipline".
+# Problem window + N resolved from /tmp/substrate_eval_rotation.json
+# (see calm/llm_computer/eval_defaults.py). Default ⇒ window 0, N=5.
+# For generalization check: write {"window": 1} to rotate to next slice.
+# For commit baseline: write {"final": true} to use N=20.
+MBPP_N, MBPP_SKIP = resolve_problem_window(
+    default_n=ITERATION_N, final_n=FINAL_N)
+# MBPP-specific cap: 8K instead of EVAL_MAX_TOKENS=16K. Rationale:
+# R13v2 showed clean problems (reverse_words, token-bucket style) finish
+# at 1-3K tokens; rambling problems (max_chain_length, get_ludic)
+# produce no code at 16K either way. Capping at 8K halves worst-case
+# round time without losing any clean results. If MBPP problems ever
+# legitimately need >8K (unlikely — MBPP test harnesses are small),
+# bump via MBPP_MAX_TOKENS env var.
+import os as _os_mbpp
+MAX_TOKENS = int(_os_mbpp.environ.get("MBPP_MAX_TOKENS", "8192"))
 USE_TQ4_KV = True
 
 
@@ -238,10 +249,31 @@ def _derive_mbpp_signature(p: MbppProblem) -> str:
     return f"def {p.fn_name}({args}):"
 
 
+def _defines_function(code: str, name: str) -> bool:
+    """True iff `code` parses AND defines a FunctionDef named `name`.
+
+    Stricter than `name in code` — prevents docstring/comment
+    substring false-positives that book as NameError at test time
+    (R13 MBPP#1 first_repeated_char receipt).
+    """
+    import ast
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.name == name:
+                return True
+        if isinstance(node, ast.ClassDef) and node.name == name:
+            return True  # MBPP class problems (rare)
+    return False
+
+
 def extract_code(raw: str, required_name: Optional[str]) -> Optional[str]:
-    """Format-agnostic extractor (simple version). Try:
-    1. Fenced ```python block with required_name
-    2. Fenced ```python block (any)
+    """Format-agnostic extractor. Try:
+    1. Fenced ```python block whose AST actually defines required_name
+    2. Fenced ```python block that parses (any)
     3. Bare code starting with `def <required_name>`
     4. Whole-output AST parse
     """
@@ -258,7 +290,9 @@ def extract_code(raw: str, required_name: Optional[str]) -> Optional[str]:
         code = block.group(1).strip()
         if not _parses(code):
             continue
-        if required_name is None or required_name in code:
+        # Gate on actual FunctionDef, not substring — prevents
+        # docstring/comment false-positives (R13v2 receipt).
+        if required_name is None or _defines_function(code, required_name):
             return code
 
     if required_name:

@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# mbpp-rotate — set the substrate-eval rotation state then run a script.
+#
+# Writes /tmp/substrate_eval_rotation.json for scripts that call
+# calm.llm_computer.eval_defaults.resolve_problem_window().
+#
+# Usage:
+#   bin/mbpp-rotate 0                          # window 0 (default — deltas)
+#   bin/mbpp-rotate 1 scripts/r53_39_...py     # window 1 + dispatch
+#   bin/mbpp-rotate --final                    # FINAL_N (commit baseline)
+#   bin/mbpp-rotate --reset                    # clear rotation state
+#   bin/mbpp-rotate --show                     # print current state
+#
+# When a script path is given, also sends it via bin/gemma-run. Without
+# it, just writes the rotation file and exits (useful before a manual
+# daemon dispatch).
+
+set -euo pipefail
+
+STATE=/tmp/substrate_eval_rotation.json
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+case "${1:-}" in
+  --final)
+    echo '{"window": 0, "n": null, "final": true}' > "$STATE"
+    echo "rotation: FINAL baseline (N=20, window=0)"
+    shift
+    ;;
+  --reset)
+    rm -f "$STATE"
+    echo "rotation state cleared (defaults: window=0, N=5)"
+    exit 0
+    ;;
+  --show)
+    if [[ -f "$STATE" ]]; then
+      cat "$STATE"
+    else
+      echo "no state file — defaults: window=0, N=ITERATION_N"
+    fi
+    exit 0
+    ;;
+  "")
+    echo "usage: $0 <window> [script] | --final [script] | --reset | --show" >&2
+    exit 2
+    ;;
+  *)
+    WIN="$1"
+    if ! [[ "$WIN" =~ ^[0-9]+$ ]]; then
+      echo "error: window must be a non-negative integer, got $WIN" >&2
+      exit 2
+    fi
+    printf '{"window": %s, "n": null, "final": false}\n' "$WIN" > "$STATE"
+    echo "rotation: window=$WIN (N=ITERATION_N)"
+    shift
+    ;;
+esac
+
+if [[ $# -ge 1 ]]; then
+  exec "$ROOT/bin/gemma-run" "$@"
+fi

@@ -17,7 +17,10 @@ from calm.llm_computer.facades.ast_repair import (
     RepairResult,
     _balance_brackets_on_line,
     _find_shadowed_attrs,
+    _name_similarity,
     extract_missing_key,
+    extract_undefined_name,
+    fuzzy_rename_function,
     has_indent_error,
     has_indexerror_oob,
     has_none_return_signal,
@@ -1107,3 +1110,126 @@ def test_end_to_end_csv_column_stats_passes_after_repair():
     assert r["age"]["min"] == 25.0
     assert r["age"]["max"] == 35.0
     assert abs(r["score"]["mean"] - 88.666666) < 1e-3
+
+
+# -- fuzzy function rename ------------------------------------------
+
+
+GEMMA_WRONG_FN_NAME = textwrap.dedent('''
+    def find_first_repeated(s):
+        """Find the first repeated character."""
+        seen = set()
+        for ch in s:
+            if ch in seen:
+                return ch
+            seen.add(ch)
+        return None
+''').strip()
+
+
+GEMMA_VERY_DIFFERENT_FN = textwrap.dedent('''
+    def process_string(s):
+        result = s[::-1]
+        return result
+''').strip()
+
+
+def test_name_similarity_exact():
+    assert _name_similarity("foo_bar", "foo_bar") == 1.0
+
+
+def test_name_similarity_partial():
+    # {first, repeated, char} vs {find, first, repeated}
+    # inter={first, repeated} size 2, union={find, first, repeated, char} size 4 → 0.5
+    sim = _name_similarity("first_repeated_char", "find_first_repeated")
+    assert 0.4 < sim <= 0.5
+
+
+def test_name_similarity_disjoint():
+    assert _name_similarity("foo", "bar") == 0.0
+
+
+def test_extract_undefined_name_parses():
+    err = "Traceback (most recent call last):\n  File ...\nNameError: name 'first_repeated_char' is not defined"
+    assert extract_undefined_name(err) == "first_repeated_char"
+
+
+def test_extract_undefined_name_none():
+    assert extract_undefined_name("KeyError: 'mean'") is None
+    assert extract_undefined_name("") is None
+
+
+def test_fuzzy_rename_mbpp1_first_repeated_char():
+    """Gemma wrote `find_first_repeated`; test expected `first_repeated_char`."""
+    r = fuzzy_rename_function(GEMMA_WRONG_FN_NAME, "first_repeated_char")
+    assert r.applied, f"walker failed: {r.notes}"
+    assert r.kind == "fuzzy_rename"
+    # The renamed code should define first_repeated_char.
+    tree = ast.parse(r.new_code)
+    fn_names = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    assert "first_repeated_char" in fn_names
+    assert "find_first_repeated" not in fn_names
+    # Execute to verify it actually works.
+    ns: dict = {}
+    exec(r.new_code, ns)
+    assert ns["first_repeated_char"]("abcdab") == "a"
+    assert ns["first_repeated_char"]("abc") is None
+
+
+def test_fuzzy_rename_skips_unrelated():
+    """`process_string` vs `first_repeated_char` — zero overlap, must NOT rename."""
+    r = fuzzy_rename_function(GEMMA_VERY_DIFFERENT_FN, "first_repeated_char")
+    assert not r.applied, "walker wrongly renamed unrelated function"
+
+
+def test_fuzzy_rename_refuses_existing_target():
+    """If code already has first_repeated_char AND another similar def,
+    don't clobber."""
+    code = textwrap.dedent('''
+        def find_first_repeated(s):
+            return None
+        def first_repeated_char(s):
+            return "a"
+    ''').strip()
+    r = fuzzy_rename_function(code, "first_repeated_char")
+    assert not r.applied, "walker created duplicate definition"
+
+
+def test_fuzzy_rename_empty_code():
+    r = fuzzy_rename_function("", "foo")
+    assert not r.applied
+
+
+def test_fuzzy_rename_no_funcdef():
+    r = fuzzy_rename_function("x = 5", "foo")
+    assert not r.applied
+
+
+def test_repair_dispatches_fuzzy_rename_on_nameerror():
+    """End-to-end: repair() picks fuzzy_rename when error_output has NameError."""
+    err = "NameError: name 'first_repeated_char' is not defined"
+    r = repair(GEMMA_WRONG_FN_NAME, err)
+    assert r.applied
+    assert r.kind == "fuzzy_rename"
+
+
+def test_repair_no_fuzzy_rename_without_nameerror():
+    """If error isn't NameError, fuzzy_rename shouldn't fire."""
+    err = "AssertionError: whatever"
+    r = repair(GEMMA_WRONG_FN_NAME, err)
+    assert not r.applied or r.kind != "fuzzy_rename"
+
+
+def test_fuzzy_rename_recursive_call_rewritten():
+    """Function calls itself recursively — rename must update call site."""
+    code = textwrap.dedent('''
+        def factorial_fn(n):
+            if n <= 1:
+                return 1
+            return n * factorial_fn(n - 1)
+    ''').strip()
+    r = fuzzy_rename_function(code, "factorial")
+    assert r.applied
+    ns: dict = {}
+    exec(r.new_code, ns)
+    assert ns["factorial"](5) == 120

@@ -384,6 +384,132 @@ def has_indent_error(error_output: str) -> bool:
     return bool(_INDENT_ERROR_RE.search(error_output or ""))
 
 
+_NAMEERROR_RE = re.compile(r"NameError:\s+name\s+'([^']+)'\s+is\s+not\s+defined")
+
+
+def extract_undefined_name(error_output: str) -> Optional[str]:
+    """Return the undefined name from `NameError: name 'X' is not defined`,
+    else None. Used by fuzzy_rename_function to retarget a Gemma-emitted
+    function name to what the test harness expects (R13 MBPP#1 receipt:
+    Gemma wrote `find_first_repeated`, test called `first_repeated_char`).
+    """
+    m = _NAMEERROR_RE.search(error_output or "")
+    return m.group(1) if m else None
+
+
+# --------------------------------------------------------------------
+# 7. Fuzzy function rename (NameError driven)
+# --------------------------------------------------------------------
+# Gemma frequently writes a function with its own naming convention
+# (e.g. `find_first_repeated_character`) when MBPP expects
+# `first_repeated_char`. The test harness's `assert first_repeated_char(...)`
+# raises NameError because the extracted code defines a different name.
+# This walker rewrites the FunctionDef + all call sites to the expected
+# name. Similarity gated on token-set Jaccard ≥ 0.5 to avoid renaming
+# unrelated functions.
+
+
+def _name_similarity(a: str, b: str) -> float:
+    """Token-set Jaccard over underscore-split lowercased names.
+    `first_repeated_char` vs `find_first_repeated_character` →
+    tokens {first, repeated, char} vs {find, first, repeated, character}
+    intersection {first, repeated} size 2, union size 5 → 0.4.
+    `first_repeated_char` vs `first_repeat_char` →
+    {first, repeated, char} vs {first, repeat, char} → 2/4 → 0.5.
+    """
+    ta = set(a.lower().replace("-", "_").split("_"))
+    tb = set(b.lower().replace("-", "_").split("_"))
+    ta.discard("")
+    tb.discard("")
+    if not ta or not tb:
+        return 0.0
+    inter = len(ta & tb)
+    union = len(ta | tb)
+    return inter / union if union else 0.0
+
+
+class _FunctionRenamer(ast.NodeTransformer):
+    """Rename one FunctionDef + all its uses. Keeps other defs intact."""
+
+    def __init__(self, old_name: str, new_name: str):
+        self.old_name = old_name
+        self.new_name = new_name
+        self.rename_count = 0
+
+    def visit_FunctionDef(self, node):
+        if node.name == self.old_name:
+            node.name = self.new_name
+            self.rename_count += 1
+        self.generic_visit(node)
+        return node
+
+    def visit_AsyncFunctionDef(self, node):
+        return self.visit_FunctionDef(node)
+
+    def visit_Name(self, node):
+        if node.id == self.old_name:
+            self.rename_count += 1
+            return ast.copy_location(
+                ast.Name(id=self.new_name, ctx=node.ctx), node)
+        return node
+
+    def visit_Attribute(self, node):
+        # Method calls: obj.old_name(...) → obj.new_name(...) — only if
+        # old_name is actually a class method, not a stdlib attribute.
+        # Conservative: skip Attribute rewrites; only top-level Name
+        # and FunctionDef. Recursive calls via plain name still work.
+        self.generic_visit(node)
+        return node
+
+
+def fuzzy_rename_function(code: str, target_name: str,
+                          min_similarity: float = 0.5) -> RepairResult:
+    """Find the single FunctionDef most similar to `target_name`, rename
+    it (and all internal call sites) if similarity ≥ `min_similarity`.
+
+    Strict: refuses when (a) zero FunctionDefs, (b) no candidate above
+    threshold, (c) the target name already exists. This avoids
+    collisions that would create two same-named defs.
+    """
+    if not code:
+        return RepairResult(None, "none", ["empty code"])
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        return RepairResult(None, "none", [f"parse failed: {e}"])
+
+    funcdefs = [n for n in ast.walk(tree)
+                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    if not funcdefs:
+        return RepairResult(None, "none", ["no FunctionDef"])
+
+    # Bail if target_name is already defined — don't clobber.
+    existing = {f.name for f in funcdefs}
+    if target_name in existing:
+        return RepairResult(None, "none",
+                            [f"{target_name!r} already defined"])
+
+    scored = [(_name_similarity(f.name, target_name), f) for f in funcdefs]
+    scored.sort(key=lambda t: -t[0])
+    best_sim, best_fn = scored[0]
+    if best_sim < min_similarity:
+        return RepairResult(
+            None, "none",
+            [f"best candidate {best_fn.name!r} sim={best_sim:.2f} "
+             f"< {min_similarity}"])
+
+    old_name = best_fn.name
+    renamer = _FunctionRenamer(old_name, target_name)
+    new_tree = renamer.visit(tree)
+    ast.fix_missing_locations(new_tree)
+    new_code = ast.unparse(new_tree)
+
+    return RepairResult(
+        new_code, "fuzzy_rename",
+        [f"renamed {old_name!r} -> {target_name!r} "
+         f"(sim={best_sim:.2f}, {renamer.rename_count} sites)"])
+
+
 # --------------------------------------------------------------------
 # 3. Balanced-paren syntax repair (pre-walker, pre-extractor)
 # --------------------------------------------------------------------
@@ -1039,12 +1165,22 @@ def repair(code: str, error_output: str) -> RepairResult:
         if mret.applied:
             return mret
 
+    # 5. Fuzzy function rename — NameError driven. Gemma emits a
+    # differently-named function than the test harness expects; if code
+    # has exactly one FunctionDef similar to the missing name, rename.
+    undefined = extract_undefined_name(error_output or "")
+    if undefined:
+        fuzzy = fuzzy_rename_function(code, undefined)
+        if fuzzy.applied:
+            return fuzzy
+
     return RepairResult(None, "none",
                         ["no applicable rewrite",
                          f"shadow: {shadow.notes}",
                          f"missing_key: {missing}",
                          f"indexerror: {has_indexerror_oob(error_output or '')}",
-                         f"none_return: {has_none_return_signal(error_output or '')}"])
+                         f"none_return: {has_none_return_signal(error_output or '')}",
+                         f"undefined_name: {undefined}"])
 
 
 def repair_cascade(code: str, error_output: str,
