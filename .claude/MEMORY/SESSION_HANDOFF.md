@@ -216,6 +216,85 @@ tier-2 atlas across 2 install patterns with 4 shipped wins, (c)
 tier-3 demo on a commercial-critical domain. That's the commercial
 pitch deck complete.
 
+### 7. Planner card (4-8 hours) — orchestration layer for multi-step workflows
+
+The frontier-multi-step-coding path per `tracing_intelligence.md`
+§"multi-step planning": a **decode-path PlannerFacade** that
+decomposes NL goals into ordered facade calls. Tier-2 stacking
+taken to its logical conclusion — orchestrate R46.2 (math) +
+R22c (base conv) + `ast_repair` walker + code retrieval +
+`KnowledgeStore` recall all from a single prompt.
+
+**MVP scope (Option A — pure decode-path facade, no compiled card):**
+
+Create `calm/llm_computer/facades/planner.py` following R46.2
+skeleton:
+- `parse(prompt)` → `(template_kind, sub_task_spec)` — regex
+  catalog of task templates
+- `orchestrate(spec)` → list of facade calls in order
+- `_generate(prompt, orchestrated_steps, boost, max_tokens)` —
+  executes each sub-facade, biases Gemma's decode to emit each
+  step's result inline
+
+Initial template catalog (5 classes, ~30 min each):
+1. **Math + conversion chain** — "Compute a+b, convert result to
+   hex" → R46.2 then R22c
+2. **Bug + test** — "Fix this TypeError in <code>, then run tests"
+   → `ast_repair` walker then sandbox
+3. **Lookup + adapt** — "Find MBPP solution for task X, adapt to
+   signature Y" → CodeExampleDB retrieve then ast_repair rename
+4. **Data transform pipeline** — "Parse CSV, compute column
+   mean, format as JSON" → CALM csv_ops + data_ops + json_ops
+5. **Code gen + verify** — "Write function to do X, verify
+   against tests" → Gemma natural + sandbox run_python + AST
+   repair on failure
+
+**Failure-surface gate first** (30 min):
+- 10-15 multi-step prompts, each mixing 2-3 sub-facades
+- Score stock Gemma end-to-end (check sub-task errors compound:
+  e.g. wrong arithmetic then wrong conversion)
+- Keep where Gemma fails ≥ 1 sub-step
+
+**Measurement** (1 hour):
+- Baseline: Gemma natural decode on the fail corpus
+- With planner: orchestrated facade calls
+- Target: **Δ ≥ 30% lift**, 0 regressions
+- Per-sub-facade: track which sub-call delivered the fix
+
+**Risks + mitigations:**
+- *Template catalog too narrow* — starts with 5 classes; add
+  more as failure modes surface. Don't block on exhaustive
+  coverage.
+- *Facade output integration* — R46.2 biases single numeric
+  answer; planner needs to bias MULTIPLE intermediate results
+  into Gemma's stream with markdown structure. May need a
+  `bias_with_marker` extension (emit `<step>value</step>` then
+  continue) — similar to R22c's `"Answer: "` suffix trick.
+- *Step coordination* — Gemma may "finish" before planner's
+  last sub-task fires. Use `max_tokens` aggressive (150+) and
+  stop-on-pattern guards to hold the window open.
+
+**Design path if MVP works:**
+Option C (compiled planner card with channel-as-register state)
+becomes the follow-up — `programs/planner.py` with
+`dispatched_v4` opcode pattern routes sub-tasks to facade slots
+via residual channels. That's tier-2 compiled (not designed from
+scratch at a missing slot, so technically tier-2 by the circuit
+typology; but it does COMPOSE existing facades in a way pure
+decode-path can't — longer horizon, auditable state trace).
+
+**Commercial framing** once shipped: "Substrate orchestrates
+exact-compute facades via a parseable planner — the output is
+inspectable as a sequence of deterministic calls with CALM
+verification at each step. GPT-4's `<think>` block is opaque;
+ours is a sequence diagram."
+
+**Queue order for tomorrow**: do #6 ICD-10 first (tier-3 moat
+demo is faster to prove out), then #7 planner. Combined, they
+ship as the "Brain + Cards orchestration" story: tier-2 + tier-3
++ orchestration layer = frontier-competitive surface on
+verifiable workflows.
+
 ## Key Context (for cold-start tomorrow)
 
 ### The adapter-bug finding (the session's pivotal discovery)
