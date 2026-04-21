@@ -70,6 +70,8 @@ class DeltaNetConfig(Small2DConfig):
     chunk_size: int = 32            # C in paper — 32 is sweet spot at seq≤128
     n_delta_heads: int = 1          # split delta state into H parallel (D/H, D/H) states
                                      # (H=1 matches single-head baseline bit-for-bit)
+    n_iterations: int = 1           # D5 refinement loop — iterate layer stack N times
+                                     # per forward pass (ARC-Prize finding: +13pp from 0→1)
 
 
 class DeltaNetSmall2DTransformer(Small2DTransformer):
@@ -324,6 +326,18 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         pos_idx = torch.arange(S, device=idx.device)
         x = self.tok(idx) + self.pos(pos_idx)
 
+        # D5 refinement loop: iterate the full layer stack n_iterations times
+        # per forward pass, sharing weights across iterations. Each iteration
+        # rebuilds DeltaNet state from scratch; the residual stream x carries
+        # over between iterations. n_iterations=1 matches baseline exactly
+        # (the outer loop runs once and the inner body is bit-identical).
+        n_iters = max(1, getattr(cfg, "n_iterations", 1))
+        for _iter in range(n_iters):
+            x = self._delta_layer_stack(x, cfg, B, S)
+        return x
+
+    def _delta_layer_stack(self, x: torch.Tensor, cfg, B: int, S: int) -> torch.Tensor:
+        """One pass through all layers. Extracted for D5 refinement-loop reuse."""
         for layer in range(cfg.n_layers):
             qkv = self.W_qkv[layer](x)                         # (B, S, 3D)
             qkv = qkv.reshape(B, S, 3, cfg.n_heads, cfg.d_head)
