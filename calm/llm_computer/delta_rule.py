@@ -66,6 +66,8 @@ class DeltaNetConfig(Small2DConfig):
     use_short_conv: bool = False    # paper's short 1D conv after QKV; optional at this scale
     use_l2_norm: bool = True        # L2 on K/Q per paper; ablation: try False
     use_silu_feat: bool = True      # SiLU feature map on K/Q per paper
+    use_chunkwise: bool = False     # chunkwise parallel form (UT transform, paper §4)
+    chunk_size: int = 32            # C in paper — 32 is sweet spot at seq≤128
 
 
 class DeltaNetSmall2DTransformer(Small2DTransformer):
@@ -116,6 +118,102 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         S_new = S - update
         out = torch.einsum("bij,bj->bi", S_new, q_t)
         return S_new, out
+
+    @staticmethod
+    def _delta_chunkwise(
+        S: torch.Tensor,
+        Q: torch.Tensor,
+        K: torch.Tensor,
+        V: torch.Tensor,
+        beta: torch.Tensor,
+        chunk_size: int = 32,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Chunkwise parallel delta-rule (paper §3-4 — UT transform).
+
+        Args:
+            S:     (B, D, D) initial state (typically zeros).
+            Q/K/V: (B, L, D) per-position queries, keys, values.
+                   K/Q are assumed L2-normalized + SiLU (caller applies).
+            beta:  (B, L, 1) per-position write strength in (0, 1).
+            chunk_size: C — number of tokens processed in parallel per
+                   chunk. Trade-off: bigger C = more parallelism, more
+                   SRAM per chunk. 32 is sweet spot at L≤128; bump to
+                   64 or 128 for longer sequences.
+
+        Returns:
+            S_final: (B, D, D) final state after all positions processed.
+            reads:   (B, L, D) per-position read-after-write outputs,
+                     matches `_delta_step` one-position-at-a-time output
+                     to float32 numerical epsilon.
+
+        Math (for chunk [t] of size C starting from prior state S):
+            K_c K_c^T                                  (C, C)
+            A = I + tril(diag(β) K K^T, -1)            (C, C) lower-tri
+            T = A^-1 · diag(β)                          (C, C) tri solve
+            W = T K,  U = T V                          (C, D) each
+            U' = U - W S^T                              (C, D) — prior-state adjusted
+            O = Q S^T + (Q K^T ⊙ M_causal) U'          (C, D) output
+            S_next = S + U'^T K                        (D, D) state update
+        """
+        B, L, D = Q.shape
+        device = Q.device
+        dtype = Q.dtype
+
+        # Precompute the strict-lower-triangular mask once (outside chunk loop).
+        # For the causal Q K^T mask we want lower-triangular INCLUDING diagonal
+        # (position r reads its own k_r after write at position r).
+        C = chunk_size
+
+        reads_chunks = []
+        for start in range(0, L, C):
+            end = min(start + C, L)
+            Cc = end - start
+
+            Q_c = Q[:, start:end, :]                        # (B, Cc, D)
+            K_c = K[:, start:end, :]                        # (B, Cc, D)
+            V_c = V[:, start:end, :]                        # (B, Cc, D)
+            beta_c = beta[:, start:end, :].squeeze(-1)      # (B, Cc)
+
+            # K K^T intra-chunk Gram matrix.
+            Kkt = torch.matmul(K_c, K_c.transpose(-2, -1))  # (B, Cc, Cc)
+
+            # A = I + tril(diag(β) K K^T, -1)
+            # Row r of (diag(β) K K^T) is β_r · K_r K^T. Strict lower tri only.
+            eye_Cc = torch.eye(Cc, device=device, dtype=dtype).unsqueeze(0).expand(B, Cc, Cc)
+            strict_tril = torch.tril(
+                torch.ones(Cc, Cc, device=device, dtype=dtype), diagonal=-1,
+            )
+            A_mat = eye_Cc + (beta_c.unsqueeze(-1) * Kkt) * strict_tril
+
+            # T · A = diag(β)  →  T = A^-1 · diag(β)
+            # Using torch.linalg.solve_triangular: solves A X = RHS for X.
+            rhs = torch.diag_embed(beta_c)                  # (B, Cc, Cc)
+            T_mat = torch.linalg.solve_triangular(A_mat, rhs, upper=False)
+
+            W_c = torch.matmul(T_mat, K_c)                  # (B, Cc, D)
+            U_c = torch.matmul(T_mat, V_c)                  # (B, Cc, D)
+
+            # Prior-state adjustment. S^T is (B, D, D).
+            S_t = S.transpose(-2, -1)                        # (B, D, D)
+            U_prime = U_c - torch.matmul(W_c, S_t)           # (B, Cc, D)
+
+            # Intra-chunk output with causal (lower-tri incl. diagonal) mask.
+            causal_incl_diag = torch.tril(
+                torch.ones(Cc, Cc, device=device, dtype=dtype), diagonal=0,
+            )
+            Qkt = torch.matmul(Q_c, K_c.transpose(-2, -1))   # (B, Cc, Cc)
+            Qkt_masked = Qkt * causal_incl_diag
+            O_c = (
+                torch.matmul(Q_c, S_t)                        # prior-state reads
+                + torch.matmul(Qkt_masked, U_prime)           # intra-chunk reads
+            )                                                 # (B, Cc, D)
+            reads_chunks.append(O_c)
+
+            # State update: S_next = S + (U')^T K
+            S = S + torch.matmul(U_prime.transpose(-2, -1), K_c)  # (B, D, D)
+
+        reads = torch.cat(reads_chunks, dim=1)               # (B, L, D)
+        return S, reads
 
     def _forward_backbone(self, idx: torch.Tensor) -> torch.Tensor:
         """Run the DeltaNet backbone; return pre-head hidden states x (B, S, D).
@@ -184,17 +282,23 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
                 B, cfg.d_model, cfg.d_model,
                 device=x.device, dtype=x.dtype,
             )
-            reads = []
-            for t in range(S):
-                S_state, out_t = self._delta_step(
-                    S_state,
-                    q_feat[:, t, :],
-                    k_feat[:, t, :],
-                    v_flat[:, t, :],
-                    beta[:, t, :],
+            if getattr(cfg, "use_chunkwise", False):
+                S_state, delta_out = self._delta_chunkwise(
+                    S_state, q_feat, k_feat, v_flat, beta,
+                    chunk_size=getattr(cfg, "chunk_size", 32),
                 )
-                reads.append(out_t)
-            delta_out = torch.stack(reads, dim=1)              # (B, S, D)
+            else:
+                reads = []
+                for t in range(S):
+                    S_state, out_t = self._delta_step(
+                        S_state,
+                        q_feat[:, t, :],
+                        k_feat[:, t, :],
+                        v_flat[:, t, :],
+                        beta[:, t, :],
+                    )
+                    reads.append(out_t)
+                delta_out = torch.stack(reads, dim=1)          # (B, S, D)
 
             if attn is not None:
                 x = x + self.W_out[layer](attn) + self.W_out[layer](delta_out)
