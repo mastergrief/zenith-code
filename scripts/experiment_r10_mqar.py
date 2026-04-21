@@ -28,9 +28,35 @@ from torch.utils.data import DataLoader, random_split
 
 from calm.hrm.data import VOCAB_SIZE, _CHAR_TO_ID, _ID_TO_CHAR
 from calm.hrm.memory_tasks import gen_mqar_batch, MemProblem
-from calm.llm_computer.copy_augmented import build_copy_augmented_hrm
-from calm.llm_computer.copy_augmented_delta import build_copy_augmented_delta
+from calm.llm_computer.copy_augmented import (
+    CopyAugmentedConfig, CopyAugmentedTransformer, build_copy_augmented_hrm,
+)
+from calm.llm_computer.copy_augmented_delta import (
+    CopyAugmentedDeltaConfig, CopyAugmentedDeltaNet, build_copy_augmented_delta,
+)
 from scripts.train_substrate_hrm import SeqDataset
+
+
+def _build_pt_any_d_head(vocab_size, d_model, n_heads, n_layers, d_ffn,
+                         max_len, n_copy_heads, use_hard_max):
+    """PT with any d_head (bypasses substrate d_head=2 invariant for tests)."""
+    cfg = CopyAugmentedConfig(
+        vocab_size=vocab_size, d_model=d_model, n_heads=n_heads,
+        n_layers=n_layers, d_ffn=d_ffn, max_len=max_len,
+        n_copy_heads=n_copy_heads, use_hard_max=use_hard_max,
+    )
+    return CopyAugmentedTransformer(cfg)
+
+
+def _build_delta_any_d_head(vocab_size, d_model, n_heads, n_layers, d_ffn,
+                            max_len, n_copy_heads, use_hard_max):
+    cfg = CopyAugmentedDeltaConfig(
+        vocab_size=vocab_size, d_model=d_model, n_heads=n_heads,
+        n_layers=n_layers, d_ffn=d_ffn, max_len=max_len,
+        n_copy_heads=n_copy_heads, use_hard_max=use_hard_max,
+        use_delta_net=True, use_softmax_attn=False,
+    )
+    return CopyAugmentedDeltaNet(cfg)
 
 
 def _filter_by_difficulty(probs: List[MemProblem], diff: int) -> List[MemProblem]:
@@ -182,13 +208,15 @@ def main():
     train_loader = DataLoader(train_ds, batch_size=args.batch_size,
                               shuffle=True, drop_last=True)
 
+    d_head = args.d_model // args.n_heads
+    print(f"  d_head={d_head}")
     # --- Plain PT ---
     print(f"\n[1/2] plain PT")
     torch.manual_seed(args.seed)
-    m_pt = build_copy_augmented_hrm(
+    m_pt = _build_pt_any_d_head(
         vocab_size=VOCAB_SIZE, d_model=args.d_model, n_heads=args.n_heads,
         n_layers=args.n_layers, d_ffn=args.d_ffn, max_len=args.max_len,
-        use_hard_max=False,
+        n_copy_heads=4, use_hard_max=False,
     )
     print(f"  params: {sum(p.numel() for p in m_pt.parameters()):,}")
     pt_overall, pt_by_N = train_and_measure(
@@ -202,10 +230,10 @@ def main():
     # --- PT+DeltaNet ---
     print(f"\n[2/2] PT+DeltaNet")
     torch.manual_seed(args.seed)
-    m_d = build_copy_augmented_delta(
+    m_d = _build_delta_any_d_head(
         vocab_size=VOCAB_SIZE, d_model=args.d_model, n_heads=args.n_heads,
         n_layers=args.n_layers, d_ffn=args.d_ffn, max_len=args.max_len,
-        use_hard_max=False,
+        n_copy_heads=4, use_hard_max=False,
     )
     print(f"  params: {sum(p.numel() for p in m_d.parameters()):,}")
     d_overall, d_by_N = train_and_measure(
