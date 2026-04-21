@@ -41,6 +41,23 @@ gemma.verification_hooks.append(hook)
   can be corrupted by the card's default argmax — Round 6 bug.
 - Single-token only. Fires once per forward pass.
 
+**Tune `min_margin` per-card, not to a fixed 0.5.** R22 MQAR card on
+Gemma distractor-confused corpus (`delta_rule.md` §R22 install)
+converged on `min_margin=22.0` — card's correct outputs cluster at
+margin 22-23, wrong outputs at 19-21, clean bimodal split with a
+~1-point gap. `min_margin=0.5` was too permissive (pre-R22e data
+showed card firing on confident-wrong 19-21 margins). Process:
+run the card standalone on a representative corpus, plot the
+(peak-median) margin distribution for correct vs wrong cases,
+pick a threshold in the gap.
+
+**`write_margin` must mirror `min_margin` for CardSlot installs**
+(commit `e169d6d`). `card_output_fn` independently writes to the
+residual stream; without a margin gate the write happens even when
+hook is silent, shifting Gemma's head projection. Keep them aligned
+(same numeric value) unless you have a specific reason to let one
+fire without the other.
+
 Use for: single-token verified answers where the card's vocab is
 small (digits, yes/no, enum slots).
 

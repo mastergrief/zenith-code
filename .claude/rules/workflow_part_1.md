@@ -90,11 +90,33 @@ most important discipline in this workflow.
 | Cognitive module | router on flawed response (quality + issue count) | Engine V2 Gemma test — quality gap bad vs good |
 | NL pattern | NL pattern count + precompute on test prompt | Gemma test — correct value injected? |
 | Scoring/threshold | flawed response < 75%, good > 90% | self-heal trigger test on bad response |
-| Substrate card install | card.forward standalone == card.forward inside Gemma (hooked) | Gemma logits diff vs no-install baseline > noise |
+| Substrate card install | card.forward standalone on REAL adapter-extracted inputs (not hand-crafted sanity) | Gemma + card A/B vs Gemma baseline on the SAME corpus |
 | Triton kernel | bit-equivalent to PyTorch path (max abs diff < 1e-5) | end-to-end tok/s on a 30+ token decode |
 
 If you only have one path, say so out loud and accept the reduced
 confidence — but keep looking for the second.
+
+### Adapter-robustness — the R22e lesson (2026-04-21)
+
+**If a card install shows low effective precision on live inputs,
+run the card STANDALONE on the adapter's extracted strings BEFORE
+hypothesizing calibration, distribution-shift, or architectural
+gaps.** The R22b arc burned 6 rounds tuning thresholds and installing
+margin gates on a "67% card precision" signal that turned out to be
+a 5-line regex bug in the adapter picking the wrong query key from
+distractor prose containing `value of X` phrasings. 30-second
+standalone diagnostic (`scripts/r22e_card_standalone_sanity.py`
+pattern) exposed it: card was 100% on correctly-extracted inputs.
+
+Rule: for install work with an adapter or parser, the two-measurement
+pair is **(raw on REAL adapter outputs) + (user-facing A/B)**, not
+(raw on synthetic inputs) + (user-facing). Synthetic sanity cases
+(R22a's `"a 3 b 7 c 1 ; b"`) skip the adapter entirely, so adapter
+bugs are invisible.
+
+Sibling commits worth citing when this rule applies:
+- `c3eac18` — R22e adapter-regex anchor fix (5 lines)
+- `73df738` — TRUE result post-fix: Δ=+9 vs pre-fix Δ=+1
 
 ## Plateau detection
 

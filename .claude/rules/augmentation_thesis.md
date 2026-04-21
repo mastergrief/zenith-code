@@ -58,7 +58,8 @@ working augmentation in this codebase is tier-2 ADDITIVE:
 | R46.2 `MultiStepReasoningFacade` (17/17 fixes) | Tier-2 stack | NL parser + `safe_eval` + step-through bias |
 | `KnowledgeStore` recall cards | Tier-2 at output | Step-function indicators + `CardSlot` + `VerificationHook` |
 | `programs/gcd`, `adder`, `multiplier` (compiled) | Tier-2 integration | Compiled compute + tier-2 output hook |
-| R-delta-21 `CopyAugmentedDeltaNet` MQAR card (100% N=5-15) | Tier-2/3 retrieval card | DeltaNet Householder fast-weight state + cached decode (R-delta-20b), ready for CardSlot install on Gemma (R22). Full spec: `delta_rule.md`. |
+| R-delta-21 `CopyAugmentedDeltaNet` MQAR card (100% N=5-15) | Tier-2/3 retrieval card | Installed on prod Gemma via 4-gate CardSlot (R22, 2026-04-21, commit `73df738`): **+9/60 (21% relative) on 60-prompt distractor-confused corpus, 0 regressions.** Card is 100% on clean adapter outputs; pre-`c3eac18` "calibration gap" narrative was an adapter-regex bug (see `delta_rule.md` §R22 install). |
+| `BaseConversionFacade` R22c hex/binary → decimal (decode-path, no training, commit `7db6eb9`) | Tier-2 compute facade | Parser + `int(x, base)` + step-through digit bias. 10/10 vs baseline 7/10 (+3, 30% lift, 0 regressions) in 119s. R46.2 pattern generalizes — see `compute_facades.md`. |
 
 **R51/R52 were the anomaly.** Both explicitly chose REPLACEMENT via
 monkey-patching `m._forward_layer` to skip Gemma's native L24.
@@ -473,6 +474,8 @@ re-validate the thesis.
 ## Related rules
 
 - `Substrate.md` — install mechanics (CardSlot, `install_card_in_attention`, VerificationHook)
+- `compute_facades.md` — decode-path tier-2 card pattern (R46.2 + R22c), zero-VRAM compute facades
+- `delta_rule.md` §R22 install — CardSlot retrieval card with 4-gate config (2026-04-21 shipped)
 - `tracing_intelligence.md` — first-principles bound on what's compilable
 - `tracing_roadmap.md` — concrete atlas progress and next-target queue
 - `capability_gain.md` — measurement discipline (raw path + user-facing path)
