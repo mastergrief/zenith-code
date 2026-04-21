@@ -114,6 +114,10 @@ def main() -> None:
     heavy_warmup(3.0)
     print("[warmup done]", flush=True)
 
+    # Round 4 (null): enabling torch.compile on _tq4_linear_kernel produced
+    # no measurable lift on the graph path — CUDA Graphs already captures
+    # the launch overhead compile targets. Leaving disabled.
+
     # Pre-run once to JIT-compile Triton kernels + warm caches
     print("\n[jit warmup] generate(use_tq4_kv=False) 64 tok...", flush=True)
     _ = m_ref.generate(PROMPT, tok_ref, max_tokens=64, device="cuda",
