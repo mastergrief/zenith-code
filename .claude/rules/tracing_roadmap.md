@@ -309,6 +309,36 @@ Ruled-out entries (from this session's rounds):
 | Fused tq4 flash-attn decode kernel initial dispatch rejection (PARTIALLY SUPERSEDED 2026-04-20) | Round 53.34 → revised | **Session 33-34 read (retained for receipt)**: rewrote the 257-line `tq4_flash_attn.py` scaffold with correct online-softmax + per-head-parallel V kernel, wired into `_forward_layer` for `KVCacheTq4 AND S==1 AND d_head==256 AND not partitions`. 7/7 unit tests cos=1.00000 vs fp32, real-Gemma Δmean=0 argmax=+0. Initial A/B (single-run, Triton weight kernels ON for both, isolated via `enable_fused_flash_attn()`): fused 8-10% slower than memo — N=64 5.60 vs 6.06, N=256 5.32 vs 5.77, N=1024 5.11 vs 5.60, fp16 baseline 7.0-7.5. Conclusion at the time: `_use_fused_flash_attn=False` default, kernel kept in tree, revisit if N>4K becomes the workload. **2026-04-20 re-bench reversal** (same script, same hardware, different GPU clock/driver state): fp16 7.0, memo 5.6-6.1, fused 4.0 at N=64 / **6.40 at N=256** / **6.43 at N=1024** / 5.65 at N=4096. The N=256 (5.32→6.40) and N=1024 (5.11→6.43) points from the session-33 read are directly contradicted; N=64 and extended N=4096 CONFIRM slower. Curve is non-monotonic, not universally slower. **Attributed**: GPU clock/driver state variance between sessions is real (single-run methodology per `workflow.md` §"GPU bench discipline" can miss 5-10% shifts; both reads violated median-of-5). **New disposition**: `_use_fused_flash_attn=True` default, runtime conditional gates on `128 < kv_cache.layer_pos[kv_src] < 2048`. Inside the band fused runs (+6 to +14%); outside it falls back to Phase 1 memo (protects N=64 small-decode + long-eval past 2048). Realistic chat + short-eval workloads decode entirely inside the gate. Phase 1 memo remains the asymptotic winner (N>2048) and the out-of-gate fallback — it's not retired. Unlock potential if ever revisited: (a) one Triton kernel spanning all Q heads, (b) TILE_N parallel-over-N V kernel — both would push the lower gate threshold down. Full bench table + policy rationale: `turboquant.md` §"Fused flash-attention decode". |
 | csv_column_stats "NoCode bottleneck" (PARTIALLY SUPERSEDED by R53.35 reaudit) | Round 53.35 (initial) → superseded by R53.35 reaudit | **Initial framing (retained as receipt)**: R53.33's "csv hits KeyError at runtime" stale; first R53.35 pass reported csv `0/0 NoCode` across two attempts, walker gated out, "intervention is upstream of the walker". **REFUTED by `c81feb6` reaudit**: csv actually emits extractable code with ONE missing `)` at `for i in range(min(num_cols, len(row)):` (line 42). Original extractor's AST-validate step rejected 1742 tokens of otherwise-correct logic — looked like "NoCode" in scoring output. After `syntax_repair` (insert-before-colon strategy, `fd581a6`), code parses, runs, and passes **8/8** R53 csv sub-tests (name-skip, age mean/min/max, score mean, empty dict, single-row stdev). **The real lesson**: the "NoCode" label conflated `extractor returned 0 chars` with `Gemma produced no code` — the two are different states. Gemma's output has mechanical bugs; extractor strictness hides them; walker heals them. Post-fix, csv moves from "extractor ceiling" to "walker-fixable". The NoCode-framing still applies to the OTHER branch where Gemma truly emits prose only (untested on live Gemma since reaudit — deferred). **Next direction**: run the walker stack on MBPP/HumanEvalPlus corpus — many more mechanical-bug lifts likely available. |
 
+## R-delta arc ruled-out log (2026-04-21)
+
+**R-number disambiguation**: the tracing-arc R13-R21 above (logit
+lens / activation patching / per-head / SAE / V probe) are distinct
+from the PT+Delta "R-delta" arc that landed on the same branch the
+same day. R-delta work lives in `.claude/rules/delta_rule.md` with
+its own numbering scope. Nulls below use the `R-delta-NN` prefix to
+avoid collision. Full arc + receipts: `delta_rule.md` and
+`.claude/MEMORY/evals/2026-04-21_r*.md`.
+
+| R-delta ID | SHA | Approach | Reason ruled out |
+|---|---|---|---|
+| R-delta-5 | `dba270e` | Pure DeltaNet at substrate scale | 19.7% @ n=5 vs plain-PT baseline 65.1%. Paper's d_head=128 regime doesn't transfer to substrate d_head=2. Need PT copy-path shield (landed as R-delta-6a). |
+| R-delta-6b | `97fba23` | Plain-PT multi-step chain test as capability wedge | Plain PT saturated 100% at all L=1-5; task too easy to distinguish mechanisms. PT+Delta wall-time prohibitive at max_len=128 (pre-chunkwise). |
+| R-delta-8 | `3b9087f` | Sub-head partition (softmax + delta + copy) | 44% plateau @ ep25. Convex-combination over sub-heads dilutes each mechanism to a fraction of full state capacity at d_head=2. Compose at OUTPUT, not residual. |
+| R-delta-9 | `1e9925e` | Soft-gate dispatch (3-way weighted sum) | 46% plateau; gate learns specialization but convex combination mathematically dilutes each mechanism below full-strength contribution. |
+| R-delta-11a/b | `6617a48` | Capacity scaling (d_model 64→128 in 11a; d_head 2→16 in 11b) | Both null on MQAR ceiling at R10's 500/N × 40 ep budget. Misread as capacity limit; actually data-starved — cracked by R13 data-scaling. |
+| R-delta-16 | `187203d` | Scratchpad single-card (PT+Delta solves ((a*b)+c)+d step-by-step) | Both plain PT and PT+Delta at 0% full-expression match; loss trajectories identical (1.4→0.3 over 12 ep). State-carry mechanism present but arithmetic lookup requires ~243 single-digit + multi-digit facts — beyond 185K-param capacity. Brain+Cards thesis: use compiled `safe_eval` card for compute. |
+| R-delta-18 | `78b5dfb` | Multi-head delta state (H=4 at d_model=64) | PT+Δ 21% vs plain PT 27% (-6pp). Per-head state (16, 16) = 256 scalars has D/log(D) capacity ~6 keys, well below N=15. Aggregate storage 4096→1024 scalars. Reopen only at d_model ≥128. |
+| R-delta-19 | `65fb148` | D5 refinement loop (n_iterations=2) on MQAR | 21% best / 16% final, same plateau as R-delta-11/18. ARC Prize's "+13pp from refinement" is grid-reasoning-specific — MQAR has nothing to iteratively refine (single-token retrieval). May still help scratchpad (R-delta-16 retry deferred). |
+
+## Track A decode ruled-out log (2026-04-21)
+
+From the parallel decode-speedup track (commits `805e539`→`f59ae73`):
+
+| Approach | SHA | Reason ruled out |
+|---|---|---|
+| Batched pos_t as end-to-end perf win | `aa46f2b` | 42× per-layer Python `set_pos` calls save ~0.8 ms/step theoretical; actual delta below GPU clock variance (24.62 vs 25.02 same-code). Kept cleaner single-tensor design anyway. |
+| `torch.compile` on `_tq4_linear_kernel` | `6b27b90` | -1% to -7% across bench paths. Dynamic-shape recompile lookup overhead exceeds launch savings already captured by CUDA Graphs. Don't retry on graph path. |
+
 ## Related rules
 
 - `augmentation_thesis.md` — strategic synthesis: circuit typology, tier framework, factorial scaling, anti-skepticism (settled positions from R20-R36)
