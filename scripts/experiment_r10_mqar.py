@@ -27,7 +27,18 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, random_split
 
 from calm.hrm.data import VOCAB_SIZE, _CHAR_TO_ID, _ID_TO_CHAR
-from calm.hrm.memory_tasks import gen_mqar_batch, MemProblem
+from calm.hrm.memory_tasks import (
+    MemProblem,
+    gen_mqar_batch,
+    gen_reassign_batch,
+    gen_scratchpad_batch,
+)
+
+_TASK_GENERATORS = {
+    "mqar": gen_mqar_batch,
+    "reassign": gen_reassign_batch,
+    "scratchpad": gen_scratchpad_batch,
+}
 from calm.llm_computer.copy_augmented import (
     CopyAugmentedConfig, CopyAugmentedTransformer, build_copy_augmented_hrm,
 )
@@ -182,23 +193,28 @@ def main():
     ap.add_argument("--no-scheduled-sampling", action="store_true")
     ap.add_argument("--tf-ratio-end", type=float, default=0.3)
     ap.add_argument("--device", type=str, default="auto")
+    ap.add_argument("--task", type=str, default="mqar",
+                    choices=list(_TASK_GENERATORS.keys()),
+                    help="memory task generator: mqar | reassign | scratchpad")
     args = ap.parse_args()
 
     device = args.device
     if device == "auto":
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    print(f"=== R10 MQAR stress: plain PT vs PT+DeltaNet ===")
+    gen_fn = _TASK_GENERATORS[args.task]
+    print(f"=== R10 memory-task stress: plain PT vs PT+DeltaNet ===")
+    print(f"  task={args.task}")
     print(f"  N values: {args.n_values}")
     print(f"  per-N train={args.per_N_train} val={args.per_N_val}")
     print(f"  epochs={args.epochs} max_len={args.max_len} device={device}")
     sys.stdout.flush()
 
-    # Generate mixed-N dataset.
+    # Generate mixed-N dataset using the selected task generator.
     train_probs, val_probs = [], []
     for i, N in enumerate(args.n_values):
-        train_probs.extend(gen_mqar_batch(N, args.per_N_train, seed=args.seed + 1000 * i))
-        val_probs.extend(gen_mqar_batch(N, args.per_N_val, seed=args.seed + 1000 * i + 500))
+        train_probs.extend(gen_fn(N, args.per_N_train, seed=args.seed + 1000 * i))
+        val_probs.extend(gen_fn(N, args.per_N_val, seed=args.seed + 1000 * i + 500))
     print(f"  total train={len(train_probs)} val={len(val_probs)}")
     max_q_len = max(len(p.question) for p in train_probs + val_probs)
     print(f"  max question length: {max_q_len}")
