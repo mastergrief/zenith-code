@@ -68,6 +68,8 @@ class DeltaNetConfig(Small2DConfig):
     use_silu_feat: bool = True      # SiLU feature map on K/Q per paper
     use_chunkwise: bool = False     # chunkwise parallel form (UT transform, paper §4)
     chunk_size: int = 32            # C in paper — 32 is sweet spot at seq≤128
+    n_delta_heads: int = 1          # split delta state into H parallel (D/H, D/H) states
+                                     # (H=1 matches single-head baseline bit-for-bit)
 
 
 class DeltaNetSmall2DTransformer(Small2DTransformer):
@@ -215,6 +217,84 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         reads = torch.cat(reads_chunks, dim=1)               # (B, L, D)
         return S, reads
 
+    @staticmethod
+    def _delta_chunkwise_multihead(
+        S: torch.Tensor,
+        Q: torch.Tensor,
+        K: torch.Tensor,
+        V: torch.Tensor,
+        beta: torch.Tensor,
+        chunk_size: int = 32,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Multi-head chunkwise delta rule.
+
+        Same math as `_delta_chunkwise`, with a leading head dim that
+        broadcasts through all the matmuls. H heads each maintain their
+        own (D_h, D_h) state; aggregate storage is H·D_h² = D·D_h
+        (smaller than single-head's D² for D_h < D).
+
+        Args:
+            S:     (B, H, D_h, D_h)
+            Q/K/V: (B, H, L, D_h)
+            beta:  (B, L, 1) — shared across heads, reshaped internally to (B, 1, L)
+            chunk_size: same as single-head.
+
+        Returns:
+            S_final: (B, H, D_h, D_h)
+            reads:   (B, H, L, D_h)
+        """
+        B, H, L, D_h = Q.shape
+        device = Q.device
+        dtype = Q.dtype
+        C = chunk_size
+
+        reads_chunks = []
+        for start in range(0, L, C):
+            end = min(start + C, L)
+            Cc = end - start
+
+            Q_c = Q[:, :, start:end, :]                             # (B, H, Cc, D_h)
+            K_c = K[:, :, start:end, :]                             # (B, H, Cc, D_h)
+            V_c = V[:, :, start:end, :]                             # (B, H, Cc, D_h)
+            # beta shared across heads — broadcast to (B, 1, Cc, 1).
+            beta_c_full = beta[:, start:end, :]                     # (B, Cc, 1)
+            beta_c = beta_c_full.squeeze(-1).unsqueeze(1)           # (B, 1, Cc)
+
+            Kkt = torch.matmul(K_c, K_c.transpose(-2, -1))          # (B, H, Cc, Cc)
+
+            eye_Cc = torch.eye(Cc, device=device, dtype=dtype)
+            eye_Cc = eye_Cc.view(1, 1, Cc, Cc).expand(B, H, Cc, Cc)
+            strict_tril = torch.tril(
+                torch.ones(Cc, Cc, device=device, dtype=dtype), diagonal=-1,
+            )
+            A_mat = eye_Cc + (beta_c.unsqueeze(-1) * Kkt) * strict_tril
+
+            # diag(β) broadcast to (B, 1, Cc, Cc) then expanded to (B, H, ...)
+            diag_beta = torch.diag_embed(beta_c.expand(B, H, Cc))   # (B, H, Cc, Cc)
+            T_mat = torch.linalg.solve_triangular(A_mat, diag_beta, upper=False)
+
+            W_c = torch.matmul(T_mat, K_c)                          # (B, H, Cc, D_h)
+            U_c = torch.matmul(T_mat, V_c)                          # (B, H, Cc, D_h)
+
+            S_t = S.transpose(-2, -1)                                # (B, H, D_h, D_h)
+            U_prime = U_c - torch.matmul(W_c, S_t)                   # (B, H, Cc, D_h)
+
+            causal_incl_diag = torch.tril(
+                torch.ones(Cc, Cc, device=device, dtype=dtype), diagonal=0,
+            )
+            Qkt = torch.matmul(Q_c, K_c.transpose(-2, -1))           # (B, H, Cc, Cc)
+            Qkt_masked = Qkt * causal_incl_diag
+            O_c = (
+                torch.matmul(Q_c, S_t)
+                + torch.matmul(Qkt_masked, U_prime)
+            )                                                         # (B, H, Cc, D_h)
+            reads_chunks.append(O_c)
+
+            S = S + torch.matmul(U_prime.transpose(-2, -1), K_c)     # (B, H, D_h, D_h)
+
+        reads = torch.cat(reads_chunks, dim=2)                       # (B, H, L, D_h)
+        return S, reads
+
     def _forward_backbone(self, idx: torch.Tensor) -> torch.Tensor:
         """Run the DeltaNet backbone; return pre-head hidden states x (B, S, D).
 
@@ -278,16 +358,40 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             # Per-position learned β_t ∈ (0, 1).
             beta = torch.sigmoid(self.beta_head[layer](x))     # (B, S, 1)
 
-            S_state = torch.zeros(
-                B, cfg.d_model, cfg.d_model,
-                device=x.device, dtype=x.dtype,
-            )
-            if getattr(cfg, "use_chunkwise", False):
+            n_dh = getattr(cfg, "n_delta_heads", 1)
+            if n_dh > 1 and getattr(cfg, "use_chunkwise", False):
+                # Multi-head path — reshape q/k/v/S per n_delta_heads, run mh chunkwise.
+                assert cfg.d_model % n_dh == 0, (
+                    f"d_model ({cfg.d_model}) must be divisible by n_delta_heads ({n_dh})"
+                )
+                D_h = cfg.d_model // n_dh
+                q_mh = q_feat.reshape(B, S, n_dh, D_h).transpose(1, 2)  # (B, H, S, D_h)
+                k_mh = k_feat.reshape(B, S, n_dh, D_h).transpose(1, 2)
+                v_mh = v_flat.reshape(B, S, n_dh, D_h).transpose(1, 2)
+                S_mh = torch.zeros(
+                    B, n_dh, D_h, D_h, device=x.device, dtype=x.dtype,
+                )
+                S_mh, delta_out_mh = self._delta_chunkwise_multihead(
+                    S_mh, q_mh, k_mh, v_mh, beta,
+                    chunk_size=getattr(cfg, "chunk_size", 32),
+                )
+                # (B, H, S, D_h) → (B, S, H, D_h) → (B, S, D)
+                delta_out = delta_out_mh.transpose(1, 2).reshape(B, S, cfg.d_model)
+                S_state = S_mh  # unused after this — we don't read it out
+            elif getattr(cfg, "use_chunkwise", False):
+                S_state = torch.zeros(
+                    B, cfg.d_model, cfg.d_model,
+                    device=x.device, dtype=x.dtype,
+                )
                 S_state, delta_out = self._delta_chunkwise(
                     S_state, q_feat, k_feat, v_flat, beta,
                     chunk_size=getattr(cfg, "chunk_size", 32),
                 )
             else:
+                S_state = torch.zeros(
+                    B, cfg.d_model, cfg.d_model,
+                    device=x.device, dtype=x.dtype,
+                )
                 reads = []
                 for t in range(S):
                     S_state, out_t = self._delta_step(

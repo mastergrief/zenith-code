@@ -63,13 +63,15 @@ def _build_pt_any_d_head(vocab_size, d_model, n_heads, n_layers, d_ffn,
 
 def _build_delta_any_d_head(vocab_size, d_model, n_heads, n_layers, d_ffn,
                             max_len, n_copy_heads, use_hard_max,
-                            use_chunkwise=False, chunk_size=32):
+                            use_chunkwise=False, chunk_size=32,
+                            n_delta_heads=1):
     cfg = CopyAugmentedDeltaConfig(
         vocab_size=vocab_size, d_model=d_model, n_heads=n_heads,
         n_layers=n_layers, d_ffn=d_ffn, max_len=max_len,
         n_copy_heads=n_copy_heads, use_hard_max=use_hard_max,
         use_delta_net=True, use_softmax_attn=False,
         use_chunkwise=use_chunkwise, chunk_size=chunk_size,
+        n_delta_heads=n_delta_heads,
     )
     return CopyAugmentedDeltaNet(cfg)
 
@@ -204,6 +206,8 @@ def main():
                     help="use chunkwise parallel DeltaNet (paper §3-4 UT transform)")
     ap.add_argument("--chunk-size", type=int, default=32,
                     help="chunk size C for chunkwise DeltaNet")
+    ap.add_argument("--n-delta-heads", type=int, default=1,
+                    help="split delta state into H parallel (D/H, D/H) heads (H=1 single)")
     args = ap.parse_args()
 
     device = args.device
@@ -259,6 +263,7 @@ def main():
         n_layers=args.n_layers, d_ffn=args.d_ffn, max_len=args.max_len,
         n_copy_heads=4, use_hard_max=False,
         use_chunkwise=args.chunkwise, chunk_size=args.chunk_size,
+        n_delta_heads=args.n_delta_heads,
     )
     print(f"  params: {sum(p.numel() for p in m_d.parameters()):,}")
     d_overall, d_by_N = train_and_measure(
