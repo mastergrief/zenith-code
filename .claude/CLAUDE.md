@@ -104,12 +104,28 @@ real Gemma layer with distinct non-zero diffs. Full spec:
 `.claude/rules/Substrate.md`.
 
 **Brain + Cards model**: Gemma (language + routing) dispatches to cards
-(compiled programs, HRM specialists, PTs). Two install paths on prod
-Gemma: in-tensor (`install_card_in_attention`, weights live in
-`attn_q/k/v/output`) and residual-additive (`CardSlot.attach(preserve=True)`,
-card runs as separate Module — required for PTs). Adding a card =
-weight edit, not retraining. Auto-upgrade: CALM catches errors →
-compile into recall card → install via CardSlot → persist as JSON.
+(compiled programs, HRM specialists, PTs). **Three install paths** on
+prod Gemma (session 2026-04-21 R22 arc):
+- **Decode-path facade** (R46.2 `MultiStepReasoningFacade`, R22c
+  `BaseConversionFacade`) — parser + `safe_eval` + step-through digit
+  bias at Gemma decode. Zero VRAM, stacks freely, zero training.
+  **Cheapest path for deterministic compute domains** (arithmetic,
+  hex/binary, GCD, dates). See `.claude/rules/compute_facades.md`.
+- **CardSlot residual-additive install** (PT+Delta MQAR, R22,
+  `KnowledgeStore` recall) — card runs as separate Module; output
+  adds to reserved residual channels + biases Gemma logits via
+  `VerificationHook`. R22 default: `preserve=False` + aligned
+  `write_margin=min_margin=22.0` for strict additivity (see
+  `delta_rule.md` §R22 install). `preserve=True` is legacy — pins
+  channels even when card is silent, subtly shifts Gemma output.
+- **In-tensor install** (`install_card_in_attention`) — weights live
+  in `attn_q/k/v/output`; ~600 MB FP32 host layer cost. For surgical
+  attention-circuit replacement (R28/R42/R43 forced-attn, compiled
+  programs).
+
+Adding a card = weight edit or facade install, not retraining.
+Auto-upgrade: CALM catches errors → compile into recall card →
+install via CardSlot → persist as JSON.
 
 ## Architecture
 

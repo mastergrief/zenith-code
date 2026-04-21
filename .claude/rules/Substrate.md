@@ -142,17 +142,48 @@ Gemma's grouped softmax). Card weights ship in the .pt.
 **2. Residual-additive (CardSlot)** — card runs as a separate Module:
 
 ```python
+# R22 retrieval-card default (commits e169d6d + 7db6eb9 + c3eac18 + 73df738):
 slot = CardSlot(layer_idx=30, ch_off=2480, card=pt, d_card=80,
                 card_input_fn=adapter, use_full_residual=True,
                 output_fn=writer)
-slot.attach(m, preserve=True)                 # masks subsequent layers
+slot.attach(m, preserve=False)                # R22 default — see below
+
+# Aligned gates for strict additivity:
+install(m, card, ..., write_margin=22.0, preserve=False)  # write gate
+hook.min_margin = 22.0                                    # bias gate
+# + N-range gate in adapter: skip activation on OOD N
 ```
 
-`preserve=True` registers the channel range so subsequent layers'
-attn / ffn / per-layer-embed contributions to those channels are
-zeroed at runtime — card output flows through to output_norm intact.
+**`preserve=True` (legacy)** — registers the channel range so
+subsequent layers' attn / ffn / per-layer-embed contributions to those
+channels are zeroed at runtime. **Known side effect (R22b r6/r7,
+commit `7db6eb9`):** the channel range stays pinned even when the
+card writes NOTHING. At rest (card silent), channels [ch_off:ch_off+d_card]
+carry whatever L30 wrote there rather than being freely overwritten by
+L31-L41, which subtly shifts Gemma's head projection — one measurable
+regression (`q=v margin=0.00`) disappeared when switching to
+`preserve=False`. Use `preserve=True` ONLY when channel isolation is
+load-bearing (e.g., chained cards that read from an earlier card's
+output channels). "Strictly additive" does NOT hold bit-wise at rest
+with `preserve=True` — only via `detach()` reversibility.
+
+**`preserve=False` (R22 default)** — subsequent layers freely
+overwrite reserved channels when card is silent. Card's output
+reaches head ONLY via `VerificationHook`'s logit bias (when margin
+exceeds `min_margin`). Strict additivity holds bit-wise at rest
+because silent channels behave identically to no-install.
+
+**Margin-gate alignment (commit `e169d6d`):** `card_output_fn` must
+itself skip the residual write when card's (peak - median) margin is
+below `write_margin`. Without this gate, low-confidence card output
+still writes, and the write propagates through the head projection
+even when `VerificationHook.min_margin` silences the logit bias.
+Keep `write_margin == min_margin` for symmetry.
+
 Used for PTs (copy-augmented attention can't reduce to a sub-head
-mode) and prototyping.
+mode) and prototyping. R22 delivered +9/60 (21% relative) on a
+distractor-confused MQAR corpus with this 4-gate config —
+`delta_rule.md` §"R22 install — shipped" has the full receipt.
 
 **3. Hub-first forced-attention (HubInjectionCard)** — R44 facade
 form of R43's causal-validation intervention. For shared hub heads
@@ -291,13 +322,25 @@ update the registry. Pattern:
 2. **Convert** (in-attention only): `m.convert_layer_to_fp32(host_layer)`
    once per host. ~330 MB SWA / ~600 MB global.
 3. **Install**: `install_card_in_attention(card, ..., mode='hard_max')`
-   for compiled, `mode='softmax'` for HRM-style; OR
-   `CardSlot(...).attach(m, preserve=True)` for PTs and prototyping.
-4. **Verify**: hook `card.forward`, run a probe prompt, check
-   - card receives the expected input slice
-   - card produces the expected output (compare to standalone)
-   - Gemma's logits diff vs no-install baseline > noise
+   for compiled, `mode='softmax'` for HRM-style; OR for retrieval PTs
+   the **R22 4-gate default**: `install(m, card, ...,
+   write_margin=T, preserve=False)` with `hook.min_margin=T` and
+   an adapter N-range gate (see `delta_rule.md` §R22 install). Only
+   use `CardSlot(...).attach(m, preserve=True)` when channel isolation
+   is load-bearing (chained cards reading from prior-card outputs).
+4. **Verify — BOTH the raw path AND the user-facing path**:
+   - **Raw**: `card.forward` standalone on the ACTUAL adapter-extracted
+     inputs from a representative corpus (NOT hand-crafted sanity cases
+     — R22e lesson: 6 rounds of debugging could have been avoided by
+     running the card on 60 real adapter outputs at round 2).
+   - **User-facing**: Gemma with card installed A/B against Gemma
+     baseline on the same corpus. Verify no regressions on prompts
+     where baseline is correct.
    - `VerificationHook` (if used) flips argmax on the verified token
+     ONLY when card margin exceeds `min_margin`.
+   - Adapter parses the query key from the RIGHT portion of the prompt
+     (anchor on a marker like `"Question:"` — see
+     `r22_install_mqar_card.py::parse_mqar_prompt` for the fix).
 5. **Register**: append a row to `substrate_registry.md` with
    domain, host_layer, channels, sub_head_offset, mode,
    vocab_mapping, install date, max abs diff vs baseline.

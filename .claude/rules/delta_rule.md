@@ -183,73 +183,81 @@ R15/R15-b narrowed "mutation tracking" to "sparse-key retrieval";
 R16 confirmed composition-per-card thesis (compute → compiled cards,
 recall → DeltaNet).
 
-## R22 install — shipped (rounds 1-7, 2026-04-21)
+## R22 install — shipped (rounds 1-7 + R22e adapter fix, 2026-04-21)
 
 Card installed on prod Gemma via `CardSlot` + `VerificationHook` +
-adapter. 7-round arc (R22a mechanism + R22b 6 iterations) produced
-a net-positive result at the final config:
+adapter. 7-round debug arc + R22e diagnostic produced the TRUE
+result at the final config:
 
 ```
 install(m, card, layer_idx=30, ch_off=2480,
         write_margin=22.0, preserve=False)
 hook.min_margin = 22.0
+# CARD_N_RANGE = {5, 10, 15}
 ```
 
-**Four aligned gates** (R22b round 7 receipt,
-`.claude/MEMORY/evals/2026-04-21_r22b_*.md`):
+**Four aligned gates** (commits `e169d6d` r6 + `7db6eb9` r7 +
+`c3eac18` R22e + `73df738` true result):
 1. `write_margin=22.0` — skips residual write when card unconfident
 2. `hook.min_margin=22.0` — skips logit bias when card unconfident
-3. `preserve=False` — lets L31-L41 freely overwrite reserved channels
-   (preserve=True pins channels even when card writes nothing, subtly
-   shifts Gemma — round 6 `q=v margin=0.00` regression)
-4. N-range gate ({5, 10, 15}) — skips card on N outside training dist
+3. `preserve=False` — lets L31-L41 freely overwrite reserved channels.
+   `preserve=True` pins channels even when card writes nothing,
+   subtly shifts Gemma (round 6 `q=v margin=0.00` regression).
+4. N-range gate `{5, 10, 15}` — skips card on N outside training dist
 
-At this config: 60-prompt pooled eval **Δ=+1 (43/60 vs 42/60)**, 2 wins,
-1 regression (card confident-wrong on one prompt — not fixable by
-install gates, needs better card calibration).
+**Result** (`73df738`, 60-prompt pooled distractor-confused corpus,
+two seeds, after R22e adapter fix):
 
-## R-delta-22 — noise-augmented training (next)
-
-R22's effective precision on adapter-extracted live inputs: ~67% on
-fired prompts (2 wins / 3 fires in round 7). Gap vs R21's 100%
-held-out is the train/test distribution mismatch: training used
-random-letter keys + uniform digit values, real `<mem>` content has
-clustered keys + skewed value distributions.
-
-Fix shipped as scaffolding (2026-04-21):
-
-- `calm/hrm/memory_tasks.py::_gen_mqar_noisy` + `gen_mqar_batch_noisy`.
-  Four noise types:
-  - `clustered_keys` — sample keys from common letter clusters
-    (a-e, xyz+abc, ...)
-  - `zipf_values` — zipfian digit distribution (0, 1 more common)
-  - `whitespace` — double-space or variable separator spacing
-  - `separator_variants` — `=` between k and v (as users type)
-- `scripts/train_pt_delta_mqar.py --noisy-frac 0.5` flag. 50/50
-  clean/noisy split. Validation corpus stays clean — measures
-  generalization FROM noisy training.
-
-**Next session:**
-
-```bash
-PYTHONPATH=. python3 scripts/train_pt_delta_mqar.py \
-    --noisy-frac 0.5 \
-    --epochs 20 --per-N-train 5000 \
-    --n-values 5 10 15
-# Save as copy_augmented_delta_mqar_noisy_best.pt
-# Rerun scripts/r22b_round7_preserve_false.py with new checkpoint.
-# Pass: precision > 67% (round 7 baseline) OR win count goes up.
-# Null: precision ≈ 67% → card's calibration cap is intrinsic, not
-#       distribution-shift. Move to architecture (more params, H=4
-#       multi-head, dual-card verification).
+```
+baseline:  42/60  (70.0%)
+with card: 51/60  (85.0%)   Δ=+9 absolute, 21% relative
+hook fired: 19/60
+WINS: 9    REGR: 0
 ```
 
-Decode-path facades (R46.2, R22c base conversion) sidestep this
-entire problem for **compute domains** — no trained card, no
-calibration gap. For **retrieval cards specifically**, noise
-augmentation is the remaining lever. Two-track product:
-- **Train noisy for retrieval** (R-delta-22+)
-- **Parser + safe_eval for compute** (R46.2 / R22c pattern)
+Per-cell: `N=5/d=500/confusing 5/10→10/10 +5`, `N=5/d=1500/confusing_long
+8/10→10/10 +2`, `N=10` both flat, `N=15` +1/+1. All 9 win margins
+22.17–23.03 (tight high cluster). Gate catches them cleanly.
+
+### Interim R22b rounds 1-7 (2W 1R / Δ=+1) SUPERSEDED
+
+Receipts `.claude/MEMORY/evals/2026-04-21_r22b_round[1-6]_*.md` +
+`r22b_r7_rerun_adapter_fixed.md` are preserved as per-round debugging
+history. Pre-R22e effect sizes (2W, 67% fired precision, etc.) were
+**adapter-regex bug**, not card calibration: `parse_mqar_prompt`'s
+`value of X` pattern matched distractor prose like
+`"Previously the value of q rose to 2..."` BEFORE the real
+`Question: value of d?`. Fix in `c3eac18`: anchor query-key search
+on the LAST `"Question:"` marker. Card standalone jumps from
+14/33 (42%) to 60/60 (100%) on adapter outputs.
+
+### N=10 remaining flat — follow-up for next session
+
+N=10 cells 7/10→7/10 and 9/10→9/10 unchanged by card. Possible:
+(a) card margin < 22 on those 3 prompts; (b) Gemma's wrong-answer
+logit gap > 50 boost; (c) adapter bug remnant on specific key
+patterns. 10-second diagnostic: dump margins + card_argmax per N=10
+fail.
+
+## R-delta-22 — noise-augmented training (CANCELLED by R22e)
+
+**Cancelled** — the R22 adapter bug (not a distribution shift) was
+the source of the ~67% fired precision seen in r22b rounds 5-7. Card
+is **100% accurate on clean adapter outputs** (R22e standalone:
+60/60). No train/test distribution gap exists for the R21 MQAR card
+on the adapter-extracted MQAR format.
+
+Scaffolding stays in tree as an option if a FUTURE card genuinely
+shows distribution shift:
+
+- `calm/hrm/memory_tasks.py::_gen_mqar_noisy` — four noise types
+  (clustered_keys, zipf_values, whitespace, separator_variants)
+- `calm/hrm/memory_tasks.py::gen_mqar_batch_noisy(noisy_frac=0.5)`
+- `scripts/train_pt_delta_mqar.py --noisy-frac 0.5` (default 0.0
+  preserves R21 behavior)
+
+Do NOT retrain R21 with `--noisy-frac > 0` unless a new diagnostic
+finds a real gap AFTER verifying the adapter parses correctly.
 
 Full per-round arc receipts:
 - `.claude/MEMORY/evals/2026-04-21_r22a_mqar_card_install.md`
