@@ -183,22 +183,81 @@ R15/R15-b narrowed "mutation tracking" to "sparse-key retrieval";
 R16 confirmed composition-per-card thesis (compute → compiled cards,
 recall → DeltaNet).
 
-## R22 install plan (deferred)
+## R22 install — shipped (rounds 1-7, 2026-04-21)
 
-Card artifact ready. Remaining engineering for Gemma install:
-1. Input adapter: NL context → 82-char-vocab MQAR input (AST walker
-   for code var bindings, or NER for NL facts)
-2. `CardSlot.attach(gemma, preserve=True)` at L30 with
-   `card_input_fn=adapter, output_fn=writer`
-3. `VerificationHook` with `vocab_mapping` for the token that the
-   card's argmax should bias in Gemma's BPE
-4. Measure on multi-needle NIAH prompts where Gemma baseline
-   degrades (2026-04-07 NIAH eval: 4/5 at 220K)
-5. Regression guard on pure-Gemma prompts (hash-match gate should
-   miss, leave Gemma unchanged)
+Card installed on prod Gemma via `CardSlot` + `VerificationHook` +
+adapter. 7-round arc (R22a mechanism + R22b 6 iterations) produced
+a net-positive result at the final config:
 
-Install mechanics already proven in session 32 PT install via
-`CardSlot`. Adapter is the novel design piece.
+```
+install(m, card, layer_idx=30, ch_off=2480,
+        write_margin=22.0, preserve=False)
+hook.min_margin = 22.0
+```
+
+**Four aligned gates** (R22b round 7 receipt,
+`.claude/MEMORY/evals/2026-04-21_r22b_*.md`):
+1. `write_margin=22.0` — skips residual write when card unconfident
+2. `hook.min_margin=22.0` — skips logit bias when card unconfident
+3. `preserve=False` — lets L31-L41 freely overwrite reserved channels
+   (preserve=True pins channels even when card writes nothing, subtly
+   shifts Gemma — round 6 `q=v margin=0.00` regression)
+4. N-range gate ({5, 10, 15}) — skips card on N outside training dist
+
+At this config: 60-prompt pooled eval **Δ=+1 (43/60 vs 42/60)**, 2 wins,
+1 regression (card confident-wrong on one prompt — not fixable by
+install gates, needs better card calibration).
+
+## R-delta-22 — noise-augmented training (next)
+
+R22's effective precision on adapter-extracted live inputs: ~67% on
+fired prompts (2 wins / 3 fires in round 7). Gap vs R21's 100%
+held-out is the train/test distribution mismatch: training used
+random-letter keys + uniform digit values, real `<mem>` content has
+clustered keys + skewed value distributions.
+
+Fix shipped as scaffolding (2026-04-21):
+
+- `calm/hrm/memory_tasks.py::_gen_mqar_noisy` + `gen_mqar_batch_noisy`.
+  Four noise types:
+  - `clustered_keys` — sample keys from common letter clusters
+    (a-e, xyz+abc, ...)
+  - `zipf_values` — zipfian digit distribution (0, 1 more common)
+  - `whitespace` — double-space or variable separator spacing
+  - `separator_variants` — `=` between k and v (as users type)
+- `scripts/train_pt_delta_mqar.py --noisy-frac 0.5` flag. 50/50
+  clean/noisy split. Validation corpus stays clean — measures
+  generalization FROM noisy training.
+
+**Next session:**
+
+```bash
+PYTHONPATH=. python3 scripts/train_pt_delta_mqar.py \
+    --noisy-frac 0.5 \
+    --epochs 20 --per-N-train 5000 \
+    --n-values 5 10 15
+# Save as copy_augmented_delta_mqar_noisy_best.pt
+# Rerun scripts/r22b_round7_preserve_false.py with new checkpoint.
+# Pass: precision > 67% (round 7 baseline) OR win count goes up.
+# Null: precision ≈ 67% → card's calibration cap is intrinsic, not
+#       distribution-shift. Move to architecture (more params, H=4
+#       multi-head, dual-card verification).
+```
+
+Decode-path facades (R46.2, R22c base conversion) sidestep this
+entire problem for **compute domains** — no trained card, no
+calibration gap. For **retrieval cards specifically**, noise
+augmentation is the remaining lever. Two-track product:
+- **Train noisy for retrieval** (R-delta-22+)
+- **Parser + safe_eval for compute** (R46.2 / R22c pattern)
+
+Full per-round arc receipts:
+- `.claude/MEMORY/evals/2026-04-21_r22a_mqar_card_install.md`
+- `.claude/MEMORY/evals/2026-04-21_r22b_round1_no_failure_surface.md`
+- `.claude/MEMORY/evals/2026-04-21_r22b_round2_mixed_signal.md`
+- `.claude/MEMORY/evals/2026-04-21_r22b_round3_margin_threshold.md`
+- `.claude/MEMORY/evals/2026-04-21_r22b_round4_holdout.md`
+- `.claude/MEMORY/evals/2026-04-21_r22b_round5_6_gate_fix.md`
 
 ## Related rules
 

@@ -85,6 +85,115 @@ def gen_mqar_batch(n_pairs: int, count: int, seed: int) -> List[MemProblem]:
 
 
 # -----------------------------------------------------------------------------
+# Noise-augmented MQAR — R-delta-22 prep (distribution-shift mitigation)
+#
+# R22b rounds 5-7 showed PT+Delta R21 card's effective precision on adapter-
+# extracted live inputs is ~67% despite 100% held-out on training format.
+# Hypothesis: train/test distribution gap. Training is random-letter keys +
+# uniform digit values; real-world `<mem>` content may have clustered keys,
+# skewed value distributions, whitespace variation.
+#
+# Four noise types, each sampled with a probability to augment the clean
+# corpus. Final training distribution: ~50% clean + ~50% noisy.
+# -----------------------------------------------------------------------------
+
+# Common letter clusters users write when inventing variable names.
+_CLUSTERED_KEY_POOLS = [
+    list("abcde"),                      # first 5 letters (very common)
+    list("xyz") + list("abc"),          # math-style (x, y, z, a, b, c)
+    list("pqr") + list("stu"),          # algebra extension
+    list("abc") + list("def"),          # alphabet run
+    list("ijk") + list("lmn"),          # mid-alphabet run
+]
+
+# Zipfian digit sampling weights — 0 and 1 are more common in
+# real-world values than 7-9.
+_ZIPF_DIGIT_WEIGHTS = [8, 6, 4, 3, 3, 2, 2, 2, 1, 1]
+
+
+def _gen_mqar_noisy(n_pairs: int, rng: random.Random,
+                     noise_types: set[str] | None = None) -> MemProblem:
+    """Noise-augmented MQAR problem.
+
+    noise_types (subset of {'clustered_keys', 'zipf_values',
+    'whitespace', 'separator_variants'}):
+      clustered_keys: sample keys from a non-uniform clustered pool
+      zipf_values:    sample digits with zipfian weights (0,1 more likely)
+      whitespace:     randomize number of spaces around k-v and separators
+      separator_variants: use `=` or `:` between k and v occasionally
+
+    If noise_types is None, randomly choose 1-2 noise types.
+    """
+    all_types = {"clustered_keys", "zipf_values", "whitespace",
+                 "separator_variants"}
+    if noise_types is None:
+        n_active = rng.choice([1, 2])
+        noise_types = set(rng.sample(sorted(all_types), n_active))
+
+    # Key sampling
+    if "clustered_keys" in noise_types:
+        pool = rng.choice(_CLUSTERED_KEY_POOLS)
+        if len(pool) < n_pairs:
+            pool = _MQAR_KEY_POOL
+        keys = rng.sample(pool, n_pairs)
+    else:
+        keys = rng.sample(_MQAR_KEY_POOL, n_pairs)
+
+    # Value sampling
+    if "zipf_values" in noise_types:
+        values = [str(rng.choices(range(10),
+                                    weights=_ZIPF_DIGIT_WEIGHTS)[0])
+                  for _ in range(n_pairs)]
+    else:
+        values = [rng.choice(_MQAR_VAL_POOL) for _ in range(n_pairs)]
+
+    q_idx = rng.randrange(n_pairs)
+    query_key = keys[q_idx]
+    target_val = values[q_idx]
+
+    # Format assembly
+    parts = []
+    for k, v in zip(keys, values):
+        if "separator_variants" in noise_types:
+            sep = rng.choice([" ", " ", "="])  # bias toward space
+            parts.append(f"{k}{sep}{v}")
+        else:
+            parts.append(f"{k} {v}")
+
+    if "whitespace" in noise_types:
+        join_sep = rng.choice([" ", "  ", " "])  # 33% chance of double-space
+        sep_tok = rng.choice([" ; ", "  ;  ", " ; "])
+    else:
+        join_sep = " "
+        sep_tok = " ; "
+
+    question = join_sep.join(parts) + sep_tok + query_key
+
+    return MemProblem(
+        question=question, expression=target_val, answer=target_val,
+        task_kind="mqar", difficulty=n_pairs,
+    )
+
+
+def gen_mqar_batch_noisy(n_pairs: int, count: int, seed: int,
+                          noisy_frac: float = 0.5) -> List[MemProblem]:
+    """Mix of clean (1 - noisy_frac) + noisy (noisy_frac) MQAR problems.
+
+    R-delta-22 default training distribution: noisy_frac=0.5 gives ~50/50
+    split. Use noisy_frac=0.0 for the clean-only R21 baseline behavior.
+    """
+    rng = random.Random(seed)
+    out = []
+    for _ in range(count):
+        if rng.random() < noisy_frac:
+            out.append(_gen_mqar_noisy(n_pairs, rng))
+        else:
+            out.append(_gen_mqar(n_pairs, rng, _MQAR_KEY_POOL, _MQAR_VAL_POOL))
+    return [p for p in out
+            if _valid_chars(p.question) and _valid_chars(p.expression)]
+
+
+# -----------------------------------------------------------------------------
 # TASK 2: Reassignment — latest-value semantics
 #
 # Format:  "x = A ; ... more ops ... ; x = B ; x"

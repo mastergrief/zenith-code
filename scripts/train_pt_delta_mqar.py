@@ -72,6 +72,7 @@ def train(
     d_model=64, n_heads=32, n_layers=4, d_ffn=128, max_len=128,
     n_copy_heads=4, seed=42, eval_every=2,
     tf_ratio_start=1.0, tf_ratio_end=0.3,
+    noisy_frac=0.0,   # R-delta-22: >0 enables noise-augmented training
     device=None,
 ):
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
@@ -79,10 +80,18 @@ def train(
 
     # Build corpus.
     train_probs, val_probs = [], []
+    if noisy_frac > 0.0:
+        from calm.hrm.memory_tasks import gen_mqar_batch_noisy
+        gen_train = lambda N, count, seed: gen_mqar_batch_noisy(
+            N, count, seed=seed, noisy_frac=noisy_frac)
+    else:
+        gen_train = gen_mqar_batch
     for i, N in enumerate(n_values):
-        train_probs.extend(gen_mqar_batch(N, per_N_train, seed=seed + 1000 * i))
+        train_probs.extend(gen_train(N, per_N_train, seed=seed + 1000 * i))
+        # Val stays clean — measures generalization FROM noisy training
         val_probs.extend(gen_mqar_batch(N, per_N_val, seed=seed + 1000 * i + 500))
-    print(f"Corpus: train={len(train_probs)} val={len(val_probs)}  N={list(n_values)}")
+    print(f"Corpus: train={len(train_probs)} val={len(val_probs)}  "
+          f"N={list(n_values)}  noisy_frac={noisy_frac}")
 
     train_ds = SeqDataset(train_probs, max_len=max_len)
     loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True)
@@ -194,6 +203,10 @@ if __name__ == "__main__":
     p.add_argument("--max-len", type=int, default=128)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--eval-every", type=int, default=2)
+    p.add_argument("--noisy-frac", type=float, default=0.0,
+                    help="R-delta-22: fraction of training examples drawn "
+                    "from gen_mqar_batch_noisy (default 0 = clean-only, "
+                    "reproduces R21). Try 0.5 for 50/50 clean/noisy mix.")
     args = p.parse_args()
     train(
         epochs=args.epochs,
@@ -206,4 +219,5 @@ if __name__ == "__main__":
         n_layers=args.n_layers, d_ffn=args.d_ffn,
         max_len=args.max_len,
         seed=args.seed, eval_every=args.eval_every,
+        noisy_frac=args.noisy_frac,
     )

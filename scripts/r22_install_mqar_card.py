@@ -131,7 +131,8 @@ def load_mqar_card(ckpt_path: str | Path, device="cuda"):
 # Install
 # ============================================================================
 
-def install(m, card, layer_idx=30, ch_off=2480, write_margin: float = 0.0):
+def install(m, card, layer_idx=30, ch_off=2480,
+            write_margin: float = 0.0, preserve: bool = True):
     """Attach card + VerificationHook. Returns (slot, state) closure handle.
 
     `write_margin`: if > 0, card_output_fn skips the residual-stream write
@@ -139,6 +140,13 @@ def install(m, card, layer_idx=30, ch_off=2480, write_margin: float = 0.0):
     low-confidence card outputs from shifting Gemma's head projection via
     the reserved channels. Round 5 showed that without this gate, the
     residual write affects Gemma even when VerificationHook is silent.
+
+    `preserve`: passed through to CardSlot.attach. preserve=True masks
+    subsequent layers' contributions to reserved channels — may subtly
+    affect Gemma even when card didn't write (round 6 `q=v margin=0.00`
+    regression hypothesis). preserve=False lets Gemma's L31+ freely
+    overwrite, but then card's write (if any) only affects Gemma via
+    the same layer's residual propagation plus VerificationHook.
     """
     # Remove any stale slots + hooks from prior daemon runs — the daemon's
     # globals persist, so `m.layers[layer_idx].card_slots` and
@@ -202,7 +210,7 @@ def install(m, card, layer_idx=30, ch_off=2480, write_margin: float = 0.0):
         use_full_residual=True,
         output_fn=card_output_fn,
     )
-    slot.attach(m, preserve=True)
+    slot.attach(m, preserve=preserve)
 
     # Card digit char IDs → Gemma BPE digit token IDs.
     # Gemma tokenizes digits as "▁0", "▁1", ... (space-prefixed). We want the
