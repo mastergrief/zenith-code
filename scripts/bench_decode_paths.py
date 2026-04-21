@@ -42,7 +42,7 @@ if str(ROOT) not in sys.path:
 PROMPT = ("Write a Python function that sorts a list of integers "
           "using quicksort. Include type hints.\n\n")
 DECODE_TOKENS = 256            # short decode — we care about steady-state tok/s
-N_RUNS = 3
+N_RUNS = 5                     # bumped from 3 → 5 for lower-noise median
 MAX_LEN_GRAPH = 1024           # KVCacheStatic buffer size for graph path
 
 
