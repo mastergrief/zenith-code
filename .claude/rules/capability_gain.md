@@ -423,10 +423,47 @@ stacking remains the priority per `augmentation_thesis.md`
 refined *why* tier-3 was hard (sharp-direction miss + wrong-loss),
 not *whether* tier-2 is correct.
 
+## MQAR data-scaling rule (R-delta arc, 2026-04-21)
+
+Canonical receipt of "architecture changes don't substitute for
+data" at substrate scale. PT+Delta MQAR benchmark — 4 architectural
+null rounds before identifying the data lever:
+
+- `6617a48` R11a d_model 64→128, R11b d_head 2→16 — null on MQAR
+  ceiling at 500/N × 40 ep; misread as capacity limit.
+- `78b5dfb` R18 multi-head H=4 — null (-6pp vs plain PT); per-head
+  state (16, 16) below D/log(D) capacity for N=15.
+- `65fb148` R19 D5 refinement n_iters=2 — null on MQAR; ARC's
+  "refinement is the win" finding is grid-reasoning-specific,
+  doesn't transfer to single-token retrieval.
+- `7110990` + `49c13d7` R13/R14-b — **data scaling** at 2K/5K/10K
+  per N solves N=5-20 cleanly. Plain PT gap: +21pp (N=5), +66pp
+  (N=10), +75pp (N=15), +84pp (N=20).
+
+**"+5 on N needs 2× data"** — clean empirical rule across N=5-20
+at d_model=64. At this substrate scale, aggregate DeltaNet state
+capacity (D² = 4096 scalars) is the binding constraint once N
+exceeds per-N key-space-density threshold; inside that window,
+only data-scaling moves the ceiling.
+
+**Methodology receipt**: four architectural rounds nulled at
+R10's 500/N undertraining; one flag change (`--per-N-train 2000/
+5000/10000`) cracked each N-ceiling. Canonical "plateau = bug,
+not tuning" case per `workflow_part_1.md`. See
+`.claude/rules/delta_rule.md` for full arc + install path.
+
+Generalization to Track A's architectural nulls: `aa46f2b`
+batched pos_t (null, GPU variance dominates) and `6b27b90`
+torch.compile on `_tq4_linear_kernel` (-1 to -7% across paths,
+dynamic-shape recompile overhead > launch-savings already
+captured by CUDA Graphs). Same principle: within fixed compute
+budget, rearranging the dispatch doesn't add performance.
+
 ## Related rules
 
 - `workflow.md` — the general hypothesis-test loop
 - `Substrate.md` — install modes
+- `delta_rule.md` — PT+Delta arc + MQAR scaling full receipt
 - `embed_intelligence.md` — delivery path from card to Gemma's tokens
 - `tracing_intelligence.md` — first-principles bound on what's compilable
 - `retrieval.md` — hybrid retrieval used by augmentation paths

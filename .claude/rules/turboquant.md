@@ -187,10 +187,21 @@ BLOCK_M at 32 (register pressure with two weight matrices).
 
 Toggle via `enable_triton_tq4(True)` (module-level) or `--triton`
 CLI flag on `gemma_substrate.py`. End-to-end on RTX 4070M with
-gemma-4-E4B-it-tq4: PyTorch baseline 0.25 tok/s → Triton + CUDA
-Graphs **42 tok/s** decode steady (90% of llama.cpp on the same
-GGUF). See `.claude/rules/architecture.md` "Gemma substrate loader"
-for the full perf chain.
+gemma-4-E4B-it-tq4 (2026-04-21 clean bench, median-of-5, four
+paths A/B/C/D per `scripts/bench_decode_paths.py`):
+
+| path | config | tok/s | % llama |
+|---|---|---:|---:|
+| A | fp16 KV, no graphs | 7.14 | 17% |
+| B | tq4 KV, no graphs | 5.56 | 13% |
+| C | fp16 KV + CUDA Graphs | 33.35 | 79% |
+| D | tq4 KV + CUDA Graphs (`bdf67ee`) | **25.02** | **60%** |
+
+llama.cpp baseline on the same GGUF is ~42 tok/s. Historical
+"42 tok/s / 90% llama" claim from session 32 is unreproducible
+in current bench — hardware/driver state dependent; reserve for
+matching conditions or rebench. See `.claude/rules/architecture.md`
+"Gemma substrate loader" for the full perf chain.
 
 ## Fused flash-attention decode with tq4 K/V (R53.34)
 
