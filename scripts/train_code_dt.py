@@ -45,6 +45,7 @@ from calm.hrm.code_dt_data import (
     _paraphrase_augment,
     build_balanced_sampler_weights,
     code_detokenize,
+    dedupe_ambiguous_prompts,
     extract_pairs_from_db,
     filter_rare_classes,
     normalize_skeleton,
@@ -151,6 +152,7 @@ def train(
     synth_rare: int = 0,                # R9: synthesize N pairs per rare class (0=off, 30 recommended)
     synth_rare_min: int = 3,            # R9: min raw count to synthesize
     synth_rare_max: int = 20,           # R9: max raw count to synthesize
+    dedupe_ambiguous: bool = False,     # R19: drop/resolve same-prompt→multiple-skeletons
 ):
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
@@ -169,6 +171,12 @@ def train(
                          for p in raw_pairs]
             n_classes = len(set(p.expression for p in raw_pairs))
             print(f"[train] normalized raw → {n_classes} classes")
+        if dedupe_ambiguous:
+            n_before = len(raw_pairs)
+            raw_pairs = dedupe_ambiguous_prompts(raw_pairs)
+            n_classes_after = len(set(p.expression for p in raw_pairs))
+            print(f"[train] R19 dedup ambiguous: "
+                  f"{n_before} → {len(raw_pairs)} pairs ({n_classes_after} classes)")
         synth_pairs = synthesize_rare_class_pairs(
             raw_pairs, min_count=synth_rare_min, max_count=synth_rare_max,
             target_per_class=synth_rare, seed=seed,
@@ -385,6 +393,9 @@ if __name__ == "__main__":
                     help="R9: min raw count to target (default 3).")
     ap.add_argument("--synth-rare-max", type=int, default=20,
                     help="R9: max raw count to target (default 20).")
+    ap.add_argument("--dedupe-ambiguous", action="store_true",
+                    help="R19: drop conceptual prompts with 3+ distinct "
+                         "target skeletons; majority-vote on 2-skeleton cases.")
     args = ap.parse_args()
     train(
         epochs=args.epochs,
@@ -404,4 +415,5 @@ if __name__ == "__main__":
         synth_rare=args.synth_rare,
         synth_rare_min=args.synth_rare_min,
         synth_rare_max=args.synth_rare_max,
+        dedupe_ambiguous=args.dedupe_ambiguous,
     )

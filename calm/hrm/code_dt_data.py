@@ -28,7 +28,7 @@ import random
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import torch
 from torch.utils.data import Dataset
@@ -847,6 +847,44 @@ def filter_rare_classes(
     from collections import Counter
     counts = Counter(p.expression for p in pairs)
     return [p for p in pairs if counts[p.expression] >= min_count]
+
+
+def dedupe_ambiguous_prompts(
+    pairs: List[CodeProblem],
+    drop_if_skels_geq: int = 3,
+) -> List[CodeProblem]:
+    """R19 lever: resolve ambiguous prompts (same problem text → multiple
+    skeletons). extract_all_defs introduces these on Claude-authored
+    conceptual prompts where the "target" isn't well-defined.
+
+    Policy:
+      - ≥ `drop_if_skels_geq` distinct skeletons for the same problem
+        → drop all pairs for that problem (conceptual multi-example).
+      - 2 skeletons → keep only pairs whose skeleton is the more common
+        one in the corpus overall (majority vote breaks the tie).
+      - 1 skeleton → pass through.
+    """
+    from collections import Counter, defaultdict
+    by_q: Dict[str, List[CodeProblem]] = defaultdict(list)
+    for p in pairs:
+        by_q[p.question].append(p)
+
+    # Global skeleton frequency for majority-vote tiebreaking
+    global_skel_counts = Counter(p.expression for p in pairs)
+
+    out: List[CodeProblem] = []
+    for q, ps in by_q.items():
+        distinct_skels = {p.expression for p in ps}
+        if len(distinct_skels) == 1:
+            out.extend(ps)
+        elif len(distinct_skels) >= drop_if_skels_geq:
+            # Conceptual prompt with many interpretations — drop
+            continue
+        else:
+            # 2 skeletons — keep the globally more common one
+            winner = max(distinct_skels, key=lambda s: global_skel_counts[s])
+            out.extend(p for p in ps if p.expression == winner)
+    return out
 
 
 def arg_count(skeleton: str) -> int:

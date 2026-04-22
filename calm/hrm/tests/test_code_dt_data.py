@@ -480,6 +480,49 @@ def test_filter_rare_classes_preserves_common():
     assert len(filtered) == 5
 
 
+# --- Round 19: dedupe ambiguous prompts ---
+
+def test_dedupe_drops_conceptual_prompts():
+    """Prompts with 3+ distinct skeletons are dropped entirely."""
+    from calm.hrm.code_dt_data import dedupe_ambiguous_prompts
+    pairs = (
+        [CodeProblem("conceptual", "def FN(a):"),
+         CodeProblem("conceptual", "def FN(b):"),
+         CodeProblem("conceptual", "def FN(c):")] +
+        [CodeProblem("clear q", "def FN(n):")]
+    )
+    out = dedupe_ambiguous_prompts(pairs, drop_if_skels_geq=3)
+    # conceptual dropped; clear q kept
+    assert [p.question for p in out] == ["clear q"]
+
+
+def test_dedupe_majority_vote_on_two_skels():
+    """With 2 skeletons, keep the globally-more-common one."""
+    from calm.hrm.code_dt_data import dedupe_ambiguous_prompts
+    pairs = (
+        # Global: FN(n) appears 5 times, FN(s) appears 1
+        [CodeProblem(f"common_q{i}", "def FN(n):") for i in range(5)] +
+        [CodeProblem("amb", "def FN(s):")] +
+        [CodeProblem("amb", "def FN(n):")]  # amb maps to both; FN(n) wins
+    )
+    out = dedupe_ambiguous_prompts(pairs, drop_if_skels_geq=3)
+    # Only one "amb" pair survives (the FN(n) one)
+    amb_pairs = [p for p in out if p.question == "amb"]
+    assert len(amb_pairs) == 1
+    assert amb_pairs[0].expression == "def FN(n):"
+
+
+def test_dedupe_unambiguous_passes_through():
+    """Single-skeleton prompts are unchanged."""
+    from calm.hrm.code_dt_data import dedupe_ambiguous_prompts
+    pairs = [
+        CodeProblem("q1", "def FN(n):"),
+        CodeProblem("q2", "def FN(s):"),
+    ]
+    out = dedupe_ambiguous_prompts(pairs)
+    assert len(out) == 2
+
+
 def test_copy_gate_bias_sigmoid_makes_sense():
     """At init=+1.0, sigmoid(p_copy_pre_data) ~ 0.73 — favors copy path."""
     import torch
