@@ -1233,3 +1233,129 @@ def test_fuzzy_rename_recursive_call_rewritten():
     ns: dict = {}
     exec(r.new_code, ns)
     assert ns["factorial"](5) == 120
+
+
+# ==================================================================
+# 8. guard_zero_division
+# ==================================================================
+
+from calm.llm_computer.facades.ast_repair import (
+    guard_zero_division, fix_mutable_default_args,
+    has_zero_division_error,
+)
+
+
+def test_guard_zero_division_simple():
+    code = "def divide(a, b):\n    return a / b"
+    r = guard_zero_division(code)
+    assert r.applied
+    assert "(b or 1)" in r.new_code
+    ns: dict = {}
+    exec(r.new_code, ns)
+    assert ns["divide"](10, 0) == 10   # 10 / (0 or 1) = 10
+    assert ns["divide"](10, 2) == 5
+
+
+def test_guard_zero_division_floor_div():
+    code = "def q(a, b):\n    return a // b"
+    r = guard_zero_division(code)
+    assert r.applied
+    assert "//" in r.new_code
+    ns: dict = {}
+    exec(r.new_code, ns)
+    assert ns["q"](10, 0) == 10
+
+
+def test_guard_zero_division_mod():
+    code = "def m(a, b):\n    return a % b"
+    r = guard_zero_division(code)
+    assert r.applied
+    ns: dict = {}
+    exec(r.new_code, ns)
+    assert ns["m"](10, 0) == 0        # 10 % 1 = 0
+    assert ns["m"](10, 3) == 1
+
+
+def test_guard_zero_division_skips_multiple_divs():
+    """Conservative: multiple division ops → no rewrite."""
+    code = "def f(a, b, c):\n    return a / b + c / b"
+    r = guard_zero_division(code)
+    assert not r.applied
+    assert "2 division" in r.notes[0]
+
+
+def test_has_zero_division_error():
+    assert has_zero_division_error("ZeroDivisionError: division by zero")
+    assert has_zero_division_error("traceback... ZeroDivisionError")
+    assert not has_zero_division_error("IndexError: ...")
+    assert not has_zero_division_error("")
+
+
+def test_repair_dispatches_zero_div_guard():
+    from calm.llm_computer.facades.ast_repair import repair
+    code = "def safe_ratio(a, b):\n    return a / b"
+    r = repair(code, "ZeroDivisionError: division by zero")
+    assert r.applied
+    assert r.kind == "zero_div_guard"
+
+
+# ==================================================================
+# 9. fix_mutable_default_args
+# ==================================================================
+
+
+def test_fix_mutable_default_list():
+    code = textwrap.dedent('''
+        def append_item(x, items=[]):
+            items.append(x)
+            return items
+    ''').strip()
+    r = fix_mutable_default_args(code)
+    assert r.applied
+    assert "items=None" in r.new_code
+    assert "items is None" in r.new_code
+    ns: dict = {}
+    exec(r.new_code, ns)
+    # Each call gets fresh list — the bug this rewrite fixes
+    assert ns["append_item"](1) == [1]
+    assert ns["append_item"](2) == [2]
+
+
+def test_fix_mutable_default_dict():
+    code = "def f(x, d={}):\n    d[x] = 1\n    return d"
+    r = fix_mutable_default_args(code)
+    assert r.applied
+    assert "d=None" in r.new_code
+
+
+def test_fix_mutable_default_skips_non_empty():
+    """Non-empty defaults might be intentional — leave alone."""
+    code = "def f(x, items=[1, 2, 3]):\n    items.append(x)\n    return items"
+    r = fix_mutable_default_args(code)
+    assert not r.applied
+
+
+def test_fix_mutable_default_multiple_args():
+    code = "def f(x, a=[], b={}):\n    a.append(x)\n    b[x]=1\n    return a, b"
+    r = fix_mutable_default_args(code)
+    assert r.applied
+    ns: dict = {}
+    exec(r.new_code, ns)
+    a1, b1 = ns["f"](1)
+    a2, b2 = ns["f"](2)
+    assert a1 == [1] and a2 == [2]   # independent
+    assert b1 == {1: 1} and b2 == {2: 1}
+
+
+def test_fix_mutable_default_noop_on_clean_code():
+    code = "def f(x, y=5):\n    return x + y"
+    r = fix_mutable_default_args(code)
+    assert not r.applied
+
+
+def test_repair_dispatches_mutable_default():
+    from calm.llm_computer.facades.ast_repair import repair
+    code = "def append_item(x, items=[]):\n    items.append(x)\n    return items"
+    r = repair(code, "")  # No error text needed — static rewrite
+    assert r.applied
+    assert r.kind == "mutable_default"

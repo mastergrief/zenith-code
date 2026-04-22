@@ -385,6 +385,11 @@ def has_indent_error(error_output: str) -> bool:
 
 
 _NAMEERROR_RE = re.compile(r"NameError:\s+name\s+'([^']+)'\s+is\s+not\s+defined")
+_ZERODIV_RE = re.compile(r"ZeroDivisionError", re.IGNORECASE)
+
+
+def has_zero_division_error(error_output: str) -> bool:
+    return bool(_ZERODIV_RE.search(error_output or ""))
 
 
 def extract_undefined_name(error_output: str) -> Optional[str]:
@@ -1107,6 +1112,201 @@ def insert_pass_in_empty_blocks(code: str) -> RepairResult:
 
 
 # --------------------------------------------------------------------
+# 8. ZeroDivisionError guard (ZeroDivisionError-driven)
+# --------------------------------------------------------------------
+#
+# Gemma writes `a / b` or `a // b` or `a % b` without guarding b==0.
+# Test harness passes b=0 → ZeroDivisionError. Rewrite: find the
+# first Div/FloorDiv/Mod BinOp in the failing function, wrap the
+# containing function with `if <divisor> == 0: return 0` guard.
+# Conservative — only rewrites when (a) error says ZeroDivisionError
+# AND (b) exactly one division-class BinOp appears in the code.
+
+
+class _FindDivisionBinOp(ast.NodeVisitor):
+    def __init__(self):
+        self.ops: List[ast.BinOp] = []
+
+    def visit_BinOp(self, node):
+        if isinstance(node.op, (ast.Div, ast.FloorDiv, ast.Mod)):
+            self.ops.append(node)
+        self.generic_visit(node)
+
+
+def _find_containing_function(
+    tree: ast.Module, target: ast.BinOp
+) -> Optional[ast.FunctionDef]:
+    """Return the innermost FunctionDef containing `target`, or None."""
+    best: Optional[ast.FunctionDef] = None
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for child in ast.walk(node):
+            if child is target:
+                best = node
+                break
+    return best
+
+
+def guard_zero_division(code: str) -> RepairResult:
+    """If code has exactly one division-class BinOp (/, //, %), wrap
+    it with `<divisor_expr> or 1` inline: `a / (b or 1)`.
+
+    Conservative: only fires when there's a single division. Multiple
+    divisions risk guarding the wrong one; defer to manual review.
+    """
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return RepairResult(None, "none", ["parse failed"])
+
+    finder = _FindDivisionBinOp()
+    finder.visit(tree)
+    if len(finder.ops) != 1:
+        return RepairResult(
+            None, "none",
+            [f"{len(finder.ops)} division ops found, need exactly 1"])
+
+    op_node = finder.ops[0]
+    # Rewrite right-hand side as `<right> or 1`
+    # Python semantics: `b or 1` returns b if truthy else 1 —
+    # so zero becomes 1, and the division becomes harmless.
+    original_right = op_node.right
+    new_right = ast.BoolOp(
+        op=ast.Or(),
+        values=[original_right, ast.Constant(value=1)],
+    )
+    op_node.right = new_right
+    ast.fix_missing_locations(tree)
+
+    try:
+        new_code = ast.unparse(tree)
+    except Exception as e:
+        return RepairResult(None, "none", [f"unparse failed: {e}"])
+
+    return RepairResult(
+        new_code, "zero_div_guard",
+        [f"wrapped divisor with `or 1` guard: "
+         f"{ast.unparse(original_right)} -> "
+         f"({ast.unparse(original_right)} or 1)"])
+
+
+# --------------------------------------------------------------------
+# 9. Mutable default argument fix (static detection, no error needed)
+# --------------------------------------------------------------------
+#
+# Canonical Python gotcha: `def f(x, l=[]):` — l is shared across
+# all calls. Rewrite: replace mutable default with None sentinel,
+# add `l = [] if l is None else l` at function start.
+
+
+_MUTABLE_DEFAULT_TYPES = (ast.List, ast.Dict, ast.Set)
+
+
+class _MutableDefaultRewriter(ast.NodeTransformer):
+    """For every FunctionDef, find args with mutable literal defaults
+    and rewrite them."""
+
+    def __init__(self):
+        self.n_changes = 0
+        self.notes: List[str] = []
+
+    def _rewrite_function(self, node):
+        self.generic_visit(node)
+
+        # args.defaults align with args[-len(defaults):] (trailing)
+        defaults = node.args.defaults
+        if not defaults:
+            return node
+        n_args = len(node.args.args)
+        first_default_idx = n_args - len(defaults)
+
+        rewrote_args: List[Tuple[str, ast.AST]] = []  # (argname, original_default_value)
+        for i, default in enumerate(defaults):
+            if not isinstance(default, _MUTABLE_DEFAULT_TYPES):
+                continue
+            # Don't rewrite non-empty literals — those might be intentional
+            if (isinstance(default, ast.List) and default.elts) or \
+               (isinstance(default, ast.Dict) and default.keys) or \
+               (isinstance(default, ast.Set) and default.elts):
+                continue
+            arg = node.args.args[first_default_idx + i]
+            rewrote_args.append((arg.arg, default))
+            defaults[i] = ast.Constant(value=None)
+
+        if not rewrote_args:
+            return node
+
+        # Prepend init statements at function start
+        init_stmts = []
+        for argname, original_default in rewrote_args:
+            # argname = <original_default> if argname is None else argname
+            init_stmts.append(ast.Assign(
+                targets=[ast.Name(id=argname, ctx=ast.Store())],
+                value=ast.IfExp(
+                    test=ast.Compare(
+                        left=ast.Name(id=argname, ctx=ast.Load()),
+                        ops=[ast.Is()],
+                        comparators=[ast.Constant(value=None)],
+                    ),
+                    body=copy_default_expr(original_default),
+                    orelse=ast.Name(id=argname, ctx=ast.Load()),
+                ),
+            ))
+            self.notes.append(
+                f"{node.name}: {argname}={ast.unparse(original_default)} "
+                f"-> None + lazy init")
+            self.n_changes += 1
+
+        node.body = init_stmts + node.body
+        return node
+
+    def visit_FunctionDef(self, node):
+        return self._rewrite_function(node)
+
+    def visit_AsyncFunctionDef(self, node):
+        return self._rewrite_function(node)
+
+
+def copy_default_expr(default: ast.AST) -> ast.AST:
+    """Deep-clone default expression (List/Dict/Set literal)."""
+    import copy as _c
+    return _c.deepcopy(default)
+
+
+def fix_mutable_default_args(code: str) -> RepairResult:
+    """Find `def f(x, l=[]):` or `def f(x, d={}):` or `def f(x, s=set()):`
+    style mutable defaults and rewrite them as `None` + lazy init.
+
+    Static rewrite: no error signal needed. Useful as a proactive
+    refactor on code generated by models (including Gemma).
+
+    Only rewrites EMPTY mutable literals ([], {}, set()) — non-empty
+    literals might be intentional shared state.
+    """
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return RepairResult(None, "none", ["parse failed"])
+
+    rewriter = _MutableDefaultRewriter()
+    tree = rewriter.visit(tree)
+    if rewriter.n_changes == 0:
+        return RepairResult(None, "none", ["no mutable default args found"])
+
+    ast.fix_missing_locations(tree)
+    try:
+        new_code = ast.unparse(tree)
+    except Exception as e:
+        return RepairResult(None, "none", [f"unparse failed: {e}"])
+
+    return RepairResult(
+        new_code, "mutable_default",
+        rewriter.notes,
+    )
+
+
+# --------------------------------------------------------------------
 # Entry point
 # --------------------------------------------------------------------
 
@@ -1174,13 +1374,30 @@ def repair(code: str, error_output: str) -> RepairResult:
         if fuzzy.applied:
             return fuzzy
 
+    # 6. Zero-division guard — ZeroDivisionError driven. Wraps the one
+    # division-class BinOp with `or 1` safeguard. Conservative: only
+    # fires when exactly one Div/FloorDiv/Mod op is present.
+    if has_zero_division_error(error_output or ""):
+        zdg = guard_zero_division(code)
+        if zdg.applied:
+            return zdg
+
+    # 7. Mutable default arg — static detection, no error signal needed.
+    # Rewrites `def f(x, l=[])` as `l=None` + lazy init. Always safe to
+    # attempt; returns no-op if no mutable defaults found.
+    mda = fix_mutable_default_args(code)
+    if mda.applied:
+        return mda
+
     return RepairResult(None, "none",
                         ["no applicable rewrite",
                          f"shadow: {shadow.notes}",
                          f"missing_key: {missing}",
                          f"indexerror: {has_indexerror_oob(error_output or '')}",
                          f"none_return: {has_none_return_signal(error_output or '')}",
-                         f"undefined_name: {undefined}"])
+                         f"undefined_name: {undefined}",
+                         f"zerodiv: {has_zero_division_error(error_output or '')}",
+                         f"mutable_default: {mda.notes}"])
 
 
 def repair_cascade(code: str, error_output: str,
