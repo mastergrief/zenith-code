@@ -459,6 +459,27 @@ dynamic-shape recompile overhead > launch-savings already
 captured by CUDA Graphs). Same principle: within fixed compute
 budget, rearranging the dispatch doesn't add performance.
 
+## 2026-04-22 session receipts (R22f + facade proliferation + recursion)
+
+Full per-commit receipts landed as:
+
+| Round | Commit | Receipt | Headline |
+|---|---|---|---|
+| R22f | `9691e06` | `evals/2026-04-22_r22f_threshold_sweep.md` | 51/60 → 60/60 via min_margin=14.5 recalibration. Per-N margin discipline: N=5 p50=23.3, N=10 p50=20.83 p5=15.21, N=15 p50=18.63 p5=16.39. Threshold-below-lowest-p5 rule. |
+| R53a | `69279d4` | `evals/2026-04-22_r53a_number_theory_facade.md` | 8/15 → 15/15 mod/GCD/LCM. Exposed the `▁`-strip bug (token id 236743 consumes bias slot 0; Gemma natural `0` logit 57-66 dominates +50 boost on `▁`). |
+| R22d rerun | `c3cc73f` | `evals/2026-04-22_r22d_rerun_threshold_14.5.md` | Independent corpus (all-keys-per-mem-block) confirms 42/60 → 60/60 at 14.5. 58/60 fired, 0 regressions. |
+| R60a | `afc0220` | `evals/2026-04-22_r60a_icd10_tier3_demo.md` | 8/30 → 26/30 on 72,748-code ICD-10 DB. First tier-3 via decode-path. 4 edge codes resist; rule: text-recall decode-path works when answer is short known-length text. |
+| R70a | `956a3ae` | `evals/2026-04-22_r70a_planner_mixed.md` | 20/20 route + 18/20 answer cross-domain Planner dispatch. |
+| F1 | `8ba151d` | (r60a v2 receipt) | Code-echo detect+retry infrastructure; 4 stubborn edges confirmed structural. |
+| F2 | `5ee61a5` | `evals/2026-04-22_r70b_planner_chain.md` | 12/12 route + 12/12 answer on 2-step chains ("X in hex"). Option C step-1 landed. |
+| F3 | `3274659` | `evals/2026-04-22_r80a_recursion_level1_demo.md` | 5/10 → 10/10 via substrate-generated factorial + fibonacci facades. Level 1 shipped. Three-gate CALM discipline documented. |
+| M1+M2 | `5173745` | `evals/2026-04-22_m1a_four_new_facades.md` + `m2a_level2_metafacade.md` | M1 12/20 → 20/20 (4 more Level-1 specs). M2 4/15 → 15/15 (5 Level-2 meta-synthesized specs). Level 2 shipped. |
+
+**Session total**: 20/60 → 60/60 R22 retrieval, 12/30 → 26/30 tier-3
+ICD-10, 0 → 15/15 NumberTheory, 0 → 12/12 Planner chain, 5 human-
+written + 11 auto/meta-generated facades operational on prod Gemma.
+Measurement receipts and per-probe JSONLs in `.cache/` for replay.
+
 ## Related rules
 
 - `workflow.md` — the general hypothesis-test loop

@@ -58,8 +58,13 @@ working augmentation in this codebase is tier-2 ADDITIVE:
 | R46.2 `MultiStepReasoningFacade` (17/17 fixes) | Tier-2 stack | NL parser + `safe_eval` + step-through bias |
 | `KnowledgeStore` recall cards | Tier-2 at output | Step-function indicators + `CardSlot` + `VerificationHook` |
 | `programs/gcd`, `adder`, `multiplier` (compiled) | Tier-2 integration | Compiled compute + tier-2 output hook |
-| R-delta-21 `CopyAugmentedDeltaNet` MQAR card (100% N=5-15) | Tier-2/3 retrieval card | Installed on prod Gemma via 4-gate CardSlot (R22, 2026-04-21, commit `73df738`): **+9/60 (21% relative) on 60-prompt distractor-confused corpus, 0 regressions.** Card is 100% on clean adapter outputs; pre-`c3eac18` "calibration gap" narrative was an adapter-regex bug (see `delta_rule.md` §R22 install). |
-| `BaseConversionFacade` R22c hex/binary → decimal (decode-path, no training, commit `7db6eb9`) | Tier-2 compute facade | Parser + `int(x, base)` + step-through digit bias. 10/10 vs baseline 7/10 (+3, 30% lift, 0 regressions) in 119s. R46.2 pattern generalizes — see `compute_facades.md`. |
+| R-delta-21 `CopyAugmentedDeltaNet` MQAR card | Tier-2/3 retrieval | 4-gate CardSlot. 2026-04-21 ship at 22.0 → 2026-04-22 R22f recalibration to **14.5 → 60/60 (+18, 0 regressions, commits `9691e06` + `c3cc73f`)**. See `delta_rule.md` §R22. |
+| `BaseConversionFacade` R22c (`7db6eb9`) | Tier-2 decode-path | Parser + `int(x, base)` + digit bias. 10/10 vs 7/10 (+3, 30% lift). |
+| `NumberTheoryFacade` R53a mod/GCD/LCM (`69279d4`) | Tier-2 decode-path | Parser + `safe_eval` + digit bias. **15/15 vs 8/15 (+7, 47% lift).** Exposed the `▁`-strip + POST_BIAS_BUDGET=4 discipline now canonical for decode-path facades. |
+| `NumericEncodeFacade` F2 int→hex/binary/octal (`5ee61a5`) | Tier-2 decode-path | 12/12 on chain corpus. First facade with letter-answer (e.g. "DEADBEEF"). |
+| `Icd10RecallFacade` R60a 72,748-code DB (`afc0220`) | **Tier-3 decode-path** | Parser + JSON lookup + multi-token step-through bias on TEXT answer. **26/30 vs 8/30 (+18, 67% lift).** First tier-3 delivered via decode-path rather than CardSlot. Generalizes step-through bias from integer answers to arbitrary Gemma BPE. 4 edge codes resist — F1 retry infra (`8ba151d`) + pure-DB bypass candidate future work. |
+| `PlannerFacade` R70a + F2 (`956a3ae` + `5ee61a5`) | Tier-2 orchestrator | First-match-wins classify over 5 specialist facades + "X in hex/binary/octal" chain detect. 20/20 single + 12/12 chain. |
+| Auto/meta-generated facades via `recursion.py` (6 Level-1 `*_auto.py`, 5 Level-2 `*_meta.py` — `3274659`, `5173745`) | Tier-2 auto-gen | Level-1 (hand `FacadeSpec`): 17/30 → 30/30 across factorial/fibonacci/combinations/permutations/power/next_prime. Level-2 (`MetaFacade.from_oracle(fn_name, arity)`): 4/15 → 15/15 across factorial/combinations/gcd/lcm/fibonacci. **Spec authorship moved human → substrate; three CALM gates (oracle → ast.parse → live A/B) intact.** |
 
 **R51/R52 were the anomaly.** Both explicitly chose REPLACEMENT via
 monkey-patching `m._forward_layer` to skip Gemma's native L24.
@@ -75,6 +80,14 @@ tier-2 stacking leverages Gemma's NL understanding + context
 handling + output routing for free. The distilled-student tier-3
 pattern (reproducing a Gemma layer's full function) is a bad bet
 on deep-diffuse circuits specifically.
+
+**Refinement (2026-04-22 Icd10 receipt):** tier-3 with a short
+known-length text answer from a static DB is **decode-path-addressable**
+(parser + JSON lookup + multi-token bias), not CardSlot-mandatory.
+Icd10 shipped 26/30. CardSlot-with-trained-PT is only required when
+the key is non-literal (R22 MQAR under distractor prose). For
+well-typed code→text mappings (medical/legal/financial/chemical),
+decode-path is the cheapest tier-3.
 
 **Reframing implication for R53+**: stop hunting for tier-3
 distillable deep-diffuse circuits. For each capability: (1) does
@@ -106,8 +119,10 @@ Each customer's substrate = Gemma + their own deck of Tier-2/3 cards.
 
 - **Legal firm**: citation-format enforcer + statute DB + clause
   templates + compliance checkers + Gemma drafts.
-- **Hospital**: ICD-10 validator + drug-interaction DB + diagnosis
-  templates + dosage calculator + Gemma explains.
+- **Hospital**: ICD-10 validator (**shipped 2026-04-22** —
+  `Icd10RecallFacade` at 26/30 on 72,748-code DB, commit `afc0220`)
+  + drug-interaction DB + diagnosis templates + dosage calculator
+  + Gemma explains.
 - **Fintech**: exact-decimal arithmetic + regulation lookups +
   compliance verifiers + currency conversion cards + Gemma answers
   customer queries.
