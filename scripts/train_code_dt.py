@@ -39,11 +39,14 @@ from torch.utils.data import DataLoader
 from calm.hrm.code_dt_data import (
     CODE_VOCAB_SIZE,
     CodePairDataset,
+    CodeProblem,
     _CODE_CHAR_TO_ID,
     _CODE_ID_TO_CHAR,
     build_balanced_sampler_weights,
     code_detokenize,
     extract_pairs_from_db,
+    filter_rare_classes,
+    normalize_skeleton,
     split_pairs,
 )
 from calm.llm_computer.copy_augmented_delta import build_copy_augmented_delta
@@ -140,6 +143,8 @@ def train(
     plateau_min_delta: float = 0.005,   # improvement threshold
     balanced_sampler: str = "none",     # "none", "inverse", "sqrt_inverse", "capped"
     copy_gate_bias_init: float = -2.0,  # -2.0 v4 default (favors gen); 0.0 neutral; +1.0 favors copy
+    normalize_skeletons: bool = False,  # R6: collapse spacing variants (FN(a, b) ≡ FN(a,b))
+    drop_rare_count: int = 0,           # R6: drop training classes with count < N (0 = keep all)
 ):
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
@@ -149,7 +154,27 @@ def train(
           f"(augment={augment}, factor={augment_factor})...")
     pairs = extract_pairs_from_db(augment=augment, augment_factor=augment_factor)
     print(f"[train] total pairs: {len(pairs)}")
+
+    if normalize_skeletons:
+        n_classes_before = len(set(p.expression for p in pairs))
+        pairs = [CodeProblem(question=p.question,
+                              expression=normalize_skeleton(p.expression))
+                 for p in pairs]
+        n_classes_after = len(set(p.expression for p in pairs))
+        print(f"[train] normalized skeletons: "
+              f"{n_classes_before} → {n_classes_after} classes "
+              f"(-{n_classes_before - n_classes_after} spacing variants)")
+
     train_pairs, val_pairs = split_pairs(pairs, val_frac=val_frac, seed=seed)
+
+    if drop_rare_count > 0:
+        n_before = len(train_pairs)
+        train_pairs = filter_rare_classes(train_pairs, min_count=drop_rare_count)
+        n_train_classes = len(set(p.expression for p in train_pairs))
+        print(f"[train] dropped rare classes (min_count={drop_rare_count}): "
+              f"{n_before} → {len(train_pairs)} train pairs, "
+              f"{n_train_classes} classes")
+
     print(f"[train] split: {len(train_pairs)} train / {len(val_pairs)} val")
 
     train_ds = CodePairDataset(train_pairs, max_len=max_len)
@@ -309,6 +334,12 @@ if __name__ == "__main__":
                     help="Initial bias for copy gate (Round 5 lever). "
                          "-2.0 (v4 default, favors gen); 0.0 (neutral); "
                          "+1.0 (favors copy).")
+    ap.add_argument("--normalize-skeletons", action="store_true",
+                    help="R6 lever: collapse skeleton spacing variants "
+                         "(FN(a, b) ≡ FN(a,b)) to canonical form before split.")
+    ap.add_argument("--drop-rare-count", type=int, default=0,
+                    help="R6 lever: drop training classes with count < N "
+                         "(0 = keep all). Val set unaffected.")
     args = ap.parse_args()
     train(
         epochs=args.epochs,
@@ -322,4 +353,6 @@ if __name__ == "__main__":
         device=args.device,
         balanced_sampler=args.balanced_sampler,
         copy_gate_bias_init=args.copy_gate_bias_init,
+        normalize_skeletons=args.normalize_skeletons,
+        drop_rare_count=args.drop_rare_count,
     )

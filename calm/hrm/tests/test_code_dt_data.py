@@ -290,6 +290,57 @@ def test_copy_gate_bias_configurable():
         )
 
 
+# --- Round 6: skeleton normalization + drop rare ---
+
+def test_normalize_skeleton_collapses_spacing():
+    from calm.hrm.code_dt_data import normalize_skeleton
+    # All three should collapse to the same canonical form
+    assert normalize_skeleton("def FN(a, b):") == "def FN(a, b):"
+    assert normalize_skeleton("def FN(a,b):") == "def FN(a, b):"
+    assert normalize_skeleton("def FN( a , b ):") == "def FN(a, b):"
+
+
+def test_normalize_skeleton_preserves_single_arg():
+    from calm.hrm.code_dt_data import normalize_skeleton
+    assert normalize_skeleton("def FN(n):") == "def FN(n):"
+    assert normalize_skeleton("def FN( n ):") == "def FN(n):"
+
+
+def test_normalize_skeleton_preserves_empty():
+    from calm.hrm.code_dt_data import normalize_skeleton
+    assert normalize_skeleton("def FN():") == "def FN():"
+
+
+def test_normalize_skeleton_leaves_malformed():
+    """If input isn't a valid skeleton, return as-is."""
+    from calm.hrm.code_dt_data import normalize_skeleton
+    assert normalize_skeleton("not a skeleton") == "not a skeleton"
+
+
+def test_filter_rare_classes_drops_below_threshold():
+    from calm.hrm.code_dt_data import filter_rare_classes
+    pairs = (
+        [CodeProblem(question=f"q{i}", expression="def FN(n):") for i in range(10)] +
+        [CodeProblem(question="q_rare1", expression="def FN(z):")] +
+        [CodeProblem(question="q_rare2", expression="def FN(y):")] +
+        [CodeProblem(question="q_s1", expression="def FN(s):")] * 2
+    )
+    filtered = filter_rare_classes(pairs, min_count=3)
+    # FN(n) has 10 → stays; FN(z) has 1 → drops; FN(y) has 1 → drops;
+    # FN(s) has 2 → drops
+    classes_kept = {p.expression for p in filtered}
+    assert classes_kept == {"def FN(n):"}
+    assert len(filtered) == 10
+
+
+def test_filter_rare_classes_preserves_common():
+    from calm.hrm.code_dt_data import filter_rare_classes
+    pairs = [CodeProblem(question=f"q{i}", expression="def FN(n):")
+             for i in range(5)]
+    filtered = filter_rare_classes(pairs, min_count=3)
+    assert len(filtered) == 5
+
+
 def test_copy_gate_bias_sigmoid_makes_sense():
     """At init=+1.0, sigmoid(p_copy_pre_data) ~ 0.73 — favors copy path."""
     import torch

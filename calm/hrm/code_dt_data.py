@@ -421,6 +421,45 @@ def load_pairs_jsonl(path: Path) -> List[CodeProblem]:
     return out
 
 
+_ARG_NORM_RE = re.compile(r"\s*,\s*")
+
+
+def normalize_skeleton(skel: str) -> str:
+    """Canonicalize `def FN(<args>):` by normalizing whitespace in arg
+    list. `FN(a, b):` and `FN(a,b):` and `FN( a , b ):` all collapse
+    to `FN(a, b):` (single-space post-comma, no surrounding spaces).
+
+    R6 lever: reduces ~367 output classes by merging spacing variants.
+    Safe — outputs identical in function, differ only in formatting.
+    """
+    s = skel.strip()
+    m = re.match(r"^(def FN\()(.*?)(\)\s*:)$", s)
+    if not m:
+        return s  # malformed — leave alone
+    prefix, args, suffix = m.groups()
+    # Split on any-whitespace-comma-any-whitespace, rejoin with ", "
+    pieces = [p.strip() for p in _ARG_NORM_RE.split(args) if p.strip() or args.strip() == ""]
+    # Empty args stays ""
+    if args.strip() == "":
+        return f"{prefix}){s.rstrip()[-1]}"  # preserve ":"
+    return f"{prefix}{', '.join(pieces)}):"
+
+
+def filter_rare_classes(
+    pairs: List[CodeProblem], min_count: int = 3,
+) -> List[CodeProblem]:
+    """Drop pairs whose skeleton class appears fewer than `min_count`
+    times in `pairs`. Use ONLY on training data — val keeps full
+    distribution for honest eval. Returns new list.
+
+    R6 lever: classes with 1-2 examples can't generalize, they're
+    gradient noise. Dropping them simplifies the learning target.
+    """
+    from collections import Counter
+    counts = Counter(p.expression for p in pairs)
+    return [p for p in pairs if counts[p.expression] >= min_count]
+
+
 def build_balanced_sampler_weights(
     pairs: List[CodeProblem],
     strategy: str = "sqrt_inverse",
