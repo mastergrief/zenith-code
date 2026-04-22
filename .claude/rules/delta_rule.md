@@ -283,6 +283,147 @@ Full per-round arc receipts:
 - `.claude/MEMORY/evals/2026-04-21_r22b_round4_holdout.md`
 - `.claude/MEMORY/evals/2026-04-21_r22b_round5_6_gate_fix.md`
 
+## DT code-skeleton arc — R1→R27+R25b (2026-04-22)
+
+First extended DT training session on a natural-language code corpus
+(MBPP / HumanEvalPlus / BigCodeBench / Claude-reasoning + stdlib + pip
+signatures → `def FN(<args>):` skeletons). 20 commits `d62335e` → `7ba612f`.
+
+### P0 methodology findings (read BEFORE next DT training)
+
+**R27 — split-before-aug is mandatory** (`fa654bb`). Pre-R27
+pipelines called `split_pairs(pairs)` AFTER `_paraphrase_augment()`,
+which meant val contained 8× paraphrase variants of train problems.
+Train/val shared the underlying problems; only surface phrasing
+differed. Metric was memorization, not generalization.
+
+Correct pipeline:
+1. extract raw → normalize → R19 dedup
+2. SPLIT raw → train_raw / val  (val never sees train problems)
+3. synthesize rare (train only) → paraphrase-aug (train only) → drop_rare (train only)
+
+**R26 — aux copy-attention loss prevents gate collapse** (`d26c56a`).
+Without direct supervision, DT's copy mechanism collapses under
+generation-path optimization pressure. v9 measurement: copy-gate
+decayed 0.5 → **0.018** over 66 epochs while augmented-val autoreg
+climbed 0.30 → 0.75. The metric said "winning"; honest unaug val
+was 0.284 — the model had become a 370-way classifier with no copy.
+
+Fix: `_copy_aux_loss(model, input_ids, target_ids, pad_id)` in
+`scripts/train_code_dt.py`. Position-gated: applies at positions
+where target_ids[b,t] appears anywhere in input_ids[b] (i.e. target
+is in-principle copyable). Self-gating (on copy_logits mass) was
+rejected — creates chicken-and-egg where copy path starts at ~0
+and never activates.
+
+Loss formula: `aux = -log(copy_logits[b, t, target].clamp(min=1e-10)) * copyable_mask`.
+Added to main NLL as `total = main + copy_aux_weight * aux`.
+Default weight 0.5. Expose `copy_logits` via
+`CopyAugmentedDeltaNet._last_copy_logits_grad` (NOT detached — grad
+flows back through copy_q_proj/copy_k_proj).
+
+**v9's 0.750 is an inflated metric** — preserve as historical
+receipt only. Honest measurements on 271-sample unaug val:
+  - greedy: 0.262
+  - +R4 skeleton repair: 0.262 (0 flips — R4 is null at full-val too)
+  - beam=4: 0.284
+  - avg copy-gate: 0.018 (collapsed)
+
+### P1 training-infra levers
+
+| R | SHA | Lever | Default |
+|---|---|---|---|
+| R20 | `70bb94b` | DataLoader `num_workers=2` + `pin_memory=True` + batch 64→256 + `non_blocking` H2D | `--num-workers 2` |
+| R20b | (inline) | `--eval-cap 300` — subsample val during training (autoreg is greedy per-sample, O(N×200ms); 1628-val stalls) | 300 |
+| R21 | `4f12a36` | `EMAWeights` class; apply_shadow/restore around eval + save. **Decay=0.995 not 0.999** — 0.999 is too slow for 100-ep budget | `--ema-decay 0.995` |
+
+R20 infra was the stealth biggest lever of the session: 67-min-per-run
+→ 20-min-per-run enabled 13 training iterations. At decay=0.999 EMA
+shadow is ~70% init at ep6 — signal blocked. Decay 0.995 stabilizes
+by ep12.
+
+### P1 data levers
+
+| R | SHA | Lever | Default |
+|---|---|---|---|
+| R3 | `4ebcf74` | `WeightedRandomSampler` on per-class `sqrt_inverse` weights | `--balanced-sampler sqrt_inverse` |
+| R5 | `12bbf84` | `--copy-gate-bias-init` (v4 -2.0 / v5 +1.0 failed / v9 0.0 collapsed / v11-v13 `-1.0` works with R26) | `-1.0` with R26 |
+| R6 | `5b12d30` | `--normalize-skeletons` (strip ann + whitespace) + `--drop-rare-count N` | `3` |
+| R8 | `74dc1e4` | `--extract-all-defs` + 20 new paraphrase templates | on |
+| R9 | `df3cd73` | `--synth-rare N --synth-rare-max M`: programmatic rare-class prompt synthesis via `rare_class_synth.py` (semantic-typed templates: int/string/list/url/db/etc.) | `--synth-rare 60 --synth-rare-max 50` |
+| R10-R15 | `f8c0769` | Family (arg_count) + domain (url/db/request/user/file/matrix) + 3-arg templates + type-annotation stripping + 16 new paraphrase families | auto |
+| R18 | `66d7263` | Widened per-semantic template libraries (14→34 int, 13→33 string/list, added url/db/request/user domain templates) | auto |
+| R19 | `3f051ab` | `--dedupe-ambiguous`: drop conceptual prompts with 3+ distinct skeletons, majority-vote on 2-skeleton ambiguity | on |
+| R25 | `be19450` | `build_stdlib_corpus.py` scraper — inspect.signature + `__doc__` on stdlib (67 modules, +835 pairs) | — |
+| R25b | `7ba612f` | Expanded to 124 modules (stdlib + top pip) → +3761 pairs (4.5× R25) | — |
+
+**R28 auto-scan-all-installed** (UNCOMMITTED, dangerous). Using
+`pkgutil.iter_modules()` with `PYTHONPATH=.` imports top-level
+scripts as modules, which RUNS their top-level code at import. During
+one run this loaded Gemma (2.06 GB) into CUDA and ran
+`r53_phase2_bench.py`'s full ablation. Repo-exclusion set is
+necessary but insufficient — any auto-scan risks pip packages with
+import-time side effects. Repo-exclusion edit is in the working tree
+but not committed; consider committing with explicit docstring warning
+or reverting to hand-curated module list.
+
+### P1 inference levers (compose with any checkpoint)
+
+| R | SHA | Lever | File |
+|---|---|---|---|
+| R4 | `0a1322b` | Skeleton-repair regex rewrites (ruled-out for accuracy, kept for output validity) | `calm/hrm/dt_skeleton_repair.py` |
+| R22 | `9987b8f` | Beam search w/ skeleton-validity bias — when multiple beams tie on logp, prefer the one that parses as valid skeleton | `scripts/eval_dt_beam.py` |
+| R24 | `358cdf2` | Comprehensive post-train eval: greedy / +repair / beam / beam+repair + per-class + copy-gate | `scripts/eval_dt_final.py` |
+
+### Full DT run trajectory (session 2026-04-22)
+
+| Run | Config | Best val | On | Fate |
+|---|---|---:|---|---|
+| v4 | baseline (handoff) | 0.298 | aug val | kill ep34 |
+| v5 | +R3+R5+R6 @ gate +1.0 | 0.067 | aug val | kill ep10 (gate overshoot) |
+| v9 | +R5+R6+R8 @ gate 0.0 + R20 | **0.750** | **aug val (INFLATED)** | plateau ep76 |
+| v9 honest | eval_dt_final on v9 | **0.284** | 271 unaug | — |
+| v10 | +R9+R19 pre-R27 | 0.000 | flawed | kill ep4 |
+| v11 | +R26+R27 @ gate -1.0 EMA 0.999 | 0.000 | 228 honest | kill (EMA too slow) |
+| v12 | EMA 0.995 | 0.004 | 228 honest | kill (data upgrade) |
+| v13 | +R25b (3761 extra pairs), 520 honest val | **0.193** | 520 honest | kill ep16 for R28 scale |
+
+v13 ep16 0.193 on 520-sample honest val is the first legitimate DT
+capability measurement on this corpus. Trajectory through ep16:
+0.097 → 0.143 → 0.127 → 0.140 → 0.147 → 0.163 → 0.193 (non-
+decelerating).
+
+### Ruled-out for DT code-skeleton (don't retry)
+
+- **R2 retrieval-aug prompt** (`c0d58c5`): −0.108 at gate=0.19. Inject
+  top-k retrieved skeletons into prompt → model attends to distractors,
+  scrambles emission. Gate must be healthier (>0.3) for retrieval-aug
+  to shine.
+- **R4 skeleton-repair for accuracy** (`0a1322b`): 0 flips on v4_mid,
+  0 flips on v9-final full val. Model's errors are wrong-content-
+  cleanly-formed, not malformations. Repair still useful for output
+  validity (cheap invariant-keeping) but doesn't lift autoreg.
+- **Gate init +1.0** (v5 ep10=0.067): blocks gen path from emitting
+  structure tokens (`def`, `FN`, `(`, `:`) that are NOT in the prompt.
+  Fabricates like `FN(num1, n2223)`. Only viable with explicit
+  structure-token fallback.
+- **Gate init 0.0 alone** (v9): without R26 aux, copy-gate collapses.
+  Must pair with R26 aux_weight ≥ 0.3.
+- **EMA decay 0.999** (v11): too slow for 100-ep budget. Use 0.995.
+- **Pre-R27 paraphrase-aug val split** (v4-v9): measures memorization
+  not generalization. Split BEFORE aug, val stays raw.
+
+### Install status
+
+`calm/llm_computer/dt_install.py` scaffold is in place (R22 CardSlot
+pattern, L30, `write_margin=min_margin=14.5`). NOT yet run against
+live Gemma on code prompts. Install threshold: DT honest val ≥ 0.40
+before wiring — below that, distractor misses hurt Gemma more than
+accurate hits help (R2 precedent).
+
+Full receipts for this arc: `.claude/MEMORY/SESSION_HANDOFF.md`
+(2026-04-22) + commit bodies d62335e..7ba612f.
+
 ## Related rules
 
 - `Substrate.md` — CardSlot / VerificationHook / in-attention install
