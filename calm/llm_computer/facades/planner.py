@@ -50,6 +50,25 @@ from calm.llm_computer.facades.number_theory import NumberTheoryFacade
 from calm.llm_computer.facades.numeric_encode import NumericEncodeFacade
 
 
+# Auto-facade registry — list of (tag, module, class_name) triples.
+# Registered by default in PlannerFacade.__init__ via register_default_auto_facades().
+# Each auto-facade follows the multi_step / number_theory contract:
+#   - parse(prompt) → Optional[tuple] (operands) or None
+#   - solve(prompt, use_bias=bool) → dataclass with .value, .used_bias, .generated
+# Order matters: earlier facades match first (before multi_step catch-all).
+DEFAULT_AUTO_FACADES = [
+    # (tag, module_name, class_name)
+    ("factorial",    "factorial_auto",    "FactorialFacade"),
+    ("fibonacci",    "fibonacci_auto",    "FibonacciFacade"),
+    ("combinations", "combinations_auto", "CombinationsFacade"),
+    ("permutations", "permutations_auto", "PermutationsFacade"),
+    ("power",        "power_auto",        "PowerFacade"),
+    ("next_prime",   "next_prime_auto",   "NextPrimeFacade"),
+    ("days_between", "days_between_auto", "DaysBetweenFacade"),
+    ("is_prime",     "is_prime_auto",     "IsPrimeFacade"),
+]
+
+
 @dataclass
 class PlannerResult:
     prompt: str
@@ -66,13 +85,28 @@ _CHAIN_SUFFIX_RE = re.compile(
     re.IGNORECASE,
 )
 
+# N-step chain: arithmetic-op intermediate step.
+# Matches: "multiply by N" / "times N" / "plus N" / "minus N" /
+#          "divided by N" / "add N" / "subtract N" / "* N" / "+ N" etc.
+# Single capture group = signed operand.
+_CHAIN_OP_RE = re.compile(
+    r"\b(?:multiplied?\s+by|multiply\s+by|times|\*)\s+(-?\d+)"      # ×N
+    r"|\b(?:divided?\s+by|divide\s+by|over|/)\s+(-?\d+)"             # ÷N
+    r"|\b(?:plus|add(?:ed)?(?:\s+by)?|\+)\s+(-?\d+)"                 # +N
+    r"|\b(?:minus|subtract(?:ed)?(?:\s+by)?|\-)\s+(-?\d+)",          # −N
+    re.IGNORECASE,
+)
+# Op-category order (regex alternation above). Maps group idx → (op, sign)
+# group 1 = *, 2 = /, 3 = +, 4 = -
+_CHAIN_OP_ORDER = ["*", "/", "+", "-"]
+
 
 class PlannerFacade:
     """Top-level dispatch facade. Minimal orchestration — single-facade
     routing, no chaining between facades yet. Fixed priority order,
     first matcher wins."""
 
-    def __init__(self, device: str = "cuda"):
+    def __init__(self, device: str = "cuda", register_auto: bool = True):
         self.device = device
         self._gemma = None
         self._tokenizer = None
@@ -81,6 +115,39 @@ class PlannerFacade:
         self.number_theory = NumberTheoryFacade(device=device)
         self.multi_step = MultiStepReasoningFacade(device=device)
         self.numeric_encode = NumericEncodeFacade(device=device)
+        # Auto-facades: list of (tag, instance). Dispatched between
+        # numeric_encode and number_theory in priority (tighter regexes).
+        self.auto_facades: list[tuple[str, object]] = []
+        if register_auto:
+            self.register_default_auto_facades()
+
+    def register_default_auto_facades(self) -> int:
+        """Register the DEFAULT_AUTO_FACADES list (factorial, fibonacci,
+        combinations, permutations, power, next_prime). Silently skips
+        any module that fails to import (e.g. if the .py file hasn't
+        been generated yet). Returns count of successfully registered."""
+        import importlib
+        count = 0
+        for tag, module_name, class_name in DEFAULT_AUTO_FACADES:
+            try:
+                mod = importlib.import_module(
+                    f"calm.llm_computer.facades.{module_name}"
+                )
+                cls = getattr(mod, class_name)
+                self.register_auto_facade(tag, cls(device=self.device))
+                count += 1
+            except (ImportError, AttributeError):
+                continue
+        return count
+
+    def register_auto_facade(self, tag: str, facade: object) -> None:
+        """Register a generated facade under a unique tag. Facade must
+        implement parse(prompt) → Optional[tuple] and solve(prompt,
+        use_bias: bool) → object with .value / .used_bias / .generated.
+        """
+        if any(t == tag for t, _ in self.auto_facades):
+            raise ValueError(f"auto-facade tag {tag!r} already registered")
+        self.auto_facades.append((tag, facade))
 
     def load_icd10_db(self, path: Path | str) -> int:
         return self.icd10.load_db(path)
@@ -93,6 +160,8 @@ class PlannerFacade:
         self.number_theory.install(gemma, tokenizer)
         self.multi_step.install(gemma, tokenizer)
         self.numeric_encode.install(gemma, tokenizer)
+        for _tag, fac in self.auto_facades:
+            fac.install(gemma, tokenizer)
 
     def detach(self):
         self.icd10.detach()
@@ -100,8 +169,50 @@ class PlannerFacade:
         self.number_theory.detach()
         self.multi_step.detach()
         self.numeric_encode.detach()
+        for _tag, fac in self.auto_facades:
+            fac.detach()
         self._gemma = None
         self._tokenizer = None
+
+    @staticmethod
+    def _split_chain_steps(prompt: str) -> list[str]:
+        """Split a prompt into ordered chain steps on ", then " / " then ".
+        Returns list of segment strings. Single-segment (no connective)
+        returns [prompt] unchanged."""
+        # Split on "then" connectives; preserve order
+        parts = re.split(
+            r",?\s*\bthen\b\s*,?|,(?=\s*(?:multiply|times|plus|add|minus|subtract|divided?|\*|\+|\-|/|in\s+(?:hex|binary|octal)))",
+            prompt,
+            flags=re.IGNORECASE,
+        )
+        return [p.strip(" ,?") for p in parts if p.strip(" ,?")]
+
+    @staticmethod
+    def _parse_chain_op(segment: str) -> Optional[tuple[str, int]]:
+        """Extract (op, operand) from a chain step like 'multiply by 3'.
+        Returns None if segment is not a chain-op step."""
+        m = _CHAIN_OP_RE.search(segment)
+        if not m:
+            return None
+        for idx, op in enumerate(_CHAIN_OP_ORDER, start=1):
+            if m.group(idx) is not None:
+                return (op, int(m.group(idx)))
+        return None
+
+    @staticmethod
+    def _apply_chain_op(value: int, op: str, operand: int) -> Optional[int]:
+        if op == "*":
+            return value * operand
+        if op == "/":
+            if operand == 0:
+                return None
+            q, r = divmod(value, operand)
+            return q if r == 0 else None  # integer division only
+        if op == "+":
+            return value + operand
+        if op == "-":
+            return value - operand
+        return None
 
     def _chain_detect(self, prompt: str) -> Optional[tuple[str, int]]:
         """Detect 'X in hex|binary|octal' chain where X is a sub-query.
@@ -154,7 +265,10 @@ class PlannerFacade:
         return self._classify_single(prompt)
 
     def _classify_single(self, prompt: str) -> Optional[str]:
-        """Single-facade classifier (no chain)."""
+        """Single-facade classifier (no chain). Auto-facades checked
+        BEFORE multi_step catch-all — their regexes are tighter so they
+        won't match infix-math prompts incorrectly.
+        """
         if self.icd10.parse(prompt) != (None, None):
             return "icd10"
         if self.base_conv.parse(prompt) != (None, None):
@@ -163,13 +277,137 @@ class PlannerFacade:
             return "numeric_encode"
         if self.number_theory.parse(prompt) != (None, None):
             return "number_theory"
+        # Auto-facades (factorial, fibonacci, combinations, etc.) —
+        # checked before multi_step because they have narrower regexes.
+        for tag, fac in self.auto_facades:
+            if fac.parse(prompt) is not None:
+                return f"auto:{tag}"
         if self.multi_step.parse(prompt) is not None:
             return "multi_step"
         return None
 
+    def _primary_solve(self, primary_prompt: str) -> tuple[Optional[str], Optional[int]]:
+        """Run classified single-facade solve (no bias) on a primary
+        sub-prompt. Returns (facade_tag, integer_value) or (None, None)
+        if no facade parses. Used by N-step chain dispatch.
+        """
+        tag = self._classify_single(primary_prompt)
+        if tag is None:
+            return None, None
+        if tag == "number_theory":
+            pr = self.number_theory.solve(primary_prompt, use_bias=False)
+            return tag, pr.value
+        if tag == "multi_step":
+            pr = self.multi_step.solve(primary_prompt, use_bias=False)
+            return tag, pr.value
+        if tag == "base_conv":
+            pr = self.base_conv.solve(primary_prompt, use_bias=False)
+            return tag, pr.value
+        if tag == "numeric_encode":
+            pr = self.numeric_encode.solve(primary_prompt, use_bias=False)
+            return tag, pr.source
+        if tag.startswith("auto:"):
+            sub = tag.split(":", 1)[1]
+            for t, fac in self.auto_facades:
+                if t == sub:
+                    pr = fac.solve(primary_prompt, use_bias=False)
+                    return tag, getattr(pr, "value", None)
+        return None, None
+
+    def _nstep_chain_dispatch(
+        self, prompt: str, use_bias: bool
+    ) -> Optional[PlannerResult]:
+        """N-step chain parser. Splits on 'then' / ',' connectives into
+        ordered steps. Step 0 is a primary facade call; subsequent steps
+        are either arithmetic ops on the running value ('multiply by 3')
+        or a final numeric-encode ('in hex').
+
+        Returns PlannerResult when a chain is detected AND every step
+        resolves; None otherwise (caller falls back to single-facade /
+        2-step chain / pass-through).
+        """
+        segments = self._split_chain_steps(prompt)
+        if len(segments) < 2:
+            return None
+
+        primary_prompt = segments[0]
+        # Hint the primary regexes by shaping the segment as a question.
+        primary_shaped = primary_prompt.rstrip(" ,?") + "?"
+        primary_tag, value = self._primary_solve(primary_shaped)
+        if primary_tag is None or value is None:
+            return None
+
+        steps: list = [(primary_tag, value)]
+        final_encoded: Optional[str] = None
+        final_generated: str = ""
+        final_used_bias = False
+        final_base: Optional[int] = None
+
+        for seg in segments[1:]:
+            # In-base suffix (must be last step)
+            mb = _CHAIN_SUFFIX_RE.search(seg)
+            if mb:
+                base_map = {"hex": 16, "hexadecimal": 16,
+                            "binary": 2, "bin": 2,
+                            "octal": 8, "oct": 8}
+                final_base = base_map[mb.group(1).lower()]
+                # Issue encode via numeric_encode facade using running value.
+                base_name = {16: "hex", 2: "binary", 8: "octal"}[final_base]
+                encode_prompt = f"What is {value} in {base_name}?"
+                er = self.numeric_encode.solve(encode_prompt, use_bias=use_bias)
+                final_encoded = er.encoded
+                final_generated = er.generated
+                final_used_bias = er.used_bias
+                steps.append(("numeric_encode", er.encoded))
+                break
+            # Arithmetic op step
+            op_pair = self._parse_chain_op(seg)
+            if op_pair is None:
+                return None  # unrecognized step → abort chain
+            op, operand = op_pair
+            nv = self._apply_chain_op(value, op, operand)
+            if nv is None:
+                return None
+            value = nv
+            steps.append((f"arith:{op}{operand}", value))
+
+        # If the final step was not a numeric encode, emit the integer
+        # value via multi_step facade so bias fires on the answer digits.
+        # multi_step needs a parseable expression — use `value + 0` so
+        # the parser fires and the digit bias anchors on `value`. Plain
+        # "What is {value}?" produces no parse → no bias → Gemma emits
+        # EOS turn token immediately. See r70d corpus for the failure mode.
+        if final_encoded is None:
+            emit_prompt = f"What is {value} + 0?"
+            er = self.multi_step.solve(emit_prompt, use_bias=use_bias)
+            final_generated = er.generated
+            final_used_bias = er.used_bias
+
+        # Facade tag encodes the full chain: "chain:A→…→encodeB" or
+        # "chain:A→arith:*3→…"
+        tag_str = "chain:" + "→".join(
+            t if not t.startswith("auto:") else t for t, _ in steps
+        )
+        return PlannerResult(
+            prompt=prompt,
+            facade=tag_str,
+            used_bias=final_used_bias,
+            generated=final_generated,
+            parsed_value=(final_encoded if final_encoded is not None else value),
+            chain_steps=steps,
+        )
+
     def solve(self, prompt: str, *, use_bias: bool = True) -> PlannerResult:
         if self._gemma is None or self._tokenizer is None:
             raise RuntimeError("planner not installed — call install() first")
+
+        # Try N-step chain dispatch FIRST. It handles 3+ step chains
+        # connected by 'then' or comma connectives. If it fires, return
+        # directly. If it misses (single-step / wrong shape), fall
+        # through to the 2-step chain + single-facade path.
+        nstep = self._nstep_chain_dispatch(prompt, use_bias)
+        if nstep is not None:
+            return nstep
 
         tag = self.classify(prompt)
 
@@ -250,6 +488,19 @@ class PlannerFacade:
                 prompt=prompt, facade="multi_step", used_bias=r.used_bias,
                 generated=r.generated, parsed_value=r.value,
             )
+
+        # Auto-facade dispatch ("auto:<tag>") ------------------------------
+        if tag and tag.startswith("auto:"):
+            tag_name = tag.split(":", 1)[1]
+            for t, fac in self.auto_facades:
+                if t == tag_name:
+                    r = fac.solve(prompt, use_bias=use_bias)
+                    return PlannerResult(
+                        prompt=prompt, facade=f"auto:{t}",
+                        used_bias=getattr(r, "used_bias", False),
+                        generated=getattr(r, "generated", ""),
+                        parsed_value=getattr(r, "value", None),
+                    )
 
         # Pass-through — no facade engaged
         from calm.llm_computer.gemma_substrate import KVCache
