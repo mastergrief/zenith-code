@@ -5,77 +5,135 @@ Each level of recursion is guarded by CALM's deterministic verifier,
 so improvements compound without the bias-amplification failure mode
 of self-training on a learned judge (Self-Instruct, RLAIF, etc.).
 
-Already shipped end-to-end for facts (`calm/llm_computer/auto_upgrade.py`
-+ `scripts/gemma_learning_loop_demo.py`): **5/5 wrong → 5/5 correct**
-after one self-improvement cycle. Generalization to all card types is
-mechanical.
+**Shipped as of 2026-04-22** (commits `3274659` F3, `5173745` M1+M2):
+- **Fact-level recursion** (earlier) — `auto_upgrade.py` +
+  `gemma_learning_loop_demo.py`: 5/5 wrong → 5/5 correct.
+- **Level 1** — generic decode-path facade auto-generator
+  (`calm/llm_computer/recursion.py`). 6 shipped auto-facades
+  (factorial, fibonacci, combinations, permutations, power,
+  next_prime) lifting Gemma 17/30 → 30/30 across their domains.
+- **Level 2** — `MetaFacade.from_oracle(fn_name, arity)` synthesizes
+  the `FacadeSpec` itself. 5 meta-facades shipped (factorial,
+  combinations, gcd, lcm, fibonacci) lifting 4/15 → 15/15.
 
-## Level 1 — card self-distills its own domain
+Level 3 (substrate designs NEW meta-facades from observed failure
+traces) is the remaining frontier.
+
+## Level 1 — decode-path facade auto-generator (SHIPPED)
+
+**Core module**: `calm/llm_computer/recursion.py`.
+
+```python
+from calm.llm_computer.recursion import (
+    FacadeSpec, validate_facade, generate_facade, import_facade_class,
+)
+
+spec = FacadeSpec(
+    name="Factorial",
+    module_name="factorial_auto",
+    description="Factorial (n!) via CALM safe_eval oracle.",
+    parse_patterns=[r"factorial\s+of\s+(-?\d+)", r"(-?\d+)\s*!"],
+    eval_expr="factorial({a})",
+    max_operand=20,
+    operand_count=1,
+)
+
+# Three CALM gates:
+validate_facade(spec, oracle_test_cases)   # 1. safe_eval validates
+path = generate_facade(spec, overwrite=True)  # 2. ast.parse-checked write
+Cls = import_facade_class(spec); facade = Cls()
+facade.install(gemma, tok)                 # 3. live A/B gate
+```
+
+**Three CALM-anchored gates** keep the loop drift-free:
+
+1. `validate_facade(spec, cases)` — `safe_eval(spec.eval_expr.format(a=..))`
+   must match expected for every oracle case BEFORE any file touches disk.
+2. `generate_facade(spec)` — `compile(code, path, "exec")` syntax-checks
+   the rendered Python source before writing. Path resolved via
+   `_REPO_ROOT` absolute, not cwd-relative.
+3. Live A/B — baseline (`use_bias=False`) vs facade (`use_bias=True`)
+   on Gemma. Facade gets added to the registry only if it beats
+   baseline with 0 regressions.
+
+**What's in the template** (`_TEMPLATE` at line ~70 of recursion.py):
+- `@dataclass {name}Result` — per-facade result type
+- `class {name}Facade` — standard install/detach/parse/evaluate/solve API
+- `_PARSE_RES` list of compiled regexes (rendered via
+  `_render_parse_res_literals`; uses `{pat!r}` NOT `r{pat!r}` to
+  avoid double-escaping — see inline comment at `_render_...` definition)
+- `_EVAL_TEMPLATE` — safe_eval formatter string with `{a}` / `{b}` slots
+- Standard `_SPACE_TOKEN_ID = 236743` strip + `POST_BIAS_BUDGET = 4`
+  post-bias truncation (see `compute_facades.md` + `embed_intelligence.md`)
+- 12-digit `_parse_int` cap
+
+Extended to other card types: if a future PT or compiled card follows
+the "parse → oracle → bias" shape, drop a `FacadeSpec`-analog and
+re-use the three CALM gates.
+
+## Level 2 — MetaFacade synthesizes the spec itself (SHIPPED)
+
+Instead of a human writing `parse_patterns` + `eval_expr`, MetaFacade
+encodes canonical NL patterns per arity:
+
+```python
+from calm.llm_computer.recursion import MetaFacade
+
+spec = MetaFacade.from_oracle(
+    fn_name="combinations", arity=2, max_operand=100,
+    extra_patterns=[r"(-?\d+)\s+choose\s+(-?\d+)"],
+)
+# spec is a standard FacadeSpec, goes through the same Level-1 pipeline
+```
+
+Canonical patterns (per MetaFacade source):
+
+**1-arg** (3 patterns): `fn(N)` / `fn of N` / `[what is] fn N`.
+
+**2-arg** (4 patterns):
+- `fn(A, B)`
+- `fn of A and B`
+- `A fn B` — for verb-like names ("choose", "permute")
+- `fn A by|with|taken B`
+
+User supplies: `fn_name` (must exist in safe_eval), `arity` ∈ {1, 2},
+optional `domain_name` / `module_name` / `max_operand` / `extra_patterns`.
+
+`MetaFacade.batch_from_oracles(list_of_dicts)` generates a list of
+FacadeSpecs in one call — demo at `scripts/m2a_metafacade_demo.py`.
+
+**Scope limits** (what Level 2 does NOT yet handle):
+- Higher arities (≥3 args) — template library doesn't cover
+- Non-regex parsing — e.g. ISO dates, structured strings
+- Non-integer outputs — float, tuple, boolean (e.g. `is_prime` bool).
+  `sqrt` returns float but falls back via the existing
+  `val.is_integer()` check in the generated `evaluate()`.
+- Domain-specific idioms — e.g. "N choose K" needs to be supplied
+  via `extra_patterns` for now.
+
+All of these are the natural Level-3 expansion scope.
+
+## Level 3 — substrate designs new spec templates (FUTURE)
+
+A **MetaMetaFacade** observes MetaFacade failure modes (e.g. misses
+non-regex parsers, arity=3, non-integer outputs) and proposes new
+template patterns. Not shipped — current Level-2 template library is
+the upper bound of the present system.
+
+When Level 3 ships, the pipeline becomes:
 
 ```
-CardV1 (trained on seed corpus + DB)
-   ↓
-install on Gemma (CardSlot or in-attention)
-   ↓
-card generates candidate outputs on unseen prompts
-   ↓
-CALM + sandbox verify each intermediate value + final answer
-   ↓
-keep verified (input, verified_output) pairs
-   ↓
-CardV2 trained on seed + verified-new
-   ↓
-repeat: each iteration absorbs cases the previous version solved
-```
-
-This is what `auto_upgrade.py` does for recall cards. Extended to the
-code PT (R53.5) or future MultiStepCoding card, the loop becomes:
-
-- PT generates reasoning trace for a new problem
-- CodeVerifierFacade runs extracted code against tests
-- Passing → add to corpus
-- Failing → CALM generates corrected trace → add to corpus
-- Retrain PT on expanded corpus
-
-Seed cost: human-curated 222 examples (generators). After N iterations,
-the card owns tens of thousands of verified traces with zero manual
-labeling.
-
-## Level 2 — cards that build cards
-
-A **MetaCard** receives: "here's a capability Gemma fails on" and
-emits: a full card spec (probing target, IR layout, training recipe).
-
-```
-MetaCard inputs:
-  - failure traces from CALM (what capability is broken)
-  - probing results (where the circuit lives)
-  - circuit classification (concentrated / cooperative / diffuse)
+Gemma fails at domain X (CALM verifier catches)
     ↓
-MetaCard outputs:
-  - IR template: which primitives (TokenEmbed / LookUp / ReGLU)
-  - install pattern: in-attention / CardSlot / HubInjection
-  - training recipe: data generator + verification oracle
+MetaMetaFacade proposes: (fn_name, arity, output_type, parser_family)
     ↓
-card compiled → installed → verified → deployed
+MetaFacade synthesizes FacadeSpec from the proposal
+    ↓
+Level-1 pipeline takes it from there
 ```
 
-Humans design the meta-process once; the system generates specific
-cards on demand when new capability gaps appear.
-
-The pieces for this already exist independently — probing
-methodology, circuit classifier, IR compiler, install patterns. Meta-
-card is the glue that automates their composition.
-
-## Level 3 — meta-cards that build meta-cards
-
-Same pattern one level up. The MetaCard itself has failure modes
-(e.g. misses certain circuit typologies). A MetaMetaCard watches for
-these failures, designs a new MetaCard variant that handles them.
-
-Same CALM-discipline keeps the recursion from diverging — at every
-level, the "was this better?" oracle is deterministic (CALM tests,
-circuit mapping is measurable, card compilation is exact).
+Same CALM gates apply at every level — correctness pushed to the
+deterministic oracle, not the LLM-as-judge.
 
 ## Why this is safe where Self-Instruct / RLAIF fails
 
@@ -125,33 +183,46 @@ different card stack per customer.
 
 ## Concrete state
 
-### What's shipped
+### What's shipped (as of 2026-04-22)
 
 - `calm/llm_computer/auto_upgrade.py` — fact-level recursion
   (`AutoUpgradeEngine.commit()` compiles corrections into recall card)
 - `calm/llm_computer/persistent_knowledge.py` — `KnowledgeStore` with
   `add_correction(key, value)` + `build_recall_model()` + save/load
-- `scripts/gemma_learning_loop_demo.py` — Level 1 end-to-end on Gemma
-  substrate (2+3, 4+1, 3+2, 5+1, 2+4 mod 8 → 5/5 wrong → 5/5 correct
-  after compile + install + persist)
+- `scripts/gemma_learning_loop_demo.py` — fact-level demo
+  (5/5 wrong → 5/5 correct)
+- **`calm/llm_computer/recursion.py`** — Level-1 generator +
+  Level-2 MetaFacade (this session)
+- **Level-1 shipped facades** (`*_auto.py` in
+  `calm/llm_computer/facades/`):
+  `factorial_auto`, `fibonacci_auto`, `combinations_auto`,
+  `permutations_auto`, `power_auto`, `next_prime_auto`
+- **Level-2 shipped facades** (`*_meta.py`):
+  `factorial_meta`, `combinations_meta`, `gcd_meta`, `lcm_meta`,
+  `fibonacci_meta`
+- **Demo scripts**: `scripts/r80a_recursion_demo.py` (F3 Level-1),
+  `scripts/m1a_four_new_facades.py` (M1 4 new auto),
+  `scripts/m2a_metafacade_demo.py` (M2 Level-2)
+- **Receipts**:
+  `.claude/MEMORY/evals/2026-04-22_r80a_recursion_level1_demo.md`,
+  `m1a_four_new_facades.md`, `m2a_level2_metafacade.md`
 
-### What's next (R53.5 + R53.6)
+### What's next (Level 3 + code PT)
 
-- Train `copy_code_best.pt` PT on 8970-example DB + generator traces
-  (Level 1 seed)
-- Install at L24 via CardSlot; Install KnowledgeStore at L30
-- Run self-distillation loop: PT generates plans → CodeVerifierFacade
-  validates → passing plans absorbed into next PT training round
-- After N rounds, measure: does the PT cover multi-step compositions
-  the initial version missed? (expected: yes, monotonic growth)
-
-### What's further out (Level 2+)
-
-- Wire probing tools (`tracing_roadmap.md`) to auto-classify new
-  failure modes on prod queries
-- Auto-generate card specs from the classification (MetaCard v0)
-- Closed loop: user prompts → failures logged → MetaCard builds new
-  card → installed → user next prompt works
+- **Level 3 MetaMetaFacade**: observe MetaFacade failures (higher
+  arity, non-regex parsers, non-integer outputs), propose new template
+  families, synthesize MetaFacade variants. Current template library
+  is the upper bound of the present system.
+- **Code PT self-distill** (R53.5 + R53.6, inherited roadmap):
+  train `copy_code_best.pt` on 8970-example DB, install at L24 via
+  CardSlot, run CodeVerifierFacade-gated self-distillation loop.
+- **Commercial vertical decks**: use Level-2 MetaFacade to rapidly
+  stand up hospital / legal / financial card decks (each is ~5-10
+  domain-specific `FacadeSpec`s produced by hand + MetaFacade).
+- **Closed loop**: CALM verifier catches Gemma failure → infers
+  oracle signature → MetaFacade proposes spec → Level-1 pipeline
+  ships the facade. Last missing link is the CALM → oracle-
+  signature inference step.
 
 ## Related rules
 

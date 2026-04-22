@@ -41,15 +41,21 @@ gemma.verification_hooks.append(hook)
   can be corrupted by the card's default argmax — Round 6 bug.
 - Single-token only. Fires once per forward pass.
 
-**Tune `min_margin` per-card, not to a fixed 0.5.** R22 MQAR card on
-Gemma distractor-confused corpus (`delta_rule.md` §R22 install)
-converged on `min_margin=22.0` — card's correct outputs cluster at
-margin 22-23, wrong outputs at 19-21, clean bimodal split with a
-~1-point gap. `min_margin=0.5` was too permissive (pre-R22e data
-showed card firing on confident-wrong 19-21 margins). Process:
-run the card standalone on a representative corpus, plot the
-(peak-median) margin distribution for correct vs wrong cases,
-pick a threshold in the gap.
+**Tune `min_margin` per-card AND per-N, not to a fixed 0.5.** R22 MQAR
+card on Gemma distractor-confused corpus (`delta_rule.md` §R22 install)
+shipped 2026-04-21 at `min_margin=22.0` (+9/60). R22f recalibrated
+2026-04-22 to `14.5` (+18/60, 60/60, commit `9691e06`) after
+diagnosing flat N=10 cells as over-gating: card margins are
+**N-dependent**, with N=5 p50≈23.3, N=10 p50=20.83 p5=15.21,
+N=15 p50=18.63 p5=16.39. The 22.0 threshold was N=5-calibrated;
+14.5 sits below the lowest observed p5 across all Ns and preserves
+zero-regression.
+
+Process: run the card standalone on a representative corpus **per
+input-distribution bucket**, plot (peak-median) margin distribution
+per bucket, pick threshold below the lowest p5 across buckets. A
+single margin threshold that's correct for one bucket may over-gate
+another if input shape varies.
 
 **`write_margin` must mirror `min_margin` for CardSlot installs**
 (commit `e169d6d`). `card_output_fn` independently writes to the
@@ -141,6 +147,46 @@ step-through digit bias per intermediate AND final value.
 to N-op composition — step-through biasing is the right embed
 mechanism for any verifier that produces a multi-token numeric
 answer, not just arithmetic cards.
+
+### `▁`-strip + POST_BIAS_BUDGET discipline (2026-04-22 R53a refinement)
+
+For prompt-terminators that end in a SPACE (e.g. `"Answer: "` with
+trailing space), `tokenizer.encode(str(n))` returns
+`[BOS, ▁, d0, d1, ...]` where `▁` is id **236743**. The naïve
+`strip_bos` path leaves `▁` in the bias chain, so step-0 biases a
+SPACE — Gemma's natural `0` token at that position has logit **57-66**
+and +50 boost on `▁` can't flip it. Result: bias starts one step
+late, and the answer gets "0"-prefixed gibberish like "01000..." or
+pure "0000..." (R53a `scripts/r53a_debug_probe.py`, commit `69279d4`).
+
+**Rule (applied to all integer-answer facades post-R53a):**
+
+1. Strip BOTH BOS (id=2) AND leading `▁` (id=236743) from bias tokens.
+   Step-0 then biases the first digit directly.
+2. After the bias chain exhausts, Gemma sticks in a same-digit loop
+   (the "0"-run or "F"-run artifact). Cap continuation at
+   `POST_BIAS_BUDGET=4` natural tokens then break.
+3. `_parse_int` caps digit-run matches at 12 chars to defeat any
+   residual loop that survives POST_BIAS_BUDGET.
+
+**Scope** (2026-04-22): applied in `number_theory.py`, `numeric_encode.py`,
+and all `recursion.py`-generated facades (via the shared `_TEMPLATE`).
+NOT backported to `multi_step.py` / `base_conversion.py` — those work
+without the fix because their answer shapes don't trigger the
+"0"-run in practice (17/17 and 10/10 shipped tests still pass).
+
+**For text-answer facades** (`Icd10RecallFacade`, R60a): do NOT
+strip `▁` because the diagnosis text begins with a capital letter
+and Gemma's BPE often merges the leading space into the first-word
+token (e.g. `▁Type` as a single token). The ▁-strip is correct
+ONLY for integer-answer facades whose bias is `[▁, digit0, digit1, ...]`.
+
+**boost tuning for stubborn priors**: ICD-10 code-echo retry uses
+`boost * 3.0 = 150.0` plus in-context answer injection (commit
+`8ba151d`) for codes where Gemma's code-analysis format prior
+overwhelms step-through bias. 4 ICD-10 codes (T44.6X4D, T40.5X4D,
+V80.22XA, W10.0XXA) resist even this — genuine tier-3 edge that
+needs different mechanism (prompt reshape or pure-DB bypass).
 
 ## Which mechanism to use
 

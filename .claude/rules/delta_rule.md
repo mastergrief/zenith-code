@@ -183,61 +183,66 @@ R15/R15-b narrowed "mutation tracking" to "sparse-key retrieval";
 R16 confirmed composition-per-card thesis (compute → compiled cards,
 recall → DeltaNet).
 
-## R22 install — shipped (rounds 1-7 + R22e adapter fix, 2026-04-21)
+## R22 install — shipped (rounds 1-7 + R22e adapter fix + R22f
+threshold recalibration, 2026-04-21 → 2026-04-22)
 
 Card installed on prod Gemma via `CardSlot` + `VerificationHook` +
-adapter. 7-round debug arc + R22e diagnostic produced the TRUE
-result at the final config:
+adapter. 7-round debug arc + R22e diagnostic shipped at `min_margin=22.0`
+(+9/60 on 2026-04-21, `73df738`). R22f (2026-04-22, `9691e06`)
+recalibrated the threshold to **14.5** after diagnosing the flat N=10
+cells as gate-silence, not card failure:
 
 ```
 install(m, card, layer_idx=30, ch_off=2480,
-        write_margin=22.0, preserve=False)
-hook.min_margin = 22.0
+        write_margin=14.5, preserve=False)
+hook.min_margin = 14.5
 # CARD_N_RANGE = {5, 10, 15}
 ```
 
 **Four aligned gates** (commits `e169d6d` r6 + `7db6eb9` r7 +
-`c3eac18` R22e + `73df738` true result):
-1. `write_margin=22.0` — skips residual write when card unconfident
-2. `hook.min_margin=22.0` — skips logit bias when card unconfident
+`c3eac18` R22e + `73df738` initial ship + `9691e06` R22f recal):
+1. `write_margin=14.5` — skips residual write when card unconfident
+2. `hook.min_margin=14.5` — skips logit bias when card unconfident
 3. `preserve=False` — lets L31-L41 freely overwrite reserved channels.
    `preserve=True` pins channels even when card writes nothing,
    subtly shifts Gemma (round 6 `q=v margin=0.00` regression).
 4. N-range gate `{5, 10, 15}` — skips card on N outside training dist
 
-**Result** (`73df738`, 60-prompt pooled distractor-confused corpus,
-two seeds, after R22e adapter fix):
+**Result at 14.5** (`9691e06`, same 60-prompt pooled corpus,
+post-R22e adapter fix):
 
 ```
 baseline:  42/60  (70.0%)
-with card: 51/60  (85.0%)   Δ=+9 absolute, 21% relative
-hook fired: 19/60
-WINS: 9    REGR: 0
+with card: 60/60  (100%)    Δ=+18 absolute, 43% relative
+hook fired: 59/60
+WINS: 18    REGR: 0
 ```
 
-Per-cell: `N=5/d=500/confusing 5/10→10/10 +5`, `N=5/d=1500/confusing_long
-8/10→10/10 +2`, `N=10` both flat, `N=15` +1/+1. All 9 win margins
-22.17–23.03 (tight high cluster). Gate catches them cleanly.
+Per-cell at 14.5: all six cells 10/10. R22d rerun
+(`c3cc73f`, all-keys-per-mem-block corpus) independently confirmed
+42/60 → 60/60 at the same threshold.
 
-### Interim R22b rounds 1-7 (2W 1R / Δ=+1) SUPERSEDED
+**Why 14.5, not 22.0**: R22f sweep showed N=5 card margins cluster
+at p50=23.3 (above 22.0 threshold); N=10 p50=20.83 p5=15.21; N=15
+p50=18.63 p5=16.39. Threshold=22.0 was N=5-calibrated and over-gated
+N≥10 despite standalone card being 100% correct (20/20 each) on
+those Ns. Threshold=14.5 sits below observed p5 across all Ns and
+preserves zero-regression invariant.
 
-Receipts `.claude/MEMORY/evals/2026-04-21_r22b_round[1-6]_*.md` +
-`r22b_r7_rerun_adapter_fixed.md` are preserved as per-round debugging
-history. Pre-R22e effect sizes (2W, 67% fired precision, etc.) were
-**adapter-regex bug**, not card calibration: `parse_mqar_prompt`'s
-`value of X` pattern matched distractor prose like
-`"Previously the value of q rose to 2..."` BEFORE the real
-`Question: value of d?`. Fix in `c3eac18`: anchor query-key search
-on the LAST `"Question:"` marker. Card standalone jumps from
-14/33 (42%) to 60/60 (100%) on adapter outputs.
+### Historical ships (preserved as receipts)
 
-### N=10 remaining flat — follow-up for next session
+**2026-04-21 initial ship at min_margin=22.0** (`73df738`): +9/60
+(21% relative), fired 19/60, N=10 cells flat. Per-cell: N=5/500
++5, N=5/1500 +2, N=10 both 0, N=15 +1/+1. Supersedes the interim
+r22b rounds 1-7 (2W 1R / Δ=+1) which were ADAPTER-REGEX bug, not
+card calibration — `parse_mqar_prompt`'s `value of X` pattern matched
+distractor prose before the real `Question:`. Fix in `c3eac18`:
+anchor query-key search on LAST `"Question:"` marker.
 
-N=10 cells 7/10→7/10 and 9/10→9/10 unchanged by card. Possible:
-(a) card margin < 22 on those 3 prompts; (b) Gemma's wrong-answer
-logit gap > 50 boost; (c) adapter bug remnant on specific key
-patterns. 10-second diagnostic: dump margins + card_argmax per N=10
-fail.
+**2026-04-22 R22f recalibration** (`9691e06` + receipt
+`.claude/MEMORY/evals/2026-04-22_r22f_threshold_sweep.md`): sweep
+over {22.0, 18.0, 14.5} produced 51 / 56 / **60**/60 respectively,
+all zero-regression. 14.5 shipped as new default.
 
 ## R-delta-22 — noise-augmented training (CANCELLED by R22e)
 

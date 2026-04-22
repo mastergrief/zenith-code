@@ -142,15 +142,16 @@ Gemma's grouped softmax). Card weights ship in the .pt.
 **2. Residual-additive (CardSlot)** — card runs as a separate Module:
 
 ```python
-# R22 retrieval-card default (commits e169d6d + 7db6eb9 + c3eac18 + 73df738):
+# R22 retrieval-card default (shipped 2026-04-21; threshold recalibrated
+# 2026-04-22 via R22f sweep — commit 9691e06):
 slot = CardSlot(layer_idx=30, ch_off=2480, card=pt, d_card=80,
                 card_input_fn=adapter, use_full_residual=True,
                 output_fn=writer)
 slot.attach(m, preserve=False)                # R22 default — see below
 
 # Aligned gates for strict additivity:
-install(m, card, ..., write_margin=22.0, preserve=False)  # write gate
-hook.min_margin = 22.0                                    # bias gate
+install(m, card, ..., write_margin=14.5, preserve=False)  # write gate
+hook.min_margin = 14.5                                    # bias gate
 # + N-range gate in adapter: skip activation on OOD N
 ```
 
@@ -181,9 +182,14 @@ even when `VerificationHook.min_margin` silences the logit bias.
 Keep `write_margin == min_margin` for symmetry.
 
 Used for PTs (copy-augmented attention can't reduce to a sub-head
-mode) and prototyping. R22 delivered +9/60 (21% relative) on a
-distractor-confused MQAR corpus with this 4-gate config —
-`delta_rule.md` §"R22 install — shipped" has the full receipt.
+mode) and prototyping. R22 at `min_margin=14.5` delivers
+**+18/60 (43% relative, 60/60 total) with zero regressions** on the
+distractor-confused MQAR corpus — independently confirmed at the
+same threshold by R22d rerun (all-keys-per-mem-block, `c3cc73f`).
+Per-N margin distribution: N=5 p50≈23.3, N=10 p50=20.83,
+N=15 p50=18.63 — threshold must sit below the lowest observed p5
+(N=10 p5=15.21) to fire across all Ns. See `delta_rule.md` §"R22
+install — shipped" for the full receipt + historical 22.0→14.5 arc.
 
 **3. Hub-first forced-attention (HubInjectionCard)** — R44 facade
 form of R43's causal-validation intervention. For shared hub heads

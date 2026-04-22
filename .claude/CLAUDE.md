@@ -105,25 +105,38 @@ real Gemma layer with distinct non-zero diffs. Full spec:
 
 **Brain + Cards model**: Gemma (language + routing) dispatches to cards
 (compiled programs, HRM specialists, PTs). **Three install paths** on
-prod Gemma (session 2026-04-21 R22 arc):
-- **Decode-path facade** (R46.2 `MultiStepReasoningFacade`, R22c
-  `BaseConversionFacade`) — parser + `safe_eval` + step-through digit
-  bias at Gemma decode. Zero VRAM, stacks freely, zero training.
-  **Cheapest path for deterministic compute domains** (arithmetic,
-  hex/binary, GCD, dates). See `.claude/rules/compute_facades.md`.
+prod Gemma (session 2026-04-21 R22 arc + 2026-04-22 facade proliferation):
+- **Decode-path facade** — parser + `safe_eval` + step-through bias at
+  Gemma decode. Zero VRAM, stacks freely, zero training. Cheapest path
+  for deterministic compute AND exact-lookup domains. Shipped as of
+  2026-04-22: `MultiStepReasoningFacade` (R46.2 infix math),
+  `BaseConversionFacade` (R22c hex/binary→decimal), `NumberTheoryFacade`
+  (R53a mod/GCD/LCM), `NumericEncodeFacade` (F2 int→hex/binary/octal),
+  `Icd10RecallFacade` (R60a tier-3 TEXT-answer recall, 72,748-code DB),
+  `PlannerFacade` (R70a orchestrator + F2 2-step chains). Auto-generated
+  via `recursion.py`: factorial, fibonacci, combinations, permutations,
+  power, next_prime + 5 Meta-synthesized variants. See
+  `.claude/rules/compute_facades.md` + `.claude/rules/recursion.md`.
 - **CardSlot residual-additive install** (PT+Delta MQAR, R22,
   `KnowledgeStore` recall) — card runs as separate Module; output
   adds to reserved residual channels + biases Gemma logits via
   `VerificationHook`. R22 default: `preserve=False` + aligned
-  `write_margin=min_margin=22.0` for strict additivity (see
-  `delta_rule.md` §R22 install). `preserve=True` is legacy — pins
-  channels even when card is silent, subtly shifts Gemma output.
+  `write_margin=min_margin=14.5` for strict additivity at 60/60
+  (commit `9691e06`, R22f threshold recalibration — supersedes the
+  2026-04-21 initial ship at 22.0; see `delta_rule.md` §R22 install).
+  `preserve=True` is legacy — pins channels even when card is silent,
+  subtly shifts Gemma output.
 - **In-tensor install** (`install_card_in_attention`) — weights live
   in `attn_q/k/v/output`; ~600 MB FP32 host layer cost. For surgical
   attention-circuit replacement (R28/R42/R43 forced-attn, compiled
   programs).
 
-Adding a card = weight edit or facade install, not retraining.
+Adding a card = weight edit, facade install, OR substrate auto-generation
+via `calm/llm_computer/recursion.py` (`FacadeSpec` → `generate_facade`
+→ CALM-oracle-validated → live A/B, no human-written Python for each
+new spec). Level-2 `MetaFacade.from_oracle(fn_name, arity)` shipped
+2026-04-22 (commit `5173745`) — user supplies safe_eval function name
++ arity; MetaFacade synthesizes the FacadeSpec itself.
 Auto-upgrade: CALM catches errors → compile into recall card →
 install via CardSlot → persist as JSON.
 
@@ -135,7 +148,7 @@ Four active systems coexist:
 1. **Python agent harness** (`agents/`, ~4,423 LOC across 15 files) — terminal coding assistant with dual backend (Ollama + llama.cpp), 3-level permissions, thinking mode, sessions, compaction, effort control, and llama.cpp hot-swap
 2. **CALM engine** (`calm/`, ~83,600 LOC across 413 .py files) — modular compute + knowledge facade with cognitive intelligence layer. Auto-CALM (transparent verification + precomputation, 100% benchmark) + Engine V2 (7-phase pipeline: pre-analyze → enrich → precompute → generate → verify → cognitive route → self-heal) + 120 modular backends (1002 verified functions, 550 NL patterns, 100% coverage) + 39 cognitive modules (verification, reasoning, quality, meta, planning) + 48 factual check patterns + 10 dynamic cross-check patterns against backends + adaptive thinking budget + cross-turn conversation state + module self-learning with feedback loop. Full spec: `.claude/rules/calm.md`
 3. **Rust claw-code port** (`rust/`) — upstream claw-code, 9 crates, separate build system
-4. **Unified Single Tensor** (`calm/llm_computer/`) — the CHRLM architecture. **ONE `.pt` contains Gemma (tq4) + trained PTs + compiled cards + persistent knowledge DB.** Session 30 validated Level 5 on the substrate-native demo (`HybridGroupedSmall2DTransformer`): three attention modes coexist in one layer via per-sub-head partition. **Session 32 ported the full pattern to prod Gemma 4 E4B** (`gemma_substrate.py`): coherent output via Triton fused dequant kernels (`tq4_triton.py`, v2 default as of R53.29 — shared-mem LUT via `tl.gather`, -7% aggregate) + CUDA Graph capture + real tq4 KV storage (`KVCacheTq4`, ~3.6× memory, multi-token prefill + `trim_swa_storage` byte-copy shipped in R53.28). **Decode perf (clean bench 2026-04-21, median-of-5, RTX 4070): 25.02 tok/s on tq4+graphs (D path, `bdf67ee`), 33.35 tok/s fp16+graphs (C path) — ~60% / 79% of llama.cpp ~42 tok/s baseline. Older claim of 42 tok/s / 90% from session 32 is unreproducible in current bench.** Graph-captured tq4 adds `KVCacheTq4Static` + `generate_with_graph_tq4` (gemma_substrate.py); fused k+v projection via `tq4_linear_dual_triton` (`da382d7`/`f59ae73`, +64.9% per-kernel microbench, +4.4% e2e projected but unverified due to rustc contention at session end). Fused flash-attention decode kernel (`tq4_flash_attn.py`, R53.34) wires tq4 K/V into a single-pass kernel (K-side reuses `tq4_matvec_triton`; V-side `_tq4_weighted_v_kernel` with grid=(n_heads_q,)). SWA layers fused; global layers (d_head=512) fall back to memoized dequant. Cards install three ways on prod Gemma: **decode-path facade** (parser + `safe_eval` + step-through digit bias — R46.2, R22c `BaseConversionFacade`, zero VRAM, see `compute_facades.md`), **residual-additive** (`CardSlot` with R22 default `preserve=False` + aligned `write_margin=min_margin=22.0` for retrieval cards; `preserve=True` is legacy, see `Substrate.md` §CardSlot and `delta_rule.md` §R22 install), and **in-tensor** (`install_card_in_attention` + `convert_layer_to_fp32`, with per-sub-head dispatch via `attention_partition` for `mode='hard_max'|'softmax'|'grouped'`). Verification feedback closes the loop (`VerificationHook` biases Gemma logits with the card's argmax). Learning loop end-to-end: `KnowledgeStore` corrections compile into a recall card via `build_recall_model()`, install via `CardSlot`, persist as JSON — demo at `scripts/gemma_learning_loop_demo.py` (5/5 wrong → 5/5 correct). 29 compiled programs in `programs/` (`adder` 10K/10K, `multiplier` 3390/3390 on a·b<1000 — first compiled card to fix real Gemma arithmetic errors via step-through digit bias, `gcd` 256/256, `dispatched_v4` 791/791, `reasoning_engine` 512/512). **Pointer Transducers** (session 31, `CopyAugmentedTransformer`): one PT per output-language family (~3-5 PTs cover 30+ domains); cross-domain val acc 86-100%; checkpoints in `calm/hrm/checkpoints/copy_*_best.pt`. **PT+Delta (`CopyAugmentedDeltaNet`, R-delta-20, 2026-04-21)** supersedes plain PT as the default for new cards — same 99.5% held-out on structure tasks + +21-84pp on retrieval tasks (MQAR N=5-20). Deployable MQAR card at `calm/hrm/checkpoints/copy_augmented_delta_mqar_best.pt`; inference at 1.18× plain-PT via `decode_greedy_cached`. Domain registry: `.claude/MEMORY/substrate_registry.md`. `/domain` command for guided domain addition. Full spec: `.claude/rules/Substrate.md` + `.claude/rules/architecture.md` + `.claude/rules/delta_rule.md`.
+4. **Unified Single Tensor** (`calm/llm_computer/`) — the CHRLM architecture. **ONE `.pt` contains Gemma (tq4) + trained PTs + compiled cards + persistent knowledge DB.** Session 30 validated Level 5 on the substrate-native demo (`HybridGroupedSmall2DTransformer`): three attention modes coexist in one layer via per-sub-head partition. **Session 32 ported the full pattern to prod Gemma 4 E4B** (`gemma_substrate.py`): coherent output via Triton fused dequant kernels (`tq4_triton.py`, v2 default as of R53.29 — shared-mem LUT via `tl.gather`, -7% aggregate) + CUDA Graph capture + real tq4 KV storage (`KVCacheTq4`, ~3.6× memory, multi-token prefill + `trim_swa_storage` byte-copy shipped in R53.28). **Decode perf (clean bench 2026-04-21, median-of-5, RTX 4070): 25.02 tok/s on tq4+graphs (D path, `bdf67ee`), 33.35 tok/s fp16+graphs (C path) — ~60% / 79% of llama.cpp ~42 tok/s baseline. Older claim of 42 tok/s / 90% from session 32 is unreproducible in current bench.** Graph-captured tq4 adds `KVCacheTq4Static` + `generate_with_graph_tq4` (gemma_substrate.py); fused k+v projection via `tq4_linear_dual_triton` (`da382d7`/`f59ae73`, +64.9% per-kernel microbench, +4.4% e2e projected but unverified due to rustc contention at session end). Fused flash-attention decode kernel (`tq4_flash_attn.py`, R53.34) wires tq4 K/V into a single-pass kernel (K-side reuses `tq4_matvec_triton`; V-side `_tq4_weighted_v_kernel` with grid=(n_heads_q,)). SWA layers fused; global layers (d_head=512) fall back to memoized dequant. Cards install three ways on prod Gemma: **decode-path facade** (parser + `safe_eval` + step-through bias — R46.2, R22c, R53a, R60a, F2, R70a, plus auto-generated via `recursion.py` / `MetaFacade`, zero VRAM, see `compute_facades.md` + `recursion.md`), **residual-additive** (`CardSlot` with R22 default `preserve=False` + aligned `write_margin=min_margin=14.5` for retrieval cards at 60/60; `preserve=True` is legacy, see `Substrate.md` §CardSlot and `delta_rule.md` §R22 install), and **in-tensor** (`install_card_in_attention` + `convert_layer_to_fp32`, with per-sub-head dispatch via `attention_partition` for `mode='hard_max'|'softmax'|'grouped'`). Verification feedback closes the loop (`VerificationHook` biases Gemma logits with the card's argmax). Learning loop end-to-end: `KnowledgeStore` corrections compile into a recall card via `build_recall_model()`, install via `CardSlot`, persist as JSON — demo at `scripts/gemma_learning_loop_demo.py` (5/5 wrong → 5/5 correct). 29 compiled programs in `programs/` (`adder` 10K/10K, `multiplier` 3390/3390 on a·b<1000 — first compiled card to fix real Gemma arithmetic errors via step-through digit bias, `gcd` 256/256, `dispatched_v4` 791/791, `reasoning_engine` 512/512). **Pointer Transducers** (session 31, `CopyAugmentedTransformer`): one PT per output-language family (~3-5 PTs cover 30+ domains); cross-domain val acc 86-100%; checkpoints in `calm/hrm/checkpoints/copy_*_best.pt`. **PT+Delta (`CopyAugmentedDeltaNet`, R-delta-20, 2026-04-21)** supersedes plain PT as the default for new cards — same 99.5% held-out on structure tasks + +21-84pp on retrieval tasks (MQAR N=5-20). Deployable MQAR card at `calm/hrm/checkpoints/copy_augmented_delta_mqar_best.pt`; inference at 1.18× plain-PT via `decode_greedy_cached`. Domain registry: `.claude/MEMORY/substrate_registry.md`. `/domain` command for guided domain addition. Full spec: `.claude/rules/Substrate.md` + `.claude/rules/architecture.md` + `.claude/rules/delta_rule.md`.
 
 Serving: Gemma 4 E4B (primary) or Qwen 3.5 4B via llama.cpp at **512K context** (`ctx_size=524288`), **48K thinking budget** (`EFFORT["max"]["max_tokens"]=49152`). Production: tq4+tq4 KV cache on Gemma E4B (`~/models/gemma-4-E4B-it-tq4-aligned.gguf`, 5.0 GB). CALM/Auto-CALM runs on the same llama-server instance. Harness auto-computes compaction threshold as `min(per-GGUF limit, int(ctx_size * 0.89))` — Gemma compacts at **227.5K tokens** (232960). Hot-swap between bases via `agents/model_swap.py`.
 
