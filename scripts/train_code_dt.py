@@ -153,6 +153,7 @@ def train(
     synth_rare_min: int = 3,            # R9: min raw count to synthesize
     synth_rare_max: int = 20,           # R9: max raw count to synthesize
     dedupe_ambiguous: bool = False,     # R19: drop/resolve same-prompt→multiple-skeletons
+    num_workers: int = 0,               # R20: DataLoader parallelism
 ):
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
@@ -221,6 +222,14 @@ def train(
     print(f"[train] split: {len(train_pairs)} train / {len(val_pairs)} val")
 
     train_ds = CodePairDataset(train_pairs, max_len=max_len)
+    # R20: num_workers + pin_memory overlap CPU data prep with GPU compute
+    use_pin_memory = device.startswith("cuda")
+    common_loader_kw = dict(
+        batch_size=batch_size,
+        num_workers=num_workers,
+        pin_memory=use_pin_memory,
+        persistent_workers=(num_workers > 0),
+    )
     if balanced_sampler != "none":
         from torch.utils.data import WeightedRandomSampler
         weights = build_balanced_sampler_weights(
@@ -231,13 +240,13 @@ def train(
             num_samples=len(train_pairs),
             replacement=True,
         )
-        loader = DataLoader(train_ds, batch_size=batch_size,
-                            sampler=sampler, num_workers=0)
+        loader = DataLoader(train_ds, sampler=sampler, **common_loader_kw)
         print(f"[train] balanced sampler: strategy={balanced_sampler!r}, "
               f"unique skeletons={len(set(p.expression for p in train_pairs))}")
     else:
-        loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
-                            num_workers=0)
+        loader = DataLoader(train_ds, shuffle=True, **common_loader_kw)
+    print(f"[train] DataLoader: batch={batch_size}, num_workers={num_workers}, "
+          f"pin_memory={use_pin_memory}")
 
     # --- Model ---
     model = build_copy_augmented_delta(
@@ -282,8 +291,8 @@ def train(
         n_batches = 0
         for batch in loader:
             input_ids, target_ids, _ = batch
-            input_ids = input_ids.to(device)
-            target_ids = target_ids.to(device)
+            input_ids = input_ids.to(device, non_blocking=use_pin_memory)
+            target_ids = target_ids.to(device, non_blocking=use_pin_memory)
             loss = _scheduled_tf(model, input_ids, target_ids, tf_ratio)
             optim.zero_grad()
             loss.backward()
@@ -396,6 +405,8 @@ if __name__ == "__main__":
     ap.add_argument("--dedupe-ambiguous", action="store_true",
                     help="R19: drop conceptual prompts with 3+ distinct "
                          "target skeletons; majority-vote on 2-skeleton cases.")
+    ap.add_argument("--num-workers", type=int, default=0,
+                    help="R20: DataLoader worker processes (2 recommended).")
     args = ap.parse_args()
     train(
         epochs=args.epochs,
@@ -416,4 +427,5 @@ if __name__ == "__main__":
         synth_rare_min=args.synth_rare_min,
         synth_rare_max=args.synth_rare_max,
         dedupe_ambiguous=args.dedupe_ambiguous,
+        num_workers=args.num_workers,
     )
