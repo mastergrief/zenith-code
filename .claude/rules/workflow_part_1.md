@@ -199,6 +199,56 @@ Rule: never declare a Triton kernel win on one run. Median ≥ 3;
 A/B deltas must agree in SIGN across runs even if magnitude
 varies. If sign flips, it's noise.
 
+## Daemon state invariants (2026-04-22 facade-run receipt)
+
+The Gemma daemon (`bin/gemma_daemon.py` + `bin/gemma-run`) preserves
+`m` and `tok` across script runs but each script also mutates
+hidden state on `m` that MUST be reset between unrelated runs:
+
+1. **`m.verification_hooks`** is a list owned by
+   `calm/llm_computer/gemma_substrate.py`. Every script that installs
+   a `CardSlot` or `VerificationHook` appends to this list. `RESET_GLOBALS`
+   does NOT clear it. Run 2 of r60a (ICD-10 facade) after r22d (MQAR
+   card) produced pure-digit garbage output because MQAR's digit-bias
+   hook was still attached, biasing every ICD-10 probe's tokens.
+
+2. **`m.reserved_channels`** + `m.layers[idx].card_slots` — same
+   failure mode; lingering channel reservations affect downstream
+   scripts.
+
+3. **Module cache**: the daemon does `exec(compile(code, line, "exec"),
+   ns)` each run, but `sys.modules` is shared. Editing `recursion.py`
+   or a facade module and re-running picks up the NEW script text,
+   but the IMPORT of the module still returns the cached version.
+   `--reset` doesn't help; `--quit` + `--start` does.
+
+**Rules:**
+
+- Every facade A/B script MUST call `clear_card_state()` at startup:
+  ```python
+  def clear_card_state():
+      for lyr in m.layers:
+          if hasattr(lyr, "card_slots"):
+              lyr.card_slots = []
+      m.verification_hooks = []
+      m.reserved_channels = []
+
+  clear_card_state()
+  ```
+  Pattern shipped in `scripts/r60a_icd10_failure_gate.py`,
+  `scripts/r70a_planner_mixed.py`, `scripts/m1a_four_new_facades.py`,
+  `scripts/r80a_recursion_demo.py`.
+
+- After editing a facade module source file, run `bin/gemma-run --quit`
+  then `bin/gemma-run --start` (not just `--reset`). Re-loading takes
+  ~2-3 min but is the only way to pick up module-level code changes.
+  `importlib.reload` inside the script helps for THAT run but doesn't
+  affect subsequent runs from the same daemon.
+
+- If a script's output shows digit-bias artifacts on prompts it
+  shouldn't bias ("hello" → "0000...0"), lingering hook is the first
+  hypothesis before suspecting the new code.
+
 ## Commit discipline — git log as progress changelog
 
 - **Commit completed work before starting the next round.** Default
