@@ -42,6 +42,7 @@ from calm.hrm.code_dt_data import (
     CodeProblem,
     _CODE_CHAR_TO_ID,
     _CODE_ID_TO_CHAR,
+    _paraphrase_augment,
     build_balanced_sampler_weights,
     code_detokenize,
     extract_pairs_from_db,
@@ -49,6 +50,7 @@ from calm.hrm.code_dt_data import (
     normalize_skeleton,
     split_pairs,
 )
+from calm.hrm.rare_class_synth import synthesize_rare_class_pairs
 from calm.llm_computer.copy_augmented_delta import build_copy_augmented_delta
 
 
@@ -146,26 +148,57 @@ def train(
     normalize_skeletons: bool = False,  # R6: collapse spacing variants (FN(a, b) ≡ FN(a,b))
     drop_rare_count: int = 0,           # R6: drop training classes with count < N (0 = keep all)
     extract_all_defs: bool = False,     # R8: emit ALL top-level defs per solution (+19% raw)
+    synth_rare: int = 0,                # R9: synthesize N pairs per rare class (0=off, 30 recommended)
+    synth_rare_min: int = 3,            # R9: min raw count to synthesize
+    synth_rare_max: int = 20,           # R9: max raw count to synthesize
 ):
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
 
     # --- Data ---
-    print(f"[train] extracting pairs from CodeExampleDB "
-          f"(augment={augment}, factor={augment_factor})...")
-    pairs = extract_pairs_from_db(augment=augment, augment_factor=augment_factor,
-                                    extract_all_defs=extract_all_defs)
-    print(f"[train] total pairs: {len(pairs)}")
-
-    if normalize_skeletons:
-        n_classes_before = len(set(p.expression for p in pairs))
-        pairs = [CodeProblem(question=p.question,
-                              expression=normalize_skeleton(p.expression))
-                 for p in pairs]
-        n_classes_after = len(set(p.expression for p in pairs))
-        print(f"[train] normalized skeletons: "
-              f"{n_classes_before} → {n_classes_after} classes "
-              f"(-{n_classes_before - n_classes_after} spacing variants)")
+    if synth_rare > 0:
+        # R9 path: extract raw (no aug), normalize, synthesize rare classes,
+        # THEN aug so synthetic prompts also get paraphrased.
+        print(f"[train] R9 path: extract raw + synthesize rare + aug")
+        raw_pairs = extract_pairs_from_db(augment=False,
+                                            extract_all_defs=extract_all_defs)
+        print(f"[train] raw pairs: {len(raw_pairs)}")
+        if normalize_skeletons:
+            raw_pairs = [CodeProblem(question=p.question,
+                                       expression=normalize_skeleton(p.expression))
+                         for p in raw_pairs]
+            n_classes = len(set(p.expression for p in raw_pairs))
+            print(f"[train] normalized raw → {n_classes} classes")
+        synth_pairs = synthesize_rare_class_pairs(
+            raw_pairs, min_count=synth_rare_min, max_count=synth_rare_max,
+            target_per_class=synth_rare, seed=seed,
+        )
+        print(f"[train] R9 synthetic: {len(synth_pairs)} pairs across "
+              f"{len(set(p.expression for p in synth_pairs))} rare classes")
+        combined = raw_pairs + synth_pairs
+        if augment:
+            pairs = _paraphrase_augment(combined, factor=augment_factor, seed=seed)
+        else:
+            pairs = combined
+        print(f"[train] after aug (factor={augment_factor}): {len(pairs)} pairs, "
+              f"{len(set(p.expression for p in pairs))} classes")
+    else:
+        # Original path: aug at extract-time
+        print(f"[train] extracting pairs from CodeExampleDB "
+              f"(augment={augment}, factor={augment_factor})...")
+        pairs = extract_pairs_from_db(augment=augment,
+                                        augment_factor=augment_factor,
+                                        extract_all_defs=extract_all_defs)
+        print(f"[train] total pairs: {len(pairs)}")
+        if normalize_skeletons:
+            n_classes_before = len(set(p.expression for p in pairs))
+            pairs = [CodeProblem(question=p.question,
+                                  expression=normalize_skeleton(p.expression))
+                     for p in pairs]
+            n_classes_after = len(set(p.expression for p in pairs))
+            print(f"[train] normalized skeletons: "
+                  f"{n_classes_before} → {n_classes_after} classes "
+                  f"(-{n_classes_before - n_classes_after} spacing variants)")
 
     train_pairs, val_pairs = split_pairs(pairs, val_frac=val_frac, seed=seed)
 
@@ -345,6 +378,13 @@ if __name__ == "__main__":
     ap.add_argument("--extract-all-defs", action="store_true",
                     help="R8 lever: emit ALL top-level defs per solution "
                          "(not just last). +19%% raw pairs.")
+    ap.add_argument("--synth-rare", type=int, default=0,
+                    help="R9 lever: synthesize N pairs per rare class "
+                         "(0=off, 30 recommended).")
+    ap.add_argument("--synth-rare-min", type=int, default=3,
+                    help="R9: min raw count to target (default 3).")
+    ap.add_argument("--synth-rare-max", type=int, default=20,
+                    help="R9: max raw count to target (default 20).")
     args = ap.parse_args()
     train(
         epochs=args.epochs,
@@ -361,4 +401,7 @@ if __name__ == "__main__":
         normalize_skeletons=args.normalize_skeletons,
         drop_rare_count=args.drop_rare_count,
         extract_all_defs=args.extract_all_defs,
+        synth_rare=args.synth_rare,
+        synth_rare_min=args.synth_rare_min,
+        synth_rare_max=args.synth_rare_max,
     )
