@@ -1,8 +1,19 @@
-# DeltaNet / PT+Delta — Card architecture rules
+# Delta-Transducer (DT) / DeltaNet — Card architecture rules
+
+**DT (delta-transducer)** is the canonical product name (adopted
+2026-04-22) for the copy-augmented DeltaNet trained-card architecture.
+Underlying implementation class `CopyAugmentedDeltaNet` stays; DT is
+the product-level label used in new training scripts
+(`scripts/train_code_dt.py`), checkpoints (`dt_*_best.pt`), and install
+paths (`calm/llm_computer/dt_install.py`).
+
+Older text below may still say "PT+Delta" or "CopyAugmentedDeltaNet" —
+those refer to the same thing. Use **DT** in all new prose, commits,
+and filenames.
 
 R5→R21 arc (2026-04-21, "R-delta" scope — distinct from tracing-arc
 R13-R21 in `tracing_roadmap.md`/`atlas.md`). `CopyAugmentedDeltaNet`
-is now the **default trained-card architecture** (R20 consolidation,
+is the **default trained-card architecture** (R20 consolidation,
 commit `63a49fc`), superseding plain `CopyAugmentedTransformer` for
 new work.
 
