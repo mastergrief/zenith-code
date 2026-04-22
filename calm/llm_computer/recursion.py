@@ -59,12 +59,25 @@ class FacadeSpec:
     name: str                          # e.g. "Factorial" — PascalCase class prefix
     module_name: str                   # e.g. "factorial_auto" — .py file stem
     description: str                   # one-liner, populates docstring
-    parse_patterns: list[str]          # regexes with ≥1 int group (the operand)
+    parse_patterns: list[str]          # regexes with ≥1 capture group per operand
     eval_expr: str                     # safe_eval template, e.g. "factorial({a})"
-    max_operand: Optional[int] = None  # reject operands beyond this (guard)
+    max_operand: Optional[int] = None  # reject operands beyond this (guard). int-only.
     operand_count: int = 1             # 1 or 2 — single vs paired operand
     boost: float = 50.0
     max_tokens: int = 40
+    # Operand type. "int" (default): each regex group is parsed as int and
+    # guarded by max_operand. "str": groups kept as strings (e.g. ISO dates).
+    # eval_expr should already include quoting (e.g. 'days_between("{a}", "{b}")').
+    operand_type: str = "int"
+    # Output type. "int" (default): step-through digit bias on str(int).
+    # "bool": maps True/False to "Yes"/"No" and biases those token sequences.
+    # "float": decimal string (may include "."). Level-3 extension beyond
+    # the integer-answer assumption baked into the R46.2 decode-path template.
+    output_type: str = "int"
+    # For bool outputs only: the True/False token strings emitted.
+    # Default "Yes"/"No" — Gemma's most common affirmative/negative pattern.
+    bool_true_str: str = "Yes"
+    bool_false_str: str = "No"
 
 
 _TEMPLATE = '''"""{description}
@@ -112,6 +125,10 @@ class {name}Facade:
     DEFAULT_MAX_TOKENS = {max_tokens}
     MAX_OPERAND = {max_operand!r}
     OPERAND_COUNT = {operand_count}
+    OPERAND_TYPE = {operand_type!r}   # "int" or "str"
+    OUTPUT_TYPE = {output_type!r}     # "int" or "bool"
+    BOOL_TRUE_STR = {bool_true_str!r}
+    BOOL_FALSE_STR = {bool_false_str!r}
 
     _PARSE_RES = [
 {parse_res_literals}
@@ -142,17 +159,24 @@ class {name}Facade:
             m = pat.search(prompt)
             if m:
                 try:
-                    groups = tuple(int(m.group(i + 1))
-                                   for i in range(self.OPERAND_COUNT))
+                    if self.OPERAND_TYPE == "int":
+                        groups = tuple(int(m.group(i + 1))
+                                       for i in range(self.OPERAND_COUNT))
+                        if self.MAX_OPERAND is not None:
+                            if any(abs(g) > self.MAX_OPERAND for g in groups):
+                                continue
+                    else:
+                        # operand_type == "str" — keep raw capture
+                        groups = tuple(m.group(i + 1)
+                                       for i in range(self.OPERAND_COUNT))
                 except (ValueError, IndexError):
                     continue
-                if self.MAX_OPERAND is not None:
-                    if any(abs(g) > self.MAX_OPERAND for g in groups):
-                        continue
                 return groups
         return None
 
-    def evaluate(self, operands: tuple) -> Optional[int]:
+    def evaluate(self, operands: tuple):
+        """Returns int|bool|None depending on OUTPUT_TYPE. For "int"
+        returns int; for "bool" returns bool. None on eval failure."""
         if operands is None:
             return None
         try:
@@ -161,6 +185,11 @@ class {name}Facade:
             else:
                 expr = self._EVAL_TEMPLATE.format(a=operands[0], b=operands[1])
             val = safe_eval(expr)
+            if self.OUTPUT_TYPE == "bool":
+                if isinstance(val, bool):
+                    return val
+                return None
+            # default: int output
             if isinstance(val, bool):
                 return None
             if isinstance(val, int):
@@ -181,13 +210,20 @@ class {name}Facade:
         operands = self.parse(prompt)
         value = self.evaluate(operands) if operands else None
 
-        digit_ids: list[int] = []
+        bias_ids: list[int] = []
         if use_bias and value is not None:
-            digit_ids = self._gemma_digit_tokens(value)
+            if self.OUTPUT_TYPE == "bool":
+                bias_ids = self._bool_bias_tokens(value)
+            else:
+                bias_ids = self._gemma_digit_tokens(value)
 
-        fire_bias = bool(digit_ids)
-        text = self._generate(prompt, digit_ids if fire_bias else [], b, mt)
-        parsed = self._parse_int(text)
+        fire_bias = bool(bias_ids)
+        text = self._generate(prompt, bias_ids if fire_bias else [], b, mt)
+        # Parsed answer interpretation depends on OUTPUT_TYPE
+        if self.OUTPUT_TYPE == "bool":
+            parsed = self._parse_bool(text)
+        else:
+            parsed = self._parse_int(text)
         return {name}Result(
             prompt=prompt, operands=operands, value=value,
             generated=text, parsed_answer=parsed, used_bias=fire_bias,
@@ -201,11 +237,41 @@ class {name}Facade:
             ids = ids[1:]
         return ids
 
+    def _bool_bias_tokens(self, val: bool) -> list[int]:
+        """Bias sequence for bool answers. Emits tokens for BOOL_TRUE_STR
+        or BOOL_FALSE_STR. Keep leading ▁ if present — capitalized words
+        usually merge the space into the first BPE token (e.g. ▁Yes)."""
+        answer = self.BOOL_TRUE_STR if val else self.BOOL_FALSE_STR
+        ids = self._tokenizer.encode(answer)
+        if ids and ids[0] == 2:
+            ids = ids[1:]
+        return ids
+
     @staticmethod
     def _parse_int(text: str) -> Optional[int]:
         normalized = text.replace(",", "")
         m = re.search(r"-?\\d{{1,15}}", normalized)
         return int(m.group(0)) if m else None
+
+    def _parse_bool(self, text: str) -> Optional[bool]:
+        low = text.lower()
+        t = self.BOOL_TRUE_STR.lower()
+        f = self.BOOL_FALSE_STR.lower()
+        # First occurrence wins
+        ti = low.find(t)
+        fi = low.find(f)
+        if ti == -1 and fi == -1:
+            # Fallback: yes/no/true/false
+            for pat, v in [(r"\\byes\\b", True), (r"\\btrue\\b", True),
+                           (r"\\bno\\b", False), (r"\\bfalse\\b", False)]:
+                if re.search(pat, low):
+                    return v
+            return None
+        if ti == -1:
+            return False
+        if fi == -1:
+            return True
+        return ti < fi
 
     def _generate(self, prompt: str, digit_token_ids: list[int],
                   boost: float, max_tokens: int) -> str:
@@ -290,6 +356,10 @@ def generate_facade(
         max_tokens=spec.max_tokens,
         max_operand=spec.max_operand,
         operand_count=spec.operand_count,
+        operand_type=spec.operand_type,
+        output_type=spec.output_type,
+        bool_true_str=spec.bool_true_str,
+        bool_false_str=spec.bool_false_str,
         parse_res_literals=_render_parse_res_literals(spec.parse_patterns),
         eval_template=spec.eval_expr,
     )
@@ -326,6 +396,14 @@ def validate_facade(
             expr = spec.eval_expr.format(a=a, b=b)
         try:
             got = safe_eval(expr)
+            # Bool output types accept bool directly; int types reject bools.
+            if spec.output_type == "bool":
+                if not isinstance(got, bool):
+                    continue
+                if got == expected:
+                    passed += 1
+                continue
+            # Default: int output
             if isinstance(got, bool):
                 continue
             if isinstance(got, float) and got.is_integer():
@@ -335,6 +413,27 @@ def validate_facade(
         except (ExpressionError, Exception):
             continue
     return passed, len(test_cases)
+
+
+# --- DaysBetween spec (L3 demo: string operands) ---
+
+DAYS_BETWEEN_SPEC = FacadeSpec(
+    name="DaysBetween",
+    module_name="days_between_auto",
+    description="Days between two ISO-formatted dates (YYYY-MM-DD).",
+    parse_patterns=[
+        # "days between 2024-01-01 and 2024-12-31"
+        r"days\s+between\s+(\d{4}-\d{2}-\d{2})\s+(?:and|to|-)\s+(\d{4}-\d{2}-\d{2})",
+        # "how many days between YYYY-MM-DD and YYYY-MM-DD"
+        r"how\s+many\s+days\s+(?:between|from)\s+(\d{4}-\d{2}-\d{2})\s+(?:and|to)\s+(\d{4}-\d{2}-\d{2})",
+        # "days from YYYY-MM-DD to YYYY-MM-DD"
+        r"days\s+from\s+(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})",
+    ],
+    eval_expr='days_between("{a}", "{b}")',
+    operand_count=2,
+    operand_type="str",
+    max_tokens=40,
+)
 
 
 def import_facade_class(spec: FacadeSpec):
@@ -445,6 +544,23 @@ POWER_SPEC = FacadeSpec(
     max_tokens=40,
 )
 
+IS_PRIME_SPEC = FacadeSpec(
+    name="IsPrime",
+    module_name="is_prime_auto",
+    description="is_prime(n) — True iff n is prime. Bool output demo (L3).",
+    parse_patterns=[
+        r"is\s+(-?\d+)\s+(?:a\s+)?prime\b",
+        r"is_prime\s*\(\s*(-?\d+)\s*\)",
+        r"is\s+(-?\d+)\s+prime\s*\?",
+    ],
+    eval_expr="is_prime({a})",
+    max_operand=1000000,
+    operand_count=1,
+    output_type="bool",
+    max_tokens=15,
+)
+
+
 NEXT_PRIME_SPEC = FacadeSpec(
     name="NextPrime",
     module_name="next_prime_auto",
@@ -536,6 +652,10 @@ class MetaFacade:
         max_operand: int | None = None,
         max_tokens: int = 40,
         extra_patterns: list[str] | None = None,
+        operand_type: str = "int",
+        output_type: str = "int",
+        bool_true_str: str = "Yes",
+        bool_false_str: str = "No",
     ) -> FacadeSpec:
         """Synthesize a FacadeSpec for a safe_eval oracle function.
 
@@ -573,6 +693,10 @@ class MetaFacade:
             max_operand=max_operand,
             operand_count=arity,
             max_tokens=max_tokens,
+            operand_type=operand_type,
+            output_type=output_type,
+            bool_true_str=bool_true_str,
+            bool_false_str=bool_false_str,
         )
 
     @classmethod

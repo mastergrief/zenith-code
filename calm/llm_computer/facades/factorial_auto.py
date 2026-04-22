@@ -43,6 +43,10 @@ class FactorialFacade:
     DEFAULT_MAX_TOKENS = 30
     MAX_OPERAND = 20
     OPERAND_COUNT = 1
+    OPERAND_TYPE = 'int'   # "int" or "str"
+    OUTPUT_TYPE = 'int'     # "int" or "bool"
+    BOOL_TRUE_STR = 'Yes'
+    BOOL_FALSE_STR = 'No'
 
     _PARSE_RES = [
         re.compile('factorial\\s+of\\s+(-?\\d+)', re.IGNORECASE),
@@ -75,17 +79,24 @@ class FactorialFacade:
             m = pat.search(prompt)
             if m:
                 try:
-                    groups = tuple(int(m.group(i + 1))
-                                   for i in range(self.OPERAND_COUNT))
+                    if self.OPERAND_TYPE == "int":
+                        groups = tuple(int(m.group(i + 1))
+                                       for i in range(self.OPERAND_COUNT))
+                        if self.MAX_OPERAND is not None:
+                            if any(abs(g) > self.MAX_OPERAND for g in groups):
+                                continue
+                    else:
+                        # operand_type == "str" — keep raw capture
+                        groups = tuple(m.group(i + 1)
+                                       for i in range(self.OPERAND_COUNT))
                 except (ValueError, IndexError):
                     continue
-                if self.MAX_OPERAND is not None:
-                    if any(abs(g) > self.MAX_OPERAND for g in groups):
-                        continue
                 return groups
         return None
 
-    def evaluate(self, operands: tuple) -> Optional[int]:
+    def evaluate(self, operands: tuple):
+        """Returns int|bool|None depending on OUTPUT_TYPE. For "int"
+        returns int; for "bool" returns bool. None on eval failure."""
         if operands is None:
             return None
         try:
@@ -94,6 +105,11 @@ class FactorialFacade:
             else:
                 expr = self._EVAL_TEMPLATE.format(a=operands[0], b=operands[1])
             val = safe_eval(expr)
+            if self.OUTPUT_TYPE == "bool":
+                if isinstance(val, bool):
+                    return val
+                return None
+            # default: int output
             if isinstance(val, bool):
                 return None
             if isinstance(val, int):
@@ -114,13 +130,20 @@ class FactorialFacade:
         operands = self.parse(prompt)
         value = self.evaluate(operands) if operands else None
 
-        digit_ids: list[int] = []
+        bias_ids: list[int] = []
         if use_bias and value is not None:
-            digit_ids = self._gemma_digit_tokens(value)
+            if self.OUTPUT_TYPE == "bool":
+                bias_ids = self._bool_bias_tokens(value)
+            else:
+                bias_ids = self._gemma_digit_tokens(value)
 
-        fire_bias = bool(digit_ids)
-        text = self._generate(prompt, digit_ids if fire_bias else [], b, mt)
-        parsed = self._parse_int(text)
+        fire_bias = bool(bias_ids)
+        text = self._generate(prompt, bias_ids if fire_bias else [], b, mt)
+        # Parsed answer interpretation depends on OUTPUT_TYPE
+        if self.OUTPUT_TYPE == "bool":
+            parsed = self._parse_bool(text)
+        else:
+            parsed = self._parse_int(text)
         return FactorialResult(
             prompt=prompt, operands=operands, value=value,
             generated=text, parsed_answer=parsed, used_bias=fire_bias,
@@ -134,11 +157,41 @@ class FactorialFacade:
             ids = ids[1:]
         return ids
 
+    def _bool_bias_tokens(self, val: bool) -> list[int]:
+        """Bias sequence for bool answers. Emits tokens for BOOL_TRUE_STR
+        or BOOL_FALSE_STR. Keep leading ▁ if present — capitalized words
+        usually merge the space into the first BPE token (e.g. ▁Yes)."""
+        answer = self.BOOL_TRUE_STR if val else self.BOOL_FALSE_STR
+        ids = self._tokenizer.encode(answer)
+        if ids and ids[0] == 2:
+            ids = ids[1:]
+        return ids
+
     @staticmethod
     def _parse_int(text: str) -> Optional[int]:
         normalized = text.replace(",", "")
         m = re.search(r"-?\d{1,15}", normalized)
         return int(m.group(0)) if m else None
+
+    def _parse_bool(self, text: str) -> Optional[bool]:
+        low = text.lower()
+        t = self.BOOL_TRUE_STR.lower()
+        f = self.BOOL_FALSE_STR.lower()
+        # First occurrence wins
+        ti = low.find(t)
+        fi = low.find(f)
+        if ti == -1 and fi == -1:
+            # Fallback: yes/no/true/false
+            for pat, v in [(r"\byes\b", True), (r"\btrue\b", True),
+                           (r"\bno\b", False), (r"\bfalse\b", False)]:
+                if re.search(pat, low):
+                    return v
+            return None
+        if ti == -1:
+            return False
+        if fi == -1:
+            return True
+        return ti < fi
 
     def _generate(self, prompt: str, digit_token_ids: list[int],
                   boost: float, max_tokens: int) -> str:
