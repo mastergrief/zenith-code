@@ -41,31 +41,65 @@ from pathlib import Path
 _STDLIB_MODULES = [
     # Data / collections
     "collections", "collections.abc", "itertools", "functools", "operator",
-    "heapq", "bisect", "array", "queue", "copy",
+    "heapq", "bisect", "array", "queue", "copy", "contextlib", "reprlib",
+    "types",
     # Numbers / math
     "math", "cmath", "decimal", "fractions", "random", "statistics",
+    "numbers",
     # Text
-    "string", "re", "textwrap", "unicodedata", "difflib",
+    "string", "re", "textwrap", "unicodedata", "difflib", "shlex",
+    "stringprep",
     # Binary data
     "struct", "codecs", "base64", "binascii", "hashlib", "hmac", "secrets",
     # Dates / times
     "datetime", "calendar", "time", "zoneinfo",
     # Data format
-    "json", "csv", "configparser", "tomllib", "plistlib", "xml.etree.ElementTree",
+    "json", "csv", "configparser", "tomllib", "plistlib",
+    "xml.etree.ElementTree", "xml.dom.minidom", "html", "html.parser",
+    "html.entities",
     # File / path
-    "pathlib", "os.path", "shutil", "tempfile", "glob", "fnmatch", "linecache",
+    "pathlib", "os.path", "shutil", "tempfile", "glob", "fnmatch",
+    "linecache", "io", "fileinput",
     # Networking / internet
-    "urllib.parse", "urllib.request", "socket", "ipaddress", "email.utils",
+    "urllib.parse", "urllib.request", "urllib.response", "urllib.error",
+    "urllib.robotparser", "socket", "ipaddress", "email.utils",
+    "email.parser", "http.client", "http.cookies",
     # Compression / archiving
-    "gzip", "zlib", "bz2", "lzma", "tarfile", "zipfile",
+    "gzip", "zlib", "bz2", "lzma", "tarfile", "zipfile", "shutil",
     # System
-    "sys", "platform", "argparse", "logging",
+    "sys", "platform", "argparse", "logging", "getopt", "os",
     # Typing / classes
     "typing", "dataclasses", "enum", "abc", "weakref",
-    # Concurrency (interface parts only — avoid threads in scan)
-    "concurrent.futures",
-    # Regex helpers
-    "re",
+    # Concurrency
+    "concurrent.futures", "asyncio",
+    # Debug / profiling
+    "traceback", "pdb", "inspect",
+]
+
+
+# Popular pip packages — attempt import, skip if not installed. Each
+# adds 100-1000 signatures on typical ML/web-dev Python environments.
+_PIP_MODULES = [
+    # HTTP / networking
+    "requests", "httpx", "urllib3", "aiohttp",
+    # Web frameworks
+    "flask", "fastapi", "django",
+    # Data science
+    "numpy", "pandas", "scipy",
+    # ML
+    "sklearn", "torch", "torchvision", "transformers",
+    # DB / ORM
+    "sqlalchemy", "pymongo", "redis",
+    # Validation / parsing
+    "pydantic", "marshmallow", "yaml", "lxml", "bs4", "beautifulsoup4",
+    # Async / concurrent
+    "trio", "anyio",
+    # CLI / config
+    "click", "typer", "rich",
+    # Testing
+    "pytest", "hypothesis",
+    # Utils
+    "toml", "pillow", "PIL",
 ]
 
 
@@ -161,8 +195,10 @@ def main():
     n_rejected_sig = 0
     n_duplicate_prob = 0
 
-    for mod_name in _STDLIB_MODULES:
-        print(f"scanning {mod_name} ...")
+    all_modules = list(_STDLIB_MODULES) + list(_PIP_MODULES)
+    for mod_name in all_modules:
+        source_tag = "stdlib" if mod_name in _STDLIB_MODULES else "pip"
+        print(f"scanning {mod_name} ({source_tag}) ...")
         mod_kept = 0
         for attr_name, obj, doc in _iter_callables(mod_name):
             n_functions += 1
