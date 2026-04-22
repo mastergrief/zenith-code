@@ -1,0 +1,202 @@
+{
+  "best_val_autoreg": 0.14782608695652175,
+  "n_params": 191941,
+  "epochs": 30,
+  "history": [
+    {
+      "epoch": 1,
+      "loss": 2.5943842765056724,
+      "tf_ratio": 1.0,
+      "elapsed_s": 5.4
+    },
+    {
+      "epoch": 2,
+      "loss": 1.7963961326714717,
+      "tf_ratio": 0.976,
+      "elapsed_s": 11.1,
+      "val_autoreg": 0.1043
+    },
+    {
+      "epoch": 3,
+      "loss": 1.6290378859548857,
+      "tf_ratio": 0.952,
+      "elapsed_s": 46.3
+    },
+    {
+      "epoch": 4,
+      "loss": 1.5372299425529712,
+      "tf_ratio": 0.928,
+      "elapsed_s": 51.2,
+      "val_autoreg": 0.113
+    },
+    {
+      "epoch": 5,
+      "loss": 1.4825345819646663,
+      "tf_ratio": 0.903,
+      "elapsed_s": 85.3
+    },
+    {
+      "epoch": 6,
+      "loss": 1.4402858271743313,
+      "tf_ratio": 0.879,
+      "elapsed_s": 89.9,
+      "val_autoreg": 0.1391
+    },
+    {
+      "epoch": 7,
+      "loss": 1.4181934775728169,
+      "tf_ratio": 0.855,
+      "elapsed_s": 128.6
+    },
+    {
+      "epoch": 8,
+      "loss": 1.3893917365507646,
+      "tf_ratio": 0.831,
+      "elapsed_s": 132.8,
+      "val_autoreg": 0.1478
+    },
+    {
+      "epoch": 9,
+      "loss": 1.363527987942551,
+      "tf_ratio": 0.807,
+      "elapsed_s": 169.6
+    },
+    {
+      "epoch": 10,
+      "loss": 1.3549366936539158,
+      "tf_ratio": 0.783,
+      "elapsed_s": 174.6,
+      "val_autoreg": 0.113
+    },
+    {
+      "epoch": 11,
+      "loss": 1.3416186823989407,
+      "tf_ratio": 0.759,
+      "elapsed_s": 215.6
+    },
+    {
+      "epoch": 12,
+      "loss": 1.3393715078180486,
+      "tf_ratio": 0.734,
+      "elapsed_s": 221.3,
+      "val_autoreg": 0.1391
+    },
+    {
+      "epoch": 13,
+      "loss": 1.328437707640908,
+      "tf_ratio": 0.71,
+      "elapsed_s": 262.8
+    },
+    {
+      "epoch": 14,
+      "loss": 1.3271977467970415,
+      "tf_ratio": 0.686,
+      "elapsed_s": 267.7,
+      "val_autoreg": 0.1304
+    },
+    {
+      "epoch": 15,
+      "loss": 1.330891200990388,
+      "tf_ratio": 0.662,
+      "elapsed_s": 306.5
+    },
+    {
+      "epoch": 16,
+      "loss": 1.3226499701991226,
+      "tf_ratio": 0.638,
+      "elapsed_s": 311.6,
+      "val_autoreg": 0.1217
+    },
+    {
+      "epoch": 17,
+      "loss": 1.3169913255807124,
+      "tf_ratio": 0.614,
+      "elapsed_s": 352.1
+    },
+    {
+      "epoch": 18,
+      "loss": 1.3272663643865874,
+      "tf_ratio": 0.59,
+      "elapsed_s": 356.9,
+      "val_autoreg": 0.1391
+    },
+    {
+      "epoch": 19,
+      "loss": 1.3243447831182769,
+      "tf_ratio": 0.566,
+      "elapsed_s": 394.9
+    },
+    {
+      "epoch": 20,
+      "loss": 1.327095588048299,
+      "tf_ratio": 0.541,
+      "elapsed_s": 399.2,
+      "val_autoreg": 0.1478
+    },
+    {
+      "epoch": 21,
+      "loss": 1.3304997212959058,
+      "tf_ratio": 0.517,
+      "elapsed_s": 439.8
+    },
+    {
+      "epoch": 22,
+      "loss": 1.3331397807959355,
+      "tf_ratio": 0.493,
+      "elapsed_s": 443.8,
+      "val_autoreg": 0.1304
+    },
+    {
+      "epoch": 23,
+      "loss": 1.3388919721950183,
+      "tf_ratio": 0.469,
+      "elapsed_s": 483.6
+    },
+    {
+      "epoch": 24,
+      "loss": 1.3459533163995454,
+      "tf_ratio": 0.445,
+      "elapsed_s": 488.6,
+      "val_autoreg": 0.1304
+    },
+    {
+      "epoch": 25,
+      "loss": 1.3540404059670188,
+      "tf_ratio": 0.421,
+      "elapsed_s": 527.8
+    },
+    {
+      "epoch": 26,
+      "loss": 1.3630704193404226,
+      "tf_ratio": 0.397,
+      "elapsed_s": 532.5,
+      "val_autoreg": 0.1478
+    },
+    {
+      "epoch": 27,
+      "loss": 1.3744682362585356,
+      "tf_ratio": 0.372,
+      "elapsed_s": 568.3
+    },
+    {
+      "epoch": 28,
+      "loss": 1.3824289097930447,
+      "tf_ratio": 0.348,
+      "elapsed_s": 573.2,
+      "val_autoreg": 0.1478
+    },
+    {
+      "epoch": 29,
+      "loss": 1.389178586728645,
+      "tf_ratio": 0.324,
+      "elapsed_s": 612.5
+    },
+    {
+      "epoch": 30,
+      "loss": 1.4015456329692493,
+      "tf_ratio": 0.3,
+      "elapsed_s": 616.7,
+      "val_autoreg": 0.1391
+    }
+  ]
+}
