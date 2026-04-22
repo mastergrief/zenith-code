@@ -127,8 +127,11 @@ class VerifiedRefactorSession:
                 refactor_result=result, test_passed=None,
             )
             self._history.append(step)
-            self._failed = True
-            self._error = f"{primitive.__name__}: {result.error}"
+            # No-op (new_code=None, error=None) is session-safe: nothing
+            # to apply but no failure either. Only fail on explicit error.
+            if result.error is not None:
+                self._failed = True
+                self._error = f"{primitive.__name__}: {result.error}"
             return step
 
         # Refactor applied; verify via sandbox

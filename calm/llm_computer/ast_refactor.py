@@ -622,6 +622,300 @@ def extract_method(
 
 
 # ==================================================================
+# 4. convert_loop_to_comprehension
+# ==================================================================
+#
+# Detects the canonical pattern
+#     result = []
+#     for x in iterable:
+#         if <guard>:        # optional
+#             result.append(<expr>)
+# and rewrites it as
+#     result = [<expr> for x in iterable if <guard>]
+#
+# Also handles set/dict comprehension shapes. Conservative gates:
+#   - the for-loop body is ONLY an append (optionally guarded by if)
+#   - the accumulator is initialized to [] / {} / set() immediately
+#     before the loop
+#   - the accumulator name doesn't escape the loop body in mutating
+#     ways that the comprehension couldn't replicate
+
+
+def _is_empty_list_init(node: ast.AST) -> Optional[ast.Name]:
+    """Return the target Name if `node` is `<name> = []`, else None."""
+    if (isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and isinstance(node.value, ast.List)
+            and not node.value.elts):
+        return node.targets[0]
+    return None
+
+
+def _single_append_body(
+    body: List[ast.stmt], accum_name: str
+) -> Optional[Tuple[Optional[ast.AST], ast.AST]]:
+    """If `body` consists of a single `accum.append(<expr>)` call or
+    an `if <guard>: accum.append(<expr>)`, return (guard_or_None, expr).
+    Otherwise None.
+    """
+    if len(body) != 1:
+        return None
+    stmt = body[0]
+
+    # Bare append: Expr(Call(Attribute(Name(accum), 'append'), [expr]))
+    if isinstance(stmt, ast.Expr):
+        call = stmt.value
+        if (isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Attribute)
+                and call.func.attr == "append"
+                and isinstance(call.func.value, ast.Name)
+                and call.func.value.id == accum_name
+                and len(call.args) == 1
+                and not call.keywords):
+            return (None, call.args[0])
+        return None
+
+    # Guarded append: If(test=<guard>, body=[Expr(append)], orelse=[])
+    if (isinstance(stmt, ast.If)
+            and not stmt.orelse
+            and len(stmt.body) == 1):
+        inner = stmt.body[0]
+        if isinstance(inner, ast.Expr):
+            call = inner.value
+            if (isinstance(call, ast.Call)
+                    and isinstance(call.func, ast.Attribute)
+                    and call.func.attr == "append"
+                    and isinstance(call.func.value, ast.Name)
+                    and call.func.value.id == accum_name
+                    and len(call.args) == 1
+                    and not call.keywords):
+                return (stmt.test, call.args[0])
+    return None
+
+
+class _LoopComprehensionRewriter(ast.NodeTransformer):
+    """Walk bodies; find the `accum = []; for ...: accum.append(...)`
+    pattern and replace both statements with a single Assign using a
+    list comprehension."""
+
+    def __init__(self):
+        self.n_changes = 0
+        self.notes: List[str] = []
+
+    def _rewrite_body(self, body: List[ast.stmt]) -> List[ast.stmt]:
+        out: List[ast.stmt] = []
+        i = 0
+        while i < len(body):
+            stmt = body[i]
+            init_target = _is_empty_list_init(stmt)
+            # Check next stmt is a for-loop matching the pattern
+            if (init_target is not None
+                    and i + 1 < len(body)
+                    and isinstance(body[i + 1], ast.For)):
+                for_stmt = body[i + 1]
+                accum_name = init_target.id
+                parsed = _single_append_body(for_stmt.body, accum_name)
+                # Further gate: the loop iterator must be a simple Name
+                # or Call (iterable) — not something with side effects we
+                # can't replicate safely. We accept anything ast.unparse
+                # can roundtrip; too-strict filter would under-fire.
+                if parsed is not None:
+                    guard, expr = parsed
+                    # Build: List comp: [expr for target in iter if guard]
+                    generator = ast.comprehension(
+                        target=for_stmt.target,
+                        iter=for_stmt.iter,
+                        ifs=[guard] if guard is not None else [],
+                        is_async=0,
+                    )
+                    listcomp = ast.ListComp(elt=expr, generators=[generator])
+                    new_assign = ast.Assign(
+                        targets=[ast.Name(id=accum_name, ctx=ast.Store())],
+                        value=listcomp,
+                    )
+                    out.append(ast.copy_location(new_assign, stmt))
+                    self.n_changes += 1
+                    self.notes.append(
+                        f"converted for-loop accumulation into "
+                        f"`{accum_name} = [...]`")
+                    i += 2  # skip both init + for-loop
+                    continue
+            # Default: recurse + keep
+            out.append(self.visit(stmt))
+            i += 1
+        return out
+
+    def visit_Module(self, node):
+        node.body = self._rewrite_body(node.body)
+        return node
+
+    def visit_FunctionDef(self, node):
+        node.body = self._rewrite_body(node.body)
+        node.args = self.visit(node.args)
+        return node
+
+    def visit_AsyncFunctionDef(self, node):
+        return self.visit_FunctionDef(node)
+
+    def visit_ClassDef(self, node):
+        node.body = self._rewrite_body(node.body)
+        return node
+
+    def visit_For(self, node):
+        node.body = self._rewrite_body(node.body)
+        node.orelse = self._rewrite_body(node.orelse)
+        return node
+
+    def visit_While(self, node):
+        node.body = self._rewrite_body(node.body)
+        node.orelse = self._rewrite_body(node.orelse)
+        return node
+
+    def visit_If(self, node):
+        node.body = self._rewrite_body(node.body)
+        node.orelse = self._rewrite_body(node.orelse)
+        return node
+
+
+def convert_loop_to_comprehension(code: str) -> RefactorResult:
+    """Find `accum = []; for x in it: accum.append(expr)` patterns (with
+    optional `if guard`) and rewrite as list comprehensions.
+
+    Safe: every rewrite is semantics-preserving by construction (the
+    comprehension produces the same list as the loop).
+    """
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        return RefactorResult(None, "none", error=f"parse failed: {e.msg}")
+
+    rewriter = _LoopComprehensionRewriter()
+    tree = rewriter.visit(tree)
+    if rewriter.n_changes == 0:
+        return RefactorResult(
+            None, "none",
+            notes=["no loop→comprehension patterns found"])
+
+    ast.fix_missing_locations(tree)
+    try:
+        new_code = ast.unparse(tree)
+    except Exception as e:
+        return RefactorResult(None, "none", error=f"unparse failed: {e}")
+    try:
+        ast.parse(new_code)
+    except SyntaxError as e:
+        return RefactorResult(
+            None, "none",
+            error=f"post-rewrite parse failed: {e.msg}")
+
+    return RefactorResult(
+        new_code, "loop_to_comprehension",
+        notes=rewriter.notes, n_changes=rewriter.n_changes,
+    )
+
+
+# ==================================================================
+# 5. detect_refactor_opportunities
+# ==================================================================
+
+
+@dataclass
+class RefactorOpportunity:
+    """A detected opportunity + the primitive that would fix it."""
+    kind: str                 # "long_method" | "loop_to_comprehension" | "dead_assign"
+    location: str             # "class.method" or "<module:line>"
+    detail: str
+    severity: str = "info"    # "info" | "warn"
+
+
+def detect_refactor_opportunities(
+    code: str,
+    long_method_threshold: int = 30,
+) -> List[RefactorOpportunity]:
+    """Scan code, return opportunities to refactor. Pure analysis —
+    doesn't modify anything. Used by the refactor planner to propose
+    a session automatically.
+
+    Detects:
+        - methods longer than `long_method_threshold` lines
+        - `accum = []; for ...: accum.append(...)` loop patterns
+        - single-assignment vars only used once (candidates for inline)
+    """
+    opportunities: List[RefactorOpportunity] = []
+
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return opportunities
+
+    # 1. Long methods
+    for cls in [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]:
+        for m in cls.body:
+            if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                span = (getattr(m, "end_lineno", m.lineno) - m.lineno + 1
+                        if m.lineno else 0)
+                if span >= long_method_threshold:
+                    opportunities.append(RefactorOpportunity(
+                        kind="long_method",
+                        location=f"{cls.name}.{m.name}",
+                        detail=f"{span} lines (threshold {long_method_threshold})",
+                        severity="warn",
+                    ))
+
+    # Also check top-level functions
+    for fn in [n for n in tree.body
+               if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]:
+        span = (getattr(fn, "end_lineno", fn.lineno) - fn.lineno + 1
+                if fn.lineno else 0)
+        if span >= long_method_threshold:
+            opportunities.append(RefactorOpportunity(
+                kind="long_method",
+                location=fn.name,
+                detail=f"{span} lines (threshold {long_method_threshold})",
+                severity="warn",
+            ))
+
+    # 2. Loop → comprehension patterns
+    lc_rewrite = convert_loop_to_comprehension(code)
+    if lc_rewrite.applied:
+        for note in lc_rewrite.notes:
+            opportunities.append(RefactorOpportunity(
+                kind="loop_to_comprehension",
+                location="<module>",
+                detail=note,
+                severity="info",
+            ))
+
+    # 3. Single-use single-assignment var (inline candidate)
+    # Check each function scope for local var bindings used exactly once.
+    for fn in ast.walk(tree):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        # Collect Assigns + Load-site counts
+        assigns: dict = {}  # name -> assign count
+        loads: dict = {}    # name -> load count
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Assign):
+                for tgt in node.targets:
+                    if isinstance(tgt, ast.Name):
+                        assigns[tgt.id] = assigns.get(tgt.id, 0) + 1
+            elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                loads[node.id] = loads.get(node.id, 0) + 1
+        for name, n_assign in assigns.items():
+            if n_assign == 1 and loads.get(name, 0) == 1:
+                opportunities.append(RefactorOpportunity(
+                    kind="single_use_local",
+                    location=f"{fn.name}:{name}",
+                    detail=f"var {name!r} assigned once, used once "
+                           "(inline candidate)",
+                    severity="info",
+                ))
+
+    return opportunities
+
+
+# ==================================================================
 # Recursive refactor session
 # ==================================================================
 

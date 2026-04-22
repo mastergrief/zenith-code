@@ -32,6 +32,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from calm.llm_computer.ast_refactor import (
+    convert_loop_to_comprehension, detect_refactor_opportunities,
     extract_method, inline_variable, rename_variable,
 )
 from calm.llm_computer.refactor_session import VerifiedRefactorSession
@@ -162,6 +163,20 @@ def main():
     print(f"\nStep 6: rename k→cat_key"
           f" — applied={step.refactor_result.applied} "
           f"tests={step.test_passed}")
+
+    # Step 7: auto-detect + apply convert_loop_to_comprehension
+    # This is the substrate's opportunity-detection path — no user
+    # direction needed; the planner spotted a for/append pattern.
+    opps_before = detect_refactor_opportunities(session.result())
+    print(f"\nDetected opportunities (before step 7): "
+          f"{[(o.kind, o.detail[:40]) for o in opps_before]}")
+    step = session.apply(convert_loop_to_comprehension)
+    print(f"\nStep 7: convert_loop_to_comprehension"
+          f" — applied={step.refactor_result.applied} "
+          f"tests={step.test_passed}")
+    if step.refactor_result.notes:
+        for n in step.refactor_result.notes:
+            print(f"  {n}")
 
     print(f"\n{'=' * 60}")
     print(f"Session outcome: {session.summary}")

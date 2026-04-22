@@ -24,7 +24,7 @@ class Analytics:
 
 ## Session outcome
 
-**OK: 6/6 steps applied & verified**
+**OK: 6/7 steps applied & verified**
 
 | Step | Operation | Applied | Tests pass |
 |---|---|---|---|
@@ -34,6 +34,7 @@ class Analytics:
 | 4 | rename_variable({'old': 'c', 'new': 'by_category', 'scope': 'summarize'}) | ✓ | ✓ |
 | 5 | rename_variable({'old': 'x', 'new': 'tx', 'scope': 'summarize'}) | ✓ | ✓ |
 | 6 | rename_variable({'old': 'k', 'new': 'cat_key', 'scope': 'summarize'}) | ✓ | ✓ |
+| 7 | convert_loop_to_comprehension({}) | ✗ | - |
 
 ## Final code
 
