@@ -417,19 +417,27 @@ Prod Gemma (session 32):
 ## Trained cards — default architecture
 
 As of R-delta-20 (commit `63a49fc`, 2026-04-21), new trained cards
-default to **`CopyAugmentedDeltaNet`** (PT + Householder fast-weight
-backbone) rather than plain `CopyAugmentedTransformer` (PT). Held-
-out parity on copy-dominant structure tasks (NL math 99.5% both),
-+21-84pp on retrieval-shaped tasks (MQAR N=5-20), 3-10× faster
-training convergence, 1.18× inference overhead via `decode_greedy_cached`
-(commit `e6f2d5c`).
+default to **DT (`CopyAugmentedDeltaNet`)** (PT + Householder fast-weight
+backbone) rather than plain `CopyAugmentedTransformer` (PT) — **for
+retrieval + structure-extraction regimes**. Held-out parity on copy-
+dominant structure tasks (NL math 99.5% both), +21-84pp on retrieval-
+shaped tasks (MQAR N=5-20), 3-10× faster training convergence, 1.18×
+inference overhead via `decode_greedy_cached` (commit `e6f2d5c`).
 
 Deployable card artifact: `calm/hrm/checkpoints/copy_augmented_delta_mqar_best.pt`
 (748 KB, 183K params, MQAR N=5-15 @ 100% held-out). Trained with
 chunkwise UT transform (3-7× training speedup). See
 `.claude/rules/delta_rule.md` for the full arc + install mechanics.
 
+**Code-skeleton DT** (NL → `def FN(<args>):`) is a separate open
+arc — `calm/hrm/checkpoints/dt_code_skel_v13_ep16_0193.pt` at 0.193
+honest val on 520 held-out problems (2026-04-22). NOT install-viable
+— threshold is ≥ 0.40 honest val before wiring to Gemma. Recipe
+differs from MQAR/NL defaults (requires R26 aux copy-loss + R27
+split-before-aug + gate init -1.0 + EMA 0.995). See `delta_rule.md`
+§"DT code-skeleton arc".
+
 Plain PT (`copy_augmented.py`) stays as ablation baseline; existing
 PT checkpoints (`copy_augmented_hrm_best.pt`, `copy_word_best.pt`,
 `copy_gsm_best.pt`, `copy_funcall_best.pt`, `copy_logic_best.pt`)
-preserved — no benefit to retraining as PT+Delta.
+preserved — no benefit to retraining as DT.

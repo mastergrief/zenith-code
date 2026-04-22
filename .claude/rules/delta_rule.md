@@ -13,9 +13,12 @@ and filenames.
 
 R5→R21 arc (2026-04-21, "R-delta" scope — distinct from tracing-arc
 R13-R21 in `tracing_roadmap.md`/`atlas.md`). `CopyAugmentedDeltaNet`
-is the **default trained-card architecture** (R20 consolidation,
-commit `63a49fc`), superseding plain `CopyAugmentedTransformer` for
-new work.
+is the **default trained-card architecture for retrieval + structure-
+extraction regimes** (R20 consolidation, commit `63a49fc`), superseding
+plain `CopyAugmentedTransformer` for new work. Code-skeleton DT is
+a separate open arc with different training recipe — see §"DT code-
+skeleton arc" at the bottom of this file before extrapolating these
+defaults to code.
 
 ## Architecture
 
