@@ -126,13 +126,33 @@ def test_synthesize_different_seeds_differ():
     assert [p.question for p in s1] != [p.question for p in s2]
 
 
-def test_synthesize_skips_zero_arg_and_three_plus():
-    pairs = (
-        [CodeProblem(question="q", expression="def FN():")] * 5 +
-        [CodeProblem(question="q", expression="def FN(a, b, c):")] * 5
-    )
+def test_synthesize_skips_zero_arg():
+    """0-arg has trivial output (only FN() exists). Not synthesized."""
+    pairs = [CodeProblem(question="q", expression="def FN():")] * 5
     synthetic = synthesize_rare_class_pairs(
         pairs, min_count=3, max_count=20, target_per_class=10,
     )
-    # Neither 0-arg nor 3-arg supported in current template library
+    assert synthetic == []
+
+
+def test_synthesize_three_arg_number_triple():
+    """R11: 3-arg with templates DOES synthesize."""
+    pairs = [CodeProblem(question="q", expression="def FN(a, b, c):")] * 5
+    synthetic = synthesize_rare_class_pairs(
+        pairs, min_count=3, max_count=20, target_per_class=10,
+    )
+    # Number triple templates exist → should synthesize
+    assert len(synthetic) == 10
+    assert all(p.expression == "def FN(a, b, c):" for p in synthetic)
+    # All prompts mention a, b, and c
+    for p in synthetic:
+        assert "a" in p.question and "b" in p.question and "c" in p.question
+
+
+def test_synthesize_four_arg_skipped():
+    """4+ args still skipped (no templates yet)."""
+    pairs = [CodeProblem(question="q", expression="def FN(a, b, c, d):")] * 5
+    synthetic = synthesize_rare_class_pairs(
+        pairs, min_count=3, max_count=20, target_per_class=10,
+    )
     assert synthetic == []

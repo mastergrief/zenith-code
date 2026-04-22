@@ -246,16 +246,35 @@ def extract_pairs_from_db(
 # as one of the paraphrases.
 _PARAPHRASE_TEMPLATES = [
     # (canonical prefix regex (case-insensitive), list of replacements)
-    (r"^write a (?:python )?function to\b",
+    # R14: widened to match "python function that" + "python program"
+    # + variants. Original regex matched only "function to"; misses ~300
+    # prompts in aug=False corpus.
+    (r"^write a (?:python )?(?:function|program|script|utility|method|class) (?:to|that)\b",
      [
          "Write a function to",
          "Write a python function to",
+         "Write a Python function that",
+         "Write a function that",
          "Create a function to",
          "Create a python function that",
+         "Create a function that",
          "Build a function to",
+         "Build a function that",
          "Implement a function to",
+         "Implement a function that",
          "Define a function to",
+         "Define a function that",
          "Python function to",
+     ]),
+    (r"^write (?:a|an) (?:python )?(?:program|script) (?:to|for|that)\b",
+     [
+         "Write a Python program to",
+         "Write a program to",
+         "Write a script to",
+         "Write a function that",
+         "Write a utility to",
+         "Create a program that",
+         "Build a tool that",
      ]),
     (r"^write a function that\b",
      [
@@ -264,6 +283,24 @@ _PARAPHRASE_TEMPLATES = [
          "Build a function that",
          "Implement a function that",
          "Define a function that",
+     ]),
+    # R15: I'm X (contractions missing apostrophe from upstream ASCII filter)
+    (r"^i m (?:building|implementing|designing|working|getting|trying|writing|creating|copy-pasting|debugging|looking|refactoring|testing|migrating|prototyping|wondering)\b",
+     [
+         "I'm building",
+         "I'm implementing",
+         "I'm working on",
+         "I'm writing",
+         "I am implementing",
+         "We're building",
+         "The team is implementing",
+     ]),
+    (r"^i ve (?:got|been|seen)\b",
+     [
+         "I've got",
+         "I've been",
+         "I have",
+         "I keep",
      ]),
     (r"^given\b",
      [
@@ -497,6 +534,145 @@ _PARAPHRASE_TEMPLATES = [
          "Fetch",
          "Obtain",
      ]),
+    # R10: conversational / how-to / need patterns — Claude-authored
+    # prompts in coding_reasoning_claude.jsonl have these shapes heavily.
+    # Together they cover ~200 of the 800 previously-unmatched prompts.
+    (r"^how (?:do|can) (?:i|we|you)\b",
+     [
+         "How do I",
+         "How can I",
+         "How do you",
+         "How can we",
+         "What's the best way to",
+         "What approach do I use to",
+     ]),
+    (r"^i need (?:to|a)\b",
+     [
+         "I need to",
+         "I need a function to",
+         "I want to",
+         "I'm trying to",
+         "I'm looking to",
+         "Help me",
+     ]),
+    (r"^i (?:want|'m trying) to\b",
+     [
+         "I want to",
+         "I'm trying to",
+         "I need to",
+         "I'm looking to",
+         "My goal is to",
+     ]),
+    (r"^i have\b",
+     [
+         "I have",
+         "I've got",
+         "Given",
+         "Suppose",
+     ]),
+    (r"^design a\b",
+     [
+         "Design a",
+         "Create a",
+         "Implement a",
+         "Build a",
+         "Define a",
+     ]),
+    (r"^(?:when|where) should\b",
+     [
+         "When should",
+         "Where should",
+         "How should",
+         "In what case should",
+     ]),
+    (r"^write (?:a|an) (?:simple|small|short|basic|function|module|class|script|utility|program|tool|method)\b",
+     [
+         "Write a function to",
+         "Write a small function that",
+         "Write a simple function that",
+         "Create a function that",
+         "Implement a function that",
+     ]),
+    (r"^(?:develop|develops) a\b",
+     [
+         "Develop a",
+         "Write a",
+         "Build a",
+         "Create a",
+         "Implement a",
+     ]),
+    (r"^(?:construct|constructs) a\b",
+     [
+         "Construct a",
+         "Build a",
+         "Create a",
+         "Assemble a",
+     ]),
+    (r"^what (?:'s|is) the\b",
+     [
+         "What's the",
+         "What is the",
+         "Compute the",
+         "Return the",
+         "Find the",
+     ]),
+    # Problem-statement openings ("Given", "Suppose", "Consider") merge
+    # with "i have" above but keep explicit forms for variety.
+    (r"^suppose\b",
+     [
+         "Suppose",
+         "Given",
+         "Assume",
+         "Consider",
+     ]),
+    (r"^assume\b",
+     [
+         "Assume",
+         "Suppose",
+         "Given",
+         "Consider",
+     ]),
+    # Imperative verbs commonly used in competitive-programming prompts
+    (r"^(?:print|prints)\b",
+     [
+         "Print",
+         "Output",
+         "Display",
+         "Emit",
+     ]),
+    (r"^(?:swap|swaps)\b",
+     [
+         "Swap",
+         "Exchange",
+         "Interchange",
+     ]),
+    (r"^(?:shift|shifts)\b",
+     [
+         "Shift",
+         "Rotate",
+         "Move",
+     ]),
+    (r"^(?:match|matches)\b",
+     [
+         "Match",
+         "Find",
+         "Identify",
+         "Locate",
+     ]),
+    (r"^(?:search|searches)\b",
+     [
+         "Search",
+         "Find",
+         "Look for",
+         "Locate",
+     ]),
+    (r"^(?:parse|parses) (?:the|a|an)\b",
+     [
+         "Parse the",
+         "Extract from the",
+         "Interpret the",
+         "Process the",
+     ]),
 ]
 
 
@@ -614,23 +790,46 @@ def load_pairs_jsonl(path: Path) -> List[CodeProblem]:
 _ARG_NORM_RE = re.compile(r"\s*,\s*")
 
 
-def normalize_skeleton(skel: str) -> str:
-    """Canonicalize `def FN(<args>):` by normalizing whitespace in arg
-    list. `FN(a, b):` and `FN(a,b):` and `FN( a , b ):` all collapse
-    to `FN(a, b):` (single-space post-comma, no surrounding spaces).
+def _strip_arg_annotation(arg: str) -> str:
+    """Strip `: Type` and `= default` from a single arg. Preserves
+    leading `*` / `**` for varargs.
+    `n: int = 10` → `n`
+    `l: list` → `l`
+    `*args` → `*args`
+    """
+    s = arg.strip()
+    # Strip default value first (comes last syntactically)
+    s = s.split("=")[0].strip()
+    # Strip annotation
+    s = s.split(":")[0].strip()
+    return s
 
-    R6 lever: reduces ~367 output classes by merging spacing variants.
-    Safe — outputs identical in function, differ only in formatting.
+
+def normalize_skeleton(skel: str, strip_annotations: bool = True) -> str:
+    """Canonicalize `def FN(<args>):` by normalizing whitespace in arg
+    list and optionally stripping type annotations + default values.
+
+    R6 lever: reduces ~560 output classes by merging:
+    - Spacing variants (FN(a, b) ≡ FN(a,b))
+    - R13 (when strip_annotations=True, default): typed variants
+      (FN(n: int) ≡ FN(n); FN(l: list, t: int) ≡ FN(l, t))
+
+    Safe — outputs identical in function, differ only in formatting
+    and static-analysis hints.
     """
     s = skel.strip()
     m = re.match(r"^(def FN\()(.*?)(\)\s*:)$", s)
     if not m:
         return s  # malformed — leave alone
-    prefix, args, suffix = m.groups()
-    # Split on any-whitespace-comma-any-whitespace, rejoin with ", "
+    prefix, args, _ = m.groups()
+    # Split on any-whitespace-comma-any-whitespace
     pieces = [p.strip() for p in _ARG_NORM_RE.split(args) if p.strip() or args.strip() == ""]
+    if strip_annotations:
+        pieces = [_strip_arg_annotation(p) for p in pieces]
+        # Drop empties produced by edge cases
+        pieces = [p for p in pieces if p]
     # Empty args stays ""
-    if args.strip() == "":
+    if not pieces:
         return f"{prefix}){s.rstrip()[-1]}"  # preserve ":"
     return f"{prefix}{', '.join(pieces)}):"
 

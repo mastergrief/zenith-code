@@ -38,29 +38,35 @@ _SEMANTIC_MAP: Dict[str, str] = {
     "count": "int", "k": "int", "K": "int", "m": "int", "M": "int",
     "i": "int", "j": "int", "size": "int", "length": "int", "len": "int",
     "limit": "int", "bound": "int", "value": "int",
+    "idx": "int", "index": "int", "position": "int", "pos": "int",
+    "offset": "int", "depth": "int", "level": "int",
     # String / text
     "s": "string", "text": "string", "str": "string",
     "str1": "string", "str2": "string", "string": "string",
     "test_str": "string", "sentence": "string", "word": "string",
-    "name": "string", "char": "string",
+    "name": "string", "char": "string", "prefix": "string",
+    "suffix": "string", "pattern": "string", "word1": "string", "word2": "string",
     # List / array
     "l": "list", "arr": "list", "array": "list", "xs": "list",
     "nums": "list", "nums1": "list", "nums2": "list",
     "list": "list", "list1": "list", "list2": "list",
     "input_list": "list", "test_list": "list", "data": "list",
-    "items": "list", "elements": "list",
+    "items": "list", "elements": "list", "seq": "list", "sequence": "list",
+    "values": "list", "keys": "list",
     # Pairs / tuples
     "a": "number", "b": "number", "c": "number", "d": "number",
     "x": "number", "y": "number", "z": "number",
-    # Domain-specific (used as-is, no special verbs)
+    # Domain-specific (R12: dedicated templates below)
     "url": "url", "request": "request", "db": "db",
     "user": "user", "user_id": "user",
     "matrix": "matrix", "grid": "matrix",
     "tree": "tree", "node": "node", "graph": "graph",
-    "file": "file", "path": "file",
+    "file": "file", "path": "file", "filepath": "file", "filename": "file",
     "self": "self",
-    # Commonly paired
+    # Geometry
     "r": "number", "h": "number", "w": "number",
+    "radius": "number", "height": "number", "width": "number",
+    "side": "number", "base": "number",
 }
 
 
@@ -156,6 +162,77 @@ _TEMPLATES_BY_SEMANTIC: Dict[str, List[str]] = {
         "Create a function that validates {arg}.",
         "Return a transformed version of {arg}.",
     ],
+    # R12: domain-specific verbs — prompts likely to appear in
+    # Claude-authored / web-framework corpora.
+    "url": [
+        "Parse URL {arg} into components.",
+        "Validate URL {arg}.",
+        "Extract the domain from URL {arg}.",
+        "Return the TLD of URL {arg}.",
+        "Check if URL {arg} uses HTTPS.",
+        "Normalize URL {arg}.",
+        "Return the path portion of URL {arg}.",
+    ],
+    "db": [
+        "Connect to database {arg}.",
+        "Query records from {arg}.",
+        "Count rows in database {arg}.",
+        "Close database connection {arg}.",
+        "Return the schema of {arg}.",
+    ],
+    "request": [
+        "Authenticate request {arg}.",
+        "Parse headers of request {arg}.",
+        "Log incoming request {arg}.",
+        "Route request {arg} to the correct handler.",
+        "Check CSRF token on request {arg}.",
+    ],
+    "user": [
+        "Fetch user {arg} from the database.",
+        "Authenticate user {arg}.",
+        "Return the role of user {arg}.",
+        "Check whether user {arg} has admin access.",
+        "Log out user {arg}.",
+    ],
+    "file": [
+        "Read the contents of file {arg}.",
+        "Check whether file {arg} exists.",
+        "Return the size of file {arg}.",
+        "Open file {arg} for reading.",
+        "Delete file {arg}.",
+        "Return the extension of file {arg}.",
+    ],
+    "matrix": [
+        "Transpose matrix {arg}.",
+        "Return the determinant of matrix {arg}.",
+        "Check whether matrix {arg} is square.",
+        "Return the trace of matrix {arg}.",
+        "Flatten matrix {arg} into a list.",
+    ],
+    "node": [
+        "Return the value of tree node {arg}.",
+        "Count descendants of node {arg}.",
+        "Return the depth of node {arg}.",
+        "Return True if node {arg} is a leaf.",
+    ],
+    "tree": [
+        "Traverse tree {arg} in pre-order.",
+        "Return the height of tree {arg}.",
+        "Count leaves of tree {arg}.",
+        "Return True if tree {arg} is balanced.",
+    ],
+    "graph": [
+        "Return the number of nodes in graph {arg}.",
+        "Check whether graph {arg} is connected.",
+        "Return the adjacency list of graph {arg}.",
+        "Detect a cycle in graph {arg}.",
+    ],
+    "self": [
+        "Return the value of self.",
+        "Return the string representation of self.",
+        "Reset self to its initial state.",
+        "Return a copy of self.",
+    ],
 }
 
 # 2-arg templates by (type_a, type_b) composition
@@ -202,6 +279,65 @@ _TEMPLATES_BY_PAIR: Dict[Tuple[str, str], List[str]] = {
         "Return the top {a} elements of list {b}.",
         "Check if list {b} has at least {a} elements.",
     ],
+    # R10: more pair combinations — these pairs appear in 2-arg rare
+    # classes observed in the corpus.
+    ("string", "int"): [
+        "Return the character at index {b} of string {a}.",
+        "Truncate string {a} to {b} characters.",
+        "Repeat string {a} {b} times.",
+        "Return the first {b} characters of string {a}.",
+        "Check whether string {a} has length at least {b}.",
+    ],
+    ("int", "string"): [
+        "Repeat string {b} exactly {a} times.",
+        "Pad string {b} with zeros to width {a}.",
+        "Return the {a}th occurrence of string {b}.",
+    ],
+    ("string", "list"): [
+        "Join list {b} using separator {a}.",
+        "Count occurrences of string {a} in list {b}.",
+        "Filter list {b} to entries containing string {a}.",
+    ],
+    ("list", "string"): [
+        "Filter list {a} to entries matching pattern {b}.",
+        "Return elements of list {a} containing string {b}.",
+        "Split each element of list {a} by separator {b}.",
+    ],
+    ("int", "number"): [
+        "Round number {b} to {a} decimal places.",
+        "Return {b} to the power of {a}.",
+    ],
+    ("number", "int"): [
+        "Round number {a} to {b} decimal places.",
+        "Raise number {a} to the integer power {b}.",
+    ],
+}
+
+# R11: triple templates for common 3-arg patterns observed in corpus
+_TEMPLATES_BY_TRIPLE: Dict[Tuple[str, str, str], List[str]] = {
+    ("number", "number", "number"): [
+        "Return the sum of {a}, {b}, and {c}.",
+        "Return the maximum of {a}, {b}, and {c}.",
+        "Return the minimum of {a}, {b}, and {c}.",
+        "Compute the mean of {a}, {b}, and {c}.",
+        "Check if {a}, {b}, and {c} can form a triangle.",
+    ],
+    ("int", "int", "int"): [
+        "Return the GCD of integers {a}, {b}, and {c}.",
+        "Check if integer {a} is between {b} and {c}.",
+        "Return the sum of integers {a}, {b}, and {c}.",
+        "Compute (({a} + {b}) * {c}).",
+    ],
+    ("list", "int", "int"): [
+        "Return the slice of list {a} from index {b} to {c}.",
+        "Rotate list {a} by {b} positions toward {c}.",
+        "Return the top {b} elements of list {a} starting at offset {c}.",
+        "Sort list {a} by key between indices {b} and {c}.",
+    ],
+    ("list", "number", "number"): [
+        "Filter list {a} to elements between {b} and {c}.",
+        "Scale each element of list {a} by {b} and offset by {c}.",
+    ],
 }
 
 
@@ -217,21 +353,22 @@ def _generate_for_skeleton(
     semantics = [infer_semantic(a) for a in args_raw]
 
     templates: List[str] = []
-    use_arg_fmt = True  # True = 1-arg {arg}; False = 2-arg {a}/{b}
+    fmt_arity = 1   # 1 = {arg}; 2 = {a}/{b}; 3 = {a}/{b}/{c}
     if len(args_raw) == 1:
         templates = _TEMPLATES_BY_SEMANTIC.get(semantics[0], [])
         if not templates:
             templates = _TEMPLATES_BY_SEMANTIC["generic"]
-        use_arg_fmt = True
+        fmt_arity = 1
     elif len(args_raw) == 2:
         key = (semantics[0], semantics[1])
         templates = _TEMPLATES_BY_PAIR.get(key, [])
-        use_arg_fmt = False
-        # No fallback to 1-arg templates — misleading for 2-arg skeletons
-        # (would generate "Compute factorial of a" when skel is FN(a,b)).
-        # Caller skips this class; R10 can widen the pair-template library.
+        fmt_arity = 2
+    elif len(args_raw) == 3:
+        key3 = (semantics[0], semantics[1], semantics[2])
+        templates = _TEMPLATES_BY_TRIPLE.get(key3, [])
+        fmt_arity = 3
     else:
-        return []  # 0-arg / 3+arg not handled
+        return []  # 4+ args not handled
 
     if not templates:
         return []
@@ -239,10 +376,12 @@ def _generate_for_skeleton(
     out: List[CodeProblem] = []
     for _ in range(n):
         tpl = rng.choice(templates)
-        if use_arg_fmt:
+        if fmt_arity == 1:
             prompt = tpl.format(arg=args_canon[0])
-        else:
+        elif fmt_arity == 2:
             prompt = tpl.format(a=args_canon[0], b=args_canon[1])
+        else:
+            prompt = tpl.format(a=args_canon[0], b=args_canon[1], c=args_canon[2])
         out.append(CodeProblem(question=prompt, expression=skeleton))
     return out
 
@@ -265,7 +404,7 @@ def synthesize_rare_class_pairs(
     counts = Counter(p.expression for p in pairs)
     rare = [skel for skel, cnt in counts.items()
             if min_count <= cnt <= max_count
-            and arg_count(skel) in (1, 2)]
+            and arg_count(skel) in (1, 2, 3)]
 
     out: List[CodeProblem] = []
     for skel in rare:

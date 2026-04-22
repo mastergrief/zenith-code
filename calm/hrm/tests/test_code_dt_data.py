@@ -427,6 +427,35 @@ def test_normalize_skeleton_leaves_malformed():
     assert normalize_skeleton("not a skeleton") == "not a skeleton"
 
 
+def test_normalize_strips_type_annotation_default():
+    from calm.hrm.code_dt_data import normalize_skeleton
+    # Default strip_annotations=True
+    assert normalize_skeleton("def FN(n: int):") == "def FN(n):"
+    assert normalize_skeleton("def FN(s: str):") == "def FN(s):"
+    assert normalize_skeleton("def FN(l: list):") == "def FN(l):"
+
+
+def test_normalize_strips_default_values():
+    from calm.hrm.code_dt_data import normalize_skeleton
+    assert normalize_skeleton("def FN(n: int = 10):") == "def FN(n):"
+    assert normalize_skeleton("def FN(capacity=100):") == "def FN(capacity):"
+
+
+def test_normalize_strips_multi_arg_annotations():
+    from calm.hrm.code_dt_data import normalize_skeleton
+    assert normalize_skeleton("def FN(l: list, t: int):") == "def FN(l, t):"
+    assert normalize_skeleton(
+        "def FN(text: str, visible: int = 6):"
+    ) == "def FN(text, visible):"
+
+
+def test_normalize_opt_out():
+    """strip_annotations=False preserves annotations (for v4 compat)."""
+    from calm.hrm.code_dt_data import normalize_skeleton
+    assert normalize_skeleton("def FN(n: int):",
+                                 strip_annotations=False) == "def FN(n: int):"
+
+
 def test_filter_rare_classes_drops_below_threshold():
     from calm.hrm.code_dt_data import filter_rare_classes
     pairs = (
