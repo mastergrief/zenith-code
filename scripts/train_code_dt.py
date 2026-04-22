@@ -41,6 +41,7 @@ from calm.hrm.code_dt_data import (
     CodePairDataset,
     _CODE_CHAR_TO_ID,
     _CODE_ID_TO_CHAR,
+    build_balanced_sampler_weights,
     code_detokenize,
     extract_pairs_from_db,
     split_pairs,
@@ -137,6 +138,7 @@ def train(
     augment_factor: int = 8,
     plateau_patience: int = 5,    # val evals with no improvement → [PLATEAU]
     plateau_min_delta: float = 0.005,   # improvement threshold
+    balanced_sampler: str = "none",     # "none", "inverse", "sqrt_inverse", "capped"
 ):
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
@@ -150,8 +152,23 @@ def train(
     print(f"[train] split: {len(train_pairs)} train / {len(val_pairs)} val")
 
     train_ds = CodePairDataset(train_pairs, max_len=max_len)
-    loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
-                        num_workers=0)
+    if balanced_sampler != "none":
+        from torch.utils.data import WeightedRandomSampler
+        weights = build_balanced_sampler_weights(
+            train_pairs, strategy=balanced_sampler,
+        )
+        sampler = WeightedRandomSampler(
+            weights=weights,
+            num_samples=len(train_pairs),
+            replacement=True,
+        )
+        loader = DataLoader(train_ds, batch_size=batch_size,
+                            sampler=sampler, num_workers=0)
+        print(f"[train] balanced sampler: strategy={balanced_sampler!r}, "
+              f"unique skeletons={len(set(p.expression for p in train_pairs))}")
+    else:
+        loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
+                            num_workers=0)
 
     # --- Model ---
     model = build_copy_augmented_delta(
@@ -279,6 +296,10 @@ if __name__ == "__main__":
     ap.add_argument("--max-len", type=int, default=256)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--device", type=str, default=None)
+    ap.add_argument("--balanced-sampler", type=str, default="none",
+                    choices=["none", "inverse", "sqrt_inverse", "capped"],
+                    help="Upsample rare skeleton classes during training "
+                         "(Round 3 lever). Default none (uniform shuffle).")
     args = ap.parse_args()
     train(
         epochs=args.epochs,
@@ -290,4 +311,5 @@ if __name__ == "__main__":
         max_len=args.max_len,
         seed=args.seed,
         device=args.device,
+        balanced_sampler=args.balanced_sampler,
     )

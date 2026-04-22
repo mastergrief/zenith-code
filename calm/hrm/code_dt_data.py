@@ -419,3 +419,45 @@ def load_pairs_jsonl(path: Path) -> List[CodeProblem]:
         rec = json.loads(line)
         out.append(CodeProblem(question=rec["q"], expression=rec["skel"]))
     return out
+
+
+def build_balanced_sampler_weights(
+    pairs: List[CodeProblem],
+    strategy: str = "sqrt_inverse",
+    cap: Optional[int] = None,
+) -> List[float]:
+    """Per-pair weights for a torch WeightedRandomSampler, to counter
+    Zipf-distributed skeleton classes.
+
+    Round 1 diagnostic showed DT at 0.193 gate collapses to common
+    arg names (FN(n) 89%, FN(list1) 83%) and 0/n on rare classes
+    (FN(s), FN(self), FN(x), FN(xs)). Failing classes exist in the
+    corpus but are drowned — balanced sampling gives rare skeletons
+    training signal proportional to their inverse frequency.
+
+    Strategies:
+      - "inverse":      w_i = 1 / count(class(p_i))  — aggressive
+      - "sqrt_inverse": w_i = 1 / sqrt(count)        — moderate (default)
+      - "capped":       w_i = 1 / min(count, cap)    — bounded lift
+      - "uniform":      w_i = 1                      — no-op (control)
+
+    sqrt_inverse is the standard imbalanced-classification heuristic:
+    gives rare classes more signal without destroying common-class
+    frequency priors.
+    """
+    import math
+    from collections import Counter
+
+    counts = Counter(p.expression for p in pairs)
+
+    if strategy == "uniform":
+        return [1.0] * len(pairs)
+    if strategy == "inverse":
+        return [1.0 / counts[p.expression] for p in pairs]
+    if strategy == "sqrt_inverse":
+        return [1.0 / math.sqrt(counts[p.expression]) for p in pairs]
+    if strategy == "capped":
+        if cap is None:
+            cap = 20
+        return [1.0 / min(counts[p.expression], cap) for p in pairs]
+    raise ValueError(f"unknown strategy: {strategy!r}")
