@@ -290,6 +290,57 @@ def test_copy_gate_bias_configurable():
         )
 
 
+# --- Round 7: output-family split ---
+
+def test_arg_count_zero():
+    from calm.hrm.code_dt_data import arg_count
+    assert arg_count("def FN():") == 0
+
+
+def test_arg_count_single():
+    from calm.hrm.code_dt_data import arg_count
+    assert arg_count("def FN(n):") == 1
+    assert arg_count("def FN(self):") == 1
+
+
+def test_arg_count_multi():
+    from calm.hrm.code_dt_data import arg_count
+    assert arg_count("def FN(a, b):") == 2
+    assert arg_count("def FN(a,b):") == 2
+    assert arg_count("def FN(a, b, c):") == 3
+
+
+def test_arg_count_malformed():
+    from calm.hrm.code_dt_data import arg_count
+    assert arg_count("not a skeleton") == -1
+
+
+def test_family_bucket():
+    from calm.hrm.code_dt_data import family_bucket
+    assert family_bucket("def FN():") == "zero"
+    assert family_bucket("def FN(n):") == "one"
+    assert family_bucket("def FN(a, b):") == "two"
+    assert family_bucket("def FN(a, b, c):") == "three_plus"
+    assert family_bucket("def FN(a, b, c, d):") == "three_plus"
+    assert family_bucket("bogus") == "unknown"
+
+
+def test_split_pairs_by_family():
+    from calm.hrm.code_dt_data import split_pairs_by_family
+    pairs = [
+        CodeProblem(question="q0", expression="def FN():"),
+        CodeProblem(question="q1", expression="def FN(n):"),
+        CodeProblem(question="q2", expression="def FN(s):"),
+        CodeProblem(question="q3", expression="def FN(a, b):"),
+        CodeProblem(question="q4", expression="def FN(a, b, c):"),
+    ]
+    buckets = split_pairs_by_family(pairs)
+    assert len(buckets["zero"]) == 1
+    assert len(buckets["one"]) == 2
+    assert len(buckets["two"]) == 1
+    assert len(buckets["three_plus"]) == 1
+
+
 # --- Round 6: skeleton normalization + drop rare ---
 
 def test_normalize_skeleton_collapses_spacing():

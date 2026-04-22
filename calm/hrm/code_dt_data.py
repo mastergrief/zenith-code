@@ -460,6 +460,63 @@ def filter_rare_classes(
     return [p for p in pairs if counts[p.expression] >= min_count]
 
 
+def arg_count(skeleton: str) -> int:
+    """Return the arg count of a `def FN(<args>):` skeleton.
+    Returns -1 for malformed inputs (caller can filter).
+    0-arg (FN():) returns 0; 1-arg returns 1; varargs count as 1 arg each.
+
+    R7 lever (family split): groups skeletons by arg count so we can
+    train separate DTs per family. Addresses the R1 mode-collapse
+    finding by reducing the per-family output space.
+    """
+    m = re.match(r"^def FN\(([^)]*)\)\s*:$", skeleton.strip())
+    if not m:
+        return -1
+    args = m.group(1).strip()
+    if not args:
+        return 0
+    return len(args.split(","))
+
+
+def family_bucket(skeleton: str) -> str:
+    """Map a skeleton to its family bucket for output-family split.
+
+    Buckets (R7 lever):
+      - "zero"   → FN() — 0 args
+      - "one"    → FN(arg) — 1 arg  (most common family)
+      - "two"    → FN(a, b) — 2 args
+      - "three_plus" → FN(a, b, c, ...) — 3+ args
+
+    Returns "unknown" for malformed skeletons.
+    """
+    n = arg_count(skeleton)
+    if n < 0:
+        return "unknown"
+    if n == 0:
+        return "zero"
+    if n == 1:
+        return "one"
+    if n == 2:
+        return "two"
+    return "three_plus"
+
+
+def split_pairs_by_family(
+    pairs: List[CodeProblem],
+) -> dict:
+    """Group pairs by family bucket. Returns dict family_name → list.
+
+    R7 lever: each family trains a separate DT with its own output
+    vocabulary constraint. Session-31 precedent: per-family PTs beat
+    one combined PT by +5-15pp on each family.
+    """
+    from collections import defaultdict
+    buckets: dict = defaultdict(list)
+    for p in pairs:
+        buckets[family_bucket(p.expression)].append(p)
+    return dict(buckets)
+
+
 def build_balanced_sampler_weights(
     pairs: List[CodeProblem],
     strategy: str = "sqrt_inverse",
