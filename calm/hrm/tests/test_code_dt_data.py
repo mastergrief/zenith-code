@@ -266,3 +266,41 @@ def test_balanced_weights_unknown_strategy_raises():
     pairs = _zipf_pairs({"def FN(n):": 5})
     with pytest.raises(ValueError):
         build_balanced_sampler_weights(pairs, strategy="bogus")
+
+
+# --- Round 5: copy-gate bias init ---
+
+def test_copy_gate_bias_default_preserved():
+    """Ensure default behavior (v4 baseline) is unchanged."""
+    from calm.llm_computer.copy_augmented_delta import build_copy_augmented_delta
+    model = build_copy_augmented_delta(vocab_size=16, max_len=32)
+    assert model.copy_gate.bias.item() == pytest.approx(-2.0)
+
+
+def test_copy_gate_bias_configurable():
+    """Non-default init applies correctly."""
+    from calm.llm_computer.copy_augmented_delta import build_copy_augmented_delta
+    for init_val in [-2.0, 0.0, 1.0, 2.0]:
+        model = build_copy_augmented_delta(
+            vocab_size=16, max_len=32,
+            copy_gate_bias_init=init_val,
+        )
+        assert model.copy_gate.bias.item() == pytest.approx(init_val), (
+            f"init_val={init_val} → bias={model.copy_gate.bias.item()}"
+        )
+
+
+def test_copy_gate_bias_sigmoid_makes_sense():
+    """At init=+1.0, sigmoid(p_copy_pre_data) ~ 0.73 — favors copy path."""
+    import torch
+    from calm.llm_computer.copy_augmented_delta import build_copy_augmented_delta
+    model = build_copy_augmented_delta(
+        vocab_size=16, max_len=32, copy_gate_bias_init=1.0,
+    )
+    # With zero linear weights (default init is small), bias dominates
+    # initial gate value. sigmoid(1.0) ≈ 0.731.
+    sigmoid_bias = torch.sigmoid(model.copy_gate.bias).item()
+    assert sigmoid_bias > 0.7
+    # And default stays below 0.2
+    m2 = build_copy_augmented_delta(vocab_size=16, max_len=32)
+    assert torch.sigmoid(m2.copy_gate.bias).item() < 0.2

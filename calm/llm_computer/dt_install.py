@@ -59,6 +59,7 @@ def load_dt_checkpoint(
         n_layers=cfg["n_layers"],
         d_ffn=cfg["d_ffn"],
         n_copy_heads=cfg["n_copy_heads"],
+        copy_gate_bias_init=cfg.get("copy_gate_bias_init", -2.0),
     ).to(device)
     if cfg.get("use_chunkwise") and hasattr(model.config, "use_chunkwise"):
         model.config.use_chunkwise = True

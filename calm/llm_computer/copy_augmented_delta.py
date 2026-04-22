@@ -48,6 +48,13 @@ class CopyAugmentedDeltaConfig(DeltaNetConfig):
     """DeltaNetConfig + copy mechanism parameters (mirrors CopyAugmentedConfig)."""
     n_copy_heads: int = 4
     sep_token_id: int = 3
+    # Copy-gate bias init: -2.0 (sigmoid 0.12) favors generation at start;
+    # 0.0 (sigmoid 0.5) is neutral; +1.0 (sigmoid 0.73) favors copy.
+    # For copy-dominant tasks (args literally in prompt), higher init lets
+    # the copy path establish before gen path overwhelms. See Round 1
+    # diagnostic (gate plateaued at 0.193) and Round 4 finding ("content
+    # is wrong, not form" → gen path dominance is the real issue).
+    copy_gate_bias_init: float = -2.0
 
 
 class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
@@ -59,7 +66,7 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
         d = config.d_model
 
         self.copy_gate = nn.Linear(d, 1, bias=True)
-        nn.init.constant_(self.copy_gate.bias, -2.0)
+        nn.init.constant_(self.copy_gate.bias, config.copy_gate_bias_init)
 
         copy_dim = config.n_copy_heads * config.d_head
         self.copy_q_proj = nn.Linear(d, copy_dim, bias=False)
@@ -328,6 +335,7 @@ def build_copy_augmented_delta(
     n_copy_heads: int = 4, sep_token_id: int = 3,
     use_hard_max: bool = False,
     use_softmax_attn: bool = False,
+    copy_gate_bias_init: float = -2.0,
 ) -> CopyAugmentedDeltaNet:
     """Build a CopyAugmentedDeltaNet mirroring PT's default sizing."""
     cfg = CopyAugmentedDeltaConfig(
@@ -336,6 +344,7 @@ def build_copy_augmented_delta(
         n_copy_heads=n_copy_heads, sep_token_id=sep_token_id,
         use_hard_max=use_hard_max,
         use_delta_net=True, use_softmax_attn=use_softmax_attn,
+        copy_gate_bias_init=copy_gate_bias_init,
     )
     assert cfg.d_head == 2, f"d_head must be 2, got {cfg.d_head}"
     return CopyAugmentedDeltaNet(cfg)

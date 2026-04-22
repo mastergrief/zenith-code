@@ -139,6 +139,7 @@ def train(
     plateau_patience: int = 5,    # val evals with no improvement → [PLATEAU]
     plateau_min_delta: float = 0.005,   # improvement threshold
     balanced_sampler: str = "none",     # "none", "inverse", "sqrt_inverse", "capped"
+    copy_gate_bias_init: float = -2.0,  # -2.0 v4 default (favors gen); 0.0 neutral; +1.0 favors copy
 ):
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
@@ -179,7 +180,10 @@ def train(
         n_layers=n_layers,
         d_ffn=d_ffn,
         n_copy_heads=n_copy_heads,
+        copy_gate_bias_init=copy_gate_bias_init,
     ).to(device)
+    print(f"[train] copy_gate_bias_init={copy_gate_bias_init} "
+          f"(sigmoid = {torch.sigmoid(torch.tensor(copy_gate_bias_init)).item():.3f})")
     # Enable chunkwise for training speed (set on config if supported)
     if hasattr(model, "config") and hasattr(model.config, "use_chunkwise"):
         model.config.use_chunkwise = True
@@ -245,6 +249,7 @@ def train(
                         "d_ffn": d_ffn,
                         "n_copy_heads": n_copy_heads,
                         "use_chunkwise": True,
+                        "copy_gate_bias_init": copy_gate_bias_init,
                     },
                     "epoch": ep,
                     "val_autoreg": acc,
@@ -300,6 +305,10 @@ if __name__ == "__main__":
                     choices=["none", "inverse", "sqrt_inverse", "capped"],
                     help="Upsample rare skeleton classes during training "
                          "(Round 3 lever). Default none (uniform shuffle).")
+    ap.add_argument("--copy-gate-bias-init", type=float, default=-2.0,
+                    help="Initial bias for copy gate (Round 5 lever). "
+                         "-2.0 (v4 default, favors gen); 0.0 (neutral); "
+                         "+1.0 (favors copy).")
     args = ap.parse_args()
     train(
         epochs=args.epochs,
@@ -312,4 +321,5 @@ if __name__ == "__main__":
         seed=args.seed,
         device=args.device,
         balanced_sampler=args.balanced_sampler,
+        copy_gate_bias_init=args.copy_gate_bias_init,
     )
