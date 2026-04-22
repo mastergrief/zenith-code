@@ -386,3 +386,207 @@ FIBONACCI_SPEC = FacadeSpec(
     operand_count=1,
     max_tokens=30,
 )
+
+
+# --- M1 arc: more auto-generated facades (2026-04-22) ---
+
+COMBINATIONS_SPEC = FacadeSpec(
+    name="Combinations",
+    module_name="combinations_auto",
+    description="combinations(n, k) — binomial coefficient C(n, k).",
+    parse_patterns=[
+        r"(-?\d+)\s+choose\s+(-?\d+)",
+        r"\bC\s*\(\s*(-?\d+)\s*,\s*(-?\d+)\s*\)",
+        r"combinations?\s+of\s+(-?\d+)\s+(?:choose|taken?)\s+(-?\d+)",
+        r"combinations?\s*\(\s*(-?\d+)\s*,\s*(-?\d+)\s*\)",
+        r"\bbinomial\s+coefficient\s+of\s+(-?\d+)\s+and\s+(-?\d+)",
+    ],
+    eval_expr="combinations({a}, {b})",
+    max_operand=100,
+    operand_count=2,
+    max_tokens=40,
+)
+
+PERMUTATIONS_SPEC = FacadeSpec(
+    name="Permutations",
+    module_name="permutations_auto",
+    description="permutations(n, k) — P(n, k) = n! / (n-k)!.",
+    parse_patterns=[
+        r"(-?\d+)\s+permute\s+(-?\d+)",
+        r"\bP\s*\(\s*(-?\d+)\s*,\s*(-?\d+)\s*\)",
+        r"permutations?\s+of\s+(-?\d+)\s+(?:taken?|choose)\s+(-?\d+)",
+        r"permutations?\s*\(\s*(-?\d+)\s*,\s*(-?\d+)\s*\)",
+    ],
+    eval_expr="permutations({a}, {b})",
+    max_operand=50,
+    operand_count=2,
+    max_tokens=40,
+)
+
+POWER_SPEC = FacadeSpec(
+    name="Power",
+    module_name="power_auto",
+    description="pow(a, b) — a raised to the power b, integer exponent.",
+    parse_patterns=[
+        # "2 to the power 10" / "2 to the 10th power"
+        r"(-?\d+)\s+to\s+the\s+(?:power\s+(?:of\s+)?)?(-?\d+)(?:(?:st|nd|rd|th)\s+power)?",
+        # "2^10" / "2 ^ 10"
+        r"(-?\d+)\s*\^\s*(-?\d+)",
+        # "2**10"
+        r"(-?\d+)\s*\*\*\s*(-?\d+)",
+        # "pow(2, 10)"
+        r"\bpow\s*\(\s*(-?\d+)\s*,\s*(-?\d+)\s*\)",
+        # "2 raised to the 10"
+        r"(-?\d+)\s+raised\s+to\s+(?:the\s+)?(-?\d+)(?:(?:st|nd|rd|th)\s+power)?",
+    ],
+    eval_expr="pow({a}, {b})",
+    max_operand=30,    # pow(2, 30) is ~1B; keep bounded for sane tokens
+    operand_count=2,
+    max_tokens=40,
+)
+
+NEXT_PRIME_SPEC = FacadeSpec(
+    name="NextPrime",
+    module_name="next_prime_auto",
+    description="next_prime(n) — smallest prime strictly greater than n.",
+    parse_patterns=[
+        r"next\s+prime\s+(?:after|greater\s+than|above)\s+(-?\d+)",
+        r"smallest\s+prime\s+(?:greater|larger|bigger)\s+than\s+(-?\d+)",
+        r"prime\s+(?:number\s+)?after\s+(-?\d+)",
+        r"next_prime\s*\(\s*(-?\d+)\s*\)",
+    ],
+    eval_expr="next_prime({a})",
+    max_operand=100000,
+    operand_count=1,
+    max_tokens=30,
+)
+
+
+# ============================================================================
+# Level-2: MetaFacade — auto-synthesize the FacadeSpec itself
+# ============================================================================
+#
+# Given just (fn_name, arity, domain_name), emit a FacadeSpec whose
+# regex catalog covers the canonical NL patterns for that operation.
+#
+# Upgrade over Level-1: the spec itself is no longer hand-written.
+# Code-generation responsibility moves from human to substrate while
+# CALM oracle validation remains the correctness gate.
+#
+# Bounded synthesis scope: regex templates are deterministic per arity
+# (1-arg / 2-arg math function with integer operands). Level-3
+# (MetaMetaFacade) extends this to operations with non-integer outputs,
+# non-regex parsing (e.g. date strings), and structural arity>=3.
+
+
+class MetaFacade:
+    """Synthesizes FacadeSpec objects from a function-name + arity pair.
+
+    The template library codifies the common English patterns for
+    N-argument math functions. Each pattern is a regex with N integer
+    capture groups. The synthesizer assembles a FacadeSpec using these
+    patterns plus a standard safe_eval template.
+
+    Usage:
+        spec = MetaFacade.from_oracle(
+            fn_name="combinations",
+            arity=2,
+            max_operand=100,
+            extra_patterns=[r"(-?\\d+)\\s+choose\\s+(-?\\d+)"],
+        )
+        # spec is functionally equivalent to a hand-written FacadeSpec
+    """
+
+    @staticmethod
+    def _canonical_patterns_1arg(fn_name: str) -> list[str]:
+        """Regexes for single-operand NL patterns around `fn_name`."""
+        fn = re.escape(fn_name)
+        return [
+            # "fn_name(N)" / "fn_name ( N )"
+            rf"{fn}\s*\(\s*(-?\d+)\s*\)",
+            # "fn_name of N"
+            rf"{fn}\s+of\s+(-?\d+)",
+            # "what is fn_name N"
+            rf"(?:what\s+is\s+)?{fn}\s+(-?\d+)",
+        ]
+
+    @staticmethod
+    def _canonical_patterns_2arg(fn_name: str) -> list[str]:
+        """Regexes for two-operand NL patterns around `fn_name`."""
+        fn = re.escape(fn_name)
+        return [
+            # "fn_name(A, B)"
+            rf"{fn}\s*\(\s*(-?\d+)\s*,\s*(-?\d+)\s*\)",
+            # "fn_name of A and B"
+            rf"{fn}\s+of\s+(-?\d+)\s+and\s+(-?\d+)",
+            # "A fn_name B" — for verb-like names ("choose", "permute")
+            rf"(-?\d+)\s+{fn}\s+(-?\d+)",
+            # "fn_name A by B" / "fn_name A with B"
+            rf"{fn}\s+(-?\d+)\s+(?:by|with|taken)\s+(-?\d+)",
+        ]
+
+    @classmethod
+    def from_oracle(
+        cls,
+        fn_name: str,
+        arity: int,
+        domain_name: str | None = None,
+        module_name: str | None = None,
+        description: str | None = None,
+        max_operand: int | None = None,
+        max_tokens: int = 40,
+        extra_patterns: list[str] | None = None,
+    ) -> FacadeSpec:
+        """Synthesize a FacadeSpec for a safe_eval oracle function.
+
+        `fn_name`: name in safe_eval (e.g. "factorial", "combinations").
+        `arity`: 1 or 2.
+        `domain_name`: PascalCase class-prefix (defaults to Capitalized fn_name).
+        `module_name`: snake_case file stem (defaults to "{fn_name}_auto").
+        `max_operand`: guard beyond which the facade rejects.
+        `extra_patterns`: user-supplied regex templates appended AFTER the
+            canonical patterns (lower priority — canonical first-match-wins).
+        """
+        if arity not in (1, 2):
+            raise ValueError(f"arity must be 1 or 2, got {arity}")
+
+        domain = domain_name or fn_name.capitalize()
+        module = module_name or f"{fn_name.lower()}_auto"
+        desc = description or f"{fn_name}(...) via CALM safe_eval oracle."
+
+        if arity == 1:
+            patterns = cls._canonical_patterns_1arg(fn_name)
+            eval_expr = f"{fn_name}({{a}})"
+        else:
+            patterns = cls._canonical_patterns_2arg(fn_name)
+            eval_expr = f"{fn_name}({{a}}, {{b}})"
+
+        if extra_patterns:
+            patterns.extend(extra_patterns)
+
+        return FacadeSpec(
+            name=domain,
+            module_name=module,
+            description=desc,
+            parse_patterns=patterns,
+            eval_expr=eval_expr,
+            max_operand=max_operand,
+            operand_count=arity,
+            max_tokens=max_tokens,
+        )
+
+    @classmethod
+    def batch_from_oracles(
+        cls,
+        oracle_specs: list[dict],
+    ) -> list[FacadeSpec]:
+        """Emit a FacadeSpec list from a list of oracle descriptors.
+        Each dict passes **kwargs to from_oracle.
+
+        Example:
+            specs = MetaFacade.batch_from_oracles([
+                {"fn_name": "factorial", "arity": 1, "max_operand": 20},
+                {"fn_name": "combinations", "arity": 2, "max_operand": 100},
+            ])
+        """
+        return [cls.from_oracle(**d) for d in oracle_specs]
