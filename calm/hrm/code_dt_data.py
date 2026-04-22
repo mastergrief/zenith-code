@@ -97,6 +97,7 @@ _TARGET_CORPORA = (
     "crownelius.jsonl",
     "nohurry_code.jsonl",
     "python.jsonl",
+    "stdlib_signatures.jsonl",  # R25: 835 stdlib fns with perfect sig
 )
 
 

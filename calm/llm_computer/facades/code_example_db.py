@@ -64,6 +64,8 @@ DEFAULT_CORPORA = [
     REPO_ROOT / "agents/distill/data/generated/data_structures.jsonl",
     REPO_ROOT / "agents/distill/data/generated/datetime_utils.jsonl",      # date/time correctness
     REPO_ROOT / "agents/distill/data/generated/functional.jsonl",          # HOF idioms
+    # R25: stdlib signatures (perfect-quality ground truth for skeletons)
+    REPO_ROOT / "agents/distill/data/stdlib_signatures.jsonl",             # ~835 stdlib fns
     # 9B-generated per-language
     REPO_ROOT / "agents/distill/data/python.jsonl",                        # 25 9B
     REPO_ROOT / "agents/distill/data/typescript.jsonl",                    # 39 9B
