@@ -31,6 +31,7 @@ import argparse
 import json
 import time
 from pathlib import Path
+from typing import Optional
 
 import torch
 import torch.nn.functional as F
@@ -55,18 +56,67 @@ from calm.hrm.rare_class_synth import synthesize_rare_class_pairs
 from calm.llm_computer.copy_augmented_delta import build_copy_augmented_delta
 
 
+class EMAWeights:
+    """R21: Exponential Moving Average of model weights.
+
+    Shadow copy of params updated each step as ema = decay*ema + (1-decay)*current.
+    At eval time, temporarily swap shadow weights into the model, then restore.
+
+    Decay 0.999 typical (halves in ~700 steps). Smaller → faster tracking
+    (less averaging); larger → slower (more averaging).
+    """
+    def __init__(self, model, decay: float = 0.999):
+        self.decay = decay
+        self._shadow = {
+            n: p.data.clone().detach()
+            for n, p in model.named_parameters() if p.requires_grad
+        }
+        self._saved: dict = {}
+
+    @torch.no_grad()
+    def update(self, model) -> None:
+        d = self.decay
+        for n, p in model.named_parameters():
+            if n in self._shadow and p.requires_grad:
+                self._shadow[n].mul_(d).add_(p.data, alpha=1.0 - d)
+
+    def apply_shadow(self, model) -> None:
+        """Swap shadow weights into model, saving originals for restore."""
+        for n, p in model.named_parameters():
+            if n in self._shadow:
+                self._saved[n] = p.data.clone()
+                p.data.copy_(self._shadow[n])
+
+    def restore(self, model) -> None:
+        """Restore the training weights (saved during apply_shadow)."""
+        for n, p in model.named_parameters():
+            if n in self._saved:
+                p.data.copy_(self._saved[n])
+        self._saved = {}
+
+    def state_dict(self) -> dict:
+        return {"decay": self.decay, "shadow": self._shadow}
+
+    def load_state_dict(self, state: dict) -> None:
+        self.decay = state["decay"]
+        self._shadow = state["shadow"]
+
+
 CHECKPOINT_PATH = Path("calm/hrm/checkpoints/dt_code_skel_best.pt")
 METRICS_PATH = Path("calm/hrm/checkpoints/dt_code_skel_metrics.json")
 
 
-def autoreg_eval(model, val_pairs, device, max_gen=40):
-    """Greedy decode from <bos>prob<sep>, measure exact-skeleton match."""
+def autoreg_eval(model, val_pairs, device, max_gen=40, cap=None):
+    """Greedy decode from <bos>prob<sep>, measure exact-skeleton match.
+    Optional `cap` subsamples val to first N pairs for speed."""
     bos = _CODE_CHAR_TO_ID["<bos>"]
     sep = _CODE_CHAR_TO_ID["<sep>"]
     eos = _CODE_CHAR_TO_ID["<eos>"]
     model.eval()
     n_correct = 0
     samples = []
+    if cap is not None and len(val_pairs) > cap:
+        val_pairs = val_pairs[:cap]
     for p in val_pairs:
         from calm.hrm.code_dt_data import code_tokenize
         prefix = code_tokenize(p.question, add_bos=True, add_eos=False) + [sep]
@@ -154,6 +204,8 @@ def train(
     synth_rare_max: int = 20,           # R9: max raw count to synthesize
     dedupe_ambiguous: bool = False,     # R19: drop/resolve same-prompt→multiple-skeletons
     num_workers: int = 0,               # R20: DataLoader parallelism
+    eval_cap: int = 300,                # R20b: subsample val during training for speed
+    ema_decay: float = 0.0,             # R21: EMA of weights; 0 = off, 0.999 recommended
 ):
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
@@ -273,6 +325,11 @@ def train(
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optim, T_max=epochs)
 
+    ema: Optional[EMAWeights] = None
+    if ema_decay > 0.0:
+        ema = EMAWeights(model, decay=ema_decay)
+        print(f"[train] R21 EMA enabled (decay={ema_decay})")
+
     best_acc = 0.0
     history: list[dict] = []
     CHECKPOINT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -298,6 +355,8 @@ def train(
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optim.step()
+            if ema is not None:
+                ema.update(model)
             total_loss += loss.item()
             n_batches += 1
         avg_loss = total_loss / max(n_batches, 1)
@@ -308,13 +367,22 @@ def train(
                "elapsed_s": round(elapsed, 1)}
 
         if ep % eval_every == 0 or ep == epochs:
-            acc, samples = autoreg_eval(model, val_pairs, device)
+            # R21: evaluate with EMA weights (shadow) when enabled.
+            if ema is not None:
+                ema.apply_shadow(model)
+            acc, samples = autoreg_eval(model, val_pairs, device, cap=eval_cap)
+            if ema is not None:
+                ema.restore(model)
             rec["val_autoreg"] = round(acc, 4)
             print(f"[train] ep{ep:3d} loss={avg_loss:.4f} tf={tf_ratio:.2f} "
                   f"val_autoreg={acc:.3f} elapsed={elapsed:.0f}s")
             if acc > best_acc + plateau_min_delta:
                 best_acc = acc
                 evals_since_improvement = 0
+                # Save EMA-weighted state_dict when EMA is active — that's
+                # the model that produced the best autoreg measurement.
+                if ema is not None:
+                    ema.apply_shadow(model)
                 torch.save({
                     "model_state": model.state_dict(),
                     "config": {
@@ -334,6 +402,9 @@ def train(
                     "n_val": len(val_pairs),
                 }, CHECKPOINT_PATH)
                 print(f"[train] ✓ saved (best autoreg={acc:.3f}) → {CHECKPOINT_PATH}")
+                # Restore live training weights after EMA-save
+                if ema is not None:
+                    ema.restore(model)
                 # Print 3 sample decodes
                 for i, (q, tgt, out) in enumerate(samples[:3]):
                     mark = "✓" if out.strip() == tgt.strip() else "✗"
@@ -407,6 +478,12 @@ if __name__ == "__main__":
                          "target skeletons; majority-vote on 2-skeleton cases.")
     ap.add_argument("--num-workers", type=int, default=0,
                     help="R20: DataLoader worker processes (2 recommended).")
+    ap.add_argument("--eval-cap", type=int, default=300,
+                    help="R20b: subsample val to N pairs during training "
+                         "(speeds eval; full-val post-training).")
+    ap.add_argument("--ema-decay", type=float, default=0.0,
+                    help="R21: EMA decay (0=off, 0.999 recommended). "
+                         "Eval + checkpoint save use EMA-averaged weights.")
     args = ap.parse_args()
     train(
         epochs=args.epochs,
@@ -428,4 +505,6 @@ if __name__ == "__main__":
         synth_rare_max=args.synth_rare_max,
         dedupe_ambiguous=args.dedupe_ambiguous,
         num_workers=args.num_workers,
+        eval_cap=args.eval_cap,
+        ema_decay=args.ema_decay,
     )
