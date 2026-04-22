@@ -120,6 +120,7 @@ def _clean_prob(prob: str, max_len: int = 180) -> Optional[str]:
 def _extract_skeleton(
     solution: str,
     placeholder: str = "FN",
+    max_skel_len: int = 80,
 ) -> Optional[Tuple[str, str]]:
     """Find the target function def in solution. Prefer last top-level
     `def ` (not indented) — MBPP pattern is helper classes first, target
@@ -142,12 +143,49 @@ def _extract_skeleton(
     fn_name = m.group(1)
     args = m.group(2).strip()
     skeleton = f"def {placeholder}({args}):"
-    if len(skeleton) > 80:
+    if len(skeleton) > max_skel_len:
         return None
     # Verify every char is in vocab (no Unicode / escaped chars)
     if not all(c in _ALLOWED for c in skeleton):
         return None
     return fn_name, skeleton
+
+
+_TOP_DEF_RE = re.compile(
+    r"(?:^|\n)def\s+(\w+)\s*\(([^)]*)\)\s*(?:->\s*[^:]+)?:",
+)
+
+
+def _extract_all_skeletons(
+    solution: str,
+    placeholder: str = "FN",
+    max_skel_len: int = 80,
+) -> List[Tuple[str, str]]:
+    """R8 lever: extract EVERY top-level `def` per solution, not just the
+    last. MBPP-style solutions typically have 1-2 helper fns + target fn;
+    HumanEvalPlus and BigCodeBench often have 3-5. Returns list of
+    (fn_name, skeleton) pairs. Empty list on no matches.
+
+    Uses `_TOP_DEF_RE` which anchors on start-of-file or `\\n` (not
+    `^\\s*`), correctly excluding indented class-method defs.
+    """
+    sol = solution.replace("\r", "")
+    out: List[Tuple[str, str]] = []
+    seen_skels: set = set()
+    for m in _TOP_DEF_RE.finditer(sol):
+        fn_name = m.group(1)
+        args = m.group(2).strip()
+        skeleton = f"def {placeholder}({args}):"
+        if len(skeleton) > max_skel_len:
+            continue
+        if not all(c in _ALLOWED for c in skeleton):
+            continue
+        # Dedup within a single solution (two defs with same args collapse)
+        if skeleton in seen_skels:
+            continue
+        seen_skels.add(skeleton)
+        out.append((fn_name, skeleton))
+    return out
 
 
 def extract_pairs_from_db(
@@ -158,6 +196,7 @@ def extract_pairs_from_db(
     augment: bool = False,
     augment_factor: int = 3,
     aug_seed: int = 42,
+    extract_all_defs: bool = False,
 ) -> List[CodeProblem]:
     """Mine (problem, skeleton) pairs from CodeExampleDB.
 
@@ -166,6 +205,11 @@ def extract_pairs_from_db(
     original pair spawns N paraphrases. A pair where the prompt
     doesn't start with a known paraphrase template yields 1 pair (no
     aug applied). Roughly 2-3× overall multiplier at factor=3.
+
+    With `extract_all_defs=True` (R8 lever), emit ALL top-level defs
+    per solution, not just the last. Problem description repeats; each
+    distinct skeleton spawns its own pair. 2-3× raw pairs without new
+    corpora.
     """
     if db is None:
         from calm.llm_computer.facades.code_example_db import CodeExampleDB
@@ -179,13 +223,17 @@ def extract_pairs_from_db(
         prob = _clean_prob(ex.problem, max_len=max_prob_len)
         if prob is None:
             continue
-        result = _extract_skeleton(ex.solution)
-        if result is None:
-            continue
-        _, skeleton = result
-        if len(skeleton) > max_skel_len:
-            continue
-        pairs.append(CodeProblem(question=prob, expression=skeleton))
+        if extract_all_defs:
+            results = _extract_all_skeletons(ex.solution,
+                                              max_skel_len=max_skel_len)
+            for _, skeleton in results:
+                pairs.append(CodeProblem(question=prob, expression=skeleton))
+        else:
+            result = _extract_skeleton(ex.solution, max_skel_len=max_skel_len)
+            if result is None:
+                continue
+            _, skeleton = result
+            pairs.append(CodeProblem(question=prob, expression=skeleton))
 
     if augment:
         pairs = _paraphrase_augment(pairs, factor=augment_factor, seed=aug_seed)
@@ -306,6 +354,148 @@ _PARAPHRASE_TEMPLATES = [
          "Divide",
          "Partition",
          "Break",
+     ]),
+    # R8: expanded coverage — prefixes in Claude-authored + HumanEvalPlus
+    # that previously escaped the template match (80% of prompts in those
+    # corpora fell through).
+    (r"^(?:create|creates)\b",
+     [
+         "Create",
+         "Build",
+         "Construct",
+         "Make",
+         "Define",
+     ]),
+    (r"^(?:parse|parses)\b",
+     [
+         "Parse",
+         "Extract from",
+         "Interpret",
+         "Process the",
+     ]),
+    (r"^(?:handle|handles)\b",
+     [
+         "Handle",
+         "Deal with",
+         "Process",
+         "Manage",
+     ]),
+    (r"^(?:process|processes)\b",
+     [
+         "Process",
+         "Transform",
+         "Work with",
+         "Handle",
+     ]),
+    (r"^(?:build|builds)\b",
+     [
+         "Build",
+         "Construct",
+         "Create",
+         "Generate",
+     ]),
+    (r"^(?:generate|generates)\b",
+     [
+         "Generate",
+         "Produce",
+         "Create",
+         "Emit",
+     ]),
+    (r"^(?:validate|validates)\b",
+     [
+         "Validate",
+         "Verify",
+         "Check",
+         "Ensure",
+     ]),
+    (r"^(?:format|formats)\b",
+     [
+         "Format",
+         "Render",
+         "Serialize",
+         "Print",
+     ]),
+    (r"^(?:extract|extracts)\b",
+     [
+         "Extract",
+         "Pull",
+         "Get",
+         "Retrieve",
+     ]),
+    (r"^(?:compute|computes)\b",
+     [
+         "Compute",
+         "Calculate",
+         "Find",
+         "Determine",
+     ]),
+    (r"^(?:determine|determines)\b",
+     [
+         "Determine",
+         "Compute",
+         "Find",
+         "Identify",
+     ]),
+    (r"^(?:detect|detects)\b",
+     [
+         "Detect",
+         "Identify",
+         "Check for",
+         "Find",
+     ]),
+    (r"^(?:filter|filters)\b",
+     [
+         "Filter",
+         "Select",
+         "Keep",
+         "Retain",
+     ]),
+    (r"^(?:group|groups)\b",
+     [
+         "Group",
+         "Cluster",
+         "Bucket",
+         "Aggregate",
+     ]),
+    (r"^(?:reverse|reverses)\b",
+     [
+         "Reverse",
+         "Invert",
+         "Flip",
+     ]),
+    (r"^(?:sum|sums)\b",
+     [
+         "Sum",
+         "Add up",
+         "Total",
+         "Compute the sum of",
+     ]),
+    (r"^(?:multiply|multiplies)\b",
+     [
+         "Multiply",
+         "Compute the product of",
+         "Take the product of",
+     ]),
+    (r"^(?:replace|replaces)\b",
+     [
+         "Replace",
+         "Substitute",
+         "Swap",
+         "Change",
+     ]),
+    (r"^(?:add|adds)\b",
+     [
+         "Add",
+         "Append",
+         "Insert",
+         "Include",
+     ]),
+    (r"^(?:get|gets)\b",
+     [
+         "Get",
+         "Retrieve",
+         "Fetch",
+         "Obtain",
      ]),
 ]
 

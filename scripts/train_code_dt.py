@@ -145,6 +145,7 @@ def train(
     copy_gate_bias_init: float = -2.0,  # -2.0 v4 default (favors gen); 0.0 neutral; +1.0 favors copy
     normalize_skeletons: bool = False,  # R6: collapse spacing variants (FN(a, b) ≡ FN(a,b))
     drop_rare_count: int = 0,           # R6: drop training classes with count < N (0 = keep all)
+    extract_all_defs: bool = False,     # R8: emit ALL top-level defs per solution (+19% raw)
 ):
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
@@ -152,7 +153,8 @@ def train(
     # --- Data ---
     print(f"[train] extracting pairs from CodeExampleDB "
           f"(augment={augment}, factor={augment_factor})...")
-    pairs = extract_pairs_from_db(augment=augment, augment_factor=augment_factor)
+    pairs = extract_pairs_from_db(augment=augment, augment_factor=augment_factor,
+                                    extract_all_defs=extract_all_defs)
     print(f"[train] total pairs: {len(pairs)}")
 
     if normalize_skeletons:
@@ -340,6 +342,9 @@ if __name__ == "__main__":
     ap.add_argument("--drop-rare-count", type=int, default=0,
                     help="R6 lever: drop training classes with count < N "
                          "(0 = keep all). Val set unaffected.")
+    ap.add_argument("--extract-all-defs", action="store_true",
+                    help="R8 lever: emit ALL top-level defs per solution "
+                         "(not just last). +19%% raw pairs.")
     args = ap.parse_args()
     train(
         epochs=args.epochs,
@@ -355,4 +360,5 @@ if __name__ == "__main__":
         copy_gate_bias_init=args.copy_gate_bias_init,
         normalize_skeletons=args.normalize_skeletons,
         drop_rare_count=args.drop_rare_count,
+        extract_all_defs=args.extract_all_defs,
     )

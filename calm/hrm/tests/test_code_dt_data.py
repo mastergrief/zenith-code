@@ -290,6 +290,65 @@ def test_copy_gate_bias_configurable():
         )
 
 
+# --- Round 8: data expansion (extract-all-defs) ---
+
+def test_extract_all_skeletons_single_def():
+    from calm.hrm.code_dt_data import _extract_all_skeletons
+    sol = "def target(x):\n    return x"
+    out = _extract_all_skeletons(sol)
+    assert out == [("target", "def FN(x):")]
+
+
+def test_extract_all_skeletons_multiple_defs():
+    """Multi-def solution: both defs emitted as separate skeletons."""
+    from calm.hrm.code_dt_data import _extract_all_skeletons
+    sol = """
+def helper(a):
+    return a + 1
+
+def target(x, y):
+    return helper(x) + y
+"""
+    out = _extract_all_skeletons(sol)
+    skels = {s for _, s in out}
+    assert "def FN(a):" in skels
+    assert "def FN(x, y):" in skels
+
+
+def test_extract_all_skeletons_dedups_within_solution():
+    """Same skeleton twice in one solution = emit once."""
+    from calm.hrm.code_dt_data import _extract_all_skeletons
+    sol = """
+def f1(n):
+    return n
+
+def f2(n):
+    return n + 1
+"""
+    out = _extract_all_skeletons(sol)
+    skels = [s for _, s in out]
+    # Both defs have same args → dedup to one skeleton
+    assert skels.count("def FN(n):") == 1
+
+
+def test_extract_all_skeletons_skips_indented():
+    """Class-method defs are indented, not top-level."""
+    from calm.hrm.code_dt_data import _extract_all_skeletons
+    sol = """
+class Helper:
+    def method(self):
+        pass
+
+def target(x):
+    return x
+"""
+    out = _extract_all_skeletons(sol)
+    skels = {s for _, s in out}
+    assert "def FN(x):" in skels
+    # method is indented → not included
+    assert "def FN(self):" not in skels
+
+
 # --- Round 7: output-family split ---
 
 def test_arg_count_zero():
