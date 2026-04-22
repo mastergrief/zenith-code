@@ -27,8 +27,8 @@ assert "m" in globals() and "tok" in globals(), (  # type: ignore[name-defined]
     "run via bin/gemma-run scripts/r22d_rerun_final_config.py"
 )
 
-# Read threshold from globals if set, else default
-MIN_MARGIN = globals().get("MIN_MARGIN", 22.0)
+# Read threshold from globals if set, else default to R22f winner
+MIN_MARGIN = globals().get("MIN_MARGIN", 14.5)
 
 sys.path.insert(0, str(ROOT))
 from calm.llm_computer.gemma_substrate import KVCache
