@@ -262,58 +262,55 @@ def train(
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
 
-    # --- Data ---
+    # --- Data (R27: split-before-aug to prevent paraphrase leakage) ---
+    # Pipeline:
+    #   1. extract raw pairs (no aug)
+    #   2. normalize + dedupe
+    #   3. SPLIT raw into train_raw / val_raw — val never sees train problems
+    #   4. synthesize rare classes (train only)
+    #   5. paraphrase-aug (train only)
+    #   6. drop rare (train only)
+    # Val is raw — no paraphrase variants, no synthetic pairs. Honest
+    # held-out measurement.
+    print(f"[train] R27 pipeline: split-before-aug (honest val)")
+    raw_pairs = extract_pairs_from_db(augment=False,
+                                        extract_all_defs=extract_all_defs)
+    print(f"[train] raw pairs: {len(raw_pairs)}")
+    if normalize_skeletons:
+        raw_pairs = [CodeProblem(question=p.question,
+                                   expression=normalize_skeleton(p.expression))
+                     for p in raw_pairs]
+        n_classes = len(set(p.expression for p in raw_pairs))
+        print(f"[train] normalized raw → {n_classes} classes")
+    if dedupe_ambiguous:
+        n_before = len(raw_pairs)
+        raw_pairs = dedupe_ambiguous_prompts(raw_pairs)
+        n_classes_after = len(set(p.expression for p in raw_pairs))
+        print(f"[train] R19 dedup ambiguous: "
+              f"{n_before} → {len(raw_pairs)} pairs ({n_classes_after} classes)")
+
+    # Split RAW into train/val BEFORE any aug or synthesis
+    train_raw, val_pairs = split_pairs(raw_pairs, val_frac=val_frac, seed=seed)
+    print(f"[train] raw split: {len(train_raw)} train_raw / {len(val_pairs)} val "
+          f"(val is unaug, unshared with train)")
+
+    # Now expand train side only
     if synth_rare > 0:
-        # R9 path: extract raw (no aug), normalize, synthesize rare classes,
-        # THEN aug so synthetic prompts also get paraphrased.
-        print(f"[train] R9 path: extract raw + synthesize rare + aug")
-        raw_pairs = extract_pairs_from_db(augment=False,
-                                            extract_all_defs=extract_all_defs)
-        print(f"[train] raw pairs: {len(raw_pairs)}")
-        if normalize_skeletons:
-            raw_pairs = [CodeProblem(question=p.question,
-                                       expression=normalize_skeleton(p.expression))
-                         for p in raw_pairs]
-            n_classes = len(set(p.expression for p in raw_pairs))
-            print(f"[train] normalized raw → {n_classes} classes")
-        if dedupe_ambiguous:
-            n_before = len(raw_pairs)
-            raw_pairs = dedupe_ambiguous_prompts(raw_pairs)
-            n_classes_after = len(set(p.expression for p in raw_pairs))
-            print(f"[train] R19 dedup ambiguous: "
-                  f"{n_before} → {len(raw_pairs)} pairs ({n_classes_after} classes)")
         synth_pairs = synthesize_rare_class_pairs(
-            raw_pairs, min_count=synth_rare_min, max_count=synth_rare_max,
+            train_raw, min_count=synth_rare_min, max_count=synth_rare_max,
             target_per_class=synth_rare, seed=seed,
         )
-        print(f"[train] R9 synthetic: {len(synth_pairs)} pairs across "
-              f"{len(set(p.expression for p in synth_pairs))} rare classes")
-        combined = raw_pairs + synth_pairs
-        if augment:
-            pairs = _paraphrase_augment(combined, factor=augment_factor, seed=seed)
-        else:
-            pairs = combined
-        print(f"[train] after aug (factor={augment_factor}): {len(pairs)} pairs, "
-              f"{len(set(p.expression for p in pairs))} classes")
-    else:
-        # Original path: aug at extract-time
-        print(f"[train] extracting pairs from CodeExampleDB "
-              f"(augment={augment}, factor={augment_factor})...")
-        pairs = extract_pairs_from_db(augment=augment,
-                                        augment_factor=augment_factor,
-                                        extract_all_defs=extract_all_defs)
-        print(f"[train] total pairs: {len(pairs)}")
-        if normalize_skeletons:
-            n_classes_before = len(set(p.expression for p in pairs))
-            pairs = [CodeProblem(question=p.question,
-                                  expression=normalize_skeleton(p.expression))
-                     for p in pairs]
-            n_classes_after = len(set(p.expression for p in pairs))
-            print(f"[train] normalized skeletons: "
-                  f"{n_classes_before} → {n_classes_after} classes "
-                  f"(-{n_classes_before - n_classes_after} spacing variants)")
+        print(f"[train] R9 synthetic (train-only): {len(synth_pairs)} pairs "
+              f"across {len(set(p.expression for p in synth_pairs))} rare classes")
+        train_raw = train_raw + synth_pairs
 
-    train_pairs, val_pairs = split_pairs(pairs, val_frac=val_frac, seed=seed)
+    if augment:
+        train_pairs = _paraphrase_augment(train_raw, factor=augment_factor,
+                                            seed=seed)
+        print(f"[train] train aug (factor={augment_factor}): {len(train_raw)} "
+              f"→ {len(train_pairs)} pairs")
+    else:
+        train_pairs = train_raw
 
     if drop_rare_count > 0:
         n_before = len(train_pairs)
@@ -323,7 +320,7 @@ def train(
               f"{n_before} → {len(train_pairs)} train pairs, "
               f"{n_train_classes} classes")
 
-    print(f"[train] split: {len(train_pairs)} train / {len(val_pairs)} val")
+    print(f"[train] FINAL split: {len(train_pairs)} train / {len(val_pairs)} val")
 
     train_ds = CodePairDataset(train_pairs, max_len=max_len)
     # R20: num_workers + pin_memory overlap CPU data prep with GPU compute
