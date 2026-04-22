@@ -55,11 +55,13 @@ class Icd10RecallFacade:
     DEFAULT_BOOST = 50.0
     DEFAULT_MAX_TOKENS = 80   # diagnoses are longer than digit answers
 
-    # Code pattern — ICD-10 codes are 1 letter + 2 digits optional
-    # + optional "." + up to 4 more alphanumeric chars. e.g. J45.909,
-    # E11.9, S72.001A, I10, M54.5
+    # Code pattern — ICD-10 codes are 1 letter + 2 digits + optional "."
+    # + up to 5 alphanumeric chars (digits AND letters interleaved, e.g.
+    # T44.6X4D, V80.22XA, W10.0XXA, S72.452H). Previous regex restricted
+    # the post-dot segment to \d{1,4}[A-Z]? which failed on codes with
+    # interior letters. New pattern: [0-9A-Z]{1,5} after the dot.
     _CODE_RE = re.compile(
-        r"\b([A-TV-Z])(\d{2})(?:\.(\d{1,4}[A-Z]?))?\b"
+        r"\b([A-TV-Z])(\d{2})(?:\.([0-9A-Z]{1,5}))?\b"
     )
 
     def __init__(
@@ -125,6 +127,7 @@ class Icd10RecallFacade:
         max_tokens: Optional[int] = None,
         boost: Optional[float] = None,
         use_bias: bool = True,
+        db_fallback: bool = True,
     ) -> Icd10Result:
         if self._gemma is None or self._tokenizer is None:
             raise RuntimeError("facade not installed — call install() first")
@@ -157,6 +160,15 @@ class Icd10RecallFacade:
             injected_prompt = self._inject_answer_in_context(user_form, diagnosis)
             retry_boost = boost * 3.0
             text = self._generate(injected_prompt, bias_ids, retry_boost, max_tokens)
+
+            # Final fallback: some codes (T44.6X4D, T40.5X4D, V80.22XA,
+            # W10.0XXA — "code-analysis" format prior class) resist even
+            # the in-context-injection retry. When DB has the answer,
+            # return it directly rather than Gemma's template output.
+            # Loses "Gemma narrates" property but guarantees correctness
+            # for the DB-hit tier-3 case. Opt out via db_fallback=False.
+            if db_fallback and self._is_code_echo(text, user_form):
+                text = diagnosis
 
         return Icd10Result(
             prompt=prompt, code_raw=user_form, code=normalized,

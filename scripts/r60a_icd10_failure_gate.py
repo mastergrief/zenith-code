@@ -33,6 +33,10 @@ assert "m" in globals() and "tok" in globals(), (  # type: ignore[name-defined]
 )
 
 sys.path.insert(0, str(ROOT))
+# Force-reload to pick up edits since daemon start (cache invariant).
+import importlib
+import calm.llm_computer.facades.icd10_recall as _icd10_mod
+importlib.reload(_icd10_mod)
 from calm.llm_computer.facades.icd10_recall import Icd10RecallFacade
 from calm.llm_computer.facades.retrieval import _monkey_patch_fast_encode
 
