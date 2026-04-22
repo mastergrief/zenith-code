@@ -892,14 +892,19 @@ def detect_refactor_opportunities(
     for fn in ast.walk(tree):
         if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
-        # Collect Assigns + Load-site counts
-        assigns: dict = {}  # name -> assign count
+        # Collect Assigns + AugAssigns + Load-site counts. AugAssign
+        # (e.g. `x += 1`) counts as a binding here so accumulators
+        # aren't misclassified as single-assignment.
+        assigns: dict = {}  # name -> binding count (Assign OR AugAssign)
         loads: dict = {}    # name -> load count
         for node in ast.walk(fn):
             if isinstance(node, ast.Assign):
                 for tgt in node.targets:
                     if isinstance(tgt, ast.Name):
                         assigns[tgt.id] = assigns.get(tgt.id, 0) + 1
+            elif isinstance(node, ast.AugAssign):
+                if isinstance(node.target, ast.Name):
+                    assigns[node.target.id] = assigns.get(node.target.id, 0) + 1
             elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
                 loads[node.id] = loads.get(node.id, 0) + 1
         for name, n_assign in assigns.items():
