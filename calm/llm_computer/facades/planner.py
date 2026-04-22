@@ -38,6 +38,7 @@ Usage:
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -46,15 +47,24 @@ from calm.llm_computer.facades.base_conversion import BaseConversionFacade
 from calm.llm_computer.facades.icd10_recall import Icd10RecallFacade
 from calm.llm_computer.facades.multi_step import MultiStepReasoningFacade
 from calm.llm_computer.facades.number_theory import NumberTheoryFacade
+from calm.llm_computer.facades.numeric_encode import NumericEncodeFacade
 
 
 @dataclass
 class PlannerResult:
     prompt: str
-    facade: Optional[str]      # 'icd10' | 'base_conv' | 'number_theory' | 'multi_step' | None
+    facade: Optional[str]      # 'icd10' | 'base_conv' | 'number_theory' | 'multi_step' | 'numeric_encode' | 'chain:<A>→<B>' | None
     used_bias: bool
     generated: str             # raw facade output OR pass-through Gemma
     parsed_value: Optional[object] = None  # facade-specific (int for math, text for ICD-10)
+    chain_steps: Optional[list] = None     # for chain: [(facade, value), ...]
+
+
+# "… in hex/binary/octal/decimal" chain suffix detector.
+_CHAIN_SUFFIX_RE = re.compile(
+    r"\bin\s+(hex|hexadecimal|binary|bin|octal|oct)\b",
+    re.IGNORECASE,
+)
 
 
 class PlannerFacade:
@@ -70,6 +80,7 @@ class PlannerFacade:
         self.base_conv = BaseConversionFacade(device=device)
         self.number_theory = NumberTheoryFacade(device=device)
         self.multi_step = MultiStepReasoningFacade(device=device)
+        self.numeric_encode = NumericEncodeFacade(device=device)
 
     def load_icd10_db(self, path: Path | str) -> int:
         return self.icd10.load_db(path)
@@ -81,22 +92,75 @@ class PlannerFacade:
         self.base_conv.install(gemma, tokenizer)
         self.number_theory.install(gemma, tokenizer)
         self.multi_step.install(gemma, tokenizer)
+        self.numeric_encode.install(gemma, tokenizer)
 
     def detach(self):
         self.icd10.detach()
         self.base_conv.detach()
         self.number_theory.detach()
         self.multi_step.detach()
+        self.numeric_encode.detach()
         self._gemma = None
         self._tokenizer = None
 
+    def _chain_detect(self, prompt: str) -> Optional[tuple[str, int]]:
+        """Detect 'X in hex|binary|octal' chain where X is a sub-query.
+        Returns (primary_prompt, target_base) or None.
+
+        Rule: ONLY a chain when the suffix is 'in <base>' AND there's
+        no explicit decimal literal that the existing BaseConversion
+        facade would handle (so 0xFF stays with base_conv). Strips
+        the suffix and trailing punctuation so the primary classifier
+        can reparse the remainder cleanly.
+        """
+        m = _CHAIN_SUFFIX_RE.search(prompt)
+        if not m:
+            return None
+        # Base conv handles "0xFF in decimal" already — don't chain.
+        if re.search(r"\b0[xb]", prompt, re.IGNORECASE):
+            return None
+        base_map = {
+            "hex": 16, "hexadecimal": 16,
+            "binary": 2, "bin": 2,
+            "octal": 8, "oct": 8,
+        }
+        base = base_map[m.group(1).lower()]
+        # The primary sub-prompt is everything before "in <base>".
+        primary = prompt[:m.start()].rstrip(" ,?")
+        # Append a question-shaped continuation so the primary classifier
+        # matches its regex; most of those patterns don't require a ?
+        # at the end but the math regex is position-aware.
+        if not primary:
+            return None
+        primary = primary.rstrip() + "?"
+        return primary, base
+
     def classify(self, prompt: str) -> Optional[str]:
         """Returns the tag of the first facade that would parse the
-        prompt, or None for pass-through. Pure, no inference."""
+        prompt, or None for pass-through. Pure, no inference.
+
+        Chain case ('X in hex'): returns 'chain:<primary>→encode<base>'
+        where <primary> is one of the single-facade tags.
+        """
+        # Chain detection first — if it fires, the primary must also
+        # parse for the chain to be valid; else fall back to single-facade.
+        chain = self._chain_detect(prompt)
+        if chain:
+            primary_prompt, target_base = chain
+            primary_tag = self._classify_single(primary_prompt)
+            if primary_tag is not None and primary_tag != "icd10":
+                return f"chain:{primary_tag}→encode{target_base}"
+
+        return self._classify_single(prompt)
+
+    def _classify_single(self, prompt: str) -> Optional[str]:
+        """Single-facade classifier (no chain)."""
         if self.icd10.parse(prompt) != (None, None):
             return "icd10"
         if self.base_conv.parse(prompt) != (None, None):
             return "base_conv"
+        if self.numeric_encode.parse(prompt) != (None, None):
+            return "numeric_encode"
         if self.number_theory.parse(prompt) != (None, None):
             return "number_theory"
         if self.multi_step.parse(prompt) is not None:
@@ -109,6 +173,53 @@ class PlannerFacade:
 
         tag = self.classify(prompt)
 
+        # --- Chain: primary facade → numeric_encode ---
+        # Tag format: "chain:<primary>→encode<base>"
+        if tag and tag.startswith("chain:"):
+            _, payload = tag.split(":", 1)
+            primary_tag, encode_part = payload.split("→")
+            target_base = int(encode_part.replace("encode", ""))
+
+            # Run primary on the stripped prompt — same logic as
+            # _chain_detect to rebuild primary_prompt
+            chain = self._chain_detect(prompt)
+            assert chain is not None
+            primary_prompt, _ = chain
+
+            primary_value: Optional[int] = None
+            steps = []
+            if primary_tag == "number_theory":
+                pr = self.number_theory.solve(primary_prompt, use_bias=False)
+                primary_value = pr.value
+            elif primary_tag == "multi_step":
+                pr = self.multi_step.solve(primary_prompt, use_bias=False)
+                primary_value = pr.value
+            elif primary_tag == "base_conv":
+                pr = self.base_conv.solve(primary_prompt, use_bias=False)
+                primary_value = pr.value
+            elif primary_tag == "numeric_encode":
+                pr = self.numeric_encode.solve(primary_prompt, use_bias=False)
+                # numeric_encode already produces a string — re-decode
+                # to int for the second-stage encode.
+                primary_value = pr.source
+            steps.append((primary_tag, primary_value))
+
+            if primary_value is None:
+                # Primary didn't eval — fall back to single-facade
+                tag = self._classify_single(prompt)
+            else:
+                # Synthesize an encode prompt using the primary's value.
+                # We want Gemma to emit the encoded form of primary_value.
+                base_name = {16: "hex", 2: "binary", 8: "octal"}[target_base]
+                encode_prompt = f"What is {primary_value} in {base_name}?"
+                er = self.numeric_encode.solve(encode_prompt, use_bias=use_bias)
+                steps.append(("numeric_encode", er.encoded))
+                return PlannerResult(
+                    prompt=prompt, facade=tag, used_bias=er.used_bias,
+                    generated=er.generated, parsed_value=er.encoded,
+                    chain_steps=steps,
+                )
+
         if tag == "icd10":
             r = self.icd10.solve(prompt, use_bias=use_bias)
             return PlannerResult(
@@ -120,6 +231,12 @@ class PlannerFacade:
             return PlannerResult(
                 prompt=prompt, facade="base_conv", used_bias=r.used_bias,
                 generated=r.generated, parsed_value=r.value,
+            )
+        if tag == "numeric_encode":
+            r = self.numeric_encode.solve(prompt, use_bias=use_bias)
+            return PlannerResult(
+                prompt=prompt, facade="numeric_encode", used_bias=r.used_bias,
+                generated=r.generated, parsed_value=r.encoded,
             )
         if tag == "number_theory":
             r = self.number_theory.solve(prompt, use_bias=use_bias)
