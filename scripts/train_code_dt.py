@@ -141,18 +141,65 @@ def autoreg_eval(model, val_pairs, device, max_gen=40, cap=None):
     return acc, samples
 
 
-def _scheduled_tf(model, input_ids, target_ids, tf_ratio):
+def _copy_aux_loss(model, input_ids, target_ids, pad_id: int) -> torch.Tensor:
+    """R26: auxiliary loss supervising the copy-attention mechanism.
+
+    Position-gated: apply at positions where target_ids[b,t] APPEARS
+    anywhere in input_ids[b] (i.e. the target is in-principle copyable).
+    The model should have non-trivial copy mass on the target at those
+    positions. At structure-token positions (target is `def`/`(`/`:` etc,
+    not in prompt), skip — gen path is responsible there.
+
+    Uses ground-truth copyability (from input_ids), not self-gated —
+    prevents the early-training chicken-and-egg where copy path starts
+    at ~0 mass and would never learn to activate otherwise.
+
+    Requires `model._last_copy_logits_grad` to be set by forward().
+    """
+    copy_logits = getattr(model, "_last_copy_logits_grad", None)
+    if copy_logits is None:
+        return torch.tensor(0.0, device=target_ids.device)
+    # copy_logits: (B, S, V) — probability mass from copy mechanism
+    # target_ids: (B, S)
+    # input_ids: (B, S) — full input sequence (model sees this)
+    target_prob_copy = copy_logits.gather(
+        -1, target_ids.unsqueeze(-1)
+    ).squeeze(-1)  # (B, S)
+    # Copyability mask: does target_ids[b, t] appear anywhere in
+    # input_ids[b]? Vectorized broadcast compare.
+    #   input (B, 1, S_i) vs target (B, S_t, 1) → (B, S_t, S_i) bool
+    matches = (input_ids.unsqueeze(1) == target_ids.unsqueeze(2))
+    any_match = matches.any(dim=-1)  # (B, S_t)
+    pad_mask = (target_ids != pad_id)
+    mask = (any_match & pad_mask).float()  # (B, S_t)
+    if mask.sum() < 1.0:
+        return torch.tensor(0.0, device=target_ids.device)
+    # Clamp probability to avoid log(0) when copy path hasn't learned yet
+    loss = -torch.log(target_prob_copy.clamp(min=1e-10)) * mask
+    return loss.sum() / mask.sum()
+
+
+def _scheduled_tf(model, input_ids, target_ids, tf_ratio,
+                   copy_aux_weight: float = 0.0):
     """Scheduled sampling: forward once to get predictions, swap some
-    positions with the model's argmax, then forward again with gradient."""
+    positions with the model's argmax, then forward again with gradient.
+
+    R26: when copy_aux_weight > 0, adds an auxiliary loss supervising
+    the copy-attention mechanism (prevents copy-gate collapse).
+    """
+    pad_id = _CODE_CHAR_TO_ID["<pad>"]
     if tf_ratio >= 0.999:
         # Pure teacher forcing — single forward
         log_probs = model(input_ids)
-        loss = F.nll_loss(
+        main_loss = F.nll_loss(
             log_probs.reshape(-1, log_probs.shape[-1]),
             target_ids.reshape(-1),
-            ignore_index=_CODE_CHAR_TO_ID["<pad>"],
+            ignore_index=pad_id,
         )
-        return loss
+        if copy_aux_weight > 0.0:
+            aux = _copy_aux_loss(model, input_ids, target_ids, pad_id)
+            return main_loss + copy_aux_weight * aux
+        return main_loss
     with torch.no_grad():
         lp = model(input_ids)
         preds = lp.argmax(dim=-1)
@@ -167,11 +214,15 @@ def _scheduled_tf(model, input_ids, target_ids, tf_ratio):
     mask[:, 0] = False
     mixed = torch.where(mask, shifted, input_ids)
     log_probs = model(mixed)
-    return F.nll_loss(
+    main_loss = F.nll_loss(
         log_probs.reshape(-1, log_probs.shape[-1]),
         target_ids.reshape(-1),
-        ignore_index=_CODE_CHAR_TO_ID["<pad>"],
+        ignore_index=pad_id,
     )
+    if copy_aux_weight > 0.0:
+        aux = _copy_aux_loss(model, mixed, target_ids, pad_id)
+        return main_loss + copy_aux_weight * aux
+    return main_loss
 
 
 def train(
@@ -206,6 +257,7 @@ def train(
     num_workers: int = 0,               # R20: DataLoader parallelism
     eval_cap: int = 300,                # R20b: subsample val during training for speed
     ema_decay: float = 0.0,             # R21: EMA of weights; 0 = off, 0.999 recommended
+    copy_aux_weight: float = 0.0,       # R26: aux copy-attention loss weight (0=off, 0.5 recommended)
 ):
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
@@ -350,7 +402,10 @@ def train(
             input_ids, target_ids, _ = batch
             input_ids = input_ids.to(device, non_blocking=use_pin_memory)
             target_ids = target_ids.to(device, non_blocking=use_pin_memory)
-            loss = _scheduled_tf(model, input_ids, target_ids, tf_ratio)
+            loss = _scheduled_tf(
+                model, input_ids, target_ids, tf_ratio,
+                copy_aux_weight=copy_aux_weight,
+            )
             optim.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -484,6 +539,9 @@ if __name__ == "__main__":
     ap.add_argument("--ema-decay", type=float, default=0.0,
                     help="R21: EMA decay (0=off, 0.999 recommended). "
                          "Eval + checkpoint save use EMA-averaged weights.")
+    ap.add_argument("--copy-aux-weight", type=float, default=0.0,
+                    help="R26: auxiliary copy-attention loss weight (0=off, "
+                         "0.5 recommended). Prevents copy-gate collapse.")
     args = ap.parse_args()
     train(
         epochs=args.epochs,
@@ -507,4 +565,5 @@ if __name__ == "__main__":
         num_workers=args.num_workers,
         eval_cap=args.eval_cap,
         ema_decay=args.ema_decay,
+        copy_aux_weight=args.copy_aux_weight,
     )

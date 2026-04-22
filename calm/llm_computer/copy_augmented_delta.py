@@ -116,6 +116,10 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
         gen_probs = F.softmax(gen_logits, dim=-1)
         blended = p_copy * copy_logits + (1 - p_copy) * gen_probs
 
+        # Expose copy-path probability distribution for auxiliary loss
+        # (R26). NOT detached — caller may backprop through it.
+        self._last_copy_logits_grad = copy_logits
+
         return torch.log(blended + 1e-10)
 
     def decode_greedy_cached(
