@@ -81,6 +81,9 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
         prefix_mask = self._build_prefix_mask(idx, sep_id)
 
         p_copy = torch.sigmoid(self.copy_gate(x))
+        # Expose for diagnostics (eval_dt_checkpoint reads this to compute
+        # avg copy-gate usage — 0 = pure generation, 1 = pure copy).
+        self.last_p_copy = p_copy.detach()
 
         n_ch = self.copy_config.n_copy_heads
         dh = cfg.d_head
