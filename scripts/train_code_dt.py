@@ -133,13 +133,18 @@ def train(
     eval_every: int = 2,
     device: str | None = None,
     val_frac: float = 0.1,
+    augment: bool = True,
+    augment_factor: int = 8,
+    plateau_patience: int = 5,    # val evals with no improvement → [PLATEAU]
+    plateau_min_delta: float = 0.005,   # improvement threshold
 ):
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
 
     # --- Data ---
-    print(f"[train] extracting pairs from CodeExampleDB...")
-    pairs = extract_pairs_from_db()
+    print(f"[train] extracting pairs from CodeExampleDB "
+          f"(augment={augment}, factor={augment_factor})...")
+    pairs = extract_pairs_from_db(augment=augment, augment_factor=augment_factor)
     print(f"[train] total pairs: {len(pairs)}")
     train_pairs, val_pairs = split_pairs(pairs, val_frac=val_frac, seed=seed)
     print(f"[train] split: {len(train_pairs)} train / {len(val_pairs)} val")
@@ -173,6 +178,9 @@ def train(
     best_acc = 0.0
     history: list[dict] = []
     CHECKPOINT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    # Plateau detection state
+    evals_since_improvement = 0
+    plateau_triggered = False
 
     t0 = time.time()
     for ep in range(1, epochs + 1):
@@ -206,8 +214,9 @@ def train(
             rec["val_autoreg"] = round(acc, 4)
             print(f"[train] ep{ep:3d} loss={avg_loss:.4f} tf={tf_ratio:.2f} "
                   f"val_autoreg={acc:.3f} elapsed={elapsed:.0f}s")
-            if acc > best_acc:
+            if acc > best_acc + plateau_min_delta:
                 best_acc = acc
+                evals_since_improvement = 0
                 torch.save({
                     "model_state": model.state_dict(),
                     "config": {
@@ -231,11 +240,21 @@ def train(
                     mark = "✓" if out.strip() == tgt.strip() else "✗"
                     print(f"    {mark} tgt={tgt!r}")
                     print(f"      out={out!r}")
+            else:
+                evals_since_improvement += 1
+                if evals_since_improvement >= plateau_patience:
+                    print(f"[train] [PLATEAU] {evals_since_improvement} evals "
+                          f"without improvement > {plateau_min_delta} — "
+                          f"best={best_acc:.3f} ep={ep} — stopping early.")
+                    plateau_triggered = True
         else:
             print(f"[train] ep{ep:3d} loss={avg_loss:.4f} tf={tf_ratio:.2f} "
                   f"elapsed={elapsed:.0f}s")
 
         history.append(rec)
+
+        if plateau_triggered:
+            break
 
     # Final report
     print(f"\n[train] best val_autoreg: {best_acc:.3f}")

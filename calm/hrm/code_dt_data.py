@@ -80,13 +80,23 @@ class CodeProblem:
     difficulty: int = 1   # compatibility with other training code
 
 
-# Source-file filter: only function-defining corpora
+# Source-file filter: function-defining corpora.
+# Expanded from the original 4-source list to include claude_reasoning
+# and codecontests, targeting 3-5K raw pairs before paraphrase aug.
 _TARGET_CORPORA = (
     "mbpp.jsonl",
     "humanevalplus.jsonl",
     "bigcodebench.jsonl",
     "multi_step_code.jsonl",
     "/generated/",
+    "codecontests.jsonl",
+    "claude_reasoning.jsonl",
+    "claude_reasoning_prefilter.jsonl",
+    "claude_reasoning_hf_raw.jsonl",
+    "coding_reasoning_claude.jsonl",
+    "crownelius.jsonl",
+    "nohurry_code.jsonl",
+    "python.jsonl",
 )
 
 
@@ -143,10 +153,20 @@ def _extract_skeleton(
 def extract_pairs_from_db(
     db=None,
     min_len: int = 20,
-    max_prob_len: int = 180,
+    max_prob_len: int = 220,
     max_skel_len: int = 80,
+    augment: bool = False,
+    augment_factor: int = 3,
+    aug_seed: int = 42,
 ) -> List[CodeProblem]:
-    """Mine (problem, skeleton) pairs from CodeExampleDB."""
+    """Mine (problem, skeleton) pairs from CodeExampleDB.
+
+    With `augment=True`, applies paraphrase augmentation (template
+    rotation on the problem prefix). `augment_factor=N` means each
+    original pair spawns N paraphrases. A pair where the prompt
+    doesn't start with a known paraphrase template yields 1 pair (no
+    aug applied). Roughly 2-3× overall multiplier at factor=3.
+    """
     if db is None:
         from calm.llm_computer.facades.code_example_db import CodeExampleDB
         db = CodeExampleDB.load_default()
@@ -166,7 +186,167 @@ def extract_pairs_from_db(
         if len(skeleton) > max_skel_len:
             continue
         pairs.append(CodeProblem(question=prob, expression=skeleton))
+
+    if augment:
+        pairs = _paraphrase_augment(pairs, factor=augment_factor, seed=aug_seed)
     return pairs
+
+
+# Template rotation for paraphrase augmentation. Maps a canonical prefix
+# (that shows up heavily in MBPP/HumanEval corpora) to alternate phrasings.
+# The first match wins; the original unchanged prefix is always preserved
+# as one of the paraphrases.
+_PARAPHRASE_TEMPLATES = [
+    # (canonical prefix regex (case-insensitive), list of replacements)
+    (r"^write a (?:python )?function to\b",
+     [
+         "Write a function to",
+         "Write a python function to",
+         "Create a function to",
+         "Create a python function that",
+         "Build a function to",
+         "Implement a function to",
+         "Define a function to",
+         "Python function to",
+     ]),
+    (r"^write a function that\b",
+     [
+         "Write a function that",
+         "Create a function that",
+         "Build a function that",
+         "Implement a function that",
+         "Define a function that",
+     ]),
+    (r"^given\b",
+     [
+         "Given",
+         "You are given",
+         "For a given",
+         "Consider",
+     ]),
+    (r"^check (?:if|whether)\b",
+     [
+         "Check if",
+         "Check whether",
+         "Verify whether",
+         "Determine if",
+         "Test if",
+     ]),
+    (r"^find\b",
+     [
+         "Find",
+         "Compute",
+         "Return",
+         "Identify",
+     ]),
+    (r"^calculate\b",
+     [
+         "Calculate",
+         "Compute",
+         "Return the",
+         "Find the",
+     ]),
+    (r"^(?:count|counts)\b",
+     [
+         "Count",
+         "Count the number of",
+         "Return the count of",
+         "Compute the count of",
+     ]),
+    (r"^(?:check|checks)\b",
+     [
+         "Check",
+         "Verify",
+         "Determine",
+         "Test",
+     ]),
+    (r"^(?:convert|converts)\b",
+     [
+         "Convert",
+         "Transform",
+         "Change",
+     ]),
+    (r"^(?:sort|sorts)\b",
+     [
+         "Sort",
+         "Order",
+         "Arrange",
+     ]),
+    (r"^return\b",
+     [
+         "Return",
+         "Output",
+         "Produce",
+         "Give back",
+     ]),
+    (r"^implement\b",
+     [
+         "Implement",
+         "Write a function to implement",
+         "Create",
+         "Build",
+     ]),
+    (r"^(?:remove|removes)\b",
+     [
+         "Remove",
+         "Delete",
+         "Filter out",
+         "Strip",
+     ]),
+    (r"^(?:merge|merges)\b",
+     [
+         "Merge",
+         "Combine",
+         "Join",
+         "Concatenate",
+     ]),
+    (r"^(?:split|splits)\b",
+     [
+         "Split",
+         "Divide",
+         "Partition",
+         "Break",
+     ]),
+]
+
+
+def _paraphrase_augment(
+    pairs: List[CodeProblem], factor: int = 3, seed: int = 42,
+) -> List[CodeProblem]:
+    """Expand pairs via template-prefix rotation. Each original pair
+    spawns up to `factor` paraphrases (including the original)."""
+    rng = random.Random(seed)
+    out: List[CodeProblem] = []
+    for p in pairs:
+        variants = [p.question]  # always include original
+        matched_template: Optional[list] = None
+        matched_match: Optional[re.Match] = None
+        for prefix_pat, replacements in _PARAPHRASE_TEMPLATES:
+            m = re.match(prefix_pat, p.question, re.IGNORECASE)
+            if m:
+                matched_template = replacements
+                matched_match = m
+                break
+        if matched_template and matched_match:
+            # Pick `factor - 1` distinct alternates. Exclude the
+            # replacement that (case-insensitively) matches the original.
+            orig_prefix_lower = p.question[:matched_match.end()].lower()
+            candidates = [
+                r for r in matched_template
+                if r.lower() != orig_prefix_lower.rstrip()
+            ]
+            rng.shuffle(candidates)
+            for rep in candidates[:factor - 1]:
+                variant = rep + p.question[matched_match.end():]
+                # Keep within vocab
+                variant = "".join(c if c in _ALLOWED else " " for c in variant)
+                variant = " ".join(variant.split())
+                if 20 <= len(variant) <= 220:
+                    variants.append(variant)
+        # Emit all variants with same skeleton
+        for v in variants:
+            out.append(CodeProblem(question=v, expression=p.expression))
+    return out
 
 
 def split_pairs(
