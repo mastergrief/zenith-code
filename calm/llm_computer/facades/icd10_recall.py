@@ -141,10 +141,71 @@ class Icd10RecallFacade:
         fire_bias = bool(bias_ids)
         text = self._generate(prompt, bias_ids if fire_bias else [],
                               boost, max_tokens)
+
+        # Code-echo detect + retry with in-context diagnosis injection.
+        # Codes with unusual internal tokens (e.g. T44.6X4D, V80.22XA)
+        # trigger Gemma's "code-analysis format" prior — output echoes
+        # the code OR leads with an "Analysis of ICD-10 Code" template
+        # before reaching the diagnosis text. Rephrased-prompt retry
+        # alone fails because Gemma's format prior dominates any
+        # boost-level bias.
+        #
+        # Stronger intervention: inject the diagnosis TEXT into the
+        # prompt context itself, then ask Gemma to repeat/confirm.
+        # Uses Gemma's in-context-learning rather than pure decode bias.
+        if fire_bias and user_form and diagnosis and self._is_code_echo(text, user_form):
+            injected_prompt = self._inject_answer_in_context(user_form, diagnosis)
+            retry_boost = boost * 3.0
+            text = self._generate(injected_prompt, bias_ids, retry_boost, max_tokens)
+
         return Icd10Result(
             prompt=prompt, code_raw=user_form, code=normalized,
             diagnosis=diagnosis, generated=text, used_bias=fire_bias,
         )
+
+    @staticmethod
+    def _is_code_echo(output: str, code_raw: str) -> bool:
+        """Return True if the output shows code-echo / code-analysis
+        format signature:
+          - code literal appears 2+ times in the first 200 chars, OR
+          - "Analysis of ICD-10 Code" / "Code Structure" template
+            appears in the first 100 chars (Gemma's dominant template
+            for codes with unusual embedded chars).
+        """
+        head = output[:200]
+        if head.count(code_raw) >= 2:
+            return True
+        head_low = head.lower()
+        for signature in (
+            "analysis of icd-10 code",
+            "analysis of icd 10 code",
+            "code structure",
+            "code breakdown",
+            "no diagnosis is available",
+            "not applicable",
+        ):
+            if signature in head_low:
+                return True
+        return False
+
+    @staticmethod
+    def _rephrase(prompt: str, code_raw: str, diagnosis: Optional[str]) -> str:
+        """Produce a prompt that demotes the code from the final token
+        position. Gemma's code-echo prior fires strongest when the
+        prompt ends in the code literal; shift the code to mid-prompt
+        and replace with a directive ending."""
+        return (f"Please describe the medical condition referenced by the "
+                f"code {code_raw}. Condition: ")
+
+    @staticmethod
+    def _inject_answer_in_context(code_raw: str, diagnosis: str) -> str:
+        """For codes where rephrase alone doesn't break Gemma's format
+        prior, inject the diagnosis TEXT directly into the prompt
+        context. Gemma's in-context-learning then provides the anchor
+        tokens to match, and the bias merely reinforces the already-
+        visible answer. Format: '<code> = <diagnosis>. Repeat:'."""
+        return (f"The ICD-10 code {code_raw} means: {diagnosis}.\n"
+                f"Diagnosis for {code_raw}: ")
 
     def _diagnosis_to_gemma_tokens(self, text: str) -> list[int]:
         """Tokenize the diagnosis text as Gemma BPE. Skip BOS."""
@@ -174,7 +235,7 @@ class Icd10RecallFacade:
         gemma = self._gemma
         tok = self._tokenizer
         if not prompt.rstrip().lower().endswith(
-            ("answer:", "diagnosis:", "means:", "is:")
+            ("answer:", "diagnosis:", "means:", "is:", "condition:")
         ):
             prompt = prompt.rstrip() + " Diagnosis: "
         ids = tok.encode(prompt)
