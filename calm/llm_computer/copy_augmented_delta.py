@@ -119,6 +119,10 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
         # Expose copy-path probability distribution for auxiliary loss
         # (R26). NOT detached — caller may backprop through it.
         self._last_copy_logits_grad = copy_logits
+        # v17: expose copy_attn (B, S_target, S_source) for pointer
+        # supervision loss that trains WHICH source position to attend
+        # to, not just which output char to emit.
+        self._last_copy_attn_grad = copy_attn
 
         return torch.log(blended + 1e-10)
 

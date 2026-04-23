@@ -108,8 +108,15 @@ METRICS_PATH = Path("calm/hrm/checkpoints/dt_code_skel_metrics.json")
 
 def autoreg_eval(model, val_pairs, device, max_gen=40, cap=None):
     """Greedy decode from <bos>prob<sep>, measure exact-skeleton match.
-    Optional `cap` subsamples val to first N pairs for speed."""
-    bos = _CODE_CHAR_TO_ID["<bos>"]
+    Optional `cap` subsamples val to first N pairs for speed.
+
+    Per-sample (not batched): learned positional embeddings assume
+    position 0 is the first prompt token, so left-padding in a batch
+    shifts positions and breaks the model. Attempted bs=32 batched
+    version 2026-04-23 showed 50% accuracy loss (0.15 vs 0.30 on
+    20-sample CPU test). Reverted. Fast path is fewer val samples.
+    """
+    from calm.hrm.code_dt_data import code_tokenize
     sep = _CODE_CHAR_TO_ID["<sep>"]
     eos = _CODE_CHAR_TO_ID["<eos>"]
     model.eval()
@@ -118,7 +125,6 @@ def autoreg_eval(model, val_pairs, device, max_gen=40, cap=None):
     if cap is not None and len(val_pairs) > cap:
         val_pairs = val_pairs[:cap]
     for p in val_pairs:
-        from calm.hrm.code_dt_data import code_tokenize
         prefix = code_tokenize(p.question, add_bos=True, add_eos=False) + [sep]
         ids = list(prefix)
         gen = []
