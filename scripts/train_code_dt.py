@@ -539,6 +539,13 @@ if __name__ == "__main__":
     ap.add_argument("--copy-aux-weight", type=float, default=0.0,
                     help="R26: auxiliary copy-attention loss weight (0=off, "
                          "0.5 recommended). Prevents copy-gate collapse.")
+    ap.add_argument("--plateau-patience", type=int, default=5,
+                    help="R29: val evals with no >plateau_min_delta "
+                         "improvement before early-stop. Default 5; "
+                         "raise to 10+ for longer exploration.")
+    ap.add_argument("--plateau-min-delta", type=float, default=0.005,
+                    help="R29: required improvement threshold (in val_autoreg "
+                         "units) to reset plateau counter. Default 0.005.")
     args = ap.parse_args()
     train(
         epochs=args.epochs,
@@ -563,4 +570,6 @@ if __name__ == "__main__":
         eval_cap=args.eval_cap,
         ema_decay=args.ema_decay,
         copy_aux_weight=args.copy_aux_weight,
+        plateau_patience=args.plateau_patience,
+        plateau_min_delta=args.plateau_min_delta,
     )
