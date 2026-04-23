@@ -20,7 +20,7 @@ Fork of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) with
 **Never**: spawn agents "just in case", for work that fits in one direct tool call, or as a default orchestration pattern when the above cases don't apply. User's explicit ask for teams/parallel workers overrides — if asked, spawn.
 
 ## Default Workflow — Hypothesis, Test, Iterate
-Full spec: `.claude/rules/workflow_part_1.md` + `workflow_part_2.md`
+Full spec: `.claude/rules/workflow.md` (historical receipts: `.claude/MEMORY/atlas/workflow_part_1.md` + `workflow_part_2.md`)
 
 **Core principle: it works or it doesn't, it's better or it isn't.** Every
 "done", "working", "fixed", "faster" claim must be backed by a measurement

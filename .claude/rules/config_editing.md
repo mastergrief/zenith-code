@@ -59,4 +59,4 @@ Don't subvert by going inline.
 
 - `CLAUDE.md` — top-level index that points to every rule in this directory
 - `.claude/commands/update.md` — `/update` workflow + Phase 0 contamination check + Phase 5 gates
-- `workflow_part_1.md` §"Commit discipline" — commit-message conventions that apply to rule edits too
+- `workflow.md` §"Commit discipline" — commit-message conventions that apply to rule edits too
