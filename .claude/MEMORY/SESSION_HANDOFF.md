@@ -1,209 +1,223 @@
-# Session Handoff — 2026-04-22 (R22 14.5 recal + decode-path facade proliferation + Recursion L1/L2 shipped)
+# Session Handoff — 2026-04-23 evening (RENAME N=50 ship, VGSL critique + Stage 1/2 reframe + park reco)
 
 ## Goal
 
-Opened with "read '/mnt/c/Users/gabes/projects/claw-code/.claude/MEMORY/SESSION_HANDOFF.md' and summarise" + "ok implement next steps". Session was a mega-session working the Phase-A queue from the 2026-04-21 handoff, then three follow-ups, then a combined arc of more auto-facades + Level-2 MetaFacade + rules rewrite.
+Resume from morning handoff (N=50 MBPP A/B eval running on daemon PID 540958 mid-flight at 44/50, VGSL spec untouched since `c98a2a1` greenfield framing). Land the eval verdict + receipt; do the cleanup commit the prior handoff scoped; act on user direction to first-principles-review VGSL with codex; then on user reframe ("VGSL as in-tree drop-in upgrade") run a focused design discussion and land the spec update; then give a clear "what do you think" recommendation; then surface the next research-line of pursuit.
 
-User directions mid-session (chronological):
-1. "implement next steps: hypothesis, build, test, commit and iterate" → worked full queue (items 1, 2, 3, 6, 7)
-2. "implement all 3 please" → F1 ICD-10 retry + F2 NumericEncode+chain + F3 Recursion L1
-3. "implement 2+3+7 as combined arc" → M1 (4 more auto-facades) + M2 (Level-2 MetaFacade) + M3 (docs rewrite)
-4. "/update uses explore agents" (rejecting initial single-agent pass) → 3-agent P0/P1/P2 tier discipline
-5. "/handoff" → this document
+By session end: RENAME-canonical-for-MBPP confirmed at N=50 scale; VGSL spec rewritten with joint-critique findings + Stage 1/2 in-tree pursuit framing; claude's lean = **park VGSL with explicit revisit triggers**; next research line surfaced = **extend RENAME to HumanEvalPlus / BigCodeBench**.
 
-Ended at a clean stopping point: **13 commits**, full docs sync, substrate has 17 operational facades (6 hand-written + 11 auto/meta-generated), recursion infrastructure shipped through Level-2.
+## Completed (3 current-repo session commits, `1e0680e` → `94767db`)
 
-## Completed (13 commits, `9691e06` → `438e874`)
+Session-local commits on `feature/multi-agent-qwen` (chronological):
+`1e0680e`, `362e5a5`, `94767db`. No sister-repo activity this session.
 
-### Phase A — original queue (5 commits)
+### N=50 RENAME-vs-DT eval ship
 
-| SHA | Round | Headline |
-|---|---|---|
-| `9691e06` | R22f | N=10 flat diagnostic + threshold fix — 51/60 → **60/60 (Δ=+18)** via `min_margin=22.0 → 14.5`. Per-N margin discipline established: N=5 p50≈23.3, N=10 p50=20.83 p5=15.21, N=15 p50=18.63 p5=16.39. Threshold-below-lowest-p5 rule. |
-| `69279d4` | R53a | **NumberTheoryFacade** (`calm/llm_computer/facades/number_theory.py`) — mod/GCD/LCM. **8/15 → 15/15 (Δ=+7)**. Caught + fixed decode-path bias bug: leading `▁` (id 236743) strip + POST_BIAS_BUDGET=4. |
-| `c3cc73f` | R22d rerun | Independent 60-prompt all-keys corpus: **42/60 → 60/60** at threshold 14.5. 58/60 fired, 0 regressions. Confirms R22f result on different corpus shape. |
-| `afc0220` | R60a | **Icd10RecallFacade** (`calm/llm_computer/facades/icd10_recall.py`) — first tier-3 decode-path facade (TEXT answer). **8/30 → 26/30 (Δ=+18)** on 72,748-code CMS 2022 DB. Generalizes step-through bias from integers to arbitrary Gemma BPE. |
-| `956a3ae` | R70a | **PlannerFacade** (`calm/llm_computer/facades/planner.py`) — orchestrates 4 specialist facades. **20/20 route + 18/20 answer** on mixed 20-probe corpus. |
+- **`1e0680e`** — `.claude/MEMORY/evals/2026-04-23_dt_rename_n50.md` (108 lines). Receipt for the N=50 scale-up of `dac50ed`. Verdict per matrix: **dac50ed stands**.
 
-### Phase B — follow-ups (3 commits)
+  | Method | Known (1-20) | Novel (21-50) | Total |
+  |---|---|---|---|
+  | stock | 9/60 = 15.00% | 0/90 = 0.00% | 9/150 = 6.00% |
+  | dt-bias | 15/60 = 25.00% | 23/90 = 25.56% | 38/150 = 25.33% |
+  | **rename** | **17/60 = 28.33%** | **36/90 = 40.00%** | **53/150 = 35.33%** |
 
-| SHA | Round | Headline |
-|---|---|---|
-| `8ba151d` | F1 | ICD-10 code-echo detect+retry infrastructure. In-context diagnosis injection + 3× boost on retry. 4 edges (T44.6X4D, T40.5X4D, V80.22XA, W10.0XXA) remain — genuine tier-3 limit. Score unchanged (26/30). |
-| `5ee61a5` | F2 | **NumericEncodeFacade** (int→hex/binary/octal) + **PlannerFacade chain dispatch** for "X in hex/binary/octal". **12/12 route + 12/12 answer** on chain corpus. Option C step-1 per tracing_roadmap. |
-| `3274659` | F3 | **Recursion Level-1 MVP** (`calm/llm_computer/recursion.py`). `FacadeSpec` → `validate_facade` → `generate_facade` (ast.parse-gated) → `import_facade_class`. Demo: factorial_auto + fibonacci_auto generated, **5/10 → 10/10**. Three CALM-anchored gates keep loop drift-free. |
+  - Δ rename-vs-dt: **+15 cells (+9.99pp) total**, **+13 cells (+14.4pp) novel-only**
+  - Δ rename-vs-stock: +44 cells (+29.33pp)
+  - **RENAME 15 wins / 0 regressions** vs DT 12 wins / **1 regression** (`remove_kth_element` 3/3 → 0/3, arity hallucination — DT predicted `(list1, list2)`, actual `(list, K)`)
+  - Overlap: 8 problems / **23 passing cells** (codex's correction: `first_repeated_char` is 2/3 both methods, not 3/3)
+  - DT-only wins: `floor_Min` (+1), `get_median` (+3), `pair_OR_Sum` (+3), `are_Equal` (+2) = +9 cells (codex framing: "real but weak body-trajectory side signal; not globally null; carries one regression that RENAME does not. For MBPP shipping: DT remains obsolete vs deterministic RENAME. For future work: park as 'body-bias may matter in a different task class or stacked RENAME+DT experiment, must be re-tested with regression gate.'")
+  - Codex cross-reviewed: 1 blocker (line 13 overclaim re: re-running 6.7h live eval) + 1 nit (`50× scale` → `N=50 scale`); both fixes landed verbatim before commit.
 
-### M1+M2 combined arc (1 commit)
+### Housekeeping cleanup
 
-| SHA | Arc | Headline |
-|---|---|---|
-| `5173745` | M1+M2 | M1: 4 Level-1 specs (combinations, permutations, power, next_prime) — **12/20 → 20/20 (Δ=+8)**. M2: `MetaFacade.from_oracle(fn_name, arity)` synthesizes FacadeSpec from just name + arity — 5 meta-specs (factorial, combinations, gcd, lcm, fibonacci) — **4/15 → 15/15 (Δ=+11)**. Combined 16/35 → 35/35. |
+- **`362e5a5`** — `chore: housekeeping`. Three pre-existing low-risk items left uncommitted across the DT→RENAME arc, landed as one commit:
+  - delete `.claude/MEMORY/SESSION_HANDOFF_1.md` (−173) — stale backup
+  - delete `.claude/MEMORY/notesd.md` (−134) — stale notes
+  - `scripts/dt_install_eval.py:42` (+1/−1) — `DT_EVAL_N` default 20 → 50 to match canonical eval scale
 
-### Docs rewrite via /update 3-agent split (4 commits)
+### VGSL spec joint-critique update
 
-| SHA | Tier | Files |
-|---|---|---|
-| `5fa8228` | P0 | CLAUDE.md, delta_rule.md, Substrate.md, embed_intelligence.md, compute_facades.md, recursion.md, architecture.md — R22 14.5, decode-path facade list, recursion L1/L2 shipped, ▁-strip discipline, text-recall tier-3 refinement |
-| `eec1178` | P1 | augmentation_thesis.md, tracing_roadmap.md, capability_gain.md — tier-2 table + facades-built rows + per-round receipts |
-| `cf8a8ee` | P2 | workflow_part_1.md, commercial.md — daemon state invariants + commercial decode-path row |
-| `438e874` | chore | r22d script default 22.0→14.5 + r60a eval regenerated |
+- **`94767db`** — `RESEARCH/VGSL/` four-file bundle, +638/−80. Joint critique → reframed in-tree pursuit; voice-preservation split (claude owns 00+01, codex owns 02+03). Cross-vocab consistent across all 4 files.
 
-### Key decisions + WHY
+  - **`00_INDEX.md`** (claude, +191/−41): "What this is" softened to "non-weight knowledge substrate for a post-transformer stack"; new §"Pursuit path" with Stage 1/2 in-tree slice + 4 success gates; "What this subsumes" gets Stage swap target column; "Decision the user needs to make" restructured (Stage 1 in-tree primary; original 3 options as Alternatives 1/2/3); imitation-trained caveat ("VGSL attacks 2 of 3 constraints immediately; imitation-trained gated on Phase 4 with admitted training-signal-density risk").
+  - **`01_ARCHITECTURE.md`** (claude, +147/−25): thesis preserved verbatim; joint-critique caveat added; Tier B claim softened ("research frontier, not solved common-sense merge"); §"Bootstrapping" Tier-B-seed bullet rewritten verbatim from codex's contradiction-fix; §"Why retrieval failed here" reframed as "anti-pattern receipt + dual-path discipline motivator, NOT whole-architecture origin story"; NEW §"Source-priority is projection policy, not merge semantics" codifies codex's correction.
+  - **`02_IMPLEMENTATION.md`** (codex, +190/−0): TL;DR adds Stage 1 in-tree first / greenfield deferred framing; §"In-tree Stage 0/1"; **Invariant 8** ("Representative selection is projection policy. Source priority, latest-wins, and first-wins are never encoded as merge semantics"); §"Source priority encoding" with concrete schema (`source_tier`, `source_rank`, `corpus_order`, `line_no`, `event_id`, `stable_problem_key`); §"`CodeExampleDB`/`KnowledgeStore` assertions"; §"Stage-1/Stage-2 compatibility APIs"; §"Phase Boundaries" with Stage 0/1/2 + Phase 1-5.
+  - **`03_TESTING.md`** (codex, +110/−14): "Prove parity before value" guiding principle; §"In-Tree Stage 1 Falsifier — `CodeExampleDB` Shadow Swap" with 4 success gates (parity / audit / performance / value); greenfield Phase 1 success gate adds event-sourced/temporal-table baseline (joint critique Finding 4); §"Tier B merge test" risk note acknowledges correlated-evidence + missing-contradiction risks; §"Phase Exit Criteria" + §"Recommended Baselines" updated.
 
-- **Threshold 14.5 over 18.0 / 22.0**: max lift (60/60) with 0 regressions and 59/60 fire rate. 14.5 sits below the lowest observed margin p5 (N=10's 15.21) across all in-distribution Ns.
-- **Icd10 as decode-path (not CardSlot)**: hours to ship vs days; 26/30 on first pass. Rule refined in `augmentation_thesis.md`: short known-length text recall from static DB is decode-path-addressable.
-- **PlannerFacade first-match-wins**: priority order icd10 → base_conv → numeric_encode → number_theory → multi_step. Avoids cross-facade parse ambiguity (ICD-10 codes could look decimal-ish; hex literals could look like multi_step operands).
-- **Recursion as template-parameterized (not LLM-written)**: Level-1 generator is deterministic Python template + ast.parse gate + safe_eval oracle. This is the "drift-free by construction" claim from `recursion.md`. LLM-written Level-2 (Gemma writes FacadeSpec) is the natural future extension.
-- **Bag-of-words scoring for ICD-10**: anchor-word too strict (Gemma's "Hypertension" missed "(primary) hypertension" literal), longest-word too weak ("complications" can be any diagnosis). Bag-of-words ≥4-char non-stopword is the robust middle.
-- **R22f diagnostic chain** (non-obvious): `round6_gated_write.jsonl` showed 41/60 cards "silent" with margin=0 / argmax=`<pad>`. First hypothesis (parse failure) ruled out by offline regeneration. Live probe via `r22f_live_parse_trace.py` showed standalone card is 100% on N=10/15 with margins clustering below 22.0. The gate — not the card — was the bottleneck.
+  Codex's two decisive one-liners ("Merge is not fact movement..." / "Binding resolves references...") preserved verbatim per charter §F. Cross-review caught 1 blocking contradiction (`01:287-290` Tier-B-seed bullet still claimed first-occurrence-wins IS Tier-A merge) + 2 alignment nits (`00:3` post-transformer wording, `00:330` cross-ref to renamed `03` heading); all landed verbatim from codex's suggested replacements.
 
 ## In Progress
 
-**None.** All 13 commits landed cleanly. No in-flight training runs, no mid-refactor code, no uncommitted session work at risk. Daemon running (PID 362642, 32m uptime, warm).
+**Nothing.** Board idle both sides at handoff time.
+
+- Slice A task `1776966574027-bb08a31d` (N=50 eval) — completed mid-session
+- Spec-update parent task `1776979899534-1ac48036` — completed
+- Sibling codex-owned VGSL critique + spec tasks — both completed
+- VGSL first-principles review parent task `1776978553491-9cd7ee74` — completed
+
+`ai_room_resume_check` → `idle ok: no owned tasks, no pending inbox`
 
 ## ⚠ Uncommitted
 
-```
- M .claude/MEMORY/notesd.md       — pre-existing modification (was ' M' at session start too)
-?? .cache/                        — runtime cache (icd10 DB, r22b/r53/r60a/r70a/r70b jsonls); convention-gitignored
-?? .claude/MEMORY/minutes/        — session transcript (2026-04-22_0747-1055_54a426a0.md, 62 KB)
-?? .claude/scheduled_tasks.lock   — runtime lock
-?? .codex/                        — external-tool workspace
-?? .port_sessions/                — runtime
-?? calm/.module_learning.json     — runtime state
-```
+`git status --short` at handoff:
 
-**Risk assessment**:
-- **`notesd.md`** — NOT in .gitignore. Contains DeltaNet / R7 analysis from prior session. Session-agnostic content. **(b) Safe to commit later** — user choice.
-- **All `??` entries** — convention-gitignored runtime state. None are session-critical. `.cache/` contains the 6.4 MB ICD-10 DB + per-round jsonls; regenerable from scripts if needed.
-- **No session-critical uncommitted work.** All shipped code + evals + docs are committed.
+| Entry | Class | Action on resume |
+|---|---|---|
+| `M .claude/MEMORY/SESSION_HANDOFF.md` | session-critical | THIS handoff (being written now). `/handoff` convention is overwrite-in-place; do not commit unless explicitly asked. |
+| `M .codex/AGENTS.md` | session-supporting drift | **+2 lines benign tooling policy** (Serena/python3 edit-tool guidance, "Treat `apply_patch` as last-resort fallback"). Likely codex-side parity nudge during this session. Low risk; safe to leave or land as separate parity commit (NOT bundled with VGSL). |
+| `?? .cache/` | untracked cache (NOT gitignored — convention only) | Ignore by convention. Codex verified: `git check-ignore` returns nothing. |
+| `?? .claude/MEMORY/memory_architecture.md` | session-supporting | Carry-over from prior session (mtime Apr 23 10:39, pre-session); not this session's work. |
+| `?? .claude/MEMORY/minutes/` | untracked runtime state | Auto-generated session minutes (Stop-hook export). |
+| `?? .claude/scheduled_tasks.lock` | untracked runtime state | Lock file — not gitignored, just not tracked. |
+| `?? .codex/skills/` | parallel / upstream | Codex-side skills, NOT this session. Do not touch. |
+| `?? .port_sessions/` | untracked cache (NOT gitignored — convention only) | Ignore by convention. Codex verified: `git check-ignore` returns nothing. |
+| `?? calm/.module_learning.json` | untracked runtime state | Runtime state file — not gitignored. |
+| `?? calm/hrm/checkpoints/dt_code_skel_v{4,5,9,13,14}*.pt` (6 files) | parallel / upstream | Prior-session DT checkpoints (mtimes Apr 22 + one Apr 23 10:14, pre-session). |
+| `?? calm/hrm/checkpoints/stage1_argcount_best.pt`, `stage2_copyonly_best.pt` | parallel / upstream | Prior-session ruled-out training artifacts. |
+| `?? calm/hrm/code_dt_stage2_data.py`, `pointer_supervision.py` | parallel / upstream | Prior-session ruled-out experimental modules. |
+| `?? calm/llm_computer/facades/code_skeleton.py` | parallel / upstream | Prior-session regex-only CodeSkeletonFacade (ruled out). |
+| `?? scripts/train_code_dt_stage2.py`, `train_code_dt_v17.py`, `train_stage1_argcount.py` | parallel / upstream | Prior-session ruled-out training scripts. |
+
+**Coverage claim**: all 3 session commits landed. Only genuine session-critical uncommitted file is `SESSION_HANDOFF.md` (this file). `.codex/AGENTS.md` flagged for review but content-consistent with session's AI-Room activity.
 
 ## Next Steps
 
-**Recommended priority order** (by commercial/research leverage):
+### 1. **Extend RENAME to HumanEvalPlus** — research-line of pursuit (~2h active + ~7h daemon)
 
-### Short (30 min — 2 hours each)
+User asked "how long would that take?" as the final session message; **claude's answer never landed in chat** (it was the last message before /handoff). Estimate from session context:
 
-1. **Fix 4 stubborn ICD-10 codes** (T44.6X4D, T40.5X4D, V80.22XA, W10.0XXA). F1 infra landed but these resist rephrase + in-context injection. Two paths:
-   - **Pure-DB bypass**: skip Gemma entirely for detected codes, return diagnosis text directly. Fastest; loses the "Gemma explains" property but gets 30/30.
-   - **Multi-shot prompt ensemble**: generate with 3 different prompt formats, pick output with ≥1 significant word. ~3× inference cost; keeps Gemma in the loop.
-   - Target: 26/30 → 30/30. Commit `8ba151d` has the retry scaffolding.
+- **Active work**: 2-3 hours (harness extension to load HumanEvalPlus problem corpus + smoke test on N=5 + offline RENAME replay + receipt commit + codex cross-review). Function-name extraction is *easier* than MBPP (`entry_point` field is explicit). Test-format adaptation needed: HumanEvalPlus uses `def check(candidate): assert ...` wrapping vs MBPP's bare top-level asserts.
+- **Daemon-bound wait**: ~6-7 hours unattended (HumanEvalPlus 164 problems; same per-problem cost as MBPP N=50 which took 6h43m).
+- **Calendar**: 1 day if daemon runs in background; 2 sessions if context-switching.
 
-2. **Register auto-generated facades with PlannerFacade**. Currently `factorial_auto`, `fibonacci_auto`, `combinations_auto`, etc. aren't in Planner's dispatch chain — users with factorial prompts would hit the `multi_step` catch-all and miss the facade. Add a registry pattern: `recursion.generate_facade()` also registers the generated class with `PlannerFacade.register(cls)`. ~1 hour.
+**Hypothesis**: RENAME's MBPP win generalizes to other code benchmarks. Falsifiers: novel-zone +10pp confirms; flat/regress = MBPP-specific contract-name signal; DT suddenly viable on novel benchmark = architectural signal worth chasing.
 
-3. **Add days-between-dates facade** via `MetaFacade`. Parser is richer (ISO date extraction) but `date_ops` backend has `days_between(date1, date2)`. Good test of MetaFacade's `extra_patterns` for non-trivial regex. Shows the decode-path pattern extends to non-arithmetic domains. ~1-2 hours.
+**Files affected**: extend `scripts/dt_install_eval.py` to load HumanEvalPlus parallel to MBPP (probably new `load_humaneval_plus()` function + small sandbox-runner adaptation for `def check(candidate)` form). Receipt at `.claude/MEMORY/evals/2026-04-XX_dt_rename_humanevalplus.md`.
 
-### Medium (4-8 hours)
+### 2. VGSL — claude's lean is **park** (with explicit revisit triggers)
 
-4. **Recursion Level-3 — MetaMetaFacade**. Observe MetaFacade failure modes (higher arity, non-regex parsers, non-integer outputs like `sqrt` → float, boolean outputs like `is_prime`), propose new template families. Current Level-2 template library is the upper bound of the present system. Landing any of these extensions proves Level-3 is real.
+Recommendation given to user via "what do you think?" exchange. **User has not formally said "park" or "Stage 1" — decision is open.** **No VGSL infrastructure work until user explicitly chooses Stage 1 / prototype** (codex's stricter framing, post-/handoff-review). If user picks Stage 1, the spec is ready (see `RESEARCH/VGSL/00_INDEX.md` §"Pursuit path" + `02_IMPLEMENTATION.md` §"In-tree Stage 0/1").
 
-5. **Hospital card deck**: use Level-2 MetaFacade to rapidly stand up 5-10 medical-vertical facades. Drug interaction lookup + dosage calculator + medication-name validation + chief-complaint-to-ICD mapping. Each is a `FacadeSpec` + oracle test set. 1-2 day build = deployable hospital-vertical demo.
+Revisit triggers (when one fires, re-read spec + execute):
+- Correction conflict eats >2h debug session (audit-gate justifies itself)
+- Source-priority causes measurable `CodeExampleDB` retrieval regression
+- Regulated-vertical play emerges (legal/medical/financial)
+- Temporal-query becomes real ask
 
-6. **3-step Planner chains**: "GCD(48,180), then multiply by 3, in hex" → NumberTheory → MultiStep → NumericEncode. Requires parsing "then"/"," connectives in the chain detector. Proof of orchestration-layer scale.
+### 3. R53 Phase 2 — PT training + L24/L30 install (substantive substrate work)
 
-### Longer (8+ hours, research-adjacent)
+Per `CLAUDE.md` §"R53": "Phase 1 (retrieval + DB + generators) shipped; Phase 2 (PT training + L24/L30 install) pending." Bigger session budget; not queued for immediate next session unless user signals.
 
-7. **LLM-written Level-2 variant**. Instead of template-param `FacadeSpec`, have Gemma (+ CodeExampleDB retrieval + CodeVerifierFacade) write the actual Python facade source. Then `ast.parse` + safe_eval oracle still gate. RLAIF-safe "Gemma self-improves": verifier rejects arbitrary code, no drift amplification. Key differentiator from SFT-based self-instruct.
+### 4. Optional — `.codex/AGENTS.md` parity commit
 
-8. **Wire CALM → oracle-signature inference**. Closed loop: CALM verifier catches Gemma failure → infers (fn_name, arity) from the prompt → MetaFacade proposes spec → Level-1 pipeline ships the facade. Last missing link before Phase B is fully autonomous.
++2 lines benign tooling policy. Land as separate small commit if user wants clean tree, OR leave as drift. Not blocking.
+
+### Deferred / separate slices (matches prior handoff; nothing changed)
+
+- **Pre-existing contamination cleanup** — R52.1/R53/session-30/31/32/33-34/R-delta-20/`bb7f13d` in CLAUDE.md/AGENTS.md/other rules. Punted from `0757716` per pre-dispatch agreement. Mechanical, ~30-45 min.
+- **Eager-tier line-cap overflow** — `retrieval.md` 270, `delta_rule.md` 203, `AI_ROOM_COLLAB.md` claude-side 304 (all over 200 hard cap). Carve to atlas. Mechanical, ~30-45 min.
+- **Dense retrieval device-alignment fix** — parked from Slice B; `_cached_dequant` monkey-patch in `gemma_substrate.py:1458-1475` leaks GPU cache into `DenseIndex.load()`'s CPU dequant path. Unpark only if new workload demands hybrid RRF.
+- **VGSL Stage 1 prototype** (only if user picks Stage 1) — ~1-2 weeks of careful refactor for in-tree `CodeExampleDB` shadow swap with `source_priority_v1` policy materializing current `examples` order bit-for-bit; 4 success gates per `RESEARCH/VGSL/03_TESTING.md` §"In-Tree Stage 1 Falsifier."
 
 ## Key Context
 
-### Decode-path bias discipline (R53a receipt, now canonical)
+### Joint critique distilled findings (load-bearing for VGSL spec interpretation)
 
-- Gemma's natural `0` logit after `"Answer: "` is **57–66**. +50 boost on `▁` (id 236743) cannot flip.
-- **Rule**: strip BOTH BOS (id=2) AND leading `▁` (id=236743) from bias token sequences for integer-answer facades. Step-0 then biases the first digit directly.
-- **POST_BIAS_BUDGET=4**: after bias exhausts, Gemma sticks in same-digit loops ("0-run", "F-run"). Cap post-bias tail at 4 natural tokens.
-- **`_parse_int` caps digit-run at 12 chars** as a last-ditch defense against residual loops.
-- **Scope**: applied in `number_theory.py`, `numeric_encode.py`, and all `recursion.py`-generated facades (via shared `_TEMPLATE`). NOT backported to `multi_step.py` / `base_conversion.py` — shipped tests don't trigger the bug.
-- **Text-answer exception** (Icd10RecallFacade): do NOT strip `▁` — the diagnosis starts with a capital merged into `▁Type`, `▁Hypertension`, etc.
+The 5 load-bearing primitives identified jointly:
+1. **Non-destructive merge as projection-time aliasing** (codex's R4 insight, preserved verbatim at `01_ARCHITECTURE.md:88-101`)
+2. **Verifier+canonicalizer versioning per event** (`01:103-115`)
+3. **Binding/merge/projection separation** (`01:159-201`)
+4. **Exact-default reads with explicit slow path** (`01:245-275`)
+5. **Dependency-tracked derivation invalidation** (`01:117-131`)
 
-### Daemon state invariants (2026-04-22 lesson)
+Overstated framings (now softened in spec):
+- "Post-transformer architecture" → "non-weight knowledge substrate for a post-transformer stack"
+- "Versioned event log as novelty" → real prior art (Datomic, Kafka + materialized views, RDF/SPARQL with revision history); novel composition is verifier+canonicalizer versioning + non-destructive merge + dependency invalidation + exact-gated reads
+- "Retrieval-null motivates whole thesis" → motivates dual-path discipline only; defensibility argument, not new-capability
+- "Phase 1 falsifier proves novelty" → proves semantics only; distinctive value at Phase 3
+- "Imitation-trained attacked at base" → attacked only when Phase 4 proposer/verifier generates beyond imitation
 
-- `RESET_GLOBALS` (via `bin/gemma-run --reset`) does NOT clear `m.verification_hooks`, `m.reserved_channels`, or `m.layers[idx].card_slots`. A lingering R22 MQAR hook from r22d caused r60a's first run to emit `"4444..."` on every ICD-10 probe.
-- **Rule**: every facade test script starts with `clear_card_state()` — pattern in `r60a_icd10_failure_gate.py`, `r70a_planner_mixed.py`, `m1a_four_new_facades.py`, `r80a_recursion_demo.py`.
-- After editing a facade module source, **full daemon restart** (`--quit` + `--start`) is required, not `--reset`. The daemon re-execs the SCRIPT on each run, but `sys.modules` is shared. `importlib.reload` inside the script helps for THAT run but subsequent runs see the cached version again.
-- Signature of a lingering hook: pure-digit artifacts on unrelated prompts ("hello" → "0000000"). Check state before suspecting new code.
+Real risks (3 stacked open-research dependencies):
+1. Open-world canonicalization is "TODO" (`01:366-368`)
+2. Tier B "common-sense merges" claim too strong; correlated evidence + missing contradictions
+3. Phase 4 learned-proposer might fail; product-path VGSL survives without it (closed-world / Tier-A-heavy), research-path does not
 
-### ICD-10 edge cases (F1 ruled out)
+### Codex's load-bearing correction (msg `1776979663929-802bd974`, verbatim)
 
-4 codes resist both prompt rephrase + in-context injection + 3× boost:
-- **T44.6X4D** — Poisoning by alpha-adrenoreceptor antagonists, undetermined
-- **T40.5X4D** — Poisoning by cocaine, undetermined, subsequent encounter
-- **V80.22XA** — Occupant of animal-drawn vehicle injured in collision
-- **W10.0XXA** — Fall (on)(from) escalator, initial encounter
+> **CodeExampleDB source priority is projection policy, not merge semantics.**
+>
+> Source priority should live in the projection rule / selected-assertion derivation: `accepted_assertion.source_tier`, `source_rank`, stable tie-breaker `(corpus_order, line_no, event_id)`, and a projection output like `active_example_for_key = assertion_id`. Otherwise we conflate identity with representative selection and recreate the merge/binding mistake in a smaller room.
 
-Common trait: unusual internal tokens (`X4D`, `22XA`, `0XXA`) trigger Gemma's "code-analysis format" prior. Output dumps "Analysis of ICD-10 Code..." template that dominates both integer and text bias. Genuine tier-3 edge; documented in `compute_facades.md` as future work.
+Codified in `02_IMPLEMENTATION.md` Invariant 8 + §"Source priority encoding"; cross-ref'd from `01_ARCHITECTURE.md` §"Source-priority is projection policy, not merge semantics."
 
-### Failed approaches (cite SHAs, don't retry)
+### "Prove parity before value" — gate-design correction (codex msg `1776979663929-802bd974`)
 
-- **Parse failure as R22 N=10 hypothesis** (r22f_parse_diag.py): offline regeneration showed 60/60 parse OK. The bottleneck was margin gate, not parser.
-- **Anchor-word scoring for ICD-10**: too strict. Gemma's "Hypertension" missed anchor "(primary) hypertension".
-- **Longest-word scoring for ICD-10**: too weak. "complications" matched any diagnosis containing that generic word.
-- **WebFetch on CMS ICD-10 page**: 60000ms timeout. CMS zip URL returned HTML-redirect page, not ZIP. Used `smog1210/2022-ICD-10-CM-JSON` GitHub mirror instead (6.7 MB, 72,748 codes verified).
-- **Hand-guessed ICD-10 codes**: 23/50 first-guess codes missing from 2022 DB. Switched to DB-sampled real codes.
-- **`comb` / `perm` / `isqrt` / `divmod` as safe_eval function names**: not registered. Correct names are `combinations` / `permutations` / `sqrt` / (no divmod).
-- **Generator `r`-prefix + `{pat!r}`**: double-escapes `\s` → `\\s`. Fix: `{pat!r}` without `r` prefix. Inline comment at `_render_parse_res_literals` in `recursion.py`.
-- **`path.relative_to(ROOT)` in script running under daemon**: daemon cwd differs from repo root. Use `Path(__file__).resolve().parent.parent.parent` for `_REPO_ROOT`, catch `ValueError` in script.
+Claude originally proposed "≥3 bugs surfaced in 1-week shadow mode" as success gate. Codex called this luck-shaped — would punish a clean system. Replaced with 4 explicit gates:
+1. **Parity gate** (entry ticket — behavior-equivalent first)
+2. **Audit gate** (forced auditability test)
+3. **Performance gate** (≤10% overhead, O(1) active lookup)
+4. **Value gate** (shadow-mode bugs are upside, not entry ticket)
 
-### Methodology caveats
+Now in `03_TESTING.md` §"In-Tree Stage 1 Falsifier" §"Success gates."
 
-- All A/B runs are single-seed / single-run (not median-of-5 per workflow_part_1.md §"GPU bench discipline"). Acceptable for decode-path facades because the delta is large (several-fold change) and deterministic modulo Gemma's argmax; not acceptable for future Triton kernel work where variance is 20-30%.
-- R60a scoring function evolved across three iterations (anchor → longest → bag-of-words). Final BoW was baked into the script before last commit; receipts earlier in the chain use weaker scoring.
-- PlannerFacade uses runtime-glue orchestration (Option A). Option C (compiled planner card with channel-as-register state) is deferred.
-- Recursion generator is template-parameterized, not LLM-written. Level-2 MetaFacade adds pattern synthesis but not code synthesis. True LLM-in-loop recursion remains future work.
+### User pivots verbatim (this session)
+
+| Moment | Verbatim | Effect |
+|---|---|---|
+| collab entry | invoked `/collab` | drained reconnect state, took over Slice A |
+| codex async signal | "codex compiling" | proceeded solo on offline RENAME replay |
+| forced grounding audit | "did you read this at session start'/mnt/c/Users/gabes/projects/claw-code/.claude/MEMORY/SESSION_HANDOFF.md'?" | claude conceded no, read in full, identified 5 missed gotchas |
+| direction | "yes do cleanup commit then review'/mnt/c/Users/gabes/projects/claw-code/RESEARCH/VGSL' with codex with first principles thinking" | landed `362e5a5` cleanup + opened first-principles review |
+| upside question | "what is the upside of vgsl ontop of substrate?" | claude framed as "purely a knowledge-substrate replacement for KnowledgeStore + CodeExampleDB + auto-upgrade loop"; commercial vertical = substantial; current R&D = marginal |
+| **reframe** | "ok well if its a upgrade to VGSL is purely a knowledge-substrate replacement for KnowledgeStore + CodeExampleDB + auto-upgrade loop. then maybe its worth pursuit? discus with codex" | triggered design discussion → Stage 1/2 in-tree shadow-mode framing |
+| spec-update direction | "ok update '/mnt/c/Users/gabes/projects/claw-code/RESEARCH/VGSL' with new ideas with codex" | landed `94767db` 4-file spec update |
+| recommendation ask | "what do you think?" | claude's answer: park with revisit triggers |
+| next-line ask | "so after last eval what was the next line of pursuit?" | claude surfaced HumanEvalPlus / BigCodeBench RENAME extension |
+| timing ask | "how long would that take?" | claude estimated ~2h active + ~7h daemon |
+| **handoff** | "/handoff lets hand off to pick up in new session" + "and include codex for review" | THIS handoff invocation |
+
+### Subagent-policy reminder
+
+Charter §C: claude-side documented exception preserved (slash-command subagents allowed where command explicitly allows them); codex-side no-subagents preserved. THIS /handoff fired 2-agent parallel grounding per command spec — within charter.
+
+### Failed approaches this session (none new — all from prior sessions)
+
+No new failed approaches this session. Prior session nulls remain valid: DT code-skeleton for MBPP (ruled out), retrieval-signature without rename (ruled out), batched autoreg eval (ruled out). DT-bias on MBPP confirmed null at N=50; RENAME canonical.
 
 ### Hardware / environment state at session end
 
-- **Daemon**: PID **362642**, uptime **32m37s** at /handoff time. `python3 -u bin/gemma_daemon.py`.
-- **GPU**: 6299 MiB used, 27% util. Gemma 4 E4B tq4 substrate preloaded (5.17 GB) + Q6_K embedding + tq4 weights.
-- **Substrate**: `/home/gabe/models/gemma-4-E4B-it-tq4-aligned.gguf`, 42 layers, 720 tensors.
-- **ICD-10 DB**: `.cache/icd10/icd10cm_codes_2022.json` (6,707,336 bytes, 72,748 codes).
-- **Generated facade files**: `calm/llm_computer/facades/factorial_auto.py` (6534 B), `fibonacci_auto.py` (6633 B), etc. — all verified on disk post-commit.
-- Last daemon job: `m2a_metafacade_demo.py` (M2A_DONE).
+- Gemma daemon PID 540958, running `bin/gemma_daemon.py`, etime ~7h46m, 75.7% CPU
+- GPU: 7042/8188 MiB used by PID 540958, 5% util, 15W/99W, 37C — warm/idle-resident (model loaded, awaiting requests)
+- Forensic dumps preserved: `/tmp/dt_install_eval_results.json` (258 KB, N=50 dump from 21:50). Other artifacts: `/tmp/dt_install_eval_n5_results.json` (25 KB), `/tmp/dt_install_eval_n20_results.json` (102 KB, prior-eval dump — preserved separately, NOT overwritten), `/tmp/dt_retrieval_offline_eval.json` (9.8 KB), `/tmp/dt_retrieval_offline_n20_results.json` (9.8 KB), train logs v14-v17 (prior session R&D).
+- Branch `feature/multi-agent-qwen` on `mastergrief/zenith-code`
+- ai-room cursor synced; both peers idle
 
 ## Files in Project (session-shipped)
 
-### New core module
-- `calm/llm_computer/recursion.py` — Level-1 `FacadeSpec` generator + Level-2 `MetaFacade`. `_TEMPLATE` at line ~70, `_REPO_ROOT` at line ~270, `generate_facade()` / `validate_facade()` / `import_facade_class()` at lines ~273-350, `MetaFacade.from_oracle()` at line ~528, module-level FACTORIAL_SPEC / FIBONACCI_SPEC / COMBINATIONS_SPEC / PERMUTATIONS_SPEC / POWER_SPEC / NEXT_PRIME_SPEC at 356-462.
+### New files
 
-### New facade files (15)
-- **Hand-written specialists** (5): `number_theory.py`, `icd10_recall.py`, `numeric_encode.py`, `planner.py`, + prior `base_conversion.py` / `multi_step.py` unchanged.
-- **Level-1 auto-generated** (6): `factorial_auto.py`, `fibonacci_auto.py`, `combinations_auto.py`, `permutations_auto.py`, `power_auto.py`, `next_prime_auto.py`.
-- **Level-2 meta-synthesized** (5): `factorial_meta.py`, `combinations_meta.py`, `gcd_meta.py`, `lcm_meta.py`, `fibonacci_meta.py`.
+- `.claude/MEMORY/evals/2026-04-23_dt_rename_n50.md` (108 lines, `1e0680e`) — N=50 RENAME-vs-DT receipt; canonical reference for `dac50ed`-stands-at-scale verdict.
 
-### New scripts (14)
-- Diagnostic: `r22f_{n10_diag, parse_diag, live_parse_trace, threshold_sweep}.py`, `r53a_{debug, debug_probe}.py`.
-- A/B: `r22d_rerun_final_config.py`, `r53a_number_theory.py`, `r60a_icd10_failure_gate.py`, `r70a_planner_mixed.py`, `r70b_planner_chain.py`, `r80a_recursion_demo.py`, `m1a_four_new_facades.py`, `m2a_metafacade_demo.py`.
+### Modified files
 
-### Modified docs (11 rules files + CLAUDE.md)
-- `.claude/CLAUDE.md` — Brain+Cards model rewritten, install typology updated 22.0→14.5, decode-path facade list extended.
-- `.claude/rules/delta_rule.md` — §R22 install rewritten for 14.5 shipping + 22.0 preserved as historical receipt.
-- `.claude/rules/Substrate.md` — §CardSlot example updated, per-N margin data added.
-- `.claude/rules/embed_intelligence.md` — R22 min_margin narrative + new §"`▁`-strip + POST_BIAS_BUDGET discipline".
-- `.claude/rules/compute_facades.md` — full rewrite; "Shipped instances" table (17 facades), three-path "Adding a new domain" (Level 0 / 1 / 2).
-- `.claude/rules/recursion.md` — Level-1 + Level-2 rewritten as SHIPPED.
-- `.claude/rules/architecture.md` — prod Gemma install line updated.
-- `.claude/rules/augmentation_thesis.md` — tier-2 table extended; hospital vertical cites Icd10RecallFacade; tier-3 text-recall refinement.
-- `.claude/rules/tracing_roadmap.md` — 7 new "Shipped and verified" rows.
-- `.claude/rules/capability_gain.md` — §"2026-04-22 session receipts" with per-commit table.
-- `.claude/rules/workflow_part_1.md` — new §"Daemon state invariants".
-- `.claude/rules/commercial.md` — two new differentiator rows.
+- `RESEARCH/VGSL/00_INDEX.md` (+191/−41, claude-authored, `94767db`) — pursuit path, Stage 1/2 framing, decision restructure
+- `RESEARCH/VGSL/01_ARCHITECTURE.md` (+147/−25, claude-authored, `94767db`) — caveats, Tier B softening, source-priority section
+- `RESEARCH/VGSL/02_IMPLEMENTATION.md` (+190/−0, codex-authored, `94767db`) — Stage 0/1/2 implementation shape, Invariant 8, source priority encoding
+- `RESEARCH/VGSL/03_TESTING.md` (+110/−14, codex-authored, `94767db`) — 4 in-tree gates, parity-first principle, event-sourced baseline
+- `scripts/dt_install_eval.py` (+1/−1, `362e5a5`) — `DT_EVAL_N` default 20 → 50
 
-### New eval receipts (9)
-- `.claude/MEMORY/evals/2026-04-22_{r22f_threshold_sweep, r22d_rerun_threshold_14.5, r53a_number_theory_facade, r60a_icd10_tier3_demo, r70a_planner_mixed, r70b_planner_chain, r80a_recursion_level1_demo, m1a_four_new_facades, m2a_level2_metafacade}.md`.
+### Deleted files
 
-### Cache / data
-- `.cache/icd10/icd10cm_codes_2022.json` (6.4 MB, 72,748 codes) — gitignored by convention.
-- `.cache/{r22b, r60a_icd10_results.jsonl, r70a_planner_results.jsonl, r70b_planner_chain_results.jsonl}` — per-round replay data.
+- `.claude/MEMORY/SESSION_HANDOFF_1.md` (−173, `362e5a5`) — stale handoff backup
+- `.claude/MEMORY/notesd.md` (−134, `362e5a5`) — stale notes file
 
 ## Handoff verification
 
-- Narrative vs git state: **match.** All 13 commits confirmed via `git log --oneline -15`.
-- `min_margin=14.5` present in 5 doc locations (CLAUDE.md, delta_rule.md, Substrate.md, architecture.md, capability_gain.md). Stale 22.0 references only appear in explicit "historical receipt" context (delta_rule.md, embed_intelligence.md).
-- 11 new facade files + `recursion.py` confirmed on disk.
-- Generated `factorial_auto.py` (6534 B) + `fibonacci_auto.py` (6633 B) verified.
-- `.cache/icd10/icd10cm_codes_2022.json` verified (6,707,336 bytes).
-- All `.claude/` docs ≤500 LOC soft cap.
-- 2-agent Explore grounding matches main-context narrative — no discrepancies flagged.
-- Uncommitted session-critical files: **none.** Only `.claude/MEMORY/notesd.md` (pre-existing, non-today) + runtime caches.
+- ✅ 3 current-repo session commits verified individually: `1e0680e`, `362e5a5`, `94767db`. Verified via `git log --oneline -5` + per-commit `git show --stat`.
+- ✅ Grounding via 2 parallel Explore agents (transcript+measurements / code+uncommitted state); this handoff uses their verbatim extractions for eval numbers + commit deltas + uncommitted-state classification.
+- ✅ Daemon PID 540958 alive, etime 7h46m at handoff finalization, 7042/8188 MiB GPU resident.
+- ✅ All ai-room tasks completed: Slice A (`1776966574027-bb08a31d`), VGSL critique parent (`1776978553491-9cd7ee74`), spec-update parent (`1776979899534-1ac48036`); both codex sibling tasks also completed.
+- ✅ ai_room_resume_check → `idle ok: no owned tasks, no pending inbox`
+- ✅ N=50 RENAME receipt commits verbatim numbers from `/tmp/dt_install_eval_results.json` + offline `scripts/dt_rename_offline_eval.py` rerun (codex re-verified the offline scorer; not the 6.7h live daemon eval).
+- ✅ VGSL spec update preserves codex's two decisive one-liners verbatim ("Merge is not fact movement..." / "Binding resolves references...") per AI Room charter §F.
+- ✅ Codex cross-review completed via ai-room (msg `1776981614275-30403a17`); 4 metadata corrections landed verbatim before user-facing confirmation: per-file numstats (`+191/-41`, `+147/-25`, `+190/-0`, `+110/-14`), `.cache/` + `.port_sessions/` reclassified from "gitignored cache" to "untracked cache (NOT gitignored — convention only)", `/tmp/dt_install_eval_n20_results.json` corrected from "overwritten" to "preserved separately", VGSL no-work framing strengthened.
