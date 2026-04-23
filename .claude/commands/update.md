@@ -8,6 +8,39 @@ The default for a non-trivial update (session touched >1 subsystem, >3 commits, 
 
 Case-study receipt: the 2026-04-20 fused flash-attn flip (commit `ad1469e`) used this exact 3-agent split. Agent 1 extracted verbatim bench numbers from the minutes transcript; Agent 2 mapped the flag + dispatch + N-gate feasibility to 5 specific line numbers; Agent 3 enumerated 14 doc locations across 7 files with fix-category tags. Synthesis + plan + commit took ~30 min end-to-end.
 
+### Phase 0 — contamination check (run FIRST, before any audit)
+
+Memory architecture splits content by *currency*: `.claude/rules/` =
+current invariants, `.claude/MEMORY/atlas/<topic>_arc.md` = receipts /
+ruled-out / dated measurements / per-round arcs. If a rules file already
+contains receipts, this `/update` will pile new ones on top of old
+contamination. Migrate first, audit second.
+
+```bash
+# Flag rules files contaminated with receipts
+grep -nE '\bR[0-9]+|\b[a-f0-9]{7,}\b|\b20[0-9]{2}-[0-9]{2}-[0-9]{2}' \
+  .claude/rules/*.md
+```
+
+For each hit: extract the contaminating block (R-number paragraph,
+SHA citation, dated bench, "Ruled out" / "Cancelled" / "Historical
+ships" subsection) → move to `.claude/MEMORY/atlas/<topic>_arc.md`
+(create if missing) → leave a single cross-ref line at the top of the
+rule:
+
+```markdown
+> Historical receipts: see `MEMORY/atlas/<topic>_arc.md`.
+```
+
+Also run the preload measurement gate:
+
+```bash
+python3 scripts/measure_preload.py --max-tokens 15000
+```
+
+If eager-tier exceeds the cap, the contamination migration above is
+mandatory before proceeding.
+
 ### Phase 1 — parallel research (3 Explore agents)
 
 **The brief IS the session context.** Agents are cold-started with zero
@@ -43,6 +76,7 @@ domain — don't blur scopes. Synthesis happens in main context.
   - **correct the claim** (was wrong, rewrite)
   - **tighten / add gate** (still mostly right, needs qualifier)
   - **keep as historical receipt** (session-specific, mark PARTIALLY SUPERSEDED not delete)
+  - **misclassified by location** (content is a receipt — R-number, SHA, dated bench, ruled-out arc — but lives in `rules/`. Migrate to `MEMORY/atlas/<topic>_arc.md`, leave one-line cross-ref in rule)
   - **new section** (mechanism is new, needs fresh doc)
 - Group findings by file; include edit-priority ordering
 - ≤ 500 words
@@ -74,14 +108,29 @@ Call `ExitPlanMode` when ready; do not ask "is this ok?" in prose.
 - One P-tier per commit (3 commits total for a full-scope session). Each commit message cites the receipts (commits from this session, eval deltas, null-round counts).
 - Use `Edit`, not `Write` — preserve structure, tone, and terse imperative voice.
 - Match existing section depth / bullet style / table format.
-- 500 LOC hard limit per file (250-500 sweet spot). If a new section pushes past, trim older stale content in the same file before adding.
+- **Eager-tier line cap**: rules files target ≤ 150 lines, hard cap 200. Atlas files unbounded (query-triggered). If a new section pushes a rule past cap, carve receipts to atlas/ — don't split into `_part_1/_part_2`.
 
 ### Phase 5 — verification (fail-closed)
 
 Run every verification check listed in the plan file. Typical set:
 - `grep -r "<stale claim>" .claude/` returns zero hits
 - `grep -r "<new mechanism name>" .claude/` hits all expected files
-- `for f in .claude/CLAUDE.md .claude/rules/*.md; do lines=$(wc -l <"$f"); if [ "$lines" -gt 500 ]; then echo "OVER: $f: $lines"; fi; done` is empty (or limited to inherited-over files already flagged)
+- **Receipt contamination check** (must return zero hits in `rules/`):
+  ```bash
+  grep -nE '\bR[0-9]+|\b[a-f0-9]{7,}\b|\b20[0-9]{2}-[0-9]{2}-[0-9]{2}' \
+    .claude/rules/*.md && echo "FAIL: rules/ contains receipts — migrate to MEMORY/atlas/"
+  ```
+- **Eager-tier line cap** (200 hard cap):
+  ```bash
+  for f in .claude/CLAUDE.md .claude/rules/*.md; do
+    lines=$(wc -l <"$f")
+    [ "$lines" -gt 200 ] && echo "OVER: $f: $lines lines (cap 200)"
+  done
+  ```
+- **Eager-tier token gate** (must pass):
+  ```bash
+  python3 scripts/measure_preload.py --max-tokens 15000
+  ```
 - Spot-read 2-3 edited files for coherent integration, not tacked-on appendices
 
 If verification fails, fix before declaring done. If a finding is lost, add it OR explicitly note "see <script>:<line>" in a rule.
@@ -118,14 +167,18 @@ If verification fails, fix before declaring done. If a finding is lost, add it O
    - **Missing**: invariant / constant / mechanism exists in code but isn't documented — add a new rule
    - **New architectural mechanism** (distinct enough from existing rules) — create a new `.claude/rules/*.md` file. Don't force-fit it into an existing one that's off-topic.
 
-6. **Route findings to the right layer**:
+6. **Route findings by *currency* AND *layer***:
+
+   First decide *currency* — is this how we do it NOW, or a receipt of how we got here?
 
    | Finding type | Destination |
    |---|---|
-   | Project facts, architecture, defaults | `CLAUDE.md` + existing rule |
-   | New architectural mechanism (e.g. new subsystem / new pattern) | New `.claude/rules/<name>.md` |
-   | Extension of existing concept | Edit existing rule |
-   | Strategic synthesis / thesis-level claims | `augmentation_thesis.md` or `commercial.md` |
+   | **Current invariant / API / default** (the *rule*) | `.claude/rules/<topic>.md` (eager) |
+   | **Receipt: R-number, commit SHA, dated bench, ruled-out experiment, cancelled arc, "Historical ships"** | `.claude/MEMORY/atlas/<topic>_arc.md` (query-triggered). Cross-ref from rule with `> Historical receipts: see MEMORY/atlas/<topic>_arc.md`. |
+   | **Per-round arc / null log** | `.claude/MEMORY/atlas/<topic>_arc.md` |
+   | New architectural mechanism (current API + invariants only) | New `.claude/rules/<name>.md` + companion `MEMORY/atlas/<name>_arc.md` for the receipts that justified it |
+   | Extension of existing concept (current state) | Edit existing rule; receipts of the change → atlas |
+   | Strategic synthesis / thesis-level claims | `augmentation_thesis.md` or `commercial.md` (current framing); per-round derivation → atlas |
    | Environment quirks (WSL, OS, hardware, service gotchas) | `.claude/rules/training.md` §Known Issues |
    | Session-specific state, mid-flight work, uncommitted files | `.claude/MEMORY/SESSION_HANDOFF.md` |
    | Personal debugging lessons / preferences | `~/.claude/projects/.../memory/` (NOT docs) |
@@ -153,14 +206,26 @@ If verification fails, fix before declaring done. If a finding is lost, add it O
 
 ## Rules
 
+- **Rules files must not contain receipts.** A file in `.claude/rules/`
+  MUST NOT contain: R-numbers (`R\d+`), commit SHAs (7+ hex chars),
+  dated measurements (`YYYY-MM-DD`), bench tables, "Historical ships" /
+  "Cancelled" / "Ruled-out" / "Per-round arc" subsections. These belong
+  in `.claude/MEMORY/atlas/<topic>_arc.md`, linked from the top of the
+  rule with one line: `> Historical receipts: see MEMORY/atlas/<topic>_arc.md`.
+  This is the load-bearing discipline that keeps eager-tier preload
+  bounded — it's why `/update` Phase 0 grep-checks before any audit.
+- **Eager-tier line caps**:
+  - `.claude/rules/*.md`: target ≤ 150 lines, hard cap 200. If past cap,
+    carve receipts to atlas — DO NOT split into `_part_1/_part_2`.
+  - `.claude/MEMORY/atlas/*.md`: unbounded (query-triggered, not preloaded).
 - **Replace, don't append**. If a section says "5 tools" and there are now 7, change the number. Don't add a note.
 - **Delete dead info**. If a feature doesn't exist yet, remove it or mark it as planned.
 - **Keep it scannable**. Bullet-point style, same section headers where possible.
 - **Verify claims**. Don't trust what the docs say — read the actual files. Line counts change, features evolve.
 - **Update rules files too**. Check all rules under `.claude/rules/` against actual code state.
-- **New files are fine**. Creating a new `.claude/rules/<name>.md` is preferred over cramming a new mechanism into an unrelated file. Target ~150-300 lines per rule.
-- **Capture invariants, not just facts**. For fragile areas (flag state, lock ordering, event sequencing, init order, side-effecting imports, hardcoded limits), add explicit "invariant" rules explaining what NOT to do and why. Cite the fixing commit.
-- **Cite commits in doc updates**. When documenting a rule that came from a recent bug fix, include the commit hash inline.
+- **New files are fine**. Creating a new `.claude/rules/<name>.md` is preferred over cramming a new mechanism into an unrelated file. Pair every new rule with a sibling `MEMORY/atlas/<name>_arc.md` for receipts.
+- **Capture invariants, not just facts**. For fragile areas (flag state, lock ordering, event sequencing, init order, side-effecting imports, hardcoded limits), add explicit "invariant" rules explaining what NOT to do and why. **Cite the fixing commit in the atlas entry, not in the rule.**
+- **Cite commits in atlas, not rules**. Citation format: `` (commit `c11232a`) `` belongs in `MEMORY/atlas/<topic>_arc.md`. The rule references the atlas: `See MEMORY/atlas/<topic>_arc.md for the R22f recalibration receipt.`
 - **Don't put project facts in memory**. Memory = personal preferences + debugging lessons. Project state / architecture / conventions → `CLAUDE.md` or `.claude/rules/`.
 - **Distinguish wrong-premise from stale**. Stale was true and is now false; wrong-premise was never quite right. Wrong-premise needs framing changes, not just value updates.
 - **Session-log extraction before rule-writing**. If a transcript exists, findings there are richer than docs. Pull from transcript first, reconcile with code + commits second, write rules third.
