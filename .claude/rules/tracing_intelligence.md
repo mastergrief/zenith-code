@@ -10,7 +10,7 @@ interpretability advances.
 
 This file is the first-principles companion to `Substrate.md`
 (architectural invariants), `capability_gain.md` (measurement
-discipline), and `tracing_roadmap.md` (what's actually been traced
+discipline), and `MEMORY/atlas/tracing_arc_part_1.md` (what's actually been traced
 and what's next).
 
 ## What "compilable" means here
@@ -202,7 +202,7 @@ compiled cards.
 The first mechanistic-interpretability arc on this model. Validated
 that steps 1-2 of the tracing workflow (corpus + activation patching)
 produce clean results on capabilities whose information flow aligns
-with Gemma's architecture. Full arc details in `tracing_roadmap.md`
+with Gemma's architecture. Full arc details in `MEMORY/atlas/tracing_arc_part_1.md`
 §"Gemma 4 E4B tracing findings"; summary:
 
 - **Activation patching (R16)** localizes arithmetic to **L22-L30
@@ -238,7 +238,7 @@ with Gemma's architecture. Full arc details in `tracing_roadmap.md`
   bias to N-op compositions → **17/17 real Gemma fixes, 0
   regressions**. Becomes the 5th L23-hub beneficiary →
   **5-for-1 compilation ROI**. Full per-capability
-  detail: `.claude/MEMORY/atlas.md`.
+  detail: `.claude/MEMORY/atlas/capabilities.md`.
 - **Multi-step composition mapped (R47-R50.6)**: 7th capability
   on the atlas. L24 SWA Δ=-17.23. **Deep-diffuse** — ruled out
   at attention (R47.4), FFN per-neuron (R48.1), SVD rank (R49.1-5),
@@ -318,5 +318,5 @@ the theoretical upper bound is labor, not architecture.
   actually delivered a capability, not just a format change
 - `embed_intelligence.md` — delivery mechanisms (card → Gemma tokens)
 - `Substrate.md` — install mechanisms (where cards live)
-- `tracing_roadmap.md` — concrete plan of what to trace next
+- `MEMORY/atlas/tracing_arc_part_1.md` — concrete plan of what to trace next
 - `workflow.md` — hypothesis-test discipline

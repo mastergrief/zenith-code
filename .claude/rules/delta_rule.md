@@ -12,7 +12,7 @@ those refer to the same thing. Use **DT** in all new prose, commits,
 and filenames.
 
 R5→R21 arc (2026-04-21, "R-delta" scope — distinct from tracing-arc
-R13-R21 in `tracing_roadmap.md`/`atlas.md`). `CopyAugmentedDeltaNet`
+R13-R21 in `MEMORY/atlas/tracing_arc_part_1.md`/`capabilities.md`). `CopyAugmentedDeltaNet`
 is the **default trained-card architecture for retrieval + structure-
 extraction regimes** (R20 consolidation, commit `63a49fc`), superseding
 plain `CopyAugmentedTransformer` for new work. Code-skeleton DT is
@@ -180,7 +180,7 @@ Checkpoints:
 
 ## Nulls (for the ruled-out log)
 
-Documented in `tracing_roadmap.md` §"R-delta ruled-out log" with
+Documented in `MEMORY/atlas/tracing_arc_part_2.md` §"R-delta ruled-out log" with
 R-delta prefix to avoid collision with tracing-arc R-numbers:
 
 - `dba270e` R-delta-5 pure DeltaNet at substrate scale (19.7% n=5)
@@ -435,7 +435,7 @@ Full receipts for this arc: `.claude/MEMORY/SESSION_HANDOFF.md`
 - `capability_gain.md` — MQAR data-scaling receipt + the "plateau =
   bug, not tuning" canonical case
 - `training.md` — PT vs PT+Delta training recipes
-- `tracing_roadmap.md` §"R-delta ruled-out log" — null arc receipts
+- `MEMORY/atlas/tracing_arc_part_2.md` §"R-delta ruled-out log" — null arc receipts
 - `workflow_part_1.md` §"The loop" — hypothesis/test/commit discipline
   that produced the R-delta arc
 

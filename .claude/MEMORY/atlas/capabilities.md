@@ -279,7 +279,7 @@ All scripts live at `scripts/test_*.py`. Look for named patterns:
   framework, typology, compositional hypothesis)
 - `tracing_intelligence.md` — first-principles bound on what's
   compilable
-- `tracing_roadmap.md` — concrete round-by-round progress log
+- `MEMORY/atlas/tracing_arc_part_1.md` + `tracing_arc_part_2.md` — concrete round-by-round progress log
 - `capability_gain.md` — measurement discipline
 - `Substrate.md` — install mechanics (how to compile into Gemma)
 - `substrate_registry.md` — what's currently INSTALLED (vs this

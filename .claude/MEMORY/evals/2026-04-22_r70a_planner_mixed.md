@@ -1,6 +1,6 @@
 # R70a — PlannerFacade mixed-corpus A/B
 
-Orchestration MVP per `tracing_roadmap.md` §'Planner card'.
+Orchestration MVP per `MEMORY/atlas/tracing_arc_part_1.md` §'Planner card'.
 Single NL entry point dispatches to 4 specialist facades
 (multi_step / base_conv / number_theory / icd10) plus
 pass-through. First-match-wins priority chain, no chaining yet.
