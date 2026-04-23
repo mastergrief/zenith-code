@@ -1,6 +1,6 @@
 # M2a — Level-2 MetaFacade demo
 
-Per `.claude/rules/recursion.md` §'Level 2'. MetaFacade
+Per `.claude/spec/recursion.md` §'Level 2'. MetaFacade
 synthesizes the FacadeSpec itself from just
 (oracle_fn_name, arity). All three Level-1 CALM gates still
 apply (oracle validation → ast.parse → live A/B); only the

@@ -429,7 +429,7 @@ Full receipts for this arc: `.claude/MEMORY/SESSION_HANDOFF.md`
 
 ## Related rules
 
-- `Substrate.md` — CardSlot / VerificationHook / in-attention install
+- `.claude/spec/Substrate.md` — CardSlot / VerificationHook / in-attention install
 - `augmentation_thesis.md` — tier-2 stacking framework (PT+Delta is
   a tier-2 card for retrieval failure modes)
 - `capability_gain.md` — MQAR data-scaling receipt + the "plateau =

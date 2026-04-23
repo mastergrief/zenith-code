@@ -288,7 +288,7 @@ if os.environ.get("MBPP_FINAL")=="1" else ITERATION_N`).
 ## Export & Serving
 
 Canonical serving docs in `.claude/CLAUDE.md` §"Serving Architecture".
-Quantization-specific details in `.claude/rules/turboquant.md`. Default:
+Quantization-specific details in `.claude/spec/turboquant.md`. Default:
 Q5_K_M weights + Q4/tq4 KV; `Q5_K_M` over Q4 unless VRAM forces; for
 Gemma use tq4 + tq4-KV at 512K context.
 

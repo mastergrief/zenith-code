@@ -105,7 +105,7 @@ validate_facade(spec, oracle_cases)   # CALM-gated
 generate_facade(spec, overwrite=True)
 ```
 
-See `.claude/rules/recursion.md` for the full Level-1 pipeline
+See `.claude/spec/recursion.md` for the full Level-1 pipeline
 (three CALM gates: oracle validate → ast.parse → live A/B).
 
 ### Level 2 (seconds) — `MetaFacade.from_oracle(fn_name, arity)`

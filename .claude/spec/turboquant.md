@@ -200,7 +200,7 @@ paths A/B/C/D per `scripts/bench_decode_paths.py`):
 llama.cpp baseline on the same GGUF is ~42 tok/s. Historical
 "42 tok/s / 90% llama" claim from session 32 is unreproducible
 in current bench — hardware/driver state dependent; reserve for
-matching conditions or rebench. See `.claude/rules/architecture.md`
+matching conditions or rebench. See `.claude/spec/architecture.md`
 "Gemma substrate loader" for the full perf chain.
 
 ## Graph-captured tq4 KV decode (Track A, 2026-04-21)

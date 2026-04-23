@@ -2,7 +2,7 @@
 
 R53 Phase 1 shipped a full hybrid retrieval stack over `CodeExampleDB`.
 This rule documents the architecture, API, and the invariants that
-keep it correct. See `.claude/rules/code_reasoning_db.md` for the
+keep it correct. See `.claude/spec/code_reasoning_db.md` for the
 DB side; this file is about how retrieval works on top of that DB.
 
 ## Architecture

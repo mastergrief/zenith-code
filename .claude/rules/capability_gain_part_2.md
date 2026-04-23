@@ -241,10 +241,10 @@ Measurement receipts and per-probe JSONLs in `.cache/` for replay.
 ## Related rules
 
 - `workflow.md` — the general hypothesis-test loop
-- `Substrate.md` — install modes
+- `.claude/spec/Substrate.md` — install modes
 - `delta_rule.md` — PT+Delta arc + MQAR scaling full receipt
-- `embed_intelligence.md` — delivery path from card to Gemma's tokens
-- `tracing_intelligence.md` — first-principles bound on what's compilable
-- `retrieval.md` — hybrid retrieval used by augmentation paths
+- `.claude/spec/embed_intelligence.md` — delivery path from card to Gemma's tokens
+- `.claude/spec/tracing_intelligence.md` — first-principles bound on what's compilable
+- `.claude/spec/retrieval.md` — hybrid retrieval used by augmentation paths
 - `augmentation_thesis.md` §"Automatic Tier-1 preservation" — why
   blanket augmentation fails even on passing extractor
