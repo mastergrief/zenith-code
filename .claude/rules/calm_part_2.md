@@ -215,7 +215,7 @@ User queries → CALM verifies → wrong? → correction logged
 **Install mode**: the recall card is FFN-only (ReGLU step functions +
 LinearHead) so it installs via `CardSlot.attach(preserve=True)` today
 — the `install_card_in_attention` path writes `attn_q/k/v/output` only
-and has no FFN migration yet. See `.claude/spec/Substrate.md` "Card
+and has no FFN migration yet. See `.claude/rules/Substrate.md` "Card
 Installation" for the mode tradeoff table and known limits.
 
 **CALM-as-verifier**: `calm/llm_computer/calm_verifier.py` (Round 5)

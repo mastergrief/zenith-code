@@ -144,7 +144,7 @@ ratio alone — they may be epiphenomenal.
 - `augmentation_thesis.md` — circuit typology (concentrated /
   cooperative / diffuse / pathway-cooperative) and tier-1/2/3
   framework
-- `.claude/spec/tracing_intelligence.md` — first-principles bounds on what's
+- `tracing_intelligence.md` — first-principles bounds on what's
   compilable
-- `.claude/MEMORY/atlas/tracing_arc_part_1.md` — round-by-round atlas progress
-- `.claude/MEMORY/atlas/capabilities.md` — the capability/layer/head reference
+- `tracing_roadmap.md` — round-by-round atlas progress
+- `.claude/MEMORY/atlas.md` — the capability/layer/head reference

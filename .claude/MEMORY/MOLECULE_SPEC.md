@@ -309,13 +309,13 @@ Three testable architectural claims:
 
 This spec synthesizes and extends material from:
 - `.claude/rules/augmentation_thesis.md` — substrate thesis, tier-2 stacking
-- `.claude/spec/Substrate.md` — Small2DTransformer, d_head=2, per-sub-head partition
-- `.claude/spec/tracing_intelligence.md` — what's compilable from first principles
-- `.claude/spec/recursion.md` — MetaCard and card-that-builds-cards
+- `.claude/rules/Substrate.md` — Small2DTransformer, d_head=2, per-sub-head partition
+- `.claude/rules/tracing_intelligence.md` — what's compilable from first principles
+- `.claude/rules/recursion.md` — MetaCard and card-that-builds-cards
 - `.claude/rules/capability_gain.md` — measurement discipline
 - `.claude/rules/calm.md` — oracle verification role
 - `.claude/rules/training.md` — training vs compilation tradeoff
-- `.claude/spec/commercial.md` — product positioning
+- `.claude/rules/commercial.md` — product positioning
 
 ## Relationship to the existing project
 

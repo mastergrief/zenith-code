@@ -48,7 +48,7 @@ worse attention-output cosine than plain tq4 at every context tested
 per-realization variance more than it amplifies MSE-only's small
 structural bias. Paper's distortion claim is about expected inner
 product MSE, not softmax preservation. Full ruled-out entry:
-`.claude/MEMORY/atlas/tracing_arc_part_2.md` §"TurboQuant Q_prod for KV cache".
+`.claude/rules/tracing_roadmap.md` §"TurboQuant Q_prod for KV cache".
 
 Artifact kept in tree (`calm/llm_computer/tq4_qjl_torch.py`,
 `tq4_flash_attn.fused_tq4_qjl_flash_attn_decode`) for future use cases
@@ -200,7 +200,7 @@ paths A/B/C/D per `scripts/bench_decode_paths.py`):
 llama.cpp baseline on the same GGUF is ~42 tok/s. Historical
 "42 tok/s / 90% llama" claim from session 32 is unreproducible
 in current bench — hardware/driver state dependent; reserve for
-matching conditions or rebench. See `.claude/spec/architecture.md`
+matching conditions or rebench. See `.claude/rules/architecture.md`
 "Gemma substrate loader" for the full perf chain.
 
 ## Graph-captured tq4 KV decode (Track A, 2026-04-21)
@@ -370,7 +370,7 @@ of 8), (b) parallel-over-N V kernel via TILE_N blocking. Both
 non-trivial; not pursued because the gated default already
 captures the measured win.
 
-See `MEMORY/atlas/tracing_arc_part_2.md` ruled-out row (Round 53.34) for full
+See `tracing_roadmap.md` ruled-out row (Round 53.34) for full
 A/B receipt. Adjacent null: TurboQuant Q_prod (3-bit Q_mse +
 1-bit QJL encoding) — implemented in `tq4_qjl_torch.py`, proven
 unbiased inner-product estimator, but empirical attention-output

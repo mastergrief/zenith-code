@@ -54,7 +54,7 @@ Rules for editing agents, CLAUDE.md, commands, rules, hooks: `.claude/rules/conf
 
 ## Commercial Potential
 
-Long-term commercial direction documented in `.claude/spec/commercial.md`. Currently R&D — focus on building the best system, not shipping a product. Commercial awareness is context, not a constraint.
+Long-term commercial direction documented in `.claude/rules/commercial.md`. Currently R&D — focus on building the best system, not shipping a product. Commercial awareness is context, not a constraint.
 
 ## Substrate vs Cards vs CHRLM — vocabulary
 
@@ -94,31 +94,31 @@ conflate.
 **Brain + Cards model**: Gemma (language + routing) dispatches to cards
 (compiled programs, HRM specialists, PTs). Three install paths —
 decode-path facade (zero VRAM, cheapest), CardSlot residual-additive,
-in-tensor. Full spec + tradeoffs: `.claude/spec/Substrate.md` §"Card
-Installation", `.claude/spec/compute_facades.md`,
+in-tensor. Full spec + tradeoffs: `.claude/rules/Substrate.md` §"Card
+Installation", `.claude/rules/compute_facades.md`,
 `.claude/rules/delta_rule.md` §R22. Auto-generation via
 `calm/llm_computer/recursion.py` (`FacadeSpec` + `MetaFacade`) —
-see `.claude/spec/recursion.md`.
+see `.claude/rules/recursion.md`.
 
 ## Architecture
 
 **Model understands, transducers structure, cards compute, engine verifies.** Intelligence comes from the system architecture, not the weights. Adding a backend module is equivalent to training — the model gets smarter at that domain instantly, with zero GPU cost.
 
 Four active systems coexist:
-1. **Python agent harness** (`agents/`, ~4,423 LOC across 15 files) — terminal coding assistant with dual backend (Ollama + llama.cpp), 3-level permissions, thinking mode, sessions, compaction, effort control, llama.cpp hot-swap. Commands + launch: `.claude/spec/harness.md`. Internals: `.claude/spec/architecture.md` §"Agent System".
-2. **CALM engine** (`calm/`, ~83,600 LOC across 413 .py files) — modular compute + knowledge facade with cognitive intelligence layer. Auto-CALM + Engine V2 (7-phase pipeline) + 120 modular backends + 39 cognitive modules + self-healing quality loop. Full spec: `.claude/spec/calm_part_1.md` + `.claude/spec/calm_part_2.md`.
+1. **Python agent harness** (`agents/`, ~4,423 LOC across 15 files) — terminal coding assistant with dual backend (Ollama + llama.cpp), 3-level permissions, thinking mode, sessions, compaction, effort control, llama.cpp hot-swap. Commands + launch: `.claude/rules/harness.md`. Internals: `.claude/rules/architecture.md` §"Agent System".
+2. **CALM engine** (`calm/`, ~83,600 LOC across 413 .py files) — modular compute + knowledge facade with cognitive intelligence layer. Auto-CALM + Engine V2 (7-phase pipeline) + 120 modular backends + 39 cognitive modules + self-healing quality loop. Full spec: `.claude/rules/calm_part_1.md` + `calm_part_2.md`.
 3. **Rust claw-code port** (`rust/`) — upstream claw-code, 9 crates, separate build system.
-4. **Unified Single Tensor** (`calm/llm_computer/`) — CHRLM architecture. ONE `.pt` contains Gemma (tq4) + trained PTs + compiled cards + persistent knowledge DB. Session 32 ported Level 5 to prod Gemma 4 E4B. Full spec: `.claude/spec/Substrate.md` + `.claude/spec/architecture.md` + `delta_rule.md`.
+4. **Unified Single Tensor** (`calm/llm_computer/`) — CHRLM architecture. ONE `.pt` contains Gemma (tq4) + trained PTs + compiled cards + persistent knowledge DB. Session 32 ported Level 5 to prod Gemma 4 E4B. Full spec: `.claude/rules/Substrate.md` + `architecture.md` + `delta_rule.md`.
 
-Serving + VRAM + perf: `.claude/spec/environment.md` §"Serving Architecture".
-Mechinterp tracing arc (session 33-34, R13-R52): `.claude/rules/augmentation_thesis_part_1.md` + `.claude/spec/tracing_intelligence.md` + `.claude/MEMORY/atlas/tracing_arc_part_1.md`. Full atlas: `.claude/MEMORY/atlas/capabilities.md`.
+Serving + VRAM + perf: `.claude/rules/environment.md` §"Serving Architecture".
+Mechinterp tracing arc (session 33-34, R13-R52): `.claude/rules/augmentation_thesis_part_1.md` + `tracing_intelligence.md` + `tracing_roadmap.md`. Full atlas: `.claude/MEMORY/atlas.md`.
 
 ## Python Agent Harness (`agents/`)
 
 Terminal coding assistant, ~4,423 LOC across 15 files. Commands table
-+ launch examples: `.claude/spec/harness.md`. Internals (streaming,
++ launch examples: `.claude/rules/harness.md`. Internals (streaming,
 tool-call loop, permissions, compaction invariants, hot-swap):
-`.claude/spec/architecture.md` §"Agent System" + §"File Organization".
+`.claude/rules/architecture.md` §"Agent System" + §"File Organization".
 
 ## CALM Engine (`calm/`)
 
@@ -130,7 +130,7 @@ instantly. 100% on 40-problem benchmark with precompute. Auto-CALM
 120 backends / 1002 functions / 550 NL patterns. 39 cognitive modules
 across 5 layers. Engine V2 7-phase pipeline with self-healing.
 
-Full spec: `.claude/spec/calm_part_1.md` + `.claude/spec/calm_part_2.md`.
+Full spec: `.claude/rules/calm_part_1.md` + `calm_part_2.md`.
 
 ```bash
 python3 -m calm.auto_calm "What is 347 * 289? Is it prime?"
@@ -147,9 +147,9 @@ superseded HRM for all new work (session 31); PT+Delta
 (`CopyAugmentedDeltaNet`, R-delta-20, 2026-04-21) supersedes plain PT
 as the default trained-card architecture.
 
-Architecture spec: `.claude/spec/architecture.md`. Training recipes +
-checkpoint inventory: `.claude/spec/training_part_1.md` +
-`.claude/spec/training_part_2.md`. PT+Delta mechanics + MQAR data-scaling curve +
+Architecture spec: `.claude/rules/architecture.md`. Training recipes +
+checkpoint inventory: `.claude/rules/training_part_1.md` +
+`training_part_2.md`. PT+Delta mechanics + MQAR data-scaling curve +
 R22 install: `.claude/rules/delta_rule.md`. Domain registry:
 `.claude/MEMORY/substrate_registry.md`. Add a domain: `/domain` command.
 
@@ -157,11 +157,11 @@ R22 install: `.claude/rules/delta_rule.md`. Domain registry:
 
 Two-stage QLoRA training pipeline for reasoning base + domain specialists. Current state: 4B Qwen base trained (serving via llama.cpp, eval 0/5 on coding A/B vs stock Gemma 4 E4B), stock Gemma 4 E4B validated as alternative base. Specialists not yet trained. Hot-swap infrastructure shipped (`agents/model_swap.py` + `SpecialistCoordinator`).
 
-Full spec: `.claude/spec/distillation.md` — pipeline scripts, specialist domain table, training-data file list, training commands, training philosophy.
+Full spec: `.claude/rules/distillation.md` — pipeline scripts, specialist domain table, training-data file list, training commands, training philosophy.
 
 ## Serving, Hardware, Constraints
 
-Consolidated in `.claude/spec/environment.md`: hardware (RTX 4070
+Consolidated in `.claude/rules/environment.md`: hardware (RTX 4070
 Laptop / 8 GB VRAM / 32 GB RAM), serving architecture (llama.cpp
 primary with tq4 + tq4 KV @ 512K, Ollama fallback), local tools
 (custom llama.cpp `zenith` branch + patches), cloud accounts (RunPod,
@@ -169,15 +169,15 @@ Colab Pro), key VRAM / context constraints. Update there when
 hardware, GGUF paths, accounts, or budgets change.
 
 tq4 kernel internals + fused flash-attn decode + per-kernel bench
-receipts: `.claude/spec/turboquant.md`.
+receipts: `.claude/rules/turboquant.md`.
 
 ## R53 — Verified Code-Reasoning Stack
 
-Phase 1 (retrieval + DB + generators) shipped; Phase 2 (PT training + L24/L30 install) pending. Full receipts + per-round findings in: `.claude/spec/retrieval.md`, `.claude/spec/code_reasoning_db.md`, `.claude/spec/recursion.md`, `.claude/MEMORY/atlas/tracing_arc_part_2.md` ruled-out log, `.claude/rules/capability_gain_part_1.md` + `capability_gain_part_2.md`.
+Phase 1 (retrieval + DB + generators) shipped; Phase 2 (PT training + L24/L30 install) pending. Full receipts + per-round findings in: `.claude/rules/retrieval.md`, `.claude/rules/code_reasoning_db.md`, `.claude/rules/recursion.md`, `.claude/rules/tracing_roadmap.md` ruled-out log, `.claude/rules/capability_gain_part_1.md` + `capability_gain_part_2.md`.
 
 ## Needle-in-Haystack Validation
 
-Effective context for both 4B base models (Gemma 4 E4B 200K, Qwen 3.5 4B 130K) validated against single / multi / distractor NIAH at 4K–220K. Full table + findings + `MODEL_CONTEXT_LIMITS` source of truth: `.claude/spec/niah_validation.md`.
+Effective context for both 4B base models (Gemma 4 E4B 200K, Qwen 3.5 4B 130K) validated against single / multi / distractor NIAH at 4K–220K. Full table + findings + `MODEL_CONTEXT_LIMITS` source of truth: `.claude/rules/niah_validation.md`.
 
 ## Branch
 

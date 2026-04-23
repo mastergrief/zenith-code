@@ -57,7 +57,7 @@ prompts pass on stock Gemma because:
 - Prompt is short (~16 tokens) — well within Gemma's attention
 - Keys are single-letter, values single-digit — trivial to copy
 - Gemma's native attention handles this pattern via simple
-  induction-style heads (see `MEMORY/atlas/tracing_arc_part_1.md` R32 L37 H6)
+  induction-style heads (see `tracing_roadmap.md` R32 L37 H6)
 
 **Mechanism gain ≠ capability gain.** The substrate → Gemma token
 bias pathway is verified working. The product win (R22b) is still

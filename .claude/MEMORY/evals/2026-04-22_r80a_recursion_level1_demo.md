@@ -1,6 +1,6 @@
 # R80a — Recursion Level-1 demo
 
-Phase B MVP per `.claude/spec/recursion.md`. Substrate
+Phase B MVP per `.claude/rules/recursion.md`. Substrate
 template-generates new decode-path facades, CALM oracle
 validates the spec, generator writes the .py file, facade
 installs on live Gemma, A/B runs against baseline.

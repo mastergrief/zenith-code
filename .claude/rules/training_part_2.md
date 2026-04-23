@@ -277,7 +277,7 @@ if os.environ.get("MBPP_FINAL")=="1" else ITERATION_N`).
   the band (small prompts + first ~128 decode steps, or decode past
   2048) it falls back to Phase 1 memoized dequant. Long R53 eval
   with AdaptiveBudget up to 16K uses memo past 2048 — no regression.
-  See `tq4_flash_attn.py`, `MEMORY/atlas/tracing_arc_part_2.md` Round 53.34, and
+  See `tq4_flash_attn.py`, `tracing_roadmap.md` Round 53.34, and
   `turboquant.md` for the bench table.
 - **Exception**: `scripts/r51_eval_dual_gate.py` and
   `scripts/r52_eval_dual_gate.py` use `K_TOKENS=12` as a measurement
@@ -288,7 +288,7 @@ if os.environ.get("MBPP_FINAL")=="1" else ITERATION_N`).
 ## Export & Serving
 
 Canonical serving docs in `.claude/CLAUDE.md` §"Serving Architecture".
-Quantization-specific details in `.claude/spec/turboquant.md`. Default:
+Quantization-specific details in `.claude/rules/turboquant.md`. Default:
 Q5_K_M weights + Q4/tq4 KV; `Q5_K_M` over Q4 unless VRAM forces; for
 Gemma use tq4 + tq4-KV at 512K context.
 

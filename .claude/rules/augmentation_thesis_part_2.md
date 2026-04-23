@@ -224,13 +224,13 @@ re-validate the thesis.
 
 ## Related rules
 
-- `.claude/spec/Substrate.md` — install mechanics (CardSlot, `install_card_in_attention`, VerificationHook)
-- `.claude/spec/compute_facades.md` — decode-path tier-2 card pattern (R46.2 + R22c), zero-VRAM compute facades
+- `Substrate.md` — install mechanics (CardSlot, `install_card_in_attention`, VerificationHook)
+- `compute_facades.md` — decode-path tier-2 card pattern (R46.2 + R22c), zero-VRAM compute facades
 - `delta_rule.md` §R22 install — CardSlot retrieval card with 4-gate config (2026-04-21 shipped)
-- `.claude/spec/tracing_intelligence.md` — first-principles bound on what's compilable
+- `tracing_intelligence.md` — first-principles bound on what's compilable
 - `MEMORY/atlas/tracing_arc_part_1.md` — concrete atlas progress and next-target queue
 - `capability_gain.md` — measurement discipline (raw path + user-facing path)
-- `.claude/spec/embed_intelligence.md` — delivery mechanisms (card → Gemma tokens)
-- `.claude/spec/commercial.md` — product positioning (Tier 2/3 = the product)
+- `embed_intelligence.md` — delivery mechanisms (card → Gemma tokens)
+- `commercial.md` — product positioning (Tier 2/3 = the product)
 - `workflow.md` — iteration discipline (hypothesis → test → commit)
 - `calm.md` — verification layer (the CPU oracle for compiled cards)

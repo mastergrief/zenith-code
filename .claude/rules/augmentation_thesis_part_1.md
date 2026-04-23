@@ -33,7 +33,7 @@ Net effect: **one model, enhanced surgically, no retraining.** Gemma
 stays intact. Cards are strictly additive: `facade.install()` adds,
 `facade.detach()` reverses cleanly. Adding a card is a **strict
 improvement with zero regression on other tasks** (verified by
-reserved-channel masking in `.claude/spec/Substrate.md`).
+reserved-channel masking in `Substrate.md`).
 
 ## Three-tier framework
 
@@ -220,7 +220,7 @@ Per-domain cost structure (once pipeline exists):
 
 Marginal cost of the 100th domain ≈ cost of the 1st (no cross-domain
 interference — each card lives in its own channel/head slot, verified
-by reserved-channels mechanism in `.claude/spec/Substrate.md`).
+by reserved-channels mechanism in `Substrate.md`).
 
 ### Economics inversion vs standard LLMs
 

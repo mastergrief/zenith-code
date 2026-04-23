@@ -2,7 +2,7 @@
 
 User-facing surface of the `agents/` harness (`zenith` CLI). Internals,
 tool definitions, and streaming invariants live in
-`.claude/spec/architecture.md` §"Agent System" + §"File Organization".
+`.claude/rules/architecture.md` §"Agent System" + §"File Organization".
 
 ## Harness Commands
 
