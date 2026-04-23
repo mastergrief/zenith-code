@@ -39,7 +39,7 @@ import torch  # noqa: F401  (sanity import for daemon env)
 from calm.llm_computer.eval_defaults import EVAL_CTX_SIZE, EVAL_MAX_TOKENS
 
 import os
-EVAL_N = int(os.environ.get("DT_EVAL_N", "20"))  # how many MBPP problems
+EVAL_N = int(os.environ.get("DT_EVAL_N", "50"))  # how many MBPP problems
 GENERATE_MAX_TOKENS = min(800, EVAL_MAX_TOKENS)    # per-problem output budget
 
 
