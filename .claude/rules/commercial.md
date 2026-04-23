@@ -22,8 +22,8 @@ useful about general AI, nothing dangerous.
 | **Fully local** | No cloud, no API, no internet required | Privacy, zero cost, offline-capable |
 | **Safety by architecture** | User-controlled, inspectable, reversible, scoped | Alignment without RLHF — the system can't set its own goals |
 | **Tier 2/3 augmentation** | Mapping-guided compiled replacements (Tier 2) + from-scratch compiled capabilities (Tier 3) | Tier 1 (preserve) is free — Tiers 2 and 3 are the product. Factorial per-domain scaling; marginal cost of 100th domain ≈ 1st. See `augmentation_thesis.md` |
-| **Decode-path facade proliferation** (2026-04-22 receipt) | `calm/llm_computer/recursion.py` + `MetaFacade.from_oracle(fn_name, arity)` + three-gate CALM validation | Adding a compute / text-recall domain is MINUTES, not weeks. 11 facades shipped in one session (6 Level-1 auto + 5 Level-2 meta); 5 hand-written facades in the same session (NumberTheory, NumericEncode, Icd10Recall tier-3, Planner, Icd10 retry). See `compute_facades.md` + `recursion.md`. |
-| **Tier-3 decode-path for regulated verticals** | `Icd10RecallFacade` (72,748-code DB, 26/30 on Gemma-fail corpus, `afc0220`) | Hospital / legal / financial / chemical domains: short known-length text recall from a static DB IS tier-3-addressable via decode-path facade. First instance shipped. |
+| **Decode-path facade proliferation** | `calm/llm_computer/recursion.py` + `MetaFacade.from_oracle(fn_name, arity)` + three-gate CALM validation | Adding a compute / text-recall domain is MINUTES, not weeks. Level-1 auto-generators and Level-2 meta-facades ship new domains in seconds-to-minutes. See `compute_facades.md` + `recursion.md`. |
+| **Tier-3 decode-path for regulated verticals** | `Icd10RecallFacade` (72,748-code DB, 26/30 on Gemma-fail corpus) | Hospital / legal / financial / chemical domains: short known-length text recall from a static DB IS tier-3-addressable via decode-path facade. |
 
 ## Safety as a Feature
 

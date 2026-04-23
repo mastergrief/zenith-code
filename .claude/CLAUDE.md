@@ -96,7 +96,7 @@ conflate.
 decode-path facade (zero VRAM, cheapest), CardSlot residual-additive,
 in-tensor. Full spec + tradeoffs: `.claude/rules/Substrate.md` §"Card
 Installation", `.claude/rules/compute_facades.md`,
-`.claude/rules/delta_rule.md` §R22. Auto-generation via
+`.claude/rules/delta_rule.md` §"Retrieval card install". Auto-generation via
 `calm/llm_computer/recursion.py` (`FacadeSpec` + `MetaFacade`) —
 see `.claude/rules/recursion.md`.
 

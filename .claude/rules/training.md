@@ -95,7 +95,7 @@ pipeline above.
 **Stop asking HRM to compute values.** Use `--structure-only` in
 `calm/hrm/train.py`. Decoder target becomes `problem + = + <eos>`.
 The LLM-Computer interpreter handles every value via `safe_eval`.
-Result from session 25: 245K → 48K params, 15 min → 145 sec training,
+Result: 245K → 48K params, 15 min → 145 sec training,
 43% → 96.7% full-expression accuracy.
 
 ### Sweet-spot config (all production domains)

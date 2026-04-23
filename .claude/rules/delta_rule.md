@@ -1,11 +1,10 @@
 # Delta-Transducer (DT) / DeltaNet — Card architecture rules
 
-**DT (delta-transducer)** is the canonical product name (adopted
-2026-04-22) for the copy-augmented DeltaNet trained-card architecture.
-Underlying class `CopyAugmentedDeltaNet` unchanged. Use **DT** in new
-prose, commits, training scripts (`scripts/train_code_dt.py`),
-checkpoints (`dt_*_best.pt`), install paths
-(`calm/llm_computer/dt_install.py`).
+**DT (delta-transducer)** is the canonical product name for the
+copy-augmented DeltaNet trained-card architecture. Underlying class
+`CopyAugmentedDeltaNet`. Use **DT** in new prose, commits, training
+scripts (`scripts/train_code_dt.py`), checkpoints (`dt_*_best.pt`),
+install paths (`calm/llm_computer/dt_install.py`).
 
 DT is the **default trained-card architecture for retrieval +
 structure-extraction regimes**, superseding plain
@@ -13,8 +12,8 @@ structure-extraction regimes**, superseding plain
 separate open arc with a different recipe — see §"Code-skeleton
 recipe" before extrapolating retrieval defaults to code.
 
-> **Historical receipts** (R-delta-5 through R-delta-22, R22 install
-> arc, full DT code-skeleton trajectory v4→v13): see
+> **Historical receipts** (DT ablation rounds, retrieval card install
+> calibration arc, full code-skeleton trajectory): see
 > `.claude/MEMORY/atlas/delta_rule_arc.md`.
 
 ## Architecture
@@ -32,7 +31,7 @@ which subclasses `Small2DTransformer`. Three mechanisms layered:
    β_t ∈ (0, 1) learned per-position via `beta_head[layer]`. Keys/
    queries L2-normalized + optional SiLU feature map. State `S` is
    (d_model, d_model) per layer, reset each forward pass.
-2. **Copy gate + pointer attention** (PT, session 31) — unchanged.
+2. **Copy gate + pointer attention** (PT-derived) — unchanged.
    `p_copy · copy_dist + (1 - p_copy) · gen_probs`.
 3. **Output returns log-probs** (not logits) — use `F.nll_loss`,
    NOT `F.cross_entropy`.
@@ -103,7 +102,7 @@ unique-key retrieval is where the mechanism advantage is load-bearing.
   DT (open arc), 0.193 honest val on 520 held-out. **Not install-viable**
   — threshold ≥ 0.40 honest val before wiring to Gemma.
 
-## R22 install — current pattern
+## Retrieval card install — current pattern
 
 DT MQAR card installed on prod Gemma via `CardSlot` + `VerificationHook`
 + adapter:
@@ -162,7 +161,7 @@ Canonical flags for `scripts/train_code_dt.py`:
 
 Splitting AFTER augmentation gives val 8× paraphrase variants of train
 problems — measures memorization, not generalization. The aux copy-loss
-(R26) prevents the copy gate from collapsing under generation-path
+prevents the copy gate from collapsing under generation-path
 optimization pressure; without it, gate decays to ~0.018 and the model
 becomes a 370-way classifier with no copy mechanism.
 
@@ -184,5 +183,5 @@ becomes a 370-way classifier with no copy mechanism.
 | `scripts/experiment_r10_mqar.py` | Ablation harness |
 | `scripts/train_pt_delta_mqar.py` | Deployable MQAR card trainer |
 | `scripts/train_code_dt.py` | Code-skeleton DT trainer |
-| `calm/llm_computer/dt_install.py` | Install scaffold (R22 CardSlot pattern) |
+| `calm/llm_computer/dt_install.py` | Install scaffold (retrieval CardSlot pattern) |
 | `RESEARCH/DELTA-RULE/02_Chunkwise_Parallel_Algorithm.md` | UT transform derivation |

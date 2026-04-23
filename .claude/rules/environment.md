@@ -17,13 +17,13 @@ here when hardware, GGUF paths, accounts, or VRAM budgets change.
 
 **llama.cpp (primary)** — Gemma 4 E4B via full GPU:
 
-- **Production GGUF**: `~/models/gemma-4-E4B-it-tq4-aligned.gguf` (5.0 GB, TurboQuant tq4, 132-byte block alignment from session 16). **This is what CALM runs on.**
+- **Production GGUF**: `~/models/gemma-4-E4B-it-tq4-aligned.gguf` (5.0 GB, TurboQuant tq4, 132-byte block alignment for 4-byte aligned CUDA loads). **This is what CALM runs on.**
 - **Alternative GGUFs**: `~/models/gemma-4-E4B-it-Q5_K_M.gguf` (5.48 GB, stock Q5), `~/models/Qwen3.5-4B.Q5_K_M.gguf` (2.9 GB, fine-tuned Q5)
 - **TurboQuant tq4 KV cache**: `--cache-type-k tq4_k256 --cache-type-v tq4_k256`. 4.125 bpw, 16-level Lloyd-Max codebook, Pi rotation (seed=42, 256×256 orthogonal). 132-byte blocks (128 qs + 2 d + 2 pad for 4-byte aligned uint32 loads). **Old 130-byte GGUFs are incompatible — re-quantize.**
 - Context: **512K** with tq4 KV (~5.0 GB weights + ~2.0 GB KV = ~7 GB VRAM). 48K thinking budget (`EFFORT["max"]["max_tokens"]=49152`). Auto-CALM + harness share the same server.
 - `--parallel 1` required — without it, llama-server splits `ctx_size` across 4 default slots
 - Launch: `llama-server -m ~/models/gemma-4-E4B-it-tq4-aligned.gguf --ctx-size 524288 --parallel 1 --cache-type-k tq4_k256 --cache-type-v tq4_k256 -ngl 999 --port 8080`
-- **Decode perf (2026-04-21 clean bench, median-of-5):** 25.02 tok/s tq4+graphs / 33.35 tok/s fp16+graphs / 7.14 tok/s tq4 no-graphs. ~60% / 79% / 17% of llama.cpp ~42 tok/s. Historical "42 tok/s / 90% llama" claim (session 32) is unreproducible in current bench — reserve for hardware/driver state that matches session 32 or rebench to confirm.
+- **Decode perf (median-of-5):** 25.02 tok/s tq4+graphs / 33.35 tok/s fp16+graphs / 7.14 tok/s tq4 no-graphs. ~60% / 79% / 17% of llama.cpp ~42 tok/s. Historical "90% of llama.cpp" claim reserved for hardware/driver state that may not match current bench — rebench to confirm if comparing to that baseline.
 - Hot-swap: `agents/model_swap.py:LlamaServerManager`. `/swap gemma` / `/swap qwen` in harness.
 
 **Ollama (fallback)** — stock models, quick testing:
@@ -37,10 +37,10 @@ receipts live in `turboquant.md`.
 
 ## Local Tools
 
-- **llama.cpp**: built at `~/llama.cpp/build/bin/` with CUDA support (RTX 4070). **Branch `zenith` at `a6218df`** with 3 custom commits:
-  - `7aae919` — `GGML_CUDA_OP_TIMING`: per-op/per-shape cudaEvent timing diagnostic. Enable: `cmake -DGGML_CUDA_OP_TIMING=ON`, `GGML_CUDA_DISABLE_GRAPHS=1 GGML_CUDA_OP_TIMING=1`
-  - `29782ec` — Gemma gate+up ordering fix: upstream fusion check at `should_fuse_mul_mat` rejected Gemma's reversed ordering. **GLU fusion was never firing on any Gemma quant type upstream.** Worth upstreaming.
-  - `a6218df` — fused gate+up+GLU tq4 kernel: `k_mmvq_tq4_k256_fused_preload_glu` in `mmvq-tq4.cu`. +0.68% avg (structural win, ships one Pi@x precompute + eliminates GLU kernel launch).
+- **llama.cpp**: built at `~/llama.cpp/build/bin/` with CUDA support (RTX 4070). **Branch `zenith`** carries 3 custom commits beyond upstream (see `git log` for SHAs):
+  - **OP_TIMING**: per-op/per-shape cudaEvent timing diagnostic. Enable: `cmake -DGGML_CUDA_OP_TIMING=ON`, `GGML_CUDA_DISABLE_GRAPHS=1 GGML_CUDA_OP_TIMING=1`
+  - **Gemma gate+up ordering fix**: upstream fusion check at `should_fuse_mul_mat` rejected Gemma's reversed ordering — GLU fusion was never firing on any Gemma quant type upstream. Worth upstreaming.
+  - **Fused gate+up+GLU tq4 kernel**: `k_mmvq_tq4_k256_fused_preload_glu` in `mmvq-tq4.cu`. +0.68% avg (structural win — ships one Pi@x precompute, eliminates GLU kernel launch).
   - `llama-quantize`, `llama-server` — standard tools
   - **Local patch** at `tools/server/server-context.cpp:763-766` — comments out `n_ctx_slot = n_ctx_train` for >128K context on Gemma. Re-apply after `git pull`.
   - **5 mmvq-tq4 rounds reverted** (SHFL LUT, NB template, 4-row/block, PiX memoization, 2-way accumulator). Kernel is at a deep local optimum. See `SESSION_HANDOFF.md` ruled-out log.

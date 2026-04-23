@@ -1,4 +1,4 @@
-# Needle-in-Haystack Validation (2026-04-07)
+# Needle-in-Haystack Validation
 
 Effective context for both base models was measured via single-needle,
 multi-needle, and distractor NIAH tests at 4K–220K haystack sizes.

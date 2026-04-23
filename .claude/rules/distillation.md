@@ -14,13 +14,13 @@ Consult when actively training, not on general sessions.
   exported to GGUF Q5_K_M, serving via llama.cpp. Earlier eval:
   3/5 PASS with thinking enabled (race condition, OOMKilled,
   architecture pass; React and security partial). **Subsequent
-  5-prompt A/B vs stock Gemma 4 E4B (2026-04-07) scored
+  5-prompt A/B vs stock Gemma 4 E4B scored
   fine-tuned Qwen 0/5** — the React and security failures were
   correctness bugs (hallucinated Node.js `beforeOOM` API, broken
   Postgres `FOR UPDATE SKIP LOCKED` queue, regex-on-hostname SSRF
   check). See `.claude/MEMORY/evals/2026-04-07_qwen4b_vs_gemma4_e4b.md`.
-- **Gemma 4 E4B (stock)**: validated as alternative base
-  2026-04-07. Beats fine-tuned Qwen 5/0 on the same coding eval
+- **Gemma 4 E4B (stock)**: validated as alternative base.
+  Beats fine-tuned Qwen 5/0 on the same coding eval
   without any fine-tuning. NIAH effective context: 200K (vs
   Qwen's 130K). Multimodal (vision projector available). GGUF on
   disk at `~/models/gemma-4-E4B-it-Q5_K_M.gguf` (5.48 GB). Not
@@ -72,9 +72,8 @@ Consult when actively training, not on general sessions.
   over HuggingFace + hand-written sources; earlier 1,339 count
   reflected a pre-filter merge)
 - `coding_reasoning_claude.jsonl` — 547 hand-written coding
-  reasoning examples (committed). Includes +19 added 2026-04-07
-  (React + security, targeting Qwen eval gaps) and +21 added
-  2026-04-08
+  reasoning examples (committed). Includes React + security examples
+  targeting Qwen eval gaps.
 - `claude_reasoning_filtered.jsonl` — 832 filtered HuggingFace
   examples (intermediate)
 - `claude_reasoning_prefilter.jsonl` — backup of pre-filter merged
