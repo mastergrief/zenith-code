@@ -148,9 +148,10 @@ superseded HRM for all new work (session 31); PT+Delta
 as the default trained-card architecture.
 
 Architecture spec: `.claude/rules/architecture.md`. Training recipes +
-checkpoint inventory: `.claude/rules/training_part_1.md` +
-`training_part_2.md`. PT+Delta mechanics + MQAR data-scaling curve +
-R22 install: `.claude/rules/delta_rule.md`. Domain registry:
+checkpoint inventory: `.claude/rules/training.md` (atlas:
+`MEMORY/atlas/training_part_1.md` + `training_part_2.md`). PT+Delta
+mechanics + MQAR data-scaling curve + retrieval-card install:
+`.claude/rules/delta_rule.md`. Domain registry:
 `.claude/MEMORY/substrate_registry.md`. Add a domain: `/domain` command.
 
 ## Distillation Pipeline (`agents/distill/`)

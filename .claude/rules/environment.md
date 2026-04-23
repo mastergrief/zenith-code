@@ -66,6 +66,6 @@ receipts live in `turboquant.md`.
 - `turboquant.md` — tq4 block format, Triton kernels, fused flash-attn decode, per-kernel bench receipts
 - `niah_validation.md` — `MODEL_CONTEXT_LIMITS` source of truth (200K Gemma, 130K Qwen)
 - `harness.md` — `zenith` launcher flags + env vars that wrap llama-server
-- `training_part_1.md` — Substrate FP32 hosting layer VRAM budget + Substrate eval defaults
+- `training.md` — Substrate FP32 hosting layer VRAM budget + Substrate eval defaults
 - `distillation.md` — cloud vs local training decision table
 - `CLAUDE.md` — top-level index
