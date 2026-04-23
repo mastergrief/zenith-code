@@ -39,7 +39,7 @@ import torch  # noqa: F401  (sanity import for daemon env)
 from calm.llm_computer.eval_defaults import EVAL_CTX_SIZE, EVAL_MAX_TOKENS
 
 import os
-EVAL_N = int(os.environ.get("DT_EVAL_N", globals().get("EVAL_N", 5)))  # how many MBPP problems
+EVAL_N = int(os.environ.get("DT_EVAL_N", "20"))  # how many MBPP problems
 GENERATE_MAX_TOKENS = min(800, EVAL_MAX_TOKENS)    # per-problem output budget
 
 
@@ -106,6 +106,62 @@ def load_mbpp(limit: int) -> List[MbppProblem]:
 _CODE_FENCE_RE = re.compile(r"```(?:python)?\n(.*?)\n```", re.DOTALL)
 
 
+def _trim_to_first_def(code: str) -> str:
+    """Trim extracted code to end at the first top-level def/class body.
+
+    Fixes the "toxic trailer" failure mode: Gemma often emits
+    `# Example Usage:` + print(...) calls after the function body.
+    Those prints can contain syntax errors (truncation, wrong
+    quoting) that fail the entire sandbox exec, even when the
+    function itself is perfect.
+
+    Two-pass strategy:
+      1. Textual strip — drop all lines from the first col-0 `print(`
+         (or `# Example` comment) onward. These are always example
+         calls outside the function, never part of the body.
+      2. AST trim — parse the remaining code; keep only up to the
+         end of the first FunctionDef/ClassDef.
+
+    Pass 1 fires when AST parse would fail on the raw trailer
+    (typical — Gemma truncates mid-line); pass 2 cleans up
+    well-formed trailers like `print(foo())` that parse fine but
+    aren't part of the target function.
+    """
+    # Pass 1: textual strip
+    lines = code.splitlines(keepends=True)
+    cut = None
+    for i, ln in enumerate(lines):
+        stripped = ln.lstrip()
+        if ln and not ln.startswith((" ", "\t")):
+            # col-0 line. Drop example trailers + demo prints.
+            if stripped.startswith("print(") or \
+               stripped.startswith("# Example") or \
+               stripped.startswith("# Test") or \
+               stripped.startswith("# Usage"):
+                cut = i
+                break
+    if cut is not None:
+        code = "".join(lines[:cut]).rstrip() + "\n"
+
+    # Pass 2: AST trim (if parseable)
+    import ast as _ast
+    try:
+        tree = _ast.parse(code)
+    except SyntaxError:
+        return code
+    if not tree.body:
+        return code
+    first = tree.body[0]
+    if not isinstance(first, (_ast.FunctionDef, _ast.ClassDef,
+                              _ast.AsyncFunctionDef)):
+        return code
+    end_line = getattr(first, "end_lineno", None)
+    if end_line is None:
+        return code
+    lines2 = code.splitlines(keepends=True)
+    return "".join(lines2[:end_line])
+
+
 def extract_code(output: str, fn_name: str) -> Optional[str]:
     """Extract Python code from Gemma output.
 
@@ -124,11 +180,11 @@ def extract_code(output: str, fn_name: str) -> Optional[str]:
     if end_fence > 0:
         candidate = output[:end_fence].rstrip()
         if "def " in candidate or "class " in candidate:
-            return candidate
+            return _trim_to_first_def(candidate)
     # 2. Full fence pair (generated text opened its own fence)
     m = _CODE_FENCE_RE.search(output)
     if m:
-        return m.group(1)
+        return _trim_to_first_def(m.group(1))
     # 3. Bare def: slice from def <fn_name> to end of that function block
     m = re.search(rf"def\s+{re.escape(fn_name)}\s*\(", output)
     if m is None:
