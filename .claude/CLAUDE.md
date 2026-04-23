@@ -106,7 +106,7 @@ see `.claude/rules/recursion.md`.
 
 Four active systems coexist:
 1. **Python agent harness** (`agents/`, ~4,423 LOC across 15 files) — terminal coding assistant with dual backend (Ollama + llama.cpp), 3-level permissions, thinking mode, sessions, compaction, effort control, llama.cpp hot-swap. Commands + launch: `.claude/rules/harness.md`. Internals: `.claude/rules/architecture.md` §"Agent System".
-2. **CALM engine** (`calm/`, ~83,600 LOC across 413 .py files) — modular compute + knowledge facade with cognitive intelligence layer. Auto-CALM + Engine V2 (7-phase pipeline) + 120 modular backends + 39 cognitive modules + self-healing quality loop. Full spec: `.claude/rules/calm_part_1.md` + `calm_part_2.md`.
+2. **CALM engine** (`calm/`, ~83,600 LOC across 413 .py files) — modular compute + knowledge facade with cognitive intelligence layer. Auto-CALM + Engine V2 (7-phase pipeline) + 120 modular backends + 39 cognitive modules + self-healing quality loop. Full spec: `.claude/rules/calm.md` (atlas: `MEMORY/atlas/calm_part_1.md` + `calm_part_2.md`).
 3. **Rust claw-code port** (`rust/`) — upstream claw-code, 9 crates, separate build system.
 4. **Unified Single Tensor** (`calm/llm_computer/`) — CHRLM architecture. ONE `.pt` contains Gemma (tq4) + trained PTs + compiled cards + persistent knowledge DB. Session 32 ported Level 5 to prod Gemma 4 E4B. Full spec: `.claude/rules/Substrate.md` + `architecture.md` + `delta_rule.md`.
 
@@ -130,7 +130,7 @@ instantly. 100% on 40-problem benchmark with precompute. Auto-CALM
 120 backends / 1002 functions / 550 NL patterns. 39 cognitive modules
 across 5 layers. Engine V2 7-phase pipeline with self-healing.
 
-Full spec: `.claude/rules/calm_part_1.md` + `calm_part_2.md`.
+Full spec: `.claude/rules/calm.md` (atlas: `MEMORY/atlas/calm_part_1.md` + `calm_part_2.md`).
 
 ```bash
 python3 -m calm.auto_calm "What is 347 * 289? Is it prime?"
