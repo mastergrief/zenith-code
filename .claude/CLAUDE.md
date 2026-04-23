@@ -173,7 +173,7 @@ receipts: `.claude/rules/turboquant.md`.
 
 ## R53 — Verified Code-Reasoning Stack
 
-Phase 1 (retrieval + DB + generators) shipped; Phase 2 (PT training + L24/L30 install) pending. Full receipts + per-round findings in: `.claude/rules/retrieval.md`, `.claude/rules/code_reasoning_db.md`, `.claude/rules/recursion.md`, `.claude/MEMORY/atlas/tracing_roadmap_part_1.md` ruled-out log, `.claude/rules/capability_gain_part_1.md` + `capability_gain_part_2.md`.
+Phase 1 (retrieval + DB + generators) shipped; Phase 2 (PT training + L24/L30 install) pending. Full receipts + per-round findings in: `.claude/rules/retrieval.md`, `.claude/rules/code_reasoning_db.md`, `.claude/rules/recursion.md`, `.claude/MEMORY/atlas/tracing_roadmap_part_1.md` ruled-out log, `.claude/rules/capability_gain.md` (receipts in `.claude/MEMORY/atlas/capability_gain_arc.md`).
 
 ## Needle-in-Haystack Validation
 
