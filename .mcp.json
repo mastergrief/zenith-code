@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "ai-room": {
+      "command": "ai-room-mcp",
+      "args": [],
+      "env": {
+        "AI_ROOM_HANDLE": "claude"
+      }
+    }
+  }
+}

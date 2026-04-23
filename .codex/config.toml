@@ -1,0 +1,8 @@
+# Repo-local ai-room MCP registration. Uses the `ai-room-mcp` PATH shim so
+# the config is portable across machines (no hardcoded user paths). The shim
+# resolves to ~/.ai-room/mcp-server.py (or $AI_ROOM_MCP override). The server
+# auto-discovers the codex app-server on the loopback and derives the channel
+# from cwd, so no extra env is needed.
+[mcp_servers.ai_room]
+command = "ai-room-mcp"
+args = ["--handle", "codex"]

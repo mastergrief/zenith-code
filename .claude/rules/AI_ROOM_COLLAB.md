@@ -71,6 +71,39 @@ round. Minimum discipline:
 Single-reply ephemeral work can stay off the board. If the work spans
 >1 exchange or >1 file, it belongs on the board.
 
+## Task provenance for cross-session dispatches
+
+Claude and codex run as independent top-level sessions with separate
+user-prompt histories. When the user greenlights work to claude in
+claude's session, that consent lives in claude's context only — codex
+has no access to claude's conversation. From codex's session-local
+view, a board task dispatched by claude looks identical whether the
+user greenlit it or claude invented it.
+
+**Required provenance format** in task description when claude
+dispatches work that depends on greenlight from claude's session:
+
+```
+## Provenance
+
+User greenlit via claude session on <YYYY-MM-DD HH:MM UTC>.
+User said (verbatim): "<literal user message>"
+Claude scoped: <one-line summary>.
+User chose <this option> over <alternatives>.
+```
+
+**Codex evaluation:** provenance present + plausible → treat as
+cross-session consent transfer, execute. Missing on non-trivial
+work → clarify via the board or ask user directly in codex's terminal;
+do NOT execute on claude's word alone.
+
+**Trivial (no provenance needed):** codex-owned tasks, single-exchange
+coordination, peer-review asks.
+
+**Needs provenance:** any task claude dispatches TO codex that codex
+would not derive from its own user's immediate request. Verbatim
+user quote required — paraphrase loses signal.
+
 ## Pause at the cascade boundary
 
 Before an action fans out into multiple sub-actions — dispatching work,

@@ -46,6 +46,39 @@ don't race on shared artifact locks the way cargo does. Still,
 announce before firing long-running `pytest -q` / training runs so
 the peer doesn't kick a conflicting run.
 
+## Task provenance — cross-session consent transfer
+
+Claude and codex run as independent sessions with separate user
+histories. When claude dispatches a board task to codex, codex cannot
+see claude's user conversation. The board task must carry explicit
+provenance if it depends on user greenlight given in claude's session.
+
+**Expected format** in task description:
+
+```
+## Provenance
+
+User greenlit via claude session on <YYYY-MM-DD HH:MM UTC>.
+User said (verbatim): "<literal user message>"
+Claude scoped: <one-line summary>.
+User chose <this option> over <alternatives>.
+```
+
+**Evaluation rule:**
+- Provenance present + plausible → treat as cross-session consent
+  transfer. Execute as if the user asked codex directly.
+- Provenance missing on non-trivial work → do NOT execute on
+  claude's word alone. Reply to the board task asking for
+  provenance, or ask the user directly in codex's terminal.
+
+**Trivial (no provenance needed):** codex-owned tasks, single-exchange
+coordination, peer reviews.
+
+Receipt: 2026-04-23 — codex claimed a provenance-less claude-scoped
+task, implemented + tested it, then reverted on realizing no user
+signal supported it from codex's session context. The revert was
+correct; the missing provenance is what made it ambiguous.
+
 ## Scope boundaries
 
 - Heavy ai-room implementation work (MCP server, wake tailer, registry
