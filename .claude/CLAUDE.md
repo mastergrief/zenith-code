@@ -111,7 +111,7 @@ Four active systems coexist:
 4. **Unified Single Tensor** (`calm/llm_computer/`) — CHRLM architecture. ONE `.pt` contains Gemma (tq4) + trained PTs + compiled cards + persistent knowledge DB. Session 32 ported Level 5 to prod Gemma 4 E4B. Full spec: `.claude/rules/Substrate.md` + `architecture.md` + `delta_rule.md`.
 
 Serving + VRAM + perf: `.claude/rules/environment.md` §"Serving Architecture".
-Mechinterp tracing arc (session 33-34, R13-R52): `.claude/rules/augmentation_thesis_part_1.md` + `tracing_intelligence.md` + `MEMORY/atlas/tracing_roadmap_part_1.md`. Full atlas: `.claude/MEMORY/atlas.md`.
+Mechinterp tracing arc (sessions 33-34, full R-arc): `.claude/rules/augmentation_thesis.md` (current strategic positions) + `tracing_intelligence.md` (first-principles bound) + `.claude/MEMORY/atlas/tracing_roadmap_part_1.md` (per-round receipts) + `.claude/MEMORY/atlas/augmentation_thesis_arc.md` (capability map + R51/R52 distillation null detail).
 
 ## Python Agent Harness (`agents/`)
 
