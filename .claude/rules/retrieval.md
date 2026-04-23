@@ -1,9 +1,13 @@
 # Retrieval — Hybrid TF-IDF + BM25 + Dense + RRF
 
-R53 Phase 1 shipped a full hybrid retrieval stack over `CodeExampleDB`.
-This rule documents the architecture, API, and the invariants that
-keep it correct. See `.claude/rules/code_reasoning_db.md` for the
-DB side; this file is about how retrieval works on top of that DB.
+Full hybrid retrieval stack over `CodeExampleDB`. This rule documents
+the architecture, API, and the invariants that keep it correct. See
+`code_reasoning_db.md` for the DB side; this file is about how
+retrieval works on top of that DB.
+
+> Historical receipts (Phase 1 shipping arc, blanket-RAG null
+> measurement, L41-install regression, dense-tq4 ship-date):
+> see `MEMORY/atlas/retrieval_arc.md`.
 
 ## Architecture
 
@@ -142,7 +146,7 @@ Recommended k values on our 8970-example DB:
   promotes docs appearing in BOTH; going to 20 dilutes signal, going
   to 3 misses paraphrase wins
 
-## Retrieval-content policy (post-R53.2b fix)
+## Retrieval-content policy
 
 The `solution_preview` fix documented in `code_reasoning_db.md` is
 load-bearing: retrieved solutions injected into prompts must be
@@ -184,7 +188,7 @@ MISSES (pass-through, Gemma's native behavior). Automatic Tier 1
 preservation with no gating logic needed. Prompt RAG requires
 explicit gates; substrate RAG has them by construction.
 
-## Two-channel design (future R53.6)
+## Two-channel design (future work)
 
 For multi-step tasks, retrieval should surface TWO separate types
 of content, injected at different points:
@@ -226,23 +230,23 @@ Full pipeline rebuild: `PYTHONPATH=. python3 scripts/r53_run_data_generators.py`
 
 ## Ruled-out / refined directions
 
-- **Substrate-RAG at L41 on code tasks (R53.14/20a/20b, post-SWA-fix)**
-  — `-9.3pp` regression. Tier-1 preservation thesis holds in
-  principle but the L41 install mechanism (CardSlot `preserve=True`
-  + per-marker FirstTokenHook `boost=50`) disrupts HIT prompts:
-  Gemma's first-token on code is confidently a fence/whitespace
-  opener (margin 6.8-9.2), so `min_margin=0.5` never gates, hook
-  always fires, forces "def"/"class" → code-without-fence →
-  extractor fails. First-token bias is the wrong intervention for
-  code. See `augmentation_thesis.md` §"R53.14/20a/20b" — refined
-  thesis: Tier-1 holds at output-boundary `VerificationHook` with
-  `min_margin` guard, NOT at residual-write CardSlot. Correct
-  tier-2 target: post-generation AST walker.
+- **Substrate-RAG at L41 on code tasks** — negative lift measured on
+  the code corpus. Tier-1 preservation thesis holds in principle but
+  the L41 install mechanism (CardSlot `preserve=True` + per-marker
+  FirstTokenHook) disrupts HIT prompts: Gemma's first-token on code
+  is confidently a fence/whitespace opener (margin 6.8-9.2), so
+  `min_margin=0.5` never gates, hook always fires, forces
+  "def"/"class" → code-without-fence → extractor fails. First-token
+  bias is the wrong intervention for code. **Refined thesis**: Tier-1
+  holds at output-boundary `VerificationHook` with `min_margin`
+  guard, NOT at residual-write CardSlot. Correct tier-2 target:
+  post-generation AST walker. See `augmentation_thesis.md` +
+  `MEMORY/atlas/retrieval_arc.md` for the measurement.
 
-- **`DenseIndex.load(prefer_tq4=True)` is the new default** (R53.28).
-  Loads `.tq4.pt` companion when present (4× smaller than `.pt`,
-  <1% rank flip). `bin/gemma-run scripts/r53_build_dense.py` saves
-  tq4 by default.
+- **`DenseIndex.load(prefer_tq4=True)` is the default**. Loads
+  `.tq4.pt` companion when present (4× smaller than `.pt`, <1% rank
+  flip). `bin/gemma-run scripts/r53_build_dense.py` saves tq4 by
+  default.
 
 ## Related rules
 

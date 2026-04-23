@@ -1,13 +1,16 @@
 # Code Reasoning DB — 8970-example substrate corpus + generator framework
 
-R53 Phase 1 deliverable. Powers `CodeVerifierFacade` retrieval and is
-training signal for the code PT (R53.5). Two parts:
+Powers `CodeVerifierFacade` retrieval and provides training signal
+for the code DT. Two parts:
 
 1. **CodeExampleDB** — in-memory retrieval corpus, 8970 unique
    examples across 10 sources, deduped on problem hash
 2. **DomainDataGenerator framework** — 9 concrete generators
    producing 222 verified (problem, solution, tests) examples
    with behavioral verification via sandbox
+
+> Historical receipts (Phase 1 shipping arc, per-source dedup dates):
+> see `MEMORY/atlas/retrieval_arc.md`.
 
 ## DB composition (8970 unique after dedup)
 
@@ -89,8 +92,8 @@ class VerifiedExample:
 Three output sinks (each example can flow to all three):
 
 - `to_messages_jsonl_record()` → messages-schema JSONL for DB ingest
-- `to_pt_training_record()` → `{prompt, target}` chars for
-  `CopyAugmentedTransformer` training (R53.5)
+- `to_pt_training_record()` → `{prompt, target}` chars for PT/DT
+  training
 - `to_kb_entry()` → `(fn_name, callable)` for optional *_kb.py compile
 
 `DomainDataGenerator.generate(n)` runs subclass's `generate_raw(n)`,
@@ -215,6 +218,6 @@ trace channel) with independent gating. See `retrieval.md`
 - `retrieval.md` — retrieval algorithms on top of this DB
 - `recursion.md` — card-level self-improvement using DB + CALM oracle
 - `calm.md` — CALM backends that verify generator outputs
-- `training.md` — PT training on `pt_*.jsonl` files (R53.5)
+- `training.md` — PT/DT training on `pt_*.jsonl` files
 - `augmentation_thesis.md` §"Tier-1 preservation" — why retrieval
   must be gated

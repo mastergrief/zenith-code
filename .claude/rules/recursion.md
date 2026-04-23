@@ -5,19 +5,22 @@ Each level of recursion is guarded by CALM's deterministic verifier,
 so improvements compound without the bias-amplification failure mode
 of self-training on a learned judge (Self-Instruct, RLAIF, etc.).
 
-**Shipped as of 2026-04-22** (commits `3274659` F3, `5173745` M1+M2):
-- **Fact-level recursion** (earlier) — `auto_upgrade.py` +
-  `gemma_learning_loop_demo.py`: 5/5 wrong → 5/5 correct.
+**Shipped capabilities**:
+- **Fact-level recursion** — `auto_upgrade.py` +
+  `gemma_learning_loop_demo.py`: wrong → correct pipeline.
 - **Level 1** — generic decode-path facade auto-generator
-  (`calm/llm_computer/recursion.py`). 6 shipped auto-facades
-  (factorial, fibonacci, combinations, permutations, power,
-  next_prime) lifting Gemma 17/30 → 30/30 across their domains.
+  (`calm/llm_computer/recursion.py`). Shipped auto-facades include
+  factorial, fibonacci, combinations, permutations, power, next_prime.
 - **Level 2** — `MetaFacade.from_oracle(fn_name, arity)` synthesizes
-  the `FacadeSpec` itself. 5 meta-facades shipped (factorial,
-  combinations, gcd, lcm, fibonacci) lifting 4/15 → 15/15.
+  the `FacadeSpec` itself. Shipped meta-facades include factorial,
+  combinations, gcd, lcm, fibonacci.
 
 Level 3 (substrate designs NEW meta-facades from observed failure
 traces) is the remaining frontier.
+
+> Historical receipts (shipped-facade dated inventory with commit
+> SHAs, per-level demo scripts + eval files, code-PT self-distill
+> roadmap R-numbers): see `MEMORY/atlas/recursion_arc.md`.
 
 ## Level 1 — decode-path facade auto-generator (SHIPPED)
 
@@ -183,46 +186,39 @@ different card stack per customer.
 
 ## Concrete state
 
-### What's shipped (as of 2026-04-22)
+### What's shipped
 
 - `calm/llm_computer/auto_upgrade.py` — fact-level recursion
   (`AutoUpgradeEngine.commit()` compiles corrections into recall card)
 - `calm/llm_computer/persistent_knowledge.py` — `KnowledgeStore` with
   `add_correction(key, value)` + `build_recall_model()` + save/load
 - `scripts/gemma_learning_loop_demo.py` — fact-level demo
-  (5/5 wrong → 5/5 correct)
-- **`calm/llm_computer/recursion.py`** — Level-1 generator +
-  Level-2 MetaFacade (this session)
-- **Level-1 shipped facades** (`*_auto.py` in
-  `calm/llm_computer/facades/`):
+- `calm/llm_computer/recursion.py` — Level-1 generator + Level-2 MetaFacade
+- **Level-1 shipped facades** (`*_auto.py` in `calm/llm_computer/facades/`):
   `factorial_auto`, `fibonacci_auto`, `combinations_auto`,
   `permutations_auto`, `power_auto`, `next_prime_auto`
-- **Level-2 shipped facades** (`*_meta.py`):
-  `factorial_meta`, `combinations_meta`, `gcd_meta`, `lcm_meta`,
-  `fibonacci_meta`
-- **Demo scripts**: `scripts/r80a_recursion_demo.py` (F3 Level-1),
-  `scripts/m1a_four_new_facades.py` (M1 4 new auto),
-  `scripts/m2a_metafacade_demo.py` (M2 Level-2)
-- **Receipts**:
-  `.claude/MEMORY/evals/2026-04-22_r80a_recursion_level1_demo.md`,
-  `m1a_four_new_facades.md`, `m2a_level2_metafacade.md`
+- **Level-2 shipped facades** (`*_meta.py`): `factorial_meta`,
+  `combinations_meta`, `gcd_meta`, `lcm_meta`, `fibonacci_meta`
 
-### What's next (Level 3 + code PT)
+Shipped-facade dated inventory + eval file cross-refs:
+`MEMORY/atlas/recursion_arc.md`.
+
+### What's next (Level 3 + code DT)
 
 - **Level 3 MetaMetaFacade**: observe MetaFacade failures (higher
   arity, non-regex parsers, non-integer outputs), propose new template
   families, synthesize MetaFacade variants. Current template library
   is the upper bound of the present system.
-- **Code PT self-distill** (R53.5 + R53.6, inherited roadmap):
-  train `copy_code_best.pt` on 8970-example DB, install at L24 via
-  CardSlot, run CodeVerifierFacade-gated self-distillation loop.
+- **Code DT self-distill** (roadmap): train code-skeleton DT on DB,
+  install via CardSlot, run `CodeVerifierFacade`-gated
+  self-distillation loop. See `delta_rule.md` §"Code-skeleton recipe".
 - **Commercial vertical decks**: use Level-2 MetaFacade to rapidly
   stand up hospital / legal / financial card decks (each is ~5-10
   domain-specific `FacadeSpec`s produced by hand + MetaFacade).
 - **Closed loop**: CALM verifier catches Gemma failure → infers
   oracle signature → MetaFacade proposes spec → Level-1 pipeline
-  ships the facade. Last missing link is the CALM → oracle-
-  signature inference step.
+  ships the facade. Last missing link is the CALM → oracle-signature
+  inference step.
 
 ## Related rules
 
