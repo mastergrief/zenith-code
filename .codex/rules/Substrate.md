@@ -1,0 +1,399 @@
+# Substrate — Unified Single Tensor Architecture
+
+> Historical receipts (level cascade proofs, retrieval-card install
+> calibration arc, prod Gemma port detail, hybrid-finding origin,
+> per-level validation receipts): see `MEMORY/atlas/Substrate_arc.md`.
+
+## Core Thesis
+
+**The model IS the substrate. The substrate IS the model.** Gemma's
+own attention layers host compiled programs, trained HRM specialists,
+and persistent knowledge — all in ONE weight tensor, ONE forward pass,
+ZERO cross-talk. Adding a compiled program to Gemma is a weight edit,
+not retraining.
+
+## d_head=2 Decomposition (architectural foundation)
+
+`d_head=256` attention = 128 × `d_head=2` sub-heads with scores SUMMED
+before softmax (proven exact to float32). Every transformer attention
+head IS a collection of tiny analytically-tractable units. You can
+surgically modify individual sub-heads while leaving adjacent ones
+untouched.
+
+At Gemma 4 E4B scale:
+- 8 heads × 128 sub-heads = **1024 d_head=2 sub-heads** per SWA layer
+- Gemma uses 1024 sub-heads → **1024 FREE** per SWA layer
+- 35 SWA layers → **35,840 free sub-head slots** for programs
+- 1536 free channels [2560, 4096) for card I/O
+
+## Per-Sub-Head Attention Partition (Level 5)
+
+Three attention modes coexist in ONE layer:
+
+```
+Sub-heads 0..1023:    Gemma      (grouped softmax)
+Sub-heads 1024..1055: HRM        (single softmax)
+Sub-heads 1056..1060: Compiled   (single hard_max)
+Sub-heads 1061..2047: FREE
+```
+
+Forward splits Q/K/V by sub-head range, applies each mode's attention,
+concats output. FFN is shared; each domain's neurons fire only on its
+channels. Cross-talk: **0.00e+00** (verified exhaustively).
+
+**Real on prod Gemma 4 E4B** (`GemmaSubstrate`). Set via
+`GemmaSubstrate.attention_partition[layer_idx]` — list of
+`(sh_lo, sh_hi, mode)` entries. `_forward_layer` dispatches: zeros
+card sub-heads' Q for the standard sum-then-softmax, computes Gemma's
+attention without their contribution, then computes per-sub-head
+attention for each card range with its own mode (`'softmax'` or
+`'hard_max'`), reshape to `(B, H, S, n_sub, 2)`, einsum scores per
+sub-head, mask, softmax/hard_max, einsum back with V slices. Layers
+without partitions stay on the fast path (no perf cost).
+`install_card_in_attention(..., mode='hard_max')` registers the
+partition automatically.
+
+## Channel Allocation Protocol
+
+```
+Channels 0..2559:     Gemma residual (pretrained, frozen)
+Channels 2560..2623:  HRM I/O (per specialist: 32 channels)
+Channels 2624..3205:  Compiled card I/O (dispatched_v4: 582 ch)
+Channels 3206..3225:  Knowledge DB (recall channels)
+Channels 3226..4095:  FREE (870 channels for future domains)
+```
+
+Each domain owns a disjoint channel rectangle. Writes are additive
+via W_out (each domain's W_out rows are nonzero only in its channel
+range). No domain can corrupt another's residual.
+
+## Hybrid Per-Layer Linear Type
+
+**Critical rule**: tq4 quantization DESTROYS compiled card weights.
+Lloyd-Max codebook is tuned for Gaussian LM weights; compiled cards
+have discrete ±1/±16 coefs.
+
+Two implementations:
+
+- **`HybridGroupedSmall2DTransformer`** (substrate-native demo, GGML orientation)
+  - `Tq4LinearGGMLOriented` for Gemma layers (byte-preserving)
+  - `FP32LinearGGMLOriented` for compiled/HRM layers (exact)
+- **`GemmaSubstrate.convert_layer_to_fp32(layer_idx)`** (prod Gemma)
+  - Replaces `MmapTq4Linear` with `FP32GemmaLinear` for the chosen
+    layer. One-time dequant via the tq4 path; lossless to numerical
+    noise (max abs diff ~2e-5 vs original tq4 forward).
+  - Required before `install_card_in_attention` (surgical edits to
+    tq4 weights would re-quantize and lose compiled coefs).
+  - Cost: ~330 MB SWA, ~600 MB global per layer; budget 5-7 hosting
+    layers on 8 GB.
+
+Files: `calm/llm_computer/hybrid_substrate.py`,
+`calm/llm_computer/gemma_substrate.py`.
+
+## Card Installation
+
+Two install modes on prod `GemmaSubstrate`, architecturally distinct,
+different perf / VRAM / capability profiles. Pick per card.
+
+### Mode tradeoffs
+
+| Aspect | In-attention | CardSlot (residual-additive) |
+|---|---|---|
+| Card compute | Inside Gemma's `attn_q/k/v/output` matmul | Separate Module, appended after layer |
+| Upgrades attention directly | Yes (same kernel) | No (runs alongside) |
+| Sub-head budget | Consumes reserved sub-heads | None |
+| FP32 cost | ~330 MB SWA / ~600 MB global per host | Zero |
+| Card types | Pure-attention only today | Any `nn.Module` incl. PT, FFN cards |
+| Custom attention (PT copy gate) | Impossible | Required |
+| Perf | Zero overhead | Small extra matmul per slot |
+
+**Known limit**: `install_card_in_attention` writes `attn_q/k/v/output`
+only. Cards with ReGLU/FFN (`adder_tiny`, `gcd`, `reasoning_engine`)
+need an FFN migration (not yet shipped) before they can be fully
+in-attention. Pure-attention cards (`add_one`, `threshold`,
+`copy_past`, `retrieve_by_index`) work today.
+
+**Facade packaging**: `calm/llm_computer/facades/math_addition.py`
+(`MathAdditionFacade`) is the reusable domain-class pattern. New
+domains subclass and get install/detach/set_prompt + save/load +
+detach reversibility. Prefer facades over one-off install scripts.
+
+### 1. In-attention — card weights live INSIDE `attn_q/k/v/output`
+
+```python
+m.convert_layer_to_fp32(host_layer)           # one-time per host
+m.install_card_in_attention(
+    card=card, layer_idx=host_layer,
+    sub_head_offset=0, ch_off=2552, d_card=8,
+    mode='hard_max',                          # or 'softmax', 'grouped'
+)
+```
+
+Surgical writes:
+```
+attn_q[ch_off:ch_off+d_card, sh_lo:sh_hi]    = card.W_qkv[Q].T
+attn_k[ch_off:ch_off+d_card, sh_lo:sh_hi]    = card.W_qkv[K].T
+attn_v[ch_off:ch_off+d_card, sh_lo:sh_hi]    = card.W_qkv[V].T
+attn_output[sh_lo:sh_hi, ch_off:ch_off+d_card] = card.W_out.T
+```
+Other rows zeroed so card sub-head's input comes ONLY from reserved
+channels. `mode='hard_max'` / `'softmax'` registers a per-sub-head
+partition entry so the card's attention runs in its own mode (not
+Gemma's grouped softmax). Card weights ship in the `.pt`.
+
+### 2. Residual-additive (CardSlot) — card runs as separate Module
+
+```python
+# Retrieval-card 4-gate install pattern:
+slot = CardSlot(layer_idx=30, ch_off=2480, card=pt, d_card=80,
+                card_input_fn=adapter, use_full_residual=True,
+                output_fn=writer)
+slot.attach(m, preserve=False)
+
+# Aligned gates for strict additivity:
+install(m, card, ..., write_margin=T, preserve=False)  # write gate
+hook.min_margin = T                                    # bias gate
+# + N-range gate in adapter: skip activation on OOD N
+```
+
+**`preserve=False` (default)** — subsequent layers freely overwrite
+reserved channels when card is silent. Card's output reaches head
+ONLY via `VerificationHook`'s logit bias (when margin exceeds
+`min_margin`). Strict additivity holds bit-wise at rest because silent
+channels behave identically to no-install.
+
+**`preserve=True` (legacy)** — registers the channel range so
+subsequent layers' attn / ffn / per-layer-embed contributions to
+those channels are zeroed at runtime. **Known side effect**: the
+channel range stays pinned even when the card writes NOTHING. At
+rest (card silent), channels `[ch_off:ch_off+d_card]` carry whatever
+the host layer wrote there rather than being freely overwritten by
+downstream layers, which subtly shifts Gemma's head projection. Use
+`preserve=True` ONLY when channel isolation is load-bearing (chained
+cards reading from earlier card's output channels). "Strictly
+additive" does NOT hold bit-wise at rest with `preserve=True` — only
+via `detach()` reversibility.
+
+**Margin-gate alignment rule**: `card_output_fn` must itself skip
+the residual write when card's (peak − median) margin is below
+`write_margin`. Without this gate, low-confidence card output still
+writes, and the write propagates through the head projection even
+when `VerificationHook.min_margin` silences the logit bias. Keep
+`write_margin == min_margin` for symmetry.
+
+**Threshold calibration rule**: for new retrieval cards, run standalone
+on a representative corpus per input-distribution bucket, plot
+(peak − median) margin distribution per bucket, set both gates below
+the lowest observed p5 across all buckets. A single threshold calibrated
+on one bucket will over-gate others. See `delta_rule.md` for the
+canonical MQAR-card install.
+
+Used for PTs (copy-augmented attention can't reduce to a sub-head
+mode) and prototyping.
+
+### 3. Hub-first forced-attention (HubInjectionCard)
+
+Facade form of the causal-validation intervention for shared hub
+heads (L23 H1/H4, serving arithmetic + SV agreement + comparison +
+counting + multi-step composition). Install the intervention as a
+runtime-dispatched facade: detect the natural top-position via live
+Q/K, force one-hot attention, no per-task hand-dispatch.
+
+```python
+from calm.llm_computer.facades.hub_l23 import HubInjectionCard
+card = HubInjectionCard(layer_idx=23, heads=[1, 4])
+card.install(m)                              # hooks L23 attention
+# 5-for-1 ROI across arithmetic + SV + comparison + counting + multi-step
+```
+
+Compatible with `generate()` / autoregressive. Use for hub heads with
+validated cross-task causal effect. Facade file:
+`calm/llm_computer/facades/hub_l23.py`.
+
+### 4. VerificationHook — close the loop card → Gemma logits
+
+```python
+m.verification_hooks.append(
+    VerificationHook(slot, vocab_mapping=DIGIT_TO_GEMMA, boost=50.0))
+```
+
+Reads `slot.last_output`, picks argmax, biases the corresponding
+Gemma BPE token logit by `boost`. Runs after head + softcapping.
+Overrides Gemma's natural continuation with the verified token when
+margin exceeds `min_margin`.
+
+Files: `calm/llm_computer/gemma_substrate.py` (prod Gemma),
+`calm/llm_computer/card_installer.py`,
+`calm/llm_computer/facades/hub_l23.py`,
+`calm/llm_computer/hybrid_substrate.py` (demo substrate).
+
+## Facade / Import System (Program Builder)
+
+Module system for compiled neural programs:
+
+```python
+stdlib = StdLib(exports={"a": 3, "b": 4, "bias": 1})
+adder = CompiledOp(imports={"x": "a", "y": "b"}, exports="sum")
+model = build_program(stdlib, [adder, ...], head)
+```
+
+- **StdLib**: layer-0 facade with tok/pos/copy primitives
+- **CompiledOp**: declares imports (channel names), gate/val formulas, exports
+- **Linker** (`build_program`): resolves imports to channel numbers,
+  auto-schedules layers (topological sort), compiles to one
+  `Small2DTransformer`
+- Bad imports → `KeyError` at build time, not runtime
+
+File: `calm/llm_computer/program_builder.py`
+
+## Composition Patterns
+
+Three ways separately-compiled cards compose on a shared substrate.
+Channels are registers, layers are instructions, sub-heads are threads
+— Gemma's 42 layers × 1024 free sub-heads = **43,008 compute slots**.
+
+- **Inter-slot composition** (`programs/composed_sum_threshold.py`) —
+  Card A writes `a+b → channel 9` at layer 0; Card B reads channel 9
+  at layer 1, outputs indicator. Cards don't know each other at
+  compile time; they agree on channel numbers (the interface).
+- **Depth-compounding** (`programs/depth_compound.py`) — one sub-head
+  across multiple layers = pipeline. L0 `a+b`, L1 `SUM×2`, L2
+  `DOUBLE≥8` — each layer reads the prior's output channel.
+- **Cross-card gating** (`programs/dispatched_v4.py`) — opcode
+  thresholds shifted by +1 so valid ops are `[1, N_OPS]`. Token 0
+  = "not my input" → ALL card slots output exactly zero. Gating with
+  zero extra layers.
+
+## Persistent Knowledge + Auto-Upgrade
+
+Corrections compile into weights as step-function indicators:
+`indicator(x == k) = ReLU(x-k+1) - 2·ReLU(x-k) + ReLU(x-k-1)`. 3 ReGLU
+neurons per fact. Cross-session via save/reload of `.pt`.
+
+Auto-upgrade closes the loop: wrong prompt → CALM verifies → log
+correction to `KnowledgeStore` → `build_recall_model()` produces a
+`Small2DTransformer` recall card → `CardSlot.attach` +
+`VerificationHook` → correct. JSON persistence round-trips
+bit-identical recall.
+
+Files: `persistent_knowledge.py`, `auto_upgrade.py`,
+`scripts/gemma_learning_loop_demo.py`. CALM-side verifier hookup +
+oracle: `calm.md` §"Auto-Upgrade Loop".
+
+## Install Workflow (checklist)
+
+When installing a card into prod Gemma:
+
+1. **Allocate**: read `.claude/MEMORY/substrate_registry.md`. Pick a
+   `host_layer`, channel range `[ch_off : ch_off + d_card]`, and
+   `sub_head_offset` (in-attention installs) that don't collide with
+   any existing entry in the same host_layer.
+2. **Convert** (in-attention only): `m.convert_layer_to_fp32(host_layer)`
+   once per host. ~330 MB SWA / ~600 MB global.
+3. **Install**:
+   - `install_card_in_attention(card, ..., mode='hard_max')` for
+     compiled, `mode='softmax'` for HRM-style.
+   - OR for retrieval PTs the 4-gate default: `install(m, card, ...,
+     write_margin=T, preserve=False)` with `hook.min_margin=T` and an
+     adapter N-range gate. See `delta_rule.md`.
+   - Use `CardSlot(...).attach(m, preserve=True)` ONLY when channel
+     isolation is load-bearing (chained cards reading from
+     prior-card outputs).
+4. **Verify — BOTH raw path AND user-facing path**:
+   - **Raw**: `card.forward` standalone on ACTUAL adapter-extracted
+     inputs from a representative corpus (NOT hand-crafted sanity
+     cases — see adapter-robustness rule in `workflow.md`).
+   - **User-facing**: Gemma with card installed A/B against baseline
+     on the same corpus. Verify no regressions where baseline is
+     correct.
+   - `VerificationHook` (if used) flips argmax ONLY when margin
+     exceeds `min_margin`.
+   - Adapter parses the query key from the RIGHT portion of the
+     prompt (anchor on a marker like `"Question:"`).
+5. **Register**: append a row to `substrate_registry.md` with
+   domain, host_layer, channels, sub_head_offset, mode, vocab_mapping,
+   install date, max abs diff vs baseline.
+6. **Commit**: one commit per domain, registry row included.
+
+End-to-end demo: `scripts/gemma_learning_loop_demo.py`.
+
+## GPU Scaling
+
+| Hardware | Capacity | Params |
+|---|---|---|
+| RTX 4070 (8 GB) | 50 HRM slots + card | 889M, 68.6× speedup, 3.56 GB VRAM |
+| RTX 4090 (24 GB) | ~100 domains | ~3B |
+| A100 (80 GB) | ~500 domains, team substrate | ~10B |
+
+## Key Files
+
+Substrate-native:
+
+| Module | Purpose |
+|---|---|
+| `card_installer.py` | CardSlot + install_compiled_card (substrate-native) |
+| `hybrid_substrate.py` | HybridGroupedSmall2DTransformer + FP32/tq4 per-layer |
+| `tied_embedding.py` | tie_head_to_tok for Gemma-style weight sharing |
+| `q6k_dequant.py` | Q6_K → FP32 for Gemma token_embd |
+| `substrate_compute.py` | SubstrateComputer (text → card → answer) |
+| `unified_substrate_compute.py` | UnifiedSubstrateComputer (HRM + card + Gemma) |
+| `auto_upgrade.py` | AutoUpgradeEngine (CALM → compile → persist) |
+| `persistent_knowledge.py` | KnowledgeStore (corrections → weights) |
+| `program_builder.py` | StdLib + CompiledOp + build_program linker |
+
+Prod Gemma:
+
+| Module | Purpose |
+|---|---|
+| `gemma_substrate.py` | `GemmaSubstrate` (full Gemma 4 E4B from GGUF), `MmapTq4Linear`, `FP32GemmaLinear`, `GpuQ6KEmbedding`, `KVCache` variants, `CardSlot`, `VerificationHook`, `convert_layer_to_fp32`, `install_card_in_attention`, `attention_partition`, `generate(use_tq4_kv=True)` dispatch, `generate_with_graph`, `warmup` |
+| `tq4_triton.py` | Fused dequant+matvec/matmul Triton kernels for tq4 and Q6_K; dual gate+up kernel; per-shape BLOCK_M heuristic; v2 matvec shared-mem LUT default |
+| `tq4_flash_attn.py` | Fused flash-attention decode with tq4 K/V. Head-major storage contract. SWA layers fused; global layers (d_head=512) fall back to memoized dequant. See `turboquant.md`. |
+| `scripts/gemma_learning_loop_demo.py` | End-to-end detect → log → compile → install → persist |
+| `.claude/MEMORY/substrate_registry.md` | Source of truth for installed-domain channel/sub-head allocation |
+
+Compiled programs (what each proves is current; R-provenance in atlas):
+
+| Program | Capability |
+|---|---|
+| `compiled_router.py` | ADD/MUL opcode dispatch |
+| `dispatched_v2.py` | 5-op internal gating |
+| `dispatched_v3.py` | 9 ops scaled |
+| `dispatched_v4.py` | Cross-card gating via opcode shift |
+| `composed_sum_threshold.py` | Inter-slot composition |
+| `depth_compound.py` | 3-stage depth pipeline |
+| `reasoning_engine.py` | Comparison + logic + transitivity |
+| `compiled_in_gemma.py` | Card inside Gemma layer |
+| `three_in_one_layer.py` | Level 5: 3 attention modes in one layer |
+
+## Trained cards — default architecture
+
+New trained cards default to **DT (`CopyAugmentedDeltaNet`)** (PT +
+Householder fast-weight backbone) rather than plain
+`CopyAugmentedTransformer` (PT) — **for retrieval + structure-
+extraction regimes**. Held-out parity on copy-dominant structure
+tasks (NL math), large gains on retrieval-shaped tasks (MQAR with
+high N), faster training convergence, small inference overhead via
+`decode_greedy_cached`.
+
+Deployable card artifact:
+`calm/hrm/checkpoints/copy_augmented_delta_mqar_best.pt` (748 KB,
+183K params, MQAR N=5-15 @ 100% held-out). Trained with chunkwise
+UT transform. See `delta_rule.md` for the full recipe + install
+mechanics.
+
+**Code-skeleton DT** (NL → `def FN(<args>):`) is a separate open arc
+— not install-viable. Recipe differs from MQAR/NL defaults. See
+`delta_rule.md` §"Code-skeleton recipe".
+
+Plain PT stays as ablation baseline; existing PT checkpoints
+preserved (sunk cost), no benefit to retraining as DT.
+
+## Related rules
+
+- `delta_rule.md` — DT / CardSlot install pattern + MQAR scaling
+- `compute_facades.md` — decode-path tier-2 facades (zero-VRAM alt)
+- `turboquant.md` — tq4 kernels + hybrid linear type detail
+- `embed_intelligence.md` — VerificationHook / step-through bias mechanisms
+- `augmentation_thesis.md` — tier-1/2/3 strategic framing
+- `architecture.md` — full agent + substrate integration
+- `MEMORY/atlas/Substrate_arc.md` — level-cascade validation receipts + session-32 port detail
