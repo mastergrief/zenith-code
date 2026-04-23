@@ -1,5 +1,9 @@
 # AI Room collaboration — codex-side
 
+> Historical receipts (session dates, commit SHAs, msg IDs, incident
+> narratives, rule-origin chronology): see
+> `.codex/MEMORY/atlas/AI_ROOM_COLLAB_arc.md`.
+
 Companion to the "AI Room Collaboration" section in `.codex/AGENTS.md`
 (canonical). This file captures codex-perspective specifics that sit
 under the shared charter.
@@ -74,17 +78,17 @@ User chose <this option> over <alternatives>.
 **Trivial (no provenance needed):** codex-owned tasks, single-exchange
 coordination, peer reviews.
 
-Receipt: 2026-04-23 — codex claimed a provenance-less claude-scoped
+Receipt (atlas): codex once claimed a provenance-less claude-scoped
 task, implemented + tested it, then reverted on realizing no user
 signal supported it from codex's session context. The revert was
-correct; the missing provenance is what made it ambiguous.
+correct; the missing provenance is what made it ambiguous. See
+`MEMORY/atlas/AI_ROOM_COLLAB_arc.md` for dated context.
 
 ## High-signal pushback
 
-Today's best collab results came from a clear asymmetry: claude
-synthesized a thesis, codex grounded the weak points with live
-`file:line` evidence, and both agents let the evidence move the design.
-Preserve that pattern.
+The best collab results come from a clear asymmetry: claude synthesizes
+a thesis, codex grounds the weak points with live `file:line` evidence,
+and both agents let the evidence move the design. Preserve that pattern.
 
 - **Prefer one load-bearing cited correction over a list of concerns.**
   If several issues surface, lead with the one most likely to change the
@@ -98,27 +102,31 @@ Preserve that pattern.
   holds, adopt the sharper version and move. The design round is
   succeeding when the artifact changes.
 
-Receipt: 2026-04-23 VGSL design. Codex's cited corrections on verifier
-overlays, non-monotonic truth, MBPP as wrong falsifier, non-destructive
-merge, and binding-vs-merge moved the proposal from loose first
-principles to committed spec `c98a2a1`.
+Receipt (atlas): the canonical 5-round VGSL design arc that validated
+this pattern is recorded with message IDs and commit refs in
+`MEMORY/atlas/AI_ROOM_COLLAB_arc.md`.
 
 ## Receipt discipline
 
-When a phrase from the room crystallizes the insight, preserve it
-verbatim in the downstream artifact. Do not sand off the wording just
-because it came from chat.
+Load-bearing rule. Read before adding to rules or atlas.
 
-- Lift the phrase into the spec, commit body, rule, or handoff exactly
-  when exact wording is the insight.
-- Credit the source by handle or message id when the artifact has room.
+**Rules files preserve the canonical phrase and current invariant.
+Receipt metadata — dates, commit SHAs, message IDs, handles, session
+numbers — lives in atlas, commit bodies, or handoff; NOT in
+eager-tier rules.** Rules explain WHAT the invariant is now. Atlas
+explains HOW it got there.
+
+- Lift a crystallizing phrase verbatim into the spec, commit body,
+  rule, or handoff — exact wording carries the insight.
+- Credit metadata (handle, message id, date, SHA) in atlas or commit
+  body, not in the rule prose.
 - Use this sparingly. The test is whether paraphrase would weaken the
-  idea.
+  idea. Routine ack/concur/status is not receipt material.
+- Phase 0 of `/update` grep-checks rules for dated receipts — this
+  discipline keeps rules compatible with that gate.
 
-Canonical example: "Merge is not fact movement. Merge is
-projection-time aliasing over immutable assertions." That phrase moved
-from codex message `1776968021263` into the VGSL architecture spec and
-commit receipt.
+Canonical example lives in atlas: the VGSL one-liner phrasing that
+this rule was partly written to preserve.
 
 ## Round closure
 
@@ -131,9 +139,9 @@ synthesizing.
 ```
 
 This gives the peer a clean choice: flag the final blocking concern or
-concur. It is small ceremony, but it surfaced the binding-vs-merge hole
-before the VGSL synthesis landed. Use it when a round is about to
-harden into a spec, task split, or commit.
+concur. It is small ceremony, but the canonical receipt (atlas) shows
+it surfaced a final architectural hole before synthesis locked. Use it
+when a round is about to harden into a spec, task split, or commit.
 
 ## Split drafting and voice ownership
 
@@ -148,9 +156,10 @@ instead of serializing the whole artifact through one agent.
 - Cross-review for rule consistency, not voice flattening.
 - Land one coherent commit after the alignment pass.
 
-Receipt: 2026-04-23 VGSL spec. Claude owned `00_INDEX.md` and
-`01_ARCHITECTURE.md`; codex owned `02_IMPLEMENTATION.md` and
-`03_TESTING.md`; both cross-reviewed; one commit landed all four files.
+Receipt (atlas): the VGSL spec split (claude: thesis + architecture;
+codex: implementation + testing) is recorded as the canonical parallel-
+drafting arc in `MEMORY/atlas/AI_ROOM_COLLAB_arc.md` with elapsed
+measurements.
 
 ## Scope boundaries
 

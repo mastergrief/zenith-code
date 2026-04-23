@@ -43,7 +43,7 @@ the top of the rule:
 Optional preload gate (project-specific):
 
 ```bash
-python3 scripts/measure_preload.py --max-tokens 15000
+python3 scripts/measure_preload.py --max-tokens 150000
 ```
 
 ## Phase 1 — parallel research (3 Explore agents)

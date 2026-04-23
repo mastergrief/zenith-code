@@ -241,7 +241,19 @@ Full pipeline rebuild: `PYTHONPATH=. python3 scripts/r53_run_data_generators.py`
   holds at output-boundary `VerificationHook` with `min_margin`
   guard, NOT at residual-write CardSlot. Correct tier-2 target:
   post-generation AST walker. See `augmentation_thesis.md` +
-  `MEMORY/atlas/retrieval_arc.md` for the measurement.
+  `MEMORY/atlas/retrieval_arc.md` for the measurement. The
+  post-generation AST walker concrete implementation is
+  `CodeRenameFacade` (`compute_facades.md` §"Rename-facade pattern").
+
+- **Retrieval-signature prediction without rename escape hatch** —
+  catastrophic null. Pure retrieval over `CodeExampleDB` to pick
+  a function name (without the AST rename used by
+  `CodeRenameFacade`) regresses correct Gemma solutions by forcing
+  nearest-neighbor identifier names that violate the caller's
+  contract. See `MEMORY/atlas/delta_rule_arc.md`
+  §"RENAME-beats-DT on MBPP" for A/B receipts.
+  Operational phrasing: nearest-neighbor naming is not a safe
+  substitute for caller-known contract names on MBPP-like prompts.
 
 - **`DenseIndex.load(prefer_tq4=True)` is the default**. Loads
   `.tq4.pt` companion when present (4× smaller than `.pt`, <1% rank

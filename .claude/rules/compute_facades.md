@@ -121,6 +121,42 @@ User supplies safe_eval function name + arity (+ optional overrides).
 Per-domain cost at Level-2: seconds for spec synthesis + ~1 hour for
 CALM oracle test set + A/B corpus.
 
+## Rename-facade pattern (code-correctness tier-2)
+
+Different shape from decode-path bias facades above. Let Gemma emit
+natural output, then **mechanically rewrite identifiers post-gen**
+via an AST walker. Zero decode-time intervention, zero training,
+zero regression possible (rename preserves body by construction).
+
+Canonical class `CodeRenameFacade` (`calm/llm_computer/facades/code_rename.py`):
+
+```python
+facade = CodeRenameFacade()
+facade.install(gemma, tokenizer)
+r = facade.solve(prompt, fn_name="prime_num")
+# r.generated = Gemma's natural body with first def renamed
+```
+
+Pure function `rename_first_def(source, new_name) -> (rewritten, original_name)`
+is unit-testable without Gemma.
+
+**When this wins over decode-path bias**: target has caller-known
+contract name (tests pin it); Gemma's body is already correct under
+natural name and bias would risk corrupting a correct trajectory;
+DT-style facades can hallucinate arity, rename-facade is immune
+(only touches def header identifier).
+
+**Extraction discipline**: `_trim_to_first_def` two-pass helper
+(`scripts/dt_install_eval.py`). Pass 1: strip col-0 `print(`/
+`# Example`/`# Test` trailers (fires on Gemma-truncated output).
+Pass 2: AST-walk to `FunctionDef.end_lineno`. Any code-generating
+facade should use this extractor shape.
+
+**Rename vs decode-path are complementary**: decode-path for exact
+compute where answer is literal; rename for code-correctness where
+Gemma's body is competent but identifier must match caller contract.
+Chain (compute → rename) for verticals that need both.
+
 ## Decode-path vs CardSlot — decision rule
 
 | Concern | CardSlot retrieval | Decode-path compute facade |

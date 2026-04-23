@@ -98,9 +98,13 @@ unique-key retrieval is where the mechanism advantage is load-bearing.
 - `calm/hrm/checkpoints/copy_augmented_delta_mqar_best.pt` —
   deployable MQAR card, 100% on N=5/10/15 held-out. 748 KB, 183,877 params.
   Trained by `scripts/train_pt_delta_mqar.py`.
-- `calm/hrm/checkpoints/dt_code_skel_v13_ep16_0193.pt` — code-skeleton
-  DT (open arc), 0.193 honest val on 520 held-out. **Not install-viable**
-  — threshold ≥ 0.40 honest val before wiring to Gemma.
+- code-skeleton DT checkpoints (`dt_code_skel_*.pt`) — **ruled out for
+  MBPP-style signature prediction.** Not install-viable for that
+  regime; the canonical tier-2 is post-gen AST rename via
+  `CodeRenameFacade` (see `compute_facades.md`). Retained as retrieval-
+  regime ablation baseline for tasks that match the DT task-shape rule
+  (large sparse key vocab). See `MEMORY/atlas/delta_rule_arc.md` for
+  the honest-val numbers and the RENAME-beats-DT A/B.
 
 ## Retrieval card install — current pattern
 
@@ -132,7 +136,19 @@ on one bucket will over-gate others.
 Result: 42/60 → 60/60 (+18, 43% relative, 0 regressions) on the
 distractor-confused MQAR corpus.
 
-## Code-skeleton recipe (open arc, NOT install-viable)
+## Code-skeleton recipe (ruled out for MBPP; retained for non-MBPP regimes)
+
+**Status**: ruled out for MBPP-style signature prediction. On the
+MBPP benchmark, `CodeRenameFacade` (post-gen AST rename, zero
+training, zero decode bias) dominates DT-bias install: strictly more
+tests passed with zero arity-hallucination regressions. See
+`compute_facades.md` §"Rename-facade pattern" for the shipping
+mechanism and `MEMORY/atlas/delta_rule_arc.md` for the A/B receipts.
+
+The recipe below is retained for non-MBPP code-skeleton regimes where
+the retrieval task-shape rule still applies (large sparse key vocab,
+copyable-token density > ~40%). For MBPP-like arbitrary-convention
+signature prediction, DO NOT invest further in DT training.
 
 Regime: NL problem description → `def FN(<args>):` skeleton. ~370-713
 output classes, Zipf-distributed. Lower copyable-token density than

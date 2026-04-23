@@ -310,6 +310,10 @@ receipts: `.codex/rules/turboquant.md`.
 
 Phase 1 (retrieval + DB + generators) shipped; Phase 2 (PT training + L24/L30 install) pending. Full receipts + per-round findings in: `.codex/rules/retrieval.md`, `.codex/rules/code_reasoning_db.md`, `.codex/rules/recursion.md`, `.codex/MEMORY/atlas/tracing_roadmap_part_1.md` ruled-out log, `.codex/rules/capability_gain.md` (receipts in `.codex/MEMORY/atlas/capability_gain_arc.md`).
 
+## VGSL — post-transformer architecture R&D
+
+`RESEARCH/VGSL/` holds a 4-file architecture spec for a Verifier-Governed Substrate Log — a post-transformer design that moves knowledge out of opaque weights into a versioned, verifier-governed, canonicalized event log with temporally-indexed projection. R&D direction, not shipping arc. Three user-facing options documented in `RESEARCH/VGSL/00_INDEX.md`: park / Phase-1 prototype (1-week bounded experiment) / scope to a commercial vertical.
+
 ## Needle-in-Haystack Validation
 
 Effective context for both 4B base models (Gemma 4 E4B 200K, Qwen 3.5 4B 130K) validated against single / multi / distractor NIAH at 4K–220K. Full table + findings + `MODEL_CONTEXT_LIMITS` source of truth: `.codex/rules/niah_validation.md`.

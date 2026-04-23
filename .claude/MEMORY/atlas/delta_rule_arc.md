@@ -318,3 +318,66 @@ Full receipts for this arc: `.claude/MEMORY/SESSION_HANDOFF.md`
   §"MQAR data-scaling rule"
 - R-delta nulls also indexed in: `tracing_roadmap_part_2.md`
   §"R-delta arc ruled-out log"
+
+---
+
+## RENAME-beats-DT on MBPP (2026-04-23)
+
+DT-bias install for MBPP-style signature prediction is **ruled out**.
+Replacement: `CodeRenameFacade` (post-gen AST rename, zero training,
+zero decode bias, 40 LOC).
+
+### A/B receipt (N=20 MBPP)
+
+| Method | Pass | Delta vs stock | Regressions |
+|---|---|---|---|
+| stock Gemma | 9/60 = 15% | — | — |
+| CodeRenameFacade (oracle-rename) | 17/60 = 28% | +8 / +13pp | **0** |
+| DT-bias install (v14) | 15/60 = 25% | +6 / +10pp | 1 |
+
+DT regression: `remove_kth_element` 3/3 → 0/3 — DT predicted
+`args=[list1, list2]` when actual signature is `(list, k)` (arity
+hallucination). RENAME is immune by construction (only renames, never
+changes behavior).
+
+### v14 DT honest val (code-skeleton)
+
+- Checkpoint: `dt_code_skel_v14_ep18_0200.pt`
+- Honest val: 0.200 greedy / 0.314 beam (563 held-out)
+- Avg copy-gate: 0.040 (collapsed despite R26 aux loss)
+- Threshold for install viability was ≥ 0.40 honest val; never reached.
+
+### Retrieval-signature null (N=20 MBPP)
+
+A pure retrieval approach to signature prediction WITHOUT the AST
+rename escape hatch (i.e., renaming Gemma's output to a retrieved
+neighbor's fn name) regresses the baseline by -9 tests:
+
+| Method | Pass | Delta |
+|---|---|---|
+| retr-self-ok (DB contains MBPP verbatim) | 17/60 = 28% | +8 (trivial — top-1 = oracle) |
+| retr-self-skip (novel prompt simulation) | **0/60 = 0%** | **−9, 3 regressions** |
+
+Regressions: `reverse_words` 3/3→0/3 (renamed to `solution`);
+`remove_kth_element` 3/3→0/3 (renamed to `remove_even`);
+`tuple_modulo` 3/3→0/3 (renamed to `index_multiplication`).
+
+Codex's receipt line: "nearest-neighbor naming is not a safe
+substitute for caller-known contract names on MBPP-like prompts."
+
+### Commit ledger
+
+| Commit | Content |
+|---|---|
+| `6b90d13` | DT install facade + MBPP A/B harness (+33pp on N=5) |
+| `dac50ed` | RENAME beats DT (+13pp vs +10pp, 0 regressions at N=20) |
+| `ed795ef` | Retrieval-signature null (−9 tests, 3 regressions) |
+| `eda1ca7` | Preserve v17 pointer-sup hook + document batched-autoreg null |
+
+### DT's role going forward
+
+- **MQAR retrieval card** (`copy_augmented_delta_mqar_best.pt`) — stays, shipped, 100% on N=5/10/15.
+- **Canonical trained-card architecture for retrieval + structure-extraction** — stays per `delta_rule.md` task-shape rule.
+- **Substrate primitive** in VGSL (see `RESEARCH/VGSL/`) — stays as `verified_program` node candidate.
+- **MBPP code-skeleton signature prediction** — ruled out. Do not retarget DT here.
+- **Arbitrary-convention output prediction in general** — ruled out. DT's ceiling is the task-shape rule's validity.

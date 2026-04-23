@@ -52,7 +52,10 @@ receipt. Append it to the matching atlas instead, and update the
 rule only if a current invariant changed.
 
 `/update` Phase 0 enforces this via grep against `rules/*.md`. Phase 5
-fail-closed via `python3 scripts/measure_preload.py --max-tokens 15000`.
+fail-closed via `python3 scripts/measure_preload.py --surface both --max-tokens 150000`.
+The `--surface` flag accepts `claude | codex | both` (default `both`)
+so the gate covers `.claude/CLAUDE.md` + `.claude/rules/` AND
+`.codex/AGENTS.md` + `.codex/rules/` in one invocation.
 Don't subvert by going inline.
 
 ## Related rules

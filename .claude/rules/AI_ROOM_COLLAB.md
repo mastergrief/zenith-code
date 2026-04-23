@@ -1,5 +1,9 @@
 # AI Room collaboration — claude + codex charter
 
+> Historical receipts (session dates, commit SHAs, msg IDs, incident
+> narratives, rule-origin chronology): see
+> `.claude/MEMORY/atlas/AI_ROOM_COLLAB_arc.md`.
+
 Durable operating rules for when claude (this session) and codex (a
 separate session, running `claudex` from this repo's cwd) coordinate
 directly via the ai-room MCP tools.
@@ -24,8 +28,7 @@ spawning *inside* one session and is unaffected by ai-room collab.
   a file, peer reviews but does not rewrite. Suggest edits via
   ai-room post; lead decides what to apply. Preserves authority,
   avoids rewrite churn, maintains voice consistency across commits.
-  (Prior-incident receipt: 2026-04-23 mirror-overwrite required
-  HEAD restore — avoidable with this discipline.)
+  (Prior-incident receipt in atlas.)
 
 ## Coordination channel
 
@@ -84,9 +87,9 @@ commit.** The lead posts "calling round closed unless one more hole;
 otherwise synthesizing" or equivalent. This gives peer a clean
 exit — two possible responses: (a) flag one final hole, (b) concur.
 Dead-time between rounds shrinks to one round-trip instead of
-"waiting-in-case-there's-more." Today's VGSL receipt: this signal
-is what surfaced the binding-vs-merge hole before synthesis started,
-preventing a mid-synthesis rework.
+"waiting-in-case-there's-more." (Receipt in atlas: the VGSL design
+round used this signal to surface the final architectural hole
+before synthesis locked.)
 
 Equivalent signals: "calling round done from my side", "no more
 pushback from me", "concur, go ahead." Ambiguity ("I think we're
@@ -192,27 +195,33 @@ channel, call `ai_room_resume_check`. It returns one of:
 
 ## Receipt discipline
 
-- **Verbatim-lift rule.** When a one-liner or phrase from a round
-  crystallizes the insight, preserve it verbatim in downstream
-  artifacts (commit messages, spec files, handoff docs, rule-file
-  additions). Credit by message ID or handle. Paraphrasing degrades:
-  the precise wording IS the epiphany — the metaphor, the negation,
-  the specific noun choice.
-- **Canonical example.** Today's VGSL round produced "Merge is not
-  fact movement. Merge is projection-time aliasing over immutable
-  assertions." (codex, msg `1776968021263-08f807cc`). Went verbatim
-  to `RESEARCH/VGSL/01_ARCHITECTURE.md` §"Core invariants" + commit
-  `c98a2a1` body. Any paraphrase ("merges are non-destructive")
-  loses the two-clause structure that makes the invariant
-  memorable and actionable.
-- **Credit concretely.** Message ID is the durable citation; handle
-  alone is insufficient because message IDs anchor the specific
-  round in the ai-room log. Lift: `"<verbatim>" — <handle>, msg
-  <id>`. Receipt is auditable.
-- **Don't over-lift.** Every round produces some prose. Only lift
-  what actually crystallizes (irreducible phrasing of a specific
+Load-bearing rule — read carefully before adding to rules or atlas.
+
+**Rules files preserve the canonical phrase and current invariant.
+Receipt metadata — dates, commit SHAs, message IDs, handles, session
+numbers — lives in atlas, commit messages, or handoff, NOT in
+eager-tier rules.** Rules explain WHAT the invariant is now. Atlas
+explains HOW it got there.
+
+- **Verbatim-lift the phrase.** When a one-liner crystallizes an
+  insight, the phrase itself belongs in rules (+ commits, specs,
+  handoffs). Paraphrasing degrades: the exact wording IS the
+  epiphany — the metaphor, negation, specific noun choice. Keep
+  the two-clause / emphatic structure intact.
+- **Receipt metadata goes to atlas.** The date the phrase
+  originated, the message ID that coined it, the commit SHA that
+  shipped it — all ATLAS material, not rule material. Cross-ref
+  the atlas from the rule with one line at the top of the file:
+  `> Historical receipts: see MEMORY/atlas/<topic>_arc.md`.
+- **Don't over-lift.** Every round produces prose. Only lift what
+  actually crystallizes (irreducible phrasing of a specific
   insight). Routine concur / ack / status text is not receipt
   material.
+- **Compatibility with Phase 0.** `/update`'s Phase 0 contamination
+  grep (R-numbers, commit SHAs, bare dates, session-N) catches
+  receipt metadata left in rules. This discipline keeps rules
+  compatible with that gate. Rules that carry metadata contaminate
+  the eager tier on every update cycle.
 
 ## Parallel drafting on clean splits
 
@@ -237,9 +246,8 @@ in-progress work.
 author has context on. In that case, first author drafts, posts
 shape, then second author drafts dependent half.
 
-**Receipt**: today's VGSL spec (claude: INDEX + ARCHITECTURE; codex:
-IMPLEMENTATION + TESTING) was ~2 hours elapsed with parallel
-drafting. Estimated sequential would have been ~3.5 hours.
+**Receipt**: empirical comparisons of parallel vs sequential drafting
+elapsed are kept in atlas.
 
 ## TDD by collab
 

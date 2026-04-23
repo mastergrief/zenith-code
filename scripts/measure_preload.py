@@ -15,7 +15,7 @@ Token estimate uses chars/4 heuristic — close enough for budgeting; for
 exact counts pipe through tiktoken.
 
 Used by /update Phase 5 as a fail-closed gate:
-  python3 scripts/measure_preload.py --surface both --max-tokens 15000
+  python3 scripts/measure_preload.py --surface both --max-tokens 150000
 """
 from __future__ import annotations
 

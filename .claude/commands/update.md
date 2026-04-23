@@ -2,9 +2,11 @@ Audit the project and rewrite both eager doc surfaces to reflect the current sta
 
 **Handoff rewriting is owned by `.claude/commands/handoff.md`, not here.** After `/update` ships Claude + Codex eager-doc updates, run `/handoff` to rewrite `.claude/MEMORY/SESSION_HANDOFF.md` with its own 2-agent grounding. The two commands compose — they don't duplicate. `/update` validates handoff coherence during its audit phase (e.g. uncommitted files are listed); handoff-content editing happens under `/handoff`. If a repo later adds a Codex handoff file, `/update` may validate that it is coherent, but it still does not own handoff prose.
 
-## Default workflow — parallel audit → P0/P1/P2 plan → execute by tier
+## Default workflow — 3-agent audit → P0/P1/P2 plan → execute by tier → Codex cross-review
 
-The default for a non-trivial update (session touched >1 subsystem, >3 commits, or introduced a new mechanism): launch **3 Explore agents in parallel** for the audit (transcript / code / docs), classify findings by priority tier, draft a plan file in plan mode, then execute one tier per commit. Fall through to inline work only for single-file trivial fixes.
+The default for a non-trivial update (session touched >1 subsystem, >3 commits, or introduced a new mechanism): Claude launches **3 Explore agents in parallel** for the audit (transcript / code / docs), classifies findings by priority tier, drafts a plan file in plan mode, then executes one tier per commit. Fall through to inline work only for single-file trivial fixes.
+
+Codex review gate: when `/update` changes `.codex/*` or otherwise touches both eager surfaces, Codex does **not** run subagents. Codex performs the final cross-review of the proposed diff before commit; Claude resolves blockers or records Codex sign-off.
 
 Case-study receipt: the 2026-04-20 fused flash-attn flip (commit `ad1469e`) used this exact 3-agent split. Agent 1 extracted verbatim bench numbers from the minutes transcript; Agent 2 mapped the flag + dispatch + N-gate feasibility to 5 specific line numbers; Agent 3 enumerated 14 doc locations across 7 files with fix-category tags. Synthesis + plan + commit took ~30 min end-to-end.
 
@@ -54,7 +56,7 @@ leave a single cross-ref line at the top of the rule:
 Also run the preload measurement gate:
 
 ```bash
-python3 scripts/measure_preload.py --surface both --max-tokens 15000
+python3 scripts/measure_preload.py --surface both --max-tokens 150000
 ```
 
 If eager-tier exceeds the cap, the contamination migration above is
@@ -124,7 +126,7 @@ Call `ExitPlanMode` when ready; do not ask "is this ok?" in prose.
 
 ### Phase 4 — execute by tier
 
-- One P-tier per commit (3 commits total for a full-scope session). Each commit message cites the receipts (commits from this session, eval deltas, null-round counts).
+- One P-tier per commit (3 commits total for a full-scope session). Before committing any tier that edits `.codex/*` or both eager surfaces, post the proposed diff to Codex for cross-review and resolve blockers. Each commit message cites the receipts (commits from this session, eval deltas, null-round counts).
 - Use `Edit`, not `Write` — preserve structure, tone, and terse imperative voice.
 - Match existing section depth / bullet style / table format.
 - **Eager-tier line cap**: rules files target ≤ 150 lines, hard cap 200. Atlas files unbounded (query-triggered). If a new section pushes a rule past cap, carve receipts to atlas/ — don't split into `_part_1/_part_2`.
@@ -148,7 +150,7 @@ Run every verification check listed in the plan file. Typical set:
   ```
 - **Eager-tier token gate** (must pass):
   ```bash
-  python3 scripts/measure_preload.py --surface both --max-tokens 15000
+  python3 scripts/measure_preload.py --surface both --max-tokens 150000
   ```
 - Spot-read 2-3 edited files for coherent integration, not tacked-on appendices
 
