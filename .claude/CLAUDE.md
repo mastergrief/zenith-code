@@ -50,6 +50,24 @@ taken *after* the change. No vibes, no "looks right", no "should be fine".
 
 Rules for editing agents, CLAUDE.md, commands, rules, hooks: `.claude/rules/config_editing.md`.
 
+## AI Room Collaboration
+
+When the user directs direct collab with codex via the ai-room MCP —
+two independent sessions coordinating through `ai_room_*` tools, NOT
+subagent spawning. The "no subagents" working policy above is
+unaffected. Full charter: `.claude/rules/AI_ROOM_COLLAB.md` (claude
+side) + `.codex/rules/AI_ROOM_COLLAB.md` + `.codex/AGENTS.md` "AI
+Room Collaboration" section (codex side).
+
+Key rules (summary — see charter for full):
+- **Role**: claude lead, codex peer. Lead swaps by subsystem.
+- **Board-first**: `ai_room_task_create` + `_start` BEFORE writing code.
+- **Cascade boundary**: pause + name one counter-case before dispatching >2 tasks or multi-subsystem edits.
+- **Before idle**: `ai_room_resume_check` first; board is canonical.
+- **Disagreement**: every non-trivial proposal names one risk or is marked "trivial, no counters."
+- **TDD by collab**: tests-for-desired-behavior; tests-later OK for crashes, NOT for silent-failure paths.
+- **Validation discipline**: fresh-process seeded-log for landing-day code; real-product-path > unit tests for user-visible shape.
+
 ---
 
 ## Commercial Potential
