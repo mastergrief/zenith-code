@@ -146,5 +146,5 @@ ratio alone — they may be epiphenomenal.
   framework
 - `tracing_intelligence.md` — first-principles bounds on what's
   compilable
-- `tracing_roadmap.md` — round-by-round atlas progress
+- `MEMORY/atlas/tracing_roadmap_part_1.md` — round-by-round atlas progress
 - `.claude/MEMORY/atlas.md` — the capability/layer/head reference

@@ -111,7 +111,7 @@ Four active systems coexist:
 4. **Unified Single Tensor** (`calm/llm_computer/`) — CHRLM architecture. ONE `.pt` contains Gemma (tq4) + trained PTs + compiled cards + persistent knowledge DB. Session 32 ported Level 5 to prod Gemma 4 E4B. Full spec: `.claude/rules/Substrate.md` + `architecture.md` + `delta_rule.md`.
 
 Serving + VRAM + perf: `.claude/rules/environment.md` §"Serving Architecture".
-Mechinterp tracing arc (session 33-34, R13-R52): `.claude/rules/augmentation_thesis_part_1.md` + `tracing_intelligence.md` + `tracing_roadmap.md`. Full atlas: `.claude/MEMORY/atlas.md`.
+Mechinterp tracing arc (session 33-34, R13-R52): `.claude/rules/augmentation_thesis_part_1.md` + `tracing_intelligence.md` + `MEMORY/atlas/tracing_roadmap_part_1.md`. Full atlas: `.claude/MEMORY/atlas.md`.
 
 ## Python Agent Harness (`agents/`)
 
@@ -173,7 +173,7 @@ receipts: `.claude/rules/turboquant.md`.
 
 ## R53 — Verified Code-Reasoning Stack
 
-Phase 1 (retrieval + DB + generators) shipped; Phase 2 (PT training + L24/L30 install) pending. Full receipts + per-round findings in: `.claude/rules/retrieval.md`, `.claude/rules/code_reasoning_db.md`, `.claude/rules/recursion.md`, `.claude/rules/tracing_roadmap.md` ruled-out log, `.claude/rules/capability_gain_part_1.md` + `capability_gain_part_2.md`.
+Phase 1 (retrieval + DB + generators) shipped; Phase 2 (PT training + L24/L30 install) pending. Full receipts + per-round findings in: `.claude/rules/retrieval.md`, `.claude/rules/code_reasoning_db.md`, `.claude/rules/recursion.md`, `.claude/MEMORY/atlas/tracing_roadmap_part_1.md` ruled-out log, `.claude/rules/capability_gain_part_1.md` + `capability_gain_part_2.md`.
 
 ## Needle-in-Haystack Validation
 
