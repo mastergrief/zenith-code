@@ -17,10 +17,26 @@ contains receipts, this `/update` will pile new ones on top of old
 contamination. Migrate first, audit second.
 
 ```bash
-# Flag rules files contaminated with receipts
-grep -nE '\bR[0-9]+|\b[a-f0-9]{7,}\b|\b20[0-9]{2}-[0-9]{2}-[0-9]{2}' \
+# Flag rules files contaminated with receipts.
+# Uses PCRE (-P) for negative lookahead on dated file paths.
+grep -nP '\b(R\d+(\.\d+)?|R-[a-z]+-\d+)\b|\b[a-f0-9]{7,}\b|\b20\d{2}-\d{2}-\d{2}(?![_A-Za-z0-9])|\b[Ss]ession \d+' \
   .claude/rules/*.md
 ```
+
+Regex parts (keep in sync across Phase 0 + Phase 5):
+- `R\d+(\.\d+)?` — round numbers: `R22`, `R47.2`, `R50.6`
+- `R-[a-z]+-\d+` — namespaced rounds: `R-delta-5`, `R-delta-22`
+- `[a-f0-9]{7,}` — commit SHAs (word-bounded)
+- `20\d{2}-\d{2}-\d{2}(?![_A-Za-z0-9])` — bare dates; lookahead
+  excludes eval-file paths like `2026-04-07_qwen4b.md`
+- `[Ss]ession \d+` — "session N" / "Session N" session-numbering
+
+Known benign hits that should NOT be flagged:
+- Model names starting with a capital R (e.g. `Reasoning-3000x`) —
+  tight `\b(R\d+|R-word-\d+)\b` excludes them
+- Dated eval file paths (`.claude/MEMORY/evals/YYYY-MM-DD_*.md`)
+- Hex-in-word (`feedback`, `metafacade`) — word-bounded `\b...\b`
+  excludes them
 
 For each hit: extract the contaminating block (R-number paragraph,
 SHA citation, dated bench, "Ruled out" / "Cancelled" / "Historical
@@ -117,7 +133,7 @@ Run every verification check listed in the plan file. Typical set:
 - `grep -r "<new mechanism name>" .claude/` hits all expected files
 - **Receipt contamination check** (must return zero hits in `rules/`):
   ```bash
-  grep -nE '\bR[0-9]+|\b[a-f0-9]{7,}\b|\b20[0-9]{2}-[0-9]{2}-[0-9]{2}' \
+  grep -nP '\b(R\d+(\.\d+)?|R-[a-z]+-\d+)\b|\b[a-f0-9]{7,}\b|\b20\d{2}-\d{2}-\d{2}(?![_A-Za-z0-9])|\b[Ss]ession \d+' \
     .claude/rules/*.md && echo "FAIL: rules/ contains receipts — migrate to MEMORY/atlas/"
   ```
 - **Eager-tier line cap** (200 hard cap):

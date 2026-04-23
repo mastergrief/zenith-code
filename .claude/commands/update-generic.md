@@ -15,10 +15,22 @@ file already contains receipts, this `/update` will pile new ones on
 top. Migrate first.
 
 ```bash
-# Flag rules files contaminated with receipts
-grep -nE '\bR[0-9]+|\b[a-f0-9]{7,}\b|\b20[0-9]{2}-[0-9]{2}-[0-9]{2}' \
+# Flag rules files contaminated with receipts.
+# Uses PCRE (-P) for negative lookahead on dated file paths.
+grep -nP '\b(R\d+(\.\d+)?|R-[a-z]+-\d+)\b|\b[a-f0-9]{7,}\b|\b20\d{2}-\d{2}-\d{2}(?![_A-Za-z0-9])|\b[Ss]ession \d+' \
   .claude/rules/*.md
 ```
+
+Regex parts (keep in sync across Phase 0 + Phase 5):
+- `R\d+(\.\d+)?` — round numbers: `R22`, `R47.2`
+- `R-[a-z]+-\d+` — namespaced rounds: `R-delta-5`
+- `[a-f0-9]{7,}` — commit SHAs (word-bounded)
+- `20\d{2}-\d{2}-\d{2}(?![_A-Za-z0-9])` — bare dates; lookahead
+  excludes eval-file paths like `2026-04-07_NAME.md`
+- `[Ss]ession \d+` — session-numbering references
+
+Benign hits excluded by design: capitalized model names (`Reasoning-*`),
+dated eval file paths, hex-substring-in-word (`feedback`, `metafacade`).
 
 For each hit: extract the contaminating block → move to
 `.claude/MEMORY/atlas/<topic>_arc.md` → leave a single cross-ref at
@@ -103,7 +115,7 @@ Call `ExitPlanMode` when ready; don't ask approval in prose.
 - `grep -r "<new mechanism name>" .claude/` hits all expected files
 - **Receipt contamination check** (must return zero hits in `rules/`):
   ```bash
-  grep -nE '\bR[0-9]+|\b[a-f0-9]{7,}\b|\b20[0-9]{2}-[0-9]{2}-[0-9]{2}' \
+  grep -nP '\b(R\d+(\.\d+)?|R-[a-z]+-\d+)\b|\b[a-f0-9]{7,}\b|\b20\d{2}-\d{2}-\d{2}(?![_A-Za-z0-9])|\b[Ss]ession \d+' \
     .claude/rules/*.md && echo "FAIL: rules/ contains receipts — migrate to MEMORY/atlas/"
   ```
 - **Line-cap check**:
