@@ -134,8 +134,8 @@ The GSM shortfall was digit transposition — **fixed by copy mechanism in sessi
 - **Balanced `_sample_operand()`**: uniform across digit-length buckets [1-9]/[10-99]/[100+]. Without this, small operands get 0%.
 - **`max_len` ≥ max_prefix + max_expression + decode_headroom**: positional embeddings cap sequence length. CUDA assert if autoreg exceeds it.
 - **One PT per output-language family**: function-call, infix arithmetic, boolean logic. Combined model plateaus at 74%; split recovers 86-88%.
-- **Autoreg eval is the gate**: teacher-forced val_acc is misleading (99.6% while autoreg is 74%). Always use `_autoreg_eval`.
-- **Copy gate bias = -2.0**: initializes toward generation, learns to copy.
+- **Autoreg eval is the gate**: teacher-forced val_acc is misleading (99.6% while autoreg is 74%). Always use `_autoreg_eval` — *on raw/unaugmented val*. If val is drawn AFTER `_paraphrase_augment()`, it contains paraphrase variants of train problems and autoreg is still memorization. **Split BEFORE aug** (R27, `fa654bb`) — v9's 0.75 "autoreg" was paraphrase-leakage; honest unaug val was 0.284. See `delta_rule.md` §DT code-skeleton arc.
+- **Copy gate bias = -2.0**: initializes toward generation, learns to copy. *Stable on retrieval / NL-math.* Code-skeleton regime needs `-1.0` + R26 aux copy-loss (`--copy-aux-weight 0.5`) — without aux, gate collapses to ~0.018 and model becomes gen-only (v9 receipt).
 - **VOCAB_SIZE = 82** (added `><` in session 31). Old checkpoints use 80 and load fine.
 
 **Remaining ceiling**: 3+ operand copy accuracy (68-83%). Copy attention over prefix gets noisy with 3+ numbers. Known fix: two-stage decode via D5 recurrence.
@@ -173,15 +173,23 @@ Scratchpad-with-intermediate-values forces memorization that small models can't 
 - `copy_logic_best.pt` — boolean logic family
 - `copy_reasoning_best.pt`, `copy_writing_best.pt` — bonus domains
 
-**PT+Delta (default for new cards post-R-delta-20, 2026-04-21):**
+**DT (Delta-Transducer; default for new cards post-R-delta-20,
+2026-04-21; renamed from PT+Delta 2026-04-22):**
 - `copy_augmented_delta_best.pt` — NL math via DeltaNet backbone
   (R-delta-6a, 100% val autoreg ep15). 183,877 params.
 - `copy_augmented_delta_mqar_best.pt` — deployable MQAR card
   (R-delta-21, 100% held-out on N=5/10/15). Trained by
   `scripts/train_pt_delta_mqar.py` (5K/N × N=[5,10,15] × 20 ep,
   chunkwise + scheduled sampling, ~2 min wall).
+- `dt_code_skel_v13_ep16_0193.pt` — code-skeleton DT (2026-04-22
+  session, v13 best). 192K params. Honest val **0.193 on 520
+  held-out unaug problems** (v9's 0.75 was augmented-val
+  inflation; honest v9 unaug was 0.284). Install threshold ≥ 0.40
+  before wiring to Gemma — not yet shipped. Trained by
+  `scripts/train_code_dt.py`. See `delta_rule.md` §DT code-skeleton
+  arc for full R1-R27 receipt.
 
-Default config for new domain cards (commit `63a49fc`):
+Default config for MQAR/NL-math cards (commit `63a49fc`):
 `use_chunkwise=True, n_delta_heads=1, n_iterations=1, chunk_size=32`.
 Full rule: `.claude/rules/delta_rule.md`.
 
@@ -190,6 +198,31 @@ Training recipe differs from plain PT: `F.nll_loss` (not
 gives 3-7× per-epoch speedup; data budget scales with N per the
 MQAR curve: +5 on N needs 2× training data (2K/N → 5K/N → 10K/N
 for N=5-10, 15, 20 respectively).
+
+### DT code-skeleton recipe (session 2026-04-22, different from MQAR/NL)
+
+Regime: NL problem description → `def FN(<args>):` skeleton. ~370-713
+output classes, Zipf-distributed. Lower copyable-token density than
+MQAR (most tokens in `def`/`FN`/`(`/`:` must be generated, not copied)
+→ MQAR defaults DON'T transfer.
+
+Canonical flags for `scripts/train_code_dt.py` (per `delta_rule.md` §DT):
+```
+--balanced-sampler sqrt_inverse   # R3 — counter Zipf
+--copy-gate-bias-init -1.0        # R5 — neutral; 0.0 collapses, +1.0 fabricates
+--copy-aux-weight 0.5             # R26 — position-gated aux loss; prevents gate collapse
+--ema-decay 0.995                 # R21 — 0.999 too slow for 100-ep budget
+--normalize-skeletons             # R6 — strip type annotations + whitespace variants
+--drop-rare-count 3               # R6 — drop training classes <3 examples
+--extract-all-defs                # R8 — emit ALL top-level defs per solution
+--dedupe-ambiguous                # R19 — drop prompts w/ 3+ distinct skeletons
+--synth-rare 60 --synth-rare-max 50   # R9 — programmatic synth on rare classes
+--num-workers 2 --batch-size 256 --lr 3e-3 --eval-cap 300   # R20 infra
+```
+
+R27 **split-before-aug** is mandatory — pipeline does: extract raw →
+normalize → dedup → SPLIT raw → synth rare (train only) → paraphrase
+aug (train only) → drop rare (train only). Val stays raw and honest.
 
 **Substrate-native (180K params, session 30):**
 - `substrate_hrm_nl_best.pt` — first HRM on Small2DTransformer substrate, 90% autoregressive on NL math (scheduled sampling)

@@ -1,6 +1,6 @@
 # CALM — Compute-Augmented Language Model Rules
 
-Part 1
+**Part 1**
 
 ## Core Principle
 
