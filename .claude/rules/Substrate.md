@@ -246,70 +246,39 @@ model = build_program(stdlib, [adder, ...], head)
 
 File: `calm/llm_computer/program_builder.py`
 
-## Inter-Slot Composition
+## Composition Patterns
 
-Two separately-compiled cards compose via a shared residual channel:
+Three ways separately-compiled cards compose on a shared substrate.
+Channels are registers, layers are instructions, sub-heads are threads
+— Gemma's 42 layers × 1024 free sub-heads = **43,008 compute slots**.
 
-```
-Card A (layer 0): writes a+b → channel 9
-Card B (layer 1): reads channel 9 → outputs indicator
-merge_cards(A, B) → one model, one forward, composition works
-```
+- **Inter-slot composition** (`programs/composed_sum_threshold.py`) —
+  Card A writes `a+b → channel 9` at layer 0; Card B reads channel 9
+  at layer 1, outputs indicator. Cards don't know each other at
+  compile time; they agree on channel numbers (the interface).
+- **Depth-compounding** (`programs/depth_compound.py`) — one sub-head
+  across multiple layers = pipeline. L0 `a+b`, L1 `SUM×2`, L2
+  `DOUBLE≥8` — each layer reads the prior's output channel.
+- **Cross-card gating** (`programs/dispatched_v4.py`) — opcode
+  thresholds shifted by +1 so valid ops are `[1, N_OPS]`. Token 0
+  = "not my input" → ALL card slots output exactly zero. Gating with
+  zero extra layers.
 
-Cards don't know each other during compilation. They agree on channel
-numbers (the "interface"). The substrate is the wiring plane.
+## Persistent Knowledge + Auto-Upgrade
 
-File: `calm/llm_computer/programs/composed_sum_threshold.py`
+Corrections compile into weights as step-function indicators:
+`indicator(x == k) = ReLU(x-k+1) - 2·ReLU(x-k) + ReLU(x-k-1)`. 3 ReGLU
+neurons per fact. Cross-session via save/reload of `.pt`.
 
-## Depth-Compounding
-
-One sub-head across multiple layers = compound computation pipeline:
-
-```
-Layer 0: a+b → CH_SUM           (adder)
-Layer 1: SUM×2 → CH_DOUBLE      (doubler, reads layer 0's output)
-Layer 2: DOUBLE≥8 → indicator   (classifier, reads layer 1's output)
-```
-
-Channels are registers. Layers are instructions. Sub-heads are
-threads. Gemma's 42 layers × 1024 free sub-heads = **43,008 compute
-slots**.
-
-File: `calm/llm_computer/programs/depth_compound.py`
-
-## Cross-Card Gating
-
-`dispatched_v4`: opcode thresholds shifted by +1 so valid ops are
-`[1, N_OPS]`. Token 0 = "not my input" → ALL card slots output exactly
-zero. Cross-card gating with zero extra layers.
-
-File: `calm/llm_computer/programs/dispatched_v4.py`
-
-## Persistent Knowledge
-
-Corrections compiled into weights as step-function indicators:
-`indicator(x == k) = ReLU(x-k+1) - 2·ReLU(x-k) + ReLU(x-k-1)`. 3
-ReGLU neurons per fact. Cross-session via save/reload of `.pt`.
-
-File: `calm/llm_computer/persistent_knowledge.py`
-
-## Auto-Upgrade Loop
-
-```
-User queries → CALM verifies → corrections logged → compile into weights → save .pt
-Next session → load → errors permanently fixed → zero retraining
-```
-
-`AutoUpgradeEngine` connects all pieces. End-to-end on prod Gemma:
-wrong prompts → log corrections to `KnowledgeStore` →
-`build_recall_model()` produces a `Small2DTransformer` recall card
-(3 ReGLU per fact, step-function dispatch) → `CardSlot.attach` +
+Auto-upgrade closes the loop: wrong prompt → CALM verifies → log
+correction to `KnowledgeStore` → `build_recall_model()` produces a
+`Small2DTransformer` recall card → `CardSlot.attach` +
 `VerificationHook` → correct. JSON persistence round-trips
 bit-identical recall.
 
-Files: `calm/llm_computer/auto_upgrade.py`,
-`calm/llm_computer/persistent_knowledge.py`,
-`scripts/gemma_learning_loop_demo.py`.
+Files: `persistent_knowledge.py`, `auto_upgrade.py`,
+`scripts/gemma_learning_loop_demo.py`. CALM-side verifier hookup +
+oracle: `calm.md` §"Auto-Upgrade Loop".
 
 ## Install Workflow (checklist)
 
