@@ -154,11 +154,17 @@ def _iter_callables(module_name: str):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             mod = importlib.import_module(module_name)
-    except Exception as e:
-        print(f"  [skip] {module_name}: {e}")
+    except BaseException as e:  # catch pyo3 PanicException + SystemExit etc
+        print(f"  [skip] {module_name}: {type(e).__name__}: {str(e)[:80]}")
         return
 
-    for attr_name in dir(mod):
+    try:
+        attrs = dir(mod)
+    except BaseException as e:
+        print(f"  [skip-dir] {module_name}: {e}")
+        return
+
+    for attr_name in attrs:
         if attr_name.startswith("_"):
             continue
         if len(attr_name) > 40:
@@ -176,10 +182,68 @@ def _iter_callables(module_name: str):
         yield attr_name, obj, doc
 
 
+def _discover_installed_packages() -> list[str]:
+    """R28: auto-scan all top-level installed packages (stdlib + pip).
+    Returns list of importable module names in the current Python env.
+    Skips deprecated / known-problematic packages.
+
+    ⚠ WARNING — IMPORT-TIME SIDE EFFECTS
+    -----------------------------------
+    `pkgutil.iter_modules()` with `PYTHONPATH=.` (the normal harness
+    invocation) enumerates BOTH stdlib/pip AND local repo modules. A
+    subsequent `importlib.import_module(name)` RUNS module-level code.
+
+    Observed 2026-04-22: `scripts/r53_phase2_bench.py` ran its full
+    ablation at import time — loaded Gemma (2.06 GB) into GPU, ran
+    perf probes. Similar risk exists with ANY pip package whose top
+    level performs eager work (`transformers` loads configs, some CUDA
+    libs call `cuda.init`, telemetry packages send pings).
+
+    Mitigations in place:
+    1. The repo-exclusion `skip` set below filters our own top-level
+       packages (calm, agents, scripts, src, tests, etc.) — these are
+       the highest-impact side effects (GPU, disk, model loads).
+    2. `--auto-scan` is OPT-IN. Default pipeline uses the hand-curated
+       `_STDLIB_MODULES + _PIP_MODULES` lists which are known safe.
+    3. `_iter_callables` catches BaseException on import to survive
+       pyo3 panics.
+
+    Before enabling `--auto-scan`:
+      - Verify no NEW repo-local package names need adding to `skip`
+      - Run first with `--verbose` and eyeball the module list
+      - Monitor GPU VRAM during scan (`watch -n1 nvidia-smi`)
+    """
+    skip = {
+        "pip", "pkg_resources", "setuptools", "wheel", "easy_install",
+        "distutils", "ensurepip", "tkinter", "turtle", "turtledemo",
+        "idlelib", "antigravity", "this", "__pycache__",
+        "_distutils_hack", "_virtualenv", "_yaml",
+        # R28 — exclude our OWN repo to avoid self-referential training data
+        "calm", "agents", "scripts", "src", "tests", "rust", "bin",
+        "models", "unsloth_compiled_cache", "RESEARCH",
+    }
+    found: set = set()
+    for mod in pkgutil.iter_modules():
+        name = mod.name
+        if name.startswith("_") or name in skip:
+            continue
+        if len(name) < 2 or len(name) > 40:
+            continue
+        found.add(name)
+    # Also include every stdlib top-level
+    for name in getattr(sys, "stdlib_module_names", ()):
+        if name.startswith("_") or name in skip:
+            continue
+        found.add(name)
+    return sorted(found)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="agents/distill/data/stdlib_signatures.jsonl")
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--auto-scan", action="store_true",
+                    help="R28: auto-discover all installed packages.")
     args = ap.parse_args()
 
     out_path = Path(args.out)
@@ -195,7 +259,15 @@ def main():
     n_rejected_sig = 0
     n_duplicate_prob = 0
 
-    all_modules = list(_STDLIB_MODULES) + list(_PIP_MODULES)
+    if args.auto_scan:
+        auto_mods = _discover_installed_packages()
+        all_modules = list(dict.fromkeys(list(_STDLIB_MODULES) +
+                                          list(_PIP_MODULES) +
+                                          auto_mods))
+        print(f"auto-scan: {len(auto_mods)} packages discovered, "
+              f"{len(all_modules)} total modules to scan")
+    else:
+        all_modules = list(_STDLIB_MODULES) + list(_PIP_MODULES)
     for mod_name in all_modules:
         source_tag = "stdlib" if mod_name in _STDLIB_MODULES else "pip"
         print(f"scanning {mod_name} ({source_tag}) ...")
@@ -204,7 +276,7 @@ def main():
             n_functions += 1
             try:
                 sig = inspect.signature(obj)
-            except (ValueError, TypeError):
+            except BaseException:  # pyo3/Rust methods raise panics
                 n_rejected_sig += 1
                 continue
             skel = _clean_sig(sig)
