@@ -1,9 +1,20 @@
 # VGSL — Architecture
 
 The design spec. Primitives, invariants, the four-layer stack, and
-what makes this post-transformer. Companion to `00_INDEX.md`
-(overview), `02_IMPLEMENTATION.md` (data structures + APIs),
-`03_TESTING.md` (falsifiers).
+what this adds vs the current substrate. Companion to `00_INDEX.md`
+(overview + pursuit path), `02_IMPLEMENTATION.md` (data structures +
+APIs + Stage 1/2 shape), `03_TESTING.md` (falsifiers + 4 in-tree
+gates).
+
+**2026-04-23 update**: post-joint-critique (claude+codex
+first-principles review), framing has been softened on
+"post-transformer" (it's a knowledge substrate that complements
+transformers, not a replacement); the imitation-trained constraint
+framing has been corrected (only attacked once Phase 4 proposer/
+verifier loop generates beyond human text); the Tier B claim has
+been softened (research frontier, not solved common-sense merge);
+and source-priority encoding has been clarified as projection
+policy, NOT merge semantics. See per-section notes below.
 
 ## Thesis
 
@@ -11,6 +22,23 @@ what makes this post-transformer. Companion to `00_INDEX.md`
 > writes + temporally-indexed canonicalized projection + dual-path
 > reads (exact-gated fast + verifier-bounded exploratory), with
 > replay reproducibility as an architectural invariant.**
+
+**Joint-critique caveat on "post-transformer"**: the thesis sentence
+above is preserved verbatim as the design's framing aspiration,
+but the load-bearing claim is narrower. VGSL is a **non-weight
+knowledge substrate for a post-transformer stack**, not a
+replacement for transformers. Generation, language understanding,
+and attention all still live in the transformer. What VGSL adds is
+externalized fact storage with audit/replay/temporal properties
+the transformer's weights cannot give you. Items (1)-(5) of
+`00_INDEX.md` §"What this adds vs current substrate" describe
+post-implicit-storage patterns shared with existing event-sourcing
+systems (Datomic, Kafka + materialized views, RDF/SPARQL with
+revision history); the load-bearing novelty for an LLM-knowledge
+substrate is the specific composition (per-event verifier+
+canonicalizer versioning, non-destructive merge as projection-time
+aliasing, dependency-tracked derivation invalidation, exact-default
+reads with verifier-gated slow path).
 
 Each phrase earns its place:
 
@@ -68,6 +96,25 @@ Their weights ARE their "now." Training once means frozen. CHRLM
 unifies fact storage into the `.pt` but still has one implicit
 projection per snapshot. VGSL makes "now" a query parameter, not a
 property of the weights.
+
+**Important caveat (post-joint-critique)**: VGSL attacks (8) —
+weight-baked knowledge — and (9) — single implicit worldview —
+*immediately* via the log + projection substrate. It only attacks
+(7) — imitation-trained — once a working proposer/verifier loop
+generates beyond human text imitation (Phase 4 in the original arc;
+not in scope for the in-tree Stage 1/2 pursuit). The original
+draft's claim that "VGSL attacks all three at the architectural
+base" was an over-statement: the log/projection substrate doesn't
+generate new content, it stores and serves what the verifier
+accepts. Until the proposer + verifier are themselves generative
+beyond imitation (Phase 4 with admitted training-signal-density
+risk), VGSL is **a knowledge substrate that doesn't ingest beyond
+what humans curate or what existing CALM/HRM/Gemma proposers
+already produce**.
+
+The honest framing: VGSL closes 2 of 3 constraints deterministically;
+the third is gated on a separate research bet (Phase 4 learned
+proposer feasibility — see `00_INDEX.md` §"Risks").
 
 ## Core invariants
 
@@ -211,8 +258,22 @@ retraction costs:
 | **B** (Evidence) | ≥N shared verified predicates, 0 contradictions | Applied to projection, auto-retracted on verified contradiction | Contradiction event `{predicate_P_verified(A) ⊥ predicate_P_verified(B)}` |
 | **C** (Candidate) | Weak similarity (embedding neighbors, lexical overlap, partial predicate match) | NOT applied to projection; stored as `hypothesis_merge_candidate` | Never durable without promotion to Tier B or A |
 
-Tier A and B cover most common-sense merges. Tier C is the holding
-pen for cases needing more evidence or human disambiguation.
+Tier A is durable when external authoritative sources exist.
+**Tier B is the research frontier, not a solved common-sense merge
+story** (post-joint-critique correction). Its `≥N shared verified
+predicates, 0 contradictions` rule is vulnerable to:
+
+- **Correlated evidence** — multiple "shared verified predicates" can
+  derive from the same upstream source, inflating confidence without
+  independent corroboration
+- **Missing contradictions** — in fully open domains, the absence
+  of recorded contradictions does not mean contradictions don't
+  exist; it means none have been observed yet
+
+Treat Tier B precision as **empirical-validation territory** until a
+domain-specific evidence-threshold harness exists (see `03_TESTING.md`
+§"Tier B merge test" for the open-question structure). Tier C is the
+holding pen for cases needing more evidence or human disambiguation.
 
 The threshold N for Tier B is a versioned canonicalizer parameter.
 Changing N is a `canonicalizer_upgraded` event; replay determinism
@@ -223,10 +284,14 @@ holds.
 - **Tier A seed**: import trusted ontologies (Wikidata for entities,
   SPDX for licenses, ICD-10 for medical codes, etc.). These are
   canonical by construction.
-- **Tier B seed**: existing `CodeExampleDB` dedup records
-  (`calm/llm_computer/facades/code_example_db.py:135-137`) already
-  do first-occurrence-wins on problem hash — that IS a Tier-A merge
-  event for problem identity, retroactively promotable.
+- **Stage-1 seed**: existing `CodeExampleDB` dedup records
+  (`calm/llm_computer/facades/code_example_db.py:135-137`) define a
+  closed-world duplicate set by problem hash. The duplicate identity
+  can be represented as same-problem assertion grouping; the active
+  example is selected by `source_priority_v1` projection policy, not
+  by a merge field. (Codex correction msg `1776979663929-802bd974`;
+  full encoding spec: `02_IMPLEMENTATION.md` §"Source priority
+  encoding.")
 - **Tier C seed**: empty at start; populated by Phase 4 exploration
   policy.
 
@@ -296,10 +361,18 @@ Transformer-era LLMs can't do the first without retrieval (and
 retrieval doesn't answer the temporal part cleanly); can't do the
 second at all; can't do the third.
 
-## Why retrieval failed here (motivating the canonicalization layer)
+## Why retrieval failed here (anti-pattern receipt motivating dual-path discipline)
+
+**Joint-critique scope correction**: this is an anti-pattern receipt
++ dual-path discipline motivator, **NOT a whole-architecture origin
+story**. Approximate retrieval being unsafe as authoritative answer
+doesn't by itself motivate append-only event sourcing or temporal
+replay; it motivates **exact-default reads with verifier-gated slow
+path**, which VGSL bakes into substrate semantics.
 
 The N=20 retrieval-null result (commit `ed795ef`) concretely
-motivates VGSL's non-negotiable canonicalization layer. Observation:
+motivates VGSL's non-negotiable canonicalization + dual-path layer.
+Observation:
 
 > When test-expected names are pinned by assertions
 > (MBPP tests call `assert prime_num(...)`) and the retrieval system
@@ -322,26 +395,75 @@ projection).
 Without this discipline, a growing graph becomes what codex termed
 "a higher-bandwidth hallucination store."
 
+The fix at retrieval level (gating in `retrieval.md` §"Gating rule")
+already exists. VGSL's contribution is **baking the discipline into
+the substrate** so it can't be forgotten — defensibility argument,
+not new-capability argument. The cite stands as anti-pattern receipt
+that informs VGSL's dual-path design, not as the architecture's
+origin story (which is the broader log + projection + verifier-
+versioning composition; see Thesis above).
+
 ## What this subsumes from the current stack
 
 Not a rewrite. VGSL generalizes patterns already proven in the
-repo. Mapping:
+repo. Mapping (with **Stage swap target** column showing the
+recommended in-tree pursuit path per `00_INDEX.md` §"Pursuit
+path"):
 
-| Current pattern | VGSL event class |
-|---|---|
-| Compiled cards | `accepted_assertion` of kind `verified_program`, verifier_id = executability checker |
-| CALM backends (`*_ops.py`) | Per-class verifiers, versioned |
-| CALM knowledge backends (`*_kb.py`) | Tier A proof seeds (canonical by external source) |
-| CodeExampleDB | `accepted_assertion` nodes; dedup IS Tier-A merge |
-| KnowledgeStore `add_correction` | Special-case of log + projection; latest-wins is degenerate supersession chain |
-| `VerificationHook` | Verifier on read path (logit-bias form) |
-| `CardSlot` + `install_card_in_attention` | Projection computation primitive |
-| Auto-upgrade loop | Supersession event stream fed by CALM |
-| Tier 1/2/3 framework | Read-only projection / overlay / log-extension |
-| Decode-path facades | Tier-A-proof `verified_program` with oracle-validated equivalence |
+| Current pattern | VGSL event class | Stage swap target |
+|---|---|---|
+| Compiled cards | `accepted_assertion` of kind `verified_program`, verifier_id = executability checker | Stage 3+ generalization |
+| CALM backends (`*_ops.py`) | Per-class verifiers, versioned | Stage 3+ generalization |
+| CALM knowledge backends (`*_kb.py`) | Tier A proof seeds (canonical by external source) | Stage 3+ generalization |
+| **CodeExampleDB** | `accepted_assertion` nodes per source-tagged example; **source-priority is projection policy (`source_priority_v1`), NOT merge field** (post-joint-critique correction — see §"Source-priority is projection policy, not merge semantics" below) | **Stage 1 — shadow-mode swap** |
+| **KnowledgeStore `add_correction`** | Special-case of log + projection; latest-wins is degenerate supersession chain | **Stage 2 — paired with `auto_upgrade`** |
+| `VerificationHook` | Verifier on read path (logit-bias form) | Stage 3+ generalization |
+| `CardSlot` + `install_card_in_attention` | Projection computation primitive | Stage 3+ generalization |
+| **Auto-upgrade loop** | Supersession event stream fed by CALM; recall-card-weight compilation moves to projection-builder output | **Stage 2 — paired with `KnowledgeStore`** |
+| Tier 1/2/3 framework | Read-only projection / overlay / log-extension | Stage 3+ generalization |
+| Decode-path facades | Tier-A-proof `verified_program` with oracle-validated equivalence | Stage 3+ generalization |
 
 Every existing substrate pattern has a VGSL analog. The spec is not
-a departure — it's a generalization.
+a departure — it's a generalization. Stage 1/2 swaps are
+backward-compatible behind public APIs of the existing classes.
+
+## Source-priority is projection policy, not merge semantics
+
+A clarification crystallized in the joint critique
+(codex msg `1776979663929-802bd974`):
+
+> **Source-priority lives in projection rule + assertion metadata.
+> Merge says "these assertions share identity"; projection says "of
+> these N aliased records, this one represents the cluster under
+> policy P."**
+
+Concrete encoding (full schema: `02_IMPLEMENTATION.md` §"Source
+priority encoding"):
+
+- `accepted_assertion.source_tier` (string: e.g. `"hand_written"`,
+  `"curated_benchmark"`, `"hf_filtered"`, `"synthetic"`,
+  `"9b_generated"`, `"long_tail_hf"`) — assertion metadata
+- `accepted_assertion.source_rank` (int: per-tier ordinal) —
+  assertion metadata
+- Tie-breaker `(corpus_order, line_no, event_id)` — assertion
+  metadata
+- `accepted_assertion.stable_problem_key` — canonicalized hash for
+  identity grouping (codex's term, see `02_IMPLEMENTATION.md`)
+- Projection rule (`source_priority_v1` for closed-world Stage 1
+  `CodeExampleDB` deployments; `latest_verified_correction_v1` for
+  Stage 2 `KnowledgeStore` deployments) — selects representative
+  from aliased cluster
+
+Conflating priority with merge would re-create the merge/binding
+mistake at smaller scale: identity-resolution and representative-
+selection are distinct primitives with distinct retraction
+semantics. `merge_retracted` should not affect representative
+selection; `projection_rule_changed` should not affect identity
+clusters. Keeping them separate at the schema level keeps
+retraction coherent in both directions.
+
+Full implementation shape: `02_IMPLEMENTATION.md` §"Source priority
+encoding" (codex-owned).
 
 ## Related rules
 

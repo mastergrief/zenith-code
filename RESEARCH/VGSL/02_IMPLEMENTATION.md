@@ -39,9 +39,35 @@ repo subsystems but do not generalize to open-world state:
 VGSL replaces hidden precedence with **explicit log semantics + explicit
 projection semantics**.
 
+The first pursuit path is not greenfield. Stage 1 is an in-tree,
+shadow-mode replacement for `CodeExampleDB` that preserves the existing
+public surface and materializes the current `examples` list bit-for-bit.
+Stage 2 applies the same substrate to `KnowledgeStore` +
+`auto_upgrade`. The broader open-world VGSL phases remain research
+follow-ons after those closed-world swaps prove parity, audit value, and
+acceptable performance.
+
 ---
 
 ## 2. Layer Model
+
+### In-tree Stage 0/1
+
+Before the greenfield closed-world prototype, VGSL should land as a
+shadow-mode substrate under existing repo APIs:
+
+1. **Stage 0 - event log + projection materializer.** Build the minimal
+   append-only log, verifier/canonicalizer registry, and materialized
+   projection cache needed by current callers.
+2. **Stage 1 - `CodeExampleDB` swap.** Emit one `accepted_assertion` per
+   source-tagged example and materialize the exact current ordered
+   representative list under `source_priority_v1`.
+3. **Stage 2 - `KnowledgeStore` + `auto_upgrade`.** Represent
+   corrections as assertions and compile recall-card weights from the
+   materialized current projection.
+
+These stages are closed-world. They do not require open-world bindings,
+entity merges, Tier-B evidence merges, or a learned proposer.
 
 ### Closed-world Phase 1
 
@@ -92,6 +118,9 @@ The implementation must preserve these invariants:
 6. **Tier-C isolation.** Weak candidates never enter the exact fast path.
 7. **Projection plurality.** Conservative and pragmatic projections may
    coexist over the same log.
+8. **Representative selection is projection policy.** Source priority,
+   latest-wins, and first-wins are never encoded as merge semantics.
+   They are explicit projection rules over immutable assertions.
 
 If any of these invariants fail, replay reproducibility and retraction
 coherence fail with them.
@@ -135,6 +164,28 @@ Every event should have a common envelope:
 - `hypothesis`
 - `hypothesis_promoted`
 - `invalidated_pending_reverify`
+
+### Source priority encoding
+
+The Stage-1 `CodeExampleDB` shadow swap needs deterministic assertion
+metadata, not new event kinds:
+
+```json
+{
+  "record_class": "code_example",
+  "source_path": "agents/distill/data/mbpp.jsonl",
+  "source_tier": "benchmark",
+  "source_rank": 2,
+  "corpus_order": 3,
+  "line_no": 417,
+  "stable_problem_key": 1234567890
+}
+```
+
+`source_tier` / `source_rank` describe quality. `(corpus_order,
+line_no, event_id)` is the stable tie-breaker. The active
+representative is derived by the `source_priority_v1` projection rule;
+it is not stored as a fact and not encoded on a merge.
 
 ### [OPEN] Projection-rule events
 
@@ -202,6 +253,60 @@ canonicalized merged ids:
 
 That looks redundant until a merge is retracted. Then it is the whole
 system's coherence story.
+
+### `CodeExampleDB` assertions
+
+Stage 1 maps each ingested example to an assertion:
+
+```json
+{
+  "kind": "accepted_assertion",
+  "assertion_id": "code_ex_000417",
+  "record_class": "code_example",
+  "subject_id": "problem_hash:8f41...",
+  "payload": {
+    "problem": "...",
+    "solution": "...",
+    "code_fragment": "...",
+    "reasoning_trace": "..."
+  },
+  "source_path": "agents/distill/data/mbpp.jsonl",
+  "source_tier": "benchmark",
+  "source_rank": 2,
+  "corpus_order": 3,
+  "line_no": 417
+}
+```
+
+All duplicate problem hashes remain in the log. The projection
+materializes exactly one active representative per problem hash under
+`source_priority_v1`, preserving today's
+`calm/llm_computer/facades/code_example_db.py` behavior:
+`DEFAULT_CORPORA` priority order, first unique hash wins, and
+`self.examples[doc_idx]` remains the retrieval-index ABI.
+
+### `KnowledgeStore` assertions
+
+Stage 2 maps each correction to an assertion:
+
+```json
+{
+  "kind": "accepted_assertion",
+  "assertion_id": "corr_000123",
+  "record_class": "knowledge_correction",
+  "subject_id": "query_key:17",
+  "payload": {
+    "correct_value": 391
+  },
+  "source_tier": "verified_calm",
+  "source_rank": 0
+}
+```
+
+The current projection collapses these by query key under a
+`latest_verified_correction_v1` policy. `KnowledgeStore.add_correction`
+stays as a compatibility wrapper; recall-card compilation consumes the
+projection output instead of the raw correction list.
 
 ---
 
@@ -286,6 +391,13 @@ Tier semantics:
   verifier upgrade
 - **Tier C** — candidate only, never consulted by exact reads
 
+Do not use merge fields to select the "best" representative for a
+closed-world duplicate set. In `CodeExampleDB`, duplicate problem hashes
+share identity, but source priority is representative selection. A merge
+may say "these assertions are about the same problem"; the
+`source_priority_v1` projection rule decides which assertion appears in
+the materialized `examples` list.
+
 ### [OPEN] Cluster ids
 
 The spec should decide whether `into_cluster` is a fresh synthetic id or
@@ -312,6 +424,7 @@ Outputs:
 - active bindings
 - active merge alias sets
 - invalidated-but-not-reverified derivations
+- materialized compatibility views (for Stage 1/2 wrappers)
 
 ### Fold order
 
@@ -338,6 +451,20 @@ VGSL should support at least:
 This is the ontology-level analog of the repo's exact-gated recall path
 in `augmentation_thesis.md:206-216`.
 
+Stage 1 deliberately does not need multiple user-facing projections.
+It needs one explicit policy:
+
+```python
+source_priority_v1(assertions) -> list[CodeExample]
+```
+
+The policy groups assertions by `stable_problem_key`, sorts each group
+by `(source_rank, corpus_order, line_no, event_id)`, selects the first
+representative, and emits the ordered `examples` list. That list is the
+compatibility boundary: TF-IDF doc ids, dense vectors, channel maps, and
+callers that index `db.examples` must see the same order as today's
+first-occurrence-wins implementation.
+
 ---
 
 ## 11. Read APIs
@@ -353,6 +480,41 @@ read_at(key, t, *, mode="conservative")
 read_all(key)
 read_canonical(key, *, verifier_version=None, canonicalizer_version=None)
 ```
+
+Stage-1 compatibility APIs:
+
+```python
+CodeExampleDB.load_default()
+CodeExampleDB.load_paths(paths)
+db.examples
+db.retrieve(query, ...)
+db.retrieve_channel(query, ...)
+db.build_tfidf()
+db.build_dense(m, tok)
+db.save_indices(path)
+db.load_indices(path)
+db.export_pt_signature_jsonl(path)
+```
+
+The wrapper may be backed by a log, but the list order and index mapping
+are part of the API. `load_indices()` remains caller-synchronized with
+the materialized projection; if the projection policy changes, caches
+must rebuild or carry a projection-policy hash.
+
+Stage-2 compatibility APIs:
+
+```python
+KnowledgeStore.add_correction(query_key, correct_value)
+KnowledgeStore.save_corrections(path)
+KnowledgeStore.load_corrections(path)
+KnowledgeStore.build_recall_model(...)
+AutoUpgradeEngine.commit()
+```
+
+`AutoUpgradeEngine.commit()` should still save a `.pt`; the difference
+is that the recall-card weights are compiled from the current projection
+of `knowledge_correction` assertions rather than directly from the
+mutable `corrections` list.
 
 Open-world extension:
 
@@ -390,9 +552,37 @@ VGSL should reuse, not ignore, the repo's existing receipts:
 VGSL generalizes these into an explicit event/projection substrate
 instead of a set of local shortcuts.
 
+For the in-tree pursuit, `CodeExampleDB` comes first. It has a crisp
+closed-world invariant: problem-hash identity plus source-priority
+representative selection. It also has broad enough call-site coverage to
+make parity meaningful without touching model serving. `KnowledgeStore`
+and `auto_upgrade` come second because they cross into runtime
+weight-compilation and saved `.pt` artifacts.
+
 ---
 
 ## 13. Phase Boundaries
+
+### Stage 0 - In-tree substrate skeleton
+
+- append-only event store
+- version registry
+- materialized projection cache
+- no public behavior change
+
+### Stage 1 - `CodeExampleDB` shadow swap
+
+- one explicit `source_priority_v1` projection policy
+- materialized ordered `examples` list matches current implementation
+- retrieval APIs and index artifacts remain compatible
+- no open-world bindings, Tier-B merges, or learned proposer
+
+### Stage 2 - `KnowledgeStore` + `auto_upgrade`
+
+- `add_correction` emits `knowledge_correction` assertions
+- current projection preserves latest-verified correction behavior
+- recall-card compilation consumes projection output
+- `.pt` save path remains the serving artifact
 
 ### Phase 1
 

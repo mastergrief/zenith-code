@@ -22,9 +22,12 @@ architecture's distinctive claims:
 Anything that does not stress those claims is, at best, a secondary
 benchmark.
 
-This is why MBPP is the wrong first falsifier for VGSL. MBPP mostly
-re-tests contract-name inference, which the retrieval-null result already
-showed is the wrong problem framing for this architecture.
+This is why MBPP is the wrong first falsifier for greenfield VGSL.
+MBPP mostly re-tests contract-name inference, which the retrieval-null
+result already showed is the wrong problem framing for this
+architecture. For the in-tree pursuit, the first falsifier is narrower:
+can a VGSL-backed `CodeExampleDB` shadow the current subsystem exactly
+while adding auditability and acceptable performance?
 
 ---
 
@@ -53,9 +56,61 @@ wrapper around it.
 that rewards approximate retrieval on the default path is testing the
 wrong thing.
 
+### Prove parity before value
+
+For in-tree swaps, VGSL must first behave exactly like the subsystem it
+replaces. Audit value is only meaningful after parity: same active
+examples, same retrieval top-k on fixed query suites, same correction
+projection, and same recall-card behavior. Shadow-mode bug discoveries
+are upside, not the entry ticket.
+
 ---
 
-## 3. Primary Falsifier — API-Contract-Evolution Bench
+## 3. In-Tree Stage 1 Falsifier - `CodeExampleDB` Shadow Swap
+
+The first pursuit path is not greenfield. It replaces the substrate
+under `CodeExampleDB` in shadow mode while preserving the existing API
+and materialized `examples` order.
+
+### Baseline
+
+The baseline is the current implementation:
+
+- `DEFAULT_CORPORA` loaded in priority order
+- duplicate problem hashes skipped on first occurrence
+- `examples` list order used as the retrieval-index ABI
+- TF-IDF, dense, hybrid, and channel retrieval map doc ids back into
+  `examples`
+
+### Success gates
+
+1. **Parity gate.** On a fixed corpus snapshot, the VGSL projection emits
+   the same length, source counts, ordered `(key, source)` pairs,
+   `code_fragment` hashes, and `reasoning_trace` hashes as current
+   `CodeExampleDB`. Jaccard, TF-IDF, dense, hybrid, and channel top-k
+   results match for a fixed query suite, or any cache rebuild is
+   explicitly explained and top-k equivalent.
+2. **Audit gate.** For every duplicate problem hash, VGSL can explain why
+   the active example won: event id, source path, source tier/rank,
+   corpus order, line number, projection policy id, verifier version, and
+   canonicalizer version.
+3. **Performance gate.** Materialized projection keeps active lookup O(1)
+   by problem key and adds no more than 10% overhead to load/index-build
+   time on the fixed corpus snapshot.
+4. **Value gate.** One-week shadow-mode findings are recorded, but
+   surfaced bugs are upside. The slice passes on parity + audit +
+   performance; it does not depend on lucky bug discovery.
+
+### Failure meaning
+
+- mismatched `examples` ordering: projection policy bug
+- mismatched top-k with same indices: ABI or doc-id mapping bug
+- missing duplicate explanation: audit model not paying for itself
+- excessive load/build overhead: projection cache design too expensive
+
+---
+
+## 4. Greenfield Phase 1 Falsifier - API-Contract-Evolution Bench
 
 This is the first serious benchmark because it directly exercises
 versioned truth, supersession, and replay.
@@ -95,6 +150,9 @@ if the design is real.
 - VGSL conservative projection: `>= 80%` accuracy on temporal and audit
   queries
 - stock LLM baseline: `<= 20%` on the same set without external retrieval
+- simple event-sourced / temporal-table baseline included, so this phase
+  proves VGSL semantics and ergonomics rather than merely proving that a
+  temporal store can answer temporal queries
 - replay of the same log under the same versions must be bit-identical
 
 ### Failure meaning
@@ -105,7 +163,7 @@ if the design is real.
 
 ---
 
-## 4. Secondary Falsifier — Verifier-Upgrade Replay
+## 5. Secondary Falsifier — Verifier-Upgrade Replay
 
 This tests whether `verifier_upgraded` is actually first-class.
 
@@ -137,7 +195,7 @@ VGSL is not actually replayable.
 
 ---
 
-## 5. Projection Invariant Tests
+## 6. Projection Invariant Tests
 
 These should be property-like tests, not prose demos.
 
@@ -182,7 +240,7 @@ If a derived assertion depended on a retracted merge, it becomes
 
 ---
 
-## 6. Open-World Merge Tests
+## 7. Open-World Merge Tests
 
 This is not Phase 1, but the spec should already define the tests.
 
@@ -209,6 +267,11 @@ Success:
 - all derived assertions depending on the merge become invalidated or
   reverified
 
+Risk to test explicitly: shared predicates can be correlated evidence,
+and open-world missing contradictions are not evidence of identity. Tier
+B must be treated as a research frontier with precision/recall curves,
+not as solved common-sense merging.
+
 ### Tier C candidate test
 
 - weak similarity candidate is stored
@@ -221,7 +284,7 @@ Success:
 
 ---
 
-## 7. Binding Tests
+## 8. Binding Tests
 
 Binding is separate from merge, so it needs separate tests.
 
@@ -248,7 +311,7 @@ Projection must distinguish those operations.
 
 ---
 
-## 8. Anti-Pattern Tests
+## 9. Anti-Pattern Tests
 
 VGSL should explicitly test against the failure modes the current repo
 has already encountered.
@@ -278,12 +341,27 @@ back to either shortcut silently.
 
 ---
 
-## 9. Phase Exit Criteria
+## 10. Phase Exit Criteria
 
-### Phase 1 — Closed-world log/projection
+### Stage 1 - `CodeExampleDB` shadow swap
+
+- parity gate passes against the current implementation
+- audit gate explains all duplicate problem-hash representative choices
+- performance gate stays within the load/index-build budget
+- one explicit `source_priority_v1` policy; no multi-projection scope
+
+### Stage 2 - `KnowledgeStore` + `auto_upgrade`
+
+- correction projection matches current latest-wins behavior
+- compiled recall card matches fixed correction-set outputs
+- `AutoUpgradeEngine.commit()` still writes the expected `.pt` artifact
+- projection audit explains every overwritten correction
+
+### Phase 1 - Closed-world log/projection
 
 - API-Contract-Evolution bench passes success gate
 - verifier-upgrade replay deterministic
+- event-sourced / temporal-table baseline included
 - no learned proposer required
 
 ### Phase 2 — Tier A binding/merge
@@ -309,13 +387,28 @@ back to either shortcut silently.
 
 ---
 
-## 10. Recommended Baselines
+## 11. Recommended Baselines
 
-For Phase 1:
+For Stage 1:
+
+- current `CodeExampleDB` implementation (authoritative baseline)
+- VGSL-backed shadow projection materializing `examples`
+- fixed query suite across jaccard, TF-IDF, dense, hybrid, and channel
+  retrieval modes
+- index-cache rebuild path when projection-policy hash changes
+
+For Stage 2:
+
+- current `KnowledgeStore` correction list + recall-card compiler
+- VGSL-backed correction projection + recall-card compiler
+- fixed correction sets with duplicate keys and overwritten values
+
+For greenfield Phase 1:
 
 - stock LLM without retrieval
 - stock LLM with prompt-retrieval
 - simple deterministic rules over raw revision docs
+- simple event-sourced / temporal-table baseline
 - VGSL conservative projection
 
 For open-world phases:
@@ -329,8 +422,11 @@ projection discipline is the reason it works.
 
 ---
 
-## 11. Open Questions
+## 12. Open Questions
 
+- [OPEN] exact fixed-query suite for Stage-1 retrieval parity
+- [OPEN] whether projection-policy hashes invalidate index caches or
+  force explicit rebuilds
 - [OPEN] hand-labeled eval size for Tier-B merge precision
 - [OPEN] whether verifier-upgrade replay should be eager or lazy by
   default
