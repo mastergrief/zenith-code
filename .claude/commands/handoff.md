@@ -28,7 +28,21 @@ Before dispatching, run `git log --oneline -10` + `git status --short` + `git di
 
 Merge the two agent outputs with the main-context narrative. The narrative gives you the story; the agents give you the ground truth. Cross-reference: every "we decided X" claim should map to a transcript line; every "file Y was changed" should appear in git state.
 
-Write to `.claude/MEMORY/SESSION_HANDOFF.md` (overwrite previous). Confirm to the user what was captured.
+Write to `.claude/MEMORY/SESSION_HANDOFF.md` (overwrite previous). Do not declare done yet if Codex review is required; continue to Phase 3.
+
+## Phase 3 — Codex cross-review when in collab mode
+
+Run this phase when the user asks for Codex review, when the session used ai-room collaboration, or when the handoff records Codex-owned / dual-surface work. Skip only for Claude-only sessions with no Codex or ai-room state.
+
+Post the drafted handoff to Codex via ai-room before final confirmation. Ask Codex to review:
+
+- uncommitted-state classification: session-critical vs supporting vs runtime/cache vs parallel/upstream
+- commit coverage, especially Codex-authored or dual-surface work
+- pending ai-room tasks and ownership state
+- next-step priority and blockers
+- in-flight evals, daemons, logs, and process state
+
+Apply factual corrections or explicitly record why they were declined. Codex reviews the final handoff; Codex does not spawn subagents unless the user explicitly asks. After review is resolved, confirm to the user what was captured and name any remaining uncommitted risk.
 
 ## Document Structure
 
@@ -79,5 +93,6 @@ What the user was trying to achieve. Be specific.
 - **Capture reasoning, not just outcomes** — WHY decisions were made (usually in transcript), not just WHAT
 - **Include failures** — failed approaches are as valuable as successes; cite the null-result commit SHAs
 - **Cross-reference narrative against agents** — if the narrative says "X happened" but neither agent found it in transcript or code, flag as unverified
+- **Codex review before done when in collab mode** — if the session used ai-room or the user asked for Codex review, complete Phase 3 before final user confirmation
 - **No fluff** — every line should help future-you resume faster
 - **Preserve historical receipts** — if a handoff claim is falsified later, a `/update` pass adds a postscript. Handoff rewrites are for session-end only.
