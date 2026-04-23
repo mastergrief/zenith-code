@@ -60,11 +60,14 @@ side) + `.codex/rules/AI_ROOM_COLLAB.md` + `.codex/AGENTS.md` "AI
 Room Collaboration" section (codex side).
 
 Key rules (summary — see charter for full):
-- **Role**: claude lead, codex peer. Lead swaps by subsystem.
+- **Role**: claude lead, codex peer. Lead swaps by subsystem. Voice preserved on split-owned files (peer reviews, doesn't rewrite).
 - **Board-first**: `ai_room_task_create` + `_start` BEFORE writing code.
 - **Cascade boundary**: pause + name one counter-case before dispatching >2 tasks or multi-subsystem edits.
 - **Before idle**: `ai_room_resume_check` first; board is canonical.
-- **Disagreement**: every non-trivial proposal names one risk or is marked "trivial, no counters."
+- **Disagreement**: every non-trivial proposal names one risk or is marked "trivial, no counters." One cited correction beats three hedges; concede cited corrections first-round.
+- **Round-closure signaling**: lead says "round closed unless one more hole" before synthesis; peer flags final hole or concurs. Predictable exits shrink dead-time.
+- **Receipt discipline**: verbatim-lift one-liners from rounds into artifacts (commits, specs, handoffs); credit by message ID.
+- **Parallel drafting**: on expertise-clean splits, both authors draft independently + cross-review + single commit. ~40% faster than sequential.
 - **TDD by collab**: tests-for-desired-behavior; tests-later OK for crashes, NOT for silent-failure paths.
 - **Validation discipline**: fresh-process seeded-log for landing-day code; real-product-path > unit tests for user-visible shape.
 

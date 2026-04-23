@@ -20,6 +20,12 @@ spawning *inside* one session and is unaffected by ai-room collab.
   invariant it owns.
 - Both participate in design. Lead role swaps by subsystem: codex
   leads on anything it knows the internals of better than claude.
+- **Voice preservation on split-owned files.** When one agent leads
+  a file, peer reviews but does not rewrite. Suggest edits via
+  ai-room post; lead decides what to apply. Preserves authority,
+  avoids rewrite churn, maintains voice consistency across commits.
+  (Prior-incident receipt: 2026-04-23 mirror-overwrite required
+  HEAD restore — avoidable with this discipline.)
 
 ## Coordination channel
 
@@ -70,6 +76,21 @@ round. Minimum discipline:
 
 Single-reply ephemeral work can stay off the board. If the work spans
 >1 exchange or >1 file, it belongs on the board.
+
+### Round-closure signaling
+
+**Signal "round done" explicitly before moving to synthesis or
+commit.** The lead posts "calling round closed unless one more hole;
+otherwise synthesizing" or equivalent. This gives peer a clean
+exit — two possible responses: (a) flag one final hole, (b) concur.
+Dead-time between rounds shrinks to one round-trip instead of
+"waiting-in-case-there's-more." Today's VGSL receipt: this signal
+is what surfaced the binding-vs-merge hole before synthesis started,
+preventing a mid-synthesis rework.
+
+Equivalent signals: "calling round done from my side", "no more
+pushback from me", "concur, go ahead." Ambiguity ("I think we're
+good?") does NOT count — state the decision, don't hedge.
 
 ## Task provenance for cross-session dispatches
 
@@ -145,6 +166,20 @@ channel, call `ai_room_resume_check`. It returns one of:
   low-friction consensus (rare) or default-compliance (common and bad).
 - Prefer grounded pushback (cite `file:line` evidence) over prose-only
   disagreement.
+- **One cited correction beats three hedges.** If multiple issues
+  surface in one round, lead with the most architecturally-gating one
+  and defer the others explicitly ("also flagging X and Y; happy to
+  park unless the primary resolves differently"). A list of vague
+  concerns starves the primary round and buries signal under
+  ack-stacks. One substantive cite per round is the rate the channel
+  sustains at quality.
+- **Concede cited corrections first-round.** A correction backed by a
+  `file:line` cite, a reproducible receipt, or a concrete
+  counter-case takes first-round precedence over intuition-based
+  counter-argument. Concede explicitly: "conceded, here's what
+  changes." Only push back if you can produce a counter-cite or a
+  falsifying case. Defensive re-framing without evidence burns
+  rounds without moving the design.
 - Attack the idea, not the agent. Concede genuine tradeoffs. Name
   uncertainty ("~70% on this").
 - Don't re-litigate losses. When a call is made, commit.
@@ -154,6 +189,57 @@ channel, call `ai_room_resume_check`. It returns one of:
 - If claude+codex can't agree after one round, lead decides and
   logs the rejected option with reason. Codex may re-open if new
   information surfaces.
+
+## Receipt discipline
+
+- **Verbatim-lift rule.** When a one-liner or phrase from a round
+  crystallizes the insight, preserve it verbatim in downstream
+  artifacts (commit messages, spec files, handoff docs, rule-file
+  additions). Credit by message ID or handle. Paraphrasing degrades:
+  the precise wording IS the epiphany — the metaphor, the negation,
+  the specific noun choice.
+- **Canonical example.** Today's VGSL round produced "Merge is not
+  fact movement. Merge is projection-time aliasing over immutable
+  assertions." (codex, msg `1776968021263-08f807cc`). Went verbatim
+  to `RESEARCH/VGSL/01_ARCHITECTURE.md` §"Core invariants" + commit
+  `c98a2a1` body. Any paraphrase ("merges are non-destructive")
+  loses the two-clause structure that makes the invariant
+  memorable and actionable.
+- **Credit concretely.** Message ID is the durable citation; handle
+  alone is insufficient because message IDs anchor the specific
+  round in the ai-room log. Lift: `"<verbatim>" — <handle>, msg
+  <id>`. Receipt is auditable.
+- **Don't over-lift.** Every round produces some prose. Only lift
+  what actually crystallizes (irreducible phrasing of a specific
+  insight). Routine concur / ack / status text is not receipt
+  material.
+
+## Parallel drafting on clean splits
+
+When a split is expertise-clean (both authors know their half of
+the deliverable without needing the other's draft to start), **draft
+in parallel rather than sequential.**
+
+- Each author drafts their own files to disk
+- Each posts "draft ready for cross-review" to the board
+- Peer reads the other's draft; suggests edits via ai-room, does
+  not rewrite (see §"Role" voice-preservation rule)
+- Single alignment pass on shared vocab, cross-references, [OPEN]
+  aggregation
+- One commit at the end covering both halves
+
+**When this works**: deliverables with natural ownership boundaries
+(code vs tests, design vs implementation, thesis vs schema). Each
+author has enough context to draft without blocking on peer's
+in-progress work.
+
+**When NOT to use**: when one half depends on shapes only the other
+author has context on. In that case, first author drafts, posts
+shape, then second author drafts dependent half.
+
+**Receipt**: today's VGSL spec (claude: INDEX + ARCHITECTURE; codex:
+IMPLEMENTATION + TESTING) was ~2 hours elapsed with parallel
+drafting. Estimated sequential would have been ~3.5 hours.
 
 ## TDD by collab
 

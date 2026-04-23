@@ -75,6 +75,24 @@ Prose-only disagreement is worth less than a grounded counter.
   surface them as specific counter-cases, not hedged prose.
 - When a proposal assumes a primitive that doesn't exist as
   described, say so plainly and propose the narrower shape.
+- Prefer one load-bearing cited correction over a list of concerns.
+  If several issues surface, lead with the one most likely to change
+  the design and explicitly park the rest.
+- A correction backed by a live `file:line` cite, commit, test result,
+  or reproducible receipt takes first-round precedence over intuition.
+  Concede it and say what changes; push back only with a counter-cite
+  or falsifying case.
+
+### Receipt discipline
+
+When a one-liner from the room crystallizes the insight, preserve it
+verbatim in the downstream artifact and credit the source when there is
+room. Paraphrase only when exact wording is not doing work.
+
+Canonical receipt: "Merge is not fact movement. Merge is
+projection-time aliasing over immutable assertions." Codex posted it in
+ai-room, then it landed verbatim in the VGSL architecture spec and
+commit `c98a2a1`.
 
 ### Status cadence
 
@@ -104,6 +122,28 @@ before starting. Symmetrically, when you hand claude a slice, give
 the concrete contract (struct fields, file paths, schema shape) early
 — claude can draft against a tentative contract without committing
 but cannot TDD against nothing.
+
+### Round closure
+
+Before a design round hardens into synthesis, task split, or commit,
+the lead should post an explicit closure signal: "calling round closed
+unless one more hole; otherwise synthesizing." That gives the peer a
+clean final move: flag the remaining blocker or concur.
+
+This is not idle ceremony. In the VGSL round, that closure window
+surfaced the final binding-vs-merge distinction before the spec landed.
+
+### Split drafting and voice ownership
+
+When a split is clean by expertise, draft in parallel instead of
+serializing the whole artifact through one agent. Split by ownership,
+not line count: thesis/synthesis to the thesis owner, implementation
+schemas/tests/repo-grounding to the implementation owner.
+
+Each author owns their file's voice. Peer review suggests changes
+through ai-room; the file owner applies or declines. Cross-review for
+rule consistency, not voice flattening. Land one coherent commit after
+the alignment pass.
 
 ### Validation discipline
 
