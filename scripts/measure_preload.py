@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
-"""Measure auto-loaded preload size for Claude Code memory tier.
+"""Measure auto-loaded preload size for Claude/Codex memory tiers.
 
 Per Claude Code memory docs, files in .claude/rules/ auto-load at session
 start. CLAUDE.md (project root) and .claude/CLAUDE.md also auto-load.
 Anything else (.claude/spec/, .claude/MEMORY/, etc.) is query-triggered.
 
-Files in .claude/rules/ with `paths:` YAML frontmatter only inject when
-matching files are read — they're path-scoped, not eager.
+For Codex, .codex/AGENTS.md and .codex/rules/*.md are the repo-local eager
+instruction surface loaded for Codex sessions.
+
+Files in .claude/rules/ or .codex/rules/ with `paths:` YAML frontmatter
+only inject when matching files are read — they're path-scoped, not eager.
 
 Token estimate uses chars/4 heuristic — close enough for budgeting; for
 exact counts pipe through tiktoken.
 
 Used by /update Phase 5 as a fail-closed gate:
-  python3 scripts/measure_preload.py --max-tokens 15000
+  python3 scripts/measure_preload.py --surface both --max-tokens 15000
 """
 from __future__ import annotations
 
@@ -21,6 +24,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
+SURFACES = ("claude", "codex", "both")
 
 
 def chars_to_tokens(n: int) -> int:
@@ -28,7 +32,7 @@ def chars_to_tokens(n: int) -> int:
 
 
 def has_paths_frontmatter(text: str) -> bool:
-    """Detect YAML frontmatter with a `paths:` key (Claude Code path-scoped rule)."""
+    """Detect YAML frontmatter with a `paths:` key (path-scoped rule)."""
     if not text.startswith("---\n"):
         return False
     end = text.find("\n---\n", 4)
@@ -41,23 +45,41 @@ def has_paths_frontmatter(text: str) -> bool:
     return False
 
 
-def measure(repo: Path) -> dict:
-    files = []  # (label, path, scope) where scope ∈ {"eager", "path-scoped"}
+def add_rule_files(files: list[tuple[str, Path, str]], rules_dir: Path) -> None:
+    if not rules_dir.exists():
+        return
+    for p in sorted(rules_dir.rglob("*.md")):
+        rel = p.relative_to(REPO)
+        scope = "path-scoped" if has_paths_frontmatter(p.read_text(encoding="utf-8")) else "eager"
+        files.append((str(rel), p, scope))
 
-    root_claude = repo / "CLAUDE.md"
-    if root_claude.exists():
-        files.append(("CLAUDE.md (root)", root_claude, "eager"))
 
-    claude_md = repo / ".claude" / "CLAUDE.md"
-    if claude_md.exists():
-        files.append((".claude/CLAUDE.md", claude_md, "eager"))
+def collect_files(repo: Path, surface: str) -> list[tuple[str, Path, str]]:
+    files: list[tuple[str, Path, str]] = []
 
-    rules_dir = repo / ".claude" / "rules"
-    if rules_dir.exists():
-        for p in sorted(rules_dir.rglob("*.md")):
-            rel = p.relative_to(repo)
-            scope = "path-scoped" if has_paths_frontmatter(p.read_text(encoding="utf-8")) else "eager"
-            files.append((str(rel), p, scope))
+    if surface in {"claude", "both"}:
+        root_claude = repo / "CLAUDE.md"
+        if root_claude.exists():
+            files.append(("CLAUDE.md (root)", root_claude, "eager"))
+
+        claude_md = repo / ".claude" / "CLAUDE.md"
+        if claude_md.exists():
+            files.append((".claude/CLAUDE.md", claude_md, "eager"))
+
+        add_rule_files(files, repo / ".claude" / "rules")
+
+    if surface in {"codex", "both"}:
+        codex_agents = repo / ".codex" / "AGENTS.md"
+        if codex_agents.exists():
+            files.append((".codex/AGENTS.md", codex_agents, "eager"))
+
+        add_rule_files(files, repo / ".codex" / "rules")
+
+    return files
+
+
+def measure(repo: Path, surface: str) -> dict:
+    files = collect_files(repo, surface)
 
     rows = []
     eager_lines = eager_chars = 0
@@ -77,6 +99,7 @@ def measure(repo: Path) -> dict:
     return {
         "rows": rows,
         "totals": {
+            "surface": surface,
             "files": len(rows),
             "eager_files": sum(1 for _, _, _, _, s in rows if s == "eager"),
             "path_scoped_files": sum(1 for _, _, _, _, s in rows if s == "path-scoped"),
@@ -93,13 +116,16 @@ def measure(repo: Path) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--quiet", action="store_true", help="totals only")
+    ap.add_argument("--surface", choices=SURFACES, default="both",
+                    help="instruction surface to measure (default: both)")
     ap.add_argument("--max-tokens", type=int, default=None,
                     help="exit non-zero if eager-tier totals exceed this token budget")
     args = ap.parse_args()
 
-    result = measure(REPO)
+    result = measure(REPO, args.surface)
 
     if not args.quiet:
+        print(f"surface: {args.surface}")
         print(f"{'file':<60} {'lines':>6} {'chars':>8} {'~tokens':>8}  scope")
         print("-" * 96)
         for label, lines, chars, tok, scope in result["rows"]:
@@ -107,6 +133,7 @@ def main() -> int:
         print("-" * 96)
 
     t = result["totals"]
+    print(f"SURFACE: {t['surface']}")
     print(f"EAGER (always-loaded):       {t['eager_files']:>3} files  {t['eager_lines']:>5} lines  ~{t['eager_tokens']:>6} tokens")
     print(f"PATH-SCOPED (on file match): {t['path_scoped_files']:>3} files  {t['path_scoped_lines']:>5} lines  ~{t['path_scoped_tokens']:>6} tokens")
     print(f"TOTAL:                       {t['files']:>3} files  {t['total_lines']:>5} lines  ~{t['total_tokens']:>6} tokens")
