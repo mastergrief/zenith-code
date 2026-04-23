@@ -61,8 +61,8 @@ Process:
 3. Pick threshold below the lowest p5 across buckets.
 
 A single margin threshold that's correct for one bucket may
-over-gate another if input shape varies. See `delta_rule.md` §R22
-install for the canonical MQAR calibration arc.
+over-gate another if input shape varies. See `delta_rule.md`
+§"retrieval-card install pattern" for the canonical MQAR calibration arc.
 
 ### `write_margin` == `min_margin` alignment rule
 
