@@ -24,7 +24,14 @@ import subprocess
 import sys
 import textwrap
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, List, Optional
+
+
+# Opt-in pre-imports available to run_python() callers whose user code
+# needs a heavier module that transitively imports `os` (blocked by
+# `_safe_import`). Strictly allowlisted — arbitrary names are rejected
+# to prevent a caller from bypassing the import hook via this channel.
+_EXTRA_PREIMPORT_ALLOWLIST = frozenset({"numpy"})
 
 
 # Prelude injected into every sandbox execution — provides the safe
@@ -166,6 +173,9 @@ _WRAPPER = textwrap.dedent("""\
     import struct as _pre_struct, decimal as _pre_decimal
     import fractions as _pre_fractions, textwrap as _pre_textwrap
 
+    # Caller-opt-in extra pre-imports (allowlisted in Python). Empty by default.
+    {extra_preimports}
+
     # Block dangerous imports
     _BLOCKED = frozenset(['os', 'subprocess', 'shutil', 'socket', 'http',
         'urllib', 'requests', 'pathlib', 'glob', 'tempfile', 'signal',
@@ -226,6 +236,7 @@ def run_python(
     code: str,
     timeout: float = 10.0,
     max_output: int = 10000,
+    extra_preimports: Optional[List[str]] = None,
 ) -> SandboxResult:
     """
     Execute Python code in a sandboxed subprocess.
@@ -233,14 +244,32 @@ def run_python(
     The code has access to math builtins (is_prime, factorize, etc.)
     but NO filesystem, network, or dangerous operations.
 
+    `extra_preimports` opts into additional heavy modules (e.g. `numpy`)
+    that would otherwise fail at `_safe_import` because they transitively
+    import `os`. Strictly allowlisted — see `_EXTRA_PREIMPORT_ALLOWLIST`.
+
     Returns a SandboxResult with value (last expression), stdout,
     and any error message.
     """
-    script = _WRAPPER.format(prelude=_PRELUDE, code=code)
+    extra_lines = ""
+    if extra_preimports:
+        for name in extra_preimports:
+            if name not in _EXTRA_PREIMPORT_ALLOWLIST:
+                return SandboxResult(error=f"unsupported preimport: {name!r}")
+            # Build a pre-hook import. Name validated above — safe to format.
+            # No leading whitespace: _WRAPPER is textwrap.dedent'd so the
+            # {extra_preimports} placeholder sits at column 0 (top-level).
+            extra_lines += f"import {name} as _pre_extra_{name}\n"
+    script = _WRAPPER.format(prelude=_PRELUDE, code=code, extra_preimports=extra_lines)
 
     try:
+        # Pass script via stdin (`python -`) rather than `-c` to avoid
+        # E2BIG on large scripts (ARG_MAX is ~128 KB-2 MB depending on OS;
+        # HumanEvalPlus inputs-literals easily exceed this for the 1,006-
+        # input max problem). Behavior is otherwise bit-identical.
         proc = subprocess.run(
-            [sys.executable, "-c", script],
+            [sys.executable, "-"],
+            input=script,
             capture_output=True,
             text=True,
             timeout=timeout,
