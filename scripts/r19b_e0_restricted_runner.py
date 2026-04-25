@@ -111,11 +111,46 @@ def _install_runtime_guards():
 
         _os.system = _blocked_os_process
         _os.popen = _blocked_os_process
-        for _name in ("spawnl", "spawnle", "spawnlp", "spawnlpe", "spawnv", "spawnve", "spawnvp", "spawnvpe"):
+        for _name in (
+            "fork",
+            "forkpty",
+            "posix_spawn",
+            "posix_spawnp",
+            "spawnl",
+            "spawnle",
+            "spawnlp",
+            "spawnlpe",
+            "spawnv",
+            "spawnve",
+            "spawnvp",
+            "spawnvpe",
+        ):
             if hasattr(_os, _name):
                 setattr(_os, _name, _blocked_os_process)
     except Exception:
         pass
+
+
+def _force_matplotlib_agg_if_requested():
+    deps = {
+        dep.strip().split(".", 1)[0].lower()
+        for dep in os.environ.get("E0_DEPS", "").split(",")
+        if dep.strip()
+    }
+    if "matplotlib" not in deps and os.environ.get("E0_FORCE_MPL_AGG") != "1":
+        return
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg", force=True)
+        import matplotlib.pyplot as pyplot
+
+        pyplot.switch_backend("Agg")
+    except (ModuleNotFoundError, ImportError):
+        raise
+    except Exception as exc:
+        raise E0Unsupported("matplotlib_backend:" + type(exc).__name__) from exc
+
 
 def _missing_dep_reason(exc):
     name = getattr(exc, "name", None)
@@ -155,6 +190,24 @@ def _emit(payload):
 
 
 def _run():
+    try:
+        _force_matplotlib_agg_if_requested()
+    except (ModuleNotFoundError, ImportError) as exc:
+        _emit({
+            "outcome": "env_unsupported",
+            "unsupported_reason": _missing_dep_reason(exc),
+            "error_type": type(exc).__name__,
+            "stderr": str(exc),
+        })
+        return
+    except E0Unsupported as exc:
+        _emit({
+            "outcome": "env_unsupported",
+            "unsupported_reason": str(exc)[:160],
+            "error_type": type(exc).__name__,
+        })
+        return
+
     _install_runtime_guards()
     candidate_code = Path("candidate.py").read_text(encoding="utf-8")
     test_code = Path("test_code.py").read_text(encoding="utf-8")
@@ -342,7 +395,6 @@ def _set_limits(timeout: float) -> None:
         (resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds + 1)),
         (resource.RLIMIT_AS, (2 * 1024 * 1024 * 1024, 2 * 1024 * 1024 * 1024)),
         (resource.RLIMIT_NOFILE, (128, 128)),
-        (resource.RLIMIT_NPROC, (16, 16)),
     )
     for res, value in limits:
         try:
@@ -351,8 +403,27 @@ def _set_limits(timeout: float) -> None:
             pass
 
 
-def _env_for_child(tmpdir: str, python_executable: str) -> dict[str, str]:
+def _needs_matplotlib_prelude(code: str, test_code: str, deps: Iterable[str] | None) -> bool:
+    normalized = {dep.lower() for dep in _normalize_deps(deps)}
+    if normalized & {"matplotlib", "seaborn"}:
+        return True
+
+    combined = (code + "\n" + test_code).lower()
+    if any(token in combined for token in ("matplotlib", "pyplot", "plt.", "seaborn")):
+        return True
+    if "pandas" in normalized and any(token in combined for token in (".plot(", ".hist(", ".bar(")):
+        return True
+    return False
+
+
+def _env_for_child(
+    tmpdir: str,
+    python_executable: str,
+    deps: Iterable[str] | None = None,
+    force_matplotlib_agg: bool = False,
+) -> dict[str, str]:
     py_dir = str(Path(python_executable).resolve().parent)
+    normalized_deps = _normalize_deps(deps)
     return {
         "HOME": tmpdir,
         "TMPDIR": tmpdir,
@@ -361,7 +432,10 @@ def _env_for_child(tmpdir: str, python_executable: str) -> dict[str, str]:
         "PATH": os.pathsep.join([py_dir, "/usr/bin", "/bin"]),
         "PYTHONHASHSEED": "0",
         "PYTHONNOUSERSITE": "1",
+        "E0_DEPS": ",".join(normalized_deps),
+        "E0_FORCE_MPL_AGG": "1" if force_matplotlib_agg else "0",
         "MPLBACKEND": "Agg",
+        "MPLCONFIGDIR": str(Path(tmpdir) / "mplconfig"),
         "OMP_NUM_THREADS": "1",
         "OPENBLAS_NUM_THREADS": "1",
         "MKL_NUM_THREADS": "1",
@@ -429,7 +503,13 @@ def run_test_restricted(
         (tmp_path / "candidate.py").write_text(code, encoding="utf-8")
         (tmp_path / "test_code.py").write_text(test_code, encoding="utf-8")
         (tmp_path / "runner.py").write_text(_CHILD_RUNNER, encoding="utf-8")
-        env = _env_for_child(tmpdir, python_executable)
+        (tmp_path / "mplconfig").mkdir()
+        env = _env_for_child(
+            tmpdir,
+            python_executable,
+            deps,
+            force_matplotlib_agg=_needs_matplotlib_prelude(code, test_code, deps),
+        )
         preexec_fn = (lambda: _set_limits(timeout)) if hasattr(os, "fork") else None
         try:
             proc = subprocess.run(
