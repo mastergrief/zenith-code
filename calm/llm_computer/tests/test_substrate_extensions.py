@@ -18,6 +18,7 @@ from calm.llm_computer.mixed_geometry import (
     euclidean_score, hyperbolic_score, lattice_score, spherical_score,
     toroidal_score,
 )
+from calm.llm_computer.delta_rule import DeltaNetConfig, DeltaNetSmall2DTransformer
 from calm.llm_computer.model import Small2DConfig, Small2DTransformer
 from calm.llm_computer.recurrent_substrate import (
     RecurrentConfig, RecurrentSmall2DTransformer,
@@ -31,6 +32,17 @@ def _tiny_cfg(**kw):
     )
     defaults.update(kw)
     return Small2DConfig(**defaults)
+
+
+def _tiny_delta_cfg(**kw):
+    defaults = dict(
+        vocab_size=16, d_model=8, n_heads=4, n_layers=2, d_ffn=8,
+        max_len=10, use_hard_max=False, use_delta_net=True,
+        use_softmax_attn=False, use_chunkwise=True, chunk_size=4,
+        n_iterations=1, use_loop_index=False,
+    )
+    defaults.update(kw)
+    return DeltaNetConfig(**defaults)
 
 
 # ---- Direction 2: computation traces ----
@@ -224,6 +236,38 @@ def test_recurrent_more_iterations_changes_output():
         "more iterations should evolve the residual stream"
 
 
+
+def test_delta_loop_index_n1_matches_default_off():
+    """Loop-index flag must not affect the n_iterations=1 DT path."""
+    torch.manual_seed(0)
+    cfg_off = _tiny_delta_cfg(n_iterations=1, use_loop_index=False)
+    cfg_on = _tiny_delta_cfg(n_iterations=1, use_loop_index=True)
+    model_off = DeltaNetSmall2DTransformer(cfg_off)
+    model_on = DeltaNetSmall2DTransformer(cfg_on)
+    model_on.load_state_dict(model_off.state_dict())
+    x = torch.randint(0, 16, (2, 5))
+    with torch.no_grad():
+        out_off = model_off(x)
+        out_on = model_on(x)
+    assert torch.equal(out_off, out_on), "loop-index must be inert for n_iterations=1"
+
+
+def test_delta_loop_index_changes_multi_iteration_path():
+    """With shared weights, loop-index should alter only the multi-iter DT path."""
+    torch.manual_seed(0)
+    cfg_off = _tiny_delta_cfg(n_iterations=3, use_loop_index=False)
+    cfg_on = _tiny_delta_cfg(n_iterations=3, use_loop_index=True)
+    model_off = DeltaNetSmall2DTransformer(cfg_off)
+    model_on = DeltaNetSmall2DTransformer(cfg_on)
+    model_on.load_state_dict(model_off.state_dict())
+    x = torch.randint(0, 16, (2, 5))
+    with torch.no_grad():
+        out_off = model_off(x)
+        out_on = model_on(x)
+    assert not torch.allclose(out_off, out_on, atol=1e-5), (
+        "loop-index should differentiate n_iterations > 1"
+    )
+
 def test_recurrent_max_iterations_clamps():
     """Asking for more than max_iterations should clamp to the cap."""
     torch.manual_seed(0)
@@ -270,5 +314,9 @@ if __name__ == "__main__":
     print("[ok] D5: n_iterations=1 matches parent bitwise")
     test_recurrent_more_iterations_changes_output()
     print("[ok] D5: more iterations evolve residual stream")
+    test_delta_loop_index_n1_matches_default_off()
+    print("[ok] DT/D5: loop-index inert at n_iterations=1")
+    test_delta_loop_index_changes_multi_iteration_path()
+    print("[ok] DT/D5: loop-index differentiates multi-iter path")
     test_recurrent_max_iterations_clamps()
     print("[ok] D5: max_iterations clamps runaway requests")

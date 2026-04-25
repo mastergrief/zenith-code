@@ -40,6 +40,7 @@ at L≥2K; not needed for this round.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 import torch
 import torch.nn as nn
@@ -72,6 +73,7 @@ class DeltaNetConfig(Small2DConfig):
                                      # (H=1 matches single-head baseline bit-for-bit)
     n_iterations: int = 1           # D5 refinement loop — iterate layer stack N times
                                      # per forward pass (ARC-Prize finding: +13pp from 0→1)
+    use_loop_index: bool = False    # Add deterministic per-iteration embedding in D5 loop
 
 
 class DeltaNetSmall2DTransformer(Small2DTransformer):
@@ -297,6 +299,26 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         reads = torch.cat(reads_chunks, dim=2)                       # (B, H, L, D_h)
         return S, reads
 
+    @staticmethod
+    def _loop_index_embedding(
+        iteration: int,
+        d_model: int,
+        *,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> torch.Tensor:
+        """Sinusoidal depth embedding for differentiating D5 iterations."""
+        freqs = torch.exp(
+            -math.log(10000.0)
+            * torch.arange(0, d_model, 2, device=device, dtype=torch.float32)
+            / d_model
+        )
+        angles = float(iteration) * freqs
+        emb = torch.cat([torch.sin(angles), torch.cos(angles)], dim=0)
+        if emb.numel() < d_model:
+            emb = F.pad(emb, (0, d_model - emb.numel()))
+        return emb[:d_model].to(dtype=dtype)
+
     def _forward_backbone(self, idx: torch.Tensor) -> torch.Tensor:
         """Run the DeltaNet backbone; return pre-head hidden states x (B, S, D).
 
@@ -332,7 +354,13 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         # over between iterations. n_iterations=1 matches baseline exactly
         # (the outer loop runs once and the inner body is bit-identical).
         n_iters = max(1, getattr(cfg, "n_iterations", 1))
-        for _iter in range(n_iters):
+        use_loop_index = bool(getattr(cfg, "use_loop_index", False)) and n_iters > 1
+        for iteration in range(n_iters):
+            if use_loop_index:
+                loop_emb = self._loop_index_embedding(
+                    iteration, cfg.d_model, device=x.device, dtype=x.dtype,
+                )
+                x = x + loop_emb.view(1, 1, cfg.d_model)
             x = self._delta_layer_stack(x, cfg, B, S)
         return x
 
