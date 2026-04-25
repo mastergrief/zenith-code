@@ -28,6 +28,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import time
@@ -302,6 +303,89 @@ def fetch_bigcodebench(out: Path) -> int:
     return n
 
 
+def _parse_libs_field(raw: str) -> List[str]:
+    """BigCodeBench `libs` arrives as a Python-literal STRING like
+    "['random', 'itertools']". Parse to real list via ast.literal_eval;
+    return empty list on any failure (defensive — converter must not
+    crash on a malformed row)."""
+    if not raw:
+        return []
+    try:
+        parsed = ast.literal_eval(raw)
+        if isinstance(parsed, list):
+            return [str(x) for x in parsed]
+    except (ValueError, SyntaxError):
+        pass
+    return []
+
+
+def _parse_doc_struct(raw: str) -> Optional[dict]:
+    """BigCodeBench `doc_struct` arrives as a JSON string. Parse to
+    dict; return None on failure."""
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            return parsed
+    except (json.JSONDecodeError, ValueError):
+        pass
+    return None
+
+
+def convert_bigcodebench_raw(row: dict) -> Optional[dict]:
+    """Preserve native BigCodeBench fields verbatim for E0 failure-surface
+    scout. Differs from convert_bigcodebench (messages-format with
+    truncated test) by keeping task_id + entry_point + libs + full
+    untruncated test + doc_struct.
+
+    Quality gate matches existing converter (problem >= 20 chars,
+    solution >= 100 chars, code markers present in canonical+code_prompt)
+    so junk rows don't slip through.
+    """
+    r = row.get("row", {})
+    task_id = (r.get("task_id") or "").strip()
+    entry_point = (r.get("entry_point") or "").strip()
+    instruct_prompt = (r.get("instruct_prompt") or "").strip()
+    complete_prompt = (r.get("complete_prompt") or "").strip()
+    code_prompt = (r.get("code_prompt") or "").strip()
+    canonical_solution = (r.get("canonical_solution") or "").strip()
+    test = (r.get("test") or "").strip()
+    libs_raw = r.get("libs") or ""
+    doc_struct_raw = r.get("doc_struct") or ""
+
+    # Quality gate parity with convert_bigcodebench (don't ship junk to E0)
+    primary_prompt = instruct_prompt or complete_prompt
+    if not primary_prompt or not canonical_solution:
+        return None
+    full_code = (code_prompt + "\n" + canonical_solution) if code_prompt else canonical_solution
+    quality_solution = f"```python\n{full_code}\n```"
+    if not passes_quality(primary_prompt, quality_solution):
+        return None
+
+    return {
+        "task_id": task_id,
+        "entry_point": entry_point,
+        "instruct_prompt": instruct_prompt,
+        "complete_prompt": complete_prompt,
+        "code_prompt": code_prompt,
+        "canonical_solution": canonical_solution,
+        "test": test,
+        "libs": _parse_libs_field(libs_raw),
+        "doc_struct": _parse_doc_struct(doc_struct_raw),
+    }
+
+
+def fetch_bigcodebench_raw(out: Path) -> int:
+    print(f"Fetching BigCodeBench raw (v0.1.4) — native fields preserved for E0...", flush=True)
+    rows = _fetch_rows(
+        "bigcode%2Fbigcodebench", "default", "v0.1.4", 1140, sleep_s=0.5)
+    converted = [c for c in (convert_bigcodebench_raw(r) for r in rows) if c is not None]
+    n = _write_jsonl(out, converted)
+    print(f"  BigCodeBench raw: wrote {n} / fetched {len(rows)}", flush=True)
+    return n
+
+
 # -------------------------------------------------------------
 # Crownelius (retry with backoff)
 # -------------------------------------------------------------
@@ -342,12 +426,13 @@ def fetch_crownelius(out: Path) -> int:
 # -------------------------------------------------------------
 
 SOURCES: Dict[str, tuple[Callable[[Path], int], str]] = {
-    "mbpp":          (fetch_mbpp,          "mbpp.jsonl"),
-    "humaneval":     (fetch_humaneval,     "humanevalplus.jsonl"),
-    "nohurry":       (fetch_nohurry_code,  "nohurry_code.jsonl"),
-    "crownelius":    (fetch_crownelius,    "crownelius.jsonl"),
-    "codecontests":  (fetch_codecontests,  "codecontests.jsonl"),
-    "bigcodebench":  (fetch_bigcodebench,  "bigcodebench.jsonl"),
+    "mbpp":              (fetch_mbpp,              "mbpp.jsonl"),
+    "humaneval":         (fetch_humaneval,         "humanevalplus.jsonl"),
+    "nohurry":           (fetch_nohurry_code,      "nohurry_code.jsonl"),
+    "crownelius":        (fetch_crownelius,        "crownelius.jsonl"),
+    "codecontests":      (fetch_codecontests,      "codecontests.jsonl"),
+    "bigcodebench":      (fetch_bigcodebench,      "bigcodebench.jsonl"),
+    "bigcodebench_raw":  (fetch_bigcodebench_raw,  "bigcodebench_raw.jsonl"),
 }
 
 
