@@ -114,8 +114,12 @@ class Small2DTransformer(nn.Module):
 
         # LeCun-normal init: re-init every Linear weight if flag set.
         # Subclasses that add their own Linear layers AFTER super().__init__()
-        # must invoke `self._apply_lecun_init()` again at the end of their
-        # __init__ if `config.use_lecun_init` is on.
+        # must invoke `self._apply_lecun_init_to(new_modules)` (scoped) at
+        # the end of their __init__ if `config.use_lecun_init` is on. Do
+        # NOT call the broad `_apply_lecun_init()` again — it would walk
+        # the full module tree and re-init existing modules with fresh
+        # RNG, silently scrambling weights when a later slice adds more
+        # conditional modules (see co_lead audit msg 1779305159197).
         if config.use_lecun_init:
             self._apply_lecun_init()
 

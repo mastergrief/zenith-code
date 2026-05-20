@@ -269,6 +269,15 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         # checkpoints — it's a training-step-dependent runtime concern.
         self._bp_warmup_active_iters: int | None = None
 
+        # Slice 7: bp_warmup grain — 'l' (default, Slice 3 behavior:
+        # bp_active_iters applies per L-loop uniformly) or 'global'
+        # (bp_active_iters counts across the FLATTENED h_cycles × n_iters
+        # sequence — only the LAST bp_active_iters iterations of the entire
+        # H/L flat sequence get gradient). 'global' is only meaningful when
+        # `h_cycles > 1`; at h_cycles=1 the two grains collapse. Set via
+        # `model.bp_warmup_ctx(k, grain='global')`. NOT persisted.
+        self._bp_warmup_grain: str = "l"
+
         # Slice 5: H-boundary RMSNorm. Single shared module — applied at
         # the H-cycle hand-off in `_forward_backbone` when both flag and
         # h_cycles > 1 conditions are met. Stays None when flag off →
@@ -635,26 +644,45 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         out = conv(x_pad)                   # (B, D, S)
         return out.transpose(1, 2)         # (B, S, D)
 
-    def bp_warmup_ctx(self, active_iters: int | None):
-        """Context manager that sets `_bp_warmup_active_iters` for the scope
-        and restores it on exit. Use during training to ramp the number of
-        differentiable D5 iterations:
+    def bp_warmup_ctx(self, active_iters: int | None, grain: str = "l"):
+        """Context manager that sets `_bp_warmup_active_iters` and
+        `_bp_warmup_grain` for the scope and restores them on exit. Use
+        during training to ramp the number of differentiable D5 iterations:
 
-            with model.bp_warmup_ctx(k):
+            with model.bp_warmup_ctx(k):              # default 'l' grain
                 out = model(idx)
-                loss = ...
                 loss.backward()
+
+            with model.bp_warmup_ctx(k, grain="global"):  # Slice 7
+                out = model(idx)
+                loss.backward()
+
+        Grain semantics:
+          'l' (Slice 3, default): bp_active iters apply PER L-loop
+            uniformly across all H cycles. Same `detach_until` for every
+            inner L loop.
+          'global' (Slice 7): bp_active iters count across the FLATTENED
+            h_cycles × n_iters sequence. Only the LAST `bp_active` of
+            those flat iterations get gradient. Earlier whole H cycles
+            run under no_grad; the H stack call between such detached
+            cycles also runs under no_grad.
+        Both collapse to identical behavior when h_cycles == 1.
         """
+        if grain not in ("l", "global"):
+            raise ValueError(f"grain must be 'l' or 'global', got {grain!r}")
         outer = self
 
         class _Ctx:
             def __enter__(self_inner):
-                self_inner._saved = outer._bp_warmup_active_iters
+                self_inner._saved_active = outer._bp_warmup_active_iters
+                self_inner._saved_grain = outer._bp_warmup_grain
                 outer._bp_warmup_active_iters = active_iters
+                outer._bp_warmup_grain = grain
                 return outer
 
             def __exit__(self_inner, exc_type, exc_val, exc_tb):
-                outer._bp_warmup_active_iters = self_inner._saved
+                outer._bp_warmup_active_iters = self_inner._saved_active
+                outer._bp_warmup_grain = self_inner._saved_grain
                 return False
 
         return _Ctx()
@@ -747,13 +775,11 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             if getattr(cfg, "use_prefix_lm", False)
             else None
         )
-        # Slice 3: bp warmup. Default None = full gradient flow.
+        # Slice 3/7: bp warmup. Default None = full gradient flow.
+        # `grain` selects L-grain (Slice 3, default) vs global-grain
+        # (Slice 7, opt-in via `bp_warmup_ctx(k, grain='global')`).
         bp_active = self._bp_warmup_active_iters
-        if bp_active is None or bp_active >= n_iters:
-            detach_until = 0  # All iters differentiable.
-        else:
-            bp_active = max(1, bp_active)
-            detach_until = n_iters - bp_active  # iters [0, detach_until) are no_grad
+        bp_grain = self._bp_warmup_grain
 
         input_residual = x_embed if use_input_injection else None
 
@@ -762,9 +788,43 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         # in an outer H loop with a residual skip add between H cycles.
         h_cycles = max(1, getattr(cfg, "h_cycles", 1))
 
-        def _run_l_loop(x_in: torch.Tensor) -> torch.Tensor:
+        # Per-H-cycle detach_until — Slice 7 generalization.
+        # 'l' grain: same detach_until for every L loop (Slice 3 default).
+        # 'global' grain: detach_until varies per H cycle so the FLATTENED
+        #   h_cycles × n_iters sequence has its last bp_active iters active.
+        total_flat = h_cycles * n_iters
+        if bp_active is None or bp_active >= total_flat:
+            # Full gradient flow — every iter active, no H stack detach.
+            per_h_detach_until = [0] * h_cycles
+            h_detach_set = set()  # H stack call indices that need no_grad wrap
+        elif bp_grain == "global":
+            bp_active_clamped = max(1, bp_active)
+            threshold = total_flat - bp_active_clamped
+            per_h_detach_until = [
+                max(0, min(n_iters, threshold - h * n_iters))
+                for h in range(h_cycles)
+            ]
+            # If a whole H cycle is detached (detach_until == n_iters),
+            # the subsequent H stack call must also run under no_grad —
+            # otherwise H weights would still receive gradient on those
+            # cycles, defeating the 'global' semantic.
+            h_detach_set = {
+                h for h, du in enumerate(per_h_detach_until) if du == n_iters
+            }
+        else:  # 'l' grain (Slice 3 behavior)
+            if bp_active >= n_iters:
+                per_h_detach_until = [0] * h_cycles
+            else:
+                bp_active_clamped = max(1, bp_active)
+                per_h_detach_until = [n_iters - bp_active_clamped] * h_cycles
+            h_detach_set = set()
+
+        def _run_l_loop(x_in: torch.Tensor, detach_until: int) -> torch.Tensor:
             """Run l_cycles (= n_iters) inner iterations starting from x_in.
-            All existing Slice 1-3 flags apply at L-iter granularity."""
+            All existing Slice 1-3 flags apply at L-iter granularity.
+            `detach_until` is Slice 7-parameterized so the outer H loop
+            can apply different L-detach budgets per H cycle.
+            """
             x_l = x_in
             for iteration in range(n_iters):
                 # Inject the embedding when:
@@ -794,8 +854,10 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
 
         if h_cycles == 1:
             # Bit-equivalent baseline path: run L loop once, return directly.
-            # No residual add; preserves Slice 1-3 behavior exactly.
-            return _run_l_loop(x)
+            # No residual add; preserves Slice 1-3 behavior exactly. At
+            # h_cycles=1, per_h_detach_until[0] equals the Slice 3 'l'-grain
+            # value AND the Slice 7 'global'-grain value (the two collapse).
+            return _run_l_loop(x, per_h_detach_until[0])
 
         # H/L hierarchy: z_H carries across H cycles; each H cycle resets
         # z_L from z_H and runs n_iters L iters; H hands off L's converged
@@ -820,13 +882,25 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             and self._h_bank is not None
         )
         z_H = x
-        for _h_step in range(h_cycles):
+        for h_step in range(h_cycles):
             z_L = z_H
-            z_L = _run_l_loop(z_L)
+            z_L = _run_l_loop(z_L, per_h_detach_until[h_step])
+            # Slice 7: when this whole H cycle is detached under 'global'
+            # grain (per_h_detach_until == n_iters), the subsequent H stack
+            # call must also run under no_grad so H weights don't receive
+            # gradient from cycles we explicitly excluded.
+            h_no_grad = h_step in h_detach_set
             if use_h_stack:
-                z_H_raw = self._run_h_layer_stack(
-                    z_L, cfg, B, S, prefix_mask=prefix_mask,
-                )
+                if h_no_grad:
+                    with torch.no_grad():
+                        z_H_raw = self._run_h_layer_stack(
+                            z_L, cfg, B, S, prefix_mask=prefix_mask,
+                        )
+                    z_H_raw = z_H_raw.detach()
+                else:
+                    z_H_raw = self._run_h_layer_stack(
+                        z_L, cfg, B, S, prefix_mask=prefix_mask,
+                    )
             else:
                 z_H_raw = z_L
             z_H = self.h_norm(z_H_raw) if use_h_norm else z_H_raw
