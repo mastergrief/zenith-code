@@ -180,6 +180,10 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
             ("use_prefix_lm", bool),
             ("use_softmax_attn", bool),
             ("use_h_rmsnorm", bool),
+            # Slice 6: cached decode would need to keep last (k-1) hidden/QKV
+            # values per layer in streaming state to mirror the causal conv.
+            # Until that's implemented, hard-block the flag.
+            ("use_short_conv", bool),
         )
         _blocked = []
         for _attr, _pred in _CACHED_DECODE_BLOCKED:
@@ -424,6 +428,7 @@ def build_copy_augmented_delta(
     use_prefix_lm: bool = False,
     h_cycles: int = 1,
     use_h_rmsnorm: bool = False,
+    use_short_conv: bool = False,
 ) -> CopyAugmentedDeltaNet:
     """Build a CopyAugmentedDeltaNet mirroring PT's default sizing.
 
@@ -449,6 +454,7 @@ def build_copy_augmented_delta(
         use_prefix_lm=use_prefix_lm,
         h_cycles=h_cycles,
         use_h_rmsnorm=use_h_rmsnorm,
+        use_short_conv=use_short_conv,
     )
     assert cfg.d_head == 2, f"d_head must be 2, got {cfg.d_head}"
     return CopyAugmentedDeltaNet(cfg)

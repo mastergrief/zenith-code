@@ -64,7 +64,13 @@ class DeltaNetConfig(Small2DConfig):
     """
     use_delta_net: bool = True
     use_softmax_attn: bool = False  # paper-canonical: DeltaNet replaces attn
-    use_short_conv: bool = False    # paper's short 1D conv after QKV; optional at this scale
+    use_short_conv: bool = False    # paper's short 1D causal depthwise conv applied to
+                                     # Q/K/V AFTER the QKV projection and BEFORE feature-map
+                                     # + L2-norm (Slice 6, Tier B). kernel_size=4 fixed.
+                                     # Adds ~3 × kernel_size × d_model params per layer.
+                                     # Cached-decode blocklist includes this flag (per-token
+                                     # cached path can't mirror causal conv without keeping
+                                     # the last k-1 hidden/QKV values in streaming state).
     use_l2_norm: bool = True        # L2 on K/Q per paper; ablation: try False
     use_silu_feat: bool = True      # SiLU feature map on K/Q per paper
     use_chunkwise: bool = False     # chunkwise parallel form (UT transform, paper §4)
@@ -135,6 +141,8 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
     are summed into the residual stream, same pattern as fast_weights.py.
     """
 
+    SHORT_CONV_KERNEL = 4  # paper-canonical kernel size for the short-conv mixer
+
     def __init__(self, config: DeltaNetConfig):
         super().__init__(config)
         self.beta_head = nn.ModuleList([
@@ -147,6 +155,38 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         for h in self.beta_head:
             with torch.no_grad():
                 h.bias.fill_(0.0)
+
+        # Slice 6: per-layer depthwise causal short conv on Q/K/V.
+        # Allocated as three ModuleLists (one per Q/K/V) so each axis can
+        # learn its own local-mixing kernel. groups=d_model → depthwise
+        # (per-channel kernel, no cross-channel mixing — keeps register-
+        # like channel semantics intact). bias=False per Mamba/DeltaNet
+        # convention. Forward uses `F.pad(x, (k-1, 0))` for left-pad
+        # causality, then conv with padding=0 → output length unchanged.
+        if getattr(config, "use_short_conv", False):
+            k = self.SHORT_CONV_KERNEL
+            self.short_conv_q = nn.ModuleList([
+                nn.Conv1d(config.d_model, config.d_model,
+                          kernel_size=k, padding=0,
+                          groups=config.d_model, bias=False)
+                for _ in range(config.n_layers)
+            ])
+            self.short_conv_k = nn.ModuleList([
+                nn.Conv1d(config.d_model, config.d_model,
+                          kernel_size=k, padding=0,
+                          groups=config.d_model, bias=False)
+                for _ in range(config.n_layers)
+            ])
+            self.short_conv_v = nn.ModuleList([
+                nn.Conv1d(config.d_model, config.d_model,
+                          kernel_size=k, padding=0,
+                          groups=config.d_model, bias=False)
+                for _ in range(config.n_layers)
+            ])
+        else:
+            self.short_conv_q = None
+            self.short_conv_k = None
+            self.short_conv_v = None
 
         # z_init: learned per-channel initial state for the D5 recurrence.
         # When use_z_init=True AND n_iterations>1, iter 0 starts from
@@ -399,6 +439,20 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         reads = torch.cat(reads_chunks, dim=2)                       # (B, H, L, D_h)
         return S, reads
 
+    @staticmethod
+    def _apply_short_conv(x: torch.Tensor, conv: nn.Conv1d) -> torch.Tensor:
+        """Slice 6: apply a causal depthwise short conv to (B, S, D) → (B, S, D).
+
+        Left-pads by kernel_size-1 (causality: position t sees [t-k+1, t]),
+        runs Conv1d on (B, D, S), transposes back. Output length matches
+        input. Per-channel mixing only (Conv1d with groups=D).
+        """
+        k = conv.kernel_size[0]
+        x_t = x.transpose(1, 2)            # (B, D, S)
+        x_pad = F.pad(x_t, (k - 1, 0))     # causal left-pad
+        out = conv(x_pad)                   # (B, D, S)
+        return out.transpose(1, 2)         # (B, S, D)
+
     def bp_warmup_ctx(self, active_iters: int | None):
         """Context manager that sets `_bp_warmup_active_iters` for the scope
         and restores it on exit. Use during training to ramp the number of
@@ -609,6 +663,17 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             q_flat = q.transpose(1, 2).reshape(B, S, cfg.d_model)
             k_flat = k.transpose(1, 2).reshape(B, S, cfg.d_model)
             v_flat = v.transpose(1, 2).reshape(B, S, cfg.d_model)
+
+            # Slice 6: paper-canonical short causal depthwise conv on Q/K/V
+            # AFTER projection, BEFORE feature-map + L2-norm. Applied only
+            # to the DeltaNet-side q_flat/k_flat/v_flat — the softmax
+            # attention path (when use_softmax_attn=True) uses the
+            # head-shaped q/k/v directly above and is NOT short-conv'd.
+            # Per-channel local mixing (groups=d_model) — no cross-channel.
+            if self.short_conv_q is not None:
+                q_flat = self._apply_short_conv(q_flat, self.short_conv_q[layer])
+                k_flat = self._apply_short_conv(k_flat, self.short_conv_k[layer])
+                v_flat = self._apply_short_conv(v_flat, self.short_conv_v[layer])
 
             # Paper feature-map + L2-norm on K and Q. V untouched.
             # Both ablatable — the paper's d_head=128 regime may not transfer
