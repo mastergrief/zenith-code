@@ -890,7 +890,10 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
 
         # Slice 4: H/L hierarchy. h_cycles=1 (default) takes the flat-loop
         # path → bit-equivalent to Slice 1-3. h_cycles > 1 wraps the L loop
-        # in an outer H loop with a residual skip add between H cycles.
+        # in an outer H loop with HAND-OFF between H cycles (`z_H = z_L_final`,
+        # then optional H-stack/RMSNorm) — NOT residual add (residual add
+        # without LayerNorm explodes magnitudes; Slice 5 introduces opt-in
+        # H-boundary RMSNorm for the residual-add-style regime).
         h_cycles = max(1, getattr(cfg, "h_cycles", 1))
 
         # Per-H-cycle detach_until — Slice 7 generalization.
