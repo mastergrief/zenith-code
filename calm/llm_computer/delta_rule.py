@@ -145,6 +145,18 @@ class DeltaNetConfig(Small2DConfig):
                                        # recall-card installs (R22 MQAR etc.) on h_cycles=1
                                        # are unaffected; new cards opting into h_cycles>1
                                        # accept normalized residuals at train AND inference.
+    use_halt_head: bool = False        # Slice 10a (Tier B): ACT halt-head telemetry.
+                                       # When True, allocates `self.halt_head:
+                                       # nn.Linear(d_model, 1)` and during the H/L loop
+                                       # in `_forward_backbone` computes per-H-cycle
+                                       # halt probability `sigmoid(halt_head(z_H.mean(dim=1)))`,
+                                       # appending to `self.last_halt_probs: list`.
+                                       # **Telemetry ONLY** — no early-stop behavior;
+                                       # forward output is bit-identical to flag-off.
+                                       # Per co_lead audit msg 1779304303629, untrained
+                                       # halt head cannot drive inference safely;
+                                       # behavior change happens in Slices 10b/10c only.
+                                       # Cached-decode blocklist gets this flag defensively.
     use_h_layer_stack: bool = False    # Slice 8 (Tier B): separate H/L weight banks.
                                        # When True AND h_cycles > 1, the H boundary
                                        # runs a FULL H layer stack with its own
@@ -286,6 +298,29 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             self.h_norm = nn.RMSNorm(config.d_model)
         else:
             self.h_norm = None
+
+        # Slice 10a: ACT halt-head telemetry. When `use_halt_head=True`,
+        # allocate a single `nn.Linear(d_model, 1)` that reads per-H-cycle
+        # `z_H.mean(dim=1)` and produces a halt logit. `last_halt_probs`
+        # instance attr collects sigmoid(halt_logit) per H cycle during
+        # forward — read by trainers (S10b) and inference (S10c). Pure
+        # telemetry; forward output is bit-identical to flag-off.
+        # RNG-isolated (same pattern as H bank): without save/restore the
+        # halt_head allocation would shift downstream subclass-constructed
+        # params (copy_gate / copy_q_proj / copy_k_proj after
+        # CopyAugmentedDeltaNet's super().__init__() returns), breaking
+        # the telemetry-only invariant.
+        if getattr(config, "use_halt_head", False):
+            _saved_rng_halt = torch.get_rng_state()
+            self.halt_head = nn.Linear(config.d_model, 1, bias=True)
+            with torch.no_grad():
+                self.halt_head.bias.fill_(0.0)
+            torch.set_rng_state(_saved_rng_halt)
+        else:
+            self.halt_head = None
+        # Runtime telemetry; not persisted. List populated each forward
+        # when halt_head is active.
+        self.last_halt_probs: list[torch.Tensor] = []
 
         # Slice 8: separate H/L weight banks. When `use_h_layer_stack=True`,
         # allocate parallel ModuleLists mirroring the L stack (same shapes
@@ -872,6 +907,13 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             # h_cycles=1, per_h_detach_until[0] equals the Slice 3 'l'-grain
             # value AND the Slice 7 'global'-grain value (the two collapse).
             x_final = _run_l_loop(x, per_h_detach_until[0])
+            # Slice 10a: collect halt telemetry even at h_cycles=1 so the
+            # `len(last_halt_probs) == h_cycles` contract holds across the
+            # two code paths uniformly.
+            if self.halt_head is not None:
+                self.last_halt_probs = []
+                halt_logit = self.halt_head(x_final.mean(dim=1))
+                self.last_halt_probs.append(torch.sigmoid(halt_logit))
             if return_per_iter:
                 # Single H cycle → per-iter list contains just the final.
                 return x_final, [x_final]
@@ -903,6 +945,13 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         # supervision is requested. Empty list when off → zero overhead.
         per_iter_outputs: list = [] if return_per_iter else None
 
+        # Slice 10a: ACT halt-head telemetry. Reset the list at start of
+        # the H/L hierarchy path so each forward sees a fresh collection.
+        # Telemetry-only — does NOT participate in any forward decision.
+        collect_halt = self.halt_head is not None
+        if collect_halt:
+            self.last_halt_probs = []
+
         z_H = x
         for h_step in range(h_cycles):
             z_L = z_H
@@ -928,6 +977,15 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             z_H = self.h_norm(z_H_raw) if use_h_norm else z_H_raw
             if per_iter_outputs is not None:
                 per_iter_outputs.append(z_H)
+            if collect_halt:
+                # Per-cycle halt probability — mean-pooled z_H over sequence
+                # → halt head → sigmoid. NOT used to gate iteration (S10c)
+                # or compute loss (S10b); just exposed for monitoring.
+                # Tensor is kept gradient-attached so future S10b training
+                # can backprop through it without rerunning forward.
+                halt_logit = self.halt_head(z_H.mean(dim=1))  # (B, 1)
+                halt_prob = torch.sigmoid(halt_logit)
+                self.last_halt_probs.append(halt_prob)
         if return_per_iter:
             return z_H, per_iter_outputs
         return z_H

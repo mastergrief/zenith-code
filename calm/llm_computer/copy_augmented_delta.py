@@ -244,6 +244,11 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
             # (already blocked), but block flag-on too as a defensive
             # signal — cached path has no notion of an H weight bank.
             ("use_h_layer_stack", bool),
+            # Slice 10a: halt-head telemetry doesn't fork behavior in 10a
+            # alone, but co_lead audit msg 1779304303629 asked for
+            # defensive blocking so future 10c (greedy inference halt)
+            # cannot accidentally activate via the cached path.
+            ("use_halt_head", bool),
         )
         _blocked = []
         for _attr, _pred in _CACHED_DECODE_BLOCKED:
@@ -490,6 +495,7 @@ def build_copy_augmented_delta(
     use_h_rmsnorm: bool = False,
     use_short_conv: bool = False,
     use_h_layer_stack: bool = False,
+    use_halt_head: bool = False,
 ) -> CopyAugmentedDeltaNet:
     """Build a CopyAugmentedDeltaNet mirroring PT's default sizing.
 
@@ -517,6 +523,7 @@ def build_copy_augmented_delta(
         use_h_rmsnorm=use_h_rmsnorm,
         use_short_conv=use_short_conv,
         use_h_layer_stack=use_h_layer_stack,
+        use_halt_head=use_halt_head,
     )
     assert cfg.d_head == 2, f"d_head must be 2, got {cfg.d_head}"
     return CopyAugmentedDeltaNet(cfg)

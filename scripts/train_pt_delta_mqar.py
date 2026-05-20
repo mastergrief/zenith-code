@@ -189,6 +189,7 @@ def train(
                         "use_h_rmsnorm": getattr(m.config, "use_h_rmsnorm", False),
                         "use_short_conv": getattr(m.config, "use_short_conv", False),
                         "use_h_layer_stack": getattr(m.config, "use_h_layer_stack", False),
+                        "use_halt_head": getattr(m.config, "use_halt_head", False),
                     },
                     "epoch": epoch,
                     "autoreg_acc": acc,
