@@ -146,27 +146,34 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
         return torch.log(blended + 1e-10)
 
     def forward(self, idx: torch.Tensor,
-                return_per_iter: bool = False):
+                return_per_iter: bool = False,
+                act_inference: bool = False):
         """idx: (B, S). Returns log-probs (B, S, vocab).
 
         Slice 11 deep supervision: when `return_per_iter=True`, returns
-        `(final_log_probs, per_iter_log_probs)` where `per_iter_log_probs`
-        is a list of length `h_cycles` (or 1 in the flat / h_cycles=1
-        path) — each element is log-probs (B, S, vocab) computed by
-        passing the corresponding per-H-cycle z_H through the head +
-        copy mechanism. Trainer can sum/average loss across iters for
-        deep-supervision-style training (HRM-Text-style).
+        `(final_log_probs, per_iter_log_probs)` — list of length equal
+        to the number of H cycles actually executed (which may be
+        shorter than config `h_cycles` when act_inference=True and the
+        halt fires early).
 
-        Default `return_per_iter=False` → returns just `final_log_probs`,
-        bit-equivalent to every prior slice's call site.
+        Slice 10c ACT greedy inference halt: when `act_inference=True`,
+        the H/L loop breaks early once `cumulative halt prob >
+        self.act_threshold` AND at least `self.act_min_iters` cycles
+        have executed. Requires `use_halt_head=True` (else
+        `_forward_backbone` raises). `self.last_act_halt_step` after
+        forward records the number of cycles executed. Default
+        `act_inference=False` → all configured h_cycles run, no early
+        stop — bit-equivalent to prior slices.
         """
         # DeltaNet backbone produces per-position hidden states.
         # When deep supervision is requested, also collect per-iter
         # intermediates (a list of z_H states from each H cycle).
         if return_per_iter:
-            x, per_iter_x = self._forward_backbone(idx, return_per_iter=True)
+            x, per_iter_x = self._forward_backbone(
+                idx, return_per_iter=True, act_inference=act_inference,
+            )
         else:
-            x = self._forward_backbone(idx)
+            x = self._forward_backbone(idx, act_inference=act_inference)
             per_iter_x = None
 
         # Final log-probs (with diagnostics exposed).

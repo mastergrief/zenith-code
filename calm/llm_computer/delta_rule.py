@@ -321,6 +321,16 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         # Runtime telemetry; not persisted. List populated each forward
         # when halt_head is active.
         self.last_halt_probs: list[torch.Tensor] = []
+        # Slice 10c: ACT greedy-halt runtime knobs (NOT persisted).
+        # `act_threshold` is the cumulative-halt threshold; once
+        # `cum_halt > act_threshold` AND iter >= act_min_iters - 1,
+        # the H/L loop breaks. Defaults: 0.9 / 1. Trainer sets to
+        # reasonable values after the halt head has a training contract
+        # (S10b). `last_act_halt_step` records the number of H cycles
+        # actually executed when act_inference=True.
+        self.act_threshold: float = 0.9
+        self.act_min_iters: int = 1
+        self.last_act_halt_step: int | None = None
 
         # Slice 8: separate H/L weight banks. When `use_h_layer_stack=True`,
         # allocate parallel ModuleLists mirroring the L stack (same shapes
@@ -743,7 +753,8 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         return emb[:d_model].to(dtype=dtype)
 
     def _forward_backbone(self, idx: torch.Tensor,
-                          return_per_iter: bool = False):
+                          return_per_iter: bool = False,
+                          act_inference: bool = False):
         """Run the DeltaNet backbone; return pre-head hidden states x (B, S, D).
 
         Factored out so subclasses (e.g. CopyAugmentedDeltaNet) can use the
@@ -752,13 +763,29 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
 
         Slice 11 deep supervision: when `return_per_iter=True`, returns a
         tuple `(final_x, per_iter_x_list)` where `per_iter_x_list` is a
-        list of length `h_cycles` containing the z_H residual at the END
-        of each H cycle (i.e. AFTER the optional H stack and RMSNorm,
-        which is the same residual that feeds the next H cycle as z_L
-        and ultimately the head). When `return_per_iter=False` (default),
-        returns just `final_x` — backward-compat preserved for every
-        prior slice's call sites.
+        list of length `actually_executed_h_cycles` containing the z_H
+        residual at the END of each H cycle (i.e. AFTER the optional H
+        stack and RMSNorm, which is the same residual that feeds the
+        next H cycle as z_L and ultimately the head). When
+        `return_per_iter=False` (default), returns just `final_x` —
+        backward-compat preserved for every prior slice's call sites.
+
+        Slice 10c ACT greedy inference halt: when `act_inference=True`,
+        the H/L loop breaks early once `cumulative_halt > act_threshold`
+        AND `h_step >= act_min_iters - 1`. Requires `use_halt_head=True`
+        (else raises). `self.last_act_halt_step` records the count of
+        H cycles actually executed. When the halt never fires, the loop
+        runs all `h_cycles` and `last_act_halt_step` equals h_cycles.
+        At inference only — training should use full h_cycles + the
+        training-side loss from `compute_act_loss` (Slice 10b).
         """
+        if act_inference and self.halt_head is None:
+            raise ValueError(
+                "act_inference=True requires use_halt_head=True "
+                "(self.halt_head is None). Re-build the model with the "
+                "halt-head flag enabled, or train a halt head first via "
+                "S10b's compute_act_loss before enabling greedy inference halt."
+            )
         if not getattr(self.config, "use_delta_net", True):
             # Vanilla path — replicate Small2DTransformer.forward minus the head
             B, S = idx.shape
@@ -914,6 +941,10 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
                 self.last_halt_probs = []
                 halt_logit = self.halt_head(x_final.mean(dim=1))
                 self.last_halt_probs.append(torch.sigmoid(halt_logit))
+            # Slice 10c: at h_cycles=1, act_inference is a no-op — only one
+            # cycle to run. Record halt step for consistency.
+            if act_inference:
+                self.last_act_halt_step = 1
             if return_per_iter:
                 # Single H cycle → per-iter list contains just the final.
                 return x_final, [x_final]
@@ -947,10 +978,15 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
 
         # Slice 10a: ACT halt-head telemetry. Reset the list at start of
         # the H/L hierarchy path so each forward sees a fresh collection.
-        # Telemetry-only — does NOT participate in any forward decision.
+        # Telemetry-only when act_inference=False — does NOT participate
+        # in any forward decision. When act_inference=True (Slice 10c),
+        # halt prob feeds the early-break condition.
         collect_halt = self.halt_head is not None
         if collect_halt:
             self.last_halt_probs = []
+        # Slice 10c: cumulative-halt accumulator for early-break.
+        cum_halt = 0.0
+        halted_at_step: int | None = None
 
         z_H = x
         for h_step in range(h_cycles):
@@ -979,13 +1015,31 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
                 per_iter_outputs.append(z_H)
             if collect_halt:
                 # Per-cycle halt probability — mean-pooled z_H over sequence
-                # → halt head → sigmoid. NOT used to gate iteration (S10c)
-                # or compute loss (S10b); just exposed for monitoring.
-                # Tensor is kept gradient-attached so future S10b training
-                # can backprop through it without rerunning forward.
+                # → halt head → sigmoid. S10a telemetry; S10b training
+                # loss path; S10c (this slice) consumes for greedy halt.
+                # Tensor is kept gradient-attached so S10b training can
+                # backprop through it without rerunning forward.
                 halt_logit = self.halt_head(z_H.mean(dim=1))  # (B, 1)
                 halt_prob = torch.sigmoid(halt_logit)
                 self.last_halt_probs.append(halt_prob)
+                # Slice 10c: greedy inference halt — break early when
+                # cumulative halt prob crosses threshold AND we've
+                # executed at least act_min_iters cycles.
+                if act_inference:
+                    # Use mean halt prob across batch as the single
+                    # halt signal (matches S10b's batch-shared halt-dist
+                    # treatment).
+                    cum_halt += float(halt_prob.mean().item())
+                    if (cum_halt > self.act_threshold
+                            and (h_step + 1) >= self.act_min_iters):
+                        halted_at_step = h_step + 1
+                        break
+        # Slice 10c: record actual halt step for monitoring. If we never
+        # halted, `last_act_halt_step` equals the full h_cycles count.
+        if act_inference:
+            self.last_act_halt_step = (
+                halted_at_step if halted_at_step is not None else h_cycles
+            )
         if return_per_iter:
             return z_H, per_iter_outputs
         return z_H
