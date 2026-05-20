@@ -464,6 +464,7 @@ def train(
                         "h_cycles": getattr(model.config, "h_cycles", 1),
                         "use_h_rmsnorm": getattr(model.config, "use_h_rmsnorm", False),
                         "use_short_conv": getattr(model.config, "use_short_conv", False),
+                        "use_h_layer_stack": getattr(model.config, "use_h_layer_stack", False),
                     },
                     "epoch": ep,
                     "val_autoreg": acc,

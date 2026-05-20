@@ -184,6 +184,10 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
             # values per layer in streaming state to mirror the causal conv.
             # Until that's implemented, hard-block the flag.
             ("use_short_conv", bool),
+            # Slice 8: H layer stack is only meaningful when h_cycles > 1
+            # (already blocked), but block flag-on too as a defensive
+            # signal — cached path has no notion of an H weight bank.
+            ("use_h_layer_stack", bool),
         )
         _blocked = []
         for _attr, _pred in _CACHED_DECODE_BLOCKED:
@@ -429,6 +433,7 @@ def build_copy_augmented_delta(
     h_cycles: int = 1,
     use_h_rmsnorm: bool = False,
     use_short_conv: bool = False,
+    use_h_layer_stack: bool = False,
 ) -> CopyAugmentedDeltaNet:
     """Build a CopyAugmentedDeltaNet mirroring PT's default sizing.
 
@@ -455,6 +460,7 @@ def build_copy_augmented_delta(
         h_cycles=h_cycles,
         use_h_rmsnorm=use_h_rmsnorm,
         use_short_conv=use_short_conv,
+        use_h_layer_stack=use_h_layer_stack,
     )
     assert cfg.d_head == 2, f"d_head must be 2, got {cfg.d_head}"
     return CopyAugmentedDeltaNet(cfg)

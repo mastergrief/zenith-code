@@ -188,6 +188,7 @@ def train(
                         "h_cycles": getattr(m.config, "h_cycles", 1),
                         "use_h_rmsnorm": getattr(m.config, "use_h_rmsnorm", False),
                         "use_short_conv": getattr(m.config, "use_short_conv", False),
+                        "use_h_layer_stack": getattr(m.config, "use_h_layer_stack", False),
                     },
                     "epoch": epoch,
                     "autoreg_acc": acc,

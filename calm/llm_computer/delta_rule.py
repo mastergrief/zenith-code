@@ -49,6 +49,34 @@ import torch.nn.functional as F
 from calm.llm_computer.model import Small2DConfig, Small2DTransformer
 
 
+class _LayerBank:
+    """Per-layer weight references for one pass through `_delta_layer_stack`.
+
+    Slice 8: factored so the L stack (existing `self.W_qkv` etc.) and the
+    opt-in H stack (`self.H_W_qkv` etc.) can share the same forward code.
+    Holds ModuleList references — not Modules themselves — so state-dict
+    keys still point at the named submodules of the parent transformer.
+    """
+
+    __slots__ = (
+        "W_qkv", "W_out", "ff_in", "ff_out", "beta_head",
+        "attn_gate_proj", "short_conv_q", "short_conv_k", "short_conv_v",
+    )
+
+    def __init__(self, W_qkv, W_out, ff_in, ff_out, beta_head,
+                 attn_gate_proj=None,
+                 short_conv_q=None, short_conv_k=None, short_conv_v=None):
+        self.W_qkv = W_qkv
+        self.W_out = W_out
+        self.ff_in = ff_in
+        self.ff_out = ff_out
+        self.beta_head = beta_head
+        self.attn_gate_proj = attn_gate_proj
+        self.short_conv_q = short_conv_q
+        self.short_conv_k = short_conv_k
+        self.short_conv_v = short_conv_v
+
+
 @dataclass
 class DeltaNetConfig(Small2DConfig):
     """Small2DConfig + DeltaNet hyperparameters.
@@ -117,6 +145,17 @@ class DeltaNetConfig(Small2DConfig):
                                        # recall-card installs (R22 MQAR etc.) on h_cycles=1
                                        # are unaffected; new cards opting into h_cycles>1
                                        # accept normalized residuals at train AND inference.
+    use_h_layer_stack: bool = False    # Slice 8 (Tier B): separate H/L weight banks.
+                                       # When True AND h_cycles > 1, the H boundary
+                                       # runs a FULL H layer stack with its own
+                                       # weights (W_qkv, W_out, ff_in, ff_out,
+                                       # beta_head, attn_gate_proj, short_conv_q/k/v)
+                                       # before the optional RMSNorm:
+                                       #   z_H_raw = _run_h_layer_stack(z_L)
+                                       #   z_H = h_norm(z_H_raw) if rmsnorm else z_H_raw
+                                       # Doubles DT param count when on. Default off →
+                                       # Slice 4-5 hand-off (`z_H = z_L` or `h_norm(z_L)`)
+                                       # path preserved bit-equivalently.
     h_cycles: int = 1                  # HRM-Text H/L hierarchy: outer-loop cycles.
                                        # The existing `n_iterations` field becomes
                                        # the L-cycles (inner). When h_cycles > 1,
@@ -236,6 +275,129 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             self.h_norm = nn.RMSNorm(config.d_model)
         else:
             self.h_norm = None
+
+        # Slice 8: separate H/L weight banks. When `use_h_layer_stack=True`,
+        # allocate parallel ModuleLists mirroring the L stack (same shapes
+        # so `_delta_layer_stack` can run unchanged code against either
+        # bank). Doubles DT param count when on. Zero state-dict drift
+        # when off (modules simply not created → not present in state_dict).
+        #
+        # RNG isolation: save/restore global torch.Generator state around
+        # H-bank allocation so the downstream subclass-constructed modules
+        # (CopyAugmentedDeltaNet.copy_gate / copy_q_proj / copy_k_proj
+        # after super().__init__() returns) get the SAME seeded values
+        # whether this flag is on or off. Without this, the n_iters=1
+        # bit-equivalence guard at h_cycles=1 (which never invokes the H
+        # bank) would silently break because downstream params would
+        # diverge between flag-on and flag-off builds at the same seed.
+        # Same hazard pattern caught in Slice 2 (z_init local generator).
+        if getattr(config, "use_h_layer_stack", False):
+            _saved_rng = torch.get_rng_state()
+            self.H_W_qkv = nn.ModuleList([
+                nn.Linear(config.d_model, 3 * config.d_model, bias=False)
+                for _ in range(config.n_layers)
+            ])
+            self.H_W_out = nn.ModuleList([
+                nn.Linear(config.d_model, config.d_model, bias=False)
+                for _ in range(config.n_layers)
+            ])
+            self.H_ff_in = nn.ModuleList([
+                nn.Linear(config.d_model, 2 * config.d_ffn, bias=False)
+                for _ in range(config.n_layers)
+            ])
+            self.H_ff_out = nn.ModuleList([
+                nn.Linear(config.d_ffn, config.d_model, bias=False)
+                for _ in range(config.n_layers)
+            ])
+            self.H_beta_head = nn.ModuleList([
+                nn.Linear(config.d_model, 1, bias=True)
+                for _ in range(config.n_layers)
+            ])
+            for h in self.H_beta_head:
+                with torch.no_grad():
+                    h.bias.fill_(0.0)
+            # Slice 1 + Slice 6 per-layer modules mirror on the H bank if their
+            # respective flags are also on. Otherwise None (forward gated).
+            if getattr(config, "use_gated_attention", False):
+                self.H_attn_gate_proj = nn.ModuleList([
+                    nn.Linear(config.d_model, config.d_model, bias=False)
+                    for _ in range(config.n_layers)
+                ])
+            else:
+                self.H_attn_gate_proj = None
+            if getattr(config, "use_short_conv", False):
+                k = self.SHORT_CONV_KERNEL
+                self.H_short_conv_q = nn.ModuleList([
+                    nn.Conv1d(config.d_model, config.d_model,
+                              kernel_size=k, padding=0,
+                              groups=config.d_model, bias=False)
+                    for _ in range(config.n_layers)
+                ])
+                self.H_short_conv_k = nn.ModuleList([
+                    nn.Conv1d(config.d_model, config.d_model,
+                              kernel_size=k, padding=0,
+                              groups=config.d_model, bias=False)
+                    for _ in range(config.n_layers)
+                ])
+                self.H_short_conv_v = nn.ModuleList([
+                    nn.Conv1d(config.d_model, config.d_model,
+                              kernel_size=k, padding=0,
+                              groups=config.d_model, bias=False)
+                    for _ in range(config.n_layers)
+                ])
+            else:
+                self.H_short_conv_q = None
+                self.H_short_conv_k = None
+                self.H_short_conv_v = None
+            # Restore RNG so downstream subclass-constructed modules get the
+            # same seeded values as the flag-off case.
+            torch.set_rng_state(_saved_rng)
+        else:
+            self.H_W_qkv = None
+            self.H_W_out = None
+            self.H_ff_in = None
+            self.H_ff_out = None
+            self.H_beta_head = None
+            self.H_attn_gate_proj = None
+            self.H_short_conv_q = None
+            self.H_short_conv_k = None
+            self.H_short_conv_v = None
+
+        # Build the lazy bank handles. These are plain Python objects holding
+        # references to the ModuleList submodules — NOT registered modules
+        # themselves, so they don't double-count parameters or pollute
+        # state_dict keys.
+        self._l_bank = _LayerBank(
+            W_qkv=self.W_qkv, W_out=self.W_out,
+            ff_in=self.ff_in, ff_out=self.ff_out,
+            beta_head=self.beta_head,
+            attn_gate_proj=self.attn_gate_proj,
+            short_conv_q=self.short_conv_q,
+            short_conv_k=self.short_conv_k,
+            short_conv_v=self.short_conv_v,
+        )
+        if getattr(config, "use_h_layer_stack", False):
+            self._h_bank = _LayerBank(
+                W_qkv=self.H_W_qkv, W_out=self.H_W_out,
+                ff_in=self.H_ff_in, ff_out=self.H_ff_out,
+                beta_head=self.H_beta_head,
+                attn_gate_proj=self.H_attn_gate_proj,
+                short_conv_q=self.H_short_conv_q,
+                short_conv_k=self.H_short_conv_k,
+                short_conv_v=self.H_short_conv_v,
+            )
+        else:
+            self._h_bank = None
+
+        # Slice 8: re-apply LeCun init AFTER H bank allocation so the H
+        # Linear weights ALSO get LeCun-normal when both flags are on.
+        # Slice 2's lecun-init pass earlier in DeltaNet.__init__ ran
+        # BEFORE the H bank existed, so H weights would have default init
+        # without this second pass. Bias-preserving as always (beta_head
+        # bias stays at 0; copy_gate.bias in CopyAugmentedDeltaNet stays
+        # at -2.0).
+        if getattr(config, "use_lecun_init", False) and self._h_bank is not None:
+            self._apply_lecun_init()
 
     @staticmethod
     def _delta_step(
@@ -629,22 +791,45 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             bool(getattr(cfg, "use_h_rmsnorm", False))
             and self.h_norm is not None
         )
+        # Slice 8: full H layer stack at the hand-off when flag on.
+        # Seam migrates from `z_H = h_norm(z_L)` to
+        # `z_H = h_norm(H_stack(z_L))` — H bank actually transforms the
+        # carry, not just normalizes it. RMSNorm wraps the H stack output.
+        use_h_stack = (
+            bool(getattr(cfg, "use_h_layer_stack", False))
+            and self._h_bank is not None
+        )
         z_H = x
         for _h_step in range(h_cycles):
             z_L = z_H
             z_L = _run_l_loop(z_L)
-            z_H = self.h_norm(z_L) if use_h_norm else z_L
+            if use_h_stack:
+                z_H_raw = self._run_h_layer_stack(
+                    z_L, cfg, B, S, prefix_mask=prefix_mask,
+                )
+            else:
+                z_H_raw = z_L
+            z_H = self.h_norm(z_H_raw) if use_h_norm else z_H_raw
         return z_H
 
     def _delta_layer_stack(self, x: torch.Tensor, cfg, B: int, S: int,
-                           prefix_mask: torch.Tensor | None = None) -> torch.Tensor:
+                           prefix_mask: torch.Tensor | None = None,
+                           bank: _LayerBank | None = None) -> torch.Tensor:
         """One pass through all layers. Extracted for D5 refinement-loop reuse.
+
+        Slice 8: accepts a `bank` arg for separate H/L weight banks. When
+        bank is None, uses `self._l_bank` (the original modules). The H
+        path (`_run_h_layer_stack`) passes `self._h_bank`. The forward body
+        below references `bank.W_qkv[layer]` etc. instead of `self.W_qkv[layer]`
+        so the same code works for both stacks.
 
         `prefix_mask` is forwarded to the softmax-attention call when
         `cfg.use_softmax_attn=True`. On delta-only DT path it has no effect.
         """
+        if bank is None:
+            bank = self._l_bank
         for layer in range(cfg.n_layers):
-            qkv = self.W_qkv[layer](x)                         # (B, S, 3D)
+            qkv = bank.W_qkv[layer](x)                         # (B, S, 3D)
             qkv = qkv.reshape(B, S, 3, cfg.n_heads, cfg.d_head)
             q, k, v = qkv.permute(2, 0, 3, 1, 4)               # 3 × (B, H, S, Dh)
 
@@ -670,10 +855,10 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             # attention path (when use_softmax_attn=True) uses the
             # head-shaped q/k/v directly above and is NOT short-conv'd.
             # Per-channel local mixing (groups=d_model) — no cross-channel.
-            if self.short_conv_q is not None:
-                q_flat = self._apply_short_conv(q_flat, self.short_conv_q[layer])
-                k_flat = self._apply_short_conv(k_flat, self.short_conv_k[layer])
-                v_flat = self._apply_short_conv(v_flat, self.short_conv_v[layer])
+            if bank.short_conv_q is not None:
+                q_flat = self._apply_short_conv(q_flat, bank.short_conv_q[layer])
+                k_flat = self._apply_short_conv(k_flat, bank.short_conv_k[layer])
+                v_flat = self._apply_short_conv(v_flat, bank.short_conv_v[layer])
 
             # Paper feature-map + L2-norm on K and Q. V untouched.
             # Both ablatable — the paper's d_head=128 regime may not transfer
@@ -689,7 +874,7 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
                 k_feat = F.normalize(k_feat, p=2, dim=-1, eps=1e-6)
 
             # Per-position learned β_t ∈ (0, 1).
-            beta = torch.sigmoid(self.beta_head[layer](x))     # (B, S, 1)
+            beta = torch.sigmoid(bank.beta_head[layer](x))     # (B, S, 1)
 
             n_dh = getattr(cfg, "n_delta_heads", 1)
             if n_dh > 1 and getattr(cfg, "use_chunkwise", False):
@@ -743,20 +928,31 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             # the softmax attn output is already gated inside _attention via
             # Small2DTransformer's parent path; we still apply the delta gate
             # here so both mixers get gated.
-            if self.attn_gate_proj is not None:
-                delta_gate = torch.sigmoid(self.attn_gate_proj[layer](x))  # (B, S, D)
+            if bank.attn_gate_proj is not None:
+                delta_gate = torch.sigmoid(bank.attn_gate_proj[layer](x))  # (B, S, D)
                 gated_delta = delta_gate * delta_out
             else:
                 gated_delta = delta_out
 
             if attn is not None:
-                x = x + self.W_out[layer](attn) + self.W_out[layer](gated_delta)
+                x = x + bank.W_out[layer](attn) + bank.W_out[layer](gated_delta)
             else:
-                x = x + self.W_out[layer](gated_delta)
-            gate, val = self.ff_in[layer](x).chunk(2, dim=-1)
-            x = x + self.ff_out[layer](F.relu(gate) * val)
+                x = x + bank.W_out[layer](gated_delta)
+            gate, val = bank.ff_in[layer](x).chunk(2, dim=-1)
+            x = x + bank.ff_out[layer](F.relu(gate) * val)
 
         return x
+
+    def _run_h_layer_stack(self, z_L: torch.Tensor, cfg, B: int, S: int,
+                           prefix_mask: torch.Tensor | None = None) -> torch.Tensor:
+        """Slice 8: one pass through the H weight bank. Used at H-cycle
+        hand-off when `use_h_layer_stack=True` (and `_h_bank is not None`).
+        Calls `_delta_layer_stack` with `bank=self._h_bank` — same forward
+        code, different weights.
+        """
+        return self._delta_layer_stack(
+            z_L, cfg, B, S, prefix_mask=prefix_mask, bank=self._h_bank,
+        )
 
     def forward(self, idx: torch.Tensor) -> torch.Tensor:
         """idx: (B, S). Returns logits (B, S, vocab)."""
