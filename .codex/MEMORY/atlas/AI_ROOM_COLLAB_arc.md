@@ -104,6 +104,30 @@ session-local asymmetry (each agent's user consent invisible to the
 peer) motivates the `## Provenance` block requirement in board task
 descriptions for cross-session dispatches.
 
+## 2026-05-20 User-input Capture Contract port from zenith-fitness
+
+`.claude/hooks/at_gabe_askuserquestion_gate.py` ported from
+zenith-fitness — `PreToolUse` hook on
+`mcp__ai-room__ai_room_post` / `_reply`. Enforces claude-side
+capture-then-relay: outbound posts addressing gabe without a captured
+`AskUserQuestion` in the same turn are blocked. Hook fails-open on
+transcript parse errors and channel-log lookup misses; skips
+ack-kind messages.
+
+The hook landed on disk BEFORE matching rule text existed in either
+`.claude/rules/AI_ROOM_COLLAB.md` or `.codex/rules/AI_ROOM_COLLAB.md` —
+the rule text was filled in subsequently in the same arc, alongside
+`.claude/CLAUDE.md` § "AI Room Collaboration" control-loop framing
+(REPL-only synthesis, capture-then-relay, `@gabe` 4-shape trigger,
+AUQ recommendations mandatory, mixed-purpose ban, gate sequence) and
+a new `.codex/rules/AI_ROOM_COLLAB.md` codifying the codex-side
+mirror.
+
+Codex-side enforcement is by rule, not hook: codex never `@gabes`
+directly. Worker / peer questions re-thread to claude with source
+provenance; claude runs capture-and-relay. See `.codex/rules/
+AI_ROOM_COLLAB.md` §"Codex never `@gabes` directly".
+
 ## Commit ledger
 
 | Commit | Repo | Content |

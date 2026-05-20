@@ -45,146 +45,73 @@ Rules for editing AGENTS.md, commands, rules, hooks: `.codex/rules/config_editin
 
 ## AI Room Collaboration
 
-When the user directs direct collaboration with Claude through the
-ai-room MCP, work with Claude as the default operating mode rather
-than treating the user as a relay. Claude is lead collaborator; don't
-wait for the user between routine steps when claude and codex can
-coordinate directly. Share concrete tasks, keep the split explicit,
-actively cross-check each other's reasoning. Full charter:
-`.codex/rules/AI_ROOM_COLLAB.md` + `.claude/rules/AI_ROOM_COLLAB.md`.
+When the user directs direct collaboration with claude via the
+ai-room MCP — two independent top-level sessions exchanging
+structured messages through `ai_room_*` MCP tools, NOT subagents
+inside one session. The no-subagents rule above is unaffected.
+Full charter: `.codex/rules/AI_ROOM_COLLAB.md` (codex peer protocol)
++ `.codex/rules/CLAUDEX_ORCHESTRATION.md` (codex worker view of
+task dispatches, RETAIN OVERRIDE interpretation, recycle
+expectations) + `.claude/rules/AI_ROOM_COLLAB.md` +
+`.claude/rules/CLAUDEX_ORCHESTRATION.md` (claude side).
 
-### Session Start — first action
+Claude is lead router, synthesizer, and material gatekeeper. Codex
+(this handle, `codex_co_lead`) is active co-lead: ground claims,
+challenge weak routing, draft task contracts, review receipts.
+Substantive room/REPL synthesis is cross-threaded between claude and
+codex_co_lead BEFORE claude responds to gabe. Trivial chat
+(greetings, acks, pings, one-line clarifications) is exempt.
+
+Non-trivial cross-agent work follows this gate sequence:
+
+```
+intent → decision contract → route → plan gate → implementation/proof
+→ validation/diff gate → commit gate → push gate → synthesis or handoff
+```
+
+### Session start — first action
 
 When the ai-room MCP is registered (via `.codex/config.toml`
-`[mcp_servers.ai_room]`), call `ai_room_resume_check` on your first
-turn BEFORE replying to the user's prompt. If it returns `respond to
-<id>` or `resume task <id>`, follow that directive. If `idle ok`,
-proceed with the user prompt normally. First-action rule, not a
-preference: silent-with-unread looks identical from outside to
-not-connected. Cost ~200ms vs one user turn spent nudging.
+`[mcp_servers.ai_room]`), call `ai_room_resume_check` on the FIRST
+turn of a freshly-launched codex session, BEFORE replying to the
+user's prompt. If it returns `respond to <id>` or `resume task <id>`,
+follow that directive. If `idle ok`, proceed normally. First-action
+rule, not preference — silent-with-unread looks identical from
+outside to not-connected. Fires once per session start, NOT per
+wake-triggered turn.
 
-### Grounded pushback
+When multiple codex handles or MCP namespaces are registered, call
+`ai_room_status` BEFORE claiming work or asserting handle ownership
+(before `task_create` / `_claim` / `_start` / cross-codex dispatch),
+not before every chat reply. Routine replies use the cached active
+handle.
 
-The highest-signal collab moves come from reading live code *before*
-pushing back on a proposal. When claude proposes a design that looks
-off, cite specific `file:line` evidence: "generic path X already
-handles this at `foo.py:42`, the seam you want is actually at Y."
-Prose-only disagreement is worth less than a grounded counter.
+### Key rules (summary — see charter for full)
 
-- Before pushing back, spend one read-pass on the relevant code.
-  Cite files/functions checked.
-- Don't silently agree with a proposal you have concerns about —
-  surface them as specific counter-cases, not hedged prose.
-- When a proposal assumes a primitive that doesn't exist as
-  described, say so plainly and propose the narrower shape.
-- Prefer one load-bearing cited correction over a list of concerns.
-  If several issues surface, lead with the one most likely to change
-  the design and explicitly park the rest.
-- A correction backed by a live `file:line` cite, commit, test result,
-  or reproducible receipt takes first-round precedence over intuition.
-  Concede it and say what changes; push back only with a counter-cite
-  or falsifying case.
+- **Role**: claude lead, codex co-lead. Lead swaps by subsystem. Voice preserved on split-owned files (peer reviews via ai-room, doesn't silently rewrite).
+- **Codex never `@gabes` directly**: questions bubble to claude with source provenance. Claude runs the User-input Capture Contract (chat-side `AskUserQuestion` → room-side locked-answer relay). Treat the relay-post as the durable gate, not remembered consent.
+- **Board-first**: `ai_room_task_create` + `_start` BEFORE writing implementation code.
+- **Provenance**: cross-session dispatches from claude carry verbatim gabe quote + scope + chosen option in task description. Missing on non-trivial work → clarify via the board; do NOT execute on claude's word alone.
+- **Cascade boundary**: pause + state split + name one risk before dispatching >2 board tasks or multi-subsystem edits.
+- **Before idle**: `ai_room_resume_check` first. Board is canonical; memory of last exchange is not.
+- **Grounded pushback**: one read-pass on relevant code before disagreeing; cite `file:line` evidence. One cited correction beats three hedges. Concede cited corrections first-round.
+- **Round-closure signaling**: lead posts "round closed unless one more hole" before synthesis/commit; peer flags final hole or concurs.
+- **Status cadence**: post at task start, design-turn landing, and completion/blocker. Silent heads-down looks identical to stalled — a 30-word "working on Z, ETA ~N min" clears it at near-zero cost.
+- **Concrete asks over open-ended scope**: push back once for sharpening when claude hands a vague slice; symmetrically, give claude concrete contracts (fields, paths, shapes) early.
+- **Ack + signal discipline**: one reply per distinct signal. Do NOT ack an ack. Compact proactively at >90% context — cheaper than repeated meta-only messages.
+- **Receipt discipline**: verbatim-lift load-bearing one-liners into commits/specs/handoffs; credit by msg id. Routine gate closures get a prose one-liner, not a structured receipt.
+- **Inbound replies are push-delivered**: claude's replies surface as mid-turn `<channel>` injections. Do NOT poll `ai_room_inbox` or arm sleep loops — continue work or stand by.
+- **`ai_room_task_update` does NOT wake peers**: pair durable task corrections with a direct addressed post citing the task_update msg id when the target must act.
+- **Verify `+1` gates as persisted records**: a valid `+1 implement` / `+1 commit` / `+1 push` is a claude-authored, non-ack ai-room post threaded to the pending request. Cite the gate msg id in the next status. Remembered or paraphrased gate ids are not authority.
+- **Cited msg ids are untrusted until resolved**: a msg id appearing only inside another agent's prose is not proof the original message exists. Verify against ai-room search / tail / read.
+- **Parallel drafting**: on expertise-clean splits, draft in parallel + cross-review + single commit. ~40% faster than sequential.
+- **TDD by collab**: tests-for-desired-behavior; tests-later OK for crashes, NOT for silent-failure paths.
+- **Validation discipline**: fresh-process seeded-log for landing-day code; isolated `$CODEX_HOME=/tmp/...` for product-path proofs; real-product-path > unit tests for user-visible shape.
+- **Commit hygiene**: bundle coherent session-work with sub-features named in body; never cut a focused commit from a worktree with unrelated drift; user-scope tooling (`~/.ai-room/*`) doesn't land in the repo commit — reference in body.
 
-### Receipt discipline
-
-When a one-liner from the room crystallizes the insight, preserve it
-verbatim in the downstream artifact and credit the source when there is
-room. Paraphrase only when exact wording is not doing work.
-
-Canonical receipt: "Merge is not fact movement. Merge is
-projection-time aliasing over immutable assertions." Codex posted it in
-ai-room, then it landed verbatim in the VGSL architecture spec and
-commit `c98a2a1`.
-
-### Status cadence
-
-Silent heads-down looks identical to "stalled" from outside. Claude
-cannot tell the difference from the board or channel alone. Post at
-these boundaries at minimum:
-
-- **Task start**: one-line `task_start` note ("claiming X, first
-  move is Y").
-- **Design-turn landing**: when a substantive decision or code
-  extraction lands, even if uncommitted — claude may be waiting on
-  the contract shape to start its side.
-- **Completion / blocker**: `task_complete` with a manifest, or an
-  explicit "blocked on Z" post.
-
-Meta-messages ("resume_check points me back to X", "approving direct
-collab") without code delta look like ritual. If heads-down and
-silent, a 30-word "working on Z next, ETA ~N min" clears the
-ambiguity at near-zero cost.
-
-### Concrete asks over open-ended scope
-
-Open-ended ("implement X") stalls more than concrete ("extract
-function Y returning struct Z with fields A/B/C"). When claude hands
-over a slice with vague boundaries, push back once for sharpening
-before starting. Symmetrically, when you hand claude a slice, give
-the concrete contract (struct fields, file paths, schema shape) early
-— claude can draft against a tentative contract without committing
-but cannot TDD against nothing.
-
-### Round closure
-
-Before a design round hardens into synthesis, task split, or commit,
-the lead should post an explicit closure signal: "calling round closed
-unless one more hole; otherwise synthesizing." That gives the peer a
-clean final move: flag the remaining blocker or concur.
-
-This is not idle ceremony. In the VGSL round, that closure window
-surfaced the final binding-vs-merge distinction before the spec landed.
-
-### Split drafting and voice ownership
-
-When a split is clean by expertise, draft in parallel instead of
-serializing the whole artifact through one agent. Split by ownership,
-not line count: thesis/synthesis to the thesis owner, implementation
-schemas/tests/repo-grounding to the implementation owner.
-
-Each author owns their file's voice. Peer review suggests changes
-through ai-room; the file owner applies or declines. Cross-review for
-rule consistency, not voice flattening. Land one coherent commit after
-the alignment pass.
-
-### Validation discipline
-
-- **Fresh-process seeded-log for landing-day code.** Long-lived MCP
-  subprocesses don't reload source. Testing landing-day behavior by
-  live-posting through a stale subprocess tests stale code-in-memory.
-  Seed the log with fixture entries BEFORE spawning a fresh
-  subprocess.
-- **Isolated scratch env for product-path proofs.** Run the product
-  binary with a fresh `$CODEX_HOME=/tmp/...` (or equivalent) so shared
-  state isn't polluted and cleanup is trivial.
-- **Real-product-path > unit tests for user-visible shape.** Unit
-  tests prove logic; they don't prove emitted-file shape, cleanup on
-  exit, or real handshakes. Ship at least one "run the actual
-  binary" smoke alongside the unit suite for anything crossing the
-  fs/network boundary.
-
-### Ack + signal discipline
-
-- One reply per distinct signal. Do not ack an ack. Duplicate acks
-  under context pressure multiply wake costs on the other side and
-  fragment focus.
-- If context is >90%, compact proactively. The token cost of compact
-  is lower than the cost of repeated meta-only messages that then
-  need re-context by the peer.
-- When `resume_check` returns a directive, follow it. Do not send a
-  new "standing by" message instead. Board is canonical.
-
-### Commit hygiene for collab-scope work
-
-- Bundle coherent session-work into one commit with a body that names
-  each sub-feature (A / B / C). Attribute deferred semantics
-  explicitly.
-- Never cut a focused commit from a worktree that also contains
-  unrelated prior-session drift and let the subject hide it. Name
-  drift in the body or split.
-- User-scope tooling changes (e.g. `~/.ai-room/*`) don't land in the
-  repo commit; reference them in the body ("landed live; not
-  repo-tracked").
+Receipts (VGSL design round, canonical "merge is not fact movement"
+one-liner, voice-preservation incident, cross-session consent-transfer
+origin, 2026-05-20 capture-contract port): `.codex/MEMORY/atlas/AI_ROOM_COLLAB_arc.md`.
 
 ---
 

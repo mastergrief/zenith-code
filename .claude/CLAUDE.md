@@ -56,20 +56,60 @@ When the user directs direct collab with codex via the ai-room MCP —
 two independent sessions coordinating through `ai_room_*` tools, NOT
 subagent spawning. The "no subagents" working policy above is
 unaffected. Full charter: `.claude/rules/AI_ROOM_COLLAB.md` (claude
-side) + `.codex/rules/AI_ROOM_COLLAB.md` + `.codex/AGENTS.md` "AI
-Room Collaboration" section (codex side).
+peer protocol) + `.claude/rules/CLAUDEX_ORCHESTRATION.md` (task-
+dispatch lifecycle, recycle boundaries, hook-enforced RETAIN
+OVERRIDE) + `.codex/rules/AI_ROOM_COLLAB.md` + `.codex/AGENTS.md`
+"AI Room Collaboration" section (codex side).
+
+**R&D team shape**: gabe is research lead (seeds problems, picks
+directions, suggests crazy things). Claude is executor + audit-
+responder (implements, tests, commits — single executor, cache-warm).
+Codex (handle `codex_co_lead`) is parallel thinker (audits, devil's-
+advocates, generates creative alternatives, joins planning — does
+NOT implement or test). Loop:
+
+```
+gabe seeds → claude+codex hypothesize → claude+codex plan →
+claude builds (solo) → claude tests (solo) → claude+codex audit →
+commit → iterate
+```
+
+**Cross-thread is mandatory at every thinking boundary** —
+hypothesize, plan, challenge, audit, creativity. Implementation
+(build, test, commit) stays claude-solo. Cross-thread is the default
+rate of the channel, not occasional. Empirical: rounds where claude
+got codex's take produced better output than solo. Cache cost ≪
+audit lift. Opt-out only for mechanical edits and micro-tuning
+inside an already-cross-threaded round.
+
+Non-trivial gabe-facing work follows this gate sequence:
+
+```
+intent → decision contract → route → plan gate → implementation/proof
+→ validation/diff gate → commit gate → push gate → synthesis or handoff
+```
 
 Key rules (summary — see charter for full):
-- **Role**: claude lead, codex peer. Lead swaps by subsystem. Voice preserved on split-owned files (peer reviews, doesn't rewrite).
+- **Role**: claude lead, codex co-lead. Lead swaps by subsystem. Voice preserved on split-owned files (peer reviews, doesn't rewrite).
 - **Board-first**: `ai_room_task_create` + `_start` BEFORE writing code.
+- **Provenance**: cross-session dispatches carry verbatim gabe quote + scope + chosen option in task description. Paraphrase loses signal.
 - **Cascade boundary**: pause + name one counter-case before dispatching >2 tasks or multi-subsystem edits.
 - **Before idle**: `ai_room_resume_check` first; board is canonical.
 - **Disagreement**: every non-trivial proposal names one risk or is marked "trivial, no counters." One cited correction beats three hedges; concede cited corrections first-round.
-- **Round-closure signaling**: lead says "round closed unless one more hole" before synthesis; peer flags final hole or concurs. Predictable exits shrink dead-time.
-- **Receipt discipline**: verbatim-lift one-liners from rounds into artifacts (commits, specs, handoffs); credit by message ID.
+- **Round-closure signaling**: lead says "round closed unless one more hole" before synthesis; peer flags final hole or concurs.
+- **Receipt discipline**: verbatim-lift one-liners from rounds into artifacts (commits, specs, handoffs); credit by message ID. Routine gate closures get a tight prose one-liner, not a structured receipt.
 - **Parallel drafting**: on expertise-clean splits, both authors draft independently + cross-review + single commit. ~40% faster than sequential.
 - **TDD by collab**: tests-for-desired-behavior; tests-later OK for crashes, NOT for silent-failure paths.
 - **Validation discipline**: fresh-process seeded-log for landing-day code; real-product-path > unit tests for user-visible shape.
+- **REPL-only synthesis**: when gabe posts via the ai-room channel/REPL, the substantive answer lives in the room alone — no chat-side duplicate. Chat-side may carry tool mechanics (AskUserQuestion capture, brief acks) but the user-facing synthesis goes to the room only.
+- **Capture-then-relay**: for non-trivial durable decisions (batched choices, spec closures, route picks, material gates, product defaults), default to `AskUserQuestion` chat-side then IMMEDIATELY relay the locked answer to the room as a persisted non-ack record BEFORE any material action — threaded to source/parent and targeted at `codex_co_lead` for challenge/+1. Chat answer = provenance; room relay = the durable gate.
+- **`@gabe` is the trigger**: any inbound message addressing gabe (4 shapes: `to: gabe`, `requires_response_from: gabe`, reply-to whose sender is gabe, or `@gabe` in body outside quoted text) triggers AUQ. Hook `.claude/hooks/at_gabe_askuserquestion_gate.py` enforces at the `mcp__ai-room__ai_room_post`/`_reply` boundary.
+- **AUQ recommendations mandatory**: first option carries `(Recommended)`. Genuinely no recommendation is rare — usually means think harder before posing.
+- **Mixed-purpose posts banned**: one outbound post = one purpose. Either pure relay of an already-captured answer OR a fresh ask, never both. Closeouts that surface future decisions name them as **carry-forward** (deferred), not inline decisions.
+- **Verify `+1` claims as persisted records**: a valid material gate (`+1 implement` / `+1 commit` / `+1 push`) is a claude-authored, non-ack ai-room post threaded to the pending request. Cite the gate msg id in the next status. Remembered, paraphrased, or unresolvable gate ids are not authority — ask claude to re-confirm on-thread.
+- **Cited msg ids are untrusted until resolved**: a msg id appearing only inside another agent's prose is not proof the original message exists. Verify against ai-room search / tail / read output before acting on it.
+- **`ai_room_task_update` does NOT wake peers**: task-state transitions are durable board records, not wake events. When correcting a task post-creation, pair the `task_update` (audit record) with a direct addressed post citing the task_update msg id (wake signal).
+- **Inbound replies are push-delivered**: when waiting on codex, the reply arrives as a mid-turn `<channel>` injection. Do NOT poll `ai_room_inbox` or arm sleep loops — continue other work or stand by.
 
 ---
 

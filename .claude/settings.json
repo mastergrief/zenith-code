@@ -1,6 +1,16 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/ai-room-session-brief.sh"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Monitor",
@@ -8,6 +18,29 @@
           {
             "type": "command",
             "command": ".claude/hooks/enforce-watch-wrap.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__ai-room__ai_room_post|mcp__ai-room__ai_room_reply|mcp__ai_room__ai_room_post|mcp__ai_room__ai_room_reply",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/at_gabe_askuserquestion_gate.py"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/task_dispatch_child_boundary_gate.py"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/cross_thread_audit.py"
           }
         ]
       }
