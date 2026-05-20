@@ -6,8 +6,15 @@ HRM-Text's hierarchical recurrence has two levels:
 
 In our port, the existing `n_iterations` becomes the L-cycle count
 (inner) and a new `h_cycles` flag adds the outer wrap. At each H
-boundary, the hidden state gets a residual skip add:
-  z_H ← z_H + z_L_final
+boundary, the hidden state HANDS OFF:
+  z_H ← z_L_final
+
+(Pure hand-off, NOT residual add — residual add without LayerNorm to
+stabilize magnitude blows up to NaN on toy d_model=8. The H/L
+architectural distinction vs flat L is preserved because the H
+boundary skips iter-0 injection that flat L would have. Slice 5
+adds optional H-boundary RMSNorm to unlock the residual-add-style
+regime; this Slice 4 test file documents the pure hand-off baseline.)
 
 `h_cycles = 1` (default) special-cases to the flat-loop path from
 Slice 1-3 — bit-equivalent baseline.
@@ -72,10 +79,13 @@ def test_h_cycles_1_bit_equivalent_to_baseline_n1():
 def test_h_cycles_1_n3_bit_equivalent_to_pre_slice4():
     """h_cycles=1 with n_iter=3 should produce IDENTICAL output to the
     Slice 1-3 flat L-loop. Falsifier: if the h_cycles=1 special-case branch
-    were removed, the H/L hierarchy code would add a residual at the H
-    boundary, changing output."""
-    # Build two configs differing ONLY in n_iterations to confirm the
-    # h_cycles=1 path mirrors Slice 1-3 (no skip add).
+    were removed, the H/L hierarchy code would re-wrap the L loop in an
+    outer H pass (with hand-off `z_H = z_L_final`), which on this iter
+    count of 1 H cycle has no observable effect — but with `use_z_init`
+    or other recurrence flags, the H-iter-0 path subtly differs because
+    the wrapping changes iter-0-injection eligibility per the H/L spec."""
+    # Build configs to confirm the h_cycles=1 path mirrors Slice 1-3
+    # (no H wrap, no hand-off).
     m_h1 = _make_dt(h_cycles=1, n_iter=3, use_inject=True, seed=42)
     m_h1.eval()
     idx = torch.tensor([[5, 7, SEP_ID, 9, 11, 13]], device=DEVICE)
@@ -89,8 +99,9 @@ def test_h_cycles_1_n3_bit_equivalent_to_pre_slice4():
 # ===== Section B: h_cycles>1 changes output =====
 
 def test_h_cycles_2_differs_from_h_cycles_1():
-    """At h_cycles=2 vs h_cycles=1 with same n_iter, the residual skip add
-    at the H boundary changes the final hidden state."""
+    """At h_cycles=2 vs h_cycles=1 with same n_iter, the H-boundary
+    hand-off (`z_H = z_L_final`) plus the iter-0 injection-skip on
+    each new H cycle changes the final hidden state."""
     m_h1 = _make_dt(h_cycles=1, n_iter=3, use_inject=True, seed=42)
     m_h2 = _make_dt(h_cycles=2, n_iter=3, use_inject=True, seed=42)
     m_h1.eval(); m_h2.eval()
@@ -115,8 +126,9 @@ def test_h_cycles_3_differs_from_h_cycles_2():
 
 def test_h_cycles_2_n1_runs_two_l_loops():
     """At h_cycles=2, n_iter=1 → outer loop runs twice, each L-loop runs
-    once. z_H accumulates two L outputs via residual add. Output should
-    differ from h=1, n=1 (single L run, no residual)."""
+    once. z_H hands off L's output to the next H cycle, where the inner
+    layer stack runs again on the carry. Output should differ from
+    h=1, n=1 (single L pass, no second wrap)."""
     m_h1 = _make_dt(h_cycles=1, n_iter=1, seed=42)
     m_h2 = _make_dt(h_cycles=2, n_iter=1, seed=42)
     m_h1.eval(); m_h2.eval()
