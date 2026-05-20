@@ -458,6 +458,8 @@ def train(
                         "use_loop_index": getattr(model.config, "use_loop_index", False),
                         "use_input_injection": getattr(model.config, "use_input_injection", False),
                         "use_gated_attention": getattr(model.config, "use_gated_attention", False),
+                        "use_z_init": getattr(model.config, "use_z_init", False),
+                        "use_lecun_init": getattr(model.config, "use_lecun_init", False),
                     },
                     "epoch": ep,
                     "val_autoreg": acc,

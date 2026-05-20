@@ -34,6 +34,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
 from calm.llm_computer.model import Small2DConfig, Small2DTransformer
@@ -54,10 +55,20 @@ class RecurrentConfig(Small2DConfig):
         this, recurrence dilutes the original input across iterations.
         Per Sapient HRM-Text models/baselines/hrm_nocarry_bp_warmup.py:
             return self.core(hidden_states + input_injection, **kwargs)
+      use_z_init: learned per-channel initial hidden state for the D5
+        recurrence. When set, iteration 0 starts from
+        `z_init.expand(B, S, d_model)` (the learned "starting prior")
+        instead of the token+position embedding; the embedding itself
+        is then re-added at each iteration boundary via input_injection.
+        Pairing rule (enforced lazily, not asserted): set
+        `use_z_init=True` AND `use_input_injection=True` so the original
+        input is recovered each iter — otherwise the recurrence has no
+        access to the prompt. Only fires when n_iterations > 1.
     """
     default_iterations: int = 1
     max_iterations: int = 16
     use_input_injection: bool = False
+    use_z_init: bool = False
 
 
 class RecurrentSmall2DTransformer(Small2DTransformer):
@@ -73,6 +84,16 @@ class RecurrentSmall2DTransformer(Small2DTransformer):
 
     def __init__(self, config: RecurrentConfig):
         super().__init__(config)
+        # z_init: learned initial hidden state for the D5 recurrence. Small
+        # init so flag-on doesn't blow gradient at step 0. When the flag
+        # is off, parameter is absent (`None`) so it doesn't slow training
+        # via dead-parameter all-reduce on multi-GPU. Only fires when
+        # n_iterations > 1 — see forward() guard.
+        if config.use_z_init:
+            self.z_init = nn.Parameter(torch.zeros(config.d_model))
+            nn.init.normal_(self.z_init, mean=0.0, std=0.02)
+        else:
+            self.z_init = None
 
     def forward(self, idx: torch.Tensor,
                 n_iterations: int | None = None) -> torch.Tensor:
@@ -80,17 +101,29 @@ class RecurrentSmall2DTransformer(Small2DTransformer):
         n = n_iterations if n_iterations is not None else cfg.default_iterations
         n = max(1, min(n, cfg.max_iterations))
 
-        # n=1 → exactly parent behavior (early return preserves bit-equality).
+        # n=1 → exactly parent behavior. Both use_input_injection AND
+        # use_z_init are recurrence-only knobs that are no-ops at n=1, so
+        # the early-return guard preserves bit-equivalence regardless of
+        # config flags. This guard is load-bearing (Slice 1 audit).
         if n == 1:
             return super().forward(idx)
 
         B, S = idx.shape
         pos_idx = torch.arange(S, device=idx.device)
-        x = self.tok(idx) + self.pos(pos_idx)
+        x_embed = self.tok(idx) + self.pos(pos_idx)
 
         # HRM-Text-style input injection: save the initial input residual
         # so we can re-add it at every iteration boundary.
-        input_residual = x if cfg.use_input_injection else None
+        input_residual = x_embed if cfg.use_input_injection else None
+
+        # z_init swap: iteration 0 starts from the learned initial state
+        # instead of the token+position embedding. The embedding is then
+        # re-supplied each iter via input_injection (caller is responsible
+        # for pairing the two flags — see RecurrentConfig docstring).
+        if self.z_init is not None:
+            x = self.z_init.view(1, 1, cfg.d_model).expand(B, S, cfg.d_model)
+        else:
+            x = x_embed
 
         for _iteration in range(n):
             if input_residual is not None:

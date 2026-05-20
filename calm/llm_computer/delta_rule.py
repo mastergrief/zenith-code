@@ -80,9 +80,20 @@ class DeltaNetConfig(Small2DConfig):
                                        # `core(hidden_states + input_injection)`). Skip
                                        # injection on iteration 0 — x already IS input.
                                        # Only meaningful when n_iterations > 1.
+    use_z_init: bool = False           # Replace iteration-0 hidden state with a learned
+                                       # per-channel z_init parameter (HRM-Text z_L_init).
+                                       # When set, iter 0 starts from z_init.expand(B, S, D)
+                                       # instead of (tok+pos) embedding; embedding must be
+                                       # re-supplied via use_input_injection (pairing rule).
+                                       # When z_init AND injection both on, iter-0 ALSO
+                                       # injects (the skip-iter-0 guard releases because
+                                       # x no longer "already has the embed"). Only fires
+                                       # when n_iterations > 1.
     # use_gated_attention inherits from Small2DConfig. On DT path
     # (use_softmax_attn=False) the gate is applied to delta_out (sequence-mixer
     # output) before adding to residual. On softmax path it gates attn_output.
+    # use_lecun_init inherits from Small2DConfig. Re-init applies to all
+    # Linear weights AFTER subclass construction adds beta_head / copy_* layers.
 
 
 class DeltaNetSmall2DTransformer(Small2DTransformer):
@@ -105,6 +116,37 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         for h in self.beta_head:
             with torch.no_grad():
                 h.bias.fill_(0.0)
+
+        # z_init: learned per-channel initial state for the D5 recurrence.
+        # When use_z_init=True AND n_iterations>1, iter 0 starts from
+        # z_init.expand(B, S, D) instead of the token+position embedding.
+        # Small init (std=0.02) keeps gradient stable at step 0.
+        #
+        # NOTE: init through a LOCAL generator so the global RNG stream is
+        # not disturbed. Without this, downstream subclass parameters
+        # (e.g. CopyAugmentedDeltaNet.copy_gate / copy_q_proj / copy_k_proj
+        # constructed after super().__init__() returns) would get different
+        # seeded values vs the use_z_init=False case — which would break
+        # n_iters=1 bit-equivalence tests where the flag is meant to be
+        # invisible to forward.
+        if getattr(config, "use_z_init", False):
+            self.z_init = nn.Parameter(torch.zeros(config.d_model))
+            _gen = torch.Generator(device="cpu")
+            _gen.manual_seed(0x5A0B2D1F)  # arbitrary fixed seed for z_init
+            with torch.no_grad():
+                init_vals = torch.empty_like(self.z_init.data, device="cpu")
+                init_vals.normal_(mean=0.0, std=0.02, generator=_gen)
+                self.z_init.data.copy_(init_vals)
+        else:
+            self.z_init = None
+
+        # Slice 2: re-apply LeCun init AFTER subclass construction so the
+        # newly-added beta_head Linears (and any further subclass layers
+        # added via super().__init__() chains) get LeCun-normal too.
+        # Bias-preserving — beta_head.bias stays at 0 (from above) and
+        # subclass biases like copy_gate_bias_init remain intact.
+        if getattr(config, "use_lecun_init", False):
+            self._apply_lecun_init()
 
     @staticmethod
     def _delta_step(
@@ -355,7 +397,7 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         B, S = idx.shape
         cfg = self.config
         pos_idx = torch.arange(S, device=idx.device)
-        x = self.tok(idx) + self.pos(pos_idx)
+        x_embed = self.tok(idx) + self.pos(pos_idx)
 
         # D5 refinement loop: iterate the full layer stack n_iterations times
         # per forward pass, sharing weights across iterations. Each iteration
@@ -370,12 +412,28 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         use_input_injection = (
             bool(getattr(cfg, "use_input_injection", False)) and n_iters > 1
         )
-        input_residual = x if use_input_injection else None
+        # z_init swap: iter-0 hidden state is the learned z_init parameter
+        # (broadcast over (B, S)) instead of the embedding. Only fires when
+        # n_iters > 1 — preserves n=1 bit-equivalence baseline. When z_init
+        # IS active, iter-0 also needs the embedding via injection (the
+        # skip-iter-0 guard releases since x no longer "already is" embed).
+        use_z_init = (
+            bool(getattr(cfg, "use_z_init", False))
+            and self.z_init is not None
+            and n_iters > 1
+        )
+        input_residual = x_embed if use_input_injection else None
+        if use_z_init:
+            x = self.z_init.view(1, 1, cfg.d_model).expand(B, S, cfg.d_model)
+        else:
+            x = x_embed
         for iteration in range(n_iters):
-            if use_input_injection and iteration > 0:
-                # Skip iteration 0 — x already IS the input + position embedding.
-                # On iteration N>0, x has been transformed by prior layer stack
-                # passes; re-inject the original input to keep it anchored.
+            # Inject the embedding when:
+            #   (a) injection flag is on AND iteration > 0, OR
+            #   (b) injection flag is on AND z_init replaced x at iter 0 (need
+            #       to recover the embed signal because z_init alone has none).
+            inject_now = use_input_injection and (iteration > 0 or use_z_init)
+            if inject_now:
                 x = x + input_residual
             if use_loop_index:
                 loop_emb = self._loop_index_embedding(

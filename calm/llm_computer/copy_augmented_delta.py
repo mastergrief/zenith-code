@@ -72,6 +72,12 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
         self.copy_q_proj = nn.Linear(d, copy_dim, bias=False)
         self.copy_k_proj = nn.Linear(d, copy_dim, bias=False)
 
+        # Slice 2: re-apply LeCun init now that copy_gate / copy_q_proj /
+        # copy_k_proj exist. `_apply_lecun_init` is bias-preserving so
+        # `copy_gate.bias` (just set to copy_gate_bias_init above) stays.
+        if getattr(config, "use_lecun_init", False):
+            self._apply_lecun_init()
+
     def forward(self, idx: torch.Tensor) -> torch.Tensor:
         """idx: (B, S). Returns log-probs (B, S, vocab)."""
         B, S = idx.shape
@@ -363,6 +369,8 @@ def build_copy_augmented_delta(
     use_loop_index: bool = False,
     use_input_injection: bool = False,
     use_gated_attention: bool = False,
+    use_z_init: bool = False,
+    use_lecun_init: bool = False,
 ) -> CopyAugmentedDeltaNet:
     """Build a CopyAugmentedDeltaNet mirroring PT's default sizing.
 
@@ -383,6 +391,8 @@ def build_copy_augmented_delta(
         use_loop_index=use_loop_index,
         use_input_injection=use_input_injection,
         use_gated_attention=use_gated_attention,
+        use_z_init=use_z_init,
+        use_lecun_init=use_lecun_init,
     )
     assert cfg.d_head == 2, f"d_head must be 2, got {cfg.d_head}"
     return CopyAugmentedDeltaNet(cfg)

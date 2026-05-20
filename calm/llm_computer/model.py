@@ -33,6 +33,12 @@ class Small2DConfig:
     HRM-Text-derived flags (default off — bit-equivalence preserved):
       use_gated_attention: apply `sigmoid(gate) * attn_output` per Qwen3Next /
         HRM-Text 1B. Adds one Linear(d_model, d_model) per layer. Cheap.
+      use_lecun_init: re-initialize every nn.Linear weight in the module
+        tree with LeCun normal (std=sqrt(1/fan_in)). Per HRM-Text:
+        better matched to sigmoid/tanh-gated paths than PyTorch's default
+        kaiming_uniform(a=sqrt(5)) which assumes leaky-ReLU shape.
+        Bias channels are NOT touched (preserves init contracts like
+        CopyAugmentedDeltaNet's copy_gate_bias_init).
     """
     vocab_size: int = 32
     d_model: int = 8
@@ -42,6 +48,7 @@ class Small2DConfig:
     max_len: int = 256
     use_hard_max: bool = True
     use_gated_attention: bool = False
+    use_lecun_init: bool = False
 
     @property
     def d_head(self) -> int:
@@ -95,6 +102,24 @@ class Small2DTransformer(nn.Module):
             ])
         else:
             self.attn_gate_proj = None  # explicit; surfaces flag-state in repr
+
+        # LeCun-normal init: re-init every Linear weight if flag set.
+        # Subclasses that add their own Linear layers AFTER super().__init__()
+        # must invoke `self._apply_lecun_init()` again at the end of their
+        # __init__ if `config.use_lecun_init` is on.
+        if config.use_lecun_init:
+            self._apply_lecun_init()
+
+    def _apply_lecun_init(self) -> None:
+        """LeCun normal: weight ~ N(0, 1/fan_in). Touches nn.Linear weights
+        only — leaves biases alone so subclass init contracts (e.g.
+        CopyAugmentedDeltaNet's copy_gate_bias_init) stay intact.
+        """
+        for module in self.modules():
+            if isinstance(module, nn.Linear):
+                fan_in = module.weight.shape[1]
+                std = (1.0 / max(1, fan_in)) ** 0.5
+                nn.init.normal_(module.weight, mean=0.0, std=std)
 
     def _attention(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
                    hard_max: bool,

@@ -182,6 +182,8 @@ def train(
                         "use_loop_index": getattr(m.config, "use_loop_index", False),
                         "use_input_injection": getattr(m.config, "use_input_injection", False),
                         "use_gated_attention": getattr(m.config, "use_gated_attention", False),
+                        "use_z_init": getattr(m.config, "use_z_init", False),
+                        "use_lecun_init": getattr(m.config, "use_lecun_init", False),
                     },
                     "epoch": epoch,
                     "autoreg_acc": acc,
