@@ -73,10 +73,14 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
         self.copy_k_proj = nn.Linear(d, copy_dim, bias=False)
 
         # Slice 2: re-apply LeCun init now that copy_gate / copy_q_proj /
-        # copy_k_proj exist. `_apply_lecun_init` is bias-preserving so
-        # `copy_gate.bias` (just set to copy_gate_bias_init above) stays.
+        # copy_k_proj exist. Scoped via `_apply_lecun_init_to` per co_lead
+        # audit msg 1779305159197 — broad walker would re-init the H bank
+        # too when Slice 8 flag is on, scrambling RNG consumption.
+        # Bias-preserving — `copy_gate.bias` stays at copy_gate_bias_init.
         if getattr(config, "use_lecun_init", False):
-            self._apply_lecun_init()
+            self._apply_lecun_init_to([
+                self.copy_gate, self.copy_q_proj, self.copy_k_proj,
+            ])
 
     def forward(self, idx: torch.Tensor) -> torch.Tensor:
         """idx: (B, S). Returns log-probs (B, S, vocab)."""

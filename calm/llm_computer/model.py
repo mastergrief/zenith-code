@@ -130,6 +130,26 @@ class Small2DTransformer(nn.Module):
                 std = (1.0 / max(1, fan_in)) ** 0.5
                 nn.init.normal_(module.weight, mean=0.0, std=std)
 
+    def _apply_lecun_init_to(self, roots) -> None:
+        """Scoped LeCun normal: walk only the supplied module roots and
+        re-init the nn.Linear weights within them. Used by Slice 8+ when a
+        new weight bank is allocated AFTER an earlier broad `_apply_lecun_init`
+        — calling the broad version again would re-init the existing L bank
+        a second time with fresh RNG, silently breaking the n_iters=1/
+        h_cycles=1 bit-equivalence guard for the new flag.
+
+        `roots` may be a single nn.Module, a ModuleList, or any iterable
+        of Modules. Bias-preserving as always.
+        """
+        if isinstance(roots, nn.Module):
+            roots = [roots]
+        for root in roots:
+            for module in root.modules():
+                if isinstance(module, nn.Linear):
+                    fan_in = module.weight.shape[1]
+                    std = (1.0 / max(1, fan_in)) ** 0.5
+                    nn.init.normal_(module.weight, mean=0.0, std=std)
+
     def _compute_prefix_mask(self, idx: torch.Tensor) -> Optional[torch.Tensor]:
         """Hook: return (B, S) bool tensor where True marks prefix positions.
 

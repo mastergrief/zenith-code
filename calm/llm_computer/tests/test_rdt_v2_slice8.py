@@ -134,6 +134,47 @@ def test_h_stack_h_cycles_1_inert():
     assert torch.equal(a, b)
 
 
+def test_h_stack_h_cycles_1_inert_under_lecun_init():
+    """Co_lead audit msg 1779305159197: with both `use_h_layer_stack=True`
+    AND `use_lecun_init=True`, the h_cycles=1 inert invariant MUST hold.
+    A broad `_apply_lecun_init()` re-application would re-initialize the
+    L bank a second time with fresh RNG, silently scrambling its weights
+    vs flag-off. The scoped `_apply_lecun_init_to(h_roots)` fix is
+    falsifiable only via this test."""
+    torch.manual_seed(42)
+    m_off = build_copy_augmented_delta(
+        vocab_size=20, d_model=8, n_heads=4, n_layers=2, d_ffn=16,
+        max_len=24, n_copy_heads=2, sep_token_id=SEP_ID,
+        use_chunkwise=False, n_iterations=2, h_cycles=1,
+        use_h_layer_stack=False, use_lecun_init=True,
+    ).to(DEVICE)
+    torch.manual_seed(42)
+    m_on = build_copy_augmented_delta(
+        vocab_size=20, d_model=8, n_heads=4, n_layers=2, d_ffn=16,
+        max_len=24, n_copy_heads=2, sep_token_id=SEP_ID,
+        use_chunkwise=False, n_iterations=2, h_cycles=1,
+        use_h_layer_stack=True, use_lecun_init=True,
+    ).to(DEVICE)
+    m_off.eval(); m_on.eval()
+
+    # L bank weights MUST be identical between the two builds (scoped
+    # LeCun re-init only touches H bank, not L).
+    assert torch.equal(m_off.W_qkv[0].weight, m_on.W_qkv[0].weight), (
+        "L bank W_qkv diverged under use_lecun_init=True when "
+        "use_h_layer_stack flipped — scoped LeCun re-init regressed."
+    )
+    # copy_gate.bias must still be -2.0 (init contract preserved)
+    assert m_off.copy_gate.bias.item() == pytest.approx(-2.0)
+    assert m_on.copy_gate.bias.item() == pytest.approx(-2.0)
+
+    # Forward output identical at h_cycles=1 (H path never invoked)
+    idx = torch.tensor([[5, 7, SEP_ID, 9, 11, 13]], device=DEVICE)
+    with torch.no_grad():
+        a = m_off(idx)
+        b = m_on(idx)
+    assert torch.equal(a, b)
+
+
 def test_h_stack_off_h_cycles_2_unchanged_vs_slice4():
     """Flag off at h_cycles=2 should produce the Slice 4 hand-off behavior
     exactly (`z_H = z_L`, no H stack). Confirms we didn't perturb the

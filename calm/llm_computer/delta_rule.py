@@ -250,13 +250,15 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         else:
             self.z_init = None
 
-        # Slice 2: re-apply LeCun init AFTER subclass construction so the
-        # newly-added beta_head Linears (and any further subclass layers
-        # added via super().__init__() chains) get LeCun-normal too.
-        # Bias-preserving — beta_head.bias stays at 0 (from above) and
-        # subclass biases like copy_gate_bias_init remain intact.
+        # Slice 2: re-apply LeCun init to the newly-added beta_head Linears.
+        # Originally this called the broad `_apply_lecun_init()` walker but
+        # that's flag-state-dependent now (Slice 8 H bank changes the
+        # walked-Linear set). Switched to scoped `_apply_lecun_init_to`
+        # per co_lead audit msg 1779305159197 so RNG consumption at this
+        # point is identical regardless of `use_h_layer_stack`.
+        # Bias-preserving — beta_head.bias stays at 0 (from above).
         if getattr(config, "use_lecun_init", False):
-            self._apply_lecun_init()
+            self._apply_lecun_init_to(self.beta_head)
 
         # Slice 3: backprop-warmup runtime knob. When set to k < n_iters,
         # only the LAST k iterations of the D5 loop are differentiable;
@@ -389,15 +391,33 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         else:
             self._h_bank = None
 
-        # Slice 8: re-apply LeCun init AFTER H bank allocation so the H
-        # Linear weights ALSO get LeCun-normal when both flags are on.
-        # Slice 2's lecun-init pass earlier in DeltaNet.__init__ ran
-        # BEFORE the H bank existed, so H weights would have default init
-        # without this second pass. Bias-preserving as always (beta_head
-        # bias stays at 0; copy_gate.bias in CopyAugmentedDeltaNet stays
-        # at -2.0).
+        # Slice 8: re-apply LeCun init ONLY to H-bank Linear modules
+        # (scoped via `_apply_lecun_init_to`) so the L bank — which was
+        # already LeCun-init'd earlier in DeltaNet.__init__ — does NOT
+        # get re-initialized a second time with different RNG state.
+        # Without the scoped call (i.e. if we used the broad
+        # `_apply_lecun_init()` here), flag-on `use_h_layer_stack=True`
+        # would silently scramble the L bank weights vs flag-off at the
+        # same seed, breaking the n_iters=1 / h_cycles=1 bit-equivalence
+        # guard under `use_lecun_init=True`. Co_lead audit msg
+        # 1779305159197 caught this. Bias-preserving as always.
         if getattr(config, "use_lecun_init", False) and self._h_bank is not None:
-            self._apply_lecun_init()
+            h_roots = [
+                self.H_W_qkv, self.H_W_out, self.H_ff_in, self.H_ff_out,
+                self.H_beta_head,
+            ]
+            if self.H_attn_gate_proj is not None:
+                h_roots.append(self.H_attn_gate_proj)
+            # H_short_conv_q/k/v are Conv1d — `_apply_lecun_init_to` is
+            # nn.Linear-scoped only, so Conv1d weights stay at default
+            # init (consistent with how the L-side short_conv is treated).
+            # RNG isolation: same pattern as H allocation above. Without
+            # save/restore, this re-init consumes RNG and shifts every
+            # downstream subclass-constructed module's seeded values
+            # (Slice 2 falsifier extended to use_lecun_init=True).
+            _saved_rng2 = torch.get_rng_state()
+            self._apply_lecun_init_to(h_roots)
+            torch.set_rng_state(_saved_rng2)
 
     @staticmethod
     def _delta_step(
