@@ -139,6 +139,29 @@ def collate(batch, pad_id: int, max_len: int):
     return pad, loss_mask, sep_positions
 
 
+def _masked_shifted_nll(log_probs: torch.Tensor, ids: torch.Tensor,
+                        mask: torch.Tensor) -> torch.Tensor:
+    """Canonical trainer NLL: predict ids[:, 1:] from log_probs[:, :-1],
+    mask[:, :-1]. Returns scalar mean over target positions (mask=True).
+
+    Factored so the final-NLL path and each per-iter NLL path (deep
+    supervision) use identical shift + mask semantics. The mask MUST be
+    the target-position mask built by `collate` — prompt positions stay
+    at 0, so prompt-token predictions never contribute to the loss.
+    """
+    log_probs = log_probs[:, :-1].contiguous()
+    targets = ids[:, 1:].contiguous()
+    mask = mask[:, :-1].contiguous()
+    B, L, V = log_probs.shape
+    nll_per = F.nll_loss(
+        log_probs.reshape(B * L, V),
+        targets.reshape(B * L),
+        reduction="none",
+    ).reshape(B, L)
+    denom = mask.float().sum().clamp(min=1.0)
+    return (nll_per * mask.float()).sum() / denom
+
+
 def autoreg_decode_integer(model, tok: Gsm8kTokenizer, question: str,
                            max_new: int = 16, device: str = "cuda") -> str:
     """Greedy autoreg from `<bos> question <sep>` to first `<eos>`.
@@ -212,6 +235,10 @@ def train(
     use_halt_head: bool = False,
     use_carry: bool = False,
     chunk_size: int = 32,
+    # Deep-supervision aux loss (S0c-aux per codex audit `1779314708107`).
+    # 0.0 = final-NLL only (baseline, bit-equivalent to pre-S0c-aux path).
+    # >0 = enable per-iter NLL via `return_per_iter=True`.
+    aux_weight: float = 0.0,
 ) -> None:
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
@@ -295,20 +322,30 @@ def train(
         for ids, mask, _sep in loader:
             ids = ids.to(device)
             mask = mask.to(device)
-            log_probs = m(ids)
-            # Shift: predict ids[:, 1:] from log_probs[:, :-1].
-            log_probs = log_probs[:, :-1].contiguous()
-            targets = ids[:, 1:].contiguous()
-            mask = mask[:, :-1].contiguous()
-            # F.nll_loss expects log-probs flattened over class dim.
-            B, L, V = log_probs.shape
-            loss_per = F.nll_loss(
-                log_probs.reshape(B * L, V),
-                targets.reshape(B * L),
-                reduction="none",
-            ).reshape(B, L)
-            denom = mask.float().sum().clamp(min=1.0)
-            loss = (loss_per * mask.float()).sum() / denom
+            if aux_weight > 0.0:
+                # Deep supervision (S11 / S10b seam, per codex audit
+                # `1779314284912` / `1779314708107`): forward returns
+                # `(final_log_probs, per_iter_log_probs_list)`. Total loss
+                # = final_NLL + aux_weight * mean(per_iter_NLL).
+                #
+                # per_iter[-1] equals final at h_cycles>=1 (see
+                # test_rdt_v2_slice11.py:130-142), so the final term is
+                # deliberately double-weighted (1 + aux_weight/k) on the
+                # last cycle. Documented choice — keeps the mean simple
+                # and matches the Slice 11 deep-supervision tests at
+                # :164-200.
+                final_log_probs, per_iter_list = m(ids, return_per_iter=True)
+                final_nll = _masked_shifted_nll(final_log_probs, ids, mask)
+                per_iter_nlls = [
+                    _masked_shifted_nll(lp, ids, mask) for lp in per_iter_list
+                ]
+                aux_nll = sum(per_iter_nlls) / len(per_iter_nlls)
+                loss = final_nll + aux_weight * aux_nll
+            else:
+                # Final-NLL only (baseline, bit-equivalent to pre-S0c-aux
+                # path when called via _masked_shifted_nll on the same
+                # inputs).
+                loss = _masked_shifted_nll(m(ids), ids, mask)
             opt.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(m.parameters(), max_norm=1.0)
@@ -358,6 +395,16 @@ def train(
                         # GSM8k-specific metadata (locked S0b2 contract).
                         "gsm8k_char_vocab": tok.vocab_as_list(),
                         "gsm8k_normalizer_version": tok.normalizer_version,
+                        # Loss provenance (S0c-aux per codex audit `1779314708107`).
+                        # dt_install does not need these for architecture
+                        # reconstruction, but S1/S2 receipts must be
+                        # replayable: loss_mode names the recipe; aux_weight
+                        # pins the scalar.
+                        "aux_weight": float(aux_weight),
+                        "loss_mode": (
+                            "final_plus_per_iter_mean"
+                            if aux_weight > 0.0 else "final_only"
+                        ),
                     },
                     "epoch": ep,
                     "val_acc": acc,
@@ -406,6 +453,11 @@ if __name__ == "__main__":
     ap.add_argument("--use-halt-head", action="store_true")
     ap.add_argument("--use-carry", action="store_true")
     ap.add_argument("--chunk-size", type=int, default=32)
+    # S0c-aux: deep-supervision aux loss (per codex audit `1779314708107`).
+    ap.add_argument("--aux-weight", type=float, default=0.0,
+                    help="Weight on mean(per_iter_NLL) added to final_NLL. "
+                         "0.0 = final-only baseline (bit-equivalent). "
+                         ">0 enables `return_per_iter=True` deep supervision.")
     args = ap.parse_args()
     train(
         epochs=args.epochs,
@@ -437,4 +489,5 @@ if __name__ == "__main__":
         use_halt_head=args.use_halt_head,
         use_carry=args.use_carry,
         chunk_size=args.chunk_size,
+        aux_weight=args.aux_weight,
     )
