@@ -707,12 +707,22 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             emb = F.pad(emb, (0, d_model - emb.numel()))
         return emb[:d_model].to(dtype=dtype)
 
-    def _forward_backbone(self, idx: torch.Tensor) -> torch.Tensor:
+    def _forward_backbone(self, idx: torch.Tensor,
+                          return_per_iter: bool = False):
         """Run the DeltaNet backbone; return pre-head hidden states x (B, S, D).
 
         Factored out so subclasses (e.g. CopyAugmentedDeltaNet) can use the
         DeltaNet recurrence without the final vocab projection. Has the same
         use_delta_net=False fallback as forward().
+
+        Slice 11 deep supervision: when `return_per_iter=True`, returns a
+        tuple `(final_x, per_iter_x_list)` where `per_iter_x_list` is a
+        list of length `h_cycles` containing the z_H residual at the END
+        of each H cycle (i.e. AFTER the optional H stack and RMSNorm,
+        which is the same residual that feeds the next H cycle as z_L
+        and ultimately the head). When `return_per_iter=False` (default),
+        returns just `final_x` — backward-compat preserved for every
+        prior slice's call sites.
         """
         if not getattr(self.config, "use_delta_net", True):
             # Vanilla path — replicate Small2DTransformer.forward minus the head
@@ -737,6 +747,10 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
                 x = x + self.W_out[layer](attn)
                 gate, val = self.ff_in[layer](x).chunk(2, dim=-1)
                 x = x + self.ff_out[layer](F.relu(gate) * val)
+            if return_per_iter:
+                # Vanilla path has no H cycles → per-iter list contains
+                # just the final hidden state for shape consistency.
+                return x, [x]
             return x
 
         B, S = idx.shape
@@ -857,7 +871,11 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             # No residual add; preserves Slice 1-3 behavior exactly. At
             # h_cycles=1, per_h_detach_until[0] equals the Slice 3 'l'-grain
             # value AND the Slice 7 'global'-grain value (the two collapse).
-            return _run_l_loop(x, per_h_detach_until[0])
+            x_final = _run_l_loop(x, per_h_detach_until[0])
+            if return_per_iter:
+                # Single H cycle → per-iter list contains just the final.
+                return x_final, [x_final]
+            return x_final
 
         # H/L hierarchy: z_H carries across H cycles; each H cycle resets
         # z_L from z_H and runs n_iters L iters; H hands off L's converged
@@ -881,6 +899,10 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             bool(getattr(cfg, "use_h_layer_stack", False))
             and self._h_bank is not None
         )
+        # Slice 11: collect z_H at the end of each H cycle when deep
+        # supervision is requested. Empty list when off → zero overhead.
+        per_iter_outputs: list = [] if return_per_iter else None
+
         z_H = x
         for h_step in range(h_cycles):
             z_L = z_H
@@ -904,6 +926,10 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             else:
                 z_H_raw = z_L
             z_H = self.h_norm(z_H_raw) if use_h_norm else z_H_raw
+            if per_iter_outputs is not None:
+                per_iter_outputs.append(z_H)
+        if return_per_iter:
+            return z_H, per_iter_outputs
         return z_H
 
     def _delta_layer_stack(self, x: torch.Tensor, cfg, B: int, S: int,

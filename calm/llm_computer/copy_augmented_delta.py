@@ -82,25 +82,33 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
                 self.copy_gate, self.copy_q_proj, self.copy_k_proj,
             ])
 
-    def forward(self, idx: torch.Tensor) -> torch.Tensor:
-        """idx: (B, S). Returns log-probs (B, S, vocab)."""
+    def _compute_log_probs(self, x: torch.Tensor, idx: torch.Tensor,
+                           expose_diagnostics: bool = True) -> torch.Tensor:
+        """Slice 11: factored out of forward so deep supervision can call
+        it for both the final z_H AND each intermediate per-iter z_H.
+
+        `x`: (B, S, D) pre-head residual (from `_forward_backbone`).
+        `idx`: (B, S) original token ids (for the copy mechanism's source).
+        `expose_diagnostics`: when True (default for the final pass),
+        sets `self.last_p_copy / _last_copy_logits_grad / _last_copy_attn_grad`
+        instance attrs for downstream diagnostic readers. When False
+        (intermediate per-iter passes), skips those exposures so the
+        final pass's diagnostics aren't overwritten by per-iter values.
+        Returns log-probs (B, S, vocab).
+        """
         B, S = idx.shape
         cfg = self.config
 
-        # DeltaNet backbone produces per-position hidden states.
-        x = self._forward_backbone(idx)
-
-        # Generation distribution.
         gen_logits = self.head(x)
 
-        # Copy mechanism (identical to CopyAugmentedTransformer).
         sep_id = self.copy_config.sep_token_id
         prefix_mask = self._build_prefix_mask(idx, sep_id)
 
         p_copy = torch.sigmoid(self.copy_gate(x))
-        # Expose for diagnostics (eval_dt_checkpoint reads this to compute
-        # avg copy-gate usage — 0 = pure generation, 1 = pure copy).
-        self.last_p_copy = p_copy.detach()
+        if expose_diagnostics:
+            # Expose for diagnostics (eval_dt_checkpoint reads this to
+            # compute avg copy-gate usage — 0 = pure generation, 1 = pure copy).
+            self.last_p_copy = p_copy.detach()
 
         n_ch = self.copy_config.n_copy_heads
         dh = cfg.d_head
@@ -126,15 +134,59 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
         gen_probs = F.softmax(gen_logits, dim=-1)
         blended = p_copy * copy_logits + (1 - p_copy) * gen_probs
 
-        # Expose copy-path probability distribution for auxiliary loss
-        # (R26). NOT detached — caller may backprop through it.
-        self._last_copy_logits_grad = copy_logits
-        # v17: expose copy_attn (B, S_target, S_source) for pointer
-        # supervision loss that trains WHICH source position to attend
-        # to, not just which output char to emit.
-        self._last_copy_attn_grad = copy_attn
+        if expose_diagnostics:
+            # Expose copy-path probability distribution for auxiliary loss
+            # (R26). NOT detached — caller may backprop through it.
+            self._last_copy_logits_grad = copy_logits
+            # v17: expose copy_attn (B, S_target, S_source) for pointer
+            # supervision loss that trains WHICH source position to attend
+            # to, not just which output char to emit.
+            self._last_copy_attn_grad = copy_attn
 
         return torch.log(blended + 1e-10)
+
+    def forward(self, idx: torch.Tensor,
+                return_per_iter: bool = False):
+        """idx: (B, S). Returns log-probs (B, S, vocab).
+
+        Slice 11 deep supervision: when `return_per_iter=True`, returns
+        `(final_log_probs, per_iter_log_probs)` where `per_iter_log_probs`
+        is a list of length `h_cycles` (or 1 in the flat / h_cycles=1
+        path) — each element is log-probs (B, S, vocab) computed by
+        passing the corresponding per-H-cycle z_H through the head +
+        copy mechanism. Trainer can sum/average loss across iters for
+        deep-supervision-style training (HRM-Text-style).
+
+        Default `return_per_iter=False` → returns just `final_log_probs`,
+        bit-equivalent to every prior slice's call site.
+        """
+        # DeltaNet backbone produces per-position hidden states.
+        # When deep supervision is requested, also collect per-iter
+        # intermediates (a list of z_H states from each H cycle).
+        if return_per_iter:
+            x, per_iter_x = self._forward_backbone(idx, return_per_iter=True)
+        else:
+            x = self._forward_backbone(idx)
+            per_iter_x = None
+
+        # Final log-probs (with diagnostics exposed).
+        final_log_probs = self._compute_log_probs(x, idx, expose_diagnostics=True)
+
+        if not return_per_iter:
+            return final_log_probs
+
+        # Slice 11: per-iter log-probs. The LAST per-iter entry would
+        # otherwise duplicate the final computation; we still pass it
+        # through `_compute_log_probs` (with diagnostics SUPPRESSED so
+        # we don't overwrite the final exposures). Trainer iterates and
+        # computes per-iter loss; the final entry's loss naturally
+        # equals the loss the non-supervised path would compute on
+        # `final_log_probs`.
+        per_iter_log_probs = [
+            self._compute_log_probs(z_x, idx, expose_diagnostics=False)
+            for z_x in per_iter_x
+        ]
+        return final_log_probs, per_iter_log_probs
 
     def decode_greedy_cached(
         self,
