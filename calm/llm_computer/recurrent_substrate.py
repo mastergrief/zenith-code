@@ -94,9 +94,12 @@ class RecurrentSmall2DTransformer(Small2DTransformer):
             nn.init.normal_(self.z_init, mean=0.0, std=0.02)
         else:
             self.z_init = None
+        # Slice 3 bp-warmup runtime attr (see DeltaNetSmall2DTransformer
+        # for the same pattern). Toggle via `forward(..., bp_warmup_active_iters=k)`.
 
     def forward(self, idx: torch.Tensor,
-                n_iterations: int | None = None) -> torch.Tensor:
+                n_iterations: int | None = None,
+                bp_warmup_active_iters: int | None = None) -> torch.Tensor:
         cfg: RecurrentConfig = self.config  # type: ignore[assignment]
         n = n_iterations if n_iterations is not None else cfg.default_iterations
         n = max(1, min(n, cfg.max_iterations))
@@ -125,25 +128,50 @@ class RecurrentSmall2DTransformer(Small2DTransformer):
         else:
             x = x_embed
 
-        for _iteration in range(n):
-            if input_residual is not None:
-                # Re-inject input residual before the layer pass. This is the
-                # `core(hidden_states + input_injection)` pattern that keeps
-                # the original input anchored across recurrent iterations.
-                x = x + input_residual
+        # Slice 3 prefix_lm: computed once. Inert on base Small2DTransformer
+        # hook (returns None); subclasses (e.g. wrapping recurrent over a
+        # sep-aware idx) can override.
+        prefix_mask = (
+            self._compute_prefix_mask(idx)
+            if getattr(cfg, "use_prefix_lm", False)
+            else None
+        )
+        # Slice 3 bp_warmup: only the last `bp_warmup_active_iters` iters are
+        # differentiable. None = full grad (default).
+        if bp_warmup_active_iters is None or bp_warmup_active_iters >= n:
+            detach_until = 0
+        else:
+            detach_until = n - max(1, bp_warmup_active_iters)
+
+        def _one_iter(x_in: torch.Tensor) -> torch.Tensor:
             for layer in range(cfg.n_layers):
-                qkv = self.W_qkv[layer](x)
+                qkv = self.W_qkv[layer](x_in)
                 qkv = qkv.reshape(B, S, 3, cfg.n_heads, cfg.d_head)
                 q, k, v = qkv.permute(2, 0, 3, 1, 4)
                 # Honor parent's gated-attention flag when set.
                 gate = None
                 if self.attn_gate_proj is not None:
-                    gate = self.attn_gate_proj[layer](x)
+                    gate = self.attn_gate_proj[layer](x_in)
                     gate = gate.reshape(B, S, cfg.n_heads, cfg.d_head).transpose(1, 2)
-                attn = self._attention(q, k, v, hard_max=cfg.use_hard_max, gate=gate)
+                attn = self._attention(
+                    q, k, v, hard_max=cfg.use_hard_max,
+                    gate=gate, prefix_mask=prefix_mask,
+                )
                 attn = attn.transpose(1, 2).reshape(B, S, cfg.d_model)
-                x = x + self.W_out[layer](attn)
-                gate, val = self.ff_in[layer](x).chunk(2, dim=-1)
-                x = x + self.ff_out[layer](F.relu(gate) * val)
+                x_in = x_in + self.W_out[layer](attn)
+                gate, val = self.ff_in[layer](x_in).chunk(2, dim=-1)
+                x_in = x_in + self.ff_out[layer](F.relu(gate) * val)
+            return x_in
+
+        for iteration in range(n):
+            if input_residual is not None:
+                # Re-inject input residual before the layer pass.
+                x = x + input_residual
+            if iteration < detach_until:
+                with torch.no_grad():
+                    x = _one_iter(x)
+                x = x.detach()
+            else:
+                x = _one_iter(x)
 
         return self.head(x)

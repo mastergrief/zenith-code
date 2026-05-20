@@ -39,6 +39,14 @@ class Small2DConfig:
         kaiming_uniform(a=sqrt(5)) which assumes leaky-ReLU shape.
         Bias channels are NOT touched (preserves init contracts like
         CopyAugmentedDeltaNet's copy_gate_bias_init).
+      use_prefix_lm: relax causal mask within the prompt prefix per HRM-Text
+        `prefix_lm=true`. Tokens at positions [0, prefix_end) attend
+        bidirectionally to each other; tokens at or after prefix_end stay
+        causal w.r.t. everything. Requires a subclass-specific way to
+        identify the prefix — base Small2DTransformer returns None from
+        `_compute_prefix_mask(idx)`, so the flag is inert here.
+        CopyAugmentedDeltaNet overrides the hook to derive the prefix
+        from sep_token_id.
     """
     vocab_size: int = 32
     d_model: int = 8
@@ -49,6 +57,7 @@ class Small2DConfig:
     use_hard_max: bool = True
     use_gated_attention: bool = False
     use_lecun_init: bool = False
+    use_prefix_lm: bool = False
 
     @property
     def d_head(self) -> int:
@@ -121,21 +130,50 @@ class Small2DTransformer(nn.Module):
                 std = (1.0 / max(1, fan_in)) ** 0.5
                 nn.init.normal_(module.weight, mean=0.0, std=std)
 
+    def _compute_prefix_mask(self, idx: torch.Tensor) -> Optional[torch.Tensor]:
+        """Hook: return (B, S) bool tensor where True marks prefix positions.
+
+        Subclasses with a sep/marker concept (e.g. CopyAugmentedDeltaNet)
+        override to derive the prefix from idx tokens. Base
+        Small2DTransformer has no notion of prefix, returns None — which
+        makes the use_prefix_lm flag a no-op at this level.
+        """
+        return None
+
     def _attention(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
                    hard_max: bool,
-                   gate: Optional[torch.Tensor] = None) -> torch.Tensor:
+                   gate: Optional[torch.Tensor] = None,
+                   prefix_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         """Causal multi-head attention. q,k,v: (B, H, S, D_head).
 
         If `gate` is supplied (B, H, S, D_head), applies
         `sigmoid(gate) * out` before returning — HRM-Text-style gating.
-        When gate=None (default), behavior is identical to original.
+        If `prefix_mask` is supplied (B, S) bool, queries within the prefix
+        attend BIDIRECTIONALLY to keys within the prefix (causal mask is
+        relaxed for the (prefix × prefix) block). Tokens at or after the
+        prefix stay causal.
+        When both gate=None and prefix_mask=None, behavior is identical
+        to original causal softmax/argmax attention.
         """
         B, H, S, Dh = q.shape
         scores = torch.einsum("bhid,bhjd->bhij", q, k)  # (B, H, S, S)
         # Causal mask: position i can only see j <= i.
-        mask = torch.triu(
+        causal = torch.triu(
             torch.ones(S, S, dtype=torch.bool, device=q.device), diagonal=1
         )
+        if prefix_mask is not None:
+            # prefix_mask: (B, S) — True where position is in the prefix block.
+            # Build (B, S, S) "both endpoints in prefix" block; allow attention
+            # there even when causal would have masked it.
+            assert prefix_mask.shape == (B, S), (
+                f"prefix_mask shape {tuple(prefix_mask.shape)} must be (B, S)=({B},{S})"
+            )
+            prefix_pair = prefix_mask.unsqueeze(2) & prefix_mask.unsqueeze(1)  # (B, S, S)
+            # Final mask: causal AND NOT (both endpoints in prefix).
+            mask = causal.unsqueeze(0) & ~prefix_pair  # (B, S, S)
+            mask = mask.unsqueeze(1)  # (B, 1, S, S) — broadcast on head dim
+        else:
+            mask = causal
         scores = scores.masked_fill(mask, float("-inf"))
         if hard_max:
             # Replace softmax with one-hot over argmax. Tie-breaks: first match.
@@ -155,6 +193,11 @@ class Small2DTransformer(nn.Module):
         cfg = self.config
         pos_idx = torch.arange(S, device=idx.device)
         x = self.tok(idx) + self.pos(pos_idx)
+        # Compute prefix mask once per forward (used by every layer's attention
+        # when use_prefix_lm is set AND a subclass populates _compute_prefix_mask).
+        prefix_mask = (
+            self._compute_prefix_mask(idx) if cfg.use_prefix_lm else None
+        )
         for layer in range(cfg.n_layers):
             qkv = self.W_qkv[layer](x)  # (B, S, 3*D)
             qkv = qkv.reshape(B, S, 3, cfg.n_heads, cfg.d_head)
@@ -164,7 +207,10 @@ class Small2DTransformer(nn.Module):
             if self.attn_gate_proj is not None:
                 gate = self.attn_gate_proj[layer](x)  # (B, S, D)
                 gate = gate.reshape(B, S, cfg.n_heads, cfg.d_head).transpose(1, 2)  # (B, H, S, Dh)
-            attn = self._attention(q, k, v, hard_max=cfg.use_hard_max, gate=gate)
+            attn = self._attention(
+                q, k, v, hard_max=cfg.use_hard_max, gate=gate,
+                prefix_mask=prefix_mask,
+            )
             attn = attn.transpose(1, 2).reshape(B, S, cfg.d_model)  # (B, S, D)
             x = x + self.W_out[layer](attn)
             gate, val = self.ff_in[layer](x).chunk(2, dim=-1)

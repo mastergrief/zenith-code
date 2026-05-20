@@ -148,20 +148,28 @@ class MixedGeometrySmall2DTransformer(Small2DTransformer):
 
     def _attention(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
                    hard_max: bool, geometry: str = "euclidean",
-                   gate: torch.Tensor | None = None) -> torch.Tensor:
+                   gate: torch.Tensor | None = None,
+                   prefix_mask: torch.Tensor | None = None) -> torch.Tensor:
         """Causal attention with configurable geometry.
 
         `gate` mirrors parent Small2DTransformer._attention: when supplied
         (B, H, S, D_head), applies sigmoid(gate) * out before returning.
-        Accepted here so parent.forward() can pass it through transparently
-        even though mixed_geometry's forward override never sets it.
+        `prefix_mask` (B, S) bool relaxes causal mask for queries+keys
+        BOTH in the prefix block (HRM-Text prefix_lm). Both kwargs accepted
+        here so parent.forward() can pipe them through transparently
+        even though mixed_geometry's forward override never sets them.
         """
         B, H, S, Dh = q.shape
         score_fn = GEOMETRY_DISPATCH[geometry]
         scores = score_fn(q, k)
-        mask = torch.triu(
+        causal = torch.triu(
             torch.ones(S, S, dtype=torch.bool, device=q.device), diagonal=1
         )
+        if prefix_mask is not None:
+            prefix_pair = prefix_mask.unsqueeze(2) & prefix_mask.unsqueeze(1)
+            mask = (causal.unsqueeze(0) & ~prefix_pair).unsqueeze(1)
+        else:
+            mask = causal
         scores = scores.masked_fill(mask, float("-inf"))
         if hard_max:
             idx = scores.argmax(dim=-1, keepdim=True)

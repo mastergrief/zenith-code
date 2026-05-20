@@ -355,6 +355,16 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
         positions = torch.arange(S, device=idx.device).unsqueeze(0)
         return positions < sep_pos.unsqueeze(1)
 
+    def _compute_prefix_mask(self, idx: torch.Tensor) -> torch.Tensor:
+        """Override Small2DTransformer hook to expose the prefix block via the
+        existing sep-token-id mechanism. Returned mask is (B, S) bool — True
+        at positions before the first sep, i.e. the prompt/copyable region.
+
+        Only consulted by `_attention` when `config.use_prefix_lm` is True;
+        otherwise this hook is never called.
+        """
+        return self._build_prefix_mask(idx, self.copy_config.sep_token_id)
+
 
 def build_copy_augmented_delta(
     vocab_size: int = 80, d_model: int = 64, n_heads: int = 32,
@@ -371,6 +381,7 @@ def build_copy_augmented_delta(
     use_gated_attention: bool = False,
     use_z_init: bool = False,
     use_lecun_init: bool = False,
+    use_prefix_lm: bool = False,
 ) -> CopyAugmentedDeltaNet:
     """Build a CopyAugmentedDeltaNet mirroring PT's default sizing.
 
@@ -393,6 +404,7 @@ def build_copy_augmented_delta(
         use_gated_attention=use_gated_attention,
         use_z_init=use_z_init,
         use_lecun_init=use_lecun_init,
+        use_prefix_lm=use_prefix_lm,
     )
     assert cfg.d_head == 2, f"d_head must be 2, got {cfg.d_head}"
     return CopyAugmentedDeltaNet(cfg)

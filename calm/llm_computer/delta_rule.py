@@ -94,6 +94,9 @@ class DeltaNetConfig(Small2DConfig):
     # output) before adding to residual. On softmax path it gates attn_output.
     # use_lecun_init inherits from Small2DConfig. Re-init applies to all
     # Linear weights AFTER subclass construction adds beta_head / copy_* layers.
+    # use_prefix_lm inherits from Small2DConfig. On DT path (delta-only), it's
+    # inert — DeltaNet recurrence has no explicit attention mask. On softmax
+    # path (use_softmax_attn=True) it relaxes causal mask within the prefix.
 
 
 class DeltaNetSmall2DTransformer(Small2DTransformer):
@@ -147,6 +150,15 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         # subclass biases like copy_gate_bias_init remain intact.
         if getattr(config, "use_lecun_init", False):
             self._apply_lecun_init()
+
+        # Slice 3: backprop-warmup runtime knob. When set to k < n_iters,
+        # only the LAST k iterations of the D5 loop are differentiable;
+        # earlier iters run under torch.no_grad() and their output enters
+        # the gradient-tracked region as a detached tensor. None = full
+        # gradient flow (default — backward unchanged). Set via the
+        # context manager `model.bp_warmup_ctx(k)`. NOT persisted to
+        # checkpoints — it's a training-step-dependent runtime concern.
+        self._bp_warmup_active_iters: int | None = None
 
     @staticmethod
     def _delta_step(
@@ -350,6 +362,30 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         reads = torch.cat(reads_chunks, dim=2)                       # (B, H, L, D_h)
         return S, reads
 
+    def bp_warmup_ctx(self, active_iters: int | None):
+        """Context manager that sets `_bp_warmup_active_iters` for the scope
+        and restores it on exit. Use during training to ramp the number of
+        differentiable D5 iterations:
+
+            with model.bp_warmup_ctx(k):
+                out = model(idx)
+                loss = ...
+                loss.backward()
+        """
+        outer = self
+
+        class _Ctx:
+            def __enter__(self_inner):
+                self_inner._saved = outer._bp_warmup_active_iters
+                outer._bp_warmup_active_iters = active_iters
+                return outer
+
+            def __exit__(self_inner, exc_type, exc_val, exc_tb):
+                outer._bp_warmup_active_iters = self_inner._saved
+                return False
+
+        return _Ctx()
+
     @staticmethod
     def _loop_index_embedding(
         iteration: int,
@@ -383,11 +419,19 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             cfg = self.config
             pos_idx = torch.arange(S, device=idx.device)
             x = self.tok(idx) + self.pos(pos_idx)
+            prefix_mask_v = (
+                self._compute_prefix_mask(idx)
+                if getattr(cfg, "use_prefix_lm", False)
+                else None
+            )
             for layer in range(cfg.n_layers):
                 qkv = self.W_qkv[layer](x)
                 qkv = qkv.reshape(B, S, 3, cfg.n_heads, cfg.d_head)
                 q, k, v = qkv.permute(2, 0, 3, 1, 4)
-                attn = self._attention(q, k, v, hard_max=cfg.use_hard_max)
+                attn = self._attention(
+                    q, k, v, hard_max=cfg.use_hard_max,
+                    prefix_mask=prefix_mask_v,
+                )
                 attn = attn.transpose(1, 2).reshape(B, S, cfg.d_model)
                 x = x + self.W_out[layer](attn)
                 gate, val = self.ff_in[layer](x).chunk(2, dim=-1)
@@ -422,6 +466,22 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             and self.z_init is not None
             and n_iters > 1
         )
+        # Slice 3: prefix_lm mask. Inert on delta-only DT path (no softmax
+        # attention to mask); _delta_layer_stack only consults it when
+        # cfg.use_softmax_attn is True. Computed once per forward.
+        prefix_mask = (
+            self._compute_prefix_mask(idx)
+            if getattr(cfg, "use_prefix_lm", False)
+            else None
+        )
+        # Slice 3: bp warmup. Default None = full gradient flow.
+        bp_active = self._bp_warmup_active_iters
+        if bp_active is None or bp_active >= n_iters:
+            detach_until = 0  # All iters differentiable.
+        else:
+            bp_active = max(1, bp_active)
+            detach_until = n_iters - bp_active  # iters [0, detach_until) are no_grad
+
         input_residual = x_embed if use_input_injection else None
         if use_z_init:
             x = self.z_init.view(1, 1, cfg.d_model).expand(B, S, cfg.d_model)
@@ -440,18 +500,35 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
                     iteration, cfg.d_model, device=x.device, dtype=x.dtype,
                 )
                 x = x + loop_emb.view(1, 1, cfg.d_model)
-            x = self._delta_layer_stack(x, cfg, B, S)
+            # bp warmup: run early iters without gradient tracking, then
+            # detach so the gradient-tracked region starts cleanly with x
+            # as a leaf tensor (no grad_fn). Last `bp_active` iters
+            # contribute to dL/dW.
+            if iteration < detach_until:
+                with torch.no_grad():
+                    x = self._delta_layer_stack(x, cfg, B, S, prefix_mask=prefix_mask)
+                x = x.detach()
+            else:
+                x = self._delta_layer_stack(x, cfg, B, S, prefix_mask=prefix_mask)
         return x
 
-    def _delta_layer_stack(self, x: torch.Tensor, cfg, B: int, S: int) -> torch.Tensor:
-        """One pass through all layers. Extracted for D5 refinement-loop reuse."""
+    def _delta_layer_stack(self, x: torch.Tensor, cfg, B: int, S: int,
+                           prefix_mask: torch.Tensor | None = None) -> torch.Tensor:
+        """One pass through all layers. Extracted for D5 refinement-loop reuse.
+
+        `prefix_mask` is forwarded to the softmax-attention call when
+        `cfg.use_softmax_attn=True`. On delta-only DT path it has no effect.
+        """
         for layer in range(cfg.n_layers):
             qkv = self.W_qkv[layer](x)                         # (B, S, 3D)
             qkv = qkv.reshape(B, S, 3, cfg.n_heads, cfg.d_head)
             q, k, v = qkv.permute(2, 0, 3, 1, 4)               # 3 × (B, H, S, Dh)
 
             if cfg.use_softmax_attn:
-                attn = self._attention(q, k, v, hard_max=cfg.use_hard_max)
+                attn = self._attention(
+                    q, k, v, hard_max=cfg.use_hard_max,
+                    prefix_mask=prefix_mask,
+                )
                 attn = attn.transpose(1, 2).reshape(B, S, cfg.d_model)
             else:
                 attn = None

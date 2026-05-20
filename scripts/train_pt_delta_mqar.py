@@ -184,6 +184,7 @@ def train(
                         "use_gated_attention": getattr(m.config, "use_gated_attention", False),
                         "use_z_init": getattr(m.config, "use_z_init", False),
                         "use_lecun_init": getattr(m.config, "use_lecun_init", False),
+                        "use_prefix_lm": getattr(m.config, "use_prefix_lm", False),
                     },
                     "epoch": epoch,
                     "autoreg_acc": acc,

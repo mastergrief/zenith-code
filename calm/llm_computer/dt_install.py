@@ -70,6 +70,7 @@ def load_dt_checkpoint(
         use_gated_attention=cfg.get("use_gated_attention", False),
         use_z_init=cfg.get("use_z_init", False),
         use_lecun_init=cfg.get("use_lecun_init", False),
+        use_prefix_lm=cfg.get("use_prefix_lm", False),
     ).to(device)
     model.load_state_dict(ckpt["model_state"])
     model.eval()
