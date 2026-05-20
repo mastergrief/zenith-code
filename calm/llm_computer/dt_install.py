@@ -51,6 +51,9 @@ def load_dt_checkpoint(
 
     ckpt = torch.load(path, map_location=device, weights_only=False)
     cfg = ckpt["config"]
+    # HRM-Text-derived flags: defaults preserve backward-compat for old
+    # checkpoints (which don't include these keys). New checkpoints saved
+    # via the training scripts MUST include them so the architecture round-trips.
     model = build_copy_augmented_delta(
         vocab_size=cfg["vocab_size"],
         max_len=cfg["max_len"],
@@ -60,9 +63,12 @@ def load_dt_checkpoint(
         d_ffn=cfg["d_ffn"],
         n_copy_heads=cfg["n_copy_heads"],
         copy_gate_bias_init=cfg.get("copy_gate_bias_init", -2.0),
+        use_chunkwise=cfg.get("use_chunkwise", False),
+        n_iterations=cfg.get("n_iterations", 1),
+        use_loop_index=cfg.get("use_loop_index", False),
+        use_input_injection=cfg.get("use_input_injection", False),
+        use_gated_attention=cfg.get("use_gated_attention", False),
     ).to(device)
-    if cfg.get("use_chunkwise") and hasattr(model.config, "use_chunkwise"):
-        model.config.use_chunkwise = True
     model.load_state_dict(ckpt["model_state"])
     model.eval()
     return model, ckpt

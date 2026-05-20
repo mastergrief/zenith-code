@@ -74,6 +74,15 @@ class DeltaNetConfig(Small2DConfig):
     n_iterations: int = 1           # D5 refinement loop — iterate layer stack N times
                                      # per forward pass (ARC-Prize finding: +13pp from 0→1)
     use_loop_index: bool = False    # Add deterministic per-iteration embedding in D5 loop
+    # HRM-Text-derived (default off → bit-equivalence preserved):
+    use_input_injection: bool = False  # Re-add the initial input residual at every
+                                       # D5 iteration boundary (per Sapient HRM-Text
+                                       # `core(hidden_states + input_injection)`). Skip
+                                       # injection on iteration 0 — x already IS input.
+                                       # Only meaningful when n_iterations > 1.
+    # use_gated_attention inherits from Small2DConfig. On DT path
+    # (use_softmax_attn=False) the gate is applied to delta_out (sequence-mixer
+    # output) before adding to residual. On softmax path it gates attn_output.
 
 
 class DeltaNetSmall2DTransformer(Small2DTransformer):
@@ -355,7 +364,19 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         # (the outer loop runs once and the inner body is bit-identical).
         n_iters = max(1, getattr(cfg, "n_iterations", 1))
         use_loop_index = bool(getattr(cfg, "use_loop_index", False)) and n_iters > 1
+        # HRM-Text-derived input injection: re-anchor the original input at every
+        # iteration boundary so deep recurrence doesn't dilute the input signal.
+        # Only meaningful when n_iters > 1 (otherwise injection is a no-op).
+        use_input_injection = (
+            bool(getattr(cfg, "use_input_injection", False)) and n_iters > 1
+        )
+        input_residual = x if use_input_injection else None
         for iteration in range(n_iters):
+            if use_input_injection and iteration > 0:
+                # Skip iteration 0 — x already IS the input + position embedding.
+                # On iteration N>0, x has been transformed by prior layer stack
+                # passes; re-inject the original input to keep it anchored.
+                x = x + input_residual
             if use_loop_index:
                 loop_emb = self._loop_index_embedding(
                     iteration, cfg.d_model, device=x.device, dtype=x.dtype,
@@ -446,10 +467,22 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
                     reads.append(out_t)
                 delta_out = torch.stack(reads, dim=1)          # (B, S, D)
 
-            if attn is not None:
-                x = x + self.W_out[layer](attn) + self.W_out[layer](delta_out)
+            # HRM-Text-derived gated sequence-mixer output. On DT canonical
+            # path (use_softmax_attn=False, attn=None) the gate is applied to
+            # delta_out before W_out. On softmax+DT (use_softmax_attn=True),
+            # the softmax attn output is already gated inside _attention via
+            # Small2DTransformer's parent path; we still apply the delta gate
+            # here so both mixers get gated.
+            if self.attn_gate_proj is not None:
+                delta_gate = torch.sigmoid(self.attn_gate_proj[layer](x))  # (B, S, D)
+                gated_delta = delta_gate * delta_out
             else:
-                x = x + self.W_out[layer](delta_out)
+                gated_delta = delta_out
+
+            if attn is not None:
+                x = x + self.W_out[layer](attn) + self.W_out[layer](gated_delta)
+            else:
+                x = x + self.W_out[layer](gated_delta)
             gate, val = self.ff_in[layer](x).chunk(2, dim=-1)
             x = x + self.ff_out[layer](F.relu(gate) * val)
 

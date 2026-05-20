@@ -203,6 +203,14 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
                     reads.append(out_t)
                 delta_out = torch.stack(reads, dim=1)
 
+            # Mirror _delta_layer_stack's gated sequence-mixer output for
+            # parity with non-cached forward. Without this, training-time
+            # forward (uses _delta_layer_stack with gate) and product-path
+            # cached decode (this code) silently diverge under use_gated_attention.
+            if self.attn_gate_proj is not None:
+                delta_gate = torch.sigmoid(self.attn_gate_proj[layer](x))  # (B, S, D)
+                delta_out = delta_gate * delta_out
+
             x = x + self.W_out[layer](delta_out)
             gate, val = self.ff_in[layer](x).chunk(2, dim=-1)
             x = x + self.ff_out[layer](F.relu(gate) * val)
@@ -271,6 +279,11 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
                 )
                 layer_states[layer] = S_new
                 delta_out_t = out_t.unsqueeze(1)  # (B, 1, D)
+
+                # Mirror gated sequence-mixer output for parity with non-cached path.
+                if self.attn_gate_proj is not None:
+                    delta_gate_t = torch.sigmoid(self.attn_gate_proj[layer](new_x))
+                    delta_out_t = delta_gate_t * delta_out_t
 
                 new_x = new_x + self.W_out[layer](delta_out_t)
                 gate, val = self.ff_in[layer](new_x).chunk(2, dim=-1)
@@ -344,8 +357,20 @@ def build_copy_augmented_delta(
     use_hard_max: bool = False,
     use_softmax_attn: bool = False,
     copy_gate_bias_init: float = -2.0,
+    # HRM-Text-derived flags (default off → existing checkpoints unaffected):
+    use_chunkwise: bool = False,
+    n_iterations: int = 1,
+    use_loop_index: bool = False,
+    use_input_injection: bool = False,
+    use_gated_attention: bool = False,
 ) -> CopyAugmentedDeltaNet:
-    """Build a CopyAugmentedDeltaNet mirroring PT's default sizing."""
+    """Build a CopyAugmentedDeltaNet mirroring PT's default sizing.
+
+    Optional HRM-Text-derived flags must be plumbed through here so that
+    `load_dt_checkpoint` can reconstruct a trained-with-flag model with the
+    correct architecture. Without this, a checkpoint with `use_gated_attention=True`
+    would silently load as default-off and fail param-shape checks.
+    """
     cfg = CopyAugmentedDeltaConfig(
         vocab_size=vocab_size, d_model=d_model, n_heads=n_heads,
         n_layers=n_layers, d_ffn=d_ffn, max_len=max_len,
@@ -353,6 +378,11 @@ def build_copy_augmented_delta(
         use_hard_max=use_hard_max,
         use_delta_net=True, use_softmax_attn=use_softmax_attn,
         copy_gate_bias_init=copy_gate_bias_init,
+        use_chunkwise=use_chunkwise,
+        n_iterations=n_iterations,
+        use_loop_index=use_loop_index,
+        use_input_injection=use_input_injection,
+        use_gated_attention=use_gated_attention,
     )
     assert cfg.d_head == 2, f"d_head must be 2, got {cfg.d_head}"
     return CopyAugmentedDeltaNet(cfg)

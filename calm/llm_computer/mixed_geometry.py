@@ -147,8 +147,15 @@ class MixedGeometrySmall2DTransformer(Small2DTransformer):
                 )
 
     def _attention(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
-                   hard_max: bool, geometry: str = "euclidean") -> torch.Tensor:
-        """Causal attention with configurable geometry."""
+                   hard_max: bool, geometry: str = "euclidean",
+                   gate: torch.Tensor | None = None) -> torch.Tensor:
+        """Causal attention with configurable geometry.
+
+        `gate` mirrors parent Small2DTransformer._attention: when supplied
+        (B, H, S, D_head), applies sigmoid(gate) * out before returning.
+        Accepted here so parent.forward() can pass it through transparently
+        even though mixed_geometry's forward override never sets it.
+        """
         B, H, S, Dh = q.shape
         score_fn = GEOMETRY_DISPATCH[geometry]
         scores = score_fn(q, k)
@@ -162,7 +169,10 @@ class MixedGeometrySmall2DTransformer(Small2DTransformer):
             weights.scatter_(-1, idx, 1.0)
         else:
             weights = F.softmax(scores, dim=-1)
-        return torch.einsum("bhij,bhjd->bhid", weights, v)
+        out = torch.einsum("bhij,bhjd->bhid", weights, v)
+        if gate is not None:
+            out = torch.sigmoid(gate) * out
+        return out
 
     def forward(self, idx: torch.Tensor) -> torch.Tensor:
         if self.config.layer_geometries is None:

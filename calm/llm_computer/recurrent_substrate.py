@@ -47,9 +47,17 @@ class RecurrentConfig(Small2DConfig):
     without an explicit `n_iterations` kwarg. Default 1 = parent behavior.
     `max_iterations` caps any explicit request — prevents runaway compute
     if a future learned controller emits too many `<|think_more|>` tokens.
+
+    HRM-Text-derived flags (default off — bit-equivalence preserved):
+      use_input_injection: re-feed the input residual at every iteration
+        boundary, as `x = x + input_residual` BEFORE the layer pass. Without
+        this, recurrence dilutes the original input across iterations.
+        Per Sapient HRM-Text models/baselines/hrm_nocarry_bp_warmup.py:
+            return self.core(hidden_states + input_injection, **kwargs)
     """
     default_iterations: int = 1
     max_iterations: int = 16
+    use_input_injection: bool = False
 
 
 class RecurrentSmall2DTransformer(Small2DTransformer):
@@ -59,8 +67,8 @@ class RecurrentSmall2DTransformer(Small2DTransformer):
     matrices are applied iteratively — weights are shared across iterations
     (the iteration count doesn't multiply parameter count).
 
-    Backward compatible: `forward(idx)` with `default_iterations=1` matches
-    parent class exactly.
+    Backward compatible: `forward(idx)` with `default_iterations=1` and
+    `use_input_injection=False` matches parent class exactly.
     """
 
     def __init__(self, config: RecurrentConfig):
@@ -80,12 +88,26 @@ class RecurrentSmall2DTransformer(Small2DTransformer):
         pos_idx = torch.arange(S, device=idx.device)
         x = self.tok(idx) + self.pos(pos_idx)
 
+        # HRM-Text-style input injection: save the initial input residual
+        # so we can re-add it at every iteration boundary.
+        input_residual = x if cfg.use_input_injection else None
+
         for _iteration in range(n):
+            if input_residual is not None:
+                # Re-inject input residual before the layer pass. This is the
+                # `core(hidden_states + input_injection)` pattern that keeps
+                # the original input anchored across recurrent iterations.
+                x = x + input_residual
             for layer in range(cfg.n_layers):
                 qkv = self.W_qkv[layer](x)
                 qkv = qkv.reshape(B, S, 3, cfg.n_heads, cfg.d_head)
                 q, k, v = qkv.permute(2, 0, 3, 1, 4)
-                attn = self._attention(q, k, v, hard_max=cfg.use_hard_max)
+                # Honor parent's gated-attention flag when set.
+                gate = None
+                if self.attn_gate_proj is not None:
+                    gate = self.attn_gate_proj[layer](x)
+                    gate = gate.reshape(B, S, cfg.n_heads, cfg.d_head).transpose(1, 2)
+                attn = self._attention(q, k, v, hard_max=cfg.use_hard_max, gate=gate)
                 attn = attn.transpose(1, 2).reshape(B, S, cfg.d_model)
                 x = x + self.W_out[layer](attn)
                 gate, val = self.ff_in[layer](x).chunk(2, dim=-1)

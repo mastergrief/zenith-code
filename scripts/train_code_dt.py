@@ -453,6 +453,11 @@ def train(
                         "n_copy_heads": n_copy_heads,
                         "use_chunkwise": True,
                         "copy_gate_bias_init": copy_gate_bias_init,
+                        # Live values from model.config so flag-on runs persist.
+                        "n_iterations": getattr(model.config, "n_iterations", 1),
+                        "use_loop_index": getattr(model.config, "use_loop_index", False),
+                        "use_input_injection": getattr(model.config, "use_input_injection", False),
+                        "use_gated_attention": getattr(model.config, "use_gated_attention", False),
                     },
                     "epoch": ep,
                     "val_autoreg": acc,

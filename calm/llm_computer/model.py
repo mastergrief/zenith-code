@@ -29,6 +29,10 @@ class Small2DConfig:
     Paper defaults: d_model=36, n_heads=18, n_layers=7, d_ffn=36.
     We use tiny defaults (d_model=8, n_heads=4, n_layers=2) for the
     first prototype so we can test compile/execute cycles in ms on CPU.
+
+    HRM-Text-derived flags (default off — bit-equivalence preserved):
+      use_gated_attention: apply `sigmoid(gate) * attn_output` per Qwen3Next /
+        HRM-Text 1B. Adds one Linear(d_model, d_model) per layer. Cheap.
     """
     vocab_size: int = 32
     d_model: int = 8
@@ -37,6 +41,7 @@ class Small2DConfig:
     d_ffn: int = 8
     max_len: int = 256
     use_hard_max: bool = True
+    use_gated_attention: bool = False
 
     @property
     def d_head(self) -> int:
@@ -81,9 +86,25 @@ class Small2DTransformer(nn.Module):
         ])
         self.head = nn.Linear(config.d_model, config.vocab_size, bias=False)
 
+        # HRM-Text-derived: gated attention (Qwen3Next-style). Opt-in via config.
+        # When use_gated_attention=False (default), these are not allocated.
+        if config.use_gated_attention:
+            self.attn_gate_proj = nn.ModuleList([
+                nn.Linear(config.d_model, config.d_model, bias=False)
+                for _ in range(config.n_layers)
+            ])
+        else:
+            self.attn_gate_proj = None  # explicit; surfaces flag-state in repr
+
     def _attention(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
-                   hard_max: bool) -> torch.Tensor:
-        """Causal multi-head attention. q,k,v: (B, H, S, D_head)."""
+                   hard_max: bool,
+                   gate: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """Causal multi-head attention. q,k,v: (B, H, S, D_head).
+
+        If `gate` is supplied (B, H, S, D_head), applies
+        `sigmoid(gate) * out` before returning — HRM-Text-style gating.
+        When gate=None (default), behavior is identical to original.
+        """
         B, H, S, Dh = q.shape
         scores = torch.einsum("bhid,bhjd->bhij", q, k)  # (B, H, S, S)
         # Causal mask: position i can only see j <= i.
@@ -99,6 +120,8 @@ class Small2DTransformer(nn.Module):
         else:
             weights = F.softmax(scores, dim=-1)
         out = torch.einsum("bhij,bhjd->bhid", weights, v)  # (B, H, S, D_head)
+        if gate is not None:
+            out = torch.sigmoid(gate) * out
         return out
 
     def forward(self, idx: torch.Tensor) -> torch.Tensor:
@@ -111,7 +134,12 @@ class Small2DTransformer(nn.Module):
             qkv = self.W_qkv[layer](x)  # (B, S, 3*D)
             qkv = qkv.reshape(B, S, 3, cfg.n_heads, cfg.d_head)
             q, k, v = qkv.permute(2, 0, 3, 1, 4)  # 3 × (B, H, S, Dh)
-            attn = self._attention(q, k, v, hard_max=cfg.use_hard_max)
+            # HRM-Text gated attention: compute gate per layer when flag on.
+            gate = None
+            if self.attn_gate_proj is not None:
+                gate = self.attn_gate_proj[layer](x)  # (B, S, D)
+                gate = gate.reshape(B, S, cfg.n_heads, cfg.d_head).transpose(1, 2)  # (B, H, S, Dh)
+            attn = self._attention(q, k, v, hard_max=cfg.use_hard_max, gate=gate)
             attn = attn.transpose(1, 2).reshape(B, S, cfg.d_model)  # (B, S, D)
             x = x + self.W_out[layer](attn)
             gate, val = self.ff_in[layer](x).chunk(2, dim=-1)

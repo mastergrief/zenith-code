@@ -174,7 +174,14 @@ def train(
                         "n_layers": n_layers, "d_ffn": d_ffn,
                         "max_len": max_len, "n_copy_heads": n_copy_heads,
                         "use_chunkwise": True, "chunk_size": 32,
-                        "n_delta_heads": 1, "n_iterations": 1,
+                        "n_delta_heads": 1,
+                        # Read live values from model.config so flag-on training
+                        # runs save the actual architecture (otherwise reload via
+                        # load_dt_checkpoint would silently revert to defaults).
+                        "n_iterations": getattr(m.config, "n_iterations", 1),
+                        "use_loop_index": getattr(m.config, "use_loop_index", False),
+                        "use_input_injection": getattr(m.config, "use_input_injection", False),
+                        "use_gated_attention": getattr(m.config, "use_gated_attention", False),
                     },
                     "epoch": epoch,
                     "autoreg_acc": acc,
