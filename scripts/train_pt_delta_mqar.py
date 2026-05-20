@@ -74,6 +74,24 @@ def train(
     tf_ratio_start=1.0, tf_ratio_end=0.3,
     noisy_frac=0.0,   # R-delta-22: >0 enables noise-augmented training
     device=None,
+    # Build-time flags plumbed through to `build_copy_augmented_delta` so
+    # `_init_` allocates the right modules (halt_head, H layer stack, etc.)
+    # and the saved config dict round-trips correctly via `load_dt_checkpoint`.
+    use_chunkwise: bool = True,
+    n_iterations: int = 1,
+    use_loop_index: bool = False,
+    use_input_injection: bool = False,
+    use_gated_attention: bool = False,
+    use_z_init: bool = False,
+    use_lecun_init: bool = False,
+    use_prefix_lm: bool = False,
+    h_cycles: int = 1,
+    use_h_rmsnorm: bool = False,
+    use_short_conv: bool = False,
+    use_h_layer_stack: bool = False,
+    use_halt_head: bool = False,
+    use_carry: bool = False,
+    chunk_size: int = 32,
 ):
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
@@ -100,9 +118,22 @@ def train(
         vocab_size=VOCAB_SIZE, d_model=d_model, n_heads=n_heads,
         n_layers=n_layers, d_ffn=d_ffn, max_len=max_len,
         n_copy_heads=n_copy_heads,
+        use_chunkwise=use_chunkwise,
+        n_iterations=n_iterations,
+        use_loop_index=use_loop_index,
+        use_input_injection=use_input_injection,
+        use_gated_attention=use_gated_attention,
+        use_z_init=use_z_init,
+        use_lecun_init=use_lecun_init,
+        use_prefix_lm=use_prefix_lm,
+        h_cycles=h_cycles,
+        use_h_rmsnorm=use_h_rmsnorm,
+        use_short_conv=use_short_conv,
+        use_h_layer_stack=use_h_layer_stack,
+        use_halt_head=use_halt_head,
+        use_carry=use_carry,
     )
-    m.config.use_chunkwise = True
-    m.config.chunk_size = 32
+    m.config.chunk_size = chunk_size
     m.to(device)
     print(f"Params: {sum(p.numel() for p in m.parameters()):,}")
     print(f"Config: chunkwise={m.config.use_chunkwise} "
@@ -173,11 +204,12 @@ def train(
                         "d_model": d_model, "n_heads": n_heads,
                         "n_layers": n_layers, "d_ffn": d_ffn,
                         "max_len": max_len, "n_copy_heads": n_copy_heads,
-                        "use_chunkwise": True, "chunk_size": 32,
-                        "n_delta_heads": 1,
                         # Read live values from model.config so flag-on training
                         # runs save the actual architecture (otherwise reload via
                         # load_dt_checkpoint would silently revert to defaults).
+                        "use_chunkwise": getattr(m.config, "use_chunkwise", True),
+                        "chunk_size": getattr(m.config, "chunk_size", 32),
+                        "n_delta_heads": getattr(m.config, "n_delta_heads", 1),
                         "n_iterations": getattr(m.config, "n_iterations", 1),
                         "use_loop_index": getattr(m.config, "use_loop_index", False),
                         "use_input_injection": getattr(m.config, "use_input_injection", False),
@@ -223,6 +255,25 @@ if __name__ == "__main__":
                     help="R-delta-22: fraction of training examples drawn "
                     "from gen_mqar_batch_noisy (default 0 = clean-only, "
                     "reproduces R21). Try 0.5 for 50/50 clean/noisy mix.")
+    # rdt-v2 Tier A+B flag bundle. Defaults preserve pre-flag behavior
+    # (use_chunkwise=True is the existing hardcoded value; everything else
+    # off matches DeltaNetConfig defaults).
+    p.add_argument("--no-chunkwise", dest="use_chunkwise",
+                   action="store_false", default=True)
+    p.add_argument("--n-iterations", type=int, default=1)
+    p.add_argument("--use-loop-index", action="store_true")
+    p.add_argument("--use-input-injection", action="store_true")
+    p.add_argument("--use-gated-attention", action="store_true")
+    p.add_argument("--use-z-init", action="store_true")
+    p.add_argument("--use-lecun-init", action="store_true")
+    p.add_argument("--use-prefix-lm", action="store_true")
+    p.add_argument("--h-cycles", type=int, default=1)
+    p.add_argument("--use-h-rmsnorm", action="store_true")
+    p.add_argument("--use-short-conv", action="store_true")
+    p.add_argument("--use-h-layer-stack", action="store_true")
+    p.add_argument("--use-halt-head", action="store_true")
+    p.add_argument("--use-carry", action="store_true")
+    p.add_argument("--chunk-size", type=int, default=32)
     args = p.parse_args()
     train(
         epochs=args.epochs,
@@ -236,4 +287,19 @@ if __name__ == "__main__":
         max_len=args.max_len,
         seed=args.seed, eval_every=args.eval_every,
         noisy_frac=args.noisy_frac,
+        use_chunkwise=args.use_chunkwise,
+        n_iterations=args.n_iterations,
+        use_loop_index=args.use_loop_index,
+        use_input_injection=args.use_input_injection,
+        use_gated_attention=args.use_gated_attention,
+        use_z_init=args.use_z_init,
+        use_lecun_init=args.use_lecun_init,
+        use_prefix_lm=args.use_prefix_lm,
+        h_cycles=args.h_cycles,
+        use_h_rmsnorm=args.use_h_rmsnorm,
+        use_short_conv=args.use_short_conv,
+        use_h_layer_stack=args.use_h_layer_stack,
+        use_halt_head=args.use_halt_head,
+        use_carry=args.use_carry,
+        chunk_size=args.chunk_size,
     )

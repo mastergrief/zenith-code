@@ -78,7 +78,17 @@ def load_dt_checkpoint(
         use_halt_head=cfg.get("use_halt_head", False),
         use_carry=cfg.get("use_carry", False),
     ).to(device)
-    model.load_state_dict(ckpt["model_state"])
+    # `chunk_size` is config-only (not a builder kwarg) — restore after build
+    # so non-default chunk sizes round-trip. Default 32 matches DeltaNetConfig.
+    model.config.chunk_size = cfg.get("chunk_size", 32)
+    # `train_pt_delta_mqar.py` historically saves under "model_state_dict";
+    # `train_code_dt.py` saves under "model_state". Accept either.
+    state = ckpt.get("model_state", ckpt.get("model_state_dict"))
+    if state is None:
+        raise KeyError(
+            f"checkpoint {path!s} has neither 'model_state' nor 'model_state_dict'"
+        )
+    model.load_state_dict(state)
     model.eval()
     return model, ckpt
 
