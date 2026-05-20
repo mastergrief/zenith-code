@@ -188,6 +188,88 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
         ]
         return final_log_probs, per_iter_log_probs
 
+    def compute_act_loss(
+        self,
+        per_iter_log_probs: list[torch.Tensor],
+        halt_probs: list[torch.Tensor],
+        target_ids: torch.Tensor,
+        loss_mask: torch.Tensor | None = None,
+        ponder_weight: float = 0.01,
+    ) -> torch.Tensor:
+        """Slice 10b: canonical ACT loss per Graves 2016 + HRM-Text.
+
+        Combines per-iter accuracy loss (weighted by halt distribution)
+        + ponder cost (expected number of iterations).
+
+        Args:
+          per_iter_log_probs: list of length h_cycles, each
+            `(B, S, vocab)`. Output of `forward(idx, return_per_iter=True)`.
+          halt_probs: list of length h_cycles, each `(B, 1)` per-cycle
+            sigmoid halt probability. Output of `self.last_halt_probs`
+            after a forward pass with `use_halt_head=True`.
+          target_ids: `(B, S)` target token ids for cross-entropy.
+          loss_mask: optional `(B, S)` bool mask — only masked positions
+            contribute. Default None → uniform.
+          ponder_weight: scalar weight on the ponder cost term. Per HRM-Text
+            default ~0.01; trainer may tune.
+
+        Returns:
+          scalar loss tensor (gradient-flowing).
+
+        Mechanism:
+          Compute halt distribution p_halt_i = halt_probs[i] * Π_{j<i}(1 - halt_probs[j]),
+          i.e. probability that iteration i is the halt point. At the last
+          iteration, the remaining mass `Π_j(1 - halt_probs[j])` is folded
+          into the last iter so the distribution sums to 1.
+
+          Per-iter loss is per-position NLL = `-log_probs.gather(target).mean()`.
+
+          Total = Σ_i p_halt_i * loss_i + ponder_weight * E[iter_index].
+        """
+        if len(per_iter_log_probs) != len(halt_probs):
+            raise ValueError(
+                f"per_iter_log_probs (len {len(per_iter_log_probs)}) and "
+                f"halt_probs (len {len(halt_probs)}) must align — call "
+                f"`forward(idx, return_per_iter=True)` then read "
+                f"`self.last_halt_probs`, both populated by the same forward."
+            )
+
+        # Per-iter NLL — gather target log-probs, mean over (B, S).
+        per_iter_nll = []
+        for lp in per_iter_log_probs:
+            # lp: (B, S, V); target_ids: (B, S)
+            tok_lp = lp.gather(-1, target_ids.unsqueeze(-1)).squeeze(-1)  # (B, S)
+            if loss_mask is not None:
+                mask_f = loss_mask.float()
+                nll = -(tok_lp * mask_f).sum() / mask_f.sum().clamp(min=1.0)
+            else:
+                nll = -tok_lp.mean()
+            per_iter_nll.append(nll)
+
+        # Halt distribution: p_halt_i = halt_i * Π_{j<i}(1 - halt_j).
+        # Fold remaining mass into the last iter so probabilities sum to 1.
+        device = per_iter_log_probs[0].device
+        halt_dist = []
+        cum_not_halt = torch.ones((), device=device)
+        for i, h in enumerate(halt_probs):
+            h_scalar = h.mean()  # average over batch — single halt distribution per call
+            if i == len(halt_probs) - 1:
+                halt_dist.append(cum_not_halt)  # fold remainder
+            else:
+                halt_dist.append(h_scalar * cum_not_halt)
+                cum_not_halt = cum_not_halt * (1 - h_scalar)
+        # Normalize defensively in case fp drift accumulates
+        total_mass = sum(halt_dist).clamp(min=1e-8)
+        halt_dist = [d / total_mass for d in halt_dist]
+
+        # Weighted loss
+        weighted_loss = sum(p * nll for p, nll in zip(halt_dist, per_iter_nll))
+
+        # Ponder cost: expected iteration index (1-based).
+        ponder = sum((i + 1) * p for i, p in enumerate(halt_dist))
+
+        return weighted_loss + ponder_weight * ponder
+
     def decode_greedy_cached(
         self,
         prefix_ids: torch.Tensor,
