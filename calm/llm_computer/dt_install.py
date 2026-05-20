@@ -76,6 +76,7 @@ def load_dt_checkpoint(
         use_short_conv=cfg.get("use_short_conv", False),
         use_h_layer_stack=cfg.get("use_h_layer_stack", False),
         use_halt_head=cfg.get("use_halt_head", False),
+        use_carry=cfg.get("use_carry", False),
     ).to(device)
     model.load_state_dict(ckpt["model_state"])
     model.eval()

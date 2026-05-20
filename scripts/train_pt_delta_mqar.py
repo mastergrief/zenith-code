@@ -190,6 +190,7 @@ def train(
                         "use_short_conv": getattr(m.config, "use_short_conv", False),
                         "use_h_layer_stack": getattr(m.config, "use_h_layer_stack", False),
                         "use_halt_head": getattr(m.config, "use_halt_head", False),
+                        "use_carry": getattr(m.config, "use_carry", False),
                     },
                     "epoch": epoch,
                     "autoreg_acc": acc,

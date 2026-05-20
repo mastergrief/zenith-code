@@ -145,6 +145,16 @@ class DeltaNetConfig(Small2DConfig):
                                        # recall-card installs (R22 MQAR etc.) on h_cycles=1
                                        # are unaffected; new cards opting into h_cycles>1
                                        # accept normalized residuals at train AND inference.
+    use_carry: bool = False            # Slice 9 (Tier B): residual H/L carry opt-in.
+                                       # When True, `forward(idx, carry=None,
+                                       # return_carry=False)` accepts a prior `z_H`
+                                       # residual as the H-loop's initial state and
+                                       # optionally returns the final `z_H` (detached)
+                                       # for the next forward to pick up. NOT a
+                                       # streaming DeltaNet cache — `_delta_layer_stack`
+                                       # still zeroes fast-weight S_state per call.
+                                       # Default off → forward rejects carry kwargs;
+                                       # cached-decode blocklist refuses this flag.
     use_halt_head: bool = False        # Slice 10a (Tier B): ACT halt-head telemetry.
                                        # When True, allocates `self.halt_head:
                                        # nn.Linear(d_model, 1)` and during the H/L loop
@@ -754,7 +764,9 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
 
     def _forward_backbone(self, idx: torch.Tensor,
                           return_per_iter: bool = False,
-                          act_inference: bool = False):
+                          act_inference: bool = False,
+                          carry: torch.Tensor | None = None,
+                          return_carry: bool = False):
         """Run the DeltaNet backbone; return pre-head hidden states x (B, S, D).
 
         Factored out so subclasses (e.g. CopyAugmentedDeltaNet) can use the
@@ -786,6 +798,18 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
                 "halt-head flag enabled, or train a halt head first via "
                 "S10b's compute_act_loss before enabling greedy inference halt."
             )
+        # Slice 9: carry kwargs are opt-in via the use_carry config flag.
+        # This makes the contract auditable (the cached-decode blocklist
+        # can check the config flag; runtime kwarg alone is invisible to it)
+        # and forces callers to make the streaming intent explicit at
+        # build time.
+        carry_requested = (carry is not None) or return_carry
+        if carry_requested and not getattr(self.config, "use_carry", False):
+            raise ValueError(
+                "carry kwargs (carry=..., return_carry=True) require "
+                "`use_carry=True` at model build time. Re-build with the "
+                "flag enabled to opt into residual H/L carry semantics."
+            )
         if not getattr(self.config, "use_delta_net", True):
             # Vanilla path — replicate Small2DTransformer.forward minus the head
             B, S = idx.shape
@@ -809,10 +833,15 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
                 x = x + self.W_out[layer](attn)
                 gate, val = self.ff_in[layer](x).chunk(2, dim=-1)
                 x = x + self.ff_out[layer](F.relu(gate) * val)
+            extras_v = []
             if return_per_iter:
                 # Vanilla path has no H cycles → per-iter list contains
                 # just the final hidden state for shape consistency.
-                return x, [x]
+                extras_v.append([x])
+            if return_carry:
+                extras_v.append(x.detach())
+            if extras_v:
+                return (x, *extras_v)
             return x
 
         B, S = idx.shape
@@ -923,7 +952,22 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
                     x_l = self._delta_layer_stack(x_l, cfg, B, S, prefix_mask=prefix_mask)
             return x_l
 
-        if use_z_init:
+        # Slice 9: carry takes precedence over both z_init and the
+        # tok+pos embedding for the H loop's initial state. Caller is
+        # responsible for shape (must match (B, S, d_model)); we
+        # validate explicitly because mismatched carry shapes would
+        # otherwise propagate as opaque tensor errors.
+        if carry is not None:
+            expected_shape = (B, S, cfg.d_model)
+            if tuple(carry.shape) != expected_shape:
+                raise ValueError(
+                    f"carry shape {tuple(carry.shape)} must match "
+                    f"(B, S, d_model)={expected_shape}. Carry from a "
+                    f"different-shape forward cannot be reused — "
+                    f"residual H/L carry is shape-locked to the input idx."
+                )
+            x = carry
+        elif use_z_init:
             x = self.z_init.view(1, 1, cfg.d_model).expand(B, S, cfg.d_model)
         else:
             x = x_embed
@@ -945,9 +989,15 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             # cycle to run. Record halt step for consistency.
             if act_inference:
                 self.last_act_halt_step = 1
+            # Slice 9: assemble varying-length return tuple based on which
+            # extras the caller requested.
+            extras = []
             if return_per_iter:
-                # Single H cycle → per-iter list contains just the final.
-                return x_final, [x_final]
+                extras.append([x_final])
+            if return_carry:
+                extras.append(x_final.detach())
+            if extras:
+                return (x_final, *extras)
             return x_final
 
         # H/L hierarchy: z_H carries across H cycles; each H cycle resets
@@ -1040,8 +1090,14 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             self.last_act_halt_step = (
                 halted_at_step if halted_at_step is not None else h_cycles
             )
+        # Slice 9: assemble varying-length return tuple.
+        extras = []
         if return_per_iter:
-            return z_H, per_iter_outputs
+            extras.append(per_iter_outputs)
+        if return_carry:
+            extras.append(z_H.detach())
+        if extras:
+            return (z_H, *extras)
         return z_H
 
     def _delta_layer_stack(self, x: torch.Tensor, cfg, B: int, S: int,

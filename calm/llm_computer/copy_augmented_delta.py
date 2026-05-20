@@ -147,7 +147,9 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
 
     def forward(self, idx: torch.Tensor,
                 return_per_iter: bool = False,
-                act_inference: bool = False):
+                act_inference: bool = False,
+                carry: torch.Tensor | None = None,
+                return_carry: bool = False):
         """idx: (B, S). Returns log-probs (B, S, vocab).
 
         Slice 11 deep supervision: when `return_per_iter=True`, returns
@@ -164,36 +166,63 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
         forward records the number of cycles executed. Default
         `act_inference=False` → all configured h_cycles run, no early
         stop — bit-equivalent to prior slices.
+
+        Slice 9 residual H/L carry: when `carry` is supplied (a tensor
+        of shape (B, S, d_model)), it replaces the tok+pos embedding
+        as the H loop's initial state. When `return_carry=True`, the
+        final z_H is detached and returned as the carry tensor for
+        the next forward to pick up. Both kwargs require
+        `use_carry=True` at model build time (else
+        `_forward_backbone` raises) — opt-in by construction so the
+        cached-decode blocklist can refuse such models.
+
+        Return shape grows with extras requested. Default returns
+        just log-probs; per_iter / carry append to a tuple.
         """
         # DeltaNet backbone produces per-position hidden states.
         # When deep supervision is requested, also collect per-iter
         # intermediates (a list of z_H states from each H cycle).
-        if return_per_iter:
-            x, per_iter_x = self._forward_backbone(
-                idx, return_per_iter=True, act_inference=act_inference,
-            )
+        backbone_kwargs = dict(
+            return_per_iter=return_per_iter,
+            act_inference=act_inference,
+            carry=carry,
+            return_carry=return_carry,
+        )
+        result = self._forward_backbone(idx, **backbone_kwargs)
+        if return_per_iter or return_carry:
+            x = result[0]
+            extras = list(result[1:])  # may contain per_iter_x and/or carry_out
+            per_iter_x = extras.pop(0) if return_per_iter else None
+            carry_out = extras.pop(0) if return_carry else None
         else:
-            x = self._forward_backbone(idx, act_inference=act_inference)
+            x = result
             per_iter_x = None
+            carry_out = None
 
         # Final log-probs (with diagnostics exposed).
         final_log_probs = self._compute_log_probs(x, idx, expose_diagnostics=True)
 
-        if not return_per_iter:
+        if not return_per_iter and not return_carry:
             return final_log_probs
 
         # Slice 11: per-iter log-probs. The LAST per-iter entry would
         # otherwise duplicate the final computation; we still pass it
         # through `_compute_log_probs` (with diagnostics SUPPRESSED so
-        # we don't overwrite the final exposures). Trainer iterates and
-        # computes per-iter loss; the final entry's loss naturally
-        # equals the loss the non-supervised path would compute on
-        # `final_log_probs`.
-        per_iter_log_probs = [
-            self._compute_log_probs(z_x, idx, expose_diagnostics=False)
-            for z_x in per_iter_x
-        ]
-        return final_log_probs, per_iter_log_probs
+        # we don't overwrite the final exposures).
+        if return_per_iter:
+            per_iter_log_probs = [
+                self._compute_log_probs(z_x, idx, expose_diagnostics=False)
+                for z_x in per_iter_x
+            ]
+
+        # Slice 9: assemble varying-length return tuple in stable
+        # order: (final_log_probs, per_iter?, carry?).
+        extras = []
+        if return_per_iter:
+            extras.append(per_iter_log_probs)
+        if return_carry:
+            extras.append(carry_out)
+        return (final_log_probs, *extras)
 
     def compute_act_loss(
         self,
@@ -338,6 +367,12 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
             # defensive blocking so future 10c (greedy inference halt)
             # cannot accidentally activate via the cached path.
             ("use_halt_head", bool),
+            # Slice 9: residual H/L carry. Per co_lead audit msg
+            # 1779304303629, cached decode has its own state model
+            # and can't transparently honor H/L carry. Block flag-on
+            # at the entry; users get a clean NotImplementedError
+            # instead of degraded silent inference.
+            ("use_carry", bool),
         )
         _blocked = []
         for _attr, _pred in _CACHED_DECODE_BLOCKED:
@@ -585,6 +620,7 @@ def build_copy_augmented_delta(
     use_short_conv: bool = False,
     use_h_layer_stack: bool = False,
     use_halt_head: bool = False,
+    use_carry: bool = False,
 ) -> CopyAugmentedDeltaNet:
     """Build a CopyAugmentedDeltaNet mirroring PT's default sizing.
 
@@ -613,6 +649,7 @@ def build_copy_augmented_delta(
         use_short_conv=use_short_conv,
         use_h_layer_stack=use_h_layer_stack,
         use_halt_head=use_halt_head,
+        use_carry=use_carry,
     )
     assert cfg.d_head == 2, f"d_head must be 2, got {cfg.d_head}"
     return CopyAugmentedDeltaNet(cfg)
