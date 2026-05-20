@@ -156,6 +156,46 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
         B, S = prefix_ids.shape
         assert B == 1, "cached decode supports batch=1 for now"
 
+        # Slice 5 / co_lead audit msg 1779303378368: cached decode is a
+        # FLAT prefill + flat per-token loop. It does NOT honor
+        # `_forward_backbone` control flow — no `_run_l_loop`,
+        # `_delta_layer_stack` wrapping, `n_iterations` outer loop,
+        # `h_cycles` outer loop, z_init swap, input injection,
+        # loop-index embed, prefix_lm mask, or H-boundary RMSNorm.
+        #
+        # Without a hard guard, a card trained with Slice 1-5 control-flow
+        # flags would silently get a degraded forward at facade-install
+        # inference time (training-time `forward` ≠ product-path
+        # `decode_greedy_cached`). That's the worst kind of regression.
+        #
+        # Allowlist: `use_gated_attention` is mirrored in BOTH cached-path
+        # branches (per Slice 1) and is safe. Everything else in the
+        # following blocklist forces NotImplementedError.
+        _CACHED_DECODE_BLOCKED = (
+            ("h_cycles", lambda v: v > 1),
+            ("n_iterations", lambda v: v > 1),
+            ("use_input_injection", bool),
+            ("use_z_init", bool),
+            ("use_loop_index", bool),
+            ("use_prefix_lm", bool),
+            ("use_softmax_attn", bool),
+            ("use_h_rmsnorm", bool),
+        )
+        _blocked = []
+        for _attr, _pred in _CACHED_DECODE_BLOCKED:
+            _v = getattr(cfg, _attr, False)
+            if _pred(_v):
+                _blocked.append(f"{_attr}={_v!r}")
+        if _blocked:
+            raise NotImplementedError(
+                "decode_greedy_cached is a flat-layer-pass codepath that "
+                "does NOT honor _forward_backbone control flow. Refusing "
+                "to run with non-flat config: " + ", ".join(_blocked) +
+                ". Use the full-forward path `model(idx)` for inference, "
+                "or extend decode_greedy_cached to mirror _forward_backbone "
+                "before installing a card trained with these flags."
+            )
+
         sep_id = copy_cfg.sep_token_id
         n_layers = cfg.n_layers
         n_heads = cfg.n_heads
@@ -383,6 +423,7 @@ def build_copy_augmented_delta(
     use_lecun_init: bool = False,
     use_prefix_lm: bool = False,
     h_cycles: int = 1,
+    use_h_rmsnorm: bool = False,
 ) -> CopyAugmentedDeltaNet:
     """Build a CopyAugmentedDeltaNet mirroring PT's default sizing.
 
@@ -407,6 +448,7 @@ def build_copy_augmented_delta(
         use_lecun_init=use_lecun_init,
         use_prefix_lm=use_prefix_lm,
         h_cycles=h_cycles,
+        use_h_rmsnorm=use_h_rmsnorm,
     )
     assert cfg.d_head == 2, f"d_head must be 2, got {cfg.d_head}"
     return CopyAugmentedDeltaNet(cfg)

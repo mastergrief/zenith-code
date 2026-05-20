@@ -72,6 +72,7 @@ def load_dt_checkpoint(
         use_lecun_init=cfg.get("use_lecun_init", False),
         use_prefix_lm=cfg.get("use_prefix_lm", False),
         h_cycles=cfg.get("h_cycles", 1),
+        use_h_rmsnorm=cfg.get("use_h_rmsnorm", False),
     ).to(device)
     model.load_state_dict(ckpt["model_state"])
     model.eval()

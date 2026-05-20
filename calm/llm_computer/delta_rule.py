@@ -97,6 +97,20 @@ class DeltaNetConfig(Small2DConfig):
     # use_prefix_lm inherits from Small2DConfig. On DT path (delta-only), it's
     # inert — DeltaNet recurrence has no explicit attention mask. On softmax
     # path (use_softmax_attn=True) it relaxes causal mask within the prefix.
+    use_h_rmsnorm: bool = False        # Slice 5: per-channel RMSNorm at the H-cycle
+                                       # hand-off (`z_H = h_norm(z_L)`) to stabilize
+                                       # magnitude when h_cycles × n_iter × use_input_injection
+                                       # compounds beyond toy-substrate ceiling. Default off
+                                       # → bit-equivalent to Slice 4 hand-off. Fires only when
+                                       # h_cycles > 1 (Slice 4 baseline guard preserved).
+                                       # Per co_lead audit msg 1779303378368: RMSNorm chosen
+                                       # over LayerNorm (no mean centering for register-like
+                                       # channels) and over scalar τ (per-channel skew matters).
+                                       # CAVEAT: rescales WHOLE residual at H boundary, which
+                                       # shifts substrate-card reserved channels. Existing
+                                       # recall-card installs (R22 MQAR etc.) on h_cycles=1
+                                       # are unaffected; new cards opting into h_cycles>1
+                                       # accept normalized residuals at train AND inference.
     h_cycles: int = 1                  # HRM-Text H/L hierarchy: outer-loop cycles.
                                        # The existing `n_iterations` field becomes
                                        # the L-cycles (inner). When h_cycles > 1,
@@ -173,6 +187,15 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         # context manager `model.bp_warmup_ctx(k)`. NOT persisted to
         # checkpoints — it's a training-step-dependent runtime concern.
         self._bp_warmup_active_iters: int | None = None
+
+        # Slice 5: H-boundary RMSNorm. Single shared module — applied at
+        # the H-cycle hand-off in `_forward_backbone` when both flag and
+        # h_cycles > 1 conditions are met. Stays None when flag off →
+        # zero overhead, zero state-dict drift for Slice 1-4 checkpoints.
+        if getattr(config, "use_h_rmsnorm", False):
+            self.h_norm = nn.RMSNorm(config.d_model)
+        else:
+            self.h_norm = None
 
     @staticmethod
     def _delta_step(
@@ -542,11 +565,21 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         # z_L from z_H and runs n_iters L iters; H hands off L's converged
         # state via `z_H = z_L_final`. (See class docstring on why this
         # is NOT a residual add — magnitude stability without LayerNorm.)
+        #
+        # Slice 5: when `use_h_rmsnorm=True`, the hand-off is normalized:
+        # `z_H = h_norm(z_L)`. This is the gate that unlocks the full
+        # `h_cycles × n_iters × use_input_injection` regime which would
+        # otherwise NaN on toy d_model=8 (Slice 4 explicit punt). Flag-off
+        # behavior is bit-identical to Slice 4 (no h_norm call).
+        use_h_norm = (
+            bool(getattr(cfg, "use_h_rmsnorm", False))
+            and self.h_norm is not None
+        )
         z_H = x
         for _h_step in range(h_cycles):
             z_L = z_H
             z_L = _run_l_loop(z_L)
-            z_H = z_L
+            z_H = self.h_norm(z_L) if use_h_norm else z_L
         return z_H
 
     def _delta_layer_stack(self, x: torch.Tensor, cfg, B: int, S: int,
