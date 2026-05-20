@@ -461,6 +461,7 @@ def train(
                         "use_z_init": getattr(model.config, "use_z_init", False),
                         "use_lecun_init": getattr(model.config, "use_lecun_init", False),
                         "use_prefix_lm": getattr(model.config, "use_prefix_lm", False),
+                        "h_cycles": getattr(model.config, "h_cycles", 1),
                     },
                     "epoch": ep,
                     "val_autoreg": acc,

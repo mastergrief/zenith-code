@@ -185,6 +185,7 @@ def train(
                         "use_z_init": getattr(m.config, "use_z_init", False),
                         "use_lecun_init": getattr(m.config, "use_lecun_init", False),
                         "use_prefix_lm": getattr(m.config, "use_prefix_lm", False),
+                        "h_cycles": getattr(m.config, "h_cycles", 1),
                     },
                     "epoch": epoch,
                     "autoreg_acc": acc,

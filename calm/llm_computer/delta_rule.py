@@ -97,6 +97,20 @@ class DeltaNetConfig(Small2DConfig):
     # use_prefix_lm inherits from Small2DConfig. On DT path (delta-only), it's
     # inert — DeltaNet recurrence has no explicit attention mask. On softmax
     # path (use_softmax_attn=True) it relaxes causal mask within the prefix.
+    h_cycles: int = 1                  # HRM-Text H/L hierarchy: outer-loop cycles.
+                                       # The existing `n_iterations` field becomes
+                                       # the L-cycles (inner). When h_cycles > 1,
+                                       # `_forward_backbone` runs `h_cycles` outer
+                                       # iterations of the L loop. Each H cycle
+                                       # HANDS OFF L's converged state to the next
+                                       # H cycle: z_H ← z_L_final. (Pure hand-off,
+                                       # NOT residual add — residual add explodes
+                                       # magnitude without a LayerNorm to stabilize.
+                                       # Architectural distinction vs flat L is
+                                       # preserved because the H boundary skips
+                                       # iter-0 injection that flat L would have.)
+                                       # h_cycles=1 (default) special-cases to the
+                                       # flat Slice 1-3 path — bit-equivalent baseline.
 
 
 class DeltaNetSmall2DTransformer(Small2DTransformer):
@@ -483,34 +497,57 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             detach_until = n_iters - bp_active  # iters [0, detach_until) are no_grad
 
         input_residual = x_embed if use_input_injection else None
+
+        # Slice 4: H/L hierarchy. h_cycles=1 (default) takes the flat-loop
+        # path → bit-equivalent to Slice 1-3. h_cycles > 1 wraps the L loop
+        # in an outer H loop with a residual skip add between H cycles.
+        h_cycles = max(1, getattr(cfg, "h_cycles", 1))
+
+        def _run_l_loop(x_in: torch.Tensor) -> torch.Tensor:
+            """Run l_cycles (= n_iters) inner iterations starting from x_in.
+            All existing Slice 1-3 flags apply at L-iter granularity."""
+            x_l = x_in
+            for iteration in range(n_iters):
+                # Inject the embedding when:
+                #   (a) injection flag is on AND iteration > 0, OR
+                #   (b) injection flag is on AND z_init replaced x at iter 0 (need
+                #       to recover the embed signal because z_init alone has none).
+                inject_now = use_input_injection and (iteration > 0 or use_z_init)
+                if inject_now:
+                    x_l = x_l + input_residual
+                if use_loop_index:
+                    loop_emb = self._loop_index_embedding(
+                        iteration, cfg.d_model, device=x_l.device, dtype=x_l.dtype,
+                    )
+                    x_l = x_l + loop_emb.view(1, 1, cfg.d_model)
+                if iteration < detach_until:
+                    with torch.no_grad():
+                        x_l = self._delta_layer_stack(x_l, cfg, B, S, prefix_mask=prefix_mask)
+                    x_l = x_l.detach()
+                else:
+                    x_l = self._delta_layer_stack(x_l, cfg, B, S, prefix_mask=prefix_mask)
+            return x_l
+
         if use_z_init:
             x = self.z_init.view(1, 1, cfg.d_model).expand(B, S, cfg.d_model)
         else:
             x = x_embed
-        for iteration in range(n_iters):
-            # Inject the embedding when:
-            #   (a) injection flag is on AND iteration > 0, OR
-            #   (b) injection flag is on AND z_init replaced x at iter 0 (need
-            #       to recover the embed signal because z_init alone has none).
-            inject_now = use_input_injection and (iteration > 0 or use_z_init)
-            if inject_now:
-                x = x + input_residual
-            if use_loop_index:
-                loop_emb = self._loop_index_embedding(
-                    iteration, cfg.d_model, device=x.device, dtype=x.dtype,
-                )
-                x = x + loop_emb.view(1, 1, cfg.d_model)
-            # bp warmup: run early iters without gradient tracking, then
-            # detach so the gradient-tracked region starts cleanly with x
-            # as a leaf tensor (no grad_fn). Last `bp_active` iters
-            # contribute to dL/dW.
-            if iteration < detach_until:
-                with torch.no_grad():
-                    x = self._delta_layer_stack(x, cfg, B, S, prefix_mask=prefix_mask)
-                x = x.detach()
-            else:
-                x = self._delta_layer_stack(x, cfg, B, S, prefix_mask=prefix_mask)
-        return x
+
+        if h_cycles == 1:
+            # Bit-equivalent baseline path: run L loop once, return directly.
+            # No residual add; preserves Slice 1-3 behavior exactly.
+            return _run_l_loop(x)
+
+        # H/L hierarchy: z_H carries across H cycles; each H cycle resets
+        # z_L from z_H and runs n_iters L iters; H hands off L's converged
+        # state via `z_H = z_L_final`. (See class docstring on why this
+        # is NOT a residual add — magnitude stability without LayerNorm.)
+        z_H = x
+        for _h_step in range(h_cycles):
+            z_L = z_H
+            z_L = _run_l_loop(z_L)
+            z_H = z_L
+        return z_H
 
     def _delta_layer_stack(self, x: torch.Tensor, cfg, B: int, S: int,
                            prefix_mask: torch.Tensor | None = None) -> torch.Tensor:

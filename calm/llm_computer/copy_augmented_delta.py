@@ -382,6 +382,7 @@ def build_copy_augmented_delta(
     use_z_init: bool = False,
     use_lecun_init: bool = False,
     use_prefix_lm: bool = False,
+    h_cycles: int = 1,
 ) -> CopyAugmentedDeltaNet:
     """Build a CopyAugmentedDeltaNet mirroring PT's default sizing.
 
@@ -405,6 +406,7 @@ def build_copy_augmented_delta(
         use_z_init=use_z_init,
         use_lecun_init=use_lecun_init,
         use_prefix_lm=use_prefix_lm,
+        h_cycles=h_cycles,
     )
     assert cfg.d_head == 2, f"d_head must be 2, got {cfg.d_head}"
     return CopyAugmentedDeltaNet(cfg)
