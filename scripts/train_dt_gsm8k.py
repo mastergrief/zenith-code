@@ -241,6 +241,13 @@ def train(
     # (residual magnitude blow-up through L stack at the Core-H/L
     # flag composition). Default False → bit-equivalent to Slice 1-11.
     use_pre_rmsnorm: bool = False,
+    # TRM-1.58 (Slice 13) — native W1.58A8 BitNet-style ternary bulk
+    # projections from step zero. Flips W_qkv/W_out/ff_in/ff_out + H-bank
+    # mirrors + copy_k_proj to TernaryLinear with BF16 master + STE.
+    # Mechanism-critical projections (copy_gate/copy_q/beta/attn_gate/
+    # RMSNorm/halt/embeddings/head) stay FP. Default False → bit-equivalent
+    # to pre-Slice-13 path; flag-on enters TRM-1.58 training regime.
+    use_ternary_bulk: bool = False,
     # Deep-supervision aux loss (S0c-aux per codex audit `1779314708107`).
     # 0.0 = final-NLL only (baseline, bit-equivalent to pre-S0c-aux path).
     # >0 = enable per-iter NLL via `return_per_iter=True`.
@@ -311,6 +318,7 @@ def train(
         use_halt_head=use_halt_head,
         use_carry=use_carry,
         use_pre_rmsnorm=use_pre_rmsnorm,
+        use_ternary_bulk=use_ternary_bulk,
     ).to(device)
     m.config.chunk_size = chunk_size
     m.max_len = max_len
@@ -499,6 +507,7 @@ def train(
                         "use_halt_head": getattr(m.config, "use_halt_head", False),
                         "use_carry": getattr(m.config, "use_carry", False),
                         "use_pre_rmsnorm": getattr(m.config, "use_pre_rmsnorm", False),
+                        "use_ternary_bulk": getattr(m.config, "use_ternary_bulk", False),
                         # GSM8k-specific metadata (locked S0b2 contract).
                         "gsm8k_char_vocab": tok.vocab_as_list(),
                         "gsm8k_normalizer_version": tok.normalizer_version,
@@ -561,6 +570,9 @@ if __name__ == "__main__":
     ap.add_argument("--use-carry", action="store_true")
     ap.add_argument("--chunk-size", type=int, default=32)
     # Slice 12: per-layer Pre-RMSNorm flag (L-stack residual stability fix).
+    ap.add_argument("--use-ternary-bulk", action="store_true",
+                    help="TRM-1.58 (Slice 13): native W1.58A8 ternary forward "
+                         "weights for bulk projections + STE backward")
     ap.add_argument("--use-pre-rmsnorm", action="store_true",
                     help="Allocate per-layer RMSNorm before sequence-mixer "
                          "AND before FFN in both L and H banks. Fixes S2 NaN "
@@ -608,6 +620,7 @@ if __name__ == "__main__":
         use_halt_head=args.use_halt_head,
         use_carry=args.use_carry,
         use_pre_rmsnorm=args.use_pre_rmsnorm,
+        use_ternary_bulk=args.use_ternary_bulk,
         chunk_size=args.chunk_size,
         aux_weight=args.aux_weight,
         log_every=args.log_every,
