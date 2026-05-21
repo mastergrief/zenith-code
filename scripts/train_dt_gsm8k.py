@@ -186,6 +186,13 @@ def autoreg_decode_integer(model, tok: Gsm8kTokenizer, question: str,
     """Greedy autoreg from `<bos> question <sep>` to first `<eos>`.
 
     Returns the decoded target string (post-decode; no normalization).
+
+    NOTE: this is the legacy single-forward-per-token decoder. It does
+    NOT use the segment loop / carry / halt-head — appropriate for
+    vanilla NLL training (`use_carry=False AND use_halt_head=False`).
+    For HRM-Text-trained models (`use_carry=True AND use_halt_head=True`),
+    use `autoreg_decode_integer_hrm` — single-forward decode is an
+    inference-path mismatch for those models. See Slice 13h.
     """
     model.eval()
     q_ids = tok.encode(question)
@@ -203,10 +210,101 @@ def autoreg_decode_integer(model, tok: Gsm8kTokenizer, question: str,
     return tok.decode(ids[0, len(prefix):].tolist(), stop_at_eos=True)
 
 
+def autoreg_decode_integer_hrm(
+    model, tok: Gsm8kTokenizer, question: str,
+    *, m_max: int = 4, max_new: int = 16,
+    eval_min_segments: int = 1,
+    device: str = "cuda",
+) -> dict:
+    """HRM-Text source-faithful ACT-greedy inference (Slice 13h).
+
+    Per token, runs outer segment loop with carry across segments for
+    the SAME prefix, carry=None at the start of each token. Halts on
+    ``Q_halt > Q_continue`` (gated by ``eval_min_segments``) or at
+    ``seg == m_max`` (forced). Emits from the halted segment's
+    final-position logits.
+
+    Per HRM-Text §5:222-255 inference contract + codex audit
+    msg 1779391827108-b211c8d8 (scope-lock for Slice 13h).
+
+    Args:
+      eval_min_segments: minimum segments before halt-head can fire
+                         (deterministic analog of train-side m_min;
+                         default 1 = head decides every segment, no
+                         stochastic exploration at eval).
+
+    Returns:
+      dict with:
+        decoded: str — the post-sep token sequence
+        segs_per_token: list[int] — segments used to emit each token
+        halt_histogram: list[int] len m_max — count of halts per seg idx
+        qh_sum / qc_sum / n_emits: aggregation primitives for callers
+    """
+    model.eval()
+    q_ids = tok.encode(question)
+    prefix = [tok.bos_id] + q_ids + [tok.sep_id]
+    ids = torch.tensor([prefix], dtype=torch.long, device=device)
+
+    segs_per_token: list[int] = []
+    halt_hist = [0] * m_max
+    qh_sum = 0.0
+    qc_sum = 0.0
+    n_emits = 0
+
+    with torch.no_grad():
+        for _ in range(max_new):
+            if ids.shape[1] >= model.config.max_len:
+                break
+            carry = None
+            final_log_probs = None
+            seg_emitted = 0
+            for seg_m in range(m_max):
+                seg = seg_m + 1
+                out = model(ids, carry=carry, return_carry=True)
+                if isinstance(out, tuple):
+                    log_probs, carry_m = out
+                else:
+                    log_probs, carry_m = out, None
+                q_pair = model.last_q_pair  # (1, 2)
+                q_halt = float(q_pair[0, 0])
+                q_continue = float(q_pair[0, 1])
+                halt = (q_halt > q_continue) and (seg >= eval_min_segments)
+                forced = (seg == m_max)
+                if halt or forced:
+                    final_log_probs = log_probs
+                    seg_emitted = seg
+                    halt_hist[seg - 1] += 1
+                    qh_sum += q_halt
+                    qc_sum += q_continue
+                    n_emits += 1
+                    break
+                carry = carry_m.detach() if carry_m is not None else None
+
+            segs_per_token.append(seg_emitted)
+            next_id = int(final_log_probs[0, -1].argmax().item())
+            if next_id == tok.eos_id:
+                break
+            ids = torch.cat([ids, torch.tensor([[next_id]], device=device)], dim=1)
+
+    decoded = tok.decode(ids[0, len(prefix):].tolist(), stop_at_eos=True)
+    return {
+        "decoded": decoded,
+        "segs_per_token": segs_per_token,
+        "halt_histogram": halt_hist,
+        "qh_sum": qh_sum,
+        "qc_sum": qc_sum,
+        "n_emits": n_emits,
+    }
+
+
 def autoreg_eval(model, tok: Gsm8kTokenizer, val_rows: list[dict],
                  cap: int, device: str) -> tuple[float, int, int]:
     """Returns (accuracy, n_correct, n_evaluated). Scores via
     `surface_gsm8k.score_row` for parity with the b-v Step 2 A/B harness.
+
+    Legacy decoder; appropriate only for vanilla-NLL trained models
+    (no carry, no segment loop). For HRM-Text-trained models, use
+    `autoreg_eval_hrm` to avoid the Slice 13h inference-path mismatch.
     """
     from scripts.bv_step2.surface_gsm8k import score_row
 
@@ -219,6 +317,76 @@ def autoreg_eval(model, tok: Gsm8kTokenizer, val_rows: list[dict],
             n_correct += 1
     acc = n_correct / max(n_eval, 1)
     return acc, n_correct, n_eval
+
+
+def autoreg_eval_hrm(
+    model, tok: Gsm8kTokenizer, val_rows: list[dict],
+    cap: int, device: str,
+    *, m_max: int = 4, eval_min_segments: int = 1,
+) -> dict:
+    """HRM-Text source-faithful eval with full telemetry (Slice 13h).
+
+    Uses the carry-aware outer-segment loop decoder. Reports both the
+    legacy parsed-numeric metric (via `surface_gsm8k.score_row` — same
+    as `autoreg_eval`) AND the exact-string token-sequence match
+    (same semantics as train-side `full_answer_correct`). Folds in the
+    13f.4 reward-alignment probe at zero marginal cost.
+
+    Returns dict with:
+      acc_parsed, acc_exact: floats (0..1)
+      n_correct_parsed, n_correct_exact: ints
+      n_evaluated: int
+      avg_segs_per_token: float
+      halt_histogram: list[int] len m_max
+      qh_mean, qc_mean: floats
+    """
+    from scripts.bv_step2.surface_gsm8k import score_row
+
+    n_eval = min(cap, len(val_rows))
+    n_correct_parsed = 0
+    n_correct_exact = 0
+    total_segs = 0
+    total_tokens = 0
+    halt_hist = [0] * m_max
+    qh_sum_total = 0.0
+    qc_sum_total = 0.0
+    n_emits_total = 0
+
+    for r in val_rows[:n_eval]:
+        result = autoreg_decode_integer_hrm(
+            model, tok, r["question"],
+            m_max=m_max, max_new=16,
+            eval_min_segments=eval_min_segments, device=device,
+        )
+        _, parsed_correct = score_row(result["decoded"], r)
+        if parsed_correct:
+            n_correct_parsed += 1
+        # Exact-string match: decoded == str(expected_int). The trainer's
+        # target is `<sep> {digits} <eos>`; decode strips bos+question+sep
+        # prefix and stops at eos, so decoded should == str(expected) for
+        # exact match.
+        if result["decoded"] == str(r["expected"]):
+            n_correct_exact += 1
+        for s in result["segs_per_token"]:
+            total_segs += s
+            total_tokens += 1
+        for i in range(m_max):
+            halt_hist[i] += result["halt_histogram"][i]
+        qh_sum_total += result["qh_sum"]
+        qc_sum_total += result["qc_sum"]
+        n_emits_total += result["n_emits"]
+
+    return {
+        "acc_parsed": n_correct_parsed / max(n_eval, 1),
+        "acc_exact": n_correct_exact / max(n_eval, 1),
+        "n_correct_parsed": n_correct_parsed,
+        "n_correct_exact": n_correct_exact,
+        "n_evaluated": n_eval,
+        "avg_segs_per_token": total_segs / max(total_tokens, 1),
+        "halt_histogram": halt_hist,
+        "qh_mean": qh_sum_total / max(n_emits_total, 1),
+        "qc_mean": qc_sum_total / max(n_emits_total, 1),
+    }
 
 
 def train(
@@ -782,14 +950,89 @@ def train(
               f"time={epoch_secs:.1f}s")
 
         if ep % eval_every == 0 or ep == epochs:
-            acc, n_c, n_e = autoreg_eval(m, tok, val_rows, cap=eval_cap, device=device)
-            print(f"[ep {ep:3d}] val_acc={acc:.3f} ({n_c}/{n_e})")
-            # Save gate: belt+suspenders to the NaN-tripwire above. Require
-            # both epoch loss finite AND val acc finite. sys.exit(2) on first
-            # non-finite batch means we shouldn't reach here with a poisoned
-            # model — but co_lead audit `1779353017204-69c791ba` flagged that
-            # `acc > best_acc` lets `acc=0.0` save when `best_acc=-1`, so
-            # this guard refuses to save unless both metrics are clean.
+            # Slice 13h: route to source-faithful HRM eval when the model
+            # was trained with carry + halt-head. Otherwise legacy decoder.
+            use_hrm_eval = bool(
+                getattr(m.config, "use_carry", False)
+                and getattr(m.config, "use_halt_head", False)
+            )
+            if use_hrm_eval:
+                er = autoreg_eval_hrm(
+                    m, tok, val_rows, cap=eval_cap, device=device,
+                    m_max=m_max if use_hrm_act else 4,
+                )
+                acc = er["acc_parsed"]   # gate on parsed (legacy-compatible)
+                n_c = er["n_correct_parsed"]
+                n_e = er["n_evaluated"]
+                halt_str = ",".join(str(h) for h in er["halt_histogram"])
+                print(
+                    f"[ep {ep:3d}] val_acc_parsed={er['acc_parsed']:.3f} "
+                    f"({er['n_correct_parsed']}/{n_e})  "
+                    f"val_acc_exact={er['acc_exact']:.3f} "
+                    f"({er['n_correct_exact']}/{n_e})  "
+                    f"avg_segs/tok={er['avg_segs_per_token']:.2f}  "
+                    f"halt_hist=[{halt_str}]  "
+                    f"Qh={er['qh_mean']:.3f}  Qc={er['qc_mean']:.3f}"
+                )
+            else:
+                acc, n_c, n_e = autoreg_eval(
+                    m, tok, val_rows, cap=eval_cap, device=device)
+                print(f"[ep {ep:3d}] val_acc={acc:.3f} ({n_c}/{n_e})")
+
+            # Slice 13h checkpoint hygiene: build the ckpt blob once and
+            # save it unconditionally as `<name>_last.pt` EVERY epoch
+            # (so post-collapse epochs aren't silently dropped); also
+            # save as `<name>.pt` (best) only when val_acc beats best.
+            ckpt_blob = {
+                "model_state": m.state_dict(),
+                "config": {
+                    "vocab_size": tok.vocab_size,
+                    "max_len": max_len,
+                    "d_model": d_model,
+                    "n_heads": n_heads,
+                    "n_layers": n_layers,
+                    "d_ffn": d_ffn,
+                    "n_copy_heads": n_copy_heads,
+                    "copy_gate_bias_init": -2.0,
+                    "use_chunkwise": getattr(m.config, "use_chunkwise", True),
+                    "chunk_size": getattr(m.config, "chunk_size", 32),
+                    "n_iterations": getattr(m.config, "n_iterations", 1),
+                    "use_loop_index": getattr(m.config, "use_loop_index", False),
+                    "use_input_injection": getattr(m.config, "use_input_injection", False),
+                    "use_gated_attention": getattr(m.config, "use_gated_attention", False),
+                    "use_z_init": getattr(m.config, "use_z_init", False),
+                    "use_lecun_init": getattr(m.config, "use_lecun_init", False),
+                    "use_prefix_lm": getattr(m.config, "use_prefix_lm", False),
+                    "h_cycles": getattr(m.config, "h_cycles", 1),
+                    "use_h_rmsnorm": getattr(m.config, "use_h_rmsnorm", False),
+                    "use_short_conv": getattr(m.config, "use_short_conv", False),
+                    "use_h_layer_stack": getattr(m.config, "use_h_layer_stack", False),
+                    "use_halt_head": getattr(m.config, "use_halt_head", False),
+                    "use_carry": getattr(m.config, "use_carry", False),
+                    "use_pre_rmsnorm": getattr(m.config, "use_pre_rmsnorm", False),
+                    "use_ternary_bulk": getattr(m.config, "use_ternary_bulk", False),
+                    "gsm8k_char_vocab": tok.vocab_as_list(),
+                    "gsm8k_normalizer_version": tok.normalizer_version,
+                    "aux_weight": float(aux_weight),
+                    "loss_mode": (
+                        "final_plus_per_iter_mean"
+                        if aux_weight > 0.0 else "final_only"
+                    ),
+                },
+                "epoch": ep,
+                "val_acc": acc,
+                "n_train": len(train_ds),
+                "n_val": len(val_ds),
+            }
+
+            last_path = Path(checkpoint_path).with_name(
+                Path(checkpoint_path).stem + "_last.pt"
+            )
+            torch.save(ckpt_blob, last_path)
+
+            # best.pt: gate on (loss finite AND acc finite AND acc > best).
+            # Co-lead audit `1779353017204-69c791ba`: `acc > best_acc` lets
+            # `acc=0.0` save when `best_acc=-1`, so guard requires clean metrics.
             if (
                 math.isfinite(avg_loss)
                 and math.isfinite(acc)
@@ -797,55 +1040,7 @@ def train(
             ):
                 best_acc = acc
                 best_ep = ep
-                torch.save({
-                    "model_state": m.state_dict(),
-                    "config": {
-                        "vocab_size": tok.vocab_size,
-                        "max_len": max_len,
-                        "d_model": d_model,
-                        "n_heads": n_heads,
-                        "n_layers": n_layers,
-                        "d_ffn": d_ffn,
-                        "n_copy_heads": n_copy_heads,
-                        "copy_gate_bias_init": -2.0,
-                        # rdt-v2 flags — live values from m.config so reload
-                        # rebuilds the trained architecture exactly.
-                        "use_chunkwise": getattr(m.config, "use_chunkwise", True),
-                        "chunk_size": getattr(m.config, "chunk_size", 32),
-                        "n_iterations": getattr(m.config, "n_iterations", 1),
-                        "use_loop_index": getattr(m.config, "use_loop_index", False),
-                        "use_input_injection": getattr(m.config, "use_input_injection", False),
-                        "use_gated_attention": getattr(m.config, "use_gated_attention", False),
-                        "use_z_init": getattr(m.config, "use_z_init", False),
-                        "use_lecun_init": getattr(m.config, "use_lecun_init", False),
-                        "use_prefix_lm": getattr(m.config, "use_prefix_lm", False),
-                        "h_cycles": getattr(m.config, "h_cycles", 1),
-                        "use_h_rmsnorm": getattr(m.config, "use_h_rmsnorm", False),
-                        "use_short_conv": getattr(m.config, "use_short_conv", False),
-                        "use_h_layer_stack": getattr(m.config, "use_h_layer_stack", False),
-                        "use_halt_head": getattr(m.config, "use_halt_head", False),
-                        "use_carry": getattr(m.config, "use_carry", False),
-                        "use_pre_rmsnorm": getattr(m.config, "use_pre_rmsnorm", False),
-                        "use_ternary_bulk": getattr(m.config, "use_ternary_bulk", False),
-                        # GSM8k-specific metadata (locked S0b2 contract).
-                        "gsm8k_char_vocab": tok.vocab_as_list(),
-                        "gsm8k_normalizer_version": tok.normalizer_version,
-                        # Loss provenance (S0c-aux per codex audit `1779314708107`).
-                        # dt_install does not need these for architecture
-                        # reconstruction, but S1/S2 receipts must be
-                        # replayable: loss_mode names the recipe; aux_weight
-                        # pins the scalar.
-                        "aux_weight": float(aux_weight),
-                        "loss_mode": (
-                            "final_plus_per_iter_mean"
-                            if aux_weight > 0.0 else "final_only"
-                        ),
-                    },
-                    "epoch": ep,
-                    "val_acc": acc,
-                    "n_train": len(train_ds),
-                    "n_val": len(val_ds),
-                }, checkpoint_path)
+                torch.save(ckpt_blob, checkpoint_path)
                 print(f"[ep {ep:3d}] saved best to {checkpoint_path}")
 
     print(f"\nBest: epoch {best_ep}  val_acc={best_acc:.3f}")
