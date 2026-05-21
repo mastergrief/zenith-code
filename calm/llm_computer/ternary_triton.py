@@ -422,6 +422,164 @@ def ternary_matmul_triton_v2(
     )
 
 
+# =========================================================================
+# v3 / 14b: Fused FFN GLU kernel — ff_in matmul + chunk + ReLU + multiply
+# =========================================================================
+#
+# Slice 14b: collapse the FFN pipeline's ff_in + chunk + ReLU + mul into a
+# single Triton kernel. Pattern from tq4_triton.py tq4_linear_dual_triton.
+# Saves 3 kernel launches per FFN pass (chunk is a view-only no-op, but
+# ReLU and elementwise multiply each launch separately in the unfused
+# path).
+#
+# Math:
+#   ff_in.weight: (2 * d_ffn, d_model) ternary
+#   For each output position n in [0, d_ffn):
+#     gate[m, n] = sum_k x[m, k] * ff_in.weight[n, k]
+#     val[m, n]  = sum_k x[m, k] * ff_in.weight[n + d_ffn, k]
+#     y[m, n]    = ReLU(gate[m, n]) * val[m, n]
+
+
+@triton.jit
+def _ternary_ffn_glu_int8_kernel(
+    x_ptr,            # (M, K) int8
+    w_packed_ptr,     # (2*d_ffn, K/4) uint8 — gate-half (first d_ffn rows) + val-half
+    x_scale_ptr,      # (M,) FP32
+    w_scale_ptr,      # (1,) FP32
+    y_ptr,            # (M, d_ffn) FP32
+    M, d_ffn, K,
+    stride_xm, stride_xk,
+    stride_wn, stride_wk,
+    stride_ym, stride_yn,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+):
+    """One program tile: BLOCK_M rows × BLOCK_N cols of (M, d_ffn) output.
+
+    Streams BOTH gate-half and val-half of the packed ff_in weights per
+    program. Each output element y[m, n] = ReLU(gate_dot[m, n]) * val_dot[m, n]
+    where gate_dot uses w_packed[n, :] and val_dot uses w_packed[n + d_ffn, :].
+
+    The x tile is loaded ONCE per program and reused for both halves —
+    that's the main bandwidth win vs running ff_in matmul + separate
+    ReLU + multiply pipeline.
+    """
+    pid_m = tl.program_id(0)
+    pid_n = tl.program_id(1)
+
+    rm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    rn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    mask_m = rm < M
+    mask_n = rn < d_ffn
+
+    acc_gate = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.int32)
+    acc_val = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.int32)
+
+    for k0 in range(0, K, BLOCK_K):
+        k_offs = k0 + tl.arange(0, BLOCK_K)
+        mask_k = k_offs < K
+
+        # Load x tile (BLOCK_M, BLOCK_K) — used by BOTH halves
+        x_offs = rm[:, None] * stride_xm + k_offs[None, :] * stride_xk
+        x_i8 = tl.load(
+            x_ptr + x_offs,
+            mask=mask_m[:, None] & mask_k[None, :],
+            other=0,
+        )
+
+        # Decode gate-half and val-half ternary codes for current K chunk
+        k_byte = k_offs // 4
+        k_inbyte = k_offs % 4
+        shift = 2 * k_inbyte[None, :]
+        mask_k_byte = k_byte < (K // 4)
+
+        # Gate half: rows [0, d_ffn) -- offset by rn
+        gate_offs = rn[:, None] * stride_wn + k_byte[None, :] * stride_wk
+        gate_byte = tl.load(
+            w_packed_ptr + gate_offs,
+            mask=mask_n[:, None] & mask_k_byte[None, :],
+            other=0,
+        ).to(tl.int32)
+        gate_code = (gate_byte >> shift) & 0x3
+        gate_w = ((gate_code == 2).to(tl.int8)
+                  - (gate_code == 0).to(tl.int8))
+
+        # Val half: rows [d_ffn, 2*d_ffn) -- offset by rn + d_ffn
+        val_offs = (rn + d_ffn)[:, None] * stride_wn + k_byte[None, :] * stride_wk
+        val_byte = tl.load(
+            w_packed_ptr + val_offs,
+            mask=mask_n[:, None] & mask_k_byte[None, :],
+            other=0,
+        ).to(tl.int32)
+        val_code = (val_byte >> shift) & 0x3
+        val_w = ((val_code == 2).to(tl.int8)
+                 - (val_code == 0).to(tl.int8))
+
+        # Two INT8 tensor-core matmuls reusing x_i8
+        acc_gate += tl.dot(x_i8, tl.trans(gate_w), out_dtype=tl.int32)
+        acc_val += tl.dot(x_i8, tl.trans(val_w), out_dtype=tl.int32)
+
+    # Dequant epilogue
+    x_scale = tl.load(x_scale_ptr + rm, mask=mask_m, other=1.0)
+    w_scale = tl.load(w_scale_ptr)
+    gate_fp = acc_gate.to(tl.float32) * x_scale[:, None] * w_scale
+    val_fp = acc_val.to(tl.float32) * x_scale[:, None] * w_scale
+
+    # Fused ReLU + multiply
+    y_fp = tl.maximum(gate_fp, 0.0) * val_fp
+
+    y_offs = rm[:, None] * stride_ym + rn[None, :] * stride_yn
+    tl.store(y_ptr + y_offs, y_fp, mask=mask_m[:, None] & mask_n[None, :])
+
+
+def ternary_ffn_glu_triton_v2_prequant(
+    x_i8: torch.Tensor, x_scale: torch.Tensor,
+    w_packed: torch.Tensor, w_scale: float,
+    in_features: int, d_ffn: int,
+    BLOCK_M: int = 32, BLOCK_N: int = 32, BLOCK_K: int = 32,
+) -> torch.Tensor:
+    """Fused ff_in matmul + chunk + ReLU + multiply (Slice 14b v3 path).
+
+    Args:
+        x_i8: (M, in_features) int8.
+        x_scale: (M,) FP32 per-row activation scale.
+        w_packed: (2 * d_ffn, in_features // 4) uint8 — gate-half then val-half.
+        w_scale: FP32 per-tensor weight scale.
+        in_features: K dim.
+        d_ffn: output dimension (HALF the rows of w_packed).
+    Returns:
+        y: (M, d_ffn) FP32 — equivalent to F.relu(gate) * val.
+    """
+    assert x_i8.is_contiguous() and x_i8.dtype == torch.int8
+    assert x_scale.is_contiguous() and x_scale.dtype == torch.float32
+    assert w_packed.is_contiguous() and w_packed.dtype == torch.uint8
+    assert w_packed.shape == (2 * d_ffn, in_features // 4)
+    assert in_features % 4 == 0 and BLOCK_K % 4 == 0
+    assert BLOCK_K >= 16
+
+    M = x_i8.shape[0]
+    assert x_i8.shape[1] == in_features
+    assert x_scale.shape == (M,)
+
+    y = torch.empty((M, d_ffn), device=x_i8.device, dtype=torch.float32)
+    w_scale_tensor = torch.tensor([w_scale], device=x_i8.device, dtype=torch.float32)
+    grid = (
+        (M + BLOCK_M - 1) // BLOCK_M,
+        (d_ffn + BLOCK_N - 1) // BLOCK_N,
+    )
+    _ternary_ffn_glu_int8_kernel[grid](
+        x_i8, w_packed, x_scale, w_scale_tensor, y,
+        M, d_ffn, in_features,
+        x_i8.stride(0), x_i8.stride(1),
+        w_packed.stride(0), w_packed.stride(1),
+        y.stride(0), y.stride(1),
+        BLOCK_M=BLOCK_M, BLOCK_N=BLOCK_N, BLOCK_K=BLOCK_K,
+        num_warps=4,
+    )
+    return y
+
+
 def ternary_linear_triton(x: torch.Tensor, weight: torch.Tensor,
                            bias: torch.Tensor | None = None) -> torch.Tensor:
     """End-to-end: take a FP `weight` (treated as the master weight),
