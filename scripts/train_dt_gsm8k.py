@@ -116,12 +116,29 @@ class Gsm8kDataset(Dataset):
         return self.items[i]
 
 
-def collate(batch, pad_id: int, max_len: int):
+def collate(batch, pad_id: int, max_len: int, fixed_shape: bool = False):
     """Right-pad to the batch's longest sequence; build a target-position
     mask (1 for positions whose NEXT-token prediction loss counts).
+
+    Slice 13e.1 (TRM-1.58 throughput-to-signal track):
+      `fixed_shape=False` (default, preserved baseline): pads to per-batch
+      max_L. Variable shape per batch — precludes CUDA graph capture at
+      training-step granularity.
+
+      `fixed_shape=True`: pads ALL batches to fixed `max_len`. Tail
+      positions in `pad` are `pad_id`; tail positions in `loss_mask` are
+      False. Invariant: the last real loss position remains `L-2` for any
+      example with `L > sep_pos + 1` (matches `_masked_shifted_nll` which
+      uses `targets=ids[:, 1:]` and `mask=mask[:, :-1]`). Per codex audit
+      msg `1779383623566-0b118cd2`: tail-pad regions are pad_id AND
+      loss_mask=False, so model loss is semantically identical to
+      `fixed_shape=False` on the same examples.
     """
     seq_lens = [len(ids) for ids, _ in batch]
-    max_L = max(seq_lens)
+    if fixed_shape:
+        max_L = max_len
+    else:
+        max_L = max(seq_lens)
     B = len(batch)
     pad = torch.full((B, max_L), pad_id, dtype=torch.long)
     sep_positions = torch.zeros(B, dtype=torch.long)
@@ -252,6 +269,14 @@ def train(
     # 0.0 = final-NLL only (baseline, bit-equivalent to pre-S0c-aux path).
     # >0 = enable per-iter NLL via `return_per_iter=True`.
     aux_weight: float = 0.0,
+    # TRM-1.58 throughput-to-signal track Slice 13e.1: fixed-shape padding.
+    # When True, every batch pads to `max_len` (default 512) instead of the
+    # per-batch max — unlocks training-step CUDA graph capture at fixed
+    # shapes. Default False preserves baseline collate behavior. Loss/logits
+    # at non-pad positions are semantically identical (causal mask + tail
+    # loss_mask=False); only the per-step wall-clock changes when graph
+    # capture also lands.
+    fixed_shape_padding: bool = False,
     # Interior-batch loss/grad logging (NaN-diagnostic). 0 = disabled (default,
     # preserves prior log shape). N>0 = print `[ep E step S] loss=X grad_norm=Y`
     # every N batches AND early-exit on first non-finite loss with diagnostic
@@ -292,8 +317,12 @@ def train(
 
     loader = DataLoader(
         train_ds, batch_size=batch_size, shuffle=True, drop_last=True,
-        collate_fn=lambda b: collate(b, tok.pad_id, max_len),
+        collate_fn=lambda b: collate(b, tok.pad_id, max_len,
+                                      fixed_shape=fixed_shape_padding),
     )
+    if fixed_shape_padding:
+        print(f"[gsm8k] Slice 13e.1: fixed-shape padding ENABLED — every "
+              f"batch padded to (B={batch_size}, max_len={max_len})")
 
     print(f"[gsm8k] building model (d_model={d_model}, layers={n_layers}, "
           f"vocab={tok.vocab_size})...")
@@ -573,6 +602,11 @@ if __name__ == "__main__":
     ap.add_argument("--use-ternary-bulk", action="store_true",
                     help="TRM-1.58 (Slice 13): native W1.58A8 ternary forward "
                          "weights for bulk projections + STE backward")
+    ap.add_argument("--fixed-shape-padding", action="store_true",
+                    help="TRM-1.58 throughput-to-signal Slice 13e.1: pad "
+                         "every batch to fixed --max-len instead of per-batch "
+                         "max_L. Required for CUDA graph capture of the "
+                         "training step (Slice 13e.2).")
     ap.add_argument("--use-pre-rmsnorm", action="store_true",
                     help="Allocate per-layer RMSNorm before sequence-mixer "
                          "AND before FFN in both L and H banks. Fixes S2 NaN "
@@ -621,6 +655,7 @@ if __name__ == "__main__":
         use_carry=args.use_carry,
         use_pre_rmsnorm=args.use_pre_rmsnorm,
         use_ternary_bulk=args.use_ternary_bulk,
+        fixed_shape_padding=args.fixed_shape_padding,
         chunk_size=args.chunk_size,
         aux_weight=args.aux_weight,
         log_every=args.log_every,
