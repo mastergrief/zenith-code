@@ -373,6 +373,16 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
             # at the entry; users get a clean NotImplementedError
             # instead of degraded silent inference.
             ("use_carry", bool),
+            # Slice 12: Pre-RMSNorm normalizes the residual before the
+            # sequence-mixer AND before the FFN sublayer inside
+            # `_delta_layer_stack`. The cached prefill loop here at
+            # :400-455 walks layers FLAT and applies W_qkv / ff_in
+            # directly to `x` without the norm path. Without a block,
+            # a card trained with `use_pre_rmsnorm=True` would silently
+            # diverge between training-time `forward` and product-path
+            # `decode_greedy_cached`. Per co_lead audit msg
+            # `1779354358961-1aff6d0c`.
+            ("use_pre_rmsnorm", bool),
         )
         _blocked = []
         for _attr, _pred in _CACHED_DECODE_BLOCKED:
@@ -621,6 +631,7 @@ def build_copy_augmented_delta(
     use_h_layer_stack: bool = False,
     use_halt_head: bool = False,
     use_carry: bool = False,
+    use_pre_rmsnorm: bool = False,
 ) -> CopyAugmentedDeltaNet:
     """Build a CopyAugmentedDeltaNet mirroring PT's default sizing.
 
@@ -650,6 +661,7 @@ def build_copy_augmented_delta(
         use_h_layer_stack=use_h_layer_stack,
         use_halt_head=use_halt_head,
         use_carry=use_carry,
+        use_pre_rmsnorm=use_pre_rmsnorm,
     )
     assert cfg.d_head == 2, f"d_head must be 2, got {cfg.d_head}"
     return CopyAugmentedDeltaNet(cfg)

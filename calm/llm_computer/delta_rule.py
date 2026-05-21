@@ -61,11 +61,14 @@ class _LayerBank:
     __slots__ = (
         "W_qkv", "W_out", "ff_in", "ff_out", "beta_head",
         "attn_gate_proj", "short_conv_q", "short_conv_k", "short_conv_v",
+        # Slice 12: per-layer Pre-RMSNorm modules (None when flag off).
+        "pre_mixer_norm", "pre_ffn_norm",
     )
 
     def __init__(self, W_qkv, W_out, ff_in, ff_out, beta_head,
                  attn_gate_proj=None,
-                 short_conv_q=None, short_conv_k=None, short_conv_v=None):
+                 short_conv_q=None, short_conv_k=None, short_conv_v=None,
+                 pre_mixer_norm=None, pre_ffn_norm=None):
         self.W_qkv = W_qkv
         self.W_out = W_out
         self.ff_in = ff_in
@@ -75,6 +78,8 @@ class _LayerBank:
         self.short_conv_q = short_conv_q
         self.short_conv_k = short_conv_k
         self.short_conv_v = short_conv_v
+        self.pre_mixer_norm = pre_mixer_norm
+        self.pre_ffn_norm = pre_ffn_norm
 
 
 @dataclass
@@ -192,6 +197,23 @@ class DeltaNetConfig(Small2DConfig):
                                        # iter-0 injection that flat L would have.)
                                        # h_cycles=1 (default) special-cases to the
                                        # flat Slice 1-3 path — bit-equivalent baseline.
+    use_pre_rmsnorm: bool = False      # Slice 12: per-layer Pre-RMSNorm INSIDE the
+                                       # L (and H, when use_h_layer_stack=True) layer
+                                       # stack. Normalizes the residual stream BEFORE
+                                       # the sequence-mixer (QKV proj) AND BEFORE the
+                                       # FFN sublayer — full pre-norm block pattern
+                                       # (HRM-Text / Llama / GPT-NeoX canonical).
+                                       # Fixes S2 NaN root cause: without per-layer
+                                       # norm, residual accumulates `x = x + W_out(...)
+                                       # + ff_out(...)` per layer, and with
+                                       # use_input_injection + n_iterations > 1 +
+                                       # h_cycles > 1 the magnitude saturates fp32 by
+                                       # ~layer 3 (`ff_out.3` first-NaN, max|t|~1.76e35
+                                       # per `/tmp/diagnose_s2_nan.py` receipt
+                                       # `1779353960822-1bade0d5`). Default off →
+                                       # bit-equivalent to Slice 1-11 baseline. RNG-
+                                       # isolated allocation per Slice 8/10a pattern.
+                                       # Cached-decode blocklist includes this flag.
 
 
 class DeltaNetSmall2DTransformer(Small2DTransformer):
@@ -248,6 +270,31 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             self.short_conv_q = None
             self.short_conv_k = None
             self.short_conv_v = None
+
+        # Slice 12: per-layer Pre-RMSNorm for the L stack. Allocated only
+        # when flag on; otherwise None. RMSNorm has bias-free `weight=1.0`
+        # init so the broad LeCun walker (run later in this same __init__
+        # path on the parent class init when use_lecun_init is set) is
+        # not affected — `_apply_lecun_init` is nn.Linear-scoped.
+        #
+        # RNG isolation: save/restore around allocation so downstream
+        # subclass-built params (CopyAugmentedDeltaNet.copy_gate /
+        # copy_q_proj / copy_k_proj) get the same seeded values whether
+        # this flag is on or off. Same pattern as Slice 2 z_init, Slice 8
+        # H bank, Slice 10a halt_head. Without this, flag-off bit-
+        # equivalence to Slice 1-11 silently breaks at the same seed.
+        if getattr(config, "use_pre_rmsnorm", False):
+            _saved_rng_lnorm = torch.get_rng_state()
+            self.pre_mixer_norm = nn.ModuleList([
+                nn.RMSNorm(config.d_model) for _ in range(config.n_layers)
+            ])
+            self.pre_ffn_norm = nn.ModuleList([
+                nn.RMSNorm(config.d_model) for _ in range(config.n_layers)
+            ])
+            torch.set_rng_state(_saved_rng_lnorm)
+        else:
+            self.pre_mixer_norm = None
+            self.pre_ffn_norm = None
 
         # z_init: learned per-channel initial state for the D5 recurrence.
         # When use_z_init=True AND n_iterations>1, iter 0 starts from
@@ -415,6 +462,21 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
                 self.H_short_conv_q = None
                 self.H_short_conv_k = None
                 self.H_short_conv_v = None
+            # Slice 12: H-bank symmetric Pre-RMSNorm. Mirrors L bank's
+            # `pre_mixer_norm` / `pre_ffn_norm`. Lives inside the H-bank
+            # RNG envelope so the save/restore at line ~420 below covers
+            # this allocation too — keeping downstream subclass-built
+            # params seed-stable when use_pre_rmsnorm is flipped.
+            if getattr(config, "use_pre_rmsnorm", False):
+                self.H_pre_mixer_norm = nn.ModuleList([
+                    nn.RMSNorm(config.d_model) for _ in range(config.n_layers)
+                ])
+                self.H_pre_ffn_norm = nn.ModuleList([
+                    nn.RMSNorm(config.d_model) for _ in range(config.n_layers)
+                ])
+            else:
+                self.H_pre_mixer_norm = None
+                self.H_pre_ffn_norm = None
             # Restore RNG so downstream subclass-constructed modules get the
             # same seeded values as the flag-off case.
             torch.set_rng_state(_saved_rng)
@@ -428,6 +490,8 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             self.H_short_conv_q = None
             self.H_short_conv_k = None
             self.H_short_conv_v = None
+            self.H_pre_mixer_norm = None
+            self.H_pre_ffn_norm = None
 
         # Build the lazy bank handles. These are plain Python objects holding
         # references to the ModuleList submodules — NOT registered modules
@@ -441,6 +505,8 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             short_conv_q=self.short_conv_q,
             short_conv_k=self.short_conv_k,
             short_conv_v=self.short_conv_v,
+            pre_mixer_norm=self.pre_mixer_norm,
+            pre_ffn_norm=self.pre_ffn_norm,
         )
         if getattr(config, "use_h_layer_stack", False):
             self._h_bank = _LayerBank(
@@ -451,6 +517,8 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
                 short_conv_q=self.H_short_conv_q,
                 short_conv_k=self.H_short_conv_k,
                 short_conv_v=self.H_short_conv_v,
+                pre_mixer_norm=self.H_pre_mixer_norm,
+                pre_ffn_norm=self.H_pre_ffn_norm,
             )
         else:
             self._h_bank = None
@@ -1120,7 +1188,14 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         if bank is None:
             bank = self._l_bank
         for layer in range(cfg.n_layers):
-            qkv = bank.W_qkv[layer](x)                         # (B, S, 3D)
+            # Slice 12: Pre-RMSNorm before sequence-mixer (QKV projection).
+            # Flag-off path: pre_mixer_norm is None → x_for_mixer is x →
+            # bit-equivalent to Slice 1-11.
+            if bank.pre_mixer_norm is not None:
+                x_for_mixer = bank.pre_mixer_norm[layer](x)
+            else:
+                x_for_mixer = x
+            qkv = bank.W_qkv[layer](x_for_mixer)               # (B, S, 3D)
             qkv = qkv.reshape(B, S, 3, cfg.n_heads, cfg.d_head)
             q, k, v = qkv.permute(2, 0, 3, 1, 4)               # 3 × (B, H, S, Dh)
 
@@ -1229,7 +1304,13 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
                 x = x + bank.W_out[layer](attn) + bank.W_out[layer](gated_delta)
             else:
                 x = x + bank.W_out[layer](gated_delta)
-            gate, val = bank.ff_in[layer](x).chunk(2, dim=-1)
+            # Slice 12: Pre-RMSNorm before FFN sublayer. Same flag-off
+            # invariant — x_for_ffn is x when norm is None.
+            if bank.pre_ffn_norm is not None:
+                x_for_ffn = bank.pre_ffn_norm[layer](x)
+            else:
+                x_for_ffn = x
+            gate, val = bank.ff_in[layer](x_for_ffn).chunk(2, dim=-1)
             x = x + bank.ff_out[layer](F.relu(gate) * val)
 
         return x

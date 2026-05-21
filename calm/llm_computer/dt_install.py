@@ -77,6 +77,7 @@ def load_dt_checkpoint(
         use_h_layer_stack=cfg.get("use_h_layer_stack", False),
         use_halt_head=cfg.get("use_halt_head", False),
         use_carry=cfg.get("use_carry", False),
+        use_pre_rmsnorm=cfg.get("use_pre_rmsnorm", False),
     ).to(device)
     # `chunk_size` is config-only (not a builder kwarg) — restore after build
     # so non-default chunk sizes round-trip. Default 32 matches DeltaNetConfig.

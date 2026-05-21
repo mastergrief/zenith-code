@@ -35,6 +35,8 @@ share this entry-point; the `--use-*` flags pick the variant.
 from __future__ import annotations
 
 import argparse
+import math
+import sys
 import time
 from pathlib import Path
 
@@ -235,10 +237,19 @@ def train(
     use_halt_head: bool = False,
     use_carry: bool = False,
     chunk_size: int = 32,
+    # Slice 12: per-layer Pre-RMSNorm flag. Fixes S2 NaN root cause
+    # (residual magnitude blow-up through L stack at the Core-H/L
+    # flag composition). Default False → bit-equivalent to Slice 1-11.
+    use_pre_rmsnorm: bool = False,
     # Deep-supervision aux loss (S0c-aux per codex audit `1779314708107`).
     # 0.0 = final-NLL only (baseline, bit-equivalent to pre-S0c-aux path).
     # >0 = enable per-iter NLL via `return_per_iter=True`.
     aux_weight: float = 0.0,
+    # Interior-batch loss/grad logging (NaN-diagnostic). 0 = disabled (default,
+    # preserves prior log shape). N>0 = print `[ep E step S] loss=X grad_norm=Y`
+    # every N batches AND early-exit on first non-finite loss with diagnostic
+    # context (step idx, last finite loss, last grad_norm).
+    log_every: int = 0,
 ) -> None:
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
@@ -299,6 +310,7 @@ def train(
         use_h_layer_stack=use_h_layer_stack,
         use_halt_head=use_halt_head,
         use_carry=use_carry,
+        use_pre_rmsnorm=use_pre_rmsnorm,
     ).to(device)
     m.config.chunk_size = chunk_size
     m.max_len = max_len
@@ -314,6 +326,8 @@ def train(
     checkpoint_path = Path(checkpoint_path)
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
 
+    last_finite_loss = float("nan")
+    last_grad_norm = float("nan")
     for ep in range(1, epochs + 1):
         m.train()
         t0 = time.time()
@@ -345,13 +359,95 @@ def train(
                 # Final-NLL only (baseline, bit-equivalent to pre-S0c-aux
                 # path when called via _masked_shifted_nll on the same
                 # inputs).
-                loss = _masked_shifted_nll(m(ids), ids, mask)
+                final_nll = _masked_shifted_nll(m(ids), ids, mask)
+                loss = final_nll
+                per_iter_nlls = None
+                aux_nll = None
+
+            # Finite-tripwire (NaN-diagnostic per codex audit
+            # `1779353017204-69c791ba`). Check ALL loss components BEFORE
+            # backward — NaN-poisoned grads corrupt weights silently.
+            # Exit nonzero with full component readout on first violation;
+            # do NOT save or eval a poisoned model.
+            step_idx = n_batches + 1
+            loss_item = float(loss.detach())
+            finite_loss = math.isfinite(loss_item)
+            final_item = float(final_nll.detach())
+            finite_final = math.isfinite(final_item)
+            if per_iter_nlls is not None:
+                pi_items = [float(p.detach()) for p in per_iter_nlls]
+                aux_item = float(aux_nll.detach())
+                finite_aux = math.isfinite(aux_item)
+                finite_pi = all(math.isfinite(p) for p in pi_items)
+            else:
+                pi_items = None
+                aux_item = None
+                finite_aux = True
+                finite_pi = True
+
+            if not (finite_loss and finite_final and finite_aux and finite_pi):
+                print(f"[NaN-DETECT] ep={ep} step={step_idx} loss={loss_item} "
+                      f"finite_loss={finite_loss}",
+                      flush=True)
+                print(f"[NaN-DETECT] final_nll={final_item} "
+                      f"finite_final={finite_final}",
+                      flush=True)
+                if pi_items is not None:
+                    print(f"[NaN-DETECT] aux_nll={aux_item} "
+                          f"finite_aux={finite_aux} per_iter={pi_items} "
+                          f"finite_pi={finite_pi}",
+                          flush=True)
+                print(f"[NaN-DETECT] last_finite_loss={last_finite_loss} "
+                      f"last_grad_norm={last_grad_norm}",
+                      flush=True)
+                sys.exit(2)
+
+            last_finite_loss = loss_item
             opt.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(m.parameters(), max_norm=1.0)
+            grad_norm = torch.nn.utils.clip_grad_norm_(m.parameters(), max_norm=1.0)
+            last_grad_norm = float(grad_norm)
+
+            # Grad-norm finite gate (per codex audit `1779353275232-793dc65e`).
+            # clip_grad_norm_ divides but does NOT filter — NaN/inf grads
+            # survive clipping and poison weights via opt.step(). Refuse step
+            # on non-finite grad norm; same diagnostic readout as loss tripwire.
+            if not math.isfinite(last_grad_norm):
+                print(f"[NaN-DETECT] ep={ep} step={step_idx} "
+                      f"grad_norm={last_grad_norm} "
+                      f"loss={loss_item}",
+                      flush=True)
+                print(f"[NaN-DETECT] final_nll={final_item} "
+                      f"finite_final={finite_final}",
+                      flush=True)
+                if pi_items is not None:
+                    print(f"[NaN-DETECT] aux_nll={aux_item} "
+                          f"per_iter={pi_items}",
+                          flush=True)
+                print(f"[NaN-DETECT] last_finite_loss={last_finite_loss} "
+                      f"(grad explosion: loss was finite but grads diverged)",
+                      flush=True)
+                sys.exit(2)
+
             opt.step()
-            total_loss += loss.item()
+            total_loss += loss_item
             n_batches += 1
+
+            # Interior log: step 1 AND every log_every batches. Decomposes
+            # loss into final_nll + aux_nll + per-iter NLLs so divergence
+            # source is visible per step.
+            if log_every > 0 and (step_idx == 1 or step_idx % log_every == 0):
+                if pi_items is not None:
+                    pi_str = ",".join(f"{p:.4f}" for p in pi_items)
+                    print(f"[ep {ep:3d} step {step_idx:5d}] "
+                          f"loss={loss_item:.4f}  final_nll={final_item:.4f}  "
+                          f"aux_nll={aux_item:.4f}  per_iter=[{pi_str}]  "
+                          f"grad_norm={last_grad_norm:.4f}",
+                          flush=True)
+                else:
+                    print(f"[ep {ep:3d} step {step_idx:5d}] "
+                          f"loss={loss_item:.4f}  grad_norm={last_grad_norm:.4f}",
+                          flush=True)
         sched.step()
         avg_loss = total_loss / max(n_batches, 1)
         epoch_secs = time.time() - t0
@@ -361,7 +457,17 @@ def train(
         if ep % eval_every == 0 or ep == epochs:
             acc, n_c, n_e = autoreg_eval(m, tok, val_rows, cap=eval_cap, device=device)
             print(f"[ep {ep:3d}] val_acc={acc:.3f} ({n_c}/{n_e})")
-            if acc > best_acc:
+            # Save gate: belt+suspenders to the NaN-tripwire above. Require
+            # both epoch loss finite AND val acc finite. sys.exit(2) on first
+            # non-finite batch means we shouldn't reach here with a poisoned
+            # model — but co_lead audit `1779353017204-69c791ba` flagged that
+            # `acc > best_acc` lets `acc=0.0` save when `best_acc=-1`, so
+            # this guard refuses to save unless both metrics are clean.
+            if (
+                math.isfinite(avg_loss)
+                and math.isfinite(acc)
+                and acc > best_acc
+            ):
                 best_acc = acc
                 best_ep = ep
                 torch.save({
@@ -392,6 +498,7 @@ def train(
                         "use_h_layer_stack": getattr(m.config, "use_h_layer_stack", False),
                         "use_halt_head": getattr(m.config, "use_halt_head", False),
                         "use_carry": getattr(m.config, "use_carry", False),
+                        "use_pre_rmsnorm": getattr(m.config, "use_pre_rmsnorm", False),
                         # GSM8k-specific metadata (locked S0b2 contract).
                         "gsm8k_char_vocab": tok.vocab_as_list(),
                         "gsm8k_normalizer_version": tok.normalizer_version,
@@ -453,11 +560,23 @@ if __name__ == "__main__":
     ap.add_argument("--use-halt-head", action="store_true")
     ap.add_argument("--use-carry", action="store_true")
     ap.add_argument("--chunk-size", type=int, default=32)
+    # Slice 12: per-layer Pre-RMSNorm flag (L-stack residual stability fix).
+    ap.add_argument("--use-pre-rmsnorm", action="store_true",
+                    help="Allocate per-layer RMSNorm before sequence-mixer "
+                         "AND before FFN in both L and H banks. Fixes S2 NaN "
+                         "root cause (residual magnitude blow-up). Default OFF "
+                         "preserves Slice 1-11 bit-equivalence.")
     # S0c-aux: deep-supervision aux loss (per codex audit `1779314708107`).
     ap.add_argument("--aux-weight", type=float, default=0.0,
                     help="Weight on mean(per_iter_NLL) added to final_NLL. "
                          "0.0 = final-only baseline (bit-equivalent). "
                          ">0 enables `return_per_iter=True` deep supervision.")
+    # NaN-diagnostic interior logging (per codex audit `1779353017204-69c791ba`).
+    ap.add_argument("--log-every", type=int, default=0,
+                    help="Print interior loss/grad components every N batches "
+                         "(step 1 always logged when >0). Triggers "
+                         "finite-tripwire on every step regardless of value. "
+                         "0 = disabled (preserves prior log shape).")
     args = ap.parse_args()
     train(
         epochs=args.epochs,
@@ -488,6 +607,8 @@ if __name__ == "__main__":
         use_h_layer_stack=args.use_h_layer_stack,
         use_halt_head=args.use_halt_head,
         use_carry=args.use_carry,
+        use_pre_rmsnorm=args.use_pre_rmsnorm,
         chunk_size=args.chunk_size,
         aux_weight=args.aux_weight,
+        log_every=args.log_every,
     )
