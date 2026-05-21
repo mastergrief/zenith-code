@@ -747,6 +747,29 @@ def compute_hrm_segment_loss(
     return loss_nll + loss_bce, loss_nll, loss_bce
 
 
+def hrm_boundary_q_continue_target(
+    q_next: torch.Tensor, seg: int, m_max: int
+) -> torch.Tensor:
+    """HRM-Text §5:248-250 Q_continue bootstrap rule.
+
+    At ``seg + 1 == m_max`` the lookahead segment is itself the forced-halt
+    segment, so its ``Q_continue`` is illegal as a bootstrap target —
+    use ``Q_halt`` alone. Otherwise use ``max(Q_halt, Q_continue)``.
+
+    Args:
+      q_next: (B, 2) lookahead Q-pair (Q_halt, Q_continue) from segment seg+1.
+      seg: current segment index (1-based, matching train_dt_gsm8k loop).
+      m_max: hard cap on segments.
+
+    Returns:
+      (B,) bootstrap target tensor (no gradient — caller already used no_grad
+      when producing q_next).
+    """
+    if seg + 1 >= m_max:
+        return q_next[..., 0]
+    return q_next.max(dim=-1).values
+
+
 def build_copy_augmented_delta(
     vocab_size: int = 80, d_model: int = 64, n_heads: int = 32,
     n_layers: int = 4, d_ffn: int = 128, max_len: int = 96,

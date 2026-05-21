@@ -458,6 +458,7 @@ def train(
             if use_hrm_act:
                 from calm.llm_computer.copy_augmented_delta import (
                     full_answer_correct, compute_hrm_segment_loss,
+                    hrm_boundary_q_continue_target,
                 )
                 B = ids.shape[0]
                 active = torch.ones(B, dtype=torch.bool, device=device)
@@ -498,7 +499,11 @@ def train(
                         halt_decision, forced_halt))
                     needs_continue = active & ~terminal
 
-                    # Lookahead Q-target ONLY if any active example continues
+                    # Lookahead Q-target ONLY if any active example continues.
+                    # Boundary rule lives in hrm_boundary_q_continue_target
+                    # (HRM-Text §5:248-250): at seg+1==m_max the lookahead
+                    # segment is itself forced-halt, so its Q_continue is
+                    # illegal — bootstrap from Q_halt only.
                     if needs_continue.any() and seg < m_max:
                         with torch.no_grad():
                             out_next = m(ids, return_carry=True,
@@ -506,7 +511,8 @@ def train(
                             if isinstance(out_next, tuple):
                                 _, _ = out_next
                             q_next = m.last_q_pair  # (B, 2)
-                        g_continue_lookahead = q_next.max(dim=-1).values
+                        g_continue_lookahead = hrm_boundary_q_continue_target(
+                            q_next, seg, m_max)
                     else:
                         g_continue_lookahead = torch.zeros_like(q_halt)
 
@@ -541,7 +547,7 @@ def train(
                                         float(nll_seg.detach()),
                                         float(bce_seg.detach()),
                                         int(active.sum().item()),
-                                        int(reward_m.sum().item())))
+                                        int((reward_m & active).sum().item())))
 
                     # Drop terminal examples for next segment
                     active = active & ~terminal

@@ -21,6 +21,7 @@ from calm.llm_computer.copy_augmented_delta import (
     build_copy_augmented_delta,
     full_answer_correct,
     compute_hrm_segment_loss,
+    hrm_boundary_q_continue_target,
     CopyAugmentedDeltaNet,
 )
 
@@ -199,6 +200,68 @@ def test_segment_loss_inactive_examples_excluded():
     )
     # Different losses (different active subsets); both finite
     assert torch.isfinite(total_all) and torch.isfinite(total_half)
+
+
+# =============================================================================
+# Boundary Q_continue bootstrap target (HRM-Text §5:248-250)
+# =============================================================================
+
+
+def test_boundary_q_continue_uses_q_halt_only():
+    """At seg+1 == m_max the lookahead segment is itself the forced-halt
+    segment; its Q_continue is illegal as a bootstrap target. Use Q_halt only."""
+    # Q_continue > Q_halt for example 0; Q_halt > Q_continue for example 1
+    q_next = torch.tensor([[0.30, 0.90], [0.70, 0.40]])
+    m_max = 4
+    # Boundary: seg == m_max - 1 (so seg + 1 == m_max) → Q_halt only
+    boundary = hrm_boundary_q_continue_target(q_next, seg=m_max - 1, m_max=m_max)
+    expected_boundary = torch.tensor([0.30, 0.70])
+    assert torch.allclose(boundary, expected_boundary), (
+        f"boundary target must equal Q_halt; got {boundary.tolist()}"
+    )
+
+
+def test_non_boundary_uses_max_q():
+    """Non-boundary lookahead uses max(Q_halt, Q_continue) per HRM-Text."""
+    q_next = torch.tensor([[0.30, 0.90], [0.70, 0.40]])
+    m_max = 4
+    # Non-boundary: seg == 1 (seg + 1 == 2 < m_max) → max rule
+    g = hrm_boundary_q_continue_target(q_next, seg=1, m_max=m_max)
+    expected = torch.tensor([0.90, 0.70])  # max per row
+    assert torch.allclose(g, expected), (
+        f"non-boundary target must equal max(Q_halt,Q_continue); got {g.tolist()}"
+    )
+
+
+def test_boundary_target_carries_no_grad_from_lookahead_path():
+    """Caller produces q_next under torch.no_grad(); helper must not require
+    grad. Verifies no autograd version-error in the segment loop pattern.
+
+    Pattern mirrors train_dt_gsm8k: forward under no_grad, extract q_next,
+    feed to boundary helper, attach to loss as constant target."""
+    m = _make_model(use_halt_head=True, use_carry=True)
+    m.train()
+    ids, _ = _make_batch(B=2)
+    # Outer forward, grad-tracked (this would be the m-th segment)
+    out = m(ids, return_carry=True)
+    log_probs, carry = out
+    q_pair = m.last_q_pair  # grad-tracked
+    # Lookahead under no_grad — matches trainer's no_grad block
+    with torch.no_grad():
+        _ = m(ids, return_carry=True, carry=carry.detach())
+        q_next = m.last_q_pair
+    assert not q_next.requires_grad
+    # Boundary target is non-grad regardless of seg/m_max
+    target_boundary = hrm_boundary_q_continue_target(q_next, seg=3, m_max=4)
+    target_non_boundary = hrm_boundary_q_continue_target(q_next, seg=1, m_max=4)
+    assert not target_boundary.requires_grad
+    assert not target_non_boundary.requires_grad
+    # Use boundary target in a BCE against grad-tracked Q_continue; grad
+    # must flow to halt_head but NOT through the target
+    loss = F.binary_cross_entropy(q_pair[..., 1], target_boundary)
+    loss.backward()
+    assert m.halt_head.weight.grad is not None
+    assert m.halt_head.weight.grad.abs().max() > 0
 
 
 # =============================================================================
