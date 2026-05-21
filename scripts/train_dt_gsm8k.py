@@ -1025,6 +1025,18 @@ def train(
                 "n_val": len(val_ds),
             }
 
+            # Per-epoch ckpt: `<stem>_ep{N}.pt`. Each epoch a distinct file
+            # so 13i.0-style cross-checkpoint diagnostics have stable inputs.
+            # (Slice 13h originally saved single overwritten `_last.pt`;
+            # codex audit 1779391827108 + 13f.3b workaround revealed the
+            # gap. This is the proper fix for future runs.)
+            ep_path = Path(checkpoint_path).with_name(
+                Path(checkpoint_path).stem + f"_ep{ep:03d}.pt"
+            )
+            torch.save(ckpt_blob, ep_path)
+            # Also save a `_last.pt` symlink-equivalent (overwritten each
+            # epoch) for backward-compat with downstream tooling that
+            # expects a single "current" pointer.
             last_path = Path(checkpoint_path).with_name(
                 Path(checkpoint_path).stem + "_last.pt"
             )
