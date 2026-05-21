@@ -543,11 +543,24 @@ def train(
                         sys.exit(2)
                     opt.step()
 
-                    seg_losses.append((float(total_seg.detach()),
-                                        float(nll_seg.detach()),
-                                        float(bce_seg.detach()),
-                                        int(active.sum().item()),
-                                        int((reward_m & active).sum().item())))
+                    # Per-segment telemetry over ACTIVE rows only (the
+                    # only rows whose Q-pair contributed gradient this seg).
+                    # Slice 13f.3 instrumentation: halt-decision histogram
+                    # (raw q_halt > q_continue, ungated by m_min so we see
+                    # the head's signal directly) + Q mean for both axes.
+                    active_f = active.float()
+                    denom = active_f.sum().clamp_min(1.0)
+                    q_halt_mean = float((q_halt.detach() * active_f).sum() / denom)
+                    q_continue_mean = float((q_continue.detach() * active_f).sum() / denom)
+                    raw_halt = ((q_halt > q_continue) & active).sum().item()
+                    seg_losses.append((float(total_seg.detach()),       # 0 total
+                                        float(nll_seg.detach()),         # 1 nll
+                                        float(bce_seg.detach()),         # 2 bce
+                                        int(active.sum().item()),        # 3 active
+                                        int((reward_m & active).sum().item()),  # 4 reward
+                                        q_halt_mean,                     # 5 Qh mean
+                                        q_continue_mean,                 # 6 Qc mean
+                                        int(raw_halt)))                  # 7 raw halt
 
                     # Drop terminal examples for next segment
                     active = active & ~terminal
@@ -564,10 +577,16 @@ def train(
                     nll_str = ",".join(f"{s[1]:.3f}" for s in seg_losses)
                     bce_str = ",".join(f"{s[2]:.3f}" for s in seg_losses)
                     rew_str = ",".join(f"{s[4]}/{s[3]}" for s in seg_losses)
+                    qh_str = ",".join(f"{s[5]:.3f}" for s in seg_losses)
+                    qc_str = ",".join(f"{s[6]:.3f}" for s in seg_losses)
+                    halt_str = ",".join(f"{s[7]}/{s[3]}" for s in seg_losses)
                     print(f"[ep {ep:3d} step {step_idx:5d}] HRM seg_count={seg_count}/{m_max} "
                           f"m_min={m_min} loss_avg={avg_seg_total:.4f} "
                           f"per_seg_nll=[{nll_str}] per_seg_bce=[{bce_str}] "
-                          f"per_seg_reward=[{rew_str}] grad_norm={last_grad_norm:.4f}",
+                          f"per_seg_reward=[{rew_str}] "
+                          f"per_seg_Qh=[{qh_str}] per_seg_Qc=[{qc_str}] "
+                          f"per_seg_raw_halt=[{halt_str}] "
+                          f"grad_norm={last_grad_norm:.4f}",
                           flush=True)
                 continue  # skip the standard graph_capture/aux_weight branches below
 
