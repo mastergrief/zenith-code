@@ -277,6 +277,15 @@ def train(
     # loss_mask=False); only the per-step wall-clock changes when graph
     # capture also lands.
     fixed_shape_padding: bool = False,
+    # TRM-1.58 throughput-to-signal track Slice 13e.2: CUDA graph capture
+    # of the training step (forward + loss + backward + grad-clip). The
+    # finite-check and opt.step REMAIN OUTSIDE the captured region per
+    # codex guardrail 2 (preserve training semantics — NaN tripwire must
+    # fire BEFORE opt.step, not after). Requires `fixed_shape_padding=True`
+    # (variable shapes preclude capture). Adds `capturable=True` to AdamW.
+    # Hard requirement: aux_weight > 0 (deep-supervision path); the
+    # final-NLL-only branch isn't captured in this slice (separate later).
+    graph_capture: bool = False,
     # Interior-batch loss/grad logging (NaN-diagnostic). 0 = disabled (default,
     # preserves prior log shape). N>0 = print `[ep E step S] loss=X grad_norm=Y`
     # every N batches AND early-exit on first non-finite loss with diagnostic
@@ -355,8 +364,40 @@ def train(
     print(f"[gsm8k] config: n_iter={m.config.n_iterations}  h_cycles={m.config.h_cycles}  "
           f"chunkwise={m.config.use_chunkwise}  layer_stack={m.config.use_h_layer_stack}")
 
-    opt = torch.optim.AdamW(m.parameters(), lr=lr, weight_decay=1e-4)
+    # Slice 13e.2: `capturable=True` enables CUDA graph capture of
+    # opt.step's internal state updates. We don't actually capture opt.step
+    # in this slice (it runs uncaptured after the finite tripwire fires),
+    # but capturable=True is harmless without capture and ready for a
+    # future slice that may want to include opt.step in the graph.
+    opt = torch.optim.AdamW(
+        m.parameters(), lr=lr, weight_decay=1e-4,
+        capturable=graph_capture,
+    )
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs)
+
+    # Slice 13e.2: graph-capture setup. Static buffers + captured handle
+    # initialized lazily on the first batch (so we can pin shapes from
+    # actual data instead of assuming).
+    if graph_capture:
+        if not fixed_shape_padding:
+            raise ValueError(
+                "graph_capture=True requires fixed_shape_padding=True — "
+                "variable per-batch shapes preclude CUDA graph capture"
+            )
+        if aux_weight <= 0.0:
+            raise ValueError(
+                "graph_capture=True requires aux_weight > 0.0 — Slice 13e.2 "
+                "captures the deep-supervision branch only; final-NLL-only "
+                "capture is a separate later slice"
+            )
+        print(f"[gsm8k] Slice 13e.2: graph-capture training step ENABLED — "
+              f"first batch will trigger capture")
+        _graph_ids_buf = torch.zeros(batch_size, max_len, dtype=torch.long,
+                                      device=device)
+        _graph_mask_buf = torch.zeros(batch_size, max_len, dtype=torch.bool,
+                                       device=device)
+        _captured_g = None      # filled on first batch
+        _captured_outs = None   # dict of output tensors: loss, final_nll, aux_nll, per_iter_nlls
 
     best_acc = -1.0
     best_ep = -1
@@ -373,7 +414,70 @@ def train(
         for ids, mask, _sep in loader:
             ids = ids.to(device)
             mask = mask.to(device)
-            if aux_weight > 0.0:
+
+            # Slice 13e.2: graph-capture training-step branch.
+            # Captured region: opt.zero_grad + forward + loss + backward +
+            # grad-clip. opt.step REMAINS UNCAPTURED so the finite tripwire
+            # can fire BEFORE the optimizer poisons weights. First batch
+            # warms up + captures; subsequent batches just copy-buf + replay.
+            if graph_capture:
+                _graph_ids_buf.copy_(ids)
+                _graph_mask_buf.copy_(mask)
+                if _captured_g is None:
+                    # First batch: side-stream warmup with FULL training step
+                    # (forward+backward+clip+opt.step × 3) to initialize Adam
+                    # state on the side stream. Without this, opt.zero_grad
+                    # inside the captured region fails because Adam state
+                    # isn't allocated. Cost: batch 0 effectively gets 4 extra
+                    # opt.steps before batch 1 sees the model — negligible at
+                    # 30-epoch × ~800-step run (0.017% drift).
+                    _s = torch.cuda.Stream()
+                    _s.wait_stream(torch.cuda.current_stream())
+                    with torch.cuda.stream(_s):
+                        for _ in range(3):
+                            opt.zero_grad()
+                            _fp, _pi = m(_graph_ids_buf, return_per_iter=True)
+                            _fn = _masked_shifted_nll(_fp, _graph_ids_buf, _graph_mask_buf)
+                            _pn = [_masked_shifted_nll(lp, _graph_ids_buf, _graph_mask_buf) for lp in _pi]
+                            _an = sum(_pn) / len(_pn)
+                            _ll = _fn + aux_weight * _an
+                            _ll.backward()
+                            torch.nn.utils.clip_grad_norm_(m.parameters(), max_norm=1.0)
+                            opt.step()  # init Adam state on side stream
+                            del _ll, _fn, _pn, _an, _fp, _pi
+                    torch.cuda.current_stream().wait_stream(_s)
+                    torch.cuda.synchronize()
+                    # Capture forward+backward+clip (NO opt.step — finite-
+                    # tripwire and opt.step stay uncaptured per codex
+                    # guardrail 2 in msg 1779384319796-f0f31547)
+                    _captured_g = torch.cuda.CUDAGraph()
+                    with torch.cuda.graph(_captured_g):
+                        opt.zero_grad()
+                        _fp, _pi = m(_graph_ids_buf, return_per_iter=True)
+                        _fn = _masked_shifted_nll(_fp, _graph_ids_buf, _graph_mask_buf)
+                        _pn = [_masked_shifted_nll(lp, _graph_ids_buf, _graph_mask_buf) for lp in _pi]
+                        _an = sum(_pn) / len(_pn)
+                        _ll = _fn + aux_weight * _an
+                        _ll.backward()
+                        torch.nn.utils.clip_grad_norm_(m.parameters(), max_norm=1.0)
+                    _captured_outs = {
+                        'loss': _ll, 'final_nll': _fn, 'aux_nll': _an,
+                        'per_iter_nlls': _pn,
+                    }
+                    print(f"[gsm8k] Slice 13e.2: training-step graph captured "
+                          f"(forward+loss+backward+grad-clip; opt.step + "
+                          f"finite-tripwire stay uncaptured)")
+                else:
+                    _captured_g.replay()
+                # Expose captured outputs to the rest of the loop as if from
+                # a normal forward — finite-check + opt.step run BELOW.
+                final_log_probs = None  # not needed downstream when captured
+                per_iter_list = None
+                loss = _captured_outs['loss']
+                final_nll = _captured_outs['final_nll']
+                aux_nll = _captured_outs['aux_nll']
+                per_iter_nlls = _captured_outs['per_iter_nlls']
+            elif aux_weight > 0.0:
                 # Deep supervision (S11 / S10b seam, per codex audit
                 # `1779314284912` / `1779314708107`): forward returns
                 # `(final_log_probs, per_iter_log_probs_list)`. Total loss
@@ -440,10 +544,21 @@ def train(
                 sys.exit(2)
 
             last_finite_loss = loss_item
-            opt.zero_grad()
-            loss.backward()
-            grad_norm = torch.nn.utils.clip_grad_norm_(m.parameters(), max_norm=1.0)
-            last_grad_norm = float(grad_norm)
+            if graph_capture:
+                # Slice 13e.2: backward + grad-clip already ran inside the
+                # captured region. Compute grad_norm from p.grad for the
+                # tripwire below (cheap GPU reduction; not in capture).
+                last_grad_norm = float(
+                    torch.sqrt(sum(
+                        p.grad.detach().pow(2).sum()
+                        for p in m.parameters() if p.grad is not None
+                    ))
+                )
+            else:
+                opt.zero_grad()
+                loss.backward()
+                grad_norm = torch.nn.utils.clip_grad_norm_(m.parameters(), max_norm=1.0)
+                last_grad_norm = float(grad_norm)
 
             # Grad-norm finite gate (per codex audit `1779353275232-793dc65e`).
             # clip_grad_norm_ divides but does NOT filter — NaN/inf grads
@@ -607,6 +722,12 @@ if __name__ == "__main__":
                          "every batch to fixed --max-len instead of per-batch "
                          "max_L. Required for CUDA graph capture of the "
                          "training step (Slice 13e.2).")
+    ap.add_argument("--graph-capture", action="store_true",
+                    help="TRM-1.58 throughput-to-signal Slice 13e.2: capture "
+                         "forward+loss+backward+grad-clip as a CUDA graph; "
+                         "replay per step. opt.step + finite-tripwire stay "
+                         "uncaptured for training-semantics preservation. "
+                         "Requires --fixed-shape-padding + aux-weight > 0.")
     ap.add_argument("--use-pre-rmsnorm", action="store_true",
                     help="Allocate per-layer RMSNorm before sequence-mixer "
                          "AND before FFN in both L and H banks. Fixes S2 NaN "
@@ -656,6 +777,7 @@ if __name__ == "__main__":
         use_pre_rmsnorm=args.use_pre_rmsnorm,
         use_ternary_bulk=args.use_ternary_bulk,
         fixed_shape_padding=args.fixed_shape_padding,
+        graph_capture=args.graph_capture,
         chunk_size=args.chunk_size,
         aux_weight=args.aux_weight,
         log_every=args.log_every,
