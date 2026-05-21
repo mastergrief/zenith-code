@@ -429,16 +429,29 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         # params (copy_gate / copy_q_proj / copy_k_proj after
         # CopyAugmentedDeltaNet's super().__init__() returns), breaking
         # the telemetry-only invariant.
+        # Slice 13f.2: halt_head is now the HRM-Text Q-head, producing TWO
+        # outputs (Q_halt, Q_continue) per HRM-Text §5 (RESEARCH/HRM/
+        # 03_Training_Procedure.md:222-255). Computed ONCE per forward at the
+        # final z_H (post H-cycle loop), NOT per H-cycle. The old per-H-cycle
+        # collection in `last_halt_probs` is removed; `last_q_pair` holds the
+        # latest (B, 2) sigmoid Q-values for the trainer's HRM segment loop.
+        # Attribute name kept as `halt_head` to minimize churn in install code
+        # and prior trainers; only the SHAPE is different (1 → 2).
         if getattr(config, "use_halt_head", False):
             _saved_rng_halt = torch.get_rng_state()
-            self.halt_head = nn.Linear(config.d_model, 1, bias=True)
+            self.halt_head = nn.Linear(config.d_model, 2, bias=True)
             with torch.no_grad():
                 self.halt_head.bias.fill_(0.0)
             torch.set_rng_state(_saved_rng_halt)
         else:
             self.halt_head = None
-        # Runtime telemetry; not persisted. List populated each forward
-        # when halt_head is active.
+        # Slice 13f.2: per-forward Q-pair (B, 2). Replaces the per-H-cycle
+        # `last_halt_probs` list — HRM-Text segments are training-step outer
+        # loop, not forward-internal H cycles.
+        self.last_q_pair: torch.Tensor | None = None
+        # Kept for back-compat with any test still reading it; HRM-faithful
+        # path does NOT populate it. Slice 10 tests that asserted shape (B, 1)
+        # are superseded by Slice 13f.
         self.last_halt_probs: list[torch.Tensor] = []
         # Slice 10c: ACT greedy-halt runtime knobs (NOT persisted).
         # `act_threshold` is the cumulative-halt threshold; once
@@ -1120,13 +1133,14 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             # h_cycles=1, per_h_detach_until[0] equals the Slice 3 'l'-grain
             # value AND the Slice 7 'global'-grain value (the two collapse).
             x_final = _run_l_loop(x, per_h_detach_until[0])
-            # Slice 10a: collect halt telemetry even at h_cycles=1 so the
-            # `len(last_halt_probs) == h_cycles` contract holds across the
-            # two code paths uniformly.
+            # Slice 13f.2: HRM-Text Q-head produces (Q_halt, Q_continue)
+            # ONCE at the final z_H, NOT per H-cycle. last_q_pair: (B, 2).
+            # last_halt_probs left empty (Slice 10 cumulative-prob semantics
+            # superseded).
             if self.halt_head is not None:
+                q_logits = self.halt_head(x_final.mean(dim=1))  # (B, 2)
+                self.last_q_pair = torch.sigmoid(q_logits)
                 self.last_halt_probs = []
-                halt_logit = self.halt_head(x_final.mean(dim=1))
-                self.last_halt_probs.append(torch.sigmoid(halt_logit))
             # Slice 10c: at h_cycles=1, act_inference is a no-op — only one
             # cycle to run. Record halt step for consistency.
             if act_inference:
@@ -1168,17 +1182,12 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         # supervision is requested. Empty list when off → zero overhead.
         per_iter_outputs: list = [] if return_per_iter else None
 
-        # Slice 10a: ACT halt-head telemetry. Reset the list at start of
-        # the H/L hierarchy path so each forward sees a fresh collection.
-        # Telemetry-only when act_inference=False — does NOT participate
-        # in any forward decision. When act_inference=True (Slice 10c),
-        # halt prob feeds the early-break condition.
-        collect_halt = self.halt_head is not None
-        if collect_halt:
+        # Slice 13f.2: per-H-cycle halt collection removed. Q-head computed
+        # ONCE post-H-cycle-loop (see below). Reset last_q_pair at start of
+        # each forward so it reflects only this forward's segment.
+        if self.halt_head is not None:
+            self.last_q_pair = None
             self.last_halt_probs = []
-        # Slice 10c: cumulative-halt accumulator for early-break.
-        cum_halt = 0.0
-        halted_at_step: int | None = None
 
         z_H = x
         for h_step in range(h_cycles):
@@ -1205,33 +1214,33 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
             z_H = self.h_norm(z_H_raw) if use_h_norm else z_H_raw
             if per_iter_outputs is not None:
                 per_iter_outputs.append(z_H)
-            if collect_halt:
-                # Per-cycle halt probability — mean-pooled z_H over sequence
-                # → halt head → sigmoid. S10a telemetry; S10b training
-                # loss path; S10c (this slice) consumes for greedy halt.
-                # Tensor is kept gradient-attached so S10b training can
-                # backprop through it without rerunning forward.
-                halt_logit = self.halt_head(z_H.mean(dim=1))  # (B, 1)
-                halt_prob = torch.sigmoid(halt_logit)
-                self.last_halt_probs.append(halt_prob)
-                # Slice 10c: greedy inference halt — break early when
-                # cumulative halt prob crosses threshold AND we've
-                # executed at least act_min_iters cycles.
-                if act_inference:
-                    # Use mean halt prob across batch as the single
-                    # halt signal (matches S10b's batch-shared halt-dist
-                    # treatment).
-                    cum_halt += float(halt_prob.mean().item())
-                    if (cum_halt > self.act_threshold
-                            and (h_step + 1) >= self.act_min_iters):
-                        halted_at_step = h_step + 1
-                        break
-        # Slice 10c: record actual halt step for monitoring. If we never
-        # halted, `last_act_halt_step` equals the full h_cycles count.
-        if act_inference:
-            self.last_act_halt_step = (
-                halted_at_step if halted_at_step is not None else h_cycles
+            # Slice 13f.2: per-H-cycle halt collection REMOVED. HRM-Text
+            # Q-head is computed ONCE at final z_H AFTER the H-cycle loop
+            # exits (see below). The forward-internal cumulative-prob
+            # act_inference path is also removed — source-faithful
+            # outer-segment Q-rule inference is deferred to a separate slice.
+        # Slice 13f.2: deferred-cumulative-prob act_inference no longer
+        # supported when use_halt_head=True (the new Q-head is per-segment).
+        # Raise rather than silently swap semantics — guardrail per codex
+        # msg 1779384319796-f0f31547.
+        if act_inference and self.halt_head is not None:
+            raise ValueError(
+                "act_inference=True with use_halt_head=True is no longer "
+                "supported: old cumulative-prob ACT semantics removed in "
+                "Slice 13f.2. Source-faithful outer-segment Q-rule inference "
+                "is DEFERRED to a separate slice (training uses the Q-head; "
+                "inference path comes later)."
             )
+        # Slice 13f.2: HRM-Text Q-head at FINAL z_H, ONCE per forward.
+        # last_q_pair: (B, 2) sigmoid (Q_halt, Q_continue). Gradient-attached
+        # so training BCE can backprop. last_halt_probs left empty.
+        if self.halt_head is not None:
+            q_logits = self.halt_head(z_H.mean(dim=1))  # (B, 2)
+            self.last_q_pair = torch.sigmoid(q_logits)
+            self.last_halt_probs = []
+        # last_act_halt_step retained for back-compat. Setting to h_cycles
+        # since we no longer perform forward-internal halt.
+        self.last_act_halt_step = h_cycles if self.halt_head is not None else None
         # Slice 9: assemble varying-length return tuple.
         extras = []
         if return_per_iter:

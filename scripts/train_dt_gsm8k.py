@@ -286,6 +286,18 @@ def train(
     # Hard requirement: aux_weight > 0 (deep-supervision path); the
     # final-NLL-only branch isn't captured in this slice (separate later).
     graph_capture: bool = False,
+    # TRM-1.58 Slice 13f.2: source-faithful HRM-Text/Sapient ACT training.
+    # When True, training step runs M_max outer segments per HRM-Text §4-5
+    # (RESEARCH/HRM/03_Training_Procedure.md:177-187, :222-255). Each segment
+    # = one forward with detached carry; loss = NLL + BCE(Q̂, Ĝ) where
+    # Ĝ_halt = full-answer reward and Ĝ_continue = stop-grad max-Q of next
+    # segment (NO-grad lookahead per codex guardrail to avoid autograd-vs-
+    # opt.step version-error). Per-example active mask drops halting examples
+    # from subsequent segments. Requires use_halt_head=True. INCOMPATIBLE
+    # with graph_capture (future slice).
+    use_hrm_act: bool = False,
+    m_max: int = 4,
+    m_min_epsilon: float = 0.1,  # HRM-Text §5:234-236 exploration probability
     # Interior-batch loss/grad logging (NaN-diagnostic). 0 = disabled (default,
     # preserves prior log shape). N>0 = print `[ep E step S] loss=X grad_norm=Y`
     # every N batches AND early-exit on first non-finite loss with diagnostic
@@ -378,6 +390,28 @@ def train(
     # Slice 13e.2: graph-capture setup. Static buffers + captured handle
     # initialized lazily on the first batch (so we can pin shapes from
     # actual data instead of assuming).
+    if use_hrm_act:
+        if not getattr(m.config, "use_halt_head", False):
+            raise ValueError(
+                "use_hrm_act=True requires use_halt_head=True — the HRM-Text "
+                "training contract reads Q-values from the model's halt_head "
+                "(reshaped to Linear(d, 2) per Slice 13f.2)."
+            )
+        if not getattr(m.config, "use_carry", False):
+            raise ValueError(
+                "use_hrm_act=True requires use_carry=True — HRM-Text segments "
+                "share x; state z_H detached between segments. See "
+                "RESEARCH/HRM/03_Training_Procedure.md:171-187."
+            )
+        if graph_capture:
+            raise ValueError(
+                "use_hrm_act=True + graph_capture=True not yet supported "
+                "(captures one forward; HRM segment loop runs M_max forwards "
+                "per training step). Separate slice."
+            )
+        print(f"[gsm8k] Slice 13f.2: HRM-Text per-segment training ENABLED "
+              f"(M_max={m_max}, m_min_epsilon={m_min_epsilon})")
+
     if graph_capture:
         if not fixed_shape_padding:
             raise ValueError(
@@ -414,6 +448,122 @@ def train(
         for ids, mask, _sep in loader:
             ids = ids.to(device)
             mask = mask.to(device)
+
+            # Slice 13f.2: HRM-Text per-segment training contract.
+            # Source: RESEARCH/HRM/03_Training_Procedure.md:171-255.
+            # Active mask per example (NOT batch-shared per codex audit
+            # msg 1779386734917-9df1f5d5). Per-segment backward+opt.step
+            # with detached carry. NO-grad lookahead for non-terminal Q
+            # target (avoids autograd-vs-opt.step version-error trap).
+            if use_hrm_act:
+                from calm.llm_computer.copy_augmented_delta import (
+                    full_answer_correct, compute_hrm_segment_loss,
+                )
+                B = ids.shape[0]
+                active = torch.ones(B, dtype=torch.bool, device=device)
+                carry = None
+                # M_min stochastic per HRM-Text §5:234-236
+                if torch.rand(1).item() < m_min_epsilon:
+                    m_min = int(torch.randint(2, m_max + 1, (1,)).item())
+                else:
+                    m_min = 1
+                step_idx = n_batches + 1
+                seg_losses = []
+                seg_count = 0
+                for seg_m in range(m_max):
+                    seg = seg_m + 1  # 1-based per HRM source rule
+                    if not active.any():
+                        break
+                    seg_count = seg_m + 1
+                    # Grad-tracked forward
+                    out = m(ids, return_carry=True, carry=carry)
+                    if isinstance(out, tuple):
+                        log_probs_m, carry_m = out
+                    else:
+                        log_probs_m, carry_m = out, None
+                    q_pair = m.last_q_pair
+                    if q_pair is None:
+                        raise RuntimeError(
+                            "use_hrm_act=True but last_q_pair is None — "
+                            "model not built with use_halt_head=True"
+                        )
+                    reward_m = full_answer_correct(log_probs_m, ids, mask)
+
+                    # Per-example halt decision
+                    q_halt = q_pair[..., 0]
+                    q_continue = q_pair[..., 1]
+                    halt_decision = (q_halt > q_continue) & (seg >= m_min)
+                    forced_halt = (seg == m_max)
+                    terminal = active & (halt_decision | torch.full_like(
+                        halt_decision, forced_halt))
+                    needs_continue = active & ~terminal
+
+                    # Lookahead Q-target ONLY if any active example continues
+                    if needs_continue.any() and seg < m_max:
+                        with torch.no_grad():
+                            out_next = m(ids, return_carry=True,
+                                          carry=carry_m.detach() if carry_m is not None else None)
+                            if isinstance(out_next, tuple):
+                                _, _ = out_next
+                            q_next = m.last_q_pair  # (B, 2)
+                        g_continue_lookahead = q_next.max(dim=-1).values
+                    else:
+                        g_continue_lookahead = torch.zeros_like(q_halt)
+
+                    g_halt = reward_m.float()
+                    g_continue = torch.where(terminal,
+                                              torch.zeros_like(g_continue_lookahead),
+                                              g_continue_lookahead)
+
+                    total_seg, nll_seg, bce_seg = compute_hrm_segment_loss(
+                        log_probs_m, q_pair, g_halt, g_continue, ids, mask, active,
+                    )
+
+                    # Finite tripwire (preserved per codex guardrail 2)
+                    if not torch.isfinite(total_seg).all():
+                        print(f"[NaN-DETECT] ep={ep} step={step_idx} seg={seg} "
+                              f"nll={float(nll_seg.detach())} bce={float(bce_seg.detach())} "
+                              f"NON-FINITE TOTAL — STOP", flush=True)
+                        sys.exit(2)
+
+                    opt.zero_grad()
+                    total_seg.backward()
+                    grad_norm = torch.nn.utils.clip_grad_norm_(
+                        m.parameters(), max_norm=1.0)
+                    if not math.isfinite(float(grad_norm)):
+                        print(f"[NaN-DETECT] ep={ep} step={step_idx} seg={seg} "
+                              f"grad_norm={float(grad_norm)} NON-FINITE — STOP",
+                              flush=True)
+                        sys.exit(2)
+                    opt.step()
+
+                    seg_losses.append((float(total_seg.detach()),
+                                        float(nll_seg.detach()),
+                                        float(bce_seg.detach()),
+                                        int(active.sum().item()),
+                                        int(reward_m.sum().item())))
+
+                    # Drop terminal examples for next segment
+                    active = active & ~terminal
+                    carry = carry_m.detach() if carry_m is not None else None
+
+                # Aggregate logging
+                avg_seg_total = sum(s[0] for s in seg_losses) / len(seg_losses)
+                total_loss += avg_seg_total
+                n_batches += 1
+                last_finite_loss = avg_seg_total
+                last_grad_norm = float(grad_norm)
+
+                if log_every > 0 and (step_idx == 1 or step_idx % log_every == 0):
+                    nll_str = ",".join(f"{s[1]:.3f}" for s in seg_losses)
+                    bce_str = ",".join(f"{s[2]:.3f}" for s in seg_losses)
+                    rew_str = ",".join(f"{s[4]}/{s[3]}" for s in seg_losses)
+                    print(f"[ep {ep:3d} step {step_idx:5d}] HRM seg_count={seg_count}/{m_max} "
+                          f"m_min={m_min} loss_avg={avg_seg_total:.4f} "
+                          f"per_seg_nll=[{nll_str}] per_seg_bce=[{bce_str}] "
+                          f"per_seg_reward=[{rew_str}] grad_norm={last_grad_norm:.4f}",
+                          flush=True)
+                continue  # skip the standard graph_capture/aux_weight branches below
 
             # Slice 13e.2: graph-capture training-step branch.
             # Captured region: opt.zero_grad + forward + loss + backward +
@@ -728,6 +878,19 @@ if __name__ == "__main__":
                          "replay per step. opt.step + finite-tripwire stay "
                          "uncaptured for training-semantics preservation. "
                          "Requires --fixed-shape-padding + aux-weight > 0.")
+    ap.add_argument("--use-hrm-act", action="store_true",
+                    help="TRM-1.58 Slice 13f.2: source-faithful HRM-Text/Sapient "
+                         "ACT training contract. M_max-segment outer loop with "
+                         "per-segment NLL + BCE(Q̂, Ĝ) loss, detached carry "
+                         "between segments. Requires --use-halt-head + --use-carry. "
+                         "Incompatible with --graph-capture (future slice).")
+    ap.add_argument("--m-max", type=int, default=4,
+                    help="HRM-Text M_max — segments per training step "
+                         "(default 4). HRM paper uses 8.")
+    ap.add_argument("--m-min-epsilon", type=float, default=0.1,
+                    help="HRM-Text §5:234-236 exploration probability: with "
+                         "probability epsilon, M_min is sampled uniform from "
+                         "{2..M_max}; otherwise M_min=1.")
     ap.add_argument("--use-pre-rmsnorm", action="store_true",
                     help="Allocate per-layer RMSNorm before sequence-mixer "
                          "AND before FFN in both L and H banks. Fixes S2 NaN "
@@ -778,6 +941,9 @@ if __name__ == "__main__":
         use_ternary_bulk=args.use_ternary_bulk,
         fixed_shape_padding=args.fixed_shape_padding,
         graph_capture=args.graph_capture,
+        use_hrm_act=args.use_hrm_act,
+        m_max=args.m_max,
+        m_min_epsilon=args.m_min_epsilon,
         chunk_size=args.chunk_size,
         aux_weight=args.aux_weight,
         log_every=args.log_every,

@@ -240,7 +240,35 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
         loss_mask: torch.Tensor | None = None,
         ponder_weight: float = 0.01,
     ) -> torch.Tensor:
-        """Slice 10b: canonical ACT loss per Graves 2016 + HRM-Text.
+        """Slice 13f.2: PonderNet-style compute_act_loss REMOVED.
+
+        Per gabe source-faithful constraint (room msg 1779385952530-dd2f6591:
+        "yeah it has to be what sapeint and hrm-text do"), the old
+        halt-distribution-weighted NLL + ponder cost implementation is NOT
+        the HRM-Text training contract. Use `compute_hrm_segment_loss`
+        (module-level) instead, which implements HRM-Text §5:238-255 per
+        segment: dense NLL + BCE on (Q_halt, Q_continue) targets.
+
+        This method body raises so any stale caller surfaces immediately.
+        """
+        raise NotImplementedError(
+            "compute_act_loss (PonderNet-style halt-weighted NLL) was "
+            "superseded by Slice 13f.2 HRM-Text per-segment loss. "
+            "Use the module-level `compute_hrm_segment_loss` helper and "
+            "the trainer's per-segment loop (M_max outer iterations with "
+            "detached carry). See RESEARCH/HRM/03_Training_Procedure.md:222-255."
+        )
+
+    def _compute_act_loss_DEPRECATED(
+        self,
+        per_iter_log_probs: list[torch.Tensor],
+        halt_probs: list[torch.Tensor],
+        target_ids: torch.Tensor,
+        loss_mask: torch.Tensor | None = None,
+        ponder_weight: float = 0.01,
+    ) -> torch.Tensor:
+        """[DEPRECATED Slice 10b body — preserved for archival reference only.
+        Do NOT call. Use compute_hrm_segment_loss instead.]
 
         Combines per-iter accuracy loss (weighted by halt distribution)
         + ponder cost (expected number of iterations).
@@ -634,6 +662,89 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
         otherwise this hook is never called.
         """
         return self._build_prefix_mask(idx, self.copy_config.sep_token_id)
+
+
+# =========================================================================
+# Slice 13f.2: HRM-Text per-segment training contract (module-level helpers)
+# =========================================================================
+#
+# Source: RESEARCH/HRM/03_Training_Procedure.md:222-255 (Sapient/HRM-Text §5).
+# Reward + Q targets + per-segment loss per HRM paper. Trainer drives the
+# outer-segment loop with carry.detach() between segments.
+
+
+def full_answer_correct(
+    log_probs: torch.Tensor, ids: torch.Tensor, loss_mask: torch.Tensor,
+) -> torch.Tensor:
+    """HRM-Text completion reward: 1{ŷ^m = y} over the answer-token range.
+
+    Trainer-shifted target semantics (matches _masked_shifted_nll):
+      log_probs[:, :-1] predicts ids[:, 1:]; mask = loss_mask[:, :-1].
+
+    Args:
+      log_probs: (B, L, V)
+      ids: (B, L) target token ids
+      loss_mask: (B, L) bool — True at positions whose NEXT-token loss counts
+    Returns:
+      (B,) bool: True iff ALL masked positions are correctly predicted
+        AND at least one masked position exists
+    """
+    y_hat = log_probs[:, :-1].argmax(-1)           # (B, L-1)
+    targets = ids[:, 1:]                            # (B, L-1)
+    mask = loss_mask[:, :-1]                        # (B, L-1)
+    per_pos_correct = (y_hat == targets) & mask     # (B, L-1)
+    n_pos = mask.sum(dim=1)                         # (B,)
+    n_correct = per_pos_correct.sum(dim=1)          # (B,)
+    return (n_correct == n_pos) & (n_pos > 0)
+
+
+def compute_hrm_segment_loss(
+    log_probs: torch.Tensor,
+    q_pair: torch.Tensor,
+    g_halt: torch.Tensor,
+    g_continue: torch.Tensor,
+    target_ids: torch.Tensor,
+    loss_mask: torch.Tensor,
+    active: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """HRM-Text per-segment loss: L^m = NLL(ŷ^m, y) + BCE(Q̂^m, Ĝ^m).
+
+    Per HRM-Text §5:252-254 (RESEARCH/HRM/03_Training_Procedure.md). Both
+    terms preserved dense — completion reward goes into G_halt target, NOT
+    a multiplicative gate on NLL (per codex audit msgs 1779385776936 +
+    1779386461143).
+
+    Args:
+      log_probs: (B, L, V) per-token log-probs at this segment
+      q_pair: (B, 2) sigmoid (Q_halt, Q_continue) from this segment
+      g_halt: (B,) Q_halt BCE target — for active examples = reward; for
+        terminal examples = reward (forced halt training signal)
+      g_continue: (B,) Q_continue BCE target — for non-terminal active
+        examples = stop-grad max-Q of next segment; for terminal = 0
+        (boundary convention)
+      target_ids: (B, L) target token ids
+      loss_mask: (B, L) bool — True at NEXT-token loss positions
+      active: (B,) bool — only active examples contribute to loss
+
+    Returns:
+      (loss, loss_nll, loss_bce) — total + components for logging
+    """
+    from scripts.train_dt_gsm8k import _masked_shifted_nll
+
+    # NLL: zero out inactive rows so they don't contribute
+    active_loss_mask = loss_mask & active.unsqueeze(1)
+    loss_nll = _masked_shifted_nll(log_probs, target_ids, active_loss_mask)
+
+    # BCE per-example, then averaged over active examples
+    targets_q = torch.stack([g_halt, g_continue], dim=-1)  # (B, 2)
+    bce_pe = torch.nn.functional.binary_cross_entropy(
+        q_pair, targets_q, reduction='none'
+    ).mean(dim=-1)  # (B,)
+    active_f = active.float()
+    active_count = active_f.sum().clamp_min(1.0)
+    loss_bce = (bce_pe * active_f).sum() / active_count
+
+    return loss_nll + loss_bce, loss_nll, loss_bce
 
 
 def build_copy_augmented_delta(
