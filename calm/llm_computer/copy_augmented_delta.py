@@ -608,12 +608,20 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
 
     @staticmethod
     def _build_prefix_mask(idx: torch.Tensor, sep_id: int) -> torch.Tensor:
-        """Positions before first <sep> marked True (copyable input prefix)."""
+        """Positions before first <sep> marked True (copyable input prefix).
+
+        Slice 15.5 fix: replaced `torch.tensor(S, device=idx.device)` with
+        `torch.full_like(sep_pos, S)`. The original creates a CPU-side scalar
+        tensor and transfers it to GPU inside the forward — a known CUDA-
+        graph-capture breaker (cudaErrorStreamCaptureInvalidated). full_like
+        allocates directly in the captured memory pool. Bit-equivalent
+        forward output; graph-safe.
+        """
         B, S = idx.shape
         is_sep = (idx == sep_id)
         has_sep = is_sep.any(dim=1)
         sep_pos = is_sep.float().argmax(dim=1)
-        sep_pos = torch.where(has_sep, sep_pos, torch.tensor(S, device=idx.device))
+        sep_pos = torch.where(has_sep, sep_pos, torch.full_like(sep_pos, S))
         positions = torch.arange(S, device=idx.device).unsqueeze(0)
         return positions < sep_pos.unsqueeze(1)
 
