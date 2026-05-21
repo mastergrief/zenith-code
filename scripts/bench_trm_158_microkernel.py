@@ -35,7 +35,10 @@ from calm.llm_computer.ternary_linear import TernaryLinear
 from calm.llm_computer.ternary_triton import (
     pack_ternary_2bit,
     quantize_to_ternary_indices,
+    quantize_activation_int8_pertoken,
     ternary_matmul_triton,
+    ternary_matmul_triton_v2,
+    ternary_matmul_triton_v2_prequant,
 )
 
 
@@ -85,9 +88,15 @@ def fake_quant_ternary(x_fp32, ternary_mod):
 
 
 def triton_ternary(x_fp32, w_packed, scale, in_features, out_features):
-    """Triton ternary matmul kernel."""
+    """Triton ternary matmul kernel (v1, FP32 IEEE)."""
     return ternary_matmul_triton(x_fp32, w_packed, scale,
                                   in_features, out_features)
+
+
+def triton_ternary_v2(x_fp32, w_packed, scale, in_features, out_features):
+    """Triton ternary matmul kernel (v2, W1.58A8 INT8 tensor cores)."""
+    return ternary_matmul_triton_v2(x_fp32, w_packed, scale,
+                                     in_features, out_features)
 
 
 def bench_shape(label: str, M: int, in_f: int, out_f: int, device: str = "cuda"):
@@ -113,14 +122,33 @@ def bench_shape(label: str, M: int, in_f: int, out_f: int, device: str = "cuda")
         y_fakeq = fake_quant_ternary(x_fp32, ternary_mod)
     assert y_fakeq.shape == (M, out_f)
 
-    # Variant 3: Triton ternary
+    # Variant 3: Triton ternary v1 (FP32 IEEE)
     indices, scale = quantize_to_ternary_indices(w_fp32)
     w_packed = pack_ternary_2bit(indices)
     y_tri = triton_ternary(x_fp32, w_packed, scale, in_f, out_f)
     # Correctness gate vs fake-quant reference
     diff_tri_vs_fakeq = (y_tri - y_fakeq).abs().max().item()
-    print(f"[bench]   correctness Triton vs fake-quant: max|diff|={diff_tri_vs_fakeq:.3e}")
-    assert diff_tri_vs_fakeq < 1e-3, f"Triton diverged at bench shape: {diff_tri_vs_fakeq}"
+    print(f"[bench]   correctness v1 vs fake-quant: max|diff|={diff_tri_vs_fakeq:.3e}")
+    assert diff_tri_vs_fakeq < 1e-3, f"Triton v1 diverged at bench shape: {diff_tri_vs_fakeq}"
+
+    # Variant 4: Triton ternary v2 (W1.58A8 INT8 tensor cores)
+    y_v2 = triton_ternary_v2(x_fp32, w_packed, scale, in_f, out_f)
+    # Correctness gate vs fake-quant reference (int8 activation has rel ~1/127
+    # noise so threshold is looser than v1's fp32 IEEE; use rel error vs
+    # output magnitude)
+    diff_v2_vs_fakeq = (y_v2 - y_fakeq).abs().max().item()
+    rel_v2 = diff_v2_vs_fakeq / (y_fakeq.abs().max().item() + 1e-8)
+    print(f"[bench]   correctness v2 vs fake-quant: max|diff|={diff_v2_vs_fakeq:.3e}  "
+          f"rel={rel_v2:.3e}")
+    # int8 absmax activation expected to land within ~2-3% relative error
+    assert rel_v2 < 0.05, f"Triton v2 diverged at bench shape (rel={rel_v2})"
+
+    # Pre-quantize activation for v2_prequant (amortized real-pipeline cost
+    # — in a real forward, x quantized once per layer-input, reused across
+    # W_qkv/W_out/ff_in/ff_out projections)
+    x_i8_pre, x_scale_pre = quantize_activation_int8_pertoken(x_fp32)
+    x_i8_pre = x_i8_pre.contiguous()
+    x_scale_pre = x_scale_pre.contiguous()
 
     # Bench
     t_cublas, _ = bench_one(lambda: cublas_bf16_matmul(x_bf16, w_bf16))
@@ -128,6 +156,10 @@ def bench_shape(label: str, M: int, in_f: int, out_f: int, device: str = "cuda")
         t_fakeq, _ = bench_one(lambda: fake_quant_ternary(x_fp32, ternary_mod))
     t_tri, _ = bench_one(lambda: triton_ternary(x_fp32, w_packed, scale,
                                                  in_f, out_f))
+    t_v2, _ = bench_one(lambda: triton_ternary_v2(x_fp32, w_packed, scale,
+                                                   in_f, out_f))
+    t_v2_pre, _ = bench_one(lambda: ternary_matmul_triton_v2_prequant(
+        x_i8_pre, x_scale_pre, w_packed, scale, in_f, out_f))
 
     # Memory footprint (weight side only, per-tensor)
     mem_bf16 = w_bf16.element_size() * w_bf16.numel()
@@ -138,11 +170,17 @@ def bench_shape(label: str, M: int, in_f: int, out_f: int, device: str = "cuda")
     # For deployment, ternary packed is the only relevant memory size.
 
     print(f"[bench]   timing (μs/iter, median of {N_TRIALS} × {N_ITERS} iters):")
-    print(f"[bench]     cuBLAS BF16:        {t_cublas:8.2f} μs/iter")
-    print(f"[bench]     PyTorch fake-quant: {t_fakeq:8.2f} μs/iter  "
+    print(f"[bench]     cuBLAS BF16:           {t_cublas:8.2f} μs/iter")
+    print(f"[bench]     PyTorch fake-quant:    {t_fakeq:8.2f} μs/iter  "
           f"({t_fakeq/t_cublas:.2f}× cuBLAS)")
-    print(f"[bench]     Triton ternary:     {t_tri:8.2f} μs/iter  "
+    print(f"[bench]     Triton v1 (FP32 IEEE): {t_tri:8.2f} μs/iter  "
           f"({t_tri/t_cublas:.2f}× cuBLAS,  {t_tri/t_fakeq:.2f}× fake-quant)")
+    print(f"[bench]     Triton v2 (W1.58A8):   {t_v2:8.2f} μs/iter  "
+          f"({t_v2/t_cublas:.2f}× cuBLAS,  {t_v2/t_fakeq:.2f}× fake-quant,  "
+          f"{t_v2/t_tri:.2f}× v1)")
+    print(f"[bench]     Triton v2 (pre-quant): {t_v2_pre:8.2f} μs/iter  "
+          f"({t_v2_pre/t_cublas:.2f}× cuBLAS,  {t_v2_pre/t_tri:.2f}× v1,  "
+          f"{t_v2/t_v2_pre:.2f}× faster than v2-inline)")
     print(f"[bench]   weight memory:")
     print(f"[bench]     BF16:               {mem_bf16:8d} bytes")
     print(f"[bench]     fake-quant FP32:    {mem_fakeq:8d} bytes")
@@ -151,9 +189,10 @@ def bench_shape(label: str, M: int, in_f: int, out_f: int, device: str = "cuda")
 
     return {
         "label": label, "M": M, "in_f": in_f, "out_f": out_f,
-        "t_cublas_us": t_cublas, "t_fakeq_us": t_fakeq, "t_tri_us": t_tri,
+        "t_cublas_us": t_cublas, "t_fakeq_us": t_fakeq,
+        "t_tri_us": t_tri, "t_v2_us": t_v2, "t_v2_pre_us": t_v2_pre,
         "mem_bf16": mem_bf16, "mem_packed": mem_packed,
-        "correctness_diff_max": diff_tri_vs_fakeq,
+        "v1_diff_max": diff_tri_vs_fakeq, "v2_rel_diff": rel_v2,
     }
 
 
@@ -194,51 +233,36 @@ def main():
     print("\n" + "="*70)
     print("[bench] SUMMARY")
     print("="*70)
-    print(f"{'shape':40s}  {'cuBLAS':>8s}  {'fake-q':>8s}  {'Triton':>8s}  "
-          f"{'tri/cu':>7s}  {'mem×':>5s}")
+    print(f"{'shape':40s}  {'cuBLAS':>7s}  {'fake-q':>7s}  {'v1':>7s}  "
+          f"{'v2':>7s}  {'v2pre':>7s}  {'v2pre/cu':>9s}  {'mem×':>5s}")
     for r in results_first + results_scaleup:
         print(f"{r['label']:40s}  "
-              f"{r['t_cublas_us']:8.2f}  {r['t_fakeq_us']:8.2f}  "
-              f"{r['t_tri_us']:8.2f}  "
-              f"{r['t_tri_us']/r['t_cublas_us']:7.2f}  "
+              f"{r['t_cublas_us']:7.2f}  {r['t_fakeq_us']:7.2f}  "
+              f"{r['t_tri_us']:7.2f}  {r['t_v2_us']:7.2f}  {r['t_v2_pre_us']:7.2f}  "
+              f"{r['t_v2_pre_us']/r['t_cublas_us']:9.2f}  "
               f"{r['mem_bf16']/r['mem_packed']:5.1f}")
 
-    # Honest verdict
+    # Honest 2-axis verdict per codex 1779377742036-0686905a
     print()
-    triton_beats_cublas_first = [r for r in results_first
-                                  if r['t_tri_us'] < r['t_cublas_us']]
-    triton_beats_cublas_scaleup = [r for r in results_scaleup
-                                    if r['t_tri_us'] < r['t_cublas_us']]
-    triton_beats_fakeq_first = [r for r in results_first
-                                 if r['t_tri_us'] < r['t_fakeq_us']]
-    triton_beats_fakeq_scaleup = [r for r in results_scaleup
-                                    if r['t_tri_us'] < r['t_fakeq_us']]
+    def axis_report(results, axis_name, kernel_key):
+        beats_cublas = [r for r in results if r[kernel_key] < r['t_cublas_us']]
+        beats_fakeq = [r for r in results if r[kernel_key] < r['t_fakeq_us']]
+        return beats_cublas, beats_fakeq
 
-    print(f"[bench] Triton vs cuBLAS BF16 (speed-of-light):")
-    print(f"[bench]   first config (d=64):  {len(triton_beats_cublas_first)}/{len(results_first)} shapes faster")
-    print(f"[bench]   scale-up (d=256):     {len(triton_beats_cublas_scaleup)}/{len(results_scaleup)} shapes faster")
-    print(f"[bench] Triton vs fake-quant (no-kernel ternary baseline):")
-    print(f"[bench]   first config (d=64):  {len(triton_beats_fakeq_first)}/{len(results_first)} shapes faster")
-    print(f"[bench]   scale-up (d=256):     {len(triton_beats_fakeq_scaleup)}/{len(results_scaleup)} shapes faster")
-
-    print()
-    print("[bench] Gate B.3 result classifications (per locked contract):")
-    if len(triton_beats_cublas_first) > 0 and len(triton_beats_fakeq_first) > 0:
-        print("[bench]   ✓ d_model=64: Triton kernel viable at TRM-1.58 first config")
-    elif len(triton_beats_fakeq_first) > 0:
-        print("[bench]   ◐ d_model=64: kernel beats no-kernel baseline but trails cuBLAS BF16 "
-              "(memory win only at first config)")
-    else:
-        print("[bench]   ✗ d_model=64: LAUNCH-BOUND — kernel slower than both baselines "
-              "(memory-only win at first config; not viable for speed claim)")
-
-    if len(triton_beats_cublas_scaleup) > 0 and len(triton_beats_fakeq_scaleup) > 0:
-        print("[bench]   ✓ d_model=256: Triton kernel viable at scale-up")
-    elif len(triton_beats_fakeq_scaleup) > 0:
-        print("[bench]   ◐ d_model=256: kernel beats no-kernel baseline but trails cuBLAS BF16 "
-              "(memory win only at scale-up)")
-    else:
-        print("[bench]   ✗ d_model=256: LAUNCH-BOUND — kernel not yet viable at scale-up")
+    for variant_label, kernel_key in [("v1 (FP32 IEEE)", "t_tri_us"),
+                                       ("v2 (W1.58A8, inline quant)", "t_v2_us"),
+                                       ("v2 (W1.58A8, pre-quant)", "t_v2_pre_us")]:
+        print(f"[bench] {variant_label}:")
+        for cfg_label, results in [("first config (d=64)", results_first),
+                                     ("scale-up (d=256)", results_scaleup)]:
+            beats_cublas, beats_fakeq = axis_report(results, cfg_label, kernel_key)
+            verdict = (
+                "full speed claim" if beats_cublas and beats_fakeq
+                else "memory + dispatch win" if beats_fakeq
+                else "speed null"
+            )
+            print(f"[bench]   {cfg_label}: {len(beats_cublas)}/{len(results)} beat cuBLAS, "
+                  f"{len(beats_fakeq)}/{len(results)} beat fake-quant → {verdict}")
 
     return 0
 

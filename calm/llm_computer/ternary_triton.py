@@ -233,6 +233,195 @@ def ternary_matmul_triton(
     return y
 
 
+# =========================================================================
+# v2: W1.58A8 INT8 tensor-core path (Slice 14a)
+# =========================================================================
+#
+# v1 above does FP32 matmul (input_precision="ieee") so → CUDA cores, not
+# tensor cores. v2 quantizes activations to int8 per-token absmax, casts
+# the unpacked ternary codes to int8 in {-1, 0, +1}, and runs
+# tl.dot(int8, int8, out_dtype=int32) which lowers to INT8 tensor cores
+# on Ada (compute capability 8.9). Dequant epilogue scales by
+# x_scale_per_row × w_scale_per_tensor at the end.
+#
+# Gate B v1 preserved as ablation baseline per `tq4_triton.py` v1→v2→v4→v5
+# precedent. v2 is the speed-claim kernel; v1 is the parity baseline.
+
+
+@torch.no_grad()
+def quantize_activation_int8_pertoken(x: torch.Tensor, eps: float = 1e-8):
+    """Per-token (per-row) absmax int8 quantization.
+
+    Args:
+        x: (M, K) FP32, contiguous.
+    Returns:
+        x_int8: (M, K) int8
+        x_scale: (M,) FP32 — per-row scale s.t. x ≈ x_int8.float() * x_scale[:, None]
+    """
+    assert x.dim() == 2 and x.dtype == torch.float32
+    # Per-row absmax
+    row_max = x.abs().amax(dim=1).clamp_min(eps)              # (M,)
+    scale = row_max / 127.0                                    # (M,)
+    x_q = torch.round(x / scale[:, None]).clamp(-127, 127).to(torch.int8)
+    return x_q, scale
+
+
+@triton.jit
+def _ternary_matmul_int8_kernel(
+    x_ptr,           # (M, K) int8
+    w_packed_ptr,    # (N, K/4) uint8
+    x_scale_ptr,     # (M,) FP32 per-row
+    w_scale_ptr,     # (1,) FP32 per-tensor
+    y_ptr,           # (M, N) FP32
+    M, N, K,
+    stride_xm, stride_xk,
+    stride_wn, stride_wk,
+    stride_ym, stride_yn,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+):
+    """INT8 tensor-core ternary matmul.
+
+    Math: y = x_int8 @ ternary_int8.T  (accumulated as int32),
+          then y_fp32 = y_int32 * x_scale[:, None] * w_scale.
+
+    Ternary codes {-1, 0, +1} fit cleanly in int8 so the INT8 tensor-core
+    matmul has no precision loss from the weight side. The only quant
+    loss is from int8 activation absmax (~1/127 ≈ 0.78% per element).
+    """
+    pid_m = tl.program_id(0)
+    pid_n = tl.program_id(1)
+
+    rm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    rn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    mask_m = rm < M
+    mask_n = rn < N
+
+    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.int32)
+
+    for k0 in range(0, K, BLOCK_K):
+        k_offs = k0 + tl.arange(0, BLOCK_K)
+        mask_k = k_offs < K
+
+        # Load x tile as int8: (BLOCK_M, BLOCK_K)
+        x_offs = rm[:, None] * stride_xm + k_offs[None, :] * stride_xk
+        x_i8 = tl.load(
+            x_ptr + x_offs,
+            mask=mask_m[:, None] & mask_k[None, :],
+            other=0,
+        )
+
+        # Load packed weight tile and unpack as int8 in {-1, 0, +1}.
+        k_byte = k_offs // 4
+        k_inbyte = k_offs % 4
+        w_offs = rn[:, None] * stride_wn + k_byte[None, :] * stride_wk
+        mask_k_byte = k_byte < (K // 4)
+        w_byte = tl.load(
+            w_packed_ptr + w_offs,
+            mask=mask_n[:, None] & mask_k_byte[None, :],
+            other=0,
+        ).to(tl.int32)
+        shift = 2 * k_inbyte[None, :]
+        code = (w_byte >> shift) & 0x3                        # (BLOCK_N, BLOCK_K)
+        # Map {0, 1, 2, 3} -> int8 {-1, 0, +1, 0}
+        is_neg = (code == 0).to(tl.int8)
+        is_pos = (code == 2).to(tl.int8)
+        w_i8 = is_pos - is_neg                                # (BLOCK_N, BLOCK_K) int8
+
+        # INT8 tensor-core matmul: int8 @ int8 -> int32
+        acc += tl.dot(x_i8, tl.trans(w_i8), out_dtype=tl.int32)
+
+    # Dequant epilogue: int32 * x_scale[:, None] * w_scale -> fp32
+    acc_fp = acc.to(tl.float32)
+    x_scale = tl.load(x_scale_ptr + rm, mask=mask_m, other=1.0)   # (BLOCK_M,)
+    w_scale = tl.load(w_scale_ptr)                                # scalar
+    y_fp = acc_fp * x_scale[:, None] * w_scale
+
+    y_offs = rm[:, None] * stride_ym + rn[None, :] * stride_yn
+    tl.store(y_ptr + y_offs, y_fp, mask=mask_m[:, None] & mask_n[None, :])
+
+
+def ternary_matmul_triton_v2_prequant(
+    x_i8: torch.Tensor, x_scale: torch.Tensor,
+    w_packed: torch.Tensor, w_scale: float,
+    in_features: int, out_features: int,
+    BLOCK_M: int = 32, BLOCK_N: int = 32, BLOCK_K: int = 32,
+) -> torch.Tensor:
+    """v2 host wrapper with PRE-QUANTIZED activations.
+
+    Use this when bench/runtime amortizes the activation quant cost across
+    multiple matmuls (real forward pass: x quantized once per layer-input,
+    reused by W_qkv/W_out/ff_in/ff_out projections).
+
+    Args:
+        x_i8: (M, in_features) int8.
+        x_scale: (M,) FP32 per-row scale.
+        w_packed: (out_features, in_features // 4) uint8.
+        w_scale: FP32 per-tensor weight scale.
+    Returns:
+        y: (M, out_features) FP32.
+    """
+    assert x_i8.is_contiguous() and x_i8.dtype == torch.int8
+    assert x_scale.is_contiguous() and x_scale.dtype == torch.float32
+    assert w_packed.is_contiguous() and w_packed.dtype == torch.uint8
+    assert w_packed.shape == (out_features, in_features // 4)
+    assert in_features % 4 == 0 and BLOCK_K % 4 == 0
+    assert BLOCK_K >= 16, "INT8 tensor cores want BLOCK_K >= 16"
+
+    M = x_i8.shape[0]
+    assert x_i8.shape[1] == in_features
+    assert x_scale.shape == (M,)
+
+    y = torch.empty((M, out_features), device=x_i8.device, dtype=torch.float32)
+    w_scale_tensor = torch.tensor([w_scale], device=x_i8.device, dtype=torch.float32)
+    grid = (
+        (M + BLOCK_M - 1) // BLOCK_M,
+        (out_features + BLOCK_N - 1) // BLOCK_N,
+    )
+    _ternary_matmul_int8_kernel[grid](
+        x_i8, w_packed, x_scale, w_scale_tensor, y,
+        M, out_features, in_features,
+        x_i8.stride(0), x_i8.stride(1),
+        w_packed.stride(0), w_packed.stride(1),
+        y.stride(0), y.stride(1),
+        BLOCK_M=BLOCK_M, BLOCK_N=BLOCK_N, BLOCK_K=BLOCK_K,
+        num_warps=4,
+    )
+    return y
+
+
+def ternary_matmul_triton_v2(
+    x: torch.Tensor, w_packed: torch.Tensor, w_scale: float,
+    in_features: int, out_features: int,
+    BLOCK_M: int = 32, BLOCK_N: int = 32, BLOCK_K: int = 32,
+) -> torch.Tensor:
+    """v2 host wrapper: W1.58A8 INT8 tensor-core path.
+
+    Convenience wrapper that quantizes activations inline. For perf-
+    sensitive bench/runtime use `ternary_matmul_triton_v2_prequant` to
+    amortize activation quant across multiple matmuls.
+
+    Args:
+        x: (M, in_features) FP32 — host-side quantized to int8 here.
+        w_packed: (out_features, in_features // 4) uint8.
+        w_scale: FP32 per-tensor weight scale.
+    Returns:
+        y: (M, out_features) FP32.
+    """
+    assert x.is_contiguous() and x.dtype == torch.float32
+    M = x.shape[0]
+    assert x.shape[1] == in_features
+    x_i8, x_scale = quantize_activation_int8_pertoken(x)
+    x_i8 = x_i8.contiguous()
+    x_scale = x_scale.contiguous()
+    return ternary_matmul_triton_v2_prequant(
+        x_i8, x_scale, w_packed, w_scale,
+        in_features, out_features,
+        BLOCK_M=BLOCK_M, BLOCK_N=BLOCK_N, BLOCK_K=BLOCK_K,
+    )
+
+
 def ternary_linear_triton(x: torch.Tensor, weight: torch.Tensor,
                            bias: torch.Tensor | None = None) -> torch.Tensor:
     """End-to-end: take a FP `weight` (treated as the master weight),
