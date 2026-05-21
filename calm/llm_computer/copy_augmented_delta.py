@@ -69,8 +69,16 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
         nn.init.constant_(self.copy_gate.bias, config.copy_gate_bias_init)
 
         copy_dim = config.n_copy_heads * config.d_head
+        # Slice 13 / TRM-1.58: copy_q_proj stays FP (mechanism-critical
+        # pointer-query reads must preserve full precision; copy_k_proj is
+        # the bulk projection per locked TRM-1.58 scope and IS ternary-
+        # eligible when use_ternary_bulk is on).
         self.copy_q_proj = nn.Linear(d, copy_dim, bias=False)
-        self.copy_k_proj = nn.Linear(d, copy_dim, bias=False)
+        if getattr(config, "use_ternary_bulk", False):
+            from calm.llm_computer.ternary_linear import TernaryLinear
+            self.copy_k_proj = TernaryLinear(d, copy_dim, bias=False)
+        else:
+            self.copy_k_proj = nn.Linear(d, copy_dim, bias=False)
 
         # Slice 2: re-apply LeCun init now that copy_gate / copy_q_proj /
         # copy_k_proj exist. Scoped via `_apply_lecun_init_to` per co_lead
@@ -383,6 +391,17 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
             # `decode_greedy_cached`. Per co_lead audit msg
             # `1779354358961-1aff6d0c`.
             ("use_pre_rmsnorm", bool),
+            # Slice 13 / TRM-1.58: ternary forward weights diverge per-token
+            # from the cached-decode shortcut path. The cached prefill walks
+            # W_qkv / ff_in directly without re-quantizing; full-forward
+            # path applies absmean ternary quantization with a per-tensor
+            # scale computed over the master weight. Match-shape ternary
+            # quantization in the cached path would require carrying the
+            # current scale per layer in streaming state. Until that's
+            # implemented, hard-block the flag — users get NotImplementedError
+            # instead of silent divergence between training-time forward
+            # and product-path decode_greedy_cached.
+            ("use_ternary_bulk", bool),
         )
         _blocked = []
         for _attr, _pred in _CACHED_DECODE_BLOCKED:
@@ -632,6 +651,7 @@ def build_copy_augmented_delta(
     use_halt_head: bool = False,
     use_carry: bool = False,
     use_pre_rmsnorm: bool = False,
+    use_ternary_bulk: bool = False,
 ) -> CopyAugmentedDeltaNet:
     """Build a CopyAugmentedDeltaNet mirroring PT's default sizing.
 
@@ -662,6 +682,7 @@ def build_copy_augmented_delta(
         use_halt_head=use_halt_head,
         use_carry=use_carry,
         use_pre_rmsnorm=use_pre_rmsnorm,
+        use_ternary_bulk=use_ternary_bulk,
     )
     assert cfg.d_head == 2, f"d_head must be 2, got {cfg.d_head}"
     return CopyAugmentedDeltaNet(cfg)

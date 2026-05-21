@@ -47,6 +47,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from calm.llm_computer.model import Small2DConfig, Small2DTransformer
+from calm.llm_computer.ternary_linear import TernaryLinear
 
 
 class _LayerBank:
@@ -197,7 +198,29 @@ class DeltaNetConfig(Small2DConfig):
                                        # iter-0 injection that flat L would have.)
                                        # h_cycles=1 (default) special-cases to the
                                        # flat Slice 1-3 path — bit-equivalent baseline.
-    use_pre_rmsnorm: bool = False      # Slice 12: per-layer Pre-RMSNorm INSIDE the
+    use_pre_rmsnorm: bool = False
+    use_ternary_bulk: bool = False     # Slice 13 / TRM-1.58: native W1.58A8
+                                       # BitNet-style ternary forward weights
+                                       # for the bulk projections (W_qkv,
+                                       # W_out, ff_in, ff_out + H-bank mirrors
+                                       # + copy_k_proj). FP/BF16 master + STE
+                                       # backward. Activations stay BF16/FP32
+                                       # in Gate A — int8 absmax lands in a
+                                       # separate gate-B/C slice once the
+                                       # kernel arc proves out.
+                                       # Mechanism-critical projections stay
+                                       # FP (copy_gate/copy_q/beta_head/
+                                       # attn_gate/RMSNorm/halt/embeddings/
+                                       # head) per the locked TRM-1.58 scope-
+                                       # out (gabe AUQ 2026-05-21, room msg
+                                       # 1779376520096-5ed6856c).
+                                       # Cached-decode blocklist refuses this
+                                       # flag — quantized forward and any
+                                       # cached-decode shortcut diverge per-
+                                       # token. Same RNG-isolation envelope
+                                       # as Slices 8/10a/12 so flag-off bit-
+                                       # equivalence is preserved at the same
+                                       # seed.      # Slice 12: per-layer Pre-RMSNorm INSIDE the
                                        # L (and H, when use_h_layer_stack=True) layer
                                        # stack. Normalizes the residual stream BEFORE
                                        # the sequence-mixer (QKV proj) AND BEFORE the
@@ -228,6 +251,45 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
 
     def __init__(self, config: DeltaNetConfig):
         super().__init__(config)
+
+        # Slice 13 / TRM-1.58: native ternary bulk projections. Replace the
+        # parent class's nn.Linear allocations for W_qkv/W_out/ff_in/ff_out
+        # with TernaryLinear (BitNet b1.58 absmean quantize + STE) when the
+        # flag is set. The parent class already allocated nn.Linear versions;
+        # we overwrite the attributes here (parent versions garbage-collected).
+        # State-dict keys preserved because attribute names + parameter names
+        # (.weight, .bias) match nn.Linear.
+        #
+        # RNG isolation: save/restore around the swap so downstream subclass-
+        # constructed params (CopyAugmentedDeltaNet.copy_gate / copy_q_proj /
+        # copy_k_proj after super().__init__() returns) get the same seeded
+        # values whether this flag is on or off. Same hazard pattern as
+        # Slices 2/8/10a/12. Without this, flag-off bit-equivalence breaks at
+        # the same seed because the parent's nn.Linear allocations already
+        # consumed RNG; re-allocating as TernaryLinear here consumes RNG
+        # AGAIN before the subclass adds its own params.
+        if getattr(config, "use_ternary_bulk", False):
+            _saved_rng_ternary = torch.get_rng_state()
+            d = config.d_model
+            d_ffn = config.d_ffn
+            self.W_qkv = nn.ModuleList([
+                TernaryLinear(d, 3 * d, bias=False)
+                for _ in range(config.n_layers)
+            ])
+            self.W_out = nn.ModuleList([
+                TernaryLinear(d, d, bias=False)
+                for _ in range(config.n_layers)
+            ])
+            self.ff_in = nn.ModuleList([
+                TernaryLinear(d, 2 * d_ffn, bias=False)
+                for _ in range(config.n_layers)
+            ])
+            self.ff_out = nn.ModuleList([
+                TernaryLinear(d_ffn, d, bias=False)
+                for _ in range(config.n_layers)
+            ])
+            torch.set_rng_state(_saved_rng_ternary)
+
         self.beta_head = nn.ModuleList([
             nn.Linear(config.d_model, 1, bias=True)
             for _ in range(config.n_layers)
@@ -406,20 +468,29 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
         # Same hazard pattern caught in Slice 2 (z_init local generator).
         if getattr(config, "use_h_layer_stack", False):
             _saved_rng = torch.get_rng_state()
+            # Slice 13 / TRM-1.58: H-bank mirrors L-bank's ternary scope when
+            # use_ternary_bulk is set. Per locked contract, the ternary wrap
+            # must apply symmetrically to L-bank and H-bank — otherwise the
+            # H/L bank divergence would introduce a confound on top of the
+            # quantization signal.
+            _bulk_linear = (
+                TernaryLinear if getattr(config, "use_ternary_bulk", False)
+                else nn.Linear
+            )
             self.H_W_qkv = nn.ModuleList([
-                nn.Linear(config.d_model, 3 * config.d_model, bias=False)
+                _bulk_linear(config.d_model, 3 * config.d_model, bias=False)
                 for _ in range(config.n_layers)
             ])
             self.H_W_out = nn.ModuleList([
-                nn.Linear(config.d_model, config.d_model, bias=False)
+                _bulk_linear(config.d_model, config.d_model, bias=False)
                 for _ in range(config.n_layers)
             ])
             self.H_ff_in = nn.ModuleList([
-                nn.Linear(config.d_model, 2 * config.d_ffn, bias=False)
+                _bulk_linear(config.d_model, 2 * config.d_ffn, bias=False)
                 for _ in range(config.n_layers)
             ])
             self.H_ff_out = nn.ModuleList([
-                nn.Linear(config.d_ffn, config.d_model, bias=False)
+                _bulk_linear(config.d_ffn, config.d_model, bias=False)
                 for _ in range(config.n_layers)
             ])
             self.H_beta_head = nn.ModuleList([
