@@ -91,6 +91,20 @@ upstream baseline citation, (d) revisit criteria.
 - **Upstream**: `pretrain.py` (392 lines).
 - **Revisit when**: Never — this is a permanent simplification for the smoke.
 
+### D1.8 — Dataclasses instead of pydantic.BaseModel for configs
+
+- **What**: `TransformerConfig`, `HierarchicalReasoningModelConfig`, `LMHeadConfig`, `InitConfig` declared as `@dataclass` (stdlib) instead of upstream `pydantic.BaseModel`.
+- **Why**: pydantic validates field types + provides `model_dump()` for merging overrides. We don't need either for the FP smoke — we assert shapes/values explicitly in test harness, and use `dataclasses.replace()` instead of `model_dump() | overrides`. Avoids pydantic dependency.
+- **Upstream**: `models/transformer.py:12,19` `class InitConfig(BaseModel)` / `class TransformerConfig(BaseModel)`; `models/baselines/hrm_nocarry_bp_warmup.py:11` `class HierarchicalReasoningModelConfig(TransformerConfig)`; `models/lm_head.py:14` `class LMHeadConfig(BaseModel)`.
+- **Revisit when**: Phase 2 / 3 if we want pydantic validation gates on user configs (e.g. for a config-file-driven training driver). Not load-bearing for behavior; load-bearing only for input validation surface.
+
+### D1.9 — `create_cache` deferred from LMHead surface
+
+- **What**: Phase 1 `LMHead` does NOT delegate `create_cache` from the wrapped HRM. Upstream `models/lm_head.py:24` sets `self.create_cache = self.model.create_cache`.
+- **Why**: Phase 1 mini-smoke is training-only forward (no autoregressive inference via KV cache). The SDPA path (D1.2) doesn't yet implement an equivalent of upstream's `Cache.create` (which returns flash-attn-compatible static `(keys, values)` buffers).
+- **Upstream**: `models/lm_head.py:24` + `models/transformer.py:119` + `models/baselines/hrm_nocarry_bp_warmup.py:72-73` define a nested cache dict `{H: [...], L: [...]}` keyed by H/L cycle index.
+- **Revisit when**: Phase 1 needs autoregressive decoding for the canonical `17×23=391` probe. Then implement a `Cache` analog using PyTorch-friendly storage (e.g. `nn.Buffer` of `(B, S_max, num_heads, head_dim)`) and wire `Attention` SDPA to take optional cache args.
+
 ## Phase 2 (native 1.58 bulk linears) planned deviations
 
 These are the WHOLE POINT of the 1.58 work. Each is intentional.
