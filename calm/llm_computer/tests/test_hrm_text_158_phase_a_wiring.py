@@ -602,9 +602,12 @@ def test_resolve_prior_rungs_unset_positional_default() -> None:
     # R1b3: cur_idx=5, positional=[R0, R1, R1b1, R1b2a, R1b2]; minus
     # diagnosis -> [R0, R1, R1b1, R1b2]
     assert _resolve_prior_rungs("R1b3", None) == ["R0", "R1", "R1b1", "R1b2"]
-    # R3: cur_idx=9, positional includes R1b3 (active) but excludes
-    # diagnosis-only R1b2a/R1b/R2/R2a -> [R0, R1, R1b1, R1b2, R1b3]
-    assert _resolve_prior_rungs("R3", None) == ["R0", "R1", "R1b1", "R1b2", "R1b3"]
+    # R1b4: cur_idx=6, positional=[R0, R1, R1b1, R1b2a, R1b2, R1b3];
+    # minus diagnosis -> [R0, R1, R1b1, R1b2, R1b3]
+    assert _resolve_prior_rungs("R1b4", None) == ["R0", "R1", "R1b1", "R1b2", "R1b3"]
+    # R3: cur_idx=10, positional includes R1b3+R1b4 (active) but excludes
+    # diagnosis-only R1b2a/R1b/R2/R2a -> [R0, R1, R1b1, R1b2, R1b3, R1b4]
+    assert _resolve_prior_rungs("R3", None) == ["R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4"]
 
 
 def test_resolve_prior_rungs_explicit_override_basic() -> None:
