@@ -528,12 +528,14 @@ def train(
     # M_max" — the model must LEARN to halt rather than learn-to-not-halt.
     # Halt bias = -1.0, Continue bias = +1.0 → sigmoid Qh ~ 0.27, Qc ~ 0.73.
     q_init_bias_continue: bool = False,
-    # Slice 13l: --save-at-step N mid-training ckpt hook. If set, saves
-    # a ckpt to `<stem>_step{N:05d}.pt` once during training when
-    # step_idx == save_at_step (HRM segment-loop path only). Default
-    # None = disabled, no extra saves. Closes the gap that bit 13j/13k
-    # where slope-based aborts left no usable ckpt to probe.
-    save_at_step: int | None = None,
+    # Slice 13l: --save-at-step N mid-training ckpt hook. Repeatable —
+    # pass a sequence of step indices, ckpts saved to
+    # `<stem>_step{N:05d}.pt` when step_idx ∈ save_at_steps (HRM segment-
+    # loop path only). Default None = disabled, no extra saves. Closes
+    # the gap that bit 13j/13k where slope-based aborts left no usable
+    # ckpt to probe. Codex msg 1779446584981 spec: minimal API, single
+    # kwarg, frozenset-once dedupe, positive-int validation.
+    save_at_steps: list[int] | None = None,
     # Interior-batch loss/grad logging (NaN-diagnostic). 0 = disabled (default,
     # preserves prior log shape). N>0 = print `[ep E step S] loss=X grad_norm=Y`
     # every N batches AND early-exit on first non-finite loss with diagnostic
@@ -546,6 +548,21 @@ def train(
     if use_softmax_only:
         print("[gsm8k] Slice 13k: SOFTMAX-ONLY mixer mode ENABLED "
               "(delta path skipped; softmax_attn auto-forced ON)")
+
+    # Slice 13l: validate + dedupe save_at_steps once at train entry.
+    # Codex msg 1779446584981 spec: minimal API, frozenset-once dedupe,
+    # positive-int validation.
+    if save_at_steps is not None:
+        for s in save_at_steps:
+            if not isinstance(s, int) or s <= 0:
+                raise ValueError(
+                    f"save_at_steps entries must be positive ints; got {s!r}"
+                )
+        save_at_steps_set = frozenset(save_at_steps)
+        print(f"[gsm8k] Slice 13l: save_at_steps ENABLED → "
+              f"{sorted(save_at_steps_set)}")
+    else:
+        save_at_steps_set = frozenset()
 
     print(f"[gsm8k] loading splits via `datasets` lib...")
     full_train, full_val, test_rows = load_gsm8k_splits(val_frac=0.10)
@@ -858,13 +875,13 @@ def train(
                           f"per_seg_raw_halt=[{halt_str}] "
                           f"grad_norm={last_grad_norm:.4f}",
                           flush=True)
-                # Slice 13l: --save-at-step N mid-training ckpt hook.
+                # Slice 13l: --save-at-step N mid-training ckpt hook (repeatable).
                 # Closes the gap that bit 13j/13k where slope-based aborts
                 # left no usable ckpt for the forced-depth probe gate.
                 # Saves a per-step ckpt to `<stem>_step{N:05d}.pt` then
                 # continues training (does NOT terminate; allows the run
                 # to either continue or be killed externally).
-                if save_at_step is not None and step_idx == save_at_step:
+                if step_idx in save_at_steps_set:
                     step_ckpt_path = Path(checkpoint_path).with_name(
                         Path(checkpoint_path).stem + f"_step{step_idx:05d}.pt"
                     )
@@ -1254,13 +1271,16 @@ if __name__ == "__main__":
                          "(sigmoid Qh~0.27, Qc~0.73). Inverts default policy "
                          "from 'halt at seg 1' to 'continue to M_max'; addresses "
                          "shallow-halt zero-attractor observed in 13f.3b.")
-    ap.add_argument("--save-at-step", type=int, default=None,
-                    help="Slice 13l: mid-training ckpt save hook. Saves a "
-                         "ckpt to `<stem>_step{N:05d}.pt` once during "
-                         "training when step_idx == save_at_step. Closes "
-                         "the gap that bit 13j/13k where slope-based aborts "
-                         "left no usable ckpt for forced-depth probe gates. "
-                         "HRM segment-loop path only; defaults to None (off).")
+    ap.add_argument("--save-at-step", type=int, action="append", default=None,
+                    help="Slice 13l: mid-training ckpt save hook (repeatable). "
+                         "Pass multiple times (e.g. `--save-at-step 100 "
+                         "--save-at-step 200`) to save at multiple step indices "
+                         "in one trajectory. Saves to `<stem>_step{N:05d}.pt` "
+                         "when step_idx is in the supplied set. Closes the gap "
+                         "that bit 13j/13k where slope-based aborts left no "
+                         "usable ckpt for forced-depth probe gates. HRM "
+                         "segment-loop path only; defaults to None (off). "
+                         "Positive ints only; duplicates deduped via frozenset.")
     ap.add_argument("--use-pre-rmsnorm", action="store_true",
                     help="Allocate per-layer RMSNorm before sequence-mixer "
                          "AND before FFN in both L and H banks. Fixes S2 NaN "
@@ -1333,7 +1353,7 @@ if __name__ == "__main__":
         m_min_warmup_epochs=args.m_min_warmup_epochs,
         m_min_warmup_value=args.m_min_warmup_value,
         q_init_bias_continue=args.q_init_bias_continue,
-        save_at_step=args.save_at_step,
+        save_at_steps=args.save_at_step,
         chunk_size=args.chunk_size,
         aux_weight=args.aux_weight,
         log_every=args.log_every,
