@@ -466,6 +466,20 @@ def train(
     use_hrm_act: bool = False,
     m_max: int = 4,
     m_min_epsilon: float = 0.1,  # HRM-Text §5:234-236 exploration probability
+    # Slice 13i.1: deterministic deeper-M_min warmup curriculum.
+    # During the first `m_min_warmup_epochs` epochs, force m_min to a
+    # constant `m_min_warmup_value` on every batch (override the
+    # stochastic m_min_epsilon draw). Anneals back to the source-faithful
+    # epsilon-stochastic schedule after the warmup. Default 0 = no
+    # warmup, preserves current behavior.
+    m_min_warmup_epochs: int = 0,
+    m_min_warmup_value: int = 4,
+    # Slice 13i.1: continue-biased Q-head init. When True, patches the
+    # halt_head bias so Q_continue > Q_halt before training starts.
+    # Inverts the default policy from "halt at seg 1" to "continue to
+    # M_max" — the model must LEARN to halt rather than learn-to-not-halt.
+    # Halt bias = -1.0, Continue bias = +1.0 → sigmoid Qh ~ 0.27, Qc ~ 0.73.
+    q_init_bias_continue: bool = False,
     # Interior-batch loss/grad logging (NaN-diagnostic). 0 = disabled (default,
     # preserves prior log shape). N>0 = print `[ep E step S] loss=X grad_norm=Y`
     # every N batches AND early-exit on first non-finite loss with diagnostic
@@ -580,6 +594,29 @@ def train(
         print(f"[gsm8k] Slice 13f.2: HRM-Text per-segment training ENABLED "
               f"(M_max={m_max}, m_min_epsilon={m_min_epsilon})")
 
+        # Slice 13i.1: continue-biased Q-head init. Patch halt_head.bias
+        # so Q_continue > Q_halt at startup (sigmoid Qh~0.27, Qc~0.73).
+        # Forces the model to LEARN to halt rather than learn-to-not-halt;
+        # addresses the shallow-halt zero-attractor observed in 13f.3b
+        # (all 5 saved epochs had avg_segs/tok=1.00, halt_hist concentrated
+        # at bin 0). Per codex audit 1779432805671 + 1779432871832 gate.
+        if q_init_bias_continue:
+            with torch.no_grad():
+                # halt_head is Linear(d_model, 2). bias is shape (2,).
+                # Index 0 = Q_halt, Index 1 = Q_continue.
+                m.halt_head.bias.zero_()
+                m.halt_head.bias[0] = -1.0  # Q_halt sigmoid → ~0.27
+                m.halt_head.bias[1] = +1.0  # Q_continue sigmoid → ~0.73
+            print(f"[gsm8k] Slice 13i.1: continue-biased Q init INSTALLED "
+                  f"(halt bias=[-1.0, +1.0] → sigmoid Qh~0.27, Qc~0.73)")
+
+        # Slice 13i.1: deterministic deeper-M_min warmup curriculum.
+        if m_min_warmup_epochs > 0:
+            print(f"[gsm8k] Slice 13i.1: M_min warmup ENABLED "
+                  f"(constant m_min={m_min_warmup_value} for first "
+                  f"{m_min_warmup_epochs} epochs, then anneal to "
+                  f"epsilon-stochastic at epsilon={m_min_epsilon})")
+
     if graph_capture:
         if not fixed_shape_padding:
             raise ValueError(
@@ -631,8 +668,13 @@ def train(
                 B = ids.shape[0]
                 active = torch.ones(B, dtype=torch.bool, device=device)
                 carry = None
-                # M_min stochastic per HRM-Text §5:234-236
-                if torch.rand(1).item() < m_min_epsilon:
+                # M_min: Slice 13i.1 warmup curriculum + HRM-Text §5:234-236.
+                # During warmup epochs, force constant deeper m_min to give
+                # the recurrence + Q-head dense training signal at depth.
+                # After warmup, anneal back to source-faithful stochastic draw.
+                if m_min_warmup_epochs > 0 and ep <= m_min_warmup_epochs:
+                    m_min = m_min_warmup_value
+                elif torch.rand(1).item() < m_min_epsilon:
                     m_min = int(torch.randint(2, m_max + 1, (1,)).item())
                 else:
                     m_min = 1
@@ -1123,6 +1165,24 @@ if __name__ == "__main__":
                     help="HRM-Text §5:234-236 exploration probability: with "
                          "probability epsilon, M_min is sampled uniform from "
                          "{2..M_max}; otherwise M_min=1.")
+    # Slice 13i.1: deterministic deeper-M_min warmup curriculum + Q-init bias.
+    ap.add_argument("--m-min-warmup-epochs", type=int, default=0,
+                    help="Slice 13i.1: deterministic deeper-M_min warmup. "
+                         "For the first N epochs, force constant m_min="
+                         "--m-min-warmup-value on every batch (override "
+                         "stochastic epsilon draw). After warmup, anneal "
+                         "back to epsilon-stochastic source-faithful schedule. "
+                         "Default 0 = no warmup, preserves current behavior.")
+    ap.add_argument("--m-min-warmup-value", type=int, default=4,
+                    help="Slice 13i.1: m_min value used during warmup epochs "
+                         "(default 4 = M_max; forces all batches through full "
+                         "M_max segments during warmup).")
+    ap.add_argument("--q-init-bias-continue", action="store_true",
+                    help="Slice 13i.1: continue-biased Q-head init. After "
+                         "model build, patches halt_head.bias to [-1.0, +1.0] "
+                         "(sigmoid Qh~0.27, Qc~0.73). Inverts default policy "
+                         "from 'halt at seg 1' to 'continue to M_max'; addresses "
+                         "shallow-halt zero-attractor observed in 13f.3b.")
     ap.add_argument("--use-pre-rmsnorm", action="store_true",
                     help="Allocate per-layer RMSNorm before sequence-mixer "
                          "AND before FFN in both L and H banks. Fixes S2 NaN "
@@ -1176,6 +1236,9 @@ if __name__ == "__main__":
         use_hrm_act=args.use_hrm_act,
         m_max=args.m_max,
         m_min_epsilon=args.m_min_epsilon,
+        m_min_warmup_epochs=args.m_min_warmup_epochs,
+        m_min_warmup_value=args.m_min_warmup_value,
+        q_init_bias_continue=args.q_init_bias_continue,
         chunk_size=args.chunk_size,
         aux_weight=args.aux_weight,
         log_every=args.log_every,
