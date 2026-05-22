@@ -18,7 +18,7 @@ def build_rung_splits(
     n_train: int = 2000,
     n_held_out: int = 400,
     seed: int = 42,
-    rungs: tuple[str, ...] = ("R0", "R1", "R1b1", "R1b2a", "R2", "R3", "R4", "R5", "R6"),
+    rungs: tuple[str, ...] = ("R0", "R1", "R1b1", "R1b2", "R2", "R3", "R4", "R5", "R6"),
 ) -> dict[str, dict[str, list[dict]]]:
     """Build train + held_out splits for all rungs.
 
@@ -27,13 +27,21 @@ def build_rung_splits(
 
     R7 (GSM8k) excluded — served from load_gsm8k_splits.
 
-    Default tuple is the ACTIVE CHAIN per codex msg 1779469638068:
-    R1b is excluded by default because its A_plus_1 rows overlap R1b1's
-    by construction (single-template R1b1 succeeds R1b's 3-template
-    failure). R1b stays accessible by passing `rungs=("R0", "R1",
-    "R1b1", "R1b", ...)` explicitly for diagnosis-only inspection,
-    but assert_no_train_holdout_overlap WILL fail on a tuple containing
-    both R1b and R1b1.
+    Default tuple is the ACTIVE CHAIN per codex msg 1779475454122-1512da3b
+    (structural fix after R1b2a v2 lowmult confounded fail at ddcc943):
+
+      R0 -> R1 -> R1b1 -> R1b2 (canonical retry target via
+      R1b2_v2_replay50) -> R2 -> R3 -> R4 -> R5 -> R6
+
+    R1b2a is OUT of default (now diagnosis-only after both v1 and v2
+    lowmult failed). R1b stays diagnosis-only (legacy 3-template
+    superseded by R1b1). Both reachable via explicit `rungs=` arg
+    for diagnosis-only inspection. `assert_no_train_holdout_overlap`
+    WILL fail on a tuple containing both R1b1 and R1b1's failed
+    siblings (R1b2a, R1b) due to row construction overlap.
+
+    See `replay.py:DIAGNOSIS_ONLY_RUNGS` for the trainer-side
+    auto-exclusion mechanism that complements this default.
     """
     out: dict[str, dict[str, list[dict]]] = {}
     for rung in rungs:

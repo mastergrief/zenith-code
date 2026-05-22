@@ -1262,20 +1262,19 @@ def test_generator_arithmetic_correctness() -> None:
 # ============================================================================ #
 
 def test_cross_rung_no_train_holdout_overlap() -> None:
-    """Active-chain cross-rung invariant per codex msg 1779472300306
-    (R1b2 demoted to diagnosis-only after FAIL at 6fd2fec; R1b2a is
-    the narrower-split successor).
+    """Active-chain cross-rung invariant per codex msg 1779475454122-1512da3b
+    structural fix after R1b2a v2 lowmult confounded fail at ddcc943.
 
     `build_rung_splits` default tuple is now `("R0", "R1", "R1b1",
-    "R1b2a", "R2", "R3", "R4", "R5", "R6")` -- BOTH R1b AND R1b2 are
-    diagnosis-only because their A_minus_1 templates overlap R1b2a's
-    [1,19] subset by construction. The invariant asserts no row in
-    any rung's held_out appears in any rung's train set across the
-    active chain only."""
+    "R1b2", "R2", "R3", "R4", "R5", "R6")` -- R1b2 is the canonical
+    retry target via R1b2_v2_replay50 (NOT in DIAGNOSIS_ONLY_RUNGS).
+    R1b2a and R1b are diagnosis-only and OUT of default. The
+    invariant asserts no row in any rung's held_out appears in any
+    rung's train set across the active chain only."""
     splits = build_rung_splits(n_train=200, n_held_out=50, seed=42)
     assert_no_train_holdout_overlap(splits)
-    # Active chain: R0, R1, R1b1, R1b2a, R2-R6 (R1b2 + R1b diagnosis-only; R7 = GSM8k)
-    assert set(splits.keys()) == {"R0", "R1", "R1b1", "R1b2a", "R2", "R3", "R4", "R5", "R6"}
+    # Active chain: R0, R1, R1b1, R1b2, R2-R6 (R1b2a + R1b diagnosis-only; R7 = GSM8k)
+    assert set(splits.keys()) == {"R0", "R1", "R1b1", "R1b2", "R2", "R3", "R4", "R5", "R6"}
 
 
 def test_cross_rung_r1b1_and_r1b_together_collide() -> None:

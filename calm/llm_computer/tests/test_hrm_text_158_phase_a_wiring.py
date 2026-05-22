@@ -552,3 +552,138 @@ def test_ckpt_config_includes_curriculum_metadata() -> None:
     assert "curriculum_rung" not in gsm
     assert "replay_ratio" not in gsm
     assert "prior_rungs" not in gsm
+
+
+# ============================================================================ #
+# --replay-rungs explicit-priors + DIAGNOSIS_ONLY_RUNGS auto-exclude
+# (codex msg 1779475454122-1512da3b structural fix after R1b2a v2 lowmult
+#  confounded fail at ddcc943)
+# ============================================================================ #
+
+from calm.hrm_text_158.curriculum.replay import (
+    DIAGNOSIS_ONLY_RUNGS,
+    _resolve_prior_rungs,
+)
+
+
+def test_replay_diagnosis_only_rungs_constants() -> None:
+    """DIAGNOSIS_ONLY_RUNGS contains R1b2a and R1b (failed/superseded),
+    NOT R1b2 (canonical retry target via R1b2_v2_replay50). Codex msg
+    1779475454122-1512da3b."""
+    assert "R1b2a" in DIAGNOSIS_ONLY_RUNGS
+    assert "R1b" in DIAGNOSIS_ONLY_RUNGS
+    assert "R1b2" not in DIAGNOSIS_ONLY_RUNGS, (
+        "R1b2 must stay OUT of DIAGNOSIS_ONLY_RUNGS as canonical retry target "
+        "(see replay.py docstring)"
+    )
+    # Sanity: well-known good rungs NEVER diagnosis-only
+    for r in ("R0", "R1", "R1b1", "R2", "R3"):
+        assert r not in DIAGNOSIS_ONLY_RUNGS
+
+
+def test_resolve_prior_rungs_unset_positional_default() -> None:
+    """replay_rungs_arg=None -> positional RUNG_NAMES[:cur_idx] minus
+    DIAGNOSIS_ONLY_RUNGS minus R7."""
+    from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
+    # R1b1: cur_idx=2, positional=[R0, R1]; no diagnosis-only at those idx
+    assert _resolve_prior_rungs("R1b1", None) == ["R0", "R1"]
+    # R1b2: cur_idx=4, positional=[R0, R1, R1b1, R1b2a]; minus diagnosis
+    # ({R1b2a, R1b}) -> [R0, R1, R1b1]
+    assert _resolve_prior_rungs("R1b2", None) == ["R0", "R1", "R1b1"]
+    # R2: cur_idx=6, positional=[R0, R1, R1b1, R1b2a, R1b2, R1b]; minus
+    # diagnosis -> [R0, R1, R1b1, R1b2]
+    assert _resolve_prior_rungs("R2", None) == ["R0", "R1", "R1b1", "R1b2"]
+
+
+def test_resolve_prior_rungs_explicit_override_basic() -> None:
+    """Explicit --replay-rungs overrides positional. Accepted list returns."""
+    out = _resolve_prior_rungs("R1b2", "R0,R1,R1b1")
+    assert out == ["R0", "R1", "R1b1"]
+
+
+def test_resolve_prior_rungs_explicit_excludes_default_diagnosis() -> None:
+    """Explicit override CAN choose subset; e.g. just R0+R1 for R1b2."""
+    out = _resolve_prior_rungs("R1b2", "R0,R1")
+    assert out == ["R0", "R1"]
+    # R1b1 explicitly excluded by operator choice (allowed)
+
+
+def test_resolve_prior_rungs_explicit_whitespace_handling() -> None:
+    """Whitespace around commas accepted; empty entries malformed."""
+    out = _resolve_prior_rungs("R1b2", " R0 , R1 , R1b1 ")
+    assert out == ["R0", "R1", "R1b1"]
+
+
+def test_resolve_prior_rungs_explicit_empty_string_raises() -> None:
+    """--replay-rungs '' must raise."""
+    with pytest.raises(ValueError, match="cannot be empty"):
+        _resolve_prior_rungs("R1b2", "")
+
+
+def test_resolve_prior_rungs_explicit_empty_entry_raises() -> None:
+    """--replay-rungs 'R0,,R1' (empty mid-list) must raise."""
+    with pytest.raises(ValueError, match="empty entry|malformed"):
+        _resolve_prior_rungs("R1b2", "R0,,R1")
+
+
+def test_resolve_prior_rungs_unknown_rung_raises() -> None:
+    """--replay-rungs entry not in RUNG_NAMES must raise."""
+    with pytest.raises(ValueError, match="not in rung_names"):
+        _resolve_prior_rungs("R1b2", "R0,R1,UNKNOWN")
+
+
+def test_resolve_prior_rungs_current_rung_raises() -> None:
+    """--replay-rungs cannot include current rung (would replay self)."""
+    with pytest.raises(ValueError, match="cannot include current rung"):
+        _resolve_prior_rungs("R1b2", "R0,R1b2,R1")
+
+
+def test_resolve_prior_rungs_future_rung_raises() -> None:
+    """--replay-rungs entry at index >= cur_idx must raise."""
+    # R1b1 at index 2; R2 at index 6 (future)
+    with pytest.raises(ValueError, match="future rungs cannot be replay"):
+        _resolve_prior_rungs("R1b1", "R0,R1,R2")
+
+
+def test_resolve_prior_rungs_r7_raises() -> None:
+    """--replay-rungs R7 must raise (GSM8k served separately)."""
+    with pytest.raises(ValueError, match="generator-incompatible|served separately"):
+        _resolve_prior_rungs("R2", "R0,R1,R7")
+
+
+def test_resolve_prior_rungs_duplicate_raises() -> None:
+    """--replay-rungs duplicate entries must raise (would overweight prior)."""
+    with pytest.raises(ValueError, match="duplicate"):
+        _resolve_prior_rungs("R1b2", "R0,R1,R0,R1b1")
+
+
+def test_resolve_prior_rungs_explicit_diagnosis_warns() -> None:
+    """--replay-rungs explicitly including diagnosis-only emits WARN
+    (caught via callback) but returns the list unchanged."""
+    warns = []
+    out = _resolve_prior_rungs(
+        "R2",
+        "R0,R1,R1b1,R1b2a",
+        warn_callback=lambda msg: warns.append(msg),
+    )
+    assert out == ["R0", "R1", "R1b1", "R1b2a"]
+    assert len(warns) == 1, f"expected 1 warn; got {warns}"
+    assert "R1b2a" in warns[0]
+    assert "diagnosis-only" in warns[0].lower()
+
+
+def test_resolve_prior_rungs_unknown_curriculum_rung_raises() -> None:
+    """curriculum_rung itself not in RUNG_NAMES must raise."""
+    with pytest.raises(ValueError, match="not in rung_names"):
+        _resolve_prior_rungs("UNKNOWN_RUNG", None)
+
+
+def test_resolve_prior_rungs_r0_no_priors_unset() -> None:
+    """R0 has no priors with unset replay_rungs; returns []."""
+    assert _resolve_prior_rungs("R0", None) == []
+
+
+def test_resolve_prior_rungs_r0_explicit_with_self_raises() -> None:
+    """--replay-rungs R0 at R0 launch raises (current rung)."""
+    with pytest.raises(ValueError, match="cannot include current rung"):
+        _resolve_prior_rungs("R0", "R0")

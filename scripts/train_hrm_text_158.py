@@ -251,6 +251,7 @@ def train(
     curriculum_n_train: int = 4000,
     curriculum_n_heldout: int = 200,
     replay_ratio: float = 0.30,
+    replay_rungs: str | None = None,
     use_broad_tokenizer: bool = False,
     load_from: str | None = None,
     dry_run: bool = False,
@@ -301,8 +302,22 @@ def train(
         tok = BroadTokenizer()
         print(f"[hrm158] BroadTokenizer (vocab={tok.vocab_size}, normalizer_version={tok.normalizer_version})", flush=True)
 
+        # Resolve prior_rungs via shared helper (codex msg 1779475454122-1512da3b
+        # structural fix). Helper validates explicit --replay-rungs (reject
+        # unknown/current/future/R7/duplicate; allow diagnosis-only with WARN)
+        # AND auto-excludes DIAGNOSIS_ONLY_RUNGS + R7 from positional default.
+        from calm.hrm_text_158.curriculum.replay import (
+            _resolve_prior_rungs,
+            DIAGNOSIS_ONLY_RUNGS,
+        )
         cur_idx = list(RUNG_NAMES).index(curriculum_rung)
-        prior_rungs = list(RUNG_NAMES[:cur_idx])
+        positional_full = list(RUNG_NAMES[:cur_idx])
+        prior_rungs = _resolve_prior_rungs(curriculum_rung, replay_rungs)
+        print(f"[hrm158] curriculum {curriculum_rung}: prior_rungs={prior_rungs} "
+              f"(positional_full={positional_full}, "
+              f"diagnosis_only={sorted(DIAGNOSIS_ONLY_RUNGS)}, "
+              f"explicit_override={replay_rungs is not None})",
+              flush=True)
 
         # Mandatory --load-from for R1+ (codex msg 1779463196431 rule 1):
         # curriculum builds via WEIGHTS continuity; random-init train at
@@ -716,6 +731,15 @@ if __name__ == "__main__":
                     help="Fraction of train mixed from prior rungs (default 0.30 per "
                          "codex msg 1779462307554 rule 4). Effective ratio is logged "
                          "into the ckpt config blob.")
+    ap.add_argument("--replay-rungs", type=str, default=None,
+                    help="Comma-separated explicit rung list to draw replay from. "
+                         "Overrides positional RUNG_NAMES[:cur_idx] derivation. "
+                         "Use to exclude diagnosis-only or failed rungs from replay "
+                         "(e.g. --replay-rungs R0,R1,R1b1 when targeting R1b2 after "
+                         "R1b2a failed and stays diagnosis-only). Validation rejects "
+                         "unknown/current/future/R7/duplicate entries; diagnosis-only "
+                         "in list emits WARN. Codex msg 1779475454122-1512da3b "
+                         "structural fix.")
     ap.add_argument("--use-broad-tokenizer", action="store_true",
                     help="Use BroadTokenizer (byte-level UTF-8, vocab=260, "
                          "normalizer_version=byte_utf8_v1) instead of Gsm8kTokenizer. "
@@ -758,6 +782,7 @@ if __name__ == "__main__":
         curriculum_rung=args.curriculum_rung,
         curriculum_seed=args.curriculum_seed,
         curriculum_n_train=args.curriculum_n_train,
+        replay_rungs=args.replay_rungs,
         curriculum_n_heldout=args.curriculum_n_heldout,
         replay_ratio=args.replay_ratio,
         use_broad_tokenizer=args.use_broad_tokenizer,
