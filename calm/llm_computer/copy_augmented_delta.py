@@ -389,6 +389,7 @@ class CopyAugmentedDeltaNet(DeltaNetSmall2DTransformer):
             ("use_loop_index", bool),
             ("use_prefix_lm", bool),
             ("use_softmax_attn", bool),
+            ("use_softmax_only", bool),
             ("use_h_rmsnorm", bool),
             # Slice 6: cached decode would need to keep last (k-1) hidden/QKV
             # values per layer in streaming state to mirror the causal conv.
@@ -776,6 +777,12 @@ def build_copy_augmented_delta(
     n_copy_heads: int = 4, sep_token_id: int = 3,
     use_hard_max: bool = False,
     use_softmax_attn: bool = False,
+    # Slice 13k: explicit softmax-only mixer mode. Auto-forces
+    # `use_softmax_attn=True` (otherwise no attn output exists).
+    # Mutex with the hybrid `use_softmax_attn=True alone` arm —
+    # enforce at the trainer surface (not here, to allow library
+    # callers to set both as long as semantics are explicit).
+    use_softmax_only: bool = False,
     copy_gate_bias_init: float = -2.0,
     # HRM-Text-derived flags (default off → existing checkpoints unaffected):
     use_chunkwise: bool = False,
@@ -802,12 +809,18 @@ def build_copy_augmented_delta(
     correct architecture. Without this, a checkpoint with `use_gated_attention=True`
     would silently load as default-off and fail param-shape checks.
     """
+    # Slice 13k: softmax-only auto-forces softmax_attn=True so the
+    # `_attention` call actually runs (the new branch in
+    # `_delta_layer_stack` asserts attn is non-None).
+    if use_softmax_only:
+        use_softmax_attn = True
     cfg = CopyAugmentedDeltaConfig(
         vocab_size=vocab_size, d_model=d_model, n_heads=n_heads,
         n_layers=n_layers, d_ffn=d_ffn, max_len=max_len,
         n_copy_heads=n_copy_heads, sep_token_id=sep_token_id,
         use_hard_max=use_hard_max,
         use_delta_net=True, use_softmax_attn=use_softmax_attn,
+        use_softmax_only=use_softmax_only,
         copy_gate_bias_init=copy_gate_bias_init,
         use_chunkwise=use_chunkwise,
         n_iterations=n_iterations,

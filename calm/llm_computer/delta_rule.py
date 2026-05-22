@@ -98,6 +98,16 @@ class DeltaNetConfig(Small2DConfig):
     """
     use_delta_net: bool = True
     use_softmax_attn: bool = False  # paper-canonical: DeltaNet replaces attn
+    # Slice 13k: explicit softmax-only mixer arm. When True, the
+    # `_delta_layer_stack` SKIPS the DeltaNet chunkwise/per-position
+    # recurrence entirely (no compute, no memory), and the residual
+    # uses ONLY the softmax `attn` output. Distinct from
+    # `use_softmax_attn=True` (which runs delta IN PARALLEL with
+    # softmax — hybrid). H/L stack + carry + halt_head preserved.
+    # If True, the build path auto-sets `use_softmax_attn=True` so
+    # `_attention` actually runs. Mutex with `use_softmax_attn=True`
+    # alone (enforced in build path / trainer).
+    use_softmax_only: bool = False
     use_short_conv: bool = False    # paper's short 1D causal depthwise conv applied to
                                      # Q/K/V AFTER the QKV projection and BEFORE feature-map
                                      # + L2-norm (Slice 6, Tier B). kernel_size=4 fixed.
@@ -1287,6 +1297,28 @@ class DeltaNetSmall2DTransformer(Small2DTransformer):
                 attn = attn.transpose(1, 2).reshape(B, S, cfg.d_model)
             else:
                 attn = None
+
+            # Slice 13k softmax-only branch: skip ALL DeltaNet computation
+            # (chunkwise / per-position recurrence) when `use_softmax_only`
+            # is True. The residual add uses ONLY the softmax `attn` output.
+            # This makes the mixer purely softmax-attention while preserving
+            # H/L stack + carry + halt_head outer-loop semantics.
+            # NEGATIVE ASSERTION per codex msg 1779442478419: ensure no
+            # DeltaNet allocation/call happens on this path.
+            if getattr(cfg, "use_softmax_only", False):
+                assert attn is not None, (
+                    "use_softmax_only=True requires use_softmax_attn=True "
+                    "to be forced ON at build time; build path must set both."
+                )
+                x = x + bank.W_out[layer](attn)
+                # FFN sublayer (mirrors the non-softmax-only path below).
+                if bank.pre_ffn_norm is not None:
+                    x_for_ffn = bank.pre_ffn_norm[layer](x)
+                else:
+                    x_for_ffn = x
+                gate, val = bank.ff_in[layer](x_for_ffn).chunk(2, dim=-1)
+                x = x + bank.ff_out[layer](F.relu(gate) * val)
+                continue  # skip the delta + residual-add + FFN below
 
             # Flatten heads back to (B, S, D) for the DeltaNet recurrence,
             # which treats the whole d_model vector as one "head" (the

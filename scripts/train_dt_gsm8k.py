@@ -416,6 +416,7 @@ def train(
     use_lecun_init: bool = False,
     use_prefix_lm: bool = False,
     use_softmax_attn: bool = False,
+    use_softmax_only: bool = False,
     h_cycles: int = 1,
     use_h_rmsnorm: bool = False,
     use_short_conv: bool = False,
@@ -490,6 +491,10 @@ def train(
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
 
+    if use_softmax_only:
+        print("[gsm8k] Slice 13k: SOFTMAX-ONLY mixer mode ENABLED "
+              "(delta path skipped; softmax_attn auto-forced ON)")
+
     print(f"[gsm8k] loading splits via `datasets` lib...")
     full_train, full_val, test_rows = load_gsm8k_splits(val_frac=0.10)
     print(f"[gsm8k] splits: train={len(full_train)}  val={len(full_val)}  test={len(test_rows)}")
@@ -545,6 +550,7 @@ def train(
         use_lecun_init=use_lecun_init,
         use_prefix_lm=use_prefix_lm,
         use_softmax_attn=use_softmax_attn,
+        use_softmax_only=use_softmax_only,
         h_cycles=h_cycles,
         use_h_rmsnorm=use_h_rmsnorm,
         use_short_conv=use_short_conv,
@@ -1048,6 +1054,7 @@ def train(
                     "use_lecun_init": getattr(m.config, "use_lecun_init", False),
                     "use_prefix_lm": getattr(m.config, "use_prefix_lm", False),
                     "use_softmax_attn": getattr(m.config, "use_softmax_attn", False),
+                    "use_softmax_only": getattr(m.config, "use_softmax_only", False),
                     "h_cycles": getattr(m.config, "h_cycles", 1),
                     "use_h_rmsnorm": getattr(m.config, "use_h_rmsnorm", False),
                     "use_short_conv": getattr(m.config, "use_short_conv", False),
@@ -1137,7 +1144,15 @@ if __name__ == "__main__":
                     help="Slice 13j hybrid: enable softmax attention path "
                          "alongside DeltaNet (parallel residual add at "
                          "delta_rule.py:1384). Required for --use-prefix-lm "
-                         "to have any effect on the active code path.")
+                         "to have any effect on the active code path. "
+                         "MUTEX with --use-softmax-only (different arms).")
+    ap.add_argument("--use-softmax-only", action="store_true",
+                    help="Slice 13k: softmax-ONLY mixer mode. Skips the "
+                         "DeltaNet recurrence entirely (no compute, no "
+                         "memory). Auto-forces --use-softmax-attn ON so the "
+                         "softmax path actually runs. H/L stack + carry + "
+                         "halt_head outer-loop semantics preserved. MUTEX "
+                         "with --use-softmax-attn alone (hybrid arm).")
     ap.add_argument("--h-cycles", type=int, default=1)
     ap.add_argument("--use-h-rmsnorm", action="store_true")
     ap.add_argument("--use-short-conv", action="store_true")
@@ -1208,6 +1223,20 @@ if __name__ == "__main__":
                          "finite-tripwire on every step regardless of value. "
                          "0 = disabled (preserves prior log shape).")
     args = ap.parse_args()
+    # Slice 13k mutex per codex msg 1779442478419: --use-softmax-only and
+    # --use-softmax-attn are different comparator arms. Hybrid runs softmax
+    # in parallel with DeltaNet; softmax-only skips DeltaNet entirely.
+    # Silently accepting both poisons later provenance.
+    # (softmax-only DOES auto-set softmax_attn=True internally, but here
+    # we check what the USER supplied at the CLI.)
+    if args.use_softmax_only and args.use_softmax_attn:
+        raise ValueError(
+            "--use-softmax-only and --use-softmax-attn are MUTEX comparator "
+            "arms. Hybrid (softmax-attn alone, parallel with DeltaNet) and "
+            "softmax-only (DeltaNet skipped) are different research arms; "
+            "do not enable both. softmax-only auto-forces softmax_attn=True "
+            "internally, so you do not need to pass both."
+        )
     train(
         epochs=args.epochs,
         batch_size=args.batch_size,
@@ -1232,6 +1261,7 @@ if __name__ == "__main__":
         use_lecun_init=args.use_lecun_init,
         use_prefix_lm=args.use_prefix_lm,
         use_softmax_attn=args.use_softmax_attn,
+        use_softmax_only=args.use_softmax_only,
         h_cycles=args.h_cycles,
         use_h_rmsnorm=args.use_h_rmsnorm,
         use_short_conv=args.use_short_conv,
