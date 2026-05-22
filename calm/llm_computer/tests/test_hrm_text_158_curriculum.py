@@ -319,6 +319,138 @@ def test_generator_r0_partition_pool_sizes() -> None:
     assert (train_one | train_two) & (held_one | held_two) == set()
 
 
+# ============================================================================ #
+# R1 identity-bridge stratified partition (codex msg 1779466025267 redefinition)
+# ============================================================================ #
+
+_R1_IDENTITY_QS = {
+    # (template_key, A) -> expected question string
+    "A_plus_0":  lambda A: f"what is {A} plus 0?",
+    "0_plus_A":  lambda A: f"what is 0 plus {A}?",
+    "A_minus_0": lambda A: f"what is {A} minus 0?",
+}
+
+
+def _r1_identity_decode(ex: dict) -> tuple[str, int]:
+    """Identify (template_key, A) from an R1 identity-bridge example."""
+    q = ex["question"]
+    if " plus 0?" in q and not q.startswith("what is 0"):
+        # "what is A plus 0?"
+        A = int(q.split()[2])
+        return ("A_plus_0", A)
+    if q.startswith("what is 0 plus "):
+        # "what is 0 plus A?"
+        A = int(q.split()[4].rstrip("?"))
+        return ("0_plus_A", A)
+    if " minus 0?" in q:
+        # "what is A minus 0?"
+        A = int(q.split()[2])
+        return ("A_minus_0", A)
+    raise ValueError(f"unrecognized R1 identity question shape: {q!r}")
+
+
+def test_generator_r1_identity_train_holdout_exact_row_disjoint() -> None:
+    """R1 train + held_out must NEVER share an example row (codex Step 1
+    assertion: exact-row disjoint)."""
+    train = make_rung_examples("R1", n=2000, seed=42, split="train")
+    held = make_rung_examples("R1", n=2000, seed=42, split="held_out")
+    train_keys = {(ex["question"], ex["expected"]) for ex in train}
+    held_keys = {(ex["question"], ex["expected"]) for ex in held}
+    overlap = train_keys & held_keys
+    assert not overlap, f"R1 identity train/held_out share rows: {sorted(overlap)[:5]}"
+
+
+def test_generator_r1_identity_all_templates_in_train_and_holdout() -> None:
+    """R1 stratification by template ensures BOTH splits contain ALL 3
+    identity templates (A_plus_0 / 0_plus_A / A_minus_0)."""
+    train = make_rung_examples("R1", n=500, seed=42, split="train")
+    held = make_rung_examples("R1", n=500, seed=42, split="held_out")
+    train_templates = {_r1_identity_decode(ex)[0] for ex in train}
+    held_templates = {_r1_identity_decode(ex)[0] for ex in held}
+    expected = {"A_plus_0", "0_plus_A", "A_minus_0"}
+    assert train_templates == expected, f"R1 train missing template(s): {expected - train_templates}"
+    assert held_templates == expected, f"R1 held_out missing template(s): {expected - held_templates}"
+
+
+def test_generator_r1_identity_both_digit_lengths_in_both_splits() -> None:
+    """R1 stratification by digit-bucket ensures BOTH splits contain
+    1-digit AND 2-digit A values."""
+    train = make_rung_examples("R1", n=500, seed=42, split="train")
+    held = make_rung_examples("R1", n=500, seed=42, split="held_out")
+    train_one = any(_r1_identity_decode(ex)[1] < 10 for ex in train)
+    train_two = any(_r1_identity_decode(ex)[1] >= 10 for ex in train)
+    held_one = any(_r1_identity_decode(ex)[1] < 10 for ex in held)
+    held_two = any(_r1_identity_decode(ex)[1] >= 10 for ex in held)
+    assert train_one, "R1 train missing 1-digit A (stratification bug)"
+    assert train_two, "R1 train missing 2-digit A (stratification bug)"
+    assert held_one, "R1 held_out missing 1-digit A (stratification bug)"
+    assert held_two, "R1 held_out missing 2-digit A (stratification bug)"
+
+
+def test_generator_r1_identity_max_a_le_99() -> None:
+    """R1 A must always be in [0,99] (no OOD length shift, mirror of R0 fix)."""
+    train = make_rung_examples("R1", n=500, seed=42, split="train")
+    held = make_rung_examples("R1", n=500, seed=42, split="held_out")
+    for ex in train + held:
+        _, A = _r1_identity_decode(ex)
+        assert 0 <= A <= 99, f"R1 has A={A} outside [0,99]"
+
+
+def test_generator_r1_identity_expected_always_equals_A() -> None:
+    """For all 3 identity templates, expected == A (output preserves R0
+    digit-copy primitive)."""
+    rows = make_rung_examples("R1", n=300, seed=42, split="train") + \
+           make_rung_examples("R1", n=300, seed=42, split="held_out")
+    for ex in rows:
+        _, A = _r1_identity_decode(ex)
+        assert ex["expected"] == A, (
+            f"R1 identity broken: question={ex['question']!r} expected={ex['expected']} A={A}"
+        )
+
+
+def test_generator_r1_identity_pool_sizes() -> None:
+    """Stratified pool sizes: "0_plus_A" drops A=0 to avoid row collision
+    with "A_plus_0" (both produce "what is 0 plus 0?" -> 0).
+
+    Pool composition:
+      A_plus_0:  [0,9]  -> 8+2,  [10,99] -> 72+18  (80 train + 20 held_out)
+      0_plus_A:  [1,9]  -> 7+2,  [10,99] -> 72+18  (79 train + 20 held_out)
+      A_minus_0: [0,9]  -> 8+2,  [10,99] -> 72+18  (80 train + 20 held_out)
+      total:                    239 train + 60 held_out
+    Note: int(9 * 0.8) = 7, hence 7+2 for the 9-element bucket."""
+    from calm.hrm_text_158.curriculum.generators import _enumerate_partition_r1
+    train, held = _enumerate_partition_r1(42)
+    assert len(train) == 239, f"R1 train pool size: {len(train)} expected 239"
+    assert len(held) == 60, f"R1 held_out pool size: {len(held)} expected 60"
+    # All 3 templates present in each
+    train_templates = {t for t, _ in train}
+    held_templates = {t for t, _ in held}
+    assert train_templates == {"A_plus_0", "0_plus_A", "A_minus_0"}
+    assert held_templates == {"A_plus_0", "0_plus_A", "A_minus_0"}
+    # Disjoint by construction
+    assert train & held == set()
+    # A=0 in "0_plus_A" template MUST be absent (collision-fix)
+    assert ("0_plus_A", 0) not in train
+    assert ("0_plus_A", 0) not in held
+
+
+def test_generator_r1_identity_no_row_collision_across_seeds() -> None:
+    """Multi-seed sweep regression for the A=0 cross-template collision:
+    `("A_plus_0", 0)` and `("0_plus_A", 0)` both emit "what is 0 plus 0?".
+    With the row-collision fix dropping A=0 from "0_plus_A", train/held_out
+    must remain row-disjoint across multiple seeds."""
+    for seed in (0, 1, 7, 42, 999, 12345):
+        train = make_rung_examples("R1", n=2000, seed=seed, split="train")
+        held = make_rung_examples("R1", n=2000, seed=seed, split="held_out")
+        train_keys = {(ex["question"], ex["expected"]) for ex in train}
+        held_keys = {(ex["question"], ex["expected"]) for ex in held}
+        overlap = train_keys & held_keys
+        assert not overlap, (
+            f"seed={seed}: R1 identity row collision detected: "
+            f"{sorted(overlap)[:5]}"
+        )
+
+
 def test_generator_r3_held_out_includes_canonical_17x23() -> None:
     """R3 held-out MUST contain the exact canonical probe row
     `("what is 17 times 23?", 391)` — _enumerate_partition_r3 force-injects
