@@ -18,7 +18,7 @@ def build_rung_splits(
     n_train: int = 2000,
     n_held_out: int = 400,
     seed: int = 42,
-    rungs: tuple[str, ...] = ("R0", "R1", "R1b", "R2", "R3", "R4", "R5", "R6"),
+    rungs: tuple[str, ...] = ("R0", "R1", "R1b1", "R2", "R3", "R4", "R5", "R6"),
 ) -> dict[str, dict[str, list[dict]]]:
     """Build train + held_out splits for all rungs.
 
@@ -26,6 +26,14 @@ def build_rung_splits(
         {"R0": {"train": [...], "held_out": [...]}, "R1": {...}, ...}
 
     R7 (GSM8k) excluded — served from load_gsm8k_splits.
+
+    Default tuple is the ACTIVE CHAIN per codex msg 1779469638068:
+    R1b is excluded by default because its A_plus_1 rows overlap R1b1's
+    by construction (single-template R1b1 succeeds R1b's 3-template
+    failure). R1b stays accessible by passing `rungs=("R0", "R1",
+    "R1b1", "R1b", ...)` explicitly for diagnosis-only inspection,
+    but assert_no_train_holdout_overlap WILL fail on a tuple containing
+    both R1b and R1b1.
     """
     out: dict[str, dict[str, list[dict]]] = {}
     for rung in rungs:

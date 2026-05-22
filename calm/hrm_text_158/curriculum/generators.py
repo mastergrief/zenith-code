@@ -8,11 +8,19 @@ Axis 1 — math complexity under stable language wrapper:
                                  [redefined per codex msg 1779466025267 after R1 v1
                                   failed acquisition; bridges R0 copy -> two-operand parsing
                                   + operator binding without full arithmetic]
+  R1b1: single-template +1       `what is A plus 1?` -> `A+1`  (A in [1,98])
+                                 [codex msg 1779469364293 + 1779469638068 after R1b v2
+                                  failed at 0.845 with 2x training steps (0d152dd "more-
+                                  updates hypothesis falsified"). Falsifier-protocol split:
+                                  isolate the simplest sub-skill (`A plus K` position) so
+                                  the model can acquire it cleanly before symmetric +1 and
+                                  -1 variations land in successor rungs.]
   R1b: minimal arithmetic (±1)   `what is A plus 1?` -> `A+1` (also `1 plus A`, `A minus 1`)
-                                 [codex msg 1779467425298 after R1 identity-bridge pass at
-                                  c6e94578; min-incremental jump from identity to actual
-                                  arithmetic, output constrained to [0,99] to avoid new
-                                  digit-length class]
+                                 [DIAGNOSIS-ONLY after R1b v2 failure (codex msg
+                                  1779469638068). Stays in RUNG_NAMES for backward-
+                                  compat; out of build_rung_splits default tuple because
+                                  its A_plus_1 rows overlap R1b1's by construction.
+                                  Successor design tbd post-R1b1.]
   R2: carry multi-digit ±        `what is 47 plus 28?` -> `75`
   R3: multiplication only        `what is A times B?` -> `C`  (NO division)
   R4: multi-step compound        `what is A plus B times C?` -> `D`
@@ -40,7 +48,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -137,6 +145,18 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
         "train":     {"A_range": (0, 99), "partition": "enumerate_stratified_identity"},
         "held_out":  {"A_range": (0, 99), "partition": "enumerate_stratified_identity"},
     },
+    # R1b1 (codex msg 1779469364293 + 1779469638068 falsifier-protocol split
+    # after R1b v2 failed at 0.845 with 2x steps): SINGLE-template `A plus 1`
+    # over A in [1,98], bucket-stratified. Drops A=0 (would emit "what is 0
+    # plus 1?" -> 1 -- duplicates R1 0_plus_A with A=1) and A=99 (output
+    # would saturate at 100, introducing new digit-length class). Inserted
+    # BEFORE R1b in RUNG_NAMES so trainer's prior_rungs derivation
+    # (RUNG_NAMES[:cur_idx]) auto-resolves to (R0, R1) and the failed full
+    # R1b is excluded from the active chain.
+    "R1b1": {
+        "train":     {"A_range": (1, 98), "partition": "enumerate_stratified_r1b1"},
+        "held_out":  {"A_range": (1, 98), "partition": "enumerate_stratified_r1b1"},
+    },
     # R1b (codex msg 1779467425298): minimal arithmetic bridge from R1
     # identity to single-digit ±1. Templates A_plus_1 / 1_plus_A /
     # A_minus_1 with A-range constrained per-template to prevent
@@ -146,6 +166,14 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     #                             drop A=1 -> avoids intra-R1b A_plus_1/A=1 collision)
     #   A_minus_1: A in [1,99]  (drop A=0 to avoid negative output)
     # Output stays in [0,99] -> no new digit-length class.
+    #
+    # NOTE (codex msg 1779469638068): R1b is now diagnosis-only. After R1b
+    # v2 failed at 0.845 ("more-updates" hypothesis falsified, 0d152dd),
+    # falsifier-protocol split to R1b1 (single template). R1b's A_plus_1
+    # rows overlap R1b1's A_plus_1 rows by construction (same template +
+    # same A range [1,98]) so R1b is NOT in the active chain and NOT in
+    # build_rung_splits default tuple. R1b's own generator + tests stay
+    # green as diagnosis-only and as the R1b1 successor design parent.
     "R1b": {
         "train":     {"A_range": (1, 99), "partition": "enumerate_stratified_pm1"},
         "held_out":  {"A_range": (1, 99), "partition": "enumerate_stratified_pm1"},
@@ -254,6 +282,50 @@ def _enumerate_partition_r1(seed: int, train_frac: float = 0.8) -> tuple[set, se
             split = int(len(bucket_as) * train_frac)
             train_set.update((template, a) for a in bucket_as[:split])
             held_out_set.update((template, a) for a in bucket_as[split:])
+    return train_set, held_out_set
+
+
+def _enumerate_partition_r1b1(seed: int, train_frac: float = 0.8) -> tuple[set, set]:
+    """Stratified deterministic 80/20 partition of R1b1's single-template
+    `A plus 1` operand space (codex msg 1779469364293 + 1779469638068).
+
+    R1b1 is the falsifier-protocol split after R1b v2 failed at 0.845
+    with 2x training steps ("more-updates" hypothesis falsified at
+    0d152dd). Single template `what is A plus 1?` -> A+1 isolates the
+    simplest sub-skill (commutative-add by 1 in `A op K` position) so
+    the model can acquire it cleanly before symmetric (`1 plus A`) and
+    subtraction (`A minus 1`) variations land in later sub-rungs.
+
+    Pool: A in [1, 98]
+      - drop A=0: would emit "what is 0 plus 1?" -> 1, duplicating R1
+                  0_plus_A row with A=1 (cross-rung collision).
+      - cap A=98: keeps output <= 99 (no new digit-length class).
+
+    Stratification (per codex Step 1 spec): each digit-bucket
+    partitioned 80/20 separately with bucket-distinct
+    `_stable_seed("R1b1_partition", seed, bucket_label)` so the digit-
+    length mix is preserved on both sides:
+      one-digit bucket A in [1, 9]:  9 vals  ->  7 train + 2 held_out
+      two-digit bucket A in [10, 98]: 89 vals -> 71 train + 18 held_out
+      TOTAL: 78 train + 20 held_out integers A
+            (each integer represents exactly one row since template is fixed)
+
+    Cross-rung-train invariant: R1b1 always emits "what is A plus 1?";
+    R1 emits "what is A plus 0?" / "what is 0 plus A?" / "what is A
+    minus 0?" (B=0 on the additive side OR template-distinct minus);
+    R2 train requires B in [10,99] so no R2 row has B=1; R3 uses
+    "times" not "plus". R1b is OUT of the active chain by design
+    (overlaps by construction; see _RUNG_SPEC R1b comment).
+    """
+    train_set: set = set()
+    held_out_set: set = set()
+    for bucket_label, lo, hi in (("one_digit", 1, 9), ("two_digit", 10, 98)):
+        bucket_as = list(range(lo, hi + 1))
+        rng = random.Random(_stable_seed("R1b1_partition", seed, bucket_label))
+        rng.shuffle(bucket_as)
+        split = int(len(bucket_as) * train_frac)
+        train_set.update(bucket_as[:split])
+        held_out_set.update(bucket_as[split:])
     return train_set, held_out_set
 
 
@@ -416,6 +488,29 @@ def _gen_r1(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> li
         else:  # pragma: no cover - exhaustive
             raise ValueError(f"unknown R1 identity template: {template!r}")
         out.append({"question": q, "expected": A, "rung": "R1"})
+    return out
+
+
+def _gen_r1b1(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """R1b1 single-template `A plus 1` (codex msg 1779469364293
+    falsifier-protocol split after R1b v2 failed at 0.845).
+
+    Single template `what is A plus 1?` -> A+1. A in [1, 98]
+    bucket-stratified. Output ∈ [2, 99]. Designed disjoint from R1
+    (R1 has B=0 on additive side; R1b1 has B=1) and disjoint from
+    R2+ (R2 train requires B>=10).
+
+    Train pool = 78 integers A; held_out pool = 20 integers A. Both
+    splits contain BOTH digit-length buckets."""
+    train_pool, held_out_pool = _enumerate_partition_r1b1(seed)
+    pool = train_pool if split == "train" else held_out_pool
+    pool_list = sorted(pool)
+    out = []
+    while len(out) < n:
+        A = rng.choice(pool_list)
+        q = f"what is {A} plus 1?"
+        expected = A + 1
+        out.append({"question": q, "expected": expected, "rung": "R1b1"})
     return out
 
 
@@ -583,6 +678,8 @@ def make_rung_examples(
         return _gen_r0(rng, _RUNG_SPEC["R0"][split], n, seed=seed, split=split)
     if rung == "R1":
         return _gen_r1(rng, _RUNG_SPEC["R1"][split], n, seed=seed, split=split)
+    if rung == "R1b1":
+        return _gen_r1b1(rng, _RUNG_SPEC["R1b1"][split], n, seed=seed, split=split)
     if rung == "R1b":
         return _gen_r1b(rng, _RUNG_SPEC["R1b"][split], n, seed=seed, split=split)
     if rung == "R2":
