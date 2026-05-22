@@ -568,15 +568,24 @@ from calm.hrm_text_158.curriculum.replay import (
 
 def test_replay_diagnosis_only_rungs_constants() -> None:
     """DIAGNOSIS_ONLY_RUNGS current membership per codex msgs
-    1779475454122-1512da3b + 1779478819906-0e30503e + 1779479973262-6d7445d2:
+    1779475454122-1512da3b + 1779478819906-0e30503e + 1779479973262-6d7445d2 +
+    1779483673737-20ff22ab:
     - R1b2a: failed v1+v2 lowmult
     - R1b: legacy 3-template
+    - R1b4: K=3 v1 failed at 7b53368 (measurement bug — 2-row one_digit
+            heldout sampled ~22× via rng.choice). R1b4v2 is successor.
     - R2: failed v1 (0.085) AND v2 n_train=8000 (0.185)
     - R2a: failed v1 (0.045); variable-B blocker. R1b3 is the active
            constant K=2 successor.
-    R1b2 stays OUT (PASSED via R1b2_v2_replay50 at c2686cc)."""
+    R1b2 stays OUT (PASSED via R1b2_v2_replay50 at c2686cc).
+    R1b3 stays OUT (PASSED via v2 schedule at 175d327).
+    R1b4v2 stays OUT (active-chain target, not yet attempted)."""
     assert "R1b2a" in DIAGNOSIS_ONLY_RUNGS
     assert "R1b" in DIAGNOSIS_ONLY_RUNGS
+    assert "R1b4" in DIAGNOSIS_ONLY_RUNGS, (
+        "R1b4 must be in DIAGNOSIS_ONLY_RUNGS after v1 fail (7b53368); "
+        "R1b4v2 is the active one_digit-exhaustive successor"
+    )
     assert "R2" in DIAGNOSIS_ONLY_RUNGS
     assert "R2a" in DIAGNOSIS_ONLY_RUNGS, (
         "R2a must be in DIAGNOSIS_ONLY_RUNGS after v1 fail (558fcc1); "
@@ -584,6 +593,9 @@ def test_replay_diagnosis_only_rungs_constants() -> None:
     )
     assert "R1b2" not in DIAGNOSIS_ONLY_RUNGS, (
         "R1b2 must stay OUT (PASSED at c2686cc)"
+    )
+    assert "R1b4v2" not in DIAGNOSIS_ONLY_RUNGS, (
+        "R1b4v2 must stay OUT (active-chain target, not yet attempted)"
     )
     # Sanity: well-known good/active rungs NEVER diagnosis-only
     for r in ("R0", "R1", "R1b1", "R1b3", "R3"):
@@ -597,17 +609,25 @@ def test_resolve_prior_rungs_unset_positional_default() -> None:
     # R1b1: cur_idx=2, positional=[R0, R1]; no diagnosis-only at those idx
     assert _resolve_prior_rungs("R1b1", None) == ["R0", "R1"]
     # R1b2: cur_idx=4, positional=[R0, R1, R1b1, R1b2a]; minus diagnosis
-    # ({R1b2a, R1b, R2, R2a}) -> [R0, R1, R1b1]
+    # ({R1b2a, R1b, R1b4, R2, R2a}) -> [R0, R1, R1b1]
     assert _resolve_prior_rungs("R1b2", None) == ["R0", "R1", "R1b1"]
     # R1b3: cur_idx=5, positional=[R0, R1, R1b1, R1b2a, R1b2]; minus
     # diagnosis -> [R0, R1, R1b1, R1b2]
     assert _resolve_prior_rungs("R1b3", None) == ["R0", "R1", "R1b1", "R1b2"]
     # R1b4: cur_idx=6, positional=[R0, R1, R1b1, R1b2a, R1b2, R1b3];
-    # minus diagnosis -> [R0, R1, R1b1, R1b2, R1b3]
+    # minus diagnosis -> [R0, R1, R1b1, R1b2, R1b3]. (R1b4 is current,
+    # not in prior list; the diagnosis-only mark on R1b4 affects later
+    # rungs.)
     assert _resolve_prior_rungs("R1b4", None) == ["R0", "R1", "R1b1", "R1b2", "R1b3"]
-    # R3: cur_idx=10, positional includes R1b3+R1b4 (active) but excludes
-    # diagnosis-only R1b2a/R1b/R2/R2a -> [R0, R1, R1b1, R1b2, R1b3, R1b4]
-    assert _resolve_prior_rungs("R3", None) == ["R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4"]
+    # R1b4v2: cur_idx=7, positional=[R0, R1, R1b1, R1b2a, R1b2, R1b3,
+    # R1b4]; minus diagnosis (R1b4 now in!) -> [R0, R1, R1b1, R1b2, R1b3]
+    # — critically NOT including R1b4. Codex msg 1779483673737-20ff22ab
+    # provenance preservation: R1b4 is diagnosis-only, never auto-replayed.
+    assert _resolve_prior_rungs("R1b4v2", None) == ["R0", "R1", "R1b1", "R1b2", "R1b3"]
+    # R3: cur_idx=11 (after R1b4v2 insertion at 7 shifted R3 from 10),
+    # positional includes R1b4v2 (active) but excludes diagnosis-only
+    # R1b2a/R1b/R1b4/R2/R2a -> [R0, R1, R1b1, R1b2, R1b3, R1b4v2]
+    assert _resolve_prior_rungs("R3", None) == ["R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2"]
 
 
 def test_resolve_prior_rungs_explicit_override_basic() -> None:

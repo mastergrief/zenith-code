@@ -18,7 +18,7 @@ def build_rung_splits(
     n_train: int = 2000,
     n_held_out: int = 400,
     seed: int = 42,
-    rungs: tuple[str, ...] = ("R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4", "R3", "R4", "R5", "R6"),
+    rungs: tuple[str, ...] = ("R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2", "R3", "R4", "R5", "R6"),
 ) -> dict[str, dict[str, list[dict]]]:
     """Build train + held_out splits for all rungs.
 
@@ -27,19 +27,22 @@ def build_rung_splits(
 
     R7 (GSM8k) excluded — served from load_gsm8k_splits.
 
-    Default tuple is the ACTIVE CHAIN per codex msg 1779479973262-6d7445d2
-    (constant K=2 successor R1b3 after R2a v1 failed 0.045 at 558fcc1;
-    variable-B reframed as the structural blocker):
+    Default tuple is the ACTIVE CHAIN per codex msg 1779483673737-20ff22ab
+    (R1b4v2 one_digit-exhaustive after R1b4 v1 failed at 7b53368;
+    measurement-bug diagnosis preserved R1b4 immutable):
 
       R0 -> R1 -> R1b1 (K=1 plus) -> R1b2 (K=-1 minus) -> R1b3 (K=2 plus,
-      this rung) -> R3 -> R4 -> R5 -> R6
+      PASSED at 175d327) -> R1b4v2 (K=3 plus, one_digit-exhaustive
+      partition replacing R1b4 v1 failed) -> R3 -> R4 -> R5 -> R6
 
     Diagnosis-only and OUT of default: R1b2a (failed v1+v2 lowmult),
-    R1b (legacy 3-template), R2 (failed v1+v2 n_train=8000), R2a
-    (failed v1 — variable B is the blocker). All reachable via explicit
-    `rungs=` arg for diagnosis-only inspection.
-    `assert_no_train_holdout_overlap` WILL fail on tuples containing
-    overlapping pairs (R1b1+R1b, R1b2+R1b2a, R2a+R2, etc.).
+    R1b (legacy 3-template), R1b4 (K=3 v1 failed 7b53368 measurement
+    bug — preserved immutable per codex 1779483673737), R2 (failed
+    v1+v2 n_train=8000), R2a (failed v1 — variable B is the blocker).
+    All reachable via explicit `rungs=` arg for diagnosis-only
+    inspection. `assert_no_train_holdout_overlap` WILL fail on tuples
+    containing overlapping pairs (R1b1+R1b, R1b2+R1b2a, R1b4+R1b4v2,
+    R2a+R2, etc.).
 
     See `replay.py:DIAGNOSIS_ONLY_RUNGS` for the trainer-side
     auto-exclusion mechanism that complements this default.

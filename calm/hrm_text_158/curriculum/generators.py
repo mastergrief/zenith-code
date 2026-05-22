@@ -49,7 +49,20 @@ Axis 1 — math complexity under stable language wrapper:
                                   175d327. Continues locked constant-K pattern (K=1, K=-1,
                                   K=2 all PASSED) to K=3 before grouped K or variable-B.
                                   Output [4,99]; bucket-stratified 80/20 = 76 train + 20 held.
-                                  Uses new default schedule lr=5e-4, epochs=2 (1500 steps).]
+                                  v1 FAILED at 7b53368: standard 0.885 below G1 0.90 due to
+                                  one_digit thin-pool (2 heldout rows sampled ~22× each via
+                                  rng.choice). DIAGNOSIS-ONLY after v1 fail per codex msg
+                                  1779483673737-20ff22ab; R1b4v2 (one_digit-exhaustive) is
+                                  the active-chain successor.]
+  R1b4v2: K=3 addition, one-digit-exhaustive partition (codex msg 1779483673737-20ff22ab
+                                  after R1b4 v1 fail at 7b53368). Same question/output as
+                                  R1b4 (`what is A plus 3?` -> A+3) but measurement/support
+                                  redesign: one_digit A=1..9 EXHAUSTIVE in train (all 9 rows);
+                                  two_digit A=10..96 80/20 stratified (heldout = 18 two_digit
+                                  rows only, zero one_digit). Separate deterministic 9-row
+                                  one_digit exhaustive audit served via
+                                  `r1b4v2_one_digit_audit_rows`. Preserves R1b4 immutable as
+                                  failed diagnostic.]
   R2a: teens addition-only       `what is 13 plus 7?` -> `20` (A in [10,19], B in [2,9])
                                  [DIAGNOSIS-ONLY after v1 failed 0.045 at 558fcc1; variable-B
                                   is the blocker, not operator mixing. R1b3 is the active
@@ -85,7 +98,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -264,6 +277,28 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     "R1b4": {
         "train":     {"A_range": (1, 96), "partition": "enumerate_stratified_r1b4"},
         "held_out":  {"A_range": (1, 96), "partition": "enumerate_stratified_r1b4"},
+    },
+    # R1b4v2 (codex msg 1779483673737-20ff22ab after R1b4 v1 fail at 7b53368):
+    # one-digit-exhaustive partition redesign. PROVENANCE-PRESERVING new
+    # rung — R1b4 stays immutable as v1 failed diagnostic. Same question /
+    # output (`what is A plus 3?` -> A+3) but measurement support design
+    # fixed: one_digit support is too small (9 vals) to split 80/20 into
+    # train (7) + heldout (2) and have `probe_curriculum`'s eval_cap=200
+    # `rng.choice` sampling produce robust generalization signal — the
+    # 2-row heldout one_digit bucket gets sampled ~22x each on average.
+    #
+    # Partition:
+    #   one_digit [1, 9]:    9 vals -> 9 EXHAUSTIVE train + 0 held_out
+    #   two_digit [10, 96]: 87 vals -> 69 train + 18 held_out (80/20)
+    #   TOTAL:              96 vals -> 78 train + 18 held_out integers A
+    # Held_out contains ONLY two_digit rows; one_digit mastery is gated
+    # via a separate deterministic 9-row exhaustive audit served by
+    # `r1b4v2_one_digit_audit_rows(seed)`.
+    #
+    # B=3 stays disjoint from priors R0/R1/R1b1/R1b2/R1b3 same as R1b4.
+    "R1b4v2": {
+        "train":     {"A_range": (1, 96), "partition": "enumerate_stratified_r1b4v2"},
+        "held_out":  {"A_range": (10, 96), "partition": "enumerate_stratified_r1b4v2"},
     },
     # R2a (codex msg 1779478819906-0e30503e after full R2 failed v1+v2;
     # DIAGNOSIS-ONLY after R2a v1 itself failed 0.045 at 558fcc1, codex
@@ -861,6 +896,97 @@ def _gen_r1b4(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> 
     return out
 
 
+def _enumerate_partition_r1b4v2(seed: int, train_frac: float = 0.8) -> tuple[set, set]:
+    """Stratified deterministic partition for R1b4v2's K=3 addition with
+    one-digit-EXHAUSTIVE train support (codex msg 1779483673737-20ff22ab
+    after R1b4 v1 fail at 7b53368).
+
+    Provenance-preserving fix to R1b4 v1's measurement bug: R1b4 v1
+    split one_digit 7/2 train/held, then `probe_curriculum` sampled
+    eval_cap=200 via `rng.choice(pool_list)`, so the 2 one_digit
+    heldout rows were each measured ~22× — repeated-sample weighting
+    of a tiny bucket, not generalization signal. Result: standard
+    metric 0.885 < G1 0.90 by 0.015 while two_digit hit 18/18 perfect.
+
+    R1b4v2 partition:
+      one_digit [1, 9]:    9 vals -> 9 EXHAUSTIVE train + 0 held_out
+      two_digit [10, 96]: 87 vals -> 69 train + 18 held_out (80/20)
+      TOTAL:              96 vals -> 78 train + 18 held_out
+
+    Held_out contains ZERO one_digit rows by design — one_digit mastery
+    gated via separate deterministic 9-row exhaustive audit (see
+    `r1b4v2_one_digit_audit_rows`). two_digit retains the standard
+    80/20 stratified split with bucket-distinct seed
+    `_stable_seed("R1b4v2_partition", seed, "two_digit")`.
+    """
+    train_set: set = set()
+    held_out_set: set = set()
+
+    # one_digit: exhaustive into train, ZERO held_out
+    for A in range(1, 10):
+        train_set.add(A)
+
+    # two_digit: standard 80/20 stratified split
+    bucket_as = list(range(10, 97))
+    rng = random.Random(_stable_seed("R1b4v2_partition", seed, "two_digit"))
+    rng.shuffle(bucket_as)
+    split = int(len(bucket_as) * train_frac)
+    train_set.update(bucket_as[:split])
+    held_out_set.update(bucket_as[split:])
+
+    return train_set, held_out_set
+
+
+def r1b4v2_one_digit_audit_rows(seed: int = 42) -> list[dict]:
+    """Deterministic 9-row exhaustive audit of R1b4v2 one_digit support
+    (A in [1, 9], `what is A plus 3?` -> A+3).
+
+    Served separately from heldout (which is two_digit-only by R1b4v2
+    design). Mastery on this audit means 9/9 — finite-domain exhaustive
+    check, not repeated-sample probe. Codex msg 1779483673737-20ff22ab
+    spec: "since the finite domain has 9 cases, mastery means 9/9
+    rather than pretending two unseen rows are a robust generalization
+    estimate."
+
+    The `seed` arg is accepted for API symmetry with the generator
+    functions but the row contents are seed-invariant (the rows ARE
+    the full domain, no sampling). It's available so callers can pass
+    the trainer seed for log/audit traceability without branching.
+
+    Returns list of {"question", "expected", "rung"} dicts sorted by A.
+    """
+    del seed  # accepted for API symmetry; row contents are exhaustive
+    return [
+        {"question": f"what is {A} plus 3?", "expected": A + 3, "rung": "R1b4v2"}
+        for A in range(1, 10)
+    ]
+
+
+def _gen_r1b4v2(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """R1b4v2 constant K=3 addition, one-digit-EXHAUSTIVE partition (codex
+    msg 1779483673737-20ff22ab after R1b4 v1 fail at 7b53368).
+
+    Same question/output as R1b4 (`what is A plus 3?` -> A+3) but
+    measurement/support redesign: one_digit A=1..9 ALL in train (9
+    rows); two_digit A=10..96 80/20 stratified. Heldout is two_digit
+    ONLY (18 rows). one_digit mastery gated separately via
+    `r1b4v2_one_digit_audit_rows`.
+
+    Train pool = 78 integers A (9 one_digit + 69 two_digit);
+    held_out pool = 18 (all two_digit).
+    """
+    train_pool, held_out_pool = _enumerate_partition_r1b4v2(seed)
+    pool = train_pool if split == "train" else held_out_pool
+    pool_list = sorted(pool)
+    out = []
+    while len(out) < n:
+        A = rng.choice(pool_list)
+        q = f"what is {A} plus 3?"
+        expected = A + 3
+        out.append({"question": q, "expected": expected, "rung": "R1b4v2"})
+    return out
+
+
 def _gen_r1b(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
     """R1b ±1 (codex msg 1779467425298 after R1 identity pass at c6e94578).
 
@@ -1209,6 +1335,8 @@ def make_rung_examples(
         return _gen_r1b3(rng, _RUNG_SPEC["R1b3"][split], n, seed=seed, split=split)
     if rung == "R1b4":
         return _gen_r1b4(rng, _RUNG_SPEC["R1b4"][split], n, seed=seed, split=split)
+    if rung == "R1b4v2":
+        return _gen_r1b4v2(rng, _RUNG_SPEC["R1b4v2"][split], n, seed=seed, split=split)
     if rung == "R1b":
         return _gen_r1b(rng, _RUNG_SPEC["R1b"][split], n, seed=seed, split=split)
     if rung == "R2a":

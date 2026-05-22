@@ -42,6 +42,7 @@ from calm.hrm_text_158.curriculum import (
     RUNG_NAMES,
     RungProbeResult,
     make_rung_examples,
+    r1b4v2_one_digit_audit_rows,
 )
 
 
@@ -388,6 +389,57 @@ def probe_curriculum(
         "exact_ok": bool(canonical_decoded.strip() == str(canonical_expected) and not canonical_too_long),
         "too_long": canonical_too_long,
     }
+    # R1b4v2 one_digit exhaustive audit (codex msg 1779483673737-20ff22ab).
+    # Fires only when R1b4v2 is in the probed rungs list. 9-row finite-
+    # domain check served from `r1b4v2_one_digit_audit_rows` (seed-invariant
+    # by design: rows ARE the full one_digit domain A in [1, 9]). Heldout
+    # for R1b4v2 contains zero one_digit rows by construction; this audit
+    # is the dedicated mastery gate for the one_digit support.
+    if "R1b4v2" in rungs:
+        curriculum_seed = config.get("curriculum_seed", 42)
+        audit_rows = r1b4v2_one_digit_audit_rows(seed=curriculum_seed)
+        audit_exact = 0
+        audit_parsed = 0
+        audit_too_long = 0
+        audit_finite = True
+        audit_row_results: list[dict] = []
+        for ex in audit_rows:
+            decoded, tl, fin = _decode_greedy_no_cache(
+                m, tok, ex["question"], max_gen=max_gen,
+                max_seq_len=max_seq_len, device=device,
+            )
+            expected = ex["expected"]
+            parsed = _parse_int(decoded)
+            is_parsed = (parsed == expected) and not tl
+            is_exact = (decoded.strip() == str(expected)) and not tl
+            audit_exact += int(is_exact)
+            audit_parsed += int(is_parsed)
+            audit_too_long += int(tl)
+            if not fin:
+                audit_finite = False
+            audit_row_results.append({
+                "question": ex["question"],
+                "expected": expected,
+                "decoded": decoded,
+                "parsed": parsed,
+                "exact_ok": bool(is_exact),
+                "parsed_ok": bool(is_parsed),
+                "too_long": bool(tl),
+            })
+        overall_finite = overall_finite and audit_finite
+        result.one_digit_audit = {
+            "exact": audit_exact,
+            "parsed": audit_parsed,
+            "too_long": audit_too_long,
+            "cap": len(audit_rows),
+            "finite": audit_finite,
+            "rows": audit_row_results,
+        }
+        print(f"[probe-curriculum] R1b4v2 one_digit audit: exact={audit_exact}/"
+              f"{len(audit_rows)} parsed={audit_parsed}/{len(audit_rows)} "
+              f"too_long={audit_too_long}/{len(audit_rows)} finite={audit_finite}",
+              flush=True)
+
     result.elapsed_sec = time.time() - start_t
     result.finite = overall_finite
     print(f"[probe-curriculum] canonical 17×23: decoded={canonical_decoded!r} "

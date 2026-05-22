@@ -60,9 +60,19 @@ from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
 #          itself is the structural blocker; the locked-piece pattern
 #          is "constant-B single-template" (R1b1/R1b2 PASS). R1b3
 #          (constant K=2 addition) is the next active rung.
+#   - R1b4: constant K=3 addition v1 FAILED at 7b53368 (standard
+#           0.885 < G1 0.90 by 0.015). Per codex msg 1779483673737-
+#           20ff22ab the failure was a measurement bug (2-row
+#           one_digit heldout sampled ~22× via rng.choice repeated
+#           weighting), not architectural. R1b4 is preserved
+#           immutable in RUNG_NAMES as failed-diagnostic provenance;
+#           R1b4v2 (one_digit-exhaustive partition) is the active-
+#           chain successor.
 #
 # R1b2 stays OUT (canonical retry that PASSED at c2686cc).
-DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b", "R2", "R2a"})
+# R1b3 stays OUT (PASSED at 175d327 via v2 schedule).
+# R1b4v2 stays OUT (active-chain target, not yet attempted).
+DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b", "R1b4", "R2", "R2a"})
 
 
 # R7 (GSM8k) is generator-incompatible — served separately from

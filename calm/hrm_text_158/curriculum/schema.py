@@ -32,6 +32,14 @@ class RungProbeResult:
     # Canonical 17×23 probe (multiplication-rung mastery gate)
     canonical_17x23: dict = field(default_factory=dict)  # {decoded, parsed, exact_ok, parsed_ok, too_long}
 
+    # R1b4v2 one_digit exhaustive audit (codex msg 1779483673737-20ff22ab).
+    # Populated ONLY when R1b4v2 is in the probed rungs list. 9-row
+    # exhaustive check of `what is A plus 3?` for A in [1, 9]. Mastery =
+    # 9/9 exact. Shape: {"exact": int, "cap": 9, "rows": [{question,
+    # expected, decoded, parsed, exact_ok, parsed_ok, too_long}, ...]}.
+    # Empty dict if R1b4v2 not probed.
+    one_digit_audit: dict = field(default_factory=dict)
+
     # Retention deltas vs PREVIOUS rung's probe of the same prior rungs
     # (None for the rung being currently trained; populated for all rungs prior to it)
     retention_delta: dict[str, float] = field(default_factory=dict)
