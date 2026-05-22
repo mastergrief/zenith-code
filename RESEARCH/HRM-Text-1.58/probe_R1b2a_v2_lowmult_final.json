@@ -1,0 +1,48 @@
+{
+  "canonical_17x23": {
+    "decoded": "13",
+    "exact_ok": false,
+    "expected": 391,
+    "parsed": 13,
+    "parsed_ok": false,
+    "question": "what is 17 times 23?",
+    "too_long": false
+  },
+  "ckpt_path": "calm/hrm/checkpoints/hrm_text_158_phase3_R1b2a_v2_lowmult_final.pt",
+  "elapsed_sec": 588.8964002132416,
+  "finite": true,
+  "n_params": 29626368,
+  "retention_delta": {},
+  "rung": "R1b2a",
+  "rung_accuracy": {
+    "R0": 1.0,
+    "R1": 0.91,
+    "R1b1": 0.585,
+    "R1b2a": 0.0
+  },
+  "rung_cap": {
+    "R0": 200,
+    "R1": 200,
+    "R1b1": 200,
+    "R1b2a": 200
+  },
+  "rung_exact": {
+    "R0": 200,
+    "R1": 182,
+    "R1b1": 117,
+    "R1b2a": 0
+  },
+  "rung_parsed": {
+    "R0": 200,
+    "R1": 182,
+    "R1b1": 117,
+    "R1b2a": 0
+  },
+  "rung_too_long": {
+    "R0": 0,
+    "R1": 0,
+    "R1b1": 0,
+    "R1b2a": 0
+  },
+  "step": 75
+}
