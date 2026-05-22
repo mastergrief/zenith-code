@@ -1,0 +1,199 @@
+{
+  "A_27_held": true,
+  "A_27_train": false,
+  "A_57_held": true,
+  "A_57_train": false,
+  "ckpt_path": "calm/hrm/checkpoints/hrm_text_158_phase3_R1b4v2_seed0002_final.pt",
+  "failed_rows": [],
+  "held_units7": [
+    27,
+    47,
+    57
+  ],
+  "partition": "R1b4v2",
+  "rows": [
+    {
+      "A": 12,
+      "decoded": "15",
+      "exact_ok": true,
+      "expected": 15,
+      "is_carry": false,
+      "parsed": 15,
+      "question": "what is 12 plus 3?",
+      "too_long": false
+    },
+    {
+      "A": 14,
+      "decoded": "17",
+      "exact_ok": true,
+      "expected": 17,
+      "is_carry": false,
+      "parsed": 17,
+      "question": "what is 14 plus 3?",
+      "too_long": false
+    },
+    {
+      "A": 20,
+      "decoded": "23",
+      "exact_ok": true,
+      "expected": 23,
+      "is_carry": false,
+      "parsed": 23,
+      "question": "what is 20 plus 3?",
+      "too_long": false
+    },
+    {
+      "A": 23,
+      "decoded": "26",
+      "exact_ok": true,
+      "expected": 26,
+      "is_carry": false,
+      "parsed": 26,
+      "question": "what is 23 plus 3?",
+      "too_long": false
+    },
+    {
+      "A": 27,
+      "decoded": "30",
+      "exact_ok": true,
+      "expected": 30,
+      "is_carry": true,
+      "parsed": 30,
+      "question": "what is 27 plus 3?",
+      "too_long": false
+    },
+    {
+      "A": 30,
+      "decoded": "33",
+      "exact_ok": true,
+      "expected": 33,
+      "is_carry": false,
+      "parsed": 33,
+      "question": "what is 30 plus 3?",
+      "too_long": false
+    },
+    {
+      "A": 31,
+      "decoded": "34",
+      "exact_ok": true,
+      "expected": 34,
+      "is_carry": false,
+      "parsed": 34,
+      "question": "what is 31 plus 3?",
+      "too_long": false
+    },
+    {
+      "A": 35,
+      "decoded": "38",
+      "exact_ok": true,
+      "expected": 38,
+      "is_carry": false,
+      "parsed": 38,
+      "question": "what is 35 plus 3?",
+      "too_long": false
+    },
+    {
+      "A": 39,
+      "decoded": "42",
+      "exact_ok": true,
+      "expected": 42,
+      "is_carry": true,
+      "parsed": 42,
+      "question": "what is 39 plus 3?",
+      "too_long": false
+    },
+    {
+      "A": 45,
+      "decoded": "48",
+      "exact_ok": true,
+      "expected": 48,
+      "is_carry": false,
+      "parsed": 48,
+      "question": "what is 45 plus 3?",
+      "too_long": false
+    },
+    {
+      "A": 47,
+      "decoded": "50",
+      "exact_ok": true,
+      "expected": 50,
+      "is_carry": true,
+      "parsed": 50,
+      "question": "what is 47 plus 3?",
+      "too_long": false
+    },
+    {
+      "A": 48,
+      "decoded": "51",
+      "exact_ok": true,
+      "expected": 51,
+      "is_carry": true,
+      "parsed": 51,
+      "question": "what is 48 plus 3?",
+      "too_long": false
+    },
+    {
+      "A": 57,
+      "decoded": "60",
+      "exact_ok": true,
+      "expected": 60,
+      "is_carry": true,
+      "parsed": 60,
+      "question": "what is 57 plus 3?",
+      "too_long": false
+    },
+    {
+      "A": 59,
+      "decoded": "62",
+      "exact_ok": true,
+      "expected": 62,
+      "is_carry": true,
+      "parsed": 62,
+      "question": "what is 59 plus 3?",
+      "too_long": false
+    },
+    {
+      "A": 62,
+      "decoded": "65",
+      "exact_ok": true,
+      "expected": 65,
+      "is_carry": false,
+      "parsed": 65,
+      "question": "what is 62 plus 3?",
+      "too_long": false
+    },
+    {
+      "A": 63,
+      "decoded": "66",
+      "exact_ok": true,
+      "expected": 66,
+      "is_carry": false,
+      "parsed": 66,
+      "question": "what is 63 plus 3?",
+      "too_long": false
+    },
+    {
+      "A": 69,
+      "decoded": "72",
+      "exact_ok": true,
+      "expected": 72,
+      "is_carry": true,
+      "parsed": 72,
+      "question": "what is 69 plus 3?",
+      "too_long": false
+    },
+    {
+      "A": 85,
+      "decoded": "88",
+      "exact_ok": true,
+      "expected": 88,
+      "is_carry": false,
+      "parsed": 88,
+      "question": "what is 85 plus 3?",
+      "too_long": false
+    }
+  ],
+  "seed": 2,
+  "unique_cap": 18,
+  "unique_exact": 18
+}

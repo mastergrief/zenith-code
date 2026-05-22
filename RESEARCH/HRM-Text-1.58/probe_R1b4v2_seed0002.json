@@ -1,0 +1,148 @@
+{
+  "canonical_17x23": {
+    "decoded": "20",
+    "exact_ok": false,
+    "expected": 391,
+    "parsed": 20,
+    "parsed_ok": false,
+    "question": "what is 17 times 23?",
+    "too_long": false
+  },
+  "ckpt_path": "calm/hrm/checkpoints/hrm_text_158_phase3_R1b4v2_seed0002_final.pt",
+  "elapsed_sec": 208.4784209728241,
+  "finite": true,
+  "n_params": 29626368,
+  "one_digit_audit": {
+    "cap": 9,
+    "exact": 9,
+    "finite": true,
+    "parsed": 9,
+    "rows": [
+      {
+        "decoded": "4",
+        "exact_ok": true,
+        "expected": 4,
+        "parsed": 4,
+        "parsed_ok": true,
+        "question": "what is 1 plus 3?",
+        "too_long": false
+      },
+      {
+        "decoded": "5",
+        "exact_ok": true,
+        "expected": 5,
+        "parsed": 5,
+        "parsed_ok": true,
+        "question": "what is 2 plus 3?",
+        "too_long": false
+      },
+      {
+        "decoded": "6",
+        "exact_ok": true,
+        "expected": 6,
+        "parsed": 6,
+        "parsed_ok": true,
+        "question": "what is 3 plus 3?",
+        "too_long": false
+      },
+      {
+        "decoded": "7",
+        "exact_ok": true,
+        "expected": 7,
+        "parsed": 7,
+        "parsed_ok": true,
+        "question": "what is 4 plus 3?",
+        "too_long": false
+      },
+      {
+        "decoded": "8",
+        "exact_ok": true,
+        "expected": 8,
+        "parsed": 8,
+        "parsed_ok": true,
+        "question": "what is 5 plus 3?",
+        "too_long": false
+      },
+      {
+        "decoded": "9",
+        "exact_ok": true,
+        "expected": 9,
+        "parsed": 9,
+        "parsed_ok": true,
+        "question": "what is 6 plus 3?",
+        "too_long": false
+      },
+      {
+        "decoded": "10",
+        "exact_ok": true,
+        "expected": 10,
+        "parsed": 10,
+        "parsed_ok": true,
+        "question": "what is 7 plus 3?",
+        "too_long": false
+      },
+      {
+        "decoded": "11",
+        "exact_ok": true,
+        "expected": 11,
+        "parsed": 11,
+        "parsed_ok": true,
+        "question": "what is 8 plus 3?",
+        "too_long": false
+      },
+      {
+        "decoded": "12",
+        "exact_ok": true,
+        "expected": 12,
+        "parsed": 12,
+        "parsed_ok": true,
+        "question": "what is 9 plus 3?",
+        "too_long": false
+      }
+    ],
+    "too_long": 0
+  },
+  "retention_delta": {},
+  "rung": "R1b4v2",
+  "rung_accuracy": {
+    "R0": 1.0,
+    "R1": 0.975,
+    "R1b1": 0.945,
+    "R1b2": 0.95,
+    "R1b3": 0.98,
+    "R1b4v2": 1.0
+  },
+  "rung_cap": {
+    "R0": 200,
+    "R1": 200,
+    "R1b1": 200,
+    "R1b2": 200,
+    "R1b3": 200,
+    "R1b4v2": 200
+  },
+  "rung_exact": {
+    "R0": 200,
+    "R1": 195,
+    "R1b1": 189,
+    "R1b2": 190,
+    "R1b3": 196,
+    "R1b4v2": 200
+  },
+  "rung_parsed": {
+    "R0": 200,
+    "R1": 195,
+    "R1b1": 189,
+    "R1b2": 190,
+    "R1b3": 196,
+    "R1b4v2": 200
+  },
+  "rung_too_long": {
+    "R0": 0,
+    "R1": 0,
+    "R1b1": 0,
+    "R1b2": 0,
+    "R1b3": 0,
+    "R1b4v2": 0
+  },
+  "step": 1500
+}
