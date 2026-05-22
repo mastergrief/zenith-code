@@ -415,6 +415,7 @@ def train(
     use_z_init: bool = False,
     use_lecun_init: bool = False,
     use_prefix_lm: bool = False,
+    use_softmax_attn: bool = False,
     h_cycles: int = 1,
     use_h_rmsnorm: bool = False,
     use_short_conv: bool = False,
@@ -543,6 +544,7 @@ def train(
         use_z_init=use_z_init,
         use_lecun_init=use_lecun_init,
         use_prefix_lm=use_prefix_lm,
+        use_softmax_attn=use_softmax_attn,
         h_cycles=h_cycles,
         use_h_rmsnorm=use_h_rmsnorm,
         use_short_conv=use_short_conv,
@@ -1045,6 +1047,7 @@ def train(
                     "use_z_init": getattr(m.config, "use_z_init", False),
                     "use_lecun_init": getattr(m.config, "use_lecun_init", False),
                     "use_prefix_lm": getattr(m.config, "use_prefix_lm", False),
+                    "use_softmax_attn": getattr(m.config, "use_softmax_attn", False),
                     "h_cycles": getattr(m.config, "h_cycles", 1),
                     "use_h_rmsnorm": getattr(m.config, "use_h_rmsnorm", False),
                     "use_short_conv": getattr(m.config, "use_short_conv", False),
@@ -1130,6 +1133,11 @@ if __name__ == "__main__":
     ap.add_argument("--use-z-init", action="store_true")
     ap.add_argument("--use-lecun-init", action="store_true")
     ap.add_argument("--use-prefix-lm", action="store_true")
+    ap.add_argument("--use-softmax-attn", action="store_true",
+                    help="Slice 13j hybrid: enable softmax attention path "
+                         "alongside DeltaNet (parallel residual add at "
+                         "delta_rule.py:1384). Required for --use-prefix-lm "
+                         "to have any effect on the active code path.")
     ap.add_argument("--h-cycles", type=int, default=1)
     ap.add_argument("--use-h-rmsnorm", action="store_true")
     ap.add_argument("--use-short-conv", action="store_true")
@@ -1223,6 +1231,7 @@ if __name__ == "__main__":
         use_z_init=args.use_z_init,
         use_lecun_init=args.use_lecun_init,
         use_prefix_lm=args.use_prefix_lm,
+        use_softmax_attn=args.use_softmax_attn,
         h_cycles=args.h_cycles,
         use_h_rmsnorm=args.use_h_rmsnorm,
         use_short_conv=args.use_short_conv,
