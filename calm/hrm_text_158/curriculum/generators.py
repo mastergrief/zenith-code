@@ -74,14 +74,30 @@ def _stable_seed(*parts) -> int:
 #   - R5 uses arithmetic-operator chars (+, -, *) instead of words; R6
 #     uses word-problem templates. Both have unique surface forms.
 #
-# Implementation: R1 + R3 enumerate full operand spaces + deterministic-
+# Implementation: R0 + R1 + R3 enumerate full operand spaces + deterministic-
 # shuffle-partition. R2 / R4 use disjoint operand ranges (no overlap by
 # construction).
+#
+# R0 design correction (codex msg 1779464341737-43a42cae after R0 launch
+# msg 1779464300667 reported G1 fail):
+#   - Previous R0 design: train [0,99] vs held_out [100,999]. Tests OOD
+#     length generalization, not in-distribution digit-copy memorization
+#     (model learned 1-2 digit copy but couldn't extend to 3-digit -> G1=0).
+#   - New R0 design: STRATIFIED in-distribution partition over [0,99].
+#     Train + held_out both contain 1-digit AND 2-digit examples. Bucket
+#     [0,9] partitioned 80/20 separately from [10,99] so the digit-length
+#     mix is preserved on both sides. Tests in-distribution memorization
+#     of digit copy (the actual R0 primitive).
+#   - R0 max N <= 99 in both splits. OOD length generalization is NOT
+#     an R0 gate.
 
 _RUNG_SPEC: dict[str, dict[str, dict]] = {
     "R0": {
-        "train":     {"N_range": (0, 99)},
-        "held_out":  {"N_range": (100, 999)},
+        # R0 stratified partition: bucket [0,9] (one-digit) + bucket [10,99]
+        # (two-digit) split 80/20 each, then unioned per split. Held_out
+        # max N <= 99 — in-distribution memorization gate.
+        "train":     {"N_range": (0, 99), "partition": "enumerate_stratified"},
+        "held_out":  {"N_range": (0, 99), "partition": "enumerate_stratified"},
     },
     # R1 uses enumerate-partition (see _enumerate_partition_r1) — operand
     # range constant [0,9]² for both train + held_out, deterministically
@@ -106,6 +122,36 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     },
     # R5/R6 use template banks rather than operand ranges; R7 = GSM8k (out of scope)
 }
+
+
+def _enumerate_partition_r0(seed: int, train_frac: float = 0.8) -> tuple[set, set]:
+    """Stratified deterministic 80/20 partition of R0's [0,99] operand space.
+
+    Per codex msg 1779464341737-43a42cae: split bucket [0,9] (one-digit)
+    AND bucket [10,99] (two-digit) separately with bucket-distinct
+    `_stable_seed("R0_partition", seed, bucket)` so a flat shuffle can't
+    accidentally segregate all 1-digit Ns onto one side.
+
+    Result: train ~= 8 one-digit + 72 two-digit; held_out ~= 2 one-digit
+    + 18 two-digit. Both splits contain both digit-length classes -> tests
+    in-distribution digit-copy memorization, not OOD length generalization.
+
+    Cross-rung-train doesn't see R0's held_out because R0's template
+    `what is N?` is UNIQUE to R0 (no other rung uses single-operand
+    completion).
+    """
+    train_set: set = set()
+    held_out_set: set = set()
+    # Bucket 1: one-digit [0,9]  (10 Ns -> 8 train / 2 held_out at 0.8)
+    # Bucket 2: two-digit [10,99] (90 Ns -> 72 train / 18 held_out at 0.8)
+    for bucket_label, lo, hi in (("one_digit", 0, 9), ("two_digit", 10, 99)):
+        bucket_ns = list(range(lo, hi + 1))
+        rng = random.Random(_stable_seed("R0_partition", seed, bucket_label))
+        rng.shuffle(bucket_ns)
+        split = int(len(bucket_ns) * train_frac)
+        train_set.update(bucket_ns[:split])
+        held_out_set.update(bucket_ns[split:])
+    return train_set, held_out_set
 
 
 def _enumerate_partition_r1(seed: int, train_frac: float = 0.8) -> tuple[set, set]:
@@ -173,11 +219,19 @@ def _make_rng(rung: str, seed: int, split: str) -> random.Random:
     return random.Random(_stable_seed(rung, seed, salt))
 
 
-def _gen_r0(rng: random.Random, spec: dict, n: int) -> list[dict]:
-    lo, hi = spec["N_range"]
+def _gen_r0(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """R0: digit copy `what is N? -> N`.
+
+    Stratified in-distribution partition over [0,99] (codex msg
+    1779464341737-43a42cae). Train pool ~80 Ns (8 one-digit + 72 two-digit);
+    held_out pool ~20 Ns (2 one-digit + 18 two-digit). Both contain both
+    digit-length classes. NO operand >= 100 in either split."""
+    train_pool, held_out_pool = _enumerate_partition_r0(seed)
+    pool = train_pool if split == "train" else held_out_pool
+    pool_list = sorted(pool)  # deterministic order before rng.choice
     out = []
     while len(out) < n:
-        N = rng.randint(lo, hi)
+        N = rng.choice(pool_list)
         out.append({"question": f"what is {N}?", "expected": N, "rung": "R0"})
     return out
 
@@ -331,7 +385,7 @@ def make_rung_examples(
 
     rng = _make_rng(rung, seed, split)
     if rung == "R0":
-        return _gen_r0(rng, _RUNG_SPEC["R0"][split], n)
+        return _gen_r0(rng, _RUNG_SPEC["R0"][split], n, seed=seed, split=split)
     if rung == "R1":
         return _gen_r1(rng, _RUNG_SPEC["R1"][split], n, seed=seed, split=split)
     if rung == "R2":

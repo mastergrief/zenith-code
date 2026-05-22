@@ -204,6 +204,121 @@ def test_generator_train_holdout_distinct(rung) -> None:
     assert train != held_out
 
 
+# ============================================================================ #
+# R0 stratified in-distribution partition (codex msg 1779464341737-43a42cae)
+# ============================================================================ #
+
+def _r0_n(ex: dict) -> int:
+    """Extract the operand N from an R0 example's question `what is N?`."""
+    return int(ex["question"].split()[2].rstrip("?"))
+
+
+def test_generator_r0_train_holdout_exact_row_disjoint() -> None:
+    """R0 train + held_out must NEVER share an example row.
+
+    Stratified partition splits [0,9] and [10,99] separately; train and
+    held_out pools are disjoint by construction. n=2000 sampling exhausts
+    both pools repeatedly; verify zero overlap on the sampled rows."""
+    train = make_rung_examples("R0", n=2000, seed=42, split="train")
+    held = make_rung_examples("R0", n=2000, seed=42, split="held_out")
+    train_keys = {(ex["question"], ex["expected"]) for ex in train}
+    held_keys = {(ex["question"], ex["expected"]) for ex in held}
+    overlap = train_keys & held_keys
+    assert not overlap, f"R0 train/held_out share rows: {sorted(overlap)[:5]}"
+
+
+def test_generator_r0_held_out_max_n_le_99() -> None:
+    """R0 held_out operand N must be in [0,99] (in-distribution).
+
+    Previous design had held_out [100,999] (OOD length shift); fixed
+    design (codex msg 1779464341737) keeps held_out in [0,99]."""
+    held = make_rung_examples("R0", n=500, seed=42, split="held_out")
+    for ex in held:
+        n = _r0_n(ex)
+        assert 0 <= n <= 99, (
+            f"R0 held_out has N={n} outside [0,99] — OOD length shift not allowed"
+        )
+
+
+def test_generator_r0_train_max_n_le_99() -> None:
+    """R0 train operand N must also be in [0,99]."""
+    train = make_rung_examples("R0", n=500, seed=42, split="train")
+    for ex in train:
+        n = _r0_n(ex)
+        assert 0 <= n <= 99, f"R0 train has N={n} outside [0,99]"
+
+
+def test_generator_r0_train_contains_both_digit_lengths() -> None:
+    """Stratified partition ensures R0 train has BOTH 1-digit and 2-digit Ns.
+
+    A flat shuffle of 100 Ns could accidentally put all 1-digit Ns on one
+    side; codex msg 1779464341737 requires bucket-stratified partition."""
+    train = make_rung_examples("R0", n=500, seed=42, split="train")
+    has_one_digit = any(_r0_n(ex) < 10 for ex in train)
+    has_two_digit = any(_r0_n(ex) >= 10 for ex in train)
+    assert has_one_digit, "R0 train missing 1-digit examples (stratification bug)"
+    assert has_two_digit, "R0 train missing 2-digit examples (stratification bug)"
+
+
+def test_generator_r0_held_out_contains_both_digit_lengths() -> None:
+    """Stratified partition ensures R0 held_out has BOTH 1-digit and 2-digit Ns."""
+    held = make_rung_examples("R0", n=500, seed=42, split="held_out")
+    has_one_digit = any(_r0_n(ex) < 10 for ex in held)
+    has_two_digit = any(_r0_n(ex) >= 10 for ex in held)
+    assert has_one_digit, "R0 held_out missing 1-digit examples (stratification bug)"
+    assert has_two_digit, "R0 held_out missing 2-digit examples (stratification bug)"
+
+
+def test_generator_r0_partition_stable_across_pythonhashseed() -> None:
+    """R0 stratified partition output identical across PYTHONHASHSEED values
+    (uses sha256-stable _stable_seed, not builtin hash)."""
+    import json
+    import os
+    import subprocess
+    import sys
+
+    code = (
+        "import json\n"
+        "from calm.hrm_text_158.curriculum.generators import _enumerate_partition_r0\n"
+        "train, held = _enumerate_partition_r0(42)\n"
+        "print(json.dumps({'train': sorted(train), 'held': sorted(held)}))\n"
+    )
+
+    def _run(pyhs: str) -> str:
+        env = os.environ.copy()
+        env["PYTHONPATH"] = "."
+        env["PYTHONHASHSEED"] = pyhs
+        proc = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True,
+            env=env, cwd=".", timeout=60,
+        )
+        assert proc.returncode == 0, proc.stderr
+        return proc.stdout.strip()
+
+    a = _run("0")
+    b = _run("999")
+    c = _run("random")
+    assert a == b == c, f"R0 partition diverged: PYHS=0:{a[:80]} PYHS=999:{b[:80]}"
+
+
+def test_generator_r0_partition_pool_sizes() -> None:
+    """Stratified partition sizes: 8 one-digit train + 72 two-digit train,
+    2 one-digit held_out + 18 two-digit held_out (codex msg 1779464341737
+    recommendation)."""
+    from calm.hrm_text_158.curriculum.generators import _enumerate_partition_r0
+    train, held = _enumerate_partition_r0(42)
+    train_one = {n for n in train if n < 10}
+    train_two = {n for n in train if n >= 10}
+    held_one = {n for n in held if n < 10}
+    held_two = {n for n in held if n >= 10}
+    assert len(train_one) == 8, f"train one-digit count: {len(train_one)} expected 8"
+    assert len(train_two) == 72, f"train two-digit count: {len(train_two)} expected 72"
+    assert len(held_one) == 2, f"held one-digit count: {len(held_one)} expected 2"
+    assert len(held_two) == 18, f"held two-digit count: {len(held_two)} expected 18"
+    # Disjoint by construction
+    assert (train_one | train_two) & (held_one | held_two) == set()
+
+
 def test_generator_r3_held_out_includes_canonical_17x23() -> None:
     """R3 held-out MUST contain the exact canonical probe row
     `("what is 17 times 23?", 391)` — _enumerate_partition_r3 force-injects
