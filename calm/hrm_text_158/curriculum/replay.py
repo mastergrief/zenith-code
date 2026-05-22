@@ -44,10 +44,21 @@ from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
 #
 # Append a rung here ONLY when its retry/successor has shipped AND
 # the failed variant should never participate in default replay.
-# R1b2 is INTENTIONALLY NOT here per codex msg 1779475454122-1512da3b:
-# R1b2 is the canonical retry target via R1b2_v2_replay50; if that
-# retry passes, R1b2 should remain available for positional R2 replay.
-DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b"})
+# Status is RUNG-WISE, not architecture-wide — a rung listed here can
+# be removed later if a future retry passes (e.g., R2 can drop out if
+# a future full-R2 target acquires).
+#
+# Current set:
+#   - R1b2a: failed both v1 (memorization) and v2 lowmult (confounded)
+#   - R1b: legacy 3-template, superseded by R1b1 + R1b2 single-template
+#   - R2: full teens ± failed v1 (n_train=6000) AND v2 (n_train=8000)
+#         (codex msg 1779478819906-0e30503e: "Add R2 to DIAGNOSIS_ONLY_RUNGS
+#         until a future full-R2 target passes; update comments so this is
+#         not permanent architecture truth"). R2a is the addition-only
+#         successor in the active chain.
+#
+# R1b2 stays OUT (canonical retry that PASSED at c2686cc).
+DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b", "R2"})
 
 
 # R7 (GSM8k) is generator-incompatible — served separately from

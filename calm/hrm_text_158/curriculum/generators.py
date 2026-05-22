@@ -36,13 +36,18 @@ Axis 1 — math complexity under stable language wrapper:
                                   compat; out of build_rung_splits default tuple because
                                   its A_plus_1 rows overlap R1b1's by construction.
                                   Successor design tbd post-R1b1.]
+  R2a: teens addition-only       `what is 13 plus 7?` -> `20` (A in [10,19], B in [2,9])
+                                 [codex msg 1779478819906-0e30503e after R2 (full teens ±)
+                                  failed both v1 0.085 and v2 n_train=8000 0.185 at c2f4f8d.
+                                  Operator-split successor; addition only. Phenomenon-strat
+                                  (plus_no_carry, plus_carry) with 75/25 split: 60 train +
+                                  20 held_out. Multiplicity ~50x at 6000 rows. Output
+                                  [12,28]. R2b subtraction-only will follow if R2a PASSES.]
   R2: teens variable-B ±         `what is 13 plus 7?` -> `20`   (A in [10,19], B in [2,9])
-                                 [codex msg 1779476750248-2dca0aa7 after R1b2 v2 replay50
-                                  PASS at c2686cc. Smallest TRUE multi-digit bridge: real
-                                  variable B (not literal 1) + teens A; phenomenon-stratified
-                                  (plus_no_carry/plus_carry/minus_no_borrow/minus_borrow).
-                                  Output [1,28]; no 3-digit class. Future full two-digit
-                                  expansion is R2b.]
+                                 [DIAGNOSIS-ONLY after v1+v2 fail at c2f4f8d; A_plus_B rows
+                                  overlap R2a by construction. Reachable via explicit rungs=
+                                  for diagnosis; auto-excluded from positional via
+                                  DIAGNOSIS_ONLY_RUNGS in replay.py.]
   R3: multiplication only        `what is A times B?` -> `C`  (NO division)
   R4: multi-step compound        `what is A plus B times C?` -> `D`
 
@@ -69,7 +74,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -221,6 +226,19 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
         "train":     {"A_range": (1, 99), "partition": "enumerate_stratified_pm1"},
         "held_out":  {"A_range": (1, 99), "partition": "enumerate_stratified_pm1"},
     },
+    # R2a (codex msg 1779478819906-0e30503e after full R2 failed both v1
+    # 0.085 and v2 n_train=8000 0.185 at c2f4f8d): operator-split successor
+    # to failed full teens ± R2. Addition-only teens variable-B:
+    #   A in [10, 19], B in [2, 9], template {A_plus_B}.
+    # Phenomena: plus_no_carry + plus_carry only.
+    # 75/25 stratified split: pool 80 -> 60 train + 20 held_out (3000 new /
+    # 60 = 50x multiplicity, comparable to R1b1's 54x; preserves 20-row
+    # unique audit). Output [12, 28]; no 3-digit class.
+    # Subtraction-only R2b will follow if R2a PASSES.
+    "R2a": {
+        "train":     {"A_range": (10, 19), "B_range": (2, 9), "partition": "enumerate_stratified_phenom_plus"},
+        "held_out":  {"A_range": (10, 19), "B_range": (2, 9), "partition": "enumerate_stratified_phenom_plus"},
+    },
     # R2 (codex msg 1779476750248-2dca0aa7 after R1b2 v2 replay50 PASS at
     # c2686cc): smallest TRUE multi-digit ± bridge. Teens variable-B:
     #   A in [10, 19], B in [2, 9], templates {A_plus_B, A_minus_B}.
@@ -228,7 +246,14 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     # Stratify by PHENOMENON (plus_no_carry, plus_carry, minus_no_borrow,
     # minus_borrow), not just A bucket — guarantees both train and held_out
     # contain carry AND borrow cases.
-    # Future full two-digit expansion is a separate rung R2b.
+    #
+    # DIAGNOSIS-ONLY after R2 v1 (0.085) AND v2 n_train=8000 (0.185)
+    # both failed (c2f4f8d). R2a (addition-only) is the operator-split
+    # successor in the active chain. R2 stays in RUNG_NAMES at higher
+    # index for backward-compat; reachable via explicit rungs= arg.
+    # R2's A_plus_B rows OVERLAP R2a's by construction (same template,
+    # same A/B ranges). R2 stays in DIAGNOSIS_ONLY_RUNGS until a future
+    # full-R2 target passes.
     "R2": {
         "train":     {"A_range": (10, 19), "B_range": (2, 9), "partition": "enumerate_stratified_phenom"},
         "held_out":  {"A_range": (10, 19), "B_range": (2, 9), "partition": "enumerate_stratified_phenom"},
@@ -730,6 +755,59 @@ def _gen_r1b(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> l
     return out
 
 
+R2A_PHENOMENA = ("plus_no_carry", "plus_carry")
+
+
+def _r2a_phenomenon(A: int, B: int) -> str:
+    """Classify (A, B) as plus_no_carry or plus_carry for R2a's
+    addition-only stratification (codex msg 1779478819906-0e30503e)."""
+    return "plus_carry" if (A % 10) + B >= 10 else "plus_no_carry"
+
+
+def _enumerate_partition_r2a(seed: int, train_frac: float = 0.75) -> tuple[set, set]:
+    """Stratified deterministic 75/25 partition of R2a's teens addition-only
+    operand space (codex msg 1779478819906-0e30503e after full R2 failed v1+v2).
+
+    R2a is the operator-split successor to failed full teens ± R2.
+    Addition only: template `what is A plus B?`, A in [10,19], B in [2,9].
+    Phenomenon-stratified across (plus_no_carry, plus_carry); 75/25 split
+    chosen (vs prior rungs' 80/20) to leave 20 unique held_out rows while
+    keeping multiplicity comparable to R1b1's 54x.
+
+    Pool sizes per phenomenon:
+      plus_no_carry: 36 -> 27 train + 9 held_out  (36 * 0.75 = 27.0)
+      plus_carry:    44 -> 33 train + 11 held_out (44 * 0.75 = 33.0)
+      TOTAL:         80 -> 60 train + 20 held_out
+
+    At 3000 new R2a rows / 60 unique train = 50x multiplicity (close to
+    R1b1's 54x; well above lowmult's 20x memorization regime).
+
+    Cross-rung invariant: R2a emits `A plus B` with B in [2,9]. R0/R1/R1b1/
+    R1b2 all have B in {0, 1}; R2 (diagnosis-only) emits A_plus_B over
+    the SAME range with 80/20 split -> overlaps R2a by construction.
+    R2 stays excluded from build_rung_splits default + auto-excluded by
+    DIAGNOSIS_ONLY_RUNGS in replay.py.
+    """
+    train_set: set = set()
+    held_out_set: set = set()
+
+    # Build (A, B) tuples + classify by phenomenon (addition only)
+    by_phenom: dict[str, list[tuple[int, int]]] = {}
+    for A in range(10, 20):
+        for B in range(2, 10):
+            phenom = _r2a_phenomenon(A, B)
+            by_phenom.setdefault(phenom, []).append((A, B))
+
+    # Stratify 75/25 per phenomenon with phenom-distinct _stable_seed
+    for phenom, pairs in by_phenom.items():
+        rng = random.Random(_stable_seed("R2a_partition", seed, phenom))
+        rng.shuffle(pairs)
+        split = int(len(pairs) * train_frac)
+        train_set.update(pairs[:split])
+        held_out_set.update(pairs[split:])
+    return train_set, held_out_set
+
+
 R2_TEMPLATES = ("A_plus_B", "A_minus_B")
 R2_PHENOMENA = ("plus_no_carry", "plus_carry", "minus_no_borrow", "minus_borrow")
 
@@ -794,6 +872,29 @@ def _enumerate_partition_r2(seed: int, train_frac: float = 0.8) -> tuple[set, se
         train_set.update(pairs[:split])
         held_out_set.update(pairs[split:])
     return train_set, held_out_set
+
+
+def _gen_r2a(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """R2a teens addition-only (codex msg 1779478819906-0e30503e after
+    full R2 failed v1+v2 n_train=8000 at c2f4f8d).
+
+    Single template `what is A plus B?` -> A+B. A in [10,19], B in [2,9],
+    phenomenon-stratified 75/25 across plus_no_carry + plus_carry.
+    Output [12, 28]; no 3-digit class. Disjoint from R0/R1/R1b1/R1b2
+    (B in [2,9] vs their B in {0,1}); overlaps R2 A_plus_B rows by
+    construction (R2 diagnosis-only).
+
+    Train pool = 60 unique (A, B); held_out pool = 20."""
+    train_pool, held_out_pool = _enumerate_partition_r2a(seed)
+    pool = train_pool if split == "train" else held_out_pool
+    pool_list = sorted(pool)
+    out = []
+    while len(out) < n:
+        A, B = rng.choice(pool_list)
+        q = f"what is {A} plus {B}?"
+        expected = A + B
+        out.append({"question": q, "expected": expected, "rung": "R2a"})
+    return out
 
 
 def _gen_r2(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
@@ -946,6 +1047,8 @@ def make_rung_examples(
         return _gen_r1b2(rng, _RUNG_SPEC["R1b2"][split], n, seed=seed, split=split)
     if rung == "R1b":
         return _gen_r1b(rng, _RUNG_SPEC["R1b"][split], n, seed=seed, split=split)
+    if rung == "R2a":
+        return _gen_r2a(rng, _RUNG_SPEC["R2a"][split], n, seed=seed, split=split)
     if rung == "R2":
         return _gen_r2(rng, _RUNG_SPEC["R2"][split], n, seed=seed, split=split)
     if rung == "R3":

@@ -186,7 +186,7 @@ def test_broad_tokenizer_decode_skips_pad() -> None:
 # Generators: determinism + held-out non-overlap
 # ============================================================================ #
 
-@pytest.mark.parametrize("rung", ["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b", "R2", "R3", "R4", "R5", "R6"])
+@pytest.mark.parametrize("rung", ["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6"])
 def test_generator_deterministic_per_seed(rung) -> None:
     """Same (rung, seed, split) -> same examples list."""
     examples_a = make_rung_examples(rung, n=20, seed=42, split="train")
@@ -194,7 +194,7 @@ def test_generator_deterministic_per_seed(rung) -> None:
     assert examples_a == examples_b
 
 
-@pytest.mark.parametrize("rung", ["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b", "R2", "R3", "R4", "R5", "R6"])
+@pytest.mark.parametrize("rung", ["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6"])
 def test_generator_train_holdout_distinct(rung) -> None:
     """Train and held_out splits produce different examples for same seed
     (different RNG salt per split)."""
@@ -1206,8 +1206,193 @@ def test_generator_r1b_partition_stable_across_pythonhashseed() -> None:
 
 
 # ============================================================================ #
+# R2a teens addition-only (codex msg 1779478819906-0e30503e after full R2
+#  failed v1+v2 n_train=8000 at c2f4f8d; jigsaw-curriculum operator split)
+# ============================================================================ #
+
+def _r2a_decode(ex: dict) -> tuple[int, int]:
+    """Identify (A, B) from an R2a example: question is `what is A plus B?`."""
+    q = ex["question"]
+    toks = q.split()
+    assert len(toks) == 5 and toks[0] == "what" and toks[1] == "is" and toks[3] == "plus", q
+    A = int(toks[2])
+    B = int(toks[4].rstrip("?"))
+    return (A, B)
+
+
+def test_generator_r2a_in_rung_names_index_6() -> None:
+    """R2a at RUNG_NAMES index 6 (after R1b, before failed R2). Trainer's
+    prior_rungs derivation auto-resolves to (R0, R1, R1b1, R1b2). Codex
+    msg 1779478819906-0e30503e."""
+    from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
+    assert RUNG_NAMES[6] == "R2a", f"R2a must be at index 6; got {RUNG_NAMES}"
+    assert RUNG_NAMES[7] == "R2", f"R2 must be at index 7 (diagnosis-only); got {RUNG_NAMES}"
+
+
+def test_generator_r2a_train_holdout_exact_row_disjoint() -> None:
+    """R2a train + held_out exact-row disjoint at n=2000 sampling."""
+    train = make_rung_examples("R2a", n=2000, seed=42, split="train")
+    held = make_rung_examples("R2a", n=2000, seed=42, split="held_out")
+    train_rows = {(ex["question"], ex["expected"]) for ex in train}
+    held_rows = {(ex["question"], ex["expected"]) for ex in held}
+    overlap = train_rows & held_rows
+    assert not overlap, f"R2a train/held_out share rows: {sorted(overlap)[:5]}"
+
+
+def test_generator_r2a_addition_only() -> None:
+    """R2a emits ONLY `what is A plus B?`; never minus."""
+    rows = make_rung_examples("R2a", n=2000, seed=42, split="train") + \
+           make_rung_examples("R2a", n=2000, seed=42, split="held_out")
+    for ex in rows:
+        q = ex["question"]
+        assert q.startswith("what is "), f"R2a prefix violated: {q!r}"
+        assert q.endswith("?"), f"R2a suffix violated: {q!r}"
+        assert " plus " in q, f"R2a must contain ' plus ': {q!r}"
+        assert " minus " not in q, f"R2a must not emit 'minus': {q!r}"
+        toks = q.split()
+        assert len(toks) == 5 and toks[3] == "plus", f"R2a shape violated: {q!r}"
+
+
+def test_generator_r2a_a_in_teens() -> None:
+    """R2a A in [10, 19]."""
+    rows = make_rung_examples("R2a", n=2000, seed=42, split="train") + \
+           make_rung_examples("R2a", n=2000, seed=42, split="held_out")
+    for ex in rows:
+        A, _ = _r2a_decode(ex)
+        assert 10 <= A <= 19, f"R2a A out of [10,19]: A={A} q={ex['question']!r}"
+
+
+def test_generator_r2a_b_in_2_to_9() -> None:
+    """R2a B in [2, 9] (never 0/1; cross-rung B-disjoint with R1/R1b1/R1b2)."""
+    rows = make_rung_examples("R2a", n=2000, seed=42, split="train") + \
+           make_rung_examples("R2a", n=2000, seed=42, split="held_out")
+    for ex in rows:
+        _, B = _r2a_decode(ex)
+        assert 2 <= B <= 9, f"R2a B out of [2,9]: B={B} q={ex['question']!r}"
+
+
+def test_generator_r2a_both_phenomena_in_both_splits() -> None:
+    """Both plus_no_carry and plus_carry phenomena in both splits
+    (codex direction msg 1779478819906)."""
+    from calm.hrm_text_158.curriculum.generators import _r2a_phenomenon
+    train = make_rung_examples("R2a", n=500, seed=42, split="train")
+    held = make_rung_examples("R2a", n=500, seed=42, split="held_out")
+    train_phenoms = {_r2a_phenomenon(*_r2a_decode(ex)) for ex in train}
+    held_phenoms = {_r2a_phenomenon(*_r2a_decode(ex)) for ex in held}
+    expected = {"plus_no_carry", "plus_carry"}
+    assert train_phenoms == expected, f"R2a train missing phenoms: {expected - train_phenoms}"
+    assert held_phenoms == expected, f"R2a held missing phenoms: {expected - held_phenoms}"
+
+
+def test_generator_r2a_expected_matches_arithmetic() -> None:
+    """For every R2a row, expected == A + B."""
+    rows = make_rung_examples("R2a", n=500, seed=42, split="train") + \
+           make_rung_examples("R2a", n=500, seed=42, split="held_out")
+    for ex in rows:
+        A, B = _r2a_decode(ex)
+        assert ex["expected"] == A + B, f"R2a expected mismatch: {ex}"
+
+
+def test_generator_r2a_output_in_12_to_28() -> None:
+    """R2a output in [12, 28] (min 10+2=12; max 19+9=28). No 3-digit."""
+    rows = make_rung_examples("R2a", n=1000, seed=42, split="train") + \
+           make_rung_examples("R2a", n=1000, seed=42, split="held_out")
+    for ex in rows:
+        assert 12 <= ex["expected"] <= 28, (
+            f"R2a output out of [12,28]: {ex['question']!r} -> {ex['expected']}"
+        )
+
+
+def test_generator_r2a_pool_sizes() -> None:
+    """R2a pool sizes per codex msg 1779478819906 with 75/25 split:
+      plus_no_carry: 36 -> 27 train + 9 held  (36 * 0.75 = 27.0)
+      plus_carry:    44 -> 33 train + 11 held (44 * 0.75 = 33.0)
+      TOTAL:         80 -> 60 train + 20 held
+    Restores R1b1-style ~50x multiplicity at 6000 rows."""
+    from calm.hrm_text_158.curriculum.generators import (
+        _enumerate_partition_r2a,
+        _r2a_phenomenon,
+    )
+    train_pool, held_pool = _enumerate_partition_r2a(seed=42)
+    assert len(train_pool) == 60, f"R2a train pool must be 60; got {len(train_pool)}"
+    assert len(held_pool) == 20, f"R2a held_out pool must be 20; got {len(held_pool)}"
+    assert not (train_pool & held_pool), "R2a pools must be disjoint"
+    full = train_pool | held_pool
+    assert len(full) == 80, f"R2a union pool must be 80; got {len(full)}"
+    # Per-phenomenon
+    from collections import Counter
+    train_phenom = Counter(_r2a_phenomenon(A, B) for (A, B) in train_pool)
+    held_phenom = Counter(_r2a_phenomenon(A, B) for (A, B) in held_pool)
+    assert train_phenom == {"plus_no_carry": 27, "plus_carry": 33}, train_phenom
+    assert held_phenom == {"plus_no_carry": 9, "plus_carry": 11}, held_phenom
+
+
+def test_generator_r2a_held_out_unique_count() -> None:
+    """R2a held_out unique = 20. Codex direction: 75/25 split chosen to
+    preserve 20-row unique audit support."""
+    held = make_rung_examples("R2a", n=200, seed=42, split="held_out")
+    unique = {(ex["question"], ex["expected"]) for ex in held}
+    assert len(unique) == 20, f"R2a held_out unique must be 20; got {len(unique)}"
+
+
+def test_generator_r2a_no_collision_with_priors() -> None:
+    """R2a rows must NEVER appear in R0/R1/R1b1/R1b2 train OR held_out.
+    All priors have B in {0, 1}; R2a has B in [2,9]."""
+    r2a_rows = set()
+    for split in ("train", "held_out"):
+        for ex in make_rung_examples("R2a", n=2000, seed=42, split=split):
+            r2a_rows.add((ex["question"], ex["expected"]))
+    for prior in ("R0", "R1", "R1b1", "R1b2"):
+        prior_rows = set()
+        for split in ("train", "held_out"):
+            for ex in make_rung_examples(prior, n=2000, seed=42, split=split):
+                prior_rows.add((ex["question"], ex["expected"]))
+        overlap = prior_rows & r2a_rows
+        assert not overlap, f"{prior} vs R2a collision: {sorted(overlap)[:5]}"
+
+
+def test_generator_r2a_partition_stable_across_pythonhashseed() -> None:
+    """_enumerate_partition_r2a stable across PYTHONHASHSEED restarts."""
+    import os
+    import subprocess
+    import sys
+
+    snippet = (
+        "from calm.hrm_text_158.curriculum.generators import _enumerate_partition_r2a; "
+        "train, held = _enumerate_partition_r2a(seed=42); "
+        "print(','.join(repr(x) for x in sorted(train)) + '|' + ','.join(repr(x) for x in sorted(held)))"
+    )
+    out1 = subprocess.check_output(
+        [sys.executable, "-c", snippet], env={**os.environ, "PYTHONHASHSEED": "0"}
+    ).decode().strip()
+    out2 = subprocess.check_output(
+        [sys.executable, "-c", snippet], env={**os.environ, "PYTHONHASHSEED": "555"}
+    ).decode().strip()
+    out3 = subprocess.check_output(
+        [sys.executable, "-c", snippet], env={**os.environ, "PYTHONHASHSEED": "random"}
+    ).decode().strip()
+    assert out1 == out2 == out3, "R2a partition diverged across PYTHONHASHSEED"
+
+
+def test_cross_rung_r2a_and_r2_together_collide() -> None:
+    """Negative test: opting BOTH R2a and R2 into build_rung_splits
+    expected to fail assert_no_train_holdout_overlap because R2a's
+    A_plus_B rows are a STRICT SUBSET of R2's A_plus_B rows (R2 also
+    has A_minus_B). Codex msg 1779478819906: R2 stays diagnosis-only."""
+    splits = build_rung_splits(
+        n_train=2000,
+        n_held_out=400,
+        seed=42,
+        rungs=("R0", "R1", "R1b1", "R1b2", "R2a", "R2"),
+    )
+    with pytest.raises(AssertionError, match="overlap detected"):
+        assert_no_train_holdout_overlap(splits)
+
+
+# ============================================================================ #
 # R2 teens variable-B ± stratified partition
-# (codex msg 1779476750248-2dca0aa7 after R1b2 v2 replay50 PASS at c2686cc)
+# (codex msg 1779476750248-2dca0aa7 after R1b2 v2 replay50 PASS at c2686cc;
+#  DIAGNOSIS-ONLY after v1+v2 fail at c2f4f8d; R2a is the operator-split successor)
 # ============================================================================ #
 
 def _r2_decode(ex: dict) -> tuple[str, int, int]:
@@ -1465,19 +1650,19 @@ def test_generator_arithmetic_correctness() -> None:
 # ============================================================================ #
 
 def test_cross_rung_no_train_holdout_overlap() -> None:
-    """Active-chain cross-rung invariant per codex msg 1779475454122-1512da3b
-    structural fix after R1b2a v2 lowmult confounded fail at ddcc943.
+    """Active-chain cross-rung invariant per codex msg 1779478819906-0e30503e
+    structural fix after R2 v1+v2 n_train=8000 both failed at c2f4f8d.
 
     `build_rung_splits` default tuple is now `("R0", "R1", "R1b1",
-    "R1b2", "R2", "R3", "R4", "R5", "R6")` -- R1b2 is the canonical
-    retry target via R1b2_v2_replay50 (NOT in DIAGNOSIS_ONLY_RUNGS).
-    R1b2a and R1b are diagnosis-only and OUT of default. The
-    invariant asserts no row in any rung's held_out appears in any
-    rung's train set across the active chain only."""
+    "R1b2", "R2a", "R3", "R4", "R5", "R6")` -- R2a is the operator-
+    split addition-only successor to failed full teens ± R2. R1b2a,
+    R1b, R2 are diagnosis-only and OUT of default. The invariant
+    asserts no row in any rung's held_out appears in any rung's
+    train set across the active chain only."""
     splits = build_rung_splits(n_train=200, n_held_out=50, seed=42)
     assert_no_train_holdout_overlap(splits)
-    # Active chain: R0, R1, R1b1, R1b2, R2-R6 (R1b2a + R1b diagnosis-only; R7 = GSM8k)
-    assert set(splits.keys()) == {"R0", "R1", "R1b1", "R1b2", "R2", "R3", "R4", "R5", "R6"}
+    # Active chain: R0, R1, R1b1, R1b2, R2a, R3-R6 (R1b2a/R1b/R2 diagnosis-only; R7 = GSM8k)
+    assert set(splits.keys()) == {"R0", "R1", "R1b1", "R1b2", "R2a", "R3", "R4", "R5", "R6"}
 
 
 def test_cross_rung_r1b1_and_r1b_together_collide() -> None:
@@ -1518,9 +1703,10 @@ def test_cross_rung_invariant_detects_violation() -> None:
     """Manually construct a violation: copy a held_out row into another rung's train.
     assert_no_train_holdout_overlap must raise."""
     splits = build_rung_splits(n_train=20, n_held_out=10, seed=42)
-    # Inject violation: take an R1 held_out row and add it to R2 train
+    # Inject violation: take an R1 held_out row and add it to R3 train
+    # (R2 dropped from default active chain at c2f4f8d -> R2a; use R3 here)
     violation_row = splits["R1"]["held_out"][0].copy()
-    splits["R2"]["train"].append(violation_row)
+    splits["R3"]["train"].append(violation_row)
     with pytest.raises(AssertionError, match="overlap detected"):
         assert_no_train_holdout_overlap(splits)
 
