@@ -36,7 +36,13 @@ Axis 1 — math complexity under stable language wrapper:
                                   compat; out of build_rung_splits default tuple because
                                   its A_plus_1 rows overlap R1b1's by construction.
                                   Successor design tbd post-R1b1.]
-  R2: carry multi-digit ±        `what is 47 plus 28?` -> `75`
+  R2: teens variable-B ±         `what is 13 plus 7?` -> `20`   (A in [10,19], B in [2,9])
+                                 [codex msg 1779476750248-2dca0aa7 after R1b2 v2 replay50
+                                  PASS at c2686cc. Smallest TRUE multi-digit bridge: real
+                                  variable B (not literal 1) + teens A; phenomenon-stratified
+                                  (plus_no_carry/plus_carry/minus_no_borrow/minus_borrow).
+                                  Output [1,28]; no 3-digit class. Future full two-digit
+                                  expansion is R2b.]
   R3: multiplication only        `what is A times B?` -> `C`  (NO division)
   R4: multi-step compound        `what is A plus B times C?` -> `D`
 
@@ -215,9 +221,17 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
         "train":     {"A_range": (1, 99), "partition": "enumerate_stratified_pm1"},
         "held_out":  {"A_range": (1, 99), "partition": "enumerate_stratified_pm1"},
     },
+    # R2 (codex msg 1779476750248-2dca0aa7 after R1b2 v2 replay50 PASS at
+    # c2686cc): smallest TRUE multi-digit ± bridge. Teens variable-B:
+    #   A in [10, 19], B in [2, 9], templates {A_plus_B, A_minus_B}.
+    #   Output stays in [1, 28] (no 3-digit class).
+    # Stratify by PHENOMENON (plus_no_carry, plus_carry, minus_no_borrow,
+    # minus_borrow), not just A bucket — guarantees both train and held_out
+    # contain carry AND borrow cases.
+    # Future full two-digit expansion is a separate rung R2b.
     "R2": {
-        "train":     {"A_range": (10, 99), "B_range": (10, 99)},
-        "held_out":  {"A_range": (100, 999), "B_range": (100, 999)},
+        "train":     {"A_range": (10, 19), "B_range": (2, 9), "partition": "enumerate_stratified_phenom"},
+        "held_out":  {"A_range": (10, 19), "B_range": (2, 9), "partition": "enumerate_stratified_phenom"},
     },
     # R3 uses enumerate-partition over [0,9]² × {times}. 17×23 specifically
     # force-injected into held_out (out of [0,9]² range).
@@ -716,21 +730,97 @@ def _gen_r1b(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> l
     return out
 
 
-def _gen_r2(rng: random.Random, spec: dict, n: int) -> list[dict]:
-    # Same template shape as R1 but multi-digit (carry needed)
-    a_lo, a_hi = spec["A_range"]
-    b_lo, b_hi = spec["B_range"]
+R2_TEMPLATES = ("A_plus_B", "A_minus_B")
+R2_PHENOMENA = ("plus_no_carry", "plus_carry", "minus_no_borrow", "minus_borrow")
+
+
+def _r2_phenomenon(template: str, A: int, B: int) -> str:
+    """Classify (template, A, B) into one of R2's 4 phenomena.
+
+    Per codex msg 1779476750248-2dca0aa7: stratify by phenomenon so train
+    AND held_out both contain carry AND borrow cases.
+    """
+    if template == "A_plus_B":
+        return "plus_carry" if (A % 10) + B >= 10 else "plus_no_carry"
+    if template == "A_minus_B":
+        return "minus_borrow" if (A % 10) < B else "minus_no_borrow"
+    raise ValueError(f"unknown R2 template: {template!r}")
+
+
+def _enumerate_partition_r2(seed: int, train_frac: float = 0.8) -> tuple[set, set]:
+    """Stratified deterministic 80/20 partition of R2's teens variable-B
+    operand space (codex msg 1779476750248-2dca0aa7 after R1b2 v2 replay50
+    PASS at c2686cc).
+
+    R2 is the smallest TRUE multi-digit ± bridge: introduces a real
+    second operand B (not literal 1) while keeping A in teens [10,19].
+    Output stays in [1, 28] (no 3-digit class). Stratifies by
+    PHENOMENON, not just A bucket — guarantees carry/borrow examples
+    in both splits.
+
+    Pool: A in [10, 19] (10 vals) × B in [2, 9] (8 vals) × 2 templates
+    = 160 (template, A, B) tuples total. 80/20 floor split per
+    (template, phenomenon) bucket. Phenomenon counts:
+      plus_no_carry: 36 -> 28 train + 8 held
+      plus_carry:    44 -> 35 train + 9 held
+      minus_no_borrow: 36 -> 28 train + 8 held
+      minus_borrow:  44 -> 35 train + 9 held
+      TOTAL:         160 -> 126 train + 34 held_out
+
+    Cross-rung-train invariant: R2 emits `A plus B` / `A minus B` with
+    B in [2,9]. R0 has no second operand. R1 has B=0 (additive side).
+    R1b1 has B=1 (plus). R1b2 has B=1 (minus). All disjoint by B-value
+    in question text. R1b/R1b2 templates with B=1 over A in [1,99]
+    DO NOT overlap because R2's B never equals 1.
+    """
+    train_set: set = set()
+    held_out_set: set = set()
+
+    # Build all (template, A, B) tuples + classify by phenomenon
+    by_bucket: dict[tuple[str, str], list[tuple[str, int, int]]] = {}
+    for template in R2_TEMPLATES:
+        for A in range(10, 20):
+            for B in range(2, 10):
+                phenom = _r2_phenomenon(template, A, B)
+                bucket = (template, phenom)
+                by_bucket.setdefault(bucket, []).append((template, A, B))
+
+    # Stratify 80/20 per (template, phenomenon) bucket with bucket-distinct
+    # _stable_seed so different phenomena don't synchronize their shuffles
+    for (template, phenom), pairs in by_bucket.items():
+        rng = random.Random(_stable_seed("R2_partition", seed, template, phenom))
+        rng.shuffle(pairs)
+        split = int(len(pairs) * train_frac)
+        train_set.update(pairs[:split])
+        held_out_set.update(pairs[split:])
+    return train_set, held_out_set
+
+
+def _gen_r2(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """R2 teens variable-B (codex msg 1779476750248-2dca0aa7 after R1b2
+    v2 replay50 PASS at c2686cc).
+
+    Two templates × A in [10,19] × B in [2,9], stratified by phenomenon
+    (plus_no_carry, plus_carry, minus_no_borrow, minus_borrow). Output
+    in [1, 28]; no 3-digit class. Designed disjoint from R0/R1/R1b1/R1b2
+    (B never equals 0 or 1).
+
+    Train pool = 126 unique (template, A, B) tuples; held_out pool = 34.
+    """
+    train_pool, held_out_pool = _enumerate_partition_r2(seed)
+    pool = train_pool if split == "train" else held_out_pool
+    pool_list = sorted(pool)
     out = []
     while len(out) < n:
-        A = rng.randint(a_lo, a_hi)
-        B = rng.randint(b_lo, b_hi)
-        op = rng.choice(["plus", "minus"])
-        if op == "plus":
-            expected = A + B
+        template, A, B = rng.choice(pool_list)
+        if template == "A_plus_B":
             q = f"what is {A} plus {B}?"
-        else:
-            expected = A - B
+            expected = A + B
+        elif template == "A_minus_B":
             q = f"what is {A} minus {B}?"
+            expected = A - B
+        else:  # pragma: no cover - exhaustive
+            raise ValueError(f"unknown R2 template: {template!r}")
         out.append({"question": q, "expected": expected, "rung": "R2"})
     return out
 
@@ -857,7 +947,7 @@ def make_rung_examples(
     if rung == "R1b":
         return _gen_r1b(rng, _RUNG_SPEC["R1b"][split], n, seed=seed, split=split)
     if rung == "R2":
-        return _gen_r2(rng, _RUNG_SPEC["R2"][split], n)
+        return _gen_r2(rng, _RUNG_SPEC["R2"][split], n, seed=seed, split=split)
     if rung == "R3":
         return _gen_r3(rng, _RUNG_SPEC["R3"][split], n, seed=seed, split=split)
     if rung == "R4":

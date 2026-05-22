@@ -1205,6 +1205,209 @@ def test_generator_r1b_partition_stable_across_pythonhashseed() -> None:
     assert a == b == c, "R1b partition diverged across PYTHONHASHSEED"
 
 
+# ============================================================================ #
+# R2 teens variable-B ± stratified partition
+# (codex msg 1779476750248-2dca0aa7 after R1b2 v2 replay50 PASS at c2686cc)
+# ============================================================================ #
+
+def _r2_decode(ex: dict) -> tuple[str, int, int]:
+    """Identify (template, A, B) from an R2 example."""
+    q = ex["question"]
+    toks = q.split()  # ['what', 'is', 'A', 'op', 'B?']
+    assert len(toks) == 5 and toks[0] == "what" and toks[1] == "is", q
+    A = int(toks[2])
+    op = toks[3]
+    B = int(toks[4].rstrip("?"))
+    if op == "plus":
+        return ("A_plus_B", A, B)
+    if op == "minus":
+        return ("A_minus_B", A, B)
+    raise ValueError(f"unrecognized R2 question shape: {q!r}")
+
+
+def test_generator_r2_train_holdout_exact_row_disjoint() -> None:
+    """R2 train + held_out exact-row disjoint at n=2000 sampling."""
+    train = make_rung_examples("R2", n=2000, seed=42, split="train")
+    held = make_rung_examples("R2", n=2000, seed=42, split="held_out")
+    train_rows = {(ex["question"], ex["expected"]) for ex in train}
+    held_rows = {(ex["question"], ex["expected"]) for ex in held}
+    overlap = train_rows & held_rows
+    assert not overlap, f"R2 train/held_out share rows: {sorted(overlap)[:5]}"
+
+
+def test_generator_r2_both_templates_in_both_splits() -> None:
+    """Both A_plus_B and A_minus_B appear in both splits."""
+    train = make_rung_examples("R2", n=500, seed=42, split="train")
+    held = make_rung_examples("R2", n=500, seed=42, split="held_out")
+    train_templates = {_r2_decode(ex)[0] for ex in train}
+    held_templates = {_r2_decode(ex)[0] for ex in held}
+    assert train_templates == {"A_plus_B", "A_minus_B"}, train_templates
+    assert held_templates == {"A_plus_B", "A_minus_B"}, held_templates
+
+
+def test_generator_r2_all_phenomena_in_both_splits() -> None:
+    """All 4 phenomena (plus_no_carry, plus_carry, minus_no_borrow,
+    minus_borrow) appear in BOTH train and held_out splits (codex
+    direction msg 1779476750248: stratify so carry+borrow guaranteed)."""
+    from calm.hrm_text_158.curriculum.generators import _r2_phenomenon
+    train = make_rung_examples("R2", n=1000, seed=42, split="train")
+    held = make_rung_examples("R2", n=1000, seed=42, split="held_out")
+    train_phenoms = {_r2_phenomenon(*_r2_decode(ex)) for ex in train}
+    held_phenoms = {_r2_phenomenon(*_r2_decode(ex)) for ex in held}
+    expected = {"plus_no_carry", "plus_carry", "minus_no_borrow", "minus_borrow"}
+    assert train_phenoms == expected, f"train missing phenomena: {expected - train_phenoms}"
+    assert held_phenoms == expected, f"held missing phenomena: {expected - held_phenoms}"
+
+
+def test_generator_r2_b_never_0_or_1() -> None:
+    """R2 B in [2,9]. NEVER 0 (collides R1 templates) NEVER 1 (collides
+    R1b1/R1b2)."""
+    rows = make_rung_examples("R2", n=2000, seed=42, split="train") + \
+           make_rung_examples("R2", n=2000, seed=42, split="held_out")
+    for ex in rows:
+        _, _, B = _r2_decode(ex)
+        assert 2 <= B <= 9, f"R2 B out of [2,9]: B={B} q={ex['question']!r}"
+
+
+def test_generator_r2_a_in_teens() -> None:
+    """R2 A in [10,19] (teens only — smallest multi-digit bridge)."""
+    rows = make_rung_examples("R2", n=2000, seed=42, split="train") + \
+           make_rung_examples("R2", n=2000, seed=42, split="held_out")
+    for ex in rows:
+        _, A, _ = _r2_decode(ex)
+        assert 10 <= A <= 19, f"R2 A out of [10,19]: A={A} q={ex['question']!r}"
+
+
+def test_generator_r2_expected_matches_arithmetic() -> None:
+    """For every R2 row, expected == A op B per template."""
+    rows = make_rung_examples("R2", n=500, seed=42, split="train") + \
+           make_rung_examples("R2", n=500, seed=42, split="held_out")
+    for ex in rows:
+        template, A, B = _r2_decode(ex)
+        if template == "A_plus_B":
+            assert ex["expected"] == A + B, f"R2 plus mismatch: {ex}"
+        else:
+            assert ex["expected"] == A - B, f"R2 minus mismatch: {ex}"
+
+
+def test_generator_r2_output_in_1_to_28() -> None:
+    """R2 output in [1, 28]. No 3-digit class.
+
+    plus max: 19+9=28; plus min: 10+2=12.
+    minus max: 19-2=17; minus min: 10-9=1.
+    Combined output range = [1, 28]."""
+    rows = make_rung_examples("R2", n=1000, seed=42, split="train") + \
+           make_rung_examples("R2", n=1000, seed=42, split="held_out")
+    for ex in rows:
+        assert 1 <= ex["expected"] <= 28, (
+            f"R2 output out of [1,28]: {ex['question']!r} -> {ex['expected']}"
+        )
+
+
+def test_generator_r2_pool_sizes() -> None:
+    """R2 pool sizes per codex msg 1779476750248:
+      plus_no_carry: 36 -> 28 train + 8 held
+      plus_carry:    44 -> 35 train + 9 held
+      minus_no_borrow: 36 -> 28 train + 8 held
+      minus_borrow:  44 -> 35 train + 9 held
+      TOTAL:         160 -> 126 train + 34 held
+    """
+    from calm.hrm_text_158.curriculum.generators import (
+        _enumerate_partition_r2,
+        _r2_phenomenon,
+    )
+    train_pool, held_pool = _enumerate_partition_r2(seed=42)
+    assert len(train_pool) == 126, f"R2 train pool must be 126; got {len(train_pool)}"
+    assert len(held_pool) == 34, f"R2 held_out pool must be 34; got {len(held_pool)}"
+    # Disjoint
+    assert not (train_pool & held_pool), "R2 pools must be disjoint"
+    # Total covers all 160 (template, A, B) tuples
+    full = train_pool | held_pool
+    assert len(full) == 160, f"R2 union pool must be 160; got {len(full)}"
+    # Per-phenomenon counts
+    from collections import Counter
+    train_phenom_counts = Counter(
+        _r2_phenomenon(template, A, B) for (template, A, B) in train_pool
+    )
+    held_phenom_counts = Counter(
+        _r2_phenomenon(template, A, B) for (template, A, B) in held_pool
+    )
+    # 80/20 floor split: 36 -> 28+8; 44 -> 35+9
+    assert train_phenom_counts == {
+        "plus_no_carry": 28, "plus_carry": 35,
+        "minus_no_borrow": 28, "minus_borrow": 35,
+    }, train_phenom_counts
+    assert held_phenom_counts == {
+        "plus_no_carry": 8, "plus_carry": 9,
+        "minus_no_borrow": 8, "minus_borrow": 9,
+    }, held_phenom_counts
+
+
+def test_generator_r2_held_out_unique_count() -> None:
+    """R2 held_out unique = 34. Per codex held-out support rule for
+    sampled-with-replacement probes."""
+    held = make_rung_examples("R2", n=200, seed=42, split="held_out")
+    unique = {(ex["question"], ex["expected"]) for ex in held}
+    assert len(unique) == 34, (
+        f"R2 held_out unique count must be 34 (codex msg 1779476750248); "
+        f"got {len(unique)}"
+    )
+
+
+def test_generator_r2_no_collision_with_r1() -> None:
+    """R2 rows must NEVER appear in R1's train OR held_out (R1 B=0, R2 B>=2)."""
+    r1_train = make_rung_examples("R1", n=2000, seed=42, split="train")
+    r1_held = make_rung_examples("R1", n=2000, seed=42, split="held_out")
+    r2_train = make_rung_examples("R2", n=2000, seed=42, split="train")
+    r2_held = make_rung_examples("R2", n=2000, seed=42, split="held_out")
+    r1_rows = {(ex["question"], ex["expected"]) for ex in r1_train + r1_held}
+    r2_rows = {(ex["question"], ex["expected"]) for ex in r2_train + r2_held}
+    overlap = r1_rows & r2_rows
+    assert not overlap, f"R1 vs R2 collision: {sorted(overlap)[:5]}"
+
+
+def test_generator_r2_no_collision_with_r1b1_or_r1b2() -> None:
+    """R2 rows must NEVER appear in R1b1 (B=1, plus) or R1b2 (B=1, minus).
+    R2 has B in [2,9] -> disjoint by B-value."""
+    r1b1_rows = set()
+    for split in ("train", "held_out"):
+        for ex in make_rung_examples("R1b1", n=2000, seed=42, split=split):
+            r1b1_rows.add((ex["question"], ex["expected"]))
+    r1b2_rows = set()
+    for split in ("train", "held_out"):
+        for ex in make_rung_examples("R1b2", n=2000, seed=42, split=split):
+            r1b2_rows.add((ex["question"], ex["expected"]))
+    r2_rows = set()
+    for split in ("train", "held_out"):
+        for ex in make_rung_examples("R2", n=2000, seed=42, split=split):
+            r2_rows.add((ex["question"], ex["expected"]))
+    assert not (r1b1_rows & r2_rows), f"R1b1 vs R2 collision: {sorted(r1b1_rows & r2_rows)[:5]}"
+    assert not (r1b2_rows & r2_rows), f"R1b2 vs R2 collision: {sorted(r1b2_rows & r2_rows)[:5]}"
+
+
+def test_generator_r2_partition_stable_across_pythonhashseed() -> None:
+    """_enumerate_partition_r2 stable across PYTHONHASHSEED restarts."""
+    import os
+    import subprocess
+    import sys
+
+    snippet = (
+        "from calm.hrm_text_158.curriculum.generators import _enumerate_partition_r2; "
+        "train, held = _enumerate_partition_r2(seed=42); "
+        "print(','.join(repr(x) for x in sorted(train)) + '|' + ','.join(repr(x) for x in sorted(held)))"
+    )
+    out1 = subprocess.check_output(
+        [sys.executable, "-c", snippet], env={**os.environ, "PYTHONHASHSEED": "0"}
+    ).decode().strip()
+    out2 = subprocess.check_output(
+        [sys.executable, "-c", snippet], env={**os.environ, "PYTHONHASHSEED": "999"}
+    ).decode().strip()
+    out3 = subprocess.check_output(
+        [sys.executable, "-c", snippet], env={**os.environ, "PYTHONHASHSEED": "random"}
+    ).decode().strip()
+    assert out1 == out2 == out3, "R2 partition diverged across PYTHONHASHSEED"
+
+
 def test_generator_r3_held_out_includes_canonical_17x23() -> None:
     """R3 held-out MUST contain the exact canonical probe row
     `("what is 17 times 23?", 391)` — _enumerate_partition_r3 force-injects
