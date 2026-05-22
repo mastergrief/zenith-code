@@ -198,6 +198,9 @@ class Attention(nn.Module):
     Replace `flash_attn_varlen_prefixlm` + `flash_attn_with_kvcache`
     with `F.scaled_dot_product_attention` + constructed PrefixLM mask
     via `build_prefix_lm_mask`. Mask semantics preserved.
+
+    Deviation D2.1 (Phase 2): when use_ternary_bulk=True, gqkv_proj +
+    o_proj use BitLinear (ternary master+STE) instead of LinearInit.
     """
     def __init__(
         self,
@@ -208,6 +211,7 @@ class Attention(nn.Module):
         attn_type: str,
         init_std_in: Optional[float] = None,
         init_std_out: Optional[float] = None,
+        use_ternary_bulk: bool = False,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -215,9 +219,17 @@ class Attention(nn.Module):
         self.num_heads = num_heads
         self.num_key_value_heads = num_key_value_heads
         self.attn_type = attn_type
+        # Ternary or FP/BF16 master? Per D2.1 bounded scope: gqkv_proj + o_proj only.
+        # Import inside __init__ to avoid circular import at module load
+        # (bit_linear imports trunc_normal_init_ from layers).
+        if use_ternary_bulk:
+            from calm.hrm_text_158.bit_linear import BitLinear
+            LinearImpl = BitLinear
+        else:
+            LinearImpl = LinearInit
         # Fused gqkv: layout = (gate, query, key, value) along the head axis
         # Total: 2*num_heads (gate+query) + 2*num_key_value_heads (key+value)
-        self.gqkv_proj = LinearInit(
+        self.gqkv_proj = LinearImpl(
             hidden_size,
             self.head_dim,
             batch_out_features=(2 * self.num_heads + 2 * self.num_key_value_heads,),
@@ -225,7 +237,7 @@ class Attention(nn.Module):
             init_std=init_std_in,
             **kwargs,
         )
-        self.o_proj = LinearInit(head_dim * num_heads, hidden_size, bias=False, init_std=init_std_out, **kwargs)
+        self.o_proj = LinearImpl(head_dim * num_heads, hidden_size, bias=False, init_std=init_std_out, **kwargs)
 
     def forward(
         self,
@@ -293,6 +305,9 @@ class SwiGLU(nn.Module):
     """Fused gate+up SwiGLU MLP.
 
     Port of `sapientinc/HRM-Text/models/layers.py:158-168`.
+
+    Deviation D2.1 (Phase 2): when use_ternary_bulk=True, gate_up_proj +
+    down_proj use BitLinear (ternary master+STE) instead of LinearInit.
     """
     def __init__(
         self,
@@ -300,11 +315,18 @@ class SwiGLU(nn.Module):
         intermediate_size: int,
         init_std_in: Optional[float] = None,
         init_std_out: Optional[float] = None,
+        use_ternary_bulk: bool = False,
         **kwargs,
     ) -> None:
         super().__init__()
+        # Per D2.1 bounded scope: gate_up_proj + down_proj.
+        if use_ternary_bulk:
+            from calm.hrm_text_158.bit_linear import BitLinear
+            LinearImpl = BitLinear
+        else:
+            LinearImpl = LinearInit
         # Fused (gate, up) projection: output dim = 2 * intermediate_size
-        self.gate_up_proj = LinearInit(
+        self.gate_up_proj = LinearImpl(
             hidden_size,
             intermediate_size,
             batch_out_features=(2,),
@@ -312,7 +334,7 @@ class SwiGLU(nn.Module):
             init_std=init_std_in,
             **kwargs,
         )
-        self.down_proj = LinearInit(
+        self.down_proj = LinearImpl(
             intermediate_size,
             hidden_size,
             bias=False,

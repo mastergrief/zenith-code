@@ -229,6 +229,10 @@ def train(
     n_val_cap: int | None = None,
     device: str | None = None,
     splits_loader=load_gsm8k_splits,  # injectable for tests
+    # Phase 2 D2.1: ternary bulk linears. When True, gqkv_proj/o_proj/
+    # gate_up_proj/down_proj use BitLinear; lm_head/embd/norms/zL_init
+    # stay FP per D2.2.
+    use_ternary_bulk: bool = False,
 ) -> None:
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
@@ -279,7 +283,12 @@ def train(
         bp_warmup_ratio=bp_warmup_ratio,
         bp_min_steps=bp_min_steps,
         bp_max_steps=bp_max_steps,
+        use_ternary_bulk=use_ternary_bulk,
     )
+    if use_ternary_bulk:
+        print(f"[hrm158] Phase 2 D2.1: TERNARY BULK LINEARS ENABLED "
+              f"(gqkv/o/gate_up/down → BitLinear; lm_head/embd/norms FP per D2.2)",
+              flush=True)
     hrm = HierarchicalReasoningModel(cfg)
     m = LMHead(hrm, LMHeadConfig(vocab_size=tok.vocab_size)).to(device)
     n_params = sum(p.numel() for p in m.parameters())
@@ -400,6 +409,7 @@ def _build_ckpt_config(m, tok, cfg, max_len, batch_size) -> dict:
         "attn_type": cfg.attn_type,
         "init_type": cfg.init_type,
         "pos_emb_type": cfg.pos_emb_type,
+        "use_ternary_bulk": cfg.use_ternary_bulk,
         "max_len_runtime": max_len,
         "batch_size_runtime": batch_size,
     }
@@ -443,6 +453,10 @@ if __name__ == "__main__":
     ap.add_argument("--log-every", type=int, default=50)
     ap.add_argument("--n-train-cap", type=int, default=None)
     ap.add_argument("--n-val-cap", type=int, default=None)
+    ap.add_argument("--use-ternary-bulk", action="store_true",
+                    help="Phase 2 D2.1: replace bulk LinearInit with BitLinear "
+                         "(ternary master+STE) on gqkv_proj/o_proj/gate_up_proj/"
+                         "down_proj. lm_head/embd/norms/zL_init stay FP per D2.2.")
     args = ap.parse_args()
 
     train(
@@ -468,4 +482,5 @@ if __name__ == "__main__":
         log_every=args.log_every,
         n_train_cap=args.n_train_cap,
         n_val_cap=args.n_val_cap,
+        use_ternary_bulk=args.use_ternary_bulk,
     )

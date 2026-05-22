@@ -32,6 +32,7 @@ from calm.hrm_text_158.hrm import (
     HierarchicalReasoningModel,
 )
 from calm.hrm_text_158.lm_head import LMHead
+from calm.hrm_text_158.bit_linear import BitLinear
 
 __all__ = [
     "TransformerConfig",
@@ -50,4 +51,5 @@ __all__ = [
     "HierarchicalReasoningModelRecurrentBlock",
     "HierarchicalReasoningModel",
     "LMHead",
+    "BitLinear",
 ]

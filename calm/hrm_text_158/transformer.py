@@ -33,12 +33,14 @@ class TransformerBlock(nn.Module):
             attn_type=config.attn_type,
             init_std_in=init_cfg.in_std,
             init_std_out=init_cfg.attn_out_std,
+            use_ternary_bulk=config.use_ternary_bulk,  # D2.1
         )
         self.mlp = SwiGLU(
             hidden_size=config.hidden_size,
             intermediate_size=config.intermediate_size,
             init_std_in=init_cfg.in_std,
             init_std_out=init_cfg.ff_out_std,
+            use_ternary_bulk=config.use_ternary_bulk,  # D2.1
         )
         self._norm_type = config.norm_type
         self._norm_eps = config.norm_eps

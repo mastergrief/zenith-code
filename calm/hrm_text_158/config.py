@@ -60,6 +60,14 @@ class TransformerConfig:
     pos_emb_type: Literal["rope", "none"] = "rope"
     rope_theta: Optional[float] = 10000.0
 
+    # Phase 2 D2.1: native 1.58-bit ternary bulk linears. When True,
+    # gqkv_proj / o_proj / gate_up_proj / down_proj use BitLinear instead
+    # of LinearInit. FP master weights stored; forward quantizes to
+    # {-1, 0, +1} via per-tensor absmean. STE for backward. Default False
+    # (FP/BF16 baseline). NOT applied to lm_head, embed_tokens, norms,
+    # zL_init per D2.2 bounded scope.
+    use_ternary_bulk: bool = False
+
     @property
     def intermediate_size(self) -> int:
         """Automatic compute from expansion. Port of `transformer.py:42-46`.

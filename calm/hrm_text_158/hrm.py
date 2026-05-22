@@ -93,6 +93,7 @@ class HierarchicalReasoningModel(nn.Module):
             norm_eps=config.norm_eps,
             pos_emb_type=config.pos_emb_type,
             rope_theta=config.rope_theta,
+            use_ternary_bulk=config.use_ternary_bulk,  # D2.1: propagate to H/L per-level
         )
         # H gets the override
         h_cfg = replace(base_per_level_cfg, **{

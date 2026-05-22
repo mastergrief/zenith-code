@@ -59,6 +59,12 @@ def _build_model_from_ckpt(ckpt: dict, device: str) -> tuple[LMHead, Gsm8kTokeni
         attn_type=config["attn_type"],
         init_type=config["init_type"],
         pos_emb_type=config["pos_emb_type"],
+        # CRITICAL per codex msg 1779457628632: load ternary flag from ckpt
+        # config blob. Without this, ternary ckpts reconstruct as FP models
+        # (state_dict keys match because BitLinear and LinearInit both use
+        # `weight`/`bias`), but inference runs FP LinearInit over master
+        # weights -- silently wrong probe results, false A/B.
+        use_ternary_bulk=config.get("use_ternary_bulk", False),
     )
     hrm = HierarchicalReasoningModel(cfg)
     m = LMHead(hrm, LMHeadConfig(vocab_size=config["vocab_size"])).to(device)
