@@ -8,6 +8,11 @@ Axis 1 — math complexity under stable language wrapper:
                                  [redefined per codex msg 1779466025267 after R1 v1
                                   failed acquisition; bridges R0 copy -> two-operand parsing
                                   + operator binding without full arithmetic]
+  R1b: minimal arithmetic (±1)   `what is A plus 1?` -> `A+1` (also `1 plus A`, `A minus 1`)
+                                 [codex msg 1779467425298 after R1 identity-bridge pass at
+                                  c6e94578; min-incremental jump from identity to actual
+                                  arithmetic, output constrained to [0,99] to avoid new
+                                  digit-length class]
   R2: carry multi-digit ±        `what is 47 plus 28?` -> `75`
   R3: multiplication only        `what is A times B?` -> `C`  (NO division)
   R4: multi-step compound        `what is A plus B times C?` -> `D`
@@ -20,7 +25,7 @@ Axis 2 — language variability grows, math stable from R0-R4:
 All generators are deterministic per (rung, seed, split). split="train" and
 split="held_out" produce NON-OVERLAPPING ROWS via either disjoint operand
 ranges (R2/R4) or deterministic row partitioning over a shared support
-(R0/R1/R3 enumerate / stratified partitions). Cross-rung train/held_out
+(R0/R1/R1b/R3 enumerate / stratified partitions). Cross-rung train/held_out
 invariant enforced by splits.assert_no_train_holdout_overlap.
 
 Win/falsifier per codex msg 1779457170889 + 1779458774209:
@@ -35,7 +40,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -73,6 +78,22 @@ def _stable_seed(*parts) -> int:
 #     R2 train requires B in [10,99] so no R2 row has B=0; R1 always
 #     has B=0 or A=0 in the question text. Disjoint by row content.
 #
+#   - R1b (minimal ±1 bridge per codex msg 1779467425298): three templates
+#     `A plus 1` / `1 plus A` / `A minus 1` with per-template A ranges
+#     chosen to drop the cross-rung row collisions:
+#         A_plus_1   A in [1,98]  -- drop A=0 (else "what is 0 plus 1?" -> 1
+#                                   duplicates R1 0_plus_A A=1)
+#                                  -- cap A=98 (keeps output <= 99, no new
+#                                     digit-length class)
+#         1_plus_A   A in [2,98]  -- drop A=0 (else "what is 1 plus 0?" -> 1
+#                                   duplicates R1 A_plus_0 A=1)
+#                                  -- drop A=1 (else "what is 1 plus 1?" -> 2
+#                                   duplicates intra-R1b A_plus_1 A=1)
+#         A_minus_1  A in [1,99]  -- drop A=0 (output would be -1, schema
+#                                   mismatch)
+#     Output stays in [0,99]. R2 cannot collide: R2 train requires
+#     B in [10,99] so no R2 row has B=1. Pool 234 train + 60 held_out.
+#
 #   - R3 template "what is A times B?" is UNIQUE to R3 (no other rung
 #     uses "times" with this shape). 17×23 canonical FORCED in held_out.
 #
@@ -81,9 +102,9 @@ def _stable_seed(*parts) -> int:
 #   - R5 uses arithmetic-operator chars (+, -, *) instead of words; R6
 #     uses word-problem templates. Both have unique surface forms.
 #
-# Implementation: R0 + R1 + R3 enumerate full operand spaces + deterministic-
-# shuffle-partition. R2 / R4 use disjoint operand ranges (no overlap by
-# construction).
+# Implementation: R0 + R1 + R1b + R3 enumerate full operand spaces +
+# deterministic shuffle-partition (stratified by template / digit-bucket).
+# R2 / R4 use disjoint operand ranges (no overlap by construction).
 #
 # R0 design correction (codex msg 1779464341737-43a42cae after R0 launch
 # msg 1779464300667 reported G1 fail):
@@ -115,6 +136,19 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     "R1": {
         "train":     {"A_range": (0, 99), "partition": "enumerate_stratified_identity"},
         "held_out":  {"A_range": (0, 99), "partition": "enumerate_stratified_identity"},
+    },
+    # R1b (codex msg 1779467425298): minimal arithmetic bridge from R1
+    # identity to single-digit ±1. Templates A_plus_1 / 1_plus_A /
+    # A_minus_1 with A-range constrained per-template to prevent
+    # cross-template AND cross-rung row collisions:
+    #   A_plus_1:  A in [1,98]  (drop A=0 -> avoids R1 0_plus_A/A=1 collision)
+    #   1_plus_A:  A in [2,98]  (drop A=0 -> avoids R1 A_plus_0/A=1 collision;
+    #                             drop A=1 -> avoids intra-R1b A_plus_1/A=1 collision)
+    #   A_minus_1: A in [1,99]  (drop A=0 to avoid negative output)
+    # Output stays in [0,99] -> no new digit-length class.
+    "R1b": {
+        "train":     {"A_range": (1, 99), "partition": "enumerate_stratified_pm1"},
+        "held_out":  {"A_range": (1, 99), "partition": "enumerate_stratified_pm1"},
     },
     "R2": {
         "train":     {"A_range": (10, 99), "B_range": (10, 99)},
@@ -215,6 +249,64 @@ def _enumerate_partition_r1(seed: int, train_frac: float = 0.8) -> tuple[set, se
                 bucket_as = [a for a in bucket_as if a != 0]
             rng = random.Random(
                 _stable_seed("R1_identity_partition", seed, template, bucket_label)
+            )
+            rng.shuffle(bucket_as)
+            split = int(len(bucket_as) * train_frac)
+            train_set.update((template, a) for a in bucket_as[:split])
+            held_out_set.update((template, a) for a in bucket_as[split:])
+    return train_set, held_out_set
+
+
+R1B_TEMPLATES = ("A_plus_1", "1_plus_A", "A_minus_1")
+
+
+def _enumerate_partition_r1b(seed: int, train_frac: float = 0.8) -> tuple[set, set]:
+    """Stratified deterministic 80/20 partition of R1b's ±1 operand space
+    (codex msg 1779467425298 after R1 identity-bridge pass).
+
+    R1b is the minimal-arithmetic bridge from R1 identity to actual
+    single-digit ±1. Three templates with per-template A constraints
+    chosen to prevent cross-template AND cross-rung row collisions:
+
+      A_plus_1:  A in [1, 98]    -- "what is A plus 1?"  -> A+1
+                                 -- drop A=0: would emit "what is 0 plus 1?" -> 1,
+                                    duplicating R1 0_plus_A with A=1
+                                 -- cap A=98: keeps output <= 99 (no 3-digit class)
+      1_plus_A:  A in [2, 98]    -- "what is 1 plus A?"  -> A+1
+                                 -- drop A=0: would emit "what is 1 plus 0?" -> 1,
+                                    duplicating R1 A_plus_0 with A=1
+                                 -- drop A=1: would emit "what is 1 plus 1?" -> 2,
+                                    duplicating intra-R1b A_plus_1 with A=1
+                                 -- cap A=98: keeps output <= 99
+      A_minus_1: A in [1, 99]    -- "what is A minus 1?" -> A-1
+                                 -- drop A=0: would emit "what is 0 minus 1?" -> -1
+                                    (negative output, schema mismatch)
+
+    Pool sizes per template:
+      A_plus_1:  [1,9]   ( 9 vals) -> 7 train + 2 held;
+                 [10,98] (89 vals) -> 71 train + 18 held; total 78 train + 20 held
+      1_plus_A:  [2,9]   ( 8 vals) -> 6 train + 2 held;
+                 [10,98] (89 vals) -> 71 train + 18 held; total 77 train + 20 held
+      A_minus_1: [1,9]   ( 9 vals) -> 7 train + 2 held;
+                 [10,99] (90 vals) -> 72 train + 18 held; total 79 train + 20 held
+      TOTAL: 234 train + 60 held_out pairs
+
+    All splits contain ALL 3 templates AND BOTH digit-length buckets.
+    """
+    train_set: set = set()
+    held_out_set: set = set()
+
+    template_specs = {
+        "A_plus_1":  {"one_digit": list(range(1, 10)),  "two_digit": list(range(10, 99))},
+        "1_plus_A":  {"one_digit": list(range(2, 10)),  "two_digit": list(range(10, 99))},
+        "A_minus_1": {"one_digit": list(range(1, 10)),  "two_digit": list(range(10, 100))},
+    }
+
+    for template in R1B_TEMPLATES:
+        for bucket_label in ("one_digit", "two_digit"):
+            bucket_as = list(template_specs[template][bucket_label])
+            rng = random.Random(
+                _stable_seed("R1b_partition", seed, template, bucket_label)
             )
             rng.shuffle(bucket_as)
             split = int(len(bucket_as) * train_frac)
@@ -324,6 +416,38 @@ def _gen_r1(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> li
         else:  # pragma: no cover - exhaustive
             raise ValueError(f"unknown R1 identity template: {template!r}")
         out.append({"question": q, "expected": A, "rung": "R1"})
+    return out
+
+
+def _gen_r1b(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """R1b ±1 (codex msg 1779467425298 after R1 identity pass at c6e94578).
+
+    3 templates × stratified-partitioned A range:
+      `what is A plus 1?`  -> A+1  (A in [1,98])
+      `what is 1 plus A?`  -> A+1  (A in [2,98])
+      `what is A minus 1?` -> A-1  (A in [1,99])
+
+    Output stays in [0,99]; no new digit-length class. Train pool = 234
+    (template, A) pairs; held_out pool = 60. Both splits contain all 3
+    templates + both digit-length buckets."""
+    train_pool, held_out_pool = _enumerate_partition_r1b(seed)
+    pool = train_pool if split == "train" else held_out_pool
+    pool_list = sorted(pool)
+    out = []
+    while len(out) < n:
+        template, A = rng.choice(pool_list)
+        if template == "A_plus_1":
+            q = f"what is {A} plus 1?"
+            expected = A + 1
+        elif template == "1_plus_A":
+            q = f"what is 1 plus {A}?"
+            expected = A + 1
+        elif template == "A_minus_1":
+            q = f"what is {A} minus 1?"
+            expected = A - 1
+        else:  # pragma: no cover - exhaustive
+            raise ValueError(f"unknown R1b template: {template!r}")
+        out.append({"question": q, "expected": expected, "rung": "R1b"})
     return out
 
 
@@ -459,6 +583,8 @@ def make_rung_examples(
         return _gen_r0(rng, _RUNG_SPEC["R0"][split], n, seed=seed, split=split)
     if rung == "R1":
         return _gen_r1(rng, _RUNG_SPEC["R1"][split], n, seed=seed, split=split)
+    if rung == "R1b":
+        return _gen_r1b(rng, _RUNG_SPEC["R1b"][split], n, seed=seed, split=split)
     if rung == "R2":
         return _gen_r2(rng, _RUNG_SPEC["R2"][split], n)
     if rung == "R3":

@@ -5,7 +5,7 @@ Per task #51, board task 1779460303130-742c8cbd, codex msg 1779460698439
 
 Covers:
 - BroadTokenizer determinism + vocab spec + roundtrip
-- Synthetic generators (R0-R6) determinism + held-out non-overlap
+- Synthetic generators (R0-R1, R1b, R2-R6) determinism + held-out non-overlap
 - Cross-rung invariant (held_out ∩ all_train = ∅)
 - Retention probe schema + delta computation + G2 gate
 - --load-from ckpt compat validation (vocab/normalizer/ternary/arch mismatch)
@@ -186,7 +186,7 @@ def test_broad_tokenizer_decode_skips_pad() -> None:
 # Generators: determinism + held-out non-overlap
 # ============================================================================ #
 
-@pytest.mark.parametrize("rung", ["R0", "R1", "R2", "R3", "R4", "R5", "R6"])
+@pytest.mark.parametrize("rung", ["R0", "R1", "R1b", "R2", "R3", "R4", "R5", "R6"])
 def test_generator_deterministic_per_seed(rung) -> None:
     """Same (rung, seed, split) -> same examples list."""
     examples_a = make_rung_examples(rung, n=20, seed=42, split="train")
@@ -194,7 +194,7 @@ def test_generator_deterministic_per_seed(rung) -> None:
     assert examples_a == examples_b
 
 
-@pytest.mark.parametrize("rung", ["R0", "R1", "R2", "R3", "R4", "R5", "R6"])
+@pytest.mark.parametrize("rung", ["R0", "R1", "R1b", "R2", "R3", "R4", "R5", "R6"])
 def test_generator_train_holdout_distinct(rung) -> None:
     """Train and held_out splits produce different examples for same seed
     (different RNG salt per split)."""
@@ -451,6 +451,181 @@ def test_generator_r1_identity_no_row_collision_across_seeds() -> None:
         )
 
 
+# ============================================================================ #
+# R1b ±1 stratified partition (codex msg 1779467425298 design)
+# ============================================================================ #
+
+def _r1b_decode(ex: dict) -> tuple[str, int]:
+    """Identify (template_key, A) from an R1b ±1 example."""
+    q = ex["question"]
+    if q.startswith("what is 1 plus "):
+        # "what is 1 plus A?"
+        A = int(q.split()[4].rstrip("?"))
+        return ("1_plus_A", A)
+    if " plus 1?" in q:
+        # "what is A plus 1?"
+        A = int(q.split()[2])
+        return ("A_plus_1", A)
+    if " minus 1?" in q:
+        # "what is A minus 1?"
+        A = int(q.split()[2])
+        return ("A_minus_1", A)
+    raise ValueError(f"unrecognized R1b question shape: {q!r}")
+
+
+def test_generator_r1b_train_holdout_exact_row_disjoint() -> None:
+    """R1b train + held_out must be exact-row disjoint at n=2000 sampling."""
+    train = make_rung_examples("R1b", n=2000, seed=42, split="train")
+    held = make_rung_examples("R1b", n=2000, seed=42, split="held_out")
+    train_keys = {(ex["question"], ex["expected"]) for ex in train}
+    held_keys = {(ex["question"], ex["expected"]) for ex in held}
+    overlap = train_keys & held_keys
+    assert not overlap, f"R1b train/held_out share rows: {sorted(overlap)[:5]}"
+
+
+def test_generator_r1b_all_templates_in_both_splits() -> None:
+    """Stratification by template: both splits contain all 3 templates."""
+    train = make_rung_examples("R1b", n=500, seed=42, split="train")
+    held = make_rung_examples("R1b", n=500, seed=42, split="held_out")
+    train_templates = {_r1b_decode(ex)[0] for ex in train}
+    held_templates = {_r1b_decode(ex)[0] for ex in held}
+    expected = {"A_plus_1", "1_plus_A", "A_minus_1"}
+    assert train_templates == expected
+    assert held_templates == expected
+
+
+def test_generator_r1b_both_digit_lengths_in_both_splits() -> None:
+    """Both splits contain 1-digit AND 2-digit A."""
+    train = make_rung_examples("R1b", n=500, seed=42, split="train")
+    held = make_rung_examples("R1b", n=500, seed=42, split="held_out")
+    assert any(_r1b_decode(ex)[1] < 10 for ex in train), "R1b train missing 1-digit A"
+    assert any(_r1b_decode(ex)[1] >= 10 for ex in train), "R1b train missing 2-digit A"
+    assert any(_r1b_decode(ex)[1] < 10 for ex in held), "R1b held missing 1-digit A"
+    assert any(_r1b_decode(ex)[1] >= 10 for ex in held), "R1b held missing 2-digit A"
+
+
+def test_generator_r1b_output_in_0_to_99() -> None:
+    """R1b output must stay in [0,99] -- no new digit-length class (codex
+    msg 1779467425298 output-range constraint). 'A_plus_1' caps at A=98
+    (output=99); 'A_minus_1' starts at A=1 (output=0)."""
+    rows = make_rung_examples("R1b", n=1000, seed=42, split="train") + \
+           make_rung_examples("R1b", n=1000, seed=42, split="held_out")
+    for ex in rows:
+        assert 0 <= ex["expected"] <= 99, (
+            f"R1b output out of [0,99]: {ex['question']!r} -> {ex['expected']}"
+        )
+
+
+def test_generator_r1b_expected_matches_arithmetic() -> None:
+    """For each template, output schema matches the corresponding ±1 op:
+    A_plus_1 -> expected=A+1; 1_plus_A -> expected=A+1; A_minus_1 -> expected=A-1."""
+    rows = make_rung_examples("R1b", n=500, seed=42, split="train") + \
+           make_rung_examples("R1b", n=500, seed=42, split="held_out")
+    for ex in rows:
+        template, A = _r1b_decode(ex)
+        if template == "A_plus_1":
+            assert ex["expected"] == A + 1, f"{ex['question']!r}: expected {A+1}, got {ex['expected']}"
+        elif template == "1_plus_A":
+            assert ex["expected"] == A + 1
+        elif template == "A_minus_1":
+            assert ex["expected"] == A - 1
+
+
+def test_generator_r1b_no_a_zero_in_plus_templates() -> None:
+    """Collision-fix regression: A=0 MUST be absent from both 'A_plus_1'
+    and '1_plus_A' templates. Otherwise these would emit rows that
+    collide with R1 identity rows ('what is 0 plus 1?' or 'what is 1 plus 0?')."""
+    rows = make_rung_examples("R1b", n=2000, seed=42, split="train") + \
+           make_rung_examples("R1b", n=2000, seed=42, split="held_out")
+    for ex in rows:
+        template, A = _r1b_decode(ex)
+        if template in ("A_plus_1", "1_plus_A"):
+            assert A != 0, (
+                f"{template} has A=0: {ex['question']!r}; would collide with R1"
+            )
+
+
+def test_generator_r1b_no_a_one_in_1_plus_a() -> None:
+    """Intra-R1b collision-fix regression: ('1_plus_A', A=1) MUST be
+    absent from the partition. (A_plus_1, A=1) emits 'what is 1 plus 1?' -> 2;
+    if (1_plus_A, A=1) were present it'd emit the SAME row.
+
+    Checked at the partition-pool level (not via row-decoder) because
+    'what is 1 plus 1?' is row-ambiguous: it matches both templates'
+    string patterns, so the row-decoder cannot distinguish which
+    template emitted it. The partition is the authoritative source."""
+    from calm.hrm_text_158.curriculum.generators import _enumerate_partition_r1b
+    train, held = _enumerate_partition_r1b(42)
+    assert ("1_plus_A", 1) not in train, (
+        "partition has ('1_plus_A', 1); would duplicate ('A_plus_1', 1)"
+    )
+    assert ("1_plus_A", 1) not in held, (
+        "partition has ('1_plus_A', 1); would duplicate ('A_plus_1', 1)"
+    )
+    # Sanity: ('A_plus_1', 1) IS present somewhere (canonical owner of "1+1")
+    assert ("A_plus_1", 1) in train or ("A_plus_1", 1) in held
+
+
+def test_generator_r1b_pool_sizes() -> None:
+    """Exact pool sizes per codex msg 1779467425298 spec:
+       A_plus_1:  [1,9] -> 7+2 / [10,98] -> 71+18 = 78 train + 20 held
+       1_plus_A:  [2,9] -> 6+2 / [10,98] -> 71+18 = 77 train + 20 held
+       A_minus_1: [1,9] -> 7+2 / [10,99] -> 72+18 = 79 train + 20 held
+       TOTAL: 234 train + 60 held"""
+    from calm.hrm_text_158.curriculum.generators import _enumerate_partition_r1b
+    train, held = _enumerate_partition_r1b(42)
+    assert len(train) == 234, f"R1b train pool size: {len(train)} expected 234"
+    assert len(held) == 60, f"R1b held_out pool size: {len(held)} expected 60"
+    train_templates = {t for t, _ in train}
+    held_templates = {t for t, _ in held}
+    assert train_templates == {"A_plus_1", "1_plus_A", "A_minus_1"}
+    assert held_templates == {"A_plus_1", "1_plus_A", "A_minus_1"}
+    assert train & held == set()
+
+
+def test_generator_r1b_cross_rung_collision_rows_excluded() -> None:
+    """Explicit regression: the two specific cross-rung collision rows
+    that codex msg 1779467425298 flagged MUST NEVER appear in R1b:
+      - 'what is 0 plus 1?' -> 1   (would duplicate R1 0_plus_A A=1)
+      - 'what is 1 plus 0?' -> 1   (would duplicate R1 A_plus_0 A=1)
+    These rows belong to R1 identity. R1b ranges drop A=0 from both
+    plus-templates."""
+    rows = make_rung_examples("R1b", n=4000, seed=42, split="train") + \
+           make_rung_examples("R1b", n=4000, seed=42, split="held_out")
+    keys = {(ex["question"], ex["expected"]) for ex in rows}
+    assert ("what is 0 plus 1?", 1) not in keys, "R1b leaked R1-collision row"
+    assert ("what is 1 plus 0?", 1) not in keys, "R1b leaked R1-collision row"
+    assert ("what is 1 plus 1?", 2) in keys, "R1b should still have its A_plus_1 A=1 row"
+
+
+def test_generator_r1b_partition_stable_across_pythonhashseed() -> None:
+    """R1b partition stable across PYTHONHASHSEED (sha256-stable seed)."""
+    import os
+    import subprocess
+    import sys
+
+    code = (
+        "import json\n"
+        "from calm.hrm_text_158.curriculum.generators import _enumerate_partition_r1b\n"
+        "train, held = _enumerate_partition_r1b(42)\n"
+        "print(json.dumps({'train': sorted(train), 'held': sorted(held)}))\n"
+    )
+
+    def _run(pyhs: str) -> str:
+        env = os.environ.copy()
+        env["PYTHONPATH"] = "."
+        env["PYTHONHASHSEED"] = pyhs
+        proc = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True,
+            env=env, cwd=".", timeout=60,
+        )
+        assert proc.returncode == 0, proc.stderr
+        return proc.stdout.strip()
+
+    a = _run("0"); b = _run("999"); c = _run("random")
+    assert a == b == c, "R1b partition diverged across PYTHONHASHSEED"
+
+
 def test_generator_r3_held_out_includes_canonical_17x23() -> None:
     """R3 held-out MUST contain the exact canonical probe row
     `("what is 17 times 23?", 391)` — _enumerate_partition_r3 force-injects
@@ -508,12 +683,15 @@ def test_generator_arithmetic_correctness() -> None:
 # ============================================================================ #
 
 def test_cross_rung_no_train_holdout_overlap() -> None:
-    """Build full R0-R6 splits + assert no row in any rung's held_out
-    appears in any rung's train set."""
+    """Build full R0-R6 (incl. R1b) splits + assert no row in any rung's
+    held_out appears in any rung's train set. R1b is included by default
+    per codex msg 1779467425298 -- the cross-rung invariant MUST detect
+    the R1-vs-R1b collision rows ("what is 0 plus 1?" -> 1; "what is 1 plus 0?" -> 1)
+    if R1b's A=0 cases were not dropped."""
     splits = build_rung_splits(n_train=200, n_held_out=50, seed=42)
     assert_no_train_holdout_overlap(splits)
-    # Confirm we have all 7 sub-GSM8k rungs
-    assert set(splits.keys()) == {"R0", "R1", "R2", "R3", "R4", "R5", "R6"}
+    # Confirm we have all 8 sub-GSM8k synthetic rungs (R7 = GSM8k, excluded)
+    assert set(splits.keys()) == {"R0", "R1", "R1b", "R2", "R3", "R4", "R5", "R6"}
 
 
 def test_cross_rung_invariant_detects_violation() -> None:
