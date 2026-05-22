@@ -14,7 +14,14 @@ Axis 1 — math complexity under stable language wrapper:
                                   updates hypothesis falsified"). Falsifier-protocol split:
                                   isolate the simplest sub-skill (`A plus K` position) so
                                   the model can acquire it cleanly before symmetric +1 and
-                                  -1 variations land in successor rungs.]
+                                  -1 variations land in successor rungs.
+                                  PASSED at 0.930 exact (66b9747).]
+  R1b2: single-template -1       `what is A minus 1?` -> `A-1` (A in [1,99])
+                                 [codex msg 1779471073874 + 1779471212090 after R1b1
+                                  PASS. Isolates subtraction operator at the same
+                                  operand position as R1b1; falsifier on whether `-`
+                                  acquires comparably to `+1` once position symmetry
+                                  is held fixed.]
   R1b: minimal arithmetic (±1)   `what is A plus 1?` -> `A+1` (also `1 plus A`, `A minus 1`)
                                  [DIAGNOSIS-ONLY after R1b v2 failure (codex msg
                                   1779469638068). Stays in RUNG_NAMES for backward-
@@ -48,7 +55,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2", "R1b", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -156,6 +163,16 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     "R1b1": {
         "train":     {"A_range": (1, 98), "partition": "enumerate_stratified_r1b1"},
         "held_out":  {"A_range": (1, 98), "partition": "enumerate_stratified_r1b1"},
+    },
+    # R1b2 (codex msg 1779471073874 + 1779471212090 after R1b1 PASS at
+    # 66b9747): SINGLE-template `A minus 1` over A in [1,99],
+    # bucket-stratified. Drops A=0 (output would be -1; negative output
+    # mismatches schema). Inserted BEFORE diagnosis-only R1b in
+    # RUNG_NAMES so trainer's prior_rungs derivation
+    # (RUNG_NAMES[:cur_idx]) auto-resolves to (R0, R1, R1b1).
+    "R1b2": {
+        "train":     {"A_range": (1, 99), "partition": "enumerate_stratified_r1b2"},
+        "held_out":  {"A_range": (1, 99), "partition": "enumerate_stratified_r1b2"},
     },
     # R1b (codex msg 1779467425298): minimal arithmetic bridge from R1
     # identity to single-digit ±1. Templates A_plus_1 / 1_plus_A /
@@ -322,6 +339,46 @@ def _enumerate_partition_r1b1(seed: int, train_frac: float = 0.8) -> tuple[set, 
     for bucket_label, lo, hi in (("one_digit", 1, 9), ("two_digit", 10, 98)):
         bucket_as = list(range(lo, hi + 1))
         rng = random.Random(_stable_seed("R1b1_partition", seed, bucket_label))
+        rng.shuffle(bucket_as)
+        split = int(len(bucket_as) * train_frac)
+        train_set.update(bucket_as[:split])
+        held_out_set.update(bucket_as[split:])
+    return train_set, held_out_set
+
+
+def _enumerate_partition_r1b2(seed: int, train_frac: float = 0.8) -> tuple[set, set]:
+    """Stratified deterministic 80/20 partition of R1b2's single-template
+    `A minus 1` operand space (codex msg 1779471073874 + 1779471212090).
+
+    R1b2 isolates the subtraction operator at the same operand position
+    as R1b1 (`A op K` shape, K=1). Falsifier: does `-` acquire comparably
+    to `+1` once position symmetry is held fixed?
+
+    Pool: A in [1, 99]
+      - drop A=0: output would be -1 (negative; schema mismatches non-
+                  negative integer answers).
+      - A=99 allowed: output 98 stays in [0,99] (no digit-length class
+                      change — unlike R1b1 where A=99 would push output
+                      to 100; subtraction can't overflow upward).
+
+    Stratification: each digit-bucket partitioned 80/20 separately with
+    bucket-distinct `_stable_seed("R1b2_partition", seed, bucket_label)`:
+      one-digit bucket A in [1, 9]:   9 vals  -> 7 train + 2 held_out
+      two-digit bucket A in [10, 99]: 90 vals -> 72 train + 18 held_out
+      TOTAL: 79 train + 20 held_out integers A
+
+    Cross-rung-train invariant: R1b2 always emits `what is A minus 1?`;
+    R1 emits `A minus 0` (B=0); R1b1 emits `A plus 1` (operator word
+    distinct); R2 train requires B in [10,99] so no R2 row has B=1.
+    R1b's diagnosis-only A_minus_1 template OVERLAPS R1b2 by
+    construction (same template, same A range) — R1b stays excluded
+    from build_rung_splits default per established active-chain policy.
+    """
+    train_set: set = set()
+    held_out_set: set = set()
+    for bucket_label, lo, hi in (("one_digit", 1, 9), ("two_digit", 10, 99)):
+        bucket_as = list(range(lo, hi + 1))
+        rng = random.Random(_stable_seed("R1b2_partition", seed, bucket_label))
         rng.shuffle(bucket_as)
         split = int(len(bucket_as) * train_frac)
         train_set.update(bucket_as[:split])
@@ -514,6 +571,30 @@ def _gen_r1b1(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> 
     return out
 
 
+def _gen_r1b2(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """R1b2 single-template `A minus 1` (codex msg 1779471073874 +
+    1779471212090 after R1b1 PASS at 66b9747).
+
+    Single template `what is A minus 1?` -> A-1. A in [1, 99]
+    bucket-stratified. Output ∈ [0, 98]. Designed disjoint from R1
+    (R1 has B=0 on additive side; R1b2 has B=1 on subtractive side),
+    R1b1 (R1b1 uses "plus"; R1b2 uses "minus"), and R2+ (R2 train
+    requires B>=10).
+
+    Train pool = 79 integers A; held_out pool = 20 integers A. Both
+    splits contain BOTH digit-length buckets."""
+    train_pool, held_out_pool = _enumerate_partition_r1b2(seed)
+    pool = train_pool if split == "train" else held_out_pool
+    pool_list = sorted(pool)
+    out = []
+    while len(out) < n:
+        A = rng.choice(pool_list)
+        q = f"what is {A} minus 1?"
+        expected = A - 1
+        out.append({"question": q, "expected": expected, "rung": "R1b2"})
+    return out
+
+
 def _gen_r1b(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
     """R1b ±1 (codex msg 1779467425298 after R1 identity pass at c6e94578).
 
@@ -680,6 +761,8 @@ def make_rung_examples(
         return _gen_r1(rng, _RUNG_SPEC["R1"][split], n, seed=seed, split=split)
     if rung == "R1b1":
         return _gen_r1b1(rng, _RUNG_SPEC["R1b1"][split], n, seed=seed, split=split)
+    if rung == "R1b2":
+        return _gen_r1b2(rng, _RUNG_SPEC["R1b2"][split], n, seed=seed, split=split)
     if rung == "R1b":
         return _gen_r1b(rng, _RUNG_SPEC["R1b"][split], n, seed=seed, split=split)
     if rung == "R2":
