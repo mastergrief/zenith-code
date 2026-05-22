@@ -186,7 +186,7 @@ def test_broad_tokenizer_decode_skips_pad() -> None:
 # Generators: determinism + held-out non-overlap
 # ============================================================================ #
 
-@pytest.mark.parametrize("rung", ["R0", "R1", "R1b1", "R1b2", "R1b", "R2", "R3", "R4", "R5", "R6"])
+@pytest.mark.parametrize("rung", ["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b", "R2", "R3", "R4", "R5", "R6"])
 def test_generator_deterministic_per_seed(rung) -> None:
     """Same (rung, seed, split) -> same examples list."""
     examples_a = make_rung_examples(rung, n=20, seed=42, split="train")
@@ -194,7 +194,7 @@ def test_generator_deterministic_per_seed(rung) -> None:
     assert examples_a == examples_b
 
 
-@pytest.mark.parametrize("rung", ["R0", "R1", "R1b1", "R1b2", "R1b", "R2", "R3", "R4", "R5", "R6"])
+@pytest.mark.parametrize("rung", ["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b", "R2", "R3", "R4", "R5", "R6"])
 def test_generator_train_holdout_distinct(rung) -> None:
     """Train and held_out splits produce different examples for same seed
     (different RNG salt per split)."""
@@ -636,8 +636,224 @@ def test_generator_r1b1_partition_stable_across_pythonhashseed() -> None:
 
 
 # ============================================================================ #
+# R1b2a low-A subtraction stratified partition
+# (codex msg 1779472124507 + 1779472300306 falsifier-protocol split
+#  after R1b2 FAILED at 6fd2fec: G1 R1b2=0.860, G2 R1b1 retention -0.050 decay)
+# ============================================================================ #
+
+def _r1b2a_a(ex: dict) -> int:
+    """Extract A from an R1b2a example: question is `what is A minus 1?`."""
+    q = ex["question"]
+    assert q.endswith(" minus 1?"), f"R1b2a question must end ' minus 1?': {q!r}"
+    return int(q.split()[2])
+
+
+def test_generator_r1b2a_in_rung_names_index_3() -> None:
+    """R1b2a must sit at RUNG_NAMES index 3 (after R1b1, before failed
+    R1b2/R1b) so the trainer's prior_rungs derivation auto-resolves to
+    (R0, R1, R1b1). Codex msg 1779472300306."""
+    from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
+    assert RUNG_NAMES[3] == "R1b2a", f"R1b2a must be at index 3; got {RUNG_NAMES}"
+    assert RUNG_NAMES[2] == "R1b1", f"R1b1 must be at index 2; got {RUNG_NAMES}"
+    assert RUNG_NAMES[4] == "R1b2", f"R1b2 must be at index 4 (diagnosis-only); got {RUNG_NAMES}"
+    # R0/R1/R1b1 sit before R1b2a so prior_rungs[:3] for R1b2a = (R0, R1, R1b1)
+    assert RUNG_NAMES[:3] == ("R0", "R1", "R1b1")
+
+
+def test_generator_r1b2a_train_holdout_exact_row_disjoint() -> None:
+    """R1b2a train + held_out must be exact-row disjoint at n=2000 sampling."""
+    train = make_rung_examples("R1b2a", n=2000, seed=42, split="train")
+    held = make_rung_examples("R1b2a", n=2000, seed=42, split="held_out")
+    train_rows = {(ex["question"], ex["expected"]) for ex in train}
+    held_rows = {(ex["question"], ex["expected"]) for ex in held}
+    overlap = train_rows & held_rows
+    assert not overlap, f"R1b2a train/held_out share rows: {sorted(overlap)[:5]}"
+
+
+def test_generator_r1b2a_single_template_only() -> None:
+    """R1b2a emits ONLY `what is A minus 1?`; never `A plus 1`, never any
+    R1b template."""
+    rows = make_rung_examples("R1b2a", n=2000, seed=42, split="train") + \
+           make_rung_examples("R1b2a", n=2000, seed=42, split="held_out")
+    for ex in rows:
+        q = ex["question"]
+        assert q.startswith("what is "), f"R1b2a prefix violated: {q!r}"
+        assert q.endswith(" minus 1?"), f"R1b2a must end ' minus 1?'; got {q!r}"
+        assert q.count(" minus ") == 1, f"R1b2a must contain ' minus ' exactly once: {q!r}"
+        assert " plus " not in q, f"R1b2a must not emit 'plus' template: {q!r}"
+        toks = q.split()
+        assert len(toks) == 5, f"R1b2a question must have 5 tokens; got {len(toks)}: {q!r}"
+        assert toks[0] == "what" and toks[1] == "is" and toks[3] == "minus" and toks[4] == "1?", (
+            f"R1b2a template shape violated: {q!r}"
+        )
+
+
+def test_generator_r1b2a_no_a_zero() -> None:
+    """R1b2a must NEVER emit A=0 -- output would be -1 (negative; schema
+    mismatch)."""
+    rows = make_rung_examples("R1b2a", n=2000, seed=42, split="train") + \
+           make_rung_examples("R1b2a", n=2000, seed=42, split="held_out")
+    for ex in rows:
+        A = _r1b2a_a(ex)
+        assert A != 0, f"R1b2a must not emit A=0; got {ex['question']!r}"
+        assert 1 <= A <= 19, f"R1b2a A out of [1,19]; got A={A} q={ex['question']!r}"
+
+
+def test_generator_r1b2a_no_a_ge_20() -> None:
+    """R1b2a must NEVER emit A >= 20 -- low-A only (no two-digit borrow
+    pattern). Codex msg 1779472300306: 'isolates minimal -1 operator on
+    low-A operands'."""
+    rows = make_rung_examples("R1b2a", n=2000, seed=42, split="train") + \
+           make_rung_examples("R1b2a", n=2000, seed=42, split="held_out")
+    for ex in rows:
+        A = _r1b2a_a(ex)
+        assert A < 20, f"R1b2a must not emit A>=20; got A={A} q={ex['question']!r}"
+
+
+def test_generator_r1b2a_expected_matches_arithmetic() -> None:
+    """For every R1b2a row, expected must equal A-1."""
+    rows = make_rung_examples("R1b2a", n=500, seed=42, split="train") + \
+           make_rung_examples("R1b2a", n=500, seed=42, split="held_out")
+    for ex in rows:
+        A = _r1b2a_a(ex)
+        assert ex["expected"] == A - 1, (
+            f"R1b2a expected mismatch: A={A} expected={ex['expected']}"
+        )
+
+
+def test_generator_r1b2a_output_in_0_to_18() -> None:
+    """R1b2a output ∈ [0, 18] (A in [1,19] -> A-1 in [0,18])."""
+    rows = make_rung_examples("R1b2a", n=1000, seed=42, split="train") + \
+           make_rung_examples("R1b2a", n=1000, seed=42, split="held_out")
+    for ex in rows:
+        assert 0 <= ex["expected"] <= 18, (
+            f"R1b2a output out of [0,18]: {ex['question']!r} -> {ex['expected']}"
+        )
+
+
+def test_generator_r1b2a_both_buckets_in_both_splits() -> None:
+    """Both splits must contain one-digit AND teen A (stratification gate)."""
+    train = make_rung_examples("R1b2a", n=500, seed=42, split="train")
+    held = make_rung_examples("R1b2a", n=500, seed=42, split="held_out")
+    assert any(_r1b2a_a(ex) < 10 for ex in train), "R1b2a train missing one_digit A"
+    assert any(_r1b2a_a(ex) >= 10 for ex in train), "R1b2a train missing teen A"
+    assert any(_r1b2a_a(ex) < 10 for ex in held), "R1b2a held missing one_digit A"
+    assert any(_r1b2a_a(ex) >= 10 for ex in held), "R1b2a held missing teen A"
+
+
+def test_generator_r1b2a_pool_sizes() -> None:
+    """R1b2a pool sizes per codex msg 1779472300306:
+      one_digit [1,9]:  9 vals  -> 7 train + 2 held
+      teen      [10,19]: 10 vals -> 8 train + 2 held
+      TOTAL:             19 vals -> 15 train + 4 held
+    """
+    from calm.hrm_text_158.curriculum.generators import _enumerate_partition_r1b2a
+    train_pool, held_pool = _enumerate_partition_r1b2a(seed=42)
+    assert len(train_pool) == 15, f"R1b2a train pool must be 15; got {len(train_pool)}"
+    assert len(held_pool) == 4, f"R1b2a held_out pool must be 4; got {len(held_pool)}"
+    full = train_pool | held_pool
+    assert full == set(range(1, 20)), (
+        f"R1b2a pool must equal {{1..19}}; got {sorted(full)}"
+    )
+    assert 0 not in full, "R1b2a pool must not contain A=0"
+    assert 20 not in full, "R1b2a pool must not contain A=20"
+    assert not (train_pool & held_pool), "R1b2a pools must be disjoint"
+
+
+def test_generator_r1b2a_held_out_unique_ge_4() -> None:
+    """Codex implementation guardrail msg 1779472239175: held-out must
+    have >= 4 UNIQUE rows so G1 isn't oversampled over too small a pool.
+
+    With A in [1,19] bucket-stratified, 2 unique held-out per bucket
+    (one_digit + teen) yields 4 unique held-out rows. This test asserts
+    the unique-row guarantee directly so any regression on the bucket
+    split would fail the build."""
+    held = make_rung_examples("R1b2a", n=200, seed=42, split="held_out")
+    unique = {(ex["question"], ex["expected"]) for ex in held}
+    assert len(unique) >= 4, (
+        f"R1b2a held_out unique count must be >= 4 (codex guardrail "
+        f"1779472239175); got {len(unique)}: {sorted(unique)}"
+    )
+
+
+def test_generator_r1b2a_no_collision_with_r1() -> None:
+    """R1b2a rows must NEVER appear in R1's train OR held_out.
+    R1 emits `A minus 0` (B=0); R1b2a emits `A minus 1` (B=1)."""
+    r1_train = make_rung_examples("R1", n=2000, seed=42, split="train")
+    r1_held = make_rung_examples("R1", n=2000, seed=42, split="held_out")
+    r1b2a_train = make_rung_examples("R1b2a", n=2000, seed=42, split="train")
+    r1b2a_held = make_rung_examples("R1b2a", n=2000, seed=42, split="held_out")
+    r1_rows = {(ex["question"], ex["expected"]) for ex in r1_train + r1_held}
+    r1b2a_rows = {(ex["question"], ex["expected"]) for ex in r1b2a_train + r1b2a_held}
+    overlap = r1_rows & r1b2a_rows
+    assert not overlap, f"R1 vs R1b2a row collision: {sorted(overlap)[:5]}"
+
+
+def test_generator_r1b2a_no_collision_with_r1b1() -> None:
+    """R1b2a rows must NEVER appear in R1b1's train OR held_out.
+    R1b1 emits `A plus 1`; R1b2a emits `A minus 1` (operator distinct)."""
+    r1b1_train = make_rung_examples("R1b1", n=2000, seed=42, split="train")
+    r1b1_held = make_rung_examples("R1b1", n=2000, seed=42, split="held_out")
+    r1b2a_train = make_rung_examples("R1b2a", n=2000, seed=42, split="train")
+    r1b2a_held = make_rung_examples("R1b2a", n=2000, seed=42, split="held_out")
+    r1b1_rows = {(ex["question"], ex["expected"]) for ex in r1b1_train + r1b1_held}
+    r1b2a_rows = {(ex["question"], ex["expected"]) for ex in r1b2a_train + r1b2a_held}
+    overlap = r1b1_rows & r1b2a_rows
+    assert not overlap, f"R1b1 vs R1b2a row collision: {sorted(overlap)[:5]}"
+
+
+def test_generator_r1b2a_partition_stable_across_pythonhashseed() -> None:
+    """_enumerate_partition_r1b2a partition must be IDENTICAL across
+    PYTHONHASHSEED restarts."""
+    import os
+    import subprocess
+    import sys
+
+    snippet = (
+        "from calm.hrm_text_158.curriculum.generators import _enumerate_partition_r1b2a; "
+        "train, held = _enumerate_partition_r1b2a(seed=42); "
+        "print(','.join(str(x) for x in sorted(train)) + '|' + ','.join(str(x) for x in sorted(held)))"
+    )
+    out1 = subprocess.check_output(
+        [sys.executable, "-c", snippet],
+        env={**os.environ, "PYTHONHASHSEED": "0"},
+    ).decode().strip()
+    out2 = subprocess.check_output(
+        [sys.executable, "-c", snippet],
+        env={**os.environ, "PYTHONHASHSEED": "12345"},
+    ).decode().strip()
+    out3 = subprocess.check_output(
+        [sys.executable, "-c", snippet],
+        env={**os.environ, "PYTHONHASHSEED": "random"},
+    ).decode().strip()
+    assert out1 == out2 == out3, (
+        f"R1b2a partition diverges across PYTHONHASHSEED: "
+        f"PYTHONHASHSEED=0 -> {out1[:60]}...; "
+        f"PYTHONHASHSEED=12345 -> {out2[:60]}...; "
+        f"PYTHONHASHSEED=random -> {out3[:60]}..."
+    )
+
+
+def test_cross_rung_r1b2a_and_r1b2_together_collide() -> None:
+    """Negative test: opting BOTH R1b2a and R1b2 into build_rung_splits
+    is expected to fail assert_no_train_holdout_overlap because R1b2a's
+    A_minus_1 over [1,19] is a STRICT SUBSET of R1b2's [1,99]. Same
+    policy as R1b1+R1b: R1b2 is now diagnosis-only post-FAIL (6fd2fec)
+    and stays excluded from active default. Codex msg 1779472300306."""
+    splits = build_rung_splits(
+        n_train=2000,
+        n_held_out=400,
+        seed=42,
+        rungs=("R0", "R1", "R1b1", "R1b2a", "R1b2"),
+    )
+    with pytest.raises(AssertionError, match="overlap detected"):
+        assert_no_train_holdout_overlap(splits)
+
+
+# ============================================================================ #
 # R1b2 single-template -1 stratified partition
-# (codex msg 1779471073874 + 1779471212090 after R1b1 PASS at 66b9747)
+# (codex msg 1779471073874 + 1779471212090 after R1b1 PASS at 66b9747;
+#  diagnosis-only after FAIL at 6fd2fec)
 # ============================================================================ #
 
 def _r1b2_a(ex: dict) -> int:
@@ -647,17 +863,14 @@ def _r1b2_a(ex: dict) -> int:
     return int(q.split()[2])
 
 
-def test_generator_r1b2_in_rung_names_index_3() -> None:
-    """R1b2 must sit at RUNG_NAMES index 3 (after R1b1, before R1b) so
-    the trainer's prior_rungs derivation (RUNG_NAMES[:cur_idx]) auto-
-    resolves to (R0, R1, R1b1) for R1b2 launches and the failed full
-    R1b is excluded from the active chain. Codex msg 1779471212090."""
+def test_generator_r1b2_in_rung_names_after_r1b2a() -> None:
+    """R1b2 was demoted to diagnosis-only after FAIL at 6fd2fec; it now
+    sits at RUNG_NAMES index 4 (after R1b2a), with R1b at index 5.
+    Codex msg 1779472300306."""
     from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
-    assert RUNG_NAMES[3] == "R1b2", f"R1b2 must be at index 3; got {RUNG_NAMES}"
-    assert RUNG_NAMES[2] == "R1b1", f"R1b1 must be at index 2 (pre-R1b2); got {RUNG_NAMES}"
-    assert RUNG_NAMES[4] == "R1b", f"R1b must be at index 4 (post-R1b2); got {RUNG_NAMES}"
-    # R0/R1/R1b1 sit before R1b2 so prior_rungs[:3] for R1b2 = (R0, R1, R1b1)
-    assert RUNG_NAMES[:3] == ("R0", "R1", "R1b1")
+    assert RUNG_NAMES[4] == "R1b2", f"R1b2 must be at index 4 (post-R1b2a); got {RUNG_NAMES}"
+    assert RUNG_NAMES[3] == "R1b2a", f"R1b2a must be at index 3; got {RUNG_NAMES}"
+    assert RUNG_NAMES[5] == "R1b", f"R1b must be at index 5; got {RUNG_NAMES}"
 
 
 def test_generator_r1b2_train_holdout_exact_row_disjoint() -> None:
@@ -1049,19 +1262,20 @@ def test_generator_arithmetic_correctness() -> None:
 # ============================================================================ #
 
 def test_cross_rung_no_train_holdout_overlap() -> None:
-    """Active-chain cross-rung invariant per codex msg 1779469638068
-    + 1779471212090 (R1b2 added to active chain after R1b1 PASS).
+    """Active-chain cross-rung invariant per codex msg 1779472300306
+    (R1b2 demoted to diagnosis-only after FAIL at 6fd2fec; R1b2a is
+    the narrower-split successor).
 
     `build_rung_splits` default tuple is now `("R0", "R1", "R1b1",
-    "R1b2", "R2", "R3", "R4", "R5", "R6")` -- R1b is OUT of the
-    active chain because its A_plus_1 AND A_minus_1 rows overlap
-    R1b1 AND R1b2 respectively by construction. The invariant
-    asserts no row in any rung's held_out appears in any rung's
-    train set across the active chain only."""
+    "R1b2a", "R2", "R3", "R4", "R5", "R6")` -- BOTH R1b AND R1b2 are
+    diagnosis-only because their A_minus_1 templates overlap R1b2a's
+    [1,19] subset by construction. The invariant asserts no row in
+    any rung's held_out appears in any rung's train set across the
+    active chain only."""
     splits = build_rung_splits(n_train=200, n_held_out=50, seed=42)
     assert_no_train_holdout_overlap(splits)
-    # Active chain: R0, R1, R1b1, R1b2, R2-R6 (R1b diagnosis-only; R7 = GSM8k)
-    assert set(splits.keys()) == {"R0", "R1", "R1b1", "R1b2", "R2", "R3", "R4", "R5", "R6"}
+    # Active chain: R0, R1, R1b1, R1b2a, R2-R6 (R1b2 + R1b diagnosis-only; R7 = GSM8k)
+    assert set(splits.keys()) == {"R0", "R1", "R1b1", "R1b2a", "R2", "R3", "R4", "R5", "R6"}
 
 
 def test_cross_rung_r1b1_and_r1b_together_collide() -> None:

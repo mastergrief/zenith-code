@@ -16,12 +16,20 @@ Axis 1 — math complexity under stable language wrapper:
                                   the model can acquire it cleanly before symmetric +1 and
                                   -1 variations land in successor rungs.
                                   PASSED at 0.930 exact (66b9747).]
+  R1b2a: low-A subtraction       `what is A minus 1?` -> `A-1` (A in [1,19])
+                                 [codex msg 1779472124507 + 1779472300306 after R1b2
+                                  FAIL at 0.860 + R1b1 retention -0.050 decay
+                                  (6fd2fec). Isolates minimal `-1` operator on
+                                  low-A operands (no two-digit borrow) with stronger
+                                  replay (ratio 0.50) to anchor R1b1; falsifier on
+                                  whether operator coexistence can be controlled.]
   R1b2: single-template -1       `what is A minus 1?` -> `A-1` (A in [1,99])
                                  [codex msg 1779471073874 + 1779471212090 after R1b1
-                                  PASS. Isolates subtraction operator at the same
-                                  operand position as R1b1; falsifier on whether `-`
-                                  acquires comparably to `+1` once position symmetry
-                                  is held fixed.]
+                                  PASS. Isolated subtraction at the same operand
+                                  position as R1b1; FAILED at 0.860 G1 with R1b1
+                                  retention -0.050 decay (6fd2fec). Now DIAGNOSIS-
+                                  ONLY pending R1b2a outcome; A_minus_1 over [1,99]
+                                  overlaps R1b2a's [1,19] subset by construction.]
   R1b: minimal arithmetic (±1)   `what is A plus 1?` -> `A+1` (also `1 plus A`, `A minus 1`)
                                  [DIAGNOSIS-ONLY after R1b v2 failure (codex msg
                                   1779469638068). Stays in RUNG_NAMES for backward-
@@ -55,7 +63,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2", "R1b", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -163,6 +171,18 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     "R1b1": {
         "train":     {"A_range": (1, 98), "partition": "enumerate_stratified_r1b1"},
         "held_out":  {"A_range": (1, 98), "partition": "enumerate_stratified_r1b1"},
+    },
+    # R1b2a (codex msg 1779472124507 + 1779472300306 after R1b2 FAILED
+    # at 0.860 G1 + R1b1 retention -0.050 decay, 6fd2fec): SINGLE-template
+    # `A minus 1` over A in [1,19] (one-digit + teens, no two-digit borrow),
+    # bucket-stratified. Designed to isolate the minimal `-1` operator on
+    # low-A operands; pairs with replay_ratio=0.50 (vs prior 0.30) to
+    # anchor R1b1 retention stronger. Output [0,18]. Inserted BEFORE
+    # diagnosis-only R1b2/R1b in RUNG_NAMES so trainer prior_rungs auto-
+    # resolves to (R0, R1, R1b1).
+    "R1b2a": {
+        "train":     {"A_range": (1, 19), "partition": "enumerate_stratified_r1b2a"},
+        "held_out":  {"A_range": (1, 19), "partition": "enumerate_stratified_r1b2a"},
     },
     # R1b2 (codex msg 1779471073874 + 1779471212090 after R1b1 PASS at
     # 66b9747): SINGLE-template `A minus 1` over A in [1,99],
@@ -339,6 +359,52 @@ def _enumerate_partition_r1b1(seed: int, train_frac: float = 0.8) -> tuple[set, 
     for bucket_label, lo, hi in (("one_digit", 1, 9), ("two_digit", 10, 98)):
         bucket_as = list(range(lo, hi + 1))
         rng = random.Random(_stable_seed("R1b1_partition", seed, bucket_label))
+        rng.shuffle(bucket_as)
+        split = int(len(bucket_as) * train_frac)
+        train_set.update(bucket_as[:split])
+        held_out_set.update(bucket_as[split:])
+    return train_set, held_out_set
+
+
+def _enumerate_partition_r1b2a(seed: int, train_frac: float = 0.8) -> tuple[set, set]:
+    """Stratified deterministic 80/20 partition of R1b2a's low-A
+    subtraction operand space (codex msg 1779472124507 + 1779472300306
+    after R1b2 FAILED at 6fd2fec).
+
+    R1b2a is the falsifier-protocol narrower-split after R1b2 (full
+    [1,99]) failed simultaneously on G1 (0.860) AND G2 R1b1 retention
+    (0.880, -0.050 decay). Splits subtraction into low-A (this rung)
+    + high-A (future R1b2b) to isolate operator difficulty from two-
+    digit generalization. Paired with replay_ratio=0.50 to anchor R1b1
+    stronger.
+
+    Pool: A in [1, 19]
+      - drop A=0: output -1 mismatches non-negative schema.
+      - cap A=19: output 18 stays in [0,18]; no two-digit borrow.
+
+    Stratification: bucket-stratified per established R1b1/R1b2 pattern:
+      one-digit bucket A in [1, 9]:   9 vals  -> 7 train + 2 held_out
+      teen bucket     A in [10, 19]: 10 vals -> 8 train + 2 held_out
+      TOTAL: 15 train + 4 held_out integers A
+
+    Codex guardrail msg 1779472239175: 2-row held_out at [1,9] alone
+    was too weak; [1,19] gives 4 unique held_out (one_digit + teen)
+    enabling unique-heldout G1 audit (must be 4/4) alongside the
+    standard oversampled exact rate.
+
+    Cross-rung-train invariant: R1b2a emits `what is A minus 1?` over
+    A in [1,19]. R1 emits `A minus 0` (B=0; disjoint by B-value); R1b1
+    emits `A plus 1` (disjoint by operator). R2 train requires
+    B in [10,99] so no R2 row has B=1. R1b2 (failed) and R1b
+    (diagnosis-only) both emit `A_minus_1` over A in [1,99] which
+    OVERLAPS R1b2a's [1,19] strict subset by construction; R1b2 and
+    R1b both stay excluded from build_rung_splits default.
+    """
+    train_set: set = set()
+    held_out_set: set = set()
+    for bucket_label, lo, hi in (("one_digit", 1, 9), ("teen", 10, 19)):
+        bucket_as = list(range(lo, hi + 1))
+        rng = random.Random(_stable_seed("R1b2a_partition", seed, bucket_label))
         rng.shuffle(bucket_as)
         split = int(len(bucket_as) * train_frac)
         train_set.update(bucket_as[:split])
@@ -571,6 +637,29 @@ def _gen_r1b1(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> 
     return out
 
 
+def _gen_r1b2a(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """R1b2a low-A subtraction (codex msg 1779472124507 + 1779472300306
+    after R1b2 FAIL at 6fd2fec).
+
+    Single template `what is A minus 1?` -> A-1. A in [1, 19]
+    bucket-stratified (one_digit + teen). Output ∈ [0, 18]. Designed
+    disjoint from R1 (R1 B=0), R1b1 (plus vs minus), R2+ (B≥10);
+    overlaps R1b2/R1b A_minus_1 by construction (both diagnosis-only).
+
+    Train pool = 15 integers A; held_out pool = 4 integers A. Both
+    splits contain BOTH digit-length buckets (one_digit + teen)."""
+    train_pool, held_out_pool = _enumerate_partition_r1b2a(seed)
+    pool = train_pool if split == "train" else held_out_pool
+    pool_list = sorted(pool)
+    out = []
+    while len(out) < n:
+        A = rng.choice(pool_list)
+        q = f"what is {A} minus 1?"
+        expected = A - 1
+        out.append({"question": q, "expected": expected, "rung": "R1b2a"})
+    return out
+
+
 def _gen_r1b2(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
     """R1b2 single-template `A minus 1` (codex msg 1779471073874 +
     1779471212090 after R1b1 PASS at 66b9747).
@@ -761,6 +850,8 @@ def make_rung_examples(
         return _gen_r1(rng, _RUNG_SPEC["R1"][split], n, seed=seed, split=split)
     if rung == "R1b1":
         return _gen_r1b1(rng, _RUNG_SPEC["R1b1"][split], n, seed=seed, split=split)
+    if rung == "R1b2a":
+        return _gen_r1b2a(rng, _RUNG_SPEC["R1b2a"][split], n, seed=seed, split=split)
     if rung == "R1b2":
         return _gen_r1b2(rng, _RUNG_SPEC["R1b2"][split], n, seed=seed, split=split)
     if rung == "R1b":
