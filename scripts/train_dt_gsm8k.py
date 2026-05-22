@@ -389,6 +389,52 @@ def autoreg_eval_hrm(
     }
 
 
+def _build_ckpt_config(
+    m, tok: Gsm8kTokenizer, *,
+    max_len: int, d_model: int, n_heads: int, n_layers: int,
+    d_ffn: int, n_copy_heads: int, aux_weight: float,
+) -> dict:
+    """Slice 13l helper: shared ckpt-blob config dict for both epoch-end
+    saves AND step-N saves (--save-at-step). Single source of truth to
+    prevent config drift between save sites per codex msg 1779444785341."""
+    return {
+        "vocab_size": tok.vocab_size,
+        "max_len": max_len,
+        "d_model": d_model,
+        "n_heads": n_heads,
+        "n_layers": n_layers,
+        "d_ffn": d_ffn,
+        "n_copy_heads": n_copy_heads,
+        "copy_gate_bias_init": -2.0,
+        "use_chunkwise": getattr(m.config, "use_chunkwise", True),
+        "chunk_size": getattr(m.config, "chunk_size", 32),
+        "n_iterations": getattr(m.config, "n_iterations", 1),
+        "use_loop_index": getattr(m.config, "use_loop_index", False),
+        "use_input_injection": getattr(m.config, "use_input_injection", False),
+        "use_gated_attention": getattr(m.config, "use_gated_attention", False),
+        "use_z_init": getattr(m.config, "use_z_init", False),
+        "use_lecun_init": getattr(m.config, "use_lecun_init", False),
+        "use_prefix_lm": getattr(m.config, "use_prefix_lm", False),
+        "use_softmax_attn": getattr(m.config, "use_softmax_attn", False),
+        "use_softmax_only": getattr(m.config, "use_softmax_only", False),
+        "h_cycles": getattr(m.config, "h_cycles", 1),
+        "use_h_rmsnorm": getattr(m.config, "use_h_rmsnorm", False),
+        "use_short_conv": getattr(m.config, "use_short_conv", False),
+        "use_h_layer_stack": getattr(m.config, "use_h_layer_stack", False),
+        "use_halt_head": getattr(m.config, "use_halt_head", False),
+        "use_carry": getattr(m.config, "use_carry", False),
+        "use_pre_rmsnorm": getattr(m.config, "use_pre_rmsnorm", False),
+        "use_ternary_bulk": getattr(m.config, "use_ternary_bulk", False),
+        "gsm8k_char_vocab": tok.vocab_as_list(),
+        "gsm8k_normalizer_version": tok.normalizer_version,
+        "aux_weight": float(aux_weight),
+        "loss_mode": (
+            "final_plus_per_iter_mean"
+            if aux_weight > 0.0 else "final_only"
+        ),
+    }
+
+
 def train(
     epochs: int = 30,
     batch_size: int = 16,
@@ -482,6 +528,12 @@ def train(
     # M_max" — the model must LEARN to halt rather than learn-to-not-halt.
     # Halt bias = -1.0, Continue bias = +1.0 → sigmoid Qh ~ 0.27, Qc ~ 0.73.
     q_init_bias_continue: bool = False,
+    # Slice 13l: --save-at-step N mid-training ckpt hook. If set, saves
+    # a ckpt to `<stem>_step{N:05d}.pt` once during training when
+    # step_idx == save_at_step (HRM segment-loop path only). Default
+    # None = disabled, no extra saves. Closes the gap that bit 13j/13k
+    # where slope-based aborts left no usable ckpt to probe.
+    save_at_step: int | None = None,
     # Interior-batch loss/grad logging (NaN-diagnostic). 0 = disabled (default,
     # preserves prior log shape). N>0 = print `[ep E step S] loss=X grad_norm=Y`
     # every N batches AND early-exit on first non-finite loss with diagnostic
@@ -806,6 +858,33 @@ def train(
                           f"per_seg_raw_halt=[{halt_str}] "
                           f"grad_norm={last_grad_norm:.4f}",
                           flush=True)
+                # Slice 13l: --save-at-step N mid-training ckpt hook.
+                # Closes the gap that bit 13j/13k where slope-based aborts
+                # left no usable ckpt for the forced-depth probe gate.
+                # Saves a per-step ckpt to `<stem>_step{N:05d}.pt` then
+                # continues training (does NOT terminate; allows the run
+                # to either continue or be killed externally).
+                if save_at_step is not None and step_idx == save_at_step:
+                    step_ckpt_path = Path(checkpoint_path).with_name(
+                        Path(checkpoint_path).stem + f"_step{step_idx:05d}.pt"
+                    )
+                    step_ckpt_blob = {
+                        "model_state": m.state_dict(),
+                        "config": _build_ckpt_config(
+                            m=m, tok=tok, max_len=max_len, d_model=d_model,
+                            n_heads=n_heads, n_layers=n_layers, d_ffn=d_ffn,
+                            n_copy_heads=n_copy_heads, aux_weight=aux_weight,
+                        ),
+                        "epoch": ep,
+                        "step": step_idx,
+                        "val_acc": float("nan"),
+                        "n_train": len(train_ds),
+                        "n_val": len(val_ds),
+                    }
+                    torch.save(step_ckpt_blob, step_ckpt_path)
+                    print(f"[ep {ep:3d} step {step_idx:5d}] "
+                          f"Slice 13l save_at_step: saved {step_ckpt_path}",
+                          flush=True)
                 continue  # skip the standard graph_capture/aux_weight branches below
 
             # Slice 13e.2: graph-capture training-step branch.
@@ -1035,42 +1114,11 @@ def train(
             # save as `<name>.pt` (best) only when val_acc beats best.
             ckpt_blob = {
                 "model_state": m.state_dict(),
-                "config": {
-                    "vocab_size": tok.vocab_size,
-                    "max_len": max_len,
-                    "d_model": d_model,
-                    "n_heads": n_heads,
-                    "n_layers": n_layers,
-                    "d_ffn": d_ffn,
-                    "n_copy_heads": n_copy_heads,
-                    "copy_gate_bias_init": -2.0,
-                    "use_chunkwise": getattr(m.config, "use_chunkwise", True),
-                    "chunk_size": getattr(m.config, "chunk_size", 32),
-                    "n_iterations": getattr(m.config, "n_iterations", 1),
-                    "use_loop_index": getattr(m.config, "use_loop_index", False),
-                    "use_input_injection": getattr(m.config, "use_input_injection", False),
-                    "use_gated_attention": getattr(m.config, "use_gated_attention", False),
-                    "use_z_init": getattr(m.config, "use_z_init", False),
-                    "use_lecun_init": getattr(m.config, "use_lecun_init", False),
-                    "use_prefix_lm": getattr(m.config, "use_prefix_lm", False),
-                    "use_softmax_attn": getattr(m.config, "use_softmax_attn", False),
-                    "use_softmax_only": getattr(m.config, "use_softmax_only", False),
-                    "h_cycles": getattr(m.config, "h_cycles", 1),
-                    "use_h_rmsnorm": getattr(m.config, "use_h_rmsnorm", False),
-                    "use_short_conv": getattr(m.config, "use_short_conv", False),
-                    "use_h_layer_stack": getattr(m.config, "use_h_layer_stack", False),
-                    "use_halt_head": getattr(m.config, "use_halt_head", False),
-                    "use_carry": getattr(m.config, "use_carry", False),
-                    "use_pre_rmsnorm": getattr(m.config, "use_pre_rmsnorm", False),
-                    "use_ternary_bulk": getattr(m.config, "use_ternary_bulk", False),
-                    "gsm8k_char_vocab": tok.vocab_as_list(),
-                    "gsm8k_normalizer_version": tok.normalizer_version,
-                    "aux_weight": float(aux_weight),
-                    "loss_mode": (
-                        "final_plus_per_iter_mean"
-                        if aux_weight > 0.0 else "final_only"
-                    ),
-                },
+                "config": _build_ckpt_config(
+                    m=m, tok=tok, max_len=max_len, d_model=d_model,
+                    n_heads=n_heads, n_layers=n_layers, d_ffn=d_ffn,
+                    n_copy_heads=n_copy_heads, aux_weight=aux_weight,
+                ),
                 "epoch": ep,
                 "val_acc": acc,
                 "n_train": len(train_ds),
@@ -1206,6 +1254,13 @@ if __name__ == "__main__":
                          "(sigmoid Qh~0.27, Qc~0.73). Inverts default policy "
                          "from 'halt at seg 1' to 'continue to M_max'; addresses "
                          "shallow-halt zero-attractor observed in 13f.3b.")
+    ap.add_argument("--save-at-step", type=int, default=None,
+                    help="Slice 13l: mid-training ckpt save hook. Saves a "
+                         "ckpt to `<stem>_step{N:05d}.pt` once during "
+                         "training when step_idx == save_at_step. Closes "
+                         "the gap that bit 13j/13k where slope-based aborts "
+                         "left no usable ckpt for forced-depth probe gates. "
+                         "HRM segment-loop path only; defaults to None (off).")
     ap.add_argument("--use-pre-rmsnorm", action="store_true",
                     help="Allocate per-layer RMSNorm before sequence-mixer "
                          "AND before FFN in both L and H banks. Fixes S2 NaN "
@@ -1278,6 +1333,7 @@ if __name__ == "__main__":
         m_min_warmup_epochs=args.m_min_warmup_epochs,
         m_min_warmup_value=args.m_min_warmup_value,
         q_init_bias_continue=args.q_init_bias_continue,
+        save_at_step=args.save_at_step,
         chunk_size=args.chunk_size,
         aux_weight=args.aux_weight,
         log_every=args.log_every,
