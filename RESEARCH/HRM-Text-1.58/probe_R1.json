@@ -9,26 +9,26 @@
     "too_long": false
   },
   "ckpt_path": "calm/hrm/checkpoints/hrm_text_158_phase3_R1_final.pt",
-  "elapsed_sec": 91.16021609306335,
+  "elapsed_sec": 77.33090662956238,
   "finite": true,
   "n_params": 29626368,
   "retention_delta": {},
   "rung": "R1",
   "rung_accuracy": {
-    "R0": 0.845,
-    "R1": 0.23
+    "R0": 1.0,
+    "R1": 1.0
   },
   "rung_cap": {
     "R0": 200,
     "R1": 200
   },
   "rung_exact": {
-    "R0": 169,
-    "R1": 46
+    "R0": 200,
+    "R1": 200
   },
   "rung_parsed": {
-    "R0": 169,
-    "R1": 46
+    "R0": 200,
+    "R1": 200
   },
   "rung_too_long": {
     "R0": 0,
