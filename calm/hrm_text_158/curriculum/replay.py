@@ -52,13 +52,17 @@ from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
 #   - R1b2a: failed both v1 (memorization) and v2 lowmult (confounded)
 #   - R1b: legacy 3-template, superseded by R1b1 + R1b2 single-template
 #   - R2: full teens ± failed v1 (n_train=6000) AND v2 (n_train=8000)
-#         (codex msg 1779478819906-0e30503e: "Add R2 to DIAGNOSIS_ONLY_RUNGS
-#         until a future full-R2 target passes; update comments so this is
-#         not permanent architecture truth"). R2a is the addition-only
-#         successor in the active chain.
+#         (codex msg 1779478819906-0e30503e). R2a was the addition-only
+#         operator-split successor but ALSO failed v1 (0.045 at 558fcc1)
+#         due to variable-B blocker (NOT operator mixing alone).
+#   - R2a: addition-only teens variable-B failed v1 at 0.045 (worse
+#          than R2). Per codex msg 1779479973262-6d7445d2: variable-B
+#          itself is the structural blocker; the locked-piece pattern
+#          is "constant-B single-template" (R1b1/R1b2 PASS). R1b3
+#          (constant K=2 addition) is the next active rung.
 #
 # R1b2 stays OUT (canonical retry that PASSED at c2686cc).
-DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b", "R2"})
+DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b", "R2", "R2a"})
 
 
 # R7 (GSM8k) is generator-incompatible — served separately from

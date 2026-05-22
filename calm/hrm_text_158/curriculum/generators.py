@@ -36,13 +36,16 @@ Axis 1 — math complexity under stable language wrapper:
                                   compat; out of build_rung_splits default tuple because
                                   its A_plus_1 rows overlap R1b1's by construction.
                                   Successor design tbd post-R1b1.]
+  R1b3: constant K=2 addition    `what is A plus 2?` -> `A+2`  (A in [1,97])
+                                 [codex msg 1779479973262-6d7445d2 after R2a v1 failed 0.045
+                                  at 558fcc1; variable-B reframed as structural blocker.
+                                  Extends locked constant-B single-template pattern (R1b1
+                                  K=1, R1b2 K=-1) to K=2 BEFORE attempting variable-B.
+                                  Output [3,99]; bucket-stratified 80/20 = 77 train + 20 held.]
   R2a: teens addition-only       `what is 13 plus 7?` -> `20` (A in [10,19], B in [2,9])
-                                 [codex msg 1779478819906-0e30503e after R2 (full teens ±)
-                                  failed both v1 0.085 and v2 n_train=8000 0.185 at c2f4f8d.
-                                  Operator-split successor; addition only. Phenomenon-strat
-                                  (plus_no_carry, plus_carry) with 75/25 split: 60 train +
-                                  20 held_out. Multiplicity ~50x at 6000 rows. Output
-                                  [12,28]. R2b subtraction-only will follow if R2a PASSES.]
+                                 [DIAGNOSIS-ONLY after v1 failed 0.045 at 558fcc1; variable-B
+                                  is the blocker, not operator mixing. R1b3 is the active
+                                  successor (constant K=2 first).]
   R2: teens variable-B ±         `what is 13 plus 7?` -> `20`   (A in [10,19], B in [2,9])
                                  [DIAGNOSIS-ONLY after v1+v2 fail at c2f4f8d; A_plus_B rows
                                   overlap R2a by construction. Reachable via explicit rungs=
@@ -74,7 +77,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -226,9 +229,25 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
         "train":     {"A_range": (1, 99), "partition": "enumerate_stratified_pm1"},
         "held_out":  {"A_range": (1, 99), "partition": "enumerate_stratified_pm1"},
     },
-    # R2a (codex msg 1779478819906-0e30503e after full R2 failed both v1
-    # 0.085 and v2 n_train=8000 0.185 at c2f4f8d): operator-split successor
-    # to failed full teens ± R2. Addition-only teens variable-B:
+    # R1b3 (codex msg 1779479973262-6d7445d2 after R2a v1 failed 0.045 at
+    # 558fcc1): constant K=2 addition. Extends locked constant-B single-
+    # template pattern (R1b1 K=1, R1b2 K=-1) to K=2 BEFORE variable-B.
+    #   A in [1, 97], template `A_plus_2`. Output [3, 99] (no 3-digit).
+    # Stratified by digit bucket per R1b1 pattern:
+    #   one_digit [1, 9]:    9 vals  -> 7 train + 2 held
+    #   two_digit [10, 97]: 88 vals  -> 70 train + 18 held
+    #   TOTAL:              97 vals  -> 77 train + 20 held_out
+    # B=2 disjoint from R1 (B=0), R1b1 (B=1), R1b2 (B=1), R2a (variable B
+    # in [2,9] but R2a is diagnosis-only; A range [10,19] overlaps R1b3
+    # for A in [10,19] B=2 -> stays excluded from active chain).
+    "R1b3": {
+        "train":     {"A_range": (1, 97), "partition": "enumerate_stratified_r1b3"},
+        "held_out":  {"A_range": (1, 97), "partition": "enumerate_stratified_r1b3"},
+    },
+    # R2a (codex msg 1779478819906-0e30503e after full R2 failed v1+v2;
+    # DIAGNOSIS-ONLY after R2a v1 itself failed 0.045 at 558fcc1, codex
+    # msg 1779479973262-6d7445d2 reframed variable-B as the blocker not
+    # operator mixing): addition-only teens variable-B:
     #   A in [10, 19], B in [2, 9], template {A_plus_B}.
     # Phenomena: plus_no_carry + plus_carry only.
     # 75/25 stratified split: pool 80 -> 60 train + 20 held_out (3000 new /
@@ -484,6 +503,48 @@ def _enumerate_partition_r1b2(seed: int, train_frac: float = 0.8) -> tuple[set, 
     for bucket_label, lo, hi in (("one_digit", 1, 9), ("two_digit", 10, 99)):
         bucket_as = list(range(lo, hi + 1))
         rng = random.Random(_stable_seed("R1b2_partition", seed, bucket_label))
+        rng.shuffle(bucket_as)
+        split = int(len(bucket_as) * train_frac)
+        train_set.update(bucket_as[:split])
+        held_out_set.update(bucket_as[split:])
+    return train_set, held_out_set
+
+
+def _enumerate_partition_r1b3(seed: int, train_frac: float = 0.8) -> tuple[set, set]:
+    """Stratified deterministic 80/20 partition of R1b3's constant-K=2
+    operand space (codex msg 1779479973262-6d7445d2 after R2a v1 failed
+    0.045 at 558fcc1; variable-B reframed as the structural blocker).
+
+    R1b3 extends the locked-piece pattern (constant-B single-template,
+    proven via R1b1 K=1 and R1b2 K=-1) to K=2 BEFORE attempting
+    variable-B again.
+
+    Pool: A in [1, 97]
+      - drop A=0: avoids collision with R1's 0_plus_A (A=2 emits
+                  "what is 0 plus 2?" -> 2; R1 has B=0 not B=2, so no
+                  collision by B-value; A=0 still excluded for symmetry
+                  with R1b1's drop and to avoid emitting "what is 0 plus
+                  2?" which the model might confuse with R1 templates).
+      - cap A=97: keeps output A+2 <= 99 (no 3-digit class).
+
+    Stratification: bucket-stratified per R1b1 pattern with
+    bucket-distinct `_stable_seed("R1b3_partition", seed, bucket_label)`.
+      one_digit [1, 9]:    9 vals -> 7 train + 2 held_out
+      two_digit [10, 97]: 88 vals -> 70 train + 18 held_out
+      TOTAL:              97 vals -> 77 train + 20 held_out integers A
+
+    Cross-rung-train invariant: R1b3 emits `what is A plus 2?` with
+    B=2. R0 has no second operand. R1 has B=0 (additive side). R1b1
+    has B=1 (plus). R1b2 has B=1 (minus). All disjoint by B-value.
+    R2a (diagnosis-only) has variable B in [2,9] over A in [10,19];
+    overlaps R1b3 only for B=2, A in [10,19] -- R2a stays excluded
+    from active chain via DIAGNOSIS_ONLY_RUNGS.
+    """
+    train_set: set = set()
+    held_out_set: set = set()
+    for bucket_label, lo, hi in (("one_digit", 1, 9), ("two_digit", 10, 97)):
+        bucket_as = list(range(lo, hi + 1))
+        rng = random.Random(_stable_seed("R1b3_partition", seed, bucket_label))
         rng.shuffle(bucket_as)
         split = int(len(bucket_as) * train_frac)
         train_set.update(bucket_as[:split])
@@ -874,6 +935,28 @@ def _enumerate_partition_r2(seed: int, train_frac: float = 0.8) -> tuple[set, se
     return train_set, held_out_set
 
 
+def _gen_r1b3(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """R1b3 constant K=2 addition (codex msg 1779479973262-6d7445d2 after
+    R2a v1 failed 0.045 at 558fcc1; variable-B reframed as blocker).
+
+    Single template `what is A plus 2?` -> A+2. A in [1, 97]
+    bucket-stratified. Output [3, 99]; no 3-digit class. Extends the
+    locked constant-B single-template pattern (R1b1 K=1, R1b2 K=-1)
+    to K=2 before attempting variable-B again.
+
+    Train pool = 77 integers A; held_out pool = 20."""
+    train_pool, held_out_pool = _enumerate_partition_r1b3(seed)
+    pool = train_pool if split == "train" else held_out_pool
+    pool_list = sorted(pool)
+    out = []
+    while len(out) < n:
+        A = rng.choice(pool_list)
+        q = f"what is {A} plus 2?"
+        expected = A + 2
+        out.append({"question": q, "expected": expected, "rung": "R1b3"})
+    return out
+
+
 def _gen_r2a(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
     """R2a teens addition-only (codex msg 1779478819906-0e30503e after
     full R2 failed v1+v2 n_train=8000 at c2f4f8d).
@@ -1045,6 +1128,8 @@ def make_rung_examples(
         return _gen_r1b2a(rng, _RUNG_SPEC["R1b2a"][split], n, seed=seed, split=split)
     if rung == "R1b2":
         return _gen_r1b2(rng, _RUNG_SPEC["R1b2"][split], n, seed=seed, split=split)
+    if rung == "R1b3":
+        return _gen_r1b3(rng, _RUNG_SPEC["R1b3"][split], n, seed=seed, split=split)
     if rung == "R1b":
         return _gen_r1b(rng, _RUNG_SPEC["R1b"][split], n, seed=seed, split=split)
     if rung == "R2a":
