@@ -100,6 +100,13 @@ class Transformer(nn.Module):
         **seq_info,
     ) -> Tensor:
         cos_sin = self.rotary_emb(position_ids) if self.rotary_emb is not None else None
-        for layer in self.layers:
-            x = layer(x, cos_sin=cos_sin, sep_positions=sep_positions, **seq_info)
+        # T2 γ1: thread layer_idx into kv_cache plumbing when cache is present.
+        # When kv_cache is None this just passes seq_info verbatim — no behavior
+        # change to the no-cache path.
+        cache_active = seq_info.get("kv_cache") is not None
+        for layer_idx, layer in enumerate(self.layers):
+            layer_kwargs = seq_info
+            if cache_active:
+                layer_kwargs = {**seq_info, "kv_cache_layer_idx": layer_idx}
+            x = layer(x, cos_sin=cos_sin, sep_positions=sep_positions, **layer_kwargs)
         return self.norm_f(x)

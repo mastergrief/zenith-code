@@ -131,6 +131,11 @@ class HierarchicalReasoningModel(nn.Module):
 
         Port of `hrm_nocarry_bp_warmup.py:75-91`. Selectively enables grad
         per bp_steps schedule.
+
+        T2 γ1 (codex msg 1779530833485-eb9296ca): when `kv_cache` is in
+        `seq_info`, threads (level, rec_idx) per iteration so Attention can
+        key its cache by (level, rec_idx, layer_idx). When `kv_cache` is
+        None (default), behavior is identical to the no-cache path.
         """
         # z_L starts from persistent buffer, broadcast across batch
         z_H = x
@@ -138,16 +143,31 @@ class HierarchicalReasoningModel(nn.Module):
         # bp_steps allocation: H prioritized
         H_bp_steps = min(self.H_cycles, bp_steps - 1)
         L_bp_steps = bp_steps - H_bp_steps
+        cache_active = seq_info.get("kv_cache") is not None
         for i in range(self.H_cycles):
             for k in range(i * self.L_cycles, (i + 1) * self.L_cycles):
                 with torch.set_grad_enabled(
                     torch.is_grad_enabled() and (k >= self.H_cycles * self.L_cycles - L_bp_steps)
                 ):
-                    z_L = self.L_level(z_L, z_H, **seq_info)
+                    L_kwargs = seq_info
+                    if cache_active:
+                        L_kwargs = {
+                            **seq_info,
+                            "kv_cache_level": "L",
+                            "kv_cache_rec_idx": k,
+                        }
+                    z_L = self.L_level(z_L, z_H, **L_kwargs)
             with torch.set_grad_enabled(
                 torch.is_grad_enabled() and (i >= self.H_cycles - H_bp_steps)
             ):
-                z_H = self.H_level(z_H, z_L, **seq_info)
+                H_kwargs = seq_info
+                if cache_active:
+                    H_kwargs = {
+                        **seq_info,
+                        "kv_cache_level": "H",
+                        "kv_cache_rec_idx": i,
+                    }
+                z_H = self.H_level(z_H, z_L, **H_kwargs)
         return None, z_H
 
     def compute_train_extra_args(self, step: int, total_steps: int) -> dict:

@@ -244,6 +244,10 @@ class Attention(nn.Module):
         hidden_states: Tensor,
         cos_sin: Optional[CosSin] = None,
         sep_positions: Optional[Tensor] = None,
+        kv_cache=None,
+        kv_cache_level: Optional[str] = None,
+        kv_cache_rec_idx: Optional[int] = None,
+        kv_cache_layer_idx: Optional[int] = None,
         **seq_info,
     ) -> Tensor:
         # gqkv: [..., S, hidden_size] -> [..., S, (2*h+2*kvh)*head_dim]
@@ -266,12 +270,42 @@ class Attention(nn.Module):
         q_t = query.transpose(1, 2)
         k_t = key.transpose(1, 2)
         v_t = value.transpose(1, 2)
+
+        # T2 γ1: KV cache integration (per codex msg 1779530833485-eb9296ca).
+        # Cache stores POST-RoPE K/V at unrepeated shape (B, num_kv_heads, S, D).
+        # `update()` appends and returns the full cached K/V views.
+        # Defense in depth: cached path bypassed under training mode.
+        use_cached = (
+            kv_cache is not None
+            and not self.training
+            and kv_cache_level is not None
+            and kv_cache_rec_idx is not None
+            and kv_cache_layer_idx is not None
+        )
+        is_decode = False
+        if use_cached:
+            k_t, v_t = kv_cache.update(
+                kv_cache_level, kv_cache_rec_idx, kv_cache_layer_idx, k_t, v_t,
+            )
+            # Decode mode signal: caller passed a single-token slice. Multi-position
+            # update on a non-empty cache is not used in γ1 (would need explicit
+            # contract; γ2 batched can revisit).
+            is_decode = (S == 1)
+
         # Build mask
-        if self.attn_type == "prefixlm":
+        if use_cached and is_decode:
+            # Single-token decode after cache update: cache truncation already
+            # enforces causality (no future K/V are ever stored). Q[0:1] attends
+            # to all cached K[0:length]. attn_mask=None, is_causal=False — using
+            # is_causal=True with non-square q_len=1 vs k_len=S+1 would align to
+            # query-local index 0 and silently drop all cached past K. Banned.
+            attn_mask = None
+            is_causal = False
+        elif self.attn_type == "prefixlm":
             assert sep_positions is not None, (
                 "Attention requires sep_positions when attn_type='prefixlm'"
             )
-            # mask shape: (B, S, S). Expand to (B, 1, S, S) for SDPA.
+            # Prefill or no-cache path: full S x S PrefixLM mask, unchanged.
             mask_2d = build_prefix_lm_mask(S, sep_positions, device=hidden_states.device, dtype=torch.bool)
             attn_mask = mask_2d.unsqueeze(1)  # (B, 1, S, S)
             is_causal = False
@@ -280,7 +314,9 @@ class Attention(nn.Module):
             is_causal = True
         else:
             raise NotImplementedError(f"attn_type={self.attn_type!r}")
-        # Need to handle GQA (num_kv < num_heads) — repeat KV heads if needed
+        # Need to handle GQA (num_kv < num_heads) — repeat KV heads if needed.
+        # Done AFTER cache update so the cache stores the unrepeated form
+        # (saves memory when num_kv_heads < num_heads).
         if self.num_key_value_heads != self.num_heads:
             kv_repeat = self.num_heads // self.num_key_value_heads
             k_t = k_t.repeat_interleave(kv_repeat, dim=1)

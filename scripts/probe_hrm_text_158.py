@@ -170,6 +170,94 @@ def _decode_greedy_no_cache(
     return tok.decode(out_tokens, stop_at_eos=False), False, finite
 
 
+def _decode_greedy_cached(
+    m: LMHead,
+    tok,
+    question: str,
+    *,
+    max_gen: int = 8,
+    max_seq_len: int,
+    device: str,
+) -> tuple[str, bool, bool]:
+    """Greedy decode using KV cache (T2 γ1 per codex msg 1779530833485-eb9296ca).
+
+    Single-row (B=1). Prefill processes the full prompt under existing
+    PrefixLM mask, populating the cache. Decode loop appends one position
+    per step with attn_mask=None, is_causal=False (cache truncation
+    enforces causality).
+
+    Returns (decoded_string, too_long_flag, finite_flag). Contract matches
+    `_decode_greedy_no_cache` so the caller (probe loops) can swap freely.
+    """
+    from calm.hrm_text_158.kv_cache import KVCache
+
+    hrm = m.model
+    sample_attn = hrm.H_level.core.layers[0].attn
+    sample_w = sample_attn.gqkv_proj.weight
+    cache = KVCache(
+        max_seq_len=max_seq_len,
+        num_kv_heads=sample_attn.num_key_value_heads,
+        head_dim=sample_attn.head_dim,
+        dtype=sample_w.dtype,
+        device=device,
+    )
+
+    q_ids = tok.encode(question)
+    prefix = [tok.bos_id] + q_ids + [tok.sep_id]
+    if len(prefix) >= max_seq_len:
+        return "", True, True
+    sep_pos = 1 + len(q_ids)
+
+    # Prefill: full prompt forward, populates cache at length len(prefix)
+    prefill_ids = torch.tensor([prefix], dtype=torch.long, device=device)
+    prefill_pos = torch.arange(len(prefix), dtype=torch.long, device=device).unsqueeze(0)
+    prefill_sep = torch.tensor([sep_pos], dtype=torch.long, device=device)
+    finite = True
+    with torch.no_grad():
+        _, logits = m(
+            None,
+            {"inputs": prefill_ids, "sep_positions": prefill_sep, "position_ids": prefill_pos},
+            kv_cache=cache,
+        )
+    if not bool(torch.isfinite(logits).all().item()):
+        return "", False, False
+
+    next_id = int(torch.argmax(logits[0, -1], dim=-1).item())
+    out_tokens: list[int] = []
+    if next_id == tok.eos_id:
+        return tok.decode(out_tokens, stop_at_eos=False), False, finite
+    out_tokens.append(next_id)
+    current_position = len(prefix)
+
+    # Decode loop: single-token append per step
+    for _ in range(max_gen - 1):
+        if current_position >= max_seq_len:
+            break
+        decode_ids = torch.tensor([[next_id]], dtype=torch.long, device=device)
+        decode_pos = torch.tensor([[current_position]], dtype=torch.long, device=device)
+        # sep_positions unused by the cached-decode branch (no mask) but
+        # passed through for kwarg-shape compatibility with the assert
+        # path in the prefill branch (which is not entered here since
+        # cache is active AND S==1 triggers the decode branch).
+        decode_sep = prefill_sep
+        with torch.no_grad():
+            _, logits = m(
+                None,
+                {"inputs": decode_ids, "sep_positions": decode_sep, "position_ids": decode_pos},
+                kv_cache=cache,
+            )
+        if not bool(torch.isfinite(logits).all().item()):
+            finite = False
+            break
+        next_id = int(torch.argmax(logits[0, -1], dim=-1).item())
+        if next_id == tok.eos_id:
+            break
+        out_tokens.append(next_id)
+        current_position += 1
+
+    return tok.decode(out_tokens, stop_at_eos=False), False, finite
+
+
 def _parse_int(s: str) -> Optional[int]:
     """Extract first signed-int from a string; None if none found."""
     out: list[str] = []
@@ -296,6 +384,7 @@ def probe_curriculum(
     device: str | None = None,
     output_json: str | None = None,
     use_cached_ternary_infer: bool = False,
+    use_kv_cache_decode: bool = False,
 ) -> RungProbeResult:
     """Phase 3 curriculum-mode probe (codex msg 1779462307554 Phase A receipt
     requirement).
@@ -334,6 +423,13 @@ def probe_curriculum(
         n_frozen = freeze_bitlinears_for_inference(m)
         print(f"[probe-curriculum] cached-ternary-infer: froze {n_frozen} BitLinear modules", flush=True)
 
+    # T2 γ1: KV cache decode (codex msg 1779530833485-eb9296ca). Substitutes
+    # _decode_greedy_cached for _decode_greedy_no_cache at all call sites
+    # below. Same signature; cached path uses single-row B=1 KV cache.
+    decode_fn = _decode_greedy_cached if use_kv_cache_decode else _decode_greedy_no_cache
+    if use_kv_cache_decode:
+        print(f"[probe-curriculum] kv-cache-decode: ENABLED (single-row B=1)", flush=True)
+
     # Identify rung being trained (informational; not always the most recent rung)
     trained_rung = config.get("curriculum_rung", "?")
     replay_ratio = config.get("replay_ratio", 0.0)
@@ -361,7 +457,7 @@ def probe_curriculum(
         too_long = 0
         rung_finite = True
         for ex in rows:
-            decoded, tl, fin = _decode_greedy_no_cache(
+            decoded, tl, fin = decode_fn(
                 m, tok, ex["question"], max_gen=max_gen,
                 max_seq_len=max_seq_len, device=device,
             )
@@ -394,7 +490,7 @@ def probe_curriculum(
     # Canonical 17×23=391 (R3 mastery falsifier, codex rule 3 -- HARD R3 advance gate)
     canonical_q = "what is 17 times 23?"
     canonical_expected = 391
-    canonical_decoded, canonical_too_long, canonical_finite = _decode_greedy_no_cache(
+    canonical_decoded, canonical_too_long, canonical_finite = decode_fn(
         m, tok, canonical_q, max_gen=max_gen, max_seq_len=max_seq_len, device=device,
     )
     overall_finite = overall_finite and canonical_finite
@@ -430,7 +526,7 @@ def probe_curriculum(
         audit_finite = True
         audit_row_results: list[dict] = []
         for ex in audit_rows:
-            decoded, tl, fin = _decode_greedy_no_cache(
+            decoded, tl, fin = decode_fn(
                 m, tok, ex["question"], max_gen=max_gen,
                 max_seq_len=max_seq_len, device=device,
             )
@@ -508,6 +604,13 @@ if __name__ == "__main__":
                          "for inference-only F.linear dispatch. Skips per-call "
                          "quantize-and-materialize (~30%% wall-clock per T0). "
                          "Inference-only; training STE/backward unchanged.")
+    # T2 γ1 inference-only KV cache decode flag per codex msg 1779530833485-eb9296ca.
+    ap.add_argument("--use-kv-cache-decode", action="store_true",
+                    help="Single-row (B=1) KV cache decode. Prefill with PrefixLM "
+                         "mask, then single-token append per decode step with "
+                         "attn_mask=None, is_causal=False. Targets the ~83%% non-BL "
+                         "bucket from T2 re-profile. Inference-only; training path "
+                         "unchanged. Composable with --use-cached-ternary-infer.")
     args = ap.parse_args()
 
     if args.curriculum_rungs is not None:
@@ -519,6 +622,7 @@ if __name__ == "__main__":
             max_gen=args.max_gen,
             output_json=args.probe_output_json,
             use_cached_ternary_infer=args.use_cached_ternary_infer,
+            use_kv_cache_decode=args.use_kv_cache_decode,
         )
     else:
         probe(args.ckpt_path, eval_cap=args.eval_cap, max_gen=args.max_gen)
