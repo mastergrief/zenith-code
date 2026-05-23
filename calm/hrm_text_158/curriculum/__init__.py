@@ -17,6 +17,7 @@ from calm.hrm_text_158.curriculum.generators import (
     r1b4v2_one_digit_audit_rows,
     r1b5_one_digit_audit_rows,
     r1b6_one_digit_audit_rows,
+    r1b7_one_digit_audit_rows,
 )
 from calm.hrm_text_158.curriculum.splits import (
     build_rung_splits,
@@ -36,6 +37,7 @@ __all__ = [
     "r1b4v2_one_digit_audit_rows",
     "r1b5_one_digit_audit_rows",
     "r1b6_one_digit_audit_rows",
+    "r1b7_one_digit_audit_rows",
     "build_rung_splits",
     "assert_no_train_holdout_overlap",
     "compute_retention_deltas",

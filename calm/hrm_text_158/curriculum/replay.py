@@ -83,9 +83,13 @@ from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
 #         1779523412979-ff88b885; ADVANCED via seed=17 head).
 # R1b6 stays OUT (active-chain target K=5 added per codex msg
 #         1779545956176-4a8cfc3e after gabe greenlight relay
-#         1779545575582-7c52a912 of verbatim "ok implement, full prov";
-#         current attempt). Positional priors when training R1b6 resolve
-#         to {R0, R1, R1b1, R1b2, R1b3, R1b4v2, R1b5}.
+#         1779545575582-7c52a912; ADVANCED via replay50_lr5e4 at commit
+#         128b097 with R1b6=1.00 + all priors 1.00 + all keyed audits 9/9).
+# R1b7 stays OUT (active-chain target K=6 added per codex msg
+#         1779547753761-5711d790 under durable gabe provenance relay
+#         1779547541812 of verbatim "you have full provenance until im
+#         back"; current attempt). Positional priors when training R1b7
+#         resolve to {R0, R1, R1b1, R1b2, R1b3, R1b4v2, R1b5, R1b6}.
 DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b", "R1b4", "R2", "R2a"})
 
 
