@@ -1,17 +1,20 @@
-"""HRM-Text-1.58 single-row (B=1) KV cache for inference/probe decode.
+"""HRM-Text-1.58 KV cache for inference/probe decode (γ1 B=1, R4a B≥1).
 
-Per codex +1 γ1 implement at msg 1779530833485-eb9296ca. Companion design
-proposal at msg 1779530825108-86d50e8a closes the recurrence-aliasing hole
-codex flagged at msg 1779530491974-01905b3c.
+Per codex +1 γ1 implement at msg 1779530833485-eb9296ca; B≥1 extension per
+codex +1 R4a at msg 1779534977172-88a0cb6c (head-major layout correction).
+Companion γ1 design proposal at msg 1779530825108-86d50e8a closes the
+recurrence-aliasing hole codex flagged at msg 1779530491974-01905b3c.
 
 Cache contract (load-bearing):
 - Keys: (level: "L"|"H", rec_idx: int, layer_idx: int).
 - Each HRM forward visits 32 distinct keys per row:
   L: H_cycles × L_cycles iterations × n_layers_per_level (typically 6×4=24)
   H: H_cycles iterations × n_layers_per_level (typically 2×4=8)
-- Buffers store post-RoPE, transposed K/V: (B=1, num_kv_heads, max_seq, head_dim).
+- Buffers store post-RoPE, transposed K/V:
+  (batch_size, num_kv_heads, max_seq, head_dim). Default batch_size=1
+  preserves γ1 behavior bit-exact.
 - Runtime-only object; NOT registered as buffer/parameter; never in state_dict.
-- Resets between rows; never persists across decode sessions.
+- Resets between rows / chunks; never persists across decode sessions.
 
 Mask semantics (corrected per codex msg 1779530776100-9a914271):
 - Prefill: caller passes full prompt; cache stores full K/V for length S;
@@ -21,6 +24,14 @@ Mask semantics (corrected per codex msg 1779530776100-9a914271):
   truncation already enforces causality — no future K/V are ever stored).
 - `is_causal=True` with non-square q_len=1, k_len=S+1 is BANNED because
   SDPA aligns it to query-local index 0 (Q[0] would attend only to K[0]).
+
+R4a batched contract (per codex msg 1779534977172-88a0cb6c):
+- One `KVCache(batch_size=actual_chunk_B)` per exact-prefix-length chunk.
+- All rows in a chunk share `length` (uniform prefill + lockstep decode).
+- No cross-row attention happens inside SDPA (B axis is independent).
+- Inactive rows (EOS-completed) may keep appending dummy tokens; their
+  outputs are discarded by the caller — harmless for the live rows since
+  B-axis is non-interacting.
 """
 from __future__ import annotations
 
@@ -37,22 +48,27 @@ CacheKey = tuple[str, int, int]  # (level, rec_idx, layer_idx)
 @dataclass
 class _CacheBuffer:
     """Per-key K/V storage + current valid length."""
-    K: Tensor  # (1, num_kv_heads, max_seq, head_dim)
+    K: Tensor  # (batch_size, num_kv_heads, max_seq, head_dim)
     V: Tensor
     length: int
 
 
 class KVCache:
-    """Single-row KV cache keyed by (level, rec_idx, layer_idx).
+    """KV cache keyed by (level, rec_idx, layer_idx).
 
     Lazy allocation: a buffer is materialized on first `update()` for a given
     key. This avoids paying memory for unused cycles if recurrence depth is
     smaller than the configured max.
 
     Memory at HRM-Text-1.58 defaults (max_seq=384, num_kv_heads=4,
-    head_dim=128, fp32):
+    head_dim=128, fp32, batch_size=1):
       Per buffer: K = 4*384*128*4 bytes = 768 KB; V same; total 1.5 MB.
       32 buffers (24 L + 8 H) = 48 MB total.
+    At batch_size=B, memory scales linearly: 48 MB * B.
+
+    Batched mode (R4a): all rows in a single KVCache share the same
+    per-key `length` (uniform prefill + lockstep decode). One cache per
+    exact-prefix-length chunk; no cross-chunk sharing.
     """
 
     def __init__(
@@ -62,12 +78,16 @@ class KVCache:
         head_dim: int,
         dtype: torch.dtype = torch.float32,
         device: str | torch.device = "cuda",
+        batch_size: int = 1,
     ) -> None:
+        if batch_size < 1:
+            raise ValueError(f"batch_size must be >= 1, got {batch_size}")
         self._max_seq = max_seq_len
         self._num_kv_heads = num_kv_heads
         self._head_dim = head_dim
         self._dtype = dtype
         self._device = device
+        self._batch_size = batch_size
         self._buffers: dict[CacheKey, _CacheBuffer] = {}
         # Test/diagnostic: per-call access log of (level, rec_idx, layer_idx).
         # Reset by `reset()` along with buffers.
@@ -76,6 +96,10 @@ class KVCache:
     @property
     def max_seq_len(self) -> int:
         return self._max_seq
+
+    @property
+    def batch_size(self) -> int:
+        return self._batch_size
 
     def reset(self) -> None:
         """Clear all buffers and access log. Call between rows / new prompts."""
@@ -96,12 +120,14 @@ class KVCache:
             level: "L" or "H" (which RecurrentBlock).
             rec_idx: recurrence iteration index within the HRM forward.
             layer_idx: layer index inside the level's Transformer.
-            new_k, new_v: shape (1, num_kv_heads, S_new, head_dim). For prefill,
-                S_new = full prompt length; for decode, S_new = 1.
+            new_k, new_v: shape (batch_size, num_kv_heads, S_new, head_dim).
+                For prefill, S_new = full prompt length; for decode, S_new = 1.
+                batch_size MUST equal the cache's configured batch_size.
 
         Returns:
-            (K_full, V_full): views of shape (1, num_kv_heads, length, head_dim)
-            where length = previous_length + S_new.
+            (K_full, V_full): views of shape
+            (batch_size, num_kv_heads, length, head_dim) where
+            length = previous_length + S_new.
 
         Raises:
             RuntimeError: if appending overflows max_seq_len.
@@ -119,10 +145,10 @@ class KVCache:
                 f"got {new_k.dim()}"
             )
         B, H, S_new, D = new_k.shape
-        if B != 1:
+        if B != self._batch_size:
             raise ValueError(
-                f"γ1 KVCache is single-row only (B=1); got B={B}. "
-                "Batched decode is γ2 (deferred)."
+                f"batch_size mismatch: cache={self._batch_size}, new_k B={B}. "
+                "Create one KVCache(batch_size=actual_chunk_B) per chunk."
             )
         if H != self._num_kv_heads:
             raise ValueError(
@@ -137,7 +163,7 @@ class KVCache:
         self._access_log.append(key)
 
         if key not in self._buffers:
-            shape = (1, self._num_kv_heads, self._max_seq, self._head_dim)
+            shape = (self._batch_size, self._num_kv_heads, self._max_seq, self._head_dim)
             self._buffers[key] = _CacheBuffer(
                 K=torch.zeros(shape, dtype=self._dtype, device=self._device),
                 V=torch.zeros(shape, dtype=self._dtype, device=self._device),

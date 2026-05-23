@@ -56,3 +56,10 @@ class RungProbeResult:
     # Run wall + finite-check
     elapsed_sec: float = 0.0
     finite: bool = True
+
+    # R4a batched probe/eval diagnostics (codex msg 1779534977172-88a0cb6c).
+    # Populated only when --use-batched-probe-eval is set. Maps actual
+    # chunk batch_size → count of chunks at that size, aggregated across
+    # all rung loops + canonical + audits in this probe. Empty dict on
+    # the scalar (B=1) path. JSON keys are stringified ints.
+    batched_chunk_size_hist: dict[int, int] = field(default_factory=dict)

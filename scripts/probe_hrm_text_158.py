@@ -258,6 +258,213 @@ def _decode_greedy_cached(
     return tok.decode(out_tokens, stop_at_eos=False), False, finite
 
 
+def _decode_greedy_batched_cached(
+    m: LMHead,
+    tok,
+    questions: list[str],
+    *,
+    max_gen: int = 8,
+    max_seq_len: int,
+    device: str,
+) -> list[tuple[str, bool, bool]]:
+    """R4a batched cached decode for a chunk of same-prefix-length rows.
+
+    Per codex +1 R4a at msg 1779534977172-88a0cb6c. All questions in
+    `questions` MUST tokenize to identical prefix length (caller is
+    `_run_rows_batched` which groups by exact `len(prefix)`).
+
+    One chunk-local `KVCache(batch_size=B)` per call. Cache buffers shape
+    `(B, n_kv, max_seq_len, head_dim)`. No padding. Rows that hit EOS
+    drop out of `active` mask; inactive rows continue to consume cache
+    slots (lockstep position advance) but their emitted tokens are not
+    appended. Cross-row attention is impossible inside SDPA so inactive
+    rows cannot leak into live ones.
+
+    Returns a list of (decoded_string, too_long_flag, finite_flag) in the
+    same order as `questions`. `too_long=True` cannot happen here since
+    the caller pre-filters that case; the return tuple shape is kept for
+    contract parity with `_decode_greedy_cached`.
+    """
+    from calm.hrm_text_158.kv_cache import KVCache
+
+    B = len(questions)
+    if B == 0:
+        return []
+    hrm = m.model
+    sample_attn = hrm.H_level.core.layers[0].attn
+    sample_w = sample_attn.gqkv_proj.weight
+
+    # Encode + assemble prefixes; verify same-length invariant.
+    prefixes: list[list[int]] = []
+    for q in questions:
+        q_ids = tok.encode(q)
+        prefixes.append([tok.bos_id] + q_ids + [tok.sep_id])
+    prefix_len = len(prefixes[0])
+    for p in prefixes:
+        if len(p) != prefix_len:
+            raise ValueError(
+                "all questions in a batched chunk must share encoded prefix length; "
+                f"got {[len(x) for x in prefixes]}"
+            )
+    if prefix_len >= max_seq_len:
+        # Caller should have filtered this case; surface defensively.
+        return [("", True, True) for _ in questions]
+    sep_pos = prefix_len - 1  # 1 + len(q_ids); sep is at last prefill position
+
+    cache = KVCache(
+        max_seq_len=max_seq_len,
+        num_kv_heads=sample_attn.num_key_value_heads,
+        head_dim=sample_attn.head_dim,
+        dtype=sample_w.dtype,
+        device=device,
+        batch_size=B,
+    )
+
+    # Prefill: stacked (B, prefix_len) tensor.
+    prefill_ids = torch.tensor(prefixes, dtype=torch.long, device=device)
+    prefill_pos = (
+        torch.arange(prefix_len, dtype=torch.long, device=device)
+        .unsqueeze(0)
+        .expand(B, prefix_len)
+        .contiguous()
+    )
+    prefill_sep = torch.full((B,), sep_pos, dtype=torch.long, device=device)
+    with torch.no_grad():
+        _, logits = m(
+            None,
+            {"inputs": prefill_ids, "sep_positions": prefill_sep, "position_ids": prefill_pos},
+            kv_cache=cache,
+        )
+
+    # Per-row finite tracking. Logits last position: (B, V).
+    finite_per_row = torch.isfinite(logits[:, -1, :]).all(dim=-1)  # (B,)
+    # If any row went non-finite on prefill, that row gets ("", False, False);
+    # decode proceeds for the rest (still in lockstep but their tokens are
+    # discarded since the row is recorded as not-finite — keeps cache shapes uniform).
+    next_ids = torch.argmax(logits[:, -1, :], dim=-1)  # (B,)
+
+    out_tokens: list[list[int]] = [[] for _ in range(B)]
+    row_finite: list[bool] = [bool(finite_per_row[b].item()) for b in range(B)]
+    # active: row will continue contributing tokens until EOS or max_gen.
+    active = [row_finite[b] for b in range(B)]
+    for b in range(B):
+        if not active[b]:
+            continue
+        nid = int(next_ids[b].item())
+        if nid == tok.eos_id:
+            active[b] = False
+        else:
+            out_tokens[b].append(nid)
+
+    current_position = prefix_len
+
+    # Decode loop: lockstep, all rows advance one slot per step.
+    for _ in range(max_gen - 1):
+        if current_position >= max_seq_len:
+            break
+        if not any(active):
+            break
+        decode_ids = next_ids.unsqueeze(-1)  # (B, 1)
+        decode_pos = torch.full(
+            (B, 1), current_position, dtype=torch.long, device=device
+        )
+        decode_sep = prefill_sep
+        with torch.no_grad():
+            _, logits = m(
+                None,
+                {"inputs": decode_ids, "sep_positions": decode_sep, "position_ids": decode_pos},
+                kv_cache=cache,
+            )
+        step_finite = torch.isfinite(logits[:, -1, :]).all(dim=-1)  # (B,)
+        next_ids = torch.argmax(logits[:, -1, :], dim=-1)  # (B,)
+        for b in range(B):
+            if not active[b]:
+                continue
+            if not bool(step_finite[b].item()):
+                row_finite[b] = False
+                active[b] = False
+                continue
+            nid = int(next_ids[b].item())
+            if nid == tok.eos_id:
+                active[b] = False
+            else:
+                out_tokens[b].append(nid)
+        current_position += 1
+
+    results: list[tuple[str, bool, bool]] = []
+    for b in range(B):
+        if not row_finite[b]:
+            # Match scalar-path failure shape: empty decoded, finite=False
+            results.append(("", False, False))
+        else:
+            results.append((tok.decode(out_tokens[b], stop_at_eos=False), False, True))
+    return results
+
+
+def _run_rows_batched(
+    m: LMHead,
+    tok,
+    questions: list[str],
+    *,
+    max_gen: int,
+    max_seq_len: int,
+    device: str,
+    batch_size: int,
+) -> tuple[list[tuple[str, bool, bool]], dict[int, int]]:
+    """R4a batched runner: group rows by exact encoded prefix length,
+    chunk each group ≤ batch_size, decode in batch, return per-row results
+    in the original input order plus a chunk-size histogram.
+
+    Pre-filters rows with `len(prefix) >= max_seq_len` (same `too_long`
+    semantics as the scalar path) so they are never sent into a batched
+    chunk and don't distort group-length statistics.
+    """
+    n = len(questions)
+    results: list[Optional[tuple[str, bool, bool]]] = [None] * n
+    # Encode + classify each row.
+    prefix_lens: list[Optional[int]] = []
+    too_long_indices: list[int] = []
+    for i, q in enumerate(questions):
+        q_ids = tok.encode(q)
+        plen = 1 + len(q_ids) + 1
+        if plen >= max_seq_len:
+            results[i] = ("", True, True)
+            too_long_indices.append(i)
+            prefix_lens.append(None)
+        else:
+            prefix_lens.append(plen)
+
+    # Group by exact prefix length (skip too_long rows).
+    groups: dict[int, list[int]] = {}
+    for i, plen in enumerate(prefix_lens):
+        if plen is None:
+            continue
+        groups.setdefault(plen, []).append(i)
+
+    chunk_size_hist: dict[int, int] = {}
+    # Iterate groups deterministically (sorted by length) so receipts are
+    # reproducible. Per-group: split into chunks ≤ batch_size.
+    for plen in sorted(groups.keys()):
+        indices = groups[plen]
+        for start in range(0, len(indices), batch_size):
+            chunk_indices = indices[start:start + batch_size]
+            chunk_qs = [questions[i] for i in chunk_indices]
+            chunk_out = _decode_greedy_batched_cached(
+                m, tok, chunk_qs,
+                max_gen=max_gen, max_seq_len=max_seq_len, device=device,
+            )
+            for orig_i, out in zip(chunk_indices, chunk_out):
+                results[orig_i] = out
+            csz = len(chunk_indices)
+            chunk_size_hist[csz] = chunk_size_hist.get(csz, 0) + 1
+
+    # Defensive: every result slot must be filled.
+    for i, r in enumerate(results):
+        if r is None:
+            raise RuntimeError(f"batched runner left row {i} unfilled (bug)")
+    return results, chunk_size_hist  # type: ignore[return-value]
+
+
 def _parse_int(s: str) -> Optional[int]:
     """Extract first signed-int from a string; None if none found."""
     out: list[str] = []
@@ -385,6 +592,8 @@ def probe_curriculum(
     output_json: str | None = None,
     use_cached_ternary_infer: bool = False,
     use_kv_cache_decode: bool = False,
+    use_batched_probe_eval: bool = False,
+    probe_batch_size: int = 16,
 ) -> RungProbeResult:
     """Phase 3 curriculum-mode probe (codex msg 1779462307554 Phase A receipt
     requirement).
@@ -405,6 +614,15 @@ def probe_curriculum(
         if r not in RUNG_NAMES or r == "R7":
             raise ValueError(f"Invalid curriculum rung {r!r}; valid synthetic rungs: "
                              f"{[x for x in RUNG_NAMES if x != 'R7']}")
+    # R4a fail-fast: --use-batched-probe-eval requires --use-kv-cache-decode.
+    # Checked BEFORE ckpt load per codex msg 1779535251889-85062157 fail-fast rule.
+    if use_batched_probe_eval and not use_kv_cache_decode:
+        raise ValueError(
+            "--use-batched-probe-eval requires --use-kv-cache-decode "
+            "(batched path is built on top of the γ1 KV cache contract)"
+        )
+    if probe_batch_size < 1:
+        raise ValueError(f"--probe-batch-size must be >= 1, got {probe_batch_size}")
 
     print(f"[probe-curriculum] loading ckpt: {ckpt_path}", flush=True)
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
@@ -429,6 +647,18 @@ def probe_curriculum(
     decode_fn = _decode_greedy_cached if use_kv_cache_decode else _decode_greedy_no_cache
     if use_kv_cache_decode:
         print(f"[probe-curriculum] kv-cache-decode: ENABLED (single-row B=1)", flush=True)
+
+    # R4a batched probe/eval (codex msg 1779534977172-88a0cb6c). Groups rows
+    # by exact encoded prefix length; chunks each group ≤ probe_batch_size;
+    # one chunk-local KVCache(batch_size=actual_chunk_B) per chunk. No padding.
+    # Dependency check is at top of function (fail-fast before ckpt load).
+    chunk_size_hist_agg: dict[int, int] = {}
+    if use_batched_probe_eval:
+        print(
+            f"[probe-curriculum] batched-probe-eval: ENABLED "
+            f"(batch_size={probe_batch_size}, exact-prefix-length grouping)",
+            flush=True,
+        )
 
     # Identify rung being trained (informational; not always the most recent rung)
     trained_rung = config.get("curriculum_rung", "?")
@@ -456,11 +686,25 @@ def probe_curriculum(
         exact_ok = 0
         too_long = 0
         rung_finite = True
-        for ex in rows:
-            decoded, tl, fin = decode_fn(
-                m, tok, ex["question"], max_gen=max_gen,
-                max_seq_len=max_seq_len, device=device,
+        if use_batched_probe_eval:
+            batched_results, hist = _run_rows_batched(
+                m, tok,
+                [ex["question"] for ex in rows],
+                max_gen=max_gen, max_seq_len=max_seq_len, device=device,
+                batch_size=probe_batch_size,
             )
+            for sz, c in hist.items():
+                chunk_size_hist_agg[sz] = chunk_size_hist_agg.get(sz, 0) + c
+            row_outputs = batched_results
+        else:
+            row_outputs = [
+                decode_fn(
+                    m, tok, ex["question"], max_gen=max_gen,
+                    max_seq_len=max_seq_len, device=device,
+                )
+                for ex in rows
+            ]
+        for ex, (decoded, tl, fin) in zip(rows, row_outputs):
             expected = ex["expected"]
             parsed = _parse_int(decoded)
             is_parsed = (parsed == expected) and not tl
@@ -490,9 +734,19 @@ def probe_curriculum(
     # Canonical 17×23=391 (R3 mastery falsifier, codex rule 3 -- HARD R3 advance gate)
     canonical_q = "what is 17 times 23?"
     canonical_expected = 391
-    canonical_decoded, canonical_too_long, canonical_finite = decode_fn(
-        m, tok, canonical_q, max_gen=max_gen, max_seq_len=max_seq_len, device=device,
-    )
+    if use_batched_probe_eval:
+        canonical_results, canonical_hist = _run_rows_batched(
+            m, tok, [canonical_q],
+            max_gen=max_gen, max_seq_len=max_seq_len, device=device,
+            batch_size=probe_batch_size,
+        )
+        for sz, c in canonical_hist.items():
+            chunk_size_hist_agg[sz] = chunk_size_hist_agg.get(sz, 0) + c
+        canonical_decoded, canonical_too_long, canonical_finite = canonical_results[0]
+    else:
+        canonical_decoded, canonical_too_long, canonical_finite = decode_fn(
+            m, tok, canonical_q, max_gen=max_gen, max_seq_len=max_seq_len, device=device,
+        )
     overall_finite = overall_finite and canonical_finite
     canonical_parsed = _parse_int(canonical_decoded)
     result.canonical_17x23 = {
@@ -525,11 +779,25 @@ def probe_curriculum(
         audit_too_long = 0
         audit_finite = True
         audit_row_results: list[dict] = []
-        for ex in audit_rows:
-            decoded, tl, fin = decode_fn(
-                m, tok, ex["question"], max_gen=max_gen,
-                max_seq_len=max_seq_len, device=device,
+        if use_batched_probe_eval:
+            audit_decoded_rows, audit_hist = _run_rows_batched(
+                m, tok,
+                [ex["question"] for ex in audit_rows],
+                max_gen=max_gen, max_seq_len=max_seq_len, device=device,
+                batch_size=probe_batch_size,
             )
+            for sz, c in audit_hist.items():
+                chunk_size_hist_agg[sz] = chunk_size_hist_agg.get(sz, 0) + c
+            audit_row_outputs = audit_decoded_rows
+        else:
+            audit_row_outputs = [
+                decode_fn(
+                    m, tok, ex["question"], max_gen=max_gen,
+                    max_seq_len=max_seq_len, device=device,
+                )
+                for ex in audit_rows
+            ]
+        for ex, (decoded, tl, fin) in zip(audit_rows, audit_row_outputs):
             expected = ex["expected"]
             parsed = _parse_int(decoded)
             is_parsed = (parsed == expected) and not tl
@@ -568,6 +836,13 @@ def probe_curriculum(
 
     result.elapsed_sec = time.time() - start_t
     result.finite = overall_finite
+    if use_batched_probe_eval:
+        result.batched_chunk_size_hist = dict(chunk_size_hist_agg)
+        print(
+            f"[probe-curriculum] batched chunk-size histogram: "
+            f"{sorted(chunk_size_hist_agg.items())}",
+            flush=True,
+        )
     print(f"[probe-curriculum] canonical 17×23: decoded={canonical_decoded!r} "
           f"parsed={canonical_parsed} parsed_ok={result.canonical_17x23['parsed_ok']} "
           f"exact_ok={result.canonical_17x23['exact_ok']}", flush=True)
@@ -611,6 +886,18 @@ if __name__ == "__main__":
                          "attn_mask=None, is_causal=False. Targets the ~83%% non-BL "
                          "bucket from T2 re-profile. Inference-only; training path "
                          "unchanged. Composable with --use-cached-ternary-infer.")
+    # R4a batched probe/eval flags per codex msg 1779534977172-88a0cb6c.
+    ap.add_argument("--use-batched-probe-eval", action="store_true",
+                    help="Group probe rows by exact encoded prefix length and "
+                         "decode each chunk with a B=N KVCache. Requires "
+                         "--use-kv-cache-decode (fails fast otherwise). No "
+                         "padding; chunk-local cache per exact-length group. "
+                         "Preserves original row order in result records.")
+    ap.add_argument("--probe-batch-size", type=int, default=16,
+                    help="Max chunk size when --use-batched-probe-eval is set. "
+                         "Default 16. Groups larger than this are split into "
+                         "multiple chunks; smaller groups run at their natural "
+                         "size (no padding).")
     args = ap.parse_args()
 
     if args.curriculum_rungs is not None:
@@ -623,6 +910,8 @@ if __name__ == "__main__":
             output_json=args.probe_output_json,
             use_cached_ternary_infer=args.use_cached_ternary_infer,
             use_kv_cache_decode=args.use_kv_cache_decode,
+            use_batched_probe_eval=args.use_batched_probe_eval,
+            probe_batch_size=args.probe_batch_size,
         )
     else:
         probe(args.ckpt_path, eval_cap=args.eval_cap, max_gen=args.max_gen)

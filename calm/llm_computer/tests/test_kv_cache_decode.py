@@ -1,19 +1,26 @@
-"""T2 γ1 parity + recurrence-aliasing tests for KV cache decode.
+"""T2 γ1 + R4a parity + recurrence-aliasing tests for KV cache decode.
 
-Per codex +1 implement at msg 1779530833485-eb9296ca and the design
-proposal at msg 1779530825108-86d50e8a.
+Per codex +1 γ1 implement at msg 1779530833485-eb9296ca and the design
+proposal at msg 1779530825108-86d50e8a; B≥1 extension per codex +1 R4a
+at msg 1779534977172-88a0cb6c (head-major layout + chunk-local cache).
 
-9 tests:
-  1. Mask-alignment guard (q_len=1 vs k_len>1) — the LOAD-BEARING test
-     that fails if cached decode uses is_causal=True on non-square Q/K
-  2. Multi-step decode parity vs no-cache full-prefix re-forward
-  3. K/V differ across L iterations at same layer (aliasing guard)
-  4. K/V differ between H and L at same layer/iter (aliasing guard)
-  5. Cached positions remain bit-identical across decode steps
-  6. Cross-row independence after .reset()
-  7. Training-mode bypass (defense in depth alongside `not self.training` guard)
-  8. PrefixLM prefill vs cached K/V identity (K/V independent of mask)
-  9. Access pattern hits exactly 32 distinct keys per HRM forward
+Tests:
+  γ1 (B=1) regression tests:
+    1. Mask-alignment guard (q_len=1 vs k_len>1) — LOAD-BEARING
+    2. Multi-step decode parity vs no-cache full-prefix re-forward
+    3. K/V differ across L iterations at same layer (aliasing guard)
+    4. K/V differ between H and L at same layer/iter (aliasing guard)
+    5. Cached positions remain bit-identical across decode steps
+    6. Cross-row independence after .reset()
+    7. Training-mode bypass (defense in depth alongside `not self.training`)
+    8. PrefixLM prefill vs cached K/V identity (K/V independent of mask)
+    9. Access pattern hits exactly 32 distinct keys per HRM forward
+  R4a (B>1) tests:
+   10. Constructor accepts batch_size >=1 and rejects <1
+   11. Buffer shape (B, num_kv_heads, max_seq, head_dim) at allocation
+   12. update() rejects shape mismatch on B axis (cache B vs input B)
+   13. Overflow guard fires at B>1 same as B=1
+   14. Batched B=3 cached decode token-parity vs per-row B=1 cached decode
 """
 from __future__ import annotations
 
@@ -460,3 +467,207 @@ def test_access_pattern_hits_32_distinct_keys(device: str):
     H_layers = {k[2] for k in H_keys}
     assert L_layers == set(range(4)), f"L layer coverage: {L_layers}"
     assert H_layers == set(range(4)), f"H layer coverage: {H_layers}"
+
+
+# ============================================================================ #
+# R4a B>1 tests — per codex +1 R4a at msg 1779534977172-88a0cb6c
+# ============================================================================ #
+
+
+def _build_batched_kv_cache(m: LMHead, max_seq: int, device: str, batch_size: int) -> KVCache:
+    sample_attn = m.model.H_level.core.layers[0].attn
+    sample_w = sample_attn.gqkv_proj.weight
+    return KVCache(
+        max_seq_len=max_seq,
+        num_kv_heads=sample_attn.num_key_value_heads,
+        head_dim=sample_attn.head_dim,
+        dtype=sample_w.dtype,
+        device=device,
+        batch_size=batch_size,
+    )
+
+
+def _build_batched_batch(rows_ids: list[list[int]], sep_positions: list[int], device: str) -> dict:
+    """Build a (B, S) batch from B same-length token id lists."""
+    S = len(rows_ids[0])
+    for row in rows_ids:
+        assert len(row) == S, "all rows in batched batch must share length"
+    B = len(rows_ids)
+    return {
+        "inputs": torch.tensor(rows_ids, dtype=torch.long, device=device),
+        "sep_positions": torch.tensor(sep_positions, dtype=torch.long, device=device),
+        "position_ids": torch.arange(S, dtype=torch.long, device=device).unsqueeze(0).expand(B, S).contiguous(),
+    }
+
+
+# ---------------------------------------------------------------------------- #
+# TEST 10 — Constructor accepts batch_size >= 1 and rejects < 1
+# ---------------------------------------------------------------------------- #
+
+
+def test_kv_cache_ctor_batch_size_range(device: str):
+    """KVCache(batch_size=N) accepts N>=1 and exposes it via .batch_size.
+    N<1 raises ValueError before any allocation.
+    """
+    # Defaults to 1
+    c1 = KVCache(max_seq_len=8, num_kv_heads=2, head_dim=4, dtype=torch.float32, device=device)
+    assert c1.batch_size == 1
+    # Explicit B=1
+    c1e = KVCache(max_seq_len=8, num_kv_heads=2, head_dim=4, dtype=torch.float32, device=device, batch_size=1)
+    assert c1e.batch_size == 1
+    # B=4
+    c4 = KVCache(max_seq_len=8, num_kv_heads=2, head_dim=4, dtype=torch.float32, device=device, batch_size=4)
+    assert c4.batch_size == 4
+    # B=0 and negative rejected
+    with pytest.raises(ValueError, match="batch_size must be >= 1"):
+        KVCache(max_seq_len=8, num_kv_heads=2, head_dim=4, dtype=torch.float32, device=device, batch_size=0)
+    with pytest.raises(ValueError, match="batch_size must be >= 1"):
+        KVCache(max_seq_len=8, num_kv_heads=2, head_dim=4, dtype=torch.float32, device=device, batch_size=-1)
+
+
+# ---------------------------------------------------------------------------- #
+# TEST 11 — Buffer shape leading dim equals batch_size on first allocation
+# ---------------------------------------------------------------------------- #
+
+
+def test_kv_cache_buffer_shape_b_gt_1(device: str):
+    """First update() at B=3 produces buffers shaped (3, n_kv, max_seq, head_dim)."""
+    B, n_kv, S_max, D = 3, 2, 16, 4
+    cache = KVCache(
+        max_seq_len=S_max, num_kv_heads=n_kv, head_dim=D,
+        dtype=torch.float32, device=device, batch_size=B,
+    )
+    new_k = torch.randn(B, n_kv, 5, D, device=device)
+    new_v = torch.randn(B, n_kv, 5, D, device=device)
+    K_full, V_full = cache.update("L", 0, 0, new_k, new_v)
+    assert K_full.shape == (B, n_kv, 5, D)
+    assert V_full.shape == (B, n_kv, 5, D)
+    # Underlying buffer is full-sized at max_seq
+    K_buf, V_buf, length = cache.get_buffer("L", 0, 0)
+    assert K_buf.shape == (B, n_kv, 5, D)  # view truncated to length
+    assert length == 5
+
+
+# ---------------------------------------------------------------------------- #
+# TEST 12 — update() rejects mismatched batch_size on input
+# ---------------------------------------------------------------------------- #
+
+
+def test_kv_cache_rejects_batch_size_mismatch(device: str):
+    """A cache with batch_size=4 rejects new_k/new_v with leading dim != 4."""
+    cache = KVCache(
+        max_seq_len=8, num_kv_heads=2, head_dim=4,
+        dtype=torch.float32, device=device, batch_size=4,
+    )
+    # Wrong B (1 instead of 4)
+    new_k_wrong = torch.zeros(1, 2, 2, 4, device=device)
+    new_v_wrong = torch.zeros(1, 2, 2, 4, device=device)
+    with pytest.raises(ValueError, match="batch_size mismatch"):
+        cache.update("L", 0, 0, new_k_wrong, new_v_wrong)
+    # Wrong B (5 instead of 4)
+    new_k_wrong2 = torch.zeros(5, 2, 2, 4, device=device)
+    new_v_wrong2 = torch.zeros(5, 2, 2, 4, device=device)
+    with pytest.raises(ValueError, match="batch_size mismatch"):
+        cache.update("L", 0, 0, new_k_wrong2, new_v_wrong2)
+
+
+# ---------------------------------------------------------------------------- #
+# TEST 13 — Overflow guard at B>1 (same semantics as B=1)
+# ---------------------------------------------------------------------------- #
+
+
+def test_kv_cache_overflow_b_gt_1(device: str):
+    """Appending past max_seq_len at B=3 raises RuntimeError, same as B=1."""
+    cache = KVCache(
+        max_seq_len=4, num_kv_heads=2, head_dim=4,
+        dtype=torch.float32, device=device, batch_size=3,
+    )
+    new_k = torch.zeros(3, 2, 3, 4, device=device)
+    new_v = torch.zeros(3, 2, 3, 4, device=device)
+    cache.update("L", 0, 0, new_k, new_v)  # length=3
+    # next +2 would push to length=5 > max_seq_len=4
+    overflow_k = torch.zeros(3, 2, 2, 4, device=device)
+    overflow_v = torch.zeros(3, 2, 2, 4, device=device)
+    with pytest.raises(RuntimeError, match="KVCache overflow"):
+        cache.update("L", 0, 0, overflow_k, overflow_v)
+
+
+# ---------------------------------------------------------------------------- #
+# TEST 14 — Batched cached decode matches per-row B=1 cached decode (LOAD-BEARING)
+# ---------------------------------------------------------------------------- #
+
+
+def test_batched_decode_matches_per_row_b1(device: str):
+    """For B=3 rows sharing the same prefix length, batched cached decode
+    produces the same greedy token sequence per row as per-row B=1 cached
+    decode of each row in isolation.
+
+    This is the R4a load-bearing parity test — if the cache's B-axis
+    mishandles per-row independence (e.g. cross-row write leakage), the
+    decoded tokens diverge.
+    """
+    m, max_seq = _build_tiny_model(device)
+    # Three distinct prompts, all length=5
+    rows = [
+        [1, 5, 7, 3, 2],
+        [4, 2, 9, 1, 6],
+        [8, 3, 1, 7, 5],
+    ]
+    sep_positions = [4, 4, 4]  # arbitrary; same across rows
+    max_gen = 3
+    B = len(rows)
+    S = len(rows[0])
+
+    # Per-row B=1 cached decode reference
+    per_row_tokens: list[list[int]] = []
+    for ids, sep in zip(rows, sep_positions):
+        cache = _build_kv_cache(m, max_seq, device)
+        batch_prefill = _build_batch(ids, sep, device)
+        with torch.no_grad():
+            _, logits = m(None, batch_prefill, kv_cache=cache)
+        nxt = int(torch.argmax(logits[0, -1], dim=-1).item())
+        toks = [nxt]
+        cur_pos = S
+        for _ in range(max_gen - 1):
+            decode_ids = torch.tensor([[nxt]], dtype=torch.long, device=device)
+            decode_pos = torch.tensor([[cur_pos]], dtype=torch.long, device=device)
+            decode_batch = {
+                "inputs": decode_ids,
+                "sep_positions": torch.tensor([sep], dtype=torch.long, device=device),
+                "position_ids": decode_pos,
+            }
+            with torch.no_grad():
+                _, logits = m(None, decode_batch, kv_cache=cache)
+            nxt = int(torch.argmax(logits[0, -1], dim=-1).item())
+            toks.append(nxt)
+            cur_pos += 1
+        per_row_tokens.append(toks)
+
+    # Batched B=3 cached decode
+    cache_b = _build_batched_kv_cache(m, max_seq, device, batch_size=B)
+    batch_prefill = _build_batched_batch(rows, sep_positions, device)
+    with torch.no_grad():
+        _, logits = m(None, batch_prefill, kv_cache=cache_b)
+    # logits shape (B, S, V); take last position per row
+    nxt_per_row = torch.argmax(logits[:, -1, :], dim=-1)  # (B,)
+    batched_tokens: list[list[int]] = [[int(nxt_per_row[b].item())] for b in range(B)]
+    cur_pos = S
+    for _ in range(max_gen - 1):
+        decode_ids = nxt_per_row.unsqueeze(-1)  # (B, 1)
+        decode_pos = torch.full((B, 1), cur_pos, dtype=torch.long, device=device)
+        decode_batch = {
+            "inputs": decode_ids,
+            "sep_positions": torch.tensor(sep_positions, dtype=torch.long, device=device),
+            "position_ids": decode_pos,
+        }
+        with torch.no_grad():
+            _, logits = m(None, decode_batch, kv_cache=cache_b)
+        nxt_per_row = torch.argmax(logits[:, -1, :], dim=-1)
+        for b in range(B):
+            batched_tokens[b].append(int(nxt_per_row[b].item()))
+        cur_pos += 1
+
+    assert batched_tokens == per_row_tokens, (
+        f"batched B={B} cached decode tokens != per-row B=1 cached decode\n"
+        f"  per_row={per_row_tokens}\n  batched={batched_tokens}"
+    )
