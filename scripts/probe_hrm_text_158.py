@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 from dataclasses import asdict
@@ -871,6 +872,234 @@ def probe_curriculum(
     return result
 
 
+def probe_exhaustive_finite_supports(
+    ckpt_path: str,
+    *,
+    max_gen: int = 8,
+    device: str | None = None,
+    output_json: str | None = None,
+    watch_rows: list[dict] | None = None,
+    use_cached_ternary_infer: bool = False,
+    use_kv_cache_decode: bool = False,
+    use_batched_probe_eval: bool = False,
+    probe_batch_size: int = 32,
+) -> dict:
+    """Exhaustive finite-support audit for the active math chain
+    (R0..R1b8). Per codex msg 1779552750209-3218959b after R1b8 commit
+    1a14a09. Promoted from /tmp helper to committed tooling because
+    sampled probes can hide cluster regressions and boundary singletons
+    that exhaustive audit catches deterministically.
+
+    Iterates `build_exhaustive_supports()` per rung, decodes via the
+    faststack path (cached ternary + KV + batched eval when enabled),
+    aggregates totals, captures up to first 20 holes per rung with
+    replayable detail, runs optional `watch_rows` boundary checks, and
+    optionally writes JSON.
+
+    Returns dict with `ckpt_path`, `ckpt_step`, `device`, per-rung
+    `results`, `aggregate`, `watch_rows`, `elapsed_s`, `active_rungs`,
+    plus flag echo for receipt reproducibility.
+    """
+    from calm.hrm_text_158.curriculum.exhaustive_supports import (
+        EXHAUSTIVE_ACTIVE_RUNGS,
+        EXHAUSTIVE_EXPECTED_AGGREGATE,
+        build_exhaustive_supports,
+    )
+
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    if use_batched_probe_eval and not use_kv_cache_decode:
+        raise ValueError(
+            "--use-batched-probe-eval requires --use-kv-cache-decode "
+            "(batched path is built on top of the γ1 KV cache contract)"
+        )
+    if probe_batch_size < 1:
+        raise ValueError(f"--probe-batch-size must be >= 1, got {probe_batch_size}")
+
+    watch_rows = list(watch_rows) if watch_rows else []
+
+    print(f"[probe-exhaustive] loading ckpt: {ckpt_path}", flush=True)
+    ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
+    step = ckpt.get("step", -1)
+    print(f"[probe-exhaustive] ckpt step={step}", flush=True)
+    m, tok = _build_model_from_ckpt(ckpt, device)
+    max_seq_len = ckpt["config"]["max_seq_len"]
+
+    if use_cached_ternary_infer:
+        from calm.hrm_text_158.bit_linear import freeze_bitlinears_for_inference
+        n_frozen = freeze_bitlinears_for_inference(m)
+        print(f"[probe-exhaustive] cached-ternary-infer: froze {n_frozen} "
+              f"BitLinear modules", flush=True)
+
+    # Decode-path dispatch — mirror probe_curriculum (codex msg 1779553066144
+    # Blocker 2: prior implementation always called _run_rows_batched; flags
+    # were ignored). Selection:
+    #   - use_batched_probe_eval (requires use_kv_cache_decode): batched KV path
+    #   - elif use_kv_cache_decode:                                row-by-row KV cache
+    #   - else:                                                    row-by-row no cache
+    if use_batched_probe_eval:
+        dispatch_path = "batched_kv_cache"
+    elif use_kv_cache_decode:
+        dispatch_path = "scalar_kv_cache"
+    else:
+        dispatch_path = "scalar_no_cache"
+    print(f"[probe-exhaustive] decode dispatch: {dispatch_path}", flush=True)
+
+    decode_fn = _decode_greedy_cached if use_kv_cache_decode else _decode_greedy_no_cache
+
+    supports = build_exhaustive_supports()
+    print(f"[probe-exhaustive] active rungs: {list(supports.keys())}", flush=True)
+
+    # Build a flat lookup for watch-row population.
+    watch_lookup: dict[tuple[str, int], dict] = {}
+    if watch_rows:
+        watch_lookup = {(row["question"], int(row["expected"])): row for row in watch_rows}
+    watch_results: list[dict] = []
+
+    def _parse_int(text: str) -> int | None:
+        # Mirror production parser: cap digit-run at 12 chars to defeat
+        # post-bias loop residue (compute_facades.md POST_BIAS_BUDGET).
+        capped = re.sub(r"(\d{12})\d+", r"\1", text)
+        m_ = re.search(r"-?\d+", capped)
+        return int(m_.group(0)) if m_ else None
+
+    def _decode_rows(qs: list[str]) -> list[tuple[str, bool, bool]]:
+        """Dispatch decode according to selected path."""
+        if use_batched_probe_eval:
+            per_row, _hist = _run_rows_batched(
+                m, tok, qs,
+                max_gen=max_gen, max_seq_len=max_seq_len, device=device,
+                batch_size=probe_batch_size,
+            )
+            return per_row
+        # Row-by-row path (scalar): use decode_fn per row
+        return [
+            decode_fn(m, tok, q, max_gen=max_gen,
+                      max_seq_len=max_seq_len, device=device)
+            for q in qs
+        ]
+
+    results: dict[str, dict] = {}
+    finite_all = True
+    t0 = time.time()
+    for rung, rows in supports.items():
+        questions = [q for q, _ in rows]
+        expected_list = [e for _, e in rows]
+        rt0 = time.time()
+        per_row = _decode_rows(questions)
+        rt_elapsed = time.time() - rt0
+        holes: list[dict] = []
+        finite_rung = True
+        too_long = 0
+        exact = 0
+        parsed_correct = 0
+        for q, exp, (decoded, tl, fin) in zip(questions, expected_list, per_row):
+            if not fin:
+                finite_rung = False
+                finite_all = False
+            # Codex msg 1779553066144 Blocker 1: n_exact / exact_ok must be
+            # strict string equality (matches probe_curriculum's primary
+            # `decoded.strip() == str(expected)`). Parsed correctness is
+            # reported separately as `n_parsed_correct` per rung.
+            exact_match = (not tl) and (decoded.strip() == str(exp))
+            parsed = _parse_int(decoded) if not tl else None
+            parsed_match = (not tl) and parsed == exp
+            wk = (q, exp)
+            if wk in watch_lookup:
+                src = watch_lookup[wk]
+                watch_results.append({
+                    "key": src["key"],
+                    "question": q,
+                    "expected": exp,
+                    "decoded": decoded,
+                    "parsed": parsed,
+                    "too_long": tl,
+                    "finite": fin,
+                    "exact_ok": exact_match,        # strict
+                    "parsed_ok": parsed_match,      # lenient (separate report)
+                })
+            if tl:
+                too_long += 1
+                holes.append({
+                    "question": q, "expected": exp, "decoded": decoded,
+                    "parsed": None, "exact_ok": False, "parsed_ok": False,
+                    "too_long": True, "finite": fin,
+                })
+                continue
+            if parsed_match:
+                parsed_correct += 1
+            if exact_match:
+                exact += 1
+            else:
+                holes.append({
+                    "question": q, "expected": exp, "decoded": decoded,
+                    "parsed": parsed,
+                    "exact_ok": False,
+                    "parsed_ok": parsed_match,
+                    "too_long": False, "finite": fin,
+                })
+        n_total = len(rows)
+        results[rung] = {
+            "n_total": n_total,
+            "n_exact": exact,                       # strict (primary)
+            "n_parsed_correct": parsed_correct,     # lenient (separate)
+            "rate": exact / n_total if n_total else 1.0,
+            "n_holes": len(holes),                  # strict holes
+            "n_too_long": too_long,
+            "finite": finite_rung,
+            "holes_first20": holes[:20],
+            "elapsed_s": round(rt_elapsed, 3),
+        }
+        print(f"[probe-exhaustive] {rung:8s} {exact}/{n_total} = "
+              f"{results[rung]['rate']:.4f} (strict) parsed={parsed_correct}/{n_total} "
+              f"holes={len(holes)} too_long={too_long} "
+              f"finite={finite_rung} t={rt_elapsed:.2f}s", flush=True)
+
+    total_elapsed = time.time() - t0
+    agg_total = sum(r["n_total"] for r in results.values())
+    agg_exact = sum(r["n_exact"] for r in results.values())
+    agg_parsed = sum(r["n_parsed_correct"] for r in results.values())
+    agg_holes = sum(r["n_holes"] for r in results.values())
+    aggregate = {
+        "n_total": agg_total,
+        "n_exact": agg_exact,                       # strict (primary)
+        "n_parsed_correct": agg_parsed,             # lenient (separate)
+        "rate": agg_exact / agg_total if agg_total else 1.0,
+        "n_holes": agg_holes,
+        "finite": finite_all,
+        "expected_aggregate": EXHAUSTIVE_EXPECTED_AGGREGATE,
+    }
+    print(f"[probe-exhaustive] AGGREGATE strict={agg_exact}/{agg_total} = "
+          f"{aggregate['rate']:.4f} parsed={agg_parsed}/{agg_total} "
+          f"holes={agg_holes} finite={finite_all} "
+          f"elapsed={total_elapsed:.1f}s", flush=True)
+
+    output = {
+        "ckpt_path": str(ckpt_path),
+        "ckpt_step": int(step) if step != -1 else None,
+        "device": device,
+        "active_rungs": list(supports.keys()),
+        "flags": {
+            "use_cached_ternary_infer": use_cached_ternary_infer,
+            "use_kv_cache_decode": use_kv_cache_decode,
+            "use_batched_probe_eval": use_batched_probe_eval,
+            "probe_batch_size": probe_batch_size,
+            "max_gen": max_gen,
+        },
+        "dispatch_path": dispatch_path,
+        "results": results,
+        "aggregate": aggregate,
+        "watch_rows": watch_results,
+        "elapsed_s": round(total_elapsed, 2),
+    }
+    if output_json:
+        # Codex msg 1779553066144 polish: mkdir -p parent like probe_curriculum.
+        Path(output_json).parent.mkdir(parents=True, exist_ok=True)
+        with open(output_json, "w") as f:
+            json.dump(output, f, indent=2)
+        print(f"[probe-exhaustive] wrote {output_json}", flush=True)
+    return output
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="HRM-Text-1.58 probe.")
     ap.add_argument("--ckpt-path", type=str, required=True)
@@ -910,9 +1139,65 @@ if __name__ == "__main__":
                          "Default 16. Groups larger than this are split into "
                          "multiple chunks; smaller groups run at their natural "
                          "size (no padding).")
+    # Exhaustive finite-support audit flags per codex msg 1779552750209-3218959b
+    # after R1b8 commit 1a14a09 where A0 exhaustive caught the digit-7 cluster
+    # + 0-plus-N cluster + R1b2 boundary that sampled probes hid. Promoted
+    # from /tmp helper to committed tooling.
+    ap.add_argument("--exhaustive-finite-supports", action="store_true",
+                    help="Run exhaustive finite-support audit on the active "
+                         "math chain (R0..R1b8) instead of sampled per-rung "
+                         "probe. Conflicts with --curriculum-rungs. Per-rung "
+                         "supports built via "
+                         "calm.hrm_text_158.curriculum.exhaustive_supports."
+                         "build_exhaustive_supports.")
+    ap.add_argument("--watch-rows-json", type=str, default=None,
+                    help="Optional path to JSON file listing watch-rows for "
+                         "boundary checking under --exhaustive-finite-supports. "
+                         "Each entry must be {key: str, question: str, "
+                         "expected: int}. Schema validated BEFORE ckpt load "
+                         "(fails loud per codex 1779552750209 guardrail).")
+    ap.add_argument("--audit-output-json", type=str, default=None,
+                    help="Path to write exhaustive audit JSON (per-rung + "
+                         "aggregate + watch_rows). Required for --exhaustive-"
+                         "finite-supports if you want machine-readable output.")
     args = ap.parse_args()
 
-    if args.curriculum_rungs is not None:
+    # Pre-checks BEFORE ckpt load (codex 1779552750209 guardrail: fail loud
+    # on bad CLI/schema, never after expensive ckpt load).
+    if args.exhaustive_finite_supports and args.curriculum_rungs is not None:
+        raise SystemExit(
+            "ERROR: --exhaustive-finite-supports conflicts with "
+            "--curriculum-rungs (mutually exclusive); pass only one."
+        )
+    if args.use_batched_probe_eval and not args.use_kv_cache_decode:
+        # Mirror existing pre-check from probe_curriculum so exhaustive mode
+        # fails consistently before ckpt load.
+        raise SystemExit(
+            "ERROR: --use-batched-probe-eval requires --use-kv-cache-decode "
+            "(fails fast for both --curriculum-rungs and "
+            "--exhaustive-finite-supports modes)."
+        )
+
+    if args.exhaustive_finite_supports:
+        # Validate watch-rows JSON schema BEFORE ckpt load
+        from calm.hrm_text_158.curriculum.exhaustive_supports import (
+            validate_watch_rows,
+        )
+        watch_rows: list[dict] = []
+        if args.watch_rows_json:
+            with open(args.watch_rows_json) as f:
+                watch_rows = validate_watch_rows(json.load(f))
+        probe_exhaustive_finite_supports(
+            args.ckpt_path,
+            max_gen=args.max_gen,
+            output_json=args.audit_output_json,
+            watch_rows=watch_rows,
+            use_cached_ternary_infer=args.use_cached_ternary_infer,
+            use_kv_cache_decode=args.use_kv_cache_decode,
+            use_batched_probe_eval=args.use_batched_probe_eval,
+            probe_batch_size=args.probe_batch_size,
+        )
+    elif args.curriculum_rungs is not None:
         rungs = [r.strip() for r in args.curriculum_rungs.split(",") if r.strip()]
         probe_curriculum(
             args.ckpt_path,
