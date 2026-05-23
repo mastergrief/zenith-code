@@ -60,10 +60,12 @@ from calm.hrm_text_158.curriculum import (
 # 1779550489408-f40f66ab after R1b7 commit 682659b ADVANCED + A0
 # exhaustive audit PASS; R1b9 added per codex msg 1779554293017-3ba4b4ee
 # after R-C diagnostic PASS msg 1779554256972, parent = R1b3-repair
-# candidate banked as new chain head; R1b10 added per codex msg
-# 1779556007032-4c8f2a3e after R1b9 acceptance PASS msg 1779555982684,
-# parent = R1b9 candidate banked as new chain head, completes
-# constant-K single-digit addition jigsaw K=1..K=9).
+# candidate banked as new chain head; R1b10 audit accessor preserved
+# but R1b10 is PARKED / diagnosis-only per codex msg 1779558351771-055c2265
+# after three failed promotion attempts from R1b9 chain head (R1b9
+# remains math chain head). The R1b10 keyed audit fires only when
+# R1b10 is explicitly in `--curriculum-rungs`; default math probe
+# does NOT exercise it).
 # Each entry maps rung name -> callable(seed) -> list of 9 audit rows.
 # When `probe_curriculum` runs, it iterates this registry against the
 # `rungs` argument so every audit-eligible rung present gets a keyed
@@ -894,12 +896,14 @@ def probe_exhaustive_finite_supports(
     probe_batch_size: int = 32,
 ) -> dict:
     """Exhaustive finite-support audit for the active math chain
-    (R0..R1b10). Per codex msg 1779552750209-3218959b after R1b8 commit
-    1a14a09. Promoted from /tmp helper to committed tooling because
-    sampled probes can hide cluster regressions and boundary singletons
-    that exhaustive audit catches deterministically. R1b9 added per
-    codex msg 1779554293017-3ba4b4ee. R1b10 added per codex msg
-    1779556007032-4c8f2a3e.
+    (currently R0..R1b9; aggregate 1255). Per codex msg
+    1779552750209-3218959b after R1b8 commit 1a14a09. Promoted from
+    /tmp helper to committed tooling because sampled probes can hide
+    cluster regressions and boundary singletons that exhaustive audit
+    catches deterministically. R1b9 added per codex msg
+    1779554293017-3ba4b4ee. R1b10 is PARKED / diagnosis-only per codex
+    msg 1779558351771-055c2265 and is NOT in the default active math
+    chain (still reachable via explicit per-rung probes).
 
     Iterates `build_exhaustive_supports()` per rung, decodes via the
     faststack path (cached ternary + KV + batched eval when enabled),
@@ -1111,6 +1115,267 @@ def probe_exhaustive_finite_supports(
     return output
 
 
+def probe_language_finite_supports(
+    ckpt_path: str,
+    *,
+    audit_seed: int | None = None,
+    max_gen: int = 8,
+    device: str | None = None,
+    output_json: str | None = None,
+    use_cached_ternary_infer: bool = False,
+    use_kv_cache_decode: bool = False,
+    use_batched_probe_eval: bool = False,
+    probe_batch_size: int = 32,
+) -> dict:
+    """Language-axis finite-support audit (codex msg 1779559495228-f863199b
+    +1 implement; slice 2 probe integration per msg 1779560726491-971f67d5).
+
+    Parallel surface to `probe_exhaustive_finite_supports`. Iterates
+    `build_language_supports()` per active language rung (currently L0a),
+    decodes via the faststack path, aggregates totals, and emits a
+    per-source-rung breakdown in audit JSON. Does NOT touch the math
+    A0 export; math aggregate stays at 1255 in `probe_exhaustive_finite_supports`.
+
+    Audit seed handling (codex 1779560443281 nit): defaults to the
+    ckpt's stored `curriculum_seed` config field; explicit
+    `audit_seed` arg overrides. Warns on mismatch. NO hardcoded
+    `seed=42` default.
+
+    Returns dict with `ckpt_path`, `ckpt_step`, `device`,
+    `audit_seed`, per-rung `results` (each result has `n_total`,
+    `n_exact`, `n_parsed_correct`, `by_source_rung`,
+    `holes_first20`), `aggregate`, `elapsed_s`, plus flag echo.
+    """
+    from calm.hrm_text_158.curriculum.language_supports import (
+        LANGUAGE_ACTIVE_RUNGS,
+        LANGUAGE_EXPECTED_AGGREGATE,
+        build_language_supports,
+        language_source_rung_buckets,
+    )
+
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    if use_batched_probe_eval and not use_kv_cache_decode:
+        raise ValueError(
+            "--use-batched-probe-eval requires --use-kv-cache-decode "
+            "(batched path is built on top of the γ1 KV cache contract)"
+        )
+    if probe_batch_size < 1:
+        raise ValueError(f"--probe-batch-size must be >= 1, got {probe_batch_size}")
+
+    print(f"[probe-language] loading ckpt: {ckpt_path}", flush=True)
+    ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
+    step = ckpt.get("step", -1)
+    print(f"[probe-language] ckpt step={step}", flush=True)
+
+    # Audit seed resolution per codex msg 1779560443281: prefer ckpt's
+    # stored curriculum_seed (matches the seed used to draw the L0a
+    # train/held partition during training). NO hardcoded 42 default.
+    config = ckpt["config"]
+    ckpt_curriculum_seed = config.get("curriculum_seed")
+    if audit_seed is None:
+        if ckpt_curriculum_seed is None:
+            raise ValueError(
+                "language audit seed cannot be resolved: ckpt config has no "
+                "'curriculum_seed' field and no explicit --language-audit-seed "
+                "was passed. Pass --language-audit-seed N or use a ckpt that "
+                "stores curriculum_seed (Phase 3 ckpts do this by default)."
+            )
+        audit_seed = int(ckpt_curriculum_seed)
+        print(f"[probe-language] audit_seed={audit_seed} (from ckpt.curriculum_seed)", flush=True)
+    else:
+        if (
+            ckpt_curriculum_seed is not None
+            and int(ckpt_curriculum_seed) != int(audit_seed)
+        ):
+            print(
+                f"[probe-language] WARN: --language-audit-seed={audit_seed} differs "
+                f"from ckpt.curriculum_seed={ckpt_curriculum_seed}; audit will "
+                f"use {audit_seed} but row sampling may not match training partition.",
+                flush=True,
+            )
+        else:
+            print(f"[probe-language] audit_seed={audit_seed} (explicit override)", flush=True)
+
+    m, tok = _build_model_from_ckpt(ckpt, device)
+    max_seq_len = ckpt["config"]["max_seq_len"]
+
+    if use_cached_ternary_infer:
+        from calm.hrm_text_158.bit_linear import freeze_bitlinears_for_inference
+        n_frozen = freeze_bitlinears_for_inference(m)
+        print(f"[probe-language] cached-ternary-infer: froze {n_frozen} "
+              f"BitLinear modules", flush=True)
+
+    # Decode-path dispatch — mirror probe_exhaustive_finite_supports.
+    if use_batched_probe_eval:
+        dispatch_path = "batched_kv_cache"
+    elif use_kv_cache_decode:
+        dispatch_path = "scalar_kv_cache"
+    else:
+        dispatch_path = "scalar_no_cache"
+    print(f"[probe-language] decode dispatch: {dispatch_path}", flush=True)
+
+    decode_fn = _decode_greedy_cached if use_kv_cache_decode else _decode_greedy_no_cache
+
+    supports = build_language_supports(seed=audit_seed)
+    print(f"[probe-language] active language rungs: {list(supports.keys())}", flush=True)
+
+    def _parse_int(text: str) -> int | None:
+        capped = re.sub(r"(\d{12})\d+", r"\1", text)
+        m_ = re.search(r"-?\d+", capped)
+        return int(m_.group(0)) if m_ else None
+
+    def _decode_rows(qs: list[str]) -> list[tuple[str, bool, bool]]:
+        if use_batched_probe_eval:
+            per_row, _hist = _run_rows_batched(
+                m, tok, qs,
+                max_gen=max_gen, max_seq_len=max_seq_len, device=device,
+                batch_size=probe_batch_size,
+            )
+            return per_row
+        return [
+            decode_fn(m, tok, q, max_gen=max_gen,
+                      max_seq_len=max_seq_len, device=device)
+            for q in qs
+        ]
+
+    results: dict[str, dict] = {}
+    finite_all = True
+    t0 = time.time()
+    for rung, rows in supports.items():
+        # rows are (question, expected, source_rung) triples
+        questions = [q for q, _e, _s in rows]
+        expecteds = [e for _q, e, _s in rows]
+        sources = [s for _q, _e, s in rows]
+        rt0 = time.time()
+        per_row = _decode_rows(questions)
+        rt_elapsed = time.time() - rt0
+
+        # Per-source-rung accumulators
+        bucket_keys = language_source_rung_buckets(rung)
+        by_source: dict[str, dict] = {
+            b: {"n_total": 0, "n_exact": 0, "n_parsed_correct": 0, "n_holes": 0}
+            for b in bucket_keys
+        }
+
+        holes: list[dict] = []
+        finite_rung = True
+        too_long = 0
+        exact = 0
+        parsed_correct = 0
+        for q, exp, src, (decoded, tl, fin) in zip(questions, expecteds, sources, per_row):
+            if not fin:
+                finite_rung = False
+                finite_all = False
+            exact_match = (not tl) and (decoded.strip() == str(exp))
+            parsed = _parse_int(decoded) if not tl else None
+            parsed_match = (not tl) and parsed == exp
+            by_source[src]["n_total"] += 1
+            if tl:
+                too_long += 1
+                by_source[src]["n_holes"] += 1
+                holes.append({
+                    "question": q, "expected": exp, "decoded": decoded,
+                    "parsed": None, "exact_ok": False, "parsed_ok": False,
+                    "too_long": True, "finite": fin, "source_rung": src,
+                })
+                continue
+            if parsed_match:
+                parsed_correct += 1
+                by_source[src]["n_parsed_correct"] += 1
+            if exact_match:
+                exact += 1
+                by_source[src]["n_exact"] += 1
+            else:
+                by_source[src]["n_holes"] += 1
+                holes.append({
+                    "question": q, "expected": exp, "decoded": decoded,
+                    "parsed": parsed, "exact_ok": False,
+                    "parsed_ok": parsed_match,
+                    "too_long": False, "finite": fin, "source_rung": src,
+                })
+        n_total = len(rows)
+        results[rung] = {
+            "n_total": n_total,
+            "n_exact": exact,                       # strict (primary)
+            "n_parsed_correct": parsed_correct,     # lenient (separate)
+            "rate": exact / n_total if n_total else 1.0,
+            "n_holes": len(holes),
+            "n_too_long": too_long,
+            "finite": finite_rung,
+            "by_source_rung": by_source,
+            "holes_first20": holes[:20],
+            "elapsed_s": round(rt_elapsed, 3),
+        }
+        print(f"[probe-language] {rung:6s} {exact}/{n_total} = "
+              f"{results[rung]['rate']:.4f} (strict) parsed={parsed_correct}/{n_total} "
+              f"holes={len(holes)} too_long={too_long} "
+              f"finite={finite_rung} t={rt_elapsed:.2f}s", flush=True)
+        # Per-source-rung sub-line
+        for b in bucket_keys:
+            bs = by_source[b]
+            print(f"[probe-language]   bucket {b:14s} "
+                  f"strict={bs['n_exact']}/{bs['n_total']} "
+                  f"parsed={bs['n_parsed_correct']}/{bs['n_total']} "
+                  f"holes={bs['n_holes']}", flush=True)
+
+    total_elapsed = time.time() - t0
+    agg_total = sum(r["n_total"] for r in results.values())
+    agg_exact = sum(r["n_exact"] for r in results.values())
+    agg_parsed = sum(r["n_parsed_correct"] for r in results.values())
+    agg_holes = sum(r["n_holes"] for r in results.values())
+    aggregate = {
+        "n_total": agg_total,
+        "n_exact": agg_exact,
+        "n_parsed_correct": agg_parsed,
+        "rate": agg_exact / agg_total if agg_total else 1.0,
+        "n_holes": agg_holes,
+        "finite": finite_all,
+        "expected_aggregate": LANGUAGE_EXPECTED_AGGREGATE,
+    }
+    print(f"[probe-language] LANGUAGE AGGREGATE strict={agg_exact}/{agg_total} = "
+          f"{aggregate['rate']:.4f} parsed={agg_parsed}/{agg_total} "
+          f"holes={agg_holes} finite={finite_all} "
+          f"elapsed={total_elapsed:.1f}s", flush=True)
+
+    # Codex msg 1779560820500 tightening: JSON records BOTH audit_seed
+    # (actually used) and ckpt_curriculum_seed (what training used),
+    # plus an explicit `seed_mismatch` flag so receipts can be
+    # filter-grepped for mismatch incidents.
+    output = {
+        "ckpt_path": str(ckpt_path),
+        "ckpt_step": int(step) if step != -1 else None,
+        "device": device,
+        "audit_seed": int(audit_seed),
+        "ckpt_curriculum_seed": (
+            int(ckpt_curriculum_seed)
+            if ckpt_curriculum_seed is not None
+            else None
+        ),
+        "seed_mismatch": (
+            ckpt_curriculum_seed is not None
+            and int(ckpt_curriculum_seed) != int(audit_seed)
+        ),
+        "active_language_rungs": list(supports.keys()),
+        "flags": {
+            "use_cached_ternary_infer": use_cached_ternary_infer,
+            "use_kv_cache_decode": use_kv_cache_decode,
+            "use_batched_probe_eval": use_batched_probe_eval,
+            "probe_batch_size": probe_batch_size,
+            "max_gen": max_gen,
+        },
+        "dispatch_path": dispatch_path,
+        "results": results,
+        "aggregate": aggregate,
+        "elapsed_s": round(total_elapsed, 2),
+    }
+    if output_json:
+        Path(output_json).parent.mkdir(parents=True, exist_ok=True)
+        with open(output_json, "w") as f:
+            json.dump(output, f, indent=2)
+        print(f"[probe-language] wrote {output_json}", flush=True)
+    return output
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="HRM-Text-1.58 probe.")
     ap.add_argument("--ckpt-path", type=str, required=True)
@@ -1156,7 +1421,8 @@ if __name__ == "__main__":
     # from /tmp helper to committed tooling.
     ap.add_argument("--exhaustive-finite-supports", action="store_true",
                     help="Run exhaustive finite-support audit on the active "
-                         "math chain (R0..R1b10) instead of sampled per-rung "
+                         "math chain (R0..R1b9, aggregate 1255; R1b10 PARKED) "
+                         "instead of sampled per-rung "
                          "probe. Conflicts with --curriculum-rungs. Per-rung "
                          "supports built via "
                          "calm.hrm_text_158.curriculum.exhaustive_supports."
@@ -1171,6 +1437,23 @@ if __name__ == "__main__":
                     help="Path to write exhaustive audit JSON (per-rung + "
                          "aggregate + watch_rows). Required for --exhaustive-"
                          "finite-supports if you want machine-readable output.")
+    # Language-axis audit flags per codex msg 1779559495228-f863199b +1 implement
+    # L0a (first language rung). Slice 2 per codex msg 1779560726491. Parallel
+    # to --exhaustive-finite-supports; emits a separate `language` section in
+    # the audit JSON. Math A0 export remains pure.
+    ap.add_argument("--language-supports", action="store_true",
+                    help="Run language-axis finite-support audit on the active "
+                         "language rungs (currently L0a = `what's <math>?` "
+                         "paraphrase wrapper over R0..R1b9 primitives, 230 "
+                         "rows). Emits per-source-rung breakdown. Conflicts "
+                         "with --curriculum-rungs and --exhaustive-finite-supports.")
+    ap.add_argument("--language-audit-seed", type=int, default=None,
+                    help="Explicit seed for language-axis support sampling. "
+                         "Defaults to ckpt's stored `curriculum_seed` config "
+                         "(matches training-side L0a partition). If ckpt has "
+                         "no curriculum_seed AND this flag is omitted, the "
+                         "probe fails BEFORE ckpt load. Mismatch with ckpt "
+                         "seed warns and records both values in audit JSON.")
     args = ap.parse_args()
 
     # Pre-checks BEFORE ckpt load (codex 1779552750209 guardrail: fail loud
@@ -1180,16 +1463,39 @@ if __name__ == "__main__":
             "ERROR: --exhaustive-finite-supports conflicts with "
             "--curriculum-rungs (mutually exclusive); pass only one."
         )
+    if args.language_supports and args.curriculum_rungs is not None:
+        raise SystemExit(
+            "ERROR: --language-supports conflicts with --curriculum-rungs "
+            "(mutually exclusive); pass only one."
+        )
+    if args.language_supports and args.exhaustive_finite_supports:
+        raise SystemExit(
+            "ERROR: --language-supports conflicts with --exhaustive-finite-supports "
+            "(mutually exclusive — math and language are separate probe modes). "
+            "Run them as two separate invocations and combine the JSON output "
+            "in the receipt."
+        )
     if args.use_batched_probe_eval and not args.use_kv_cache_decode:
         # Mirror existing pre-check from probe_curriculum so exhaustive mode
         # fails consistently before ckpt load.
         raise SystemExit(
             "ERROR: --use-batched-probe-eval requires --use-kv-cache-decode "
-            "(fails fast for both --curriculum-rungs and "
-            "--exhaustive-finite-supports modes)."
+            "(fails fast for --curriculum-rungs, --exhaustive-finite-supports, "
+            "and --language-supports modes)."
         )
 
-    if args.exhaustive_finite_supports:
+    if args.language_supports:
+        probe_language_finite_supports(
+            args.ckpt_path,
+            audit_seed=args.language_audit_seed,
+            max_gen=args.max_gen,
+            output_json=args.audit_output_json,
+            use_cached_ternary_infer=args.use_cached_ternary_infer,
+            use_kv_cache_decode=args.use_kv_cache_decode,
+            use_batched_probe_eval=args.use_batched_probe_eval,
+            probe_batch_size=args.probe_batch_size,
+        )
+    elif args.exhaustive_finite_supports:
         # Validate watch-rows JSON schema BEFORE ckpt load
         from calm.hrm_text_158.curriculum.exhaustive_supports import (
             validate_watch_rows,

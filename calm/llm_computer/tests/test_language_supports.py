@@ -262,3 +262,281 @@ def test_l0a_partition_changes_with_seed() -> None:
     qs_b = {r["question"] for r in train_b}
     # Some overlap (one_digit exhaustive), but not identical
     assert qs_a != qs_b, "L0a partition must depend on seed"
+
+
+# ============================================================================ #
+# Slice 2 probe integration tests (codex msg 1779560820500-88e4e540 +1 implement
+# slice 2 with 2-file scope: probe + tests). Seed contract: probe defaults to
+# ckpt's curriculum_seed, explicit override warns on mismatch + writes BOTH
+# values to JSON, missing-seed-without-override fails BEFORE ckpt load.
+# ============================================================================ #
+
+
+def test_probe_language_default_seed_from_ckpt() -> None:
+    """Codex msg 1779560820500: probe defaults to ckpt's stored
+    curriculum_seed (no hardcoded 42)."""
+    from unittest.mock import patch, MagicMock
+    import scripts.probe_hrm_text_158 as probe_mod
+
+    fake_ckpt = {"step": 1500, "config": {"max_seq_len": 384, "curriculum_seed": 17}}
+    with patch.multiple(probe_mod,
+                        torch=MagicMock(load=MagicMock(return_value=fake_ckpt)),
+                        _build_model_from_ckpt=MagicMock(return_value=(MagicMock(), MagicMock())),
+                        _decode_greedy_no_cache=MagicMock(
+                            return_value=("0", False, True))):
+        out = probe_mod.probe_language_finite_supports(
+            ckpt_path="dummy",
+            device="cpu",
+            use_cached_ternary_infer=False,
+            use_kv_cache_decode=False,
+            use_batched_probe_eval=False,
+        )
+    assert out["audit_seed"] == 17, f"audit_seed should default to ckpt's curriculum_seed=17"
+    assert out["ckpt_curriculum_seed"] == 17
+    assert out["seed_mismatch"] is False
+
+
+def test_probe_language_explicit_override_with_mismatch_warns() -> None:
+    """Codex msg 1779560820500: explicit --language-audit-seed that
+    differs from ckpt seed warns + records BOTH values in JSON."""
+    from unittest.mock import patch, MagicMock
+    import scripts.probe_hrm_text_158 as probe_mod
+
+    fake_ckpt = {"step": 1500, "config": {"max_seq_len": 384, "curriculum_seed": 17}}
+    with patch.multiple(probe_mod,
+                        torch=MagicMock(load=MagicMock(return_value=fake_ckpt)),
+                        _build_model_from_ckpt=MagicMock(return_value=(MagicMock(), MagicMock())),
+                        _decode_greedy_no_cache=MagicMock(
+                            return_value=("0", False, True))):
+        out = probe_mod.probe_language_finite_supports(
+            ckpt_path="dummy",
+            audit_seed=137,
+            device="cpu",
+            use_cached_ternary_infer=False,
+            use_kv_cache_decode=False,
+            use_batched_probe_eval=False,
+        )
+    assert out["audit_seed"] == 137
+    assert out["ckpt_curriculum_seed"] == 17
+    assert out["seed_mismatch"] is True, "mismatch flag must be True when seeds differ"
+
+
+def test_probe_language_explicit_override_match_no_mismatch() -> None:
+    """Explicit override that matches ckpt seed is fine, no mismatch flag."""
+    from unittest.mock import patch, MagicMock
+    import scripts.probe_hrm_text_158 as probe_mod
+
+    fake_ckpt = {"step": 1500, "config": {"max_seq_len": 384, "curriculum_seed": 17}}
+    with patch.multiple(probe_mod,
+                        torch=MagicMock(load=MagicMock(return_value=fake_ckpt)),
+                        _build_model_from_ckpt=MagicMock(return_value=(MagicMock(), MagicMock())),
+                        _decode_greedy_no_cache=MagicMock(
+                            return_value=("0", False, True))):
+        out = probe_mod.probe_language_finite_supports(
+            ckpt_path="dummy",
+            audit_seed=17,
+            device="cpu",
+            use_cached_ternary_infer=False,
+            use_kv_cache_decode=False,
+            use_batched_probe_eval=False,
+        )
+    assert out["audit_seed"] == 17
+    assert out["ckpt_curriculum_seed"] == 17
+    assert out["seed_mismatch"] is False
+
+
+def test_probe_language_missing_seed_no_override_fails() -> None:
+    """Codex msg 1779560820500: if ckpt config has no curriculum_seed AND
+    no --language-audit-seed override, probe fails BEFORE ckpt load is
+    interpreted as inference-runnable. No silent fallback to 42."""
+    from unittest.mock import patch, MagicMock
+    import scripts.probe_hrm_text_158 as probe_mod
+
+    fake_ckpt = {"step": 1500, "config": {"max_seq_len": 384}}  # NO curriculum_seed
+    with patch.multiple(probe_mod,
+                        torch=MagicMock(load=MagicMock(return_value=fake_ckpt))):
+        with pytest.raises(ValueError, match="curriculum_seed"):
+            probe_mod.probe_language_finite_supports(
+                ckpt_path="dummy",
+                audit_seed=None,
+                device="cpu",
+                use_cached_ternary_infer=False,
+                use_kv_cache_decode=False,
+                use_batched_probe_eval=False,
+            )
+
+
+def test_probe_language_per_source_rung_buckets_sum_to_230() -> None:
+    """Per-source-rung breakdown in audit JSON must sum to 230
+    (matches LANGUAGE_EXPECTED_AGGREGATE)."""
+    from unittest.mock import patch, MagicMock
+    import scripts.probe_hrm_text_158 as probe_mod
+
+    fake_ckpt = {"step": 1500, "config": {"max_seq_len": 384, "curriculum_seed": 17}}
+    with patch.multiple(probe_mod,
+                        torch=MagicMock(load=MagicMock(return_value=fake_ckpt)),
+                        _build_model_from_ckpt=MagicMock(return_value=(MagicMock(), MagicMock())),
+                        _decode_greedy_no_cache=MagicMock(
+                            return_value=("0", False, True))):
+        out = probe_mod.probe_language_finite_supports(
+            ckpt_path="dummy",
+            audit_seed=17,
+            device="cpu",
+            use_cached_ternary_infer=False,
+            use_kv_cache_decode=False,
+            use_batched_probe_eval=False,
+        )
+    l0a = out["results"]["L0a"]
+    assert l0a["n_total"] == 230, f"L0a total: {l0a['n_total']}"
+    bucket_total = sum(b["n_total"] for b in l0a["by_source_rung"].values())
+    assert bucket_total == 230, (
+        f"per-source-rung bucket sum must equal 230; got {bucket_total}"
+    )
+    # All 13 source-rung buckets are present.
+    expected_buckets = {
+        "R0", "R1_plus_0", "R1_0_plus_A", "R1_minus_0",
+        "R1b1", "R1b2", "R1b3", "R1b4v2",
+        "R1b5", "R1b6", "R1b7", "R1b8", "R1b9",
+    }
+    assert set(l0a["by_source_rung"].keys()) == expected_buckets
+
+
+def test_probe_language_aggregate_separate_from_math() -> None:
+    """Codex msg 1779559495228 invariant: language audit emits its own
+    aggregate separate from math A0. JSON has `aggregate.expected_aggregate`
+    equal to LANGUAGE_EXPECTED_AGGREGATE=230, NOT blended with math 1255."""
+    from unittest.mock import patch, MagicMock
+    import scripts.probe_hrm_text_158 as probe_mod
+
+    fake_ckpt = {"step": 1500, "config": {"max_seq_len": 384, "curriculum_seed": 17}}
+    with patch.multiple(probe_mod,
+                        torch=MagicMock(load=MagicMock(return_value=fake_ckpt)),
+                        _build_model_from_ckpt=MagicMock(return_value=(MagicMock(), MagicMock())),
+                        _decode_greedy_no_cache=MagicMock(
+                            return_value=("0", False, True))):
+        out = probe_mod.probe_language_finite_supports(
+            ckpt_path="dummy",
+            audit_seed=17,
+            device="cpu",
+            use_cached_ternary_infer=False,
+            use_kv_cache_decode=False,
+            use_batched_probe_eval=False,
+        )
+    assert out["aggregate"]["expected_aggregate"] == 230, (
+        f"language aggregate must be 230 (NOT blended with math 1255); "
+        f"got {out['aggregate']['expected_aggregate']}"
+    )
+    assert out["aggregate"]["n_total"] == 230
+    # `active_language_rungs` field distinguishes language from math
+    assert out["active_language_rungs"] == ["L0a"]
+
+
+def test_probe_language_cli_conflicts_with_curriculum_rungs() -> None:
+    """--language-supports conflicts with --curriculum-rungs (mutually
+    exclusive); pre-check fails BEFORE ckpt load."""
+    snippet = (
+        "import subprocess, sys; "
+        "r = subprocess.run([sys.executable, '-m', 'scripts.probe_hrm_text_158', "
+        "'--ckpt-path', '/nonexistent.pt', "
+        "'--curriculum-rungs', 'R0', "
+        "'--language-supports'], capture_output=True, text=True); "
+        "print('EXIT', r.returncode); "
+        "print('STDERR', r.stderr[:500])"
+    )
+    out = subprocess.check_output([sys.executable, "-c", snippet], cwd=os.getcwd()).decode()
+    assert "EXIT 0" not in out, f"expected nonzero exit; got: {out}"
+    assert ("conflicts with --curriculum-rungs" in out
+            or "mutually exclusive" in out), (
+        f"expected explicit conflict error; got: {out}"
+    )
+
+
+def test_probe_language_cli_conflicts_with_exhaustive() -> None:
+    """--language-supports conflicts with --exhaustive-finite-supports
+    (math and language are separate probe modes per codex spec)."""
+    snippet = (
+        "import subprocess, sys; "
+        "r = subprocess.run([sys.executable, '-m', 'scripts.probe_hrm_text_158', "
+        "'--ckpt-path', '/nonexistent.pt', "
+        "'--exhaustive-finite-supports', "
+        "'--language-supports'], capture_output=True, text=True); "
+        "print('EXIT', r.returncode); "
+        "print('STDERR', r.stderr[:500])"
+    )
+    out = subprocess.check_output([sys.executable, "-c", snippet], cwd=os.getcwd()).decode()
+    assert "EXIT 0" not in out, f"expected nonzero exit; got: {out}"
+    assert ("conflicts with --exhaustive-finite-supports" in out
+            or "mutually exclusive" in out
+            or "separate probe modes" in out), (
+        f"expected explicit conflict error; got: {out}"
+    )
+
+
+def test_probe_language_dispatch_path_selection() -> None:
+    """Verify dispatch_path string matches existing exhaustive convention."""
+    from unittest.mock import patch, MagicMock
+    import scripts.probe_hrm_text_158 as probe_mod
+
+    fake_ckpt = {"step": 1500, "config": {"max_seq_len": 384, "curriculum_seed": 17}}
+    common = {
+        "torch": MagicMock(load=MagicMock(return_value=fake_ckpt)),
+        "_build_model_from_ckpt": MagicMock(return_value=(MagicMock(), MagicMock())),
+        "_decode_greedy_no_cache": MagicMock(return_value=("0", False, True)),
+        "_decode_greedy_cached": MagicMock(return_value=("0", False, True)),
+        "_run_rows_batched": MagicMock(
+            return_value=([("0", False, True)] * 230, {})
+        ),
+    }
+    # Scenario A: no flags → scalar_no_cache
+    with patch.multiple(probe_mod, **common):
+        out = probe_mod.probe_language_finite_supports(
+            ckpt_path="dummy", audit_seed=17, device="cpu",
+            use_cached_ternary_infer=False, use_kv_cache_decode=False,
+            use_batched_probe_eval=False,
+        )
+        assert out["dispatch_path"] == "scalar_no_cache"
+
+    # Scenario B: kv only → scalar_kv_cache
+    with patch.multiple(probe_mod, **common):
+        out = probe_mod.probe_language_finite_supports(
+            ckpt_path="dummy", audit_seed=17, device="cpu",
+            use_cached_ternary_infer=False, use_kv_cache_decode=True,
+            use_batched_probe_eval=False,
+        )
+        assert out["dispatch_path"] == "scalar_kv_cache"
+
+    # Scenario C: both → batched_kv_cache
+    with patch.multiple(probe_mod, **common):
+        out = probe_mod.probe_language_finite_supports(
+            ckpt_path="dummy", audit_seed=17, device="cpu",
+            use_cached_ternary_infer=False, use_kv_cache_decode=True,
+            use_batched_probe_eval=True,
+        )
+        assert out["dispatch_path"] == "batched_kv_cache"
+
+
+def test_probe_language_output_json_creates_parent_dirs(tmp_path) -> None:
+    """Output JSON writer mkdir -p's parent dir, mirroring exhaustive."""
+    from unittest.mock import patch, MagicMock
+    import json as json_mod
+    import scripts.probe_hrm_text_158 as probe_mod
+
+    fake_ckpt = {"step": 1500, "config": {"max_seq_len": 384, "curriculum_seed": 17}}
+    nested = tmp_path / "deep" / "nested" / "lang_audit.json"
+    assert not nested.parent.exists()
+    with patch.multiple(probe_mod,
+                        torch=MagicMock(load=MagicMock(return_value=fake_ckpt)),
+                        _build_model_from_ckpt=MagicMock(return_value=(MagicMock(), MagicMock())),
+                        _decode_greedy_no_cache=MagicMock(
+                            return_value=("0", False, True))):
+        probe_mod.probe_language_finite_supports(
+            ckpt_path="dummy", audit_seed=17, device="cpu",
+            output_json=str(nested),
+            use_cached_ternary_infer=False, use_kv_cache_decode=False,
+            use_batched_probe_eval=False,
+        )
+    assert nested.exists()
+    payload = json_mod.loads(nested.read_text())
+    assert "language_l0a" not in payload  # not a blended key
+    assert "results" in payload and "L0a" in payload["results"]
+    assert payload["aggregate"]["expected_aggregate"] == 230
