@@ -52,6 +52,7 @@ from calm.hrm_text_158 import (
     LMHeadConfig,
 )
 from calm.hrm_text_158.lm_head import IGNORE_LABEL_ID
+from calm.hrm_text_158.curriculum.retention_anchors import load_anchor_set
 
 
 # ----------------------------------------------------------------------------- #
@@ -209,6 +210,32 @@ def _lr_schedule(step: int, total_steps: int, warmup_steps: int, peak_lr: float,
     return min_lr + (peak_lr - min_lr) * cosine
 
 
+def _compose_anchor_rows(
+    retention_anchor_set: str, retention_anchor_repeat: int
+) -> list[dict]:
+    """Materialize the row-repeated anchor list for trainer composition.
+
+    Slice B A1 row-repeat per codex msg 1779564576409-a7db0527. Each anchor
+    row from the named set is replicated `retention_anchor_repeat` times.
+    Rows include `anchor_id` so downstream multiplicity-floor accounting
+    can exclude them from target-rung unique counts.
+
+    Returns [] when set == "none" (default-off contract).
+    """
+    if retention_anchor_set == "none":
+        return []
+    anchor_rows_unique = [
+        {
+            "question": row.question,
+            "expected": row.expected,
+            "anchor_id": row.anchor_id,
+            "source_rung": row.source_rung,
+        }
+        for row in load_anchor_set(retention_anchor_set)
+    ]
+    return anchor_rows_unique * retention_anchor_repeat
+
+
 # ----------------------------------------------------------------------------- #
 # Train function
 # ----------------------------------------------------------------------------- #
@@ -259,10 +286,36 @@ def train(
     allow_future_replay: bool = False,
     use_broad_tokenizer: bool = False,
     load_from: str | None = None,
+    # Retention-anchor V0 Slice B (codex msg 1779564576409-a7db0527).
+    # A1 row-repeat: each anchor row appears `retention_anchor_repeat`
+    # times in train_rows when set is non-'none'. Anchors append AFTER
+    # the curriculum cap + log; NOT in the deterministic curriculum
+    # shuffle. Defaults preserve byte-identical behavior to pre-Slice-B.
+    retention_anchor_set: str = "none",
+    retention_anchor_repeat: int = 2,
     dry_run: bool = False,
 ) -> None:
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
+
+    # Slice B phase-gate (codex msg 1779565128372-c6872566 catch): anchors are
+    # Phase 3 curriculum-only. In GSM8k mode no composition runs, but the
+    # ckpt save path would otherwise falsely record retention_anchor_set as
+    # active. Fail-fast here BEFORE either branch builds rows.
+    if retention_anchor_set != "none" and curriculum_rung is None:
+        raise ValueError(
+            f"retention_anchor_set={retention_anchor_set!r} requires "
+            f"curriculum_rung to be set (Phase 3 curriculum mode). "
+            f"Retention anchors are not supported in GSM8k mode."
+        )
+    # Programmatic-call defense: argparse already rejects bad CLI values,
+    # but train() may be called from tests or other scripts directly.
+    if retention_anchor_set != "none" and retention_anchor_repeat < 1:
+        raise ValueError(
+            f"retention_anchor_repeat must be >= 1 when "
+            f"retention_anchor_set != 'none'; "
+            f"got {retention_anchor_repeat}"
+        )
 
     # Save-at-steps validation + dedupe (mirror Slice 13m pattern,
     # commit 38c3032, prior receipt msg 1779447055338-e1ee34dc)
@@ -395,6 +448,34 @@ def train(
         print(f"[hrm158] curriculum {curriculum_rung}: train={len(train_rows)} "
               f"({n_new} new + {sum(replay_samples_by_rung.values())} replay {replay_samples_by_rung}) "
               f"held_out={len(val_rows)}", flush=True)
+
+        # Slice B retention-anchor V0 (codex msg 1779564576409-a7db0527):
+        # A1 row-repeat appends anchor rows AFTER the curriculum cap+log.
+        # Per codex correction: anchors do NOT enter the deterministic
+        # curriculum shuffle at L385-387; interleaving relies on the
+        # DataLoader(shuffle=True) at L424 below.
+        #
+        # Target-rung multiplicity math (n_new / unique_train_count) is
+        # already computed PRE-composition at L354 / by the L0a generator's
+        # `_enumerate_partition_l0a`. Anchor rows carry an `anchor_id`
+        # field so any downstream code can exclude them.
+        if retention_anchor_set != "none":
+            anchor_rows = _compose_anchor_rows(
+                retention_anchor_set, retention_anchor_repeat
+            )
+            anchor_unique = len(anchor_rows) // retention_anchor_repeat
+            base_curriculum_train = len(train_rows)
+            train_rows = train_rows + anchor_rows
+            print(
+                f"[hrm158] retention-anchor: set={retention_anchor_set} "
+                f"repeat={retention_anchor_repeat} "
+                f"anchor_rows_added={len(anchor_rows)} "
+                f"anchor_unique={anchor_unique} "
+                f"(base_curriculum_train={base_curriculum_train}, "
+                f"anchor_inclusive_train={len(train_rows)})",
+                flush=True,
+            )
+            tok.assert_corpus_covered(anchor_rows, label="retention_anchors")
 
         # Empty test split (curriculum has no separate test corpus; rung-cross retention is the eval)
         test_rows: list[dict] = []
@@ -602,6 +683,8 @@ def train(
                         curriculum_seed=curriculum_seed,
                         replay_ratio=effective_replay_ratio if curriculum_rung else 0.0,
                         prior_rungs=prior_rungs,
+                        retention_anchor_set=retention_anchor_set,
+                        retention_anchor_repeat=retention_anchor_repeat,
                     ),
                     "step": step,
                     "epoch": ep,
@@ -638,6 +721,8 @@ def train(
             curriculum_seed=curriculum_seed,
             replay_ratio=effective_replay_ratio if curriculum_rung else 0.0,
             prior_rungs=prior_rungs,
+            retention_anchor_set=retention_anchor_set,
+            retention_anchor_repeat=retention_anchor_repeat,
         ),
         "step": step,
         "epoch": ep,
@@ -658,12 +743,18 @@ def _build_ckpt_config(
     curriculum_seed: int = 42,
     replay_ratio: float = 0.0,
     prior_rungs: list[str] | None = None,
+    retention_anchor_set: str | None = None,
+    retention_anchor_repeat: int | None = None,
 ) -> dict:
     """Single source of truth for ckpt config blob (per Slice 13m pattern).
 
     Phase 3 additions (curriculum_rung / replay_ratio / prior_rungs) are
     populated only when training in curriculum mode; absent on legacy
     GSM8k ckpts.
+
+    Slice B additions (retention_anchor_set / retention_anchor_repeat) are
+    populated only when retention-anchor V0 is enabled (set != 'none');
+    absent when disabled, matching the default-off contract.
     """
     out: dict = {
         "vocab_size": tok.vocab_size,
@@ -695,6 +786,9 @@ def _build_ckpt_config(
         out["curriculum_seed"] = curriculum_seed
         out["replay_ratio"] = replay_ratio
         out["prior_rungs"] = list(prior_rungs or [])
+    if retention_anchor_set is not None and retention_anchor_set != "none":
+        out["retention_anchor_set"] = retention_anchor_set
+        out["retention_anchor_repeat"] = retention_anchor_repeat
     return out
 
 
@@ -796,11 +890,41 @@ if __name__ == "__main__":
                          "runs first (hard-fails on vocab/normalizer/ternary/arch "
                          "mismatch); then model_state loads strict; optimizer state "
                          "+ LR schedule RESET per rung.")
+    # Retention-anchor V0 Slice B (codex msg 1779564576409-a7db0527 +1 A1
+    # row-repeat implementation). Default-off; ckpt config records anchor
+    # metadata only when enabled. Anchors are excluded from target-rung
+    # unique-count / multiplicity math. n_train_cap applies to base
+    # curriculum BEFORE anchor composition; anchors append after cap.
+    # Anchors do NOT enter the deterministic curriculum shuffle at L385-387;
+    # interleaving comes from the existing DataLoader(shuffle=True) at L424.
+    ap.add_argument("--retention-anchor-set", type=str, default="none",
+                    choices=["none", "math_fragile_v1"],
+                    help="Retention-anchor V0 sentinel set. Default 'none' = "
+                         "no composition change. When enabled, anchor rows "
+                         "are appended after curriculum cap + log (NOT in the "
+                         "pre-cap shuffle); interleaving relies on DataLoader."
+                         " Recorded in ckpt config when enabled, absent when "
+                         "disabled.")
+    ap.add_argument("--retention-anchor-repeat", type=int, default=2,
+                    help="Row-repeat multiplier for A1 anchor composition. "
+                         "Each anchor row appears N times in train_rows. "
+                         "Default 2. Integer-only (argparse type=int rejects "
+                         "non-integers loudly); must be >= 1 (rejected at "
+                         "parse time). Ignored when --retention-anchor-set "
+                         "is 'none'.")
     ap.add_argument("--dry-run", action="store_true",
                     help="Build corpus + tokenizer + model + first batch + verify "
                          "forward pass, then exit BEFORE optimizer step. No ckpt "
                          "written. Used for Phase A receipt validation.")
     args = ap.parse_args()
+
+    # Slice B: integer-and->=1 sanity bound for --retention-anchor-repeat.
+    # argparse type=int already rejects non-integer; this catches zero/neg.
+    if args.retention_anchor_repeat < 1:
+        ap.error(
+            f"--retention-anchor-repeat must be >= 1; "
+            f"got {args.retention_anchor_repeat}"
+        )
 
     train(
         epochs=args.epochs,
@@ -836,5 +960,7 @@ if __name__ == "__main__":
         replay_ratio=args.replay_ratio,
         use_broad_tokenizer=args.use_broad_tokenizer,
         load_from=args.load_from,
+        retention_anchor_set=args.retention_anchor_set,
+        retention_anchor_repeat=args.retention_anchor_repeat,
         dry_run=args.dry_run,
     )

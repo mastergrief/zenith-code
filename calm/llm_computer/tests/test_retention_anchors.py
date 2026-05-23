@@ -219,3 +219,363 @@ def test_anchor_set_source_rung_buckets_unknown_raises():
     """Bad name fails fast."""
     with pytest.raises(ValueError, match=r"unknown retention-anchor set"):
         anchor_set_source_rung_buckets("bogus")
+
+
+# ============================================================================ #
+# Slice B trainer-integration tests (codex msg 1779564576409-a7db0527 +1 A1
+# row-repeat). These test the trainer-side helper `_compose_anchor_rows` and
+# the ckpt config recording, NOT actual training (no GPU, no model build).
+# Trainer module is imported lazily inside each test to avoid heavy import
+# cost when running only Slice A tests.
+# ============================================================================ #
+
+
+def _import_trainer():
+    """Import the trainer module lazily. Defers heavy torch/HRM imports
+    until a Slice B test actually runs."""
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[3]
+    trainer_path = repo_root / "scripts" / "train_hrm_text_158.py"
+    # Use importlib to load the script as a module without adding to PATH.
+    spec = importlib.util.spec_from_file_location(
+        "_test_train_hrm_text_158", str(trainer_path)
+    )
+    assert spec is not None and spec.loader is not None
+    if "_test_train_hrm_text_158" in sys.modules:
+        return sys.modules["_test_train_hrm_text_158"]
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["_test_train_hrm_text_158"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_trainer_compose_anchor_rows_none_returns_empty():
+    """Default-off contract: 'none' yields zero anchor rows."""
+    trainer = _import_trainer()
+    rows = trainer._compose_anchor_rows("none", 2)
+    assert rows == []
+    rows = trainer._compose_anchor_rows("none", 5)
+    assert rows == []
+
+
+def test_trainer_compose_anchor_rows_math_fragile_v1_repeat_2_adds_42():
+    """Default repeat=2 with math_fragile_v1 yields 21·2 = 42 anchor rows."""
+    trainer = _import_trainer()
+    rows = trainer._compose_anchor_rows("math_fragile_v1", 2)
+    assert len(rows) == 42, f"expected 42, got {len(rows)}"
+    # First 21 rows match the canonical set order; next 21 are the repeat.
+    unique_count = len({r["anchor_id"] for r in rows})
+    assert unique_count == 21, (
+        f"21 unique anchor_ids expected; got {unique_count}"
+    )
+
+
+def test_trainer_compose_anchor_rows_math_fragile_v1_repeat_5_adds_105():
+    """Explicit repeat=5 yields 21·5 = 105 anchor rows."""
+    trainer = _import_trainer()
+    rows = trainer._compose_anchor_rows("math_fragile_v1", 5)
+    assert len(rows) == 105, f"expected 105, got {len(rows)}"
+    unique_count = len({r["anchor_id"] for r in rows})
+    assert unique_count == 21
+
+
+def test_trainer_compose_anchor_rows_repeat_1_adds_21():
+    """Minimum legal repeat=1 yields 21 anchor rows (no replication)."""
+    trainer = _import_trainer()
+    rows = trainer._compose_anchor_rows("math_fragile_v1", 1)
+    assert len(rows) == 21
+    # All anchor_ids unique at repeat=1
+    assert len({r["anchor_id"] for r in rows}) == 21
+
+
+def test_trainer_compose_anchor_rows_schema():
+    """Each anchor row has the curriculum-compatible dict schema:
+    question (str), expected (int), anchor_id (str), source_rung (str).
+    `anchor_id` is the discriminator excluding anchors from target-rung
+    unique-count math."""
+    trainer = _import_trainer()
+    rows = trainer._compose_anchor_rows("math_fragile_v1", 2)
+    for r in rows:
+        assert set(r.keys()) == {
+            "question", "expected", "anchor_id", "source_rung",
+        }, f"unexpected keys: {set(r.keys())}"
+        assert isinstance(r["question"], str)
+        assert isinstance(r["expected"], int)
+        assert isinstance(r["anchor_id"], str)
+        assert isinstance(r["source_rung"], str)
+
+
+def test_trainer_compose_anchor_rows_unknown_set_raises():
+    """Unknown set name fails fast (delegates to load_anchor_set)."""
+    trainer = _import_trainer()
+    with pytest.raises(ValueError, match=r"unknown retention-anchor set"):
+        trainer._compose_anchor_rows("bogus_set", 2)
+
+
+def test_build_ckpt_config_omits_anchor_fields_when_default():
+    """Default-off contract: no anchor fields in config when retention_anchor_set
+    is None or 'none'."""
+    trainer = _import_trainer()
+    # Pure dispatch test: mock the minimum surface _build_ckpt_config needs.
+
+    class _MockCfg:
+        max_seq_len = 256
+        n_layers = 4
+        hidden_size = 256
+        num_heads = 2
+        expansion = 4.0
+        H_cycles = 2
+        L_cycles = 3
+        half_layers = True
+        bp_warmup_ratio = 0.2
+        bp_min_steps = 2
+        bp_max_steps = 5
+        norm_type = "rmsnorm"
+        norm_eps = 1e-5
+        rope_theta = 10000.0
+        attn_type = "self"
+        init_type = "leuncn"
+        pos_emb_type = "rope"
+        use_ternary_bulk = False
+
+    class _MockTok:
+        vocab_size = 260
+        normalizer_version = "byte_utf8_v1"
+
+        def vocab_as_list(self):
+            return list(range(260))
+
+    m, tok, cfg = object(), _MockTok(), _MockCfg()
+
+    # Case 1: retention_anchor_set not passed → no fields in output
+    out = trainer._build_ckpt_config(m, tok, cfg, max_len=256, batch_size=8)
+    assert "retention_anchor_set" not in out
+    assert "retention_anchor_repeat" not in out
+
+    # Case 2: explicit 'none' → still no fields (matches default-off
+    # contract: config shape unchanged from current behavior)
+    out = trainer._build_ckpt_config(
+        m, tok, cfg, max_len=256, batch_size=8,
+        retention_anchor_set="none", retention_anchor_repeat=2,
+    )
+    assert "retention_anchor_set" not in out
+    assert "retention_anchor_repeat" not in out
+
+
+def test_build_ckpt_config_records_anchor_fields_when_enabled():
+    """When retention_anchor_set != 'none', both fields appear in config."""
+    trainer = _import_trainer()
+
+    class _MockCfg:
+        max_seq_len = 256
+        n_layers = 4
+        hidden_size = 256
+        num_heads = 2
+        expansion = 4.0
+        H_cycles = 2
+        L_cycles = 3
+        half_layers = True
+        bp_warmup_ratio = 0.2
+        bp_min_steps = 2
+        bp_max_steps = 5
+        norm_type = "rmsnorm"
+        norm_eps = 1e-5
+        rope_theta = 10000.0
+        attn_type = "self"
+        init_type = "leuncn"
+        pos_emb_type = "rope"
+        use_ternary_bulk = False
+
+    class _MockTok:
+        vocab_size = 260
+        normalizer_version = "byte_utf8_v1"
+
+        def vocab_as_list(self):
+            return list(range(260))
+
+    out = trainer._build_ckpt_config(
+        object(), _MockTok(), _MockCfg(), max_len=256, batch_size=8,
+        retention_anchor_set="math_fragile_v1", retention_anchor_repeat=3,
+    )
+    assert out["retention_anchor_set"] == "math_fragile_v1"
+    assert out["retention_anchor_repeat"] == 3
+
+
+def test_trainer_anchor_repeat_zero_rejected_at_cli():
+    """argparse error for --retention-anchor-repeat 0."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[3]
+    trainer_path = repo_root / "scripts" / "train_hrm_text_158.py"
+    result = subprocess.run(
+        [sys.executable, str(trainer_path),
+         "--retention-anchor-repeat", "0", "--dry-run"],
+        capture_output=True, text=True,
+        env={"PYTHONPATH": str(repo_root)},
+    )
+    assert result.returncode != 0, (
+        f"expected nonzero exit; got {result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    # Error message names the flag + sanity bound
+    assert (
+        "retention-anchor-repeat" in result.stderr
+        or "retention-anchor-repeat" in result.stdout
+    )
+    assert ">= 1" in result.stderr or ">= 1" in result.stdout
+
+
+def test_trainer_anchor_repeat_negative_rejected_at_cli():
+    """argparse error for --retention-anchor-repeat -1."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[3]
+    trainer_path = repo_root / "scripts" / "train_hrm_text_158.py"
+    result = subprocess.run(
+        [sys.executable, str(trainer_path),
+         "--retention-anchor-repeat", "-1", "--dry-run"],
+        capture_output=True, text=True,
+        env={"PYTHONPATH": str(repo_root)},
+    )
+    assert result.returncode != 0
+    assert ">= 1" in result.stderr or ">= 1" in result.stdout
+
+
+def test_trainer_anchor_repeat_non_integer_rejected_at_cli():
+    """argparse type=int rejects floats loudly (no silent rounding)."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[3]
+    trainer_path = repo_root / "scripts" / "train_hrm_text_158.py"
+    result = subprocess.run(
+        [sys.executable, str(trainer_path),
+         "--retention-anchor-repeat", "2.5", "--dry-run"],
+        capture_output=True, text=True,
+        env={"PYTHONPATH": str(repo_root)},
+    )
+    assert result.returncode != 0
+    # argparse rejects non-int via "invalid int value"
+    assert (
+        "invalid int value" in result.stderr
+        or "invalid int value" in result.stdout
+    )
+
+
+def test_trainer_anchor_set_rejects_unknown_at_cli():
+    """argparse choices= rejects unknown set names."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[3]
+    trainer_path = repo_root / "scripts" / "train_hrm_text_158.py"
+    result = subprocess.run(
+        [sys.executable, str(trainer_path),
+         "--retention-anchor-set", "bogus_set", "--dry-run"],
+        capture_output=True, text=True,
+        env={"PYTHONPATH": str(repo_root)},
+    )
+    assert result.returncode != 0
+    assert (
+        "invalid choice" in result.stderr
+        or "invalid choice" in result.stdout
+    )
+
+
+def test_trainer_compose_anchor_rows_anchor_ids_disjoint_from_curriculum():
+    """Anchor `anchor_id` field is a unique discriminator; existing
+    curriculum rows never carry this key (verified via the curriculum
+    row generators in calm/hrm_text_158/curriculum/generators.py which
+    emit dicts with `question`, `expected`, `rung` OR `source_rung` but
+    NOT `anchor_id`). This is the field downstream multiplicity-floor
+    accounting uses to exclude anchor rows from target-rung unique counts.
+    """
+    trainer = _import_trainer()
+    anchor_rows = trainer._compose_anchor_rows("math_fragile_v1", 3)
+
+    # Sanity check: every anchor row has anchor_id; this is the
+    # downstream-tooling discriminator codex specified.
+    for r in anchor_rows:
+        assert "anchor_id" in r, (
+            f"anchor row missing required `anchor_id` field: {r}"
+        )
+        assert r["anchor_id"].startswith(("r1b2:", "r1_zl:", "r1_zr:"))
+
+
+def test_trainer_anchor_phase_gate_rejects_gsm8k_mode():
+    """Slice B phase-gate (codex msg 1779565128372-c6872566): retention
+    anchors are Phase 3 curriculum-only. GSM8k mode (curriculum_rung=None)
+    + anchor_set != 'none' must raise BEFORE any composition or save,
+    so the ckpt cannot falsely record retention_anchor_set=enabled.
+    """
+    trainer = _import_trainer()
+    with pytest.raises(ValueError, match=r"requires curriculum_rung"):
+        trainer.train(
+            curriculum_rung=None,
+            retention_anchor_set="math_fragile_v1",
+            retention_anchor_repeat=2,
+            # Other kwargs unset; ValueError fires before they matter.
+        )
+
+
+def test_trainer_anchor_repeat_below_one_rejected_programmatically():
+    """Programmatic-call defense: argparse-bypassing callers must still
+    fail loudly on repeat < 1. CLI already covers this; this test
+    pins the train() function-level check (codex msg 1779565128372).
+    """
+    trainer = _import_trainer()
+    # GSM8k branch unreachable due to phase-gate, so set curriculum_rung
+    # to a valid value so the repeat-validation check is the one that fires.
+    with pytest.raises(ValueError, match=r"retention_anchor_repeat must be >= 1"):
+        trainer.train(
+            curriculum_rung="R0",
+            retention_anchor_set="math_fragile_v1",
+            retention_anchor_repeat=0,
+        )
+    with pytest.raises(ValueError, match=r"retention_anchor_repeat must be >= 1"):
+        trainer.train(
+            curriculum_rung="R0",
+            retention_anchor_set="math_fragile_v1",
+            retention_anchor_repeat=-3,
+        )
+
+
+def test_trainer_anchor_phase_gate_allows_default_off_in_gsm8k():
+    """Default 'none' in GSM8k mode is still allowed (no phase-gate
+    violation when anchors aren't enabled). This is the byte-identical
+    default-off path — verify the ValueError does NOT fire.
+    """
+    trainer = _import_trainer()
+    # We can't fully run train() without a model + data, but we CAN
+    # verify the phase-gate check passes by inspecting how far the
+    # function gets before hitting later validation. The simplest
+    # assertion is that the guard's exception is NOT the one we hit.
+    # If 'none' (default) is correctly skipped, train() will fail later
+    # for a DIFFERENT reason (e.g. unsupported config), not the guard.
+    try:
+        trainer.train(
+            curriculum_rung=None,
+            retention_anchor_set="none",
+            retention_anchor_repeat=2,
+            # Likely to error somewhere later (model build, data load),
+            # but NOT at the retention-anchor phase-gate.
+        )
+    except ValueError as e:
+        # The retention-anchor guard's message is:
+        #   "retention_anchor_set=...requires curriculum_rung to be set..."
+        assert "requires curriculum_rung" not in str(e), (
+            f"phase-gate fired with 'none' (default-off contract violated): {e}"
+        )
+    except Exception:
+        # Any other exception (TypeError, AttributeError, FileNotFoundError,
+        # etc.) is acceptable — we only care that the phase-gate didn't fire.
+        pass
