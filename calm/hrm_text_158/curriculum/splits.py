@@ -18,7 +18,7 @@ def build_rung_splits(
     n_train: int = 2000,
     n_held_out: int = 400,
     seed: int = 42,
-    rungs: tuple[str, ...] = ("R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R3", "R4", "R5", "R6"),
+    rungs: tuple[str, ...] = ("R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "L0a", "R3", "R4", "R5", "R6"),
 ) -> dict[str, dict[str, list[dict]]]:
     """Build train + held_out splits for all rungs.
 
@@ -41,7 +41,12 @@ def build_rung_splits(
     diagnosis-only after three failed promotion attempts from R1b9
     chain head; R1b10 supervision reliably destabilizes R1b2 K=-1
     subtraction; R1b10 stays reachable via explicit args for diagnosis
-    but is OUT of default splits and exhaustive active rungs):
+    but is OUT of default splits and exhaustive active rungs) +
+    1779559495228-f863199b (L0a paraphrase wrapper added as first
+    language-axis rung over R0..R1b9 primitives; bounded stratified
+    230-row support `what's <math>?`, 19x multiplicity at default
+    recipe; math A0 aggregate stays at 1255 unchanged, language audit
+    lives in `language_supports.py`):
 
       R0 -> R1 -> R1b1 (K=1 plus) -> R1b2 (K=-1 minus) -> R1b3 (K=2 plus,
       PASSED at 175d327) -> R1b4v2 (K=3 plus, ADVANCED at b368b81 via
@@ -52,7 +57,8 @@ def build_rung_splits(
       at 1a14a09 via replay65_n10k_lr5e4) -> R1b9 (K=8 plus, banked as
       chain head via msg 1779556007032 from R1b3-repair parent with
       A0 1254/1255 strict + 1255/1255 parsed) -> [R1b10 K=9 PARKED] ->
-      R3 -> ...
+      L0a (paraphrase wrapper `what's <math>?` over R0..R1b9, NEW
+      first language-axis rung) -> R3 -> ...
 
     Diagnosis-only and OUT of default: R1b2a (failed v1+v2 lowmult),
     R1b (legacy 3-template), R1b4 (K=3 v1 failed 7b53368 measurement

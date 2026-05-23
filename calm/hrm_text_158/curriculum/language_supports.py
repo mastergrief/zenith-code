@@ -1,0 +1,94 @@
+"""Language-wrapper finite-support audit specs (codex msg
+1779559495228-f863199b +1 implement L0a as the first language-axis
+rung over validated R0..R1b9 math primitives).
+
+PARALLEL audit surface to `exhaustive_supports.py` (math A0). Kept in
+a separate module so:
+
+- Math A0 export (`EXHAUSTIVE_ACTIVE_RUNGS`, `EXHAUSTIVE_EXPECTED_AGGREGATE=1255`)
+  stays pure and stable as the R1b9 chain head baseline.
+- Language audit grows independently as L0a -> L0b -> L0c rungs land.
+- Probe JSON reports `math` and `language` aggregates separately
+  (no blended single-number aggregate).
+
+L0a is a BOUNDED STRATIFIED 230-row support with a single paraphrase
+template `what's <math>?` over R0..R1b9 math primitives. Multiplicity
+under the default training recipe (n_train=10000, replay_ratio=0.65)
+is ~19x against L0a unique_train_count=184, well above the 10x floor
+required to disambiguate language acquisition from undercoverage.
+
+Pure data assembly; zero model deps.
+"""
+from __future__ import annotations
+
+from typing import Callable
+
+from calm.hrm_text_158.curriculum.generators import _enumerate_partition_l0a
+
+
+LANGUAGE_ACTIVE_RUNGS: tuple[str, ...] = ("L0a",)
+
+
+def _l0a_support(seed: int = 42) -> list[tuple[str, int, str]]:
+    """Full 230-row L0a bounded stratified support (train + held).
+
+    Each row is a (question, expected, source_rung) triple. source_rung
+    identifies which R0..R1b9 math primitive the L0a row wraps, used
+    for per-source-rung breakdown in audit JSON.
+
+    Counts:
+      R0:           20 (10 one_digit + 10 two_digit)
+      R1_plus_0:    10 (A plus 0)
+      R1_0_plus_A:  10 (0 plus A)
+      R1_minus_0:   10 (A minus 0)
+      R1b1..R1b9:   each 20 (9 one_digit + 11 two_digit)
+      TOTAL:        230
+
+    Source-rung labels for R1's three sub-templates are distinct
+    ("R1_plus_0", "R1_0_plus_A", "R1_minus_0") so per-bucket reporting
+    can separately track each identity-bridge variant.
+    """
+    train, held = _enumerate_partition_l0a(seed)
+    rows: list[tuple[str, int, str]] = []
+    for r in train + held:
+        rows.append((r["question"], r["expected"], r["source_rung"]))
+    return rows
+
+
+_BUILDERS: dict[str, Callable[[int], list[tuple[str, int, str]]]] = {
+    "L0a": _l0a_support,
+}
+
+LANGUAGE_EXPECTED_COUNTS: dict[str, int] = {
+    "L0a": 230,
+}
+LANGUAGE_EXPECTED_AGGREGATE: int = sum(
+    LANGUAGE_EXPECTED_COUNTS[r] for r in LANGUAGE_ACTIVE_RUNGS
+)  # 230
+
+
+def build_language_supports(seed: int = 42) -> dict[str, list[tuple[str, int, str]]]:
+    """Build full finite-support audit list for every active language rung.
+
+    Returns dict keyed by language rung name in `LANGUAGE_ACTIVE_RUNGS`
+    order. Per-rung counts match `LANGUAGE_EXPECTED_COUNTS`. Each row
+    is (question, expected, source_rung).
+
+    Pure: no model deps, deterministic per seed.
+    """
+    return {rung: _BUILDERS[rung](seed) for rung in LANGUAGE_ACTIVE_RUNGS}
+
+
+def language_source_rung_buckets(rung: str) -> list[str]:
+    """Return the list of unique source-rung labels for a language rung,
+    in canonical reporting order. Used by probe to render per-bucket
+    breakdowns.
+    """
+    if rung == "L0a":
+        return [
+            "R0",
+            "R1_plus_0", "R1_0_plus_A", "R1_minus_0",
+            "R1b1", "R1b2", "R1b3", "R1b4v2",
+            "R1b5", "R1b6", "R1b7", "R1b8", "R1b9",
+        ]
+    raise ValueError(f"unknown language rung {rung!r}; valid: {LANGUAGE_ACTIVE_RUNGS}")

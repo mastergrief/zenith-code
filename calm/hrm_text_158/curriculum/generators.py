@@ -198,6 +198,30 @@ Axis 1 — math complexity under stable language wrapper:
                                   Output [10, 99]; no 3-digit class (max A+9 = 90+9 = 99).
                                   Audit: 9-row exhaustive one_digit via
                                   r1b10_one_digit_audit_rows.]
+  L0a: paraphrase wrapper        `what's <math>?` over R0..R1b9 primitives (first language rung)
+                                 [codex msg 1779559495228-f863199b +1 implement L0a as the
+                                  first language-axis rung. Wraps validated R0..R1b9 math
+                                  primitives in a single paraphrase template (`what's`
+                                  contraction of `what is`); preserves math semantics
+                                  exactly. Bounded stratified 230-row finite support
+                                  designed to ensure >=10x multiplicity at default
+                                  recipe (n_train=10000, rr=0.65): unique_train_count=184,
+                                  n_new=3500, multiplicity=19.0x.
+                                  Per source rung:
+                                    R0:           20 (10 one_digit {0..9} + 10 two_digit)
+                                    R1_plus_0:    10 (`A plus 0`)
+                                    R1_0_plus_A:  10 (`0 plus A`)
+                                    R1_minus_0:   10 (`A minus 0`)
+                                    R1b1..R1b9:   each 20 (9 one_digit {1..9} + 11 two_digit)
+                                  Partition: 184 train + 46 held; R0 16/4, R1 24/6
+                                  (8/2 per sub-template), R1bN each 16/4 (9 one_digit
+                                  in train + 7 two_digit in train, 4 two_digit held).
+                                  Audit surface lives in `language_supports.py`
+                                  (LANGUAGE_ACTIVE_RUNGS=("L0a",), separate from math
+                                  EXHAUSTIVE_ACTIVE_RUNGS; math A0 aggregate stays at
+                                  1255 unchanged). R1b10 excluded from L0a positional
+                                  priors via DIAGNOSIS_ONLY_RUNGS filter. Parent ckpt:
+                                  R1b9 chain head banked via msg 1779556007032.]
   R2a: teens addition-only       `what is 13 plus 7?` -> `20` (A in [10,19], B in [2,9])
                                  [DIAGNOSIS-ONLY after v1 failed 0.045 at 558fcc1; variable-B
                                   is the blocker, not operator mixing. R1b3 is the active
@@ -233,7 +257,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -575,6 +599,20 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     "R1b10": {
         "train":     {"A_range": (1, 90), "partition": "enumerate_stratified_r1b10"},
         "held_out":  {"A_range": (10, 90), "partition": "enumerate_stratified_r1b10"},
+    },
+    # L0a (codex msg 1779559495228-f863199b +1 implement first language-axis
+    # rung over validated R0..R1b9 math primitives. Single paraphrase
+    # template `what's <math>?` (contraction of `what is`). Bounded
+    # stratified 230-row support over R0..R1b9; unique_train_count=184,
+    # 19.0x multiplicity at n_train=10000/rr=0.65. Audit lives in
+    # `language_supports.py` (separate from math A0). R1b10 excluded from
+    # positional priors via DIAGNOSIS_ONLY_RUNGS filter. Spec is a single
+    # bounded support, not a parametric (A_range, B_range) sweep -
+    # partition function `_enumerate_partition_l0a` returns the explicit
+    # 230-row list with source_rung metadata for per-bucket reporting.
+    "L0a": {
+        "train":     {"partition": "enumerate_stratified_l0a"},
+        "held_out":  {"partition": "enumerate_stratified_l0a"},
     },
     # R2a (codex msg 1779478819906-0e30503e after full R2 failed v1+v2;
     # DIAGNOSIS-ONLY after R2a v1 itself failed 0.045 at 558fcc1, codex
@@ -1704,12 +1742,18 @@ def _gen_r1b9(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> 
 
 
 def _enumerate_partition_r1b10(seed: int, train_frac: float = 0.8) -> tuple[set, set]:
-    """Stratified deterministic partition for R1b10's K=9 addition (codex
-    msg 1779556007032-4c8f2a3e +1 K=9 after R1b9 acceptance PASS msg
-    1779555982684).
+    """Stratified deterministic partition for R1b10's K=9 addition.
 
-    Mirrors R1b5..R1b9 design at K=9. Completes the constant-K
-    single-digit addition jigsaw K=1..K=9. Bakes in lessons:
+    R1b10 is PARKED / diagnosis-only per codex msg 1779558351771-055c2265
+    after three failed promotion attempts from R1b9 chain head; R1b10
+    supervision destabilizes R1b2 K=-1 subtraction surface. R1b9 stays
+    math chain head; R1b10 does NOT complete the active K=1..K=9 chain.
+    Partition + generator code stays reachable for explicit diagnostic
+    revisit via `--curriculum-rung R1b10`; OUT of default splits,
+    EXHAUSTIVE_ACTIVE_RUNGS, and positional priors of later rungs.
+
+    Mirrors R1b5..R1b9 carry-stratified design at K=9 (preserved for
+    reproducibility of the parked diagnostic):
       one_digit A=1..9 EXHAUSTIVE train (NO thin-pool heldout)
       two_digit A=10..90 CARRY-STRATIFIED 80/20
 
@@ -1757,9 +1801,13 @@ def r1b10_one_digit_audit_rows(seed: int = 42) -> list[dict]:
     """Deterministic 9-row exhaustive audit of R1b10 one_digit support
     (A in [1, 9], `what is A plus 9?` -> A+9).
 
-    Codex msg 1779556007032-4c8f2a3e: same shape as r1b9_one_digit_audit_rows
-    but K=9 instead of K=8. Mastery = 9/9 finite-domain exhaustive check.
-    Seed-invariant by construction.
+    R1b10 is PARKED / diagnosis-only per codex msg 1779558351771-055c2265
+    (3 failed promotion attempts from R1b9; K=9 destabilizes R1b2). This
+    audit accessor stays available for explicit diagnostic revisit and
+    remains registered in `ONE_DIGIT_AUDIT_REGISTRY` so an explicit
+    `--curriculum-rungs R1b10` invocation produces a keyed audit row.
+    The default math probe (without explicit R1b10 in the rung list)
+    does not exercise this audit. Seed-invariant by construction.
     """
     del seed
     return [
@@ -1769,9 +1817,16 @@ def r1b10_one_digit_audit_rows(seed: int = 42) -> list[dict]:
 
 
 def _gen_r1b10(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
-    """R1b10 constant K=9 addition, carry-stratified partition (codex msg
-    1779556007032-4c8f2a3e +1 K=9 after R1b9 acceptance PASS msg
-    1779555982684; parent = R1b9 candidate banked as chain head).
+    """R1b10 constant K=9 addition sampler (PARKED / diagnosis-only).
+
+    Per codex msg 1779558351771-055c2265: R1b10 was parked after three
+    failed promotion attempts from R1b9 chain head; K=9 supervision
+    destabilizes R1b2 K=-1 subtraction surface. This generator stays
+    reachable for explicit diagnostic revisit via `--curriculum-rung
+    R1b10`; OUT of default splits, default A0 supports, and positional
+    priors of later rungs (see `DIAGNOSIS_ONLY_RUNGS` in replay.py).
+    R1b10 does NOT complete the active K=1..K=9 chain; R1b9 remains
+    math chain head.
 
     Single template `what is A plus 9?` -> A+9. one_digit A=1..9
     exhaustive in train; two_digit A=10..90 carry-stratified 80/20
@@ -1790,6 +1845,130 @@ def _gen_r1b10(rng: random.Random, spec: dict, n: int, seed: int, split: str) ->
         q = f"what is {A} plus 9?"
         expected = A + 9
         out.append({"question": q, "expected": expected, "rung": "R1b10"})
+    return out
+
+
+def _enumerate_partition_l0a(seed: int) -> tuple[list[dict], list[dict]]:
+    """Bounded stratified L0a support: 184 train + 46 held = 230 total.
+
+    Codex msg 1779559495228-f863199b +1 implement. L0a-specific
+    partition (NOT inherited from parent R0..R1b9 train/held splits);
+    L0a question strings differ from canonical `what is <math>?` by
+    the `what's` contraction, so language rows are inherently distinct
+    from any math row in any R0..R1b9 split.
+
+    Invariants:
+      - L0a train ∩ L0a held = ∅ (within-L0a disjoint)
+      - L0a expressions drawn only from validated R0..R1b9 SEMANTICS
+        (math operation outputs match parent R0..R1b9 expected values)
+      - All one_digit (R0: A in {0..9}; R1bN: A in {1..9}) exhaustive
+        in train
+      - two_digit picks per source rung are deterministic via
+        `_stable_seed("L0a_partition", seed, "<source_rung>")`
+
+    Per-source-rung counts:
+      R0:           20 (10 one_digit + 10 two_digit), 16 train / 4 held
+      R1_plus_0:    10 (10 A), 8 train / 2 held
+      R1_0_plus_A:  10 (10 A), 8 train / 2 held
+      R1_minus_0:   10 (10 A), 8 train / 2 held
+      R1b1..R1b9:   each 20 (9 one_digit + 11 two_digit), 16 train / 4 held
+
+    Each returned row is a dict with `question`, `expected`,
+    `source_rung` for downstream per-bucket reporting.
+    """
+    train: list[dict] = []
+    held: list[dict] = []
+
+    # R0: 20 rows = 10 one_digit + 10 two_digit; 16/4
+    # one_digit {0..9} exhaustive in train.
+    for n in range(0, 10):
+        train.append({"question": f"what's {n}?", "expected": n, "source_rung": "R0"})
+    # two_digit: sample 10 stratified from [10, 99], shuffle, split 6 train + 4 held.
+    rng_r0 = random.Random(_stable_seed("L0a_partition", seed, "R0_two_digit"))
+    r0_two = sorted(rng_r0.sample(range(10, 100), 10))
+    rng_r0_split = random.Random(_stable_seed("L0a_partition", seed, "R0_two_split"))
+    rng_r0_split.shuffle(r0_two)
+    for n in r0_two[:6]:
+        train.append({"question": f"what's {n}?", "expected": n, "source_rung": "R0"})
+    for n in r0_two[6:]:
+        held.append({"question": f"what's {n}?", "expected": n, "source_rung": "R0"})
+
+    # R1 identity bridge: 3 sub-templates × 10 A each = 30 rows; 24/6 total
+    # (8/2 per sub-template).
+    r1_sub_specs = [
+        ("R1_plus_0", lambda a: (f"what's {a} plus 0?", a)),
+        ("R1_0_plus_A", lambda a: (f"what's 0 plus {a}?", a)),
+        ("R1_minus_0", lambda a: (f"what's {a} minus 0?", a)),
+    ]
+    for sub_name, template_fn in r1_sub_specs:
+        rng_sub = random.Random(_stable_seed("L0a_partition", seed, sub_name))
+        r1_a = sorted(rng_sub.sample(range(0, 100), 10))
+        rng_sub_split = random.Random(_stable_seed("L0a_partition", seed, f"{sub_name}_split"))
+        rng_sub_split.shuffle(r1_a)
+        for a in r1_a[:8]:
+            q, exp = template_fn(a)
+            train.append({"question": q, "expected": exp, "source_rung": sub_name})
+        for a in r1_a[8:]:
+            q, exp = template_fn(a)
+            held.append({"question": q, "expected": exp, "source_rung": sub_name})
+
+    # R1b1..R1b9: each 20 rows = 9 one_digit + 11 two_digit; 16/4
+    # one_digit {1..9} exhaustive in train (9 train).
+    # two_digit: sample 11 stratified from [10, max_A_per_rung], split 7 train + 4 held.
+    r1b_specs = [
+        ("R1b1", " plus 1", lambda a: a + 1, 98),    # A in [1, 98]
+        ("R1b2", " minus 1", lambda a: a - 1, 99),    # A in [1, 99]
+        ("R1b3", " plus 2", lambda a: a + 2, 97),
+        ("R1b4v2", " plus 3", lambda a: a + 3, 96),
+        ("R1b5", " plus 4", lambda a: a + 4, 95),
+        ("R1b6", " plus 5", lambda a: a + 5, 94),
+        ("R1b7", " plus 6", lambda a: a + 6, 93),
+        ("R1b8", " plus 7", lambda a: a + 7, 92),
+        ("R1b9", " plus 8", lambda a: a + 8, 91),
+    ]
+    for source_rung, op_str, op_fn, max_a in r1b_specs:
+        # one_digit {1..9} exhaustive in train.
+        for a in range(1, 10):
+            q = f"what's {a}{op_str}?"
+            train.append({"question": q, "expected": op_fn(a), "source_rung": source_rung})
+        # two_digit pool is [10, max_a].
+        rng_two = random.Random(_stable_seed("L0a_partition", seed, f"{source_rung}_two_digit"))
+        two_pool = list(range(10, max_a + 1))
+        sampled = sorted(rng_two.sample(two_pool, 11))
+        rng_split = random.Random(_stable_seed("L0a_partition", seed, f"{source_rung}_split"))
+        rng_split.shuffle(sampled)
+        for a in sampled[:7]:
+            q = f"what's {a}{op_str}?"
+            train.append({"question": q, "expected": op_fn(a), "source_rung": source_rung})
+        for a in sampled[7:]:
+            q = f"what's {a}{op_str}?"
+            held.append({"question": q, "expected": op_fn(a), "source_rung": source_rung})
+
+    assert len(train) == 184, f"L0a train size: {len(train)}"
+    assert len(held) == 46, f"L0a held size: {len(held)}"
+    return train, held
+
+
+def _gen_l0a(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """L0a paraphrase wrapper training-side sampler (codex msg
+    1779559495228-f863199b +1 implement).
+
+    Samples with replacement from the L0a train/held pool (184/46
+    rows respectively) until n examples are drawn. Strips
+    `source_rung` metadata (training side doesn't need it) and adds
+    `rung: "L0a"`.
+
+    Multiplicity at default recipe (n_train=10000, rr=0.65):
+      n_new = 3500, unique_train = 184, multiplicity = 19.0x (well
+      above 10x floor required to disambiguate language acquisition
+      from undercoverage).
+    """
+    train_pool, held_pool = _enumerate_partition_l0a(seed)
+    pool = train_pool if split == "train" else held_pool
+    out = []
+    while len(out) < n:
+        row = rng.choice(pool)
+        out.append({"question": row["question"], "expected": row["expected"], "rung": "L0a"})
     return out
 
 
@@ -2180,6 +2359,8 @@ def make_rung_examples(
         return _gen_r1b9(rng, _RUNG_SPEC["R1b9"][split], n, seed=seed, split=split)
     if rung == "R1b10":
         return _gen_r1b10(rng, _RUNG_SPEC["R1b10"][split], n, seed=seed, split=split)
+    if rung == "L0a":
+        return _gen_l0a(rng, _RUNG_SPEC["L0a"][split], n, seed=seed, split=split)
     if rung == "R1b":
         return _gen_r1b(rng, _RUNG_SPEC["R1b"][split], n, seed=seed, split=split)
     if rung == "R2a":

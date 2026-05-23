@@ -186,7 +186,7 @@ def test_broad_tokenizer_decode_skips_pad() -> None:
 # Generators: determinism + held-out non-overlap
 # ============================================================================ #
 
-@pytest.mark.parametrize("rung", ["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6"])
+@pytest.mark.parametrize("rung", ["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6"])
 def test_generator_deterministic_per_seed(rung) -> None:
     """Same (rung, seed, split) -> same examples list."""
     examples_a = make_rung_examples(rung, n=20, seed=42, split="train")
@@ -194,7 +194,7 @@ def test_generator_deterministic_per_seed(rung) -> None:
     assert examples_a == examples_b
 
 
-@pytest.mark.parametrize("rung", ["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6"])
+@pytest.mark.parametrize("rung", ["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6"])
 def test_generator_train_holdout_distinct(rung) -> None:
     """Train and held_out splits produce different examples for same seed
     (different RNG salt per split)."""
@@ -880,7 +880,8 @@ def test_generator_r1b2_in_rung_names_after_r1b2a() -> None:
     assert RUNG_NAMES[11] == "R1b8", f"R1b8 must be at index 11 (post-R1b7); got {RUNG_NAMES}"
     assert RUNG_NAMES[12] == "R1b9", f"R1b9 must be at index 12 (post-R1b8); got {RUNG_NAMES}"
     assert RUNG_NAMES[13] == "R1b10", f"R1b10 must be at index 13 (post-R1b9); got {RUNG_NAMES}"
-    assert RUNG_NAMES[14] == "R1b", f"R1b must be at index 14 (post-R1b10); got {RUNG_NAMES}"
+    assert RUNG_NAMES[14] == "L0a", f"L0a must be at index 14 (post-R1b10); got {RUNG_NAMES}"
+    assert RUNG_NAMES[15] == "R1b", f"R1b must be at index 15 (post-L0a); got {RUNG_NAMES}"
 
 
 def test_generator_r1b2_train_holdout_exact_row_disjoint() -> None:
@@ -3000,6 +3001,7 @@ def test_generator_r1b9_in_rung_names_index_12() -> None:
     assert RUNG_NAMES[12] == "R1b9", f"R1b9 must be at index 12; got {RUNG_NAMES}"
     assert RUNG_NAMES[11] == "R1b8", f"R1b8 must be at index 11 (pre-R1b9); got {RUNG_NAMES}"
     assert RUNG_NAMES[13] == "R1b10", f"R1b10 must be at index 13 (post-R1b9); got {RUNG_NAMES}"
+    assert RUNG_NAMES[14] == "L0a", f"L0a must be at index 14 (post-R1b10); got {RUNG_NAMES}"
 
 
 def test_generator_r1b9_train_holdout_exact_row_disjoint() -> None:
@@ -3238,12 +3240,13 @@ def _r1b10_a(ex: dict) -> int:
 
 
 def test_generator_r1b10_in_rung_names_index_13() -> None:
-    """R1b10 at RUNG_NAMES index 13, immediately after R1b9 at 12, before R1b
-    at 14. Codex msg 1779556007032-4c8f2a3e."""
+    """R1b10 at RUNG_NAMES index 13, immediately after R1b9 at 12. With
+    L0a inserted post-R1b10 at index 14 (codex msg 1779559495228), R1b
+    shifts to index 15."""
     from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
     assert RUNG_NAMES[13] == "R1b10", f"R1b10 must be at index 13; got {RUNG_NAMES}"
     assert RUNG_NAMES[12] == "R1b9", f"R1b9 must be at index 12 (pre-R1b10); got {RUNG_NAMES}"
-    assert RUNG_NAMES[14] == "R1b", f"R1b must be at index 14 (post-R1b10); got {RUNG_NAMES}"
+    assert RUNG_NAMES[14] == "L0a", f"L0a must be at index 14 (post-R1b10); got {RUNG_NAMES}"
 
 
 def test_generator_r1b10_train_holdout_exact_row_disjoint() -> None:
@@ -3487,14 +3490,118 @@ def test_r1b10_in_diagnosis_only_rungs() -> None:
 
 def test_r1b10_excluded_from_later_rung_priors() -> None:
     """Per codex msg 1779558351771-055c2265: positional priors for any
-    rung positionally AFTER R1b10 (R3/R4/R5/R6) must NOT include R1b10
+    rung positionally AFTER R1b10 (R3/R4/R5/R6/L0a) must NOT include R1b10
     (parked diagnostic rung). DIAGNOSIS_ONLY_RUNGS filter applied."""
     from calm.hrm_text_158.curriculum.replay import _resolve_prior_rungs
-    for later_rung in ("R3", "R4", "R5", "R6"):
+    for later_rung in ("L0a", "R3", "R4", "R5", "R6"):
         priors = _resolve_prior_rungs(later_rung, replay_rungs_arg=None)
         assert "R1b10" not in priors, (
             f"{later_rung} positional priors must NOT include parked R1b10; got {priors}"
         )
+
+
+# ============================================================================ #
+# L0a paraphrase wrapper (codex msg 1779559495228-f863199b +1 implement first
+#  language-axis rung over validated R0..R1b9 math primitives. Single
+#  paraphrase template `what's <math>?`. Bounded stratified 230-row support,
+#  19x multiplicity at default recipe. Audit lives in language_supports.py;
+#  math A0 aggregate stays at 1255 unchanged.)
+# ============================================================================ #
+
+
+def test_generator_l0a_in_rung_names_index_14() -> None:
+    """L0a at RUNG_NAMES index 14, after parked R1b10 (13), before
+    legacy R1b (15). Codex msg 1779559495228 spec."""
+    from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
+    assert RUNG_NAMES[14] == "L0a", f"L0a must be at index 14; got {RUNG_NAMES}"
+    assert RUNG_NAMES[13] == "R1b10", f"R1b10 must be at index 13 (pre-L0a)"
+    assert RUNG_NAMES[15] == "R1b", f"R1b must be at index 15 (post-L0a)"
+
+
+def test_generator_l0a_NOT_in_diagnosis_only() -> None:
+    """L0a is the active first language-axis rung; NOT diagnosis-only."""
+    from calm.hrm_text_158.curriculum.replay import DIAGNOSIS_ONLY_RUNGS
+    assert "L0a" not in DIAGNOSIS_ONLY_RUNGS, (
+        f"L0a must NOT be diagnosis-only; got {sorted(DIAGNOSIS_ONLY_RUNGS)}"
+    )
+
+
+def test_generator_l0a_in_default_chain() -> None:
+    """L0a must appear in `build_rung_splits(...)` default rungs
+    (per codex msg 1779559495228 active-chain inclusion)."""
+    splits = build_rung_splits(n_train=200, n_held_out=80, seed=42)
+    assert "L0a" in splits, f"L0a must be in default chain; got {list(splits)}"
+
+
+def test_generator_l0a_train_holdout_exact_row_disjoint() -> None:
+    """L0a train + held_out exact-row disjoint at n=2000 sampling."""
+    train = make_rung_examples("L0a", n=2000, seed=42, split="train")
+    held = make_rung_examples("L0a", n=2000, seed=42, split="held_out")
+    train_set = {(ex["question"], ex["expected"]) for ex in train}
+    held_set = {(ex["question"], ex["expected"]) for ex in held}
+    overlap = train_set & held_set
+    assert not overlap, f"L0a train/held share rows: {sorted(overlap)[:5]}"
+
+
+def test_generator_l0a_template_whats_prefix() -> None:
+    """L0a emits ONLY `what's <math>?` (contraction, NOT `what is`)."""
+    rows = make_rung_examples("L0a", n=2000, seed=42, split="train") + \
+           make_rung_examples("L0a", n=500, seed=42, split="held_out")
+    for ex in rows:
+        q = ex["question"]
+        assert q.startswith("what's "), f"L0a row must start with `what's `: {q!r}"
+        assert q.endswith("?"), f"L0a row must end `?`: {q!r}"
+        assert not q.startswith("what is "), f"L0a must NOT use canonical `what is `: {q!r}"
+
+
+def test_generator_l0a_rung_field() -> None:
+    """Every L0a row carries rung='L0a'."""
+    rows = make_rung_examples("L0a", n=500, seed=42, split="train") + \
+           make_rung_examples("L0a", n=100, seed=42, split="held_out")
+    for ex in rows:
+        assert ex["rung"] == "L0a", f"L0a rung field violated: {ex!r}"
+
+
+def test_generator_l0a_train_unique_count_184() -> None:
+    """L0a train pool: 184 unique rows. Pin per codex spec."""
+    train = make_rung_examples("L0a", n=20000, seed=42, split="train")
+    unique_q = {ex["question"] for ex in train}
+    assert len(unique_q) == 184, (
+        f"L0a train unique_count must be 184; got {len(unique_q)}"
+    )
+
+
+def test_generator_l0a_held_unique_count_46() -> None:
+    """L0a held pool: 46 unique rows. Pin per codex spec."""
+    held = make_rung_examples("L0a", n=5000, seed=42, split="held_out")
+    unique_q = {ex["question"] for ex in held}
+    assert len(unique_q) == 46, (
+        f"L0a held unique_count must be 46; got {len(unique_q)}"
+    )
+
+
+def test_l0a_positional_priors_resolve_to_R0_R1b9() -> None:
+    """L0a positional priors = {R0..R1b9} (11 priors). R1b10 filtered
+    out via DIAGNOSIS_ONLY_RUNGS even though R1b10 sits between R1b9
+    and L0a in RUNG_NAMES."""
+    from calm.hrm_text_158.curriculum.replay import _resolve_prior_rungs
+    priors = _resolve_prior_rungs("L0a", replay_rungs_arg=None)
+    assert priors == ["R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2",
+                      "R1b5", "R1b6", "R1b7", "R1b8", "R1b9"], (
+        f"L0a priors: {priors}"
+    )
+    assert "R1b10" not in priors
+
+
+def test_l0a_default_chain_contains_l0a_no_overlap() -> None:
+    """Default active chain (with L0a) passes cross-rung invariant."""
+    splits = build_rung_splits(
+        n_train=2000, n_held_out=400, seed=42,
+        rungs=("R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2",
+               "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "L0a"),
+    )
+    assert "L0a" in splits
+    assert_no_train_holdout_overlap(splits)
 
 
 # ============================================================================ #
@@ -3516,11 +3623,12 @@ def _r2a_decode(ex: dict) -> tuple[int, int]:
 def test_generator_r2a_in_rung_names_after_r1b() -> None:
     """R2a was demoted to diagnosis-only after v1 failed 0.045 at 558fcc1.
     With R1b4@6, R1b4v2@7, R1b5@8, R1b6@9, R1b7@10, R1b8@11, R1b9@12 all
-    inserted before R1b@14, positions: R1b3@5, R1b4@6, R1b4v2@7, R1b5@8,
-    R1b6@9, R1b7@10, R1b8@11, R1b9@12, R1b10@13, R1b@14, R2a@15, R2@16."""
+    inserted before R1b@15, positions: R1b3@5, R1b4@6, R1b4v2@7, R1b5@8,
+    R1b6@9, R1b7@10, R1b8@11, R1b9@12, R1b10@13, L0a@14, R1b@15,
+    R2a@16, R2@17."""
     from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
-    assert RUNG_NAMES[15] == "R2a", f"R2a must be at index 15 (post-R1b at 14, post-R1b10 at 13); got {RUNG_NAMES}"
-    assert RUNG_NAMES[16] == "R2", f"R2 must be at index 16 (diagnosis-only); got {RUNG_NAMES}"
+    assert RUNG_NAMES[16] == "R2a", f"R2a must be at index 16 (post-R1b at 15, post-L0a at 14); got {RUNG_NAMES}"
+    assert RUNG_NAMES[17] == "R2", f"R2 must be at index 17 (diagnosis-only); got {RUNG_NAMES}"
 
 
 def test_generator_r2a_train_holdout_exact_row_disjoint() -> None:
@@ -3962,7 +4070,7 @@ def test_cross_rung_no_train_holdout_overlap() -> None:
     assert_no_train_holdout_overlap(splits)
     # Active chain: R0, R1, R1b1, R1b2, R1b3, R1b4v2, R1b5, R1b6, R1b7, R1b8, R3-R6
     # (R1b2a/R1b/R1b4/R2/R2a diagnosis-only; R7 = GSM8k)
-    assert set(splits.keys()) == {"R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R3", "R4", "R5", "R6"}
+    assert set(splits.keys()) == {"R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "L0a", "R3", "R4", "R5", "R6"}
 
 
 def test_cross_rung_r1b1_and_r1b_together_collide() -> None:

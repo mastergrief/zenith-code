@@ -112,6 +112,13 @@ from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
 #         class unchanged. R1b9 stays math chain head; R1b10 remains
 #         reachable via explicit `--curriculum-rung R1b10` /
 #         `--replay-rungs R1b10` for diagnosis only.
+# L0a stays OUT (codex msg 1779559495228-f863199b +1 implement first
+#         language-axis rung over validated R0..R1b9 math primitives;
+#         bounded stratified 230-row paraphrase support `what's <math>?`,
+#         19x multiplicity at default recipe). Positional priors when
+#         training L0a resolve to {R0, R1, R1b1, R1b2, R1b3, R1b4v2,
+#         R1b5, R1b6, R1b7, R1b8, R1b9} — R1b10 filtered out by
+#         DIAGNOSIS_ONLY_RUNGS, preserving math-chain integrity.
 DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b", "R1b4", "R1b10", "R2", "R2a"})
 
 
