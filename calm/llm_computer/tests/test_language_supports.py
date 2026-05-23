@@ -27,19 +27,20 @@ from calm.hrm_text_158.curriculum.language_supports import (
 )
 
 
-def test_language_active_rungs_contains_l0a_and_l0b() -> None:
-    """Active language rungs are L0a and L0b after Slice D.1 (codex msg
-    1779567887201). L0c+ are future slices."""
-    assert LANGUAGE_ACTIVE_RUNGS == ("L0a", "L0b")
+def test_language_active_rungs_contains_l0a_l0b_l0c() -> None:
+    """Active language rungs are L0a, L0b, L0c after Slice E.1 (codex msg
+    1779571151811). L0d+ are future slices."""
+    assert LANGUAGE_ACTIVE_RUNGS == ("L0a", "L0b", "L0c")
 
 
-def test_language_aggregate_equals_460() -> None:
-    """Two language rungs × 230 each = 460. Per codex msg 1779567887201
-    Slice D.1: LANGUAGE_EXPECTED_AGGREGATE extends 230 → 460 when L0b
+def test_language_aggregate_equals_690() -> None:
+    """Three language rungs × 230 each = 690. Per codex msg 1779571151811
+    Slice E.1: LANGUAGE_EXPECTED_AGGREGATE extends 460 → 690 when L0c
     lands; per-rung counts unchanged."""
-    assert LANGUAGE_EXPECTED_AGGREGATE == 460
+    assert LANGUAGE_EXPECTED_AGGREGATE == 690
     assert LANGUAGE_EXPECTED_COUNTS["L0a"] == 230
     assert LANGUAGE_EXPECTED_COUNTS["L0b"] == 230
+    assert LANGUAGE_EXPECTED_COUNTS["L0c"] == 230
 
 
 def test_build_language_supports_l0a_shape() -> None:
@@ -86,7 +87,8 @@ def test_l0a_buckets_helper_returns_canonical_order() -> None:
 
 
 def test_l0a_buckets_unknown_rung_raises() -> None:
-    # L0b is now valid (Slice D.1). Use a definitely-unknown name.
+    # L0b is valid (Slice D.1) and L0c is valid (Slice E.1). Use a
+    # definitely-unknown name.
     with pytest.raises(ValueError, match="unknown language rung"):
         language_source_rung_buckets("L0z_does_not_exist")
 
@@ -406,10 +408,11 @@ def test_probe_language_per_source_rung_buckets_sum_to_230() -> None:
 
 
 def test_probe_language_aggregate_separate_from_math() -> None:
-    """Codex msg 1779559495228 invariant + 1779567887201 D.1 extension:
-    language audit emits its own aggregate separate from math A0.
-    JSON `aggregate.expected_aggregate` equals LANGUAGE_EXPECTED_AGGREGATE
-    (= 460 after L0b lands), NOT blended with math 1255."""
+    """Codex msg 1779559495228 invariant + 1779567887201 D.1 + 1779571151811
+    E.1 extensions: language audit emits its own aggregate separate from
+    math A0. JSON `aggregate.expected_aggregate` equals
+    LANGUAGE_EXPECTED_AGGREGATE (= 690 after L0c lands), NOT blended with
+    math 1255."""
     from unittest.mock import patch, MagicMock
     import scripts.probe_hrm_text_158 as probe_mod
 
@@ -427,13 +430,13 @@ def test_probe_language_aggregate_separate_from_math() -> None:
             use_kv_cache_decode=False,
             use_batched_probe_eval=False,
         )
-    assert out["aggregate"]["expected_aggregate"] == 460, (
-        f"language aggregate must be 460 (L0a + L0b, NOT blended with math 1255); "
+    assert out["aggregate"]["expected_aggregate"] == 690, (
+        f"language aggregate must be 690 (L0a + L0b + L0c, NOT blended with math 1255); "
         f"got {out['aggregate']['expected_aggregate']}"
     )
-    assert out["aggregate"]["n_total"] == 460
-    # `active_language_rungs` distinguishes language from math; L0a then L0b in order
-    assert out["active_language_rungs"] == ["L0a", "L0b"]
+    assert out["aggregate"]["n_total"] == 690
+    # `active_language_rungs` distinguishes language from math; L0a, L0b, L0c in order
+    assert out["active_language_rungs"] == ["L0a", "L0b", "L0c"]
 
 
 def test_probe_language_cli_conflicts_with_curriculum_rungs() -> None:
@@ -544,9 +547,11 @@ def test_probe_language_output_json_creates_parent_dirs(tmp_path) -> None:
     payload = json_mod.loads(nested.read_text())
     assert "language_l0a" not in payload  # not a blended key
     assert "results" in payload and "L0a" in payload["results"]
-    # Slice D.1 extends: L0b also present, aggregate now 460
+    # Slice D.1 extends: L0b also present
     assert "L0b" in payload["results"]
-    assert payload["aggregate"]["expected_aggregate"] == 460
+    # Slice E.1 extends: L0c also present, aggregate now 690
+    assert "L0c" in payload["results"]
+    assert payload["aggregate"]["expected_aggregate"] == 690
 
 
 # ============================================================================ #
@@ -731,4 +736,197 @@ def test_l0a_l0b_partition_seed_namespaces_disjoint() -> None:
     assert l0a_r0_two != l0b_r0_two, (
         f"L0a/L0b two_digit R0 picks must differ under same outer seed; "
         f"L0a={l0a_r0_two} L0b={l0b_r0_two}"
+    )
+
+
+# ============================================================================ #
+# Slice E.1 L0c tests (codex msg 1779571151811-d3f6bc4f +1 implement third
+# language-axis rung as L0a/L0b mirror with template `<expr> equals what?`).
+# Parallels every L0a/L0b finite-support invariant: 230 rows = 184 train + 46
+# held, 13 source-rung buckets, train ∩ held = ∅, math A0 unchanged at 1255.
+# ============================================================================ #
+
+
+def test_build_language_supports_l0c_shape() -> None:
+    """L0c 230 (question, expected, source_rung) triples; template
+    `<expr> equals what?` (interrogative-suffix, distinct from L0a's
+    `what's <expr>?` and L0b's `calculate <expr>.`)."""
+    supports = build_language_supports()
+    assert "L0c" in supports
+    assert len(supports["L0c"]) == 230
+    for row in supports["L0c"]:
+        assert isinstance(row, tuple) and len(row) == 3, (
+            f"row must be (question, expected, source_rung) triple; got {row!r}"
+        )
+        q, exp, src = row
+        assert isinstance(q, str) and q.endswith(" equals what?"), (
+            f"L0c row must end ` equals what?`: {q!r}"
+        )
+        assert isinstance(exp, int)
+        assert isinstance(src, str)
+
+
+def test_l0c_per_source_rung_counts() -> None:
+    """Per-source-rung counts identical to L0a/L0b (only template differs)."""
+    supports = build_language_supports()
+    by_source: dict[str, int] = {}
+    for q, exp, src in supports["L0c"]:
+        by_source[src] = by_source.get(src, 0) + 1
+    expected = {
+        "R0": 20,
+        "R1_plus_0": 10,
+        "R1_0_plus_A": 10,
+        "R1_minus_0": 10,
+        "R1b1": 20, "R1b2": 20, "R1b3": 20, "R1b4v2": 20,
+        "R1b5": 20, "R1b6": 20, "R1b7": 20, "R1b8": 20, "R1b9": 20,
+    }
+    assert by_source == expected, f"per-source counts mismatch: {by_source}"
+    assert sum(expected.values()) == 230
+
+
+def test_l0c_buckets_helper_returns_canonical_order() -> None:
+    """L0c returns the same bucket order as L0a/L0b (mirrored shape)."""
+    buckets = language_source_rung_buckets("L0c")
+    assert buckets == [
+        "R0",
+        "R1_plus_0", "R1_0_plus_A", "R1_minus_0",
+        "R1b1", "R1b2", "R1b3", "R1b4v2",
+        "R1b5", "R1b6", "R1b7", "R1b8", "R1b9",
+    ]
+
+
+def test_l0c_train_held_disjoint() -> None:
+    """L0c train ∩ L0c held = ∅."""
+    from calm.hrm_text_158.curriculum.generators import _enumerate_partition_l0c
+    train, held = _enumerate_partition_l0c(seed=42)
+    train_qs = {r["question"] for r in train}
+    held_qs = {r["question"] for r in held}
+    overlap = train_qs & held_qs
+    assert not overlap, f"L0c train ∩ held overlap: {sorted(overlap)[:5]}"
+
+
+def test_l0c_partition_counts_184_train_46_held() -> None:
+    """Exact partition spec: 184 train + 46 held = 230 total (L0a/L0b mirror)."""
+    from calm.hrm_text_158.curriculum.generators import _enumerate_partition_l0c
+    train, held = _enumerate_partition_l0c(seed=42)
+    assert len(train) == 184, f"L0c train: {len(train)}"
+    assert len(held) == 46, f"L0c held: {len(held)}"
+
+
+def test_l0c_template_shape_equals_what_suffix() -> None:
+    """L0c emits ONLY `<expr> equals what?` (interrogative suffix). Distinct
+    from L0a's `what's <expr>?` AND L0b's `calculate <expr>.` AND canonical
+    math `what is <expr>?`."""
+    from calm.hrm_text_158.curriculum.generators import _enumerate_partition_l0c
+    train, held = _enumerate_partition_l0c(seed=42)
+    for row in train + held:
+        q = row["question"]
+        assert q.endswith(" equals what?"), (
+            f"L0c row must end ` equals what?`: {q!r}"
+        )
+        assert not q.startswith("what's "), f"L0c must NOT use L0a's prefix: {q!r}"
+        assert not q.startswith("what is "), f"L0c must NOT use canonical math prefix: {q!r}"
+        assert not q.startswith("calculate "), f"L0c must NOT use L0b's prefix: {q!r}"
+
+
+def test_l0c_math_semantics_preserved() -> None:
+    """L0c expected values match the wrapped math primitive (sanity:
+    parse the expression and verify it equals expected).
+    """
+    import re
+    from calm.hrm_text_158.curriculum.generators import _enumerate_partition_l0c
+    train, held = _enumerate_partition_l0c(seed=42)
+    pat_plus = re.compile(r"^(\d+) plus (\d+) equals what\?$")
+    pat_minus = re.compile(r"^(\d+) minus (\d+) equals what\?$")
+    pat_id = re.compile(r"^(\d+) equals what\?$")
+    for row in train + held:
+        q = row["question"]
+        m = pat_plus.match(q)
+        if m:
+            a, b = int(m.group(1)), int(m.group(2))
+            assert row["expected"] == a + b, (
+                f"L0c plus row arithmetic mismatch: {q} expected={row['expected']} vs a+b={a+b}"
+            )
+            continue
+        m = pat_minus.match(q)
+        if m:
+            a, b = int(m.group(1)), int(m.group(2))
+            assert row["expected"] == a - b, (
+                f"L0c minus row arithmetic mismatch: {q} expected={row['expected']} vs a-b={a-b}"
+            )
+            continue
+        m = pat_id.match(q)
+        if m:
+            n = int(m.group(1))
+            assert row["expected"] == n, (
+                f"L0c identity row mismatch: {q} expected={row['expected']} vs n={n}"
+            )
+            continue
+        raise AssertionError(f"Unrecognized L0c question pattern: {q!r}")
+
+
+def test_l0c_multiplicity_meets_10x_floor() -> None:
+    """At default recipe (n_new=3500 in train, unique=184):
+    multiplicity = 3500/184 ≈ 19x, well above 10x floor."""
+    from calm.hrm_text_158.curriculum.generators import _enumerate_partition_l0c
+    train, _ = _enumerate_partition_l0c(seed=42)
+    unique = len({r["question"] for r in train})
+    assert unique == 184
+    multiplicity = 3500 / unique
+    assert multiplicity > 10.0, (
+        f"L0c multiplicity below floor: {multiplicity:.2f}x at n_new=3500/unique=184"
+    )
+
+
+def test_l0c_partition_stable_across_runs() -> None:
+    """Same seed → identical partition (deterministic seed namespace)."""
+    from calm.hrm_text_158.curriculum.generators import _enumerate_partition_l0c
+    train1, held1 = _enumerate_partition_l0c(seed=17)
+    train2, held2 = _enumerate_partition_l0c(seed=17)
+    assert train1 == train2
+    assert held1 == held2
+
+
+def test_l0c_partition_changes_with_seed() -> None:
+    """Different seed → different two_digit picks (one_digit exhaustive
+    stays identical by construction)."""
+    from calm.hrm_text_158.curriculum.generators import _enumerate_partition_l0c
+    train_a, _ = _enumerate_partition_l0c(seed=17)
+    train_b, _ = _enumerate_partition_l0c(seed=42)
+    assert train_a != train_b, (
+        "Different seeds must produce different L0c partitions"
+    )
+
+
+def test_l0a_l0b_l0c_partition_seed_namespaces_disjoint() -> None:
+    """L0a/L0b/L0c use distinct seed namespaces (`L0a_partition` vs
+    `L0b_partition` vs `L0c_partition`). Pin via the two_digit pick
+    determinism: same seed must produce DIFFERENT two_digit R0 slices
+    for all three rungs (otherwise the seed namespaces are collapsing)."""
+    from calm.hrm_text_158.curriculum.generators import (
+        _enumerate_partition_l0a,
+        _enumerate_partition_l0b,
+        _enumerate_partition_l0c,
+    )
+    l0a_train, _ = _enumerate_partition_l0a(seed=17)
+    l0b_train, _ = _enumerate_partition_l0b(seed=17)
+    l0c_train, _ = _enumerate_partition_l0c(seed=17)
+
+    def _r0_two_digit_values(rows):
+        return sorted(
+            r["expected"] for r in rows
+            if r["source_rung"] == "R0" and r["expected"] >= 10
+        )
+
+    l0a_r0 = _r0_two_digit_values(l0a_train)
+    l0b_r0 = _r0_two_digit_values(l0b_train)
+    l0c_r0 = _r0_two_digit_values(l0c_train)
+    # All three pairs must differ under shared outer seed=17.
+    assert l0a_r0 != l0c_r0, (
+        f"L0a/L0c two_digit R0 picks must differ under same outer seed; "
+        f"L0a={l0a_r0} L0c={l0c_r0}"
+    )
+    assert l0b_r0 != l0c_r0, (
+        f"L0b/L0c two_digit R0 picks must differ under same outer seed; "
+        f"L0b={l0b_r0} L0c={l0c_r0}"
     )

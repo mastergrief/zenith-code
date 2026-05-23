@@ -257,7 +257,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -629,6 +629,24 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     "L0b": {
         "train":     {"partition": "enumerate_stratified_l0b"},
         "held_out":  {"partition": "enumerate_stratified_l0b"},
+    },
+    # L0c (codex msg 1779571151811-d3f6bc4f +1 Slice E.1 implement third
+    # language-axis rung over validated R0..R1b9 math primitives. Single
+    # paraphrase template `<math> equals what?` (interrogative-suffix form,
+    # distinct from L0a's question-prefix `what's <math>?` and L0b's
+    # imperative-prefix `calculate <math>.`). Identical partition shape
+    # to L0a/L0b (184 train + 46 held = 230 rows, 13 source-rung buckets;
+    # only the template wrapper differs). Audit lives in
+    # `language_supports.py` alongside L0a/L0b; LANGUAGE_EXPECTED_AGGREGATE
+    # extends 460 -> 690. R1b10 excluded from positional priors via
+    # DIAGNOSIS_ONLY_RUNGS filter. L0a AND L0b stay IN L0c's positional
+    # priors so L0c training preserves both prior paraphrase axes. Spec
+    # is a single bounded support, not parametric - partition function
+    # `_enumerate_partition_l0c` returns the explicit 230-row list with
+    # source_rung metadata for per-bucket reporting parallel to L0a/L0b.
+    "L0c": {
+        "train":     {"partition": "enumerate_stratified_l0c"},
+        "held_out":  {"partition": "enumerate_stratified_l0c"},
     },
     # R2a (codex msg 1779478819906-0e30503e after full R2 failed v1+v2;
     # DIAGNOSIS-ONLY after R2a v1 itself failed 0.045 at 558fcc1, codex
@@ -2117,6 +2135,137 @@ def _gen_l0b(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> l
     return out
 
 
+def _enumerate_partition_l0c(seed: int) -> tuple[list[dict], list[dict]]:
+    """Bounded stratified L0c support: 184 train + 46 held = 230 total.
+
+    Codex msg 1779571151811-d3f6bc4f +1 Slice E.1 implement. L0c mirrors
+    L0a/L0b partition shape exactly; only the question-string template
+    differs (`<expr> equals what?` interrogative-suffix form instead of
+    L0a's `what's <expr>?` question-prefix or L0b's `calculate <expr>.`
+    imperative-prefix). Same 13-bucket source-rung breakdown, same
+    train/held counts per bucket, same deterministic per-bucket seed
+    namespace (`L0c_partition`, distinct from L0a's `L0a_partition`
+    and L0b's `L0b_partition`).
+
+    Invariants:
+      - L0c train ∩ L0c held = ∅ (within-L0c disjoint)
+      - L0c expressions drawn only from validated R0..R1b9 SEMANTICS
+        (math operation outputs match parent R0..R1b9 expected values)
+      - L0c question strings inherently distinct from L0a (`what's
+        ... ?`), L0b (`calculate ... .`), AND from any math row
+        (`what is ... ?`), so no cross-rung row collisions.
+      - All one_digit (R0: A in {0..9}; R1bN: A in {1..9}) exhaustive
+        in train
+      - two_digit picks per source rung are deterministic via
+        `_stable_seed("L0c_partition", seed, "<source_rung>")` —
+        DISTINCT from L0a/L0b namespaces so the three language rungs
+        pick different two_digit slices and the audit gates each
+        independently.
+
+    Per-source-rung counts (identical to L0a/L0b):
+      R0:           20 (10 one_digit + 10 two_digit), 16 train / 4 held
+      R1_plus_0:    10 (10 A), 8 train / 2 held
+      R1_0_plus_A:  10 (10 A), 8 train / 2 held
+      R1_minus_0:   10 (10 A), 8 train / 2 held
+      R1b1..R1b9:   each 20 (9 one_digit + 11 two_digit), 16 train / 4 held
+
+    Each returned row is a dict with `question`, `expected`,
+    `source_rung` for downstream per-bucket reporting.
+    """
+    train: list[dict] = []
+    held: list[dict] = []
+
+    # R0: 20 rows = 10 one_digit + 10 two_digit; 16/4
+    # one_digit {0..9} exhaustive in train.
+    for n in range(0, 10):
+        train.append({"question": f"{n} equals what?", "expected": n, "source_rung": "R0"})
+    # two_digit: sample 10 stratified from [10, 99], shuffle, split 6 train + 4 held.
+    rng_r0 = random.Random(_stable_seed("L0c_partition", seed, "R0_two_digit"))
+    r0_two = sorted(rng_r0.sample(range(10, 100), 10))
+    rng_r0_split = random.Random(_stable_seed("L0c_partition", seed, "R0_two_split"))
+    rng_r0_split.shuffle(r0_two)
+    for n in r0_two[:6]:
+        train.append({"question": f"{n} equals what?", "expected": n, "source_rung": "R0"})
+    for n in r0_two[6:]:
+        held.append({"question": f"{n} equals what?", "expected": n, "source_rung": "R0"})
+
+    # R1 identity bridge: 3 sub-templates × 10 A each = 30 rows; 24/6 total
+    # (8/2 per sub-template).
+    r1_sub_specs = [
+        ("R1_plus_0", lambda a: (f"{a} plus 0 equals what?", a)),
+        ("R1_0_plus_A", lambda a: (f"0 plus {a} equals what?", a)),
+        ("R1_minus_0", lambda a: (f"{a} minus 0 equals what?", a)),
+    ]
+    for sub_name, template_fn in r1_sub_specs:
+        rng_sub = random.Random(_stable_seed("L0c_partition", seed, sub_name))
+        r1_a = sorted(rng_sub.sample(range(0, 100), 10))
+        rng_sub_split = random.Random(_stable_seed("L0c_partition", seed, f"{sub_name}_split"))
+        rng_sub_split.shuffle(r1_a)
+        for a in r1_a[:8]:
+            q, exp = template_fn(a)
+            train.append({"question": q, "expected": exp, "source_rung": sub_name})
+        for a in r1_a[8:]:
+            q, exp = template_fn(a)
+            held.append({"question": q, "expected": exp, "source_rung": sub_name})
+
+    # R1b1..R1b9: each 20 rows = 9 one_digit + 11 two_digit; 16/4
+    # one_digit {1..9} exhaustive in train (9 train).
+    # two_digit: sample 11 stratified from [10, max_A_per_rung], split 7 train + 4 held.
+    r1b_specs = [
+        ("R1b1", " plus 1", lambda a: a + 1, 98),    # A in [1, 98]
+        ("R1b2", " minus 1", lambda a: a - 1, 99),    # A in [1, 99]
+        ("R1b3", " plus 2", lambda a: a + 2, 97),
+        ("R1b4v2", " plus 3", lambda a: a + 3, 96),
+        ("R1b5", " plus 4", lambda a: a + 4, 95),
+        ("R1b6", " plus 5", lambda a: a + 5, 94),
+        ("R1b7", " plus 6", lambda a: a + 6, 93),
+        ("R1b8", " plus 7", lambda a: a + 7, 92),
+        ("R1b9", " plus 8", lambda a: a + 8, 91),
+    ]
+    for source_rung, op_str, op_fn, max_a in r1b_specs:
+        # one_digit {1..9} exhaustive in train.
+        for a in range(1, 10):
+            q = f"{a}{op_str} equals what?"
+            train.append({"question": q, "expected": op_fn(a), "source_rung": source_rung})
+        # two_digit pool is [10, max_a].
+        rng_two = random.Random(_stable_seed("L0c_partition", seed, f"{source_rung}_two_digit"))
+        two_pool = list(range(10, max_a + 1))
+        sampled = sorted(rng_two.sample(two_pool, 11))
+        rng_split = random.Random(_stable_seed("L0c_partition", seed, f"{source_rung}_split"))
+        rng_split.shuffle(sampled)
+        for a in sampled[:7]:
+            q = f"{a}{op_str} equals what?"
+            train.append({"question": q, "expected": op_fn(a), "source_rung": source_rung})
+        for a in sampled[7:]:
+            q = f"{a}{op_str} equals what?"
+            held.append({"question": q, "expected": op_fn(a), "source_rung": source_rung})
+
+    assert len(train) == 184, f"L0c train size: {len(train)}"
+    assert len(held) == 46, f"L0c held size: {len(held)}"
+    return train, held
+
+
+def _gen_l0c(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """L0c paraphrase wrapper training-side sampler (codex msg
+    1779571151811-d3f6bc4f +1 Slice E.1 implement).
+
+    Samples with replacement from the L0c train/held pool (184/46 rows
+    respectively) until n examples are drawn. Strips `source_rung`
+    metadata (training side doesn't need it) and adds `rung: "L0c"`.
+
+    Multiplicity at default recipe (n_train=10000, rr=0.65):
+      n_new = 3500, unique_train = 184, multiplicity = 19.0x (well
+      above 10x floor; matches L0a/L0b recipe under the same flag set).
+    """
+    train_pool, held_pool = _enumerate_partition_l0c(seed)
+    pool = train_pool if split == "train" else held_pool
+    out = []
+    while len(out) < n:
+        row = rng.choice(pool)
+        out.append({"question": row["question"], "expected": row["expected"], "rung": "L0c"})
+    return out
+
+
 def _gen_r1b7(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
     """R1b7 constant K=6 addition, carry-stratified partition (codex msg
     1779547753761-5711d790 +1 K=6; rebased onto R1b2-repair commit
@@ -2508,6 +2657,8 @@ def make_rung_examples(
         return _gen_l0a(rng, _RUNG_SPEC["L0a"][split], n, seed=seed, split=split)
     if rung == "L0b":
         return _gen_l0b(rng, _RUNG_SPEC["L0b"][split], n, seed=seed, split=split)
+    if rung == "L0c":
+        return _gen_l0c(rng, _RUNG_SPEC["L0c"][split], n, seed=seed, split=split)
     if rung == "R1b":
         return _gen_r1b(rng, _RUNG_SPEC["R1b"][split], n, seed=seed, split=split)
     if rung == "R2a":

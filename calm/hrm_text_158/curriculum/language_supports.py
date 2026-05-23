@@ -11,10 +11,15 @@ a separate module so:
 - Probe JSON reports `math` and `language` aggregates separately
   (no blended single-number aggregate).
 
-L0a is a BOUNDED STRATIFIED 230-row support with a single paraphrase
-template `what's <math>?` over R0..R1b9 math primitives. Multiplicity
+Slice E.1 adds L0c (`<expr> equals what?` interrogative-suffix form)
+as the third language-axis rung over R0..R1b9 primitives. Codex msg
+1779571151811-d3f6bc4f +1 implement; LANGUAGE_EXPECTED_AGGREGATE
+extends 460 -> 690 with L0c contributing its own 230-row support.
+
+L0a/L0b/L0c each carry a BOUNDED STRATIFIED 230-row support with a
+single paraphrase template over R0..R1b9 math primitives. Multiplicity
 under the default training recipe (n_train=10000, replay_ratio=0.65)
-is ~19x against L0a unique_train_count=184, well above the 10x floor
+is ~19x against unique_train_count=184, well above the 10x floor
 required to disambiguate language acquisition from undercoverage.
 
 Pure data assembly; zero model deps.
@@ -26,10 +31,11 @@ from typing import Callable
 from calm.hrm_text_158.curriculum.generators import (
     _enumerate_partition_l0a,
     _enumerate_partition_l0b,
+    _enumerate_partition_l0c,
 )
 
 
-LANGUAGE_ACTIVE_RUNGS: tuple[str, ...] = ("L0a", "L0b")
+LANGUAGE_ACTIVE_RUNGS: tuple[str, ...] = ("L0a", "L0b", "L0c")
 
 
 def _l0a_support(seed: int = 42) -> list[tuple[str, int, str]]:
@@ -65,9 +71,28 @@ def _l0b_support(seed: int = 42) -> list[tuple[str, int, str]]:
     L0a's shape exactly; only the question-string template differs
     (`calculate <expr>.` instead of `what's <expr>?`). Same 13 source
     buckets, same per-bucket counts. Aggregate adds 230 on top of L0a's
-    230 → LANGUAGE_EXPECTED_AGGREGATE = 460.
+    230 → LANGUAGE_EXPECTED_AGGREGATE = 460 (extended again to 690 when
+    L0c lands in Slice E.1).
     """
     train, held = _enumerate_partition_l0b(seed)
+    rows: list[tuple[str, int, str]] = []
+    for r in train + held:
+        rows.append((r["question"], r["expected"], r["source_rung"]))
+    return rows
+
+
+def _l0c_support(seed: int = 42) -> list[tuple[str, int, str]]:
+    """Full 230-row L0c bounded stratified support (train + held).
+
+    Codex msg 1779571151811-d3f6bc4f +1 Slice E.1 implement. L0c mirrors
+    L0a/L0b shape exactly; only the question-string template differs
+    (`<expr> equals what?` interrogative-suffix form, instead of L0a's
+    `what's <expr>?` question-prefix or L0b's `calculate <expr>.`
+    imperative-prefix). Same 13 source buckets, same per-bucket counts.
+    Aggregate adds 230 on top of L0a+L0b's 460 →
+    LANGUAGE_EXPECTED_AGGREGATE = 690.
+    """
+    train, held = _enumerate_partition_l0c(seed)
     rows: list[tuple[str, int, str]] = []
     for r in train + held:
         rows.append((r["question"], r["expected"], r["source_rung"]))
@@ -77,15 +102,17 @@ def _l0b_support(seed: int = 42) -> list[tuple[str, int, str]]:
 _BUILDERS: dict[str, Callable[[int], list[tuple[str, int, str]]]] = {
     "L0a": _l0a_support,
     "L0b": _l0b_support,
+    "L0c": _l0c_support,
 }
 
 LANGUAGE_EXPECTED_COUNTS: dict[str, int] = {
     "L0a": 230,
     "L0b": 230,
+    "L0c": 230,
 }
 LANGUAGE_EXPECTED_AGGREGATE: int = sum(
     LANGUAGE_EXPECTED_COUNTS[r] for r in LANGUAGE_ACTIVE_RUNGS
-)  # 230
+)  # 690 (L0a + L0b + L0c, each 230)
 
 
 def build_language_supports(seed: int = 42) -> dict[str, list[tuple[str, int, str]]]:
@@ -105,11 +132,11 @@ def language_source_rung_buckets(rung: str) -> list[str]:
     in canonical reporting order. Used by probe to render per-bucket
     breakdowns.
     """
-    if rung in ("L0a", "L0b"):
-        # L0b mirrors L0a's bucket order exactly (codex msg
-        # 1779567887201-1cf4f485 Slice D.1: same 13 source buckets,
-        # same per-bucket counts, only the question-template prefix
-        # differs).
+    if rung in ("L0a", "L0b", "L0c"):
+        # L0b/L0c mirror L0a's bucket order exactly (codex msg
+        # 1779567887201-1cf4f485 Slice D.1 + 1779571151811-d3f6bc4f
+        # Slice E.1: same 13 source buckets, same per-bucket counts,
+        # only the question-template surface differs).
         return [
             "R0",
             "R1_plus_0", "R1_0_plus_A", "R1_minus_0",

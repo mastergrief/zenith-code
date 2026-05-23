@@ -125,6 +125,13 @@ from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
 #         resolve to {R0, R1, R1b1, R1b2, R1b3, R1b4v2, R1b5, R1b6, R1b7,
 #         R1b8, R1b9, L0a} — R1b10 filtered out by DIAGNOSIS_ONLY_RUNGS;
 #         L0a stays IN so L0b training preserves the L0a paraphrase axis.
+# L0c stays OUT (codex msg 1779571151811-d3f6bc4f +1 Slice E.1 implement
+#         third language-axis rung as L0a/L0b mirror with template
+#         `<math> equals what?`). Positional priors when training L0c
+#         resolve to {R0, R1, R1b1, R1b2, R1b3, R1b4v2, R1b5, R1b6, R1b7,
+#         R1b8, R1b9, L0a, L0b} — R1b10 filtered out by
+#         DIAGNOSIS_ONLY_RUNGS; L0a AND L0b stay IN so L0c training
+#         preserves both prior paraphrase axes.
 DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b", "R1b4", "R1b10", "R2", "R2a"})
 
 

@@ -18,7 +18,7 @@ def build_rung_splits(
     n_train: int = 2000,
     n_held_out: int = 400,
     seed: int = 42,
-    rungs: tuple[str, ...] = ("R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "L0a", "L0b", "R3", "R4", "R5", "R6"),
+    rungs: tuple[str, ...] = ("R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "L0a", "L0b", "L0c", "R3", "R4", "R5", "R6"),
 ) -> dict[str, dict[str, list[dict]]]:
     """Build train + held_out splits for all rungs.
 
@@ -61,7 +61,10 @@ def build_rung_splits(
       first language-axis rung) -> L0b (paraphrase wrapper
       `calculate <math>.` over R0..R1b9, codex msg 1779567887201
       Slice D.1; mirrors L0a partition shape, 230 rows, L0a stays
-      in L0b's positional priors) -> R3 -> ...
+      in L0b's positional priors) -> L0c (paraphrase wrapper
+      `<math> equals what?` over R0..R1b9, codex msg 1779571151811
+      Slice E.1; mirrors L0a/L0b partition shape, 230 rows, L0a+L0b
+      stay in L0c's positional priors) -> R3 -> ...
 
     Diagnosis-only and OUT of default: R1b2a (failed v1+v2 lowmult),
     R1b (legacy 3-template), R1b4 (K=3 v1 failed 7b53368 measurement

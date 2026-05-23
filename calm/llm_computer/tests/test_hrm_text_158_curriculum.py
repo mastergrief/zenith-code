@@ -882,7 +882,8 @@ def test_generator_r1b2_in_rung_names_after_r1b2a() -> None:
     assert RUNG_NAMES[13] == "R1b10", f"R1b10 must be at index 13 (post-R1b9); got {RUNG_NAMES}"
     assert RUNG_NAMES[14] == "L0a", f"L0a must be at index 14 (post-R1b10); got {RUNG_NAMES}"
     assert RUNG_NAMES[15] == "L0b", f"L0b must be at index 15 (post-L0a); got {RUNG_NAMES}"
-    assert RUNG_NAMES[16] == "R1b", f"R1b must be at index 16 (post-L0b); got {RUNG_NAMES}"
+    assert RUNG_NAMES[16] == "L0c", f"L0c must be at index 16 (post-L0b); got {RUNG_NAMES}"
+    assert RUNG_NAMES[17] == "R1b", f"R1b must be at index 17 (post-L0c); got {RUNG_NAMES}"
 
 
 def test_generator_r1b2_train_holdout_exact_row_disjoint() -> None:
@@ -3520,12 +3521,13 @@ def test_generator_l0a_in_rung_names_index_14() -> None:
 
 
 def test_generator_l0b_in_rung_names_index_15() -> None:
-    """L0b at RUNG_NAMES index 15, after L0a (14), before legacy R1b
-    (16). Codex msg 1779567887201-1cf4f485 +1 Slice D.1 spec."""
+    """L0b at RUNG_NAMES index 15, after L0a (14), before L0c (16,
+    Slice E.1). Codex msg 1779567887201-1cf4f485 +1 Slice D.1 spec
+    + 1779571151811-d3f6bc4f Slice E.1 inserted L0c after L0b."""
     from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
     assert RUNG_NAMES[15] == "L0b", f"L0b must be at index 15; got {RUNG_NAMES}"
     assert RUNG_NAMES[14] == "L0a", f"L0a must be at index 14 (pre-L0b)"
-    assert RUNG_NAMES[16] == "R1b", f"R1b must be at index 16 (post-L0b)"
+    assert RUNG_NAMES[16] == "L0c", f"L0c must be at index 16 (post-L0b)"
 
 
 def test_generator_l0b_NOT_in_diagnosis_only() -> None:
@@ -3618,6 +3620,120 @@ def test_l0a_l0b_question_sets_fully_disjoint() -> None:
     overlap = l0a_set & l0b_set
     assert not overlap, (
         f"L0a/L0b question pools must be disjoint; overlap: {sorted(overlap)[:5]}"
+    )
+
+
+# ============================================================================ #
+# Slice E.1 L0c generator tests (codex msg 1779571151811-d3f6bc4f +1 implement
+# third language-axis rung as L0a/L0b mirror with template
+# `<expr> equals what?`).
+# ============================================================================ #
+
+
+def test_generator_l0c_in_rung_names_index_16() -> None:
+    """L0c at RUNG_NAMES index 16, after L0b (15), before legacy R1b (17).
+    Codex msg 1779571151811-d3f6bc4f +1 Slice E.1 spec."""
+    from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
+    assert RUNG_NAMES[16] == "L0c", f"L0c must be at index 16; got {RUNG_NAMES}"
+    assert RUNG_NAMES[15] == "L0b", f"L0b must be at index 15 (pre-L0c)"
+    assert RUNG_NAMES[17] == "R1b", f"R1b must be at index 17 (post-L0c)"
+
+
+def test_generator_l0c_NOT_in_diagnosis_only() -> None:
+    """L0c is the active third language-axis rung; NOT diagnosis-only."""
+    from calm.hrm_text_158.curriculum.replay import DIAGNOSIS_ONLY_RUNGS
+    assert "L0c" not in DIAGNOSIS_ONLY_RUNGS, (
+        f"L0c must NOT be diagnosis-only; got {sorted(DIAGNOSIS_ONLY_RUNGS)}"
+    )
+
+
+def test_generator_l0c_in_default_chain() -> None:
+    """L0c must appear in `build_rung_splits(...)` default rungs after
+    L0b (codex msg 1779571151811 active-chain inclusion)."""
+    splits = build_rung_splits(n_train=200, n_held_out=80, seed=42)
+    assert "L0c" in splits, f"L0c must be in default chain; got {list(splits)}"
+
+
+def test_generator_l0c_train_holdout_exact_row_disjoint() -> None:
+    """L0c train + held_out exact-row disjoint at n=2000 sampling."""
+    train = make_rung_examples("L0c", n=2000, seed=42, split="train")
+    held = make_rung_examples("L0c", n=2000, seed=42, split="held_out")
+    train_set = {(ex["question"], ex["expected"]) for ex in train}
+    held_set = {(ex["question"], ex["expected"]) for ex in held}
+    overlap = train_set & held_set
+    assert not overlap, f"L0c train/held share rows: {sorted(overlap)[:5]}"
+
+
+def test_generator_l0c_template_equals_what_suffix() -> None:
+    """L0c emits ONLY `<expr> equals what?` (interrogative-suffix form,
+    distinct from L0a's `what's...?` AND L0b's `calculate...`)."""
+    rows = make_rung_examples("L0c", n=2000, seed=42, split="train") + \
+           make_rung_examples("L0c", n=500, seed=42, split="held_out")
+    for ex in rows:
+        q = ex["question"]
+        assert q.endswith(" equals what?"), f"L0c row must end ` equals what?`: {q!r}"
+        assert not q.startswith("what is "), f"L0c must NOT use canonical math `what is `: {q!r}"
+        assert not q.startswith("what's "), f"L0c must NOT use L0a's `what's `: {q!r}"
+        assert not q.startswith("calculate "), f"L0c must NOT use L0b's `calculate `: {q!r}"
+
+
+def test_generator_l0c_rung_field() -> None:
+    """Every L0c row carries rung='L0c'."""
+    rows = make_rung_examples("L0c", n=500, seed=42, split="train") + \
+           make_rung_examples("L0c", n=100, seed=42, split="held_out")
+    for ex in rows:
+        assert ex["rung"] == "L0c", f"L0c rung field violated: {ex!r}"
+
+
+def test_generator_l0c_train_unique_count_184() -> None:
+    """L0c train pool: 184 unique rows (identical to L0a/L0b partition size)."""
+    train = make_rung_examples("L0c", n=20000, seed=42, split="train")
+    unique_q = {ex["question"] for ex in train}
+    assert len(unique_q) == 184, (
+        f"L0c train unique_count must be 184; got {len(unique_q)}"
+    )
+
+
+def test_generator_l0c_held_unique_count_46() -> None:
+    """L0c held pool: 46 unique rows."""
+    held = make_rung_examples("L0c", n=5000, seed=42, split="held_out")
+    unique_q = {ex["question"] for ex in held}
+    assert len(unique_q) == 46, (
+        f"L0c held unique_count must be 46; got {len(unique_q)}"
+    )
+
+
+def test_l0c_positional_priors_include_l0a_l0b_exclude_r1b10() -> None:
+    """L0c positional priors = R0..R1b9 + L0a + L0b (13 priors). R1b10
+    still filtered out by DIAGNOSIS_ONLY_RUNGS; L0a AND L0b stay IN so
+    L0c training preserves BOTH prior paraphrase axes."""
+    from calm.hrm_text_158.curriculum.replay import _resolve_prior_rungs
+    priors = _resolve_prior_rungs("L0c", replay_rungs_arg=None)
+    assert priors == ["R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2",
+                      "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "L0a", "L0b"], (
+        f"L0c priors: {priors}"
+    )
+    assert "R1b10" not in priors
+    assert "L0a" in priors
+    assert "L0b" in priors
+
+
+def test_l0a_l0b_l0c_question_sets_fully_disjoint() -> None:
+    """L0a, L0b, L0c paraphrase pools must NOT share any question strings.
+    `what's <expr>?` vs `calculate <expr>.` vs `<expr> equals what?` are
+    distinct templates by construction; pin as cross-language-rung
+    invariant across all three rungs."""
+    l0a_train = make_rung_examples("L0a", n=20000, seed=42, split="train")
+    l0b_train = make_rung_examples("L0b", n=20000, seed=42, split="train")
+    l0c_train = make_rung_examples("L0c", n=20000, seed=42, split="train")
+    l0a_set = {ex["question"] for ex in l0a_train}
+    l0b_set = {ex["question"] for ex in l0b_train}
+    l0c_set = {ex["question"] for ex in l0c_train}
+    assert not (l0a_set & l0c_set), (
+        f"L0a/L0c overlap: {sorted(l0a_set & l0c_set)[:5]}"
+    )
+    assert not (l0b_set & l0c_set), (
+        f"L0b/L0c overlap: {sorted(l0b_set & l0c_set)[:5]}"
     )
 
 
@@ -3725,13 +3841,14 @@ def _r2a_decode(ex: dict) -> tuple[int, int]:
 
 def test_generator_r2a_in_rung_names_after_r1b() -> None:
     """R2a was demoted to diagnosis-only after v1 failed 0.045 at 558fcc1.
-    With L0b inserted after L0a per codex msg 1779567887201 Slice D.1,
+    With L0b inserted after L0a per codex msg 1779567887201 Slice D.1
+    and L0c inserted after L0b per codex msg 1779571151811 Slice E.1,
     positions shifted: R1b3@5, R1b4@6, R1b4v2@7, R1b5@8, R1b6@9,
-    R1b7@10, R1b8@11, R1b9@12, R1b10@13, L0a@14, L0b@15, R1b@16,
-    R2a@17, R2@18."""
+    R1b7@10, R1b8@11, R1b9@12, R1b10@13, L0a@14, L0b@15, L0c@16,
+    R1b@17, R2a@18, R2@19."""
     from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
-    assert RUNG_NAMES[17] == "R2a", f"R2a must be at index 17 (post-R1b at 16, post-L0b at 15); got {RUNG_NAMES}"
-    assert RUNG_NAMES[18] == "R2", f"R2 must be at index 18 (diagnosis-only); got {RUNG_NAMES}"
+    assert RUNG_NAMES[18] == "R2a", f"R2a must be at index 18 (post-R1b at 17, post-L0c at 16); got {RUNG_NAMES}"
+    assert RUNG_NAMES[19] == "R2", f"R2 must be at index 19 (diagnosis-only); got {RUNG_NAMES}"
 
 
 def test_generator_r2a_train_holdout_exact_row_disjoint() -> None:
@@ -4171,9 +4288,10 @@ def test_cross_rung_no_train_holdout_overlap() -> None:
     active chain only."""
     splits = build_rung_splits(n_train=200, n_held_out=50, seed=42)
     assert_no_train_holdout_overlap(splits)
-    # Active chain: R0, R1, R1b1, R1b2, R1b3, R1b4v2, R1b5, R1b6, R1b7, R1b8, R3-R6
-    # (R1b2a/R1b/R1b4/R2/R2a diagnosis-only; R7 = GSM8k)
-    assert set(splits.keys()) == {"R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "L0a", "L0b", "R3", "R4", "R5", "R6"}
+    # Active chain: R0, R1, R1b1, R1b2, R1b3, R1b4v2, R1b5, R1b6, R1b7, R1b8,
+    # R1b9, L0a, L0b, L0c, R3-R6
+    # (R1b2a/R1b/R1b4/R1b10/R2/R2a diagnosis-only; R7 = GSM8k)
+    assert set(splits.keys()) == {"R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "L0a", "L0b", "L0c", "R3", "R4", "R5", "R6"}
 
 
 def test_cross_rung_r1b1_and_r1b_together_collide() -> None:
