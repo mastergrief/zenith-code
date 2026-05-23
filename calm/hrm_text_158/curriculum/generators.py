@@ -126,6 +126,25 @@ Axis 1 — math complexity under stable language wrapper:
                                   R0..R1b7 with absolute + parent-relative deltas + keyed
                                   audit deltas; **R1b2 explicit hard retention gate** per
                                   codex msg 1779549330637 (held 0.92->0.92 in this run).]
+  R1b8: constant K=7 addition    `what is A plus 7?` -> `A+7`  (A in [1, 92])
+                                 [codex msg 1779550489408-f40f66ab +1 K=7 after R1b7 commit
+                                  682659b ADVANCED via R1b2-retained chain + A0 exhaustive
+                                  audit 1071/1072 = 99.91% PASS. Continues constant-K
+                                  jigsaw (K=1, K=-1, K=2, K=3, K=4, K=5, K=6 all PASSED).
+                                  Mirrors R1b5/R1b6/R1b7 carry-stratified design at K=7:
+                                    - one_digit A=1..9 exhaustive in train
+                                    - two_digit A=10..92 carry-stratified 80/20: carry
+                                      {units in {3..9}} = 56 vals -> 44 train + 12 held;
+                                      non-carry {units in {0..2}} = 27 vals -> 21 train +
+                                      6 held. TOTAL: 83 -> 65 train + 18 held; with
+                                      one_digit 92 -> 74 train + 18 held.
+                                  Output [8, 99]; no 3-digit class. Audit: 9-row exhaustive
+                                  one_digit via r1b8_one_digit_audit_rows. Parent ckpt
+                                  (accepted R1b7 candidate from commit 682659b):
+                                  hrm_text_158_phase3_R1b7_seed0017_replay50_lr5e4_from_R1b2_repair_final.pt.
+                                  Explicit R1b2 boundary watch per codex 1779550489408:
+                                  verify `what is 10 minus 1?` decodes correctly post-train;
+                                  R1b2 full-support rate should stay >=0.99 preferred.]
   R2a: teens addition-only       `what is 13 plus 7?` -> `20` (A in [10,19], B in [2,9])
                                  [DIAGNOSIS-ONLY after v1 failed 0.045 at 558fcc1; variable-B
                                   is the blocker, not operator mixing. R1b3 is the active
@@ -161,7 +180,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -428,6 +447,30 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     "R1b7": {
         "train":     {"A_range": (1, 93), "partition": "enumerate_stratified_r1b7"},
         "held_out":  {"A_range": (10, 93), "partition": "enumerate_stratified_r1b7"},
+    },
+    # R1b8 (codex msg 1779550489408-f40f66ab +1 K=7 after R1b7 commit 682659b
+    # ADVANCED via R1b2-retained chain + A0 exhaustive audit 1071/1072 PASS).
+    # Continues locked constant-K jigsaw (K=1, K=-1, K=2, K=3, K=4, K=5, K=6
+    # all PASSED). Mirrors R1b5/R1b6/R1b7 carry-stratified design at K=7:
+    #   one_digit A=1..9: 9 vals -> 9 train exhaustive
+    #   two_digit A=10..92 carry-stratified 80/20 (carry-units {3..9} since K=7):
+    #     carry (units+7>=10, units in {3,4,5,6,7,8,9}): 56 vals -> 44 train + 12 held
+    #     non-carry (units in {0,1,2}):                  27 vals -> 21 train +  6 held
+    #     TOTAL: 83 -> 65 train + 18 held (guaranteed 12 carry + 6 non-carry)
+    #   TOTAL WITH ONE_DIGIT: 92 vals -> 74 train + 18 held_out
+    # Output [8, 99]; no 3-digit class (max A+7 = 92+7 = 99). B=7 disjoint
+    # from active priors (R0 no B; R1 B=0; R1b1 B=1; R1b2 B=1 minus; R1b3
+    # B=2; R1b4v2 B=3; R1b5 B=4; R1b6 B=5; R1b7 B=6). Audit: 9-row exhaustive
+    # one_digit via r1b8_one_digit_audit_rows. Parent ckpt (accepted R1b7
+    # candidate from commit 682659b, which advanced the math chain through
+    # K=6 with R1b2 hard-retention preserved):
+    # hrm_text_158_phase3_R1b7_seed0017_replay50_lr5e4_from_R1b2_repair_final.pt.
+    # Per codex msg 1779550489408 R1b8 launch +1: R1b2 boundary watch
+    # explicit (verify `what is 10 minus 1?` decodes correctly post-train;
+    # R1b2 full-support rate should stay >=0.99 preferred, hard floor 0.90).
+    "R1b8": {
+        "train":     {"A_range": (1, 92), "partition": "enumerate_stratified_r1b8"},
+        "held_out":  {"A_range": (10, 92), "partition": "enumerate_stratified_r1b8"},
     },
     # R2a (codex msg 1779478819906-0e30503e after full R2 failed v1+v2;
     # DIAGNOSIS-ONLY after R2a v1 itself failed 0.045 at 558fcc1, codex
@@ -1381,6 +1424,93 @@ def r1b7_one_digit_audit_rows(seed: int = 42) -> list[dict]:
     ]
 
 
+def _enumerate_partition_r1b8(seed: int, train_frac: float = 0.8) -> tuple[set, set]:
+    """Stratified deterministic partition for R1b8's K=7 addition (codex
+    msg 1779550489408-f40f66ab +1 K=7 after R1b7 commit 682659b ADVANCED
+    via R1b2-retained chain + A0 exhaustive audit 1071/1072 PASS).
+
+    Mirrors R1b5/R1b6/R1b7 design at K=7. Bakes in lessons:
+      one_digit A=1..9 EXHAUSTIVE train (NO thin-pool heldout)
+      two_digit A=10..92 CARRY-STRATIFIED 80/20
+
+    Carry stratification (units+7 >= 10, units in {3,4,5,6,7,8,9}):
+      carry-bucket A:        56 vals -> 44 train + 12 held_out
+      non-carry-bucket A:    27 vals -> 21 train +  6 held_out
+      TOTAL two_digit:       83 vals -> 65 train + 18 held_out
+    Total (with one_digit):  92 vals -> 74 train + 18 held_out
+
+    Guaranteed heldout shape: 12 carry + 6 non-carry. 12 carry vs R1b7's
+    10 is a side-effect of K=7 widening the carry support set (7 carry
+    units vs 6 at K=6); design intent is the same shape, not the same count.
+
+    Bucket-distinct seeds:
+      _stable_seed("R1b8_partition", seed, "carry")
+      _stable_seed("R1b8_partition", seed, "non_carry")
+    """
+    train_set: set = set()
+    held_out_set: set = set()
+
+    for A in range(1, 10):
+        train_set.add(A)
+
+    carry_as = [A for A in range(10, 93) if (A % 10) in (3, 4, 5, 6, 7, 8, 9)]
+    non_carry_as = [A for A in range(10, 93) if (A % 10) < 3]
+    assert len(carry_as) == 56, f"R1b8 carry bucket size: {len(carry_as)}"
+    assert len(non_carry_as) == 27, f"R1b8 non-carry bucket size: {len(non_carry_as)}"
+
+    rng = random.Random(_stable_seed("R1b8_partition", seed, "carry"))
+    rng.shuffle(carry_as)
+    split = int(len(carry_as) * train_frac)  # 56 * 0.8 = 44
+    train_set.update(carry_as[:split])
+    held_out_set.update(carry_as[split:])
+
+    rng = random.Random(_stable_seed("R1b8_partition", seed, "non_carry"))
+    rng.shuffle(non_carry_as)
+    split = int(len(non_carry_as) * train_frac)  # 27 * 0.8 = 21
+    train_set.update(non_carry_as[:split])
+    held_out_set.update(non_carry_as[split:])
+
+    return train_set, held_out_set
+
+
+def r1b8_one_digit_audit_rows(seed: int = 42) -> list[dict]:
+    """Deterministic 9-row exhaustive audit of R1b8 one_digit support
+    (A in [1, 9], `what is A plus 7?` -> A+7).
+
+    Codex msg 1779550489408-f40f66ab: same shape as r1b7_one_digit_audit_rows
+    but K=7 instead of K=6. Mastery = 9/9 finite-domain exhaustive check.
+    Seed-invariant by construction.
+    """
+    del seed
+    return [
+        {"question": f"what is {A} plus 7?", "expected": A + 7, "rung": "R1b8"}
+        for A in range(1, 10)
+    ]
+
+
+def _gen_r1b8(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """R1b8 constant K=7 addition, carry-stratified partition (codex msg
+    1779550489408-f40f66ab +1 K=7 after R1b7 commit 682659b).
+
+    Single template `what is A plus 7?` -> A+7. one_digit A=1..9
+    exhaustive in train; two_digit A=10..92 carry-stratified 80/20
+    with carry-units widened to {3,4,5,6,7,8,9} since K=7.
+
+    Train pool = 74 integers A (9 one_digit + 44 carry + 21 non-carry);
+    held_out pool = 18 (12 carry + 6 non-carry, all two_digit).
+    """
+    train_pool, held_out_pool = _enumerate_partition_r1b8(seed)
+    pool = train_pool if split == "train" else held_out_pool
+    pool_list = sorted(pool)
+    out = []
+    while len(out) < n:
+        A = rng.choice(pool_list)
+        q = f"what is {A} plus 7?"
+        expected = A + 7
+        out.append({"question": q, "expected": expected, "rung": "R1b8"})
+    return out
+
+
 def _gen_r1b7(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
     """R1b7 constant K=6 addition, carry-stratified partition (codex msg
     1779547753761-5711d790 +1 K=6; rebased onto R1b2-repair commit
@@ -1762,6 +1892,8 @@ def make_rung_examples(
         return _gen_r1b6(rng, _RUNG_SPEC["R1b6"][split], n, seed=seed, split=split)
     if rung == "R1b7":
         return _gen_r1b7(rng, _RUNG_SPEC["R1b7"][split], n, seed=seed, split=split)
+    if rung == "R1b8":
+        return _gen_r1b8(rng, _RUNG_SPEC["R1b8"][split], n, seed=seed, split=split)
     if rung == "R1b":
         return _gen_r1b(rng, _RUNG_SPEC["R1b"][split], n, seed=seed, split=split)
     if rung == "R2a":

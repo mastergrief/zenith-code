@@ -46,13 +46,16 @@ from calm.hrm_text_158.curriculum import (
     r1b5_one_digit_audit_rows,
     r1b6_one_digit_audit_rows,
     r1b7_one_digit_audit_rows,
+    r1b8_one_digit_audit_rows,
 )
 
 # Per-rung audit registry (codex msg 1779523412979-ff88b885 + R1b6 added
 # per codex msg 1779545956176-4a8cfc3e after gabe greenlight relay
 # 1779545575582-7c52a912 of verbatim "ok implement, full prov"; R1b7
 # added per codex msg 1779547753761-5711d790 under durable gabe
-# provenance relay 1779547541812).
+# provenance relay 1779547541812; R1b8 added per codex msg
+# 1779550489408-f40f66ab after R1b7 commit 682659b ADVANCED + A0
+# exhaustive audit PASS).
 # Each entry maps rung name -> callable(seed) -> list of 9 audit rows.
 # When `probe_curriculum` runs, it iterates this registry against the
 # `rungs` argument so every audit-eligible rung present gets a keyed
@@ -62,6 +65,7 @@ ONE_DIGIT_AUDIT_REGISTRY = {
     "R1b5": r1b5_one_digit_audit_rows,
     "R1b6": r1b6_one_digit_audit_rows,
     "R1b7": r1b7_one_digit_audit_rows,
+    "R1b8": r1b8_one_digit_audit_rows,
 }
 
 

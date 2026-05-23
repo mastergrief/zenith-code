@@ -186,7 +186,7 @@ def test_broad_tokenizer_decode_skips_pad() -> None:
 # Generators: determinism + held-out non-overlap
 # ============================================================================ #
 
-@pytest.mark.parametrize("rung", ["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6"])
+@pytest.mark.parametrize("rung", ["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6"])
 def test_generator_deterministic_per_seed(rung) -> None:
     """Same (rung, seed, split) -> same examples list."""
     examples_a = make_rung_examples(rung, n=20, seed=42, split="train")
@@ -194,7 +194,7 @@ def test_generator_deterministic_per_seed(rung) -> None:
     assert examples_a == examples_b
 
 
-@pytest.mark.parametrize("rung", ["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6"])
+@pytest.mark.parametrize("rung", ["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6"])
 def test_generator_train_holdout_distinct(rung) -> None:
     """Train and held_out splits produce different examples for same seed
     (different RNG salt per split)."""
@@ -877,7 +877,8 @@ def test_generator_r1b2_in_rung_names_after_r1b2a() -> None:
     assert RUNG_NAMES[8] == "R1b5", f"R1b5 must be at index 8 (post-R1b4v2); got {RUNG_NAMES}"
     assert RUNG_NAMES[9] == "R1b6", f"R1b6 must be at index 9 (post-R1b5); got {RUNG_NAMES}"
     assert RUNG_NAMES[10] == "R1b7", f"R1b7 must be at index 10 (post-R1b6); got {RUNG_NAMES}"
-    assert RUNG_NAMES[11] == "R1b", f"R1b must be at index 11 (post-R1b7); got {RUNG_NAMES}"
+    assert RUNG_NAMES[11] == "R1b8", f"R1b8 must be at index 11 (post-R1b7); got {RUNG_NAMES}"
+    assert RUNG_NAMES[12] == "R1b", f"R1b must be at index 12 (post-R1b8); got {RUNG_NAMES}"
 
 
 def test_generator_r1b2_train_holdout_exact_row_disjoint() -> None:
@@ -1800,6 +1801,7 @@ def test_generator_r1b5_in_rung_names_index_8() -> None:
     assert RUNG_NAMES[7] == "R1b4v2", f"R1b4v2 must be at index 7 (pre-R1b5); got {RUNG_NAMES}"
     assert RUNG_NAMES[9] == "R1b6", f"R1b6 must be at index 9 (post-R1b5); got {RUNG_NAMES}"
     assert RUNG_NAMES[10] == "R1b7", f"R1b7 must be at index 10 (post-R1b6); got {RUNG_NAMES}"
+    assert RUNG_NAMES[11] == "R1b8", f"R1b8 must be at index 11 (post-R1b7); got {RUNG_NAMES}"
 
 
 def test_generator_r1b5_train_holdout_exact_row_disjoint() -> None:
@@ -2452,13 +2454,14 @@ def _r1b7_a(ex: dict) -> int:
 
 
 def test_generator_r1b7_in_rung_names_index_10() -> None:
-    """R1b7 at RUNG_NAMES index 10, immediately after R1b6 at 9, before R1b
+    """R1b7 at RUNG_NAMES index 10, immediately after R1b6 at 9, before R1b8
     at 11. Codex msg 1779547753761-5711d790: constant K=6 addition extending
-    jigsaw from K=5 (R1b6 ADVANCED at 128b097 via replay50_lr5e4)."""
+    jigsaw from K=5 (R1b6 ADVANCED at 128b097 via replay50_lr5e4); R1b8
+    inserted at 11 per codex msg 1779550489408-f40f66ab."""
     from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
     assert RUNG_NAMES[10] == "R1b7", f"R1b7 must be at index 10; got {RUNG_NAMES}"
     assert RUNG_NAMES[9] == "R1b6", f"R1b6 must be at index 9 (pre-R1b7); got {RUNG_NAMES}"
-    assert RUNG_NAMES[11] == "R1b", f"R1b must be at index 11 (post-R1b7); got {RUNG_NAMES}"
+    assert RUNG_NAMES[11] == "R1b8", f"R1b8 must be at index 11 (post-R1b7); got {RUNG_NAMES}"
 
 
 def test_generator_r1b7_train_holdout_exact_row_disjoint() -> None:
@@ -2732,6 +2735,245 @@ def test_r1b7_positional_priors_match_active_chain() -> None:
 
 
 # ============================================================================ #
+# R1b8 constant K=7 addition (codex msg 1779550489408-f40f66ab +1 K=7 after
+#  R1b7 commit 682659b ADVANCED via R1b2-retained chain + A0 exhaustive
+#  audit 1071/1072 = 99.91% PASS). Continues constant-K jigsaw
+#  (K=1, K=-1, K=2, K=3, K=4, K=5, K=6 all PASSED). Mirrors R1b5/R1b6/R1b7
+#  carry-stratified design at K=7. R1b2 boundary watch explicit per codex
+#  R1b8 launch +1.
+# ============================================================================ #
+
+def _r1b8_a(ex: dict) -> int:
+    """Extract A from an R1b8 example: question is `what is A plus 7?`."""
+    q = ex["question"]
+    assert q.startswith("what is "), f"R1b8 prefix violated: {q!r}"
+    assert q.endswith(" plus 7?"), f"R1b8 question must end ' plus 7?': {q!r}"
+    return int(q[len("what is "):-len(" plus 7?")])
+
+
+def test_generator_r1b8_in_rung_names_index_11() -> None:
+    """R1b8 at RUNG_NAMES index 11, immediately after R1b7 at 10, before R1b
+    at 12. Codex msg 1779550489408-f40f66ab."""
+    from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
+    assert RUNG_NAMES[11] == "R1b8", f"R1b8 must be at index 11; got {RUNG_NAMES}"
+    assert RUNG_NAMES[10] == "R1b7", f"R1b7 must be at index 10 (pre-R1b8); got {RUNG_NAMES}"
+    assert RUNG_NAMES[12] == "R1b", f"R1b must be at index 12 (post-R1b8); got {RUNG_NAMES}"
+
+
+def test_generator_r1b8_train_holdout_exact_row_disjoint() -> None:
+    """R1b8 train + held_out exact-row disjoint at n=2000 sampling."""
+    train = make_rung_examples("R1b8", n=2000, seed=42, split="train")
+    held = make_rung_examples("R1b8", n=2000, seed=42, split="held_out")
+    train_set = {(ex["question"], ex["expected"]) for ex in train}
+    held_set = {(ex["question"], ex["expected"]) for ex in held}
+    overlap = train_set & held_set
+    assert not overlap, f"R1b8 train/held_out share rows: {sorted(overlap)[:5]}"
+
+
+def test_generator_r1b8_single_template_only() -> None:
+    """R1b8 emits ONLY `what is A plus 7?`."""
+    rows = make_rung_examples("R1b8", n=2000, seed=42, split="train") + \
+           make_rung_examples("R1b8", n=2000, seed=42, split="held_out")
+    for ex in rows:
+        q = ex["question"]
+        assert q.startswith("what is "), f"R1b8 prefix violated: {q!r}"
+        assert q.endswith(" plus 7?"), f"R1b8 must end ' plus 7?': {q!r}"
+        assert q.count(" plus ") == 1, f"R1b8 must contain ' plus ' exactly once: {q!r}"
+
+
+def test_generator_r1b8_train_contains_all_one_digit() -> None:
+    """R1b8 train MUST contain all 9 one_digit A values [1, 9]."""
+    train = make_rung_examples("R1b8", n=4000, seed=42, split="train")
+    train_as = {_r1b8_a(ex) for ex in train}
+    one_digit_as = {a for a in train_as if 1 <= a <= 9}
+    assert one_digit_as == set(range(1, 10)), (
+        f"R1b8 train missing one_digit values: expected {{1..9}}, got {sorted(one_digit_as)}"
+    )
+
+
+def test_generator_r1b8_holdout_has_zero_one_digit() -> None:
+    """R1b8 held_out MUST contain ZERO one_digit rows."""
+    held = make_rung_examples("R1b8", n=4000, seed=42, split="held_out")
+    held_as = {_r1b8_a(ex) for ex in held}
+    one_digit_held = {a for a in held_as if 1 <= a <= 9}
+    assert one_digit_held == set(), f"R1b8 held_out leaked one_digit rows: {sorted(one_digit_held)}"
+
+
+def test_generator_r1b8_holdout_has_18_unique_two_digit() -> None:
+    """R1b8 held_out unique support = 18 two_digit A values (12 carry + 6 non-carry)."""
+    held = make_rung_examples("R1b8", n=4000, seed=42, split="held_out")
+    held_as = {_r1b8_a(ex) for ex in held}
+    assert len(held_as) == 18, f"R1b8 held_out unique A count must be 18; got {len(held_as)}: {sorted(held_as)}"
+    for A in held_as:
+        assert 10 <= A <= 92, f"R1b8 held_out A out of two_digit range: {A}"
+
+
+def test_generator_r1b8_holdout_carry_stratified_12_plus_6() -> None:
+    """R1b8 held_out: EXACTLY 12 carry + 6 non-carry two_digit values
+    (carry-units {3..9} since K=7). Codex msg 1779550489408 spec."""
+    from calm.hrm_text_158.curriculum.generators import _enumerate_partition_r1b8
+    _, held = _enumerate_partition_r1b8(seed=42)
+    carry_held = sorted(a for a in held if (a % 10) in (3, 4, 5, 6, 7, 8, 9))
+    non_carry_held = sorted(a for a in held if 10 <= a <= 92 and (a % 10) < 3)
+    assert len(carry_held) == 12, f"R1b8 carry heldout must be 12; got {len(carry_held)}: {carry_held}"
+    assert len(non_carry_held) == 6, f"R1b8 non-carry heldout must be 6; got {len(non_carry_held)}: {non_carry_held}"
+
+
+def test_generator_r1b8_train_has_74_unique() -> None:
+    """R1b8 train unique support = 74 A values (9 one_digit + 44 carry + 21 non-carry)."""
+    train = make_rung_examples("R1b8", n=8000, seed=42, split="train")
+    train_as = {_r1b8_a(ex) for ex in train}
+    assert len(train_as) == 74, (
+        f"R1b8 train unique A count must be 74 (9 one + 44 carry + 21 non-carry); got {len(train_as)}"
+    )
+
+
+def test_generator_r1b8_partition_carry_bucket_sizes() -> None:
+    """`_enumerate_partition_r1b8` carry bucket: 56 vals -> 44 train + 12 held.
+    Non-carry bucket: 27 vals -> 21 train + 6 held."""
+    from calm.hrm_text_158.curriculum.generators import _enumerate_partition_r1b8
+    train, held = _enumerate_partition_r1b8(seed=42)
+    carry_train = {a for a in train if 10 <= a <= 92 and (a % 10) in (3, 4, 5, 6, 7, 8, 9)}
+    carry_held = {a for a in held if (a % 10) in (3, 4, 5, 6, 7, 8, 9)}
+    non_carry_train = {a for a in train if 10 <= a <= 92 and (a % 10) < 3}
+    non_carry_held = {a for a in held if 10 <= a <= 92 and (a % 10) < 3}
+    assert len(carry_train) == 44, f"carry train: {len(carry_train)}"
+    assert len(carry_held) == 12, f"carry held: {len(carry_held)}"
+    assert len(non_carry_train) == 21, f"non-carry train: {len(non_carry_train)}"
+    assert len(non_carry_held) == 6, f"non-carry held: {len(non_carry_held)}"
+    assert (carry_train | carry_held | non_carry_train | non_carry_held) == set(range(10, 93))
+
+
+def test_generator_r1b8_expected_matches_arithmetic() -> None:
+    """expected == A + 7 for every R1b8 row."""
+    rows = make_rung_examples("R1b8", n=2000, seed=42, split="train") + \
+           make_rung_examples("R1b8", n=2000, seed=42, split="held_out")
+    for ex in rows:
+        A = _r1b8_a(ex)
+        assert ex["expected"] == A + 7, f"R1b8 arithmetic mismatch: A={A}, expected={ex['expected']}"
+
+
+def test_generator_r1b8_output_in_8_to_99() -> None:
+    """R1b8 outputs in [8, 99]."""
+    rows = make_rung_examples("R1b8", n=2000, seed=42, split="train") + \
+           make_rung_examples("R1b8", n=2000, seed=42, split="held_out")
+    for ex in rows:
+        assert 8 <= ex["expected"] <= 99, f"R1b8 output OOR: {ex}"
+
+
+def test_generator_r1b8_rung_field() -> None:
+    """Every R1b8 row carries rung='R1b8'."""
+    rows = make_rung_examples("R1b8", n=200, seed=42, split="train") + \
+           make_rung_examples("R1b8", n=200, seed=42, split="held_out")
+    for ex in rows:
+        assert ex["rung"] == "R1b8", f"R1b8 rung field violated: {ex!r}"
+
+
+def test_r1b8_one_digit_audit_returns_9_rows() -> None:
+    from calm.hrm_text_158.curriculum import r1b8_one_digit_audit_rows
+    rows = r1b8_one_digit_audit_rows(seed=42)
+    assert len(rows) == 9, f"audit must return 9 rows; got {len(rows)}"
+
+
+def test_r1b8_one_digit_audit_seed_invariant() -> None:
+    from calm.hrm_text_158.curriculum import r1b8_one_digit_audit_rows
+    rows_a = r1b8_one_digit_audit_rows(seed=42)
+    rows_b = r1b8_one_digit_audit_rows(seed=777)
+    rows_c = r1b8_one_digit_audit_rows(seed=0)
+    assert rows_a == rows_b == rows_c, "R1b8 audit must be seed-invariant"
+
+
+def test_r1b8_one_digit_audit_covers_full_domain() -> None:
+    """R1b8 audit covers A in [1, 9] exhaustively; expected = A + 7."""
+    from calm.hrm_text_158.curriculum import r1b8_one_digit_audit_rows
+    rows = r1b8_one_digit_audit_rows()
+    audit_as = sorted(int(r["question"].split()[2]) for r in rows)
+    assert audit_as == list(range(1, 10)), f"audit A coverage: {audit_as}"
+    for r in rows:
+        A = int(r["question"].split()[2])
+        assert r["question"] == f"what is {A} plus 7?", f"audit question: {r!r}"
+        assert r["expected"] == A + 7, f"audit expected: {r!r}"
+        assert r["rung"] == "R1b8", f"audit rung field: {r!r}"
+
+
+def test_r1b8_one_digit_audit_importable_from_package() -> None:
+    from calm.hrm_text_158.curriculum import r1b8_one_digit_audit_rows
+    assert callable(r1b8_one_digit_audit_rows)
+
+
+def test_r1b8_audit_disjoint_from_holdout() -> None:
+    from calm.hrm_text_158.curriculum import r1b8_one_digit_audit_rows
+    audit_rows = r1b8_one_digit_audit_rows()
+    held = make_rung_examples("R1b8", n=4000, seed=42, split="held_out")
+    audit_qs = {r["question"] for r in audit_rows}
+    held_qs = {ex["question"] for ex in held}
+    overlap = audit_qs & held_qs
+    assert not overlap, f"R1b8 audit ∩ heldout: {overlap}"
+
+
+def test_r1b8_default_chain_contains_r1b8_no_overlap() -> None:
+    """Default active chain (with R1b8) passes cross-rung invariant."""
+    splits = build_rung_splits(
+        n_train=2000, n_held_out=400, seed=42,
+        rungs=("R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8"),
+    )
+    assert "R1b8" in splits, f"R1b8 missing: {list(splits)}"
+    assert_no_train_holdout_overlap(splits)
+
+
+def test_r1b8_build_rung_splits_default_includes_r1b8() -> None:
+    splits = build_rung_splits(n_train=200, n_held_out=80, seed=42)
+    assert "R1b8" in splits, f"R1b8 must be in default chain; got {list(splits)}"
+
+
+def test_r1b8_partition_one_digit_exhaustive() -> None:
+    from calm.hrm_text_158.curriculum.generators import _enumerate_partition_r1b8
+    train, held = _enumerate_partition_r1b8(seed=42)
+    one_digit_train = {a for a in train if 1 <= a <= 9}
+    one_digit_held = {a for a in held if 1 <= a <= 9}
+    assert one_digit_train == set(range(1, 10)), f"partition train one_digit: {sorted(one_digit_train)}"
+    assert one_digit_held == set(), f"partition heldout one_digit must be empty: {sorted(one_digit_held)}"
+
+
+def test_r1b8_partition_train_held_disjoint() -> None:
+    from calm.hrm_text_158.curriculum.generators import _enumerate_partition_r1b8
+    train, held = _enumerate_partition_r1b8(seed=17)
+    assert train.isdisjoint(held), f"R1b8 partition train ∩ held: {sorted(train & held)}"
+
+
+def test_r1b8_partition_stable_across_pythonhashseed() -> None:
+    import os, subprocess, sys
+    snippet = (
+        "from calm.hrm_text_158.curriculum.generators import _enumerate_partition_r1b8; "
+        "train, held = _enumerate_partition_r1b8(seed=42); "
+        "print(','.join(str(x) for x in sorted(train)) + '|' + ','.join(str(x) for x in sorted(held)))"
+    )
+    out1 = subprocess.check_output([sys.executable, "-c", snippet], env={**os.environ, "PYTHONHASHSEED": "0"}).decode().strip()
+    out2 = subprocess.check_output([sys.executable, "-c", snippet], env={**os.environ, "PYTHONHASHSEED": "777"}).decode().strip()
+    out3 = subprocess.check_output([sys.executable, "-c", snippet], env={**os.environ, "PYTHONHASHSEED": "random"}).decode().strip()
+    assert out1 == out2 == out3, "R1b8 partition diverged across PYTHONHASHSEED"
+
+
+def test_r1b8_in_one_digit_audit_registry() -> None:
+    from scripts.probe_hrm_text_158 import ONE_DIGIT_AUDIT_REGISTRY
+    assert "R1b8" in ONE_DIGIT_AUDIT_REGISTRY, f"R1b8 missing: {list(ONE_DIGIT_AUDIT_REGISTRY)}"
+    rows = ONE_DIGIT_AUDIT_REGISTRY["R1b8"](seed=42)
+    assert len(rows) == 9
+    for r in rows:
+        assert r["rung"] == "R1b8"
+
+
+def test_r1b8_positional_priors_match_active_chain() -> None:
+    """Trainer's `_resolve_prior_rungs("R1b8")` returns the active chain
+    {R0, R1, R1b1, R1b2, R1b3, R1b4v2, R1b5, R1b6, R1b7}."""
+    from calm.hrm_text_158.curriculum.replay import _resolve_prior_rungs
+    priors = _resolve_prior_rungs("R1b8", replay_rungs_arg=None)
+    assert priors == ["R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2", "R1b5", "R1b6", "R1b7"], (
+        f"R1b8 priors: {priors}"
+    )
+
+
+# ============================================================================ #
 # R2a teens addition-only (codex msg 1779478819906-0e30503e after full R2
 #  failed v1+v2 n_train=8000 at c2f4f8d; jigsaw-curriculum operator split;
 #  DIAGNOSIS-ONLY after v1 failed 0.045 at 558fcc1)
@@ -2749,12 +2991,12 @@ def _r2a_decode(ex: dict) -> tuple[int, int]:
 
 def test_generator_r2a_in_rung_names_after_r1b() -> None:
     """R2a was demoted to diagnosis-only after v1 failed 0.045 at 558fcc1.
-    With R1b4@6, R1b4v2@7, R1b5@8, R1b6@9, R1b7@10 all inserted before R1b@11,
-    positions: R1b3@5, R1b4@6, R1b4v2@7, R1b5@8, R1b6@9, R1b7@10, R1b@11,
-    R2a@12, R2@13."""
+    With R1b4@6, R1b4v2@7, R1b5@8, R1b6@9, R1b7@10, R1b8@11 all inserted
+    before R1b@12, positions: R1b3@5, R1b4@6, R1b4v2@7, R1b5@8, R1b6@9,
+    R1b7@10, R1b8@11, R1b@12, R2a@13, R2@14."""
     from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
-    assert RUNG_NAMES[12] == "R2a", f"R2a must be at index 12; got {RUNG_NAMES}"
-    assert RUNG_NAMES[13] == "R2", f"R2 must be at index 13 (diagnosis-only); got {RUNG_NAMES}"
+    assert RUNG_NAMES[13] == "R2a", f"R2a must be at index 13; got {RUNG_NAMES}"
+    assert RUNG_NAMES[14] == "R2", f"R2 must be at index 14 (diagnosis-only); got {RUNG_NAMES}"
 
 
 def test_generator_r2a_train_holdout_exact_row_disjoint() -> None:
@@ -3186,15 +3428,17 @@ def test_cross_rung_no_train_holdout_overlap() -> None:
     gabe provenance relay 1779547541812).
 
     `build_rung_splits` default tuple is `("R0", "R1", "R1b1", "R1b2",
-    "R1b3", "R1b4v2", "R1b5", "R1b6", "R1b7", "R3", "R4", "R5", "R6")`.
-    Diagnosis-only and OUT of default: R1b2a, R1b, R1b4, R2, R2a. The
-    invariant asserts no row in any rung's held_out appears in any
-    rung's train set across the active chain only."""
+    "R1b3", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R3", "R4", "R5",
+    "R6")` (R1b8 added per codex msg 1779550489408-f40f66ab after R1b7
+    commit 682659b + A0 exhaustive audit PASS). Diagnosis-only and OUT
+    of default: R1b2a, R1b, R1b4, R2, R2a. The invariant asserts no row
+    in any rung's held_out appears in any rung's train set across the
+    active chain only."""
     splits = build_rung_splits(n_train=200, n_held_out=50, seed=42)
     assert_no_train_holdout_overlap(splits)
-    # Active chain: R0, R1, R1b1, R1b2, R1b3, R1b4v2, R1b5, R1b6, R1b7, R3-R6
+    # Active chain: R0, R1, R1b1, R1b2, R1b3, R1b4v2, R1b5, R1b6, R1b7, R1b8, R3-R6
     # (R1b2a/R1b/R1b4/R2/R2a diagnosis-only; R7 = GSM8k)
-    assert set(splits.keys()) == {"R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2", "R1b5", "R1b6", "R1b7", "R3", "R4", "R5", "R6"}
+    assert set(splits.keys()) == {"R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R3", "R4", "R5", "R6"}
 
 
 def test_cross_rung_r1b1_and_r1b_together_collide() -> None:

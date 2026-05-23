@@ -749,7 +749,7 @@ if __name__ == "__main__":
                          "--use-ternary-bulk (no-op otherwise).")
     # Phase 3 Step 1 curriculum flags (codex msg 1779462307554 +1 implement Phase A)
     ap.add_argument("--curriculum-rung", type=str, default=None,
-                    choices=["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6"],
+                    choices=["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6"],
                     help="Phase 3 curriculum mode. When set, swaps GSM8k corpus "
                          "for synthetic per-rung data + replay mix. Requires "
                          "--use-broad-tokenizer in Phase 3 design.")
