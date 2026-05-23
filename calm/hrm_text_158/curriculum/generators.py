@@ -62,7 +62,22 @@ Axis 1 — math complexity under stable language wrapper:
                                   rows only, zero one_digit). Separate deterministic 9-row
                                   one_digit exhaustive audit served via
                                   `r1b4v2_one_digit_audit_rows`. Preserves R1b4 immutable as
-                                  failed diagnostic.]
+                                  failed diagnostic. ADVANCED via seed=2 head at b368b81.]
+  R1b5: constant K=4 addition    `what is A plus 4?` -> `A+4`  (A in [1, 95])
+                                 [codex msgs 1779488238721-49f03cc9 +1 advance R1b4v2 +
+                                  R1b5 direction; 1779523412979-ff88b885 +1 design+implement
+                                  R1b5 with keyed per-rung audits. Continues constant-K
+                                  jigsaw (K=1, K=-1, K=2, K=3 all passed). Bakes in R1b4v2
+                                  lessons FROM START:
+                                    - one_digit A=1..9 exhaustive in train (no thin pool)
+                                    - two_digit A=10..95 carry-stratified 80/20 (NEW
+                                      dimension): carry-bucket {units in {6,7,8,9}} = 32 vals
+                                      -> 25 train + 7 held; non-carry {units in {0..5}} = 54
+                                      vals -> 43 train + 11 held. TOTAL: 86 -> 68 train + 18
+                                      held with guaranteed 7 carry + 11 non-carry in held.
+                                  Output [5, 99]; no 3-digit class. Audit: 9-row exhaustive
+                                  one_digit via r1b5_one_digit_audit_rows. Parent ckpt:
+                                  hrm_text_158_phase3_R1b4v2_seed0002_final.pt.]
   R2a: teens addition-only       `what is 13 plus 7?` -> `20` (A in [10,19], B in [2,9])
                                  [DIAGNOSIS-ONLY after v1 failed 0.045 at 558fcc1; variable-B
                                   is the blocker, not operator mixing. R1b3 is the active
@@ -98,7 +113,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -299,6 +314,23 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     "R1b4v2": {
         "train":     {"A_range": (1, 96), "partition": "enumerate_stratified_r1b4v2"},
         "held_out":  {"A_range": (10, 96), "partition": "enumerate_stratified_r1b4v2"},
+    },
+    # R1b5 (codex msgs 1779488238721-49f03cc9 + 1779523412979-ff88b885 after
+    # R1b4v2 advance at b368b81): constant K=4 addition. Continues locked
+    # constant-K single-template jigsaw (K=1, K=-1, K=2, K=3 all passed).
+    # Bakes in R1b4v2 measurement/support lessons FROM START:
+    #   one_digit A=1..9: all 9 to TRAIN exhaustive (NO thin-pool heldout)
+    #   two_digit A=10..95 carry-stratified 80/20 (NEW dimension):
+    #     carry (units+4>=10, units in {6,7,8,9}): 32 vals -> 25 train + 7 held
+    #     non-carry (units in {0..5}):              54 vals -> 43 train + 11 held
+    #     TOTAL: 86 -> 68 train + 18 held (guaranteed 7 carry + 11 non-carry)
+    # Output [5, 99]; no 3-digit class. B=4 disjoint from active priors
+    # (R0 has no B; R1 B=0; R1b1 B=1; R1b2 B=1 minus; R1b3 B=2; R1b4v2 B=3).
+    # Diagnosis-only R2/R2a have B in [2,9] which overlaps B=4 historically;
+    # cross-rung invariant covers active-chain (R2/R2a not in default).
+    "R1b5": {
+        "train":     {"A_range": (1, 95), "partition": "enumerate_stratified_r1b5"},
+        "held_out":  {"A_range": (10, 95), "partition": "enumerate_stratified_r1b5"},
     },
     # R2a (codex msg 1779478819906-0e30503e after full R2 failed v1+v2;
     # DIAGNOSIS-ONLY after R2a v1 itself failed 0.045 at 558fcc1, codex
@@ -987,6 +1019,101 @@ def _gen_r1b4v2(rng: random.Random, spec: dict, n: int, seed: int, split: str) -
     return out
 
 
+def _enumerate_partition_r1b5(seed: int, train_frac: float = 0.8) -> tuple[set, set]:
+    """Stratified deterministic partition for R1b5's K=4 addition (codex
+    msgs 1779488238721-49f03cc9 + 1779523412979-ff88b885 after R1b4v2
+    advance at b368b81).
+
+    Continues locked constant-K single-template jigsaw to K=4. Bakes in
+    R1b4v2 measurement/support lessons FROM START:
+      one_digit A=1..9 EXHAUSTIVE train (NO thin-pool heldout)
+      two_digit A=10..95 CARRY-STRATIFIED 80/20 (NEW dimension)
+
+    Carry stratification (units+4 >= 10, units in {6,7,8,9}):
+      carry-bucket A:        32 vals -> 25 train + 7 held_out
+      non-carry-bucket A:    54 vals -> 43 train + 11 held_out
+      TOTAL two_digit:       86 vals -> 68 train + 18 held_out
+
+    Guaranteed heldout shape: 7 carry + 11 non-carry. Designed to make
+    the strict-gate carry signal sample-stable across seeds (vs
+    R1b4v2's accidental composition that varied per seed).
+
+    Bucket-distinct seeds:
+      _stable_seed("R1b5_partition", seed, "carry")
+      _stable_seed("R1b5_partition", seed, "non_carry")
+    """
+    train_set: set = set()
+    held_out_set: set = set()
+
+    # one_digit: exhaustive into train, ZERO held_out (R1b4v2 lesson)
+    for A in range(1, 10):
+        train_set.add(A)
+
+    # two_digit: CARRY-stratified split
+    carry_as = [A for A in range(10, 96) if (A % 10) in (6, 7, 8, 9)]
+    non_carry_as = [A for A in range(10, 96) if (A % 10) < 6]
+    # Sanity: 32 + 54 = 86 exhaustively covers [10, 95]
+    assert len(carry_as) == 32, f"R1b5 carry bucket size: {len(carry_as)}"
+    assert len(non_carry_as) == 54, f"R1b5 non-carry bucket size: {len(non_carry_as)}"
+
+    rng = random.Random(_stable_seed("R1b5_partition", seed, "carry"))
+    rng.shuffle(carry_as)
+    split = int(len(carry_as) * train_frac)  # 32 * 0.8 = 25
+    train_set.update(carry_as[:split])
+    held_out_set.update(carry_as[split:])
+
+    rng = random.Random(_stable_seed("R1b5_partition", seed, "non_carry"))
+    rng.shuffle(non_carry_as)
+    split = int(len(non_carry_as) * train_frac)  # 54 * 0.8 = 43
+    train_set.update(non_carry_as[:split])
+    held_out_set.update(non_carry_as[split:])
+
+    return train_set, held_out_set
+
+
+def r1b5_one_digit_audit_rows(seed: int = 42) -> list[dict]:
+    """Deterministic 9-row exhaustive audit of R1b5 one_digit support
+    (A in [1, 9], `what is A plus 4?` -> A+4).
+
+    Codex msg 1779523412979-ff88b885 spec: same shape as
+    `r1b4v2_one_digit_audit_rows` but K=4 instead of K=3. Served
+    separately from heldout (which is two_digit-only by R1b5 design).
+    Mastery = 9/9 finite-domain exhaustive check.
+
+    Seed-invariant by construction (rows ARE the full domain). Seed
+    arg accepted for API symmetry with the generator functions.
+    """
+    del seed  # accepted for API symmetry; row contents are exhaustive
+    return [
+        {"question": f"what is {A} plus 4?", "expected": A + 4, "rung": "R1b5"}
+        for A in range(1, 10)
+    ]
+
+
+def _gen_r1b5(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """R1b5 constant K=4 addition, carry-stratified partition (codex msgs
+    1779488238721-49f03cc9 + 1779523412979-ff88b885 after R1b4v2 advance
+    at b368b81).
+
+    Single template `what is A plus 4?` -> A+4. one_digit A=1..9
+    exhaustive in train (per R1b4v2 lesson); two_digit A=10..95
+    carry-stratified 80/20 (NEW dimension beyond R1b4v2).
+
+    Train pool = 77 integers A (9 one_digit + 25 carry + 43 non-carry);
+    held_out pool = 18 (7 carry + 11 non-carry, all two_digit).
+    """
+    train_pool, held_out_pool = _enumerate_partition_r1b5(seed)
+    pool = train_pool if split == "train" else held_out_pool
+    pool_list = sorted(pool)
+    out = []
+    while len(out) < n:
+        A = rng.choice(pool_list)
+        q = f"what is {A} plus 4?"
+        expected = A + 4
+        out.append({"question": q, "expected": expected, "rung": "R1b5"})
+    return out
+
+
 def _gen_r1b(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
     """R1b ±1 (codex msg 1779467425298 after R1 identity pass at c6e94578).
 
@@ -1337,6 +1464,8 @@ def make_rung_examples(
         return _gen_r1b4(rng, _RUNG_SPEC["R1b4"][split], n, seed=seed, split=split)
     if rung == "R1b4v2":
         return _gen_r1b4v2(rng, _RUNG_SPEC["R1b4v2"][split], n, seed=seed, split=split)
+    if rung == "R1b5":
+        return _gen_r1b5(rng, _RUNG_SPEC["R1b5"][split], n, seed=seed, split=split)
     if rung == "R1b":
         return _gen_r1b(rng, _RUNG_SPEC["R1b"][split], n, seed=seed, split=split)
     if rung == "R2a":

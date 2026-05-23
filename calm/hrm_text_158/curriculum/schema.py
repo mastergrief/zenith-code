@@ -32,12 +32,21 @@ class RungProbeResult:
     # Canonical 17×23 probe (multiplication-rung mastery gate)
     canonical_17x23: dict = field(default_factory=dict)  # {decoded, parsed, exact_ok, parsed_ok, too_long}
 
-    # R1b4v2 one_digit exhaustive audit (codex msg 1779483673737-20ff22ab).
-    # Populated ONLY when R1b4v2 is in the probed rungs list. 9-row
-    # exhaustive check of `what is A plus 3?` for A in [1, 9]. Mastery =
-    # 9/9 exact. Shape: {"exact": int, "cap": 9, "rows": [{question,
-    # expected, decoded, parsed, exact_ok, parsed_ok, too_long}, ...]}.
-    # Empty dict if R1b4v2 not probed.
+    # Keyed per-rung one_digit exhaustive audits (codex msg
+    # 1779523412979-ff88b885 after R1b5 design). Each audit-eligible
+    # rung's 9-row exhaustive check stored under its own key in
+    # `one_digit_audits`. Required because R1b5 probe includes R1b4v2
+    # in priors AND R1b5 itself — both must have audits stored, not
+    # one overwriting the other.
+    # Shape: {<rung_name>: {"exact": int, "cap": 9, "parsed": int,
+    #   "too_long": int, "finite": bool, "rows": [...]}, ...}.
+    # Empty dict if no audit-eligible rungs probed.
+    one_digit_audits: dict[str, dict] = field(default_factory=dict)
+
+    # Backcompat alias for legacy R1b4v2-only field (codex msg
+    # 1779483673737-20ff22ab). Mirrors `one_digit_audits["R1b4v2"]`
+    # when present, for older receipts that read this singular field.
+    # NEW code should consume `one_digit_audits[<rung>]` directly.
     one_digit_audit: dict = field(default_factory=dict)
 
     # Retention deltas vs PREVIOUS rung's probe of the same prior rungs

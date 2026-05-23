@@ -18,7 +18,7 @@ def build_rung_splits(
     n_train: int = 2000,
     n_held_out: int = 400,
     seed: int = 42,
-    rungs: tuple[str, ...] = ("R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2", "R3", "R4", "R5", "R6"),
+    rungs: tuple[str, ...] = ("R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2", "R1b5", "R3", "R4", "R5", "R6"),
 ) -> dict[str, dict[str, list[dict]]]:
     """Build train + held_out splits for all rungs.
 
@@ -27,13 +27,13 @@ def build_rung_splits(
 
     R7 (GSM8k) excluded — served from load_gsm8k_splits.
 
-    Default tuple is the ACTIVE CHAIN per codex msg 1779483673737-20ff22ab
-    (R1b4v2 one_digit-exhaustive after R1b4 v1 failed at 7b53368;
-    measurement-bug diagnosis preserved R1b4 immutable):
+    Default tuple is the ACTIVE CHAIN per codex msgs 1779488238721-49f03cc9
+    (R1b4v2 advance via seed=2 at b368b81) + 1779523412979-ff88b885 (R1b5
+    K=4 carry-stratified added to chain):
 
       R0 -> R1 -> R1b1 (K=1 plus) -> R1b2 (K=-1 minus) -> R1b3 (K=2 plus,
-      PASSED at 175d327) -> R1b4v2 (K=3 plus, one_digit-exhaustive
-      partition replacing R1b4 v1 failed) -> R3 -> R4 -> R5 -> R6
+      PASSED at 175d327) -> R1b4v2 (K=3 plus, ADVANCED at b368b81 via
+      seed=2 head) -> R1b5 (K=4 plus, carry-stratified, NEW) -> R3 -> ...
 
     Diagnosis-only and OUT of default: R1b2a (failed v1+v2 lowmult),
     R1b (legacy 3-template), R1b4 (K=3 v1 failed 7b53368 measurement

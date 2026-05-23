@@ -71,7 +71,10 @@ from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
 #
 # R1b2 stays OUT (canonical retry that PASSED at c2686cc).
 # R1b3 stays OUT (PASSED at 175d327 via v2 schedule).
-# R1b4v2 stays OUT (active-chain target, not yet attempted).
+# R1b4v2 stays OUT (ADVANCED at b368b81 via seed=2 head; canonical
+#         R1b4v2 chain head per codex msg 1779488238721-49f03cc9).
+# R1b5 stays OUT (active-chain target K=4 added per codex msg
+#         1779523412979-ff88b885; not yet attempted).
 DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b", "R1b4", "R2", "R2a"})
 
 

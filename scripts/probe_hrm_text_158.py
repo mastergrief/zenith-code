@@ -43,7 +43,18 @@ from calm.hrm_text_158.curriculum import (
     RungProbeResult,
     make_rung_examples,
     r1b4v2_one_digit_audit_rows,
+    r1b5_one_digit_audit_rows,
 )
+
+# Per-rung audit registry (codex msg 1779523412979-ff88b885).
+# Each entry maps rung name -> callable(seed) -> list of 9 audit rows.
+# When `probe_curriculum` runs, it iterates this registry against the
+# `rungs` argument so every audit-eligible rung present gets a keyed
+# audit in result.one_digit_audits (no silent retention drops).
+ONE_DIGIT_AUDIT_REGISTRY = {
+    "R1b4v2": r1b4v2_one_digit_audit_rows,
+    "R1b5": r1b5_one_digit_audit_rows,
+}
 
 
 def _build_model_from_ckpt(ckpt: dict, device: str) -> tuple[LMHead, object]:
@@ -389,15 +400,21 @@ def probe_curriculum(
         "exact_ok": bool(canonical_decoded.strip() == str(canonical_expected) and not canonical_too_long),
         "too_long": canonical_too_long,
     }
-    # R1b4v2 one_digit exhaustive audit (codex msg 1779483673737-20ff22ab).
-    # Fires only when R1b4v2 is in the probed rungs list. 9-row finite-
-    # domain check served from `r1b4v2_one_digit_audit_rows` (seed-invariant
-    # by design: rows ARE the full one_digit domain A in [1, 9]). Heldout
-    # for R1b4v2 contains zero one_digit rows by construction; this audit
-    # is the dedicated mastery gate for the one_digit support.
-    if "R1b4v2" in rungs:
-        curriculum_seed = config.get("curriculum_seed", 42)
-        audit_rows = r1b4v2_one_digit_audit_rows(seed=curriculum_seed)
+    # Per-rung one_digit exhaustive audits (codex msg 1779523412979-ff88b885).
+    # For every audit-eligible rung present in `rungs`, run the rung's
+    # 9-row finite-domain audit accessor and store keyed under
+    # `result.one_digit_audits[rung_name]`. Required so multi-rung
+    # probes (e.g. R1b5 with R1b4v2 retention) don't silently drop
+    # prior-rung retention signal.
+    #
+    # Backcompat: `result.one_digit_audit` (singular legacy field)
+    # mirrors `one_digit_audits["R1b4v2"]` when present, for older
+    # receipt readers.
+    curriculum_seed = config.get("curriculum_seed", 42)
+    for audit_rung, accessor in ONE_DIGIT_AUDIT_REGISTRY.items():
+        if audit_rung not in rungs:
+            continue
+        audit_rows = accessor(seed=curriculum_seed)
         audit_exact = 0
         audit_parsed = 0
         audit_too_long = 0
@@ -427,7 +444,7 @@ def probe_curriculum(
                 "too_long": bool(tl),
             })
         overall_finite = overall_finite and audit_finite
-        result.one_digit_audit = {
+        audit_record = {
             "exact": audit_exact,
             "parsed": audit_parsed,
             "too_long": audit_too_long,
@@ -435,7 +452,11 @@ def probe_curriculum(
             "finite": audit_finite,
             "rows": audit_row_results,
         }
-        print(f"[probe-curriculum] R1b4v2 one_digit audit: exact={audit_exact}/"
+        result.one_digit_audits[audit_rung] = audit_record
+        # Backcompat alias: mirror R1b4v2 record into legacy singular field.
+        if audit_rung == "R1b4v2":
+            result.one_digit_audit = audit_record
+        print(f"[probe-curriculum] {audit_rung} one_digit audit: exact={audit_exact}/"
               f"{len(audit_rows)} parsed={audit_parsed}/{len(audit_rows)} "
               f"too_long={audit_too_long}/{len(audit_rows)} finite={audit_finite}",
               flush=True)
