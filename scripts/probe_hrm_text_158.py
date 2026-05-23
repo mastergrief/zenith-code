@@ -295,6 +295,7 @@ def probe_curriculum(
     max_gen: int = 8,
     device: str | None = None,
     output_json: str | None = None,
+    use_cached_ternary_infer: bool = False,
 ) -> RungProbeResult:
     """Phase 3 curriculum-mode probe (codex msg 1779462307554 Phase A receipt
     requirement).
@@ -324,6 +325,14 @@ def probe_curriculum(
     config = ckpt["config"]
     max_seq_len = config["max_seq_len"]
     n_params = sum(p.numel() for p in m.parameters())
+
+    # T1 (α): cached ternary inference path. Codex msg 1779528934673-1c8bedf3.
+    # Called AFTER `_build_model_from_ckpt` already set `m.eval()`.
+    # Freezing in eval mode avoids the `train()` override clearing the cache.
+    if use_cached_ternary_infer:
+        from calm.hrm_text_158.bit_linear import freeze_bitlinears_for_inference
+        n_frozen = freeze_bitlinears_for_inference(m)
+        print(f"[probe-curriculum] cached-ternary-infer: froze {n_frozen} BitLinear modules", flush=True)
 
     # Identify rung being trained (informational; not always the most recent rung)
     trained_rung = config.get("curriculum_rung", "?")
@@ -490,6 +499,15 @@ if __name__ == "__main__":
                          "When set, runs the curriculum-mode probe instead of GSM8k.")
     ap.add_argument("--probe-output-json", type=str, default=None,
                     help="Path to write RungProbeResult JSON (curriculum mode).")
+    # T1 (α) inference-only flag per codex msg 1779528934673-1c8bedf3.
+    # Caches BitLinear `w_q * scale` once at model freeze to skip per-call
+    # re-quantization. Name distinct from future `--use-native-ternary-infer`
+    # which is reserved for a true packed-ternary matmul kernel (T1 β).
+    ap.add_argument("--use-cached-ternary-infer", action="store_true",
+                    help="Cache BitLinear quantized weights once at model load "
+                         "for inference-only F.linear dispatch. Skips per-call "
+                         "quantize-and-materialize (~30%% wall-clock per T0). "
+                         "Inference-only; training STE/backward unchanged.")
     args = ap.parse_args()
 
     if args.curriculum_rungs is not None:
@@ -500,6 +518,7 @@ if __name__ == "__main__":
             eval_cap=args.eval_cap,
             max_gen=args.max_gen,
             output_json=args.probe_output_json,
+            use_cached_ternary_infer=args.use_cached_ternary_infer,
         )
     else:
         probe(args.ckpt_path, eval_cap=args.eval_cap, max_gen=args.max_gen)
