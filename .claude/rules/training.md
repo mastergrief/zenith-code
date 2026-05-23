@@ -7,6 +7,124 @@
 > `MEMORY/atlas/training_part_2.md`. Quantization details (tq4/tq3
 > block format, kernels): `rules/turboquant.md`.
 
+## HRM-Text-1.58 Fork: Progressive Checkpoint Curriculum
+
+**The active training lane.** The fork target is **`hrm-158-base`**, a
+robust all-rounder native HRM-Text-1.58 checkpoint. PT/DT/Substrate
+guidance below remains as **legacy/adjacent** reference for retrieval /
+structure-extraction lanes; native HRM-Text-1.58 is now the primary
+training lane for `hrm-158-base`.
+
+### Model + tokenizer
+
+- ~29.6M params, Tier B config (`hidden=512 n_layers=8 num_heads=4
+  expansion=4 H_cycles=2 L_cycles=3 max_len=384`).
+- Fixed broad byte tokenizer (`vocab=260`, normalizer `byte_utf8_v1`)
+  across math / language / code — DO NOT swap mid-curriculum.
+- Ternary bulk linears (BitLinear on q/k/v/o/gate/up/down; `lm_head`,
+  `embd`, norms stay FP per the D2.2 contract).
+- Native ternary training kernel (Triton fused-quantize STE-correct
+  backward) enabled via `--use-native-ternary-train`.
+- Fast probe path: cached ternary inference + KV decode cache + batched
+  probe eval (single forward over equal-prefix groups, batch size 32).
+
+### Loss contract
+
+Response-only loss: prompt/instruction tokens are masked; loss is only
+on generated response tokens.
+
+### Progressive checkpoint curriculum (the loop)
+
+1. **Start from latest validated checkpoint** (the current chain head).
+2. **Train one tiny capability block** (a curriculum rung — e.g. K=N
+   addition under a carry-stratified partition, or a paraphrase block).
+3. **Replay important prior rungs** in the same training run; do NOT
+   train new-data-only. Default mix: `--replay-ratio 0.65` (65% replay,
+   35% new rung data).
+4. **Keep tokenizer broad and fixed** across math / language / code.
+5. **Promote a checkpoint only after** sampled probes + A0 exhaustive
+   finite-support audit + explicit watch rows prove acquisition AND no
+   parent-relative cluster regression.
+6. **If failures appear, classify before changing recipe**: train-set
+   miss / held-set generalization residual / parent-relative cluster /
+   signal-starvation. Each class has a different repair shape.
+
+### Default math recipe
+
+```
+--curriculum-rung <rung>
+--use-broad-tokenizer
+--load-from <chain-head>.pt
+--replay-rungs <comma-separated prior rungs>
+--replay-ratio 0.65
+--lr 5e-4
+--curriculum-n-train 10000
+--curriculum-seed 17
+--use-ternary-bulk --use-native-ternary-train
+--save-at-step 500 --save-at-step 750 --save-at-step 1000
+```
+
+For targeted-repair runs that need to replay over positionally-future
+rungs, add `--allow-future-replay`.
+
+### Validation
+
+- **A0 exhaustive finite-support audit**: every row of every active
+  rung's support decoded via the faststack path; strict-exact match
+  AND parsed-correct reported separately:
+
+  ```
+  PYTHONPATH=. python3 scripts/probe_hrm_text_158.py \
+    --ckpt-path calm/hrm/checkpoints/<run>_final.pt \
+    --exhaustive-finite-supports \
+    --watch-rows-json /tmp/<run>_watch_rows.json \
+    --audit-output-json /tmp/<run>_audit.json \
+    --use-cached-ternary-infer --use-kv-cache-decode \
+    --use-batched-probe-eval --probe-batch-size 32
+  ```
+- **Sampled probe** for trend tracking: same script with
+  `--curriculum-rungs <comma-separated rung list>` (per-rung 50
+  samples).
+- **Watch rows**: explicit list of edge / boundary / known-residual
+  rows passed via `--watch-rows-json`. Each is `{key, question,
+  expected}`; results reported as `exact_ok`/`parsed_ok`.
+- **Keyed one_digit audit**: 9-row exhaustive per audit-eligible
+  rung via `ONE_DIGIT_AUDIT_REGISTRY` in
+  `scripts/probe_hrm_text_158.py`. Every audit-eligible rung present
+  in the probe gets a keyed audit (no silent retention drops).
+
+### Failure-mode classification
+
+| Class | Signal | Repair |
+|---|---|---|
+| **Train-set miss** | row IS in train, model decodes wrong | targeted-repair pass; strict singleton, no curriculum redesign |
+| **Held-set generalization residual** | row is NOT in train, model decodes wrong | curriculum design choice; not a defect per se — track, do NOT redesign partitions to "fix" |
+| **Parent-relative cluster** | 3+ same-surface holes appear in a prior rung that the parent had clean | revert / re-recipe; cluster-swap detected |
+| **Signal-starvation** | per-prior signal too thin under heavy replay | bump corpus size (`--curriculum-n-train`) before changing other knobs |
+
+### Artifacts policy
+
+`.pt` checkpoint files are **runtime/research outputs, not repo
+content**. Commit code/tooling/docs/manifest receipts. Chain-head
+provenance lives on the ai-room board (msg ID + path + recipe + A0
+result + known residuals). Storage decisions are separate from this
+training-rule contract.
+
+### Throughput
+
+Cached/batched probe path is the default; native ternary train is
+preferred when available. Both consistently outperform their FP /
+non-cached baselines on this stack; see `MEMORY/atlas/training_*.md`
+for per-round measurements.
+
+### Strategic arc
+
+`hrm-158-base` as a robust all-rounder via math-first progressive
+reasoning blocks, then interleaved structured language / instruction
+blocks with math replay, then code/tool-use blocks. **Specialists and
+HRM-1.58-MoE branch from robust base checkpoints, not from weak narrow
+experts.**
+
 ## VRAM Budget
 
 ### Local (8 GB RTX 4070 Laptop)
@@ -124,7 +242,16 @@ The LR decays to ~0 before the model converges on digit-copy
 precision. Set `--epochs 500` generously; rely on `best_val_acc`
 checkpoint selection to pick the right moment.
 
-## Pointer Transducer (PT) training — replaces HRM for new work
+## Pointer Transducer (PT) training — legacy/adjacent transducer lane
+
+> **Status (HRM-Text-1.58 fork)**: PT/DT remain legacy/adjacent
+> transducer lanes for retrieval and structure-extraction regimes.
+> Native HRM-Text-1.58 is now the primary training lane for
+> `hrm-158-base` — see §"HRM-Text-1.58 Fork: Progressive Checkpoint
+> Curriculum" at the top of this file. The PT-vs-HRM framing below
+> reflects the prior CRLM split arc; PT/DT cards may still be useful
+> for compose-onto-base specialist lanes, but the active base lane
+> is native HRM-Text-1.58, not PT-replaces-HRM.
 
 **Architecture**: `CopyAugmentedTransformer`
 (`calm/llm_computer/copy_augmented.py`). Decoder-only

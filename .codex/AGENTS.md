@@ -6,6 +6,29 @@ Use `python3` or Serena semantic edit tools for all file edits. Treat `apply_pat
 
 Fork of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) with a Python agent harness, CALM reasoning engine, HRM + LLM-Computer (the CRLM stack), and a Rust port.
 
+## HRM-Text-1.58 Fork: Progressive Checkpoint Curriculum
+
+- Active fork target: **`hrm-158-base`**, a robust all-rounder native
+  HRM-Text-1.58 checkpoint.
+- Loss is response-only: prompt/instruction tokens are masked.
+- Curriculum loop: start from the latest validated checkpoint, train
+  one tiny capability block (rung) with replay over important prior
+  rungs, promote only after sampled probes + A0 exhaustive
+  finite-support audit + watch rows clear with no parent-relative
+  cluster regression.
+- Failure modes to classify before changing recipe: train-set miss /
+  held-set generalization residual / parent-relative cluster /
+  signal-starvation.
+- Cached/batched probe path is the default; native ternary train is
+  preferred when available.
+- `.pt` artifacts are runtime/research outputs — commit
+  code/tooling/docs/manifest receipts, NOT `.pt` by default.
+  Chain-head provenance lives on the ai-room board.
+- Arc order: math-first, then language, then code. Specialists / MoE
+  branch from robust base checkpoints, not from weak narrow experts.
+
+Full training rules: `.codex/rules/training.md` §"HRM-Text-1.58 Fork". Legacy PT/DT/Substrate guidance remains as adjacent reference for retrieval / structure-extraction lanes; **native HRM-Text-1.58 is now the primary training lane for `hrm-158-base`.**
+
 **Working policy: no subagents.** Work directly with `Edit`/`Write`/`Read`/`Grep`/`Bash`. Do not dispatch subagents or create teams. Prior VDD/orchestration infrastructure was removed in commit `bb7f13d`; the agent definitions and `/VDD`, `/DISCOVER`, `/EVAL`, `/TRAIN-DATA` slash-commands no longer exist. Session 26 and Vector 1 shipped 23+ commits + 311 tests directly; this is the proven default for the project.
 
 If a multi-step workflow is genuinely needed, structure it as sequential hypothesis → build → test → commit rounds per the workflow rules.
