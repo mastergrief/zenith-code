@@ -1,0 +1,215 @@
+{
+  "A_27_held": false,
+  "A_27_train": true,
+  "A_57_held": true,
+  "A_57_train": false,
+  "carry_cap": 7,
+  "carry_exact": 6,
+  "ckpt_path": "calm/hrm/checkpoints/hrm_text_158_phase3_R1b5_seed0002_final.pt",
+  "failed_rows": [
+    {
+      "A": 17,
+      "decoded": "11",
+      "exact_ok": false,
+      "expected": 21,
+      "is_carry": true,
+      "parsed": 11,
+      "question": "what is 17 plus 4?",
+      "too_long": false
+    }
+  ],
+  "held_units7": [
+    17,
+    37,
+    57,
+    77
+  ],
+  "non_carry_cap": 11,
+  "non_carry_exact": 11,
+  "partition": "R1b5",
+  "rows": [
+    {
+      "A": 11,
+      "decoded": "15",
+      "exact_ok": true,
+      "expected": 15,
+      "is_carry": false,
+      "parsed": 15,
+      "question": "what is 11 plus 4?",
+      "too_long": false
+    },
+    {
+      "A": 12,
+      "decoded": "16",
+      "exact_ok": true,
+      "expected": 16,
+      "is_carry": false,
+      "parsed": 16,
+      "question": "what is 12 plus 4?",
+      "too_long": false
+    },
+    {
+      "A": 16,
+      "decoded": "20",
+      "exact_ok": true,
+      "expected": 20,
+      "is_carry": true,
+      "parsed": 20,
+      "question": "what is 16 plus 4?",
+      "too_long": false
+    },
+    {
+      "A": 17,
+      "decoded": "11",
+      "exact_ok": false,
+      "expected": 21,
+      "is_carry": true,
+      "parsed": 11,
+      "question": "what is 17 plus 4?",
+      "too_long": false
+    },
+    {
+      "A": 21,
+      "decoded": "25",
+      "exact_ok": true,
+      "expected": 25,
+      "is_carry": false,
+      "parsed": 25,
+      "question": "what is 21 plus 4?",
+      "too_long": false
+    },
+    {
+      "A": 23,
+      "decoded": "27",
+      "exact_ok": true,
+      "expected": 27,
+      "is_carry": false,
+      "parsed": 27,
+      "question": "what is 23 plus 4?",
+      "too_long": false
+    },
+    {
+      "A": 24,
+      "decoded": "28",
+      "exact_ok": true,
+      "expected": 28,
+      "is_carry": false,
+      "parsed": 28,
+      "question": "what is 24 plus 4?",
+      "too_long": false
+    },
+    {
+      "A": 36,
+      "decoded": "40",
+      "exact_ok": true,
+      "expected": 40,
+      "is_carry": true,
+      "parsed": 40,
+      "question": "what is 36 plus 4?",
+      "too_long": false
+    },
+    {
+      "A": 37,
+      "decoded": "41",
+      "exact_ok": true,
+      "expected": 41,
+      "is_carry": true,
+      "parsed": 41,
+      "question": "what is 37 plus 4?",
+      "too_long": false
+    },
+    {
+      "A": 51,
+      "decoded": "55",
+      "exact_ok": true,
+      "expected": 55,
+      "is_carry": false,
+      "parsed": 55,
+      "question": "what is 51 plus 4?",
+      "too_long": false
+    },
+    {
+      "A": 55,
+      "decoded": "59",
+      "exact_ok": true,
+      "expected": 59,
+      "is_carry": false,
+      "parsed": 59,
+      "question": "what is 55 plus 4?",
+      "too_long": false
+    },
+    {
+      "A": 57,
+      "decoded": "61",
+      "exact_ok": true,
+      "expected": 61,
+      "is_carry": true,
+      "parsed": 61,
+      "question": "what is 57 plus 4?",
+      "too_long": false
+    },
+    {
+      "A": 65,
+      "decoded": "69",
+      "exact_ok": true,
+      "expected": 69,
+      "is_carry": false,
+      "parsed": 69,
+      "question": "what is 65 plus 4?",
+      "too_long": false
+    },
+    {
+      "A": 68,
+      "decoded": "72",
+      "exact_ok": true,
+      "expected": 72,
+      "is_carry": true,
+      "parsed": 72,
+      "question": "what is 68 plus 4?",
+      "too_long": false
+    },
+    {
+      "A": 73,
+      "decoded": "77",
+      "exact_ok": true,
+      "expected": 77,
+      "is_carry": false,
+      "parsed": 77,
+      "question": "what is 73 plus 4?",
+      "too_long": false
+    },
+    {
+      "A": 77,
+      "decoded": "81",
+      "exact_ok": true,
+      "expected": 81,
+      "is_carry": true,
+      "parsed": 81,
+      "question": "what is 77 plus 4?",
+      "too_long": false
+    },
+    {
+      "A": 81,
+      "decoded": "85",
+      "exact_ok": true,
+      "expected": 85,
+      "is_carry": false,
+      "parsed": 85,
+      "question": "what is 81 plus 4?",
+      "too_long": false
+    },
+    {
+      "A": 95,
+      "decoded": "99",
+      "exact_ok": true,
+      "expected": 99,
+      "is_carry": false,
+      "parsed": 99,
+      "question": "what is 95 plus 4?",
+      "too_long": false
+    }
+  ],
+  "seed": 2,
+  "unique_cap": 18,
+  "unique_exact": 17
+}
