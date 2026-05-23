@@ -15,6 +15,7 @@ Anchor-set design notes pinned by these tests:
 from __future__ import annotations
 
 import dataclasses
+import json
 
 import pytest
 
@@ -547,6 +548,316 @@ def test_trainer_anchor_repeat_below_one_rejected_programmatically():
             retention_anchor_set="math_fragile_v1",
             retention_anchor_repeat=-3,
         )
+
+
+# ============================================================================ #
+# Slice C probe-integration tests (codex msg 1779566905283-8ba63fe9 +1
+# implement). These test the `--anchor-audit` mode in
+# scripts/probe_hrm_text_158.py against the banked L0a chain head, using
+# the canonical smoke-audit baseline gate codex pinned:
+#   - strict 20/21 with sole hole = anchor_id="r1b2:10_minus_1"
+#     decoded "09" parsed_ok=true
+#   - parsed 21/21, finite=true, value-wrong holes=0
+#   - all zero-boundary anchors strict+parsed clean
+#   - aggregate.expected_aggregate=21 (NOT blended with math 1255 / language 230)
+#   - rows keyed by anchor_id (21 records preserved despite the natural-dup
+#     of `what is 0 plus 0?`)
+# Tests use subprocess invocations of the probe script — they exercise CLI
+# parsing, mutex pre-checks, and (where the banked ckpt is available) actual
+# audit JSON output.
+# ============================================================================ #
+
+import os
+from pathlib import Path
+
+_BANKED_L0A_CKPT = (
+    Path(__file__).resolve().parents[3]
+    / "calm" / "hrm" / "checkpoints"
+    / "hrm_text_158_phase3_L0a_seed0017_replay65_n10k_lr2e4_from_R1b9_final.pt"
+)
+
+
+def _banked_ckpt_present() -> bool:
+    return _BANKED_L0A_CKPT.exists()
+
+
+def _run_anchor_audit_on_banked(tmp_path: Path) -> dict:
+    """Run the probe with --anchor-audit against the banked L0a chain head
+    and return the parsed JSON. Used by gate tests below."""
+    import subprocess
+    import sys
+
+    repo_root = Path(__file__).resolve().parents[3]
+    probe_path = repo_root / "scripts" / "probe_hrm_text_158.py"
+    out_json = tmp_path / "anchor_audit.json"
+    result = subprocess.run(
+        [
+            sys.executable, "-u", str(probe_path),
+            "--ckpt-path", str(_BANKED_L0A_CKPT),
+            "--anchor-audit",
+            "--audit-output-json", str(out_json),
+            "--use-cached-ternary-infer",
+            "--use-kv-cache-decode",
+            "--use-batched-probe-eval",
+            "--probe-batch-size", "32",
+        ],
+        capture_output=True, text=True,
+        env={**os.environ, "PYTHONPATH": str(repo_root)},
+        timeout=120,
+    )
+    assert result.returncode == 0, (
+        f"probe failed (exit {result.returncode}):\n"
+        f"stdout={result.stdout}\nstderr={result.stderr}"
+    )
+    return json.loads(out_json.read_text()), result.stdout
+
+
+@pytest.mark.skipif(
+    not _banked_ckpt_present(),
+    reason=f"banked L0a chain head not present at {_BANKED_L0A_CKPT}",
+)
+def test_probe_anchor_audit_banked_L0a_baseline_20_strict_21_parsed(tmp_path):
+    """Smoke audit gate (codex msg 1779566905283 corrected baseline):
+    banked L0a chain head must produce strict=20/21 AND parsed=21/21 AND
+    sole strict hole is anchor_id='r1b2:10_minus_1' decoded '09'
+    parsed_ok=True. Future anchor-trained ckpts may improve to strict 21/21
+    but this test must not halt on the accepted parent-shape carry-forward.
+    """
+    out, _stdout = _run_anchor_audit_on_banked(tmp_path)
+    agg = out["aggregate"]
+    assert agg["n_total"] == 21
+    assert agg["n_parsed_correct"] == 21, (
+        f"parsed must be 21/21 at baseline; got {agg['n_parsed_correct']}/21"
+    )
+    assert agg["n_exact"] == 20, (
+        f"strict must be 20/21 at baseline (one accepted parent-shape hole); "
+        f"got {agg['n_exact']}/21"
+    )
+    assert agg["finite"] is True
+    assert agg["expected_aggregate"] == 21
+    # Sole hole must be the accepted carry-forward row
+    holes = out["results"]["math_fragile_v1"]["holes_first20"]
+    assert len(holes) == 1, f"expected exactly 1 hole; got {len(holes)}"
+    h = holes[0]
+    assert h["anchor_id"] == "r1b2:10_minus_1", (
+        f"sole hole must be r1b2:10_minus_1; got {h['anchor_id']}"
+    )
+    assert h["decoded"] == "09", (
+        f"decoded must match parent-shape '09'; got {h['decoded']!r}"
+    )
+    assert h["parsed_ok"] is True
+    assert h["exact_ok"] is False
+
+
+@pytest.mark.skipif(
+    not _banked_ckpt_present(),
+    reason=f"banked L0a chain head not present at {_BANKED_L0A_CKPT}",
+)
+def test_probe_anchor_audit_zero_boundary_strict_clean_on_banked_L0a(tmp_path):
+    """Both zero-boundary buckets (R1_zero_left + R1_zero_right) must be
+    strict+parsed clean at baseline (10/10 each). Any failure here is a
+    real regression, NOT the accepted parent-shape carry-forward. Pins
+    that the rr=0.80-era `0 plus 4? → '44'` corruption does not appear
+    on the lr-softened banked head.
+    """
+    out, _stdout = _run_anchor_audit_on_banked(tmp_path)
+    bs = out["results"]["math_fragile_v1"]["by_source_rung"]
+    for bucket in ("R1_zero_left", "R1_zero_right"):
+        b = bs[bucket]
+        assert b["n_total"] == 10
+        assert b["n_exact"] == 10, (
+            f"{bucket} must be strict-clean at baseline; got {b['n_exact']}/10"
+        )
+        assert b["n_parsed_correct"] == 10
+        assert b["n_holes"] == 0
+
+
+@pytest.mark.skipif(
+    not _banked_ckpt_present(),
+    reason=f"banked L0a chain head not present at {_BANKED_L0A_CKPT}",
+)
+def test_probe_anchor_audit_aggregate_expected_21(tmp_path):
+    """aggregate.expected_aggregate = 21 for math_fragile_v1; this is the
+    anchor-mode-specific field, separate from math A0's 1255 and language
+    L0a's 230."""
+    out, _stdout = _run_anchor_audit_on_banked(tmp_path)
+    assert out["aggregate"]["expected_aggregate"] == 21
+
+
+@pytest.mark.skipif(
+    not _banked_ckpt_present(),
+    reason=f"banked L0a chain head not present at {_BANKED_L0A_CKPT}",
+)
+def test_probe_anchor_audit_separate_from_math_and_language(tmp_path):
+    """Anchor JSON has no `expected_aggregate=1255` (math) or 230 (language)
+    field-name collisions. Aggregates are NOT blended."""
+    out, _stdout = _run_anchor_audit_on_banked(tmp_path)
+    assert out["aggregate"]["expected_aggregate"] == 21
+    # Anchor mode has no `audit_seed` / `ckpt_curriculum_seed` (those are
+    # language-mode fields). Has its own `anchor_set` / `ckpt_anchor_set`.
+    assert "anchor_set" in out
+    assert "ckpt_anchor_set" in out
+    assert "anchor_set_mismatch" in out
+    assert "audit_seed" not in out
+    assert "active_language_rungs" not in out
+
+
+@pytest.mark.skipif(
+    not _banked_ckpt_present(),
+    reason=f"banked L0a chain head not present at {_BANKED_L0A_CKPT}",
+)
+def test_probe_anchor_audit_per_source_rung_buckets_sum_to_21(tmp_path):
+    """Per-source-rung buckets R1b2 + R1_zero_left + R1_zero_right sum to 21
+    (literal codex V0 spec: 1 + 10 + 10)."""
+    out, _stdout = _run_anchor_audit_on_banked(tmp_path)
+    bs = out["results"]["math_fragile_v1"]["by_source_rung"]
+    assert set(bs.keys()) == {"R1b2", "R1_zero_left", "R1_zero_right"}
+    assert bs["R1b2"]["n_total"] == 1
+    assert bs["R1_zero_left"]["n_total"] == 10
+    assert bs["R1_zero_right"]["n_total"] == 10
+    total = sum(b["n_total"] for b in bs.values())
+    assert total == 21
+
+
+@pytest.mark.skipif(
+    not _banked_ckpt_present(),
+    reason=f"banked L0a chain head not present at {_BANKED_L0A_CKPT}",
+)
+def test_probe_anchor_audit_rows_keyed_by_anchor_id(tmp_path):
+    """JSON.results[set].rows has 21 records (not 20) with unique
+    anchor_ids. Downstream tooling MUST key on anchor_id, not question.
+    The natural-dup of `what is 0 plus 0?` produces two row entries with
+    the same `question` but different `anchor_id` values."""
+    out, _stdout = _run_anchor_audit_on_banked(tmp_path)
+    rows = out["results"]["math_fragile_v1"]["rows"]
+    assert len(rows) == 21, f"expected 21 rows; got {len(rows)}"
+    unique_ids = {r["anchor_id"] for r in rows}
+    assert len(unique_ids) == 21, (
+        f"all 21 anchor_ids must be unique; got {len(unique_ids)} unique"
+    )
+    # 20 unique questions (natural-dup of "0 plus 0?")
+    unique_q = {r["question"] for r in rows}
+    assert len(unique_q) == 20, (
+        f"expected 20 unique question strings (natural dup of 0+0); "
+        f"got {len(unique_q)}"
+    )
+
+
+@pytest.mark.skipif(
+    not _banked_ckpt_present(),
+    reason=f"banked L0a chain head not present at {_BANKED_L0A_CKPT}",
+)
+def test_probe_anchor_audit_fallback_source_printed(tmp_path):
+    """When ckpt has no recorded retention_anchor_set, probe MUST print the
+    fallback source plainly (codex msg 1779566905283 tightening): receipts
+    must be unambiguous about whether the audit is a trained-anchor check
+    or a baseline fallback."""
+    out, stdout = _run_anchor_audit_on_banked(tmp_path)
+    assert out["ckpt_anchor_set"] is None
+    assert out["anchor_set_mismatch"] is False
+    # Stdout must contain the fallback notice
+    assert "source=fallback" in stdout, (
+        f"fallback source must be printed plainly; stdout was:\n{stdout}"
+    )
+    assert "baseline audit, NOT a trained-anchor check" in stdout
+
+
+def test_probe_anchor_audit_cli_conflicts_with_curriculum_rungs():
+    """Mutex pre-check before ckpt load: --anchor-audit + --curriculum-rungs
+    must fail fast."""
+    import subprocess
+    import sys
+
+    repo_root = Path(__file__).resolve().parents[3]
+    probe_path = repo_root / "scripts" / "probe_hrm_text_158.py"
+    result = subprocess.run(
+        [
+            sys.executable, str(probe_path),
+            "--ckpt-path", "/dev/null",  # never loaded; mutex fires first
+            "--anchor-audit",
+            "--curriculum-rungs", "R0",
+        ],
+        capture_output=True, text=True,
+        env={**os.environ, "PYTHONPATH": str(repo_root)},
+        timeout=15,
+    )
+    assert result.returncode != 0
+    assert "--anchor-audit conflicts with --curriculum-rungs" in result.stderr
+
+
+def test_probe_anchor_audit_cli_conflicts_with_exhaustive():
+    """Mutex pre-check: --anchor-audit + --exhaustive-finite-supports must
+    fail fast."""
+    import subprocess
+    import sys
+
+    repo_root = Path(__file__).resolve().parents[3]
+    probe_path = repo_root / "scripts" / "probe_hrm_text_158.py"
+    result = subprocess.run(
+        [
+            sys.executable, str(probe_path),
+            "--ckpt-path", "/dev/null",
+            "--anchor-audit",
+            "--exhaustive-finite-supports",
+        ],
+        capture_output=True, text=True,
+        env={**os.environ, "PYTHONPATH": str(repo_root)},
+        timeout=15,
+    )
+    assert result.returncode != 0
+    assert (
+        "--anchor-audit conflicts with --exhaustive-finite-supports"
+        in result.stderr
+    )
+
+
+def test_probe_anchor_audit_cli_conflicts_with_language():
+    """Mutex pre-check: --anchor-audit + --language-supports must fail
+    fast."""
+    import subprocess
+    import sys
+
+    repo_root = Path(__file__).resolve().parents[3]
+    probe_path = repo_root / "scripts" / "probe_hrm_text_158.py"
+    result = subprocess.run(
+        [
+            sys.executable, str(probe_path),
+            "--ckpt-path", "/dev/null",
+            "--anchor-audit",
+            "--language-supports",
+        ],
+        capture_output=True, text=True,
+        env={**os.environ, "PYTHONPATH": str(repo_root)},
+        timeout=15,
+    )
+    assert result.returncode != 0
+    assert "--anchor-audit conflicts with --language-supports" in result.stderr
+
+
+def test_probe_anchor_audit_unknown_set_rejected_by_argparse():
+    """`--anchor-set bogus` rejected by argparse `choices=` (loud failure,
+    no silent fallback)."""
+    import subprocess
+    import sys
+
+    repo_root = Path(__file__).resolve().parents[3]
+    probe_path = repo_root / "scripts" / "probe_hrm_text_158.py"
+    result = subprocess.run(
+        [
+            sys.executable, str(probe_path),
+            "--ckpt-path", "/dev/null",
+            "--anchor-audit",
+            "--anchor-set", "bogus_set",
+        ],
+        capture_output=True, text=True,
+        env={**os.environ, "PYTHONPATH": str(repo_root)},
+        timeout=15,
+    )
+    assert result.returncode != 0
+    assert (
+        "invalid choice" in result.stderr
+        or "invalid choice" in result.stdout
+    )
 
 
 def test_trainer_anchor_phase_gate_allows_default_off_in_gsm8k():

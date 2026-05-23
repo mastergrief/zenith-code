@@ -1376,6 +1376,293 @@ def probe_language_finite_supports(
     return output
 
 
+def probe_anchor_finite_supports(
+    ckpt_path: str,
+    *,
+    anchor_set_override: str | None = None,
+    max_gen: int = 8,
+    device: str | None = None,
+    output_json: str | None = None,
+    use_cached_ternary_infer: bool = False,
+    use_kv_cache_decode: bool = False,
+    use_batched_probe_eval: bool = False,
+    probe_batch_size: int = 32,
+) -> dict:
+    """Retention-anchor V0 Slice C finite-support audit (codex msg
+    1779566905283-8ba63fe9 +1 implement with corrected baseline gate).
+
+    Parallel surface to `probe_exhaustive_finite_supports` (math A0 = 1255)
+    and `probe_language_finite_supports` (language L0a = 230). Iterates the
+    full anchor set (currently `math_fragile_v1` = 21 entries), decodes via
+    faststack path, aggregates strict + parsed totals, emits per-source-rung
+    breakdown AND per-anchor-row records keyed by anchor_id (not question
+    text, because the natural-dup of `what is 0 plus 0?` appears under both
+    R1_zero_left and R1_zero_right buckets).
+
+    Aggregate `expected_aggregate=21` is kept SEPARATE from math 1255 and
+    language 230; no blended single-number aggregate.
+
+    Anchor-set resolution per codex msg 1779566905283:
+    - Default (no override): use ckpt's stored `retention_anchor_set` if
+      present, else fall back to `math_fragile_v1`. Fallback source is
+      printed/logged plainly so receipts are unambiguous.
+    - Explicit `anchor_set_override`: use that name; if ckpt has a recorded
+      set and it differs, WARN + record both values + flag mismatch.
+    - JSON always records `anchor_set` (resolved), `ckpt_anchor_set` (what
+      ckpt has, or None), `anchor_set_mismatch` (bool).
+
+    Returns dict with `ckpt_path`, `ckpt_step`, `device`, `anchor_set`,
+    `ckpt_anchor_set`, `anchor_set_mismatch`, `active_anchor_buckets`,
+    per-set `results` (each with `n_total`, `n_exact`,
+    `n_parsed_correct`, `by_source_rung`, `rows` keyed by anchor_id,
+    `holes_first20`), `aggregate`, `elapsed_s`, flag echo.
+    """
+    from calm.hrm_text_158.curriculum.retention_anchors import (
+        RETENTION_ANCHOR_SETS,
+        anchor_set_source_rung_buckets,
+        load_anchor_set,
+    )
+
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    if use_batched_probe_eval and not use_kv_cache_decode:
+        raise ValueError(
+            "--use-batched-probe-eval requires --use-kv-cache-decode "
+            "(batched path is built on top of the γ1 KV cache contract)"
+        )
+    if probe_batch_size < 1:
+        raise ValueError(f"--probe-batch-size must be >= 1, got {probe_batch_size}")
+
+    print(f"[probe-anchor] loading ckpt: {ckpt_path}", flush=True)
+    ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
+    step = ckpt.get("step", -1)
+    print(f"[probe-anchor] ckpt step={step}", flush=True)
+
+    # Anchor-set resolution per codex msg 1779566905283: prefer ckpt's
+    # stored `retention_anchor_set`; fall back to math_fragile_v1 when
+    # absent; explicit override emits WARN on mismatch. Source must be
+    # printed plainly so receipts are unambiguous (codex tightening).
+    config = ckpt["config"]
+    ckpt_anchor_set = config.get("retention_anchor_set")
+    if anchor_set_override is None:
+        if ckpt_anchor_set is not None and ckpt_anchor_set != "none":
+            anchor_set = str(ckpt_anchor_set)
+            print(
+                f"[probe-anchor] anchor_set={anchor_set} "
+                f"(source=ckpt.retention_anchor_set)",
+                flush=True,
+            )
+        else:
+            anchor_set = "math_fragile_v1"
+            print(
+                f"[probe-anchor] anchor_set={anchor_set} "
+                f"(source=fallback; ckpt has no retention_anchor_set recorded — "
+                f"this is a baseline audit, NOT a trained-anchor check)",
+                flush=True,
+            )
+    else:
+        anchor_set = str(anchor_set_override)
+        if (
+            ckpt_anchor_set is not None
+            and ckpt_anchor_set != "none"
+            and str(ckpt_anchor_set) != anchor_set
+        ):
+            print(
+                f"[probe-anchor] WARN: --anchor-set={anchor_set} differs from "
+                f"ckpt.retention_anchor_set={ckpt_anchor_set!r}; audit will use "
+                f"{anchor_set} but rows may not match the set this ckpt was "
+                f"trained against.",
+                flush=True,
+            )
+        else:
+            print(
+                f"[probe-anchor] anchor_set={anchor_set} "
+                f"(source=explicit override)",
+                flush=True,
+            )
+
+    if anchor_set not in RETENTION_ANCHOR_SETS:
+        raise ValueError(
+            f"unknown anchor_set {anchor_set!r}; valid: "
+            f"{tuple(RETENTION_ANCHOR_SETS)}"
+        )
+
+    anchor_rows = load_anchor_set(anchor_set)
+
+    m, tok = _build_model_from_ckpt(ckpt, device)
+    max_seq_len = ckpt["config"]["max_seq_len"]
+
+    if use_cached_ternary_infer:
+        from calm.hrm_text_158.bit_linear import freeze_bitlinears_for_inference
+        n_frozen = freeze_bitlinears_for_inference(m)
+        print(f"[probe-anchor] cached-ternary-infer: froze {n_frozen} "
+              f"BitLinear modules", flush=True)
+
+    if use_batched_probe_eval:
+        dispatch_path = "batched_kv_cache"
+    elif use_kv_cache_decode:
+        dispatch_path = "scalar_kv_cache"
+    else:
+        dispatch_path = "scalar_no_cache"
+    print(f"[probe-anchor] decode dispatch: {dispatch_path}", flush=True)
+
+    decode_fn = _decode_greedy_cached if use_kv_cache_decode else _decode_greedy_no_cache
+
+    def _parse_int(text: str) -> int | None:
+        capped = re.sub(r"(\d{12})\d+", r"\1", text)
+        m_ = re.search(r"-?\d+", capped)
+        return int(m_.group(0)) if m_ else None
+
+    def _decode_rows(qs: list[str]) -> list[tuple[str, bool, bool]]:
+        if use_batched_probe_eval:
+            per_row, _hist = _run_rows_batched(
+                m, tok, qs,
+                max_gen=max_gen, max_seq_len=max_seq_len, device=device,
+                batch_size=probe_batch_size,
+            )
+            return per_row
+        return [
+            decode_fn(m, tok, q, max_gen=max_gen,
+                      max_seq_len=max_seq_len, device=device)
+            for q in qs
+        ]
+
+    t0 = time.time()
+    questions = [r.question for r in anchor_rows]
+    expecteds = [r.expected for r in anchor_rows]
+    sources = [r.source_rung for r in anchor_rows]
+    ids = [r.anchor_id for r in anchor_rows]
+    per_row = _decode_rows(questions)
+
+    # Per-source-rung accumulators (canonical bucket order)
+    bucket_keys = anchor_set_source_rung_buckets(anchor_set)
+    by_source: dict[str, dict] = {
+        b: {"n_total": 0, "n_exact": 0, "n_parsed_correct": 0, "n_holes": 0}
+        for b in bucket_keys
+    }
+
+    # Per-anchor-row records keyed by anchor_id (full 21 rows preserved,
+    # including the natural-dup of `what is 0 plus 0?`).
+    rows_out: list[dict] = []
+    holes: list[dict] = []
+    finite_all = True
+    too_long = 0
+    exact = 0
+    parsed_correct = 0
+
+    for aid, q, exp, src, (decoded, tl, fin) in zip(
+        ids, questions, expecteds, sources, per_row
+    ):
+        if not fin:
+            finite_all = False
+        exact_match = (not tl) and (decoded.strip() == str(exp))
+        parsed = _parse_int(decoded) if not tl else None
+        parsed_match = (not tl) and parsed == exp
+        by_source[src]["n_total"] += 1
+        row_record = {
+            "anchor_id": aid,
+            "question": q,
+            "expected": exp,
+            "decoded": decoded,
+            "parsed": parsed,
+            "exact_ok": bool(exact_match),
+            "parsed_ok": bool(parsed_match),
+            "too_long": bool(tl),
+            "finite": bool(fin),
+            "source_rung": src,
+        }
+        rows_out.append(row_record)
+        if tl:
+            too_long += 1
+            by_source[src]["n_holes"] += 1
+            holes.append(row_record)
+            continue
+        if parsed_match:
+            parsed_correct += 1
+            by_source[src]["n_parsed_correct"] += 1
+        if exact_match:
+            exact += 1
+            by_source[src]["n_exact"] += 1
+        else:
+            by_source[src]["n_holes"] += 1
+            holes.append(row_record)
+
+    n_total = len(anchor_rows)
+    set_result = {
+        "n_total": n_total,
+        "n_exact": exact,
+        "n_parsed_correct": parsed_correct,
+        "rate": exact / n_total if n_total else 1.0,
+        "n_holes": len(holes),
+        "n_too_long": too_long,
+        "finite": finite_all,
+        "by_source_rung": by_source,
+        "rows": rows_out,
+        "holes_first20": holes[:20],
+    }
+    total_elapsed = time.time() - t0
+    set_result["elapsed_s"] = round(total_elapsed, 3)
+
+    print(f"[probe-anchor] {anchor_set:18s} {exact}/{n_total} = "
+          f"{set_result['rate']:.4f} (strict) parsed={parsed_correct}/{n_total} "
+          f"holes={len(holes)} too_long={too_long} "
+          f"finite={finite_all} t={total_elapsed:.2f}s", flush=True)
+    for b in bucket_keys:
+        bs = by_source[b]
+        print(f"[probe-anchor]   bucket {b:14s} "
+              f"strict={bs['n_exact']}/{bs['n_total']} "
+              f"parsed={bs['n_parsed_correct']}/{bs['n_total']} "
+              f"holes={bs['n_holes']}", flush=True)
+
+    aggregate = {
+        "n_total": n_total,
+        "n_exact": exact,
+        "n_parsed_correct": parsed_correct,
+        "rate": exact / n_total if n_total else 1.0,
+        "n_holes": len(holes),
+        "finite": finite_all,
+        "expected_aggregate": 21,  # math_fragile_v1 fixed-size set
+    }
+    print(f"[probe-anchor] ANCHOR AGGREGATE strict={exact}/{n_total} = "
+          f"{aggregate['rate']:.4f} parsed={parsed_correct}/{n_total} "
+          f"holes={len(holes)} finite={finite_all} "
+          f"elapsed={total_elapsed:.1f}s", flush=True)
+
+    output = {
+        "ckpt_path": str(ckpt_path),
+        "ckpt_step": int(step) if step != -1 else None,
+        "device": device,
+        "anchor_set": anchor_set,
+        "ckpt_anchor_set": (
+            str(ckpt_anchor_set)
+            if ckpt_anchor_set is not None and ckpt_anchor_set != "none"
+            else None
+        ),
+        "anchor_set_mismatch": (
+            ckpt_anchor_set is not None
+            and ckpt_anchor_set != "none"
+            and str(ckpt_anchor_set) != anchor_set
+        ),
+        "active_anchor_buckets": bucket_keys,
+        "flags": {
+            "use_cached_ternary_infer": use_cached_ternary_infer,
+            "use_kv_cache_decode": use_kv_cache_decode,
+            "use_batched_probe_eval": use_batched_probe_eval,
+            "probe_batch_size": probe_batch_size,
+            "max_gen": max_gen,
+        },
+        "dispatch_path": dispatch_path,
+        "results": {anchor_set: set_result},
+        "aggregate": aggregate,
+        "elapsed_s": round(total_elapsed, 2),
+    }
+    if output_json:
+        Path(output_json).parent.mkdir(parents=True, exist_ok=True)
+        with open(output_json, "w") as f:
+            json.dump(output, f, indent=2)
+        print(f"[probe-anchor] wrote {output_json}", flush=True)
+    return output
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="HRM-Text-1.58 probe.")
     ap.add_argument("--ckpt-path", type=str, required=True)
@@ -1454,6 +1741,27 @@ if __name__ == "__main__":
                          "no curriculum_seed AND this flag is omitted, the "
                          "probe fails BEFORE ckpt load. Mismatch with ckpt "
                          "seed warns and records both values in audit JSON.")
+    # Retention-anchor V0 Slice C (codex msg 1779566905283-8ba63fe9 +1
+    # implement). Parallel surface to --exhaustive-finite-supports and
+    # --language-supports. Emits an `anchor` JSON section with
+    # aggregate.expected_aggregate=21 (separate from math 1255 + language 230).
+    ap.add_argument("--anchor-audit", action="store_true",
+                    help="Run retention-anchor V0 finite-support audit on the "
+                         "current anchor set (currently `math_fragile_v1` = 21 "
+                         "entries: R1b2 known-fragile row + R1 zero-left + R1 "
+                         "zero-right). Emits per-source-rung breakdown + per-"
+                         "anchor-row records keyed by anchor_id. Conflicts with "
+                         "--curriculum-rungs, --exhaustive-finite-supports, "
+                         "--language-supports.")
+    ap.add_argument("--anchor-set", type=str, default=None,
+                    choices=["math_fragile_v1"],
+                    help="Explicit anchor-set override for --anchor-audit. "
+                         "Default resolution uses ckpt's stored "
+                         "`retention_anchor_set` config field; falls back to "
+                         "`math_fragile_v1` when ckpt has none (fallback source "
+                         "is printed plainly so receipts are unambiguous). "
+                         "Mismatch with ckpt's recorded set warns and records "
+                         "both values in audit JSON.")
     args = ap.parse_args()
 
     # Pre-checks BEFORE ckpt load (codex 1779552750209 guardrail: fail loud
@@ -1475,6 +1783,26 @@ if __name__ == "__main__":
             "Run them as two separate invocations and combine the JSON output "
             "in the receipt."
         )
+    # Slice C: 3 mutex checks for --anchor-audit (codex msg 1779566905283).
+    if args.anchor_audit and args.curriculum_rungs is not None:
+        raise SystemExit(
+            "ERROR: --anchor-audit conflicts with --curriculum-rungs "
+            "(mutually exclusive); pass only one."
+        )
+    if args.anchor_audit and args.exhaustive_finite_supports:
+        raise SystemExit(
+            "ERROR: --anchor-audit conflicts with --exhaustive-finite-supports "
+            "(mutually exclusive — anchor and math A0 are separate probe modes). "
+            "Run them as two separate invocations and combine the JSON output "
+            "in the receipt."
+        )
+    if args.anchor_audit and args.language_supports:
+        raise SystemExit(
+            "ERROR: --anchor-audit conflicts with --language-supports "
+            "(mutually exclusive — anchor and language L0a are separate probe modes). "
+            "Run them as two separate invocations and combine the JSON output "
+            "in the receipt."
+        )
     if args.use_batched_probe_eval and not args.use_kv_cache_decode:
         # Mirror existing pre-check from probe_curriculum so exhaustive mode
         # fails consistently before ckpt load.
@@ -1484,7 +1812,18 @@ if __name__ == "__main__":
             "and --language-supports modes)."
         )
 
-    if args.language_supports:
+    if args.anchor_audit:
+        probe_anchor_finite_supports(
+            args.ckpt_path,
+            anchor_set_override=args.anchor_set,
+            max_gen=args.max_gen,
+            output_json=args.audit_output_json,
+            use_cached_ternary_infer=args.use_cached_ternary_infer,
+            use_kv_cache_decode=args.use_kv_cache_decode,
+            use_batched_probe_eval=args.use_batched_probe_eval,
+            probe_batch_size=args.probe_batch_size,
+        )
+    elif args.language_supports:
         probe_language_finite_supports(
             args.ckpt_path,
             audit_seed=args.language_audit_seed,
