@@ -256,6 +256,7 @@ def train(
     curriculum_n_heldout: int = 200,
     replay_ratio: float = 0.30,
     replay_rungs: str | None = None,
+    allow_future_replay: bool = False,
     use_broad_tokenizer: bool = False,
     load_from: str | None = None,
     dry_run: bool = False,
@@ -316,11 +317,16 @@ def train(
         )
         cur_idx = list(RUNG_NAMES).index(curriculum_rung)
         positional_full = list(RUNG_NAMES[:cur_idx])
-        prior_rungs = _resolve_prior_rungs(curriculum_rung, replay_rungs)
+        prior_rungs = _resolve_prior_rungs(
+            curriculum_rung,
+            replay_rungs,
+            allow_future_replay=allow_future_replay,
+        )
         print(f"[hrm158] curriculum {curriculum_rung}: prior_rungs={prior_rungs} "
               f"(positional_full={positional_full}, "
               f"diagnosis_only={sorted(DIAGNOSIS_ONLY_RUNGS)}, "
-              f"explicit_override={replay_rungs is not None})",
+              f"explicit_override={replay_rungs is not None}, "
+              f"allow_future_replay={allow_future_replay})",
               flush=True)
 
         # Mandatory --load-from for R1+ (codex msg 1779463196431 rule 1):
@@ -767,6 +773,20 @@ if __name__ == "__main__":
                          "unknown/current/future/R7/duplicate entries; diagnosis-only "
                          "in list emits WARN. Codex msg 1779475454122-1512da3b "
                          "structural fix.")
+    ap.add_argument("--allow-future-replay", action="store_true",
+                    help="Allow EXPLICIT --replay-rungs to include later-rung "
+                         "names (index >= current rung) for foundational-rung "
+                         "repair passes. Default rejects future rungs. Use "
+                         "ONLY when repairing a foundational primitive (e.g. "
+                         "R1b2) while preserving later-rung mastery via "
+                         "explicit replay of those rungs. Emits a WARN naming "
+                         "each future rung accepted. All other validation "
+                         "(unknown/R7/self/duplicate/empty/malformed) still "
+                         "applies. Has NO effect on positional/default replay. "
+                         "Codex msg 1779548482300-05680b9d Option G after "
+                         "R1b6 commit 128b097 baseline revealed R1b2=0.78 "
+                         "pre-existing gap; durable gabe provenance relay "
+                         "1779547541812.")
     ap.add_argument("--use-broad-tokenizer", action="store_true",
                     help="Use BroadTokenizer (byte-level UTF-8, vocab=260, "
                          "normalizer_version=byte_utf8_v1) instead of Gsm8kTokenizer. "
@@ -811,6 +831,7 @@ if __name__ == "__main__":
         curriculum_seed=args.curriculum_seed,
         curriculum_n_train=args.curriculum_n_train,
         replay_rungs=args.replay_rungs,
+        allow_future_replay=args.allow_future_replay,
         curriculum_n_heldout=args.curriculum_n_heldout,
         replay_ratio=args.replay_ratio,
         use_broad_tokenizer=args.use_broad_tokenizer,

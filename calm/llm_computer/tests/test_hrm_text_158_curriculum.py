@@ -2330,6 +2330,109 @@ def test_r1b6_positional_priors_match_active_chain() -> None:
 
 
 # ============================================================================ #
+# --allow-future-replay infra (codex msg 1779548482300-05680b9d Option G
+#  after R1b6 commit 128b097 baseline revealed R1b2=0.78 pre-existing gap;
+#  durable gabe provenance relay 1779547541812). Adds opt-in flag to
+#  _resolve_prior_rungs enabling foundational-rung repair passes with
+#  later-rung mastery preserved via explicit replay. Default behavior
+#  unchanged (regression guard test asserts).
+# ============================================================================ #
+
+def test_resolve_prior_rungs_default_rejects_future() -> None:
+    """Default behavior (allow_future_replay=False) MUST still reject
+    future-rung explicit replay. Regression guard per codex msg
+    1779548482300-05680b9d guardrail."""
+    import pytest as _pytest
+    from calm.hrm_text_158.curriculum.replay import _resolve_prior_rungs
+    with _pytest.raises(ValueError, match="future rungs cannot be replay priors"):
+        _resolve_prior_rungs(
+            "R1b2",
+            "R0,R1,R1b1,R1b3,R1b4v2,R1b5,R1b6",
+        )
+
+
+def test_resolve_prior_rungs_allow_future_accepts_repair_chain() -> None:
+    """`allow_future_replay=True` accepts the R1b2-repair chain
+    `R0,R1,R1b1,R1b3,R1b4v2,R1b5,R1b6` (R1b3/R1b4v2/R1b5/R1b6 are future
+    relative to R1b2). Codex msg 1779548482300-05680b9d Option G."""
+    from calm.hrm_text_158.curriculum.replay import _resolve_prior_rungs
+    captured_warns: list[str] = []
+    priors = _resolve_prior_rungs(
+        "R1b2",
+        "R0,R1,R1b1,R1b3,R1b4v2,R1b5,R1b6",
+        allow_future_replay=True,
+        warn_callback=captured_warns.append,
+    )
+    assert priors == ["R0", "R1", "R1b1", "R1b3", "R1b4v2", "R1b5", "R1b6"], priors
+    # WARN must name every future rung accepted (codex guardrail).
+    future_rungs_warned = {
+        r for r in ("R1b3", "R1b4v2", "R1b5", "R1b6")
+        if any(f"FUTURE rung {r!r}" in w for w in captured_warns)
+    }
+    assert future_rungs_warned == {"R1b3", "R1b4v2", "R1b5", "R1b6"}, (
+        f"WARN must name each future rung; got warns: {captured_warns}"
+    )
+
+
+def test_resolve_prior_rungs_allow_future_still_rejects_self() -> None:
+    """`allow_future_replay=True` does NOT bypass self-rung rejection
+    (current rung cannot be its own replay; codex msg 1779548482300
+    explicit guardrail)."""
+    import pytest as _pytest
+    from calm.hrm_text_158.curriculum.replay import _resolve_prior_rungs
+    with _pytest.raises(ValueError, match="cannot include current rung"):
+        _resolve_prior_rungs(
+            "R1b2",
+            "R0,R1b2,R1b6",
+            allow_future_replay=True,
+        )
+
+
+def test_resolve_prior_rungs_allow_future_still_rejects_r7_dup_unknown() -> None:
+    """`allow_future_replay=True` does NOT bypass R7/duplicate/unknown
+    rejections (only the future-rung index check is gated; all other
+    validations remain). Codex msg 1779548482300 guardrail."""
+    import pytest as _pytest
+    from calm.hrm_text_158.curriculum.replay import _resolve_prior_rungs
+    # R7 still rejected
+    with _pytest.raises(ValueError, match="generator-incompatible"):
+        _resolve_prior_rungs(
+            "R1b2",
+            "R0,R7,R1b6",
+            allow_future_replay=True,
+        )
+    # Duplicate still rejected
+    with _pytest.raises(ValueError, match="duplicate"):
+        _resolve_prior_rungs(
+            "R1b2",
+            "R0,R1,R1,R1b6",
+            allow_future_replay=True,
+        )
+    # Unknown still rejected
+    with _pytest.raises(ValueError, match="not in rung_names"):
+        _resolve_prior_rungs(
+            "R1b2",
+            "R0,RX,R1b6",
+            allow_future_replay=True,
+        )
+
+
+def test_resolve_prior_rungs_allow_future_no_effect_on_positional() -> None:
+    """`allow_future_replay=True` has NO effect on positional/default
+    replay (only the explicit `--replay-rungs` path is gated). Codex
+    msg 1779548482300 guardrail: 'has no effect on positional/default'."""
+    from calm.hrm_text_158.curriculum.replay import _resolve_prior_rungs
+    priors_default = _resolve_prior_rungs("R1b2", replay_rungs_arg=None,
+                                          allow_future_replay=False)
+    priors_with_flag = _resolve_prior_rungs("R1b2", replay_rungs_arg=None,
+                                            allow_future_replay=True)
+    assert priors_default == priors_with_flag, (
+        f"positional path must be flag-invariant; got default={priors_default} "
+        f"vs flag={priors_with_flag}"
+    )
+
+
+# ============================================================================ #
 # R2a teens addition-only (codex msg 1779478819906-0e30503e after full R2
 #  failed v1+v2 n_train=8000 at c2f4f8d; jigsaw-curriculum operator split;
 #  DIAGNOSIS-ONLY after v1 failed 0.045 at 558fcc1)

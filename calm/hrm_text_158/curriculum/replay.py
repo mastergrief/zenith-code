@@ -27,9 +27,15 @@ This module exposes:
     3. Current rung not in list (self rejected)
     4. No duplicates (overweighting prevented)
     5. R7 not in list (GSM8k served separately, not synthesized)
-    6. No future rungs (index >= current rejected)
+    6. No future rungs by default (index >= current rejected);
+       `allow_future_replay=True` is the explicit repair override
+       that gates rule 6 only — all other validations still apply.
+       WARN names each future rung accepted. Per codex msg
+       1779548482300-05680b9d Option G after R1b6 commit 128b097
+       baseline revealed R1b2=0.78 foundational-primitive gap.
   Explicit override allowed to include diagnosis-only rungs (with
-  WARN); positional default auto-excludes diagnosis-only AND R7.
+  WARN); positional default auto-excludes diagnosis-only AND R7
+  AND is unaffected by `allow_future_replay`.
 
 Tests: `calm/llm_computer/tests/test_hrm_text_158_phase_a_wiring.py`
 """
@@ -96,6 +102,7 @@ def _resolve_prior_rungs(
     rung_names: tuple[str, ...] = RUNG_NAMES,
     diagnosis_only: frozenset[str] = DIAGNOSIS_ONLY_RUNGS,
     warn_callback=None,
+    allow_future_replay: bool = False,
 ) -> list[str]:
     """Resolve prior_rungs for trainer's curriculum-replay mix.
 
@@ -108,13 +115,23 @@ def _resolve_prior_rungs(
             derivation (default DIAGNOSIS_ONLY_RUNGS).
         warn_callback: Optional callable(msg) for diagnosis-only override
             WARN. Defaults to print() if None.
+        allow_future_replay: When True, skips the future-rung rejection
+            in the EXPLICIT `--replay-rungs` path so a foundational-rung
+            repair pass can include later-rung replay (e.g. repair R1b2
+            with R1b3..R1b6 in replay to preserve mastery while lifting
+            R1b2). Emits a WARN naming each future rung accepted. DOES
+            NOT affect the positional default path. All other rejects
+            (unknown, R7, self, duplicate, empty, malformed) still
+            apply. Codex msg 1779548482300-05680b9d Option G after
+            R1b6 commit 128b097 baseline revealed R1b2=0.78 pre-existing
+            gap; durable gabe provenance relay 1779547541812.
 
     Returns:
         List of rung names (deterministic order) to draw replay from.
 
     Raises:
         ValueError on validation failure (empty list, unknown rung, self,
-        duplicate, R7, future rung).
+        duplicate, R7, or future rung when `allow_future_replay=False`).
     """
     if curriculum_rung not in rung_names:
         raise ValueError(
@@ -175,11 +192,13 @@ def _resolve_prior_rungs(
                     f"{curriculum_rung!r}; got {explicit_list}"
                 )
             r_idx = list(rung_names).index(r)
-            if r_idx >= cur_idx:
+            if r_idx >= cur_idx and not allow_future_replay:
                 raise ValueError(
                     f"--replay-rungs entry {r!r} (index {r_idx}) is at or "
                     f"after current rung {curriculum_rung!r} (index {cur_idx}); "
-                    f"future rungs cannot be replay priors."
+                    f"future rungs cannot be replay priors. Pass "
+                    f"--allow-future-replay to opt into future-rung replay "
+                    f"for foundational-rung repair passes."
                 )
 
         # Explicit override allowed to include diagnosis-only with WARN
@@ -191,6 +210,20 @@ def _resolve_prior_rungs(
                     f"operator override accepted but unusual (see "
                     f"DIAGNOSIS_ONLY_RUNGS in replay.py)."
                 )
+
+        # Future-rung WARN: when allow_future_replay=True and an entry is
+        # >= cur_idx, name the rung explicitly so receipts make the
+        # override visible (codex msg 1779548482300-05680b9d guardrail).
+        if allow_future_replay:
+            for r in explicit_list:
+                r_idx = list(rung_names).index(r)
+                if r_idx >= cur_idx:
+                    warn(
+                        f"--replay-rungs includes FUTURE rung {r!r} "
+                        f"(index {r_idx} >= current rung {curriculum_rung!r} "
+                        f"index {cur_idx}); --allow-future-replay override "
+                        f"accepted. Use only for foundational-rung repair."
+                    )
         return explicit_list
 
     # Positional default path: RUNG_NAMES[:cur_idx] minus diagnosis-only
