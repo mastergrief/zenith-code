@@ -44,9 +44,12 @@ from calm.hrm_text_158.curriculum import (
     make_rung_examples,
     r1b4v2_one_digit_audit_rows,
     r1b5_one_digit_audit_rows,
+    r1b6_one_digit_audit_rows,
 )
 
-# Per-rung audit registry (codex msg 1779523412979-ff88b885).
+# Per-rung audit registry (codex msg 1779523412979-ff88b885 + R1b6 added
+# per codex msg 1779545956176-4a8cfc3e after gabe greenlight relay
+# 1779545575582-7c52a912 of verbatim "ok implement, full prov").
 # Each entry maps rung name -> callable(seed) -> list of 9 audit rows.
 # When `probe_curriculum` runs, it iterates this registry against the
 # `rungs` argument so every audit-eligible rung present gets a keyed
@@ -54,6 +57,7 @@ from calm.hrm_text_158.curriculum import (
 ONE_DIGIT_AUDIT_REGISTRY = {
     "R1b4v2": r1b4v2_one_digit_audit_rows,
     "R1b5": r1b5_one_digit_audit_rows,
+    "R1b6": r1b6_one_digit_audit_rows,
 }
 
 
