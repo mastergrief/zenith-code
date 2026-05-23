@@ -85,6 +85,9 @@ class BitLinear(nn.Module):
         # (codex bound: no .pt schema/format change).
         self._cached_weight: Optional[Tensor] = None
         self._cached_active: bool = False
+        # TTrain-B native fused-quantize training path. Runtime-only;
+        # NOT in state_dict. Mutually exclusive with cached_active (inference).
+        self._native_train_active: bool = False
 
     def quantize_weight(self) -> tuple[Tensor, Tensor]:
         """Quantize master weight to ternary + per-tensor scale.
@@ -112,6 +115,15 @@ class BitLinear(nn.Module):
         # re-quantize.
         if self._cached_active and self._cached_weight is not None and not self.training:
             return F.linear(input, self._cached_weight, self.bias)
+        # TTrain-B native fused-quantize training path. Active only in
+        # training mode AND when explicitly enabled (`enable_native_train()`).
+        # Forward value is bit-equivalent to the default `quantize_weight()`
+        # path; backward uses STE identity to master (see
+        # `ternary_train_kernel.NativeTernaryTrainFn`).
+        if self._native_train_active and self.training:
+            # Import inside forward to avoid hard Triton dep at module load.
+            from calm.hrm_text_158.ternary_train_kernel import native_ternary_train_linear
+            return native_ternary_train_linear(input, self.weight, self.bias, self._SCALE_EPS)
         w_q_ste, _ = self.quantize_weight()
         return F.linear(input, w_q_ste, self.bias)
 
@@ -164,17 +176,52 @@ class BitLinear(nn.Module):
         self._cached_weight = None
         self._cached_active = False
 
+    def enable_native_train(self) -> None:
+        """Enable TTrain-B fused-quantize STE path for training forwards.
+
+        Must be called in training mode. Mutually exclusive with the
+        inference cached path: cached_active is cleared on enable.
+
+        Forward value is bit-equivalent to `quantize_weight()`'s; the
+        autograd Function in `ternary_train_kernel.py` provides STE-correct
+        backward without materializing the `w + sg(w_q*scale - w)` wrap.
+        """
+        if not self.training:
+            raise RuntimeError(
+                "BitLinear.enable_native_train() must be called in training "
+                "mode. Call `module.train()` first."
+            )
+        # Inference cache is incompatible with native-train forward (both
+        # try to skip `quantize_weight`); clear it on enable for safety.
+        self._cached_weight = None
+        self._cached_active = False
+        self._native_train_active = True
+
+    def disable_native_train(self) -> None:
+        """Disable the TTrain-B fused-quantize STE path. Next forward uses
+        the default `quantize_weight()` chain. Safe to call in either mode.
+        """
+        self._native_train_active = False
+
     def train(self, mode: bool = True):
-        """Invalidate the inference cache when entering training mode.
+        """Invalidate runtime-only caches when transitioning between modes.
 
         Defense-in-depth alongside the `self.training` guard in `forward()`:
-        both must agree before the cached path runs. This guarantees that
-        a user calling `model.train()` after `freeze_bitlinears_for_inference()`
-        cannot accidentally run the cached weight under autograd / STE.
+        both must agree before the cached/native paths run. Guarantees:
+        - `model.train()` after `freeze_bitlinears_for_inference()` cannot
+          accidentally run the cached weight under autograd / STE.
+        - `model.eval()` after `enable_bitlinears_for_native_train()` cannot
+          accidentally run the native-train Triton path during eval.
         """
         super().train(mode)
         if mode:
             self._cached_active = False
+        else:
+            # Moving to eval: clear native-train flag so eval forwards take
+            # the default path (or cached path if frozen). Native-train must
+            # be explicitly re-enabled via enable_native_train() after the
+            # next train() call.
+            self._native_train_active = False
         return self
 
     @torch.no_grad()
@@ -204,5 +251,37 @@ def freeze_bitlinears_for_inference(module: nn.Module) -> int:
     for m in module.modules():
         if isinstance(m, BitLinear):
             m.freeze_for_inference()
+            count += 1
+    return count
+
+
+def enable_bitlinears_for_native_train(module: nn.Module) -> int:
+    """Walk `module` and call `enable_native_train()` on every BitLinear.
+
+    Returns the count of BitLinear modules enabled — caller can assert
+    this matches the expected count (32 for HRM-Text-1.58 default config:
+    8 layers × 4 BL/block, half_layers=True splits across H and L levels).
+
+    TTrain-B per codex msg 1779538337913-2d79fa93. Must be called AFTER
+    `model.train()` so the eval-mode `train()` override doesn't immediately
+    clear the flag.
+    """
+    count = 0
+    for m in module.modules():
+        if isinstance(m, BitLinear):
+            m.enable_native_train()
+            count += 1
+    return count
+
+
+def disable_bitlinears_for_native_train(module: nn.Module) -> int:
+    """Walk `module` and call `disable_native_train()` on every BitLinear.
+
+    Returns count disabled. Safe in either mode.
+    """
+    count = 0
+    for m in module.modules():
+        if isinstance(m, BitLinear):
+            m.disable_native_train()
             count += 1
     return count

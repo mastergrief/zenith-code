@@ -243,6 +243,10 @@ def train(
     # gate_up_proj/down_proj use BitLinear; lm_head/embd/norms/zL_init
     # stay FP per D2.2.
     use_ternary_bulk: bool = False,
+    # TTrain-B: Triton fused-quantize STE-prep path for BitLinear training
+    # forwards. Requires use_ternary_bulk=True. Default False preserves
+    # current path bit-exact. Codex msg 1779538337913-2d79fa93.
+    use_native_ternary_train: bool = False,
     # Phase 3 Step 1 (codex msg 1779462307554-b57d8288):
     # Curriculum-mode replaces GSM8k corpus with synthetic per-rung
     # data. ALL fields optional; defaults preserve legacy GSM8k behavior.
@@ -513,6 +517,22 @@ def train(
 
     # Train
     m.train()
+    # TTrain-B: enable native fused-quantize STE path on all BitLinear modules
+    # AFTER m.train() so the eval-mode train() override doesn't immediately
+    # clear the flag. Forward value bit-equivalent; backward STE-correct via
+    # custom autograd.Function. Inference path unaffected. Codex msg
+    # 1779538337913-2d79fa93 +1 implement Phase B.
+    if use_native_ternary_train:
+        if not use_ternary_bulk:
+            print(f"[hrm158] --use-native-ternary-train requires --use-ternary-bulk; "
+                  f"flag is a no-op (no BitLinear modules in model). Continuing.",
+                  flush=True)
+        else:
+            from calm.hrm_text_158.bit_linear import enable_bitlinears_for_native_train
+            n_enabled = enable_bitlinears_for_native_train(m)
+            print(f"[hrm158] TTrain-B native-ternary-train: enabled {n_enabled} "
+                  f"BitLinear modules (Triton fused-quantize + STE-correct backward)",
+                  flush=True)
     step = 0
     start_t = time.time()
     for ep in range(1, epochs + 1):
@@ -714,6 +734,13 @@ if __name__ == "__main__":
                     help="Phase 2 D2.1: replace bulk LinearInit with BitLinear "
                          "(ternary master+STE) on gqkv_proj/o_proj/gate_up_proj/"
                          "down_proj. lm_head/embd/norms/zL_init stay FP per D2.2.")
+    ap.add_argument("--use-native-ternary-train", action="store_true",
+                    help="TTrain-B: enable Triton fused-quantize STE-prep path "
+                         "for BitLinear training forwards (codex msg "
+                         "1779538337913-2d79fa93). Forward value bit-equivalent "
+                         "to default path; STE-correct backward via custom "
+                         "autograd.Function. Inference path unchanged. Requires "
+                         "--use-ternary-bulk (no-op otherwise).")
     # Phase 3 Step 1 curriculum flags (codex msg 1779462307554 +1 implement Phase A)
     ap.add_argument("--curriculum-rung", type=str, default=None,
                     choices=["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6"],
@@ -779,6 +806,7 @@ if __name__ == "__main__":
         n_train_cap=args.n_train_cap,
         n_val_cap=args.n_val_cap,
         use_ternary_bulk=args.use_ternary_bulk,
+        use_native_ternary_train=args.use_native_ternary_train,
         curriculum_rung=args.curriculum_rung,
         curriculum_seed=args.curriculum_seed,
         curriculum_n_train=args.curriculum_n_train,
