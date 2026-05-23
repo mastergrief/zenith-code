@@ -23,10 +23,13 @@ from __future__ import annotations
 
 from typing import Callable
 
-from calm.hrm_text_158.curriculum.generators import _enumerate_partition_l0a
+from calm.hrm_text_158.curriculum.generators import (
+    _enumerate_partition_l0a,
+    _enumerate_partition_l0b,
+)
 
 
-LANGUAGE_ACTIVE_RUNGS: tuple[str, ...] = ("L0a",)
+LANGUAGE_ACTIVE_RUNGS: tuple[str, ...] = ("L0a", "L0b")
 
 
 def _l0a_support(seed: int = 42) -> list[tuple[str, int, str]]:
@@ -55,12 +58,30 @@ def _l0a_support(seed: int = 42) -> list[tuple[str, int, str]]:
     return rows
 
 
+def _l0b_support(seed: int = 42) -> list[tuple[str, int, str]]:
+    """Full 230-row L0b bounded stratified support (train + held).
+
+    Codex msg 1779567887201-1cf4f485 +1 Slice D.1 implement. L0b mirrors
+    L0a's shape exactly; only the question-string template differs
+    (`calculate <expr>.` instead of `what's <expr>?`). Same 13 source
+    buckets, same per-bucket counts. Aggregate adds 230 on top of L0a's
+    230 → LANGUAGE_EXPECTED_AGGREGATE = 460.
+    """
+    train, held = _enumerate_partition_l0b(seed)
+    rows: list[tuple[str, int, str]] = []
+    for r in train + held:
+        rows.append((r["question"], r["expected"], r["source_rung"]))
+    return rows
+
+
 _BUILDERS: dict[str, Callable[[int], list[tuple[str, int, str]]]] = {
     "L0a": _l0a_support,
+    "L0b": _l0b_support,
 }
 
 LANGUAGE_EXPECTED_COUNTS: dict[str, int] = {
     "L0a": 230,
+    "L0b": 230,
 }
 LANGUAGE_EXPECTED_AGGREGATE: int = sum(
     LANGUAGE_EXPECTED_COUNTS[r] for r in LANGUAGE_ACTIVE_RUNGS
@@ -84,7 +105,11 @@ def language_source_rung_buckets(rung: str) -> list[str]:
     in canonical reporting order. Used by probe to render per-bucket
     breakdowns.
     """
-    if rung == "L0a":
+    if rung in ("L0a", "L0b"):
+        # L0b mirrors L0a's bucket order exactly (codex msg
+        # 1779567887201-1cf4f485 Slice D.1: same 13 source buckets,
+        # same per-bucket counts, only the question-template prefix
+        # differs).
         return [
             "R0",
             "R1_plus_0", "R1_0_plus_A", "R1_minus_0",

@@ -881,7 +881,8 @@ def test_generator_r1b2_in_rung_names_after_r1b2a() -> None:
     assert RUNG_NAMES[12] == "R1b9", f"R1b9 must be at index 12 (post-R1b8); got {RUNG_NAMES}"
     assert RUNG_NAMES[13] == "R1b10", f"R1b10 must be at index 13 (post-R1b9); got {RUNG_NAMES}"
     assert RUNG_NAMES[14] == "L0a", f"L0a must be at index 14 (post-R1b10); got {RUNG_NAMES}"
-    assert RUNG_NAMES[15] == "R1b", f"R1b must be at index 15 (post-L0a); got {RUNG_NAMES}"
+    assert RUNG_NAMES[15] == "L0b", f"L0b must be at index 15 (post-L0a); got {RUNG_NAMES}"
+    assert RUNG_NAMES[16] == "R1b", f"R1b must be at index 16 (post-L0b); got {RUNG_NAMES}"
 
 
 def test_generator_r1b2_train_holdout_exact_row_disjoint() -> None:
@@ -3511,11 +3512,113 @@ def test_r1b10_excluded_from_later_rung_priors() -> None:
 
 def test_generator_l0a_in_rung_names_index_14() -> None:
     """L0a at RUNG_NAMES index 14, after parked R1b10 (13), before
-    legacy R1b (15). Codex msg 1779559495228 spec."""
+    L0b (15) per codex msg 1779567887201 Slice D.1."""
     from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
     assert RUNG_NAMES[14] == "L0a", f"L0a must be at index 14; got {RUNG_NAMES}"
     assert RUNG_NAMES[13] == "R1b10", f"R1b10 must be at index 13 (pre-L0a)"
-    assert RUNG_NAMES[15] == "R1b", f"R1b must be at index 15 (post-L0a)"
+    assert RUNG_NAMES[15] == "L0b", f"L0b must be at index 15 (post-L0a)"
+
+
+def test_generator_l0b_in_rung_names_index_15() -> None:
+    """L0b at RUNG_NAMES index 15, after L0a (14), before legacy R1b
+    (16). Codex msg 1779567887201-1cf4f485 +1 Slice D.1 spec."""
+    from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
+    assert RUNG_NAMES[15] == "L0b", f"L0b must be at index 15; got {RUNG_NAMES}"
+    assert RUNG_NAMES[14] == "L0a", f"L0a must be at index 14 (pre-L0b)"
+    assert RUNG_NAMES[16] == "R1b", f"R1b must be at index 16 (post-L0b)"
+
+
+def test_generator_l0b_NOT_in_diagnosis_only() -> None:
+    """L0b is the active second language-axis rung; NOT diagnosis-only."""
+    from calm.hrm_text_158.curriculum.replay import DIAGNOSIS_ONLY_RUNGS
+    assert "L0b" not in DIAGNOSIS_ONLY_RUNGS, (
+        f"L0b must NOT be diagnosis-only; got {sorted(DIAGNOSIS_ONLY_RUNGS)}"
+    )
+
+
+def test_generator_l0b_in_default_chain() -> None:
+    """L0b must appear in `build_rung_splits(...)` default rungs after
+    L0a (codex msg 1779567887201 active-chain inclusion)."""
+    splits = build_rung_splits(n_train=200, n_held_out=80, seed=42)
+    assert "L0b" in splits, f"L0b must be in default chain; got {list(splits)}"
+
+
+def test_generator_l0b_train_holdout_exact_row_disjoint() -> None:
+    """L0b train + held_out exact-row disjoint at n=2000 sampling."""
+    train = make_rung_examples("L0b", n=2000, seed=42, split="train")
+    held = make_rung_examples("L0b", n=2000, seed=42, split="held_out")
+    train_set = {(ex["question"], ex["expected"]) for ex in train}
+    held_set = {(ex["question"], ex["expected"]) for ex in held}
+    overlap = train_set & held_set
+    assert not overlap, f"L0b train/held share rows: {sorted(overlap)[:5]}"
+
+
+def test_generator_l0b_template_calculate_prefix() -> None:
+    """L0b emits ONLY `calculate <math>.` (period, NOT `what's...?`).
+    Crucially distinct from L0a's `what's` so cross-rung audit reports
+    are visibly different surfaces."""
+    rows = make_rung_examples("L0b", n=2000, seed=42, split="train") + \
+           make_rung_examples("L0b", n=500, seed=42, split="held_out")
+    for ex in rows:
+        q = ex["question"]
+        assert q.startswith("calculate "), f"L0b row must start with `calculate `: {q!r}"
+        assert q.endswith("."), f"L0b row must end `.`: {q!r}"
+        assert not q.startswith("what is "), f"L0b must NOT use canonical math `what is `: {q!r}"
+        assert not q.startswith("what's "), f"L0b must NOT use L0a's `what's `: {q!r}"
+
+
+def test_generator_l0b_rung_field() -> None:
+    """Every L0b row carries rung='L0b'."""
+    rows = make_rung_examples("L0b", n=500, seed=42, split="train") + \
+           make_rung_examples("L0b", n=100, seed=42, split="held_out")
+    for ex in rows:
+        assert ex["rung"] == "L0b", f"L0b rung field violated: {ex!r}"
+
+
+def test_generator_l0b_train_unique_count_184() -> None:
+    """L0b train pool: 184 unique rows (identical to L0a partition size)."""
+    train = make_rung_examples("L0b", n=20000, seed=42, split="train")
+    unique_q = {ex["question"] for ex in train}
+    assert len(unique_q) == 184, (
+        f"L0b train unique_count must be 184; got {len(unique_q)}"
+    )
+
+
+def test_generator_l0b_held_unique_count_46() -> None:
+    """L0b held pool: 46 unique rows."""
+    held = make_rung_examples("L0b", n=5000, seed=42, split="held_out")
+    unique_q = {ex["question"] for ex in held}
+    assert len(unique_q) == 46, (
+        f"L0b held unique_count must be 46; got {len(unique_q)}"
+    )
+
+
+def test_l0b_positional_priors_include_l0a_exclude_r1b10() -> None:
+    """L0b positional priors = R0..R1b9 + L0a (12 priors). R1b10 still
+    filtered out by DIAGNOSIS_ONLY_RUNGS; L0a stays IN so L0b training
+    preserves the L0a paraphrase axis."""
+    from calm.hrm_text_158.curriculum.replay import _resolve_prior_rungs
+    priors = _resolve_prior_rungs("L0b", replay_rungs_arg=None)
+    assert priors == ["R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2",
+                      "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "L0a"], (
+        f"L0b priors: {priors}"
+    )
+    assert "R1b10" not in priors
+    assert "L0a" in priors
+
+
+def test_l0a_l0b_question_sets_fully_disjoint() -> None:
+    """L0a and L0b paraphrase pools must NOT share any question strings.
+    `what's <expr>?` and `calculate <expr>.` are distinct templates by
+    construction, but pin this as a cross-language-rung invariant."""
+    l0a_train = make_rung_examples("L0a", n=20000, seed=42, split="train")
+    l0b_train = make_rung_examples("L0b", n=20000, seed=42, split="train")
+    l0a_set = {ex["question"] for ex in l0a_train}
+    l0b_set = {ex["question"] for ex in l0b_train}
+    overlap = l0a_set & l0b_set
+    assert not overlap, (
+        f"L0a/L0b question pools must be disjoint; overlap: {sorted(overlap)[:5]}"
+    )
 
 
 def test_generator_l0a_NOT_in_diagnosis_only() -> None:
@@ -3622,13 +3725,13 @@ def _r2a_decode(ex: dict) -> tuple[int, int]:
 
 def test_generator_r2a_in_rung_names_after_r1b() -> None:
     """R2a was demoted to diagnosis-only after v1 failed 0.045 at 558fcc1.
-    With R1b4@6, R1b4v2@7, R1b5@8, R1b6@9, R1b7@10, R1b8@11, R1b9@12 all
-    inserted before R1b@15, positions: R1b3@5, R1b4@6, R1b4v2@7, R1b5@8,
-    R1b6@9, R1b7@10, R1b8@11, R1b9@12, R1b10@13, L0a@14, R1b@15,
-    R2a@16, R2@17."""
+    With L0b inserted after L0a per codex msg 1779567887201 Slice D.1,
+    positions shifted: R1b3@5, R1b4@6, R1b4v2@7, R1b5@8, R1b6@9,
+    R1b7@10, R1b8@11, R1b9@12, R1b10@13, L0a@14, L0b@15, R1b@16,
+    R2a@17, R2@18."""
     from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
-    assert RUNG_NAMES[16] == "R2a", f"R2a must be at index 16 (post-R1b at 15, post-L0a at 14); got {RUNG_NAMES}"
-    assert RUNG_NAMES[17] == "R2", f"R2 must be at index 17 (diagnosis-only); got {RUNG_NAMES}"
+    assert RUNG_NAMES[17] == "R2a", f"R2a must be at index 17 (post-R1b at 16, post-L0b at 15); got {RUNG_NAMES}"
+    assert RUNG_NAMES[18] == "R2", f"R2 must be at index 18 (diagnosis-only); got {RUNG_NAMES}"
 
 
 def test_generator_r2a_train_holdout_exact_row_disjoint() -> None:
@@ -4070,7 +4173,7 @@ def test_cross_rung_no_train_holdout_overlap() -> None:
     assert_no_train_holdout_overlap(splits)
     # Active chain: R0, R1, R1b1, R1b2, R1b3, R1b4v2, R1b5, R1b6, R1b7, R1b8, R3-R6
     # (R1b2a/R1b/R1b4/R2/R2a diagnosis-only; R7 = GSM8k)
-    assert set(splits.keys()) == {"R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "L0a", "R3", "R4", "R5", "R6"}
+    assert set(splits.keys()) == {"R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "L0a", "L0b", "R3", "R4", "R5", "R6"}
 
 
 def test_cross_rung_r1b1_and_r1b_together_collide() -> None:

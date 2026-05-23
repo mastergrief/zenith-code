@@ -119,6 +119,12 @@ from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
 #         training L0a resolve to {R0, R1, R1b1, R1b2, R1b3, R1b4v2,
 #         R1b5, R1b6, R1b7, R1b8, R1b9} — R1b10 filtered out by
 #         DIAGNOSIS_ONLY_RUNGS, preserving math-chain integrity.
+# L0b stays OUT (codex msg 1779567887201-1cf4f485 +1 Slice D.1 implement
+#         second language-axis rung as L0a mirror with template
+#         `calculate <math>.`). Positional priors when training L0b
+#         resolve to {R0, R1, R1b1, R1b2, R1b3, R1b4v2, R1b5, R1b6, R1b7,
+#         R1b8, R1b9, L0a} — R1b10 filtered out by DIAGNOSIS_ONLY_RUNGS;
+#         L0a stays IN so L0b training preserves the L0a paraphrase axis.
 DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b", "R1b4", "R1b10", "R2", "R2a"})
 
 
