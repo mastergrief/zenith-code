@@ -89,12 +89,30 @@ from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
 #         1779547753761-5711d790 under durable gabe provenance relay
 #         1779547541812; ADVANCED at commit 682659b via R1b2-retained
 #         chain after R1b2-repair landed at 9c8f800).
-# R1b8 stays OUT (active-chain target K=7 added per codex msg
-#         1779550489408-f40f66ab after R1b7 commit 682659b ADVANCED
-#         + A0 exhaustive audit 1071/1072 = 99.91% PASS; current
-#         attempt). Positional priors when training R1b8 resolve to
-#         {R0, R1, R1b1, R1b2, R1b3, R1b4v2, R1b5, R1b6, R1b7}.
-DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b", "R1b4", "R2", "R2a"})
+# R1b8 stays OUT (ADVANCED at 1a14a09 via replay65_n10k_lr5e4 with A0
+#         1161/1164 = 99.74% PASS; banked R1b3-repair candidate (R-C msg
+#         1779554256972 PASS at A0 1163/1164) as new chain head via codex
+#         msg 1779554293017-3ba4b4ee — no .pt commit, board update is the
+#         persistence). R1b3 train-set residual singleton repaired without
+#         cluster-swap; R1 held-set residual cleared as bonus.
+# R1b9 stays OUT (banked as new chain head via codex msg
+#         1779556007032-4c8f2a3e after acceptance PASS msg 1779555982684:
+#         A0 1254/1255 strict + 1255/1255 parsed, R1b9 91/91 exhaustive,
+#         R1b2 carry-forward singleton improved from value-wrong to
+#         leading-zero-format-only). No .pt commit per chain-head
+#         board-record persistence pattern.
+# R1b10 is PARKED / diagnosis-only (codex msg 1779558351771-055c2265
+#         after three failed promotion attempts from R1b9 chain head:
+#         n=10k/lr5e4 + n=12k/lr5e4 + n=12k/lr2e4. K=9 acquired cleanly
+#         in all three (R1b10 90/90 + keyed 9/9), but R1b10 supervision
+#         destabilizes R1b2 K=-1 subtraction surface on specific rows
+#         (notably `what is 10 minus 1?` — was format-only `09`
+#         parsed-correct under R1b9, all three R1b10 recipes flip it to
+#         value-wrong). Cluster reduced 3→2 under softer lr but cluster
+#         class unchanged. R1b9 stays math chain head; R1b10 remains
+#         reachable via explicit `--curriculum-rung R1b10` /
+#         `--replay-rungs R1b10` for diagnosis only.
+DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b", "R1b4", "R1b10", "R2", "R2a"})
 
 
 # R7 (GSM8k) is generator-incompatible — served separately from

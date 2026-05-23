@@ -145,6 +145,59 @@ Axis 1 — math complexity under stable language wrapper:
                                   Explicit R1b2 boundary watch per codex 1779550489408:
                                   verify `what is 10 minus 1?` decodes correctly post-train;
                                   R1b2 full-support rate should stay >=0.99 preferred.]
+  R1b9: constant K=8 addition    `what is A plus 8?` -> `A+8`  (A in [1, 91])
+                                 [codex msg 1779554293017-3ba4b4ee +1 K=8 after R-C diagnostic
+                                  PASS (msg 1779554256972). Continues constant-K jigsaw
+                                  (K=1, K=-1, K=2, K=3, K=4, K=5, K=6, K=7 all PASSED).
+                                  Parent is the R1b3-repair candidate (R-C banked as new
+                                  chain head via msg 1779554293017): A0 1163/1164 strictly
+                                  better than R1b8 baseline. Lineage: R1b9 launches from
+                                  targeted-repair parent, NOT pure K-ladder parent.
+                                  Mirrors R1b5..R1b8 carry-stratified design at K=8:
+                                    - one_digit A=1..9 exhaustive in train
+                                    - two_digit A=10..91 carry-stratified 80/20: carry
+                                      {units in {2..9}} = 64 vals -> 51 train + 13 held;
+                                      non-carry {units in {0,1}} = 18 vals -> 14 train +
+                                      4 held. TOTAL: 82 -> 65 train + 17 held; with
+                                      one_digit 91 -> 74 train + 17 held.
+                                  Output [9, 99]; no 3-digit class (max A+8 = 91+8 = 99).
+                                  Audit: 9-row exhaustive one_digit via
+                                  r1b9_one_digit_audit_rows. Parent ckpt (R1b3-repair
+                                  candidate banked as chain head):
+                                  hrm_text_158_phase3_R1b3_repair_seed0017_replay65_n10k_lr5e4_from_R1b8_final.pt.
+                                  Known carry-forward residual per codex 1779554293017:
+                                  R1b2 `what is 10 minus 1?` (held-set generalization
+                                  singleton); must NOT multiply into cluster. Watch rows
+                                  per codex 1779554359047: `1 plus 8?` (one_digit primary),
+                                  `91 plus 8?` (upper boundary), `12 plus 8?` (carry-boundary,
+                                  K=8 carry starts at unit 2).]
+  R1b10: constant K=9 addition   `what is A plus 9?` -> `A+9`  (A in [1, 90])
+                                 [PARKED diagnostic per codex msg 1779558351771-055c2265
+                                  after three failed promotion attempts from R1b9 chain
+                                  head: n=10k/lr5e4, n=12k/lr5e4, n=12k/lr2e4. K=9
+                                  acquired cleanly in all three (R1b10 90/90 strict +
+                                  keyed 9/9) but R1b10 supervision destabilizes R1b2
+                                  K=-1 subtraction surface on specific rows (notably
+                                  `what is 10 minus 1?` — was format-only `09`
+                                  parsed-correct under R1b9, all three R1b10 recipes
+                                  flip it to value-wrong). Cluster reduced 3 -> 2 under
+                                  softer lr but cluster class unchanged. R1b9 stays
+                                  math chain head. Generator/audit/support code stays
+                                  reachable via explicit `--curriculum-rung R1b10` or
+                                  `--curriculum-rungs R1b10` for diagnostic work;
+                                  auto-excluded from default `build_rung_splits`,
+                                  `EXHAUSTIVE_ACTIVE_RUNGS`, and positional replay
+                                  (see DIAGNOSIS_ONLY_RUNGS in replay.py).
+                                  Partition shape:
+                                    - one_digit A=1..9 exhaustive in train
+                                    - two_digit A=10..90 carry-stratified 80/20: carry
+                                      {units in {1..9}} = 72 vals -> 57 train + 15 held;
+                                      non-carry {unit 0} = 9 vals -> 7 train + 2 held.
+                                      TOTAL: 81 -> 64 train + 17 held; with
+                                      one_digit 90 -> 73 train + 17 held.
+                                  Output [10, 99]; no 3-digit class (max A+9 = 90+9 = 99).
+                                  Audit: 9-row exhaustive one_digit via
+                                  r1b10_one_digit_audit_rows.]
   R2a: teens addition-only       `what is 13 plus 7?` -> `20` (A in [10,19], B in [2,9])
                                  [DIAGNOSIS-ONLY after v1 failed 0.045 at 558fcc1; variable-B
                                   is the blocker, not operator mixing. R1b3 is the active
@@ -180,7 +233,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -471,6 +524,57 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     "R1b8": {
         "train":     {"A_range": (1, 92), "partition": "enumerate_stratified_r1b8"},
         "held_out":  {"A_range": (10, 92), "partition": "enumerate_stratified_r1b8"},
+    },
+    # R1b9 (codex msg 1779554293017-3ba4b4ee +1 K=8 after R-C diagnostic PASS
+    # msg 1779554256972. Parent = R1b3-repair candidate banked as new chain
+    # head; A0 1163/1164 strictly better than R1b8 baseline 1161/1164.
+    # Lineage: R1b9 launches from targeted-repair parent, NOT pure K-ladder
+    # parent. Continues locked constant-K jigsaw (K=1, K=-1, K=2..K=7 all
+    # PASSED). Mirrors R1b5..R1b8 carry-stratified design at K=8:
+    #   one_digit A=1..9: 9 vals -> 9 train exhaustive
+    #   two_digit A=10..91 carry-stratified 80/20 (carry-units {2..9} since K=8):
+    #     carry (units+8>=10, units in {2,3,4,5,6,7,8,9}): 64 vals -> 51 train + 13 held
+    #     non-carry (units in {0,1}):                     18 vals -> 14 train +  4 held
+    #     TOTAL: 82 -> 65 train + 17 held (guaranteed 13 carry + 4 non-carry)
+    #   TOTAL WITH ONE_DIGIT: 91 vals -> 74 train + 17 held_out
+    # Output [9, 99]; no 3-digit class (max A+8 = 91+8 = 99). B=8 disjoint
+    # from active priors (R0 no B; R1 B=0; R1b1 B=1; R1b2 B=1 minus; R1b3
+    # B=2; R1b4v2 B=3; R1b5 B=4; R1b6 B=5; R1b7 B=6; R1b8 B=7). Audit: 9-row
+    # exhaustive one_digit via r1b9_one_digit_audit_rows. Parent ckpt
+    # (R1b3-repair candidate banked as chain head via msg 1779554293017):
+    # hrm_text_158_phase3_R1b3_repair_seed0017_replay65_n10k_lr5e4_from_R1b8_final.pt.
+    # Known carry-forward residual per codex 1779554293017: R1b2 `what is 10
+    # minus 1?` (held-set generalization singleton); must NOT multiply into
+    # cluster. Watch rows per codex 1779554359047: `1 plus 8?` (one_digit
+    # primary), `91 plus 8?` (upper boundary = 99 non-carry), `12 plus 8?`
+    # (carry-boundary, K=8 carry starts at unit 2).
+    "R1b9": {
+        "train":     {"A_range": (1, 91), "partition": "enumerate_stratified_r1b9"},
+        "held_out":  {"A_range": (10, 91), "partition": "enumerate_stratified_r1b9"},
+    },
+    # R1b10 PARKED diagnostic (codex msg 1779558351771-055c2265 after 3
+    # failed promotion attempts from R1b9 chain head:
+    #   - n=10k/lr5e4: R1+R1b2 cluster (3 holes, value-wrong)
+    #   - n=12k/lr5e4: R1+R1b1+R1b2 cluster (3 holes, value-wrong)
+    #   - n=12k/lr2e4: R1b2-only cluster (2 holes, value-wrong)
+    # K=9 acquired cleanly in all 3 (R1b10 90/90 strict + keyed 9/9);
+    # R1b10 supervision destabilizes R1b2 K=-1 subtraction surface on
+    # specific rows. R1b9 stays math chain head. R1b10 stays reachable
+    # via explicit `--curriculum-rung R1b10` for diagnostic work; OUT of
+    # default `build_rung_splits`, `EXHAUSTIVE_ACTIVE_RUNGS`, and
+    # positional replay (see `DIAGNOSIS_ONLY_RUNGS` in replay.py).
+    # Partition shape (preserved for reproducibility / future revisit):
+    #   one_digit A=1..9: 9 vals -> 9 train exhaustive
+    #   two_digit A=10..90 carry-stratified 80/20 (carry-units {1..9} since K=9):
+    #     carry (units+9>=10, units in {1,2,3,4,5,6,7,8,9}): 72 vals -> 57 train + 15 held
+    #     non-carry (unit 0):                                9 vals  ->  7 train +  2 held
+    #     TOTAL: 81 -> 64 train + 17 held (guaranteed 15 carry + 2 non-carry)
+    #   TOTAL WITH ONE_DIGIT: 90 vals -> 73 train + 17 held_out
+    # Output [10, 99]; no 3-digit class (max A+9 = 90+9 = 99).
+    # Audit: 9-row exhaustive one_digit via r1b10_one_digit_audit_rows.
+    "R1b10": {
+        "train":     {"A_range": (1, 90), "partition": "enumerate_stratified_r1b10"},
+        "held_out":  {"A_range": (10, 90), "partition": "enumerate_stratified_r1b10"},
     },
     # R2a (codex msg 1779478819906-0e30503e after full R2 failed v1+v2;
     # DIAGNOSIS-ONLY after R2a v1 itself failed 0.045 at 558fcc1, codex
@@ -1511,6 +1615,184 @@ def _gen_r1b8(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> 
     return out
 
 
+def _enumerate_partition_r1b9(seed: int, train_frac: float = 0.8) -> tuple[set, set]:
+    """Stratified deterministic partition for R1b9's K=8 addition (codex
+    msg 1779554293017-3ba4b4ee +1 K=8 after R-C diagnostic PASS msg
+    1779554256972).
+
+    Mirrors R1b5/R1b6/R1b7/R1b8 design at K=8. Bakes in lessons:
+      one_digit A=1..9 EXHAUSTIVE train (NO thin-pool heldout)
+      two_digit A=10..91 CARRY-STRATIFIED 80/20
+
+    Carry stratification (units+8 >= 10, units in {2,3,4,5,6,7,8,9}):
+      carry-bucket A:        64 vals -> 51 train + 13 held_out
+      non-carry-bucket A:    18 vals -> 14 train +  4 held_out
+      TOTAL two_digit:       82 vals -> 65 train + 17 held_out
+    Total (with one_digit):  91 vals -> 74 train + 17 held_out
+
+    Guaranteed heldout shape: 13 carry + 4 non-carry. 13 carry vs R1b8's
+    12 is a side-effect of K=8 widening the carry support set (8 carry
+    units vs 7 at K=7); design intent is the same shape, not the same count.
+
+    Bucket-distinct seeds:
+      _stable_seed("R1b9_partition", seed, "carry")
+      _stable_seed("R1b9_partition", seed, "non_carry")
+    """
+    train_set: set = set()
+    held_out_set: set = set()
+
+    for A in range(1, 10):
+        train_set.add(A)
+
+    carry_as = [A for A in range(10, 92) if (A % 10) in (2, 3, 4, 5, 6, 7, 8, 9)]
+    non_carry_as = [A for A in range(10, 92) if (A % 10) < 2]
+    assert len(carry_as) == 64, f"R1b9 carry bucket size: {len(carry_as)}"
+    assert len(non_carry_as) == 18, f"R1b9 non-carry bucket size: {len(non_carry_as)}"
+
+    rng = random.Random(_stable_seed("R1b9_partition", seed, "carry"))
+    rng.shuffle(carry_as)
+    split = int(len(carry_as) * train_frac)  # 64 * 0.8 = 51
+    train_set.update(carry_as[:split])
+    held_out_set.update(carry_as[split:])
+
+    rng = random.Random(_stable_seed("R1b9_partition", seed, "non_carry"))
+    rng.shuffle(non_carry_as)
+    split = int(len(non_carry_as) * train_frac)  # 18 * 0.8 = 14
+    train_set.update(non_carry_as[:split])
+    held_out_set.update(non_carry_as[split:])
+
+    return train_set, held_out_set
+
+
+def r1b9_one_digit_audit_rows(seed: int = 42) -> list[dict]:
+    """Deterministic 9-row exhaustive audit of R1b9 one_digit support
+    (A in [1, 9], `what is A plus 8?` -> A+8).
+
+    Codex msg 1779554293017-3ba4b4ee: same shape as r1b8_one_digit_audit_rows
+    but K=8 instead of K=7. Mastery = 9/9 finite-domain exhaustive check.
+    Seed-invariant by construction.
+    """
+    del seed
+    return [
+        {"question": f"what is {A} plus 8?", "expected": A + 8, "rung": "R1b9"}
+        for A in range(1, 10)
+    ]
+
+
+def _gen_r1b9(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """R1b9 constant K=8 addition, carry-stratified partition (codex msg
+    1779554293017-3ba4b4ee +1 K=8 after R-C diagnostic PASS msg
+    1779554256972; parent = R1b3-repair candidate banked as chain head).
+
+    Single template `what is A plus 8?` -> A+8. one_digit A=1..9
+    exhaustive in train; two_digit A=10..91 carry-stratified 80/20
+    with carry-units widened to {2,3,4,5,6,7,8,9} since K=8.
+
+    Train pool = 74 integers A (9 one_digit + 51 carry + 14 non-carry);
+    held_out pool = 17 (13 carry + 4 non-carry, all two_digit).
+    """
+    train_pool, held_out_pool = _enumerate_partition_r1b9(seed)
+    pool = train_pool if split == "train" else held_out_pool
+    pool_list = sorted(pool)
+    out = []
+    while len(out) < n:
+        A = rng.choice(pool_list)
+        q = f"what is {A} plus 8?"
+        expected = A + 8
+        out.append({"question": q, "expected": expected, "rung": "R1b9"})
+    return out
+
+
+def _enumerate_partition_r1b10(seed: int, train_frac: float = 0.8) -> tuple[set, set]:
+    """Stratified deterministic partition for R1b10's K=9 addition (codex
+    msg 1779556007032-4c8f2a3e +1 K=9 after R1b9 acceptance PASS msg
+    1779555982684).
+
+    Mirrors R1b5..R1b9 design at K=9. Completes the constant-K
+    single-digit addition jigsaw K=1..K=9. Bakes in lessons:
+      one_digit A=1..9 EXHAUSTIVE train (NO thin-pool heldout)
+      two_digit A=10..90 CARRY-STRATIFIED 80/20
+
+    Carry stratification (units+9 >= 10, units in {1,2,3,4,5,6,7,8,9}):
+      carry-bucket A:        72 vals -> 57 train + 15 held_out
+      non-carry-bucket A:     9 vals ->  7 train +  2 held_out
+      TOTAL two_digit:       81 vals -> 64 train + 17 held_out
+    Total (with one_digit):  90 vals -> 73 train + 17 held_out
+
+    Guaranteed heldout shape: 15 carry + 2 non-carry. Note non-carry
+    shrinks to {0} only (no other non-carry unit exists at K=9 since
+    every unit >= 1 carries).
+
+    Bucket-distinct seeds:
+      _stable_seed("R1b10_partition", seed, "carry")
+      _stable_seed("R1b10_partition", seed, "non_carry")
+    """
+    train_set: set = set()
+    held_out_set: set = set()
+
+    for A in range(1, 10):
+        train_set.add(A)
+
+    carry_as = [A for A in range(10, 91) if (A % 10) in (1, 2, 3, 4, 5, 6, 7, 8, 9)]
+    non_carry_as = [A for A in range(10, 91) if (A % 10) == 0]
+    assert len(carry_as) == 72, f"R1b10 carry bucket size: {len(carry_as)}"
+    assert len(non_carry_as) == 9, f"R1b10 non-carry bucket size: {len(non_carry_as)}"
+
+    rng = random.Random(_stable_seed("R1b10_partition", seed, "carry"))
+    rng.shuffle(carry_as)
+    split = int(len(carry_as) * train_frac)  # 72 * 0.8 = 57
+    train_set.update(carry_as[:split])
+    held_out_set.update(carry_as[split:])
+
+    rng = random.Random(_stable_seed("R1b10_partition", seed, "non_carry"))
+    rng.shuffle(non_carry_as)
+    split = int(len(non_carry_as) * train_frac)  # 9 * 0.8 = 7
+    train_set.update(non_carry_as[:split])
+    held_out_set.update(non_carry_as[split:])
+
+    return train_set, held_out_set
+
+
+def r1b10_one_digit_audit_rows(seed: int = 42) -> list[dict]:
+    """Deterministic 9-row exhaustive audit of R1b10 one_digit support
+    (A in [1, 9], `what is A plus 9?` -> A+9).
+
+    Codex msg 1779556007032-4c8f2a3e: same shape as r1b9_one_digit_audit_rows
+    but K=9 instead of K=8. Mastery = 9/9 finite-domain exhaustive check.
+    Seed-invariant by construction.
+    """
+    del seed
+    return [
+        {"question": f"what is {A} plus 9?", "expected": A + 9, "rung": "R1b10"}
+        for A in range(1, 10)
+    ]
+
+
+def _gen_r1b10(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """R1b10 constant K=9 addition, carry-stratified partition (codex msg
+    1779556007032-4c8f2a3e +1 K=9 after R1b9 acceptance PASS msg
+    1779555982684; parent = R1b9 candidate banked as chain head).
+
+    Single template `what is A plus 9?` -> A+9. one_digit A=1..9
+    exhaustive in train; two_digit A=10..90 carry-stratified 80/20
+    with carry-units widened to {1,2,3,4,5,6,7,8,9} since K=9
+    (non-carry shrinks to {0} only).
+
+    Train pool = 73 integers A (9 one_digit + 57 carry + 7 non-carry);
+    held_out pool = 17 (15 carry + 2 non-carry, all two_digit).
+    """
+    train_pool, held_out_pool = _enumerate_partition_r1b10(seed)
+    pool = train_pool if split == "train" else held_out_pool
+    pool_list = sorted(pool)
+    out = []
+    while len(out) < n:
+        A = rng.choice(pool_list)
+        q = f"what is {A} plus 9?"
+        expected = A + 9
+        out.append({"question": q, "expected": expected, "rung": "R1b10"})
+    return out
+
+
 def _gen_r1b7(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
     """R1b7 constant K=6 addition, carry-stratified partition (codex msg
     1779547753761-5711d790 +1 K=6; rebased onto R1b2-repair commit
@@ -1894,6 +2176,10 @@ def make_rung_examples(
         return _gen_r1b7(rng, _RUNG_SPEC["R1b7"][split], n, seed=seed, split=split)
     if rung == "R1b8":
         return _gen_r1b8(rng, _RUNG_SPEC["R1b8"][split], n, seed=seed, split=split)
+    if rung == "R1b9":
+        return _gen_r1b9(rng, _RUNG_SPEC["R1b9"][split], n, seed=seed, split=split)
+    if rung == "R1b10":
+        return _gen_r1b10(rng, _RUNG_SPEC["R1b10"][split], n, seed=seed, split=split)
     if rung == "R1b":
         return _gen_r1b(rng, _RUNG_SPEC["R1b"][split], n, seed=seed, split=split)
     if rung == "R2a":

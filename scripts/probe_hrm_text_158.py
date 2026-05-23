@@ -48,6 +48,8 @@ from calm.hrm_text_158.curriculum import (
     r1b6_one_digit_audit_rows,
     r1b7_one_digit_audit_rows,
     r1b8_one_digit_audit_rows,
+    r1b9_one_digit_audit_rows,
+    r1b10_one_digit_audit_rows,
 )
 
 # Per-rung audit registry (codex msg 1779523412979-ff88b885 + R1b6 added
@@ -56,7 +58,12 @@ from calm.hrm_text_158.curriculum import (
 # added per codex msg 1779547753761-5711d790 under durable gabe
 # provenance relay 1779547541812; R1b8 added per codex msg
 # 1779550489408-f40f66ab after R1b7 commit 682659b ADVANCED + A0
-# exhaustive audit PASS).
+# exhaustive audit PASS; R1b9 added per codex msg 1779554293017-3ba4b4ee
+# after R-C diagnostic PASS msg 1779554256972, parent = R1b3-repair
+# candidate banked as new chain head; R1b10 added per codex msg
+# 1779556007032-4c8f2a3e after R1b9 acceptance PASS msg 1779555982684,
+# parent = R1b9 candidate banked as new chain head, completes
+# constant-K single-digit addition jigsaw K=1..K=9).
 # Each entry maps rung name -> callable(seed) -> list of 9 audit rows.
 # When `probe_curriculum` runs, it iterates this registry against the
 # `rungs` argument so every audit-eligible rung present gets a keyed
@@ -67,6 +74,8 @@ ONE_DIGIT_AUDIT_REGISTRY = {
     "R1b6": r1b6_one_digit_audit_rows,
     "R1b7": r1b7_one_digit_audit_rows,
     "R1b8": r1b8_one_digit_audit_rows,
+    "R1b9": r1b9_one_digit_audit_rows,
+    "R1b10": r1b10_one_digit_audit_rows,
 }
 
 
@@ -885,10 +894,12 @@ def probe_exhaustive_finite_supports(
     probe_batch_size: int = 32,
 ) -> dict:
     """Exhaustive finite-support audit for the active math chain
-    (R0..R1b8). Per codex msg 1779552750209-3218959b after R1b8 commit
+    (R0..R1b10). Per codex msg 1779552750209-3218959b after R1b8 commit
     1a14a09. Promoted from /tmp helper to committed tooling because
     sampled probes can hide cluster regressions and boundary singletons
-    that exhaustive audit catches deterministically.
+    that exhaustive audit catches deterministically. R1b9 added per
+    codex msg 1779554293017-3ba4b4ee. R1b10 added per codex msg
+    1779556007032-4c8f2a3e.
 
     Iterates `build_exhaustive_supports()` per rung, decodes via the
     faststack path (cached ternary + KV + batched eval when enabled),
@@ -1145,7 +1156,7 @@ if __name__ == "__main__":
     # from /tmp helper to committed tooling.
     ap.add_argument("--exhaustive-finite-supports", action="store_true",
                     help="Run exhaustive finite-support audit on the active "
-                         "math chain (R0..R1b8) instead of sampled per-rung "
+                         "math chain (R0..R1b10) instead of sampled per-rung "
                          "probe. Conflicts with --curriculum-rungs. Per-rung "
                          "supports built via "
                          "calm.hrm_text_158.curriculum.exhaustive_supports."

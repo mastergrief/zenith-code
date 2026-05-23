@@ -24,8 +24,16 @@ from typing import Callable
 # minus R3/R4/R5/R6 which are not yet at finite-support training stage).
 EXHAUSTIVE_ACTIVE_RUNGS: tuple[str, ...] = (
     "R0", "R1", "R1b1", "R1b2", "R1b3",
-    "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8",
+    "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9",
 )
+
+# R1b10 is PARKED (codex msg 1779558351771-055c2265 after 3 failed
+# promotion attempts: R1b10 K=9 supervision destabilizes R1b2 K=-1
+# subtraction. K=9 support builder remains in `_BUILDERS` for explicit
+# diagnostic probes via `--curriculum-rungs R1b10` but is NOT in
+# `EXHAUSTIVE_ACTIVE_RUNGS`, so default A0 aggregate reverts to the
+# R1b9 chain total (1255). Tests pin both invariants.
+PARKED_DIAGNOSTIC_RUNGS: tuple[str, ...] = ("R1b10",)
 
 
 def _r0_support() -> list[tuple[str, int]]:
@@ -90,6 +98,16 @@ def _r1b8_support() -> list[tuple[str, int]]:
     return [(f"what is {a} plus 7?", a + 7) for a in range(1, 93)]
 
 
+def _r1b9_support() -> list[tuple[str, int]]:
+    """R1b9: K=8 plus, A in [1, 91] = 91 rows."""
+    return [(f"what is {a} plus 8?", a + 8) for a in range(1, 92)]
+
+
+def _r1b10_support() -> list[tuple[str, int]]:
+    """R1b10: K=9 plus, A in [1, 90] = 90 rows."""
+    return [(f"what is {a} plus 9?", a + 9) for a in range(1, 91)]
+
+
 _BUILDERS: dict[str, Callable[[], list[tuple[str, int]]]] = {
     "R0": _r0_support,
     "R1": _r1_support,
@@ -101,6 +119,8 @@ _BUILDERS: dict[str, Callable[[], list[tuple[str, int]]]] = {
     "R1b6": _r1b6_support,
     "R1b7": _r1b7_support,
     "R1b8": _r1b8_support,
+    "R1b9": _r1b9_support,
+    "R1b10": _r1b10_support,
 }
 
 # Expected per-rung row counts (constant; tests assert this matches builders).
@@ -115,8 +135,17 @@ EXHAUSTIVE_EXPECTED_COUNTS: dict[str, int] = {
     "R1b6": 94,
     "R1b7": 93,
     "R1b8": 92,
+    "R1b9": 91,
+    "R1b10": 90,
 }
-EXHAUSTIVE_EXPECTED_AGGREGATE: int = sum(EXHAUSTIVE_EXPECTED_COUNTS.values())  # 1164
+# Aggregate is computed from ACTIVE rungs only, not every known count.
+# Parked diagnostic rungs (e.g. R1b10) keep their entries in
+# `EXHAUSTIVE_EXPECTED_COUNTS` for explicit per-rung probes/tests but
+# are excluded from the active-chain aggregate so default A0 reverts
+# to the R1b9 chain head total.
+EXHAUSTIVE_EXPECTED_AGGREGATE: int = sum(
+    EXHAUSTIVE_EXPECTED_COUNTS[r] for r in EXHAUSTIVE_ACTIVE_RUNGS
+)  # 1255
 
 
 def build_exhaustive_supports() -> dict[str, list[tuple[str, int]]]:

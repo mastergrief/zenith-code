@@ -32,14 +32,18 @@ def test_build_exhaustive_supports_returns_active_chain() -> None:
     assert list(supports.keys()) == list(EXHAUSTIVE_ACTIVE_RUNGS)
     assert set(supports.keys()) == {
         "R0", "R1", "R1b1", "R1b2", "R1b3",
-        "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8",
+        "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9",
     }
 
 
 def test_per_rung_support_counts() -> None:
-    """Per-rung row counts match EXHAUSTIVE_EXPECTED_COUNTS."""
+    """Per-rung row counts match EXHAUSTIVE_EXPECTED_COUNTS for ACTIVE
+    rungs. Parked/diagnosis-only rungs (e.g. R1b10) keep their entries
+    in EXHAUSTIVE_EXPECTED_COUNTS for explicit per-rung probes but are
+    not in `build_exhaustive_supports()` default output."""
     supports = build_exhaustive_supports()
-    for rung, expected_count in EXHAUSTIVE_EXPECTED_COUNTS.items():
+    for rung in EXHAUSTIVE_ACTIVE_RUNGS:
+        expected_count = EXHAUSTIVE_EXPECTED_COUNTS[rung]
         assert len(supports[rung]) == expected_count, (
             f"{rung} count: expected {expected_count}, got {len(supports[rung])}"
         )
@@ -54,13 +58,57 @@ def test_r1b8_included_in_active_audit_list() -> None:
     assert len(supports["R1b8"]) == 92
 
 
-def test_aggregate_total_equals_1164() -> None:
-    """Codex spec: aggregate total exactly 1164 for R0..R1b8 active chain."""
-    assert EXHAUSTIVE_EXPECTED_AGGREGATE == 1164
+def test_r1b9_included_in_active_audit_list() -> None:
+    """R1b9 explicitly included (codex msg 1779554293017 ask).
+    Guards against drift if R1b9 is later split or renamed."""
+    assert "R1b9" in EXHAUSTIVE_ACTIVE_RUNGS
+    supports = build_exhaustive_supports()
+    assert "R1b9" in supports
+    assert len(supports["R1b9"]) == 91
+
+
+def test_r1b10_NOT_in_active_audit_list() -> None:
+    """Per codex msg 1779558351771-055c2265: R1b10 PARKED, must NOT be
+    in `EXHAUSTIVE_ACTIVE_RUNGS` so default A0 aggregate reverts to
+    R1b9 chain total. Generator/support code stays reachable in
+    `_BUILDERS` for explicit single-rung probes."""
+    assert "R1b10" not in EXHAUSTIVE_ACTIVE_RUNGS, (
+        f"R1b10 must be excluded from active rungs (parked); got {EXHAUSTIVE_ACTIVE_RUNGS}"
+    )
+    supports = build_exhaustive_supports()
+    assert "R1b10" not in supports, (
+        f"R1b10 must NOT appear in default exhaustive supports; got {list(supports)}"
+    )
+
+
+def test_r1b10_support_remains_reachable_for_explicit_diagnosis() -> None:
+    """R1b10 builder/count stay in `_BUILDERS` + `EXHAUSTIVE_EXPECTED_COUNTS`
+    so explicit per-rung diagnostic probes still work (preserves the
+    partition-math reproducibility receipts)."""
+    from calm.hrm_text_158.curriculum.exhaustive_supports import (
+        _BUILDERS, EXHAUSTIVE_EXPECTED_COUNTS, PARKED_DIAGNOSTIC_RUNGS,
+    )
+    assert "R1b10" in _BUILDERS, "R1b10 builder must stay reachable for diagnostic"
+    assert "R1b10" in EXHAUSTIVE_EXPECTED_COUNTS, "R1b10 count must stay reachable"
+    assert EXHAUSTIVE_EXPECTED_COUNTS["R1b10"] == 90
+    rows = _BUILDERS["R1b10"]()
+    assert len(rows) == 90, f"R1b10 builder must produce 90 rows; got {len(rows)}"
+    assert "R1b10" in PARKED_DIAGNOSTIC_RUNGS, (
+        f"R1b10 must be listed in PARKED_DIAGNOSTIC_RUNGS"
+    )
+
+
+def test_aggregate_total_equals_1255_active_only() -> None:
+    """Per codex msg 1779558351771-055c2265: aggregate computed from
+    ACTIVE rungs only, not every known count. With R1b10 parked,
+    active aggregate reverts to R1b9 chain total = 1255."""
+    assert EXHAUSTIVE_EXPECTED_AGGREGATE == 1255, (
+        f"active aggregate must be 1255 (R0..R1b9); got {EXHAUSTIVE_EXPECTED_AGGREGATE}"
+    )
     supports = build_exhaustive_supports()
     actual_aggregate = sum(len(v) for v in supports.values())
-    assert actual_aggregate == 1164, (
-        f"aggregate exhaustive support count: expected 1164, got {actual_aggregate}"
+    assert actual_aggregate == 1255, (
+        f"default A0 aggregate must be 1255; got {actual_aggregate}"
     )
 
 
@@ -77,6 +125,7 @@ def test_each_rung_template_well_formed() -> None:
         "R1b6": lambda q, e: " plus 5?" in q,
         "R1b7": lambda q, e: " plus 6?" in q,
         "R1b8": lambda q, e: " plus 7?" in q,
+        "R1b9": lambda q, e: " plus 8?" in q,
     }
     for rung, check in template_checks.items():
         for q, e in supports[rung]:
@@ -126,7 +175,7 @@ def test_audit_supports_match_make_rung_examples_template() -> None:
     curriculum data generator."""
     supports = build_exhaustive_supports()
     # Sample-row spot-check per rung — assertions of arithmetic semantics
-    for rung in ("R1b1", "R1b3", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8"):
+    for rung in ("R1b1", "R1b3", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9"):
         gen_rows = make_rung_examples(rung, n=100, seed=42, split="train")
         # All gen rows must have the same template shape as audit rows
         audit_first = supports[rung][0]

@@ -18,7 +18,7 @@ def build_rung_splits(
     n_train: int = 2000,
     n_held_out: int = 400,
     seed: int = 42,
-    rungs: tuple[str, ...] = ("R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R3", "R4", "R5", "R6"),
+    rungs: tuple[str, ...] = ("R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R3", "R4", "R5", "R6"),
 ) -> dict[str, dict[str, list[dict]]]:
     """Build train + held_out splits for all rungs.
 
@@ -33,14 +33,25 @@ def build_rung_splits(
     K=5 carry-stratified added per gabe greenlight 1779545575582-7c52a912) +
     1779547753761-5711d790 (R1b7 K=6 carry-stratified added under durable
     gabe provenance relay 1779547541812) + 1779550489408-f40f66ab (R1b8
-    K=7 carry-stratified added after R1b7 commit 682659b + A0 audit PASS):
+    K=7 carry-stratified added after R1b7 commit 682659b + A0 audit PASS) +
+    1779554293017-3ba4b4ee (R1b9 K=8 carry-stratified added after R-C
+    diagnostic PASS msg 1779554256972, parent = R1b3-repair candidate
+    banked as new chain head with A0 1163/1164 strictly better than R1b8
+    baseline 1161/1164) + 1779558351771-055c2265 (R1b10 K=9 PARKED as
+    diagnosis-only after three failed promotion attempts from R1b9
+    chain head; R1b10 supervision reliably destabilizes R1b2 K=-1
+    subtraction; R1b10 stays reachable via explicit args for diagnosis
+    but is OUT of default splits and exhaustive active rungs):
 
       R0 -> R1 -> R1b1 (K=1 plus) -> R1b2 (K=-1 minus) -> R1b3 (K=2 plus,
       PASSED at 175d327) -> R1b4v2 (K=3 plus, ADVANCED at b368b81 via
       seed=2 head) -> R1b5 (K=4 plus, carry-stratified, ADVANCED via
       seed=17) -> R1b6 (K=5 plus, carry-stratified, ADVANCED at 128b097
       via replay50_lr5e4) -> R1b7 (K=6 plus, carry-stratified, ADVANCED
-      at 682659b via R1b2-retained chain) -> R1b8 (K=7 plus, NEW) ->
+      at 682659b via R1b2-retained chain) -> R1b8 (K=7 plus, ADVANCED
+      at 1a14a09 via replay65_n10k_lr5e4) -> R1b9 (K=8 plus, banked as
+      chain head via msg 1779556007032 from R1b3-repair parent with
+      A0 1254/1255 strict + 1255/1255 parsed) -> [R1b10 K=9 PARKED] ->
       R3 -> ...
 
     Diagnosis-only and OUT of default: R1b2a (failed v1+v2 lowmult),
