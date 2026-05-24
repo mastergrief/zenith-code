@@ -42,9 +42,12 @@ def _fused_quantize_kernel(
 ):
     """Per-element: w_q_scaled[i] = round(w[i] / scale).clamp(-1, 1) * scale.
 
-    Round semantics: half-to-even (matches PyTorch torch.round default) via
-    libdevice.rintf. Falls back to half-away-from-zero only if libdevice
-    is unavailable (Triton 3.6.0 ships it; we don't expect the fallback).
+    Round semantics: half-to-even (matches PyTorch torch.round default),
+    implemented libdevice-free via a pure-Triton banker's round (tl.floor +
+    parity check). Avoids tl.extra.libdevice.rint, which is not exposed at
+    compile time on all Triton versions (notably triton 3.1.0 from the torch
+    cu121 wheel required for Pascal sm_61); newer Triton resolves it lazily
+    at JIT, older does not.
     """
     pid = tl.program_id(0)
     offs = pid * BLOCK + tl.arange(0, BLOCK)
@@ -54,8 +57,15 @@ def _fused_quantize_kernel(
     # 1/scale once; multiply for the divide. Branch is fine — scalar.
     inv_s = 1.0 / s
     q = w * inv_s
-    # Round to nearest even (matches PyTorch torch.round default).
-    q_round = tl.extra.libdevice.rint(q)
+    # Round to nearest even (matches PyTorch torch.round default), libdevice-
+    # free so it JIT-compiles on Triton versions that don't expose
+    # tl.extra.libdevice (e.g. triton 3.1.0 / Pascal cu121). Banker's round:
+    # bump up when fractional part > 0.5, or == 0.5 with an odd floor.
+    f = tl.floor(q)
+    r = q - f
+    is_odd = (f.to(tl.int32) & 1) == 1
+    round_up = (r > 0.5) | ((r == 0.5) & is_odd)
+    q_round = tl.where(round_up, f + 1.0, f)
     # Clamp to {-1, 0, +1}
     q_clamped = tl.where(q_round > 1.0, 1.0, tl.where(q_round < -1.0, -1.0, q_round))
     out = q_clamped * s
