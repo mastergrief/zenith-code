@@ -1,0 +1,221 @@
+"""Tests for the retained-support consistency registry (codex registry slice
+msg 1779656084090, Step 1 assertions).
+
+Covers: stable count/hash/order for L0b + math_a0; math_a0 contains
+`what is 10 minus 1?`@9; seed handling (L0b seed-dependent, math_a0
+seed-independent); generic K-cyclic sampler + per-support seed namespaces;
+ckpt metadata (retained_support_profile source-of-truth; legacy l0b fields
+ONLY when L0b-only); train() guards for invalid / duplicate / conflicting /
+unauthorized profiles fire before any training work. No GPU / no model load.
+"""
+import importlib.util
+import os
+import sys
+
+_REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+if _REPO not in sys.path:
+    sys.path.insert(0, _REPO)
+
+_spec = importlib.util.spec_from_file_location(
+    "_train_hrm_text_158", os.path.join(_REPO, "scripts", "train_hrm_text_158.py")
+)
+_thr = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_thr)
+
+_support = _thr._retained_support
+_sampler_seed = _thr._retained_sampler_seed
+_Sampler = _thr._RetainedSupportSampler
+_REGISTRY = _thr._RETAINED_SUPPORT_REGISTRY
+
+# L0b seed-17 canonical hash, pinned from the F.2f runs (support_hash logged).
+_L0B_SEED17_HASH = "89174273d21845bc"
+
+
+# --------------------------------------------------------------------------- #
+# Registry membership + per-support snapshot count/order/hash
+# --------------------------------------------------------------------------- #
+
+def test_registry_names():
+    assert _REGISTRY == ("L0b", "math_a0")
+
+
+def test_l0b_support_snapshot():
+    rows, h = _support("L0b", 17)
+    assert len(rows) == 230
+    assert h == _L0B_SEED17_HASH  # bit-identical to the pre-registry L0b helper
+    assert rows == sorted(rows, key=lambda r: (r[2], r[0], r[1]))
+    assert all(q.startswith("calculate ") and q.endswith(".") for q, _e, _sr in rows)
+
+
+def test_math_a0_support_snapshot():
+    rows, h = _support("math_a0", 17)
+    assert len(rows) == 1255
+    assert len(h) == 16 and all(c in "0123456789abcdef" for c in h)
+    assert rows == sorted(rows, key=lambda r: (r[2], r[0], r[1]))
+    assert all(q.startswith("what is ") and q.endswith("?") for q, _e, _sr in rows)
+
+
+def test_math_a0_contains_10_minus_1_at_9():
+    # The row F.2f regressed; protecting it via parent-KL is the whole point.
+    rows, _ = _support("math_a0", 17)
+    assert ("what is 10 minus 1?", 9, "R1b2") in rows
+
+
+def test_determinism_same_name_seed():
+    for name, seed in (("L0b", 17), ("math_a0", 17)):
+        r1, h1 = _support(name, seed)
+        r2, h2 = _support(name, seed)
+        assert r1 == r2 and h1 == h2
+
+
+def test_l0b_seed_dependent_math_a0_seed_independent():
+    assert _support("L0b", 17)[1] != _support("L0b", 42)[1], "L0b support is seed-dependent"
+    assert _support("math_a0", 17)[1] == _support("math_a0", 42)[1], "math_a0 is exhaustive/seed-independent"
+
+
+def test_unknown_support_name_raises():
+    import pytest
+    with pytest.raises(ValueError, match="unknown retained support"):
+        _support("bogus", 17)
+
+
+# --------------------------------------------------------------------------- #
+# Per-support sampler seed namespaces + generic K-cyclic sampler
+# --------------------------------------------------------------------------- #
+
+def test_sampler_seed_namespaces():
+    # L0b keeps the legacy "l0b_consistency" namespace (bit-compat); others use "retained:<name>".
+    assert _sampler_seed("L0b", 17) == _thr._stable_curriculum_seed(17, "l0b_consistency")
+    assert _sampler_seed("math_a0", 17) == _thr._stable_curriculum_seed(17, "retained:math_a0")
+    assert _sampler_seed("L0b", 17) != _sampler_seed("math_a0", 17)
+
+
+def test_l0b_alias_sampler_matches_namespace():
+    s = _thr._L0bConsistencySampler(n=230, seed=17, batch=8)
+    assert s.support_seed == _sampler_seed("L0b", 17)
+
+
+def test_generic_sampler_determinism_and_coverage():
+    seed = _sampler_seed("math_a0", 17)
+    a = _Sampler(n=1255, support_seed=seed, batch=8)
+    b = _Sampler(n=1255, support_seed=seed, batch=8)
+    assert a.perm == b.perm
+    assert [a.next_indices() for _ in range(3)] == [b.next_indices() for _ in range(3)]
+    # different support_seed -> different perm
+    c = _Sampler(n=1255, support_seed=_sampler_seed("L0b", 17), batch=8)
+    assert c.perm != a.perm
+    # perm is a permutation; one cyclic pass covers all rows
+    fresh = _Sampler(n=1255, support_seed=seed, batch=8)
+    assert sorted(fresh.perm) == list(range(1255))
+    seen = set()
+    for _ in range((1255 + 7) // 8):
+        seen.update(fresh.next_indices())
+    assert seen == set(range(1255))
+
+
+def test_sampler_rejects_bad_args():
+    import pytest
+    with pytest.raises(ValueError):
+        _Sampler(n=0, support_seed=1, batch=8)
+    with pytest.raises(ValueError):
+        _Sampler(n=10, support_seed=1, batch=0)
+
+
+# --------------------------------------------------------------------------- #
+# ckpt metadata: retained_support_profile source-of-truth; legacy fields L0b-only
+# --------------------------------------------------------------------------- #
+
+class _CfgStub:
+    max_seq_len = 384; n_layers = 8; hidden_size = 512; num_heads = 4
+    expansion = 4; H_cycles = 2; L_cycles = 3; half_layers = True
+    bp_warmup_ratio = 0.2; bp_min_steps = 2; bp_max_steps = 5
+    norm_type = "rms"; norm_eps = 1e-5; rope_theta = 1e4
+    attn_type = "a"; init_type = "i"; pos_emb_type = "p"; use_ternary_bulk = True
+
+
+class _TokStub:
+    vocab_size = 260
+    normalizer_version = "byte_utf8_v1"
+    def vocab_as_list(self):
+        return []
+
+
+def _meta(name, weight, count, h):
+    return {"name": name, "weight": weight, "batch": 8, "count": count, "hash": h}
+
+
+def test_ckpt_meta_l0b_only_keeps_legacy_fields():
+    out = _thr._build_ckpt_config(
+        None, _TokStub(), _CfgStub(), 384, 8,
+        parent_consistency_weight=1.0, parent_consistency_temp=1.0,
+        retained_support_meta=[_meta("L0b", 1.0, 230, _L0B_SEED17_HASH)],
+        retained_l0b_only=True,
+    )
+    assert "retained_support_profile" in out
+    assert out["retained_support_profile"][0]["name"] == "L0b"
+    # L0b-only ⇒ legacy fields ALSO present for back-compat.
+    assert out["l0b_consistency_weight"] == 1.0
+    assert out["l0b_consistency_support_hash"] == _L0B_SEED17_HASH
+    assert out["l0b_consistency_support_count"] == 230
+
+
+def test_ckpt_meta_mixed_profile_no_legacy_fields():
+    out = _thr._build_ckpt_config(
+        None, _TokStub(), _CfgStub(), 384, 8,
+        parent_consistency_weight=1.0, parent_consistency_temp=1.0,
+        retained_support_meta=[_meta("L0b", 1.0, 230, "aa"), _meta("math_a0", 1.0, 1255, "bb")],
+        retained_l0b_only=False,
+    )
+    names = [s["name"] for s in out["retained_support_profile"]]
+    assert names == ["L0b", "math_a0"]
+    # Mixed ⇒ do NOT pretend it is an old L0b-only checkpoint.
+    assert "l0b_consistency_weight" not in out
+    assert "l0b_consistency_support_hash" not in out
+
+
+# --------------------------------------------------------------------------- #
+# train() profile guards fire before any training work
+# --------------------------------------------------------------------------- #
+
+def test_invalid_support_name_in_profile_raises():
+    import pytest
+    with pytest.raises(ValueError, match="unknown retained support"):
+        _thr.train(retained_support_profile=[("bogus", 1.0)])
+
+
+def test_duplicate_support_names_raise():
+    import pytest
+    with pytest.raises(ValueError, match="duplicate retained-support names"):
+        _thr.train(retained_support_profile=[("L0b", 1.0), ("L0b", 0.5)])
+
+
+def test_legacy_explicit_l0b_conflict_raises():
+    import pytest
+    with pytest.raises(ValueError, match="conflicting L0b config"):
+        _thr.train(retained_support_profile=[("L0b", 1.0)], l0b_consistency_weight=0.5)
+
+
+def test_negative_profile_weight_raises():
+    import pytest
+    with pytest.raises(ValueError, match="must be >= 0"):
+        _thr.train(retained_support_profile=[("L0b", -1.0)])
+
+
+def test_profile_requires_load_from():
+    import pytest
+    with pytest.raises(ValueError, match="requires --load-from"):
+        _thr.train(retained_support_profile=[("math_a0", 1.0)])
+
+
+def test_profile_requires_curriculum_mode():
+    import pytest
+    with pytest.raises(ValueError, match="requires curriculum"):
+        _thr.train(retained_support_profile=[("math_a0", 1.0)], load_from="x", curriculum_rung=None)
+
+
+if __name__ == "__main__":
+    for _name, _fn in sorted(globals().items()):
+        if _name.startswith("test_") and callable(_fn):
+            _fn()
+            print(f"  {_name}: PASS")
+    print("retained-support-registry tests: PASS")

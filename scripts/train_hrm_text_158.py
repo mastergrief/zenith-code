@@ -314,50 +314,80 @@ def _compose_anchor_rows(
     return _rows(retention_anchor_set) * retention_anchor_repeat
 
 
-def _l0b_consistency_support(seed: int) -> tuple[list[tuple[str, int, str]], str]:
-    """Canonical-ordered L0b retained-support snapshot + content hash.
+_RETAINED_SUPPORT_REGISTRY: tuple[str, ...] = ("L0b", "math_a0")
 
-    Determinism contract (codex msg 1779647581438-d34c44db): the full 230-row
-    L0b support (train+held) for `seed`, sorted stably by
+
+def _retained_support(name: str, seed: int) -> tuple[list[tuple[str, int, str]], str]:
+    """Canonical-ordered retained-support snapshot + 16-hex content hash.
+
+    Generalizes the L0b-specific support (codex registry slice msg
+    1779656084090) to a named registry of validated finite supports that
+    become PROTECTED supports (soft forward-KL toward the frozen parent):
+
+    - "L0b"     ← `_l0b_support(seed)` — 230 rows, `calculate <expr>.` surface.
+                  SEED-DEPENDENT (two_digit picks seeded by `_stable_seed
+                  ("L0b_partition", seed, ...)`) — build with curriculum_seed.
+    - "math_a0" ← `build_exhaustive_supports()` flattened — 1255 rows,
+                  `what is <expr>?` surface, SEED-INDEPENDENT (exhaustive).
+                  Contains `what is 10 minus 1?`->9 (R1b2), the row F.2f
+                  regressed; protecting it via parent-KL is the broad fix.
+
+    Rows are `(question, expected, source_rung)` sorted stably by
     `(source_rung, question, expected)` so repeated construction is
-    byte-identical regardless of the generator's internal emission order.
-    Returns `(rows, support_hash)`. The 16-hex support_hash pins WHICH rows
-    are protected into the train log + ckpt config, so rerunning the same
-    command guards the same rows in the same order.
-
-    NOTE the support SET is seed-dependent (two_digit picks in
-    `_enumerate_partition_l0b` are seeded by `_stable_seed("L0b_partition",
-    seed, ...)`); building with `curriculum_seed` is REQUIRED so the held
-    holes observed under that seed are actually in the protected set.
+    byte-identical; the hash pins WHICH rows are protected into log + ckpt.
     """
     import hashlib
-    from calm.hrm_text_158.curriculum.language_supports import _l0b_support
-    rows = sorted(_l0b_support(seed), key=lambda r: (r[2], r[0], r[1]))
+    if name == "L0b":
+        from calm.hrm_text_158.curriculum.language_supports import _l0b_support
+        rows = [(q, e, sr) for (q, e, sr) in _l0b_support(seed)]
+    elif name == "math_a0":
+        from calm.hrm_text_158.curriculum.exhaustive_supports import build_exhaustive_supports
+        rows = [(q, e, rung)
+                for rung, pairs in build_exhaustive_supports().items()
+                for (q, e) in pairs]
+    else:
+        raise ValueError(
+            f"unknown retained support {name!r}; valid: {_RETAINED_SUPPORT_REGISTRY}"
+        )
+    rows = sorted(rows, key=lambda r: (r[2], r[0], r[1]))
     support_hash = hashlib.sha256(repr(rows).encode("utf-8")).hexdigest()[:16]
     return rows, support_hash
 
 
-class _L0bConsistencySampler:
-    """Deterministic K-cyclic side-batch index sampler over the L0b support.
+def _retained_sampler_seed(name: str, seed: int) -> int:
+    """Per-support deterministic sampler seed. L0b keeps the legacy
+    `"l0b_consistency"` namespace so its sampler is bit-identical to the
+    pre-registry slice; other supports use `"retained:<name>"`."""
+    ns = "l0b_consistency" if name == "L0b" else f"retained:{name}"
+    return _stable_curriculum_seed(seed, ns)
 
-    Determinism contract (codex msg 1779647581438-d34c44db): ONE seeded
-    permutation derived from `(curriculum_seed, "l0b_consistency")`, then a
-    cyclic cursor walks it in fixed-size K batches, wrapping at the end. Pure
-    index arithmetic — no DataLoader / worker randomness — so a rerun yields
-    identical batches in identical order. K-cyclic (NOT full-N-every-step) per
-    codex +1 msg 1779647554279-522ba519: even coverage, cheap.
+
+def _l0b_consistency_support(seed: int) -> tuple[list[tuple[str, int, str]], str]:
+    """Back-compat alias for `_retained_support("L0b", seed)`."""
+    return _retained_support("L0b", seed)
+
+
+class _RetainedSupportSampler:
+    """Deterministic K-cyclic side-batch index sampler over a retained support.
+
+    ONE seeded permutation (from `support_seed`), then a cyclic cursor walks it
+    in fixed-size K batches, wrapping at the end. Pure index arithmetic — no
+    DataLoader / worker randomness — so a rerun yields identical batches.
+    K-cyclic (NOT full-N-every-step): even coverage, cheap. Per-support seed is
+    derived by the caller (`_retained_sampler_seed`) so each support samples
+    independently.
     """
 
-    def __init__(self, n: int, seed: int, batch: int):
+    def __init__(self, n: int, support_seed: int, batch: int):
         if n <= 0:
-            raise ValueError(f"_L0bConsistencySampler needs n > 0, got {n}")
+            raise ValueError(f"_RetainedSupportSampler needs n > 0, got {n}")
         if batch <= 0:
-            raise ValueError(f"_L0bConsistencySampler needs batch > 0, got {batch}")
+            raise ValueError(f"_RetainedSupportSampler needs batch > 0, got {batch}")
         self.n = n
         self.batch = batch
-        self.support_seed = _stable_curriculum_seed(seed, "l0b_consistency")
+        self.support_seed = support_seed
         g = torch.Generator()
-        g.manual_seed(self.support_seed)
+        g.manual_seed(support_seed)
         self.perm = torch.randperm(n, generator=g).tolist()
         self.cursor = 0
         self.rows_seen = 0
@@ -377,6 +407,15 @@ class _L0bConsistencySampler:
             "full_cycles": self.rows_seen // self.n,
             "support_seed": self.support_seed,
         }
+
+
+class _L0bConsistencySampler(_RetainedSupportSampler):
+    """Back-compat: pre-registry L0b sampler. Constructs with (n, seed, batch),
+    deriving the legacy `"l0b_consistency"` seed namespace internally — so
+    existing L0b tests + bit-for-bit L0b behavior are preserved."""
+
+    def __init__(self, n: int, seed: int, batch: int):
+        super().__init__(n, _retained_sampler_seed("L0b", seed), batch)
 
 
 # ----------------------------------------------------------------------------- #
@@ -456,6 +495,17 @@ def train(
     # --parent-consistency-temp. Codex +1 msg 1779647554279-522ba519.
     l0b_consistency_weight: float = 0.0,
     l0b_consistency_batch: int = 8,
+    # Retained-support consistency registry (codex msg 1779656084090): the
+    # generalization of l0b_consistency to a named registry of validated finite
+    # supports (`_RETAINED_SUPPORT_REGISTRY`). `retained_support_profile` is a
+    # list of (name, weight) pairs; each active support side-batches a K-cyclic
+    # sample and adds soft forward-KL(parent || child) (NO CE), with its own
+    # backward (sequential accumulation -> peak VRAM bounded). Legacy
+    # `--l0b-consistency-weight` maps in as ("L0b", weight) with conflict
+    # detection. `retained_support_batch` is the per-support side-batch K
+    # (falls back to l0b_consistency_batch, then 8).
+    retained_support_profile: list[tuple[str, float]] | None = None,
+    retained_support_batch: int | None = None,
     # Diagnostic ONLY (codex msg 1779652915624): when True, build the training
     # DataLoader WITHOUT the explicit seeded generator (pre-1656ead global-RNG
     # shuffle order). Default False keeps the deterministic seeded generator.
@@ -482,30 +532,66 @@ def train(
             f"{parent_consistency_temp}); <= 0 is an invalid distillation "
             f"temperature (division by zero)."
         )
-    # L0b retained-support consistency guards (fire BEFORE any data/model work
-    # so tests + --dry-run + programmatic callers reject bad args loudly).
+    # Retained-support consistency guards + profile resolution (codex registry
+    # slice msg 1779656084090). Fire BEFORE any data/model work so tests +
+    # --dry-run + programmatic callers reject bad args loudly.
     if l0b_consistency_weight < 0.0:
         raise ValueError(
             f"--l0b-consistency-weight must be >= 0 (got "
             f"{l0b_consistency_weight}); a negative weight would reward drift "
             f"from the parent on retained L0b rows."
         )
+    # Effective profile = explicit --retained-support pairs + legacy
+    # --l0b-consistency-weight mapped to ("L0b", weight), with conflict detection.
+    _profile: list[tuple[str, float]] = list(retained_support_profile or [])
+    _profile_names = [n for (n, _w) in _profile]
     if l0b_consistency_weight > 0.0:
+        if "L0b" in _profile_names:
+            raise ValueError(
+                "conflicting L0b config: both --l0b-consistency-weight and an "
+                "explicit --retained-support L0b:<w> were given; specify L0b "
+                "exactly once."
+            )
+        _profile.append(("L0b", l0b_consistency_weight))
+        _profile_names.append("L0b")
+    for nm, wt in _profile:
+        if nm not in _RETAINED_SUPPORT_REGISTRY:
+            raise ValueError(
+                f"unknown retained support {nm!r}; valid: "
+                f"{_RETAINED_SUPPORT_REGISTRY}"
+            )
+        if wt < 0.0:
+            raise ValueError(
+                f"retained-support weight for {nm!r} must be >= 0 (got {wt})"
+            )
+    if len(_profile_names) != len(set(_profile_names)):
+        raise ValueError(
+            f"duplicate retained-support names in profile: {_profile_names}"
+        )
+    # Only weight>0 supports are active.
+    effective_retained_profile: list[tuple[str, float]] = [
+        (nm, wt) for (nm, wt) in _profile if wt > 0.0
+    ]
+    effective_retained_batch = (
+        retained_support_batch if retained_support_batch is not None
+        else l0b_consistency_batch
+    )
+    if effective_retained_profile:
         if load_from is None:
             raise ValueError(
-                "--l0b-consistency-weight > 0 requires --load-from "
+                "retained-support consistency (weight > 0) requires --load-from "
                 "(the frozen parent reference checkpoint)."
             )
         if curriculum_rung is None:
             raise ValueError(
-                "--l0b-consistency-weight > 0 requires curriculum mode "
-                "(--curriculum-rung); the L0b support snapshot is keyed by "
+                "retained-support consistency (weight > 0) requires curriculum "
+                "mode (--curriculum-rung); support snapshots are keyed by "
                 "--curriculum-seed."
             )
-        if l0b_consistency_batch < 1:
+        if effective_retained_batch < 1:
             raise ValueError(
-                f"--l0b-consistency-batch must be >= 1 when "
-                f"--l0b-consistency-weight > 0; got {l0b_consistency_batch}"
+                f"retained-support batch must be >= 1 when any support is "
+                f"active; got {effective_retained_batch}"
             )
 
     # Slice B phase-gate (codex msg 1779565128372-c6872566 catch): anchors are
@@ -828,11 +914,11 @@ def train(
     # inference BitLinear forward) while the child may use the native-train
     # forward, so step-0 KL is ~0 within FP tolerance, not bitwise.
     parent_m = None
-    if parent_consistency_weight > 0.0 or l0b_consistency_weight > 0.0:
+    if parent_consistency_weight > 0.0 or effective_retained_profile:
         if load_from is None:
             raise ValueError(
-                "parent/L0b-consistency weight > 0 requires --load-from "
-                "(the frozen parent reference checkpoint)."
+                "parent/retained-support consistency (weight > 0) requires "
+                "--load-from (the frozen parent reference checkpoint)."
             )
         parent_hrm = HierarchicalReasoningModel(cfg)
         parent_m = LMHead(parent_hrm, LMHeadConfig(vocab_size=tok.vocab_size)).to(device)
@@ -842,50 +928,63 @@ def train(
             p.requires_grad_(False)
         print(f"[hrm158] frozen parent reference LOADED from {load_from} "
               f"(parent_consistency_weight={parent_consistency_weight} "
-              f"l0b_consistency_weight={l0b_consistency_weight} "
+              f"retained_support_profile={effective_retained_profile} "
               f"temp={parent_consistency_temp})", flush=True)
 
-    # L0b retained-support KL-only consistency setup (opt-in). Build the
-    # canonical-ordered 230-row support snapshot, encode it ONCE, and arm the
-    # deterministic K-cyclic sampler. The L0b side path itself is skipped at
-    # weight 0; the trainer's explicit DataLoader generator (above) is a
-    # separate, always-on determinism change. Built after the dry-run
+    # Retained-support consistency setup (codex registry slice msg 1779656084090).
+    # For each active support: materialize the canonical-ordered snapshot, encode
+    # it ONCE into a CPU cache, and arm an INDEPENDENT deterministic K-cyclic
+    # sampler. Each support side-batches with its OWN backward in the train loop
+    # (sequential accumulation -> peak VRAM bounded, same as the 2ce0da2 fix).
+    # Skipped entirely when the profile is empty. Built after the dry-run
     # early-return so dry runs skip it.
-    l0b_sampler = None
-    l0b_support_hash = None
-    l0b_side_cache = None
-    if l0b_consistency_weight > 0.0:
-        l0b_support_rows, l0b_support_hash = _l0b_consistency_support(curriculum_seed)
-        _side_row_dicts = [
+    # active_supports: list of {name, weight, hash, count, cache, sampler}.
+    active_supports: list[dict] = []
+    for _name, _weight in effective_retained_profile:
+        _rows, _hash = _retained_support(_name, curriculum_seed)
+        _row_dicts = [
             {"question": q, "expected": e, "source_rung": sr}
-            for (q, e, sr) in l0b_support_rows
+            for (q, e, sr) in _rows
         ]
-        tok.assert_corpus_covered(_side_row_dicts, label="l0b_consistency")
-        side_ds = HrmTextGsm8kDataset(_side_row_dicts, tok, max_len=max_len,
-                                      curriculum_rung=None)
-        if side_ds.n_dropped != 0 or len(side_ds) != len(l0b_support_rows):
+        tok.assert_corpus_covered(_row_dicts, label=f"retained:{_name}")
+        _ds = HrmTextGsm8kDataset(_row_dicts, tok, max_len=max_len,
+                                  curriculum_rung=None)
+        if _ds.n_dropped != 0 or len(_ds) != len(_rows):
             raise RuntimeError(
-                f"L0b consistency support lost rows to max_len={max_len} "
-                f"(dropped {side_ds.n_dropped}, kept {len(side_ds)} of "
-                f"{len(l0b_support_rows)}); cannot align the deterministic "
-                f"sampler to the canonical support order."
+                f"retained support {_name!r} lost rows to max_len={max_len} "
+                f"(dropped {_ds.n_dropped}, kept {len(_ds)} of {len(_rows)}); "
+                f"cannot align the deterministic sampler to canonical order."
             )
-        # CPU-resident encoded cache in canonical support order; sampler indexes it.
-        l0b_side_cache = [side_ds[i] for i in range(len(side_ds))]
-        l0b_sampler = _L0bConsistencySampler(
-            n=len(l0b_side_cache), seed=curriculum_seed,
-            batch=l0b_consistency_batch,
+        _cache = [_ds[i] for i in range(len(_ds))]
+        _sampler = _RetainedSupportSampler(
+            n=len(_cache),
+            support_seed=_retained_sampler_seed(_name, curriculum_seed),
+            batch=effective_retained_batch,
         )
-        _first3 = l0b_sampler.perm[: min(3, len(l0b_sampler.perm))]
-        _first_qs = [l0b_support_rows[i][0] for i in _first3]
+        active_supports.append({
+            "name": _name, "weight": _weight, "hash": _hash,
+            "count": len(_cache), "cache": _cache, "sampler": _sampler,
+        })
+        _first3 = _sampler.perm[: min(3, len(_sampler.perm))]
+        _first_qs = [_rows[i][0] for i in _first3]
         print(
-            f"[hrm158] L0b-consistency ENABLED: weight={l0b_consistency_weight} "
-            f"temp={parent_consistency_temp} batch={l0b_consistency_batch} "
-            f"support_name=L0b support_seed={curriculum_seed} "
-            f"support_count={len(l0b_side_cache)} support_hash={l0b_support_hash} "
-            f"sampler_seed={l0b_sampler.support_seed} first3_perm={_first3} "
-            f"first3_q={_first_qs}", flush=True,
+            f"[hrm158] retained-support ENABLED: name={_name} weight={_weight} "
+            f"temp={parent_consistency_temp} batch={effective_retained_batch} "
+            f"support_seed={curriculum_seed} support_count={len(_cache)} "
+            f"support_hash={_hash} sampler_seed={_sampler.support_seed} "
+            f"first3_perm={_first3} first3_q={_first_qs}", flush=True,
         )
+    # L0b-only flag for ckpt-metadata back-compat (codex correction #2): keep
+    # legacy l0b_consistency_* fields ONLY when the effective profile is exactly
+    # single-support L0b; mixed profiles write retained_support_profile only.
+    _retained_l0b_only = (
+        len(active_supports) == 1 and active_supports[0]["name"] == "L0b"
+    )
+    retained_support_meta = [
+        {"name": s["name"], "weight": s["weight"], "batch": effective_retained_batch,
+         "count": s["count"], "hash": s["hash"]}
+        for s in active_supports
+    ]
 
     # Train
     m.train()
@@ -969,15 +1068,18 @@ def train(
             disp_loss = float(loss_main.detach())
             acc_count, acc_total = metrics["accuracy"]
 
-            # --- L0b retained-support KL-only side backward ---
-            # Built AFTER the main graph is freed -> peak VRAM bounded. NO CE:
-            # the side child-forward computes a CE loss internally but it is
-            # DISCARDED (never backpropped); only the KL term flows gradient.
-            # Protects held L0b rows that replay (train-only) + anchors miss.
-            l0b_kl_val = 0.0
-            if l0b_sampler is not None:
-                _idx = l0b_sampler.next_indices()
-                _picked = [l0b_side_cache[i] for i in _idx]
+            # --- Retained-support KL-only side backwards (registry) ---
+            # ONE side batch per active support, each built AFTER the prior
+            # graph is freed -> peak VRAM stays max(one graph) (the 2ce0da2
+            # sequential-backward discipline). NO CE: each side child-forward
+            # computes a CE loss internally but it is DISCARDED (never
+            # backpropped); only the KL term flows gradient. Protects every
+            # validated finite support (L0b held rows; math A0 incl.
+            # `what is 10 minus 1?`) via KL toward the frozen parent.
+            retained_kl_vals: dict[str, float] = {}
+            for _sup in active_supports:
+                _idx = _sup["sampler"].next_indices()
+                _picked = [_sup["cache"][i] for i in _idx]
                 s_inputs = torch.stack([p["inputs"] for p in _picked], 0).to(device)
                 s_labels = torch.stack([p["labels"] for p in _picked], 0).to(device)
                 s_sep = torch.stack([p["sep_position"] for p in _picked], 0).to(device)
@@ -994,17 +1096,18 @@ def train(
                         **extras,
                     )
                 s_is_prior = torch.ones(sB, dtype=torch.bool, device=device)
-                l0b_kl = _parent_consistency_kl(
+                s_kl = _parent_consistency_kl(
                     s_metrics["logits"], s_parent_logits, s_labels, s_is_prior,
                     temp=parent_consistency_temp,
                 )
-                l0b_loss = l0b_consistency_weight * l0b_kl
-                if not torch.isfinite(l0b_loss):
-                    print(f"[NaN-DETECT] step={step} l0b_loss={l0b_loss.item()}", flush=True)
+                s_loss = _sup["weight"] * s_kl
+                if not torch.isfinite(s_loss):
+                    print(f"[NaN-DETECT] step={step} support={_sup['name']} "
+                          f"kl_loss={s_loss.item()}", flush=True)
                     sys.exit(2)
-                l0b_loss.backward()              # accumulates grad, frees side graph
-                l0b_kl_val = float(l0b_kl.detach())
-                disp_loss += float(l0b_loss.detach())
+                s_loss.backward()            # accumulates grad, frees this side graph
+                retained_kl_vals[_sup["name"]] = float(s_kl.detach())
+                disp_loss += float(s_loss.detach())
 
             grad_norm = torch.nn.utils.clip_grad_norm_(m.parameters(), max_norm=1.0)
             if not torch.isfinite(grad_norm):
@@ -1015,7 +1118,9 @@ def train(
             if step == 1 or step % log_every == 0:
                 elapsed = time.time() - start_t
                 pc_str = f" pc_kl={pc_kl_val:.6f}" if parent_consistency_weight > 0.0 else ""
-                l0b_str = f" l0b_kl={l0b_kl_val:.6f}" if l0b_sampler is not None else ""
+                retained_str = "".join(
+                    f" {nm}_kl={v:.6f}" for nm, v in retained_kl_vals.items()
+                )
                 # Peak CUDA memory (codex receipt msg 1779650973993): reserved
                 # can stay high even when allocations are bounded, so report
                 # both. max_memory_allocated is the true peak live tensors.
@@ -1026,7 +1131,7 @@ def train(
                 print(f"[ep {ep:3d} step {step:5d}] loss={disp_loss:.4f} "
                       f"grad_norm={float(grad_norm):.4f} lr={cur_lr:.6f} "
                       f"bp_steps={extras['bp_steps']} "
-                      f"acc={int(acc_count)}/{int(acc_total)}{pc_str}{l0b_str}{mem_str} t={elapsed:.1f}s",
+                      f"acc={int(acc_count)}/{int(acc_total)}{pc_str}{retained_str}{mem_str} t={elapsed:.1f}s",
                       flush=True)
 
             # Step-level save (Slice 13m pattern, multi)
@@ -1047,18 +1152,17 @@ def train(
                         retention_anchor_repeat=retention_anchor_repeat,
                         parent_consistency_weight=parent_consistency_weight,
                         parent_consistency_temp=parent_consistency_temp,
-                        l0b_consistency_weight=l0b_consistency_weight,
-                        l0b_consistency_batch=l0b_consistency_batch,
-                        l0b_consistency_support_hash=l0b_support_hash,
-                        l0b_consistency_support_count=(
-                            len(l0b_side_cache) if l0b_side_cache is not None else 0),
+                        retained_support_meta=retained_support_meta,
+                        retained_l0b_only=_retained_l0b_only,
                     ),
                     "step": step,
                     "epoch": ep,
                     "source_pin": SOURCE_PIN,
                 }
                 torch.save(ckpt_blob, ckpt_path)
-                _cov = f" l0b_cov={l0b_sampler.coverage()}" if l0b_sampler is not None else ""
+                _cov = "".join(
+                    f" {s['name']}_cov={s['sampler'].coverage()}" for s in active_supports
+                )
                 print(f"[ep {ep:3d} step {step:5d}] save_at_step: saved {ckpt_path}{_cov}", flush=True)
 
     print(f"[hrm158] training complete: {step} steps in {time.time() - start_t:.1f}s", flush=True)
@@ -1093,18 +1197,17 @@ def train(
             retention_anchor_repeat=retention_anchor_repeat,
             parent_consistency_weight=parent_consistency_weight,
             parent_consistency_temp=parent_consistency_temp,
-            l0b_consistency_weight=l0b_consistency_weight,
-            l0b_consistency_batch=l0b_consistency_batch,
-            l0b_consistency_support_hash=l0b_support_hash,
-            l0b_consistency_support_count=(
-                len(l0b_side_cache) if l0b_side_cache is not None else 0),
+            retained_support_meta=retained_support_meta,
+            retained_l0b_only=_retained_l0b_only,
         ),
         "step": step,
         "epoch": ep,
         "source_pin": SOURCE_PIN,
     }
     torch.save(ckpt_blob, final_path)
-    _cov = f" l0b_cov={l0b_sampler.coverage()}" if l0b_sampler is not None else ""
+    _cov = "".join(
+        f" {s['name']}_cov={s['sampler'].coverage()}" for s in active_supports
+    )
     print(f"[hrm158] final ckpt: {final_path}{_cov}", flush=True)
 
 
@@ -1123,10 +1226,8 @@ def _build_ckpt_config(
     retention_anchor_repeat: int | None = None,
     parent_consistency_weight: float = 0.0,
     parent_consistency_temp: float = 1.0,
-    l0b_consistency_weight: float = 0.0,
-    l0b_consistency_batch: int = 0,
-    l0b_consistency_support_hash: str | None = None,
-    l0b_consistency_support_count: int = 0,
+    retained_support_meta: list[dict] | None = None,
+    retained_l0b_only: bool = False,
 ) -> dict:
     """Single source of truth for ckpt config blob (per Slice 13m pattern).
 
@@ -1171,18 +1272,28 @@ def _build_ckpt_config(
     if retention_anchor_set is not None and retention_anchor_set != "none":
         out["retention_anchor_set"] = retention_anchor_set
         out["retention_anchor_repeat"] = retention_anchor_repeat
-    # Consistency-loss recipe (codex determinism msg 1779647581438): record the
-    # weights/temp + L0b support hash so audit naming + manifests pin the exact
-    # recipe. Recorded only when the respective mechanism is active.
+    # Consistency-loss recipe (codex determinism msg 1779647581438 + registry
+    # msg 1779656084090): record weights/temp + per-support hash/count so audit
+    # naming + manifests pin the exact recipe. Recorded only when active.
     if parent_consistency_weight > 0.0:
         out["parent_consistency_weight"] = parent_consistency_weight
         out["parent_consistency_temp"] = parent_consistency_temp
-    if l0b_consistency_weight > 0.0:
-        out["l0b_consistency_weight"] = l0b_consistency_weight
-        out["l0b_consistency_temp"] = parent_consistency_temp
-        out["l0b_consistency_batch"] = l0b_consistency_batch
-        out["l0b_consistency_support_hash"] = l0b_consistency_support_hash
-        out["l0b_consistency_support_count"] = l0b_consistency_support_count
+    if retained_support_meta:
+        # retained_support_profile is the source-of-truth for the active
+        # supports (name/weight/batch/count/hash + the shared temp).
+        out["retained_support_profile"] = [
+            {**s, "temp": parent_consistency_temp} for s in retained_support_meta
+        ]
+        # Back-compat (codex correction msg 1779656084090): keep the legacy
+        # l0b_consistency_* fields ONLY when the profile is exactly L0b-only.
+        # Mixed profiles do NOT pretend to be old L0b-only checkpoints.
+        if retained_l0b_only:
+            _l0b = retained_support_meta[0]
+            out["l0b_consistency_weight"] = _l0b["weight"]
+            out["l0b_consistency_temp"] = parent_consistency_temp
+            out["l0b_consistency_batch"] = _l0b["batch"]
+            out["l0b_consistency_support_hash"] = _l0b["hash"]
+            out["l0b_consistency_support_count"] = _l0b["count"]
     return out
 
 
@@ -1328,6 +1439,18 @@ if __name__ == "__main__":
                     help="K rows per L0b-consistency side batch (K-cyclic "
                          "sampler). At ~1500 steps, K=8 -> ~52x coverage of the "
                          "230-row support. Default 8.")
+    ap.add_argument("--retained-support", action="append", default=None,
+                    metavar="NAME:WEIGHT",
+                    help="Repeatable. Add a validated finite support to the "
+                         "retained-support consistency profile (soft forward-KL "
+                         "toward the frozen parent, NO CE). NAME in {L0b, math_a0}; "
+                         "WEIGHT float >= 0. E.g. --retained-support L0b:1.0 "
+                         "--retained-support math_a0:1.0. Legacy "
+                         "--l0b-consistency-weight maps to L0b:<weight> (errors if "
+                         "both set L0b).")
+    ap.add_argument("--retained-support-batch", type=int, default=None,
+                    help="K rows per retained-support side batch (per support, "
+                         "K-cyclic). Falls back to --l0b-consistency-batch, then 8.")
     ap.add_argument("--legacy-loader-shuffle", action="store_true",
                     help="DIAGNOSTIC ONLY (not recipe-default): build the training "
                          "DataLoader without the explicit seeded generator, restoring "
@@ -1347,6 +1470,22 @@ if __name__ == "__main__":
             f"--retention-anchor-repeat must be >= 1; "
             f"got {args.retention_anchor_repeat}"
         )
+
+    # Parse --retained-support NAME:WEIGHT pairs into (name, weight) tuples.
+    # Registry membership / duplicate / conflict validation happens in train()
+    # so programmatic callers + tests get the same guards.
+    _retained_profile = None
+    if args.retained_support:
+        _retained_profile = []
+        for _spec in args.retained_support:
+            if ":" not in _spec:
+                ap.error(f"--retained-support expects NAME:WEIGHT; got {_spec!r}")
+            _nm, _, _wt = _spec.partition(":")
+            try:
+                _wtf = float(_wt)
+            except ValueError:
+                ap.error(f"--retained-support WEIGHT must be a float; got {_spec!r}")
+            _retained_profile.append((_nm.strip(), _wtf))
 
     train(
         epochs=args.epochs,
@@ -1388,6 +1527,8 @@ if __name__ == "__main__":
         parent_consistency_temp=args.parent_consistency_temp,
         l0b_consistency_weight=args.l0b_consistency_weight,
         l0b_consistency_batch=args.l0b_consistency_batch,
+        retained_support_profile=_retained_profile,
+        retained_support_batch=args.retained_support_batch,
         legacy_loader_shuffle=args.legacy_loader_shuffle,
         dry_run=args.dry_run,
     )
