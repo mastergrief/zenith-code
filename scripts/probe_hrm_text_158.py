@@ -1126,6 +1126,9 @@ def probe_language_finite_supports(
     use_kv_cache_decode: bool = False,
     use_batched_probe_eval: bool = False,
     probe_batch_size: int = 32,
+    supports_builder=None,
+    expected_aggregate: int | None = None,
+    surface: str = "language",
 ) -> dict:
     """Language-axis finite-support audit (codex msg 1779559495228-f863199b
     +1 implement; slice 2 probe integration per msg 1779560726491-971f67d5).
@@ -1216,8 +1219,12 @@ def probe_language_finite_supports(
 
     decode_fn = _decode_greedy_cached if use_kv_cache_decode else _decode_greedy_no_cache
 
-    supports = build_language_supports(seed=audit_seed)
-    print(f"[probe-language] active language rungs: {list(supports.keys())}", flush=True)
+    # supports_builder override (Slice F.1): --l0c1-audit passes
+    # build_l0c1_support to audit the standalone 121-row L0c1 precursor
+    # surface; default keeps the canonical build_language_supports (690).
+    _supports_builder = supports_builder if supports_builder is not None else build_language_supports
+    supports = _supports_builder(seed=audit_seed)
+    print(f"[probe-language] surface={surface} audited rungs: {list(supports.keys())}", flush=True)
 
     def _parse_int(text: str) -> int | None:
         capped = re.sub(r"(\d{12})\d+", r"\1", text)
@@ -1330,9 +1337,12 @@ def probe_language_finite_supports(
         "rate": agg_exact / agg_total if agg_total else 1.0,
         "n_holes": agg_holes,
         "finite": finite_all,
-        "expected_aggregate": LANGUAGE_EXPECTED_AGGREGATE,
+        "expected_aggregate": (
+            expected_aggregate if expected_aggregate is not None
+            else LANGUAGE_EXPECTED_AGGREGATE
+        ),
     }
-    print(f"[probe-language] LANGUAGE AGGREGATE strict={agg_exact}/{agg_total} = "
+    print(f"[probe-language] {surface.upper()} AGGREGATE strict={agg_exact}/{agg_total} = "
           f"{aggregate['rate']:.4f} parsed={agg_parsed}/{agg_total} "
           f"holes={agg_holes} finite={finite_all} "
           f"elapsed={total_elapsed:.1f}s", flush=True)
@@ -1342,6 +1352,7 @@ def probe_language_finite_supports(
     # plus an explicit `seed_mismatch` flag so receipts can be
     # filter-grepped for mismatch incidents.
     output = {
+        "surface": surface,
         "ckpt_path": str(ckpt_path),
         "ckpt_step": int(step) if step != -1 else None,
         "device": device,
@@ -1762,6 +1773,19 @@ if __name__ == "__main__":
                          "is printed plainly so receipts are unambiguous). "
                          "Mismatch with ckpt's recorded set warns and records "
                          "both values in audit JSON.")
+    # L0c1 precursor audit (codex msg 1779636434289-de29e525 +1 Slice F.1).
+    # SEPARATE surface from --language-supports: audits the one_digit-stratum
+    # subset of L0c (121 rows) and emits surface='l0c1' JSON with aggregate 121,
+    # NOT blended into the canonical 690 language aggregate.
+    ap.add_argument("--l0c1-audit", action="store_true",
+                    help="Run the standalone L0c1 precursor finite-support "
+                         "audit (one_digit-stratum subset of L0c, 121 rows, "
+                         "same `<expr> equals what?` template). Emits a "
+                         "separate surface='l0c1' JSON section (aggregate 121); "
+                         "NOT blended into --language-supports / the 690 "
+                         "language aggregate. Conflicts with --language-supports, "
+                         "--exhaustive-finite-supports, --anchor-audit, "
+                         "--curriculum-rungs.")
     args = ap.parse_args()
 
     # Pre-checks BEFORE ckpt load (codex 1779552750209 guardrail: fail loud
@@ -1803,6 +1827,29 @@ if __name__ == "__main__":
             "Run them as two separate invocations and combine the JSON output "
             "in the receipt."
         )
+    # Slice F.1: 4 mutex checks for --l0c1-audit (codex msg 1779636434289).
+    if args.l0c1_audit and args.curriculum_rungs is not None:
+        raise SystemExit(
+            "ERROR: --l0c1-audit conflicts with --curriculum-rungs "
+            "(mutually exclusive); pass only one."
+        )
+    if args.l0c1_audit and args.exhaustive_finite_supports:
+        raise SystemExit(
+            "ERROR: --l0c1-audit conflicts with --exhaustive-finite-supports "
+            "(mutually exclusive — L0c1 precursor and math A0 are separate probe "
+            "modes). Run them separately and combine the JSON in the receipt."
+        )
+    if args.l0c1_audit and args.language_supports:
+        raise SystemExit(
+            "ERROR: --l0c1-audit conflicts with --language-supports "
+            "(mutually exclusive — L0c1 is a SEPARATE precursor surface, NOT "
+            "blended into the 690 language aggregate). Run them separately."
+        )
+    if args.l0c1_audit and args.anchor_audit:
+        raise SystemExit(
+            "ERROR: --l0c1-audit conflicts with --anchor-audit "
+            "(mutually exclusive — separate probe modes). Run them separately."
+        )
     if args.use_batched_probe_eval and not args.use_kv_cache_decode:
         # Mirror existing pre-check from probe_curriculum so exhaustive mode
         # fails consistently before ckpt load.
@@ -1822,6 +1869,24 @@ if __name__ == "__main__":
             use_kv_cache_decode=args.use_kv_cache_decode,
             use_batched_probe_eval=args.use_batched_probe_eval,
             probe_batch_size=args.probe_batch_size,
+        )
+    elif args.l0c1_audit:
+        from calm.hrm_text_158.curriculum.language_supports import (
+            build_l0c1_support,
+            L0C1_EXPECTED_COUNT,
+        )
+        probe_language_finite_supports(
+            args.ckpt_path,
+            audit_seed=args.language_audit_seed,
+            max_gen=args.max_gen,
+            output_json=args.audit_output_json,
+            use_cached_ternary_infer=args.use_cached_ternary_infer,
+            use_kv_cache_decode=args.use_kv_cache_decode,
+            use_batched_probe_eval=args.use_batched_probe_eval,
+            probe_batch_size=args.probe_batch_size,
+            supports_builder=build_l0c1_support,
+            expected_aggregate=L0C1_EXPECTED_COUNT,
+            surface="l0c1",
         )
     elif args.language_supports:
         probe_language_finite_supports(

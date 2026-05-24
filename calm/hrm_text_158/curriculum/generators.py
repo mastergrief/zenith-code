@@ -257,7 +257,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -644,6 +644,26 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     # is a single bounded support, not parametric - partition function
     # `_enumerate_partition_l0c` returns the explicit 230-row list with
     # source_rung metadata for per-bucket reporting parallel to L0a/L0b.
+    # L0c1 (codex msg 1779636434289-de29e525 +1 Slice F.1 implement): the
+    # one_digit-STRATUM precursor SUBSET of L0c — exactly the 121 rows of
+    # L0c's "one_digit" stratum (R0 0..9 [10] + R1 identity bridge [30] +
+    # R1b1..R1b9 exhaustive 1..9 [81] = 121). NOTE: this is a STRATUM
+    # subset, NOT a literal "operand < 10" filter — the R1 identity-bridge
+    # rows (`A plus 0` / `0 plus A` / `A minus 0`) are included as the
+    # bridge stratum even when their sampled A is two-digit. Inherits L0c's
+    # deterministic split: 115 train + 6 held (R0/R1b one_digit all-in-
+    # train; the 6 held are R1 bridge held rows). L0c1 ⊂ L0c by construction
+    # (identical question/expected rows). DIAGNOSIS_ONLY so it never
+    # pollutes other rungs' positional priors. F.3 trains full L0c FROM the
+    # F.2 L0c1 checkpoint via --load-from (gaining the precursor through
+    # weights); L0c1 is NOT positionally replayed into L0c (subset →
+    # redundant, not axis-retention). Separate --l0c1-audit surface
+    # (aggregate 121); NOT in LANGUAGE_ACTIVE_RUNGS / the canonical 690
+    # language aggregate.
+    "L0c1": {
+        "train":     {"partition": "enumerate_stratified_l0c1"},
+        "held_out":  {"partition": "enumerate_stratified_l0c1"},
+    },
     "L0c": {
         "train":     {"partition": "enumerate_stratified_l0c"},
         "held_out":  {"partition": "enumerate_stratified_l0c"},
@@ -2178,19 +2198,20 @@ def _enumerate_partition_l0c(seed: int) -> tuple[list[dict], list[dict]]:
     # R0: 20 rows = 10 one_digit + 10 two_digit; 16/4
     # one_digit {0..9} exhaustive in train.
     for n in range(0, 10):
-        train.append({"question": f"{n} equals what?", "expected": n, "source_rung": "R0"})
+        train.append({"question": f"{n} equals what?", "expected": n, "source_rung": "R0", "stratum": "one_digit"})
     # two_digit: sample 10 stratified from [10, 99], shuffle, split 6 train + 4 held.
     rng_r0 = random.Random(_stable_seed("L0c_partition", seed, "R0_two_digit"))
     r0_two = sorted(rng_r0.sample(range(10, 100), 10))
     rng_r0_split = random.Random(_stable_seed("L0c_partition", seed, "R0_two_split"))
     rng_r0_split.shuffle(r0_two)
     for n in r0_two[:6]:
-        train.append({"question": f"{n} equals what?", "expected": n, "source_rung": "R0"})
+        train.append({"question": f"{n} equals what?", "expected": n, "source_rung": "R0", "stratum": "two_digit"})
     for n in r0_two[6:]:
-        held.append({"question": f"{n} equals what?", "expected": n, "source_rung": "R0"})
+        held.append({"question": f"{n} equals what?", "expected": n, "source_rung": "R0", "stratum": "two_digit"})
 
     # R1 identity bridge: 3 sub-templates × 10 A each = 30 rows; 24/6 total
-    # (8/2 per sub-template).
+    # (8/2 per sub-template). Identity stratum is classed one_digit (it is
+    # the precursor identity-bridge, not the large-operand sampling stratum).
     r1_sub_specs = [
         ("R1_plus_0", lambda a: (f"{a} plus 0 equals what?", a)),
         ("R1_0_plus_A", lambda a: (f"0 plus {a} equals what?", a)),
@@ -2203,10 +2224,10 @@ def _enumerate_partition_l0c(seed: int) -> tuple[list[dict], list[dict]]:
         rng_sub_split.shuffle(r1_a)
         for a in r1_a[:8]:
             q, exp = template_fn(a)
-            train.append({"question": q, "expected": exp, "source_rung": sub_name})
+            train.append({"question": q, "expected": exp, "source_rung": sub_name, "stratum": "one_digit"})
         for a in r1_a[8:]:
             q, exp = template_fn(a)
-            held.append({"question": q, "expected": exp, "source_rung": sub_name})
+            held.append({"question": q, "expected": exp, "source_rung": sub_name, "stratum": "one_digit"})
 
     # R1b1..R1b9: each 20 rows = 9 one_digit + 11 two_digit; 16/4
     # one_digit {1..9} exhaustive in train (9 train).
@@ -2226,7 +2247,7 @@ def _enumerate_partition_l0c(seed: int) -> tuple[list[dict], list[dict]]:
         # one_digit {1..9} exhaustive in train.
         for a in range(1, 10):
             q = f"{a}{op_str} equals what?"
-            train.append({"question": q, "expected": op_fn(a), "source_rung": source_rung})
+            train.append({"question": q, "expected": op_fn(a), "source_rung": source_rung, "stratum": "one_digit"})
         # two_digit pool is [10, max_a].
         rng_two = random.Random(_stable_seed("L0c_partition", seed, f"{source_rung}_two_digit"))
         two_pool = list(range(10, max_a + 1))
@@ -2235,13 +2256,19 @@ def _enumerate_partition_l0c(seed: int) -> tuple[list[dict], list[dict]]:
         rng_split.shuffle(sampled)
         for a in sampled[:7]:
             q = f"{a}{op_str} equals what?"
-            train.append({"question": q, "expected": op_fn(a), "source_rung": source_rung})
+            train.append({"question": q, "expected": op_fn(a), "source_rung": source_rung, "stratum": "two_digit"})
         for a in sampled[7:]:
             q = f"{a}{op_str} equals what?"
-            held.append({"question": q, "expected": op_fn(a), "source_rung": source_rung})
+            held.append({"question": q, "expected": op_fn(a), "source_rung": source_rung, "stratum": "two_digit"})
 
     assert len(train) == 184, f"L0c train size: {len(train)}"
     assert len(held) == 46, f"L0c held size: {len(held)}"
+    # Stratum invariant: 121 one_digit (10 R0 + 30 R1 bridge + 81 R1b) +
+    # 109 two_digit (10 R0 + 99 R1b) = 230. L0c1 (F.1) is the one_digit slice.
+    n_one = sum(1 for r in train + held if r["stratum"] == "one_digit")
+    n_two = sum(1 for r in train + held if r["stratum"] == "two_digit")
+    assert n_one == 121, f"L0c one_digit stratum: {n_one}"
+    assert n_two == 109, f"L0c two_digit stratum: {n_two}"
     return train, held
 
 
@@ -2263,6 +2290,47 @@ def _gen_l0c(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> l
     while len(out) < n:
         row = rng.choice(pool)
         out.append({"question": row["question"], "expected": row["expected"], "rung": "L0c"})
+    return out
+
+
+def _enumerate_partition_l0c1(seed: int) -> tuple[list[dict], list[dict]]:
+    """Bounded L0c1 support: the one_digit-STRATUM SUBSET of L0c.
+
+    Codex msg 1779636434289-de29e525 +1 Slice F.1 implement. L0c1 is the
+    one_digit-stratum precursor of the full L0c paraphrase rung: exactly the
+    121 rows tagged stratum=="one_digit" in L0c (R0 0..9 [10] + R1 identity
+    bridge [30] + R1b1..R1b9 exhaustive 1..9 [81]). This is a STRATUM subset,
+    NOT a literal "operand < 10" filter: the R1 identity-bridge rows are
+    included as the bridge stratum even when their sampled A is two-digit.
+    Derived by filtering `_enumerate_partition_l0c` so L0c1 ⊂ L0c by
+    construction (identical question/expected/seed), and the train/held
+    split is inherited deterministically:
+      - train: 115 (R0 one_digit 10 + R1 bridge train 24 + R1b one_digit 81)
+      - held:  6  (R1 bridge held; R0/R1b one_digit are all-in-train)
+    Total 121. Same template surface as L0c (`<expr> equals what?`).
+    """
+    l0c_train, l0c_held = _enumerate_partition_l0c(seed)
+    train = [r for r in l0c_train if r["stratum"] == "one_digit"]
+    held = [r for r in l0c_held if r["stratum"] == "one_digit"]
+    assert len(train) == 115, f"L0c1 train size: {len(train)}"
+    assert len(held) == 6, f"L0c1 held size: {len(held)}"
+    return train, held
+
+
+def _gen_l0c1(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """L0c1 one_digit-stratum precursor training-side sampler (codex msg
+    1779636434289-de29e525 +1 Slice F.1 implement).
+
+    Samples with replacement from the L0c1 train/held pool (115/6 rows)
+    until n examples are drawn. Strips metadata and adds `rung: "L0c1"`.
+    Mirrors `_gen_l0c`; differs only in the (smaller, one_digit-only) pool.
+    """
+    train_pool, held_pool = _enumerate_partition_l0c1(seed)
+    pool = train_pool if split == "train" else held_pool
+    out = []
+    while len(out) < n:
+        row = rng.choice(pool)
+        out.append({"question": row["question"], "expected": row["expected"], "rung": "L0c1"})
     return out
 
 
@@ -2657,6 +2725,8 @@ def make_rung_examples(
         return _gen_l0a(rng, _RUNG_SPEC["L0a"][split], n, seed=seed, split=split)
     if rung == "L0b":
         return _gen_l0b(rng, _RUNG_SPEC["L0b"][split], n, seed=seed, split=split)
+    if rung == "L0c1":
+        return _gen_l0c1(rng, _RUNG_SPEC["L0c1"][split], n, seed=seed, split=split)
     if rung == "L0c":
         return _gen_l0c(rng, _RUNG_SPEC["L0c"][split], n, seed=seed, split=split)
     if rung == "R1b":

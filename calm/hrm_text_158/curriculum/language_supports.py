@@ -32,6 +32,7 @@ from calm.hrm_text_158.curriculum.generators import (
     _enumerate_partition_l0a,
     _enumerate_partition_l0b,
     _enumerate_partition_l0c,
+    _enumerate_partition_l0c1,
 )
 
 
@@ -115,6 +116,44 @@ LANGUAGE_EXPECTED_AGGREGATE: int = sum(
 )  # 690 (L0a + L0b + L0c, each 230)
 
 
+# ---------------------------------------------------------------------------
+# L0c1 — one_digit-STRATUM precursor SUBSET of L0c (codex msg 1779636434289 Slice F.1).
+# SEPARATE diagnostic/audit surface: deliberately NOT in LANGUAGE_ACTIVE_RUNGS
+# and NOT in the canonical 690 aggregate. Audited via --l0c1-audit on its own
+# JSON surface, never blended into --language-supports. 121 rows = exactly
+# L0c's one_digit stratum, so L0c1 ⊂ L0c.
+# ---------------------------------------------------------------------------
+L0C1_EXPECTED_COUNT: int = 121
+
+
+def _l0c1_support(seed: int = 42) -> list[tuple[str, int, str]]:
+    """121-row L0c1 one_digit-stratum-precursor support (train + held).
+
+    The one_digit-stratum subset of L0c (L0c1 ⊂ L0c). Same template surface
+    (`<expr> equals what?`) and same 13 source buckets as L0c; only the
+    two_digit-stratum rows are excluded (the R1 identity-bridge stratum
+    stays, even where its sampled A is two-digit). Codex msg 1779636434289
+    +1 Slice F.1 implement.
+    """
+    train, held = _enumerate_partition_l0c1(seed)
+    rows: list[tuple[str, int, str]] = []
+    for r in train + held:
+        rows.append((r["question"], r["expected"], r["source_rung"]))
+    return rows
+
+
+def build_l0c1_support(seed: int = 42) -> dict[str, list[tuple[str, int, str]]]:
+    """Build the standalone L0c1 audit surface: {"L0c1": [...121 rows...]}.
+
+    Parallel to `build_language_supports` but for the L0c1 precursor audit.
+    Single-key dict so the probe's language-audit machinery iterates it
+    uniformly under `surface="l0c1"`. Deliberately NOT merged into
+    `build_language_supports` (keeps the canonical 690 language aggregate
+    and the L0c1 surface separate, per codex Slice F.1 constraint).
+    """
+    return {"L0c1": _l0c1_support(seed)}
+
+
 def build_language_supports(seed: int = 42) -> dict[str, list[tuple[str, int, str]]]:
     """Build full finite-support audit list for every active language rung.
 
@@ -132,8 +171,9 @@ def language_source_rung_buckets(rung: str) -> list[str]:
     in canonical reporting order. Used by probe to render per-bucket
     breakdowns.
     """
-    if rung in ("L0a", "L0b", "L0c"):
-        # L0b/L0c mirror L0a's bucket order exactly (codex msg
+    if rung in ("L0a", "L0b", "L0c", "L0c1"):
+        # L0b/L0c mirror L0a's bucket order exactly; L0c1 (Slice F.1) spans
+        # the same 13 source buckets (it is L0c's one_digit subset). (codex msg
         # 1779567887201-1cf4f485 Slice D.1 + 1779571151811-d3f6bc4f
         # Slice E.1: same 13 source buckets, same per-bucket counts,
         # only the question-template surface differs).
@@ -143,4 +183,7 @@ def language_source_rung_buckets(rung: str) -> list[str]:
             "R1b1", "R1b2", "R1b3", "R1b4v2",
             "R1b5", "R1b6", "R1b7", "R1b8", "R1b9",
         ]
-    raise ValueError(f"unknown language rung {rung!r}; valid: {LANGUAGE_ACTIVE_RUNGS}")
+    raise ValueError(
+        f"unknown language rung {rung!r}; valid: {LANGUAGE_ACTIVE_RUNGS} "
+        f"+ 'L0c1' (precursor audit surface)"
+    )

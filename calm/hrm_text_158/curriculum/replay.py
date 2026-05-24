@@ -132,7 +132,20 @@ from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
 #         R1b8, R1b9, L0a, L0b} — R1b10 filtered out by
 #         DIAGNOSIS_ONLY_RUNGS; L0a AND L0b stay IN so L0c training
 #         preserves both prior paraphrase axes.
-DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b", "R1b4", "R1b10", "R2", "R2a"})
+# L0c1 stays IN (codex msg 1779636434289-de29e525 +1 Slice F.1 implement:
+#         one_digit-STRATUM precursor SUBSET of L0c). Unlike L0a/L0b/L0c —
+#         which are DISJOINT paraphrase axes each retaining a distinct
+#         template under replay — L0c1 ⊂ L0c (same `<expr> equals what?`
+#         template, just the one_digit rows). Auto-replaying it into L0c
+#         would be REDUNDANT (those rows are already in L0c's own training
+#         data), not axis-retention, so L0c1 is DIAGNOSIS_ONLY: excluded
+#         from every positional prior derivation. L0c's priors stay
+#         {R0..R1b9, L0a, L0b} UNCHANGED and there is no cascade into R3+.
+#         L0c1 remains trainable via `--curriculum-rung L0c1` (own
+#         positional priors {R0..R1b9, L0a, L0b}); F.3 trains full L0c FROM
+#         the F.2 L0c1 checkpoint (--load-from), gaining the precursor via
+#         weights, not via redundant subset replay.
+DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b", "R1b4", "R1b10", "R2", "R2a", "L0c1"})
 
 
 # R7 (GSM8k) is generator-incompatible — served separately from

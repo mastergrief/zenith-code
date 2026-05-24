@@ -882,8 +882,9 @@ def test_generator_r1b2_in_rung_names_after_r1b2a() -> None:
     assert RUNG_NAMES[13] == "R1b10", f"R1b10 must be at index 13 (post-R1b9); got {RUNG_NAMES}"
     assert RUNG_NAMES[14] == "L0a", f"L0a must be at index 14 (post-R1b10); got {RUNG_NAMES}"
     assert RUNG_NAMES[15] == "L0b", f"L0b must be at index 15 (post-L0a); got {RUNG_NAMES}"
-    assert RUNG_NAMES[16] == "L0c", f"L0c must be at index 16 (post-L0b); got {RUNG_NAMES}"
-    assert RUNG_NAMES[17] == "R1b", f"R1b must be at index 17 (post-L0c); got {RUNG_NAMES}"
+    assert RUNG_NAMES[16] == "L0c1", f"L0c1 must be at index 16 (post-L0b, Slice F.1); got {RUNG_NAMES}"
+    assert RUNG_NAMES[17] == "L0c", f"L0c must be at index 17 (post-L0c1); got {RUNG_NAMES}"
+    assert RUNG_NAMES[18] == "R1b", f"R1b must be at index 18 (post-L0c); got {RUNG_NAMES}"
 
 
 def test_generator_r1b2_train_holdout_exact_row_disjoint() -> None:
@@ -3521,13 +3522,14 @@ def test_generator_l0a_in_rung_names_index_14() -> None:
 
 
 def test_generator_l0b_in_rung_names_index_15() -> None:
-    """L0b at RUNG_NAMES index 15, after L0a (14), before L0c (16,
-    Slice E.1). Codex msg 1779567887201-1cf4f485 +1 Slice D.1 spec
-    + 1779571151811-d3f6bc4f Slice E.1 inserted L0c after L0b."""
+    """L0b at RUNG_NAMES index 15, after L0a (14), before L0c1 (16,
+    Slice F.1). Codex msg 1779567887201-1cf4f485 +1 Slice D.1 spec
+    + 1779571151811-d3f6bc4f Slice E.1 inserted L0c after L0b
+    + 1779636434289-de29e525 Slice F.1 inserted L0c1 between L0b and L0c."""
     from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
     assert RUNG_NAMES[15] == "L0b", f"L0b must be at index 15; got {RUNG_NAMES}"
     assert RUNG_NAMES[14] == "L0a", f"L0a must be at index 14 (pre-L0b)"
-    assert RUNG_NAMES[16] == "L0c", f"L0c must be at index 16 (post-L0b)"
+    assert RUNG_NAMES[16] == "L0c1", f"L0c1 must be at index 16 (post-L0b, Slice F.1)"
 
 
 def test_generator_l0b_NOT_in_diagnosis_only() -> None:
@@ -3630,13 +3632,14 @@ def test_l0a_l0b_question_sets_fully_disjoint() -> None:
 # ============================================================================ #
 
 
-def test_generator_l0c_in_rung_names_index_16() -> None:
-    """L0c at RUNG_NAMES index 16, after L0b (15), before legacy R1b (17).
-    Codex msg 1779571151811-d3f6bc4f +1 Slice E.1 spec."""
+def test_generator_l0c_in_rung_names_index_17() -> None:
+    """L0c at RUNG_NAMES index 17, after L0c1 (16, Slice F.1), before legacy
+    R1b (18). Codex msg 1779571151811-d3f6bc4f Slice E.1 spec +
+    1779636434289-de29e525 Slice F.1 inserted L0c1 precursor before L0c."""
     from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
-    assert RUNG_NAMES[16] == "L0c", f"L0c must be at index 16; got {RUNG_NAMES}"
-    assert RUNG_NAMES[15] == "L0b", f"L0b must be at index 15 (pre-L0c)"
-    assert RUNG_NAMES[17] == "R1b", f"R1b must be at index 17 (post-L0c)"
+    assert RUNG_NAMES[17] == "L0c", f"L0c must be at index 17; got {RUNG_NAMES}"
+    assert RUNG_NAMES[16] == "L0c1", f"L0c1 must be at index 16 (pre-L0c)"
+    assert RUNG_NAMES[18] == "R1b", f"R1b must be at index 18 (post-L0c)"
 
 
 def test_generator_l0c_NOT_in_diagnosis_only() -> None:
@@ -3844,11 +3847,11 @@ def test_generator_r2a_in_rung_names_after_r1b() -> None:
     With L0b inserted after L0a per codex msg 1779567887201 Slice D.1
     and L0c inserted after L0b per codex msg 1779571151811 Slice E.1,
     positions shifted: R1b3@5, R1b4@6, R1b4v2@7, R1b5@8, R1b6@9,
-    R1b7@10, R1b8@11, R1b9@12, R1b10@13, L0a@14, L0b@15, L0c@16,
-    R1b@17, R2a@18, R2@19."""
+    R1b7@10, R1b8@11, R1b9@12, R1b10@13, L0a@14, L0b@15, L0c1@16,
+    L0c@17, R1b@18, R2a@19, R2@20 (Slice F.1 inserted L0c1 before L0c)."""
     from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
-    assert RUNG_NAMES[18] == "R2a", f"R2a must be at index 18 (post-R1b at 17, post-L0c at 16); got {RUNG_NAMES}"
-    assert RUNG_NAMES[19] == "R2", f"R2 must be at index 19 (diagnosis-only); got {RUNG_NAMES}"
+    assert RUNG_NAMES[19] == "R2a", f"R2a must be at index 19 (post-R1b at 18, post-L0c at 17, post-L0c1 at 16); got {RUNG_NAMES}"
+    assert RUNG_NAMES[20] == "R2", f"R2 must be at index 20 (diagnosis-only); got {RUNG_NAMES}"
 
 
 def test_generator_r2a_train_holdout_exact_row_disjoint() -> None:
