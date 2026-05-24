@@ -52,7 +52,10 @@ from calm.hrm_text_158 import (
     LMHeadConfig,
 )
 from calm.hrm_text_158.lm_head import IGNORE_LABEL_ID
-from calm.hrm_text_158.curriculum.retention_anchors import load_anchor_set
+from calm.hrm_text_158.curriculum.retention_anchors import (
+    load_anchor_set,
+    RETENTION_ANCHOR_SETS,
+)
 
 
 # ----------------------------------------------------------------------------- #
@@ -1014,7 +1017,7 @@ if __name__ == "__main__":
     # Anchors do NOT enter the deterministic curriculum shuffle at L385-387;
     # interleaving comes from the existing DataLoader(shuffle=True) at L424.
     ap.add_argument("--retention-anchor-set", type=str, default="none",
-                    choices=["none", "math_fragile_v1"],
+                    choices=["none", *sorted(RETENTION_ANCHOR_SETS)],
                     help="Retention-anchor V0 sentinel set. Default 'none' = "
                          "no composition change. When enabled, anchor rows "
                          "are appended after curriculum cap + log (NOT in the "

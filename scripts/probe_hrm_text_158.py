@@ -1676,6 +1676,9 @@ def probe_anchor_finite_supports(
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="HRM-Text-1.58 probe.")
+    from calm.hrm_text_158.curriculum.retention_anchors import (
+        RETENTION_ANCHOR_SETS as _ANCHOR_SETS,
+    )
     ap.add_argument("--ckpt-path", type=str, required=True)
     ap.add_argument("--eval-cap", type=int, default=50)
     ap.add_argument("--max-gen", type=int, default=8)
@@ -1765,7 +1768,7 @@ if __name__ == "__main__":
                          "--curriculum-rungs, --exhaustive-finite-supports, "
                          "--language-supports.")
     ap.add_argument("--anchor-set", type=str, default=None,
-                    choices=["math_fragile_v1"],
+                    choices=sorted(_ANCHOR_SETS),
                     help="Explicit anchor-set override for --anchor-audit. "
                          "Default resolution uses ckpt's stored "
                          "`retention_anchor_set` config field; falls back to "
