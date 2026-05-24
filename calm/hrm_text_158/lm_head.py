@@ -74,12 +74,18 @@ class LMHead(nn.Module):
         self,
         carry: Any,
         batch: dict,
+        return_logits: bool = False,
         **kwargs,
     ) -> Tuple[Any, Tensor] | Tuple[Any, Tensor, dict]:
         """Forward + optional loss/metrics.
 
         batch must contain "inputs". If "labels" present, returns (carry, loss, metrics).
         Else returns (carry, logits).
+
+        `return_logits=True` (labels path only) attaches the grad-carrying
+        logits to `metrics["logits"]` so a caller (e.g. the parent-consistency
+        KL term) can reuse them without a second child forward. Consumed here,
+        NOT forwarded into the wrapped model's seq_info/kwargs.
         """
         input_embedding = self.embed_tokens(batch["inputs"])
         seq_info = {k: v for k, v in batch.items() if k not in ("inputs", "labels", "cu_seqlens")}
@@ -121,6 +127,10 @@ class LMHead(nn.Module):
                     "accuracy": ((is_correct & masks).sum(), local_valid_counts),
                     "exact_accuracy": (exact_correct, exact_total),
                 }
+            # Attach grad-carrying logits OUTSIDE the no_grad block so the
+            # caller can backprop a parent-consistency KL term through them.
+            if return_logits:
+                metrics["logits"] = logits
             return new_carry, loss, metrics
 
         return new_carry, logits

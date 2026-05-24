@@ -127,24 +127,32 @@ class HrmTextGsm8kDataset(Dataset):
     Gsm8kDataset).
     """
 
-    def __init__(self, rows: list[dict], tok: Gsm8kTokenizer, max_len: int):
+    def __init__(self, rows: list[dict], tok: Gsm8kTokenizer, max_len: int,
+                 curriculum_rung: str | None = None):
         self.tok = tok
         self.max_len = max_len
-        self.items: list[tuple[list[int], int]] = []  # (ids_full, sep_pos)
+        # (ids_full, sep_pos, is_prior). is_prior marks a retained-skill row
+        # (prior rung or anchor) for the parent-consistency KL mask. A row is
+        # prior when its generator `rung` field differs from the target
+        # curriculum rung; anchors carry no `rung` (None != rung) so they
+        # count as prior. Off-curriculum (curriculum_rung is None) → all False.
+        self.items: list[tuple[list[int], int, bool]] = []
         n_dropped = 0
         for r in rows:
             ids, sep_pos = tok.encode_example(r["question"], r["expected"])
             if len(ids) > max_len:
                 n_dropped += 1
                 continue
-            self.items.append((ids, sep_pos))
+            is_prior = (curriculum_rung is not None
+                        and r.get("rung") != curriculum_rung)
+            self.items.append((ids, sep_pos, is_prior))
         self.n_dropped = n_dropped
 
     def __len__(self) -> int:
         return len(self.items)
 
     def __getitem__(self, i: int) -> dict:
-        ids_full, sep_pos = self.items[i]
+        ids_full, sep_pos, is_prior = self.items[i]
         # Pad ids_full to max_len with pad_id
         pad_id = self.tok.pad_id
         ids_padded = list(ids_full) + [pad_id] * (self.max_len - len(ids_full))
@@ -173,6 +181,7 @@ class HrmTextGsm8kDataset(Dataset):
             "labels": labels,
             "sep_position": torch.tensor(sep_pos, dtype=torch.long),
             "seq_len": torch.tensor(len(ids_full), dtype=torch.long),
+            "is_prior": torch.tensor(is_prior, dtype=torch.bool),
         }
 
 
@@ -181,6 +190,10 @@ def _collate(batch: list[dict]) -> dict:
         "inputs": torch.stack([b["inputs"] for b in batch], dim=0),
         "labels": torch.stack([b["labels"] for b in batch], dim=0),
         "sep_positions": torch.stack([b["sep_position"] for b in batch], dim=0),
+        # is_prior is trainer-only (parent-consistency KL mask). It is NOT put
+        # in the dict passed to LMHead — that would route it into the model's
+        # seq_info. The train loop reads batch["is_prior"] directly.
+        "is_prior": torch.stack([b["is_prior"] for b in batch], dim=0),
         # position_ids broadcasted from arange
     }
 
@@ -208,6 +221,35 @@ def _lr_schedule(step: int, total_steps: int, warmup_steps: int, peak_lr: float,
     progress = min(1.0, max(0.0, progress))
     cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
     return min_lr + (peak_lr - min_lr) * cosine
+
+
+def _parent_consistency_kl(
+    child_logits: "torch.Tensor",
+    parent_logits: "torch.Tensor",
+    labels: "torch.Tensor",
+    is_prior: "torch.Tensor",
+    temp: float = 1.0,
+) -> "torch.Tensor":
+    """Soft forward-KL(parent || child) on retained-skill rows.
+
+    Penalizes the child for diverging from the frozen parent's output
+    distribution on prior-rung/anchor rows (`is_prior`) at response positions
+    (`labels != IGNORE_LABEL_ID`). Mode-covering direction: the child must keep
+    probability mass where the parent (the retained skill) placed it. Computed
+    in fp32; safe when a batch has no prior rows (denominator clamp -> 0.0).
+    `temp` applies the standard distillation T with T^2 gradient scaling.
+    """
+    import torch.nn.functional as F
+    resp_mask = labels != IGNORE_LABEL_ID                               # (B, L)
+    mask = (is_prior.bool().unsqueeze(1) & resp_mask).to(torch.float32)  # (B, L)
+    cl = child_logits.to(torch.float32) / temp
+    pl = parent_logits.to(torch.float32) / temp
+    log_child = F.log_softmax(cl, dim=-1)
+    log_parent = F.log_softmax(pl, dim=-1)
+    kl_pos = (log_parent.exp() * (log_parent - log_child)).sum(dim=-1)   # (B, L)
+    denom = mask.sum().clamp(min=1.0)
+    kl = (kl_pos * mask).sum() / denom
+    return kl * (temp * temp)
 
 
 def _compose_anchor_rows(
@@ -293,10 +335,32 @@ def train(
     # shuffle. Defaults preserve byte-identical behavior to pre-Slice-B.
     retention_anchor_set: str = "none",
     retention_anchor_repeat: int = 2,
+    # Parent-consistency loss (opt-in; default 0.0 = off, behavior-preserving).
+    # Soft forward-KL(parent || child) on prior-rung/anchor rows penalizes the
+    # child for drifting from the frozen --load-from parent's outputs on
+    # retained skills. Requires --load-from when weight > 0.
+    parent_consistency_weight: float = 0.0,
+    parent_consistency_temp: float = 1.0,
     dry_run: bool = False,
 ) -> None:
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
+
+    # Parent-consistency flag validation (codex pre-commit guard): reject
+    # invalid weight/temp loudly before any work (covers --dry-run + tests +
+    # programmatic callers).
+    if parent_consistency_weight < 0.0:
+        raise ValueError(
+            f"--parent-consistency-weight must be >= 0 (got "
+            f"{parent_consistency_weight}); a negative weight would reward "
+            f"drift from the parent."
+        )
+    if parent_consistency_temp <= 0.0:
+        raise ValueError(
+            f"--parent-consistency-temp must be > 0 (got "
+            f"{parent_consistency_temp}); <= 0 is an invalid distillation "
+            f"temperature (division by zero)."
+        )
 
     # Slice B phase-gate (codex msg 1779565128372-c6872566 catch): anchors are
     # Phase 3 curriculum-only. In GSM8k mode no composition runs, but the
@@ -494,8 +558,10 @@ def train(
         train_rows = full_train[:n_train_cap] if n_train_cap is not None else full_train
         val_rows = full_val[:n_val_cap] if n_val_cap is not None else full_val
 
-    train_ds = HrmTextGsm8kDataset(train_rows, tok, max_len=max_len)
-    val_ds = HrmTextGsm8kDataset(val_rows, tok, max_len=max_len)
+    train_ds = HrmTextGsm8kDataset(train_rows, tok, max_len=max_len,
+                                   curriculum_rung=curriculum_rung)
+    val_ds = HrmTextGsm8kDataset(val_rows, tok, max_len=max_len,
+                                 curriculum_rung=curriculum_rung)
     print(f"[hrm158] usable rows after max_len={max_len} drop: "
           f"train={len(train_ds)} (dropped {train_ds.n_dropped}) "
           f"val={len(val_ds)} (dropped {val_ds.n_dropped})", flush=True)
@@ -602,6 +668,26 @@ def train(
               f"no ckpt written)", flush=True)
         return
 
+    # Parent-consistency: frozen reference = the --load-from chain head. Built
+    # after the dry-run early-return so dry runs skip it. Kept in eval (the
+    # inference BitLinear forward) while the child may use the native-train
+    # forward, so step-0 KL is ~0 within FP tolerance, not bitwise.
+    parent_m = None
+    if parent_consistency_weight > 0.0:
+        if load_from is None:
+            raise ValueError(
+                "--parent-consistency-weight > 0 requires --load-from "
+                "(the frozen parent reference checkpoint)."
+            )
+        parent_hrm = HierarchicalReasoningModel(cfg)
+        parent_m = LMHead(parent_hrm, LMHeadConfig(vocab_size=tok.vocab_size)).to(device)
+        parent_m.load_state_dict(loaded_ckpt["model_state"], strict=True)
+        parent_m.eval()
+        for p in parent_m.parameters():
+            p.requires_grad_(False)
+        print(f"[hrm158] parent-consistency ENABLED: weight={parent_consistency_weight} "
+              f"temp={parent_consistency_temp}; frozen parent from {load_from}", flush=True)
+
     # Train
     m.train()
     # TTrain-B: enable native fused-quantize STE path on all BitLinear modules
@@ -640,13 +726,32 @@ def train(
             # bp_steps schedule via LMHead.compute_train_extra_args delegation
             extras = m.compute_train_extra_args(step, total_steps)
 
-            # Forward + loss
-            new_carry, loss, metrics = m(
-                None,
-                {"inputs": inputs, "labels": labels, "sep_positions": sep_positions,
-                 "position_ids": position_ids},
-                **extras,
-            )
+            # Forward + loss (+ optional parent-consistency KL on prior rows)
+            child_batch = {"inputs": inputs, "labels": labels,
+                           "sep_positions": sep_positions, "position_ids": position_ids}
+            pc_kl_val = 0.0
+            if parent_m is not None:
+                new_carry, loss, metrics = m(None, child_batch, return_logits=True, **extras)
+                is_prior = batch["is_prior"].to(device)
+                with torch.no_grad():
+                    _, parent_logits = parent_m(
+                        None,
+                        {"inputs": inputs, "sep_positions": sep_positions,
+                         "position_ids": position_ids},
+                        **extras,
+                    )
+                pc_kl = _parent_consistency_kl(
+                    metrics["logits"], parent_logits, labels, is_prior,
+                    temp=parent_consistency_temp,
+                )
+                loss = loss + parent_consistency_weight * pc_kl
+                pc_kl_val = float(pc_kl.detach())
+            else:
+                new_carry, loss, metrics = m(
+                    None,
+                    child_batch,
+                    **extras,
+                )
 
             if not torch.isfinite(loss):
                 print(f"[NaN-DETECT] step={step} loss={loss.item()}", flush=True)
@@ -663,10 +768,11 @@ def train(
             if step == 1 or step % log_every == 0:
                 acc_count, acc_total = metrics["accuracy"]
                 elapsed = time.time() - start_t
+                pc_str = f" pc_kl={pc_kl_val:.6f}" if parent_m is not None else ""
                 print(f"[ep {ep:3d} step {step:5d}] loss={loss.item():.4f} "
                       f"grad_norm={float(grad_norm):.4f} lr={cur_lr:.6f} "
                       f"bp_steps={extras['bp_steps']} "
-                      f"acc={int(acc_count)}/{int(acc_total)} t={elapsed:.1f}s",
+                      f"acc={int(acc_count)}/{int(acc_total)}{pc_str} t={elapsed:.1f}s",
                       flush=True)
 
             # Step-level save (Slice 13m pattern, multi)
@@ -912,6 +1018,16 @@ if __name__ == "__main__":
                          "non-integers loudly); must be >= 1 (rejected at "
                          "parse time). Ignored when --retention-anchor-set "
                          "is 'none'.")
+    ap.add_argument("--parent-consistency-weight", type=float, default=0.0,
+                    help="Opt-in parent-consistency loss weight (lambda). When "
+                         ">0, adds soft forward-KL(parent||child) on prior-rung/"
+                         "anchor rows, penalizing drift from the frozen "
+                         "--load-from parent on retained skills. Requires "
+                         "--load-from. Default 0.0 (off, behavior-preserving).")
+    ap.add_argument("--parent-consistency-temp", type=float, default=1.0,
+                    help="Softmax temperature for the parent-consistency KL "
+                         "(standard distillation T with T^2 grad scaling). "
+                         "Default 1.0.")
     ap.add_argument("--dry-run", action="store_true",
                     help="Build corpus + tokenizer + model + first batch + verify "
                          "forward pass, then exit BEFORE optimizer step. No ckpt "
@@ -962,5 +1078,7 @@ if __name__ == "__main__":
         load_from=args.load_from,
         retention_anchor_set=args.retention_anchor_set,
         retention_anchor_repeat=args.retention_anchor_repeat,
+        parent_consistency_weight=args.parent_consistency_weight,
+        parent_consistency_temp=args.parent_consistency_temp,
         dry_run=args.dry_run,
     )
