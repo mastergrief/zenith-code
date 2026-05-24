@@ -201,6 +201,29 @@ def _collate(batch: list[dict]) -> dict:
     }
 
 
+def _build_train_loader(train_ds, batch_size, seed, legacy_loader_shuffle,
+                        collate_fn=_collate):
+    """Construct the curriculum training DataLoader.
+
+    Default (`legacy_loader_shuffle=False`): an explicit `torch.Generator`
+    seeded by `seed`, so the shuffle order depends ONLY on `--seed`, decoupled
+    from however much global RNG model-init consumed — the post-1656ead
+    deterministic path.
+
+    Diagnostic (`legacy_loader_shuffle=True`, codex msg 1779652915624): NO
+    explicit generator → the pre-1656ead global-RNG shuffle order. Isolation
+    use ONLY (NOT recipe-default) — to test whether the seed-decoupled
+    generator moved the fragile `10 minus 1` borrow-boundary row in F.2f.
+    """
+    if legacy_loader_shuffle:
+        return DataLoader(train_ds, batch_size=batch_size, shuffle=True,
+                          collate_fn=collate_fn)
+    gen = torch.Generator()
+    gen.manual_seed(seed)
+    return DataLoader(train_ds, batch_size=batch_size, shuffle=True,
+                      collate_fn=collate_fn, generator=gen)
+
+
 # ----------------------------------------------------------------------------- #
 # LR schedule
 # ----------------------------------------------------------------------------- #
@@ -433,6 +456,12 @@ def train(
     # --parent-consistency-temp. Codex +1 msg 1779647554279-522ba519.
     l0b_consistency_weight: float = 0.0,
     l0b_consistency_batch: int = 8,
+    # Diagnostic ONLY (codex msg 1779652915624): when True, build the training
+    # DataLoader WITHOUT the explicit seeded generator (pre-1656ead global-RNG
+    # shuffle order). Default False keeps the deterministic seeded generator.
+    # NOT recipe-default — used to isolate whether 1656ead's loader-order change
+    # caused the persistent F.2f `10 minus 1` value regression.
+    legacy_loader_shuffle: bool = False,
     dry_run: bool = False,
 ) -> None:
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
@@ -685,14 +714,16 @@ def train(
     if len(train_ds) == 0:
         raise RuntimeError("No usable training rows after max_len drop.")
 
-    # Explicit DataLoader generator (codex determinism msg 1779647581438):
-    # decouples the curriculum shuffle order from however much global RNG
-    # model-init consumed, so the data order depends only on --seed. Strictly
-    # improves run-to-run reproducibility.
-    _loader_gen = torch.Generator()
-    _loader_gen.manual_seed(seed)
-    loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
-                        collate_fn=_collate, generator=_loader_gen)
+    # DataLoader construction (codex determinism msg 1779647581438 + isolation
+    # msg 1779652915624). Default: explicit Generator seeded by --seed (order
+    # decoupled from model-init RNG). Diagnostic --legacy-loader-shuffle: the
+    # pre-1656ead global-RNG order, to isolate whether the seed-decoupled
+    # generator moved the fragile `10 minus 1` row.
+    loader = _build_train_loader(train_ds, batch_size, seed, legacy_loader_shuffle)
+    if legacy_loader_shuffle:
+        print("[hrm158] --legacy-loader-shuffle ENABLED (DIAGNOSTIC): DataLoader uses "
+              "global-RNG shuffle (pre-1656ead order); explicit seeded generator "
+              "BYPASSED. NOT recipe-default.", flush=True)
 
     # Build model
     cfg = HierarchicalReasoningModelConfig(
@@ -1297,6 +1328,12 @@ if __name__ == "__main__":
                     help="K rows per L0b-consistency side batch (K-cyclic "
                          "sampler). At ~1500 steps, K=8 -> ~52x coverage of the "
                          "230-row support. Default 8.")
+    ap.add_argument("--legacy-loader-shuffle", action="store_true",
+                    help="DIAGNOSTIC ONLY (not recipe-default): build the training "
+                         "DataLoader without the explicit seeded generator, restoring "
+                         "the pre-1656ead global-RNG shuffle order. Used to isolate "
+                         "whether the seed-decoupled generator moved a fragile boundary "
+                         "row. Default off (explicit seeded generator).")
     ap.add_argument("--dry-run", action="store_true",
                     help="Build corpus + tokenizer + model + first batch + verify "
                          "forward pass, then exit BEFORE optimizer step. No ckpt "
@@ -1351,5 +1388,6 @@ if __name__ == "__main__":
         parent_consistency_temp=args.parent_consistency_temp,
         l0b_consistency_weight=args.l0b_consistency_weight,
         l0b_consistency_batch=args.l0b_consistency_batch,
+        legacy_loader_shuffle=args.legacy_loader_shuffle,
         dry_run=args.dry_run,
     )
