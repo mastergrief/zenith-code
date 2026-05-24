@@ -266,16 +266,26 @@ def _compose_anchor_rows(
     """
     if retention_anchor_set == "none":
         return []
-    anchor_rows_unique = [
-        {
-            "question": row.question,
-            "expected": row.expected,
-            "anchor_id": row.anchor_id,
-            "source_rung": row.source_rung,
-        }
-        for row in load_anchor_set(retention_anchor_set)
-    ]
-    return anchor_rows_unique * retention_anchor_repeat
+
+    def _rows(name: str) -> list[dict]:
+        return [
+            {
+                "question": row.question,
+                "expected": row.expected,
+                "anchor_id": row.anchor_id,
+                "source_rung": row.source_rung,
+            }
+            for row in load_anchor_set(name)
+        ]
+
+    # math_fragile_v2: per-subset repeat (codex msg 1779645719820). v1 rows are
+    # fixed at repeat 3 (do NOT 5x v1 / weaken-or-overweight existing coverage);
+    # the L0b hard-row guard takes the CLI --retention-anchor-repeat (5). This
+    # is the "tiny code path composing v1 repeat3 + hard rows repeat5 explicitly".
+    if retention_anchor_set == "math_fragile_v2":
+        return _rows("math_fragile_v1") * 3 + _rows("l0b_hardrow_v1") * retention_anchor_repeat
+
+    return _rows(retention_anchor_set) * retention_anchor_repeat
 
 
 # ----------------------------------------------------------------------------- #

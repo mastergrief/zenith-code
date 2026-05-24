@@ -115,13 +115,44 @@ MATH_FRAGILE_V1: tuple[AnchorRow, ...] = (
 )
 
 
+# L0b R1b3 small-add hard-row guard (codex msg 1779645719820): the single
+# persistent L0b hole `calculate 14 plus 2.` -> "168" survives any PC lambda
+# (fails byte-identically at lambda=1 and lambda=2 while the parent is correct).
+# Guard it plus 4 adjacent-A neighbors on the SAME L0b R1b3 surface
+# `calculate {A} plus 2.` -> A+2 (verified generators.py:2106, two-digit pool
+# [10,97]). Distinct source_rung "R1b3_hardrow" keeps the audit separable from
+# v1 buckets.
+L0B_HARDROW_V1: tuple[AnchorRow, ...] = (
+    AnchorRow(question="calculate 14 plus 2.", expected=16,
+              source_rung="R1b3_hardrow", anchor_id="l0b_hr:14_plus_2"),
+    AnchorRow(question="calculate 12 plus 2.", expected=14,
+              source_rung="R1b3_hardrow", anchor_id="l0b_hr:12_plus_2"),
+    AnchorRow(question="calculate 13 plus 2.", expected=15,
+              source_rung="R1b3_hardrow", anchor_id="l0b_hr:13_plus_2"),
+    AnchorRow(question="calculate 15 plus 2.", expected=17,
+              source_rung="R1b3_hardrow", anchor_id="l0b_hr:15_plus_2"),
+    AnchorRow(question="calculate 16 plus 2.", expected=18,
+              source_rung="R1b3_hardrow", anchor_id="l0b_hr:16_plus_2"),
+)
+
+# math_fragile_v2 = v1 (21) + L0b hard-row guard (5) = 26 unique rows. This is
+# the UNIQUE-row view for load_anchor_set + audit; training composition applies
+# per-subset repeat (v1@3 + hard@CLI-repeat) in _compose_anchor_rows so v1
+# coverage is NOT multiplied up.
+MATH_FRAGILE_V2: tuple[AnchorRow, ...] = MATH_FRAGILE_V1 + L0B_HARDROW_V1
+
+
 RETENTION_ANCHOR_SETS: dict[str, tuple[AnchorRow, ...]] = {
     "math_fragile_v1": MATH_FRAGILE_V1,
+    "l0b_hardrow_v1": L0B_HARDROW_V1,
+    "math_fragile_v2": MATH_FRAGILE_V2,
 }
 
 
 RETENTION_ANCHOR_EXPECTED_COUNTS: dict[str, int] = {
     "math_fragile_v1": 21,
+    "l0b_hardrow_v1": 5,
+    "math_fragile_v2": 26,
 }
 
 
@@ -150,6 +181,10 @@ def anchor_set_source_rung_buckets(name: str) -> list[str]:
     """
     if name == "math_fragile_v1":
         return ["R1b2", "R1_zero_left", "R1_zero_right"]
+    if name == "l0b_hardrow_v1":
+        return ["R1b3_hardrow"]
+    if name == "math_fragile_v2":
+        return ["R1b2", "R1_zero_left", "R1_zero_right", "R1b3_hardrow"]
     if name == "none":
         return []
     raise ValueError(
