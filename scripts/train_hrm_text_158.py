@@ -291,6 +291,71 @@ def _compose_anchor_rows(
     return _rows(retention_anchor_set) * retention_anchor_repeat
 
 
+def _l0b_consistency_support(seed: int) -> tuple[list[tuple[str, int, str]], str]:
+    """Canonical-ordered L0b retained-support snapshot + content hash.
+
+    Determinism contract (codex msg 1779647581438-d34c44db): the full 230-row
+    L0b support (train+held) for `seed`, sorted stably by
+    `(source_rung, question, expected)` so repeated construction is
+    byte-identical regardless of the generator's internal emission order.
+    Returns `(rows, support_hash)`. The 16-hex support_hash pins WHICH rows
+    are protected into the train log + ckpt config, so rerunning the same
+    command guards the same rows in the same order.
+
+    NOTE the support SET is seed-dependent (two_digit picks in
+    `_enumerate_partition_l0b` are seeded by `_stable_seed("L0b_partition",
+    seed, ...)`); building with `curriculum_seed` is REQUIRED so the held
+    holes observed under that seed are actually in the protected set.
+    """
+    import hashlib
+    from calm.hrm_text_158.curriculum.language_supports import _l0b_support
+    rows = sorted(_l0b_support(seed), key=lambda r: (r[2], r[0], r[1]))
+    support_hash = hashlib.sha256(repr(rows).encode("utf-8")).hexdigest()[:16]
+    return rows, support_hash
+
+
+class _L0bConsistencySampler:
+    """Deterministic K-cyclic side-batch index sampler over the L0b support.
+
+    Determinism contract (codex msg 1779647581438-d34c44db): ONE seeded
+    permutation derived from `(curriculum_seed, "l0b_consistency")`, then a
+    cyclic cursor walks it in fixed-size K batches, wrapping at the end. Pure
+    index arithmetic — no DataLoader / worker randomness — so a rerun yields
+    identical batches in identical order. K-cyclic (NOT full-N-every-step) per
+    codex +1 msg 1779647554279-522ba519: even coverage, cheap.
+    """
+
+    def __init__(self, n: int, seed: int, batch: int):
+        if n <= 0:
+            raise ValueError(f"_L0bConsistencySampler needs n > 0, got {n}")
+        if batch <= 0:
+            raise ValueError(f"_L0bConsistencySampler needs batch > 0, got {batch}")
+        self.n = n
+        self.batch = batch
+        self.support_seed = _stable_curriculum_seed(seed, "l0b_consistency")
+        g = torch.Generator()
+        g.manual_seed(self.support_seed)
+        self.perm = torch.randperm(n, generator=g).tolist()
+        self.cursor = 0
+        self.rows_seen = 0
+
+    def next_indices(self) -> list[int]:
+        out = []
+        for _ in range(self.batch):
+            out.append(self.perm[self.cursor])
+            self.cursor = (self.cursor + 1) % self.n
+        self.rows_seen += self.batch
+        return out
+
+    def coverage(self) -> dict:
+        return {
+            "rows_seen": self.rows_seen,
+            "cursor": self.cursor,
+            "full_cycles": self.rows_seen // self.n,
+            "support_seed": self.support_seed,
+        }
+
+
 # ----------------------------------------------------------------------------- #
 # Train function
 # ----------------------------------------------------------------------------- #
@@ -354,6 +419,20 @@ def train(
     # retained skills. Requires --load-from when weight > 0.
     parent_consistency_weight: float = 0.0,
     parent_consistency_temp: float = 1.0,
+    # L0b retained-support KL-only consistency (opt-in; default 0.0 = off — the
+    # L0b SIDE PATH is skipped at weight 0. NOTE: this slice also adds an
+    # always-on explicit DataLoader generator (separate determinism change), so
+    # the weight-0 default path is deterministic-given-seed but NOT byte-
+    # identical to pre-slice. Each step side-batches a deterministic K-cyclic
+    # sample of the FULL 230-row L0b support (`_l0b_support(curriculum_seed)`,
+    # train+held) and adds soft forward-KL(parent || child) on it (NO CE / no
+    # target-task labels into the normal loss). Protects ALL L0b rows incl.
+    # held rows that replay (train-only) + manual anchors never cover — the
+    # broad fix for the F.2d/F.2e moving-held-hole whack-a-mole. Requires
+    # --load-from + curriculum mode when weight > 0; reuses
+    # --parent-consistency-temp. Codex +1 msg 1779647554279-522ba519.
+    l0b_consistency_weight: float = 0.0,
+    l0b_consistency_batch: int = 8,
     dry_run: bool = False,
 ) -> None:
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
@@ -374,6 +453,31 @@ def train(
             f"{parent_consistency_temp}); <= 0 is an invalid distillation "
             f"temperature (division by zero)."
         )
+    # L0b retained-support consistency guards (fire BEFORE any data/model work
+    # so tests + --dry-run + programmatic callers reject bad args loudly).
+    if l0b_consistency_weight < 0.0:
+        raise ValueError(
+            f"--l0b-consistency-weight must be >= 0 (got "
+            f"{l0b_consistency_weight}); a negative weight would reward drift "
+            f"from the parent on retained L0b rows."
+        )
+    if l0b_consistency_weight > 0.0:
+        if load_from is None:
+            raise ValueError(
+                "--l0b-consistency-weight > 0 requires --load-from "
+                "(the frozen parent reference checkpoint)."
+            )
+        if curriculum_rung is None:
+            raise ValueError(
+                "--l0b-consistency-weight > 0 requires curriculum mode "
+                "(--curriculum-rung); the L0b support snapshot is keyed by "
+                "--curriculum-seed."
+            )
+        if l0b_consistency_batch < 1:
+            raise ValueError(
+                f"--l0b-consistency-batch must be >= 1 when "
+                f"--l0b-consistency-weight > 0; got {l0b_consistency_batch}"
+            )
 
     # Slice B phase-gate (codex msg 1779565128372-c6872566 catch): anchors are
     # Phase 3 curriculum-only. In GSM8k mode no composition runs, but the
@@ -581,7 +685,14 @@ def train(
     if len(train_ds) == 0:
         raise RuntimeError("No usable training rows after max_len drop.")
 
-    loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, collate_fn=_collate)
+    # Explicit DataLoader generator (codex determinism msg 1779647581438):
+    # decouples the curriculum shuffle order from however much global RNG
+    # model-init consumed, so the data order depends only on --seed. Strictly
+    # improves run-to-run reproducibility.
+    _loader_gen = torch.Generator()
+    _loader_gen.manual_seed(seed)
+    loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
+                        collate_fn=_collate, generator=_loader_gen)
 
     # Build model
     cfg = HierarchicalReasoningModelConfig(
@@ -686,10 +797,10 @@ def train(
     # inference BitLinear forward) while the child may use the native-train
     # forward, so step-0 KL is ~0 within FP tolerance, not bitwise.
     parent_m = None
-    if parent_consistency_weight > 0.0:
+    if parent_consistency_weight > 0.0 or l0b_consistency_weight > 0.0:
         if load_from is None:
             raise ValueError(
-                "--parent-consistency-weight > 0 requires --load-from "
+                "parent/L0b-consistency weight > 0 requires --load-from "
                 "(the frozen parent reference checkpoint)."
             )
         parent_hrm = HierarchicalReasoningModel(cfg)
@@ -698,8 +809,52 @@ def train(
         parent_m.eval()
         for p in parent_m.parameters():
             p.requires_grad_(False)
-        print(f"[hrm158] parent-consistency ENABLED: weight={parent_consistency_weight} "
-              f"temp={parent_consistency_temp}; frozen parent from {load_from}", flush=True)
+        print(f"[hrm158] frozen parent reference LOADED from {load_from} "
+              f"(parent_consistency_weight={parent_consistency_weight} "
+              f"l0b_consistency_weight={l0b_consistency_weight} "
+              f"temp={parent_consistency_temp})", flush=True)
+
+    # L0b retained-support KL-only consistency setup (opt-in). Build the
+    # canonical-ordered 230-row support snapshot, encode it ONCE, and arm the
+    # deterministic K-cyclic sampler. The L0b side path itself is skipped at
+    # weight 0; the trainer's explicit DataLoader generator (above) is a
+    # separate, always-on determinism change. Built after the dry-run
+    # early-return so dry runs skip it.
+    l0b_sampler = None
+    l0b_support_hash = None
+    l0b_side_cache = None
+    if l0b_consistency_weight > 0.0:
+        l0b_support_rows, l0b_support_hash = _l0b_consistency_support(curriculum_seed)
+        _side_row_dicts = [
+            {"question": q, "expected": e, "source_rung": sr}
+            for (q, e, sr) in l0b_support_rows
+        ]
+        tok.assert_corpus_covered(_side_row_dicts, label="l0b_consistency")
+        side_ds = HrmTextGsm8kDataset(_side_row_dicts, tok, max_len=max_len,
+                                      curriculum_rung=None)
+        if side_ds.n_dropped != 0 or len(side_ds) != len(l0b_support_rows):
+            raise RuntimeError(
+                f"L0b consistency support lost rows to max_len={max_len} "
+                f"(dropped {side_ds.n_dropped}, kept {len(side_ds)} of "
+                f"{len(l0b_support_rows)}); cannot align the deterministic "
+                f"sampler to the canonical support order."
+            )
+        # CPU-resident encoded cache in canonical support order; sampler indexes it.
+        l0b_side_cache = [side_ds[i] for i in range(len(side_ds))]
+        l0b_sampler = _L0bConsistencySampler(
+            n=len(l0b_side_cache), seed=curriculum_seed,
+            batch=l0b_consistency_batch,
+        )
+        _first3 = l0b_sampler.perm[: min(3, len(l0b_sampler.perm))]
+        _first_qs = [l0b_support_rows[i][0] for i in _first3]
+        print(
+            f"[hrm158] L0b-consistency ENABLED: weight={l0b_consistency_weight} "
+            f"temp={parent_consistency_temp} batch={l0b_consistency_batch} "
+            f"support_name=L0b support_seed={curriculum_seed} "
+            f"support_count={len(l0b_side_cache)} support_hash={l0b_support_hash} "
+            f"sampler_seed={l0b_sampler.support_seed} first3_perm={_first3} "
+            f"first3_q={_first_qs}", flush=True,
+        )
 
     # Train
     m.train()
@@ -743,7 +898,7 @@ def train(
             child_batch = {"inputs": inputs, "labels": labels,
                            "sep_positions": sep_positions, "position_ids": position_ids}
             pc_kl_val = 0.0
-            if parent_m is not None:
+            if parent_consistency_weight > 0.0:
                 new_carry, loss, metrics = m(None, child_batch, return_logits=True, **extras)
                 is_prior = batch["is_prior"].to(device)
                 with torch.no_grad():
@@ -766,6 +921,39 @@ def train(
                     **extras,
                 )
 
+            # L0b retained-support KL-only side batch. A K-cyclic sample of the
+            # full 230-row L0b support; child + frozen-parent forwards, soft
+            # forward-KL on ALL side rows (is_prior all-True), added to loss.
+            # NO CE: the side child-forward DOES compute a CE loss internally
+            # but it is discarded (never added to `loss`), so only the KL term
+            # backprops. Protects held L0b rows that replay/anchors never cover.
+            l0b_kl_val = 0.0
+            if l0b_sampler is not None:
+                _idx = l0b_sampler.next_indices()
+                _picked = [l0b_side_cache[i] for i in _idx]
+                s_inputs = torch.stack([p["inputs"] for p in _picked], 0).to(device)
+                s_labels = torch.stack([p["labels"] for p in _picked], 0).to(device)
+                s_sep = torch.stack([p["sep_position"] for p in _picked], 0).to(device)
+                sB, sL = s_inputs.shape
+                s_pos = torch.arange(sL, dtype=torch.long, device=device).unsqueeze(0).expand(sB, -1)
+                s_batch = {"inputs": s_inputs, "labels": s_labels,
+                           "sep_positions": s_sep, "position_ids": s_pos}
+                _sc, _sloss, s_metrics = m(None, s_batch, return_logits=True, **extras)
+                with torch.no_grad():
+                    _, s_parent_logits = parent_m(
+                        None,
+                        {"inputs": s_inputs, "sep_positions": s_sep,
+                         "position_ids": s_pos},
+                        **extras,
+                    )
+                s_is_prior = torch.ones(sB, dtype=torch.bool, device=device)
+                l0b_kl = _parent_consistency_kl(
+                    s_metrics["logits"], s_parent_logits, s_labels, s_is_prior,
+                    temp=parent_consistency_temp,
+                )
+                loss = loss + l0b_consistency_weight * l0b_kl
+                l0b_kl_val = float(l0b_kl.detach())
+
             if not torch.isfinite(loss):
                 print(f"[NaN-DETECT] step={step} loss={loss.item()}", flush=True)
                 sys.exit(2)
@@ -781,11 +969,12 @@ def train(
             if step == 1 or step % log_every == 0:
                 acc_count, acc_total = metrics["accuracy"]
                 elapsed = time.time() - start_t
-                pc_str = f" pc_kl={pc_kl_val:.6f}" if parent_m is not None else ""
+                pc_str = f" pc_kl={pc_kl_val:.6f}" if parent_consistency_weight > 0.0 else ""
+                l0b_str = f" l0b_kl={l0b_kl_val:.6f}" if l0b_sampler is not None else ""
                 print(f"[ep {ep:3d} step {step:5d}] loss={loss.item():.4f} "
                       f"grad_norm={float(grad_norm):.4f} lr={cur_lr:.6f} "
                       f"bp_steps={extras['bp_steps']} "
-                      f"acc={int(acc_count)}/{int(acc_total)}{pc_str} t={elapsed:.1f}s",
+                      f"acc={int(acc_count)}/{int(acc_total)}{pc_str}{l0b_str} t={elapsed:.1f}s",
                       flush=True)
 
             # Step-level save (Slice 13m pattern, multi)
@@ -804,13 +993,21 @@ def train(
                         prior_rungs=prior_rungs,
                         retention_anchor_set=retention_anchor_set,
                         retention_anchor_repeat=retention_anchor_repeat,
+                        parent_consistency_weight=parent_consistency_weight,
+                        parent_consistency_temp=parent_consistency_temp,
+                        l0b_consistency_weight=l0b_consistency_weight,
+                        l0b_consistency_batch=l0b_consistency_batch,
+                        l0b_consistency_support_hash=l0b_support_hash,
+                        l0b_consistency_support_count=(
+                            len(l0b_side_cache) if l0b_side_cache is not None else 0),
                     ),
                     "step": step,
                     "epoch": ep,
                     "source_pin": SOURCE_PIN,
                 }
                 torch.save(ckpt_blob, ckpt_path)
-                print(f"[ep {ep:3d} step {step:5d}] save_at_step: saved {ckpt_path}", flush=True)
+                _cov = f" l0b_cov={l0b_sampler.coverage()}" if l0b_sampler is not None else ""
+                print(f"[ep {ep:3d} step {step:5d}] save_at_step: saved {ckpt_path}{_cov}", flush=True)
 
     print(f"[hrm158] training complete: {step} steps in {time.time() - start_t:.1f}s", flush=True)
     # Final save.
@@ -842,13 +1039,21 @@ def train(
             prior_rungs=prior_rungs,
             retention_anchor_set=retention_anchor_set,
             retention_anchor_repeat=retention_anchor_repeat,
+            parent_consistency_weight=parent_consistency_weight,
+            parent_consistency_temp=parent_consistency_temp,
+            l0b_consistency_weight=l0b_consistency_weight,
+            l0b_consistency_batch=l0b_consistency_batch,
+            l0b_consistency_support_hash=l0b_support_hash,
+            l0b_consistency_support_count=(
+                len(l0b_side_cache) if l0b_side_cache is not None else 0),
         ),
         "step": step,
         "epoch": ep,
         "source_pin": SOURCE_PIN,
     }
     torch.save(ckpt_blob, final_path)
-    print(f"[hrm158] final ckpt: {final_path}", flush=True)
+    _cov = f" l0b_cov={l0b_sampler.coverage()}" if l0b_sampler is not None else ""
+    print(f"[hrm158] final ckpt: {final_path}{_cov}", flush=True)
 
 
 def _build_ckpt_config(
@@ -864,6 +1069,12 @@ def _build_ckpt_config(
     prior_rungs: list[str] | None = None,
     retention_anchor_set: str | None = None,
     retention_anchor_repeat: int | None = None,
+    parent_consistency_weight: float = 0.0,
+    parent_consistency_temp: float = 1.0,
+    l0b_consistency_weight: float = 0.0,
+    l0b_consistency_batch: int = 0,
+    l0b_consistency_support_hash: str | None = None,
+    l0b_consistency_support_count: int = 0,
 ) -> dict:
     """Single source of truth for ckpt config blob (per Slice 13m pattern).
 
@@ -908,6 +1119,18 @@ def _build_ckpt_config(
     if retention_anchor_set is not None and retention_anchor_set != "none":
         out["retention_anchor_set"] = retention_anchor_set
         out["retention_anchor_repeat"] = retention_anchor_repeat
+    # Consistency-loss recipe (codex determinism msg 1779647581438): record the
+    # weights/temp + L0b support hash so audit naming + manifests pin the exact
+    # recipe. Recorded only when the respective mechanism is active.
+    if parent_consistency_weight > 0.0:
+        out["parent_consistency_weight"] = parent_consistency_weight
+        out["parent_consistency_temp"] = parent_consistency_temp
+    if l0b_consistency_weight > 0.0:
+        out["l0b_consistency_weight"] = l0b_consistency_weight
+        out["l0b_consistency_temp"] = parent_consistency_temp
+        out["l0b_consistency_batch"] = l0b_consistency_batch
+        out["l0b_consistency_support_hash"] = l0b_consistency_support_hash
+        out["l0b_consistency_support_count"] = l0b_consistency_support_count
     return out
 
 
@@ -1040,7 +1263,19 @@ if __name__ == "__main__":
     ap.add_argument("--parent-consistency-temp", type=float, default=1.0,
                     help="Softmax temperature for the parent-consistency KL "
                          "(standard distillation T with T^2 grad scaling). "
-                         "Default 1.0.")
+                         "Default 1.0. Also applies to the L0b-consistency KL.")
+    ap.add_argument("--l0b-consistency-weight", type=float, default=0.0,
+                    help="Weight on the L0b retained-support KL-only side batch. "
+                         ">0 side-batches a deterministic K-cyclic sample of the "
+                         "full 230-row L0b support (_l0b_support(--curriculum-seed), "
+                         "train+held) each step and adds soft forward-KL(parent||"
+                         "child) on it (NO CE), protecting held L0b rows that "
+                         "replay/anchors never cover. Requires --load-from + "
+                         "curriculum mode. Default 0.0 (off).")
+    ap.add_argument("--l0b-consistency-batch", type=int, default=8,
+                    help="K rows per L0b-consistency side batch (K-cyclic "
+                         "sampler). At ~1500 steps, K=8 -> ~52x coverage of the "
+                         "230-row support. Default 8.")
     ap.add_argument("--dry-run", action="store_true",
                     help="Build corpus + tokenizer + model + first batch + verify "
                          "forward pass, then exit BEFORE optimizer step. No ckpt "
@@ -1093,5 +1328,7 @@ if __name__ == "__main__":
         retention_anchor_repeat=args.retention_anchor_repeat,
         parent_consistency_weight=args.parent_consistency_weight,
         parent_consistency_temp=args.parent_consistency_temp,
+        l0b_consistency_weight=args.l0b_consistency_weight,
+        l0b_consistency_batch=args.l0b_consistency_batch,
         dry_run=args.dry_run,
     )
