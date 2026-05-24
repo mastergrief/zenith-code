@@ -39,30 +39,46 @@ on generated response tokens.
 2. **Train one tiny capability block** (a curriculum rung — e.g. K=N
    addition under a carry-stratified partition, or a paraphrase block).
 3. **Replay important prior rungs** in the same training run; do NOT
-   train new-data-only. Default mix: `--replay-ratio 0.65` (65% replay,
-   35% new rung data).
+   train new-data-only. Fragile slices default to `--replay-ratio 0.80`
+   (80% replay, 20% new rung data); simple non-fragile rungs may use
+   `0.65`.
 4. **Keep tokenizer broad and fixed** across math / language / code.
 5. **Promote a checkpoint only after** sampled probes + A0 exhaustive
    finite-support audit + explicit watch rows prove acquisition AND no
-   parent-relative cluster regression.
+   parent-relative cluster regression. **Bank the earliest checkpoint
+   that clears all hard gates — the final checkpoint has no privilege.**
 6. **If failures appear, classify before changing recipe**: train-set
    miss / held-set generalization residual / parent-relative cluster /
    signal-starvation. Each class has a different repair shape.
 
-### Default math recipe
+### Default recipe — fragile slices (slow-safe)
+
+**Fragile slices default to the slow-safe recipe.** Lower update
+pressure is the retention knob; higher lr migrates digit/template
+clusters into prior rungs. The producer/consumer audit watcher
+(`scripts/parallel_audit_watcher.py`) is **required** (must prove
+OVERLAP per save step; else SERIAL_FALLBACK/MISSED unless explicitly
+waived).
 
 ```
 --curriculum-rung <rung>
 --use-broad-tokenizer
 --load-from <chain-head>.pt
 --replay-rungs <comma-separated prior rungs>
---replay-ratio 0.65
---lr 5e-4
+--replay-ratio 0.80
+--lr 1e-4
 --curriculum-n-train 10000
 --curriculum-seed 17
+--retention-anchor-set math_fragile_v1 --retention-anchor-repeat 2
 --use-ternary-bulk --use-native-ternary-train
---save-at-step 500 --save-at-step 750 --save-at-step 1000
+--save-at-step 250 --save-at-step 500 --save-at-step 750 \
+--save-at-step 1000 --save-at-step 1250
 ```
+
+**Non-fragile exception (evidence-gated)**: a simple math rung that
+proves it tolerates more pressure may use faster lr (e.g. `--lr 5e-4
+--replay-ratio 0.65`, saves 500/750/1000). Default stays slow-safe
+until a rung earns the exception.
 
 For targeted-repair runs that need to replay over positionally-future
 rungs, add `--allow-future-replay`.
