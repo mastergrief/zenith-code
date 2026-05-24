@@ -36,7 +36,7 @@ _L0B_SEED17_HASH = "89174273d21845bc"
 # --------------------------------------------------------------------------- #
 
 def test_registry_names():
-    assert _REGISTRY == ("L0b", "math_a0")
+    assert _REGISTRY == ("L0b", "math_a0", "math_r1b2_minus_one")
 
 
 def test_l0b_support_snapshot():
@@ -59,6 +59,54 @@ def test_math_a0_contains_10_minus_1_at_9():
     # The row F.2f regressed; protecting it via parent-KL is the whole point.
     rows, _ = _support("math_a0", 17)
     assert ("what is 10 minus 1?", 9, "R1b2") in rows
+
+
+# --------------------------------------------------------------------------- #
+# math_r1b2_minus_one: concentrated registry-derived R1b2 class overlay (F.2h)
+# --------------------------------------------------------------------------- #
+
+# Canonical hash pinned from the seed-17 build (codex msg 1779659487346).
+_R1B2_HASH = "8c765badc7365890"
+
+
+def test_math_r1b2_minus_one_snapshot():
+    from calm.hrm_text_158.curriculum.exhaustive_supports import build_exhaustive_supports
+    rows, h = _support("math_r1b2_minus_one", 17)
+    # Codex: pin 99, but fail LOUDLY against the live source count if it drifts.
+    src = len(build_exhaustive_supports()["R1b2"])
+    assert len(rows) == src, f"support count {len(rows)} != source R1b2 count {src}"
+    assert len(rows) == 99, f"expected 99 R1b2 rows, got {len(rows)}"
+    assert h == _R1B2_HASH
+    assert rows == sorted(rows, key=lambda r: (r[2], r[0], r[1]))
+    assert all(sr == "R1b2" for _q, _e, sr in rows), "all rows must be source_rung R1b2"
+    assert all(q.startswith("what is ") and "minus 1?" in q for q, _e, _sr in rows)
+
+
+def test_math_r1b2_minus_one_contains_10_minus_1_at_9():
+    # The exact row F.2g failed to protect; the class overlay must cover it.
+    rows, _ = _support("math_r1b2_minus_one", 17)
+    assert ("what is 10 minus 1?", 9, "R1b2") in rows
+
+
+def test_math_r1b2_minus_one_seed_independent():
+    assert _support("math_r1b2_minus_one", 17)[1] == _support("math_r1b2_minus_one", 42)[1], \
+        "R1b2 class is exhaustive/seed-independent"
+
+
+def test_math_r1b2_minus_one_is_subset_of_math_a0():
+    # The overlay is a concentrated subset of the broad support, not new rows.
+    r1b2, _ = _support("math_r1b2_minus_one", 17)
+    a0, _ = _support("math_a0", 17)
+    a0_set = set(a0)
+    assert set(r1b2) <= a0_set, "every R1b2-class row must already be in math_a0"
+    assert len(r1b2) < len(a0), "overlay must be strictly smaller (concentrated)"
+
+
+def test_math_r1b2_minus_one_sampler_namespace():
+    # Non-L0b support uses the "retained:<name>" namespace (not L0b's legacy ns).
+    assert _sampler_seed("math_r1b2_minus_one", 17) == _thr._stable_curriculum_seed(
+        17, "retained:math_r1b2_minus_one")
+    assert _sampler_seed("math_r1b2_minus_one", 17) != _sampler_seed("math_a0", 17)
 
 
 def test_determinism_same_name_seed():

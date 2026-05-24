@@ -314,7 +314,7 @@ def _compose_anchor_rows(
     return _rows(retention_anchor_set) * retention_anchor_repeat
 
 
-_RETAINED_SUPPORT_REGISTRY: tuple[str, ...] = ("L0b", "math_a0")
+_RETAINED_SUPPORT_REGISTRY: tuple[str, ...] = ("L0b", "math_a0", "math_r1b2_minus_one")
 
 
 def _retained_support(name: str, seed: int) -> tuple[list[tuple[str, int, str]], str]:
@@ -331,6 +331,13 @@ def _retained_support(name: str, seed: int) -> tuple[list[tuple[str, int, str]],
                   `what is <expr>?` surface, SEED-INDEPENDENT (exhaustive).
                   Contains `what is 10 minus 1?`->9 (R1b2), the row F.2f
                   regressed; protecting it via parent-KL is the broad fix.
+    - "math_r1b2_minus_one" ← `build_exhaustive_supports()["R1b2"]` (the
+                  `what is <a> minus 1?` class), SEED-INDEPENDENT. A
+                  CONCENTRATED registry-derived subset of math_a0: F.2g showed
+                  the broad 1255-row support is too dilute at K=8 to hold the
+                  single high-pressure `10 minus 1` row against L0c1 CE on the
+                  shared minus circuit. This class support gives that whole
+                  rung dense parent-KL coverage (codex msg 1779659487346).
 
     Rows are `(question, expected, source_rung)` sorted stably by
     `(source_rung, question, expected)` so repeated construction is
@@ -345,6 +352,10 @@ def _retained_support(name: str, seed: int) -> tuple[list[tuple[str, int, str]],
         rows = [(q, e, rung)
                 for rung, pairs in build_exhaustive_supports().items()
                 for (q, e) in pairs]
+    elif name == "math_r1b2_minus_one":
+        from calm.hrm_text_158.curriculum.exhaustive_supports import build_exhaustive_supports
+        rows = [(q, e, "R1b2")
+                for (q, e) in build_exhaustive_supports()["R1b2"]]
     else:
         raise ValueError(
             f"unknown retained support {name!r}; valid: {_RETAINED_SUPPORT_REGISTRY}"
