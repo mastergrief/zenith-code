@@ -875,6 +875,10 @@ def train(
                   f"BitLinear modules (Triton fused-quantize + STE-correct backward)",
                   flush=True)
     step = 0
+    # Reset CUDA peak-memory stats so the logged peak reflects the training
+    # loop (post model+parent load), giving a clean F.2e-comparable peak.
+    if device == "cuda":
+        torch.cuda.reset_peak_memory_stats()
     start_t = time.time()
     for ep in range(1, epochs + 1):
         for batch in loader:
@@ -894,12 +898,23 @@ def train(
             # bp_steps schedule via LMHead.compute_train_extra_args delegation
             extras = m.compute_train_extra_args(step, total_steps)
 
-            # Forward + loss (+ optional parent-consistency KL on prior rows)
+            # Forward + loss with SEQUENTIAL backward to bound peak VRAM.
+            # The main (CE [+ curriculum-PC]) graph is freed by ITS backward
+            # BEFORE the L0b side graph is built, so peak activation memory is
+            # max(main, side), NOT main+side. At bp_steps=5 (deep HRM
+            # recurrence) holding BOTH return_logits graphs simultaneously
+            # ~2x'd peak and thrashed the 8 GB allocator (F.2f run-1 OOM-thrash,
+            # 0.7->13 s/step). Gradients accumulate across the two backwards —
+            # identical to a single summed-loss backward. zero_grad ONCE up
+            # front; step ONCE after both backwards.
             child_batch = {"inputs": inputs, "labels": labels,
                            "sep_positions": sep_positions, "position_ids": position_ids}
+            opt.zero_grad()
+
+            # --- Main backward: CE [+ curriculum parent-consistency KL] ---
             pc_kl_val = 0.0
             if parent_consistency_weight > 0.0:
-                new_carry, loss, metrics = m(None, child_batch, return_logits=True, **extras)
+                new_carry, loss_main, metrics = m(None, child_batch, return_logits=True, **extras)
                 is_prior = batch["is_prior"].to(device)
                 with torch.no_grad():
                     _, parent_logits = parent_m(
@@ -912,21 +927,22 @@ def train(
                     metrics["logits"], parent_logits, labels, is_prior,
                     temp=parent_consistency_temp,
                 )
-                loss = loss + parent_consistency_weight * pc_kl
+                loss_main = loss_main + parent_consistency_weight * pc_kl
                 pc_kl_val = float(pc_kl.detach())
             else:
-                new_carry, loss, metrics = m(
-                    None,
-                    child_batch,
-                    **extras,
-                )
+                new_carry, loss_main, metrics = m(None, child_batch, **extras)
+            if not torch.isfinite(loss_main):
+                print(f"[NaN-DETECT] step={step} loss_main={loss_main.item()}", flush=True)
+                sys.exit(2)
+            loss_main.backward()                 # frees the main graph here
+            disp_loss = float(loss_main.detach())
+            acc_count, acc_total = metrics["accuracy"]
 
-            # L0b retained-support KL-only side batch. A K-cyclic sample of the
-            # full 230-row L0b support; child + frozen-parent forwards, soft
-            # forward-KL on ALL side rows (is_prior all-True), added to loss.
-            # NO CE: the side child-forward DOES compute a CE loss internally
-            # but it is discarded (never added to `loss`), so only the KL term
-            # backprops. Protects held L0b rows that replay/anchors never cover.
+            # --- L0b retained-support KL-only side backward ---
+            # Built AFTER the main graph is freed -> peak VRAM bounded. NO CE:
+            # the side child-forward computes a CE loss internally but it is
+            # DISCARDED (never backpropped); only the KL term flows gradient.
+            # Protects held L0b rows that replay (train-only) + anchors miss.
             l0b_kl_val = 0.0
             if l0b_sampler is not None:
                 _idx = l0b_sampler.next_indices()
@@ -951,15 +967,14 @@ def train(
                     s_metrics["logits"], s_parent_logits, s_labels, s_is_prior,
                     temp=parent_consistency_temp,
                 )
-                loss = loss + l0b_consistency_weight * l0b_kl
+                l0b_loss = l0b_consistency_weight * l0b_kl
+                if not torch.isfinite(l0b_loss):
+                    print(f"[NaN-DETECT] step={step} l0b_loss={l0b_loss.item()}", flush=True)
+                    sys.exit(2)
+                l0b_loss.backward()              # accumulates grad, frees side graph
                 l0b_kl_val = float(l0b_kl.detach())
+                disp_loss += float(l0b_loss.detach())
 
-            if not torch.isfinite(loss):
-                print(f"[NaN-DETECT] step={step} loss={loss.item()}", flush=True)
-                sys.exit(2)
-
-            opt.zero_grad()
-            loss.backward()
             grad_norm = torch.nn.utils.clip_grad_norm_(m.parameters(), max_norm=1.0)
             if not torch.isfinite(grad_norm):
                 print(f"[NaN-DETECT] step={step} grad_norm={grad_norm}", flush=True)
@@ -967,14 +982,20 @@ def train(
             opt.step()
 
             if step == 1 or step % log_every == 0:
-                acc_count, acc_total = metrics["accuracy"]
                 elapsed = time.time() - start_t
                 pc_str = f" pc_kl={pc_kl_val:.6f}" if parent_consistency_weight > 0.0 else ""
                 l0b_str = f" l0b_kl={l0b_kl_val:.6f}" if l0b_sampler is not None else ""
-                print(f"[ep {ep:3d} step {step:5d}] loss={loss.item():.4f} "
+                # Peak CUDA memory (codex receipt msg 1779650973993): reserved
+                # can stay high even when allocations are bounded, so report
+                # both. max_memory_allocated is the true peak live tensors.
+                mem_str = ""
+                if device == "cuda":
+                    mem_str = (f" peak_alloc={torch.cuda.max_memory_allocated()/1e9:.2f}GB"
+                               f" peak_resv={torch.cuda.max_memory_reserved()/1e9:.2f}GB")
+                print(f"[ep {ep:3d} step {step:5d}] loss={disp_loss:.4f} "
                       f"grad_norm={float(grad_norm):.4f} lr={cur_lr:.6f} "
                       f"bp_steps={extras['bp_steps']} "
-                      f"acc={int(acc_count)}/{int(acc_total)}{pc_str}{l0b_str} t={elapsed:.1f}s",
+                      f"acc={int(acc_count)}/{int(acc_total)}{pc_str}{l0b_str}{mem_str} t={elapsed:.1f}s",
                       flush=True)
 
             # Step-level save (Slice 13m pattern, multi)
