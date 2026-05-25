@@ -257,7 +257,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K3", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -677,6 +677,22 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     "L0c2": {
         "train":     {"partition": "enumerate_stratified_l0c2"},
         "held_out":  {"partition": "enumerate_stratified_l0c2"},
+    },
+    # F.4d result-magnitude split rungs over the EXISTING L0c2 hard pool.
+    # These are explicit stair-step acquisition slices, not a parameterized
+    # runtime band flag. They preserve L0c2's train/held split and singleton
+    # pin; replay policy stays launch-scoped (do not alter replay.py here).
+    "L0c2-K1": {
+        "train":     {"partition": "enumerate_stratified_l0c2_k1"},
+        "held_out":  {"partition": "enumerate_stratified_l0c2_k1"},
+    },
+    "L0c2-K2": {
+        "train":     {"partition": "enumerate_stratified_l0c2_k2"},
+        "held_out":  {"partition": "enumerate_stratified_l0c2_k2"},
+    },
+    "L0c2-K3": {
+        "train":     {"partition": "enumerate_stratified_l0c2_k3"},
+        "held_out":  {"partition": "enumerate_stratified_l0c2_k3"},
     },
     "L0c": {
         "train":     {"partition": "enumerate_stratified_l0c"},
@@ -2490,6 +2506,7 @@ def set_l0c_exhaustive_2digit_hard_weight(weight: float) -> float:
 # --------------------------------------------------------------------------- #
 
 L0C2_EXPECTED_COUNT: int = 230
+L0C2_BAND_EXPECTED_COUNTS: dict[str, int] = {"K1": 24, "K2": 79, "K3": 127}
 
 
 def _l0c_operator(question: str) -> str:
@@ -2614,6 +2631,67 @@ def _enumerate_partition_l0c2(seed: int) -> tuple[list[dict], list[dict]]:
     return train, held
 
 
+def _l0c2_result_band(row: dict) -> Literal["K1", "K2", "K3"] | None:
+    """F.4d result-magnitude band classifier over an L0c2 row.
+
+    K1 is primarily result magnitude 10..19, but also owns the singleton
+    operand-2digit/result-1digit hard row (`10 minus 1 -> 9`) so L0c2's
+    existing rare-first reservation and train pin carry into the first rung.
+    """
+    if row.get("hard_reason") == "operand_2digit_result_1digit":
+        return "K1"
+    mag = abs(int(row["expected"]))
+    if 10 <= mag <= 19:
+        return "K1"
+    if 20 <= mag <= 49:
+        return "K2"
+    if 50 <= mag <= 99:
+        return "K3"
+    return None
+
+
+def _enumerate_partition_l0c2_band(
+    seed: int,
+    band: Literal["K1", "K2", "K3"],
+) -> tuple[list[dict], list[dict]]:
+    """Filter the existing L0c2 partition to a result-magnitude band.
+
+    The parent L0c2 enumerator owns bucket stratification, rare-first hard_reason
+    reservation, and train/held split. Filtering after that preserves those
+    guarantees rather than re-splitting or re-sampling inside the smaller band.
+    """
+    train, held = _enumerate_partition_l0c2(seed)
+    band_train = [r for r in train if _l0c2_result_band(r) == band]
+    band_held = [r for r in held if _l0c2_result_band(r) == band]
+    assert band_train or band_held, f"L0c2 {band} partition is empty"
+    return band_train, band_held
+
+
+def _enumerate_partition_l0c2k1(seed: int) -> tuple[list[dict], list[dict]]:
+    return _enumerate_partition_l0c2_band(seed, "K1")
+
+
+def _enumerate_partition_l0c2k2(seed: int) -> tuple[list[dict], list[dict]]:
+    return _enumerate_partition_l0c2_band(seed, "K2")
+
+
+def _enumerate_partition_l0c2k3(seed: int) -> tuple[list[dict], list[dict]]:
+    return _enumerate_partition_l0c2_band(seed, "K3")
+
+
+def _sample_l0c2_pool(
+    rng: random.Random,
+    pool: list[dict],
+    n: int,
+    rung: str,
+) -> list[dict]:
+    out = []
+    while len(out) < n:
+        row = rng.choice(pool)
+        out.append({"question": row["question"], "expected": row["expected"], "rung": rung})
+    return out
+
+
 def _gen_l0c2(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
     """L0c2 bounded-2-digit training-side sampler (codex msg 1779705530223 +1
     F.4a). Samples with replacement from the L0c2 train/held pool until n drawn;
@@ -2621,11 +2699,25 @@ def _gen_l0c2(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> 
     is the ~230-row stratified hard subset (option B stair-step)."""
     train_pool, held_pool = _enumerate_partition_l0c2(seed)
     pool = train_pool if split == "train" else held_pool
-    out = []
-    while len(out) < n:
-        row = rng.choice(pool)
-        out.append({"question": row["question"], "expected": row["expected"], "rung": "L0c2"})
-    return out
+    return _sample_l0c2_pool(rng, pool, n, "L0c2")
+
+
+def _gen_l0c2k1(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    train_pool, held_pool = _enumerate_partition_l0c2k1(seed)
+    pool = train_pool if split == "train" else held_pool
+    return _sample_l0c2_pool(rng, pool, n, "L0c2-K1")
+
+
+def _gen_l0c2k2(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    train_pool, held_pool = _enumerate_partition_l0c2k2(seed)
+    pool = train_pool if split == "train" else held_pool
+    return _sample_l0c2_pool(rng, pool, n, "L0c2-K2")
+
+
+def _gen_l0c2k3(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    train_pool, held_pool = _enumerate_partition_l0c2k3(seed)
+    pool = train_pool if split == "train" else held_pool
+    return _sample_l0c2_pool(rng, pool, n, "L0c2-K3")
 
 
 def _gen_r1b7(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
@@ -3023,6 +3115,12 @@ def make_rung_examples(
         return _gen_l0c1(rng, _RUNG_SPEC["L0c1"][split], n, seed=seed, split=split)
     if rung == "L0c2":
         return _gen_l0c2(rng, _RUNG_SPEC["L0c2"][split], n, seed=seed, split=split)
+    if rung == "L0c2-K1":
+        return _gen_l0c2k1(rng, _RUNG_SPEC["L0c2-K1"][split], n, seed=seed, split=split)
+    if rung == "L0c2-K2":
+        return _gen_l0c2k2(rng, _RUNG_SPEC["L0c2-K2"][split], n, seed=seed, split=split)
+    if rung == "L0c2-K3":
+        return _gen_l0c2k3(rng, _RUNG_SPEC["L0c2-K3"][split], n, seed=seed, split=split)
     if rung == "L0c":
         return _gen_l0c(rng, _RUNG_SPEC["L0c"][split], n, seed=seed, split=split)
     if rung == "L0c_exhaustive":

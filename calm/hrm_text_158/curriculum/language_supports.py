@@ -34,6 +34,9 @@ from calm.hrm_text_158.curriculum.generators import (
     _enumerate_partition_l0c,
     _enumerate_partition_l0c1,
     _enumerate_partition_l0c2,
+    _enumerate_partition_l0c2k1,
+    _enumerate_partition_l0c2k2,
+    _enumerate_partition_l0c2k3,
 )
 
 
@@ -208,6 +211,9 @@ def build_l0c1_support(seed: int = 42) -> dict[str, list[tuple[str, int, str]]]:
 # R1b2:minus / `10 minus 1 -> 9` operator-specific failure class cannot hide.
 # ---------------------------------------------------------------------------
 L0C2_AUDIT_EXPECTED_COUNT: int = 230
+L0C2K1_AUDIT_EXPECTED_COUNT: int = 24
+L0C2K2_AUDIT_EXPECTED_COUNT: int = 79
+L0C2K3_AUDIT_EXPECTED_COUNT: int = 127
 
 
 def _l0c2_support(seed: int = 42) -> list[tuple[str, int, str]]:
@@ -233,6 +239,42 @@ def build_l0c2_support(seed: int = 42) -> dict[str, list[tuple[str, int, str]]]:
     `build_language_supports` (keeps the canonical 690 language aggregate and
     the L0c2 surface separate, mirroring the L0c1 constraint)."""
     return {"L0c2": _l0c2_support(seed)}
+
+
+def _l0c2_band_support(partition_builder, seed: int = 42) -> list[tuple[str, int, str]]:
+    """Build an L0c2 K-band audit support from a banded partition."""
+    train, held = partition_builder(seed)
+    rows: list[tuple[str, int, str]] = []
+    for r in train + held:
+        rows.append((r["question"], r["expected"], f"{r['source_rung']}:{r['operator']}"))
+    return rows
+
+
+def _l0c2k1_support(seed: int = 42) -> list[tuple[str, int, str]]:
+    return _l0c2_band_support(_enumerate_partition_l0c2k1, seed)
+
+
+def _l0c2k2_support(seed: int = 42) -> list[tuple[str, int, str]]:
+    return _l0c2_band_support(_enumerate_partition_l0c2k2, seed)
+
+
+def _l0c2k3_support(seed: int = 42) -> list[tuple[str, int, str]]:
+    return _l0c2_band_support(_enumerate_partition_l0c2k3, seed)
+
+
+def build_l0c2k1_support(seed: int = 42) -> dict[str, list[tuple[str, int, str]]]:
+    """Standalone L0c2-K1 audit surface (seed-42 count 24)."""
+    return {"L0c2-K1": _l0c2k1_support(seed)}
+
+
+def build_l0c2k2_support(seed: int = 42) -> dict[str, list[tuple[str, int, str]]]:
+    """Standalone L0c2-K2 audit surface (seed-42 count 79)."""
+    return {"L0c2-K2": _l0c2k2_support(seed)}
+
+
+def build_l0c2k3_support(seed: int = 42) -> dict[str, list[tuple[str, int, str]]]:
+    """Standalone L0c2-K3 audit surface (seed-42 count 127)."""
+    return {"L0c2-K3": _l0c2k3_support(seed)}
 
 
 def build_language_supports(seed: int = 42) -> dict[str, list[tuple[str, int, str]]]:
@@ -264,11 +306,11 @@ def language_source_rung_buckets(rung: str) -> list[str]:
             "R1b1", "R1b2", "R1b3", "R1b4v2",
             "R1b5", "R1b6", "R1b7", "R1b8", "R1b9",
         ]
-    if rung == "L0c2":
-        # F.4 bounded-2-digit rung: report by the 12 COMPOSITE
-        # source_rung:operator buckets, NOT collapsed source-rungs — keeps the
-        # R1b2:minus operator-specific failure class (`10 minus 1 -> 9`)
-        # visible. Order = the F.4a partition's sorted (source_rung, operator).
+    if rung in ("L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K3"):
+        # F.4/F.4d bounded hard surfaces: report by COMPOSITE
+        # source_rung:operator buckets, NOT collapsed source-rungs. K bands use
+        # the full L0c2 bucket axis so non-default seeds cannot KeyError when a
+        # small band happens to include a different sparse bucket.
         return [
             "R0:identity",
             "R1:minus", "R1:plus",
@@ -277,5 +319,5 @@ def language_source_rung_buckets(rung: str) -> list[str]:
         ]
     raise ValueError(
         f"unknown language rung {rung!r}; valid: {LANGUAGE_ACTIVE_RUNGS} "
-        f"+ 'L0c1' / 'L0c2' (precursor / stair-step audit surfaces)"
+        f"+ 'L0c1' / 'L0c2' / 'L0c2-K1..K3' (separate audit surfaces)"
     )

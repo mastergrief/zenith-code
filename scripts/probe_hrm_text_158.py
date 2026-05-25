@@ -1917,6 +1917,20 @@ if __name__ == "__main__":
                          "R1b2:minus failure class visible); NOT blended into "
                          "--language-supports / the 690 aggregate. Conflicts with "
                          "the other audit modes.")
+    # F.4d K-magnitude band audits: three explicit surfaces over the existing
+    # L0c2 pool, never blended into the canonical language aggregate.
+    ap.add_argument("--l0c2k1-audit", action="store_true",
+                    help="Run the standalone L0c2-K1 audit surface (result "
+                         "magnitude 10-19 plus the 10 minus 1 -> 9 singleton; "
+                         "seed-42 aggregate 24). Conflicts with other modes.")
+    ap.add_argument("--l0c2k2-audit", action="store_true",
+                    help="Run the standalone L0c2-K2 audit surface (result "
+                         "magnitude 20-49; seed-42 aggregate 79). Conflicts "
+                         "with other modes.")
+    ap.add_argument("--l0c2k3-audit", action="store_true",
+                    help="Run the standalone L0c2-K3 audit surface (result "
+                         "magnitude 50-99; seed-42 aggregate 127). Conflicts "
+                         "with other modes.")
     # Exhaustive-L0c language-density audit (codex msg 1779693537447 / Slice:
     # language-to-math-density). The `<expr> equals what?` wrapper over the
     # FULL math-A0 set (1255). Reuses the exhaustive audit machinery via
@@ -2022,6 +2036,30 @@ if __name__ == "__main__":
             "(mutually exclusive — two separate bounded surfaces). Run them "
             "separately and combine JSON in the receipt."
         )
+    _l0c2k_flags = [
+        ("--l0c2k1-audit", args.l0c2k1_audit),
+        ("--l0c2k2-audit", args.l0c2k2_audit),
+        ("--l0c2k3-audit", args.l0c2k3_audit),
+    ]
+    for _flag, _on in _l0c2k_flags:
+        if not _on:
+            continue
+        _conflicts = [
+            ("--curriculum-rungs", args.curriculum_rungs is not None),
+            ("--exhaustive-finite-supports", args.exhaustive_finite_supports),
+            ("--language-supports", args.language_supports),
+            ("--anchor-audit", args.anchor_audit),
+            ("--l0c1-audit", args.l0c1_audit),
+            ("--l0c2-audit", args.l0c2_audit),
+            ("--l0c-exhaustive-audit", args.l0c_exhaustive_audit),
+        ] + [(_other_flag, _other_on) for _other_flag, _other_on in _l0c2k_flags if _other_flag != _flag]
+        _hit = [name for name, hit in _conflicts if hit]
+        if _hit:
+            raise SystemExit(
+                f"ERROR: {_flag} conflicts with {', '.join(_hit)} "
+                "(mutually exclusive — separate L0c2 K-band audit surfaces). "
+                "Run them separately and combine JSON in the receipt."
+            )
     # --l0c-exhaustive-audit is mutually exclusive with every other audit mode
     # (codex msg 1779694143993): the dispatch order (anchor -> l0c1 -> language
     # -> l0c_exhaustive -> exhaustive -> curriculum) would otherwise let a
@@ -2034,6 +2072,9 @@ if __name__ == "__main__":
             ("--anchor-audit", args.anchor_audit),
             ("--l0c1-audit", args.l0c1_audit),
             ("--l0c2-audit", args.l0c2_audit),
+            ("--l0c2k1-audit", args.l0c2k1_audit),
+            ("--l0c2k2-audit", args.l0c2k2_audit),
+            ("--l0c2k3-audit", args.l0c2k3_audit),
         ]
         _l0ce_hit = [name for name, on in _l0ce_conflicts if on]
         if _l0ce_hit:
@@ -2097,6 +2138,60 @@ if __name__ == "__main__":
             supports_builder=build_l0c2_support,
             expected_aggregate=L0C2_AUDIT_EXPECTED_COUNT,
             surface="l0c2",
+        )
+    elif args.l0c2k1_audit:
+        from calm.hrm_text_158.curriculum.language_supports import (
+            build_l0c2k1_support,
+            L0C2K1_AUDIT_EXPECTED_COUNT,
+        )
+        probe_language_finite_supports(
+            args.ckpt_path,
+            audit_seed=args.language_audit_seed,
+            max_gen=args.max_gen,
+            output_json=args.audit_output_json,
+            use_cached_ternary_infer=args.use_cached_ternary_infer,
+            use_kv_cache_decode=args.use_kv_cache_decode,
+            use_batched_probe_eval=args.use_batched_probe_eval,
+            probe_batch_size=args.probe_batch_size,
+            supports_builder=build_l0c2k1_support,
+            expected_aggregate=L0C2K1_AUDIT_EXPECTED_COUNT,
+            surface="l0c2k1",
+        )
+    elif args.l0c2k2_audit:
+        from calm.hrm_text_158.curriculum.language_supports import (
+            build_l0c2k2_support,
+            L0C2K2_AUDIT_EXPECTED_COUNT,
+        )
+        probe_language_finite_supports(
+            args.ckpt_path,
+            audit_seed=args.language_audit_seed,
+            max_gen=args.max_gen,
+            output_json=args.audit_output_json,
+            use_cached_ternary_infer=args.use_cached_ternary_infer,
+            use_kv_cache_decode=args.use_kv_cache_decode,
+            use_batched_probe_eval=args.use_batched_probe_eval,
+            probe_batch_size=args.probe_batch_size,
+            supports_builder=build_l0c2k2_support,
+            expected_aggregate=L0C2K2_AUDIT_EXPECTED_COUNT,
+            surface="l0c2k2",
+        )
+    elif args.l0c2k3_audit:
+        from calm.hrm_text_158.curriculum.language_supports import (
+            build_l0c2k3_support,
+            L0C2K3_AUDIT_EXPECTED_COUNT,
+        )
+        probe_language_finite_supports(
+            args.ckpt_path,
+            audit_seed=args.language_audit_seed,
+            max_gen=args.max_gen,
+            output_json=args.audit_output_json,
+            use_cached_ternary_infer=args.use_cached_ternary_infer,
+            use_kv_cache_decode=args.use_kv_cache_decode,
+            use_batched_probe_eval=args.use_batched_probe_eval,
+            probe_batch_size=args.probe_batch_size,
+            supports_builder=build_l0c2k3_support,
+            expected_aggregate=L0C2K3_AUDIT_EXPECTED_COUNT,
+            surface="l0c2k3",
         )
     elif args.language_supports:
         probe_language_finite_supports(

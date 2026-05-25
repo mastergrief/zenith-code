@@ -43,6 +43,9 @@ _AUDIT_MODES = [
     # per source_rung:operator composite bucket). Distinct subprocess per mode
     # so --l0c2-audit carries only its own flag (the probe CLI mutex never trips).
     ("l0c2", ["--l0c2-audit"], r"L0C2 AGGREGATE"),
+    ("l0c2k1", ["--l0c2k1-audit"], r"L0C2K1 AGGREGATE"),
+    ("l0c2k2", ["--l0c2k2-audit"], r"L0C2K2 AGGREGATE"),
+    ("l0c2k3", ["--l0c2k3-audit"], r"L0C2K3 AGGREGATE"),
     ("language", ["--language-supports"], r"(L0a |L0b |LANGUAGE AGGREGATE)"),
     ("anchor", ["--anchor-audit", "--anchor-set", "math_fragile_v1"], r"ANCHOR AGGREGATE"),
     ("math_a0", ["--exhaustive-finite-supports"],
@@ -194,10 +197,15 @@ def main() -> int:
             seen_steps.add(step)
             l0c1 = next((a for a in entry.get("results", {}).get("l0c1", {}).get("aggregate", [])), "")
             l0c2 = next((a for a in entry.get("results", {}).get("l0c2", {}).get("aggregate", [])), "")
+            l0c2_bands = [
+                next((a for a in entry.get("results", {}).get(name, {}).get("aggregate", [])), "")
+                for name in ("l0c2k1", "l0c2k2", "l0c2k3")
+            ]
             l0cx = next((a for a in entry.get("results", {}).get("l0c_exhaustive", {}).get("aggregate", [])
                          if "[probe-l0c-exhaustive]" in a), "")
             print(f"[a1-watcher] consumer: step {step} status={entry['status']} "
                   f"| {l0c1}" + (f" | {l0c2}" if l0c2 else "")
+                  + "".join(f" | {a}" for a in l0c2_bands if a)
                   + (f" | {l0cx}" if l0cx else ""), flush=True)
 
     # Finalize: flag expected-but-missing steps.
