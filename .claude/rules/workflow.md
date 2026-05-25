@@ -238,6 +238,15 @@ Monitor(command="tail -f /tmp/train.log | grep --line-buffered -E 'epoch.*done|e
 Each notification = plateau-detection checkpoint. Loss-crashes-while-
 val-flat for 2-3 evals → kill, change one hypothesis, restart.
 
+### HRM-Text-1.58 curriculum extension
+
+The generic <5-min loop does NOT mean finishing every training run. The
+`hrm-158-base` curriculum runs in **small gated slices**: bounded finite
+support, producer/consumer watcher, **early-abort at save points**, the bank
+gate (acquire ≥90% / retain ≥95%), and **classify + split smaller on a miss**
+(do NOT stretch the run, bump LR, or add layers). Full workflow:
+`rules/hrm-158.md`.
+
 ## Sweet-spot search for tiny models
 
 When goal is **maximum capability per parameter**, search downward:

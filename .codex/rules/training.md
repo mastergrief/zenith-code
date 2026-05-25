@@ -15,6 +15,13 @@ guidance below remains as **legacy/adjacent** reference for retrieval /
 structure-extraction lanes; native HRM-Text-1.58 is now the primary
 training lane for `hrm-158-base`.
 
+**Canonical workflow: see `rules/hrm-158.md`.** The bank gate (acquire ≥90% /
+retain ≥95%), bounded-slice / stair-step rule, recipe band, retention
+mechanisms (replay + parent consistency + broad retained supports), and
+failure-mode classification all live there. This section keeps the model
+specifics + literal operational command invocations; `hrm-158.md` is canonical
+for the policy.
+
 ### Model + tokenizer
 
 - ~29.6M params, Tier B config (`hidden=512 n_layers=8 num_heads=4
@@ -55,7 +62,11 @@ on generated response tokens.
 
 **Fragile slices default to the slow-safe recipe.** Lower update
 pressure is the retention knob; higher lr migrates digit/template
-clusters into prior rungs. The producer/consumer audit watcher
+clusters into prior rungs. The `--lr 1e-4` / `--replay-ratio 0.80` numbers
+below are **recipe-specific, NOT a universal default** — `rules/hrm-158.md`
+§"Recipe band" is canonical for the current LR / hard-emphasis band (fragile /
+continuation defaults slow-safe ~`5e-5`; the curriculum boundary dominates
+these knobs). The producer/consumer audit watcher
 (`scripts/parallel_audit_watcher.py`) is **required** (must prove
 OVERLAP per save step; else SERIAL_FALLBACK/MISSED unless explicitly
 waived).

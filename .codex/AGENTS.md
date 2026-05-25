@@ -16,9 +16,24 @@ Fork of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) with
   rungs, promote only after sampled probes + A0 exhaustive
   finite-support audit + watch rows clear with no parent-relative
   cluster regression.
+- Bank gate: acquire ≥90% / retain ≥95% per slice; bank the earliest
+  save that clears (final has no privilege); on a miss classify + split
+  smaller — don't stretch the run, bump LR, or add layers.
+- Bounded slices: tight finite supports (~230) + ≤1500-step windows;
+  full-density / exhaustive surfaces are progress metrics, not bank
+  gates unless explicitly gated. Stair-step into density — bounded
+  wrappers acquire cleanly (L0a/L0b), but swallowing or
+  continuing+re-warming a full-density surface showed broad / rewarm
+  regressions.
+- Retention (load-bearing): explicit replay + parent consistency +
+  broad retained supports (L0b, math_a0); anchors are sentinels, not
+  the primary mechanism.
 - Failure modes to classify before changing recipe: train-set miss /
   held-set generalization residual / parent-relative cluster /
-  signal-starvation.
+  signal-starvation / rewarm perturbation / template-surface. L0c
+  lesson: the `<expr> equals what?` one-digit stratum transfers cleanly;
+  failures concentrate in two-digit / template-specific (not math
+  capacity).
 - Cached/batched probe path is the default; native ternary train is
   preferred when available.
 - `.pt` artifacts are runtime/research outputs — commit
@@ -27,7 +42,7 @@ Fork of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) with
 - Arc order: math-first, then language, then code. Specialists / MoE
   branch from robust base checkpoints, not from weak narrow experts.
 
-Full training rules: `.codex/rules/training.md` §"HRM-Text-1.58 Fork". Legacy PT/DT/Substrate guidance remains as adjacent reference for retrieval / structure-extraction lanes; **native HRM-Text-1.58 is now the primary training lane for `hrm-158-base`.**
+Canonical active workflow (bank gate, slice-size, recipe band, retention, failure classes, validation): `.codex/rules/hrm-158.md`. Full training rules: `.codex/rules/training.md` §"HRM-Text-1.58 Fork". Legacy PT/DT/Substrate guidance remains as adjacent reference for retrieval / structure-extraction lanes; **native HRM-Text-1.58 is now the primary training lane for `hrm-158-base`.**
 
 **Working policy: no subagents.** Work directly with `Edit`/`Write`/`Read`/`Grep`/`Bash`. Do not dispatch subagents or create teams. Prior VDD/orchestration infrastructure was removed in commit `bb7f13d`; the agent definitions and `/VDD`, `/DISCOVER`, `/EVAL`, `/TRAIN-DATA` slash-commands no longer exist. Session 26 and Vector 1 shipped 23+ commits + 311 tests directly; this is the proven default for the project.
 

@@ -12,10 +12,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   rungs, promote only after sampled probes + A0 exhaustive
   finite-support audit + watch rows clear with no parent-relative
   cluster regression.
+- **Bank gate**: acquire ≥90% / retain ≥95% per slice; bank the
+  earliest save that clears (final has no privilege); on a miss
+  **classify + split smaller** — don't stretch the run, bump LR, or
+  add layers.
+- **Bounded slices**: tight finite supports (~230) + ≤1500-step
+  windows; full-density / exhaustive surfaces are progress metrics,
+  not bank gates unless explicitly gated. **Stair-step into density** —
+  bounded wrappers acquire cleanly (L0a/L0b), but swallowing or
+  continuing+re-warming a full-density surface showed broad / rewarm
+  regressions.
+- **Retention (load-bearing)**: explicit replay + parent consistency +
+  broad retained supports (L0b, math_a0); anchors are sentinels, not
+  the primary mechanism.
+- L0c lesson: the `<expr> equals what?` one-digit stratum transfers
+  cleanly; failures concentrate in the two-digit / template-specific
+  stratum — the same operands succeed under other wrappers, so it is a
+  surface/template gap, NOT math capacity.
 - Arc order: math-first, then language, then code. Specialists / MoE
   branch from robust base checkpoints, not from weak narrow experts.
 
 Pointers:
+- **Canonical active workflow** (bank gate, slice-size, recipe band,
+  retention, failure classes, validation): `.claude/rules/hrm-158.md`.
 - Repo manifest (multi-agent harness, CALM, AI-Room collab,
   vocabulary lock-in): `.claude/CLAUDE.md`.
 - Curriculum rules (recipe, validation, failure-mode classification):

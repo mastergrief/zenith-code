@@ -46,6 +46,13 @@ taken *after* the change. No vibes, no "looks right", no "should be fine".
 - **Correctness check every round.** Canonical smoke test: `17×23=391`
   via the chat API. Perf gains that break correctness are reverts.
 
+## HRM-Text-1.58 Fork — active training lane
+
+`hrm-158-base` grows by a **90/95-gated bounded-slice** progressive curriculum
+(acquire ≥90% / retain ≥95% per slice; tight finite supports stair-stepped into
+density; classify + split smaller on a miss). Canonical workflow:
+`.claude/rules/hrm-158.md`.
+
 ## Editing `.claude/` Configs
 
 Rules for editing agents, CLAUDE.md, commands, rules, hooks: `.claude/rules/config_editing.md`.
