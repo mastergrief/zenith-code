@@ -46,6 +46,12 @@ _AUDIT_MODES = [
     ("l0c2k1", ["--l0c2k1-audit"], r"L0C2K1 AGGREGATE"),
     ("l0c2k2", ["--l0c2k2-audit"], r"L0C2K2 AGGREGATE"),
     ("l0c2k3", ["--l0c2k3-audit"], r"L0C2K3 AGGREGATE"),
+    # F.4d-edge: L0c2-K1-edge held-generalization micro-slice acquire surface.
+    # Two finite sub-surfaces (train 52 / held 13); the aggregate line is the 65
+    # combined, the per-surface train/held/fresh/legacy breakdown is in the mode
+    # JSON. Pattern has no overlap with L0C2K1 ("...K1EDGE AGGREGATE" vs
+    # "...K1 AGGREGATE"), so the two modes never cross-match.
+    ("l0c2k1edge", ["--l0c2k1-edge-audit"], r"L0C2K1EDGE AGGREGATE"),
     ("language", ["--language-supports"], r"(L0a |L0b |LANGUAGE AGGREGATE)"),
     ("anchor", ["--anchor-audit", "--anchor-set", "math_fragile_v1"], r"ANCHOR AGGREGATE"),
     ("math_a0", ["--exhaustive-finite-supports"],
@@ -199,7 +205,7 @@ def main() -> int:
             l0c2 = next((a for a in entry.get("results", {}).get("l0c2", {}).get("aggregate", [])), "")
             l0c2_bands = [
                 next((a for a in entry.get("results", {}).get(name, {}).get("aggregate", [])), "")
-                for name in ("l0c2k1", "l0c2k2", "l0c2k3")
+                for name in ("l0c2k1", "l0c2k1edge", "l0c2k2", "l0c2k3")
             ]
             l0cx = next((a for a in entry.get("results", {}).get("l0c_exhaustive", {}).get("aggregate", [])
                          if "[probe-l0c-exhaustive]" in a), "")
