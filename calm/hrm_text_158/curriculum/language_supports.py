@@ -36,6 +36,7 @@ from calm.hrm_text_158.curriculum.generators import (
     _enumerate_partition_l0c2,
     _enumerate_partition_l0c2k1,
     _enumerate_partition_l0c2k1_edge,
+    _enumerate_partition_l0c2k1_identity,
     _enumerate_partition_l0c2k2,
     _enumerate_partition_l0c2k3,
     l0c2_band_expected_count,
@@ -327,6 +328,47 @@ def build_l0c2k1_edge_support(seed: int = 17) -> dict[str, list[tuple[str, int, 
     }
 
 
+# --------------------------------------------------------------------------- #
+# F.4d-identity — L0c2-K1-identity-2digit suffix-copy precursor audit surface.
+# Two finite sub-surfaces mirror the K1-edge pattern: train 70 / held 20. Held
+# bucket labels expose the strict subgates mechanically (teen, legacy/fresh,
+# tens bucket); rows_all in the probe carries n/tens/ones per row.
+# --------------------------------------------------------------------------- #
+L0C2K1_IDENTITY_TRAIN_AUDIT_COUNT: int = 70
+L0C2K1_IDENTITY_HELD_AUDIT_COUNT: int = 20
+L0C2K1_IDENTITY_AUDIT_EXPECTED_COUNT: int = 90
+
+
+def _identity_train_bucket(row: dict) -> str:
+    return "train_teen" if row["tens"] == 1 else f"train_tens_{row['tens']}"
+
+
+def _identity_held_bucket(row: dict) -> str:
+    if row["hold_kind"] == "legacy":
+        return "held_legacy_teen"
+    if row["tens"] == 1:
+        return "held_fresh_teen"
+    return f"held_fresh_tens_{row['tens']}"
+
+
+def _l0c2k1_identity_train_support(seed: int = 17) -> list[tuple[str, int, str]]:
+    train, _held = _enumerate_partition_l0c2k1_identity(seed)
+    return [(r["question"], r["expected"], _identity_train_bucket(r)) for r in train]
+
+
+def _l0c2k1_identity_held_support(seed: int = 17) -> list[tuple[str, int, str]]:
+    _train, held = _enumerate_partition_l0c2k1_identity(seed)
+    return [(r["question"], r["expected"], _identity_held_bucket(r)) for r in held]
+
+
+def build_l0c2k1_identity_support(seed: int = 17) -> dict[str, list[tuple[str, int, str]]]:
+    """Standalone identity-first audit surface as train/held finite supports."""
+    return {
+        "L0c2-K1-identity-2digit-train": _l0c2k1_identity_train_support(seed),
+        "L0c2-K1-identity-2digit-held": _l0c2k1_identity_held_support(seed),
+    }
+
+
 def build_language_supports(seed: int = 42) -> dict[str, list[tuple[str, int, str]]]:
     """Build full finite-support audit list for every active language rung.
 
@@ -373,6 +415,13 @@ def language_source_rung_buckets(rung: str) -> list[str]:
     if rung == "L0c2-K1-edge-held":
         # F.4d-edge finite held surface: 4 legacy pinned edges vs 9 fresh rows.
         return ["legacy", "fresh"]
+    if rung == "L0c2-K1-identity-2digit-train":
+        return ["train_teen"] + [f"train_tens_{tens}" for tens in range(2, 10)]
+    if rung == "L0c2-K1-identity-2digit-held":
+        return (
+            ["held_legacy_teen", "held_fresh_teen"]
+            + [f"held_fresh_tens_{tens}" for tens in range(2, 10)]
+        )
     raise ValueError(
         f"unknown language rung {rung!r}; valid: {LANGUAGE_ACTIVE_RUNGS} "
         f"+ 'L0c1' / 'L0c2' / 'L0c2-K1..K3' (separate audit surfaces)"

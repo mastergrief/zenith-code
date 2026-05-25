@@ -68,8 +68,9 @@ def _assert_rows_in_band(rows, band: str):
 
 
 def test_kband_rungs_registered_after_l0c2_before_l0c():
-    # F.4d-edge adds L0c2-K1-edge after the three K bands, still before L0c.
-    expected = ["L0c2-K1", "L0c2-K2", "L0c2-K3", "L0c2-K1-edge"]
+    # F.4d-edge and the identity precursor sit after the three K bands, still
+    # before L0c.
+    expected = ["L0c2-K1", "L0c2-K2", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit"]
     for rung in expected:
         assert rung in RUNG_NAMES
         assert rung in _RUNG_SPEC

@@ -22,6 +22,7 @@ from calm.hrm_text_158.curriculum.language_supports import (
     LANGUAGE_ACTIVE_RUNGS,
     LANGUAGE_EXPECTED_AGGREGATE,
     LANGUAGE_EXPECTED_COUNTS,
+    build_l0c2k1_identity_support,
     build_language_supports,
     language_source_rung_buckets,
 )
@@ -552,6 +553,63 @@ def test_probe_language_output_json_creates_parent_dirs(tmp_path) -> None:
     # Slice E.1 extends: L0c also present, aggregate now 690
     assert "L0c" in payload["results"]
     assert payload["aggregate"]["expected_aggregate"] == 690
+
+
+def test_probe_language_rows_all_identity_held_schema_and_decode_class() -> None:
+    """Identity-held audits need every row, including passes, not holes only."""
+    from unittest.mock import patch, MagicMock
+    import scripts.probe_hrm_text_158 as probe_mod
+
+    fake_ckpt = {"step": 1500, "config": {"max_seq_len": 384, "curriculum_seed": 17}}
+
+    def fake_decode(_model, _tok, q: str, **_kwargs):
+        n = int(q.split()[0])
+        if n == 17:
+            return ("7", False, True)
+        return (str(n), False, True)
+
+    with patch.multiple(
+        probe_mod,
+        torch=MagicMock(load=MagicMock(return_value=fake_ckpt)),
+        _build_model_from_ckpt=MagicMock(return_value=(MagicMock(), MagicMock())),
+        _decode_greedy_no_cache=MagicMock(side_effect=fake_decode),
+    ):
+        out = probe_mod.probe_language_finite_supports(
+            ckpt_path="dummy",
+            audit_seed=17,
+            device="cpu",
+            use_cached_ternary_infer=False,
+            use_kv_cache_decode=False,
+            use_batched_probe_eval=False,
+            supports_builder=build_l0c2k1_identity_support,
+            expected_aggregate=90,
+            surface="l0c2k1identity",
+        )
+
+    held = out["results"]["L0c2-K1-identity-2digit-held"]
+    rows_all = held["rows_all"]
+    assert len(rows_all) == 20
+    assert held["n_exact"] == 19
+    required = {
+        "question", "n", "expected", "decoded", "parsed", "exact_ok",
+        "parsed_ok", "source_rung", "bucket", "decode_class", "tens", "ones",
+    }
+    for row in rows_all:
+        assert required <= set(row), row
+        assert row["question"] == f"{row['n']} equals what?"
+        assert row["expected"] == row["n"]
+        assert row["source_rung"] == row["bucket"]
+
+    legacy_11 = next(row for row in rows_all if row["n"] == 11)
+    legacy_17 = next(row for row in rows_all if row["n"] == 17)
+    assert legacy_11["decoded"] == "11"
+    assert legacy_11["exact_ok"] is True
+    assert legacy_11["decode_class"] == "exact_copy"
+    assert legacy_17["decoded"] == "7"
+    assert legacy_17["exact_ok"] is False
+    assert legacy_17["parsed"] == 7
+    assert legacy_17["decode_class"] == "ones_only"
+    assert held["holes_first20"] == [legacy_17]
 
 
 # ============================================================================ #

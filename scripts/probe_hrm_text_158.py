@@ -1356,6 +1356,40 @@ def probe_language_finite_supports(
         m_ = re.search(r"-?\d+", capped)
         return int(m_.group(0)) if m_ else None
 
+    def _identity_n(question: str, expected: int) -> int | None:
+        m_ = re.fullmatch(r"\s*(\d+) equals what\?\s*", question)
+        if not m_:
+            return None
+        n_ = int(m_.group(1))
+        return n_ if n_ == int(expected) else None
+
+    def _decode_class(
+        decoded: str,
+        *,
+        parsed: int | None,
+        expected: int,
+        exact_ok: bool,
+        too_long: bool,
+        finite: bool,
+    ) -> str:
+        if exact_ok:
+            return "exact_copy"
+        stripped = decoded.strip()
+        if too_long or not finite or not stripped:
+            return "empty"
+        if parsed is None:
+            return "format_only"
+        if expected >= 10 and parsed == expected % 10:
+            return "ones_only"
+        if expected >= 10 and parsed == expected // 10:
+            return "tens_only"
+        if expected >= 10 and 0 <= parsed <= 9:
+            return "single_digit_other"
+        digits = re.sub(r"\D", "", stripped)
+        if len(digits) >= 2 and len(set(digits)) == 1:
+            return "constant"
+        return "other_wrong"
+
     def _decode_rows(qs: list[str]) -> list[tuple[str, bool, bool]]:
         if use_batched_probe_eval:
             per_row, _hist = _run_rows_batched(
@@ -1390,6 +1424,7 @@ def probe_language_finite_supports(
         }
 
         holes: list[dict] = []
+        rows_all: list[dict] = []
         finite_rung = True
         too_long = 0
         exact = 0
@@ -1401,15 +1436,40 @@ def probe_language_finite_supports(
             exact_match = (not tl) and (decoded.strip() == str(exp))
             parsed = _parse_int(decoded) if not tl else None
             parsed_match = (not tl) and parsed == exp
+            decode_class = _decode_class(
+                decoded,
+                parsed=parsed,
+                expected=exp,
+                exact_ok=exact_match,
+                too_long=tl,
+                finite=fin,
+            )
+            row_record = {
+                "question": q,
+                "expected": exp,
+                "decoded": decoded,
+                "parsed": parsed,
+                "exact_ok": exact_match,
+                "parsed_ok": parsed_match,
+                "too_long": tl,
+                "finite": fin,
+                "source_rung": src,
+                "bucket": src,
+                "decode_class": decode_class,
+            }
+            n_ = _identity_n(q, exp)
+            if n_ is not None:
+                row_record.update({
+                    "n": n_,
+                    "tens": n_ // 10,
+                    "ones": n_ % 10,
+                })
+            rows_all.append(row_record)
             by_source[src]["n_total"] += 1
             if tl:
                 too_long += 1
                 by_source[src]["n_holes"] += 1
-                holes.append({
-                    "question": q, "expected": exp, "decoded": decoded,
-                    "parsed": None, "exact_ok": False, "parsed_ok": False,
-                    "too_long": True, "finite": fin, "source_rung": src,
-                })
+                holes.append(row_record)
                 continue
             if parsed_match:
                 parsed_correct += 1
@@ -1419,12 +1479,7 @@ def probe_language_finite_supports(
                 by_source[src]["n_exact"] += 1
             else:
                 by_source[src]["n_holes"] += 1
-                holes.append({
-                    "question": q, "expected": exp, "decoded": decoded,
-                    "parsed": parsed, "exact_ok": False,
-                    "parsed_ok": parsed_match,
-                    "too_long": False, "finite": fin, "source_rung": src,
-                })
+                holes.append(row_record)
         n_total = len(rows)
         results[rung] = {
             "n_total": n_total,
@@ -1435,6 +1490,7 @@ def probe_language_finite_supports(
             "n_too_long": too_long,
             "finite": finite_rung,
             "by_source_rung": by_source,
+            "rows_all": rows_all,
             "holes_first20": holes[:20],
             "elapsed_s": round(rt_elapsed, 3),
         }

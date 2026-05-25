@@ -151,7 +151,11 @@ from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
 #         the L0c1 diagnosis-only rationale. Trained explicitly via
 #         `--curriculum-rung L0c2-K1-edge` with a launch-scoped explicit replay
 #         list (R0..L0c1); never a positional prior.
-DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b", "R1b4", "R1b10", "R2", "R2a", "L0c1", "L0c2-K1-edge"})
+# L0c2-K1-identity-2digit stays OUT for the same reason: identity-first
+#         suffix-copy is an acquisition target, not a prior/retained-support
+#         surface. Launches must pass explicit replay (R0..L0c1) and true-prior
+#         retained supports only.
+DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b", "R1b4", "R1b10", "R2", "R2a", "L0c1", "L0c2-K1-edge", "L0c2-K1-identity-2digit"})
 
 
 # R7 (GSM8k) is generator-incompatible — served separately from

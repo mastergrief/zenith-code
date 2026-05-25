@@ -257,7 +257,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K3", "L0c2-K1-edge", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -702,6 +702,13 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     "L0c2-K1-edge": {
         "train":     {"partition": "enumerate_l0c2_k1_edge"},
         "held_out":  {"partition": "enumerate_l0c2_k1_edge"},
+    },
+    # F.4d-identity — identity-first suffix-copy precursor over the bare
+    # `<n> equals what?` template, n=10..99. 70 train / 20 held, with the
+    # observed K1-edge identity misses 11 and 17 pinned audit-only.
+    "L0c2-K1-identity-2digit": {
+        "train":     {"partition": "enumerate_l0c2_k1_identity_2digit"},
+        "held_out":  {"partition": "enumerate_l0c2_k1_identity_2digit"},
     },
     "L0c": {
         "train":     {"partition": "enumerate_stratified_l0c"},
@@ -2891,6 +2898,114 @@ def _gen_l0c2k1_edge(rng: random.Random, spec: dict, n: int, seed: int, split: s
     return _sample_l0c2_pool(rng, pool, n, "L0c2-K1-edge")
 
 
+# --------------------------------------------------------------------------- #
+# F.4d-identity — L0c2-K1-identity-2digit suffix-copy precursor.
+# A SEPARATE finite 90-row identity-only surface over `<n> equals what?`,
+# n=10..99. This is not an arithmetic repair and contains no plus/minus rows.
+# Split: 70 train / 20 held. The legacy identity failures 11 and 17 are pinned
+# held-only; all other held rows are fresh generalization checks.
+# --------------------------------------------------------------------------- #
+
+L0C2K1_IDENTITY_TOTAL_COUNT: int = 90
+L0C2K1_IDENTITY_TRAIN_COUNT: int = 70
+L0C2K1_IDENTITY_HELD_COUNT: int = 20
+L0C2K1_IDENTITY_TEEN_TRAIN_COUNT: int = 6
+L0C2K1_IDENTITY_TEEN_HELD_COUNT: int = 4
+L0C2K1_IDENTITY_LEGACY_COUNT: int = 2
+L0C2K1_IDENTITY_FRESH_HELD_COUNT: int = 18
+L0C2K1_IDENTITY_LEGACY_ROWS: tuple[tuple[str, int], ...] = (
+    ("11 equals what?", 11),
+    ("17 equals what?", 17),
+)
+
+
+def _l0c2k1_identity_enumerate() -> list[dict]:
+    """Enumerate the finite 90-row identity-only surface (seed-independent)."""
+    rows: list[dict] = []
+    for n in range(10, 100):
+        rows.append({
+            "question": f"{n} equals what?",
+            "expected": n,
+            "n": n,
+            "tens": n // 10,
+            "ones": n % 10,
+            "stratum": "teen" if n < 20 else f"tens_{n // 10}",
+        })
+    assert len(rows) == L0C2K1_IDENTITY_TOTAL_COUNT, \
+        f"L0c2-K1-identity total {len(rows)} != {L0C2K1_IDENTITY_TOTAL_COUNT}"
+    assert all(r["question"] == f"{r['n']} equals what?" for r in rows)
+    assert all(r["expected"] == r["n"] for r in rows)
+    assert all(" plus " not in r["question"] and " minus " not in r["question"] for r in rows)
+    return rows
+
+
+def _enumerate_partition_l0c2k1_identity(seed: int) -> tuple[list[dict], list[dict]]:
+    """Partition the 90-row identity surface into 70 train / 20 held.
+
+    Order: enumerate -> force 11/17 into held -> stable-seed held picks inside
+    each tens bucket -> train is the remaining rows. Teen bucket holds 4 total
+    (legacy 11/17 + 2 fresh), every non-teen tens bucket holds 2.
+    """
+    rows = _l0c2k1_identity_enumerate()
+    legacy_qe = set(L0C2K1_IDENTITY_LEGACY_ROWS)
+    legacy_rows = [r for r in rows if (r["question"], r["expected"]) in legacy_qe]
+    assert len(legacy_rows) == L0C2K1_IDENTITY_LEGACY_COUNT, \
+        f"expected {L0C2K1_IDENTITY_LEGACY_COUNT} legacy identity rows, found {len(legacy_rows)}"
+    for r in legacy_rows:
+        r["hold_kind"] = "legacy"
+
+    by_tens: dict[int, list[dict]] = {}
+    for r in rows:
+        by_tens.setdefault(r["tens"], []).append(r)
+
+    def _pick(pool: list[dict], k: int, tag: str) -> list[dict]:
+        ordered = sorted(pool, key=lambda r: r["n"])
+        random.Random(_stable_seed("L0c2-K1-identity-2digit_partition", seed, tag)).shuffle(ordered)
+        return ordered[:k]
+
+    teen_fresh_pool = [
+        r for r in by_tens[1]
+        if (r["question"], r["expected"]) not in legacy_qe
+    ]
+    held: list[dict] = list(legacy_rows)
+    held.extend(_pick(teen_fresh_pool, 2, "teen_fresh"))
+    for tens in range(2, 10):
+        held.extend(_pick(by_tens[tens], 2, f"tens_{tens}"))
+
+    held_qe = {(r["question"], r["expected"]) for r in held}
+    for r in held:
+        if r.get("hold_kind") != "legacy":
+            r["hold_kind"] = "fresh"
+    train = [r for r in rows if (r["question"], r["expected"]) not in held_qe]
+    for r in train:
+        r["hold_kind"] = "train"
+
+    assert len(train) == L0C2K1_IDENTITY_TRAIN_COUNT, \
+        f"L0c2-K1-identity train {len(train)} != {L0C2K1_IDENTITY_TRAIN_COUNT}"
+    assert len(held) == L0C2K1_IDENTITY_HELD_COUNT, \
+        f"L0c2-K1-identity held {len(held)} != {L0C2K1_IDENTITY_HELD_COUNT}"
+    assert {(r["question"], r["expected"]) for r in train}.isdisjoint(held_qe), \
+        "L0c2-K1-identity train/held overlap"
+
+    teen_train = [r for r in train if r["tens"] == 1]
+    teen_held = [r for r in held if r["tens"] == 1]
+    assert len(teen_train) == L0C2K1_IDENTITY_TEEN_TRAIN_COUNT
+    assert len(teen_held) == L0C2K1_IDENTITY_TEEN_HELD_COUNT
+    for tens in range(2, 10):
+        assert sum(1 for r in train if r["tens"] == tens) == 8
+        assert sum(1 for r in held if r["tens"] == tens) == 2
+    assert sum(1 for r in held if r["hold_kind"] == "legacy") == L0C2K1_IDENTITY_LEGACY_COUNT
+    assert sum(1 for r in held if r["hold_kind"] == "fresh") == L0C2K1_IDENTITY_FRESH_HELD_COUNT
+    return train, held
+
+
+def _gen_l0c2k1_identity(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """L0c2-K1-identity training-side sampler over the finite split."""
+    train_pool, held_pool = _enumerate_partition_l0c2k1_identity(seed)
+    pool = train_pool if split == "train" else held_pool
+    return _sample_l0c2_pool(rng, pool, n, "L0c2-K1-identity-2digit")
+
+
 def _gen_r1b7(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
     """R1b7 constant K=6 addition, carry-stratified partition (codex msg
     1779547753761-5711d790 +1 K=6; rebased onto R1b2-repair commit
@@ -3294,6 +3409,8 @@ def make_rung_examples(
         return _gen_l0c2k3(rng, _RUNG_SPEC["L0c2-K3"][split], n, seed=seed, split=split)
     if rung == "L0c2-K1-edge":
         return _gen_l0c2k1_edge(rng, _RUNG_SPEC["L0c2-K1-edge"][split], n, seed=seed, split=split)
+    if rung == "L0c2-K1-identity-2digit":
+        return _gen_l0c2k1_identity(rng, _RUNG_SPEC["L0c2-K1-identity-2digit"][split], n, seed=seed, split=split)
     if rung == "L0c":
         return _gen_l0c(rng, _RUNG_SPEC["L0c"][split], n, seed=seed, split=split)
     if rung == "L0c_exhaustive":
