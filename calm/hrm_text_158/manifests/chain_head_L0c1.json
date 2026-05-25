@@ -1,0 +1,84 @@
+{
+  "schema": "hrm158_chain_head_v1",
+  "rung": "L0c1",
+  "status": "banked",
+  "banked_utc": "2026-05-25T06:44:00Z",
+  "chain_head": {
+    "ckpt_path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+    "step": 1500,
+    "pt_tracked": false,
+    "pt_note": ".pt is a runtime/research output and stays untracked per artifacts policy; this manifest is the committable receipt.",
+    "parent_ckpt": "calm/hrm/checkpoints/hrm_text_158_phase3_L0b_seed0017_replay65_n10k_lr2e4_anchorsv1r2_from_L0a_final_step01000.pt"
+  },
+  "bank_authority": {
+    "policy": "retain>=95 / acquire>=90 exception-ledger (broad mechanisms over singleton whack-a-mole)",
+    "gate": "codex_co_lead +1 (gabe-delegated)",
+    "gate_msg_id": "1779691416889-6b473844",
+    "gabe_authority_relay_msg_id": "1779691401911-42b886b8",
+    "gabe_authority_quote": "codex has full provenance",
+    "gabe_policy_quote": "i agree broad mechanisms rather than trying to play whack a mole. 95%+ and above retention, 90%+ and above for aquistion",
+    "auq_locked_answer": "Codex's +1 is the gate"
+  },
+  "recipe": {
+    "arch": {"hidden_size": 512, "n_layers": 8, "half_layers": true, "num_heads": 4, "head_dim": 128, "expansion": 4, "H_cycles": 2, "L_cycles": 3, "max_len": 384, "params": 29626368, "ternary_bulk": true, "native_ternary_train": true},
+    "training": {"curriculum_rung": "L0c1", "curriculum_seed": 17, "lr": 7.5e-05, "replay_ratio": 0.83, "curriculum_n_train": 12000, "batch_size": 8, "bp_min_steps": 2, "bp_max_steps": 5, "bp_warmup_ratio": 0.2, "warmup_steps": 150, "total_steps": 1508, "weight_decay": 0.1},
+    "replay_rungs": ["R0", "R1", "R1b1", "R1b2", "R1b3", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "L0a", "L0b"],
+    "retention_anchor_set": "math_fragile_v1",
+    "retention_anchor_repeat": 3,
+    "parent_consistency_weight": 1.0,
+    "parent_consistency_temp": 1.0,
+    "retained_support_profile": [
+      {"name": "L0b", "weight": 1.0, "batch": 8, "count": 230, "hash": "89174273d21845bc"},
+      {"name": "math_a0", "weight": 1.0, "batch": 8, "count": 1255, "hash": "56e64266357b793d"},
+      {"name": "math_r1b2_minus_one", "weight": 1.0, "batch": 8, "count": 99, "hash": "8c765badc7365890"}
+    ]
+  },
+  "commit_chain": {
+    "registry_support_code": "7e093a3",
+    "registry_infra_code": "84e3467",
+    "branch": "feature/hrm-text-1.58"
+  },
+  "aggregate_gates": {
+    "audit_step": 1500,
+    "acquire": {"L0c1": {"parsed": "115/121", "rate": 0.9504, "holes": 6, "threshold": 0.90, "pass": true}},
+    "retain": {
+      "L0a": {"parsed": "230/230", "rate": 1.0, "threshold": 0.95, "pass": true},
+      "L0b": {"parsed": "230/230", "rate": 1.0, "threshold": 0.95, "pass": true},
+      "math_a0": {"parsed": "1254/1255", "rate": 0.9992, "threshold": 0.95, "pass": true},
+      "anchor_math_fragile_v1": {"parsed": "20/21", "rate": 0.9524, "threshold": 0.95, "pass": true}
+    },
+    "watcher_overlap": "clean"
+  },
+  "accepted_exceptions": [
+    {
+      "key": "r1b2:10_minus_1",
+      "question": "what is 10 minus 1?",
+      "source_rung": "R1b2",
+      "expected": 9,
+      "child_decode": "0",
+      "child_parsed": 0,
+      "child_parsed_ok": false,
+      "child_exact_ok": false,
+      "parent_decode": "09",
+      "parent_parsed": 9,
+      "parent_parsed_ok": true,
+      "parent_exact_ok": false,
+      "stability": ["f2g_step1250", "f2g_step1500", "f2h_step1250", "f2h_step1500"],
+      "classification": "stable_singleton_non_cluster_non_migrating",
+      "mechanisms_tried": [
+        {"run": "f2g", "support": "math_a0", "coverage_cycles_at_step1250": 7, "result": "child decodes 0"},
+        {"run": "f2h", "support": "math_r1b2_minus_one", "coverage_cycles_at_step1250": 101, "result": "child decodes 0"}
+      ],
+      "rationale": "Stable single parent-correct row. Two independent parent-KL retain mechanisms (broad math_a0 7x and concentrated math_r1b2_minus_one 101x coverage) both failed to hold it -> dilution refuted, capacity/mechanism limit of the 29.6M ternary model at the 2-digit-borrow boundary (10->9) under L0c1 minus-circuit CE. Accepted under retain>=95/acquire>=90 policy: non-cluster, non-migrating, parent-understood, not safety/format-critical.",
+      "watch_row": true
+    }
+  ],
+  "watch_rows": [
+    {"key": "r1b2:10_minus_1", "question": "what is 10 minus 1?", "expected": 9, "expected_parent_decode": "09", "carry_forward": "all downstream rungs", "reopen_targeted_work_if": ["worsens", "clusters", "migrates", "aggregate retention < 0.95", "acquisition < 0.90"]}
+  ],
+  "next_slice_policy": {
+    "model_size": "29.6M Tier-B (hold)",
+    "scale_model_when": "curriculum stalls (acquire cannot clear ~0.90, retention drops below floor, or failures become capacity-like/cluster even after broad support scheduling)",
+    "carry": "watch_rows above"
+  }
+}
