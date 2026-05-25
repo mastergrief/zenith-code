@@ -2457,6 +2457,17 @@ def _gen_l0c_exhaustive_2digit(rng: random.Random, spec: dict, n: int, seed: int
     return out
 
 
+def set_l0c_exhaustive_2digit_hard_weight(weight: float) -> float:
+    """F.3f-a runtime override of the `L0c_exhaustive_2digit` TRAIN per-row hard
+    weight (codex msg 1779703363270). Mutates the train spec in place and
+    returns the effective value. Default stays 3.0 unless this is called; F.3e
+    proved 3x starves the easy stratum, so F.3f uses a gentler value (e.g. 1.5).
+    The held-out spec is untouched (audit surface stays uniform/unbiased)."""
+    w = float(weight)
+    _RUNG_SPEC["L0c_exhaustive_2digit"]["train"]["hard_weight"] = w
+    return w
+
+
 def _gen_r1b7(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
     """R1b7 constant K=6 addition, carry-stratified partition (codex msg
     1779547753761-5711d790 +1 K=6; rebased onto R1b2-repair commit

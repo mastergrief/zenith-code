@@ -496,6 +496,11 @@ def train(
     allow_future_replay: bool = False,
     use_broad_tokenizer: bool = False,
     load_from: str | None = None,
+    # F.3f-a (codex msg 1779703363270): runtime per-row hard-weight override
+    # for the L0c_exhaustive_2digit acquisition sampler. None -> keep spec
+    # default 3.0 (F.3d-b behavior/tests unchanged). Valid ONLY with
+    # --curriculum-rung L0c_exhaustive_2digit (fail-fast otherwise).
+    l0c_hard_weight: float | None = None,
     # Retention-anchor V0 Slice B (codex msg 1779564576409-a7db0527).
     # A1 row-repeat: each anchor row appears `retention_anchor_repeat`
     # times in train_rows when set is non-'none'. Anchors append AFTER
@@ -641,6 +646,23 @@ def train(
             f"got {retention_anchor_repeat}"
         )
 
+    # F.3f-a (codex msg 1779703363270 + 1779703935958): --l0c-hard-weight is
+    # rung-specific AND must be > 0. Fail fast (before any model build / ckpt
+    # load / data-gen). A non-positive weight would silently make TRAIN
+    # all-easy (0) or fail late inside rng.choices (negative), bypassing this
+    # fail-fast contract.
+    if l0c_hard_weight is not None:
+        if l0c_hard_weight <= 0:
+            raise ValueError(
+                f"--l0c-hard-weight must be > 0 (per-row hard weight vs easy=1.0); "
+                f"got {l0c_hard_weight}."
+            )
+        if curriculum_rung != "L0c_exhaustive_2digit":
+            raise ValueError(
+                f"--l0c-hard-weight is only valid with "
+                f"--curriculum-rung L0c_exhaustive_2digit; got rung={curriculum_rung!r}."
+            )
+
     # Save-at-steps validation + dedupe (mirror Slice 13m pattern,
     # commit 38c3032, prior receipt msg 1779447055338-e1ee34dc)
     if save_at_steps is not None:
@@ -741,6 +763,18 @@ def train(
                 print(f"[hrm158] curriculum {curriculum_rung}: no prior rungs to replay; "
                       f"overriding --replay-ratio={replay_ratio} -> effective 0.0",
                       flush=True)
+
+        # F.3f-a (codex msg 1779703363270): apply the runtime hard-weight
+        # override BEFORE current-rung data generation. Guarded above to fire
+        # only for L0c_exhaustive_2digit. Default (None) leaves spec at 3.0.
+        if l0c_hard_weight is not None:
+            from calm.hrm_text_158.curriculum.generators import (
+                set_l0c_exhaustive_2digit_hard_weight,
+            )
+            _eff_hw = set_l0c_exhaustive_2digit_hard_weight(l0c_hard_weight)
+            print(f"[hrm158] L0c_exhaustive_2digit hard_weight override: {_eff_hw} "
+                  f"(spec default 3.0); TRAIN per-row hard weight for this run",
+                  flush=True)
 
         train_rows: list[dict] = list(make_rung_examples(
             curriculum_rung, n=n_new, seed=curriculum_seed, split="train"
@@ -1380,6 +1414,13 @@ if __name__ == "__main__":
                     help="Phase 3 curriculum mode. When set, swaps GSM8k corpus "
                          "for synthetic per-rung data + replay mix. Requires "
                          "--use-broad-tokenizer in Phase 3 design.")
+    ap.add_argument("--l0c-hard-weight", type=float, default=None,
+                    help="F.3f-a (codex msg 1779703363270): runtime per-row hard "
+                         "weight for the L0c_exhaustive_2digit TRAIN sampler "
+                         "(easy=1.0). Default None keeps spec 3.0 (F.3d-b "
+                         "unchanged). VALID ONLY with --curriculum-rung "
+                         "L0c_exhaustive_2digit (fail-fast otherwise). F.3e "
+                         "rejected 3x (starved easy); F.3f uses ~1.5.")
     ap.add_argument("--curriculum-seed", type=int, default=42,
                     help="Deterministic seed for curriculum generator + shuffle (default 42).")
     ap.add_argument("--curriculum-n-train", type=int, default=4000,
@@ -1545,6 +1586,7 @@ if __name__ == "__main__":
         curriculum_n_train=args.curriculum_n_train,
         replay_rungs=args.replay_rungs,
         allow_future_replay=args.allow_future_replay,
+        l0c_hard_weight=args.l0c_hard_weight,
         curriculum_n_heldout=args.curriculum_n_heldout,
         replay_ratio=args.replay_ratio,
         use_broad_tokenizer=args.use_broad_tokenizer,
