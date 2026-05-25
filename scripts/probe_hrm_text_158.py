@@ -2008,6 +2008,15 @@ if __name__ == "__main__":
                          "two sub-surfaces (train 52/52, held 13/13; held buckets "
                          "legacy/fresh). Counts are seed-independent. Conflicts "
                          "with the other audit modes.")
+    # F.4d-identity: standalone suffix-copy precursor audit. Mirrors the
+    # K1-edge pattern with train/held sub-surfaces (70 / 20), never blended
+    # into the canonical language aggregate.
+    ap.add_argument("--l0c2k1-identity-audit", action="store_true",
+                    help="Run the standalone L0c2-K1-identity-2digit audit "
+                         "surface: 90 identity rows over '<n> equals what?' "
+                         "(70 train + 20 held). Emits surface='l0c2k1identity' "
+                         "with train/held sub-surfaces. Conflicts with the "
+                         "other audit modes.")
     # Exhaustive-L0c language-density audit (codex msg 1779693537447 / Slice:
     # language-to-math-density). The `<expr> equals what?` wrapper over the
     # FULL math-A0 set (1255). Reuses the exhaustive audit machinery via
@@ -2118,6 +2127,7 @@ if __name__ == "__main__":
         ("--l0c2k2-audit", args.l0c2k2_audit),
         ("--l0c2k3-audit", args.l0c2k3_audit),
         ("--l0c2k1-edge-audit", args.l0c2k1_edge_audit),
+        ("--l0c2k1-identity-audit", args.l0c2k1_identity_audit),
     ]
     for _flag, _on in _l0c2k_flags:
         if not _on:
@@ -2154,6 +2164,7 @@ if __name__ == "__main__":
             ("--l0c2k2-audit", args.l0c2k2_audit),
             ("--l0c2k3-audit", args.l0c2k3_audit),
             ("--l0c2k1-edge-audit", args.l0c2k1_edge_audit),
+            ("--l0c2k1-identity-audit", args.l0c2k1_identity_audit),
         ]
         _l0ce_hit = [name for name, on in _l0ce_conflicts if on]
         if _l0ce_hit:
@@ -2289,6 +2300,24 @@ if __name__ == "__main__":
             supports_builder=build_l0c2k1_edge_support,
             expected_aggregate=L0C2K1_EDGE_AUDIT_EXPECTED_COUNT,
             surface="l0c2k1edge",
+        )
+    elif args.l0c2k1_identity_audit:
+        from calm.hrm_text_158.curriculum.language_supports import (
+            build_l0c2k1_identity_support,
+            L0C2K1_IDENTITY_AUDIT_EXPECTED_COUNT,
+        )
+        probe_language_finite_supports(
+            args.ckpt_path,
+            audit_seed=args.language_audit_seed,
+            max_gen=args.max_gen,
+            output_json=args.audit_output_json,
+            use_cached_ternary_infer=args.use_cached_ternary_infer,
+            use_kv_cache_decode=args.use_kv_cache_decode,
+            use_batched_probe_eval=args.use_batched_probe_eval,
+            probe_batch_size=args.probe_batch_size,
+            supports_builder=build_l0c2k1_identity_support,
+            expected_aggregate=L0C2K1_IDENTITY_AUDIT_EXPECTED_COUNT,
+            surface="l0c2k1identity",
         )
     elif args.language_supports:
         probe_language_finite_supports(

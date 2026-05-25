@@ -238,6 +238,36 @@ def test_watcher_l0c_exhaustive_pattern_excludes_math_a0_aggregate():
     assert not re.search(pats["math_a0"], l0cx_agg)
 
 
+def test_watcher_l0c2k1_identity_mode_wired_and_printed():
+    _watcher, pats, flags = _watcher_modes()
+    names = [name for name, _f, _g in _watcher._AUDIT_MODES]
+    assert "l0c2k1identity" in names
+    assert flags["l0c2k1identity"] == ["--l0c2k1-identity-audit"]
+    assert pats["l0c2k1identity"] == r"L0C2K1IDENTITY AGGREGATE"
+
+    watcher_src = os.path.join(_REPO, "scripts", "parallel_audit_watcher.py")
+    with open(watcher_src, "r", encoding="utf-8") as fh:
+        src = fh.read()
+    assert (
+        'for name in ("l0c2k1", "l0c2k1edge", '
+        '"l0c2k1identity", "l0c2k2", "l0c2k3")'
+    ) in src
+
+
+def test_watcher_l0c2k1_identity_pattern_excludes_k1_and_edge():
+    import re
+    _watcher, pats, _flags = _watcher_modes()
+    k1_agg = "[probe-language] L0C2K1 AGGREGATE strict=29/29 = 1.0000"
+    edge_agg = "[probe-language] L0C2K1EDGE AGGREGATE strict=65/65 = 1.0000"
+    identity_agg = "[probe-language] L0C2K1IDENTITY AGGREGATE strict=90/90 = 1.0000"
+
+    assert re.search(pats["l0c2k1identity"], identity_agg)
+    assert not re.search(pats["l0c2k1"], identity_agg)
+    assert not re.search(pats["l0c2k1edge"], identity_agg)
+    assert not re.search(pats["l0c2k1identity"], k1_agg)
+    assert not re.search(pats["l0c2k1identity"], edge_agg)
+
+
 if __name__ == "__main__":
     for _name, _fn in sorted(globals().items()):
         if _name.startswith("test_") and callable(_fn):

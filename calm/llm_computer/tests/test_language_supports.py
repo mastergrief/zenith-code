@@ -22,6 +22,7 @@ from calm.hrm_text_158.curriculum.language_supports import (
     LANGUAGE_ACTIVE_RUNGS,
     LANGUAGE_EXPECTED_AGGREGATE,
     LANGUAGE_EXPECTED_COUNTS,
+    L0C2K1_IDENTITY_AUDIT_EXPECTED_COUNT,
     build_l0c2k1_identity_support,
     build_language_supports,
     language_source_rung_buckets,
@@ -481,6 +482,78 @@ def test_probe_language_cli_conflicts_with_exhaustive() -> None:
     )
 
 
+def test_probe_l0c2k1_identity_cli_routes_to_identity_surface() -> None:
+    """The CLI flag must bind to the identity audit branch, not fall through."""
+    script_path = os.path.join(os.getcwd(), "scripts", "probe_hrm_text_158.py")
+    with open(script_path, "r", encoding="utf-8") as fh:
+        src = fh.read()
+    src = src.replace(
+        'if __name__ == "__main__":\n',
+        'if __name__ == "__main__":\n'
+        '    probe_language_finite_supports = _probe_language_finite_supports_mock\n',
+        1,
+    )
+    calls = []
+
+    def _probe_language_finite_supports_mock(*args, **kwargs):
+        calls.append((args, kwargs))
+        return {"ok": True}
+
+    old_argv = sys.argv[:]
+    try:
+        sys.argv = [
+            "probe_hrm_text_158.py",
+            "--ckpt-path",
+            "dummy.pt",
+            "--l0c2k1-identity-audit",
+            "--language-audit-seed",
+            "17",
+        ]
+        ns = {
+            "__name__": "__main__",
+            "__file__": script_path,
+            "_probe_language_finite_supports_mock": _probe_language_finite_supports_mock,
+        }
+        exec(compile(src, script_path, "exec"), ns)
+    finally:
+        sys.argv = old_argv
+
+    assert len(calls) == 1
+    call_args, call_kwargs = calls[0]
+    assert call_args == ("dummy.pt",)
+    assert call_kwargs["supports_builder"].__name__ == "build_l0c2k1_identity_support"
+    assert call_kwargs["expected_aggregate"] == L0C2K1_IDENTITY_AUDIT_EXPECTED_COUNT == 90
+    assert call_kwargs["surface"] == "l0c2k1identity"
+
+
+@pytest.mark.parametrize("other_flag", [
+    "--l0c2-audit",
+    "--l0c2k1-edge-audit",
+    "--l0c-exhaustive-audit",
+])
+def test_probe_l0c2k1_identity_cli_conflicts_before_ckpt_load(other_flag: str) -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "scripts.probe_hrm_text_158",
+            "--ckpt-path",
+            "/nonexistent.pt",
+            "--l0c2k1-identity-audit",
+            other_flag,
+        ],
+        cwd=os.getcwd(),
+        capture_output=True,
+        text=True,
+    )
+    combined = result.stdout + result.stderr
+    assert result.returncode != 0, combined
+    assert "conflicts with" in combined, combined
+    assert "--l0c2k1-identity-audit" in combined, combined
+    assert other_flag in combined, combined
+    assert "No such file" not in combined and "FileNotFound" not in combined, combined
+
+
 def test_probe_language_dispatch_path_selection() -> None:
     """Verify dispatch_path string matches existing exhaustive convention."""
     from unittest.mock import patch, MagicMock
@@ -553,6 +626,40 @@ def test_probe_language_output_json_creates_parent_dirs(tmp_path) -> None:
     # Slice E.1 extends: L0c also present, aggregate now 690
     assert "L0c" in payload["results"]
     assert payload["aggregate"]["expected_aggregate"] == 690
+
+
+def test_probe_l0c2k1_identity_surface_emits_expected_token(capsys) -> None:
+    from unittest.mock import patch, MagicMock
+    import scripts.probe_hrm_text_158 as probe_mod
+
+    fake_ckpt = {"step": 1500, "config": {"max_seq_len": 384, "curriculum_seed": 17}}
+
+    def fake_decode(_model, _tok, q: str, **_kwargs):
+        return (q.split()[0], False, True)
+
+    with patch.multiple(
+        probe_mod,
+        torch=MagicMock(load=MagicMock(return_value=fake_ckpt)),
+        _build_model_from_ckpt=MagicMock(return_value=(MagicMock(), MagicMock())),
+        _decode_greedy_no_cache=MagicMock(side_effect=fake_decode),
+    ):
+        out = probe_mod.probe_language_finite_supports(
+            ckpt_path="dummy",
+            audit_seed=17,
+            device="cpu",
+            use_cached_ternary_infer=False,
+            use_kv_cache_decode=False,
+            use_batched_probe_eval=False,
+            supports_builder=build_l0c2k1_identity_support,
+            expected_aggregate=L0C2K1_IDENTITY_AUDIT_EXPECTED_COUNT,
+            surface="l0c2k1identity",
+        )
+
+    captured = capsys.readouterr().out
+    assert "L0C2K1IDENTITY AGGREGATE" in captured
+    assert out["surface"] == "l0c2k1identity"
+    assert out["aggregate"]["expected_aggregate"] == 90
+    assert out["aggregate"]["n_total"] == 90
 
 
 def test_probe_language_rows_all_identity_held_schema_and_decode_class() -> None:
