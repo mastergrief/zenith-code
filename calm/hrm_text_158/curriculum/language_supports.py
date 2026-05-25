@@ -39,6 +39,7 @@ from calm.hrm_text_158.curriculum.generators import (
     _enumerate_partition_l0c2k1_identity,
     _enumerate_partition_l0c2k2,
     _enumerate_partition_l0c2k3,
+    _l0c2k1_identity_full_enumerate,
     l0c2_band_expected_count,
 )
 
@@ -337,6 +338,7 @@ def build_l0c2k1_edge_support(seed: int = 17) -> dict[str, list[tuple[str, int, 
 L0C2K1_IDENTITY_TRAIN_AUDIT_COUNT: int = 70
 L0C2K1_IDENTITY_HELD_AUDIT_COUNT: int = 20
 L0C2K1_IDENTITY_AUDIT_EXPECTED_COUNT: int = 90
+L0C2K1_IDENTITY_FULL_AUDIT_EXPECTED_COUNT: int = 90
 
 
 def _identity_train_bucket(row: dict) -> str:
@@ -366,6 +368,26 @@ def build_l0c2k1_identity_support(seed: int = 17) -> dict[str, list[tuple[str, i
     return {
         "L0c2-K1-identity-2digit-train": _l0c2k1_identity_train_support(seed),
         "L0c2-K1-identity-2digit-held": _l0c2k1_identity_held_support(seed),
+    }
+
+
+def _l0c2k1_identity_full_support(seed: int = 17) -> list[tuple[str, int, str]]:
+    """90-row coverage surface for full-density identity acquisition.
+
+    Seed is accepted for the standard support-builder signature; the full
+    support itself is seed-independent.
+    """
+    _ = seed
+    return [
+        (r["question"], r["expected"], r["coverage_bucket"])
+        for r in _l0c2k1_identity_full_enumerate()
+    ]
+
+
+def build_l0c2k1_identity_full_support(seed: int = 17) -> dict[str, list[tuple[str, int, str]]]:
+    """Single 90-row coverage surface; no train/held sub-surfaces."""
+    return {
+        "L0c2-K1-identity-2digit-full": _l0c2k1_identity_full_support(seed),
     }
 
 
@@ -422,6 +444,8 @@ def language_source_rung_buckets(rung: str) -> list[str]:
             ["held_legacy_teen", "held_fresh_teen"]
             + [f"held_fresh_tens_{tens}" for tens in range(2, 10)]
         )
+    if rung == "L0c2-K1-identity-2digit-full":
+        return ["coverage_teen"] + [f"coverage_tens_{tens}" for tens in range(2, 10)]
     raise ValueError(
         f"unknown language rung {rung!r}; valid: {LANGUAGE_ACTIVE_RUNGS} "
         f"+ 'L0c1' / 'L0c2' / 'L0c2-K1..K3' (separate audit surfaces)"

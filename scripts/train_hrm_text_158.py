@@ -803,9 +803,45 @@ def train(
             replay_samples_by_rung[pr] = len(replay_rows)
 
         # Held-out: new rung only (probe handles prior-rung retention separately via probe script)
-        val_rows = list(make_rung_examples(
-            curriculum_rung, n=curriculum_n_heldout, seed=curriculum_seed, split="held_out"
-        ))
+        val_desc = ""
+        if curriculum_rung == "L0c2-K1-identity-2digit-full":
+            if curriculum_n_heldout <= 0:
+                raise ValueError(
+                    "L0c2-K1-identity-2digit-full is train-only, but trainer "
+                    "val uses replay-prior held rows as a retention/dev signal; "
+                    f"--curriculum-n-heldout must be positive, got {curriculum_n_heldout}."
+                )
+            if not prior_rungs:
+                raise ValueError(
+                    "L0c2-K1-identity-2digit-full needs prior_rungs to build "
+                    "trainer val from prior held rows; active-rung held_out does "
+                    "not exist."
+                )
+            val_rows = []
+            val_samples_by_rung: dict[str, int] = {}
+            base_val = curriculum_n_heldout // len(prior_rungs)
+            extra_val = curriculum_n_heldout % len(prior_rungs)
+            for i, pr in enumerate(prior_rungs):
+                n_val = base_val + (1 if i < extra_val else 0)
+                if n_val <= 0:
+                    val_samples_by_rung[pr] = 0
+                    continue
+                prior_val = make_rung_examples(pr, n=n_val, seed=curriculum_seed, split="held_out")
+                val_rows.extend(prior_val)
+                val_samples_by_rung[pr] = len(prior_val)
+            if not val_rows:
+                raise RuntimeError(
+                    "L0c2-K1-identity-2digit-full trainer val resolved to zero "
+                    "prior held rows; acquisition is audited separately, but "
+                    "trainer val must remain a non-empty retention/dev signal."
+                )
+            val_desc = (
+                f" (train-only active_held_out=0; prior_held_val={val_samples_by_rung})"
+            )
+        else:
+            val_rows = list(make_rung_examples(
+                curriculum_rung, n=curriculum_n_heldout, seed=curriculum_seed, split="held_out"
+            ))
 
         # Deterministic shuffle of train corpus (so replay isn't tail-stacked)
         shuffle_rng = random.Random(_stable_curriculum_seed("shuffle", curriculum_rung, curriculum_seed))
@@ -819,7 +855,7 @@ def train(
 
         print(f"[hrm158] curriculum {curriculum_rung}: train={len(train_rows)} "
               f"({n_new} new + {sum(replay_samples_by_rung.values())} replay {replay_samples_by_rung}) "
-              f"held_out={len(val_rows)}", flush=True)
+              f"held_out={len(val_rows)}{val_desc}", flush=True)
 
         # Slice B retention-anchor V0 (codex msg 1779564576409-a7db0527):
         # A1 row-repeat appends anchor rows AFTER the curriculum cap+log.
@@ -1424,7 +1460,7 @@ if __name__ == "__main__":
                          "--use-ternary-bulk (no-op otherwise).")
     # Phase 3 Step 1 curriculum flags (codex msg 1779462307554 +1 implement Phase A)
     ap.add_argument("--curriculum-rung", type=str, default=None,
-                    choices=["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6"],
+                    choices=["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6"],
                     help="Phase 3 curriculum mode. When set, swaps GSM8k corpus "
                          "for synthetic per-rung data + replay mix. Requires "
                          "--use-broad-tokenizer in Phase 3 design.")

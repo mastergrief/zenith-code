@@ -257,7 +257,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -709,6 +709,12 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     "L0c2-K1-identity-2digit": {
         "train":     {"partition": "enumerate_l0c2_k1_identity_2digit"},
         "held_out":  {"partition": "enumerate_l0c2_k1_identity_2digit"},
+    },
+    # F.4d-identity-full — full-density emission-primitive acquisition over the
+    # same 90 identity rows, all TRAIN-only. No held_out split: the acquisition
+    # gate is the separate 90/90 coverage audit, not held generalization.
+    "L0c2-K1-identity-2digit-full": {
+        "train":     {"partition": "enumerate_l0c2_k1_identity_2digit_full"},
     },
     "L0c": {
         "train":     {"partition": "enumerate_stratified_l0c"},
@@ -2917,6 +2923,7 @@ L0C2K1_IDENTITY_LEGACY_ROWS: tuple[tuple[str, int], ...] = (
     ("11 equals what?", 11),
     ("17 equals what?", 17),
 )
+L0C2K1_IDENTITY_FULL_TRAIN_COUNT: int = 90
 
 
 def _l0c2k1_identity_enumerate() -> list[dict]:
@@ -2936,6 +2943,16 @@ def _l0c2k1_identity_enumerate() -> list[dict]:
     assert all(r["question"] == f"{r['n']} equals what?" for r in rows)
     assert all(r["expected"] == r["n"] for r in rows)
     assert all(" plus " not in r["question"] and " minus " not in r["question"] for r in rows)
+    return rows
+
+
+def _l0c2k1_identity_full_enumerate() -> list[dict]:
+    """Full-density TRAIN-only identity surface: all 90 rows, no held split."""
+    rows = _l0c2k1_identity_enumerate()
+    for r in rows:
+        r["coverage_bucket"] = "coverage_teen" if r["tens"] == 1 else f"coverage_tens_{r['tens']}"
+    assert len(rows) == L0C2K1_IDENTITY_FULL_TRAIN_COUNT, \
+        f"L0c2-K1-identity-full total {len(rows)} != {L0C2K1_IDENTITY_FULL_TRAIN_COUNT}"
     return rows
 
 
@@ -3004,6 +3021,29 @@ def _gen_l0c2k1_identity(rng: random.Random, spec: dict, n: int, seed: int, spli
     train_pool, held_pool = _enumerate_partition_l0c2k1_identity(seed)
     pool = train_pool if split == "train" else held_pool
     return _sample_l0c2_pool(rng, pool, n, "L0c2-K1-identity-2digit")
+
+
+def _gen_l0c2k1_identity_full(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """Train-side sampler for the full-density identity emission primitive."""
+    if split != "train":
+        raise ValueError(
+            "L0c2-K1-identity-2digit-full is TRAIN-only; it has no held_out "
+            "surface. Use the 90/90 coverage audit support for acquisition."
+        )
+    pool = _l0c2k1_identity_full_enumerate()
+    out: list[dict] = []
+    while len(out) < n:
+        cycle = list(pool)
+        rng.shuffle(cycle)
+        for row in cycle:
+            out.append({
+                "question": row["question"],
+                "expected": row["expected"],
+                "rung": "L0c2-K1-identity-2digit-full",
+            })
+            if len(out) >= n:
+                break
+    return out
 
 
 def _gen_r1b7(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
@@ -3411,6 +3451,19 @@ def make_rung_examples(
         return _gen_l0c2k1_edge(rng, _RUNG_SPEC["L0c2-K1-edge"][split], n, seed=seed, split=split)
     if rung == "L0c2-K1-identity-2digit":
         return _gen_l0c2k1_identity(rng, _RUNG_SPEC["L0c2-K1-identity-2digit"][split], n, seed=seed, split=split)
+    if rung == "L0c2-K1-identity-2digit-full":
+        if split != "train":
+            raise ValueError(
+                "L0c2-K1-identity-2digit-full is TRAIN-only; split='held_out' "
+                "is invalid. Acquisition is measured by the 90/90 coverage audit."
+            )
+        return _gen_l0c2k1_identity_full(
+            rng,
+            _RUNG_SPEC["L0c2-K1-identity-2digit-full"]["train"],
+            n,
+            seed=seed,
+            split=split,
+        )
     if rung == "L0c":
         return _gen_l0c(rng, _RUNG_SPEC["L0c"][split], n, seed=seed, split=split)
     if rung == "L0c_exhaustive":
