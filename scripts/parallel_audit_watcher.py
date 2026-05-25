@@ -10,8 +10,9 @@ Wrapper-level, NOT trainer/model logic. Runs as a SECOND Monitor alongside
 the training Monitor. The producer signal is the trainer's tee'd log line
 `save_at_step: saved <path>` (checkpoint fully written). On each:
   1. rsync the ckpt to the box (consumer GPU lane),
-  2. run the audit bundle on box (--l0c1-audit, --language-supports,
-     --anchor-audit, --exhaustive-finite-supports, --l0c-exhaustive-audit),
+  2. run the audit bundle on box (--l0c1-audit, --l0c2-audit,
+     --language-supports, --anchor-audit, --exhaustive-finite-supports,
+     --l0c-exhaustive-audit),
   3. record a per-step manifest entry that PROVES OVERLAP — ckpt path,
      producer ts, rsync start/end, audit start/end, artifact paths,
      status (OVERLAP if audit started before `training complete`, else
