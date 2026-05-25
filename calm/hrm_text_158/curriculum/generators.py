@@ -257,7 +257,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K3", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K3", "L0c2-K1-edge", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -693,6 +693,15 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     "L0c2-K3": {
         "train":     {"partition": "enumerate_stratified_l0c2_k3"},
         "held_out":  {"partition": "enumerate_stratified_l0c2_k3"},
+    },
+    # F.4d-edge held-generalization micro-slice over a SEPARATE dense 65-row
+    # same-template surface (identity + small-m plus), NOT a filter of L0c2.
+    # 52 train / 13 held (4 legacy edges pinned audit-only + 9 fresh). Replay is
+    # launch-scoped + DIAGNOSIS_ONLY (acquisition target stays out of positional
+    # priors); recipe lock lr 5e-5 / replay 0.80 / 1500.
+    "L0c2-K1-edge": {
+        "train":     {"partition": "enumerate_l0c2_k1_edge"},
+        "held_out":  {"partition": "enumerate_l0c2_k1_edge"},
     },
     "L0c": {
         "train":     {"partition": "enumerate_stratified_l0c"},
@@ -2506,6 +2515,12 @@ def set_l0c_exhaustive_2digit_hard_weight(weight: float) -> float:
 # --------------------------------------------------------------------------- #
 
 L0C2_EXPECTED_COUNT: int = 230
+# Seed-42 REFERENCE band counts (the original F.4d default). The K-band is a
+# FILTER of the seed-dependent L0c2 pool, so its per-band counts vary by seed
+# (seed-42: 24/79/127; seed-17: 29/81/120). Earlier code treated this seed-42
+# dict as universal, so a seed-17 audit reported expected=24 against 29 actual
+# rows (a header/manifest mismatch). Use l0c2_band_expected_counts(seed) for the
+# seed-aware value; this constant stays the documented seed-42 reference.
 L0C2_BAND_EXPECTED_COUNTS: dict[str, int] = {"K1": 24, "K2": 79, "K3": 127}
 
 
@@ -2679,6 +2694,26 @@ def _enumerate_partition_l0c2k3(seed: int) -> tuple[list[dict], list[dict]]:
     return _enumerate_partition_l0c2_band(seed, "K3")
 
 
+def l0c2_band_expected_counts(seed: int) -> dict[str, int]:
+    """Seed-aware L0c2 K-band row counts, computed from the banded partition.
+
+    The K-band is a FILTER of the seed-dependent L0c2 pool, so counts vary by
+    seed (seed-42: 24/79/127; seed-17: 29/81/120). Computing from the partition
+    is always seed-correct (vs the seed-42 L0C2_BAND_EXPECTED_COUNTS reference).
+    The probe uses this so a seed-17 full-K1 audit reports expected=29, not 24.
+    """
+    out: dict[str, int] = {}
+    for band in ("K1", "K2", "K3"):
+        tr, hl = _enumerate_partition_l0c2_band(seed, band)  # type: ignore[arg-type]
+        out[band] = len(tr) + len(hl)
+    return out
+
+
+def l0c2_band_expected_count(seed: int, band: str) -> int:
+    """Seed-aware count for a single L0c2 K-band (K1/K2/K3)."""
+    return l0c2_band_expected_counts(seed)[band]
+
+
 def _sample_l0c2_pool(
     rng: random.Random,
     pool: list[dict],
@@ -2718,6 +2753,142 @@ def _gen_l0c2k3(rng: random.Random, spec: dict, n: int, seed: int, split: str) -
     train_pool, held_pool = _enumerate_partition_l0c2k3(seed)
     pool = train_pool if split == "train" else held_pool
     return _sample_l0c2_pool(rng, pool, n, "L0c2-K3")
+
+
+# --------------------------------------------------------------------------- #
+# F.4d-edge — L0c2-K1-edge held-generalization micro-slice (codex_2 design
+# 1779728324177 + co-lead amendments; claude-takeover implementation per gabe
+# 2026-05-25). A SEPARATE finite 65-row dense same-template surface over the K1
+# held-edge templates (identity `<n> equals what?` + small-m
+# `<n> plus <m> equals what?`), NOT a filter of the L0c2 pool. Targets the 4
+# persistent K1 held edges by dense coverage while pinning those 4 rows
+# audit-only (NO held->train laundering) + 9 fresh held rows for generalization.
+# Fixed 52 train / 13 held split — only WHICH rows are fresh-held varies by seed.
+# Recipe lock (unanimous co-lead): lr 5e-5, replay 0.80, 1500-step cap.
+# --------------------------------------------------------------------------- #
+
+L0C2K1_EDGE_TOTAL_COUNT: int = 65
+L0C2K1_EDGE_TRAIN_COUNT: int = 52
+L0C2K1_EDGE_HELD_COUNT: int = 13
+L0C2K1_EDGE_FRESH_HELD_COUNT: int = 9
+L0C2K1_EDGE_LEGACY_COUNT: int = 4
+
+# The 4 persistent K1 held edges (question, expected). Pinned audit-only; the
+# arrows in the brief (->49/->17/->2/->6) were WRONG decodes; labels stay
+# arithmetic. All match the `<expr> equals what?` surface byte-for-byte.
+L0C2K1_EDGE_LEGACY_ROWS: tuple[tuple[str, int], ...] = (
+    ("13 plus 0 equals what?", 13),
+    ("14 plus 1 equals what?", 15),
+    ("16 plus 1 equals what?", 17),
+    ("17 equals what?", 17),
+)
+
+
+def _l0c2k1_edge_enumerate() -> list[dict]:
+    """Enumerate the finite 65-row L0c2-K1-edge surface (rows seed-independent).
+
+    10 identity (`<n> equals what?`, n in 10..19, expected n) + 55 plus-small-m
+    triangular (`<n> plus <m> equals what?`, m in 0..9, n in 10..(19-m),
+    expected n+m). Every expected value is in 10..19 (strict K1 band). The
+    stratum label feeds the fresh-held quota selection. Question strings are
+    byte-identical to the `<expr> equals what?` audit surface."""
+    rows: list[dict] = []
+    for n in range(10, 20):
+        rows.append({
+            "question": f"{n} equals what?", "expected": n,
+            "stratum": "identity", "m": None,
+        })
+    for m in range(0, 10):
+        if m == 0:
+            stratum = "plus_m0"
+        elif m == 1:
+            stratum = "plus_m1"
+        elif 2 <= m <= 4:
+            stratum = "plus_m2_m4"
+        else:
+            stratum = "plus_m5_m9"
+        for n in range(10, 20 - m):
+            rows.append({
+                "question": f"{n} plus {m} equals what?", "expected": n + m,
+                "stratum": stratum, "m": m,
+            })
+    assert len(rows) == L0C2K1_EDGE_TOTAL_COUNT, \
+        f"L0c2-K1-edge total {len(rows)} != {L0C2K1_EDGE_TOTAL_COUNT}"
+    assert all(10 <= r["expected"] <= 19 for r in rows), \
+        "L0c2-K1-edge has an out-of-band expected value"
+    return rows
+
+
+def _enumerate_partition_l0c2k1_edge(seed: int) -> tuple[list[dict], list[dict]]:
+    """Partition the 65-row edge surface into 52 train / 13 held.
+
+    held = 4 legacy edges (pinned audit-only, NEVER train) + 9 fresh held rows
+    chosen deterministically per stratum so the gate measures generalization,
+    not memorization. Order: enumerate -> mark legacy -> stable-seed fresh pick
+    -> train = remainder. (With-replacement sampling happens later in
+    _gen_l0c2k1_edge for the TRAIN stream only; the audit consumes these finite
+    manifests.) Per-m train coverage is preserved (the m=9 singleton stays in
+    train; no m loses all its train rows)."""
+    rows = _l0c2k1_edge_enumerate()
+    legacy_qe = set(L0C2K1_EDGE_LEGACY_ROWS)
+    legacy_rows = [r for r in rows if (r["question"], r["expected"]) in legacy_qe]
+    assert len(legacy_rows) == L0C2K1_EDGE_LEGACY_COUNT, \
+        f"expected {L0C2K1_EDGE_LEGACY_COUNT} legacy rows, found {len(legacy_rows)}"
+    for r in legacy_rows:
+        r["hold_kind"] = "legacy"
+
+    non_legacy = [r for r in rows if (r["question"], r["expected"]) not in legacy_qe]
+    by_stratum: dict[str, list[dict]] = {}
+    for r in non_legacy:
+        by_stratum.setdefault(r["stratum"], []).append(r)
+
+    def _pick(pool: list[dict], k: int, tag: str) -> list[dict]:
+        ordered = sorted(pool, key=lambda r: r["question"])
+        random.Random(_stable_seed("L0c2-K1-edge_partition", seed, tag)).shuffle(ordered)
+        return ordered[:k]
+
+    # Fresh-held quota (excludes legacy; total 9): 1 each from identity / plus_m0
+    # / plus_m1, then 1 per m in {2,3,4} and 1 per m in {5,6,7}. m=8 stays fully
+    # train, m=9 singleton stays train -> every m keeps >=1 train row.
+    fresh: list[dict] = []
+    fresh += _pick(by_stratum.get("identity", []), 1, "identity")
+    fresh += _pick(by_stratum.get("plus_m0", []), 1, "plus_m0")
+    fresh += _pick(by_stratum.get("plus_m1", []), 1, "plus_m1")
+    for m in (2, 3, 4, 5, 6, 7):
+        pool_m = [r for r in non_legacy if r["m"] == m]
+        fresh += _pick(pool_m, 1, f"plus_m{m}")
+
+    fresh_qe = {(r["question"], r["expected"]) for r in fresh}
+    assert len(fresh_qe) == L0C2K1_EDGE_FRESH_HELD_COUNT, \
+        f"fresh held {len(fresh_qe)} != {L0C2K1_EDGE_FRESH_HELD_COUNT}"
+    for r in fresh:
+        r["hold_kind"] = "fresh"
+
+    held = legacy_rows + fresh
+    held_qe = {(r["question"], r["expected"]) for r in held}
+    train = [r for r in rows if (r["question"], r["expected"]) not in held_qe]
+    for r in train:
+        r["hold_kind"] = "train"
+
+    assert len(train) == L0C2K1_EDGE_TRAIN_COUNT, \
+        f"L0c2-K1-edge train {len(train)} != {L0C2K1_EDGE_TRAIN_COUNT}"
+    assert len(held) == L0C2K1_EDGE_HELD_COUNT, \
+        f"L0c2-K1-edge held {len(held)} != {L0C2K1_EDGE_HELD_COUNT}"
+    assert {(r["question"], r["expected"]) for r in train}.isdisjoint(held_qe), \
+        "L0c2-K1-edge train/held overlap"
+    # Every m (0..9) and identity must retain >=1 train row (no orphaned stratum).
+    train_m = {r["m"] for r in train}
+    assert train_m == set(range(0, 10)) | {None}, \
+        f"L0c2-K1-edge train lost a stratum: {sorted(str(x) for x in train_m)}"
+    return train, held
+
+
+def _gen_l0c2k1_edge(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """L0c2-K1-edge training-side sampler: with-replacement over the 52 train
+    (split='train') or 13 held finite pool; strips metadata, tags rung."""
+    train_pool, held_pool = _enumerate_partition_l0c2k1_edge(seed)
+    pool = train_pool if split == "train" else held_pool
+    return _sample_l0c2_pool(rng, pool, n, "L0c2-K1-edge")
 
 
 def _gen_r1b7(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
@@ -3121,6 +3292,8 @@ def make_rung_examples(
         return _gen_l0c2k2(rng, _RUNG_SPEC["L0c2-K2"][split], n, seed=seed, split=split)
     if rung == "L0c2-K3":
         return _gen_l0c2k3(rng, _RUNG_SPEC["L0c2-K3"][split], n, seed=seed, split=split)
+    if rung == "L0c2-K1-edge":
+        return _gen_l0c2k1_edge(rng, _RUNG_SPEC["L0c2-K1-edge"][split], n, seed=seed, split=split)
     if rung == "L0c":
         return _gen_l0c(rng, _RUNG_SPEC["L0c"][split], n, seed=seed, split=split)
     if rung == "L0c_exhaustive":

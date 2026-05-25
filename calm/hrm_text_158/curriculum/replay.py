@@ -145,7 +145,13 @@ from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
 #         positional priors {R0..R1b9, L0a, L0b}); F.3 trains full L0c FROM
 #         the F.2 L0c1 checkpoint (--load-from), gaining the precursor via
 #         weights, not via redundant subset replay.
-DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b", "R1b4", "R1b10", "R2", "R2a", "L0c1"})
+# L0c2-K1-edge stays OUT (F.4d-edge held-generalization micro-slice): it is an
+#         ACQUISITION TARGET, so auto-replaying it as a positional prior of a
+#         later rung would train on the surface it is meant to acquire. Mirrors
+#         the L0c1 diagnosis-only rationale. Trained explicitly via
+#         `--curriculum-rung L0c2-K1-edge` with a launch-scoped explicit replay
+#         list (R0..L0c1); never a positional prior.
+DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b", "R1b4", "R1b10", "R2", "R2a", "L0c1", "L0c2-K1-edge"})
 
 
 # R7 (GSM8k) is generator-incompatible — served separately from

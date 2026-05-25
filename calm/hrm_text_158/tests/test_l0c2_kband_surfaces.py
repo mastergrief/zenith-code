@@ -25,6 +25,7 @@ from calm.hrm_text_158.curriculum.generators import (  # noqa: E402
     _enumerate_partition_l0c2k3,
     _l0c_is_hard,
     _l0c2_result_band,
+    l0c2_band_expected_counts,
     make_rung_examples,
 )
 from calm.hrm_text_158.curriculum.language_supports import (  # noqa: E402
@@ -67,11 +68,25 @@ def _assert_rows_in_band(rows, band: str):
 
 
 def test_kband_rungs_registered_after_l0c2_before_l0c():
-    expected = ["L0c2-K1", "L0c2-K2", "L0c2-K3"]
+    # F.4d-edge adds L0c2-K1-edge after the three K bands, still before L0c.
+    expected = ["L0c2-K1", "L0c2-K2", "L0c2-K3", "L0c2-K1-edge"]
     for rung in expected:
         assert rung in RUNG_NAMES
         assert rung in _RUNG_SPEC
     assert list(RUNG_NAMES[RUNG_NAMES.index("L0c2") + 1:RUNG_NAMES.index("L0c")]) == expected
+
+
+def test_seed_aware_band_counts_42_and_17():
+    # STEP-0 seed-aware fix: K-band counts vary by partition seed. The seed-42
+    # reference dict stays 24/79/127; the active chain seed-17 is 29/81/120
+    # (union 230). Earlier code used the seed-42 dict as universal, mismatching
+    # a seed-17 audit (expected 24 vs 29 actual).
+    assert L0C2_BAND_EXPECTED_COUNTS == {"K1": 24, "K2": 79, "K3": 127}
+    assert l0c2_band_expected_counts(42) == {"K1": 24, "K2": 79, "K3": 127}
+    assert l0c2_band_expected_counts(17) == {"K1": 29, "K2": 81, "K3": 120}
+    for seed in (42, 17):
+        counts = l0c2_band_expected_counts(seed)
+        assert sum(counts.values()) == L0C2_EXPECTED_COUNT == 230
 
 
 def test_make_rung_examples_tags_and_band_membership():

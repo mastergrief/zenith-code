@@ -35,8 +35,10 @@ from calm.hrm_text_158.curriculum.generators import (
     _enumerate_partition_l0c1,
     _enumerate_partition_l0c2,
     _enumerate_partition_l0c2k1,
+    _enumerate_partition_l0c2k1_edge,
     _enumerate_partition_l0c2k2,
     _enumerate_partition_l0c2k3,
+    l0c2_band_expected_count,
 )
 
 
@@ -277,6 +279,54 @@ def build_l0c2k3_support(seed: int = 42) -> dict[str, list[tuple[str, int, str]]
     return {"L0c2-K3": _l0c2k3_support(seed)}
 
 
+def l0c2_band_audit_expected_count(seed: int, band: str) -> int:
+    """Seed-aware expected row count for an original L0c2 K-band audit surface
+    (K1/K2/K3). Resolves the seed-17-vs-seed-42 mismatch: a seed-17 full-K1
+    audit expects 29, not the seed-42 reference 24. The probe evaluates this at
+    the RESOLVED audit_seed so the reported expected_aggregate matches the
+    actual built rows on any seed."""
+    return l0c2_band_expected_count(seed, band)
+
+
+# --------------------------------------------------------------------------- #
+# F.4d-edge — L0c2-K1-edge held-generalization micro-slice audit surface.
+# SEPARATE finite surface (codex_2 design 1779728324177 + co-lead finite-train
+# amendment). Exposed as TWO sub-surfaces so the gate reports per surface:
+#   train 52/52 (strict-exact — training samples with replacement, so the only
+#     way to prove all 52 unique train rows cleared is a finite enumeration),
+#   held  13/13, with the held bucket axis splitting legacy(4) vs fresh(9).
+# Counts are FIXED across seeds (only WHICH rows are fresh-held varies), so no
+# seed-aware count helper is needed here (unlike K1/K2/K3). Default seed 17
+# (active chain); the probe overrides with the resolved audit_seed.
+# --------------------------------------------------------------------------- #
+L0C2K1_EDGE_TRAIN_AUDIT_COUNT: int = 52
+L0C2K1_EDGE_HELD_AUDIT_COUNT: int = 13
+L0C2K1_EDGE_AUDIT_EXPECTED_COUNT: int = 65
+
+
+def _l0c2k1_edge_train_support(seed: int = 17) -> list[tuple[str, int, str]]:
+    """52 finite train rows as (question, expected, stratum)."""
+    train, _held = _enumerate_partition_l0c2k1_edge(seed)
+    return [(r["question"], r["expected"], r["stratum"]) for r in train]
+
+
+def _l0c2k1_edge_held_support(seed: int = 17) -> list[tuple[str, int, str]]:
+    """13 finite held rows as (question, expected, hold_kind) where hold_kind is
+    'legacy' (the 4 pinned edges) or 'fresh' (9 generalization rows)."""
+    _train, held = _enumerate_partition_l0c2k1_edge(seed)
+    return [(r["question"], r["expected"], r["hold_kind"]) for r in held]
+
+
+def build_l0c2k1_edge_support(seed: int = 17) -> dict[str, list[tuple[str, int, str]]]:
+    """Standalone L0c2-K1-edge audit surface as TWO finite sub-surfaces so the
+    probe reports pass/fail per surface: train 52/52 + held 13/13 (held bucket
+    axis = legacy/fresh). Parallel to build_l0c2k1_support but two-keyed."""
+    return {
+        "L0c2-K1-edge-train": _l0c2k1_edge_train_support(seed),
+        "L0c2-K1-edge-held": _l0c2k1_edge_held_support(seed),
+    }
+
+
 def build_language_supports(seed: int = 42) -> dict[str, list[tuple[str, int, str]]]:
     """Build full finite-support audit list for every active language rung.
 
@@ -317,6 +367,12 @@ def language_source_rung_buckets(rung: str) -> list[str]:
             "R1b1:plus", "R1b2:minus", "R1b3:plus", "R1b4v2:plus",
             "R1b5:plus", "R1b6:plus", "R1b7:plus", "R1b8:plus", "R1b9:plus",
         ]
+    if rung == "L0c2-K1-edge-train":
+        # F.4d-edge finite train surface: bucketed by template stratum.
+        return ["identity", "plus_m0", "plus_m1", "plus_m2_m4", "plus_m5_m9"]
+    if rung == "L0c2-K1-edge-held":
+        # F.4d-edge finite held surface: 4 legacy pinned edges vs 9 fresh rows.
+        return ["legacy", "fresh"]
     raise ValueError(
         f"unknown language rung {rung!r}; valid: {LANGUAGE_ACTIVE_RUNGS} "
         f"+ 'L0c1' / 'L0c2' / 'L0c2-K1..K3' (separate audit surfaces)"

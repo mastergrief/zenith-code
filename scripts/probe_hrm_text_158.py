@@ -1242,6 +1242,7 @@ def probe_language_finite_supports(
     probe_batch_size: int = 32,
     supports_builder=None,
     expected_aggregate: int | None = None,
+    expected_aggregate_fn=None,
     surface: str = "language",
 ) -> dict:
     """Language-axis finite-support audit (codex msg 1779559495228-f863199b
@@ -1312,6 +1313,16 @@ def probe_language_finite_supports(
             )
         else:
             print(f"[probe-language] audit_seed={audit_seed} (explicit override)", flush=True)
+
+    # Seed-aware expected aggregate (F.4d STEP-0 fix): K-band surfaces have
+    # seed-dependent counts (L0c2-K1 = 24 at seed-42, 29 at seed-17). When the
+    # caller passes expected_aggregate_fn, evaluate it at the RESOLVED audit_seed
+    # so the reported expected matches the actual built rows — no more static
+    # seed-42 expected=24 against a 29-row seed-17 audit (header/manifest match).
+    if expected_aggregate_fn is not None:
+        expected_aggregate = int(expected_aggregate_fn(audit_seed))
+        print(f"[probe-language] expected_aggregate={expected_aggregate} "
+              f"(seed-aware, audit_seed={audit_seed})", flush=True)
 
     m, tok = _build_model_from_ckpt(ckpt, device)
     max_seq_len = ckpt["config"]["max_seq_len"]
@@ -1931,6 +1942,16 @@ if __name__ == "__main__":
                     help="Run the standalone L0c2-K3 audit surface (result "
                          "magnitude 50-99; seed-42 aggregate 127). Conflicts "
                          "with other modes.")
+    # F.4d-edge held-generalization micro-slice audit. SEPARATE dense 65-row
+    # surface (NOT a filter of L0c2); two finite sub-surfaces (train 52 / held
+    # 13) so the gate reports per surface, held bucket axis = legacy(4)/fresh(9).
+    ap.add_argument("--l0c2k1-edge-audit", action="store_true",
+                    help="Run the standalone L0c2-K1-edge audit surface: dense "
+                         "same-template held-generalization micro-slice (65 rows "
+                         "= 52 train + 13 held). Emits surface='l0c2k1edge' with "
+                         "two sub-surfaces (train 52/52, held 13/13; held buckets "
+                         "legacy/fresh). Counts are seed-independent. Conflicts "
+                         "with the other audit modes.")
     # Exhaustive-L0c language-density audit (codex msg 1779693537447 / Slice:
     # language-to-math-density). The `<expr> equals what?` wrapper over the
     # FULL math-A0 set (1255). Reuses the exhaustive audit machinery via
@@ -2040,6 +2061,7 @@ if __name__ == "__main__":
         ("--l0c2k1-audit", args.l0c2k1_audit),
         ("--l0c2k2-audit", args.l0c2k2_audit),
         ("--l0c2k3-audit", args.l0c2k3_audit),
+        ("--l0c2k1-edge-audit", args.l0c2k1_edge_audit),
     ]
     for _flag, _on in _l0c2k_flags:
         if not _on:
@@ -2075,6 +2097,7 @@ if __name__ == "__main__":
             ("--l0c2k1-audit", args.l0c2k1_audit),
             ("--l0c2k2-audit", args.l0c2k2_audit),
             ("--l0c2k3-audit", args.l0c2k3_audit),
+            ("--l0c2k1-edge-audit", args.l0c2k1_edge_audit),
         ]
         _l0ce_hit = [name for name, on in _l0ce_conflicts if on]
         if _l0ce_hit:
@@ -2142,7 +2165,7 @@ if __name__ == "__main__":
     elif args.l0c2k1_audit:
         from calm.hrm_text_158.curriculum.language_supports import (
             build_l0c2k1_support,
-            L0C2K1_AUDIT_EXPECTED_COUNT,
+            l0c2_band_audit_expected_count,
         )
         probe_language_finite_supports(
             args.ckpt_path,
@@ -2154,13 +2177,13 @@ if __name__ == "__main__":
             use_batched_probe_eval=args.use_batched_probe_eval,
             probe_batch_size=args.probe_batch_size,
             supports_builder=build_l0c2k1_support,
-            expected_aggregate=L0C2K1_AUDIT_EXPECTED_COUNT,
+            expected_aggregate_fn=lambda s: l0c2_band_audit_expected_count(s, "K1"),
             surface="l0c2k1",
         )
     elif args.l0c2k2_audit:
         from calm.hrm_text_158.curriculum.language_supports import (
             build_l0c2k2_support,
-            L0C2K2_AUDIT_EXPECTED_COUNT,
+            l0c2_band_audit_expected_count,
         )
         probe_language_finite_supports(
             args.ckpt_path,
@@ -2172,13 +2195,13 @@ if __name__ == "__main__":
             use_batched_probe_eval=args.use_batched_probe_eval,
             probe_batch_size=args.probe_batch_size,
             supports_builder=build_l0c2k2_support,
-            expected_aggregate=L0C2K2_AUDIT_EXPECTED_COUNT,
+            expected_aggregate_fn=lambda s: l0c2_band_audit_expected_count(s, "K2"),
             surface="l0c2k2",
         )
     elif args.l0c2k3_audit:
         from calm.hrm_text_158.curriculum.language_supports import (
             build_l0c2k3_support,
-            L0C2K3_AUDIT_EXPECTED_COUNT,
+            l0c2_band_audit_expected_count,
         )
         probe_language_finite_supports(
             args.ckpt_path,
@@ -2190,8 +2213,26 @@ if __name__ == "__main__":
             use_batched_probe_eval=args.use_batched_probe_eval,
             probe_batch_size=args.probe_batch_size,
             supports_builder=build_l0c2k3_support,
-            expected_aggregate=L0C2K3_AUDIT_EXPECTED_COUNT,
+            expected_aggregate_fn=lambda s: l0c2_band_audit_expected_count(s, "K3"),
             surface="l0c2k3",
+        )
+    elif args.l0c2k1_edge_audit:
+        from calm.hrm_text_158.curriculum.language_supports import (
+            build_l0c2k1_edge_support,
+            L0C2K1_EDGE_AUDIT_EXPECTED_COUNT,
+        )
+        probe_language_finite_supports(
+            args.ckpt_path,
+            audit_seed=args.language_audit_seed,
+            max_gen=args.max_gen,
+            output_json=args.audit_output_json,
+            use_cached_ternary_infer=args.use_cached_ternary_infer,
+            use_kv_cache_decode=args.use_kv_cache_decode,
+            use_batched_probe_eval=args.use_batched_probe_eval,
+            probe_batch_size=args.probe_batch_size,
+            supports_builder=build_l0c2k1_edge_support,
+            expected_aggregate=L0C2K1_EDGE_AUDIT_EXPECTED_COUNT,
+            surface="l0c2k1edge",
         )
     elif args.language_supports:
         probe_language_finite_supports(
