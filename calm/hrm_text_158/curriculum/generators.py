@@ -257,7 +257,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c", "L0c_exhaustive", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -667,6 +667,12 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     "L0c": {
         "train":     {"partition": "enumerate_stratified_l0c"},
         "held_out":  {"partition": "enumerate_stratified_l0c"},
+    },
+    # Exhaustive-L0c trainable rung (codex msg 1779694585312 Q1): the full
+    # math-density `<expr> equals what?` set (1255), DISTINCT from bounded L0c.
+    "L0c_exhaustive": {
+        "train":     {"partition": "enumerate_stratified_l0c_exhaustive"},
+        "held_out":  {"partition": "enumerate_stratified_l0c_exhaustive"},
     },
     # R2a (codex msg 1779478819906-0e30503e after full R2 failed v1+v2;
     # DIAGNOSIS-ONLY after R2a v1 itself failed 0.045 at 558fcc1, codex
@@ -2334,6 +2340,59 @@ def _gen_l0c1(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> 
     return out
 
 
+def _enumerate_partition_l0c_exhaustive(seed: int) -> tuple[list[dict], list[dict]]:
+    """Trainable EXHAUSTIVE-L0c rung: the full math-density `<expr> equals
+    what?` set (1255) as a curriculum rung, DISTINCT from the bounded 230-row
+    `L0c` (codex msg 1779694585312 Q1 — new rung, not a `_gen_l0c` flag).
+
+    Derived from `build_exhaustive_l0c_supports()` so the train and audit
+    surfaces cannot drift. Deterministic split stratified by source_rung
+    (~80/20 per rung, seeded by `_stable_seed("L0c_exhaustive_partition",
+    seed, <rung>)`). The inherited math-A0 duplicate `0 plus 0 equals what?`
+    (R1, 2 physical copies) is kept ATOMIC: the split is decided per UNIQUE
+    `(question, expected)` key, then expanded to physical rows, so both copies
+    land on the same side and `train ∩ held = ∅` on `(q, e)` (splits.py
+    invariant). Total = 1255 physical rows.
+    """
+    from calm.hrm_text_158.curriculum.language_supports import (
+        build_exhaustive_l0c_supports,
+    )
+    supports = build_exhaustive_l0c_supports()
+    train: list[dict] = []
+    held: list[dict] = []
+    for source_rung, rows in supports.items():
+        counts: dict[tuple[str, int], int] = {}
+        for (q, e) in rows:
+            counts[(q, e)] = counts.get((q, e), 0) + 1  # physical copies (dup -> 2)
+        uniq = sorted(counts.keys())  # deterministic base order
+        rng = random.Random(_stable_seed("L0c_exhaustive_partition", seed, source_rung))
+        rng.shuffle(uniq)
+        n_held = round(len(uniq) * 0.2) if len(uniq) > 1 else 0
+        held_keys = set(uniq[:n_held])
+        for (q, e) in uniq:
+            dst = held if (q, e) in held_keys else train
+            for _ in range(counts[(q, e)]):  # atomic: all copies to one side
+                dst.append({"question": q, "expected": e, "source_rung": source_rung})
+    return train, held
+
+
+def _gen_l0c_exhaustive(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """Exhaustive-L0c trainable-rung sampler (codex msg 1779694585312 Q1).
+    Samples with replacement from the train/held split of the 1255-row
+    exhaustive-L0c support; strips metadata, tags `rung: "L0c_exhaustive"`.
+    Mirrors `_gen_l0c`; the pool is the full math-density set, not the bounded
+    230-row sample, so the F.3 recipe (n_new ~12.8k over the ~1004-row train
+    split) gives ~12x multiplicity."""
+    train_pool, held_pool = _enumerate_partition_l0c_exhaustive(seed)
+    pool = train_pool if split == "train" else held_pool
+    out = []
+    while len(out) < n:
+        row = rng.choice(pool)
+        out.append({"question": row["question"], "expected": row["expected"],
+                    "rung": "L0c_exhaustive"})
+    return out
+
+
 def _gen_r1b7(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
     """R1b7 constant K=6 addition, carry-stratified partition (codex msg
     1779547753761-5711d790 +1 K=6; rebased onto R1b2-repair commit
@@ -2729,6 +2788,8 @@ def make_rung_examples(
         return _gen_l0c1(rng, _RUNG_SPEC["L0c1"][split], n, seed=seed, split=split)
     if rung == "L0c":
         return _gen_l0c(rng, _RUNG_SPEC["L0c"][split], n, seed=seed, split=split)
+    if rung == "L0c_exhaustive":
+        return _gen_l0c_exhaustive(rng, _RUNG_SPEC["L0c_exhaustive"][split], n, seed=seed, split=split)
     if rung == "R1b":
         return _gen_r1b(rng, _RUNG_SPEC["R1b"][split], n, seed=seed, split=split)
     if rung == "R2a":
