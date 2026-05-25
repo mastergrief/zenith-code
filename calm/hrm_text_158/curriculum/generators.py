@@ -2393,6 +2393,28 @@ def _gen_l0c_exhaustive(rng: random.Random, spec: dict, n: int, seed: int, split
     return out
 
 
+def _l0c_is_hard(question: str, expected: int) -> bool:
+    """F.3d-a 2-digit hard-row predicate (codex msg 1779701225492 + slice-split
+    1779701431738). A row is HARD if its result is 2-digit OR any operand parsed
+    from the question is 2-digit (abs >= 10). Matches the F.3c step-4000 hole
+    composition (2-digit result/operand dominated: result-mag 165:13, operand
+    161:17) and avoids singleton repair. Operands parsed by whitespace-split —
+    the L0c surface `<expr> equals what?` is space-separated, so no regex dep.
+
+    Pure utility: F.3d-b's weighted sampler will consume this; defined/tested
+    here standalone first per the a/b/c slice discipline."""
+    if abs(int(expected)) >= 10:
+        return True
+    expr = question[:-len(" equals what?")] if question.endswith(" equals what?") else question
+    for tok in expr.split():
+        try:
+            if abs(int(tok)) >= 10:
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def _gen_r1b7(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
     """R1b7 constant K=6 addition, carry-stratified partition (codex msg
     1779547753761-5711d790 +1 K=6; rebased onto R1b2-repair commit
