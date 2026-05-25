@@ -257,7 +257,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -663,6 +663,20 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     "L0c1": {
         "train":     {"partition": "enumerate_stratified_l0c1"},
         "held_out":  {"partition": "enumerate_stratified_l0c1"},
+    },
+    # F.4a bounded-2-digit stair-step rung (codex msg 1779705530223 +1; option B
+    # after F.3e/F.3f-b continuation+rewarm of the full-1255 exhaustive surface
+    # proved net-negative). ~230-row stratified HARD subset of exhaustive-L0c:
+    # equal-ish over (source_rung x operator), every PRESENT hard_reason
+    # represented. Codex correction (1779705530223): `_l0c_is_hard` is NOT
+    # uniformly result-2-digit — the operand_2digit_result_1digit class
+    # (singleton `10 minus 1 -> 9`) must not be averaged away, so it is
+    # guaranteed in the pick and pinned to TRAIN. Bounded + auditable like
+    # L0c/L0c1; bank-gate A keeps full exhaustive-L0c as a progress metric, NOT
+    # the bank gate. Audit-wiring is a SEPARATE slice (F.4-audit), not here.
+    "L0c2": {
+        "train":     {"partition": "enumerate_stratified_l0c2"},
+        "held_out":  {"partition": "enumerate_stratified_l0c2"},
     },
     "L0c": {
         "train":     {"partition": "enumerate_stratified_l0c"},
@@ -2468,6 +2482,152 @@ def set_l0c_exhaustive_2digit_hard_weight(weight: float) -> float:
     return w
 
 
+# --------------------------------------------------------------------------- #
+# F.4a — bounded-2-digit stair-step rung `L0c2` (codex msg 1779705530223 +1,
+# option B). Stratified HARD subset of exhaustive-L0c, bounded + auditable like
+# L0c/L0c1. Two pure classifiers (operator + hard_reason) feed the partition's
+# (source_rung x operator) x hard_reason stratification.
+# --------------------------------------------------------------------------- #
+
+L0C2_EXPECTED_COUNT: int = 230
+
+
+def _l0c_operator(question: str) -> str:
+    """F.4a operator classifier for L0c `<expr> equals what?` rows (codex msg
+    1779705530223). Whitespace-split parse (no regex; the surface is space-
+    separated): returns 'plus', 'minus', or 'identity' (bare `<n> equals what?`).
+    Used to stratify L0c2 equal-ish over (source_rung x operator) buckets."""
+    expr = question[:-len(" equals what?")] if question.endswith(" equals what?") else question
+    toks = expr.split()
+    if "plus" in toks:
+        return "plus"
+    if "minus" in toks:
+        return "minus"
+    return "identity"
+
+
+def _l0c_hard_reason(question: str, expected: int) -> str:
+    """F.4a hardness-class classifier (codex msg 1779705530223 correction:
+    `_l0c_is_hard` is NOT uniformly result-2-digit). Returns:
+      - 'result_2digit'                -> abs(result) >= 10
+      - 'operand_2digit_result_1digit' -> 1-digit result but a 2-digit operand
+      - 'easy'                         -> otherwise (not in the hard pool)
+    A row is hard iff the reason is not 'easy' (consistent with `_l0c_is_hard`).
+    The operand_2digit_result_1digit class is the subtle phenomenon the L0c2
+    partition must NOT average away — in this pool it is the singleton
+    `10 minus 1 equals what? -> 9`."""
+    if abs(int(expected)) >= 10:
+        return "result_2digit"
+    expr = question[:-len(" equals what?")] if question.endswith(" equals what?") else question
+    for tok in expr.split():
+        try:
+            if abs(int(tok)) >= 10:
+                return "operand_2digit_result_1digit"
+        except ValueError:
+            continue
+    return "easy"
+
+
+def _enumerate_partition_l0c2(seed: int) -> tuple[list[dict], list[dict]]:
+    """Bounded stratified 2-digit `L0c2` support: exactly 230 rows drawn from
+    the HARD subset of the exhaustive-L0c `<expr> equals what?` set (codex msg
+    1779705530223 +1 F.4a, option B). Bounded + auditable like L0a/L0b/L0c, but
+    EVERY row is `_l0c_is_hard` — the bounded stair-step into the 2-digit density
+    the F.3c step-4000 surface stalled on. Bank-gate A keeps full exhaustive-L0c
+    as a progress metric, NOT the bank gate.
+
+    Stratification (codex msg 1779705530223):
+      - PRIMARY: equal-ish over (source_rung x operator) buckets, capped by pool
+        size. This pool has 12 buckets (R0/identity, R1/plus, R1/minus,
+        R1b1..R1b9/{plus|minus}); each holds >=90 hard rows so the cap never
+        binds. 230 / 12 = 19.17 -> base 19/bucket, +1 to the first 2 buckets in
+        canonical order = exactly 230.
+      - SECONDARY: within each bucket, every PRESENT hard_reason is represented
+        (rare-first reservation). Only R1b2/minus carries the
+        operand_2digit_result_1digit class, a SINGLETON (`10 minus 1 -> 9`); it
+        is guaranteed in the pick AND pinned to TRAIN (a singleton class can't be
+        held-split, and the model must see the regression row).
+
+    Deterministic via `_stable_seed("L0c2_partition", seed, ...)` — a namespace
+    DISTINCT from L0c/L0c1/L0c_exhaustive, so L0c2 picks its own slice. ~80/20
+    train/held, disjoint on (q,e): each (q,e) maps to exactly one bucket and
+    picks within a bucket are unique, so disjointness holds globally. Rows carry
+    question/expected/source_rung/operator/hard_reason for downstream per-bucket
+    audit reporting (consumed by the future F.4-audit slice)."""
+    from calm.hrm_text_158.curriculum.language_supports import (
+        build_exhaustive_l0c_supports,
+    )
+    supports = build_exhaustive_l0c_supports()
+    # Group HARD rows by (source_rung, operator).
+    buckets: dict[tuple[str, str], list[dict]] = {}
+    for source_rung, rows in supports.items():
+        for (q, e) in rows:
+            if not _l0c_is_hard(q, e):
+                continue
+            op = _l0c_operator(q)
+            buckets.setdefault((source_rung, op), []).append({
+                "question": q, "expected": e, "source_rung": source_rung,
+                "operator": op, "hard_reason": _l0c_hard_reason(q, e),
+            })
+    bucket_keys = sorted(buckets.keys())  # deterministic canonical order
+    n_buckets = len(bucket_keys)
+    base = L0C2_EXPECTED_COUNT // n_buckets
+    remainder = L0C2_EXPECTED_COUNT - base * n_buckets
+
+    # Rare-first so a singleton class (operand_2digit_result_1digit) is always
+    # reserved before the abundant result_2digit class fills the quota.
+    reason_order = ("operand_2digit_result_1digit", "result_2digit")
+    train: list[dict] = []
+    held: list[dict] = []
+    for bi, key in enumerate(bucket_keys):
+        source_rung, op = key
+        quota = base + (1 if bi < remainder else 0)
+        quota = min(quota, len(buckets[key]))  # cap by pool size (never binds here)
+        # Group bucket rows by hard_reason; shuffle each deterministically.
+        by_reason: dict[str, list[dict]] = {}
+        for row in buckets[key]:
+            by_reason.setdefault(row["hard_reason"], []).append(row)
+        for hr, rs in by_reason.items():
+            random.Random(_stable_seed("L0c2_partition", seed, source_rung, op, hr)).shuffle(rs)
+        # Reserve >=1 of each present reason (rare-first), then fill the rest.
+        picked: list[dict] = []
+        for hr in reason_order:
+            if by_reason.get(hr):
+                picked.append(by_reason[hr].pop())
+        remaining: list[dict] = []
+        for hr in reason_order:
+            remaining.extend(by_reason.get(hr, []))
+        picked.extend(remaining[: max(0, quota - len(picked))])
+        picked = picked[:quota]
+        # Split ~80/20; pin operand_2digit_result_1digit rows to TRAIN.
+        pinned = [r for r in picked if r["hard_reason"] == "operand_2digit_result_1digit"]
+        splittable = [r for r in picked if r["hard_reason"] != "operand_2digit_result_1digit"]
+        random.Random(_stable_seed("L0c2_partition", seed, source_rung, op, "split")).shuffle(splittable)
+        n_held = min(round(len(picked) * 0.2), len(splittable))  # never steal pinned
+        held.extend(splittable[:n_held])
+        train.extend(splittable[n_held:] + pinned)
+
+    assert len(train) + len(held) == L0C2_EXPECTED_COUNT, \
+        f"L0c2 total {len(train) + len(held)} != {L0C2_EXPECTED_COUNT}"
+    assert all(_l0c_is_hard(r["question"], r["expected"]) for r in train + held), \
+        "L0c2 contains a non-hard row"
+    return train, held
+
+
+def _gen_l0c2(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """L0c2 bounded-2-digit training-side sampler (codex msg 1779705530223 +1
+    F.4a). Samples with replacement from the L0c2 train/held pool until n drawn;
+    strips per-bucket metadata, tags `rung: "L0c2"`. Mirrors `_gen_l0c`; the pool
+    is the ~230-row stratified hard subset (option B stair-step)."""
+    train_pool, held_pool = _enumerate_partition_l0c2(seed)
+    pool = train_pool if split == "train" else held_pool
+    out = []
+    while len(out) < n:
+        row = rng.choice(pool)
+        out.append({"question": row["question"], "expected": row["expected"], "rung": "L0c2"})
+    return out
+
+
 def _gen_r1b7(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
     """R1b7 constant K=6 addition, carry-stratified partition (codex msg
     1779547753761-5711d790 +1 K=6; rebased onto R1b2-repair commit
@@ -2861,6 +3021,8 @@ def make_rung_examples(
         return _gen_l0b(rng, _RUNG_SPEC["L0b"][split], n, seed=seed, split=split)
     if rung == "L0c1":
         return _gen_l0c1(rng, _RUNG_SPEC["L0c1"][split], n, seed=seed, split=split)
+    if rung == "L0c2":
+        return _gen_l0c2(rng, _RUNG_SPEC["L0c2"][split], n, seed=seed, split=split)
     if rung == "L0c":
         return _gen_l0c(rng, _RUNG_SPEC["L0c"][split], n, seed=seed, split=split)
     if rung == "L0c_exhaustive":
