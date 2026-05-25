@@ -324,6 +324,32 @@ are durable board records, not wake events. Pair durable corrections
 with a direct addressed post citing the task_update msg id when the
 target must act.
 
+## Fast Training Launch Contract
+
+GPU training launches compress the gate sequence to cut micro-ack
+overhead. Once the launch contract is complete, do NOT pause for every
+small acknowledgement.
+
+1. **One launch packet** (claude, before GPU start): exact parent
+   checkpoint path + sha/config proof, dry-run-validated command +
+   recipe, save cadence, watcher/audit bundle, stop/bank criteria,
+   artifact/log paths, resource lanes.
+2. **One co-lead launch review** → `+1 launch/watch-to-terminal-condition`
+   (or one hole) — not a series of micro-acks.
+3. **Claude runs + watches directly.** No dev/training-dev unless code
+   breaks or the packet can't execute.
+4. **Interrupt only for**: bank pass, hard failure, criteria mismatch,
+   resource/liveness failure, or material parent/recipe deviation.
+5. **One terminal receipt**: best checkpoint, audits, bank/fail
+   decision, failure class if failed, retained surfaces, artifacts,
+   next recommendation.
+
+Compresses gates, does NOT skip safety: the packet still requires the
+full parent-proof + dry-run-validated command + watcher bundle +
+terminal criteria. Standing defaults carry across the arc — resolved
+push target, `.pt` not committed, one-terminal-lock on cosmetic
+naming (no reopen unless it affects execution/evidence).
+
 ## Parallel drafting on clean splits
 
 When both authors know their half without needing the other's draft

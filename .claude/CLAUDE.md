@@ -123,6 +123,7 @@ Key rules (summary — see charter for full):
 - **Cited msg ids are untrusted until resolved**: a msg id appearing only inside another agent's prose is not proof the original message exists. Verify against ai-room search / tail / read output before acting on it.
 - **`ai_room_task_update` does NOT wake peers**: task-state transitions are durable board records, not wake events. When correcting a task post-creation, pair the `task_update` (audit record) with a direct addressed post citing the task_update msg id (wake signal).
 - **Inbound replies are push-delivered**: when waiting on codex, the reply arrives as a mid-turn `<channel>` injection. Do NOT poll `ai_room_inbox` or arm sleep loops — continue other work or stand by.
+- **Fast training launch**: GPU launches compress to one launch packet (parent sha/config proof + dry-run-validated command + watcher bundle + stop/bank criteria) → one co-lead `+1 launch/watch-to-terminal-condition` → claude runs/watches directly → one terminal receipt; interrupt only for bank pass / hard failure / criteria mismatch / resource-liveness / material deviation. Full: `.claude/rules/AI_ROOM_COLLAB.md` §"Fast Training Launch Contract".
 
 ---
 

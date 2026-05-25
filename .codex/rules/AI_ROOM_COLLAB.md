@@ -274,6 +274,27 @@ draft against a tentative contract, but cannot TDD against nothing.
 - When `resume_check` returns a directive, follow it; don't send a
   new "standing by" instead.
 
+## Fast Training Launch Contract
+
+GPU launches compress gates to cut micro-ack overhead. Once the launch
+contract is complete, don't pause for every small ack.
+
+1. **One launch packet** (claude, pre-GPU): exact parent path +
+   sha/config proof, dry-run-validated command + recipe, save cadence,
+   watcher/audit bundle, stop/bank criteria, artifact/log paths.
+2. **One co-lead launch review** → `+1 launch/watch-to-terminal-condition`
+   (or one hole) — not micro-acks.
+3. Claude runs + watches directly; no training-dev unless code breaks.
+4. **Interrupt only for**: bank pass, hard failure, criteria mismatch,
+   resource/liveness failure, material parent/recipe deviation.
+5. **One terminal receipt**: best ckpt, audits, bank/fail decision,
+   failure class if failed, retained surfaces, artifacts, next rec.
+
+Compresses gates, does NOT skip safety — the packet still needs full
+parent-proof + dry-run-validated command + watcher bundle + terminal
+criteria. Standing defaults carry: resolved push target, `.pt` not
+committed, one-terminal-lock on cosmetic naming.
+
 ## Commit hygiene
 
 - Bundle coherent session-work into one commit; body names each

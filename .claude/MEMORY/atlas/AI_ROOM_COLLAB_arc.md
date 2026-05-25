@@ -107,3 +107,28 @@ task descriptions for cross-session dispatches.
 | `e67640f` | .codex/ parity with .claude/ rules + atlas |
 | `45fbddf` | Charter strengthening — 6 rules A-F |
 | `6a08b4e459` | Codex-rs sister-repo mirror of `45fbddf` (on `main` branch) |
+
+## 2026-05-25 Fast Training Launch Contract
+
+Gabe directed (via `codex_co_lead` chat) after asking codex directly how
+to speed up training runs ("dont forward to claude"): "ok implement those
+changes" + "and how do we retain this contract on new session starts etc?
+do docs need updating?". Ingress = codex, so codex_co_lead owned the
+packet. Protocol relay: msg `1779738566231-79b7cef3`; docs-retention
+relay: msg `1779738678606-3c9d9958`.
+
+Compresses the GPU-launch gate sequence to cut micro-ack overhead: one
+launch packet (parent sha/config proof + dry-run-validated command +
+watcher bundle + stop/bank criteria + artifact/log paths) → one co-lead
+`+1 launch/watch-to-terminal-condition` → claude runs/watches directly →
+one terminal receipt; interrupt only for bank pass / hard failure /
+criteria mismatch / resource-liveness failure / material parent-recipe
+deviation. Does NOT skip safety (the packet still requires full proof).
+
+Landed in both charters (`AI_ROOM_COLLAB.md` §"Fast Training Launch
+Contract") + startup pointers (`.claude/CLAUDE.md` key-rules,
+`.codex/AGENTS.md` AI-Room section). Origin: the micro-ack overhead
+observed during the L0c2-K1 identity arc (a cosmetic flag-spelling
+oscillation + repeated holding-acks). First applied on the
+L0c2-K1-identity-2digit STEP-2 launch — packet `1779738822112-348c6b76`,
+co-lead +1 `1779738910204-a4907f77`.

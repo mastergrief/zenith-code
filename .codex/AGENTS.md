@@ -2,7 +2,7 @@
 
 **IMPORTANT**: Assume nothing. Hypothesis, Build, Test, Commit & Iterate. First Principles thinking. Do not discount anything until it's built and tested!
 
-Use `python3` or Serena semantic edit tools for all file edits. Treat `apply_patch` as a last-resort fallback only when those tools are blocked or clearly impractical, and state that blocker in commentary before using it.
+Use `apply_patch` for small/manual file edits when available. Use `python3` or Serena semantic edit tools for bulk, generated, or semantic edits. If the preferred edit path is blocked or impractical, state the blocker in commentary before using the fallback.
 
 Fork of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) with a Python agent harness, CALM reasoning engine, HRM + LLM-Computer (the CRLM stack), and a Rust port.
 
@@ -160,6 +160,7 @@ handle.
 - **TDD by collab**: tests-for-desired-behavior; tests-later OK for crashes, NOT for silent-failure paths.
 - **Validation discipline**: fresh-process seeded-log for landing-day code; isolated `$CODEX_HOME=/tmp/...` for product-path proofs; real-product-path > unit tests for user-visible shape.
 - **Commit hygiene**: bundle coherent session-work with sub-features named in body; never cut a focused commit from a worktree with unrelated drift; user-scope tooling (`~/.ai-room/*`) doesn't land in the repo commit — reference in body.
+- **Fast training launch**: GPU launches compress to one launch packet (parent sha/config proof + dry-run-validated command + watcher bundle + stop/bank criteria) → one co-lead `+1 launch/watch-to-terminal-condition` → claude runs/watches directly → one terminal receipt; interrupt only for bank pass / hard failure / criteria mismatch / resource-liveness / material deviation. Full: `.codex/rules/AI_ROOM_COLLAB.md` §"Fast Training Launch Contract".
 
 Receipts (VGSL design round, canonical "merge is not fact movement"
 one-liner, voice-preservation incident, cross-session consent-transfer
