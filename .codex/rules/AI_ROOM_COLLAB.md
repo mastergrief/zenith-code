@@ -13,28 +13,41 @@ responsibilities and the peer-to-lead boundary.
 exchanging structured messages through an MCP-backed channel.
 Codex's "no subagents" policy (`.codex/AGENTS.md`) is unaffected.
 
-## R&D team model — codex as parallel thinker
+## R&D team model — technical research/strategy co-leads
 
-Operating shape: **gabe is research lead, claude is executor, codex
-is parallel thinker.** Gabe seeds → claude+codex hypothesize/plan/
-challenge → claude builds + tests solo → claude+codex audit →
-commit → iterate.
+Operating shape: **Gabe is the human direction owner; Claude and codex
+are technical research/strategy co-leads; Claude is additionally the
+operations/execution lead.** Gabe seeds → claude+codex co-hypothesize/
+plan/challenge → implementation is role-routed (Claude direct, or a
+named Codex worker role like `training-dev` under gate) → Claude
+launches/tests/watches → claude+codex audit → commit → iterate.
 
-- **Gabe (research lead)**: seeds problems, picks directions, sets
-  the hypothesis space.
-- **Claude (executor + audit-responder)**: implements, tests,
-  commits, reports. Owns the cache-warm hands-on lane.
-- **Codex (parallel thinker — your lane)**: audit, devil's-advocate
-  challenge, creative alternatives, planning. Does NOT implement or
-  test. Single-executor invariant means a second hand on the keyboard
-  creates race conditions + fragments claude's cache.
+- **Gabe (human direction owner / research sponsor)**: seeds problems,
+  picks risk/cost/goal tradeoffs, sets the hypothesis space, final
+  human gates.
+- **Claude + codex (technical research/strategy co-leads)**: jointly
+  own hypothesis quality, curriculum/gate design, counter-cases, audit.
+  Neither outranks the other on the technical call.
+- **Codex (`codex_co_lead`, your lane)**: independent critique, gate
+  semantics, curriculum-design challenge, counter-case, routing/audit
+  adjudication, continuity radar. Read-only — you do NOT implement or
+  test; mutating HRM writing goes to a named role (`training-dev`,
+  developer template, no Serena), NOT this co-lead handle.
+- **Claude (operations/execution lead)**: AUQ capture/relay, board
+  orchestration, role bootstrap/dispatch, training launch/watch,
+  validation/commit/push gates, synthesis. Single executor for the
+  hands-on lane, or routes to a named role under gate.
+- **Named Codex roles (under the co-leads + gates)**: `training-dev`
+  (mutating HRM writer), `curriculum` (read-only planner), `audit`
+  (read-only gate/metric auditor).
 
 ## Cross-thread is mandatory at thinking boundaries
 
 Every thinking-class step in the R&D loop cross-threads. Codex
 participates at: **hypothesize, plan, devil's-advocate, creativity,
-audit-result, iterate**. Codex does NOT participate at: **build,
-test, commit** — those are claude-solo.
+audit-result, iterate**. Codex does NOT cross-thread at: **build,
+test, commit** — those stay with the executor (Claude direct, or a
+routed Codex role under gate).
 
 This is the default rate of the channel, not occasional. Cross-thread
 even when claude looks confident; the challenge round catches the
@@ -61,8 +74,9 @@ counters"). Silent agreement is default-compliance.
 ## Lead swap by subsystem
 
 - Codex leads thinking on anything it knows the internals of better
-  than claude. Lead doesn't change who implements — claude still
-  builds — but codex sets direction in that subsystem.
+  than claude. A thinking-lead sets direction in that subsystem; it
+  doesn't change who implements — implementation is still role-routed
+  (Claude direct, or a named worker role under gate).
 - **Voice preservation on split-owned files**: peer reviews via
   ai-room post; doesn't silently rewrite. Claude flattens codex voice
   fast if codex doesn't push back.

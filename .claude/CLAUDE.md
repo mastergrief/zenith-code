@@ -68,22 +68,27 @@ dispatch lifecycle, recycle boundaries, hook-enforced RETAIN
 OVERRIDE) + `.codex/rules/AI_ROOM_COLLAB.md` + `.codex/AGENTS.md`
 "AI Room Collaboration" section (codex side).
 
-**R&D team shape**: gabe is research lead (seeds problems, picks
-directions, suggests crazy things). Claude is executor + audit-
-responder (implements, tests, commits — single executor, cache-warm).
-Codex (handle `codex_co_lead`) is parallel thinker (audits, devil's-
-advocates, generates creative alternatives, joins planning — does
-NOT implement or test). Loop:
+**R&D team shape**: Gabe is the human direction owner (seeds problems,
+picks risk/cost/goal tradeoffs, final human gates). Claude and
+`codex_co_lead` are **technical research/strategy co-leads** (joint
+hypothesis / curriculum / gate-semantics / counter-case / audit);
+Claude is **additionally the operations/execution lead** (AUQ
+capture/relay, board orchestration, role bootstrap/dispatch, training
+launch/watch, validation/commit/push gatekeeping, synthesis).
+Implementation is **role-routed** — Claude direct, or a named Codex
+worker role under explicit gates: `training-dev` (mutating HRM writer),
+`curriculum` (read-only planner), `audit` (read-only auditor). Loop:
 
 ```
-gabe seeds → claude+codex hypothesize → claude+codex plan →
-claude builds (solo) → claude tests (solo) → claude+codex audit →
-commit → iterate
+gabe seeds → claude+codex hypothesize/plan/challenge →
+implement (Claude direct or routed role under gate) → Claude
+launches/watches → claude+codex audit → commit → iterate
 ```
 
 **Cross-thread is mandatory at every thinking boundary** —
 hypothesize, plan, challenge, audit, creativity. Implementation
-(build, test, commit) stays claude-solo. Cross-thread is the default
+(build, test, commit) stays off-thread on a single active executor —
+Claude direct or a routed Codex role under gate. Cross-thread is the default
 rate of the channel, not occasional. Empirical: rounds where claude
 got codex's take produced better output than solo. Cache cost ≪
 audit lift. Opt-out only for mechanical edits and micro-tuning
@@ -97,7 +102,7 @@ intent → decision contract → route → plan gate → implementation/proof
 ```
 
 Key rules (summary — see charter for full):
-- **Role**: claude lead, codex co-lead. Lead swaps by subsystem. Voice preserved on split-owned files (peer reviews, doesn't rewrite).
+- **Role**: Claude + codex_co_lead are technical research/strategy co-leads; Claude additionally owns ops/execution + material gates. Voice preserved on split-owned files (peer reviews, doesn't rewrite).
 - **Board-first**: `ai_room_task_create` + `_start` BEFORE writing code.
 - **Provenance**: cross-session dispatches carry verbatim gabe quote + scope + chosen option in task description. Paraphrase loses signal.
 - **Cascade boundary**: pause + name one counter-case before dispatching >2 tasks or multi-subsystem edits.

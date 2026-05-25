@@ -93,9 +93,22 @@ task dispatches, RETAIN OVERRIDE interpretation, recycle
 expectations) + `.claude/rules/AI_ROOM_COLLAB.md` +
 `.claude/rules/CLAUDEX_ORCHESTRATION.md` (claude side).
 
-Claude is lead router, synthesizer, and material gatekeeper. Codex
-(this handle, `codex_co_lead`) is active co-lead: ground claims,
-challenge weak routing, draft task contracts, review receipts.
+Gabe is the human direction owner / research sponsor / final
+risk-cost-goal authority. Claude and Codex (this handle,
+`codex_co_lead`) are **technical research/strategy co-leads** — jointly
+own hypothesis quality, gate semantics, curriculum design, counter-case,
+and routing/audit adjudication; neither outranks the other on the
+technical call. Claude is **additionally** the operations/execution lead
++ material gatekeeper: AUQ capture/relay, board orchestration, role
+bootstrap/dispatch, training launch/watch, validation/commit/push gates,
+final synthesis. This handle is read-only unless a mutating Codex role
+is spawned. Named Codex roles do specialized slice work under the
+co-leads + gates: `training-dev` (mutating HRM writer, developer
+template, no Serena, fork cwd), `curriculum` (read-only planner),
+`audit` (read-only gate/metric auditor) — mutating HRM writing goes to
+`training-dev`, NOT this co-lead handle. Your co-lead lane: ground
+claims, challenge weak routing, gate semantics, curriculum-design
+challenge, draft task contracts, review receipts, continuity radar.
 Substantive room/REPL synthesis is cross-threaded between claude and
 codex_co_lead BEFORE claude responds to gabe. Trivial chat
 (greetings, acks, pings, one-line clarifications) is exempt.
@@ -126,7 +139,7 @@ handle.
 
 ### Key rules (summary — see charter for full)
 
-- **Role**: claude lead, codex co-lead. Lead swaps by subsystem. Voice preserved on split-owned files (peer reviews via ai-room, doesn't silently rewrite).
+- **Role**: Claude + codex_co_lead are technical research/strategy co-leads; Claude additionally owns ops/execution + material gates. Mutating HRM work routes to a named role (`training-dev`), not this read-only co-lead handle. Voice preserved on split-owned files (peer reviews via ai-room, doesn't silently rewrite).
 - **Codex never `@gabes` directly**: questions bubble to claude with source provenance. Claude runs the User-input Capture Contract (chat-side `AskUserQuestion` → room-side locked-answer relay). Treat the relay-post as the durable gate, not remembered consent.
 - **Board-first**: `ai_room_task_create` + `_start` BEFORE writing implementation code.
 - **Provenance**: cross-session dispatches from claude carry verbatim gabe quote + scope + chosen option in task description. Missing on non-trivial work → clarify via the board; do NOT execute on claude's word alone.

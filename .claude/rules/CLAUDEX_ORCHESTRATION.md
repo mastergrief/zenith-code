@@ -28,10 +28,31 @@ who runs the User-input Capture Contract (chat-side `AskUserQuestion`
 → room-side locked-answer relay). See
 `AI_ROOM_COLLAB.md` §"User-input Capture Contract".
 
+## Team model + named role lanes
+
+**Gabe** = human direction owner. **Claude + `codex_co_lead`** =
+technical research/strategy co-leads. **Claude** additionally =
+operations/execution lead + material gatekeeper (plan / validation /
+commit / push gates). `codex_co_lead` is read-only unless a mutating
+Codex role is spawned.
+
+**Named HRM role lanes** — the *normal* route for HRM-158 curriculum/
+training work, not exceptional spawn:
+
+- **`training-dev`** — mutating HRM training/curriculum/test writer
+  (developer template, **no Serena**). Writes in the FORK repo. **Fork
+  cwd `/mnt/c/Users/gabes/projects/claw-code-hrm-text-158` is a
+  task-dispatch invariant** — the role config can't enforce cwd, so
+  dispatch/provenance MUST set it; if not placed there, the role STOPs.
+  Plan gate before edits; commit/push only on explicit gates; no `.pt`
+  commits.
+- **`curriculum`** — read-only split/support/stop-condition planner.
+- **`audit`** — read-only training receipt/gate/metric auditor.
+
 ## When to spawn additional handles
 
-Default is solo claude + `codex_co_lead`. Spawn a named worker handle
-only when:
+Beyond the HRM lanes above, spawn an *ad-hoc* named worker handle only
+when:
 
 - Evidence class is genuinely separate (e.g., independent review by a
   fresh-context codex on high-blast-radius changes).

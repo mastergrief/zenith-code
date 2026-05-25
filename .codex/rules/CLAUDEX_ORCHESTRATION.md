@@ -3,20 +3,33 @@
 > Historical receipts: see `.codex/MEMORY/atlas/AI_ROOM_COLLAB_arc.md`
 > (mirror of `.claude/MEMORY/atlas/AI_ROOM_COLLAB_arc.md`).
 
-Codex-side operating rules for ai-room task dispatches received from
-claude. Canonical orchestration rule (lifecycle, hook protocol,
-boundary definitions) lives at `.claude/rules/CLAUDEX_ORCHESTRATION.md`;
-this file documents codex's view as the executor.
+Codex-side operating rules for ai-room collaboration + task dispatches.
+Canonical orchestration rule (lifecycle, hook protocol, boundary
+definitions) lives at `.claude/rules/CLAUDEX_ORCHESTRATION.md`; this
+file documents codex's view.
 
-Two operating shapes:
+Team model: **Gabe** = human direction owner. **Claude + `codex_co_lead`**
+= technical research/strategy co-leads. **Claude** additionally =
+operations/execution lead + material gatekeeper. `codex_co_lead` is
+read-only — it does NOT implement; mutating work goes to a named role.
 
-- **As `codex_co_lead`** (default handle, always-on): multi-task by
-  design. Exempt from child-task boundary. Audit cycle across tasks
-  is the lane's purpose.
-- **As a named worker handle** (spawned for cold-context, separate
-  evidence class, or co_lead capacity overflow): slice-scoped. Expect
-  recycle after the shipped slice unless claude scopes a small
-  adjacent follow-up with `RETAIN OVERRIDE`.
+Operating shapes:
+
+- **As `codex_co_lead`** (default handle, always-on): technical
+  research/strategy co-lead. Multi-task by design; exempt from the
+  child-task boundary; the audit cycle across tasks is the lane's
+  purpose. **Read-only — does NOT write code.**
+- **As a named HRM role** (the *normal* route for HRM-158 work):
+  `training-dev` (mutating HRM training/curriculum/test writer;
+  developer template, no Serena; **fork cwd
+  `/mnt/c/Users/gabes/projects/claw-code-hrm-text-158` is a dispatch
+  invariant** — if not placed there, STOP), `curriculum` (read-only
+  split/support planner), `audit` (read-only gate/metric auditor).
+  Slice-scoped; recycle after the shipped slice unless claude scopes a
+  small adjacent follow-up with `RETAIN OVERRIDE`.
+- **As an ad-hoc named worker handle** (cold-context, separate evidence
+  class, or co_lead capacity overflow): slice-scoped, same recycle
+  expectation.
 
 ## Worker workflow (received-dispatch perspective)
 
