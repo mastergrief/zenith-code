@@ -314,7 +314,7 @@ def _compose_anchor_rows(
     return _rows(retention_anchor_set) * retention_anchor_repeat
 
 
-_RETAINED_SUPPORT_REGISTRY: tuple[str, ...] = ("L0b", "math_a0", "math_r1b2_minus_one", "l0c_exhaustive")
+_RETAINED_SUPPORT_REGISTRY: tuple[str, ...] = ("L0b", "L0c", "math_a0", "math_r1b2_minus_one", "l0c_exhaustive")
 
 
 def _retained_support(name: str, seed: int) -> tuple[list[tuple[str, int, str]], str]:
@@ -327,6 +327,13 @@ def _retained_support(name: str, seed: int) -> tuple[list[tuple[str, int, str]],
     - "L0b"     ← `_l0b_support(seed)` — 230 rows, `calculate <expr>.` surface.
                   SEED-DEPENDENT (two_digit picks seeded by `_stable_seed
                   ("L0b_partition", seed, ...)`) — build with curriculum_seed.
+    - "L0c"     ← `_l0c_support(seed)` — 230 rows, `<expr> equals what?`
+                  surface (canonical bounded L0c language support, same path as
+                  `build_language_supports()["L0c"]`). SEED-DEPENDENT
+                  (`_stable_seed("L0c_partition", seed, ...)`) — build with
+                  curriculum_seed, mirrors L0b. F.4c: protects the L0c surface
+                  F.4b left unprotected (replay-covered L0c1 → .917, but
+                  unprotected L0c → .557 capped LANG-690 at .852).
     - "math_a0" ← `build_exhaustive_supports()` flattened — 1255 rows,
                   `what is <expr>?` surface, SEED-INDEPENDENT (exhaustive).
                   Contains `what is 10 minus 1?`->9 (R1b2), the row F.2f
@@ -352,6 +359,13 @@ def _retained_support(name: str, seed: int) -> tuple[list[tuple[str, int, str]],
     if name == "L0b":
         from calm.hrm_text_158.curriculum.language_supports import _l0b_support
         rows = [(q, e, sr) for (q, e, sr) in _l0b_support(seed)]
+    elif name == "L0c":
+        # F.4c: canonical bounded L0c 230-row support (`<expr> equals what?`),
+        # SEED-DEPENDENT, same language support path as
+        # build_language_supports()["L0c"]; protects the L0c surface F.4b left
+        # unprotected (no replay, no retained-support) which capped LANG-690.
+        from calm.hrm_text_158.curriculum.language_supports import _l0c_support
+        rows = [(q, e, sr) for (q, e, sr) in _l0c_support(seed)]
     elif name == "math_a0":
         from calm.hrm_text_158.curriculum.exhaustive_supports import build_exhaustive_supports
         rows = [(q, e, rung)

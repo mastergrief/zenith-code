@@ -36,7 +36,7 @@ _L0B_SEED17_HASH = "89174273d21845bc"
 # --------------------------------------------------------------------------- #
 
 def test_registry_names():
-    assert _REGISTRY == ("L0b", "math_a0", "math_r1b2_minus_one", "l0c_exhaustive")
+    assert _REGISTRY == ("L0b", "L0c", "math_a0", "math_r1b2_minus_one", "l0c_exhaustive")
 
 
 # --------------------------------------------------------------------------- #
@@ -72,6 +72,43 @@ def test_l0b_support_snapshot():
     assert h == _L0B_SEED17_HASH  # bit-identical to the pre-registry L0b helper
     assert rows == sorted(rows, key=lambda r: (r[2], r[0], r[1]))
     assert all(q.startswith("calculate ") and q.endswith(".") for q, _e, _sr in rows)
+
+
+# --------------------------------------------------------------------------- #
+# L0c: F.4c retained-support — protects the bounded L0c `<expr> equals what?`
+# surface F.4b left unprotected (no replay, no support) which capped LANG-690.
+# --------------------------------------------------------------------------- #
+
+def test_l0c_support_snapshot():
+    rows, h = _support("L0c", 17)
+    assert len(rows) == 230, f"expected 230 L0c rows, got {len(rows)}"
+    assert rows == sorted(rows, key=lambda r: (r[2], r[0], r[1]))
+    assert all(q.endswith(" equals what?") for q, _e, _sr in rows)
+    assert len(h) == 16 and all(c in "0123456789abcdef" for c in h)
+
+
+def test_l0c_matches_canonical_language_support_path():
+    # Builder returns EXACTLY the canonical bounded L0c support (same path as
+    # build_language_supports()["L0c"]), modulo the retained-support stable sort.
+    from calm.hrm_text_158.curriculum.language_supports import build_language_supports
+    rows, _ = _support("L0c", 17)
+    canonical = [(q, e, sr) for (q, e, sr) in build_language_supports(17)["L0c"]]
+    key = lambda r: (r[2], r[0], r[1])
+    assert sorted(rows, key=key) == sorted(canonical, key=key)
+
+
+def test_l0c_seed_dependent_and_deterministic():
+    assert _support("L0c", 17)[1] != _support("L0c", 42)[1], "L0c support is seed-dependent"
+    r1, h1 = _support("L0c", 17)
+    r2, h2 = _support("L0c", 17)
+    assert r1 == r2 and h1 == h2  # byte-identical on repeat
+
+
+def test_l0c_sampler_namespace():
+    # L0c (non-L0b) uses the generic "retained:L0c" namespace, distinct from others.
+    assert _sampler_seed("L0c", 17) == _thr._stable_curriculum_seed(17, "retained:L0c")
+    assert _sampler_seed("L0c", 17) != _sampler_seed("L0b", 17)
+    assert _sampler_seed("L0c", 17) != _sampler_seed("math_a0", 17)
 
 
 def test_math_a0_support_snapshot():
@@ -137,7 +174,7 @@ def test_math_r1b2_minus_one_sampler_namespace():
 
 
 def test_determinism_same_name_seed():
-    for name, seed in (("L0b", 17), ("math_a0", 17)):
+    for name, seed in (("L0b", 17), ("L0c", 17), ("math_a0", 17)):
         r1, h1 = _support(name, seed)
         r2, h2 = _support(name, seed)
         assert r1 == r2 and h1 == h2
