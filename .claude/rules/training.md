@@ -16,11 +16,12 @@ structure-extraction lanes; native HRM-Text-1.58 is now the primary
 training lane for `hrm-158-base`.
 
 **Canonical workflow: see `rules/hrm-158.md`.** The bank gate (acquire ≥90% /
-retain ≥95%), bounded-slice / stair-step rule, recipe band, retention
-mechanisms (replay + parent consistency + broad retained supports), and
-failure-mode classification all live there. This section keeps the model
-specifics + literal operational command invocations; `hrm-158.md` is canonical
-for the policy.
+retain ≥90%), the **auditable-full-density-default + slow-safe-learning** slice
+recipe (bounded stair-step is the FALLBACK after a classified collision /
+oversized support), retention mechanisms (replay + parent consistency + broad
+retained supports + close-sibling protection), and failure-mode classification
+all live there. This section keeps the model specifics + literal operational
+command invocations; `hrm-158.md` is canonical for the policy.
 
 ### Model + tokenizer
 
@@ -42,48 +43,55 @@ on generated response tokens.
 
 ### Progressive checkpoint curriculum (the loop)
 
-1. **Start from latest validated checkpoint** (the current chain head).
-2. **Train one tiny capability block** (a curriculum rung — e.g. K=N
-   addition under a carry-stratified partition, or a paraphrase block).
+1. **Start from latest banked checkpoint** (the current chain head).
+2. **Train one auditable finite-support capability slice** (a curriculum rung,
+   full-density when small enough to audit completely; bounded fallback
+   otherwise — e.g. K=N addition under a carry-stratified partition, or a
+   paraphrase block).
 3. **Replay important prior rungs** in the same training run; do NOT
    train new-data-only. Fragile slices default to `--replay-ratio 0.80`
    (80% replay, 20% new rung data); simple non-fragile rungs may use
    `0.65`.
 4. **Keep tokenizer broad and fixed** across math / language / code.
 5. **Promote a checkpoint only after** sampled probes + A0 exhaustive
-   finite-support audit + explicit watch rows prove acquisition AND no
-   parent-relative cluster regression. **Bank the earliest checkpoint
+   finite-support audit + explicit watch rows prove acquisition AND clear
+   **under the named gate semantics** (true priors at the ≥90% retain bar;
+   close siblings reported, blocking bank only on a broad parent-relative
+   cluster when that is the declared semantics). **Bank the earliest checkpoint
    that clears all hard gates — the final checkpoint has no privilege.**
 6. **If failures appear, classify before changing recipe**: train-set
    miss / held-set generalization residual / parent-relative cluster /
    signal-starvation. Each class has a different repair shape.
 
-### Default recipe — fragile slices (slow-safe)
+### Default recipe — slow-safe learning (gabe-locked)
 
-**Fragile slices default to the slow-safe recipe.** Lower update
-pressure is the retention knob; higher lr migrates digit/template
-clusters into prior rungs. The `--lr 1e-4` / `--replay-ratio 0.80` numbers
-below are **recipe-specific, NOT a universal default** — `rules/hrm-158.md`
-§"Recipe band" is canonical for the current LR / hard-emphasis band (fragile /
-continuation defaults slow-safe ~`5e-5`; the curriculum boundary dominates
-these knobs). The producer/consumer audit watcher
-(`scripts/parallel_audit_watcher.py`) is **required** (must prove
-OVERLAP per save step; else SERIAL_FALLBACK/MISSED unless explicitly
-waived).
+**Slow-safe learning is the default method, not just for fragile slices.** The
+banked full-density recipe is full-density support PLUS slow-safe learning (one
+atom — full-density without slow-safe is not the method). Lower update pressure
+is the retention knob; higher lr migrates digit/template clusters into prior
+rungs. `rules/hrm-158.md` §"Recipe band" is canonical; the band: LR ~`5e-5`,
+replay ~`0.80`, ≤1500-step window, pc on acquired priors, **no knob escalation
+on a miss**. The producer/consumer audit watcher
+(`scripts/parallel_audit_watcher.py`) is **required** (must prove OVERLAP per
+save step — only OVERLAP-clean saves are bank-eligible; else
+SERIAL_FALLBACK/MISSED unless explicitly waived). **Pre-launch: verify box
+code-currency** (probe/watcher/rung files synced), not just reachability.
 
 ```
 --curriculum-rung <rung>
 --use-broad-tokenizer
---load-from <chain-head>.pt
+--load-from <banked-chain-head>.pt
 --replay-rungs <comma-separated prior rungs>
 --replay-ratio 0.80
---lr 1e-4
---curriculum-n-train 10000
+--lr 5e-5
+--curriculum-n-train 12000
 --curriculum-seed 17
---retention-anchor-set math_fragile_v1 --retention-anchor-repeat 2
+--parent-consistency-weight 1.0 --parent-consistency-temp 1.0
+--retained-support L0b:1.0 --retained-support math_a0:1.0
+--retention-anchor-set math_fragile_v1 --retention-anchor-repeat 3
 --use-ternary-bulk --use-native-ternary-train
 --save-at-step 250 --save-at-step 500 --save-at-step 750 \
---save-at-step 1000 --save-at-step 1250
+--save-at-step 1000 --save-at-step 1250 --save-at-step 1500
 ```
 
 **Non-fragile exception (evidence-gated)**: a simple math rung that

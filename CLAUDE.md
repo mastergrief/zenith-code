@@ -7,24 +7,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Active fork target: **`hrm-158-base`**, a robust all-rounder native
   HRM-Text-1.58 checkpoint.
 - Loss is response-only: prompt/instruction tokens are masked.
-- Curriculum loop: start from the latest validated checkpoint, train
-  one tiny capability block (rung) with replay over important prior
-  rungs, promote only after sampled probes + A0 exhaustive
-  finite-support audit + watch rows clear with no parent-relative
-  cluster regression.
-- **Bank gate**: acquire ≥90% / retain ≥95% per slice; bank the
+- Curriculum loop: start from the latest banked checkpoint, train one
+  auditable finite-support capability slice (full-density when small enough
+  to audit completely; bounded fallback otherwise) with replay over important
+  prior rungs, promote only after sampled probes + A0 exhaustive
+  finite-support audit + watch rows clear under the named gate semantics.
+- **Bank gate** (gabe-locked): acquire ≥90% / retain ≥90% per slice; bank the
   earliest save that clears (final has no privilege); on a miss
   **classify + split smaller** — don't stretch the run, bump LR, or
   add layers.
-- **Bounded slices**: tight finite supports (~230) + ≤1500-step
-  windows; full-density / exhaustive surfaces are progress metrics,
-  not bank gates unless explicitly gated. **Stair-step into density** —
-  bounded wrappers acquire cleanly (L0a/L0b), but swallowing or
-  continuing+re-warming a full-density surface showed broad / rewarm
-  regressions.
+- **Default slice** (gabe-locked, one atom): **auditable full-density finite
+  support trained slow-safe** (LR ~5e-5, replay ~0.80, pc on acquired priors,
+  ≤1500-step, no knob escalation). Full coverage of a small completely-auditable
+  support DRIVES acquisition (banked identity 90/90) where sparse sub-sampling
+  regressed to nearest-memorized retrieval. **Bounded stair-step (~230) is the
+  FALLBACK** after a classified collision / oversized support; don't
+  continue+re-warm a fragile dense surface.
 - **Retention (load-bearing)**: explicit replay + parent consistency +
-  broad retained supports (L0b, math_a0); anchors are sentinels, not
-  the primary mechanism.
+  broad retained supports (L0b, math_a0) + **direct close-sibling protection**
+  when the target shares a template/emission surface (L0c1 lesson); anchors are
+  sentinels, not the primary mechanism.
 - L0c lesson: the `<expr> equals what?` one-digit stratum transfers
   cleanly; failures concentrate in the two-digit / template-specific
   stratum — the same operands succeed under other wrappers, so it is a

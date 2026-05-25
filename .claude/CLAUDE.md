@@ -48,9 +48,12 @@ taken *after* the change. No vibes, no "looks right", no "should be fine".
 
 ## HRM-Text-1.58 Fork — active training lane
 
-`hrm-158-base` grows by a **90/95-gated bounded-slice** progressive curriculum
-(acquire ≥90% / retain ≥95% per slice; tight finite supports stair-stepped into
-density; classify + split smaller on a miss). Canonical workflow:
+`hrm-158-base` grows by a **90/90-gated** progressive curriculum. The default
+slice is one atom: an **auditable full-density finite support, trained
+slow-safe** (LR ~5e-5, replay ~0.80, pc on acquired priors, ≤1500-step, no knob
+escalation), bank-gated acquire ≥90% / retain ≥90% with close-sibling templates
+watched. Bounded stair-step is the fallback only after a classified collision /
+oversized support; classify + split smaller on a miss. Canonical workflow:
 `.claude/rules/hrm-158.md`.
 
 ## Editing `.claude/` Configs
