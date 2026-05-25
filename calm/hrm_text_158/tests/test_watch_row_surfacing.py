@@ -249,8 +249,8 @@ def test_watcher_l0c2k1_identity_mode_wired_and_printed():
     with open(watcher_src, "r", encoding="utf-8") as fh:
         src = fh.read()
     assert (
-        'for name in ("l0c2k1", "l0c2k1edge", '
-        '"l0c2k1identity", "l0c2k2", "l0c2k3")'
+        'for name in ("l0c2k1", "l0c2k1edge", "l0c2k1identity", '
+        '"l0c2k1identityfull", "l0c2k2", "l0c2k3")'
     ) in src
 
 
@@ -266,6 +266,51 @@ def test_watcher_l0c2k1_identity_pattern_excludes_k1_and_edge():
     assert not re.search(pats["l0c2k1edge"], identity_agg)
     assert not re.search(pats["l0c2k1identity"], k1_agg)
     assert not re.search(pats["l0c2k1identity"], edge_agg)
+
+
+# --------------------------------------------------------------------------- #
+# F.4d-identity-full: the full-density 90/90 coverage audit mode is wired with
+# its own flag + grep, printed in the per-step consumer summary, and its
+# aggregate token does NOT cross-match the sparse identity / K1 / K1EDGE modes.
+# --------------------------------------------------------------------------- #
+
+def test_watcher_l0c2k1_identity_full_mode_wired_and_printed():
+    _watcher, pats, flags = _watcher_modes()
+    names = [name for name, _f, _g in _watcher._AUDIT_MODES]
+    assert "l0c2k1identityfull" in names
+    assert flags["l0c2k1identityfull"] == ["--l0c2k1-identity-full-audit"]
+    assert pats["l0c2k1identityfull"] == r"L0C2K1IDENTITYFULL AGGREGATE"
+    # The sparse identity mode is retained (no regression).
+    assert "l0c2k1identity" in names
+
+    watcher_src = os.path.join(_REPO, "scripts", "parallel_audit_watcher.py")
+    with open(watcher_src, "r", encoding="utf-8") as fh:
+        src = fh.read()
+    # Printed in the per-step consumer band grouping.
+    assert (
+        'for name in ("l0c2k1", "l0c2k1edge", "l0c2k1identity", '
+        '"l0c2k1identityfull", "l0c2k2", "l0c2k3")'
+    ) in src
+
+
+def test_watcher_l0c2k1_identity_full_pattern_excludes_sparse_and_kband():
+    import re
+    _watcher, pats, _flags = _watcher_modes()
+    k1_agg = "[probe-language] L0C2K1 AGGREGATE strict=29/29 = 1.0000"
+    edge_agg = "[probe-language] L0C2K1EDGE AGGREGATE strict=65/65 = 1.0000"
+    identity_agg = "[probe-language] L0C2K1IDENTITY AGGREGATE strict=90/90 = 1.0000"
+    full_agg = "[probe-language] L0C2K1IDENTITYFULL AGGREGATE strict=90/90 = 1.0000"
+
+    # The full pattern matches only its own aggregate.
+    assert re.search(pats["l0c2k1identityfull"], full_agg)
+    assert not re.search(pats["l0c2k1identityfull"], identity_agg)
+    assert not re.search(pats["l0c2k1identityfull"], k1_agg)
+    assert not re.search(pats["l0c2k1identityfull"], edge_agg)
+    # And no other mode's pattern swallows the full aggregate (trailing-space
+    # anchor: "L0C2K1IDENTITY " never matches "L0C2K1IDENTITYFULL ").
+    assert not re.search(pats["l0c2k1identity"], full_agg)
+    assert not re.search(pats["l0c2k1"], full_agg)
+    assert not re.search(pats["l0c2k1edge"], full_agg)
 
 
 if __name__ == "__main__":

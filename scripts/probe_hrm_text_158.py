@@ -2017,6 +2017,17 @@ if __name__ == "__main__":
                          "(70 train + 20 held). Emits surface='l0c2k1identity' "
                          "with train/held sub-surfaces. Conflicts with the "
                          "other audit modes.")
+    # F.4d-identity-full: full-density 90/90 coverage audit for the
+    # emission-primitive rung L0c2-K1-identity-2digit-full (all identities
+    # 10..99 trained, no held sub-surface). Emits surface='l0c2k1identityfull';
+    # the aggregate token L0C2K1IDENTITYFULL is trailing-space anchored so it
+    # never cross-matches L0C2K1IDENTITY (same discipline as K1EDGE vs K1).
+    ap.add_argument("--l0c2k1-identity-full-audit", action="store_true",
+                    help="Run the full-density L0c2-K1-identity-2digit-full "
+                         "coverage audit: all 90 identity rows over "
+                         "'<n> equals what?' (10..99, train-only, no held). "
+                         "Emits surface='l0c2k1identityfull' (aggregate 90). "
+                         "Conflicts with the other audit modes.")
     # Exhaustive-L0c language-density audit (codex msg 1779693537447 / Slice:
     # language-to-math-density). The `<expr> equals what?` wrapper over the
     # FULL math-A0 set (1255). Reuses the exhaustive audit machinery via
@@ -2128,6 +2139,7 @@ if __name__ == "__main__":
         ("--l0c2k3-audit", args.l0c2k3_audit),
         ("--l0c2k1-edge-audit", args.l0c2k1_edge_audit),
         ("--l0c2k1-identity-audit", args.l0c2k1_identity_audit),
+        ("--l0c2k1-identity-full-audit", args.l0c2k1_identity_full_audit),
     ]
     for _flag, _on in _l0c2k_flags:
         if not _on:
@@ -2165,6 +2177,7 @@ if __name__ == "__main__":
             ("--l0c2k3-audit", args.l0c2k3_audit),
             ("--l0c2k1-edge-audit", args.l0c2k1_edge_audit),
             ("--l0c2k1-identity-audit", args.l0c2k1_identity_audit),
+            ("--l0c2k1-identity-full-audit", args.l0c2k1_identity_full_audit),
         ]
         _l0ce_hit = [name for name, on in _l0ce_conflicts if on]
         if _l0ce_hit:
@@ -2318,6 +2331,24 @@ if __name__ == "__main__":
             supports_builder=build_l0c2k1_identity_support,
             expected_aggregate=L0C2K1_IDENTITY_AUDIT_EXPECTED_COUNT,
             surface="l0c2k1identity",
+        )
+    elif args.l0c2k1_identity_full_audit:
+        from calm.hrm_text_158.curriculum.language_supports import (
+            build_l0c2k1_identity_full_support,
+            L0C2K1_IDENTITY_FULL_AUDIT_EXPECTED_COUNT,
+        )
+        probe_language_finite_supports(
+            args.ckpt_path,
+            audit_seed=args.language_audit_seed,
+            max_gen=args.max_gen,
+            output_json=args.audit_output_json,
+            use_cached_ternary_infer=args.use_cached_ternary_infer,
+            use_kv_cache_decode=args.use_kv_cache_decode,
+            use_batched_probe_eval=args.use_batched_probe_eval,
+            probe_batch_size=args.probe_batch_size,
+            supports_builder=build_l0c2k1_identity_full_support,
+            expected_aggregate=L0C2K1_IDENTITY_FULL_AUDIT_EXPECTED_COUNT,
+            surface="l0c2k1identityfull",
         )
     elif args.language_supports:
         probe_language_finite_supports(

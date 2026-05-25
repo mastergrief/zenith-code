@@ -55,6 +55,11 @@ _AUDIT_MODES = [
     # F.4d-identity: suffix-copy precursor surface. Pattern is literal-space
     # anchored against K1/K1EDGE aggregate tokens.
     ("l0c2k1identity", ["--l0c2k1-identity-audit"], r"L0C2K1IDENTITY AGGREGATE"),
+    # F.4d-identity-full: full-density 90/90 coverage surface for the
+    # emission-primitive rung. Distinct subprocess per mode (only its own flag),
+    # and the aggregate token L0C2K1IDENTITYFULL is trailing-space anchored, so
+    # it never cross-matches L0C2K1IDENTITY / L0C2K1 / L0C2K1EDGE.
+    ("l0c2k1identityfull", ["--l0c2k1-identity-full-audit"], r"L0C2K1IDENTITYFULL AGGREGATE"),
     ("language", ["--language-supports"], r"(L0a |L0b |LANGUAGE AGGREGATE)"),
     ("anchor", ["--anchor-audit", "--anchor-set", "math_fragile_v1"], r"ANCHOR AGGREGATE"),
     ("math_a0", ["--exhaustive-finite-supports"],
@@ -208,7 +213,7 @@ def main() -> int:
             l0c2 = next((a for a in entry.get("results", {}).get("l0c2", {}).get("aggregate", [])), "")
             l0c2_bands = [
                 next((a for a in entry.get("results", {}).get(name, {}).get("aggregate", [])), "")
-                for name in ("l0c2k1", "l0c2k1edge", "l0c2k1identity", "l0c2k2", "l0c2k3")
+                for name in ("l0c2k1", "l0c2k1edge", "l0c2k1identity", "l0c2k1identityfull", "l0c2k2", "l0c2k3")
             ]
             l0cx = next((a for a in entry.get("results", {}).get("l0c_exhaustive", {}).get("aggregate", [])
                          if "[probe-l0c-exhaustive]" in a), "")
