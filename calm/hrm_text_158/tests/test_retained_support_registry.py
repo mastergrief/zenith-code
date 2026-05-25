@@ -36,7 +36,34 @@ _L0B_SEED17_HASH = "89174273d21845bc"
 # --------------------------------------------------------------------------- #
 
 def test_registry_names():
-    assert _REGISTRY == ("L0b", "math_a0", "math_r1b2_minus_one")
+    assert _REGISTRY == ("L0b", "math_a0", "math_r1b2_minus_one", "l0c_exhaustive")
+
+
+# --------------------------------------------------------------------------- #
+# l0c_exhaustive: dormant language-density support (codex msg 1779693537447).
+# Registry-addressable now; NOT in any recipe default until banked.
+# --------------------------------------------------------------------------- #
+
+_L0C_EXH_HASH = "3209aa0a6461d916"
+
+
+def test_l0c_exhaustive_snapshot():
+    rows, h = _support("l0c_exhaustive", 17)
+    assert len(rows) == 1255, f"expected 1255 rows, got {len(rows)}"
+    assert h == _L0C_EXH_HASH
+    assert rows == sorted(rows, key=lambda r: (r[2], r[0], r[1]))
+    assert all(q.endswith(" equals what?") for q, _e, _sr in rows)
+
+
+def test_l0c_exhaustive_seed_independent():
+    assert _support("l0c_exhaustive", 17)[1] == _support("l0c_exhaustive", 42)[1], \
+        "exhaustive L0c is seed-independent (derived from math A0)"
+
+
+def test_l0c_exhaustive_source_rungs_match_math_a0():
+    from calm.hrm_text_158.curriculum.exhaustive_supports import build_exhaustive_supports
+    rows, _ = _support("l0c_exhaustive", 17)
+    assert {sr for _q, _e, sr in rows} == set(build_exhaustive_supports().keys())
 
 
 def test_l0b_support_snapshot():

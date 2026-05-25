@@ -117,6 +117,50 @@ LANGUAGE_EXPECTED_AGGREGATE: int = sum(
 
 
 # ---------------------------------------------------------------------------
+# Exhaustive L0c — ONE language wrapper at MATH density (codex msg
+# 1779692896701 plan-gate: "language to math density" = the `<expr> equals
+# what?` wrapper over the FULL math-A0 exhaustive set, not the bounded 230
+# stratified sample and not all three wrappers at once). Derived by
+# transforming each math-A0 row (`what is <expr>?` -> `<expr> equals what?`),
+# so count / per-source-rung counts / expected values match math A0 by
+# construction (1255), and L0c1's 121 one_digit rows are a subset.
+# SEED-INDEPENDENT (exhaustive). Keyed by source rung like
+# build_exhaustive_supports() so the audit can do per-bucket reporting.
+# ---------------------------------------------------------------------------
+_L0C_MATH_PREFIX = "what is "
+
+
+def _math_q_to_l0c(math_q: str) -> str:
+    """`what is <expr>?` (math-A0 surface) -> `<expr> equals what?` (L0c
+    surface). The math-A0 question format is invariant across
+    build_exhaustive_supports(); assert it to fail LOUD rather than silently
+    mis-wrap. Produces byte-identical strings to the L0c partition templates
+    (e.g. `10 minus 1 equals what?`, `7 equals what?`)."""
+    if not (math_q.startswith(_L0C_MATH_PREFIX) and math_q.endswith("?")):
+        raise ValueError(f"unexpected math-A0 question format: {math_q!r}")
+    expr = math_q[len(_L0C_MATH_PREFIX):-1]
+    return f"{expr} equals what?"
+
+
+def build_exhaustive_l0c_supports() -> dict[str, list[tuple[str, int]]]:
+    """Exhaustive L0c support: the `<expr> equals what?` wrapper applied to
+    the full math-A0 exhaustive support (R0..R1b9, 1255 rows). Returns a
+    dict keyed by source rung — same shape as build_exhaustive_supports() —
+    so the audit reports a per-source-rung breakdown parallel to math A0.
+    Pure data assembly; zero model deps; seed-independent."""
+    from calm.hrm_text_158.curriculum.exhaustive_supports import (
+        build_exhaustive_supports,
+    )
+    return {
+        rung: [(_math_q_to_l0c(q), e) for (q, e) in rows]
+        for rung, rows in build_exhaustive_supports().items()
+    }
+
+
+L0C_EXHAUSTIVE_EXPECTED_COUNT: int = 1255
+
+
+# ---------------------------------------------------------------------------
 # L0c1 — one_digit-STRATUM precursor SUBSET of L0c (codex msg 1779636434289 Slice F.1).
 # SEPARATE diagnostic/audit surface: deliberately NOT in LANGUAGE_ACTIVE_RUNGS
 # and NOT in the canonical 690 aggregate. Audited via --l0c1-audit on its own

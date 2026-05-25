@@ -920,6 +920,22 @@ def watch_aggregate(watch_results: list[dict]) -> dict:
             "all_parsed_ok": (n_ok == n) if n else True}
 
 
+def _l0c_watch_transform(row: dict) -> dict:
+    """Map a watch row onto the exhaustive-L0c surface for support lookup:
+    a math-surface question (`what is <expr>?`) becomes `<expr> equals what?`
+    preserving key/expected/source_rung; already-L0c or foreign questions
+    pass through unchanged (matched directly, or reported NOT_IN_ACTIVE by
+    design). codex msg 1779693537447 Q2 — without this the banked math-surface
+    watch row would falsely report NOT_IN_ACTIVE in the L0c audit."""
+    from calm.hrm_text_158.curriculum.language_supports import _math_q_to_l0c
+    q = row.get("question", "")
+    if q.startswith("what is ") and q.endswith("?"):
+        new = dict(row)
+        new["question"] = _math_q_to_l0c(q)
+        return new
+    return row
+
+
 def probe_exhaustive_finite_supports(
     ckpt_path: str,
     *,
@@ -931,6 +947,10 @@ def probe_exhaustive_finite_supports(
     use_kv_cache_decode: bool = False,
     use_batched_probe_eval: bool = False,
     probe_batch_size: int = 32,
+    support_builder=None,
+    expected_aggregate: int | None = None,
+    label: str = "probe-exhaustive",
+    watch_row_transform=None,
 ) -> dict:
     """Exhaustive finite-support audit for the active math chain
     (currently R0..R1b9; aggregate 1255). Per codex msg
@@ -958,6 +978,16 @@ def probe_exhaustive_finite_supports(
         build_exhaustive_supports,
     )
 
+    # Parametrized so the same audit serves math A0 (default) AND exhaustive
+    # L0c (codex msg 1779693537447): support_builder/expected_aggregate/label
+    # default to byte-identical math-A0 behavior; watch_row_transform maps the
+    # config watch row onto the support surface (identity for math).
+    if support_builder is None:
+        support_builder = build_exhaustive_supports
+    if expected_aggregate is None:
+        expected_aggregate = EXHAUSTIVE_EXPECTED_AGGREGATE
+    _label = f"[{label}] "  # trailing space: prints render "[label] <content>"
+
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     if use_batched_probe_eval and not use_kv_cache_decode:
         raise ValueError(
@@ -969,17 +999,17 @@ def probe_exhaustive_finite_supports(
 
     watch_rows = list(watch_rows) if watch_rows else []
 
-    print(f"[probe-exhaustive] loading ckpt: {ckpt_path}", flush=True)
+    print(f"{_label}loading ckpt: {ckpt_path}", flush=True)
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
     step = ckpt.get("step", -1)
-    print(f"[probe-exhaustive] ckpt step={step}", flush=True)
+    print(f"{_label}ckpt step={step}", flush=True)
     m, tok = _build_model_from_ckpt(ckpt, device)
     max_seq_len = ckpt["config"]["max_seq_len"]
 
     if use_cached_ternary_infer:
         from calm.hrm_text_158.bit_linear import freeze_bitlinears_for_inference
         n_frozen = freeze_bitlinears_for_inference(m)
-        print(f"[probe-exhaustive] cached-ternary-infer: froze {n_frozen} "
+        print(f"{_label}cached-ternary-infer: froze {n_frozen} "
               f"BitLinear modules", flush=True)
 
     # Decode-path dispatch — mirror probe_curriculum (codex msg 1779553066144
@@ -994,12 +1024,12 @@ def probe_exhaustive_finite_supports(
         dispatch_path = "scalar_kv_cache"
     else:
         dispatch_path = "scalar_no_cache"
-    print(f"[probe-exhaustive] decode dispatch: {dispatch_path}", flush=True)
+    print(f"{_label}decode dispatch: {dispatch_path}", flush=True)
 
     decode_fn = _decode_greedy_cached if use_kv_cache_decode else _decode_greedy_no_cache
 
-    supports = build_exhaustive_supports()
-    print(f"[probe-exhaustive] active rungs: {list(supports.keys())}", flush=True)
+    supports = support_builder()
+    print(f"{_label}active rungs: {list(supports.keys())}", flush=True)
 
     # Auto-source accepted-exception watch rows from the chain-head ckpt
     # `config.watch_rows` (written at bank time) so the accepted-exception
@@ -1009,8 +1039,16 @@ def probe_exhaustive_finite_supports(
     _cfg_watch = ckpt.get("config", {}).get("watch_rows") or []
     if _cfg_watch:
         watch_rows = merge_watch_rows(watch_rows, _cfg_watch)
-        print(f"[probe-exhaustive] watch_rows: +{len(_cfg_watch)} from ckpt "
+        print(f"{_label}watch_rows: +{len(_cfg_watch)} from ckpt "
               f"config.watch_rows (merged total {len(watch_rows)})", flush=True)
+
+    # Map watch rows onto the SUPPORT surface before lookup: identity for
+    # math A0; for exhaustive L0c, `what is <expr>?` -> `<expr> equals what?`
+    # so the math-surface config watch row matches the language-surface
+    # support rows instead of falsely reporting NOT_IN_ACTIVE_SUPPORT
+    # (codex msg 1779693537447 Q2).
+    if watch_row_transform is not None and watch_rows:
+        watch_rows = [watch_row_transform(r) for r in watch_rows]
 
     # Build a flat lookup for watch-row population.
     watch_lookup: dict[tuple[str, int], dict] = {}
@@ -1118,7 +1156,7 @@ def probe_exhaustive_finite_supports(
             "holes_first20": holes[:20],
             "elapsed_s": round(rt_elapsed, 3),
         }
-        print(f"[probe-exhaustive] {rung:8s} {exact}/{n_total} = "
+        print(f"{_label}{rung:8s} {exact}/{n_total} = "
               f"{results[rung]['rate']:.4f} (strict) parsed={parsed_correct}/{n_total} "
               f"holes={len(holes)} too_long={too_long} "
               f"finite={finite_rung} t={rt_elapsed:.2f}s", flush=True)
@@ -1135,9 +1173,9 @@ def probe_exhaustive_finite_supports(
         "rate": agg_exact / agg_total if agg_total else 1.0,
         "n_holes": agg_holes,
         "finite": finite_all,
-        "expected_aggregate": EXHAUSTIVE_EXPECTED_AGGREGATE,
+        "expected_aggregate": expected_aggregate,
     }
-    print(f"[probe-exhaustive] AGGREGATE strict={agg_exact}/{agg_total} = "
+    print(f"{_label}AGGREGATE strict={agg_exact}/{agg_total} = "
           f"{aggregate['rate']:.4f} parsed={agg_parsed}/{agg_total} "
           f"holes={agg_holes} finite={finite_all} "
           f"elapsed={total_elapsed:.1f}s", flush=True)
@@ -1165,6 +1203,7 @@ def probe_exhaustive_finite_supports(
     output = {
         "ckpt_path": str(ckpt_path),
         "ckpt_step": int(step) if step != -1 else None,
+        "label": label,  # self-describing surface (e.g. probe-l0c-exhaustive)
         "device": device,
         "active_rungs": list(supports.keys()),
         "flags": {
@@ -1186,7 +1225,7 @@ def probe_exhaustive_finite_supports(
         Path(output_json).parent.mkdir(parents=True, exist_ok=True)
         with open(output_json, "w") as f:
             json.dump(output, f, indent=2)
-        print(f"[probe-exhaustive] wrote {output_json}", flush=True)
+        print(f"{_label}wrote {output_json}", flush=True)
     return output
 
 
@@ -1864,6 +1903,18 @@ if __name__ == "__main__":
                          "language aggregate. Conflicts with --language-supports, "
                          "--exhaustive-finite-supports, --anchor-audit, "
                          "--curriculum-rungs.")
+    # Exhaustive-L0c language-density audit (codex msg 1779693537447 / Slice:
+    # language-to-math-density). The `<expr> equals what?` wrapper over the
+    # FULL math-A0 set (1255). Reuses the exhaustive audit machinery via
+    # support_builder + watch_row_transform; emits label `probe-l0c-exhaustive`
+    # (aggregate 1255), with the config watch row mapped onto the L0c surface.
+    ap.add_argument("--l0c-exhaustive-audit", action="store_true",
+                    help="Run the exhaustive-L0c language-density audit: the "
+                         "`<expr> equals what?` wrapper over the full math-A0 "
+                         "exhaustive set (1255 rows). Per-source-rung breakdown "
+                         "parallel to math A0; watch rows mapped to L0c surface "
+                         "so config.watch_rows decode (not NOT_IN_ACTIVE). "
+                         "Conflicts with the other audit modes.")
     args = ap.parse_args()
 
     # Pre-checks BEFORE ckpt load (codex 1779552750209 guardrail: fail loud
@@ -1928,6 +1979,25 @@ if __name__ == "__main__":
             "ERROR: --l0c1-audit conflicts with --anchor-audit "
             "(mutually exclusive — separate probe modes). Run them separately."
         )
+    # --l0c-exhaustive-audit is mutually exclusive with every other audit mode
+    # (codex msg 1779694143993): the dispatch order (anchor -> l0c1 -> language
+    # -> l0c_exhaustive -> exhaustive -> curriculum) would otherwise let a
+    # co-passed mode silently win. Fail fast BEFORE ckpt load.
+    if args.l0c_exhaustive_audit:
+        _l0ce_conflicts = [
+            ("--curriculum-rungs", args.curriculum_rungs is not None),
+            ("--language-supports", args.language_supports),
+            ("--exhaustive-finite-supports", args.exhaustive_finite_supports),
+            ("--anchor-audit", args.anchor_audit),
+            ("--l0c1-audit", args.l0c1_audit),
+        ]
+        _l0ce_hit = [name for name, on in _l0ce_conflicts if on]
+        if _l0ce_hit:
+            raise SystemExit(
+                f"ERROR: --l0c-exhaustive-audit conflicts with "
+                f"{', '.join(_l0ce_hit)} (mutually exclusive — separate probe "
+                "modes). Run them separately and combine JSON in the receipt."
+            )
     if args.use_batched_probe_eval and not args.use_kv_cache_decode:
         # Mirror existing pre-check from probe_curriculum so exhaustive mode
         # fails consistently before ckpt load.
@@ -1976,6 +2046,36 @@ if __name__ == "__main__":
             use_kv_cache_decode=args.use_kv_cache_decode,
             use_batched_probe_eval=args.use_batched_probe_eval,
             probe_batch_size=args.probe_batch_size,
+        )
+    elif args.l0c_exhaustive_audit:
+        # Exhaustive L0c language-density audit (codex msg 1779693537447):
+        # same machinery as math A0 via support_builder + watch_row_transform.
+        # count 1255, label probe-l0c-exhaustive; watch row mapped to L0c
+        # surface so the banked config watch row decodes (not NOT_IN_ACTIVE).
+        from calm.hrm_text_158.curriculum.exhaustive_supports import (
+            validate_watch_rows,
+        )
+        from calm.hrm_text_158.curriculum.language_supports import (
+            build_exhaustive_l0c_supports,
+            L0C_EXHAUSTIVE_EXPECTED_COUNT,
+        )
+        watch_rows = []
+        if args.watch_rows_json:
+            with open(args.watch_rows_json) as f:
+                watch_rows = validate_watch_rows(json.load(f))
+        probe_exhaustive_finite_supports(
+            args.ckpt_path,
+            max_gen=args.max_gen,
+            output_json=args.audit_output_json,
+            watch_rows=watch_rows,
+            use_cached_ternary_infer=args.use_cached_ternary_infer,
+            use_kv_cache_decode=args.use_kv_cache_decode,
+            use_batched_probe_eval=args.use_batched_probe_eval,
+            probe_batch_size=args.probe_batch_size,
+            support_builder=build_exhaustive_l0c_supports,
+            expected_aggregate=L0C_EXHAUSTIVE_EXPECTED_COUNT,
+            label="probe-l0c-exhaustive",
+            watch_row_transform=_l0c_watch_transform,
         )
     elif args.exhaustive_finite_supports:
         # Validate watch-rows JSON schema BEFORE ckpt load

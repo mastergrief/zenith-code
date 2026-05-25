@@ -122,6 +122,58 @@ def test_aggregate_single_accepted_exception_not_all_ok():
 
 
 # --------------------------------------------------------------------------- #
+# L0c watch transform + parametrized-audit defaults (codex msg 1779693537447):
+# the math-surface config watch row maps to the L0c surface so it decodes in
+# the exhaustive-L0c audit instead of falsely reporting NOT_IN_ACTIVE.
+# --------------------------------------------------------------------------- #
+
+def test_l0c_watch_transform_maps_math_to_l0c():
+    out = _probe._l0c_watch_transform({
+        "key": "r1b2:10_minus_1", "question": "what is 10 minus 1?",
+        "expected": 9, "source_rung": "R1b2"})
+    assert out["question"] == "10 minus 1 equals what?"
+    # key / expected / source_rung preserved.
+    assert out["key"] == "r1b2:10_minus_1" and out["expected"] == 9
+    assert out["source_rung"] == "R1b2"
+
+
+def test_l0c_watch_transform_passthrough_non_math():
+    # Already-L0c (or foreign) questions pass through unchanged — matched
+    # directly against the L0c support or reported NOT_IN_ACTIVE by design.
+    row = {"key": "x", "question": "10 minus 1 equals what?", "expected": 9}
+    assert _probe._l0c_watch_transform(row) == row
+
+
+def test_l0c_exhaustive_audit_mutex_fails_fast():
+    # CLI mutex must fail BEFORE ckpt load (codex msg 1779694143993): a
+    # co-passed audit mode must error, not silently win via dispatch order.
+    import subprocess
+    p = subprocess.run(
+        [sys.executable, os.path.join(_REPO, "scripts", "probe_hrm_text_158.py"),
+         "--ckpt-path", "/nonexistent_ckpt_for_mutex_test.pt",
+         "--l0c-exhaustive-audit", "--language-supports"],
+        capture_output=True, text=True,
+        env={**os.environ, "PYTHONPATH": _REPO}, timeout=120)
+    combined = p.stdout + p.stderr
+    assert p.returncode != 0, combined
+    assert "--l0c-exhaustive-audit conflicts with" in combined, combined
+    assert "--language-supports" in combined, combined
+    # fail-fast: never reached ckpt load (no torch.load FileNotFoundError).
+    assert "No such file" not in combined and "FileNotFound" not in combined, combined
+
+
+def test_probe_exhaustive_defaults_are_math_a0():
+    # math-A0 behavior is the default: no support_builder/transform override,
+    # label "probe-exhaustive" (so the watcher's existing grep still matches).
+    import inspect
+    sig = inspect.signature(_probe.probe_exhaustive_finite_supports)
+    assert sig.parameters["support_builder"].default is None
+    assert sig.parameters["expected_aggregate"].default is None
+    assert sig.parameters["label"].default == "probe-exhaustive"
+    assert sig.parameters["watch_row_transform"].default is None
+
+
+# --------------------------------------------------------------------------- #
 # Watcher durability: the math_a0 grep pattern surfaces watch-row lines so
 # accepted exceptions appear in producer/consumer logs (codex fix 2).
 # --------------------------------------------------------------------------- #

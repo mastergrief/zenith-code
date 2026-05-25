@@ -314,7 +314,7 @@ def _compose_anchor_rows(
     return _rows(retention_anchor_set) * retention_anchor_repeat
 
 
-_RETAINED_SUPPORT_REGISTRY: tuple[str, ...] = ("L0b", "math_a0", "math_r1b2_minus_one")
+_RETAINED_SUPPORT_REGISTRY: tuple[str, ...] = ("L0b", "math_a0", "math_r1b2_minus_one", "l0c_exhaustive")
 
 
 def _retained_support(name: str, seed: int) -> tuple[list[tuple[str, int, str]], str]:
@@ -338,6 +338,11 @@ def _retained_support(name: str, seed: int) -> tuple[list[tuple[str, int, str]],
                   single high-pressure `10 minus 1` row against L0c1 CE on the
                   shared minus circuit. This class support gives that whole
                   rung dense parent-KL coverage (codex msg 1779659487346).
+    - "l0c_exhaustive" ← `build_exhaustive_l0c_supports()` (the `<expr>
+                  equals what?` wrapper over the full math-A0 set, 1255),
+                  SEED-INDEPENDENT. DORMANT — registry-addressable for a
+                  FUTURE math slice to replay once exhaustive-L0c banks; NOT
+                  in any recipe default (codex msg 1779693537447).
 
     Rows are `(question, expected, source_rung)` sorted stably by
     `(source_rung, question, expected)` so repeated construction is
@@ -356,6 +361,18 @@ def _retained_support(name: str, seed: int) -> tuple[list[tuple[str, int, str]],
         from calm.hrm_text_158.curriculum.exhaustive_supports import build_exhaustive_supports
         rows = [(q, e, "R1b2")
                 for (q, e) in build_exhaustive_supports()["R1b2"]]
+    elif name == "l0c_exhaustive":
+        # Exhaustive L0c language-density support (codex msg 1779693537447):
+        # the `<expr> equals what?` wrapper over the full math-A0 set (1255).
+        # DORMANT — registry-addressable for a FUTURE math slice to replay as
+        # broad low/mod retained support AFTER it banks; NOT in any recipe
+        # default and NOT retained-KL'd in its own acquisition run.
+        from calm.hrm_text_158.curriculum.language_supports import (
+            build_exhaustive_l0c_supports,
+        )
+        rows = [(q, e, rung)
+                for rung, pairs in build_exhaustive_l0c_supports().items()
+                for (q, e) in pairs]
     else:
         raise ValueError(
             f"unknown retained support {name!r}; valid: {_RETAINED_SUPPORT_REGISTRY}"
