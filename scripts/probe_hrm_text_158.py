@@ -883,6 +883,43 @@ def probe_curriculum(
     return result
 
 
+def merge_watch_rows(passed_rows: list[dict] | None,
+                     config_rows: list[dict] | None) -> list[dict]:
+    """Union watch rows from --watch-rows-json (``passed_rows``) with a
+    checkpoint's ``config.watch_rows`` (accepted-exception metadata written at
+    bank time). Deduped by ``(question, int(expected))``; passed rows win on
+    collision. Pure — unit-tested without a model. (codex msg 1779691762976:
+    accepted-exception policy needs mechanical visibility, not prose.)"""
+    merged = list(passed_rows or [])
+    seen = {(r["question"], int(r["expected"])) for r in merged}
+    for r in (config_rows or []):
+        k = (r["question"], int(r["expected"]))
+        if k not in seen:
+            merged.append(r)
+            seen.add(k)
+    return merged
+
+
+def format_watch_line(result: dict) -> str:
+    """One ``[probe-watch]`` line for a decoded watch-row result (grep-able by
+    the audit watcher). Includes ``source_rung`` when present so the accepted
+    exception is mechanically keyed to its rung (codex msg 1779692376889)."""
+    sr = result.get("source_rung")
+    sr_part = f" source_rung={sr}" if sr else ""
+    return (f"[probe-watch] {result.get('key', '?')} {result['question']!r} "
+            f"expected={result['expected']} decoded={result.get('decoded')!r} "
+            f"parsed={result.get('parsed')} parsed_ok={result.get('parsed_ok')}{sr_part}")
+
+
+def watch_aggregate(watch_results: list[dict]) -> dict:
+    """Aggregate over decoded watch rows: parsed-ok count + total. Empty ⇒
+    vacuously all-ok (no watch rows is not a failure)."""
+    n = len(watch_results)
+    n_ok = sum(1 for w in watch_results if w.get("parsed_ok"))
+    return {"n_total": n, "n_parsed_ok": n_ok,
+            "all_parsed_ok": (n_ok == n) if n else True}
+
+
 def probe_exhaustive_finite_supports(
     ckpt_path: str,
     *,
@@ -964,6 +1001,17 @@ def probe_exhaustive_finite_supports(
     supports = build_exhaustive_supports()
     print(f"[probe-exhaustive] active rungs: {list(supports.keys())}", flush=True)
 
+    # Auto-source accepted-exception watch rows from the chain-head ckpt
+    # `config.watch_rows` (written at bank time) so the accepted-exception
+    # policy is mechanically surfaced every audit, not prose-dependent
+    # (codex msg 1779691762976 / bank metadata). Merged with any
+    # --watch-rows-json rows; deduped.
+    _cfg_watch = ckpt.get("config", {}).get("watch_rows") or []
+    if _cfg_watch:
+        watch_rows = merge_watch_rows(watch_rows, _cfg_watch)
+        print(f"[probe-exhaustive] watch_rows: +{len(_cfg_watch)} from ckpt "
+              f"config.watch_rows (merged total {len(watch_rows)})", flush=True)
+
     # Build a flat lookup for watch-row population.
     watch_lookup: dict[tuple[str, int], dict] = {}
     if watch_rows:
@@ -1025,6 +1073,12 @@ def probe_exhaustive_finite_supports(
                     "key": src["key"],
                     "question": q,
                     "expected": exp,
+                    # Ground-truth rung where the row was actually decoded (the
+                    # exhaustive-audit loop var) — keys the accepted exception
+                    # to R1b2 and makes moved-hole classification mechanical
+                    # rather than prose (codex msg 1779692376889 fix 1). Falls
+                    # back to the config row's source_rung if absent.
+                    "source_rung": rung or src.get("source_rung"),
                     "decoded": decoded,
                     "parsed": parsed,
                     "too_long": tl,
@@ -1088,6 +1142,26 @@ def probe_exhaustive_finite_supports(
           f"holes={agg_holes} finite={finite_all} "
           f"elapsed={total_elapsed:.1f}s", flush=True)
 
+    # Watch-row surfacing: emit one grep-able [probe-watch] line per decoded
+    # watch row + a WATCH AGGREGATE. Non-blocking — accepted exceptions are
+    # reported, never fail the audit by themselves (codex msg 1779691762976 /
+    # gabe self-repair hypothesis 1779692099947: track watch-row status each
+    # rung receipt).
+    watch_agg = watch_aggregate(watch_results)
+    if watch_rows:
+        for w in watch_results:
+            print(format_watch_line(w), flush=True)
+        _found = {(w["question"], int(w["expected"])) for w in watch_results}
+        for r in watch_rows:
+            if (r["question"], int(r["expected"])) not in _found:
+                _sr = r.get("source_rung")
+                _sr_part = f" source_rung={_sr}" if _sr else ""
+                print(f"[probe-watch] {r.get('key', '?')} {r['question']!r} "
+                      f"expected={r['expected']} NOT_IN_ACTIVE_SUPPORT{_sr_part}",
+                      flush=True)
+        print(f"[probe-watch] WATCH AGGREGATE parsed_ok="
+              f"{watch_agg['n_parsed_ok']}/{watch_agg['n_total']}", flush=True)
+
     output = {
         "ckpt_path": str(ckpt_path),
         "ckpt_step": int(step) if step != -1 else None,
@@ -1104,6 +1178,7 @@ def probe_exhaustive_finite_supports(
         "results": results,
         "aggregate": aggregate,
         "watch_rows": watch_results,
+        "watch_aggregate": watch_agg,
         "elapsed_s": round(total_elapsed, 2),
     }
     if output_json:

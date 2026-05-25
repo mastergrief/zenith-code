@@ -1,0 +1,150 @@
+"""Tests for watch-row surfacing in probe_hrm_text_158 (codex tooling slice
+msg 1779691883270 / 1779691762976: accepted-exception policy needs MECHANICAL
+visibility, not prose). Covers the pure helpers — merge from ckpt
+`config.watch_rows`, grep-able line format, and the non-blocking aggregate —
+including parsed-ok, parsed-fail, missing/no watch rows, and backward-compat.
+No model / no GPU.
+"""
+import importlib.util
+import os
+import sys
+
+_REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+if _REPO not in sys.path:
+    sys.path.insert(0, _REPO)
+
+_spec = importlib.util.spec_from_file_location(
+    "_probe_hrm_text_158", os.path.join(_REPO, "scripts", "probe_hrm_text_158.py")
+)
+_probe = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_probe)
+
+merge_watch_rows = _probe.merge_watch_rows
+format_watch_line = _probe.format_watch_line
+watch_aggregate = _probe.watch_aggregate
+
+# The banked accepted-exception row (config.watch_rows on the L0c1 chain head).
+_R1B2 = {"key": "r1b2:10_minus_1", "question": "what is 10 minus 1?",
+         "expected": 9, "source_rung": "R1b2"}
+
+
+# --------------------------------------------------------------------------- #
+# merge_watch_rows — sourcing from ckpt config + dedup + missing handling
+# --------------------------------------------------------------------------- #
+
+def test_merge_sources_config_rows():
+    # The whole point: a probe with no --watch-rows-json still picks up the
+    # accepted exception from the chain-head config.
+    assert merge_watch_rows([], [_R1B2]) == [_R1B2]
+
+
+def test_merge_dedup_passed_wins():
+    passed = [{"key": "passed", "question": "what is 10 minus 1?", "expected": 9}]
+    merged = merge_watch_rows(passed, [_R1B2])
+    assert len(merged) == 1 and merged[0]["key"] == "passed"
+
+
+def test_merge_union_distinct_rows():
+    other = {"key": "r1b2:11_minus_1", "question": "what is 11 minus 1?", "expected": 10}
+    merged = merge_watch_rows([_R1B2], [other])
+    assert {m["question"] for m in merged} == {"what is 10 minus 1?", "what is 11 minus 1?"}
+
+
+def test_merge_missing_config_is_passed_only():
+    # No / empty config.watch_rows must not drop the --watch-rows-json rows.
+    assert merge_watch_rows([_R1B2], None) == [_R1B2]
+    assert merge_watch_rows([_R1B2], []) == [_R1B2]
+
+
+def test_merge_no_rows_is_empty():
+    assert merge_watch_rows(None, None) == []
+
+
+# --------------------------------------------------------------------------- #
+# format_watch_line — grep-able, covers parsed-fail (the accepted exception)
+# --------------------------------------------------------------------------- #
+
+def test_format_parsed_fail_row():
+    line = format_watch_line({
+        "key": "r1b2:10_minus_1", "question": "what is 10 minus 1?",
+        "expected": 9, "decoded": "0", "parsed": 0, "parsed_ok": False})
+    assert line.startswith("[probe-watch] ")
+    assert "r1b2:10_minus_1" in line
+    assert "expected=9" in line and "decoded='0'" in line and "parsed_ok=False" in line
+
+
+def test_format_parsed_ok_row():
+    line = format_watch_line({
+        "key": "r1b2:11_minus_1", "question": "what is 11 minus 1?",
+        "expected": 10, "decoded": "10", "parsed": 10, "parsed_ok": True})
+    assert "parsed_ok=True" in line and "expected=10" in line
+
+
+def test_format_includes_source_rung_when_present():
+    # Accepted exception keyed to its rung — mechanical, not prose.
+    line = format_watch_line({
+        "key": "r1b2:10_minus_1", "question": "what is 10 minus 1?",
+        "expected": 9, "decoded": "0", "parsed": 0, "parsed_ok": False,
+        "source_rung": "R1b2"})
+    assert "source_rung=R1b2" in line
+
+
+def test_format_omits_source_rung_when_absent():
+    line = format_watch_line({
+        "key": "x", "question": "q?", "expected": 1,
+        "decoded": "1", "parsed": 1, "parsed_ok": True})
+    assert "source_rung" not in line
+
+
+# --------------------------------------------------------------------------- #
+# watch_aggregate — non-blocking; empty is vacuously ok (backward-compat)
+# --------------------------------------------------------------------------- #
+
+def test_aggregate_mixed():
+    agg = watch_aggregate([{"parsed_ok": True}, {"parsed_ok": False}, {"parsed_ok": True}])
+    assert agg == {"n_total": 3, "n_parsed_ok": 2, "all_parsed_ok": False}
+
+
+def test_aggregate_all_ok():
+    assert watch_aggregate([{"parsed_ok": True}])["all_parsed_ok"] is True
+
+
+def test_aggregate_empty_vacuously_ok():
+    # Backward-compat: a probe with no watch rows is NOT a failure.
+    assert watch_aggregate([]) == {"n_total": 0, "n_parsed_ok": 0, "all_parsed_ok": True}
+
+
+def test_aggregate_single_accepted_exception_not_all_ok():
+    # The r1b2:10_minus_1-only case: reported, parsed_ok false, but the
+    # aggregate is informational (the audit itself does not fail on it).
+    assert watch_aggregate([{"parsed_ok": False}]) == {
+        "n_total": 1, "n_parsed_ok": 0, "all_parsed_ok": False}
+
+
+# --------------------------------------------------------------------------- #
+# Watcher durability: the math_a0 grep pattern surfaces watch-row lines so
+# accepted exceptions appear in producer/consumer logs (codex fix 2).
+# --------------------------------------------------------------------------- #
+
+def test_watcher_math_a0_pattern_surfaces_watch_rows():
+    import re
+    _wspec = importlib.util.spec_from_file_location(
+        "_parallel_audit_watcher",
+        os.path.join(_REPO, "scripts", "parallel_audit_watcher.py"))
+    _watcher = importlib.util.module_from_spec(_wspec)
+    _wspec.loader.exec_module(_watcher)
+    pat = dict((name, grep) for name, _flags, grep in _watcher._AUDIT_MODES)["math_a0"]
+    # Still matches the exhaustive aggregate (no regression)...
+    assert re.search(pat, "[probe-exhaustive] AGGREGATE strict=1254/1255 = 0.9992")
+    # ...and now the watch-row line + aggregate.
+    assert re.search(pat, "[probe-watch] r1b2:10_minus_1 'what is 10 minus 1?' "
+                          "expected=9 decoded='0' parsed=0 parsed_ok=False source_rung=R1b2")
+    assert re.search(pat, "[probe-watch] WATCH AGGREGATE parsed_ok=0/1")
+
+
+if __name__ == "__main__":
+    for _name, _fn in sorted(globals().items()):
+        if _name.startswith("test_") and callable(_fn):
+            _fn()
+            print(f"  {_name}: PASS")
+    print("watch-row-surfacing tests: PASS")

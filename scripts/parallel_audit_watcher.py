@@ -40,7 +40,11 @@ _AUDIT_MODES = [
     ("l0c1", ["--l0c1-audit"], r"L0C1 AGGREGATE"),
     ("language", ["--language-supports"], r"(L0a |L0b |LANGUAGE AGGREGATE)"),
     ("anchor", ["--anchor-audit", "--anchor-set", "math_fragile_v1"], r"ANCHOR AGGREGATE"),
-    ("math_a0", ["--exhaustive-finite-supports"], r"\[probe-exhaustive\] AGGREGATE"),
+    ("math_a0", ["--exhaustive-finite-supports"],
+     # Surface watch-row status every exhaustive run so accepted exceptions
+     # (config.watch_rows) appear in producer/consumer logs without a one-off
+     # wrapper tweak (codex msg 1779692376889 fix 2).
+     r"(\[probe-exhaustive\] AGGREGATE|\[probe-watch\]|WATCH AGGREGATE)"),
 ]
 _COMMON_FLAGS = [
     "--use-cached-ternary-infer", "--use-kv-cache-decode",
