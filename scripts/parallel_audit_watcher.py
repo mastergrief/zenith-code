@@ -11,7 +11,7 @@ the training Monitor. The producer signal is the trainer's tee'd log line
 `save_at_step: saved <path>` (checkpoint fully written). On each:
   1. rsync the ckpt to the box (consumer GPU lane),
   2. run the audit bundle on box (--l0c1-audit, --language-supports,
-     --anchor-audit, --exhaustive-finite-supports),
+     --anchor-audit, --exhaustive-finite-supports, --l0c-exhaustive-audit),
   3. record a per-step manifest entry that PROVES OVERLAP — ckpt path,
      producer ts, rsync start/end, audit start/end, artifact paths,
      status (OVERLAP if audit started before `training complete`, else
@@ -45,6 +45,12 @@ _AUDIT_MODES = [
      # (config.watch_rows) appear in producer/consumer logs without a one-off
      # wrapper tweak (codex msg 1779692376889 fix 2).
      r"(\[probe-exhaustive\] AGGREGATE|\[probe-watch\]|WATCH AGGREGATE)"),
+    # F.3b: exhaustive-L0c acquire-target audit (codex msg 1779695455088).
+    # Distinct subprocess per mode, so --l0c-exhaustive-audit carries only
+    # its own flag (the probe's CLI mutex never trips). Watch rows are the
+    # SAME accepted exception mapped to the L0c surface by _l0c_watch_transform.
+    ("l0c_exhaustive", ["--l0c-exhaustive-audit"],
+     r"(\[probe-l0c-exhaustive\] AGGREGATE|\[probe-watch\]|WATCH AGGREGATE)"),
 ]
 _COMMON_FLAGS = [
     "--use-cached-ternary-infer", "--use-kv-cache-decode",
@@ -182,8 +188,10 @@ def main() -> int:
             entries.append(entry)
             seen_steps.add(step)
             l0c1 = next((a for a in entry.get("results", {}).get("l0c1", {}).get("aggregate", [])), "")
+            l0cx = next((a for a in entry.get("results", {}).get("l0c_exhaustive", {}).get("aggregate", [])
+                         if "[probe-l0c-exhaustive]" in a), "")
             print(f"[a1-watcher] consumer: step {step} status={entry['status']} "
-                  f"| {l0c1}", flush=True)
+                  f"| {l0c1}" + (f" | {l0cx}" if l0cx else ""), flush=True)
 
     # Finalize: flag expected-but-missing steps.
     for st in expected:

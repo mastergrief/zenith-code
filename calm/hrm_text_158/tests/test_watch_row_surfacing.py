@@ -178,20 +178,64 @@ def test_probe_exhaustive_defaults_are_math_a0():
 # accepted exceptions appear in producer/consumer logs (codex fix 2).
 # --------------------------------------------------------------------------- #
 
-def test_watcher_math_a0_pattern_surfaces_watch_rows():
-    import re
+def _watcher_modes():
     _wspec = importlib.util.spec_from_file_location(
         "_parallel_audit_watcher",
         os.path.join(_REPO, "scripts", "parallel_audit_watcher.py"))
     _watcher = importlib.util.module_from_spec(_wspec)
     _wspec.loader.exec_module(_watcher)
-    pat = dict((name, grep) for name, _flags, grep in _watcher._AUDIT_MODES)["math_a0"]
+    return _watcher, dict((name, grep) for name, _flags, grep in _watcher._AUDIT_MODES), \
+        dict((name, flags) for name, flags, _grep in _watcher._AUDIT_MODES)
+
+
+def test_watcher_math_a0_pattern_surfaces_watch_rows():
+    import re
+    _watcher, pats, _flags = _watcher_modes()
+    pat = pats["math_a0"]
     # Still matches the exhaustive aggregate (no regression)...
     assert re.search(pat, "[probe-exhaustive] AGGREGATE strict=1254/1255 = 0.9992")
     # ...and now the watch-row line + aggregate.
     assert re.search(pat, "[probe-watch] r1b2:10_minus_1 'what is 10 minus 1?' "
                           "expected=9 decoded='0' parsed=0 parsed_ok=False source_rung=R1b2")
     assert re.search(pat, "[probe-watch] WATCH AGGREGATE parsed_ok=0/1")
+
+
+# --------------------------------------------------------------------------- #
+# F.3b: the l0c_exhaustive audit mode is wired with its own flag + grep, and
+# math_a0 stays present (report-only l0c1 continuity is asserted separately).
+# --------------------------------------------------------------------------- #
+
+def test_watcher_l0c_exhaustive_mode_wired():
+    _watcher, _pats, flags = _watcher_modes()
+    names = [name for name, _f, _g in _watcher._AUDIT_MODES]
+    assert "l0c_exhaustive" in names
+    assert flags["l0c_exhaustive"] == ["--l0c-exhaustive-audit"]
+    # Report-only continuity: l0c1 + math_a0 modes are retained.
+    assert "l0c1" in names and "math_a0" in names
+
+
+def test_watcher_l0c_exhaustive_pattern_surfaces_aggregate_and_watch():
+    import re
+    _watcher, pats, _flags = _watcher_modes()
+    pat = pats["l0c_exhaustive"]
+    # The exhaustive-L0c aggregate (label baked by the parametrized probe)...
+    assert re.search(pat, "[probe-l0c-exhaustive] AGGREGATE strict=1130/1255 = 0.9004")
+    # ...and the SAME accepted exception, mapped to the L0c surface.
+    assert re.search(pat, "[probe-watch] r1b2:10_minus_1 '10 minus 1 equals what?' "
+                          "expected=9 decoded='0' parsed=0 parsed_ok=False source_rung=R1b2")
+    assert re.search(pat, "[probe-watch] WATCH AGGREGATE parsed_ok=0/1")
+
+
+def test_watcher_l0c_exhaustive_pattern_excludes_math_a0_aggregate():
+    # The two exhaustive modes are distinguishable on their AGGREGATE lines
+    # (shared [probe-watch] lines are by design — same accepted exception):
+    # each mode's grep must NOT swallow the other's aggregate.
+    import re
+    _watcher, pats, _flags = _watcher_modes()
+    math_a0_agg = "[probe-exhaustive] AGGREGATE strict=1254/1255 = 0.9992"
+    l0cx_agg = "[probe-l0c-exhaustive] AGGREGATE strict=1130/1255 = 0.9004"
+    assert not re.search(pats["l0c_exhaustive"], math_a0_agg)
+    assert not re.search(pats["math_a0"], l0cx_agg)
 
 
 if __name__ == "__main__":
