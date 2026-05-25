@@ -105,6 +105,7 @@ Key rules (summary — see charter for full):
 - **Role**: Claude + codex_co_lead are technical research/strategy co-leads; Claude additionally owns ops/execution + material gates. Voice preserved on split-owned files (peer reviews, doesn't rewrite).
 - **Board-first**: `ai_room_task_create` + `_start` BEFORE writing code.
 - **Provenance**: cross-session dispatches carry verbatim gabe quote + scope + chosen option in task description. Paraphrase loses signal.
+- **Ingress-owned provenance**: ownership follows the user-entry point — gabe-via-claude → claude owns the AUQ/relay packet; gabe-via-codex → codex_co_lead owns it (claude attaches it to tasks/gates, runs AUQ only on ambiguous/material-risk). Provenance is authority context, NOT a material gate. **No second dispatcher**: codex recommends routes/contracts/reviews; claude spawns/dispatches/gates named workers (routable `codex_N` handle — role name ≠ handle).
 - **Cascade boundary**: pause + name one counter-case before dispatching >2 tasks or multi-subsystem edits.
 - **Before idle**: `ai_room_resume_check` first; board is canonical.
 - **Disagreement**: every non-trivial proposal names one risk or is marked "trivial, no counters." One cited correction beats three hedges; concede cited corrections first-round.

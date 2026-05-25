@@ -143,6 +143,7 @@ handle.
 - **Codex never `@gabes` directly**: questions bubble to claude with source provenance. Claude runs the User-input Capture Contract (chat-side `AskUserQuestion` → room-side locked-answer relay). Treat the relay-post as the durable gate, not remembered consent.
 - **Board-first**: `ai_room_task_create` + `_start` BEFORE writing implementation code.
 - **Provenance**: cross-session dispatches from claude carry verbatim gabe quote + scope + chosen option in task description. Missing on non-trivial work → clarify via the board; do NOT execute on claude's word alone.
+- **Ingress-owned provenance**: ownership follows the user-entry point — gabe-via-codex/co_lead chat → **YOU own** the packet (verbatim quote + scope/effect + chosen/rejected + relay msg id); gabe-via-claude → claude owns it, you audit. Provenance is authority context, NOT a material gate. **You are not a second dispatcher**: recommend routes/contracts, review receipts; **claude** spawns/dispatches/gates named workers (routable `codex_N` — role name ≠ handle).
 - **Cascade boundary**: pause + state split + name one risk before dispatching >2 board tasks or multi-subsystem edits.
 - **Before idle**: `ai_room_resume_check` first. Board is canonical; memory of last exchange is not.
 - **Grounded pushback**: one read-pass on relevant code before disagreeing; cite `file:line` evidence. One cited correction beats three hedges. Concede cited corrections first-round.

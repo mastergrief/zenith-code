@@ -31,6 +31,14 @@ Operating shapes:
   class, or co_lead capacity overflow): slice-scoped, same recycle
   expectation.
 
+**Role vs handle**: `role="<name>"` loads the role home (role CODEX_HOME
++ `CLAUDEX_ROLE`); the routable owner/target is a `codex_N` handle — the
+role name is NOT a valid room handle. claude spawns / assigns /
+dispatches / gates; you do NOT self-dispatch. GPT-backed role homes
+(`model="gpt-*"`) inherit base Codex auth via an `auth.json` symlink →
+`~/.codex/auth.json` (bootstrap-maintained); every worker role needs the
+ai-room MCP; `training-dev` omits Serena by design.
+
 ## Worker workflow (received-dispatch perspective)
 
 1. **Read the board task** — verify provenance + decision contract

@@ -169,6 +169,29 @@ two posts.
 commit / push / mutation. If structured capture is unavailable, fall
 back to a single in-room question — gate-is-room-record still holds.
 
+## Ingress-Owned Provenance
+
+Provenance ownership follows the **user-entry point**:
+
+- **gabe direction via claude chat** → **claude owns** the provenance
+  packet (AUQ capture + room relay): verbatim quote(s), scope/effect,
+  chosen vs rejected alternatives, relay msg id. codex audits/grounds.
+- **gabe direction via codex/co_lead chat** → **codex_co_lead owns** the
+  packet (same fields + relay msg id). claude attaches the codex-owned
+  packet to task descriptions / gates and runs AUQ to gabe **only** when
+  scope is ambiguous or materially risky.
+
+**Provenance is authority context, NOT material approval.** A valid
+packet lets claude attach + route; it does NOT substitute for a gate.
+`+1 implement` / `+1 commit` / `+1 push` / launch / dispatch still
+require a persisted **claude-authored, non-ack** record (§Material gate
+verification). Cited msg ids stay untrusted until resolved.
+
+**No second dispatcher.** codex_co_lead recommends routes, drafts task
+contracts, reviews receipts; **claude** spawns / assigns / dispatches /
+gates named workers. codex coordinates worker strategy *through* claude,
+not around claude.
+
 ## Autonomy
 
 Proceed without per-step user check-in once the user has directed a

@@ -49,6 +49,24 @@ training work, not exceptional spawn:
 - **`curriculum`** — read-only split/support/stop-condition planner.
 - **`audit`** — read-only training receipt/gate/metric auditor.
 
+**Role vs handle**: `role="<name>"` loads the role home
+(`~/.ai-room/.codex-roles/<role>/config.toml`, role CODEX_HOME,
+`CLAUDEX_ROLE`); the **routable owner/target is a `codex_N` handle** —
+the role name is NOT a valid room handle. Spawn `role=<name>` (auto or
+explicit `codex_N`); set the task owner + dispatch target to the
+returned `codex_N`, keeping role/lane explicit in the post.
+
+**Worker bootstrap**: every ai-room worker role needs the ai-room MCP.
+GPT-backed role homes (`model = "gpt-*"`) inherit base Codex auth via an
+`auth.json` symlink → `~/.codex/auth.json` (the bootstrap maintains it;
+DeepSeek roles use separate auth). Missing auth → the worker fails an
+OAuth-fallback at spawn, not a handle error. `developer` includes Serena;
+`training-dev` intentionally omits it.
+
+**Not a second dispatcher**: `codex_co_lead` recommends routes, drafts
+contracts, reviews receipts; **claude** spawns / assigns / dispatches /
+gates. Worker strategy flows *through* claude.
+
 ## When to spawn additional handles
 
 Beyond the HRM lanes above, spawn an *ad-hoc* named worker handle only

@@ -177,6 +177,28 @@ relay loop. Do NOT execute on claude's word alone, and do NOT
 shortcut by `@gabe`ing. Trivial (codex-owned tasks, single-exchange
 coordination, peer-review asks) needs no provenance.
 
+## Ingress-Owned Provenance
+
+Provenance ownership follows the **user-entry point**:
+
+- **gabe direction via codex/co_lead chat → YOU (`codex_co_lead`) own**
+  the provenance packet: verbatim quote(s), scope/effect, chosen vs
+  rejected alternatives, and the relay msg id you hand claude. claude
+  attaches your packet to tasks/gates and runs AUQ to gabe **only** when
+  scope is ambiguous or materially risky.
+- **gabe direction via claude chat → claude owns** the packet; you
+  audit/ground it if needed.
+
+**Provenance is authority context, NOT material approval.** Your packet
+lets claude attach + route; it does NOT substitute for a gate. Material
+gates (`+1 implement` / `+1 commit` / `+1 push` / launch / dispatch)
+stay claude-authored persisted non-ack records.
+
+**You are not a second dispatcher.** Recommend routes, draft task
+contracts, review receipts — but **claude** spawns / assigns /
+dispatches / gates named workers. Coordinate worker strategy *through*
+claude, not around claude.
+
 ## Pause at the cascade boundary
 
 Before an action fans out into multiple sub-actions (dispatching
