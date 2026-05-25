@@ -55,6 +55,29 @@ def test_edge_rung_registered_and_diagnosis_only():
     assert "L0c2-K1-edge" in DIAGNOSIS_ONLY_RUNGS
 
 
+def test_train_script_argparse_choices_in_sync_with_rung_names():
+    """Guard: a new rung must be registered in BOTH RUNG_NAMES and the train
+    script's --curriculum-rung argparse choices=. The F.4d-edge launch caught
+    this drift the hard way — the rung was in RUNG_NAMES but missing from the
+    hardcoded choices=, so argparse rejected it (zero GPU wasted, but a failed
+    launch). R7 (GSM8k) is intentionally excluded from choices (served
+    separately, not via make_rung_examples)."""
+    import re
+    train_src = os.path.join(_REPO, "scripts", "train_hrm_text_158.py")
+    with open(train_src, "r", encoding="utf-8") as fh:
+        src = fh.read()
+    m = re.search(r'"--curriculum-rung"[^)]*?choices=\[([^\]]*)\]', src, re.DOTALL)
+    assert m, "could not locate --curriculum-rung choices= in train script"
+    choices = set(re.findall(r'"([^"]+)"', m.group(1)))
+    expected = set(RUNG_NAMES) - {"R7"}
+    assert choices == expected, (
+        "train --curriculum-rung choices out of sync with RUNG_NAMES; "
+        f"missing_from_choices={sorted(expected - choices)} "
+        f"extra_in_choices={sorted(choices - expected)}"
+    )
+    assert "L0c2-K1-edge" in choices
+
+
 # --------------------------------------------------------------------------- #
 # Finite enumeration shape
 # --------------------------------------------------------------------------- #
