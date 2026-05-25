@@ -38,6 +38,10 @@ _STEP_RE = re.compile(r"_step0*(\d+)\.pt$")
 # (flag, aggregate-line grep pattern) per audit mode.
 _AUDIT_MODES = [
     ("l0c1", ["--l0c1-audit"], r"L0C1 AGGREGATE"),
+    # F.4-audit: L0c2 bounded-2-digit stair-step acquire-target audit (230 rows,
+    # per source_rung:operator composite bucket). Distinct subprocess per mode
+    # so --l0c2-audit carries only its own flag (the probe CLI mutex never trips).
+    ("l0c2", ["--l0c2-audit"], r"L0C2 AGGREGATE"),
     ("language", ["--language-supports"], r"(L0a |L0b |LANGUAGE AGGREGATE)"),
     ("anchor", ["--anchor-audit", "--anchor-set", "math_fragile_v1"], r"ANCHOR AGGREGATE"),
     ("math_a0", ["--exhaustive-finite-supports"],
@@ -188,10 +192,12 @@ def main() -> int:
             entries.append(entry)
             seen_steps.add(step)
             l0c1 = next((a for a in entry.get("results", {}).get("l0c1", {}).get("aggregate", [])), "")
+            l0c2 = next((a for a in entry.get("results", {}).get("l0c2", {}).get("aggregate", [])), "")
             l0cx = next((a for a in entry.get("results", {}).get("l0c_exhaustive", {}).get("aggregate", [])
                          if "[probe-l0c-exhaustive]" in a), "")
             print(f"[a1-watcher] consumer: step {step} status={entry['status']} "
-                  f"| {l0c1}" + (f" | {l0cx}" if l0cx else ""), flush=True)
+                  f"| {l0c1}" + (f" | {l0c2}" if l0c2 else "")
+                  + (f" | {l0cx}" if l0cx else ""), flush=True)
 
     # Finalize: flag expected-but-missing steps.
     for st in expected:

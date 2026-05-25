@@ -33,6 +33,7 @@ from calm.hrm_text_158.curriculum.generators import (
     _enumerate_partition_l0b,
     _enumerate_partition_l0c,
     _enumerate_partition_l0c1,
+    _enumerate_partition_l0c2,
 )
 
 
@@ -198,6 +199,42 @@ def build_l0c1_support(seed: int = 42) -> dict[str, list[tuple[str, int, str]]]:
     return {"L0c1": _l0c1_support(seed)}
 
 
+# ---------------------------------------------------------------------------
+# L0c2 — bounded-2-digit stair-step rung audit surface (F.4a rung + F.4-audit).
+# SEPARATE surface like L0c1: deliberately NOT in LANGUAGE_ACTIVE_RUNGS, so the
+# canonical 690 language aggregate (L0a+L0b+L0c) is preserved. Audited via
+# --l0c2-audit on its own JSON surface. 230 rows = the F.4a stratified hard
+# subset; the third field is the COMPOSITE `source_rung:operator` bucket so the
+# R1b2:minus / `10 minus 1 -> 9` operator-specific failure class cannot hide.
+# ---------------------------------------------------------------------------
+L0C2_AUDIT_EXPECTED_COUNT: int = 230
+
+
+def _l0c2_support(seed: int = 42) -> list[tuple[str, int, str]]:
+    """230-row L0c2 bounded-2-digit audit support (train + held). Same template
+    surface (`<expr> equals what?`) as L0c, but every row is 2-digit-hard and
+    the bucket label is the composite `source_rung:operator` (e.g. `R1b2:minus`)
+    so --l0c2-audit reports per-(source_rung x operator), preserving the
+    operator-specific failure class. Mirrors `_l0c1_support`; the partition is
+    the F.4a `_enumerate_partition_l0c2`."""
+    train, held = _enumerate_partition_l0c2(seed)
+    rows: list[tuple[str, int, str]] = []
+    for r in train + held:
+        rows.append((r["question"], r["expected"], f"{r['source_rung']}:{r['operator']}"))
+    return rows
+
+
+def build_l0c2_support(seed: int = 42) -> dict[str, list[tuple[str, int, str]]]:
+    """Build the standalone L0c2 audit surface: {"L0c2": [...230 rows...]}.
+
+    Parallel to `build_l0c1_support` but for the F.4 bounded-2-digit stair-step
+    rung. Single-key dict so the probe's language-audit machinery iterates it
+    uniformly under `surface="l0c2"`. Deliberately NOT merged into
+    `build_language_supports` (keeps the canonical 690 language aggregate and
+    the L0c2 surface separate, mirroring the L0c1 constraint)."""
+    return {"L0c2": _l0c2_support(seed)}
+
+
 def build_language_supports(seed: int = 42) -> dict[str, list[tuple[str, int, str]]]:
     """Build full finite-support audit list for every active language rung.
 
@@ -227,7 +264,18 @@ def language_source_rung_buckets(rung: str) -> list[str]:
             "R1b1", "R1b2", "R1b3", "R1b4v2",
             "R1b5", "R1b6", "R1b7", "R1b8", "R1b9",
         ]
+    if rung == "L0c2":
+        # F.4 bounded-2-digit rung: report by the 12 COMPOSITE
+        # source_rung:operator buckets, NOT collapsed source-rungs — keeps the
+        # R1b2:minus operator-specific failure class (`10 minus 1 -> 9`)
+        # visible. Order = the F.4a partition's sorted (source_rung, operator).
+        return [
+            "R0:identity",
+            "R1:minus", "R1:plus",
+            "R1b1:plus", "R1b2:minus", "R1b3:plus", "R1b4v2:plus",
+            "R1b5:plus", "R1b6:plus", "R1b7:plus", "R1b8:plus", "R1b9:plus",
+        ]
     raise ValueError(
         f"unknown language rung {rung!r}; valid: {LANGUAGE_ACTIVE_RUNGS} "
-        f"+ 'L0c1' (precursor audit surface)"
+        f"+ 'L0c1' / 'L0c2' (precursor / stair-step audit surfaces)"
     )

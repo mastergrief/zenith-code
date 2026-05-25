@@ -1903,6 +1903,20 @@ if __name__ == "__main__":
                          "language aggregate. Conflicts with --language-supports, "
                          "--exhaustive-finite-supports, --anchor-audit, "
                          "--curriculum-rungs.")
+    # L0c2 bounded-2-digit stair-step audit (F.4-audit). SEPARATE surface like
+    # L0c1: audits the 230-row F.4a hard subset, emits surface='l0c2' JSON
+    # (aggregate 230) with a per-(source_rung:operator) COMPOSITE-bucket
+    # breakdown so the R1b2:minus / `10 minus 1 -> 9` failure class stays
+    # visible; NOT blended into the canonical 690 language aggregate.
+    ap.add_argument("--l0c2-audit", action="store_true",
+                    help="Run the standalone L0c2 bounded-2-digit stair-step "
+                         "finite-support audit (230 rows, all 2-digit-hard, "
+                         "same `<expr> equals what?` template). Emits a separate "
+                         "surface='l0c2' JSON section (aggregate 230) with 12 "
+                         "composite source_rung:operator buckets (keeps the "
+                         "R1b2:minus failure class visible); NOT blended into "
+                         "--language-supports / the 690 aggregate. Conflicts with "
+                         "the other audit modes.")
     # Exhaustive-L0c language-density audit (codex msg 1779693537447 / Slice:
     # language-to-math-density). The `<expr> equals what?` wrapper over the
     # FULL math-A0 set (1255). Reuses the exhaustive audit machinery via
@@ -1979,6 +1993,35 @@ if __name__ == "__main__":
             "ERROR: --l0c1-audit conflicts with --anchor-audit "
             "(mutually exclusive — separate probe modes). Run them separately."
         )
+    # F.4-audit: mutex checks for --l0c2-audit (mirror --l0c1-audit; L0c2 is a
+    # SEPARATE bounded-2-digit surface, never blended into the 690 aggregate).
+    if args.l0c2_audit and args.curriculum_rungs is not None:
+        raise SystemExit(
+            "ERROR: --l0c2-audit conflicts with --curriculum-rungs "
+            "(mutually exclusive); pass only one."
+        )
+    if args.l0c2_audit and args.exhaustive_finite_supports:
+        raise SystemExit(
+            "ERROR: --l0c2-audit conflicts with --exhaustive-finite-supports "
+            "(mutually exclusive — separate probe modes). Run them separately."
+        )
+    if args.l0c2_audit and args.language_supports:
+        raise SystemExit(
+            "ERROR: --l0c2-audit conflicts with --language-supports "
+            "(mutually exclusive — L0c2 is a SEPARATE surface, NOT blended into "
+            "the 690 language aggregate). Run them separately."
+        )
+    if args.l0c2_audit and args.anchor_audit:
+        raise SystemExit(
+            "ERROR: --l0c2-audit conflicts with --anchor-audit "
+            "(mutually exclusive — separate probe modes). Run them separately."
+        )
+    if args.l0c2_audit and args.l0c1_audit:
+        raise SystemExit(
+            "ERROR: --l0c2-audit conflicts with --l0c1-audit "
+            "(mutually exclusive — two separate bounded surfaces). Run them "
+            "separately and combine JSON in the receipt."
+        )
     # --l0c-exhaustive-audit is mutually exclusive with every other audit mode
     # (codex msg 1779694143993): the dispatch order (anchor -> l0c1 -> language
     # -> l0c_exhaustive -> exhaustive -> curriculum) would otherwise let a
@@ -1990,6 +2033,7 @@ if __name__ == "__main__":
             ("--exhaustive-finite-supports", args.exhaustive_finite_supports),
             ("--anchor-audit", args.anchor_audit),
             ("--l0c1-audit", args.l0c1_audit),
+            ("--l0c2-audit", args.l0c2_audit),
         ]
         _l0ce_hit = [name for name, on in _l0ce_conflicts if on]
         if _l0ce_hit:
@@ -2035,6 +2079,24 @@ if __name__ == "__main__":
             supports_builder=build_l0c1_support,
             expected_aggregate=L0C1_EXPECTED_COUNT,
             surface="l0c1",
+        )
+    elif args.l0c2_audit:
+        from calm.hrm_text_158.curriculum.language_supports import (
+            build_l0c2_support,
+            L0C2_AUDIT_EXPECTED_COUNT,
+        )
+        probe_language_finite_supports(
+            args.ckpt_path,
+            audit_seed=args.language_audit_seed,
+            max_gen=args.max_gen,
+            output_json=args.audit_output_json,
+            use_cached_ternary_infer=args.use_cached_ternary_infer,
+            use_kv_cache_decode=args.use_kv_cache_decode,
+            use_batched_probe_eval=args.use_batched_probe_eval,
+            probe_batch_size=args.probe_batch_size,
+            supports_builder=build_l0c2_support,
+            expected_aggregate=L0C2_AUDIT_EXPECTED_COUNT,
+            surface="l0c2",
         )
     elif args.language_supports:
         probe_language_finite_supports(
