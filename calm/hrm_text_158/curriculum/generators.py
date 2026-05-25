@@ -257,7 +257,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c", "L0c_exhaustive", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -672,6 +672,17 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     # math-density `<expr> equals what?` set (1255), DISTINCT from bounded L0c.
     "L0c_exhaustive": {
         "train":     {"partition": "enumerate_stratified_l0c_exhaustive"},
+        "held_out":  {"partition": "enumerate_stratified_l0c_exhaustive"},
+    },
+    # F.3d-b 2-digit-emphasis ACQUISITION variant (codex msg 1779701225492 +
+    # ratio 1779701860482). Reuses the SAME exhaustive-L0c partition/support/
+    # audit surface as L0c_exhaustive; the ONLY change is TRAIN sampling with a
+    # per-ROW hard weight (3.0 hard / 1.0 easy -> ~97.6% hard by draw), to push
+    # the F.3c 2-digit language-wrapper transfer tail. NOT pool-70/30 (support is
+    # already 93.2% hard). Held-out stays uniform/full-support; bank gate is the
+    # full --l0c-exhaustive-audit. NOT a retained-support registry entry.
+    "L0c_exhaustive_2digit": {
+        "train":     {"partition": "enumerate_stratified_l0c_exhaustive", "hard_weight": 3.0},
         "held_out":  {"partition": "enumerate_stratified_l0c_exhaustive"},
     },
     # R2a (codex msg 1779478819906-0e30503e after full R2 failed v1+v2;
@@ -2415,6 +2426,37 @@ def _l0c_is_hard(question: str, expected: int) -> bool:
     return False
 
 
+def _gen_l0c_exhaustive_2digit(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """F.3d-b 2-digit-emphasis ACQUISITION sampler (codex msg 1779701225492;
+    ratio 1779701860482).
+
+    Reuses `_enumerate_partition_l0c_exhaustive(seed)` — SAME support, SAME
+    train/held split, SAME audit surface as `L0c_exhaustive` — so train/held
+    stay disjoint on (q,e) and the bank gate is still the full 1255-row
+    `--l0c-exhaustive-audit`. The ONLY change is TRAIN sampling: a per-ROW
+    weight (hard `hard_weight`=3.0, easy 1.0) via `rng.choices`. Because the
+    support is already 93.2% hard (F.3d-a: 1170/85), this is per-row up-weight,
+    NOT pool-70/30; effective draw share = 3*1170/(3*1170+85) ~ 97.6% hard.
+    HELD stays UNIFORM over the full held pool (the 3x weighting is train-only;
+    the audit surface must be unbiased). Tags rung `L0c_exhaustive_2digit`.
+    Acquisition variant ONLY — never a retained support."""
+    train_pool, held_pool = _enumerate_partition_l0c_exhaustive(seed)
+    if split == "train":
+        hard_weight = float(spec.get("hard_weight", 3.0))
+        weights = [hard_weight if _l0c_is_hard(r["question"], r["expected"]) else 1.0
+                   for r in train_pool]
+        chosen = rng.choices(train_pool, weights=weights, k=n)
+        return [{"question": r["question"], "expected": r["expected"],
+                 "rung": "L0c_exhaustive_2digit"} for r in chosen]
+    # held / held_out: UNIFORM over the full held pool (matches L0c_exhaustive held).
+    out = []
+    while len(out) < n:
+        row = rng.choice(held_pool)
+        out.append({"question": row["question"], "expected": row["expected"],
+                    "rung": "L0c_exhaustive_2digit"})
+    return out
+
+
 def _gen_r1b7(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
     """R1b7 constant K=6 addition, carry-stratified partition (codex msg
     1779547753761-5711d790 +1 K=6; rebased onto R1b2-repair commit
@@ -2812,6 +2854,8 @@ def make_rung_examples(
         return _gen_l0c(rng, _RUNG_SPEC["L0c"][split], n, seed=seed, split=split)
     if rung == "L0c_exhaustive":
         return _gen_l0c_exhaustive(rng, _RUNG_SPEC["L0c_exhaustive"][split], n, seed=seed, split=split)
+    if rung == "L0c_exhaustive_2digit":
+        return _gen_l0c_exhaustive_2digit(rng, _RUNG_SPEC["L0c_exhaustive_2digit"][split], n, seed=seed, split=split)
     if rung == "R1b":
         return _gen_r1b(rng, _RUNG_SPEC["R1b"][split], n, seed=seed, split=split)
     if rung == "R2a":
