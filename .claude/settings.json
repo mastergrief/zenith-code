@@ -31,6 +31,10 @@
           {
             "type": "command",
             "command": ".claude/hooks/task_dispatch_child_boundary_gate.py"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/task_dispatch_cross_thread_gate.py"
           }
         ]
       }

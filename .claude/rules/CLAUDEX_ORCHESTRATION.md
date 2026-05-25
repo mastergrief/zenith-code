@@ -153,6 +153,18 @@ trail visible in room record; co_lead flags long-but-vague overrides
 as drift. Hook fail-opens on parse/log errors — rule still applies
 operationally.
 
+`.claude/hooks/task_dispatch_cross_thread_gate.py` is the second
+**block-and-explain** guard on the same matcher, making the
+cross-thread protocol deterministic. Blocks when ALL — `kind ==
+"task_dispatch"` to a single named handle; target NOT in
+`CO_LEAD_HANDLES`; body lacks BOTH a `REPORT_TO: [...]` list
+containing `claude` AND `codex_co_lead` and a `CROSS_THREAD_REQUIRED:
+yes` line — UNLESS a valid `CROSS_THREAD_WAIVER: <reason ≥10 chars>`
+is present. co_lead, ack/status/design/msg kinds, and broadcast/
+multi-target posts are untouched; fail-opens on parse errors. This is
+the fail-closed v1 of what `cross_thread_audit.py` (Stop hook) only
+logs; a v2 synthesis/bank/commit gate is deferred until v1 is stable.
+
 ## Worker task shape
 
 Every non-trivial worker task includes:
@@ -168,6 +180,14 @@ Every non-trivial worker task includes:
   commit/push gates.
 - **Stop conditions**: ambiguity, missing authorization, scope
   expansion, failed validation, context budget, role safety violation.
+- **Cross-thread markers**: `REPORT_TO: [claude, codex_co_lead]` +
+  `CROSS_THREAD_REQUIRED: yes` so worker design/audit/run receipts
+  route to co_lead natively (reply `to=[claude, codex_co_lead]`),
+  letting co_lead concur or flag one load-bearing hole before claude
+  synthesizes / banks / commits / dispatches the next slice. Emergency
+  bypass only via `CROSS_THREAD_WAIVER: <reason ≥10 chars>`.
+  Hook-enforced on `kind=task_dispatch` to worker handles (see
+  §"Hook enforcement").
 
 Dispatch to exact handles. Channel-only dispatch without board
 provenance is for tiny coordination, not durable work.
