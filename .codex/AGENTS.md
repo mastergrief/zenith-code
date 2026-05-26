@@ -4,7 +4,7 @@
 
 Use `apply_patch` for small/manual file edits when available. Use `python3` or Serena semantic edit tools for bulk, generated, or semantic edits. If the preferred edit path is blocked or impractical, state the blocker in commentary before using the fallback.
 
-Fork of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) with a Python agent harness, CALM reasoning engine, HRM + LLM-Computer (the CRLM stack), and a Rust port.
+Fork of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) with a Python agent harness, CALM reasoning engine, a native HRM-Text-1.58 training stack (the active lane), a Rust port, and the (now-adjacent) HRM + LLM-Computer CRLM/substrate stack.
 
 ## HRM-Text-1.58 Fork: Progressive Checkpoint Curriculum
 
@@ -22,9 +22,8 @@ Fork of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) with
 - Default slice (gabe-locked, one atom): **auditable full-density finite
   support, trained slow-safe** (LR ~5e-5, replay ~0.80, pc on acquired priors,
   ≤1500-step, no knob escalation). Full coverage of a small completely-auditable
-  support DRIVES acquisition (banked identity 90/90) where sparse sub-sampling
-  regressed to nearest-memorized retrieval. Bounded stair-step (~230) is the
-  FALLBACK after a classified collision / oversized support; don't
+  support is the default — do not bank sparse sub-samples. Bounded stair-step is
+  the FALLBACK after a classified collision / oversized support; don't
   continue+re-warm a fragile dense surface.
 - Retention (load-bearing): explicit replay + parent consistency +
   broad retained supports (L0b, math_a0) + **direct protection for close
@@ -44,7 +43,14 @@ Fork of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) with
 - Arc order: math-first, then language, then code. Specialists / MoE
   branch from robust base checkpoints, not from weak narrow experts.
 
-Canonical active workflow (bank gate, slice-size, recipe band, retention, failure classes, validation): `.codex/rules/hrm-158.md`. Full training rules: `.codex/rules/training.md` §"HRM-Text-1.58 Fork". Legacy PT/DT/Substrate guidance remains as adjacent reference for retrieval / structure-extraction lanes; **native HRM-Text-1.58 is now the primary training lane for `hrm-158-base`.**
+Canonical active workflow (bank gate, slice-size, recipe band, retention, failure classes, validation): `.codex/rules/hrm-158.md`. Full training rules: `.codex/rules/training.md` §"HRM-Text-1.58 Fork".
+
+**Conventions (read first):**
+- Active training lane: native HRM-Text-1.58 (`hrm-158-base`).
+- Default method: auditable full-density finite support + slow-safe learning + 90/90 gate.
+- PT / DT / RDT / cards / Substrate / Gemma-substrate / CRLM / CHRLM are legacy/adjacent/reference unless explicitly reopened.
+- CALM engine, Python agent harness, Rust port stay live infrastructure.
+- Receipts live on the ai-room board / MEMORY — not AGENTS.md / rules.
 
 **Working policy: no subagents.** Work directly with `Edit`/`Write`/`Read`/`Grep`/`Bash`. Do not dispatch subagents or create teams. Prior VDD/orchestration infrastructure was removed in commit `bb7f13d`; the agent definitions and `/VDD`, `/DISCOVER`, `/EVAL`, `/TRAIN-DATA` slash-commands no longer exist. Session 26 and Vector 1 shipped 23+ commits + 311 tests directly; this is the proven default for the project.
 
@@ -174,59 +180,25 @@ origin, 2026-05-20 capture-contract port): `.codex/MEMORY/atlas/AI_ROOM_COLLAB_a
 
 Long-term commercial direction documented in `.codex/rules/commercial.md`. Currently R&D — focus on building the best system, not shipping a product. Commercial awareness is context, not a constraint.
 
-## Substrate vs Cards vs CHRLM — vocabulary
+## Substrate vs Cards vs CHRLM — vocabulary (legacy/adjacent)
 
-Lock-in convention. Use these terms precisely in all new prose; don't
-conflate.
-
-- **Substrate** = architectural standard. `Small2DTransformer` +
-  `d_head=2` invariant + channel allocation protocol + gate-graph IR +
-  mode tokens + D2/D3/D5 + fast weights. **The spec, not a tensor.**
-  Analogy: like x86 ISA.
-- **Card** = an individual `.pt` weight tensor compliant with the spec.
-  Compiled (gate-graph IR, exact) or trained (SGD, statistical).
-  Analogy: x86 binaries.
-- **Build** = a curated set of substrate-compliant cards orchestrated
-  together for a domain. Examples: CHRLM (general), CHRLM-Coding
-  (future), CHRLM-Math (future).
-- **CHRLM** = the current general-knowledge build. Session 30:
-  **unified single tensor** — Gemma + HRMs + compiled cards + knowledge
-  DB ALL in ONE `.pt`, ONE forward pass, per-sub-head attention partition.
-- **PT** (Pointer Transducer) = a `CopyAugmentedTransformer` card
-  trained to transduce NL → formal expression via pointer-copy. Replaces
-  HRM for structure extraction. One PT per **output-language family**
-  (not per domain). ~185K params, ~32 sub-heads.
-- **DT** (Delta-Transducer) = `CopyAugmentedDeltaNet` card — 2026-04-22
-  canonical rename of PT+Delta. Underlying class unchanged. Default
-  trained-card architecture for **retrieval/structure-extraction**
-  regimes (MQAR, NL→math). Code-skeleton DT (NL → `def FN(<args>):`)
-  is an open arc at 0.193 honest val (v13 ep16, 520 held-out) —
-  not install-viable yet. See `delta_rule.md` §DT.
-- **Output-language family** = a class of expression syntax. Function-call
-  (`fn(args)`), infix arithmetic (`a + b`), boolean logic (`a > b and`).
-  ~3-5 families cover 30+ domains. Adding a domain within an existing
-  family is a data-only operation.
-- **Domain** = a facade with imports/exports + PT + compiled ops +
-  knowledge facts. ~32 sub-heads per domain, 30 domains on 8 GB VRAM.
-
-**Brain + Cards model**: Gemma (language + routing) dispatches to cards
-(compiled programs, HRM specialists, PTs). Three install paths —
-decode-path facade (zero VRAM, cheapest), CardSlot residual-additive,
-in-tensor. Full spec + tradeoffs: `.codex/rules/Substrate.md` §"Card
-Installation", `.codex/rules/compute_facades.md`,
-`.codex/rules/delta_rule.md` §"Retrieval card install". Auto-generation via
-`calm/llm_computer/recursion.py` (`FacadeSpec` + `MetaFacade`) —
-see `.codex/rules/recursion.md`.
+> Legacy/adjacent, not the active lane. Use parked-stack terms (Substrate /
+> Card / Build / CHRLM / PT / DT / output-language-family / domain) + the
+> Brain+Cards install model precisely only when working in that stack.
+> Glossary: `MEMORY/atlas/Substrate_arc.md`. PT/DT: `delta_rule.md`. Install
+> paths: `Substrate.md`, `compute_facades.md`, `recursion.md`.
 
 ## Architecture
 
-**Model understands, transducers structure, cards compute, engine verifies.** Intelligence comes from the system architecture, not the weights. Adding a backend module is equivalent to training — the model gets smarter at that domain instantly, with zero GPU cost.
+The repo carries four subsystems. The **active training lane is native
+HRM-Text-1.58** (see §"HRM-Text-1.58 Fork" above). Of the four below, the
+harness, CALM engine, and Rust port are live infrastructure; the Unified Single
+Tensor / substrate (#4) is **legacy/adjacent** — parked unless reopened.
 
-Four active systems coexist:
 1. **Python agent harness** (`agents/`, ~4,423 LOC across 15 files) — terminal coding assistant with dual backend (Ollama + llama.cpp), 3-level permissions, thinking mode, sessions, compaction, effort control, llama.cpp hot-swap. Commands + launch: `.codex/rules/harness.md`. Internals: `.codex/rules/architecture.md` §"Agent System".
 2. **CALM engine** (`calm/`, ~83,600 LOC across 413 .py files) — modular compute + knowledge facade with cognitive intelligence layer. Auto-CALM + Engine V2 (7-phase pipeline) + 120 modular backends + 39 cognitive modules + self-healing quality loop. Full spec: `.codex/rules/calm.md` (atlas: `MEMORY/atlas/calm_part_1.md` + `calm_part_2.md`).
 3. **Rust claw-code port** (`rust/`) — upstream claw-code, 9 crates, separate build system.
-4. **Unified Single Tensor** (`calm/llm_computer/`) — CHRLM architecture. ONE `.pt` contains Gemma (tq4) + trained PTs + compiled cards + persistent knowledge DB. Session 32 ported Level 5 to prod Gemma 4 E4B. Full spec: `.codex/rules/Substrate.md` + `architecture.md` + `delta_rule.md`.
+4. **Unified Single Tensor** (`calm/llm_computer/`) — *legacy/adjacent*, not the active lane. CHRLM substrate architecture: ONE `.pt` contains Gemma (tq4) + trained PTs + compiled cards + persistent knowledge DB. Spec (reference): `.codex/rules/Substrate.md` + `architecture.md` + `delta_rule.md`.
 
 Serving + VRAM + perf: `.codex/rules/environment.md` §"Serving Architecture".
 Mechinterp tracing arc (sessions 33-34, full R-arc): `.codex/rules/augmentation_thesis.md` (current strategic positions) + `tracing_intelligence.md` (first-principles bound) + `.codex/MEMORY/atlas/tracing_roadmap_part_1.md` (per-round receipts) + `.codex/MEMORY/atlas/augmentation_thesis_arc.md` (capability map + R51/R52 distillation null detail).
@@ -256,21 +228,13 @@ python3 -m calm.engine "What is 17 * 23?"
 python3 -m pytest calm/ -v
 ```
 
-## Pointer Transducers + LLM-Computer (`calm/hrm/` + `calm/llm_computer/`)
+## Pointer Transducers + LLM-Computer (`calm/hrm/` + `calm/llm_computer/`) — legacy/adjacent
 
-The CRLM split: **Pointer Transducers** (learned, ~185K params) handle
-NL → expression structure extraction via copy-augmented attention;
-**LLM-Computer** (analytically compiled) handles value computation. PT
-superseded HRM for all new work (session 31); PT+Delta
-(`CopyAugmentedDeltaNet`, R-delta-20, 2026-04-21) supersedes plain PT
-as the default trained-card architecture.
-
-Architecture spec: `.codex/rules/architecture.md`. Training recipes +
-checkpoint inventory: `.codex/rules/training.md` (atlas:
-`MEMORY/atlas/training_part_1.md` + `training_part_2.md`). PT+Delta
-mechanics + MQAR data-scaling curve + retrieval-card install:
-`.codex/rules/delta_rule.md`. Domain registry:
-`.codex/MEMORY/substrate_registry.md`. Add a domain: `/domain` command.
+> Legacy/adjacent, not the active lane. CRLM split (PT extracts NL→expr
+> structure; LLM-Computer compiles values) — reusable for
+> retrieval/structure-extraction only if reopened. Spec: `architecture.md`,
+> `delta_rule.md`. Recipes: `delta_rule.md` + `MEMORY/atlas/training_part_1.md`/`_part_2.md`.
+> Domain registry: `MEMORY/substrate_registry.md`; `/domain` to add.
 
 ## Distillation Pipeline (`agents/distill/`)
 
@@ -290,9 +254,9 @@ hardware, GGUF paths, accounts, or budgets change.
 tq4 kernel internals + fused flash-attn decode + per-kernel bench
 receipts: `.codex/rules/turboquant.md`.
 
-## R53 — Verified Code-Reasoning Stack
+## Verified Code-Reasoning Stack (legacy/adjacent)
 
-Phase 1 (retrieval + DB + generators) shipped; Phase 2 (PT training + L24/L30 install) pending. Full receipts + per-round findings in: `.codex/rules/retrieval.md`, `.codex/rules/code_reasoning_db.md`, `.codex/rules/recursion.md`, `.codex/MEMORY/atlas/tracing_roadmap_part_1.md` ruled-out log, `.codex/rules/capability_gain.md` (receipts in `.codex/MEMORY/atlas/capability_gain_arc.md`).
+Substrate-arc work, parked — not the active lane. Reference: `.codex/rules/retrieval.md`, `.codex/rules/code_reasoning_db.md`, `.codex/rules/recursion.md`, `.codex/rules/capability_gain.md` (receipts in `.codex/MEMORY/atlas/`).
 
 ## VGSL — post-transformer architecture R&D
 
