@@ -257,7 +257,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K2-addition-full", "L0c2-K2-addition-120", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K2-addition-full", "L0c2-K2-addition-120", "L0c2-K2-addition-120-k5to8", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -701,6 +701,12 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     # train-only; no held_out surface by design.
     "L0c2-K2-addition-120": {
         "train":     {"partition": "enumerate_l0c2_k2_addition_120"},
+    },
+    # L0c2-K2-addition-120-k5to8 — SECOND 2x-density atom (k=5..8 subset of the
+    # 240 surface), DISJOINT from the banked k=1..4 atom. Same template,
+    # train-only; no held_out surface by design.
+    "L0c2-K2-addition-120-k5to8": {
+        "train":     {"partition": "enumerate_l0c2_k2_addition_120_k5to8"},
     },
     "L0c2-K3": {
         "train":     {"partition": "enumerate_stratified_l0c2_k3"},
@@ -2559,6 +2565,16 @@ L0C2K2_ADDITION_FULL_ADDEND_RANGE: tuple[int, int] = (1, 8)
 L0C2K2_ADDITION_120_TRAIN_COUNT: int = 120
 L0C2K2_ADDITION_120_ADDEND_MAX: int = 4
 
+# L0c2-K2-addition-120-k5to8 — SECOND 120-row 2x-density acquisition atom. The
+# complement k=5..8 subset of the SAME 240-row full surface (the first atom
+# L0c2-K2-addition-120 banked k=1..4 at step1250, sha cc8ad2df). After k=1..4
+# banked but heldout-50s stayed 1/80 (memorization, not computation), this trains
+# the other half of the addend range to push computed transfer. SAME template/
+# surface, SAME result range (20..49); 30 results x k=5..8 = 120 == exact k>=5
+# subset of the 240, DISJOINT from the k=1..4 atom. Train-only.
+L0C2K2_ADDITION_120_K5TO8_TRAIN_COUNT: int = 120
+L0C2K2_ADDITION_120_K5TO8_ADDEND_MIN: int = 5
+
 
 def _l0c_operator(question: str) -> str:
     """F.4a operator classifier for L0c `<expr> equals what?` rows (codex msg
@@ -2895,6 +2911,52 @@ def _gen_l0c2k2_addition_120(rng: random.Random, spec: dict, n: int, seed: int, 
                 "question": row["question"],
                 "expected": row["expected"],
                 "rung": "L0c2-K2-addition-120",
+            })
+            if len(out) >= n:
+                break
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# L0c2-K2-addition-120-k5to8 — SECOND 2x-density acquisition atom. Exact k>=5
+# subset of the 240 surface (same template/surface/buckets), DISJOINT from the
+# banked k=1..4 atom, train-only.
+# --------------------------------------------------------------------------- #
+
+def _l0c2k2_addition_120_k5to8_enumerate() -> list[dict]:
+    """Enumerate the 120-row train-only K2 addition 2x-density k=5..8 atom.
+
+    Exact k>=L0C2K2_ADDITION_120_K5TO8_ADDEND_MIN (=5) subset of the 240-row full
+    surface: results 20..49 x k=5..8 = 120 rows. Reusing the full enumeration
+    guarantees identical template/surface/buckets to the 240 acquisition surface,
+    and the k>=5 filter makes it DISJOINT from the banked k=1..4 atom.
+    """
+    rows = [r for r in _l0c2k2_addition_full_enumerate()
+            if r["k"] >= L0C2K2_ADDITION_120_K5TO8_ADDEND_MIN]
+    assert len(rows) == L0C2K2_ADDITION_120_K5TO8_TRAIN_COUNT, \
+        f"L0c2-K2-addition-120-k5to8 total {len(rows)} != {L0C2K2_ADDITION_120_K5TO8_TRAIN_COUNT}"
+    return rows
+
+
+def _gen_l0c2k2_addition_120_k5to8(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """Train-side sampler for the 120-row K2 addition 2x-density k=5..8 atom."""
+    if split != "train":
+        raise ValueError(
+            "L0c2-K2-addition-120-k5to8 is TRAIN-only; it has no held_out surface. "
+            "Use the 120-row coverage audit support for acquisition and the "
+            "trained-OUT heldout-50s diagnostic for transfer checks."
+        )
+    _ = spec, seed
+    pool = _l0c2k2_addition_120_k5to8_enumerate()
+    out: list[dict] = []
+    while len(out) < n:
+        cycle = list(pool)
+        rng.shuffle(cycle)
+        for row in cycle:
+            out.append({
+                "question": row["question"],
+                "expected": row["expected"],
+                "rung": "L0c2-K2-addition-120-k5to8",
             })
             if len(out) >= n:
                 break
@@ -3600,6 +3662,19 @@ def make_rung_examples(
         return _gen_l0c2k2_addition_120(
             rng,
             _RUNG_SPEC["L0c2-K2-addition-120"]["train"],
+            n,
+            seed=seed,
+            split=split,
+        )
+    if rung == "L0c2-K2-addition-120-k5to8":
+        if split != "train":
+            raise ValueError(
+                "L0c2-K2-addition-120-k5to8 is TRAIN-only; split='held_out' is "
+                "invalid. Acquisition is measured by the 120/120 coverage audit."
+            )
+        return _gen_l0c2k2_addition_120_k5to8(
+            rng,
+            _RUNG_SPEC["L0c2-K2-addition-120-k5to8"]["train"],
             n,
             seed=seed,
             split=split,

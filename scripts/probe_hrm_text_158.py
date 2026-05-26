@@ -2006,6 +2006,13 @@ if __name__ == "__main__":
                          "k=1..4 subset of the 240 surface) over '<a> plus <k> "
                          "equals what?' for results 20-49 and k=1..4. Emits "
                          "surface='l0c2k2addition120'. Conflicts with other modes.")
+    ap.add_argument("--l0c2k2-addition-120-k5to8-audit", action="store_true",
+                    help="Run the standalone L0c2-K2-addition-120-k5to8 coverage "
+                         "audit: 120 trainable acquisition rows (SECOND 2x-density "
+                         "atom, k=5..8 subset of the 240 surface, DISJOINT from the "
+                         "banked k=1..4 atom) over '<a> plus <k> equals what?' for "
+                         "results 20-49 and k=5..8. Emits "
+                         "surface='l0c2k2addition120k5to8'. Conflicts with other modes.")
     ap.add_argument("--l0c2k2-addition-heldout-50s-audit", action="store_true",
                     help="Run the trained-OUT L0c2-K2 addition heldout-50s "
                          "diagnostic audit: 80 non-gating rows over results "
@@ -2156,6 +2163,7 @@ if __name__ == "__main__":
         ("--l0c2k2-audit", args.l0c2k2_audit),
         ("--l0c2k2-addition-full-audit", args.l0c2k2_addition_full_audit),
         ("--l0c2k2-addition-120-audit", args.l0c2k2_addition_120_audit),
+        ("--l0c2k2-addition-120-k5to8-audit", args.l0c2k2_addition_120_k5to8_audit),
         ("--l0c2k2-addition-heldout-50s-audit", args.l0c2k2_addition_heldout_50s_audit),
         ("--l0c2k3-audit", args.l0c2k3_audit),
         ("--l0c2k1-edge-audit", args.l0c2k1_edge_audit),
@@ -2336,6 +2344,24 @@ if __name__ == "__main__":
             supports_builder=build_l0c2k2_addition_120_support,
             expected_aggregate=L0C2K2_ADDITION_120_AUDIT_EXPECTED_COUNT,
             surface="l0c2k2addition120",
+        )
+    elif args.l0c2k2_addition_120_k5to8_audit:
+        from calm.hrm_text_158.curriculum.language_supports import (
+            build_l0c2k2_addition_120_k5to8_support,
+            L0C2K2_ADDITION_120_K5TO8_AUDIT_EXPECTED_COUNT,
+        )
+        probe_language_finite_supports(
+            args.ckpt_path,
+            audit_seed=args.language_audit_seed,
+            max_gen=args.max_gen,
+            output_json=args.audit_output_json,
+            use_cached_ternary_infer=args.use_cached_ternary_infer,
+            use_kv_cache_decode=args.use_kv_cache_decode,
+            use_batched_probe_eval=args.use_batched_probe_eval,
+            probe_batch_size=args.probe_batch_size,
+            supports_builder=build_l0c2k2_addition_120_k5to8_support,
+            expected_aggregate=L0C2K2_ADDITION_120_K5TO8_AUDIT_EXPECTED_COUNT,
+            surface="l0c2k2addition120k5to8",
         )
     elif args.l0c2k2_addition_heldout_50s_audit:
         from calm.hrm_text_158.curriculum.language_supports import (

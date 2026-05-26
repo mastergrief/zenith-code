@@ -55,6 +55,11 @@ _AUDIT_MODES = [
     # 240 ADDITIONFULL token or the heldout50s token.
     ("l0c2k2addition120", ["--l0c2k2-addition-120-audit"],
      r"L0C2K2ADDITION120 AGGREGATE"),
+    # SECOND 2x-density atom (k=5..8). Token L0C2K2ADDITION120K5TO8 is
+    # trailing-space anchored so it never cross-matches the k=1..4 token
+    # L0C2K2ADDITION120 (which is followed by 'K', not a space).
+    ("l0c2k2addition120k5to8", ["--l0c2k2-addition-120-k5to8-audit"],
+     r"L0C2K2ADDITION120K5TO8 AGGREGATE"),
     ("l0c2k2additionheldout50s", ["--l0c2k2-addition-heldout-50s-audit"],
      r"L0C2K2ADDITIONHELDOUT50S AGGREGATE"),
     ("l0c2k3", ["--l0c2k3-audit"], r"L0C2K3 AGGREGATE"),
@@ -225,7 +230,7 @@ def main() -> int:
             l0c2 = next((a for a in entry.get("results", {}).get("l0c2", {}).get("aggregate", [])), "")
             l0c2_bands = [
                 next((a for a in entry.get("results", {}).get(name, {}).get("aggregate", [])), "")
-                for name in ("l0c2k1", "l0c2k1edge", "l0c2k1identity", "l0c2k1identityfull", "l0c2k2", "l0c2k2additionfull", "l0c2k2addition120", "l0c2k2additionheldout50s", "l0c2k3")
+                for name in ("l0c2k1", "l0c2k1edge", "l0c2k1identity", "l0c2k1identityfull", "l0c2k2", "l0c2k2additionfull", "l0c2k2addition120", "l0c2k2addition120k5to8", "l0c2k2additionheldout50s", "l0c2k3")
             ]
             l0cx = next((a for a in entry.get("results", {}).get("l0c_exhaustive", {}).get("aggregate", [])
                          if "[probe-l0c-exhaustive]" in a), "")
