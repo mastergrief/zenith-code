@@ -232,12 +232,15 @@ Disable via `enable_fused_flash_attn(False)`.
 ## Quantization Commands
 
 ```bash
-# tq4 quantization
-setsid ~/llama.cpp/build/bin/llama-quantize \
-  model-F16.gguf model-tq4.gguf TQ4_K256 4 < /dev/null > /tmp/q.log 2>&1 &
-disown -a
+# In a dedicated shell/session, run quantization as the foreground process
+# and write its output to a log.
+~/llama.cpp/build/bin/llama-quantize \
+  model-F16.gguf model-tq4.gguf TQ4_K256 4 > /tmp/q.log 2>&1
 
-# ALWAYS: setsid + disown (survive CC crashes), 4 threads, < /dev/null
+# Then arm Monitor on the log.
+Monitor(command="bin/watch-wrap --log /tmp/q.log --heartbeat 180 --error 'Traceback|Error|Killed|OOM|FAILED|assert' --progress 'quant|tensor|write|%' --success 'done|complete|finished' --stop-on 'done|complete|finished' --replay 20")
+
+# ALWAYS: foreground shell/session + Monitor; 4 threads.
 # ALWAYS: verify output: xxd model.gguf | head -1 (must show 'GGUF')
 ```
 

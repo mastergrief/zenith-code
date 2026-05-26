@@ -217,20 +217,24 @@ Next round: <specific scope change justified by the null>
 
 ## Long-running training supervision
 
-Detached + Monitor pattern:
+Foreground-session + Monitor pattern:
 ```bash
-setsid env PYTHONPATH=. python3 -u -m calm.hrm.train ... \
-  < /dev/null > /tmp/train.log 2>&1 &
-disown -a
+# In a dedicated shell/session, run the job as the foreground process
+# and write its output to a log. Do not use setsid, nohup, disown,
+# run_in_background, or a trailing-& detach from Bash.
+env PYTHONPATH=. python3 -u -m calm.hrm.train ... \
+  > /tmp/train.log 2>&1
 ```
 
+Then arm Monitor on the log:
+
 ```
-Monitor(command="tail -f /tmp/train.log | grep --line-buffered -E 'epoch.*done|eval:|DECISION:|Traceback|Error|Killed|OOM|FAILED|assert'")
+Monitor(command="bin/watch-wrap --log /tmp/train.log --heartbeat 180 --error 'Traceback|Error|Killed|OOM|FAILED|assert' --progress 'epoch.*done|eval:|DECISION:' --success 'training complete|DONE' --stop-on 'training complete|DONE' --replay 20")
 ```
 
 - `-u` on python: unbuffered stdout.
-- `grep --line-buffered`: mandatory or events stall in pipe.
-- Redirect stdin from `/dev/null` to avoid WSL interop stdin consumption.
+- `bin/watch-wrap`: required for Monitor log streams; it adds heartbeat,
+  category tags, replay, and `--stop-on` terminal conditions.
 - **Filter MUST cover failure signatures** not just success — silent
   monitor through OOM is indistinguishable from healthy. Include
   `Traceback|Error|Killed|OOM|FAILED|assert`.

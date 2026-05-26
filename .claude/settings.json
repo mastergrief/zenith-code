@@ -26,6 +26,15 @@
         ]
       },
       {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/enforce-monitor-on-bg-shell.sh"
+          }
+        ]
+      },
+      {
         "matcher": "mcp__ai-room__ai_room_post|mcp__ai-room__ai_room_reply|mcp__ai_room__ai_room_post|mcp__ai_room__ai_room_reply",
         "hooks": [
           {
