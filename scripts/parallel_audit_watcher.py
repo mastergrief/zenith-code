@@ -45,6 +45,13 @@ _AUDIT_MODES = [
     ("l0c2", ["--l0c2-audit"], r"L0C2 AGGREGATE"),
     ("l0c2k1", ["--l0c2k1-audit"], r"L0C2K1 AGGREGATE"),
     ("l0c2k2", ["--l0c2k2-audit"], r"L0C2K2 AGGREGATE"),
+    # STEP 1 K2 addition acquisition/diagnostic surfaces. Tokens are
+    # trailing-space anchored by " AGGREGATE", so neither cross-matches the
+    # legacy L0C2K2 aggregate token.
+    ("l0c2k2additionfull", ["--l0c2k2-addition-full-audit"],
+     r"L0C2K2ADDITIONFULL AGGREGATE"),
+    ("l0c2k2additionheldout50s", ["--l0c2k2-addition-heldout-50s-audit"],
+     r"L0C2K2ADDITIONHELDOUT50S AGGREGATE"),
     ("l0c2k3", ["--l0c2k3-audit"], r"L0C2K3 AGGREGATE"),
     # F.4d-edge: L0c2-K1-edge held-generalization micro-slice acquire surface.
     # Two finite sub-surfaces (train 52 / held 13); the aggregate line is the 65
@@ -213,7 +220,7 @@ def main() -> int:
             l0c2 = next((a for a in entry.get("results", {}).get("l0c2", {}).get("aggregate", [])), "")
             l0c2_bands = [
                 next((a for a in entry.get("results", {}).get(name, {}).get("aggregate", [])), "")
-                for name in ("l0c2k1", "l0c2k1edge", "l0c2k1identity", "l0c2k1identityfull", "l0c2k2", "l0c2k3")
+                for name in ("l0c2k1", "l0c2k1edge", "l0c2k1identity", "l0c2k1identityfull", "l0c2k2", "l0c2k2additionfull", "l0c2k2additionheldout50s", "l0c2k3")
             ]
             l0cx = next((a for a in entry.get("results", {}).get("l0c_exhaustive", {}).get("aggregate", [])
                          if "[probe-l0c-exhaustive]" in a), "")

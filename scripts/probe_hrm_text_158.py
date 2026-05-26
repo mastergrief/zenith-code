@@ -1994,6 +1994,18 @@ if __name__ == "__main__":
                     help="Run the standalone L0c2-K2 audit surface (result "
                          "magnitude 20-49; seed-42 aggregate 79). Conflicts "
                          "with other modes.")
+    ap.add_argument("--l0c2k2-addition-full-audit", action="store_true",
+                    help="Run the standalone L0c2-K2-addition-full coverage "
+                         "audit: 240 trainable acquisition rows over "
+                         "'<a> plus <k> equals what?' for results 20-49 and "
+                         "k=1..8. Emits surface='l0c2k2additionfull'. "
+                         "Conflicts with other modes.")
+    ap.add_argument("--l0c2k2-addition-heldout-50s-audit", action="store_true",
+                    help="Run the trained-OUT L0c2-K2 addition heldout-50s "
+                         "diagnostic audit: 80 non-gating rows over results "
+                         "50-59 and k=1..8. Audit-visible only; not a rung, "
+                         "not retained. Emits surface='l0c2k2additionheldout50s'. "
+                         "Conflicts with other modes.")
     ap.add_argument("--l0c2k3-audit", action="store_true",
                     help="Run the standalone L0c2-K3 audit surface (result "
                          "magnitude 50-99; seed-42 aggregate 127). Conflicts "
@@ -2136,6 +2148,8 @@ if __name__ == "__main__":
     _l0c2k_flags = [
         ("--l0c2k1-audit", args.l0c2k1_audit),
         ("--l0c2k2-audit", args.l0c2k2_audit),
+        ("--l0c2k2-addition-full-audit", args.l0c2k2_addition_full_audit),
+        ("--l0c2k2-addition-heldout-50s-audit", args.l0c2k2_addition_heldout_50s_audit),
         ("--l0c2k3-audit", args.l0c2k3_audit),
         ("--l0c2k1-edge-audit", args.l0c2k1_edge_audit),
         ("--l0c2k1-identity-audit", args.l0c2k1_identity_audit),
@@ -2174,6 +2188,8 @@ if __name__ == "__main__":
             ("--l0c2-audit", args.l0c2_audit),
             ("--l0c2k1-audit", args.l0c2k1_audit),
             ("--l0c2k2-audit", args.l0c2k2_audit),
+            ("--l0c2k2-addition-full-audit", args.l0c2k2_addition_full_audit),
+            ("--l0c2k2-addition-heldout-50s-audit", args.l0c2k2_addition_heldout_50s_audit),
             ("--l0c2k3-audit", args.l0c2k3_audit),
             ("--l0c2k1-edge-audit", args.l0c2k1_edge_audit),
             ("--l0c2k1-identity-audit", args.l0c2k1_identity_audit),
@@ -2277,6 +2293,42 @@ if __name__ == "__main__":
             supports_builder=build_l0c2k2_support,
             expected_aggregate_fn=lambda s: l0c2_band_audit_expected_count(s, "K2"),
             surface="l0c2k2",
+        )
+    elif args.l0c2k2_addition_full_audit:
+        from calm.hrm_text_158.curriculum.language_supports import (
+            build_l0c2k2_addition_full_support,
+            L0C2K2_ADDITION_FULL_AUDIT_EXPECTED_COUNT,
+        )
+        probe_language_finite_supports(
+            args.ckpt_path,
+            audit_seed=args.language_audit_seed,
+            max_gen=args.max_gen,
+            output_json=args.audit_output_json,
+            use_cached_ternary_infer=args.use_cached_ternary_infer,
+            use_kv_cache_decode=args.use_kv_cache_decode,
+            use_batched_probe_eval=args.use_batched_probe_eval,
+            probe_batch_size=args.probe_batch_size,
+            supports_builder=build_l0c2k2_addition_full_support,
+            expected_aggregate=L0C2K2_ADDITION_FULL_AUDIT_EXPECTED_COUNT,
+            surface="l0c2k2additionfull",
+        )
+    elif args.l0c2k2_addition_heldout_50s_audit:
+        from calm.hrm_text_158.curriculum.language_supports import (
+            build_l0c2k2_addition_heldout_50s_support,
+            L0C2K2_ADDITION_HELDOUT_50S_AUDIT_EXPECTED_COUNT,
+        )
+        probe_language_finite_supports(
+            args.ckpt_path,
+            audit_seed=args.language_audit_seed,
+            max_gen=args.max_gen,
+            output_json=args.audit_output_json,
+            use_cached_ternary_infer=args.use_cached_ternary_infer,
+            use_kv_cache_decode=args.use_kv_cache_decode,
+            use_batched_probe_eval=args.use_batched_probe_eval,
+            probe_batch_size=args.probe_batch_size,
+            supports_builder=build_l0c2k2_addition_heldout_50s_support,
+            expected_aggregate=L0C2K2_ADDITION_HELDOUT_50S_AUDIT_EXPECTED_COUNT,
+            surface="l0c2k2additionheldout50s",
         )
     elif args.l0c2k3_audit:
         from calm.hrm_text_158.curriculum.language_supports import (

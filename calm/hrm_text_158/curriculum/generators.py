@@ -257,7 +257,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K2-addition-full", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -689,6 +689,12 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     "L0c2-K2": {
         "train":     {"partition": "enumerate_stratified_l0c2_k2"},
         "held_out":  {"partition": "enumerate_stratified_l0c2_k2"},
+    },
+    # L0c2-K2-addition-full — train-only full-density K2 arithmetic acquisition
+    # surface. 30 result values (20..49) x addend k=1..8 = 240 rows. The
+    # trained-OUT 50s diagnostic is deliberately NOT registered as a rung.
+    "L0c2-K2-addition-full": {
+        "train":     {"partition": "enumerate_l0c2_k2_addition_full"},
     },
     "L0c2-K3": {
         "train":     {"partition": "enumerate_stratified_l0c2_k3"},
@@ -2535,6 +2541,9 @@ L0C2_EXPECTED_COUNT: int = 230
 # rows (a header/manifest mismatch). Use l0c2_band_expected_counts(seed) for the
 # seed-aware value; this constant stays the documented seed-42 reference.
 L0C2_BAND_EXPECTED_COUNTS: dict[str, int] = {"K1": 24, "K2": 79, "K3": 127}
+L0C2K2_ADDITION_FULL_TRAIN_COUNT: int = 240
+L0C2K2_ADDITION_FULL_RESULT_RANGE: tuple[int, int] = (20, 49)
+L0C2K2_ADDITION_FULL_ADDEND_RANGE: tuple[int, int] = (1, 8)
 
 
 def _l0c_operator(question: str) -> str:
@@ -2766,6 +2775,72 @@ def _gen_l0c2k3(rng: random.Random, spec: dict, n: int, seed: int, split: str) -
     train_pool, held_pool = _enumerate_partition_l0c2k3(seed)
     pool = train_pool if split == "train" else held_pool
     return _sample_l0c2_pool(rng, pool, n, "L0c2-K3")
+
+
+# --------------------------------------------------------------------------- #
+# L0c2-K2-addition-full — full-density K2 addition acquire surface.
+# Train-only by design; the heldout-50s diagnostic lives in language_supports.py
+# as an audit-only support and is never a generator rung.
+# --------------------------------------------------------------------------- #
+
+def _l0c2k2_addition_full_enumerate() -> list[dict]:
+    """Enumerate the 240-row train-only K2 addition surface.
+
+    Rows are `<a> plus <k> equals what?` for result 20..49 and k=1..8, with
+    `a = result - k`. This avoids echo rows (`plus 0`, identity, or expected
+    equaling an operand) while giving balanced result/addend/carry/ones buckets.
+    """
+    r_min, r_max = L0C2K2_ADDITION_FULL_RESULT_RANGE
+    k_min, k_max = L0C2K2_ADDITION_FULL_ADDEND_RANGE
+    rows: list[dict] = []
+    for result in range(r_min, r_max + 1):
+        for k in range(k_min, k_max + 1):
+            a = result - k
+            rows.append({
+                "question": f"{a} plus {k} equals what?",
+                "expected": result,
+                "a": a,
+                "k": k,
+                "result": result,
+                "result_decade": f"{(result // 10) * 10}s",
+                "addend_k": f"k_{k}",
+                "carry": "carry" if (a % 10) + k >= 10 else "no_carry",
+                "result_ones": f"ones_{result % 10}",
+            })
+
+    assert len(rows) == L0C2K2_ADDITION_FULL_TRAIN_COUNT, \
+        f"L0c2-K2-addition-full total {len(rows)} != {L0C2K2_ADDITION_FULL_TRAIN_COUNT}"
+    qe = {(r["question"], r["expected"]) for r in rows}
+    assert len(qe) == len(rows), "L0c2-K2-addition-full duplicate question/expected rows"
+    assert all(" plus 0 " not in r["question"] and not r["question"].startswith("0 plus ") for r in rows)
+    assert all(" minus " not in r["question"] and " equals what?" in r["question"] for r in rows)
+    assert all(r["expected"] != r["a"] and r["expected"] != r["k"] for r in rows)
+    return rows
+
+
+def _gen_l0c2k2_addition_full(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """Train-side sampler for the full-density K2 addition acquisition surface."""
+    if split != "train":
+        raise ValueError(
+            "L0c2-K2-addition-full is TRAIN-only; it has no held_out surface. "
+            "Use the 240-row coverage audit support for acquisition and the "
+            "trained-OUT heldout-50s diagnostic for transfer checks."
+        )
+    _ = spec, seed
+    pool = _l0c2k2_addition_full_enumerate()
+    out: list[dict] = []
+    while len(out) < n:
+        cycle = list(pool)
+        rng.shuffle(cycle)
+        for row in cycle:
+            out.append({
+                "question": row["question"],
+                "expected": row["expected"],
+                "rung": "L0c2-K2-addition-full",
+            })
+            if len(out) >= n:
+                break
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -3445,6 +3520,19 @@ def make_rung_examples(
         return _gen_l0c2k1(rng, _RUNG_SPEC["L0c2-K1"][split], n, seed=seed, split=split)
     if rung == "L0c2-K2":
         return _gen_l0c2k2(rng, _RUNG_SPEC["L0c2-K2"][split], n, seed=seed, split=split)
+    if rung == "L0c2-K2-addition-full":
+        if split != "train":
+            raise ValueError(
+                "L0c2-K2-addition-full is TRAIN-only; split='held_out' is "
+                "invalid. Acquisition is measured by the 240/240 coverage audit."
+            )
+        return _gen_l0c2k2_addition_full(
+            rng,
+            _RUNG_SPEC["L0c2-K2-addition-full"]["train"],
+            n,
+            seed=seed,
+            split=split,
+        )
     if rung == "L0c2-K3":
         return _gen_l0c2k3(rng, _RUNG_SPEC["L0c2-K3"][split], n, seed=seed, split=split)
     if rung == "L0c2-K1-edge":

@@ -73,6 +73,7 @@ def test_kband_rungs_registered_after_l0c2_before_l0c():
     expected = [
         "L0c2-K1",
         "L0c2-K2",
+        "L0c2-K2-addition-full",
         "L0c2-K3",
         "L0c2-K1-edge",
         "L0c2-K1-identity-2digit",

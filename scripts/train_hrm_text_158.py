@@ -314,7 +314,14 @@ def _compose_anchor_rows(
     return _rows(retention_anchor_set) * retention_anchor_repeat
 
 
-_RETAINED_SUPPORT_REGISTRY: tuple[str, ...] = ("L0b", "L0c", "math_a0", "math_r1b2_minus_one", "l0c_exhaustive")
+_RETAINED_SUPPORT_REGISTRY: tuple[str, ...] = (
+    "L0b",
+    "L0c",
+    "math_a0",
+    "math_r1b2_minus_one",
+    "l0c_exhaustive",
+    "L0c2-K1-identity-2digit-full",
+)
 
 
 def _retained_support(name: str, seed: int) -> tuple[list[tuple[str, int, str]], str]:
@@ -346,10 +353,14 @@ def _retained_support(name: str, seed: int) -> tuple[list[tuple[str, int, str]],
                   shared minus circuit. This class support gives that whole
                   rung dense parent-KL coverage (codex msg 1779659487346).
     - "l0c_exhaustive" ← `build_exhaustive_l0c_supports()` (the `<expr>
-                  equals what?` wrapper over the full math-A0 set, 1255),
-                  SEED-INDEPENDENT. DORMANT — registry-addressable for a
-                  FUTURE math slice to replay once exhaustive-L0c banks; NOT
-                  in any recipe default (codex msg 1779693537447).
+                   equals what?` wrapper over the full math-A0 set, 1255),
+                   SEED-INDEPENDENT. DORMANT — registry-addressable for a
+                   FUTURE math slice to replay once exhaustive-L0c banks; NOT
+                   in any recipe default (codex msg 1779693537447).
+    - "L0c2-K1-identity-2digit-full" ← 90-row full-density identity support
+                  (`<n> equals what?`, n=10..99), SEED-INDEPENDENT. Banked
+                  after acquisition; eligible as a TRUE prior/retained surface
+                  for later K2 acquisition slices. Not a target-run parent-KL.
 
     Rows are `(question, expected, source_rung)` sorted stably by
     `(source_rung, question, expected)` so repeated construction is
@@ -387,6 +398,18 @@ def _retained_support(name: str, seed: int) -> tuple[list[tuple[str, int, str]],
         rows = [(q, e, rung)
                 for rung, pairs in build_exhaustive_l0c_supports().items()
                 for (q, e) in pairs]
+    elif name == "L0c2-K1-identity-2digit-full":
+        # Banked full-density identity support. This is a TRUE prior surface the
+        # parent has acquired; later K2 acquisition can parent-KL it. Do not add
+        # unacquired K2 acquisition/diagnostic surfaces to this registry.
+        from calm.hrm_text_158.curriculum.language_supports import (
+            build_l0c2k1_identity_full_support,
+        )
+        rows = [
+            (q, e, bucket)
+            for _surface, pairs in build_l0c2k1_identity_full_support(seed).items()
+            for (q, e, bucket) in pairs
+        ]
     else:
         raise ValueError(
             f"unknown retained support {name!r}; valid: {_RETAINED_SUPPORT_REGISTRY}"
@@ -458,6 +481,26 @@ class _L0bConsistencySampler(_RetainedSupportSampler):
 
     def __init__(self, n: int, seed: int, batch: int):
         super().__init__(n, _retained_sampler_seed("L0b", seed), batch)
+
+
+def _uses_prior_held_val_for_train_only_rung(
+    curriculum_rung: str,
+    rung_spec: dict[str, dict[str, dict]],
+    diagnosis_only: frozenset[str],
+) -> bool:
+    """True when an acquisition rung has train data but no active held_out split.
+
+    These rungs measure acquisition via finite coverage audits, while trainer
+    validation stays useful by sampling prior-rung held rows as a retention/dev
+    signal. Deriving this from rung metadata prevents one-off train-only rungs
+    from accidentally falling into the active held_out branch.
+    """
+    spec = rung_spec.get(curriculum_rung, {})
+    return (
+        curriculum_rung in diagnosis_only
+        and "train" in spec
+        and "held_out" not in spec
+    )
 
 
 # ----------------------------------------------------------------------------- #
@@ -708,6 +751,7 @@ def train(
             RUNG_NAMES,
             make_rung_examples,
         )
+        from calm.hrm_text_158.curriculum.generators import _RUNG_SPEC
         if curriculum_rung not in RUNG_NAMES:
             raise ValueError(f"--curriculum-rung must be one of {RUNG_NAMES}; got {curriculum_rung!r}")
         if not use_broad_tokenizer:
@@ -804,16 +848,18 @@ def train(
 
         # Held-out: new rung only (probe handles prior-rung retention separately via probe script)
         val_desc = ""
-        if curriculum_rung == "L0c2-K1-identity-2digit-full":
+        if _uses_prior_held_val_for_train_only_rung(
+            curriculum_rung, _RUNG_SPEC, DIAGNOSIS_ONLY_RUNGS
+        ):
             if curriculum_n_heldout <= 0:
                 raise ValueError(
-                    "L0c2-K1-identity-2digit-full is train-only, but trainer "
+                    f"{curriculum_rung} is train-only, but trainer "
                     "val uses replay-prior held rows as a retention/dev signal; "
                     f"--curriculum-n-heldout must be positive, got {curriculum_n_heldout}."
                 )
             if not prior_rungs:
                 raise ValueError(
-                    "L0c2-K1-identity-2digit-full needs prior_rungs to build "
+                    f"{curriculum_rung} needs prior_rungs to build "
                     "trainer val from prior held rows; active-rung held_out does "
                     "not exist."
                 )
@@ -831,7 +877,7 @@ def train(
                 val_samples_by_rung[pr] = len(prior_val)
             if not val_rows:
                 raise RuntimeError(
-                    "L0c2-K1-identity-2digit-full trainer val resolved to zero "
+                    f"{curriculum_rung} trainer val resolved to zero "
                     "prior held rows; acquisition is audited separately, but "
                     "trainer val must remain a non-empty retention/dev signal."
                 )
@@ -1460,7 +1506,7 @@ if __name__ == "__main__":
                          "--use-ternary-bulk (no-op otherwise).")
     # Phase 3 Step 1 curriculum flags (codex msg 1779462307554 +1 implement Phase A)
     ap.add_argument("--curriculum-rung", type=str, default=None,
-                    choices=["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6"],
+                    choices=["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K2-addition-full", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6"],
                     help="Phase 3 curriculum mode. When set, swaps GSM8k corpus "
                          "for synthetic per-rung data + replay mix. Requires "
                          "--use-broad-tokenizer in Phase 3 design.")
@@ -1562,7 +1608,9 @@ if __name__ == "__main__":
                     metavar="NAME:WEIGHT",
                     help="Repeatable. Add a validated finite support to the "
                          "retained-support consistency profile (soft forward-KL "
-                         "toward the frozen parent, NO CE). NAME in {L0b, math_a0}; "
+                         "toward the frozen parent, NO CE). NAME in "
+                         "{L0b, L0c, math_a0, math_r1b2_minus_one, "
+                         "l0c_exhaustive, L0c2-K1-identity-2digit-full}; "
                          "WEIGHT float >= 0. E.g. --retained-support L0b:1.0 "
                          "--retained-support math_a0:1.0. Legacy "
                          "--l0b-consistency-weight maps to L0b:<weight> (errors if "

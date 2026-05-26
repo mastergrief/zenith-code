@@ -36,7 +36,32 @@ _L0B_SEED17_HASH = "89174273d21845bc"
 # --------------------------------------------------------------------------- #
 
 def test_registry_names():
-    assert _REGISTRY == ("L0b", "L0c", "math_a0", "math_r1b2_minus_one", "l0c_exhaustive")
+    assert _REGISTRY == (
+        "L0b",
+        "L0c",
+        "math_a0",
+        "math_r1b2_minus_one",
+        "l0c_exhaustive",
+        "L0c2-K1-identity-2digit-full",
+    )
+
+
+_IDENTITY_FULL_HASH = "bf43ff7354b64c4e"
+
+
+def test_l0c2_k1_identity_full_retained_support_snapshot():
+    rows, h = _support("L0c2-K1-identity-2digit-full", 17)
+    assert len(rows) == 90
+    assert h == _IDENTITY_FULL_HASH
+    assert rows == sorted(rows, key=lambda r: (r[2], r[0], r[1]))
+    assert rows[0] == ("10 equals what?", 10, "coverage_teen")
+    assert rows[-1] == ("99 equals what?", 99, "coverage_tens_9")
+    assert all(q == f"{e} equals what?" for q, e, _bucket in rows)
+
+
+def test_l0c2_k1_identity_full_retained_support_seed_independent():
+    assert _support("L0c2-K1-identity-2digit-full", 17)[1] == \
+        _support("L0c2-K1-identity-2digit-full", 42)[1]
 
 
 # --------------------------------------------------------------------------- #
@@ -111,6 +136,12 @@ def test_l0c_sampler_namespace():
     assert _sampler_seed("L0c", 17) != _sampler_seed("math_a0", 17)
 
 
+def test_l0c2_k1_identity_full_sampler_namespace():
+    name = "L0c2-K1-identity-2digit-full"
+    assert _sampler_seed(name, 17) == _thr._stable_curriculum_seed(17, f"retained:{name}")
+    assert _sampler_seed(name, 17) != _sampler_seed("L0b", 17)
+
+
 def test_math_a0_support_snapshot():
     rows, h = _support("math_a0", 17)
     assert len(rows) == 1255
@@ -174,7 +205,12 @@ def test_math_r1b2_minus_one_sampler_namespace():
 
 
 def test_determinism_same_name_seed():
-    for name, seed in (("L0b", 17), ("L0c", 17), ("math_a0", 17)):
+    for name, seed in (
+        ("L0b", 17),
+        ("L0c", 17),
+        ("math_a0", 17),
+        ("L0c2-K1-identity-2digit-full", 17),
+    ):
         r1, h1 = _support(name, seed)
         r2, h2 = _support(name, seed)
         assert r1 == r2 and h1 == h2
@@ -317,6 +353,12 @@ def test_profile_requires_load_from():
     import pytest
     with pytest.raises(ValueError, match="requires --load-from"):
         _thr.train(retained_support_profile=[("math_a0", 1.0)])
+
+
+def test_identity_full_profile_name_reaches_load_from_guard():
+    import pytest
+    with pytest.raises(ValueError, match="requires --load-from"):
+        _thr.train(retained_support_profile=[("L0c2-K1-identity-2digit-full", 1.0)])
 
 
 def test_profile_requires_curriculum_mode():

@@ -158,7 +158,10 @@ from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
 # L0c2-K1-identity-2digit-full stays OUT too: full-density identity is a
 #         primitive-acquisition target with a 90/90 coverage audit, not a prior
 #         surface and not held-generalization evidence.
-DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b", "R1b4", "R1b10", "R2", "R2a", "L0c1", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full"})
+# L0c2-K2-addition-full stays OUT as the same kind of explicit acquisition
+#         target: full-density K2 addition train support with a 240/240 coverage
+#         audit. It must not become a positional prior.
+DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b", "R1b4", "R1b10", "R2", "R2a", "L0c1", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c2-K2-addition-full"})
 
 
 # R7 (GSM8k) is generator-incompatible — served separately from

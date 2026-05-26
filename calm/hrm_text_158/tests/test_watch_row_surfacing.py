@@ -250,7 +250,8 @@ def test_watcher_l0c2k1_identity_mode_wired_and_printed():
         src = fh.read()
     assert (
         'for name in ("l0c2k1", "l0c2k1edge", "l0c2k1identity", '
-        '"l0c2k1identityfull", "l0c2k2", "l0c2k3")'
+        '"l0c2k1identityfull", "l0c2k2", "l0c2k2additionfull", '
+        '"l0c2k2additionheldout50s", "l0c2k3")'
     ) in src
 
 
@@ -289,7 +290,8 @@ def test_watcher_l0c2k1_identity_full_mode_wired_and_printed():
     # Printed in the per-step consumer band grouping.
     assert (
         'for name in ("l0c2k1", "l0c2k1edge", "l0c2k1identity", '
-        '"l0c2k1identityfull", "l0c2k2", "l0c2k3")'
+        '"l0c2k1identityfull", "l0c2k2", "l0c2k2additionfull", '
+        '"l0c2k2additionheldout50s", "l0c2k3")'
     ) in src
 
 
@@ -311,6 +313,47 @@ def test_watcher_l0c2k1_identity_full_pattern_excludes_sparse_and_kband():
     assert not re.search(pats["l0c2k1identity"], full_agg)
     assert not re.search(pats["l0c2k1"], full_agg)
     assert not re.search(pats["l0c2k1edge"], full_agg)
+
+
+# --------------------------------------------------------------------------- #
+# STEP 1 K2 addition surfaces: trainable addition-full and trained-OUT
+# heldout-50s diagnostic are separate watcher modes and do not cross-match the
+# legacy L0C2K2 aggregate token.
+# --------------------------------------------------------------------------- #
+
+def test_watcher_l0c2k2_addition_modes_wired_and_printed():
+    _watcher, pats, flags = _watcher_modes()
+    names = [name for name, _f, _g in _watcher._AUDIT_MODES]
+    assert "l0c2k2additionfull" in names
+    assert "l0c2k2additionheldout50s" in names
+    assert flags["l0c2k2additionfull"] == ["--l0c2k2-addition-full-audit"]
+    assert flags["l0c2k2additionheldout50s"] == ["--l0c2k2-addition-heldout-50s-audit"]
+    assert pats["l0c2k2additionfull"] == r"L0C2K2ADDITIONFULL AGGREGATE"
+    assert pats["l0c2k2additionheldout50s"] == r"L0C2K2ADDITIONHELDOUT50S AGGREGATE"
+
+    watcher_src = os.path.join(_REPO, "scripts", "parallel_audit_watcher.py")
+    with open(watcher_src, "r", encoding="utf-8") as fh:
+        src = fh.read()
+    assert "l0c2k2additionfull" in src
+    assert "l0c2k2additionheldout50s" in src
+
+
+def test_watcher_l0c2k2_addition_patterns_do_not_cross_match():
+    import re
+    _watcher, pats, _flags = _watcher_modes()
+    legacy = "[probe-language] L0C2K2 AGGREGATE strict=79/79 = 1.0000"
+    full = "[probe-language] L0C2K2ADDITIONFULL AGGREGATE strict=240/240 = 1.0000"
+    held = "[probe-language] L0C2K2ADDITIONHELDOUT50S AGGREGATE strict=80/80 = 1.0000"
+
+    assert re.search(pats["l0c2k2"], legacy)
+    assert re.search(pats["l0c2k2additionfull"], full)
+    assert re.search(pats["l0c2k2additionheldout50s"], held)
+    assert not re.search(pats["l0c2k2"], full)
+    assert not re.search(pats["l0c2k2"], held)
+    assert not re.search(pats["l0c2k2additionfull"], legacy)
+    assert not re.search(pats["l0c2k2additionheldout50s"], legacy)
+    assert not re.search(pats["l0c2k2additionfull"], held)
+    assert not re.search(pats["l0c2k2additionheldout50s"], full)
 
 
 if __name__ == "__main__":

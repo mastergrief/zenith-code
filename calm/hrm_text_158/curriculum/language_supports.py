@@ -40,6 +40,7 @@ from calm.hrm_text_158.curriculum.generators import (
     _enumerate_partition_l0c2k2,
     _enumerate_partition_l0c2k3,
     _l0c2k1_identity_full_enumerate,
+    _l0c2k2_addition_full_enumerate,
     l0c2_band_expected_count,
 )
 
@@ -176,6 +177,8 @@ L0C_EXHAUSTIVE_EXPECTED_COUNT: int = 1255
 # L0c's one_digit stratum, so L0c1 ⊂ L0c.
 # ---------------------------------------------------------------------------
 L0C1_EXPECTED_COUNT: int = 121
+L0C1_CLOSE_SIBLING_CE_INTERLEAVE_SUPPORT: str = "L0c1-close-sibling-true-label-ce"
+L0C1_CLOSE_SIBLING_CE_INTERLEAVE_EXPECTED_COUNT: int = 13
 
 
 def _l0c1_support(seed: int = 42) -> list[tuple[str, int, str]]:
@@ -206,6 +209,37 @@ def build_l0c1_support(seed: int = 42) -> dict[str, list[tuple[str, int, str]]]:
     return {"L0c1": _l0c1_support(seed)}
 
 
+def _l0c1_close_sibling_ce_interleave_support(seed: int = 42) -> list[tuple[str, int, str]]:
+    """True-label CE support rows for the STEP-2 close-sibling interleave.
+
+    This is deliberately a CE support namespace, not a retained-support / parent
+    KL namespace. STEP 1 only defines the finite support; launch-time interleave
+    wiring is a later slice.
+    """
+    _ = seed
+    rows: list[tuple[str, int, str]] = [
+        (f"{n} equals what?", n, "one_digit_identity")
+        for n in range(10)
+    ]
+    rows.extend([
+        ("11 equals what?", 11, "legacy_identity"),
+        ("17 equals what?", 17, "legacy_identity"),
+        ("99 equals what?", 99, "two_digit_sentinel"),
+    ])
+    assert len(rows) == L0C1_CLOSE_SIBLING_CE_INTERLEAVE_EXPECTED_COUNT
+    assert ("2 equals what?", 2, "one_digit_identity") in rows
+    assert all(q == f"{e} equals what?" for q, e, _bucket in rows)
+    return rows
+
+
+def build_l0c1_close_sibling_ce_interleave_support(seed: int = 42) -> dict[str, list[tuple[str, int, str]]]:
+    """Build the support-only L0c1 true-label CE close-sibling set."""
+    return {
+        L0C1_CLOSE_SIBLING_CE_INTERLEAVE_SUPPORT:
+            _l0c1_close_sibling_ce_interleave_support(seed),
+    }
+
+
 # ---------------------------------------------------------------------------
 # L0c2 — bounded-2-digit stair-step rung audit surface (F.4a rung + F.4-audit).
 # SEPARATE surface like L0c1: deliberately NOT in LANGUAGE_ACTIVE_RUNGS, so the
@@ -218,6 +252,8 @@ L0C2_AUDIT_EXPECTED_COUNT: int = 230
 L0C2K1_AUDIT_EXPECTED_COUNT: int = 24
 L0C2K2_AUDIT_EXPECTED_COUNT: int = 79
 L0C2K3_AUDIT_EXPECTED_COUNT: int = 127
+L0C2K2_ADDITION_FULL_AUDIT_EXPECTED_COUNT: int = 240
+L0C2K2_ADDITION_HELDOUT_50S_AUDIT_EXPECTED_COUNT: int = 80
 
 
 def _l0c2_support(seed: int = 42) -> list[tuple[str, int, str]]:
@@ -279,6 +315,72 @@ def build_l0c2k2_support(seed: int = 42) -> dict[str, list[tuple[str, int, str]]
 def build_l0c2k3_support(seed: int = 42) -> dict[str, list[tuple[str, int, str]]]:
     """Standalone L0c2-K3 audit surface (seed-42 count 127)."""
     return {"L0c2-K3": _l0c2k3_support(seed)}
+
+
+def _l0c2k2_addition_bucket(row: dict) -> str:
+    return (
+        f"{row['result_decade']}:{row['addend_k']}:"
+        f"{row['carry']}:{row['result_ones']}"
+    )
+
+
+def _l0c2k2_addition_full_support(seed: int = 17) -> list[tuple[str, int, str]]:
+    """240-row coverage audit for the trainable K2 addition-full acquisition."""
+    _ = seed
+    return [
+        (r["question"], r["expected"], _l0c2k2_addition_bucket(r))
+        for r in _l0c2k2_addition_full_enumerate()
+    ]
+
+
+def build_l0c2k2_addition_full_support(seed: int = 17) -> dict[str, list[tuple[str, int, str]]]:
+    """Single-key acquisition audit support for L0c2-K2-addition-full."""
+    return {
+        "L0c2-K2-addition-full": _l0c2k2_addition_full_support(seed),
+    }
+
+
+def _l0c2k2_addition_heldout_50s_enumerate() -> list[dict]:
+    """Enumerate the trained-OUT K2 addition 50s diagnostic.
+
+    Audit-visible but not trainable/retained: result 50..59 x addend k=1..8.
+    """
+    rows: list[dict] = []
+    for result in range(50, 60):
+        for k in range(1, 9):
+            a = result - k
+            rows.append({
+                "question": f"{a} plus {k} equals what?",
+                "expected": result,
+                "a": a,
+                "k": k,
+                "result": result,
+                "result_decade": "50s",
+                "addend_k": f"k_{k}",
+                "carry": "carry" if (a % 10) + k >= 10 else "no_carry",
+                "result_ones": f"ones_{result % 10}",
+            })
+    assert len(rows) == L0C2K2_ADDITION_HELDOUT_50S_AUDIT_EXPECTED_COUNT
+    assert len({(r["question"], r["expected"]) for r in rows}) == len(rows)
+    assert all(" plus 0 " not in r["question"] and not r["question"].startswith("0 plus ") for r in rows)
+    assert all(r["expected"] != r["a"] and r["expected"] != r["k"] for r in rows)
+    return rows
+
+
+def _l0c2k2_addition_heldout_50s_support(seed: int = 17) -> list[tuple[str, int, str]]:
+    """80-row trained-OUT diagnostic support; seed-independent."""
+    _ = seed
+    return [
+        (r["question"], r["expected"], _l0c2k2_addition_bucket(r))
+        for r in _l0c2k2_addition_heldout_50s_enumerate()
+    ]
+
+
+def build_l0c2k2_addition_heldout_50s_support(seed: int = 17) -> dict[str, list[tuple[str, int, str]]]:
+    """Single-key non-gating diagnostic support for trained-OUT K2 50s rows."""
+    return {
+        "L0c2-K2-addition-heldout-50s": _l0c2k2_addition_heldout_50s_support(seed),
+    }
 
 
 def l0c2_band_audit_expected_count(seed: int, band: str) -> int:
@@ -446,7 +548,19 @@ def language_source_rung_buckets(rung: str) -> list[str]:
         )
     if rung == "L0c2-K1-identity-2digit-full":
         return ["coverage_teen"] + [f"coverage_tens_{tens}" for tens in range(2, 10)]
+    if rung == "L0c2-K2-addition-full":
+        return sorted({
+            _l0c2k2_addition_bucket(r)
+            for r in _l0c2k2_addition_full_enumerate()
+        })
+    if rung == "L0c2-K2-addition-heldout-50s":
+        return sorted({
+            _l0c2k2_addition_bucket(r)
+            for r in _l0c2k2_addition_heldout_50s_enumerate()
+        })
+    if rung == L0C1_CLOSE_SIBLING_CE_INTERLEAVE_SUPPORT:
+        return ["one_digit_identity", "legacy_identity", "two_digit_sentinel"]
     raise ValueError(
         f"unknown language rung {rung!r}; valid: {LANGUAGE_ACTIVE_RUNGS} "
-        f"+ 'L0c1' / 'L0c2' / 'L0c2-K1..K3' (separate audit surfaces)"
+        f"+ separate L0c/L0c2 acquisition and diagnostic audit surfaces"
     )
