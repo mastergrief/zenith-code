@@ -329,7 +329,8 @@ def test_120_rung_registered_train_only_diagnosis_only():
     assert K120_RUNG in _RUNG_SPEC
     assert set(_RUNG_SPEC[K120_RUNG]) == {"train"}
     assert K120_RUNG in DIAGNOSIS_ONLY_RUNGS
-    assert K120_RUNG not in _TRAIN._RETAINED_SUPPORT_REGISTRY
+    # Banked k=1..4 is now a true retained prior for the sibling k=5..8 retry.
+    assert K120_RUNG in _TRAIN._RETAINED_SUPPORT_REGISTRY
 
 
 def test_trainer_choices_include_120_rung():
@@ -454,6 +455,7 @@ def test_120_k5to8_rung_registered_train_only_diagnosis_only():
     assert K120_K5TO8_RUNG in _RUNG_SPEC
     assert set(_RUNG_SPEC[K120_K5TO8_RUNG]) == {"train"}
     assert K120_K5TO8_RUNG in DIAGNOSIS_ONLY_RUNGS
+    # The active acquisition target must never be parent-KL'd as retained prior.
     assert K120_K5TO8_RUNG not in _TRAIN._RETAINED_SUPPORT_REGISTRY
 
 

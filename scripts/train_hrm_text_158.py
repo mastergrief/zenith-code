@@ -398,6 +398,7 @@ _RETAINED_SUPPORT_REGISTRY: tuple[str, ...] = (
     "math_r1b2_minus_one",
     "l0c_exhaustive",
     "L0c2-K1-identity-2digit-full",
+    "L0c2-K2-addition-120",
 )
 
 
@@ -435,9 +436,15 @@ def _retained_support(name: str, seed: int) -> tuple[list[tuple[str, int, str]],
                    FUTURE math slice to replay once exhaustive-L0c banks; NOT
                    in any recipe default (codex msg 1779693537447).
     - "L0c2-K1-identity-2digit-full" ← 90-row full-density identity support
-                  (`<n> equals what?`, n=10..99), SEED-INDEPENDENT. Banked
-                  after acquisition; eligible as a TRUE prior/retained surface
-                  for later K2 acquisition slices. Not a target-run parent-KL.
+                   (`<n> equals what?`, n=10..99), SEED-INDEPENDENT. Banked
+                   after acquisition; eligible as a TRUE prior/retained surface
+                   for later K2 acquisition slices. Not a target-run parent-KL.
+    - "L0c2-K2-addition-120" ← 120-row full-density k=1..4 K2 addition support
+                   (`<a> plus <k> equals what?`, result=20..49, k=1..4),
+                   SEED-INDEPENDENT. Banked at exact 120/120; eligible as a TRUE
+                   prior/retained surface for the sibling k=5..8 retry. Registry
+                   membership only enables explicit `--retained-support`; it is
+                   not default-on.
 
     Rows are `(question, expected, source_rung)` sorted stably by
     `(source_rung, question, expected)` so repeated construction is
@@ -485,6 +492,18 @@ def _retained_support(name: str, seed: int) -> tuple[list[tuple[str, int, str]],
         rows = [
             (q, e, bucket)
             for _surface, pairs in build_l0c2k1_identity_full_support(seed).items()
+            for (q, e, bucket) in pairs
+        ]
+    elif name == "L0c2-K2-addition-120":
+        # Banked k=1..4 addition support. This is a TRUE prior surface the parent
+        # has acquired; it can be explicitly parent-KL'd while the sibling k=5..8
+        # acquisition target remains OUT of the retained-support registry.
+        from calm.hrm_text_158.curriculum.language_supports import (
+            build_l0c2k2_addition_120_support,
+        )
+        rows = [
+            (q, e, bucket)
+            for _surface, pairs in build_l0c2k2_addition_120_support(seed).items()
             for (q, e, bucket) in pairs
         ]
     else:
@@ -1725,7 +1744,9 @@ if __name__ == "__main__":
                          "retained-support consistency profile (soft forward-KL "
                          "toward the frozen parent, NO CE). NAME in "
                          "{L0b, L0c, math_a0, math_r1b2_minus_one, "
-                         "l0c_exhaustive, L0c2-K1-identity-2digit-full}; "
+                         "l0c_exhaustive, L0c2-K1-identity-2digit-full, "
+                         "L0c2-K2-addition-120}; registry membership only makes "
+                         "a name explicitly selectable here; it is not default-on. "
                          "WEIGHT float >= 0. E.g. --retained-support L0b:1.0 "
                          "--retained-support math_a0:1.0. Legacy "
                          "--l0b-consistency-weight maps to L0b:<weight> (errors if "

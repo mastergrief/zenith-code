@@ -43,10 +43,12 @@ def test_registry_names():
         "math_r1b2_minus_one",
         "l0c_exhaustive",
         "L0c2-K1-identity-2digit-full",
+        "L0c2-K2-addition-120",
     )
 
 
 _IDENTITY_FULL_HASH = "bf43ff7354b64c4e"
+_L0C2_K2_ADDITION_120_HASH = "8b29072411bb9c71"
 
 
 def test_l0c2_k1_identity_full_retained_support_snapshot():
@@ -62,6 +64,46 @@ def test_l0c2_k1_identity_full_retained_support_snapshot():
 def test_l0c2_k1_identity_full_retained_support_seed_independent():
     assert _support("L0c2-K1-identity-2digit-full", 17)[1] == \
         _support("L0c2-K1-identity-2digit-full", 42)[1]
+
+
+def test_l0c2_k2_addition_120_retained_support_snapshot():
+    rows, h = _support("L0c2-K2-addition-120", 17)
+    assert len(rows) == 120
+    assert h == _L0C2_K2_ADDITION_120_HASH
+    assert rows == sorted(rows, key=lambda r: (r[2], r[0], r[1]))
+    assert rows[0] == ("19 plus 1 equals what?", 20, "20s:k_1:carry:ones_0")
+    assert rows[-1] == ("45 plus 4 equals what?", 49, "40s:k_4:no_carry:ones_9")
+    assert all(q.endswith(" equals what?") and " plus " in q for q, _e, _bucket in rows)
+
+
+def test_l0c2_k2_addition_120_retained_support_matches_audit_and_not_k5to8():
+    from calm.hrm_text_158.curriculum.generators import (
+        _l0c2k2_addition_120_enumerate,
+        _l0c2k2_addition_120_k5to8_enumerate,
+    )
+    from calm.hrm_text_158.curriculum.language_supports import (
+        build_l0c2k2_addition_120_support,
+    )
+    rows, _ = _support("L0c2-K2-addition-120", 17)
+    retained = {(q, e) for q, e, _bucket in rows}
+    audit = {
+        (q, e)
+        for _surface, pairs in build_l0c2k2_addition_120_support(17).items()
+        for q, e, _bucket in pairs
+    }
+    k1to4 = {(r["question"], r["expected"]) for r in _l0c2k2_addition_120_enumerate()}
+    k5to8 = {
+        (r["question"], r["expected"])
+        for r in _l0c2k2_addition_120_k5to8_enumerate()
+    }
+    assert len(rows) == len(retained) == len(audit) == len(k1to4) == 120
+    assert retained == audit == k1to4
+    assert retained.isdisjoint(k5to8)
+
+
+def test_l0c2_k2_addition_120_retained_support_seed_independent():
+    assert _support("L0c2-K2-addition-120", 17)[1] == \
+        _support("L0c2-K2-addition-120", 42)[1]
 
 
 # --------------------------------------------------------------------------- #
@@ -142,6 +184,12 @@ def test_l0c2_k1_identity_full_sampler_namespace():
     assert _sampler_seed(name, 17) != _sampler_seed("L0b", 17)
 
 
+def test_l0c2_k2_addition_120_sampler_namespace():
+    name = "L0c2-K2-addition-120"
+    assert _sampler_seed(name, 17) == _thr._stable_curriculum_seed(17, f"retained:{name}")
+    assert _sampler_seed(name, 17) != _sampler_seed("L0b", 17)
+
+
 def test_math_a0_support_snapshot():
     rows, h = _support("math_a0", 17)
     assert len(rows) == 1255
@@ -210,6 +258,7 @@ def test_determinism_same_name_seed():
         ("L0c", 17),
         ("math_a0", 17),
         ("L0c2-K1-identity-2digit-full", 17),
+        ("L0c2-K2-addition-120", 17),
     ):
         r1, h1 = _support(name, seed)
         r2, h2 = _support(name, seed)
@@ -359,6 +408,12 @@ def test_identity_full_profile_name_reaches_load_from_guard():
     import pytest
     with pytest.raises(ValueError, match="requires --load-from"):
         _thr.train(retained_support_profile=[("L0c2-K1-identity-2digit-full", 1.0)])
+
+
+def test_l0c2_k2_addition_120_profile_name_reaches_load_from_guard():
+    import pytest
+    with pytest.raises(ValueError, match="requires --load-from"):
+        _thr.train(retained_support_profile=[("L0c2-K2-addition-120", 1.0)])
 
 
 def test_profile_requires_curriculum_mode():
