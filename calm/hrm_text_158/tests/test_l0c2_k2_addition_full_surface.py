@@ -200,6 +200,45 @@ def test_addition_full_trainer_val_uses_prior_held_rows_not_active_held(
     assert "dry-run: EXITING before optimizer step" in out
 
 
+def test_ce_interleave_dry_run_injects_rows(monkeypatch, tmp_path: Path, capsys):
+    """STEP 2a [runtime] proof: a CPU dry-run with --ce-interleave-support injects
+    exactly 13*REPEAT true-label CE rows AFTER the curriculum cap/log, and exits
+    before the optimizer with no checkpoint written. Tiny temp parent fixture; no
+    real chain-head .pt, no launch."""
+    parent_path = tmp_path / "parent_L0c1_final.pt"
+    torch.save(_build_tiny_parent_blob(), parent_path)
+    ckpt_path = tmp_path / "ce_interleave_best.pt"
+    repeat = 3
+
+    _TRAIN.train(
+        curriculum_rung=FULL_RUNG,
+        use_broad_tokenizer=True,
+        curriculum_n_train=12,
+        curriculum_n_heldout=6,
+        replay_ratio=0.0,
+        replay_rungs="R0,R1,R1b1",
+        ce_interleave_support=[f"{L0C1_CLOSE_SIBLING_CE_INTERLEAVE_SUPPORT}:{repeat}"],
+        load_from=str(parent_path),
+        dry_run=True,
+        device="cpu",
+        checkpoint_path=str(ckpt_path),
+        epochs=1,
+        batch_size=4,
+        **TINY_ARCH,
+    )
+    out = capsys.readouterr().out
+
+    # CE-interleave injected exactly 13*repeat rows, by the named support.
+    assert "[hrm158] ce-interleave:" in out
+    assert f"ce_rows_added={13 * repeat}" in out
+    assert L0C1_CLOSE_SIBLING_CE_INTERLEAVE_SUPPORT in out
+    # Ordering: curriculum cap/log fires BEFORE the CE append (acquisition mix unchanged).
+    assert out.index("[hrm158] curriculum") < out.index("[hrm158] ce-interleave")
+    # Dry-run exits before optimizer; no checkpoint written to repo/tmp scope.
+    assert "dry-run: EXITING before optimizer step" in out
+    assert not ckpt_path.exists()
+
+
 def test_addition_full_support_count_echo_exclusions_and_marginals():
     rows = _flat(build_l0c2k2_addition_full_support(), FULL_RUNG)
     parsed = _parse_rows(rows)

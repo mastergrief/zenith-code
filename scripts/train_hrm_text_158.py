@@ -139,6 +139,11 @@ class HrmTextGsm8kDataset(Dataset):
         # prior when its generator `rung` field differs from the target
         # curriculum rung; anchors carry no `rung` (None != rung) so they
         # count as prior. Off-curriculum (curriculum_rung is None) → all False.
+        # EXCEPTION (STEP 2a): ce_interleave rows (true-label close-sibling CE
+        # repair) are NEVER prior — they must be CE-only, NOT parent-KL'd toward
+        # the old parent (which still likes the broken label they repair, e.g.
+        # `2 equals what? -> "22"`). The `not r.get("ce_interleave")` clause
+        # enforces this even though their `rung` differs from the target rung.
         self.items: list[tuple[list[int], int, bool]] = []
         n_dropped = 0
         for r in rows:
@@ -147,7 +152,8 @@ class HrmTextGsm8kDataset(Dataset):
                 n_dropped += 1
                 continue
             is_prior = (curriculum_rung is not None
-                        and r.get("rung") != curriculum_rung)
+                        and r.get("rung") != curriculum_rung
+                        and not r.get("ce_interleave"))
             self.items.append((ids, sep_pos, is_prior))
         self.n_dropped = n_dropped
 
@@ -312,6 +318,77 @@ def _compose_anchor_rows(
         return _rows("math_fragile_v1") * 3 + _rows("l0b_hardrow_v1") * retention_anchor_repeat
 
     return _rows(retention_anchor_set) * retention_anchor_repeat
+
+
+# STEP 2a (L0c2-K2 close-sibling repair): bounded allowlist of language-supports
+# that may be injected as TRUE-LABEL CE-interleave train rows. Keeps the
+# --ce-interleave-support flag from pulling an arbitrary support into the CE mix.
+_CE_INTERLEAVE_SUPPORTS: frozenset[str] = frozenset({"L0c1-close-sibling-true-label-ce"})
+
+
+def _ce_interleave_builder(name: str):
+    """Resolve an allowlisted CE-interleave support name to its builder fn."""
+    if name == "L0c1-close-sibling-true-label-ce":
+        from calm.hrm_text_158.curriculum.language_supports import (
+            build_l0c1_close_sibling_ce_interleave_support,
+        )
+        return build_l0c1_close_sibling_ce_interleave_support
+    raise ValueError(
+        f"unknown ce-interleave support {name!r}; allowlist: {sorted(_CE_INTERLEAVE_SUPPORTS)}"
+    )
+
+
+def _parse_ce_interleave_specs(specs: list[str] | None) -> list[tuple[str, int]]:
+    """Parse repeatable --ce-interleave-support NAME:REPEAT into (name, repeat)."""
+    if not specs:
+        return []
+    out: list[tuple[str, int]] = []
+    for spec in specs:
+        if ":" not in spec:
+            raise ValueError(f"--ce-interleave-support must be NAME:REPEAT, got {spec!r}")
+        name, _, rep = spec.partition(":")
+        name = name.strip()
+        if name not in _CE_INTERLEAVE_SUPPORTS:
+            raise ValueError(
+                f"--ce-interleave-support name {name!r} not in allowlist "
+                f"{sorted(_CE_INTERLEAVE_SUPPORTS)}"
+            )
+        try:
+            repeat = int(rep)
+        except ValueError:
+            raise ValueError(
+                f"--ce-interleave-support REPEAT must be an int, got {rep!r} in {spec!r}"
+            )
+        if repeat < 1:
+            raise ValueError(
+                f"--ce-interleave-support REPEAT must be >= 1, got {repeat} in {spec!r}"
+            )
+        out.append((name, repeat))
+    return out
+
+
+def _compose_ce_interleave_rows(specs: list[str] | None, seed: int) -> list[dict]:
+    """Materialize true-label CE-interleave rows for trainer composition.
+
+    Each allowlisted support's rows become ordinary TRUE-LABEL CE train rows
+    tagged `ce_interleave` (so the dataset is_prior predicate excludes them from
+    parent-KL — see HrmTextGsm8kDataset.__init__), replicated `repeat` times.
+    `rung` is set to the support name purely for trace/exclusion; the
+    ce_interleave tag is what keeps the row CE-only. Returns [] when no specs.
+    """
+    parsed = _parse_ce_interleave_specs(specs)
+    if not parsed:
+        return []
+    rows: list[dict] = []
+    for name, repeat in parsed:
+        builder = _ce_interleave_builder(name)
+        support_rows = [
+            {"question": q, "expected": e, "rung": name, "ce_interleave": name}
+            for _key, pairs in builder(seed).items()
+            for (q, e, _bucket) in pairs
+        ]
+        rows.extend(support_rows * repeat)
+    return rows
 
 
 _RETAINED_SUPPORT_REGISTRY: tuple[str, ...] = (
@@ -565,6 +642,14 @@ def train(
     # shuffle. Defaults preserve byte-identical behavior to pre-Slice-B.
     retention_anchor_set: str = "none",
     retention_anchor_repeat: int = 2,
+    # STEP 2a (L0c2-K2 close-sibling repair): repeatable NAME:REPEAT specs that
+    # inject a bounded-allowlisted language-support's rows as ordinary TRUE-LABEL
+    # CE train rows (tagged `ce_interleave`), appended AFTER the curriculum
+    # cap+log like anchors. CE-only by construction — the dataset is_prior
+    # predicate excludes ce_interleave rows, so they are NEVER parent-KL'd
+    # (parent-KL would preserve the broken label they repair). Default None =
+    # off, behavior-preserving.
+    ce_interleave_support: list[str] | None = None,
     # Parent-consistency loss (opt-in; default 0.0 = off, behavior-preserving).
     # Soft forward-KL(parent || child) on prior-rung/anchor rows penalizes the
     # child for drifting from the frozen --load-from parent's outputs on
@@ -930,6 +1015,26 @@ def train(
                 flush=True,
             )
             tok.assert_corpus_covered(anchor_rows, label="retention_anchors")
+
+        # STEP 2a (L0c2-K2): true-label close-sibling CE-interleave. Appended
+        # AFTER the curriculum cap+log (like anchors) so the capped acquisition
+        # mix stays byte-identical; CE-only (is_prior=False via the ce_interleave
+        # tag) — NOT parent-KL'd. Repairs e.g. the close sibling
+        # `2 equals what? -> "22"` residual with a true-label `2 -> 2`.
+        if ce_interleave_support:
+            ce_rows = _compose_ce_interleave_rows(ce_interleave_support, curriculum_seed)
+            base_pre_ce_train = len(train_rows)
+            train_rows = train_rows + ce_rows
+            _ce_by_support: dict[str, int] = {}
+            for _r in ce_rows:
+                _ce_by_support[_r["ce_interleave"]] = _ce_by_support.get(_r["ce_interleave"], 0) + 1
+            print(
+                f"[hrm158] ce-interleave: specs={ce_interleave_support} "
+                f"ce_rows_added={len(ce_rows)} by_support={_ce_by_support} "
+                f"(base_train={base_pre_ce_train}, ce_inclusive_train={len(train_rows)})",
+                flush=True,
+            )
+            tok.assert_corpus_covered(ce_rows, label="ce_interleave")
 
         # Empty test split (curriculum has no separate test corpus; rung-cross retention is the eval)
         test_rows: list[dict] = []
@@ -1582,6 +1687,16 @@ if __name__ == "__main__":
                          "non-integers loudly); must be >= 1 (rejected at "
                          "parse time). Ignored when --retention-anchor-set "
                          "is 'none'.")
+    ap.add_argument("--ce-interleave-support", action="append", default=None,
+                    metavar="NAME:REPEAT",
+                    help="Repeatable. STEP 2a (L0c2-K2 close-sibling repair): "
+                         "inject an allowlisted language-support's rows as "
+                         "TRUE-LABEL CE train rows (tagged ce_interleave; CE-only, "
+                         "NEVER parent-KL'd), appended after the curriculum cap "
+                         "like anchors, REPEAT times. NAME in "
+                         "{L0c1-close-sibling-true-label-ce}. E.g. "
+                         "--ce-interleave-support L0c1-close-sibling-true-label-ce:3. "
+                         "Default None = off.")
     ap.add_argument("--parent-consistency-weight", type=float, default=0.0,
                     help="Opt-in parent-consistency loss weight (lambda). When "
                          ">0, adds soft forward-KL(parent||child) on prior-rung/"
@@ -1691,6 +1806,7 @@ if __name__ == "__main__":
         load_from=args.load_from,
         retention_anchor_set=args.retention_anchor_set,
         retention_anchor_repeat=args.retention_anchor_repeat,
+        ce_interleave_support=args.ce_interleave_support,
         parent_consistency_weight=args.parent_consistency_weight,
         parent_consistency_temp=args.parent_consistency_temp,
         l0b_consistency_weight=args.l0b_consistency_weight,
