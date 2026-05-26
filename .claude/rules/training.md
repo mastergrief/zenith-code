@@ -160,6 +160,15 @@ blocks with math replay, then code/tool-use blocks. **Specialists and
 HRM-1.58-MoE branch from robust base checkpoints, not from weak narrow
 experts.**
 
+---
+
+# Legacy / adjacent training lanes — distillation, CRLM, PT/DT, Substrate-native
+
+> Everything below is legacy/adjacent reference, NOT the active lane. Native
+> HRM-Text-1.58 (above, `rules/hrm-158.md`) is the only current training
+> direction. Backend-first priority, substrate card/Gemma-hosting, PT/DT, and
+> distillation lanes here apply only if Gabe explicitly reopens one.
+
 ## VRAM Budget
 
 ### Local (8 GB RTX 4070 Laptop)
@@ -218,7 +227,7 @@ domains don't reserve overlapping channels/sub-heads in the same host.
 - Merge with: `AutoTrainingCollector().export_merged()`
 - Virtuous cycle: model errors → corrections → training data →
   (optional) fine-tune → fewer errors
-- **Primary training data source going forward** — zero manual labeling
+- Was the substrate/distillation-arc training-data source — zero manual labeling
 - For substrate-native cards, feeds continuous self-distill cycles
   (teach once, library accretes, fine-tune folds library back into
   weights).

@@ -2,7 +2,7 @@
 
 **IMPORTANT**: Assume nothing. Hypothesis, Build, Test, Commit & Iterate. First Principles thinking. Do not discount anything until it's built and tested!
 
-Fork of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) with a Python agent harness, CALM reasoning engine, HRM + LLM-Computer (the CRLM stack), and a Rust port.
+Fork of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) with a Python agent harness, CALM reasoning engine, a native HRM-Text-1.58 training stack (the active lane), a Rust port, and the (now-adjacent) HRM + LLM-Computer CRLM/substrate stack.
 
 **Working policy: solo lead by default; agents in specific cases.**
 
@@ -48,13 +48,20 @@ taken *after* the change. No vibes, no "looks right", no "should be fine".
 
 ## HRM-Text-1.58 Fork — active training lane
 
-`hrm-158-base` grows by a **90/90-gated** progressive curriculum. The default
-slice is one atom: an **auditable full-density finite support, trained
-slow-safe** (LR ~5e-5, replay ~0.80, pc on acquired priors, ≤1500-step, no knob
-escalation), bank-gated acquire ≥90% / retain ≥90% with close-sibling templates
-watched. Bounded stair-step is the fallback only after a classified collision /
-oversized support; classify + split smaller on a miss. Canonical workflow:
-`.claude/rules/hrm-158.md`.
+**The active R&D + training lane.** `hrm-158-base` grows by a **90/90-gated**
+progressive curriculum. The default slice is one atom: an **auditable
+full-density finite support, trained slow-safe** (LR ~5e-5, replay ~0.80, pc on
+acquired priors, ≤1500-step, no knob escalation), bank-gated acquire ≥90% /
+retain ≥90% with close-sibling templates watched. Bounded stair-step is the
+fallback only after a classified collision / oversized support; classify + split
+smaller on a miss. Canonical workflow: `.claude/rules/hrm-158.md`.
+
+**Conventions (read first):**
+- Active training lane: native HRM-Text-1.58 (`hrm-158-base`).
+- Default method: auditable full-density finite support + slow-safe learning + 90/90 gate.
+- PT / DT / RDT / cards / Substrate / Gemma-substrate / CRLM / CHRLM are legacy/adjacent/reference unless explicitly reopened.
+- CALM engine, Python agent harness, Rust port stay live infrastructure.
+- Receipts live on the ai-room board / MEMORY — not CLAUDE.md / AGENTS.md / rules.
 
 ## Editing `.claude/` Configs
 
@@ -134,9 +141,12 @@ Key rules (summary — see charter for full):
 
 Long-term commercial direction documented in `.claude/rules/commercial.md`. Currently R&D — focus on building the best system, not shipping a product. Commercial awareness is context, not a constraint.
 
-## Substrate vs Cards vs CHRLM — vocabulary
+## Substrate vs Cards vs CHRLM — vocabulary (legacy/adjacent)
 
-Lock-in convention. Use these terms precisely in all new prose; don't
+> Legacy/adjacent reference, not the active lane. "current"/"default" below
+> scopes to the parked substrate/card stack only.
+
+Vocabulary lock-in for that stack. Use precisely when working in it; don't
 conflate.
 
 - **Substrate** = architectural standard. `Small2DTransformer` +
@@ -149,9 +159,9 @@ conflate.
 - **Build** = a curated set of substrate-compliant cards orchestrated
   together for a domain. Examples: CHRLM (general), CHRLM-Coding
   (future), CHRLM-Math (future).
-- **CHRLM** = the current general-knowledge build. Session 30:
-  **unified single tensor** — Gemma + HRMs + compiled cards + knowledge
-  DB ALL in ONE `.pt`, ONE forward pass, per-sub-head attention partition.
+- **CHRLM** = the general-knowledge build of that stack (legacy/adjacent, not
+  the active lane). **Unified single tensor** — Gemma + HRMs + compiled cards +
+  knowledge DB in ONE `.pt`, ONE forward pass, per-sub-head attention partition.
 - **PT** (Pointer Transducer) = a `CopyAugmentedTransformer` card
   trained to transduce NL → formal expression via pointer-copy. Replaces
   HRM for structure extraction. One PT per **output-language family**
@@ -169,8 +179,9 @@ conflate.
 - **Domain** = a facade with imports/exports + PT + compiled ops +
   knowledge facts. ~32 sub-heads per domain, 30 domains on 8 GB VRAM.
 
-**Brain + Cards model**: Gemma (language + routing) dispatches to cards
-(compiled programs, HRM specialists, PTs). Three install paths —
+**Brain + Cards model** (legacy/adjacent): Gemma (language + routing)
+dispatched to cards (compiled programs, HRM specialists, PTs). Three install
+paths —
 decode-path facade (zero VRAM, cheapest), CardSlot residual-additive,
 in-tensor. Full spec + tradeoffs: `.claude/rules/Substrate.md` §"Card
 Installation", `.claude/rules/compute_facades.md`,
@@ -180,13 +191,15 @@ see `.claude/rules/recursion.md`.
 
 ## Architecture
 
-**Model understands, transducers structure, cards compute, engine verifies.** Intelligence comes from the system architecture, not the weights. Adding a backend module is equivalent to training — the model gets smarter at that domain instantly, with zero GPU cost.
+The repo carries four subsystems. The **active training lane is native
+HRM-Text-1.58** (see §"HRM-Text-1.58 Fork" above). Of the four below, the
+harness, CALM engine, and Rust port are live infrastructure; the Unified Single
+Tensor / substrate (#4) is **legacy/adjacent** — parked unless reopened.
 
-Four active systems coexist:
 1. **Python agent harness** (`agents/`, ~4,423 LOC across 15 files) — terminal coding assistant with dual backend (Ollama + llama.cpp), 3-level permissions, thinking mode, sessions, compaction, effort control, llama.cpp hot-swap. Commands + launch: `.claude/rules/harness.md`. Internals: `.claude/rules/architecture.md` §"Agent System".
 2. **CALM engine** (`calm/`, ~83,600 LOC across 413 .py files) — modular compute + knowledge facade with cognitive intelligence layer. Auto-CALM + Engine V2 (7-phase pipeline) + 120 modular backends + 39 cognitive modules + self-healing quality loop. Full spec: `.claude/rules/calm.md` (atlas: `MEMORY/atlas/calm_part_1.md` + `calm_part_2.md`).
 3. **Rust claw-code port** (`rust/`) — upstream claw-code, 9 crates, separate build system.
-4. **Unified Single Tensor** (`calm/llm_computer/`) — CHRLM architecture. ONE `.pt` contains Gemma (tq4) + trained PTs + compiled cards + persistent knowledge DB. Session 32 ported Level 5 to prod Gemma 4 E4B. Full spec: `.claude/rules/Substrate.md` + `architecture.md` + `delta_rule.md`.
+4. **Unified Single Tensor** (`calm/llm_computer/`) — *legacy/adjacent*, not the active lane. CHRLM substrate architecture: ONE `.pt` contains Gemma (tq4) + trained PTs + compiled cards + persistent knowledge DB. Spec (reference): `.claude/rules/Substrate.md` + `architecture.md` + `delta_rule.md`.
 
 Serving + VRAM + perf: `.claude/rules/environment.md` §"Serving Architecture".
 Mechinterp tracing arc (sessions 33-34, full R-arc): `.claude/rules/augmentation_thesis.md` (current strategic positions) + `tracing_intelligence.md` (first-principles bound) + `.claude/MEMORY/atlas/tracing_roadmap_part_1.md` (per-round receipts) + `.claude/MEMORY/atlas/augmentation_thesis_arc.md` (capability map + R51/R52 distillation null detail).
@@ -216,19 +229,21 @@ python3 -m calm.engine "What is 17 * 23?"
 python3 -m pytest calm/ -v
 ```
 
-## Pointer Transducers + LLM-Computer (`calm/hrm/` + `calm/llm_computer/`)
+## Pointer Transducers + LLM-Computer (`calm/hrm/` + `calm/llm_computer/`) — legacy/adjacent
 
-The CRLM split: **Pointer Transducers** (learned, ~185K params) handle
-NL → expression structure extraction via copy-augmented attention;
-**LLM-Computer** (analytically compiled) handles value computation. PT
-superseded HRM for all new work (session 31); PT+Delta
-(`CopyAugmentedDeltaNet`, R-delta-20, 2026-04-21) supersedes plain PT
-as the default trained-card architecture.
+> Legacy/adjacent reference, not the active lane. Reusable for
+> retrieval/structure-extraction sub-tasks; not the current training direction
+> unless reopened.
 
-Architecture spec: `.claude/rules/architecture.md`. Training recipes +
-checkpoint inventory: `.claude/rules/training.md` (atlas:
-`MEMORY/atlas/training_part_1.md` + `training_part_2.md`). PT+Delta
-mechanics + MQAR data-scaling curve + retrieval-card install:
+The CRLM split: **Pointer Transducers** (learned) extract NL → expression
+structure via copy-augmented attention; **LLM-Computer** (compiled) computes
+values. PT+Delta (`CopyAugmentedDeltaNet`) is the trained-card architecture for
+retrieval/structure-extraction within that stack.
+
+Reference: architecture spec `.claude/rules/architecture.md`; training recipes +
+checkpoint inventory `.claude/rules/training.md` (atlas:
+`MEMORY/atlas/training_part_1.md` + `training_part_2.md`); PT+Delta
+mechanics + MQAR data-scaling curve + retrieval-card install
 `.claude/rules/delta_rule.md`. Domain registry:
 `.claude/MEMORY/substrate_registry.md`. Add a domain: `/domain` command.
 
@@ -250,9 +265,9 @@ hardware, GGUF paths, accounts, or budgets change.
 tq4 kernel internals + fused flash-attn decode + per-kernel bench
 receipts: `.claude/rules/turboquant.md`.
 
-## R53 — Verified Code-Reasoning Stack
+## Verified Code-Reasoning Stack (legacy/adjacent)
 
-Phase 1 (retrieval + DB + generators) shipped; Phase 2 (PT training + L24/L30 install) pending. Full receipts + per-round findings in: `.claude/rules/retrieval.md`, `.claude/rules/code_reasoning_db.md`, `.claude/rules/recursion.md`, `.claude/MEMORY/atlas/tracing_roadmap_part_1.md` ruled-out log, `.claude/rules/capability_gain.md` (receipts in `.claude/MEMORY/atlas/capability_gain_arc.md`).
+Substrate-arc work, parked — not the active lane. Reference: `.claude/rules/retrieval.md`, `.claude/rules/code_reasoning_db.md`, `.claude/rules/recursion.md`, `.claude/rules/capability_gain.md` (receipts in `.claude/MEMORY/atlas/`).
 
 ## VGSL — post-transformer architecture R&D
 
