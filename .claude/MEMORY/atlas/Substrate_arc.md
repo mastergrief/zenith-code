@@ -176,3 +176,41 @@ dequant. Full bench receipt + policy rationale:
 - tq4 kernel + flash-attn receipts: `MEMORY/atlas/turboquant_arc.md`
 - Tracing-arc validation (R28/R42/R43 etc.): `MEMORY/atlas/tracing_roadmap_part_1.md`
 - Auto-upgrade CALM integration: `.claude/rules/calm_part_2.md` §"Auto-Upgrade Loop"
+
+## Substrate vs Cards vs CHRLM — vocabulary (parked-stack glossary)
+
+Relocated from `.claude/CLAUDE.md` during the 2026-05-26 convention-only
+eager-doc trim (active lane is native HRM-Text-1.58; this stack is parked).
+Lock-in terms for the substrate/card stack — use precisely when working in it;
+don't conflate.
+
+- **Substrate** = architectural standard. `Small2DTransformer` + `d_head=2`
+  invariant + channel allocation protocol + gate-graph IR + mode tokens +
+  D2/D3/D5 + fast weights. The spec, not a tensor. Analogy: x86 ISA.
+- **Card** = an individual `.pt` weight tensor compliant with the spec.
+  Compiled (gate-graph IR, exact) or trained (SGD, statistical). Analogy: x86
+  binaries.
+- **Build** = a curated set of substrate-compliant cards orchestrated for a
+  domain. Examples: CHRLM (general), CHRLM-Coding, CHRLM-Math.
+- **CHRLM** = the general-knowledge build. Unified single tensor — Gemma + HRMs
+  + compiled cards + knowledge DB in ONE `.pt`, ONE forward pass, per-sub-head
+  attention partition.
+- **PT** (Pointer Transducer) = `CopyAugmentedTransformer` card, NL → formal
+  expression via pointer-copy. One PT per output-language family. ~185K params.
+- **DT** (Delta-Transducer) = `CopyAugmentedDeltaNet` card (2026-04-22 rename of
+  PT+Delta). Default trained-card arch for retrieval/structure-extraction
+  (MQAR, NL→math). Code-skeleton DT open arc (0.193 honest val, v13 ep16). See
+  `.claude/rules/delta_rule.md`.
+- **Output-language family** = class of expression syntax (function-call, infix
+  arithmetic, boolean logic). ~3-5 families cover 30+ domains; adding a domain
+  within an existing family is a data-only operation.
+- **Domain** = facade with imports/exports + PT + compiled ops + knowledge
+  facts. ~32 sub-heads per domain, 30 domains on 8 GB VRAM.
+
+**Brain + Cards model**: Gemma (language + routing) dispatched to cards
+(compiled programs, HRM specialists, PTs). Three install paths — decode-path
+facade (zero VRAM, cheapest), CardSlot residual-additive, in-tensor. Full spec:
+`.claude/rules/Substrate.md` §"Card Installation", `.claude/rules/compute_facades.md`,
+`.claude/rules/delta_rule.md` §"Retrieval card install". Auto-generation:
+`calm/llm_computer/recursion.py` (`FacadeSpec` + `MetaFacade`), see
+`.claude/rules/recursion.md`.

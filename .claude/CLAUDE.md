@@ -143,51 +143,11 @@ Long-term commercial direction documented in `.claude/rules/commercial.md`. Curr
 
 ## Substrate vs Cards vs CHRLM — vocabulary (legacy/adjacent)
 
-> Legacy/adjacent reference, not the active lane. "current"/"default" below
-> scopes to the parked substrate/card stack only.
-
-Vocabulary lock-in for that stack. Use precisely when working in it; don't
-conflate.
-
-- **Substrate** = architectural standard. `Small2DTransformer` +
-  `d_head=2` invariant + channel allocation protocol + gate-graph IR +
-  mode tokens + D2/D3/D5 + fast weights. **The spec, not a tensor.**
-  Analogy: like x86 ISA.
-- **Card** = an individual `.pt` weight tensor compliant with the spec.
-  Compiled (gate-graph IR, exact) or trained (SGD, statistical).
-  Analogy: x86 binaries.
-- **Build** = a curated set of substrate-compliant cards orchestrated
-  together for a domain. Examples: CHRLM (general), CHRLM-Coding
-  (future), CHRLM-Math (future).
-- **CHRLM** = the general-knowledge build of that stack (legacy/adjacent, not
-  the active lane). **Unified single tensor** — Gemma + HRMs + compiled cards +
-  knowledge DB in ONE `.pt`, ONE forward pass, per-sub-head attention partition.
-- **PT** (Pointer Transducer) = a `CopyAugmentedTransformer` card
-  trained to transduce NL → formal expression via pointer-copy. Replaces
-  HRM for structure extraction. One PT per **output-language family**
-  (not per domain). ~185K params, ~32 sub-heads.
-- **DT** (Delta-Transducer) = `CopyAugmentedDeltaNet` card — 2026-04-22
-  canonical rename of PT+Delta. Underlying class unchanged. Default
-  trained-card architecture for **retrieval/structure-extraction**
-  regimes (MQAR, NL→math). Code-skeleton DT (NL → `def FN(<args>):`)
-  is an open arc at 0.193 honest val (v13 ep16, 520 held-out) —
-  not install-viable yet. See `delta_rule.md` §DT.
-- **Output-language family** = a class of expression syntax. Function-call
-  (`fn(args)`), infix arithmetic (`a + b`), boolean logic (`a > b and`).
-  ~3-5 families cover 30+ domains. Adding a domain within an existing
-  family is a data-only operation.
-- **Domain** = a facade with imports/exports + PT + compiled ops +
-  knowledge facts. ~32 sub-heads per domain, 30 domains on 8 GB VRAM.
-
-**Brain + Cards model** (legacy/adjacent): Gemma (language + routing)
-dispatched to cards (compiled programs, HRM specialists, PTs). Three install
-paths —
-decode-path facade (zero VRAM, cheapest), CardSlot residual-additive,
-in-tensor. Full spec + tradeoffs: `.claude/rules/Substrate.md` §"Card
-Installation", `.claude/rules/compute_facades.md`,
-`.claude/rules/delta_rule.md` §"Retrieval card install". Auto-generation via
-`calm/llm_computer/recursion.py` (`FacadeSpec` + `MetaFacade`) —
-see `.claude/rules/recursion.md`.
+> Legacy/adjacent, not the active lane. Use parked-stack terms (Substrate /
+> Card / Build / CHRLM / PT / DT / output-language-family / domain) + the
+> Brain+Cards install model precisely only when working in that stack.
+> Glossary: `MEMORY/atlas/Substrate_arc.md`. PT/DT: `delta_rule.md`. Install
+> paths: `Substrate.md`, `compute_facades.md`, `recursion.md`.
 
 ## Architecture
 
@@ -231,21 +191,11 @@ python3 -m pytest calm/ -v
 
 ## Pointer Transducers + LLM-Computer (`calm/hrm/` + `calm/llm_computer/`) — legacy/adjacent
 
-> Legacy/adjacent reference, not the active lane. Reusable for
-> retrieval/structure-extraction sub-tasks; not the current training direction
-> unless reopened.
-
-The CRLM split: **Pointer Transducers** (learned) extract NL → expression
-structure via copy-augmented attention; **LLM-Computer** (compiled) computes
-values. PT+Delta (`CopyAugmentedDeltaNet`) is the trained-card architecture for
-retrieval/structure-extraction within that stack.
-
-Reference: architecture spec `.claude/rules/architecture.md`; training recipes +
-checkpoint inventory `.claude/rules/training.md` (atlas:
-`MEMORY/atlas/training_part_1.md` + `training_part_2.md`); PT+Delta
-mechanics + MQAR data-scaling curve + retrieval-card install
-`.claude/rules/delta_rule.md`. Domain registry:
-`.claude/MEMORY/substrate_registry.md`. Add a domain: `/domain` command.
+> Legacy/adjacent, not the active lane. CRLM split (PT extracts NL→expr
+> structure; LLM-Computer compiles values) — reusable for
+> retrieval/structure-extraction only if reopened. Spec: `architecture.md`,
+> `delta_rule.md`. Recipes: `delta_rule.md` + `MEMORY/atlas/training_part_1.md`/`_part_2.md`.
+> Domain registry: `MEMORY/substrate_registry.md`; `/domain` to add.
 
 ## Distillation Pipeline (`agents/distill/`)
 
