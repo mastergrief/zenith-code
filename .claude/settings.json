@@ -6,6 +6,10 @@
         "hooks": [
           {
             "type": "command",
+            "command": "(.claude/hooks/ai-room-ensure-codex-roles.sh &)"
+          },
+          {
+            "type": "command",
             "command": ".claude/hooks/ai-room-session-brief.sh"
           }
         ]

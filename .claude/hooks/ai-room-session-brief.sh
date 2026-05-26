@@ -67,6 +67,18 @@ print(", ".join(live) if live else "(none live; codex peer may still be spawning
 PY
 )
 
+# Live SDK Codex workers (training-dev / curriculum / audit, etc.) — distinct
+# from the lease-discovered co-lead handles above. Fault-tolerant.
+SDK_WORKERS=$(ai-room sdk-agent list --provider codex --channel "$CHANNEL" --json 2>/dev/null \
+  | python3 -c 'import json, sys
+try:
+    d = json.load(sys.stdin)
+    hs = [w.get("handle", "?") for w in d.get("workers", [])]
+    print(", ".join(hs) if hs else "(none live)")
+except Exception:
+    print("(sdk-agent list unavailable)")' || echo "(sdk-agent list unavailable)")
+[ -z "$SDK_WORKERS" ] && SDK_WORKERS="(sdk-agent list unavailable)"
+
 # Open tasks owned by claude: short list of subjects
 OPEN_TASKS=$(ai-room --channel "$CHANNEL" task list --owner "$HANDLE" --status in_progress 2>/dev/null | head -5 || true)
 [ -z "$OPEN_TASKS" ] && OPEN_TASKS="(none)"
@@ -78,6 +90,7 @@ BRIEF=$(cat <<EOF
 Inbox unread: $PEEK
 Resume directive: $RESUME
 Live codex handles: $LIVE_HANDLES
+Live SDK codex workers: $SDK_WORKERS
 Open tasks owned by claude (in_progress):
 $OPEN_TASKS
 Charter: .claude/rules/AI_ROOM_COLLAB.md §"Role" + §"Coordination channel" + §"Before declaring idle — resume_check". Two-session collab via ai_room_* MCP tools, NOT subagent spawning.
