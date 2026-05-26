@@ -67,17 +67,35 @@ print(", ".join(live) if live else "(none live; codex peer may still be spawning
 PY
 )
 
-# Live SDK Codex workers (training-dev / curriculum / audit, etc.) — distinct
-# from the lease-discovered co-lead handles above. Fault-tolerant.
-SDK_WORKERS=$(ai-room sdk-agent list --provider codex --channel "$CHANNEL" --json 2>/dev/null \
-  | python3 -c 'import json, sys
-try:
-    d = json.load(sys.stdin)
-    hs = [w.get("handle", "?") for w in d.get("workers", [])]
-    print(", ".join(hs) if hs else "(none live)")
-except Exception:
-    print("(sdk-agent list unavailable)")' || echo "(sdk-agent list unavailable)")
-[ -z "$SDK_WORKERS" ] && SDK_WORKERS="(sdk-agent list unavailable)"
+# Live claudex roles: handle:role (role = codex_home basename) from fresh leases.
+# These are the lease-backed claudex workers (co_lead + training-dev/curriculum/
+# audit). Fault-tolerant.
+CLAUDEX_ROLES=$(python3 - "$LEASE_DIR" <<'PY'
+import json, os, sys, glob
+from datetime import datetime, timezone
+lease_dir = sys.argv[1]
+fresh_window_secs = 90
+now = datetime.now(timezone.utc).timestamp()
+out = []
+for path in sorted(glob.glob(os.path.join(lease_dir, "codex*.json"))):
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        hb = data.get("heartbeat")
+        if not hb:
+            continue
+        if now - datetime.fromisoformat(hb.replace("Z", "+00:00")).timestamp() > fresh_window_secs:
+            continue
+        handle = data.get("handle") or os.path.splitext(os.path.basename(path))[0]
+        ch = data.get("codex_home") or ""
+        role = os.path.basename(ch.rstrip("/")) if ch else "?"
+        out.append(f"{handle}:{role}")
+    except Exception:
+        continue
+print(", ".join(out) if out else "(none live)")
+PY
+)
+[ -z "$CLAUDEX_ROLES" ] && CLAUDEX_ROLES="(none live)"
 
 # Open tasks owned by claude: short list of subjects
 OPEN_TASKS=$(ai-room --channel "$CHANNEL" task list --owner "$HANDLE" --status in_progress 2>/dev/null | head -5 || true)
@@ -90,7 +108,7 @@ BRIEF=$(cat <<EOF
 Inbox unread: $PEEK
 Resume directive: $RESUME
 Live codex handles: $LIVE_HANDLES
-Live SDK codex workers: $SDK_WORKERS
+Live claudex roles: $CLAUDEX_ROLES
 Open tasks owned by claude (in_progress):
 $OPEN_TASKS
 Charter: .claude/rules/AI_ROOM_COLLAB.md §"Role" + §"Coordination channel" + §"Before declaring idle — resume_check". Two-session collab via ai_room_* MCP tools, NOT subagent spawning.
