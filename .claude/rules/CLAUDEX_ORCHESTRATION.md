@@ -36,16 +36,18 @@ operations/execution lead + material gatekeeper (plan / validation /
 commit / push gates). `codex_co_lead` is read-only unless a mutating
 Codex role is spawned.
 
-**Named HRM role lanes** — the *normal* route for HRM-158 curriculum/
-training work, not exceptional spawn:
+**Named Codex role lanes** — the *normal* route for gated mutating
+Codex work, not exceptional spawn:
 
-- **`training-dev`** — mutating HRM training/curriculum/test writer
-  (developer template, **no Serena**). Writes in the FORK repo. **Fork
-  cwd `/mnt/c/Users/gabes/projects/claw-code-hrm-text-158` is a
-  task-dispatch invariant** — the role config can't enforce cwd, so
-  dispatch/provenance MUST set it; if not placed there, the role STOPs.
-  Plan gate before edits; commit/push only on explicit gates; no `.pt`
-  commits.
+- **`training-dev`** — default mutating developer role (developer
+  template, **no Serena**) for HRM training/curriculum/test/code/data
+  and main-repo docs/config/hooks/tooling fixes. **cwd is a dispatch
+  invariant selected by task class**: HRM slices use
+  `/mnt/c/Users/gabes/projects/claw-code-hrm-text-158`; main-repo
+  docs/config/hooks/tooling uses `/mnt/c/Users/gabes/projects/claw-code`.
+  Dispatch/provenance MUST set cwd; wrong repo means STOP. Plan gate
+  before edits; commit/push only on explicit gates; no `.pt` commits
+  for HRM runtime/research outputs.
 - **`curriculum`** — read-only split/support/stop-condition planner.
 - **`audit`** — read-only training receipt/gate/metric auditor.
 
@@ -69,7 +71,7 @@ gates. Worker strategy flows *through* claude.
 
 ## When to spawn additional handles
 
-Beyond the HRM lanes above, spawn an *ad-hoc* named worker handle only
+Beyond the named lanes above, spawn an *ad-hoc* named worker handle only
 when:
 
 - Evidence class is genuinely separate (e.g., independent review by a

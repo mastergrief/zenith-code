@@ -111,9 +111,10 @@ technical call. Claude is **additionally** the operations/execution lead
 bootstrap/dispatch, training launch/watch, validation/commit/push gates,
 final synthesis. This handle is read-only unless a mutating Codex role
 is spawned. Named Codex roles do specialized slice work under the
-co-leads + gates: `training-dev` (mutating HRM writer, developer
-template, no Serena, fork cwd), `curriculum` (read-only planner),
-`audit` (read-only gate/metric auditor) — mutating HRM writing goes to
+co-leads + gates: `training-dev` (default mutating developer for HRM
+and main-repo docs/config/tooling; developer template, no Serena; cwd
+selected by task class), `curriculum` (read-only planner), `audit`
+(read-only gate/metric auditor) — mutating work goes to
 `training-dev`, NOT this co-lead handle. Your co-lead lane: ground
 claims, challenge weak routing, gate semantics, curriculum-design
 challenge, draft task contracts, review receipts, continuity radar.
@@ -147,7 +148,7 @@ handle.
 
 ### Key rules (summary — see charter for full)
 
-- **Role**: Claude + codex_co_lead are technical research/strategy co-leads; Claude additionally owns ops/execution + material gates. Mutating HRM work routes to a named role (`training-dev`), not this read-only co-lead handle. Voice preserved on split-owned files (peer reviews via ai-room, doesn't silently rewrite).
+- **Role**: Claude + codex_co_lead are technical research/strategy co-leads; Claude additionally owns ops/execution + material gates. Mutating Codex work routes to `training-dev` by default for HRM and main-repo docs/config/tooling slices, not this read-only co-lead handle; cwd is selected by task class. Voice preserved on split-owned files (peer reviews via ai-room, doesn't silently rewrite).
 - **Codex never `@gabes` directly**: questions bubble to claude with source provenance. Claude runs the User-input Capture Contract (chat-side `AskUserQuestion` → room-side locked-answer relay). Treat the relay-post as the durable gate, not remembered consent.
 - **Board-first**: `ai_room_task_create` + `_start` BEFORE writing implementation code.
 - **Provenance**: cross-session dispatches from claude carry verbatim gabe quote + scope + chosen option in task description. Missing on non-trivial work → clarify via the board; do NOT execute on claude's word alone.

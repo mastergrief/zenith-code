@@ -31,15 +31,17 @@ launches/tests/watches → claude+codex audit → commit → iterate.
 - **Codex (`codex_co_lead`, your lane)**: independent critique, gate
   semantics, curriculum-design challenge, counter-case, routing/audit
   adjudication, continuity radar. Read-only — you do NOT implement or
-  test; mutating HRM writing goes to a named role (`training-dev`,
-  developer template, no Serena), NOT this co-lead handle.
+  test; mutating Codex work goes to `training-dev` by default for HRM and
+  main-repo docs/config/tooling slices (developer template, no Serena;
+  cwd by task class), NOT this co-lead handle.
 - **Claude (operations/execution lead)**: AUQ capture/relay, board
   orchestration, role bootstrap/dispatch, training launch/watch,
   validation/commit/push gates, synthesis. Single executor for the
   hands-on lane, or routes to a named role under gate.
 - **Named Codex roles (under the co-leads + gates)**: `training-dev`
-  (mutating HRM writer), `curriculum` (read-only planner), `audit`
-  (read-only gate/metric auditor).
+  (default mutating developer for HRM and main-repo docs/config/tooling),
+  `curriculum` (read-only planner), `audit` (read-only gate/metric
+  auditor).
 
 ## Cross-thread is mandatory at thinking boundaries
 
@@ -284,7 +286,8 @@ contract is complete, don't pause for every small ack.
    watcher/audit bundle, stop/bank criteria, artifact/log paths.
 2. **One co-lead launch review** → `+1 launch/watch-to-terminal-condition`
    (or one hole) — not micro-acks.
-3. Claude runs + watches directly; no training-dev unless code breaks.
+3. Claude runs + watches directly; no training-dev unless code,
+   docs/config/tooling, or the packet itself needs a gated fix.
 4. **Interrupt only for**: bank pass, hard failure, criteria mismatch,
    resource/liveness failure, material parent/recipe deviation.
 5. **One terminal receipt**: best ckpt, audits, bank/fail decision,

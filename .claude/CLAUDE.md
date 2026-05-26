@@ -86,8 +86,9 @@ Claude is **additionally the operations/execution lead** (AUQ
 capture/relay, board orchestration, role bootstrap/dispatch, training
 launch/watch, validation/commit/push gatekeeping, synthesis).
 Implementation is **role-routed** — Claude direct, or a named Codex
-worker role under explicit gates: `training-dev` (mutating HRM writer),
-`curriculum` (read-only planner), `audit` (read-only auditor). Loop:
+worker role under explicit gates: `training-dev` (default mutating
+developer for HRM + main-repo docs/config/tooling), `curriculum`
+(read-only planner), `audit` (read-only auditor). Loop:
 
 ```
 gabe seeds → claude+codex hypothesize/plan/challenge →
@@ -112,7 +113,7 @@ intent → decision contract → route → plan gate → implementation/proof
 ```
 
 Key rules (summary — see charter for full):
-- **Role**: Claude + codex_co_lead are technical research/strategy co-leads; Claude additionally owns ops/execution + material gates. Voice preserved on split-owned files (peer reviews, doesn't rewrite).
+- **Role**: Claude + codex_co_lead are technical research/strategy co-leads; Claude additionally owns ops/execution + material gates. Mutating Codex work routes to `training-dev` by default for HRM and main-repo docs/config/tooling slices; cwd is selected by task class. Voice preserved on split-owned files (peer reviews, doesn't rewrite).
 - **Board-first**: `ai_room_task_create` + `_start` BEFORE writing code.
 - **Provenance**: cross-session dispatches carry verbatim gabe quote + scope + chosen option in task description. Paraphrase loses signal.
 - **Ingress-owned provenance**: ownership follows the user-entry point — gabe-via-claude → claude owns the AUQ/relay packet; gabe-via-codex → codex_co_lead owns it (claude attaches it to tasks/gates, runs AUQ only on ambiguous/material-risk). Provenance is authority context, NOT a material gate. **No second dispatcher**: codex recommends routes/contracts/reviews; claude spawns/dispatches/gates named workers (routable `codex_N` handle — role name ≠ handle).

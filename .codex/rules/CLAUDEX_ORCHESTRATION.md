@@ -19,14 +19,17 @@ Operating shapes:
   research/strategy co-lead. Multi-task by design; exempt from the
   child-task boundary; the audit cycle across tasks is the lane's
   purpose. **Read-only — does NOT write code.**
-- **As a named HRM role** (the *normal* route for HRM-158 work):
-  `training-dev` (mutating HRM training/curriculum/test writer;
-  developer template, no Serena; **fork cwd
-  `/mnt/c/Users/gabes/projects/claw-code-hrm-text-158` is a dispatch
-  invariant** — if not placed there, STOP), `curriculum` (read-only
-  split/support planner), `audit` (read-only gate/metric auditor).
-  Slice-scoped; recycle after the shipped slice unless claude scopes a
-  small adjacent follow-up with `RETAIN OVERRIDE`.
+- **As a named Codex role** (the normal route for gated mutating worker
+  slices): `training-dev` (default mutating developer for HRM training/
+  curriculum/test/code/data and main-repo docs/config/hooks/tooling;
+  developer template, no Serena; **cwd is a dispatch invariant selected
+  by task class** — HRM:
+  `/mnt/c/Users/gabes/projects/claw-code-hrm-text-158`; main-repo
+  docs/config/hooks/tooling: `/mnt/c/Users/gabes/projects/claw-code`;
+  wrong repo means STOP), `curriculum` (read-only split/support
+  planner), `audit` (read-only gate/metric auditor). Slice-scoped;
+  recycle after the shipped slice unless claude scopes a small adjacent
+  follow-up with `RETAIN OVERRIDE`.
 - **As an ad-hoc named worker handle** (cold-context, separate evidence
   class, or co_lead capacity overflow): slice-scoped, same recycle
   expectation.

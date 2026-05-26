@@ -40,10 +40,11 @@ Test, Iterate").
   active executor per slice (Claude direct, or a routed role under
   gate) — no concurrent edits.
 - **Named Codex roles (specialized lanes, under the co-leads + gates)**:
-  `training-dev` (mutating HRM training/curriculum/test writer in the
-  fork; developer template, no Serena; after a plan gate), `curriculum`
-  (read-only split/support/stop-condition planner), `audit` (read-only
-  training receipt/gate/metric auditor).
+  `training-dev` (default mutating developer for HRM training/
+  curriculum/test/code/data and main-repo docs/config/tooling; cwd by
+  task class; developer template, no Serena; after a plan gate),
+  `curriculum` (read-only split/support/stop-condition planner), `audit`
+  (read-only training receipt/gate/metric auditor).
 
 ## Cross-thread is mandatory at thinking boundaries
 
@@ -336,8 +337,8 @@ small acknowledgement.
    artifact/log paths, resource lanes.
 2. **One co-lead launch review** → `+1 launch/watch-to-terminal-condition`
    (or one hole) — not a series of micro-acks.
-3. **Claude runs + watches directly.** No dev/training-dev unless code
-   breaks or the packet can't execute.
+3. **Claude runs + watches directly.** No dev/training-dev unless code,
+   docs/config/tooling, or the packet itself needs a gated fix.
 4. **Interrupt only for**: bank pass, hard failure, criteria mismatch,
    resource/liveness failure, or material parent/recipe deviation.
 5. **One terminal receipt**: best checkpoint, audits, bank/fail
