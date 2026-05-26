@@ -257,7 +257,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K2-addition-full", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K2-addition-full", "L0c2-K2-addition-120", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -695,6 +695,12 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     # trained-OUT 50s diagnostic is deliberately NOT registered as a rung.
     "L0c2-K2-addition-full": {
         "train":     {"partition": "enumerate_l0c2_k2_addition_full"},
+    },
+    # L0c2-K2-addition-120 — 2x-density acquisition split (k=1..4 subset of the
+    # 240 surface) after the full-density 240 missed bank. Same template,
+    # train-only; no held_out surface by design.
+    "L0c2-K2-addition-120": {
+        "train":     {"partition": "enumerate_l0c2_k2_addition_120"},
     },
     "L0c2-K3": {
         "train":     {"partition": "enumerate_stratified_l0c2_k3"},
@@ -2544,6 +2550,14 @@ L0C2_BAND_EXPECTED_COUNTS: dict[str, int] = {"K1": 24, "K2": 79, "K3": 127}
 L0C2K2_ADDITION_FULL_TRAIN_COUNT: int = 240
 L0C2K2_ADDITION_FULL_RESULT_RANGE: tuple[int, int] = (20, 49)
 L0C2K2_ADDITION_FULL_ADDEND_RANGE: tuple[int, int] = (1, 8)
+# L0c2-K2-addition-120 — 2x-per-row-density acquisition split. After the 240-row
+# full surface missed bank (post-hoc step1500 acquire 204/240; diffuse residual,
+# no carry/decade/k/ones cluster), this halves the addend range to k=1..4 so each
+# row gets ~2x gradient exposure under the same n_train. SAME template/surface,
+# SAME result range (20..49); 30 results x k=1..4 = 120 == exact k<=4 subset of
+# the 240. Train-only (the heldout-50s diagnostic stays the transfer check).
+L0C2K2_ADDITION_120_TRAIN_COUNT: int = 120
+L0C2K2_ADDITION_120_ADDEND_MAX: int = 4
 
 
 def _l0c_operator(question: str) -> str:
@@ -2837,6 +2851,50 @@ def _gen_l0c2k2_addition_full(rng: random.Random, spec: dict, n: int, seed: int,
                 "question": row["question"],
                 "expected": row["expected"],
                 "rung": "L0c2-K2-addition-full",
+            })
+            if len(out) >= n:
+                break
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# L0c2-K2-addition-120 — 2x-per-row-density acquisition split. Exact k<=4 subset
+# of the 240 surface (same template/surface/buckets), train-only.
+# --------------------------------------------------------------------------- #
+
+def _l0c2k2_addition_120_enumerate() -> list[dict]:
+    """Enumerate the 120-row train-only K2 addition 2x-density split.
+
+    Exact k<=L0C2K2_ADDITION_120_ADDEND_MAX (=4) subset of the 240-row full
+    surface: results 20..49 x k=1..4 = 120 rows. Reusing the full enumeration
+    guarantees identical template/surface/buckets to the 240 acquisition surface.
+    """
+    rows = [r for r in _l0c2k2_addition_full_enumerate()
+            if r["k"] <= L0C2K2_ADDITION_120_ADDEND_MAX]
+    assert len(rows) == L0C2K2_ADDITION_120_TRAIN_COUNT, \
+        f"L0c2-K2-addition-120 total {len(rows)} != {L0C2K2_ADDITION_120_TRAIN_COUNT}"
+    return rows
+
+
+def _gen_l0c2k2_addition_120(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """Train-side sampler for the 120-row K2 addition 2x-density split."""
+    if split != "train":
+        raise ValueError(
+            "L0c2-K2-addition-120 is TRAIN-only; it has no held_out surface. "
+            "Use the 120-row coverage audit support for acquisition and the "
+            "trained-OUT heldout-50s diagnostic for transfer checks."
+        )
+    _ = spec, seed
+    pool = _l0c2k2_addition_120_enumerate()
+    out: list[dict] = []
+    while len(out) < n:
+        cycle = list(pool)
+        rng.shuffle(cycle)
+        for row in cycle:
+            out.append({
+                "question": row["question"],
+                "expected": row["expected"],
+                "rung": "L0c2-K2-addition-120",
             })
             if len(out) >= n:
                 break
@@ -3529,6 +3587,19 @@ def make_rung_examples(
         return _gen_l0c2k2_addition_full(
             rng,
             _RUNG_SPEC["L0c2-K2-addition-full"]["train"],
+            n,
+            seed=seed,
+            split=split,
+        )
+    if rung == "L0c2-K2-addition-120":
+        if split != "train":
+            raise ValueError(
+                "L0c2-K2-addition-120 is TRAIN-only; split='held_out' is "
+                "invalid. Acquisition is measured by the 120/120 coverage audit."
+            )
+        return _gen_l0c2k2_addition_120(
+            rng,
+            _RUNG_SPEC["L0c2-K2-addition-120"]["train"],
             n,
             seed=seed,
             split=split,

@@ -24,6 +24,7 @@ from calm.hrm_text_158.curriculum.generators import (  # noqa: E402
     RUNG_NAMES,
     _RUNG_SPEC,
     _l0c2k2_addition_full_enumerate,
+    _l0c2k2_addition_120_enumerate,
     make_rung_examples,
 )
 from calm.hrm_text_158.curriculum.language_supports import (  # noqa: E402
@@ -32,9 +33,11 @@ from calm.hrm_text_158.curriculum.language_supports import (  # noqa: E402
     L0C1_CLOSE_SIBLING_CE_INTERLEAVE_EXPECTED_COUNT,
     L0C1_CLOSE_SIBLING_CE_INTERLEAVE_SUPPORT,
     L0C2K2_ADDITION_FULL_AUDIT_EXPECTED_COUNT,
+    L0C2K2_ADDITION_120_AUDIT_EXPECTED_COUNT,
     L0C2K2_ADDITION_HELDOUT_50S_AUDIT_EXPECTED_COUNT,
     build_l0c1_close_sibling_ce_interleave_support,
     build_l0c2k2_addition_full_support,
+    build_l0c2k2_addition_120_support,
     build_l0c2k2_addition_heldout_50s_support,
     build_language_supports,
     language_source_rung_buckets,
@@ -56,6 +59,7 @@ _TRAIN = importlib.util.module_from_spec(_TRAIN_SPEC)
 _TRAIN_SPEC.loader.exec_module(_TRAIN)
 
 FULL_RUNG = "L0c2-K2-addition-full"
+K120_RUNG = "L0c2-K2-addition-120"
 HELDOUT_DIAG = "L0c2-K2-addition-heldout-50s"
 _PLUS_RE = re.compile(r"^(\d+) plus ([1-8]) equals what\?$")
 TINY_ARCH = dict(
@@ -307,6 +311,131 @@ def test_l0c1_close_sibling_ce_support_is_true_label_distinct_namespace():
         "legacy_identity",
         "two_digit_sentinel",
     }
+
+
+# --------------------------------------------------------------------------- #
+# L0c2-K2-addition-120 — 2x-density split (k=1..4 subset of the 240). Sibling
+# coverage after the 240-row full surface missed bank (post-hoc step1500 acquire
+# 204/240; diffuse residual). Same template/surface; first of codex's two 120
+# atoms (k=1..4 then k=5..8).
+# --------------------------------------------------------------------------- #
+
+def test_120_rung_registered_train_only_diagnosis_only():
+    assert K120_RUNG in RUNG_NAMES
+    assert K120_RUNG in _RUNG_SPEC
+    assert set(_RUNG_SPEC[K120_RUNG]) == {"train"}
+    assert K120_RUNG in DIAGNOSIS_ONLY_RUNGS
+    assert K120_RUNG not in _TRAIN._RETAINED_SUPPORT_REGISTRY
+
+
+def test_trainer_choices_include_120_rung():
+    train_src = os.path.join(_REPO, "scripts", "train_hrm_text_158.py")
+    with open(train_src, "r", encoding="utf-8") as fh:
+        src = fh.read()
+    assert f'"{K120_RUNG}"' in src
+
+
+def test_120_generator_train_only_and_exact_240_subset():
+    rows = make_rung_examples(K120_RUNG, 120, seed=17, split="train")
+    assert len(rows) == 120
+    assert len({(r["question"], r["expected"]) for r in rows}) == 120
+    assert all(r["rung"] == K120_RUNG for r in rows)
+    assert {r["expected"] for r in rows} == set(range(20, 50))
+    # exact subset of the 240 (same question/expected, same template)
+    full_pairs = {(r["question"], r["expected"]) for r in _l0c2k2_addition_full_enumerate()}
+    assert all((r["question"], r["expected"]) in full_pairs for r in rows)
+    with pytest.raises(ValueError, match="TRAIN-only"):
+        make_rung_examples(K120_RUNG, 10, seed=17, split="held_out")
+
+
+def test_120_support_count_echo_exclusions_and_marginals():
+    rows = _flat(build_l0c2k2_addition_120_support(), K120_RUNG)
+    parsed = _parse_rows(rows)
+    assert len(rows) == L0C2K2_ADDITION_120_AUDIT_EXPECTED_COUNT == 120
+    assert len({(q, e) for q, e, _bucket in rows}) == 120
+    assert all(" plus 0 " not in q and not q.startswith("0 plus ") for q, _e, _b in rows)
+    assert all(" minus " not in q and " equals what?" in q for q, _e, _b in rows)
+    assert all(expected != a and expected != k for a, k, expected, _bucket in parsed)
+    # k=1..4 only, 30 each; decades 20/30/40s 40 each; ones 0..9 12 each
+    assert Counter(k for _a, k, _expected, _b in parsed) == {k: 30 for k in range(1, 5)}
+    assert Counter(expected // 10 for _a, _k, expected, _b in parsed) == {2: 40, 3: 40, 4: 40}
+    assert Counter(expected % 10 for _a, _k, expected, _b in parsed) == {ones: 12 for ones in range(10)}
+    # carry tracked as a bucket axis (both classes present, sums to 120)
+    carry_counts = Counter((a % 10) + k >= 10 for a, k, _expected, _b in parsed)
+    assert set(carry_counts) == {False, True}
+    assert sum(carry_counts.values()) == 120
+
+
+def test_120_enumerator_metadata_matches_support_contract():
+    rows = _l0c2k2_addition_120_enumerate()
+    assert len(rows) == 120
+    assert Counter(r["result_decade"] for r in rows) == {"20s": 40, "30s": 40, "40s": 40}
+    assert Counter(r["addend_k"] for r in rows) == {f"k_{k}": 30 for k in range(1, 5)}
+    assert Counter(r["result_ones"] for r in rows) == {f"ones_{n}": 12 for n in range(10)}
+
+
+def test_120_language_audit_buckets_cover_declared():
+    rows = _flat(build_l0c2k2_addition_120_support(), K120_RUNG)
+    present = {bucket for _q, _e, bucket in rows}
+    declared = set(language_source_rung_buckets(K120_RUNG))
+    assert present == declared
+    assert all(bucket.count(":") == 3 for bucket in present)
+
+
+def test_120_probe_flag_and_watcher_mode_wired():
+    probe_src = os.path.join(_REPO, "scripts", "probe_hrm_text_158.py")
+    with open(probe_src, "r", encoding="utf-8") as fh:
+        psrc = fh.read()
+    assert "--l0c2k2-addition-120-audit" in psrc
+    assert "args.l0c2k2_addition_120_audit" in psrc
+    assert 'surface="l0c2k2addition120"' in psrc
+    watcher_src = os.path.join(_REPO, "scripts", "parallel_audit_watcher.py")
+    with open(watcher_src, "r", encoding="utf-8") as fh:
+        wsrc = fh.read()
+    # (a) _AUDIT_MODES registration: flag + grep token present.
+    assert "--l0c2k2-addition-120-audit" in wsrc
+    assert "L0C2K2ADDITION120 AGGREGATE" in wsrc
+    # (b) console summary-print inclusion: the new bank-gate surface MUST appear
+    # in the l0c2_bands print tuple, else the live receipt line omits it.
+    band_line = next(
+        line for line in wsrc.splitlines()
+        if "l0c2k2additionfull" in line and "l0c2k2additionheldout50s" in line
+    )
+    assert "l0c2k2addition120" in band_line, (
+        "l0c2k2addition120 missing from watcher console summary band tuple"
+    )
+
+
+def test_120_ce_interleave_dry_run_injects_rows(monkeypatch, tmp_path: Path, capsys):
+    """[runtime] proof: a CPU dry-run on the 120 rung with --ce-interleave-support
+    injects exactly 13*REPEAT true-label CE rows after the curriculum cap/log and
+    exits before the optimizer with no checkpoint written."""
+    parent_path = tmp_path / "parent_L0c1_final.pt"
+    torch.save(_build_tiny_parent_blob(), parent_path)
+    ckpt_path = tmp_path / "k120_ce_interleave_best.pt"
+    repeat = 3
+
+    _TRAIN.train(
+        curriculum_rung=K120_RUNG,
+        use_broad_tokenizer=True,
+        curriculum_n_train=12,
+        curriculum_n_heldout=6,
+        replay_ratio=0.0,
+        replay_rungs="R0,R1,R1b1",
+        ce_interleave_support=[f"{L0C1_CLOSE_SIBLING_CE_INTERLEAVE_SUPPORT}:{repeat}"],
+        load_from=str(parent_path),
+        dry_run=True,
+        device="cpu",
+        checkpoint_path=str(ckpt_path),
+        epochs=1,
+        batch_size=4,
+        **TINY_ARCH,
+    )
+    out = capsys.readouterr().out
+    assert "[hrm158] ce-interleave:" in out
+    assert f"ce_rows_added={13 * repeat}" in out
+    assert "dry-run: EXITING before optimizer step" in out
+    assert not ckpt_path.exists()
 
 
 if __name__ == "__main__":

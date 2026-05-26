@@ -41,6 +41,7 @@ from calm.hrm_text_158.curriculum.generators import (
     _enumerate_partition_l0c2k3,
     _l0c2k1_identity_full_enumerate,
     _l0c2k2_addition_full_enumerate,
+    _l0c2k2_addition_120_enumerate,
     l0c2_band_expected_count,
 )
 
@@ -253,6 +254,7 @@ L0C2K1_AUDIT_EXPECTED_COUNT: int = 24
 L0C2K2_AUDIT_EXPECTED_COUNT: int = 79
 L0C2K3_AUDIT_EXPECTED_COUNT: int = 127
 L0C2K2_ADDITION_FULL_AUDIT_EXPECTED_COUNT: int = 240
+L0C2K2_ADDITION_120_AUDIT_EXPECTED_COUNT: int = 120
 L0C2K2_ADDITION_HELDOUT_50S_AUDIT_EXPECTED_COUNT: int = 80
 
 
@@ -337,6 +339,22 @@ def build_l0c2k2_addition_full_support(seed: int = 17) -> dict[str, list[tuple[s
     """Single-key acquisition audit support for L0c2-K2-addition-full."""
     return {
         "L0c2-K2-addition-full": _l0c2k2_addition_full_support(seed),
+    }
+
+
+def _l0c2k2_addition_120_support(seed: int = 17) -> list[tuple[str, int, str]]:
+    """120-row coverage audit for the trainable K2 addition-120 split."""
+    _ = seed
+    return [
+        (r["question"], r["expected"], _l0c2k2_addition_bucket(r))
+        for r in _l0c2k2_addition_120_enumerate()
+    ]
+
+
+def build_l0c2k2_addition_120_support(seed: int = 17) -> dict[str, list[tuple[str, int, str]]]:
+    """Single-key acquisition audit support for L0c2-K2-addition-120."""
+    return {
+        "L0c2-K2-addition-120": _l0c2k2_addition_120_support(seed),
     }
 
 
@@ -552,6 +570,11 @@ def language_source_rung_buckets(rung: str) -> list[str]:
         return sorted({
             _l0c2k2_addition_bucket(r)
             for r in _l0c2k2_addition_full_enumerate()
+        })
+    if rung == "L0c2-K2-addition-120":
+        return sorted({
+            _l0c2k2_addition_bucket(r)
+            for r in _l0c2k2_addition_120_enumerate()
         })
     if rung == "L0c2-K2-addition-heldout-50s":
         return sorted({
