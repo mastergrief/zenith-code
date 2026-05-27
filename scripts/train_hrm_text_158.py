@@ -394,6 +394,7 @@ def _compose_ce_interleave_rows(specs: list[str] | None, seed: int) -> list[dict
 _RETAINED_SUPPORT_REGISTRY: tuple[str, ...] = (
     "L0b",
     "L0c",
+    "L0c1",
     "math_a0",
     "math_r1b2_minus_one",
     "l0c_exhaustive",
@@ -419,6 +420,13 @@ def _retained_support(name: str, seed: int) -> tuple[list[tuple[str, int, str]],
                   curriculum_seed, mirrors L0b. F.4c: protects the L0c surface
                   F.4b left unprotected (replay-covered L0c1 → .917, but
                   unprotected L0c → .557 capped LANG-690 at .852).
+    - "L0c1"    ← `build_l0c1_support(seed)` flattened — 121 rows,
+                  one_digit-stratum `<expr> equals what?` L0c precursor surface.
+                  SEED-DEPENDENT — build with curriculum_seed so the pin matches
+                  the `--l0c1-audit` gate rows for that run seed. Explicit-only:
+                  registry membership enables `--retained-support L0c1:<w>`;
+                  it is not default-on and does NOT fix the parent's pre-existing
+                  L0c1 holes (parent KL preserves parent behavior).
     - "math_a0" ← `build_exhaustive_supports()` flattened — 1255 rows,
                   `what is <expr>?` surface, SEED-INDEPENDENT (exhaustive).
                   Contains `what is 10 minus 1?`->9 (R1b2), the row F.2f
@@ -461,6 +469,17 @@ def _retained_support(name: str, seed: int) -> tuple[list[tuple[str, int, str]],
         # unprotected (no replay, no retained-support) which capped LANG-690.
         from calm.hrm_text_158.curriculum.language_supports import _l0c_support
         rows = [(q, e, sr) for (q, e, sr) in _l0c_support(seed)]
+    elif name == "L0c1":
+        # Explicit close-sibling retained pin for the standalone L0c1 audit
+        # surface. This preserves the frozen parent's behavior on the rows the
+        # `--l0c1-audit` gate evaluates; it is not default-on and cannot repair
+        # the parent's pre-existing L0c1 holes.
+        from calm.hrm_text_158.curriculum.language_supports import build_l0c1_support
+        rows = [
+            (q, e, bucket)
+            for _surface, pairs in build_l0c1_support(seed).items()
+            for (q, e, bucket) in pairs
+        ]
     elif name == "math_a0":
         from calm.hrm_text_158.curriculum.exhaustive_supports import build_exhaustive_supports
         rows = [(q, e, rung)
@@ -1743,10 +1762,12 @@ if __name__ == "__main__":
                     help="Repeatable. Add a validated finite support to the "
                          "retained-support consistency profile (soft forward-KL "
                          "toward the frozen parent, NO CE). NAME in "
-                         "{L0b, L0c, math_a0, math_r1b2_minus_one, "
+                         "{L0b, L0c, L0c1, math_a0, math_r1b2_minus_one, "
                          "l0c_exhaustive, L0c2-K1-identity-2digit-full, "
                          "L0c2-K2-addition-120}; registry membership only makes "
                          "a name explicitly selectable here; it is not default-on. "
+                         "L0c1 explicit selection pins parent behavior on the "
+                         "121-row audit surface; it does not fix parent holes. "
                          "WEIGHT float >= 0. E.g. --retained-support L0b:1.0 "
                          "--retained-support math_a0:1.0. Legacy "
                          "--l0b-consistency-weight maps to L0b:<weight> (errors if "

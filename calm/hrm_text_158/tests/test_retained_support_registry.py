@@ -39,6 +39,7 @@ def test_registry_names():
     assert _REGISTRY == (
         "L0b",
         "L0c",
+        "L0c1",
         "math_a0",
         "math_r1b2_minus_one",
         "l0c_exhaustive",
@@ -49,6 +50,68 @@ def test_registry_names():
 
 _IDENTITY_FULL_HASH = "bf43ff7354b64c4e"
 _L0C2_K2_ADDITION_120_HASH = "8b29072411bb9c71"
+_L0C1_SEED17_HASH = "7bc8cd771daab878"
+
+
+def _l0c1_gate_surface_rows(seed: int) -> list[tuple[str, int, str]]:
+    # `--l0c1-audit` passes build_l0c1_support as probe supports_builder, so this
+    # helper mirrors the exact gate-surface row source before stable sorting.
+    from calm.hrm_text_158.curriculum.language_supports import build_l0c1_support
+    support = build_l0c1_support(seed)
+    assert list(support.keys()) == ["L0c1"]
+    return sorted(
+        [(q, e, bucket) for _surface, pairs in support.items() for q, e, bucket in pairs],
+        key=lambda r: (r[2], r[0], r[1]),
+    )
+
+
+def test_l0c1_probe_audit_uses_same_builder_path():
+    probe_src = os.path.join(_REPO, "scripts", "probe_hrm_text_158.py")
+    with open(probe_src, "r", encoding="utf-8") as fh:
+        src = fh.read()
+    start = src.index("elif args.l0c1_audit:")
+    end = src.index("elif args.l0c2_audit:", start)
+    block = src[start:end]
+    assert "build_l0c1_support" in block
+    assert "supports_builder=build_l0c1_support" in block
+    assert "expected_aggregate=L0C1_EXPECTED_COUNT" in block
+    assert 'surface="l0c1"' in block
+
+
+def test_l0c1_retained_support_snapshot():
+    rows, h = _support("L0c1", 17)
+    assert len(rows) == 121
+    assert h == _L0C1_SEED17_HASH
+    assert rows == sorted(rows, key=lambda r: (r[2], r[0], r[1]))
+    assert rows[0] == ("0 equals what?", 0, "R0")
+    assert rows[-1] == ("9 plus 8 equals what?", 17, "R1b9")
+    assert all(q.endswith(" equals what?") for q, _e, _bucket in rows)
+
+
+def test_l0c1_retained_support_matches_gate_surface_and_not_k5to8():
+    from calm.hrm_text_158.curriculum.generators import (
+        _l0c2k2_addition_120_k5to8_enumerate,
+    )
+    rows, _ = _support("L0c1", 17)
+    gate_rows = _l0c1_gate_surface_rows(17)
+    k5to8 = {
+        (r["question"], r["expected"])
+        for r in _l0c2k2_addition_120_k5to8_enumerate()
+    }
+    assert len(rows) == len(gate_rows) == 121
+    assert rows == gate_rows
+    assert {(q, e) for q, e, _bucket in rows}.isdisjoint(k5to8)
+    assert "L0c2-K2-addition-120" in _REGISTRY
+    assert "L0c2-K2-addition-120-k5to8" not in _REGISTRY
+
+
+def test_l0c1_retained_support_seed_dependent_and_deterministic():
+    assert _support("L0c1", 17)[1] != _support("L0c1", 42)[1], \
+        "L0c1 support is seed-dependent; compare per seed to the gate builder"
+    r1, h1 = _support("L0c1", 17)
+    r2, h2 = _support("L0c1", 17)
+    assert r1 == r2 and h1 == h2
+    assert _support("L0c1", 42)[0] == _l0c1_gate_surface_rows(42)
 
 
 def test_l0c2_k1_identity_full_retained_support_snapshot():
@@ -178,6 +241,12 @@ def test_l0c_sampler_namespace():
     assert _sampler_seed("L0c", 17) != _sampler_seed("math_a0", 17)
 
 
+def test_l0c1_sampler_namespace():
+    assert _sampler_seed("L0c1", 17) == _thr._stable_curriculum_seed(17, "retained:L0c1")
+    assert _sampler_seed("L0c1", 17) != _sampler_seed("L0c", 17)
+    assert _sampler_seed("L0c1", 17) != _sampler_seed("L0b", 17)
+
+
 def test_l0c2_k1_identity_full_sampler_namespace():
     name = "L0c2-K1-identity-2digit-full"
     assert _sampler_seed(name, 17) == _thr._stable_curriculum_seed(17, f"retained:{name}")
@@ -256,6 +325,7 @@ def test_determinism_same_name_seed():
     for name, seed in (
         ("L0b", 17),
         ("L0c", 17),
+        ("L0c1", 17),
         ("math_a0", 17),
         ("L0c2-K1-identity-2digit-full", 17),
         ("L0c2-K2-addition-120", 17),
@@ -414,6 +484,12 @@ def test_l0c2_k2_addition_120_profile_name_reaches_load_from_guard():
     import pytest
     with pytest.raises(ValueError, match="requires --load-from"):
         _thr.train(retained_support_profile=[("L0c2-K2-addition-120", 1.0)])
+
+
+def test_l0c1_profile_name_reaches_load_from_guard():
+    import pytest
+    with pytest.raises(ValueError, match="requires --load-from"):
+        _thr.train(retained_support_profile=[("L0c1", 1.0)])
 
 
 def test_profile_requires_curriculum_mode():
