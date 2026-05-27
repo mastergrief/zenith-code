@@ -270,6 +270,18 @@ def test_l0c2_k2_addition_50s_retained_support_matches_audit_and_not_60s_transfe
     assert "L0c2-K2-addition-60s-transfer" not in _REGISTRY
     assert "L0c2-K2-addition-60s-transfer-train" not in _REGISTRY
     assert "L0c2-K2-addition-60s-transfer-held" not in _REGISTRY
+    assert "L0c2-K2-addition-60s-trace" not in _REGISTRY
+    assert "L0c2-K2-addition-60s-trace-train" not in _REGISTRY
+    assert "L0c2-K2-addition-60s-trace-held" not in _REGISTRY
+
+
+def test_l0c2_k2_addition_trace_keeps_registry_hash_unchanged():
+    rows, h = _support("L0c2-K2-addition-50s", 17)
+    assert len(rows) == 80
+    assert h == "fb0b04414a616f4f" == _L0C2_K2_ADDITION_50S_HASH
+    assert "L0c2-K2-addition-60s-trace" not in _REGISTRY
+    assert "L0c2-K2-addition-60s-trace-train" not in _REGISTRY
+    assert "L0c2-K2-addition-60s-trace-held" not in _REGISTRY
 
 
 def test_l0c2_k2_addition_50s_retained_support_seed_independent():

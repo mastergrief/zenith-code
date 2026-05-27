@@ -257,7 +257,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K2-addition-full", "L0c2-K2-addition-120", "L0c2-K2-addition-120-k5to8", "L0c2-K2-addition-50s", "L0c2-K2-addition-60s-transfer", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K2-addition-full", "L0c2-K2-addition-120", "L0c2-K2-addition-120-k5to8", "L0c2-K2-addition-50s", "L0c2-K2-addition-60s-transfer", "L0c2-K2-addition-60s-trace", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -722,6 +722,12 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     # via language_supports/probe, not a generator held_out branch.
     "L0c2-K2-addition-60s-transfer": {
         "train":     {"partition": "enumerate_l0c2_k2_addition_60s_transfer_train"},
+    },
+    # L0c2-K2-addition-60s-trace — same 60/20 Latin 60s surface as the failed
+    # integer transfer rung, but the train target is a deterministic carry-trace
+    # string. Train-only; held trace rows are audit-visible, never parent-KL.
+    "L0c2-K2-addition-60s-trace": {
+        "train":     {"partition": "enumerate_l0c2_k2_addition_60s_trace_train"},
     },
     "L0c2-K3": {
         "train":     {"partition": "enumerate_stratified_l0c2_k3"},
@@ -3114,6 +3120,44 @@ def _l0c2k2_addition_60s_transfer_held_enumerate() -> list[dict]:
     return held
 
 
+def _l0c2k2_addition_trace_target(a: int, k: int, result: int) -> str:
+    """Canonical carry-trace target for the K2 addition trace curriculum."""
+    ones_sum = (a % 10) + k
+    ones_digit = ones_sum % 10
+    carry = ones_sum // 10
+    tens_sum = (a // 10) + carry
+    assert tens_sum * 10 + ones_digit == result
+    return (
+        f"ones {a % 10}+{k}={ones_sum}; write {ones_digit} carry {carry}; "
+        f"tens {a // 10}+{carry}={tens_sum}; answer {result}"
+    )
+
+
+def _l0c2k2_addition_60s_trace_rows(rows: list[dict]) -> list[dict]:
+    traced: list[dict] = []
+    for row in rows:
+        trace = _l0c2k2_addition_trace_target(row["a"], row["k"], row["result"])
+        out = dict(row)
+        out["expected"] = trace
+        out["trace_expected"] = trace
+        traced.append(out)
+    return traced
+
+
+def _l0c2k2_addition_60s_trace_train_enumerate() -> list[dict]:
+    """Trace-target view of the locked 60-row Latin train split."""
+    return _l0c2k2_addition_60s_trace_rows(
+        _l0c2k2_addition_60s_transfer_train_enumerate()
+    )
+
+
+def _l0c2k2_addition_60s_trace_held_enumerate() -> list[dict]:
+    """Trace-target view of the locked 20-row recombination held split."""
+    return _l0c2k2_addition_60s_trace_rows(
+        _l0c2k2_addition_60s_transfer_held_enumerate()
+    )
+
+
 def _gen_l0c2k2_addition_60s_transfer(
     rng: random.Random, spec: dict, n: int, seed: int, split: str
 ) -> list[dict]:
@@ -3135,6 +3179,33 @@ def _gen_l0c2k2_addition_60s_transfer(
                 "question": row["question"],
                 "expected": row["expected"],
                 "rung": "L0c2-K2-addition-60s-transfer",
+            })
+            if len(out) >= n:
+                break
+    return out
+
+
+def _gen_l0c2k2_addition_60s_trace(
+    rng: random.Random, spec: dict, n: int, seed: int, split: str
+) -> list[dict]:
+    """Train-side sampler for the 60-row trace-target carry curriculum."""
+    if split != "train":
+        raise ValueError(
+            "L0c2-K2-addition-60s-trace is TRAIN-only; split='held_out' is "
+            "invalid. Held recombination trace rows are audited separately via "
+            "the 20-row L0c2-K2-addition-60s-trace-held support."
+        )
+    _ = spec, seed
+    pool = _l0c2k2_addition_60s_trace_train_enumerate()
+    out: list[dict] = []
+    while len(out) < n:
+        cycle = list(pool)
+        rng.shuffle(cycle)
+        for row in cycle:
+            out.append({
+                "question": row["question"],
+                "expected": row["expected"],
+                "rung": "L0c2-K2-addition-60s-trace",
             })
             if len(out) >= n:
                 break
@@ -3761,7 +3832,7 @@ def make_rung_examples(
 ) -> list[dict]:
     """Deterministic synthetic examples for a single rung.
 
-    Returns list of dicts: {"question": str, "expected": int, "rung": str}.
+    Returns list of dicts: {"question": str, "expected": int | str, "rung": str}.
 
     R7 (GSM8k) is NOT generated here — it's served from
     scripts.train_hrm_text_158.load_gsm8k_splits directly.
@@ -3880,6 +3951,20 @@ def make_rung_examples(
         return _gen_l0c2k2_addition_60s_transfer(
             rng,
             _RUNG_SPEC["L0c2-K2-addition-60s-transfer"]["train"],
+            n,
+            seed=seed,
+            split=split,
+        )
+    if rung == "L0c2-K2-addition-60s-trace":
+        if split != "train":
+            raise ValueError(
+                "L0c2-K2-addition-60s-trace is TRAIN-only; split='held_out' "
+                "is invalid. Held trace rows are measured by the 20-row trace "
+                "audit support, not sampled into train."
+            )
+        return _gen_l0c2k2_addition_60s_trace(
+            rng,
+            _RUNG_SPEC["L0c2-K2-addition-60s-trace"]["train"],
             n,
             seed=seed,
             split=split,

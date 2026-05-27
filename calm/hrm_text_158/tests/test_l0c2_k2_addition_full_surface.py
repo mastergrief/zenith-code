@@ -27,6 +27,9 @@ from calm.hrm_text_158.curriculum.generators import (  # noqa: E402
     _l0c2k2_addition_120_enumerate,
     _l0c2k2_addition_120_k5to8_enumerate,
     _l0c2k2_addition_50s_enumerate,
+    _l0c2k2_addition_60s_trace_held_enumerate,
+    _l0c2k2_addition_60s_trace_train_enumerate,
+    _l0c2k2_addition_trace_target,
     _l0c2k2_addition_60s_transfer_held_enumerate,
     _l0c2k2_addition_60s_transfer_train_enumerate,
     make_rung_examples,
@@ -40,6 +43,8 @@ from calm.hrm_text_158.curriculum.language_supports import (  # noqa: E402
     L0C2K2_ADDITION_120_AUDIT_EXPECTED_COUNT,
     L0C2K2_ADDITION_120_K5TO8_AUDIT_EXPECTED_COUNT,
     L0C2K2_ADDITION_50S_AUDIT_EXPECTED_COUNT,
+    L0C2K2_ADDITION_60S_TRACE_HELD_AUDIT_EXPECTED_COUNT,
+    L0C2K2_ADDITION_60S_TRACE_TRAIN_AUDIT_EXPECTED_COUNT,
     L0C2K2_ADDITION_60S_TRANSFER_HELD_AUDIT_EXPECTED_COUNT,
     L0C2K2_ADDITION_60S_TRANSFER_TRAIN_AUDIT_EXPECTED_COUNT,
     L0C2K2_ADDITION_HELDOUT_50S_AUDIT_EXPECTED_COUNT,
@@ -49,6 +54,8 @@ from calm.hrm_text_158.curriculum.language_supports import (  # noqa: E402
     build_l0c2k2_addition_120_support,
     build_l0c2k2_addition_120_k5to8_support,
     build_l0c2k2_addition_50s_support,
+    build_l0c2k2_addition_60s_trace_held_support,
+    build_l0c2k2_addition_60s_trace_train_support,
     build_l0c2k2_addition_60s_transfer_held_support,
     build_l0c2k2_addition_60s_transfer_train_support,
     build_l0c2k2_addition_heldout_50s_support,
@@ -72,6 +79,12 @@ _TRAIN_SPEC = importlib.util.spec_from_file_location(
 _TRAIN = importlib.util.module_from_spec(_TRAIN_SPEC)
 _TRAIN_SPEC.loader.exec_module(_TRAIN)
 
+_PROBE_SPEC = importlib.util.spec_from_file_location(
+    "_probe_hrm_text_158", os.path.join(_REPO, "scripts", "probe_hrm_text_158.py")
+)
+_PROBE = importlib.util.module_from_spec(_PROBE_SPEC)
+_PROBE_SPEC.loader.exec_module(_PROBE)
+
 FULL_RUNG = "L0c2-K2-addition-full"
 K120_RUNG = "L0c2-K2-addition-120"
 K120_K5TO8_RUNG = "L0c2-K2-addition-120-k5to8"
@@ -79,6 +92,9 @@ FIFTIES_RUNG = "L0c2-K2-addition-50s"
 SIXTIES_TRANSFER_RUNG = "L0c2-K2-addition-60s-transfer"
 SIXTIES_TRANSFER_TRAIN = "L0c2-K2-addition-60s-transfer-train"
 SIXTIES_TRANSFER_HELD = "L0c2-K2-addition-60s-transfer-held"
+SIXTIES_TRACE_RUNG = "L0c2-K2-addition-60s-trace"
+SIXTIES_TRACE_TRAIN = "L0c2-K2-addition-60s-trace-train"
+SIXTIES_TRACE_HELD = "L0c2-K2-addition-60s-trace-held"
 HELDOUT_DIAG = "L0c2-K2-addition-heldout-50s"
 HELDOUT_60S_DIAG = "L0c2-K2-addition-heldout-60s"
 _PLUS_RE = re.compile(r"^(\d+) plus ([1-8]) equals what\?$")
@@ -111,6 +127,20 @@ def _parse_rows(rows: list[tuple[str, int, str]]) -> list[tuple[int, int, int, s
         k = int(m.group(2))
         assert a + k == expected
         out.append((a, k, expected, bucket))
+    return out
+
+
+def _parse_trace_rows(rows: list[tuple[str, str, str]]) -> list[tuple[int, int, int, str, str]]:
+    out = []
+    for q, expected, bucket in rows:
+        m = _PLUS_RE.fullmatch(q)
+        assert m, q
+        a = int(m.group(1))
+        k = int(m.group(2))
+        answer = _PROBE._parse_trace_answer(expected)
+        assert answer == a + k
+        assert expected == _l0c2k2_addition_trace_target(a, k, answer)
+        out.append((a, k, answer, bucket, expected))
     return out
 
 
@@ -896,6 +926,177 @@ def test_60s_transfer_probe_flags_watcher_modes_and_legacy_label_wired():
         and "l0c2k2addition60stransferheld" in line
     )
     assert "l0c2k2additionheldout60s" in band_line
+
+
+def test_60s_trace_rung_registered_train_only_diagnosis_only_and_not_retained():
+    assert SIXTIES_TRACE_RUNG in RUNG_NAMES
+    assert SIXTIES_TRACE_RUNG in _RUNG_SPEC
+    assert set(_RUNG_SPEC[SIXTIES_TRACE_RUNG]) == {"train"}
+    assert SIXTIES_TRACE_RUNG in DIAGNOSIS_ONLY_RUNGS
+    assert SIXTIES_TRACE_RUNG not in _TRAIN._RETAINED_SUPPORT_REGISTRY
+
+    for audit_key in (SIXTIES_TRACE_TRAIN, SIXTIES_TRACE_HELD):
+        assert audit_key not in RUNG_NAMES
+        assert audit_key not in _RUNG_SPEC
+        assert audit_key not in DIAGNOSIS_ONLY_RUNGS
+        assert audit_key not in _TRAIN._RETAINED_SUPPORT_REGISTRY
+
+
+def test_trainer_choices_include_60s_trace_rung_not_audit_surfaces():
+    train_src = os.path.join(_REPO, "scripts", "train_hrm_text_158.py")
+    with open(train_src, "r", encoding="utf-8") as fh:
+        src = fh.read()
+    assert f'"{SIXTIES_TRACE_RUNG}"' in src
+    assert SIXTIES_TRACE_TRAIN not in src
+    assert SIXTIES_TRACE_HELD not in src
+
+
+def test_60s_trace_target_format_and_arithmetic():
+    assert _l0c2k2_addition_trace_target(57, 6, 63) == (
+        "ones 7+6=13; write 3 carry 1; tens 5+1=6; answer 63"
+    )
+    rows = _l0c2k2_addition_60s_trace_train_enumerate() + \
+        _l0c2k2_addition_60s_trace_held_enumerate()
+    assert len(rows) == 80
+    trace_re = re.compile(
+        r"^ones (\d)\+([1-8])=(\d+); write (\d) carry ([01]); "
+        r"tens (\d)\+([01])=(\d); answer (6\d)$"
+    )
+    for row in rows:
+        m = trace_re.fullmatch(row["expected"])
+        assert m, row["expected"]
+        a = row["a"]
+        k = row["k"]
+        result = row["result"]
+        ones_sum = (a % 10) + k
+        carry = ones_sum // 10
+        assert int(m.group(1)) == a % 10
+        assert int(m.group(2)) == k
+        assert int(m.group(3)) == ones_sum
+        assert int(m.group(4)) == result % 10
+        assert int(m.group(5)) == carry
+        assert int(m.group(6)) == a // 10
+        assert int(m.group(7)) == carry
+        assert int(m.group(8)) == result // 10
+        assert int(m.group(9)) == result
+
+
+def test_60s_trace_train_path_samples_only_train_split():
+    train_rows = _flat(
+        build_l0c2k2_addition_60s_trace_train_support(),
+        SIXTIES_TRACE_TRAIN,
+    )
+    held_rows = _flat(
+        build_l0c2k2_addition_60s_trace_held_support(),
+        SIXTIES_TRACE_HELD,
+    )
+    train_pairs = {(q, expected) for q, expected, _bucket in train_rows}
+    held_pairs = {(q, expected) for q, expected, _bucket in held_rows}
+    rows = make_rung_examples(SIXTIES_TRACE_RUNG, 60, seed=17, split="train")
+    sampled_pairs = {(r["question"], r["expected"]) for r in rows}
+    assert len(rows) == 60
+    assert len(sampled_pairs) == 60
+    assert all(r["rung"] == SIXTIES_TRACE_RUNG for r in rows)
+    assert sampled_pairs == train_pairs
+    assert sampled_pairs.isdisjoint(held_pairs)
+    assert all(isinstance(r["expected"], str) and r["expected"].startswith("ones ") for r in rows)
+    with pytest.raises(ValueError, match="TRAIN-only"):
+        make_rung_examples(SIXTIES_TRACE_RUNG, 10, seed=17, split="held_out")
+
+
+def test_60s_trace_partition_counts_disjoint_recombination_and_prompt_disjointness():
+    train_rows = _flat(
+        build_l0c2k2_addition_60s_trace_train_support(),
+        SIXTIES_TRACE_TRAIN,
+    )
+    held_rows = _flat(
+        build_l0c2k2_addition_60s_trace_held_support(),
+        SIXTIES_TRACE_HELD,
+    )
+    train = _parse_trace_rows(train_rows)
+    held = _parse_trace_rows(held_rows)
+    train_prompts = {q for q, _e, _bucket in train_rows}
+    held_prompts = {q for q, _e, _bucket in held_rows}
+
+    assert len(train_rows) == L0C2K2_ADDITION_60S_TRACE_TRAIN_AUDIT_EXPECTED_COUNT == 60
+    assert len(held_rows) == L0C2K2_ADDITION_60S_TRACE_HELD_AUDIT_EXPECTED_COUNT == 20
+    assert len(train_prompts) == 60
+    assert len(held_prompts) == 20
+    assert train_prompts.isdisjoint(held_prompts)
+    assert Counter(answer for _a, _k, answer, _bucket, _trace in train) == {
+        result: 6 for result in range(60, 70)
+    }
+    assert Counter(answer for _a, _k, answer, _bucket, _trace in held) == {
+        result: 2 for result in range(60, 70)
+    }
+    assert set(k for _a, k, _answer, _bucket, _trace in held) <= {
+        k for _a, k, _answer, _bucket, _trace in train
+    }
+    assert set(answer for _a, _k, answer, _bucket, _trace in held) <= {
+        answer for _a, _k, answer, _bucket, _trace in train
+    }
+
+    banked_surfaces = {
+        "addition-full": _l0c2k2_addition_full_enumerate(),
+        "addition-120": _l0c2k2_addition_120_enumerate(),
+        "addition-120-k5to8": _l0c2k2_addition_120_k5to8_enumerate(),
+        "addition-50s": _l0c2k2_addition_50s_enumerate(),
+    }
+    trace_prompts = train_prompts | held_prompts
+    for label, rows in banked_surfaces.items():
+        overlap = trace_prompts & {r["question"] for r in rows}
+        assert not overlap, f"{label} prompt overlap: {sorted(overlap)[:5]}"
+
+
+def test_60s_trace_language_audit_buckets_tokenizer_and_parser_contract():
+    for key, support in (
+        (SIXTIES_TRACE_TRAIN, build_l0c2k2_addition_60s_trace_train_support()),
+        (SIXTIES_TRACE_HELD, build_l0c2k2_addition_60s_trace_held_support()),
+    ):
+        rows = _flat(support, key)
+        present = {bucket for _q, _e, bucket in rows}
+        declared = set(language_source_rung_buckets(key))
+        assert present == declared
+        assert all(bucket.count(":") == 3 for bucket in present)
+
+    q, expected, _bucket = _flat(
+        build_l0c2k2_addition_60s_trace_train_support(),
+        SIXTIES_TRACE_TRAIN,
+    )[0]
+    tok = BroadTokenizer()
+    ids, sep_pos = tok.encode_example(q, expected)
+    assert tok.decode(ids[sep_pos + 1:-1]) == expected
+    assert _PROBE._parse_trace_answer(expected) == _PROBE._parse_trace_answer(
+        "prefix " + expected + " suffix"
+    )
+    assert _PROBE._parse_trace_answer("ones 7+6=13; write 3 carry 1") is None
+    assert _PROBE._parse_integer_only("63") == 63
+    assert _PROBE._parse_integer_only("answer 63") is None
+
+
+def test_60s_trace_probe_flags_watcher_modes_and_collision_fields_wired():
+    probe_src = os.path.join(_REPO, "scripts", "probe_hrm_text_158.py")
+    with open(probe_src, "r", encoding="utf-8") as fh:
+        psrc = fh.read()
+    assert "--l0c2k2-addition-60s-trace-train-audit" in psrc
+    assert "--l0c2k2-addition-60s-trace-held-audit" in psrc
+    assert 'surface="l0c2k2addition60stracetrain"' in psrc
+    assert 'surface="l0c2k2addition60straceheld"' in psrc
+    assert "exact_trace" in psrc
+    assert "parsed_answer" in psrc
+    assert "integer_only_bleed" in psrc
+    assert "trace_bleed" in psrc
+
+    watcher_src = os.path.join(_REPO, "scripts", "parallel_audit_watcher.py")
+    with open(watcher_src, "r", encoding="utf-8") as fh:
+        wsrc = fh.read()
+    assert "--l0c2k2-addition-60s-trace-train-audit" in wsrc
+    assert "--l0c2k2-addition-60s-trace-held-audit" in wsrc
+    assert "L0C2K2ADDITION60STRACETRAIN AGGREGATE" in wsrc
+    assert "L0C2K2ADDITION60STRACEHELD AGGREGATE" in wsrc
+    assert "TRACE_TRAIN_BANK_GATE" in wsrc
+    assert "TRACE_HELD_RECOMBINATION_BANK_GATE" in wsrc
+    assert '"--max-gen", "128"' in wsrc
 
 
 def test_120_k5to8_ce_interleave_dry_run_injects_rows(monkeypatch, tmp_path: Path, capsys):

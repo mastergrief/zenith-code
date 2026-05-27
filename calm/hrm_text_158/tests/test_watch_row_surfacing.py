@@ -326,14 +326,24 @@ def test_watcher_l0c2k2_addition_modes_wired_and_printed():
     names = [name for name, _f, _g in _watcher._AUDIT_MODES]
     assert "l0c2k2additionfull" in names
     assert "l0c2k2addition50s" in names
+    assert "l0c2k2addition60stracetrain" in names
+    assert "l0c2k2addition60straceheld" in names
     assert "l0c2k2additionheldout50s" in names
     assert "l0c2k2additionheldout60s" in names
     assert flags["l0c2k2additionfull"] == ["--l0c2k2-addition-full-audit"]
     assert flags["l0c2k2addition50s"] == ["--l0c2k2-addition-50s-audit"]
+    assert flags["l0c2k2addition60stracetrain"] == [
+        "--l0c2k2-addition-60s-trace-train-audit", "--max-gen", "128",
+    ]
+    assert flags["l0c2k2addition60straceheld"] == [
+        "--l0c2k2-addition-60s-trace-held-audit", "--max-gen", "128",
+    ]
     assert flags["l0c2k2additionheldout50s"] == ["--l0c2k2-addition-heldout-50s-audit"]
     assert flags["l0c2k2additionheldout60s"] == ["--l0c2k2-addition-heldout-60s-audit"]
     assert pats["l0c2k2additionfull"] == r"L0C2K2ADDITIONFULL AGGREGATE"
     assert pats["l0c2k2addition50s"] == r"L0C2K2ADDITION50S AGGREGATE"
+    assert pats["l0c2k2addition60stracetrain"] == r"L0C2K2ADDITION60STRACETRAIN AGGREGATE"
+    assert pats["l0c2k2addition60straceheld"] == r"L0C2K2ADDITION60STRACEHELD AGGREGATE"
     assert pats["l0c2k2additionheldout50s"] == r"L0C2K2ADDITIONHELDOUT50S AGGREGATE"
     assert pats["l0c2k2additionheldout60s"] == r"L0C2K2ADDITIONHELDOUT60S AGGREGATE"
 
@@ -342,9 +352,13 @@ def test_watcher_l0c2k2_addition_modes_wired_and_printed():
         src = fh.read()
     assert "l0c2k2additionfull" in src
     assert "l0c2k2addition50s" in src
+    assert "l0c2k2addition60stracetrain" in src
+    assert "l0c2k2addition60straceheld" in src
     assert "l0c2k2additionheldout50s" in src
     assert "l0c2k2additionheldout60s" in src
     assert "alias-only/non-gating" in src
+    assert "TRACE_TRAIN_BANK_GATE" in src
+    assert "TRACE_HELD_RECOMBINATION_BANK_GATE" in src
 
     held_line = "[probe-language] L0C2K2ADDITIONHELDOUT50S AGGREGATE strict=80/80 = 1.0000"
     probe_label = _probe.language_aggregate_label("l0c2k2additionheldout50s")
@@ -366,6 +380,11 @@ def test_watcher_l0c2k2_addition_modes_wired_and_printed():
     assert "DIAGNOSTIC_NON_GATING" in held60_summary
     assert "not gate" in held60_summary
 
+    trace_line = "[probe-language] L0C2K2ADDITION60STRACETRAIN AGGREGATE exact_trace=60/60 = 1.0000"
+    trace_summary = _watcher._summary_aggregate("l0c2k2addition60stracetrain", trace_line)
+    assert "TRACE_TRAIN_BANK_GATE" in trace_summary
+    assert "not retained/parent-KL" in trace_summary
+
 
 def test_watcher_l0c2k2_addition_patterns_do_not_cross_match():
     import re
@@ -373,16 +392,22 @@ def test_watcher_l0c2k2_addition_patterns_do_not_cross_match():
     legacy = "[probe-language] L0C2K2 AGGREGATE strict=79/79 = 1.0000"
     full = "[probe-language] L0C2K2ADDITIONFULL AGGREGATE strict=240/240 = 1.0000"
     fifties = "[probe-language] L0C2K2ADDITION50S AGGREGATE strict=80/80 = 1.0000"
+    trace_train = "[probe-language] L0C2K2ADDITION60STRACETRAIN AGGREGATE exact_trace=60/60 = 1.0000"
+    trace_held = "[probe-language] L0C2K2ADDITION60STRACEHELD AGGREGATE exact_trace=20/20 = 1.0000"
     held = "[probe-language] L0C2K2ADDITIONHELDOUT50S AGGREGATE strict=80/80 = 1.0000"
     held60 = "[probe-language] L0C2K2ADDITIONHELDOUT60S AGGREGATE strict=80/80 = 1.0000"
 
     assert re.search(pats["l0c2k2"], legacy)
     assert re.search(pats["l0c2k2additionfull"], full)
     assert re.search(pats["l0c2k2addition50s"], fifties)
+    assert re.search(pats["l0c2k2addition60stracetrain"], trace_train)
+    assert re.search(pats["l0c2k2addition60straceheld"], trace_held)
     assert re.search(pats["l0c2k2additionheldout50s"], held)
     assert re.search(pats["l0c2k2additionheldout60s"], held60)
     assert not re.search(pats["l0c2k2"], full)
     assert not re.search(pats["l0c2k2"], fifties)
+    assert not re.search(pats["l0c2k2"], trace_train)
+    assert not re.search(pats["l0c2k2"], trace_held)
     assert not re.search(pats["l0c2k2"], held)
     assert not re.search(pats["l0c2k2"], held60)
     assert not re.search(pats["l0c2k2additionfull"], legacy)
@@ -396,6 +421,10 @@ def test_watcher_l0c2k2_addition_patterns_do_not_cross_match():
     assert not re.search(pats["l0c2k2addition50s"], full)
     assert not re.search(pats["l0c2k2addition50s"], held)
     assert not re.search(pats["l0c2k2addition50s"], held60)
+    assert not re.search(pats["l0c2k2addition50s"], trace_train)
+    assert not re.search(pats["l0c2k2addition50s"], trace_held)
+    assert not re.search(pats["l0c2k2addition60stracetrain"], trace_held)
+    assert not re.search(pats["l0c2k2addition60straceheld"], trace_train)
     assert not re.search(pats["l0c2k2additionheldout60s"], full)
     assert not re.search(pats["l0c2k2additionheldout60s"], fifties)
     assert not re.search(pats["l0c2k2additionheldout60s"], held)

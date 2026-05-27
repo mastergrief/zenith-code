@@ -44,6 +44,8 @@ from calm.hrm_text_158.curriculum.generators import (
     _l0c2k2_addition_120_enumerate,
     _l0c2k2_addition_120_k5to8_enumerate,
     _l0c2k2_addition_50s_enumerate,
+    _l0c2k2_addition_60s_trace_held_enumerate,
+    _l0c2k2_addition_60s_trace_train_enumerate,
     _l0c2k2_addition_60s_transfer_held_enumerate,
     _l0c2k2_addition_60s_transfer_train_enumerate,
     l0c2_band_expected_count,
@@ -263,6 +265,8 @@ L0C2K2_ADDITION_120_K5TO8_AUDIT_EXPECTED_COUNT: int = 120
 L0C2K2_ADDITION_50S_AUDIT_EXPECTED_COUNT: int = 80
 L0C2K2_ADDITION_60S_TRANSFER_TRAIN_AUDIT_EXPECTED_COUNT: int = 60
 L0C2K2_ADDITION_60S_TRANSFER_HELD_AUDIT_EXPECTED_COUNT: int = 20
+L0C2K2_ADDITION_60S_TRACE_TRAIN_AUDIT_EXPECTED_COUNT: int = 60
+L0C2K2_ADDITION_60S_TRACE_HELD_AUDIT_EXPECTED_COUNT: int = 20
 L0C2K2_ADDITION_HELDOUT_50S_AUDIT_EXPECTED_COUNT: int = 80
 L0C2K2_ADDITION_HELDOUT_60S_AUDIT_EXPECTED_COUNT: int = 80
 
@@ -430,6 +434,40 @@ def build_l0c2k2_addition_60s_transfer_held_support(seed: int = 17) -> dict[str,
     return {
         "L0c2-K2-addition-60s-transfer-held":
             _l0c2k2_addition_60s_transfer_held_support(seed),
+    }
+
+
+def _l0c2k2_addition_60s_trace_train_support(seed: int = 17) -> list[tuple[str, str, str]]:
+    """60-row trace-target train split audit for the carry-trace curriculum."""
+    _ = seed
+    return [
+        (r["question"], r["expected"], _l0c2k2_addition_bucket(r))
+        for r in _l0c2k2_addition_60s_trace_train_enumerate()
+    ]
+
+
+def build_l0c2k2_addition_60s_trace_train_support(seed: int = 17) -> dict[str, list[tuple[str, str, str]]]:
+    """Trace train bank-gate support; not a retained/parent-KL surface."""
+    return {
+        "L0c2-K2-addition-60s-trace-train":
+            _l0c2k2_addition_60s_trace_train_support(seed),
+    }
+
+
+def _l0c2k2_addition_60s_trace_held_support(seed: int = 17) -> list[tuple[str, str, str]]:
+    """20-row trace-target held recombination audit for the carry-trace curriculum."""
+    _ = seed
+    return [
+        (r["question"], r["expected"], _l0c2k2_addition_bucket(r))
+        for r in _l0c2k2_addition_60s_trace_held_enumerate()
+    ]
+
+
+def build_l0c2k2_addition_60s_trace_held_support(seed: int = 17) -> dict[str, list[tuple[str, str, str]]]:
+    """Trace held recombination support; not a retained/parent-KL surface."""
+    return {
+        "L0c2-K2-addition-60s-trace-held":
+            _l0c2k2_addition_60s_trace_held_support(seed),
     }
 
 
@@ -702,6 +740,16 @@ def language_source_rung_buckets(rung: str) -> list[str]:
         return sorted({
             _l0c2k2_addition_bucket(r)
             for r in _l0c2k2_addition_60s_transfer_held_enumerate()
+        })
+    if rung == "L0c2-K2-addition-60s-trace-train":
+        return sorted({
+            _l0c2k2_addition_bucket(r)
+            for r in _l0c2k2_addition_60s_trace_train_enumerate()
+        })
+    if rung == "L0c2-K2-addition-60s-trace-held":
+        return sorted({
+            _l0c2k2_addition_bucket(r)
+            for r in _l0c2k2_addition_60s_trace_held_enumerate()
         })
     if rung == "L0c2-K2-addition-heldout-50s":
         return sorted({

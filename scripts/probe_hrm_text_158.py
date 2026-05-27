@@ -511,6 +511,22 @@ def _parse_int(s: str) -> Optional[int]:
         return None
 
 
+def _parse_trace_answer(s: str) -> Optional[int]:
+    """Extract the final `answer N` field from a carry-trace decode."""
+    m = re.search(r"\banswer\s+(-?\d+)\b", s)
+    return int(m.group(1)) if m else None
+
+
+def _parse_integer_only(s: str) -> Optional[int]:
+    """Return an int only when the whole decode is an integer literal."""
+    m = re.fullmatch(r"\s*(-?\d+)\s*", s)
+    return int(m.group(1)) if m else None
+
+
+def _has_trace_marker(s: str) -> bool:
+    return "ones " in s or "answer " in s
+
+
 def probe(
     ckpt_path: str,
     eval_cap: int = 50,
@@ -1239,8 +1255,14 @@ _LANGUAGE_AGGREGATE_ANNOTATIONS = {
     "l0c2k2addition60stransferheld": (
         "TRANSFER_HELD_BANK_GATE_FOR_60S_TRANSFER: disjoint held recombination support; not retained/parent-KL"
     ),
+    "l0c2k2addition60stracetrain": (
+        "TRACE_TRAIN_BANK_GATE: carry-trace train split; not retained/parent-KL"
+    ),
+    "l0c2k2addition60straceheld": (
+        "TRACE_HELD_RECOMBINATION_BANK_GATE: carry-trace held split; not retained/parent-KL"
+    ),
     "l0c2k2additionheldout60s": (
-        "LEGACY_50S_TRANSFER_DIAGNOSTIC_ONLY: historical all-60s audit for banked 50s run; not future trained-out proof"
+        "DIAGNOSTIC_NON_GATING: LEGACY_50S_TRANSFER_DIAGNOSTIC_ONLY: historical all-60s audit for banked 50s run; not future trained-out proof; not gate"
     ),
 }
 
@@ -1375,6 +1397,10 @@ def probe_language_finite_supports(
     _supports_builder = supports_builder if supports_builder is not None else build_language_supports
     supports = _supports_builder(seed=audit_seed)
     print(f"[probe-language] surface={surface} audited rungs: {list(supports.keys())}", flush=True)
+    trace_surface = surface in {
+        "l0c2k2addition60stracetrain",
+        "l0c2k2addition60straceheld",
+    }
 
     def _parse_int(text: str) -> int | None:
         capped = re.sub(r"(\d{12})\d+", r"\1", text)
@@ -1444,34 +1470,76 @@ def probe_language_finite_supports(
         # Per-source-rung accumulators
         bucket_keys = language_source_rung_buckets(rung)
         by_source: dict[str, dict] = {
-            b: {"n_total": 0, "n_exact": 0, "n_parsed_correct": 0, "n_holes": 0}
+            b: {
+                "n_total": 0,
+                "n_exact": 0,
+                "n_parsed_correct": 0,
+                "n_holes": 0,
+                "n_integer_only_bleed": 0,
+                "n_trace_bleed": 0,
+            }
             for b in bucket_keys
         }
 
         holes: list[dict] = []
         rows_all: list[dict] = []
         finite_rung = True
+        finite_count = 0
         too_long = 0
         exact = 0
         parsed_correct = 0
+        integer_only_bleed = 0
+        trace_bleed = 0
         for q, exp, src, (decoded, tl, fin) in zip(questions, expecteds, sources, per_row):
             if not fin:
                 finite_rung = False
                 finite_all = False
+            else:
+                finite_count += 1
             exact_match = (not tl) and (decoded.strip() == str(exp))
-            parsed = _parse_int(decoded) if not tl else None
-            parsed_match = (not tl) and parsed == exp
-            decode_class = _decode_class(
-                decoded,
-                parsed=parsed,
-                expected=exp,
-                exact_ok=exact_match,
-                too_long=tl,
-                finite=fin,
-            )
+            parsed = None
+            expected_answer = None
+            integer_bleed = False
+            trace_bleed_row = False
+            if trace_surface:
+                expected_answer = _parse_trace_answer(str(exp))
+                if expected_answer is None:
+                    raise ValueError(f"trace support expected string lacks final answer: {exp!r}")
+                parsed = _parse_trace_answer(decoded) if not tl else None
+                parsed_match = (not tl) and parsed == expected_answer
+                integer_bleed = (
+                    not tl
+                    and _parse_integer_only(decoded) is not None
+                    and not _has_trace_marker(decoded)
+                )
+                if exact_match:
+                    decode_class = "exact_trace"
+                elif parsed_match:
+                    decode_class = "parsed_answer"
+                elif integer_bleed:
+                    decode_class = "integer_only_bleed"
+                elif tl or not fin or not decoded.strip():
+                    decode_class = "empty"
+                elif _has_trace_marker(decoded):
+                    decode_class = "trace_format_wrong"
+                else:
+                    decode_class = "other_wrong"
+            else:
+                parsed = _parse_int(decoded) if not tl else None
+                parsed_match = (not tl) and parsed == exp
+                trace_bleed_row = (not tl) and (not exact_match) and _has_trace_marker(decoded)
+                decode_class = _decode_class(
+                    decoded,
+                    parsed=parsed,
+                    expected=exp,
+                    exact_ok=exact_match,
+                    too_long=tl,
+                    finite=fin,
+                )
             row_record = {
                 "question": q,
                 "expected": exp,
+                "expected_answer": expected_answer,
                 "decoded": decoded,
                 "parsed": parsed,
                 "exact_ok": exact_match,
@@ -1481,8 +1549,10 @@ def probe_language_finite_supports(
                 "source_rung": src,
                 "bucket": src,
                 "decode_class": decode_class,
+                "integer_only_bleed": integer_bleed,
+                "trace_bleed": trace_bleed_row,
             }
-            n_ = _identity_n(q, exp)
+            n_ = _identity_n(q, exp) if isinstance(exp, int) else None
             if n_ is not None:
                 row_record.update({
                     "n": n_,
@@ -1505,43 +1575,76 @@ def probe_language_finite_supports(
             else:
                 by_source[src]["n_holes"] += 1
                 holes.append(row_record)
+            if integer_bleed:
+                integer_only_bleed += 1
+                by_source[src]["n_integer_only_bleed"] += 1
+            if trace_bleed_row:
+                trace_bleed += 1
+                by_source[src]["n_trace_bleed"] += 1
         n_total = len(rows)
         results[rung] = {
             "n_total": n_total,
             "n_exact": exact,                       # strict (primary)
             "n_parsed_correct": parsed_correct,     # lenient (separate)
+            "n_exact_trace": exact if trace_surface else None,
+            "n_parsed_answer_correct": parsed_correct if trace_surface else None,
+            "n_integer_only_bleed": integer_only_bleed,
+            "n_trace_bleed": trace_bleed,
             "rate": exact / n_total if n_total else 1.0,
             "n_holes": len(holes),
             "n_too_long": too_long,
+            "n_finite": finite_count,
             "finite": finite_rung,
             "by_source_rung": by_source,
             "rows_all": rows_all,
             "holes_first20": holes[:20],
             "elapsed_s": round(rt_elapsed, 3),
         }
-        print(f"[probe-language] {rung:6s} {exact}/{n_total} = "
-              f"{results[rung]['rate']:.4f} (strict) parsed={parsed_correct}/{n_total} "
-              f"holes={len(holes)} too_long={too_long} "
-              f"finite={finite_rung} t={rt_elapsed:.2f}s", flush=True)
+        if trace_surface:
+            print(f"[probe-language] {rung:6s} exact_trace={exact}/{n_total} = "
+                  f"{results[rung]['rate']:.4f} parsed_answer={parsed_correct}/{n_total} "
+                  f"integer_only_bleed={integer_only_bleed} holes={len(holes)} "
+                  f"too_long={too_long} finite={finite_count}/{n_total} "
+                  f"finite_all={finite_rung} t={rt_elapsed:.2f}s", flush=True)
+        else:
+            print(f"[probe-language] {rung:6s} {exact}/{n_total} = "
+                  f"{results[rung]['rate']:.4f} (strict) parsed={parsed_correct}/{n_total} "
+                  f"holes={len(holes)} too_long={too_long} trace_bleed={trace_bleed} "
+                  f"finite={finite_rung} t={rt_elapsed:.2f}s", flush=True)
         # Per-source-rung sub-line
         for b in bucket_keys:
             bs = by_source[b]
+            bleed_part = (
+                f" integer_only_bleed={bs['n_integer_only_bleed']}"
+                if trace_surface
+                else f" trace_bleed={bs['n_trace_bleed']}"
+            )
             print(f"[probe-language]   bucket {b:14s} "
                   f"strict={bs['n_exact']}/{bs['n_total']} "
                   f"parsed={bs['n_parsed_correct']}/{bs['n_total']} "
-                  f"holes={bs['n_holes']}", flush=True)
+                  f"holes={bs['n_holes']}{bleed_part}", flush=True)
 
     total_elapsed = time.time() - t0
     agg_total = sum(r["n_total"] for r in results.values())
     agg_exact = sum(r["n_exact"] for r in results.values())
     agg_parsed = sum(r["n_parsed_correct"] for r in results.values())
     agg_holes = sum(r["n_holes"] for r in results.values())
+    agg_too_long = sum(r["n_too_long"] for r in results.values())
+    agg_finite = sum(r["n_finite"] for r in results.values())
+    agg_integer_only_bleed = sum(r["n_integer_only_bleed"] for r in results.values())
+    agg_trace_bleed = sum(r["n_trace_bleed"] for r in results.values())
     aggregate = {
         "n_total": agg_total,
         "n_exact": agg_exact,
         "n_parsed_correct": agg_parsed,
+        "n_exact_trace": agg_exact if trace_surface else None,
+        "n_parsed_answer_correct": agg_parsed if trace_surface else None,
+        "n_integer_only_bleed": agg_integer_only_bleed,
+        "n_trace_bleed": agg_trace_bleed,
         "rate": agg_exact / agg_total if agg_total else 1.0,
         "n_holes": agg_holes,
+        "n_too_long": agg_too_long,
+        "n_finite": agg_finite,
         "finite": finite_all,
         "expected_aggregate": (
             expected_aggregate if expected_aggregate is not None
@@ -1549,11 +1652,21 @@ def probe_language_finite_supports(
         ),
     }
     aggregate_label = language_aggregate_label(surface)
-    aggregate_line = (
-        f"[probe-language] {aggregate_label} strict={agg_exact}/{agg_total} = "
-        f"{aggregate['rate']:.4f} parsed={agg_parsed}/{agg_total} "
-        f"holes={agg_holes} finite={finite_all} elapsed={total_elapsed:.1f}s"
-    )
+    if trace_surface:
+        aggregate_line = (
+            f"[probe-language] {aggregate_label} exact_trace={agg_exact}/{agg_total} = "
+            f"{aggregate['rate']:.4f} parsed_answer={agg_parsed}/{agg_total} "
+            f"integer_only_bleed={agg_integer_only_bleed} holes={agg_holes} "
+            f"too_long={agg_too_long} finite={agg_finite}/{agg_total} "
+            f"finite_all={finite_all} elapsed={total_elapsed:.1f}s"
+        )
+    else:
+        aggregate_line = (
+            f"[probe-language] {aggregate_label} strict={agg_exact}/{agg_total} = "
+            f"{aggregate['rate']:.4f} parsed={agg_parsed}/{agg_total} "
+            f"holes={agg_holes} trace_bleed={agg_trace_bleed} "
+            f"finite={finite_all} elapsed={total_elapsed:.1f}s"
+        )
     aggregate["line"] = aggregate_line
     print(aggregate_line, flush=True)
 
@@ -2060,6 +2173,18 @@ if __name__ == "__main__":
                          "equals what?' for results 60-69. Not retained/parent-KL. "
                          "Emits surface='l0c2k2addition60stransferheld'. Conflicts "
                          "with other modes.")
+    ap.add_argument("--l0c2k2-addition-60s-trace-train-audit", action="store_true",
+                    help="Run the L0c2-K2-addition-60s-trace TRAIN bank-gate "
+                         "audit: 60 Latin-diagonal train prompts with deterministic "
+                         "carry-trace targets ending in 'answer N'. Emits "
+                         "surface='l0c2k2addition60stracetrain'. Conflicts with "
+                         "other modes; use --max-gen >=96.")
+    ap.add_argument("--l0c2k2-addition-60s-trace-held-audit", action="store_true",
+                    help="Run the L0c2-K2-addition-60s-trace HELD recombination "
+                         "audit: 20 disjoint prompts with deterministic carry-trace "
+                         "targets ending in 'answer N'. Not retained/parent-KL. "
+                         "Emits surface='l0c2k2addition60straceheld'. Conflicts "
+                         "with other modes; use --max-gen >=96.")
     ap.add_argument("--l0c2k2-addition-heldout-50s-audit", action="store_true",
                     help="Run the legacy alias-only L0c2-K2 addition heldout-50s "
                          "audit: same 80 rows as the trainable 50s acquisition "
@@ -2220,6 +2345,8 @@ if __name__ == "__main__":
         ("--l0c2k2-addition-50s-audit", args.l0c2k2_addition_50s_audit),
         ("--l0c2k2-addition-60s-transfer-train-audit", args.l0c2k2_addition_60s_transfer_train_audit),
         ("--l0c2k2-addition-60s-transfer-held-audit", args.l0c2k2_addition_60s_transfer_held_audit),
+        ("--l0c2k2-addition-60s-trace-train-audit", args.l0c2k2_addition_60s_trace_train_audit),
+        ("--l0c2k2-addition-60s-trace-held-audit", args.l0c2k2_addition_60s_trace_held_audit),
         ("--l0c2k2-addition-heldout-50s-audit", args.l0c2k2_addition_heldout_50s_audit),
         ("--l0c2k2-addition-heldout-60s-audit", args.l0c2k2_addition_heldout_60s_audit),
         ("--l0c2k3-audit", args.l0c2k3_audit),
@@ -2264,6 +2391,8 @@ if __name__ == "__main__":
             ("--l0c2k2-addition-50s-audit", args.l0c2k2_addition_50s_audit),
             ("--l0c2k2-addition-60s-transfer-train-audit", args.l0c2k2_addition_60s_transfer_train_audit),
             ("--l0c2k2-addition-60s-transfer-held-audit", args.l0c2k2_addition_60s_transfer_held_audit),
+            ("--l0c2k2-addition-60s-trace-train-audit", args.l0c2k2_addition_60s_trace_train_audit),
+            ("--l0c2k2-addition-60s-trace-held-audit", args.l0c2k2_addition_60s_trace_held_audit),
             ("--l0c2k2-addition-heldout-50s-audit", args.l0c2k2_addition_heldout_50s_audit),
             ("--l0c2k2-addition-heldout-60s-audit", args.l0c2k2_addition_heldout_60s_audit),
             ("--l0c2k3-audit", args.l0c2k3_audit),
@@ -2477,6 +2606,42 @@ if __name__ == "__main__":
             supports_builder=build_l0c2k2_addition_60s_transfer_held_support,
             expected_aggregate=L0C2K2_ADDITION_60S_TRANSFER_HELD_AUDIT_EXPECTED_COUNT,
             surface="l0c2k2addition60stransferheld",
+        )
+    elif args.l0c2k2_addition_60s_trace_train_audit:
+        from calm.hrm_text_158.curriculum.language_supports import (
+            build_l0c2k2_addition_60s_trace_train_support,
+            L0C2K2_ADDITION_60S_TRACE_TRAIN_AUDIT_EXPECTED_COUNT,
+        )
+        probe_language_finite_supports(
+            args.ckpt_path,
+            audit_seed=args.language_audit_seed,
+            max_gen=args.max_gen,
+            output_json=args.audit_output_json,
+            use_cached_ternary_infer=args.use_cached_ternary_infer,
+            use_kv_cache_decode=args.use_kv_cache_decode,
+            use_batched_probe_eval=args.use_batched_probe_eval,
+            probe_batch_size=args.probe_batch_size,
+            supports_builder=build_l0c2k2_addition_60s_trace_train_support,
+            expected_aggregate=L0C2K2_ADDITION_60S_TRACE_TRAIN_AUDIT_EXPECTED_COUNT,
+            surface="l0c2k2addition60stracetrain",
+        )
+    elif args.l0c2k2_addition_60s_trace_held_audit:
+        from calm.hrm_text_158.curriculum.language_supports import (
+            build_l0c2k2_addition_60s_trace_held_support,
+            L0C2K2_ADDITION_60S_TRACE_HELD_AUDIT_EXPECTED_COUNT,
+        )
+        probe_language_finite_supports(
+            args.ckpt_path,
+            audit_seed=args.language_audit_seed,
+            max_gen=args.max_gen,
+            output_json=args.audit_output_json,
+            use_cached_ternary_infer=args.use_cached_ternary_infer,
+            use_kv_cache_decode=args.use_kv_cache_decode,
+            use_batched_probe_eval=args.use_batched_probe_eval,
+            probe_batch_size=args.probe_batch_size,
+            supports_builder=build_l0c2k2_addition_60s_trace_held_support,
+            expected_aggregate=L0C2K2_ADDITION_60S_TRACE_HELD_AUDIT_EXPECTED_COUNT,
+            surface="l0c2k2addition60straceheld",
         )
     elif args.l0c2k2_addition_heldout_50s_audit:
         from calm.hrm_text_158.curriculum.language_supports import (

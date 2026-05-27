@@ -131,15 +131,15 @@ class BroadTokenizer:
 
     # ---------- example construction ---------- #
 
-    def encode_example(self, question: str, target_int: int) -> tuple[list[int], int]:
-        """Build the `<bos> question <sep> {integer} <eos>` token sequence.
+    def encode_example(self, question: str, target: int | str) -> tuple[list[int], int]:
+        """Build the `<bos> question <sep> {target} <eos>` token sequence.
 
         Returns `(ids, sep_position)` matching GSM8k contract. sep_position
         is the index of `<sep>` in ids; training loss is masked to positions
         `>= sep_position` after left-shift (per shifted-PrefixLM contract).
         """
         q_ids = self.encode(question)
-        t_ids = self.encode(str(target_int))
+        t_ids = self.encode(str(target))
         ids = [self.bos_id] + q_ids + [self.sep_id] + t_ids + [self.eos_id]
         sep_pos = 1 + len(q_ids)
         return ids, sep_pos
