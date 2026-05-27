@@ -44,6 +44,8 @@ from calm.hrm_text_158.curriculum.generators import (
     _l0c2k2_addition_120_enumerate,
     _l0c2k2_addition_120_k5to8_enumerate,
     _l0c2k2_addition_50s_enumerate,
+    _l0c2k2_addition_60s_transfer_held_enumerate,
+    _l0c2k2_addition_60s_transfer_train_enumerate,
     l0c2_band_expected_count,
 )
 
@@ -259,6 +261,8 @@ L0C2K2_ADDITION_FULL_AUDIT_EXPECTED_COUNT: int = 240
 L0C2K2_ADDITION_120_AUDIT_EXPECTED_COUNT: int = 120
 L0C2K2_ADDITION_120_K5TO8_AUDIT_EXPECTED_COUNT: int = 120
 L0C2K2_ADDITION_50S_AUDIT_EXPECTED_COUNT: int = 80
+L0C2K2_ADDITION_60S_TRANSFER_TRAIN_AUDIT_EXPECTED_COUNT: int = 60
+L0C2K2_ADDITION_60S_TRANSFER_HELD_AUDIT_EXPECTED_COUNT: int = 20
 L0C2K2_ADDITION_HELDOUT_50S_AUDIT_EXPECTED_COUNT: int = 80
 L0C2K2_ADDITION_HELDOUT_60S_AUDIT_EXPECTED_COUNT: int = 80
 
@@ -395,6 +399,40 @@ def build_l0c2k2_addition_50s_support(seed: int = 17) -> dict[str, list[tuple[st
     }
 
 
+def _l0c2k2_addition_60s_transfer_train_support(seed: int = 17) -> list[tuple[str, int, str]]:
+    """60-row train split audit for the computed-transfer rung."""
+    _ = seed
+    return [
+        (r["question"], r["expected"], _l0c2k2_addition_bucket(r))
+        for r in _l0c2k2_addition_60s_transfer_train_enumerate()
+    ]
+
+
+def build_l0c2k2_addition_60s_transfer_train_support(seed: int = 17) -> dict[str, list[tuple[str, int, str]]]:
+    """Bank-gate train support for L0c2-K2-addition-60s-transfer."""
+    return {
+        "L0c2-K2-addition-60s-transfer-train":
+            _l0c2k2_addition_60s_transfer_train_support(seed),
+    }
+
+
+def _l0c2k2_addition_60s_transfer_held_support(seed: int = 17) -> list[tuple[str, int, str]]:
+    """20-row disjoint held-transfer audit for the computed-transfer rung."""
+    _ = seed
+    return [
+        (r["question"], r["expected"], _l0c2k2_addition_bucket(r))
+        for r in _l0c2k2_addition_60s_transfer_held_enumerate()
+    ]
+
+
+def build_l0c2k2_addition_60s_transfer_held_support(seed: int = 17) -> dict[str, list[tuple[str, int, str]]]:
+    """Bank-gate held-transfer support; not a retained/parent-KL surface."""
+    return {
+        "L0c2-K2-addition-60s-transfer-held":
+            _l0c2k2_addition_60s_transfer_held_support(seed),
+    }
+
+
 def _l0c2k2_addition_heldout_50s_enumerate() -> list[dict]:
     """Legacy alias for the K2 addition 50s rows.
 
@@ -406,9 +444,10 @@ def _l0c2k2_addition_heldout_50s_enumerate() -> list[dict]:
 
 
 def _l0c2k2_addition_heldout_60s_enumerate() -> list[dict]:
-    """Enumerate the trained-OUT K2 addition 60s transfer diagnostic.
+    """Enumerate the legacy all-60s diagnostic for the banked 50s run.
 
-    Audit-visible but not trainable/retained: result 60..69 x addend k=1..8.
+    Historical/all-support compatibility only after the 60s-transfer split lands:
+    it must not be read as future "trained-out 60s" proof once 60/80 trains.
     """
     rows: list[dict] = []
     for result in range(60, 70):
@@ -433,7 +472,7 @@ def _l0c2k2_addition_heldout_60s_enumerate() -> list[dict]:
 
 
 def _l0c2k2_addition_heldout_50s_support(seed: int = 17) -> list[tuple[str, int, str]]:
-    """80-row trained-OUT diagnostic support; seed-independent."""
+    """80-row legacy alias-only 50s support; seed-independent."""
     _ = seed
     return [
         (r["question"], r["expected"], _l0c2k2_addition_bucket(r))
@@ -454,7 +493,7 @@ def build_l0c2k2_addition_heldout_50s_support(seed: int = 17) -> dict[str, list[
 
 
 def _l0c2k2_addition_heldout_60s_support(seed: int = 17) -> list[tuple[str, int, str]]:
-    """80-row trained-OUT 60s diagnostic support; seed-independent."""
+    """80-row legacy all-60s diagnostic support; seed-independent."""
     _ = seed
     return [
         (r["question"], r["expected"], _l0c2k2_addition_bucket(r))
@@ -463,7 +502,7 @@ def _l0c2k2_addition_heldout_60s_support(seed: int = 17) -> list[tuple[str, int,
 
 
 def build_l0c2k2_addition_heldout_60s_support(seed: int = 17) -> dict[str, list[tuple[str, int, str]]]:
-    """Single-key non-gating diagnostic support for trained-OUT K2 60s rows."""
+    """Legacy all-60s diagnostic scoped to the banked 50s transfer run."""
     return {
         "L0c2-K2-addition-heldout-60s": _l0c2k2_addition_heldout_60s_support(seed),
     }
@@ -653,6 +692,16 @@ def language_source_rung_buckets(rung: str) -> list[str]:
         return sorted({
             _l0c2k2_addition_bucket(r)
             for r in _l0c2k2_addition_50s_enumerate()
+        })
+    if rung == "L0c2-K2-addition-60s-transfer-train":
+        return sorted({
+            _l0c2k2_addition_bucket(r)
+            for r in _l0c2k2_addition_60s_transfer_train_enumerate()
+        })
+    if rung == "L0c2-K2-addition-60s-transfer-held":
+        return sorted({
+            _l0c2k2_addition_bucket(r)
+            for r in _l0c2k2_addition_60s_transfer_held_enumerate()
         })
     if rung == "L0c2-K2-addition-heldout-50s":
         return sorted({

@@ -257,7 +257,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K2-addition-full", "L0c2-K2-addition-120", "L0c2-K2-addition-120-k5to8", "L0c2-K2-addition-50s", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K2-addition-full", "L0c2-K2-addition-120", "L0c2-K2-addition-120-k5to8", "L0c2-K2-addition-50s", "L0c2-K2-addition-60s-transfer", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -710,10 +710,18 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     },
     # L0c2-K2-addition-50s — next finite result-range extension after k1to4+k5to8
     # banked over 20..49 but the old heldout-50s diagnostic stayed near zero.
-    # Same `<a> plus <k> equals what?` surface, train-only; forward transfer is
-    # now measured by the audit-only heldout-60s support.
+    # Same `<a> plus <k> equals what?` surface, train-only. Historical all-60s
+    # transfer receipts use the legacy heldout-60s alias; current 60s transfer is
+    # split into explicit train/held audit supports below.
     "L0c2-K2-addition-50s": {
         "train":     {"partition": "enumerate_l0c2_k2_addition_50s"},
+    },
+    # L0c2-K2-addition-60s-transfer — computed-transfer falsifier after the 50s
+    # result-range extension bank. The TRAINABLE rung is the 60-row Latin-diagonal
+    # train split only; the disjoint 20-row held-transfer split is audit-visible
+    # via language_supports/probe, not a generator held_out branch.
+    "L0c2-K2-addition-60s-transfer": {
+        "train":     {"partition": "enumerate_l0c2_k2_addition_60s_transfer_train"},
     },
     "L0c2-K3": {
         "train":     {"partition": "enumerate_stratified_l0c2_k3"},
@@ -2589,6 +2597,15 @@ L0C2K2_ADDITION_50S_TRAIN_COUNT: int = 80
 L0C2K2_ADDITION_50S_RESULT_RANGE: tuple[int, int] = (50, 59)
 L0C2K2_ADDITION_50S_ADDEND_RANGE: tuple[int, int] = (1, 8)
 
+# L0c2-K2-addition-60s-transfer — Latin-diagonal computed-transfer split.
+# Pool = result 60..69 x k=1..8 (80 rows). Train = 60 rows; held-transfer =
+# 20 rows, selected by held ks {(d%8)+1, ((d+4)%8)+1} for result ones digit d.
+L0C2K2_ADDITION_60S_TRANSFER_TOTAL_COUNT: int = 80
+L0C2K2_ADDITION_60S_TRANSFER_TRAIN_COUNT: int = 60
+L0C2K2_ADDITION_60S_TRANSFER_HELD_COUNT: int = 20
+L0C2K2_ADDITION_60S_TRANSFER_RESULT_RANGE: tuple[int, int] = (60, 69)
+L0C2K2_ADDITION_60S_TRANSFER_ADDEND_RANGE: tuple[int, int] = (1, 8)
+
 
 def _l0c_operator(question: str) -> str:
     """F.4a operator classifier for L0c `<expr> equals what?` rows (codex msg
@@ -3018,7 +3035,7 @@ def _gen_l0c2k2_addition_50s(rng: random.Random, spec: dict, n: int, seed: int, 
         raise ValueError(
             "L0c2-K2-addition-50s is TRAIN-only; it has no held_out surface. "
             "Use the 80-row acquisition audit support for the 50s gate and the "
-            "trained-OUT heldout-60s diagnostic for transfer checks."
+            "legacy all-60s diagnostic only for historical 50s transfer checks."
         )
     _ = spec, seed
     pool = _l0c2k2_addition_50s_enumerate()
@@ -3031,6 +3048,93 @@ def _gen_l0c2k2_addition_50s(rng: random.Random, spec: dict, n: int, seed: int, 
                 "question": row["question"],
                 "expected": row["expected"],
                 "rung": "L0c2-K2-addition-50s",
+            })
+            if len(out) >= n:
+                break
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# L0c2-K2-addition-60s-transfer — computed-transfer split after the 50s bank.
+# Exact result 60..69 x k=1..8, with a locked 60 train / 20 held Latin split.
+# --------------------------------------------------------------------------- #
+
+def _l0c2k2_addition_60s_transfer_held_ks(result: int) -> tuple[int, int]:
+    """Locked Latin-diagonal held ks for a result value in 60..69."""
+    d = result % 10
+    return ((d % 8) + 1, ((d + 4) % 8) + 1)
+
+
+def _l0c2k2_addition_60s_transfer_partition() -> tuple[list[dict], list[dict]]:
+    """Return (train60, held20) for the locked 60s-transfer partition."""
+    r_min, r_max = L0C2K2_ADDITION_60S_TRANSFER_RESULT_RANGE
+    k_min, k_max = L0C2K2_ADDITION_60S_TRANSFER_ADDEND_RANGE
+    train: list[dict] = []
+    held: list[dict] = []
+    for result in range(r_min, r_max + 1):
+        held_ks = set(_l0c2k2_addition_60s_transfer_held_ks(result))
+        assert len(held_ks) == 2
+        for k in range(k_min, k_max + 1):
+            a = result - k
+            row = {
+                "question": f"{a} plus {k} equals what?",
+                "expected": result,
+                "a": a,
+                "k": k,
+                "result": result,
+                "result_decade": "60s",
+                "addend_k": f"k_{k}",
+                "carry": "carry" if (a % 10) + k >= 10 else "no_carry",
+                "result_ones": f"ones_{result % 10}",
+            }
+            (held if k in held_ks else train).append(row)
+
+    assert len(train) == L0C2K2_ADDITION_60S_TRANSFER_TRAIN_COUNT
+    assert len(held) == L0C2K2_ADDITION_60S_TRANSFER_HELD_COUNT
+    train_pairs = {(r["question"], r["expected"]) for r in train}
+    held_pairs = {(r["question"], r["expected"]) for r in held}
+    assert len(train_pairs) == len(train)
+    assert len(held_pairs) == len(held)
+    assert train_pairs.isdisjoint(held_pairs)
+    assert all(" plus 0 " not in r["question"] and not r["question"].startswith("0 plus ") for r in train + held)
+    assert all(" minus " not in r["question"] and " equals what?" in r["question"] for r in train + held)
+    assert all(r["expected"] != r["a"] and r["expected"] != r["k"] for r in train + held)
+    return train, held
+
+
+def _l0c2k2_addition_60s_transfer_train_enumerate() -> list[dict]:
+    """Enumerate the 60 train rows for the 60s-transfer acquisition rung."""
+    train, _held = _l0c2k2_addition_60s_transfer_partition()
+    return train
+
+
+def _l0c2k2_addition_60s_transfer_held_enumerate() -> list[dict]:
+    """Enumerate the 20 disjoint held-transfer rows for the 60s-transfer gate."""
+    _train, held = _l0c2k2_addition_60s_transfer_partition()
+    return held
+
+
+def _gen_l0c2k2_addition_60s_transfer(
+    rng: random.Random, spec: dict, n: int, seed: int, split: str
+) -> list[dict]:
+    """Train-side sampler for the 60-row 60s-transfer acquisition split."""
+    if split != "train":
+        raise ValueError(
+            "L0c2-K2-addition-60s-transfer is TRAIN-only; split='held_out' is "
+            "invalid. Held-transfer is audited separately via the 20-row "
+            "L0c2-K2-addition-60s-transfer-held support."
+        )
+    _ = spec, seed
+    pool = _l0c2k2_addition_60s_transfer_train_enumerate()
+    out: list[dict] = []
+    while len(out) < n:
+        cycle = list(pool)
+        rng.shuffle(cycle)
+        for row in cycle:
+            out.append({
+                "question": row["question"],
+                "expected": row["expected"],
+                "rung": "L0c2-K2-addition-60s-transfer",
             })
             if len(out) >= n:
                 break
@@ -3762,6 +3866,20 @@ def make_rung_examples(
         return _gen_l0c2k2_addition_50s(
             rng,
             _RUNG_SPEC["L0c2-K2-addition-50s"]["train"],
+            n,
+            seed=seed,
+            split=split,
+        )
+    if rung == "L0c2-K2-addition-60s-transfer":
+        if split != "train":
+            raise ValueError(
+                "L0c2-K2-addition-60s-transfer is TRAIN-only; split='held_out' "
+                "is invalid. Held-transfer is measured by the 20-row transfer "
+                "audit support, not sampled into train."
+            )
+        return _gen_l0c2k2_addition_60s_transfer(
+            rng,
+            _RUNG_SPEC["L0c2-K2-addition-60s-transfer"]["train"],
             n,
             seed=seed,
             split=split,

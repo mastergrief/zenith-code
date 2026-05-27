@@ -27,6 +27,8 @@ from calm.hrm_text_158.curriculum.generators import (  # noqa: E402
     _l0c2k2_addition_120_enumerate,
     _l0c2k2_addition_120_k5to8_enumerate,
     _l0c2k2_addition_50s_enumerate,
+    _l0c2k2_addition_60s_transfer_held_enumerate,
+    _l0c2k2_addition_60s_transfer_train_enumerate,
     make_rung_examples,
 )
 from calm.hrm_text_158.curriculum.language_supports import (  # noqa: E402
@@ -38,6 +40,8 @@ from calm.hrm_text_158.curriculum.language_supports import (  # noqa: E402
     L0C2K2_ADDITION_120_AUDIT_EXPECTED_COUNT,
     L0C2K2_ADDITION_120_K5TO8_AUDIT_EXPECTED_COUNT,
     L0C2K2_ADDITION_50S_AUDIT_EXPECTED_COUNT,
+    L0C2K2_ADDITION_60S_TRANSFER_HELD_AUDIT_EXPECTED_COUNT,
+    L0C2K2_ADDITION_60S_TRANSFER_TRAIN_AUDIT_EXPECTED_COUNT,
     L0C2K2_ADDITION_HELDOUT_50S_AUDIT_EXPECTED_COUNT,
     L0C2K2_ADDITION_HELDOUT_60S_AUDIT_EXPECTED_COUNT,
     build_l0c1_close_sibling_ce_interleave_support,
@@ -45,6 +49,8 @@ from calm.hrm_text_158.curriculum.language_supports import (  # noqa: E402
     build_l0c2k2_addition_120_support,
     build_l0c2k2_addition_120_k5to8_support,
     build_l0c2k2_addition_50s_support,
+    build_l0c2k2_addition_60s_transfer_held_support,
+    build_l0c2k2_addition_60s_transfer_train_support,
     build_l0c2k2_addition_heldout_50s_support,
     build_l0c2k2_addition_heldout_60s_support,
     build_language_supports,
@@ -70,6 +76,9 @@ FULL_RUNG = "L0c2-K2-addition-full"
 K120_RUNG = "L0c2-K2-addition-120"
 K120_K5TO8_RUNG = "L0c2-K2-addition-120-k5to8"
 FIFTIES_RUNG = "L0c2-K2-addition-50s"
+SIXTIES_TRANSFER_RUNG = "L0c2-K2-addition-60s-transfer"
+SIXTIES_TRANSFER_TRAIN = "L0c2-K2-addition-60s-transfer-train"
+SIXTIES_TRANSFER_HELD = "L0c2-K2-addition-60s-transfer-held"
 HELDOUT_DIAG = "L0c2-K2-addition-heldout-50s"
 HELDOUT_60S_DIAG = "L0c2-K2-addition-heldout-60s"
 _PLUS_RE = re.compile(r"^(\d+) plus ([1-8]) equals what\?$")
@@ -557,7 +566,9 @@ def test_50s_rung_registered_train_only_diagnosis_only_and_not_retained():
     assert FIFTIES_RUNG in _RUNG_SPEC
     assert set(_RUNG_SPEC[FIFTIES_RUNG]) == {"train"}
     assert FIFTIES_RUNG in DIAGNOSIS_ONLY_RUNGS
-    assert FIFTIES_RUNG not in _TRAIN._RETAINED_SUPPORT_REGISTRY
+    # Banked after the 50s slice; now eligible as closest same-template retained
+    # prior for the 60s-transfer rung.
+    assert FIFTIES_RUNG in _TRAIN._RETAINED_SUPPORT_REGISTRY
 
     assert HELDOUT_60S_DIAG not in RUNG_NAMES
     assert HELDOUT_60S_DIAG not in _RUNG_SPEC
@@ -646,6 +657,38 @@ def test_legacy_heldout_50s_aliases_trainable_50s_rows_but_is_non_gating_label()
     assert "NON-GATING" in psrc
 
 
+def test_50s_retained_support_registry_matches_banked_support_and_stays_disjoint_from_60s():
+    retained_rows, support_hash = _TRAIN._retained_support(FIFTIES_RUNG, seed=17)
+    canonical = sorted(
+        _flat(build_l0c2k2_addition_50s_support(17), FIFTIES_RUNG),
+        key=lambda r: (r[2], r[0], r[1]),
+    )
+    assert len(retained_rows) == L0C2K2_ADDITION_50S_AUDIT_EXPECTED_COUNT == 80
+    assert retained_rows == canonical
+    assert len(support_hash) == 16
+
+    retained_pairs = {(q, e) for q, e, _bucket in retained_rows}
+    sixties_train = {
+        (q, e)
+        for q, e, _bucket in _flat(
+            build_l0c2k2_addition_60s_transfer_train_support(17),
+            SIXTIES_TRANSFER_TRAIN,
+        )
+    }
+    sixties_held = {
+        (q, e)
+        for q, e, _bucket in _flat(
+            build_l0c2k2_addition_60s_transfer_held_support(17),
+            SIXTIES_TRANSFER_HELD,
+        )
+    }
+    assert retained_pairs.isdisjoint(sixties_train)
+    assert retained_pairs.isdisjoint(sixties_held)
+    assert SIXTIES_TRANSFER_RUNG not in _TRAIN._RETAINED_SUPPORT_REGISTRY
+    assert SIXTIES_TRANSFER_TRAIN not in _TRAIN._RETAINED_SUPPORT_REGISTRY
+    assert SIXTIES_TRANSFER_HELD not in _TRAIN._RETAINED_SUPPORT_REGISTRY
+
+
 def test_50s_and_60s_language_audit_buckets_cover_declared():
     for key, support in (
         (FIFTIES_RUNG, build_l0c2k2_addition_50s_support()),
@@ -680,6 +723,179 @@ def test_50s_and_60s_probe_flags_and_watcher_modes_wired():
         if "l0c2k2addition50s" in line and "l0c2k2additionheldout60s" in line
     )
     assert "l0c2k2additionheldout50s" in band_line
+
+
+def test_60s_transfer_rung_registered_train_only_diagnosis_only_and_not_retained():
+    assert SIXTIES_TRANSFER_RUNG in RUNG_NAMES
+    assert SIXTIES_TRANSFER_RUNG in _RUNG_SPEC
+    assert set(_RUNG_SPEC[SIXTIES_TRANSFER_RUNG]) == {"train"}
+    assert SIXTIES_TRANSFER_RUNG in DIAGNOSIS_ONLY_RUNGS
+    assert SIXTIES_TRANSFER_RUNG not in _TRAIN._RETAINED_SUPPORT_REGISTRY
+
+    for audit_key in (SIXTIES_TRANSFER_TRAIN, SIXTIES_TRANSFER_HELD):
+        assert audit_key not in RUNG_NAMES
+        assert audit_key not in _RUNG_SPEC
+        assert audit_key not in DIAGNOSIS_ONLY_RUNGS
+        assert audit_key not in _TRAIN._RETAINED_SUPPORT_REGISTRY
+
+
+def test_trainer_choices_include_60s_transfer_rung_not_audit_surfaces():
+    train_src = os.path.join(_REPO, "scripts", "train_hrm_text_158.py")
+    with open(train_src, "r", encoding="utf-8") as fh:
+        src = fh.read()
+    assert f'"{SIXTIES_TRANSFER_RUNG}"' in src
+    assert SIXTIES_TRANSFER_TRAIN not in src
+    assert SIXTIES_TRANSFER_HELD not in src
+    assert HELDOUT_60S_DIAG not in src
+
+
+def test_60s_transfer_train_path_samples_only_train_split():
+    train_pairs = {
+        (q, expected)
+        for q, expected, _bucket in _flat(
+            build_l0c2k2_addition_60s_transfer_train_support(),
+            SIXTIES_TRANSFER_TRAIN,
+        )
+    }
+    held_pairs = {
+        (q, expected)
+        for q, expected, _bucket in _flat(
+            build_l0c2k2_addition_60s_transfer_held_support(),
+            SIXTIES_TRANSFER_HELD,
+        )
+    }
+    rows = make_rung_examples(SIXTIES_TRANSFER_RUNG, 60, seed=17, split="train")
+    sampled_pairs = {(r["question"], r["expected"]) for r in rows}
+    assert len(rows) == 60
+    assert len(sampled_pairs) == 60
+    assert all(r["rung"] == SIXTIES_TRANSFER_RUNG for r in rows)
+    assert sampled_pairs == train_pairs
+    assert sampled_pairs.isdisjoint(held_pairs)
+    with pytest.raises(ValueError, match="TRAIN-only"):
+        make_rung_examples(SIXTIES_TRANSFER_RUNG, 10, seed=17, split="held_out")
+
+
+def test_60s_transfer_partition_counts_disjoint_and_recombination_coverage():
+    train_rows = _flat(
+        build_l0c2k2_addition_60s_transfer_train_support(),
+        SIXTIES_TRANSFER_TRAIN,
+    )
+    held_rows = _flat(
+        build_l0c2k2_addition_60s_transfer_held_support(),
+        SIXTIES_TRANSFER_HELD,
+    )
+    train = _parse_rows(train_rows)
+    held = _parse_rows(held_rows)
+    train_pairs = {(q, e) for q, e, _bucket in train_rows}
+    held_pairs = {(q, e) for q, e, _bucket in held_rows}
+
+    assert len(train_rows) == L0C2K2_ADDITION_60S_TRANSFER_TRAIN_AUDIT_EXPECTED_COUNT == 60
+    assert len(held_rows) == L0C2K2_ADDITION_60S_TRANSFER_HELD_AUDIT_EXPECTED_COUNT == 20
+    assert len(train_pairs) == 60
+    assert len(held_pairs) == 20
+    assert train_pairs.isdisjoint(held_pairs)
+    assert Counter(expected for _a, _k, expected, _bucket in train) == {
+        result: 6 for result in range(60, 70)
+    }
+    assert Counter(expected for _a, _k, expected, _bucket in held) == {
+        result: 2 for result in range(60, 70)
+    }
+    assert set(k for _a, k, _expected, _bucket in train) == set(range(1, 9))
+    assert set(k for _a, k, _expected, _bucket in held) == set(range(1, 9))
+
+    # recombination_coverage: every held result-value and k-value is also seen in train.
+    recombination_coverage = (
+        {expected for _a, _k, expected, _bucket in held}
+        <= {expected for _a, _k, expected, _bucket in train}
+        and {k for _a, k, _expected, _bucket in held}
+        <= {k for _a, k, _expected, _bucket in train}
+    )
+    assert recombination_coverage
+
+
+def test_60s_transfer_no_zero_minus_echo_carry_and_cross_support_disjoint():
+    train_rows = _flat(
+        build_l0c2k2_addition_60s_transfer_train_support(),
+        SIXTIES_TRANSFER_TRAIN,
+    )
+    held_rows = _flat(
+        build_l0c2k2_addition_60s_transfer_held_support(),
+        SIXTIES_TRANSFER_HELD,
+    )
+    for rows in (train_rows, held_rows):
+        parsed = _parse_rows(rows)
+        assert all(1 <= k <= 8 for _a, k, _expected, _bucket in parsed)
+        assert all(" plus 0 " not in q and not q.startswith("0 plus ") for q, _e, _b in rows)
+        assert all(" minus " not in q and " equals what?" in q for q, _e, _b in rows)
+        assert all(expected != a and expected != k for a, k, expected, _bucket in parsed)
+        carry_counts = Counter((a % 10) + k >= 10 for a, k, _expected, _bucket in parsed)
+        assert set(carry_counts) == {False, True}
+
+    sixties_pairs = {(q, e) for q, e, _bucket in train_rows + held_rows}
+    banked_20s_40s = {
+        (r["question"], r["expected"])
+        for r in _l0c2k2_addition_full_enumerate()
+    }
+    fifties = {
+        (r["question"], r["expected"])
+        for r in _l0c2k2_addition_50s_enumerate()
+    }
+    assert sixties_pairs.isdisjoint(banked_20s_40s)
+    assert sixties_pairs.isdisjoint(fifties)
+
+
+def test_60s_transfer_enumerator_metadata_matches_support_contract():
+    train = _l0c2k2_addition_60s_transfer_train_enumerate()
+    held = _l0c2k2_addition_60s_transfer_held_enumerate()
+    assert len(train) == 60
+    assert len(held) == 20
+    assert Counter(r["result_decade"] for r in train) == {"60s": 60}
+    assert Counter(r["result_decade"] for r in held) == {"60s": 20}
+    assert Counter(r["result_ones"] for r in train) == {f"ones_{n}": 6 for n in range(10)}
+    assert Counter(r["result_ones"] for r in held) == {f"ones_{n}": 2 for n in range(10)}
+    assert set(Counter(r["addend_k"] for r in train).values()) == {7, 8}
+    assert set(Counter(r["addend_k"] for r in held).values()) == {2, 3}
+
+
+def test_60s_transfer_language_audit_buckets_cover_declared():
+    for key, support in (
+        (SIXTIES_TRANSFER_TRAIN, build_l0c2k2_addition_60s_transfer_train_support()),
+        (SIXTIES_TRANSFER_HELD, build_l0c2k2_addition_60s_transfer_held_support()),
+    ):
+        rows = _flat(support, key)
+        present = {bucket for _q, _e, bucket in rows}
+        declared = set(language_source_rung_buckets(key))
+        assert present == declared
+        assert all(bucket.count(":") == 3 for bucket in present)
+
+
+def test_60s_transfer_probe_flags_watcher_modes_and_legacy_label_wired():
+    probe_src = os.path.join(_REPO, "scripts", "probe_hrm_text_158.py")
+    with open(probe_src, "r", encoding="utf-8") as fh:
+        psrc = fh.read()
+    assert "--l0c2k2-addition-60s-transfer-train-audit" in psrc
+    assert "--l0c2k2-addition-60s-transfer-held-audit" in psrc
+    assert 'surface="l0c2k2addition60stransfertrain"' in psrc
+    assert 'surface="l0c2k2addition60stransferheld"' in psrc
+    assert "TRANSFER_HELD_BANK_GATE_FOR_60S_TRANSFER" in psrc
+    assert "LEGACY_50S_TRANSFER_DIAGNOSTIC_ONLY" in psrc
+    assert "not future trained-out proof" in psrc
+
+    watcher_src = os.path.join(_REPO, "scripts", "parallel_audit_watcher.py")
+    with open(watcher_src, "r", encoding="utf-8") as fh:
+        wsrc = fh.read()
+    assert "--l0c2k2-addition-60s-transfer-train-audit" in wsrc
+    assert "--l0c2k2-addition-60s-transfer-held-audit" in wsrc
+    assert "L0C2K2ADDITION60STRANSFERTRAIN AGGREGATE" in wsrc
+    assert "L0C2K2ADDITION60STRANSFERHELD AGGREGATE" in wsrc
+    assert "TRANSFER_HELD_BANK_GATE_FOR_60S_TRANSFER" in wsrc
+    assert "LEGACY_50S_TRANSFER_DIAGNOSTIC_ONLY" in wsrc
+    band_line = next(
+        line for line in wsrc.splitlines()
+        if "l0c2k2addition60stransfertrain" in line
+        and "l0c2k2addition60stransferheld" in line
+    )
+    assert "l0c2k2additionheldout60s" in band_line
 
 
 def test_120_k5to8_ce_interleave_dry_run_injects_rows(monkeypatch, tmp_path: Path, capsys):

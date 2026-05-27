@@ -401,6 +401,7 @@ _RETAINED_SUPPORT_REGISTRY: tuple[str, ...] = (
     "L0c2-K1-identity-2digit-full",
     "L0c2-K2-addition-120",
     "L0c2-K2-addition-120-k5to8",
+    "L0c2-K2-addition-50s",
 )
 
 
@@ -455,11 +456,16 @@ def _retained_support(name: str, seed: int) -> tuple[list[tuple[str, int, str]],
                    membership only enables explicit `--retained-support`; it is
                    not default-on.
     - "L0c2-K2-addition-120-k5to8" ← 120-row full-density k=5..8 K2 addition
-                   support (`<a> plus <k> equals what?`, result=20..49, k=5..8),
-                   SEED-INDEPENDENT. Banked at parent-floor 119/120; eligible as
-                   a TRUE prior/retained surface for the 50s result-range
-                   extension. The active 50s acquisition target stays OUT of this
-                   registry and must not be parent-KL'd.
+                    support (`<a> plus <k> equals what?`, result=20..49, k=5..8),
+                    SEED-INDEPENDENT. Banked at parent-floor 119/120; eligible as
+                    a TRUE prior/retained surface for the 50s result-range
+                    extension.
+    - "L0c2-K2-addition-50s" ← 80-row full-density 50s K2 addition support
+                    (`<a> plus <k> equals what?`, result=50..59, k=1..8),
+                    SEED-INDEPENDENT. Banked after the 50s slice; eligible as the
+                    closest same-template retained prior for the 60s-transfer rung.
+                    The active 60s train/held-transfer supports stay OUT and must
+                    not be parent-KL'd.
 
     Rows are `(question, expected, source_rung)` sorted stably by
     `(source_rung, question, expected)` so repeated construction is
@@ -535,13 +541,25 @@ def _retained_support(name: str, seed: int) -> tuple[list[tuple[str, int, str]],
     elif name == "L0c2-K2-addition-120-k5to8":
         # Banked k=5..8 addition support. This is now a TRUE prior surface the
         # parent has acquired, so the 50s extension can explicitly parent-KL it.
-        # Do not add the active 50s target or 60s diagnostic to this registry.
+        # The banked 50s support has its own registry entry after acquisition.
         from calm.hrm_text_158.curriculum.language_supports import (
             build_l0c2k2_addition_120_k5to8_support,
         )
         rows = [
             (q, e, bucket)
             for _surface, pairs in build_l0c2k2_addition_120_k5to8_support(seed).items()
+            for (q, e, bucket) in pairs
+        ]
+    elif name == "L0c2-K2-addition-50s":
+        # Banked 50s addition support. This is the closest same-template TRUE
+        # prior for the 60s-transfer rung. Do not add the active 60s target or
+        # held-transfer gate to this registry.
+        from calm.hrm_text_158.curriculum.language_supports import (
+            build_l0c2k2_addition_50s_support,
+        )
+        rows = [
+            (q, e, bucket)
+            for _surface, pairs in build_l0c2k2_addition_50s_support(seed).items()
             for (q, e, bucket) in pairs
         ]
     else:
@@ -1667,7 +1685,7 @@ if __name__ == "__main__":
                          "--use-ternary-bulk (no-op otherwise).")
     # Phase 3 Step 1 curriculum flags (codex msg 1779462307554 +1 implement Phase A)
     ap.add_argument("--curriculum-rung", type=str, default=None,
-                    choices=["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K2-addition-full", "L0c2-K2-addition-120", "L0c2-K2-addition-120-k5to8", "L0c2-K2-addition-50s", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6"],
+                    choices=["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K2-addition-full", "L0c2-K2-addition-120", "L0c2-K2-addition-120-k5to8", "L0c2-K2-addition-50s", "L0c2-K2-addition-60s-transfer", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6"],
                     help="Phase 3 curriculum mode. When set, swaps GSM8k corpus "
                          "for synthetic per-rung data + replay mix. Requires "
                          "--use-broad-tokenizer in Phase 3 design.")
@@ -1782,7 +1800,8 @@ if __name__ == "__main__":
                          "toward the frozen parent, NO CE). NAME in "
                          "{L0b, L0c, L0c1, math_a0, math_r1b2_minus_one, "
                          "l0c_exhaustive, L0c2-K1-identity-2digit-full, "
-                         "L0c2-K2-addition-120, L0c2-K2-addition-120-k5to8}; "
+                         "L0c2-K2-addition-120, L0c2-K2-addition-120-k5to8, "
+                         "L0c2-K2-addition-50s}; "
                          "registry membership only makes "
                          "a name explicitly selectable here; it is not default-on. "
                          "L0c1 explicit selection pins parent behavior on the "

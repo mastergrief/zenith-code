@@ -164,7 +164,10 @@ from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
 # L0c2-K2-addition-50s stays OUT for the same reason: it is the active
 #         acquisition target for the result-range extension, not a parent-KL
 #         prior or positional replay source.
-DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b", "R1b4", "R1b10", "R2", "R2a", "L0c1", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c2-K2-addition-full", "L0c2-K2-addition-120", "L0c2-K2-addition-120-k5to8", "L0c2-K2-addition-50s"})
+# L0c2-K2-addition-60s-transfer stays OUT too: it is the train-60 acquisition
+#         target for a computed-transfer falsifier. The held-20 transfer support
+#         is a bank gate, not a positional prior or retained/parent-KL surface.
+DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b", "R1b4", "R1b10", "R2", "R2a", "L0c1", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c2-K2-addition-full", "L0c2-K2-addition-120", "L0c2-K2-addition-120-k5to8", "L0c2-K2-addition-50s", "L0c2-K2-addition-60s-transfer"})
 
 
 # R7 (GSM8k) is generator-incompatible — served separately from

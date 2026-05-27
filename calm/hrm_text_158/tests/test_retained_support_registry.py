@@ -46,12 +46,14 @@ def test_registry_names():
         "L0c2-K1-identity-2digit-full",
         "L0c2-K2-addition-120",
         "L0c2-K2-addition-120-k5to8",
+        "L0c2-K2-addition-50s",
     )
 
 
 _IDENTITY_FULL_HASH = "bf43ff7354b64c4e"
 _L0C2_K2_ADDITION_120_HASH = "8b29072411bb9c71"
 _L0C2_K2_ADDITION_120_K5TO8_HASH = "c156c62533a09d29"
+_L0C2_K2_ADDITION_50S_HASH = "fb0b04414a616f4f"
 _L0C1_SEED17_HASH = "7bc8cd771daab878"
 
 
@@ -224,6 +226,57 @@ def test_l0c2_k2_addition_120_k5to8_retained_support_seed_independent():
         _support("L0c2-K2-addition-120-k5to8", 42)[1]
 
 
+def test_l0c2_k2_addition_50s_retained_support_snapshot():
+    rows, h = _support("L0c2-K2-addition-50s", 17)
+    assert len(rows) == 80
+    assert h == _L0C2_K2_ADDITION_50S_HASH
+    assert rows == sorted(rows, key=lambda r: (r[2], r[0], r[1]))
+    assert rows[0] == ("49 plus 1 equals what?", 50, "50s:k_1:carry:ones_0")
+    assert rows[-1] == ("51 plus 8 equals what?", 59, "50s:k_8:no_carry:ones_9")
+    assert all(q.endswith(" equals what?") and " plus " in q for q, _e, _bucket in rows)
+
+
+def test_l0c2_k2_addition_50s_retained_support_matches_audit_and_not_60s_transfer():
+    from calm.hrm_text_158.curriculum.language_supports import (
+        build_l0c2k2_addition_50s_support,
+        build_l0c2k2_addition_60s_transfer_held_support,
+        build_l0c2k2_addition_60s_transfer_train_support,
+    )
+    rows, h = _support("L0c2-K2-addition-50s", 17)
+    retained = {(q, e) for q, e, _bucket in rows}
+    audit_rows = sorted(
+        [
+            (q, e, bucket)
+            for _surface, pairs in build_l0c2k2_addition_50s_support(17).items()
+            for (q, e, bucket) in pairs
+        ],
+        key=lambda r: (r[2], r[0], r[1]),
+    )
+    sixties_train = {
+        (q, e)
+        for _surface, pairs in build_l0c2k2_addition_60s_transfer_train_support(17).items()
+        for q, e, _bucket in pairs
+    }
+    sixties_held = {
+        (q, e)
+        for _surface, pairs in build_l0c2k2_addition_60s_transfer_held_support(17).items()
+        for q, e, _bucket in pairs
+    }
+    assert len(rows) == len(retained) == len(audit_rows) == 80
+    assert rows == audit_rows
+    assert h == _L0C2_K2_ADDITION_50S_HASH
+    assert retained.isdisjoint(sixties_train)
+    assert retained.isdisjoint(sixties_held)
+    assert "L0c2-K2-addition-60s-transfer" not in _REGISTRY
+    assert "L0c2-K2-addition-60s-transfer-train" not in _REGISTRY
+    assert "L0c2-K2-addition-60s-transfer-held" not in _REGISTRY
+
+
+def test_l0c2_k2_addition_50s_retained_support_seed_independent():
+    assert _support("L0c2-K2-addition-50s", 17)[1] == \
+        _support("L0c2-K2-addition-50s", 42)[1]
+
+
 # --------------------------------------------------------------------------- #
 # l0c_exhaustive: dormant language-density support (codex msg 1779693537447).
 # Registry-addressable now; NOT in any recipe default until banked.
@@ -314,6 +367,12 @@ def test_l0c2_k2_addition_120_sampler_namespace():
     assert _sampler_seed(name, 17) != _sampler_seed("L0b", 17)
 
 
+def test_l0c2_k2_addition_50s_sampler_namespace():
+    name = "L0c2-K2-addition-50s"
+    assert _sampler_seed(name, 17) == _thr._stable_curriculum_seed(17, f"retained:{name}")
+    assert _sampler_seed(name, 17) != _sampler_seed("L0b", 17)
+
+
 def test_math_a0_support_snapshot():
     rows, h = _support("math_a0", 17)
     assert len(rows) == 1255
@@ -385,6 +444,7 @@ def test_determinism_same_name_seed():
         ("L0c2-K1-identity-2digit-full", 17),
         ("L0c2-K2-addition-120", 17),
         ("L0c2-K2-addition-120-k5to8", 17),
+        ("L0c2-K2-addition-50s", 17),
     ):
         r1, h1 = _support(name, seed)
         r2, h2 = _support(name, seed)
@@ -546,6 +606,12 @@ def test_l0c2_k2_addition_120_k5to8_profile_name_reaches_load_from_guard():
     import pytest
     with pytest.raises(ValueError, match="requires --load-from"):
         _thr.train(retained_support_profile=[("L0c2-K2-addition-120-k5to8", 1.0)])
+
+
+def test_l0c2_k2_addition_50s_profile_name_reaches_load_from_guard():
+    import pytest
+    with pytest.raises(ValueError, match="requires --load-from"):
+        _thr.train(retained_support_profile=[("L0c2-K2-addition-50s", 1.0)])
 
 
 def test_l0c1_profile_name_reaches_load_from_guard():

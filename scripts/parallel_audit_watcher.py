@@ -64,10 +64,20 @@ _AUDIT_MODES = [
     # the legacy heldout-50s mode below is alias-only/non-gating after this rung.
     ("l0c2k2addition50s", ["--l0c2k2-addition-50s-audit"],
      r"L0C2K2ADDITION50S AGGREGATE"),
+    # Computed-transfer rung: the train split and held-transfer split are both
+    # bank-gate audit surfaces. Neither is retained/parent-KL.
+    ("l0c2k2addition60stransfertrain",
+     ["--l0c2k2-addition-60s-transfer-train-audit"],
+     r"L0C2K2ADDITION60STRANSFERTRAIN AGGREGATE"),
+    ("l0c2k2addition60stransferheld",
+     ["--l0c2k2-addition-60s-transfer-held-audit"],
+     r"L0C2K2ADDITION60STRANSFERHELD AGGREGATE"),
     # Historical receipt alias for the exact 50s rows. Kept non-gating so old
     # scripts resolve, but no longer a held-out transfer signal after 50s trains.
     ("l0c2k2additionheldout50s", ["--l0c2k2-addition-heldout-50s-audit"],
      r"L0C2K2ADDITIONHELDOUT50S AGGREGATE"),
+    # Historical all-60s diagnostic for the banked 50s run only. The current
+    # 60s-transfer gate is split into train/held modes above.
     ("l0c2k2additionheldout60s", ["--l0c2k2-addition-heldout-60s-audit"],
      r"L0C2K2ADDITIONHELDOUT60S AGGREGATE"),
     ("l0c2k3", ["--l0c2k3-audit"], r"L0C2K3 AGGREGATE"),
@@ -104,8 +114,14 @@ _SUMMARY_ANNOTATIONS = {
     "l0c2k2additionheldout50s": (
         "LEGACY_ALIAS_ONLY_NON_GATING: same rows as L0C2K2ADDITION50S; not transfer"
     ),
+    "l0c2k2addition60stransfertrain": (
+        "TRANSFER_TRAIN_BANK_GATE_FOR_60S_TRANSFER: train split; not retained/parent-KL"
+    ),
+    "l0c2k2addition60stransferheld": (
+        "TRANSFER_HELD_BANK_GATE_FOR_60S_TRANSFER: disjoint held recombination support; not retained/parent-KL"
+    ),
     "l0c2k2additionheldout60s": (
-        "DIAGNOSTIC_NON_GATING: forward-transfer signal; not gate"
+        "LEGACY_50S_TRANSFER_DIAGNOSTIC_ONLY: historical all-60s audit for banked 50s run; not future trained-out proof"
     ),
 }
 
@@ -264,7 +280,7 @@ def main() -> int:
                     name,
                     next((a for a in entry.get("results", {}).get(name, {}).get("aggregate", [])), ""),
                 )
-                for name in ("l0c2k1", "l0c2k1edge", "l0c2k1identity", "l0c2k1identityfull", "l0c2k2", "l0c2k2additionfull", "l0c2k2addition120", "l0c2k2addition120k5to8", "l0c2k2addition50s", "l0c2k2additionheldout50s", "l0c2k2additionheldout60s", "l0c2k3")
+                for name in ("l0c2k1", "l0c2k1edge", "l0c2k1identity", "l0c2k1identityfull", "l0c2k2", "l0c2k2additionfull", "l0c2k2addition120", "l0c2k2addition120k5to8", "l0c2k2addition50s", "l0c2k2addition60stransfertrain", "l0c2k2addition60stransferheld", "l0c2k2additionheldout50s", "l0c2k2additionheldout60s", "l0c2k3")
             ]
             l0cx = next((a for a in entry.get("results", {}).get("l0c_exhaustive", {}).get("aggregate", [])
                          if "[probe-l0c-exhaustive]" in a), "")
