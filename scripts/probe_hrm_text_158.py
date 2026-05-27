@@ -1261,6 +1261,12 @@ _LANGUAGE_AGGREGATE_ANNOTATIONS = {
     "l0c2k2addition60straceheld": (
         "TRACE_HELD_RECOMBINATION_BANK_GATE: carry-trace held split; not retained/parent-KL"
     ),
+    "l0c2k2addition60to89tracetrain": (
+        "TRACE_TRAIN_EXPANDED_POOL_BANK_GATE: coverage-controlled carry-trace train split; not retained/parent-KL"
+    ),
+    "l0c2k2addition60to89traceheld": (
+        "TRACE_HELD_EXPANDED_POOL_COMPOSITION_GATE: coverage-controlled carry-trace held split; not retained/parent-KL"
+    ),
     "l0c2k2additionheldout60s": (
         "DIAGNOSTIC_NON_GATING: LEGACY_50S_TRANSFER_DIAGNOSTIC_ONLY: historical all-60s audit for banked 50s run; not future trained-out proof; not gate"
     ),
@@ -1400,6 +1406,8 @@ def probe_language_finite_supports(
     trace_surface = surface in {
         "l0c2k2addition60stracetrain",
         "l0c2k2addition60straceheld",
+        "l0c2k2addition60to89tracetrain",
+        "l0c2k2addition60to89traceheld",
     }
 
     def _parse_int(text: str) -> int | None:
@@ -2185,6 +2193,18 @@ if __name__ == "__main__":
                          "targets ending in 'answer N'. Not retained/parent-KL. "
                          "Emits surface='l0c2k2addition60straceheld'. Conflicts "
                          "with other modes; use --max-gen >=96.")
+    ap.add_argument("--l0c2k2-addition-60to89-trace-train-audit", action="store_true",
+                    help="Run the L0c2-K2-addition-60to89-trace TRAIN bank-gate "
+                         "audit: 120 coverage-controlled expanded-pool prompts "
+                         "with deterministic carry-trace targets ending in "
+                         "'answer N'. Emits surface='l0c2k2addition60to89tracetrain'. "
+                         "Conflicts with other modes; use --max-gen >=128.")
+    ap.add_argument("--l0c2k2-addition-60to89-trace-held-audit", action="store_true",
+                    help="Run the L0c2-K2-addition-60to89-trace HELD composition "
+                         "audit: 40 held prompts whose trace factors are all "
+                         "covered by train. Not retained/parent-KL. Emits "
+                         "surface='l0c2k2addition60to89traceheld'. Conflicts "
+                         "with other modes; use --max-gen >=128.")
     ap.add_argument("--l0c2k2-addition-heldout-50s-audit", action="store_true",
                     help="Run the legacy alias-only L0c2-K2 addition heldout-50s "
                          "audit: same 80 rows as the trainable 50s acquisition "
@@ -2347,6 +2367,8 @@ if __name__ == "__main__":
         ("--l0c2k2-addition-60s-transfer-held-audit", args.l0c2k2_addition_60s_transfer_held_audit),
         ("--l0c2k2-addition-60s-trace-train-audit", args.l0c2k2_addition_60s_trace_train_audit),
         ("--l0c2k2-addition-60s-trace-held-audit", args.l0c2k2_addition_60s_trace_held_audit),
+        ("--l0c2k2-addition-60to89-trace-train-audit", args.l0c2k2_addition_60to89_trace_train_audit),
+        ("--l0c2k2-addition-60to89-trace-held-audit", args.l0c2k2_addition_60to89_trace_held_audit),
         ("--l0c2k2-addition-heldout-50s-audit", args.l0c2k2_addition_heldout_50s_audit),
         ("--l0c2k2-addition-heldout-60s-audit", args.l0c2k2_addition_heldout_60s_audit),
         ("--l0c2k3-audit", args.l0c2k3_audit),
@@ -2393,6 +2415,8 @@ if __name__ == "__main__":
             ("--l0c2k2-addition-60s-transfer-held-audit", args.l0c2k2_addition_60s_transfer_held_audit),
             ("--l0c2k2-addition-60s-trace-train-audit", args.l0c2k2_addition_60s_trace_train_audit),
             ("--l0c2k2-addition-60s-trace-held-audit", args.l0c2k2_addition_60s_trace_held_audit),
+            ("--l0c2k2-addition-60to89-trace-train-audit", args.l0c2k2_addition_60to89_trace_train_audit),
+            ("--l0c2k2-addition-60to89-trace-held-audit", args.l0c2k2_addition_60to89_trace_held_audit),
             ("--l0c2k2-addition-heldout-50s-audit", args.l0c2k2_addition_heldout_50s_audit),
             ("--l0c2k2-addition-heldout-60s-audit", args.l0c2k2_addition_heldout_60s_audit),
             ("--l0c2k3-audit", args.l0c2k3_audit),
@@ -2642,6 +2666,42 @@ if __name__ == "__main__":
             supports_builder=build_l0c2k2_addition_60s_trace_held_support,
             expected_aggregate=L0C2K2_ADDITION_60S_TRACE_HELD_AUDIT_EXPECTED_COUNT,
             surface="l0c2k2addition60straceheld",
+        )
+    elif args.l0c2k2_addition_60to89_trace_train_audit:
+        from calm.hrm_text_158.curriculum.language_supports import (
+            build_l0c2k2_addition_60to89_trace_train_support,
+            L0C2K2_ADDITION_60TO89_TRACE_TRAIN_AUDIT_EXPECTED_COUNT,
+        )
+        probe_language_finite_supports(
+            args.ckpt_path,
+            audit_seed=args.language_audit_seed,
+            max_gen=args.max_gen,
+            output_json=args.audit_output_json,
+            use_cached_ternary_infer=args.use_cached_ternary_infer,
+            use_kv_cache_decode=args.use_kv_cache_decode,
+            use_batched_probe_eval=args.use_batched_probe_eval,
+            probe_batch_size=args.probe_batch_size,
+            supports_builder=build_l0c2k2_addition_60to89_trace_train_support,
+            expected_aggregate=L0C2K2_ADDITION_60TO89_TRACE_TRAIN_AUDIT_EXPECTED_COUNT,
+            surface="l0c2k2addition60to89tracetrain",
+        )
+    elif args.l0c2k2_addition_60to89_trace_held_audit:
+        from calm.hrm_text_158.curriculum.language_supports import (
+            build_l0c2k2_addition_60to89_trace_held_support,
+            L0C2K2_ADDITION_60TO89_TRACE_HELD_AUDIT_EXPECTED_COUNT,
+        )
+        probe_language_finite_supports(
+            args.ckpt_path,
+            audit_seed=args.language_audit_seed,
+            max_gen=args.max_gen,
+            output_json=args.audit_output_json,
+            use_cached_ternary_infer=args.use_cached_ternary_infer,
+            use_kv_cache_decode=args.use_kv_cache_decode,
+            use_batched_probe_eval=args.use_batched_probe_eval,
+            probe_batch_size=args.probe_batch_size,
+            supports_builder=build_l0c2k2_addition_60to89_trace_held_support,
+            expected_aggregate=L0C2K2_ADDITION_60TO89_TRACE_HELD_AUDIT_EXPECTED_COUNT,
+            surface="l0c2k2addition60to89traceheld",
         )
     elif args.l0c2k2_addition_heldout_50s_audit:
         from calm.hrm_text_158.curriculum.language_supports import (

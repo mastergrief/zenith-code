@@ -81,6 +81,14 @@ _AUDIT_MODES = [
     ("l0c2k2addition60straceheld",
      ["--l0c2k2-addition-60s-trace-held-audit", "--max-gen", "128"],
      r"L0C2K2ADDITION60STRACEHELD AGGREGATE"),
+    # Expanded-pool trace rung: 120/40 coverage-controlled split over results
+    # 60..89. Uses the same trace-only generation budget as the 60s trace modes.
+    ("l0c2k2addition60to89tracetrain",
+     ["--l0c2k2-addition-60to89-trace-train-audit", "--max-gen", "128"],
+     r"L0C2K2ADDITION60TO89TRACETRAIN AGGREGATE"),
+    ("l0c2k2addition60to89traceheld",
+     ["--l0c2k2-addition-60to89-trace-held-audit", "--max-gen", "128"],
+     r"L0C2K2ADDITION60TO89TRACEHELD AGGREGATE"),
     # Historical receipt alias for the exact 50s rows. Kept non-gating so old
     # scripts resolve, but no longer a held-out transfer signal after 50s trains.
     ("l0c2k2additionheldout50s", ["--l0c2k2-addition-heldout-50s-audit"],
@@ -134,6 +142,12 @@ _SUMMARY_ANNOTATIONS = {
     ),
     "l0c2k2addition60straceheld": (
         "TRACE_HELD_RECOMBINATION_BANK_GATE: carry-trace held split; not retained/parent-KL"
+    ),
+    "l0c2k2addition60to89tracetrain": (
+        "TRACE_TRAIN_EXPANDED_POOL_BANK_GATE: coverage-controlled carry-trace train split; not retained/parent-KL"
+    ),
+    "l0c2k2addition60to89traceheld": (
+        "TRACE_HELD_EXPANDED_POOL_COMPOSITION_GATE: coverage-controlled carry-trace held split; not retained/parent-KL"
     ),
     "l0c2k2additionheldout60s": (
         "DIAGNOSTIC_NON_GATING: LEGACY_50S_TRANSFER_DIAGNOSTIC_ONLY: historical all-60s audit for banked 50s run; not future trained-out proof; not gate"
@@ -295,7 +309,7 @@ def main() -> int:
                     name,
                     next((a for a in entry.get("results", {}).get(name, {}).get("aggregate", [])), ""),
                 )
-                for name in ("l0c2k1", "l0c2k1edge", "l0c2k1identity", "l0c2k1identityfull", "l0c2k2", "l0c2k2additionfull", "l0c2k2addition120", "l0c2k2addition120k5to8", "l0c2k2addition50s", "l0c2k2addition60stransfertrain", "l0c2k2addition60stransferheld", "l0c2k2addition60stracetrain", "l0c2k2addition60straceheld", "l0c2k2additionheldout50s", "l0c2k2additionheldout60s", "l0c2k3")
+                for name in ("l0c2k1", "l0c2k1edge", "l0c2k1identity", "l0c2k1identityfull", "l0c2k2", "l0c2k2additionfull", "l0c2k2addition120", "l0c2k2addition120k5to8", "l0c2k2addition50s", "l0c2k2addition60stransfertrain", "l0c2k2addition60stransferheld", "l0c2k2addition60stracetrain", "l0c2k2addition60straceheld", "l0c2k2addition60to89tracetrain", "l0c2k2addition60to89traceheld", "l0c2k2additionheldout50s", "l0c2k2additionheldout60s", "l0c2k3")
             ]
             l0cx = next((a for a in entry.get("results", {}).get("l0c_exhaustive", {}).get("aggregate", [])
                          if "[probe-l0c-exhaustive]" in a), "")

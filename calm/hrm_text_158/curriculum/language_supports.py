@@ -46,6 +46,8 @@ from calm.hrm_text_158.curriculum.generators import (
     _l0c2k2_addition_50s_enumerate,
     _l0c2k2_addition_60s_trace_held_enumerate,
     _l0c2k2_addition_60s_trace_train_enumerate,
+    _l0c2k2_addition_60to89_trace_held_enumerate,
+    _l0c2k2_addition_60to89_trace_train_enumerate,
     _l0c2k2_addition_60s_transfer_held_enumerate,
     _l0c2k2_addition_60s_transfer_train_enumerate,
     l0c2_band_expected_count,
@@ -267,6 +269,8 @@ L0C2K2_ADDITION_60S_TRANSFER_TRAIN_AUDIT_EXPECTED_COUNT: int = 60
 L0C2K2_ADDITION_60S_TRANSFER_HELD_AUDIT_EXPECTED_COUNT: int = 20
 L0C2K2_ADDITION_60S_TRACE_TRAIN_AUDIT_EXPECTED_COUNT: int = 60
 L0C2K2_ADDITION_60S_TRACE_HELD_AUDIT_EXPECTED_COUNT: int = 20
+L0C2K2_ADDITION_60TO89_TRACE_TRAIN_AUDIT_EXPECTED_COUNT: int = 120
+L0C2K2_ADDITION_60TO89_TRACE_HELD_AUDIT_EXPECTED_COUNT: int = 40
 L0C2K2_ADDITION_HELDOUT_50S_AUDIT_EXPECTED_COUNT: int = 80
 L0C2K2_ADDITION_HELDOUT_60S_AUDIT_EXPECTED_COUNT: int = 80
 
@@ -468,6 +472,40 @@ def build_l0c2k2_addition_60s_trace_held_support(seed: int = 17) -> dict[str, li
     return {
         "L0c2-K2-addition-60s-trace-held":
             _l0c2k2_addition_60s_trace_held_support(seed),
+    }
+
+
+def _l0c2k2_addition_60to89_trace_train_support(seed: int = 17) -> list[tuple[str, str, str]]:
+    """120-row expanded-pool trace-target train split audit."""
+    _ = seed
+    return [
+        (r["question"], r["expected"], _l0c2k2_addition_bucket(r))
+        for r in _l0c2k2_addition_60to89_trace_train_enumerate()
+    ]
+
+
+def build_l0c2k2_addition_60to89_trace_train_support(seed: int = 17) -> dict[str, list[tuple[str, str, str]]]:
+    """Expanded-pool trace train support; not a retained/parent-KL surface."""
+    return {
+        "L0c2-K2-addition-60to89-trace-train":
+            _l0c2k2_addition_60to89_trace_train_support(seed),
+    }
+
+
+def _l0c2k2_addition_60to89_trace_held_support(seed: int = 17) -> list[tuple[str, str, str]]:
+    """40-row expanded-pool trace held-composition audit."""
+    _ = seed
+    return [
+        (r["question"], r["expected"], _l0c2k2_addition_bucket(r))
+        for r in _l0c2k2_addition_60to89_trace_held_enumerate()
+    ]
+
+
+def build_l0c2k2_addition_60to89_trace_held_support(seed: int = 17) -> dict[str, list[tuple[str, str, str]]]:
+    """Expanded-pool trace held support; not a retained/parent-KL surface."""
+    return {
+        "L0c2-K2-addition-60to89-trace-held":
+            _l0c2k2_addition_60to89_trace_held_support(seed),
     }
 
 
@@ -750,6 +788,16 @@ def language_source_rung_buckets(rung: str) -> list[str]:
         return sorted({
             _l0c2k2_addition_bucket(r)
             for r in _l0c2k2_addition_60s_trace_held_enumerate()
+        })
+    if rung == "L0c2-K2-addition-60to89-trace-train":
+        return sorted({
+            _l0c2k2_addition_bucket(r)
+            for r in _l0c2k2_addition_60to89_trace_train_enumerate()
+        })
+    if rung == "L0c2-K2-addition-60to89-trace-held":
+        return sorted({
+            _l0c2k2_addition_bucket(r)
+            for r in _l0c2k2_addition_60to89_trace_held_enumerate()
         })
     if rung == "L0c2-K2-addition-heldout-50s":
         return sorted({

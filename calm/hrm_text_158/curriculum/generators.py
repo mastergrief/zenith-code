@@ -257,7 +257,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K2-addition-full", "L0c2-K2-addition-120", "L0c2-K2-addition-120-k5to8", "L0c2-K2-addition-50s", "L0c2-K2-addition-60s-transfer", "L0c2-K2-addition-60s-trace", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K2-addition-full", "L0c2-K2-addition-120", "L0c2-K2-addition-120-k5to8", "L0c2-K2-addition-50s", "L0c2-K2-addition-60s-transfer", "L0c2-K2-addition-60s-trace", "L0c2-K2-addition-60to89-trace", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -728,6 +728,13 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     # string. Train-only; held trace rows are audit-visible, never parent-KL.
     "L0c2-K2-addition-60s-trace": {
         "train":     {"partition": "enumerate_l0c2_k2_addition_60s_trace_train"},
+    },
+    # L0c2-K2-addition-60to89-trace — expanded-pool coverage-controlled trace
+    # rung. Pool = results 60..89 x k=1..8 (240 rows). The trainable split is
+    # 120 rows; the 40 held rows are selected so every held trace factor has a
+    # distinct train representative. Train-only; held trace rows are audit-visible.
+    "L0c2-K2-addition-60to89-trace": {
+        "train":     {"partition": "enumerate_l0c2_k2_addition_60to89_trace_train"},
     },
     "L0c2-K3": {
         "train":     {"partition": "enumerate_stratified_l0c2_k3"},
@@ -2611,6 +2618,21 @@ L0C2K2_ADDITION_60S_TRANSFER_TRAIN_COUNT: int = 60
 L0C2K2_ADDITION_60S_TRANSFER_HELD_COUNT: int = 20
 L0C2K2_ADDITION_60S_TRANSFER_RESULT_RANGE: tuple[int, int] = (60, 69)
 L0C2K2_ADDITION_60S_TRANSFER_ADDEND_RANGE: tuple[int, int] = (1, 8)
+L0C2K2_ADDITION_60TO89_TRACE_TOTAL_COUNT: int = 240
+L0C2K2_ADDITION_60TO89_TRACE_TRAIN_COUNT: int = 120
+L0C2K2_ADDITION_60TO89_TRACE_HELD_COUNT: int = 40
+L0C2K2_ADDITION_60TO89_TRACE_RESULT_RANGE: tuple[int, int] = (60, 89)
+L0C2K2_ADDITION_60TO89_TRACE_ADDEND_RANGE: tuple[int, int] = (1, 8)
+L0C2K2_ADDITION_60TO89_TRACE_COVERAGE_FACTORS: tuple[str, ...] = (
+    "a_ones",
+    "k",
+    "ones_sum",
+    "carry",
+    "ones_digit",
+    "a_tens",
+    "a_ones_k",
+    "a_tens_carry",
+)
 
 
 def _l0c_operator(question: str) -> str:
@@ -3120,20 +3142,57 @@ def _l0c2k2_addition_60s_transfer_held_enumerate() -> list[dict]:
     return held
 
 
-def _l0c2k2_addition_trace_target(a: int, k: int, result: int) -> str:
-    """Canonical carry-trace target for the K2 addition trace curriculum."""
+def _l0c2k2_addition_trace_factors(a: int, k: int, result: int) -> dict[str, object]:
+    """Structured carry-trace factors for coverage-controlled trace splits."""
     ones_sum = (a % 10) + k
     ones_digit = ones_sum % 10
     carry = ones_sum // 10
-    tens_sum = (a // 10) + carry
+    a_tens = a // 10
+    tens_sum = a_tens + carry
     assert tens_sum * 10 + ones_digit == result
+    return {
+        "a_ones": a % 10,
+        "k": k,
+        "ones_sum": ones_sum,
+        "carry": carry,
+        "ones_digit": ones_digit,
+        "a_tens": a_tens,
+        "a_ones_k": (a % 10, k),
+        "a_tens_carry": (a_tens, carry),
+    }
+
+
+def _l0c2k2_addition_trace_factors_from_row(row: dict) -> dict[str, object]:
+    factors = row.get("trace_factors")
+    if factors is not None:
+        return dict(factors)
+    return _l0c2k2_addition_trace_factors(row["a"], row["k"], row["result"])
+
+
+def _l0c2k2_addition_trace_factor_sets(rows: list[dict]) -> dict[str, set[object]]:
+    """Return per-factor value sets used by constructor and test assertions."""
+    out: dict[str, set[object]] = {
+        name: set() for name in L0C2K2_ADDITION_60TO89_TRACE_COVERAGE_FACTORS
+    }
+    for row in rows:
+        factors = _l0c2k2_addition_trace_factors_from_row(row)
+        for name in out:
+            out[name].add(factors[name])
+    return out
+
+
+def _l0c2k2_addition_trace_target(a: int, k: int, result: int) -> str:
+    """Canonical carry-trace target for the K2 addition trace curriculum."""
+    factors = _l0c2k2_addition_trace_factors(a, k, result)
     return (
-        f"ones {a % 10}+{k}={ones_sum}; write {ones_digit} carry {carry}; "
-        f"tens {a // 10}+{carry}={tens_sum}; answer {result}"
+        f"ones {factors['a_ones']}+{k}={factors['ones_sum']}; "
+        f"write {factors['ones_digit']} carry {factors['carry']}; "
+        f"tens {factors['a_tens']}+{factors['carry']}="
+        f"{int(factors['a_tens']) + int(factors['carry'])}; answer {result}"
     )
 
 
-def _l0c2k2_addition_60s_trace_rows(rows: list[dict]) -> list[dict]:
+def _l0c2k2_addition_trace_rows(rows: list[dict]) -> list[dict]:
     traced: list[dict] = []
     for row in rows:
         trace = _l0c2k2_addition_trace_target(row["a"], row["k"], row["result"])
@@ -3146,16 +3205,234 @@ def _l0c2k2_addition_60s_trace_rows(rows: list[dict]) -> list[dict]:
 
 def _l0c2k2_addition_60s_trace_train_enumerate() -> list[dict]:
     """Trace-target view of the locked 60-row Latin train split."""
-    return _l0c2k2_addition_60s_trace_rows(
+    return _l0c2k2_addition_trace_rows(
         _l0c2k2_addition_60s_transfer_train_enumerate()
     )
 
 
 def _l0c2k2_addition_60s_trace_held_enumerate() -> list[dict]:
     """Trace-target view of the locked 20-row recombination held split."""
-    return _l0c2k2_addition_60s_trace_rows(
+    return _l0c2k2_addition_trace_rows(
         _l0c2k2_addition_60s_transfer_held_enumerate()
     )
+
+
+def _l0c2k2_addition_60to89_trace_pool_enumerate() -> list[dict]:
+    """Expanded 240-row pool: result 60..89 x k=1..8 with trace factors."""
+    r_min, r_max = L0C2K2_ADDITION_60TO89_TRACE_RESULT_RANGE
+    k_min, k_max = L0C2K2_ADDITION_60TO89_TRACE_ADDEND_RANGE
+    rows: list[dict] = []
+    for result in range(r_min, r_max + 1):
+        for k in range(k_min, k_max + 1):
+            a = result - k
+            factors = _l0c2k2_addition_trace_factors(a, k, result)
+            rows.append({
+                "question": f"{a} plus {k} equals what?",
+                "expected": result,
+                "a": a,
+                "k": k,
+                "result": result,
+                "result_decade": f"{(result // 10) * 10}s",
+                "addend_k": f"k_{k}",
+                "carry": "carry" if int(factors["carry"]) else "no_carry",
+                "result_ones": f"ones_{result % 10}",
+                "a_ones": factors["a_ones"],
+                "ones_sum": factors["ones_sum"],
+                "trace_carry": factors["carry"],
+                "ones_digit": factors["ones_digit"],
+                "a_tens": factors["a_tens"],
+                "trace_factors": factors,
+            })
+
+    assert len(rows) == L0C2K2_ADDITION_60TO89_TRACE_TOTAL_COUNT
+    assert len({(r["question"], r["expected"]) for r in rows}) == len(rows)
+    pair_counts: dict[tuple[int, int], int] = {}
+    for row in rows:
+        pair = (int(row["a_ones"]), int(row["k"]))
+        pair_counts[pair] = pair_counts.get(pair, 0) + 1
+    assert len(pair_counts) == 80
+    assert set(pair_counts.values()) == {3}
+    assert all(" plus 0 " not in r["question"] and not r["question"].startswith("0 plus ") for r in rows)
+    assert all(r["expected"] != r["a"] and r["expected"] != r["k"] for r in rows)
+    return rows
+
+
+def _l0c2k2_addition_row_key(row: dict) -> tuple[int, int]:
+    return (int(row["result"]), int(row["k"]))
+
+
+def _l0c2k2_addition_60to89_trace_assert_partition(
+    train: list[dict],
+    held: list[dict],
+    pool: list[dict],
+) -> None:
+    train_keys = {_l0c2k2_addition_row_key(r) for r in train}
+    held_keys = {_l0c2k2_addition_row_key(r) for r in held}
+    assert len(train) == L0C2K2_ADDITION_60TO89_TRACE_TRAIN_COUNT
+    assert len(held) == L0C2K2_ADDITION_60TO89_TRACE_HELD_COUNT
+    assert len(train_keys) == len(train)
+    assert len(held_keys) == len(held)
+    assert train_keys.isdisjoint(held_keys)
+    assert {r["question"] for r in train}.isdisjoint({r["question"] for r in held})
+
+    pool_keys = {_l0c2k2_addition_row_key(r) for r in pool}
+    assert train_keys <= pool_keys
+    assert held_keys <= pool_keys
+    assert len(pool_keys - train_keys - held_keys) == (
+        L0C2K2_ADDITION_60TO89_TRACE_TOTAL_COUNT
+        - L0C2K2_ADDITION_60TO89_TRACE_TRAIN_COUNT
+        - L0C2K2_ADDITION_60TO89_TRACE_HELD_COUNT
+    )
+
+    assert {r["result"] for r in held} <= {r["result"] for r in train}
+    held_factors = _l0c2k2_addition_trace_factor_sets(held)
+    train_factors = _l0c2k2_addition_trace_factor_sets(train)
+    for name in L0C2K2_ADDITION_60TO89_TRACE_COVERAGE_FACTORS:
+        missing = held_factors[name] - train_factors[name]
+        assert not missing, f"held trace factor {name} OOD in train: {sorted(missing)!r}"
+
+    for held_row in held:
+        held_pair = _l0c2k2_addition_trace_factors_from_row(held_row)["a_ones_k"]
+        reps = [
+            train_row for train_row in train
+            if (
+                _l0c2k2_addition_trace_factors_from_row(train_row)["a_ones_k"]
+                == held_pair
+                and (train_row["a"], train_row["k"]) != (held_row["a"], held_row["k"])
+            )
+        ]
+        assert reps, (
+            "held (a_ones,k) lacks a distinct train representative: "
+            f"{held_pair!r} row={held_row['question']!r}"
+        )
+
+
+def _l0c2k2_addition_60to89_trace_partition() -> tuple[list[dict], list[dict]]:
+    """Coverage-controlled 120/40 train/held partition over the 60..89 pool."""
+    pool = _l0c2k2_addition_60to89_trace_pool_enumerate()
+    by_pair: dict[tuple[int, int], list[dict]] = {}
+    for row in pool:
+        pair = (int(row["a_ones"]), int(row["k"]))
+        by_pair.setdefault(pair, []).append(row)
+
+    selected_pairs = sorted(
+        by_pair,
+        key=lambda pair: (_stable_seed("L0c2-K2-addition-60to89-trace", "held_pair", pair), pair),
+    )[:L0C2K2_ADDITION_60TO89_TRACE_HELD_COUNT]
+    held: list[dict] = []
+    for pair in selected_pairs:
+        group = sorted(by_pair[pair], key=lambda r: (r["result"], r["k"]))
+        held.append(group[_stable_seed("L0c2-K2-addition-60to89-trace", "held_row", pair) % len(group)])
+
+    held_keys = {_l0c2k2_addition_row_key(r) for r in held}
+    train: list[dict] = []
+    train_keys: set[tuple[int, int]] = set()
+
+    def add_train(row: dict) -> None:
+        key = _l0c2k2_addition_row_key(row)
+        assert key not in held_keys, f"attempted train/held collision: {key}"
+        if key not in train_keys:
+            train.append(row)
+            train_keys.add(key)
+
+    # First guarantee the load-bearing composition property: every held
+    # (a_ones,k) has a same-pair, different-(a,k) representative in train.
+    for held_row in held:
+        pair = (int(held_row["a_ones"]), int(held_row["k"]))
+        candidates = [
+            row for row in by_pair[pair]
+            if (
+                _l0c2k2_addition_row_key(row) not in held_keys
+                and (row["a"], row["k"]) != (held_row["a"], held_row["k"])
+            )
+        ]
+        assert candidates, f"unsatisfiable held pair without train representative: {pair}"
+        add_train(sorted(
+            candidates,
+            key=lambda r: (
+                _stable_seed(
+                    "L0c2-K2-addition-60to89-trace",
+                    "representative",
+                    held_row["result"],
+                    held_row["k"],
+                    r["result"],
+                    r["k"],
+                ),
+                r["result"],
+                r["k"],
+            ),
+        )[0])
+
+    def cover_value(name: str, value: object) -> None:
+        candidates = [
+            row for row in pool
+            if (
+                _l0c2k2_addition_row_key(row) not in held_keys
+                and _l0c2k2_addition_row_key(row) not in train_keys
+                and (
+                    row["result"] if name == "result"
+                    else _l0c2k2_addition_trace_factors_from_row(row)[name]
+                ) == value
+            )
+        ]
+        assert candidates, f"unsatisfiable coverage for {name}={value!r}"
+        add_train(sorted(
+            candidates,
+            key=lambda r: (
+                _stable_seed(
+                    "L0c2-K2-addition-60to89-trace",
+                    "cover",
+                    name,
+                    value,
+                    r["result"],
+                    r["k"],
+                ),
+                r["result"],
+                r["k"],
+            ),
+        )[0])
+
+    for result in sorted({r["result"] for r in held} - {r["result"] for r in train}):
+        cover_value("result", result)
+    while True:
+        held_factors = _l0c2k2_addition_trace_factor_sets(held)
+        train_factors = _l0c2k2_addition_trace_factor_sets(train)
+        missing = [
+            (name, value)
+            for name in L0C2K2_ADDITION_60TO89_TRACE_COVERAGE_FACTORS
+            for value in sorted(held_factors[name] - train_factors[name], key=repr)
+        ]
+        if not missing:
+            break
+        for name, value in missing:
+            cover_value(name, value)
+
+    for row in sorted(
+        (r for r in pool if _l0c2k2_addition_row_key(r) not in (held_keys | train_keys)),
+        key=lambda r: (
+            _stable_seed("L0c2-K2-addition-60to89-trace", "fill", r["result"], r["k"]),
+            r["result"],
+            r["k"],
+        ),
+    ):
+        if len(train) >= L0C2K2_ADDITION_60TO89_TRACE_TRAIN_COUNT:
+            break
+        add_train(row)
+
+    _l0c2k2_addition_60to89_trace_assert_partition(train, held, pool)
+    return train, held
+
+
+def _l0c2k2_addition_60to89_trace_train_enumerate() -> list[dict]:
+    """Trace-target view of the 120-row coverage-controlled train split."""
+    train, _held = _l0c2k2_addition_60to89_trace_partition()
+    return _l0c2k2_addition_trace_rows(train)
+
+
+def _l0c2k2_addition_60to89_trace_held_enumerate() -> list[dict]:
+    """Trace-target view of the 40-row coverage-controlled held split."""
+    _train, held = _l0c2k2_addition_60to89_trace_partition()
+    return _l0c2k2_addition_trace_rows(held)
 
 
 def _gen_l0c2k2_addition_60s_transfer(
@@ -3206,6 +3483,33 @@ def _gen_l0c2k2_addition_60s_trace(
                 "question": row["question"],
                 "expected": row["expected"],
                 "rung": "L0c2-K2-addition-60s-trace",
+            })
+            if len(out) >= n:
+                break
+    return out
+
+
+def _gen_l0c2k2_addition_60to89_trace(
+    rng: random.Random, spec: dict, n: int, seed: int, split: str
+) -> list[dict]:
+    """Train-side sampler for the 120-row expanded-pool trace curriculum."""
+    if split != "train":
+        raise ValueError(
+            "L0c2-K2-addition-60to89-trace is TRAIN-only; split='held_out' "
+            "is invalid. Held trace rows are measured by the 40-row trace "
+            "audit support, not sampled into train."
+        )
+    _ = spec, seed
+    pool = _l0c2k2_addition_60to89_trace_train_enumerate()
+    out: list[dict] = []
+    while len(out) < n:
+        cycle = list(pool)
+        rng.shuffle(cycle)
+        for row in cycle:
+            out.append({
+                "question": row["question"],
+                "expected": row["expected"],
+                "rung": "L0c2-K2-addition-60to89-trace",
             })
             if len(out) >= n:
                 break
@@ -3965,6 +4269,20 @@ def make_rung_examples(
         return _gen_l0c2k2_addition_60s_trace(
             rng,
             _RUNG_SPEC["L0c2-K2-addition-60s-trace"]["train"],
+            n,
+            seed=seed,
+            split=split,
+        )
+    if rung == "L0c2-K2-addition-60to89-trace":
+        if split != "train":
+            raise ValueError(
+                "L0c2-K2-addition-60to89-trace is TRAIN-only; split='held_out' "
+                "is invalid. Held trace rows are measured by the 40-row trace "
+                "audit support, not sampled into train."
+            )
+        return _gen_l0c2k2_addition_60to89_trace(
+            rng,
+            _RUNG_SPEC["L0c2-K2-addition-60to89-trace"]["train"],
             n,
             seed=seed,
             split=split,

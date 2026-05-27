@@ -21,14 +21,18 @@ if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
 from calm.hrm_text_158.curriculum.generators import (  # noqa: E402
+    L0C2K2_ADDITION_60TO89_TRACE_COVERAGE_FACTORS,
     RUNG_NAMES,
     _RUNG_SPEC,
     _l0c2k2_addition_full_enumerate,
     _l0c2k2_addition_120_enumerate,
     _l0c2k2_addition_120_k5to8_enumerate,
     _l0c2k2_addition_50s_enumerate,
+    _l0c2k2_addition_60to89_trace_held_enumerate,
+    _l0c2k2_addition_60to89_trace_train_enumerate,
     _l0c2k2_addition_60s_trace_held_enumerate,
     _l0c2k2_addition_60s_trace_train_enumerate,
+    _l0c2k2_addition_trace_factors_from_row,
     _l0c2k2_addition_trace_target,
     _l0c2k2_addition_60s_transfer_held_enumerate,
     _l0c2k2_addition_60s_transfer_train_enumerate,
@@ -43,6 +47,8 @@ from calm.hrm_text_158.curriculum.language_supports import (  # noqa: E402
     L0C2K2_ADDITION_120_AUDIT_EXPECTED_COUNT,
     L0C2K2_ADDITION_120_K5TO8_AUDIT_EXPECTED_COUNT,
     L0C2K2_ADDITION_50S_AUDIT_EXPECTED_COUNT,
+    L0C2K2_ADDITION_60TO89_TRACE_HELD_AUDIT_EXPECTED_COUNT,
+    L0C2K2_ADDITION_60TO89_TRACE_TRAIN_AUDIT_EXPECTED_COUNT,
     L0C2K2_ADDITION_60S_TRACE_HELD_AUDIT_EXPECTED_COUNT,
     L0C2K2_ADDITION_60S_TRACE_TRAIN_AUDIT_EXPECTED_COUNT,
     L0C2K2_ADDITION_60S_TRANSFER_HELD_AUDIT_EXPECTED_COUNT,
@@ -54,6 +60,8 @@ from calm.hrm_text_158.curriculum.language_supports import (  # noqa: E402
     build_l0c2k2_addition_120_support,
     build_l0c2k2_addition_120_k5to8_support,
     build_l0c2k2_addition_50s_support,
+    build_l0c2k2_addition_60to89_trace_held_support,
+    build_l0c2k2_addition_60to89_trace_train_support,
     build_l0c2k2_addition_60s_trace_held_support,
     build_l0c2k2_addition_60s_trace_train_support,
     build_l0c2k2_addition_60s_transfer_held_support,
@@ -95,6 +103,9 @@ SIXTIES_TRANSFER_HELD = "L0c2-K2-addition-60s-transfer-held"
 SIXTIES_TRACE_RUNG = "L0c2-K2-addition-60s-trace"
 SIXTIES_TRACE_TRAIN = "L0c2-K2-addition-60s-trace-train"
 SIXTIES_TRACE_HELD = "L0c2-K2-addition-60s-trace-held"
+SIXTIES_TO_89_TRACE_RUNG = "L0c2-K2-addition-60to89-trace"
+SIXTIES_TO_89_TRACE_TRAIN = "L0c2-K2-addition-60to89-trace-train"
+SIXTIES_TO_89_TRACE_HELD = "L0c2-K2-addition-60to89-trace-held"
 HELDOUT_DIAG = "L0c2-K2-addition-heldout-50s"
 HELDOUT_60S_DIAG = "L0c2-K2-addition-heldout-60s"
 _PLUS_RE = re.compile(r"^(\d+) plus ([1-8]) equals what\?$")
@@ -142,6 +153,13 @@ def _parse_trace_rows(rows: list[tuple[str, str, str]]) -> list[tuple[int, int, 
         assert expected == _l0c2k2_addition_trace_target(a, k, answer)
         out.append((a, k, answer, bucket, expected))
     return out
+
+
+def _trace_factor_sets(rows: list[dict]) -> dict[str, set[object]]:
+    return {
+        name: {_l0c2k2_addition_trace_factors_from_row(row)[name] for row in rows}
+        for name in L0C2K2_ADDITION_60TO89_TRACE_COVERAGE_FACTORS
+    }
 
 
 def _build_tiny_parent_blob() -> dict:
@@ -1096,6 +1114,174 @@ def test_60s_trace_probe_flags_watcher_modes_and_collision_fields_wired():
     assert "L0C2K2ADDITION60STRACEHELD AGGREGATE" in wsrc
     assert "TRACE_TRAIN_BANK_GATE" in wsrc
     assert "TRACE_HELD_RECOMBINATION_BANK_GATE" in wsrc
+    assert '"--max-gen", "128"' in wsrc
+
+
+def test_60to89_trace_rung_registered_train_only_diagnosis_only_and_not_retained():
+    assert SIXTIES_TO_89_TRACE_RUNG in RUNG_NAMES
+    assert SIXTIES_TO_89_TRACE_RUNG in _RUNG_SPEC
+    assert set(_RUNG_SPEC[SIXTIES_TO_89_TRACE_RUNG]) == {"train"}
+    assert SIXTIES_TO_89_TRACE_RUNG in DIAGNOSIS_ONLY_RUNGS
+    assert SIXTIES_TO_89_TRACE_RUNG not in _TRAIN._RETAINED_SUPPORT_REGISTRY
+
+    for audit_key in (SIXTIES_TO_89_TRACE_TRAIN, SIXTIES_TO_89_TRACE_HELD):
+        assert audit_key not in RUNG_NAMES
+        assert audit_key not in _RUNG_SPEC
+        assert audit_key not in DIAGNOSIS_ONLY_RUNGS
+        assert audit_key not in _TRAIN._RETAINED_SUPPORT_REGISTRY
+
+    _rows, h = _TRAIN._retained_support(FIFTIES_RUNG, 17)
+    assert h == "fb0b04414a616f4f"
+
+
+def test_trainer_choices_include_60to89_trace_rung_not_audit_surfaces():
+    train_src = os.path.join(_REPO, "scripts", "train_hrm_text_158.py")
+    with open(train_src, "r", encoding="utf-8") as fh:
+        src = fh.read()
+    assert f'"{SIXTIES_TO_89_TRACE_RUNG}"' in src
+    assert SIXTIES_TO_89_TRACE_TRAIN not in src
+    assert SIXTIES_TO_89_TRACE_HELD not in src
+
+
+def test_60to89_trace_target_format_and_arithmetic():
+    rows = _l0c2k2_addition_60to89_trace_train_enumerate() + \
+        _l0c2k2_addition_60to89_trace_held_enumerate()
+    assert len(rows) == 160
+    trace_re = re.compile(
+        r"^ones (\d)\+([1-8])=(\d+); write (\d) carry ([01]); "
+        r"tens ([5-8])\+([01])=([6-9]); answer ([678]\d)$"
+    )
+    for row in rows:
+        m = trace_re.fullmatch(row["expected"])
+        assert m, row["expected"]
+        factors = _l0c2k2_addition_trace_factors_from_row(row)
+        assert int(m.group(1)) == factors["a_ones"]
+        assert int(m.group(2)) == factors["k"]
+        assert int(m.group(3)) == factors["ones_sum"]
+        assert int(m.group(4)) == factors["ones_digit"]
+        assert int(m.group(5)) == factors["carry"]
+        assert int(m.group(6)) == factors["a_tens"]
+        assert int(m.group(7)) == factors["carry"]
+        assert int(m.group(8)) == int(factors["a_tens"]) + int(factors["carry"])
+        assert int(m.group(9)) == row["result"]
+
+
+def test_60to89_trace_train_path_samples_only_train_split():
+    train_rows = _flat(
+        build_l0c2k2_addition_60to89_trace_train_support(),
+        SIXTIES_TO_89_TRACE_TRAIN,
+    )
+    held_rows = _flat(
+        build_l0c2k2_addition_60to89_trace_held_support(),
+        SIXTIES_TO_89_TRACE_HELD,
+    )
+    train_pairs = {(q, expected) for q, expected, _bucket in train_rows}
+    held_pairs = {(q, expected) for q, expected, _bucket in held_rows}
+    rows = make_rung_examples(SIXTIES_TO_89_TRACE_RUNG, 120, seed=17, split="train")
+    sampled_pairs = {(r["question"], r["expected"]) for r in rows}
+    assert len(rows) == 120
+    assert len(sampled_pairs) == 120
+    assert all(r["rung"] == SIXTIES_TO_89_TRACE_RUNG for r in rows)
+    assert sampled_pairs == train_pairs
+    assert sampled_pairs.isdisjoint(held_pairs)
+    assert all(isinstance(r["expected"], str) and r["expected"].startswith("ones ") for r in rows)
+    with pytest.raises(ValueError, match="TRAIN-only"):
+        make_rung_examples(SIXTIES_TO_89_TRACE_RUNG, 10, seed=17, split="held_out")
+
+
+def test_60to89_trace_partition_counts_disjoint_factor_coverage_and_prompt_disjointness():
+    train = _l0c2k2_addition_60to89_trace_train_enumerate()
+    held = _l0c2k2_addition_60to89_trace_held_enumerate()
+    train_pairs = {(r["question"], r["expected"]) for r in train}
+    held_pairs = {(r["question"], r["expected"]) for r in held}
+    train_keys = {(r["result"], r["k"]) for r in train}
+    held_keys = {(r["result"], r["k"]) for r in held}
+
+    assert len(train) == L0C2K2_ADDITION_60TO89_TRACE_TRAIN_AUDIT_EXPECTED_COUNT == 120
+    assert len(held) == L0C2K2_ADDITION_60TO89_TRACE_HELD_AUDIT_EXPECTED_COUNT == 40
+    assert len(train_pairs) == 120
+    assert len(held_pairs) == 40
+    assert train_pairs.isdisjoint(held_pairs)
+    assert train_keys.isdisjoint(held_keys)
+    assert {r["result"] for r in held} <= {r["result"] for r in train}
+    assert {r["k"] for r in held} <= {r["k"] for r in train}
+
+    train_factors = _trace_factor_sets(train)
+    held_factors = _trace_factor_sets(held)
+    for name in L0C2K2_ADDITION_60TO89_TRACE_COVERAGE_FACTORS:
+        assert held_factors[name] <= train_factors[name], name
+
+    for held_row in held:
+        held_pair = _l0c2k2_addition_trace_factors_from_row(held_row)["a_ones_k"]
+        reps = [
+            train_row for train_row in train
+            if (
+                _l0c2k2_addition_trace_factors_from_row(train_row)["a_ones_k"] == held_pair
+                and (train_row["a"], train_row["k"]) != (held_row["a"], held_row["k"])
+            )
+        ]
+        assert reps, held_row
+
+    banked_surfaces = {
+        "addition-full": _l0c2k2_addition_full_enumerate(),
+        "addition-120": _l0c2k2_addition_120_enumerate(),
+        "addition-120-k5to8": _l0c2k2_addition_120_k5to8_enumerate(),
+        "addition-50s": _l0c2k2_addition_50s_enumerate(),
+    }
+    trace_prompts = {r["question"] for r in train + held}
+    for label, rows in banked_surfaces.items():
+        overlap = trace_prompts & {r["question"] for r in rows}
+        assert not overlap, f"{label} prompt overlap: {sorted(overlap)[:5]}"
+
+
+def test_60to89_trace_language_audit_buckets_tokenizer_and_parser_contract():
+    for key, support in (
+        (SIXTIES_TO_89_TRACE_TRAIN, build_l0c2k2_addition_60to89_trace_train_support()),
+        (SIXTIES_TO_89_TRACE_HELD, build_l0c2k2_addition_60to89_trace_held_support()),
+    ):
+        rows = _flat(support, key)
+        present = {bucket for _q, _e, bucket in rows}
+        declared = set(language_source_rung_buckets(key))
+        assert present == declared
+        assert all(bucket.count(":") == 3 for bucket in present)
+
+    q, expected, _bucket = _flat(
+        build_l0c2k2_addition_60to89_trace_train_support(),
+        SIXTIES_TO_89_TRACE_TRAIN,
+    )[0]
+    tok = BroadTokenizer()
+    ids, sep_pos = tok.encode_example(q, expected)
+    assert tok.decode(ids[sep_pos + 1:-1]) == expected
+    assert _PROBE._parse_trace_answer(expected) == _PROBE._parse_trace_answer(
+        "prefix " + expected + " suffix"
+    )
+    assert _PROBE._parse_trace_answer("ones 3+7=10; write 0 carry 1") is None
+
+
+def test_60to89_trace_probe_flags_watcher_modes_and_collision_fields_wired():
+    probe_src = os.path.join(_REPO, "scripts", "probe_hrm_text_158.py")
+    with open(probe_src, "r", encoding="utf-8") as fh:
+        psrc = fh.read()
+    assert "--l0c2k2-addition-60to89-trace-train-audit" in psrc
+    assert "--l0c2k2-addition-60to89-trace-held-audit" in psrc
+    assert 'surface="l0c2k2addition60to89tracetrain"' in psrc
+    assert 'surface="l0c2k2addition60to89traceheld"' in psrc
+    assert "n_exact_trace" in psrc
+    assert "n_parsed_answer_correct" in psrc
+    assert "n_integer_only_bleed" in psrc
+    assert "n_too_long" in psrc
+    assert "n_finite" in psrc
+    assert "finite" in psrc
+
+    watcher_src = os.path.join(_REPO, "scripts", "parallel_audit_watcher.py")
+    with open(watcher_src, "r", encoding="utf-8") as fh:
+        wsrc = fh.read()
+    assert "--l0c2k2-addition-60to89-trace-train-audit" in wsrc
+    assert "--l0c2k2-addition-60to89-trace-held-audit" in wsrc
+    assert "L0C2K2ADDITION60TO89TRACETRAIN AGGREGATE" in wsrc
+    assert "L0C2K2ADDITION60TO89TRACEHELD AGGREGATE" in wsrc
+    assert "TRACE_TRAIN_EXPANDED_POOL_BANK_GATE" in wsrc
+    assert "TRACE_HELD_EXPANDED_POOL_COMPOSITION_GATE" in wsrc
     assert '"--max-gen", "128"' in wsrc
 
 

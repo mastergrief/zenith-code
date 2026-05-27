@@ -170,7 +170,10 @@ from calm.hrm_text_158.curriculum.generators import RUNG_NAMES
 # L0c2-K2-addition-60s-trace stays OUT for the same reason: it is the active
 #         trace-target acquisition surface for the carry procedure, not a
 #         positional replay source. Trace train/held supports are never parent-KL.
-DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b", "R1b4", "R1b10", "R2", "R2a", "L0c1", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c2-K2-addition-full", "L0c2-K2-addition-120", "L0c2-K2-addition-120-k5to8", "L0c2-K2-addition-50s", "L0c2-K2-addition-60s-transfer", "L0c2-K2-addition-60s-trace"})
+# L0c2-K2-addition-60to89-trace stays OUT too: it is the expanded-pool
+#         coverage-controlled trace acquisition surface. The train/held trace
+#         supports are audit gates only and must never become parent-KL surfaces.
+DIAGNOSIS_ONLY_RUNGS: frozenset[str] = frozenset({"R1b2a", "R1b", "R1b4", "R1b10", "R2", "R2a", "L0c1", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c2-K2-addition-full", "L0c2-K2-addition-120", "L0c2-K2-addition-120-k5to8", "L0c2-K2-addition-50s", "L0c2-K2-addition-60s-transfer", "L0c2-K2-addition-60s-trace", "L0c2-K2-addition-60to89-trace"})
 
 
 # R7 (GSM8k) is generator-incompatible — served separately from
