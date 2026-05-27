@@ -1,3 +1,12 @@
+---
+paths:
+  - "agents/distill/**"
+  - "agents/model_swap.py"
+  - "agents/specialist_coordinator.py"
+  - "scripts/self_distill_synth.py"
+  - "scripts/eval_base_models.py"
+---
+
 # Distillation Pipeline Rules
 
 Training-specific operational reference for `agents/distill/`.

@@ -1,3 +1,16 @@
+---
+paths:
+  - "calm/llm_computer/tq4*.py"
+  - "calm/llm_computer/q6k_dequant.py"
+  - "calm/llm_computer/tests/test_tq4*.py"
+  - "calm/llm_computer/tests/test_kvcache_tq4*.py"
+  - "scripts/bench_tq4*.py"
+  - "scripts/test_tq4*.py"
+  - "scripts/sweep_tq4_block_m.py"
+  - "scripts/llama_cpp_patches/**"
+  - "RESEARCH/TQ/**"
+---
+
 # TurboQuant + Quantization Rules
 
 > Historical receipts (per-kernel bench tables, matvec variant A/B,

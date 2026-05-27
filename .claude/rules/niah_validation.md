@@ -1,3 +1,13 @@
+---
+paths:
+  - "scripts/needle_test.py"
+  - "agents/config.py"
+  - "agents/harness.py"
+  - "calm/llm_computer/eval_defaults.py"
+  - ".claude/MEMORY/evals/*needle*.md"
+  - ".codex/MEMORY/evals/*needle*.md"
+---
+
 # Needle-in-Haystack Validation
 
 Effective context for both base models was measured via single-needle,

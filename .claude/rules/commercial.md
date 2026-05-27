@@ -1,3 +1,10 @@
+---
+paths:
+  - "RESEARCH/**"
+  - ".claude/rules/commercial.md"
+  - ".codex/rules/commercial.md"
+---
+
 # Commercial Rules
 
 ## Product Vision

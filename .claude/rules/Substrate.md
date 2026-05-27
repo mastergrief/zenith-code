@@ -1,3 +1,16 @@
+---
+paths:
+  - "calm/llm_computer/**"
+  - "calm/hrm/**"
+  - "scripts/*substrate*.py"
+  - "scripts/*unified*.py"
+  - "scripts/*gemma*_demo.py"
+  - ".claude/MEMORY/substrate_registry.md"
+  - ".codex/MEMORY/substrate_registry.md"
+  - "RESEARCH/LLM-COMPUTER/**"
+  - "RESEARCH/POST_TRANSFORMER/**"
+---
+
 # Substrate — Unified Single Tensor Architecture
 
 > Historical receipts (level cascade proofs, retrieval-card install

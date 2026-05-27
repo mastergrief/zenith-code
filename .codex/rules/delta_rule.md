@@ -1,3 +1,16 @@
+---
+paths:
+  - "calm/llm_computer/*delta*.py"
+  - "calm/llm_computer/dt_install.py"
+  - "calm/hrm/**"
+  - "scripts/*delta*.py"
+  - "scripts/train_code_dt*.py"
+  - "scripts/train_pt_delta_mqar.py"
+  - "scripts/dt_*.py"
+  - "RESEARCH/DELTA-RULE/**"
+  - "RESEARCH/DT_IMPROVEMENTS/**"
+---
+
 # Delta-Transducer (DT) / DeltaNet — Card architecture rules
 
 **DT (delta-transducer)** is the canonical product name for the

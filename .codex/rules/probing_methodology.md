@@ -1,3 +1,13 @@
+---
+paths:
+  - "scripts/*probe*.py"
+  - "scripts/*sweep*.py"
+  - "scripts/test_l*.py"
+  - "scripts/*activation*.py"
+  - "scripts/*ablation*.py"
+  - "calm/llm_computer/**"
+---
+
 # Probing Methodology Rules
 
 Mechinterp / activation-level probing discipline for this project. Extends

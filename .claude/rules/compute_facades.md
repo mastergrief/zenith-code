@@ -1,3 +1,15 @@
+---
+paths:
+  - "calm/llm_computer/facades/**"
+  - "calm/llm_computer/recursion.py"
+  - "calm/llm_computer/program_builder.py"
+  - "scripts/*facade*.py"
+  - "scripts/*planner*.py"
+  - "scripts/*hospital*.py"
+  - "scripts/*icd10*.py"
+  - "scripts/*metafacade*.py"
+---
+
 # Compute Facades — the decode-path tier-2 card pattern
 
 **What it is**: parser → `safe_eval` → step-through bias at Gemma decode.

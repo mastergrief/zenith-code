@@ -1,3 +1,15 @@
+---
+paths:
+  - "calm/llm_computer/**"
+  - "scripts/*probe*.py"
+  - "scripts/*sweep*.py"
+  - "scripts/*ablation*.py"
+  - "scripts/*planner*.py"
+  - "scripts/*hospital*.py"
+  - "scripts/*icd10*.py"
+  - "RESEARCH/**"
+---
+
 # Augmentation Thesis — substrate is how small models match frontier
 
 Settled positions. Future sessions should treat these as baseline

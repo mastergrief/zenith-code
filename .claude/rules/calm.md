@@ -1,3 +1,11 @@
+---
+paths:
+  - "calm/**"
+  - "scripts/*calm*.py"
+  - "scripts/learning_dashboard.py"
+  - "scripts/minibench_calm_trained.py"
+---
+
 # CALM — Compute-Augmented Language Model Rules
 
 > Historical receipts (sandbox-fix origin + commit ref, AST-walker

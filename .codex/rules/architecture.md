@@ -1,3 +1,13 @@
+---
+paths:
+  - "agents/**"
+  - "calm/**"
+  - "rust/**"
+  - "bin/**"
+  - "scripts/**"
+  - "tests/**"
+---
+
 # Architecture Rules
 
 > Historical receipts (substrate-port session detail, DT/PT+Delta

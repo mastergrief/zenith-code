@@ -1,3 +1,13 @@
+---
+paths:
+  - "agents/**"
+  - "bin/zenith"
+  - "scripts/smoke_test_harness.py"
+  - "tests/test_agent*.py"
+  - "tests/test_new_tools.py"
+  - "tests/test_porting_workspace.py"
+---
+
 # Python Agent Harness — Commands and Launch
 
 User-facing surface of the `agents/` harness (`zenith` CLI). Internals,

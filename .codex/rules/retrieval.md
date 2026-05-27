@@ -1,3 +1,12 @@
+---
+paths:
+  - "calm/llm_computer/**/retrieval*.py"
+  - "scripts/*retrieval*.py"
+  - "scripts/*dense*.py"
+  - "scripts/*corpora*.py"
+  - ".cache/**"
+---
+
 # Retrieval — Hybrid TF-IDF + BM25 + Dense + RRF
 
 Full hybrid retrieval stack over `CodeExampleDB`. This rule documents

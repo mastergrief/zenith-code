@@ -1,3 +1,14 @@
+---
+paths:
+  - "bin/**"
+  - "agents/model_swap.py"
+  - "agents/harness.py"
+  - "scripts/llama_cpp_patches/**"
+  - "scripts/bench*.py"
+  - "scripts/gpu_*.py"
+  - "scripts/validate_gemma4_vs_llamacpp.py"
+---
+
 # Environment — Hardware, Serving, Tooling, Accounts, Constraints
 
 All "what's installed / what's available" facts in one place. Update

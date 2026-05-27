@@ -1,3 +1,15 @@
+---
+paths:
+  - "calm/llm_computer/facades/data_generators/**"
+  - "calm/llm_computer/facades/retrieval.py"
+  - "agents/distill/data/**"
+  - "scripts/*corpora*.py"
+  - "scripts/*data_generators*.py"
+  - "scripts/*dense*.py"
+  - "scripts/*complex*.py"
+  - ".cache/**"
+---
+
 # Code Reasoning DB — 8970-example substrate corpus + generator framework
 
 Powers `CodeVerifierFacade` retrieval and provides training signal

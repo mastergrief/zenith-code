@@ -1,3 +1,14 @@
+---
+paths:
+  - "calm/llm_computer/**"
+  - "scripts/*facade*.py"
+  - "scripts/*projection*.py"
+  - "scripts/*install*.py"
+  - "scripts/*gate*.py"
+  - "scripts/*measure*.py"
+  - "scripts/*number_theory*.py"
+---
+
 # Capability Gain — telling real substrate wins from format coercion
 
 The substrate thesis: compiled programs + DBs installed into Gemma

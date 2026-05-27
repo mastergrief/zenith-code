@@ -1,3 +1,14 @@
+---
+paths:
+  - "calm/llm_computer/facades/**"
+  - "calm/llm_computer/*installer*.py"
+  - "calm/llm_computer/tied_embedding.py"
+  - "scripts/test_token_embd_projection.py"
+  - "scripts/test_multi_token_projection.py"
+  - "scripts/test_projection_strength.py"
+  - "scripts/*projection*.py"
+---
+
 # Embed Intelligence — Delivery paths from compiled card to Gemma's output
 
 A compiled card with the right answer is useless if Gemma doesn't

@@ -1,3 +1,15 @@
+---
+paths:
+  - "calm/llm_computer/recursion.py"
+  - "calm/llm_computer/auto_upgrade.py"
+  - "calm/llm_computer/persistent_knowledge.py"
+  - "calm/llm_computer/facades/*_auto.py"
+  - "calm/llm_computer/facades/*_meta.py"
+  - "scripts/*metafacade*.py"
+  - "scripts/*autonomous*.py"
+  - "scripts/gemma_learning_loop_demo.py"
+---
+
 # Recursion — card-level self-improvement via CALM oracle
 
 The substrate's killer property is that **cards can build cards**.

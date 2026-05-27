@@ -1,3 +1,14 @@
+---
+paths:
+  - "scripts/*head*.py"
+  - "scripts/*ablation*.py"
+  - "scripts/*trace*.py"
+  - "scripts/test_l*.py"
+  - "scripts/*layer*.py"
+  - "scripts/*logit*.py"
+  - "calm/llm_computer/**"
+---
+
 # Tracing Intelligence — first-principles bound on what's compilable
 
 **The claim**: a trained neural network is a fixed function — a
