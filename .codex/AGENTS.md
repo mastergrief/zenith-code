@@ -24,6 +24,8 @@ Bank gate is acquire ≥90% / retain ≥90% per slice. Bank earliest all-clear s
 
 On a miss: classify, then split smaller / protect / redesign. Do **not** stretch runway, bump LR, or add model capacity to force a fragile slice through. Cached/batched probe path is default; native ternary train is preferred when available. `.pt` artifacts are runtime/research outputs; commit code/tooling/docs/manifest receipts, not `.pt` by default.
 
+Procedure targets use shaped computation supervision when answer-only rows memorize: `input/question → planning → reasoning → computing → answer/output`, with planning/reasoning/computing as temporary curriculum objects that fade only after held recombination and answer-only transfer clear.
+
 Conventions:
 - Active training lane: native HRM-Text-1.58 (`hrm-158-base`).
 - Default method: auditable full-density finite support + slow-safe learning + 90/90 gate.

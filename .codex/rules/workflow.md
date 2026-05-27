@@ -215,6 +215,10 @@ Diagnosis: <what we learned about the failure mode>
 Next round: <specific scope change justified by the null>
 ```
 
+## Curriculum nulls: change supervision shape
+
+Train-perfect with held-recombination failure is a useful null: answer-only rows were learned, but procedure was not. Next hypothesis changes supervision shape (`input/question → planning → reasoning → computing → answer/output`) before touching range/runway/LR/model size. Measure trace/structure and final answer separately, then fade scaffolds only after held recombination transfers.
+
 ## Long-running training supervision
 
 Foreground-session + Monitor pattern:

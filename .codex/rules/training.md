@@ -38,6 +38,10 @@ semantics live there; this file keeps model specifics + commands.
 Response-only loss: prompt/instruction tokens are masked; loss is only
 on generated response tokens.
 
+### Procedure targets
+
+Answer-only loss can prove finite row behavior without learning the algorithm. If train-perfect with held-recombination failure, change supervision shape: `input/question → planning → reasoning → computing → answer/output`, with planning/reasoning/computing as temporary scaffolded targets that fade only after trace + final-answer transfer. Full invariants live in `rules/hrm-158.md`.
+
 ### Progressive checkpoint curriculum (the loop)
 
 1. **Start from latest banked checkpoint** (the current chain head).
