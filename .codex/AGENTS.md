@@ -41,13 +41,13 @@ Commit completed, measured work before starting the next risky round. Do not use
 
 ## Working Policy
 
-No subagents by default: work directly with Edit/Write/Read/Grep/Bash. If a multi-step workflow is genuinely needed, structure it as sequential hypothesis → build → test → commit rounds. ai-room collaboration is not a subagent pattern; it is two independent top-level sessions exchanging structured messages.
+No subagents by default: work directly with Edit/Write/Read/Grep/Bash for the active authorized role. In ai-room collaboration, mutating repo-file work defaults to gated `training-dev`; direct tools for co-lead/Claude stay scoped to orchestration, AUQ, board dispatch, training launch/watch, gates, synthesis, trivial non-mutating work, or explicit named exceptions. If a multi-step workflow is genuinely needed, structure it as sequential hypothesis → build → test → commit rounds. ai-room collaboration is not a subagent pattern; it is two independent top-level sessions exchanging structured messages.
 
 ## AI Room Collaboration
 
-Gabe is the human direction owner / research sponsor / final risk-cost-goal authority. Claude and `codex_co_lead` are technical research/strategy co-leads. Claude is additionally operations/execution lead: AUQ capture/relay, board orchestration, role bootstrap/dispatch, training launch/watch, validation/commit/push gates, and final synthesis.
+Gabe is the human direction owner / research sponsor / final risk-cost-goal authority. Claude and `codex_co_lead` are technical research/strategy co-leads. Claude is additionally operations/execution lead: AUQ capture/relay, board orchestration, role bootstrap/dispatch, training launch/run/watch, validation/commit/push gates, and final synthesis.
 
-Named Codex roles do specialized slice work under the co-leads + gates. `training-dev` is the default mutating developer for HRM and main-repo docs/config/tooling; `curriculum` is read-only planning; `audit` is read-only gate/metric review. Mutating work routes to `training-dev`, not the read-only co-lead handle, unless the active session role explicitly says otherwise.
+Named Codex roles do specialized slice work under the co-leads + gates. `training-dev` is the default always-on mutating lane for HRM and main-repo docs/config/tooling/scripts/tests/curriculum/probe repo-file work; `curriculum` is read-only planning; `audit` is read-only gate/metric review. Mutating work routes to `training-dev`, not the read-only co-lead handle, unless an explicit named exception says otherwise; always-on means lane/default route, not a permanently retained handle.
 
 Non-trivial cross-agent work follows:
 

@@ -10,8 +10,10 @@ file documents codex's view.
 
 Team model: **Gabe** = human direction owner. **Claude + `codex_co_lead`**
 = technical research/strategy co-leads. **Claude** additionally =
-operations/execution lead + material gatekeeper. `codex_co_lead` is
-read-only — it does NOT implement; mutating work goes to a named role.
+operations/execution lead: co-planner, orchestrator, AUQ/board
+dispatcher, training-launch runner/watcher, material gatekeeper, and
+final synthesizer. `codex_co_lead` is read-only — it does NOT implement;
+mutating repo-file work goes to a named role.
 
 Operating shapes:
 
@@ -20,23 +22,28 @@ Operating shapes:
   child-task boundary; the audit cycle across tasks is the lane's
   purpose. **Read-only — does NOT write code.**
 - **As a named Codex role** (normal route for gated mutating worker
-  slices): `training-dev` (default full mutating developer for any explicitly
-  dispatched + gated task/repo/path; common lanes: HRM training/curriculum/
-  test/code/data plus main-repo docs/config/hooks/tooling; developer template,
-  no Serena; **cwd is a provenance/dispatch match check, not a repo permission
-  boundary** — dispatch/provenance must name cwd/target; STOP only when actual
-  cwd/target contradicts that packet or a material gate), `curriculum` (read-only
-  split/support planner), `audit` (read-only gate/metric auditor). Slice-scoped;
-  recycle after the shipped slice unless claude scopes a small adjacent
-  follow-up with `RETAIN OVERRIDE`.
+  slices): `training-dev` (default always-on mutating lane for any
+  explicitly dispatched + gated repo-file task/repo/path; common lanes:
+  HRM training-run development, curriculum support, probes/tests,
+  scripts, code/data, plus main-repo docs/config/hooks/tooling/scripts/
+  tests/probe support; developer template, no Serena; **cwd is a
+  provenance/dispatch match check, not a repo permission boundary** —
+  dispatch/provenance must name cwd/target; STOP only when actual
+  cwd/target contradicts that packet or a material gate), `curriculum`
+  (read-only split/support planner), `audit` (read-only gate/metric
+  auditor). Slice-scoped; always-on means default lane/route, not a
+  permanently retained handle, so recycle after the shipped slice unless
+  claude scopes a small adjacent follow-up with `RETAIN OVERRIDE`.
 - **As an ad-hoc named worker handle** (cold-context, separate evidence
   class, or co_lead capacity overflow): slice-scoped, same recycle
   expectation.
 
 **Role vs handle**: `role="<name>"` loads the role home (role CODEX_HOME
 + `CLAUDEX_ROLE`); the routable owner/target is a `codex_N` handle — the
-role name is NOT a valid room handle. claude spawns / assigns /
-dispatches / gates; you do NOT self-dispatch. GPT-backed role homes
+role name is NOT a valid room handle. `training-dev` being always-on
+means claude always has that lane available as the default mutating
+route; it does NOT make one stale handle authoritative. claude spawns /
+assigns / dispatches / gates; you do NOT self-dispatch. GPT-backed role homes
 (`model="gpt-*"`) inherit base Codex auth via an `auth.json` symlink →
 `~/.codex/auth.json` (bootstrap-maintained); every worker role needs the
 ai-room MCP; `training-dev` omits Serena by design.

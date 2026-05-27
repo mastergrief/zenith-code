@@ -18,10 +18,13 @@ boundary applies.
 ## Principle
 
 Dispatch the narrowest task that adds independent evidence. Don't
-spawn for trivial work, social reassurance, or work claude can safely
-complete with direct tools. Workers are slice-scoped — old grounding
-biases fresh work, recycle after shipped slices unless explicitly
-scoping a small adjacent follow-up.
+spawn for trivial non-mutating work, social reassurance, orchestration,
+AUQ, board actions, gates, synthesis, or training launch/watch actions
+claude owns directly. Mutating repo-file work routes to `training-dev`
+by default; direct Claude repo-file edits require a persisted named
+exception or break-glass reason. Workers are slice-scoped — old
+grounding biases fresh work, recycle after shipped slices unless
+explicitly scoping a small adjacent follow-up.
 
 **Workers never `@gabe` directly.** Worker questions bubble to claude,
 who runs the User-input Capture Contract (chat-side `AskUserQuestion`
@@ -32,21 +35,27 @@ who runs the User-input Capture Contract (chat-side `AskUserQuestion`
 
 **Gabe** = human direction owner. **Claude + `codex_co_lead`** =
 technical research/strategy co-leads. **Claude** additionally =
-operations/execution lead + material gatekeeper (plan / validation /
-commit / push gates). `codex_co_lead` is read-only unless a mutating
-Codex role is spawned.
+operations/execution lead: orchestrator, AUQ/board dispatcher,
+training-launch runner/watcher, material gatekeeper (plan /
+validation / commit / push gates), and final synthesizer.
+`codex_co_lead` is read-only; mutating repo-file work routes to a
+named role.
 
 **Named Codex role lanes** — the *normal* route for gated mutating
-Codex work, not exceptional spawn:
+Codex repo-file work, not exceptional spawn:
 
-- **`training-dev`** — default full mutating developer role (developer
-  template, **no Serena**) for any explicitly dispatched + gated path.
-  Common lanes: HRM training/curriculum/test/code/data plus main-repo
-  docs/config/hooks/tooling. **cwd is a provenance/dispatch match check,
-  not a repo permission boundary**: dispatch/provenance MUST name cwd and
-  target path; STOP only when actual cwd/target contradicts that packet or
-  a material gate. Plan gate before edits; commit/push only on explicit
-  gates; no `.pt` commits for HRM runtime/research outputs.
+- **`training-dev`** — default always-on mutating lane (developer
+  template, **no Serena**) for any explicitly dispatched + gated
+  repo-file path. Common lanes: HRM training-run development,
+  curriculum support, probes/tests, scripts, code/data, plus main-repo
+  docs/config/hooks/tooling/scripts/tests/probe support. **Always-on**
+  means the default lane/route, NOT a permanently retained handle:
+  fresh-per-child-task and recycle/`RETAIN OVERRIDE` boundaries remain.
+  **cwd is a provenance/dispatch match check, not a repo permission
+  boundary**: dispatch/provenance MUST name cwd and target path; STOP
+  only when actual cwd/target contradicts that packet or a material
+  gate. Plan gate before edits; commit/push only on explicit gates; no
+  `.pt` commits for HRM runtime/research outputs.
 - **`curriculum`** — read-only split/support/stop-condition planner.
 - **`audit`** — read-only training receipt/gate/metric auditor.
 
@@ -86,7 +95,7 @@ more, don't spawn — give it to co_lead.
 
 ```
 claude creates board task with provenance + decision contract
-  → spawns the narrowest handle (or assigns to co_lead)
+  → spawns the narrowest handle (normally training-dev for repo-file mutation, or assigns to co_lead for read-only audit)
   → handle grounds with read-only evidence + posts plan
   → claude gives +1 implement or redirects
   → handle implements or proves within scope

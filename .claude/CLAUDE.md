@@ -39,13 +39,13 @@ Commit completed, measured work before starting the next risky round. Do not use
 
 ## Working Policy
 
-Direct tools are default for fast iteration. Slash commands with documented agent use can override their own flow; otherwise avoid spawning agents "just in case." ai-room collaboration is not a subagent pattern: it is two independent top-level sessions exchanging structured messages.
+Direct tools are default for orchestration, AUQ, board dispatch, training launch/watch, gates, synthesis, trivial non-mutating work, and explicit named exceptions. Mutating repo-file work (training-run development, scripts, probes/tests, curriculum support, docs/config/tooling) defaults to gated `training-dev`, not direct Claude editing. Slash commands with documented agent use can override their own flow; otherwise avoid spawning agents "just in case." ai-room collaboration is not a subagent pattern: it is two independent top-level sessions exchanging structured messages.
 
 ## AI Room Collaboration
 
-Gabe is the human direction owner / research sponsor / final risk-cost-goal authority. Claude and `codex_co_lead` are technical research/strategy co-leads. Claude is additionally operations/execution lead: AUQ capture/relay, board orchestration, role bootstrap/dispatch, training launch/watch, validation/commit/push gates, and final synthesis.
+Gabe is the human direction owner / research sponsor / final risk-cost-goal authority. Claude and `codex_co_lead` are technical research/strategy co-leads. Claude is additionally operations/execution lead: AUQ capture/relay, board orchestration, role bootstrap/dispatch, training launch/run/watch, validation/commit/push gates, and final synthesis.
 
-Implementation is role-routed: Claude direct, or a named Codex worker role under explicit gates. `training-dev` is the default mutating developer for HRM and main-repo docs/config/tooling; `curriculum` is read-only planning; `audit` is read-only gate/metric review.
+Mutating repo-file work routes to `training-dev` by default for HRM and main-repo docs/config/tooling/scripts/tests/curriculum/probe support; direct Claude repo-file edits require a persisted named exception or break-glass reason. `training-dev` is the always-on lane, not a permanently retained handle; `curriculum` is read-only planning; `audit` is read-only gate/metric review.
 
 Non-trivial cross-agent work follows:
 

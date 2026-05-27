@@ -18,9 +18,10 @@ Codex's "no subagents" policy (`.codex/AGENTS.md`) is unaffected.
 Operating shape: **Gabe is the human direction owner; Claude and codex
 are technical research/strategy co-leads; Claude is additionally the
 operations/execution lead.** Gabe seeds → claude+codex co-hypothesize/
-plan/challenge → implementation is role-routed (Claude direct, or a
-named Codex worker role like `training-dev` under gate) → Claude
-launches/tests/watches → claude+codex audit → commit → iterate.
+plan/challenge → mutating repo-file implementation routes to
+`training-dev` by default under gate (direct Claude repo-file edits
+require a persisted named exception or break-glass reason) → Claude
+launches/runs/watches training → claude+codex audit → commit → iterate.
 
 - **Gabe (human direction owner / research sponsor)**: seeds problems,
   picks risk/cost/goal tradeoffs, sets the hypothesis space, final
@@ -31,15 +32,21 @@ launches/tests/watches → claude+codex audit → commit → iterate.
 - **Codex (`codex_co_lead`, your lane)**: independent critique, gate
   semantics, curriculum-design challenge, counter-case, routing/audit
   adjudication, continuity radar. Read-only — you do NOT implement or
-  test; mutating Codex work goes to `training-dev` by default for HRM and
-  main-repo docs/config/tooling slices (developer template, no Serena;
-  cwd by task class), NOT this co-lead handle.
+  test; mutating repo-file work goes to `training-dev` by default for
+  HRM and main-repo docs/config/tooling/scripts/tests/curriculum/probe
+  slices (developer template, no Serena; cwd by task class), NOT this
+  co-lead handle.
 - **Claude (operations/execution lead)**: AUQ capture/relay, board
-  orchestration, role bootstrap/dispatch, training launch/watch,
-  validation/commit/push gates, synthesis. Single executor for the
-  hands-on lane, or routes to a named role under gate.
+  orchestration, role bootstrap/dispatch, training launch/run/watch,
+  validation/commit/push gates, synthesis. Routes mutating repo-file
+  work to `training-dev` by default; direct-Claude repo-file edits need
+  an explicit persisted named exception or break-glass reason.
 - **Named Codex roles (under the co-leads + gates)**: `training-dev`
-  (default mutating developer for HRM and main-repo docs/config/tooling),
+  (default always-on mutating lane for explicitly dispatched + gated HRM
+  and main-repo repo-file work: training-run development, scripts,
+  probes/tests, curriculum support, docs/config/tooling, code/data;
+  always-on means lane/default route, not a retained handle;
+  fresh/recycled per child task),
   `curriculum` (read-only planner), `audit` (read-only gate/metric
   auditor).
 
@@ -48,8 +55,9 @@ launches/tests/watches → claude+codex audit → commit → iterate.
 Every thinking-class step in the R&D loop cross-threads. Codex
 participates at: **hypothesize, plan, devil's-advocate, creativity,
 audit-result, iterate**. Codex does NOT cross-thread at: **build,
-test, commit** — those stay with the executor (Claude direct, or a
-routed Codex role under gate).
+test, commit** — mutating repo-file work stays with the single executor,
+normally `training-dev` under gate; Claude launches/runs/watches
+training and gates/synthesizes.
 
 This is the default rate of the channel, not occasional. Cross-thread
 even when claude looks confident; the challenge round catches the
@@ -77,8 +85,8 @@ counters"). Silent agreement is default-compliance.
 
 - Codex leads thinking on anything it knows the internals of better
   than claude. A thinking-lead sets direction in that subsystem; it
-  doesn't change who implements — implementation is still role-routed
-  (Claude direct, or a named worker role under gate).
+  doesn't change who implements — mutating repo-file implementation
+  still routes to `training-dev` by default under gate.
 - **Voice preservation on split-owned files**: peer reviews via
   ai-room post; doesn't silently rewrite. Claude flattens codex voice
   fast if codex doesn't push back.
@@ -286,8 +294,10 @@ contract is complete, don't pause for every small ack.
    watcher/audit bundle, stop/bank criteria, artifact/log paths.
 2. **One co-lead launch review** → `+1 launch/watch-to-terminal-condition`
    (or one hole) — not micro-acks.
-3. Claude runs + watches directly; no training-dev unless code,
-   docs/config/tooling, or the packet itself needs a gated fix.
+3. Claude runs + watches directly; repo-file fixes for code,
+   docs/config/tooling, scripts/tests/probes/curriculum support, or the
+   packet itself route to `training-dev` under gate unless a persisted
+   named exception or break-glass reason says otherwise.
 4. **Interrupt only for**: bank pass, hard failure, criteria mismatch,
    resource/liveness failure, material parent/recipe deviation.
 5. **One terminal receipt**: best ckpt, audits, bank/fail decision,
