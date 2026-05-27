@@ -39,15 +39,14 @@ Codex role is spawned.
 **Named Codex role lanes** — the *normal* route for gated mutating
 Codex work, not exceptional spawn:
 
-- **`training-dev`** — default mutating developer role (developer
-  template, **no Serena**) for HRM training/curriculum/test/code/data
-  and main-repo docs/config/hooks/tooling fixes. **cwd is a dispatch
-  invariant selected by task class**: HRM slices use
-  `/mnt/c/Users/gabes/projects/claw-code-hrm-text-158`; main-repo
-  docs/config/hooks/tooling uses `/mnt/c/Users/gabes/projects/claw-code`.
-  Dispatch/provenance MUST set cwd; wrong repo means STOP. Plan gate
-  before edits; commit/push only on explicit gates; no `.pt` commits
-  for HRM runtime/research outputs.
+- **`training-dev`** — default full mutating developer role (developer
+  template, **no Serena**) for any explicitly dispatched + gated path.
+  Common lanes: HRM training/curriculum/test/code/data plus main-repo
+  docs/config/hooks/tooling. **cwd is a provenance/dispatch match check,
+  not a repo permission boundary**: dispatch/provenance MUST name cwd and
+  target path; STOP only when actual cwd/target contradicts that packet or
+  a material gate. Plan gate before edits; commit/push only on explicit
+  gates; no `.pt` commits for HRM runtime/research outputs.
 - **`curriculum`** — read-only split/support/stop-condition planner.
 - **`audit`** — read-only training receipt/gate/metric auditor.
 

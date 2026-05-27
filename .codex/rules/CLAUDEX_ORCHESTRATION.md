@@ -19,15 +19,14 @@ Operating shapes:
   research/strategy co-lead. Multi-task by design; exempt from the
   child-task boundary; the audit cycle across tasks is the lane's
   purpose. **Read-only — does NOT write code.**
-- **As a named Codex role** (the normal route for gated mutating worker
-  slices): `training-dev` (default mutating developer for HRM training/
-  curriculum/test/code/data and main-repo docs/config/hooks/tooling;
-  developer template, no Serena; **cwd is a dispatch invariant selected
-  by task class** — HRM:
-  `/mnt/c/Users/gabes/projects/claw-code-hrm-text-158`; main-repo
-  docs/config/hooks/tooling: `/mnt/c/Users/gabes/projects/claw-code`;
-  wrong repo means STOP), `curriculum` (read-only split/support
-  planner), `audit` (read-only gate/metric auditor). Slice-scoped;
+- **As a named Codex role** (normal route for gated mutating worker
+  slices): `training-dev` (default full mutating developer for any explicitly
+  dispatched + gated task/repo/path; common lanes: HRM training/curriculum/
+  test/code/data plus main-repo docs/config/hooks/tooling; developer template,
+  no Serena; **cwd is a provenance/dispatch match check, not a repo permission
+  boundary** — dispatch/provenance must name cwd/target; STOP only when actual
+  cwd/target contradicts that packet or a material gate), `curriculum` (read-only
+  split/support planner), `audit` (read-only gate/metric auditor). Slice-scoped;
   recycle after the shipped slice unless claude scopes a small adjacent
   follow-up with `RETAIN OVERRIDE`.
 - **As an ad-hoc named worker handle** (cold-context, separate evidence
