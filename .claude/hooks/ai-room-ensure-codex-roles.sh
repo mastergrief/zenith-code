@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# SessionStart helper: idempotently ensure the whole HRM room is live for the
-# derived channel — codex_co_lead (proven ensure-co-lead CLI path) plus the
-# canonical claudex role workers training-dev / curriculum / audit, spawned in
-# THIS channel as lease-backed auto codex_N handles via the claudex role loader
-# (the standing-room model — not the prototype unified-worker path).
+# SessionStart helper: idempotently ensure the standing co-lead +
+# training-dev lane is live for the derived channel — codex_co_lead via the
+# proven ensure-co-lead CLI path, plus training-dev as the standing mutating
+# worker lane in THIS channel via a lease-backed auto codex_N handle.
 #
 # Idempotent: a role whose live-lease codex_home basename already matches is
 # skipped, so repeated session starts never stack duplicate workers.
@@ -12,8 +11,9 @@
 # All output → the log; stdout stays clean.
 #
 # Role safety: training-dev is full-access but spawned IDLE in this channel — a
-# standing worker, NOT auto-dispatched work. Mutating HRM work still requires an
-# explicit Claude task/approval gate per .claude/rules/CLAUDEX_ORCHESTRATION.md.
+# standing worker, NOT auto-dispatched work. Mutating repo-file work still
+# requires an explicit Claude task/approval gate per
+# .claude/rules/CLAUDEX_ORCHESTRATION.md.
 #
 # Coupling note: the role-spawn block loads ~/.ai-room/mcp-server.py as a parity
 # module and calls its claudex spawn internals (init_room / ensure_room /
@@ -43,14 +43,15 @@ echo "channel=$CHANNEL cwd=$PROJECT_DIR"
 ai-room ensure-co-lead --channel "$CHANNEL" --cwd "$PROJECT_DIR" \
   || echo "WARN ensure-co-lead failed (non-fatal)"
 
-# 2. Canonical claudex role workers (training-dev / curriculum / audit) in THIS
-#    channel as auto codex_N handles. Skip any role already live.
+# 2. Standing claudex mutating lane (training-dev) in THIS channel as an auto
+#    codex_N handle. curriculum/audit remain explicit-dispatch roles, not
+#    SessionStart standing roles. Skip the role if already live.
 AI_ROOM_CHANNEL="$CHANNEL" AI_ROOM_CWD="$PROJECT_DIR" python3 - <<'PY' || echo "WARN role-spawn block failed (non-fatal)"
 import importlib.util, json, os, pathlib, sys
 
 CHANNEL = os.environ["AI_ROOM_CHANNEL"]
 CWD = os.environ["AI_ROOM_CWD"]
-ROLES = ["training-dev", "curriculum", "audit"]
+ROLES = ["training-dev"]
 SPAWN_TIMEOUT = 120.0
 
 
