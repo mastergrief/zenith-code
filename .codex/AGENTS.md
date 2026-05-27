@@ -16,25 +16,23 @@ Fork of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) with
   to audit completely; bounded fallback otherwise) with replay over important
   prior rungs, promote only after sampled probes + A0 exhaustive
   finite-support audit + watch rows clear under the named gate semantics.
-- Bank gate: acquire ≥90% / retain ≥90% per slice (gabe-locked); bank the
-  earliest save that clears (final has no privilege); on a miss classify +
-  split smaller — don't stretch the run, bump LR, or add layers.
+- Bank gate: acquire ≥90% / retain ≥90% per slice (gabe-locked); bank earliest all-clear save (final has no privilege). Close siblings clear by numeric gate OR no-new-broad-cluster/parent-floor. On a miss classify + split/protect/redesign — no runway/LR/model escalation.
 - Default slice (gabe-locked, one atom): **auditable full-density finite
-  support, trained slow-safe** (LR ~5e-5, replay ~0.80, pc on acquired priors,
-  ≤1500-step, no knob escalation). Full coverage of a small completely-auditable
-  support is the default — do not bank sparse sub-samples. Bounded stair-step is
-  the FALLBACK after a classified collision / oversized support; don't
-  continue+re-warm a fragile dense surface.
-- Retention (load-bearing): explicit replay + parent consistency +
-  broad retained supports (L0b, math_a0) + **direct protection for close
-  siblings sharing the target's template/emission surface** (L0c1 lesson);
-  anchors are sentinels, not the primary mechanism.
+  support** (usually ~100-150 rows / ~120 natural), trained slow-safe
+  (LR ~5e-5, replay .80, n-train 12000, heldout/eval 200 diagnostic unless
+  promoted, seeds 17/17, pc/temp 1.0, fixed Tier-B, saves 250..1500). Full coverage is the default; bounded stair-step is the FALLBACK after classified collision / oversized support; don't continue+re-warm a fragile dense surface.
+- Retention (load-bearing): explicit replay + parent consistency + broad
+  retained supports (L0b, math_a0) + **direct close-sibling protection** for
+  shared template/emission surfaces; extra run-specific KL pins must be
+  launch-command entries with ENABLED count/hash proof, never default-on
+  or on the target. Anchors are sentinels.
 - Failure modes to classify before changing recipe: train-set miss /
   held-set generalization residual / parent-relative cluster /
   signal-starvation / rewarm perturbation / template-surface. L0c
   lesson: the `<expr> equals what?` one-digit stratum transfers cleanly;
   failures concentrate in two-digit / template-specific (not math
-  capacity).
+  capacity). Heldout is diagnostic unless promoted; step250 is plumbing/liveness/
+  catastrophic-retention, step500 first acquisition climb-rate read.
 - Cached/batched probe path is the default; native ternary train is
   preferred when available.
 - `.pt` artifacts are runtime/research outputs — commit

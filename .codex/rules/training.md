@@ -15,13 +15,10 @@ guidance below remains as **legacy/adjacent** reference for retrieval /
 structure-extraction lanes; native HRM-Text-1.58 is now the primary
 training lane for `hrm-158-base`.
 
-**Canonical workflow: see `rules/hrm-158.md`.** The bank gate (acquire ≥90% /
-retain ≥90%), the **auditable-full-density-default + slow-safe-learning** slice
-recipe (bounded stair-step is the FALLBACK after a classified collision /
-oversized support), retention mechanisms (replay + parent consistency + broad
-retained supports + close-sibling protection), and failure-mode classification
-all live there. This section keeps the model specifics + literal operational
-command invocations; `hrm-158.md` is canonical for the policy.
+**Canonical workflow: see `rules/hrm-158.md`.** Bank gate stays acquire ≥90% /
+retain ≥90%; default slice is a full-density finite atom (~100-150 rows / ~120
+natural) trained slow-safe. Detailed gate, recipe, retention, and failure
+semantics live there; this file keeps model specifics + commands.
 
 ### Model + tokenizer
 
@@ -56,9 +53,9 @@ on generated response tokens.
 5. **Promote a checkpoint only after** sampled probes + A0 exhaustive
    finite-support audit + explicit watch rows prove acquisition AND clear
    **under the named gate semantics** (true priors at the ≥90% retain bar;
-   close siblings reported, blocking bank only on a broad parent-relative
-   cluster when that is the declared semantics). **Bank the earliest checkpoint
-   that clears all hard gates — the final checkpoint has no privilege.**
+   close siblings clear by numeric gate OR no-new-broad-cluster/parent-floor,
+   blocking only on a broad parent-relative cluster when declared). **Bank the
+   earliest all-clear checkpoint — the final checkpoint has no privilege.**
 6. **If failures appear, classify before changing recipe**: train-set
    miss / held-set generalization residual / parent-relative cluster /
    signal-starvation. Each class has a different repair shape.
@@ -70,8 +67,9 @@ banked full-density recipe is full-density support PLUS slow-safe learning (one
 atom — full-density without slow-safe is not the method). Lower update pressure
 is the retention knob; higher lr migrates digit/template clusters into prior
 rungs. `rules/hrm-158.md` §"Recipe band" is canonical; the band: LR ~`5e-5`,
-replay ~`0.80`, ≤1500-step window, pc on acquired priors, **no knob escalation
-on a miss**. The producer/consumer audit watcher
+replay ~`.80`, `--curriculum-n-train 12000`, heldout/eval 200 diagnostic unless
+promoted, seeds 17/17 aligned, pc/temp `1.0`, fixed Tier-B, saves through 1500,
+**no LR/runway/model escalation on a miss**. The producer/consumer audit watcher
 (`scripts/parallel_audit_watcher.py`) is **required** (must prove OVERLAP per
 save step — only OVERLAP-clean saves are bank-eligible; else
 SERIAL_FALLBACK/MISSED unless explicitly waived). **Pre-launch: verify box
@@ -94,10 +92,10 @@ code-currency** (probe/watcher/rung files synced), not just reachability.
 --save-at-step 1000 --save-at-step 1250 --save-at-step 1500
 ```
 
-**Non-fragile exception (evidence-gated)**: a simple math rung that
-proves it tolerates more pressure may use faster lr (e.g. `--lr 5e-4
---replay-ratio 0.65`, saves 500/750/1000). Default stays slow-safe
-until a rung earns the exception.
+Run contracts also name heldout/eval size (default 200), align probe/audit seed
+17, and list extra run-specific retained-support KL pins; non-dry launch must
+report ENABLED count/hash and never pin the target. Faster lr / lower replay is
+an explicit run-contract exception only, never default or miss rescue.
 
 For targeted-repair runs that need to replay over positionally-future
 rungs, add `--allow-future-replay`.
@@ -133,9 +131,11 @@ rungs, add `--allow-future-replay`.
 | Class | Signal | Repair |
 |---|---|---|
 | **Train-set miss** | row IS in train, model decodes wrong | targeted-repair pass; strict singleton, no curriculum redesign |
-| **Held-set generalization residual** | row is NOT in train, model decodes wrong | curriculum design choice; not a defect per se — track, do NOT redesign partitions to "fix" |
+| **Held-set generalization residual** | row is NOT in train, model decodes wrong | diagnostic unless promoted; track, do NOT redesign partitions to "fix" |
 | **Parent-relative cluster** | 3+ same-surface holes appear in a prior rung that the parent had clean | revert / re-recipe; cluster-swap detected |
 | **Signal-starvation** | per-prior signal too thin under heavy replay | bump corpus size (`--curriculum-n-train`) before changing other knobs |
+| **Rewarm perturbation** | continuing+re-warming a fragile dense surface degrades it | stop continuation; stair-step bounded from a clean parent |
+| **Template / surface failure** | one wrapper/template fails where others pass | bounded slice on the failing surface, not a capacity change |
 
 ### Artifacts policy
 

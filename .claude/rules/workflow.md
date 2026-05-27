@@ -245,13 +245,13 @@ val-flat for 2-3 evals → kill, change one hypothesis, restart.
 ### HRM-Text-1.58 curriculum extension
 
 The generic <5-min loop does NOT mean finishing every training run. The
-`hrm-158-base` curriculum runs in **gated slices**: the default is an
-**auditable full-density finite support trained slow-safe** (bounded stair-step
-is the fallback after a classified collision / oversized support),
-producer/consumer watcher, **early-abort at save points**, the bank gate
-(acquire ≥90% / retain ≥90%), and **classify + split smaller on a miss**
-(do NOT stretch the run, bump LR, or add layers). Full workflow:
-`rules/hrm-158.md`.
+`hrm-158-base` curriculum runs in **gated slices**: default atom is auditable
+full-density finite support (usually ~100-150 rows / ~120 natural)
+trained slow-safe (lr 5e-5, replay .80, n-train 12000, heldout/eval 200
+diagnostic unless promoted, seeds 17/17, pc/temp 1.0, Tier-B fixed, saves
+250..1500). Bank earliest all-clear save under 90/90; step250 is plumbing/
+liveness/catastrophic-retention, step500 first climb-rate read. On misses,
+classify + split/protect/redesign — no LR/runway/model escalation. Full workflow: `rules/hrm-158.md`.
 
 ## Sweet-spot search for tiny models
 

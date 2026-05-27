@@ -49,12 +49,9 @@ taken *after* the change. No vibes, no "looks right", no "should be fine".
 ## HRM-Text-1.58 Fork — active training lane
 
 **The active R&D + training lane.** `hrm-158-base` grows by a **90/90-gated**
-progressive curriculum. The default slice is one atom: an **auditable
-full-density finite support, trained slow-safe** (LR ~5e-5, replay ~0.80, pc on
-acquired priors, ≤1500-step, no knob escalation), bank-gated acquire ≥90% /
-retain ≥90% with close-sibling templates watched. Bounded stair-step is the
-fallback only after a classified collision / oversized support; classify + split
-smaller on a miss. Canonical workflow: `.claude/rules/hrm-158.md`.
+progressive curriculum. Default slice is one atom: **auditable full-density finite support** (usually ~100-150 rows / ~120 natural) trained slow-safe (LR ~5e-5, replay .80, n-train 12000, eval 200 diagnostic, seeds 17/17, pc/temp 1.0, fixed Tier-B, saves 250..1500).
+Bank-gated acquire ≥90% / retain ≥90%; bank earliest all-clear save, final has no privilege. Extra retained-support KL pins are explicit/hash-verified, never default-on or on the target; close siblings clear by numeric gate OR no-new-broad-cluster/parent-floor.
+On a miss classify + split/protect/redesign; no LR/runway/model escalation. Canonical workflow: `.claude/rules/hrm-158.md`.
 
 **Conventions (read first):**
 - Active training lane: native HRM-Text-1.58 (`hrm-158-base`).
