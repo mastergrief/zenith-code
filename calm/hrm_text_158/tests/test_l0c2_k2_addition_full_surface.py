@@ -26,6 +26,7 @@ from calm.hrm_text_158.curriculum.generators import (  # noqa: E402
     _l0c2k2_addition_full_enumerate,
     _l0c2k2_addition_120_enumerate,
     _l0c2k2_addition_120_k5to8_enumerate,
+    _l0c2k2_addition_50s_enumerate,
     make_rung_examples,
 )
 from calm.hrm_text_158.curriculum.language_supports import (  # noqa: E402
@@ -36,12 +37,16 @@ from calm.hrm_text_158.curriculum.language_supports import (  # noqa: E402
     L0C2K2_ADDITION_FULL_AUDIT_EXPECTED_COUNT,
     L0C2K2_ADDITION_120_AUDIT_EXPECTED_COUNT,
     L0C2K2_ADDITION_120_K5TO8_AUDIT_EXPECTED_COUNT,
+    L0C2K2_ADDITION_50S_AUDIT_EXPECTED_COUNT,
     L0C2K2_ADDITION_HELDOUT_50S_AUDIT_EXPECTED_COUNT,
+    L0C2K2_ADDITION_HELDOUT_60S_AUDIT_EXPECTED_COUNT,
     build_l0c1_close_sibling_ce_interleave_support,
     build_l0c2k2_addition_full_support,
     build_l0c2k2_addition_120_support,
     build_l0c2k2_addition_120_k5to8_support,
+    build_l0c2k2_addition_50s_support,
     build_l0c2k2_addition_heldout_50s_support,
+    build_l0c2k2_addition_heldout_60s_support,
     build_language_supports,
     language_source_rung_buckets,
 )
@@ -64,7 +69,9 @@ _TRAIN_SPEC.loader.exec_module(_TRAIN)
 FULL_RUNG = "L0c2-K2-addition-full"
 K120_RUNG = "L0c2-K2-addition-120"
 K120_K5TO8_RUNG = "L0c2-K2-addition-120-k5to8"
+FIFTIES_RUNG = "L0c2-K2-addition-50s"
 HELDOUT_DIAG = "L0c2-K2-addition-heldout-50s"
+HELDOUT_60S_DIAG = "L0c2-K2-addition-heldout-60s"
 _PLUS_RE = re.compile(r"^(\d+) plus ([1-8]) equals what\?$")
 TINY_ARCH = dict(
     hidden_size=64,
@@ -455,8 +462,8 @@ def test_120_k5to8_rung_registered_train_only_diagnosis_only():
     assert K120_K5TO8_RUNG in _RUNG_SPEC
     assert set(_RUNG_SPEC[K120_K5TO8_RUNG]) == {"train"}
     assert K120_K5TO8_RUNG in DIAGNOSIS_ONLY_RUNGS
-    # The active acquisition target must never be parent-KL'd as retained prior.
-    assert K120_K5TO8_RUNG not in _TRAIN._RETAINED_SUPPORT_REGISTRY
+    # Banked k=5..8 is now a true retained prior for the 50s extension.
+    assert K120_K5TO8_RUNG in _TRAIN._RETAINED_SUPPORT_REGISTRY
 
 
 def test_trainer_choices_include_120_k5to8_rung():
@@ -543,6 +550,136 @@ def test_120_k5to8_probe_flag_and_watcher_mode_wired():
     assert "l0c2k2addition120k5to8" in band_line, (
         "l0c2k2addition120k5to8 missing from watcher console summary band tuple"
     )
+
+
+def test_50s_rung_registered_train_only_diagnosis_only_and_not_retained():
+    assert FIFTIES_RUNG in RUNG_NAMES
+    assert FIFTIES_RUNG in _RUNG_SPEC
+    assert set(_RUNG_SPEC[FIFTIES_RUNG]) == {"train"}
+    assert FIFTIES_RUNG in DIAGNOSIS_ONLY_RUNGS
+    assert FIFTIES_RUNG not in _TRAIN._RETAINED_SUPPORT_REGISTRY
+
+    assert HELDOUT_60S_DIAG not in RUNG_NAMES
+    assert HELDOUT_60S_DIAG not in _RUNG_SPEC
+    assert HELDOUT_60S_DIAG not in DIAGNOSIS_ONLY_RUNGS
+    assert HELDOUT_60S_DIAG not in _TRAIN._RETAINED_SUPPORT_REGISTRY
+
+
+def test_trainer_choices_include_50s_rung_not_diagnostics():
+    train_src = os.path.join(_REPO, "scripts", "train_hrm_text_158.py")
+    with open(train_src, "r", encoding="utf-8") as fh:
+        src = fh.read()
+    assert f'"{FIFTIES_RUNG}"' in src
+    assert HELDOUT_DIAG not in src
+    assert HELDOUT_60S_DIAG not in src
+
+
+def test_50s_generator_train_only_exact_rows_and_disjoint_from_banked_20s_40s():
+    rows = make_rung_examples(FIFTIES_RUNG, 80, seed=17, split="train")
+    assert len(rows) == 80
+    assert len({(r["question"], r["expected"]) for r in rows}) == 80
+    assert all(r["rung"] == FIFTIES_RUNG for r in rows)
+    assert {r["expected"] for r in rows} == set(range(50, 60))
+    banked_20s_40s = {
+        (r["question"], r["expected"])
+        for r in _l0c2k2_addition_full_enumerate()
+    }
+    assert {(r["question"], r["expected"]) for r in rows}.isdisjoint(banked_20s_40s)
+    with pytest.raises(ValueError, match="TRAIN-only"):
+        make_rung_examples(FIFTIES_RUNG, 10, seed=17, split="held_out")
+
+
+def test_50s_support_count_echo_exclusions_and_marginals():
+    rows = _flat(build_l0c2k2_addition_50s_support(), FIFTIES_RUNG)
+    parsed = _parse_rows(rows)
+    assert len(rows) == L0C2K2_ADDITION_50S_AUDIT_EXPECTED_COUNT == 80
+    assert len({(q, e) for q, e, _bucket in rows}) == 80
+    assert all(" plus 0 " not in q and not q.startswith("0 plus ") for q, _e, _b in rows)
+    assert all(" minus " not in q and " equals what?" in q for q, _e, _b in rows)
+    assert all(expected != a and expected != k for a, k, expected, _bucket in parsed)
+    assert Counter(k for _a, k, _expected, _b in parsed) == {k: 10 for k in range(1, 9)}
+    assert Counter(expected // 10 for _a, _k, expected, _b in parsed) == {5: 80}
+    assert Counter(expected % 10 for _a, _k, expected, _b in parsed) == {ones: 8 for ones in range(10)}
+
+
+def test_50s_enumerator_metadata_matches_support_contract():
+    rows = _l0c2k2_addition_50s_enumerate()
+    assert len(rows) == 80
+    assert Counter(r["result_decade"] for r in rows) == {"50s": 80}
+    assert Counter(r["addend_k"] for r in rows) == {f"k_{k}": 10 for k in range(1, 9)}
+    assert Counter(r["result_ones"] for r in rows) == {f"ones_{n}": 8 for n in range(10)}
+
+
+def test_heldout_60s_diagnostic_exact_disjoint_and_non_trainable():
+    rows = _flat(build_l0c2k2_addition_heldout_60s_support(), HELDOUT_60S_DIAG)
+    parsed = _parse_rows(rows)
+    assert len(rows) == L0C2K2_ADDITION_HELDOUT_60S_AUDIT_EXPECTED_COUNT == 80
+    assert {expected for _a, _k, expected, _bucket in parsed} == set(range(60, 70))
+    assert Counter(k for _a, k, _expected, _b in parsed) == {k: 10 for k in range(1, 9)}
+    assert Counter(expected % 10 for _a, _k, expected, _b in parsed) == {ones: 8 for ones in range(10)}
+    assert all(expected != a and expected != k for a, k, expected, _bucket in parsed)
+    assert HELDOUT_60S_DIAG not in LANGUAGE_ACTIVE_RUNGS
+    assert HELDOUT_60S_DIAG not in RUNG_NAMES
+    with pytest.raises(ValueError, match="unknown rung"):
+        make_rung_examples(HELDOUT_60S_DIAG, 10, seed=17, split="train")
+
+    fifties = {(r["question"], r["expected"]) for r in _l0c2k2_addition_50s_enumerate()}
+    banked_20s_40s = {
+        (r["question"], r["expected"])
+        for r in _l0c2k2_addition_full_enumerate()
+    }
+    assert {(q, e) for q, e, _bucket in rows}.isdisjoint(fifties)
+    assert {(q, e) for q, e, _bucket in rows}.isdisjoint(banked_20s_40s)
+
+
+def test_legacy_heldout_50s_aliases_trainable_50s_rows_but_is_non_gating_label():
+    legacy = _flat(build_l0c2k2_addition_heldout_50s_support(), HELDOUT_DIAG)
+    canonical = _flat(build_l0c2k2_addition_50s_support(), FIFTIES_RUNG)
+    assert len(legacy) == L0C2K2_ADDITION_HELDOUT_50S_AUDIT_EXPECTED_COUNT == 80
+    assert {(q, e, b) for q, e, b in legacy} == {(q, e, b) for q, e, b in canonical}
+    assert HELDOUT_DIAG not in _TRAIN._RETAINED_SUPPORT_REGISTRY
+
+    probe_src = os.path.join(_REPO, "scripts", "probe_hrm_text_158.py")
+    with open(probe_src, "r", encoding="utf-8") as fh:
+        psrc = fh.read()
+    assert "legacy alias-only" in psrc
+    assert "NON-GATING" in psrc
+
+
+def test_50s_and_60s_language_audit_buckets_cover_declared():
+    for key, support in (
+        (FIFTIES_RUNG, build_l0c2k2_addition_50s_support()),
+        (HELDOUT_60S_DIAG, build_l0c2k2_addition_heldout_60s_support()),
+    ):
+        rows = _flat(support, key)
+        present = {bucket for _q, _e, bucket in rows}
+        declared = set(language_source_rung_buckets(key))
+        assert present == declared
+        assert all(bucket.count(":") == 3 for bucket in present)
+
+
+def test_50s_and_60s_probe_flags_and_watcher_modes_wired():
+    probe_src = os.path.join(_REPO, "scripts", "probe_hrm_text_158.py")
+    with open(probe_src, "r", encoding="utf-8") as fh:
+        psrc = fh.read()
+    assert "--l0c2k2-addition-50s-audit" in psrc
+    assert "--l0c2k2-addition-heldout-60s-audit" in psrc
+    assert 'surface="l0c2k2addition50s"' in psrc
+    assert 'surface="l0c2k2additionheldout60s"' in psrc
+
+    watcher_src = os.path.join(_REPO, "scripts", "parallel_audit_watcher.py")
+    with open(watcher_src, "r", encoding="utf-8") as fh:
+        wsrc = fh.read()
+    assert "--l0c2k2-addition-50s-audit" in wsrc
+    assert "--l0c2k2-addition-heldout-60s-audit" in wsrc
+    assert "L0C2K2ADDITION50S AGGREGATE" in wsrc
+    assert "L0C2K2ADDITIONHELDOUT60S AGGREGATE" in wsrc
+    assert "alias-only/non-gating" in wsrc
+    band_line = next(
+        line for line in wsrc.splitlines()
+        if "l0c2k2addition50s" in line and "l0c2k2additionheldout60s" in line
+    )
+    assert "l0c2k2additionheldout50s" in band_line
 
 
 def test_120_k5to8_ce_interleave_dry_run_injects_rows(monkeypatch, tmp_path: Path, capsys):

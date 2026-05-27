@@ -257,7 +257,7 @@ import random
 from typing import Iterable, Literal
 
 
-RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K2-addition-full", "L0c2-K2-addition-120", "L0c2-K2-addition-120-k5to8", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
+RUNG_NAMES = ("R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K2-addition-full", "L0c2-K2-addition-120", "L0c2-K2-addition-120-k5to8", "L0c2-K2-addition-50s", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6", "R7")
 
 
 def _stable_seed(*parts) -> int:
@@ -707,6 +707,13 @@ _RUNG_SPEC: dict[str, dict[str, dict]] = {
     # train-only; no held_out surface by design.
     "L0c2-K2-addition-120-k5to8": {
         "train":     {"partition": "enumerate_l0c2_k2_addition_120_k5to8"},
+    },
+    # L0c2-K2-addition-50s — next finite result-range extension after k1to4+k5to8
+    # banked over 20..49 but the old heldout-50s diagnostic stayed near zero.
+    # Same `<a> plus <k> equals what?` surface, train-only; forward transfer is
+    # now measured by the audit-only heldout-60s support.
+    "L0c2-K2-addition-50s": {
+        "train":     {"partition": "enumerate_l0c2_k2_addition_50s"},
     },
     "L0c2-K3": {
         "train":     {"partition": "enumerate_stratified_l0c2_k3"},
@@ -2575,6 +2582,13 @@ L0C2K2_ADDITION_120_ADDEND_MAX: int = 4
 L0C2K2_ADDITION_120_K5TO8_TRAIN_COUNT: int = 120
 L0C2K2_ADDITION_120_K5TO8_ADDEND_MIN: int = 5
 
+# L0c2-K2-addition-50s — result-range extension over the same K2 addition
+# template. This makes the former heldout-50s diagnostic an alias-only legacy
+# audit; the active acquisition gate uses the new rung/token.
+L0C2K2_ADDITION_50S_TRAIN_COUNT: int = 80
+L0C2K2_ADDITION_50S_RESULT_RANGE: tuple[int, int] = (50, 59)
+L0C2K2_ADDITION_50S_ADDEND_RANGE: tuple[int, int] = (1, 8)
+
 
 def _l0c_operator(question: str) -> str:
     """F.4a operator classifier for L0c `<expr> equals what?` rows (codex msg
@@ -2957,6 +2971,66 @@ def _gen_l0c2k2_addition_120_k5to8(rng: random.Random, spec: dict, n: int, seed:
                 "question": row["question"],
                 "expected": row["expected"],
                 "rung": "L0c2-K2-addition-120-k5to8",
+            })
+            if len(out) >= n:
+                break
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# L0c2-K2-addition-50s — result-range extension after the 20..49 k1to8 atoms
+# banked without transfer. Exact result 50..59 x k=1..8, train-only.
+# --------------------------------------------------------------------------- #
+
+def _l0c2k2_addition_50s_enumerate() -> list[dict]:
+    """Enumerate the 80-row train-only K2 addition 50s acquisition surface."""
+    r_min, r_max = L0C2K2_ADDITION_50S_RESULT_RANGE
+    k_min, k_max = L0C2K2_ADDITION_50S_ADDEND_RANGE
+    rows: list[dict] = []
+    for result in range(r_min, r_max + 1):
+        for k in range(k_min, k_max + 1):
+            a = result - k
+            rows.append({
+                "question": f"{a} plus {k} equals what?",
+                "expected": result,
+                "a": a,
+                "k": k,
+                "result": result,
+                "result_decade": f"{(result // 10) * 10}s",
+                "addend_k": f"k_{k}",
+                "carry": "carry" if (a % 10) + k >= 10 else "no_carry",
+                "result_ones": f"ones_{result % 10}",
+            })
+
+    assert len(rows) == L0C2K2_ADDITION_50S_TRAIN_COUNT, \
+        f"L0c2-K2-addition-50s total {len(rows)} != {L0C2K2_ADDITION_50S_TRAIN_COUNT}"
+    qe = {(r["question"], r["expected"]) for r in rows}
+    assert len(qe) == len(rows), "L0c2-K2-addition-50s duplicate question/expected rows"
+    assert all(" plus 0 " not in r["question"] and not r["question"].startswith("0 plus ") for r in rows)
+    assert all(" minus " not in r["question"] and " equals what?" in r["question"] for r in rows)
+    assert all(r["expected"] != r["a"] and r["expected"] != r["k"] for r in rows)
+    return rows
+
+
+def _gen_l0c2k2_addition_50s(rng: random.Random, spec: dict, n: int, seed: int, split: str) -> list[dict]:
+    """Train-side sampler for the 80-row K2 addition 50s acquisition surface."""
+    if split != "train":
+        raise ValueError(
+            "L0c2-K2-addition-50s is TRAIN-only; it has no held_out surface. "
+            "Use the 80-row acquisition audit support for the 50s gate and the "
+            "trained-OUT heldout-60s diagnostic for transfer checks."
+        )
+    _ = spec, seed
+    pool = _l0c2k2_addition_50s_enumerate()
+    out: list[dict] = []
+    while len(out) < n:
+        cycle = list(pool)
+        rng.shuffle(cycle)
+        for row in cycle:
+            out.append({
+                "question": row["question"],
+                "expected": row["expected"],
+                "rung": "L0c2-K2-addition-50s",
             })
             if len(out) >= n:
                 break
@@ -3675,6 +3749,19 @@ def make_rung_examples(
         return _gen_l0c2k2_addition_120_k5to8(
             rng,
             _RUNG_SPEC["L0c2-K2-addition-120-k5to8"]["train"],
+            n,
+            seed=seed,
+            split=split,
+        )
+    if rung == "L0c2-K2-addition-50s":
+        if split != "train":
+            raise ValueError(
+                "L0c2-K2-addition-50s is TRAIN-only; split='held_out' is "
+                "invalid. Acquisition is measured by the 80/80 coverage audit."
+            )
+        return _gen_l0c2k2_addition_50s(
+            rng,
+            _RUNG_SPEC["L0c2-K2-addition-50s"]["train"],
             n,
             seed=seed,
             split=split,

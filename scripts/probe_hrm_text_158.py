@@ -1229,6 +1229,25 @@ def probe_exhaustive_finite_supports(
     return output
 
 
+_LANGUAGE_AGGREGATE_ANNOTATIONS = {
+    "l0c2k2additionheldout50s": (
+        "LEGACY_ALIAS_ONLY_NON_GATING: same rows as L0C2K2ADDITION50S; not transfer"
+    ),
+    "l0c2k2additionheldout60s": (
+        "DIAGNOSTIC_NON_GATING: forward-transfer signal; not gate"
+    ),
+}
+
+
+def language_aggregate_label(surface: str) -> str:
+    """Return the reader-facing aggregate label for a language audit surface."""
+    label = f"{surface.upper()} AGGREGATE"
+    note = _LANGUAGE_AGGREGATE_ANNOTATIONS.get(surface)
+    if note is None:
+        return label
+    return f"{label} [{note}]"
+
+
 def probe_language_finite_supports(
     ckpt_path: str,
     *,
@@ -1523,10 +1542,14 @@ def probe_language_finite_supports(
             else LANGUAGE_EXPECTED_AGGREGATE
         ),
     }
-    print(f"[probe-language] {surface.upper()} AGGREGATE strict={agg_exact}/{agg_total} = "
-          f"{aggregate['rate']:.4f} parsed={agg_parsed}/{agg_total} "
-          f"holes={agg_holes} finite={finite_all} "
-          f"elapsed={total_elapsed:.1f}s", flush=True)
+    aggregate_label = language_aggregate_label(surface)
+    aggregate_line = (
+        f"[probe-language] {aggregate_label} strict={agg_exact}/{agg_total} = "
+        f"{aggregate['rate']:.4f} parsed={agg_parsed}/{agg_total} "
+        f"holes={agg_holes} finite={finite_all} elapsed={total_elapsed:.1f}s"
+    )
+    aggregate["line"] = aggregate_line
+    print(aggregate_line, flush=True)
 
     # Codex msg 1779560820500 tightening: JSON records BOTH audit_seed
     # (actually used) and ckpt_curriculum_seed (what training used),
@@ -2013,11 +2036,23 @@ if __name__ == "__main__":
                          "banked k=1..4 atom) over '<a> plus <k> equals what?' for "
                          "results 20-49 and k=5..8. Emits "
                          "surface='l0c2k2addition120k5to8'. Conflicts with other modes.")
+    ap.add_argument("--l0c2k2-addition-50s-audit", action="store_true",
+                    help="Run the standalone L0c2-K2-addition-50s acquisition "
+                         "audit: 80 trainable rows over '<a> plus <k> equals what?' "
+                         "for results 50-59 and k=1..8. This is the canonical "
+                         "50s gate once the former heldout-50s rows become trained. "
+                         "Emits surface='l0c2k2addition50s'. Conflicts with other modes.")
     ap.add_argument("--l0c2k2-addition-heldout-50s-audit", action="store_true",
-                    help="Run the trained-OUT L0c2-K2 addition heldout-50s "
-                         "diagnostic audit: 80 non-gating rows over results "
-                         "50-59 and k=1..8. Audit-visible only; not a rung, "
-                         "not retained. Emits surface='l0c2k2additionheldout50s'. "
+                    help="Run the legacy alias-only L0c2-K2 addition heldout-50s "
+                         "audit: same 80 rows as the trainable 50s acquisition "
+                         "target. Kept only for historical receipts; NON-GATING "
+                         "and no longer a held-out transfer signal. Emits "
+                         "surface='l0c2k2additionheldout50s'. Conflicts with other modes.")
+    ap.add_argument("--l0c2k2-addition-heldout-60s-audit", action="store_true",
+                    help="Run the trained-OUT L0c2-K2 addition heldout-60s "
+                         "diagnostic audit: 80 non-gating transfer rows over "
+                         "results 60-69 and k=1..8. Audit-visible only; not a "
+                         "rung, not retained. Emits surface='l0c2k2additionheldout60s'. "
                          "Conflicts with other modes.")
     ap.add_argument("--l0c2k3-audit", action="store_true",
                     help="Run the standalone L0c2-K3 audit surface (result "
@@ -2164,7 +2199,9 @@ if __name__ == "__main__":
         ("--l0c2k2-addition-full-audit", args.l0c2k2_addition_full_audit),
         ("--l0c2k2-addition-120-audit", args.l0c2k2_addition_120_audit),
         ("--l0c2k2-addition-120-k5to8-audit", args.l0c2k2_addition_120_k5to8_audit),
+        ("--l0c2k2-addition-50s-audit", args.l0c2k2_addition_50s_audit),
         ("--l0c2k2-addition-heldout-50s-audit", args.l0c2k2_addition_heldout_50s_audit),
+        ("--l0c2k2-addition-heldout-60s-audit", args.l0c2k2_addition_heldout_60s_audit),
         ("--l0c2k3-audit", args.l0c2k3_audit),
         ("--l0c2k1-edge-audit", args.l0c2k1_edge_audit),
         ("--l0c2k1-identity-audit", args.l0c2k1_identity_audit),
@@ -2204,7 +2241,9 @@ if __name__ == "__main__":
             ("--l0c2k1-audit", args.l0c2k1_audit),
             ("--l0c2k2-audit", args.l0c2k2_audit),
             ("--l0c2k2-addition-full-audit", args.l0c2k2_addition_full_audit),
+            ("--l0c2k2-addition-50s-audit", args.l0c2k2_addition_50s_audit),
             ("--l0c2k2-addition-heldout-50s-audit", args.l0c2k2_addition_heldout_50s_audit),
+            ("--l0c2k2-addition-heldout-60s-audit", args.l0c2k2_addition_heldout_60s_audit),
             ("--l0c2k3-audit", args.l0c2k3_audit),
             ("--l0c2k1-edge-audit", args.l0c2k1_edge_audit),
             ("--l0c2k1-identity-audit", args.l0c2k1_identity_audit),
@@ -2363,6 +2402,24 @@ if __name__ == "__main__":
             expected_aggregate=L0C2K2_ADDITION_120_K5TO8_AUDIT_EXPECTED_COUNT,
             surface="l0c2k2addition120k5to8",
         )
+    elif args.l0c2k2_addition_50s_audit:
+        from calm.hrm_text_158.curriculum.language_supports import (
+            build_l0c2k2_addition_50s_support,
+            L0C2K2_ADDITION_50S_AUDIT_EXPECTED_COUNT,
+        )
+        probe_language_finite_supports(
+            args.ckpt_path,
+            audit_seed=args.language_audit_seed,
+            max_gen=args.max_gen,
+            output_json=args.audit_output_json,
+            use_cached_ternary_infer=args.use_cached_ternary_infer,
+            use_kv_cache_decode=args.use_kv_cache_decode,
+            use_batched_probe_eval=args.use_batched_probe_eval,
+            probe_batch_size=args.probe_batch_size,
+            supports_builder=build_l0c2k2_addition_50s_support,
+            expected_aggregate=L0C2K2_ADDITION_50S_AUDIT_EXPECTED_COUNT,
+            surface="l0c2k2addition50s",
+        )
     elif args.l0c2k2_addition_heldout_50s_audit:
         from calm.hrm_text_158.curriculum.language_supports import (
             build_l0c2k2_addition_heldout_50s_support,
@@ -2380,6 +2437,24 @@ if __name__ == "__main__":
             supports_builder=build_l0c2k2_addition_heldout_50s_support,
             expected_aggregate=L0C2K2_ADDITION_HELDOUT_50S_AUDIT_EXPECTED_COUNT,
             surface="l0c2k2additionheldout50s",
+        )
+    elif args.l0c2k2_addition_heldout_60s_audit:
+        from calm.hrm_text_158.curriculum.language_supports import (
+            build_l0c2k2_addition_heldout_60s_support,
+            L0C2K2_ADDITION_HELDOUT_60S_AUDIT_EXPECTED_COUNT,
+        )
+        probe_language_finite_supports(
+            args.ckpt_path,
+            audit_seed=args.language_audit_seed,
+            max_gen=args.max_gen,
+            output_json=args.audit_output_json,
+            use_cached_ternary_infer=args.use_cached_ternary_infer,
+            use_kv_cache_decode=args.use_kv_cache_decode,
+            use_batched_probe_eval=args.use_batched_probe_eval,
+            probe_batch_size=args.probe_batch_size,
+            supports_builder=build_l0c2k2_addition_heldout_60s_support,
+            expected_aggregate=L0C2K2_ADDITION_HELDOUT_60S_AUDIT_EXPECTED_COUNT,
+            surface="l0c2k2additionheldout60s",
         )
     elif args.l0c2k3_audit:
         from calm.hrm_text_158.curriculum.language_supports import (

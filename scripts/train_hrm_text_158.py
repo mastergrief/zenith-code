@@ -400,6 +400,7 @@ _RETAINED_SUPPORT_REGISTRY: tuple[str, ...] = (
     "l0c_exhaustive",
     "L0c2-K1-identity-2digit-full",
     "L0c2-K2-addition-120",
+    "L0c2-K2-addition-120-k5to8",
 )
 
 
@@ -453,6 +454,12 @@ def _retained_support(name: str, seed: int) -> tuple[list[tuple[str, int, str]],
                    prior/retained surface for the sibling k=5..8 retry. Registry
                    membership only enables explicit `--retained-support`; it is
                    not default-on.
+    - "L0c2-K2-addition-120-k5to8" ← 120-row full-density k=5..8 K2 addition
+                   support (`<a> plus <k> equals what?`, result=20..49, k=5..8),
+                   SEED-INDEPENDENT. Banked at parent-floor 119/120; eligible as
+                   a TRUE prior/retained surface for the 50s result-range
+                   extension. The active 50s acquisition target stays OUT of this
+                   registry and must not be parent-KL'd.
 
     Rows are `(question, expected, source_rung)` sorted stably by
     `(source_rung, question, expected)` so repeated construction is
@@ -515,14 +522,26 @@ def _retained_support(name: str, seed: int) -> tuple[list[tuple[str, int, str]],
         ]
     elif name == "L0c2-K2-addition-120":
         # Banked k=1..4 addition support. This is a TRUE prior surface the parent
-        # has acquired; it can be explicitly parent-KL'd while the sibling k=5..8
-        # acquisition target remains OUT of the retained-support registry.
+        # has acquired; it can be explicitly parent-KL'd. The sibling k=5..8
+        # surface has its own registry entry after banking; active targets stay out.
         from calm.hrm_text_158.curriculum.language_supports import (
             build_l0c2k2_addition_120_support,
         )
         rows = [
             (q, e, bucket)
             for _surface, pairs in build_l0c2k2_addition_120_support(seed).items()
+            for (q, e, bucket) in pairs
+        ]
+    elif name == "L0c2-K2-addition-120-k5to8":
+        # Banked k=5..8 addition support. This is now a TRUE prior surface the
+        # parent has acquired, so the 50s extension can explicitly parent-KL it.
+        # Do not add the active 50s target or 60s diagnostic to this registry.
+        from calm.hrm_text_158.curriculum.language_supports import (
+            build_l0c2k2_addition_120_k5to8_support,
+        )
+        rows = [
+            (q, e, bucket)
+            for _surface, pairs in build_l0c2k2_addition_120_k5to8_support(seed).items()
             for (q, e, bucket) in pairs
         ]
     else:
@@ -1160,6 +1179,82 @@ def train(
         m.load_state_dict(loaded_ckpt["model_state"], strict=True)
         print(f"[hrm158] --load-from loaded; optimizer state + LR schedule will RESET per rung", flush=True)
 
+    # Parent-consistency: frozen reference = the --load-from chain head. Dry-run
+    # builds this too when retained supports are requested so launch receipts can
+    # prove the exact supports/hashes without taking optimizer steps.
+    parent_m = None
+    if parent_consistency_weight > 0.0 or effective_retained_profile:
+        if load_from is None:
+            raise ValueError(
+                "parent/retained-support consistency (weight > 0) requires "
+                "--load-from (the frozen parent reference checkpoint)."
+            )
+        parent_hrm = HierarchicalReasoningModel(cfg)
+        parent_m = LMHead(parent_hrm, LMHeadConfig(vocab_size=tok.vocab_size)).to(device)
+        parent_m.load_state_dict(loaded_ckpt["model_state"], strict=True)
+        parent_m.eval()
+        for p in parent_m.parameters():
+            p.requires_grad_(False)
+        print(f"[hrm158] frozen parent reference LOADED from {load_from} "
+              f"(parent_consistency_weight={parent_consistency_weight} "
+              f"retained_support_profile={effective_retained_profile} "
+              f"temp={parent_consistency_temp})", flush=True)
+
+    # Retained-support consistency setup (codex registry slice msg 1779656084090).
+    # For each active support: materialize the canonical-ordered snapshot, encode
+    # it ONCE into a CPU cache, and arm an INDEPENDENT deterministic K-cyclic
+    # sampler. Each support side-batches with its OWN backward in the train loop
+    # (sequential accumulation -> peak VRAM bounded, same as the 2ce0da2 fix).
+    # Dry-runs build the same manifests before their early return so no launch can
+    # silently skip support hash/count proof.
+    # active_supports: list of {name, weight, hash, count, cache, sampler}.
+    active_supports: list[dict] = []
+    for _name, _weight in effective_retained_profile:
+        _rows, _hash = _retained_support(_name, curriculum_seed)
+        _row_dicts = [
+            {"question": q, "expected": e, "source_rung": sr}
+            for (q, e, sr) in _rows
+        ]
+        tok.assert_corpus_covered(_row_dicts, label=f"retained:{_name}")
+        _ds = HrmTextGsm8kDataset(_row_dicts, tok, max_len=max_len,
+                                  curriculum_rung=None)
+        if _ds.n_dropped != 0 or len(_ds) != len(_rows):
+            raise RuntimeError(
+                f"retained support {_name!r} lost rows to max_len={max_len} "
+                f"(dropped {_ds.n_dropped}, kept {len(_ds)} of {len(_rows)}); "
+                f"cannot align the deterministic sampler to canonical order."
+            )
+        _cache = [_ds[i] for i in range(len(_ds))]
+        _sampler = _RetainedSupportSampler(
+            n=len(_cache),
+            support_seed=_retained_sampler_seed(_name, curriculum_seed),
+            batch=effective_retained_batch,
+        )
+        active_supports.append({
+            "name": _name, "weight": _weight, "hash": _hash,
+            "count": len(_cache), "cache": _cache, "sampler": _sampler,
+        })
+        _first3 = _sampler.perm[: min(3, len(_sampler.perm))]
+        _first_qs = [_rows[i][0] for i in _first3]
+        print(
+            f"[hrm158] retained-support ENABLED: name={_name} weight={_weight} "
+            f"temp={parent_consistency_temp} batch={effective_retained_batch} "
+            f"support_seed={curriculum_seed} support_count={len(_cache)} "
+            f"support_hash={_hash} sampler_seed={_sampler.support_seed} "
+            f"first3_perm={_first3} first3_q={_first_qs}", flush=True,
+        )
+    # L0b-only flag for ckpt-metadata back-compat (codex correction #2): keep
+    # legacy l0b_consistency_* fields ONLY when the effective profile is exactly
+    # single-support L0b; mixed profiles write retained_support_profile only.
+    _retained_l0b_only = (
+        len(active_supports) == 1 and active_supports[0]["name"] == "L0b"
+    )
+    retained_support_meta = [
+        {"name": s["name"], "weight": s["weight"], "batch": effective_retained_batch,
+         "count": s["count"], "hash": s["hash"]}
+        for s in active_supports
+    ]
+
     # Optimizer + LR schedule
     opt = torch.optim.AdamW(m.parameters(), lr=lr, betas=(0.9, 0.95), weight_decay=weight_decay)
     total_steps = epochs * len(loader)
@@ -1209,83 +1304,6 @@ def train(
         print(f"[hrm158] --dry-run: EXITING before optimizer step (no GPU training; "
               f"no ckpt written)", flush=True)
         return
-
-    # Parent-consistency: frozen reference = the --load-from chain head. Built
-    # after the dry-run early-return so dry runs skip it. Kept in eval (the
-    # inference BitLinear forward) while the child may use the native-train
-    # forward, so step-0 KL is ~0 within FP tolerance, not bitwise.
-    parent_m = None
-    if parent_consistency_weight > 0.0 or effective_retained_profile:
-        if load_from is None:
-            raise ValueError(
-                "parent/retained-support consistency (weight > 0) requires "
-                "--load-from (the frozen parent reference checkpoint)."
-            )
-        parent_hrm = HierarchicalReasoningModel(cfg)
-        parent_m = LMHead(parent_hrm, LMHeadConfig(vocab_size=tok.vocab_size)).to(device)
-        parent_m.load_state_dict(loaded_ckpt["model_state"], strict=True)
-        parent_m.eval()
-        for p in parent_m.parameters():
-            p.requires_grad_(False)
-        print(f"[hrm158] frozen parent reference LOADED from {load_from} "
-              f"(parent_consistency_weight={parent_consistency_weight} "
-              f"retained_support_profile={effective_retained_profile} "
-              f"temp={parent_consistency_temp})", flush=True)
-
-    # Retained-support consistency setup (codex registry slice msg 1779656084090).
-    # For each active support: materialize the canonical-ordered snapshot, encode
-    # it ONCE into a CPU cache, and arm an INDEPENDENT deterministic K-cyclic
-    # sampler. Each support side-batches with its OWN backward in the train loop
-    # (sequential accumulation -> peak VRAM bounded, same as the 2ce0da2 fix).
-    # Skipped entirely when the profile is empty. Built after the dry-run
-    # early-return so dry runs skip it.
-    # active_supports: list of {name, weight, hash, count, cache, sampler}.
-    active_supports: list[dict] = []
-    for _name, _weight in effective_retained_profile:
-        _rows, _hash = _retained_support(_name, curriculum_seed)
-        _row_dicts = [
-            {"question": q, "expected": e, "source_rung": sr}
-            for (q, e, sr) in _rows
-        ]
-        tok.assert_corpus_covered(_row_dicts, label=f"retained:{_name}")
-        _ds = HrmTextGsm8kDataset(_row_dicts, tok, max_len=max_len,
-                                  curriculum_rung=None)
-        if _ds.n_dropped != 0 or len(_ds) != len(_rows):
-            raise RuntimeError(
-                f"retained support {_name!r} lost rows to max_len={max_len} "
-                f"(dropped {_ds.n_dropped}, kept {len(_ds)} of {len(_rows)}); "
-                f"cannot align the deterministic sampler to canonical order."
-            )
-        _cache = [_ds[i] for i in range(len(_ds))]
-        _sampler = _RetainedSupportSampler(
-            n=len(_cache),
-            support_seed=_retained_sampler_seed(_name, curriculum_seed),
-            batch=effective_retained_batch,
-        )
-        active_supports.append({
-            "name": _name, "weight": _weight, "hash": _hash,
-            "count": len(_cache), "cache": _cache, "sampler": _sampler,
-        })
-        _first3 = _sampler.perm[: min(3, len(_sampler.perm))]
-        _first_qs = [_rows[i][0] for i in _first3]
-        print(
-            f"[hrm158] retained-support ENABLED: name={_name} weight={_weight} "
-            f"temp={parent_consistency_temp} batch={effective_retained_batch} "
-            f"support_seed={curriculum_seed} support_count={len(_cache)} "
-            f"support_hash={_hash} sampler_seed={_sampler.support_seed} "
-            f"first3_perm={_first3} first3_q={_first_qs}", flush=True,
-        )
-    # L0b-only flag for ckpt-metadata back-compat (codex correction #2): keep
-    # legacy l0b_consistency_* fields ONLY when the effective profile is exactly
-    # single-support L0b; mixed profiles write retained_support_profile only.
-    _retained_l0b_only = (
-        len(active_supports) == 1 and active_supports[0]["name"] == "L0b"
-    )
-    retained_support_meta = [
-        {"name": s["name"], "weight": s["weight"], "batch": effective_retained_batch,
-         "count": s["count"], "hash": s["hash"]}
-        for s in active_supports
-    ]
 
     # Train
     m.train()
@@ -1649,7 +1667,7 @@ if __name__ == "__main__":
                          "--use-ternary-bulk (no-op otherwise).")
     # Phase 3 Step 1 curriculum flags (codex msg 1779462307554 +1 implement Phase A)
     ap.add_argument("--curriculum-rung", type=str, default=None,
-                    choices=["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K2-addition-full", "L0c2-K2-addition-120", "L0c2-K2-addition-120-k5to8", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6"],
+                    choices=["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K2-addition-full", "L0c2-K2-addition-120", "L0c2-K2-addition-120-k5to8", "L0c2-K2-addition-50s", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6"],
                     help="Phase 3 curriculum mode. When set, swaps GSM8k corpus "
                          "for synthetic per-rung data + replay mix. Requires "
                          "--use-broad-tokenizer in Phase 3 design.")
@@ -1764,7 +1782,8 @@ if __name__ == "__main__":
                          "toward the frozen parent, NO CE). NAME in "
                          "{L0b, L0c, L0c1, math_a0, math_r1b2_minus_one, "
                          "l0c_exhaustive, L0c2-K1-identity-2digit-full, "
-                         "L0c2-K2-addition-120}; registry membership only makes "
+                         "L0c2-K2-addition-120, L0c2-K2-addition-120-k5to8}; "
+                         "registry membership only makes "
                          "a name explicitly selectable here; it is not default-on. "
                          "L0c1 explicit selection pins parent behavior on the "
                          "121-row audit surface; it does not fix parent holes. "

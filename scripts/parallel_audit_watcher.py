@@ -60,8 +60,16 @@ _AUDIT_MODES = [
     # L0C2K2ADDITION120 (which is followed by 'K', not a space).
     ("l0c2k2addition120k5to8", ["--l0c2k2-addition-120-k5to8-audit"],
      r"L0C2K2ADDITION120K5TO8 AGGREGATE"),
+    # Result-range extension acquisition target. This is the canonical 50s gate;
+    # the legacy heldout-50s mode below is alias-only/non-gating after this rung.
+    ("l0c2k2addition50s", ["--l0c2k2-addition-50s-audit"],
+     r"L0C2K2ADDITION50S AGGREGATE"),
+    # Historical receipt alias for the exact 50s rows. Kept non-gating so old
+    # scripts resolve, but no longer a held-out transfer signal after 50s trains.
     ("l0c2k2additionheldout50s", ["--l0c2k2-addition-heldout-50s-audit"],
      r"L0C2K2ADDITIONHELDOUT50S AGGREGATE"),
+    ("l0c2k2additionheldout60s", ["--l0c2k2-addition-heldout-60s-audit"],
+     r"L0C2K2ADDITIONHELDOUT60S AGGREGATE"),
     ("l0c2k3", ["--l0c2k3-audit"], r"L0C2K3 AGGREGATE"),
     # F.4d-edge: L0c2-K1-edge held-generalization micro-slice acquire surface.
     # Two finite sub-surfaces (train 52 / held 13); the aggregate line is the 65
@@ -91,6 +99,29 @@ _AUDIT_MODES = [
     ("l0c_exhaustive", ["--l0c-exhaustive-audit"],
      r"(\[probe-l0c-exhaustive\] AGGREGATE|\[probe-watch\]|WATCH AGGREGATE)"),
 ]
+
+_SUMMARY_ANNOTATIONS = {
+    "l0c2k2additionheldout50s": (
+        "LEGACY_ALIAS_ONLY_NON_GATING: same rows as L0C2K2ADDITION50S; not transfer"
+    ),
+    "l0c2k2additionheldout60s": (
+        "DIAGNOSTIC_NON_GATING: forward-transfer signal; not gate"
+    ),
+}
+
+
+def _summary_aggregate(mode_name: str, aggregate_line: str) -> str:
+    """Add human-facing labels that should survive log-only receipts."""
+    if not aggregate_line:
+        return aggregate_line
+    note = _SUMMARY_ANNOTATIONS.get(mode_name)
+    if note is None:
+        return aggregate_line
+    if note in aggregate_line:
+        return aggregate_line
+    return f"{aggregate_line} [{note}]"
+
+
 _COMMON_FLAGS = [
     "--use-cached-ternary-infer", "--use-kv-cache-decode",
     "--use-batched-probe-eval", "--probe-batch-size", "32",
@@ -229,8 +260,11 @@ def main() -> int:
             l0c1 = next((a for a in entry.get("results", {}).get("l0c1", {}).get("aggregate", [])), "")
             l0c2 = next((a for a in entry.get("results", {}).get("l0c2", {}).get("aggregate", [])), "")
             l0c2_bands = [
-                next((a for a in entry.get("results", {}).get(name, {}).get("aggregate", [])), "")
-                for name in ("l0c2k1", "l0c2k1edge", "l0c2k1identity", "l0c2k1identityfull", "l0c2k2", "l0c2k2additionfull", "l0c2k2addition120", "l0c2k2addition120k5to8", "l0c2k2additionheldout50s", "l0c2k3")
+                _summary_aggregate(
+                    name,
+                    next((a for a in entry.get("results", {}).get(name, {}).get("aggregate", [])), ""),
+                )
+                for name in ("l0c2k1", "l0c2k1edge", "l0c2k1identity", "l0c2k1identityfull", "l0c2k2", "l0c2k2additionfull", "l0c2k2addition120", "l0c2k2addition120k5to8", "l0c2k2addition50s", "l0c2k2additionheldout50s", "l0c2k2additionheldout60s", "l0c2k3")
             ]
             l0cx = next((a for a in entry.get("results", {}).get("l0c_exhaustive", {}).get("aggregate", [])
                          if "[probe-l0c-exhaustive]" in a), "")

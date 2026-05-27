@@ -45,11 +45,13 @@ def test_registry_names():
         "l0c_exhaustive",
         "L0c2-K1-identity-2digit-full",
         "L0c2-K2-addition-120",
+        "L0c2-K2-addition-120-k5to8",
     )
 
 
 _IDENTITY_FULL_HASH = "bf43ff7354b64c4e"
 _L0C2_K2_ADDITION_120_HASH = "8b29072411bb9c71"
+_L0C2_K2_ADDITION_120_K5TO8_HASH = "c156c62533a09d29"
 _L0C1_SEED17_HASH = "7bc8cd771daab878"
 
 
@@ -102,7 +104,7 @@ def test_l0c1_retained_support_matches_gate_surface_and_not_k5to8():
     assert rows == gate_rows
     assert {(q, e) for q, e, _bucket in rows}.isdisjoint(k5to8)
     assert "L0c2-K2-addition-120" in _REGISTRY
-    assert "L0c2-K2-addition-120-k5to8" not in _REGISTRY
+    assert "L0c2-K2-addition-120-k5to8" in _REGISTRY
 
 
 def test_l0c1_retained_support_seed_dependent_and_deterministic():
@@ -167,6 +169,59 @@ def test_l0c2_k2_addition_120_retained_support_matches_audit_and_not_k5to8():
 def test_l0c2_k2_addition_120_retained_support_seed_independent():
     assert _support("L0c2-K2-addition-120", 17)[1] == \
         _support("L0c2-K2-addition-120", 42)[1]
+
+
+def test_l0c2_k2_addition_120_k5to8_retained_support_snapshot():
+    rows, h = _support("L0c2-K2-addition-120-k5to8", 17)
+    assert len(rows) == 120
+    assert h == _L0C2_K2_ADDITION_120_K5TO8_HASH
+    assert rows == sorted(rows, key=lambda r: (r[2], r[0], r[1]))
+    assert rows[0] == ("15 plus 5 equals what?", 20, "20s:k_5:carry:ones_0")
+    assert rows[-1] == ("41 plus 8 equals what?", 49, "40s:k_8:no_carry:ones_9")
+    assert all(q.endswith(" equals what?") and " plus " in q for q, _e, _bucket in rows)
+
+
+def test_l0c2_k2_addition_120_k5to8_retained_support_matches_audit_exactly():
+    from calm.hrm_text_158.curriculum.generators import (
+        _l0c2k2_addition_120_enumerate,
+        _l0c2k2_addition_120_k5to8_enumerate,
+    )
+    from calm.hrm_text_158.curriculum.language_supports import (
+        build_l0c2k2_addition_120_k5to8_support,
+        build_l0c2k2_addition_50s_support,
+    )
+    rows, h = _support("L0c2-K2-addition-120-k5to8", 17)
+    retained = {(q, e) for q, e, _bucket in rows}
+    audit_rows = sorted(
+        [
+            (q, e, bucket)
+            for _surface, pairs in build_l0c2k2_addition_120_k5to8_support(17).items()
+            for (q, e, bucket) in pairs
+        ],
+        key=lambda r: (r[2], r[0], r[1]),
+    )
+    audit = {(q, e) for q, e, _bucket in audit_rows}
+    k5to8 = {
+        (r["question"], r["expected"])
+        for r in _l0c2k2_addition_120_k5to8_enumerate()
+    }
+    k1to4 = {(r["question"], r["expected"]) for r in _l0c2k2_addition_120_enumerate()}
+    fifties = {
+        (q, e)
+        for _surface, pairs in build_l0c2k2_addition_50s_support(17).items()
+        for q, e, _bucket in pairs
+    }
+    assert len(rows) == len(retained) == len(audit) == len(k5to8) == 120
+    assert rows == audit_rows
+    assert retained == audit == k5to8
+    assert h == _L0C2_K2_ADDITION_120_K5TO8_HASH
+    assert retained.isdisjoint(k1to4)
+    assert retained.isdisjoint(fifties)
+
+
+def test_l0c2_k2_addition_120_k5to8_retained_support_seed_independent():
+    assert _support("L0c2-K2-addition-120-k5to8", 17)[1] == \
+        _support("L0c2-K2-addition-120-k5to8", 42)[1]
 
 
 # --------------------------------------------------------------------------- #
@@ -329,6 +384,7 @@ def test_determinism_same_name_seed():
         ("math_a0", 17),
         ("L0c2-K1-identity-2digit-full", 17),
         ("L0c2-K2-addition-120", 17),
+        ("L0c2-K2-addition-120-k5to8", 17),
     ):
         r1, h1 = _support(name, seed)
         r2, h2 = _support(name, seed)
@@ -484,6 +540,12 @@ def test_l0c2_k2_addition_120_profile_name_reaches_load_from_guard():
     import pytest
     with pytest.raises(ValueError, match="requires --load-from"):
         _thr.train(retained_support_profile=[("L0c2-K2-addition-120", 1.0)])
+
+
+def test_l0c2_k2_addition_120_k5to8_profile_name_reaches_load_from_guard():
+    import pytest
+    with pytest.raises(ValueError, match="requires --load-from"):
+        _thr.train(retained_support_profile=[("L0c2-K2-addition-120-k5to8", 1.0)])
 
 
 def test_l0c1_profile_name_reaches_load_from_guard():

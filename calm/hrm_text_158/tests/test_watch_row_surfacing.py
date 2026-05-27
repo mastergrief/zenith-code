@@ -248,11 +248,11 @@ def test_watcher_l0c2k1_identity_mode_wired_and_printed():
     watcher_src = os.path.join(_REPO, "scripts", "parallel_audit_watcher.py")
     with open(watcher_src, "r", encoding="utf-8") as fh:
         src = fh.read()
-    assert (
-        'for name in ("l0c2k1", "l0c2k1edge", "l0c2k1identity", '
-        '"l0c2k1identityfull", "l0c2k2", "l0c2k2additionfull", '
-        '"l0c2k2additionheldout50s", "l0c2k3")'
-    ) in src
+    band_line = next(
+        line for line in src.splitlines()
+        if "for name in (" in line and "l0c2k1identityfull" in line and "l0c2k3" in line
+    )
+    assert "l0c2k1identity" in band_line
 
 
 def test_watcher_l0c2k1_identity_pattern_excludes_k1_and_edge():
@@ -288,11 +288,11 @@ def test_watcher_l0c2k1_identity_full_mode_wired_and_printed():
     with open(watcher_src, "r", encoding="utf-8") as fh:
         src = fh.read()
     # Printed in the per-step consumer band grouping.
-    assert (
-        'for name in ("l0c2k1", "l0c2k1edge", "l0c2k1identity", '
-        '"l0c2k1identityfull", "l0c2k2", "l0c2k2additionfull", '
-        '"l0c2k2additionheldout50s", "l0c2k3")'
-    ) in src
+    band_line = next(
+        line for line in src.splitlines()
+        if "for name in (" in line and "l0c2k1identity" in line and "l0c2k3" in line
+    )
+    assert "l0c2k1identityfull" in band_line
 
 
 def test_watcher_l0c2k1_identity_full_pattern_excludes_sparse_and_kband():
@@ -325,17 +325,46 @@ def test_watcher_l0c2k2_addition_modes_wired_and_printed():
     _watcher, pats, flags = _watcher_modes()
     names = [name for name, _f, _g in _watcher._AUDIT_MODES]
     assert "l0c2k2additionfull" in names
+    assert "l0c2k2addition50s" in names
     assert "l0c2k2additionheldout50s" in names
+    assert "l0c2k2additionheldout60s" in names
     assert flags["l0c2k2additionfull"] == ["--l0c2k2-addition-full-audit"]
+    assert flags["l0c2k2addition50s"] == ["--l0c2k2-addition-50s-audit"]
     assert flags["l0c2k2additionheldout50s"] == ["--l0c2k2-addition-heldout-50s-audit"]
+    assert flags["l0c2k2additionheldout60s"] == ["--l0c2k2-addition-heldout-60s-audit"]
     assert pats["l0c2k2additionfull"] == r"L0C2K2ADDITIONFULL AGGREGATE"
+    assert pats["l0c2k2addition50s"] == r"L0C2K2ADDITION50S AGGREGATE"
     assert pats["l0c2k2additionheldout50s"] == r"L0C2K2ADDITIONHELDOUT50S AGGREGATE"
+    assert pats["l0c2k2additionheldout60s"] == r"L0C2K2ADDITIONHELDOUT60S AGGREGATE"
 
     watcher_src = os.path.join(_REPO, "scripts", "parallel_audit_watcher.py")
     with open(watcher_src, "r", encoding="utf-8") as fh:
         src = fh.read()
     assert "l0c2k2additionfull" in src
+    assert "l0c2k2addition50s" in src
     assert "l0c2k2additionheldout50s" in src
+    assert "l0c2k2additionheldout60s" in src
+    assert "alias-only/non-gating" in src
+
+    held_line = "[probe-language] L0C2K2ADDITIONHELDOUT50S AGGREGATE strict=80/80 = 1.0000"
+    probe_label = _probe.language_aggregate_label("l0c2k2additionheldout50s")
+    assert "LEGACY_ALIAS_ONLY_NON_GATING" in probe_label
+    assert "same rows as L0C2K2ADDITION50S" in probe_label
+    assert "not transfer" in probe_label
+    assert _probe.language_aggregate_label("l0c2k2addition50s") == "L0C2K2ADDITION50S AGGREGATE"
+    assert "DIAGNOSTIC_NON_GATING" in _probe.language_aggregate_label("l0c2k2additionheldout60s")
+
+    summary = _watcher._summary_aggregate("l0c2k2additionheldout50s", held_line)
+    assert summary.startswith(held_line)
+    assert "LEGACY_ALIAS_ONLY_NON_GATING" in summary
+    assert "same rows as L0C2K2ADDITION50S" in summary
+    assert "not transfer" in summary
+    assert _watcher._summary_aggregate("l0c2k2additionheldout50s", summary) == summary
+
+    held60_line = "[probe-language] L0C2K2ADDITIONHELDOUT60S AGGREGATE strict=80/80 = 1.0000"
+    held60_summary = _watcher._summary_aggregate("l0c2k2additionheldout60s", held60_line)
+    assert "DIAGNOSTIC_NON_GATING" in held60_summary
+    assert "not gate" in held60_summary
 
 
 def test_watcher_l0c2k2_addition_patterns_do_not_cross_match():
@@ -343,17 +372,33 @@ def test_watcher_l0c2k2_addition_patterns_do_not_cross_match():
     _watcher, pats, _flags = _watcher_modes()
     legacy = "[probe-language] L0C2K2 AGGREGATE strict=79/79 = 1.0000"
     full = "[probe-language] L0C2K2ADDITIONFULL AGGREGATE strict=240/240 = 1.0000"
+    fifties = "[probe-language] L0C2K2ADDITION50S AGGREGATE strict=80/80 = 1.0000"
     held = "[probe-language] L0C2K2ADDITIONHELDOUT50S AGGREGATE strict=80/80 = 1.0000"
+    held60 = "[probe-language] L0C2K2ADDITIONHELDOUT60S AGGREGATE strict=80/80 = 1.0000"
 
     assert re.search(pats["l0c2k2"], legacy)
     assert re.search(pats["l0c2k2additionfull"], full)
+    assert re.search(pats["l0c2k2addition50s"], fifties)
     assert re.search(pats["l0c2k2additionheldout50s"], held)
+    assert re.search(pats["l0c2k2additionheldout60s"], held60)
     assert not re.search(pats["l0c2k2"], full)
+    assert not re.search(pats["l0c2k2"], fifties)
     assert not re.search(pats["l0c2k2"], held)
+    assert not re.search(pats["l0c2k2"], held60)
     assert not re.search(pats["l0c2k2additionfull"], legacy)
+    assert not re.search(pats["l0c2k2addition50s"], legacy)
     assert not re.search(pats["l0c2k2additionheldout50s"], legacy)
+    assert not re.search(pats["l0c2k2additionheldout60s"], legacy)
     assert not re.search(pats["l0c2k2additionfull"], held)
+    assert not re.search(pats["l0c2k2additionfull"], fifties)
     assert not re.search(pats["l0c2k2additionheldout50s"], full)
+    assert not re.search(pats["l0c2k2additionheldout50s"], fifties)
+    assert not re.search(pats["l0c2k2addition50s"], full)
+    assert not re.search(pats["l0c2k2addition50s"], held)
+    assert not re.search(pats["l0c2k2addition50s"], held60)
+    assert not re.search(pats["l0c2k2additionheldout60s"], full)
+    assert not re.search(pats["l0c2k2additionheldout60s"], fifties)
+    assert not re.search(pats["l0c2k2additionheldout60s"], held)
 
 
 if __name__ == "__main__":

@@ -43,6 +43,7 @@ from calm.hrm_text_158.curriculum.generators import (
     _l0c2k2_addition_full_enumerate,
     _l0c2k2_addition_120_enumerate,
     _l0c2k2_addition_120_k5to8_enumerate,
+    _l0c2k2_addition_50s_enumerate,
     l0c2_band_expected_count,
 )
 
@@ -257,7 +258,9 @@ L0C2K3_AUDIT_EXPECTED_COUNT: int = 127
 L0C2K2_ADDITION_FULL_AUDIT_EXPECTED_COUNT: int = 240
 L0C2K2_ADDITION_120_AUDIT_EXPECTED_COUNT: int = 120
 L0C2K2_ADDITION_120_K5TO8_AUDIT_EXPECTED_COUNT: int = 120
+L0C2K2_ADDITION_50S_AUDIT_EXPECTED_COUNT: int = 80
 L0C2K2_ADDITION_HELDOUT_50S_AUDIT_EXPECTED_COUNT: int = 80
+L0C2K2_ADDITION_HELDOUT_60S_AUDIT_EXPECTED_COUNT: int = 80
 
 
 def _l0c2_support(seed: int = 42) -> list[tuple[str, int, str]]:
@@ -376,13 +379,39 @@ def build_l0c2k2_addition_120_k5to8_support(seed: int = 17) -> dict[str, list[tu
     }
 
 
-def _l0c2k2_addition_heldout_50s_enumerate() -> list[dict]:
-    """Enumerate the trained-OUT K2 addition 50s diagnostic.
+def _l0c2k2_addition_50s_support(seed: int = 17) -> list[tuple[str, int, str]]:
+    """80-row coverage audit for the trainable K2 addition 50s rung."""
+    _ = seed
+    return [
+        (r["question"], r["expected"], _l0c2k2_addition_bucket(r))
+        for r in _l0c2k2_addition_50s_enumerate()
+    ]
 
-    Audit-visible but not trainable/retained: result 50..59 x addend k=1..8.
+
+def build_l0c2k2_addition_50s_support(seed: int = 17) -> dict[str, list[tuple[str, int, str]]]:
+    """Single-key acquisition audit support for L0c2-K2-addition-50s."""
+    return {
+        "L0c2-K2-addition-50s": _l0c2k2_addition_50s_support(seed),
+    }
+
+
+def _l0c2k2_addition_heldout_50s_enumerate() -> list[dict]:
+    """Legacy alias for the K2 addition 50s rows.
+
+    After L0c2-K2-addition-50s becomes trainable, this audit is retained only
+    for historical receipt compatibility. It is alias-only / non-gating, not a
+    forward-transfer signal.
+    """
+    return _l0c2k2_addition_50s_enumerate()
+
+
+def _l0c2k2_addition_heldout_60s_enumerate() -> list[dict]:
+    """Enumerate the trained-OUT K2 addition 60s transfer diagnostic.
+
+    Audit-visible but not trainable/retained: result 60..69 x addend k=1..8.
     """
     rows: list[dict] = []
-    for result in range(50, 60):
+    for result in range(60, 70):
         for k in range(1, 9):
             a = result - k
             rows.append({
@@ -391,12 +420,12 @@ def _l0c2k2_addition_heldout_50s_enumerate() -> list[dict]:
                 "a": a,
                 "k": k,
                 "result": result,
-                "result_decade": "50s",
+                "result_decade": "60s",
                 "addend_k": f"k_{k}",
                 "carry": "carry" if (a % 10) + k >= 10 else "no_carry",
                 "result_ones": f"ones_{result % 10}",
             })
-    assert len(rows) == L0C2K2_ADDITION_HELDOUT_50S_AUDIT_EXPECTED_COUNT
+    assert len(rows) == L0C2K2_ADDITION_HELDOUT_60S_AUDIT_EXPECTED_COUNT
     assert len({(r["question"], r["expected"]) for r in rows}) == len(rows)
     assert all(" plus 0 " not in r["question"] and not r["question"].startswith("0 plus ") for r in rows)
     assert all(r["expected"] != r["a"] and r["expected"] != r["k"] for r in rows)
@@ -413,9 +442,30 @@ def _l0c2k2_addition_heldout_50s_support(seed: int = 17) -> list[tuple[str, int,
 
 
 def build_l0c2k2_addition_heldout_50s_support(seed: int = 17) -> dict[str, list[tuple[str, int, str]]]:
-    """Single-key non-gating diagnostic support for trained-OUT K2 50s rows."""
+    """Legacy alias-only, non-gating support for K2 50s rows.
+
+    The canonical acquisition audit after the 50s slice lands is
+    L0c2-K2-addition-50s. This historical name is kept only so old receipt
+    scripts still resolve, and must not be read as a held-out transfer signal.
+    """
     return {
         "L0c2-K2-addition-heldout-50s": _l0c2k2_addition_heldout_50s_support(seed),
+    }
+
+
+def _l0c2k2_addition_heldout_60s_support(seed: int = 17) -> list[tuple[str, int, str]]:
+    """80-row trained-OUT 60s diagnostic support; seed-independent."""
+    _ = seed
+    return [
+        (r["question"], r["expected"], _l0c2k2_addition_bucket(r))
+        for r in _l0c2k2_addition_heldout_60s_enumerate()
+    ]
+
+
+def build_l0c2k2_addition_heldout_60s_support(seed: int = 17) -> dict[str, list[tuple[str, int, str]]]:
+    """Single-key non-gating diagnostic support for trained-OUT K2 60s rows."""
+    return {
+        "L0c2-K2-addition-heldout-60s": _l0c2k2_addition_heldout_60s_support(seed),
     }
 
 
@@ -599,10 +649,20 @@ def language_source_rung_buckets(rung: str) -> list[str]:
             _l0c2k2_addition_bucket(r)
             for r in _l0c2k2_addition_120_k5to8_enumerate()
         })
+    if rung == "L0c2-K2-addition-50s":
+        return sorted({
+            _l0c2k2_addition_bucket(r)
+            for r in _l0c2k2_addition_50s_enumerate()
+        })
     if rung == "L0c2-K2-addition-heldout-50s":
         return sorted({
             _l0c2k2_addition_bucket(r)
             for r in _l0c2k2_addition_heldout_50s_enumerate()
+        })
+    if rung == "L0c2-K2-addition-heldout-60s":
+        return sorted({
+            _l0c2k2_addition_bucket(r)
+            for r in _l0c2k2_addition_heldout_60s_enumerate()
         })
     if rung == L0C1_CLOSE_SIBLING_CE_INTERLEAVE_SUPPORT:
         return ["one_digit_identity", "legacy_identity", "two_digit_sentinel"]
