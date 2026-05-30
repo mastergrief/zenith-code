@@ -4,7 +4,8 @@
       "command": "ai-room-mcp",
       "args": [],
       "env": {
-        "AI_ROOM_HANDLE": "claude"
+        "AI_ROOM_HANDLE": "claude",
+        "AI_ROOM_SUPERVISOR_ENABLED": "0"
       }
     }
   }
