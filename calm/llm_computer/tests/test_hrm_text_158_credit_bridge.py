@@ -102,6 +102,44 @@ def test_simulated_null_is_deterministic_for_seed() -> None:
     assert a["p95"] <= a["p99"]
 
 
+def test_cpu_sampler_gpu_aggregation_replay_matches_cpu_locked() -> None:
+    bridge = _import_credit_bridge()
+    buckets = [
+        bridge.BucketCounts(fp_pos=6, fp_neg=4, int_pos=5, int_neg=3, int_zero=2),
+        bridge.BucketCounts(fp_pos=9, fp_neg=7, int_pos=8, int_neg=4, int_zero=4),
+    ]
+
+    cpu = bridge.simulate_permutation_null(
+        buckets,
+        permutations=32,
+        seed=17,
+        backend=bridge.NULL_BACKEND_CPU_LOCKED,
+    )
+    replay_cpu = bridge.simulate_permutation_null(
+        buckets,
+        permutations=32,
+        seed=17,
+        backend=bridge.NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY,
+        aggregation_device="cpu",
+        profile=True,
+    )
+
+    assert {k: replay_cpu[k] for k in ("mean", "p95", "p99")} == {k: cpu[k] for k in ("mean", "p95", "p99")}
+    assert replay_cpu["backend"] == bridge.NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY
+    assert replay_cpu["timing_seconds"]["cpu_sampler"] >= 0.0
+    assert replay_cpu["timing_seconds"]["aggregation"] >= 0.0
+
+    if torch.cuda.is_available():
+        replay_cuda = bridge.simulate_permutation_null(
+            buckets,
+            permutations=32,
+            seed=17,
+            backend=bridge.NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY,
+            aggregation_device="cuda",
+        )
+        assert {k: replay_cuda[k] for k in ("mean", "p95", "p99")} == {k: cpu[k] for k in ("mean", "p95", "p99")}
+
+
 def test_expected_invocation_schedule_bp_steps_5() -> None:
     bridge = _import_credit_bridge()
 
@@ -180,11 +218,18 @@ def test_prereg_locks_variant_folds(tmp_path: Path) -> None:
     assert "fp16_groupwise uses local group size 128" in locked
     assert "assert len(schedule_excluded_no_grad)==96" in locked
     assert "cached/native" in locked
+    assert "Fold A" in locked
+    assert "Fold G" in locked
+    assert "cpu_sampler_gpu_aggregation_replay" in locked
     assert prereg["strict_reproduction"]["expected_global_agreement"] == bridge.STRICT_REPRODUCTION_EXPECTED
     assert prereg["strict_reproduction"]["tolerance_abs"] == bridge.STRICT_REPRODUCTION_TOL
     assert prereg["null_label_scheme"] == "slice1_shared_seed_labels"
+    assert prereg["null_backend"]["default"] == bridge.NULL_BACKEND_CPU_LOCKED
+    assert prereg["null_backend"]["candidate"] == bridge.NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY
+    assert prereg["null_backend"]["speedup_floor"] == bridge.DEFAULT_NULL_SPEEDUP_FLOOR
     assert prereg["credit_variants"]["order"] == list(bridge.CREDIT_VARIANTS)
     assert "slice-1 labels" in prereg["credit_variants"]["null_seed_label_scheme"]
     assert prereg["credit_variants"]["fp16_groupwise"]["group_size"] == 128
     assert prereg["credit_variants"]["fp16_groupwise"]["scale_stat"] == "mean_abs"
-    assert prereg["terminal_labels"] == list(bridge.TERMINAL_LABELS)
+    assert prereg["credit_terminal_labels"] == list(bridge.CREDIT_TERMINAL_LABELS)
+    assert prereg["terminal_labels"] == list(bridge.NULL_PARITY_TERMINAL_LABELS)

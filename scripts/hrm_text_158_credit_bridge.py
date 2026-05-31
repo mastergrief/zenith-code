@@ -25,7 +25,7 @@ import torch
 from torch import Tensor, nn
 
 
-TASK_ID = "1780225977526-b7003f03"
+TASK_ID = "1780231236796-49ed823a"
 DEFAULT_CKPT = Path(
     "calm/hrm/checkpoints/"
     "hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_"
@@ -45,6 +45,14 @@ GROUP_ORDER = (
     "mlp.down",
 )
 CREDIT_VARIANTS = ("strict", "pow2_bucket", "fp16_groupwise", "full_magnitude_ceiling")
+NULL_BACKEND_CPU_LOCKED = "cpu_locked"
+NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY = "cpu_sampler_gpu_aggregation_replay"
+NULL_BACKENDS = (NULL_BACKEND_CPU_LOCKED, NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY)
+DEFAULT_NULL_BACKEND = NULL_BACKEND_CPU_LOCKED
+DEFAULT_NULL_SPEEDUP_FLOOR = 1.25
+DEFAULT_NULL_PROFILE_WARMUPS = 1
+DEFAULT_NULL_PROFILE_REPEATS = 5
+NULL_SAMPLER_BOUND_FRACTION = 0.60
 STRICT_REPRODUCTION_EXPECTED = 0.508805533381048
 STRICT_REPRODUCTION_TOL = 0.01
 POW2_EXP_MIN = -24
@@ -52,10 +60,18 @@ POW2_EXP_MAX = 15
 POW2_ROUND_MODE = "round"
 FP16_GROUPWISE_GROUP_SIZE = 128
 FP16_GROUPWISE_SCALE_STAT = "mean_abs"
-TERMINAL_LABELS = (
+CREDIT_TERMINAL_LABELS = (
     "pow2_magnitude_sufficient",
     "fp16_groupwise_credit_sufficient_proxy",
     "tested_lowbit_magnitude_insufficient",
+    "diagnostic_reference_invalid",
+    "integrity_failure",
+)
+NULL_PARITY_TERMINAL_LABELS = (
+    "gpu_null_parity_exact_default_enabled",
+    "gpu_null_parity_exact_speedup_insufficient_cpu_default_retained",
+    "gpu_null_parity_exact_sampler_bound_deferred",
+    "gpu_null_parity_fail",
     "diagnostic_reference_invalid",
     "integrity_failure",
 )
@@ -630,14 +646,44 @@ def row_q_bucket_counts(fp_moves: Tensor, int_moves: Tensor, q_levels: Tensor, d
     return buckets
 
 
-def simulate_permutation_null(
+def _summarize_null_scores(
+    scores: np.ndarray,
+    *,
+    backend: str,
+    timing_seconds: dict[str, float] | None = None,
+    aggregation_device: str | None = None,
+) -> dict[str, float | str | dict[str, float] | None]:
+    if scores.size == 0:
+        out: dict[str, float | str | dict[str, float] | None] = {"mean": 0.0, "p95": 0.0, "p99": 0.0}
+    else:
+        out = {
+            "mean": float(scores.mean()),
+            "p95": float(np.quantile(scores, 0.95, method="higher")),
+            "p99": float(np.quantile(scores, 0.99, method="higher")),
+        }
+    out["backend"] = backend
+    if aggregation_device is not None:
+        out["aggregation_device"] = aggregation_device
+    if timing_seconds is not None:
+        out["timing_seconds"] = timing_seconds
+    return out
+
+
+def _simulate_permutation_null_cpu_locked(
     buckets: list[BucketCounts],
     *,
     permutations: int,
     seed: int,
-) -> dict[str, float]:
+    profile: bool = False,
+) -> dict[str, Any]:
+    total_start = time.perf_counter()
     if not buckets:
-        return {"mean": 0.0, "p95": 0.0, "p99": 0.0}
+        timing = {"total": time.perf_counter() - total_start} if profile else None
+        return _summarize_null_scores(
+            np.asarray([], dtype=np.float64),
+            backend=NULL_BACKEND_CPU_LOCKED,
+            timing_seconds=timing,
+        )
     rng = np.random.default_rng(seed)
     scores: list[float] = []
     for _ in range(permutations):
@@ -661,12 +707,133 @@ def simulate_permutation_null(
             matches += x_pos_match + x_neg_match
             total += n
         scores.append(matches / total if total else 0.0)
-    arr = np.asarray(scores, dtype=np.float64)
-    return {
-        "mean": float(arr.mean()),
-        "p95": float(np.quantile(arr, 0.95, method="higher")),
-        "p99": float(np.quantile(arr, 0.99, method="higher")),
-    }
+    timing = {"total": time.perf_counter() - total_start} if profile else None
+    return _summarize_null_scores(
+        np.asarray(scores, dtype=np.float64),
+        backend=NULL_BACKEND_CPU_LOCKED,
+        timing_seconds=timing,
+    )
+
+
+def _sample_bucket_match_matrix_cpu_locked(
+    buckets: list[BucketCounts],
+    *,
+    permutations: int,
+    seed: int,
+) -> tuple[np.ndarray, np.ndarray, float]:
+    """Replay the locked numpy hypergeometric draw order into a match matrix."""
+    start = time.perf_counter()
+    totals = np.asarray([b.total for b in buckets], dtype=np.int64)
+    matches = np.zeros((permutations, len(buckets)), dtype=np.int64)
+    rng = np.random.default_rng(seed)
+    for perm_idx in range(permutations):
+        for bucket_idx, b in enumerate(buckets):
+            n = b.total
+            if n <= 0:
+                continue
+            k_pos = min(b.int_pos, n)
+            x_pos_match = int(rng.hypergeometric(b.fp_pos, n - b.fp_pos, k_pos))
+            fp_neg_consumed_by_pos = k_pos - x_pos_match
+            remaining_n = n - k_pos
+            remaining_fp_neg = max(0, b.fp_neg - fp_neg_consumed_by_pos)
+            k_neg = min(b.int_neg, remaining_n)
+            x_neg_match = 0
+            if remaining_n > 0 and k_neg > 0:
+                x_neg_match = int(
+                    rng.hypergeometric(remaining_fp_neg, remaining_n - remaining_fp_neg, k_neg)
+                )
+            matches[perm_idx, bucket_idx] = x_pos_match + x_neg_match
+    return matches, totals, time.perf_counter() - start
+
+
+def _torch_device_name(device_name: str | None) -> str:
+    if device_name is None:
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    if device_name == "cuda" and not torch.cuda.is_available():
+        raise DiagnosticInvalid("requested cuda null aggregation but torch.cuda.is_available() is false")
+    return device_name
+
+
+def _sync_for_timing(device_name: str) -> None:
+    if device_name == "cuda":
+        torch.cuda.synchronize()
+
+
+def _aggregate_match_matrix_with_torch(
+    matches: np.ndarray,
+    totals: np.ndarray,
+    *,
+    device_name: str,
+) -> tuple[np.ndarray, float]:
+    if matches.size == 0 or totals.size == 0:
+        return np.asarray([], dtype=np.float64), 0.0
+    _sync_for_timing(device_name)
+    start = time.perf_counter()
+    match_t = torch.as_tensor(matches, dtype=torch.int64, device=device_name)
+    per_perm = match_t.sum(dim=1).cpu().numpy().astype(np.int64)
+    _sync_for_timing(device_name)
+    elapsed = time.perf_counter() - start
+    total = int(totals.sum())
+    scores = per_perm.astype(np.float64) / float(total) if total else np.zeros(matches.shape[0], dtype=np.float64)
+    return scores, elapsed
+
+
+def _simulate_permutation_null_cpu_sampler_gpu_aggregation_replay(
+    buckets: list[BucketCounts],
+    *,
+    permutations: int,
+    seed: int,
+    aggregation_device: str | None = None,
+    profile: bool = False,
+) -> dict[str, Any]:
+    total_start = time.perf_counter()
+    device_name = _torch_device_name(aggregation_device)
+    matches, totals, sample_seconds = _sample_bucket_match_matrix_cpu_locked(
+        buckets,
+        permutations=permutations,
+        seed=seed,
+    )
+    scores, aggregation_seconds = _aggregate_match_matrix_with_torch(matches, totals, device_name=device_name)
+    timing = None
+    if profile:
+        timing = {
+            "cpu_sampler": sample_seconds,
+            "aggregation": aggregation_seconds,
+            "total": time.perf_counter() - total_start,
+        }
+    return _summarize_null_scores(
+        scores,
+        backend=NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY,
+        timing_seconds=timing,
+        aggregation_device=device_name,
+    )
+
+
+def simulate_permutation_null(
+    buckets: list[BucketCounts],
+    *,
+    permutations: int,
+    seed: int,
+    backend: str = DEFAULT_NULL_BACKEND,
+    aggregation_device: str | None = None,
+    profile: bool = False,
+) -> dict[str, Any]:
+    if backend == NULL_BACKEND_CPU_LOCKED:
+        return _simulate_permutation_null_cpu_locked(
+            buckets,
+            permutations=permutations,
+            seed=seed,
+            profile=profile,
+        )
+    if backend == NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY:
+        return _simulate_permutation_null_cpu_sampler_gpu_aggregation_replay(
+            buckets,
+            permutations=permutations,
+            seed=seed,
+            aggregation_device=aggregation_device,
+            profile=profile,
+        )
+    raise DiagnosticInvalid(f"unknown null backend: {backend}")
 
 
 def deterministic_seed(base_seed: int, label: str, offset: int) -> int:
@@ -758,17 +925,26 @@ def summarize_counts(
     level: str,
     null_permutations: int,
     null_seed: int,
+    null_backend: str = DEFAULT_NULL_BACKEND,
+    null_aggregation_device: str | None = None,
+    profile_null: bool = False,
 ) -> dict[str, Any]:
     agreement = counts.agree / counts.denom if counts.denom else 0.0
     global_null = simulate_permutation_null(
         counts.buckets_global,
         permutations=null_permutations,
         seed=deterministic_seed(null_seed, counts.label, 1),
+        backend=null_backend,
+        aggregation_device=null_aggregation_device,
+        profile=profile_null,
     )
     rowq_null = simulate_permutation_null(
         counts.buckets_rowq,
         permutations=null_permutations,
         seed=deterministic_seed(null_seed, counts.label, 2),
+        backend=null_backend,
+        aggregation_device=null_aggregation_device,
+        profile=profile_null,
     )
     stronger_p99 = max(global_null["p99"], rowq_null["p99"])
     if level == "global":
@@ -835,6 +1011,231 @@ def summarize_counts(
             ),
         },
     }
+
+
+def _select_evenly_spaced(items: list[tuple[str, CountAccumulator]], limit: int) -> list[tuple[str, CountAccumulator]]:
+    if limit <= 0 or len(items) <= limit:
+        return items
+    if limit == 1:
+        return [items[0]]
+    indexes = np.linspace(0, len(items) - 1, num=limit, dtype=np.int64)
+    selected: list[tuple[str, CountAccumulator]] = []
+    seen: set[int] = set()
+    for idx in indexes.tolist():
+        if idx not in seen:
+            selected.append(items[idx])
+            seen.add(idx)
+    return selected
+
+
+def collect_null_profile_items(
+    variant_count_sets: dict[str, dict[str, Any]],
+    *,
+    max_invocations_per_variant: int,
+) -> list[dict[str, Any]]:
+    """Choose a deterministic mixed-q subset covering global, all families, and invocations."""
+    items: list[dict[str, Any]] = []
+    for variant in CREDIT_VARIANTS:
+        count_set = variant_count_sets[variant]
+        items.append({"variant": variant, "level": "global", "label": "global", "counts": count_set["global"]})
+        for label, counts in sorted(count_set["families"].items()):
+            items.append({"variant": variant, "level": "family", "label": label, "counts": counts})
+
+        invocation_items = sorted(count_set["invocations"].items())
+        selected = _select_evenly_spaced(invocation_items, max_invocations_per_variant)
+        # Force q=0 denominator extremes into the fixed subset so q=0 revival coverage is explicit.
+        by_q0 = sorted(
+            invocation_items,
+            key=lambda kv: kv[1].q_stats.get("0", {}).get("denom", 0),
+        )
+        for extra in [by_q0[0], by_q0[len(by_q0) // 2], by_q0[-1]]:
+            if extra not in selected:
+                selected.append(extra)
+        for label, counts in sorted(selected):
+            items.append({"variant": variant, "level": "invocation", "label": label, "counts": counts})
+    return items
+
+
+def _null_item_runs(item: dict[str, Any], *, null_seed: int) -> list[tuple[str, list[BucketCounts], int]]:
+    counts: CountAccumulator = item["counts"]
+    return [
+        ("global_permutation", counts.buckets_global, deterministic_seed(null_seed, counts.label, 1)),
+        ("row_q_preserving", counts.buckets_rowq, deterministic_seed(null_seed, counts.label, 2)),
+    ]
+
+
+def _run_null_backend_items(
+    items: list[dict[str, Any]],
+    *,
+    backend: str,
+    permutations: int,
+    null_seed: int,
+    aggregation_device: str | None,
+) -> tuple[dict[str, dict[str, Any]], dict[str, float]]:
+    outputs: dict[str, dict[str, Any]] = {}
+    timing_totals = {"cpu_sampler": 0.0, "aggregation": 0.0, "reported_total": 0.0}
+    wall_start = time.perf_counter()
+    for item in items:
+        for null_kind, buckets, seed in _null_item_runs(item, null_seed=null_seed):
+            out = simulate_permutation_null(
+                buckets,
+                permutations=permutations,
+                seed=seed,
+                backend=backend,
+                aggregation_device=aggregation_device,
+                profile=True,
+            )
+            key = f"{item['variant']}::{item['level']}::{item['label']}::{null_kind}"
+            outputs[key] = out
+            timing = out.get("timing_seconds") or {}
+            timing_totals["cpu_sampler"] += float(timing.get("cpu_sampler", 0.0))
+            timing_totals["aggregation"] += float(timing.get("aggregation", 0.0))
+            timing_totals["reported_total"] += float(timing.get("total", 0.0))
+    timing_totals["wall_total"] = time.perf_counter() - wall_start
+    return outputs, timing_totals
+
+
+def _median(values: list[float]) -> float:
+    return float(np.median(np.asarray(values, dtype=np.float64))) if values else 0.0
+
+
+def _compare_null_outputs(cpu_outputs: dict[str, dict[str, Any]], candidate_outputs: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    failures: list[dict[str, Any]] = []
+    if set(cpu_outputs) != set(candidate_outputs):
+        missing_cpu = sorted(set(candidate_outputs) - set(cpu_outputs))
+        missing_candidate = sorted(set(cpu_outputs) - set(candidate_outputs))
+        return [{"reason": "key_mismatch", "missing_cpu": missing_cpu, "missing_candidate": missing_candidate}]
+    for key in sorted(cpu_outputs):
+        cpu = cpu_outputs[key]
+        candidate = candidate_outputs[key]
+        deltas = {field: abs(float(cpu[field]) - float(candidate[field])) for field in ("mean", "p95", "p99")}
+        if any(delta != 0.0 for delta in deltas.values()):
+            failures.append({"key": key, "cpu": {k: cpu[k] for k in ("mean", "p95", "p99")}, "candidate": {k: candidate[k] for k in ("mean", "p95", "p99")}, "deltas": deltas})
+    return failures
+
+
+def run_null_parity_profile(
+    variant_count_sets: dict[str, dict[str, Any]],
+    *,
+    args: argparse.Namespace,
+    bars: Bars,
+) -> tuple[str, dict[str, Any]]:
+    items = collect_null_profile_items(
+        variant_count_sets,
+        max_invocations_per_variant=args.null_parity_max_invocations_per_variant,
+    )
+    for _ in range(args.null_profile_warmups):
+        _run_null_backend_items(
+            items,
+            backend=NULL_BACKEND_CPU_LOCKED,
+            permutations=args.null_permutations,
+            null_seed=args.null_seed,
+            aggregation_device=args.null_aggregation_device,
+        )
+        _run_null_backend_items(
+            items,
+            backend=NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY,
+            permutations=args.null_permutations,
+            null_seed=args.null_seed,
+            aggregation_device=args.null_aggregation_device,
+        )
+
+    cpu_runs: list[dict[str, Any]] = []
+    candidate_runs: list[dict[str, Any]] = []
+    for _ in range(args.null_profile_repeats):
+        cpu_outputs, cpu_timing = _run_null_backend_items(
+            items,
+            backend=NULL_BACKEND_CPU_LOCKED,
+            permutations=args.null_permutations,
+            null_seed=args.null_seed,
+            aggregation_device=args.null_aggregation_device,
+        )
+        candidate_outputs, candidate_timing = _run_null_backend_items(
+            items,
+            backend=NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY,
+            permutations=args.null_permutations,
+            null_seed=args.null_seed,
+            aggregation_device=args.null_aggregation_device,
+        )
+        cpu_runs.append({"outputs": cpu_outputs, "timing": cpu_timing})
+        candidate_runs.append({"outputs": candidate_outputs, "timing": candidate_timing})
+
+    parity_failures = _compare_null_outputs(cpu_runs[0]["outputs"], candidate_runs[0]["outputs"]) if cpu_runs else []
+    cpu_totals = [run["timing"]["wall_total"] for run in cpu_runs]
+    candidate_totals = [run["timing"]["wall_total"] for run in candidate_runs]
+    cpu_median = _median(cpu_totals)
+    candidate_median = _median(candidate_totals)
+    speedup = (cpu_median / candidate_median) if candidate_median > 0 else 0.0
+    candidate_sampler_median = _median([run["timing"]["cpu_sampler"] for run in candidate_runs])
+    candidate_sampler_fraction = candidate_sampler_median / candidate_median if candidate_median > 0 else 0.0
+    q0_denoms = [
+        item["counts"].q_stats.get("0", {}).get("denom", 0)
+        for item in items
+        if item["level"] == "invocation"
+    ]
+    if parity_failures:
+        terminal = "gpu_null_parity_fail"
+    elif speedup >= args.null_speedup_floor and DEFAULT_NULL_BACKEND == NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY:
+        terminal = "gpu_null_parity_exact_default_enabled"
+    elif candidate_sampler_fraction >= NULL_SAMPLER_BOUND_FRACTION:
+        terminal = "gpu_null_parity_exact_sampler_bound_deferred"
+    else:
+        terminal = "gpu_null_parity_exact_speedup_insufficient_cpu_default_retained"
+
+    profile = {
+        "terminal": terminal,
+        "backend_names": {
+            "oracle": NULL_BACKEND_CPU_LOCKED,
+            "candidate": NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY,
+            "default": DEFAULT_NULL_BACKEND,
+        },
+        "speed_gate": {
+            "required_speedup_floor": args.null_speedup_floor,
+            "cpu_locked_median_wall_seconds": cpu_median,
+            "candidate_median_wall_seconds": candidate_median,
+            "candidate_speedup": speedup,
+            "candidate_cpu_sampler_fraction": candidate_sampler_fraction,
+            "sampler_bound_fraction_threshold": NULL_SAMPLER_BOUND_FRACTION,
+            "passes_speed_gate": speedup >= args.null_speedup_floor,
+        },
+        "benchmark_protocol": {
+            "warmups": args.null_profile_warmups,
+            "repeats": args.null_profile_repeats,
+            "permutations": args.null_permutations,
+            "aggregation_device": _torch_device_name(args.null_aggregation_device),
+        },
+        "subset": {
+            "item_count": len(items),
+            "max_invocations_per_variant": args.null_parity_max_invocations_per_variant,
+            "q0_invocation_denom_min": min(q0_denoms) if q0_denoms else None,
+            "q0_invocation_denom_max": max(q0_denoms) if q0_denoms else None,
+            "levels": sorted({item["level"] for item in items}),
+        },
+        "parity": {
+            "exact": not parity_failures,
+            "failure_count": len(parity_failures),
+            "failures": parity_failures[:20],
+            "compared_fields": ["mean", "p95", "p99"],
+        },
+        "timings": {
+            "cpu_locked_wall_seconds": cpu_totals,
+            "candidate_wall_seconds": candidate_totals,
+            "candidate_cpu_sampler_seconds": [run["timing"]["cpu_sampler"] for run in candidate_runs],
+            "candidate_aggregation_seconds": [run["timing"]["aggregation"] for run in candidate_runs],
+        },
+        "default_cli_route_proof": {
+            "required_before_default_flip": True,
+            "default_backend": DEFAULT_NULL_BACKEND,
+            "candidate_backend": NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY,
+            "not_applicable_reason": (
+                None
+                if DEFAULT_NULL_BACKEND == NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY
+                else "cpu_locked remains default in this prereg/run"
+            ),
+        },
+        "bars": bars.__dict__,
+    }
+    return terminal, profile
 
 
 def terminal_from_summaries(
@@ -1101,18 +1502,21 @@ def build_prereg(
     return {
         "task_id": TASK_ID,
         "created_unix": int(time.time()),
-        "source_parent_commit": "61cd912b7dc525774e25bc13a1bec44da5260d37",
-        "dispatch_msg": "1780225996024-1c4998a0",
-        "plan_msg": "1780226285076-96eb6397",
+        "source_parent_commit": "df7123b517f60f8d6c53d6360b31a8f37b880bd3",
+        "dispatch_msg": "1780231252415-76819bf7",
+        "plan_msg": "1780231521606-4d2ee333",
         "fold_msgs": [
-            "1780226363036-55cf408f",
-            "1780226385009-d61899a9",
-            "1780226391147-4f70edab",
-            "1780226399894-e5a7cb66",
-            "1780226449096-3892bda1",
+            "1780231376585-ea0cf8ec",
+            "1780231412346-5465c051",
+            "1780231574654-b062b304",
+            "1780231604003-fb0b20ba",
+            "1780231616659-2912699c",
+            "1780231671991-39ea93c5",
+            "1780231687391-80e43239",
         ],
         "runner_watcher_provenance_msg": "1780226246648-6ee162bb",
-        "implement_gate_msg": "1780226423147-139b73fc",
+        "implement_gate_msg": "1780231644991-683e9530",
+        "implement_gate_confirmation_msg": "1780231671991-39ea93c5",
         "checkpoint": {
             "path": str(ckpt_path),
             "sha256_before": checkpoint_sha256_before,
@@ -1127,6 +1531,22 @@ def build_prereg(
             "null_permutations": args.null_permutations,
             "null_seed": args.null_seed,
             "max_rows": args.max_rows,
+        },
+        "null_backend": {
+            "default": DEFAULT_NULL_BACKEND,
+            "oracle": NULL_BACKEND_CPU_LOCKED,
+            "candidate": NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY,
+            "candidate_explicit_name": (
+                "CPU/numpy hypergeometric sampler plus Torch aggregation replay; "
+                "the sampler has NOT moved to GPU in this slice"
+            ),
+            "aggregation_device": _torch_device_name(args.null_aggregation_device),
+            "profile_only": args.null_parity_profile_only,
+            "speedup_floor": args.null_speedup_floor,
+            "profile_warmups": args.null_profile_warmups,
+            "profile_repeats": args.null_profile_repeats,
+            "sampler_bound_fraction_threshold": NULL_SAMPLER_BOUND_FRACTION,
+            "parity_max_invocations_per_variant": args.null_parity_max_invocations_per_variant,
         },
         "bars": bars.__dict__,
         "strict_reproduction": {
@@ -1186,8 +1606,16 @@ def build_prereg(
             "full_magnitude_ceiling must pass locked bars or terminal is diagnostic_reference_invalid",
             "assert len(schedule_excluded_no_grad)==96",
             "assert BitLinear cached/native flags false/None; no freeze_for_inference or enable_native_train",
+            "Fold A: no from-scratch GPU hypergeometric/gpu_sampler in this slice; sampling-bound profile stops and defers sampler dispatch",
+            "Fold B: bucket construction + aggregation parity must be bit-identical; CPU/GPU replay consume the exact same draw tensor/fixture",
+            "Fold C: default flip requires bit-identical parity plus >=1.25x median total-null speedup over cpu_locked, with 1 warmup + 5 measured repeats",
+            "Fold D: locked null parity terminal set has explicit default-enabled, speedup-insufficient, sampler-bound-deferred, fail, invalid, integrity outcomes",
+            "Fold E: CPU/numpy sampler + GPU aggregation path must be named cpu_sampler_gpu_aggregation_replay in prereg/receipts",
+            "Fold F: cpu_locked remains oracle/fallback; two-file scope; checkpoint sha before==after; no train/optimizer/param/.pt; prereg before screen",
+            "Fold G: before any default flip, prove the default CLI path itself routes through cpu_sampler_gpu_aggregation_replay and matches explicit --null-backend cpu_locked on the prereg subset",
         ],
-        "terminal_labels": list(TERMINAL_LABELS),
+        "credit_terminal_labels": list(CREDIT_TERMINAL_LABELS),
+        "terminal_labels": list(NULL_PARITY_TERMINAL_LABELS),
     }
 
 
@@ -1316,6 +1744,7 @@ def run_diagnostic(args: argparse.Namespace) -> tuple[str, dict[str, Any], Path]
     assert_schedule_excluded_no_grad_count(excluded, expected=96)
 
     variant_results: dict[str, dict[str, Any]] = {}
+    variant_count_sets: dict[str, dict[str, Any]] = {}
     for variant in CREDIT_VARIANTS:
         print(f"[credit-bridge] scoring variant={variant}", flush=True)
         invocation_counts: dict[str, CountAccumulator] = {}
@@ -1338,6 +1767,15 @@ def run_diagnostic(args: argparse.Namespace) -> tuple[str, dict[str, Any], Path]
             ).merge(counts)
             global_counts.merge(counts)
 
+        variant_count_sets[variant] = {
+            "global": global_counts,
+            "families": family_counts,
+            "aggregate64": aggregate64_counts,
+            "invocations": invocation_counts,
+        }
+        if args.null_parity_profile_only:
+            continue
+
         print(f"[credit-bridge] summarizing variant={variant} invocation/family/global nulls", flush=True)
         invocation_summaries = {
             label: summarize_counts(
@@ -1346,6 +1784,8 @@ def run_diagnostic(args: argparse.Namespace) -> tuple[str, dict[str, Any], Path]
                 level="invocation",
                 null_permutations=args.null_permutations,
                 null_seed=args.null_seed,
+                null_backend=args.null_backend,
+                null_aggregation_device=args.null_aggregation_device,
             )
             | invocation_details[label]
             for label, counts in invocation_counts.items()
@@ -1357,6 +1797,8 @@ def run_diagnostic(args: argparse.Namespace) -> tuple[str, dict[str, Any], Path]
                 level="family",
                 null_permutations=args.null_permutations,
                 null_seed=args.null_seed,
+                null_backend=args.null_backend,
+                null_aggregation_device=args.null_aggregation_device,
             )
             for label, counts in sorted(family_counts.items())
         }
@@ -1367,6 +1809,8 @@ def run_diagnostic(args: argparse.Namespace) -> tuple[str, dict[str, Any], Path]
                 level="aggregate64",
                 null_permutations=args.null_permutations,
                 null_seed=args.null_seed,
+                null_backend=args.null_backend,
+                null_aggregation_device=args.null_aggregation_device,
             )
             for label, counts in sorted(aggregate64_counts.items())
         }
@@ -1376,6 +1820,8 @@ def run_diagnostic(args: argparse.Namespace) -> tuple[str, dict[str, Any], Path]
             level="global",
             null_permutations=args.null_permutations,
             null_seed=args.null_seed,
+            null_backend=args.null_backend,
+            null_aggregation_device=args.null_aggregation_device,
         )
         bar_terminal, bar_reasons = terminal_from_summaries(
             global_summary=global_summary,
@@ -1391,6 +1837,55 @@ def run_diagnostic(args: argparse.Namespace) -> tuple[str, dict[str, Any], Path]
             "aggregate64": aggregate64_summaries,
             "invocations": invocation_summaries,
         }
+
+    if args.null_parity_profile_only:
+        print("[credit-bridge] running null parity/profile subset", flush=True)
+        terminal, null_profile = run_null_parity_profile(variant_count_sets, args=args, bars=bars)
+        ckpt_sha_after = sha256_file(ckpt_path)
+        if ckpt_sha_after != ckpt_sha_before:
+            raise IntegrityFailure(
+                f"checkpoint hash changed before={ckpt_sha_before} after={ckpt_sha_after}"
+            )
+        result = {
+            "task_id": TASK_ID,
+            "terminal": terminal,
+            "terminal_reasons": [],
+            "checkpoint": {
+                "path": str(ckpt_path),
+                "sha256_before": ckpt_sha_before,
+                "sha256_after": ckpt_sha_after,
+                "unchanged": ckpt_sha_before == ckpt_sha_after,
+            },
+            "prereg": {"path": str(prereg_path), "sha256": prereg_sha},
+            "support": {
+                "surface": "L0c1",
+                "seed": args.support_seed,
+                "rows": len(rows),
+                "total_valid_response_labels": total_valid,
+                "loss_mean": float(np.mean(losses)) if losses else None,
+            },
+            "model": {
+                "hidden_size": ckpt_config.get("hidden_size"),
+                "n_layers": ckpt_config.get("n_layers"),
+                "half_layers": ckpt_config.get("half_layers"),
+                "H_cycles": ckpt_config.get("H_cycles"),
+                "L_cycles": ckpt_config.get("L_cycles"),
+                "bp_steps": args.bp_steps,
+                "target_bitlinear_count": len(targets),
+            },
+            "bars": bars.__dict__,
+            "variant_order": list(CREDIT_VARIANTS),
+            "null_parity_profile": null_profile,
+            "schedule_excluded_no_grad": excluded,
+            "fp_reference_reconstruction": grad_check,
+            "read_only_invariants": {
+                "no_optimizer": True,
+                "no_torch_save": True,
+                "no_param_write_intended": True,
+                "cached_native_flags_asserted": True,
+            },
+        }
+        return terminal, result, prereg_path
 
     terminal, reasons, terminal_checks = terminal_from_variant_results(variant_results)
 
@@ -1470,6 +1965,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--bp-steps", type=int, default=5)
     parser.add_argument("--null-permutations", type=int, default=256)
     parser.add_argument("--null-seed", type=int, default=17)
+    parser.add_argument("--null-backend", choices=NULL_BACKENDS, default=DEFAULT_NULL_BACKEND)
+    parser.add_argument(
+        "--null-aggregation-device",
+        choices=("cuda", "cpu"),
+        default=None,
+        help="Torch device for cpu_sampler_gpu_aggregation_replay aggregation; default prefers cuda when available.",
+    )
+    parser.add_argument(
+        "--null-parity-profile-only",
+        action="store_true",
+        help="Run the preregistered CPU-null vs candidate parity/profile subset and exit.",
+    )
+    parser.add_argument("--null-profile-warmups", type=int, default=DEFAULT_NULL_PROFILE_WARMUPS)
+    parser.add_argument("--null-profile-repeats", type=int, default=DEFAULT_NULL_PROFILE_REPEATS)
+    parser.add_argument("--null-speedup-floor", type=float, default=DEFAULT_NULL_SPEEDUP_FLOOR)
+    parser.add_argument("--null-parity-max-invocations-per-variant", type=int, default=16)
     parser.add_argument("--max-rows", type=int, default=None, help="Debug only; default uses all 121 rows.")
     parser.add_argument("--progress-every", type=int, default=8)
     parser.add_argument("--grad-reconstruction-atol", type=float, default=2e-3)
@@ -1498,8 +2009,16 @@ def main(argv: list[str] | None = None) -> int:
             "pow2_magnitude_sufficient",
             "fp16_groupwise_credit_sufficient_proxy",
             "tested_lowbit_magnitude_insufficient",
+            "gpu_null_parity_exact_default_enabled",
+            "gpu_null_parity_exact_speedup_insufficient_cpu_default_retained",
+            "gpu_null_parity_exact_sampler_bound_deferred",
         }
-        return 0 if terminal in ok_terminals else 2
+        semantic_fail_terminals = {"gpu_null_parity_fail"}
+        if terminal in ok_terminals:
+            return 0
+        if terminal in semantic_fail_terminals:
+            return 1
+        return 2
     except IntegrityFailure as exc:
         payload = {"task_id": TASK_ID, "terminal": "integrity_failure", "error": str(exc)}
         write_json_with_sha(result_path, payload)
