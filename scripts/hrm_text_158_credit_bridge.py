@@ -25,7 +25,7 @@ import torch
 from torch import Tensor, nn
 
 
-TASK_ID = "1780231236796-49ed823a"
+TASK_ID = "1780239430784-b2c90d8d"
 DEFAULT_CKPT = Path(
     "calm/hrm/checkpoints/"
     "hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_"
@@ -47,11 +47,34 @@ GROUP_ORDER = (
 CREDIT_VARIANTS = ("strict", "pow2_bucket", "fp16_groupwise", "full_magnitude_ceiling")
 NULL_BACKEND_CPU_LOCKED = "cpu_locked"
 NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY = "cpu_sampler_gpu_aggregation_replay"
-NULL_BACKENDS = (NULL_BACKEND_CPU_LOCKED, NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY)
+NULL_BACKEND_GPU_NATIVE_COUNTS_PMF = "gpu_native_counts_pmf"
+NULL_BACKENDS = (
+    NULL_BACKEND_CPU_LOCKED,
+    NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY,
+    NULL_BACKEND_GPU_NATIVE_COUNTS_PMF,
+)
 DEFAULT_NULL_BACKEND = NULL_BACKEND_CPU_LOCKED
 DEFAULT_NULL_SPEEDUP_FLOOR = 1.25
 DEFAULT_NULL_PROFILE_WARMUPS = 1
 DEFAULT_NULL_PROFILE_REPEATS = 5
+DEFAULT_NULL_SPEED_CPU_REPEATS = 1
+DEFAULT_NULL_SPEED_CANDIDATE_REPEATS = 5
+DEFAULT_NULL_SPEED_MAX_INVOCATIONS_PER_VARIANT = 3
+NULL_DISTRIBUTIONAL_ABS_TOL = 0.01
+GPU_NATIVE_PMF_TV_BOUND = 1e-5
+GPU_NATIVE_PMF_CDF_BOUND = 1e-5
+GPU_NATIVE_PMF_CAPTURED_MASS_EPS = 1e-6
+GPU_NATIVE_PMF_FULL_SUPPORT_GUARD = 65_536
+GPU_NATIVE_REFERENCE_SCIPY_MAX_POINTS = 4096
+GPU_NATIVE_REFERENCE_JOINT_WORK_BUDGET = 32_000_000
+GPU_NATIVE_REFERENCE_CHUNK_CELL_BUDGET = 1_000_000
+GPU_NATIVE_BOUNDED_SAMPLE_COUNT = 65_536
+GPU_NATIVE_BOUNDED_SAMPLE_CONFIDENCE = 0.999
+GPU_NATIVE_BOUNDED_SAMPLE_CDF_BOUND = 0.05
+GPU_NATIVE_BOUNDED_SAMPLE_SEED = 15817
+GPU_NATIVE_STAGE2_MAX_SECONDS = 600.0
+GPU_NATIVE_CURRENT_CPU_LOWER_BOUND_SECONDS = 1526.0
+GPU_NATIVE_PRIOR_CPU_LOWER_BOUND_SECONDS = 6600.0
 NULL_SAMPLER_BOUND_FRACTION = 0.60
 STRICT_REPRODUCTION_EXPECTED = 0.508805533381048
 STRICT_REPRODUCTION_TOL = 0.01
@@ -75,6 +98,16 @@ NULL_PARITY_TERMINAL_LABELS = (
     "diagnostic_reference_invalid",
     "integrity_failure",
 )
+GPU_NATIVE_NULL_TERMINAL_LABELS = (
+    "gpu_native_null_parity_default_enabled",
+    "gpu_native_null_parity_explicit_validated_default_deferred",
+    "gpu_native_null_parity_speedup_insufficient_cpu_default_retained",
+    "gpu_native_null_parity_fail",
+    "diagnostic_reference_invalid",
+    "integrity_failure",
+)
+REFERENCE_PMF_FUNCTION = "_joint_match_pmf_reference_scipy_vectorized_sparse"
+CANDIDATE_PMF_FUNCTION = "_joint_match_pmf_gpu_windowed_sparse"
 TARGET_RE = re.compile(
     r"^model\.(?P<level>[HL])_level\.core\.layers\.(?P<layer>\d+)\."
     r"(?P<block>attn|mlp)\.(?P<proj>gqkv_proj|o_proj|gate_up_proj|down_proj)$"
@@ -759,6 +792,1673 @@ def _sync_for_timing(device_name: str) -> None:
         torch.cuda.synchronize()
 
 
+def _bucket_totals_metadata(buckets: list[BucketCounts]) -> dict[str, Any]:
+    totals = np.asarray([b.total for b in buckets], dtype=np.int64)
+    return {
+        "bucket_count": int(totals.size),
+        "sum_total": int(totals.sum()) if totals.size else 0,
+        "ordered_totals_sha256": sha256_bytes(totals.tobytes()),
+    }
+
+
+def _new_support_policy_stats() -> dict[str, Any]:
+    return {
+        "distribution_count": 0,
+        "full_support_bucket_count": 0,
+        "mass_trimmed_bucket_count": 0,
+        "max_support_size": 0,
+        "max_omitted_mass": 0.0,
+    }
+
+
+def _record_support_policy(
+    stats: dict[str, Any],
+    *,
+    legal_size: Tensor,
+    support_size: Tensor,
+    omitted_mass: Tensor,
+) -> None:
+    legal_cpu = legal_size.detach().cpu().to(torch.int64)
+    support_cpu = support_size.detach().cpu().to(torch.int64)
+    omitted_cpu = omitted_mass.detach().cpu().to(torch.float64)
+    if legal_cpu.numel() == 0:
+        return
+    stats["distribution_count"] += int(legal_cpu.numel())
+    stats["full_support_bucket_count"] += int((support_cpu >= legal_cpu).sum().item())
+    stats["mass_trimmed_bucket_count"] += int((support_cpu < legal_cpu).sum().item())
+    stats["max_support_size"] = max(stats["max_support_size"], int(support_cpu.max().item()))
+    stats["max_omitted_mass"] = max(stats["max_omitted_mass"], float(omitted_cpu.max().item()))
+
+
+def _torch_logcomb(n: Tensor, k: Tensor) -> Tensor:
+    n = n.to(dtype=torch.float64)
+    k = k.to(dtype=torch.float64)
+    return torch.lgamma(n + 1.0) - torch.lgamma(k + 1.0) - torch.lgamma(n - k + 1.0)
+
+
+def _hypergeom_logpmf_torch(successes: Tensor, failures: Tensor, draws: Tensor, support: Tensor) -> Tensor:
+    total = successes + failures
+    return (
+        _torch_logcomb(successes, support)
+        + _torch_logcomb(failures, draws - support)
+        - _torch_logcomb(total, draws)
+    )
+
+
+def _hypergeom_initial_center_half(successes: Tensor, failures: Tensor, draws: Tensor) -> tuple[Tensor, Tensor]:
+    total = (successes + failures).to(torch.float64)
+    draws_f = draws.to(torch.float64)
+    successes_f = successes.to(torch.float64)
+    probs = torch.where(total > 0, successes_f / total, torch.zeros_like(total))
+    mean = draws_f * probs
+    finite_population = torch.where(
+        total > 1,
+        (total - draws_f).clamp_min(0.0) / (total - 1.0),
+        torch.zeros_like(total),
+    )
+    var = draws_f * probs * (1.0 - probs) * finite_population
+    std = torch.sqrt(var.clamp_min(0.0))
+    center = torch.round(mean).to(torch.int64)
+    half = torch.ceil(torch.maximum(std * 4.0, torch.full_like(std, 8.0))).to(torch.int64)
+    return center, half
+
+
+def _select_hypergeom_window_scalar(
+    *,
+    successes: int,
+    failures: int,
+    draws: int,
+    device_name: str,
+    support_guard: int = GPU_NATIVE_PMF_FULL_SUPPORT_GUARD,
+    captured_mass_eps: float = GPU_NATIVE_PMF_CAPTURED_MASS_EPS,
+    stats: dict[str, Any] | None = None,
+) -> tuple[Tensor, Tensor, float]:
+    if draws <= 0 or successes <= 0:
+        support = torch.zeros(1, dtype=torch.int64, device=device_name)
+        probs = torch.ones(1, dtype=torch.float64, device=device_name)
+        if stats is not None:
+            one = torch.ones(1, dtype=torch.int64, device=device_name)
+            zero = torch.zeros(1, dtype=torch.float64, device=device_name)
+            _record_support_policy(stats, legal_size=one, support_size=one, omitted_mass=zero)
+        return support, probs, 0.0
+    if failures <= 0:
+        support = torch.tensor([draws], dtype=torch.int64, device=device_name)
+        probs = torch.ones(1, dtype=torch.float64, device=device_name)
+        if stats is not None:
+            one = torch.ones(1, dtype=torch.int64, device=device_name)
+            zero = torch.zeros(1, dtype=torch.float64, device=device_name)
+            _record_support_policy(stats, legal_size=one, support_size=one, omitted_mass=zero)
+        return support, probs, 0.0
+
+    lo = max(0, draws - failures)
+    hi = min(draws, successes)
+    if hi < lo:
+        raise DiagnosticInvalid(
+            f"invalid hypergeometric support successes={successes} failures={failures} draws={draws}"
+        )
+    legal_size = hi - lo + 1
+    if legal_size <= support_guard:
+        low, high = lo, hi
+    else:
+        s_t = torch.tensor([successes], dtype=torch.int64, device=device_name)
+        f_t = torch.tensor([failures], dtype=torch.int64, device=device_name)
+        d_t = torch.tensor([draws], dtype=torch.int64, device=device_name)
+        center_t, half_t = _hypergeom_initial_center_half(s_t, f_t, d_t)
+        center = max(lo, min(hi, int(center_t.item())))
+        half = min(int(half_t.item()), max(1, (support_guard - 1) // 2))
+        while True:
+            low = max(lo, center - half)
+            high = min(hi, center + half)
+            support_size = high - low + 1
+            if support_size > support_guard:
+                raise DiagnosticInvalid(
+                    f"gpu PMF support guard exceeded support_size={support_size} guard={support_guard}"
+                )
+            support = torch.arange(low, high + 1, dtype=torch.int64, device=device_name)
+            logp = _hypergeom_logpmf_torch(s_t, f_t, d_t, support)
+            log_mass = torch.logsumexp(logp, dim=0)
+            omitted = max(0.0, 1.0 - float(torch.exp(log_mass).item()))
+            if omitted <= captured_mass_eps or (low == lo and high == hi):
+                break
+            if support_size >= support_guard:
+                raise DiagnosticInvalid(
+                    "gpu PMF captured-mass window could not meet epsilon "
+                    f"omitted={omitted:.6g} eps={captured_mass_eps} guard={support_guard}"
+                )
+            half = min(max(half * 2 + 1, half + 8), max(1, (support_guard - 1) // 2))
+
+    support = torch.arange(low, high + 1, dtype=torch.int64, device=device_name)
+    s_t = torch.tensor(successes, dtype=torch.int64, device=device_name)
+    f_t = torch.tensor(failures, dtype=torch.int64, device=device_name)
+    d_t = torch.tensor(draws, dtype=torch.int64, device=device_name)
+    logp = _hypergeom_logpmf_torch(s_t, f_t, d_t, support)
+    log_mass = torch.logsumexp(logp, dim=0)
+    probs = torch.exp(logp - log_mass)
+    omitted = 0.0 if support.numel() == legal_size else max(0.0, 1.0 - float(torch.exp(log_mass).item()))
+    if omitted > captured_mass_eps:
+        raise DiagnosticInvalid(
+            f"gpu PMF omitted mass {omitted:.6g} exceeds epsilon {captured_mass_eps}"
+        )
+    if stats is not None:
+        _record_support_policy(
+            stats,
+            legal_size=torch.tensor([legal_size], dtype=torch.int64, device=device_name),
+            support_size=torch.tensor([support.numel()], dtype=torch.int64, device=device_name),
+            omitted_mass=torch.tensor([omitted], dtype=torch.float64, device=device_name),
+        )
+    return support, probs, omitted
+
+
+def _sample_hypergeom_scalar_gpu(
+    *,
+    successes: int,
+    failures: int,
+    draws: int,
+    sample_count: int,
+    device_name: str,
+    generator: torch.Generator,
+    stats: dict[str, Any],
+) -> Tensor:
+    support, probs, _ = _select_hypergeom_window_scalar(
+        successes=successes,
+        failures=failures,
+        draws=draws,
+        device_name=device_name,
+        stats=stats,
+    )
+    cdf = torch.cumsum(probs, dim=0)
+    u = torch.rand(sample_count, dtype=torch.float64, device=device_name, generator=generator)
+    idx = torch.clamp((cdf.unsqueeze(0) < u.unsqueeze(1)).sum(dim=1), max=support.numel() - 1)
+    return support[idx].to(torch.int64)
+
+
+def _sample_hypergeom_batched_gpu(
+    *,
+    successes: Tensor,
+    failures: Tensor,
+    draws: Tensor,
+    device_name: str,
+    generator: torch.Generator,
+    stats: dict[str, Any],
+    support_guard: int = GPU_NATIVE_PMF_FULL_SUPPORT_GUARD,
+    captured_mass_eps: float = GPU_NATIVE_PMF_CAPTURED_MASS_EPS,
+) -> Tensor:
+    successes = successes.to(device=device_name, dtype=torch.int64)
+    failures = failures.to(device=device_name, dtype=torch.int64)
+    draws = draws.to(device=device_name, dtype=torch.int64)
+    if successes.numel() == 0:
+        return successes
+
+    legal_lo = torch.maximum(torch.zeros_like(draws), draws - failures)
+    legal_hi = torch.minimum(draws, successes)
+    if bool((legal_hi < legal_lo).any().item()):
+        raise DiagnosticInvalid("invalid batched hypergeometric support")
+    legal_size = legal_hi - legal_lo + 1
+    deterministic = legal_size <= 1
+    out = legal_lo.clone()
+    active = ~deterministic
+    if not bool(active.any().item()):
+        _record_support_policy(
+            stats,
+            legal_size=legal_size,
+            support_size=torch.ones_like(legal_size),
+            omitted_mass=torch.zeros_like(legal_size, dtype=torch.float64),
+        )
+        return out
+
+    center, half = _hypergeom_initial_center_half(successes, failures, draws)
+    center = torch.minimum(torch.maximum(center, legal_lo), legal_hi)
+    max_half = max(1, (support_guard - 1) // 2)
+    half = torch.minimum(half, torch.full_like(half, max_half))
+    full_support = legal_size <= support_guard
+    half = torch.where(full_support, torch.maximum(center - legal_lo, legal_hi - center), half)
+
+    while True:
+        low = torch.maximum(legal_lo, center - half)
+        high = torch.minimum(legal_hi, center + half)
+        support_size = high - low + 1
+        max_width = int(support_size[active].max().item())
+        if max_width > support_guard:
+            raise DiagnosticInvalid(
+                f"gpu PMF batched support guard exceeded support_size={max_width} guard={support_guard}"
+            )
+        offsets = torch.arange(max_width, dtype=torch.int64, device=device_name).unsqueeze(0)
+        support = low.unsqueeze(1) + offsets
+        valid = offsets < support_size.unsqueeze(1)
+        safe_support = torch.where(valid, support, low.unsqueeze(1))
+        logp = _hypergeom_logpmf_torch(
+            successes.unsqueeze(1),
+            failures.unsqueeze(1),
+            draws.unsqueeze(1),
+            safe_support,
+        )
+        logp = torch.where(valid, logp, torch.full_like(logp, -torch.inf))
+        log_mass = torch.logsumexp(logp, dim=1)
+        omitted = (1.0 - torch.exp(log_mass)).clamp_min(0.0)
+        covers_full = (low == legal_lo) & (high == legal_hi)
+        done = deterministic | covers_full | (omitted <= captured_mass_eps)
+        if bool((done | ~active).all().item()):
+            break
+        stuck = active & ~done & (support_size >= support_guard)
+        if bool(stuck.any().item()):
+            worst = float(omitted[stuck].max().item())
+            raise DiagnosticInvalid(
+                "gpu PMF captured-mass batched window could not meet epsilon "
+                f"omitted={worst:.6g} eps={captured_mass_eps} guard={support_guard}"
+            )
+        half = torch.where(done, half, torch.minimum(half * 2 + 1, torch.full_like(half, max_half)))
+
+    _record_support_policy(stats, legal_size=legal_size, support_size=support_size, omitted_mass=omitted)
+    probs = torch.exp(logp - log_mass.unsqueeze(1))
+    probs = torch.where(valid, probs, torch.zeros_like(probs))
+    cdf = torch.cumsum(probs, dim=1)
+    u = torch.rand(successes.shape[0], 1, dtype=torch.float64, device=device_name, generator=generator)
+    idx = torch.clamp((cdf < u).sum(dim=1), max=max_width - 1)
+    sampled = support.gather(1, idx.unsqueeze(1)).squeeze(1).to(torch.int64)
+    out = torch.where(deterministic, out, sampled)
+    return out
+
+
+def _simulate_permutation_null_gpu_native_counts_pmf(
+    buckets: list[BucketCounts],
+    *,
+    permutations: int,
+    seed: int,
+    aggregation_device: str | None = None,
+    profile: bool = False,
+) -> dict[str, Any]:
+    total_start = time.perf_counter()
+    device_name = _torch_device_name(aggregation_device)
+    bucket_metadata = _bucket_totals_metadata(buckets)
+    if not buckets:
+        timing = {"total": time.perf_counter() - total_start} if profile else None
+        out = _summarize_null_scores(
+            np.asarray([], dtype=np.float64),
+            backend=NULL_BACKEND_GPU_NATIVE_COUNTS_PMF,
+            timing_seconds=timing,
+            aggregation_device=device_name,
+        )
+        out["input_bucket_metadata"] = bucket_metadata
+        out["candidate_batching_metadata"] = bucket_metadata
+        out["support_policy"] = _new_support_policy_stats()
+        return out
+
+    generator = torch.Generator(device=device_name)
+    generator.manual_seed(seed)
+    support_stats = _new_support_policy_stats()
+    _sync_for_timing(device_name)
+    sample_start = time.perf_counter()
+    matches = torch.zeros(permutations, dtype=torch.int64, device=device_name)
+    total = int(sum(b.total for b in buckets))
+    for b in buckets:
+        n = b.total
+        if n <= 0:
+            continue
+        k_pos = min(b.int_pos, n)
+        x_pos = _sample_hypergeom_scalar_gpu(
+            successes=b.fp_pos,
+            failures=n - b.fp_pos,
+            draws=k_pos,
+            sample_count=permutations,
+            device_name=device_name,
+            generator=generator,
+            stats=support_stats,
+        )
+        fp_neg_consumed_by_pos = k_pos - x_pos
+        remaining_n = n - k_pos
+        remaining_fp_neg = (torch.full_like(x_pos, b.fp_neg) - fp_neg_consumed_by_pos).clamp_min(0)
+        k_neg = min(b.int_neg, remaining_n)
+        if remaining_n > 0 and k_neg > 0:
+            x_neg = _sample_hypergeom_batched_gpu(
+                successes=remaining_fp_neg,
+                failures=torch.full_like(remaining_fp_neg, remaining_n) - remaining_fp_neg,
+                draws=torch.full_like(remaining_fp_neg, k_neg),
+                device_name=device_name,
+                generator=generator,
+                stats=support_stats,
+            )
+        else:
+            x_neg = torch.zeros_like(x_pos)
+        matches += x_pos + x_neg
+    _sync_for_timing(device_name)
+    gpu_sampler_seconds = time.perf_counter() - sample_start
+    scores = matches.detach().cpu().numpy().astype(np.float64) / float(total) if total else np.zeros(permutations, dtype=np.float64)
+    timing = None
+    if profile:
+        timing = {
+            "gpu_sampler": gpu_sampler_seconds,
+            "aggregation": 0.0,
+            "total": time.perf_counter() - total_start,
+        }
+    out = _summarize_null_scores(
+        scores,
+        backend=NULL_BACKEND_GPU_NATIVE_COUNTS_PMF,
+        timing_seconds=timing,
+        aggregation_device=device_name,
+    )
+    out["input_bucket_metadata"] = bucket_metadata
+    out["candidate_batching_metadata"] = bucket_metadata
+    out["support_policy"] = support_stats
+    return out
+
+
+def _hypergeom_logpmf_float(successes: int, failures: int, draws: int, x: int) -> float:
+    total = successes + failures
+    if x < max(0, draws - failures) or x > min(draws, successes):
+        return -math.inf
+    return (
+        math.lgamma(successes + 1)
+        - math.lgamma(x + 1)
+        - math.lgamma(successes - x + 1)
+        + math.lgamma(failures + 1)
+        - math.lgamma(draws - x + 1)
+        - math.lgamma(failures - (draws - x) + 1)
+        - math.lgamma(total + 1)
+        + math.lgamma(draws + 1)
+        + math.lgamma(total - draws + 1)
+    )
+
+
+def _hypergeom_support_bounds(successes: int, failures: int, draws: int) -> tuple[int, int]:
+    lo = max(0, draws - failures)
+    hi = min(draws, successes)
+    if hi < lo:
+        raise DiagnosticInvalid(
+            f"invalid hypergeometric support successes={successes} failures={failures} draws={draws}"
+        )
+    return lo, hi
+
+
+def _logsumexp_float(values: list[float]) -> float:
+    if not values:
+        return -math.inf
+    peak = max(values)
+    if not math.isfinite(peak):
+        return peak
+    return peak + math.log(sum(math.exp(v - peak) for v in values))
+
+
+def _reference_initial_center_half(successes: int, failures: int, draws: int) -> tuple[int, int]:
+    total = successes + failures
+    if total <= 0:
+        return 0, 1
+    prob = successes / total
+    mean = draws * prob
+    finite_population = ((total - draws) / (total - 1)) if total > 1 else 0.0
+    var = draws * prob * (1.0 - prob) * max(0.0, finite_population)
+    std = math.sqrt(max(0.0, var))
+    return int(round(mean)), int(math.ceil(max(std * 4.0, 8.0)))
+
+
+def _new_scipy_cross_check_summary() -> dict[str, Any]:
+    return {
+        "library": "scipy.stats.hypergeom.pmf",
+        "available": None,
+        "max_points_per_distribution": GPU_NATIVE_REFERENCE_SCIPY_MAX_POINTS,
+        "checked_distribution_count": 0,
+        "skipped_distribution_count": 0,
+        "max_abs_delta": 0.0,
+        "failures": [],
+        "fallback_reasons": [],
+    }
+
+
+def _record_scipy_cross_check(
+    summary: dict[str, Any],
+    *,
+    successes: int,
+    failures: int,
+    draws: int,
+    support: np.ndarray,
+    label: str,
+) -> None:
+    if support.size == 0:
+        return
+    try:
+        from scipy.stats import hypergeom  # type: ignore
+    except Exception as exc:  # pragma: no cover - exercised only on scipy-missing hosts.
+        summary["available"] = False
+        reason = f"scipy_unavailable:{type(exc).__name__}:{exc}"
+        if reason not in summary["fallback_reasons"]:
+            summary["fallback_reasons"].append(reason)
+        summary["skipped_distribution_count"] += 1
+        return
+
+    summary["available"] = True
+    support_i = support.astype(np.int64, copy=False)
+    if support_i.size > GPU_NATIVE_REFERENCE_SCIPY_MAX_POINTS:
+        idx = np.linspace(0, support_i.size - 1, GPU_NATIVE_REFERENCE_SCIPY_MAX_POINTS, dtype=np.int64)
+        check_support = np.unique(support_i[idx])
+        summary["fallback_reasons"].append(
+            f"{label}:spot_checked_{check_support.size}_of_{support_i.size}_support_points"
+        )
+    else:
+        check_support = support_i
+
+    scipy_pmf = np.asarray(
+        hypergeom.pmf(check_support, successes + failures, successes, draws),
+        dtype=np.float64,
+    )
+    reference_pmf = np.asarray(
+        [math.exp(_hypergeom_logpmf_float(successes, failures, draws, int(x))) for x in check_support],
+        dtype=np.float64,
+    )
+    delta = np.abs(scipy_pmf - reference_pmf)
+    max_abs = float(delta.max()) if delta.size else 0.0
+    summary["checked_distribution_count"] += 1
+    summary["max_abs_delta"] = max(float(summary["max_abs_delta"]), max_abs)
+    if not np.all(np.isfinite(scipy_pmf)) or max_abs > 1e-10:
+        summary["failures"].append({"label": label, "max_abs_delta": max_abs})
+
+
+def _hypergeom_pmf_scipy_vectorized(successes: int, failures: int, draws: int, support: np.ndarray) -> np.ndarray:
+    try:
+        from scipy.stats import hypergeom  # type: ignore
+    except Exception as exc:  # pragma: no cover - exercised only on scipy-missing hosts.
+        raise DiagnosticInvalid(f"scipy hypergeom reference unavailable: {type(exc).__name__}: {exc}") from exc
+    return np.asarray(
+        hypergeom.pmf(support.astype(np.int64, copy=False), successes + failures, successes, draws),
+        dtype=np.float64,
+    )
+
+
+def _select_hypergeom_window_reference(
+    *,
+    successes: int,
+    failures: int,
+    draws: int,
+    support_guard: int,
+    captured_mass_eps: float,
+    scipy_summary: dict[str, Any] | None,
+    scipy_label: str | None,
+) -> tuple[np.ndarray, np.ndarray, float, int]:
+    if draws <= 0 or successes <= 0:
+        support = np.asarray([0], dtype=np.int64)
+        probs = np.asarray([1.0], dtype=np.float64)
+        if scipy_summary is not None and scipy_label is not None:
+            _record_scipy_cross_check(
+                scipy_summary,
+                successes=successes,
+                failures=failures,
+                draws=draws,
+                support=support,
+                label=scipy_label,
+            )
+        return support, probs, 0.0, 1
+    if failures <= 0:
+        support = np.asarray([draws], dtype=np.int64)
+        probs = np.asarray([1.0], dtype=np.float64)
+        if scipy_summary is not None and scipy_label is not None:
+            _record_scipy_cross_check(
+                scipy_summary,
+                successes=successes,
+                failures=failures,
+                draws=draws,
+                support=support,
+                label=scipy_label,
+            )
+        return support, probs, 0.0, 1
+
+    lo, hi = _hypergeom_support_bounds(successes, failures, draws)
+    legal_size = hi - lo + 1
+    if legal_size <= support_guard:
+        low, high = lo, hi
+    else:
+        center, half = _reference_initial_center_half(successes, failures, draws)
+        center = max(lo, min(hi, center))
+        half = min(half, max(1, (support_guard - 1) // 2))
+        while True:
+            low = max(lo, center - half)
+            high = min(hi, center + half)
+            support_size = high - low + 1
+            if support_size > support_guard:
+                raise DiagnosticInvalid(
+                    f"reference PMF support guard exceeded support_size={support_size} guard={support_guard}"
+                )
+            support = np.arange(low, high + 1, dtype=np.int64)
+            raw = _hypergeom_pmf_scipy_vectorized(successes, failures, draws, support)
+            mass = float(raw.sum())
+            if mass <= 0.0 or not math.isfinite(mass):
+                raise DiagnosticInvalid(
+                    "reference scipy PMF produced invalid captured mass "
+                    f"mass={mass} successes={successes} failures={failures} draws={draws}"
+                )
+            omitted = max(0.0, 1.0 - mass)
+            if omitted <= captured_mass_eps or (low == lo and high == hi):
+                break
+            if support_size >= support_guard:
+                raise DiagnosticInvalid(
+                    "reference PMF captured-mass window could not meet epsilon "
+                    f"omitted={omitted:.6g} eps={captured_mass_eps} guard={support_guard}"
+                )
+            half = min(max(half * 2 + 1, half + 8), max(1, (support_guard - 1) // 2))
+
+    support = np.arange(low, high + 1, dtype=np.int64)
+    raw = _hypergeom_pmf_scipy_vectorized(successes, failures, draws, support)
+    mass = float(raw.sum())
+    if mass <= 0.0 or not math.isfinite(mass):
+        raise DiagnosticInvalid(
+            "reference scipy PMF produced invalid captured mass "
+            f"mass={mass} successes={successes} failures={failures} draws={draws}"
+        )
+    probs = (raw / mass).astype(np.float64, copy=False)
+    omitted = 0.0 if support.size == legal_size else max(0.0, 1.0 - mass)
+    if omitted > captured_mass_eps:
+        raise DiagnosticInvalid(
+            f"reference PMF omitted mass {omitted:.6g} exceeds epsilon {captured_mass_eps}"
+        )
+    if scipy_summary is not None and scipy_label is not None:
+        _record_scipy_cross_check(
+            scipy_summary,
+            successes=successes,
+            failures=failures,
+            draws=draws,
+            support=support,
+            label=scipy_label,
+        )
+    return support, probs, omitted, legal_size
+
+
+def _conditional_cross_check_values(x_pos_support: np.ndarray) -> set[int]:
+    values = [int(x) for x in x_pos_support.tolist()]
+    if len(values) <= 16:
+        return set(values)
+    return {values[0], values[len(values) // 2], values[-1]}
+
+
+def _normalize_sparse_pmf(pmf: dict[int, float]) -> dict[int, float]:
+    total = sum(pmf.values())
+    if total <= 0.0:
+        raise DiagnosticInvalid("sparse PMF has zero mass")
+    return {k: float(v / total) for k, v in pmf.items() if v > 0.0}
+
+
+def _add_dense_window(
+    acc: np.ndarray | None,
+    offset: int | None,
+    keys: np.ndarray,
+    values: np.ndarray,
+) -> tuple[np.ndarray, int]:
+    if keys.size == 0:
+        if acc is None or offset is None:
+            return np.zeros(0, dtype=np.float64), 0
+        return acc, offset
+    low = int(keys.min())
+    high = int(keys.max())
+    if acc is None or offset is None or acc.size == 0:
+        new_acc = np.zeros(high - low + 1, dtype=np.float64)
+        np.add.at(new_acc, keys.astype(np.int64, copy=False) - low, values)
+        return new_acc, low
+
+    old_low = offset
+    old_high = offset + acc.size - 1
+    if low < old_low or high > old_high:
+        new_low = min(low, old_low)
+        new_high = max(high, old_high)
+        new_acc = np.zeros(new_high - new_low + 1, dtype=np.float64)
+        new_acc[old_low - new_low : old_high - new_low + 1] = acc
+        acc = new_acc
+        offset = new_low
+    np.add.at(acc, keys.astype(np.int64, copy=False) - offset, values)
+    return acc, offset
+
+
+def _dense_window_to_sparse(acc: np.ndarray, offset: int) -> dict[int, float]:
+    if acc.size == 0:
+        raise DiagnosticInvalid("dense PMF window has zero size")
+    idx = np.flatnonzero(acc > 0.0)
+    if idx.size == 0:
+        raise DiagnosticInvalid("dense PMF window has zero positive mass")
+    keys = idx + offset
+    values = acc[idx]
+    return {int(k): float(v) for k, v in zip(keys.tolist(), values.tolist(), strict=True)}
+
+
+def _reference_bounded_sample_seed(bucket: BucketCounts) -> int:
+    seed = GPU_NATIVE_BOUNDED_SAMPLE_SEED
+    for value in (bucket.fp_pos, bucket.fp_neg, bucket.int_pos, bucket.int_neg, bucket.int_zero):
+        seed = (seed * 1_315_423_911 + int(value) + 0x9E3779B9) & 0xFFFFFFFF
+    return int(seed)
+
+
+def _dkw_epsilon(sample_count: int, confidence: float) -> float:
+    if sample_count <= 0:
+        raise DiagnosticInvalid("bounded sampled reference sample_count must be positive")
+    if not 0.0 < confidence < 1.0:
+        raise DiagnosticInvalid("bounded sampled reference confidence must be in (0, 1)")
+    return math.sqrt(math.log(2.0 / (1.0 - confidence)) / (2.0 * sample_count))
+
+
+def _reference_joint_work_estimate(
+    bucket: BucketCounts,
+    x_pos_support: np.ndarray,
+    *,
+    k_pos: int,
+    k_neg: int,
+    remaining_n: int,
+    support_guard: int,
+) -> dict[str, Any]:
+    if x_pos_support.size == 0:
+        return {
+            "x_pos_window_size": 0,
+            "max_conditional_window_upper_bound": 0,
+            "sum_conditional_window_upper_bound": 0,
+            "estimated_joint_cells": 0,
+            "budget": GPU_NATIVE_REFERENCE_JOINT_WORK_BUDGET,
+        }
+    xp = x_pos_support.astype(np.int64, copy=False)
+    successes = np.maximum(0, int(bucket.fp_neg) - (int(k_pos) - xp))
+    failures = int(remaining_n) - successes
+    lo = np.maximum(0, int(k_neg) - failures)
+    hi = np.minimum(int(k_neg), successes)
+    if bool(np.any(hi < lo)):
+        raise DiagnosticInvalid(f"invalid conditional support estimate for bucket={bucket}")
+    legal_size = hi - lo + 1
+    window_upper = np.minimum(legal_size, int(support_guard)).astype(np.int64, copy=False)
+    return {
+        "x_pos_window_size": int(xp.size),
+        "max_conditional_window_upper_bound": int(window_upper.max(initial=0)),
+        "sum_conditional_window_upper_bound": int(window_upper.sum(dtype=np.int64)),
+        "estimated_joint_cells": int(window_upper.sum(dtype=np.int64)),
+        "budget": GPU_NATIVE_REFERENCE_JOINT_WORK_BUDGET,
+    }
+
+
+def _reference_initial_center_half_array(
+    successes: np.ndarray,
+    failures: np.ndarray,
+    draws: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    total = successes.astype(np.float64, copy=False) + failures.astype(np.float64, copy=False)
+    probs = np.divide(
+        successes.astype(np.float64, copy=False),
+        total,
+        out=np.zeros_like(total, dtype=np.float64),
+        where=total > 0,
+    )
+    draws_f = float(draws)
+    mean = draws_f * probs
+    finite_population = np.divide(
+        np.maximum(total - draws_f, 0.0),
+        total - 1.0,
+        out=np.zeros_like(total, dtype=np.float64),
+        where=total > 1.0,
+    )
+    var = draws_f * probs * (1.0 - probs) * finite_population
+    center = np.rint(mean).astype(np.int64)
+    half = np.ceil(np.maximum(np.sqrt(np.maximum(var, 0.0)) * 4.0, 8.0)).astype(np.int64)
+    return center, half
+
+
+def _select_hypergeom_windows_reference_batched(
+    *,
+    successes: np.ndarray,
+    failures: np.ndarray,
+    draws: int,
+    support_guard: int,
+    captured_mass_eps: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    try:
+        from scipy.stats import hypergeom  # type: ignore
+    except Exception as exc:  # pragma: no cover - exercised only on scipy-missing hosts.
+        raise DiagnosticInvalid(f"scipy hypergeom reference unavailable: {type(exc).__name__}: {exc}") from exc
+
+    successes = successes.astype(np.int64, copy=False)
+    failures = failures.astype(np.int64, copy=False)
+    if successes.size == 0:
+        empty_i = np.zeros((0, 0), dtype=np.int64)
+        empty_f = np.zeros((0, 0), dtype=np.float64)
+        empty_b = np.zeros((0, 0), dtype=bool)
+        empty_v = np.zeros(0, dtype=np.float64)
+        empty_s = np.zeros(0, dtype=np.int64)
+        return empty_i, empty_f, empty_b, empty_v, empty_s, empty_s
+
+    lo = np.maximum(0, int(draws) - failures)
+    hi = np.minimum(int(draws), successes)
+    if bool(np.any(hi < lo)):
+        raise DiagnosticInvalid("invalid batched reference hypergeometric support")
+    legal_size = (hi - lo + 1).astype(np.int64, copy=False)
+    center, half = _reference_initial_center_half_array(successes, failures, draws)
+    center = np.minimum(np.maximum(center, lo), hi)
+    max_half = max(1, (int(support_guard) - 1) // 2)
+    half = np.minimum(half, max_half)
+    full_support = legal_size <= int(support_guard)
+    half = np.where(full_support, np.maximum(center - lo, hi - center), half)
+
+    while True:
+        low = np.maximum(lo, center - half)
+        high = np.minimum(hi, center + half)
+        support_size = (high - low + 1).astype(np.int64, copy=False)
+        max_width = int(support_size.max(initial=0))
+        if max_width > int(support_guard):
+            raise DiagnosticInvalid(
+                f"reference PMF batched support guard exceeded support_size={max_width} guard={support_guard}"
+            )
+        offsets = np.arange(max_width, dtype=np.int64)
+        support = low[:, None] + offsets[None, :]
+        valid = offsets[None, :] < support_size[:, None]
+        safe_support = np.where(valid, support, low[:, None])
+        raw = np.asarray(
+            hypergeom.pmf(
+                safe_support,
+                (successes + failures)[:, None],
+                successes[:, None],
+                int(draws),
+            ),
+            dtype=np.float64,
+        )
+        raw = np.where(valid, raw, 0.0)
+        mass = raw.sum(axis=1)
+        if bool(np.any((mass <= 0.0) | ~np.isfinite(mass))):
+            raise DiagnosticInvalid("reference scipy PMF produced invalid batched captured mass")
+        omitted = np.maximum(0.0, 1.0 - mass)
+        covers_full = (low == lo) & (high == hi)
+        done = covers_full | (omitted <= captured_mass_eps)
+        if bool(np.all(done)):
+            probs = raw / mass[:, None]
+            return support, probs, valid, omitted.astype(np.float64), legal_size, support_size
+        stuck = (~done) & (support_size >= int(support_guard))
+        if bool(np.any(stuck)):
+            worst = float(omitted[stuck].max(initial=0.0))
+            raise DiagnosticInvalid(
+                "reference PMF captured-mass batched window could not meet epsilon "
+                f"omitted={worst:.6g} eps={captured_mass_eps} guard={support_guard}"
+            )
+        half = np.where(done, half, np.minimum(half * 2 + 1, max_half))
+
+
+def _joint_match_pmf_reference_bounded_sampled_sparse(
+    bucket: BucketCounts,
+    *,
+    joint_work: dict[str, Any],
+    sample_count: int = GPU_NATIVE_BOUNDED_SAMPLE_COUNT,
+    confidence: float = GPU_NATIVE_BOUNDED_SAMPLE_CONFIDENCE,
+    seed_salt: int = 0,
+    reference_mode: str = "bounded_sampled",
+    fallback_reason: str = "joint_work_budget_exceeded",
+) -> dict[str, Any]:
+    n = bucket.total
+    if n <= 0:
+        return {
+            "pmf": {0: 1.0},
+            "omitted_mass_bound": 0.0,
+            "max_support_size": 1,
+            "materialized_window_size": 1,
+            "max_stage_window_size": 1,
+            "reference_mode": reference_mode,
+            "fallback_flag": True,
+            "fallback_reason": fallback_reason,
+            "joint_work": joint_work,
+            "bounded_sample": {
+                "sample_count": sample_count,
+                "confidence": confidence,
+                "dkw_epsilon": _dkw_epsilon(sample_count, confidence),
+                "sampling_cdf_bound": GPU_NATIVE_BOUNDED_SAMPLE_CDF_BOUND,
+            },
+            "scipy_cross_check": _new_scipy_cross_check_summary(),
+        }
+
+    k_pos = min(bucket.int_pos, n)
+    remaining_n = n - k_pos
+    k_neg = min(bucket.int_neg, remaining_n)
+    seed = (_reference_bounded_sample_seed(bucket) + int(seed_salt)) & 0xFFFFFFFF
+    rng = np.random.default_rng(seed)
+    x_pos = rng.hypergeometric(
+        ngood=int(bucket.fp_pos),
+        nbad=max(0, int(n - bucket.fp_pos)),
+        nsample=int(k_pos),
+        size=int(sample_count),
+    ).astype(np.int64, copy=False)
+    remaining_fp_neg = np.maximum(0, int(bucket.fp_neg) - (int(k_pos) - x_pos)).astype(np.int64, copy=False)
+    remaining_failures = np.maximum(0, int(remaining_n) - remaining_fp_neg).astype(np.int64, copy=False)
+    x_neg = rng.hypergeometric(
+        ngood=remaining_fp_neg,
+        nbad=remaining_failures,
+        nsample=int(k_neg),
+    ).astype(np.int64, copy=False)
+    totals = x_pos + x_neg
+    offset = int(totals.min(initial=0))
+    counts = np.bincount((totals - offset).astype(np.int64, copy=False))
+    probs = counts.astype(np.float64) / float(sample_count)
+    pmf = {int(idx + offset): float(value) for idx, value in enumerate(probs.tolist()) if value > 0.0}
+    scipy_summary = _new_scipy_cross_check_summary()
+    scipy_summary["available"] = True
+    scipy_summary["fallback_reasons"].append("bounded_sampled_reference_no_scipy_distribution_cross_check")
+    dkw = _dkw_epsilon(sample_count, confidence)
+    return {
+        "pmf": pmf,
+        "omitted_mass_bound": 0.0,
+        "max_support_size": _bucket_joint_support_span(bucket),
+        "materialized_window_size": int(len(probs)),
+        "max_stage_window_size": int(len(probs)),
+        "reference_mode": reference_mode,
+        "fallback_flag": True,
+        "fallback_reason": fallback_reason,
+        "joint_work": joint_work,
+        "bounded_sample": {
+            "sample_count": int(sample_count),
+            "confidence": float(confidence),
+            "dkw_epsilon": float(dkw),
+            "sampling_cdf_bound": GPU_NATIVE_BOUNDED_SAMPLE_CDF_BOUND,
+            "seed": seed,
+        },
+        "scipy_cross_check": scipy_summary,
+    }
+
+
+def _joint_match_pmf_reference_scalar_loop_sparse(
+    bucket: BucketCounts,
+    *,
+    support_guard: int = GPU_NATIVE_PMF_FULL_SUPPORT_GUARD,
+    captured_mass_eps: float = GPU_NATIVE_PMF_CAPTURED_MASS_EPS,
+) -> dict[str, Any]:
+    n = bucket.total
+    scipy_summary = _new_scipy_cross_check_summary()
+    if n <= 0:
+        return {
+            "pmf": {0: 1.0},
+            "omitted_mass_bound": 0.0,
+            "max_support_size": 1,
+            "materialized_window_size": 1,
+            "max_stage_window_size": 1,
+            "reference_mode": "scalar_loop_exact",
+            "fallback_flag": False,
+            "scipy_cross_check": scipy_summary,
+        }
+
+    k_pos = min(bucket.int_pos, n)
+    remaining_n = n - k_pos
+    k_neg = min(bucket.int_neg, remaining_n)
+    x_pos_support, x_pos_probs, x_pos_omitted, x_pos_legal = _select_hypergeom_window_reference(
+        successes=bucket.fp_pos,
+        failures=n - bucket.fp_pos,
+        draws=k_pos,
+        support_guard=support_guard,
+        captured_mass_eps=captured_mass_eps,
+        scipy_summary=scipy_summary,
+        scipy_label="x_pos",
+    )
+    check_conditionals = _conditional_cross_check_values(x_pos_support)
+    skipped_conditionals = max(0, int(x_pos_support.size) - len(check_conditionals))
+    if skipped_conditionals:
+        scipy_summary["skipped_distribution_count"] += skipped_conditionals
+        scipy_summary["fallback_reasons"].append(
+            f"x_neg_conditionals_sampled_{len(check_conditionals)}_of_{int(x_pos_support.size)}"
+        )
+
+    acc: np.ndarray | None = None
+    acc_offset: int | None = None
+    max_cond_omitted = 0.0
+    max_support_size = int(x_pos_legal)
+    max_window_size = int(x_pos_support.size)
+    for xp, p_pos in zip(x_pos_support.tolist(), x_pos_probs.tolist(), strict=True):
+        remaining_fp_neg = max(0, bucket.fp_neg - (k_pos - int(xp)))
+        scipy_label = f"x_neg_given_x_pos_{int(xp)}" if int(xp) in check_conditionals else None
+        x_neg_support, x_neg_probs, x_neg_omitted, x_neg_legal = _select_hypergeom_window_reference(
+            successes=remaining_fp_neg,
+            failures=remaining_n - remaining_fp_neg,
+            draws=k_neg,
+            support_guard=support_guard,
+            captured_mass_eps=captured_mass_eps,
+            scipy_summary=scipy_summary,
+            scipy_label=scipy_label,
+        )
+        max_cond_omitted = max(max_cond_omitted, float(x_neg_omitted))
+        max_support_size = max(max_support_size, int(x_neg_legal))
+        max_window_size = max(max_window_size, int(x_neg_support.size))
+        acc, acc_offset = _add_dense_window(
+            acc,
+            acc_offset,
+            x_neg_support.astype(np.int64, copy=False) + int(xp),
+            x_neg_probs.astype(np.float64, copy=False) * float(p_pos),
+        )
+
+    if acc is None or acc_offset is None:
+        raise DiagnosticInvalid(f"reference PMF produced no support for bucket={bucket}")
+    pmf = _dense_window_to_sparse(acc, acc_offset)
+
+    return {
+        "pmf": _normalize_sparse_pmf(pmf),
+        "omitted_mass_bound": float(x_pos_omitted + max_cond_omitted),
+        "max_support_size": max_support_size,
+        "materialized_window_size": int(acc.size),
+        "max_stage_window_size": max_window_size,
+        "reference_mode": "scalar_loop_exact",
+        "fallback_flag": False,
+        "scipy_cross_check": scipy_summary,
+    }
+
+
+def _joint_match_pmf_reference_scipy_vectorized_sparse(
+    bucket: BucketCounts,
+    *,
+    support_guard: int = GPU_NATIVE_PMF_FULL_SUPPORT_GUARD,
+    captured_mass_eps: float = GPU_NATIVE_PMF_CAPTURED_MASS_EPS,
+    joint_work_budget: int = GPU_NATIVE_REFERENCE_JOINT_WORK_BUDGET,
+    chunk_cell_budget: int = GPU_NATIVE_REFERENCE_CHUNK_CELL_BUDGET,
+) -> dict[str, Any]:
+    n = bucket.total
+    scipy_summary = _new_scipy_cross_check_summary()
+    if n <= 0:
+        return {
+            "pmf": {0: 1.0},
+            "omitted_mass_bound": 0.0,
+            "max_support_size": 1,
+            "materialized_window_size": 1,
+            "max_stage_window_size": 1,
+            "reference_mode": "vectorized_chunked_exact",
+            "fallback_flag": False,
+            "joint_work": {
+                "estimated_joint_cells": 0,
+                "joint_work_budget": int(joint_work_budget),
+                "chunk_cell_budget": int(chunk_cell_budget),
+            },
+            "scipy_cross_check": scipy_summary,
+        }
+
+    k_pos = min(bucket.int_pos, n)
+    remaining_n = n - k_pos
+    k_neg = min(bucket.int_neg, remaining_n)
+    x_pos_support, x_pos_probs, x_pos_omitted, x_pos_legal = _select_hypergeom_window_reference(
+        successes=bucket.fp_pos,
+        failures=n - bucket.fp_pos,
+        draws=k_pos,
+        support_guard=support_guard,
+        captured_mass_eps=captured_mass_eps,
+        scipy_summary=scipy_summary,
+        scipy_label="x_pos",
+    )
+    check_conditionals = _conditional_cross_check_values(x_pos_support)
+    skipped_conditionals = max(0, int(x_pos_support.size) - len(check_conditionals))
+    if skipped_conditionals:
+        scipy_summary["skipped_distribution_count"] += skipped_conditionals
+        scipy_summary["fallback_reasons"].append(
+            f"x_neg_conditionals_sampled_{len(check_conditionals)}_of_{int(x_pos_support.size)}"
+        )
+
+    joint_work = _reference_joint_work_estimate(
+        bucket,
+        x_pos_support,
+        k_pos=k_pos,
+        k_neg=k_neg,
+        remaining_n=remaining_n,
+        support_guard=support_guard,
+    )
+    joint_work["joint_work_budget"] = int(joint_work_budget)
+    joint_work["chunk_cell_budget"] = int(chunk_cell_budget)
+    if int(joint_work["estimated_joint_cells"]) > int(joint_work_budget):
+        scipy_summary["fallback_reasons"].append(
+            f"joint_work_budget_exceeded:{joint_work['estimated_joint_cells']}>{joint_work_budget}"
+        )
+        out = _joint_match_pmf_reference_bounded_sampled_sparse(
+            bucket,
+            joint_work=joint_work,
+        )
+        out["scipy_cross_check"] = scipy_summary
+        return out
+
+    acc: np.ndarray | None = None
+    acc_offset: int | None = None
+    max_cond_omitted = 0.0
+    max_support_size = int(x_pos_legal)
+    max_window_size = int(x_pos_support.size)
+    cond_width_upper = max(1, int(joint_work["max_conditional_window_upper_bound"]))
+    start = 0
+    chunk_count = 0
+    while start < int(x_pos_support.size):
+        remaining = int(x_pos_support.size) - start
+        rows = max(1, min(remaining, int(chunk_cell_budget) // cond_width_upper))
+        while rows > 1 and rows * cond_width_upper > int(chunk_cell_budget):
+            rows = max(1, rows // 2)
+        stop = start + rows
+        xp_chunk = x_pos_support[start:stop].astype(np.int64, copy=False)
+        p_pos_chunk = x_pos_probs[start:stop].astype(np.float64, copy=False)
+        remaining_fp_neg = np.maximum(0, int(bucket.fp_neg) - (int(k_pos) - xp_chunk)).astype(
+            np.int64,
+            copy=False,
+        )
+        remaining_failures = (int(remaining_n) - remaining_fp_neg).astype(np.int64, copy=False)
+        x_neg_support, x_neg_probs, valid, x_neg_omitted, x_neg_legal, x_neg_support_size = (
+            _select_hypergeom_windows_reference_batched(
+                successes=remaining_fp_neg,
+                failures=remaining_failures,
+                draws=k_neg,
+                support_guard=support_guard,
+                captured_mass_eps=captured_mass_eps,
+            )
+        )
+        max_cond_omitted = max(max_cond_omitted, float(x_neg_omitted.max(initial=0.0)))
+        max_support_size = max(max_support_size, int(x_neg_legal.max(initial=0)))
+        max_window_size = max(max_window_size, int(x_neg_support_size.max(initial=0)))
+        keys = x_neg_support + xp_chunk[:, None]
+        values = x_neg_probs * p_pos_chunk[:, None]
+        flat_valid = valid.reshape(-1)
+        acc, acc_offset = _add_dense_window(
+            acc,
+            acc_offset,
+            keys.reshape(-1)[flat_valid].astype(np.int64, copy=False),
+            values.reshape(-1)[flat_valid].astype(np.float64, copy=False),
+        )
+        for row_idx, xp in enumerate(xp_chunk.tolist()):
+            if int(xp) not in check_conditionals:
+                continue
+            row_support = x_neg_support[row_idx, : int(x_neg_support_size[row_idx])]
+            _record_scipy_cross_check(
+                scipy_summary,
+                successes=int(remaining_fp_neg[row_idx]),
+                failures=int(remaining_failures[row_idx]),
+                draws=k_neg,
+                support=row_support,
+                label=f"x_neg_given_x_pos_{int(xp)}",
+            )
+        start = stop
+        chunk_count += 1
+
+    if acc is None or acc_offset is None:
+        raise DiagnosticInvalid(f"reference PMF produced no support for bucket={bucket}")
+    pmf = _dense_window_to_sparse(acc, acc_offset)
+
+    return {
+        "pmf": _normalize_sparse_pmf(pmf),
+        "omitted_mass_bound": float(x_pos_omitted + max_cond_omitted),
+        "max_support_size": max_support_size,
+        "materialized_window_size": int(acc.size),
+        "max_stage_window_size": max_window_size,
+        "reference_mode": "vectorized_chunked_exact",
+        "fallback_flag": False,
+        "joint_work": {
+            **joint_work,
+            "chunk_count": chunk_count,
+            "chunking_mode": "batched_conditional_scatter",
+        },
+        "scipy_cross_check": scipy_summary,
+    }
+
+
+def _joint_match_pmf_gpu_windowed_sparse(
+    bucket: BucketCounts,
+    *,
+    device_name: str,
+    support_guard: int = GPU_NATIVE_PMF_FULL_SUPPORT_GUARD,
+    captured_mass_eps: float = GPU_NATIVE_PMF_CAPTURED_MASS_EPS,
+    stats: dict[str, Any] | None = None,
+    joint_work_budget: int = GPU_NATIVE_REFERENCE_JOINT_WORK_BUDGET,
+) -> dict[str, Any]:
+    n = bucket.total
+    local_stats = stats if stats is not None else _new_support_policy_stats()
+    if n <= 0:
+        return {
+            "pmf": {0: 1.0},
+            "omitted_mass_bound": 0.0,
+            "materialized_window_size": 1,
+            "max_stage_window_size": 1,
+            "support_policy": local_stats,
+            "candidate_mode": "torch_windowed_exact",
+        }
+
+    k_pos = min(bucket.int_pos, n)
+    remaining_n = n - k_pos
+    k_neg = min(bucket.int_neg, remaining_n)
+    x_pos_support, x_pos_probs, x_pos_omitted = _select_hypergeom_window_scalar(
+        successes=bucket.fp_pos,
+        failures=n - bucket.fp_pos,
+        draws=k_pos,
+        device_name=device_name,
+        support_guard=support_guard,
+        captured_mass_eps=captured_mass_eps,
+        stats=local_stats,
+    )
+    x_pos_np = x_pos_support.detach().cpu().numpy().astype(np.int64, copy=False)
+    joint_work = _reference_joint_work_estimate(
+        bucket,
+        x_pos_np,
+        k_pos=k_pos,
+        k_neg=k_neg,
+        remaining_n=remaining_n,
+        support_guard=support_guard,
+    )
+    joint_work["joint_work_budget"] = int(joint_work_budget)
+    if int(joint_work["estimated_joint_cells"]) > int(joint_work_budget):
+        out = _joint_match_pmf_reference_bounded_sampled_sparse(
+            bucket,
+            joint_work=joint_work,
+            seed_salt=7919,
+            reference_mode="bounded_sampled_candidate",
+            fallback_reason="candidate_joint_work_budget_exceeded",
+        )
+        out["support_policy"] = local_stats
+        out["candidate_mode"] = "bounded_sampled"
+        return out
+    acc: np.ndarray | None = None
+    acc_offset: int | None = None
+    max_cond_omitted = 0.0
+    max_window_size = int(x_pos_support.numel())
+    for xp, p_pos in zip(x_pos_support.detach().cpu().tolist(), x_pos_probs.detach().cpu().tolist(), strict=True):
+        remaining_fp_neg = max(0, bucket.fp_neg - (k_pos - int(xp)))
+        x_neg_support, x_neg_probs, x_neg_omitted = _select_hypergeom_window_scalar(
+            successes=remaining_fp_neg,
+            failures=remaining_n - remaining_fp_neg,
+            draws=k_neg,
+            device_name=device_name,
+            support_guard=support_guard,
+            captured_mass_eps=captured_mass_eps,
+            stats=local_stats,
+        )
+        max_cond_omitted = max(max_cond_omitted, float(x_neg_omitted))
+        x_neg_np = x_neg_support.detach().cpu().numpy().astype(np.int64, copy=False)
+        max_window_size = max(max_window_size, int(x_neg_np.size))
+        acc, acc_offset = _add_dense_window(
+            acc,
+            acc_offset,
+            x_neg_np + int(xp),
+            x_neg_probs.detach().cpu().numpy().astype(np.float64, copy=False) * float(p_pos),
+        )
+
+    if acc is None or acc_offset is None:
+        raise DiagnosticInvalid(f"candidate PMF produced no support for bucket={bucket}")
+    pmf = _dense_window_to_sparse(acc, acc_offset)
+
+    return {
+        "pmf": _normalize_sparse_pmf(pmf),
+        "omitted_mass_bound": float(x_pos_omitted + max_cond_omitted),
+        "materialized_window_size": int(acc.size),
+        "max_stage_window_size": max_window_size,
+        "support_policy": local_stats,
+        "candidate_mode": "torch_windowed_exact",
+        "joint_work": joint_work,
+    }
+
+
+def _sparse_pmf_distance_metrics(
+    reference: dict[int, float],
+    candidate: dict[int, float],
+    *,
+    omitted_mass_bound: float,
+) -> dict[str, float]:
+    keys = sorted(set(reference) | set(candidate))
+    ref_cdf = 0.0
+    cand_cdf = 0.0
+    tv_core = 0.0
+    max_cdf_core = 0.0
+    max_pmf = 0.0
+    for key in keys:
+        ref = float(reference.get(key, 0.0))
+        cand = float(candidate.get(key, 0.0))
+        diff = abs(ref - cand)
+        tv_core += diff
+        max_pmf = max(max_pmf, diff)
+        ref_cdf += ref
+        cand_cdf += cand
+        max_cdf_core = max(max_cdf_core, abs(ref_cdf - cand_cdf))
+    tv_core *= 0.5
+    return {
+        "tv_distance_core": tv_core,
+        "max_cdf_delta_core": max_cdf_core,
+        "max_pmf_delta": max_pmf,
+        "omitted_mass_bound": omitted_mass_bound,
+        "tv_distance": tv_core + omitted_mass_bound,
+        "max_cdf_delta": max_cdf_core + omitted_mass_bound,
+    }
+
+
+def _joint_match_pmf_reference(bucket: BucketCounts) -> np.ndarray:
+    n = bucket.total
+    if n <= 0:
+        return np.asarray([1.0], dtype=np.float64)
+    k_pos = min(bucket.int_pos, n)
+    remaining_n = n - k_pos
+    k_neg = min(bucket.int_neg, remaining_n)
+    max_total = k_pos + k_neg
+    pmf = np.zeros(max_total + 1, dtype=np.float64)
+    xp_lo = max(0, k_pos - bucket.fp_neg)
+    xp_hi = min(k_pos, bucket.fp_pos)
+    for xp in range(xp_lo, xp_hi + 1):
+        p_pos = math.exp(_hypergeom_logpmf_float(bucket.fp_pos, bucket.fp_neg, k_pos, xp))
+        remaining_fp_neg = max(0, bucket.fp_neg - (k_pos - xp))
+        xn_lo = max(0, k_neg - (remaining_n - remaining_fp_neg))
+        xn_hi = min(k_neg, remaining_fp_neg)
+        for xn in range(xn_lo, xn_hi + 1):
+            p_neg = math.exp(
+                _hypergeom_logpmf_float(
+                    remaining_fp_neg,
+                    remaining_n - remaining_fp_neg,
+                    k_neg,
+                    xn,
+                )
+            )
+            pmf[xp + xn] += p_pos * p_neg
+    total = pmf.sum()
+    if total <= 0:
+        raise DiagnosticInvalid(f"reference PMF has zero mass for bucket={bucket}")
+    return pmf / total
+
+
+def _joint_match_pmf_gpu_windowed(
+    bucket: BucketCounts,
+    *,
+    device_name: str,
+    support_guard: int = GPU_NATIVE_PMF_FULL_SUPPORT_GUARD,
+    captured_mass_eps: float = GPU_NATIVE_PMF_CAPTURED_MASS_EPS,
+    stats: dict[str, Any] | None = None,
+) -> np.ndarray:
+    n = bucket.total
+    if n <= 0:
+        return np.asarray([1.0], dtype=np.float64)
+    k_pos = min(bucket.int_pos, n)
+    remaining_n = n - k_pos
+    k_neg = min(bucket.int_neg, remaining_n)
+    max_total = k_pos + k_neg
+    pmf = np.zeros(max_total + 1, dtype=np.float64)
+    local_stats = stats if stats is not None else _new_support_policy_stats()
+    x_pos_support, x_pos_probs, _ = _select_hypergeom_window_scalar(
+        successes=bucket.fp_pos,
+        failures=n - bucket.fp_pos,
+        draws=k_pos,
+        device_name=device_name,
+        support_guard=support_guard,
+        captured_mass_eps=captured_mass_eps,
+        stats=local_stats,
+    )
+    for xp, p_pos in zip(x_pos_support.detach().cpu().tolist(), x_pos_probs.detach().cpu().tolist(), strict=True):
+        remaining_fp_neg = max(0, bucket.fp_neg - (k_pos - int(xp)))
+        x_neg_support, x_neg_probs, _ = _select_hypergeom_window_scalar(
+            successes=remaining_fp_neg,
+            failures=remaining_n - remaining_fp_neg,
+            draws=k_neg,
+            device_name=device_name,
+            support_guard=support_guard,
+            captured_mass_eps=captured_mass_eps,
+            stats=local_stats,
+        )
+        for xn, p_neg in zip(x_neg_support.detach().cpu().tolist(), x_neg_probs.detach().cpu().tolist(), strict=True):
+            pmf[int(xp) + int(xn)] += float(p_pos) * float(p_neg)
+    total = pmf.sum()
+    if total <= 0:
+        raise DiagnosticInvalid(f"gpu windowed PMF has zero mass for bucket={bucket}")
+    return pmf / total
+
+
+def _pmf_distance_metrics(reference: np.ndarray, candidate: np.ndarray) -> dict[str, float]:
+    size = max(reference.size, candidate.size)
+    ref = np.zeros(size, dtype=np.float64)
+    cand = np.zeros(size, dtype=np.float64)
+    ref[: reference.size] = reference
+    cand[: candidate.size] = candidate
+    diff = np.abs(ref - cand)
+    return {
+        "tv_distance": float(0.5 * diff.sum()),
+        "max_cdf_delta": float(np.abs(np.cumsum(ref) - np.cumsum(cand)).max()) if size else 0.0,
+        "max_pmf_delta": float(diff.max()) if size else 0.0,
+    }
+
+
+def _bucket_joint_support_span(bucket: BucketCounts) -> int:
+    n = bucket.total
+    if n <= 0:
+        return 1
+    k_pos = min(bucket.int_pos, n)
+    remaining_n = n - k_pos
+    k_neg = min(bucket.int_neg, remaining_n)
+    return k_pos + k_neg + 1
+
+
+def _bucket_skew_tail_score(bucket: BucketCounts) -> float:
+    n = max(1, bucket.total)
+    fp_balance = abs((bucket.fp_pos / n) - 0.5)
+    int_move = (bucket.int_pos + bucket.int_neg) / n
+    int_balance = abs((bucket.int_pos / max(1, bucket.int_pos + bucket.int_neg)) - 0.5)
+    zero_rate = bucket.int_zero / n
+    return float(fp_balance + int_balance + zero_rate + abs(int_move - 0.5))
+
+
+def _bucket_manifest(bucket: BucketCounts) -> dict[str, Any]:
+    return {
+        "fp_pos": bucket.fp_pos,
+        "fp_neg": bucket.fp_neg,
+        "int_pos": bucket.int_pos,
+        "int_neg": bucket.int_neg,
+        "int_zero": bucket.int_zero,
+        "total": bucket.total,
+        "joint_support_span": _bucket_joint_support_span(bucket),
+        "skew_tail_score": _bucket_skew_tail_score(bucket),
+    }
+
+
+def _null_item_bucket_records(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for item in items:
+        counts: CountAccumulator = item["counts"]
+        q0_denom = counts.q_stats.get("0", {}).get("denom", 0)
+        q_denoms = {q: stats.get("denom", 0) for q, stats in counts.q_stats.items()}
+        mixed_q = sum(1 for denom in q_denoms.values() if denom > 0) >= 2
+        for null_kind, buckets, _seed in _null_item_runs(item, null_seed=0):
+            for bucket_idx, bucket in enumerate(buckets):
+                records.append(
+                    {
+                        "variant": item["variant"],
+                        "level": item["level"],
+                        "label": item["label"],
+                        "null_kind": null_kind,
+                        "bucket_idx": bucket_idx,
+                        "bucket": bucket,
+                        "q0_denom": q0_denom,
+                        "q_denoms": q_denoms,
+                        "mixed_q": mixed_q,
+                        "denominator": bucket.total,
+                        "support_size": _bucket_joint_support_span(bucket),
+                        "skew_tail_score": _bucket_skew_tail_score(bucket),
+                    }
+                )
+    return records
+
+
+def collect_real_analytic_pmf_fixtures(
+    variant_count_sets: dict[str, dict[str, Any]],
+    *,
+    max_invocations_per_variant: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    items = collect_null_profile_items(
+        variant_count_sets,
+        max_invocations_per_variant=max_invocations_per_variant,
+    )
+    records = _null_item_bucket_records(items)
+    if not records:
+        raise DiagnosticInvalid("real analytic PMF corpus has no bucket records")
+
+    winners: dict[str, dict[str, Any]] = {
+        "max_denominator": max(records, key=lambda r: r["denominator"]),
+        "max_support_size": max(records, key=lambda r: r["support_size"]),
+        "max_q0_denominator": max(records, key=lambda r: r["q0_denom"]),
+        "skew_tail_heavy": max(records, key=lambda r: r["skew_tail_score"]),
+        "global_permutation": max(
+            (r for r in records if r["null_kind"] == "global_permutation"),
+            key=lambda r: r["denominator"],
+        ),
+        "row_q_preserving": max(
+            (r for r in records if r["null_kind"] == "row_q_preserving"),
+            key=lambda r: r["denominator"],
+        ),
+    }
+
+    deduped: dict[tuple[str, str, str, str, int], dict[str, Any]] = {}
+    fixture_reasons: dict[tuple[str, str, str, str, int], list[str]] = {}
+    for reason, record in winners.items():
+        key = (
+            record["variant"],
+            record["level"],
+            record["label"],
+            record["null_kind"],
+            int(record["bucket_idx"]),
+        )
+        deduped[key] = record
+        fixture_reasons.setdefault(key, []).append(reason)
+
+    fixtures: list[dict[str, Any]] = []
+    for key, record in sorted(deduped.items()):
+        reasons = fixture_reasons[key]
+        fixtures.append(
+            {
+                "name": "real_" + "_".join(reasons),
+                "source": "real_full_subset",
+                "reasons": reasons,
+                "variant": record["variant"],
+                "level": record["level"],
+                "label": record["label"],
+                "null_kind": record["null_kind"],
+                "bucket_idx": record["bucket_idx"],
+                "q_level": "mixed" if record["mixed_q"] else "single_or_empty",
+                "q0_denom": record["q0_denom"],
+                "q_denoms": record["q_denoms"],
+                "bucket": record["bucket"],
+                "support_guard": GPU_NATIVE_PMF_FULL_SUPPORT_GUARD,
+            }
+        )
+
+    manifest = {
+        "item_count": len(items),
+        "bucket_record_count": len(records),
+        "required_real_winner_names": sorted(winners),
+        "real_winners": {
+            reason: {
+                "variant": record["variant"],
+                "level": record["level"],
+                "label": record["label"],
+                "null_kind": record["null_kind"],
+                "bucket_idx": record["bucket_idx"],
+                "q0_denom": record["q0_denom"],
+                "q_denoms": record["q_denoms"],
+                "bucket": _bucket_manifest(record["bucket"]),
+            }
+            for reason, record in sorted(winners.items())
+        },
+        "deduped_fixture_count": len(fixtures),
+        "null_kind_coverage": sorted({record["null_kind"] for record in records}),
+        "max_denominator": max(record["denominator"] for record in records),
+        "max_support_size": max(record["support_size"] for record in records),
+        "max_q0_denominator": max(record["q0_denom"] for record in records),
+    }
+    return fixtures, manifest
+
+
+def analytic_pmf_fixture_corpus(
+    variant_count_sets: dict[str, dict[str, Any]] | None = None,
+    *,
+    max_invocations_per_variant: int = 16,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    synthetic = [
+        {
+            "name": "q_neg_small_full_support",
+            "source": "synthetic",
+            "q_level": -1,
+            "bucket": BucketCounts(fp_pos=6, fp_neg=4, int_pos=5, int_neg=3, int_zero=2),
+            "support_guard": GPU_NATIVE_PMF_FULL_SUPPORT_GUARD,
+        },
+        {
+            "name": "q_zero_skew_tail_full_support",
+            "source": "synthetic",
+            "q_level": 0,
+            "bucket": BucketCounts(fp_pos=95, fp_neg=5, int_pos=80, int_neg=10, int_zero=10),
+            "support_guard": GPU_NATIVE_PMF_FULL_SUPPORT_GUARD,
+        },
+        {
+            "name": "q_pos_large_forced_mass_trim",
+            "source": "synthetic",
+            "q_level": 1,
+            "bucket": BucketCounts(fp_pos=700, fp_neg=500, int_pos=650, int_neg=300, int_zero=250),
+            "support_guard": 128,
+        },
+    ]
+    manifest: dict[str, Any] = {
+        "synthetic_fixture_count": len(synthetic),
+        "real_full_subset_required": variant_count_sets is not None,
+    }
+    if variant_count_sets is None:
+        return synthetic, manifest
+    real, real_manifest = collect_real_analytic_pmf_fixtures(
+        variant_count_sets,
+        max_invocations_per_variant=max_invocations_per_variant,
+    )
+    manifest["real_full_subset"] = real_manifest
+    return synthetic + real, manifest
+
+
+def run_analytic_pmf_parity(
+    device_name: str | None = None,
+    variant_count_sets: dict[str, dict[str, Any]] | None = None,
+    *,
+    max_invocations_per_variant: int = 16,
+    reference_joint_work_budget: int = GPU_NATIVE_REFERENCE_JOINT_WORK_BUDGET,
+    reference_chunk_cell_budget: int = GPU_NATIVE_REFERENCE_CHUNK_CELL_BUDGET,
+) -> dict[str, Any]:
+    device = _torch_device_name(device_name)
+    corpus, corpus_manifest = analytic_pmf_fixture_corpus(
+        variant_count_sets,
+        max_invocations_per_variant=max_invocations_per_variant,
+    )
+    fixtures: list[dict[str, Any]] = []
+    max_tv = 0.0
+    max_cdf = 0.0
+    max_omitted = 0.0
+    scipy_failures: list[dict[str, Any]] = []
+    for fixture in corpus:
+        print(
+            "[credit-bridge] stage1 analytic fixture="
+            f"{fixture['name']} source={fixture.get('source')} null_kind={fixture.get('null_kind')}",
+            flush=True,
+        )
+        stats = _new_support_policy_stats()
+        reference = _joint_match_pmf_reference_scipy_vectorized_sparse(
+            fixture["bucket"],
+            support_guard=int(fixture["support_guard"]),
+            captured_mass_eps=GPU_NATIVE_PMF_CAPTURED_MASS_EPS,
+            joint_work_budget=reference_joint_work_budget,
+            chunk_cell_budget=reference_chunk_cell_budget,
+        )
+        candidate = _joint_match_pmf_gpu_windowed_sparse(
+            fixture["bucket"],
+            device_name=device,
+            support_guard=int(fixture["support_guard"]),
+            captured_mass_eps=GPU_NATIVE_PMF_CAPTURED_MASS_EPS,
+            stats=stats,
+            joint_work_budget=reference_joint_work_budget,
+        )
+        omitted_bound = float(reference["omitted_mass_bound"]) + float(candidate["omitted_mass_bound"])
+        metrics = _sparse_pmf_distance_metrics(
+            reference["pmf"],
+            candidate["pmf"],
+            omitted_mass_bound=omitted_bound,
+        )
+        max_tv = max(max_tv, metrics["tv_distance"])
+        max_cdf = max(max_cdf, metrics["max_cdf_delta"])
+        max_omitted = max(max_omitted, omitted_bound, float(stats["max_omitted_mass"]))
+        scipy_cross_check = reference["scipy_cross_check"]
+        if scipy_cross_check["failures"]:
+            scipy_failures.append({"fixture": fixture["name"], "failures": scipy_cross_check["failures"]})
+        exact_reference_modes = {"exact_windowed_scipy", "vectorized_chunked_exact", "streaming_cdf_exact"}
+        bounded_sample = reference.get("bounded_sample")
+        exact_certified = (
+            reference["reference_mode"] in exact_reference_modes
+            and metrics["tv_distance"] <= GPU_NATIVE_PMF_TV_BOUND
+            and metrics["max_cdf_delta"] <= GPU_NATIVE_PMF_CDF_BOUND
+            and reference["max_stage_window_size"] <= fixture["support_guard"]
+            and candidate["max_stage_window_size"] <= fixture["support_guard"]
+            and not scipy_cross_check["failures"]
+        )
+        sampling_aware_metrics = None
+        bounded_certified = False
+        candidate_bounded_sample = candidate.get("bounded_sample")
+        if reference["reference_mode"] == "bounded_sampled" and bounded_sample is not None:
+            candidate_dkw = (
+                float(candidate_bounded_sample["dkw_epsilon"])
+                if candidate_bounded_sample is not None
+                else 0.0
+            )
+            sampling_cdf_delta_bound = (
+                metrics["max_cdf_delta_core"]
+                + float(bounded_sample["dkw_epsilon"])
+                + candidate_dkw
+                + float(candidate["omitted_mass_bound"])
+            )
+            sampling_aware_metrics = {
+                "max_cdf_delta_core": metrics["max_cdf_delta_core"],
+                "reference_dkw_epsilon": float(bounded_sample["dkw_epsilon"]),
+                "candidate_dkw_epsilon": candidate_dkw,
+                "candidate_omitted_mass_bound": float(candidate["omitted_mass_bound"]),
+                "sampling_cdf_delta_bound": sampling_cdf_delta_bound,
+                "sampling_cdf_bound": float(bounded_sample["sampling_cdf_bound"]),
+                "confidence": float(bounded_sample["confidence"]),
+            }
+            bounded_certified = (
+                sampling_cdf_delta_bound <= float(bounded_sample["sampling_cdf_bound"])
+                and not scipy_cross_check["failures"]
+            )
+        q0_structured = fixture["q_level"] == 0 or int(fixture.get("q0_denom") or 0) > 0
+        fixtures.append(
+            {
+                "name": fixture["name"],
+                "source": fixture.get("source"),
+                "reasons": fixture.get("reasons", []),
+                "variant": fixture.get("variant"),
+                "level": fixture.get("level"),
+                "label": fixture.get("label"),
+                "null_kind": fixture.get("null_kind"),
+                "q_level": fixture["q_level"],
+                "q0_denom": fixture.get("q0_denom"),
+                "bucket": _bucket_manifest(fixture["bucket"]),
+                "support_guard": fixture["support_guard"],
+                "metrics": metrics,
+                "support_policy": stats,
+                "reference_pmf_function": REFERENCE_PMF_FUNCTION,
+                "candidate_pmf_function": CANDIDATE_PMF_FUNCTION,
+                "reference_candidate_independent": REFERENCE_PMF_FUNCTION != CANDIDATE_PMF_FUNCTION,
+                "reference_mode": reference["reference_mode"],
+                "fallback_flag": bool(reference.get("fallback_flag", False)),
+                "fallback_reason": reference.get("fallback_reason"),
+                "joint_work": reference.get("joint_work"),
+                "bounded_sample": bounded_sample,
+                "candidate_mode": candidate.get("candidate_mode", "torch_windowed_exact"),
+                "candidate_bounded_sample": candidate_bounded_sample,
+                "sampling_aware_metrics": sampling_aware_metrics,
+                "reference_materialized_window_size": reference["materialized_window_size"],
+                "candidate_materialized_window_size": candidate["materialized_window_size"],
+                "reference_max_stage_window_size": reference["max_stage_window_size"],
+                "candidate_max_stage_window_size": candidate["max_stage_window_size"],
+                "scipy_cross_check": scipy_cross_check,
+                "q0_structured": q0_structured,
+                "stage1_exact_certified": exact_certified,
+                "bounded_certified": bounded_certified,
+                "science_unblock_eligible": exact_certified or bounded_certified,
+                "pass": exact_certified or bounded_certified,
+            }
+        )
+    exact_backend_certified = all(item["stage1_exact_certified"] for item in fixtures)
+    bounded_items = [item for item in fixtures if item["reference_mode"] == "bounded_sampled"]
+    bounded_reference_certified = bool(bounded_items) and all(item["bounded_certified"] for item in bounded_items)
+    q0_exact_coverage = any(item["q0_structured"] and item["stage1_exact_certified"] for item in fixtures)
+    explicit_backend_validated_for_science = (
+        all(item["science_unblock_eligible"] for item in fixtures)
+        and q0_exact_coverage
+        and not scipy_failures
+    )
+    default_flip_eligible = exact_backend_certified
+    passed = explicit_backend_validated_for_science
+    return {
+        "device": device,
+        "primary_math_guard": True,
+        "reference_pmf_function": REFERENCE_PMF_FUNCTION,
+        "candidate_pmf_function": CANDIDATE_PMF_FUNCTION,
+        "reference_candidate_independent": REFERENCE_PMF_FUNCTION != CANDIDATE_PMF_FUNCTION,
+        "tv_bound": GPU_NATIVE_PMF_TV_BOUND,
+        "cdf_bound": GPU_NATIVE_PMF_CDF_BOUND,
+        "captured_mass_epsilon": GPU_NATIVE_PMF_CAPTURED_MASS_EPS,
+        "joint_work_budget": reference_joint_work_budget,
+        "chunk_cell_budget": reference_chunk_cell_budget,
+        "bounded_sample_count": GPU_NATIVE_BOUNDED_SAMPLE_COUNT,
+        "bounded_sample_confidence": GPU_NATIVE_BOUNDED_SAMPLE_CONFIDENCE,
+        "bounded_sample_cdf_bound": GPU_NATIVE_BOUNDED_SAMPLE_CDF_BOUND,
+        "scipy_cross_check_required": True,
+        "scipy_cross_check_failure_count": len(scipy_failures),
+        "scipy_cross_check_failures": scipy_failures[:20],
+        "corpus_manifest": corpus_manifest,
+        "max_tv_distance": max_tv,
+        "max_cdf_delta": max_cdf,
+        "max_omitted_mass": max_omitted,
+        "exact_backend_certified": exact_backend_certified,
+        "bounded_reference_certified": bounded_reference_certified,
+        "explicit_backend_validated_for_science": explicit_backend_validated_for_science,
+        "default_flip_eligible": default_flip_eligible,
+        "q0_exact_coverage": {
+            "present": q0_exact_coverage,
+            "fixture_names": [
+                item["name"] for item in fixtures if item["q0_structured"] and item["stage1_exact_certified"]
+            ],
+        },
+        "fallback_fixture_count": len(bounded_items),
+        "pass": passed,
+        "fixtures": fixtures,
+    }
+
+
 def _aggregate_match_matrix_with_torch(
     matches: np.ndarray,
     totals: np.ndarray,
@@ -827,6 +2527,14 @@ def simulate_permutation_null(
         )
     if backend == NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY:
         return _simulate_permutation_null_cpu_sampler_gpu_aggregation_replay(
+            buckets,
+            permutations=permutations,
+            seed=seed,
+            aggregation_device=aggregation_device,
+            profile=profile,
+        )
+    if backend == NULL_BACKEND_GPU_NATIVE_COUNTS_PMF:
+        return _simulate_permutation_null_gpu_native_counts_pmf(
             buckets,
             permutations=permutations,
             seed=seed,
@@ -1073,10 +2781,11 @@ def _run_null_backend_items(
     aggregation_device: str | None,
 ) -> tuple[dict[str, dict[str, Any]], dict[str, float]]:
     outputs: dict[str, dict[str, Any]] = {}
-    timing_totals = {"cpu_sampler": 0.0, "aggregation": 0.0, "reported_total": 0.0}
+    timing_totals = {"cpu_sampler": 0.0, "gpu_sampler": 0.0, "aggregation": 0.0, "reported_total": 0.0}
     wall_start = time.perf_counter()
     for item in items:
         for null_kind, buckets, seed in _null_item_runs(item, null_seed=null_seed):
+            input_metadata = _bucket_totals_metadata(buckets)
             out = simulate_permutation_null(
                 buckets,
                 permutations=permutations,
@@ -1085,10 +2794,12 @@ def _run_null_backend_items(
                 aggregation_device=aggregation_device,
                 profile=True,
             )
+            out.setdefault("input_bucket_metadata", input_metadata)
             key = f"{item['variant']}::{item['level']}::{item['label']}::{null_kind}"
             outputs[key] = out
             timing = out.get("timing_seconds") or {}
             timing_totals["cpu_sampler"] += float(timing.get("cpu_sampler", 0.0))
+            timing_totals["gpu_sampler"] += float(timing.get("gpu_sampler", 0.0))
             timing_totals["aggregation"] += float(timing.get("aggregation", 0.0))
             timing_totals["reported_total"] += float(timing.get("total", 0.0))
     timing_totals["wall_total"] = time.perf_counter() - wall_start
@@ -1099,19 +2810,322 @@ def _median(values: list[float]) -> float:
     return float(np.median(np.asarray(values, dtype=np.float64))) if values else 0.0
 
 
-def _compare_null_outputs(cpu_outputs: dict[str, dict[str, Any]], candidate_outputs: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-    failures: list[dict[str, Any]] = []
+def collect_null_speed_items(
+    variant_count_sets: dict[str, dict[str, Any]],
+    *,
+    max_invocations_per_variant: int,
+) -> list[dict[str, Any]]:
+    """Small, q0-aware invocation subset used only for bounded CPU speed evidence."""
+    items: list[dict[str, Any]] = []
+    limit = max(1, max_invocations_per_variant)
+    for variant in CREDIT_VARIANTS:
+        invocation_items = sorted(variant_count_sets[variant]["invocations"].items())
+        selected = _select_evenly_spaced(invocation_items, limit)
+        by_q0 = sorted(
+            invocation_items,
+            key=lambda kv: kv[1].q_stats.get("0", {}).get("denom", 0),
+        )
+        for extra in [by_q0[0], by_q0[len(by_q0) // 2], by_q0[-1]]:
+            if extra not in selected:
+                selected.append(extra)
+        for label, counts in sorted(selected):
+            items.append({"variant": variant, "level": "invocation", "label": label, "counts": counts})
+    return items
+
+
+def _item_key(item: dict[str, Any], null_kind: str) -> str:
+    return f"{item['variant']}::{item['level']}::{item['label']}::{null_kind}"
+
+
+def _level_threshold(p99: float, level: str, bars: Bars) -> float:
+    if level == "global":
+        return max(p99 + bars.global_null_margin, bars.global_floor)
+    if level == "family":
+        return max(p99 + bars.family_null_margin, bars.family_floor)
+    return max(p99 + bars.stratum_null_margin, bars.stratum_floor)
+
+
+def _compare_distributional_null_outputs(
+    cpu_outputs: dict[str, dict[str, Any]],
+    candidate_outputs: dict[str, dict[str, Any]],
+    items: list[dict[str, Any]],
+    *,
+    bars: Bars,
+    abs_tol: float,
+) -> dict[str, Any]:
+    summary_failures: list[dict[str, Any]] = []
+    bucket_metadata_failures: list[dict[str, Any]] = []
+    gating_failures: list[dict[str, Any]] = []
     if set(cpu_outputs) != set(candidate_outputs):
         missing_cpu = sorted(set(candidate_outputs) - set(cpu_outputs))
         missing_candidate = sorted(set(cpu_outputs) - set(candidate_outputs))
-        return [{"reason": "key_mismatch", "missing_cpu": missing_cpu, "missing_candidate": missing_candidate}]
+        return {
+            "pass": False,
+            "summary_failures": [{"reason": "key_mismatch", "missing_cpu": missing_cpu, "missing_candidate": missing_candidate}],
+            "bucket_metadata_failures": [],
+            "gating_failures": [],
+            "abs_tol": abs_tol,
+        }
+
     for key in sorted(cpu_outputs):
         cpu = cpu_outputs[key]
         candidate = candidate_outputs[key]
         deltas = {field: abs(float(cpu[field]) - float(candidate[field])) for field in ("mean", "p95", "p99")}
-        if any(delta != 0.0 for delta in deltas.values()):
-            failures.append({"key": key, "cpu": {k: cpu[k] for k in ("mean", "p95", "p99")}, "candidate": {k: candidate[k] for k in ("mean", "p95", "p99")}, "deltas": deltas})
-    return failures
+        if any(delta > abs_tol for delta in deltas.values()):
+            summary_failures.append(
+                {
+                    "key": key,
+                    "cpu": {k: cpu[k] for k in ("mean", "p95", "p99")},
+                    "candidate": {k: candidate[k] for k in ("mean", "p95", "p99")},
+                    "deltas": deltas,
+                }
+            )
+
+        cpu_meta = cpu.get("input_bucket_metadata")
+        candidate_input = candidate.get("input_bucket_metadata")
+        candidate_batched = candidate.get("candidate_batching_metadata")
+        if cpu_meta != candidate_input or candidate_input != candidate_batched:
+            bucket_metadata_failures.append(
+                {
+                    "key": key,
+                    "cpu_input": cpu_meta,
+                    "candidate_input": candidate_input,
+                    "candidate_batched": candidate_batched,
+                }
+            )
+
+    for item in items:
+        counts: CountAccumulator = item["counts"]
+        denom = counts.denom
+        agreement = counts.agree / denom if denom else 0.0
+        cpu_p99 = max(
+            float(cpu_outputs[_item_key(item, "global_permutation")]["p99"]),
+            float(cpu_outputs[_item_key(item, "row_q_preserving")]["p99"]),
+        )
+        candidate_p99 = max(
+            float(candidate_outputs[_item_key(item, "global_permutation")]["p99"]),
+            float(candidate_outputs[_item_key(item, "row_q_preserving")]["p99"]),
+        )
+        cpu_threshold = _level_threshold(cpu_p99, item["level"], bars)
+        candidate_threshold = _level_threshold(candidate_p99, item["level"], bars)
+        cpu_decision = denom > 0 and agreement >= cpu_threshold
+        candidate_decision = denom > 0 and agreement >= candidate_threshold
+        if cpu_decision != candidate_decision:
+            gating_failures.append(
+                {
+                    "variant": item["variant"],
+                    "level": item["level"],
+                    "label": item["label"],
+                    "agreement": agreement,
+                    "cpu_threshold": cpu_threshold,
+                    "candidate_threshold": candidate_threshold,
+                    "cpu_decision": cpu_decision,
+                    "candidate_decision": candidate_decision,
+                    "threshold_delta": abs(cpu_threshold - candidate_threshold),
+                }
+            )
+
+    return {
+        "pass": not summary_failures and not bucket_metadata_failures and not gating_failures,
+        "summary_failures": summary_failures[:20],
+        "bucket_metadata_failures": bucket_metadata_failures[:20],
+        "gating_failures": gating_failures[:20],
+        "summary_failure_count": len(summary_failures),
+        "bucket_metadata_failure_count": len(bucket_metadata_failures),
+        "gating_failure_count": len(gating_failures),
+        "abs_tol": abs_tol,
+        "compared_fields": ["mean", "p95", "p99"],
+    }
+
+
+def build_full_subset_bucket_metadata_manifest(items: list[dict[str, Any]]) -> dict[str, Any]:
+    entries: dict[str, dict[str, Any]] = {}
+    max_denominator = 0
+    max_support_size = 0
+    max_q0_denom = 0
+    for item in items:
+        counts: CountAccumulator = item["counts"]
+        q0_denom = counts.q_stats.get("0", {}).get("denom", 0)
+        max_q0_denom = max(max_q0_denom, q0_denom)
+        for null_kind, buckets, _seed in _null_item_runs(item, null_seed=0):
+            key = _item_key(item, null_kind)
+            bucket_metadata = _bucket_totals_metadata(buckets)
+            bucket_max_denominator = max((bucket.total for bucket in buckets), default=0)
+            bucket_max_support = max((_bucket_joint_support_span(bucket) for bucket in buckets), default=0)
+            max_denominator = max(max_denominator, bucket_max_denominator)
+            max_support_size = max(max_support_size, bucket_max_support)
+            entries[key] = {
+                "variant": item["variant"],
+                "level": item["level"],
+                "label": item["label"],
+                "null_kind": null_kind,
+                "bucket_metadata": bucket_metadata,
+                "bucket_max_denominator": bucket_max_denominator,
+                "bucket_max_support_size": bucket_max_support,
+                "q0_denom": q0_denom,
+                "q_denoms": {q: stats.get("denom", 0) for q, stats in counts.q_stats.items()},
+            }
+    return {
+        "item_count": len(items),
+        "entry_count": len(entries),
+        "entries": entries,
+        "null_kind_coverage": sorted({entry["null_kind"] for entry in entries.values()}),
+        "max_denominator": max_denominator,
+        "max_support_size": max_support_size,
+        "max_q0_denominator": max_q0_denom,
+    }
+
+
+def candidate_full_subset_metadata_guard(
+    candidate_outputs: dict[str, dict[str, Any]],
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    failures: list[dict[str, Any]] = []
+    max_omitted = 0.0
+    max_support_size = 0
+    entries = manifest["entries"]
+    if set(candidate_outputs) != set(entries):
+        failures.append(
+            {
+                "reason": "key_mismatch",
+                "missing_candidate": sorted(set(entries) - set(candidate_outputs)),
+                "unexpected_candidate": sorted(set(candidate_outputs) - set(entries)),
+            }
+        )
+    for key, expected in entries.items():
+        out = candidate_outputs.get(key)
+        if out is None:
+            continue
+        expected_meta = expected["bucket_metadata"]
+        input_meta = out.get("input_bucket_metadata")
+        batched_meta = out.get("candidate_batching_metadata")
+        if input_meta != expected_meta or batched_meta != expected_meta:
+            failures.append(
+                {
+                    "reason": "bucket_metadata_mismatch",
+                    "key": key,
+                    "expected": expected_meta,
+                    "candidate_input": input_meta,
+                    "candidate_batched": batched_meta,
+                }
+            )
+        support_policy = out.get("support_policy") or {}
+        max_omitted = max(max_omitted, float(support_policy.get("max_omitted_mass", 0.0)))
+        max_support_size = max(max_support_size, int(support_policy.get("max_support_size", 0)))
+    if max_omitted > GPU_NATIVE_PMF_CAPTURED_MASS_EPS:
+        failures.append(
+            {
+                "reason": "support_policy_omitted_mass_exceeded",
+                "max_omitted_mass": max_omitted,
+                "epsilon": GPU_NATIVE_PMF_CAPTURED_MASS_EPS,
+            }
+        )
+    return {
+        "pass": not failures,
+        "failure_count": len(failures),
+        "failures": failures[:20],
+        "max_omitted_mass": max_omitted,
+        "max_support_size": max_support_size,
+    }
+
+
+def _tiny_empirical_item_coverage(item: dict[str, Any]) -> dict[str, Any]:
+    counts: CountAccumulator = item["counts"]
+    q_denoms = {q: stats.get("denom", 0) for q, stats in counts.q_stats.items()}
+    nonzero_q = sorted(q for q, denom in q_denoms.items() if denom > 0)
+    buckets = counts.buckets_global + counts.buckets_rowq
+    return {
+        "q_denoms": q_denoms,
+        "nonzero_q": nonzero_q,
+        "has_q0": q_denoms.get("0", 0) > 0,
+        "mixed_q": len(nonzero_q) >= 2,
+        "bucket_count": len(buckets),
+        "sum_total": sum(bucket.total for bucket in buckets),
+        "max_bucket_total": max((bucket.total for bucket in buckets), default=0),
+        "max_support_size": max((_bucket_joint_support_span(bucket) for bucket in buckets), default=0),
+    }
+
+
+def collect_tiny_empirical_items(
+    variant_count_sets: dict[str, dict[str, Any]],
+    *,
+    max_items: int = 1,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    candidates: list[tuple[tuple[int, int, int, int], dict[str, Any], dict[str, Any]]] = []
+    for variant in CREDIT_VARIANTS:
+        for label, counts in sorted(variant_count_sets[variant]["invocations"].items()):
+            item = {"variant": variant, "level": "invocation", "label": label, "counts": counts}
+            coverage = _tiny_empirical_item_coverage(item)
+            coverage_score = int(coverage["has_q0"]) + int(coverage["mixed_q"])
+            cost = int(coverage["sum_total"]) + int(coverage["max_support_size"])
+            candidates.append(((-coverage_score, cost, coverage["max_bucket_total"], len(candidates)), item, coverage))
+    if not candidates:
+        return [], {"selected_count": 0, "reason": "no_invocation_candidates"}
+    selected = sorted(candidates, key=lambda row: row[0])[: max(1, max_items)]
+    items = [item for _key, item, _coverage in selected]
+    selected_manifest = [
+        {
+            "variant": item["variant"],
+            "level": item["level"],
+            "label": item["label"],
+            "coverage": coverage,
+        }
+        for _key, item, coverage in selected
+    ]
+    return items, {
+        "selected_count": len(items),
+        "max_items": max_items,
+        "selection_rule": "prefer q0+mixed-q coverage, then smallest CPU-cost score",
+        "selected": selected_manifest,
+    }
+
+
+def write_stage_artifact(args: argparse.Namespace, name: str, payload: dict[str, Any]) -> dict[str, Any]:
+    path = Path(args.out_dir) / name
+    digest = write_json_with_sha(path, payload)
+    public_path = None
+    if args.public_out_dir:
+        public_dir = Path(args.public_out_dir)
+        public_dir.mkdir(parents=True, exist_ok=True)
+        public_path = public_dir / name
+        public_path.write_bytes(path.read_bytes())
+        public_path.with_suffix(public_path.suffix + ".sha256").write_text(
+            path.with_suffix(path.suffix + ".sha256").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+    return {"path": str(path), "sha256": digest, "public_path": str(public_path) if public_path else None}
+
+
+def build_cited_cpu_speed_gate(stage2_wall_seconds: float, required_speedup_floor: float) -> dict[str, Any]:
+    evidence = [
+        {
+            "name": "current_gpu_native_stop",
+            "elapsed_wall_seconds_lower_bound": GPU_NATIVE_CURRENT_CPU_LOWER_BOUND_SECONDS,
+            "receipt_msg": "1780242593805-dfaeaec5",
+            "subset_relation_to_stage2": "same current collect_null_profile_items full subset; stopped inside CPU oracle prefix, therefore subset of Stage-2 full intended null subset",
+            "valid_for_ratio": True,
+        },
+        {
+            "name": "prior_hybrid_stop",
+            "elapsed_wall_seconds_lower_bound": GPU_NATIVE_PRIOR_CPU_LOWER_BOUND_SECONDS,
+            "receipt_msg": "1780239060814-46159e2d",
+            "subset_relation_to_stage2": "same slice-1 shared-label parity/profile subset family; conservative CPU lower-bound corroboration",
+            "valid_for_ratio": True,
+        },
+    ]
+    valid_bounds = [item["elapsed_wall_seconds_lower_bound"] for item in evidence if item["valid_for_ratio"]]
+    selected_lower_bound = max(valid_bounds) if valid_bounds else 0.0
+    speedup = (selected_lower_bound / stage2_wall_seconds) if stage2_wall_seconds > 0 else 0.0
+    return {
+        "required_speedup_floor": required_speedup_floor,
+        "stage2_candidate_full_wall_seconds": stage2_wall_seconds,
+        "selected_cpu_lower_bound_seconds": selected_lower_bound,
+        "candidate_speedup_lower_bound": speedup,
+        "passes_speed_gate": bool(valid_bounds) and speedup >= required_speedup_floor,
+        "evidence": evidence,
+        "subset_containment_required": True,
+        "non_comparable_subsets_invalidate_ratio": True,
+    }
 
 
 def run_null_parity_profile(
@@ -1119,90 +3133,176 @@ def run_null_parity_profile(
     *,
     args: argparse.Namespace,
     bars: Bars,
+    prereg_path: Path,
+    prereg_sha: str,
 ) -> tuple[str, dict[str, Any]]:
     items = collect_null_profile_items(
         variant_count_sets,
         max_invocations_per_variant=args.null_parity_max_invocations_per_variant,
     )
-    for _ in range(args.null_profile_warmups):
-        _run_null_backend_items(
-            items,
+    metadata_manifest = build_full_subset_bucket_metadata_manifest(items)
+    analytic_parity = run_analytic_pmf_parity(
+        args.null_aggregation_device,
+        variant_count_sets,
+        max_invocations_per_variant=args.null_parity_max_invocations_per_variant,
+    )
+    stage1 = {
+        "stage": 1,
+        "name": "correctness_first",
+        "prereg": {"path": str(prereg_path), "sha256": prereg_sha},
+        "source_parent_commit": "e7aa7fe12c6f52297478b457e2743e959e71137f",
+        "reference_pmf_function": REFERENCE_PMF_FUNCTION,
+        "candidate_pmf_function": CANDIDATE_PMF_FUNCTION,
+        "reference_candidate_independent": REFERENCE_PMF_FUNCTION != CANDIDATE_PMF_FUNCTION,
+        "analytic_pmf": analytic_parity,
+        "bucket_metadata_manifest": metadata_manifest,
+        "exact_backend_certified": bool(analytic_parity["exact_backend_certified"]),
+        "bounded_reference_certified": bool(analytic_parity["bounded_reference_certified"]),
+        "explicit_backend_validated_for_science": bool(
+            analytic_parity["explicit_backend_validated_for_science"]
+        ),
+        "default_flip_eligible": bool(analytic_parity["default_flip_eligible"]),
+        "q0_exact_coverage": analytic_parity["q0_exact_coverage"],
+        "pass": bool(analytic_parity["pass"])
+        and REFERENCE_PMF_FUNCTION != CANDIDATE_PMF_FUNCTION
+        and set(metadata_manifest["null_kind_coverage"]) == {"global_permutation", "row_q_preserving"},
+    }
+    stage1["artifact"] = write_stage_artifact(args, "gpu_native_stage1_correctness.json", stage1)
+
+    candidate_outputs, candidate_timing = _run_null_backend_items(
+        items,
+        backend=NULL_BACKEND_GPU_NATIVE_COUNTS_PMF,
+        permutations=args.null_permutations,
+        null_seed=args.null_seed,
+        aggregation_device=args.null_aggregation_device,
+    )
+    stage2_guard = candidate_full_subset_metadata_guard(candidate_outputs, metadata_manifest)
+    stage2_wall = float(candidate_timing["wall_total"])
+    stage2_under_t = stage2_wall <= args.gpu_native_stage2_max_seconds
+    explicit_backend_validated = bool(stage1["pass"]) and bool(stage2_guard["pass"]) and stage2_under_t
+    stage2 = {
+        "stage": 2,
+        "name": "candidate_only_full_subset_operational_unblock",
+        "backend": NULL_BACKEND_GPU_NATIVE_COUNTS_PMF,
+        "cpu_oracle_exercised": False,
+        "full_subset_item_count": len(items),
+        "wall_seconds": stage2_wall,
+        "max_seconds": args.gpu_native_stage2_max_seconds,
+        "completed_under_t": stage2_under_t,
+        "timing": candidate_timing,
+        "metadata_guard": stage2_guard,
+        "explicit_backend_validated_for_science": explicit_backend_validated,
+    }
+    stage2["artifact"] = write_stage_artifact(args, "gpu_native_stage2_candidate_full.json", stage2)
+
+    tiny_items, tiny_manifest = collect_tiny_empirical_items(variant_count_sets, max_items=1)
+    if explicit_backend_validated and tiny_items:
+        tiny_cpu_outputs, tiny_cpu_timing = _run_null_backend_items(
+            tiny_items,
             backend=NULL_BACKEND_CPU_LOCKED,
             permutations=args.null_permutations,
             null_seed=args.null_seed,
             aggregation_device=args.null_aggregation_device,
         )
-        _run_null_backend_items(
-            items,
-            backend=NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY,
+        tiny_candidate_outputs, tiny_candidate_timing = _run_null_backend_items(
+            tiny_items,
+            backend=NULL_BACKEND_GPU_NATIVE_COUNTS_PMF,
             permutations=args.null_permutations,
             null_seed=args.null_seed,
             aggregation_device=args.null_aggregation_device,
         )
+        empirical_parity = _compare_distributional_null_outputs(
+            tiny_cpu_outputs,
+            tiny_candidate_outputs,
+            tiny_items,
+            bars=bars,
+            abs_tol=args.null_parity_abs_tol,
+        )
+        stage3_status = "pass" if empirical_parity["pass"] else "empirical_confirm_fail_or_inconclusive_default_deferred"
+        stage3_timings = {"cpu_locked": tiny_cpu_timing, "candidate": tiny_candidate_timing}
+    else:
+        empirical_parity = {
+            "pass": False,
+            "skipped": True,
+            "reason": "stage1_stage2_not_validated_or_no_tiny_item",
+            "abs_tol": args.null_parity_abs_tol,
+        }
+        stage3_status = "skipped_default_deferred"
+        stage3_timings = {}
+    stage3 = {
+        "stage": 3,
+        "name": "tiny_empirical_confirm_default_blocking_only",
+        "semantics": (
+            "A fail/timeout blocks default and triggers investigation, but does not erase "
+            "Stage1+2 explicit-backend validation unless it reports a concrete analytic-proof counterexample."
+        ),
+        "tiny_subset": tiny_manifest,
+        "empirical": empirical_parity,
+        "timings": stage3_timings,
+        "concrete_analytic_counterexample": False,
+        "status": stage3_status,
+    }
+    stage3["artifact"] = write_stage_artifact(args, "gpu_native_stage3_tiny_empirical.json", stage3)
 
-    cpu_runs: list[dict[str, Any]] = []
-    candidate_runs: list[dict[str, Any]] = []
-    for _ in range(args.null_profile_repeats):
-        cpu_outputs, cpu_timing = _run_null_backend_items(
-            items,
-            backend=NULL_BACKEND_CPU_LOCKED,
-            permutations=args.null_permutations,
-            null_seed=args.null_seed,
-            aggregation_device=args.null_aggregation_device,
-        )
-        candidate_outputs, candidate_timing = _run_null_backend_items(
-            items,
-            backend=NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY,
-            permutations=args.null_permutations,
-            null_seed=args.null_seed,
-            aggregation_device=args.null_aggregation_device,
-        )
-        cpu_runs.append({"outputs": cpu_outputs, "timing": cpu_timing})
-        candidate_runs.append({"outputs": candidate_outputs, "timing": candidate_timing})
-
-    parity_failures = _compare_null_outputs(cpu_runs[0]["outputs"], candidate_runs[0]["outputs"]) if cpu_runs else []
-    cpu_totals = [run["timing"]["wall_total"] for run in cpu_runs]
-    candidate_totals = [run["timing"]["wall_total"] for run in candidate_runs]
-    cpu_median = _median(cpu_totals)
-    candidate_median = _median(candidate_totals)
-    speedup = (cpu_median / candidate_median) if candidate_median > 0 else 0.0
-    candidate_sampler_median = _median([run["timing"]["cpu_sampler"] for run in candidate_runs])
-    candidate_sampler_fraction = candidate_sampler_median / candidate_median if candidate_median > 0 else 0.0
+    speed_gate = build_cited_cpu_speed_gate(stage2_wall, args.null_speedup_floor)
     q0_denoms = [
         item["counts"].q_stats.get("0", {}).get("denom", 0)
         for item in items
         if item["level"] == "invocation"
     ]
-    if parity_failures:
-        terminal = "gpu_null_parity_fail"
-    elif speedup >= args.null_speedup_floor and DEFAULT_NULL_BACKEND == NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY:
-        terminal = "gpu_null_parity_exact_default_enabled"
-    elif candidate_sampler_fraction >= NULL_SAMPLER_BOUND_FRACTION:
-        terminal = "gpu_null_parity_exact_sampler_bound_deferred"
+    default_route_proof = {
+        "required_before_default_flip": True,
+        "default_backend": DEFAULT_NULL_BACKEND,
+        "candidate_backend": NULL_BACKEND_GPU_NATIVE_COUNTS_PMF,
+        "null_backend_explicit": bool(getattr(args, "null_backend_explicit", False)),
+        "no_null_backend_cli_route_exercised": not bool(getattr(args, "null_backend_explicit", False)),
+        "passes": (
+            DEFAULT_NULL_BACKEND == NULL_BACKEND_GPU_NATIVE_COUNTS_PMF
+            and args.null_backend == DEFAULT_NULL_BACKEND
+            and not bool(getattr(args, "null_backend_explicit", False))
+        ),
+        "failure_reason": None,
+    }
+    if not default_route_proof["passes"]:
+        default_route_proof["failure_reason"] = "default backend is not the GPU-native candidate or CLI overrode --null-backend"
+    stage4 = {
+        "stage": 4,
+        "name": "default_ceremony_deferrable",
+        "speed_gate": speed_gate,
+        "default_cli_route_proof": default_route_proof,
+        "cpu_oracle_reentry_allowed": False,
+        "passes": bool(speed_gate["passes_speed_gate"]) and bool(default_route_proof["passes"]) and bool(empirical_parity["pass"]),
+    }
+    stage4["artifact"] = write_stage_artifact(args, "gpu_native_stage4_default_ceremony.json", stage4)
+
+    if not stage1["pass"] or not stage2_guard["pass"] or bool(stage3["concrete_analytic_counterexample"]):
+        terminal = "gpu_native_null_parity_fail"
+    elif explicit_backend_validated and bool(empirical_parity["pass"]) and bool(stage4["passes"]):
+        terminal = "gpu_native_null_parity_default_enabled"
+    elif explicit_backend_validated and not bool(speed_gate["passes_speed_gate"]) and bool(empirical_parity["pass"]):
+        terminal = "gpu_native_null_parity_speedup_insufficient_cpu_default_retained"
+    elif explicit_backend_validated:
+        terminal = "gpu_native_null_parity_explicit_validated_default_deferred"
     else:
-        terminal = "gpu_null_parity_exact_speedup_insufficient_cpu_default_retained"
+        terminal = "gpu_native_null_parity_speedup_insufficient_cpu_default_retained"
 
     profile = {
         "terminal": terminal,
         "backend_names": {
             "oracle": NULL_BACKEND_CPU_LOCKED,
-            "candidate": NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY,
+            "candidate": NULL_BACKEND_GPU_NATIVE_COUNTS_PMF,
             "default": DEFAULT_NULL_BACKEND,
         },
-        "speed_gate": {
-            "required_speedup_floor": args.null_speedup_floor,
-            "cpu_locked_median_wall_seconds": cpu_median,
-            "candidate_median_wall_seconds": candidate_median,
-            "candidate_speedup": speedup,
-            "candidate_cpu_sampler_fraction": candidate_sampler_fraction,
-            "sampler_bound_fraction_threshold": NULL_SAMPLER_BOUND_FRACTION,
-            "passes_speed_gate": speedup >= args.null_speedup_floor,
-        },
+        "explicit_backend_validated_for_science": explicit_backend_validated,
+        "speed_gate": speed_gate,
         "benchmark_protocol": {
-            "warmups": args.null_profile_warmups,
-            "repeats": args.null_profile_repeats,
+            "cpu_oracle_full_subset_repeats": 0,
+            "candidate_full_subset_repeats": 1,
+            "speed_cpu_repeats": 0,
+            "speed_candidate_repeats": 0,
             "permutations": args.null_permutations,
             "aggregation_device": _torch_device_name(args.null_aggregation_device),
+            "stage2_max_seconds": args.gpu_native_stage2_max_seconds,
         },
         "subset": {
             "item_count": len(items),
@@ -1212,26 +3312,41 @@ def run_null_parity_profile(
             "levels": sorted({item["level"] for item in items}),
         },
         "parity": {
-            "exact": not parity_failures,
-            "failure_count": len(parity_failures),
-            "failures": parity_failures[:20],
-            "compared_fields": ["mean", "p95", "p99"],
+            "standard": "Stage1 analytic PMF primary guard plus Stage3 tiny empirical confirm",
+            "pass": bool(stage1["pass"]) and (bool(empirical_parity["pass"]) or explicit_backend_validated),
+            "analytic_pmf": analytic_parity,
+            "empirical": empirical_parity,
         },
         "timings": {
-            "cpu_locked_wall_seconds": cpu_totals,
-            "candidate_wall_seconds": candidate_totals,
-            "candidate_cpu_sampler_seconds": [run["timing"]["cpu_sampler"] for run in candidate_runs],
-            "candidate_aggregation_seconds": [run["timing"]["aggregation"] for run in candidate_runs],
+            "full_subset_candidate_wall_seconds": [candidate_timing["wall_total"]],
+            "full_subset_candidate_gpu_sampler_seconds": [candidate_timing["gpu_sampler"]],
         },
-        "default_cli_route_proof": {
-            "required_before_default_flip": True,
-            "default_backend": DEFAULT_NULL_BACKEND,
-            "candidate_backend": NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY,
-            "not_applicable_reason": (
-                None
-                if DEFAULT_NULL_BACKEND == NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY
-                else "cpu_locked remains default in this prereg/run"
-            ),
+        "support_policy": {
+            "captured_mass_epsilon": GPU_NATIVE_PMF_CAPTURED_MASS_EPS,
+            "full_support_guard": GPU_NATIVE_PMF_FULL_SUPPORT_GUARD,
+            "full_subset_candidate": {
+                "max_omitted_mass": max(
+                    (
+                        float(out.get("support_policy", {}).get("max_omitted_mass", 0.0))
+                        for out in candidate_outputs.values()
+                    ),
+                    default=0.0,
+                ),
+                "max_support_size": max(
+                    (
+                        int(out.get("support_policy", {}).get("max_support_size", 0))
+                        for out in candidate_outputs.values()
+                    ),
+                    default=0,
+                ),
+            },
+        },
+        "default_cli_route_proof": default_route_proof,
+        "stages": {
+            "stage1_correctness": stage1,
+            "stage2_candidate_full": stage2,
+            "stage3_tiny_empirical": stage3,
+            "stage4_default_ceremony": stage4,
         },
         "bars": bars.__dict__,
     }
@@ -1502,21 +3617,21 @@ def build_prereg(
     return {
         "task_id": TASK_ID,
         "created_unix": int(time.time()),
-        "source_parent_commit": "df7123b517f60f8d6c53d6360b31a8f37b880bd3",
-        "dispatch_msg": "1780231252415-76819bf7",
-        "plan_msg": "1780231521606-4d2ee333",
+        "source_parent_commit": "e7aa7fe12c6f52297478b457e2743e959e71137f",
+        "dispatch_msg": "1780239448199-2d583c60",
+        "plan_msg": "1780239762459-42eb99eb",
         "fold_msgs": [
-            "1780231376585-ea0cf8ec",
-            "1780231412346-5465c051",
-            "1780231574654-b062b304",
-            "1780231604003-fb0b20ba",
-            "1780231616659-2912699c",
-            "1780231671991-39ea93c5",
-            "1780231687391-80e43239",
+            "1780239779212-e70eee07",
+            "1780239791830-38c1c154",
+            "1780239855284-d6b2d25d",
+            "1780239871440-8ec2d087",
+            "1780239882455-bb9eb191",
+            "1780239896457-6e47e248",
+            "1780239900650-9a218a1d",
         ],
-        "runner_watcher_provenance_msg": "1780226246648-6ee162bb",
-        "implement_gate_msg": "1780231644991-683e9530",
-        "implement_gate_confirmation_msg": "1780231671991-39ea93c5",
+        "runner_watcher_provenance_msg": "1780233326665-f3e3d2fa",
+        "implement_gate_msg": "1780239930504-cf146583",
+        "implement_gate_confirmation_msg": "1780239968234-f3c18df3",
         "checkpoint": {
             "path": str(ckpt_path),
             "sha256_before": checkpoint_sha256_before,
@@ -1535,18 +3650,71 @@ def build_prereg(
         "null_backend": {
             "default": DEFAULT_NULL_BACKEND,
             "oracle": NULL_BACKEND_CPU_LOCKED,
-            "candidate": NULL_BACKEND_CPU_SAMPLER_GPU_AGGREGATION_REPLAY,
+            "candidate": NULL_BACKEND_GPU_NATIVE_COUNTS_PMF,
+            "intended_default_if_all_gates_pass": NULL_BACKEND_GPU_NATIVE_COUNTS_PMF,
             "candidate_explicit_name": (
-                "CPU/numpy hypergeometric sampler plus Torch aggregation replay; "
-                "the sampler has NOT moved to GPU in this slice"
+                "GPU-native counts-PMF inverse-CDF sampler for the finite-population "
+                "two-stage null; distributional parity to cpu_locked, not bit-identical RNG replay"
             ),
             "aggregation_device": _torch_device_name(args.null_aggregation_device),
             "profile_only": args.null_parity_profile_only,
             "speedup_floor": args.null_speedup_floor,
-            "profile_warmups": args.null_profile_warmups,
-            "profile_repeats": args.null_profile_repeats,
+            "empirical_abs_tolerance": args.null_parity_abs_tol,
+            "analytic_tv_bound": GPU_NATIVE_PMF_TV_BOUND,
+            "analytic_cdf_bound": GPU_NATIVE_PMF_CDF_BOUND,
+            "captured_mass_epsilon": GPU_NATIVE_PMF_CAPTURED_MASS_EPS,
+            "full_support_guard": GPU_NATIVE_PMF_FULL_SUPPORT_GUARD,
+            "reference_joint_work_budget": GPU_NATIVE_REFERENCE_JOINT_WORK_BUDGET,
+            "reference_chunk_cell_budget": GPU_NATIVE_REFERENCE_CHUNK_CELL_BUDGET,
+            "bounded_sample_count": GPU_NATIVE_BOUNDED_SAMPLE_COUNT,
+            "bounded_sample_confidence": GPU_NATIVE_BOUNDED_SAMPLE_CONFIDENCE,
+            "bounded_sample_cdf_bound": GPU_NATIVE_BOUNDED_SAMPLE_CDF_BOUND,
+            "stage1_certification_tiers": {
+                "exact_backend_certified": "true only when every accepted fixture/path clears the exact 1e-5 TV/CDF envelope",
+                "bounded_reference_certified": "true when a tier-2 bounded-sampled bucket clears its predeclared sampling-aware CDF bound",
+                "explicit_backend_validated_for_science": (
+                    "true when all non-fallback fixtures clear exact bounds, q0 exact coverage is present, "
+                    "and any downgrade is only a flagged bounded-sampled giant bucket within its bound"
+                ),
+                "default_flip_eligible": "false under any tier-2 bounded fallback until exact/default-route proof is supplied",
+            },
+            "reference_pmf_function": REFERENCE_PMF_FUNCTION,
+            "candidate_pmf_function": CANDIDATE_PMF_FUNCTION,
+            "reference_candidate_independent_required": True,
+            "scipy_cross_check_required_where_feasible": True,
+            "stage1_real_corpus_required_winners": [
+                "max_denominator",
+                "max_support_size",
+                "max_q0_denominator",
+                "skew_tail_heavy",
+                "global_permutation",
+                "row_q_preserving",
+            ],
+            "stage2_candidate_full_max_seconds": args.gpu_native_stage2_max_seconds,
+            "stage2_unblock_condition": (
+                "Stage1 analytic correctness pass + Stage2 candidate-only full subset wall<=T "
+                "+ support/bucket/batching metadata guards pass"
+            ),
+            "stage3_semantics": (
+                "tiny CPU empirical confirm blocks default and triggers investigation on fail/timeout, "
+                "but does not erase Stage1+2 explicit-backend validation unless it reports a concrete "
+                "analytic-proof counterexample"
+            ),
+            "cited_cpu_lower_bound_seconds": GPU_NATIVE_CURRENT_CPU_LOWER_BOUND_SECONDS,
+            "cited_cpu_lower_bound_corroboration_seconds": GPU_NATIVE_PRIOR_CPU_LOWER_BOUND_SECONDS,
+            "cited_cpu_subset_containment_required": True,
+            "speed_cpu_repeats": args.null_speed_cpu_repeats,
+            "speed_candidate_repeats": args.null_speed_candidate_repeats,
+            "speed_cpu_denominator_label": "no live CPU speed denominator; cited CPU lower-bound subset containment only",
+            "speed_max_invocations_per_variant": args.null_speed_max_invocations_per_variant,
             "sampler_bound_fraction_threshold": NULL_SAMPLER_BOUND_FRACTION,
             "parity_max_invocations_per_variant": args.null_parity_max_invocations_per_variant,
+            "default_cli_route_proof_condition": (
+                "cpu_locked remains the committed default through this diagnostic. Only after analytic parity, "
+                "candidate-only full-subset operational proof, empirical/default ceremony, cited speed, "
+                "and an explicit no---null-backend route proof all pass "
+                "may a final diff flip DEFAULT_NULL_BACKEND to gpu_native_counts_pmf."
+            ),
         },
         "bars": bars.__dict__,
         "strict_reproduction": {
@@ -1606,16 +3774,17 @@ def build_prereg(
             "full_magnitude_ceiling must pass locked bars or terminal is diagnostic_reference_invalid",
             "assert len(schedule_excluded_no_grad)==96",
             "assert BitLinear cached/native flags false/None; no freeze_for_inference or enable_native_train",
-            "Fold A: no from-scratch GPU hypergeometric/gpu_sampler in this slice; sampling-bound profile stops and defers sampler dispatch",
-            "Fold B: bucket construction + aggregation parity must be bit-identical; CPU/GPU replay consume the exact same draw tensor/fixture",
-            "Fold C: default flip requires bit-identical parity plus >=1.25x median total-null speedup over cpu_locked, with 1 warmup + 5 measured repeats",
-            "Fold D: locked null parity terminal set has explicit default-enabled, speedup-insufficient, sampler-bound-deferred, fail, invalid, integrity outcomes",
-            "Fold E: CPU/numpy sampler + GPU aggregation path must be named cpu_sampler_gpu_aggregation_replay in prereg/receipts",
-            "Fold F: cpu_locked remains oracle/fallback; two-file scope; checkpoint sha before==after; no train/optimizer/param/.pt; prereg before screen",
-            "Fold G: before any default flip, prove the default CLI path itself routes through cpu_sampler_gpu_aggregation_replay and matches explicit --null-backend cpu_locked on the prereg subset",
+            "F1: analytic PMF parity is the primary math guard and is persisted before any CPU sampling: TV distance <=1e-5 and max CDF delta <=1e-5 per fixture/stage and joint x_pos+conditional-x_neg total-match distribution vs independent exact scipy/lgamma hypergeometric reference; reference_pmf_function and candidate_pmf_function must differ; scipy cross-check runs where feasible or records explicit fallback; real full-subset-derived extremes named for max denominator, max support size, max q0 denominator, skew/tail-heavy, and both null kinds; fp64 where needed; fail closed, no ad-hoc tolerance loosening",
+            "F2: captured-mass truncation epsilon=1e-6 per bucket/draw stage; full legal support when <= guard; CDF-quantile/captured-mass window for oversized supports; fail closed to diagnostic_reference_invalid if guard cannot meet epsilon; report support_policy",
+            "F2b: reference joint accumulation preserves x_neg|x_pos dependence via conditional weighted scatter, never independent convolution; predeclared joint-work budget self-limits giant fixtures; bounded-sampled fallback has a separate sampling-aware CDF bound and cannot be mistaken for exact/default certification",
+            "F3: empirical gating parity is tiny confirm/default ceremony only: prefer q0+mixed-q actual-data invocation, <=1 invocation, hard record mean/p95/p99 abs delta <=0.01 and derived threshold/gating decision per item/null_kind; fail/timeout blocks default and triggers investigation but does not erase Stage1+2 explicit-backend validation unless it reports a concrete analytic-proof counterexample",
+            "F4: row-q hard proof in the sampling path: same bucket_count, same sum(total), and same ordered bucket-total vector/hash per item/null_kind before and after candidate batching; any coalescing/flattening is a parity fail/diagnostic even if p99 matches",
+            "F5: no live CPU speed denominator: Stage2 candidate-only full intended null subset must complete under T=600s for explicit science use; default speed proof uses cited CPU lower-bound evidence only when subset containment is stated, >=1.25x lower-bound speedup, and no---null-backend default CLI proof after a future flip; non-comparable subsets invalidate the speed ratio",
+            "F6: cpu_locked never removed (oracle/fallback); terminal set locked; two-file scope; checkpoint sha before==after; no train/optimizer/param/.pt; prereg sha-pinned before screen; /tmp+box artifacts only",
         ],
         "credit_terminal_labels": list(CREDIT_TERMINAL_LABELS),
-        "terminal_labels": list(NULL_PARITY_TERMINAL_LABELS),
+        "legacy_null_terminal_labels": list(NULL_PARITY_TERMINAL_LABELS),
+        "terminal_labels": list(GPU_NATIVE_NULL_TERMINAL_LABELS),
     }
 
 
@@ -1840,7 +4009,13 @@ def run_diagnostic(args: argparse.Namespace) -> tuple[str, dict[str, Any], Path]
 
     if args.null_parity_profile_only:
         print("[credit-bridge] running null parity/profile subset", flush=True)
-        terminal, null_profile = run_null_parity_profile(variant_count_sets, args=args, bars=bars)
+        terminal, null_profile = run_null_parity_profile(
+            variant_count_sets,
+            args=args,
+            bars=bars,
+            prereg_path=prereg_path,
+            prereg_sha=prereg_sha,
+        )
         ckpt_sha_after = sha256_file(ckpt_path)
         if ckpt_sha_after != ckpt_sha_before:
             raise IntegrityFailure(
@@ -1953,6 +4128,7 @@ def mirror_artifacts(out_dir: Path, public_out_dir: Path) -> None:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ckpt", default=str(DEFAULT_CKPT), help="Checkpoint path, relative to cwd or absolute.")
     parser.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR), help="Artifact directory.")
@@ -1980,11 +4156,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--null-profile-warmups", type=int, default=DEFAULT_NULL_PROFILE_WARMUPS)
     parser.add_argument("--null-profile-repeats", type=int, default=DEFAULT_NULL_PROFILE_REPEATS)
     parser.add_argument("--null-speedup-floor", type=float, default=DEFAULT_NULL_SPEEDUP_FLOOR)
+    parser.add_argument("--null-speed-cpu-repeats", type=int, default=DEFAULT_NULL_SPEED_CPU_REPEATS)
+    parser.add_argument("--null-speed-candidate-repeats", type=int, default=DEFAULT_NULL_SPEED_CANDIDATE_REPEATS)
+    parser.add_argument("--null-speed-max-invocations-per-variant", type=int, default=DEFAULT_NULL_SPEED_MAX_INVOCATIONS_PER_VARIANT)
+    parser.add_argument("--null-parity-abs-tol", type=float, default=NULL_DISTRIBUTIONAL_ABS_TOL)
     parser.add_argument("--null-parity-max-invocations-per-variant", type=int, default=16)
+    parser.add_argument("--gpu-native-stage2-max-seconds", type=float, default=GPU_NATIVE_STAGE2_MAX_SECONDS)
     parser.add_argument("--max-rows", type=int, default=None, help="Debug only; default uses all 121 rows.")
     parser.add_argument("--progress-every", type=int, default=8)
     parser.add_argument("--grad-reconstruction-atol", type=float, default=2e-3)
-    return parser.parse_args(argv)
+    args = parser.parse_args(raw_argv)
+    args.null_backend_explicit = any(
+        arg == "--null-backend" or arg.startswith("--null-backend=")
+        for arg in raw_argv
+    )
+    return args
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -2012,8 +4198,11 @@ def main(argv: list[str] | None = None) -> int:
             "gpu_null_parity_exact_default_enabled",
             "gpu_null_parity_exact_speedup_insufficient_cpu_default_retained",
             "gpu_null_parity_exact_sampler_bound_deferred",
+            "gpu_native_null_parity_default_enabled",
+            "gpu_native_null_parity_explicit_validated_default_deferred",
+            "gpu_native_null_parity_speedup_insufficient_cpu_default_retained",
         }
-        semantic_fail_terminals = {"gpu_null_parity_fail"}
+        semantic_fail_terminals = {"gpu_null_parity_fail", "gpu_native_null_parity_fail"}
         if terminal in ok_terminals:
             return 0
         if terminal in semantic_fail_terminals:
