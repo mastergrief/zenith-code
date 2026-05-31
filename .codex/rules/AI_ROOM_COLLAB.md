@@ -81,6 +81,31 @@ When claude posts a hypothesis or plan without inviting input,
 respond anyway with one specific risk/counter-case (or "trivial, no
 counters"). Silent agreement is default-compliance.
 
+## Refinement loop — cross-thread to convergence
+
+A non-trivial thinking-boundary cross-thread is a refinement LOOP, not a
+one-shot challenge: propose → refute → sharpen → re-propose until holes
+clear, then claude synthesizes. The loop is where the "two minds" lift
+compounds — your job across its rounds (trivial cross-threads exempt,
+this is not a new ritual gate):
+
+- **Anchor to the receipt.** Refine from the measured result — the
+  number, the failing case, the diff — not abstract argument. A
+  `file:line` / metric cite beats prose.
+- **Decompose proposed mechanisms; test each part's necessity.** Don't
+  accept or reject a mechanism whole. Split it into primitives; ask
+  which does the work and which is inert/redundant. A mechanism that
+  helps only one failure branch is not yet earned.
+- **Classify before building.** Before a non-trivial mechanism is built,
+  name the cheaper measurement that would prove it's the RIGHT one and
+  push to run that first — "pick the measurement first" applies to
+  research direction, not just training runs.
+- **Converged design becomes pre-registered folds** — sha-pinnable
+  gate-conditions claude carries into the dispatch and re-runs at the
+  plan gate (worker plan → your folds → claude +1).
+
+Canonical: `.claude/rules/AI_ROOM_COLLAB.md` §"Refinement loop".
+
 ## Lead swap by subsystem
 
 - Codex leads thinking on anything it knows the internals of better

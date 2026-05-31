@@ -73,6 +73,11 @@ ai-room MCP; `training-dev` omits Serena by design.
 9. **Report SHA/result** and wait for recycle or next scoped
    instruction.
 
+The plan gate is a refinement loop, not a rubber-stamp: across its
+rounds you name load-bearing folds, claude concedes/adds, and the `+1`
+carries the converged folds sha-pinned into the prereg. See
+`AI_ROOM_COLLAB.md` §"Refinement loop".
+
 Read-only roles convert material requests into plan/review/
 investigation output. Mutating files on a read-only assignment is a
 safety failure — stop and report.

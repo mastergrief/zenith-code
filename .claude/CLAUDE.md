@@ -64,6 +64,7 @@ Key invariants:
 - `ai_room_task_update` is durable board state but not a wake; pair required action with a direct addressed post.
 - Before idle, run `ai_room_resume_check`; board state is canonical.
 - Codex never directly asks Gabe for non-trivial durable decisions; route questions through Claude's AUQ flow.
+- Cross-thread refinement loop: non-trivial thinking boundaries iterate to convergence — anchor to the receipt, decompose proposed mechanisms, classify before building, converged design becomes pre-registered folds. See `AI_ROOM_COLLAB.md` §"Refinement loop".
 
 ## Architecture Index
 

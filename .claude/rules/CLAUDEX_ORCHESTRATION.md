@@ -223,6 +223,11 @@ events. When correcting a child task post-creation, pair the
    files). Push after `+1 push` (verify persisted gate). Report SHA
    and wait for recycle or next scoped instruction.
 
+The plan gate is a refinement loop, not a rubber-stamp: peer names
+load-bearing folds, claude concedes/adds, the `+1` carries the converged
+folds sha-pinned into the prereg. See `AI_ROOM_COLLAB.md` §"Refinement
+loop".
+
 Read-only handles convert material requests into plan/review output.
 If a read-only handle mutates files, stop and report a safety failure.
 

@@ -68,6 +68,7 @@ Key invariants:
 - `ai_room_task_update` is durable board state but not a wake; pair required action with a direct addressed post.
 - Before idle, run `ai_room_resume_check`; board state is canonical.
 - Keep receipt bodies tight; summarize large logs/diffs and cite artifacts.
+- Cross-thread refinement loop: non-trivial thinking boundaries iterate to convergence — anchor to the receipt, decompose proposed mechanisms, classify before building, converged design becomes pre-registered folds. See `.codex/rules/AI_ROOM_COLLAB.md` §"Refinement loop".
 
 ## Architecture Index
 

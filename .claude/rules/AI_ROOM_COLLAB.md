@@ -91,6 +91,30 @@ trivial refactors), micro-tuning inside an already-cross-threaded
 round structure, work where audit adds no signal. When in doubt,
 cross-thread.
 
+## Refinement loop — cross-thread to convergence
+
+A non-trivial thinking-boundary cross-thread is a refinement LOOP, not a
+one-shot challenge: propose → refute → sharpen → re-propose until holes
+clear (§"Round-closure signaling"), then synthesize. The loop is where
+the "two minds" lift actually compounds. Trivial cross-threads keep the
+§"Opt-out" — this is not a new ritual gate.
+
+- **Anchor to the receipt.** Refine from the measured result that
+  motivates the step — the number, the failing case, the diff — not
+  abstract argument. A `file:line` / metric cite beats prose.
+- **Decompose proposed mechanisms; test each part's necessity.** Don't
+  accept or reject a mechanism whole. Split it into primitives; ask
+  which does the work and which is inert or redundant. A mechanism that
+  helps only one branch of the failure is not yet earned.
+- **Classify before building.** Before committing to build a non-trivial
+  mechanism, name the cheaper measurement that would prove it's the
+  RIGHT one, and run that first. "Pick the measurement first" applies to
+  research direction, not just training runs — demote "build it" to
+  "first measure whether it can even apply."
+- **Converged design becomes pre-registered folds** — sha-pinnable
+  gate-conditions, not remembered intent — carried into the dispatch and
+  re-run at the plan gate (worker plan → peer folds → lead +1).
+
 ## Lead swap by subsystem
 
 - Codex leads thinking on anything it knows the internals of better
