@@ -13,6 +13,15 @@
             "command": ".claude/hooks/ai-room-session-brief.sh"
           }
         ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/post-compact-directive.py"
+          }
+        ]
       }
     ],
     "PreToolUse": [
