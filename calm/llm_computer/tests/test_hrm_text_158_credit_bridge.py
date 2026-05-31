@@ -41,6 +41,41 @@ def test_project_integer_credit_includes_zero_revival() -> None:
     assert moves.tolist() == [[1, 0, 1, -1, 0, -1]]
 
 
+def test_full_magnitude_ceiling_projects_identically_to_fp() -> None:
+    bridge = _import_credit_bridge()
+    q = torch.tensor([[-1, 0, 1]], dtype=torch.int8)
+    grad = torch.tensor([[-2.0, 3.0, 4.0]])
+
+    fp_moves = bridge.project_fp_gradient_to_moves(grad, q)
+    ceiling_moves = bridge.project_integer_credit_to_moves(-grad, q)
+
+    assert ceiling_moves.tolist() == fp_moves.tolist()
+
+
+def test_pow2_bucket_weights_signed_credit_before_projection() -> None:
+    bridge = _import_credit_bridge()
+    grad = torch.tensor([[[1.0], [-1.0]]])
+    inputs = torch.tensor([[[1.0], [100.0]]])
+
+    strict = bridge.strict_sign_credit(grad, inputs)
+    pow2 = bridge.pow2_bucket_credit(grad, inputs)
+
+    assert strict.item() == 0
+    assert pow2.item() > 0
+
+
+def test_fp16_groupwise_mean_abs_can_flip_strict_cancellation() -> None:
+    bridge = _import_credit_bridge()
+    grad = torch.tensor([[[1.0, 1.0], [-1.0, 100.0]]])
+    inputs = torch.ones(1, 2, 1)
+
+    strict = bridge.strict_sign_credit(grad, inputs)
+    fp16_groupwise = bridge.fp16_groupwise_credit(grad, inputs, group_size=128)
+
+    assert strict[0, 0].item() == 0
+    assert fp16_groupwise[0, 0].item() > 0
+
+
 def test_row_q_preserving_null_uses_q_buckets() -> None:
     bridge = _import_credit_bridge()
     fp = torch.tensor([[1, 1, -1, -1], [1, -1, 1, -1]], dtype=torch.int8)
@@ -99,7 +134,21 @@ def test_cached_native_flag_guard_rejects_cached_bitlinear() -> None:
         raise AssertionError("cached BitLinear guard did not fail")
 
 
-def test_prereg_locks_all_seven_tightenings(tmp_path: Path) -> None:
+def test_schedule_excluded_no_grad_requires_exact_96() -> None:
+    bridge = _import_credit_bridge()
+    excluded = [{"label": str(i), "reason": "schedule_excluded_no_grad"} for i in range(96)]
+
+    bridge.assert_schedule_excluded_no_grad_count(excluded)
+
+    try:
+        bridge.assert_schedule_excluded_no_grad_count(excluded[:-1])
+    except bridge.DiagnosticInvalid as exc:
+        assert "96" in str(exc)
+    else:
+        raise AssertionError("schedule-excluded count guard did not fail")
+
+
+def test_prereg_locks_variant_folds(tmp_path: Path) -> None:
     bridge = _import_credit_bridge()
     args = bridge.parse_args(
         [
@@ -120,11 +169,22 @@ def test_prereg_locks_all_seven_tightenings(tmp_path: Path) -> None:
     )
 
     locked = "\n".join(prereg["locked_tightenings"])
-    assert len(prereg["locked_tightenings"]) == 7
+    assert len(prereg["locked_tightenings"]) >= 11
     assert "recurrence-aware" in locked
     assert "prefix/response" in locked
     assert "q=-1/q=0/q=+1" in locked
     assert "row/output-channel-preserving" in locked
     assert "global>=0.65" in locked
-    assert "magnitude-aware STE" in locked
+    assert "all variants reuse slice-1 null seed labels" in locked
+    assert "strict variant is a reproduction sentinel" in locked
+    assert "fp16_groupwise uses local group size 128" in locked
+    assert "assert len(schedule_excluded_no_grad)==96" in locked
     assert "cached/native" in locked
+    assert prereg["strict_reproduction"]["expected_global_agreement"] == bridge.STRICT_REPRODUCTION_EXPECTED
+    assert prereg["strict_reproduction"]["tolerance_abs"] == bridge.STRICT_REPRODUCTION_TOL
+    assert prereg["null_label_scheme"] == "slice1_shared_seed_labels"
+    assert prereg["credit_variants"]["order"] == list(bridge.CREDIT_VARIANTS)
+    assert "slice-1 labels" in prereg["credit_variants"]["null_seed_label_scheme"]
+    assert prereg["credit_variants"]["fp16_groupwise"]["group_size"] == 128
+    assert prereg["credit_variants"]["fp16_groupwise"]["scale_stat"] == "mean_abs"
+    assert prereg["terminal_labels"] == list(bridge.TERMINAL_LABELS)

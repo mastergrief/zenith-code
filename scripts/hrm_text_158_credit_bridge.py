@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Read-only HRM-Text-1.58 strict-integer credit bridge diagnostic.
+"""Read-only HRM-Text-1.58 magnitude-aware credit bridge diagnostic.
 
-This diagnostic compares a magnitude-free integer credit signal against the
-magnitude-aware STE master-weight gradient, after both are projected onto the
-same admissible one-step ternary moves. It is intentionally read-only: no
-optimizer, no checkpoint save, and checkpoint SHA-256 must match before/after.
+This diagnostic compares strict, coarse-magnitude, groupwise-scale, and full
+magnitude credit signals against the magnitude-aware STE master-weight
+gradient, after each is projected onto the same admissible one-step ternary
+moves. It is intentionally read-only: no optimizer, no checkpoint save, and
+checkpoint SHA-256 must match before/after.
 """
 from __future__ import annotations
 
@@ -24,7 +25,7 @@ import torch
 from torch import Tensor, nn
 
 
-TASK_ID = "1780222249885-f8e55be0"
+TASK_ID = "1780225977526-b7003f03"
 DEFAULT_CKPT = Path(
     "calm/hrm/checkpoints/"
     "hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_"
@@ -42,6 +43,21 @@ GROUP_ORDER = (
     "mlp.gate_up.gate",
     "mlp.gate_up.up",
     "mlp.down",
+)
+CREDIT_VARIANTS = ("strict", "pow2_bucket", "fp16_groupwise", "full_magnitude_ceiling")
+STRICT_REPRODUCTION_EXPECTED = 0.508805533381048
+STRICT_REPRODUCTION_TOL = 0.01
+POW2_EXP_MIN = -24
+POW2_EXP_MAX = 15
+POW2_ROUND_MODE = "round"
+FP16_GROUPWISE_GROUP_SIZE = 128
+FP16_GROUPWISE_SCALE_STAT = "mean_abs"
+TERMINAL_LABELS = (
+    "pow2_magnitude_sufficient",
+    "fp16_groupwise_credit_sufficient_proxy",
+    "tested_lowbit_magnitude_insufficient",
+    "diagnostic_reference_invalid",
+    "integrity_failure",
 )
 TARGET_RE = re.compile(
     r"^model\.(?P<level>[HL])_level\.core\.layers\.(?P<layer>\d+)\."
@@ -147,7 +163,7 @@ class InvocationAggregate:
     group_start: int
     group_end: int
     in_features: int
-    credit: Tensor | None = None
+    variant_credits: dict[str, Tensor] = field(default_factory=dict)
     weighted_grad: Tensor | None = None
     active_inputs: Tensor | None = None
     active_outputs: Tensor | None = None
@@ -162,7 +178,7 @@ class InvocationAggregate:
     def accumulate(
         self,
         *,
-        credit: Tensor,
+        variant_credits: dict[str, Tensor],
         weighted_grad: Tensor,
         active_inputs: Tensor,
         active_outputs: Tensor,
@@ -173,22 +189,23 @@ class InvocationAggregate:
         input_abs_values: Tensor,
         grad_abs_values: Tensor,
     ) -> None:
-        credit_cpu = credit.detach().to(torch.int32).cpu()
+        credit_cpu = {name: value.detach().cpu() for name, value in variant_credits.items()}
         weighted_cpu = weighted_grad.detach().to(torch.float32).cpu()
         active_inputs_cpu = active_inputs.detach().to(torch.bool).cpu()
         active_outputs_cpu = active_outputs.detach().to(torch.bool).cpu()
 
-        if self.credit is None:
-            self.credit = torch.zeros_like(credit_cpu)
+        if self.weighted_grad is None:
             self.weighted_grad = torch.zeros_like(weighted_cpu)
             self.active_inputs = torch.zeros_like(active_inputs_cpu)
             self.active_outputs = torch.zeros_like(active_outputs_cpu)
-        assert self.credit is not None
         assert self.weighted_grad is not None
         assert self.active_inputs is not None
         assert self.active_outputs is not None
 
-        self.credit += credit_cpu
+        for name, value in credit_cpu.items():
+            if name not in self.variant_credits:
+                self.variant_credits[name] = torch.zeros_like(value)
+            self.variant_credits[name] += value
         self.weighted_grad += weighted_cpu
         self.active_inputs |= active_inputs_cpu
         self.active_outputs |= active_outputs_cpu
@@ -309,6 +326,59 @@ def project_integer_credit_to_moves(credit: Tensor, q_levels: Tensor) -> Tensor:
     moves[(q_levels <= -1) & (moves < 0)] = 0
     moves[(q_levels >= 1) & (moves > 0)] = 0
     return moves
+
+
+def strict_sign_credit(grad_chunk: Tensor, input_tensor: Tensor) -> Tensor:
+    """Magnitude-free signed credit before projection."""
+    return -torch.einsum("bso,bsi->oi", grad_chunk.to(torch.float32).sign(), input_tensor.to(torch.float32).sign())
+
+
+def pow2_bucket_values(values: Tensor, *, exp_min: int = POW2_EXP_MIN, exp_max: int = POW2_EXP_MAX) -> Tensor:
+    """Map values to sign plus rounded/clipped base-2 exponent buckets."""
+    values_f = values.to(torch.float32)
+    out = torch.zeros_like(values_f)
+    nonzero = values_f != 0
+    if bool(nonzero.any().item()):
+        abs_values = values_f[nonzero].abs()
+        exponents = torch.log2(abs_values).round().clamp(float(exp_min), float(exp_max))
+        out[nonzero] = values_f[nonzero].sign() * torch.exp2(exponents)
+    return out
+
+
+def pow2_bucket_credit(grad_chunk: Tensor, input_tensor: Tensor) -> Tensor:
+    """Coarse exponent-magnitude credit; magnitudes weight signed credit before projection."""
+    return -torch.einsum("bso,bsi->oi", pow2_bucket_values(grad_chunk), pow2_bucket_values(input_tensor))
+
+
+def signed_fp16_groupwise_mean_abs(
+    values: Tensor,
+    *,
+    group_size: int = FP16_GROUPWISE_GROUP_SIZE,
+) -> Tensor:
+    """Replace each nonzero element magnitude with one fp16 mean-abs group scale."""
+    if group_size <= 0:
+        raise ValueError("group_size must be positive")
+    values_f = values.to(torch.float32)
+    signed = torch.empty_like(values_f)
+    features = values_f.shape[-1]
+    for start in range(0, features, group_size):
+        end = min(start + group_size, features)
+        chunk = values_f[..., start:end]
+        scale = chunk.abs().mean(dim=-1, keepdim=True).to(torch.float16).to(torch.float32)
+        signed[..., start:end] = chunk.sign() * scale
+    return signed
+
+
+def fp16_groupwise_credit(
+    grad_chunk: Tensor,
+    input_tensor: Tensor,
+    *,
+    group_size: int = FP16_GROUPWISE_GROUP_SIZE,
+) -> Tensor:
+    """Groupwise-scale credit; scales weight signed credit before projection."""
+    signed_grad = signed_fp16_groupwise_mean_abs(grad_chunk, group_size=group_size)
+    signed_input = signed_fp16_groupwise_mean_abs(input_tensor, group_size=group_size)
+    return -torch.einsum("bso,bsi->oi", signed_grad, signed_input)
 
 
 def ternary_levels(weight: Tensor, eps: float = 1e-5) -> Tensor:
@@ -487,7 +557,7 @@ class CreditHookTracker:
             grad_chunk = grad_output[..., group.start:group.end].to(torch.float32)
             grad_sign = grad_chunk.sign()
             active_out = grad_sign != 0
-            credit_f = -torch.einsum("bso,bsi->oi", grad_sign, input_sign)
+            credit_f = strict_sign_credit(grad_chunk, inp_f)
             rounded = credit_f.round()
             max_round_err = float((credit_f - rounded).abs().max().item()) if credit_f.numel() else 0.0
             if max_round_err > 1e-3:
@@ -496,6 +566,11 @@ class CreditHookTracker:
                     f"(max round err {max_round_err:.6g})"
                 )
             weighted_grad = torch.einsum("bso,bsi->oi", grad_chunk, inp_f)
+            variant_credits = {
+                "strict": rounded.to(torch.int32),
+                "pow2_bucket": pow2_bucket_credit(grad_chunk, inp_f),
+                "fp16_groupwise": fp16_groupwise_credit(grad_chunk, inp_f),
+            }
             active_inputs = torch.einsum(
                 "bso,bsi->oi",
                 active_out.to(torch.float32),
@@ -513,7 +588,7 @@ class CreditHookTracker:
 
             key = InvocationKey(target.level, rec_idx, target.layer, group.group)
             self._aggregate_for(key, target, group).accumulate(
-                credit=rounded.to(torch.int32),
+                variant_credits=variant_credits,
                 weighted_grad=weighted_grad,
                 active_inputs=active_inputs,
                 active_outputs=active_outputs,
@@ -603,12 +678,19 @@ def build_counts_for_invocation(
     key: InvocationKey,
     agg: InvocationAggregate,
     q_levels: Tensor,
+    *,
+    variant: str,
 ) -> tuple[CountAccumulator, dict[str, Any]]:
-    if agg.credit is None or agg.weighted_grad is None or agg.active_inputs is None or agg.active_outputs is None:
+    if agg.weighted_grad is None or agg.active_inputs is None or agg.active_outputs is None:
         raise DiagnosticInvalid(f"{key.label}: no backward aggregate captured")
     q = q_levels[agg.group_start:agg.group_end].cpu()
-    credit = agg.credit.cpu()
     weighted = agg.weighted_grad.cpu()
+    if variant == "full_magnitude_ceiling":
+        credit = -weighted
+    else:
+        if variant not in agg.variant_credits:
+            raise DiagnosticInvalid(f"{key.label}: missing credit variant {variant}")
+        credit = agg.variant_credits[variant].cpu()
     active_inputs = agg.active_inputs.cpu()
     active_outputs = agg.active_outputs.cpu()
 
@@ -634,11 +716,11 @@ def build_counts_for_invocation(
         }
 
     weighted_dir = -weighted.sign()
-    integer_dir = credit.sign()
+    credit_dir = credit.sign()
     raw_denom = weighted_dir != 0
     counts.raw_dir_denom = int(raw_denom.sum().item())
-    counts.raw_dir_disagree = int((raw_denom & (integer_dir != 0) & (weighted_dir != integer_dir)).sum().item())
-    counts.raw_dir_integer_zero = int((raw_denom & (integer_dir == 0)).sum().item())
+    counts.raw_dir_disagree = int((raw_denom & (credit_dir != 0) & (weighted_dir != credit_dir)).sum().item())
+    counts.raw_dir_integer_zero = int((raw_denom & (credit_dir == 0)).sum().item())
 
     admissible_routes = active_inputs & ((q != 0) | (int_moves != 0))
     current_routes = active_inputs & (q != 0)
@@ -656,7 +738,8 @@ def build_counts_for_invocation(
     counts.response_active_output_elements = agg.response_active_output_elements
 
     detail = {
-        "label": key.label,
+        "variant": variant,
+        "invocation_label": key.label,
         "family": key.family_label,
         "aggregate64": key.aggregate64_label,
         "module_name": agg.module_name,
@@ -843,7 +926,70 @@ def terminal_from_summaries(
         return "credit_direction_mismatch", reasons
     if mixed:
         return "mixed_requires_scale_hedge", reasons
-    return "strict_integer_bridge_plausible", reasons
+    return "locked_bars_pass", reasons
+
+
+def variant_locked_bars_pass(variant_result: dict[str, Any]) -> bool:
+    return variant_result["bar_terminal"] == "locked_bars_pass"
+
+
+def terminal_from_variant_results(variant_results: dict[str, dict[str, Any]]) -> tuple[str, list[str], dict[str, Any]]:
+    reasons: list[str] = []
+    checks: dict[str, Any] = {}
+
+    for variant, variant_result in variant_results.items():
+        bar_terminal = variant_result["bar_terminal"]
+        if bar_terminal in {"diagnostic_reference_invalid", "route_death_persists_at_scale"}:
+            reasons.append(f"{variant}: {bar_terminal}")
+            reasons.extend(f"{variant}: {reason}" for reason in variant_result["bar_reasons"][:20])
+            checks["invalid_variant"] = variant
+            return "diagnostic_reference_invalid", reasons, checks
+
+    strict_agreement = float(variant_results["strict"]["global"]["agreement"])
+    strict_delta = abs(strict_agreement - STRICT_REPRODUCTION_EXPECTED)
+    strict_passes = variant_locked_bars_pass(variant_results["strict"])
+    checks["strict_reproduction"] = {
+        "expected": STRICT_REPRODUCTION_EXPECTED,
+        "tolerance_abs": STRICT_REPRODUCTION_TOL,
+        "observed": strict_agreement,
+        "delta_abs": strict_delta,
+        "within_tolerance": strict_delta <= STRICT_REPRODUCTION_TOL,
+        "locked_bars_pass": strict_passes,
+    }
+    if strict_delta > STRICT_REPRODUCTION_TOL:
+        reasons.append(
+            f"strict: global agreement {strict_agreement:.6f} deviates from committed "
+            f"{STRICT_REPRODUCTION_EXPECTED:.6f} by {strict_delta:.6f} > {STRICT_REPRODUCTION_TOL}"
+        )
+        return "diagnostic_reference_invalid", reasons, checks
+    if strict_passes:
+        reasons.append("strict: reproduction sentinel crossed locked bars; this indicates harness drift")
+        return "diagnostic_reference_invalid", reasons, checks
+
+    if not variant_locked_bars_pass(variant_results["full_magnitude_ceiling"]):
+        reasons.append("full_magnitude_ceiling: failed locked bars; FP reference/projection is suspect")
+        reasons.extend(variant_results["full_magnitude_ceiling"]["bar_reasons"][:50])
+        return "diagnostic_reference_invalid", reasons, checks
+
+    if variant_locked_bars_pass(variant_results["pow2_bucket"]):
+        reasons.append("pow2_bucket: passed locked bars while strict reproduced the committed failing baseline")
+        return "pow2_magnitude_sufficient", reasons, checks
+
+    if variant_locked_bars_pass(variant_results["fp16_groupwise"]):
+        reasons.append("fp16_groupwise: passed locked bars while strict/pow2 did not")
+        return "fp16_groupwise_credit_sufficient_proxy", reasons, checks
+
+    reasons.append("pow2_bucket and fp16_groupwise both failed locked bars while full magnitude ceiling passed")
+    return "tested_lowbit_magnitude_insufficient", reasons, checks
+
+
+def assert_schedule_excluded_no_grad_count(excluded: list[dict[str, Any]], *, expected: int = 96) -> None:
+    if len(excluded) != expected:
+        raise DiagnosticInvalid(f"schedule_excluded_no_grad count {len(excluded)} != {expected}")
+    bad = [item for item in excluded if item.get("reason") != "schedule_excluded_no_grad"]
+    if bad:
+        labels = ", ".join(str(item.get("label")) for item in bad[:5])
+        raise DiagnosticInvalid(f"schedule_excluded entries have non-matching reasons: {labels}")
 
 
 def _build_model_from_ckpt(ckpt: dict[str, Any], device: str):
@@ -955,10 +1101,18 @@ def build_prereg(
     return {
         "task_id": TASK_ID,
         "created_unix": int(time.time()),
-        "dispatch_msg": "1780222274361-cb110bbd",
-        "plan_msg": "1780222832795-c45aaeaf",
-        "bars_update_msg": "1780223015674-af9b7aa5",
-        "implement_gate_msg": "1780223042896-c36934e2",
+        "source_parent_commit": "61cd912b7dc525774e25bc13a1bec44da5260d37",
+        "dispatch_msg": "1780225996024-1c4998a0",
+        "plan_msg": "1780226285076-96eb6397",
+        "fold_msgs": [
+            "1780226363036-55cf408f",
+            "1780226385009-d61899a9",
+            "1780226391147-4f70edab",
+            "1780226399894-e5a7cb66",
+            "1780226449096-3892bda1",
+        ],
+        "runner_watcher_provenance_msg": "1780226246648-6ee162bb",
+        "implement_gate_msg": "1780226423147-139b73fc",
         "checkpoint": {
             "path": str(ckpt_path),
             "sha256_before": checkpoint_sha256_before,
@@ -975,23 +1129,65 @@ def build_prereg(
             "max_rows": args.max_rows,
         },
         "bars": bars.__dict__,
+        "strict_reproduction": {
+            "expected_global_agreement": STRICT_REPRODUCTION_EXPECTED,
+            "tolerance_abs": STRICT_REPRODUCTION_TOL,
+            "terminal_on_deviation": "diagnostic_reference_invalid",
+            "sentinel_only": True,
+        },
+        "null_label_scheme": "slice1_shared_seed_labels",
+        "null_label_scheme_detail": (
+            "all variants reuse global/family/invocation CountAccumulator labels from slice 1; "
+            "variant names do not enter deterministic null seeds"
+        ),
+        "credit_variants": {
+            "order": list(CREDIT_VARIANTS),
+            "null_seed_label_scheme": "all variants reuse the slice-1 labels (global/family/invocation) so deterministic null draws stay shared",
+            "strict": {
+                "formula": "-sum_t sign(dL/dy_i) * sign(x_j)",
+                "role": "reproduction sentinel only; never a success path",
+            },
+            "pow2_bucket": {
+                "formula": "-sum_t pow2(dL/dy_i) * pow2(x_j)",
+                "pow2": {
+                    "round_mode": POW2_ROUND_MODE,
+                    "exp_min": POW2_EXP_MIN,
+                    "exp_max": POW2_EXP_MAX,
+                    "zero_behavior": "zero remains zero",
+                },
+                "magnitude_enters": "weights signed credit before projection",
+            },
+            "fp16_groupwise": {
+                "formula": "-sum_t (sign(dL/dy_i)*g_scale[t,out_group(i)]) * (sign(x_j)*x_scale[t,in_group(j)])",
+                "group_size": FP16_GROUPWISE_GROUP_SIZE,
+                "scale_stat": FP16_GROUPWISE_SCALE_STAT,
+                "scale_dtype": "fp16 quantized then fp32 accumulated",
+                "partition": "local within already-sliced projection group; no q/k/v/gate/up/down crossing",
+                "zero_behavior": "all-zero groups produce scale 0; no epsilon floor",
+                "magnitude_enters": "weights signed credit before projection",
+                "proxy_only": True,
+            },
+            "full_magnitude_ceiling": {
+                "formula": "-weighted_grad",
+                "role": "sanity ceiling; failure makes terminal diagnostic_reference_invalid",
+            },
+        },
         "locked_tightenings": [
             "recurrence-aware 160 gradient-enabled invocation strata at bp_steps=5; schedule-excluded no-grad L invocations listed separately",
             "credit denominator uses all local positions with nonzero BitLinear output grad, with prefix/response breakdown",
             "sign agreement stratified by q=-1/q=0/q=+1; q=0 projected denominator gates plausible",
             "row/output-channel-preserving q-bucket null added; score against stronger p99 null",
             "absolute floors raised: global>=0.65, family>=0.60, stratum/invocation>=0.55",
-            "FP reference is magnitude-aware STE master-weight gradient sign; integer credit is sum-of-signs, with cancellation diagnostics",
+            "FP reference is the reused magnitude-aware STE master-weight gradient; all variants share denominators/projection/nulls",
+            "all variants reuse slice-1 null seed labels; variant names do not alter deterministic null draws",
+            "strict variant is a reproduction sentinel expected at 0.508805533381048 +/- 0.01, never a success path",
+            "pow2 and fp16_groupwise magnitudes weight signed credit before projection, not tie-only resolution",
+            "fp16_groupwise uses local group size 128, mean(abs), fp16-quantized scales, no epsilon floor",
+            "full_magnitude_ceiling must pass locked bars or terminal is diagnostic_reference_invalid",
+            "assert len(schedule_excluded_no_grad)==96",
             "assert BitLinear cached/native flags false/None; no freeze_for_inference or enable_native_train",
         ],
-        "terminal_labels": [
-            "strict_integer_bridge_plausible",
-            "credit_direction_mismatch",
-            "route_death_persists_at_scale",
-            "mixed_requires_scale_hedge",
-            "diagnostic_reference_invalid",
-            "integrity_failure",
-        ],
+        "terminal_labels": list(TERMINAL_LABELS),
     }
 
 
@@ -1107,70 +1303,96 @@ def run_diagnostic(args: argparse.Namespace) -> tuple[str, dict[str, Any], Path]
 
     q_by_module = {target.name: ternary_levels(target.module.weight).cpu() for target in targets}
     bars = Bars()
-    invocation_counts: dict[str, CountAccumulator] = {}
-    invocation_details: dict[str, dict[str, Any]] = {}
-    family_counts: dict[str, CountAccumulator] = {}
-    aggregate64_counts: dict[str, CountAccumulator] = {}
-    global_counts = CountAccumulator(label="global")
-    for key, agg in sorted(tracker.aggregates.items(), key=lambda kv: kv[0].label):
-        q = q_by_module[agg.module_name]
-        counts, detail = build_counts_for_invocation(key, agg, q)
-        invocation_counts[key.label] = counts
-        invocation_details[key.label] = detail
-        family_counts.setdefault(key.family_label, CountAccumulator(label=key.family_label)).merge(counts)
-        aggregate64_counts.setdefault(key.aggregate64_label, CountAccumulator(label=key.aggregate64_label)).merge(counts)
-        global_counts.merge(counts)
-
     expected_invocation_count = 160
-    if len(invocation_counts) != expected_invocation_count:
+    if len(tracker.aggregates) != expected_invocation_count:
         raise DiagnosticInvalid(
-            f"gradient-enabled invocation strata {len(invocation_counts)} != {expected_invocation_count}"
+            f"gradient-enabled invocation strata {len(tracker.aggregates)} != {expected_invocation_count}"
         )
 
-    invocation_summaries = {
-        label: summarize_counts(
-            counts,
+    excluded = [
+        {"label": item.key.label, "module_name": item.module_name, "reason": item.reason}
+        for item in tracker.schedule_excluded.values()
+    ]
+    assert_schedule_excluded_no_grad_count(excluded, expected=96)
+
+    variant_results: dict[str, dict[str, Any]] = {}
+    for variant in CREDIT_VARIANTS:
+        print(f"[credit-bridge] scoring variant={variant}", flush=True)
+        invocation_counts: dict[str, CountAccumulator] = {}
+        invocation_details: dict[str, dict[str, Any]] = {}
+        family_counts: dict[str, CountAccumulator] = {}
+        aggregate64_counts: dict[str, CountAccumulator] = {}
+        global_counts = CountAccumulator(label="global")
+        for key, agg in sorted(tracker.aggregates.items(), key=lambda kv: kv[0].label):
+            q = q_by_module[agg.module_name]
+            counts, detail = build_counts_for_invocation(key, agg, q, variant=variant)
+            invocation_counts[key.label] = counts
+            invocation_details[key.label] = detail
+            family_counts.setdefault(
+                key.family_label,
+                CountAccumulator(label=key.family_label),
+            ).merge(counts)
+            aggregate64_counts.setdefault(
+                key.aggregate64_label,
+                CountAccumulator(label=key.aggregate64_label),
+            ).merge(counts)
+            global_counts.merge(counts)
+
+        print(f"[credit-bridge] summarizing variant={variant} invocation/family/global nulls", flush=True)
+        invocation_summaries = {
+            label: summarize_counts(
+                counts,
+                bars=bars,
+                level="invocation",
+                null_permutations=args.null_permutations,
+                null_seed=args.null_seed,
+            )
+            | invocation_details[label]
+            for label, counts in invocation_counts.items()
+        }
+        family_summaries = {
+            label: summarize_counts(
+                counts,
+                bars=bars,
+                level="family",
+                null_permutations=args.null_permutations,
+                null_seed=args.null_seed,
+            )
+            for label, counts in sorted(family_counts.items())
+        }
+        aggregate64_summaries = {
+            label: summarize_counts(
+                counts,
+                bars=bars,
+                level="aggregate64",
+                null_permutations=args.null_permutations,
+                null_seed=args.null_seed,
+            )
+            for label, counts in sorted(aggregate64_counts.items())
+        }
+        global_summary = summarize_counts(
+            global_counts,
             bars=bars,
-            level="invocation",
+            level="global",
             null_permutations=args.null_permutations,
             null_seed=args.null_seed,
         )
-        | invocation_details[label]
-        for label, counts in invocation_counts.items()
-    }
-    family_summaries = {
-        label: summarize_counts(
-            counts,
+        bar_terminal, bar_reasons = terminal_from_summaries(
+            global_summary=global_summary,
+            family_summaries=family_summaries,
+            invocation_summaries=invocation_summaries,
             bars=bars,
-            level="family",
-            null_permutations=args.null_permutations,
-            null_seed=args.null_seed,
         )
-        for label, counts in sorted(family_counts.items())
-    }
-    aggregate64_summaries = {
-        label: summarize_counts(
-            counts,
-            bars=bars,
-            level="aggregate64",
-            null_permutations=args.null_permutations,
-            null_seed=args.null_seed,
-        )
-        for label, counts in sorted(aggregate64_counts.items())
-    }
-    global_summary = summarize_counts(
-        global_counts,
-        bars=bars,
-        level="global",
-        null_permutations=args.null_permutations,
-        null_seed=args.null_seed,
-    )
-    terminal, reasons = terminal_from_summaries(
-        global_summary=global_summary,
-        family_summaries=family_summaries,
-        invocation_summaries=invocation_summaries,
-        bars=bars,
-    )
+        variant_results[variant] = {
+            "bar_terminal": bar_terminal,
+            "bar_reasons": bar_reasons[:200],
+            "global": global_summary,
+            "families": family_summaries,
+            "aggregate64": aggregate64_summaries,
+            "invocations": invocation_summaries,
+        }
+
+    terminal, reasons, terminal_checks = terminal_from_variant_results(variant_results)
 
     ckpt_sha_after = sha256_file(ckpt_path)
     if ckpt_sha_after != ckpt_sha_before:
@@ -1178,10 +1400,6 @@ def run_diagnostic(args: argparse.Namespace) -> tuple[str, dict[str, Any], Path]
             f"checkpoint hash changed before={ckpt_sha_before} after={ckpt_sha_after}"
         )
 
-    excluded = [
-        {"label": item.key.label, "module_name": item.module_name, "reason": item.reason}
-        for item in tracker.schedule_excluded.values()
-    ]
     result = {
         "task_id": TASK_ID,
         "terminal": terminal,
@@ -1210,10 +1428,13 @@ def run_diagnostic(args: argparse.Namespace) -> tuple[str, dict[str, Any], Path]
             "target_bitlinear_count": len(targets),
         },
         "bars": bars.__dict__,
-        "global": global_summary,
-        "families": family_summaries,
-        "aggregate64": aggregate64_summaries,
-        "invocations": invocation_summaries,
+        "variant_order": list(CREDIT_VARIANTS),
+        "terminal_checks": terminal_checks,
+        "variants": variant_results,
+        "global": variant_results["strict"]["global"],
+        "families": variant_results["strict"]["families"],
+        "aggregate64": variant_results["strict"]["aggregate64"],
+        "invocations": variant_results["strict"]["invocations"],
         "schedule_excluded_no_grad": excluded,
         "fp_reference_reconstruction": grad_check,
         "read_only_invariants": {
@@ -1273,7 +1494,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[credit-bridge] terminal={terminal}", flush=True)
         print(f"[credit-bridge] result_path={result_path}", flush=True)
         print(f"[credit-bridge] result_sha256={result_sha}", flush=True)
-        return 0 if terminal in {"strict_integer_bridge_plausible", "mixed_requires_scale_hedge", "credit_direction_mismatch", "route_death_persists_at_scale"} else 2
+        ok_terminals = {
+            "pow2_magnitude_sufficient",
+            "fp16_groupwise_credit_sufficient_proxy",
+            "tested_lowbit_magnitude_insufficient",
+        }
+        return 0 if terminal in ok_terminals else 2
     except IntegrityFailure as exc:
         payload = {"task_id": TASK_ID, "terminal": "integrity_failure", "error": str(exc)}
         write_json_with_sha(result_path, payload)
