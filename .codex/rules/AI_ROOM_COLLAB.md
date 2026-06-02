@@ -191,6 +191,11 @@ Use `ai_room_task_*` for work that outlives a single message round.
   `task_start` is atomic — reads state and appends `in_progress`
   under the same lock.
 - Update status as work progresses; complete with a result summary.
+- Keep ONE task `in_progress` across a slice's gated sub-steps; don't
+  `complete` between gates. If you closed a slice and get a gated
+  follow-up, mark it `in_progress` (`task_update notify=true` or
+  `task_start` when valid) FIRST, then execute — acking + idling
+  makes your own `resume_check` return idle-ok and the work stalls.
 - Don't silently start the other agent's assigned task.
 
 ## Task provenance for cross-session dispatches

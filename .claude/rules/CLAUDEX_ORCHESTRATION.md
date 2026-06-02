@@ -211,6 +211,15 @@ events. When correcting a child task post-creation, pair the
 `task_update` (durable record) with a direct addressed
 `ai_room_post`/`_reply` citing the task_update msg id (wake signal).
 
+**Completed-task ack-idle**: a worker that `task_complete`d a slice ACKs
+a follow-up `msg` dispatch then goes dormant — its own `resume_check`
+returns `idle ok` (no owned in-progress task + acked inbox), so nothing
+drives execution. Keep ONE task `in_progress` across a slice's gated
+sub-steps (plan → +1 implement → validate → +1 launch → run); do NOT
+`complete` between gates. Re-drive a closed/idled worker by reopening the
+task to `in_progress` (`task_update notify=true` + a direct execution
+wake), not another bare `msg` — a `msg` just earns another ack.
+
 ## Worker workflow
 
 1. Read board task; verify provenance + contract are sufficient.
@@ -277,6 +286,7 @@ drift for its owner. Commit policy + footers per
 | Validation blocked | Command fails for setup/resource reasons | Preserve receipt and escalate |
 | Scope creep | Files/systems/action class expand | Return to claude for re-gate |
 | Spawn timeout | Handle never becomes wake-routable | Diagnose auth, channel, cwd, bootstrap, registry |
+| Ack-idle dormancy | Handle ACKs a dispatch then idles; task already completed, `resume_check` says idle-ok | Reopen task to `in_progress` (notify) + direct execution wake, not another `msg` |
 
 ## Anti-patterns
 

@@ -249,6 +249,10 @@ Use `ai_room_task_*` for work that outlives a single message round.
   `task_start` is atomic — reads state and appends `in_progress`
   under the same lock.
 - Update status as work progresses; complete with a result summary.
+- Keep ONE task `in_progress` across a slice's gated sub-steps; don't
+  `complete` between gates — a completed task + a `msg` follow-up makes
+  the worker ack-then-idle on its own `resume_check` (idle-ok). Reopen
+  (`task_update notify=true` + direct wake) to re-drive, not a bare `msg`.
 - Don't silently start the other agent's assigned task.
 
 Single-reply ephemeral work can stay off the board; >1 exchange or

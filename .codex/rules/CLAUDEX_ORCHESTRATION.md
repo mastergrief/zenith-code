@@ -151,6 +151,16 @@ do NOT proactively re-read and re-execute — claude probably intended
 the update as audit-only or hasn't decided to dispatch the correction
 yet.
 
+**Don't ack-then-idle on a gated continuation.** If you `task_complete`
+a slice and claude then sends a gated follow-up dispatch (`+1 implement`,
+next sub-step), acking it and idling makes your own `resume_check` return
+`idle ok` (no owned in-progress task) — nothing drives execution and the
+work stalls. On a gated continuation of work you closed: mark the task
+`in_progress` with the available task-state op (`task_update notify=true`,
+or `task_start` when valid) FIRST, then execute to the receipt; keep it
+`in_progress` across the slice's gated sub-steps. Expect claude to reopen
+it for you (notify + direct wake) if you've already gone idle.
+
 ## Codex never `@gabes` directly
 
 Even when acting as a worker handle, codex never addresses gabe in
