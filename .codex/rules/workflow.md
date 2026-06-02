@@ -287,6 +287,24 @@ you need.
 5. **External profilers (`ncu`, `nsys`, `perf`)** — known broken on
    this WSL setup. Don't block optimization on profilers.
 
+## GPU-first for dynamics; CPU for the correctness pre-gate
+
+Match the tool to the question. **CPU** = the cheap correctness/schema
+PRE-GATE only (`py_compile`, no-write contract smoke, schema + flag-on/off,
+1-step state-restore / conditioning / no-mutation / banked-unchanged) —
+seconds, and GPU-lane-independent (run it while the GPU is busy).
+**GPU-first** for any training-DYNAMICS measurement (distributions,
+pressure, stability over many steps); **never run the full dynamics
+measurement on CPU** — that's the hours-vs-minutes trap.
+
+The "minutes to write a GPU run" tradeoff holds ONLY when the native GPU
+path already exists + is parity-validated (a NEW native GPU kernel is the
+expensive lane), AND the minutes INCLUDE launch-contract discipline (pinned
+hashes, no-write contract smoke, pipefail/exit-code, fresh paths, watcher,
+stop conditions) — that contract is what makes the receipt trustworthy, not
+optional overhead. On this fleet GPU-first = the 4070; the 1070 box stays
+the audit/probe lane, not a CPU-substitute for dynamics.
+
 ## Probing-specific methodology gates
 
 Three gates from mechinterp work. Full spec: `probing_methodology.md`.
