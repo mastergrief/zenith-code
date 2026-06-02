@@ -78,6 +78,7 @@ Key invariants:
 
 The repo carries four subsystems. Full details are path-scoped references; open them when working in those paths.
 
+- Architecture discipline: `.codex/rules/architecture_discipline.md` (facades before god files; thin harnesses; import-facade and reducer seams).
 - Python agent harness: `agents/`, `bin/zenith`, and `.codex/rules/harness.md`.
 - CALM engine: `calm/` and `.codex/rules/calm.md`.
 - Rust claw-code port: `rust/`.
