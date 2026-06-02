@@ -287,23 +287,34 @@ you need.
 5. **External profilers (`ncu`, `nsys`, `perf`)** — known broken on
    this WSL setup. Don't block optimization on profilers.
 
-## GPU-first for dynamics; CPU for the correctness pre-gate
+## Full-GPU for trainer-loop work; CPU only for non-loop checks
 
-Match the tool to the question. **CPU** = the cheap correctness/schema
-PRE-GATE only (`py_compile`, no-write contract smoke, schema + flag-on/off,
-1-step state-restore / conditioning / no-mutation / banked-unchanged) —
-seconds, and GPU-lane-independent (run it while the GPU is busy).
-**GPU-first** for any training-DYNAMICS measurement (distributions,
-pressure, stability over many steps); **never run the full dynamics
-measurement on CPU** — that's the hours-vs-minutes trap.
+**The dividing line is loop entry** (gabe directive: "full gpu going
+forward"). Anything that enters the model/trainer loop — forward/backward,
+probes, q/acc update, OR checkpoint-load-and-step — runs on **GPU**, even a
+"1-step smoke." **CPU is allowed ONLY for checks that never enter the loop**:
+`py_compile`, import/argparse, schema parser over a FIXTURE object,
+dry-run/unit codepath checks (assert a flag gates emission / default-off),
+hash + preflight + git-state. A real checkpoint-loading 1-step trainer smoke
+is NOT a CPU pre-gate — it's GPU. Any CPU check that would enter the loop or
+exceed a tiny (seconds) budget: classify **`cpu_guardrail_too_heavy`**,
+hard-timeout it, route to a GPU gate. Don't normalize a multi-minute CPU
+"pre-gate."
 
-The "minutes to write a GPU run" tradeoff holds ONLY when the native GPU
-path already exists + is parity-validated (a NEW native GPU kernel is the
-expensive lane), AND the minutes INCLUDE launch-contract discipline (pinned
-hashes, no-write contract smoke, pipefail/exit-code, fresh paths, watcher,
-stop conditions) — that contract is what makes the receipt trustworthy, not
-optional overhead. On this fleet GPU-first = the 4070; the 1070 box stays
-the audit/probe lane, not a CPU-substitute for dynamics.
+**Two proportionate GPU gate weights** (don't make every smoke a launch
+ceremony):
+- **GPU correctness smoke** = lightweight gate: pinned hashes + fresh scratch
+  path + pipefail/exit-code + banked read-only/re-hash + a **hard step/probe
+  bound** + artifact paths + duration. If it starts answering dynamics or runs
+  long → reclassify + escalate to the full gate (else you recreate the CPU
+  problem on GPU under a lighter name).
+- **GPU dynamics run** = the lightweight set PLUS watcher + stop conditions.
+
+The "minutes to write a GPU run" tradeoff holds ONLY when the native GPU path
+exists + is parity-validated (a NEW native GPU kernel is the expensive lane),
+AND the minutes INCLUDE the launch-contract discipline above — that contract
+is what makes the receipt trustworthy, not optional overhead. On this fleet
+GPU = the 4070; the 1070 box is the audit/probe lane, not a CPU-substitute.
 
 ## Probing-specific methodology gates
 
