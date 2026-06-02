@@ -7,7 +7,7 @@ Fork of `ultraworkers/claw-code` with a Python agent harness, CALM reasoning eng
 ## Start Here
 
 - Default workflow: `.claude/rules/workflow.md`.
-- Active HRM lane: `.claude/rules/hrm-158.md` and `.claude/rules/training.md`.
+- Active HRM lane: `.claude/rules/hrm-158.md` and `.claude/rules/training.md`; FP-free/ternary-hybrid training-stack research lane: `.claude/rules/ternary_hybrid_stack.md`.
 - Config/rules edits: `.claude/rules/config_editing.md`.
 - ai-room collab: `.claude/rules/AI_ROOM_COLLAB.md` and `.claude/rules/CLAUDEX_ORCHESTRATION.md`.
 - Long-running shell jobs: `.claude/rules/shell_monitor.md`.
