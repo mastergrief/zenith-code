@@ -128,6 +128,45 @@ directly. Worker / peer questions re-thread to claude with source
 provenance; claude runs capture-and-relay. See `.codex/rules/
 AI_ROOM_COLLAB.md` §"Codex never `@gabes` directly".
 
+## 2026-06-02 Ack-idle wake-pairing hook
+
+Second occurrence of the **ack-idle worker hang** in one session
+motivated a deterministic PreToolUse guard. Failure mode: a worker
+finishes its turn "holding for Claude's gate" (no self-driving work);
+the `+1` / drive arrives as a plain `kind=msg`; a plain msg does NOT
+re-wake a worker whose turn already ended (authority != wake — same as
+`task_update` being durable state, not a wake event); the worker's
+`resume_check` returns "idle ok" and it sits idle for minutes/hours.
+
+Two incidents: (1) the first "nothing is happening" ack-idle earlier in
+the session; (2) the D2a re-drive where claude's `+1 implement`
+(msg `1780431337021`) landed 12 seconds after codex's "holding for
+Claude implement gate" (msg `1780431325655`) — a near-miss just past
+the turn boundary. Recovered both times via `task_update notify=true` +
+direct execution wake (the §"Completed-task ack-idle" invariant).
+
+Root cause: **authority and wake are decoupled** — a `+1` is a durable
+authority record but not a wake event. Gabe (verbatim, via claude
+chat): "ok create a hook for it so we dont accidently hang for
+minutes/hours not being productive" + "make hook yourself and have co
+lead review" (direct-author named exception after the training-dev
+spawn failed twice on a stale `lease_in_wrong_channel`).
+
+Hook: `.claude/hooks/worker_gate_wake_pairing_gate.py` (3rd PreToolUse
+guard on the `ai_room_post` matcher; Claude-side enforcement —
+`.codex/rules/CLAUDEX_ORCHESTRATION.md` references the `.claude`
+§"Hook enforcement"). **STATEFUL** design — upgraded from claude's
+initial honor-system marker after verifying `notify` IS persisted in
+the task_update record. Blocks a gate/drive to a single parked
+non-co_lead worker unless a recent claude-issued, target-bound,
+same-task, `notify=true`/`in_progress` wake-pairing `task_update` exists
+in the channel log (recency window 1800s), or a `WAKE_VERIFIED: <reason
+≥10 chars>` bypass is present. co_lead folds adopted: same-target +
+same-task binding, `from=claude` requirement, recency window,
+line-anchored + blockquote-stripped + non-trivial `WAKE_VERIFIED`.
+Validation: 17/17 fixture cases; py_compile OK; preload ~142k < 150k.
+Task `1780432224760-2b7dfecc`.
+
 ## Commit ledger
 
 | Commit | Repo | Content |

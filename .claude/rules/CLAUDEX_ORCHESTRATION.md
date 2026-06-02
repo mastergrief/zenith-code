@@ -178,6 +178,24 @@ multi-target posts are untouched; fail-opens on parse errors. This is
 the fail-closed v1 of what `cross_thread_audit.py` (Stop hook) only
 logs; a v2 synthesis/bank/commit gate is deferred until v1 is stable.
 
+`.claude/hooks/worker_gate_wake_pairing_gate.py` is the third
+**block-and-explain** guard on the same matcher, making ack-idle
+re-drive deterministic (enforces §"Completed-task ack-idle" +
+§"Wake semantics" so a parked worker can't hang on a gate that already
+arrived). Blocks when ALL — `kind` is `msg`/`question_answered` to a
+single named handle; target NOT in `CO_LEAD_HANDLES`; body carries a
+gate/drive directive (`+1 implement|commit|launch|push`,
+`EXECUTION WAKE`, `<verb> now`); no valid `WAKE_VERIFIED: <reason ≥10
+chars>` bypass (line-anchored, blockquoted text stripped); AND the
+channel log has no recent target-bound wake-pairing `task_update`
+(`from=claude`, `notify=true`, `status=in_progress`, worker in `to` OR
+`owner`, same-task when the gate cites a task_id, within a recency
+window). Resolve by pairing `task_update(notify=true, to=<worker>,
+status=in_progress)` THIS turn *before* the gate post, or
+`WAKE_VERIFIED: <reason>` when the worker is confirmed mid-turn. co_lead,
+ack/status/design/task_dispatch kinds, and broadcast posts are
+untouched; fail-opens on parse/log errors.
+
 ## Worker task shape
 
 Every non-trivial worker task includes:
