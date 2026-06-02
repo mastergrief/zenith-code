@@ -16,13 +16,23 @@ here when hardware, GGUF paths, accounts, or VRAM budgets change.
 
 ## Hardware
 
-- Laptop: Acer Nitro AN17-42
-- GPU: NVIDIA RTX 4070 Laptop GPU (8 GB VRAM) — no Thunderbolt/eGPU support
+**Laptop (Acer Nitro AN17-42) — primary trainer + serving:**
+
+- GPU: NVIDIA RTX 4070 Laptop GPU (8 GB VRAM, Ada, Tensor Cores) — no Thunderbolt/eGPU support
 - iGPU: AMD Radeon 780M (display only, no CUDA)
 - RAM: 32 GB DDR5 5600MHz
 - WSL2: Ubuntu 24.04 with GPU access
 - Training (local): Unsloth 2026.4.2 + PyTorch 2.10.0+cu128
-- Training (cloud): Google Colab Pro A100 (40GB)
+
+**The box — audit/probe helper lane (separate Linux machine, over LAN):**
+
+- GPU: NVIDIA GTX 1070 (8 GB VRAM, Pascal CC 6.1) — **no Tensor Cores**; consumer-Pascal native FP16 is ~1:64 of FP32, so its lane is integer/ternary inference + small-model FP32, **NOT** FP16/bf16 training.
+- Reached over LAN via a multiplexed connection; the "audit box" is a plain rsync dir (not git) — see `hrm-158.md` §Validation pre-launch code-currency check.
+- Role: runs the producer/consumer audit-watcher probe bundle so the 4070 trains uncontended. The native ternary path runs after the portability fix; still measure sm_61 train throughput before committing *training* (vs inference) to it.
+
+**Cloud:**
+
+- Training: Google Colab Pro A100 (40GB)
 
 ## Serving Architecture
 
