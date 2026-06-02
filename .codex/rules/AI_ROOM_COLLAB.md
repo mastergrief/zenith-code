@@ -17,11 +17,12 @@ Codex's "no subagents" policy (`.codex/AGENTS.md`) is unaffected.
 
 Operating shape: **Gabe is the human direction owner; Claude and codex
 are technical research/strategy co-leads; Claude is additionally the
-operations/execution lead.** Gabe seeds → claude+codex co-hypothesize/
-plan/challenge → mutating repo-file implementation routes to
-`training-dev` by default under gate (direct Claude repo-file edits
-require a persisted named exception or break-glass reason) → Claude
-launches/runs/watches training → claude+codex audit → commit → iterate.
+operations/orchestration lead.** Gabe seeds → claude+codex co-hypothesize/
+challenge → `training-dev` owns the plan + implementation + test/runs/
+execution (incl. GPU launch/run/watch) under gate → claude+codex
+review/audit → commit → iterate. Claude+co_lead review/audit, NOT execute
+(Claude alone gates material actions); direct Claude repo-file edits or runs
+require a persisted named exception or break-glass reason.
 
 - **Gabe (human direction owner / research sponsor)**: seeds problems,
   picks risk/cost/goal tradeoffs, sets the hypothesis space, final
@@ -36,14 +37,16 @@ launches/runs/watches training → claude+codex audit → commit → iterate.
   HRM and main-repo docs/config/tooling/scripts/tests/curriculum/probe
   slices (developer template, no Serena; cwd by task class), NOT this
   co-lead handle.
-- **Claude (operations/execution lead)**: AUQ capture/relay, board
-  orchestration, role bootstrap/dispatch, training launch/run/watch,
-  validation/commit/push gates, synthesis. Routes mutating repo-file
-  work to `training-dev` by default; direct-Claude repo-file edits need
-  an explicit persisted named exception or break-glass reason.
+- **Claude (operations/orchestration lead)**: AUQ capture/relay, board
+  orchestration, role bootstrap/dispatch, training launch/run dispatch +
+  review (`training-dev` executes + watches), plan/validation/commit/push/
+  launch gates, synthesis. Routes plan + implementation + test/runs/
+  execution to `training-dev` by default; direct-Claude repo-file edits or
+  runs need an explicit persisted named exception or break-glass reason.
 - **Named Codex roles (under the co-leads + gates)**: `training-dev`
-  (default always-on mutating lane for explicitly dispatched + gated HRM
-  and main-repo repo-file work: training-run development, scripts,
+  (default always-on mutating lane that OWNS plan + implementation +
+  test/runs/execution for explicitly dispatched + gated HRM and main-repo
+  work: training-run development incl. GPU launch/run/watch, scripts,
   probes/tests, curriculum support, docs/config/tooling, code/data;
   always-on means lane/default route, not a retained handle;
   fresh/recycled per child task),
@@ -55,9 +58,9 @@ launches/runs/watches training → claude+codex audit → commit → iterate.
 Every thinking-class step in the R&D loop cross-threads. Codex
 participates at: **hypothesize, plan, devil's-advocate, creativity,
 audit-result, iterate**. Codex does NOT cross-thread at: **build,
-test, commit** — mutating repo-file work stays with the single executor,
-normally `training-dev` under gate; Claude launches/runs/watches
-training and gates/synthesizes.
+test, commit** — implementation + test/runs/execution stay with the single
+executor, normally `training-dev` under gate; Claude orchestrates/gates/
+synthesizes and co_lead audits.
 
 This is the default rate of the channel, not occasional. Cross-thread
 even when claude looks confident; the challenge round catches the
@@ -314,12 +317,14 @@ draft against a tentative contract, but cannot TDD against nothing.
 GPU launches compress gates to cut micro-ack overhead. Once the launch
 contract is complete, don't pause for every small ack.
 
-1. **One launch packet** (claude, pre-GPU): exact parent path +
-   sha/config proof, dry-run-validated command + recipe, save cadence,
-   watcher/audit bundle, stop/bank criteria, artifact/log paths.
-2. **One co-lead launch review** → `+1 launch/watch-to-terminal-condition`
+1. **One launch packet** (owned by `training-dev`, the run owner; claude
+   may assemble/relay, pre-GPU): exact parent path + sha/config proof,
+   dry-run-validated command + recipe, save cadence, watcher/audit bundle,
+   stop/bank criteria, artifact/log paths.
+2. **One claude + co-lead launch review** → `+1 launch/watch-to-terminal-condition`
    (or one hole) — not micro-acks.
-3. Claude runs + watches directly; repo-file fixes for code,
+3. `training-dev` runs + watches directly and posts the terminal receipt;
+   claude orchestrates/gates and co_lead audits. Repo-file fixes for code,
    docs/config/tooling, scripts/tests/probes/curriculum support, or the
    packet itself route to `training-dev` under gate unless a persisted
    named exception or break-glass reason says otherwise.

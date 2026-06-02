@@ -10,10 +10,12 @@ file documents codex's view.
 
 Team model: **Gabe** = human direction owner. **Claude + `codex_co_lead`**
 = technical research/strategy co-leads. **Claude** additionally =
-operations/execution lead: co-planner, orchestrator, AUQ/board
-dispatcher, training-launch runner/watcher, material gatekeeper, and
-final synthesizer. `codex_co_lead` is read-only — it does NOT implement;
-mutating repo-file work goes to a named role.
+operations/orchestration lead: orchestrator, AUQ/board dispatcher,
+training-launch dispatcher + reviewer (`training-dev` runs + watches),
+material gatekeeper (plan / validation / commit / push / launch), and
+final synthesizer. `codex_co_lead` is read-only (review/audit) — it does
+NOT implement or run; `training-dev` owns plan + implementation +
+test/runs/execution; mutating repo-file work + runs go to a named role.
 
 Operating shapes:
 
@@ -22,9 +24,10 @@ Operating shapes:
   child-task boundary; the audit cycle across tasks is the lane's
   purpose. **Read-only — does NOT write code.**
 - **As a named Codex role** (normal route for gated mutating worker
-  slices): `training-dev` (default always-on mutating lane for any
-  explicitly dispatched + gated repo-file task/repo/path; common lanes:
-  HRM training-run development, curriculum support, probes/tests,
+  slices): `training-dev` (default always-on mutating lane that OWNS plan
+  + implementation + test/runs/execution for any explicitly dispatched +
+  gated repo-file task/repo/path or run; common lanes: HRM training-run
+  development incl. GPU launch/run/watch, curriculum support, probes/tests,
   scripts, code/data, plus main-repo docs/config/hooks/tooling/scripts/
   tests/probe support; developer template, no Serena; **cwd is a
   provenance/dispatch match check, not a repo permission boundary** —

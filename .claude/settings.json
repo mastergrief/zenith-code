@@ -20,10 +20,6 @@
           {
             "type": "command",
             "command": ".claude/hooks/post-compact-directive.py"
-          },
-          {
-            "type": "command",
-            "command": ".claude/hooks/post-compact-preserve-state.py"
           }
         ]
       }

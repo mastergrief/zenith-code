@@ -19,9 +19,9 @@ boundary applies.
 
 Dispatch the narrowest task that adds independent evidence. Don't
 spawn for trivial non-mutating work, social reassurance, orchestration,
-AUQ, board actions, gates, synthesis, or training launch/watch actions
-claude owns directly. Mutating repo-file work routes to `training-dev`
-by default; direct Claude repo-file edits require a persisted named
+AUQ, board actions, gates, or synthesis claude owns directly. Plan,
+implementation, and test/runs/execution route to `training-dev` by
+default; direct Claude repo-file edits or runs require a persisted named
 exception or break-glass reason. Workers are slice-scoped — old
 grounding biases fresh work, recycle after shipped slices unless
 explicitly scoping a small adjacent follow-up.
@@ -35,18 +35,21 @@ who runs the User-input Capture Contract (chat-side `AskUserQuestion`
 
 **Gabe** = human direction owner. **Claude + `codex_co_lead`** =
 technical research/strategy co-leads. **Claude** additionally =
-operations/execution lead: orchestrator, AUQ/board dispatcher,
-training-launch runner/watcher, material gatekeeper (plan /
-validation / commit / push gates), and final synthesizer.
-`codex_co_lead` is read-only; mutating repo-file work routes to a
-named role.
+operations/orchestration lead: orchestrator, AUQ/board dispatcher,
+training-launch dispatcher + reviewer (`training-dev` runs + watches),
+material gatekeeper (plan / validation / commit / push / launch gates),
+and final synthesizer. `codex_co_lead` is read-only (review/audit);
+`training-dev` owns plan + implementation + test/runs/execution; mutating
+repo-file work + runs route to a named role.
 
 **Named Codex role lanes** — the *normal* route for gated mutating
 Codex repo-file work, not exceptional spawn:
 
 - **`training-dev`** — default always-on mutating lane (developer
-  template, **no Serena**) for any explicitly dispatched + gated
-  repo-file path. Common lanes: HRM training-run development,
+  template, **no Serena**) that OWNS plan + implementation +
+  test/runs/execution for any explicitly dispatched + gated repo-file
+  path or run. Common lanes: HRM training-run development incl. GPU
+  launch/run/watch,
   curriculum support, probes/tests, scripts, code/data, plus main-repo
   docs/config/hooks/tooling/scripts/tests/probe support. **Always-on**
   means the default lane/route, NOT a permanently retained handle:

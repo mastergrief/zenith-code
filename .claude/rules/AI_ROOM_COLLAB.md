@@ -13,12 +13,14 @@ one session and is unaffected.
 
 Operating shape: **Gabe is the human direction owner; Claude and
 `codex_co_lead` are technical research/strategy co-leads; Claude is
-additionally the operations/execution lead.** Gabe seeds a direction →
-claude+codex co-hypothesize/plan/challenge → mutating repo-file
-implementation is routed to `training-dev` by default under explicit
-gate (direct Claude repo-file edits require a persisted named exception
-or break-glass reason) → Claude launches/runs/watches training →
-claude+codex audit → commit → iterate. First principles throughout;
+additionally the operations/orchestration lead.** Gabe seeds a direction →
+claude+codex co-hypothesize/challenge → `training-dev` owns the plan +
+implementation + test/runs/execution (incl. GPU launch/run/watch) under
+explicit gate → claude+codex review/audit → commit → iterate. Claude and
+co_lead review/audit, NOT execute (Claude alone gates material actions) —
+direct Claude repo-file edits or runs require a persisted named exception
+or break-glass reason. First
+principles throughout;
 nothing discounted until built and tested (workflow.md §"Hypothesis,
 Test, Iterate").
 
@@ -32,18 +34,20 @@ Test, Iterate").
     semantics, curriculum-design challenge, counter-case, routing/audit
     adjudication, continuity radar. Read-only; mutating repo-file work
     routes to `training-dev` by default, not the co-lead handle.
-  - **Claude** comparative advantage: operational/training insight from
-    direct execution, experiment-design feedback, launcher/watcher
-    evidence, run-receipt synthesis, board/user-capture discipline.
-- **Claude (operations/execution lead)**: AUQ capture/relay, board
-  orchestration, role bootstrap/dispatch, training launch/run/watch,
-  validation/commit/push gatekeeping, final synthesis. Routes mutating
-  repo-file work to `training-dev` by default; direct-Claude repo-file
-  edits require an explicit persisted named exception or break-glass
+  - **Claude** comparative advantage: operational/orchestration insight,
+    experiment-design feedback, launch-packet + run-receipt review/synthesis,
+    board/user-capture discipline.
+- **Claude (operations/orchestration lead)**: AUQ capture/relay, board
+  orchestration, role bootstrap/dispatch, training launch/run dispatch +
+  review (`training-dev` executes + watches), plan/validation/commit/push/
+  launch gatekeeping, final synthesis. Routes plan + implementation +
+  test/runs/execution to `training-dev` by default; direct-Claude repo-file
+  edits or runs require an explicit persisted named exception or break-glass
   reason. Ensures one active executor per slice — no concurrent edits.
 - **Named Codex roles (specialized lanes, under the co-leads + gates)**:
-  `training-dev` (default always-on mutating lane for explicitly
-  dispatched + gated repo-file changes: HRM training-run development,
+  `training-dev` (default always-on mutating lane that OWNS plan +
+  implementation + test/runs/execution for explicitly dispatched + gated
+  work: HRM training-run development incl. GPU launch/run/watch,
   scripts, probes/tests, curriculum support, code/data, and main-repo
   docs/config/tooling/scripts/tests/probe support; cwd by task class;
   developer template, no Serena; after a plan gate; always-on means
@@ -56,10 +60,10 @@ Test, Iterate").
 
 Every thinking-class step in the R&D loop cross-threads to codex.
 Implementation-class repo-file steps don't cross-thread — they run on a
-single active executor, normally `training-dev` under gate. Claude
-launches/runs/watches training and gates/synthesizes; direct-Claude
-repo-file mutation needs an explicit named exception or break-glass
-reason.
+single active executor, normally `training-dev` under gate — which owns
+implementation + test/runs/execution. Claude orchestrates/gates/synthesizes
+and co_lead audits; direct-Claude repo-file mutation or runs need an
+explicit named exception or break-glass reason.
 
 | Step | Lane | Cross-thread? |
 |---|---|---|
@@ -68,7 +72,7 @@ reason.
 | Devil's advocate | thinking | **yes** — codex argues the counter-case |
 | Creativity / alternatives | thinking | **yes** — codex generates orthogonal paths |
 | Build | implementation | **no** — executor solo; mutating repo-file work defaults to `training-dev`, direct Claude only by persisted named exception or break-glass reason |
-| Test | implementation | **no** — Claude launches/runs/watches training; repo-file test/script fixes route to `training-dev` |
+| Test / Run | implementation | **no** — `training-dev` runs/executes + watches; claude + co_lead review/audit |
 | Audit result | thinking | **yes** — codex audits the receipt |
 | Commit | implementation | **no** — Claude (commit gatekeeper), after audit clears |
 | Iterate | thinking | **yes** — back to hypothesize with audit signal |
@@ -363,16 +367,18 @@ GPU training launches compress the gate sequence to cut micro-ack
 overhead. Once the launch contract is complete, do NOT pause for every
 small acknowledgement.
 
-1. **One launch packet** (claude, before GPU start): exact parent
+1. **One launch packet** (owned by `training-dev`, the run owner; claude
+   may assemble/relay from its inputs, before GPU start): exact parent
    checkpoint path + sha/config proof, dry-run-validated command +
    recipe, save cadence, watcher/audit bundle, stop/bank criteria,
    artifact/log paths, resource lanes.
-2. **One co-lead launch review** → `+1 launch/watch-to-terminal-condition`
+2. **One claude + co-lead launch review** → `+1 launch/watch-to-terminal-condition`
    (or one hole) — not a series of micro-acks.
-3. **Claude runs + watches directly.** Repo-file fixes for code,
-   docs/config/tooling, scripts/tests/probes/curriculum support, or the
-   packet itself route to `training-dev` under gate unless a persisted
-   named exception or break-glass reason says otherwise.
+3. **`training-dev` runs + watches directly** and posts the terminal
+   receipt; claude orchestrates/gates and co_lead audits. Repo-file fixes
+   for code, docs/config/tooling, scripts/tests/probes/curriculum support,
+   or the packet itself route to `training-dev` under gate unless a
+   persisted named exception or break-glass reason says otherwise.
 4. **Interrupt only for**: bank pass, hard failure, criteria mismatch,
    resource/liveness failure, or material parent/recipe deviation.
 5. **One terminal receipt**: best checkpoint, audits, bank/fail
