@@ -12,7 +12,13 @@ from typing import Any, Optional, Tuple
 
 import torch
 from torch import Tensor, nn
+from torch.utils.checkpoint import checkpoint
 
+from calm.hrm_text_158.native_full_stack.activation_relief import (
+    ActivationReliefPolicy,
+    normalize_activation_relief_policy,
+    should_checkpoint_recurrence,
+)
 from calm.hrm_text_158.config import HierarchicalReasoningModelConfig, TransformerConfig
 from calm.hrm_text_158.layers import trunc_normal_init_
 from calm.hrm_text_158.transformer import Transformer
@@ -125,6 +131,7 @@ class HierarchicalReasoningModel(nn.Module):
         carry: Any,  # always None for nocarry variant
         x: Tensor,
         bp_steps: int = 2,
+        activation_relief_policy: ActivationReliefPolicy | dict | str | bool | None = None,
         **seq_info,
     ) -> Tuple[None, Tensor]:
         """HRM forward loop.
@@ -143,12 +150,24 @@ class HierarchicalReasoningModel(nn.Module):
         # bp_steps allocation: H prioritized
         H_bp_steps = min(self.H_cycles, bp_steps - 1)
         L_bp_steps = bp_steps - H_bp_steps
+        relief_policy = normalize_activation_relief_policy(activation_relief_policy)
         cache_active = seq_info.get("kv_cache") is not None
+        if relief_policy.enabled and cache_active:
+            # Reject before any cache update side effect can occur.
+            should_checkpoint_recurrence(
+                relief_policy,
+                module_training=self.training,
+                kv_cache_present=True,
+                outer_grad_enabled=torch.is_grad_enabled(),
+                scheduled_grad_enabled=False,
+            )
         for i in range(self.H_cycles):
             for k in range(i * self.L_cycles, (i + 1) * self.L_cycles):
-                with torch.set_grad_enabled(
-                    torch.is_grad_enabled() and (k >= self.H_cycles * self.L_cycles - L_bp_steps)
-                ):
+                outer_grad_enabled = torch.is_grad_enabled()
+                l_grad_enabled = outer_grad_enabled and (
+                    k >= self.H_cycles * self.L_cycles - L_bp_steps
+                )
+                with torch.set_grad_enabled(l_grad_enabled):
                     L_kwargs = seq_info
                     if cache_active:
                         L_kwargs = {
@@ -156,10 +175,29 @@ class HierarchicalReasoningModel(nn.Module):
                             "kv_cache_level": "L",
                             "kv_cache_rec_idx": k,
                         }
-                    z_L = self.L_level(z_L, z_H, **L_kwargs)
-            with torch.set_grad_enabled(
-                torch.is_grad_enabled() and (i >= self.H_cycles - H_bp_steps)
-            ):
+                    if should_checkpoint_recurrence(
+                        relief_policy,
+                        module_training=self.training,
+                        kv_cache_present=cache_active,
+                        outer_grad_enabled=outer_grad_enabled,
+                        scheduled_grad_enabled=l_grad_enabled,
+                    ):
+                        z_L = checkpoint(
+                            lambda hidden_states, input_injection: self.L_level(
+                                hidden_states,
+                                input_injection,
+                                **L_kwargs,
+                            ),
+                            z_L,
+                            z_H,
+                            use_reentrant=relief_policy.use_reentrant,
+                            preserve_rng_state=relief_policy.preserve_rng_state,
+                        )
+                    else:
+                        z_L = self.L_level(z_L, z_H, **L_kwargs)
+            outer_grad_enabled = torch.is_grad_enabled()
+            h_grad_enabled = outer_grad_enabled and (i >= self.H_cycles - H_bp_steps)
+            with torch.set_grad_enabled(h_grad_enabled):
                 H_kwargs = seq_info
                 if cache_active:
                     H_kwargs = {
@@ -167,7 +205,26 @@ class HierarchicalReasoningModel(nn.Module):
                         "kv_cache_level": "H",
                         "kv_cache_rec_idx": i,
                     }
-                z_H = self.H_level(z_H, z_L, **H_kwargs)
+                if should_checkpoint_recurrence(
+                    relief_policy,
+                    module_training=self.training,
+                    kv_cache_present=cache_active,
+                    outer_grad_enabled=outer_grad_enabled,
+                    scheduled_grad_enabled=h_grad_enabled,
+                ):
+                    z_H = checkpoint(
+                        lambda hidden_states, input_injection: self.H_level(
+                            hidden_states,
+                            input_injection,
+                            **H_kwargs,
+                        ),
+                        z_H,
+                        z_L,
+                        use_reentrant=relief_policy.use_reentrant,
+                        preserve_rng_state=relief_policy.preserve_rng_state,
+                    )
+                else:
+                    z_H = self.H_level(z_H, z_L, **H_kwargs)
         return None, z_H
 
     def compute_train_extra_args(self, step: int, total_steps: int) -> dict:
