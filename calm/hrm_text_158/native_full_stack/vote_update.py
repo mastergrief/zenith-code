@@ -23,6 +23,10 @@ except ImportError:  # pragma: no cover - non-Triton hosts.
 
 
 RUN_GPU_VOTE_UPDATE_ENV = "HRM_TEXT_158_RUN_GPU_VOTE_UPDATE"
+RUN_GPU_Q_ACC_APPLY_ENV = "HRM_TEXT_158_RUN_GPU_Q_ACC_APPLY"
+Q_ACC_APPLY_MUTATION_TORCH_CUDA_REFERENCE_SCOPE = (
+    "q_acc_apply_mutation_torch_cuda_reference_under_cap_rows_only"
+)
 
 INT8_Q_TRANSITIONAL_NOTE = (
     "int8_levels q state is transitional and pack-ready; it is not packed "
@@ -170,6 +174,15 @@ class VoteUpdateResult:
     accumulators: torch.Tensor
     plan: VoteUpdatePlan
     stats: dict[str, int | float | bool | str]
+
+
+@dataclass(frozen=True)
+class QAccApplyMutationResult:
+    q_levels: torch.Tensor
+    accumulators: torch.Tensor
+    scope: str
+    backend: str
+    stats: dict[str, int | bool | str]
 
 
 def _safe_ratio(numerator: int, denominator: int) -> float:
@@ -412,6 +425,211 @@ def apply_integer_vote_update_reference(
     return VoteUpdateResult(q_levels=q_out, accumulators=acc_out, plan=plan, stats=stats)
 
 
+def _coerce_flat_indices(
+    name: str,
+    values: torch.Tensor,
+    *,
+    device: torch.device,
+    numel: int,
+) -> torch.Tensor:
+    if values.dtype not in (torch.int32, torch.int64):
+        raise ValueError(f"{name} must be int32/int64, got {values.dtype}")
+    out = values.flatten().to(device=device, dtype=torch.int64)
+    if out.numel() == 0:
+        return out
+    if bool((out < 0).any().item()) or bool((out >= int(numel)).any().item()):
+        raise ValueError(f"{name} contains out-of-range flat indices")
+    return out
+
+
+def _coerce_flat_i16(name: str, values: torch.Tensor, *, device: torch.device) -> torch.Tensor:
+    if values.dtype not in (torch.int8, torch.int16, torch.int32, torch.int64):
+        raise ValueError(f"{name} must be an integer tensor, got {values.dtype}")
+    return values.flatten().to(device=device, dtype=torch.int16)
+
+
+def _coerce_flat_i32(name: str, values: torch.Tensor, *, device: torch.device) -> torch.Tensor:
+    if values.dtype not in (torch.int16, torch.int32, torch.int64):
+        raise ValueError(f"{name} must be an integer tensor, got {values.dtype}")
+    return values.flatten().to(device=device, dtype=torch.int32)
+
+
+def _validate_apply_rows(
+    *,
+    name: str,
+    indices: torch.Tensor,
+    directions: torch.Tensor,
+    thresholds: torch.Tensor,
+) -> None:
+    if indices.numel() != directions.numel() or indices.numel() != thresholds.numel():
+        raise ValueError(f"{name} indices/directions/thresholds must have matching lengths")
+    if thresholds.numel() and bool((thresholds <= 0).any().item()):
+        raise ValueError(f"{name} thresholds must be > 0")
+    if directions.numel():
+        invalid = (directions != 1) & (directions != -1)
+        if bool(invalid.any().item()):
+            raise ValueError(f"{name} directions must be -1 or +1")
+
+
+def _apply_threshold_residual_in_place(
+    acc_i32: torch.Tensor,
+    *,
+    indices: torch.Tensor,
+    directions: torch.Tensor,
+    thresholds: torch.Tensor,
+) -> None:
+    if indices.numel() == 0:
+        return
+    residual = acc_i32[indices] - directions.to(torch.int32) * thresholds
+    low = -thresholds + 1
+    high = thresholds - 1
+    acc_i32[indices] = torch.minimum(torch.maximum(residual, low), high)
+
+
+def q_acc_apply_mutation_torch_cuda_reference_under_cap_rows(
+    *,
+    q_levels: torch.Tensor,
+    new_accumulators: torch.Tensor,
+    accepted_indices: torch.Tensor,
+    accepted_directions: torch.Tensor,
+    accepted_thresholds: torch.Tensor,
+    replay_veto_indices: torch.Tensor | None = None,
+    replay_veto_directions: torch.Tensor | None = None,
+    replay_veto_thresholds: torch.Tensor | None = None,
+    mutate_outputs: bool = True,
+    original_accumulators: torch.Tensor | None = None,
+    scope: str = Q_ACC_APPLY_MUTATION_TORCH_CUDA_REFERENCE_SCOPE,
+) -> QAccApplyMutationResult:
+    """Torch-CUDA reference for final cap-accepted q/acc mutation rows.
+
+    Global cap selection stays CPU/control-flow glue. This function consumes the
+    final cap-accepted rows plus replay-veto residual rows and applies only the
+    sparse q flip/write and accumulator residual update on CUDA copies.
+    """
+
+    if os.environ.get(RUN_GPU_Q_ACC_APPLY_ENV) != "1":
+        raise RuntimeError(
+            f"{RUN_GPU_Q_ACC_APPLY_ENV}=1 is required and must only be set inside "
+            "a granted gpu:0 resource lane"
+        )
+    if q_levels.dtype != torch.int8:
+        raise ValueError(f"q_levels must be torch.int8, got {q_levels.dtype}")
+    if new_accumulators.dtype not in (torch.int16, torch.int32, torch.int64):
+        raise ValueError(
+            f"new_accumulators must be int16/int32/int64, got {new_accumulators.dtype}"
+        )
+    if q_levels.shape != new_accumulators.shape:
+        raise ValueError("q_levels and new_accumulators must have identical shapes")
+    if q_levels.device.type != "cuda" or new_accumulators.device != q_levels.device:
+        raise ValueError("q_acc apply reference requires q/new_acc tensors on the same CUDA device")
+    if not bool(mutate_outputs):
+        if original_accumulators is None:
+            raise ValueError("original_accumulators is required when mutate_outputs=False")
+        if original_accumulators.dtype != torch.int16:
+            raise ValueError(
+                f"original_accumulators must be torch.int16, got {original_accumulators.dtype}"
+            )
+        if original_accumulators.shape != q_levels.shape:
+            raise ValueError("original_accumulators shape must match q_levels")
+
+    device = q_levels.device
+    numel = int(q_levels.numel())
+    accepted = _coerce_flat_indices(
+        "accepted_indices",
+        accepted_indices,
+        device=device,
+        numel=numel,
+    )
+    accepted_dirs = _coerce_flat_i16(
+        "accepted_directions",
+        accepted_directions,
+        device=device,
+    )
+    accepted_thresholds_i32 = _coerce_flat_i32(
+        "accepted_thresholds",
+        accepted_thresholds,
+        device=device,
+    )
+    _validate_apply_rows(
+        name="accepted rows",
+        indices=accepted,
+        directions=accepted_dirs,
+        thresholds=accepted_thresholds_i32,
+    )
+
+    replay_parts = (replay_veto_indices, replay_veto_directions, replay_veto_thresholds)
+    if any(part is not None for part in replay_parts):
+        if any(part is None for part in replay_parts):
+            raise ValueError("replay-veto rows require indices, directions, and thresholds")
+        replay = _coerce_flat_indices(
+            "replay_veto_indices",
+            replay_veto_indices,
+            device=device,
+            numel=numel,
+        )
+        replay_dirs = _coerce_flat_i16(
+            "replay_veto_directions",
+            replay_veto_directions,
+            device=device,
+        )
+        replay_thresholds_i32 = _coerce_flat_i32(
+            "replay_veto_thresholds",
+            replay_veto_thresholds,
+            device=device,
+        )
+    else:
+        replay = torch.empty(0, dtype=torch.int64, device=device)
+        replay_dirs = torch.empty(0, dtype=torch.int16, device=device)
+        replay_thresholds_i32 = torch.empty(0, dtype=torch.int32, device=device)
+    _validate_apply_rows(
+        name="replay-veto rows",
+        indices=replay,
+        directions=replay_dirs,
+        thresholds=replay_thresholds_i32,
+    )
+
+    if not bool(mutate_outputs):
+        q_out = q_levels.detach().clone().contiguous()
+        acc_out = original_accumulators.to(device=device).detach().clone().contiguous()
+    else:
+        q_i16 = q_levels.flatten().to(torch.int16).clone()
+        acc_i32 = new_accumulators.flatten().to(torch.int32).clone()
+        if accepted.numel() > 0:
+            q_i16[accepted] = (q_i16[accepted] + accepted_dirs).clamp(-1, 1)
+            _apply_threshold_residual_in_place(
+                acc_i32,
+                indices=accepted,
+                directions=accepted_dirs,
+                thresholds=accepted_thresholds_i32,
+            )
+        _apply_threshold_residual_in_place(
+            acc_i32,
+            indices=replay,
+            directions=replay_dirs,
+            thresholds=replay_thresholds_i32,
+        )
+        q_out = q_i16.view_as(q_levels).to(torch.int8).contiguous()
+        acc_out = acc_i32.view_as(new_accumulators).to(torch.int16).contiguous()
+
+    stats = {
+        "scope": scope,
+        "cap_rows_fixture_required": True,
+        "global_cap_gpu_native": False,
+        "packed_state": False,
+        "mutate_outputs": bool(mutate_outputs),
+        "accepted_count": int(accepted.numel()),
+        "replay_veto_count": int(replay.numel()),
+        "q_changed_count": int((q_out != q_levels).sum().item()),
+    }
+    return QAccApplyMutationResult(
+        q_levels=q_out,
+        accumulators=acc_out,
+        scope=scope,
+        backend=device.type,
+        stats=stats,
+    )
+
+
 if triton is not None:
 
     @triton.jit
@@ -508,4 +726,3 @@ def vote_update_preplan_triton(
         "candidate_mask_int8": candidate,
         "direction_int8": direction,
     }
-
