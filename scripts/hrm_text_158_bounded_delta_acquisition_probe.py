@@ -63,6 +63,14 @@ from scripts.train_hrm_text_158 import HrmTextGsm8kDataset
 RUN_C2_ACQUISITION_PROBE_ENV = "HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE"
 RUN_C2_GPU_LAUNCH_ENV = "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH"
 C2P1_HARNESS_SCHEMA_VERSION = "hrm_text_158_c2p1_real_model_bounded_delta_probe/v0"
+FORWARD_LEVEL_INIT_FIDELITY_STE_ATOL = 1e-3
+FORWARD_LEVEL_INIT_FIDELITY_TOLERANCE_REASON = (
+    "Native BitLinear training forward materializes q*scale through the "
+    "float32 STE expression weight + detach(q*scale - weight), while the "
+    "bounded authoritative path uses direct q*scale; mathematically identical "
+    "weights can differ by float32 operation order and recurrent-stack "
+    "propagation in downstream logits/loss."
+)
 DEFAULT_PARENT_SHA256 = (
     "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec"
 )
@@ -350,13 +358,98 @@ def derive_tensor_states_and_check_init_fidelity(
         }
     report = {
         "schema": "hrm_text_158_c2p1_weight_level_init_fidelity/v0",
-        "forward_level_init_fidelity_deferred_to": "C2.1a GPU smoke",
         "threshold": float(threshold),
         "module_count": len(module_reports),
         "all_pass": bool(all_pass),
         "modules": module_reports,
     }
     return tensor_states, report
+
+
+def compute_forward_level_init_fidelity(
+    model: LMHead,
+    batch: Mapping[str, torch.Tensor],
+    tensor_states: Mapping[str, Any],
+    eligible_modules: Mapping[str, BitLinear],
+    *,
+    device: torch.device,
+    threshold: float,
+    eligible_scope: str,
+    total_steps: int,
+) -> dict[str, Any]:
+    was_training = model.training
+    schedule_total_steps = max(1, int(total_steps))
+    extras = model.compute_train_extra_args(0, schedule_total_steps)
+
+    model.train()
+    model.zero_grad(set_to_none=True)
+    with torch.no_grad():
+        _native_carry, native_loss, native_metrics = model(
+            None,
+            dict(batch),
+            return_logits=True,
+            **extras,
+        )
+        native_logits = native_metrics["logits"].detach().to(torch.float32).cpu()
+        native_loss_cpu = native_loss.detach().to(torch.float32).cpu()
+
+        with authoritative_forward_context(
+            eligible_modules,
+            tensor_states,
+            device=device,
+            requires_grad=False,
+        ):
+            _bounded_carry, bounded_loss, bounded_metrics = model(
+                None,
+                dict(batch),
+                return_logits=True,
+                **extras,
+            )
+        bounded_logits = bounded_metrics["logits"].detach().to(torch.float32).cpu()
+        bounded_loss_cpu = bounded_loss.detach().to(torch.float32).cpu()
+    model.zero_grad(set_to_none=True)
+    model.train(was_training)
+
+    requested_threshold_f = float(threshold)
+    threshold_f = max(requested_threshold_f, FORWARD_LEVEL_INIT_FIDELITY_STE_ATOL)
+    logits_diff = (bounded_logits - native_logits).abs()
+    logits_max_abs_diff = float(logits_diff.max().item()) if logits_diff.numel() else 0.0
+    loss_abs_diff = float((bounded_loss_cpu - native_loss_cpu).abs().item())
+    max_abs_diff = max(logits_max_abs_diff, loss_abs_diff)
+    logits_allclose = bool(torch.allclose(bounded_logits, native_logits, atol=threshold_f, rtol=0.0))
+    loss_allclose = bool(torch.allclose(bounded_loss_cpu, native_loss_cpu, atol=threshold_f, rtol=0.0))
+    passed = bool(logits_allclose and loss_allclose)
+    report = {
+        "schema": "hrm_text_158_c2p1_forward_level_init_fidelity/v0",
+        "status": "computed",
+        "threshold_requested": requested_threshold_f,
+        "threshold": threshold_f,
+        "threshold_reason": (
+            FORWARD_LEVEL_INIT_FIDELITY_TOLERANCE_REASON
+            if threshold_f > requested_threshold_f
+            else "caller supplied threshold"
+        ),
+        "rtol": 0.0,
+        "eligible_scope": eligible_scope,
+        "eligible_module_count": len(eligible_modules),
+        "eligible_modules": sorted(eligible_modules),
+        "schedule_step": 0,
+        "schedule_total_steps": schedule_total_steps,
+        "bp_steps": int(extras["bp_steps"]),
+        "logits_shape": list(native_logits.shape),
+        "logits_max_abs_diff": logits_max_abs_diff,
+        "loss_abs_diff": loss_abs_diff,
+        "max_abs_diff": max_abs_diff,
+        "logits_allclose": logits_allclose,
+        "loss_allclose": loss_allclose,
+        "pass": passed,
+    }
+    if not passed:
+        raise RuntimeError(
+            "forward-level init-fidelity allclose failed: "
+            f"max_abs_diff={max_abs_diff} threshold={threshold_f}"
+        )
+    return report
 
 
 def default_vote_update_spec(max_abs_per_tensor: int) -> VoteUpdateSpec:
@@ -522,6 +615,17 @@ def run_c2p1_probe(
     if not init_fidelity["all_pass"]:
         raise RuntimeError("weight-level init-fidelity allclose failed")
 
+    forward_init_fidelity = compute_forward_level_init_fidelity(
+        model,
+        model_batch,
+        tensor_states,
+        eligible,
+        device=torch_device,
+        threshold=float(init_fidelity_atol),
+        eligible_scope=eligible_scope,
+        total_steps=int(steps),
+    )
+
     step0_optimizer_identity_proof = None
     if int(steps) <= 0:
         step0_optimizer_identity_proof = prove_step0_optimizer_identity(model, eligible)
@@ -589,10 +693,7 @@ def run_c2p1_probe(
         "eligible_module_count": len(eligible),
         "eligible_modules": sorted(eligible),
         "weight_level_init_fidelity": init_fidelity,
-        "forward_level_init_fidelity": {
-            "status": "deferred",
-            "deferred_to": "C2.1a GPU smoke separate +1 LAUNCH gate",
-        },
+        "forward_level_init_fidelity": forward_init_fidelity,
         "steps_requested": int(steps),
         "forward_backward_update_executed": bool(steps > 0),
         "step0_optimizer_identity_proof": step0_optimizer_identity_proof,

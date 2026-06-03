@@ -19,8 +19,12 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
 )
 from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     DEFAULT_PARENT_SHA256,
+    FORWARD_LEVEL_INIT_FIDELITY_STE_ATOL,
     HISTORICAL_IDENTITY_CONTROL,
     RUN_C2_GPU_LAUNCH_ENV,
+    build_identity_full_batch,
+    build_model_from_checkpoint,
+    compute_forward_level_init_fidelity,
     derive_bounded_tensor_state_from_weight,
     derive_tensor_states_and_check_init_fidelity,
     file_sha256,
@@ -28,6 +32,7 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     identity_full_support_control_proof,
     native_ternary_effective_weight,
     run_c2p1_probe,
+    select_eligible_bitlinears,
 )
 from scripts.train_hrm_text_158 import _build_ckpt_config, SOURCE_PIN
 
@@ -83,6 +88,23 @@ def _tiny_parent_blob(*, batch_size: int = 2) -> dict:
     }
 
 
+def _tiny_forward_fixture(*, batch_size: int = 2):
+    device = torch.device("cpu")
+    ckpt = _tiny_parent_blob(batch_size=batch_size)
+    model, tok, _cfg = build_model_from_checkpoint(ckpt, device)
+    batch, _batch_proof = build_identity_full_batch(
+        tok=tok,
+        max_len=TINY_ARCH["max_len"],
+        batch_size=batch_size,
+        curriculum_seed=17,
+        device=device,
+    )
+    eligible = select_eligible_bitlinears(model, eligible_scope="first-bitlinear")
+    states, report = derive_tensor_states_and_check_init_fidelity(eligible, threshold=0.0)
+    assert report["all_pass"] is True
+    return model, batch, eligible, states
+
+
 def test_gpu_guard_requires_explicit_launch_env(monkeypatch):
     monkeypatch.delenv(RUN_C2_GPU_LAUNCH_ENV, raising=False)
 
@@ -128,6 +150,58 @@ def test_weight_level_init_fidelity_detects_corrupted_q_state():
     assert torch.max(torch.abs(bounded_effective - native_effective)).item() == 0.5
 
 
+def test_forward_level_init_fidelity_passes_on_tiny_real_model():
+    model, batch, eligible, states = _tiny_forward_fixture()
+
+    report = compute_forward_level_init_fidelity(
+        model,
+        batch,
+        states,
+        eligible,
+        device=torch.device("cpu"),
+        threshold=0.0,
+        eligible_scope="first-bitlinear",
+        total_steps=1,
+    )
+
+    assert report["status"] == "computed"
+    assert report["pass"] is True
+    assert report["threshold_requested"] == 0.0
+    assert report["threshold"] == FORWARD_LEVEL_INIT_FIDELITY_STE_ATOL
+    assert "Native BitLinear training forward" in report["threshold_reason"]
+    assert report["eligible_module_count"] == 1
+    assert report["eligible_modules"] == sorted(eligible)
+    assert report["logits_max_abs_diff"] <= report["threshold"]
+    assert report["loss_abs_diff"] <= report["threshold"]
+    assert report["max_abs_diff"] <= report["threshold"]
+
+
+def test_forward_level_init_fidelity_hard_fails_on_corrupted_q_state():
+    model, batch, eligible, states = _tiny_forward_fixture()
+    state_key = next(iter(states))
+    corrupted_q = states[state_key].q_levels.clone().mul(-1)
+    if torch.equal(corrupted_q, states[state_key].q_levels):
+        corrupted_q.fill_(1)
+    corrupted_states = dict(states)
+    corrupted_states[state_key] = make_bounded_tensor_state(
+        state_key,
+        corrupted_q,
+        states[state_key].frozen_scale,
+    )
+
+    with pytest.raises(RuntimeError, match="forward-level init-fidelity allclose failed"):
+        compute_forward_level_init_fidelity(
+            model,
+            batch,
+            corrupted_states,
+            eligible,
+            device=torch.device("cpu"),
+            threshold=0.0,
+            eligible_scope="first-bitlinear",
+            total_steps=1,
+        )
+
+
 def test_tiny_real_model_cpu_step_receipt_is_scratch_only(tmp_path: Path):
     parent = tmp_path / "tiny_parent.pt"
     torch.save(_tiny_parent_blob(), parent)
@@ -155,6 +229,12 @@ def test_tiny_real_model_cpu_step_receipt_is_scratch_only(tmp_path: Path):
     assert receipt["parent_hash_unchanged"] is True
     assert receipt["eligible_module_count"] == 1
     assert receipt["weight_level_init_fidelity"]["all_pass"] is True
+    assert receipt["forward_level_init_fidelity"]["status"] == "computed"
+    assert receipt["forward_level_init_fidelity"]["pass"] is True
+    assert receipt["forward_level_init_fidelity"]["threshold_requested"] == 0.0
+    assert receipt["forward_level_init_fidelity"]["threshold"] == FORWARD_LEVEL_INIT_FIDELITY_STE_ATOL
+    assert receipt["forward_level_init_fidelity"]["logits_max_abs_diff"] <= FORWARD_LEVEL_INIT_FIDELITY_STE_ATOL
+    assert receipt["forward_level_init_fidelity"]["loss_abs_diff"] <= FORWARD_LEVEL_INIT_FIDELITY_STE_ATOL
     assert receipt["forward_backward_update_executed"] is True
     assert receipt["step_reports"]["1"]["loss_finite"] is True
     assert receipt["step_reports"]["1"]["weighted_grad_finite"] is True
