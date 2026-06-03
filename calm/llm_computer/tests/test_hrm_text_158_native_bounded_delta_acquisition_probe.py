@@ -1,0 +1,171 @@
+"""C2.1 bounded-delta acquisition harness CPU/static tests."""
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+import torch
+
+from calm.hrm_text_158 import (
+    HierarchicalReasoningModel,
+    HierarchicalReasoningModelConfig,
+    LMHead,
+    LMHeadConfig,
+)
+from calm.hrm_text_158.bit_linear import BitLinear
+from calm.hrm_text_158.curriculum import BroadTokenizer
+from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
+    make_bounded_tensor_state,
+)
+from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+    DEFAULT_PARENT_SHA256,
+    HISTORICAL_IDENTITY_CONTROL,
+    RUN_C2_GPU_LAUNCH_ENV,
+    derive_bounded_tensor_state_from_weight,
+    derive_tensor_states_and_check_init_fidelity,
+    file_sha256,
+    guard_gpu_launch,
+    identity_full_support_control_proof,
+    native_ternary_effective_weight,
+    run_c2p1_probe,
+)
+from scripts.train_hrm_text_158 import _build_ckpt_config, SOURCE_PIN
+
+
+TINY_ARCH = dict(
+    max_len=64,
+    hidden_size=64,
+    n_layers=2,
+    num_heads=2,
+    expansion=4,
+    H_cycles=1,
+    L_cycles=1,
+    half_layers=True,
+    bp_warmup_ratio=0.2,
+    bp_min_steps=1,
+    bp_max_steps=2,
+)
+
+
+def _tiny_parent_blob(*, batch_size: int = 2) -> dict:
+    tok = BroadTokenizer()
+    cfg = HierarchicalReasoningModelConfig(
+        max_seq_len=TINY_ARCH["max_len"],
+        n_layers=TINY_ARCH["n_layers"],
+        hidden_size=TINY_ARCH["hidden_size"],
+        num_heads=TINY_ARCH["num_heads"],
+        expansion=TINY_ARCH["expansion"],
+        H_cycles=TINY_ARCH["H_cycles"],
+        L_cycles=TINY_ARCH["L_cycles"],
+        half_layers=TINY_ARCH["half_layers"],
+        bp_warmup_ratio=TINY_ARCH["bp_warmup_ratio"],
+        bp_min_steps=TINY_ARCH["bp_min_steps"],
+        bp_max_steps=TINY_ARCH["bp_max_steps"],
+        use_ternary_bulk=True,
+    )
+    model = LMHead(HierarchicalReasoningModel(cfg), LMHeadConfig(vocab_size=tok.vocab_size))
+    return {
+        "model_state": model.state_dict(),
+        "config": _build_ckpt_config(
+            model,
+            tok,
+            cfg,
+            TINY_ARCH["max_len"],
+            batch_size=batch_size,
+            curriculum_rung="L0c1",
+            curriculum_seed=17,
+            replay_ratio=0.0,
+            prior_rungs=[],
+        ),
+        "step": 50,
+        "epoch": 1,
+        "source_pin": SOURCE_PIN,
+    }
+
+
+def test_gpu_guard_requires_explicit_launch_env(monkeypatch):
+    monkeypatch.delenv(RUN_C2_GPU_LAUNCH_ENV, raising=False)
+
+    with pytest.raises(RuntimeError, match="persisted \\+1 LAUNCH"):
+        guard_gpu_launch(torch.device("cuda:0"), allow_gpu_launch=False)
+
+    with pytest.raises(RuntimeError, match=RUN_C2_GPU_LAUNCH_ENV):
+        guard_gpu_launch(torch.device("cuda:0"), allow_gpu_launch=True)
+
+
+def test_identity_full_control_is_historical_positive_not_same_harness_control():
+    proof = identity_full_support_control_proof(17)
+
+    assert proof["historical_control"] == HISTORICAL_IDENTITY_CONTROL
+    assert proof["historical_control"]["parent_sha256"] == DEFAULT_PARENT_SHA256
+    assert proof["train_rows_qe_match_support"] is True
+    assert proof["seed_independent_support"] is True
+    assert proof["same_harness_paired_int16_control"] is False
+    assert proof["inline_control_required"] is False
+
+
+def test_weight_level_init_fidelity_detects_corrupted_q_state():
+    module = BitLinear(3, 2, bias=False)
+    with torch.no_grad():
+        module.weight.fill_(0.5)
+    eligible = {"proj": module}
+
+    states, report = derive_tensor_states_and_check_init_fidelity(eligible, threshold=0.0)
+
+    assert report["all_pass"] is True
+    assert report["modules"]["proj"]["max_abs_diff"] == 0.0
+
+    corrupted = {
+        "proj": make_bounded_tensor_state(
+            "proj",
+            torch.zeros_like(states["proj"].q_levels),
+            states["proj"].frozen_scale,
+        )
+    }
+    bounded_effective = corrupted["proj"].materialized_weight(device="cpu", requires_grad=False)
+    native_effective = native_ternary_effective_weight(module)
+    assert torch.max(torch.abs(bounded_effective)).item() == 0.0
+    assert torch.max(torch.abs(bounded_effective - native_effective)).item() == 0.5
+
+
+def test_tiny_real_model_cpu_step_receipt_is_scratch_only(tmp_path: Path):
+    parent = tmp_path / "tiny_parent.pt"
+    torch.save(_tiny_parent_blob(), parent)
+    parent_sha = file_sha256(parent)
+
+    receipt = run_c2p1_probe(
+        parent=parent,
+        parent_sha256=parent_sha,
+        scratch_root=tmp_path / "scratch",
+        device="cpu",
+        eligible_scope="first-bitlinear",
+        steps=1,
+        batch_size=2,
+        max_len=TINY_ARCH["max_len"],
+        curriculum_seed=17,
+        enabled=True,
+    )
+
+    assert receipt["gpu_launched"] is False
+    assert receipt["checkpoint_written"] is False
+    assert receipt["banked_pt_mutated"] is False
+    assert receipt["creditdir_mutated"] is False
+    assert receipt["parent_hash_before"] == parent_sha
+    assert receipt["parent_hash_after"] == parent_sha
+    assert receipt["parent_hash_unchanged"] is True
+    assert receipt["eligible_module_count"] == 1
+    assert receipt["weight_level_init_fidelity"]["all_pass"] is True
+    assert receipt["forward_backward_update_executed"] is True
+    assert receipt["step_reports"]["1"]["loss_finite"] is True
+    assert receipt["step_reports"]["1"]["weighted_grad_finite"] is True
+    assert receipt["step_reports"]["1"]["optimizer_identity_proof"]["pass"] is True
+    assert receipt["checkpoint_payload"]["checkpoint_written"] is False
+    assert Path(receipt["receipt_path"]).exists()
+
+
+def test_default_derivation_import_is_exercised_for_script_surface():
+    module = BitLinear(2, 1, bias=False)
+    state = derive_bounded_tensor_state_from_weight("proj", module.weight)
+
+    assert state.state_key == "proj"
+    assert state.q_levels.dtype == torch.int8
