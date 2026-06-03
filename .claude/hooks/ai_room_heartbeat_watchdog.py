@@ -70,6 +70,7 @@ ARTIFACT_RE = re.compile(r"expected_next_artifact\s*=\s*([^\n]+)")
 PATHISH_RE = re.compile(r"(/home/[^\s'\"`]+\.(?:json|jsonl|log|pt|py))")
 RUNDIR_RE = re.compile(r"(?:--run-dir\s+|run[_-]dir[=:\s]+)(\S+)")
 TASKID_RE = re.compile(r"\b(\d{13}-[0-9a-f]{6,8})\b")
+POSTED_ID_RE = re.compile(r"\bposted id=([^\s]+)")
 
 
 def _parse_ts(s):
@@ -310,7 +311,34 @@ def decide(hb, ev, n_extends, n_stalls):
                 f"@claude liveness check + decision.")}
 
 
-def emit(decision, dry_run):
+def _channel_from_log_path(path):
+    try:
+        p = os.path.abspath(os.path.expanduser(path or ""))
+    except Exception:
+        return ""
+    parts = p.split(os.sep)
+    if len(parts) >= 3 and parts[-1] == "messages.jsonl" and parts[-3] == "channels":
+        return parts[-2]
+    return ""
+
+
+def _resolve_emit_channel(log_path, override):
+    return override or _channel_from_log_path(log_path) or os.environ.get("AI_ROOM_CHANNEL", "")
+
+
+def _trim_for_log(value, limit=500):
+    text = (value or "").strip().replace("\n", "\\n")
+    if len(text) > limit:
+        text = text[:limit - 3] + "..."
+    return text or "-"
+
+
+def _posted_msg_id(stdout):
+    m = POSTED_ID_RE.search(stdout or "")
+    return m.group(1) if m else ""
+
+
+def emit(decision, dry_run, channel=""):
     if decision.get("action") == "clean":
         print("CLEAN")
         return
@@ -319,28 +347,49 @@ def emit(decision, dry_run):
         print(f"POST_BODY={decision['body']}")
         return
     ai_room = shutil.which("ai-room") or os.path.expanduser("~/.local/bin/ai-room")
-    cmd = [ai_room, "post", WATCHDOG_FROM, "--to", "claude",
-           "--to", "codex_co_lead", "--kind", decision["kind"]]
+    cmd = [ai_room]
+    if channel:
+        cmd += ["--channel", channel]
+    cmd += ["post", WATCHDOG_FROM, "--to", "claude",
+            "--to", "codex_co_lead", "--kind", decision["kind"]]
     if decision["wake"]:
         cmd += ["--requires-response-from", "claude",
                 "--response-deadline-secs", str(STALL_RESPONSE_DEADLINE)]
     cmd += [decision["body"]]
+    env = os.environ.copy()
+    if channel:
+        env["AI_ROOM_CHANNEL"] = channel
     try:
-        subprocess.run(cmd, capture_output=True, text=True, timeout=20)
-        print(f"POSTED action={decision['action']} wake={decision['wake']}")
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=20, env=env)
+        channel_label = channel or "default"
+        if proc.returncode == 0:
+            msg_id = _posted_msg_id(proc.stdout)
+            if msg_id:
+                print(f"POSTED action={decision['action']} wake={decision['wake']} "
+                      f"channel={channel_label} msg_id={msg_id}")
+            else:
+                print(f"POSTED action={decision['action']} wake={decision['wake']} "
+                      f"channel={channel_label} stdout={_trim_for_log(proc.stdout)}")
+            return
+        print(f"POST_FAILED action={decision['action']} wake={decision['wake']} "
+              f"channel={channel_label} rc={proc.returncode} "
+              f"stdout={_trim_for_log(proc.stdout)} stderr={_trim_for_log(proc.stderr)}")
     except Exception as e:
-        print(f"POST_FAILED ({e})")
+        print(f"POST_FAILED action={decision['action']} wake={decision['wake']} "
+              f"channel={channel or 'default'} exception={type(e).__name__}: {_trim_for_log(str(e))}")
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--channel-log", default=None)
+    ap.add_argument("--channel", default=None)
     ap.add_argument("--now", default=None)
     args = ap.parse_args()
     try:
         log_path = (args.channel_log or os.environ.get("AI_ROOM_CHANNEL_LOG")
                     or DEFAULT_CHANNEL_LOG)
+        emit_channel = _resolve_emit_channel(log_path, args.channel)
         now = _parse_ts(args.now) if args.now else None
         if now is None:
             now = datetime.now(timezone.utc).timestamp()
@@ -356,7 +405,7 @@ def main():
             ev = prove_liveness(hb, last_check)
             decision = decide(hb, ev, n_ext, n_stall)
             decision["worker"] = hb["worker"]
-            emit(decision, args.dry_run)
+            emit(decision, args.dry_run, emit_channel)
             acted = True
         if not acted:
             print("CLEAN")

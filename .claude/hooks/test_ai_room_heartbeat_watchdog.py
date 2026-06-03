@@ -15,11 +15,16 @@ Run: python3 .claude/hooks/test_ai_room_heartbeat_watchdog.py
 """
 from __future__ import annotations
 
+import contextlib
+import importlib.util
+import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 WD = Path(__file__).with_name("ai_room_heartbeat_watchdog.py")
 
@@ -59,10 +64,30 @@ def run(log_lines, now, file_fresh=None, proc_corr=None):
 
 
 CASES = []
+EXTRA_TESTS = []
 
 
 def case(name, log_lines, now, ff, pc, expect):
     CASES.append((name, log_lines, now, ff, pc, expect))
+
+
+def extra_test(name):
+    def deco(fn):
+        EXTRA_TESTS.append((name, fn))
+        return fn
+    return deco
+
+
+def load_watchdog_module():
+    spec = importlib.util.spec_from_file_location("ai_room_heartbeat_watchdog_test", WD)
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def emit_decision():
+    return {"action": "stall", "wake": True, "kind": "status_update", "body": "WATCHDOG_TEST_BODY"}
 
 
 # 1. stale + no movement (code phase) -> STALL (wake), 1st miss => re-drive
@@ -122,6 +147,67 @@ case("own_terminal_clean",
 case("empty_log_clean", [], NOW_OVERDUE, "0", "0", ["CLEAN"])
 
 
+@extra_test("emit_nonzero_logs_failure_not_posted")
+def test_emit_nonzero_logs_failure_not_posted():
+    wd = load_watchdog_module()
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        return SimpleNamespace(returncode=7, stdout="partial out\n", stderr="cron env boom\n")
+
+    orig_run = wd.subprocess.run
+    wd.subprocess.run = fake_run
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            wd.emit(emit_decision(), dry_run=False, channel="claw-code")
+    finally:
+        wd.subprocess.run = orig_run
+
+    out = buf.getvalue()
+    assert calls, "subprocess.run was not called"
+    assert "POST_FAILED" in out, out
+    assert "rc=7" in out, out
+    assert "cron env boom" in out, out
+    assert "POSTED action=" not in out, out
+
+
+@extra_test("emit_success_uses_channel_and_logs_msg_id")
+def test_emit_success_uses_channel_and_logs_msg_id():
+    wd = load_watchdog_module()
+    calls = []
+    old_channel = os.environ.get("AI_ROOM_CHANNEL")
+
+    def fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        return SimpleNamespace(returncode=0, stdout="posted id=1780494000000-deadbeef from=watchdog\n",
+                               stderr="")
+
+    orig_run = wd.subprocess.run
+    wd.subprocess.run = fake_run
+    os.environ["AI_ROOM_CHANNEL"] = "outer-channel"
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            wd.emit(emit_decision(), dry_run=False, channel="claw-code")
+        assert os.environ.get("AI_ROOM_CHANNEL") == "outer-channel", "emit mutated global env"
+    finally:
+        wd.subprocess.run = orig_run
+        if old_channel is None:
+            os.environ.pop("AI_ROOM_CHANNEL", None)
+        else:
+            os.environ["AI_ROOM_CHANNEL"] = old_channel
+
+    out = buf.getvalue()
+    assert calls, "subprocess.run was not called"
+    cmd, kwargs = calls[0]
+    assert cmd[1:4] == ["--channel", "claw-code", "post"], cmd
+    assert kwargs["env"]["AI_ROOM_CHANNEL"] == "claw-code", kwargs["env"].get("AI_ROOM_CHANNEL")
+    assert wd._resolve_emit_channel(wd.DEFAULT_CHANNEL_LOG, None) == "claw-code"
+    assert "POSTED action=stall wake=True channel=claw-code msg_id=1780494000000-deadbeef" in out, out
+
+
 def main():
     failures = 0
     for name, log_lines, now, ff, pc, expect in CASES:
@@ -131,7 +217,21 @@ def main():
         if not ok:
             print(f"   --- got ---\n{out}")
             failures += 1
-    print(f"\n{len(CASES) - failures}/{len(CASES)} passed")
+    for name, fn in EXTRA_TESTS:
+        try:
+            fn()
+            ok = True
+        except AssertionError as e:
+            ok = False
+            print(f"   --- assertion ---\n{e}")
+        except Exception as e:
+            ok = False
+            print(f"   --- exception ---\n{type(e).__name__}: {e}")
+        print(f"{'PASS' if ok else 'FAIL'} {name}")
+        if not ok:
+            failures += 1
+    total = len(CASES) + len(EXTRA_TESTS)
+    print(f"\n{total - failures}/{total} passed")
     return 1 if failures else 0
 
 
