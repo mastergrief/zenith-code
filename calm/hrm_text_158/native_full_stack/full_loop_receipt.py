@@ -27,6 +27,11 @@ from calm.hrm_text_158.native_full_stack.global_rate_cap import (
     GlobalRateCapTensorInput,
     apply_global_rate_cap_reference,
 )
+from calm.hrm_text_158.native_full_stack.global_rate_cap_gpu import (
+    GLOBAL_RATE_CAP_TORCH_CUDA_REFERENCE_SCOPE,
+    RUN_GPU_GLOBAL_RATE_CAP_ENV,
+    apply_global_rate_cap_torch_cuda_reference_under_margin,
+)
 from calm.hrm_text_158.native_full_stack.persistent_state_budget import (
     PHYSICAL_SUB2_NOT_ACHIEVED_STATEMENT,
     PersistentStateBudgetReport,
@@ -69,10 +74,21 @@ QSCALE_REFERENCE_MATERIALIZATION_CAVEAT = (
     "wall-clock is reference-harness timing, not a native/custom-kernel speed claim."
 )
 GLOBAL_CAP_CPU_GLUE_CAVEAT = (
-    "global cap remains apply_global_rate_cap_reference CPU/control-flow glue in "
-    "this receipt; GPU-resident cap is the next engineering seam."
+    "global cap remains apply_global_rate_cap_reference CPU/control-flow glue "
+    f"when {RUN_GPU_GLOBAL_RATE_CAP_ENV} is unset; explicit per-step backend "
+    "fields identify opt-in GPU-cap receipt rows."
 )
 CAP_ACCEPTED_ROWS_PROVENANCE = "apply_global_rate_cap_reference.accepted_rows"
+GPU_CAP_ACCEPTED_ROWS_PROVENANCE = "device_selection_result.rows_by_state"
+GLOBAL_CAP_CPU_GLUE_SCOPE = "apply_global_rate_cap_reference_cpu_glue"
+GLOBAL_CAP_BACKEND_CAVEAT = (
+    "global cap backend is explicit per step: legacy CPU/reference glue when "
+    f"{RUN_GPU_GLOBAL_RATE_CAP_ENV} is unset; MARGIN-only torch-CUDA reference "
+    "selection/apply-chain when set; CPU oracle parity is retained in both modes."
+)
+ALLOCATOR_DELTA_TELEMETRY_CAVEAT = (
+    "no_leak_alloc_delta_bytes is allocator/headroom telemetry, not a zero-leak proof"
+)
 NEXT_PHYSICAL_SUB2_FORK = (
     "accumulator/vote-state compression toward ternary-hybrid/event-coded/sparse "
     "representation"
@@ -136,6 +152,16 @@ class NativeFullLoopStepReceipt:
     q_changed_count_by_state: dict[str, int]
     global_rate_cap_saturated: bool
     cap_provenance_source: str
+    global_cap_backend: str
+    global_cap_scope: str
+    global_cap_gpu_enabled: bool
+    global_cap_cpu_oracle_retained: bool
+    global_cap_counts_match_cpu_oracle: bool
+    global_cap_backlog_matches_cpu_oracle: bool
+    global_cap_backlog_keys_match_cpu_oracle: bool
+    global_cap_deferred_backlog_size: int
+    global_cap_deferred_backlog_max_age_steps: int
+    global_cap_deferred_backlog_max_defer_count: int
     local_plan_rows_used_as_cap_acceptance: bool
     parity_cuda_matches_cpu_global_cap_oracle: bool
     cpu_oracle_mutate_outputs: bool
@@ -154,8 +180,10 @@ class NativeFullLoopEngineeringReceipt:
     eligible_weight_count: int
     default_off_env: str
     q_acc_apply_env: str
+    global_cap_gpu_env: str
     qscale_materialization_caveat: str
     global_cap_cpu_glue_caveat: str
+    global_cap_backend_caveat: str
     acquisition_claim: bool
     retention_claim: bool
     native_custom_kernel_speed_claim: bool
@@ -172,6 +200,7 @@ class NativeFullLoopEngineeringReceipt:
     allocated_before_bytes: int
     allocated_after_cleanup_bytes: int
     no_leak_alloc_delta_bytes: int
+    allocator_delta_caveat: str
     artifact_path: str | None
     artifact_hygiene: str
 
@@ -269,8 +298,10 @@ def run_native_full_loop_engineering_receipt(
         eligible_weight_count=eligible_weight_count,
         default_off_env=RUN_GPU_FULL_LOOP_RECEIPT_ENV,
         q_acc_apply_env=RUN_GPU_Q_ACC_APPLY_ENV,
+        global_cap_gpu_env=RUN_GPU_GLOBAL_RATE_CAP_ENV,
         qscale_materialization_caveat=QSCALE_REFERENCE_MATERIALIZATION_CAVEAT,
         global_cap_cpu_glue_caveat=GLOBAL_CAP_CPU_GLUE_CAVEAT,
+        global_cap_backend_caveat=GLOBAL_CAP_BACKEND_CAVEAT,
         acquisition_claim=False,
         retention_claim=False,
         native_custom_kernel_speed_claim=False,
@@ -287,10 +318,12 @@ def run_native_full_loop_engineering_receipt(
         allocated_before_bytes=allocated_before,
         allocated_after_cleanup_bytes=allocated_after_cleanup,
         no_leak_alloc_delta_bytes=allocated_after_cleanup - allocated_before,
+        allocator_delta_caveat=ALLOCATOR_DELTA_TELEMETRY_CAVEAT,
         artifact_path=artifact_path_str,
         artifact_hygiene=(
             "compact runtime proof only: shapes, hashes, counters, ledgers, timings; "
-            "no raw tensor arrays or per-weight dumps; do not stage in commit"
+            "no raw tensor arrays or per-weight dumps; allocator delta is telemetry, "
+            "not a zero-leak proof; do not stage in commit"
         ),
     )
     if artifact_path is not None:
@@ -380,17 +413,6 @@ def _execute_tiny_loop(
             )
             for key in _TENSOR_ORDER
         ]
-        frozen_cap = apply_global_rate_cap_reference(
-            cap_inputs,
-            GlobalRateCapSpec(
-                cap=fixture.cap,
-                step=step,
-                ordering_mode=GlobalRateCapOrderingMode.MARGIN,
-                mutate_outputs=False,
-            ),
-            deferred_backlog=deferred_backlog,
-            tensor_offsets=tensor_offsets,
-        )
         cpu_oracle = apply_global_rate_cap_reference(
             cap_inputs,
             GlobalRateCapSpec(
@@ -402,16 +424,19 @@ def _execute_tiny_loop(
             deferred_backlog=deferred_backlog,
             tensor_offsets=tensor_offsets,
         )
-        deferred_backlog = frozen_cap.deferred_backlog
-
-        qscale_states, accumulators, parity_ok, q_changed_by_state = _apply_cap_rows_on_cuda(
+        cap_step = _run_cap_path_for_step(
             qscale_states=qscale_states,
             accumulators=accumulators,
-            plans=plans,
-            cap_result=frozen_cap,
+            cap_inputs=cap_inputs,
             cpu_oracle=cpu_oracle,
-            device=device,
+            tensor_offsets=tensor_offsets,
+            incoming_deferred_backlog=deferred_backlog,
+            cap=fixture.cap,
+            step=step,
         )
+        qscale_states = cap_step.qscale_states
+        accumulators = cap_step.accumulators
+        deferred_backlog = cap_step.deferred_backlog
         state_output_hashes = _state_hashes(qscale_states, accumulators)
         budget = measure_persistent_state_budget(
             list(qscale_states.values()),
@@ -419,10 +444,9 @@ def _execute_tiny_loop(
         ).to_dict()
         torch.cuda.synchronize(device)
 
-        accepted_by_state = _row_count_by_state(frozen_cap.accepted_rows)
-        deferred_by_state = _row_count_by_state(frozen_cap.deferred_rows)
-        accepted_state_keys = tuple(row.state_key for row in frozen_cap.accepted_rows)
-        nonzero_winners = [key for key, count in accepted_by_state.items() if count > 0]
+        nonzero_winners = [
+            key for key, count in cap_step.accepted_count_by_state.items() if count > 0
+        ]
         step_receipts.append(
             NativeFullLoopStepReceipt(
                 step=step,
@@ -436,20 +460,36 @@ def _execute_tiny_loop(
                 qscale_output_hashes=qscale_output_hashes,
                 qscale_outputs_finite=qscale_outputs_finite,
                 selection_backend_by_state=selection_backend_by_state,
-                pre_cap_demand_count=int(frozen_cap.step_summary["global_pre_cap_would_apply_count"]),
-                global_rate_cap_cap=int(frozen_cap.step_summary["global_rate_cap_cap"]),
-                accepted_count=int(frozen_cap.step_summary["global_rate_cap_accepted_count"]),
-                deferred_count=int(frozen_cap.step_summary["global_rate_cap_deferred_count"]),
-                accepted_count_by_state=accepted_by_state,
-                deferred_count_by_state=deferred_by_state,
-                accepted_state_keys=accepted_state_keys,
+                pre_cap_demand_count=cap_step.pre_cap_demand_count,
+                global_rate_cap_cap=cap_step.global_rate_cap_cap,
+                accepted_count=cap_step.accepted_count,
+                deferred_count=cap_step.deferred_count,
+                accepted_count_by_state=cap_step.accepted_count_by_state,
+                deferred_count_by_state=cap_step.deferred_count_by_state,
+                accepted_state_keys=cap_step.accepted_state_keys,
                 cap_single_tensor_winner_state_key=nonzero_winners[0] if len(nonzero_winners) == 1 else None,
-                q_changed_count=int(sum(q_changed_by_state.values())),
-                q_changed_count_by_state=q_changed_by_state,
-                global_rate_cap_saturated=bool(frozen_cap.step_summary["global_rate_cap_saturated"]),
-                cap_provenance_source=CAP_ACCEPTED_ROWS_PROVENANCE,
+                q_changed_count=int(sum(cap_step.q_changed_count_by_state.values())),
+                q_changed_count_by_state=cap_step.q_changed_count_by_state,
+                global_rate_cap_saturated=cap_step.global_rate_cap_saturated,
+                cap_provenance_source=cap_step.cap_provenance_source,
+                global_cap_backend=cap_step.global_cap_backend,
+                global_cap_scope=cap_step.global_cap_scope,
+                global_cap_gpu_enabled=cap_step.global_cap_gpu_enabled,
+                global_cap_cpu_oracle_retained=True,
+                global_cap_counts_match_cpu_oracle=cap_step.counts_match_cpu_oracle,
+                global_cap_backlog_matches_cpu_oracle=cap_step.backlog_matches_cpu_oracle,
+                global_cap_backlog_keys_match_cpu_oracle=cap_step.backlog_keys_match_cpu_oracle,
+                global_cap_deferred_backlog_size=cap_step.deferred_backlog_summary[
+                    "deferred_backlog_size"
+                ],
+                global_cap_deferred_backlog_max_age_steps=cap_step.deferred_backlog_summary[
+                    "deferred_backlog_max_age_steps"
+                ],
+                global_cap_deferred_backlog_max_defer_count=cap_step.deferred_backlog_summary[
+                    "deferred_backlog_max_defer_count"
+                ],
                 local_plan_rows_used_as_cap_acceptance=False,
-                parity_cuda_matches_cpu_global_cap_oracle=parity_ok,
+                parity_cuda_matches_cpu_global_cap_oracle=cap_step.parity_ok,
                 cpu_oracle_mutate_outputs=True,
                 step_consumes_state_mutated_by_prior_step=(
                     previous_output_hashes is not None
@@ -542,6 +582,282 @@ def _apply_cap_rows_on_cuda(
         q_changed_by_state[key] = int(result.stats["q_changed_count"])
 
     return out_states, out_accumulators, parity_ok, q_changed_by_state
+
+
+@dataclass(frozen=True)
+class _FullLoopCapStepResult:
+    qscale_states: dict[str, QScaleWeightState]
+    accumulators: dict[str, torch.Tensor]
+    deferred_backlog: dict[str, dict[int, dict[str, int]]]
+    pre_cap_demand_count: int
+    global_rate_cap_cap: int
+    accepted_count: int
+    deferred_count: int
+    accepted_count_by_state: dict[str, int]
+    deferred_count_by_state: dict[str, int]
+    accepted_state_keys: tuple[str, ...]
+    q_changed_count_by_state: dict[str, int]
+    global_rate_cap_saturated: bool
+    cap_provenance_source: str
+    global_cap_backend: str
+    global_cap_scope: str
+    global_cap_gpu_enabled: bool
+    parity_ok: bool
+    counts_match_cpu_oracle: bool
+    backlog_matches_cpu_oracle: bool
+    backlog_keys_match_cpu_oracle: bool
+    deferred_backlog_summary: dict[str, int]
+
+
+def _run_cap_path_for_step(
+    *,
+    qscale_states: dict[str, QScaleWeightState],
+    accumulators: dict[str, torch.Tensor],
+    cap_inputs: list[GlobalRateCapTensorInput],
+    cpu_oracle: GlobalRateCapResult,
+    tensor_offsets: dict[str, int],
+    incoming_deferred_backlog: dict[str, dict[int, dict[str, int]]] | None,
+    cap: int,
+    step: int,
+) -> _FullLoopCapStepResult:
+    spec_frozen = GlobalRateCapSpec(
+        cap=cap,
+        step=step,
+        ordering_mode=GlobalRateCapOrderingMode.MARGIN,
+        mutate_outputs=False,
+    )
+    spec_mutating = GlobalRateCapSpec(
+        cap=cap,
+        step=step,
+        ordering_mode=GlobalRateCapOrderingMode.MARGIN,
+        mutate_outputs=True,
+    )
+    cpu_selection = apply_global_rate_cap_reference(
+        cap_inputs,
+        spec_frozen,
+        deferred_backlog=incoming_deferred_backlog,
+        tensor_offsets=tensor_offsets,
+    )
+    if os.environ.get(RUN_GPU_GLOBAL_RATE_CAP_ENV) == "1":
+        return _run_gpu_cap_path_for_step(
+            qscale_states=qscale_states,
+            cap_inputs=cap_inputs,
+            cpu_selection=cpu_selection,
+            cpu_oracle=cpu_oracle,
+            spec=spec_mutating,
+            tensor_offsets=tensor_offsets,
+            incoming_deferred_backlog=incoming_deferred_backlog,
+        )
+    out_states, out_accumulators, parity_ok, q_changed_by_state = _apply_cap_rows_on_cuda(
+        qscale_states=qscale_states,
+        accumulators=accumulators,
+        plans={item.state_key: item.plan for item in cap_inputs},
+        cap_result=cpu_selection,
+        cpu_oracle=cpu_oracle,
+        device=next(iter(qscale_states.values())).q_levels.device,
+    )
+    return _cap_step_result_from_cpu_selection(
+        qscale_states=out_states,
+        accumulators=out_accumulators,
+        active_backlog=cpu_selection.deferred_backlog,
+        cpu_selection=cpu_selection,
+        cpu_oracle=cpu_oracle,
+        q_changed_count_by_state=q_changed_by_state,
+        parity_ok=parity_ok,
+        step=step,
+    )
+
+
+def _run_gpu_cap_path_for_step(
+    *,
+    qscale_states: dict[str, QScaleWeightState],
+    cap_inputs: list[GlobalRateCapTensorInput],
+    cpu_selection: GlobalRateCapResult,
+    cpu_oracle: GlobalRateCapResult,
+    spec: GlobalRateCapSpec,
+    tensor_offsets: dict[str, int],
+    incoming_deferred_backlog: dict[str, dict[int, dict[str, int]]] | None,
+) -> _FullLoopCapStepResult:
+    gpu_cap = apply_global_rate_cap_torch_cuda_reference_under_margin(
+        cap_inputs,
+        spec,
+        tensor_offsets=tensor_offsets,
+        deferred_backlog=incoming_deferred_backlog,
+    )
+    out_states, out_accumulators = _states_from_tensor_results(
+        qscale_states,
+        gpu_cap.tensor_results,
+    )
+    parity_ok = _tensor_results_match_oracle(gpu_cap.tensor_results, cpu_oracle)
+    q_changed_by_state = {
+        result.state_key: int(result.stats["q_changed_count"])
+        for result in gpu_cap.tensor_results
+    }
+    accepted_by_state = {
+        key: int(gpu_cap.selection.rows_by_state[key].accepted_indices.numel())
+        for key in _TENSOR_ORDER
+    }
+    deferred_by_state = {
+        key: int(gpu_cap.selection.rows_by_state[key].deferred_indices.numel())
+        for key in _TENSOR_ORDER
+    }
+    active_backlog = gpu_cap.selection.deferred_backlog
+    return _FullLoopCapStepResult(
+        qscale_states=out_states,
+        accumulators=out_accumulators,
+        deferred_backlog=active_backlog,
+        pre_cap_demand_count=int(gpu_cap.stats["global_pre_cap_would_apply_count"]),
+        global_rate_cap_cap=int(gpu_cap.stats["global_rate_cap_cap"]),
+        accepted_count=int(gpu_cap.stats["global_rate_cap_accepted_count"]),
+        deferred_count=int(gpu_cap.stats["global_rate_cap_deferred_count"]),
+        accepted_count_by_state=accepted_by_state,
+        deferred_count_by_state=deferred_by_state,
+        accepted_state_keys=tuple(row[0] for row in gpu_cap.selection.accepted_rows_as_tuples()),
+        q_changed_count_by_state=q_changed_by_state,
+        global_rate_cap_saturated=bool(gpu_cap.stats["global_rate_cap_saturated"]),
+        cap_provenance_source=GPU_CAP_ACCEPTED_ROWS_PROVENANCE,
+        global_cap_backend="cuda",
+        global_cap_scope=GLOBAL_RATE_CAP_TORCH_CUDA_REFERENCE_SCOPE,
+        global_cap_gpu_enabled=True,
+        parity_ok=parity_ok,
+        counts_match_cpu_oracle=_counts_match_cpu_oracle(
+            accepted_by_state,
+            deferred_by_state,
+            cpu_oracle,
+        )
+        and _counts_match_cpu_oracle(
+            accepted_by_state,
+            deferred_by_state,
+            cpu_selection,
+        ),
+        backlog_matches_cpu_oracle=_backlog_summary(active_backlog, step=spec.step)
+        == _backlog_summary(cpu_oracle.deferred_backlog, step=spec.step),
+        backlog_keys_match_cpu_oracle=_backlog_keys(active_backlog)
+        == _backlog_keys(cpu_oracle.deferred_backlog),
+        deferred_backlog_summary=_backlog_summary(active_backlog, step=spec.step),
+    )
+
+
+def _cap_step_result_from_cpu_selection(
+    *,
+    qscale_states: dict[str, QScaleWeightState],
+    accumulators: dict[str, torch.Tensor],
+    active_backlog: dict[str, dict[int, dict[str, int]]],
+    cpu_selection: GlobalRateCapResult,
+    cpu_oracle: GlobalRateCapResult,
+    q_changed_count_by_state: dict[str, int],
+    parity_ok: bool,
+    step: int,
+) -> _FullLoopCapStepResult:
+    accepted_by_state = _row_count_by_state(cpu_selection.accepted_rows)
+    deferred_by_state = _row_count_by_state(cpu_selection.deferred_rows)
+    return _FullLoopCapStepResult(
+        qscale_states=qscale_states,
+        accumulators=accumulators,
+        deferred_backlog=active_backlog,
+        pre_cap_demand_count=int(cpu_selection.step_summary["global_pre_cap_would_apply_count"]),
+        global_rate_cap_cap=int(cpu_selection.step_summary["global_rate_cap_cap"]),
+        accepted_count=int(cpu_selection.step_summary["global_rate_cap_accepted_count"]),
+        deferred_count=int(cpu_selection.step_summary["global_rate_cap_deferred_count"]),
+        accepted_count_by_state=accepted_by_state,
+        deferred_count_by_state=deferred_by_state,
+        accepted_state_keys=tuple(row.state_key for row in cpu_selection.accepted_rows),
+        q_changed_count_by_state=q_changed_count_by_state,
+        global_rate_cap_saturated=bool(cpu_selection.step_summary["global_rate_cap_saturated"]),
+        cap_provenance_source=CAP_ACCEPTED_ROWS_PROVENANCE,
+        global_cap_backend="cpu_reference_glue",
+        global_cap_scope=GLOBAL_CAP_CPU_GLUE_SCOPE,
+        global_cap_gpu_enabled=False,
+        parity_ok=parity_ok,
+        counts_match_cpu_oracle=_counts_match_cpu_oracle(
+            accepted_by_state,
+            deferred_by_state,
+            cpu_oracle,
+        ),
+        backlog_matches_cpu_oracle=_backlog_summary(active_backlog, step=step)
+        == _backlog_summary(cpu_oracle.deferred_backlog, step=step),
+        backlog_keys_match_cpu_oracle=_backlog_keys(active_backlog)
+        == _backlog_keys(cpu_oracle.deferred_backlog),
+        deferred_backlog_summary=_backlog_summary(
+            active_backlog,
+            step=step,
+        ),
+    )
+
+
+def _states_from_tensor_results(
+    qscale_states: dict[str, QScaleWeightState],
+    tensor_results: list[Any],
+) -> tuple[dict[str, QScaleWeightState], dict[str, torch.Tensor]]:
+    out_states: dict[str, QScaleWeightState] = {}
+    out_accumulators: dict[str, torch.Tensor] = {}
+    result_by_key = {result.state_key: result for result in tensor_results}
+    for key in _TENSOR_ORDER:
+        result = result_by_key[key]
+        out_states[key] = QScaleWeightState(
+            q_levels=result.q_levels,
+            scale=qscale_states[key].scale,
+            format=qscale_states[key].format,
+        )
+        out_accumulators[key] = result.accumulators
+    return out_states, out_accumulators
+
+
+def _tensor_results_match_oracle(
+    tensor_results: list[Any],
+    cpu_oracle: GlobalRateCapResult,
+) -> bool:
+    oracle_by_state = {result.state_key: result for result in cpu_oracle.tensor_results}
+    for result in tensor_results:
+        oracle = oracle_by_state[result.state_key]
+        if not torch.equal(result.q_levels.detach().cpu(), oracle.q_levels.detach().cpu()):
+            return False
+        if not torch.equal(result.accumulators.detach().cpu(), oracle.accumulators.detach().cpu()):
+            return False
+    return True
+
+
+def _counts_match_cpu_oracle(
+    accepted_by_state: dict[str, int],
+    deferred_by_state: dict[str, int],
+    cpu_oracle: GlobalRateCapResult,
+) -> bool:
+    return (
+        accepted_by_state == _row_count_by_state(cpu_oracle.accepted_rows)
+        and deferred_by_state == _row_count_by_state(cpu_oracle.deferred_rows)
+    )
+
+
+def _backlog_summary(
+    backlog: dict[str, dict[int, dict[str, int]]],
+    *,
+    step: int,
+) -> dict[str, int]:
+    entries = [entry for by_index in backlog.values() for entry in by_index.values()]
+    if not entries:
+        return {
+            "deferred_backlog_size": 0,
+            "deferred_backlog_max_age_steps": 0,
+            "deferred_backlog_max_defer_count": 0,
+        }
+    return {
+        "deferred_backlog_size": len(entries),
+        "deferred_backlog_max_age_steps": max(
+            int(step) - int(entry["first_step"]) for entry in entries
+        ),
+        "deferred_backlog_max_defer_count": max(
+            int(entry["defer_count"]) for entry in entries
+        ),
+    }
+
+
+def _backlog_keys(
+    backlog: dict[str, dict[int, dict[str, int]]],
+) -> dict[str, tuple[int, ...]]:
+    return {
+        key: tuple(sorted(int(index) for index in by_index))
+        for key, by_index in sorted(backlog.items())
+    }
 
 
 def _accepted_row_tensors(

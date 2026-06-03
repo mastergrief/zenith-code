@@ -9,9 +9,14 @@ import pytest
 import torch
 
 from calm.hrm_text_158.native_full_stack.full_loop_receipt import (
+    ALLOCATOR_DELTA_TELEMETRY_CAVEAT,
+    CAP_ACCEPTED_ROWS_PROVENANCE,
     DEFAULT_FULL_LOOP_RECEIPT_ARTIFACT_PATH,
     FULL_LOOP_RECEIPT_ARTIFACT_ENV,
+    GLOBAL_CAP_BACKEND_CAVEAT,
     GLOBAL_CAP_CPU_GLUE_CAVEAT,
+    GLOBAL_CAP_CPU_GLUE_SCOPE,
+    GPU_CAP_ACCEPTED_ROWS_PROVENANCE,
     NATIVE_FULL_LOOP_ENGINEERING_RECEIPT_LABEL,
     NEXT_PHYSICAL_SUB2_FORK,
     PRIOR_LARGE_FIXTURE_REFERENCE,
@@ -21,6 +26,10 @@ from calm.hrm_text_158.native_full_stack.full_loop_receipt import (
     measure_tiny_two_projection_fixture_budget,
     run_native_full_loop_engineering_receipt,
     tiny_two_projection_vote_cap_fixture,
+)
+from calm.hrm_text_158.native_full_stack.global_rate_cap_gpu import (
+    GLOBAL_RATE_CAP_TORCH_CUDA_REFERENCE_SCOPE,
+    RUN_GPU_GLOBAL_RATE_CAP_ENV,
 )
 from calm.hrm_text_158.native_full_stack.persistent_state_budget import (
     PHYSICAL_SUB2_NOT_ACHIEVED_STATEMENT,
@@ -78,6 +87,10 @@ def test_receipt_labels_reference_harness_and_defers_science_not_acquisition():
     assert "q.float() * scale" in QSCALE_REFERENCE_MATERIALIZATION_CAVEAT
     assert "not a native/custom-kernel speed claim" in QSCALE_REFERENCE_MATERIALIZATION_CAVEAT
     assert "CPU/control-flow glue" in GLOBAL_CAP_CPU_GLUE_CAVEAT
+    assert RUN_GPU_GLOBAL_RATE_CAP_ENV in GLOBAL_CAP_BACKEND_CAVEAT
+    assert "backend is explicit per step" in GLOBAL_CAP_BACKEND_CAVEAT
+    assert "CPU oracle parity is retained" in GLOBAL_CAP_BACKEND_CAVEAT
+    assert "not a zero-leak proof" in ALLOCATOR_DELTA_TELEMETRY_CAVEAT
     assert "ternary-hybrid" in NEXT_PHYSICAL_SUB2_FORK
     assert PRIOR_LARGE_FIXTURE_REFERENCE["scope"].endswith("not_tiny_loop_expected_value")
     assert PRIOR_LARGE_FIXTURE_REFERENCE["target_achieved"] is False
@@ -85,6 +98,18 @@ def test_receipt_labels_reference_harness_and_defers_science_not_acquisition():
 
 @GPU_FULL_LOOP_RECEIPT
 def test_cuda_full_loop_receipt_proves_cap_pressure_parity_and_compact_artifact():
+    gpu_cap_enabled = os.environ.get(RUN_GPU_GLOBAL_RATE_CAP_ENV) == "1"
+    expected_backend = "cuda" if gpu_cap_enabled else "cpu_reference_glue"
+    expected_scope = (
+        GLOBAL_RATE_CAP_TORCH_CUDA_REFERENCE_SCOPE
+        if gpu_cap_enabled
+        else GLOBAL_CAP_CPU_GLUE_SCOPE
+    )
+    expected_provenance = (
+        GPU_CAP_ACCEPTED_ROWS_PROVENANCE
+        if gpu_cap_enabled
+        else CAP_ACCEPTED_ROWS_PROVENANCE
+    )
     artifact_path = Path(
         os.environ.get(FULL_LOOP_RECEIPT_ARTIFACT_ENV, DEFAULT_FULL_LOOP_RECEIPT_ARTIFACT_PATH),
     )
@@ -99,6 +124,9 @@ def test_cuda_full_loop_receipt_proves_cap_pressure_parity_and_compact_artifact(
     assert len(receipt.step_receipts) == 2
     assert receipt.step_receipts[0].step_consumes_state_mutated_by_prior_step is False
     assert receipt.step_receipts[1].step_consumes_state_mutated_by_prior_step is True
+    assert receipt.global_cap_gpu_env == RUN_GPU_GLOBAL_RATE_CAP_ENV
+    assert receipt.global_cap_backend_caveat == GLOBAL_CAP_BACKEND_CAVEAT
+    assert receipt.allocator_delta_caveat == ALLOCATOR_DELTA_TELEMETRY_CAVEAT
     assert receipt.peak_reserved_bytes >= receipt.peak_allocated_bytes >= 0
     assert receipt.wall_clock_per_step_seconds > 0.0
 
@@ -110,7 +138,16 @@ def test_cuda_full_loop_receipt_proves_cap_pressure_parity_and_compact_artifact(
         assert step.accepted_count == 2
         assert step.deferred_count > 0
         assert step.global_rate_cap_saturated is True
-        assert step.cap_provenance_source == "apply_global_rate_cap_reference.accepted_rows"
+        assert step.cap_provenance_source == expected_provenance
+        assert step.global_cap_backend == expected_backend
+        assert step.global_cap_scope == expected_scope
+        assert step.global_cap_gpu_enabled is gpu_cap_enabled
+        assert step.global_cap_cpu_oracle_retained is True
+        assert step.global_cap_counts_match_cpu_oracle is True
+        assert step.global_cap_backlog_matches_cpu_oracle is True
+        assert step.global_cap_backlog_keys_match_cpu_oracle is True
+        assert step.global_cap_deferred_backlog_size > 0
+        assert step.global_cap_deferred_backlog_max_defer_count >= 1
         assert step.local_plan_rows_used_as_cap_acceptance is False
         assert step.parity_cuda_matches_cpu_global_cap_oracle is True
         assert step.cpu_oracle_mutate_outputs is True
@@ -137,7 +174,12 @@ def test_cuda_full_loop_receipt_proves_cap_pressure_parity_and_compact_artifact(
     artifact_text = artifact_path.read_text(encoding="utf-8")
     payload = json.loads(artifact_text)
     assert payload["label"] == NATIVE_FULL_LOOP_ENGINEERING_RECEIPT_LABEL
+    assert payload["global_cap_gpu_env"] == RUN_GPU_GLOBAL_RATE_CAP_ENV
+    assert payload["global_cap_backend_caveat"] == GLOBAL_CAP_BACKEND_CAVEAT
+    assert payload["allocator_delta_caveat"] == ALLOCATOR_DELTA_TELEMETRY_CAVEAT
     assert payload["artifact_hygiene"].startswith("compact runtime proof")
+    assert payload["step_receipts"][0]["global_cap_backend"] == expected_backend
+    assert payload["step_receipts"][0]["global_cap_scope"] == expected_scope
     assert len(artifact_text.encode("utf-8")) < 50_000
     assert '"q_levels"' not in artifact_text
     assert '"accumulators"' not in artifact_text
