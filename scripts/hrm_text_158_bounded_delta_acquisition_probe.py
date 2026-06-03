@@ -15,7 +15,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from typing import Any, Mapping
+import re
+from typing import Any, Callable, Mapping, Sequence
 
 import torch
 from torch.utils.data import DataLoader
@@ -28,6 +29,7 @@ from calm.hrm_text_158 import (
     LMHeadConfig,
 )
 from calm.hrm_text_158.bit_linear import BitLinear
+from calm.hrm_text_158.lm_head import IGNORE_LABEL_ID
 from calm.hrm_text_158.curriculum import (
     BROAD_NORMALIZER_VERSION,
     BroadTokenizer,
@@ -63,6 +65,25 @@ from scripts.train_hrm_text_158 import HrmTextGsm8kDataset
 RUN_C2_ACQUISITION_PROBE_ENV = "HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE"
 RUN_C2_GPU_LAUNCH_ENV = "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH"
 C2P1_HARNESS_SCHEMA_VERSION = "hrm_text_158_c2p1_real_model_bounded_delta_probe/v0"
+C2P2_TRAJECTORY_SCHEMA_VERSION = "hrm_text_158_c2p2_identity_full_acquisition_trajectory/v0"
+C2P2_AUDIT_SCHEMA_VERSION = "hrm_text_158_c2p2_identity_full_strict_exact_audit/v0"
+C2P2_SUPPORT_CYCLER_SCHEMA_VERSION = "hrm_text_158_c2p2_identity_full_support_cycler/v0"
+C2P2_STRICT_EXACT_TARGET = 90
+C2P2_DEFAULT_MAX_STEPS_HARD = 1500
+C2P2_NULL_TAXONOMY = (
+    "no-q-move",
+    "q-move-no-accuracy",
+    "partial-acquisition-plateau",
+    "nonfinite",
+    "instability-divergence",
+    "audit-mismatch",
+    "runtime-resource-failure",
+)
+C2P2_NULL_ESCALATION_RULE = (
+    "If C2.2 returns a classified null, escalate inside the same harness with "
+    "an inline int16/dense-acc control; historical receipt 1779747988676 is "
+    "context only, not a same-harness paired control."
+)
 FORWARD_LEVEL_INIT_FIDELITY_STE_ATOL = 1e-3
 FORWARD_LEVEL_INIT_FIDELITY_TOLERANCE_REASON = (
     "Native BitLinear training forward materializes q*scale through the "
@@ -106,6 +127,159 @@ def _collate(batch: list[dict]) -> dict[str, torch.Tensor]:
         "sep_positions": torch.stack([b["sep_position"] for b in batch], dim=0),
         "is_prior": torch.stack([b["is_prior"] for b in batch], dim=0),
     }
+
+
+def identity_full_rows(curriculum_seed: int) -> list[dict[str, Any]]:
+    return make_rung_examples(
+        IDENTITY_FULL_RUNG,
+        n=C2P2_STRICT_EXACT_TARGET,
+        seed=int(curriculum_seed),
+        split="train",
+    )
+
+
+def _identity_full_usable_rows(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    tok: Any,
+    max_len: int,
+) -> list[dict[str, Any]]:
+    usable: list[dict[str, Any]] = []
+    for index, row in enumerate(rows):
+        ids, _sep_pos = tok.encode_example(row["question"], row["expected"])
+        if len(ids) <= int(max_len):
+            item = dict(row)
+            item["_support_index"] = int(index)
+            usable.append(item)
+    return usable
+
+
+def _model_batch_from_collated(
+    batch: Mapping[str, torch.Tensor],
+    *,
+    device: torch.device,
+) -> dict[str, torch.Tensor]:
+    inputs = batch["inputs"].to(device)
+    labels = batch["labels"].to(device)
+    sep_positions = batch["sep_positions"].to(device)
+    batch_size, seq_len = inputs.shape
+    position_ids = torch.arange(seq_len, dtype=torch.long, device=device).unsqueeze(0).expand(batch_size, -1)
+    return {
+        "inputs": inputs,
+        "labels": labels,
+        "sep_positions": sep_positions,
+        "position_ids": position_ids,
+    }
+
+
+def _support_sample_hash(row: Mapping[str, Any]) -> str:
+    return _sha16(
+        {
+            "question": row["question"],
+            "expected": row["expected"],
+            "support_index": int(row.get("_support_index", -1)),
+        }
+    )
+
+
+def _support_batch_metadata(
+    *,
+    batch_index: int,
+    rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    sample_hashes = [_support_sample_hash(row) for row in rows]
+    row_ids = [
+        f"{int(row.get('_support_index', index))}:{sample_hash}"
+        for index, (row, sample_hash) in enumerate(zip(rows, sample_hashes))
+    ]
+    return {
+        "batch_index": int(batch_index),
+        "row_count": len(rows),
+        "row_ids": row_ids,
+        "sample_hashes": sample_hashes,
+        "batch_content_hash16": _sha16(sample_hashes),
+        "first_question": rows[0]["question"] if rows else None,
+        "last_question": rows[-1]["question"] if rows else None,
+    }
+
+
+def build_identity_full_support_batches(
+    *,
+    tok: Any,
+    max_len: int,
+    batch_size: int,
+    curriculum_seed: int,
+    device: torch.device,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if int(batch_size) <= 0:
+        raise ValueError("batch_size must be positive")
+    rows = identity_full_rows(int(curriculum_seed))
+    usable_rows = _identity_full_usable_rows(rows, tok=tok, max_len=int(max_len))
+    dataset = HrmTextGsm8kDataset(
+        rows,
+        tok,
+        max_len=int(max_len),
+        curriculum_rung=IDENTITY_FULL_RUNG,
+    )
+    if len(dataset) != len(usable_rows):
+        raise RuntimeError(
+            "identity-full metadata/tensor row mismatch: "
+            f"dataset={len(dataset)} usable_metadata={len(usable_rows)}"
+        )
+    if not dataset:
+        raise RuntimeError("identity-full dataset has no usable rows")
+    loader = DataLoader(
+        dataset,
+        batch_size=int(batch_size),
+        shuffle=False,
+        collate_fn=_collate,
+    )
+    support_batches: list[dict[str, Any]] = []
+    row_offset = 0
+    for batch_index, collated in enumerate(loader):
+        row_count = int(collated["inputs"].shape[0])
+        batch_rows = usable_rows[row_offset: row_offset + row_count]
+        metadata = _support_batch_metadata(batch_index=batch_index, rows=batch_rows)
+        support_batches.append(
+            {
+                "batch": _model_batch_from_collated(collated, device=device),
+                "metadata": {
+                    **metadata,
+                    "row_start": int(row_offset),
+                    "row_end_exclusive": int(row_offset + row_count),
+                },
+            }
+        )
+        row_offset += row_count
+    distinct_batch_hashes = {
+        item["metadata"]["batch_content_hash16"]
+        for item in support_batches
+    }
+    proof = {
+        "schema": C2P2_SUPPORT_CYCLER_SCHEMA_VERSION,
+        "rung": IDENTITY_FULL_RUNG,
+        "seed": int(curriculum_seed),
+        "requested_rows": C2P2_STRICT_EXACT_TARGET,
+        "usable_rows": len(dataset),
+        "dropped_rows": int(dataset.n_dropped),
+        "batch_size": int(batch_size),
+        "batch_count": len(support_batches),
+        "distinct_batch_count": len(distinct_batch_hashes),
+        "has_at_least_two_distinct_batches": len(distinct_batch_hashes) >= 2,
+        "covers_full_support": len(dataset) == C2P2_STRICT_EXACT_TARGET and row_offset == len(dataset),
+        "support_content_hash16": _sha16(
+            [
+                batch["metadata"]["batch_content_hash16"]
+                for batch in support_batches
+            ]
+        ),
+        "first_questions": [row["question"] for row in rows[: min(3, len(rows))]],
+        "batch_metadata": [
+            item["metadata"]
+            for item in support_batches
+        ],
+    }
+    return support_batches, proof
 
 
 def _tensor_scalar(value: Any) -> int | float | bool | str:
@@ -227,49 +401,31 @@ def build_identity_full_batch(
     curriculum_seed: int,
     device: torch.device,
 ) -> tuple[dict[str, torch.Tensor], dict[str, Any]]:
-    rows = make_rung_examples(
-        IDENTITY_FULL_RUNG,
-        n=90,
-        seed=int(curriculum_seed),
-        split="train",
-    )
-    dataset = HrmTextGsm8kDataset(rows, tok, max_len=max_len, curriculum_rung=IDENTITY_FULL_RUNG)
-    if len(dataset) < batch_size:
-        raise RuntimeError(
-            f"identity-full dataset has {len(dataset)} usable rows, need batch_size={batch_size}"
-        )
-    loader = DataLoader(
-        dataset,
+    support_batches, proof = build_identity_full_support_batches(
+        tok=tok,
+        max_len=int(max_len),
         batch_size=int(batch_size),
-        shuffle=False,
-        collate_fn=_collate,
+        curriculum_seed=int(curriculum_seed),
+        device=device,
     )
-    batch = next(iter(loader))
-    inputs = batch["inputs"].to(device)
-    labels = batch["labels"].to(device)
-    sep_positions = batch["sep_positions"].to(device)
-    B, L = inputs.shape
-    position_ids = torch.arange(L, dtype=torch.long, device=device).unsqueeze(0).expand(B, -1)
-    model_batch = {
-        "inputs": inputs,
-        "labels": labels,
-        "sep_positions": sep_positions,
-        "position_ids": position_ids,
-    }
-    proof = {
-        "rung": IDENTITY_FULL_RUNG,
-        "seed": int(curriculum_seed),
-        "requested_rows": 90,
-        "usable_rows": len(dataset),
-        "dropped_rows": int(dataset.n_dropped),
+    if not support_batches:
+        raise RuntimeError(
+            f"identity-full dataset has no usable rows for batch_size={batch_size}"
+        )
+    first_batch = support_batches[0]
+    first_model_batch = first_batch["batch"]
+    first_metadata = first_batch["metadata"]
+    batch_proof = {
+        **proof,
+        "selected_batch_index": 0,
+        "selected_batch_metadata": first_metadata,
         "batch_shape": {
-            "inputs": list(inputs.shape),
-            "labels": list(labels.shape),
-            "sep_positions": list(sep_positions.shape),
+            "inputs": list(first_model_batch["inputs"].shape),
+            "labels": list(first_model_batch["labels"].shape),
+            "sep_positions": list(first_model_batch["sep_positions"].shape),
         },
-        "first_questions": [row["question"] for row in rows[: min(3, len(rows))]],
     }
-    return model_batch, proof
+    return first_model_batch, batch_proof
 
 
 def identity_full_support_control_proof(curriculum_seed: int) -> dict[str, Any]:
@@ -300,6 +456,412 @@ def identity_full_support_control_proof(curriculum_seed: int) -> dict[str, Any]:
             "If C2.2 null is ambiguous after C2.1 telemetry, add an inline "
             "same-harness int16/dense-acc control."
         ),
+    }
+
+
+def _parse_single_int(text: str) -> int | None:
+    match = re.fullmatch(r"\s*(-?\d+)\s*", text)
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+def _decode_valid_tokens(tok: Any, token_ids: torch.Tensor) -> str:
+    return tok.decode([int(token) for token in token_ids.detach().cpu().tolist()])
+
+
+def score_strict_exact_and_parsed_from_logits(
+    logits: torch.Tensor,
+    labels: torch.Tensor,
+    *,
+    tok: Any,
+    row_offset: int = 0,
+    include_row_results: bool = False,
+    max_failure_examples: int = 5,
+) -> dict[str, Any]:
+    if logits.ndim != 3 or labels.ndim != 2:
+        raise ValueError(
+            "expected logits=(B,L,V) and labels=(B,L), got "
+            f"logits={tuple(logits.shape)} labels={tuple(labels.shape)}"
+        )
+    if tuple(logits.shape[:2]) != tuple(labels.shape):
+        raise ValueError(
+            "logits/labels sequence shape mismatch: "
+            f"logits={tuple(logits.shape[:2])} labels={tuple(labels.shape)}"
+        )
+    pred_ids = torch.argmax(logits.detach(), dim=-1).to("cpu")
+    labels_cpu = labels.detach().to("cpu")
+    masks = labels_cpu != IGNORE_LABEL_ID
+    row_has_labels = masks.any(dim=-1)
+    strict_per_row = ((pred_ids == labels_cpu) | ~masks).all(dim=-1) & row_has_labels
+    row_total = int(row_has_labels.sum().item())
+    strict_count = int(strict_per_row.sum().item())
+    parsed_count = 0
+    failure_examples: list[dict[str, Any]] = []
+    row_results: list[dict[str, Any]] = []
+    for local_index in range(labels_cpu.shape[0]):
+        if not bool(row_has_labels[local_index].item()):
+            continue
+        mask = masks[local_index]
+        expected_text = _decode_valid_tokens(tok, labels_cpu[local_index][mask])
+        predicted_text = _decode_valid_tokens(tok, pred_ids[local_index][mask])
+        expected_value = _parse_single_int(expected_text)
+        predicted_value = _parse_single_int(predicted_text)
+        parsed_exact = (
+            expected_value is not None
+            and predicted_value is not None
+            and expected_value == predicted_value
+        )
+        parsed_count += int(parsed_exact)
+        row_result = {
+            "row_index": int(row_offset + local_index),
+            "strict_exact": bool(strict_per_row[local_index].item()),
+            "parsed_exact": bool(parsed_exact),
+            "expected_text": expected_text,
+            "predicted_text": predicted_text,
+            "expected_value": expected_value,
+            "predicted_value": predicted_value,
+        }
+        if include_row_results:
+            row_results.append(row_result)
+        if (
+            (not row_result["strict_exact"] or not row_result["parsed_exact"])
+            and len(failure_examples) < int(max_failure_examples)
+        ):
+            failure_examples.append(row_result)
+    report = {
+        "strict_exact_count": strict_count,
+        "strict_exact_total": row_total,
+        "strict_exact": f"{strict_count}/{row_total}",
+        "strict_exact_pct": float(strict_count / row_total) if row_total else 0.0,
+        "parsed_exact_count": parsed_count,
+        "parsed_exact_total": row_total,
+        "parsed_exact": f"{parsed_count}/{row_total}",
+        "parsed_exact_pct": float(parsed_count / row_total) if row_total else 0.0,
+        "strict_exact_and_parsed_independent": True,
+        "failure_examples": failure_examples,
+    }
+    if include_row_results:
+        report["row_results"] = row_results
+    return report
+
+
+def aggregate_identity_full_audit_batch_reports(
+    *,
+    step: int,
+    batch_reports: Sequence[Mapping[str, Any]],
+    bp_steps: int,
+) -> dict[str, Any]:
+    strict_metric_count = sum(
+        int(report["metric_strict"]["count"])
+        for report in batch_reports
+    )
+    strict_metric_total = sum(
+        int(report["metric_strict"]["total"])
+        for report in batch_reports
+    )
+    strict_recomputed_count = sum(
+        int(report["strict_recomputed"]["count"])
+        for report in batch_reports
+    )
+    strict_recomputed_total = sum(
+        int(report["strict_recomputed"]["total"])
+        for report in batch_reports
+    )
+    parsed_count = sum(
+        int(report["parsed"]["count"])
+        for report in batch_reports
+    )
+    parsed_total = sum(
+        int(report["parsed"]["total"])
+        for report in batch_reports
+    )
+    loss_values = [
+        float(report["loss"])
+        for report in batch_reports
+        if report.get("loss") is not None
+    ]
+    strict_recompute_mismatch = (
+        strict_metric_count != strict_recomputed_count
+        or strict_metric_total != strict_recomputed_total
+    )
+    audit_mismatch = (
+        strict_recompute_mismatch
+        or strict_metric_total != parsed_total
+    )
+    audited_hashes = [
+        report["metadata"]["batch_content_hash16"]
+        for report in batch_reports
+    ]
+    return {
+        "schema": C2P2_AUDIT_SCHEMA_VERSION,
+        "step": int(step),
+        "support_rows_expected": C2P2_STRICT_EXACT_TARGET,
+        "support_rows_audited": strict_metric_total,
+        "audit_batch_count": len(batch_reports),
+        "audited_batch_content_hashes": audited_hashes,
+        "audited_distinct_batch_count": len(set(audited_hashes)),
+        "strict_exact_count": strict_metric_count,
+        "strict_exact_total": strict_metric_total,
+        "strict_exact": f"{strict_metric_count}/{strict_metric_total}",
+        "strict_exact_pct": (
+            float(strict_metric_count / strict_metric_total)
+            if strict_metric_total
+            else 0.0
+        ),
+        "strict_exact_recomputed_from_logits_count": strict_recomputed_count,
+        "strict_exact_recomputed_from_logits_total": strict_recomputed_total,
+        "strict_exact_recompute_matches_metric": not strict_recompute_mismatch,
+        "parsed_exact_count": parsed_count,
+        "parsed_exact_total": parsed_total,
+        "parsed_exact": f"{parsed_count}/{parsed_total}",
+        "parsed_exact_pct": (
+            float(parsed_count / parsed_total)
+            if parsed_total
+            else 0.0
+        ),
+        "strict_exact_and_parsed_independent": True,
+        "acquired": (
+            strict_metric_count == C2P2_STRICT_EXACT_TARGET
+            and strict_metric_total == C2P2_STRICT_EXACT_TARGET
+        ),
+        "loss_mean": (
+            float(sum(loss_values) / len(loss_values))
+            if loss_values
+            else None
+        ),
+        "bp_steps": int(bp_steps),
+        "audit_mismatch": bool(audit_mismatch),
+        "batch_reports": list(batch_reports),
+    }
+
+
+def audit_identity_full_support(
+    model: LMHead,
+    audit_batches: Sequence[Mapping[str, Any]],
+    tensor_states: Mapping[str, Any],
+    eligible_modules: Mapping[str, BitLinear],
+    *,
+    tok: Any,
+    device: torch.device,
+    step: int,
+    total_steps: int,
+) -> dict[str, Any]:
+    was_training = model.training
+    model.eval()
+    batch_reports: list[dict[str, Any]] = []
+    try:
+        extras = model.compute_train_extra_args(int(step), max(1, int(total_steps)))
+        with torch.no_grad():
+            with authoritative_forward_context(
+                eligible_modules,
+                tensor_states,
+                device=device,
+                requires_grad=False,
+            ):
+                for batch_item in audit_batches:
+                    metadata = batch_item["metadata"]
+                    batch = batch_item["batch"]
+                    _carry, loss, metrics = model(
+                        None,
+                        dict(batch),
+                        return_logits=True,
+                        **extras,
+                    )
+                    metric_exact = metrics["exact_accuracy"]
+                    metric_count = int(_tensor_scalar(metric_exact[0]))
+                    metric_total = int(_tensor_scalar(metric_exact[1]))
+                    score = score_strict_exact_and_parsed_from_logits(
+                        metrics["logits"],
+                        batch["labels"],
+                        tok=tok,
+                        row_offset=int(metadata["row_start"]),
+                    )
+                    batch_reports.append(
+                        {
+                            "metadata": metadata,
+                            "loss": float(loss.detach().cpu().item()),
+                            "metrics": _metrics_to_dict(metrics),
+                            "metric_strict": {
+                                "count": metric_count,
+                                "total": metric_total,
+                                "strict_exact": f"{metric_count}/{metric_total}",
+                            },
+                            "strict_recomputed": {
+                                "count": int(score["strict_exact_count"]),
+                                "total": int(score["strict_exact_total"]),
+                                "strict_exact": score["strict_exact"],
+                            },
+                            "parsed": {
+                                "count": int(score["parsed_exact_count"]),
+                                "total": int(score["parsed_exact_total"]),
+                                "parsed_exact": score["parsed_exact"],
+                            },
+                            "failure_examples": score["failure_examples"],
+                        }
+                    )
+    finally:
+        model.train(was_training)
+    return aggregate_identity_full_audit_batch_reports(
+        step=int(step),
+        batch_reports=batch_reports,
+        bp_steps=int(extras["bp_steps"]),
+    )
+
+
+def _step_q_changed_total(step_reports: Mapping[str, Any]) -> int:
+    return sum(
+        int(report.get("q_changed_count", 0))
+        for report in step_reports.values()
+    )
+
+
+def classify_c2p2_null(
+    *,
+    audit_reports: Mapping[str, Any],
+    step_reports: Mapping[str, Any],
+    support_cycler_proof: Mapping[str, Any],
+) -> str | None:
+    if not audit_reports:
+        return None
+    ordered = [
+        audit_reports[key]
+        for key in sorted(audit_reports, key=lambda item: int(item))
+    ]
+    final = ordered[-1]
+    if final.get("acquired") is True:
+        return None
+    if (
+        any(report.get("audit_mismatch") for report in ordered)
+        or final.get("strict_exact_total") != C2P2_STRICT_EXACT_TARGET
+        or not support_cycler_proof.get("covers_full_support", False)
+    ):
+        return "audit-mismatch"
+    if any(
+        report.get("loss_finite") is False
+        or report.get("weighted_grad_finite") is False
+        for report in step_reports.values()
+    ):
+        return "nonfinite"
+    if _step_q_changed_total(step_reports) <= 0:
+        return "no-q-move"
+    baseline = audit_reports.get("0", ordered[0])
+    if int(final["strict_exact_count"]) > int(baseline["strict_exact_count"]):
+        return "partial-acquisition-plateau"
+    return "q-move-no-accuracy"
+
+
+def build_acquisition_trajectory(
+    *,
+    audit_enabled: bool,
+    audit_reports: Mapping[str, Any],
+    step_reports: Mapping[str, Any],
+    support_cycler_proof: Mapping[str, Any],
+    audit_interval: int,
+    stop_on_strict_exact: bool,
+    max_steps_hard: int,
+    stop_reason: str,
+) -> dict[str, Any]:
+    if not audit_enabled:
+        return {
+            "schema": C2P2_TRAJECTORY_SCHEMA_VERSION,
+            "enabled": False,
+            "reason": "audit_interval<=0 and stop_on_strict_exact disabled",
+            "null_taxonomy": list(C2P2_NULL_TAXONOMY),
+            "null_escalation_rule": C2P2_NULL_ESCALATION_RULE,
+        }
+    ordered_steps = sorted(audit_reports, key=lambda item: int(item))
+    ordered_audits = [audit_reports[key] for key in ordered_steps]
+    baseline = audit_reports.get("0", ordered_audits[0] if ordered_audits else None)
+    final = ordered_audits[-1] if ordered_audits else None
+    trained_batch_hashes = [
+        report["support_batch"]["batch_content_hash16"]
+        for report in step_reports.values()
+        if "support_batch" in report
+    ]
+    acquired = bool(final and final.get("acquired"))
+    null_class = classify_c2p2_null(
+        audit_reports=audit_reports,
+        step_reports=step_reports,
+        support_cycler_proof=support_cycler_proof,
+    )
+    baseline_count = int(baseline["strict_exact_count"]) if baseline else 0
+    final_count = int(final["strict_exact_count"]) if final else 0
+    final_total = int(final["strict_exact_total"]) if final else 0
+    return {
+        "schema": C2P2_TRAJECTORY_SCHEMA_VERSION,
+        "enabled": True,
+        "recipe": {
+            "stability": "OUT",
+            "replay": "OUT/pure-rung",
+            "audit_interval": int(audit_interval),
+            "stop_on_strict_exact": bool(stop_on_strict_exact),
+            "max_steps_hard": int(max_steps_hard),
+            "steps_upper_bound": C2P2_DEFAULT_MAX_STEPS_HARD,
+            "acquire_gate": f"{C2P2_STRICT_EXACT_TARGET}/{C2P2_STRICT_EXACT_TARGET} strict-exact",
+        },
+        "acquisition_definition": (
+            "Acquisition is current-q exhaustive strict-exact "
+            "90/90 on the identity-full support; step-0 M/90 is the parent "
+            "baseline denominator, not a bank/pass verdict."
+        ),
+        "support_cycler_proof": support_cycler_proof,
+        "support_cycler_distinctness": {
+            "trained_batch_content_hashes": trained_batch_hashes,
+            "trained_distinct_batch_count": len(set(trained_batch_hashes)),
+            "trained_at_least_two_distinct_batches": len(set(trained_batch_hashes)) >= 2,
+            "audited_distinct_batch_count": (
+                int(final["audited_distinct_batch_count"])
+                if final
+                else 0
+            ),
+            "audited_at_least_two_distinct_batches": (
+                int(final["audited_distinct_batch_count"]) >= 2
+                if final
+                else False
+            ),
+        },
+        "audit_steps": [int(step) for step in ordered_steps],
+        "audits": {
+            str(step): audit_reports[str(step)]
+            for step in ordered_steps
+        },
+        "baseline_strict_exact_at_step0": (
+            {
+                "strict_exact_count": int(baseline["strict_exact_count"]),
+                "strict_exact_total": int(baseline["strict_exact_total"]),
+                "strict_exact": baseline["strict_exact"],
+                "strict_exact_pct": baseline["strict_exact_pct"],
+                "parsed_exact_count": int(baseline["parsed_exact_count"]),
+                "parsed_exact_total": int(baseline["parsed_exact_total"]),
+                "parsed_exact": baseline["parsed_exact"],
+            }
+            if baseline
+            else None
+        ),
+        "final_audit": (
+            {
+                "step": int(final["step"]),
+                "strict_exact_count": final_count,
+                "strict_exact_total": final_total,
+                "strict_exact": final["strict_exact"],
+                "strict_exact_pct": final["strict_exact_pct"],
+                "parsed_exact_count": int(final["parsed_exact_count"]),
+                "parsed_exact_total": int(final["parsed_exact_total"]),
+                "parsed_exact": final["parsed_exact"],
+                "acquired": bool(final["acquired"]),
+            }
+            if final
+            else None
+        ),
+        "baseline_to_final_delta": final_count - baseline_count,
+        "baseline_to_target_delta_remaining": C2P2_STRICT_EXACT_TARGET - final_count,
+        "stop_reason": stop_reason,
+        "acquisition_verdict": "acquired" if acquired else "no_acquisition_verdict",
+        "null_attribution_class": null_class,
+        "null_taxonomy": list(C2P2_NULL_TAXONOMY),
+        "null_escalation_rule": C2P2_NULL_ESCALATION_RULE,
+        "total_q_changed_count": _step_q_changed_total(step_reports),
     }
 
 
@@ -599,9 +1161,11 @@ def run_bounded_delta_steps(
     steps: int,
     require_q_change: bool,
     max_abs_per_tensor: int,
-) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-    if steps <= 0:
-        return {}, {}, dict(tensor_states)
+    support_batches: Sequence[Mapping[str, Any]] | None = None,
+    audit_callback: Callable[[int, Mapping[str, Any]], dict[str, Any]] | None = None,
+    audit_interval: int = 0,
+    stop_on_strict_exact: bool = False,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], str, int]:
     model.train()
     rank_spec = default_dry_run_rank_vote_spec()
     vote_spec = default_vote_update_spec(max_abs_per_tensor)
@@ -614,7 +1178,73 @@ def run_bounded_delta_steps(
     )
     states = dict(tensor_states)
     step_reports: dict[str, Any] = {}
+    audit_reports: dict[str, Any] = {}
+    if support_batches:
+        step_batches = list(support_batches)
+    else:
+        row_count = int(batch["inputs"].shape[0])
+        step_batches = [
+            {
+                "batch": batch,
+                "metadata": {
+                    "batch_index": 0,
+                    "row_start": 0,
+                    "row_end_exclusive": row_count,
+                    "row_count": row_count,
+                    "row_ids": [],
+                    "sample_hashes": [],
+                    "batch_content_hash16": _sha16(
+                        {
+                            "legacy_single_batch_shape": list(batch["inputs"].shape),
+                            "row_count": row_count,
+                        }
+                    ),
+                    "legacy_single_batch": True,
+                },
+            }
+        ]
+    if not step_batches:
+        raise RuntimeError("bounded-delta step loop requires at least one support batch")
+
+    def maybe_audit(step: int) -> bool:
+        if audit_callback is None:
+            return False
+        audit_reports[str(step)] = audit_callback(int(step), states)
+        return (
+            bool(stop_on_strict_exact)
+            and bool(audit_reports[str(step)].get("acquired"))
+        )
+
+    if maybe_audit(0):
+        updater_config = {
+            "rank_vote_spec": rank_spec.to_live_dict(),
+            "vote_update_spec": asdict(vote_spec),
+            "projection_law": S1_PROJECTION_LAW,
+            "vote_law": S1_RANK_BUCKET_VOTE_LAW,
+        }
+        return (
+            step_reports,
+            updater_config,
+            states,
+            audit_reports,
+            "strict_exact_acquired_step0",
+            0,
+        )
+    if steps <= 0:
+        updater_config = {
+            "rank_vote_spec": rank_spec.to_live_dict(),
+            "vote_update_spec": asdict(vote_spec),
+            "projection_law": S1_PROJECTION_LAW,
+            "vote_law": S1_RANK_BUCKET_VOTE_LAW,
+        }
+        return step_reports, updater_config, states, audit_reports, "no_steps", 0
+
+    stop_reason = "max_steps_completed"
+    steps_completed = 0
     for step in range(1, int(steps) + 1):
+        batch_item = step_batches[(step - 1) % len(step_batches)]
+        step_batch = batch_item["batch"]
+        step_batch_metadata = batch_item["metadata"]
         model.zero_grad(set_to_none=True)
         if optimizer is not None:
             optimizer.zero_grad(set_to_none=True)
@@ -625,7 +1255,7 @@ def run_bounded_delta_steps(
             device=device,
             requires_grad=True,
         ) as handle:
-            _carry, loss, metrics = model(None, dict(batch), **extras)
+            _carry, loss, metrics = model(None, dict(step_batch), **extras)
             loss.backward()
             weighted_grads = {
                 key: handle.weighted_grad(key)
@@ -655,16 +1285,36 @@ def run_bounded_delta_steps(
             "metrics": _metrics_to_dict(metrics),
             "bp_steps": int(extras["bp_steps"]),
             "q_changed_count": q_changed_count,
+            "support_batch": dict(step_batch_metadata),
             "step_result": step_result.to_dict(),
             "optimizer_identity_proof": identity_proof,
         }
+        steps_completed = step
+        if (
+            audit_callback is not None
+            and int(audit_interval) > 0
+            and step % int(audit_interval) == 0
+            and maybe_audit(step)
+        ):
+            stop_reason = "strict_exact_acquired_stop_fast"
+            break
+    if audit_callback is not None and str(steps_completed) not in audit_reports:
+        if maybe_audit(steps_completed):
+            stop_reason = "strict_exact_acquired_final"
     updater_config = {
         "rank_vote_spec": rank_spec.to_live_dict(),
         "vote_update_spec": asdict(vote_spec),
         "projection_law": S1_PROJECTION_LAW,
         "vote_law": S1_RANK_BUCKET_VOTE_LAW,
     }
-    return step_reports, updater_config, states
+    return (
+        step_reports,
+        updater_config,
+        states,
+        audit_reports,
+        stop_reason,
+        steps_completed,
+    )
 
 
 def prove_step0_optimizer_identity(
@@ -733,10 +1383,21 @@ def run_c2p1_probe(
     init_fidelity_atol: float = 0.0,
     require_q_change: bool = False,
     max_abs_per_tensor: int = 4096,
+    audit_interval: int = 0,
+    stop_on_strict_exact: bool = False,
+    max_steps_hard: int = C2P2_DEFAULT_MAX_STEPS_HARD,
     enabled: bool | None = None,
     allow_gpu_launch: bool = False,
 ) -> dict[str, Any]:
     assert_default_off(enabled)
+    if int(max_steps_hard) <= 0:
+        raise ValueError("max_steps_hard must be positive")
+    if int(steps) > int(max_steps_hard):
+        raise ValueError(
+            f"steps={int(steps)} exceeds max_steps_hard={int(max_steps_hard)}"
+        )
+    if int(audit_interval) < 0:
+        raise ValueError("audit_interval must be non-negative")
     torch_device = torch.device(device)
     guard_gpu_launch(torch_device, allow_gpu_launch=allow_gpu_launch)
     scratch_root.mkdir(parents=True, exist_ok=True)
@@ -745,14 +1406,25 @@ def run_c2p1_probe(
 
     ckpt, parent_hash_before = load_parent_checkpoint(parent, expected_sha256=parent_sha256)
     model, tok, cfg = build_model_from_checkpoint(ckpt, torch_device)
-    model_batch, batch_proof = build_identity_full_batch(
+    support_batches, support_cycler_proof = build_identity_full_support_batches(
         tok=tok,
         max_len=int(max_len or ckpt["config"]["max_seq_len"]),
         batch_size=int(batch_size),
         curriculum_seed=int(curriculum_seed),
         device=torch_device,
     )
-    support_proof = identity_full_support_control_proof(int(curriculum_seed))
+    model_batch = support_batches[0]["batch"]
+    batch_proof = {
+        **support_cycler_proof,
+        "selected_batch_index": 0,
+        "selected_batch_metadata": support_batches[0]["metadata"],
+        "batch_shape": {
+            "inputs": list(model_batch["inputs"].shape),
+            "labels": list(model_batch["labels"].shape),
+            "sep_positions": list(model_batch["sep_positions"].shape),
+        },
+    }
+    support_control_proof = identity_full_support_control_proof(int(curriculum_seed))
     eligible = select_eligible_bitlinears(model, eligible_scope=eligible_scope)
     tensor_states, init_fidelity = derive_tensor_states_and_check_init_fidelity(
         eligible,
@@ -776,7 +1448,28 @@ def run_c2p1_probe(
     if int(steps) <= 0:
         step0_optimizer_identity_proof = prove_step0_optimizer_identity(model, eligible)
 
-    step_reports, updater_config, final_states = run_bounded_delta_steps(
+    audit_enabled = int(audit_interval) > 0 or bool(stop_on_strict_exact)
+
+    def audit_callback(step: int, states: Mapping[str, Any]) -> dict[str, Any]:
+        return audit_identity_full_support(
+            model,
+            support_batches,
+            states,
+            eligible,
+            tok=tok,
+            device=torch_device,
+            step=int(step),
+            total_steps=max(1, int(steps)),
+        )
+
+    (
+        step_reports,
+        updater_config,
+        final_states,
+        audit_reports,
+        stop_reason,
+        steps_completed,
+    ) = run_bounded_delta_steps(
         model,
         model_batch,
         tensor_states,
@@ -785,6 +1478,10 @@ def run_c2p1_probe(
         steps=int(steps),
         require_q_change=bool(require_q_change),
         max_abs_per_tensor=int(max_abs_per_tensor),
+        support_batches=support_batches,
+        audit_callback=audit_callback if audit_enabled else None,
+        audit_interval=int(audit_interval),
+        stop_on_strict_exact=bool(stop_on_strict_exact),
     )
     if not updater_config:
         updater_config = {
@@ -795,7 +1492,7 @@ def run_c2p1_probe(
         }
     checkpoint_payload = build_authoritative_checkpoint_payload(
         final_states,
-        step=int(steps),
+        step=int(steps_completed),
         updater_config=updater_config,
         oracle_receipt=None,
         dry_run=True,
@@ -834,17 +1531,34 @@ def run_c2p1_probe(
             "use_ternary_bulk": bool(cfg.use_ternary_bulk),
         },
         "batch": batch_proof,
-        "identity_full_control": support_proof,
+        "identity_full_control": support_control_proof,
+        "support_cycler": support_cycler_proof,
         "eligible_scope": eligible_scope,
         "eligible_module_count": len(eligible),
         "eligible_modules": sorted(eligible),
         "weight_level_init_fidelity": init_fidelity,
         "forward_level_init_fidelity": forward_init_fidelity,
         "steps_requested": int(steps),
+        "steps_completed": int(steps_completed),
+        "max_steps_hard": int(max_steps_hard),
+        "audit_interval": int(audit_interval),
+        "stop_on_strict_exact": bool(stop_on_strict_exact),
+        "stop_reason": stop_reason,
         "forward_backward_update_executed": bool(steps > 0),
         "step0_optimizer_identity_proof": step0_optimizer_identity_proof,
         "bounded_update_attribution": BOUNDED_UPDATE_ATTRIBUTION,
         "step_reports": step_reports,
+        "audit_reports": audit_reports,
+        "acquisition_trajectory": build_acquisition_trajectory(
+            audit_enabled=audit_enabled,
+            audit_reports=audit_reports,
+            step_reports=step_reports,
+            support_cycler_proof=support_cycler_proof,
+            audit_interval=int(audit_interval),
+            stop_on_strict_exact=bool(stop_on_strict_exact),
+            max_steps_hard=int(max_steps_hard),
+            stop_reason=stop_reason,
+        ),
         "checkpoint_payload": checkpoint_payload,
         "memory": cuda_memory_receipt(torch_device),
     }
@@ -873,6 +1587,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--require-q-change", action="store_true")
     ap.add_argument("--max-abs-per-tensor", type=int, default=4096)
     ap.add_argument("--init-fidelity-atol", type=float, default=0.0)
+    ap.add_argument("--audit-interval", type=int, default=0)
+    ap.add_argument("--stop-on-strict-exact", action="store_true")
+    ap.add_argument("--max-steps-hard", type=int, default=C2P2_DEFAULT_MAX_STEPS_HARD)
     return ap
 
 
@@ -892,6 +1609,9 @@ def main(argv: list[str] | None = None) -> int:
         init_fidelity_atol=args.init_fidelity_atol,
         require_q_change=args.require_q_change,
         max_abs_per_tensor=args.max_abs_per_tensor,
+        audit_interval=args.audit_interval,
+        stop_on_strict_exact=args.stop_on_strict_exact,
+        max_steps_hard=args.max_steps_hard,
         enabled=args.enable_bounded_delta_probe,
         allow_gpu_launch=args.allow_gpu_launch,
     )

@@ -14,6 +14,7 @@ from calm.hrm_text_158 import (
 )
 from calm.hrm_text_158.bit_linear import BitLinear
 from calm.hrm_text_158.curriculum import BroadTokenizer
+from calm.hrm_text_158.lm_head import IGNORE_LABEL_ID
 from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     make_bounded_tensor_state,
 )
@@ -22,7 +23,9 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     FORWARD_LEVEL_INIT_FIDELITY_STE_ATOL,
     HISTORICAL_IDENTITY_CONTROL,
     RUN_C2_GPU_LAUNCH_ENV,
+    aggregate_identity_full_audit_batch_reports,
     build_identity_full_batch,
+    build_identity_full_support_batches,
     build_model_from_checkpoint,
     compute_forward_level_init_fidelity,
     cuda_memory_receipt,
@@ -35,6 +38,7 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     native_ternary_effective_weight,
     reset_cuda_memory_stats,
     run_c2p1_probe,
+    score_strict_exact_and_parsed_from_logits,
     select_eligible_bitlinears,
 )
 from scripts.train_hrm_text_158 import _build_ckpt_config, SOURCE_PIN
@@ -179,6 +183,132 @@ def test_identity_full_control_is_historical_positive_not_same_harness_control()
     assert proof["seed_independent_support"] is True
     assert proof["same_harness_paired_int16_control"] is False
     assert proof["inline_control_required"] is False
+
+
+def test_support_cycler_builds_distinct_full_support_batches():
+    tok = BroadTokenizer()
+
+    batches, proof = build_identity_full_support_batches(
+        tok=tok,
+        max_len=TINY_ARCH["max_len"],
+        batch_size=45,
+        curriculum_seed=17,
+        device=torch.device("cpu"),
+    )
+
+    assert proof["covers_full_support"] is True
+    assert proof["usable_rows"] == 90
+    assert proof["batch_count"] == 2
+    assert proof["distinct_batch_count"] == 2
+    assert proof["has_at_least_two_distinct_batches"] is True
+    assert len({batch["metadata"]["batch_content_hash16"] for batch in batches}) == 2
+    assert batches[0]["metadata"]["row_ids"] != batches[1]["metadata"]["row_ids"]
+
+
+def test_audit_score_counts_known_k_and_parsed_independently():
+    tok = BroadTokenizer()
+    batches, _proof = build_identity_full_support_batches(
+        tok=tok,
+        max_len=TINY_ARCH["max_len"],
+        batch_size=4,
+        curriculum_seed=17,
+        device=torch.device("cpu"),
+    )
+    labels = batches[0]["batch"]["labels"].detach().cpu()
+    pred_ids = torch.full_like(labels, tok.pad_id)
+    masks = labels != IGNORE_LABEL_ID
+
+    # Rows 0-1 are strict-correct. Row 2 has correct numeric digits but a
+    # wrong EOS token, proving parsed accuracy is not a strict-exact alias.
+    for row_index in (0, 1, 2):
+        pred_ids[row_index][masks[row_index]] = labels[row_index][masks[row_index]]
+    eos_pos = int(torch.nonzero(masks[2], as_tuple=False)[-1].item())
+    pred_ids[2, eos_pos] = tok.pad_id
+
+    logits = torch.full(
+        (labels.shape[0], labels.shape[1], tok.vocab_size),
+        -1000.0,
+        dtype=torch.float32,
+    )
+    for row_index in range(labels.shape[0]):
+        for pos_index in range(labels.shape[1]):
+            logits[row_index, pos_index, int(pred_ids[row_index, pos_index])] = 1000.0
+
+    score = score_strict_exact_and_parsed_from_logits(
+        logits,
+        labels,
+        tok=tok,
+        include_row_results=True,
+    )
+
+    assert score["strict_exact_count"] == 2
+    assert score["strict_exact_total"] == 4
+    assert score["parsed_exact_count"] == 3
+    assert score["parsed_exact_total"] == 4
+    assert score["strict_exact_and_parsed_independent"] is True
+    assert score["row_results"][2]["strict_exact"] is False
+    assert score["row_results"][2]["parsed_exact"] is True
+
+
+def test_audit_aggregation_counts_hand_built_k_of_n_fixture():
+    report = aggregate_identity_full_audit_batch_reports(
+        step=250,
+        bp_steps=1,
+        batch_reports=[
+            {
+                "metadata": {"batch_content_hash16": "batch-a"},
+                "loss": 0.25,
+                "metric_strict": {
+                    "count": 2,
+                    "total": 4,
+                    "strict_exact": "2/4",
+                },
+                "strict_recomputed": {
+                    "count": 2,
+                    "total": 4,
+                    "strict_exact": "2/4",
+                },
+                "parsed": {
+                    "count": 3,
+                    "total": 4,
+                    "parsed_exact": "3/4",
+                },
+                "failure_examples": [],
+            },
+            {
+                "metadata": {"batch_content_hash16": "batch-b"},
+                "loss": 0.75,
+                "metric_strict": {
+                    "count": 1,
+                    "total": 3,
+                    "strict_exact": "1/3",
+                },
+                "strict_recomputed": {
+                    "count": 1,
+                    "total": 3,
+                    "strict_exact": "1/3",
+                },
+                "parsed": {
+                    "count": 2,
+                    "total": 3,
+                    "parsed_exact": "2/3",
+                },
+                "failure_examples": [],
+            },
+        ],
+    )
+
+    assert report["step"] == 250
+    assert report["strict_exact_count"] == 3
+    assert report["strict_exact_total"] == 7
+    assert report["strict_exact"] == "3/7"
+    assert report["parsed_exact_count"] == 5
+    assert report["parsed_exact_total"] == 7
+    assert report["parsed_exact"] == "5/7"
+    assert report["strict_exact_recompute_matches_metric"] is True
+    assert report["audit_mismatch"] is False
+    assert report["audited_distinct_batch_count"] == 2
+    assert report["loss_mean"] == 0.5
 
 
 def test_weight_level_init_fidelity_detects_corrupted_q_state():
@@ -370,6 +500,53 @@ def test_tiny_real_model_cpu_step_receipt_is_scratch_only(tmp_path: Path):
     assert receipt["step_reports"]["1"]["optimizer_identity_proof"]["pass"] is True
     assert receipt["checkpoint_payload"]["checkpoint_written"] is False
     assert Path(receipt["receipt_path"]).exists()
+
+
+def test_tiny_cpu_audit_receipt_proves_distinct_support_batches_and_step0_baseline(tmp_path: Path):
+    parent = tmp_path / "tiny_parent.pt"
+    torch.save(_tiny_parent_blob(batch_size=45), parent)
+    parent_sha = file_sha256(parent)
+
+    receipt = run_c2p1_probe(
+        parent=parent,
+        parent_sha256=parent_sha,
+        scratch_root=tmp_path / "scratch",
+        device="cpu",
+        eligible_scope="first-bitlinear",
+        steps=2,
+        batch_size=45,
+        max_len=TINY_ARCH["max_len"],
+        curriculum_seed=17,
+        audit_interval=1,
+        max_steps_hard=5,
+        enabled=True,
+    )
+
+    step_hashes = [
+        receipt["step_reports"]["1"]["support_batch"]["batch_content_hash16"],
+        receipt["step_reports"]["2"]["support_batch"]["batch_content_hash16"],
+    ]
+    trajectory = receipt["acquisition_trajectory"]
+
+    assert receipt["audit_interval"] == 1
+    assert receipt["steps_completed"] == 2
+    assert receipt["support_cycler"]["covers_full_support"] is True
+    assert receipt["support_cycler"]["has_at_least_two_distinct_batches"] is True
+    assert len(set(step_hashes)) == 2
+    assert trajectory["enabled"] is True
+    assert trajectory["support_cycler_distinctness"]["trained_at_least_two_distinct_batches"] is True
+    assert trajectory["support_cycler_distinctness"]["audited_at_least_two_distinct_batches"] is True
+    assert trajectory["audit_steps"] == [0, 1, 2]
+    assert trajectory["baseline_strict_exact_at_step0"]["strict_exact_total"] == 90
+    assert trajectory["final_audit"]["strict_exact_total"] == 90
+    assert trajectory["acquisition_verdict"] in {"acquired", "no_acquisition_verdict"}
+    if trajectory["acquisition_verdict"] == "no_acquisition_verdict":
+        assert trajectory["null_attribution_class"] is not None
+    assert receipt["audit_reports"]["0"]["strict_exact_total"] == 90
+    assert receipt["audit_reports"]["0"]["strict_exact_recompute_matches_metric"] is True
+    assert receipt["audit_reports"]["2"]["audited_distinct_batch_count"] == 2
+    assert receipt["checkpoint_written"] is False
+    assert receipt["parent_hash_after"] == parent_sha
 
 
 def test_default_derivation_import_is_exercised_for_script_surface():
