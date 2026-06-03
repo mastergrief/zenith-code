@@ -556,6 +556,21 @@ def prove_step0_optimizer_identity(
     )
 
 
+def cuda_memory_stats_device_arg(device: torch.device) -> int:
+    if device.type != "cuda":
+        raise ValueError(f"CUDA memory stats require a cuda device, got {device}")
+    if device.index is not None:
+        return int(device.index)
+    return int(torch.cuda.current_device())
+
+
+def reset_cuda_memory_stats(device: torch.device) -> int:
+    stats_device = cuda_memory_stats_device_arg(device)
+    torch.cuda.set_device(stats_device)
+    torch.cuda.reset_peak_memory_stats(stats_device)
+    return stats_device
+
+
 def cuda_memory_receipt(device: torch.device) -> dict[str, Any]:
     if device.type != "cuda":
         return {
@@ -564,11 +579,14 @@ def cuda_memory_receipt(device: torch.device) -> dict[str, Any]:
             "cuda_peak_reserved_bytes": None,
             "cuda_final_allocated_bytes": None,
         }
+    stats_device = cuda_memory_stats_device_arg(device)
+    torch.cuda.set_device(stats_device)
     return {
         "device": str(device),
-        "cuda_peak_allocated_bytes": int(torch.cuda.max_memory_allocated(device)),
-        "cuda_peak_reserved_bytes": int(torch.cuda.max_memory_reserved(device)),
-        "cuda_final_allocated_bytes": int(torch.cuda.memory_allocated(device)),
+        "cuda_memory_stats_device": int(stats_device),
+        "cuda_peak_allocated_bytes": int(torch.cuda.max_memory_allocated(stats_device)),
+        "cuda_peak_reserved_bytes": int(torch.cuda.max_memory_reserved(stats_device)),
+        "cuda_final_allocated_bytes": int(torch.cuda.memory_allocated(stats_device)),
     }
 
 
@@ -595,7 +613,7 @@ def run_c2p1_probe(
     guard_gpu_launch(torch_device, allow_gpu_launch=allow_gpu_launch)
     scratch_root.mkdir(parents=True, exist_ok=True)
     if torch_device.type == "cuda":
-        torch.cuda.reset_peak_memory_stats(torch_device)
+        reset_cuda_memory_stats(torch_device)
 
     ckpt, parent_hash_before = load_parent_checkpoint(parent, expected_sha256=parent_sha256)
     model, tok, cfg = build_model_from_checkpoint(ckpt, torch_device)

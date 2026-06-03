@@ -25,12 +25,15 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     build_identity_full_batch,
     build_model_from_checkpoint,
     compute_forward_level_init_fidelity,
+    cuda_memory_receipt,
+    cuda_memory_stats_device_arg,
     derive_bounded_tensor_state_from_weight,
     derive_tensor_states_and_check_init_fidelity,
     file_sha256,
     guard_gpu_launch,
     identity_full_support_control_proof,
     native_ternary_effective_weight,
+    reset_cuda_memory_stats,
     run_c2p1_probe,
     select_eligible_bitlinears,
 )
@@ -113,6 +116,58 @@ def test_gpu_guard_requires_explicit_launch_env(monkeypatch):
 
     with pytest.raises(RuntimeError, match=RUN_C2_GPU_LAUNCH_ENV):
         guard_gpu_launch(torch.device("cuda:0"), allow_gpu_launch=True)
+
+
+def test_cuda_memory_stats_device_arg_normalizes_without_real_cuda(monkeypatch):
+    monkeypatch.setattr(torch.cuda, "current_device", lambda: 4)
+
+    assert cuda_memory_stats_device_arg(torch.device("cuda:2")) == 2
+    assert cuda_memory_stats_device_arg(torch.device("cuda")) == 4
+
+
+def test_cuda_memory_stats_reset_and_receipt_use_normalized_device(monkeypatch):
+    calls = []
+
+    def record(name, value):
+        calls.append((name, value))
+
+    monkeypatch.setattr(torch.cuda, "set_device", lambda device: record("set_device", device))
+    monkeypatch.setattr(
+        torch.cuda,
+        "reset_peak_memory_stats",
+        lambda device: record("reset_peak_memory_stats", device),
+    )
+    monkeypatch.setattr(
+        torch.cuda,
+        "max_memory_allocated",
+        lambda device: record("max_memory_allocated", device) or 11,
+    )
+    monkeypatch.setattr(
+        torch.cuda,
+        "max_memory_reserved",
+        lambda device: record("max_memory_reserved", device) or 22,
+    )
+    monkeypatch.setattr(
+        torch.cuda,
+        "memory_allocated",
+        lambda device: record("memory_allocated", device) or 3,
+    )
+
+    assert reset_cuda_memory_stats(torch.device("cuda:0")) == 0
+    receipt = cuda_memory_receipt(torch.device("cuda:0"))
+
+    assert receipt["cuda_memory_stats_device"] == 0
+    assert receipt["cuda_peak_allocated_bytes"] == 11
+    assert receipt["cuda_peak_reserved_bytes"] == 22
+    assert receipt["cuda_final_allocated_bytes"] == 3
+    assert calls == [
+        ("set_device", 0),
+        ("reset_peak_memory_stats", 0),
+        ("set_device", 0),
+        ("max_memory_allocated", 0),
+        ("max_memory_reserved", 0),
+        ("memory_allocated", 0),
+    ]
 
 
 def test_identity_full_control_is_historical_positive_not_same_harness_control():
