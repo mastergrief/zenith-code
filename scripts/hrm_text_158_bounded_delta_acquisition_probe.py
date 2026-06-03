@@ -366,6 +366,116 @@ def derive_tensor_states_and_check_init_fidelity(
     return tensor_states, report
 
 
+def _capture_eligible_module_outputs(
+    model: LMHead,
+    batch: Mapping[str, torch.Tensor],
+    eligible_modules: Mapping[str, BitLinear],
+    extras: Mapping[str, Any],
+) -> tuple[torch.Tensor, Mapping[str, Any], dict[str, list[torch.Tensor]]]:
+    captures = {state_key: [] for state_key in eligible_modules}
+    handles = []
+    for state_key, module in eligible_modules.items():
+
+        def _capture_output(
+            _module: torch.nn.Module,
+            _inputs: tuple[Any, ...],
+            output: Any,
+            *,
+            key: str = state_key,
+        ) -> None:
+            if not isinstance(output, torch.Tensor):
+                raise TypeError(
+                    "eligible BitLinear forward output telemetry requires "
+                    f"torch.Tensor output for {key}, got {type(output).__name__}"
+                )
+            captures[key].append(output.detach().to(torch.float32).cpu())
+
+        handles.append(module.register_forward_hook(_capture_output))
+    try:
+        _carry, loss, metrics = model(
+            None,
+            dict(batch),
+            return_logits=True,
+            **extras,
+        )
+    finally:
+        for handle in handles:
+            handle.remove()
+    return loss, metrics, captures
+
+
+def compare_module_output_fidelity(
+    native_outputs: Mapping[str, list[torch.Tensor]],
+    bounded_outputs: Mapping[str, list[torch.Tensor]],
+    *,
+    threshold: float,
+    eligible_scope: str,
+) -> dict[str, Any]:
+    module_reports = {}
+    all_pass = True
+    for state_key in sorted(native_outputs):
+        native_items = native_outputs[state_key]
+        bounded_items = bounded_outputs.get(state_key, [])
+        counts_match = len(native_items) == len(bounded_items)
+        invoked = len(native_items) > 0
+        aligned_count = min(len(native_items), len(bounded_items))
+        max_abs_diff = 0.0
+        allclose = counts_match and invoked
+        shape_mismatch_count = 0
+        first_output_shape = None
+        for native_item, bounded_item in zip(native_items, bounded_items):
+            if first_output_shape is None:
+                first_output_shape = list(native_item.shape)
+            if native_item.shape != bounded_item.shape:
+                shape_mismatch_count += 1
+                allclose = False
+                continue
+            diff = (bounded_item - native_item).abs()
+            item_max = float(diff.max().item()) if diff.numel() else 0.0
+            max_abs_diff = max(max_abs_diff, item_max)
+            allclose = allclose and bool(
+                torch.allclose(
+                    bounded_item,
+                    native_item,
+                    atol=float(threshold),
+                    rtol=0.0,
+                )
+            )
+        module_pass = bool(
+            counts_match
+            and invoked
+            and shape_mismatch_count == 0
+            and allclose
+        )
+        all_pass = all_pass and module_pass
+        module_reports[state_key] = {
+            "native_invocation_count": len(native_items),
+            "bounded_invocation_count": len(bounded_items),
+            "invocation_count": len(native_items) if counts_match else None,
+            "aligned_invocation_count": aligned_count,
+            "first_output_shape": first_output_shape,
+            "shape_mismatch_count": shape_mismatch_count,
+            "max_abs_diff": max_abs_diff,
+            "threshold": float(threshold),
+            "rtol": 0.0,
+            "allclose": bool(allclose),
+            "pass": module_pass,
+        }
+    missing_bounded_keys = sorted(set(bounded_outputs) - set(native_outputs))
+    all_pass = all_pass and not missing_bounded_keys
+    return {
+        "schema": "hrm_text_158_c2p1_module_output_init_fidelity/v0",
+        "eligible_scope": eligible_scope,
+        "threshold": float(threshold),
+        "rtol": 0.0,
+        "module_count": len(module_reports),
+        "eligible_modules": sorted(native_outputs),
+        "missing_bounded_only_modules": missing_bounded_keys,
+        "all_pass": bool(all_pass),
+        "modules": module_reports,
+    }
+
+
 def compute_forward_level_init_fidelity(
     model: LMHead,
     batch: Mapping[str, torch.Tensor],
@@ -384,11 +494,11 @@ def compute_forward_level_init_fidelity(
     model.train()
     model.zero_grad(set_to_none=True)
     with torch.no_grad():
-        _native_carry, native_loss, native_metrics = model(
-            None,
-            dict(batch),
-            return_logits=True,
-            **extras,
+        native_loss, native_metrics, native_module_outputs = _capture_eligible_module_outputs(
+            model,
+            batch,
+            eligible_modules,
+            extras,
         )
         native_logits = native_metrics["logits"].detach().to(torch.float32).cpu()
         native_loss_cpu = native_loss.detach().to(torch.float32).cpu()
@@ -399,11 +509,11 @@ def compute_forward_level_init_fidelity(
             device=device,
             requires_grad=False,
         ):
-            _bounded_carry, bounded_loss, bounded_metrics = model(
-                None,
-                dict(batch),
-                return_logits=True,
-                **extras,
+            bounded_loss, bounded_metrics, bounded_module_outputs = _capture_eligible_module_outputs(
+                model,
+                batch,
+                eligible_modules,
+                extras,
             )
         bounded_logits = bounded_metrics["logits"].detach().to(torch.float32).cpu()
         bounded_loss_cpu = bounded_loss.detach().to(torch.float32).cpu()
@@ -418,7 +528,22 @@ def compute_forward_level_init_fidelity(
     max_abs_diff = max(logits_max_abs_diff, loss_abs_diff)
     logits_allclose = bool(torch.allclose(bounded_logits, native_logits, atol=threshold_f, rtol=0.0))
     loss_allclose = bool(torch.allclose(bounded_loss_cpu, native_loss_cpu, atol=threshold_f, rtol=0.0))
-    passed = bool(logits_allclose and loss_allclose)
+    module_output_fidelity = compare_module_output_fidelity(
+        native_module_outputs,
+        bounded_module_outputs,
+        threshold=threshold_f,
+        eligible_scope=eligible_scope,
+    )
+    module_output_max_abs_diff = max(
+        (
+            float(item["max_abs_diff"])
+            for item in module_output_fidelity["modules"].values()
+        ),
+        default=0.0,
+    )
+    max_abs_diff = max(max_abs_diff, module_output_max_abs_diff)
+    module_outputs_allclose = bool(module_output_fidelity["all_pass"])
+    passed = bool(logits_allclose and loss_allclose and module_outputs_allclose)
     report = {
         "schema": "hrm_text_158_c2p1_forward_level_init_fidelity/v0",
         "status": "computed",
@@ -439,9 +564,12 @@ def compute_forward_level_init_fidelity(
         "logits_shape": list(native_logits.shape),
         "logits_max_abs_diff": logits_max_abs_diff,
         "loss_abs_diff": loss_abs_diff,
+        "module_output_max_abs_diff": module_output_max_abs_diff,
         "max_abs_diff": max_abs_diff,
         "logits_allclose": logits_allclose,
         "loss_allclose": loss_allclose,
+        "module_outputs_allclose": module_outputs_allclose,
+        "module_output_fidelity": module_output_fidelity,
         "pass": passed,
     }
     if not passed:

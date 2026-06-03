@@ -91,7 +91,7 @@ def _tiny_parent_blob(*, batch_size: int = 2) -> dict:
     }
 
 
-def _tiny_forward_fixture(*, batch_size: int = 2):
+def _tiny_forward_fixture(*, batch_size: int = 2, eligible_scope: str = "first-bitlinear"):
     device = torch.device("cpu")
     ckpt = _tiny_parent_blob(batch_size=batch_size)
     model, tok, _cfg = build_model_from_checkpoint(ckpt, device)
@@ -102,7 +102,7 @@ def _tiny_forward_fixture(*, batch_size: int = 2):
         curriculum_seed=17,
         device=device,
     )
-    eligible = select_eligible_bitlinears(model, eligible_scope="first-bitlinear")
+    eligible = select_eligible_bitlinears(model, eligible_scope=eligible_scope)
     states, report = derive_tensor_states_and_check_init_fidelity(eligible, threshold=0.0)
     assert report["all_pass"] is True
     return model, batch, eligible, states
@@ -228,7 +228,53 @@ def test_forward_level_init_fidelity_passes_on_tiny_real_model():
     assert report["eligible_modules"] == sorted(eligible)
     assert report["logits_max_abs_diff"] <= report["threshold"]
     assert report["loss_abs_diff"] <= report["threshold"]
+    assert report["module_output_max_abs_diff"] <= report["threshold"]
     assert report["max_abs_diff"] <= report["threshold"]
+    module_fidelity = report["module_output_fidelity"]
+    assert module_fidelity["eligible_scope"] == "first-bitlinear"
+    assert module_fidelity["all_pass"] is True
+    assert module_fidelity["module_count"] == len(eligible)
+    assert module_fidelity["eligible_modules"] == sorted(eligible)
+    module_report = module_fidelity["modules"][next(iter(eligible))]
+    assert module_report["invocation_count"] > 0
+    assert module_report["native_invocation_count"] == module_report["bounded_invocation_count"]
+    assert module_report["max_abs_diff"] <= report["threshold"]
+    assert module_report["allclose"] is True
+    assert module_report["pass"] is True
+
+
+def test_forward_level_init_fidelity_emits_module_output_telemetry_for_all_bitlinears():
+    model, batch, eligible, states = _tiny_forward_fixture(eligible_scope="all-bitlinear")
+
+    report = compute_forward_level_init_fidelity(
+        model,
+        batch,
+        states,
+        eligible,
+        device=torch.device("cpu"),
+        threshold=0.0,
+        eligible_scope="all-bitlinear",
+        total_steps=1,
+    )
+
+    module_fidelity = report["module_output_fidelity"]
+    assert report["pass"] is True
+    assert report["module_outputs_allclose"] is True
+    assert module_fidelity["schema"] == "hrm_text_158_c2p1_module_output_init_fidelity/v0"
+    assert module_fidelity["eligible_scope"] == "all-bitlinear"
+    assert module_fidelity["all_pass"] is True
+    assert module_fidelity["module_count"] == len(eligible)
+    assert module_fidelity["eligible_modules"] == sorted(eligible)
+    assert set(module_fidelity["modules"]) == set(eligible)
+    for module_report in module_fidelity["modules"].values():
+        assert module_report["native_invocation_count"] == module_report["bounded_invocation_count"]
+        assert module_report["invocation_count"] == module_report["aligned_invocation_count"]
+        assert module_report["invocation_count"] > 0
+        assert module_report["first_output_shape"] is not None
+        assert module_report["shape_mismatch_count"] == 0
+        assert module_report["max_abs_diff"] <= report["threshold"]
+        assert module_report["allclose"] is True
+        assert module_report["pass"] is True
 
 
 def test_forward_level_init_fidelity_hard_fails_on_corrupted_q_state():
@@ -253,6 +299,32 @@ def test_forward_level_init_fidelity_hard_fails_on_corrupted_q_state():
             device=torch.device("cpu"),
             threshold=0.0,
             eligible_scope="first-bitlinear",
+            total_steps=1,
+        )
+
+
+def test_forward_level_init_fidelity_hard_fails_on_corrupted_all_bitlinear_q_state():
+    model, batch, eligible, states = _tiny_forward_fixture(eligible_scope="all-bitlinear")
+    state_key = sorted(states)[0]
+    corrupted_q = states[state_key].q_levels.clone().mul(-1)
+    if torch.equal(corrupted_q, states[state_key].q_levels):
+        corrupted_q.fill_(1)
+    corrupted_states = dict(states)
+    corrupted_states[state_key] = make_bounded_tensor_state(
+        state_key,
+        corrupted_q,
+        states[state_key].frozen_scale,
+    )
+
+    with pytest.raises(RuntimeError, match="forward-level init-fidelity allclose failed"):
+        compute_forward_level_init_fidelity(
+            model,
+            batch,
+            corrupted_states,
+            eligible,
+            device=torch.device("cpu"),
+            threshold=0.0,
+            eligible_scope="all-bitlinear",
             total_steps=1,
         )
 
@@ -290,6 +362,8 @@ def test_tiny_real_model_cpu_step_receipt_is_scratch_only(tmp_path: Path):
     assert receipt["forward_level_init_fidelity"]["threshold"] == FORWARD_LEVEL_INIT_FIDELITY_STE_ATOL
     assert receipt["forward_level_init_fidelity"]["logits_max_abs_diff"] <= FORWARD_LEVEL_INIT_FIDELITY_STE_ATOL
     assert receipt["forward_level_init_fidelity"]["loss_abs_diff"] <= FORWARD_LEVEL_INIT_FIDELITY_STE_ATOL
+    assert receipt["forward_level_init_fidelity"]["module_outputs_allclose"] is True
+    assert receipt["forward_level_init_fidelity"]["module_output_fidelity"]["all_pass"] is True
     assert receipt["forward_backward_update_executed"] is True
     assert receipt["step_reports"]["1"]["loss_finite"] is True
     assert receipt["step_reports"]["1"]["weighted_grad_finite"] is True
