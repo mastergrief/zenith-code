@@ -96,6 +96,10 @@ def _backlog_key_set(backlog: Mapping[str, Mapping[int, Mapping[str, int]]]) -> 
     }
 
 
+def _backlog_keys_sha256(backlog: Mapping[str, Mapping[int, Mapping[str, int]]]) -> str:
+    return hashlib.sha256(str(sorted(_backlog_key_set(backlog))).encode("utf-8")).hexdigest()
+
+
 def _identity_sha256(identities: set[tuple[str, int]]) -> str:
     h = hashlib.sha256()
     for state_key, flat_index in sorted(identities):
@@ -901,6 +905,8 @@ def compare_bounded_delta_step_to_int16_oracle(
     guard_spec: BoundedDeltaGuardSpec | None = None,
     global_cap_spec: GlobalRateCapSpec | None = None,
     deferred_backlog: dict[str, dict[int, dict[str, int]]] | None = None,
+    bounded_deferred_backlog: dict[str, dict[int, dict[str, int]]] | None = None,
+    bounded_stored_deferred_backlog: dict[str, dict[int, dict[str, int]]] | None = None,
     tensor_offsets: dict[str, int] | None = None,
     storage_projection: BoundedDeltaStorageProjection | None = None,
     dense_cold_bits_per_weight: float = 0.0,
@@ -911,7 +917,16 @@ def compare_bounded_delta_step_to_int16_oracle(
     guardrail_metadata_bits: int = 64,
     next_candidate_if_failed: str = "event_coded_crossing_residual_log",
 ) -> BoundedDeltaReferenceReport:
-    """Compare exact int16 dynamics against bounded encode/decode loss only."""
+    """Compare exact int16 dynamics against bounded encode/decode loss.
+
+    By default this preserves the original same-backlog strict control: exact and
+    bounded paths receive the same deferred backlog, and the projection charges the
+    max exact/bounded output backlog. Supplying ``bounded_deferred_backlog`` and/or
+    ``bounded_stored_deferred_backlog`` opts into an explicit degraded-backlog
+    measurement: the bounded path receives/carries the provided bounded backlog,
+    and the ledger charges the actual bounded stored backlog rather than hiding an
+    exact backlog behind a budget-fitting override.
+    """
 
     if not inputs:
         raise ValueError("at least one bounded-delta oracle input is required")
@@ -971,15 +986,54 @@ def compare_bounded_delta_step_to_int16_oracle(
         deferred_backlog=deferred_backlog,
         tensor_offsets=offsets,
     )
+    bounded_backlog_policy_active = (
+        bounded_deferred_backlog is not None
+        or bounded_stored_deferred_backlog is not None
+    )
+    bounded_input_backlog = (
+        deferred_backlog if bounded_deferred_backlog is None else bounded_deferred_backlog
+    )
     bounded = _run_reference_path(
         inputs,
         states_by_key=bounded_states,
         global_cap_spec=global_cap_spec,
-        deferred_backlog=deferred_backlog,
+        deferred_backlog=bounded_input_backlog,
         tensor_offsets=offsets,
     )
+    bounded_output_backlog = (
+        bounded_stored_deferred_backlog
+        if bounded_stored_deferred_backlog is not None
+        else bounded.cap_result.deferred_backlog
+        if bounded.cap_result is not None
+        else bounded_input_backlog
+    ) or {}
+    exact_backlog_ids = exact.backlog_ids
+    bounded_backlog_ids = _backlog_key_set(bounded_output_backlog)
+    if bounded_stored_deferred_backlog is not None and bounded.cap_result is not None:
+        bounded_actual_backlog_ids = _backlog_key_set(bounded.cap_result.deferred_backlog)
+        if not bounded_backlog_ids <= bounded_actual_backlog_ids:
+            invented_ids = sorted(bounded_backlog_ids - bounded_actual_backlog_ids)
+            raise ValueError(
+                "bounded_stored_deferred_backlog must be a subset of the bounded "
+                "path's actual output backlog; invented_or_stale_ids="
+                f"{invented_ids[:8]}"
+            )
 
-    backlog_entry_count = max(len(exact.backlog_ids), len(bounded.backlog_ids))
+    backlog_entry_count = (
+        len(bounded_backlog_ids)
+        if bounded_backlog_policy_active
+        else max(len(exact_backlog_ids), len(bounded.backlog_ids))
+    )
+    if (
+        bounded_backlog_policy_active
+        and storage_projection is not None
+        and int(storage_projection.backlog_entry_count) != backlog_entry_count
+    ):
+        raise ValueError(
+            "bounded-backlog policy storage_projection must charge the actual "
+            "bounded stored backlog entry count; got "
+            f"{storage_projection.backlog_entry_count} != {backlog_entry_count}"
+        )
     projection = storage_projection or project_bounded_delta_accumulator_bpw(
         eligible_weight_count=eligible,
         hot_exact_row_count=hot_count,
@@ -1009,8 +1063,8 @@ def compare_bounded_delta_step_to_int16_oracle(
     )
     q_changed_count, q_fraction = _symmetric_fraction(exact.q_changed_ids, bounded.q_changed_ids)
     backlog_changed_count, backlog_fraction = _symmetric_fraction(
-        exact.backlog_ids,
-        bounded.backlog_ids,
+        exact_backlog_ids,
+        bounded_backlog_ids,
     )
 
     exact_direction = exact.candidate_direction_by_id
@@ -1049,7 +1103,16 @@ def compare_bounded_delta_step_to_int16_oracle(
     vote_hash = _hash_vote_inputs(inputs)
     cap_hash = _hash_cap_spec(global_cap_spec)
     offsets_hash = hashlib.sha256(str(sorted((offsets or {}).items())).encode("utf-8")).hexdigest()
-    backlog_hash = hashlib.sha256(str(sorted(_backlog_key_set(deferred_backlog or {}))).encode("utf-8")).hexdigest()
+    exact_input_backlog = deferred_backlog or {}
+    bounded_input_backlog_for_hash = bounded_input_backlog or {}
+    path_difference = (
+        "bounded path differs only by encode_decode_accumulator_loss"
+        if not bounded_backlog_policy_active
+        else (
+            "bounded path differs by encode_decode_accumulator_loss_and_"
+            "bounded_backlog_encode_drop"
+        )
+    )
     measured = BoundedDeltaMeasuredReport(
         schema_version=BOUNDED_DELTA_ACCUMULATOR_SCHEMA_VERSION,
         label=BOUNDED_DELTA_ACCUMULATOR_LABEL,
@@ -1068,7 +1131,7 @@ def compare_bounded_delta_step_to_int16_oracle(
         q_changed_union_count=len(exact.q_changed_ids | bounded.q_changed_ids),
         q_changed_fraction=q_fraction,
         backlog_key_changed_count=backlog_changed_count,
-        backlog_key_union_count=len(exact.backlog_ids | bounded.backlog_ids),
+        backlog_key_union_count=len(exact_backlog_ids | bounded_backlog_ids),
         backlog_key_changed_fraction=backlog_fraction,
         cap_frontier_rank_delta=rank_delta,
         hot_risk_changed_count=hot_risk_changed,
@@ -1089,11 +1152,22 @@ def compare_bounded_delta_step_to_int16_oracle(
             "votes_sha256": vote_hash,
             "same_cap_spec": True,
             "cap_spec_sha256": cap_hash,
-            "same_deferred_backlog": True,
-            "deferred_backlog_keys_sha256": backlog_hash,
+            "same_deferred_backlog": not bounded_backlog_policy_active,
+            "bounded_backlog_policy_active": bounded_backlog_policy_active,
+            "exact_input_deferred_backlog_count": len(_backlog_key_set(exact_input_backlog)),
+            "bounded_input_deferred_backlog_count": len(_backlog_key_set(bounded_input_backlog_for_hash)),
+            "exact_output_deferred_backlog_count": len(exact_backlog_ids),
+            "bounded_stored_deferred_backlog_count": len(bounded_backlog_ids),
+            "deferred_backlog_keys_sha256": _backlog_keys_sha256(exact_input_backlog),
+            "exact_input_deferred_backlog_keys_sha256": _backlog_keys_sha256(exact_input_backlog),
+            "bounded_input_deferred_backlog_keys_sha256": _backlog_keys_sha256(
+                bounded_input_backlog_for_hash
+            ),
+            "exact_output_deferred_backlog_keys_sha256": _identity_sha256(exact_backlog_ids),
+            "bounded_stored_deferred_backlog_keys_sha256": _identity_sha256(bounded_backlog_ids),
             "same_tensor_offsets": True,
             "tensor_offsets_sha256": offsets_hash,
-            "path_difference": "bounded path differs only by encode_decode_accumulator_loss",
+            "path_difference": path_difference,
         },
     )
     guard_eval = _evaluate_guardrail(guard, measured)
