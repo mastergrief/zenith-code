@@ -1,6 +1,7 @@
 """C2.1 bounded-delta acquisition harness CPU/static tests."""
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     make_bounded_tensor_state,
 )
 from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+    C2P2_TIMING_SCHEMA_VERSION,
     DEFAULT_PARENT_SHA256,
     FORWARD_LEVEL_INIT_FIDELITY_STE_ATOL,
     HISTORICAL_IDENTITY_CONTROL,
@@ -110,6 +112,11 @@ def _tiny_forward_fixture(*, batch_size: int = 2, eligible_scope: str = "first-b
     states, report = derive_tensor_states_and_check_init_fidelity(eligible, threshold=0.0)
     assert report["all_pass"] is True
     return model, batch, eligible, states
+
+
+def _assert_finite_non_negative(value: float | int) -> None:
+    assert math.isfinite(float(value))
+    assert float(value) >= 0.0
 
 
 def test_gpu_guard_requires_explicit_launch_env(monkeypatch):
@@ -527,6 +534,7 @@ def test_tiny_cpu_audit_receipt_proves_distinct_support_batches_and_step0_baseli
         receipt["step_reports"]["2"]["support_batch"]["batch_content_hash16"],
     ]
     trajectory = receipt["acquisition_trajectory"]
+    timing_summary = receipt["timing_summary"]
 
     assert receipt["audit_interval"] == 1
     assert receipt["steps_completed"] == 2
@@ -545,6 +553,28 @@ def test_tiny_cpu_audit_receipt_proves_distinct_support_batches_and_step0_baseli
     assert receipt["audit_reports"]["0"]["strict_exact_total"] == 90
     assert receipt["audit_reports"]["0"]["strict_exact_recompute_matches_metric"] is True
     assert receipt["audit_reports"]["2"]["audited_distinct_batch_count"] == 2
+    assert timing_summary["schema"] == C2P2_TIMING_SCHEMA_VERSION
+    assert timing_summary["step_report_count"] == 2
+    assert timing_summary["step_timing_count"] == 2
+    assert timing_summary["audit_report_count"] == 3
+    assert timing_summary["audit_timing_count"] == 3
+    assert set(timing_summary["step_duration_seconds_by_step"]) == {"1", "2"}
+    assert set(timing_summary["audit_duration_seconds_by_step"]) == {"0", "1", "2"}
+    assert timing_summary["audit_overhead_seconds_by_step"] == timing_summary["audit_duration_seconds_by_step"]
+    assert len(timing_summary["step_duration_seconds"]) == 2
+    assert len(timing_summary["audit_duration_seconds"]) == 3
+    _assert_finite_non_negative(receipt["step_reports"]["1"]["duration_seconds"])
+    _assert_finite_non_negative(receipt["audit_reports"]["0"]["duration_seconds"])
+    _assert_finite_non_negative(timing_summary["total_run_duration_seconds"])
+    _assert_finite_non_negative(timing_summary["median_step_duration_seconds"])
+    _assert_finite_non_negative(timing_summary["total_step_duration_seconds"])
+    _assert_finite_non_negative(timing_summary["median_audit_duration_seconds"])
+    _assert_finite_non_negative(timing_summary["total_audit_duration_seconds"])
+    for duration in timing_summary["step_duration_seconds"]:
+        _assert_finite_non_negative(duration)
+    for duration in timing_summary["audit_duration_seconds"]:
+        _assert_finite_non_negative(duration)
+    assert trajectory["timing_summary"] == timing_summary
     assert receipt["checkpoint_written"] is False
     assert receipt["parent_hash_after"] == parent_sha
 

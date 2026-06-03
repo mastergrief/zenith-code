@@ -16,6 +16,8 @@ import json
 import os
 from pathlib import Path
 import re
+import statistics
+import time
 from typing import Any, Callable, Mapping, Sequence
 
 import torch
@@ -68,6 +70,7 @@ C2P1_HARNESS_SCHEMA_VERSION = "hrm_text_158_c2p1_real_model_bounded_delta_probe/
 C2P2_TRAJECTORY_SCHEMA_VERSION = "hrm_text_158_c2p2_identity_full_acquisition_trajectory/v0"
 C2P2_AUDIT_SCHEMA_VERSION = "hrm_text_158_c2p2_identity_full_strict_exact_audit/v0"
 C2P2_SUPPORT_CYCLER_SCHEMA_VERSION = "hrm_text_158_c2p2_identity_full_support_cycler/v0"
+C2P2_TIMING_SCHEMA_VERSION = "hrm_text_158_c2p2_calibration_timing_summary/v0"
 C2P2_STRICT_EXACT_TARGET = 90
 C2P2_DEFAULT_MAX_STEPS_HARD = 1500
 C2P2_NULL_TAXONOMY = (
@@ -307,6 +310,73 @@ def _metrics_to_dict(metrics: Mapping[str, Any]) -> dict[str, Any]:
         else:
             out[key] = _tensor_scalar(value)
     return out
+
+
+def _synchronize_timing_device(device: torch.device) -> None:
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+
+
+def _timing_start(device: torch.device) -> float:
+    _synchronize_timing_device(device)
+    return time.perf_counter()
+
+
+def _timing_duration_seconds(start: float, device: torch.device) -> float:
+    _synchronize_timing_device(device)
+    return max(0.0, float(time.perf_counter() - start))
+
+
+def _median_or_none(values: Sequence[float]) -> float | None:
+    if not values:
+        return None
+    return float(statistics.median(values))
+
+
+def _numeric_report_items(
+    reports: Mapping[str, Any],
+) -> list[tuple[str, Mapping[str, Any]]]:
+    return [
+        (str(key), reports[key])
+        for key in sorted(reports, key=lambda item: int(item))
+    ]
+
+
+def build_timing_summary(
+    *,
+    step_reports: Mapping[str, Any],
+    audit_reports: Mapping[str, Any],
+    total_run_duration_seconds: float,
+) -> dict[str, Any]:
+    step_duration_by_step = {
+        step: float(report["duration_seconds"])
+        for step, report in _numeric_report_items(step_reports)
+        if "duration_seconds" in report
+    }
+    audit_duration_by_step = {
+        step: float(report["duration_seconds"])
+        for step, report in _numeric_report_items(audit_reports)
+        if "duration_seconds" in report
+    }
+    step_durations = list(step_duration_by_step.values())
+    audit_durations = list(audit_duration_by_step.values())
+    return {
+        "schema": C2P2_TIMING_SCHEMA_VERSION,
+        "total_run_duration_seconds": float(total_run_duration_seconds),
+        "step_report_count": len(step_reports),
+        "step_timing_count": len(step_duration_by_step),
+        "step_duration_seconds": step_durations,
+        "step_duration_seconds_by_step": step_duration_by_step,
+        "median_step_duration_seconds": _median_or_none(step_durations),
+        "total_step_duration_seconds": float(sum(step_durations)),
+        "audit_report_count": len(audit_reports),
+        "audit_timing_count": len(audit_duration_by_step),
+        "audit_duration_seconds": audit_durations,
+        "audit_duration_seconds_by_step": audit_duration_by_step,
+        "audit_overhead_seconds_by_step": audit_duration_by_step,
+        "median_audit_duration_seconds": _median_or_none(audit_durations),
+        "total_audit_duration_seconds": float(sum(audit_durations)),
+    }
 
 
 def assert_default_off(enabled: bool | None) -> None:
@@ -761,12 +831,15 @@ def build_acquisition_trajectory(
     stop_on_strict_exact: bool,
     max_steps_hard: int,
     stop_reason: str,
+    timing_summary: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    timing_payload = dict(timing_summary) if timing_summary is not None else None
     if not audit_enabled:
         return {
             "schema": C2P2_TRAJECTORY_SCHEMA_VERSION,
             "enabled": False,
             "reason": "audit_interval<=0 and stop_on_strict_exact disabled",
+            "timing_summary": timing_payload,
             "null_taxonomy": list(C2P2_NULL_TAXONOMY),
             "null_escalation_rule": C2P2_NULL_ESCALATION_RULE,
         }
@@ -800,6 +873,7 @@ def build_acquisition_trajectory(
             "steps_upper_bound": C2P2_DEFAULT_MAX_STEPS_HARD,
             "acquire_gate": f"{C2P2_STRICT_EXACT_TARGET}/{C2P2_STRICT_EXACT_TARGET} strict-exact",
         },
+        "timing_summary": timing_payload,
         "acquisition_definition": (
             "Acquisition is current-q exhaustive strict-exact "
             "90/90 on the identity-full support; step-0 M/90 is the parent "
@@ -1209,7 +1283,13 @@ def run_bounded_delta_steps(
     def maybe_audit(step: int) -> bool:
         if audit_callback is None:
             return False
-        audit_reports[str(step)] = audit_callback(int(step), states)
+        audit_timing_start = _timing_start(device)
+        audit_report = dict(audit_callback(int(step), states))
+        audit_report["duration_seconds"] = _timing_duration_seconds(
+            audit_timing_start,
+            device,
+        )
+        audit_reports[str(step)] = audit_report
         return (
             bool(stop_on_strict_exact)
             and bool(audit_reports[str(step)].get("acquired"))
@@ -1242,6 +1322,7 @@ def run_bounded_delta_steps(
     stop_reason = "max_steps_completed"
     steps_completed = 0
     for step in range(1, int(steps) + 1):
+        step_timing_start = _timing_start(device)
         batch_item = step_batches[(step - 1) % len(step_batches)]
         step_batch = batch_item["batch"]
         step_batch_metadata = batch_item["metadata"]
@@ -1278,10 +1359,15 @@ def run_bounded_delta_steps(
             eligible_modules,
             optimizer_checks=optimizer_checks,
         )
+        step_duration_seconds = _timing_duration_seconds(
+            step_timing_start,
+            device,
+        )
         step_reports[str(step)] = {
             "loss": float(loss.detach().cpu().item()),
             "loss_finite": bool(torch.isfinite(loss).item()),
             "weighted_grad_finite": bool(finite_weighted_grad),
+            "duration_seconds": step_duration_seconds,
             "metrics": _metrics_to_dict(metrics),
             "bp_steps": int(extras["bp_steps"]),
             "q_changed_count": q_changed_count,
@@ -1403,6 +1489,7 @@ def run_c2p1_probe(
     scratch_root.mkdir(parents=True, exist_ok=True)
     if torch_device.type == "cuda":
         reset_cuda_memory_stats(torch_device)
+    run_timing_start = _timing_start(torch_device)
 
     ckpt, parent_hash_before = load_parent_checkpoint(parent, expected_sha256=parent_sha256)
     model, tok, cfg = build_model_from_checkpoint(ckpt, torch_device)
@@ -1503,6 +1590,15 @@ def run_c2p1_probe(
     parent_hash_unchanged = parent_hash_before == parent_hash_after
     if not parent_hash_unchanged:
         raise RuntimeError("parent checkpoint hash changed during C2.1 probe")
+    total_run_duration_seconds = _timing_duration_seconds(
+        run_timing_start,
+        torch_device,
+    )
+    timing_summary = build_timing_summary(
+        step_reports=step_reports,
+        audit_reports=audit_reports,
+        total_run_duration_seconds=total_run_duration_seconds,
+    )
     receipt = {
         "schema": C2P1_HARNESS_SCHEMA_VERSION,
         "c2p0_schema": BOUNDED_DELTA_LEARNER_SCHEMA_VERSION,
@@ -1549,6 +1645,7 @@ def run_c2p1_probe(
         "bounded_update_attribution": BOUNDED_UPDATE_ATTRIBUTION,
         "step_reports": step_reports,
         "audit_reports": audit_reports,
+        "timing_summary": timing_summary,
         "acquisition_trajectory": build_acquisition_trajectory(
             audit_enabled=audit_enabled,
             audit_reports=audit_reports,
@@ -1558,6 +1655,7 @@ def run_c2p1_probe(
             stop_on_strict_exact=bool(stop_on_strict_exact),
             max_steps_hard=int(max_steps_hard),
             stop_reason=stop_reason,
+            timing_summary=timing_summary,
         ),
         "checkpoint_payload": checkpoint_payload,
         "memory": cuda_memory_receipt(torch_device),
