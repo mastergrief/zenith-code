@@ -1,0 +1,236 @@
+"""C2.0 bounded-delta learner integration tests.
+
+These tests are CPU-only. They prove the default-off learner seams without
+launching a GPU acquisition probe or touching the dirty curriculum trainer.
+"""
+from __future__ import annotations
+
+import copy
+import hashlib
+
+import pytest
+import torch
+import torch.nn.functional as F
+
+from calm.hrm_text_158.bit_linear import BitLinear
+from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
+    AUTHORITATIVE_STATE_SOURCE,
+    BOUNDED_DELTA_CHECKPOINT_SCHEMA_VERSION,
+    BOUNDED_UPDATE_ATTRIBUTION,
+    RUN_BOUNDED_DELTA_LEARNER_ENV,
+    RankVoteBin,
+    RankVoteSpec,
+    SourcePointer,
+    apply_bounded_delta_vote_step,
+    authoritative_forward_context,
+    build_authoritative_checkpoint_payload,
+    build_optimizer_excluding_eligible_masters,
+    credit_from_weighted_grad,
+    file_sha256,
+    make_bounded_tensor_state,
+    project_s1_gradient_to_moves,
+    prove_eligible_master_identity_after_optimizer_step,
+    rank_bucketed_int16_votes,
+    reanchor_s1_oracle_hash,
+    run_c2_bounded_delta_cpu_dry_run,
+    validate_authoritative_resume_payload,
+)
+from calm.hrm_text_158.native_full_stack.vote_update import VoteUpdateSpec
+
+
+def _assert_no_tensors(value):
+    if isinstance(value, torch.Tensor):
+        raise AssertionError("receipt payload must not contain raw tensors")
+    if isinstance(value, dict):
+        for child in value.values():
+            _assert_no_tensors(child)
+    elif isinstance(value, (list, tuple)):
+        for child in value:
+            _assert_no_tensors(child)
+
+
+def _rank_spec() -> RankVoteSpec:
+    return RankVoteSpec(
+        rank_bins=(
+            RankVoteBin(0.0, 0.5, 1),
+            RankVoteBin(0.5, 1.0, 4, include_hi=True),
+        ),
+    )
+
+
+def test_s1_projection_and_rank_bucket_votes_port_sign_and_rank_law():
+    q = torch.tensor([[-1, 0, 0, 1, -1, 1]], dtype=torch.int8)
+    grad = torch.tensor([[-1.0, -2.0, 3.0, 4.0, 5.0, -6.0]])
+
+    moves = project_s1_gradient_to_moves(grad, q)
+    credit = credit_from_weighted_grad(grad)
+    votes = rank_bucketed_int16_votes(credit, moves, _rank_spec())
+
+    assert moves.tolist() == [[1, 1, -1, -1, 0, 0]]
+    assert votes.dtype == torch.int16
+    # Four candidates: smallest abs credit gets vote 1, the rest land in the
+    # inclusive upper rank bucket with vote 4, signed by the projected move.
+    assert votes.tolist() == [[1, 4, -4, -4, 0, 0]]
+
+
+def test_bounded_delta_step_updates_q_acc_backlog_and_attributes_bounded_updates():
+    state = make_bounded_tensor_state(
+        "toy.proj",
+        torch.tensor([0, 0, 0, 0], dtype=torch.int8),
+        0.5,
+        torch.zeros(4, dtype=torch.int16),
+        hot_exact_indices=(0, 2),
+    )
+    votes = torch.tensor([3, 0, -3, 0], dtype=torch.int16)
+    spec = VoteUpdateSpec(
+        threshold_abs=2,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=8,
+    )
+
+    result = apply_bounded_delta_vote_step(
+        {"toy.proj": state},
+        {"toy.proj": votes},
+        {"toy.proj": spec},
+    )
+    next_state = result.tensor_states["toy.proj"]
+    stats = result.tensor_stats["toy.proj"]
+
+    assert next_state.q_levels.tolist() == [1, 0, -1, 0]
+    assert next_state.exact_accumulator_shadow.tolist() == [1, 0, -1, 0]
+    assert next_state.decoded_accumulators().tolist() == [1, 0, -1, 0]
+    assert stats["q_changed_count"] == 2
+    assert stats["bounded_decode_matches_exact_shadow"] is True
+    assert stats["bounded_update_attribution"] == BOUNDED_UPDATE_ATTRIBUTION
+    assert result.to_dict()["bounded_update_attribution"] == BOUNDED_UPDATE_ATTRIBUTION
+
+
+def test_optimizer_excludes_bitlinear_masters_and_identity_snapshot():
+    class Tiny(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.proj = BitLinear(3, 2, bias=True)
+            self.noneligible = torch.nn.Linear(2, 1)
+
+    model = Tiny()
+    eligible = {"proj": model.proj}
+    opt, checks = build_optimizer_excluding_eligible_masters(model, eligible)
+    model.proj.weight.grad = torch.ones_like(model.proj.weight)
+    for param in model.noneligible.parameters():
+        param.grad = torch.ones_like(param)
+
+    proof = prove_eligible_master_identity_after_optimizer_step(
+        opt,
+        eligible,
+        optimizer_checks=checks,
+    )
+
+    assert checks["eligible_params_in_optimizer"] == 0
+    assert checks["eligible_optimizer_state_entries"] == 0
+    assert proof["eligible_master_identity_pass"] is True
+    assert proof["pass"] is True
+    assert proof["eligible_master_sha256_before"] == proof["eligible_master_sha256_after"]
+
+
+def test_authoritative_forward_context_uses_q_state_not_fp_master_and_captures_grad():
+    module = BitLinear(3, 2, bias=False)
+    with torch.no_grad():
+        module.weight.fill_(99.0)
+    q = torch.tensor([[1, 0, -1], [0, 1, 0]], dtype=torch.int8)
+    state = make_bounded_tensor_state(
+        "proj",
+        q,
+        2.0,
+        hot_exact_indices=tuple(range(q.numel())),
+    )
+    x = torch.tensor([[1.0, 2.0, 3.0]])
+    target = torch.tensor([[0.0, 1.0]])
+
+    with authoritative_forward_context({"proj": module}, {"proj": state}, requires_grad=True) as handle:
+        out = module(x)
+        expected = F.linear(x, q.to(torch.float32) * 2.0, None)
+        torch.testing.assert_close(out, expected, atol=0.0, rtol=0.0)
+        with torch.no_grad():
+            module.weight.fill_(-123.0)
+        out_after_master_mutation = module(x)
+        torch.testing.assert_close(out_after_master_mutation, expected, atol=0.0, rtol=0.0)
+        loss = F.mse_loss(out, target)
+        loss.backward()
+        weighted_grad = handle.weighted_grad("proj")
+
+    assert weighted_grad.shape == q.shape
+    torch.testing.assert_close(weighted_grad, handle.current_weights["proj"].grad, atol=0.0, rtol=0.0)
+
+
+def test_checkpoint_schema_resume_refusal_and_reanchored_oracle_hash_receipt(tmp_path):
+    oracle = tmp_path / "transient_fp_credit_science_train.py"
+    oracle.write_text("def oracle_semantics():\n    return 'current'\n", encoding="utf-8")
+    pointer = SourcePointer(
+        label="tmp_s1_oracle",
+        root=str(tmp_path),
+        relative_path=oracle.name,
+        expected_sha256="0" * 64,
+        reason="unit test re-anchor fixture",
+        reanchor_note="refresh when file-content sha256 changes",
+    )
+    receipt = reanchor_s1_oracle_hash(pointer)
+    q = torch.tensor([0, 1], dtype=torch.int8)
+    state = make_bounded_tensor_state("proj", q, 0.25, hot_exact_indices=(0, 1))
+
+    payload = build_authoritative_checkpoint_payload(
+        {"proj": state},
+        step=3,
+        updater_config={"rank_vote_spec": _rank_spec().to_live_dict()},
+        oracle_receipt=receipt,
+        dry_run=True,
+        checkpoint_written=False,
+    )
+
+    assert receipt["current_sha256"] == file_sha256(oracle)
+    assert receipt["expected_matches_current"] is False
+    assert receipt["reanchored"] is True
+    assert payload["schema"] == BOUNDED_DELTA_CHECKPOINT_SCHEMA_VERSION
+    assert payload["authoritative_state_source"] == AUTHORITATIVE_STATE_SOURCE
+    assert payload["source_oracle_receipt"]["current_sha256"] == hashlib.sha256(
+        oracle.read_bytes(),
+    ).hexdigest()
+    assert payload["checkpoint_written"] is False
+    _assert_no_tensors(payload)
+    validate_authoritative_resume_payload(payload)
+
+    eval_export = copy.deepcopy(payload)
+    eval_export["artifact_role"] = "eval_export"
+    with pytest.raises(ValueError, match="authoritative train state"):
+        validate_authoritative_resume_payload(eval_export)
+
+
+def test_default_off_cpu_dry_run_smoke_no_checkpoint_written(monkeypatch, tmp_path):
+    monkeypatch.delenv(RUN_BOUNDED_DELTA_LEARNER_ENV, raising=False)
+    with pytest.raises(RuntimeError, match=RUN_BOUNDED_DELTA_LEARNER_ENV):
+        run_c2_bounded_delta_cpu_dry_run()
+
+    oracle = tmp_path / "transient_fp_credit_science_train.py"
+    oracle.write_text("def oracle_semantics():\n    return 'dry-run-current'\n", encoding="utf-8")
+    pointer = SourcePointer(
+        label="tmp_s1_oracle",
+        root=str(tmp_path),
+        relative_path=oracle.name,
+        expected_sha256="f" * 64,
+        reason="unit test dry-run oracle fixture",
+        reanchor_note="refresh when file-content sha256 changes",
+    )
+
+    receipt = run_c2_bounded_delta_cpu_dry_run(enabled=True, oracle_pointer=pointer).to_dict()
+
+    assert receipt["dry_run"] is True
+    assert receipt["gpu_launched"] is False
+    assert receipt["checkpoint_written"] is False
+    assert receipt["first_forward_backward_update_finite"] is True
+    assert receipt["parent_hash_unchanged"] is True
+    assert receipt["optimizer_identity_proof"]["eligible_master_identity_pass"] is True
+    assert receipt["oracle_receipt"]["current_sha256"] == hashlib.sha256(oracle.read_bytes()).hexdigest()
+    assert receipt["step_result"]["global_summary"]["q_changed_count"] > 0
+    assert receipt["bounded_update_attribution"] == BOUNDED_UPDATE_ATTRIBUTION
+    assert receipt["checkpoint_payload"]["checkpoint_written"] is False
+    _assert_no_tensors(receipt)

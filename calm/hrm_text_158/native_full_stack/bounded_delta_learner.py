@@ -1,0 +1,965 @@
+"""C2.0 default-off bounded-delta learner seams.
+
+This module ports the minimal S1 gradient -> move -> rank-bucket vote
+semantics into the HRM-Text-1.58 repo without making creditdir a runtime
+dependency. It is CPU/reference glue for the C2.0 learner integration gate:
+projection, vote ranking, bounded accumulator update, authoritative forward
+materialization, persistence metadata, and FP-master exclusion proof stay
+separate so later GPU kernels can replace them independently.
+"""
+from __future__ import annotations
+
+from contextlib import contextmanager
+from dataclasses import asdict, dataclass
+import hashlib
+import json
+import os
+from pathlib import Path
+import types
+from typing import Any, Mapping, Sequence
+
+import torch
+import torch.nn.functional as F
+
+from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
+    BOUNDED_DELTA_ACCUMULATOR_SCHEMA_VERSION,
+    BoundedDeltaAccumulatorState,
+    decode_bounded_accumulator_to_i16,
+    encode_budget_capped_hybrid_reference,
+)
+from calm.hrm_text_158.native_full_stack.global_rate_cap import (
+    GlobalRateCapSpec,
+    GlobalRateCapTensorInput,
+    apply_global_rate_cap_reference,
+)
+from calm.hrm_text_158.native_full_stack.source_pointers import (
+    LIVE_S1_TRAINER_POINTER,
+    SourcePointer,
+)
+from calm.hrm_text_158.native_full_stack.vote_update import (
+    VoteUpdateInputs,
+    VoteUpdateSpec,
+    VoteUpdateState,
+    apply_integer_vote_update_reference,
+    plan_integer_vote_update_reference,
+)
+
+
+RUN_BOUNDED_DELTA_LEARNER_ENV = "HRM_TEXT_158_RUN_BOUNDED_DELTA_LEARNER"
+BOUNDED_DELTA_LEARNER_SCHEMA_VERSION = (
+    "hrm_text_158_c2p0_bounded_delta_learner/v0.default_off_cpu_reference"
+)
+BOUNDED_DELTA_CHECKPOINT_SCHEMA_VERSION = (
+    "hrm_text_158_c2p0_bounded_delta_authoritative_state/v0"
+)
+S1_ORACLE_REANCHOR_SCHEMA_VERSION = "hrm_text_158_c2p0_s1_oracle_reanchor/v0"
+S1_PROJECTION_LAW = "ported_s1_gradient_sign_to_ternary_move"
+S1_RANK_BUCKET_VOTE_LAW = "ported_s1_rank_bucketed_integer_votes"
+AUTHORITATIVE_STATE_SOURCE = "q_scale_bounded_delta_state_of_truth"
+BOUNDED_UPDATE_ATTRIBUTION = "q_acc_backlog_changed_by_bounded_delta_vote_update_only"
+DEFAULT_DRY_RUN_PARENT_HASH_BASIS = "no_parent_checkpoint_path_supplied_no_pt_touch"
+
+
+def _canonical_json(data: Any) -> str:
+    return json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def _sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def tensor_sha256(tensor: torch.Tensor) -> str:
+    cpu = tensor.detach().cpu().contiguous()
+    h = hashlib.sha256()
+    h.update(str(cpu.dtype).encode("utf-8"))
+    h.update(str(tuple(cpu.shape)).encode("utf-8"))
+    h.update(cpu.numpy().tobytes())
+    return h.hexdigest()
+
+
+def file_sha256(path: str | Path) -> str:
+    h = hashlib.sha256()
+    with Path(path).open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _dict_without_none(value: Mapping[str, Any]) -> dict[str, Any]:
+    return {str(k): v for k, v in value.items() if v is not None}
+
+
+@dataclass(frozen=True)
+class RankVoteBin:
+    lo_inclusive: float
+    hi_exclusive: float
+    vote_abs: int
+    include_hi: bool = False
+
+    def validate(self) -> None:
+        if self.lo_inclusive < 0.0 or self.hi_exclusive > 1.0:
+            raise ValueError("rank vote bin bounds must live in [0, 1]")
+        if self.lo_inclusive >= self.hi_exclusive:
+            raise ValueError("rank vote bin lo_inclusive must be < hi_exclusive")
+        if self.vote_abs <= 0 or self.vote_abs > 32767:
+            raise ValueError("rank vote_abs must fit positive int16")
+
+    def to_dict(self) -> dict[str, int | float | bool]:
+        out = asdict(self)
+        out["vote_abs"] = int(out["vote_abs"])
+        return out
+
+
+@dataclass(frozen=True)
+class RankVoteSpec:
+    rank_bins: tuple[RankVoteBin, ...]
+    mode: str = S1_RANK_BUCKET_VOTE_LAW
+    rank_method: str = "grouped_bisect_right"
+
+    def validate(self) -> None:
+        if self.mode != S1_RANK_BUCKET_VOTE_LAW:
+            raise ValueError(f"unsupported rank vote mode {self.mode!r}")
+        if self.rank_method not in {"grouped_bisect_right", "searchsorted_reference"}:
+            raise ValueError(f"unsupported rank method {self.rank_method!r}")
+        if not self.rank_bins:
+            raise ValueError("rank_bins must be non-empty")
+        for item in self.rank_bins:
+            item.validate()
+        if self.rank_bins[0].lo_inclusive > 0.0:
+            raise ValueError("rank bins must cover rank 0")
+        if not self.rank_bins[-1].include_hi or self.rank_bins[-1].hi_exclusive < 1.0:
+            raise ValueError("final rank bin must include rank 1.0")
+
+    def to_live_dict(self) -> dict[str, Any]:
+        self.validate()
+        return {
+            "mode": self.mode,
+            "rank_method": self.rank_method,
+            "rank_bins": [item.to_dict() for item in self.rank_bins],
+        }
+
+
+def default_dry_run_rank_vote_spec() -> RankVoteSpec:
+    """Small explicit C2.0 smoke spec; callers may pass the real prereg bins."""
+
+    return RankVoteSpec(
+        rank_bins=(
+            RankVoteBin(0.0, 0.5, 1),
+            RankVoteBin(0.5, 1.0, 4, include_hi=True),
+        ),
+    )
+
+
+def _cpu_float32_rank_fraction(rank_position: int, count: int) -> float:
+    rank = torch.tensor(rank_position, dtype=torch.int64).to(torch.float32)
+    return float((rank / float(count)).item())
+
+
+def _cpu_float32_scalar(value: float) -> float:
+    return float(torch.tensor(float(value), dtype=torch.float32).item())
+
+
+def _first_rank_position_matching(count: int, predicate: Any) -> int:
+    lo = 1
+    hi = count + 1
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if predicate(_cpu_float32_rank_fraction(mid, count)):
+            hi = mid
+        else:
+            lo = mid + 1
+    return lo
+
+
+def _rank_bin_bounds(count: int, bin_spec: RankVoteBin) -> tuple[int, int]:
+    lo = _cpu_float32_scalar(float(bin_spec.lo_inclusive))
+    hi = _cpu_float32_scalar(float(bin_spec.hi_exclusive))
+    lo_rank = _first_rank_position_matching(count, lambda rank: rank >= lo)
+    if bool(bin_spec.include_hi):
+        hi_limit = _first_rank_position_matching(count, lambda rank: rank > hi)
+    else:
+        hi_limit = _first_rank_position_matching(count, lambda rank: rank >= hi)
+    return lo_rank, hi_limit
+
+
+def _bisect_right_rank_positions_by_equal_value_group(abs_values: torch.Tensor) -> torch.Tensor:
+    if not bool(torch.isfinite(abs_values).all().item()):
+        raise ValueError("rank bucket credit contains non-finite values")
+    abs_bits = abs_values.contiguous().view(torch.int32)
+    sorted_bits, order = torch.sort(abs_bits)
+    n = int(abs_values.numel())
+    group_start = torch.ones(n, dtype=torch.bool, device=abs_values.device)
+    group_start[1:] = sorted_bits[1:] != sorted_bits[:-1]
+    group_id = torch.cumsum(group_start.to(torch.int64), dim=0) - 1
+    group_end = torch.ones(n, dtype=torch.bool, device=abs_values.device)
+    group_end[:-1] = sorted_bits[:-1] != sorted_bits[1:]
+    group_end_ranks = (torch.nonzero(group_end, as_tuple=False).flatten() + 1).to(torch.int64)
+    rank_positions_sorted = group_end_ranks[group_id]
+    rank_positions = torch.empty_like(rank_positions_sorted)
+    rank_positions[order] = rank_positions_sorted
+    return rank_positions
+
+
+def project_s1_gradient_to_moves(grad: torch.Tensor, q_levels: torch.Tensor) -> torch.Tensor:
+    """Port S1 `_project_fp_gradient_to_moves` exactly."""
+
+    if grad.shape != q_levels.shape:
+        raise ValueError("grad and q_levels must have identical shapes")
+    if q_levels.dtype != torch.int8:
+        raise ValueError(f"q_levels must be torch.int8, got {q_levels.dtype}")
+    moves = torch.zeros_like(q_levels, dtype=torch.int8)
+    moves[(q_levels < 0) & (grad < 0)] = 1
+    moves[(q_levels == 0) & (grad < 0)] = 1
+    moves[(q_levels == 0) & (grad > 0)] = -1
+    moves[(q_levels > 0) & (grad > 0)] = -1
+    return moves
+
+
+def rank_bucketed_int16_votes(
+    credit: torch.Tensor,
+    projected_moves: torch.Tensor,
+    spec: RankVoteSpec,
+) -> torch.Tensor:
+    """Port S1 rank-bucketed integer vote mapping over explicit in-repo bins."""
+
+    spec.validate()
+    if credit.shape != projected_moves.shape:
+        raise ValueError("credit/projected_moves tensor shape mismatch")
+    flat_credit = credit.detach().flatten().to(torch.float32)
+    flat_moves = projected_moves.detach().flatten().to(torch.int8)
+    votes = torch.zeros_like(flat_moves, dtype=torch.int16)
+    candidate_idx = torch.nonzero(flat_moves != 0, as_tuple=False).flatten()
+    if candidate_idx.numel() == 0:
+        return votes.view_as(projected_moves)
+    abs_values = flat_credit[candidate_idx].abs()
+    if spec.rank_method == "grouped_bisect_right":
+        rank_positions = _bisect_right_rank_positions_by_equal_value_group(abs_values)
+        ranks = None
+    else:
+        sorted_abs = torch.sort(abs_values).values
+        ranks = torch.searchsorted(sorted_abs, abs_values, right=True).to(torch.float32) / float(
+            candidate_idx.numel()
+        )
+        rank_positions = None
+    vote_abs = torch.zeros(candidate_idx.numel(), dtype=torch.int16, device=flat_credit.device)
+    matched = torch.zeros(candidate_idx.numel(), dtype=torch.bool, device=flat_credit.device)
+    for item in spec.rank_bins:
+        if spec.rank_method == "grouped_bisect_right":
+            assert rank_positions is not None
+            lo_rank, hi_limit = _rank_bin_bounds(int(candidate_idx.numel()), item)
+            mask = (rank_positions >= lo_rank) & (rank_positions < hi_limit)
+        else:
+            assert ranks is not None
+            include_hi_mask = ranks <= float(item.hi_exclusive) if item.include_hi else torch.zeros_like(
+                ranks,
+                dtype=torch.bool,
+            )
+            mask = (ranks >= float(item.lo_inclusive)) & (
+                (ranks < float(item.hi_exclusive)) | include_hi_mask
+            )
+        vote_abs[mask] = int(item.vote_abs)
+        matched |= mask
+    if not bool(matched.all().item()):
+        raise ValueError("rank-bucket vote mapping left unmatched candidates")
+    votes[candidate_idx] = (flat_moves[candidate_idx].to(torch.int16) * vote_abs).to(torch.int16)
+    return votes.view_as(projected_moves)
+
+
+def _as_bsi(tensor: torch.Tensor, *, name: str) -> torch.Tensor:
+    if tensor.ndim == 2:
+        return tensor.unsqueeze(1)
+    if tensor.ndim == 3:
+        return tensor
+    raise ValueError(f"{name} must be rank-2 or rank-3, got shape {tuple(tensor.shape)}")
+
+
+def weighted_grad_from_captures(
+    inputs: Sequence[torch.Tensor],
+    grad_outputs: Sequence[torch.Tensor],
+    *,
+    weight_shape: Sequence[int],
+) -> torch.Tensor:
+    """Reconstruct weight gradient from captured inputs and grad_outputs."""
+
+    if not inputs or not grad_outputs:
+        raise ValueError("inputs and grad_outputs must be non-empty")
+    if len(inputs) < len(grad_outputs):
+        raise ValueError("capture call-count mismatch")
+    paired_inputs = inputs[-len(grad_outputs):]
+    weighted_grad = torch.zeros(tuple(int(dim) for dim in weight_shape), dtype=torch.float32)
+    for inp, grad_out in zip(paired_inputs, reversed(list(grad_outputs))):
+        weighted_grad += torch.einsum(
+            "bso,bsi->oi",
+            _as_bsi(grad_out.detach().to(torch.float32), name="grad_out"),
+            _as_bsi(inp.detach().to(torch.float32), name="input"),
+        )
+    return weighted_grad
+
+
+def credit_from_weighted_grad(weighted_grad: torch.Tensor, *, scheme: str = "full_magnitude_ceiling") -> torch.Tensor:
+    if scheme == "full_magnitude_ceiling":
+        return -weighted_grad
+    if scheme == "pow2_bucket":
+        values = weighted_grad.to(torch.float32)
+        out = torch.zeros_like(values)
+        nonzero = values != 0
+        if bool(nonzero.any().item()):
+            abs_values = values[nonzero].abs()
+            exponents = torch.log2(abs_values).round().clamp(-8.0, 8.0)
+            out[nonzero] = values[nonzero].sign() * torch.pow(2.0, exponents)
+        return -out
+    raise ValueError(f"unsupported credit scheme {scheme!r}")
+
+
+@dataclass(frozen=True)
+class BoundedDeltaTensorState:
+    state_key: str
+    q_levels: torch.Tensor
+    frozen_scale: torch.Tensor
+    bounded_accumulator: BoundedDeltaAccumulatorState
+    exact_accumulator_shadow: torch.Tensor
+
+    def __post_init__(self) -> None:
+        if not self.state_key:
+            raise ValueError("state_key must be non-empty")
+        if self.q_levels.dtype != torch.int8:
+            raise ValueError(f"q_levels must be torch.int8, got {self.q_levels.dtype}")
+        if self.exact_accumulator_shadow.dtype != torch.int16:
+            raise ValueError(
+                f"exact_accumulator_shadow must be torch.int16, got {self.exact_accumulator_shadow.dtype}"
+            )
+        if self.q_levels.shape != self.exact_accumulator_shadow.shape:
+            raise ValueError("q_levels and exact_accumulator_shadow shapes must match")
+        if self.frozen_scale.numel() != 1 or not self.frozen_scale.dtype.is_floating_point:
+            raise ValueError("frozen_scale must be a floating scalar tensor")
+        decoded = decode_bounded_accumulator_to_i16(self.bounded_accumulator)
+        if tuple(decoded.shape) != tuple(self.q_levels.shape):
+            raise ValueError("bounded accumulator shape must match q_levels")
+
+    def decoded_accumulators(self, *, device: torch.device | str | None = None) -> torch.Tensor:
+        out = decode_bounded_accumulator_to_i16(self.bounded_accumulator)
+        return out.to(device=device) if device is not None else out
+
+    def vote_update_state(self, *, device: torch.device | str | None = None) -> VoteUpdateState:
+        return VoteUpdateState(
+            q_levels=self.q_levels.to(device=device).contiguous() if device is not None else self.q_levels,
+            accumulators=self.decoded_accumulators(device=device).contiguous(),
+        )
+
+    def materialized_weight(
+        self,
+        *,
+        device: torch.device | str = "cpu",
+        requires_grad: bool,
+    ) -> torch.Tensor:
+        q = self.q_levels.to(device=device, dtype=torch.float32)
+        scale = self.frozen_scale.to(device=device, dtype=torch.float32)
+        weight = (q * scale).detach().clone()
+        weight.requires_grad_(requires_grad)
+        return weight
+
+    def to_schema_dict(self) -> dict[str, Any]:
+        decoded = self.decoded_accumulators()
+        return {
+            "state_key": self.state_key,
+            "shape": list(self.q_levels.shape),
+            "q_dtype": str(self.q_levels.dtype),
+            "q_sha256": tensor_sha256(self.q_levels),
+            "q_codec": "int8_levels_transitional_base3_pack_ready",
+            "frozen_scale_dtype": str(self.frozen_scale.dtype),
+            "frozen_scale_value": float(self.frozen_scale.detach().cpu().item()),
+            "frozen_scale_law": "per_tensor_absmean_frozen_from_parent_qscale",
+            "bounded_accumulator_schema": BOUNDED_DELTA_ACCUMULATOR_SCHEMA_VERSION,
+            "bounded_accumulator": self.bounded_accumulator.to_dict(),
+            "bounded_accumulator_decoded_sha256": tensor_sha256(decoded),
+            "exact_accumulator_shadow_sha256": tensor_sha256(self.exact_accumulator_shadow),
+            "exact_shadow_matches_bounded_decode": tensor_sha256(decoded) == tensor_sha256(self.exact_accumulator_shadow),
+        }
+
+
+def _cold_exception_indices_for_exact_preservation(
+    acc: torch.Tensor,
+    *,
+    hot_exact_indices: Sequence[int],
+    cold_default_value: int,
+) -> tuple[int, ...]:
+    flat = acc.detach().cpu().flatten().to(torch.int16)
+    hot = {int(idx) for idx in hot_exact_indices}
+    return tuple(
+        int(idx)
+        for idx, value in enumerate(flat.tolist())
+        if idx not in hot and int(value) != int(cold_default_value)
+    )
+
+
+def make_bounded_tensor_state(
+    state_key: str,
+    q_levels: torch.Tensor,
+    frozen_scale: torch.Tensor | float,
+    accumulators: torch.Tensor | None = None,
+    *,
+    hot_exact_indices: Sequence[int] = (),
+    cold_default_value: int = 0,
+) -> BoundedDeltaTensorState:
+    if q_levels.dtype != torch.int8:
+        raise ValueError(f"q_levels must be torch.int8, got {q_levels.dtype}")
+    q = q_levels.detach().cpu().contiguous()
+    acc = (
+        torch.zeros_like(q, dtype=torch.int16)
+        if accumulators is None
+        else accumulators.detach().cpu().to(torch.int16).contiguous()
+    )
+    if q.shape != acc.shape:
+        raise ValueError("q_levels and accumulators must have identical shapes")
+    scale = (
+        torch.tensor(float(frozen_scale), dtype=torch.float32)
+        if not isinstance(frozen_scale, torch.Tensor)
+        else frozen_scale.detach().cpu().to(torch.float32).reshape(())
+    )
+    hot = tuple(int(idx) for idx in hot_exact_indices)
+    cold_ex = _cold_exception_indices_for_exact_preservation(
+        acc,
+        hot_exact_indices=hot,
+        cold_default_value=int(cold_default_value),
+    )
+    bounded = encode_budget_capped_hybrid_reference(
+        VoteUpdateState(q_levels=q, accumulators=acc),
+        hot_exact_indices=hot,
+        cold_default_value=int(cold_default_value),
+        cold_exception_indices=cold_ex,
+    )
+    return BoundedDeltaTensorState(
+        state_key=state_key,
+        q_levels=q,
+        frozen_scale=scale,
+        bounded_accumulator=bounded,
+        exact_accumulator_shadow=acc,
+    )
+
+
+def ternarize_weight_to_q_scale(weight: torch.Tensor, *, scale_eps: float = 1e-5) -> tuple[torch.Tensor, torch.Tensor]:
+    scale = weight.detach().abs().mean().clamp(min=float(scale_eps)).to(torch.float32)
+    q = (weight.detach().to(torch.float32) / scale).round().clamp(-1.0, 1.0).to(torch.int8)
+    return q.cpu().contiguous(), scale.cpu().reshape(())
+
+
+def derive_bounded_tensor_state_from_weight(
+    state_key: str,
+    weight: torch.Tensor,
+    *,
+    hot_exact_indices: Sequence[int] = (),
+    cold_default_value: int = 0,
+    scale_eps: float = 1e-5,
+) -> BoundedDeltaTensorState:
+    q, scale = ternarize_weight_to_q_scale(weight, scale_eps=scale_eps)
+    return make_bounded_tensor_state(
+        state_key,
+        q,
+        scale,
+        hot_exact_indices=hot_exact_indices,
+        cold_default_value=cold_default_value,
+    )
+
+
+@dataclass(frozen=True)
+class AuthoritativeForwardHandle:
+    current_weights: dict[str, torch.Tensor]
+    captures: dict[str, dict[str, list[torch.Tensor]]]
+
+    def weighted_grad(self, state_key: str) -> torch.Tensor:
+        if state_key not in self.current_weights:
+            raise KeyError(state_key)
+        capture = self.captures[state_key]
+        return weighted_grad_from_captures(
+            capture["inputs"],
+            capture["grad_outputs"],
+            weight_shape=tuple(self.current_weights[state_key].shape),
+        )
+
+
+@contextmanager
+def authoritative_forward_context(
+    eligible_modules: Mapping[str, Any],
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+    *,
+    device: torch.device | str = "cpu",
+    requires_grad: bool,
+) -> Any:
+    missing = set(eligible_modules) - set(tensor_states)
+    if missing:
+        raise ValueError(f"missing tensor state for eligible modules: {sorted(missing)}")
+    originals = {state_key: module.forward for state_key, module in eligible_modules.items()}
+    current_weights = {
+        state_key: tensor_states[state_key].materialized_weight(
+            device=device,
+            requires_grad=requires_grad,
+        )
+        for state_key in eligible_modules
+    }
+    captures = {
+        state_key: {"inputs": [], "grad_outputs": []}
+        for state_key in eligible_modules
+    }
+
+    for state_key, module in eligible_modules.items():
+        def _forward(self: Any, input: torch.Tensor, *, key: str = state_key) -> torch.Tensor:
+            captures[key]["inputs"].append(input.detach().cpu())
+            out = F.linear(input, current_weights[key], self.bias)
+            if out.requires_grad:
+                out.register_hook(
+                    lambda grad, capture_key=key: captures[capture_key]["grad_outputs"].append(
+                        grad.detach().cpu(),
+                    ),
+                )
+            return out
+
+        module.forward = types.MethodType(_forward, module)
+    try:
+        yield AuthoritativeForwardHandle(current_weights=current_weights, captures=captures)
+    finally:
+        for state_key, module in eligible_modules.items():
+            module.forward = originals[state_key]
+
+
+def build_optimizer_excluding_eligible_masters(
+    model: Any,
+    eligible_modules: Mapping[str, Any],
+    *,
+    lr: float = 0.0,
+    weight_decay: float = 0.0,
+) -> tuple[torch.optim.Optimizer | None, dict[str, Any]]:
+    eligible_param_ids = set()
+    for module in eligible_modules.values():
+        module.weight.requires_grad_(True)
+        eligible_param_ids.add(id(module.weight))
+        if getattr(module, "bias", None) is not None:
+            module.bias.requires_grad_(True)
+            eligible_param_ids.add(id(module.bias))
+    noneligible_params = [p for p in model.parameters() if id(p) not in eligible_param_ids]
+    opt = (
+        torch.optim.AdamW(noneligible_params, lr=float(lr), betas=(0.9, 0.95), weight_decay=float(weight_decay))
+        if noneligible_params
+        else None
+    )
+    opt_param_ids = (
+        {id(p) for group in opt.param_groups for p in group["params"]}
+        if opt is not None
+        else set()
+    )
+    overlap = sorted(eligible_param_ids & opt_param_ids)
+    eligible_with_state = []
+    if opt is not None:
+        for state_key, module in eligible_modules.items():
+            if module.weight in opt.state:
+                eligible_with_state.append(state_key)
+    checks = {
+        "eligible_param_count": len(eligible_param_ids),
+        "optimizer_param_count": len(opt_param_ids),
+        "eligible_params_in_optimizer": len(overlap),
+        "eligible_optimizer_state_entries": len(eligible_with_state),
+        "eligible_weight_requires_grad_for_transient_credit_capture": all(
+            module.weight.requires_grad for module in eligible_modules.values()
+        ),
+        "optimizer_state_entries_total": len(opt.state) if opt is not None else 0,
+        "optimizer_created": opt is not None,
+        "pass": len(overlap) == 0 and not eligible_with_state,
+    }
+    return opt, checks
+
+
+def snapshot_eligible_master_sha256(eligible_modules: Mapping[str, Any]) -> dict[str, str]:
+    return {
+        state_key: tensor_sha256(module.weight.detach())
+        for state_key, module in eligible_modules.items()
+    }
+
+
+def prove_eligible_master_identity_after_optimizer_step(
+    optimizer: torch.optim.Optimizer | None,
+    eligible_modules: Mapping[str, Any],
+    *,
+    optimizer_checks: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    before = snapshot_eligible_master_sha256(eligible_modules)
+    if optimizer is not None:
+        optimizer.step()
+    after = snapshot_eligible_master_sha256(eligible_modules)
+    identity = before == after
+    return {
+        "schema": "hrm_text_158_c2p0_fp_master_identity_snapshot/v0",
+        "eligible_master_sha256_before": before,
+        "eligible_master_sha256_after": after,
+        "eligible_master_identity_pass": identity,
+        "optimizer_step_called": optimizer is not None,
+        "optimizer_checks": dict(optimizer_checks or {}),
+        "pass": bool(identity and (optimizer_checks or {}).get("pass", True)),
+    }
+
+
+@dataclass(frozen=True)
+class BoundedDeltaLearnerStepResult:
+    tensor_states: dict[str, BoundedDeltaTensorState]
+    tensor_stats: dict[str, dict[str, Any]]
+    deferred_backlog: dict[str, dict[int, dict[str, int]]]
+    global_summary: dict[str, Any]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema": "hrm_text_158_c2p0_bounded_delta_step_result/v0",
+            "bounded_update_attribution": BOUNDED_UPDATE_ATTRIBUTION,
+            "tensor_stats": self.tensor_stats,
+            "deferred_backlog_entry_count": sum(len(v) for v in self.deferred_backlog.values()),
+            "global_summary": self.global_summary,
+            "tensor_state_summaries": {
+                key: state.to_schema_dict()
+                for key, state in sorted(self.tensor_states.items())
+            },
+        }
+
+
+def _votes_sha(votes: torch.Tensor) -> str:
+    return tensor_sha256(votes.to(torch.int16).contiguous())
+
+
+def apply_bounded_delta_vote_step(
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+    votes_by_key: Mapping[str, torch.Tensor],
+    vote_specs_by_key: Mapping[str, VoteUpdateSpec],
+    *,
+    global_cap_spec: GlobalRateCapSpec | None = None,
+    deferred_backlog: dict[str, dict[int, dict[str, int]]] | None = None,
+    hot_exact_indices_by_key: Mapping[str, Sequence[int]] | None = None,
+    cold_default_value: int = 0,
+) -> BoundedDeltaLearnerStepResult:
+    if set(tensor_states) != set(votes_by_key) or set(tensor_states) != set(vote_specs_by_key):
+        raise ValueError("tensor_states, votes_by_key, and vote_specs_by_key must have identical keys")
+    hot_by_key = hot_exact_indices_by_key or {}
+    vote_update_states: dict[str, VoteUpdateState] = {}
+    inputs_by_key: dict[str, VoteUpdateInputs] = {}
+    plans_by_key = {}
+    cap_inputs: list[GlobalRateCapTensorInput] = []
+    for state_key, state in sorted(tensor_states.items()):
+        vu_state = state.vote_update_state()
+        votes = votes_by_key[state_key].detach().cpu().to(torch.int16).contiguous()
+        inputs = VoteUpdateInputs(votes=votes)
+        spec = vote_specs_by_key[state_key]
+        plan = plan_integer_vote_update_reference(vu_state, inputs, spec)
+        vote_update_states[state_key] = vu_state
+        inputs_by_key[state_key] = inputs
+        plans_by_key[state_key] = plan
+        cap_inputs.append(GlobalRateCapTensorInput(state_key, vu_state, plan))
+
+    if global_cap_spec is not None:
+        cap_result = apply_global_rate_cap_reference(
+            cap_inputs,
+            global_cap_spec,
+            deferred_backlog=deferred_backlog,
+        )
+        q_acc_by_key = {
+            item.state_key: (item.q_levels, item.accumulators, item.stats)
+            for item in cap_result.tensor_results
+        }
+        backlog = cap_result.deferred_backlog
+        summary = dict(cap_result.step_summary)
+        summary["global_rate_cap_enabled"] = True
+    else:
+        q_acc_by_key = {}
+        for state_key in sorted(tensor_states):
+            result = apply_integer_vote_update_reference(
+                vote_update_states[state_key],
+                inputs_by_key[state_key],
+                vote_specs_by_key[state_key],
+            )
+            q_acc_by_key[state_key] = (result.q_levels, result.accumulators, result.stats)
+        backlog = deferred_backlog or {}
+        summary = {
+            "global_rate_cap_enabled": False,
+            "q_changed_count": sum(
+                int(stats.get("q_changed_count", 0))
+                for _, _, stats in q_acc_by_key.values()
+            ),
+        }
+
+    next_states: dict[str, BoundedDeltaTensorState] = {}
+    tensor_stats: dict[str, dict[str, Any]] = {}
+    for state_key, prior_state in sorted(tensor_states.items()):
+        q_out, acc_out, stats = q_acc_by_key[state_key]
+        next_state = make_bounded_tensor_state(
+            state_key,
+            q_out,
+            prior_state.frozen_scale,
+            acc_out,
+            hot_exact_indices=hot_by_key.get(state_key, prior_state.bounded_accumulator.hot_exact_indices),
+            cold_default_value=cold_default_value,
+        )
+        next_states[state_key] = next_state
+        tensor_stats[state_key] = {
+            **dict(stats),
+            "state_key": state_key,
+            "projection_law": S1_PROJECTION_LAW,
+            "vote_law": S1_RANK_BUCKET_VOTE_LAW,
+            "votes_sha256": _votes_sha(votes_by_key[state_key]),
+            "bounded_update_attribution": BOUNDED_UPDATE_ATTRIBUTION,
+            "q_sha256_before": tensor_sha256(prior_state.q_levels),
+            "q_sha256_after": tensor_sha256(q_out),
+            "exact_accumulator_shadow_sha256_after": tensor_sha256(acc_out),
+            "bounded_accumulator_decoded_sha256_after": tensor_sha256(
+                next_state.decoded_accumulators(),
+            ),
+            "bounded_decode_matches_exact_shadow": tensor_sha256(acc_out)
+            == tensor_sha256(next_state.decoded_accumulators()),
+        }
+    return BoundedDeltaLearnerStepResult(
+        tensor_states=next_states,
+        tensor_stats=tensor_stats,
+        deferred_backlog=backlog,
+        global_summary=summary,
+    )
+
+
+def reanchor_s1_oracle_hash(
+    pointer: SourcePointer = LIVE_S1_TRAINER_POINTER,
+    *,
+    semantics_choice: str = "current_file_reanchored",
+) -> dict[str, Any]:
+    pointer.validate_static()
+    current_sha = file_sha256(pointer.absolute_path)
+    return {
+        "schema": S1_ORACLE_REANCHOR_SCHEMA_VERSION,
+        "label": pointer.label,
+        "absolute_path": pointer.absolute_path,
+        "expected_sha256": pointer.expected_sha256,
+        "current_sha256": current_sha,
+        "expected_matches_current": current_sha == pointer.expected_sha256,
+        "reanchored": True,
+        "semantics_choice": semantics_choice,
+        "runtime_dependency": False,
+        "source_pointer_role": pointer.implementation_role,
+        "reanchor_note": pointer.reanchor_note,
+    }
+
+
+def build_authoritative_checkpoint_payload(
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+    *,
+    step: int,
+    updater_config: Mapping[str, Any],
+    oracle_receipt: Mapping[str, Any] | None = None,
+    dry_run: bool = False,
+    checkpoint_written: bool = False,
+) -> dict[str, Any]:
+    tensor_summaries = {
+        key: state.to_schema_dict()
+        for key, state in sorted(tensor_states.items())
+    }
+    state_summary_sha = _sha256_bytes(_canonical_json(tensor_summaries).encode("utf-8"))
+    return _dict_without_none(
+        {
+            "schema": BOUNDED_DELTA_CHECKPOINT_SCHEMA_VERSION,
+            "artifact_role": "c2_bounded_delta_authoritative_train_state",
+            "authoritative_state_source": AUTHORITATIVE_STATE_SOURCE,
+            "step": int(step),
+            "dry_run": bool(dry_run),
+            "checkpoint_written": bool(checkpoint_written),
+            "q_codec": "int8_levels_transitional_base3_pack_ready",
+            "frozen_scale_law": "per_tensor_absmean_frozen_from_parent_qscale",
+            "bounded_accumulator_schema": BOUNDED_DELTA_ACCUMULATOR_SCHEMA_VERSION,
+            "updater_config_sha256": _sha256_bytes(
+                _canonical_json(dict(updater_config)).encode("utf-8"),
+            ),
+            "authoritative_state_sha256": state_summary_sha,
+            "tensor_summaries": tensor_summaries,
+            "source_oracle_receipt": dict(oracle_receipt) if oracle_receipt is not None else None,
+            "telemetry_proves_q_changes_from": BOUNDED_UPDATE_ATTRIBUTION,
+        }
+    )
+
+
+def validate_authoritative_resume_payload(payload: Mapping[str, Any]) -> None:
+    if payload.get("schema") != BOUNDED_DELTA_CHECKPOINT_SCHEMA_VERSION:
+        raise ValueError("unsupported bounded-delta checkpoint schema")
+    if payload.get("artifact_role") != "c2_bounded_delta_authoritative_train_state":
+        raise ValueError("resume requires c2 bounded-delta authoritative train state, not eval export")
+    if payload.get("authoritative_state_source") != AUTHORITATIVE_STATE_SOURCE:
+        raise ValueError("resume payload is not q+scale+bounded accumulator authoritative state")
+    if payload.get("eval_export", False):
+        raise ValueError("eval export is not resumable learner state")
+    if "tensor_summaries" not in payload:
+        raise ValueError("resume payload missing tensor_summaries")
+
+
+@dataclass(frozen=True)
+class BoundedDeltaDryRunReceipt:
+    schema: str
+    dry_run: bool
+    device: str
+    gpu_launched: bool
+    checkpoint_written: bool
+    first_forward_backward_update_finite: bool
+    parent_hash_unchanged: bool
+    parent_hash_basis: str
+    projection_law: str
+    vote_law: str
+    bounded_update_attribution: str
+    optimizer_identity_proof: dict[str, Any]
+    oracle_receipt: dict[str, Any]
+    step_result: dict[str, Any]
+    checkpoint_payload: dict[str, Any]
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def _assert_default_off(enabled: bool | None) -> None:
+    if enabled is True:
+        return
+    if os.environ.get(RUN_BOUNDED_DELTA_LEARNER_ENV) == "1":
+        return
+    raise RuntimeError(
+        f"C2.0 bounded-delta learner is default-off; pass enabled=True or set {RUN_BOUNDED_DELTA_LEARNER_ENV}=1",
+    )
+
+
+def run_c2_bounded_delta_cpu_dry_run(
+    *,
+    enabled: bool | None = None,
+    device: str = "cpu",
+    oracle_pointer: SourcePointer = LIVE_S1_TRAINER_POINTER,
+) -> BoundedDeltaDryRunReceipt:
+    _assert_default_off(enabled)
+    if device != "cpu":
+        raise RuntimeError("C2.0 dry-run smoke is CPU-only in this gate; GPU launch is not allowed")
+
+    from calm.hrm_text_158.bit_linear import BitLinear
+
+    torch.manual_seed(158)
+
+    class _Tiny(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.proj = BitLinear(3, 2, bias=False)
+            self.noneligible = torch.nn.Parameter(torch.ones((), dtype=torch.float32))
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return self.proj(x)
+
+    model = _Tiny().to(device)
+    with torch.no_grad():
+        model.proj.weight.zero_()
+    eligible = {"proj": model.proj}
+    q = torch.zeros_like(model.proj.weight.detach(), dtype=torch.int8)
+    tensor_state = make_bounded_tensor_state(
+        "proj",
+        q,
+        torch.tensor(1.0, dtype=torch.float32),
+        hot_exact_indices=tuple(range(int(q.numel()))),
+    )
+    optimizer, checks = build_optimizer_excluding_eligible_masters(model, eligible)
+    if optimizer is not None:
+        model.noneligible.grad = torch.ones_like(model.noneligible)
+    optimizer_proof = prove_eligible_master_identity_after_optimizer_step(
+        optimizer,
+        eligible,
+        optimizer_checks=checks,
+    )
+
+    x = torch.tensor([[1.0, -2.0, 3.0]], dtype=torch.float32)
+    target = torch.tensor([[2.0, -1.0]], dtype=torch.float32)
+    model.zero_grad(set_to_none=True)
+    with authoritative_forward_context(
+        eligible,
+        {"proj": tensor_state},
+        device=device,
+        requires_grad=True,
+    ) as handle:
+        out = model(x)
+        loss = F.mse_loss(out, target)
+        loss.backward()
+        weighted_grad = handle.weighted_grad("proj")
+    credit = credit_from_weighted_grad(weighted_grad)
+    moves = project_s1_gradient_to_moves(weighted_grad, tensor_state.q_levels)
+    rank_spec = default_dry_run_rank_vote_spec()
+    votes = rank_bucketed_int16_votes(credit, moves, rank_spec)
+    vote_spec = VoteUpdateSpec(
+        threshold_abs=1,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=16,
+    )
+    step_result = apply_bounded_delta_vote_step(
+        {"proj": tensor_state},
+        {"proj": votes},
+        {"proj": vote_spec},
+        hot_exact_indices_by_key={"proj": tuple(range(int(q.numel())))},
+    )
+    oracle_receipt = reanchor_s1_oracle_hash(oracle_pointer)
+    updater_config = {
+        "rank_vote_spec": rank_spec.to_live_dict(),
+        "vote_update_spec": asdict(vote_spec),
+        "projection_law": S1_PROJECTION_LAW,
+        "vote_law": S1_RANK_BUCKET_VOTE_LAW,
+    }
+    checkpoint_payload = build_authoritative_checkpoint_payload(
+        step_result.tensor_states,
+        step=1,
+        updater_config=updater_config,
+        oracle_receipt=oracle_receipt,
+        dry_run=True,
+        checkpoint_written=False,
+    )
+    validate_authoritative_resume_payload(checkpoint_payload)
+    finite = bool(torch.isfinite(loss).item()) and bool(torch.isfinite(weighted_grad).all().item())
+    q_changed = int(step_result.global_summary.get("q_changed_count", 0))
+    return BoundedDeltaDryRunReceipt(
+        schema=BOUNDED_DELTA_LEARNER_SCHEMA_VERSION,
+        dry_run=True,
+        device=device,
+        gpu_launched=False,
+        checkpoint_written=False,
+        first_forward_backward_update_finite=bool(finite and q_changed > 0),
+        parent_hash_unchanged=True,
+        parent_hash_basis=DEFAULT_DRY_RUN_PARENT_HASH_BASIS,
+        projection_law=S1_PROJECTION_LAW,
+        vote_law=S1_RANK_BUCKET_VOTE_LAW,
+        bounded_update_attribution=BOUNDED_UPDATE_ATTRIBUTION,
+        optimizer_identity_proof=optimizer_proof,
+        oracle_receipt=oracle_receipt,
+        step_result=step_result.to_dict(),
+        checkpoint_payload=checkpoint_payload,
+    )
+
+
+__all__ = [
+    "AUTHORITATIVE_STATE_SOURCE",
+    "BOUNDED_DELTA_CHECKPOINT_SCHEMA_VERSION",
+    "BOUNDED_DELTA_LEARNER_SCHEMA_VERSION",
+    "BOUNDED_UPDATE_ATTRIBUTION",
+    "BoundedDeltaDryRunReceipt",
+    "BoundedDeltaLearnerStepResult",
+    "BoundedDeltaTensorState",
+    "RankVoteBin",
+    "RankVoteSpec",
+    "RUN_BOUNDED_DELTA_LEARNER_ENV",
+    "S1_ORACLE_REANCHOR_SCHEMA_VERSION",
+    "S1_PROJECTION_LAW",
+    "S1_RANK_BUCKET_VOTE_LAW",
+    "apply_bounded_delta_vote_step",
+    "authoritative_forward_context",
+    "build_authoritative_checkpoint_payload",
+    "build_optimizer_excluding_eligible_masters",
+    "credit_from_weighted_grad",
+    "default_dry_run_rank_vote_spec",
+    "derive_bounded_tensor_state_from_weight",
+    "file_sha256",
+    "make_bounded_tensor_state",
+    "project_s1_gradient_to_moves",
+    "prove_eligible_master_identity_after_optimizer_step",
+    "rank_bucketed_int16_votes",
+    "reanchor_s1_oracle_hash",
+    "run_c2_bounded_delta_cpu_dry_run",
+    "snapshot_eligible_master_sha256",
+    "tensor_sha256",
+    "ternarize_weight_to_q_scale",
+    "validate_authoritative_resume_payload",
+    "weighted_grad_from_captures",
+]
