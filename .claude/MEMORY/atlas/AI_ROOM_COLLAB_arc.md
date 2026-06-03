@@ -174,3 +174,45 @@ recency window, line-anchored + blockquote-stripped + non-trivial
 (`.claude/hooks/test_worker_gate_wake_pairing_gate.py`); py_compile OK;
 preload ~142k < 150k gate. Task `1780432224760-2b7dfecc`; route-change
 relay `1780432542504`; hook-review request `1780433198650`.
+
+## 2026-06-03 Heartbeat watchdog (clock-driven wake) — the 8h-wedge fix
+
+During the overnight ternary-hybrid arc, a `training-dev` worker **wedged
+silently for ~8h** mid-implementation: it ACKed a gate, then emitted no
+further event. Because channel pushes + PreToolUse hooks are event-driven,
+nothing re-invoked claude OR co_lead to notice — the stall sat until co_lead's
+manual `peer_status` progress audit (~8h later). Filesystem check confirmed
+no work was lost (trainer sha unchanged, no hung process, gpu clean) — the
+wedge cost only wall-time. The wake-pairing hook guarantees claude *pairs* the
+wake when it gates; it cannot see a worker that wedges *after* being woken.
+
+Gabe (verbatim, via codex chat): "how do we make this deterministic so it
+doesnt happen again? i.e a real heartbeat" → "the heartbeat should be a wake
+mechanism right?" → "can heartbeat be driven by a hook?". Converged
+architecture (claude + co_lead): **hook ARMS/ENFORCES the SLA metadata on
+events; an external CLOCK (cron) DETECTS expiry + WAKES** — an event hook
+can't fire on silence. The `ai-room` CLI `post` supports
+`--requires-response-from` + `--response-deadline-secs`, so a cron script can
+post a wake-bearing record that re-invokes an idle orchestrator.
+
+`.claude/hooks/ai_room_heartbeat_watchdog.py` (v1, cron `*/7`): reads the room,
+finds the latest worker gated heartbeat past `next_heartbeat_due` (+600s
+grace; missing metadata ⇒ +1800s due-soon, never invisible), proves liveness
+read-only, posts wake-bearing `WATCHDOG_STALL` (`requires_response_from=claude`)
+on no-movement, `WATCHDOG_HEARTBEAT_EXTEND` on movement. Non-destructive
+(claude decides recycle/re-drive). co_lead review caught TWO silent-suppression
+blockers, both conceded + fixed: (1) **sticky movement** — compared mtime to
+the original hb ts, so a moved-once-then-wedged worker extended forever; fixed
+to FRESH movement since the last watchdog check + EXTEND→escalate-to-recycle;
+(2) **uncorrelated process/GPU** — bare process-match/GPU≥2000 MiB counted as
+moved regardless of phase/run_dir; fixed to phase-aware (code phases = file
+freshness only; gpu phases also accept a run-dir-CORRELATED process) — GPU MiB
+is reported, never a movement signal. Per-worker selection (worker B's terminal
+can't clean worker A). Validation: 11/11 fixtures (incl. the 3 hardening cases
+that fail on pre-hardening code); py_compile OK; live dry-run vs real room =
+CLEAN (no false-stall during healthy heartbeating). Caveat (co_lead): a
+correlated live process is liveness, not progress — GPU launch packets still
+need the watch-wrap producer stale-progress watcher as the hung-trainer
+detector. v2 (an event hook that ENFORCES the SLA metadata) deferred. The
+watchdog cron receipt is a Stage-B launch precondition (no unattended GPU run
+without it or a named `MANUAL WATCH EXCEPTION`).

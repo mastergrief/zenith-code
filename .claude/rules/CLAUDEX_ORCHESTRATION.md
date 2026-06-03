@@ -196,6 +196,23 @@ status=in_progress)` THIS turn *before* the gate post, or
 ack/status/design/task_dispatch kinds, and broadcast posts are
 untouched; fail-opens on parse/log errors.
 
+`.claude/hooks/ai_room_heartbeat_watchdog.py` is the **clock-driven**
+complement (cron, not a PreToolUse hook): event hooks can't fire on
+*silence*, so a worker that wedges AFTER being woken emits no event and
+no turn-driven agent is re-invoked to notice. The watchdog reads the
+room every ~7 min, finds the latest worker gated heartbeat past its
+`next_heartbeat_due`, proves liveness read-only (phase-aware, FRESH
+since last watchdog check, run-dir-CORRELATED — never bare process/GPU
+existence), and on no-movement posts a **wake-bearing** `WATCHDOG_STALL`
+(`requires_response_from=claude`) that re-invokes the idle orchestrator.
+NON-DESTRUCTIVE: detect/prove/post/wake — claude decides recycle/re-drive
+from the proof packet; an EXTEND then no fresh movement escalates to a
+recycle-recommending STALL. Heartbeat SLA: gated `IMPLEMENTING`/milestone
+posts carry `next_heartbeat_due` + `phase` + `expected_next_artifact`;
+missing metadata ⇒ due-soon, never invisible. It is wake/liveness on
+LLM-worker silence, NOT a hung-trainer detector — GPU runs still need the
+watch-wrap producer stale-progress watcher. Receipts in atlas.
+
 ## Worker task shape
 
 Every non-trivial worker task includes:
