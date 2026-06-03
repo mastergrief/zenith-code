@@ -1,6 +1,7 @@
 """C2.1 bounded-delta acquisition harness CPU/static tests."""
 from __future__ import annotations
 
+import json
 import math
 from pathlib import Path
 
@@ -17,18 +18,23 @@ from calm.hrm_text_158.bit_linear import BitLinear
 from calm.hrm_text_158.curriculum import BroadTokenizer
 from calm.hrm_text_158.lm_head import IGNORE_LABEL_ID
 from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
+    authoritative_forward_context,
     make_bounded_tensor_state,
 )
 from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+    C2P2_PHASE_TELEMETRY_SCHEMA_VERSION,
     C2P2_TIMING_SCHEMA_VERSION,
+    C2PhaseTimeout,
     DEFAULT_PARENT_SHA256,
     FORWARD_LEVEL_INIT_FIDELITY_STE_ATOL,
     HISTORICAL_IDENTITY_CONTROL,
+    PhaseProgress,
     RUN_C2_GPU_LAUNCH_ENV,
     aggregate_identity_full_audit_batch_reports,
     build_identity_full_batch,
     build_identity_full_support_batches,
     build_model_from_checkpoint,
+    compare_module_output_fidelity,
     compute_forward_level_init_fidelity,
     cuda_memory_receipt,
     cuda_memory_stats_device_arg,
@@ -42,6 +48,8 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     run_c2p1_probe,
     score_strict_exact_and_parsed_from_logits,
     select_eligible_bitlinears,
+    _capture_eligible_module_outputs,
+    enforce_phase_bound,
 )
 from scripts.train_hrm_text_158 import _build_ckpt_config, SOURCE_PIN
 
@@ -117,6 +125,82 @@ def _tiny_forward_fixture(*, batch_size: int = 2, eligible_scope: str = "first-b
 def _assert_finite_non_negative(value: float | int) -> None:
     assert math.isfinite(float(value))
     assert float(value) >= 0.0
+
+
+def _metric_scalar(value):
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu().item()
+    return value
+
+
+def _metrics_without_logits(metrics: dict) -> dict:
+    out = {}
+    for key, value in metrics.items():
+        if key == "logits":
+            continue
+        if isinstance(value, tuple):
+            out[key] = tuple(_metric_scalar(item) for item in value)
+        else:
+            out[key] = _metric_scalar(value)
+    return out
+
+
+def _forward_init_value_subset(
+    *,
+    native_loss: torch.Tensor,
+    native_metrics: dict,
+    native_module_outputs: dict,
+    bounded_loss: torch.Tensor,
+    bounded_metrics: dict,
+    bounded_module_outputs: dict,
+    eligible_scope: str,
+) -> dict:
+    native_logits = native_metrics["logits"].detach().to(torch.float32).cpu()
+    bounded_logits = bounded_metrics["logits"].detach().to(torch.float32).cpu()
+    logits_diff = (bounded_logits - native_logits).abs()
+    loss_abs_diff = float(
+        (
+            bounded_loss.detach().to(torch.float32).cpu()
+            - native_loss.detach().to(torch.float32).cpu()
+        ).abs().item()
+    )
+    module_fidelity = compare_module_output_fidelity(
+        native_module_outputs,
+        bounded_module_outputs,
+        threshold=FORWARD_LEVEL_INIT_FIDELITY_STE_ATOL,
+        eligible_scope=eligible_scope,
+    )
+    module_output_max_abs_diff = max(
+        (
+            float(item["max_abs_diff"])
+            for item in module_fidelity["modules"].values()
+        ),
+        default=0.0,
+    )
+    logits_max_abs_diff = float(logits_diff.max().item()) if logits_diff.numel() else 0.0
+    return {
+        "logits_max_abs_diff": logits_max_abs_diff,
+        "loss_abs_diff": loss_abs_diff,
+        "module_output_max_abs_diff": module_output_max_abs_diff,
+        "max_abs_diff": max(logits_max_abs_diff, loss_abs_diff, module_output_max_abs_diff),
+        "logits_allclose": bool(
+            torch.allclose(
+                bounded_logits,
+                native_logits,
+                atol=FORWARD_LEVEL_INIT_FIDELITY_STE_ATOL,
+                rtol=0.0,
+            )
+        ),
+        "loss_allclose": bool(
+            torch.allclose(
+                bounded_loss.detach().to(torch.float32).cpu(),
+                native_loss.detach().to(torch.float32).cpu(),
+                atol=FORWARD_LEVEL_INIT_FIDELITY_STE_ATOL,
+                rtol=0.0,
+            )
+        ),
+        "module_outputs_allclose": bool(module_fidelity["all_pass"]),
+    }
 
 
 def test_gpu_guard_requires_explicit_launch_env(monkeypatch):
@@ -380,6 +464,112 @@ def test_forward_level_init_fidelity_passes_on_tiny_real_model():
     assert module_report["pass"] is True
 
 
+def test_no_grad_authoritative_forward_matches_native_outputs_metrics_and_captures_nothing():
+    model, batch, eligible, states = _tiny_forward_fixture()
+    extras = model.compute_train_extra_args(0, 1)
+
+    model.train()
+    model.zero_grad(set_to_none=True)
+    with torch.no_grad():
+        native_loss, native_metrics, native_module_outputs = _capture_eligible_module_outputs(
+            model,
+            batch,
+            eligible,
+            extras,
+        )
+        with authoritative_forward_context(
+            eligible,
+            states,
+            device=torch.device("cpu"),
+            requires_grad=True,
+        ) as capture_on_handle:
+            capture_on_loss, capture_on_metrics, capture_on_module_outputs = _capture_eligible_module_outputs(
+                model,
+                batch,
+                eligible,
+                extras,
+            )
+        with authoritative_forward_context(
+            eligible,
+            states,
+            device=torch.device("cpu"),
+            requires_grad=False,
+        ) as capture_off_handle:
+            capture_off_loss, capture_off_metrics, capture_off_module_outputs = _capture_eligible_module_outputs(
+                model,
+                batch,
+                eligible,
+                extras,
+            )
+
+    torch.testing.assert_close(
+        capture_off_metrics["logits"].detach().cpu(),
+        capture_on_metrics["logits"].detach().cpu(),
+        atol=0.0,
+        rtol=0.0,
+    )
+    torch.testing.assert_close(
+        capture_off_loss.detach().cpu(),
+        capture_on_loss.detach().cpu(),
+        atol=0.0,
+        rtol=0.0,
+    )
+    assert _metrics_without_logits(capture_off_metrics) == _metrics_without_logits(capture_on_metrics)
+    for state_key in eligible:
+        capture_on_outputs = capture_on_module_outputs[state_key]
+        capture_off_outputs = capture_off_module_outputs[state_key]
+        assert len(capture_on_outputs) == len(capture_off_outputs)
+        assert len(capture_on_outputs) > 0
+        for capture_on_output, capture_off_output in zip(capture_on_outputs, capture_off_outputs):
+            torch.testing.assert_close(capture_off_output, capture_on_output, atol=0.0, rtol=0.0)
+
+    capture_on_fidelity_values = _forward_init_value_subset(
+        native_loss=native_loss,
+        native_metrics=native_metrics,
+        native_module_outputs=native_module_outputs,
+        bounded_loss=capture_on_loss,
+        bounded_metrics=capture_on_metrics,
+        bounded_module_outputs=capture_on_module_outputs,
+        eligible_scope="first-bitlinear",
+    )
+    capture_off_fidelity_values = _forward_init_value_subset(
+        native_loss=native_loss,
+        native_metrics=native_metrics,
+        native_module_outputs=native_module_outputs,
+        bounded_loss=capture_off_loss,
+        bounded_metrics=capture_off_metrics,
+        bounded_module_outputs=capture_off_module_outputs,
+        eligible_scope="first-bitlinear",
+    )
+    assert capture_off_fidelity_values == capture_on_fidelity_values
+    public_report = compute_forward_level_init_fidelity(
+        model,
+        batch,
+        states,
+        eligible,
+        device=torch.device("cpu"),
+        threshold=0.0,
+        eligible_scope="first-bitlinear",
+        total_steps=1,
+    )
+    assert {
+        key: public_report[key]
+        for key in capture_off_fidelity_values
+    } == capture_off_fidelity_values
+    assert capture_on_handle.capture_enabled is True
+    for capture in capture_on_handle.captures.values():
+        assert len(capture["inputs"]) > 0
+        assert capture["grad_outputs"] == []
+    with pytest.raises(RuntimeError, match="captured inputs and grad_outputs"):
+        capture_on_handle.weighted_grad(next(iter(eligible)))
+    assert capture_off_handle.capture_enabled is False
+    for capture in capture_off_handle.captures.values():
+        assert capture["inputs"] == []
+        assert capture["grad_outputs"] == []
+    with pytest.raises(RuntimeError, match="capture is disabled"):
+        capture_off_handle.weighted_grad(next(iter(eligible)))
+
+
 def test_forward_level_init_fidelity_emits_module_output_telemetry_for_all_bitlinears():
     model, batch, eligible, states = _tiny_forward_fixture(eligible_scope="all-bitlinear")
 
@@ -466,6 +656,46 @@ def test_forward_level_init_fidelity_hard_fails_on_corrupted_all_bitlinear_q_sta
         )
 
 
+def test_phase_progress_emits_schema_events_and_timeout_payload(capsys):
+    class FakeClock:
+        def __init__(self) -> None:
+            self.now = 0.0
+
+        def __call__(self) -> float:
+            return self.now
+
+    clock = FakeClock()
+    progress = PhaseProgress(
+        enabled=True,
+        device=torch.device("cpu"),
+        phase_timeout_seconds=10.0,
+        total_timeout_seconds=10.0,
+        clock=clock,
+    )
+
+    with progress.phase("synthetic", step=7):
+        clock.now = 0.25
+
+    emitted = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [item["event"] for item in emitted] == ["start", "end"]
+    assert {item["schema"] for item in emitted} == {C2P2_PHASE_TELEMETRY_SCHEMA_VERSION}
+    assert {item["phase"] for item in emitted} == {"synthetic"}
+    assert emitted[1]["duration_seconds"] == 0.25
+    assert progress.to_dict()["event_count"] == 2
+
+    with pytest.raises(C2PhaseTimeout) as excinfo:
+        enforce_phase_bound(
+            phase="synthetic-over-bound",
+            duration_seconds=2.0,
+            timeout_seconds=1.0,
+            bound_kind="phase",
+        )
+    assert excinfo.value.payload["schema"] == C2P2_PHASE_TELEMETRY_SCHEMA_VERSION
+    assert excinfo.value.payload["phase"] == "synthetic-over-bound"
+    assert excinfo.value.payload["event"] == "phase_timeout"
+    assert excinfo.value.payload["bound_kind"] == "phase"
+
+
 def test_tiny_real_model_cpu_step_receipt_is_scratch_only(tmp_path: Path):
     parent = tmp_path / "tiny_parent.pt"
     torch.save(_tiny_parent_blob(), parent)
@@ -526,6 +756,9 @@ def test_tiny_cpu_audit_receipt_proves_distinct_support_batches_and_step0_baseli
         curriculum_seed=17,
         audit_interval=1,
         max_steps_hard=5,
+        emit_progress=True,
+        phase_timeout_seconds=600.0,
+        total_timeout_seconds=600.0,
         enabled=True,
     )
 
@@ -535,9 +768,26 @@ def test_tiny_cpu_audit_receipt_proves_distinct_support_batches_and_step0_baseli
     ]
     trajectory = receipt["acquisition_trajectory"]
     timing_summary = receipt["timing_summary"]
+    phase_telemetry = receipt["phase_telemetry"]
 
     assert receipt["audit_interval"] == 1
     assert receipt["steps_completed"] == 2
+    assert receipt["device_guard"]["pass"] is True
+    assert phase_telemetry["schema"] == C2P2_PHASE_TELEMETRY_SCHEMA_VERSION
+    assert phase_telemetry["enabled"] is True
+    assert phase_telemetry["event_count"] > 0
+    phase_names = {event["phase"] for event in phase_telemetry["events"]}
+    assert {
+        "load",
+        "support_build",
+        "state_init",
+        "forward_fidelity",
+        "audit0",
+        "step",
+        "step_update",
+        "checkpoint_payload",
+        "receipt_write",
+    }.issubset(phase_names)
     assert receipt["support_cycler"]["covers_full_support"] is True
     assert receipt["support_cycler"]["has_at_least_two_distinct_batches"] is True
     assert len(set(step_hashes)) == 2

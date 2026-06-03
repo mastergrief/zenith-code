@@ -465,11 +465,24 @@ def derive_bounded_tensor_state_from_weight(
 class AuthoritativeForwardHandle:
     current_weights: dict[str, torch.Tensor]
     captures: dict[str, dict[str, list[torch.Tensor]]]
+    capture_enabled: bool
 
     def weighted_grad(self, state_key: str) -> torch.Tensor:
         if state_key not in self.current_weights:
             raise KeyError(state_key)
+        if not self.capture_enabled:
+            raise RuntimeError(
+                "weighted_grad is unavailable because "
+                "authoritative_forward_context capture is disabled; use "
+                "requires_grad=True when weighted gradients are needed"
+            )
         capture = self.captures[state_key]
+        if not capture["inputs"] or not capture["grad_outputs"]:
+            raise RuntimeError(
+                "weighted_grad requires captured inputs and grad_outputs; "
+                "ensure the eligible module was invoked under a differentiable "
+                "authoritative_forward_context"
+            )
         return weighted_grad_from_captures(
             capture["inputs"],
             capture["grad_outputs"],
@@ -489,6 +502,7 @@ def authoritative_forward_context(
     if missing:
         raise ValueError(f"missing tensor state for eligible modules: {sorted(missing)}")
     originals = {state_key: module.forward for state_key, module in eligible_modules.items()}
+    capture_enabled = bool(requires_grad)
     current_weights = {
         state_key: tensor_states[state_key].materialized_weight(
             device=device,
@@ -503,9 +517,10 @@ def authoritative_forward_context(
 
     for state_key, module in eligible_modules.items():
         def _forward(self: Any, input: torch.Tensor, *, key: str = state_key) -> torch.Tensor:
-            captures[key]["inputs"].append(input.detach().cpu())
+            if capture_enabled:
+                captures[key]["inputs"].append(input.detach().cpu())
             out = F.linear(input, current_weights[key], self.bias)
-            if out.requires_grad:
+            if capture_enabled and out.requires_grad:
                 out.register_hook(
                     lambda grad, capture_key=key: captures[capture_key]["grad_outputs"].append(
                         grad.detach().cpu(),
@@ -515,7 +530,11 @@ def authoritative_forward_context(
 
         module.forward = types.MethodType(_forward, module)
     try:
-        yield AuthoritativeForwardHandle(current_weights=current_weights, captures=captures)
+        yield AuthoritativeForwardHandle(
+            current_weights=current_weights,
+            captures=captures,
+            capture_enabled=capture_enabled,
+        )
     finally:
         for state_key, module in eligible_modules.items():
             module.forward = originals[state_key]

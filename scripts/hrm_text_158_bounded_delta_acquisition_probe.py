@@ -10,6 +10,7 @@ gates.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 from dataclasses import asdict
 import hashlib
 import json
@@ -17,8 +18,13 @@ import os
 from pathlib import Path
 import re
 import statistics
+import sys
 import time
 from typing import Any, Callable, Mapping, Sequence
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 import torch
 from torch.utils.data import DataLoader
@@ -71,6 +77,8 @@ C2P2_TRAJECTORY_SCHEMA_VERSION = "hrm_text_158_c2p2_identity_full_acquisition_tr
 C2P2_AUDIT_SCHEMA_VERSION = "hrm_text_158_c2p2_identity_full_strict_exact_audit/v0"
 C2P2_SUPPORT_CYCLER_SCHEMA_VERSION = "hrm_text_158_c2p2_identity_full_support_cycler/v0"
 C2P2_TIMING_SCHEMA_VERSION = "hrm_text_158_c2p2_calibration_timing_summary/v0"
+C2P2_PHASE_TELEMETRY_SCHEMA_VERSION = "hrm_text_158_c2p2_phase_telemetry/v0"
+C2P2_DEVICE_GUARD_SCHEMA_VERSION = "hrm_text_158_c2p2_device_guard/v0"
 C2P2_STRICT_EXACT_TARGET = 90
 C2P2_DEFAULT_MAX_STEPS_HARD = 1500
 C2P2_NULL_TAXONOMY = (
@@ -325,6 +333,180 @@ def _timing_start(device: torch.device) -> float:
 def _timing_duration_seconds(start: float, device: torch.device) -> float:
     _synchronize_timing_device(device)
     return max(0.0, float(time.perf_counter() - start))
+
+
+def _timeout_or_none(value: float | int | None) -> float | None:
+    if value is None:
+        return None
+    timeout = float(value)
+    if timeout <= 0.0:
+        return None
+    return timeout
+
+
+class C2PhaseTimeout(RuntimeError):
+    def __init__(
+        self,
+        *,
+        phase: str,
+        bound_kind: str,
+        duration_seconds: float,
+        timeout_seconds: float,
+    ) -> None:
+        self.payload = {
+            "schema": C2P2_PHASE_TELEMETRY_SCHEMA_VERSION,
+            "event": "phase_timeout",
+            "phase": str(phase),
+            "bound_kind": str(bound_kind),
+            "duration_seconds": float(duration_seconds),
+            "timeout_seconds": float(timeout_seconds),
+        }
+        super().__init__(json.dumps(self.payload, sort_keys=True))
+
+
+def enforce_phase_bound(
+    *,
+    phase: str,
+    duration_seconds: float,
+    timeout_seconds: float | int | None,
+    bound_kind: str,
+) -> None:
+    timeout = _timeout_or_none(timeout_seconds)
+    if timeout is not None and float(duration_seconds) > timeout:
+        raise C2PhaseTimeout(
+            phase=phase,
+            bound_kind=bound_kind,
+            duration_seconds=float(duration_seconds),
+            timeout_seconds=timeout,
+        )
+
+
+def assert_probe_device_ready(device: torch.device) -> dict[str, Any]:
+    report: dict[str, Any] = {
+        "schema": C2P2_DEVICE_GUARD_SCHEMA_VERSION,
+        "device": str(device),
+        "device_type": device.type,
+        "cuda_available": bool(torch.cuda.is_available()),
+    }
+    if device.type != "cuda":
+        report["pass"] = True
+        return report
+    if not torch.cuda.is_available():
+        report["pass"] = False
+        raise RuntimeError("CUDA device requested but torch.cuda.is_available() is false")
+    stats_device = cuda_memory_stats_device_arg(device)
+    torch.cuda.set_device(stats_device)
+    current_device = int(torch.cuda.current_device())
+    report.update(
+        {
+            "cuda_device_index": stats_device,
+            "cuda_current_device": current_device,
+            "pass": current_device == stats_device,
+        }
+    )
+    if not report["pass"]:
+        raise RuntimeError(
+            "CUDA current device does not match requested probe device: "
+            f"current={current_device} requested={stats_device}"
+        )
+    return report
+
+
+class PhaseProgress:
+    def __init__(
+        self,
+        *,
+        enabled: bool,
+        device: torch.device,
+        phase_timeout_seconds: float | int | None = None,
+        total_timeout_seconds: float | int | None = None,
+        clock: Callable[[], float] = time.perf_counter,
+    ) -> None:
+        self.enabled = bool(enabled)
+        self.device = device
+        self.phase_timeout_seconds = _timeout_or_none(phase_timeout_seconds)
+        self.total_timeout_seconds = _timeout_or_none(total_timeout_seconds)
+        self.clock = clock
+        self.started_at = float(self.clock())
+        self.events: list[dict[str, Any]] = []
+
+    @property
+    def active(self) -> bool:
+        return bool(
+            self.enabled
+            or self.phase_timeout_seconds is not None
+            or self.total_timeout_seconds is not None
+        )
+
+    def _elapsed(self) -> float:
+        return max(0.0, float(self.clock() - self.started_at))
+
+    def mark(self, phase: str, event: str, **fields: Any) -> dict[str, Any]:
+        payload = {
+            "schema": C2P2_PHASE_TELEMETRY_SCHEMA_VERSION,
+            "phase": str(phase),
+            "event": str(event),
+            "elapsed_since_start_seconds": self._elapsed(),
+            "device": str(self.device),
+            **fields,
+        }
+        if self.active:
+            self.events.append(payload)
+        if self.enabled:
+            print(json.dumps(payload, sort_keys=True), flush=True)
+        return payload
+
+    def _check_total_bound(self, phase: str) -> None:
+        enforce_phase_bound(
+            phase=phase,
+            duration_seconds=self._elapsed(),
+            timeout_seconds=self.total_timeout_seconds,
+            bound_kind="total",
+        )
+
+    @contextmanager
+    def phase(self, phase: str, **fields: Any) -> Any:
+        phase_start = float(self.clock())
+        self.mark(phase, "start", **fields)
+        try:
+            yield
+        except Exception as exc:
+            self.mark(
+                phase,
+                "error",
+                duration_seconds=max(0.0, float(self.clock() - phase_start)),
+                error_type=type(exc).__name__,
+                **fields,
+            )
+            raise
+        duration = max(0.0, float(self.clock() - phase_start))
+        try:
+            enforce_phase_bound(
+                phase=phase,
+                duration_seconds=duration,
+                timeout_seconds=self.phase_timeout_seconds,
+                bound_kind="phase",
+            )
+            self._check_total_bound(phase)
+        except C2PhaseTimeout as exc:
+            timeout_fields = {
+                key: value
+                for key, value in exc.payload.items()
+                if key not in {"schema", "phase", "event"}
+            }
+            self.mark(phase, "timeout", **timeout_fields, **fields)
+            raise
+        self.mark(phase, "end", duration_seconds=duration, **fields)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema": C2P2_PHASE_TELEMETRY_SCHEMA_VERSION,
+            "enabled": bool(self.enabled),
+            "phase_timeout_seconds": self.phase_timeout_seconds,
+            "total_timeout_seconds": self.total_timeout_seconds,
+            "event_count": len(self.events),
+            "events": list(self.events),
+        }
 
 
 def _median_or_none(values: Sequence[float]) -> float | None:
@@ -1239,8 +1421,10 @@ def run_bounded_delta_steps(
     audit_callback: Callable[[int, Mapping[str, Any]], dict[str, Any]] | None = None,
     audit_interval: int = 0,
     stop_on_strict_exact: bool = False,
+    phase_progress: PhaseProgress | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], str, int]:
     model.train()
+    progress = phase_progress or PhaseProgress(enabled=False, device=device)
     rank_spec = default_dry_run_rank_vote_spec()
     vote_spec = default_vote_update_spec(max_abs_per_tensor)
     vote_specs = {key: vote_spec for key in tensor_states}
@@ -1280,15 +1464,22 @@ def run_bounded_delta_steps(
     if not step_batches:
         raise RuntimeError("bounded-delta step loop requires at least one support batch")
 
-    def maybe_audit(step: int) -> bool:
+    def maybe_audit(step: int, *, final: bool = False) -> bool:
         if audit_callback is None:
             return False
-        audit_timing_start = _timing_start(device)
-        audit_report = dict(audit_callback(int(step), states))
-        audit_report["duration_seconds"] = _timing_duration_seconds(
-            audit_timing_start,
-            device,
-        )
+        if int(step) == 0:
+            audit_phase = "audit0"
+        elif final:
+            audit_phase = "final_audit"
+        else:
+            audit_phase = "audit"
+        with progress.phase(audit_phase, step=int(step)):
+            audit_timing_start = _timing_start(device)
+            audit_report = dict(audit_callback(int(step), states))
+            audit_report["duration_seconds"] = _timing_duration_seconds(
+                audit_timing_start,
+                device,
+            )
         audit_reports[str(step)] = audit_report
         return (
             bool(stop_on_strict_exact)
@@ -1322,59 +1513,62 @@ def run_bounded_delta_steps(
     stop_reason = "max_steps_completed"
     steps_completed = 0
     for step in range(1, int(steps) + 1):
-        step_timing_start = _timing_start(device)
-        batch_item = step_batches[(step - 1) % len(step_batches)]
-        step_batch = batch_item["batch"]
-        step_batch_metadata = batch_item["metadata"]
-        model.zero_grad(set_to_none=True)
-        if optimizer is not None:
-            optimizer.zero_grad(set_to_none=True)
-        extras = model.compute_train_extra_args(step, max(1, int(steps)))
-        with authoritative_forward_context(
-            eligible_modules,
-            states,
-            device=device,
-            requires_grad=True,
-        ) as handle:
-            _carry, loss, metrics = model(None, dict(step_batch), **extras)
-            loss.backward()
-            weighted_grads = {
-                key: handle.weighted_grad(key)
-                for key in states
-            }
-        votes_by_key = {}
-        finite_weighted_grad = True
-        for key, weighted_grad in weighted_grads.items():
-            finite_weighted_grad = finite_weighted_grad and bool(torch.isfinite(weighted_grad).all().item())
-            credit = credit_from_weighted_grad(weighted_grad)
-            moves = project_s1_gradient_to_moves(weighted_grad, states[key].q_levels)
-            votes_by_key[key] = rank_bucketed_int16_votes(credit, moves, rank_spec)
-        step_result = apply_bounded_delta_vote_step(states, votes_by_key, vote_specs)
-        states = step_result.tensor_states
-        q_changed_count = int(step_result.global_summary.get("q_changed_count", 0))
-        if require_q_change and q_changed_count <= 0:
-            raise RuntimeError("bounded-delta step produced no q movement under --require-q-change")
-        identity_proof = prove_eligible_master_identity_after_optimizer_step(
-            optimizer,
-            eligible_modules,
-            optimizer_checks=optimizer_checks,
-        )
-        step_duration_seconds = _timing_duration_seconds(
-            step_timing_start,
-            device,
-        )
-        step_reports[str(step)] = {
-            "loss": float(loss.detach().cpu().item()),
-            "loss_finite": bool(torch.isfinite(loss).item()),
-            "weighted_grad_finite": bool(finite_weighted_grad),
-            "duration_seconds": step_duration_seconds,
-            "metrics": _metrics_to_dict(metrics),
-            "bp_steps": int(extras["bp_steps"]),
-            "q_changed_count": q_changed_count,
-            "support_batch": dict(step_batch_metadata),
-            "step_result": step_result.to_dict(),
-            "optimizer_identity_proof": identity_proof,
-        }
+        with progress.phase("step", step=int(step)):
+            step_timing_start = _timing_start(device)
+            batch_item = step_batches[(step - 1) % len(step_batches)]
+            step_batch = batch_item["batch"]
+            step_batch_metadata = batch_item["metadata"]
+            model.zero_grad(set_to_none=True)
+            if optimizer is not None:
+                optimizer.zero_grad(set_to_none=True)
+            extras = model.compute_train_extra_args(step, max(1, int(steps)))
+            with progress.phase("step_forward_backward", step=int(step)):
+                with authoritative_forward_context(
+                    eligible_modules,
+                    states,
+                    device=device,
+                    requires_grad=True,
+                ) as handle:
+                    _carry, loss, metrics = model(None, dict(step_batch), **extras)
+                    loss.backward()
+                    weighted_grads = {
+                        key: handle.weighted_grad(key)
+                        for key in states
+                    }
+            with progress.phase("step_update", step=int(step)):
+                votes_by_key = {}
+                finite_weighted_grad = True
+                for key, weighted_grad in weighted_grads.items():
+                    finite_weighted_grad = finite_weighted_grad and bool(torch.isfinite(weighted_grad).all().item())
+                    credit = credit_from_weighted_grad(weighted_grad)
+                    moves = project_s1_gradient_to_moves(weighted_grad, states[key].q_levels)
+                    votes_by_key[key] = rank_bucketed_int16_votes(credit, moves, rank_spec)
+                step_result = apply_bounded_delta_vote_step(states, votes_by_key, vote_specs)
+                states = step_result.tensor_states
+                q_changed_count = int(step_result.global_summary.get("q_changed_count", 0))
+                if require_q_change and q_changed_count <= 0:
+                    raise RuntimeError("bounded-delta step produced no q movement under --require-q-change")
+                identity_proof = prove_eligible_master_identity_after_optimizer_step(
+                    optimizer,
+                    eligible_modules,
+                    optimizer_checks=optimizer_checks,
+                )
+                step_duration_seconds = _timing_duration_seconds(
+                    step_timing_start,
+                    device,
+                )
+                step_reports[str(step)] = {
+                    "loss": float(loss.detach().cpu().item()),
+                    "loss_finite": bool(torch.isfinite(loss).item()),
+                    "weighted_grad_finite": bool(finite_weighted_grad),
+                    "duration_seconds": step_duration_seconds,
+                    "metrics": _metrics_to_dict(metrics),
+                    "bp_steps": int(extras["bp_steps"]),
+                    "q_changed_count": q_changed_count,
+                    "support_batch": dict(step_batch_metadata),
+                    "step_result": step_result.to_dict(),
+                    "optimizer_identity_proof": identity_proof,
+                }
         steps_completed = step
         if (
             audit_callback is not None
@@ -1385,7 +1579,7 @@ def run_bounded_delta_steps(
             stop_reason = "strict_exact_acquired_stop_fast"
             break
     if audit_callback is not None and str(steps_completed) not in audit_reports:
-        if maybe_audit(steps_completed):
+        if maybe_audit(steps_completed, final=True):
             stop_reason = "strict_exact_acquired_final"
     updater_config = {
         "rank_vote_spec": rank_spec.to_live_dict(),
@@ -1472,6 +1666,9 @@ def run_c2p1_probe(
     audit_interval: int = 0,
     stop_on_strict_exact: bool = False,
     max_steps_hard: int = C2P2_DEFAULT_MAX_STEPS_HARD,
+    emit_progress: bool = False,
+    phase_timeout_seconds: float = 0.0,
+    total_timeout_seconds: float = 0.0,
     enabled: bool | None = None,
     allow_gpu_launch: bool = False,
 ) -> dict[str, Any]:
@@ -1486,20 +1683,31 @@ def run_c2p1_probe(
         raise ValueError("audit_interval must be non-negative")
     torch_device = torch.device(device)
     guard_gpu_launch(torch_device, allow_gpu_launch=allow_gpu_launch)
+    device_guard = assert_probe_device_ready(torch_device)
+    phase_progress = PhaseProgress(
+        enabled=bool(emit_progress),
+        device=torch_device,
+        phase_timeout_seconds=float(phase_timeout_seconds),
+        total_timeout_seconds=float(total_timeout_seconds),
+    )
     scratch_root.mkdir(parents=True, exist_ok=True)
     if torch_device.type == "cuda":
-        reset_cuda_memory_stats(torch_device)
+        with phase_progress.phase("cuda_memory_reset"):
+            reset_cuda_memory_stats(torch_device)
     run_timing_start = _timing_start(torch_device)
 
-    ckpt, parent_hash_before = load_parent_checkpoint(parent, expected_sha256=parent_sha256)
-    model, tok, cfg = build_model_from_checkpoint(ckpt, torch_device)
-    support_batches, support_cycler_proof = build_identity_full_support_batches(
-        tok=tok,
-        max_len=int(max_len or ckpt["config"]["max_seq_len"]),
-        batch_size=int(batch_size),
-        curriculum_seed=int(curriculum_seed),
-        device=torch_device,
-    )
+    with phase_progress.phase("load"):
+        ckpt, parent_hash_before = load_parent_checkpoint(parent, expected_sha256=parent_sha256)
+    with phase_progress.phase("build_model"):
+        model, tok, cfg = build_model_from_checkpoint(ckpt, torch_device)
+    with phase_progress.phase("support_build"):
+        support_batches, support_cycler_proof = build_identity_full_support_batches(
+            tok=tok,
+            max_len=int(max_len or ckpt["config"]["max_seq_len"]),
+            batch_size=int(batch_size),
+            curriculum_seed=int(curriculum_seed),
+            device=torch_device,
+        )
     model_batch = support_batches[0]["batch"]
     batch_proof = {
         **support_cycler_proof,
@@ -1511,29 +1719,34 @@ def run_c2p1_probe(
             "sep_positions": list(model_batch["sep_positions"].shape),
         },
     }
-    support_control_proof = identity_full_support_control_proof(int(curriculum_seed))
-    eligible = select_eligible_bitlinears(model, eligible_scope=eligible_scope)
-    tensor_states, init_fidelity = derive_tensor_states_and_check_init_fidelity(
-        eligible,
-        threshold=float(init_fidelity_atol),
-    )
+    with phase_progress.phase("support_control"):
+        support_control_proof = identity_full_support_control_proof(int(curriculum_seed))
+    with phase_progress.phase("select_eligible"):
+        eligible = select_eligible_bitlinears(model, eligible_scope=eligible_scope)
+    with phase_progress.phase("state_init"):
+        tensor_states, init_fidelity = derive_tensor_states_and_check_init_fidelity(
+            eligible,
+            threshold=float(init_fidelity_atol),
+        )
     if not init_fidelity["all_pass"]:
         raise RuntimeError("weight-level init-fidelity allclose failed")
 
-    forward_init_fidelity = compute_forward_level_init_fidelity(
-        model,
-        model_batch,
-        tensor_states,
-        eligible,
-        device=torch_device,
-        threshold=float(init_fidelity_atol),
-        eligible_scope=eligible_scope,
-        total_steps=int(steps),
-    )
+    with phase_progress.phase("forward_fidelity"):
+        forward_init_fidelity = compute_forward_level_init_fidelity(
+            model,
+            model_batch,
+            tensor_states,
+            eligible,
+            device=torch_device,
+            threshold=float(init_fidelity_atol),
+            eligible_scope=eligible_scope,
+            total_steps=int(steps),
+        )
 
     step0_optimizer_identity_proof = None
     if int(steps) <= 0:
-        step0_optimizer_identity_proof = prove_step0_optimizer_identity(model, eligible)
+        with phase_progress.phase("step0_optimizer_identity"):
+            step0_optimizer_identity_proof = prove_step0_optimizer_identity(model, eligible)
 
     audit_enabled = int(audit_interval) > 0 or bool(stop_on_strict_exact)
 
@@ -1549,27 +1762,29 @@ def run_c2p1_probe(
             total_steps=max(1, int(steps)),
         )
 
-    (
-        step_reports,
-        updater_config,
-        final_states,
-        audit_reports,
-        stop_reason,
-        steps_completed,
-    ) = run_bounded_delta_steps(
-        model,
-        model_batch,
-        tensor_states,
-        eligible,
-        device=torch_device,
-        steps=int(steps),
-        require_q_change=bool(require_q_change),
-        max_abs_per_tensor=int(max_abs_per_tensor),
-        support_batches=support_batches,
-        audit_callback=audit_callback if audit_enabled else None,
-        audit_interval=int(audit_interval),
-        stop_on_strict_exact=bool(stop_on_strict_exact),
-    )
+    with phase_progress.phase("bounded_steps"):
+        (
+            step_reports,
+            updater_config,
+            final_states,
+            audit_reports,
+            stop_reason,
+            steps_completed,
+        ) = run_bounded_delta_steps(
+            model,
+            model_batch,
+            tensor_states,
+            eligible,
+            device=torch_device,
+            steps=int(steps),
+            require_q_change=bool(require_q_change),
+            max_abs_per_tensor=int(max_abs_per_tensor),
+            support_batches=support_batches,
+            audit_callback=audit_callback if audit_enabled else None,
+            audit_interval=int(audit_interval),
+            stop_on_strict_exact=bool(stop_on_strict_exact),
+            phase_progress=phase_progress,
+        )
     if not updater_config:
         updater_config = {
             "rank_vote_spec": default_dry_run_rank_vote_spec().to_live_dict(),
@@ -1577,16 +1792,18 @@ def run_c2p1_probe(
             "projection_law": S1_PROJECTION_LAW,
             "vote_law": S1_RANK_BUCKET_VOTE_LAW,
         }
-    checkpoint_payload = build_authoritative_checkpoint_payload(
-        final_states,
-        step=int(steps_completed),
-        updater_config=updater_config,
-        oracle_receipt=None,
-        dry_run=True,
-        checkpoint_written=False,
-    )
-    validate_authoritative_resume_payload(checkpoint_payload)
-    parent_hash_after = file_sha256(parent)
+    with phase_progress.phase("checkpoint_payload"):
+        checkpoint_payload = build_authoritative_checkpoint_payload(
+            final_states,
+            step=int(steps_completed),
+            updater_config=updater_config,
+            oracle_receipt=None,
+            dry_run=True,
+            checkpoint_written=False,
+        )
+        validate_authoritative_resume_payload(checkpoint_payload)
+    with phase_progress.phase("parent_hash_after"):
+        parent_hash_after = file_sha256(parent)
     parent_hash_unchanged = parent_hash_before == parent_hash_after
     if not parent_hash_unchanged:
         raise RuntimeError("parent checkpoint hash changed during C2.1 probe")
@@ -1608,6 +1825,7 @@ def run_c2p1_probe(
         "gpu_launch_authorized": bool(torch_device.type == "cuda"),
         "gpu_launched": bool(torch_device.type == "cuda"),
         "device": str(torch_device),
+        "device_guard": device_guard,
         "dry_run": True,
         "checkpoint_written": False,
         "creditdir_mutated": False,
@@ -1659,8 +1877,14 @@ def run_c2p1_probe(
         ),
         "checkpoint_payload": checkpoint_payload,
         "memory": cuda_memory_receipt(torch_device),
+        "phase_telemetry": phase_progress.to_dict(),
     }
     receipt_path = scratch_root / "receipt.json"
+    phase_progress.mark("receipt_write", "start", path=str(receipt_path))
+    receipt["phase_telemetry"] = phase_progress.to_dict()
+    receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
+    phase_progress.mark("receipt_write", "end", path=str(receipt_path))
+    receipt["phase_telemetry"] = phase_progress.to_dict()
     receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
     receipt["receipt_path"] = str(receipt_path)
     return receipt
@@ -1688,6 +1912,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--audit-interval", type=int, default=0)
     ap.add_argument("--stop-on-strict-exact", action="store_true")
     ap.add_argument("--max-steps-hard", type=int, default=C2P2_DEFAULT_MAX_STEPS_HARD)
+    ap.add_argument("--emit-progress", action="store_true")
+    ap.add_argument("--phase-timeout-seconds", type=float, default=0.0)
+    ap.add_argument("--total-timeout-seconds", type=float, default=0.0)
     return ap
 
 
@@ -1710,6 +1937,9 @@ def main(argv: list[str] | None = None) -> int:
         audit_interval=args.audit_interval,
         stop_on_strict_exact=args.stop_on_strict_exact,
         max_steps_hard=args.max_steps_hard,
+        emit_progress=args.emit_progress,
+        phase_timeout_seconds=args.phase_timeout_seconds,
+        total_timeout_seconds=args.total_timeout_seconds,
         enabled=args.enable_bounded_delta_probe,
         allow_gpu_launch=args.allow_gpu_launch,
     )

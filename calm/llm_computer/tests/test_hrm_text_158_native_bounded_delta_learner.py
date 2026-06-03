@@ -148,9 +148,13 @@ def test_authoritative_forward_context_uses_q_state_not_fp_master_and_captures_g
     target = torch.tensor([[0.0, 1.0]])
 
     with authoritative_forward_context({"proj": module}, {"proj": state}, requires_grad=True) as handle:
+        assert handle.capture_enabled is True
         out = module(x)
         expected = F.linear(x, q.to(torch.float32) * 2.0, None)
         torch.testing.assert_close(out, expected, atol=0.0, rtol=0.0)
+        assert len(handle.captures["proj"]["inputs"]) == 1
+        with pytest.raises(RuntimeError, match="captured inputs and grad_outputs"):
+            handle.weighted_grad("proj")
         with torch.no_grad():
             module.weight.fill_(-123.0)
         out_after_master_mutation = module(x)
@@ -161,6 +165,25 @@ def test_authoritative_forward_context_uses_q_state_not_fp_master_and_captures_g
 
     assert weighted_grad.shape == q.shape
     torch.testing.assert_close(weighted_grad, handle.current_weights["proj"].grad, atol=0.0, rtol=0.0)
+
+
+def test_authoritative_forward_context_no_grad_disables_capture_without_changing_output():
+    module = BitLinear(3, 2, bias=False)
+    with torch.no_grad():
+        module.weight.fill_(42.0)
+    q = torch.tensor([[1, 0, -1], [0, 1, 0]], dtype=torch.int8)
+    state = make_bounded_tensor_state("proj", q, 2.0)
+    x = torch.tensor([[1.0, 2.0, 3.0]])
+
+    with authoritative_forward_context({"proj": module}, {"proj": state}, requires_grad=False) as handle:
+        out = module(x)
+        expected = F.linear(x, q.to(torch.float32) * 2.0, None)
+        torch.testing.assert_close(out, expected, atol=0.0, rtol=0.0)
+        assert handle.capture_enabled is False
+        assert handle.captures["proj"]["inputs"] == []
+        assert handle.captures["proj"]["grad_outputs"] == []
+        with pytest.raises(RuntimeError, match="capture is disabled"):
+            handle.weighted_grad("proj")
 
 
 def test_checkpoint_schema_resume_refusal_and_reanchored_oracle_hash_receipt(tmp_path):
