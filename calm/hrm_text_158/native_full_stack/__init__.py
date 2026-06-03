@@ -34,6 +34,15 @@ from calm.hrm_text_158.native_full_stack.metrics import (
     AcceptanceMetric,
     first_class_metric_names,
 )
+from calm.hrm_text_158.native_full_stack.qscale_linear import (
+    INT8_LEVELS_TRANSITIONAL_NOTE,
+    QScaleLinearConfig,
+    QScaleWeightFormat,
+    QScaleWeightState,
+    qscale_linear_reference,
+    qscale_linear_triton,
+    validate_qscale_weight_state,
+)
 from calm.hrm_text_158.native_full_stack.source_pointers import (
     ACTIVE_HRM_REPO_ROOT,
     HISTORICAL_NON_ANCHOR_POINTERS,
@@ -54,6 +63,7 @@ __all__ = [
     "FPException",
     "HISTORICAL_NON_ANCHOR_POINTERS",
     "IMPLEMENTATION_STATUS_SKELETON_ONLY",
+    "INT8_LEVELS_TRANSITIONAL_NOTE",
     "LEDGER_SCHEMA_VERSION",
     "LIVE_C1353FD5_OBSERVATIONS",
     "LIVE_S1_TRAINER_POINTER",
@@ -61,8 +71,14 @@ __all__ = [
     "PHASE0_LEDGER_ROWS",
     "PHASE0_SOURCE_POINTERS",
     "PROJECTION_GROUPS",
+    "QScaleLinearConfig",
+    "QScaleWeightFormat",
+    "QScaleWeightState",
     "SUBSYSTEM_CONTRACTS",
     "SourcePointer",
     "SubsystemContract",
     "first_class_metric_names",
+    "qscale_linear_reference",
+    "qscale_linear_triton",
+    "validate_qscale_weight_state",
 ]
