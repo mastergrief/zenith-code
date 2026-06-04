@@ -126,6 +126,104 @@ def _votes_for(*entries: tuple[int, int]):
     return out
 
 
+def _legacy_bounded_identity_selection(
+    identities: set[tuple[str, int]],
+    *,
+    max_keys: int,
+    priority_ids: set[tuple[str, int]] | None = None,
+) -> list[dict[str, int | str]]:
+    full = set(identities)
+    limit = max(0, int(max_keys))
+    emitted = full
+    if len(full) > limit:
+        selected: list[tuple[str, int]] = []
+        seen: set[tuple[str, int]] = set()
+        for identity in sorted(set(priority_ids or set()) & full):
+            if len(selected) >= limit:
+                break
+            selected.append(identity)
+            seen.add(identity)
+        for identity in sorted(full):
+            if len(selected) >= limit:
+                break
+            if identity in seen:
+                continue
+            selected.append(identity)
+            seen.add(identity)
+        emitted = set(selected)
+    return front_c_emission._identity_dicts(emitted)
+
+
+@pytest.mark.parametrize(
+    ("identities", "max_keys", "priority_ids"),
+    (
+        ({("only", 3), ("only", 1), ("only", 2)}, 2, set()),
+        ({("b", 0), ("a", 5), ("a", 1), ("b", 1)}, 3, set()),
+        ({("a", 0), ("a", 1), ("a", 9), ("a", 10)}, 2, {("a", 10)}),
+        ({("a", 0), ("a", 1)}, 8, {("a", 1)}),
+        (set(), 1, {("missing", 0)}),
+    ),
+)
+def test_front_c_bounded_identity_set_preserves_legacy_contract(
+    identities,
+    max_keys,
+    priority_ids,
+):
+    emitted, diagnostics = front_c_emission._bounded_identity_set(
+        "unit_surface",
+        identities,
+        max_keys=max_keys,
+        priority_ids=priority_ids,
+    )
+
+    assert front_c_emission._identity_dicts(emitted) == _legacy_bounded_identity_selection(
+        identities,
+        max_keys=max_keys,
+        priority_ids=priority_ids,
+    )
+    assert diagnostics["full_identity_count"] == len(identities)
+    assert diagnostics["emitted_identity_count"] == len(emitted)
+    assert diagnostics["bounded"] is (len(identities) > max(0, int(max_keys)))
+
+
+def test_front_c_source_bounded_selection_matches_tuple_legacy_ordering():
+    universe = front_c_emission._identity_universe_from_sources(
+        {
+            "b": torch.tensor([2, 0, 2, 1], dtype=torch.int64),
+            "a": torch.tensor([5, 1], dtype=torch.int64),
+        },
+        extra_identities={("a", 0), ("b", 9), ("c", 3), ("a", 5)},
+    )
+    full_reference = {
+        ("a", 0),
+        ("a", 1),
+        ("a", 5),
+        ("b", 0),
+        ("b", 1),
+        ("b", 2),
+        ("b", 9),
+        ("c", 3),
+    }
+
+    selection = front_c_emission._select_bounded_identity_universe(
+        "unit_surface",
+        universe,
+        max_keys=4,
+        priority_ids={("b", 9), ("c", 3), ("missing", 0)},
+    )
+
+    assert front_c_emission._identity_dicts(selection.identities) == (
+        _legacy_bounded_identity_selection(
+            full_reference,
+            max_keys=4,
+            priority_ids={("b", 9), ("c", 3), ("missing", 0)},
+        )
+    )
+    assert selection.diagnostics["full_identity_count"] == len(full_reference)
+    assert selection.diagnostics["emitted_identity_count"] == 4
+    assert selection.diagnostics["bounded"] is True
+
+
 def test_front_c_identity_observer_is_logging_only_and_cloned(tmp_path):
     states = {"toy.weight": _state()}
     votes = {"toy.weight": _votes()}

@@ -11,7 +11,7 @@ import hashlib
 import json
 from pathlib import Path
 import time
-from typing import Any, Mapping, Sequence
+from typing import Any, Iterable, Iterator, Mapping, Sequence
 
 import torch
 
@@ -59,6 +59,18 @@ DEFAULT_SPARSE_ORACLE_MAX_ACTIVE_IDS = 100_000
 
 
 FrontCIdentity = tuple[str, int]
+
+
+@dataclass(frozen=True)
+class _IdentityUniverse:
+    sources_by_key: tuple[tuple[str, torch.Tensor], ...] = ()
+    extra_identities: frozenset[FrontCIdentity] = frozenset()
+
+
+@dataclass(frozen=True)
+class _BoundedIdentitySelection:
+    identities: tuple[FrontCIdentity, ...]
+    diagnostics: dict[str, Any]
 
 
 def _canonical_json(data: Any) -> str:
@@ -118,6 +130,187 @@ def _identity_dicts(identities: Sequence[FrontCIdentity]) -> list[dict[str, int 
         {"state_key": state_key, "flat_index": int(flat_index)}
         for state_key, flat_index in sorted((str(k), int(i)) for k, i in identities)
     ]
+
+
+def _identity_row_json_bytes(state_key: str, flat_index: int) -> bytes:
+    state_json = json.dumps(
+        str(state_key),
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )
+    return f'{{"flat_index":{int(flat_index)},"state_key":{state_json}}}'.encode("utf-8")
+
+
+def _identity_dicts_sha256(identities: Iterable[FrontCIdentity]) -> str:
+    h = hashlib.sha256()
+    h.update(b"[")
+    first = True
+    for state_key, flat_index in sorted((str(k), int(i)) for k, i in identities):
+        if not first:
+            h.update(b",")
+        h.update(_identity_row_json_bytes(state_key, int(flat_index)))
+        first = False
+    h.update(b"]")
+    return h.hexdigest()
+
+
+def _sorted_unique_i64_indices(indices: torch.Tensor | Sequence[int]) -> torch.Tensor:
+    if isinstance(indices, torch.Tensor):
+        flat = indices.detach().cpu().to(torch.int64).flatten().contiguous()
+    else:
+        flat = torch.tensor([int(index) for index in indices], dtype=torch.int64)
+    if int(flat.numel()) <= 1:
+        return flat.clone().contiguous()
+    if bool(torch.all(flat[1:] >= flat[:-1]).item()):
+        return torch.unique_consecutive(flat).contiguous()
+    return torch.unique(flat, sorted=True).to(torch.int64).cpu().contiguous()
+
+
+def _identity_universe_from_sources(
+    sources_by_key: Mapping[str, torch.Tensor | Sequence[int]],
+    *,
+    extra_identities: Iterable[FrontCIdentity] = (),
+) -> _IdentityUniverse:
+    sources = tuple(
+        (str(state_key), _sorted_unique_i64_indices(indices))
+        for state_key, indices in sorted(sources_by_key.items())
+    )
+    extras = frozenset((str(state_key), int(flat_index)) for state_key, flat_index in extra_identities)
+    return _IdentityUniverse(sources_by_key=sources, extra_identities=extras)
+
+
+def _identity_universe_from_identities(identities: Iterable[FrontCIdentity]) -> _IdentityUniverse:
+    return _IdentityUniverse(
+        extra_identities=frozenset((str(state_key), int(flat_index)) for state_key, flat_index in identities),
+    )
+
+
+def _source_contains(source: torch.Tensor | None, flat_index: int) -> bool:
+    if source is None or int(source.numel()) == 0:
+        return False
+    needle = torch.tensor(int(flat_index), dtype=torch.int64)
+    pos = int(torch.searchsorted(source, needle).item())
+    return pos < int(source.numel()) and int(source[pos].item()) == int(flat_index)
+
+
+def _identity_universe_contains(universe: _IdentityUniverse, identity: FrontCIdentity) -> bool:
+    state_key, flat_index = str(identity[0]), int(identity[1])
+    if (state_key, flat_index) in universe.extra_identities:
+        return True
+    source_map = dict(universe.sources_by_key)
+    return _source_contains(source_map.get(state_key), flat_index)
+
+
+def _identity_universe_count(universe: _IdentityUniverse) -> int:
+    source_map = dict(universe.sources_by_key)
+    count = sum(int(indices.numel()) for indices in source_map.values())
+    for state_key, flat_index in universe.extra_identities:
+        if not _source_contains(source_map.get(state_key), int(flat_index)):
+            count += 1
+    return count
+
+
+def _extra_indices_by_key(universe: _IdentityUniverse) -> dict[str, list[int]]:
+    out: dict[str, list[int]] = {}
+    source_map = dict(universe.sources_by_key)
+    for state_key, flat_index in universe.extra_identities:
+        if _source_contains(source_map.get(state_key), int(flat_index)):
+            continue
+        out.setdefault(str(state_key), []).append(int(flat_index))
+    for values in out.values():
+        values.sort()
+    return out
+
+
+def _iter_merged_indices(source: torch.Tensor | None, extras: Sequence[int]) -> Iterator[int]:
+    extra_pos = 0
+    if source is not None:
+        chunk_size = 8192
+        for start in range(0, int(source.numel()), chunk_size):
+            for raw_index in source[start : start + chunk_size].tolist():
+                index = int(raw_index)
+                while extra_pos < len(extras) and int(extras[extra_pos]) < index:
+                    yield int(extras[extra_pos])
+                    extra_pos += 1
+                if extra_pos < len(extras) and int(extras[extra_pos]) == index:
+                    extra_pos += 1
+                yield index
+    while extra_pos < len(extras):
+        yield int(extras[extra_pos])
+        extra_pos += 1
+
+
+def _iter_identity_universe(universe: _IdentityUniverse) -> Iterator[FrontCIdentity]:
+    source_map = dict(universe.sources_by_key)
+    extras_by_key = _extra_indices_by_key(universe)
+    for state_key in sorted(set(source_map) | set(extras_by_key)):
+        for flat_index in _iter_merged_indices(
+            source_map.get(state_key),
+            extras_by_key.get(state_key, ()),
+        ):
+            yield (str(state_key), int(flat_index))
+
+
+def _identity_universe_sha256(universe: _IdentityUniverse) -> str:
+    h = hashlib.sha256()
+    h.update(b"[")
+    first = True
+    for state_key, flat_index in _iter_identity_universe(universe):
+        if not first:
+            h.update(b",")
+        h.update(_identity_row_json_bytes(state_key, int(flat_index)))
+        first = False
+    h.update(b"]")
+    return h.hexdigest()
+
+
+def _select_bounded_identity_universe(
+    surface_name: str,
+    universe: _IdentityUniverse,
+    *,
+    max_keys: int,
+    priority_ids: Iterable[FrontCIdentity] | None = None,
+) -> _BoundedIdentitySelection:
+    limit = max(0, int(max_keys))
+    full_count = _identity_universe_count(universe)
+    bounded = full_count > limit
+    if not bounded:
+        identities = tuple(_iter_identity_universe(universe))
+    else:
+        selected: list[FrontCIdentity] = []
+        seen: set[FrontCIdentity] = set()
+        for raw_identity in sorted(
+            (str(state_key), int(flat_index))
+            for state_key, flat_index in (priority_ids or ())
+        ):
+            if len(selected) >= limit:
+                break
+            if raw_identity in seen:
+                continue
+            if not _identity_universe_contains(universe, raw_identity):
+                continue
+            selected.append(raw_identity)
+            seen.add(raw_identity)
+        for identity in _iter_identity_universe(universe):
+            if len(selected) >= limit:
+                break
+            if identity in seen:
+                continue
+            selected.append(identity)
+            seen.add(identity)
+        identities = tuple(sorted(selected))
+    diagnostics = {
+        "surface": str(surface_name),
+        "full_identity_count": int(full_count),
+        "emitted_identity_count": len(identities),
+        "identity_cap": limit,
+        "bounded": bool(bounded),
+    }
+    if bounded:
+        diagnostics["cap_reason"] = (
+            f"{surface_name} full identity count {full_count} exceeds cap {limit}"
+        )
+    return _BoundedIdentitySelection(identities=identities, diagnostics=diagnostics)
 
 
 def _direction_dicts(values: Mapping[FrontCIdentity, int]) -> list[dict[str, int | str]]:
@@ -228,38 +421,13 @@ def _bounded_identity_set(
     max_keys: int,
     priority_ids: set[FrontCIdentity] | None = None,
 ) -> tuple[set[FrontCIdentity], dict[str, Any]]:
-    full = set(identities)
-    limit = max(0, int(max_keys))
-    bounded = len(full) > limit
-    emitted = full
-    if bounded:
-        selected: list[FrontCIdentity] = []
-        seen: set[FrontCIdentity] = set()
-        for identity in sorted(set(priority_ids or set()) & full):
-            if len(selected) >= limit:
-                break
-            selected.append(identity)
-            seen.add(identity)
-        for identity in sorted(full):
-            if len(selected) >= limit:
-                break
-            if identity in seen:
-                continue
-            selected.append(identity)
-            seen.add(identity)
-        emitted = set(selected)
-    diagnostics = {
-        "surface": str(surface_name),
-        "full_identity_count": len(full),
-        "emitted_identity_count": len(emitted),
-        "identity_cap": limit,
-        "bounded": bool(bounded),
-    }
-    if bounded:
-        diagnostics["cap_reason"] = (
-            f"{surface_name} full identity count {len(full)} exceeds cap {limit}"
-        )
-    return emitted, diagnostics
+    selection = _select_bounded_identity_universe(
+        surface_name,
+        _identity_universe_from_identities(identities),
+        max_keys=max_keys,
+        priority_ids=priority_ids,
+    )
+    return set(selection.identities), selection.diagnostics
 
 
 def _q_acc_entry_parts(value: Any) -> tuple[torch.Tensor, torch.Tensor, dict[str, Any]]:
@@ -358,22 +526,19 @@ def _surface_from_reused_plans(
 ) -> tuple[
     FrontCDecisionSurfaceStep,
     set[FrontCIdentity],
-    set[FrontCIdentity],
+    _IdentityUniverse,
     dict[str, Any],
     bool,
 ]:
     current_threshold: set[FrontCIdentity] = set()
-    active_next: set[FrontCIdentity] = set()
-    ranking_exact: set[FrontCIdentity] = set()
     cap_frontier: set[FrontCIdentity] = set()
     replay_veto: set[FrontCIdentity] = set()
+    candidate_indices_by_key: dict[str, torch.Tensor] = {}
 
     for state_key, state in sorted(states_by_key.items()):
         plan = plans_by_key[state_key]
         current_threshold |= _current_threshold_ids(state_key, state, specs_by_key[state_key])
-        candidates = _ids_from_indices(state_key, plan.candidate_indices)
-        active_next |= candidates
-        ranking_exact |= candidates
+        candidate_indices_by_key[str(state_key)] = plan.candidate_indices
         cap_frontier |= _ids_from_indices(
             state_key,
             plan.pre_veto_selected_indices[: int(cap_frontier_width)],
@@ -382,57 +547,63 @@ def _surface_from_reused_plans(
 
     backlog = _backlog_keys(deferred_backlog)
     priority = _plan_priority_ids(plans_by_key, cap_frontier_width=cap_frontier_width) | backlog
-    surface_inputs = {
-        "current_magnitude_threshold_keys": current_threshold,
-        "active_next_step_keys": active_next,
-        "ranking_sensitive_exact_keys": ranking_exact,
-        "global_cap_frontier_keys": cap_frontier,
-        "backlog_carry_keys": backlog,
-        "replay_veto_residual_keys": replay_veto,
+    candidate_universe = _identity_universe_from_sources(candidate_indices_by_key)
+    decision_universe = _IdentityUniverse(
+        sources_by_key=candidate_universe.sources_by_key,
+        extra_identities=frozenset(cap_frontier | replay_veto | backlog),
+    )
+    surface_universes = {
+        "current_magnitude_threshold_keys": _identity_universe_from_identities(
+            current_threshold,
+        ),
+        "active_next_step_keys": candidate_universe,
+        "ranking_sensitive_exact_keys": candidate_universe,
+        "global_cap_frontier_keys": _identity_universe_from_identities(cap_frontier),
+        "backlog_carry_keys": _identity_universe_from_identities(backlog),
+        "replay_veto_residual_keys": _identity_universe_from_identities(replay_veto),
     }
-    emitted: dict[str, set[FrontCIdentity]] = {}
+    emitted: dict[str, tuple[FrontCIdentity, ...]] = {}
     surface_diagnostics: dict[str, Any] = {}
     bounded = False
-    for name, identities in surface_inputs.items():
-        subset, diagnostics = _bounded_identity_set(
+    for name, universe in surface_universes.items():
+        selection = _select_bounded_identity_universe(
             name,
-            identities,
+            universe,
             max_keys=max_exact_identity_keys,
             priority_ids=priority,
         )
-        emitted[name] = subset
-        surface_diagnostics[name] = diagnostics
-        bounded = bounded or bool(diagnostics["bounded"])
+        emitted[name] = selection.identities
+        surface_diagnostics[name] = selection.diagnostics
+        bounded = bounded or bool(selection.diagnostics["bounded"])
 
-    full_decision_relevant = active_next | ranking_exact | cap_frontier | replay_veto | backlog
-    emitted_decision_relevant = (
-        emitted["active_next_step_keys"]
-        | emitted["ranking_sensitive_exact_keys"]
-        | emitted["global_cap_frontier_keys"]
-        | emitted["replay_veto_residual_keys"]
-        | emitted["backlog_carry_keys"]
-    )
+    emitted_decision_relevant: set[FrontCIdentity] = set()
+    for name in (
+        "active_next_step_keys",
+        "ranking_sensitive_exact_keys",
+        "global_cap_frontier_keys",
+        "replay_veto_residual_keys",
+        "backlog_carry_keys",
+    ):
+        emitted_decision_relevant.update(emitted[name])
     eligible = sum(int(state.q_levels.numel()) for state in states_by_key.values())
-    surface_diagnostics["decision_relevant_identity_count"] = len(full_decision_relevant)
+    surface_diagnostics["decision_relevant_identity_count"] = _identity_universe_count(
+        decision_universe,
+    )
     surface_diagnostics["emitted_decision_relevant_identity_count"] = len(emitted_decision_relevant)
     surface_diagnostics["identity_emission_bounded"] = bool(bounded)
     return (
         FrontCDecisionSurfaceStep(
             step=int(step),
             eligible_weight_count=eligible,
-            current_magnitude_threshold_keys=_identity_dicts(
-                emitted["current_magnitude_threshold_keys"],
-            ),
-            active_next_step_keys=_identity_dicts(emitted["active_next_step_keys"]),
-            ranking_sensitive_exact_keys=_identity_dicts(
-                emitted["ranking_sensitive_exact_keys"],
-            ),
-            global_cap_frontier_keys=_identity_dicts(emitted["global_cap_frontier_keys"]),
-            backlog_carry_keys=_identity_dicts(emitted["backlog_carry_keys"]),
-            replay_veto_residual_keys=_identity_dicts(emitted["replay_veto_residual_keys"]),
+            current_magnitude_threshold_keys=emitted["current_magnitude_threshold_keys"],
+            active_next_step_keys=emitted["active_next_step_keys"],
+            ranking_sensitive_exact_keys=emitted["ranking_sensitive_exact_keys"],
+            global_cap_frontier_keys=emitted["global_cap_frontier_keys"],
+            backlog_carry_keys=emitted["backlog_carry_keys"],
+            replay_veto_residual_keys=emitted["replay_veto_residual_keys"],
         ),
         emitted_decision_relevant,
-        full_decision_relevant,
+        decision_universe,
         surface_diagnostics,
         bounded,
     )
@@ -626,27 +797,30 @@ def build_front_c_live_step_paths(
             cap_frontier_width=cap_frontier_width,
         )
         sparse_active_ids = set(active_ids)
+        full_active_count = _identity_universe_count(full_active_ids)
         sparse_subset_diag = {
             "surface": "sparse_active_set",
-            "full_identity_count": len(full_active_ids),
+            "full_identity_count": full_active_count,
             "emitted_identity_count": len(sparse_active_ids),
             "identity_cap": int(sparse_oracle_max_active_ids),
             "bounded": False,
         }
         sparse_bounded = False
         sparse_exact_oracle_ran = False
-        if len(full_active_ids) > int(sparse_oracle_max_active_ids):
-            sparse_active_ids, sparse_subset_diag = _bounded_identity_set(
+        if full_active_count > int(sparse_oracle_max_active_ids):
+            sparse_selection = _select_bounded_identity_universe(
                 "sparse_active_set",
                 full_active_ids,
                 max_keys=sparse_oracle_max_active_ids,
                 priority_ids=priority,
             )
+            sparse_active_ids = set(sparse_selection.identities)
+            sparse_subset_diag = sparse_selection.diagnostics
             sparse_bounded = True
         full_identity = not surface_bounded
         _record_duration(step_timing, "sparse_active_set_select_or_bound", phase_start)
         if not surface_bounded and not sparse_bounded:
-            sparse_active_ids = set(full_active_ids)
+            sparse_active_ids = set(_iter_identity_universe(full_active_ids))
             sparse_path_mode = "exact_sparse_encode_decode"
             phase_start = time.perf_counter()
             sparse_states = _sparse_states_from_active_set(states_by_key, sparse_active_ids)
@@ -685,10 +859,10 @@ def build_front_c_live_step_paths(
         sparse_diag.update(
             {
                 "sparse_active_set_count": len(sparse_active_ids),
-                "sparse_active_set_full_count": len(full_active_ids),
-                "sparse_active_set_sha256": _sha256_json(_identity_dicts(sparse_active_ids)),
-                "sparse_active_set_full_sha256": _sha256_json(
-                    _identity_dicts(full_active_ids),
+                "sparse_active_set_full_count": full_active_count,
+                "sparse_active_set_sha256": _identity_dicts_sha256(sparse_active_ids),
+                "sparse_active_set_full_sha256": _identity_universe_sha256(
+                    full_active_ids,
                 ),
                 "sparse_active_set_source": (
                     "dense_oracle_active_ids"
