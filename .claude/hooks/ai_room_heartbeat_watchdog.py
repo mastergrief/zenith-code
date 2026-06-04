@@ -24,6 +24,11 @@ Movement proof is PHASE-AWARE, FRESH, and CORRELATED (co_lead hardening):
     process — never bare process/GPU existence (which an unrelated job fakes).
   - ESCALATION: an EXTEND followed by no fresh movement, or any prior STALL,
     escalates to a recycle-recommending STALL.
+  - RETIRE: after RETIRE_THRESHOLD EXACT-worker wake STALLs with no movement, a
+    dead heartbeat is RETIRED (one non-wake notice, then CLEAN) — stops a killed
+    handle (e.g. `codex_1`) from crying wolf forever. Re-monitors on a newer
+    heartbeat. Worker attribution is exact (`\bworker <handle>\b`), so a retired
+    `codex_1` stream never counts against live `codex`.
 Per-worker: each worker's latest gated post decides its own state — worker B's
 terminal never cleans worker A's overdue heartbeat.
 
@@ -53,6 +58,9 @@ TAIL_LINES = 4000
 GRACE_SECONDS = 600
 DEFAULT_DUE_SECONDS = 1800       # gated IMPLEMENTING without metadata ⇒ due-soon
 STALL_RESPONSE_DEADLINE = 1800
+RETIRE_THRESHOLD = 3             # exact-worker wake STALLs with no movement before a
+                                 # dead heartbeat is retired (ceases alerts; re-monitors
+                                 # on a newer heartbeat). Stops dead-handle cry-wolf.
 GPU_ACTIVE_MIB = 2000            # reported only; NOT a movement signal by itself
 PROCESS_PATTERNS = ("transient_fp_credit_science_train", "train_hrm_text_158",
                     "calm.hrm.train")
@@ -181,15 +189,33 @@ def find_active_heartbeats(records):
     return out
 
 
+def _referenced_worker(body):
+    """Extract the `worker <handle>` token from a watchdog body, or None. Exact
+    worker attribution is AUTHORITATIVE: a body naming a worker counts ONLY for
+    that worker — a stale `codex_1` stream never counts against live `codex`,
+    even when they share a task id (the substring bug AND the task-fallback
+    cross-contamination, both co_lead catches). Task fallback (below) applies
+    ONLY to bodies with NO worker token (legacy/history)."""
+    m = re.search(r"\bworker\s+([A-Za-z0-9_]+)", body)
+    return m.group(1) if m else None
+
+
+def _references_task(body, task):
+    """Exact task attribution fallback (task-ids are unique 13-digit-hex). Used
+    ONLY when a watchdog body has no `worker <handle>` token to attribute by."""
+    return bool(task) and re.search(rf"\b{re.escape(task)}\b", body) is not None
+
+
 def watchdog_history(records, hb):
     """Room-derived state for this worker's current heartbeat:
-    (last_check_ts, n_extends, n_stalls) from watchdog posts after hb_ts that
-    reference this worker (or its task)."""
+    (last_check_ts, n_extends, n_stalls, n_retired) from watchdog posts after
+    hb_ts that EXACTLY reference this worker (or its task). Exact match (not
+    substring) so a retired `codex_1` stream never counts against live `codex`."""
     since = hb.get("hb_ts")
     worker, task = hb.get("worker", ""), hb.get("task_id", "")
-    last_check, n_ext, n_stall = since, 0, 0
+    last_check, n_ext, n_stall, n_retired = since, 0, 0, 0
     if since is None:
-        return since, 0, 0
+        return since, 0, 0, 0
     for rec in records:
         if rec.get("from") != WATCHDOG_FROM:
             continue
@@ -197,15 +223,21 @@ def watchdog_history(records, hb):
         if t is None or t <= since:
             continue
         body = _body(rec)
-        if worker not in body and (not task or task not in body):
-            continue
+        ref_worker = _referenced_worker(body)
+        if ref_worker is not None:
+            if ref_worker != worker:
+                continue            # body names a DIFFERENT worker — never counts (authoritative)
+        elif not _references_task(body, task):
+            continue                # no worker token AND task mismatch — skip
         if last_check is None or t > last_check:
             last_check = t
-        if "WATCHDOG_STALL" in body:
+        if "WATCHDOG_RETIRED" in body:
+            n_retired += 1
+        elif "WATCHDOG_STALL" in body:
             n_stall += 1
         elif "WATCHDOG_HEARTBEAT_EXTEND" in body:
             n_ext += 1
-    return last_check, n_ext, n_stall
+    return last_check, n_ext, n_stall, n_retired
 
 
 def _max_mtime(paths):
@@ -283,7 +315,7 @@ def prove_liveness(hb, last_check_ts):
     return ev
 
 
-def decide(hb, ev, n_extends, n_stalls):
+def decide(hb, ev, n_extends, n_stalls, n_retired):
     if ev["moved"]:
         return {"action": "extend", "kind": "status_update", "wake": False,
                 "body": (
@@ -293,6 +325,22 @@ def decide(hb, ev, n_extends, n_stalls):
                     f"(file_fresh={ev['file_fresh']} proc_correlated={ev['proc_correlated']} "
                     f"gpu_used_mib={ev['gpu_used_mib']}). Extending due; no stall. "
                     f"Non-destructive watchdog.")}
+    if n_stalls >= RETIRE_THRESHOLD:
+        # Dead-handle cry-wolf cap: claude was wake-notified RETIRE_THRESHOLD times for
+        # this EXACT worker with no movement and chose no recycle/re-drive, so further
+        # alerts add no signal. Emit ONE non-wake RETIRED, then CLEAN until a NEWER
+        # heartbeat post supersedes this one (find_active_heartbeats takes latest-per-worker).
+        if n_retired == 0:
+            return {"action": "retire", "kind": "status_update", "wake": False,
+                    "body": (
+                        f"WATCHDOG_RETIRED — worker {hb['worker']} heartbeat "
+                        f"{hb.get('hb_id')} (phase {ev['phase'] or '?'}) retired after "
+                        f"{n_stalls} no-movement stalls. Claude was wake-notified {n_stalls}x "
+                        f"(file_fresh=false proc_correlated=false) and took no recycle/re-drive, "
+                        f"so further alerts add no signal. CEASING alerts for this heartbeat; "
+                        f"it re-monitors automatically on a NEWER heartbeat post from this "
+                        f"worker. Non-destructive; no state touched.")}
+        return {"action": "clean", "kind": "status_update", "wake": False, "body": ""}
     escalate = (n_stalls >= 1) or (n_extends >= 1)
     rec_line = (("RECOMMEND RECYCLE (prior watchdog action then NO fresh movement — "
                  f"extends={n_extends} stalls={n_stalls}).") if escalate else
@@ -401,9 +449,9 @@ def main():
         for hb in find_active_heartbeats(records):
             if hb.get("due") is None or now <= hb["due"] + GRACE_SECONDS:
                 continue  # not overdue
-            last_check, n_ext, n_stall = watchdog_history(records, hb)
+            last_check, n_ext, n_stall, n_retired = watchdog_history(records, hb)
             ev = prove_liveness(hb, last_check)
-            decision = decide(hb, ev, n_ext, n_stall)
+            decision = decide(hb, ev, n_ext, n_stall, n_retired)
             decision["worker"] = hb["worker"]
             emit(decision, args.dry_run, emit_channel)
             acted = True

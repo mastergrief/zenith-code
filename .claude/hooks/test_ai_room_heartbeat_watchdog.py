@@ -147,6 +147,71 @@ case("own_terminal_clean",
 case("empty_log_clean", [], NOW_OVERDUE, "0", "0", ["CLEAN"])
 
 
+# --- retire-after-K + exact-worker-match hardening (co_lead-converged) ----------
+T_S1, T_S2, T_S3 = ("2026-06-03T00:15:00Z", "2026-06-03T00:20:00Z",
+                    "2026-06-03T00:25:00Z")
+T_RET = "2026-06-03T00:30:00Z"
+NOW_LATE = "2026-06-03T02:00:00Z"
+
+
+def wd_stall(worker, ts, mid, task="?"):
+    return rec("watchdog",
+               f"WATCHDOG_STALL — heartbeat_overdue. task {task} worker {worker}; "
+               f"last hb x phase y. RECOMMEND RECYCLE.", ts=ts, mid=mid)
+
+
+def wd_retired(worker, ts, mid):
+    return rec("watchdog",
+               f"WATCHDOG_RETIRED — worker {worker} heartbeat x retired after "
+               f"3 no-movement stalls.", ts=ts, mid=mid)
+
+
+# 12. HARDENING: RETIRE after K exact-worker stalls + no movement -> non-wake RETIRED
+case("retire_after_k",
+     [rec("codex", hb_body(), mid="hbR"),
+      wd_stall("codex", T_S1, "s1"), wd_stall("codex", T_S2, "s2"),
+      wd_stall("codex", T_S3, "s3")],
+     NOW_OVERDUE, "0", "0", ["ACTION=retire", "WAKE=False", "WATCHDOG_RETIRED"])
+
+# 13. HARDENING: EXACT worker match — codex_1 stalls do NOT count against codex
+case("exact_worker_codex1_no_count",
+     [rec("codex", hb_body(), mid="hbE"),
+      wd_stall("codex_1", T_S1, "c1"), wd_stall("codex_1", T_S2, "c2"),
+      wd_stall("codex_1", T_S3, "c3")],
+     NOW_OVERDUE, "0", "0", ["ACTION=stall", "RECOMMEND re-drive"])
+
+# 14. HARDENING: already RETIRED for same worker -> CLEAN (no re-emit)
+case("already_retired_clean",
+     [rec("codex", hb_body(), mid="hbC"),
+      wd_stall("codex", T_S1, "k1"), wd_stall("codex", T_S2, "k2"),
+      wd_stall("codex", T_S3, "k3"), wd_retired("codex", T_RET, "ret1")],
+     NOW_OVERDUE, "0", "0", ["CLEAN"])
+
+# 15. HARDENING: NEWER heartbeat after prior stalls/retired -> re-monitors (n_stall=0)
+case("newer_hb_remonitors",
+     [wd_stall("codex", T_S1, "n1"), wd_stall("codex", T_S2, "n2"),
+      wd_stall("codex", T_S3, "n3"), wd_retired("codex", T_RET, "nret"),
+      rec("codex", hb_body(due="2026-06-03T00:50:00Z"),
+          ts="2026-06-03T00:40:00Z", mid="hbN")],
+     NOW_LATE, "0", "0", ["ACTION=stall", "RECOMMEND re-drive"])
+
+# 16. HARDENING: movement WINS over retire — prior K stalls but fresh movement -> EXTEND
+case("moved_wins_over_retire",
+     [rec("codex", hb_body(), mid="hbM"),
+      wd_stall("codex", T_S1, "m1"), wd_stall("codex", T_S2, "m2"),
+      wd_stall("codex", T_S3, "m3")],
+     NOW_OVERDUE, "1", "0", ["ACTION=extend", "WAKE=False"])
+
+# 17. HARDENING: SAME-TASK other-worker — codex_1 stalls citing TASK do NOT count
+#     against codex (worker attribution is authoritative over the task fallback).
+case("same_task_other_worker_no_count",
+     [rec("codex", hb_body(), mid="hbST"),
+      wd_stall("codex_1", T_S1, "st1", task=TASK),
+      wd_stall("codex_1", T_S2, "st2", task=TASK),
+      wd_stall("codex_1", T_S3, "st3", task=TASK)],
+     NOW_OVERDUE, "0", "0", ["ACTION=stall", "RECOMMEND re-drive"])
+
+
 @extra_test("emit_nonzero_logs_failure_not_posted")
 def test_emit_nonzero_logs_failure_not_posted():
     wd = load_watchdog_module()
