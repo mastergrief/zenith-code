@@ -28,6 +28,7 @@ from calm.hrm_text_158.native_full_stack.vote_update import (
     VoteUpdateState,
 )
 from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+    build_arg_parser,
     make_front_c_identity_observer_for_step,
 )
 
@@ -716,7 +717,7 @@ def test_front_c_collection_cadence_rebuild_skips_uncollected_observe_tax(tmp_pa
     collector = FrontCLiveIdentityCollector(
         artifact_path=tmp_path / "front_c_identity_artifact.json",
         emission_interval=0,
-        legacy_oracle_compare=True,
+        independent_oracle_compare=True,
     )
     collector.record_step0(states)
 
@@ -762,6 +763,9 @@ def test_front_c_collection_cadence_rebuild_skips_uncollected_observe_tax(tmp_pa
 
     assert observer_calls == [1, 3]
     assert sorted(diagnostics["step_diagnostics"]) == ["1", "3"]
+    assert "2" not in diagnostics["step_diagnostics"]
+    assert diagnostics["independent_oracle_compare_enabled"] is True
+    assert diagnostics["full_active_hash_oracle_enabled"] is False
     assert diagnostics["observe_only_diagnostics"] == {}
     assert diagnostics["touched_count_by_step"] == {}
     assert diagnostics["carried_threshold_count_by_step"] == {}
@@ -778,6 +782,12 @@ def test_front_c_collection_cadence_rebuild_skips_uncollected_observe_tax(tmp_pa
     )
     assert diagnostics["step_diagnostics"]["3"]["legacy_oracle"]["enabled"] is True
     assert (
+        diagnostics["step_diagnostics"]["3"]["legacy_oracle"][
+            "full_active_hash_computed"
+        ]
+        is False
+    )
+    assert (
         diagnostics["step_diagnostics"]["3"]["legacy_oracle"]["oracle_source"]
         == "exact_reference_recompute_no_reused_plan"
     )
@@ -787,11 +797,14 @@ def test_front_c_collection_cadence_rebuild_skips_uncollected_observe_tax(tmp_pa
     )
     assert all(diagnostics["step_diagnostics"]["3"]["legacy_oracle"]["checks"].values())
     assert diagnostics["step_diagnostics"]["3"]["legacy_oracle"]["checks"][
+        "sparse_active_set_full_hash_not_computed"
+    ] is True
+    assert diagnostics["step_diagnostics"]["3"]["legacy_oracle"]["checks"][
         "q_flip_receipt_parity"
     ] is True
     assert diagnostics["step_diagnostics"]["3"]["sparse"][
         "sparse_active_set_full_hash_computed"
-    ] is True
+    ] is False
     assert (
         diagnostics["step_diagnostics"]["3"]["collection_current_threshold_rebuild"][
             "source"
@@ -972,9 +985,70 @@ def test_front_c_default_collection_skips_full_active_universe_hash(monkeypatch,
         stop_reason="unit_test_terminal",
     )
     sparse_diag = payload["diagnostics"]["step_diagnostics"]["1"]["sparse"]
+    step_diag = payload["diagnostics"]["step_diagnostics"]["1"]
 
+    assert payload["diagnostics"]["independent_oracle_compare_enabled"] is False
+    assert payload["diagnostics"]["full_active_hash_oracle_enabled"] is False
+    assert step_diag["legacy_oracle"]["enabled"] is False
     assert sparse_diag["sparse_active_set_full_hash_computed"] is False
     assert sparse_diag["sparse_active_set_full_sha256"] == ""
+
+
+def test_front_c_independent_oracle_does_not_compute_full_active_hash(
+    monkeypatch,
+    tmp_path,
+):
+    def fail_full_universe_hash(*args, **kwargs):
+        raise AssertionError("independent oracle receipts must not compute full hash")
+
+    monkeypatch.setattr(
+        front_c_emission,
+        "_identity_universe_sha256",
+        fail_full_universe_hash,
+    )
+    states = {"toy.weight": _state()}
+    votes = {"toy.weight": _votes()}
+    specs = {"toy.weight": _spec()}
+    collector = FrontCLiveIdentityCollector(
+        artifact_path=tmp_path / "front_c_identity_artifact.json",
+        emission_interval=1,
+        independent_oracle_compare=True,
+    )
+    collector.record_step0(states)
+
+    apply_bounded_delta_vote_step(
+        states,
+        votes,
+        specs,
+        front_c_identity_observer=lambda observation: collector.record_step_observation(
+            step=1,
+            observation=observation,
+        ),
+    )
+    payload = collector.build_payload(
+        audit_reports={"1": {"acquired": True, "strict_exact_count": 90}},
+        prior_audit_start_reports={"L0b": {"strict_exact": "230/230"}},
+        prior_audit_final_reports={"L0b": {"strict_exact": "230/230"}},
+        steps_completed=1,
+        stop_reason="unit_test_terminal",
+    )
+    step_diag = payload["diagnostics"]["step_diagnostics"]["1"]
+    oracle = step_diag["legacy_oracle"]
+
+    assert payload["diagnostics"]["independent_oracle_compare_enabled"] is True
+    assert payload["diagnostics"]["full_active_hash_oracle_enabled"] is False
+    assert oracle["enabled"] is True
+    assert oracle["oracle_source"] == "exact_reference_recompute_no_reused_plan"
+    assert oracle["oracle_path_source"] == "reference_recompute_compatibility_fallback"
+    assert oracle["live_path_source"] == "reused_observer_plan"
+    assert oracle["full_active_hash_computed"] is False
+    assert oracle["full_active_count"] == oracle["oracle_full_active_count"]
+    assert all(oracle["checks"].values())
+    assert step_diag["sparse"]["sparse_active_set_full_hash_computed"] is False
+    assert "independent_oracle_reference_recompute" in step_diag["timing"][
+        "durations_seconds"
+    ]
+    assert "oracle_full_rebuild" not in step_diag["timing"]["durations_seconds"]
 
 
 @pytest.mark.parametrize(
@@ -996,7 +1070,7 @@ def test_front_c_exact_reference_oracle_covers_replay_and_pc_branches(
     collector = FrontCLiveIdentityCollector(
         artifact_path=tmp_path / f"front_c_identity_artifact.{pc_aux_mode}.json",
         emission_interval=1,
-        legacy_oracle_compare=True,
+        independent_oracle_compare=True,
     )
     collector.record_step0(states)
 
@@ -1028,6 +1102,7 @@ def test_front_c_exact_reference_oracle_covers_replay_and_pc_branches(
     )
 
     assert step_diag["legacy_oracle"]["enabled"] is True
+    assert step_diag["legacy_oracle"]["full_active_hash_computed"] is False
     assert (
         step_diag["legacy_oracle"]["oracle_source"]
         == "exact_reference_recompute_no_reused_plan"
@@ -1042,9 +1117,20 @@ def test_front_c_exact_reference_oracle_covers_replay_and_pc_branches(
     )
     assert all(step_diag["legacy_oracle"]["checks"].values())
     assert step_diag["legacy_oracle"]["checks"]["q_flip_receipt_hash_parity"] is True
+    assert step_diag["legacy_oracle"]["checks"][
+        "sparse_active_set_full_hash_not_computed"
+    ] is True
     assert q_flip_indices == expected_q_flip_indices
     assert step_diag["carried_index_update"]["enabled"] is False
     assert payload["diagnostics"]["carried_threshold_count_by_step"] == {}
     assert payload["diagnostics"]["collection_current_threshold_rebuild_by_step"]["1"][
         "source"
     ] == "pre_step_q_acc_scan"
+
+
+def test_front_c_independent_oracle_cli_flag_parses():
+    default_args = build_arg_parser().parse_args([])
+    enabled_args = build_arg_parser().parse_args(["--front-c-independent-oracle"])
+
+    assert default_args.front_c_independent_oracle is False
+    assert enabled_args.front_c_independent_oracle is True

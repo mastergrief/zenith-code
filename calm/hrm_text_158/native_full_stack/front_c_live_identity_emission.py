@@ -58,6 +58,7 @@ FRONT_C_LIVE_TIMING_SCHEMA_VERSION = "hrm_text_158_front_c/v0.live_identity_timi
 DEFAULT_MAX_EXACT_IDENTITY_KEYS = 100_000
 DEFAULT_SPARSE_ORACLE_MAX_ACTIVE_IDS = 100_000
 FRONT_C_ORACLE_FULL_REBUILD_ENV = "HRM_TEXT_158_FRONT_C_ORACLE_FULL_REBUILD"
+FRONT_C_INDEPENDENT_ORACLE_ENV = "HRM_TEXT_158_FRONT_C_INDEPENDENT_ORACLE"
 
 
 FrontCIdentity = tuple[str, int]
@@ -1157,6 +1158,7 @@ def _assert_legacy_surface_oracle_match(
     cap_frontier_width: int,
     max_exact_identity_keys: int,
     sparse_oracle_max_active_ids: int,
+    include_full_active_hash: bool = False,
 ) -> dict[str, Any]:
     oracle_paths = build_front_c_live_step_paths(
         step=int(step),
@@ -1198,10 +1200,6 @@ def _assert_legacy_surface_oracle_match(
             == _identity_dicts(tuple(oracle_active))
         ),
         "full_active_count": full_active_count == oracle_full_active_count,
-        "full_active_sha256": (
-            _identity_universe_sha256(actual_full_active)
-            == _identity_universe_sha256(oracle_full_active)
-        ),
         "full_identity_flag": paths.full_identity_emission_claimed == expected_full_identity,
         "full_sparse_flag": paths.full_sparse_equivalence_claimed == expected_full_sparse,
         "q_flip_receipt_parity": (
@@ -1214,21 +1212,51 @@ def _assert_legacy_surface_oracle_match(
             if paths.full_sparse_equivalence_claimed
             else True
         ),
-        "sparse_active_set_full_hash_computed": bool(
-            paths.sparse_diagnostics.get("sparse_active_set_full_hash_computed", False),
-        ),
         "sparse_active_set_full_count": int(
             paths.sparse_diagnostics.get("sparse_active_set_full_count", -1),
         )
         == oracle_full_active_count,
-        "sparse_active_set_full_sha256": (
-            str(paths.sparse_diagnostics.get("sparse_active_set_full_sha256", ""))
-            == _identity_universe_sha256(oracle_full_active)
-        ),
         "oracle_source_independent": (
             oracle_source == "reference_recompute_compatibility_fallback"
         ),
     }
+    actual_full_active_sha256 = ""
+    oracle_full_active_sha256 = ""
+    if bool(include_full_active_hash):
+        actual_full_active_sha256 = _identity_universe_sha256(actual_full_active)
+        oracle_full_active_sha256 = _identity_universe_sha256(oracle_full_active)
+        checks.update(
+            {
+                "full_active_sha256": (
+                    actual_full_active_sha256 == oracle_full_active_sha256
+                ),
+                "sparse_active_set_full_hash_computed": bool(
+                    paths.sparse_diagnostics.get(
+                        "sparse_active_set_full_hash_computed",
+                        False,
+                    ),
+                ),
+                "sparse_active_set_full_sha256": (
+                    str(paths.sparse_diagnostics.get("sparse_active_set_full_sha256", ""))
+                    == oracle_full_active_sha256
+                ),
+            },
+        )
+    else:
+        checks.update(
+            {
+                "sparse_active_set_full_hash_not_computed": not bool(
+                    paths.sparse_diagnostics.get(
+                        "sparse_active_set_full_hash_computed",
+                        False,
+                    ),
+                ),
+                "sparse_active_set_full_sha256_empty": str(
+                    paths.sparse_diagnostics.get("sparse_active_set_full_sha256", ""),
+                )
+                == "",
+            },
+        )
     if not all(checks.values()):
         failed = sorted(name for name, ok in checks.items() if not ok)
         raise AssertionError(
@@ -1245,14 +1273,22 @@ def _assert_legacy_surface_oracle_match(
         ),
         "checks": checks,
         "full_active_count": full_active_count,
-        "full_active_sha256": _identity_universe_sha256(actual_full_active),
+        "oracle_full_active_count": oracle_full_active_count,
+        "full_active_hash_computed": bool(include_full_active_hash),
+        "full_active_sha256": actual_full_active_sha256,
+        "oracle_full_active_sha256": oracle_full_active_sha256,
+        "full_active_hash_control": (
+            "enabled_by_full_rebuild_or_legacy_control"
+            if bool(include_full_active_hash)
+            else "disabled_for_independent_oracle_perf_path"
+        ),
         "emitted_decision_relevant_count": len(paths.emitted_decision_relevant_ids),
         "expected_full_identity_emission_claimed": expected_full_identity,
         "expected_full_sparse_equivalence_claimed": expected_full_sparse,
         "q_flip_receipt_parity_scope": q_flip_parity_scope,
         "dense_q_flip_receipt_sha256": _sha256_json(dense_q_flips),
         "sparse_q_flip_receipt_sha256": _sha256_json(sparse_q_flips),
-        "oracle_full_rebuild_timing_seconds": dict(
+        "oracle_reference_recompute_timing_seconds": dict(
             oracle_timing.get("durations_seconds", {}),
         ),
     }
@@ -1276,6 +1312,8 @@ class FrontCLiveIdentityCollector:
     value_bits_per_row: int = 16
     flag_bits_per_row: int = 2
     legacy_oracle_compare: bool = False
+    independent_oracle_compare: bool = False
+    full_active_hash_oracle: bool = False
 
     def __post_init__(self) -> None:
         self.artifact_path = Path(self.artifact_path)
@@ -1289,9 +1327,17 @@ class FrontCLiveIdentityCollector:
         self.guardrail_metadata_bits = int(self.guardrail_metadata_bits)
         self.value_bits_per_row = int(self.value_bits_per_row)
         self.flag_bits_per_row = int(self.flag_bits_per_row)
-        self.legacy_oracle_compare = bool(
-            self.legacy_oracle_compare or _truthy_env(FRONT_C_ORACLE_FULL_REBUILD_ENV),
+        self.full_active_hash_oracle = bool(
+            self.full_active_hash_oracle
+            or self.legacy_oracle_compare
+            or _truthy_env(FRONT_C_ORACLE_FULL_REBUILD_ENV),
         )
+        self.independent_oracle_compare = bool(
+            self.independent_oracle_compare
+            or _truthy_env(FRONT_C_INDEPENDENT_ORACLE_ENV)
+            or self.full_active_hash_oracle,
+        )
+        self.legacy_oracle_compare = self.independent_oracle_compare
         self._step_rows: dict[int, FrontCDecisionSurfaceStep] = {}
         self._states_by_key: dict[str, VoteUpdateState] = {}
         self._current_threshold_indices_by_key: dict[str, torch.Tensor] = {}
@@ -1318,7 +1364,9 @@ class FrontCLiveIdentityCollector:
             "full_sparse_equivalence_claimed": True,
             "max_exact_identity_keys": self.max_exact_identity_keys,
             "sparse_oracle_max_active_ids": self.sparse_oracle_max_active_ids,
-            "legacy_oracle_compare_enabled": self.legacy_oracle_compare,
+            "legacy_oracle_compare_enabled": self.independent_oracle_compare,
+            "independent_oracle_compare_enabled": self.independent_oracle_compare,
+            "full_active_hash_oracle_enabled": self.full_active_hash_oracle,
             "collection_mode": "collection_cadence_current_threshold_rebuild",
             "observe_only_diagnostics": {},
             "collection_current_threshold_rebuild_by_step": {},
@@ -1657,7 +1705,7 @@ class FrontCLiveIdentityCollector:
             max_exact_identity_keys=self.max_exact_identity_keys,
             sparse_oracle_max_active_ids=self.sparse_oracle_max_active_ids,
             current_threshold_indices_by_key=None,
-            include_full_active_hash=self.legacy_oracle_compare,
+            include_full_active_hash=self.full_active_hash_oracle,
         )
         step_key = str(int(step))
         self._diagnostics["observe_only_duration_by_step"][step_key] = 0.0
@@ -1718,7 +1766,7 @@ class FrontCLiveIdentityCollector:
         timing["durations_seconds"] = dict(timing.get("durations_seconds", {}))
         timing["collection_mode"] = "collection_cadence_current_threshold_rebuild"
         legacy_oracle = {"enabled": False}
-        if self.legacy_oracle_compare:
+        if self.independent_oracle_compare:
             oracle_start = time.perf_counter()
             legacy_oracle = _assert_legacy_surface_oracle_match(
                 step=int(step),
@@ -1730,8 +1778,9 @@ class FrontCLiveIdentityCollector:
                 cap_frontier_width=self.cap_frontier_width,
                 max_exact_identity_keys=self.max_exact_identity_keys,
                 sparse_oracle_max_active_ids=self.sparse_oracle_max_active_ids,
+                include_full_active_hash=self.full_active_hash_oracle,
             )
-            _record_duration(timing, "oracle_full_rebuild", oracle_start)
+            _record_duration(timing, "independent_oracle_reference_recompute", oracle_start)
         step_diagnostics = {
             "collect": True,
             "dense": paths.dense_diagnostics,

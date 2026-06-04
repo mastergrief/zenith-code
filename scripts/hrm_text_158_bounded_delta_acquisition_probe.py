@@ -3439,6 +3439,7 @@ def run_c2p1_probe(
     b2_math_a0_batch_size: int = 16,
     front_c_identity_emission_artifact: Path | None = None,
     front_c_identity_emission_interval: int = 0,
+    front_c_independent_oracle: bool = False,
 ) -> dict[str, Any]:
     assert_default_off(enabled)
     if int(max_steps_hard) <= 0:
@@ -3595,6 +3596,7 @@ def run_c2p1_probe(
             artifact_path=artifact_path,
             emission_interval=int(front_c_identity_emission_interval),
             audit_interval=int(audit_interval),
+            independent_oracle_compare=bool(front_c_independent_oracle),
         )
 
     with phase_progress.phase("forward_fidelity"):
@@ -4069,6 +4071,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "be silently skipped. Default 0 records step 1, audit rows, and terminal."
         ),
     )
+    ap.add_argument(
+        "--front-c-independent-oracle",
+        action="store_true",
+        help=(
+            "Emit collected-row independent exact-reference oracle receipts for "
+            "Front-C identity rows without enabling the legacy full-active-hash "
+            "oracle control."
+        ),
+    )
     ap.add_argument("--max-steps-hard", type=int, default=C2P2_DEFAULT_MAX_STEPS_HARD)
     ap.add_argument("--emit-progress", action="store_true")
     ap.add_argument("--phase-timeout-seconds", type=float, default=0.0)
@@ -4114,6 +4125,7 @@ def main(argv: list[str] | None = None) -> int:
         b2_math_a0_batch_size=args.b2_math_a0_batch_size,
         front_c_identity_emission_artifact=args.front_c_identity_emission_artifact,
         front_c_identity_emission_interval=args.front_c_identity_emission_interval,
+        front_c_independent_oracle=args.front_c_independent_oracle,
         max_steps_hard=args.max_steps_hard,
         emit_progress=args.emit_progress,
         phase_timeout_seconds=args.phase_timeout_seconds,
