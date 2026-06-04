@@ -25,6 +25,7 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     B1_PRIOR_AUDIT_PINS,
     B1_PRIOR_AUDIT_SCHEMA_VERSION,
     B1_PRIOR_AUDIT_SUPPORTS,
+    B2_FULL_VERDICT_SCHEMA_VERSION,
     B2_RETAINED_SUPPORT_SCHEMA_VERSION,
     C2P2_PHASE_TELEMETRY_SCHEMA_VERSION,
     C2P2_TIMING_SCHEMA_VERSION,
@@ -36,6 +37,10 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     RUN_C2_ACQUISITION_PROBE_ENV,
     RUN_C2_GPU_LAUNCH_ENV,
     aggregate_identity_full_audit_batch_reports,
+    b2_full_coverage_gate_met,
+    b2_full_required_snapshot_names,
+    build_arg_parser,
+    build_b2_full_prior_snapshot,
     build_identity_full_batch,
     build_identity_full_support_batches,
     build_b2_retained_support_sets,
@@ -49,15 +54,21 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     derive_bounded_tensor_state_from_weight,
     derive_tensor_states_and_check_init_fidelity,
     file_sha256,
+    finalize_b2_full_verdict_state,
     guard_gpu_launch,
     identity_full_support_control_proof,
     native_ternary_effective_weight,
+    new_b2_full_coverage_tracker,
+    new_b2_full_verdict_state,
     parse_b2_retained_supports,
     parse_prior_audit_supports,
+    record_b2_full_prior_snapshot,
     reset_cuda_memory_stats,
     run_c2p1_probe,
     score_strict_exact_and_parsed_from_logits,
     select_eligible_bitlinears,
+    snapshot_b2_full_coverage_tracker,
+    update_b2_full_coverage_tracker,
     _capture_eligible_module_outputs,
     enforce_phase_bound,
 )
@@ -153,6 +164,40 @@ def _metrics_without_logits(metrics: dict) -> dict:
         else:
             out[key] = _metric_scalar(value)
     return out
+
+
+def _b2_prior_report(
+    step: int,
+    *,
+    strict_count: int = 10,
+    parsed_count: int = 10,
+    total: int = 10,
+    strict_failures: tuple[str, ...] = (),
+    parsed_failures: tuple[str, ...] = (),
+    source: str = "fixture_source",
+) -> dict:
+    strict_failure_ids = [str(row_id) for row_id in strict_failures]
+    parsed_failure_ids = [str(row_id) for row_id in parsed_failures]
+    return {
+        "step": int(step),
+        "strict_exact": f"{int(strict_count)}/{int(total)}",
+        "strict_exact_count": int(strict_count),
+        "strict_exact_total": int(total),
+        "parsed_exact": f"{int(parsed_count)}/{int(total)}",
+        "parsed_exact_count": int(parsed_count),
+        "parsed_exact_total": int(total),
+        "duration_seconds": 0.0,
+        "strict_failure_row_ids": strict_failure_ids,
+        "parsed_failure_row_ids": parsed_failure_ids,
+        "strict_failure_sources_by_row_id": {
+            row_id: source
+            for row_id in strict_failure_ids
+        },
+        "parsed_failure_sources_by_row_id": {
+            row_id: source
+            for row_id in parsed_failure_ids
+        },
+    }
 
 
 def _step_hash_subset(receipt: dict) -> dict:
@@ -450,6 +495,200 @@ def test_b2_retained_support_parser_and_builders_keep_l0c1_report_only():
     assert support_sets["L0b"]["proof"]["target_parent_kl"] is False
     assert support_sets["math_a0"]["proof"]["expected_count"] == 1255
     assert support_sets["math_a0"]["proof"]["batch_size"] == 16
+
+
+def test_b2_full_coverage_tracker_counts_disjoint_cycles():
+    tracker = new_b2_full_coverage_tracker({"math_a0": 4})
+
+    update_b2_full_coverage_tracker(
+        tracker,
+        support="math_a0",
+        row_ids=("0", "1", "2", "3"),
+    )
+    one_pass = snapshot_b2_full_coverage_tracker(tracker)["math_a0"]
+    assert one_pass["coverage_cycles"] == 1
+    assert one_pass["coverage_gate_met"] is True
+    assert one_pass["rows_seen_current_cycle"] == 0
+    assert one_pass["rows_seen_total"] == 4
+
+    update_b2_full_coverage_tracker(
+        tracker,
+        support="math_a0",
+        row_ids=("0", "1"),
+    )
+    one_and_half_passes = snapshot_b2_full_coverage_tracker(tracker)["math_a0"]
+    assert one_and_half_passes["coverage_cycles"] == 1
+    assert one_and_half_passes["rows_seen_current_cycle"] == 2
+    assert one_and_half_passes["rows_seen_total"] == 6
+
+    update_b2_full_coverage_tracker(
+        tracker,
+        support="math_a0",
+        row_ids=("2", "3"),
+    )
+    two_passes = snapshot_b2_full_coverage_tracker(tracker)["math_a0"]
+    assert two_passes["coverage_cycles"] == 2
+    assert two_passes["rows_seen_current_cycle"] == 0
+    assert b2_full_coverage_gate_met({"math_a0": two_passes}) is True
+
+
+def test_b2_full_precoverage_snapshot_does_not_stop_and_l0c1_is_report_only():
+    state = new_b2_full_verdict_state()
+    start_reports = {
+        "L0b": _b2_prior_report(0),
+        "math_a0": _b2_prior_report(0),
+        "L0c1": _b2_prior_report(0),
+    }
+    current_reports = {
+        "L0b": _b2_prior_report(40),
+        "math_a0": _b2_prior_report(40),
+        "L0c1": _b2_prior_report(
+            40,
+            strict_count=7,
+            parsed_count=7,
+            strict_failures=("l0c1-a", "l0c1-b", "l0c1-c"),
+            parsed_failures=("l0c1-a", "l0c1-b", "l0c1-c"),
+            source="close_wrapper",
+        ),
+    }
+    target_audit = {
+        "step": 40,
+        "strict_exact": "90/90",
+        "strict_exact_count": 90,
+        "parsed_exact": "90/90",
+        "parsed_exact_count": 90,
+        "acquired": True,
+    }
+    coverage = {
+        "L0b": {"coverage_cycles": 0, "rows_total": 4},
+        "math_a0": {"coverage_cycles": 0, "rows_total": 4},
+    }
+
+    assert b2_full_required_snapshot_names(
+        state,
+        target_audit=target_audit,
+        coverage_by_support=coverage,
+    ) == ["first_audited_target_ge_90"]
+
+    snapshot = build_b2_full_prior_snapshot(
+        snapshot_name="first_audited_target_ge_90",
+        step=40,
+        target_audit=target_audit,
+        coverage_by_support=coverage,
+        start_reports=start_reports,
+        current_reports=current_reports,
+    )
+
+    assert snapshot["schema"] == B2_FULL_VERDICT_SCHEMA_VERSION
+    assert snapshot["target_gate_met"] is True
+    assert snapshot["coverage_gate_met"] is False
+    assert snapshot["combined_stop_pass"] is False
+    assert snapshot["retained_true_priors_no_new_broad_cluster"] is True
+    assert snapshot["stop_support_status"] == {"L0b": True, "math_a0": True}
+    assert snapshot["deltas"]["L0c1"]["no_new_broad_cluster"] is False
+    assert "L0c1" not in snapshot["stop_support_status"]
+
+
+def test_b2_full_snapshot_state_dedupes_same_step_combined_stop_and_terminal():
+    state = new_b2_full_verdict_state()
+    start_reports = {
+        "L0b": _b2_prior_report(0),
+        "math_a0": _b2_prior_report(0),
+        "L0c1": _b2_prior_report(0),
+    }
+    current_reports = {
+        "L0b": _b2_prior_report(80),
+        "math_a0": _b2_prior_report(80),
+        "L0c1": _b2_prior_report(80),
+    }
+    target_audit = {
+        "step": 80,
+        "strict_exact": "90/90",
+        "strict_exact_count": 90,
+        "parsed_exact": "90/90",
+        "parsed_exact_count": 90,
+        "acquired": True,
+    }
+    coverage = {
+        "L0b": {"coverage_cycles": 1, "rows_total": 4},
+        "math_a0": {"coverage_cycles": 1, "rows_total": 4},
+    }
+    names = b2_full_required_snapshot_names(
+        state,
+        target_audit=target_audit,
+        coverage_by_support=coverage,
+    )
+    assert names == ["first_audited_target_ge_90", "first_covered_target_ge_90"]
+
+    snapshot = build_b2_full_prior_snapshot(
+        snapshot_name="runtime_prior_snapshot",
+        step=80,
+        target_audit=target_audit,
+        coverage_by_support=coverage,
+        start_reports=start_reports,
+        current_reports=current_reports,
+    )
+    record_b2_full_prior_snapshot(state, snapshot_names=names, snapshot=snapshot)
+
+    assert state["prior_audit_count"] == 1
+    assert state["snapshot_steps"]["first_audited_target_ge_90"] == 80
+    assert state["snapshot_steps"]["first_covered_target_ge_90"] == 80
+    assert state["combined_stop"]["triggered"] is True
+    assert state["combined_stop"]["step"] == 80
+    assert state["first_audited_target_ge_90"]["snapshot_name"] == "first_audited_target_ge_90"
+    assert state["first_covered_target_ge_90"]["snapshot_name"] == "first_covered_target_ge_90"
+
+    terminal_snapshot = build_b2_full_prior_snapshot(
+        snapshot_name="terminal",
+        step=160,
+        target_audit=target_audit,
+        coverage_by_support={
+            "L0b": {"coverage_cycles": 2, "rows_total": 4},
+            "math_a0": {"coverage_cycles": 2, "rows_total": 4},
+        },
+        start_reports=start_reports,
+        current_reports={
+            "L0b": _b2_prior_report(160),
+            "math_a0": _b2_prior_report(160),
+            "L0c1": _b2_prior_report(160),
+        },
+    )
+    receipt = finalize_b2_full_verdict_state(state, terminal_snapshot=terminal_snapshot)
+
+    assert receipt["prior_audit_count"] == 2
+    assert receipt["snapshot_steps"]["terminal"] == 160
+    assert receipt["math_a0_coverage_cycles"] == 2
+    assert receipt["l0b_coverage_cycles"] == 2
+    assert receipt["terminal"]["combined_stop_pass"] is True
+    assert receipt["verdict"] == "RETAINS"
+
+
+def test_b2_full_cli_flag_defaults_off_and_support_validation_is_preload(tmp_path):
+    args = build_arg_parser().parse_args([])
+    assert args.b2_full_verdict_mode is False
+    assert build_arg_parser().parse_args(["--b2-full-verdict-mode"]).b2_full_verdict_mode is True
+
+    with pytest.raises(ValueError, match="requires retained supports"):
+        run_c2p1_probe(
+            parent=tmp_path / "missing.pt",
+            scratch_root=tmp_path,
+            enabled=True,
+            b2_full_verdict_mode=True,
+            audit_interval=20,
+            prior_audit_supports="L0b,math_a0,L0c1",
+            b2_retained_supports="L0b",
+        )
+
+    with pytest.raises(ValueError, match="requires audit_interval"):
+        run_c2p1_probe(
+            parent=tmp_path / "missing.pt",
+            scratch_root=tmp_path,
+            enabled=True,
+            b2_full_verdict_mode=True,
+            audit_interval=0,
+            prior_audit_supports="L0b,math_a0,L0c1",
+            b2_retained_supports="L0b,math_a0",
+        )
 
 
 def test_audit_score_counts_known_k_and_parsed_independently():

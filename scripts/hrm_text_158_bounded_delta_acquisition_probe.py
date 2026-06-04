@@ -87,7 +87,9 @@ B1_PRIOR_AUDIT_SCHEMA_VERSION = "hrm_text_158_b1_prior_support_audit/v0"
 B1_PRIOR_SUPPORT_SCHEMA_VERSION = "hrm_text_158_b1_prior_support_adapter/v0"
 B1_PRIOR_AUDIT_DELTA_SCHEMA_VERSION = "hrm_text_158_b1_prior_support_delta/v0"
 B2_RETAINED_SUPPORT_SCHEMA_VERSION = "hrm_text_158_b2_retained_support_vote_aux/v0"
+B2_FULL_VERDICT_SCHEMA_VERSION = "hrm_text_158_b2_full_retention_verdict/v0"
 B2_RETAINED_SUPPORTS: tuple[str, ...] = ("L0b", "math_a0")
+B2_FULL_STOP_SUPPORTS: tuple[str, ...] = ("L0b", "math_a0")
 B2_PC_AUX_MODES: tuple[str, ...] = ("telemetry", "veto")
 C2P2_STRICT_EXACT_TARGET = 90
 C2P2_DEFAULT_MAX_STEPS_HARD = 1500
@@ -581,6 +583,302 @@ def build_b2_retained_support_sets(
         support_set["proof"] = proof
         retained[support] = support_set
     return retained
+
+
+def new_b2_full_coverage_tracker(
+    rows_total_by_support: Mapping[str, int],
+) -> dict[str, dict[str, Any]]:
+    """Track disjoint support-pass coverage for B2-full retention verdicts."""
+    tracker: dict[str, dict[str, Any]] = {}
+    for support, rows_total in rows_total_by_support.items():
+        total = int(rows_total)
+        if total <= 0:
+            raise ValueError(f"B2-full coverage rows_total must be positive for {support}")
+        tracker[str(support)] = {
+            "rows_total": total,
+            "rows_seen_total": 0,
+            "rows_seen_unique": set(),
+            "current_cycle_row_ids": set(),
+            "coverage_cycles": 0,
+        }
+    return tracker
+
+
+def update_b2_full_coverage_tracker(
+    tracker: dict[str, dict[str, Any]],
+    *,
+    support: str,
+    row_ids: Sequence[str],
+) -> dict[str, Any]:
+    if support not in tracker:
+        raise KeyError(f"B2-full coverage tracker missing support {support!r}")
+    item = tracker[support]
+    rows_total = int(item["rows_total"])
+    current_cycle = item["current_cycle_row_ids"]
+    for row_id in row_ids:
+        normalized = str(row_id)
+        item["rows_seen_total"] = int(item["rows_seen_total"]) + 1
+        item["rows_seen_unique"].add(normalized)
+        current_cycle.add(normalized)
+        if len(current_cycle) >= rows_total:
+            item["coverage_cycles"] = int(item["coverage_cycles"]) + 1
+            item["current_cycle_row_ids"] = set()
+            current_cycle = item["current_cycle_row_ids"]
+    return snapshot_b2_full_coverage_tracker(tracker)[support]
+
+
+def snapshot_b2_full_coverage_tracker(
+    tracker: Mapping[str, Mapping[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    snapshot: dict[str, dict[str, Any]] = {}
+    for support, item in sorted(tracker.items()):
+        unique_rows = item.get("rows_seen_unique", set())
+        current_cycle = item.get("current_cycle_row_ids", set())
+        cycles = int(item.get("coverage_cycles", 0))
+        rows_total = int(item["rows_total"])
+        snapshot[support] = {
+            # Legacy names kept for B2 receipt readers.
+            "rows_seen": len(unique_rows),
+            "rows_total": rows_total,
+            "coverage_cycle_complete": cycles >= 1,
+            # B2-full first-class cycle accounting.
+            "rows_seen_unique": len(unique_rows),
+            "rows_seen_total": int(item.get("rows_seen_total", 0)),
+            "rows_seen_current_cycle": len(current_cycle),
+            "coverage_cycles": cycles,
+            "coverage_gate_met": cycles >= 1,
+        }
+    return snapshot
+
+
+def b2_full_coverage_cycles(
+    coverage_by_support: Mapping[str, Mapping[str, Any]],
+    support: str,
+) -> int:
+    coverage = coverage_by_support.get(support, {})
+    return int(coverage.get("coverage_cycles", 0))
+
+
+def b2_full_coverage_gate_met(
+    coverage_by_support: Mapping[str, Mapping[str, Any]],
+    *,
+    support: str = "math_a0",
+    required_cycles: int = 1,
+) -> bool:
+    return b2_full_coverage_cycles(coverage_by_support, support) >= int(required_cycles)
+
+
+def b2_full_target_gate_met(
+    target_audit: Mapping[str, Any],
+    *,
+    target_count: int = C2P2_STRICT_EXACT_TARGET,
+) -> bool:
+    if target_audit.get("acquired") is True:
+        return True
+    if "strict_exact_count" not in target_audit:
+        return False
+    return int(target_audit["strict_exact_count"]) >= int(target_count)
+
+
+def new_b2_full_verdict_state() -> dict[str, Any]:
+    return {
+        "schema": B2_FULL_VERDICT_SCHEMA_VERSION,
+        "enabled": True,
+        "coverage_support": "math_a0",
+        "required_coverage_cycles": 1,
+        "stop_supports": list(B2_FULL_STOP_SUPPORTS),
+        "report_only_supports": ["L0c1"],
+        "first_audited_target_ge_90": None,
+        "first_covered_target_ge_90": None,
+        "terminal": None,
+        "snapshot_steps": {},
+        "prior_audit_executions": [],
+        "prior_audit_count": 0,
+        "audit_export_paths": {},
+        "combined_stop": {
+            "triggered": False,
+            "step": None,
+            "reason": None,
+        },
+        "verdict": "pending",
+    }
+
+
+def b2_full_required_snapshot_names(
+    state: Mapping[str, Any],
+    *,
+    target_audit: Mapping[str, Any],
+    coverage_by_support: Mapping[str, Mapping[str, Any]],
+) -> list[str]:
+    if not b2_full_target_gate_met(target_audit):
+        return []
+    names: list[str] = []
+    if state.get("first_audited_target_ge_90") is None:
+        names.append("first_audited_target_ge_90")
+    if (
+        state.get("first_covered_target_ge_90") is None
+        and b2_full_coverage_gate_met(coverage_by_support)
+    ):
+        names.append("first_covered_target_ge_90")
+    return names
+
+
+def build_b2_full_prior_snapshot(
+    *,
+    snapshot_name: str,
+    step: int,
+    target_audit: Mapping[str, Any],
+    coverage_by_support: Mapping[str, Mapping[str, Any]],
+    start_reports: Mapping[str, Mapping[str, Any]],
+    current_reports: Mapping[str, Mapping[str, Any]],
+    stop_supports: Sequence[str] = B2_FULL_STOP_SUPPORTS,
+    report_only_supports: Sequence[str] = ("L0c1",),
+) -> dict[str, Any]:
+    deltas = {
+        support: build_prior_audit_delta(
+            support=support,
+            start_report=start_reports[support],
+            final_report=current_reports[support],
+        )
+        for support in current_reports
+        if support in start_reports
+    }
+    stop_status = {
+        support: bool(deltas.get(support, {}).get("no_new_broad_cluster", False))
+        for support in stop_supports
+        if support in deltas
+    }
+    stop_supports_present = all(support in stop_status for support in stop_supports)
+    retained_true_priors_pass = bool(stop_supports_present and all(stop_status.values()))
+    math_cycles = b2_full_coverage_cycles(coverage_by_support, "math_a0")
+    l0b_cycles = b2_full_coverage_cycles(coverage_by_support, "L0b")
+    target_gate = b2_full_target_gate_met(target_audit)
+    coverage_gate = b2_full_coverage_gate_met(coverage_by_support)
+    return {
+        "schema": B2_FULL_VERDICT_SCHEMA_VERSION,
+        "snapshot_name": snapshot_name,
+        "step": int(step),
+        "target_gate_met": bool(target_gate),
+        "target_audit": dict(target_audit),
+        "coverage_gate_met": bool(coverage_gate),
+        "math_a0_coverage_cycles": int(math_cycles),
+        "l0b_coverage_cycles": int(l0b_cycles),
+        "coverage_by_support": {
+            support: dict(coverage)
+            for support, coverage in coverage_by_support.items()
+        },
+        "prior_report_summary": {
+            support: {
+                "strict_exact": report.get("strict_exact"),
+                "strict_exact_count": report.get("strict_exact_count"),
+                "parsed_exact": report.get("parsed_exact"),
+                "parsed_exact_count": report.get("parsed_exact_count"),
+                "duration_seconds": report.get("duration_seconds"),
+            }
+            for support, report in current_reports.items()
+        },
+        "deltas": deltas,
+        "stop_supports": list(stop_supports),
+        "stop_support_status": stop_status,
+        "report_only_supports": list(report_only_supports),
+        "retained_true_priors_no_new_broad_cluster": retained_true_priors_pass,
+        "combined_stop_pass": bool(
+            target_gate and coverage_gate and retained_true_priors_pass
+        ),
+    }
+
+
+def record_b2_full_prior_snapshot(
+    state: dict[str, Any],
+    *,
+    snapshot_names: Sequence[str],
+    snapshot: Mapping[str, Any],
+) -> dict[str, Any]:
+    names = [str(name) for name in snapshot_names]
+    if not names:
+        return state
+    execution = {
+        "step": int(snapshot["step"]),
+        "snapshots": names,
+    }
+    state.setdefault("prior_audit_executions", []).append(execution)
+    state["prior_audit_count"] = len(state["prior_audit_executions"])
+    snapshot_steps = state.setdefault("snapshot_steps", {})
+    for name in names:
+        named_snapshot = dict(snapshot)
+        named_snapshot["snapshot_name"] = name
+        state[name] = named_snapshot
+        snapshot_steps[name] = int(snapshot["step"])
+        if name == "first_covered_target_ge_90" and named_snapshot["combined_stop_pass"]:
+            state["combined_stop"] = {
+                "triggered": True,
+                "step": int(snapshot["step"]),
+                "reason": "b2_full_target_coverage_retain_pass",
+            }
+    return state
+
+
+def summarize_b2_full_prior_snapshot(snapshot: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    if not snapshot:
+        return None
+    deltas = {
+        support: {
+            "broad_cluster_classification": delta.get("broad_cluster_classification"),
+            "no_new_broad_cluster": delta.get("no_new_broad_cluster"),
+            "new_strict_failure_count": delta.get("new_strict_failure_count"),
+            "new_parsed_failure_count": delta.get("new_parsed_failure_count"),
+            "parent_baseline_vs_final": delta.get("parent_baseline_vs_final"),
+        }
+        for support, delta in snapshot.get("deltas", {}).items()
+    }
+    return {
+        "snapshot_name": snapshot.get("snapshot_name"),
+        "step": snapshot.get("step"),
+        "target_gate_met": snapshot.get("target_gate_met"),
+        "coverage_gate_met": snapshot.get("coverage_gate_met"),
+        "math_a0_coverage_cycles": snapshot.get("math_a0_coverage_cycles"),
+        "l0b_coverage_cycles": snapshot.get("l0b_coverage_cycles"),
+        "retained_true_priors_no_new_broad_cluster": snapshot.get(
+            "retained_true_priors_no_new_broad_cluster"
+        ),
+        "combined_stop_pass": snapshot.get("combined_stop_pass"),
+        "deltas": deltas,
+    }
+
+
+def finalize_b2_full_verdict_state(
+    state: dict[str, Any],
+    *,
+    terminal_snapshot: Mapping[str, Any],
+) -> dict[str, Any]:
+    record_b2_full_prior_snapshot(
+        state,
+        snapshot_names=["terminal"],
+        snapshot=terminal_snapshot,
+    )
+    state["math_a0_coverage_cycles"] = int(
+        terminal_snapshot.get("math_a0_coverage_cycles", 0)
+    )
+    state["l0b_coverage_cycles"] = int(
+        terminal_snapshot.get("l0b_coverage_cycles", 0)
+    )
+    first = state.get("first_audited_target_ge_90")
+    terminal = state.get("terminal")
+    if first is None:
+        verdict = "no-target-acquisition"
+    elif (
+        terminal
+        and terminal.get("target_gate_met")
+        and terminal.get("coverage_gate_met")
+        and terminal.get("retained_true_priors_no_new_broad_cluster")
+    ):
+        verdict = "RETAINS"
+    elif terminal and not terminal.get("target_gate_met"):
+        verdict = "acquire-then-forget"
+    else:
+        verdict = "no-retain"
+    state["verdict"] = verdict
+    return state
 
 
 def _tensor_scalar(value: Any) -> int | float | bool | str:
@@ -2375,13 +2673,35 @@ def run_bounded_delta_steps(
     audit_callback: Callable[[int, Mapping[str, Any]], dict[str, Any]] | None = None,
     audit_interval: int = 0,
     stop_on_strict_exact: bool = False,
+    b2_full_verdict_mode: bool = False,
+    b2_full_prior_snapshot_callback: Callable[
+        [int, Mapping[str, Any], Mapping[str, Any], Mapping[str, Mapping[str, Any]]],
+        dict[str, Any],
+    ] | None = None,
+    b2_full_audit_export_callback: Callable[
+        [
+            int,
+            Mapping[str, Any],
+            Mapping[str, Any],
+            Mapping[str, Mapping[str, Any]],
+            Mapping[str, Any],
+            Mapping[str, Any],
+        ],
+        str | None,
+    ] | None = None,
     phase_progress: PhaseProgress | None = None,
-) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], str, int]:
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], str, int, dict[str, Any] | None]:
     model.train()
     progress = phase_progress or PhaseProgress(enabled=False, device=device)
     rank_spec = default_dry_run_rank_vote_spec()
     vote_spec = default_vote_update_spec(max_abs_per_tensor)
     vote_specs = {key: vote_spec for key in tensor_states}
+    updater_config = {
+        "rank_vote_spec": rank_spec.to_live_dict(),
+        "vote_update_spec": asdict(vote_spec),
+        "projection_law": S1_PROJECTION_LAW,
+        "vote_law": S1_RANK_BUCKET_VOTE_LAW,
+    }
     optimizer, optimizer_checks = build_optimizer_excluding_eligible_masters(
         model,
         eligible_modules,
@@ -2422,12 +2742,27 @@ def run_bounded_delta_steps(
         support: set()
         for support in retained_support_sets
     }
+    b2_full_coverage_tracker = (
+        new_b2_full_coverage_tracker(
+            {
+                support: int(support_set["proof"]["expected_count"])
+                for support, support_set in retained_support_sets.items()
+            }
+        )
+        if b2_full_verdict_mode and retained_support_sets
+        else None
+    )
+    b2_full_verdict_state = (
+        new_b2_full_verdict_state()
+        if b2_full_verdict_mode
+        else None
+    )
     if retained_support_sets and float(b2_parent_consistency_weight) > 0.0 and b2_parent_model is None:
         raise ValueError("B2 parent-consistency aux requires a frozen parent model")
 
-    def maybe_audit(step: int, *, final: bool = False) -> bool:
+    def maybe_audit(step: int, *, final: bool = False) -> str | None:
         if audit_callback is None:
-            return False
+            return None
         if int(step) == 0:
             audit_phase = "audit0"
         elif final:
@@ -2442,34 +2777,88 @@ def run_bounded_delta_steps(
                 device,
             )
         audit_reports[str(step)] = audit_report
-        return (
-            bool(stop_on_strict_exact)
-            and bool(audit_reports[str(step)].get("acquired"))
-        )
+        if b2_full_verdict_mode:
+            if b2_full_verdict_state is None:
+                raise RuntimeError("B2-full verdict state was not initialized")
+            coverage_by_support = (
+                snapshot_b2_full_coverage_tracker(b2_full_coverage_tracker)
+                if b2_full_coverage_tracker is not None
+                else {}
+            )
+            audit_report["b2_full_coverage_by_support"] = coverage_by_support
+            snapshot_names = b2_full_required_snapshot_names(
+                b2_full_verdict_state,
+                target_audit=audit_report,
+                coverage_by_support=coverage_by_support,
+            )
+            if snapshot_names:
+                if b2_full_prior_snapshot_callback is None:
+                    raise RuntimeError("B2-full verdict mode requires a prior snapshot callback")
+                with progress.phase("b2_full_prior_snapshot", step=int(step)):
+                    prior_snapshot = b2_full_prior_snapshot_callback(
+                        int(step),
+                        states,
+                        audit_report,
+                        coverage_by_support,
+                    )
+                record_b2_full_prior_snapshot(
+                    b2_full_verdict_state,
+                    snapshot_names=snapshot_names,
+                    snapshot=prior_snapshot,
+                )
+            b2_full_verdict_state["coverage_by_support"] = coverage_by_support
+            b2_full_verdict_state["math_a0_coverage_cycles"] = b2_full_coverage_cycles(
+                coverage_by_support,
+                "math_a0",
+            )
+            b2_full_verdict_state["l0b_coverage_cycles"] = b2_full_coverage_cycles(
+                coverage_by_support,
+                "L0b",
+            )
+            if b2_full_audit_export_callback is not None:
+                with progress.phase("b2_full_audit_export", step=int(step)):
+                    export_path = b2_full_audit_export_callback(
+                        int(step),
+                        states,
+                        audit_report,
+                        coverage_by_support,
+                        b2_full_verdict_state,
+                        updater_config,
+                    )
+                if export_path:
+                    b2_full_verdict_state.setdefault("audit_export_paths", {})[
+                        str(step)
+                    ] = str(export_path)
+            if b2_full_verdict_state.get("combined_stop", {}).get("triggered"):
+                return "b2_full_target_coverage_retain_stop"
+            return None
+        if bool(stop_on_strict_exact) and bool(audit_report.get("acquired")):
+            return "strict_exact_acquired"
+        return None
 
-    if maybe_audit(0):
-        updater_config = {
-            "rank_vote_spec": rank_spec.to_live_dict(),
-            "vote_update_spec": asdict(vote_spec),
-            "projection_law": S1_PROJECTION_LAW,
-            "vote_law": S1_RANK_BUCKET_VOTE_LAW,
-        }
+    initial_stop = maybe_audit(0)
+    if initial_stop:
         return (
             step_reports,
             updater_config,
             states,
             audit_reports,
-            "strict_exact_acquired_step0",
+            "strict_exact_acquired_step0"
+            if initial_stop == "strict_exact_acquired"
+            else initial_stop,
             0,
+            b2_full_verdict_state,
         )
     if steps <= 0:
-        updater_config = {
-            "rank_vote_spec": rank_spec.to_live_dict(),
-            "vote_update_spec": asdict(vote_spec),
-            "projection_law": S1_PROJECTION_LAW,
-            "vote_law": S1_RANK_BUCKET_VOTE_LAW,
-        }
-        return step_reports, updater_config, states, audit_reports, "no_steps", 0
+        return (
+            step_reports,
+            updater_config,
+            states,
+            audit_reports,
+            "no_steps",
+            0,
+            b2_full_verdict_state,
+        )
 
     stop_reason = "max_steps_completed"
     steps_completed = 0
@@ -2512,7 +2901,14 @@ def run_bounded_delta_steps(
                         support_batch = support_batch_item["batch"]
                         support_metadata = dict(support_batch_item["metadata"])
                         row_ids = [str(row_id) for row_id in support_metadata.get("row_ids", [])]
-                        retained_coverage[support].update(row_ids)
+                        if b2_full_coverage_tracker is not None:
+                            update_b2_full_coverage_tracker(
+                                b2_full_coverage_tracker,
+                                support=support,
+                                row_ids=row_ids,
+                            )
+                        else:
+                            retained_coverage[support].update(row_ids)
                         ce_grads, ce_loss, ce_metrics = _compute_ce_weighted_grads(
                             model,
                             support_batch,
@@ -2575,17 +2971,22 @@ def run_bounded_delta_steps(
                         states,
                         rank_spec,
                     )
-                coverage_by_support = {
-                    support: {
-                        "rows_seen": len(retained_coverage[support]),
-                        "rows_total": int(support_set["proof"]["expected_count"]),
-                        "coverage_cycle_complete": (
-                            len(retained_coverage[support])
-                            >= int(support_set["proof"]["expected_count"])
-                        ),
+                if b2_full_coverage_tracker is not None:
+                    coverage_by_support = snapshot_b2_full_coverage_tracker(
+                        b2_full_coverage_tracker
+                    )
+                else:
+                    coverage_by_support = {
+                        support: {
+                            "rows_seen": len(retained_coverage[support]),
+                            "rows_total": int(support_set["proof"]["expected_count"]),
+                            "coverage_cycle_complete": (
+                                len(retained_coverage[support])
+                                >= int(support_set["proof"]["expected_count"])
+                            ),
+                        }
+                        for support, support_set in sorted(retained_support_sets.items())
                     }
-                    for support, support_set in sorted(retained_support_sets.items())
-                }
                 b2_step_receipt = {
                     "enabled": True,
                     "support_batches": support_receipts,
@@ -2647,19 +3048,23 @@ def run_bounded_delta_steps(
             audit_callback is not None
             and int(audit_interval) > 0
             and step % int(audit_interval) == 0
-            and maybe_audit(step)
         ):
-            stop_reason = "strict_exact_acquired_stop_fast"
-            break
+            stop_token = maybe_audit(step)
+            if stop_token:
+                stop_reason = (
+                    "strict_exact_acquired_stop_fast"
+                    if stop_token == "strict_exact_acquired"
+                    else stop_token
+                )
+                break
     if audit_callback is not None and str(steps_completed) not in audit_reports:
-        if maybe_audit(steps_completed, final=True):
-            stop_reason = "strict_exact_acquired_final"
-    updater_config = {
-        "rank_vote_spec": rank_spec.to_live_dict(),
-        "vote_update_spec": asdict(vote_spec),
-        "projection_law": S1_PROJECTION_LAW,
-        "vote_law": S1_RANK_BUCKET_VOTE_LAW,
-    }
+        stop_token = maybe_audit(steps_completed, final=True)
+        if stop_token:
+            stop_reason = (
+                "strict_exact_acquired_final"
+                if stop_token == "strict_exact_acquired"
+                else stop_token
+            )
     return (
         step_reports,
         updater_config,
@@ -2667,6 +3072,7 @@ def run_bounded_delta_steps(
         audit_reports,
         stop_reason,
         steps_completed,
+        b2_full_verdict_state,
     )
 
 
@@ -2748,6 +3154,7 @@ def run_c2p1_probe(
     b2_retained_supports: str | Sequence[str] | None = None,
     b2_parent_consistency_weight: float = 0.0,
     b2_pc_aux_mode: str = "telemetry",
+    b2_full_verdict_mode: bool = False,
     b2_l0b_batch_size: int = 8,
     b2_math_a0_batch_size: int = 16,
 ) -> dict[str, Any]:
@@ -2762,6 +3169,30 @@ def run_c2p1_probe(
         raise ValueError("audit_interval must be non-negative")
     requested_prior_audit_supports = parse_prior_audit_supports(prior_audit_supports)
     requested_b2_retained_supports = parse_b2_retained_supports(b2_retained_supports)
+    if b2_full_verdict_mode:
+        missing_retained = [
+            support
+            for support in B2_FULL_STOP_SUPPORTS
+            if support not in requested_b2_retained_supports
+        ]
+        if missing_retained:
+            raise ValueError(
+                "B2-full verdict mode requires retained supports "
+                f"{B2_FULL_STOP_SUPPORTS}; missing {tuple(missing_retained)}"
+            )
+        required_prior_supports = (*B2_FULL_STOP_SUPPORTS, "L0c1")
+        missing_prior = [
+            support
+            for support in required_prior_supports
+            if support not in requested_prior_audit_supports
+        ]
+        if missing_prior:
+            raise ValueError(
+                "B2-full verdict mode requires prior audit supports "
+                f"{required_prior_supports}; missing {tuple(missing_prior)}"
+            )
+        if int(audit_interval) <= 0:
+            raise ValueError("B2-full verdict mode requires audit_interval > 0")
     if b2_pc_aux_mode not in B2_PC_AUX_MODES:
         raise ValueError(f"b2_pc_aux_mode must be one of {B2_PC_AUX_MODES}, got {b2_pc_aux_mode!r}")
     if float(b2_parent_consistency_weight) < 0.0:
@@ -2881,7 +3312,11 @@ def run_c2p1_probe(
         with phase_progress.phase("step0_optimizer_identity"):
             step0_optimizer_identity_proof = prove_step0_optimizer_identity(model, eligible)
 
-    audit_enabled = int(audit_interval) > 0 or bool(stop_on_strict_exact)
+    audit_enabled = (
+        int(audit_interval) > 0
+        or bool(stop_on_strict_exact)
+        or bool(b2_full_verdict_mode)
+    )
 
     def audit_callback(step: int, states: Mapping[str, Any]) -> dict[str, Any]:
         return audit_identity_full_support(
@@ -2895,6 +3330,113 @@ def run_c2p1_probe(
             total_steps=max(1, int(steps)),
         )
 
+    b2_full_prior_snapshot_callback = None
+    b2_full_audit_export_callback = None
+    if b2_full_verdict_mode:
+
+        def b2_full_prior_snapshot_callback(
+            step: int,
+            states: Mapping[str, Any],
+            target_audit: Mapping[str, Any],
+            coverage_by_support: Mapping[str, Mapping[str, Any]],
+        ) -> dict[str, Any]:
+            current_reports = audit_prior_support_sets(
+                model,
+                prior_support_sets,
+                states,
+                eligible,
+                tok=tok,
+                device=torch_device,
+                phase="b2_full_prior_snapshot",
+                step=int(step),
+                total_steps=max(1, int(steps)),
+            )
+            return build_b2_full_prior_snapshot(
+                snapshot_name="runtime_prior_snapshot",
+                step=int(step),
+                target_audit=target_audit,
+                coverage_by_support=coverage_by_support,
+                start_reports=prior_audit_start_reports,
+                current_reports=current_reports,
+            )
+
+        def b2_full_audit_export_callback(
+            step: int,
+            states: Mapping[str, Any],
+            target_audit: Mapping[str, Any],
+            coverage_by_support: Mapping[str, Mapping[str, Any]],
+            verdict_state: Mapping[str, Any],
+            updater_config: Mapping[str, Any],
+        ) -> str | None:
+            checkpoint_payload = build_authoritative_checkpoint_payload(
+                states,
+                step=int(step),
+                updater_config=updater_config,
+                oracle_receipt=None,
+                dry_run=True,
+                checkpoint_written=False,
+            )
+            validate_authoritative_resume_payload(checkpoint_payload)
+            parent_hash_current = file_sha256(parent)
+            audit_dir = scratch_root / "audits" / f"step_{int(step):04d}"
+            audit_dir.mkdir(parents=True, exist_ok=True)
+            audit_path = audit_dir / "summary.json"
+            summary = {
+                "schema": B2_FULL_VERDICT_SCHEMA_VERSION,
+                "artifact_role": "b2_full_audit_summary",
+                "step": int(step),
+                "dry_run": True,
+                "checkpoint_written": False,
+                "checkpoint_artifact_written": False,
+                "pt_artifact_written": False,
+                "parent_hash_before": parent_hash_before,
+                "parent_hash_current": parent_hash_current,
+                "parent_hash_unchanged": parent_hash_current == parent_hash_before,
+                "checkpoint_payload_summary": {
+                    "schema": checkpoint_payload["schema"],
+                    "artifact_role": checkpoint_payload["artifact_role"],
+                    "step": checkpoint_payload["step"],
+                    "dry_run": checkpoint_payload["dry_run"],
+                    "checkpoint_written": checkpoint_payload["checkpoint_written"],
+                    "authoritative_state_sha256": checkpoint_payload[
+                        "authoritative_state_sha256"
+                    ],
+                    "updater_config_sha256": checkpoint_payload[
+                        "updater_config_sha256"
+                    ],
+                    "tensor_summary_count": len(checkpoint_payload["tensor_summaries"]),
+                },
+                "target_audit": dict(target_audit),
+                "coverage_by_support": {
+                    support: dict(coverage)
+                    for support, coverage in coverage_by_support.items()
+                },
+                "math_a0_coverage_cycles": b2_full_coverage_cycles(
+                    coverage_by_support,
+                    "math_a0",
+                ),
+                "l0b_coverage_cycles": b2_full_coverage_cycles(
+                    coverage_by_support,
+                    "L0b",
+                ),
+                "verdict_summary": {
+                    "prior_audit_count": verdict_state.get("prior_audit_count", 0),
+                    "snapshot_steps": dict(verdict_state.get("snapshot_steps", {})),
+                    "combined_stop": dict(verdict_state.get("combined_stop", {})),
+                    "first_audited_target_ge_90": summarize_b2_full_prior_snapshot(
+                        verdict_state.get("first_audited_target_ge_90")
+                    ),
+                    "first_covered_target_ge_90": summarize_b2_full_prior_snapshot(
+                        verdict_state.get("first_covered_target_ge_90")
+                    ),
+                },
+            }
+            audit_path.write_text(
+                json.dumps(summary, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+            return str(audit_path)
+
     with phase_progress.phase("bounded_steps"):
         (
             step_reports,
@@ -2903,6 +3445,7 @@ def run_c2p1_probe(
             audit_reports,
             stop_reason,
             steps_completed,
+            b2_full_verdict_state,
         ) = run_bounded_delta_steps(
             model,
             model_batch,
@@ -2920,6 +3463,9 @@ def run_c2p1_probe(
             audit_callback=audit_callback if audit_enabled else None,
             audit_interval=int(audit_interval),
             stop_on_strict_exact=bool(stop_on_strict_exact),
+            b2_full_verdict_mode=bool(b2_full_verdict_mode),
+            b2_full_prior_snapshot_callback=b2_full_prior_snapshot_callback,
+            b2_full_audit_export_callback=b2_full_audit_export_callback,
             phase_progress=phase_progress,
         )
     prior_audit_final_reports: dict[str, dict[str, Any]] = {}
@@ -2980,6 +3526,28 @@ def run_c2p1_probe(
         pc_aux_mode=str(b2_pc_aux_mode),
         parent_consistency_weight=float(b2_parent_consistency_weight),
     )
+    b2_full_verdict_receipt = None
+    if b2_full_verdict_mode:
+        if b2_full_verdict_state is None:
+            raise RuntimeError("B2-full verdict mode did not return verdict state")
+        if not audit_reports:
+            raise RuntimeError("B2-full verdict mode requires at least one target audit")
+        final_audit_step = str(
+            max(int(step) for step in audit_reports)
+        )
+        coverage_by_support = b2_full_verdict_state.get("coverage_by_support", {})
+        terminal_snapshot = build_b2_full_prior_snapshot(
+            snapshot_name="terminal",
+            step=int(steps_completed),
+            target_audit=audit_reports[final_audit_step],
+            coverage_by_support=coverage_by_support,
+            start_reports=prior_audit_start_reports,
+            current_reports=prior_audit_final_reports,
+        )
+        b2_full_verdict_receipt = finalize_b2_full_verdict_state(
+            b2_full_verdict_state,
+            terminal_snapshot=terminal_snapshot,
+        )
     receipt = {
         "schema": C2P1_HARNESS_SCHEMA_VERSION,
         "c2p0_schema": BOUNDED_DELTA_LEARNER_SCHEMA_VERSION,
@@ -3045,6 +3613,20 @@ def run_c2p1_probe(
         "memory": cuda_memory_receipt(torch_device),
         "phase_telemetry": phase_progress.to_dict(),
     }
+    if b2_full_verdict_mode:
+        assert b2_full_verdict_receipt is not None
+        receipt.update(
+            {
+                "b2_full_verdict_mode": True,
+                "b2_full_retention_verdict": b2_full_verdict_receipt,
+                "math_a0_coverage_cycles": b2_full_verdict_receipt.get(
+                    "math_a0_coverage_cycles"
+                ),
+                "l0b_coverage_cycles": b2_full_verdict_receipt.get(
+                    "l0b_coverage_cycles"
+                ),
+            }
+        )
     receipt_path = scratch_root / "receipt.json"
     phase_progress.mark("receipt_write", "start", path=str(receipt_path))
     receipt["phase_telemetry"] = phase_progress.to_dict()
@@ -3117,6 +3699,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "Default telemetry."
         ),
     )
+    ap.add_argument(
+        "--b2-full-verdict-mode",
+        action="store_true",
+        help=(
+            "Enable B2-full retention verdict accounting: disjoint retained-support "
+            "coverage cycles, first target>=0.90 prior snapshots, covered-stop "
+            "snapshot, terminal verdict, and scratch audit summaries. Default off."
+        ),
+    )
     ap.add_argument("--b2-l0b-batch-size", type=int, default=8)
     ap.add_argument("--b2-math-a0-batch-size", type=int, default=16)
     ap.add_argument("--max-steps-hard", type=int, default=C2P2_DEFAULT_MAX_STEPS_HARD)
@@ -3148,6 +3739,7 @@ def main(argv: list[str] | None = None) -> int:
         b2_retained_supports=args.b2_retained_supports,
         b2_parent_consistency_weight=args.b2_parent_consistency_weight,
         b2_pc_aux_mode=args.b2_pc_aux_mode,
+        b2_full_verdict_mode=args.b2_full_verdict_mode,
         b2_l0b_batch_size=args.b2_l0b_batch_size,
         b2_math_a0_batch_size=args.b2_math_a0_batch_size,
         max_steps_hard=args.max_steps_hard,
