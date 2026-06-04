@@ -70,6 +70,9 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     tensor_sha256,
     validate_authoritative_resume_payload,
 )
+from calm.hrm_text_158.native_full_stack.front_c_live_identity_emission import (
+    FrontCLiveIdentityCollector,
+)
 from calm.hrm_text_158.native_full_stack.vote_update import VoteUpdateSpec
 from scripts.train_hrm_text_158 import HrmTextGsm8kDataset
 
@@ -2689,6 +2692,7 @@ def run_bounded_delta_steps(
         ],
         str | None,
     ] | None = None,
+    front_c_identity_collector: FrontCLiveIdentityCollector | None = None,
     phase_progress: PhaseProgress | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], str, int, dict[str, Any] | None]:
     model.train()
@@ -2835,6 +2839,10 @@ def run_bounded_delta_steps(
         if bool(stop_on_strict_exact) and bool(audit_report.get("acquired")):
             return "strict_exact_acquired"
         return None
+
+    if front_c_identity_collector is not None:
+        with progress.phase("front_c_identity_step0", step=0):
+            front_c_identity_collector.record_step0(states)
 
     initial_stop = maybe_audit(0)
     if initial_stop:
@@ -3006,6 +3014,25 @@ def run_bounded_delta_steps(
                     credit = credit_from_weighted_grad(weighted_grad)
                     moves = project_s1_gradient_to_moves(weighted_grad, states[key].q_levels)
                     votes_by_key[key] = rank_bucketed_int16_votes(credit, moves, rank_spec)
+                front_c_identity_observer = None
+                if (
+                    front_c_identity_collector is not None
+                    and front_c_identity_collector.should_collect_step(
+                        step,
+                        total_steps=int(steps),
+                    )
+                ):
+
+                    def front_c_identity_observer(
+                        observation: Mapping[str, Any],
+                        *,
+                        observed_step: int = int(step),
+                    ) -> None:
+                        front_c_identity_collector.record_step_observation(
+                            step=observed_step,
+                            observation=observation,
+                        )
+
                 step_result = apply_bounded_delta_vote_step(
                     states,
                     votes_by_key,
@@ -3015,6 +3042,7 @@ def run_bounded_delta_steps(
                     pc_aux_votes_by_key=pc_aux_votes_by_key,
                     pc_aux_moves_by_key=pc_aux_moves_by_key,
                     pc_aux_mode=str(b2_pc_aux_mode),
+                    front_c_identity_observer=front_c_identity_observer,
                 )
                 states = step_result.tensor_states
                 q_changed_count = int(step_result.global_summary.get("q_changed_count", 0))
@@ -3157,6 +3185,8 @@ def run_c2p1_probe(
     b2_full_verdict_mode: bool = False,
     b2_l0b_batch_size: int = 8,
     b2_math_a0_batch_size: int = 16,
+    front_c_identity_emission_artifact: Path | None = None,
+    front_c_identity_emission_interval: int = 0,
 ) -> dict[str, Any]:
     assert_default_off(enabled)
     if int(max_steps_hard) <= 0:
@@ -3197,6 +3227,22 @@ def run_c2p1_probe(
         raise ValueError(f"b2_pc_aux_mode must be one of {B2_PC_AUX_MODES}, got {b2_pc_aux_mode!r}")
     if float(b2_parent_consistency_weight) < 0.0:
         raise ValueError("b2_parent_consistency_weight must be non-negative")
+    if front_c_identity_emission_artifact is not None:
+        if int(steps) <= 0:
+            raise ValueError("Front-C identity emission requires steps > 0")
+        if int(front_c_identity_emission_interval) < 0:
+            raise ValueError("front_c_identity_emission_interval must be non-negative")
+        required_front_c_prior = ("L0b", "math_a0", "L0c1")
+        missing_front_c_prior = [
+            support
+            for support in required_front_c_prior
+            if support not in requested_prior_audit_supports
+        ]
+        if missing_front_c_prior:
+            raise ValueError(
+                "Front-C identity emission requires prior audit supports "
+                f"{required_front_c_prior}; missing {tuple(missing_front_c_prior)}"
+            )
     b2_support_batch_sizes = {
         "L0b": int(b2_l0b_batch_size),
         "math_a0": int(b2_math_a0_batch_size),
@@ -3279,6 +3325,17 @@ def run_c2p1_probe(
         )
     if not init_fidelity["all_pass"]:
         raise RuntimeError("weight-level init-fidelity allclose failed")
+
+    front_c_identity_collector = None
+    if front_c_identity_emission_artifact is not None:
+        artifact_path = Path(front_c_identity_emission_artifact)
+        if not artifact_path.is_absolute():
+            artifact_path = scratch_root / artifact_path
+        front_c_identity_collector = FrontCLiveIdentityCollector(
+            artifact_path=artifact_path,
+            emission_interval=int(front_c_identity_emission_interval),
+            audit_interval=int(audit_interval),
+        )
 
     with phase_progress.phase("forward_fidelity"):
         forward_init_fidelity = compute_forward_level_init_fidelity(
@@ -3466,6 +3523,7 @@ def run_c2p1_probe(
             b2_full_verdict_mode=bool(b2_full_verdict_mode),
             b2_full_prior_snapshot_callback=b2_full_prior_snapshot_callback,
             b2_full_audit_export_callback=b2_full_audit_export_callback,
+            front_c_identity_collector=front_c_identity_collector,
             phase_progress=phase_progress,
         )
     prior_audit_final_reports: dict[str, dict[str, Any]] = {}
@@ -3548,6 +3606,19 @@ def run_c2p1_probe(
             b2_full_verdict_state,
             terminal_snapshot=terminal_snapshot,
         )
+    front_c_identity_emission_receipt: dict[str, Any] = {"enabled": False}
+    if front_c_identity_collector is not None:
+        with phase_progress.phase("front_c_identity_artifact", step=int(steps_completed)):
+            front_c_identity_emission_receipt = {
+                "enabled": True,
+                **front_c_identity_collector.finalize(
+                    audit_reports=audit_reports,
+                    prior_audit_start_reports=prior_audit_start_reports,
+                    prior_audit_final_reports=prior_audit_final_reports,
+                    steps_completed=int(steps_completed),
+                    stop_reason=stop_reason,
+                ),
+            }
     receipt = {
         "schema": C2P1_HARNESS_SCHEMA_VERSION,
         "c2p0_schema": BOUNDED_DELTA_LEARNER_SCHEMA_VERSION,
@@ -3597,6 +3668,7 @@ def run_c2p1_probe(
         "audit_reports": audit_reports,
         "prior_audit": prior_audit_receipt,
         "b2_retention": b2_retention_receipt,
+        "front_c_identity_emission": front_c_identity_emission_receipt,
         "timing_summary": timing_summary,
         "acquisition_trajectory": build_acquisition_trajectory(
             audit_enabled=audit_enabled,
@@ -3710,6 +3782,27 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     ap.add_argument("--b2-l0b-batch-size", type=int, default=8)
     ap.add_argument("--b2-math-a0-batch-size", type=int, default=16)
+    ap.add_argument(
+        "--front-c-identity-emission-artifact",
+        type=Path,
+        default=None,
+        help=(
+            "Default-off Front-C path-b identity artifact path. When set, "
+            "the probe records cloned CPU learner observations and writes one "
+            "self-contained artifact validated by the Stage-1a adapter."
+        ),
+    )
+    ap.add_argument(
+        "--front-c-identity-emission-interval",
+        type=int,
+        default=0,
+        help=(
+            "Record Front-C identity rows at this step interval, plus step 1 "
+            "and the requested terminal step. Audit-interval rows are always "
+            "recorded when --audit-interval is set so acquired audit rows cannot "
+            "be silently skipped. Default 0 records step 1, audit rows, and terminal."
+        ),
+    )
     ap.add_argument("--max-steps-hard", type=int, default=C2P2_DEFAULT_MAX_STEPS_HARD)
     ap.add_argument("--emit-progress", action="store_true")
     ap.add_argument("--phase-timeout-seconds", type=float, default=0.0)
@@ -3742,6 +3835,8 @@ def main(argv: list[str] | None = None) -> int:
         b2_full_verdict_mode=args.b2_full_verdict_mode,
         b2_l0b_batch_size=args.b2_l0b_batch_size,
         b2_math_a0_batch_size=args.b2_math_a0_batch_size,
+        front_c_identity_emission_artifact=args.front_c_identity_emission_artifact,
+        front_c_identity_emission_interval=args.front_c_identity_emission_interval,
         max_steps_hard=args.max_steps_hard,
         emit_progress=args.emit_progress,
         phase_timeout_seconds=args.phase_timeout_seconds,

@@ -16,7 +16,7 @@ import json
 import os
 from pathlib import Path
 import types
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 import torch
 import torch.nn.functional as F
@@ -58,6 +58,9 @@ S1_RANK_BUCKET_VOTE_LAW = "ported_s1_rank_bucketed_integer_votes"
 AUTHORITATIVE_STATE_SOURCE = "q_scale_bounded_delta_state_of_truth"
 BOUNDED_UPDATE_ATTRIBUTION = "q_acc_backlog_changed_by_bounded_delta_vote_update_only"
 DEFAULT_DRY_RUN_PARENT_HASH_BASIS = "no_parent_checkpoint_path_supplied_no_pt_touch"
+FRONT_C_LIVE_OBSERVATION_SCHEMA_VERSION = (
+    "hrm_text_158_front_c/v0.live_identity_observation_cloned_cpu"
+)
 
 
 def _canonical_json(data: Any) -> str:
@@ -808,6 +811,79 @@ def _coerce_optional_vote_map_tensor(
     return value.detach().cpu().contiguous()
 
 
+def _clone_vote_update_state_for_front_c(state: VoteUpdateState) -> VoteUpdateState:
+    return VoteUpdateState(
+        q_levels=state.q_levels.detach().cpu().clone().contiguous(),
+        accumulators=state.accumulators.detach().cpu().clone().contiguous(),
+        q_format=state.q_format,
+        accumulator_format=state.accumulator_format,
+    )
+
+
+def _clone_vote_update_inputs_for_front_c(inputs: VoteUpdateInputs) -> VoteUpdateInputs:
+    def clone_optional(tensor: torch.Tensor | None) -> torch.Tensor | None:
+        if tensor is None:
+            return None
+        return tensor.detach().cpu().clone().contiguous()
+
+    return VoteUpdateInputs(
+        votes=inputs.votes.detach().cpu().clone().contiguous(),
+        replay_ce_veto_votes=clone_optional(inputs.replay_ce_veto_votes),
+        replay_ce_veto_moves=clone_optional(inputs.replay_ce_veto_moves),
+        pc_aux_votes=clone_optional(inputs.pc_aux_votes),
+        pc_aux_moves=clone_optional(inputs.pc_aux_moves),
+        pc_aux_mode=inputs.pc_aux_mode,
+        vote_format=inputs.vote_format,
+    )
+
+
+def _clone_vote_update_spec_for_front_c(spec: VoteUpdateSpec) -> VoteUpdateSpec:
+    return VoteUpdateSpec(**asdict(spec))
+
+
+def _clone_backlog_for_front_c(
+    backlog: Mapping[str, Mapping[int, Mapping[str, int]]] | None,
+) -> dict[str, dict[int, dict[str, int]]]:
+    return {
+        str(state_key): {
+            int(flat_index): {
+                str(field): int(value)
+                for field, value in dict(entry).items()
+            }
+            for flat_index, entry in dict(by_index).items()
+        }
+        for state_key, by_index in dict(backlog or {}).items()
+    }
+
+
+def _front_c_cloned_observation(
+    *,
+    vote_update_states: Mapping[str, VoteUpdateState],
+    inputs_by_key: Mapping[str, VoteUpdateInputs],
+    vote_specs_by_key: Mapping[str, VoteUpdateSpec],
+    deferred_backlog: Mapping[str, Mapping[int, Mapping[str, int]]] | None,
+    global_cap_used: bool,
+) -> dict[str, Any]:
+    return {
+        "schema": FRONT_C_LIVE_OBSERVATION_SCHEMA_VERSION,
+        "global_cap_used": bool(global_cap_used),
+        "states_by_key": {
+            key: _clone_vote_update_state_for_front_c(state)
+            for key, state in sorted(vote_update_states.items())
+        },
+        "inputs_by_key": {
+            key: _clone_vote_update_inputs_for_front_c(inputs)
+            for key, inputs in sorted(inputs_by_key.items())
+        },
+        "specs_by_key": {
+            key: _clone_vote_update_spec_for_front_c(vote_specs_by_key[key])
+            for key in sorted(vote_specs_by_key)
+        },
+        "deferred_backlog": _clone_backlog_for_front_c(deferred_backlog),
+        "live_mutation_inputs_exposed": False,
+    }
+
+
 def apply_bounded_delta_vote_step(
     tensor_states: Mapping[str, BoundedDeltaTensorState],
     votes_by_key: Mapping[str, torch.Tensor],
@@ -823,6 +899,7 @@ def apply_bounded_delta_vote_step(
     hot_exact_indices_by_key: Mapping[str, Sequence[int]] | None = None,
     cold_default_value: int | None = None,
     parity_check: bool = False,
+    front_c_identity_observer: Callable[[Mapping[str, Any]], object] | None = None,
 ) -> BoundedDeltaLearnerStepResult:
     if set(tensor_states) != set(votes_by_key) or set(tensor_states) != set(vote_specs_by_key):
         raise ValueError("tensor_states, votes_by_key, and vote_specs_by_key must have identical keys")
@@ -908,6 +985,18 @@ def apply_bounded_delta_vote_step(
                 for _, _, stats in q_acc_by_key.values()
             ),
         }
+
+    if front_c_identity_observer is not None:
+        _ignored_observer_return = front_c_identity_observer(
+            _front_c_cloned_observation(
+                vote_update_states=vote_update_states,
+                inputs_by_key=inputs_by_key,
+                vote_specs_by_key=vote_specs_by_key,
+                deferred_backlog=backlog,
+                global_cap_used=global_cap_spec is not None,
+            ),
+        )
+        del _ignored_observer_return
 
     next_states: dict[str, BoundedDeltaTensorState] = {}
     tensor_stats: dict[str, dict[str, Any]] = {}
