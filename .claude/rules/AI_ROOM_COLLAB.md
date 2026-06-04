@@ -375,7 +375,10 @@ small acknowledgement.
    may assemble/relay from its inputs, before GPU start): exact parent
    checkpoint path + sha/config proof, dry-run-validated command +
    recipe, save cadence, watcher/audit bundle, stop/bank criteria,
-   artifact/log paths, resource lanes.
+   artifact/log paths, resource lanes, and visible per-phase first-milestone
+   **phase budget** entries for forward/backward, update,
+   emission/accounting, and artifact flush. For GPU-hot-loop work, GPU means
+   hot-path kernelized execution, not merely `device=cuda:0` plus VRAM.
 2. **One claude + co-lead launch review** → `+1 launch/watch-to-terminal-condition`
    (or one hole) — not a series of micro-acks.
 3. **`training-dev` runs + watches directly** and posts the terminal
@@ -384,16 +387,21 @@ small acknowledgement.
    or the packet itself route to `training-dev` under gate unless a
    persisted named exception or break-glass reason says otherwise.
 4. **Interrupt only for**: bank pass, hard failure, criteria mismatch,
-   resource/liveness failure, or material parent/recipe deviation.
+   resource/liveness failure, no-progress-past-phase-budget liveness failure,
+   or material parent/recipe deviation. A watch-wrap heartbeat is not hot-loop progress;
+   per-phase milestones are the progress source.
 5. **One terminal receipt**: best checkpoint, audits, bank/fail
    decision, failure class if failed, retained surfaces, artifacts,
-   next recommendation.
+   next recommendation. Receipts separate DEVICE residency from HOT-LOOP
+   residency.
 
 Compresses gates, does NOT skip safety: the packet still requires the
 full parent-proof + dry-run-validated command + watcher bundle +
-terminal criteria. Standing defaults carry across the arc — resolved
-push target, `.pt` not committed, one-terminal-lock on cosmetic
-naming (no reopen unless it affects execution/evidence).
+terminal criteria. New observer/emitter/collector code at representative
+scale requires a prior scale-smoke or cost model; a co-lead-flagged de-risk
+smoke is not overridable on one-run EV grounds. Standing defaults carry
+across the arc — resolved push target, `.pt` not committed, one-terminal-lock
+on cosmetic naming (no reopen unless it affects execution/evidence).
 
 ## Parallel drafting on clean splits
 

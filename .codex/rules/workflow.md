@@ -301,6 +301,18 @@ exceed a tiny (seconds) budget: classify **`cpu_guardrail_too_heavy`**,
 hard-timeout it, route to a GPU gate. Don't normalize a multi-minute CPU
 "pre-gate."
 
+**GPU-hot-loop convention**: "GPU" means the hot path is GPU-resident and
+kernelized, not merely `device=cuda:0` plus allocated VRAM. A launch packet
+must declare a visible per-phase first-milestone **phase budget** for
+forward/backward, update, emission/accounting, and artifact flush. A
+watch-wrap heartbeat is not hot-loop progress; per-phase milestones are the
+progress source. No progress past the phase budget is a **liveness failure**:
+stack-sample, kill/release, and classify the run instead of waiting for the
+total timeout. New observer/emitter/collector code at representative scale
+requires a prior **scale-smoke** or cost model; a co-lead-flagged de-risk smoke
+is not overridable on one-run EV grounds. Receipts must separate DEVICE
+residency from HOT-LOOP residency.
+
 **Two proportionate GPU gate weights** (don't make every smoke a launch
 ceremony):
 - **GPU correctness smoke** = lightweight gate: pinned hashes + fresh scratch
