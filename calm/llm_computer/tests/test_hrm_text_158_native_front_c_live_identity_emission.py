@@ -6,6 +6,7 @@ import json
 import pytest
 import torch
 
+import calm.hrm_text_158.native_full_stack.front_c_live_identity_emission as front_c_emission
 from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     apply_bounded_delta_vote_step,
     make_bounded_tensor_state,
@@ -39,6 +40,16 @@ def _state():
         torch.zeros(8, dtype=torch.int8),
         1.0,
         torch.zeros(8, dtype=torch.int16),
+    )
+
+
+def _state_with_accumulators(*values: int):
+    acc = torch.tensor(list(values), dtype=torch.int16)
+    return make_bounded_tensor_state(
+        "toy.weight",
+        torch.zeros_like(acc, dtype=torch.int8),
+        1.0,
+        acc,
     )
 
 
@@ -89,7 +100,11 @@ def test_front_c_identity_observer_is_logging_only_and_cloned(tmp_path):
         for key, state in on.tensor_states.items()
     }
     assert observations[0]["live_mutation_inputs_exposed"] is False
+    assert set(observations[0]["plans_by_key"]) == {"toy.weight"}
+    assert set(observations[0]["q_acc_by_key"]) == {"toy.weight"}
     observations[0]["states_by_key"]["toy.weight"].q_levels[0] = -1
+    observations[0]["plans_by_key"]["toy.weight"].applied_indices[0] = 7
+    observations[0]["q_acc_by_key"]["toy.weight"]["q_levels"][0] = -1
     assert int(on.tensor_states["toy.weight"].q_levels.flatten()[0].item()) == 1
 
 
@@ -144,6 +159,202 @@ def test_front_c_live_identity_artifact_is_run_derived_and_extractable(tmp_path)
     assert payload["diagnostics"]["metadata_bit_receipt"]["guardrail_metadata_bits"] > 0
     assert inventory.identity_extractable is True
     assert report.decision_equivalence.zero_drift is True
+
+
+def test_front_c_exact_claim_path_touches_sparse_encode_decode(monkeypatch, tmp_path):
+    calls = []
+    original = front_c_emission.encode_sparse_active_set_accumulator
+
+    def spy_sparse_encode_decode(state, *, hot_exact_indices):
+        calls.append(tuple(int(index) for index in hot_exact_indices))
+        return original(state, hot_exact_indices=hot_exact_indices)
+
+    monkeypatch.setattr(
+        front_c_emission,
+        "encode_sparse_active_set_accumulator",
+        spy_sparse_encode_decode,
+    )
+    states = {"toy.weight": _state()}
+    votes = {"toy.weight": _votes()}
+    specs = {"toy.weight": _spec()}
+    collector = FrontCLiveIdentityCollector(
+        artifact_path=tmp_path / "front_c_identity_artifact.json",
+        emission_interval=1,
+    )
+    collector.record_step0(states)
+    apply_bounded_delta_vote_step(
+        states,
+        votes,
+        specs,
+        front_c_identity_observer=lambda observation: collector.record_step_observation(
+            step=1,
+            observation=observation,
+        ),
+    )
+
+    receipt = collector.finalize(
+        audit_reports={"1": {"acquired": True, "strict_exact_count": 90}},
+        prior_audit_start_reports={"L0b": {"strict_exact": "230/230"}},
+        prior_audit_final_reports={"L0b": {"strict_exact": "230/230"}},
+        steps_completed=1,
+        stop_reason="unit_test_terminal",
+    )
+    payload = json.loads((tmp_path / "front_c_identity_artifact.json").read_text())
+
+    assert calls == [(0, 3)]
+    assert "front_c_report" in receipt
+    assert payload["decision_path_derivation"]["full_sparse_equivalence_claimed"] is True
+    assert payload["diagnostics"]["step_diagnostics"]["1"]["sparse"]["sparse_exact_oracle_ran"] is True
+    assert receipt["front_c_report"]["decision_equivalence"]["zero_drift"] is True
+
+
+def test_front_c_observer_reuses_passed_plan_without_dense_path_recompute(monkeypatch, tmp_path):
+    original_path_from_inputs = front_c_emission._path_from_inputs
+
+    def fail_dense_reference_recompute(*args, **kwargs):
+        if kwargs.get("label") == "front_c_dense_int16_reference":
+            raise AssertionError("collector must reuse observer plans/q_acc for dense path")
+        return original_path_from_inputs(*args, **kwargs)
+
+    monkeypatch.setattr(
+        front_c_emission,
+        "_path_from_inputs",
+        fail_dense_reference_recompute,
+    )
+    states = {"toy.weight": _state()}
+    votes = {"toy.weight": _votes()}
+    specs = {"toy.weight": _spec()}
+    collector = FrontCLiveIdentityCollector(
+        artifact_path=tmp_path / "front_c_identity_artifact.json",
+        emission_interval=1,
+    )
+    collector.record_step0(states)
+
+    apply_bounded_delta_vote_step(
+        states,
+        votes,
+        specs,
+        front_c_identity_observer=lambda observation: collector.record_step_observation(
+            step=1,
+            observation=observation,
+        ),
+    )
+    payload = collector.build_payload(
+        audit_reports={"1": {"acquired": True, "strict_exact_count": 90}},
+        prior_audit_start_reports={"L0b": {"strict_exact": "230/230"}},
+        prior_audit_final_reports={"L0b": {"strict_exact": "230/230"}},
+        steps_completed=1,
+        stop_reason="unit_test_terminal",
+    )
+
+    step_diag = payload["diagnostics"]["step_diagnostics"]["1"]
+    assert step_diag["dense"]["dense_source"] == "reused_vote_update_plan"
+    assert step_diag["dense_q_flip_directions"] == [
+        {"state_key": "toy.weight", "flat_index": 0, "direction": 1},
+        {"state_key": "toy.weight", "flat_index": 3, "direction": -1},
+    ]
+
+
+def test_front_c_dense_replay_veto_direction_comes_from_reused_plan(tmp_path):
+    states = {"toy.weight": _state()}
+    votes = {"toy.weight": _votes_for((0, 2), (2, 2))}
+    replay_votes = {"toy.weight": _votes_for((2, -1))}
+    replay_moves = {"toy.weight": torch.zeros(8, dtype=torch.int8)}
+    specs = {"toy.weight": _spec()}
+    collector = FrontCLiveIdentityCollector(
+        artifact_path=tmp_path / "front_c_identity_artifact.json",
+        emission_interval=1,
+    )
+    collector.record_step0(states)
+
+    result = apply_bounded_delta_vote_step(
+        states,
+        votes,
+        specs,
+        replay_ce_veto_votes_by_key=replay_votes,
+        replay_ce_veto_moves_by_key=replay_moves,
+        front_c_identity_observer=lambda observation: collector.record_step_observation(
+            step=1,
+            observation=observation,
+        ),
+    )
+    payload = collector.build_payload(
+        audit_reports={"1": {"acquired": True, "strict_exact_count": 90}},
+        prior_audit_start_reports={"L0b": {"strict_exact": "230/230"}},
+        prior_audit_final_reports={"L0b": {"strict_exact": "230/230"}},
+        steps_completed=1,
+        stop_reason="unit_test_terminal",
+    )
+    dense = payload["dense_decision_path"]
+
+    assert int(result.tensor_states["toy.weight"].q_levels.flatten()[0].item()) == 1
+    assert int(result.tensor_states["toy.weight"].q_levels.flatten()[2].item()) == 0
+    assert dense["q_flip_directions"] == [
+        {"state_key": "toy.weight", "flat_index": 0, "direction": 1},
+    ]
+    assert dense["replay_veto_decision_keys"] == [
+        {"state_key": "toy.weight", "flat_index": 2},
+    ]
+
+
+def test_front_c_bounded_identity_artifact_is_structurally_nonclaimable(tmp_path):
+    states = {"toy.weight": _state_with_accumulators(1, 1, 0, 0, 0, 0, 0, 0)}
+    votes = {"toy.weight": torch.zeros(8, dtype=torch.int16)}
+    specs = {
+        "toy.weight": VoteUpdateSpec(
+            threshold_abs=1,
+            accumulator_clip_min=-127,
+            accumulator_clip_max=127,
+            max_abs_per_tensor=0,
+        ),
+    }
+    collector = FrontCLiveIdentityCollector(
+        artifact_path=tmp_path / "front_c_identity_artifact.json",
+        emission_interval=1,
+        max_exact_identity_keys=1,
+        sparse_oracle_max_active_ids=1,
+    )
+    collector.record_step0(states)
+    apply_bounded_delta_vote_step(
+        states,
+        votes,
+        specs,
+        front_c_identity_observer=lambda observation: collector.record_step_observation(
+            step=1,
+            observation=observation,
+        ),
+    )
+
+    receipt = collector.finalize(
+        audit_reports={"1": {"acquired": True, "strict_exact_count": 90}},
+        prior_audit_start_reports={"L0b": {"strict_exact": "230/230"}},
+        prior_audit_final_reports={"L0b": {"strict_exact": "230/230"}},
+        steps_completed=1,
+        stop_reason="unit_test_bounded_nonclaim",
+    )
+    payload = json.loads((tmp_path / "front_c_identity_artifact.json").read_text())
+    validation = validate_front_c_identity_artifact(payload)
+
+    assert validation.status == FRONT_C_IDENTITY_EXTRACTABLE
+    assert "front_c_report" not in receipt
+    assert receipt["front_c_report_skipped_bounded_nonclaim"]["identity_emission_scope"].startswith(
+        "bounded_",
+    )
+    assert payload["decision_path_derivation"]["identity_emission_scope"].startswith("bounded_")
+    assert payload["decision_path_derivation"]["full_identity_emission_claimed"] is False
+    assert payload["decision_path_derivation"]["full_sparse_equivalence_claimed"] is False
+    assert payload["timeline"][1]["current_magnitude_threshold_keys"] == [
+        {"state_key": "toy.weight", "flat_index": 0},
+    ]
+    assert payload["diagnostics"]["step_diagnostics"]["1"]["surface"][
+        "current_magnitude_threshold_keys"
+    ]["full_identity_count"] == 2
+    assert (
+        payload["dense_decision_path"]["q_flip_directions"]
+        == payload["sparse_decision_path"]["q_flip_directions"]
+    )
+    with pytest.raises(ValueError, match="bounded/non-claim"):
+        front_c_report_from_identity_artifact(payload)
 
 
 def test_front_c_event_delta_count_uses_selected_timeline_not_latest(tmp_path):

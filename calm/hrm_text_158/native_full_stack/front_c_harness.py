@@ -34,6 +34,23 @@ def base3_q_ledger_from_front_c_artifact(payload: Mapping[str, Any]) -> Base3QEn
     )
 
 
+def _reject_bounded_nonclaim_artifact(payload: Mapping[str, Any]) -> None:
+    derivation = payload.get("decision_path_derivation")
+    if not isinstance(derivation, Mapping):
+        return
+    scope = str(derivation.get("identity_emission_scope", ""))
+    full_identity = derivation.get("full_identity_emission_claimed", None)
+    full_sparse = derivation.get("full_sparse_equivalence_claimed", None)
+    if (
+        scope.startswith("bounded_")
+        or full_identity is False
+        or full_sparse is False
+    ):
+        raise ValueError(
+            "bounded/non-claim Front-C identity artifacts cannot build a claimable projection report"
+        )
+
+
 def front_c_report_from_mapping(
     payload: Mapping[str, Any],
     *,
@@ -41,6 +58,7 @@ def front_c_report_from_mapping(
 ) -> FrontCProjectionReport:
     """Normalize a future B2 audit artifact and compute the compact Front-C report."""
 
+    _reject_bounded_nonclaim_artifact(payload)
     timeline = payload.get("timeline")
     if not isinstance(timeline, Sequence) or isinstance(timeline, (str, bytes)):
         raise ValueError("Front-C artifact must include a timeline sequence")

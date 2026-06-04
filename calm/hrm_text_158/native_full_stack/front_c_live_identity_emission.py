@@ -31,6 +31,7 @@ from calm.hrm_text_158.native_full_stack.front_c_projection import (
 )
 from calm.hrm_text_158.native_full_stack.vote_update import (
     VoteUpdateInputs,
+    VoteUpdatePlan,
     VoteUpdateSpec,
     VoteUpdateState,
     apply_integer_vote_update_reference,
@@ -44,6 +45,15 @@ FRONT_C_LIVE_IDENTITY_EMISSION_SCHEMA_VERSION = (
 FRONT_C_LIVE_OBSERVATION_SCHEMA_VERSION = (
     "hrm_text_158_front_c/v0.live_identity_observation_cloned_cpu"
 )
+FRONT_C_IDENTITY_SCOPE_EXACT = "full_exact_identity_emission"
+FRONT_C_IDENTITY_SCOPE_BOUNDED_FRONTIER = "bounded_frontier_summary"
+FRONT_C_IDENTITY_SCOPE_BOUNDED_SPARSE = "bounded_sparse_oracle_sample"
+FRONT_C_SPARSE_EQUIVALENCE_EXACT = (
+    "conditional_on_dense_oracle_active_set_encode_decode"
+)
+FRONT_C_SPARSE_EQUIVALENCE_BOUNDED = "bounded_sparse_oracle_sample_nonclaim"
+DEFAULT_MAX_EXACT_IDENTITY_KEYS = 100_000
+DEFAULT_SPARSE_ORACLE_MAX_ACTIVE_IDS = 100_000
 
 
 FrontCIdentity = tuple[str, int]
@@ -160,6 +170,11 @@ class _StepPaths:
     sparse_path: FrontCDecisionPath
     dense_diagnostics: dict[str, Any]
     sparse_diagnostics: dict[str, Any]
+    surface_diagnostics: dict[str, Any]
+    identity_emission_scope: str = FRONT_C_IDENTITY_SCOPE_EXACT
+    full_identity_emission_claimed: bool = True
+    full_sparse_equivalence_claimed: bool = True
+    bounded_nonclaim_reasons: tuple[str, ...] = ()
 
 
 def _current_threshold_ids(
@@ -174,6 +189,223 @@ def _current_threshold_ids(
         (flat_acc <= -threshold) & (flat_q > -1)
     )
     return _ids_from_indices(state_key, torch.nonzero(current, as_tuple=False).flatten())
+
+
+def _bounded_identity_set(
+    surface_name: str,
+    identities: set[FrontCIdentity],
+    *,
+    max_keys: int,
+    priority_ids: set[FrontCIdentity] | None = None,
+) -> tuple[set[FrontCIdentity], dict[str, Any]]:
+    full = set(identities)
+    limit = max(0, int(max_keys))
+    bounded = len(full) > limit
+    emitted = full
+    if bounded:
+        selected: list[FrontCIdentity] = []
+        seen: set[FrontCIdentity] = set()
+        for identity in sorted(set(priority_ids or set()) & full):
+            if len(selected) >= limit:
+                break
+            selected.append(identity)
+            seen.add(identity)
+        for identity in sorted(full):
+            if len(selected) >= limit:
+                break
+            if identity in seen:
+                continue
+            selected.append(identity)
+            seen.add(identity)
+        emitted = set(selected)
+    diagnostics = {
+        "surface": str(surface_name),
+        "full_identity_count": len(full),
+        "emitted_identity_count": len(emitted),
+        "identity_cap": limit,
+        "bounded": bool(bounded),
+    }
+    if bounded:
+        diagnostics["cap_reason"] = (
+            f"{surface_name} full identity count {len(full)} exceeds cap {limit}"
+        )
+    return emitted, diagnostics
+
+
+def _q_acc_entry_parts(value: Any) -> tuple[torch.Tensor, torch.Tensor, dict[str, Any]]:
+    if isinstance(value, Mapping):
+        return (
+            value["q_levels"],
+            value["accumulators"],
+            dict(value.get("stats", {})),
+        )
+    q_levels, accumulators, stats = value
+    return q_levels, accumulators, dict(stats)
+
+
+def _plan_priority_ids(
+    plans_by_key: Mapping[str, VoteUpdatePlan],
+    *,
+    cap_frontier_width: int,
+) -> set[FrontCIdentity]:
+    priority: set[FrontCIdentity] = set()
+    for state_key, plan in sorted(plans_by_key.items()):
+        priority |= _ids_from_indices(state_key, plan.applied_indices)
+        priority |= _ids_from_indices(state_key, plan.replay_ce_veto_indices)
+        priority |= _ids_from_indices(
+            state_key,
+            plan.pre_veto_selected_indices[: int(cap_frontier_width)],
+        )
+    return priority
+
+
+def _path_from_reused_plans(
+    states_by_key: Mapping[str, VoteUpdateState],
+    plans_by_key: Mapping[str, VoteUpdatePlan],
+    q_acc_by_key: Mapping[str, Any],
+    *,
+    label: str,
+    active_ids: set[FrontCIdentity] | None = None,
+) -> tuple[FrontCDecisionPath, dict[str, Any]]:
+    q_directions: dict[FrontCIdentity, int] = {}
+    replay_veto_ids: set[FrontCIdentity] = set()
+    q_changed_ids: set[FrontCIdentity] = set()
+    stats_by_key: dict[str, Any] = {}
+    active_filter = None if active_ids is None else set(active_ids)
+
+    for state_key, state in sorted(states_by_key.items()):
+        plan = plans_by_key[state_key]
+        q_after, _, stats = _q_acc_entry_parts(q_acc_by_key[state_key])
+        for raw_index, raw_direction in zip(
+            plan.applied_indices.detach().cpu().to(torch.int64).tolist(),
+            plan.applied_directions.detach().cpu().to(torch.int16).tolist(),
+        ):
+            identity = (str(state_key), int(raw_index))
+            if active_filter is None or identity in active_filter:
+                q_directions[identity] = int(raw_direction)
+        replay_ids = _ids_from_indices(state_key, plan.replay_ce_veto_indices)
+        if active_filter is not None:
+            replay_ids &= active_filter
+        replay_veto_ids |= replay_ids
+        changed = torch.nonzero(
+            q_after.detach().cpu().flatten().to(torch.int8)
+            != state.q_levels.detach().cpu().flatten().to(torch.int8),
+            as_tuple=False,
+        ).flatten()
+        changed_ids = _ids_from_indices(state_key, changed)
+        if active_filter is not None:
+            changed_ids &= active_filter
+        q_changed_ids |= changed_ids
+        stats_by_key[state_key] = dict(stats)
+
+    path = FrontCDecisionPath(
+        label=label,
+        q_flip_directions=_direction_dicts(q_directions),
+        accepted_under_global_cap_keys=(),
+        deferred_under_global_cap_keys=(),
+        backlog_keys=(),
+        replay_veto_decision_keys=_identity_dicts(replay_veto_ids),
+    )
+    return path, {
+        "q_changed_count": len(q_changed_ids),
+        "q_changed_sha256": _sha256_json(_identity_dicts(q_changed_ids)),
+        "global_cap_used": False,
+        "local_stats_by_key": stats_by_key,
+        "derivation": "reused_vote_update_plan_and_q_acc_result",
+        "active_filter_count": None if active_filter is None else len(active_filter),
+    }
+
+
+def _surface_from_reused_plans(
+    step: int,
+    states_by_key: Mapping[str, VoteUpdateState],
+    specs_by_key: Mapping[str, VoteUpdateSpec],
+    plans_by_key: Mapping[str, VoteUpdatePlan],
+    deferred_backlog: Mapping[str, Mapping[int, Mapping[str, int]]] | None,
+    *,
+    cap_frontier_width: int,
+    max_exact_identity_keys: int,
+) -> tuple[
+    FrontCDecisionSurfaceStep,
+    set[FrontCIdentity],
+    set[FrontCIdentity],
+    dict[str, Any],
+    bool,
+]:
+    current_threshold: set[FrontCIdentity] = set()
+    active_next: set[FrontCIdentity] = set()
+    ranking_exact: set[FrontCIdentity] = set()
+    cap_frontier: set[FrontCIdentity] = set()
+    replay_veto: set[FrontCIdentity] = set()
+
+    for state_key, state in sorted(states_by_key.items()):
+        plan = plans_by_key[state_key]
+        current_threshold |= _current_threshold_ids(state_key, state, specs_by_key[state_key])
+        candidates = _ids_from_indices(state_key, plan.candidate_indices)
+        active_next |= candidates
+        ranking_exact |= candidates
+        cap_frontier |= _ids_from_indices(
+            state_key,
+            plan.pre_veto_selected_indices[: int(cap_frontier_width)],
+        )
+        replay_veto |= _ids_from_indices(state_key, plan.replay_ce_veto_indices)
+
+    backlog = _backlog_keys(deferred_backlog)
+    priority = _plan_priority_ids(plans_by_key, cap_frontier_width=cap_frontier_width) | backlog
+    surface_inputs = {
+        "current_magnitude_threshold_keys": current_threshold,
+        "active_next_step_keys": active_next,
+        "ranking_sensitive_exact_keys": ranking_exact,
+        "global_cap_frontier_keys": cap_frontier,
+        "backlog_carry_keys": backlog,
+        "replay_veto_residual_keys": replay_veto,
+    }
+    emitted: dict[str, set[FrontCIdentity]] = {}
+    surface_diagnostics: dict[str, Any] = {}
+    bounded = False
+    for name, identities in surface_inputs.items():
+        subset, diagnostics = _bounded_identity_set(
+            name,
+            identities,
+            max_keys=max_exact_identity_keys,
+            priority_ids=priority,
+        )
+        emitted[name] = subset
+        surface_diagnostics[name] = diagnostics
+        bounded = bounded or bool(diagnostics["bounded"])
+
+    full_decision_relevant = active_next | ranking_exact | cap_frontier | replay_veto | backlog
+    emitted_decision_relevant = (
+        emitted["active_next_step_keys"]
+        | emitted["ranking_sensitive_exact_keys"]
+        | emitted["global_cap_frontier_keys"]
+        | emitted["replay_veto_residual_keys"]
+        | emitted["backlog_carry_keys"]
+    )
+    eligible = sum(int(state.q_levels.numel()) for state in states_by_key.values())
+    surface_diagnostics["decision_relevant_identity_count"] = len(full_decision_relevant)
+    surface_diagnostics["emitted_decision_relevant_identity_count"] = len(emitted_decision_relevant)
+    surface_diagnostics["identity_emission_bounded"] = bool(bounded)
+    return (
+        FrontCDecisionSurfaceStep(
+            step=int(step),
+            eligible_weight_count=eligible,
+            current_magnitude_threshold_keys=_identity_dicts(
+                emitted["current_magnitude_threshold_keys"],
+            ),
+            active_next_step_keys=_identity_dicts(emitted["active_next_step_keys"]),
+            ranking_sensitive_exact_keys=_identity_dicts(
+                emitted["ranking_sensitive_exact_keys"],
+            ),
+            global_cap_frontier_keys=_identity_dicts(emitted["global_cap_frontier_keys"]),
+            backlog_carry_keys=_identity_dicts(emitted["backlog_carry_keys"]),
+            replay_veto_residual_keys=_identity_dicts(emitted["replay_veto_residual_keys"]),
+        ),
+        emitted_decision_relevant,
+        full_decision_relevant,
+        surface_diagnostics,
+        bounded,
+    )
 
 
 def _path_from_inputs(
@@ -315,9 +547,13 @@ def build_front_c_live_step_paths(
     states_by_key: Mapping[str, VoteUpdateState],
     inputs_by_key: Mapping[str, VoteUpdateInputs],
     specs_by_key: Mapping[str, VoteUpdateSpec],
+    plans_by_key: Mapping[str, VoteUpdatePlan] | None = None,
+    q_acc_by_key: Mapping[str, Any] | None = None,
     deferred_backlog: Mapping[str, Mapping[int, Mapping[str, int]]] | None = None,
     global_cap_used: bool = False,
     cap_frontier_width: int = 1,
+    max_exact_identity_keys: int = DEFAULT_MAX_EXACT_IDENTITY_KEYS,
+    sparse_oracle_max_active_ids: int = DEFAULT_SPARSE_ORACLE_MAX_ACTIVE_IDS,
 ) -> _StepPaths:
     """Build dense and independently-derived sparse path records for one step."""
 
@@ -325,6 +561,123 @@ def build_front_c_live_step_paths(
         raise ValueError("Front-C path-b emission must not enable or consume global cap")
     if set(states_by_key) != set(inputs_by_key) or set(states_by_key) != set(specs_by_key):
         raise ValueError("states, inputs, and specs must have identical keys")
+    if plans_by_key is not None and set(states_by_key) != set(plans_by_key):
+        raise ValueError("states and plans_by_key must have identical keys")
+    if q_acc_by_key is not None and set(states_by_key) != set(q_acc_by_key):
+        raise ValueError("states and q_acc_by_key must have identical keys")
+
+    if plans_by_key is not None and q_acc_by_key is not None:
+        surface, active_ids, full_active_ids, surface_diag, surface_bounded = (
+            _surface_from_reused_plans(
+                int(step),
+                states_by_key,
+                specs_by_key,
+                plans_by_key,
+                deferred_backlog,
+                cap_frontier_width=cap_frontier_width,
+                max_exact_identity_keys=max_exact_identity_keys,
+            )
+        )
+        dense_path, dense_diag = _path_from_reused_plans(
+            states_by_key,
+            plans_by_key,
+            q_acc_by_key,
+            label="front_c_dense_int16_reference",
+        )
+        priority = _plan_priority_ids(
+            plans_by_key,
+            cap_frontier_width=cap_frontier_width,
+        )
+        sparse_active_ids = set(active_ids)
+        sparse_subset_diag = {
+            "surface": "sparse_active_set",
+            "full_identity_count": len(full_active_ids),
+            "emitted_identity_count": len(sparse_active_ids),
+            "identity_cap": int(sparse_oracle_max_active_ids),
+            "bounded": False,
+        }
+        sparse_bounded = False
+        sparse_exact_oracle_ran = False
+        if len(full_active_ids) > int(sparse_oracle_max_active_ids):
+            sparse_active_ids, sparse_subset_diag = _bounded_identity_set(
+                "sparse_active_set",
+                full_active_ids,
+                max_keys=sparse_oracle_max_active_ids,
+                priority_ids=priority,
+            )
+            sparse_bounded = True
+        full_identity = not surface_bounded
+        if not surface_bounded and not sparse_bounded:
+            sparse_active_ids = set(full_active_ids)
+            sparse_states = _sparse_states_from_active_set(states_by_key, sparse_active_ids)
+            sparse_path, sparse_diag = _path_from_inputs(
+                sparse_states,
+                inputs_by_key,
+                specs_by_key,
+                label="front_c_sparse_encode_decode_reference",
+            )
+            sparse_exact_oracle_ran = True
+            sparse_subset_diag["emitted_identity_count"] = len(sparse_active_ids)
+        else:
+            sparse_path, sparse_diag = _path_from_reused_plans(
+                states_by_key,
+                plans_by_key,
+                q_acc_by_key,
+                label="front_c_sparse_encode_decode_reference",
+                active_ids=sparse_active_ids,
+            )
+        full_sparse = not sparse_bounded and not surface_bounded and sparse_exact_oracle_ran
+        scope = FRONT_C_IDENTITY_SCOPE_EXACT
+        reasons: list[str] = []
+        if surface_bounded:
+            scope = FRONT_C_IDENTITY_SCOPE_BOUNDED_FRONTIER
+            reasons.append("surface_identity_emission_exceeded_cap")
+        elif sparse_bounded:
+            scope = FRONT_C_IDENTITY_SCOPE_BOUNDED_SPARSE
+            reasons.append("sparse_active_set_exceeded_cap")
+        sparse_diag.update(
+            {
+                "sparse_active_set_count": len(sparse_active_ids),
+                "sparse_active_set_full_count": len(full_active_ids),
+                "sparse_active_set_sha256": _sha256_json(_identity_dicts(sparse_active_ids)),
+                "sparse_active_set_full_sha256": _sha256_json(
+                    _identity_dicts(full_active_ids),
+                ),
+                "sparse_active_set_source": (
+                    "dense_oracle_active_ids"
+                    if full_sparse
+                    else "bounded_reused_plan_active_ids"
+                ),
+                "sparse_active_set_bounding": sparse_subset_diag,
+                "sparse_policy_selector_claimed": False,
+                "sparse_decision_equivalence_scope": (
+                    FRONT_C_SPARSE_EQUIVALENCE_EXACT
+                    if full_sparse
+                    else FRONT_C_SPARSE_EQUIVALENCE_BOUNDED
+                ),
+                "sparse_derivation": (
+                    "base3_q_plus_sparse_active_set_accumulator_encode_decode"
+                    if full_sparse
+                    else "reused_vote_update_plan_bounded_nonclaim_no_sparse_oracle"
+                ),
+                "sparse_exact_oracle_ran": bool(sparse_exact_oracle_ran),
+                "full_sparse_equivalence_claimed": bool(full_sparse),
+            },
+        )
+        dense_diag["dense_source"] = "reused_vote_update_plan"
+        dense_diag["full_identity_emission_claimed"] = bool(full_identity)
+        return _StepPaths(
+            surface=surface,
+            dense_path=dense_path,
+            sparse_path=sparse_path,
+            dense_diagnostics=dense_diag,
+            sparse_diagnostics=sparse_diag,
+            surface_diagnostics=surface_diag,
+            identity_emission_scope=scope,
+            full_identity_emission_claimed=bool(full_identity),
+            full_sparse_equivalence_claimed=bool(full_sparse),
+            bounded_nonclaim_reasons=tuple(reasons),
+        )
 
     surface, active_ids = _surface_from_exact_path(
         int(step),
@@ -365,6 +718,10 @@ def build_front_c_live_step_paths(
         sparse_path=sparse_path,
         dense_diagnostics=dense_diag,
         sparse_diagnostics=sparse_diag,
+        surface_diagnostics={
+            "identity_emission_bounded": False,
+            "derivation": "reference_recompute_compatibility_fallback",
+        },
     )
 
 
@@ -374,6 +731,8 @@ class FrontCLiveIdentityCollector:
     emission_interval: int = 0
     audit_interval: int = 0
     cap_frontier_width: int = 1
+    max_exact_identity_keys: int = DEFAULT_MAX_EXACT_IDENTITY_KEYS
+    sparse_oracle_max_active_ids: int = DEFAULT_SPARSE_ORACLE_MAX_ACTIVE_IDS
     tensor_metadata_bits_per_state: int = 64
     bucket_metadata_bits: int = 64
     guardrail_metadata_bits: int = 64
@@ -385,18 +744,29 @@ class FrontCLiveIdentityCollector:
         self.emission_interval = int(self.emission_interval)
         self.audit_interval = int(self.audit_interval)
         self.cap_frontier_width = int(self.cap_frontier_width)
+        self.max_exact_identity_keys = int(self.max_exact_identity_keys)
+        self.sparse_oracle_max_active_ids = int(self.sparse_oracle_max_active_ids)
         self._step_rows: dict[int, FrontCDecisionSurfaceStep] = {}
         self._states_by_key: dict[str, VoteUpdateState] = {}
         self._latest_dense_path: FrontCDecisionPath | None = None
         self._latest_sparse_path: FrontCDecisionPath | None = None
         self._dense_paths_by_step: dict[int, FrontCDecisionPath] = {}
         self._sparse_paths_by_step: dict[int, FrontCDecisionPath] = {}
+        self._identity_emission_scope = FRONT_C_IDENTITY_SCOPE_EXACT
+        self._full_identity_emission_claimed = True
+        self._full_sparse_equivalence_claimed = True
+        self._bounded_nonclaim_reasons: list[str] = []
         self._diagnostics: dict[str, Any] = {
             "schema": FRONT_C_LIVE_IDENTITY_EMISSION_SCHEMA_VERSION,
             "global_cap_used": False,
             "global_cap_honest_false": True,
             "collector_return_ignored_by_learner": True,
             "observation_source": FRONT_C_LIVE_OBSERVATION_SCHEMA_VERSION,
+            "identity_emission_scope": self._identity_emission_scope,
+            "full_identity_emission_claimed": True,
+            "full_sparse_equivalence_claimed": True,
+            "max_exact_identity_keys": self.max_exact_identity_keys,
+            "sparse_oracle_max_active_ids": self.sparse_oracle_max_active_ids,
             "step_diagnostics": {},
         }
 
@@ -433,16 +803,46 @@ class FrontCLiveIdentityCollector:
         states_by_key = dict(observation["states_by_key"])
         inputs_by_key = dict(observation["inputs_by_key"])
         specs_by_key = dict(observation["specs_by_key"])
+        plans_by_key = dict(observation.get("plans_by_key", {})) or None
+        q_acc_by_key = dict(observation.get("q_acc_by_key", {})) or None
         self._states_by_key = states_by_key
         paths = build_front_c_live_step_paths(
             step=int(step),
             states_by_key=states_by_key,
             inputs_by_key=inputs_by_key,
             specs_by_key=specs_by_key,
+            plans_by_key=plans_by_key,
+            q_acc_by_key=q_acc_by_key,
             deferred_backlog=observation.get("deferred_backlog", {}),
             global_cap_used=False,
             cap_frontier_width=self.cap_frontier_width,
+            max_exact_identity_keys=self.max_exact_identity_keys,
+            sparse_oracle_max_active_ids=self.sparse_oracle_max_active_ids,
         )
+        if (
+            not paths.full_identity_emission_claimed
+            or not paths.full_sparse_equivalence_claimed
+        ):
+            self._identity_emission_scope = paths.identity_emission_scope
+            self._full_identity_emission_claimed = (
+                self._full_identity_emission_claimed
+                and paths.full_identity_emission_claimed
+            )
+            self._full_sparse_equivalence_claimed = (
+                self._full_sparse_equivalence_claimed
+                and paths.full_sparse_equivalence_claimed
+            )
+            self._bounded_nonclaim_reasons.extend(paths.bounded_nonclaim_reasons)
+            self._diagnostics["identity_emission_scope"] = self._identity_emission_scope
+            self._diagnostics["full_identity_emission_claimed"] = (
+                self._full_identity_emission_claimed
+            )
+            self._diagnostics["full_sparse_equivalence_claimed"] = (
+                self._full_sparse_equivalence_claimed
+            )
+            self._diagnostics["bounded_nonclaim_reasons"] = sorted(
+                set(self._bounded_nonclaim_reasons),
+            )
         self._step_rows[int(step)] = paths.surface
         self._latest_dense_path = paths.dense_path
         self._latest_sparse_path = paths.sparse_path
@@ -453,6 +853,10 @@ class FrontCLiveIdentityCollector:
             "dense_q_flip_directions": paths.dense_path.to_dict()["q_flip_directions"],
             "sparse": paths.sparse_diagnostics,
             "sparse_q_flip_directions": paths.sparse_path.to_dict()["q_flip_directions"],
+            "surface": paths.surface_diagnostics,
+            "identity_emission_scope": paths.identity_emission_scope,
+            "full_identity_emission_claimed": paths.full_identity_emission_claimed,
+            "full_sparse_equivalence_claimed": paths.full_sparse_equivalence_claimed,
             "observation": {
                 "states_sha256": {
                     key: {
@@ -606,11 +1010,21 @@ class FrontCLiveIdentityCollector:
                 "dense_source": FRONT_C_DENSE_DECISION_SOURCE,
                 "sparse_source": FRONT_C_SPARSE_DECISION_SOURCE,
                 "independent_sparse_derivation": True,
-                "sparse_active_set_source": "dense_oracle_active_ids",
+                "sparse_active_set_source": (
+                    "dense_oracle_active_ids"
+                    if self._full_sparse_equivalence_claimed
+                    else "bounded_reused_plan_active_ids"
+                ),
                 "sparse_policy_selector_claimed": False,
                 "sparse_decision_equivalence_scope": (
-                    "conditional_on_dense_oracle_active_set_encode_decode"
+                    FRONT_C_SPARSE_EQUIVALENCE_EXACT
+                    if self._full_sparse_equivalence_claimed
+                    else FRONT_C_SPARSE_EQUIVALENCE_BOUNDED
                 ),
+                "identity_emission_scope": self._identity_emission_scope,
+                "full_identity_emission_claimed": self._full_identity_emission_claimed,
+                "full_sparse_equivalence_claimed": self._full_sparse_equivalence_claimed,
+                "bounded_nonclaim_reasons": sorted(set(self._bounded_nonclaim_reasons)),
                 "source_artifact_id": source_artifact_id,
                 "state_layout_metadata_sha256": state_metadata[
                     "state_layout_metadata_sha256"
@@ -661,8 +1075,34 @@ class FrontCLiveIdentityCollector:
             encoding="utf-8",
         )
         validation = validate_front_c_identity_artifact(payload)
-        report = front_c_report_from_identity_artifact(payload)
         inventory = classify_front_c_saved_audit_root(self.artifact_path)
+        bounded_nonclaim = (
+            self._identity_emission_scope.startswith("bounded_")
+            or not self._full_identity_emission_claimed
+            or not self._full_sparse_equivalence_claimed
+        )
+        if bounded_nonclaim:
+            return {
+                "schema": FRONT_C_LIVE_IDENTITY_EMISSION_SCHEMA_VERSION,
+                "artifact_path": str(self.artifact_path),
+                "artifact_sha256": hashlib.sha256(
+                    self.artifact_path.read_bytes(),
+                ).hexdigest(),
+                "identity_validation": validation.to_dict(),
+                "front_c_report_skipped_bounded_nonclaim": {
+                    "reason": "bounded_identity_artifact_is_structurally_nonclaimable",
+                    "identity_emission_scope": self._identity_emission_scope,
+                    "full_identity_emission_claimed": self._full_identity_emission_claimed,
+                    "full_sparse_equivalence_claimed": self._full_sparse_equivalence_claimed,
+                    "bounded_nonclaim_reasons": sorted(set(self._bounded_nonclaim_reasons)),
+                },
+                "inventory": inventory.to_dict(),
+                "single_self_contained_artifact": True,
+                "global_cap_used": False,
+                "gpu_launched": False,
+                "pt_artifact_written": False,
+            }
+        report = front_c_report_from_identity_artifact(payload)
         return {
             "schema": FRONT_C_LIVE_IDENTITY_EMISSION_SCHEMA_VERSION,
             "artifact_path": str(self.artifact_path),

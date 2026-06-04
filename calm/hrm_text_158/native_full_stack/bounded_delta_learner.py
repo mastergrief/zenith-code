@@ -38,6 +38,7 @@ from calm.hrm_text_158.native_full_stack.source_pointers import (
 )
 from calm.hrm_text_158.native_full_stack.vote_update import (
     VoteUpdateInputs,
+    VoteUpdatePlan,
     VoteUpdateSpec,
     VoteUpdateState,
     apply_integer_vote_update_reference,
@@ -841,6 +842,36 @@ def _clone_vote_update_spec_for_front_c(spec: VoteUpdateSpec) -> VoteUpdateSpec:
     return VoteUpdateSpec(**asdict(spec))
 
 
+def _clone_vote_update_plan_for_front_c(plan: VoteUpdatePlan) -> VoteUpdatePlan:
+    return VoteUpdatePlan(
+        q_i16=plan.q_i16.detach().cpu().clone().contiguous(),
+        new_acc_i32=plan.new_acc_i32.detach().cpu().clone().contiguous(),
+        candidate_indices=plan.candidate_indices.detach().cpu().clone().contiguous(),
+        pre_veto_selected_indices=plan.pre_veto_selected_indices.detach().cpu().clone().contiguous(),
+        applied_indices=plan.applied_indices.detach().cpu().clone().contiguous(),
+        applied_directions=plan.applied_directions.detach().cpu().clone().contiguous(),
+        applied_thresholds=plan.applied_thresholds.detach().cpu().clone().contiguous(),
+        replay_ce_veto_indices=plan.replay_ce_veto_indices.detach().cpu().clone().contiguous(),
+        replay_veto_directions=plan.replay_veto_directions.detach().cpu().clone().contiguous(),
+        replay_veto_thresholds=plan.replay_veto_thresholds.detach().cpu().clone().contiguous(),
+        pc_aux_negative_indices=plan.pc_aux_negative_indices.detach().cpu().clone().contiguous(),
+        pc_aux_veto_indices=plan.pc_aux_veto_indices.detach().cpu().clone().contiguous(),
+        stats=dict(plan.stats),
+    )
+
+
+def _clone_q_acc_result_for_front_c(
+    q_levels: torch.Tensor,
+    accumulators: torch.Tensor,
+    stats: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "q_levels": q_levels.detach().cpu().clone().contiguous(),
+        "accumulators": accumulators.detach().cpu().clone().contiguous(),
+        "stats": dict(stats),
+    }
+
+
 def _clone_backlog_for_front_c(
     backlog: Mapping[str, Mapping[int, Mapping[str, int]]] | None,
 ) -> dict[str, dict[int, dict[str, int]]]:
@@ -861,6 +892,8 @@ def _front_c_cloned_observation(
     vote_update_states: Mapping[str, VoteUpdateState],
     inputs_by_key: Mapping[str, VoteUpdateInputs],
     vote_specs_by_key: Mapping[str, VoteUpdateSpec],
+    plans_by_key: Mapping[str, VoteUpdatePlan],
+    q_acc_by_key: Mapping[str, tuple[torch.Tensor, torch.Tensor, Mapping[str, Any]]],
     deferred_backlog: Mapping[str, Mapping[int, Mapping[str, int]]] | None,
     global_cap_used: bool,
 ) -> dict[str, Any]:
@@ -878,6 +911,14 @@ def _front_c_cloned_observation(
         "specs_by_key": {
             key: _clone_vote_update_spec_for_front_c(vote_specs_by_key[key])
             for key in sorted(vote_specs_by_key)
+        },
+        "plans_by_key": {
+            key: _clone_vote_update_plan_for_front_c(plan)
+            for key, plan in sorted(plans_by_key.items())
+        },
+        "q_acc_by_key": {
+            key: _clone_q_acc_result_for_front_c(q_levels, accumulators, stats)
+            for key, (q_levels, accumulators, stats) in sorted(q_acc_by_key.items())
         },
         "deferred_backlog": _clone_backlog_for_front_c(deferred_backlog),
         "live_mutation_inputs_exposed": False,
@@ -992,6 +1033,8 @@ def apply_bounded_delta_vote_step(
                 vote_update_states=vote_update_states,
                 inputs_by_key=inputs_by_key,
                 vote_specs_by_key=vote_specs_by_key,
+                plans_by_key=plans_by_key,
+                q_acc_by_key=q_acc_by_key,
                 deferred_backlog=backlog,
                 global_cap_used=global_cap_spec is not None,
             ),
