@@ -25,6 +25,68 @@ from calm.hrm_text_158.native_full_stack.front_c_live_identity_emission import (
 from calm.hrm_text_158.native_full_stack.vote_update import VoteUpdateSpec
 
 
+STEP_TIMING_KEYS = {
+    "surface_from_reused_plans",
+    "dense_from_reused_plans",
+    "sparse_active_set_select_or_bound",
+    "sparse_encode_decode_or_bounded_filter",
+    "sparse_path_materialize",
+    "record_step_observation_total",
+}
+FINALIZE_TIMING_KEYS = {
+    "build_payload",
+    "artifact_write",
+    "identity_validate",
+    "front_c_report_or_skip",
+    "finalize_total",
+}
+ARTIFACT_FINALIZE_TIMING_KEYS = {
+    "build_payload",
+    "identity_validate",
+    "front_c_report_or_skip",
+}
+
+
+def _assert_nonnegative_timing(timing: dict, required_keys: set[str]) -> None:
+    assert timing["schema"] == front_c_emission.FRONT_C_LIVE_TIMING_SCHEMA_VERSION
+    durations = timing["durations_seconds"]
+    assert required_keys <= set(durations)
+    for key in required_keys:
+        assert durations[key] >= 0.0
+
+
+def _assert_authoritative_finalize_timing(timing: dict) -> None:
+    _assert_nonnegative_timing(timing, FINALIZE_TIMING_KEYS)
+    assert timing["authoritative"] is True
+    assert (
+        timing["authoritative_timing_location"]
+        == "front_c_finalize_receipt.front_c_finalize_timing"
+    )
+    assert (
+        timing["artifact_write_position"]
+        == "post_identity_validate_and_front_c_report_or_skip"
+    )
+    assert timing["durations_seconds"]["finalize_total"] >= (
+        timing["durations_seconds"]["artifact_write"]
+    )
+
+
+def _assert_artifact_finalize_timing_is_caveated(timing: dict) -> None:
+    _assert_nonnegative_timing(timing, ARTIFACT_FINALIZE_TIMING_KEYS)
+    assert timing["authoritative"] is False
+    assert (
+        timing["authoritative_timing_location"]
+        == "front_c_finalize_receipt.front_c_finalize_timing"
+    )
+    assert set(timing["excluded_duration_keys_due_to_self_reference"]) == {
+        "artifact_write",
+        "finalize_total",
+    }
+    assert "artifact_write" not in timing["durations_seconds"]
+    assert "finalize_total" not in timing["durations_seconds"]
+    assert "cannot embed the cost of the write" in timing["artifact_embedded_timing_caveat"]
+
+
 def _spec() -> VoteUpdateSpec:
     return VoteUpdateSpec(
         threshold_abs=1,
@@ -154,6 +216,14 @@ def test_front_c_live_identity_artifact_is_run_derived_and_extractable(tmp_path)
         ]
         == "conditional_on_dense_oracle_active_set_encode_decode"
     )
+    step_timing = payload["diagnostics"]["step_diagnostics"]["1"]["timing"]
+    _assert_nonnegative_timing(step_timing, STEP_TIMING_KEYS)
+    assert step_timing["path_source"] == "reused_observer_plan"
+    assert step_timing["sparse_path_mode"] == "exact_sparse_encode_decode"
+    _assert_artifact_finalize_timing_is_caveated(
+        payload["diagnostics"]["finalize_timing"],
+    )
+    _assert_authoritative_finalize_timing(receipt["front_c_finalize_timing"])
     assert payload["diagnostics"]["metadata_bit_receipt"]["tensor_metadata_bits"] > 0
     assert payload["diagnostics"]["metadata_bit_receipt"]["bucket_metadata_bits"] > 0
     assert payload["diagnostics"]["metadata_bit_receipt"]["guardrail_metadata_bits"] > 0
@@ -343,6 +413,14 @@ def test_front_c_bounded_identity_artifact_is_structurally_nonclaimable(tmp_path
     assert payload["decision_path_derivation"]["identity_emission_scope"].startswith("bounded_")
     assert payload["decision_path_derivation"]["full_identity_emission_claimed"] is False
     assert payload["decision_path_derivation"]["full_sparse_equivalence_claimed"] is False
+    step_timing = payload["diagnostics"]["step_diagnostics"]["1"]["timing"]
+    _assert_nonnegative_timing(step_timing, STEP_TIMING_KEYS)
+    assert step_timing["path_source"] == "reused_observer_plan"
+    assert step_timing["sparse_path_mode"] == "bounded_reused_plan_filter"
+    _assert_artifact_finalize_timing_is_caveated(
+        payload["diagnostics"]["finalize_timing"],
+    )
+    _assert_authoritative_finalize_timing(receipt["front_c_finalize_timing"])
     assert payload["timeline"][1]["current_magnitude_threshold_keys"] == [
         {"state_key": "toy.weight", "flat_index": 0},
     ]

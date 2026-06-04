@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
+import time
 from typing import Any, Mapping, Sequence
 
 import torch
@@ -21,7 +22,7 @@ from calm.hrm_text_158.native_full_stack.front_c_identity_emitter import (
     FRONT_C_RUN_DERIVED_ARTIFACT,
     FRONT_C_SPARSE_DECISION_SOURCE,
     FRONT_C_STATE_LAYOUT_HASH_SEMANTICS,
-    classify_front_c_saved_audit_root,
+    classify_front_c_identity_payload,
     front_c_report_from_identity_artifact,
     validate_front_c_identity_artifact,
 )
@@ -52,6 +53,7 @@ FRONT_C_SPARSE_EQUIVALENCE_EXACT = (
     "conditional_on_dense_oracle_active_set_encode_decode"
 )
 FRONT_C_SPARSE_EQUIVALENCE_BOUNDED = "bounded_sparse_oracle_sample_nonclaim"
+FRONT_C_LIVE_TIMING_SCHEMA_VERSION = "hrm_text_158_front_c/v0.live_identity_timing"
 DEFAULT_MAX_EXACT_IDENTITY_KEYS = 100_000
 DEFAULT_SPARSE_ORACLE_MAX_ACTIVE_IDS = 100_000
 
@@ -65,6 +67,33 @@ def _canonical_json(data: Any) -> str:
 
 def _sha256_json(data: Any) -> str:
     return hashlib.sha256(_canonical_json(data).encode("utf-8")).hexdigest()
+
+
+def _new_timing_diagnostics(*, phase: str) -> dict[str, Any]:
+    return {
+        "schema": FRONT_C_LIVE_TIMING_SCHEMA_VERSION,
+        "phase": str(phase),
+        "durations_seconds": {},
+    }
+
+
+def _record_duration(timing: dict[str, Any], key: str, start: float) -> None:
+    timing.setdefault("durations_seconds", {})[str(key)] = max(
+        0.0,
+        time.perf_counter() - start,
+    )
+
+
+def _ensure_duration(
+    timing: dict[str, Any],
+    key: str,
+    *,
+    duration_seconds: float = 0.0,
+) -> None:
+    timing.setdefault("durations_seconds", {}).setdefault(
+        str(key),
+        max(0.0, float(duration_seconds)),
+    )
 
 
 def _tensor_sha256(tensor: torch.Tensor) -> str:
@@ -175,6 +204,7 @@ class _StepPaths:
     full_identity_emission_claimed: bool = True
     full_sparse_equivalence_claimed: bool = True
     bounded_nonclaim_reasons: tuple[str, ...] = ()
+    timing_diagnostics: dict[str, Any] | None = None
 
 
 def _current_threshold_ids(
@@ -567,6 +597,9 @@ def build_front_c_live_step_paths(
         raise ValueError("states and q_acc_by_key must have identical keys")
 
     if plans_by_key is not None and q_acc_by_key is not None:
+        step_timing = _new_timing_diagnostics(phase="build_front_c_live_step_paths")
+        step_timing["path_source"] = "reused_observer_plan"
+        phase_start = time.perf_counter()
         surface, active_ids, full_active_ids, surface_diag, surface_bounded = (
             _surface_from_reused_plans(
                 int(step),
@@ -578,12 +611,16 @@ def build_front_c_live_step_paths(
                 max_exact_identity_keys=max_exact_identity_keys,
             )
         )
+        _record_duration(step_timing, "surface_from_reused_plans", phase_start)
+        phase_start = time.perf_counter()
         dense_path, dense_diag = _path_from_reused_plans(
             states_by_key,
             plans_by_key,
             q_acc_by_key,
             label="front_c_dense_int16_reference",
         )
+        _record_duration(step_timing, "dense_from_reused_plans", phase_start)
+        phase_start = time.perf_counter()
         priority = _plan_priority_ids(
             plans_by_key,
             cap_frontier_width=cap_frontier_width,
@@ -607,18 +644,27 @@ def build_front_c_live_step_paths(
             )
             sparse_bounded = True
         full_identity = not surface_bounded
+        _record_duration(step_timing, "sparse_active_set_select_or_bound", phase_start)
         if not surface_bounded and not sparse_bounded:
             sparse_active_ids = set(full_active_ids)
+            sparse_path_mode = "exact_sparse_encode_decode"
+            phase_start = time.perf_counter()
             sparse_states = _sparse_states_from_active_set(states_by_key, sparse_active_ids)
+            _record_duration(step_timing, "sparse_path_materialize", phase_start)
+            phase_start = time.perf_counter()
             sparse_path, sparse_diag = _path_from_inputs(
                 sparse_states,
                 inputs_by_key,
                 specs_by_key,
                 label="front_c_sparse_encode_decode_reference",
             )
+            _record_duration(step_timing, "sparse_encode_decode_or_bounded_filter", phase_start)
             sparse_exact_oracle_ran = True
             sparse_subset_diag["emitted_identity_count"] = len(sparse_active_ids)
         else:
+            sparse_path_mode = "bounded_reused_plan_filter"
+            _ensure_duration(step_timing, "sparse_path_materialize")
+            phase_start = time.perf_counter()
             sparse_path, sparse_diag = _path_from_reused_plans(
                 states_by_key,
                 plans_by_key,
@@ -626,6 +672,7 @@ def build_front_c_live_step_paths(
                 label="front_c_sparse_encode_decode_reference",
                 active_ids=sparse_active_ids,
             )
+            _record_duration(step_timing, "sparse_encode_decode_or_bounded_filter", phase_start)
         full_sparse = not sparse_bounded and not surface_bounded and sparse_exact_oracle_ran
         scope = FRONT_C_IDENTITY_SCOPE_EXACT
         reasons: list[str] = []
@@ -664,6 +711,9 @@ def build_front_c_live_step_paths(
                 "full_sparse_equivalence_claimed": bool(full_sparse),
             },
         )
+        step_timing["sparse_path_mode"] = sparse_path_mode
+        step_timing["full_identity_emission_claimed"] = bool(full_identity)
+        step_timing["full_sparse_equivalence_claimed"] = bool(full_sparse)
         dense_diag["dense_source"] = "reused_vote_update_plan"
         dense_diag["full_identity_emission_claimed"] = bool(full_identity)
         return _StepPaths(
@@ -677,8 +727,12 @@ def build_front_c_live_step_paths(
             full_identity_emission_claimed=bool(full_identity),
             full_sparse_equivalence_claimed=bool(full_sparse),
             bounded_nonclaim_reasons=tuple(reasons),
+            timing_diagnostics=step_timing,
         )
 
+    step_timing = _new_timing_diagnostics(phase="build_front_c_live_step_paths")
+    step_timing["path_source"] = "reference_recompute_compatibility_fallback"
+    phase_start = time.perf_counter()
     surface, active_ids = _surface_from_exact_path(
         int(step),
         states_by_key,
@@ -687,19 +741,32 @@ def build_front_c_live_step_paths(
         deferred_backlog,
         cap_frontier_width=cap_frontier_width,
     )
+    _record_duration(step_timing, "surface_from_reused_plans", phase_start)
+    phase_start = time.perf_counter()
     dense_path, dense_diag = _path_from_inputs(
         states_by_key,
         inputs_by_key,
         specs_by_key,
         label="front_c_dense_int16_reference",
     )
+    _record_duration(step_timing, "dense_from_reused_plans", phase_start)
+    phase_start = time.perf_counter()
+    active_ids = set(active_ids)
+    _record_duration(step_timing, "sparse_active_set_select_or_bound", phase_start)
+    phase_start = time.perf_counter()
     sparse_states = _sparse_states_from_active_set(states_by_key, active_ids)
+    _record_duration(step_timing, "sparse_path_materialize", phase_start)
+    phase_start = time.perf_counter()
     sparse_path, sparse_diag = _path_from_inputs(
         sparse_states,
         inputs_by_key,
         specs_by_key,
         label="front_c_sparse_encode_decode_reference",
     )
+    _record_duration(step_timing, "sparse_encode_decode_or_bounded_filter", phase_start)
+    step_timing["sparse_path_mode"] = "exact_sparse_encode_decode"
+    step_timing["full_identity_emission_claimed"] = True
+    step_timing["full_sparse_equivalence_claimed"] = True
     sparse_diag.update(
         {
             "sparse_active_set_count": len(active_ids),
@@ -722,6 +789,7 @@ def build_front_c_live_step_paths(
             "identity_emission_bounded": False,
             "derivation": "reference_recompute_compatibility_fallback",
         },
+        timing_diagnostics=step_timing,
     )
 
 
@@ -796,6 +864,7 @@ class FrontCLiveIdentityCollector:
         )
 
     def record_step_observation(self, *, step: int, observation: Mapping[str, Any]) -> None:
+        record_start = time.perf_counter()
         if observation.get("schema") != FRONT_C_LIVE_OBSERVATION_SCHEMA_VERSION:
             raise ValueError("unexpected Front-C observation schema")
         if bool(observation.get("global_cap_used", False)):
@@ -848,7 +917,12 @@ class FrontCLiveIdentityCollector:
         self._latest_sparse_path = paths.sparse_path
         self._dense_paths_by_step[int(step)] = paths.dense_path
         self._sparse_paths_by_step[int(step)] = paths.sparse_path
-        self._diagnostics["step_diagnostics"][str(int(step))] = {
+        timing = dict(
+            paths.timing_diagnostics
+            or _new_timing_diagnostics(phase="record_step_observation"),
+        )
+        timing["durations_seconds"] = dict(timing.get("durations_seconds", {}))
+        step_diagnostics = {
             "dense": paths.dense_diagnostics,
             "dense_q_flip_directions": paths.dense_path.to_dict()["q_flip_directions"],
             "sparse": paths.sparse_diagnostics,
@@ -871,6 +945,9 @@ class FrontCLiveIdentityCollector:
                 },
             },
         }
+        _record_duration(timing, "record_step_observation_total", record_start)
+        step_diagnostics["timing"] = timing
+        self._diagnostics["step_diagnostics"][str(int(step))] = step_diagnostics
 
     def _selected_timeline(self, audit_reports: Mapping[str, Any] | None) -> list[FrontCDecisionSurfaceStep]:
         rows = dict(self._step_rows)
@@ -1062,6 +1139,9 @@ class FrontCLiveIdentityCollector:
         steps_completed: int | None = None,
         stop_reason: str | None = None,
     ) -> dict[str, Any]:
+        finalize_start = time.perf_counter()
+        finalize_timing = _new_timing_diagnostics(phase="front_c_finalize")
+        phase_start = time.perf_counter()
         payload = self.build_payload(
             audit_reports=audit_reports,
             prior_audit_start_reports=prior_audit_start_reports,
@@ -1069,19 +1149,59 @@ class FrontCLiveIdentityCollector:
             steps_completed=steps_completed,
             stop_reason=stop_reason,
         )
-        self.artifact_path.parent.mkdir(parents=True, exist_ok=True)
-        self.artifact_path.write_text(
-            json.dumps(payload, indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
+        _record_duration(finalize_timing, "build_payload", phase_start)
+        payload["diagnostics"]["finalize_timing"] = finalize_timing
+        phase_start = time.perf_counter()
         validation = validate_front_c_identity_artifact(payload)
-        inventory = classify_front_c_saved_audit_root(self.artifact_path)
+        inventory = classify_front_c_identity_payload(
+            payload,
+            matched_artifact_path=str(self.artifact_path),
+        )
+        _record_duration(finalize_timing, "identity_validate", phase_start)
         bounded_nonclaim = (
             self._identity_emission_scope.startswith("bounded_")
             or not self._full_identity_emission_claimed
             or not self._full_sparse_equivalence_claimed
         )
+
+        def persist_final_payload() -> None:
+            finalize_timing["artifact_write_position"] = (
+                "post_identity_validate_and_front_c_report_or_skip"
+            )
+            finalize_timing["authoritative"] = True
+            finalize_timing["authoritative_timing_location"] = (
+                "front_c_finalize_receipt.front_c_finalize_timing"
+            )
+            artifact_timing = {
+                **finalize_timing,
+                "authoritative": False,
+                "artifact_embedded_timing_caveat": (
+                    "Self-contained artifact timing is a pre-persist diagnostic "
+                    "snapshot. Use front_c_finalize_receipt.front_c_finalize_timing "
+                    "as the authoritative source for artifact_write and finalize_total; "
+                    "the artifact cannot embed the cost of the write that serializes "
+                    "those fields."
+                ),
+                "excluded_duration_keys_due_to_self_reference": [
+                    "artifact_write",
+                    "finalize_total",
+                ],
+                "durations_seconds": dict(finalize_timing["durations_seconds"]),
+            }
+            payload["diagnostics"]["finalize_timing"] = artifact_timing
+            self.artifact_path.parent.mkdir(parents=True, exist_ok=True)
+            persist_start = time.perf_counter()
+            self.artifact_path.write_text(
+                json.dumps(payload, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+            _record_duration(finalize_timing, "artifact_write", persist_start)
+            _record_duration(finalize_timing, "finalize_total", finalize_start)
+
+        phase_start = time.perf_counter()
         if bounded_nonclaim:
+            _record_duration(finalize_timing, "front_c_report_or_skip", phase_start)
+            persist_final_payload()
             return {
                 "schema": FRONT_C_LIVE_IDENTITY_EMISSION_SCHEMA_VERSION,
                 "artifact_path": str(self.artifact_path),
@@ -1089,6 +1209,7 @@ class FrontCLiveIdentityCollector:
                     self.artifact_path.read_bytes(),
                 ).hexdigest(),
                 "identity_validation": validation.to_dict(),
+                "front_c_finalize_timing": finalize_timing,
                 "front_c_report_skipped_bounded_nonclaim": {
                     "reason": "bounded_identity_artifact_is_structurally_nonclaimable",
                     "identity_emission_scope": self._identity_emission_scope,
@@ -1103,6 +1224,8 @@ class FrontCLiveIdentityCollector:
                 "pt_artifact_written": False,
             }
         report = front_c_report_from_identity_artifact(payload)
+        _record_duration(finalize_timing, "front_c_report_or_skip", phase_start)
+        persist_final_payload()
         return {
             "schema": FRONT_C_LIVE_IDENTITY_EMISSION_SCHEMA_VERSION,
             "artifact_path": str(self.artifact_path),
@@ -1110,6 +1233,7 @@ class FrontCLiveIdentityCollector:
                 self.artifact_path.read_bytes(),
             ).hexdigest(),
             "identity_validation": validation.to_dict(),
+            "front_c_finalize_timing": finalize_timing,
             "front_c_report": report.to_dict(),
             "inventory": inventory.to_dict(),
             "single_self_contained_artifact": True,
