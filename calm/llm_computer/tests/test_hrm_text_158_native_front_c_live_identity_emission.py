@@ -198,6 +198,62 @@ def test_front_c_event_delta_count_uses_selected_timeline_not_latest(tmp_path):
     assert bit_receipt["selected_step_q_flip_receipts"]["2"]["q_flip_count"] == 1
 
 
+def test_front_c_selected_timeline_keeps_terminal_after_acquired_row(tmp_path):
+    states = {"toy.weight": _state()}
+    specs = {"toy.weight": _spec()}
+    collector = FrontCLiveIdentityCollector(
+        artifact_path=tmp_path / "front_c_identity_artifact.json",
+        emission_interval=20,
+        audit_interval=20,
+    )
+    collector.record_step0(states)
+
+    step1 = apply_bounded_delta_vote_step(
+        states,
+        {"toy.weight": _votes_for((0, 2))},
+        specs,
+        front_c_identity_observer=lambda observation: collector.record_step_observation(
+            step=1,
+            observation=observation,
+        ),
+    )
+    step80 = apply_bounded_delta_vote_step(
+        step1.tensor_states,
+        {"toy.weight": _votes_for((3, -2))},
+        specs,
+        front_c_identity_observer=lambda observation: collector.record_step_observation(
+            step=80,
+            observation=observation,
+        ),
+    )
+    apply_bounded_delta_vote_step(
+        step80.tensor_states,
+        {"toy.weight": _votes_for((4, 2))},
+        specs,
+        front_c_identity_observer=lambda observation: collector.record_step_observation(
+            step=120,
+            observation=observation,
+        ),
+    )
+
+    payload = collector.build_payload(
+        audit_reports={
+            "80": {"acquired": True, "strict_exact_count": 90},
+            "120": {"acquired": True, "strict_exact_count": 90},
+        },
+        prior_audit_start_reports={"L0b": {"strict_exact": "230/230"}},
+        prior_audit_final_reports={"L0b": {"strict_exact": "230/230"}},
+        steps_completed=120,
+        stop_reason="unit_test_terminal",
+    )
+    bit_receipt = payload["diagnostics"]["metadata_bit_receipt"]
+
+    assert bit_receipt["selected_timeline_steps"] == [0, 1, 80, 120]
+    assert bit_receipt["selected_step_q_flip_receipts"]["120"]["q_flip_count"] == 1
+    assert bit_receipt["event_delta_count"] == 3
+    assert [row["step"] for row in payload["timeline"]] == [0, 1, 80, 120]
+
+
 def test_front_c_rejects_acquired_audit_step_not_collected(tmp_path):
     states = {"toy.weight": _state()}
     specs = {"toy.weight": _spec()}

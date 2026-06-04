@@ -476,6 +476,7 @@ class FrontCLiveIdentityCollector:
         positive_steps = sorted(step for step in rows if step > 0)
         if positive_steps:
             selected_steps.add(positive_steps[0])
+            selected_steps.add(positive_steps[-1])
             acquired_steps: list[int] = []
             for raw_step, report in sorted(
                 (audit_reports or {}).items(),
