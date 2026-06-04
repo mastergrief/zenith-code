@@ -477,6 +477,12 @@ class FrontCLiveIdentityCollector:
         if positive_steps:
             selected_steps.add(positive_steps[0])
             selected_steps.add(positive_steps[-1])
+            if self.audit_interval > 0:
+                selected_steps.update(
+                    step
+                    for step in positive_steps
+                    if step % int(self.audit_interval) == 0
+                )
             acquired_steps: list[int] = []
             for raw_step, report in sorted(
                 (audit_reports or {}).items(),
