@@ -116,6 +116,72 @@ def test_bounded_delta_step_updates_q_acc_backlog_and_attributes_bounded_updates
     assert result.to_dict()["bounded_update_attribution"] == BOUNDED_UPDATE_ATTRIBUTION
 
 
+def test_bounded_delta_step_passes_replay_and_pc_aux_maps_to_vote_update():
+    state = make_bounded_tensor_state(
+        "toy.proj",
+        torch.tensor([0], dtype=torch.int8),
+        0.5,
+        torch.zeros(1, dtype=torch.int16),
+    )
+    votes = torch.tensor([12], dtype=torch.int16)
+    replay_votes = torch.tensor([0], dtype=torch.int16)
+    replay_moves = torch.tensor([0], dtype=torch.int8)
+    pc_votes = torch.tensor([-1], dtype=torch.int16)
+    pc_moves = torch.tensor([0], dtype=torch.int8)
+    spec = VoteUpdateSpec(
+        threshold_abs=10,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=1,
+    )
+
+    result = apply_bounded_delta_vote_step(
+        {"toy.proj": state},
+        {"toy.proj": votes},
+        {"toy.proj": spec},
+        replay_ce_veto_votes_by_key={"toy.proj": replay_votes},
+        replay_ce_veto_moves_by_key={"toy.proj": replay_moves},
+        pc_aux_votes_by_key={"toy.proj": pc_votes},
+        pc_aux_moves_by_key={"toy.proj": pc_moves},
+        pc_aux_mode="veto",
+    )
+    stats = result.tensor_stats["toy.proj"]
+
+    assert result.tensor_states["toy.proj"].q_levels.tolist() == [0]
+    assert result.tensor_states["toy.proj"].exact_accumulator_shadow.tolist() == [12]
+    assert stats["pc_aux_mode"] == "veto"
+    assert stats["pc_aux_negative_count"] == 1
+    assert stats["pc_aux_veto_count"] == 1
+    assert stats["post_veto_applied_flip_count"] == 0
+
+
+def test_bounded_delta_step_validates_aux_map_keys_and_dtypes():
+    state = make_bounded_tensor_state("toy.proj", torch.tensor([0], dtype=torch.int8), 0.5)
+    votes = torch.tensor([12], dtype=torch.int16)
+    spec = VoteUpdateSpec(
+        threshold_abs=10,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=1,
+    )
+
+    with pytest.raises(ValueError, match="keys must match tensor_states"):
+        apply_bounded_delta_vote_step(
+            {"toy.proj": state},
+            {"toy.proj": votes},
+            {"toy.proj": spec},
+            replay_ce_veto_votes_by_key={"other": votes},
+        )
+    with pytest.raises(ValueError, match="must be torch.int8"):
+        apply_bounded_delta_vote_step(
+            {"toy.proj": state},
+            {"toy.proj": votes},
+            {"toy.proj": spec},
+            replay_ce_veto_votes_by_key={"toy.proj": votes},
+            replay_ce_veto_moves_by_key={"toy.proj": votes},
+        )
+
+
 def test_live_bounded_delta_step_uses_exact_shadow_without_decode(monkeypatch):
     q = torch.zeros(64, dtype=torch.int8)
     acc = torch.ones(64, dtype=torch.int16)

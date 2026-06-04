@@ -772,11 +772,52 @@ def _votes_sha(votes: torch.Tensor) -> str:
     return tensor_sha256(votes.to(torch.int16).contiguous())
 
 
+def _validate_optional_vote_map_keys(
+    name: str,
+    values_by_key: Mapping[str, torch.Tensor] | None,
+    expected_keys: set[str],
+) -> None:
+    if values_by_key is None:
+        return
+    actual_keys = set(values_by_key)
+    if actual_keys != expected_keys:
+        raise ValueError(
+            f"{name} keys must match tensor_states exactly: "
+            f"missing={sorted(expected_keys - actual_keys)} extra={sorted(actual_keys - expected_keys)}"
+        )
+
+
+def _coerce_optional_vote_map_tensor(
+    name: str,
+    values_by_key: Mapping[str, torch.Tensor] | None,
+    state_key: str,
+    *,
+    dtype: torch.dtype,
+    shape: torch.Size,
+) -> torch.Tensor | None:
+    if values_by_key is None:
+        return None
+    value = values_by_key[state_key]
+    if value.dtype != dtype:
+        raise ValueError(f"{name}[{state_key!r}] must be {dtype}, got {value.dtype}")
+    if value.shape != shape:
+        raise ValueError(
+            f"{name}[{state_key!r}] shape must match votes shape; "
+            f"got {tuple(value.shape)} expected {tuple(shape)}"
+        )
+    return value.detach().cpu().contiguous()
+
+
 def apply_bounded_delta_vote_step(
     tensor_states: Mapping[str, BoundedDeltaTensorState],
     votes_by_key: Mapping[str, torch.Tensor],
     vote_specs_by_key: Mapping[str, VoteUpdateSpec],
     *,
+    replay_ce_veto_votes_by_key: Mapping[str, torch.Tensor] | None = None,
+    replay_ce_veto_moves_by_key: Mapping[str, torch.Tensor] | None = None,
+    pc_aux_votes_by_key: Mapping[str, torch.Tensor] | None = None,
+    pc_aux_moves_by_key: Mapping[str, torch.Tensor] | None = None,
+    pc_aux_mode: str = "telemetry",
     global_cap_spec: GlobalRateCapSpec | None = None,
     deferred_backlog: dict[str, dict[int, dict[str, int]]] | None = None,
     hot_exact_indices_by_key: Mapping[str, Sequence[int]] | None = None,
@@ -785,6 +826,11 @@ def apply_bounded_delta_vote_step(
 ) -> BoundedDeltaLearnerStepResult:
     if set(tensor_states) != set(votes_by_key) or set(tensor_states) != set(vote_specs_by_key):
         raise ValueError("tensor_states, votes_by_key, and vote_specs_by_key must have identical keys")
+    expected_keys = set(tensor_states)
+    _validate_optional_vote_map_keys("replay_ce_veto_votes_by_key", replay_ce_veto_votes_by_key, expected_keys)
+    _validate_optional_vote_map_keys("replay_ce_veto_moves_by_key", replay_ce_veto_moves_by_key, expected_keys)
+    _validate_optional_vote_map_keys("pc_aux_votes_by_key", pc_aux_votes_by_key, expected_keys)
+    _validate_optional_vote_map_keys("pc_aux_moves_by_key", pc_aux_moves_by_key, expected_keys)
     hot_by_key = hot_exact_indices_by_key or {}
     vote_update_states: dict[str, VoteUpdateState] = {}
     inputs_by_key: dict[str, VoteUpdateInputs] = {}
@@ -793,7 +839,38 @@ def apply_bounded_delta_vote_step(
     for state_key, state in sorted(tensor_states.items()):
         vu_state = state.vote_update_state()
         votes = votes_by_key[state_key].detach().cpu().to(torch.int16).contiguous()
-        inputs = VoteUpdateInputs(votes=votes)
+        inputs = VoteUpdateInputs(
+            votes=votes,
+            replay_ce_veto_votes=_coerce_optional_vote_map_tensor(
+                "replay_ce_veto_votes_by_key",
+                replay_ce_veto_votes_by_key,
+                state_key,
+                dtype=torch.int16,
+                shape=votes.shape,
+            ),
+            replay_ce_veto_moves=_coerce_optional_vote_map_tensor(
+                "replay_ce_veto_moves_by_key",
+                replay_ce_veto_moves_by_key,
+                state_key,
+                dtype=torch.int8,
+                shape=votes.shape,
+            ),
+            pc_aux_votes=_coerce_optional_vote_map_tensor(
+                "pc_aux_votes_by_key",
+                pc_aux_votes_by_key,
+                state_key,
+                dtype=torch.int16,
+                shape=votes.shape,
+            ),
+            pc_aux_moves=_coerce_optional_vote_map_tensor(
+                "pc_aux_moves_by_key",
+                pc_aux_moves_by_key,
+                state_key,
+                dtype=torch.int8,
+                shape=votes.shape,
+            ),
+            pc_aux_mode=pc_aux_mode,
+        )
         spec = vote_specs_by_key[state_key]
         plan = plan_integer_vote_update_reference(vu_state, inputs, spec)
         vote_update_states[state_key] = vu_state

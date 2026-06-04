@@ -63,6 +63,8 @@ def _inputs(votes: list[int], **kwargs) -> VoteUpdateInputs:
     for name, value in kwargs.items():
         if value is None:
             converted[name] = None
+        elif name == "pc_aux_mode":
+            converted[name] = value
         elif name.endswith("moves"):
             converted[name] = torch.tensor(value, dtype=torch.int8)
         else:
@@ -154,6 +156,32 @@ def test_pc_aux_negative_is_metadata_not_apply_veto():
     assert plan.applied_indices.tolist() == [0]
     assert result.q_levels.tolist() == [1]
     assert result.accumulators.tolist() == [2]
+    assert result.stats["pc_aux_mode"] == "telemetry"
+    assert result.stats["pc_aux_veto_count"] == 0
+
+
+def test_pc_aux_veto_mode_masks_selected_flip_without_replay_threshold_consumption():
+    state = _state([0], [0])
+    inputs = _inputs(
+        [12],
+        pc_aux_votes=[-1],
+        pc_aux_moves=[0],
+        pc_aux_mode="veto",
+    )
+
+    plan = plan_integer_vote_update_reference(state, inputs, _spec())
+    result = apply_integer_vote_update_reference(state, inputs, _spec())
+
+    assert plan.pc_aux_negative_indices.tolist() == [0]
+    assert plan.pc_aux_veto_indices.tolist() == [0]
+    assert plan.applied_indices.tolist() == []
+    assert result.q_levels.tolist() == [0]
+    assert result.accumulators.tolist() == [12]
+    assert result.stats["pc_aux_mode"] == "veto"
+    assert result.stats["pc_aux_veto_count"] == 1
+    assert result.stats["pc_aux_veto_accumulator_residual_policy"] == (
+        "q_mutation_veto_only_accumulator_retained"
+    )
 
 
 def test_truncating_decay_and_clip_edges_are_exact():

@@ -27,6 +27,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from calm.llm_computer.gsm8k_tokenizer import Gsm8kTokenizer
@@ -85,6 +86,9 @@ C2P2_DEVICE_GUARD_SCHEMA_VERSION = "hrm_text_158_c2p2_device_guard/v0"
 B1_PRIOR_AUDIT_SCHEMA_VERSION = "hrm_text_158_b1_prior_support_audit/v0"
 B1_PRIOR_SUPPORT_SCHEMA_VERSION = "hrm_text_158_b1_prior_support_adapter/v0"
 B1_PRIOR_AUDIT_DELTA_SCHEMA_VERSION = "hrm_text_158_b1_prior_support_delta/v0"
+B2_RETAINED_SUPPORT_SCHEMA_VERSION = "hrm_text_158_b2_retained_support_vote_aux/v0"
+B2_RETAINED_SUPPORTS: tuple[str, ...] = ("L0b", "math_a0")
+B2_PC_AUX_MODES: tuple[str, ...] = ("telemetry", "veto")
 C2P2_STRICT_EXACT_TARGET = 90
 C2P2_DEFAULT_MAX_STEPS_HARD = 1500
 C2P2_NULL_TAXONOMY = (
@@ -337,6 +341,24 @@ def parse_prior_audit_supports(raw: str | Sequence[str] | None) -> tuple[str, ..
     return tuple(parts)
 
 
+def parse_b2_retained_supports(raw: str | Sequence[str] | None) -> tuple[str, ...]:
+    if raw is None:
+        return ()
+    if isinstance(raw, str):
+        parts = [part.strip() for part in raw.split(",") if part.strip()]
+    else:
+        parts = [str(part).strip() for part in raw if str(part).strip()]
+    unknown = [part for part in parts if part not in B2_RETAINED_SUPPORTS]
+    if unknown:
+        raise ValueError(
+            f"unknown B2 retained support(s) {unknown}; valid: {B2_RETAINED_SUPPORTS}. "
+            "L0c1 is report-only in B2.0."
+        )
+    if len(parts) != len(set(parts)):
+        raise ValueError(f"duplicate B2 retained support(s): {parts}")
+    return tuple(parts)
+
+
 def _prior_support_sorted_rows(name: str, curriculum_seed: int) -> list[tuple[str, int, str]]:
     if name == "L0b":
         rows = [(q, e, source_rung) for (q, e, source_rung) in _l0b_support(int(curriculum_seed))]
@@ -519,6 +541,46 @@ def build_prior_audit_support_sets(
         )
         for support in supports
     }
+
+
+def build_b2_retained_support_sets(
+    supports: Sequence[str],
+    *,
+    tok: Any,
+    max_len: int,
+    support_batch_sizes: Mapping[str, int],
+    curriculum_seed: int,
+    device: torch.device,
+) -> dict[str, dict[str, Any]]:
+    retained: dict[str, dict[str, Any]] = {}
+    for support in supports:
+        batch_size = int(support_batch_sizes[support])
+        if batch_size <= 0:
+            raise ValueError(f"B2 retained support {support} batch size must be positive")
+        support_set = build_prior_audit_support_batches(
+            support=support,
+            tok=tok,
+            max_len=int(max_len),
+            batch_size=batch_size,
+            curriculum_seed=int(curriculum_seed),
+            device=device,
+        )
+        proof = dict(support_set["proof"])
+        proof.update(
+            {
+                "schema": B2_RETAINED_SUPPORT_SCHEMA_VERSION,
+                "support_role": "retained_true_prior",
+                "report_only": False,
+                "replay_ce_veto": True,
+                "pc_aux_eligible": True,
+                "target_parent_kl": False,
+                "l0c1_report_only_b2": True,
+            }
+        )
+        support_set = dict(support_set)
+        support_set["proof"] = proof
+        retained[support] = support_set
+    return retained
 
 
 def _tensor_scalar(value: Any) -> int | float | bool | str:
@@ -2082,6 +2144,219 @@ def default_vote_update_spec(max_abs_per_tensor: int) -> VoteUpdateSpec:
     )
 
 
+def _zero_weighted_grad_sums(
+    tensor_states: Mapping[str, Any],
+) -> dict[str, torch.Tensor]:
+    return {
+        key: torch.zeros_like(state.q_levels, dtype=torch.float32)
+        for key, state in tensor_states.items()
+    }
+
+
+def _add_weighted_grads_in_place(
+    destination: dict[str, torch.Tensor],
+    source: Mapping[str, torch.Tensor],
+) -> None:
+    for key, value in source.items():
+        destination[key] = destination[key] + value.detach().cpu().to(torch.float32)
+
+
+def _weighted_grads_all_finite(weighted_grads: Mapping[str, torch.Tensor]) -> bool:
+    return all(
+        bool(torch.isfinite(value).all().item())
+        for value in weighted_grads.values()
+    )
+
+
+def _weighted_grads_to_vote_aux_maps(
+    weighted_grads: Mapping[str, torch.Tensor],
+    tensor_states: Mapping[str, Any],
+    rank_spec: Any,
+) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
+    votes_by_key: dict[str, torch.Tensor] = {}
+    moves_by_key: dict[str, torch.Tensor] = {}
+    for key, weighted_grad in weighted_grads.items():
+        moves = project_s1_gradient_to_moves(weighted_grad, tensor_states[key].q_levels)
+        credit = credit_from_weighted_grad(weighted_grad)
+        votes_by_key[key] = rank_bucketed_int16_votes(credit, moves, rank_spec)
+        moves_by_key[key] = moves.detach().cpu().to(torch.int8).contiguous()
+    return votes_by_key, moves_by_key
+
+
+def _compute_ce_weighted_grads(
+    model: LMHead,
+    batch: Mapping[str, torch.Tensor],
+    tensor_states: Mapping[str, Any],
+    eligible_modules: Mapping[str, BitLinear],
+    *,
+    device: torch.device,
+    extras: Mapping[str, Any],
+) -> tuple[dict[str, torch.Tensor], torch.Tensor, Mapping[str, Any]]:
+    model.zero_grad(set_to_none=True)
+    with authoritative_forward_context(
+        eligible_modules,
+        tensor_states,
+        device=device,
+        requires_grad=True,
+    ) as handle:
+        _carry, loss, metrics = model(None, dict(batch), **extras)
+        loss.backward()
+        weighted_grads = {
+            key: handle.weighted_grad(key)
+            for key in tensor_states
+        }
+    model.zero_grad(set_to_none=True)
+    return weighted_grads, loss.detach(), metrics
+
+
+def _parent_consistency_kl(
+    child_logits: torch.Tensor,
+    parent_logits: torch.Tensor,
+    labels: torch.Tensor,
+    *,
+    temp: float = 1.0,
+) -> torch.Tensor:
+    mask = labels != IGNORE_LABEL_ID
+    if not bool(mask.any().item()):
+        return child_logits.new_zeros(())
+    temp_f = float(temp)
+    child_logp = F.log_softmax(child_logits[mask] / temp_f, dim=-1)
+    parent_logp = F.log_softmax(parent_logits[mask] / temp_f, dim=-1)
+    parent_p = parent_logp.exp()
+    return F.kl_div(child_logp, parent_p, reduction="batchmean") * (temp_f ** 2)
+
+
+def _compute_pc_weighted_grads(
+    model: LMHead,
+    parent_model: LMHead,
+    batch: Mapping[str, torch.Tensor],
+    tensor_states: Mapping[str, Any],
+    eligible_modules: Mapping[str, BitLinear],
+    *,
+    device: torch.device,
+    extras: Mapping[str, Any],
+    weight: float,
+) -> tuple[dict[str, torch.Tensor], torch.Tensor]:
+    model.zero_grad(set_to_none=True)
+    parent_model.eval()
+    with torch.no_grad():
+        _parent_carry, _parent_loss, parent_metrics = parent_model(
+            None,
+            dict(batch),
+            return_logits=True,
+            **extras,
+        )
+        parent_logits = parent_metrics["logits"].detach()
+    with authoritative_forward_context(
+        eligible_modules,
+        tensor_states,
+        device=device,
+        requires_grad=True,
+    ) as handle:
+        _child_carry, _child_loss, child_metrics = model(
+            None,
+            dict(batch),
+            return_logits=True,
+            **extras,
+        )
+        kl = _parent_consistency_kl(
+            child_metrics["logits"],
+            parent_logits,
+            batch["labels"],
+        )
+        (float(weight) * kl).backward()
+        weighted_grads = {
+            key: handle.weighted_grad(key)
+            for key in tensor_states
+        }
+    model.zero_grad(set_to_none=True)
+    return weighted_grads, kl.detach()
+
+
+def _empty_b2_step_aux_receipt() -> dict[str, Any]:
+    return {
+        "enabled": False,
+        "support_batches": [],
+        "coverage_by_support": {},
+        "replay_ce_veto_generated": False,
+        "pc_aux_generated": False,
+    }
+
+
+def build_b2_retention_receipt(
+    *,
+    requested_supports: Sequence[str],
+    support_sets: Mapping[str, Mapping[str, Any]],
+    step_reports: Mapping[str, Mapping[str, Any]],
+    pc_aux_mode: str,
+    parent_consistency_weight: float,
+) -> dict[str, Any]:
+    if not requested_supports:
+        return {
+            "schema": B2_RETAINED_SUPPORT_SCHEMA_VERSION,
+            "enabled": False,
+            "default_off": True,
+            "requested_supports": [],
+            "prior_batches_fed_to_bounded_steps": False,
+            "replay_ce_veto": False,
+            "pc_aux_mode": str(pc_aux_mode),
+            "pc_aux_enabled": False,
+            "target_parent_kl": False,
+            "l0c1_report_only_b2": True,
+        }
+    replay_veto_count = 0
+    pc_aux_negative_count = 0
+    pc_aux_veto_count = 0
+    post_veto_acceptance_ratios: list[float] = []
+    coverage_by_support: dict[str, Any] = {}
+    for report in step_reports.values():
+        step_result = report.get("step_result", {})
+        for stats in step_result.get("tensor_stats", {}).values():
+            replay_veto_count += int(stats.get("replay_ce_veto_count", 0))
+            pc_aux_negative_count += int(stats.get("pc_aux_negative_count", 0))
+            pc_aux_veto_count += int(stats.get("pc_aux_veto_count", 0))
+            post_veto_acceptance_ratios.append(
+                float(stats.get("post_veto_acceptance_ratio_pre_cap", 0.0))
+            )
+        for support, coverage in report.get("b2_retained_support", {}).get(
+            "coverage_by_support",
+            {},
+        ).items():
+            coverage_by_support[support] = coverage
+    return {
+        "schema": B2_RETAINED_SUPPORT_SCHEMA_VERSION,
+        "enabled": True,
+        "default_off": False,
+        "requested_supports": list(requested_supports),
+        "prior_batches_fed_to_bounded_steps": True,
+        "replay_ce_veto": True,
+        "pc_aux_mode": str(pc_aux_mode),
+        "pc_aux_enabled": float(parent_consistency_weight) > 0.0,
+        "parent_consistency_weight": float(parent_consistency_weight),
+        "target_parent_kl": False,
+        "target_rows_excluded_from_pc": True,
+        "l0c1_report_only_b2": True,
+        "support_proofs": {
+            support: support_sets[support]["proof"]
+            for support in requested_supports
+        },
+        "coverage_by_support": coverage_by_support,
+        "replay_ce_veto_count": replay_veto_count,
+        "pc_aux_negative_count": pc_aux_negative_count,
+        "pc_aux_veto_count": pc_aux_veto_count,
+        "post_veto_acceptance_ratio_pre_cap_min": (
+            min(post_veto_acceptance_ratios)
+            if post_veto_acceptance_ratios
+            else None
+        ),
+        "post_veto_acceptance_ratio_pre_cap_max": (
+            max(post_veto_acceptance_ratios)
+            if post_veto_acceptance_ratios
+            else None
+        ),
+    }
+
+
 def run_bounded_delta_steps(
     model: LMHead,
     batch: Mapping[str, torch.Tensor],
@@ -2093,6 +2368,10 @@ def run_bounded_delta_steps(
     require_q_change: bool,
     max_abs_per_tensor: int,
     support_batches: Sequence[Mapping[str, Any]] | None = None,
+    b2_retained_support_sets: Mapping[str, Mapping[str, Any]] | None = None,
+    b2_parent_model: LMHead | None = None,
+    b2_parent_consistency_weight: float = 0.0,
+    b2_pc_aux_mode: str = "telemetry",
     audit_callback: Callable[[int, Mapping[str, Any]], dict[str, Any]] | None = None,
     audit_interval: int = 0,
     stop_on_strict_exact: bool = False,
@@ -2138,6 +2417,13 @@ def run_bounded_delta_steps(
         ]
     if not step_batches:
         raise RuntimeError("bounded-delta step loop requires at least one support batch")
+    retained_support_sets = dict(b2_retained_support_sets or {})
+    retained_coverage: dict[str, set[str]] = {
+        support: set()
+        for support in retained_support_sets
+    }
+    if retained_support_sets and float(b2_parent_consistency_weight) > 0.0 and b2_parent_model is None:
+        raise ValueError("B2 parent-consistency aux requires a frozen parent model")
 
     def maybe_audit(step: int, *, final: bool = False) -> bool:
         if audit_callback is None:
@@ -2198,18 +2484,119 @@ def run_bounded_delta_steps(
                 optimizer.zero_grad(set_to_none=True)
             extras = model.compute_train_extra_args(step, max(1, int(steps)))
             with progress.phase("step_forward_backward", step=int(step)):
-                with authoritative_forward_context(
-                    eligible_modules,
+                weighted_grads, loss, metrics = _compute_ce_weighted_grads(
+                    model,
+                    step_batch,
                     states,
+                    eligible_modules,
                     device=device,
-                    requires_grad=True,
-                ) as handle:
-                    _carry, loss, metrics = model(None, dict(step_batch), **extras)
-                    loss.backward()
-                    weighted_grads = {
-                        key: handle.weighted_grad(key)
-                        for key in states
+                    extras=extras,
+                )
+            b2_step_receipt = _empty_b2_step_aux_receipt()
+            replay_ce_veto_votes_by_key = None
+            replay_ce_veto_moves_by_key = None
+            pc_aux_votes_by_key = None
+            pc_aux_moves_by_key = None
+            aux_weighted_grad_finite = True
+            if retained_support_sets:
+                replay_grad_sums = _zero_weighted_grad_sums(states)
+                pc_grad_sums = _zero_weighted_grad_sums(states)
+                support_receipts: list[dict[str, Any]] = []
+                pc_aux_generated = False
+                with progress.phase("b2_retained_aux", step=int(step)):
+                    for support, support_set in sorted(retained_support_sets.items()):
+                        support_batches_for_name = list(support_set["batches"])
+                        support_batch_item = support_batches_for_name[
+                            (step - 1) % len(support_batches_for_name)
+                        ]
+                        support_batch = support_batch_item["batch"]
+                        support_metadata = dict(support_batch_item["metadata"])
+                        row_ids = [str(row_id) for row_id in support_metadata.get("row_ids", [])]
+                        retained_coverage[support].update(row_ids)
+                        ce_grads, ce_loss, ce_metrics = _compute_ce_weighted_grads(
+                            model,
+                            support_batch,
+                            states,
+                            eligible_modules,
+                            device=device,
+                            extras=extras,
+                        )
+                        _add_weighted_grads_in_place(replay_grad_sums, ce_grads)
+                        ce_finite = bool(torch.isfinite(ce_loss).item())
+                        ce_grad_finite = _weighted_grads_all_finite(ce_grads)
+                        pc_kl_value = None
+                        pc_finite = True
+                        pc_grad_finite = True
+                        if float(b2_parent_consistency_weight) > 0.0:
+                            assert b2_parent_model is not None
+                            pc_grads, pc_kl = _compute_pc_weighted_grads(
+                                model,
+                                b2_parent_model,
+                                support_batch,
+                                states,
+                                eligible_modules,
+                                device=device,
+                                extras=extras,
+                                weight=float(b2_parent_consistency_weight),
+                            )
+                            _add_weighted_grads_in_place(pc_grad_sums, pc_grads)
+                            pc_kl_value = float(pc_kl.cpu().item())
+                            pc_finite = bool(torch.isfinite(pc_kl).item())
+                            pc_grad_finite = _weighted_grads_all_finite(pc_grads)
+                            pc_aux_generated = True
+                        aux_weighted_grad_finite = (
+                            aux_weighted_grad_finite
+                            and ce_finite
+                            and ce_grad_finite
+                            and pc_finite
+                            and pc_grad_finite
+                        )
+                        support_receipts.append(
+                            {
+                                "support": support,
+                                "batch_metadata": support_metadata,
+                                "replay_ce_loss": float(ce_loss.cpu().item()),
+                                "replay_ce_loss_finite": ce_finite,
+                                "replay_ce_weighted_grad_finite": ce_grad_finite,
+                                "replay_ce_metrics": _metrics_to_dict(ce_metrics),
+                                "pc_kl": pc_kl_value,
+                                "pc_kl_finite": pc_finite,
+                                "pc_weighted_grad_finite": pc_grad_finite,
+                            }
+                        )
+                replay_ce_veto_votes_by_key, replay_ce_veto_moves_by_key = _weighted_grads_to_vote_aux_maps(
+                    replay_grad_sums,
+                    states,
+                    rank_spec,
+                )
+                if pc_aux_generated:
+                    pc_aux_votes_by_key, pc_aux_moves_by_key = _weighted_grads_to_vote_aux_maps(
+                        pc_grad_sums,
+                        states,
+                        rank_spec,
+                    )
+                coverage_by_support = {
+                    support: {
+                        "rows_seen": len(retained_coverage[support]),
+                        "rows_total": int(support_set["proof"]["expected_count"]),
+                        "coverage_cycle_complete": (
+                            len(retained_coverage[support])
+                            >= int(support_set["proof"]["expected_count"])
+                        ),
                     }
+                    for support, support_set in sorted(retained_support_sets.items())
+                }
+                b2_step_receipt = {
+                    "enabled": True,
+                    "support_batches": support_receipts,
+                    "coverage_by_support": coverage_by_support,
+                    "replay_ce_veto_generated": True,
+                    "pc_aux_generated": pc_aux_generated,
+                    "pc_aux_mode": str(b2_pc_aux_mode),
+                    "parent_consistency_weight": float(b2_parent_consistency_weight),
+                    "target_parent_kl": False,
+                    "target_rows_excluded_from_pc": True,
+                }
             with progress.phase("step_update", step=int(step)):
                 votes_by_key = {}
                 finite_weighted_grad = True
@@ -2218,7 +2605,16 @@ def run_bounded_delta_steps(
                     credit = credit_from_weighted_grad(weighted_grad)
                     moves = project_s1_gradient_to_moves(weighted_grad, states[key].q_levels)
                     votes_by_key[key] = rank_bucketed_int16_votes(credit, moves, rank_spec)
-                step_result = apply_bounded_delta_vote_step(states, votes_by_key, vote_specs)
+                step_result = apply_bounded_delta_vote_step(
+                    states,
+                    votes_by_key,
+                    vote_specs,
+                    replay_ce_veto_votes_by_key=replay_ce_veto_votes_by_key,
+                    replay_ce_veto_moves_by_key=replay_ce_veto_moves_by_key,
+                    pc_aux_votes_by_key=pc_aux_votes_by_key,
+                    pc_aux_moves_by_key=pc_aux_moves_by_key,
+                    pc_aux_mode=str(b2_pc_aux_mode),
+                )
                 states = step_result.tensor_states
                 q_changed_count = int(step_result.global_summary.get("q_changed_count", 0))
                 if require_q_change and q_changed_count <= 0:
@@ -2236,11 +2632,13 @@ def run_bounded_delta_steps(
                     "loss": float(loss.detach().cpu().item()),
                     "loss_finite": bool(torch.isfinite(loss).item()),
                     "weighted_grad_finite": bool(finite_weighted_grad),
+                    "aux_weighted_grad_finite": bool(aux_weighted_grad_finite),
                     "duration_seconds": step_duration_seconds,
                     "metrics": _metrics_to_dict(metrics),
                     "bp_steps": int(extras["bp_steps"]),
                     "q_changed_count": q_changed_count,
                     "support_batch": dict(step_batch_metadata),
+                    "b2_retained_support": b2_step_receipt,
                     "step_result": step_result.to_compact_dict(),
                     "optimizer_identity_proof": identity_proof,
                 }
@@ -2347,6 +2745,11 @@ def run_c2p1_probe(
     enabled: bool | None = None,
     allow_gpu_launch: bool = False,
     prior_audit_supports: str | Sequence[str] | None = None,
+    b2_retained_supports: str | Sequence[str] | None = None,
+    b2_parent_consistency_weight: float = 0.0,
+    b2_pc_aux_mode: str = "telemetry",
+    b2_l0b_batch_size: int = 8,
+    b2_math_a0_batch_size: int = 16,
 ) -> dict[str, Any]:
     assert_default_off(enabled)
     if int(max_steps_hard) <= 0:
@@ -2358,6 +2761,15 @@ def run_c2p1_probe(
     if int(audit_interval) < 0:
         raise ValueError("audit_interval must be non-negative")
     requested_prior_audit_supports = parse_prior_audit_supports(prior_audit_supports)
+    requested_b2_retained_supports = parse_b2_retained_supports(b2_retained_supports)
+    if b2_pc_aux_mode not in B2_PC_AUX_MODES:
+        raise ValueError(f"b2_pc_aux_mode must be one of {B2_PC_AUX_MODES}, got {b2_pc_aux_mode!r}")
+    if float(b2_parent_consistency_weight) < 0.0:
+        raise ValueError("b2_parent_consistency_weight must be non-negative")
+    b2_support_batch_sizes = {
+        "L0b": int(b2_l0b_batch_size),
+        "math_a0": int(b2_math_a0_batch_size),
+    }
     torch_device = torch.device(device)
     guard_gpu_launch(torch_device, allow_gpu_launch=allow_gpu_launch)
     device_guard = assert_probe_device_ready(torch_device)
@@ -2377,6 +2789,13 @@ def run_c2p1_probe(
         ckpt, parent_hash_before = load_parent_checkpoint(parent, expected_sha256=parent_sha256)
     with phase_progress.phase("build_model"):
         model, tok, cfg = build_model_from_checkpoint(ckpt, torch_device)
+    b2_parent_model = None
+    if requested_b2_retained_supports and float(b2_parent_consistency_weight) > 0.0:
+        with phase_progress.phase("b2_parent_model_build"):
+            b2_parent_model, _parent_tok, _parent_cfg = build_model_from_checkpoint(ckpt, torch_device)
+            b2_parent_model.eval()
+            for param in b2_parent_model.parameters():
+                param.requires_grad_(False)
     with phase_progress.phase("support_build"):
         support_batches, support_cycler_proof = build_identity_full_support_batches(
             tok=tok,
@@ -2393,6 +2812,17 @@ def run_c2p1_probe(
                 tok=tok,
                 max_len=int(max_len or ckpt["config"]["max_seq_len"]),
                 batch_size=int(batch_size),
+                curriculum_seed=int(curriculum_seed),
+                device=torch_device,
+            )
+    b2_retained_support_sets: dict[str, dict[str, Any]] = {}
+    if requested_b2_retained_supports:
+        with phase_progress.phase("b2_retained_support_build"):
+            b2_retained_support_sets = build_b2_retained_support_sets(
+                requested_b2_retained_supports,
+                tok=tok,
+                max_len=int(max_len or ckpt["config"]["max_seq_len"]),
+                support_batch_sizes=b2_support_batch_sizes,
                 curriculum_seed=int(curriculum_seed),
                 device=torch_device,
             )
@@ -2483,6 +2913,10 @@ def run_c2p1_probe(
             require_q_change=bool(require_q_change),
             max_abs_per_tensor=int(max_abs_per_tensor),
             support_batches=support_batches,
+            b2_retained_support_sets=b2_retained_support_sets,
+            b2_parent_model=b2_parent_model,
+            b2_parent_consistency_weight=float(b2_parent_consistency_weight),
+            b2_pc_aux_mode=str(b2_pc_aux_mode),
             audit_callback=audit_callback if audit_enabled else None,
             audit_interval=int(audit_interval),
             stop_on_strict_exact=bool(stop_on_strict_exact),
@@ -2539,6 +2973,13 @@ def run_c2p1_probe(
         start_reports=prior_audit_start_reports,
         final_reports=prior_audit_final_reports,
     )
+    b2_retention_receipt = build_b2_retention_receipt(
+        requested_supports=requested_b2_retained_supports,
+        support_sets=b2_retained_support_sets,
+        step_reports=step_reports,
+        pc_aux_mode=str(b2_pc_aux_mode),
+        parent_consistency_weight=float(b2_parent_consistency_weight),
+    )
     receipt = {
         "schema": C2P1_HARNESS_SCHEMA_VERSION,
         "c2p0_schema": BOUNDED_DELTA_LEARNER_SCHEMA_VERSION,
@@ -2587,6 +3028,7 @@ def run_c2p1_probe(
         "step_reports": step_reports,
         "audit_reports": audit_reports,
         "prior_audit": prior_audit_receipt,
+        "b2_retention": b2_retention_receipt,
         "timing_summary": timing_summary,
         "acquisition_trajectory": build_acquisition_trajectory(
             audit_enabled=audit_enabled,
@@ -2644,6 +3086,39 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "Default off."
         ),
     )
+    ap.add_argument(
+        "--b2-retained-supports",
+        default="",
+        help=(
+            "Comma-separated B2 retained true-prior supports that generate "
+            "replay-CE veto aux votes during bounded steps. Valid: "
+            f"{','.join(B2_RETAINED_SUPPORTS)}. L0c1 remains report-only in B2.0. "
+            "Default off."
+        ),
+    )
+    ap.add_argument(
+        "--b2-parent-consistency-weight",
+        type=float,
+        default=0.0,
+        help=(
+            "B2 retained-support parent-consistency KL weight. When >0, "
+            "builds a frozen parent from --parent and generates PC aux votes "
+            "on retained supports only; target rows are never parent-KL'd. "
+            "Default 0.0."
+        ),
+    )
+    ap.add_argument(
+        "--b2-pc-aux-mode",
+        choices=B2_PC_AUX_MODES,
+        default="telemetry",
+        help=(
+            "B2 PC aux mode. telemetry records negative PC aux only; veto "
+            "also masks PC-negative candidate flips after replay veto. "
+            "Default telemetry."
+        ),
+    )
+    ap.add_argument("--b2-l0b-batch-size", type=int, default=8)
+    ap.add_argument("--b2-math-a0-batch-size", type=int, default=16)
     ap.add_argument("--max-steps-hard", type=int, default=C2P2_DEFAULT_MAX_STEPS_HARD)
     ap.add_argument("--emit-progress", action="store_true")
     ap.add_argument("--phase-timeout-seconds", type=float, default=0.0)
@@ -2670,6 +3145,11 @@ def main(argv: list[str] | None = None) -> int:
         audit_interval=args.audit_interval,
         stop_on_strict_exact=args.stop_on_strict_exact,
         prior_audit_supports=args.prior_audit_supports,
+        b2_retained_supports=args.b2_retained_supports,
+        b2_parent_consistency_weight=args.b2_parent_consistency_weight,
+        b2_pc_aux_mode=args.b2_pc_aux_mode,
+        b2_l0b_batch_size=args.b2_l0b_batch_size,
+        b2_math_a0_batch_size=args.b2_math_a0_batch_size,
         max_steps_hard=args.max_steps_hard,
         emit_progress=args.emit_progress,
         phase_timeout_seconds=args.phase_timeout_seconds,

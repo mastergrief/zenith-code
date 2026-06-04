@@ -54,6 +54,11 @@ class VoteUpdateVoteFormat(str, Enum):
     COMPRESSED_VOTES = "compressed_votes"
 
 
+class PcAuxMode(str, Enum):
+    TELEMETRY = "telemetry"
+    VETO = "veto"
+
+
 @dataclass(frozen=True)
 class VoteUpdateSpec:
     """Per-tensor local integer update law.
@@ -145,11 +150,16 @@ class VoteUpdateInputs:
     replay_ce_veto_moves: Optional[torch.Tensor] = None
     pc_aux_votes: Optional[torch.Tensor] = None
     pc_aux_moves: Optional[torch.Tensor] = None
+    pc_aux_mode: PcAuxMode | str = PcAuxMode.TELEMETRY
     vote_format: VoteUpdateVoteFormat | str = VoteUpdateVoteFormat.INT16_VOTES
 
     @property
     def normalized_vote_format(self) -> VoteUpdateVoteFormat:
         return VoteUpdateVoteFormat(self.vote_format)
+
+    @property
+    def normalized_pc_aux_mode(self) -> PcAuxMode:
+        return PcAuxMode(self.pc_aux_mode)
 
 
 @dataclass(frozen=True)
@@ -165,6 +175,7 @@ class VoteUpdatePlan:
     replay_veto_directions: torch.Tensor
     replay_veto_thresholds: torch.Tensor
     pc_aux_negative_indices: torch.Tensor
+    pc_aux_veto_indices: torch.Tensor
     stats: dict[str, int | float | bool | str]
 
 
@@ -196,6 +207,7 @@ def _validate_future_formats(state: VoteUpdateState, inputs: VoteUpdateInputs) -
         raise NotImplementedError("compressed accumulator formats are named but not implemented in Slice 2A")
     if inputs.normalized_vote_format != VoteUpdateVoteFormat.INT16_VOTES:
         raise NotImplementedError("compressed vote formats are named but not implemented in Slice 2A")
+    inputs.normalized_pc_aux_mode
 
 
 def validate_vote_update_contract(
@@ -295,6 +307,7 @@ def plan_integer_vote_update_reference(
     replay_veto_directions = torch.zeros_like(candidate_idx[:0], dtype=torch.int16)
     replay_veto_thresholds = torch.zeros_like(candidate_idx[:0], dtype=torch.int32)
     pc_aux_negative = candidate_idx[:0]
+    pc_aux_vetoed = candidate_idx[:0]
 
     if candidate_idx.numel() > 0 and max_flips > 0:
         abs_score = new_acc_i32[candidate_idx].abs().to(torch.int64)
@@ -319,6 +332,7 @@ def plan_integer_vote_update_reference(
             replay_ce_vetoed = pre_veto_selected[replay_veto_mask]
             replay_veto_directions = directions[replay_veto_mask]
             replay_veto_thresholds = selected_thresholds[replay_veto_mask]
+        pc_veto_mask = torch.zeros_like(directions, dtype=torch.bool)
         if inputs.pc_aux_votes is not None:
             pc_vote = inputs.pc_aux_votes.flatten().to(torch.int32)
             pc_move = inputs.pc_aux_moves.flatten().to(torch.int32)
@@ -329,8 +343,15 @@ def plan_integer_vote_update_reference(
                 torch.sign(pc_move[pre_veto_selected]),
             ).to(torch.int16)
             pc_support = pc_direction * directions
-            pc_aux_negative = pre_veto_selected[pc_support < 0]
+            pc_veto_mask = pc_support < 0
+            pc_aux_negative = pre_veto_selected[pc_veto_mask]
+            if inputs.normalized_pc_aux_mode == PcAuxMode.VETO:
+                # Replay remains the first veto layer; PC-veto only accounts for
+                # additional flips that survived replay.
+                pc_aux_vetoed = pre_veto_selected[pc_veto_mask & ~replay_veto_mask]
         apply_mask = ~replay_veto_mask
+        if inputs.normalized_pc_aux_mode == PcAuxMode.VETO:
+            apply_mask = apply_mask & ~pc_veto_mask
         applied = pre_veto_selected[apply_mask]
         applied_directions = directions[apply_mask]
         applied_thresholds = selected_thresholds[apply_mask]
@@ -339,6 +360,7 @@ def plan_integer_vote_update_reference(
     applied_count = int(applied.numel())
     replay_count = int(replay_ce_vetoed.numel())
     pc_negative_count = int(pc_aux_negative.numel())
+    pc_veto_count = int(pc_aux_vetoed.numel())
     stats: dict[str, int | float | bool | str] = {
         "scope": "per_tensor_local_update",
         "global_cap_policy": DEFERRED_GLOBAL_CAP,
@@ -350,6 +372,14 @@ def plan_integer_vote_update_reference(
         "post_veto_acceptance_ratio_pre_cap": _safe_ratio(applied_count, pre_veto_count),
         "replay_ce_veto_count": replay_count,
         "pc_aux_negative_count": pc_negative_count,
+        "pc_aux_mode": inputs.normalized_pc_aux_mode.value,
+        "pc_aux_veto_enabled": inputs.normalized_pc_aux_mode == PcAuxMode.VETO,
+        "pc_aux_veto_count": pc_veto_count,
+        "pc_aux_veto_accumulator_residual_policy": (
+            "q_mutation_veto_only_accumulator_retained"
+            if inputs.normalized_pc_aux_mode == PcAuxMode.VETO and inputs.pc_aux_votes is not None
+            else "not_enabled"
+        ),
         "replay_ce_veto_consumes_threshold_event": inputs.replay_ce_veto_votes is not None,
         "vetoed_accumulator_residual_policy": (
             "subtract_threshold_then_clamp_without_q_mutation"
@@ -371,6 +401,7 @@ def plan_integer_vote_update_reference(
         replay_veto_directions=replay_veto_directions.to(torch.int16),
         replay_veto_thresholds=replay_veto_thresholds.to(torch.int32),
         pc_aux_negative_indices=pc_aux_negative.to(torch.int64),
+        pc_aux_veto_indices=pc_aux_vetoed.to(torch.int64),
         stats=stats,
     )
 

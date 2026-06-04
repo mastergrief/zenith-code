@@ -25,6 +25,7 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     B1_PRIOR_AUDIT_PINS,
     B1_PRIOR_AUDIT_SCHEMA_VERSION,
     B1_PRIOR_AUDIT_SUPPORTS,
+    B2_RETAINED_SUPPORT_SCHEMA_VERSION,
     C2P2_PHASE_TELEMETRY_SCHEMA_VERSION,
     C2P2_TIMING_SCHEMA_VERSION,
     C2PhaseTimeout,
@@ -37,6 +38,7 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     aggregate_identity_full_audit_batch_reports,
     build_identity_full_batch,
     build_identity_full_support_batches,
+    build_b2_retained_support_sets,
     build_model_from_checkpoint,
     build_prior_audit_support_batches,
     build_prior_audit_support_rows,
@@ -50,6 +52,7 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     guard_gpu_launch,
     identity_full_support_control_proof,
     native_ternary_effective_weight,
+    parse_b2_retained_supports,
     parse_prior_audit_supports,
     reset_cuda_memory_stats,
     run_c2p1_probe,
@@ -419,6 +422,34 @@ def test_prior_audit_support_parser_rejects_unknowns_and_duplicates():
         parse_prior_audit_supports("L0b,not-a-support")
     with pytest.raises(ValueError, match="duplicate prior audit support"):
         parse_prior_audit_supports("L0b,L0b")
+
+
+def test_b2_retained_support_parser_and_builders_keep_l0c1_report_only():
+    tok = BroadTokenizer()
+
+    assert parse_b2_retained_supports(None) == ()
+    assert parse_b2_retained_supports("L0b, math_a0") == ("L0b", "math_a0")
+    with pytest.raises(ValueError, match="L0c1 is report-only"):
+        parse_b2_retained_supports("L0b,L0c1")
+    with pytest.raises(ValueError, match="duplicate B2 retained support"):
+        parse_b2_retained_supports("L0b,L0b")
+
+    support_sets = build_b2_retained_support_sets(
+        ("L0b", "math_a0"),
+        tok=tok,
+        max_len=TINY_ARCH["max_len"],
+        support_batch_sizes={"L0b": 8, "math_a0": 16},
+        curriculum_seed=17,
+        device=torch.device("cpu"),
+    )
+
+    assert support_sets["L0b"]["proof"]["schema"] == B2_RETAINED_SUPPORT_SCHEMA_VERSION
+    assert support_sets["L0b"]["proof"]["support_role"] == "retained_true_prior"
+    assert support_sets["L0b"]["proof"]["report_only"] is False
+    assert support_sets["L0b"]["proof"]["replay_ce_veto"] is True
+    assert support_sets["L0b"]["proof"]["target_parent_kl"] is False
+    assert support_sets["math_a0"]["proof"]["expected_count"] == 1255
+    assert support_sets["math_a0"]["proof"]["batch_size"] == 16
 
 
 def test_audit_score_counts_known_k_and_parsed_independently():
@@ -874,6 +905,62 @@ def test_tiny_real_model_cpu_step_receipt_is_scratch_only(tmp_path: Path):
         assert tensor_summary["bounded_decode_parity_checked"] is True
         assert tensor_summary["exact_shadow_matches_bounded_decode"] is True
     assert Path(receipt["receipt_path"]).exists()
+
+
+def test_tiny_b2_retained_support_receipt_is_cpu_only_and_target_excluded_from_pc(tmp_path: Path):
+    parent = tmp_path / "tiny_parent.pt"
+    torch.save(_tiny_parent_blob(), parent)
+    parent_sha = file_sha256(parent)
+
+    receipt = run_c2p1_probe(
+        parent=parent,
+        parent_sha256=parent_sha,
+        scratch_root=tmp_path / "scratch_b2",
+        device="cpu",
+        eligible_scope="first-bitlinear",
+        steps=1,
+        batch_size=2,
+        max_len=TINY_ARCH["max_len"],
+        curriculum_seed=17,
+        enabled=True,
+        b2_retained_supports=["L0b"],
+        b2_parent_consistency_weight=1.0,
+        b2_pc_aux_mode="telemetry",
+        b2_l0b_batch_size=4,
+    )
+
+    b2 = receipt["b2_retention"]
+    assert receipt["gpu_launched"] is False
+    assert receipt["parent_hash_before"] == parent_sha
+    assert receipt["parent_hash_after"] == parent_sha
+    assert receipt["parent_hash_unchanged"] is True
+    assert b2["schema"] == B2_RETAINED_SUPPORT_SCHEMA_VERSION
+    assert b2["enabled"] is True
+    assert b2["requested_supports"] == ["L0b"]
+    assert b2["prior_batches_fed_to_bounded_steps"] is True
+    assert b2["replay_ce_veto"] is True
+    assert b2["pc_aux_enabled"] is True
+    assert b2["pc_aux_mode"] == "telemetry"
+    assert b2["target_parent_kl"] is False
+    assert b2["target_rows_excluded_from_pc"] is True
+    assert b2["support_proofs"]["L0b"]["support_hash16"] == "89174273d21845bc"
+    assert b2["support_proofs"]["L0b"]["report_only"] is False
+    assert b2["coverage_by_support"]["L0b"]["rows_seen"] == 4
+    assert b2["coverage_by_support"]["L0b"]["coverage_cycle_complete"] is False
+
+    step_b2 = receipt["step_reports"]["1"]["b2_retained_support"]
+    assert step_b2["enabled"] is True
+    assert step_b2["replay_ce_veto_generated"] is True
+    assert step_b2["pc_aux_generated"] is True
+    assert step_b2["target_parent_kl"] is False
+    assert step_b2["target_rows_excluded_from_pc"] is True
+    for tensor_stats in receipt["step_reports"]["1"]["step_result"]["tensor_stats"].values():
+        assert "replay_ce_veto_count" in tensor_stats
+        assert tensor_stats["pc_aux_mode"] == "telemetry"
+        assert tensor_stats["pc_aux_veto_count"] == 0
+    assert receipt["step_reports"]["1"]["optimizer_identity_proof"]["optimizer_checks"][
+        "eligible_optimizer_state_entries"
+    ] == 0
 
 
 def test_tiny_prior_audit_is_report_only_and_preserves_state_hash_parity(tmp_path: Path):
