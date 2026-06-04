@@ -22,7 +22,11 @@ from calm.hrm_text_158.native_full_stack.front_c_identity_emitter import (
 from calm.hrm_text_158.native_full_stack.front_c_live_identity_emission import (
     FrontCLiveIdentityCollector,
 )
-from calm.hrm_text_158.native_full_stack.vote_update import VoteUpdateSpec
+from calm.hrm_text_158.native_full_stack.vote_update import (
+    VoteUpdatePlan,
+    VoteUpdateSpec,
+    VoteUpdateState,
+)
 
 
 STEP_TIMING_KEYS = {
@@ -124,6 +128,39 @@ def _votes_for(*entries: tuple[int, int]):
     for flat_index, vote in entries:
         out[int(flat_index)] = int(vote)
     return out
+
+
+def _spec_with_max_flips(max_abs_per_tensor: int) -> VoteUpdateSpec:
+    return VoteUpdateSpec(
+        threshold_abs=1,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=int(max_abs_per_tensor),
+    )
+
+
+def _fake_vote_update_plan(
+    numel: int,
+    *,
+    candidate_indices: torch.Tensor,
+) -> VoteUpdatePlan:
+    empty_i64 = torch.empty(0, dtype=torch.int64)
+    empty_i16 = torch.empty(0, dtype=torch.int16)
+    return VoteUpdatePlan(
+        q_i16=torch.zeros(int(numel), dtype=torch.int16),
+        new_acc_i32=torch.zeros(int(numel), dtype=torch.int32),
+        candidate_indices=candidate_indices.to(torch.int64).contiguous(),
+        pre_veto_selected_indices=empty_i64,
+        applied_indices=empty_i64,
+        applied_directions=empty_i16,
+        applied_thresholds=empty_i16,
+        replay_ce_veto_indices=empty_i64,
+        replay_veto_directions=empty_i16,
+        replay_veto_thresholds=empty_i16,
+        pc_aux_negative_indices=empty_i64,
+        pc_aux_veto_indices=empty_i64,
+        stats={},
+    )
 
 
 def _legacy_bounded_identity_selection(
@@ -668,3 +705,328 @@ def test_front_c_rejects_acquired_audit_step_not_collected(tmp_path):
             steps_completed=2,
             stop_reason="unit_test_missing_acquired_row",
         )
+
+
+def test_front_c_carried_threshold_updates_on_uncollected_steps(tmp_path):
+    states = {"toy.weight": _state()}
+    specs = {"toy.weight": _spec_with_max_flips(1)}
+    collector = FrontCLiveIdentityCollector(
+        artifact_path=tmp_path / "front_c_identity_artifact.json",
+        emission_interval=0,
+        legacy_oracle_compare=True,
+    )
+    collector.record_step0(states)
+
+    current_states = states
+    for step, votes, collect in (
+        (1, _votes_for((0, 2), (1, 2), (2, 2)), True),
+        (2, _votes_for(), False),
+        (3, _votes_for(), True),
+    ):
+        result = apply_bounded_delta_vote_step(
+            current_states,
+            {"toy.weight": votes},
+            specs,
+            front_c_identity_observer=lambda observation, step=step, collect=collect: (
+                collector.record_step_observation(
+                    step=step,
+                    observation=observation,
+                    collect=collect,
+                )
+            ),
+        )
+        current_states = result.tensor_states
+
+    payload = collector.build_payload(
+        audit_reports={
+            "1": {"acquired": False, "strict_exact_count": 1},
+            "3": {"acquired": False, "strict_exact_count": 3},
+        },
+        prior_audit_start_reports={"L0b": {"strict_exact": "230/230"}},
+        prior_audit_final_reports={"L0b": {"strict_exact": "230/230"}},
+        steps_completed=3,
+        stop_reason="unit_test_terminal",
+    )
+    diagnostics = payload["diagnostics"]
+    step3_row = next(row for row in payload["timeline"] if row["step"] == 3)
+
+    assert sorted(diagnostics["step_diagnostics"]) == ["1", "3"]
+    assert sorted(diagnostics["observe_only_diagnostics"]) == ["2"]
+    assert diagnostics["touched_count_by_step"] == {"1": 3, "2": 2, "3": 1}
+    assert diagnostics["carried_threshold_count_by_step"] == {"1": 2, "2": 1, "3": 0}
+    assert step3_row["current_magnitude_threshold_keys"] == [
+        {"state_key": "toy.weight", "flat_index": 2},
+    ]
+    assert diagnostics["observe_only_diagnostics"]["2"]["timing"]["path_source"] == (
+        "observe_only_carried_index_update"
+    )
+    assert (
+        diagnostics["step_diagnostics"]["3"]["surface"]["current_magnitude_threshold_keys"][
+            "full_identity_count"
+        ]
+        == 1
+    )
+    assert diagnostics["step_diagnostics"]["3"]["legacy_oracle"]["enabled"] is True
+    assert all(diagnostics["step_diagnostics"]["3"]["legacy_oracle"]["checks"].values())
+    assert diagnostics["step_diagnostics"]["3"]["legacy_oracle"]["checks"][
+        "q_flip_receipt_parity"
+    ] is True
+    assert diagnostics["step_diagnostics"]["3"]["sparse"][
+        "sparse_active_set_full_hash_computed"
+    ] is True
+
+
+def test_front_c_observe_every_step_on_off_parity(tmp_path):
+    specs = {"toy.weight": _spec_with_max_flips(1)}
+    step_votes = (
+        _votes_for((0, 2), (1, 2), (2, 2)),
+        _votes_for(),
+        _votes_for(),
+    )
+
+    off_states = {"toy.weight": _state()}
+    off_results = []
+    for votes in step_votes:
+        result = apply_bounded_delta_vote_step(
+            off_states,
+            {"toy.weight": votes},
+            specs,
+        )
+        off_results.append(result)
+        off_states = result.tensor_states
+
+    on_states = {"toy.weight": _state()}
+    on_results = []
+    collector = FrontCLiveIdentityCollector(
+        artifact_path=tmp_path / "front_c_identity_artifact.json",
+        emission_interval=0,
+        legacy_oracle_compare=True,
+    )
+    collector.record_step0(on_states)
+    for step, votes in enumerate(step_votes, start=1):
+        collect = collector.should_collect_step(step, total_steps=len(step_votes))
+        result = apply_bounded_delta_vote_step(
+            on_states,
+            {"toy.weight": votes},
+            specs,
+            front_c_identity_observer=lambda observation, step=step, collect=collect: (
+                collector.record_step_observation(
+                    step=step,
+                    observation=observation,
+                    collect=collect,
+                )
+            ),
+        )
+        on_results.append(result)
+        on_states = result.tensor_states
+
+    assert [result.to_compact_dict() for result in off_results] == [
+        result.to_compact_dict() for result in on_results
+    ]
+    assert [result.global_summary for result in off_results] == [
+        result.global_summary for result in on_results
+    ]
+    assert [result.deferred_backlog for result in off_results] == [
+        result.deferred_backlog for result in on_results
+    ]
+    assert {
+        key: tensor_sha256(state.q_levels)
+        for key, state in off_states.items()
+    } == {
+        key: tensor_sha256(state.q_levels)
+        for key, state in on_states.items()
+    }
+    payload = collector.build_payload(
+        audit_reports={"1": {"acquired": False}, "3": {"acquired": False}},
+        prior_audit_start_reports={"L0b": {"strict_exact": "230/230"}},
+        prior_audit_final_reports={"L0b": {"strict_exact": "230/230"}},
+        steps_completed=3,
+        stop_reason="unit_test_terminal",
+    )
+    assert sorted(payload["diagnostics"]["observe_only_diagnostics"]) == ["2"]
+
+
+def test_front_c_observe_only_carried_update_is_delta_bounded(monkeypatch, tmp_path):
+    original_difference = front_c_emission._sorted_difference_i64
+    original_present = front_c_emission._sorted_probe_present_i64
+    original_missing = front_c_emission._sorted_probe_missing_i64
+    max_delta_rows = 4
+    op_calls = []
+
+    def fail_merge(*args, **kwargs):
+        raise AssertionError("observe-only update must not materialize carried merge")
+
+    def guarded_difference(base, remove):
+        op_calls.append(("difference", int(base.numel()), int(remove.numel())))
+        assert int(base.numel()) <= max_delta_rows
+        return original_difference(base, remove)
+
+    def guarded_present(source, probe):
+        op_calls.append(("present", int(source.numel()), int(probe.numel())))
+        assert int(probe.numel()) <= max_delta_rows
+        return original_present(source, probe)
+
+    def guarded_missing(source, probe):
+        op_calls.append(("missing", int(source.numel()), int(probe.numel())))
+        assert int(probe.numel()) <= max_delta_rows
+        return original_missing(source, probe)
+
+    monkeypatch.setattr(front_c_emission, "_merge_index_delta", fail_merge)
+    monkeypatch.setattr(front_c_emission, "_sorted_difference_i64", guarded_difference)
+    monkeypatch.setattr(front_c_emission, "_sorted_probe_present_i64", guarded_present)
+    monkeypatch.setattr(front_c_emission, "_sorted_probe_missing_i64", guarded_missing)
+
+    for carried_count in (10_000, 100_000):
+        numel = carried_count + 8
+        touched = torch.tensor([carried_count - 2, carried_count + 1], dtype=torch.int64)
+        collector = FrontCLiveIdentityCollector(
+            artifact_path=tmp_path / f"front_c_identity_artifact.{carried_count}.json",
+            emission_interval=0,
+        )
+        collector._current_threshold_initialized = True
+        collector._current_threshold_indices_by_key = {
+            "toy.weight": torch.arange(carried_count, dtype=torch.int64),
+        }
+        collector._pending_threshold_add_indices_by_key = {
+            "toy.weight": torch.empty(0, dtype=torch.int64),
+        }
+        collector._pending_threshold_remove_indices_by_key = {
+            "toy.weight": torch.empty(0, dtype=torch.int64),
+        }
+        collector._current_threshold_count_by_key = {"toy.weight": carried_count}
+        q_after = torch.zeros(numel, dtype=torch.int8)
+        acc_after = torch.zeros(numel, dtype=torch.int16)
+        acc_after[touched] = 1
+
+        update = collector._update_current_threshold_index(
+            states_by_key={
+                "toy.weight": VoteUpdateState(
+                    q_levels=torch.zeros(numel, dtype=torch.int8),
+                    accumulators=torch.zeros(numel, dtype=torch.int16),
+                ),
+            },
+            specs_by_key={"toy.weight": _spec()},
+            plans_by_key={
+                "toy.weight": _fake_vote_update_plan(
+                    numel,
+                    candidate_indices=touched,
+                ),
+            },
+            q_acc_by_key={"toy.weight": (q_after, acc_after, {})},
+            deferred_backlog={},
+        )
+
+        assert update["touched_count"] == 2
+        assert update["per_state"]["toy.weight"]["update_mode"] == (
+            "pending_overlay_touched_bounded"
+        )
+        assert update["carried_threshold_count"] == carried_count + 1
+        assert collector._pending_threshold_add_indices_by_key["toy.weight"].tolist() == [
+            carried_count + 1,
+        ]
+
+    probe_sizes = [probe for _, _, probe in op_calls]
+    difference_base_sizes = [
+        base for op, base, _ in op_calls if op == "difference"
+    ]
+    assert max(probe_sizes) <= max_delta_rows
+    assert max(difference_base_sizes) <= max_delta_rows
+
+
+def test_front_c_default_collection_skips_full_active_universe_hash(monkeypatch, tmp_path):
+    def fail_full_universe_hash(*args, **kwargs):
+        raise AssertionError("full active universe hash must be oracle-only")
+
+    monkeypatch.setattr(
+        front_c_emission,
+        "_identity_universe_sha256",
+        fail_full_universe_hash,
+    )
+    states = {"toy.weight": _state()}
+    votes = {"toy.weight": _votes()}
+    specs = {"toy.weight": _spec()}
+    collector = FrontCLiveIdentityCollector(
+        artifact_path=tmp_path / "front_c_identity_artifact.json",
+        emission_interval=1,
+    )
+    collector.record_step0(states)
+
+    apply_bounded_delta_vote_step(
+        states,
+        votes,
+        specs,
+        front_c_identity_observer=lambda observation: collector.record_step_observation(
+            step=1,
+            observation=observation,
+        ),
+    )
+    payload = collector.build_payload(
+        audit_reports={"1": {"acquired": True, "strict_exact_count": 90}},
+        prior_audit_start_reports={"L0b": {"strict_exact": "230/230"}},
+        prior_audit_final_reports={"L0b": {"strict_exact": "230/230"}},
+        steps_completed=1,
+        stop_reason="unit_test_terminal",
+    )
+    sparse_diag = payload["diagnostics"]["step_diagnostics"]["1"]["sparse"]
+
+    assert sparse_diag["sparse_active_set_full_hash_computed"] is False
+    assert sparse_diag["sparse_active_set_full_sha256"] == ""
+
+
+@pytest.mark.parametrize(
+    ("pc_aux_mode", "expected_pc_veto_count", "expected_carried_count"),
+    (
+        ("telemetry", 0, 0),
+        ("veto", 2, 2),
+    ),
+)
+def test_front_c_carried_oracle_covers_replay_and_pc_branches(
+    tmp_path,
+    pc_aux_mode,
+    expected_pc_veto_count,
+    expected_carried_count,
+):
+    states = {"toy.weight": _state()}
+    specs = {"toy.weight": _spec()}
+    replay_moves = {"toy.weight": torch.zeros(8, dtype=torch.int8)}
+    pc_moves = {"toy.weight": torch.zeros(8, dtype=torch.int8)}
+    collector = FrontCLiveIdentityCollector(
+        artifact_path=tmp_path / f"front_c_identity_artifact.{pc_aux_mode}.json",
+        emission_interval=1,
+        legacy_oracle_compare=True,
+    )
+    collector.record_step0(states)
+
+    apply_bounded_delta_vote_step(
+        states,
+        {"toy.weight": _votes_for((0, 2), (1, 2), (2, 2), (3, 2))},
+        specs,
+        replay_ce_veto_votes_by_key={"toy.weight": _votes_for((1, -1))},
+        replay_ce_veto_moves_by_key=replay_moves,
+        pc_aux_votes_by_key={"toy.weight": _votes_for((2, -1), (3, -1))},
+        pc_aux_moves_by_key=pc_moves,
+        pc_aux_mode=pc_aux_mode,
+        front_c_identity_observer=lambda observation: collector.record_step_observation(
+            step=1,
+            observation=observation,
+        ),
+    )
+    payload = collector.build_payload(
+        audit_reports={"1": {"acquired": True, "strict_exact_count": 90}},
+        prior_audit_start_reports={"L0b": {"strict_exact": "230/230"}},
+        prior_audit_final_reports={"L0b": {"strict_exact": "230/230"}},
+        steps_completed=1,
+        stop_reason="unit_test_terminal",
+    )
+    step_diag = payload["diagnostics"]["step_diagnostics"]["1"]
+    touched = step_diag["carried_index_update"]["per_state"]["toy.weight"]
+
+    assert step_diag["legacy_oracle"]["enabled"] is True
+    assert all(step_diag["legacy_oracle"]["checks"].values())
+    assert step_diag["legacy_oracle"]["checks"]["q_flip_receipt_hash_parity"] is True
+    assert touched["replay_ce_veto_count"] == 1
+    assert touched["pc_aux_negative_count"] == 2
+    assert touched["pc_aux_veto_count"] == expected_pc_veto_count
+    assert payload["diagnostics"]["carried_threshold_count_by_step"]["1"] == (
+        expected_carried_count
+    )

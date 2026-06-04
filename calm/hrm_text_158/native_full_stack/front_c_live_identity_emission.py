@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import os
 from pathlib import Path
 import time
 from typing import Any, Iterable, Iterator, Mapping, Sequence
@@ -56,6 +57,7 @@ FRONT_C_SPARSE_EQUIVALENCE_BOUNDED = "bounded_sparse_oracle_sample_nonclaim"
 FRONT_C_LIVE_TIMING_SCHEMA_VERSION = "hrm_text_158_front_c/v0.live_identity_timing"
 DEFAULT_MAX_EXACT_IDENTITY_KEYS = 100_000
 DEFAULT_SPARSE_ORACLE_MAX_ACTIVE_IDS = 100_000
+FRONT_C_ORACLE_FULL_REBUILD_ENV = "HRM_TEXT_158_FRONT_C_ORACLE_FULL_REBUILD"
 
 
 FrontCIdentity = tuple[str, int]
@@ -164,6 +166,73 @@ def _sorted_unique_i64_indices(indices: torch.Tensor | Sequence[int]) -> torch.T
     if bool(torch.all(flat[1:] >= flat[:-1]).item()):
         return torch.unique_consecutive(flat).contiguous()
     return torch.unique(flat, sorted=True).to(torch.int64).cpu().contiguous()
+
+
+def _empty_i64_indices() -> torch.Tensor:
+    return torch.empty(0, dtype=torch.int64)
+
+
+def _sorted_difference_i64(base: torch.Tensor, remove: torch.Tensor) -> torch.Tensor:
+    base = _sorted_unique_i64_indices(base)
+    remove = _sorted_unique_i64_indices(remove)
+    if int(base.numel()) == 0 or int(remove.numel()) == 0:
+        return base.clone().contiguous()
+    pos = torch.searchsorted(remove, base)
+    in_bounds = pos < int(remove.numel())
+    matched = torch.zeros_like(in_bounds, dtype=torch.bool)
+    if bool(in_bounds.any().item()):
+        matched[in_bounds] = remove[pos[in_bounds]] == base[in_bounds]
+    return base[~matched].to(torch.int64).cpu().contiguous()
+
+
+def _sorted_probe_present_i64(source: torch.Tensor, probe: torch.Tensor) -> torch.Tensor:
+    source = _sorted_unique_i64_indices(source)
+    probe = _sorted_unique_i64_indices(probe)
+    if int(source.numel()) == 0 or int(probe.numel()) == 0:
+        return _empty_i64_indices()
+    pos = torch.searchsorted(source, probe)
+    in_bounds = pos < int(source.numel())
+    matched = torch.zeros_like(in_bounds, dtype=torch.bool)
+    if bool(in_bounds.any().item()):
+        matched[in_bounds] = source[pos[in_bounds]] == probe[in_bounds]
+    return probe[matched].to(torch.int64).cpu().contiguous()
+
+
+def _sorted_probe_missing_i64(source: torch.Tensor, probe: torch.Tensor) -> torch.Tensor:
+    source = _sorted_unique_i64_indices(source)
+    probe = _sorted_unique_i64_indices(probe)
+    if int(probe.numel()) == 0:
+        return probe
+    if int(source.numel()) == 0:
+        return probe.clone().contiguous()
+    pos = torch.searchsorted(source, probe)
+    in_bounds = pos < int(source.numel())
+    matched = torch.zeros_like(in_bounds, dtype=torch.bool)
+    if bool(in_bounds.any().item()):
+        matched[in_bounds] = source[pos[in_bounds]] == probe[in_bounds]
+    return probe[~matched].to(torch.int64).cpu().contiguous()
+
+
+def _sorted_union_i64(left: torch.Tensor, right: torch.Tensor) -> torch.Tensor:
+    left = _sorted_unique_i64_indices(left)
+    right = _sorted_unique_i64_indices(right)
+    if int(left.numel()) == 0:
+        return right.clone().contiguous()
+    if int(right.numel()) == 0:
+        return left.clone().contiguous()
+    return torch.unique(torch.cat((left, right)), sorted=True).to(torch.int64).cpu().contiguous()
+
+
+def _merge_index_delta(
+    base: torch.Tensor,
+    *,
+    touched: torch.Tensor,
+    active_after_touch: torch.Tensor,
+) -> torch.Tensor:
+    return _sorted_union_i64(
+        _sorted_difference_i64(base, touched),
+        active_after_touch,
+    )
 
 
 def _identity_universe_from_sources(
@@ -393,6 +462,8 @@ class _StepPaths:
     dense_diagnostics: dict[str, Any]
     sparse_diagnostics: dict[str, Any]
     surface_diagnostics: dict[str, Any]
+    emitted_decision_relevant_ids: frozenset[FrontCIdentity] = frozenset()
+    full_active_identity_universe: _IdentityUniverse | None = None
     identity_emission_scope: str = FRONT_C_IDENTITY_SCOPE_EXACT
     full_identity_emission_claimed: bool = True
     full_sparse_equivalence_claimed: bool = True
@@ -400,18 +471,49 @@ class _StepPaths:
     timing_diagnostics: dict[str, Any] | None = None
 
 
-def _current_threshold_ids(
-    state_key: str,
+def _current_threshold_indices(
     state: VoteUpdateState,
     spec: VoteUpdateSpec,
-) -> set[FrontCIdentity]:
+) -> torch.Tensor:
     flat_q = state.q_levels.flatten().to(torch.int16)
     flat_acc = state.accumulators.flatten().to(torch.int32)
     threshold = int(spec.threshold_abs)
     current = ((flat_acc >= threshold) & (flat_q < 1)) | (
         (flat_acc <= -threshold) & (flat_q > -1)
     )
-    return _ids_from_indices(state_key, torch.nonzero(current, as_tuple=False).flatten())
+    return _sorted_unique_i64_indices(torch.nonzero(current, as_tuple=False).flatten())
+
+
+def _threshold_indices_from_q_acc_rows(
+    q_levels: torch.Tensor,
+    accumulators: torch.Tensor,
+    spec: VoteUpdateSpec,
+    rows: torch.Tensor,
+) -> torch.Tensor:
+    rows = _sorted_unique_i64_indices(rows)
+    if int(rows.numel()) == 0:
+        return rows
+    flat_q = q_levels.detach().cpu().flatten().to(torch.int16)
+    flat_acc = accumulators.detach().cpu().flatten().to(torch.int32)
+    valid = (rows >= 0) & (rows < int(flat_q.numel()))
+    rows = rows[valid]
+    if int(rows.numel()) == 0:
+        return rows.to(torch.int64).cpu().contiguous()
+    threshold = int(spec.threshold_abs)
+    q_values = flat_q[rows]
+    acc_values = flat_acc[rows]
+    active = ((acc_values >= threshold) & (q_values < 1)) | (
+        (acc_values <= -threshold) & (q_values > -1)
+    )
+    return rows[active].to(torch.int64).cpu().contiguous()
+
+
+def _current_threshold_ids(
+    state_key: str,
+    state: VoteUpdateState,
+    spec: VoteUpdateSpec,
+) -> set[FrontCIdentity]:
+    return _ids_from_indices(state_key, _current_threshold_indices(state, spec))
 
 
 def _bounded_identity_set(
@@ -523,6 +625,7 @@ def _surface_from_reused_plans(
     *,
     cap_frontier_width: int,
     max_exact_identity_keys: int,
+    current_threshold_indices_by_key: Mapping[str, torch.Tensor] | None = None,
 ) -> tuple[
     FrontCDecisionSurfaceStep,
     set[FrontCIdentity],
@@ -530,32 +633,47 @@ def _surface_from_reused_plans(
     dict[str, Any],
     bool,
 ]:
-    current_threshold: set[FrontCIdentity] = set()
+    surface_timing: dict[str, float] = {}
     cap_frontier: set[FrontCIdentity] = set()
     replay_veto: set[FrontCIdentity] = set()
     candidate_indices_by_key: dict[str, torch.Tensor] = {}
+    current_threshold_indices: dict[str, torch.Tensor] = {}
 
+    phase_start = time.perf_counter()
     for state_key, state in sorted(states_by_key.items()):
         plan = plans_by_key[state_key]
-        current_threshold |= _current_threshold_ids(state_key, state, specs_by_key[state_key])
+        if current_threshold_indices_by_key is None:
+            current_threshold_indices[str(state_key)] = _current_threshold_indices(
+                state,
+                specs_by_key[state_key],
+            )
+        else:
+            current_threshold_indices[str(state_key)] = _sorted_unique_i64_indices(
+                current_threshold_indices_by_key.get(str(state_key), _empty_i64_indices()),
+            )
         candidate_indices_by_key[str(state_key)] = plan.candidate_indices
         cap_frontier |= _ids_from_indices(
             state_key,
             plan.pre_veto_selected_indices[: int(cap_frontier_width)],
         )
         replay_veto |= _ids_from_indices(state_key, plan.replay_ce_veto_indices)
+    surface_timing[
+        "current_threshold_scan"
+        if current_threshold_indices_by_key is None
+        else "current_threshold_index_read"
+    ] = max(0.0, time.perf_counter() - phase_start)
 
     backlog = _backlog_keys(deferred_backlog)
+    phase_start = time.perf_counter()
     priority = _plan_priority_ids(plans_by_key, cap_frontier_width=cap_frontier_width) | backlog
+    surface_timing["priority_build"] = max(0.0, time.perf_counter() - phase_start)
     candidate_universe = _identity_universe_from_sources(candidate_indices_by_key)
     decision_universe = _IdentityUniverse(
         sources_by_key=candidate_universe.sources_by_key,
         extra_identities=frozenset(cap_frontier | replay_veto | backlog),
     )
     surface_universes = {
-        "current_magnitude_threshold_keys": _identity_universe_from_identities(
-            current_threshold,
-        ),
+        "current_magnitude_threshold_keys": _identity_universe_from_sources(current_threshold_indices),
         "active_next_step_keys": candidate_universe,
         "ranking_sensitive_exact_keys": candidate_universe,
         "global_cap_frontier_keys": _identity_universe_from_identities(cap_frontier),
@@ -565,15 +683,20 @@ def _surface_from_reused_plans(
     emitted: dict[str, tuple[FrontCIdentity, ...]] = {}
     surface_diagnostics: dict[str, Any] = {}
     bounded = False
+    selection_total = 0.0
     for name, universe in surface_universes.items():
+        phase_start = time.perf_counter()
         selection = _select_bounded_identity_universe(
             name,
             universe,
             max_keys=max_exact_identity_keys,
             priority_ids=priority,
         )
+        selection_duration = max(0.0, time.perf_counter() - phase_start)
+        selection_total += selection_duration
         emitted[name] = selection.identities
         surface_diagnostics[name] = selection.diagnostics
+        surface_diagnostics[name]["selection_duration_seconds"] = selection_duration
         bounded = bounded or bool(selection.diagnostics["bounded"])
 
     emitted_decision_relevant: set[FrontCIdentity] = set()
@@ -591,6 +714,8 @@ def _surface_from_reused_plans(
     )
     surface_diagnostics["emitted_decision_relevant_identity_count"] = len(emitted_decision_relevant)
     surface_diagnostics["identity_emission_bounded"] = bool(bounded)
+    surface_timing["bounded_selection_by_surface"] = selection_total
+    surface_diagnostics["surface_build_subtimers_seconds"] = surface_timing
     return (
         FrontCDecisionSurfaceStep(
             step=int(step),
@@ -755,6 +880,8 @@ def build_front_c_live_step_paths(
     cap_frontier_width: int = 1,
     max_exact_identity_keys: int = DEFAULT_MAX_EXACT_IDENTITY_KEYS,
     sparse_oracle_max_active_ids: int = DEFAULT_SPARSE_ORACLE_MAX_ACTIVE_IDS,
+    current_threshold_indices_by_key: Mapping[str, torch.Tensor] | None = None,
+    include_full_active_hash: bool = False,
 ) -> _StepPaths:
     """Build dense and independently-derived sparse path records for one step."""
 
@@ -780,9 +907,34 @@ def build_front_c_live_step_paths(
                 deferred_backlog,
                 cap_frontier_width=cap_frontier_width,
                 max_exact_identity_keys=max_exact_identity_keys,
+                current_threshold_indices_by_key=current_threshold_indices_by_key,
             )
         )
         _record_duration(step_timing, "surface_from_reused_plans", phase_start)
+        step_timing["durations_seconds"]["collect_surface_build"] = step_timing[
+            "durations_seconds"
+        ]["surface_from_reused_plans"]
+        surface_subtimers = dict(surface_diag.get("surface_build_subtimers_seconds", {}))
+        _ensure_duration(
+            step_timing,
+            "current_threshold_scan",
+            duration_seconds=float(surface_subtimers.get("current_threshold_scan", 0.0)),
+        )
+        _ensure_duration(
+            step_timing,
+            "current_threshold_index_read",
+            duration_seconds=float(surface_subtimers.get("current_threshold_index_read", 0.0)),
+        )
+        _ensure_duration(
+            step_timing,
+            "priority_build",
+            duration_seconds=float(surface_subtimers.get("priority_build", 0.0)),
+        )
+        _ensure_duration(
+            step_timing,
+            "bounded_selection_by_surface",
+            duration_seconds=float(surface_subtimers.get("bounded_selection_by_surface", 0.0)),
+        )
         phase_start = time.perf_counter()
         dense_path, dense_diag = _path_from_reused_plans(
             states_by_key,
@@ -856,13 +1008,20 @@ def build_front_c_live_step_paths(
         elif sparse_bounded:
             scope = FRONT_C_IDENTITY_SCOPE_BOUNDED_SPARSE
             reasons.append("sparse_active_set_exceeded_cap")
+        full_active_sha256 = ""
+        phase_start = time.perf_counter()
+        if bool(include_full_active_hash):
+            full_active_sha256 = _identity_universe_sha256(full_active_ids)
+        _record_duration(step_timing, "sparse_active_set_full_hash_oracle", phase_start)
         sparse_diag.update(
             {
                 "sparse_active_set_count": len(sparse_active_ids),
                 "sparse_active_set_full_count": full_active_count,
                 "sparse_active_set_sha256": _identity_dicts_sha256(sparse_active_ids),
-                "sparse_active_set_full_sha256": _identity_universe_sha256(
-                    full_active_ids,
+                "sparse_active_set_full_sha256": full_active_sha256,
+                "sparse_active_set_full_hash_computed": bool(include_full_active_hash),
+                "sparse_active_set_full_hash_semantics": (
+                    "oracle_debug_only_empty_when_not_computed"
                 ),
                 "sparse_active_set_source": (
                     "dense_oracle_active_ids"
@@ -897,6 +1056,8 @@ def build_front_c_live_step_paths(
             dense_diagnostics=dense_diag,
             sparse_diagnostics=sparse_diag,
             surface_diagnostics=surface_diag,
+            emitted_decision_relevant_ids=frozenset(active_ids),
+            full_active_identity_universe=full_active_ids,
             identity_emission_scope=scope,
             full_identity_emission_claimed=bool(full_identity),
             full_sparse_equivalence_claimed=bool(full_sparse),
@@ -963,8 +1124,127 @@ def build_front_c_live_step_paths(
             "identity_emission_bounded": False,
             "derivation": "reference_recompute_compatibility_fallback",
         },
+        emitted_decision_relevant_ids=frozenset(active_ids),
+        full_active_identity_universe=_identity_universe_from_identities(active_ids),
         timing_diagnostics=step_timing,
     )
+
+
+def _surface_diagnostics_contract(diagnostics: Mapping[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key, value in diagnostics.items():
+        if key == "surface_build_subtimers_seconds":
+            continue
+        if isinstance(value, Mapping):
+            out[key] = {
+                str(k): v
+                for k, v in value.items()
+                if str(k) != "selection_duration_seconds"
+            }
+        else:
+            out[str(key)] = value
+    return out
+
+
+def _assert_legacy_surface_oracle_match(
+    *,
+    step: int,
+    paths: _StepPaths,
+    states_by_key: Mapping[str, VoteUpdateState],
+    specs_by_key: Mapping[str, VoteUpdateSpec],
+    plans_by_key: Mapping[str, VoteUpdatePlan],
+    deferred_backlog: Mapping[str, Mapping[int, Mapping[str, int]]] | None,
+    cap_frontier_width: int,
+    max_exact_identity_keys: int,
+    sparse_oracle_max_active_ids: int,
+) -> dict[str, Any]:
+    oracle_surface, oracle_active, oracle_full_active, oracle_diag, _ = _surface_from_reused_plans(
+        int(step),
+        states_by_key,
+        specs_by_key,
+        plans_by_key,
+        deferred_backlog,
+        cap_frontier_width=cap_frontier_width,
+        max_exact_identity_keys=max_exact_identity_keys,
+        current_threshold_indices_by_key=None,
+    )
+    actual_full_active = paths.full_active_identity_universe or _identity_universe_from_identities(())
+    full_active_count = _identity_universe_count(actual_full_active)
+    oracle_full_active_count = _identity_universe_count(oracle_full_active)
+    expected_full_identity = not bool(oracle_diag.get("identity_emission_bounded", False))
+    expected_full_sparse = oracle_full_active_count <= max(0, int(sparse_oracle_max_active_ids))
+    dense_q_flips = paths.dense_path.to_dict()["q_flip_directions"]
+    sparse_q_flips = paths.sparse_path.to_dict()["q_flip_directions"]
+    q_flip_parity_scope = (
+        "dense_sparse_exact_q_flip_receipt"
+        if paths.full_sparse_equivalence_claimed
+        else "bounded_sparse_nonclaim_q_flip_receipt_parity_not_claimed"
+    )
+    checks = {
+        "surface_rows": paths.surface.to_dict() == oracle_surface.to_dict(),
+        "emitted_decision_relevant": (
+            _identity_dicts(tuple(paths.emitted_decision_relevant_ids))
+            == _identity_dicts(tuple(oracle_active))
+        ),
+        "full_active_count": full_active_count == oracle_full_active_count,
+        "full_active_sha256": (
+            _identity_universe_sha256(actual_full_active)
+            == _identity_universe_sha256(oracle_full_active)
+        ),
+        "full_identity_flag": paths.full_identity_emission_claimed == expected_full_identity,
+        "full_sparse_flag": paths.full_sparse_equivalence_claimed == expected_full_sparse,
+        "q_flip_receipt_parity": (
+            dense_q_flips == sparse_q_flips
+            if paths.full_sparse_equivalence_claimed
+            else True
+        ),
+        "q_flip_receipt_hash_parity": (
+            _sha256_json(dense_q_flips) == _sha256_json(sparse_q_flips)
+            if paths.full_sparse_equivalence_claimed
+            else True
+        ),
+        "sparse_active_set_full_hash_computed": bool(
+            paths.sparse_diagnostics.get("sparse_active_set_full_hash_computed", False),
+        ),
+        "sparse_active_set_full_count": int(
+            paths.sparse_diagnostics.get("sparse_active_set_full_count", -1),
+        )
+        == oracle_full_active_count,
+        "sparse_active_set_full_sha256": (
+            str(paths.sparse_diagnostics.get("sparse_active_set_full_sha256", ""))
+            == _identity_universe_sha256(oracle_full_active)
+        ),
+        "surface_diagnostics": (
+            _surface_diagnostics_contract(paths.surface_diagnostics)
+            == _surface_diagnostics_contract(oracle_diag)
+        ),
+    }
+    if not all(checks.values()):
+        failed = sorted(name for name, ok in checks.items() if not ok)
+        raise AssertionError(
+            "Front-C carried-index oracle mismatch at step "
+            f"{int(step)}: {failed}"
+        )
+    return {
+        "enabled": True,
+        "step": int(step),
+        "checks": checks,
+        "full_active_count": full_active_count,
+        "full_active_sha256": _identity_universe_sha256(actual_full_active),
+        "emitted_decision_relevant_count": len(paths.emitted_decision_relevant_ids),
+        "expected_full_identity_emission_claimed": expected_full_identity,
+        "expected_full_sparse_equivalence_claimed": expected_full_sparse,
+        "q_flip_receipt_parity_scope": q_flip_parity_scope,
+        "dense_q_flip_receipt_sha256": _sha256_json(dense_q_flips),
+        "sparse_q_flip_receipt_sha256": _sha256_json(sparse_q_flips),
+        "oracle_full_rebuild_surface_timing_seconds": dict(
+            oracle_diag.get("surface_build_subtimers_seconds", {}),
+        ),
+    }
+
+
+def _truthy_env(name: str) -> bool:
+    return str(os.environ.get(name, "")).strip().lower() in {"1", "true", "yes", "on"}
 
 
 @dataclass
@@ -980,6 +1260,7 @@ class FrontCLiveIdentityCollector:
     guardrail_metadata_bits: int = 64
     value_bits_per_row: int = 16
     flag_bits_per_row: int = 2
+    legacy_oracle_compare: bool = False
 
     def __post_init__(self) -> None:
         self.artifact_path = Path(self.artifact_path)
@@ -988,8 +1269,21 @@ class FrontCLiveIdentityCollector:
         self.cap_frontier_width = int(self.cap_frontier_width)
         self.max_exact_identity_keys = int(self.max_exact_identity_keys)
         self.sparse_oracle_max_active_ids = int(self.sparse_oracle_max_active_ids)
+        self.tensor_metadata_bits_per_state = int(self.tensor_metadata_bits_per_state)
+        self.bucket_metadata_bits = int(self.bucket_metadata_bits)
+        self.guardrail_metadata_bits = int(self.guardrail_metadata_bits)
+        self.value_bits_per_row = int(self.value_bits_per_row)
+        self.flag_bits_per_row = int(self.flag_bits_per_row)
+        self.legacy_oracle_compare = bool(
+            self.legacy_oracle_compare or _truthy_env(FRONT_C_ORACLE_FULL_REBUILD_ENV),
+        )
         self._step_rows: dict[int, FrontCDecisionSurfaceStep] = {}
         self._states_by_key: dict[str, VoteUpdateState] = {}
+        self._current_threshold_indices_by_key: dict[str, torch.Tensor] = {}
+        self._pending_threshold_add_indices_by_key: dict[str, torch.Tensor] = {}
+        self._pending_threshold_remove_indices_by_key: dict[str, torch.Tensor] = {}
+        self._current_threshold_count_by_key: dict[str, int] = {}
+        self._current_threshold_initialized = False
         self._latest_dense_path: FrontCDecisionPath | None = None
         self._latest_sparse_path: FrontCDecisionPath | None = None
         self._dense_paths_by_step: dict[int, FrontCDecisionPath] = {}
@@ -1009,6 +1303,12 @@ class FrontCLiveIdentityCollector:
             "full_sparse_equivalence_claimed": True,
             "max_exact_identity_keys": self.max_exact_identity_keys,
             "sparse_oracle_max_active_ids": self.sparse_oracle_max_active_ids,
+            "legacy_oracle_compare_enabled": self.legacy_oracle_compare,
+            "observe_only_diagnostics": {},
+            "touched_count_by_step": {},
+            "carried_threshold_count_by_step": {},
+            "observe_only_duration_by_step": {},
+            "touch_ratio_alarm_by_step": {},
             "step_diagnostics": {},
         }
 
@@ -1037,7 +1337,274 @@ class FrontCLiveIdentityCollector:
             eligible_weight_count=eligible,
         )
 
-    def record_step_observation(self, *, step: int, observation: Mapping[str, Any]) -> None:
+    def _ensure_current_threshold_index(
+        self,
+        *,
+        states_by_key: Mapping[str, VoteUpdateState],
+        specs_by_key: Mapping[str, VoteUpdateSpec],
+    ) -> dict[str, Any]:
+        start = time.perf_counter()
+        if self._current_threshold_initialized:
+            return {
+                "initialized": False,
+                "duration_seconds": 0.0,
+                "carried_threshold_count": sum(self._current_threshold_count_by_key.values()),
+            }
+        self._current_threshold_indices_by_key = {
+            str(state_key): _current_threshold_indices(
+                state,
+                specs_by_key[str(state_key)],
+            )
+            for state_key, state in sorted(states_by_key.items())
+        }
+        self._pending_threshold_add_indices_by_key = {
+            str(state_key): _empty_i64_indices()
+            for state_key in self._current_threshold_indices_by_key
+        }
+        self._pending_threshold_remove_indices_by_key = {
+            str(state_key): _empty_i64_indices()
+            for state_key in self._current_threshold_indices_by_key
+        }
+        self._current_threshold_count_by_key = {
+            str(state_key): int(indices.numel())
+            for state_key, indices in self._current_threshold_indices_by_key.items()
+        }
+        self._current_threshold_initialized = True
+        duration = max(0.0, time.perf_counter() - start)
+        per_state = dict(sorted(self._current_threshold_count_by_key.items()))
+        return {
+            "initialized": True,
+            "duration_seconds": duration,
+            "carried_threshold_count": sum(per_state.values()),
+            "per_state_carried_threshold_count": per_state,
+        }
+
+    def _materialize_current_threshold_indices_for_collect(
+        self,
+    ) -> tuple[dict[str, torch.Tensor], dict[str, Any]]:
+        start = time.perf_counter()
+        out: dict[str, torch.Tensor] = {}
+        per_state: dict[str, Any] = {}
+        for key in sorted(self._current_threshold_indices_by_key):
+            base = self._current_threshold_indices_by_key.get(key, _empty_i64_indices())
+            pending_add = self._pending_threshold_add_indices_by_key.get(
+                key,
+                _empty_i64_indices(),
+            )
+            pending_remove = self._pending_threshold_remove_indices_by_key.get(
+                key,
+                _empty_i64_indices(),
+            )
+            materialized = _merge_index_delta(
+                base,
+                touched=pending_remove,
+                active_after_touch=pending_add,
+            )
+            out[key] = materialized
+            self._current_threshold_indices_by_key[key] = materialized
+            self._pending_threshold_add_indices_by_key[key] = _empty_i64_indices()
+            self._pending_threshold_remove_indices_by_key[key] = _empty_i64_indices()
+            self._current_threshold_count_by_key[key] = int(materialized.numel())
+            per_state[key] = {
+                "materialized_count": int(materialized.numel()),
+                "pending_add_count_before": int(pending_add.numel()),
+                "pending_remove_count_before": int(pending_remove.numel()),
+            }
+        duration = max(0.0, time.perf_counter() - start)
+        return out, {
+            "materialized_for_collect": True,
+            "duration_seconds": duration,
+            "carried_threshold_count": sum(self._current_threshold_count_by_key.values()),
+            "per_state": per_state,
+        }
+
+    def _touched_threshold_indices_by_key(
+        self,
+        *,
+        states_by_key: Mapping[str, VoteUpdateState],
+        plans_by_key: Mapping[str, VoteUpdatePlan],
+        deferred_backlog: Mapping[str, Mapping[int, Mapping[str, int]]] | None,
+    ) -> tuple[dict[str, torch.Tensor], dict[str, Any]]:
+        backlog_by_key = {
+            str(state_key): _sorted_unique_i64_indices(tuple(int(index) for index in by_index))
+            for state_key, by_index in (deferred_backlog or {}).items()
+        }
+        touched_by_key: dict[str, torch.Tensor] = {}
+        per_state: dict[str, Any] = {}
+        for state_key in sorted(states_by_key):
+            plan = plans_by_key[str(state_key)]
+            pieces: list[torch.Tensor] = []
+
+            def add_piece(indices: torch.Tensor) -> int:
+                selected = _sorted_unique_i64_indices(indices)
+                if int(selected.numel()) > 0:
+                    pieces.append(selected)
+                return int(selected.numel())
+
+            candidate_count = add_piece(plan.candidate_indices)
+            pre_veto_count = add_piece(plan.pre_veto_selected_indices)
+            applied_count = add_piece(plan.applied_indices)
+            replay_count = add_piece(plan.replay_ce_veto_indices)
+            pc_negative_count = add_piece(plan.pc_aux_negative_indices)
+            pc_veto_count = add_piece(plan.pc_aux_veto_indices)
+            backlog_indices = backlog_by_key.get(str(state_key), _empty_i64_indices())
+            if int(backlog_indices.numel()) > 0:
+                pieces.append(backlog_indices)
+            backlog_count = int(backlog_indices.numel())
+            touched = (
+                _sorted_unique_i64_indices(torch.cat(pieces))
+                if pieces
+                else _empty_i64_indices()
+            )
+            touched_by_key[str(state_key)] = touched
+            applied_veto_delta_count = applied_count + replay_count + pc_veto_count
+            per_state[str(state_key)] = {
+                "touched_count": int(touched.numel()),
+                "candidate_count": candidate_count,
+                "pre_veto_count": pre_veto_count,
+                "applied_count": applied_count,
+                "replay_ce_veto_count": replay_count,
+                "pc_aux_negative_count": pc_negative_count,
+                "pc_aux_veto_count": pc_veto_count,
+                "backlog_count": backlog_count,
+                "applied_veto_delta_count": applied_veto_delta_count,
+                "touched_semantics": (
+                    "candidate/pre_veto/applied/replay_veto/pc_negative/"
+                    "pc_veto/backlog rows only; prior threshold rows are not included"
+                ),
+            }
+        return touched_by_key, per_state
+
+    def _update_current_threshold_index(
+        self,
+        *,
+        states_by_key: Mapping[str, VoteUpdateState],
+        specs_by_key: Mapping[str, VoteUpdateSpec],
+        plans_by_key: Mapping[str, VoteUpdatePlan],
+        q_acc_by_key: Mapping[str, Any],
+        deferred_backlog: Mapping[str, Mapping[int, Mapping[str, int]]] | None,
+    ) -> dict[str, Any]:
+        update_start = time.perf_counter()
+        phase_start = time.perf_counter()
+        touched_by_key, touched_diag = self._touched_threshold_indices_by_key(
+            states_by_key=states_by_key,
+            plans_by_key=plans_by_key,
+            deferred_backlog=deferred_backlog,
+        )
+        touched_duration = max(0.0, time.perf_counter() - phase_start)
+        phase_start = time.perf_counter()
+        next_threshold_indices: dict[str, torch.Tensor] = {}
+        per_state: dict[str, Any] = {}
+        total_touched = 0
+        total_carried = 0
+        ratio_alarm = False
+        for state_key in sorted(states_by_key):
+            key = str(state_key)
+            touched = touched_by_key.get(key, _empty_i64_indices())
+            q_after, acc_after, _ = _q_acc_entry_parts(q_acc_by_key[key])
+            active_after_touch = _threshold_indices_from_q_acc_rows(
+                q_after,
+                acc_after,
+                specs_by_key[key],
+                touched,
+            )
+            inactive_after_touch = _sorted_difference_i64(touched, active_after_touch)
+            base = self._current_threshold_indices_by_key.get(key, _empty_i64_indices())
+            pending_add = self._pending_threshold_add_indices_by_key.get(
+                key,
+                _empty_i64_indices(),
+            )
+            pending_remove = self._pending_threshold_remove_indices_by_key.get(
+                key,
+                _empty_i64_indices(),
+            )
+            touched_in_base = _sorted_probe_present_i64(base, touched)
+            touched_in_pending_remove = _sorted_probe_present_i64(
+                pending_remove,
+                touched_in_base,
+            )
+            touched_in_pending_add = _sorted_probe_present_i64(pending_add, touched)
+            old_active_touched_count = (
+                int(touched_in_base.numel())
+                - int(touched_in_pending_remove.numel())
+                + int(touched_in_pending_add.numel())
+            )
+            active_missing_from_base = _sorted_probe_missing_i64(base, active_after_touch)
+            inactive_present_in_base = _sorted_probe_present_i64(base, inactive_after_touch)
+            pending_add = _sorted_union_i64(pending_add, active_missing_from_base)
+            pending_add = _sorted_difference_i64(pending_add, inactive_after_touch)
+            pending_remove = _sorted_difference_i64(pending_remove, active_after_touch)
+            pending_remove = _sorted_union_i64(pending_remove, inactive_present_in_base)
+            self._pending_threshold_add_indices_by_key[key] = pending_add
+            self._pending_threshold_remove_indices_by_key[key] = pending_remove
+            previous_count = int(
+                self._current_threshold_count_by_key.get(key, int(base.numel())),
+            )
+            carried_count = (
+                previous_count
+                - old_active_touched_count
+                + int(active_after_touch.numel())
+            )
+            self._current_threshold_count_by_key[key] = carried_count
+            next_threshold_indices[key] = base
+            eligible_count = int(q_after.numel())
+            touched_count = int(touched.numel())
+            applied_veto_delta_count = int(
+                touched_diag[key].get("applied_veto_delta_count", 0),
+            )
+            state_alarm = bool(
+                touched_count > 5 * applied_veto_delta_count
+                or (eligible_count > 0 and touched_count > 0.10 * eligible_count),
+            )
+            ratio_alarm = ratio_alarm or state_alarm
+            total_touched += touched_count
+            total_carried += carried_count
+            per_state[key] = {
+                **dict(touched_diag[key]),
+                "eligible_count": eligible_count,
+                "active_after_touch_count": int(active_after_touch.numel()),
+                "carried_threshold_count": carried_count,
+                "old_active_touched_count": old_active_touched_count,
+                "pending_add_count": int(pending_add.numel()),
+                "pending_remove_count": int(pending_remove.numel()),
+                "base_carried_count": int(base.numel()),
+                "update_mode": "pending_overlay_touched_bounded",
+                "touch_ratio_alarm": state_alarm,
+                "touch_over_eligible_ratio": (
+                    float(touched_count) / float(eligible_count)
+                    if eligible_count
+                    else 0.0
+                ),
+                "touch_over_applied_veto_delta_ratio": (
+                    float(touched_count) / float(applied_veto_delta_count)
+                    if applied_veto_delta_count
+                    else None
+                ),
+            }
+        self._current_threshold_indices_by_key.update(next_threshold_indices)
+        merge_duration = max(0.0, time.perf_counter() - phase_start)
+        total_duration = max(0.0, time.perf_counter() - update_start)
+        return {
+            "schema": FRONT_C_LIVE_TIMING_SCHEMA_VERSION,
+            "touched_count": total_touched,
+            "carried_threshold_count": total_carried,
+            "touch_ratio_alarm": ratio_alarm,
+            "per_state": per_state,
+            "durations_seconds": {
+                "touched_set_build": touched_duration,
+                "carried_index_delta_merge": merge_duration,
+                "observe_carried_index_update": total_duration,
+                "carried_index_update": total_duration,
+            },
+        }
+
+    def record_step_observation(
+        self,
+        *,
+        step: int,
+        observation: Mapping[str, Any],
+        collect: bool = True,
+    ) -> None:
         record_start = time.perf_counter()
         if observation.get("schema") != FRONT_C_LIVE_OBSERVATION_SCHEMA_VERSION:
             raise ValueError("unexpected Front-C observation schema")
@@ -1046,22 +1613,91 @@ class FrontCLiveIdentityCollector:
         states_by_key = dict(observation["states_by_key"])
         inputs_by_key = dict(observation["inputs_by_key"])
         specs_by_key = dict(observation["specs_by_key"])
-        plans_by_key = dict(observation.get("plans_by_key", {})) or None
-        q_acc_by_key = dict(observation.get("q_acc_by_key", {})) or None
+        plans_by_key = dict(observation.get("plans_by_key", {}))
+        q_acc_by_key = dict(observation.get("q_acc_by_key", {}))
+        if not plans_by_key or not q_acc_by_key:
+            raise ValueError("Front-C carried identity observer requires plans_by_key and q_acc_by_key")
+        missing_plans = sorted(set(states_by_key) - set(plans_by_key))
+        missing_q_acc = sorted(set(states_by_key) - set(q_acc_by_key))
+        if missing_plans or missing_q_acc:
+            raise ValueError(
+                "Front-C carried identity observer missing plan/q_acc rows: "
+                f"plans={missing_plans}, q_acc={missing_q_acc}",
+            )
         self._states_by_key = states_by_key
-        paths = build_front_c_live_step_paths(
-            step=int(step),
+        seed_diag = self._ensure_current_threshold_index(
             states_by_key=states_by_key,
-            inputs_by_key=inputs_by_key,
+            specs_by_key=specs_by_key,
+        )
+        materialize_diag = {"materialized_for_collect": False, "duration_seconds": 0.0}
+        pre_step_threshold_indices = None
+        paths = None
+        if bool(collect):
+            pre_step_threshold_indices, materialize_diag = (
+                self._materialize_current_threshold_indices_for_collect()
+            )
+            paths = build_front_c_live_step_paths(
+                step=int(step),
+                states_by_key=states_by_key,
+                inputs_by_key=inputs_by_key,
+                specs_by_key=specs_by_key,
+                plans_by_key=plans_by_key,
+                q_acc_by_key=q_acc_by_key,
+                deferred_backlog=observation.get("deferred_backlog", {}),
+                global_cap_used=False,
+                cap_frontier_width=self.cap_frontier_width,
+                max_exact_identity_keys=self.max_exact_identity_keys,
+                sparse_oracle_max_active_ids=self.sparse_oracle_max_active_ids,
+                current_threshold_indices_by_key=pre_step_threshold_indices,
+                include_full_active_hash=self.legacy_oracle_compare,
+            )
+        carried_update = self._update_current_threshold_index(
+            states_by_key=states_by_key,
             specs_by_key=specs_by_key,
             plans_by_key=plans_by_key,
             q_acc_by_key=q_acc_by_key,
             deferred_backlog=observation.get("deferred_backlog", {}),
-            global_cap_used=False,
-            cap_frontier_width=self.cap_frontier_width,
-            max_exact_identity_keys=self.max_exact_identity_keys,
-            sparse_oracle_max_active_ids=self.sparse_oracle_max_active_ids,
         )
+        step_key = str(int(step))
+        self._diagnostics["touched_count_by_step"][step_key] = int(
+            carried_update["touched_count"],
+        )
+        self._diagnostics["carried_threshold_count_by_step"][step_key] = int(
+            carried_update["carried_threshold_count"],
+        )
+        self._diagnostics["touch_ratio_alarm_by_step"][step_key] = bool(
+            carried_update["touch_ratio_alarm"],
+        )
+        if paths is None:
+            timing = _new_timing_diagnostics(phase="record_step_observation")
+            timing["path_source"] = "observe_only_carried_index_update"
+            timing["collect"] = False
+            durations = timing.setdefault("durations_seconds", {})
+            durations["current_threshold_index_seed"] = float(
+                seed_diag.get("duration_seconds", 0.0),
+            )
+            durations["carried_index_materialize_for_collect"] = float(
+                materialize_diag.get("duration_seconds", 0.0),
+            )
+            durations.update(
+                {
+                    str(key): float(value)
+                    for key, value in carried_update.get("durations_seconds", {}).items()
+                },
+            )
+            _record_duration(timing, "record_step_observation_total", record_start)
+            observe_only_total = float(
+                timing["durations_seconds"]["record_step_observation_total"],
+            )
+            self._diagnostics["observe_only_duration_by_step"][step_key] = observe_only_total
+            self._diagnostics["observe_only_diagnostics"][step_key] = {
+                "collect": False,
+                "current_threshold_index_seed": seed_diag,
+                "carried_index_update": carried_update,
+                "timing": timing,
+            }
+            return
+        self._diagnostics["observe_only_duration_by_step"][step_key] = 0.0
         if (
             not paths.full_identity_emission_claimed
             or not paths.full_sparse_equivalence_claimed
@@ -1096,12 +1732,44 @@ class FrontCLiveIdentityCollector:
             or _new_timing_diagnostics(phase="record_step_observation"),
         )
         timing["durations_seconds"] = dict(timing.get("durations_seconds", {}))
+        timing["durations_seconds"]["current_threshold_index_seed"] = float(
+            seed_diag.get("duration_seconds", 0.0),
+        )
+        timing["durations_seconds"]["carried_index_materialize_for_collect"] = float(
+            materialize_diag.get("duration_seconds", 0.0),
+        )
+        timing["durations_seconds"].update(
+            {
+                str(key): float(value)
+                for key, value in carried_update.get("durations_seconds", {}).items()
+            },
+        )
+        legacy_oracle = {"enabled": False}
+        if self.legacy_oracle_compare:
+            oracle_start = time.perf_counter()
+            legacy_oracle = _assert_legacy_surface_oracle_match(
+                step=int(step),
+                paths=paths,
+                states_by_key=states_by_key,
+                specs_by_key=specs_by_key,
+                plans_by_key=plans_by_key,
+                deferred_backlog=observation.get("deferred_backlog", {}),
+                cap_frontier_width=self.cap_frontier_width,
+                max_exact_identity_keys=self.max_exact_identity_keys,
+                sparse_oracle_max_active_ids=self.sparse_oracle_max_active_ids,
+            )
+            _record_duration(timing, "oracle_full_rebuild", oracle_start)
         step_diagnostics = {
+            "collect": True,
             "dense": paths.dense_diagnostics,
             "dense_q_flip_directions": paths.dense_path.to_dict()["q_flip_directions"],
             "sparse": paths.sparse_diagnostics,
             "sparse_q_flip_directions": paths.sparse_path.to_dict()["q_flip_directions"],
             "surface": paths.surface_diagnostics,
+            "current_threshold_index_seed": seed_diag,
+            "carried_index_materialize_for_collect": materialize_diag,
+            "carried_index_update": carried_update,
+            "legacy_oracle": legacy_oracle,
             "identity_emission_scope": paths.identity_emission_scope,
             "full_identity_emission_claimed": paths.full_identity_emission_claimed,
             "full_sparse_equivalence_claimed": paths.full_sparse_equivalence_claimed,
