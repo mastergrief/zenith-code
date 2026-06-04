@@ -332,18 +332,37 @@ class BoundedDeltaTensorState:
             raise ValueError("q_levels and exact_accumulator_shadow shapes must match")
         if self.frozen_scale.numel() != 1 or not self.frozen_scale.dtype.is_floating_point:
             raise ValueError("frozen_scale must be a floating scalar tensor")
-        decoded = decode_bounded_accumulator_to_i16(self.bounded_accumulator)
-        if tuple(decoded.shape) != tuple(self.q_levels.shape):
+        if tuple(self.bounded_accumulator.logical_shape) != tuple(self.q_levels.shape):
             raise ValueError("bounded accumulator shape must match q_levels")
 
     def decoded_accumulators(self, *, device: torch.device | str | None = None) -> torch.Tensor:
         out = decode_bounded_accumulator_to_i16(self.bounded_accumulator)
         return out.to(device=device) if device is not None else out
 
+    def bounded_decode_parity_report(self, *, fail_on_mismatch: bool = False) -> dict[str, Any]:
+        decoded = self.decoded_accumulators()
+        decoded_sha = tensor_sha256(decoded)
+        shadow_sha = tensor_sha256(self.exact_accumulator_shadow)
+        matches = decoded_sha == shadow_sha
+        if fail_on_mismatch and not matches:
+            raise ValueError(
+                f"bounded accumulator decode does not match exact shadow for {self.state_key}"
+            )
+        return {
+            "bounded_decode_parity_checked": True,
+            "bounded_accumulator_decoded_sha256": decoded_sha,
+            "exact_accumulator_shadow_sha256": shadow_sha,
+            "exact_shadow_matches_bounded_decode": matches,
+        }
+
     def vote_update_state(self, *, device: torch.device | str | None = None) -> VoteUpdateState:
+        accumulators = (
+            self.exact_accumulator_shadow.to(device=device).contiguous()
+            if device is not None else self.exact_accumulator_shadow.contiguous()
+        )
         return VoteUpdateState(
             q_levels=self.q_levels.to(device=device).contiguous() if device is not None else self.q_levels,
-            accumulators=self.decoded_accumulators(device=device).contiguous(),
+            accumulators=accumulators,
         )
 
     def materialized_weight(
@@ -358,9 +377,8 @@ class BoundedDeltaTensorState:
         weight.requires_grad_(requires_grad)
         return weight
 
-    def to_schema_dict(self) -> dict[str, Any]:
-        decoded = self.decoded_accumulators()
-        return {
+    def to_schema_dict(self, *, parity_check: bool = True) -> dict[str, Any]:
+        out = {
             "state_key": self.state_key,
             "shape": list(self.q_levels.shape),
             "q_dtype": str(self.q_levels.dtype),
@@ -371,10 +389,12 @@ class BoundedDeltaTensorState:
             "frozen_scale_law": "per_tensor_absmean_frozen_from_parent_qscale",
             "bounded_accumulator_schema": BOUNDED_DELTA_ACCUMULATOR_SCHEMA_VERSION,
             "bounded_accumulator": self.bounded_accumulator.to_dict(),
-            "bounded_accumulator_decoded_sha256": tensor_sha256(decoded),
             "exact_accumulator_shadow_sha256": tensor_sha256(self.exact_accumulator_shadow),
-            "exact_shadow_matches_bounded_decode": tensor_sha256(decoded) == tensor_sha256(self.exact_accumulator_shadow),
+            "bounded_decode_parity_checked": bool(parity_check),
         }
+        if parity_check:
+            out.update(self.bounded_decode_parity_report(fail_on_mismatch=True))
+        return out
 
 
 def _cold_exception_indices_for_exact_preservation(
@@ -622,15 +642,28 @@ class BoundedDeltaLearnerStepResult:
     deferred_backlog: dict[str, dict[int, dict[str, int]]]
     global_summary: dict[str, Any]
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_compact_dict(self) -> dict[str, Any]:
+        return {
+            "schema": "hrm_text_158_c2p0_bounded_delta_step_result/v0.compact",
+            "bounded_update_attribution": BOUNDED_UPDATE_ATTRIBUTION,
+            "tensor_stats": self.tensor_stats,
+            "deferred_backlog_entry_count": sum(len(v) for v in self.deferred_backlog.values()),
+            "global_summary": self.global_summary,
+            "tensor_state_key_count": len(self.tensor_states),
+            "tensor_state_keys": sorted(self.tensor_states),
+            "tensor_state_summaries_included": False,
+        }
+
+    def to_dict(self, *, parity_check: bool = True) -> dict[str, Any]:
         return {
             "schema": "hrm_text_158_c2p0_bounded_delta_step_result/v0",
             "bounded_update_attribution": BOUNDED_UPDATE_ATTRIBUTION,
             "tensor_stats": self.tensor_stats,
             "deferred_backlog_entry_count": sum(len(v) for v in self.deferred_backlog.values()),
             "global_summary": self.global_summary,
+            "tensor_state_summaries_included": True,
             "tensor_state_summaries": {
-                key: state.to_schema_dict()
+                key: state.to_schema_dict(parity_check=parity_check)
                 for key, state in sorted(self.tensor_states.items())
             },
         }
@@ -649,6 +682,7 @@ def apply_bounded_delta_vote_step(
     deferred_backlog: dict[str, dict[int, dict[str, int]]] | None = None,
     hot_exact_indices_by_key: Mapping[str, Sequence[int]] | None = None,
     cold_default_value: int = 0,
+    parity_check: bool = False,
 ) -> BoundedDeltaLearnerStepResult:
     if set(tensor_states) != set(votes_by_key) or set(tensor_states) != set(vote_specs_by_key):
         raise ValueError("tensor_states, votes_by_key, and vote_specs_by_key must have identical keys")
@@ -712,7 +746,7 @@ def apply_bounded_delta_vote_step(
             cold_default_value=cold_default_value,
         )
         next_states[state_key] = next_state
-        tensor_stats[state_key] = {
+        stats_out = {
             **dict(stats),
             "state_key": state_key,
             "projection_law": S1_PROJECTION_LAW,
@@ -722,12 +756,17 @@ def apply_bounded_delta_vote_step(
             "q_sha256_before": tensor_sha256(prior_state.q_levels),
             "q_sha256_after": tensor_sha256(q_out),
             "exact_accumulator_shadow_sha256_after": tensor_sha256(acc_out),
-            "bounded_accumulator_decoded_sha256_after": tensor_sha256(
-                next_state.decoded_accumulators(),
-            ),
-            "bounded_decode_matches_exact_shadow": tensor_sha256(acc_out)
-            == tensor_sha256(next_state.decoded_accumulators()),
+            "bounded_decode_parity_checked": bool(parity_check),
         }
+        if parity_check:
+            parity = next_state.bounded_decode_parity_report(fail_on_mismatch=True)
+            stats_out["bounded_accumulator_decoded_sha256_after"] = parity[
+                "bounded_accumulator_decoded_sha256"
+            ]
+            stats_out["bounded_decode_matches_exact_shadow"] = parity[
+                "exact_shadow_matches_bounded_decode"
+            ]
+        tensor_stats[state_key] = stats_out
     return BoundedDeltaLearnerStepResult(
         tensor_states=next_states,
         tensor_stats=tensor_stats,

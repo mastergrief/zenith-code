@@ -6,12 +6,14 @@ launching a GPU acquisition probe or touching the dirty curriculum trainer.
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
 import hashlib
 
 import pytest
 import torch
 import torch.nn.functional as F
 
+import calm.hrm_text_158.native_full_stack.bounded_delta_learner as bounded_delta_learner
 from calm.hrm_text_158.bit_linear import BitLinear
 from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     AUTHORITATIVE_STATE_SOURCE,
@@ -35,7 +37,12 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     run_c2_bounded_delta_cpu_dry_run,
     validate_authoritative_resume_payload,
 )
-from calm.hrm_text_158.native_full_stack.vote_update import VoteUpdateSpec
+from calm.hrm_text_158.native_full_stack.vote_update import (
+    VoteUpdateInputs,
+    VoteUpdateSpec,
+    VoteUpdateState,
+    apply_integer_vote_update_reference,
+)
 
 
 def _assert_no_tensors(value):
@@ -93,6 +100,7 @@ def test_bounded_delta_step_updates_q_acc_backlog_and_attributes_bounded_updates
         {"toy.proj": state},
         {"toy.proj": votes},
         {"toy.proj": spec},
+        parity_check=True,
     )
     next_state = result.tensor_states["toy.proj"]
     stats = result.tensor_stats["toy.proj"]
@@ -104,6 +112,105 @@ def test_bounded_delta_step_updates_q_acc_backlog_and_attributes_bounded_updates
     assert stats["bounded_decode_matches_exact_shadow"] is True
     assert stats["bounded_update_attribution"] == BOUNDED_UPDATE_ATTRIBUTION
     assert result.to_dict()["bounded_update_attribution"] == BOUNDED_UPDATE_ATTRIBUTION
+
+
+def test_live_bounded_delta_step_uses_exact_shadow_without_decode(monkeypatch):
+    q = torch.zeros(64, dtype=torch.int8)
+    acc = torch.ones(64, dtype=torch.int16)
+    state = make_bounded_tensor_state("toy.proj", q, 0.5, acc)
+    votes = torch.zeros(64, dtype=torch.int16)
+    spec = VoteUpdateSpec(
+        threshold_abs=3,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=64,
+    )
+
+    def fail_decode(_state):
+        raise AssertionError("live path must not decode bounded accumulators")
+
+    monkeypatch.setattr(
+        bounded_delta_learner,
+        "decode_bounded_accumulator_to_i16",
+        fail_decode,
+    )
+
+    result = apply_bounded_delta_vote_step(
+        {"toy.proj": state},
+        {"toy.proj": votes},
+        {"toy.proj": spec},
+    )
+    stats = result.tensor_stats["toy.proj"]
+
+    assert result.tensor_states["toy.proj"].exact_accumulator_shadow.tolist() == acc.tolist()
+    assert stats["bounded_decode_parity_checked"] is False
+    assert "bounded_decode_matches_exact_shadow" not in stats
+    compact = result.to_compact_dict()
+    assert compact["tensor_state_summaries_included"] is False
+    assert compact["tensor_state_keys"] == ["toy.proj"]
+
+
+def test_shadow_direct_live_update_matches_decode_baseline_on_dense_exceptions():
+    q = torch.zeros(1024, dtype=torch.int8)
+    acc = torch.arange(1024, dtype=torch.int16).remainder(5) - 2
+    votes = torch.where(torch.arange(1024) % 2 == 0, 3, -3).to(torch.int16)
+    state = make_bounded_tensor_state("toy.proj", q, 0.5, acc)
+    assert len(state.bounded_accumulator.cold_exception_indices) > 700
+    spec = VoteUpdateSpec(
+        threshold_abs=3,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=1024,
+    )
+    decoded_baseline = VoteUpdateState(
+        q_levels=state.q_levels,
+        accumulators=state.decoded_accumulators(),
+    )
+    expected = apply_integer_vote_update_reference(
+        decoded_baseline,
+        VoteUpdateInputs(votes=votes),
+        spec,
+    )
+
+    result = apply_bounded_delta_vote_step(
+        {"toy.proj": state},
+        {"toy.proj": votes},
+        {"toy.proj": spec},
+    )
+    next_state = result.tensor_states["toy.proj"]
+    stats = result.tensor_stats["toy.proj"]
+
+    torch.testing.assert_close(next_state.q_levels, expected.q_levels, atol=0, rtol=0)
+    torch.testing.assert_close(
+        next_state.exact_accumulator_shadow,
+        expected.accumulators,
+        atol=0,
+        rtol=0,
+    )
+    assert result.global_summary["q_changed_count"] == expected.stats["q_changed_count"]
+    for key in (
+        "candidate_count",
+        "vote_nonzero_count",
+        "q_changed_count",
+        "acc_abs_max_after",
+    ):
+        assert stats[key] == expected.stats[key]
+    assert stats["bounded_decode_parity_checked"] is False
+
+
+def test_explicit_bounded_decode_parity_catches_shadow_mismatch():
+    q = torch.zeros(8, dtype=torch.int8)
+    acc = torch.arange(8, dtype=torch.int16)
+    state = make_bounded_tensor_state("toy.proj", q, 0.5, acc)
+    corrupted = replace(
+        state,
+        exact_accumulator_shadow=state.exact_accumulator_shadow.clone().add(1),
+    )
+
+    with pytest.raises(ValueError, match="decode does not match exact shadow"):
+        corrupted.bounded_decode_parity_report(fail_on_mismatch=True)
+    with pytest.raises(ValueError, match="decode does not match exact shadow"):
+        corrupted.to_schema_dict(parity_check=True)
 
 
 def test_optimizer_excludes_bitlinear_masters_and_identity_snapshot():

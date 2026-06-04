@@ -1566,7 +1566,7 @@ def run_bounded_delta_steps(
                     "bp_steps": int(extras["bp_steps"]),
                     "q_changed_count": q_changed_count,
                     "support_batch": dict(step_batch_metadata),
-                    "step_result": step_result.to_dict(),
+                    "step_result": step_result.to_compact_dict(),
                     "optimizer_identity_proof": identity_proof,
                 }
         steps_completed = step
