@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 import torch
 
+import scripts.hrm_text_158_bounded_delta_acquisition_probe as probe_module
 from calm.hrm_text_158 import (
     HierarchicalReasoningModel,
     HierarchicalReasoningModelConfig,
@@ -25,6 +26,8 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     B1_PRIOR_AUDIT_PINS,
     B1_PRIOR_AUDIT_SCHEMA_VERSION,
     B1_PRIOR_AUDIT_SUPPORTS,
+    C2P2_DEFAULT_GPU_SILENT_PHASE_TIMEOUT_SECONDS,
+    C2P2_FAULTHANDLER_SCHEMA_VERSION,
     B2_FULL_VERDICT_SCHEMA_VERSION,
     B2_RETAINED_SUPPORT_SCHEMA_VERSION,
     C2P2_PHASE_TELEMETRY_SCHEMA_VERSION,
@@ -63,7 +66,9 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     parse_b2_retained_supports,
     parse_prior_audit_supports,
     record_b2_full_prior_snapshot,
+    register_probe_faulthandler,
     reset_cuda_memory_stats,
+    resolve_max_silent_phase_seconds,
     run_c2p1_probe,
     score_strict_exact_and_parsed_from_logits,
     select_eligible_bitlinears,
@@ -666,7 +671,24 @@ def test_b2_full_snapshot_state_dedupes_same_step_combined_stop_and_terminal():
 def test_b2_full_cli_flag_defaults_off_and_support_validation_is_preload(tmp_path):
     args = build_arg_parser().parse_args([])
     assert args.b2_full_verdict_mode is False
+    assert args.max_silent_phase_seconds is None
+    assert resolve_max_silent_phase_seconds(
+        allow_gpu_launch=args.allow_gpu_launch,
+        max_silent_phase_seconds=args.max_silent_phase_seconds,
+    ) is None
     assert build_arg_parser().parse_args(["--b2-full-verdict-mode"]).b2_full_verdict_mode is True
+    gpu_args = build_arg_parser().parse_args(["--allow-gpu-launch"])
+    assert resolve_max_silent_phase_seconds(
+        allow_gpu_launch=gpu_args.allow_gpu_launch,
+        max_silent_phase_seconds=gpu_args.max_silent_phase_seconds,
+    ) == C2P2_DEFAULT_GPU_SILENT_PHASE_TIMEOUT_SECONDS
+    override_args = build_arg_parser().parse_args(
+        ["--allow-gpu-launch", "--max-silent-phase-seconds", "0"]
+    )
+    assert resolve_max_silent_phase_seconds(
+        allow_gpu_launch=override_args.allow_gpu_launch,
+        max_silent_phase_seconds=override_args.max_silent_phase_seconds,
+    ) is None
 
     with pytest.raises(ValueError, match="requires retained supports"):
         run_c2p1_probe(
@@ -1089,6 +1111,216 @@ def test_phase_progress_emits_schema_events_and_timeout_payload(capsys):
     assert excinfo.value.payload["phase"] == "synthetic-over-bound"
     assert excinfo.value.payload["event"] == "phase_timeout"
     assert excinfo.value.payload["bound_kind"] == "phase"
+
+
+def test_phase_progress_silent_phase_guard_breaches_before_phase_exit(tmp_path: Path):
+    class FakeClock:
+        def __init__(self) -> None:
+            self.now = 0.0
+
+        def __call__(self) -> float:
+            return self.now
+
+    clock = FakeClock()
+    last_active_path = tmp_path / "last_active_phase.json"
+    progress = PhaseProgress(
+        enabled=False,
+        device=torch.device("cpu"),
+        silent_phase_timeout_seconds=5.0,
+        last_active_phase_path=last_active_path,
+        arm_faulthandler_timer=False,
+        clock=clock,
+    )
+
+    with progress.phase("step_update", step=1):
+        clock.now = 5.5
+        with pytest.raises(C2PhaseTimeout) as excinfo:
+            progress.check_stale_active_phase()
+
+    payload = excinfo.value.payload
+    assert payload["phase"] == "step_update"
+    assert payload["bound_kind"] == "silent_phase"
+    assert payload["failure_class"] == "LIVENESS_FAILURE"
+    assert payload["step"] == 1
+    last_active = json.loads(last_active_path.read_text(encoding="utf-8"))
+    assert last_active["phase"] == "step_update"
+    assert last_active["budget_seconds"] == 5.0
+    assert last_active["failure_class"] == "LIVENESS_FAILURE"
+
+
+def test_phase_progress_silent_phase_guard_allows_normal_progress(tmp_path: Path):
+    class FakeClock:
+        def __init__(self) -> None:
+            self.now = 0.0
+
+        def __call__(self) -> float:
+            return self.now
+
+    clock = FakeClock()
+    progress = PhaseProgress(
+        enabled=False,
+        device=torch.device("cpu"),
+        silent_phase_timeout_seconds=5.0,
+        last_active_phase_path=tmp_path / "last_active_phase.json",
+        arm_faulthandler_timer=False,
+        clock=clock,
+    )
+
+    with progress.phase("step_update", step=1):
+        clock.now = 4.0
+        assert progress.check_stale_active_phase() is None
+
+
+def test_phase_progress_arms_faulthandler_timer_without_firing(monkeypatch, tmp_path: Path):
+    calls = []
+
+    def fake_cancel() -> None:
+        calls.append(("cancel",))
+
+    def fake_dump(timeout: float, *, repeat: bool, exit: bool) -> None:
+        calls.append(("dump", timeout, repeat, exit))
+
+    monkeypatch.setattr(probe_module.faulthandler, "cancel_dump_traceback_later", fake_cancel)
+    monkeypatch.setattr(probe_module.faulthandler, "dump_traceback_later", fake_dump)
+    progress = PhaseProgress(
+        enabled=False,
+        device=torch.device("cpu"),
+        silent_phase_timeout_seconds=7.0,
+        last_active_phase_path=tmp_path / "last_active_phase.json",
+    )
+
+    with progress.phase("step_update", step=1):
+        assert ("dump", 7.0, False, True) in calls
+
+    assert calls[-1] == ("cancel",)
+
+
+def test_phase_progress_fails_closed_when_faulthandler_timer_cannot_arm(monkeypatch, tmp_path: Path):
+    body_entered = {"value": False}
+    calls = []
+
+    def fake_cancel() -> None:
+        calls.append(("cancel",))
+        return None
+
+    def fake_dump(timeout: float, *, repeat: bool, exit: bool) -> None:
+        calls.append(("dump", timeout, repeat, exit))
+        raise RuntimeError("timer unavailable")
+
+    monkeypatch.setattr(probe_module.faulthandler, "cancel_dump_traceback_later", fake_cancel)
+    monkeypatch.setattr(probe_module.faulthandler, "dump_traceback_later", fake_dump)
+    progress = PhaseProgress(
+        enabled=False,
+        device=torch.device("cpu"),
+        silent_phase_timeout_seconds=7.0,
+        last_active_phase_path=tmp_path / "last_active_phase.json",
+    )
+
+    with pytest.raises(RuntimeError, match="failed to arm silent phase faulthandler guard"):
+        with progress.phase("cuda_memory_reset"):
+            body_entered["value"] = True
+
+    assert body_entered["value"] is False
+    assert progress._phase_stack == []
+    assert ("cancel",) in calls
+    assert ("dump", 7.0, False, True) in calls
+
+
+def test_register_probe_faulthandler_enable_failure_fails_closed():
+    def fake_enable(*, all_threads: bool) -> None:
+        raise RuntimeError("enable unavailable")
+
+    with pytest.raises(RuntimeError, match="failed to enable faulthandler for probe"):
+        register_probe_faulthandler(
+            enable_fn=fake_enable,
+            is_enabled_fn=lambda: False,
+        )
+
+
+def test_tiny_step0_receipt_write_uses_guarded_phase(monkeypatch, tmp_path: Path):
+    calls = []
+    timer_armed = {"value": False}
+    receipt_write_armed = []
+    original_write_text = Path.write_text
+
+    def fake_cancel() -> None:
+        calls.append(("cancel",))
+        timer_armed["value"] = False
+
+    def fake_dump(timeout: float, *, repeat: bool, exit: bool) -> None:
+        calls.append(("dump", timeout, repeat, exit))
+        timer_armed["value"] = True
+
+    def guarded_write_text(self, data, *args, **kwargs):
+        if self.name == "receipt.json":
+            receipt_write_armed.append(bool(timer_armed["value"]))
+        return original_write_text(self, data, *args, **kwargs)
+
+    monkeypatch.setattr(probe_module.faulthandler, "cancel_dump_traceback_later", fake_cancel)
+    monkeypatch.setattr(probe_module.faulthandler, "dump_traceback_later", fake_dump)
+    monkeypatch.setattr(Path, "write_text", guarded_write_text)
+    parent = tmp_path / "tiny_parent.pt"
+    scratch_root = tmp_path / "scratch"
+    torch.save(_tiny_parent_blob(), parent)
+    parent_sha = file_sha256(parent)
+
+    receipt = run_c2p1_probe(
+        parent=parent,
+        parent_sha256=parent_sha,
+        scratch_root=scratch_root,
+        device="cpu",
+        eligible_scope="first-bitlinear",
+        steps=0,
+        batch_size=2,
+        max_len=TINY_ARCH["max_len"],
+        curriculum_seed=17,
+        max_silent_phase_seconds=11.0,
+        enabled=True,
+    )
+
+    events = [
+        event
+        for event in receipt["phase_telemetry"]["events"]
+        if event["phase"] == "receipt_write"
+    ]
+    assert [event["event"] for event in events] == ["start", "end"]
+    last_active = json.loads((scratch_root / "last_active_phase.json").read_text(encoding="utf-8"))
+    assert last_active["phase"] == "receipt_write"
+    assert last_active["budget_seconds"] == 11.0
+    assert ("dump", 11.0, False, True) in calls
+    assert receipt_write_armed == [True]
+    disk_receipt = json.loads((scratch_root / "receipt.json").read_text(encoding="utf-8"))
+    assert disk_receipt["receipt_path"] == str(scratch_root / "receipt.json")
+
+
+def test_register_probe_faulthandler_reports_signal_paths_without_signalling():
+    calls = []
+    enabled = {"value": False}
+
+    def fake_is_enabled() -> bool:
+        return bool(enabled["value"])
+
+    def fake_enable(*, all_threads: bool) -> None:
+        calls.append(("enable", all_threads))
+        enabled["value"] = True
+
+    def fake_register(sig, *, all_threads: bool, chain: bool) -> None:
+        calls.append(("register", int(sig), all_threads, chain))
+
+    report = register_probe_faulthandler(
+        enable_fn=fake_enable,
+        register_fn=fake_register,
+        is_enabled_fn=fake_is_enabled,
+    )
+
+    assert report["schema"] == C2P2_FAULTHANDLER_SCHEMA_VERSION
+    assert report["enabled_before"] is False
+    assert report["enabled_after"] is True
+    assert ("enable", True) in calls
+    assert report["signals"]["SIGABRT"]["status"] == "handled_by_faulthandler_enable"
+    if getattr(probe_module.signal, "SIGQUIT", None) is not None:
+        assert report["signals"]["SIGQUIT"]["status"] == "registered"
+        assert any(call[0] == "register" for call in calls)
 
 
 def test_tiny_real_model_cpu_step_receipt_is_scratch_only(tmp_path: Path):

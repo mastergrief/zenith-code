@@ -12,11 +12,13 @@ from __future__ import annotations
 import argparse
 from contextlib import contextmanager
 from dataclasses import asdict
+import faulthandler
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import signal
 import statistics
 import sys
 import time
@@ -86,6 +88,7 @@ C2P2_SUPPORT_CYCLER_SCHEMA_VERSION = "hrm_text_158_c2p2_identity_full_support_cy
 C2P2_TIMING_SCHEMA_VERSION = "hrm_text_158_c2p2_calibration_timing_summary/v0"
 C2P2_PHASE_TELEMETRY_SCHEMA_VERSION = "hrm_text_158_c2p2_phase_telemetry/v0"
 C2P2_DEVICE_GUARD_SCHEMA_VERSION = "hrm_text_158_c2p2_device_guard/v0"
+C2P2_FAULTHANDLER_SCHEMA_VERSION = "hrm_text_158_faulthandler_guard/v0"
 B1_PRIOR_AUDIT_SCHEMA_VERSION = "hrm_text_158_b1_prior_support_audit/v0"
 B1_PRIOR_SUPPORT_SCHEMA_VERSION = "hrm_text_158_b1_prior_support_adapter/v0"
 B1_PRIOR_AUDIT_DELTA_SCHEMA_VERSION = "hrm_text_158_b1_prior_support_delta/v0"
@@ -96,6 +99,7 @@ B2_FULL_STOP_SUPPORTS: tuple[str, ...] = ("L0b", "math_a0")
 B2_PC_AUX_MODES: tuple[str, ...] = ("telemetry", "veto")
 C2P2_STRICT_EXACT_TARGET = 90
 C2P2_DEFAULT_MAX_STEPS_HARD = 1500
+C2P2_DEFAULT_GPU_SILENT_PHASE_TIMEOUT_SECONDS = 300.0
 C2P2_NULL_TAXONOMY = (
     "no-q-move",
     "q-move-no-accuracy",
@@ -943,6 +947,7 @@ class C2PhaseTimeout(RuntimeError):
         bound_kind: str,
         duration_seconds: float,
         timeout_seconds: float,
+        **fields: Any,
     ) -> None:
         self.payload = {
             "schema": C2P2_PHASE_TELEMETRY_SCHEMA_VERSION,
@@ -951,6 +956,7 @@ class C2PhaseTimeout(RuntimeError):
             "bound_kind": str(bound_kind),
             "duration_seconds": float(duration_seconds),
             "timeout_seconds": float(timeout_seconds),
+            **fields,
         }
         super().__init__(json.dumps(self.payload, sort_keys=True))
 
@@ -970,6 +976,104 @@ def enforce_phase_bound(
             duration_seconds=float(duration_seconds),
             timeout_seconds=timeout,
         )
+
+
+def resolve_max_silent_phase_seconds(
+    *,
+    allow_gpu_launch: bool,
+    max_silent_phase_seconds: float | int | None,
+) -> float | None:
+    if max_silent_phase_seconds is not None:
+        return _timeout_or_none(max_silent_phase_seconds)
+    if bool(allow_gpu_launch):
+        return C2P2_DEFAULT_GPU_SILENT_PHASE_TIMEOUT_SECONDS
+    return None
+
+
+def register_probe_faulthandler(
+    *,
+    enable_fn: Callable[..., Any] | None = None,
+    register_fn: Callable[..., Any] | None = None,
+    is_enabled_fn: Callable[[], bool] | None = None,
+) -> dict[str, Any]:
+    enable = enable_fn or faulthandler.enable
+    register = register_fn or faulthandler.register
+    is_enabled = is_enabled_fn or faulthandler.is_enabled
+    report: dict[str, Any] = {
+        "schema": C2P2_FAULTHANDLER_SCHEMA_VERSION,
+        "enabled_before": bool(is_enabled()),
+        "signals": {},
+    }
+    if not report["enabled_before"]:
+        try:
+            enable(all_threads=True)
+        except Exception as exc:
+            report["enable_error"] = {
+                "type": type(exc).__name__,
+                "message": str(exc),
+            }
+            raise RuntimeError("failed to enable faulthandler for probe") from exc
+    report["enabled_after"] = bool(is_enabled())
+
+    sigquit = getattr(signal, "SIGQUIT", None)
+    if sigquit is None:
+        report["signals"]["SIGQUIT"] = {"status": "unavailable"}
+    else:
+        try:
+            register(sigquit, all_threads=True, chain=False)
+            report["signals"]["SIGQUIT"] = {
+                "status": "registered",
+                "signal": int(sigquit),
+            }
+        except Exception as exc:
+            report["signals"]["SIGQUIT"] = {
+                "status": "failed",
+                "signal": int(sigquit),
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            }
+
+    sigabrt = getattr(signal, "SIGABRT", None)
+    report["signals"]["SIGABRT"] = (
+        {"status": "unavailable"}
+        if sigabrt is None
+        else {
+            "status": "handled_by_faulthandler_enable",
+            "signal": int(sigabrt),
+        }
+    )
+    return report
+
+
+def _proc_self_resource_snapshot() -> dict[str, Any]:
+    snapshot: dict[str, Any] = {"pid": int(os.getpid())}
+    try:
+        times = os.times()
+        snapshot["process_cpu_user_seconds"] = float(times.user)
+        snapshot["process_cpu_system_seconds"] = float(times.system)
+    except Exception as exc:
+        snapshot["process_cpu_error"] = f"{type(exc).__name__}: {exc}"
+    try:
+        status = Path("/proc/self/status").read_text(encoding="utf-8", errors="replace")
+        for line in status.splitlines():
+            if line.startswith("VmRSS:"):
+                parts = line.split()
+                if len(parts) >= 2:
+                    snapshot["rss_kib"] = int(parts[1])
+                break
+    except Exception as exc:
+        snapshot["rss_error"] = f"{type(exc).__name__}: {exc}"
+    return snapshot
+
+
+def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f"{path.name}.tmp")
+    tmp_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True, default=str),
+        encoding="utf-8",
+    )
+    tmp_path.replace(path)
 
 
 def assert_probe_device_ready(device: torch.device) -> dict[str, Any]:
@@ -1011,15 +1115,23 @@ class PhaseProgress:
         device: torch.device,
         phase_timeout_seconds: float | int | None = None,
         total_timeout_seconds: float | int | None = None,
+        silent_phase_timeout_seconds: float | int | None = None,
+        last_active_phase_path: Path | None = None,
+        arm_faulthandler_timer: bool = True,
         clock: Callable[[], float] = time.perf_counter,
     ) -> None:
         self.enabled = bool(enabled)
         self.device = device
         self.phase_timeout_seconds = _timeout_or_none(phase_timeout_seconds)
         self.total_timeout_seconds = _timeout_or_none(total_timeout_seconds)
+        self.silent_phase_timeout_seconds = _timeout_or_none(silent_phase_timeout_seconds)
+        self.last_active_phase_path = last_active_phase_path
+        self.arm_faulthandler_timer = bool(arm_faulthandler_timer)
         self.clock = clock
         self.started_at = float(self.clock())
         self.events: list[dict[str, Any]] = []
+        self._phase_stack: list[dict[str, Any]] = []
+        self._last_active_phase_payload: dict[str, Any] | None = None
 
     @property
     def active(self) -> bool:
@@ -1027,6 +1139,7 @@ class PhaseProgress:
             self.enabled
             or self.phase_timeout_seconds is not None
             or self.total_timeout_seconds is not None
+            or self.silent_phase_timeout_seconds is not None
         )
 
     def _elapsed(self) -> float:
@@ -1055,13 +1168,127 @@ class PhaseProgress:
             bound_kind="total",
         )
 
+    def _active_phase_payload(
+        self,
+        record: Mapping[str, Any],
+        *,
+        guard_event: str,
+    ) -> dict[str, Any]:
+        budget = self.silent_phase_timeout_seconds
+        guard_started_at = float(record.get("guard_started_at", self.clock()))
+        payload = {
+            "schema": C2P2_PHASE_TELEMETRY_SCHEMA_VERSION,
+            "event": "active_phase_guard",
+            "guard_event": str(guard_event),
+            "phase": str(record["phase"]),
+            "elapsed_since_start_seconds": self._elapsed(),
+            "active_phase_elapsed_seconds": max(0.0, float(self.clock() - guard_started_at)),
+            "budget_seconds": budget,
+            "breach_after_silent_seconds": budget,
+            "device": str(self.device),
+            "pid": int(os.getpid()),
+            "failure_class": "LIVENESS_FAILURE",
+            "stack_source": "faulthandler.dump_traceback_later",
+            "fail_closed_termination": "faulthandler_exit_true",
+            "resource_snapshot": _proc_self_resource_snapshot(),
+            **dict(record.get("fields", {})),
+        }
+        return payload
+
+    def _write_last_active_phase(self, payload: Mapping[str, Any]) -> None:
+        if self.last_active_phase_path is None:
+            return
+        try:
+            _write_json_atomic(self.last_active_phase_path, payload)
+        except Exception as exc:
+            raise RuntimeError(
+                f"failed to write last-active-phase record: {self.last_active_phase_path}"
+            ) from exc
+
+    def _cancel_faulthandler_timer(self) -> None:
+        if self.silent_phase_timeout_seconds is None or not self.arm_faulthandler_timer:
+            return
+        faulthandler.cancel_dump_traceback_later()
+
+    def _arm_current_phase(self, record: dict[str, Any], *, guard_event: str) -> None:
+        if self.silent_phase_timeout_seconds is None:
+            return
+        record["guard_started_at"] = float(self.clock())
+        payload = self._active_phase_payload(record, guard_event=guard_event)
+        self._last_active_phase_payload = payload
+        self._write_last_active_phase(payload)
+        if not self.arm_faulthandler_timer:
+            return
+        try:
+            faulthandler.cancel_dump_traceback_later()
+            faulthandler.dump_traceback_later(
+                float(self.silent_phase_timeout_seconds),
+                repeat=False,
+                exit=True,
+            )
+        except Exception as exc:
+            raise RuntimeError("failed to arm silent phase faulthandler guard") from exc
+
+    def _enter_phase(self, phase: str, phase_start: float, fields: Mapping[str, Any]) -> None:
+        record: dict[str, Any] = {
+            "phase": str(phase),
+            "fields": dict(fields),
+            "phase_started_at": float(phase_start),
+            "guard_started_at": float(phase_start),
+        }
+        self._phase_stack.append(record)
+        try:
+            self._arm_current_phase(record, guard_event="enter")
+        except Exception:
+            self._phase_stack.pop()
+            self._cancel_faulthandler_timer()
+            raise
+
+    def _exit_phase(self, phase: str) -> None:
+        if self._phase_stack and self._phase_stack[-1]["phase"] == str(phase):
+            self._phase_stack.pop()
+        else:
+            for index in range(len(self._phase_stack) - 1, -1, -1):
+                if self._phase_stack[index]["phase"] == str(phase):
+                    del self._phase_stack[index]
+                    break
+        self._cancel_faulthandler_timer()
+        if self._phase_stack:
+            self._arm_current_phase(self._phase_stack[-1], guard_event="resume")
+
+    def check_stale_active_phase(self) -> dict[str, Any] | None:
+        if self.silent_phase_timeout_seconds is None or not self._phase_stack:
+            return None
+        record = self._phase_stack[-1]
+        guard_started_at = float(record.get("guard_started_at", record["phase_started_at"]))
+        silent_seconds = max(0.0, float(self.clock() - guard_started_at))
+        budget = float(self.silent_phase_timeout_seconds)
+        if silent_seconds <= budget:
+            return None
+        fields = dict(record.get("fields", {}))
+        raise C2PhaseTimeout(
+            phase=str(record["phase"]),
+            bound_kind="silent_phase",
+            duration_seconds=silent_seconds,
+            timeout_seconds=budget,
+            failure_class="LIVENESS_FAILURE",
+            active_phase=str(record["phase"]),
+            silent_seconds=silent_seconds,
+            pid=int(os.getpid()),
+            stack_source="faulthandler.dump_traceback_later",
+            fail_closed_termination="faulthandler_exit_true",
+            **fields,
+        )
+
     @contextmanager
     def phase(self, phase: str, **fields: Any) -> Any:
         phase_start = float(self.clock())
+        self._enter_phase(phase, phase_start, fields)
         self.mark(phase, "start", **fields)
         try:
             yield
         except Exception as exc:
+            self._exit_phase(phase)
             self.mark(
                 phase,
                 "error",
@@ -1071,6 +1298,7 @@ class PhaseProgress:
             )
             raise
         duration = max(0.0, float(self.clock() - phase_start))
+        self._exit_phase(phase)
         try:
             enforce_phase_bound(
                 phase=phase,
@@ -1095,6 +1323,14 @@ class PhaseProgress:
             "enabled": bool(self.enabled),
             "phase_timeout_seconds": self.phase_timeout_seconds,
             "total_timeout_seconds": self.total_timeout_seconds,
+            "silent_phase_timeout_seconds": self.silent_phase_timeout_seconds,
+            "last_active_phase_path": (
+                None
+                if self.last_active_phase_path is None
+                else str(self.last_active_phase_path)
+            ),
+            "faulthandler_timer_enabled": bool(self.arm_faulthandler_timer),
+            "last_active_phase": self._last_active_phase_payload,
             "event_count": len(self.events),
             "events": list(self.events),
         }
@@ -3176,6 +3412,7 @@ def run_c2p1_probe(
     emit_progress: bool = False,
     phase_timeout_seconds: float = 0.0,
     total_timeout_seconds: float = 0.0,
+    max_silent_phase_seconds: float | None = None,
     enabled: bool | None = None,
     allow_gpu_launch: bool = False,
     prior_audit_supports: str | Sequence[str] | None = None,
@@ -3250,13 +3487,21 @@ def run_c2p1_probe(
     torch_device = torch.device(device)
     guard_gpu_launch(torch_device, allow_gpu_launch=allow_gpu_launch)
     device_guard = assert_probe_device_ready(torch_device)
+    scratch_root.mkdir(parents=True, exist_ok=True)
+    faulthandler_report = register_probe_faulthandler()
+    silent_phase_timeout_seconds = resolve_max_silent_phase_seconds(
+        allow_gpu_launch=bool(allow_gpu_launch),
+        max_silent_phase_seconds=max_silent_phase_seconds,
+    )
+    last_active_phase_path = scratch_root / "last_active_phase.json"
     phase_progress = PhaseProgress(
         enabled=bool(emit_progress),
         device=torch_device,
         phase_timeout_seconds=float(phase_timeout_seconds),
         total_timeout_seconds=float(total_timeout_seconds),
+        silent_phase_timeout_seconds=silent_phase_timeout_seconds,
+        last_active_phase_path=last_active_phase_path,
     )
-    scratch_root.mkdir(parents=True, exist_ok=True)
     if torch_device.type == "cuda":
         with phase_progress.phase("cuda_memory_reset"):
             reset_cuda_memory_stats(torch_device)
@@ -3629,6 +3874,14 @@ def run_c2p1_probe(
         "gpu_launched": bool(torch_device.type == "cuda"),
         "device": str(torch_device),
         "device_guard": device_guard,
+        "faulthandler": faulthandler_report,
+        "silent_phase_guard": {
+            "default_on_with_allow_gpu_launch": True,
+            "allow_gpu_launch": bool(allow_gpu_launch),
+            "max_silent_phase_seconds": silent_phase_timeout_seconds,
+            "last_active_phase_path": str(last_active_phase_path),
+            "fail_closed_mechanism": "faulthandler.dump_traceback_later(exit=True)",
+        },
         "dry_run": True,
         "checkpoint_written": False,
         "creditdir_mutated": False,
@@ -3698,15 +3951,13 @@ def run_c2p1_probe(
                     "l0b_coverage_cycles"
                 ),
             }
-        )
+    )
     receipt_path = scratch_root / "receipt.json"
-    phase_progress.mark("receipt_write", "start", path=str(receipt_path))
-    receipt["phase_telemetry"] = phase_progress.to_dict()
-    receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
-    phase_progress.mark("receipt_write", "end", path=str(receipt_path))
-    receipt["phase_telemetry"] = phase_progress.to_dict()
-    receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
     receipt["receipt_path"] = str(receipt_path)
+    with phase_progress.phase("receipt_write", path=str(receipt_path)):
+        receipt["phase_telemetry"] = phase_progress.to_dict()
+        receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
+    receipt["phase_telemetry"] = phase_progress.to_dict()
     return receipt
 
 
@@ -3807,6 +4058,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--emit-progress", action="store_true")
     ap.add_argument("--phase-timeout-seconds", type=float, default=0.0)
     ap.add_argument("--total-timeout-seconds", type=float, default=0.0)
+    ap.add_argument(
+        "--max-silent-phase-seconds",
+        type=float,
+        default=None,
+        help=(
+            "Fail-closed active-phase liveness budget. Defaults to "
+            f"{C2P2_DEFAULT_GPU_SILENT_PHASE_TIMEOUT_SECONDS:g}s when "
+            "--allow-gpu-launch is present; pass 0 only when the launch gate "
+            "explicitly authorizes running without this guard."
+        ),
+    )
     return ap
 
 
@@ -3841,6 +4103,7 @@ def main(argv: list[str] | None = None) -> int:
         emit_progress=args.emit_progress,
         phase_timeout_seconds=args.phase_timeout_seconds,
         total_timeout_seconds=args.total_timeout_seconds,
+        max_silent_phase_seconds=args.max_silent_phase_seconds,
         enabled=args.enable_bounded_delta_probe,
         allow_gpu_launch=args.allow_gpu_launch,
     )
