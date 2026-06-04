@@ -59,6 +59,13 @@ DEFAULT_MAX_EXACT_IDENTITY_KEYS = 100_000
 DEFAULT_SPARSE_ORACLE_MAX_ACTIVE_IDS = 100_000
 FRONT_C_ORACLE_FULL_REBUILD_ENV = "HRM_TEXT_158_FRONT_C_ORACLE_FULL_REBUILD"
 FRONT_C_INDEPENDENT_ORACLE_ENV = "HRM_TEXT_158_FRONT_C_INDEPENDENT_ORACLE"
+FRONT_C_INDEPENDENT_ORACLE_BOUNDED_REQUIRED_REASON = (
+    "independent_oracle_bounded_required"
+)
+FRONT_C_INDEPENDENT_ORACLE_BOUNDED_REQUIRED_MARKER = (
+    "FRONT_C_INDEPENDENT_ORACLE_BOUNDED_REQUIRED"
+)
+FRONT_C_INDEPENDENT_ORACLE_BOUNDED_EXACTNESS_AXIS = "fail_bounded_required"
 
 
 FrontCIdentity = tuple[str, int]
@@ -1011,7 +1018,10 @@ def build_front_c_live_step_paths(
             reasons.append("sparse_active_set_exceeded_cap")
         full_active_sha256 = ""
         phase_start = time.perf_counter()
-        if bool(include_full_active_hash):
+        compute_full_active_hash = bool(include_full_active_hash) and not (
+            surface_bounded or sparse_bounded
+        )
+        if compute_full_active_hash:
             full_active_sha256 = _identity_universe_sha256(full_active_ids)
         _record_duration(step_timing, "sparse_active_set_full_hash_oracle", phase_start)
         sparse_diag.update(
@@ -1020,7 +1030,7 @@ def build_front_c_live_step_paths(
                 "sparse_active_set_full_count": full_active_count,
                 "sparse_active_set_sha256": _identity_dicts_sha256(sparse_active_ids),
                 "sparse_active_set_full_sha256": full_active_sha256,
-                "sparse_active_set_full_hash_computed": bool(include_full_active_hash),
+                "sparse_active_set_full_hash_computed": bool(compute_full_active_hash),
                 "sparse_active_set_full_hash_semantics": (
                     "oracle_debug_only_empty_when_not_computed"
                 ),
@@ -1147,6 +1157,143 @@ def _surface_diagnostics_contract(diagnostics: Mapping[str, Any]) -> dict[str, A
     return out
 
 
+def _independent_oracle_bounded_status(
+    paths: _StepPaths,
+    *,
+    sparse_oracle_max_active_ids: int,
+) -> dict[str, Any]:
+    full_active = paths.full_active_identity_universe or _identity_universe_from_identities(())
+    full_active_count = _identity_universe_count(full_active)
+    cap = max(0, int(sparse_oracle_max_active_ids))
+    sparse_bounding = dict(
+        paths.sparse_diagnostics.get("sparse_active_set_bounding", {}) or {},
+    )
+    sparse_full_count = int(
+        paths.sparse_diagnostics.get("sparse_active_set_full_count", full_active_count)
+        or 0,
+    )
+    surface_bounded = bool(paths.surface_diagnostics.get("identity_emission_bounded", False))
+    sparse_bounded = bool(sparse_bounding.get("bounded", False))
+    cap_exceeded = bool(full_active_count > cap or sparse_full_count > cap)
+    reasons = tuple(str(reason) for reason in paths.bounded_nonclaim_reasons)
+    bounded_required = bool(
+        surface_bounded
+        or sparse_bounded
+        or cap_exceeded
+        or reasons
+        or not paths.full_identity_emission_claimed
+        or not paths.full_sparse_equivalence_claimed
+    )
+    return {
+        "bounded_required": bounded_required,
+        "full_active_count": int(full_active_count),
+        "sparse_active_set_full_count": int(sparse_full_count),
+        "sparse_oracle_max_active_ids": int(cap),
+        "full_active_count_exceeds_cap": bool(full_active_count > cap),
+        "sparse_active_set_count_exceeds_cap": bool(sparse_full_count > cap),
+        "surface_identity_emission_bounded": surface_bounded,
+        "sparse_active_set_bounded": sparse_bounded,
+        "bounded_nonclaim_reasons": sorted(set(reasons)),
+        "sparse_active_set_bounding": sparse_bounding,
+    }
+
+
+def _emit_independent_oracle_bounded_marker(
+    *,
+    step: int,
+    status: Mapping[str, Any],
+) -> None:
+    payload = {
+        "marker": FRONT_C_INDEPENDENT_ORACLE_BOUNDED_REQUIRED_MARKER,
+        "step": int(step),
+        "reason": FRONT_C_INDEPENDENT_ORACLE_BOUNDED_REQUIRED_REASON,
+        "full_active_count": int(status.get("full_active_count", 0)),
+        "sparse_active_set_full_count": int(
+            status.get("sparse_active_set_full_count", 0),
+        ),
+        "sparse_oracle_max_active_ids": int(
+            status.get("sparse_oracle_max_active_ids", 0),
+        ),
+        "bounded_nonclaim_reasons": list(status.get("bounded_nonclaim_reasons", ())),
+    }
+    print(
+        f"{FRONT_C_INDEPENDENT_ORACLE_BOUNDED_REQUIRED_MARKER} "
+        f"{_canonical_json(payload)}",
+        flush=True,
+    )
+
+
+def _bounded_independent_oracle_receipt(
+    *,
+    step: int,
+    paths: _StepPaths,
+    sparse_oracle_max_active_ids: int,
+    include_full_active_hash: bool,
+    status: Mapping[str, Any],
+) -> dict[str, Any]:
+    dense_q_flips = paths.dense_path.to_dict()["q_flip_directions"]
+    sparse_q_flips = paths.sparse_path.to_dict()["q_flip_directions"]
+    _emit_independent_oracle_bounded_marker(step=int(step), status=status)
+    return {
+        "enabled": True,
+        "pass": False,
+        "status": FRONT_C_INDEPENDENT_ORACLE_BOUNDED_REQUIRED_REASON,
+        "reason": FRONT_C_INDEPENDENT_ORACLE_BOUNDED_REQUIRED_REASON,
+        "exactness_axis": FRONT_C_INDEPENDENT_ORACLE_BOUNDED_EXACTNESS_AXIS,
+        "step3_unblocked": False,
+        "diagnostic_validity": "diagnostic_valid_for_live_bounded_path",
+        "step": int(step),
+        "oracle_source": FRONT_C_INDEPENDENT_ORACLE_BOUNDED_REQUIRED_REASON,
+        "oracle_path_source": "not_run_bounded_required",
+        "live_path_source": str(
+            (paths.timing_diagnostics or {}).get("path_source", ""),
+        ),
+        "oracle_ran": False,
+        "checks": {FRONT_C_INDEPENDENT_ORACLE_BOUNDED_REQUIRED_REASON: False},
+        "full_active_count": int(status.get("full_active_count", 0)),
+        "oracle_full_active_count": None,
+        "sparse_active_set_full_count": int(
+            status.get("sparse_active_set_full_count", 0),
+        ),
+        "sparse_oracle_max_active_ids": int(
+            status.get("sparse_oracle_max_active_ids", sparse_oracle_max_active_ids),
+        ),
+        "full_active_count_exceeds_cap": bool(
+            status.get("full_active_count_exceeds_cap", False),
+        ),
+        "sparse_active_set_count_exceeds_cap": bool(
+            status.get("sparse_active_set_count_exceeds_cap", False),
+        ),
+        "surface_identity_emission_bounded": bool(
+            status.get("surface_identity_emission_bounded", False),
+        ),
+        "sparse_active_set_bounded": bool(
+            status.get("sparse_active_set_bounded", False),
+        ),
+        "bounded_nonclaim_reasons": list(status.get("bounded_nonclaim_reasons", ())),
+        "sparse_active_set_bounding": dict(
+            status.get("sparse_active_set_bounding", {}) or {},
+        ),
+        "full_active_hash_computed": False,
+        "full_active_sha256": "",
+        "oracle_full_active_sha256": "",
+        "full_active_hash_control": (
+            "disabled_bounded_independent_oracle_marker"
+            if bool(include_full_active_hash)
+            else "disabled_for_independent_oracle_perf_path"
+        ),
+        "emitted_decision_relevant_count": len(paths.emitted_decision_relevant_ids),
+        "full_identity_emission_claimed": bool(paths.full_identity_emission_claimed),
+        "full_sparse_equivalence_claimed": bool(paths.full_sparse_equivalence_claimed),
+        "q_flip_receipt_parity_scope": (
+            "bounded_sparse_nonclaim_q_flip_receipt_parity_not_claimed"
+        ),
+        "dense_q_flip_receipt_sha256": _sha256_json(dense_q_flips),
+        "sparse_q_flip_receipt_sha256": _sha256_json(sparse_q_flips),
+        "oracle_reference_recompute_timing_seconds": {},
+    }
+
+
 def _assert_legacy_surface_oracle_match(
     *,
     step: int,
@@ -1160,6 +1307,19 @@ def _assert_legacy_surface_oracle_match(
     sparse_oracle_max_active_ids: int,
     include_full_active_hash: bool = False,
 ) -> dict[str, Any]:
+    bounded_status = _independent_oracle_bounded_status(
+        paths,
+        sparse_oracle_max_active_ids=sparse_oracle_max_active_ids,
+    )
+    if bool(bounded_status["bounded_required"]):
+        return _bounded_independent_oracle_receipt(
+            step=int(step),
+            paths=paths,
+            sparse_oracle_max_active_ids=sparse_oracle_max_active_ids,
+            include_full_active_hash=include_full_active_hash,
+            status=bounded_status,
+        )
+
     oracle_paths = build_front_c_live_step_paths(
         step=int(step),
         states_by_key=states_by_key,
@@ -1265,6 +1425,10 @@ def _assert_legacy_surface_oracle_match(
         )
     return {
         "enabled": True,
+        "pass": True,
+        "status": "exact_reference_pass",
+        "reason": "",
+        "exactness_axis": "pass",
         "step": int(step),
         "oracle_source": "exact_reference_recompute_no_reused_plan",
         "oracle_path_source": oracle_source,
@@ -1780,7 +1944,13 @@ class FrontCLiveIdentityCollector:
                 sparse_oracle_max_active_ids=self.sparse_oracle_max_active_ids,
                 include_full_active_hash=self.full_active_hash_oracle,
             )
-            _record_duration(timing, "independent_oracle_reference_recompute", oracle_start)
+            oracle_timer_key = (
+                FRONT_C_INDEPENDENT_ORACLE_BOUNDED_REQUIRED_REASON
+                if legacy_oracle.get("status")
+                == FRONT_C_INDEPENDENT_ORACLE_BOUNDED_REQUIRED_REASON
+                else "independent_oracle_reference_recompute"
+            )
+            _record_duration(timing, oracle_timer_key, oracle_start)
         step_diagnostics = {
             "collect": True,
             "dense": paths.dense_diagnostics,

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 import pytest
 import torch
@@ -1038,6 +1039,10 @@ def test_front_c_independent_oracle_does_not_compute_full_active_hash(
     assert payload["diagnostics"]["independent_oracle_compare_enabled"] is True
     assert payload["diagnostics"]["full_active_hash_oracle_enabled"] is False
     assert oracle["enabled"] is True
+    assert oracle["pass"] is True
+    assert oracle["status"] == "exact_reference_pass"
+    assert oracle["reason"] == ""
+    assert oracle["exactness_axis"] == "pass"
     assert oracle["oracle_source"] == "exact_reference_recompute_no_reused_plan"
     assert oracle["oracle_path_source"] == "reference_recompute_compatibility_fallback"
     assert oracle["live_path_source"] == "reused_observer_plan"
@@ -1049,6 +1054,187 @@ def test_front_c_independent_oracle_does_not_compute_full_active_hash(
         "durations_seconds"
     ]
     assert "oracle_full_rebuild" not in step_diag["timing"]["durations_seconds"]
+
+
+def test_front_c_bounded_independent_oracle_emits_marker_without_full_materialization(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    def fail_sparse_materialize(*args, **kwargs):
+        raise AssertionError("bounded independent oracle must not materialize sparse states")
+
+    def fail_full_universe_hash(*args, **kwargs):
+        raise AssertionError("bounded independent oracle must not compute full hash")
+
+    monkeypatch.setattr(
+        front_c_emission,
+        "_sparse_states_from_active_set",
+        fail_sparse_materialize,
+    )
+    monkeypatch.setattr(
+        front_c_emission,
+        "_identity_universe_sha256",
+        fail_full_universe_hash,
+    )
+    states = {"toy.weight": _state()}
+    votes = {"toy.weight": _votes_for((0, 2), (1, 2), (2, 2))}
+    specs = {"toy.weight": _spec_with_max_flips(3)}
+    collector = FrontCLiveIdentityCollector(
+        artifact_path=tmp_path / "front_c_identity_artifact.json",
+        emission_interval=1,
+        max_exact_identity_keys=1,
+        sparse_oracle_max_active_ids=1,
+        independent_oracle_compare=True,
+        full_active_hash_oracle=True,
+    )
+    collector.record_step0(states)
+
+    apply_bounded_delta_vote_step(
+        states,
+        votes,
+        specs,
+        front_c_identity_observer=lambda observation: collector.record_step_observation(
+            step=1,
+            observation=observation,
+        ),
+    )
+    stdout = capsys.readouterr().out
+    receipt = collector.finalize(
+        audit_reports={"1": {"acquired": True, "strict_exact_count": 90}},
+        prior_audit_start_reports={"L0b": {"strict_exact": "230/230"}},
+        prior_audit_final_reports={"L0b": {"strict_exact": "230/230"}},
+        steps_completed=1,
+        stop_reason="unit_test_bounded_oracle_marker",
+    )
+    payload = json.loads((tmp_path / "front_c_identity_artifact.json").read_text())
+    step_diag = payload["diagnostics"]["step_diagnostics"]["1"]
+    oracle = step_diag["legacy_oracle"]
+    reason = front_c_emission.FRONT_C_INDEPENDENT_ORACLE_BOUNDED_REQUIRED_REASON
+
+    assert front_c_emission.FRONT_C_INDEPENDENT_ORACLE_BOUNDED_REQUIRED_MARKER in stdout
+    assert front_c_emission.FRONT_C_INDEPENDENT_ORACLE_BOUNDED_EXACTNESS_AXIS not in stdout
+    assert payload["diagnostics"]["independent_oracle_compare_enabled"] is True
+    assert payload["diagnostics"]["full_active_hash_oracle_enabled"] is True
+    assert oracle["enabled"] is True
+    assert oracle["pass"] is False
+    assert oracle["status"] == reason
+    assert oracle["reason"] == reason
+    assert (
+        oracle["exactness_axis"]
+        == front_c_emission.FRONT_C_INDEPENDENT_ORACLE_BOUNDED_EXACTNESS_AXIS
+    )
+    assert oracle["step3_unblocked"] is False
+    assert oracle["diagnostic_validity"] == "diagnostic_valid_for_live_bounded_path"
+    assert oracle["oracle_ran"] is False
+    assert oracle["oracle_path_source"] == "not_run_bounded_required"
+    assert oracle["checks"] == {reason: False}
+    assert not all(oracle["checks"].values())
+    assert oracle["full_active_count"] > oracle["sparse_oracle_max_active_ids"]
+    assert oracle["full_active_hash_computed"] is False
+    assert step_diag["sparse"]["sparse_active_set_full_hash_computed"] is False
+    assert step_diag["sparse"]["sparse_active_set_full_sha256"] == ""
+    assert step_diag["timing"]["sparse_path_mode"] == "bounded_reused_plan_filter"
+    assert reason in step_diag["timing"]["durations_seconds"]
+    assert "independent_oracle_reference_recompute" not in step_diag["timing"][
+        "durations_seconds"
+    ]
+    assert step_diag["collection_current_threshold_rebuild"]["source"] == (
+        "pre_step_q_acc_scan"
+    )
+    assert payload["decision_path_derivation"]["full_identity_emission_claimed"] is False
+    assert payload["decision_path_derivation"]["full_sparse_equivalence_claimed"] is False
+    assert "front_c_report" not in receipt
+    assert "front_c_report_skipped_bounded_nonclaim" in receipt
+
+
+def test_front_c_bounded_independent_oracle_representative_scale_is_o_small(
+    monkeypatch,
+    capsys,
+):
+    representative_full_count = 19_300_000
+
+    def fail_full_oracle(*args, **kwargs):
+        raise AssertionError("bounded marker must not call the exact fallback")
+
+    monkeypatch.setattr(
+        front_c_emission,
+        "build_front_c_live_step_paths",
+        fail_full_oracle,
+    )
+    monkeypatch.setattr(
+        front_c_emission,
+        "_sparse_states_from_active_set",
+        fail_full_oracle,
+    )
+    monkeypatch.setattr(
+        front_c_emission,
+        "_iter_identity_universe",
+        fail_full_oracle,
+    )
+    path = front_c_emission.FrontCDecisionPath(
+        label="front_c_dense_int16_reference",
+        q_flip_directions=(),
+        accepted_under_global_cap_keys=(),
+        deferred_under_global_cap_keys=(),
+        backlog_keys=(),
+        replay_veto_decision_keys=(),
+    )
+    paths = front_c_emission._StepPaths(
+        surface=front_c_emission.FrontCDecisionSurfaceStep(
+            step=1,
+            eligible_weight_count=representative_full_count,
+        ),
+        dense_path=path,
+        sparse_path=path,
+        dense_diagnostics={},
+        sparse_diagnostics={
+            "sparse_active_set_bounding": {
+                "bounded": True,
+                "full_identity_count": representative_full_count,
+                "emitted_identity_count": 1,
+                "identity_cap": 1,
+            },
+            "sparse_active_set_full_count": representative_full_count,
+            "sparse_active_set_full_hash_computed": False,
+            "sparse_active_set_full_sha256": "",
+        },
+        surface_diagnostics={"identity_emission_bounded": True},
+        emitted_decision_relevant_ids=frozenset(),
+        full_active_identity_universe=front_c_emission._IdentityUniverse(
+            sources_by_key=(
+                ("big.weight", torch.empty(representative_full_count, dtype=torch.int64)),
+            ),
+        ),
+        identity_emission_scope=front_c_emission.FRONT_C_IDENTITY_SCOPE_BOUNDED_SPARSE,
+        full_identity_emission_claimed=False,
+        full_sparse_equivalence_claimed=False,
+        bounded_nonclaim_reasons=("sparse_active_set_exceeded_cap",),
+        timing_diagnostics={"path_source": "reused_observer_plan", "durations_seconds": {}},
+    )
+
+    start = time.perf_counter()
+    receipt = front_c_emission._assert_legacy_surface_oracle_match(
+        step=1,
+        paths=paths,
+        states_by_key={},
+        inputs_by_key={},
+        specs_by_key={},
+        deferred_backlog={},
+        cap_frontier_width=1,
+        max_exact_identity_keys=1,
+        sparse_oracle_max_active_ids=1,
+        include_full_active_hash=False,
+    )
+    elapsed_seconds = time.perf_counter() - start
+    stdout = capsys.readouterr().out
+
+    assert elapsed_seconds < 2.0
+    assert receipt["status"] == front_c_emission.FRONT_C_INDEPENDENT_ORACLE_BOUNDED_REQUIRED_REASON
+    assert receipt["pass"] is False
+    assert receipt["full_active_count"] == representative_full_count
+    assert receipt["oracle_ran"] is False
+    assert front_c_emission.FRONT_C_INDEPENDENT_ORACLE_BOUNDED_REQUIRED_MARKER in stdout
 
 
 @pytest.mark.parametrize(
