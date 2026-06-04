@@ -318,6 +318,9 @@ class BoundedDeltaTensorState:
     frozen_scale: torch.Tensor
     bounded_accumulator: BoundedDeltaAccumulatorState
     exact_accumulator_shadow: torch.Tensor
+    bounded_accumulator_fresh_for_exact_shadow: bool = True
+    bounded_accumulator_rebuild_hot_exact_indices: tuple[int, ...] | None = None
+    bounded_accumulator_rebuild_cold_default_value: int | None = None
 
     def __post_init__(self) -> None:
         if not self.state_key:
@@ -335,14 +338,53 @@ class BoundedDeltaTensorState:
         if tuple(self.bounded_accumulator.logical_shape) != tuple(self.q_levels.shape):
             raise ValueError("bounded accumulator shape must match q_levels")
 
-    def decoded_accumulators(self, *, device: torch.device | str | None = None) -> torch.Tensor:
-        out = decode_bounded_accumulator_to_i16(self.bounded_accumulator)
+    def rebuild_hot_exact_indices(self) -> tuple[int, ...]:
+        if self.bounded_accumulator_rebuild_hot_exact_indices is not None:
+            return tuple(int(idx) for idx in self.bounded_accumulator_rebuild_hot_exact_indices)
+        return tuple(int(idx) for idx in self.bounded_accumulator.hot_exact_indices)
+
+    def rebuild_cold_default_value(self) -> int:
+        if self.bounded_accumulator_rebuild_cold_default_value is not None:
+            return int(self.bounded_accumulator_rebuild_cold_default_value)
+        return int(self.bounded_accumulator.cold_default_value)
+
+    def with_fresh_bounded_accumulator(self) -> BoundedDeltaTensorState:
+        return make_bounded_tensor_state(
+            self.state_key,
+            self.q_levels,
+            self.frozen_scale,
+            self.exact_accumulator_shadow,
+            hot_exact_indices=self.rebuild_hot_exact_indices(),
+            cold_default_value=self.rebuild_cold_default_value(),
+        )
+
+    def _fresh_state_for_bounded_parity(self) -> tuple[BoundedDeltaTensorState, bool]:
+        if self.bounded_accumulator_fresh_for_exact_shadow:
+            return self, False
+        return self.with_fresh_bounded_accumulator(), True
+
+    def decoded_accumulators(
+        self,
+        *,
+        device: torch.device | str | None = None,
+        rebuild_if_stale: bool = False,
+    ) -> torch.Tensor:
+        state = self
+        if not self.bounded_accumulator_fresh_for_exact_shadow:
+            if not rebuild_if_stale:
+                raise ValueError(
+                    "bounded accumulator is stale for exact_accumulator_shadow; "
+                    "request rebuild_if_stale=True or use an explicit parity/checkpoint path",
+                )
+            state = self.with_fresh_bounded_accumulator()
+        out = decode_bounded_accumulator_to_i16(state.bounded_accumulator)
         return out.to(device=device) if device is not None else out
 
     def bounded_decode_parity_report(self, *, fail_on_mismatch: bool = False) -> dict[str, Any]:
-        decoded = self.decoded_accumulators()
+        parity_state, rebuilt = self._fresh_state_for_bounded_parity()
+        decoded = decode_bounded_accumulator_to_i16(parity_state.bounded_accumulator)
         decoded_sha = tensor_sha256(decoded)
-        shadow_sha = tensor_sha256(self.exact_accumulator_shadow)
+        shadow_sha = tensor_sha256(parity_state.exact_accumulator_shadow)
         matches = decoded_sha == shadow_sha
         if fail_on_mismatch and not matches:
             raise ValueError(
@@ -350,6 +392,8 @@ class BoundedDeltaTensorState:
             )
         return {
             "bounded_decode_parity_checked": True,
+            "bounded_accumulator_fresh_for_exact_shadow": True,
+            "bounded_accumulator_rebuilt_for_parity": rebuilt,
             "bounded_accumulator_decoded_sha256": decoded_sha,
             "exact_accumulator_shadow_sha256": shadow_sha,
             "exact_shadow_matches_bounded_decode": matches,
@@ -378,22 +422,38 @@ class BoundedDeltaTensorState:
         return weight
 
     def to_schema_dict(self, *, parity_check: bool = True) -> dict[str, Any]:
+        summary_state = self
+        rebuilt = False
+        if parity_check:
+            summary_state, rebuilt = self._fresh_state_for_bounded_parity()
         out = {
-            "state_key": self.state_key,
-            "shape": list(self.q_levels.shape),
-            "q_dtype": str(self.q_levels.dtype),
-            "q_sha256": tensor_sha256(self.q_levels),
+            "state_key": summary_state.state_key,
+            "shape": list(summary_state.q_levels.shape),
+            "q_dtype": str(summary_state.q_levels.dtype),
+            "q_sha256": tensor_sha256(summary_state.q_levels),
             "q_codec": "int8_levels_transitional_base3_pack_ready",
-            "frozen_scale_dtype": str(self.frozen_scale.dtype),
-            "frozen_scale_value": float(self.frozen_scale.detach().cpu().item()),
+            "frozen_scale_dtype": str(summary_state.frozen_scale.dtype),
+            "frozen_scale_value": float(summary_state.frozen_scale.detach().cpu().item()),
             "frozen_scale_law": "per_tensor_absmean_frozen_from_parent_qscale",
             "bounded_accumulator_schema": BOUNDED_DELTA_ACCUMULATOR_SCHEMA_VERSION,
-            "bounded_accumulator": self.bounded_accumulator.to_dict(),
-            "exact_accumulator_shadow_sha256": tensor_sha256(self.exact_accumulator_shadow),
+            "bounded_accumulator": summary_state.bounded_accumulator.to_dict(),
+            "bounded_accumulator_fresh_for_exact_shadow": bool(
+                summary_state.bounded_accumulator_fresh_for_exact_shadow
+            ),
+            "bounded_accumulator_rebuilt_for_parity": bool(rebuilt),
+            "live_authoritative_state_source": "q_levels_plus_exact_accumulator_shadow",
+            "bounded_accumulator_authority": (
+                "fresh_checkpoint_export_or_explicit_parity"
+                if summary_state.bounded_accumulator_fresh_for_exact_shadow
+                else "stale_optional_not_live_authority"
+            ),
+            "exact_accumulator_shadow_sha256": tensor_sha256(summary_state.exact_accumulator_shadow),
             "bounded_decode_parity_checked": bool(parity_check),
         }
         if parity_check:
-            out.update(self.bounded_decode_parity_report(fail_on_mismatch=True))
+            parity = summary_state.bounded_decode_parity_report(fail_on_mismatch=True)
+            parity["bounded_accumulator_rebuilt_for_parity"] = bool(rebuilt)
+            out.update(parity)
         return out
 
 
@@ -454,6 +514,45 @@ def make_bounded_tensor_state(
         frozen_scale=scale,
         bounded_accumulator=bounded,
         exact_accumulator_shadow=acc,
+    )
+
+
+def make_live_shadow_tensor_state(
+    prior_state: BoundedDeltaTensorState,
+    q_levels: torch.Tensor,
+    accumulators: torch.Tensor,
+    *,
+    hot_exact_indices: Sequence[int] | None = None,
+    cold_default_value: int | None = None,
+) -> BoundedDeltaTensorState:
+    """Build the next live state without rebuilding the bounded accumulator."""
+
+    q = q_levels.detach().cpu().to(torch.int8).contiguous()
+    acc = accumulators.detach().cpu().to(torch.int16).contiguous()
+    if q.shape != acc.shape:
+        raise ValueError("q_levels and accumulators must have identical shapes")
+    if tuple(prior_state.bounded_accumulator.logical_shape) != tuple(q.shape):
+        raise ValueError("live shadow update cannot change bounded accumulator logical shape")
+    scale = prior_state.frozen_scale.detach().cpu().to(torch.float32).reshape(())
+    rebuild_hot = (
+        tuple(int(idx) for idx in hot_exact_indices)
+        if hot_exact_indices is not None
+        else prior_state.rebuild_hot_exact_indices()
+    )
+    rebuild_default = (
+        int(cold_default_value)
+        if cold_default_value is not None
+        else prior_state.rebuild_cold_default_value()
+    )
+    return BoundedDeltaTensorState(
+        state_key=prior_state.state_key,
+        q_levels=q,
+        frozen_scale=scale,
+        bounded_accumulator=prior_state.bounded_accumulator,
+        exact_accumulator_shadow=acc,
+        bounded_accumulator_fresh_for_exact_shadow=False,
+        bounded_accumulator_rebuild_hot_exact_indices=rebuild_hot,
+        bounded_accumulator_rebuild_cold_default_value=rebuild_default,
     )
 
 
@@ -681,7 +780,7 @@ def apply_bounded_delta_vote_step(
     global_cap_spec: GlobalRateCapSpec | None = None,
     deferred_backlog: dict[str, dict[int, dict[str, int]]] | None = None,
     hot_exact_indices_by_key: Mapping[str, Sequence[int]] | None = None,
-    cold_default_value: int = 0,
+    cold_default_value: int | None = None,
     parity_check: bool = False,
 ) -> BoundedDeltaLearnerStepResult:
     if set(tensor_states) != set(votes_by_key) or set(tensor_states) != set(vote_specs_by_key):
@@ -737,14 +836,17 @@ def apply_bounded_delta_vote_step(
     tensor_stats: dict[str, dict[str, Any]] = {}
     for state_key, prior_state in sorted(tensor_states.items()):
         q_out, acc_out, stats = q_acc_by_key[state_key]
-        next_state = make_bounded_tensor_state(
-            state_key,
+        rebuilt_for_step_parity = False
+        next_state = make_live_shadow_tensor_state(
+            prior_state,
             q_out,
-            prior_state.frozen_scale,
             acc_out,
-            hot_exact_indices=hot_by_key.get(state_key, prior_state.bounded_accumulator.hot_exact_indices),
+            hot_exact_indices=hot_by_key.get(state_key),
             cold_default_value=cold_default_value,
         )
+        if parity_check:
+            next_state = next_state.with_fresh_bounded_accumulator()
+            rebuilt_for_step_parity = True
         next_states[state_key] = next_state
         stats_out = {
             **dict(stats),
@@ -756,6 +858,10 @@ def apply_bounded_delta_vote_step(
             "q_sha256_before": tensor_sha256(prior_state.q_levels),
             "q_sha256_after": tensor_sha256(q_out),
             "exact_accumulator_shadow_sha256_after": tensor_sha256(acc_out),
+            "bounded_accumulator_fresh_for_exact_shadow": bool(
+                next_state.bounded_accumulator_fresh_for_exact_shadow
+            ),
+            "bounded_accumulator_rebuilt_for_parity": bool(rebuilt_for_step_parity),
             "bounded_decode_parity_checked": bool(parity_check),
         }
         if parity_check:
@@ -1009,6 +1115,7 @@ __all__ = [
     "default_dry_run_rank_vote_spec",
     "derive_bounded_tensor_state_from_weight",
     "file_sha256",
+    "make_live_shadow_tensor_state",
     "make_bounded_tensor_state",
     "project_s1_gradient_to_moves",
     "prove_eligible_master_identity_after_optimizer_step",

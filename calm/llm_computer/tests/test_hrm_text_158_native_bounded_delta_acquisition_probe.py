@@ -738,8 +738,14 @@ def test_tiny_real_model_cpu_step_receipt_is_scratch_only(tmp_path: Path):
     step_result = receipt["step_reports"]["1"]["step_result"]
     assert step_result["tensor_state_summaries_included"] is False
     assert "tensor_state_summaries" not in step_result
+    for tensor_stats in step_result["tensor_stats"].values():
+        assert tensor_stats["bounded_accumulator_fresh_for_exact_shadow"] is False
+        assert tensor_stats["bounded_accumulator_rebuilt_for_parity"] is False
+        assert tensor_stats["bounded_decode_parity_checked"] is False
     assert receipt["checkpoint_payload"]["checkpoint_written"] is False
     for tensor_summary in receipt["checkpoint_payload"]["tensor_summaries"].values():
+        assert tensor_summary["bounded_accumulator_fresh_for_exact_shadow"] is True
+        assert tensor_summary["bounded_accumulator_rebuilt_for_parity"] is True
         assert tensor_summary["bounded_decode_parity_checked"] is True
         assert tensor_summary["exact_shadow_matches_bounded_decode"] is True
     assert Path(receipt["receipt_path"]).exists()
