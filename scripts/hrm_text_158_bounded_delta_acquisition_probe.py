@@ -43,7 +43,10 @@ from calm.hrm_text_158.curriculum import (
     BroadTokenizer,
     make_rung_examples,
 )
+from calm.hrm_text_158.curriculum.exhaustive_supports import build_exhaustive_supports
 from calm.hrm_text_158.curriculum.language_supports import (
+    _l0b_support,
+    build_l0c1_support,
     build_l0c2k1_identity_full_support,
 )
 from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
@@ -79,6 +82,9 @@ C2P2_SUPPORT_CYCLER_SCHEMA_VERSION = "hrm_text_158_c2p2_identity_full_support_cy
 C2P2_TIMING_SCHEMA_VERSION = "hrm_text_158_c2p2_calibration_timing_summary/v0"
 C2P2_PHASE_TELEMETRY_SCHEMA_VERSION = "hrm_text_158_c2p2_phase_telemetry/v0"
 C2P2_DEVICE_GUARD_SCHEMA_VERSION = "hrm_text_158_c2p2_device_guard/v0"
+B1_PRIOR_AUDIT_SCHEMA_VERSION = "hrm_text_158_b1_prior_support_audit/v0"
+B1_PRIOR_SUPPORT_SCHEMA_VERSION = "hrm_text_158_b1_prior_support_adapter/v0"
+B1_PRIOR_AUDIT_DELTA_SCHEMA_VERSION = "hrm_text_158_b1_prior_support_delta/v0"
 C2P2_STRICT_EXACT_TARGET = 90
 C2P2_DEFAULT_MAX_STEPS_HARD = 1500
 C2P2_NULL_TAXONOMY = (
@@ -112,6 +118,27 @@ DEFAULT_PARENT = (
     "pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt"
 )
 IDENTITY_FULL_RUNG = "L0c2-K1-identity-2digit-full"
+B1_PRIOR_AUDIT_SUPPORTS: tuple[str, ...] = ("L0b", "math_a0", "L0c1")
+B1_PRIOR_AUDIT_PINS: dict[str, dict[str, Any]] = {
+    "L0b": {
+        "expected_count": 230,
+        "expected_hash16": "89174273d21845bc",
+        "builder_path": "calm.hrm_text_158.curriculum.language_supports._l0b_support",
+        "support_role": "true_prior",
+    },
+    "math_a0": {
+        "expected_count": 1255,
+        "expected_hash16": "56e64266357b793d",
+        "builder_path": "calm.hrm_text_158.curriculum.exhaustive_supports.build_exhaustive_supports",
+        "support_role": "true_prior",
+    },
+    "L0c1": {
+        "expected_count": 121,
+        "expected_hash16": "7bc8cd771daab878",
+        "builder_path": "calm.hrm_text_158.curriculum.language_supports.build_l0c1_support",
+        "support_role": "close_wrapper_report_only",
+    },
+}
 HISTORICAL_IDENTITY_CONTROL = {
     "control_role": "historical_positive_acquirability_control_not_same_harness_paired_int16",
     "receipt_msg_id": "1779747988676-247047ce",
@@ -291,6 +318,207 @@ def build_identity_full_support_batches(
         ],
     }
     return support_batches, proof
+
+
+def parse_prior_audit_supports(raw: str | Sequence[str] | None) -> tuple[str, ...]:
+    if raw is None:
+        return ()
+    if isinstance(raw, str):
+        parts = [part.strip() for part in raw.split(",") if part.strip()]
+    else:
+        parts = [str(part).strip() for part in raw if str(part).strip()]
+    unknown = [part for part in parts if part not in B1_PRIOR_AUDIT_SUPPORTS]
+    if unknown:
+        raise ValueError(
+            f"unknown prior audit support(s) {unknown}; valid: {B1_PRIOR_AUDIT_SUPPORTS}"
+        )
+    if len(parts) != len(set(parts)):
+        raise ValueError(f"duplicate prior audit support(s): {parts}")
+    return tuple(parts)
+
+
+def _prior_support_sorted_rows(name: str, curriculum_seed: int) -> list[tuple[str, int, str]]:
+    if name == "L0b":
+        rows = [(q, e, source_rung) for (q, e, source_rung) in _l0b_support(int(curriculum_seed))]
+    elif name == "math_a0":
+        rows = [
+            (q, e, rung)
+            for rung, pairs in build_exhaustive_supports().items()
+            for (q, e) in pairs
+        ]
+    elif name == "L0c1":
+        rows = [
+            (q, e, bucket)
+            for _surface, pairs in build_l0c1_support(int(curriculum_seed)).items()
+            for (q, e, bucket) in pairs
+        ]
+    else:
+        raise ValueError(
+            f"unknown prior audit support {name!r}; valid: {B1_PRIOR_AUDIT_SUPPORTS}"
+        )
+    return sorted(rows, key=lambda row: (row[2], row[0], row[1]))
+
+
+def build_prior_audit_support_rows(
+    name: str,
+    *,
+    curriculum_seed: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    pins = B1_PRIOR_AUDIT_PINS[name]
+    sorted_rows = _prior_support_sorted_rows(name, int(curriculum_seed))
+    row_count = len(sorted_rows)
+    support_hash16 = hashlib.sha256(repr(sorted_rows).encode("utf-8")).hexdigest()[:16]
+    if row_count != int(pins["expected_count"]) or support_hash16 != pins["expected_hash16"]:
+        raise RuntimeError(
+            f"prior audit support pin mismatch for {name}: "
+            f"count/hash {row_count}/{support_hash16} != "
+            f"{pins['expected_count']}/{pins['expected_hash16']}"
+        )
+    rows = [
+        {
+            "question": question,
+            "expected": expected,
+            "rung": name,
+            "source_rung": source_rung,
+            "prior_audit_support": name,
+            "_support_index": index,
+        }
+        for index, (question, expected, source_rung) in enumerate(sorted_rows)
+    ]
+    source_counts: dict[str, int] = {}
+    for _question, _expected, source_rung in sorted_rows:
+        source_counts[source_rung] = source_counts.get(source_rung, 0) + 1
+    proof = {
+        "schema": B1_PRIOR_SUPPORT_SCHEMA_VERSION,
+        "support": name,
+        "support_role": pins["support_role"],
+        "seed": int(curriculum_seed),
+        "builder_path": pins["builder_path"],
+        "row_count": row_count,
+        "expected_count": int(pins["expected_count"]),
+        "support_hash16": support_hash16,
+        "expected_hash16": pins["expected_hash16"],
+        "pinned_count_hash_pass": True,
+        "source_bucket_counts": dict(sorted(source_counts.items())),
+        "report_only": True,
+        "direct_kl": False,
+        "replay_pc": "OUT",
+        "target_parent_kl": False,
+    }
+    if name == "L0c1":
+        proof["close_wrapper_report_only"] = {
+            "direct_kl": False,
+            "replay_pc": "OUT",
+            "target_parent_kl": False,
+        }
+    return rows, proof
+
+
+def build_prior_audit_support_batches(
+    *,
+    support: str,
+    tok: Any,
+    max_len: int,
+    batch_size: int,
+    curriculum_seed: int,
+    device: torch.device,
+) -> dict[str, Any]:
+    if int(batch_size) <= 0:
+        raise ValueError("batch_size must be positive")
+    rows, proof = build_prior_audit_support_rows(
+        support,
+        curriculum_seed=int(curriculum_seed),
+    )
+    usable_rows = _identity_full_usable_rows(rows, tok=tok, max_len=int(max_len))
+    dataset = HrmTextGsm8kDataset(
+        rows,
+        tok,
+        max_len=int(max_len),
+        curriculum_rung=support,
+    )
+    if len(dataset) != len(usable_rows):
+        raise RuntimeError(
+            f"prior audit metadata/tensor row mismatch for {support}: "
+            f"dataset={len(dataset)} usable_metadata={len(usable_rows)}"
+        )
+    if len(dataset) != int(proof["expected_count"]):
+        raise RuntimeError(
+            f"prior audit support {support} dropped rows under max_len={max_len}: "
+            f"usable={len(dataset)} expected={proof['expected_count']}"
+        )
+    loader = DataLoader(
+        dataset,
+        batch_size=int(batch_size),
+        shuffle=False,
+        collate_fn=_collate,
+    )
+    batches: list[dict[str, Any]] = []
+    row_offset = 0
+    for batch_index, collated in enumerate(loader):
+        row_count = int(collated["inputs"].shape[0])
+        batch_rows = usable_rows[row_offset: row_offset + row_count]
+        source_buckets = [str(row["source_rung"]) for row in batch_rows]
+        source_counts: dict[str, int] = {}
+        for source_bucket in source_buckets:
+            source_counts[source_bucket] = source_counts.get(source_bucket, 0) + 1
+        metadata = _support_batch_metadata(batch_index=batch_index, rows=batch_rows)
+        batches.append(
+            {
+                "batch": _model_batch_from_collated(collated, device=device),
+                "metadata": {
+                    **metadata,
+                    "support": support,
+                    "row_start": int(row_offset),
+                    "row_end_exclusive": int(row_offset + row_count),
+                    "source_buckets": source_buckets,
+                    "source_bucket_counts": dict(sorted(source_counts.items())),
+                },
+            }
+        )
+        row_offset += row_count
+    distinct_batch_hashes = {
+        item["metadata"]["batch_content_hash16"]
+        for item in batches
+    }
+    proof = {
+        **proof,
+        "batch_size": int(batch_size),
+        "batch_count": len(batches),
+        "distinct_batch_count": len(distinct_batch_hashes),
+        "support_content_hash16": _sha16(
+            [
+                batch["metadata"]["batch_content_hash16"]
+                for batch in batches
+            ]
+        ),
+        "batch_metadata": [
+            item["metadata"]
+            for item in batches
+        ],
+    }
+    return {"support": support, "batches": batches, "proof": proof}
+
+
+def build_prior_audit_support_sets(
+    supports: Sequence[str],
+    *,
+    tok: Any,
+    max_len: int,
+    batch_size: int,
+    curriculum_seed: int,
+    device: torch.device,
+) -> dict[str, dict[str, Any]]:
+    return {
+        support: build_prior_audit_support_batches(
+            support=support,
+            tok=tok,
+            max_len=int(max_len),
+            batch_size=int(batch_size),
+            curriculum_seed=int(curriculum_seed),
+            device=device,
+        )
+        for support in supports
+    }
 
 
 def _tensor_scalar(value: Any) -> int | float | bool | str:
@@ -959,6 +1187,453 @@ def audit_identity_full_support(
         batch_reports=batch_reports,
         bp_steps=int(extras["bp_steps"]),
     )
+
+
+def _audit_failure_summary(
+    score: Mapping[str, Any],
+    metadata: Mapping[str, Any],
+    *,
+    exact_key: str,
+) -> dict[str, Any]:
+    row_ids = list(metadata.get("row_ids", []))
+    source_buckets = list(metadata.get("source_buckets", []))
+    row_start = int(metadata.get("row_start", 0))
+    failure_row_ids: list[str] = []
+    sources_by_row_id: dict[str, str] = {}
+    source_counts: dict[str, int] = {}
+    for row_result in score.get("row_results", []):
+        if bool(row_result[exact_key]):
+            continue
+        row_index = int(row_result["row_index"])
+        local_index = row_index - row_start
+        row_id = (
+            str(row_ids[local_index])
+            if 0 <= local_index < len(row_ids)
+            else f"{row_index}:missing-row-id"
+        )
+        source_bucket = (
+            str(source_buckets[local_index])
+            if 0 <= local_index < len(source_buckets)
+            else "unknown"
+        )
+        failure_row_ids.append(row_id)
+        sources_by_row_id[row_id] = source_bucket
+        source_counts[source_bucket] = source_counts.get(source_bucket, 0) + 1
+    return {
+        "failure_row_ids": failure_row_ids,
+        "failure_sources_by_row_id": sources_by_row_id,
+        "failure_source_counts": dict(sorted(source_counts.items())),
+    }
+
+
+def _merge_failure_summaries(
+    batch_reports: Sequence[Mapping[str, Any]],
+    *,
+    prefix: str,
+) -> dict[str, Any]:
+    row_ids: list[str] = []
+    sources_by_row_id: dict[str, str] = {}
+    source_counts: dict[str, int] = {}
+    for report in batch_reports:
+        for row_id in report.get(f"{prefix}_failure_row_ids", []):
+            row_ids.append(str(row_id))
+        for row_id, source_bucket in report.get(f"{prefix}_failure_sources_by_row_id", {}).items():
+            sources_by_row_id[str(row_id)] = str(source_bucket)
+        for source_bucket, count in report.get(f"{prefix}_failure_source_counts", {}).items():
+            source_counts[str(source_bucket)] = source_counts.get(str(source_bucket), 0) + int(count)
+    return {
+        f"{prefix}_failure_row_ids": sorted(row_ids),
+        f"{prefix}_failure_sources_by_row_id": dict(sorted(sources_by_row_id.items())),
+        f"{prefix}_failure_source_counts": dict(sorted(source_counts.items())),
+    }
+
+
+def aggregate_prior_audit_batch_reports(
+    *,
+    support: str,
+    support_proof: Mapping[str, Any],
+    phase: str,
+    step: int,
+    batch_reports: Sequence[Mapping[str, Any]],
+    bp_steps: int,
+    duration_seconds: float,
+) -> dict[str, Any]:
+    strict_metric_count = sum(
+        int(report["metric_strict"]["count"])
+        for report in batch_reports
+    )
+    strict_metric_total = sum(
+        int(report["metric_strict"]["total"])
+        for report in batch_reports
+    )
+    strict_recomputed_count = sum(
+        int(report["strict_recomputed"]["count"])
+        for report in batch_reports
+    )
+    strict_recomputed_total = sum(
+        int(report["strict_recomputed"]["total"])
+        for report in batch_reports
+    )
+    parsed_count = sum(
+        int(report["parsed"]["count"])
+        for report in batch_reports
+    )
+    parsed_total = sum(
+        int(report["parsed"]["total"])
+        for report in batch_reports
+    )
+    loss_values = [
+        float(report["loss"])
+        for report in batch_reports
+        if report.get("loss") is not None
+    ]
+    strict_recompute_mismatch = (
+        strict_metric_count != strict_recomputed_count
+        or strict_metric_total != strict_recomputed_total
+    )
+    audit_mismatch = (
+        strict_recompute_mismatch
+        or strict_metric_total != parsed_total
+        or strict_metric_total != int(support_proof["expected_count"])
+    )
+    audited_hashes = [
+        report["metadata"]["batch_content_hash16"]
+        for report in batch_reports
+    ]
+    strict_failures = _merge_failure_summaries(batch_reports, prefix="strict")
+    parsed_failures = _merge_failure_summaries(batch_reports, prefix="parsed")
+    return {
+        "schema": B1_PRIOR_AUDIT_SCHEMA_VERSION,
+        "phase": phase,
+        "step": int(step),
+        "support": support,
+        "support_role": support_proof["support_role"],
+        "support_proof": dict(support_proof),
+        "support_rows_expected": int(support_proof["expected_count"]),
+        "support_rows_audited": strict_metric_total,
+        "audit_batch_count": len(batch_reports),
+        "audited_batch_content_hashes": audited_hashes,
+        "audited_distinct_batch_count": len(set(audited_hashes)),
+        "strict_exact_count": strict_metric_count,
+        "strict_exact_total": strict_metric_total,
+        "strict_exact": f"{strict_metric_count}/{strict_metric_total}",
+        "strict_exact_pct": (
+            float(strict_metric_count / strict_metric_total)
+            if strict_metric_total
+            else 0.0
+        ),
+        "strict_exact_recomputed_from_logits_count": strict_recomputed_count,
+        "strict_exact_recomputed_from_logits_total": strict_recomputed_total,
+        "strict_exact_recompute_matches_metric": not strict_recompute_mismatch,
+        "parsed_exact_count": parsed_count,
+        "parsed_exact_total": parsed_total,
+        "parsed_exact": f"{parsed_count}/{parsed_total}",
+        "parsed_exact_pct": (
+            float(parsed_count / parsed_total)
+            if parsed_total
+            else 0.0
+        ),
+        "strict_exact_and_parsed_independent": True,
+        "acquired": (
+            strict_metric_count == int(support_proof["expected_count"])
+            and strict_metric_total == int(support_proof["expected_count"])
+        ),
+        "loss_mean": (
+            float(sum(loss_values) / len(loss_values))
+            if loss_values
+            else None
+        ),
+        "bp_steps": int(bp_steps),
+        "duration_seconds": float(duration_seconds),
+        "audit_mismatch": bool(audit_mismatch),
+        "report_only": True,
+        "direct_kl": False,
+        "replay_pc": "OUT",
+        "target_parent_kl": False,
+        **strict_failures,
+        **parsed_failures,
+        "batch_reports": list(batch_reports),
+    }
+
+
+def audit_prior_support(
+    model: LMHead,
+    prior_support_set: Mapping[str, Any],
+    tensor_states: Mapping[str, Any],
+    eligible_modules: Mapping[str, BitLinear],
+    *,
+    tok: Any,
+    device: torch.device,
+    phase: str,
+    step: int,
+    total_steps: int,
+) -> dict[str, Any]:
+    support = str(prior_support_set["support"])
+    support_batches = list(prior_support_set["batches"])
+    support_proof = dict(prior_support_set["proof"])
+    was_training = model.training
+    model.eval()
+    batch_reports: list[dict[str, Any]] = []
+    timing_start = _timing_start(device)
+    try:
+        extras = model.compute_train_extra_args(int(step), max(1, int(total_steps)))
+        with torch.no_grad():
+            with authoritative_forward_context(
+                eligible_modules,
+                tensor_states,
+                device=device,
+                requires_grad=False,
+            ):
+                for batch_item in support_batches:
+                    metadata = batch_item["metadata"]
+                    batch = batch_item["batch"]
+                    _carry, loss, metrics = model(
+                        None,
+                        dict(batch),
+                        return_logits=True,
+                        **extras,
+                    )
+                    metric_exact = metrics["exact_accuracy"]
+                    metric_count = int(_tensor_scalar(metric_exact[0]))
+                    metric_total = int(_tensor_scalar(metric_exact[1]))
+                    score = score_strict_exact_and_parsed_from_logits(
+                        metrics["logits"],
+                        batch["labels"],
+                        tok=tok,
+                        row_offset=int(metadata["row_start"]),
+                        include_row_results=True,
+                    )
+                    strict_failure_summary = _audit_failure_summary(
+                        score,
+                        metadata,
+                        exact_key="strict_exact",
+                    )
+                    parsed_failure_summary = _audit_failure_summary(
+                        score,
+                        metadata,
+                        exact_key="parsed_exact",
+                    )
+                    batch_reports.append(
+                        {
+                            "metadata": metadata,
+                            "loss": float(loss.detach().cpu().item()),
+                            "metrics": _metrics_to_dict(metrics),
+                            "metric_strict": {
+                                "count": metric_count,
+                                "total": metric_total,
+                                "strict_exact": f"{metric_count}/{metric_total}",
+                            },
+                            "strict_recomputed": {
+                                "count": int(score["strict_exact_count"]),
+                                "total": int(score["strict_exact_total"]),
+                                "strict_exact": score["strict_exact"],
+                            },
+                            "parsed": {
+                                "count": int(score["parsed_exact_count"]),
+                                "total": int(score["parsed_exact_total"]),
+                                "parsed_exact": score["parsed_exact"],
+                            },
+                            "failure_examples": score["failure_examples"],
+                            "strict_failure_row_ids": strict_failure_summary["failure_row_ids"],
+                            "strict_failure_sources_by_row_id": strict_failure_summary[
+                                "failure_sources_by_row_id"
+                            ],
+                            "strict_failure_source_counts": strict_failure_summary[
+                                "failure_source_counts"
+                            ],
+                            "parsed_failure_row_ids": parsed_failure_summary["failure_row_ids"],
+                            "parsed_failure_sources_by_row_id": parsed_failure_summary[
+                                "failure_sources_by_row_id"
+                            ],
+                            "parsed_failure_source_counts": parsed_failure_summary[
+                                "failure_source_counts"
+                            ],
+                        }
+                    )
+    finally:
+        model.train(was_training)
+    duration_seconds = _timing_duration_seconds(timing_start, device)
+    return aggregate_prior_audit_batch_reports(
+        support=support,
+        support_proof=support_proof,
+        phase=phase,
+        step=int(step),
+        batch_reports=batch_reports,
+        bp_steps=int(extras["bp_steps"]),
+        duration_seconds=duration_seconds,
+    )
+
+
+def audit_prior_support_sets(
+    model: LMHead,
+    prior_support_sets: Mapping[str, Mapping[str, Any]],
+    tensor_states: Mapping[str, Any],
+    eligible_modules: Mapping[str, BitLinear],
+    *,
+    tok: Any,
+    device: torch.device,
+    phase: str,
+    step: int,
+    total_steps: int,
+) -> dict[str, Any]:
+    return {
+        support: audit_prior_support(
+            model,
+            prior_support_sets[support],
+            tensor_states,
+            eligible_modules,
+            tok=tok,
+            device=device,
+            phase=phase,
+            step=int(step),
+            total_steps=int(total_steps),
+        )
+        for support in prior_support_sets
+    }
+
+
+def _new_failure_source_counts(
+    final_report: Mapping[str, Any],
+    new_row_ids: Sequence[str],
+    *,
+    prefix: str,
+) -> dict[str, int]:
+    source_by_row = final_report.get(f"{prefix}_failure_sources_by_row_id", {})
+    counts: dict[str, int] = {}
+    for row_id in new_row_ids:
+        source = str(source_by_row.get(row_id, "unknown"))
+        counts[source] = counts.get(source, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def build_prior_audit_delta(
+    *,
+    support: str,
+    start_report: Mapping[str, Any],
+    final_report: Mapping[str, Any],
+) -> dict[str, Any]:
+    start_strict_failures = set(start_report.get("strict_failure_row_ids", []))
+    final_strict_failures = set(final_report.get("strict_failure_row_ids", []))
+    start_parsed_failures = set(start_report.get("parsed_failure_row_ids", []))
+    final_parsed_failures = set(final_report.get("parsed_failure_row_ids", []))
+    new_strict_failures = sorted(final_strict_failures - start_strict_failures)
+    new_parsed_failures = sorted(final_parsed_failures - start_parsed_failures)
+    strict_source_counts = _new_failure_source_counts(
+        final_report,
+        new_strict_failures,
+        prefix="strict",
+    )
+    parsed_source_counts = _new_failure_source_counts(
+        final_report,
+        new_parsed_failures,
+        prefix="parsed",
+    )
+    max_new_cluster_count = max(
+        [0, *strict_source_counts.values(), *parsed_source_counts.values()]
+    )
+    broad_cluster_threshold_rows = 3
+    no_new_broad_cluster = max_new_cluster_count < broad_cluster_threshold_rows
+    return {
+        "schema": B1_PRIOR_AUDIT_DELTA_SCHEMA_VERSION,
+        "support": support,
+        "parent_baseline_step": int(start_report["step"]),
+        "final_step": int(final_report["step"]),
+        "parent_baseline_vs_final": {
+            "baseline_strict_exact": start_report["strict_exact"],
+            "final_strict_exact": final_report["strict_exact"],
+            "strict_exact_count_delta": int(final_report["strict_exact_count"])
+            - int(start_report["strict_exact_count"]),
+            "baseline_parsed_exact": start_report["parsed_exact"],
+            "final_parsed_exact": final_report["parsed_exact"],
+            "parsed_exact_count_delta": int(final_report["parsed_exact_count"])
+            - int(start_report["parsed_exact_count"]),
+        },
+        "new_strict_failure_count": len(new_strict_failures),
+        "new_strict_failure_row_ids": new_strict_failures,
+        "new_strict_failure_source_counts": strict_source_counts,
+        "new_parsed_failure_count": len(new_parsed_failures),
+        "new_parsed_failure_row_ids": new_parsed_failures,
+        "new_parsed_failure_source_counts": parsed_source_counts,
+        "broad_cluster_threshold_rows": broad_cluster_threshold_rows,
+        "max_new_failure_cluster_count": max_new_cluster_count,
+        "no_new_broad_cluster": bool(no_new_broad_cluster),
+        "broad_cluster_classification": (
+            "no-new-broad-cluster"
+            if no_new_broad_cluster
+            else "broad-cluster"
+        ),
+    }
+
+
+def build_prior_audit_receipt(
+    *,
+    requested_supports: Sequence[str],
+    support_sets: Mapping[str, Mapping[str, Any]],
+    start_reports: Mapping[str, Mapping[str, Any]],
+    final_reports: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    if not requested_supports:
+        return {
+            "schema": B1_PRIOR_AUDIT_SCHEMA_VERSION,
+            "enabled": False,
+            "requested_supports": [],
+            "default_off": True,
+            "prior_batches_fed_to_bounded_steps": False,
+            "direct_kl": False,
+            "replay_pc": "OUT",
+            "target_parent_kl": False,
+        }
+    deltas = {
+        support: build_prior_audit_delta(
+            support=support,
+            start_report=start_reports[support],
+            final_report=final_reports[support],
+        )
+        for support in requested_supports
+    }
+    per_support = {
+        support: {
+            "support_hash16": support_sets[support]["proof"]["support_hash16"],
+            "support_rows_expected": support_sets[support]["proof"]["expected_count"],
+            "builder_path": support_sets[support]["proof"]["builder_path"],
+            "support_role": support_sets[support]["proof"]["support_role"],
+            "start": {
+                "strict_exact": start_reports[support]["strict_exact"],
+                "parsed_exact": start_reports[support]["parsed_exact"],
+                "duration_seconds": start_reports[support]["duration_seconds"],
+            },
+            "final": {
+                "strict_exact": final_reports[support]["strict_exact"],
+                "parsed_exact": final_reports[support]["parsed_exact"],
+                "duration_seconds": final_reports[support]["duration_seconds"],
+            },
+            "delta": deltas[support],
+        }
+        for support in requested_supports
+    }
+    total_duration_seconds = sum(
+        float(report["duration_seconds"])
+        for report in list(start_reports.values()) + list(final_reports.values())
+    )
+    return {
+        "schema": B1_PRIOR_AUDIT_SCHEMA_VERSION,
+        "enabled": True,
+        "requested_supports": list(requested_supports),
+        "default_off": False,
+        "prior_batches_fed_to_bounded_steps": False,
+        "direct_kl": False,
+        "replay_pc": "OUT",
+        "target_parent_kl": False,
+        "support_proofs": {
+            support: support_sets[support]["proof"]
+            for support in requested_supports
+        },
+        "start_reports": dict(start_reports),
+        "final_reports": dict(final_reports),
+        "deltas": deltas,
+        "per_support": per_support,
+        "total_duration_seconds": float(total_duration_seconds),
+    }
 
 
 def _step_q_changed_total(step_reports: Mapping[str, Any]) -> int:
@@ -1671,6 +2346,7 @@ def run_c2p1_probe(
     total_timeout_seconds: float = 0.0,
     enabled: bool | None = None,
     allow_gpu_launch: bool = False,
+    prior_audit_supports: str | Sequence[str] | None = None,
 ) -> dict[str, Any]:
     assert_default_off(enabled)
     if int(max_steps_hard) <= 0:
@@ -1681,6 +2357,7 @@ def run_c2p1_probe(
         )
     if int(audit_interval) < 0:
         raise ValueError("audit_interval must be non-negative")
+    requested_prior_audit_supports = parse_prior_audit_supports(prior_audit_supports)
     torch_device = torch.device(device)
     guard_gpu_launch(torch_device, allow_gpu_launch=allow_gpu_launch)
     device_guard = assert_probe_device_ready(torch_device)
@@ -1708,6 +2385,17 @@ def run_c2p1_probe(
             curriculum_seed=int(curriculum_seed),
             device=torch_device,
         )
+    prior_support_sets: dict[str, dict[str, Any]] = {}
+    if requested_prior_audit_supports:
+        with phase_progress.phase("prior_support_build"):
+            prior_support_sets = build_prior_audit_support_sets(
+                requested_prior_audit_supports,
+                tok=tok,
+                max_len=int(max_len or ckpt["config"]["max_seq_len"]),
+                batch_size=int(batch_size),
+                curriculum_seed=int(curriculum_seed),
+                device=torch_device,
+            )
     model_batch = support_batches[0]["batch"]
     batch_proof = {
         **support_cycler_proof,
@@ -1742,6 +2430,21 @@ def run_c2p1_probe(
             eligible_scope=eligible_scope,
             total_steps=int(steps),
         )
+
+    prior_audit_start_reports: dict[str, dict[str, Any]] = {}
+    if prior_support_sets:
+        with phase_progress.phase("prior_audit0"):
+            prior_audit_start_reports = audit_prior_support_sets(
+                model,
+                prior_support_sets,
+                tensor_states,
+                eligible,
+                tok=tok,
+                device=torch_device,
+                phase="prior_audit0",
+                step=0,
+                total_steps=max(1, int(steps)),
+            )
 
     step0_optimizer_identity_proof = None
     if int(steps) <= 0:
@@ -1785,6 +2488,20 @@ def run_c2p1_probe(
             stop_on_strict_exact=bool(stop_on_strict_exact),
             phase_progress=phase_progress,
         )
+    prior_audit_final_reports: dict[str, dict[str, Any]] = {}
+    if prior_support_sets:
+        with phase_progress.phase("prior_final_audit", step=int(steps_completed)):
+            prior_audit_final_reports = audit_prior_support_sets(
+                model,
+                prior_support_sets,
+                final_states,
+                eligible,
+                tok=tok,
+                device=torch_device,
+                phase="prior_final_audit",
+                step=int(steps_completed),
+                total_steps=max(1, int(steps)),
+            )
     if not updater_config:
         updater_config = {
             "rank_vote_spec": default_dry_run_rank_vote_spec().to_live_dict(),
@@ -1810,11 +2527,17 @@ def run_c2p1_probe(
     total_run_duration_seconds = _timing_duration_seconds(
         run_timing_start,
         torch_device,
-    )
+        )
     timing_summary = build_timing_summary(
         step_reports=step_reports,
         audit_reports=audit_reports,
         total_run_duration_seconds=total_run_duration_seconds,
+    )
+    prior_audit_receipt = build_prior_audit_receipt(
+        requested_supports=requested_prior_audit_supports,
+        support_sets=prior_support_sets,
+        start_reports=prior_audit_start_reports,
+        final_reports=prior_audit_final_reports,
     )
     receipt = {
         "schema": C2P1_HARNESS_SCHEMA_VERSION,
@@ -1863,6 +2586,7 @@ def run_c2p1_probe(
         "bounded_update_attribution": BOUNDED_UPDATE_ATTRIBUTION,
         "step_reports": step_reports,
         "audit_reports": audit_reports,
+        "prior_audit": prior_audit_receipt,
         "timing_summary": timing_summary,
         "acquisition_trajectory": build_acquisition_trajectory(
             audit_enabled=audit_enabled,
@@ -1911,6 +2635,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--init-fidelity-atol", type=float, default=0.0)
     ap.add_argument("--audit-interval", type=int, default=0)
     ap.add_argument("--stop-on-strict-exact", action="store_true")
+    ap.add_argument(
+        "--prior-audit-supports",
+        default="",
+        help=(
+            "Comma-separated read-only prior supports to audit before/after "
+            f"bounded steps. Valid: {','.join(B1_PRIOR_AUDIT_SUPPORTS)}. "
+            "Default off."
+        ),
+    )
     ap.add_argument("--max-steps-hard", type=int, default=C2P2_DEFAULT_MAX_STEPS_HARD)
     ap.add_argument("--emit-progress", action="store_true")
     ap.add_argument("--phase-timeout-seconds", type=float, default=0.0)
@@ -1936,6 +2669,7 @@ def main(argv: list[str] | None = None) -> int:
         max_abs_per_tensor=args.max_abs_per_tensor,
         audit_interval=args.audit_interval,
         stop_on_strict_exact=args.stop_on_strict_exact,
+        prior_audit_supports=args.prior_audit_supports,
         max_steps_hard=args.max_steps_hard,
         emit_progress=args.emit_progress,
         phase_timeout_seconds=args.phase_timeout_seconds,

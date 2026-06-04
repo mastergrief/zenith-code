@@ -22,6 +22,9 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     make_bounded_tensor_state,
 )
 from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+    B1_PRIOR_AUDIT_PINS,
+    B1_PRIOR_AUDIT_SCHEMA_VERSION,
+    B1_PRIOR_AUDIT_SUPPORTS,
     C2P2_PHASE_TELEMETRY_SCHEMA_VERSION,
     C2P2_TIMING_SCHEMA_VERSION,
     C2PhaseTimeout,
@@ -29,11 +32,14 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     FORWARD_LEVEL_INIT_FIDELITY_STE_ATOL,
     HISTORICAL_IDENTITY_CONTROL,
     PhaseProgress,
+    RUN_C2_ACQUISITION_PROBE_ENV,
     RUN_C2_GPU_LAUNCH_ENV,
     aggregate_identity_full_audit_batch_reports,
     build_identity_full_batch,
     build_identity_full_support_batches,
     build_model_from_checkpoint,
+    build_prior_audit_support_batches,
+    build_prior_audit_support_rows,
     compare_module_output_fidelity,
     compute_forward_level_init_fidelity,
     cuda_memory_receipt,
@@ -44,6 +50,7 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     guard_gpu_launch,
     identity_full_support_control_proof,
     native_ternary_effective_weight,
+    parse_prior_audit_supports,
     reset_cuda_memory_stats,
     run_c2p1_probe,
     score_strict_exact_and_parsed_from_logits,
@@ -145,6 +152,60 @@ def _metrics_without_logits(metrics: dict) -> dict:
     return out
 
 
+def _step_hash_subset(receipt: dict) -> dict:
+    hash_keys = (
+        "q_sha256_before",
+        "q_sha256_after",
+        "exact_accumulator_shadow_sha256_after",
+        "votes_sha256",
+    )
+    return {
+        step: {
+            "q_changed_count": int(report["q_changed_count"]),
+            "tensor_stats": {
+                key: {
+                    hash_key: stats[hash_key]
+                    for hash_key in hash_keys
+                }
+                for key, stats in report["step_result"]["tensor_stats"].items()
+            },
+        }
+        for step, report in receipt["step_reports"].items()
+    }
+
+
+def _target_audit_metric_subset(receipt: dict) -> dict:
+    return {
+        step: {
+            "strict_exact": report["strict_exact"],
+            "parsed_exact": report["parsed_exact"],
+            "strict_exact_count": int(report["strict_exact_count"]),
+            "parsed_exact_count": int(report["parsed_exact_count"]),
+        }
+        for step, report in receipt["audit_reports"].items()
+    }
+
+
+def _trajectory_without_timing(receipt: dict) -> dict:
+    trajectory = json.loads(json.dumps(receipt["acquisition_trajectory"], sort_keys=True))
+    trajectory.pop("timing_summary", None)
+    return trajectory
+
+
+def _state_parity_subset(receipt: dict) -> dict:
+    checkpoint = receipt["checkpoint_payload"]
+    return {
+        "steps_completed": int(receipt["steps_completed"]),
+        "stop_reason": receipt["stop_reason"],
+        "step_report_keys": sorted(receipt["step_reports"]),
+        "step_hashes": _step_hash_subset(receipt),
+        "target_audit_reports": _target_audit_metric_subset(receipt),
+        "acquisition_trajectory": _trajectory_without_timing(receipt),
+        "authoritative_state_sha256": checkpoint["authoritative_state_sha256"],
+        "tensor_summaries": checkpoint["tensor_summaries"],
+    }
+
+
 def _forward_init_value_subset(
     *,
     native_loss: torch.Tensor,
@@ -211,6 +272,18 @@ def test_gpu_guard_requires_explicit_launch_env(monkeypatch):
 
     with pytest.raises(RuntimeError, match=RUN_C2_GPU_LAUNCH_ENV):
         guard_gpu_launch(torch.device("cuda:0"), allow_gpu_launch=True)
+
+
+def test_prior_audit_flag_does_not_bypass_default_off(monkeypatch, tmp_path: Path):
+    monkeypatch.delenv(RUN_C2_ACQUISITION_PROBE_ENV, raising=False)
+
+    with pytest.raises(RuntimeError, match="default-off"):
+        run_c2p1_probe(
+            parent=tmp_path / "missing_parent.pt",
+            parent_sha256=None,
+            scratch_root=tmp_path / "scratch",
+            prior_audit_supports="L0c1",
+        )
 
 
 def test_cuda_memory_stats_device_arg_normalizes_without_real_cuda(monkeypatch):
@@ -294,6 +367,58 @@ def test_support_cycler_builds_distinct_full_support_batches():
     assert proof["has_at_least_two_distinct_batches"] is True
     assert len({batch["metadata"]["batch_content_hash16"] for batch in batches}) == 2
     assert batches[0]["metadata"]["row_ids"] != batches[1]["metadata"]["row_ids"]
+
+
+def test_prior_audit_support_builders_pin_counts_hashes_and_l0c1_metadata():
+    tok = BroadTokenizer()
+
+    for support in B1_PRIOR_AUDIT_SUPPORTS:
+        rows, proof = build_prior_audit_support_rows(support, curriculum_seed=17)
+        pins = B1_PRIOR_AUDIT_PINS[support]
+
+        assert len(rows) == pins["expected_count"]
+        assert proof["row_count"] == pins["expected_count"]
+        assert proof["support_hash16"] == pins["expected_hash16"]
+        assert proof["builder_path"] == pins["builder_path"]
+        assert proof["pinned_count_hash_pass"] is True
+        assert proof["direct_kl"] is False
+        assert proof["replay_pc"] == "OUT"
+        assert proof["target_parent_kl"] is False
+
+    l0c1 = build_prior_audit_support_batches(
+        support="L0c1",
+        tok=tok,
+        max_len=TINY_ARCH["max_len"],
+        batch_size=64,
+        curriculum_seed=17,
+        device=torch.device("cpu"),
+    )
+
+    assert l0c1["proof"]["expected_count"] == 121
+    assert l0c1["proof"]["support_hash16"] == "7bc8cd771daab878"
+    assert l0c1["proof"]["support_role"] == "close_wrapper_report_only"
+    assert l0c1["proof"]["close_wrapper_report_only"] == {
+        "direct_kl": False,
+        "replay_pc": "OUT",
+        "target_parent_kl": False,
+    }
+    assert l0c1["proof"]["batch_count"] == 2
+    assert sum(batch["metadata"]["row_count"] for batch in l0c1["batches"]) == 121
+
+
+def test_prior_audit_support_parser_rejects_unknowns_and_duplicates():
+    assert parse_prior_audit_supports(None) == ()
+    assert parse_prior_audit_supports("") == ()
+    assert parse_prior_audit_supports("L0b, math_a0,L0c1") == (
+        "L0b",
+        "math_a0",
+        "L0c1",
+    )
+
+    with pytest.raises(ValueError, match="unknown prior audit support"):
+        parse_prior_audit_supports("L0b,not-a-support")
+    with pytest.raises(ValueError, match="duplicate prior audit support"):
+        parse_prior_audit_supports("L0b,L0b")
 
 
 def test_audit_score_counts_known_k_and_parsed_independently():
@@ -749,6 +874,61 @@ def test_tiny_real_model_cpu_step_receipt_is_scratch_only(tmp_path: Path):
         assert tensor_summary["bounded_decode_parity_checked"] is True
         assert tensor_summary["exact_shadow_matches_bounded_decode"] is True
     assert Path(receipt["receipt_path"]).exists()
+
+
+def test_tiny_prior_audit_is_report_only_and_preserves_state_hash_parity(tmp_path: Path):
+    parent = tmp_path / "tiny_parent.pt"
+    torch.save(_tiny_parent_blob(batch_size=90), parent)
+    parent_sha = file_sha256(parent)
+    common = {
+        "parent": parent,
+        "parent_sha256": parent_sha,
+        "device": "cpu",
+        "eligible_scope": "first-bitlinear",
+        "steps": 1,
+        "batch_size": 90,
+        "max_len": TINY_ARCH["max_len"],
+        "curriculum_seed": 17,
+        "enabled": True,
+    }
+
+    off_receipt = run_c2p1_probe(
+        **common,
+        scratch_root=tmp_path / "scratch_off",
+    )
+    on_receipt = run_c2p1_probe(
+        **common,
+        scratch_root=tmp_path / "scratch_on",
+        prior_audit_supports=["L0c1"],
+    )
+
+    prior_audit = on_receipt["prior_audit"]
+    assert off_receipt["prior_audit"]["enabled"] is False
+    assert prior_audit["schema"] == B1_PRIOR_AUDIT_SCHEMA_VERSION
+    assert prior_audit["enabled"] is True
+    assert prior_audit["requested_supports"] == ["L0c1"]
+    assert prior_audit["prior_batches_fed_to_bounded_steps"] is False
+    assert prior_audit["direct_kl"] is False
+    assert prior_audit["replay_pc"] == "OUT"
+    assert prior_audit["target_parent_kl"] is False
+    assert prior_audit["support_proofs"]["L0c1"]["support_hash16"] == "7bc8cd771daab878"
+    assert prior_audit["support_proofs"]["L0c1"]["expected_count"] == 121
+    assert prior_audit["support_proofs"]["L0c1"]["close_wrapper_report_only"] == {
+        "direct_kl": False,
+        "replay_pc": "OUT",
+        "target_parent_kl": False,
+    }
+    assert prior_audit["start_reports"]["L0c1"]["phase"] == "prior_audit0"
+    assert prior_audit["final_reports"]["L0c1"]["phase"] == "prior_final_audit"
+    assert prior_audit["start_reports"]["L0c1"]["support_rows_audited"] == 121
+    assert prior_audit["final_reports"]["L0c1"]["support_rows_audited"] == 121
+    assert prior_audit["deltas"]["L0c1"]["broad_cluster_classification"] in {
+        "no-new-broad-cluster",
+        "broad-cluster",
+    }
+    assert "parent_baseline_vs_final" in prior_audit["deltas"]["L0c1"]
+
+    assert _state_parity_subset(off_receipt) == _state_parity_subset(on_receipt)
 
 
 def test_tiny_cpu_audit_receipt_proves_distinct_support_batches_and_step0_baseline(tmp_path: Path):
