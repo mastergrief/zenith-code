@@ -1151,28 +1151,39 @@ def _assert_legacy_surface_oracle_match(
     step: int,
     paths: _StepPaths,
     states_by_key: Mapping[str, VoteUpdateState],
+    inputs_by_key: Mapping[str, VoteUpdateInputs],
     specs_by_key: Mapping[str, VoteUpdateSpec],
-    plans_by_key: Mapping[str, VoteUpdatePlan],
     deferred_backlog: Mapping[str, Mapping[int, Mapping[str, int]]] | None,
     cap_frontier_width: int,
     max_exact_identity_keys: int,
     sparse_oracle_max_active_ids: int,
 ) -> dict[str, Any]:
-    oracle_surface, oracle_active, oracle_full_active, oracle_diag, _ = _surface_from_reused_plans(
-        int(step),
-        states_by_key,
-        specs_by_key,
-        plans_by_key,
-        deferred_backlog,
+    oracle_paths = build_front_c_live_step_paths(
+        step=int(step),
+        states_by_key=states_by_key,
+        inputs_by_key=inputs_by_key,
+        specs_by_key=specs_by_key,
+        deferred_backlog=deferred_backlog,
+        global_cap_used=False,
         cap_frontier_width=cap_frontier_width,
+        sparse_oracle_max_active_ids=sparse_oracle_max_active_ids,
         max_exact_identity_keys=max_exact_identity_keys,
-        current_threshold_indices_by_key=None,
     )
+    oracle_surface = oracle_paths.surface
+    oracle_active = set(oracle_paths.emitted_decision_relevant_ids)
+    oracle_full_active = (
+        oracle_paths.full_active_identity_universe
+        or _identity_universe_from_identities(oracle_active)
+    )
+    oracle_timing = dict(oracle_paths.timing_diagnostics or {})
+    oracle_source = str(oracle_timing.get("path_source", ""))
     actual_full_active = paths.full_active_identity_universe or _identity_universe_from_identities(())
     full_active_count = _identity_universe_count(actual_full_active)
     oracle_full_active_count = _identity_universe_count(oracle_full_active)
-    expected_full_identity = not bool(oracle_diag.get("identity_emission_bounded", False))
-    expected_full_sparse = oracle_full_active_count <= max(0, int(sparse_oracle_max_active_ids))
+    expected_full_identity = paths.surface.to_dict() == oracle_surface.to_dict()
+    expected_full_sparse = expected_full_identity and (
+        oracle_full_active_count <= max(0, int(sparse_oracle_max_active_ids))
+    )
     dense_q_flips = paths.dense_path.to_dict()["q_flip_directions"]
     sparse_q_flips = paths.sparse_path.to_dict()["q_flip_directions"]
     q_flip_parity_scope = (
@@ -1214,20 +1225,24 @@ def _assert_legacy_surface_oracle_match(
             str(paths.sparse_diagnostics.get("sparse_active_set_full_sha256", ""))
             == _identity_universe_sha256(oracle_full_active)
         ),
-        "surface_diagnostics": (
-            _surface_diagnostics_contract(paths.surface_diagnostics)
-            == _surface_diagnostics_contract(oracle_diag)
+        "oracle_source_independent": (
+            oracle_source == "reference_recompute_compatibility_fallback"
         ),
     }
     if not all(checks.values()):
         failed = sorted(name for name, ok in checks.items() if not ok)
         raise AssertionError(
-            "Front-C carried-index oracle mismatch at step "
+            "Front-C exact-reference oracle mismatch at step "
             f"{int(step)}: {failed}"
         )
     return {
         "enabled": True,
         "step": int(step),
+        "oracle_source": "exact_reference_recompute_no_reused_plan",
+        "oracle_path_source": oracle_source,
+        "live_path_source": str(
+            (paths.timing_diagnostics or {}).get("path_source", ""),
+        ),
         "checks": checks,
         "full_active_count": full_active_count,
         "full_active_sha256": _identity_universe_sha256(actual_full_active),
@@ -1237,8 +1252,8 @@ def _assert_legacy_surface_oracle_match(
         "q_flip_receipt_parity_scope": q_flip_parity_scope,
         "dense_q_flip_receipt_sha256": _sha256_json(dense_q_flips),
         "sparse_q_flip_receipt_sha256": _sha256_json(sparse_q_flips),
-        "oracle_full_rebuild_surface_timing_seconds": dict(
-            oracle_diag.get("surface_build_subtimers_seconds", {}),
+        "oracle_full_rebuild_timing_seconds": dict(
+            oracle_timing.get("durations_seconds", {}),
         ),
     }
 
@@ -1304,7 +1319,9 @@ class FrontCLiveIdentityCollector:
             "max_exact_identity_keys": self.max_exact_identity_keys,
             "sparse_oracle_max_active_ids": self.sparse_oracle_max_active_ids,
             "legacy_oracle_compare_enabled": self.legacy_oracle_compare,
+            "collection_mode": "collection_cadence_current_threshold_rebuild",
             "observe_only_diagnostics": {},
+            "collection_current_threshold_rebuild_by_step": {},
             "touched_count_by_step": {},
             "carried_threshold_count_by_step": {},
             "observe_only_duration_by_step": {},
@@ -1610,6 +1627,8 @@ class FrontCLiveIdentityCollector:
             raise ValueError("unexpected Front-C observation schema")
         if bool(observation.get("global_cap_used", False)):
             raise ValueError("Front-C path-b emission must record global_cap_used=false")
+        if not bool(collect):
+            return
         states_by_key = dict(observation["states_by_key"])
         inputs_by_key = dict(observation["inputs_by_key"])
         specs_by_key = dict(observation["specs_by_key"])
@@ -1625,79 +1644,44 @@ class FrontCLiveIdentityCollector:
                 f"plans={missing_plans}, q_acc={missing_q_acc}",
             )
         self._states_by_key = states_by_key
-        seed_diag = self._ensure_current_threshold_index(
+        paths = build_front_c_live_step_paths(
+            step=int(step),
             states_by_key=states_by_key,
-            specs_by_key=specs_by_key,
-        )
-        materialize_diag = {"materialized_for_collect": False, "duration_seconds": 0.0}
-        pre_step_threshold_indices = None
-        paths = None
-        if bool(collect):
-            pre_step_threshold_indices, materialize_diag = (
-                self._materialize_current_threshold_indices_for_collect()
-            )
-            paths = build_front_c_live_step_paths(
-                step=int(step),
-                states_by_key=states_by_key,
-                inputs_by_key=inputs_by_key,
-                specs_by_key=specs_by_key,
-                plans_by_key=plans_by_key,
-                q_acc_by_key=q_acc_by_key,
-                deferred_backlog=observation.get("deferred_backlog", {}),
-                global_cap_used=False,
-                cap_frontier_width=self.cap_frontier_width,
-                max_exact_identity_keys=self.max_exact_identity_keys,
-                sparse_oracle_max_active_ids=self.sparse_oracle_max_active_ids,
-                current_threshold_indices_by_key=pre_step_threshold_indices,
-                include_full_active_hash=self.legacy_oracle_compare,
-            )
-        carried_update = self._update_current_threshold_index(
-            states_by_key=states_by_key,
+            inputs_by_key=inputs_by_key,
             specs_by_key=specs_by_key,
             plans_by_key=plans_by_key,
             q_acc_by_key=q_acc_by_key,
             deferred_backlog=observation.get("deferred_backlog", {}),
+            global_cap_used=False,
+            cap_frontier_width=self.cap_frontier_width,
+            max_exact_identity_keys=self.max_exact_identity_keys,
+            sparse_oracle_max_active_ids=self.sparse_oracle_max_active_ids,
+            current_threshold_indices_by_key=None,
+            include_full_active_hash=self.legacy_oracle_compare,
         )
         step_key = str(int(step))
-        self._diagnostics["touched_count_by_step"][step_key] = int(
-            carried_update["touched_count"],
-        )
-        self._diagnostics["carried_threshold_count_by_step"][step_key] = int(
-            carried_update["carried_threshold_count"],
-        )
-        self._diagnostics["touch_ratio_alarm_by_step"][step_key] = bool(
-            carried_update["touch_ratio_alarm"],
-        )
-        if paths is None:
-            timing = _new_timing_diagnostics(phase="record_step_observation")
-            timing["path_source"] = "observe_only_carried_index_update"
-            timing["collect"] = False
-            durations = timing.setdefault("durations_seconds", {})
-            durations["current_threshold_index_seed"] = float(
-                seed_diag.get("duration_seconds", 0.0),
-            )
-            durations["carried_index_materialize_for_collect"] = float(
-                materialize_diag.get("duration_seconds", 0.0),
-            )
-            durations.update(
-                {
-                    str(key): float(value)
-                    for key, value in carried_update.get("durations_seconds", {}).items()
-                },
-            )
-            _record_duration(timing, "record_step_observation_total", record_start)
-            observe_only_total = float(
-                timing["durations_seconds"]["record_step_observation_total"],
-            )
-            self._diagnostics["observe_only_duration_by_step"][step_key] = observe_only_total
-            self._diagnostics["observe_only_diagnostics"][step_key] = {
-                "collect": False,
-                "current_threshold_index_seed": seed_diag,
-                "carried_index_update": carried_update,
-                "timing": timing,
-            }
-            return
         self._diagnostics["observe_only_duration_by_step"][step_key] = 0.0
+        surface_subtimers = dict(
+            paths.surface_diagnostics.get("surface_build_subtimers_seconds", {}),
+        )
+        current_threshold_surface = paths.surface_diagnostics.get(
+            "current_magnitude_threshold_keys",
+            {},
+        )
+        collection_rebuild = {
+            "schema": FRONT_C_LIVE_TIMING_SCHEMA_VERSION,
+            "source": "pre_step_q_acc_scan",
+            "current_threshold_scan_seconds": float(
+                surface_subtimers.get("current_threshold_scan", 0.0),
+            ),
+            "current_threshold_count": int(
+                dict(current_threshold_surface).get("full_identity_count", 0),
+            ),
+            "carried_index_used": False,
+        }
+        self._diagnostics["collection_current_threshold_rebuild_by_step"][
+            step_key
+        ] = collection_rebuild
         if (
             not paths.full_identity_emission_claimed
             or not paths.full_sparse_equivalence_claimed
@@ -1732,18 +1716,7 @@ class FrontCLiveIdentityCollector:
             or _new_timing_diagnostics(phase="record_step_observation"),
         )
         timing["durations_seconds"] = dict(timing.get("durations_seconds", {}))
-        timing["durations_seconds"]["current_threshold_index_seed"] = float(
-            seed_diag.get("duration_seconds", 0.0),
-        )
-        timing["durations_seconds"]["carried_index_materialize_for_collect"] = float(
-            materialize_diag.get("duration_seconds", 0.0),
-        )
-        timing["durations_seconds"].update(
-            {
-                str(key): float(value)
-                for key, value in carried_update.get("durations_seconds", {}).items()
-            },
-        )
+        timing["collection_mode"] = "collection_cadence_current_threshold_rebuild"
         legacy_oracle = {"enabled": False}
         if self.legacy_oracle_compare:
             oracle_start = time.perf_counter()
@@ -1751,8 +1724,8 @@ class FrontCLiveIdentityCollector:
                 step=int(step),
                 paths=paths,
                 states_by_key=states_by_key,
+                inputs_by_key=inputs_by_key,
                 specs_by_key=specs_by_key,
-                plans_by_key=plans_by_key,
                 deferred_backlog=observation.get("deferred_backlog", {}),
                 cap_frontier_width=self.cap_frontier_width,
                 max_exact_identity_keys=self.max_exact_identity_keys,
@@ -1766,9 +1739,17 @@ class FrontCLiveIdentityCollector:
             "sparse": paths.sparse_diagnostics,
             "sparse_q_flip_directions": paths.sparse_path.to_dict()["q_flip_directions"],
             "surface": paths.surface_diagnostics,
-            "current_threshold_index_seed": seed_diag,
-            "carried_index_materialize_for_collect": materialize_diag,
-            "carried_index_update": carried_update,
+            "collection_current_threshold_rebuild": collection_rebuild,
+            "carried_index_materialize_for_collect": {
+                "materialized_for_collect": False,
+                "duration_seconds": 0.0,
+                "disabled_reason": "collection_cadence_rebuild_no_carried_index",
+            },
+            "carried_index_update": {
+                "enabled": False,
+                "duration_seconds": 0.0,
+                "disabled_reason": "observer_not_installed_on_non_collected_steps",
+            },
             "legacy_oracle": legacy_oracle,
             "identity_emission_scope": paths.identity_emission_scope,
             "full_identity_emission_claimed": paths.full_identity_emission_claimed,

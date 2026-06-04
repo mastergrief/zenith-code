@@ -368,6 +368,34 @@ def parse_b2_retained_supports(raw: str | Sequence[str] | None) -> tuple[str, ..
     return tuple(parts)
 
 
+def make_front_c_identity_observer_for_step(
+    front_c_identity_collector: FrontCLiveIdentityCollector | None,
+    *,
+    step: int,
+    total_steps: int,
+) -> Callable[[Mapping[str, Any]], None] | None:
+    if front_c_identity_collector is None:
+        return None
+    if not front_c_identity_collector.should_collect_step(
+        int(step),
+        total_steps=int(total_steps),
+    ):
+        return None
+
+    def front_c_identity_observer(
+        observation: Mapping[str, Any],
+        *,
+        observed_step: int = int(step),
+    ) -> None:
+        front_c_identity_collector.record_step_observation(
+            step=observed_step,
+            observation=observation,
+            collect=True,
+        )
+
+    return front_c_identity_observer
+
+
 def _prior_support_sorted_rows(name: str, curriculum_seed: int) -> list[tuple[str, int, str]]:
     if name == "L0b":
         rows = [(q, e, source_rung) for (q, e, source_rung) in _l0b_support(int(curriculum_seed))]
@@ -3250,26 +3278,11 @@ def run_bounded_delta_steps(
                     credit = credit_from_weighted_grad(weighted_grad)
                     moves = project_s1_gradient_to_moves(weighted_grad, states[key].q_levels)
                     votes_by_key[key] = rank_bucketed_int16_votes(credit, moves, rank_spec)
-                front_c_identity_observer = None
-                if front_c_identity_collector is not None:
-                    collect_front_c_identity_step = (
-                        front_c_identity_collector.should_collect_step(
-                            step,
-                            total_steps=int(steps),
-                        )
-                    )
-
-                    def front_c_identity_observer(
-                        observation: Mapping[str, Any],
-                        *,
-                        observed_step: int = int(step),
-                        collect_step: bool = bool(collect_front_c_identity_step),
-                    ) -> None:
-                        front_c_identity_collector.record_step_observation(
-                            step=observed_step,
-                            observation=observation,
-                            collect=collect_step,
-                        )
+                front_c_identity_observer = make_front_c_identity_observer_for_step(
+                    front_c_identity_collector,
+                    step=int(step),
+                    total_steps=int(steps),
+                )
 
                 step_result = apply_bounded_delta_vote_step(
                     states,
