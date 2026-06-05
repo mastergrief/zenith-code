@@ -49,12 +49,24 @@ class TransformerBlock(nn.Module):
         return F.rms_norm(x, (x.shape[-1],), eps=self._norm_eps)
 
     def forward(self, x: Tensor, **seq_info) -> Tensor:
+        activation_codec_seam = seq_info.get("activation_codec_seam")
         if self._norm_type == "pre":
             x = x + self.attn(self.norm(x), **seq_info)
-            return x + self.mlp(self.norm(x))
+            if activation_codec_seam is not None:
+                x = activation_codec_seam("residual.post_attn", x)
+            x = x + self.mlp(self.norm(x))
+            if activation_codec_seam is not None:
+                x = activation_codec_seam("residual.post_mlp", x)
+            return x
         elif self._norm_type == "post":
-            x = self.norm(x + self.attn(x, **seq_info))
-            return self.norm(x + self.mlp(x))
+            x = x + self.attn(x, **seq_info)
+            if activation_codec_seam is not None:
+                x = activation_codec_seam("residual.post_attn", x)
+            x = self.norm(x)
+            x = x + self.mlp(x)
+            if activation_codec_seam is not None:
+                x = activation_codec_seam("residual.post_mlp", x)
+            return self.norm(x)
         else:
             raise NotImplementedError(f"norm_type={self._norm_type!r}")
 

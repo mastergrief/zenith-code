@@ -252,6 +252,7 @@ class Attention(nn.Module):
     ) -> Tensor:
         # gqkv: [..., S, hidden_size] -> [..., S, (2*h+2*kvh)*head_dim]
         B, S, _ = hidden_states.shape
+        activation_codec_seam = seq_info.get("activation_codec_seam")
         gqkv = self.gqkv_proj(hidden_states)
         # Split into heads dimension. Port of `layers.py:134`:
         #   gqkv = rearrange(gqkv, "... (h hd) -> ... h hd", h=2h+2kvh)
@@ -266,6 +267,10 @@ class Attention(nn.Module):
         if cos_sin is not None:
             query = apply_rotary_pos_emb(query, cos_sin)
             key = apply_rotary_pos_emb(key, cos_sin)
+        if activation_codec_seam is not None:
+            query = activation_codec_seam("attn.gqkv.query_post_rope", query)
+            key = activation_codec_seam("attn.gqkv.key_post_rope", key)
+            value = activation_codec_seam("attn.gqkv.value", value)
         # SDPA expects (B, num_heads, S, head_dim)
         q_t = query.transpose(1, 2)
         k_t = key.transpose(1, 2)

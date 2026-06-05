@@ -152,6 +152,7 @@ class HierarchicalReasoningModel(nn.Module):
         L_bp_steps = bp_steps - H_bp_steps
         relief_policy = normalize_activation_relief_policy(activation_relief_policy)
         cache_active = seq_info.get("kv_cache") is not None
+        activation_codec_seam = seq_info.get("activation_codec_seam")
         if relief_policy.enabled and cache_active:
             # Reject before any cache update side effect can occur.
             should_checkpoint_recurrence(
@@ -195,6 +196,8 @@ class HierarchicalReasoningModel(nn.Module):
                         )
                     else:
                         z_L = self.L_level(z_L, z_H, **L_kwargs)
+                    if activation_codec_seam is not None:
+                        z_L = activation_codec_seam("recurrent.z_L_update", z_L)
             outer_grad_enabled = torch.is_grad_enabled()
             h_grad_enabled = outer_grad_enabled and (i >= self.H_cycles - H_bp_steps)
             with torch.set_grad_enabled(h_grad_enabled):
@@ -225,6 +228,8 @@ class HierarchicalReasoningModel(nn.Module):
                     )
                 else:
                     z_H = self.H_level(z_H, z_L, **H_kwargs)
+                if activation_codec_seam is not None:
+                    z_H = activation_codec_seam("recurrent.z_H_update", z_H)
         return None, z_H
 
     def compute_train_extra_args(self, step: int, total_steps: int) -> dict:
