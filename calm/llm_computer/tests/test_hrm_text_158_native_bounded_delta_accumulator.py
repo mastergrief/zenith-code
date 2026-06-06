@@ -7,18 +7,24 @@ import pytest
 import torch
 
 from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
+    ALGORITHMIC_LOCAL_VOTE_UPDATE_EXECUTABLE_NOT_PHYSICAL_SUB2,
     BOUNDED_DELTA_ADMISSION_FAILED,
     BOUNDED_DELTA_GUARDRAIL_FAILED,
     BOUNDED_DELTA_LEDGER_FAILED,
     BOUNDED_DELTA_WITH_REPORT,
     COARSE_SIGNED_CHARGE_SPARSE_FRONTIER_CANDIDATE,
     EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE,
+    BoundedDeltaAccumulatorState,
     BoundedDeltaGuardSpec,
     BoundedDeltaOracleInput,
     bounded_delta_inclusive_ledger,
     compare_bounded_delta_step_to_int16_oracle,
+    encode_budget_capped_hybrid_reference,
+    execute_direct_bounded_local_vote_update_candidate,
+    INTRINSIC_BOUNDED_UPDATE_DOMAIN_GAP,
     project_bounded_delta_accumulator_bpw,
     validate_bounded_delta_inclusive_ledger,
+    decode_bounded_accumulator_to_i16,
 )
 from calm.hrm_text_158.native_full_stack.global_rate_cap import GlobalRateCapSpec
 from calm.hrm_text_158.native_full_stack.q_entropy_packing import (
@@ -29,6 +35,7 @@ from calm.hrm_text_158.native_full_stack.vote_update import (
     VoteUpdateInputs,
     VoteUpdateSpec,
     VoteUpdateState,
+    apply_integer_vote_update_reference,
 )
 
 
@@ -203,6 +210,89 @@ def test_zero_drift_when_hot_exact_covers_all_decision_risk_rows():
     assert report.candidate_assessment.preserved_information
     assert report.candidate_assessment.sub2_persistent_strategy is not None
     _assert_no_tensors(report.to_dict())
+
+
+def test_direct_bounded_local_vote_update_executes_sparse_event_domain_without_dense_decode():
+    state = _state(4, acc_overrides={0: 9, 2: -9})
+    votes = _inputs(4, {0: 2, 2: -2})
+    bounded = encode_budget_capped_hybrid_reference(
+        state,
+        hot_exact_indices=(0, 2),
+        cold_default_value=0,
+    )
+    spec = _spec(max_abs_per_tensor=4)
+
+    result = execute_direct_bounded_local_vote_update_candidate(
+        state_key="toy.local",
+        q_levels=state.q_levels,
+        bounded_accumulator=bounded,
+        sparse_vote_events={0: 2, 2: -2},
+        vote_spec=spec,
+    )
+    oracle = apply_integer_vote_update_reference(state, votes, spec)
+    decoded = decode_bounded_accumulator_to_i16(result.next_bounded_accumulator)
+
+    assert result.proof["pass"] is True
+    assert result.proof["candidate_dense_decode_used"] is False
+    assert result.proof["candidate_accumulator_transient_over2_used"] is False
+    assert result.proof["candidate_vote_transient_over2_used"] is False
+    assert result.proof["candidate_dense_vote_authority_used"] is False
+    assert result.proof["coverage_domain"]["no_global_cap"] is True
+    assert result.proof["coverage_domain"]["sparse_vote_events_only"] is True
+    assert result.proof["coverage_domain"]["supports_default_mass_crossing"] is False
+    assert result.proof["q_changed_count"] == 2
+    assert result.proof["applied_row_count"] == 2
+    assert result.next_q_levels.tolist() == [1, 0, -1, 0]
+    assert decoded.tolist() == [1, 0, -1, 0]
+    assert oracle.q_levels.tolist() == [1, 0, -1, 0]
+    assert oracle.accumulators.tolist() == [1, 0, -1, 0]
+    assert result.proof["hot_exact_row_count_after"] == 2
+    assert result.proof["cold_exception_row_count_after"] == 0
+    assert result.proof["storage_projection"]["bounded_delta_acc_bits_per_weight"] >= 2.0
+    assert result.proof["accumulator_physical_sub2_pass"] is False
+    assert (
+        result.proof["scoped_label"]
+        == ALGORITHMIC_LOCAL_VOTE_UPDATE_EXECUTABLE_NOT_PHYSICAL_SUB2
+    )
+    assert (
+        result.proof["terminal_classification"]
+        == ALGORITHMIC_LOCAL_VOTE_UPDATE_EXECUTABLE_NOT_PHYSICAL_SUB2
+    )
+    assert result.proof["scoped_physical_budget_claim"] == "algorithmic_only_not_physical_sub2"
+    assert result.proof["q_storage_physical_budget_covered_by_scoped_proof"] is False
+    assert result.proof["frozen_scale_physical_budget_covered_by_scoped_proof"] is False
+    _assert_no_tensors(result.proof)
+
+
+def test_direct_bounded_local_vote_update_flags_default_mass_crossing_domain_gap():
+    bounded = BoundedDeltaAccumulatorState(
+        logical_shape=(4,),
+        cold_default_value=10,
+        hot_exact_indices=(),
+        hot_exact_values=(),
+        cold_exception_indices=(),
+        cold_exception_values=(),
+    )
+    q_levels = torch.zeros(4, dtype=torch.int8)
+
+    result = execute_direct_bounded_local_vote_update_candidate(
+        state_key="toy.default.crossing",
+        q_levels=q_levels,
+        bounded_accumulator=bounded,
+        sparse_vote_events={},
+        vote_spec=_spec(max_abs_per_tensor=4),
+    )
+
+    assert result.proof["pass"] is False
+    assert result.proof["scoped_label"] is None
+    assert result.proof["terminal_classification"] == INTRINSIC_BOUNDED_UPDATE_DOMAIN_GAP
+    assert result.proof["domain_gap_dimension"] == "implicit_default_mass_crossing"
+    assert result.proof["default_mass_crossing_count"] == 4
+    assert result.proof["candidate_dense_decode_used"] is False
+    assert result.proof["candidate_accumulator_transient_over2_used"] is False
+    assert result.proof["candidate_vote_transient_over2_used"] is False
+    assert result.next_q_levels.tolist() == [0, 0, 0, 0]
+    _assert_no_tensors(result.proof)
 
 
 def test_guardrail_failure_when_measured_decision_drift_exceeds_predeclared_spec():

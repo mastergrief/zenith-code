@@ -6,11 +6,16 @@ from dataclasses import replace
 import pytest
 
 import calm.hrm_text_158.native_full_stack as native_full_stack
+from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
+    ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
+    ALGORITHMIC_LOCAL_VOTE_UPDATE_EXECUTABLE_NOT_PHYSICAL_SUB2,
+)
 from calm.hrm_text_158.native_full_stack.sub2_native_birth_scaffold import (
     ACQUISITION_GATE_DEFERRED,
     LEDGER_CLASS_LEQ2,
     LEDGER_CLASS_NOT_YET,
     RUNTIME_STATE_AUTHORITY_SUB2_SCAFFOLD_ONLY,
+    attach_strict_sub2_scoped_candidate_proof,
     build_strict_sub2_candidate_runtime_scaffold,
     validate_strict_sub2_candidate_runtime_scaffold_report,
 )
@@ -165,6 +170,7 @@ def test_native_full_stack_public_exports_include_strict_sub2_scaffold_symbols()
         "STRICT_SUB2_CANDIDATE_RUNTIME_TARGET_NAME",
         "StrictSub2CandidateRuntimeScaffoldReport",
         "StrictSub2ScaffoldRow",
+        "attach_strict_sub2_scoped_candidate_proof",
         "build_strict_sub2_candidate_runtime_scaffold",
         "validate_strict_sub2_candidate_runtime_scaffold_report",
     }
@@ -173,3 +179,131 @@ def test_native_full_stack_public_exports_include_strict_sub2_scaffold_symbols()
     for name in names:
         assert hasattr(native_full_stack, name)
         assert name in exported
+
+
+def test_scaffold_accepts_scoped_accumulator_local_vote_update_proof_without_full_promotion():
+    report = build_strict_sub2_candidate_runtime_scaffold(
+        eligible_module_shapes=_eligible_shapes(),
+        activation_paid_bits_ledger=_activation_ledger(),
+        live_both_gate=_live_both_gate(),
+        hot_loop_residency=_hot_loop_residency(),
+    )
+    scoped = {
+        "surface": "accumulator_substitute",
+        "scoped_label": ALGORITHMIC_LOCAL_VOTE_UPDATE_EXECUTABLE_NOT_PHYSICAL_SUB2,
+        "terminal_classification": ALGORITHMIC_LOCAL_VOTE_UPDATE_EXECUTABLE_NOT_PHYSICAL_SUB2,
+        "pass": True,
+        "runtime_state_authority_after": RUNTIME_STATE_AUTHORITY_SUB2_SCAFFOLD_ONLY,
+        "candidate_dense_decode_used": False,
+        "candidate_accumulator_transient_over2_used": False,
+        "candidate_vote_transient_over2_used": False,
+        "candidate_dense_vote_authority_used": False,
+        "scoped_physical_budget_claim": "algorithmic_only_not_physical_sub2",
+        "q_storage_physical_budget_covered_by_scoped_proof": False,
+        "frozen_scale_physical_budget_covered_by_scoped_proof": False,
+        "coverage_domain": {
+            "no_global_cap": True,
+            "sparse_vote_events_only": True,
+        },
+        "storage_projection": {
+            "bounded_delta_acc_bits_per_weight": 10.0,
+        },
+    }
+
+    promoted = attach_strict_sub2_scoped_candidate_proof(
+        report,
+        scoped_candidate_proof=scoped,
+    )
+
+    validate_strict_sub2_candidate_runtime_scaffold_report(promoted)
+    assert promoted.runtime_state_authority == RUNTIME_STATE_AUTHORITY_SUB2_SCAFFOLD_ONLY
+    assert promoted.candidate_runtime_complete is False
+    assert (
+        promoted.scoped_candidate_proof["scoped_label"]
+        == ALGORITHMIC_LOCAL_VOTE_UPDATE_EXECUTABLE_NOT_PHYSICAL_SUB2
+    )
+    persistent = {row.name: row for row in promoted.persistent_candidate_rows}
+    assert persistent["accumulator_substitute"].classification == LEDGER_CLASS_NOT_YET
+    assert persistent["accumulator_substitute"].in_candidate_authority is False
+
+
+def test_scaffold_rejects_scoped_candidate_proof_with_dense_decode_or_wrong_null_taxonomy():
+    report = build_strict_sub2_candidate_runtime_scaffold(
+        eligible_module_shapes=_eligible_shapes(),
+        activation_paid_bits_ledger=_activation_ledger(),
+        live_both_gate=_live_both_gate(),
+        hot_loop_residency=_hot_loop_residency(),
+    )
+    bad_dense = {
+        "surface": "accumulator_substitute",
+        "scoped_label": ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
+        "terminal_classification": ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
+        "pass": True,
+        "runtime_state_authority_after": RUNTIME_STATE_AUTHORITY_SUB2_SCAFFOLD_ONLY,
+        "candidate_dense_decode_used": True,
+        "candidate_accumulator_transient_over2_used": False,
+        "candidate_vote_transient_over2_used": False,
+        "candidate_dense_vote_authority_used": False,
+        "scoped_physical_budget_claim": "physical_sub2_budgeted",
+        "q_storage_physical_budget_covered_by_scoped_proof": False,
+        "frozen_scale_physical_budget_covered_by_scoped_proof": False,
+        "coverage_domain": {"no_global_cap": True},
+        "storage_projection": {"bounded_delta_acc_bits_per_weight": 1.0},
+    }
+    bad_null = dict(bad_dense)
+    bad_null.update(
+        {
+            "candidate_dense_decode_used": False,
+            "pass": False,
+            "scoped_label": None,
+            "terminal_classification": "not_a_real_null",
+        }
+    )
+
+    with pytest.raises(ValueError, match="dense decode"):
+        attach_strict_sub2_scoped_candidate_proof(
+            report,
+            scoped_candidate_proof=bad_dense,
+        )
+    with pytest.raises(ValueError, match="intrinsic domain-gap null"):
+        attach_strict_sub2_scoped_candidate_proof(
+            report,
+            scoped_candidate_proof=bad_null,
+        )
+
+
+def test_scaffold_rejects_positive_scoped_candidate_without_storage_projection_or_with_bpw_ge_2():
+    report = build_strict_sub2_candidate_runtime_scaffold(
+        eligible_module_shapes=_eligible_shapes(),
+        activation_paid_bits_ledger=_activation_ledger(),
+        live_both_gate=_live_both_gate(),
+        hot_loop_residency=_hot_loop_residency(),
+    )
+    missing_projection = {
+        "surface": "accumulator_substitute",
+        "scoped_label": ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
+        "terminal_classification": ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
+        "pass": True,
+        "runtime_state_authority_after": RUNTIME_STATE_AUTHORITY_SUB2_SCAFFOLD_ONLY,
+        "candidate_dense_decode_used": False,
+        "candidate_accumulator_transient_over2_used": False,
+        "candidate_vote_transient_over2_used": False,
+        "candidate_dense_vote_authority_used": False,
+        "scoped_physical_budget_claim": "physical_sub2_budgeted",
+        "q_storage_physical_budget_covered_by_scoped_proof": False,
+        "frozen_scale_physical_budget_covered_by_scoped_proof": False,
+        "coverage_domain": {"no_global_cap": True},
+    }
+    bad_bpw = dict(missing_projection)
+    bad_bpw["storage_projection"] = {"bounded_delta_acc_bits_per_weight": 2.0}
+
+    with pytest.raises(ValueError, match="must disclose storage_projection"):
+        attach_strict_sub2_scoped_candidate_proof(
+            report,
+            scoped_candidate_proof=missing_projection,
+        )
+    with pytest.raises(ValueError, match="storage_projection bounded_delta_acc_bits_per_weight < 2"):
+        attach_strict_sub2_scoped_candidate_proof(
+            report,
+            scoped_candidate_proof=bad_bpw,
+        )

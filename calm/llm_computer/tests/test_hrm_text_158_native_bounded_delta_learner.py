@@ -16,6 +16,10 @@ import torch.nn.functional as F
 
 import calm.hrm_text_158.native_full_stack.bounded_delta_learner as bounded_delta_learner
 from calm.hrm_text_158.bit_linear import BitLinear
+from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
+    ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
+    ALGORITHMIC_LOCAL_VOTE_UPDATE_EXECUTABLE_NOT_PHYSICAL_SUB2,
+)
 from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     AUTHORITATIVE_STATE_SOURCE,
     BOUNDED_DELTA_CHECKPOINT_SCHEMA_VERSION,
@@ -402,6 +406,130 @@ def test_explicit_bounded_decode_parity_catches_shadow_mismatch():
         corrupted.bounded_decode_parity_report(fail_on_mismatch=True)
     with pytest.raises(ValueError, match="decode does not match exact shadow"):
         corrupted.to_schema_dict(parity_check=True)
+
+
+def test_candidate_local_vote_update_mode_matches_dense_oracle_and_emits_scoped_proof():
+    state = make_bounded_tensor_state(
+        "toy.proj",
+        torch.tensor([0, 0, 0, 0], dtype=torch.int8),
+        0.5,
+        torch.tensor([9, 0, -9, 0], dtype=torch.int16),
+        hot_exact_indices=(0, 2),
+    )
+    votes = torch.tensor([2, 0, -2, 0], dtype=torch.int16)
+    spec = VoteUpdateSpec(
+        threshold_abs=10,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=4,
+    )
+
+    result = apply_bounded_delta_vote_step(
+        {"toy.proj": state},
+        {"toy.proj": votes},
+        {"toy.proj": spec},
+        candidate_mode=ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
+        candidate_sparse_vote_events_by_key={"toy.proj": {0: 2, 2: -2}},
+        candidate_oracle_control_enabled=True,
+    )
+    next_state = result.tensor_states["toy.proj"]
+    proof = result.global_summary["candidate_local_update_proof_by_key"]["toy.proj"]
+    stats = result.tensor_stats["toy.proj"]
+
+    assert next_state.exact_accumulator_shadow is None
+    assert next_state.q_levels.tolist() == [1, 0, -1, 0]
+    assert proof["pass"] is True
+    assert proof["scoped_label"] == ALGORITHMIC_LOCAL_VOTE_UPDATE_EXECUTABLE_NOT_PHYSICAL_SUB2
+    assert proof["terminal_classification"] == ALGORITHMIC_LOCAL_VOTE_UPDATE_EXECUTABLE_NOT_PHYSICAL_SUB2
+    assert proof["parity_pass"] is True
+    assert proof["candidate_dense_decode_used"] is False
+    assert proof["candidate_accumulator_transient_over2_used"] is False
+    assert proof["candidate_vote_transient_over2_used"] is False
+    assert proof["candidate_dense_vote_authority_used"] is False
+    assert proof["dense_oracle_control_used"] is True
+    assert proof["scoped_physical_budget_claim"] == "algorithmic_only_not_physical_sub2"
+    assert proof["accumulator_physical_sub2_pass"] is False
+    assert proof["candidate_bounded_decode_sha256_after"] == proof["oracle_acc_sha256_after"]
+    assert proof["candidate_q_sha256_after"] == proof["oracle_q_sha256_after"]
+    assert result.global_summary["candidate_local_update_pass"] is True
+    assert result.global_summary["candidate_dense_vote_authority_used"] is False
+    assert result.global_summary["q_changed_count"] == 2
+    assert stats["candidate_local_update_pass"] is True
+    assert (
+        stats["candidate_terminal_classification"]
+        == ALGORITHMIC_LOCAL_VOTE_UPDATE_EXECUTABLE_NOT_PHYSICAL_SUB2
+    )
+
+
+def test_candidate_local_vote_update_mode_rejects_dense_vote_authority_without_sparse_events():
+    state = make_bounded_tensor_state(
+        "toy.proj",
+        torch.tensor([0], dtype=torch.int8),
+        0.5,
+        torch.tensor([9], dtype=torch.int16),
+        hot_exact_indices=(0,),
+    )
+    votes = torch.tensor([2], dtype=torch.int16)
+    spec = VoteUpdateSpec(
+        threshold_abs=10,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=1,
+    )
+
+    with pytest.raises(ValueError, match="dense vote authority is unsupported"):
+        apply_bounded_delta_vote_step(
+            {"toy.proj": state},
+            {"toy.proj": votes},
+            {"toy.proj": spec},
+            candidate_mode=ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
+        )
+
+
+def test_candidate_local_vote_update_mode_avoids_dense_escape_hatches_when_oracle_disabled(monkeypatch):
+    state = make_bounded_tensor_state(
+        "toy.proj",
+        torch.tensor([0, 0, 0, 0], dtype=torch.int8),
+        0.5,
+        torch.tensor([9, 0, -9, 0], dtype=torch.int16),
+        hot_exact_indices=(0, 2),
+    )
+    object.__setattr__(state, "exact_accumulator_shadow", object())
+    votes = torch.tensor([2, 0, -2, 0], dtype=torch.int16)
+    spec = VoteUpdateSpec(
+        threshold_abs=10,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=4,
+    )
+
+    def fail_decode(_state):
+        raise AssertionError("candidate path must not dense-decode bounded accumulators")
+
+    def fail_vote_update_state(*_args, **_kwargs):
+        raise AssertionError("candidate path must not request dense vote_update_state")
+
+    def fail_dense_oracle(*_args, **_kwargs):
+        raise AssertionError("candidate path must not route through the dense oracle branch")
+
+    monkeypatch.setattr(bounded_delta_learner, "decode_bounded_accumulator_to_i16", fail_decode)
+    monkeypatch.setattr(bounded_delta_learner.BoundedDeltaTensorState, "vote_update_state", fail_vote_update_state)
+    monkeypatch.setattr(bounded_delta_learner, "apply_integer_vote_update_reference", fail_dense_oracle)
+
+    result = apply_bounded_delta_vote_step(
+        {"toy.proj": state},
+        {"toy.proj": votes},
+        {"toy.proj": spec},
+        candidate_mode=ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
+        candidate_sparse_vote_events_by_key={"toy.proj": {0: 2, 2: -2}},
+        candidate_oracle_control_enabled=False,
+    )
+    proof = result.global_summary["candidate_local_update_proof_by_key"]["toy.proj"]
+
+    assert proof["pass"] is True
+    assert proof["dense_oracle_control_used"] is False
+    assert proof["candidate_dense_decode_used"] is False
+    assert proof["candidate_dense_vote_authority_used"] is False
 
 
 def test_stale_state_guard_and_checkpoint_rebuild_serializes_fresh_bounded_payload():

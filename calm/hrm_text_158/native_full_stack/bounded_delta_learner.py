@@ -22,10 +22,13 @@ import torch
 import torch.nn.functional as F
 
 from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
+    ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
     BOUNDED_DELTA_ACCUMULATOR_SCHEMA_VERSION,
     BoundedDeltaAccumulatorState,
     decode_bounded_accumulator_to_i16,
     encode_budget_capped_hybrid_reference,
+    execute_direct_bounded_local_vote_update_candidate,
+    INTRINSIC_BOUNDED_UPDATE_DOMAIN_GAP,
 )
 from calm.hrm_text_158.native_full_stack.global_rate_cap import (
     EXACT_GLOBAL_CAP_TIE_RULE_MODE,
@@ -322,7 +325,7 @@ class BoundedDeltaTensorState:
     q_levels: torch.Tensor
     frozen_scale: torch.Tensor
     bounded_accumulator: BoundedDeltaAccumulatorState
-    exact_accumulator_shadow: torch.Tensor
+    exact_accumulator_shadow: torch.Tensor | None
     bounded_accumulator_fresh_for_exact_shadow: bool = True
     bounded_accumulator_rebuild_hot_exact_indices: tuple[int, ...] | None = None
     bounded_accumulator_rebuild_cold_default_value: int | None = None
@@ -332,16 +335,23 @@ class BoundedDeltaTensorState:
             raise ValueError("state_key must be non-empty")
         if self.q_levels.dtype != torch.int8:
             raise ValueError(f"q_levels must be torch.int8, got {self.q_levels.dtype}")
-        if self.exact_accumulator_shadow.dtype != torch.int16:
-            raise ValueError(
-                f"exact_accumulator_shadow must be torch.int16, got {self.exact_accumulator_shadow.dtype}"
-            )
-        if self.q_levels.shape != self.exact_accumulator_shadow.shape:
-            raise ValueError("q_levels and exact_accumulator_shadow shapes must match")
         if self.frozen_scale.numel() != 1 or not self.frozen_scale.dtype.is_floating_point:
             raise ValueError("frozen_scale must be a floating scalar tensor")
         if tuple(self.bounded_accumulator.logical_shape) != tuple(self.q_levels.shape):
             raise ValueError("bounded accumulator shape must match q_levels")
+        if self.exact_accumulator_shadow is not None:
+            if self.exact_accumulator_shadow.dtype != torch.int16:
+                raise ValueError(
+                    "exact_accumulator_shadow must be torch.int16, got "
+                    f"{self.exact_accumulator_shadow.dtype}"
+                )
+            if self.q_levels.shape != self.exact_accumulator_shadow.shape:
+                raise ValueError("q_levels and exact_accumulator_shadow shapes must match")
+        elif self.bounded_accumulator_fresh_for_exact_shadow:
+            raise ValueError(
+                "bounded_accumulator_fresh_for_exact_shadow cannot be true when no "
+                "exact_accumulator_shadow is present"
+            )
 
     def rebuild_hot_exact_indices(self) -> tuple[int, ...]:
         if self.bounded_accumulator_rebuild_hot_exact_indices is not None:
@@ -354,6 +364,8 @@ class BoundedDeltaTensorState:
         return int(self.bounded_accumulator.cold_default_value)
 
     def with_fresh_bounded_accumulator(self) -> BoundedDeltaTensorState:
+        if self.exact_accumulator_shadow is None:
+            raise ValueError("cannot rebuild bounded accumulator without exact_accumulator_shadow")
         return make_bounded_tensor_state(
             self.state_key,
             self.q_levels,
@@ -364,6 +376,8 @@ class BoundedDeltaTensorState:
         )
 
     def _fresh_state_for_bounded_parity(self) -> tuple[BoundedDeltaTensorState, bool]:
+        if self.exact_accumulator_shadow is None:
+            raise ValueError("bounded parity requires exact_accumulator_shadow")
         if self.bounded_accumulator_fresh_for_exact_shadow:
             return self, False
         return self.with_fresh_bounded_accumulator(), True
@@ -374,6 +388,9 @@ class BoundedDeltaTensorState:
         device: torch.device | str | None = None,
         rebuild_if_stale: bool = False,
     ) -> torch.Tensor:
+        if self.exact_accumulator_shadow is None:
+            out = decode_bounded_accumulator_to_i16(self.bounded_accumulator)
+            return out.to(device=device) if device is not None else out
         state = self
         if not self.bounded_accumulator_fresh_for_exact_shadow:
             if not rebuild_if_stale:
@@ -405,6 +422,11 @@ class BoundedDeltaTensorState:
         }
 
     def vote_update_state(self, *, device: torch.device | str | None = None) -> VoteUpdateState:
+        if self.exact_accumulator_shadow is None:
+            raise ValueError(
+                "dense oracle/control vote_update_state is unavailable for a bounded-only "
+                "candidate-authority tensor state"
+            )
         accumulators = (
             self.exact_accumulator_shadow.to(device=device).contiguous()
             if device is not None else self.exact_accumulator_shadow.contiguous()
@@ -429,7 +451,7 @@ class BoundedDeltaTensorState:
     def to_schema_dict(self, *, parity_check: bool = True) -> dict[str, Any]:
         summary_state = self
         rebuilt = False
-        if parity_check:
+        if parity_check and self.exact_accumulator_shadow is not None:
             summary_state, rebuilt = self._fresh_state_for_bounded_parity()
         out = {
             "state_key": summary_state.state_key,
@@ -446,16 +468,33 @@ class BoundedDeltaTensorState:
                 summary_state.bounded_accumulator_fresh_for_exact_shadow
             ),
             "bounded_accumulator_rebuilt_for_parity": bool(rebuilt),
-            "live_authoritative_state_source": "q_levels_plus_exact_accumulator_shadow",
-            "bounded_accumulator_authority": (
-                "fresh_checkpoint_export_or_explicit_parity"
-                if summary_state.bounded_accumulator_fresh_for_exact_shadow
-                else "stale_optional_not_live_authority"
+            "live_authoritative_state_source": (
+                "q_levels_plus_exact_accumulator_shadow"
+                if summary_state.exact_accumulator_shadow is not None
+                else "q_levels_plus_bounded_accumulator"
             ),
-            "exact_accumulator_shadow_sha256": tensor_sha256(summary_state.exact_accumulator_shadow),
-            "bounded_decode_parity_checked": bool(parity_check),
+            "bounded_accumulator_authority": (
+                (
+                    "fresh_checkpoint_export_or_explicit_parity"
+                    if summary_state.bounded_accumulator_fresh_for_exact_shadow
+                    else "stale_optional_not_live_authority"
+                )
+                if summary_state.exact_accumulator_shadow is not None
+                else "direct_candidate_authority"
+            ),
+            "exact_accumulator_shadow_available": bool(
+                summary_state.exact_accumulator_shadow is not None
+            ),
+            "exact_accumulator_shadow_sha256": (
+                tensor_sha256(summary_state.exact_accumulator_shadow)
+                if summary_state.exact_accumulator_shadow is not None
+                else None
+            ),
+            "bounded_decode_parity_checked": bool(
+                parity_check and summary_state.exact_accumulator_shadow is not None
+            ),
         }
-        if parity_check:
+        if parity_check and summary_state.exact_accumulator_shadow is not None:
             parity = summary_state.bounded_decode_parity_report(fail_on_mismatch=True)
             parity["bounded_accumulator_rebuilt_for_parity"] = bool(rebuilt)
             out.update(parity)
@@ -558,6 +597,29 @@ def make_live_shadow_tensor_state(
         bounded_accumulator_fresh_for_exact_shadow=False,
         bounded_accumulator_rebuild_hot_exact_indices=rebuild_hot,
         bounded_accumulator_rebuild_cold_default_value=rebuild_default,
+    )
+
+
+def make_candidate_authority_tensor_state(
+    prior_state: BoundedDeltaTensorState,
+    q_levels: torch.Tensor,
+    bounded_accumulator: BoundedDeltaAccumulatorState,
+) -> BoundedDeltaTensorState:
+    q = q_levels.detach().cpu().to(torch.int8).contiguous()
+    if tuple(bounded_accumulator.logical_shape) != tuple(q.shape):
+        raise ValueError("candidate bounded accumulator logical shape must match q_levels")
+    scale = prior_state.frozen_scale.detach().cpu().to(torch.float32).reshape(())
+    return BoundedDeltaTensorState(
+        state_key=prior_state.state_key,
+        q_levels=q,
+        frozen_scale=scale,
+        bounded_accumulator=bounded_accumulator,
+        exact_accumulator_shadow=None,
+        bounded_accumulator_fresh_for_exact_shadow=False,
+        bounded_accumulator_rebuild_hot_exact_indices=tuple(
+            int(idx) for idx in bounded_accumulator.hot_exact_indices
+        ),
+        bounded_accumulator_rebuild_cold_default_value=int(bounded_accumulator.cold_default_value),
     )
 
 
@@ -792,6 +854,21 @@ def _validate_optional_vote_map_keys(
         )
 
 
+def _validate_candidate_sparse_vote_map_keys(
+    name: str,
+    values_by_key: Mapping[str, Mapping[int, int]] | None,
+    expected_keys: set[str],
+) -> None:
+    if values_by_key is None:
+        return
+    actual_keys = set(values_by_key)
+    if actual_keys != expected_keys:
+        raise ValueError(
+            f"{name} keys must match tensor_states exactly: "
+            f"missing={sorted(expected_keys - actual_keys)} extra={sorted(actual_keys - expected_keys)}"
+        )
+
+
 def _coerce_optional_vote_map_tensor(
     name: str,
     values_by_key: Mapping[str, torch.Tensor] | None,
@@ -811,6 +888,25 @@ def _coerce_optional_vote_map_tensor(
             f"got {tuple(value.shape)} expected {tuple(shape)}"
         )
     return value.detach().cpu().contiguous()
+
+
+def _coerce_candidate_sparse_vote_events(
+    values_by_key: Mapping[str, Mapping[int, int]] | None,
+    state_key: str,
+) -> dict[int, int]:
+    if values_by_key is None:
+        raise ValueError(
+            "candidate sparse vote events are required for the direct bounded "
+            "candidate path; dense vote authority is unsupported there"
+        )
+    raw = values_by_key[state_key]
+    out: dict[int, int] = {}
+    for raw_index, raw_vote in raw.items():
+        index = int(raw_index)
+        vote = int(raw_vote)
+        if vote != 0:
+            out[index] = vote
+    return out
 
 
 def _clone_vote_update_state_for_front_c(state: VoteUpdateState) -> VoteUpdateState:
@@ -944,6 +1040,9 @@ def apply_bounded_delta_vote_step(
     cold_default_value: int | None = None,
     parity_check: bool = False,
     front_c_identity_observer: Callable[[Mapping[str, Any]], object] | None = None,
+    candidate_mode: str | None = None,
+    candidate_sparse_vote_events_by_key: Mapping[str, Mapping[int, int]] | None = None,
+    candidate_oracle_control_enabled: bool = True,
 ) -> BoundedDeltaLearnerStepResult:
     if set(tensor_states) != set(votes_by_key) or set(tensor_states) != set(vote_specs_by_key):
         raise ValueError("tensor_states, votes_by_key, and vote_specs_by_key must have identical keys")
@@ -952,11 +1051,184 @@ def apply_bounded_delta_vote_step(
     _validate_optional_vote_map_keys("replay_ce_veto_moves_by_key", replay_ce_veto_moves_by_key, expected_keys)
     _validate_optional_vote_map_keys("pc_aux_votes_by_key", pc_aux_votes_by_key, expected_keys)
     _validate_optional_vote_map_keys("pc_aux_moves_by_key", pc_aux_moves_by_key, expected_keys)
+    _validate_candidate_sparse_vote_map_keys(
+        "candidate_sparse_vote_events_by_key",
+        candidate_sparse_vote_events_by_key,
+        expected_keys,
+    )
     if global_cap_spec is None and global_cap_tie_rule_mode != EXACT_GLOBAL_CAP_TIE_RULE_MODE:
         raise ValueError(
             "global_cap_tie_rule_mode requires an active global_cap_spec; "
             "non-global paths must stay exact_global_cap"
         )
+    if candidate_mode is not None:
+        if candidate_mode != ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE:
+            raise ValueError(f"unsupported candidate_mode {candidate_mode!r}")
+        if front_c_identity_observer is not None:
+            raise ValueError("candidate_mode does not cover front_c live identity observation")
+        if global_cap_spec is not None:
+            raise ValueError("candidate_mode local vote-update proof does not cover global cap")
+        if (
+            replay_ce_veto_votes_by_key is not None
+            or replay_ce_veto_moves_by_key is not None
+            or pc_aux_votes_by_key is not None
+            or pc_aux_moves_by_key is not None
+        ):
+            raise ValueError("candidate_mode local vote-update proof does not cover replay/pc auxiliary paths")
+
+        next_states: dict[str, BoundedDeltaTensorState] = {}
+        tensor_stats: dict[str, dict[str, Any]] = {}
+        proof_by_key: dict[str, dict[str, Any]] = {}
+        for state_key, prior_state in sorted(tensor_states.items()):
+            candidate_result = execute_direct_bounded_local_vote_update_candidate(
+                state_key=state_key,
+                q_levels=prior_state.q_levels,
+                bounded_accumulator=prior_state.bounded_accumulator,
+                sparse_vote_events=_coerce_candidate_sparse_vote_events(
+                    candidate_sparse_vote_events_by_key,
+                    state_key,
+                ),
+                vote_spec=vote_specs_by_key[state_key],
+            )
+            next_state = make_candidate_authority_tensor_state(
+                prior_state,
+                candidate_result.next_q_levels,
+                candidate_result.next_bounded_accumulator,
+            )
+            proof = dict(candidate_result.proof)
+            proof["candidate_dense_decode_used"] = False
+            proof["candidate_accumulator_transient_over2_used"] = False
+            proof["candidate_vote_transient_over2_used"] = False
+            proof["candidate_dense_vote_authority_used"] = False
+            proof["dense_oracle_control_used"] = False
+            proof["oracle_dense_vote_sha256"] = None
+            proof["oracle_q_sha256_after"] = None
+            proof["oracle_acc_sha256_after"] = None
+            proof["oracle_applied_row_identities_sha256"] = None
+            proof["oracle_residual_after_threshold_sha256"] = None
+            proof["parity_pass"] = None
+            if candidate_oracle_control_enabled:
+                dense_votes = votes_by_key[state_key].detach().cpu().to(torch.int16).contiguous()
+                oracle_result = apply_integer_vote_update_reference(
+                    prior_state.vote_update_state(),
+                    VoteUpdateInputs(votes=dense_votes),
+                    vote_specs_by_key[state_key],
+                )
+                candidate_decode = decode_bounded_accumulator_to_i16(next_state.bounded_accumulator)
+                oracle_applied = tuple(
+                    int(index)
+                    for index in oracle_result.plan.applied_indices.detach().cpu().to(torch.int64).tolist()
+                )
+                oracle_residuals = {
+                    int(index): int(oracle_result.accumulators.flatten()[int(index)].item())
+                    for index in oracle_applied
+                }
+                oracle_applied_hash = hashlib.sha256()
+                for index in oracle_applied:
+                    oracle_applied_hash.update(state_key.encode("utf-8"))
+                    oracle_applied_hash.update(b":")
+                    oracle_applied_hash.update(str(int(index)).encode("utf-8"))
+                    oracle_applied_hash.update(b"\n")
+                oracle_applied_sha = oracle_applied_hash.hexdigest()
+                oracle_residual_hash = hashlib.sha256()
+                for index, value in sorted(oracle_residuals.items()):
+                    oracle_residual_hash.update(state_key.encode("utf-8"))
+                    oracle_residual_hash.update(b":")
+                    oracle_residual_hash.update(str(int(index)).encode("utf-8"))
+                    oracle_residual_hash.update(b"=")
+                    oracle_residual_hash.update(str(int(value)).encode("utf-8"))
+                    oracle_residual_hash.update(b"\n")
+                oracle_residual_sha = oracle_residual_hash.hexdigest()
+                candidate_applied_sha = proof.get("applied_row_identities_sha256")
+                candidate_residual_sha = proof.get("residual_after_threshold_sha256")
+                parity_pass = (
+                    tensor_sha256(next_state.q_levels) == tensor_sha256(oracle_result.q_levels)
+                    and tensor_sha256(candidate_decode) == tensor_sha256(oracle_result.accumulators)
+                    and candidate_applied_sha == oracle_applied_sha
+                    and candidate_residual_sha == oracle_residual_sha
+                )
+                proof.update(
+                    {
+                        "dense_oracle_control_used": True,
+                        "oracle_dense_vote_sha256": tensor_sha256(dense_votes),
+                        "oracle_q_sha256_after": tensor_sha256(oracle_result.q_levels),
+                        "oracle_acc_sha256_after": tensor_sha256(oracle_result.accumulators),
+                        "candidate_bounded_decode_sha256_after": tensor_sha256(candidate_decode),
+                        "oracle_applied_row_identities_sha256": oracle_applied_sha,
+                        "oracle_residual_after_threshold_sha256": oracle_residual_sha,
+                        "parity_pass": bool(parity_pass),
+                    }
+                )
+                if bool(proof.get("pass")) and not parity_pass:
+                    proof.update(
+                        {
+                            "pass": False,
+                            "scoped_label": None,
+                            "terminal_classification": INTRINSIC_BOUNDED_UPDATE_DOMAIN_GAP,
+                            "scoped_physical_budget_claim": "not_applicable_domain_gap",
+                            "domain_gap_dimension": "toy_oracle_parity",
+                            "domain_gap_detail": (
+                                "direct bounded local update diverged from the dense oracle "
+                                "on q mutations, applied rows, residual-after-threshold, or "
+                                "bounded decode parity within the claimed coverage domain"
+                            ),
+                        }
+                    )
+
+            next_states[state_key] = next_state
+            tensor_stats[state_key] = {
+                "state_key": state_key,
+                "candidate_mode": candidate_mode,
+                "bounded_update_attribution": BOUNDED_UPDATE_ATTRIBUTION,
+                "q_sha256_before": tensor_sha256(prior_state.q_levels),
+                "q_sha256_after": tensor_sha256(next_state.q_levels),
+                "bounded_accumulator_fresh_for_exact_shadow": False,
+                "bounded_accumulator_rebuilt_for_parity": False,
+                "bounded_decode_parity_checked": False,
+                "candidate_scoped_label": proof.get("scoped_label"),
+                "candidate_terminal_classification": proof.get("terminal_classification"),
+                "candidate_dense_decode_used": bool(proof.get("candidate_dense_decode_used")),
+                "candidate_accumulator_transient_over2_used": bool(
+                    proof.get("candidate_accumulator_transient_over2_used")
+                ),
+                "candidate_vote_transient_over2_used": bool(
+                    proof.get("candidate_vote_transient_over2_used")
+                ),
+                "candidate_dense_vote_authority_used": bool(
+                    proof.get("candidate_dense_vote_authority_used")
+                ),
+                "coverage_domain": dict(proof.get("coverage_domain") or {}),
+                "dense_oracle_control_used": bool(proof.get("dense_oracle_control_used")),
+                "candidate_local_update_pass": bool(proof.get("pass")),
+                "candidate_local_update_domain_gap_dimension": proof.get("domain_gap_dimension"),
+            }
+            proof_by_key[state_key] = proof
+
+        summary = {
+            "global_rate_cap_enabled": False,
+            "candidate_mode": candidate_mode,
+            "q_changed_count": sum(
+                int((proof.get("q_changed_count") or 0))
+                for proof in proof_by_key.values()
+            ),
+            "candidate_local_update_pass": all(bool(proof.get("pass")) for proof in proof_by_key.values()),
+            "candidate_local_update_proof_by_key": proof_by_key,
+            "candidate_terminal_classifications": {
+                key: proof.get("terminal_classification")
+                for key, proof in sorted(proof_by_key.items())
+            },
+            "candidate_dense_decode_used": False,
+            "candidate_accumulator_transient_over2_used": False,
+            "candidate_vote_transient_over2_used": False,
+            "candidate_dense_vote_authority_used": False,
+        }
+        return BoundedDeltaLearnerStepResult(
+            tensor_states=next_states,
+            tensor_stats=tensor_stats,
+            deferred_backlog={},
+            global_summary=summary,
+        )
+
     hot_by_key = hot_exact_indices_by_key or {}
     vote_update_states: dict[str, VoteUpdateState] = {}
     inputs_by_key: dict[str, VoteUpdateInputs] = {}
@@ -1341,6 +1613,7 @@ __all__ = [
     "default_dry_run_rank_vote_spec",
     "derive_bounded_tensor_state_from_weight",
     "file_sha256",
+    "make_candidate_authority_tensor_state",
     "make_live_shadow_tensor_state",
     "make_bounded_tensor_state",
     "project_s1_gradient_to_moves",

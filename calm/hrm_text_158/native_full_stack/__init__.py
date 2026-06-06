@@ -203,6 +203,7 @@ from calm.hrm_text_158.native_full_stack.sub2_native_birth_scaffold import (
     STRICT_SUB2_CANDIDATE_RUNTIME_TARGET_NAME,
     StrictSub2CandidateRuntimeScaffoldReport,
     StrictSub2ScaffoldRow,
+    attach_strict_sub2_scoped_candidate_proof,
     build_strict_sub2_candidate_runtime_scaffold,
     validate_strict_sub2_candidate_runtime_scaffold_report,
 )
@@ -251,6 +252,7 @@ __all__ = [
     "AttentionKVKeySchedule",
     "AttributionHookPoint",
     "AttributionIntegrityCheck",
+    "attach_strict_sub2_scoped_candidate_proof",
     "CAP_ACCEPTED_ROWS_PROVENANCE",
     "CAP_ORDERING_HASH_SEED",
     "CPU_GLUE_NOT_KERNEL_NOTE",

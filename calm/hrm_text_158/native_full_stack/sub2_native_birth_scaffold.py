@@ -10,11 +10,14 @@ an executable sub-2 learner. Instead it emits:
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Any, Mapping, Sequence
 
 from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
+    ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
+    ALGORITHMIC_LOCAL_VOTE_UPDATE_EXECUTABLE_NOT_PHYSICAL_SUB2,
     HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE,
+    INTRINSIC_BOUNDED_UPDATE_DOMAIN_GAP,
     bounded_delta_admission_contract,
     bounded_delta_candidate_assessment,
 )
@@ -91,6 +94,7 @@ class StrictSub2CandidateRuntimeScaffoldReport:
     acquisition_gate: dict[str, Any]
     hot_loop_residency: dict[str, Any]
     hidden_fp_learner_fail_state: str
+    scoped_candidate_proof: dict[str, Any] | None
     non_claims: tuple[str, ...]
 
     def to_dict(self) -> dict[str, Any]:
@@ -117,6 +121,9 @@ class StrictSub2CandidateRuntimeScaffoldReport:
             "acquisition_gate": dict(self.acquisition_gate),
             "hot_loop_residency": dict(self.hot_loop_residency),
             "hidden_fp_learner_fail_state": self.hidden_fp_learner_fail_state,
+            "scoped_candidate_proof": (
+                None if self.scoped_candidate_proof is None else dict(self.scoped_candidate_proof)
+            ),
             "non_claims": list(self.non_claims),
         }
 
@@ -219,6 +226,68 @@ def validate_strict_sub2_candidate_runtime_scaffold_report(
         raise ValueError("hidden FP learner fail state must be preserved verbatim")
     if not bool(report.pass_report):
         raise ValueError("scaffold report pass flag must reflect a valid fail-closed scaffold, not executable success")
+    if report.scoped_candidate_proof is not None:
+        proof = dict(report.scoped_candidate_proof)
+        if proof.get("surface") != "accumulator_substitute":
+            raise ValueError("scoped candidate proof must stay on accumulator_substitute only")
+        if proof.get("runtime_state_authority_after") != RUNTIME_STATE_AUTHORITY_SUB2_SCAFFOLD_ONLY:
+            raise ValueError("scoped candidate proof must leave runtime_state_authority scaffold-only")
+        if bool(proof.get("candidate_dense_decode_used")):
+            raise ValueError("scoped candidate proof cannot use dense decode on the candidate path")
+        if bool(proof.get("candidate_accumulator_transient_over2_used")):
+            raise ValueError("scoped candidate proof cannot use >2-bit accumulator transients")
+        if bool(proof.get("candidate_vote_transient_over2_used")):
+            raise ValueError("scoped candidate proof cannot use dense vote transients")
+        if bool(proof.get("candidate_dense_vote_authority_used")):
+            raise ValueError("scoped candidate proof cannot use dense vote authority")
+        if proof.get("q_storage_physical_budget_covered_by_scoped_proof") is not False:
+            raise ValueError("scoped candidate proof must not claim q-storage physical budget coverage")
+        if proof.get("frozen_scale_physical_budget_covered_by_scoped_proof") is not False:
+            raise ValueError("scoped candidate proof must not claim frozen-scale physical budget coverage")
+        if not isinstance(proof.get("coverage_domain"), Mapping):
+            raise ValueError("scoped candidate proof must disclose its coverage domain")
+        terminal = proof.get("terminal_classification")
+        if not bool(proof.get("pass")) and terminal != INTRINSIC_BOUNDED_UPDATE_DOMAIN_GAP:
+            raise ValueError("negative scoped candidate proof must land as the intrinsic domain-gap null")
+        if terminal not in {
+            ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
+            ALGORITHMIC_LOCAL_VOTE_UPDATE_EXECUTABLE_NOT_PHYSICAL_SUB2,
+            INTRINSIC_BOUNDED_UPDATE_DOMAIN_GAP,
+        }:
+            raise ValueError("scoped candidate proof terminal classification is unknown")
+        if bool(proof.get("pass")):
+            if not isinstance(proof.get("storage_projection"), Mapping):
+                raise ValueError("positive scoped candidate proof must disclose storage_projection")
+            accumulator_bpw = float(
+                proof["storage_projection"].get("bounded_delta_acc_bits_per_weight")
+            )
+            if proof.get("scoped_label") == ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE:
+                if accumulator_bpw >= 2.0:
+                    raise ValueError(
+                        "positive scoped candidate proof with the physical local-vote label "
+                        "must validate storage_projection bounded_delta_acc_bits_per_weight < 2"
+                    )
+                if proof.get("scoped_physical_budget_claim") != "physical_sub2_budgeted":
+                    raise ValueError(
+                        "physical local-vote label must explicitly claim physical_sub2_budgeted"
+                    )
+            elif proof.get("scoped_label") == ALGORITHMIC_LOCAL_VOTE_UPDATE_EXECUTABLE_NOT_PHYSICAL_SUB2:
+                if proof.get("scoped_physical_budget_claim") != "algorithmic_only_not_physical_sub2":
+                    raise ValueError(
+                        "algorithmic-only local-vote label must explicitly reject physical-sub2 interpretation"
+                    )
+            else:
+                raise ValueError("positive scoped candidate proof uses an unknown positive label")
+        persistent_rows = {
+            row.name: row
+            for row in report.persistent_candidate_rows
+        }
+        accumulator_row = persistent_rows["accumulator_substitute"]
+        if accumulator_row.in_candidate_authority or accumulator_row.classification != LEDGER_CLASS_NOT_YET:
+            raise ValueError(
+                "scoped candidate proof cannot silently promote the full accumulator row; "
+                "it stays blocked/not-yet until broader decision dimensions are covered"
+            )
 
 
 def build_strict_sub2_candidate_runtime_scaffold(
@@ -439,6 +508,7 @@ def build_strict_sub2_candidate_runtime_scaffold(
         acquisition_gate=acquisition_gate,
         hot_loop_residency=hot_loop,
         hidden_fp_learner_fail_state=HIDDEN_FP_LEARNER_FAIL_STATE,
+        scoped_candidate_proof=None,
         non_claims=(
             "scaffold-only; no sub-2 learner achieved claim",
             "runtime_state_authority stays sub2_scaffold_only in this slice",
@@ -448,6 +518,19 @@ def build_strict_sub2_candidate_runtime_scaffold(
     )
     validate_strict_sub2_candidate_runtime_scaffold_report(report)
     return report
+
+
+def attach_strict_sub2_scoped_candidate_proof(
+    report: StrictSub2CandidateRuntimeScaffoldReport,
+    *,
+    scoped_candidate_proof: Mapping[str, Any],
+) -> StrictSub2CandidateRuntimeScaffoldReport:
+    updated = replace(
+        report,
+        scoped_candidate_proof=dict(scoped_candidate_proof),
+    )
+    validate_strict_sub2_candidate_runtime_scaffold_report(updated)
+    return updated
 
 
 __all__ = [
@@ -463,6 +546,7 @@ __all__ = [
     "STRICT_SUB2_CANDIDATE_RUNTIME_TARGET_NAME",
     "StrictSub2CandidateRuntimeScaffoldReport",
     "StrictSub2ScaffoldRow",
+    "attach_strict_sub2_scoped_candidate_proof",
     "build_strict_sub2_candidate_runtime_scaffold",
     "validate_strict_sub2_candidate_runtime_scaffold_report",
 ]
