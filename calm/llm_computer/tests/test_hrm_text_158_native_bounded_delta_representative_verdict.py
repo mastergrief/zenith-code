@@ -21,15 +21,23 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
 )
 from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict import (
     ACCUMULATOR_FREE_NULL_BASELINE,
+    A_COLD_EXCEPTION_BUDGET_LEVER_LABEL,
+    A_FUNDAMENTALLY_OVER_LABEL,
     BACKLOG_K_POLICIES,
+    CAPACITY_LOCALIZATION_DIAGNOSTIC_LABEL,
     CANDIDATE_ADMISSION_DIAGNOSTIC_LABEL,
     CUMULATIVE_SCHEDULE_MODE,
     HOT_BUDGET_POINT_LABELS,
+    K_SWEEP_JOINT_INFEASIBLE,
+    K_SWEEP_MINIMAL_VIABLE_PASS,
+    K_SWEEP_REPRESENTATION_WALL,
     ONE_STEP_LOCAL_DIAGNOSTIC_MODE,
     ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC,
-    run_representative_bounded_delta_drift_verdict,
     run_candidate_admission_diagnostic,
+    run_candidate_capacity_localization_diagnostic,
+    run_representative_bounded_delta_drift_verdict,
     validate_candidate_admission_diagnostic_report,
+    validate_candidate_capacity_localization_report,
     validate_representative_bounded_delta_drift_verdict_report,
 )
 from calm.hrm_text_158.native_full_stack.global_rate_cap import GlobalRateCapSpec
@@ -98,6 +106,11 @@ def _representative_report():
 @lru_cache(maxsize=1)
 def _candidate_admission_report():
     return run_candidate_admission_diagnostic()
+
+
+@lru_cache(maxsize=1)
+def _capacity_localization_report():
+    return run_candidate_capacity_localization_diagnostic()
 
 
 def test_bounded_backlog_policy_is_opt_in_and_charged_as_actual_stored_backlog():
@@ -395,4 +408,64 @@ def test_candidate_admission_diagnostic_is_null_anchored_and_oracle_upper_bound(
         .bounded_stored_truncation_count
         > 0
     )
+    _assert_no_tensors(payload)
+
+
+def test_candidate_capacity_localization_reports_a_budget_direction_and_bc_k_sweeps():
+    report = _capacity_localization_report()
+    payload = report.to_dict()
+
+    validate_candidate_capacity_localization_report(report)
+    assert report.label == CAPACITY_LOCALIZATION_DIAGNOSTIC_LABEL
+    assert report.backlog_k_schedule[-1] == "unbounded"
+    assert report.candidate_a_budget_report.terminal_budget_direction_label == (
+        A_FUNDAMENTALLY_OVER_LABEL
+    )
+    assert (
+        report.candidate_a_budget_report.original_terminal_rejection_summary
+        == "exact_surface_miss"
+    )
+    assert "surface-faithful tighter-cold encoding" in report.candidate_a_budget_report.non_claim
+    assert len(report.candidate_a_budget_report.per_step_readouts) == 4
+    terminal_a = report.candidate_a_budget_report.per_step_readouts[-1]
+    assert terminal_a.packed_inclusive_physical_bits_per_weight > 2.0
+    assert terminal_a.cold_zero_counterfactual_bits_per_weight > 2.0
+    assert terminal_a.cold_zero_counterfactual_bits_per_weight == pytest.approx(
+        terminal_a.packed_inclusive_physical_bits_per_weight,
+    )
+    for step in report.candidate_a_budget_report.per_step_readouts:
+        assert step.cold_zero_counterfactual_bits_per_weight <= step.packed_inclusive_physical_bits_per_weight
+
+    by_name = {run.candidate_name: run for run in report.sweep_runs}
+    assert by_name[EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE].terminal_decision.status == (
+        K_SWEEP_JOINT_INFEASIBLE
+    )
+    assert by_name[EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE].terminal_decision.decisive_k_label == (
+        "4096"
+    )
+    assert by_name[EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE].terminal_decision.decisive_k_value == 4096
+    assert by_name[COARSE_SIGNED_CHARGE_SPARSE_FRONTIER_CANDIDATE].terminal_decision.status == (
+        K_SWEEP_REPRESENTATION_WALL
+    )
+    assert by_name[COARSE_SIGNED_CHARGE_SPARSE_FRONTIER_CANDIDATE].terminal_decision.decisive_k_label == (
+        "unbounded"
+    )
+    assert by_name[COARSE_SIGNED_CHARGE_SPARSE_FRONTIER_CANDIDATE].terminal_decision.decisive_k_value is None
+
+    for run in report.sweep_runs:
+        assert run.terminal_decision.status in {
+            K_SWEEP_MINIMAL_VIABLE_PASS,
+            K_SWEEP_JOINT_INFEASIBLE,
+            K_SWEEP_REPRESENTATION_WALL,
+        }
+        assert run.sweep_entries[0].k_label == "32"
+        assert run.sweep_entries[-1].k_label == "unbounded"
+        for entry in run.sweep_entries:
+            assert len(entry.per_step_reports) == 4
+        for step in run.sweep_entries[-1].per_step_reports:
+            assert step.backlog_truncation_attribution.bounded_input_truncation_count == 0
+            assert step.backlog_truncation_attribution.bounded_stored_truncation_count == 0
+            assert step.bounded_delta_report.measured_report.oracle_parity["builder_label"] == (
+                ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC
+            )
     _assert_no_tensors(payload)
