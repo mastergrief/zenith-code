@@ -322,6 +322,21 @@ CAP_PRESSURE_FRONTIER_OVERFLOW_REQUIRES_ILLEGAL_SUBSET_SELECTION = (
 )
 PATH_B_AGGREGATE_STATE_METADATA_BITS = 64
 PATH_B_AGGREGATE_STATE_CARRY_BITS = 16
+PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_SCHEMA_VERSION = (
+    "hrm_text_158_c1p1i_path_b_defer_all_zero_bit_baseline_parity_probe/v0"
+)
+PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_LABEL = (
+    "c1p1i_path_b_defer_all_zero_bit_baseline_parity_probe"
+)
+PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_CANDIDATE = (
+    CLASS_ACTION_DEFER_ALL_MIXED_CLASSES_NO_BACKFILL
+)
+BASELINE_SUFFICIENT_NO_CARRY_NEEDED = "baseline_sufficient_no_carry_needed"
+CARRY_CANDIDATE_EARNED = "carry_candidate_earned"
+INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT = "inconclusive_needs_loop_measurement"
+AGGREGATE_RUNTIME_SEMANTICS_DEFINITION_PLAN = (
+    "aggregate_runtime_semantics_definition_plan"
+)
 
 
 def representative_engineering_guard_spec() -> BoundedDeltaGuardSpec:
@@ -7110,6 +7125,934 @@ def validate_path_b_identity_free_tie_rule_classifier_report(
     _assert_no_tensors(report.to_dict())
 
 
+@dataclass(frozen=True)
+class PathBDeferAllBaselineStepReport:
+    schedule_name: str
+    step: int
+    global_cap: int
+    exact_candidate_row_count: int
+    replay_candidate_row_count: int
+    exact_accepted_count: int
+    replay_accepted_count: int
+    accepted_surface_symmetric_difference: int
+    exact_deferred_count: int
+    replay_deferred_count: int
+    deferred_surface_symmetric_difference: int
+    exact_backlog_count: int
+    replay_backlog_count: int
+    backlog_surface_symmetric_difference: int
+    q_divergence_count: int
+    mixed_feature_class_count: int
+    mixed_feature_class_row_count: int
+    max_mixed_class_cardinality: int
+    dropped_mass_count: int
+    exact_accepted_identities_sha256: str
+    replay_accepted_identities_sha256: str
+    exact_deferred_identities_sha256: str
+    replay_deferred_identities_sha256: str
+    exact_backlog_identities_sha256: str
+    replay_backlog_identities_sha256: str
+    dropped_mass_identities_sha256: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schedule_name": self.schedule_name,
+            "step": int(self.step),
+            "global_cap": int(self.global_cap),
+            "exact_candidate_row_count": int(self.exact_candidate_row_count),
+            "replay_candidate_row_count": int(self.replay_candidate_row_count),
+            "exact_accepted_count": int(self.exact_accepted_count),
+            "replay_accepted_count": int(self.replay_accepted_count),
+            "accepted_surface_symmetric_difference": int(
+                self.accepted_surface_symmetric_difference
+            ),
+            "exact_deferred_count": int(self.exact_deferred_count),
+            "replay_deferred_count": int(self.replay_deferred_count),
+            "deferred_surface_symmetric_difference": int(
+                self.deferred_surface_symmetric_difference
+            ),
+            "exact_backlog_count": int(self.exact_backlog_count),
+            "replay_backlog_count": int(self.replay_backlog_count),
+            "backlog_surface_symmetric_difference": int(
+                self.backlog_surface_symmetric_difference
+            ),
+            "q_divergence_count": int(self.q_divergence_count),
+            "mixed_feature_class_count": int(self.mixed_feature_class_count),
+            "mixed_feature_class_row_count": int(self.mixed_feature_class_row_count),
+            "max_mixed_class_cardinality": int(self.max_mixed_class_cardinality),
+            "dropped_mass_count": int(self.dropped_mass_count),
+            "exact_accepted_identities_sha256": self.exact_accepted_identities_sha256,
+            "replay_accepted_identities_sha256": self.replay_accepted_identities_sha256,
+            "exact_deferred_identities_sha256": self.exact_deferred_identities_sha256,
+            "replay_deferred_identities_sha256": self.replay_deferred_identities_sha256,
+            "exact_backlog_identities_sha256": self.exact_backlog_identities_sha256,
+            "replay_backlog_identities_sha256": self.replay_backlog_identities_sha256,
+            "dropped_mass_identities_sha256": self.dropped_mass_identities_sha256,
+        }
+
+
+@dataclass(frozen=True)
+class PathBDroppedMassOriginReport:
+    origin_schedule_name: str
+    origin_step: int
+    dropped_mass_count: int
+    dropped_mass_identities_sha256: str
+    re_presented_later_count: int
+    re_presented_later_identities_sha256: str
+    eventually_accepted_under_baseline_count: int
+    eventually_accepted_under_baseline_identities_sha256: str
+    recoverable_but_unrecovered_count: int
+    recoverable_but_unrecovered_identities_sha256: str
+    never_recovered_count: int
+    never_recovered_identities_sha256: str
+    terminal_censored_mass_count: int
+    terminal_censored_mass_identities_sha256: str
+    future_schedule_names: tuple[str, ...]
+    bounded_class_count_upper_bound: int
+    max_bounded_class_cardinality: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "origin_schedule_name": self.origin_schedule_name,
+            "origin_step": int(self.origin_step),
+            "dropped_mass_count": int(self.dropped_mass_count),
+            "dropped_mass_identities_sha256": self.dropped_mass_identities_sha256,
+            "re_presented_later_count": int(self.re_presented_later_count),
+            "re_presented_later_identities_sha256": self.re_presented_later_identities_sha256,
+            "eventually_accepted_under_baseline_count": int(
+                self.eventually_accepted_under_baseline_count
+            ),
+            "eventually_accepted_under_baseline_identities_sha256": (
+                self.eventually_accepted_under_baseline_identities_sha256
+            ),
+            "recoverable_but_unrecovered_count": int(
+                self.recoverable_but_unrecovered_count
+            ),
+            "recoverable_but_unrecovered_identities_sha256": (
+                self.recoverable_but_unrecovered_identities_sha256
+            ),
+            "never_recovered_count": int(self.never_recovered_count),
+            "never_recovered_identities_sha256": self.never_recovered_identities_sha256,
+            "terminal_censored_mass_count": int(self.terminal_censored_mass_count),
+            "terminal_censored_mass_identities_sha256": (
+                self.terminal_censored_mass_identities_sha256
+            ),
+            "future_schedule_names": list(self.future_schedule_names),
+            "bounded_class_count_upper_bound": int(
+                self.bounded_class_count_upper_bound
+            ),
+            "max_bounded_class_cardinality": int(
+                self.max_bounded_class_cardinality
+            ),
+        }
+
+
+@dataclass(frozen=True)
+class PathBDeferAllBaselineDecision:
+    terminal_label: str
+    final_step_schedule_name: str
+    final_q_divergence_count: int
+    final_accepted_surface_symmetric_difference: int
+    final_deferred_surface_symmetric_difference: int
+    final_backlog_surface_symmetric_difference: int
+    total_dropped_mass_count: int
+    total_re_presented_later_count: int
+    total_eventually_accepted_under_baseline_count: int
+    total_recoverable_but_unrecovered_count: int
+    total_never_recovered_count: int
+    total_terminal_censored_mass_count: int
+    peak_bounded_class_count_upper_bound: int
+    peak_bounded_class_cardinality: int
+    aggregate_runtime_semantics_definition_plan_earned: bool
+    candidate_only: bool
+    dyn200_earned: bool
+    learner_sub2_claimed: bool
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "terminal_label": self.terminal_label,
+            "final_step_schedule_name": self.final_step_schedule_name,
+            "final_q_divergence_count": int(self.final_q_divergence_count),
+            "final_accepted_surface_symmetric_difference": int(
+                self.final_accepted_surface_symmetric_difference
+            ),
+            "final_deferred_surface_symmetric_difference": int(
+                self.final_deferred_surface_symmetric_difference
+            ),
+            "final_backlog_surface_symmetric_difference": int(
+                self.final_backlog_surface_symmetric_difference
+            ),
+            "total_dropped_mass_count": int(self.total_dropped_mass_count),
+            "total_re_presented_later_count": int(
+                self.total_re_presented_later_count
+            ),
+            "total_eventually_accepted_under_baseline_count": int(
+                self.total_eventually_accepted_under_baseline_count
+            ),
+            "total_recoverable_but_unrecovered_count": int(
+                self.total_recoverable_but_unrecovered_count
+            ),
+            "total_never_recovered_count": int(self.total_never_recovered_count),
+            "total_terminal_censored_mass_count": int(
+                self.total_terminal_censored_mass_count
+            ),
+            "peak_bounded_class_count_upper_bound": int(
+                self.peak_bounded_class_count_upper_bound
+            ),
+            "peak_bounded_class_cardinality": int(
+                self.peak_bounded_class_cardinality
+            ),
+            "aggregate_runtime_semantics_definition_plan_earned": bool(
+                self.aggregate_runtime_semantics_definition_plan_earned
+            ),
+            "candidate_only": bool(self.candidate_only),
+            "dyn200_earned": bool(self.dyn200_earned),
+            "learner_sub2_claimed": bool(self.learner_sub2_claimed),
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class PathBDeferAllBaselineParityProbeReport:
+    schema_version: str
+    label: str
+    source_bindingness: Any
+    field_coverage: SourceFieldCoverage
+    candidate_name: str
+    source_classifier_label: str
+    source_classifier_candidate_variant: str
+    source_classifier_downstream_test: str
+    step_reports: tuple[PathBDeferAllBaselineStepReport, ...]
+    dropped_mass_origin_reports: tuple[PathBDroppedMassOriginReport, ...]
+    terminal_decision: PathBDeferAllBaselineDecision
+    raw_arrays_included: bool
+    non_claims: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "label": self.label,
+            "source_bindingness": self.source_bindingness.to_dict(),
+            "field_coverage": self.field_coverage.to_dict(),
+            "candidate_name": self.candidate_name,
+            "source_classifier_label": self.source_classifier_label,
+            "source_classifier_candidate_variant": self.source_classifier_candidate_variant,
+            "source_classifier_downstream_test": self.source_classifier_downstream_test,
+            "step_reports": [step.to_dict() for step in self.step_reports],
+            "dropped_mass_origin_reports": [
+                report.to_dict() for report in self.dropped_mass_origin_reports
+            ],
+            "terminal_decision": self.terminal_decision.to_dict(),
+            "raw_arrays_included": bool(self.raw_arrays_included),
+            "non_claims": list(self.non_claims),
+        }
+
+
+@dataclass(frozen=True)
+class _PathBReplayStepState:
+    schedule_name: str
+    step: int
+    global_cap: int
+    candidate_row_ids: set[tuple[str, int]]
+    accepted_ids: set[tuple[str, int]]
+    deferred_ids: set[tuple[str, int]]
+    backlog_ids: set[tuple[str, int]]
+    output_states: dict[str, VoteUpdateState]
+    output_backlog: dict[str, dict[int, dict[str, int]]]
+    q_changed_ids: set[tuple[str, int]]
+    dropped_ids: set[tuple[str, int]]
+    mixed_feature_class_count: int
+    mixed_feature_class_row_count: int
+    max_mixed_class_cardinality: int
+    observable_rows: tuple[_StrictObservableTieMaskRow, ...]
+
+
+def _path_b_ids_from_indices(
+    state_key: str,
+    indices: torch.Tensor,
+) -> set[tuple[str, int]]:
+    return {
+        (str(state_key), int(index))
+        for index in indices.detach().cpu().to(torch.int64).tolist()
+    }
+
+
+def _path_b_apply_threshold_residual(
+    new_acc_i32: torch.Tensor,
+    indices: torch.Tensor,
+    directions: torch.Tensor,
+    thresholds: torch.Tensor,
+) -> None:
+    if indices.numel() == 0:
+        return
+    residual = new_acc_i32[indices] - directions.to(torch.int32) * thresholds
+    low = -thresholds + 1
+    high = thresholds - 1
+    new_acc_i32[indices] = torch.minimum(torch.maximum(residual, low), high)
+
+
+def _path_b_current_trace_step(
+    *,
+    states_by_key: Mapping[str, VoteUpdateState],
+    deferred_backlog: Mapping[str, Mapping[int, Mapping[str, int]]],
+    schedule_step: VotePressureStepSpec,
+) -> _ExactScheduleTraceStep:
+    inputs, offsets = _make_step_inputs(states_by_key, schedule_step)
+    cap_spec = GlobalRateCapSpec(cap=int(schedule_step.cap), step=int(schedule_step.step))
+    exact_path = _run_reference_path(
+        inputs,
+        states_by_key=_copy_state_map(states_by_key),
+        global_cap_spec=cap_spec,
+        deferred_backlog=_copy_backlog(deferred_backlog),
+        tensor_offsets=offsets,
+    )
+    if exact_path.cap_result is None:
+        raise ValueError("path-(b) baseline replay requires cap-result exact paths")
+    return _ExactScheduleTraceStep(
+        schedule_step=schedule_step,
+        inputs=tuple(inputs),
+        tensor_offsets=dict(offsets),
+        cap_spec=cap_spec,
+        exact_input_states=_copy_state_map(states_by_key),
+        exact_input_backlog=_copy_backlog(deferred_backlog),
+        exact_path=exact_path,
+        exact_output_backlog=_copy_backlog(exact_path.cap_result.deferred_backlog),
+    )
+
+
+def _path_b_mutated_partition_for_trace_step(
+    trace_step: _ExactScheduleTraceStep,
+) -> tuple[
+    tuple[_StrictObservableTieMaskRow, ...],
+    set[tuple[str, int]],
+    set[tuple[str, int]],
+    set[tuple[str, int]],
+    int,
+    int,
+    int,
+]:
+    cap_result = trace_step.exact_path.cap_result
+    if cap_result is None:
+        raise ValueError("path-(b) baseline replay requires a cap-result trace")
+    observable_rows = _strict_observable_tie_mask_rows(trace_step)
+    exact_accepted = {
+        (row.state_key, int(row.flat_index)) for row in cap_result.accepted_rows
+    }
+    exact_deferred = {
+        (row.state_key, int(row.flat_index)) for row in cap_result.deferred_rows
+    }
+    by_bucket: dict[tuple[str, int, int], list[_StrictObservableTieMaskRow]] = {}
+    for row in observable_rows:
+        by_bucket.setdefault(row.bucket_key, []).append(row)
+    dropped_ids: set[tuple[str, int]] = set()
+    mixed_feature_class_count = 0
+    mixed_feature_class_row_count = 0
+    max_mixed_class_cardinality = 0
+    for bucket_rows in by_bucket.values():
+        by_feature: dict[tuple[tuple[str, Any], ...], list[_StrictObservableTieMaskRow]] = {}
+        for row in bucket_rows:
+            by_feature.setdefault(row.feature_key(), []).append(row)
+        for class_rows in by_feature.values():
+            class_ids = {row.identity for row in class_rows}
+            class_accepted = class_ids & exact_accepted
+            if 0 < len(class_accepted) < len(class_ids):
+                mixed_feature_class_count += 1
+                mixed_feature_class_row_count += len(class_ids)
+                max_mixed_class_cardinality = max(
+                    max_mixed_class_cardinality,
+                    len(class_ids),
+                )
+                dropped_ids |= class_accepted
+    replay_accepted = set(exact_accepted) - set(dropped_ids)
+    replay_deferred = set(exact_deferred) | set(dropped_ids)
+    return (
+        observable_rows,
+        replay_accepted,
+        replay_deferred,
+        dropped_ids,
+        int(mixed_feature_class_count),
+        int(mixed_feature_class_row_count),
+        int(max_mixed_class_cardinality),
+    )
+
+
+def _path_b_replay_step_from_mutated_partition(
+    trace_step: _ExactScheduleTraceStep,
+) -> _PathBReplayStepState:
+    cap_result = trace_step.exact_path.cap_result
+    if cap_result is None:
+        raise ValueError("path-(b) baseline replay requires a cap-result trace")
+    (
+        observable_rows,
+        replay_accepted,
+        replay_deferred,
+        dropped_ids,
+        mixed_feature_class_count,
+        mixed_feature_class_row_count,
+        max_mixed_class_cardinality,
+    ) = _path_b_mutated_partition_for_trace_step(trace_step)
+    backlog = _copy_backlog(trace_step.exact_input_backlog)
+    for row in cap_result.rows:
+        identity = row.identity()
+        if identity in replay_accepted:
+            state_backlog = backlog.get(row.state_key, {})
+            if row.flat_index in state_backlog:
+                del state_backlog[row.flat_index]
+        if identity in replay_deferred:
+            state_backlog = backlog.setdefault(row.state_key, {})
+            entry = state_backlog.setdefault(
+                int(row.flat_index),
+                {
+                    "first_step": int(trace_step.schedule_step.step),
+                    "last_deferred_step": int(trace_step.schedule_step.step),
+                    "defer_count": 0,
+                },
+            )
+            entry["last_deferred_step"] = int(trace_step.schedule_step.step)
+            entry["defer_count"] = int(entry.get("defer_count", 0)) + 1
+    output_states: dict[str, VoteUpdateState] = {}
+    q_changed_ids: set[tuple[str, int]] = set()
+    for item in trace_step.inputs:
+        state_key = item.state_key
+        input_state = trace_step.exact_input_states[state_key]
+        plan = trace_step.exact_path.plans[state_key]
+        q_i16 = plan.q_i16.flatten().clone()
+        new_acc_i32 = plan.new_acc_i32.flatten().clone().to(torch.int32)
+        pre_cap_indices = plan.applied_indices.to(torch.int64)
+        pre_cap_directions = plan.applied_directions.to(torch.int16)
+        pre_cap_thresholds = plan.applied_thresholds.to(torch.int32)
+        accepted_mask = torch.tensor(
+            [
+                (state_key, int(idx)) in replay_accepted
+                for idx in pre_cap_indices.detach().cpu().tolist()
+            ],
+            dtype=torch.bool,
+        )
+        accepted_indices = pre_cap_indices[accepted_mask]
+        accepted_directions = pre_cap_directions[accepted_mask]
+        accepted_thresholds = pre_cap_thresholds[accepted_mask]
+        if accepted_indices.numel() > 0:
+            q_i16[accepted_indices] = (
+                q_i16[accepted_indices] + accepted_directions
+            ).clamp(-1, 1)
+            _path_b_apply_threshold_residual(
+                new_acc_i32,
+                accepted_indices,
+                accepted_directions,
+                accepted_thresholds,
+            )
+        replay_indices = plan.replay_ce_veto_indices.to(torch.int64)
+        replay_directions = plan.replay_veto_directions.to(torch.int16)
+        replay_thresholds = plan.replay_veto_thresholds.to(torch.int32)
+        _path_b_apply_threshold_residual(
+            new_acc_i32,
+            replay_indices,
+            replay_directions,
+            replay_thresholds,
+        )
+        q_out = q_i16.view_as(input_state.q_levels).to(torch.int8).contiguous()
+        acc_out = new_acc_i32.view_as(input_state.accumulators).to(torch.int16).contiguous()
+        changed = torch.nonzero(
+            q_out.flatten() != input_state.q_levels.flatten(),
+            as_tuple=False,
+        ).flatten()
+        q_changed_ids |= _path_b_ids_from_indices(state_key, changed)
+        output_states[state_key] = VoteUpdateState(
+            q_levels=q_out,
+            accumulators=acc_out,
+        )
+    return _PathBReplayStepState(
+        schedule_name=trace_step.schedule_step.name,
+        step=int(trace_step.schedule_step.step),
+        global_cap=int(trace_step.cap_spec.cap),
+        candidate_row_ids={row.identity for row in observable_rows},
+        accepted_ids=set(replay_accepted),
+        deferred_ids=set(replay_deferred),
+        backlog_ids=_backlog_key_set(backlog),
+        output_states=output_states,
+        output_backlog=backlog,
+        q_changed_ids=q_changed_ids,
+        dropped_ids=set(dropped_ids),
+        mixed_feature_class_count=int(mixed_feature_class_count),
+        mixed_feature_class_row_count=int(mixed_feature_class_row_count),
+        max_mixed_class_cardinality=int(max_mixed_class_cardinality),
+        observable_rows=observable_rows,
+    )
+
+
+def _path_b_q_divergence_count(
+    *,
+    replay_states: Mapping[str, VoteUpdateState],
+    exact_output_q_by_key: Mapping[str, torch.Tensor],
+) -> int:
+    divergence_ids: set[tuple[str, int]] = set()
+    for state_key in PRIMARY_STATE_KEYS:
+        replay_q = replay_states[state_key].q_levels.flatten()
+        exact_q = exact_output_q_by_key[state_key].flatten()
+        changed = torch.nonzero(replay_q != exact_q, as_tuple=False).flatten()
+        divergence_ids |= _path_b_ids_from_indices(state_key, changed)
+    return int(len(divergence_ids))
+
+
+def _path_b_defer_all_baseline_step_report(
+    *,
+    exact_trace_step: _ExactScheduleTraceStep,
+    replay_step: _PathBReplayStepState,
+) -> PathBDeferAllBaselineStepReport:
+    cap_result = exact_trace_step.exact_path.cap_result
+    if cap_result is None:
+        raise ValueError("path-(b) baseline step report requires an exact cap-result trace")
+    exact_accepted = {
+        (row.state_key, int(row.flat_index)) for row in cap_result.accepted_rows
+    }
+    exact_deferred = {
+        (row.state_key, int(row.flat_index)) for row in cap_result.deferred_rows
+    }
+    exact_backlog_ids = _backlog_key_set(exact_trace_step.exact_output_backlog)
+    return PathBDeferAllBaselineStepReport(
+        schedule_name=exact_trace_step.schedule_step.name,
+        step=int(exact_trace_step.schedule_step.step),
+        global_cap=int(exact_trace_step.cap_spec.cap),
+        exact_candidate_row_count=len(cap_result.rows),
+        replay_candidate_row_count=len(replay_step.candidate_row_ids),
+        exact_accepted_count=len(exact_accepted),
+        replay_accepted_count=len(replay_step.accepted_ids),
+        accepted_surface_symmetric_difference=len(
+            exact_accepted ^ replay_step.accepted_ids
+        ),
+        exact_deferred_count=len(exact_deferred),
+        replay_deferred_count=len(replay_step.deferred_ids),
+        deferred_surface_symmetric_difference=len(
+            exact_deferred ^ replay_step.deferred_ids
+        ),
+        exact_backlog_count=len(exact_backlog_ids),
+        replay_backlog_count=len(replay_step.backlog_ids),
+        backlog_surface_symmetric_difference=len(
+            exact_backlog_ids ^ replay_step.backlog_ids
+        ),
+        q_divergence_count=_path_b_q_divergence_count(
+            replay_states=replay_step.output_states,
+            exact_output_q_by_key=exact_trace_step.exact_path.output_q_by_key,
+        ),
+        mixed_feature_class_count=int(replay_step.mixed_feature_class_count),
+        mixed_feature_class_row_count=int(replay_step.mixed_feature_class_row_count),
+        max_mixed_class_cardinality=int(replay_step.max_mixed_class_cardinality),
+        dropped_mass_count=len(replay_step.dropped_ids),
+        exact_accepted_identities_sha256=_identity_sha256(exact_accepted),
+        replay_accepted_identities_sha256=_identity_sha256(replay_step.accepted_ids),
+        exact_deferred_identities_sha256=_identity_sha256(exact_deferred),
+        replay_deferred_identities_sha256=_identity_sha256(replay_step.deferred_ids),
+        exact_backlog_identities_sha256=_identity_sha256(exact_backlog_ids),
+        replay_backlog_identities_sha256=_identity_sha256(replay_step.backlog_ids),
+        dropped_mass_identities_sha256=_identity_sha256(replay_step.dropped_ids),
+    )
+
+
+def _path_b_future_class_support_summary(
+    *,
+    dropped_ids: set[tuple[str, int]],
+    future_steps: Sequence[_PathBReplayStepState],
+) -> tuple[set[tuple[str, int]], int, int, tuple[str, ...]]:
+    re_presented: set[tuple[str, int]] = set()
+    peak_class_count = 0
+    peak_class_cardinality = 0
+    future_schedule_names: list[str] = []
+    for future_step in future_steps:
+        identity_to_group = {
+            row.identity: (row.bucket_key, row.feature_key())
+            for row in future_step.observable_rows
+        }
+        re_presented_now = dropped_ids & future_step.candidate_row_ids
+        if not re_presented_now:
+            continue
+        future_schedule_names.append(future_step.schedule_name)
+        re_presented |= re_presented_now
+        by_group: dict[
+            tuple[tuple[str, int, int], tuple[tuple[str, Any], ...]],
+            set[tuple[str, int]],
+        ] = {}
+        for identity in re_presented_now:
+            group_key = identity_to_group.get(identity)
+            if group_key is None:
+                raise ValueError(
+                    "re-presented identity must stay observable inside the replay step"
+                )
+            by_group.setdefault(group_key, set()).add(identity)
+        peak_class_count = max(peak_class_count, len(by_group))
+        if by_group:
+            peak_class_cardinality = max(
+                peak_class_cardinality,
+                max(len(group) for group in by_group.values()),
+            )
+    return (
+        re_presented,
+        int(peak_class_count),
+        int(peak_class_cardinality),
+        tuple(dict.fromkeys(future_schedule_names)),
+    )
+
+
+def _path_b_dropped_mass_origin_reports(
+    replay_steps: Sequence[_PathBReplayStepState],
+) -> tuple[PathBDroppedMassOriginReport, ...]:
+    reports: list[PathBDroppedMassOriginReport] = []
+    for index, origin_step in enumerate(replay_steps):
+        dropped_ids = set(origin_step.dropped_ids)
+        if not dropped_ids:
+            continue
+        future_steps = tuple(replay_steps[index + 1 :])
+        re_presented_ids, peak_class_count, peak_class_cardinality, future_schedule_names = (
+            _path_b_future_class_support_summary(
+                dropped_ids=dropped_ids,
+                future_steps=future_steps,
+            )
+        )
+        eventually_accepted = set()
+        for future_step in future_steps:
+            eventually_accepted |= dropped_ids & future_step.accepted_ids
+        terminal_censored = set(dropped_ids) if not future_steps else set()
+        recoverable_but_unrecovered = re_presented_ids - eventually_accepted
+        never_recovered = dropped_ids - eventually_accepted - terminal_censored
+        reports.append(
+            PathBDroppedMassOriginReport(
+                origin_schedule_name=origin_step.schedule_name,
+                origin_step=int(origin_step.step),
+                dropped_mass_count=len(dropped_ids),
+                dropped_mass_identities_sha256=_identity_sha256(dropped_ids),
+                re_presented_later_count=len(re_presented_ids),
+                re_presented_later_identities_sha256=_identity_sha256(re_presented_ids),
+                eventually_accepted_under_baseline_count=len(eventually_accepted),
+                eventually_accepted_under_baseline_identities_sha256=_identity_sha256(
+                    eventually_accepted
+                ),
+                recoverable_but_unrecovered_count=len(recoverable_but_unrecovered),
+                recoverable_but_unrecovered_identities_sha256=_identity_sha256(
+                    recoverable_but_unrecovered
+                ),
+                never_recovered_count=len(never_recovered),
+                never_recovered_identities_sha256=_identity_sha256(never_recovered),
+                terminal_censored_mass_count=len(terminal_censored),
+                terminal_censored_mass_identities_sha256=_identity_sha256(
+                    terminal_censored
+                ),
+                future_schedule_names=future_schedule_names,
+                bounded_class_count_upper_bound=int(peak_class_count),
+                max_bounded_class_cardinality=int(peak_class_cardinality),
+            )
+        )
+    return tuple(reports)
+
+
+def _path_b_defer_all_baseline_non_claims() -> tuple[str, ...]:
+    return (
+        "CPU-only mutated recurrence replay over the fixed preregistered native reference schedule",
+        "rule inputs remain limited to current-step bucket plus within-bucket observable feature classes",
+        "the replay mutates the accepted/deferred partition and recomputes downstream backlog/q/acc from that mutated partition",
+        "aggregate-state is non-competing in this slice; carry_candidate_earned only routes to a future runtime-semantics-definition plan",
+        "nonzero terminal-step censored dropped mass blocks baseline_sufficient_no_carry_needed",
+        "candidate-only; no dyn200, no learner/sub-2 claim, no raw per-weight arrays",
+    )
+
+
+def _path_b_defer_all_baseline_terminal_decision(
+    *,
+    step_reports: Sequence[PathBDeferAllBaselineStepReport],
+    origin_reports: Sequence[PathBDroppedMassOriginReport],
+) -> PathBDeferAllBaselineDecision:
+    if not step_reports:
+        raise ValueError("path-(b) baseline parity probe requires at least one step report")
+    final_step = step_reports[-1]
+    total_dropped_mass = sum(report.dropped_mass_count for report in origin_reports)
+    total_re_presented = sum(report.re_presented_later_count for report in origin_reports)
+    total_eventually_accepted = sum(
+        report.eventually_accepted_under_baseline_count for report in origin_reports
+    )
+    total_recoverable_but_unrecovered = sum(
+        report.recoverable_but_unrecovered_count for report in origin_reports
+    )
+    total_never_recovered = sum(report.never_recovered_count for report in origin_reports)
+    total_terminal_censored = sum(
+        report.terminal_censored_mass_count for report in origin_reports
+    )
+    peak_class_count = max(
+        (report.bounded_class_count_upper_bound for report in origin_reports),
+        default=0,
+    )
+    peak_class_cardinality = max(
+        (report.max_bounded_class_cardinality for report in origin_reports),
+        default=0,
+    )
+    if total_recoverable_but_unrecovered > 0:
+        terminal = CARRY_CANDIDATE_EARNED
+        reason = (
+            "non-terminal defer-all dropped mass re-presented later as a bounded identity-free "
+            "class aggregate but still failed to get accepted under the 0-bit baseline, so the "
+            "aggregate runtime-semantics-definition plan is earned next"
+        )
+    elif total_terminal_censored > 0:
+        terminal = INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT
+        reason = (
+            "terminal-step dropped mass remained horizon-censored on backlog_growth, so the hard "
+            "baseline cannot claim sufficiency on the fixed four-step schedule"
+        )
+    elif (
+        final_step.q_divergence_count == 0
+        and final_step.accepted_surface_symmetric_difference == 0
+        and final_step.deferred_surface_symmetric_difference == 0
+        and final_step.backlog_surface_symmetric_difference == 0
+        and total_never_recovered == 0
+    ):
+        terminal = BASELINE_SUFFICIENT_NO_CARRY_NEEDED
+        reason = (
+            "the 0-bit defer-all replay closed back onto the committed exact-path surfaces by the "
+            "end of the preregistered schedule with no unrecovered or censored dropped mass"
+        )
+    else:
+        terminal = INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT
+        reason = (
+            "the replay exposed residual divergence without an observed bounded recoverable class "
+            "aggregate that would justify carry, so the honest next step is more measurement rather "
+            "than a sufficiency or carry claim"
+        )
+    return PathBDeferAllBaselineDecision(
+        terminal_label=terminal,
+        final_step_schedule_name=final_step.schedule_name,
+        final_q_divergence_count=int(final_step.q_divergence_count),
+        final_accepted_surface_symmetric_difference=int(
+            final_step.accepted_surface_symmetric_difference
+        ),
+        final_deferred_surface_symmetric_difference=int(
+            final_step.deferred_surface_symmetric_difference
+        ),
+        final_backlog_surface_symmetric_difference=int(
+            final_step.backlog_surface_symmetric_difference
+        ),
+        total_dropped_mass_count=int(total_dropped_mass),
+        total_re_presented_later_count=int(total_re_presented),
+        total_eventually_accepted_under_baseline_count=int(total_eventually_accepted),
+        total_recoverable_but_unrecovered_count=int(
+            total_recoverable_but_unrecovered
+        ),
+        total_never_recovered_count=int(total_never_recovered),
+        total_terminal_censored_mass_count=int(total_terminal_censored),
+        peak_bounded_class_count_upper_bound=int(peak_class_count),
+        peak_bounded_class_cardinality=int(peak_class_cardinality),
+        aggregate_runtime_semantics_definition_plan_earned=(
+            terminal == CARRY_CANDIDATE_EARNED
+        ),
+        candidate_only=True,
+        dyn200_earned=False,
+        learner_sub2_claimed=False,
+        reason=reason,
+    )
+
+
+def run_path_b_defer_all_baseline_parity_probe() -> PathBDeferAllBaselineParityProbeReport:
+    classifier_report = run_path_b_identity_free_tie_rule_classifier()
+    validate_path_b_identity_free_tie_rule_classifier_report(classifier_report)
+    classifier_by_variant = {
+        entry.variant_name: entry for entry in classifier_report.family_reports
+    }
+    defer_all = classifier_by_variant[CLASS_ACTION_DEFER_ALL_MIXED_CLASSES_NO_BACKFILL]
+    if defer_all.earned_downstream_test != RUNTIME_TIE_RULE_MUTATION_PARITY_PROBE:
+        raise ValueError(
+            "path-(b) baseline parity probe requires the committed defer-all runtime mutation trigger"
+        )
+    exact_trace_steps, _ = _build_exact_schedule_trace()
+    replay_states = _initial_states()
+    replay_backlog: dict[str, dict[int, dict[str, int]]] = {}
+    replay_steps: list[_PathBReplayStepState] = []
+    step_reports: list[PathBDeferAllBaselineStepReport] = []
+    for exact_trace_step in exact_trace_steps:
+        replay_trace_step = _path_b_current_trace_step(
+            states_by_key=replay_states,
+            deferred_backlog=replay_backlog,
+            schedule_step=exact_trace_step.schedule_step,
+        )
+        replay_step = _path_b_replay_step_from_mutated_partition(replay_trace_step)
+        replay_steps.append(replay_step)
+        step_reports.append(
+            _path_b_defer_all_baseline_step_report(
+                exact_trace_step=exact_trace_step,
+                replay_step=replay_step,
+            )
+        )
+        replay_states = _copy_state_map(replay_step.output_states)
+        replay_backlog = _copy_backlog(replay_step.output_backlog)
+    origin_reports = _path_b_dropped_mass_origin_reports(replay_steps)
+    bindingness = pre_register_source_bindingness(
+        source_kind=SOURCE_KIND_GENERATED_NATIVE_LOOP,
+        coverage=SourceFieldCoverage.full_generated_native_loop(),
+    )
+    return PathBDeferAllBaselineParityProbeReport(
+        schema_version=PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_SCHEMA_VERSION,
+        label=PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_LABEL,
+        source_bindingness=bindingness,
+        field_coverage=SourceFieldCoverage.full_generated_native_loop(),
+        candidate_name=PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_CANDIDATE,
+        source_classifier_label=classifier_report.label,
+        source_classifier_candidate_variant=CLASS_ACTION_DEFER_ALL_MIXED_CLASSES_NO_BACKFILL,
+        source_classifier_downstream_test=RUNTIME_TIE_RULE_MUTATION_PARITY_PROBE,
+        step_reports=tuple(step_reports),
+        dropped_mass_origin_reports=origin_reports,
+        terminal_decision=_path_b_defer_all_baseline_terminal_decision(
+            step_reports=step_reports,
+            origin_reports=origin_reports,
+        ),
+        raw_arrays_included=False,
+        non_claims=_path_b_defer_all_baseline_non_claims(),
+    )
+
+
+def validate_path_b_defer_all_baseline_parity_probe_report(
+    report: PathBDeferAllBaselineParityProbeReport,
+) -> None:
+    if report.schema_version != PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_SCHEMA_VERSION:
+        raise ValueError("unexpected path-(b) defer-all baseline parity schema version")
+    if report.label != PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_LABEL:
+        raise ValueError("unexpected path-(b) defer-all baseline parity label")
+    if report.candidate_name != PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_CANDIDATE:
+        raise ValueError("unexpected path-(b) defer-all baseline parity candidate")
+    if report.source_classifier_label != PATH_B_IDENTITY_FREE_TIE_RULE_CLASSIFIER_LABEL:
+        raise ValueError("baseline parity probe must cite the committed path-(b) classifier label")
+    if report.source_classifier_candidate_variant != CLASS_ACTION_DEFER_ALL_MIXED_CLASSES_NO_BACKFILL:
+        raise ValueError("baseline parity probe must stay on the defer-all class-action candidate")
+    if report.source_classifier_downstream_test != RUNTIME_TIE_RULE_MUTATION_PARITY_PROBE:
+        raise ValueError("baseline parity probe must inherit the runtime mutation downstream test")
+    if report.terminal_decision.terminal_label not in {
+        BASELINE_SUFFICIENT_NO_CARRY_NEEDED,
+        CARRY_CANDIDATE_EARNED,
+        INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT,
+    }:
+        raise ValueError("unexpected path-(b) defer-all baseline terminal label")
+    if not report.step_reports:
+        raise ValueError("baseline parity probe requires at least one step report")
+    if len(report.step_reports) != len(PRE_REGISTERED_VOTE_PRESSURE_SCHEDULE):
+        raise ValueError("baseline parity probe must cover the full preregistered schedule")
+    expected_names = [step.name for step in PRE_REGISTERED_VOTE_PRESSURE_SCHEDULE]
+    actual_names = [step.schedule_name for step in report.step_reports]
+    if actual_names != expected_names:
+        raise ValueError("baseline parity probe step order drifted from the preregistered schedule")
+    dropped_by_step = {
+        (step.schedule_name, int(step.step)): int(step.dropped_mass_count)
+        for step in report.step_reports
+    }
+    final_step = report.step_reports[-1]
+    for step_report, schedule_step in zip(report.step_reports, PRE_REGISTERED_VOTE_PRESSURE_SCHEDULE):
+        if int(step_report.step) != int(schedule_step.step):
+            raise ValueError("baseline parity probe step number drifted from the preregistered schedule")
+        if step_report.global_cap != int(schedule_step.cap):
+            raise ValueError("baseline parity probe step cap drifted from the preregistered schedule")
+        if step_report.exact_accepted_count + step_report.exact_deferred_count != step_report.exact_candidate_row_count:
+            raise ValueError("exact accepted/deferred counts must partition the exact candidate rows")
+        if step_report.replay_accepted_count + step_report.replay_deferred_count != step_report.replay_candidate_row_count:
+            raise ValueError("replay accepted/deferred counts must partition the replay candidate rows")
+        if step_report.dropped_mass_count > step_report.mixed_feature_class_row_count:
+            raise ValueError("dropped mass cannot exceed the rows carried by mixed feature classes")
+        if step_report.mixed_feature_class_count == 0 and step_report.dropped_mass_count != 0:
+            raise ValueError("dropping mass without a mixed feature class would violate the gated rule")
+        if step_report.max_mixed_class_cardinality < 0:
+            raise ValueError("mixed class cardinality must stay non-negative")
+    for origin_report in report.dropped_mass_origin_reports:
+        key = (origin_report.origin_schedule_name, int(origin_report.origin_step))
+        if key not in dropped_by_step:
+            raise ValueError("origin report must cite one of the traced replay steps")
+        if int(origin_report.dropped_mass_count) != int(dropped_by_step[key]):
+            raise ValueError("origin report dropped-mass count drifted from the step report")
+        if origin_report.re_presented_later_count < origin_report.eventually_accepted_under_baseline_count:
+            raise ValueError("later acceptance must be a subset of later re-presentation")
+        if origin_report.recoverable_but_unrecovered_count > origin_report.re_presented_later_count:
+            raise ValueError("recoverable-but-unrecovered mass must be bounded by later re-presentation")
+        if origin_report.future_schedule_names != tuple(dict.fromkeys(origin_report.future_schedule_names)):
+            raise ValueError("future schedule names must stay unique and ordered")
+        if key == (final_step.schedule_name, int(final_step.step)):
+            if origin_report.terminal_censored_mass_count != origin_report.dropped_mass_count:
+                raise ValueError("terminal-step dropped mass must remain fully censored on the fixed schedule")
+        else:
+            if origin_report.terminal_censored_mass_count != 0:
+                raise ValueError("only terminal-step dropped mass may be marked censored")
+    summed_dropped = sum(report_entry.dropped_mass_count for report_entry in report.dropped_mass_origin_reports)
+    summed_re_presented = sum(
+        report_entry.re_presented_later_count for report_entry in report.dropped_mass_origin_reports
+    )
+    summed_eventually_accepted = sum(
+        report_entry.eventually_accepted_under_baseline_count
+        for report_entry in report.dropped_mass_origin_reports
+    )
+    summed_recoverable_but_unrecovered = sum(
+        report_entry.recoverable_but_unrecovered_count
+        for report_entry in report.dropped_mass_origin_reports
+    )
+    summed_never_recovered = sum(
+        report_entry.never_recovered_count for report_entry in report.dropped_mass_origin_reports
+    )
+    summed_terminal_censored = sum(
+        report_entry.terminal_censored_mass_count
+        for report_entry in report.dropped_mass_origin_reports
+    )
+    if report.terminal_decision.total_dropped_mass_count != int(summed_dropped):
+        raise ValueError("baseline parity total dropped-mass count drifted from the origin reports")
+    if report.terminal_decision.total_re_presented_later_count != int(summed_re_presented):
+        raise ValueError("baseline parity total re-presented count drifted from the origin reports")
+    if report.terminal_decision.total_eventually_accepted_under_baseline_count != int(summed_eventually_accepted):
+        raise ValueError("baseline parity total eventual-accept count drifted from the origin reports")
+    if report.terminal_decision.total_recoverable_but_unrecovered_count != int(summed_recoverable_but_unrecovered):
+        raise ValueError("baseline parity total recoverable-but-unrecovered count drifted from the origin reports")
+    if report.terminal_decision.total_never_recovered_count != int(summed_never_recovered):
+        raise ValueError("baseline parity total never-recovered count drifted from the origin reports")
+    if report.terminal_decision.total_terminal_censored_mass_count != int(summed_terminal_censored):
+        raise ValueError("baseline parity total terminal-censored count drifted from the origin reports")
+    if report.terminal_decision.final_step_schedule_name != final_step.schedule_name:
+        raise ValueError("baseline parity final-step schedule name drifted from the step reports")
+    if report.terminal_decision.final_q_divergence_count != int(final_step.q_divergence_count):
+        raise ValueError("baseline parity final q divergence drifted from the final step report")
+    if report.terminal_decision.final_accepted_surface_symmetric_difference != int(
+        final_step.accepted_surface_symmetric_difference
+    ):
+        raise ValueError("baseline parity final accepted-surface divergence drifted from the final step report")
+    if report.terminal_decision.final_deferred_surface_symmetric_difference != int(
+        final_step.deferred_surface_symmetric_difference
+    ):
+        raise ValueError("baseline parity final deferred-surface divergence drifted from the final step report")
+    if report.terminal_decision.final_backlog_surface_symmetric_difference != int(
+        final_step.backlog_surface_symmetric_difference
+    ):
+        raise ValueError("baseline parity final backlog divergence drifted from the final step report")
+    if report.terminal_decision.candidate_only is not True:
+        raise ValueError("baseline parity probe must stay candidate-only")
+    if report.terminal_decision.dyn200_earned or report.terminal_decision.learner_sub2_claimed:
+        raise ValueError("baseline parity probe must not claim dyn200 or learner/sub-2 success")
+    label = report.terminal_decision.terminal_label
+    if label == BASELINE_SUFFICIENT_NO_CARRY_NEEDED:
+        if report.terminal_decision.total_recoverable_but_unrecovered_count != 0:
+            raise ValueError("baseline sufficiency requires zero recoverable-but-unrecovered mass")
+        if report.terminal_decision.total_terminal_censored_mass_count != 0:
+            raise ValueError("baseline sufficiency requires zero terminal-censored mass")
+        if any(
+            value != 0
+            for value in (
+                report.terminal_decision.final_q_divergence_count,
+                report.terminal_decision.final_accepted_surface_symmetric_difference,
+                report.terminal_decision.final_deferred_surface_symmetric_difference,
+                report.terminal_decision.final_backlog_surface_symmetric_difference,
+                report.terminal_decision.total_never_recovered_count,
+            )
+        ):
+            raise ValueError("baseline sufficiency requires closure of final divergences and unrecovered mass")
+        if report.terminal_decision.aggregate_runtime_semantics_definition_plan_earned:
+            raise ValueError("baseline sufficiency must not earn the aggregate runtime-semantics-definition plan")
+    elif label == CARRY_CANDIDATE_EARNED:
+        if report.terminal_decision.total_recoverable_but_unrecovered_count <= 0:
+            raise ValueError("carry candidate requires observed recoverable-but-unrecovered mass")
+        if not report.terminal_decision.aggregate_runtime_semantics_definition_plan_earned:
+            raise ValueError("carry candidate must earn the aggregate runtime-semantics-definition plan")
+    else:
+        if report.terminal_decision.aggregate_runtime_semantics_definition_plan_earned:
+            raise ValueError("inconclusive terminal must not earn the aggregate runtime-semantics-definition plan")
+    _assert_no_tensors(report.to_dict())
+
+
 def _validate_decision_statistic_statistic_input(
     step_report: DecisionStatisticStepReport,
 ) -> None:
@@ -7478,6 +8421,13 @@ __all__ = [
     "CANDIDATE_FAMILY_AGGREGATE_STATE_RUNTIME_SEMANTICS_UNSPECIFIED",
     "RUNTIME_TIE_RULE_MUTATION_PARITY_PROBE",
     "LEARNING_RETENTION_TOLERANCE_PROBE",
+    "PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_SCHEMA_VERSION",
+    "PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_LABEL",
+    "PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_CANDIDATE",
+    "BASELINE_SUFFICIENT_NO_CARRY_NEEDED",
+    "CARRY_CANDIDATE_EARNED",
+    "INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT",
+    "AGGREGATE_RUNTIME_SEMANTICS_DEFINITION_PLAN",
     "ONE_STEP_LOCAL_DIAGNOSTIC_MODE",
     "ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC",
     "PER_ROW_COMPRESSION_CLOSED_BY_EASY_CASE_LOWER_BOUND",
@@ -7523,6 +8473,10 @@ __all__ = [
     "PathBMechanismFamilyReport",
     "PathBClassifierDecision",
     "PathBIdentityFreeTieRuleClassifierReport",
+    "PathBDeferAllBaselineStepReport",
+    "PathBDroppedMassOriginReport",
+    "PathBDeferAllBaselineDecision",
+    "PathBDeferAllBaselineParityProbeReport",
     "TieFrontierObservedBucketReport",
     "TieFrontierReservationDecision",
     "TieFrontierReservationLowerBoundReport",
@@ -7562,6 +8516,7 @@ __all__ = [
     "run_decision_statistic_upper_bound_diagnostic",
     "run_online_estimable_tie_mask_diagnostic",
     "run_path_b_identity_free_tie_rule_classifier",
+    "run_path_b_defer_all_baseline_parity_probe",
     "run_real_backlog_lower_bound_diagnostic",
     "run_tie_frontier_reservation_lower_bound_diagnostic",
     "run_scale_appropriate_b_storage_comparison",
@@ -7571,6 +8526,7 @@ __all__ = [
     "validate_decision_statistic_upper_bound_report",
     "validate_online_estimable_tie_mask_report",
     "validate_path_b_identity_free_tie_rule_classifier_report",
+    "validate_path_b_defer_all_baseline_parity_probe_report",
     "validate_real_backlog_lower_bound_diagnostic_report",
     "validate_tie_frontier_reservation_lower_bound_report",
     "validate_scale_appropriate_b_storage_comparison_report",

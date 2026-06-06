@@ -30,6 +30,8 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     CUMULATIVE_SCHEDULE_MODE,
     DECISION_STATISTIC_UPPER_BOUND_LABEL,
     PATH_B_IDENTITY_FREE_TIE_RULE_CLASSIFIER_LABEL,
+    PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_LABEL,
+    PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_CANDIDATE,
     PATH_B_IDENTITY_FREE_TIE_RULE_CLASSIFIER_CANDIDATE,
     ONLINE_ESTIMABILITY_TIE_MASK_LABEL,
     ONLINE_ESTIMABLE_TIE_MASK_CANDIDATE,
@@ -50,6 +52,10 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     CANDIDATE_FAMILY_AGGREGATE_STATE_RUNTIME_SEMANTICS_UNSPECIFIED,
     RUNTIME_TIE_RULE_MUTATION_PARITY_PROBE,
     LEARNING_RETENTION_TOLERANCE_PROBE,
+    BASELINE_SUFFICIENT_NO_CARRY_NEEDED,
+    CARRY_CANDIDATE_EARNED,
+    INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT,
+    AGGREGATE_RUNTIME_SEMANTICS_DEFINITION_PLAN,
     CAP_PRESSURE_FRONTIER_ONLY_UNDERFILL_NO_REALLOCATION,
     CAP_PRESSURE_FRONTIER_OVERFLOW_REQUIRES_ILLEGAL_SUBSET_SELECTION,
     STRICT_OBSERVABLE_TIE_MASK_EXACT_RECOVERABLE_IDENTITY_FREE_CANDIDATE_ONLY,
@@ -80,6 +86,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     run_decision_statistic_upper_bound_diagnostic,
     run_online_estimable_tie_mask_diagnostic,
     run_path_b_identity_free_tie_rule_classifier,
+    run_path_b_defer_all_baseline_parity_probe,
     run_real_backlog_lower_bound_diagnostic,
     run_tie_frontier_reservation_lower_bound_diagnostic,
     run_scale_appropriate_b_storage_comparison,
@@ -89,6 +96,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     validate_decision_statistic_upper_bound_report,
     validate_online_estimable_tie_mask_report,
     validate_path_b_identity_free_tie_rule_classifier_report,
+    validate_path_b_defer_all_baseline_parity_probe_report,
     validate_real_backlog_lower_bound_diagnostic_report,
     validate_tie_frontier_reservation_lower_bound_report,
     validate_scale_appropriate_b_storage_comparison_report,
@@ -195,6 +203,11 @@ def _online_estimable_tie_mask_report():
 @lru_cache(maxsize=1)
 def _path_b_identity_free_tie_rule_classifier_report():
     return run_path_b_identity_free_tie_rule_classifier()
+
+
+@lru_cache(maxsize=1)
+def _path_b_defer_all_baseline_parity_probe_report():
+    return run_path_b_defer_all_baseline_parity_probe()
 
 
 def test_bounded_backlog_policy_is_opt_in_and_charged_as_actual_stored_backlog():
@@ -990,6 +1003,87 @@ def test_online_estimable_tie_mask_lands_on_identity_bound_negative():
     assert nonzero_group.canonical_prefix_matches_exact is True
     assert nonzero_group.reversed_prefix_matches_exact is True
     _assert_no_tensors(payload)
+
+def test_path_b_defer_all_baseline_parity_probe_replays_mutated_partition_and_handles_terminal_censoring():
+    report = _path_b_defer_all_baseline_parity_probe_report()
+    payload = report.to_dict()
+
+    validate_path_b_defer_all_baseline_parity_probe_report(report)
+    assert report.label == PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_LABEL
+    assert report.candidate_name == PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_CANDIDATE
+    assert report.source_classifier_label == PATH_B_IDENTITY_FREE_TIE_RULE_CLASSIFIER_LABEL
+    assert report.source_classifier_candidate_variant == (
+        CLASS_ACTION_DEFER_ALL_MIXED_CLASSES_NO_BACKFILL
+    )
+    assert report.source_classifier_downstream_test == RUNTIME_TIE_RULE_MUTATION_PARITY_PROBE
+
+    assert report.terminal_decision.terminal_label == CARRY_CANDIDATE_EARNED
+    assert report.terminal_decision.aggregate_runtime_semantics_definition_plan_earned is True
+    assert report.terminal_decision.total_dropped_mass_count == 512
+    assert report.terminal_decision.total_re_presented_later_count == 256
+    assert report.terminal_decision.total_eventually_accepted_under_baseline_count == 0
+    assert report.terminal_decision.total_recoverable_but_unrecovered_count == 256
+    assert report.terminal_decision.total_never_recovered_count == 256
+    assert report.terminal_decision.total_terminal_censored_mass_count == 256
+    assert report.terminal_decision.peak_bounded_class_count_upper_bound == 2
+    assert report.terminal_decision.peak_bounded_class_cardinality == 128
+    assert report.terminal_decision.final_step_schedule_name == "backlog_growth"
+    assert report.terminal_decision.final_q_divergence_count == 512
+    assert report.terminal_decision.final_accepted_surface_symmetric_difference == 256
+    assert report.terminal_decision.final_backlog_surface_symmetric_difference == 512
+    assert report.terminal_decision.candidate_only is True
+    assert report.terminal_decision.dyn200_earned is False
+    assert report.terminal_decision.learner_sub2_claimed is False
+
+    by_step = {step.schedule_name: step for step in report.step_reports}
+    cap_saturated = by_step["cap_saturated"]
+    assert cap_saturated.exact_candidate_row_count == 1536
+    assert cap_saturated.replay_candidate_row_count == 1536
+    assert cap_saturated.replay_accepted_count == 0
+    assert cap_saturated.accepted_surface_symmetric_difference == 256
+    assert cap_saturated.backlog_surface_symmetric_difference == 256
+    assert cap_saturated.q_divergence_count == 256
+    assert cap_saturated.dropped_mass_count == 256
+    assert cap_saturated.mixed_feature_class_count == 2
+    assert cap_saturated.max_mixed_class_cardinality == 384
+
+    backlog_growth = by_step["backlog_growth"]
+    assert backlog_growth.exact_candidate_row_count == 2816
+    assert backlog_growth.replay_candidate_row_count == 3072
+    assert backlog_growth.replay_accepted_count == 0
+    assert backlog_growth.accepted_surface_symmetric_difference == 256
+    assert backlog_growth.backlog_surface_symmetric_difference == 512
+    assert backlog_growth.q_divergence_count == 512
+    assert backlog_growth.dropped_mass_count == 256
+    assert backlog_growth.mixed_feature_class_count == 2
+    assert backlog_growth.max_mixed_class_cardinality == 384
+
+    origins = {entry.origin_schedule_name: entry for entry in report.dropped_mass_origin_reports}
+    cap_origin = origins["cap_saturated"]
+    assert cap_origin.re_presented_later_count == 256
+    assert cap_origin.eventually_accepted_under_baseline_count == 0
+    assert cap_origin.recoverable_but_unrecovered_count == 256
+    assert cap_origin.never_recovered_count == 256
+    assert cap_origin.terminal_censored_mass_count == 0
+    assert cap_origin.future_schedule_names == ("backlog_growth",)
+    assert cap_origin.bounded_class_count_upper_bound == 2
+    assert cap_origin.max_bounded_class_cardinality == 128
+
+    backlog_origin = origins["backlog_growth"]
+    assert backlog_origin.re_presented_later_count == 0
+    assert backlog_origin.eventually_accepted_under_baseline_count == 0
+    assert backlog_origin.recoverable_but_unrecovered_count == 0
+    assert backlog_origin.never_recovered_count == 0
+    assert backlog_origin.terminal_censored_mass_count == 256
+    assert backlog_origin.future_schedule_names == ()
+    assert backlog_origin.bounded_class_count_upper_bound == 0
+    assert backlog_origin.max_bounded_class_cardinality == 0
+
+    assert BASELINE_SUFFICIENT_NO_CARRY_NEEDED != report.terminal_decision.terminal_label
+    assert INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT != report.terminal_decision.terminal_label
+    assert "aggregate runtime-semantics-definition plan" in report.terminal_decision.reason
+    _assert_no_tensors(payload)
+
 
 
 
