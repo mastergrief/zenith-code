@@ -51,9 +51,16 @@ BOUNDED_DELTA_ACCUMULATOR_LABEL = (
 HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE = (
     "budget_capped_hot_exact_cold_default_sparse_exceptions"
 )
+EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE = (
+    "event_coded_crossing_residual_log"
+)
+COARSE_SIGNED_CHARGE_SPARSE_FRONTIER_CANDIDATE = (
+    "coarse_signed_charge_sparse_exact_frontier"
+)
 BOUNDED_DELTA_WITH_REPORT = CandidateClassification.BOUNDED_DELTA_WITH_REPORT.value
 BOUNDED_DELTA_GUARDRAIL_FAILED = "bounded_delta_guardrail_failed"
 BOUNDED_DELTA_LEDGER_FAILED = "bounded_delta_ledger_failed"
+BOUNDED_DELTA_ADMISSION_FAILED = "bounded_delta_admission_failed"
 
 
 def _bits_per_weight(bits: int | float, eligible_weight_count: int) -> float:
@@ -236,6 +243,60 @@ class BoundedDeltaGuardSpec:
 
 
 @dataclass(frozen=True)
+class BoundedDeltaAdmissionContract:
+    """Machine-checkable candidate contract for the cheap exact admission gate."""
+
+    candidate_name: str
+    preserved_information: tuple[str, ...]
+    capacity_hypothesis: str
+    sub2_persistent_strategy: str
+    exact_surfaces: tuple[str, ...]
+    allowed_divergence_contract: str
+    max_cap_frontier_rank_delta: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "candidate_name": self.candidate_name,
+            "preserved_information": list(self.preserved_information),
+            "capacity_hypothesis": self.capacity_hypothesis,
+            "sub2_persistent_strategy": self.sub2_persistent_strategy,
+            "exact_surfaces": list(self.exact_surfaces),
+            "allowed_divergence_contract": self.allowed_divergence_contract,
+            "max_cap_frontier_rank_delta": int(self.max_cap_frontier_rank_delta),
+        }
+
+
+@dataclass(frozen=True)
+class BoundedDeltaRejectionSurface:
+    surface: str
+    observed: int | float | bool | str
+    threshold: int | float | bool | str
+    status: str
+    detail: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class BoundedDeltaRejectionTelemetry:
+    candidate_name: str
+    admission_passed: bool
+    summary: str
+    failed_surfaces: tuple[str, ...]
+    surfaces: tuple[BoundedDeltaRejectionSurface, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "candidate_name": self.candidate_name,
+            "admission_passed": bool(self.admission_passed),
+            "summary": self.summary,
+            "failed_surfaces": list(self.failed_surfaces),
+            "surfaces": [item.to_dict() for item in self.surfaces],
+        }
+
+
+@dataclass(frozen=True)
 class BoundedDeltaAccumulatorState:
     """Compact reference state: exact hot rows plus cold default/exceptions."""
 
@@ -308,6 +369,10 @@ class BoundedDeltaMeasuredReport:
     hot_risk_changed_count: int
     max_abs_acc_error: int
     p95_abs_acc_error: float
+    fired_or_accepted_residual_changed_count: int
+    fired_or_accepted_residual_identities_sha256: str
+    hot_residual_changed_count: int
+    hot_residual_identities_sha256: str
     accumulator_residual_hash_match: bool
     exact_accumulator_residuals_sha256: dict[str, str]
     bounded_accumulator_residuals_sha256: dict[str, str]
@@ -351,10 +416,14 @@ class BoundedDeltaReferenceReport:
     ledger: BoundedDeltaInclusiveLedger
     storage_projection: BoundedDeltaStorageProjection
     guard_spec: BoundedDeltaGuardSpec
+    admission_contract: BoundedDeltaAdmissionContract
     measured_report: BoundedDeltaMeasuredReport
     guard_passed: bool
     failed_metrics: tuple[str, ...]
+    admission_passed: bool
+    admission_failed_surfaces: tuple[str, ...]
     candidate_assessment: CandidateAssessment
+    rejection_telemetry: BoundedDeltaRejectionTelemetry
     raw_arrays_included: bool
     non_claims: tuple[str, ...]
     next_candidate_if_failed: str
@@ -365,6 +434,7 @@ class BoundedDeltaReferenceReport:
             self.classification == BOUNDED_DELTA_WITH_REPORT
             and self.ledger.claimable_physical_sub2
             and self.guard_passed
+            and self.admission_passed
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -376,10 +446,14 @@ class BoundedDeltaReferenceReport:
             "ledger": self.ledger.to_dict(),
             "storage_projection": self.storage_projection.to_dict(),
             "guard_spec": self.guard_spec.to_dict(),
+            "admission_contract": self.admission_contract.to_dict(),
             "measured_report": self.measured_report.to_dict(),
             "guard_passed": bool(self.guard_passed),
             "failed_metrics": list(self.failed_metrics),
+            "admission_passed": bool(self.admission_passed),
+            "admission_failed_surfaces": list(self.admission_failed_surfaces),
             "candidate_assessment": self.candidate_assessment.to_dict(),
+            "rejection_telemetry": self.rejection_telemetry.to_dict(),
             "raw_arrays_included": bool(self.raw_arrays_included),
             "non_claims": list(self.non_claims),
             "next_candidate_if_failed": self.next_candidate_if_failed,
@@ -704,20 +778,475 @@ def bounded_delta_candidate_assessment(
     *,
     candidate_name: str = HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE,
 ) -> CandidateAssessment:
+    contract = bounded_delta_admission_contract(candidate_name=candidate_name)
     return candidate_assessment(
-        candidate_name=candidate_name,
+        candidate_name=contract.candidate_name,
         classification=CandidateClassification.BOUNDED_DELTA_WITH_REPORT,
         covered_decision_dimensions=required_decision_dimension_names(),
         compressed_representation=True,
-        bounded_delta_hypothesis=(
-            "budget-capped hot exact rows plus cold default/sparse exceptions fit "
-            "the q+scale remaining budget while allowing bounded nonzero decision drift"
-        ),
-        guardrail=(
-            "pre-declared decision-surface drift bounds over candidate/order/"
-            "accepted/deferred/q_changed/backlog/rank metrics"
-        ),
+        bounded_delta_hypothesis=contract.capacity_hypothesis,
+        guardrail=contract.allowed_divergence_contract,
+        preserved_information=contract.preserved_information,
+        sub2_persistent_strategy=contract.sub2_persistent_strategy,
         note="adapter/oracle reference only; no production vote/cap replacement",
+    )
+
+
+def bounded_delta_admission_contract(
+    *,
+    candidate_name: str = HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE,
+) -> BoundedDeltaAdmissionContract:
+    if candidate_name == HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE:
+        return BoundedDeltaAdmissionContract(
+            candidate_name=candidate_name,
+            preserved_information=(
+                "exact residual magnitude/sign on hot frontier rows",
+                "accepted/deferred identity carry plus backlog continuity",
+                "exact post-threshold residual state on applied and vetoed rows",
+            ),
+            capacity_hypothesis=(
+                "preserve the exact frontier and backlog rows the dense control uses "
+                "to decide threshold crossings while collapsing cold rows to a shared "
+                "default plus sparse exceptions"
+            ),
+            sub2_persistent_strategy=(
+                "charge exact hot rows, sparse cold exceptions, and backlog metadata "
+                "under the inclusive q+scale+acc ledger; no dense cold field"
+            ),
+            exact_surfaces=(
+                "candidate_mask",
+                "accepted_rows",
+                "deferred_rows",
+                "final_q_changes",
+                "backlog_carry",
+                "cap_frontier_rank_delta",
+                "hot_risk_rows",
+                "accumulator_residuals",
+            ),
+            allowed_divergence_contract=(
+                "none; this candidate is admitted only if it preserves the dense "
+                "control exactly on every preregistered surface"
+            ),
+            max_cap_frontier_rank_delta=0,
+        )
+    if candidate_name == EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE:
+        return BoundedDeltaAdmissionContract(
+            candidate_name=candidate_name,
+            preserved_information=(
+                "threshold-crossing event identity and direction",
+                "residual state on rows that actually fired",
+                "accepted/deferred identity carry plus backlog continuity",
+            ),
+            capacity_hypothesis=(
+                "learning is carried by sparse crossing events and deferred carry, "
+                "so non-fired cold residual magnitude may be dropped if decisive "
+                "surfaces remain exact"
+            ),
+            sub2_persistent_strategy=(
+                "persist only event rows plus backlog metadata and keep the cold "
+                "field implicit under the inclusive q+scale+acc ledger"
+            ),
+            exact_surfaces=(
+                "accepted_rows",
+                "deferred_rows",
+                "final_q_changes",
+                "backlog_carry",
+                "cap_frontier_rank_delta",
+                "hot_risk_rows",
+            ),
+            allowed_divergence_contract=(
+                "candidate-mask drift and non-fired cold residual drift are allowed "
+                "only when accepted/deferred/q/backlog/frontier-hot surfaces stay exact"
+            ),
+            max_cap_frontier_rank_delta=0,
+        )
+    if candidate_name == COARSE_SIGNED_CHARGE_SPARSE_FRONTIER_CANDIDATE:
+        return BoundedDeltaAdmissionContract(
+            candidate_name=candidate_name,
+            preserved_information=(
+                "coarse ubiquitous signed pressure toward threshold",
+                "exact sparse frontier overrides on rows near decision boundaries",
+                "accepted/deferred identity carry plus backlog continuity",
+            ),
+            capacity_hypothesis=(
+                "weak evidence must accumulate everywhere, but only the sparse "
+                "frontier requires exact residual state to preserve dense decisions"
+            ),
+            sub2_persistent_strategy=(
+                "charge a coarse dense cold field plus sparse frontier overrides and "
+                "backlog metadata under the inclusive q+scale+acc ledger"
+            ),
+            exact_surfaces=(
+                "accepted_rows",
+                "deferred_rows",
+                "final_q_changes",
+                "backlog_carry",
+                "hot_risk_rows",
+                "accumulator_residuals",
+            ),
+            allowed_divergence_contract=(
+                "cold candidate-mask density may drift away from the active frontier "
+                "and non-decisive cap-frontier reordering is allowed only up to "
+                "cap_frontier_rank_delta<=1"
+            ),
+            max_cap_frontier_rank_delta=1,
+        )
+    raise ValueError(f"unsupported bounded-delta candidate_name {candidate_name!r}")
+
+
+@dataclass(frozen=True)
+class _BoundedDeltaAdmissionEvaluation:
+    admission_passed: bool
+    failed_surfaces: tuple[str, ...]
+    rejection_telemetry: BoundedDeltaRejectionTelemetry
+
+
+def _detail_for_fraction(
+    *,
+    count: int,
+    union_count: int,
+    fraction: float,
+) -> str:
+    return f"changed={int(count)} union={int(union_count)} fraction={float(fraction):.6f}"
+
+
+def _evaluate_bounded_delta_admission(
+    contract: BoundedDeltaAdmissionContract,
+    measured_report: BoundedDeltaMeasuredReport,
+) -> _BoundedDeltaAdmissionEvaluation:
+    decisive_zero = (
+        measured_report.accepted_changed_count == 0
+        and measured_report.deferred_changed_count == 0
+        and measured_report.q_changed_count == 0
+        and measured_report.backlog_key_changed_count == 0
+        and measured_report.hot_risk_changed_count == 0
+    )
+    residual_exact = (
+        bool(measured_report.accumulator_residual_hash_match)
+        and int(measured_report.max_abs_acc_error) == 0
+    )
+    candidate_mask_allowed = (
+        contract.candidate_name
+        in {
+            EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE,
+            COARSE_SIGNED_CHARGE_SPARSE_FRONTIER_CANDIDATE,
+        }
+        and decisive_zero
+        and int(measured_report.cap_frontier_rank_delta) <= int(contract.max_cap_frontier_rank_delta)
+    )
+    residual_only_allowed = (
+        contract.candidate_name == EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE
+        and decisive_zero
+        and int(measured_report.cap_frontier_rank_delta) == 0
+        and int(measured_report.fired_or_accepted_residual_changed_count) == 0
+        and int(measured_report.hot_residual_changed_count) == 0
+    )
+
+    surfaces: list[BoundedDeltaRejectionSurface] = []
+    failed_surfaces: list[str] = []
+
+    def add_surface(
+        *,
+        surface: str,
+        observed: int | float | bool | str,
+        threshold: int | float | bool | str,
+        status: str,
+        detail: str,
+    ) -> None:
+        surfaces.append(
+            BoundedDeltaRejectionSurface(
+                surface=surface,
+                observed=observed,
+                threshold=threshold,
+                status=status,
+                detail=detail,
+            )
+        )
+        if status not in {
+            "pass",
+            "allowed_non_decisive_divergence",
+            "allowed_non_fired_cold_residual_divergence",
+        }:
+            failed_surfaces.append(surface)
+
+    candidate_fraction = float(measured_report.candidate_changed_fraction)
+    if math.isclose(candidate_fraction, 0.0, abs_tol=1e-12):
+        add_surface(
+            surface="candidate_mask",
+            observed=candidate_fraction,
+            threshold="exact 0.0",
+            status="pass",
+            detail=_detail_for_fraction(
+                count=measured_report.candidate_changed_count,
+                union_count=measured_report.candidate_union_count,
+                fraction=candidate_fraction,
+            ),
+        )
+    elif candidate_mask_allowed:
+        add_surface(
+            surface="candidate_mask",
+            observed=candidate_fraction,
+            threshold=contract.allowed_divergence_contract,
+            status="allowed_non_decisive_divergence",
+            detail=(
+                "candidate-mask drift stayed off decisive surfaces; "
+                + _detail_for_fraction(
+                    count=measured_report.candidate_changed_count,
+                    union_count=measured_report.candidate_union_count,
+                    fraction=candidate_fraction,
+                )
+            ),
+        )
+    else:
+        add_surface(
+            surface="candidate_mask",
+            observed=candidate_fraction,
+            threshold="exact 0.0",
+            status="exact_surface_miss",
+            detail=_detail_for_fraction(
+                count=measured_report.candidate_changed_count,
+                union_count=measured_report.candidate_union_count,
+                fraction=candidate_fraction,
+            ),
+        )
+
+    accepted_fraction = float(measured_report.accepted_changed_fraction)
+    if math.isclose(accepted_fraction, 0.0, abs_tol=1e-12):
+        add_surface(
+            surface="accepted_rows",
+            observed=accepted_fraction,
+            threshold="exact 0.0",
+            status="pass",
+            detail=_detail_for_fraction(
+                count=measured_report.accepted_changed_count,
+                union_count=measured_report.accepted_union_count,
+                fraction=accepted_fraction,
+            ),
+        )
+    else:
+        status = "destructive_approximation"
+        detail = _detail_for_fraction(
+            count=measured_report.accepted_changed_count,
+            union_count=measured_report.accepted_union_count,
+            fraction=accepted_fraction,
+        )
+        if (
+            contract.candidate_name == COARSE_SIGNED_CHARGE_SPARSE_FRONTIER_CANDIDATE
+            and measured_report.q_changed_count == 0
+            and measured_report.hot_risk_changed_count == 0
+        ):
+            status = "revisit_divergence_contract"
+            detail = (
+                f"would have flipped {int(measured_report.accepted_changed_count)} accepted rows "
+                "under the dense control without q mutation; revisit whether this is a "
+                "capacity signal or a contract-breaking approximation"
+            )
+        add_surface(
+            surface="accepted_rows",
+            observed=accepted_fraction,
+            threshold="exact 0.0",
+            status=status,
+            detail=detail,
+        )
+
+    deferred_fraction = float(measured_report.deferred_changed_fraction)
+    if math.isclose(deferred_fraction, 0.0, abs_tol=1e-12):
+        add_surface(
+            surface="deferred_rows",
+            observed=deferred_fraction,
+            threshold="exact 0.0",
+            status="pass",
+            detail=_detail_for_fraction(
+                count=measured_report.deferred_changed_count,
+                union_count=measured_report.deferred_union_count,
+                fraction=deferred_fraction,
+            ),
+        )
+    else:
+        status = "destructive_approximation"
+        detail = _detail_for_fraction(
+            count=measured_report.deferred_changed_count,
+            union_count=measured_report.deferred_union_count,
+            fraction=deferred_fraction,
+        )
+        if (
+            contract.candidate_name == COARSE_SIGNED_CHARGE_SPARSE_FRONTIER_CANDIDATE
+            and measured_report.q_changed_count == 0
+            and measured_report.hot_risk_changed_count == 0
+        ):
+            status = "revisit_divergence_contract"
+            detail = (
+                f"would have changed {int(measured_report.deferred_changed_count)} deferred rows "
+                "without q mutation; revisit whether this is a capacity signal or drift"
+            )
+        add_surface(
+            surface="deferred_rows",
+            observed=deferred_fraction,
+            threshold="exact 0.0",
+            status=status,
+            detail=detail,
+        )
+
+    q_fraction = float(measured_report.q_changed_fraction)
+    add_surface(
+        surface="final_q_changes",
+        observed=q_fraction,
+        threshold="exact 0.0",
+        status="pass" if math.isclose(q_fraction, 0.0, abs_tol=1e-12) else "destructive_approximation",
+        detail=_detail_for_fraction(
+            count=measured_report.q_changed_count,
+            union_count=measured_report.q_changed_union_count,
+            fraction=q_fraction,
+        ),
+    )
+
+    backlog_fraction = float(measured_report.backlog_key_changed_fraction)
+    add_surface(
+        surface="backlog_carry",
+        observed=backlog_fraction,
+        threshold="exact 0.0",
+        status=(
+            "pass"
+            if math.isclose(backlog_fraction, 0.0, abs_tol=1e-12)
+            else "destructive_approximation"
+        ),
+        detail=_detail_for_fraction(
+            count=measured_report.backlog_key_changed_count,
+            union_count=measured_report.backlog_key_union_count,
+            fraction=backlog_fraction,
+        ),
+    )
+
+    cap_rank_delta = int(measured_report.cap_frontier_rank_delta)
+    if cap_rank_delta <= int(contract.max_cap_frontier_rank_delta):
+        add_surface(
+            surface="cap_frontier_rank_delta",
+            observed=cap_rank_delta,
+            threshold=int(contract.max_cap_frontier_rank_delta),
+            status=(
+                "pass"
+                if cap_rank_delta == 0
+                else "allowed_non_decisive_divergence"
+            ),
+            detail=(
+                f"cap_frontier_rank_delta={cap_rank_delta}"
+                if cap_rank_delta == 0
+                else f"reordered non-decisive ranks within preregistered ceiling {contract.max_cap_frontier_rank_delta}"
+            ),
+        )
+    else:
+        add_surface(
+            surface="cap_frontier_rank_delta",
+            observed=cap_rank_delta,
+            threshold=int(contract.max_cap_frontier_rank_delta),
+            status=(
+                "revisit_divergence_contract"
+                if decisive_zero
+                else "destructive_approximation"
+            ),
+            detail=(
+                f"reordered non-decisive ranks beyond preregistered ceiling; delta={cap_rank_delta}"
+                if decisive_zero
+                else f"cap-frontier rank delta exceeded ceiling with decisive drift; delta={cap_rank_delta}"
+            ),
+        )
+
+    hot_risk_count = int(measured_report.hot_risk_changed_count)
+    add_surface(
+        surface="hot_risk_rows",
+        observed=hot_risk_count,
+        threshold=0,
+        status="pass" if hot_risk_count == 0 else "destructive_approximation",
+        detail=f"hot_risk_changed_count={hot_risk_count}",
+    )
+
+    residual_detail = (
+        f"hash_match={bool(measured_report.accumulator_residual_hash_match)} "
+        f"max_abs_acc_error={int(measured_report.max_abs_acc_error)} "
+        f"p95_abs_acc_error={float(measured_report.p95_abs_acc_error):.6f} "
+        f"fired_or_accepted_residual_changed_count={int(measured_report.fired_or_accepted_residual_changed_count)} "
+        f"hot_residual_changed_count={int(measured_report.hot_residual_changed_count)}"
+    )
+    if residual_exact:
+        add_surface(
+            surface="accumulator_residuals",
+            observed=True,
+            threshold="exact hash match and zero error",
+            status="pass",
+            detail=residual_detail,
+        )
+    elif residual_only_allowed:
+        add_surface(
+            surface="accumulator_residuals",
+            observed=False,
+            threshold=contract.allowed_divergence_contract,
+            status="allowed_non_fired_cold_residual_divergence",
+            detail=(
+                "residual mismatch stayed off fired/accepted and hot rows; "
+                + residual_detail
+            ),
+        )
+    else:
+        if int(measured_report.fired_or_accepted_residual_changed_count) > 0:
+            status = "fired_or_accepted_residual_drift"
+            detail = (
+                "residual mismatch touched fired/accepted rows; "
+                + residual_detail
+            )
+        elif int(measured_report.hot_residual_changed_count) > 0:
+            status = "hot_residual_drift"
+            detail = "residual mismatch touched hot rows; " + residual_detail
+        else:
+            status = "exact_surface_miss"
+            detail = residual_detail
+        add_surface(
+            surface="accumulator_residuals",
+            observed=False,
+            threshold="exact hash match and zero error",
+            status=status,
+            detail=detail,
+        )
+
+    failed = tuple(failed_surfaces)
+    if not failed:
+        summary = "admission_pass"
+    elif any(
+        item.status == "fired_or_accepted_residual_drift"
+        for item in surfaces
+        if item.surface in failed
+    ):
+        summary = "fired_or_accepted_residual_drift"
+    elif any(
+        item.status == "hot_residual_drift"
+        for item in surfaces
+        if item.surface in failed
+    ):
+        summary = "hot_residual_drift"
+    elif any(
+        item.status == "destructive_approximation"
+        for item in surfaces
+        if item.surface in failed
+    ):
+        summary = "destructive_approximation"
+    elif any(
+        item.status == "revisit_divergence_contract"
+        for item in surfaces
+        if item.surface in failed
+    ):
+        summary = "revisit_divergence_contract"
+    else:
+        summary = "exact_surface_miss"
+    telemetry = BoundedDeltaRejectionTelemetry(
+        candidate_name=contract.candidate_name,
+        admission_passed=not failed,
+        summary=summary,
+        failed_surfaces=failed,
+        surfaces=tuple(surfaces),
+    )
+    return _BoundedDeltaAdmissionEvaluation(
+        admission_passed=not failed,
+        failed_surfaces=failed,
+        rejection_telemetry=telemetry,
     )
 
 
@@ -727,6 +1256,7 @@ class _PathResult:
     candidate_ids: set[tuple[str, int]]
     candidate_direction_by_id: dict[tuple[str, int], int]
     accepted_ids: set[tuple[str, int]]
+    fired_ids: set[tuple[str, int]]
     deferred_ids: set[tuple[str, int]]
     q_changed_ids: set[tuple[str, int]]
     backlog_ids: set[tuple[str, int]]
@@ -774,6 +1304,7 @@ def _run_reference_path(
     output_q: dict[str, torch.Tensor] = {}
     output_acc: dict[str, torch.Tensor] = {}
     accepted_ids: set[tuple[str, int]] = set()
+    fired_ids: set[tuple[str, int]] = set()
     deferred_ids: set[tuple[str, int]] = set()
     q_changed_ids: set[tuple[str, int]] = set()
     ordered_row_ids: list[tuple[str, int]] = []
@@ -786,6 +1317,12 @@ def _run_reference_path(
             tensor_offsets=offsets,
         )
         accepted_ids = {(row.state_key, int(row.flat_index)) for row in cap_result.accepted_rows}
+        fired_ids = set(accepted_ids)
+        for item in inputs:
+            fired_ids |= _ids_from_indices(
+                item.state_key,
+                plans[item.state_key].replay_ce_veto_indices,
+            )
         deferred_ids = {(row.state_key, int(row.flat_index)) for row in cap_result.deferred_rows}
         ordered_row_ids = [(row.state_key, int(row.flat_index)) for row in cap_result.rows]
         result_by_key = {result.state_key: result for result in cap_result.tensor_results}
@@ -811,6 +1348,8 @@ def _run_reference_path(
             output_q[item.state_key] = result.q_levels
             output_acc[item.state_key] = result.accumulators
             accepted_ids |= _ids_from_indices(item.state_key, result.plan.applied_indices)
+            fired_ids |= _ids_from_indices(item.state_key, result.plan.applied_indices)
+            fired_ids |= _ids_from_indices(item.state_key, result.plan.replay_ce_veto_indices)
             ordered_row_ids.extend(
                 (item.state_key, int(idx))
                 for idx in result.plan.applied_indices.detach().cpu().to(torch.int64).tolist()
@@ -826,6 +1365,7 @@ def _run_reference_path(
         candidate_ids=candidate_ids,
         candidate_direction_by_id=candidate_direction_by_id,
         accepted_ids=accepted_ids,
+        fired_ids=fired_ids,
         deferred_ids=deferred_ids,
         q_changed_ids=q_changed_ids,
         backlog_ids=backlog_ids,
@@ -898,11 +1438,20 @@ def _hot_identity_set(inputs: Sequence[BoundedDeltaOracleInput]) -> set[tuple[st
     }
 
 
+def _default_next_candidate_if_failed(candidate_name: str) -> str:
+    if candidate_name == HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE:
+        return EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE
+    if candidate_name == EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE:
+        return COARSE_SIGNED_CHARGE_SPARSE_FRONTIER_CANDIDATE
+    return "none_declared_stop_after_coarse_candidate"
+
+
 def compare_bounded_delta_step_to_int16_oracle(
     inputs: Sequence[BoundedDeltaOracleInput],
     *,
     q_ledger_row: Base3QEntropyLedgerRow,
     guard_spec: BoundedDeltaGuardSpec | None = None,
+    candidate_name: str = HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE,
     global_cap_spec: GlobalRateCapSpec | None = None,
     deferred_backlog: dict[str, dict[int, dict[str, int]]] | None = None,
     bounded_deferred_backlog: dict[str, dict[int, dict[str, int]]] | None = None,
@@ -915,7 +1464,7 @@ def compare_bounded_delta_step_to_int16_oracle(
     bucket_metadata_bits: int = 64,
     scale_metadata_bits: int = 0,
     guardrail_metadata_bits: int = 64,
-    next_candidate_if_failed: str = "event_coded_crossing_residual_log",
+    next_candidate_if_failed: str | None = None,
 ) -> BoundedDeltaReferenceReport:
     """Compare exact int16 dynamics against bounded encode/decode loss.
 
@@ -932,6 +1481,12 @@ def compare_bounded_delta_step_to_int16_oracle(
         raise ValueError("at least one bounded-delta oracle input is required")
     guard = guard_spec or BoundedDeltaGuardSpec()
     guard.validate()
+    admission_contract = bounded_delta_admission_contract(candidate_name=candidate_name)
+    next_candidate = (
+        _default_next_candidate_if_failed(admission_contract.candidate_name)
+        if next_candidate_if_failed is None
+        else str(next_candidate_if_failed)
+    )
     seen: set[str] = set()
     exact_states: dict[str, VoteUpdateState] = {}
     bounded_states: dict[str, VoteUpdateState] = {}
@@ -1090,6 +1645,12 @@ def compare_bounded_delta_step_to_int16_oracle(
         acc_errors.append((exact_acc - bounded_acc).abs().flatten())
     all_errors = torch.cat(acc_errors) if acc_errors else torch.empty(0, dtype=torch.int32)
     max_abs_error = int(all_errors.max().item()) if int(all_errors.numel()) else 0
+    residual_error_ids: set[tuple[str, int]] = set()
+    for item in inputs:
+        exact_acc = exact.output_acc_by_key[item.state_key].detach().cpu().to(torch.int32).flatten()
+        bounded_acc = bounded.output_acc_by_key[item.state_key].detach().cpu().to(torch.int32).flatten()
+        changed = torch.nonzero(exact_acc != bounded_acc, as_tuple=False).flatten()
+        residual_error_ids |= _ids_from_indices(item.state_key, changed)
 
     hot_ids = _hot_identity_set(inputs)
     decision_symdiff = (
@@ -1099,6 +1660,9 @@ def compare_bounded_delta_step_to_int16_oracle(
         | (exact.q_changed_ids ^ bounded.q_changed_ids)
     )
     hot_risk_changed = len(decision_symdiff & hot_ids)
+    fired_or_accepted_ids = exact.fired_ids | bounded.fired_ids
+    fired_or_accepted_residual_changed = residual_error_ids & fired_or_accepted_ids
+    hot_residual_changed = residual_error_ids & hot_ids
 
     vote_hash = _hash_vote_inputs(inputs)
     cap_hash = _hash_cap_spec(global_cap_spec)
@@ -1116,7 +1680,7 @@ def compare_bounded_delta_step_to_int16_oracle(
     measured = BoundedDeltaMeasuredReport(
         schema_version=BOUNDED_DELTA_ACCUMULATOR_SCHEMA_VERSION,
         label=BOUNDED_DELTA_ACCUMULATOR_LABEL,
-        candidate_name=HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE,
+        candidate_name=admission_contract.candidate_name,
         candidate_changed_count=candidate_changed_count,
         candidate_union_count=len(exact.candidate_ids | bounded.candidate_ids),
         candidate_changed_fraction=candidate_fraction,
@@ -1137,6 +1701,12 @@ def compare_bounded_delta_step_to_int16_oracle(
         hot_risk_changed_count=hot_risk_changed,
         max_abs_acc_error=max_abs_error,
         p95_abs_acc_error=_p95(all_errors),
+        fired_or_accepted_residual_changed_count=len(fired_or_accepted_residual_changed),
+        fired_or_accepted_residual_identities_sha256=_identity_sha256(
+            fired_or_accepted_residual_changed
+        ),
+        hot_residual_changed_count=len(hot_residual_changed),
+        hot_residual_identities_sha256=_identity_sha256(hot_residual_changed),
         accumulator_residual_hash_match=residual_hash_match,
         exact_accumulator_residuals_sha256=exact_hashes,
         bounded_accumulator_residuals_sha256=bounded_hashes,
@@ -1171,25 +1741,34 @@ def compare_bounded_delta_step_to_int16_oracle(
         },
     )
     guard_eval = _evaluate_guardrail(guard, measured)
+    admission_eval = _evaluate_bounded_delta_admission(admission_contract, measured)
     if not guard_eval.guard_passed:
         classification = BOUNDED_DELTA_GUARDRAIL_FAILED
     elif not ledger.claimable_physical_sub2:
         classification = BOUNDED_DELTA_LEDGER_FAILED
+    elif not admission_eval.admission_passed:
+        classification = BOUNDED_DELTA_ADMISSION_FAILED
     else:
         classification = BOUNDED_DELTA_WITH_REPORT
 
     return BoundedDeltaReferenceReport(
         schema_version=BOUNDED_DELTA_ACCUMULATOR_SCHEMA_VERSION,
         label=BOUNDED_DELTA_ACCUMULATOR_LABEL,
-        candidate_name=HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE,
+        candidate_name=admission_contract.candidate_name,
         classification=classification,
         ledger=ledger,
         storage_projection=projection,
         guard_spec=guard,
+        admission_contract=admission_contract,
         measured_report=measured,
         guard_passed=guard_eval.guard_passed,
         failed_metrics=guard_eval.failed_metrics,
-        candidate_assessment=bounded_delta_candidate_assessment(),
+        admission_passed=admission_eval.admission_passed,
+        admission_failed_surfaces=admission_eval.failed_surfaces,
+        candidate_assessment=bounded_delta_candidate_assessment(
+            candidate_name=admission_contract.candidate_name
+        ),
+        rejection_telemetry=admission_eval.rejection_telemetry,
         raw_arrays_included=False,
         non_claims=(
             "no production vote_update/global_rate_cap replacement",
@@ -1199,22 +1778,29 @@ def compare_bounded_delta_step_to_int16_oracle(
             "no decision_exact claim",
             "compact counts/hashes only; no raw per-weight arrays",
         ),
-        next_candidate_if_failed=next_candidate_if_failed,
+        next_candidate_if_failed=next_candidate,
     )
 
 
 __all__ = [
+    "BOUNDED_DELTA_ADMISSION_FAILED",
     "BOUNDED_DELTA_GUARDRAIL_FAILED",
     "BOUNDED_DELTA_LEDGER_FAILED",
     "BOUNDED_DELTA_WITH_REPORT",
+    "COARSE_SIGNED_CHARGE_SPARSE_FRONTIER_CANDIDATE",
+    "EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE",
     "HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE",
     "BoundedDeltaAccumulatorState",
+    "BoundedDeltaAdmissionContract",
     "BoundedDeltaGuardSpec",
     "BoundedDeltaInclusiveLedger",
     "BoundedDeltaMeasuredReport",
     "BoundedDeltaOracleInput",
+    "BoundedDeltaRejectionTelemetry",
+    "BoundedDeltaRejectionSurface",
     "BoundedDeltaReferenceReport",
     "BoundedDeltaStorageProjection",
+    "bounded_delta_admission_contract",
     "bounded_delta_candidate_assessment",
     "bounded_delta_inclusive_ledger",
     "compare_bounded_delta_step_to_int16_oracle",

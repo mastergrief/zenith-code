@@ -103,6 +103,8 @@ class CandidateAssessment:
     compressed_representation: bool
     bounded_delta_hypothesis: str | None = None
     guardrail: str | None = None
+    preserved_information: tuple[str, ...] = ()
+    sub2_persistent_strategy: str | None = None
     note: str = ""
 
     @property
@@ -135,6 +137,8 @@ class CandidateAssessment:
             "c2_eligible_by_default": bool(self.c2_eligible_by_default),
             "bounded_delta_hypothesis": self.bounded_delta_hypothesis,
             "guardrail": self.guardrail,
+            "preserved_information": list(self.preserved_information),
+            "sub2_persistent_strategy": self.sub2_persistent_strategy,
             "note": self.note,
         }
 
@@ -537,6 +541,10 @@ def validate_candidate_assessment(assessment: CandidateAssessment) -> None:
     if classification == CandidateClassification.BOUNDED_DELTA_WITH_REPORT:
         if not assessment.bounded_delta_hypothesis or not assessment.guardrail:
             raise ValueError("bounded_delta candidates require a hypothesis and guardrail")
+        if not assessment.preserved_information:
+            raise ValueError("bounded_delta candidates require preserved_information")
+        if not assessment.sub2_persistent_strategy:
+            raise ValueError("bounded_delta candidates require a sub2_persistent_strategy")
 
 
 def candidate_assessment(
@@ -547,6 +555,8 @@ def candidate_assessment(
     compressed_representation: bool,
     bounded_delta_hypothesis: str | None = None,
     guardrail: str | None = None,
+    preserved_information: Iterable[str] = (),
+    sub2_persistent_strategy: str | None = None,
     note: str = "",
 ) -> CandidateAssessment:
     assessment = CandidateAssessment(
@@ -556,6 +566,8 @@ def candidate_assessment(
         compressed_representation=bool(compressed_representation),
         bounded_delta_hypothesis=bounded_delta_hypothesis,
         guardrail=guardrail,
+        preserved_information=tuple(str(item) for item in preserved_information),
+        sub2_persistent_strategy=sub2_persistent_strategy,
         note=note,
     )
     validate_candidate_assessment(assessment)

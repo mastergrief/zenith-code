@@ -7,9 +7,12 @@ import pytest
 import torch
 
 from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
+    BOUNDED_DELTA_ADMISSION_FAILED,
     BOUNDED_DELTA_GUARDRAIL_FAILED,
     BOUNDED_DELTA_LEDGER_FAILED,
     BOUNDED_DELTA_WITH_REPORT,
+    COARSE_SIGNED_CHARGE_SPARSE_FRONTIER_CANDIDATE,
+    EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE,
     BoundedDeltaGuardSpec,
     BoundedDeltaOracleInput,
     bounded_delta_inclusive_ledger,
@@ -194,6 +197,11 @@ def test_zero_drift_when_hot_exact_covers_all_decision_risk_rows():
     assert report.measured_report.accumulator_residual_hash_match is True
     assert report.candidate_assessment.classification == BOUNDED_DELTA_WITH_REPORT
     assert report.candidate_assessment.c2_eligible_by_default is False
+    assert report.admission_passed is True
+    assert report.rejection_telemetry.summary == "admission_pass"
+    assert report.rejection_telemetry.failed_surfaces == ()
+    assert report.candidate_assessment.preserved_information
+    assert report.candidate_assessment.sub2_persistent_strategy is not None
     _assert_no_tensors(report.to_dict())
 
 
@@ -305,3 +313,132 @@ def test_ledger_failure_is_not_reported_as_physical_sub2_success():
     assert report.ledger.claimable_physical_sub2 is False
     assert report.classification == BOUNDED_DELTA_LEDGER_FAILED
     assert report.claimable_physical_sub2_with_guardrail is False
+
+
+def test_event_coded_candidate_allows_non_decisive_candidate_mask_and_residual_drift():
+    q_ledger = _prior_large_q_ledger()
+    numel = q_ledger.eligible_weight_count
+    state = _state(numel, acc_overrides={5: 9, 7: 9})
+    votes = _inputs(numel, {5: 2, 7: 2})
+
+    report = compare_bounded_delta_step_to_int16_oracle(
+        [
+            BoundedDeltaOracleInput(
+                state_key="event.candidate",
+                state=state,
+                vote_inputs=votes,
+                vote_spec=_spec(max_abs_per_tensor=1),
+                hot_exact_indices=(5,),
+                cold_default_value=0,
+            ),
+        ],
+        q_ledger_row=q_ledger,
+        candidate_name=EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE,
+        guard_spec=BoundedDeltaGuardSpec(max_candidate_changed_fraction=1.0),
+        tensor_metadata_bits=0,
+        bucket_metadata_bits=0,
+        guardrail_metadata_bits=0,
+    )
+
+    assert report.classification == BOUNDED_DELTA_WITH_REPORT
+    assert report.admission_passed is True
+    assert report.measured_report.candidate_changed_fraction > 0.0
+    assert report.measured_report.accepted_changed_fraction == pytest.approx(0.0)
+    assert report.measured_report.q_changed_fraction == pytest.approx(0.0)
+    assert report.measured_report.fired_or_accepted_residual_changed_count == 0
+    assert report.measured_report.hot_residual_changed_count == 0
+    surfaces = {
+        item.surface: item for item in report.rejection_telemetry.surfaces
+    }
+    assert (
+        surfaces["candidate_mask"].status == "allowed_non_decisive_divergence"
+    )
+    assert (
+        surfaces["accumulator_residuals"].status
+        == "allowed_non_fired_cold_residual_divergence"
+    )
+    assert report.rejection_telemetry.summary == "admission_pass"
+
+
+def test_event_coded_candidate_rejects_when_accepted_row_residual_drifts():
+    q_ledger = _prior_large_q_ledger()
+    numel = q_ledger.eligible_weight_count
+    state = _state(numel, acc_overrides={5: 11})
+    votes = _inputs(numel, {})
+
+    report = compare_bounded_delta_step_to_int16_oracle(
+        [
+            BoundedDeltaOracleInput(
+                state_key="event.residual.drift",
+                state=state,
+                vote_inputs=votes,
+                vote_spec=_spec(max_abs_per_tensor=4),
+                hot_exact_indices=(),
+                cold_default_value=0,
+                cold_exception_indices=(5,),
+                cold_exception_values=(13,),
+            ),
+        ],
+        q_ledger_row=q_ledger,
+        candidate_name=EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE,
+        guard_spec=BoundedDeltaGuardSpec(max_candidate_changed_fraction=1.0),
+        tensor_metadata_bits=0,
+        bucket_metadata_bits=0,
+        guardrail_metadata_bits=0,
+    )
+
+    assert report.classification == BOUNDED_DELTA_ADMISSION_FAILED
+    assert report.guard_passed is True
+    assert report.admission_passed is False
+    assert report.measured_report.accepted_changed_fraction == pytest.approx(0.0)
+    assert report.measured_report.q_changed_fraction == pytest.approx(0.0)
+    assert report.measured_report.fired_or_accepted_residual_changed_count == 1
+    assert report.measured_report.hot_residual_changed_count == 0
+    assert report.rejection_telemetry.summary == "fired_or_accepted_residual_drift"
+    surfaces = {
+        item.surface: item for item in report.rejection_telemetry.surfaces
+    }
+    assert surfaces["accumulator_residuals"].status == "fired_or_accepted_residual_drift"
+    assert "fired/accepted rows" in surfaces["accumulator_residuals"].detail
+
+
+def test_coarse_candidate_rejection_telemetry_flags_revisit_contract():
+    q_ledger = _prior_large_q_ledger()
+    numel = q_ledger.eligible_weight_count
+    state = _state(numel, acc_overrides={5: 20, 6: 21, 7: 22})
+    votes = _inputs(numel, {})
+
+    report = compare_bounded_delta_step_to_int16_oracle(
+        [
+            BoundedDeltaOracleInput(
+                state_key="coarse.contract",
+                state=state,
+                vote_inputs=votes,
+                vote_spec=_spec(max_abs_per_tensor=3),
+                hot_exact_indices=(),
+                cold_default_value=0,
+                cold_exception_indices=(5, 6, 7),
+                cold_exception_values=(22, 21, 20),
+            ),
+        ],
+        q_ledger_row=q_ledger,
+        candidate_name=COARSE_SIGNED_CHARGE_SPARSE_FRONTIER_CANDIDATE,
+        guard_spec=BoundedDeltaGuardSpec(max_cap_frontier_rank_delta=10),
+        global_cap_spec=GlobalRateCapSpec(cap=3, step=1),
+        tensor_offsets={"coarse.contract": 0},
+        tensor_metadata_bits=0,
+        bucket_metadata_bits=0,
+        guardrail_metadata_bits=0,
+        dense_cold_bits_per_weight=0.25,
+    )
+
+    assert report.classification == BOUNDED_DELTA_ADMISSION_FAILED
+    assert report.guard_passed is True
+    assert report.admission_passed is False
+    assert report.rejection_telemetry.summary == "revisit_divergence_contract"
+    assert report.admission_failed_surfaces == ("cap_frontier_rank_delta",)
+    surfaces = {
+        item.surface: item for item in report.rejection_telemetry.surfaces
+    }
+    assert surfaces["cap_frontier_rank_delta"].status == "revisit_divergence_contract"
+    assert surfaces["accumulator_residuals"].status == "pass"
