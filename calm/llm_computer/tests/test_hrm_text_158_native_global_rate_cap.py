@@ -7,6 +7,8 @@ drain.
 """
 from __future__ import annotations
 
+import json
+
 import pytest
 import torch
 
@@ -354,3 +356,4 @@ def test_defer_all_no_backfill_uses_same_pre_state_shadow_and_drops_mixed_class_
     assert [row.flat_index for row in exact.accepted_rows] == [0]
     assert defer_all.accepted_rows == []
     assert sorted(row.flat_index for row in defer_all.deferred_rows) == [0, 1]
+    json.dumps(defer_all.step_summary, sort_keys=True)

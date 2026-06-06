@@ -669,7 +669,13 @@ def apply_global_rate_cap_reference(
         )
         accepted_rows = partition["accepted_rows"]
         deferred_rows = partition["deferred_rows"]
-        shadow_summary.update(partition)
+        shadow_summary.update(
+            {
+                key: value
+                for key, value in partition.items()
+                if key not in {"accepted_rows", "deferred_rows"}
+            }
+        )
     accepted_by_key = _rows_by_key(accepted_rows)
     deferred_by_key = _rows_by_key(deferred_rows)
     backlog = copy.deepcopy(deferred_backlog or {})

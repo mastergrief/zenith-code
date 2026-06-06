@@ -8,6 +8,7 @@ from __future__ import annotations
 import copy
 from dataclasses import replace
 import hashlib
+import json
 
 import pytest
 import torch
@@ -207,6 +208,20 @@ def test_bounded_delta_step_global_cap_tie_rule_wiring_is_opt_in_and_shadowed():
     assert defer_all.global_summary["mixed_class_count"] == 1
     assert exact.global_summary["global_rate_cap_accepted_count"] == 1
     assert defer_all.global_summary["global_rate_cap_accepted_count"] == 0
+    json.dumps(defer_all.global_summary, sort_keys=True)
+
+    for result in (exact, defer_all):
+        receipt_fragment = {
+            "device": "cpu",
+            "dry_run": True,
+            "checkpoint_written": False,
+            "creditdir_mutated": False,
+            "banked_pt_mutated": False,
+            "steps_completed": 1,
+            "step_reports": {"1": {"step_result": result.to_compact_dict()}},
+            "phase_telemetry": {"event_count": 0, "events": []},
+        }
+        json.dumps(receipt_fragment, sort_keys=True)
 
 
 def test_bounded_delta_step_validates_aux_map_keys_and_dtypes():
