@@ -370,6 +370,44 @@ CARRY_SUBCASE_EXACT_RECOVERY = "exact_recovery"
 CARRY_SUBCASE_CLASS_UNIFORM_BOUNDED_EXTRA_DEVIATION = (
     "class_uniform_recovery_with_bounded_extra_deviation"
 )
+PATH_B_DEFER_UNTIL_FIT_TTL2_PLAUSIBILITY_PRECHECK_SCHEMA_VERSION = (
+    "hrm_text_158_c1p1k_path_b_defer_until_fit_ttl2_fit_plausibility_precheck/v0"
+)
+PATH_B_DEFER_UNTIL_FIT_TTL2_PLAUSIBILITY_PRECHECK_LABEL = (
+    "c1p1k_path_b_defer_until_fit_ttl2_fit_plausibility_precheck"
+)
+PATH_B_DEFER_UNTIL_FIT_TTL2_PLAUSIBILITY_PRECHECK_CANDIDATE = (
+    "defer_until_fit_ttl2_fit_plausibility_precheck"
+)
+DEFER_UNTIL_FIT_FIRST_FIT_PLAUSIBLE_CANDIDATE_ONLY = (
+    "defer_until_fit_first_fit_plausible_candidate_only"
+)
+DEFER_UNTIL_FIT_TTL2_NO_FIT_ON_STATE_PATH = (
+    "defer_until_fit_ttl2_no_fit_on_state_path"
+)
+DEFER_UNTIL_FIT_HORIZON_MEASUREMENT_INCONCLUSIVE = (
+    "defer_until_fit_horizon_measurement_inconclusive"
+)
+DEFER_UNTIL_FIT_TTL2_ALLOWED_ACTION_INPUT_DIMENSIONS = (
+    "state_key",
+    "current_q_level",
+    "move_direction",
+    "stored_debt_count",
+    "age_steps",
+    "residual_cap_entering_packet",
+    "projected_class_count",
+    "projected_class_mass",
+    "projected_class_cardinality",
+    "projection_bits",
+)
+DEFER_UNTIL_FIT_TTL2_FORBIDDEN_ACTION_INPUT_KEY_FRAGMENTS = (
+    "identity",
+    "order",
+    "prefix",
+    "row_id",
+    "flat_index",
+)
+DEFER_UNTIL_FIT_TTL2_HORIZON_STEPS = 2
 
 
 def representative_engineering_guard_spec() -> BoundedDeltaGuardSpec:
@@ -9039,6 +9077,831 @@ def validate_path_b_aggregate_state_runtime_semantics_report(
     _assert_no_tensors(report.to_dict())
 
 
+@dataclass(frozen=True)
+class DeferUntilFitTtl2PacketOriginReport:
+    packet_name: str
+    priority_rank: int
+    state_key: str
+    current_q_level: int
+    move_direction: int
+    created_from_origin_schedule_name: str
+    created_from_origin_step: int
+    first_projection_schedule_name: str
+    first_projection_step: int
+    stored_debt_count: int
+    first_projection_class_cardinality: int
+    first_projection_class_count_in_bucket: int
+    first_projection_false_positive_mass: int
+    projection_bits_for_class: int
+    projected_feature_payload: dict[str, Any]
+    audit_represented_mass_count: int
+    audit_represented_identities_sha256: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "packet_name": self.packet_name,
+            "priority_rank": int(self.priority_rank),
+            "state_key": self.state_key,
+            "current_q_level": int(self.current_q_level),
+            "move_direction": int(self.move_direction),
+            "created_from_origin_schedule_name": self.created_from_origin_schedule_name,
+            "created_from_origin_step": int(self.created_from_origin_step),
+            "first_projection_schedule_name": self.first_projection_schedule_name,
+            "first_projection_step": int(self.first_projection_step),
+            "stored_debt_count": int(self.stored_debt_count),
+            "first_projection_class_cardinality": int(self.first_projection_class_cardinality),
+            "first_projection_class_count_in_bucket": int(self.first_projection_class_count_in_bucket),
+            "first_projection_false_positive_mass": int(self.first_projection_false_positive_mass),
+            "projection_bits_for_class": int(self.projection_bits_for_class),
+            "projected_feature_payload": dict(self.projected_feature_payload),
+            "audit_represented_mass_count": int(self.audit_represented_mass_count),
+            "audit_represented_identities_sha256": self.audit_represented_identities_sha256,
+        }
+
+
+@dataclass(frozen=True)
+class DeferUntilFitTtl2PacketStepReport:
+    packet_name: str
+    priority_rank: int
+    schedule_name: str
+    step: int
+    age_steps: int
+    residual_cap_entering_packet: int
+    projected_class_count: int
+    projected_class_cardinalities: tuple[int, ...]
+    total_projected_class_mass: int
+    projection_bits_for_class: int
+    recovered_dropped_audit_mass: int
+    false_positive_mass: int
+    missed_represented_mass: int
+    full_class_consume_legal: bool
+    uses_row_identity_or_order_as_action_input: bool
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "packet_name": self.packet_name,
+            "priority_rank": int(self.priority_rank),
+            "schedule_name": self.schedule_name,
+            "step": int(self.step),
+            "age_steps": int(self.age_steps),
+            "residual_cap_entering_packet": int(self.residual_cap_entering_packet),
+            "projected_class_count": int(self.projected_class_count),
+            "projected_class_cardinalities": [
+                int(value) for value in self.projected_class_cardinalities
+            ],
+            "total_projected_class_mass": int(self.total_projected_class_mass),
+            "projection_bits_for_class": int(self.projection_bits_for_class),
+            "recovered_dropped_audit_mass": int(self.recovered_dropped_audit_mass),
+            "false_positive_mass": int(self.false_positive_mass),
+            "missed_represented_mass": int(self.missed_represented_mass),
+            "full_class_consume_legal": bool(self.full_class_consume_legal),
+            "uses_row_identity_or_order_as_action_input": bool(
+                self.uses_row_identity_or_order_as_action_input
+            ),
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class DeferUntilFitTtl2FutureStepReport:
+    schedule_name: str
+    step: int
+    age_steps: int
+    global_cap: int
+    candidate_row_count: int
+    backlog_count: int
+    packet_step_reports: tuple[DeferUntilFitTtl2PacketStepReport, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schedule_name": self.schedule_name,
+            "step": int(self.step),
+            "age_steps": int(self.age_steps),
+            "global_cap": int(self.global_cap),
+            "candidate_row_count": int(self.candidate_row_count),
+            "backlog_count": int(self.backlog_count),
+            "packet_step_reports": [
+                report.to_dict() for report in self.packet_step_reports
+            ],
+        }
+
+
+@dataclass(frozen=True)
+class DeferUntilFitTtl2Decision:
+    terminal_label: str
+    ttl_steps_charged: int
+    ttl_boundary_evaluated: bool
+    first_fit_schedule_name: str | None
+    first_fit_step: int | None
+    first_fit_packet_names: tuple[str, ...]
+    uses_row_identity_or_order_as_action_input: bool
+    candidate_only: bool
+    dyn200_earned: bool
+    learner_sub2_claimed: bool
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "terminal_label": self.terminal_label,
+            "ttl_steps_charged": int(self.ttl_steps_charged),
+            "ttl_boundary_evaluated": bool(self.ttl_boundary_evaluated),
+            "first_fit_schedule_name": self.first_fit_schedule_name,
+            "first_fit_step": self.first_fit_step,
+            "first_fit_packet_names": list(self.first_fit_packet_names),
+            "uses_row_identity_or_order_as_action_input": bool(
+                self.uses_row_identity_or_order_as_action_input
+            ),
+            "candidate_only": bool(self.candidate_only),
+            "dyn200_earned": bool(self.dyn200_earned),
+            "learner_sub2_claimed": bool(self.learner_sub2_claimed),
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class DeferUntilFitTtl2FitPlausibilityPrecheckReport:
+    schema_version: str
+    label: str
+    source_bindingness: Any
+    field_coverage: SourceFieldCoverage
+    candidate_name: str
+    source_baseline_label: str
+    source_baseline_terminal_label: str
+    source_aggregate_runtime_label: str
+    source_aggregate_runtime_terminal_label: str
+    source_defer_family_variant_name: str
+    defer_family_lifecycle_spec: AggregateStateLifecycleSpec
+    defer_family_ledger_charge: AggregateStateRuntimeLedgerCharge
+    ttl_steps_charged: int
+    allowed_action_input_dimensions: tuple[str, ...]
+    forbidden_action_input_key_fragments: tuple[str, ...]
+    packet_origin_reports: tuple[DeferUntilFitTtl2PacketOriginReport, ...]
+    future_step_reports: tuple[DeferUntilFitTtl2FutureStepReport, ...]
+    terminal_decision: DeferUntilFitTtl2Decision
+    raw_arrays_included: bool
+    non_claims: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "label": self.label,
+            "source_bindingness": self.source_bindingness.to_dict(),
+            "field_coverage": self.field_coverage.to_dict(),
+            "candidate_name": self.candidate_name,
+            "source_baseline_label": self.source_baseline_label,
+            "source_baseline_terminal_label": self.source_baseline_terminal_label,
+            "source_aggregate_runtime_label": self.source_aggregate_runtime_label,
+            "source_aggregate_runtime_terminal_label": self.source_aggregate_runtime_terminal_label,
+            "source_defer_family_variant_name": self.source_defer_family_variant_name,
+            "defer_family_lifecycle_spec": self.defer_family_lifecycle_spec.to_dict(),
+            "defer_family_ledger_charge": self.defer_family_ledger_charge.to_dict(),
+            "ttl_steps_charged": int(self.ttl_steps_charged),
+            "allowed_action_input_dimensions": list(
+                self.allowed_action_input_dimensions
+            ),
+            "forbidden_action_input_key_fragments": list(
+                self.forbidden_action_input_key_fragments
+            ),
+            "packet_origin_reports": [
+                report.to_dict() for report in self.packet_origin_reports
+            ],
+            "future_step_reports": [
+                report.to_dict() for report in self.future_step_reports
+            ],
+            "terminal_decision": self.terminal_decision.to_dict(),
+            "raw_arrays_included": bool(self.raw_arrays_included),
+            "non_claims": list(self.non_claims),
+        }
+
+
+@dataclass(frozen=True)
+class _DeferUntilFitTtl2PacketContext:
+    packet_name: str
+    priority_rank: int
+    state_key: str
+    current_q_level: int
+    move_direction: int
+    created_from_origin_schedule_name: str
+    created_from_origin_step: int
+    first_projection_schedule_name: str
+    first_projection_step: int
+    stored_debt_count: int
+    first_projection_class_cardinality: int
+    first_projection_class_count_in_bucket: int
+    first_projection_false_positive_mass: int
+    projection_bits_for_class: int
+    projected_feature_payload: dict[str, Any]
+    audit_identities: frozenset[tuple[str, int]]
+
+
+def _path_b_defer_until_fit_packet_name(
+    *,
+    state_key: str,
+    current_q_level: int,
+    move_direction: int,
+) -> str:
+    return f"{state_key}:q{int(current_q_level)}:d{int(move_direction)}"
+
+
+def _path_b_defer_until_fit_packet_contexts() -> tuple[_DeferUntilFitTtl2PacketContext, ...]:
+    replay_pairs = _path_b_exact_and_defer_all_replay_steps()
+    by_schedule_name = {
+        replay_step.schedule_name: (exact_trace_step, replay_step)
+        for exact_trace_step, replay_step in replay_pairs
+    }
+    if "cap_saturated" not in by_schedule_name or "backlog_growth" not in by_schedule_name:
+        raise ValueError(
+            "defer-until-fit TTL2 precheck requires the committed cap_saturated/backlog_growth path"
+        )
+    origin_exact, origin_replay = by_schedule_name["cap_saturated"]
+    future_exact, future_replay = by_schedule_name["backlog_growth"]
+    future_bucket_feature_sets: dict[
+        tuple[str, int, int], set[tuple[tuple[str, Any], ...]]
+    ] = {}
+    future_class_rows: dict[
+        tuple[tuple[str, int, int], tuple[tuple[str, Any], ...]],
+        list[_StrictObservableTieMaskRow],
+    ] = {}
+    for row in future_replay.observable_rows:
+        future_bucket_feature_sets.setdefault(row.bucket_key, set()).add(
+            row.feature_key()
+        )
+        future_class_rows.setdefault((row.bucket_key, row.feature_key()), []).append(row)
+    identity_to_group = {
+        row.identity: (row.bucket_key, row.feature_key())
+        for row in future_replay.observable_rows
+    }
+    by_future_group: dict[
+        tuple[tuple[str, int, int], tuple[tuple[str, Any], ...]],
+        set[tuple[str, int]],
+    ] = {}
+    for identity in sorted(origin_replay.dropped_ids & future_replay.candidate_row_ids):
+        group_key = identity_to_group.get(identity)
+        if group_key is None:
+            raise ValueError(
+                "defer-until-fit TTL2 packet audit identities must stay observable on backlog_growth"
+            )
+        by_future_group.setdefault(group_key, set()).add(identity)
+    contexts: list[_DeferUntilFitTtl2PacketContext] = []
+    for priority_rank, ((bucket_key, feature_key), identities) in enumerate(
+        sorted(by_future_group.items(), key=lambda item: (item[0][0], item[0][1])),
+        start=1,
+    ):
+        class_rows = future_class_rows[(bucket_key, feature_key)]
+        contexts.append(
+            _DeferUntilFitTtl2PacketContext(
+                packet_name=_path_b_defer_until_fit_packet_name(
+                    state_key=str(bucket_key[0]),
+                    current_q_level=int(bucket_key[1]),
+                    move_direction=int(bucket_key[2]),
+                ),
+                priority_rank=int(priority_rank),
+                state_key=str(bucket_key[0]),
+                current_q_level=int(bucket_key[1]),
+                move_direction=int(bucket_key[2]),
+                created_from_origin_schedule_name=origin_replay.schedule_name,
+                created_from_origin_step=int(origin_exact.schedule_step.step),
+                first_projection_schedule_name=future_replay.schedule_name,
+                first_projection_step=int(future_exact.schedule_step.step),
+                stored_debt_count=len(identities),
+                first_projection_class_cardinality=len(class_rows),
+                first_projection_class_count_in_bucket=len(
+                    future_bucket_feature_sets[bucket_key]
+                ),
+                first_projection_false_positive_mass=len(class_rows) - len(identities),
+                projection_bits_for_class=_enum_bit_width(
+                    len(future_bucket_feature_sets[bucket_key])
+                ),
+                projected_feature_payload=dict(class_rows[0].feature_payload()),
+                audit_identities=frozenset(identities),
+            )
+        )
+    if not contexts:
+        raise ValueError(
+            "defer-until-fit TTL2 precheck requires the committed carry packets from backlog_growth"
+        )
+    return tuple(contexts)
+
+
+def _path_b_defer_until_fit_ttl2_future_step_specs() -> tuple[VotePressureStepSpec, ...]:
+    base_step = PRE_REGISTERED_VOTE_PRESSURE_SCHEDULE[-1]
+    tensor_numel = int(next(iter(_initial_states().values())).q_levels.numel())
+    specs: list[VotePressureStepSpec] = []
+    for age_steps in range(1, DEFER_UNTIL_FIT_TTL2_HORIZON_STEPS + 1):
+        start_index = int(base_step.start_index) + int(base_step.rows_per_tensor) * int(
+            age_steps
+        )
+        if start_index < 0 or start_index + int(base_step.rows_per_tensor) > tensor_numel:
+            break
+        specs.append(
+            VotePressureStepSpec(
+                name=f"{base_step.name}_ttl2_future_{int(age_steps)}",
+                step=int(base_step.step) + int(age_steps),
+                rows_per_tensor=int(base_step.rows_per_tensor),
+                start_index=int(start_index),
+                vote_abs=int(base_step.vote_abs),
+                cap=int(base_step.cap),
+                expected_regime=(
+                    f"ttl2 natural continuation {int(age_steps)} from {base_step.name}; "
+                    "same pressure/cap shape, advanced row window"
+                ),
+            )
+        )
+    return tuple(specs)
+
+
+def _path_b_exact_and_defer_all_replay_steps_ttl2_extension(
+) -> tuple[_PathBReplayStepState, ...]:
+    replay_pairs = _path_b_exact_and_defer_all_replay_steps()
+    replay_states = _copy_state_map(replay_pairs[-1][1].output_states)
+    replay_backlog = _copy_backlog(replay_pairs[-1][1].output_backlog)
+    future_steps: list[_PathBReplayStepState] = []
+    for schedule_step in _path_b_defer_until_fit_ttl2_future_step_specs():
+        replay_trace_step = _path_b_current_trace_step(
+            states_by_key=replay_states,
+            deferred_backlog=replay_backlog,
+            schedule_step=schedule_step,
+        )
+        replay_step = _path_b_replay_step_from_mutated_partition(replay_trace_step)
+        future_steps.append(replay_step)
+        replay_states = _copy_state_map(replay_step.output_states)
+        replay_backlog = _copy_backlog(replay_step.output_backlog)
+    return tuple(future_steps)
+
+
+def _path_b_defer_until_fit_ttl2_packet_origin_reports(
+    packet_contexts: Sequence[_DeferUntilFitTtl2PacketContext],
+) -> tuple[DeferUntilFitTtl2PacketOriginReport, ...]:
+    return tuple(
+        DeferUntilFitTtl2PacketOriginReport(
+            packet_name=context.packet_name,
+            priority_rank=int(context.priority_rank),
+            state_key=context.state_key,
+            current_q_level=int(context.current_q_level),
+            move_direction=int(context.move_direction),
+            created_from_origin_schedule_name=context.created_from_origin_schedule_name,
+            created_from_origin_step=int(context.created_from_origin_step),
+            first_projection_schedule_name=context.first_projection_schedule_name,
+            first_projection_step=int(context.first_projection_step),
+            stored_debt_count=int(context.stored_debt_count),
+            first_projection_class_cardinality=int(
+                context.first_projection_class_cardinality
+            ),
+            first_projection_class_count_in_bucket=int(
+                context.first_projection_class_count_in_bucket
+            ),
+            first_projection_false_positive_mass=int(
+                context.first_projection_false_positive_mass
+            ),
+            projection_bits_for_class=int(context.projection_bits_for_class),
+            projected_feature_payload=dict(context.projected_feature_payload),
+            audit_represented_mass_count=int(len(context.audit_identities)),
+            audit_represented_identities_sha256=_identity_sha256(
+                set(context.audit_identities)
+            ),
+        )
+        for context in packet_contexts
+    )
+
+
+def _path_b_defer_until_fit_ttl2_packet_step_report(
+    *,
+    packet_context: _DeferUntilFitTtl2PacketContext,
+    future_step: _PathBReplayStepState,
+    age_steps: int,
+    residual_cap_entering_packet: int,
+) -> DeferUntilFitTtl2PacketStepReport:
+    identity_to_group = {
+        row.identity: (row.bucket_key, row.feature_key())
+        for row in future_step.observable_rows
+    }
+    class_rows_by_group: dict[
+        tuple[tuple[str, int, int], tuple[tuple[str, Any], ...]],
+        list[_StrictObservableTieMaskRow],
+    ] = {}
+    for row in future_step.observable_rows:
+        class_rows_by_group.setdefault((row.bucket_key, row.feature_key()), []).append(
+            row
+        )
+    present_ids = set(packet_context.audit_identities) & future_step.candidate_row_ids
+    by_group: dict[
+        tuple[tuple[str, int, int], tuple[tuple[str, Any], ...]],
+        set[tuple[str, int]],
+    ] = {}
+    for identity in sorted(present_ids):
+        group_key = identity_to_group.get(identity)
+        if group_key is None:
+            raise ValueError(
+                "TTL2 future packet audit mass must stay observable when represented"
+            )
+        by_group.setdefault(group_key, set()).add(identity)
+    projected_group_keys = sorted(by_group, key=lambda item: (item[0], item[1]))
+    projected_class_cardinalities = tuple(
+        len(class_rows_by_group[group_key]) for group_key in projected_group_keys
+    )
+    total_projected_class_mass = int(sum(projected_class_cardinalities))
+    recovered_dropped_audit_mass = int(len(present_ids))
+    false_positive_mass = int(
+        total_projected_class_mass - recovered_dropped_audit_mass
+    )
+    full_class_consume_legal = bool(
+        len(projected_group_keys) == 1
+        and total_projected_class_mass > 0
+        and total_projected_class_mass <= int(residual_cap_entering_packet)
+    )
+    missed_represented_mass = int(
+        0 if full_class_consume_legal else recovered_dropped_audit_mass
+    )
+    if not projected_group_keys:
+        reason = (
+            "packet audit mass is not represented as a candidate class on this future step"
+        )
+    elif len(projected_group_keys) > 1:
+        reason = (
+            "packet audit mass split across multiple future observable classes, so no single class packet can be consumed lawfully"
+        )
+    elif total_projected_class_mass > int(residual_cap_entering_packet):
+        reason = (
+            f"projected class mass {int(total_projected_class_mass)} exceeds residual cap {int(residual_cap_entering_packet)}"
+        )
+    else:
+        reason = "single projected class fits residual cap and is lawful to consume"
+    return DeferUntilFitTtl2PacketStepReport(
+        packet_name=packet_context.packet_name,
+        priority_rank=int(packet_context.priority_rank),
+        schedule_name=future_step.schedule_name,
+        step=int(future_step.step),
+        age_steps=int(age_steps),
+        residual_cap_entering_packet=int(residual_cap_entering_packet),
+        projected_class_count=int(len(projected_group_keys)),
+        projected_class_cardinalities=tuple(int(value) for value in projected_class_cardinalities),
+        total_projected_class_mass=int(total_projected_class_mass),
+        projection_bits_for_class=int(packet_context.projection_bits_for_class),
+        recovered_dropped_audit_mass=int(recovered_dropped_audit_mass),
+        false_positive_mass=int(false_positive_mass),
+        missed_represented_mass=int(missed_represented_mass),
+        full_class_consume_legal=bool(full_class_consume_legal),
+        uses_row_identity_or_order_as_action_input=False,
+        reason=reason,
+    )
+
+
+def _path_b_defer_until_fit_ttl2_future_step_report(
+    *,
+    packet_contexts: Sequence[_DeferUntilFitTtl2PacketContext],
+    future_step: _PathBReplayStepState,
+    age_steps: int,
+) -> DeferUntilFitTtl2FutureStepReport:
+    residual_cap = int(future_step.global_cap)
+    packet_step_reports: list[DeferUntilFitTtl2PacketStepReport] = []
+    for packet_context in packet_contexts:
+        packet_report = _path_b_defer_until_fit_ttl2_packet_step_report(
+            packet_context=packet_context,
+            future_step=future_step,
+            age_steps=age_steps,
+            residual_cap_entering_packet=residual_cap,
+        )
+        packet_step_reports.append(packet_report)
+        if packet_report.full_class_consume_legal:
+            residual_cap -= int(packet_report.total_projected_class_mass)
+    return DeferUntilFitTtl2FutureStepReport(
+        schedule_name=future_step.schedule_name,
+        step=int(future_step.step),
+        age_steps=int(age_steps),
+        global_cap=int(future_step.global_cap),
+        candidate_row_count=int(len(future_step.candidate_row_ids)),
+        backlog_count=int(len(future_step.backlog_ids)),
+        packet_step_reports=tuple(packet_step_reports),
+    )
+
+
+def _path_b_defer_until_fit_ttl2_non_claims() -> tuple[str, ...]:
+    return (
+        "CPU-only TTL2 fit-plausibility precheck over the committed defer-all replay path",
+        "TTL2 is a new local seam layered on top of the banked 4-step baseline; the fixed baseline validator semantics remain unchanged",
+        "the natural future horizon is derived from backlog_growth with the same pressure/cap shape and advancing row windows",
+        "no cap-relief control is present in the candidate decision",
+        "action inputs remain class-level only; row identity/order are audit-only and never consume inputs",
+        "candidate-only; no dyn200, no learner/sub-2 claim, no raw per-weight arrays",
+    )
+
+
+def _path_b_defer_until_fit_ttl2_terminal_decision(
+    future_step_reports: Sequence[DeferUntilFitTtl2FutureStepReport],
+) -> DeferUntilFitTtl2Decision:
+    ttl_boundary_evaluated = bool(
+        len(future_step_reports) == DEFER_UNTIL_FIT_TTL2_HORIZON_STEPS
+    )
+    first_fit_step = None
+    first_fit_packets: tuple[str, ...] = ()
+    for future_step in future_step_reports:
+        fit_packets = tuple(
+            packet.packet_name
+            for packet in future_step.packet_step_reports
+            if packet.full_class_consume_legal
+        )
+        if fit_packets:
+            first_fit_step = future_step
+            first_fit_packets = fit_packets
+            break
+    if not ttl_boundary_evaluated:
+        return DeferUntilFitTtl2Decision(
+            terminal_label=DEFER_UNTIL_FIT_HORIZON_MEASUREMENT_INCONCLUSIVE,
+            ttl_steps_charged=DEFER_UNTIL_FIT_TTL2_HORIZON_STEPS,
+            ttl_boundary_evaluated=False,
+            first_fit_schedule_name=None,
+            first_fit_step=None,
+            first_fit_packet_names=(),
+            uses_row_identity_or_order_as_action_input=False,
+            candidate_only=True,
+            dyn200_earned=False,
+            learner_sub2_claimed=False,
+            reason=(
+                "the TTL boundary could not be evaluated from the local natural extension steps, so the honest result is horizon inconclusive"
+            ),
+        )
+    if first_fit_step is not None:
+        return DeferUntilFitTtl2Decision(
+            terminal_label=DEFER_UNTIL_FIT_FIRST_FIT_PLAUSIBLE_CANDIDATE_ONLY,
+            ttl_steps_charged=DEFER_UNTIL_FIT_TTL2_HORIZON_STEPS,
+            ttl_boundary_evaluated=True,
+            first_fit_schedule_name=first_fit_step.schedule_name,
+            first_fit_step=int(first_fit_step.step),
+            first_fit_packet_names=tuple(first_fit_packets),
+            uses_row_identity_or_order_as_action_input=False,
+            candidate_only=True,
+            dyn200_earned=False,
+            learner_sub2_claimed=False,
+            reason=(
+                "at least one full carried class packet fits before TTL expiry on the natural defer-all replay path, so the charged defer family earns a later full horizon/tolerance slice only"
+            ),
+        )
+    ttl_boundary = future_step_reports[-1]
+    ttl_boundary_masses = tuple(
+        int(packet.total_projected_class_mass)
+        for packet in ttl_boundary.packet_step_reports
+    )
+    return DeferUntilFitTtl2Decision(
+        terminal_label=DEFER_UNTIL_FIT_TTL2_NO_FIT_ON_STATE_PATH,
+        ttl_steps_charged=DEFER_UNTIL_FIT_TTL2_HORIZON_STEPS,
+        ttl_boundary_evaluated=True,
+        first_fit_schedule_name=None,
+        first_fit_step=None,
+        first_fit_packet_names=(),
+        uses_row_identity_or_order_as_action_input=False,
+        candidate_only=True,
+        dyn200_earned=False,
+        learner_sub2_claimed=False,
+        reason=(
+            f"no carried class packet fits by ttl_steps={int(DEFER_UNTIL_FIT_TTL2_HORIZON_STEPS)} on this state path; at the TTL boundary {ttl_boundary.schedule_name} the projected class masses {ttl_boundary_masses} still exceed residual cap {int(ttl_boundary.global_cap)}"
+        ),
+    )
+
+
+def run_defer_until_fit_ttl2_fit_plausibility_precheck(
+) -> DeferUntilFitTtl2FitPlausibilityPrecheckReport:
+    baseline_report = run_path_b_defer_all_baseline_parity_probe()
+    validate_path_b_defer_all_baseline_parity_probe_report(baseline_report)
+    if baseline_report.terminal_decision.terminal_label != CARRY_CANDIDATE_EARNED:
+        raise ValueError(
+            "TTL2 defer-until-fit precheck requires the committed carry-candidate baseline source"
+        )
+    aggregate_report = run_path_b_aggregate_state_runtime_semantics_definition()
+    validate_path_b_aggregate_state_runtime_semantics_report(aggregate_report)
+    if (
+        aggregate_report.terminal_decision.terminal_label
+        != INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT
+    ):
+        raise ValueError(
+            "TTL2 defer-until-fit precheck requires the committed aggregate-runtime inconclusive source"
+        )
+    family_by_variant = {
+        family.variant_name: family for family in aggregate_report.family_reports
+    }
+    defer_family = family_by_variant[CARRY_FAMILY_CLASS_UNIFORM_DEFER_UNTIL_FIT]
+    if defer_family.lifecycle_spec.ttl_steps != DEFER_UNTIL_FIT_TTL2_HORIZON_STEPS:
+        raise ValueError(
+            "TTL2 defer-until-fit precheck requires the charged ttl_steps=2 lifecycle"
+        )
+    packet_contexts = _path_b_defer_until_fit_packet_contexts()
+    packet_origin_reports = _path_b_defer_until_fit_ttl2_packet_origin_reports(
+        packet_contexts
+    )
+    future_replay_steps = _path_b_exact_and_defer_all_replay_steps_ttl2_extension()
+    future_step_reports = tuple(
+        _path_b_defer_until_fit_ttl2_future_step_report(
+            packet_contexts=packet_contexts,
+            future_step=future_step,
+            age_steps=age_steps,
+        )
+        for age_steps, future_step in enumerate(future_replay_steps, start=1)
+    )
+    bindingness = pre_register_source_bindingness(
+        source_kind=SOURCE_KIND_GENERATED_NATIVE_LOOP,
+        coverage=SourceFieldCoverage.full_generated_native_loop(),
+    )
+    return DeferUntilFitTtl2FitPlausibilityPrecheckReport(
+        schema_version=PATH_B_DEFER_UNTIL_FIT_TTL2_PLAUSIBILITY_PRECHECK_SCHEMA_VERSION,
+        label=PATH_B_DEFER_UNTIL_FIT_TTL2_PLAUSIBILITY_PRECHECK_LABEL,
+        source_bindingness=bindingness,
+        field_coverage=SourceFieldCoverage.full_generated_native_loop(),
+        candidate_name=PATH_B_DEFER_UNTIL_FIT_TTL2_PLAUSIBILITY_PRECHECK_CANDIDATE,
+        source_baseline_label=baseline_report.label,
+        source_baseline_terminal_label=baseline_report.terminal_decision.terminal_label,
+        source_aggregate_runtime_label=aggregate_report.label,
+        source_aggregate_runtime_terminal_label=(
+            aggregate_report.terminal_decision.terminal_label
+        ),
+        source_defer_family_variant_name=CARRY_FAMILY_CLASS_UNIFORM_DEFER_UNTIL_FIT,
+        defer_family_lifecycle_spec=defer_family.lifecycle_spec,
+        defer_family_ledger_charge=defer_family.ledger_charge,
+        ttl_steps_charged=DEFER_UNTIL_FIT_TTL2_HORIZON_STEPS,
+        allowed_action_input_dimensions=(
+            DEFER_UNTIL_FIT_TTL2_ALLOWED_ACTION_INPUT_DIMENSIONS
+        ),
+        forbidden_action_input_key_fragments=(
+            DEFER_UNTIL_FIT_TTL2_FORBIDDEN_ACTION_INPUT_KEY_FRAGMENTS
+        ),
+        packet_origin_reports=packet_origin_reports,
+        future_step_reports=future_step_reports,
+        terminal_decision=_path_b_defer_until_fit_ttl2_terminal_decision(
+            future_step_reports
+        ),
+        raw_arrays_included=False,
+        non_claims=_path_b_defer_until_fit_ttl2_non_claims(),
+    )
+
+
+def validate_defer_until_fit_ttl2_fit_plausibility_precheck_report(
+    report: DeferUntilFitTtl2FitPlausibilityPrecheckReport,
+) -> None:
+    if (
+        report.schema_version
+        != PATH_B_DEFER_UNTIL_FIT_TTL2_PLAUSIBILITY_PRECHECK_SCHEMA_VERSION
+    ):
+        raise ValueError("unexpected defer-until-fit TTL2 precheck schema version")
+    if report.label != PATH_B_DEFER_UNTIL_FIT_TTL2_PLAUSIBILITY_PRECHECK_LABEL:
+        raise ValueError("unexpected defer-until-fit TTL2 precheck label")
+    if (
+        report.candidate_name
+        != PATH_B_DEFER_UNTIL_FIT_TTL2_PLAUSIBILITY_PRECHECK_CANDIDATE
+    ):
+        raise ValueError("unexpected defer-until-fit TTL2 precheck candidate")
+    if report.source_baseline_label != PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_LABEL:
+        raise ValueError("TTL2 precheck must cite the committed baseline label")
+    if report.source_baseline_terminal_label != CARRY_CANDIDATE_EARNED:
+        raise ValueError("TTL2 precheck must inherit the carry-candidate baseline")
+    if report.source_aggregate_runtime_label != PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_LABEL:
+        raise ValueError("TTL2 precheck must cite the committed aggregate-runtime label")
+    if report.source_aggregate_runtime_terminal_label != INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT:
+        raise ValueError("TTL2 precheck must inherit the aggregate-runtime inconclusive source")
+    if report.source_defer_family_variant_name != CARRY_FAMILY_CLASS_UNIFORM_DEFER_UNTIL_FIT:
+        raise ValueError("TTL2 precheck must stay on the charged defer-until-fit family")
+    if int(report.ttl_steps_charged) != int(DEFER_UNTIL_FIT_TTL2_HORIZON_STEPS):
+        raise ValueError("TTL2 precheck must keep the charged ttl_steps=2 horizon")
+    if report.defer_family_lifecycle_spec.ttl_steps != DEFER_UNTIL_FIT_TTL2_HORIZON_STEPS:
+        raise ValueError("TTL2 precheck must report the charged ttl_steps=2 lifecycle")
+    if report.defer_family_ledger_charge.ttl_bits != 4:
+        raise ValueError("TTL2 precheck must report the charged ttl bits")
+    if report.defer_family_ledger_charge.age_bits != 4:
+        raise ValueError("TTL2 precheck must report the charged age bits")
+    if report.defer_family_ledger_charge.active_slot_bits != 2:
+        raise ValueError("TTL2 precheck must report the charged active-slot bits")
+    if report.defer_family_ledger_charge.projection_bits != 2:
+        raise ValueError("TTL2 precheck must report the charged projection bits")
+    if tuple(report.forbidden_action_input_key_fragments) != (
+        DEFER_UNTIL_FIT_TTL2_FORBIDDEN_ACTION_INPUT_KEY_FRAGMENTS
+    ):
+        raise ValueError("TTL2 forbidden action-input fragments drifted from the gate")
+    for key in report.allowed_action_input_dimensions:
+        lowered = key.lower()
+        if any(
+            fragment in lowered
+            for fragment in report.forbidden_action_input_key_fragments
+        ):
+            raise ValueError(
+                "TTL2 action-input schema leaked a forbidden identity/order key"
+            )
+    if tuple(report.allowed_action_input_dimensions) != (
+        DEFER_UNTIL_FIT_TTL2_ALLOWED_ACTION_INPUT_DIMENSIONS
+    ):
+        raise ValueError("TTL2 action-input schema drifted from the approved class-level input set")
+    if not report.packet_origin_reports:
+        raise ValueError("TTL2 precheck requires at least one carried packet")
+    seen_packet_names: set[str] = set()
+    for expected_rank, packet in enumerate(report.packet_origin_reports, start=1):
+        if packet.packet_name in seen_packet_names:
+            raise ValueError("TTL2 packet names must stay unique")
+        seen_packet_names.add(packet.packet_name)
+        if int(packet.priority_rank) != int(expected_rank):
+            raise ValueError("TTL2 packet priority ranks must stay contiguous and ordered")
+        if int(packet.audit_represented_mass_count) != int(packet.stored_debt_count):
+            raise ValueError("stored debt must equal the audited dropped mass for each packet")
+        if int(packet.first_projection_false_positive_mass) != (
+            int(packet.first_projection_class_cardinality)
+            - int(packet.audit_represented_mass_count)
+        ):
+            raise ValueError("first-projection false-positive mass drifted from class minus audit mass")
+        if int(packet.projection_bits_for_class) != _enum_bit_width(
+            int(packet.first_projection_class_count_in_bucket)
+        ):
+            raise ValueError("TTL2 packet projection bits drifted from the first projection selector width")
+    expected_future_specs = _path_b_defer_until_fit_ttl2_future_step_specs()
+    if report.terminal_decision.terminal_label != DEFER_UNTIL_FIT_HORIZON_MEASUREMENT_INCONCLUSIVE:
+        if len(report.future_step_reports) != len(expected_future_specs):
+            raise ValueError("TTL2 precheck must evaluate the full charged horizon when not inconclusive")
+    residual_packet_names = tuple(packet.packet_name for packet in report.packet_origin_reports)
+    for future_step_report, expected_spec in zip(
+        report.future_step_reports, expected_future_specs
+    ):
+        if future_step_report.schedule_name != expected_spec.name:
+            raise ValueError("TTL2 future step names drifted from the natural extension spec")
+        if int(future_step_report.step) != int(expected_spec.step):
+            raise ValueError("TTL2 future step numbers drifted from the natural extension spec")
+        if int(future_step_report.age_steps) != int(
+            expected_spec.step - PRE_REGISTERED_VOTE_PRESSURE_SCHEDULE[-1].step
+        ):
+            raise ValueError("TTL2 future step ages drifted from the charged horizon index")
+        if int(future_step_report.global_cap) != int(expected_spec.cap):
+            raise ValueError("TTL2 future step cap drifted from backlog_growth")
+        if tuple(packet.packet_name for packet in future_step_report.packet_step_reports) != residual_packet_names:
+            raise ValueError("TTL2 future steps must report every carried packet in priority order")
+        residual_cap = int(future_step_report.global_cap)
+        for packet_step_report, packet_origin in zip(
+            future_step_report.packet_step_reports,
+            report.packet_origin_reports,
+        ):
+            if int(packet_step_report.priority_rank) != int(packet_origin.priority_rank):
+                raise ValueError("TTL2 packet-step priority drifted from the packet origin ordering")
+            if int(packet_step_report.age_steps) != int(future_step_report.age_steps):
+                raise ValueError("TTL2 packet-step age drifted from the future step")
+            if int(packet_step_report.residual_cap_entering_packet) != int(residual_cap):
+                raise ValueError("TTL2 residual cap entering packet drifted from the priority simulation")
+            if int(packet_step_report.projected_class_count) != len(
+                packet_step_report.projected_class_cardinalities
+            ):
+                raise ValueError("TTL2 projected class count drifted from the cardinality tuple")
+            if int(packet_step_report.total_projected_class_mass) != sum(
+                int(value)
+                for value in packet_step_report.projected_class_cardinalities
+            ):
+                raise ValueError("TTL2 projected class mass drifted from the class cardinalities")
+            if int(packet_step_report.false_positive_mass) != (
+                int(packet_step_report.total_projected_class_mass)
+                - int(packet_step_report.recovered_dropped_audit_mass)
+            ):
+                raise ValueError("TTL2 false-positive mass drifted from projected mass minus audit mass")
+            if bool(packet_step_report.uses_row_identity_or_order_as_action_input):
+                raise ValueError("TTL2 packet consume path must stay class-level with no identity/order input")
+            if packet_step_report.full_class_consume_legal:
+                if int(packet_step_report.projected_class_count) != 1:
+                    raise ValueError("TTL2 lawful consume requires exactly one projected class packet")
+                if int(packet_step_report.total_projected_class_mass) <= 0:
+                    raise ValueError("TTL2 lawful consume requires a positive projected class mass")
+                if int(packet_step_report.total_projected_class_mass) > int(residual_cap):
+                    raise ValueError("TTL2 lawful consume cannot exceed residual cap")
+                if int(packet_step_report.missed_represented_mass) != 0:
+                    raise ValueError("TTL2 lawful consume must clear the represented audit mass on that step")
+                residual_cap -= int(packet_step_report.total_projected_class_mass)
+            else:
+                expected_missed = int(packet_step_report.recovered_dropped_audit_mass)
+                if int(packet_step_report.missed_represented_mass) != expected_missed:
+                    raise ValueError("TTL2 non-consuming packet must mark all represented audit mass as missed")
+    decision = report.terminal_decision
+    if bool(decision.uses_row_identity_or_order_as_action_input):
+        raise ValueError("TTL2 terminal decision must stay class-level with no identity/order input")
+    if decision.candidate_only is not True or decision.dyn200_earned or decision.learner_sub2_claimed:
+        raise ValueError("TTL2 precheck must stay candidate-only with no dyn200/learner claim")
+    any_legal = any(
+        packet.full_class_consume_legal
+        for future_step in report.future_step_reports
+        for packet in future_step.packet_step_reports
+    )
+    if decision.terminal_label == DEFER_UNTIL_FIT_FIRST_FIT_PLAUSIBLE_CANDIDATE_ONLY:
+        if not any_legal:
+            raise ValueError("TTL2 first-fit candidate terminal requires a lawful consume event")
+        if decision.first_fit_schedule_name is None or decision.first_fit_step is None:
+            raise ValueError("TTL2 first-fit candidate terminal must record the first-fit step")
+        if not decision.first_fit_packet_names:
+            raise ValueError("TTL2 first-fit candidate terminal must record the fitting packet names")
+    elif decision.terminal_label == DEFER_UNTIL_FIT_TTL2_NO_FIT_ON_STATE_PATH:
+        if any_legal:
+            raise ValueError("TTL2 no-fit terminal cannot coexist with a lawful consume event")
+        if not decision.ttl_boundary_evaluated:
+            raise ValueError("TTL2 no-fit terminal requires the TTL boundary to be evaluated")
+        if decision.first_fit_schedule_name is not None or decision.first_fit_step is not None:
+            raise ValueError("TTL2 no-fit terminal must not report a first-fit step")
+    elif decision.terminal_label == DEFER_UNTIL_FIT_HORIZON_MEASUREMENT_INCONCLUSIVE:
+        if decision.ttl_boundary_evaluated:
+            raise ValueError("TTL2 horizon inconclusive must only be used when the TTL boundary is unevaluated")
+    else:
+        raise ValueError("unexpected TTL2 precheck terminal label")
+    if bool(report.raw_arrays_included):
+        raise ValueError("TTL2 precheck must not include raw arrays")
+    _assert_no_tensors(report.to_dict())
+
+
 def _validate_decision_statistic_statistic_input(
     step_report: DecisionStatisticStepReport,
 ) -> None:
@@ -9413,12 +10276,18 @@ __all__ = [
     "PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_SCHEMA_VERSION",
     "PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_LABEL",
     "PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_CANDIDATE",
+    "PATH_B_DEFER_UNTIL_FIT_TTL2_PLAUSIBILITY_PRECHECK_SCHEMA_VERSION",
+    "PATH_B_DEFER_UNTIL_FIT_TTL2_PLAUSIBILITY_PRECHECK_LABEL",
+    "PATH_B_DEFER_UNTIL_FIT_TTL2_PLAUSIBILITY_PRECHECK_CANDIDATE",
     "BASELINE_SUFFICIENT_NO_CARRY_NEEDED",
     "CARRY_CANDIDATE_EARNED",
     "CARRY_SEMANTICS_CANDIDATE",
     "CARRY_SEMANTICS_UNLAWFUL_REQUIRES_IDENTITY_OR_ORDER",
     "CARRY_SEMANTICS_CAP_OVERFLOW_OR_BITS_UNBOUNDED",
     "INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT",
+    "DEFER_UNTIL_FIT_FIRST_FIT_PLAUSIBLE_CANDIDATE_ONLY",
+    "DEFER_UNTIL_FIT_TTL2_NO_FIT_ON_STATE_PATH",
+    "DEFER_UNTIL_FIT_HORIZON_MEASUREMENT_INCONCLUSIVE",
     "IMMEDIATE_RECOVERY_SEMANTICS_EXHAUSTED_ON_THIS_STATE_PATH",
     "CARRY_FAMILY_QUOTA_RELEASE",
     "CARRY_FAMILY_CLASS_UNIFORM_ACCEPT_ALL_IF_FIT",
@@ -9477,6 +10346,11 @@ __all__ = [
     "PathBDeferAllBaselineDecision",
     "PathBDeferAllBaselineParityProbeReport",
     "AggregateStateRuntimeLedgerCharge",
+    "DeferUntilFitTtl2PacketOriginReport",
+    "DeferUntilFitTtl2PacketStepReport",
+    "DeferUntilFitTtl2FutureStepReport",
+    "DeferUntilFitTtl2Decision",
+    "DeferUntilFitTtl2FitPlausibilityPrecheckReport",
     "AggregateStateLifecycleSpec",
     "AggregateStateProjectionClassReport",
     "AggregateStateRuntimeFamilyReport",
@@ -9523,6 +10397,7 @@ __all__ = [
     "run_path_b_identity_free_tie_rule_classifier",
     "run_path_b_defer_all_baseline_parity_probe",
     "run_path_b_aggregate_state_runtime_semantics_definition",
+    "run_defer_until_fit_ttl2_fit_plausibility_precheck",
     "run_real_backlog_lower_bound_diagnostic",
     "run_tie_frontier_reservation_lower_bound_diagnostic",
     "run_scale_appropriate_b_storage_comparison",
@@ -9534,6 +10409,7 @@ __all__ = [
     "validate_path_b_identity_free_tie_rule_classifier_report",
     "validate_path_b_defer_all_baseline_parity_probe_report",
     "validate_path_b_aggregate_state_runtime_semantics_report",
+    "validate_defer_until_fit_ttl2_fit_plausibility_precheck_report",
     "validate_real_backlog_lower_bound_diagnostic_report",
     "validate_tie_frontier_reservation_lower_bound_report",
     "validate_scale_appropriate_b_storage_comparison_report",

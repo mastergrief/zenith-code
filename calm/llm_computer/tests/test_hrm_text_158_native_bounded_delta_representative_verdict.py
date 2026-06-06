@@ -35,6 +35,8 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_CANDIDATE,
     PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_LABEL,
     PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_CANDIDATE,
+    PATH_B_DEFER_UNTIL_FIT_TTL2_PLAUSIBILITY_PRECHECK_LABEL,
+    PATH_B_DEFER_UNTIL_FIT_TTL2_PLAUSIBILITY_PRECHECK_CANDIDATE,
     PATH_B_IDENTITY_FREE_TIE_RULE_CLASSIFIER_CANDIDATE,
     ONLINE_ESTIMABILITY_TIE_MASK_LABEL,
     ONLINE_ESTIMABLE_TIE_MASK_CANDIDATE,
@@ -65,6 +67,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     CARRY_FAMILY_CLASS_UNIFORM_WITH_EXTRA_DEVIATION,
     CARRY_FAMILY_QUOTA_RELEASE,
     CARRY_SUBCASE_CLASS_UNIFORM_BOUNDED_EXTRA_DEVIATION,
+    DEFER_UNTIL_FIT_TTL2_NO_FIT_ON_STATE_PATH,
     INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT,
     AGGREGATE_RUNTIME_SEMANTICS_DEFINITION_PLAN,
     CAP_PRESSURE_FRONTIER_ONLY_UNDERFILL_NO_REALLOCATION,
@@ -99,6 +102,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     run_path_b_identity_free_tie_rule_classifier,
     run_path_b_defer_all_baseline_parity_probe,
     run_path_b_aggregate_state_runtime_semantics_definition,
+    run_defer_until_fit_ttl2_fit_plausibility_precheck,
     run_real_backlog_lower_bound_diagnostic,
     run_tie_frontier_reservation_lower_bound_diagnostic,
     run_scale_appropriate_b_storage_comparison,
@@ -110,6 +114,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     validate_path_b_identity_free_tie_rule_classifier_report,
     validate_path_b_defer_all_baseline_parity_probe_report,
     validate_path_b_aggregate_state_runtime_semantics_report,
+    validate_defer_until_fit_ttl2_fit_plausibility_precheck_report,
     validate_real_backlog_lower_bound_diagnostic_report,
     validate_tie_frontier_reservation_lower_bound_report,
     validate_scale_appropriate_b_storage_comparison_report,
@@ -226,6 +231,11 @@ def _path_b_defer_all_baseline_parity_probe_report():
 @lru_cache(maxsize=1)
 def _path_b_aggregate_state_runtime_semantics_report():
     return run_path_b_aggregate_state_runtime_semantics_definition()
+
+
+@lru_cache(maxsize=1)
+def _defer_until_fit_ttl2_fit_plausibility_precheck_report():
+    return run_defer_until_fit_ttl2_fit_plausibility_precheck()
 
 
 def test_bounded_backlog_policy_is_opt_in_and_charged_as_actual_stored_backlog():
@@ -1333,6 +1343,106 @@ def test_path_b_aggregate_state_runtime_semantics_definition_charges_projection_
             assert class_report.future_feature_payload["vote_value"] == 0
 
     _assert_no_tensors(payload)
+
+def test_defer_until_fit_ttl2_fit_plausibility_precheck_closes_charged_family_on_this_state_path():
+    report = _defer_until_fit_ttl2_fit_plausibility_precheck_report()
+    payload = report.to_dict()
+
+    validate_defer_until_fit_ttl2_fit_plausibility_precheck_report(report)
+    assert report.label == PATH_B_DEFER_UNTIL_FIT_TTL2_PLAUSIBILITY_PRECHECK_LABEL
+    assert report.candidate_name == (
+        PATH_B_DEFER_UNTIL_FIT_TTL2_PLAUSIBILITY_PRECHECK_CANDIDATE
+    )
+    assert report.source_baseline_label == PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_LABEL
+    assert report.source_baseline_terminal_label == CARRY_CANDIDATE_EARNED
+    assert report.source_aggregate_runtime_label == (
+        PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_LABEL
+    )
+    assert report.source_aggregate_runtime_terminal_label == (
+        INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT
+    )
+    assert report.source_defer_family_variant_name == (
+        CARRY_FAMILY_CLASS_UNIFORM_DEFER_UNTIL_FIT
+    )
+    assert report.ttl_steps_charged == 2
+    assert report.defer_family_lifecycle_spec.ttl_steps == 2
+    assert report.defer_family_ledger_charge.projection_bits == 2
+    assert report.defer_family_ledger_charge.ttl_bits == 4
+    assert report.defer_family_ledger_charge.age_bits == 4
+    assert report.defer_family_ledger_charge.active_slot_bits == 2
+
+    assert len(report.packet_origin_reports) == 2
+    assert [packet.move_direction for packet in report.packet_origin_reports] == [-1, 1]
+    for packet in report.packet_origin_reports:
+        assert packet.state_key == "proj_in"
+        assert packet.current_q_level == 0
+        assert packet.created_from_origin_schedule_name == "cap_saturated"
+        assert packet.created_from_origin_step == 3
+        assert packet.first_projection_schedule_name == "backlog_growth"
+        assert packet.first_projection_step == 4
+        assert packet.stored_debt_count == 128
+        assert packet.first_projection_class_cardinality == 384
+        assert packet.first_projection_class_count_in_bucket == 2
+        assert packet.first_projection_false_positive_mass == 256
+        assert packet.projection_bits_for_class == 1
+        assert packet.audit_represented_mass_count == 128
+
+    future_steps = list(report.future_step_reports)
+    assert [step.schedule_name for step in future_steps] == [
+        "backlog_growth_ttl2_future_1",
+        "backlog_growth_ttl2_future_2",
+    ]
+    assert [step.step for step in future_steps] == [5, 6]
+    assert [step.age_steps for step in future_steps] == [1, 2]
+    assert [step.global_cap for step in future_steps] == [256, 256]
+    assert [step.candidate_row_count for step in future_steps] == [4608, 6144]
+    assert [step.backlog_count for step in future_steps] == [4608, 6144]
+
+    for expected_mass, step in zip((768, 1152), future_steps):
+        assert len(step.packet_step_reports) == 2
+        for packet_step in step.packet_step_reports:
+            assert packet_step.residual_cap_entering_packet == 256
+            assert packet_step.projected_class_count == 1
+            assert packet_step.projected_class_cardinalities == (expected_mass,)
+            assert packet_step.total_projected_class_mass == expected_mass
+            assert packet_step.projection_bits_for_class == 1
+            assert packet_step.recovered_dropped_audit_mass == 128
+            assert packet_step.false_positive_mass == expected_mass - 128
+            assert packet_step.missed_represented_mass == 128
+            assert packet_step.full_class_consume_legal is False
+            assert packet_step.uses_row_identity_or_order_as_action_input is False
+
+    decision = report.terminal_decision
+    assert decision.terminal_label == DEFER_UNTIL_FIT_TTL2_NO_FIT_ON_STATE_PATH
+    assert decision.ttl_steps_charged == 2
+    assert decision.ttl_boundary_evaluated is True
+    assert decision.first_fit_schedule_name is None
+    assert decision.first_fit_step is None
+    assert tuple(decision.first_fit_packet_names) == ()
+    assert decision.uses_row_identity_or_order_as_action_input is False
+    assert decision.candidate_only is True
+    assert decision.dyn200_earned is False
+    assert decision.learner_sub2_claimed is False
+
+    _assert_no_tensors(payload)
+
+
+def test_defer_until_fit_ttl2_validator_rejects_identity_order_action_input_leak():
+    report = _defer_until_fit_ttl2_fit_plausibility_precheck_report()
+    bad_report = replace(
+        report,
+        allowed_action_input_dimensions=(
+            *report.allowed_action_input_dimensions,
+            "row_identity",
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="TTL2 action-input schema leaked a forbidden identity/order key",
+    ):
+        validate_defer_until_fit_ttl2_fit_plausibility_precheck_report(bad_report)
+
 
 def test_path_b_aggregate_state_runtime_validator_rejects_negative_candidate_residual():
     report = _path_b_aggregate_state_runtime_semantics_report()
