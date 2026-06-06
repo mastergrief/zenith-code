@@ -20,6 +20,7 @@ from calm.hrm_text_158.native_full_stack.accumulator_real_dynamics_verdict impor
     PRIMARY_STATE_KEYS,
     SOURCE_KIND_GENERATED_NATIVE_LOOP,
     SourceFieldCoverage,
+    VotePressureStepSpec,
     _cap_inputs_for_density_inputs,
     _density_inputs_for_step,
     _initial_states,
@@ -27,34 +28,23 @@ from calm.hrm_text_158.native_full_stack.accumulator_real_dynamics_verdict impor
     pre_register_source_bindingness,
 )
 from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
-    BOUNDED_DELTA_ACCUMULATOR_LABEL,
-    BOUNDED_DELTA_ACCUMULATOR_SCHEMA_VERSION,
-    BOUNDED_DELTA_GUARDRAIL_FAILED,
-    BOUNDED_DELTA_LEDGER_FAILED,
-    BOUNDED_DELTA_WITH_REPORT,
+    COARSE_SIGNED_CHARGE_SPARSE_FRONTIER_CANDIDATE,
+    EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE,
+    HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE,
     BoundedDeltaGuardSpec,
-    BoundedDeltaInclusiveLedger,
     BoundedDeltaMeasuredReport,
     BoundedDeltaOracleInput,
     BoundedDeltaReferenceReport,
     BoundedDeltaStorageProjection,
     _backlog_key_set,
-    _evaluate_guardrail,
-    _hash_cap_spec,
-    _hash_vote_inputs,
     _identity_sha256,
-    _p95,
-    _rank_delta,
     _run_reference_path,
-    _symmetric_fraction,
-    _tensor_sha256,
-    bounded_delta_candidate_assessment,
     bounded_delta_inclusive_ledger,
+    compare_bounded_delta_paths_to_int16_oracle,
     compare_bounded_delta_step_to_int16_oracle,
     decode_bounded_accumulator_to_i16,
     encode_budget_capped_hybrid_reference,
     project_bounded_delta_accumulator_bpw,
-    validate_bounded_delta_inclusive_ledger,
 )
 from calm.hrm_text_158.native_full_stack.global_rate_cap import (
     GlobalRateCapSpec,
@@ -84,6 +74,15 @@ DEFAULT_TENSOR_METADATA_BITS_PER_INPUT = 64
 DEFAULT_BUCKET_METADATA_BITS = 64
 DEFAULT_SCALE_METADATA_BITS = 0
 DEFAULT_GUARDRAIL_METADATA_BITS = 64
+ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC = "oracle_upper_bound_admission_diagnostic"
+ACCUMULATOR_FREE_NULL_BASELINE = "accumulator_free_null_baseline"
+CANDIDATE_ADMISSION_DIAGNOSTIC_SCHEMA_VERSION = (
+    "hrm_text_158_c1p1c_candidate_admission_diagnostic/v0"
+)
+CANDIDATE_ADMISSION_DIAGNOSTIC_LABEL = (
+    "c1p1c_candidate_admission_oracle_upper_bound_diagnostic"
+)
+COARSE_SIGNED_CHARGE_BLOCK_SIZE = 8
 
 
 def representative_engineering_guard_spec() -> BoundedDeltaGuardSpec:
@@ -268,17 +267,6 @@ def _requested_hot_budget(label: str, max_hot_budget: int) -> tuple[int, bool]:
     return min(int(label.removeprefix("hot")), int(max_hot_budget)), False
 
 
-def _classify_from_guard_and_ledger(
-    guard_passed: bool,
-    ledger: BoundedDeltaInclusiveLedger,
-) -> str:
-    if not guard_passed:
-        return BOUNDED_DELTA_GUARDRAIL_FAILED
-    if not ledger.claimable_physical_sub2:
-        return BOUNDED_DELTA_LEDGER_FAILED
-    return BOUNDED_DELTA_WITH_REPORT
-
-
 def _build_cumulative_reference_report(
     *,
     exact_path: Any,
@@ -296,147 +284,42 @@ def _build_cumulative_reference_report(
     tensor_offsets: Mapping[str, int],
     hot_by_state: Mapping[str, Sequence[int]],
 ) -> BoundedDeltaReferenceReport:
-    ledger = bounded_delta_inclusive_ledger(q_ledger_row, projection)
-    validate_bounded_delta_inclusive_ledger(ledger)
-
-    candidate_changed_count, candidate_fraction = _symmetric_fraction(
-        exact_path.candidate_ids,
-        bounded_path.candidate_ids,
+    report_inputs = tuple(
+        BoundedDeltaOracleInput(
+            state_key=item.state_key,
+            state=bounded_input_states[item.state_key],
+            vote_inputs=item.vote_inputs,
+            vote_spec=item.vote_spec,
+            hot_exact_indices=tuple(int(idx) for idx in hot_by_state.get(item.state_key, ())),
+            cold_default_value=0,
+        )
+        for item in inputs
     )
-    accepted_changed_count, accepted_fraction = _symmetric_fraction(
-        exact_path.accepted_ids,
-        bounded_path.accepted_ids,
-    )
-    deferred_changed_count, deferred_fraction = _symmetric_fraction(
-        exact_path.deferred_ids,
-        bounded_path.deferred_ids,
-    )
-    q_changed_count, q_fraction = _symmetric_fraction(
-        exact_path.q_changed_ids,
-        bounded_path.q_changed_ids,
-    )
-    exact_backlog_ids = _backlog_key_set(
-        exact_path.cap_result.deferred_backlog if exact_path.cap_result is not None else exact_backlog
-    )
-    bounded_backlog_ids = _backlog_key_set(bounded_stored_backlog)
-    backlog_changed_count, backlog_fraction = _symmetric_fraction(
-        exact_backlog_ids,
-        bounded_backlog_ids,
-    )
-    direction_keys = set(exact_path.candidate_direction_by_id) | set(
-        bounded_path.candidate_direction_by_id
-    )
-    direction_changed = sum(
-        1
-        for identity in direction_keys
-        if exact_path.candidate_direction_by_id.get(identity)
-        != bounded_path.candidate_direction_by_id.get(identity)
-    )
-    acc_errors: list[torch.Tensor] = []
-    exact_hashes: dict[str, str] = {}
-    bounded_hashes: dict[str, str] = {}
-    residual_hash_match = True
-    for state_key in PRIMARY_STATE_KEYS:
-        exact_acc = exact_path.output_acc_by_key[state_key].detach().cpu().to(torch.int32)
-        bounded_acc = bounded_path.output_acc_by_key[state_key].detach().cpu().to(torch.int32)
-        exact_hashes[state_key] = _tensor_sha256(exact_acc)
-        bounded_hashes[state_key] = _tensor_sha256(bounded_acc)
-        residual_hash_match = residual_hash_match and exact_hashes[state_key] == bounded_hashes[state_key]
-        acc_errors.append((exact_acc - bounded_acc).abs().flatten())
-    all_errors = torch.cat(acc_errors) if acc_errors else torch.empty(0, dtype=torch.int32)
-    max_abs_error = int(all_errors.max().item()) if int(all_errors.numel()) else 0
-
-    hot_ids = {
-        (state_key, int(index))
-        for state_key, indices in hot_by_state.items()
-        for index in indices
-    }
-    decision_symdiff = (
-        (exact_path.candidate_ids ^ bounded_path.candidate_ids)
-        | (exact_path.accepted_ids ^ bounded_path.accepted_ids)
-        | (exact_path.deferred_ids ^ bounded_path.deferred_ids)
-        | (exact_path.q_changed_ids ^ bounded_path.q_changed_ids)
-    )
-    same_initial_q = all(
-        _tensor_sha256(exact_input_states[key].q_levels)
-        == _tensor_sha256(bounded_input_states[key].q_levels)
-        for key in PRIMARY_STATE_KEYS
-    )
-    vote_hash = _hash_vote_inputs(inputs)
-    offsets_hash = math.fsum(float(value) for value in tensor_offsets.values())
-    measured = BoundedDeltaMeasuredReport(
-        schema_version=BOUNDED_DELTA_ACCUMULATOR_SCHEMA_VERSION,
-        label=BOUNDED_DELTA_ACCUMULATOR_LABEL,
-        candidate_name="cumulative_hot_exact_cold_default_bounded_backlog_k_policy",
-        candidate_changed_count=candidate_changed_count,
-        candidate_union_count=len(exact_path.candidate_ids | bounded_path.candidate_ids),
-        candidate_changed_fraction=candidate_fraction,
-        direction_changed_count=direction_changed,
-        accepted_changed_count=accepted_changed_count,
-        accepted_union_count=len(exact_path.accepted_ids | bounded_path.accepted_ids),
-        accepted_changed_fraction=accepted_fraction,
-        deferred_changed_count=deferred_changed_count,
-        deferred_union_count=len(exact_path.deferred_ids | bounded_path.deferred_ids),
-        deferred_changed_fraction=deferred_fraction,
-        q_changed_count=q_changed_count,
-        q_changed_union_count=len(exact_path.q_changed_ids | bounded_path.q_changed_ids),
-        q_changed_fraction=q_fraction,
-        backlog_key_changed_count=backlog_changed_count,
-        backlog_key_union_count=len(exact_backlog_ids | bounded_backlog_ids),
-        backlog_key_changed_fraction=backlog_fraction,
-        cap_frontier_rank_delta=_rank_delta(
-            exact_path.ordered_row_ids,
-            bounded_path.ordered_row_ids,
-        ),
-        hot_risk_changed_count=len(decision_symdiff & hot_ids),
-        max_abs_acc_error=max_abs_error,
-        p95_abs_acc_error=_p95(all_errors),
-        accumulator_residual_hash_match=residual_hash_match,
-        exact_accumulator_residuals_sha256=exact_hashes,
-        bounded_accumulator_residuals_sha256=bounded_hashes,
-        exact_candidate_identities_sha256=_identity_sha256(exact_path.candidate_ids),
-        bounded_candidate_identities_sha256=_identity_sha256(bounded_path.candidate_ids),
-        exact_accepted_identities_sha256=_identity_sha256(exact_path.accepted_ids),
-        bounded_accepted_identities_sha256=_identity_sha256(bounded_path.accepted_ids),
-        exact_deferred_identities_sha256=_identity_sha256(exact_path.deferred_ids),
-        bounded_deferred_identities_sha256=_identity_sha256(bounded_path.deferred_ids),
-        oracle_parity={
-            "same_initial_q": same_initial_q,
-            "same_votes_sha256": True,
-            "votes_sha256": vote_hash,
-            "same_cap_spec": True,
-            "cap_spec_sha256": _hash_cap_spec(global_cap_spec),
-            "same_deferred_backlog": False,
-            "bounded_backlog_policy_active": True,
-            "cumulative_carry_forward": True,
-            "bounded_reinitialized_from_exact": False,
-            "exact_input_deferred_backlog_count": _backlog_entry_count(exact_backlog),
-            "bounded_input_deferred_backlog_count": _backlog_entry_count(bounded_input_backlog),
-            "exact_output_deferred_backlog_count": len(exact_backlog_ids),
-            "bounded_stored_deferred_backlog_count": len(bounded_backlog_ids),
-            "same_tensor_offsets": True,
-            "tensor_offsets_checksum": str(offsets_hash),
-            "path_difference": (
-                "cumulative path differs by bounded accumulator encode_decode, "
-                "bounded-backlog encode/drop, and prior bounded q/acc/backlog carry-forward"
-            ),
-        },
-    )
-    guard_eval = _evaluate_guardrail(guard_spec, measured)
-    classification = _classify_from_guard_and_ledger(guard_eval.guard_passed, ledger)
-    return BoundedDeltaReferenceReport(
-        schema_version=BOUNDED_DELTA_ACCUMULATOR_SCHEMA_VERSION,
-        label=BOUNDED_DELTA_ACCUMULATOR_LABEL,
-        candidate_name="cumulative_hot_exact_cold_default_bounded_backlog_k_policy",
-        classification=classification,
-        ledger=ledger,
+    return compare_bounded_delta_paths_to_int16_oracle(
+        inputs=report_inputs,
+        q_ledger_row=q_ledger_row,
+        exact_path=exact_path,
+        bounded_path=bounded_path,
         storage_projection=projection,
         guard_spec=guard_spec,
-        measured_report=measured,
-        guard_passed=guard_eval.guard_passed,
-        failed_metrics=guard_eval.failed_metrics,
-        candidate_assessment=bounded_delta_candidate_assessment(),
-        raw_arrays_included=False,
+        candidate_name=HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE,
+        global_cap_spec=global_cap_spec,
+        exact_input_states=exact_input_states,
+        bounded_input_states=bounded_input_states,
+        exact_input_backlog=exact_backlog,
+        bounded_input_backlog=bounded_input_backlog,
+        bounded_stored_backlog=bounded_stored_backlog,
+        tensor_offsets=tensor_offsets,
+        bounded_backlog_policy_active=True,
+        path_difference=(
+            "cumulative path differs by bounded accumulator encode_decode, "
+            "bounded-backlog encode/drop, and prior bounded q/acc/backlog carry-forward"
+        ),
+        oracle_parity_overrides={
+            "cumulative_carry_forward": True,
+            "bounded_reinitialized_from_exact": False,
+            "tensor_offsets_checksum": str(math.fsum(float(value) for value in tensor_offsets.values())),
+        },
         non_claims=(
             "cumulative representative verdict over generated in-tree schedule only",
             "no production vote_update/global_rate_cap replacement",
@@ -446,7 +329,6 @@ def _build_cumulative_reference_report(
             "guard-bound adequacy deferred to C2",
             "compact counts/hashes only; no raw per-weight arrays",
         ),
-        next_candidate_if_failed="event_coded_crossing_residual_log",
     )
 
 
@@ -566,6 +448,138 @@ class RepresentativeDriftVerdictReport:
         }
 
 
+@dataclass(frozen=True)
+class AdmissionNullBaselineComparison:
+    candidate_beats_null: bool
+    compared_surfaces: tuple[str, ...]
+    strict_improvement_surfaces: tuple[str, ...]
+    regressed_surfaces: tuple[str, ...]
+    candidate_surface_counts: dict[str, int]
+    null_surface_counts: dict[str, int]
+    summary: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "candidate_beats_null": bool(self.candidate_beats_null),
+            "compared_surfaces": list(self.compared_surfaces),
+            "strict_improvement_surfaces": list(self.strict_improvement_surfaces),
+            "regressed_surfaces": list(self.regressed_surfaces),
+            "candidate_surface_counts": dict(self.candidate_surface_counts),
+            "null_surface_counts": dict(self.null_surface_counts),
+            "summary": self.summary,
+        }
+
+
+@dataclass(frozen=True)
+class BacklogTruncationAttribution:
+    bounded_input_truncation_count: int
+    bounded_input_truncation_identities_sha256: str
+    bounded_stored_truncation_count: int
+    bounded_stored_truncation_identities_sha256: str
+    paired_rejection_summary: str
+    summary: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "bounded_input_truncation_count": int(self.bounded_input_truncation_count),
+            "bounded_input_truncation_identities_sha256": self.bounded_input_truncation_identities_sha256,
+            "bounded_stored_truncation_count": int(self.bounded_stored_truncation_count),
+            "bounded_stored_truncation_identities_sha256": self.bounded_stored_truncation_identities_sha256,
+            "paired_rejection_summary": self.paired_rejection_summary,
+            "summary": self.summary,
+        }
+
+
+@dataclass(frozen=True)
+class CandidateAdmissionDiagnosticStepReport:
+    schedule_name: str
+    step: int
+    candidate_name: str
+    builder_label: str
+    backlog_policy_k: int | None
+    bounded_delta_report: BoundedDeltaReferenceReport
+    null_baseline_comparison: AdmissionNullBaselineComparison
+    backlog_truncation_attribution: BacklogTruncationAttribution
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schedule_name": self.schedule_name,
+            "step": int(self.step),
+            "candidate_name": self.candidate_name,
+            "builder_label": self.builder_label,
+            "backlog_policy_k": self.backlog_policy_k,
+            "bounded_delta_report": self.bounded_delta_report.to_dict(),
+            "null_baseline_comparison": self.null_baseline_comparison.to_dict(),
+            "backlog_truncation_attribution": self.backlog_truncation_attribution.to_dict(),
+        }
+
+
+@dataclass(frozen=True)
+class CandidatePromotionDecision:
+    candidate_name: str
+    earns_dyn200_consideration: bool
+    status: str
+    failed_step_names: tuple[str, ...]
+    oracle_upper_bound_only: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "candidate_name": self.candidate_name,
+            "earns_dyn200_consideration": bool(self.earns_dyn200_consideration),
+            "status": self.status,
+            "failed_step_names": list(self.failed_step_names),
+            "oracle_upper_bound_only": bool(self.oracle_upper_bound_only),
+        }
+
+
+@dataclass(frozen=True)
+class CandidateAdmissionDiagnosticRunReport:
+    candidate_name: str
+    builder_label: str
+    backlog_policy_k: int | None
+    per_step_reports: tuple[CandidateAdmissionDiagnosticStepReport, ...]
+    terminal_decision: CandidatePromotionDecision
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "candidate_name": self.candidate_name,
+            "builder_label": self.builder_label,
+            "backlog_policy_k": self.backlog_policy_k,
+            "per_step_reports": [step.to_dict() for step in self.per_step_reports],
+            "terminal_decision": self.terminal_decision.to_dict(),
+        }
+
+
+@dataclass(frozen=True)
+class CandidateAdmissionDiagnosticReport:
+    schema_version: str
+    label: str
+    source_bindingness: Any
+    field_coverage: SourceFieldCoverage
+    q_ledger_regime_name: str
+    guard_spec: BoundedDeltaGuardSpec
+    null_baseline_label: str
+    pre_registered_schedule: tuple[VotePressureStepSpec, ...]
+    candidate_runs: tuple[CandidateAdmissionDiagnosticRunReport, ...]
+    raw_arrays_included: bool
+    non_claims: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "label": self.label,
+            "source_bindingness": self.source_bindingness.to_dict(),
+            "field_coverage": self.field_coverage.to_dict(),
+            "q_ledger_regime_name": self.q_ledger_regime_name,
+            "guard_spec": self.guard_spec.to_dict(),
+            "null_baseline_label": self.null_baseline_label,
+            "pre_registered_schedule": [step.to_dict() for step in self.pre_registered_schedule],
+            "candidate_runs": [run.to_dict() for run in self.candidate_runs],
+            "raw_arrays_included": bool(self.raw_arrays_included),
+            "non_claims": list(self.non_claims),
+        }
+
+
 def _step_report_from_reference(
     *,
     schedule_name: str,
@@ -602,6 +616,279 @@ def _step_report_from_reference(
         guard_passed=bool(report.guard_passed),
         failed_metrics=tuple(report.failed_metrics),
         bounded_delta_report=report,
+    )
+
+
+def _copy_state_map(
+    states: Mapping[str, VoteUpdateState],
+) -> dict[str, VoteUpdateState]:
+    return {
+        state_key: VoteUpdateState(
+            q_levels=state.q_levels.detach().clone().contiguous(),
+            accumulators=state.accumulators.detach().clone().contiguous(),
+        )
+        for state_key, state in states.items()
+    }
+
+
+def _zero_accumulator_state_map(
+    states: Mapping[str, VoteUpdateState],
+) -> dict[str, VoteUpdateState]:
+    return {
+        state_key: VoteUpdateState(
+            q_levels=state.q_levels.detach().clone().contiguous(),
+            accumulators=torch.zeros_like(state.accumulators, dtype=torch.int16),
+        )
+        for state_key, state in states.items()
+    }
+
+
+def _ids_by_state(
+    identities: Sequence[tuple[str, int]],
+) -> dict[str, tuple[int, ...]]:
+    out: dict[str, list[int]] = {key: [] for key in PRIMARY_STATE_KEYS}
+    for state_key, flat_index in sorted(identities):
+        out.setdefault(str(state_key), []).append(int(flat_index))
+    return {state_key: tuple(indices) for state_key, indices in out.items()}
+
+
+def _candidate_hot_identities(
+    *,
+    candidate_name: str,
+    exact_path: Any,
+    carried_backlog: Mapping[str, Mapping[int, Mapping[str, int]]],
+) -> set[tuple[str, int]]:
+    carried_ids = _backlog_key_set(carried_backlog)
+    if candidate_name == HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE:
+        return exact_path.candidate_ids | carried_ids
+    if candidate_name == EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE:
+        return exact_path.fired_ids | carried_ids
+    if candidate_name == COARSE_SIGNED_CHARGE_SPARSE_FRONTIER_CANDIDATE:
+        return exact_path.candidate_ids | exact_path.accepted_ids | exact_path.deferred_ids | carried_ids
+    raise ValueError(f"unsupported candidate_name {candidate_name!r}")
+
+
+def _hot_exact_candidate_inputs_and_states(
+    *,
+    inputs: Sequence[BoundedDeltaOracleInput],
+    source_states: Mapping[str, VoteUpdateState],
+    hot_by_state: Mapping[str, Sequence[int]],
+) -> tuple[tuple[BoundedDeltaOracleInput, ...], dict[str, VoteUpdateState]]:
+    candidate_inputs: list[BoundedDeltaOracleInput] = []
+    bounded_states: dict[str, VoteUpdateState] = {}
+    for item in inputs:
+        state = source_states[item.state_key]
+        hot = tuple(int(idx) for idx in hot_by_state.get(item.state_key, ()))
+        encoded = encode_budget_capped_hybrid_reference(
+            state,
+            hot_exact_indices=hot,
+            cold_default_value=0,
+        )
+        bounded_states[item.state_key] = VoteUpdateState(
+            q_levels=state.q_levels.detach().clone().contiguous(),
+            accumulators=decode_bounded_accumulator_to_i16(encoded),
+        )
+        candidate_inputs.append(
+            BoundedDeltaOracleInput(
+                state_key=item.state_key,
+                state=state,
+                vote_inputs=item.vote_inputs,
+                vote_spec=item.vote_spec,
+                hot_exact_indices=hot,
+                cold_default_value=0,
+            )
+        )
+    return tuple(candidate_inputs), bounded_states
+
+
+def _coarse_block_charge(block: torch.Tensor, *, threshold_abs: int) -> int:
+    mean_value = float(block.detach().to(torch.float32).mean().item())
+    charge = max(1, int(threshold_abs) - 1)
+    if mean_value > 0.5:
+        return charge
+    if mean_value < -0.5:
+        return -charge
+    return 0
+
+
+def _coarse_signed_candidate_inputs_and_states(
+    *,
+    inputs: Sequence[BoundedDeltaOracleInput],
+    source_states: Mapping[str, VoteUpdateState],
+    hot_by_state: Mapping[str, Sequence[int]],
+) -> tuple[tuple[BoundedDeltaOracleInput, ...], dict[str, VoteUpdateState], float]:
+    candidate_inputs: list[BoundedDeltaOracleInput] = []
+    bounded_states: dict[str, VoteUpdateState] = {}
+    total_dense_bits = 0
+    total_eligible = 0
+    for item in inputs:
+        state = source_states[item.state_key]
+        hot = tuple(int(idx) for idx in hot_by_state.get(item.state_key, ()))
+        flat = state.accumulators.detach().cpu().to(torch.int16).flatten()
+        approx = torch.zeros_like(flat)
+        for block_start in range(0, int(flat.numel()), COARSE_SIGNED_CHARGE_BLOCK_SIZE):
+            block = flat[block_start : block_start + COARSE_SIGNED_CHARGE_BLOCK_SIZE]
+            block_charge = _coarse_block_charge(
+                block,
+                threshold_abs=int(item.vote_spec.threshold_abs),
+            )
+            approx[block_start : block_start + int(block.numel())] = int(block_charge)
+        for index in hot:
+            approx[int(index)] = flat[int(index)]
+        bounded_states[item.state_key] = VoteUpdateState(
+            q_levels=state.q_levels.detach().clone().contiguous(),
+            accumulators=approx.view_as(state.accumulators).contiguous(),
+        )
+        candidate_inputs.append(
+            BoundedDeltaOracleInput(
+                state_key=item.state_key,
+                state=state,
+                vote_inputs=item.vote_inputs,
+                vote_spec=item.vote_spec,
+                hot_exact_indices=hot,
+                cold_default_value=0,
+            )
+        )
+        total_dense_bits += int(math.ceil(float(flat.numel()) / COARSE_SIGNED_CHARGE_BLOCK_SIZE) * 2)
+        total_eligible += int(flat.numel())
+    dense_bpw = float(total_dense_bits) / float(total_eligible) if total_eligible else 0.0
+    return tuple(candidate_inputs), bounded_states, dense_bpw
+
+
+def _candidate_inputs_and_states(
+    *,
+    candidate_name: str,
+    inputs: Sequence[BoundedDeltaOracleInput],
+    source_states: Mapping[str, VoteUpdateState],
+    carried_backlog: Mapping[str, Mapping[int, Mapping[str, int]]],
+    exact_path: Any,
+) -> tuple[tuple[BoundedDeltaOracleInput, ...], dict[str, VoteUpdateState], int, float]:
+    hot_by_state = _ids_by_state(
+        _candidate_hot_identities(
+            candidate_name=candidate_name,
+            exact_path=exact_path,
+            carried_backlog=carried_backlog,
+        )
+    )
+    if candidate_name == COARSE_SIGNED_CHARGE_SPARSE_FRONTIER_CANDIDATE:
+        candidate_inputs, bounded_states, dense_bpw = _coarse_signed_candidate_inputs_and_states(
+            inputs=inputs,
+            source_states=source_states,
+            hot_by_state=hot_by_state,
+        )
+        return candidate_inputs, bounded_states, 0, dense_bpw
+    candidate_inputs, bounded_states = _hot_exact_candidate_inputs_and_states(
+        inputs=inputs,
+        source_states=source_states,
+        hot_by_state=hot_by_state,
+    )
+    event_delta_count = (
+        len(exact_path.fired_ids)
+        if candidate_name == EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE
+        else 0
+    )
+    return candidate_inputs, bounded_states, event_delta_count, 0.0
+
+
+def _continuity_surface_counts(measured: BoundedDeltaMeasuredReport) -> dict[str, int]:
+    return {
+        "accepted_rows": int(measured.accepted_changed_count),
+        "deferred_rows": int(measured.deferred_changed_count),
+        "final_q_changes": int(measured.q_changed_count),
+        "backlog_carry": int(measured.backlog_key_changed_count),
+    }
+
+
+def _compare_against_null(
+    *,
+    candidate_report: BoundedDeltaReferenceReport,
+    null_report: BoundedDeltaReferenceReport,
+) -> AdmissionNullBaselineComparison:
+    candidate_counts = _continuity_surface_counts(candidate_report.measured_report)
+    null_counts = _continuity_surface_counts(null_report.measured_report)
+    compared_surfaces = tuple(candidate_counts)
+    strict_improvement = tuple(
+        name for name in compared_surfaces if candidate_counts[name] < null_counts[name]
+    )
+    regressed = tuple(
+        name for name in compared_surfaces if candidate_counts[name] > null_counts[name]
+    )
+    beats_null = not regressed and bool(strict_improvement)
+    summary = (
+        "beats_accumulator_free_null_on_continuity"
+        if beats_null
+        else "does_not_beat_accumulator_free_null_on_continuity"
+    )
+    return AdmissionNullBaselineComparison(
+        candidate_beats_null=beats_null,
+        compared_surfaces=compared_surfaces,
+        strict_improvement_surfaces=strict_improvement,
+        regressed_surfaces=regressed,
+        candidate_surface_counts=candidate_counts,
+        null_surface_counts=null_counts,
+        summary=summary,
+    )
+
+
+def _backlog_truncation_report(
+    *,
+    report: BoundedDeltaReferenceReport,
+    exact_input_backlog: Mapping[str, Mapping[int, Mapping[str, int]]],
+    bounded_input_backlog: Mapping[str, Mapping[int, Mapping[str, int]]],
+    exact_output_backlog: Mapping[str, Mapping[int, Mapping[str, int]]],
+    bounded_stored_backlog: Mapping[str, Mapping[int, Mapping[str, int]]],
+) -> BacklogTruncationAttribution:
+    input_truncated = _backlog_key_set(exact_input_backlog) - _backlog_key_set(bounded_input_backlog)
+    stored_truncated = _backlog_key_set(exact_output_backlog) - _backlog_key_set(bounded_stored_backlog)
+    if input_truncated or stored_truncated:
+        summary = (
+            "backlog_truncation_continuity_miss"
+            if int(report.measured_report.backlog_key_changed_count) > 0
+            else "backlog_truncation_present_without_backlog_key_miss"
+        )
+    else:
+        summary = "no_backlog_truncation"
+    return BacklogTruncationAttribution(
+        bounded_input_truncation_count=len(input_truncated),
+        bounded_input_truncation_identities_sha256=_identity_sha256(input_truncated),
+        bounded_stored_truncation_count=len(stored_truncated),
+        bounded_stored_truncation_identities_sha256=_identity_sha256(stored_truncated),
+        paired_rejection_summary=report.rejection_telemetry.summary,
+        summary=summary,
+    )
+
+
+def _oracle_upper_bound_non_claims(*, candidate_name: str) -> tuple[str, ...]:
+    return (
+        f"{ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC} only; exact-path oracle identities guide {candidate_name}",
+        "PASS is an oracle-informed upper bound, not a deployable online codec",
+        "promotion means earns dyn200 consideration / next implementation design only",
+        "no live codec exists from this diagnostic alone",
+        "no production vote_update/global_rate_cap replacement",
+        "no GPU lane",
+        "no trainer/live-run/checkpoint/creditdir mutation",
+        "compact counts/hashes only; no raw per-weight arrays",
+    )
+
+
+def _candidate_path_difference(
+    *,
+    candidate_name: str,
+    backlog_policy_k: int | None,
+) -> str:
+    if candidate_name == HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE:
+        return (
+            "oracle upper bound candidate path differs by exact-path-guided hot frontier/backlog "
+            "selection carried through the bounded accumulator state"
+        )
+    if candidate_name == EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE:
+        return (
+            "oracle upper bound candidate path differs by fired-row event retention plus "
+            f"bounded backlog truncate_k{int(backlog_policy_k or 0)} carry-forward"
+        )
+    return (
+        "oracle upper bound candidate path differs by coarse signed cold-field approximation plus "
+        f"sparse exact frontier overrides and bounded backlog truncate_k{int(backlog_policy_k or 0)} carry-forward"
     )
 
 
@@ -844,6 +1131,279 @@ def run_representative_bounded_delta_drift_verdict() -> RepresentativeDriftVerdi
     )
 
 
+def run_candidate_admission_diagnostic() -> CandidateAdmissionDiagnosticReport:
+    """Run the CPU-only A/B/C oracle-upper-bound candidate admission diagnostic."""
+
+    q_ledger = _prior_large_q_ledger()
+    guard_spec = representative_engineering_guard_spec()
+    bindingness = pre_register_source_bindingness(
+        source_kind=SOURCE_KIND_GENERATED_NATIVE_LOOP,
+        coverage=SourceFieldCoverage.full_generated_native_loop(),
+    )
+    exact_states = _initial_states()
+    exact_backlog: dict[str, dict[int, dict[str, int]]] = {}
+    null_states = _zero_accumulator_state_map(_initial_states())
+    candidate_runtime: dict[str, dict[str, Any]] = {
+        HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE: {
+            "states": _copy_state_map(_initial_states()),
+            "backlog": {},
+            "backlog_policy_k": None,
+            "steps": [],
+        },
+        EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE: {
+            "states": _copy_state_map(_initial_states()),
+            "backlog": {},
+            "backlog_policy_k": 32,
+            "steps": [],
+        },
+        COARSE_SIGNED_CHARGE_SPARSE_FRONTIER_CANDIDATE: {
+            "states": _copy_state_map(_initial_states()),
+            "backlog": {},
+            "backlog_policy_k": 32,
+            "steps": [],
+        },
+    }
+    eligible = int(q_ledger.eligible_weight_count)
+
+    for schedule_step in PRE_REGISTERED_VOTE_PRESSURE_SCHEDULE:
+        inputs, offsets = _make_step_inputs(exact_states, schedule_step)
+        cap_spec = GlobalRateCapSpec(cap=int(schedule_step.cap), step=int(schedule_step.step))
+        exact_path = _run_reference_path(
+            inputs,
+            states_by_key=exact_states,
+            global_cap_spec=cap_spec,
+            deferred_backlog=exact_backlog,
+            tensor_offsets=offsets,
+        )
+        if exact_path.cap_result is None:
+            raise ValueError("candidate admission diagnostic requires global cap results")
+        exact_output_backlog = _copy_backlog(exact_path.cap_result.deferred_backlog)
+
+        null_inputs = tuple(
+            BoundedDeltaOracleInput(
+                state_key=item.state_key,
+                state=null_states[item.state_key],
+                vote_inputs=item.vote_inputs,
+                vote_spec=item.vote_spec,
+                hot_exact_indices=(),
+                cold_default_value=0,
+            )
+            for item in inputs
+        )
+        null_path = _run_reference_path(
+            null_inputs,
+            states_by_key=null_states,
+            global_cap_spec=cap_spec,
+            deferred_backlog={},
+            tensor_offsets=offsets,
+        )
+        if null_path.cap_result is None:
+            raise ValueError("null baseline diagnostic requires global cap results")
+        null_report = compare_bounded_delta_paths_to_int16_oracle(
+            inputs=null_inputs,
+            q_ledger_row=q_ledger,
+            exact_path=exact_path,
+            bounded_path=null_path,
+            storage_projection=project_bounded_delta_accumulator_bpw(
+                eligible_weight_count=eligible,
+                hot_exact_row_count=0,
+                backlog_entry_count=0,
+                tensor_metadata_bits=len(PRIMARY_STATE_KEYS) * DEFAULT_TENSOR_METADATA_BITS_PER_INPUT,
+                bucket_metadata_bits=DEFAULT_BUCKET_METADATA_BITS,
+                scale_metadata_bits=DEFAULT_SCALE_METADATA_BITS,
+                guardrail_metadata_bits=DEFAULT_GUARDRAIL_METADATA_BITS,
+            ),
+            guard_spec=guard_spec,
+            candidate_name=HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE,
+            global_cap_spec=cap_spec,
+            exact_input_states=exact_states,
+            bounded_input_states=null_states,
+            exact_input_backlog=exact_backlog,
+            bounded_input_backlog={},
+            bounded_stored_backlog={},
+            tensor_offsets=offsets,
+            bounded_backlog_policy_active=True,
+            path_difference=(
+                "accumulator-free null baseline removes accumulator and backlog carry "
+                "from the bounded path while preserving the same q/vote/cap pipeline"
+            ),
+            oracle_parity_overrides={
+                "cumulative_carry_forward": True,
+                "bounded_reinitialized_from_exact": False,
+                "baseline_label": ACCUMULATOR_FREE_NULL_BASELINE,
+            },
+            non_claims=(
+                "accumulator-free null baseline is a continuity anchor only",
+                "no production vote_update/global_rate_cap replacement",
+                "no GPU lane",
+                "no trainer/live-run/checkpoint/creditdir mutation",
+                "compact counts/hashes only; no raw per-weight arrays",
+            ),
+        )
+        null_states = _zero_accumulator_state_map(_states_from_path(null_path))
+
+        for candidate_name in (
+            HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE,
+            EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE,
+            COARSE_SIGNED_CHARGE_SPARSE_FRONTIER_CANDIDATE,
+        ):
+            runtime = candidate_runtime[candidate_name]
+            candidate_input_backlog = _copy_backlog(runtime["backlog"])
+            candidate_inputs, bounded_input_states, event_delta_count, dense_cold_bpw = (
+                _candidate_inputs_and_states(
+                    candidate_name=candidate_name,
+                    inputs=inputs,
+                    source_states=runtime["states"],
+                    carried_backlog=candidate_input_backlog,
+                    exact_path=exact_path,
+                )
+            )
+            bounded_path = _run_reference_path(
+                candidate_inputs,
+                states_by_key=bounded_input_states,
+                global_cap_spec=cap_spec,
+                deferred_backlog=candidate_input_backlog,
+                tensor_offsets=offsets,
+            )
+            if bounded_path.cap_result is None:
+                raise ValueError("candidate admission diagnostic requires bounded cap results")
+            backlog_policy_k = runtime["backlog_policy_k"]
+            if backlog_policy_k is None:
+                bounded_stored_backlog = _copy_backlog(bounded_path.cap_result.deferred_backlog)
+            else:
+                bounded_stored_backlog = _select_stored_backlog(
+                    bounded_path.cap_result.deferred_backlog,
+                    priority_identities=exact_path.ordered_row_ids,
+                    max_entries=int(backlog_policy_k),
+                )
+            hot_row_count = _hot_count(
+                {item.state_key: item.hot_exact_indices for item in candidate_inputs}
+            )
+            bounded_backlog_policy_active = (
+                _backlog_key_set(exact_backlog) != _backlog_key_set(candidate_input_backlog)
+                or _backlog_key_set(exact_output_backlog) != _backlog_key_set(bounded_stored_backlog)
+            )
+            candidate_report = compare_bounded_delta_paths_to_int16_oracle(
+                inputs=candidate_inputs,
+                q_ledger_row=q_ledger,
+                exact_path=exact_path,
+                bounded_path=bounded_path,
+                storage_projection=project_bounded_delta_accumulator_bpw(
+                    eligible_weight_count=eligible,
+                    hot_exact_row_count=hot_row_count,
+                    event_delta_count=event_delta_count,
+                    backlog_entry_count=_backlog_entry_count(bounded_stored_backlog),
+                    tensor_metadata_bits=len(PRIMARY_STATE_KEYS) * DEFAULT_TENSOR_METADATA_BITS_PER_INPUT,
+                    bucket_metadata_bits=DEFAULT_BUCKET_METADATA_BITS,
+                    scale_metadata_bits=DEFAULT_SCALE_METADATA_BITS,
+                    guardrail_metadata_bits=DEFAULT_GUARDRAIL_METADATA_BITS,
+                    dense_cold_bits_per_weight=dense_cold_bpw,
+                ),
+                guard_spec=guard_spec,
+                candidate_name=candidate_name,
+                global_cap_spec=cap_spec,
+                exact_input_states=exact_states,
+                bounded_input_states=bounded_input_states,
+                exact_input_backlog=exact_backlog,
+                bounded_input_backlog=candidate_input_backlog,
+                bounded_stored_backlog=bounded_stored_backlog,
+                tensor_offsets=offsets,
+                bounded_backlog_policy_active=bounded_backlog_policy_active,
+                path_difference=_candidate_path_difference(
+                    candidate_name=candidate_name,
+                    backlog_policy_k=backlog_policy_k,
+                ),
+                oracle_parity_overrides={
+                    "cumulative_carry_forward": True,
+                    "bounded_reinitialized_from_exact": False,
+                    "builder_label": ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC,
+                },
+                non_claims=_oracle_upper_bound_non_claims(candidate_name=candidate_name),
+            )
+            runtime["steps"].append(
+                CandidateAdmissionDiagnosticStepReport(
+                    schedule_name=schedule_step.name,
+                    step=int(schedule_step.step),
+                    candidate_name=candidate_name,
+                    builder_label=ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC,
+                    backlog_policy_k=backlog_policy_k,
+                    bounded_delta_report=candidate_report,
+                    null_baseline_comparison=_compare_against_null(
+                        candidate_report=candidate_report,
+                        null_report=null_report,
+                    ),
+                    backlog_truncation_attribution=_backlog_truncation_report(
+                        report=candidate_report,
+                        exact_input_backlog=exact_backlog,
+                        bounded_input_backlog=candidate_input_backlog,
+                        exact_output_backlog=exact_output_backlog,
+                        bounded_stored_backlog=bounded_stored_backlog,
+                    ),
+                )
+            )
+            runtime["states"] = _states_from_path(bounded_path)
+            runtime["backlog"] = _copy_backlog(bounded_stored_backlog)
+
+        exact_states = _states_from_path(exact_path)
+        exact_backlog = exact_output_backlog
+
+    candidate_runs: list[CandidateAdmissionDiagnosticRunReport] = []
+    for candidate_name in (
+        HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE,
+        EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE,
+        COARSE_SIGNED_CHARGE_SPARSE_FRONTIER_CANDIDATE,
+    ):
+        runtime = candidate_runtime[candidate_name]
+        step_reports = tuple(runtime["steps"])
+        failed_step_names = tuple(
+            step.schedule_name
+            for step in step_reports
+            if not (
+                step.bounded_delta_report.claimable_physical_sub2_with_guardrail
+                and step.null_baseline_comparison.candidate_beats_null
+            )
+        )
+        candidate_runs.append(
+            CandidateAdmissionDiagnosticRunReport(
+                candidate_name=candidate_name,
+                builder_label=ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC,
+                backlog_policy_k=runtime["backlog_policy_k"],
+                per_step_reports=step_reports,
+                terminal_decision=CandidatePromotionDecision(
+                    candidate_name=candidate_name,
+                    earns_dyn200_consideration=not failed_step_names,
+                    status=(
+                        "earns_dyn200_consideration"
+                        if not failed_step_names
+                        else "classified_null_with_rejection_telemetry"
+                    ),
+                    failed_step_names=failed_step_names,
+                    oracle_upper_bound_only=True,
+                ),
+            )
+        )
+
+    return CandidateAdmissionDiagnosticReport(
+        schema_version=CANDIDATE_ADMISSION_DIAGNOSTIC_SCHEMA_VERSION,
+        label=CANDIDATE_ADMISSION_DIAGNOSTIC_LABEL,
+        source_bindingness=bindingness,
+        field_coverage=SourceFieldCoverage.full_generated_native_loop(),
+        q_ledger_regime_name=q_ledger.regime_name,
+        guard_spec=guard_spec,
+        null_baseline_label=ACCUMULATOR_FREE_NULL_BASELINE,
+        pre_registered_schedule=PRE_REGISTERED_VOTE_PRESSURE_SCHEDULE,
+        candidate_runs=tuple(candidate_runs),
+        raw_arrays_included=False,
+        non_claims=(
+            "CPU-only oracle-upper-bound admission diagnostic",
+            "PASS proves an upper bound, not a deployable online codec",
+            "dyn200 remains a later gate outside this slice",
+            "no GPU lane",
+            "compact counts/hashes only; no raw per-weight arrays",
+        ),
+    )
+
+
 def _assert_no_tensors(value: Any) -> None:
     if isinstance(value, torch.Tensor):
         raise ValueError("representative verdict payload must not include raw tensors")
@@ -887,18 +1447,55 @@ def validate_representative_bounded_delta_drift_verdict_report(
     _assert_no_tensors(report.to_dict())
 
 
+def validate_candidate_admission_diagnostic_report(
+    report: CandidateAdmissionDiagnosticReport,
+) -> None:
+    if report.schema_version != CANDIDATE_ADMISSION_DIAGNOSTIC_SCHEMA_VERSION:
+        raise ValueError("unexpected candidate admission diagnostic schema version")
+    if report.null_baseline_label != ACCUMULATOR_FREE_NULL_BASELINE:
+        raise ValueError("candidate admission diagnostic must name the accumulator-free null baseline")
+    if len(report.pre_registered_schedule) != len(PRE_REGISTERED_VOTE_PRESSURE_SCHEDULE):
+        raise ValueError("candidate admission diagnostic must cover the full pre-registered schedule")
+    if len(report.candidate_runs) != 3:
+        raise ValueError("candidate admission diagnostic must report the three preregistered candidates")
+    for run in report.candidate_runs:
+        if run.builder_label != ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC:
+            raise ValueError("candidate admission diagnostic must stay oracle-upper-bound labeled")
+        if len(run.per_step_reports) != len(PRE_REGISTERED_VOTE_PRESSURE_SCHEDULE):
+            raise ValueError("each candidate run must cover the full pre-registered schedule")
+        for step in run.per_step_reports:
+            if step.builder_label != ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC:
+                raise ValueError("step report builder label drifted from the preregistered oracle-upper-bound tag")
+            parity = step.bounded_delta_report.measured_report.oracle_parity
+            if parity.get("builder_label") != ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC:
+                raise ValueError("oracle parity must record the oracle-upper-bound builder label")
+            if not bool(parity.get("cumulative_carry_forward")):
+                raise ValueError("candidate admission diagnostic must record cumulative carry-forward")
+    _assert_no_tensors(report.to_dict())
+
+
 __all__ = [
+    "ACCUMULATOR_FREE_NULL_BASELINE",
     "BACKLOG_K_POLICIES",
+    "CANDIDATE_ADMISSION_DIAGNOSTIC_LABEL",
+    "CANDIDATE_ADMISSION_DIAGNOSTIC_SCHEMA_VERSION",
     "CUMULATIVE_SCHEDULE_MODE",
     "HOT_BUDGET_POINT_LABELS",
     "ONE_STEP_LOCAL_DIAGNOSTIC_MODE",
+    "ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC",
     "PRIMARY_CURVE_LABEL",
     "REPRESENTATIVE_VERDICT_LABEL",
     "REPRESENTATIVE_VERDICT_SCHEMA_VERSION",
+    "CandidateAdmissionDiagnosticReport",
+    "CandidateAdmissionDiagnosticRunReport",
+    "CandidateAdmissionDiagnosticStepReport",
+    "CandidatePromotionDecision",
     "RepresentativeCurveRunReport",
     "RepresentativeDriftVerdictReport",
     "RepresentativeStepReport",
     "representative_engineering_guard_spec",
+    "run_candidate_admission_diagnostic",
     "run_representative_bounded_delta_drift_verdict",
+    "validate_candidate_admission_diagnostic_report",
     "validate_representative_bounded_delta_drift_verdict_report",
 ]

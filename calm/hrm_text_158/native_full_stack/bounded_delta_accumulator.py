@@ -1446,6 +1446,258 @@ def _default_next_candidate_if_failed(candidate_name: str) -> str:
     return "none_declared_stop_after_coarse_candidate"
 
 
+def _build_measured_report_from_paths(
+    *,
+    inputs: Sequence[BoundedDeltaOracleInput],
+    candidate_name: str,
+    exact_path: _PathResult,
+    bounded_path: _PathResult,
+    global_cap_spec: GlobalRateCapSpec | None,
+    exact_input_backlog: Mapping[str, Mapping[int, Mapping[str, int]]] | None,
+    bounded_input_backlog: Mapping[str, Mapping[int, Mapping[str, int]]] | None,
+    bounded_stored_backlog: Mapping[str, Mapping[int, Mapping[str, int]]] | None,
+    tensor_offsets: Mapping[str, int] | None,
+    bounded_backlog_policy_active: bool,
+    path_difference: str,
+    exact_input_states: Mapping[str, VoteUpdateState] | None = None,
+    bounded_input_states: Mapping[str, VoteUpdateState] | None = None,
+    oracle_parity_overrides: Mapping[str, bool | str | int] | None = None,
+) -> BoundedDeltaMeasuredReport:
+    exact_backlog = exact_input_backlog or {}
+    bounded_input = exact_backlog if bounded_input_backlog is None else bounded_input_backlog
+    bounded_stored = (
+        bounded_stored_backlog
+        if bounded_stored_backlog is not None
+        else bounded_path.cap_result.deferred_backlog
+        if bounded_path.cap_result is not None
+        else bounded_input
+    )
+    exact_backlog_ids = _backlog_key_set(
+        exact_path.cap_result.deferred_backlog if exact_path.cap_result is not None else exact_backlog
+    )
+    bounded_backlog_ids = _backlog_key_set(bounded_stored)
+    candidate_changed_count, candidate_fraction = _symmetric_fraction(
+        exact_path.candidate_ids,
+        bounded_path.candidate_ids,
+    )
+    accepted_changed_count, accepted_fraction = _symmetric_fraction(
+        exact_path.accepted_ids,
+        bounded_path.accepted_ids,
+    )
+    deferred_changed_count, deferred_fraction = _symmetric_fraction(
+        exact_path.deferred_ids,
+        bounded_path.deferred_ids,
+    )
+    q_changed_count, q_fraction = _symmetric_fraction(
+        exact_path.q_changed_ids,
+        bounded_path.q_changed_ids,
+    )
+    backlog_changed_count, backlog_fraction = _symmetric_fraction(
+        exact_backlog_ids,
+        bounded_backlog_ids,
+    )
+
+    exact_direction = exact_path.candidate_direction_by_id
+    bounded_direction = bounded_path.candidate_direction_by_id
+    direction_keys = set(exact_direction) | set(bounded_direction)
+    direction_changed = sum(
+        1 for key in direction_keys if exact_direction.get(key) != bounded_direction.get(key)
+    )
+    rank_delta = _rank_delta(exact_path.ordered_row_ids, bounded_path.ordered_row_ids)
+
+    exact_hashes: dict[str, str] = {}
+    bounded_hashes: dict[str, str] = {}
+    acc_errors: list[torch.Tensor] = []
+    residual_hash_match = True
+    residual_error_ids: set[tuple[str, int]] = set()
+    for item in inputs:
+        exact_acc = exact_path.output_acc_by_key[item.state_key].detach().cpu().to(torch.int32)
+        bounded_acc = bounded_path.output_acc_by_key[item.state_key].detach().cpu().to(torch.int32)
+        exact_hash = _tensor_sha256(exact_acc)
+        bounded_hash = _tensor_sha256(bounded_acc)
+        exact_hashes[item.state_key] = exact_hash
+        bounded_hashes[item.state_key] = bounded_hash
+        residual_hash_match = residual_hash_match and exact_hash == bounded_hash
+        acc_errors.append((exact_acc - bounded_acc).abs().flatten())
+        changed = torch.nonzero(
+            exact_acc.flatten() != bounded_acc.flatten(),
+            as_tuple=False,
+        ).flatten()
+        residual_error_ids |= _ids_from_indices(item.state_key, changed)
+    all_errors = torch.cat(acc_errors) if acc_errors else torch.empty(0, dtype=torch.int32)
+    max_abs_error = int(all_errors.max().item()) if int(all_errors.numel()) else 0
+
+    hot_ids = _hot_identity_set(inputs)
+    decision_symdiff = (
+        (exact_path.candidate_ids ^ bounded_path.candidate_ids)
+        | (exact_path.accepted_ids ^ bounded_path.accepted_ids)
+        | (exact_path.deferred_ids ^ bounded_path.deferred_ids)
+        | (exact_path.q_changed_ids ^ bounded_path.q_changed_ids)
+    )
+    hot_risk_changed = len(decision_symdiff & hot_ids)
+    fired_or_accepted_ids = exact_path.fired_ids | bounded_path.fired_ids
+    fired_or_accepted_residual_changed = residual_error_ids & fired_or_accepted_ids
+    hot_residual_changed = residual_error_ids & hot_ids
+
+    same_initial_q = True
+    if exact_input_states is not None and bounded_input_states is not None:
+        same_initial_q = all(
+            _tensor_sha256(exact_input_states[state_key].q_levels)
+            == _tensor_sha256(bounded_input_states[state_key].q_levels)
+            for state_key in exact_input_states
+        )
+    vote_hash = _hash_vote_inputs(inputs)
+    cap_hash = _hash_cap_spec(global_cap_spec)
+    offsets_hash = hashlib.sha256(str(sorted((tensor_offsets or {}).items())).encode("utf-8")).hexdigest()
+    oracle_parity: dict[str, bool | str | int] = {
+        "same_initial_q": same_initial_q,
+        "same_votes_sha256": True,
+        "votes_sha256": vote_hash,
+        "same_cap_spec": True,
+        "cap_spec_sha256": cap_hash,
+        "same_deferred_backlog": not bounded_backlog_policy_active,
+        "bounded_backlog_policy_active": bounded_backlog_policy_active,
+        "exact_input_deferred_backlog_count": len(_backlog_key_set(exact_backlog)),
+        "bounded_input_deferred_backlog_count": len(_backlog_key_set(bounded_input)),
+        "exact_output_deferred_backlog_count": len(exact_backlog_ids),
+        "bounded_stored_deferred_backlog_count": len(bounded_backlog_ids),
+        "deferred_backlog_keys_sha256": _backlog_keys_sha256(exact_backlog),
+        "exact_input_deferred_backlog_keys_sha256": _backlog_keys_sha256(exact_backlog),
+        "bounded_input_deferred_backlog_keys_sha256": _backlog_keys_sha256(bounded_input),
+        "exact_output_deferred_backlog_keys_sha256": _identity_sha256(exact_backlog_ids),
+        "bounded_stored_deferred_backlog_keys_sha256": _identity_sha256(bounded_backlog_ids),
+        "same_tensor_offsets": True,
+        "tensor_offsets_sha256": offsets_hash,
+        "path_difference": path_difference,
+    }
+    if oracle_parity_overrides:
+        oracle_parity.update(dict(oracle_parity_overrides))
+    return BoundedDeltaMeasuredReport(
+        schema_version=BOUNDED_DELTA_ACCUMULATOR_SCHEMA_VERSION,
+        label=BOUNDED_DELTA_ACCUMULATOR_LABEL,
+        candidate_name=candidate_name,
+        candidate_changed_count=candidate_changed_count,
+        candidate_union_count=len(exact_path.candidate_ids | bounded_path.candidate_ids),
+        candidate_changed_fraction=candidate_fraction,
+        direction_changed_count=direction_changed,
+        accepted_changed_count=accepted_changed_count,
+        accepted_union_count=len(exact_path.accepted_ids | bounded_path.accepted_ids),
+        accepted_changed_fraction=accepted_fraction,
+        deferred_changed_count=deferred_changed_count,
+        deferred_union_count=len(exact_path.deferred_ids | bounded_path.deferred_ids),
+        deferred_changed_fraction=deferred_fraction,
+        q_changed_count=q_changed_count,
+        q_changed_union_count=len(exact_path.q_changed_ids | bounded_path.q_changed_ids),
+        q_changed_fraction=q_fraction,
+        backlog_key_changed_count=backlog_changed_count,
+        backlog_key_union_count=len(exact_backlog_ids | bounded_backlog_ids),
+        backlog_key_changed_fraction=backlog_fraction,
+        cap_frontier_rank_delta=rank_delta,
+        hot_risk_changed_count=hot_risk_changed,
+        max_abs_acc_error=max_abs_error,
+        p95_abs_acc_error=_p95(all_errors),
+        fired_or_accepted_residual_changed_count=len(fired_or_accepted_residual_changed),
+        fired_or_accepted_residual_identities_sha256=_identity_sha256(
+            fired_or_accepted_residual_changed
+        ),
+        hot_residual_changed_count=len(hot_residual_changed),
+        hot_residual_identities_sha256=_identity_sha256(hot_residual_changed),
+        accumulator_residual_hash_match=residual_hash_match,
+        exact_accumulator_residuals_sha256=exact_hashes,
+        bounded_accumulator_residuals_sha256=bounded_hashes,
+        exact_candidate_identities_sha256=_identity_sha256(exact_path.candidate_ids),
+        bounded_candidate_identities_sha256=_identity_sha256(bounded_path.candidate_ids),
+        exact_accepted_identities_sha256=_identity_sha256(exact_path.accepted_ids),
+        bounded_accepted_identities_sha256=_identity_sha256(bounded_path.accepted_ids),
+        exact_deferred_identities_sha256=_identity_sha256(exact_path.deferred_ids),
+        bounded_deferred_identities_sha256=_identity_sha256(bounded_path.deferred_ids),
+        oracle_parity=oracle_parity,
+    )
+
+
+def compare_bounded_delta_paths_to_int16_oracle(
+    *,
+    inputs: Sequence[BoundedDeltaOracleInput],
+    q_ledger_row: Base3QEntropyLedgerRow,
+    exact_path: _PathResult,
+    bounded_path: _PathResult,
+    storage_projection: BoundedDeltaStorageProjection,
+    guard_spec: BoundedDeltaGuardSpec | None = None,
+    candidate_name: str = HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE,
+    global_cap_spec: GlobalRateCapSpec | None = None,
+    exact_input_states: Mapping[str, VoteUpdateState] | None = None,
+    bounded_input_states: Mapping[str, VoteUpdateState] | None = None,
+    exact_input_backlog: Mapping[str, Mapping[int, Mapping[str, int]]] | None = None,
+    bounded_input_backlog: Mapping[str, Mapping[int, Mapping[str, int]]] | None = None,
+    bounded_stored_backlog: Mapping[str, Mapping[int, Mapping[str, int]]] | None = None,
+    tensor_offsets: Mapping[str, int] | None = None,
+    bounded_backlog_policy_active: bool = False,
+    path_difference: str = "bounded path differs only by encode_decode_accumulator_loss",
+    oracle_parity_overrides: Mapping[str, bool | str | int] | None = None,
+    next_candidate_if_failed: str | None = None,
+    non_claims: Sequence[str] = (),
+) -> BoundedDeltaReferenceReport:
+    guard = guard_spec or BoundedDeltaGuardSpec()
+    guard.validate()
+    admission_contract = bounded_delta_admission_contract(candidate_name=candidate_name)
+    next_candidate = (
+        _default_next_candidate_if_failed(admission_contract.candidate_name)
+        if next_candidate_if_failed is None
+        else str(next_candidate_if_failed)
+    )
+    validate_base3_q_entropy_ledger(q_ledger_row)
+    ledger = bounded_delta_inclusive_ledger(q_ledger_row, storage_projection)
+    validate_bounded_delta_inclusive_ledger(ledger)
+    measured = _build_measured_report_from_paths(
+        inputs=inputs,
+        candidate_name=admission_contract.candidate_name,
+        exact_path=exact_path,
+        bounded_path=bounded_path,
+        global_cap_spec=global_cap_spec,
+        exact_input_backlog=exact_input_backlog,
+        bounded_input_backlog=bounded_input_backlog,
+        bounded_stored_backlog=bounded_stored_backlog,
+        tensor_offsets=tensor_offsets,
+        bounded_backlog_policy_active=bounded_backlog_policy_active,
+        path_difference=path_difference,
+        exact_input_states=exact_input_states,
+        bounded_input_states=bounded_input_states,
+        oracle_parity_overrides=oracle_parity_overrides,
+    )
+    guard_eval = _evaluate_guardrail(guard, measured)
+    admission_eval = _evaluate_bounded_delta_admission(admission_contract, measured)
+    if not guard_eval.guard_passed:
+        classification = BOUNDED_DELTA_GUARDRAIL_FAILED
+    elif not ledger.claimable_physical_sub2:
+        classification = BOUNDED_DELTA_LEDGER_FAILED
+    elif not admission_eval.admission_passed:
+        classification = BOUNDED_DELTA_ADMISSION_FAILED
+    else:
+        classification = BOUNDED_DELTA_WITH_REPORT
+    return BoundedDeltaReferenceReport(
+        schema_version=BOUNDED_DELTA_ACCUMULATOR_SCHEMA_VERSION,
+        label=BOUNDED_DELTA_ACCUMULATOR_LABEL,
+        candidate_name=admission_contract.candidate_name,
+        classification=classification,
+        ledger=ledger,
+        storage_projection=storage_projection,
+        guard_spec=guard,
+        admission_contract=admission_contract,
+        measured_report=measured,
+        guard_passed=guard_eval.guard_passed,
+        failed_metrics=guard_eval.failed_metrics,
+        admission_passed=admission_eval.admission_passed,
+        admission_failed_surfaces=admission_eval.failed_surfaces,
+        candidate_assessment=bounded_delta_candidate_assessment(
+            candidate_name=admission_contract.candidate_name
+        ),
+        rejection_telemetry=admission_eval.rejection_telemetry,
+        raw_arrays_included=False,
+        non_claims=tuple(non_claims),
+        next_candidate_if_failed=next_candidate,
+    )
+
+
 def compare_bounded_delta_step_to_int16_oracle(
     inputs: Sequence[BoundedDeltaOracleInput],
     *,
@@ -1601,74 +1853,6 @@ def compare_bounded_delta_step_to_int16_oracle(
         guardrail_metadata_bits=guardrail_metadata_bits,
         dense_cold_bits_per_weight=dense_cold_bits_per_weight,
     )
-    ledger = bounded_delta_inclusive_ledger(q_ledger_row, projection)
-    validate_bounded_delta_inclusive_ledger(ledger)
-
-    candidate_changed_count, candidate_fraction = _symmetric_fraction(
-        exact.candidate_ids,
-        bounded.candidate_ids,
-    )
-    accepted_changed_count, accepted_fraction = _symmetric_fraction(
-        exact.accepted_ids,
-        bounded.accepted_ids,
-    )
-    deferred_changed_count, deferred_fraction = _symmetric_fraction(
-        exact.deferred_ids,
-        bounded.deferred_ids,
-    )
-    q_changed_count, q_fraction = _symmetric_fraction(exact.q_changed_ids, bounded.q_changed_ids)
-    backlog_changed_count, backlog_fraction = _symmetric_fraction(
-        exact_backlog_ids,
-        bounded_backlog_ids,
-    )
-
-    exact_direction = exact.candidate_direction_by_id
-    bounded_direction = bounded.candidate_direction_by_id
-    direction_keys = set(exact_direction) | set(bounded_direction)
-    direction_changed = sum(
-        1 for key in direction_keys if exact_direction.get(key) != bounded_direction.get(key)
-    )
-    rank_delta = _rank_delta(exact.ordered_row_ids, bounded.ordered_row_ids)
-
-    exact_hashes: dict[str, str] = {}
-    bounded_hashes: dict[str, str] = {}
-    acc_errors: list[torch.Tensor] = []
-    residual_hash_match = True
-    for item in inputs:
-        exact_acc = exact.output_acc_by_key[item.state_key].detach().cpu().to(torch.int32)
-        bounded_acc = bounded.output_acc_by_key[item.state_key].detach().cpu().to(torch.int32)
-        exact_hash = _tensor_sha256(exact_acc)
-        bounded_hash = _tensor_sha256(bounded_acc)
-        exact_hashes[item.state_key] = exact_hash
-        bounded_hashes[item.state_key] = bounded_hash
-        residual_hash_match = residual_hash_match and exact_hash == bounded_hash
-        acc_errors.append((exact_acc - bounded_acc).abs().flatten())
-    all_errors = torch.cat(acc_errors) if acc_errors else torch.empty(0, dtype=torch.int32)
-    max_abs_error = int(all_errors.max().item()) if int(all_errors.numel()) else 0
-    residual_error_ids: set[tuple[str, int]] = set()
-    for item in inputs:
-        exact_acc = exact.output_acc_by_key[item.state_key].detach().cpu().to(torch.int32).flatten()
-        bounded_acc = bounded.output_acc_by_key[item.state_key].detach().cpu().to(torch.int32).flatten()
-        changed = torch.nonzero(exact_acc != bounded_acc, as_tuple=False).flatten()
-        residual_error_ids |= _ids_from_indices(item.state_key, changed)
-
-    hot_ids = _hot_identity_set(inputs)
-    decision_symdiff = (
-        (exact.candidate_ids ^ bounded.candidate_ids)
-        | (exact.accepted_ids ^ bounded.accepted_ids)
-        | (exact.deferred_ids ^ bounded.deferred_ids)
-        | (exact.q_changed_ids ^ bounded.q_changed_ids)
-    )
-    hot_risk_changed = len(decision_symdiff & hot_ids)
-    fired_or_accepted_ids = exact.fired_ids | bounded.fired_ids
-    fired_or_accepted_residual_changed = residual_error_ids & fired_or_accepted_ids
-    hot_residual_changed = residual_error_ids & hot_ids
-
-    vote_hash = _hash_vote_inputs(inputs)
-    cap_hash = _hash_cap_spec(global_cap_spec)
-    offsets_hash = hashlib.sha256(str(sorted((offsets or {}).items())).encode("utf-8")).hexdigest()
-    exact_input_backlog = deferred_backlog or {}
-    bounded_input_backlog_for_hash = bounded_input_backlog or {}
     path_difference = (
         "bounded path differs only by encode_decode_accumulator_loss"
         if not bounded_backlog_policy_active
@@ -1677,99 +1861,24 @@ def compare_bounded_delta_step_to_int16_oracle(
             "bounded_backlog_encode_drop"
         )
     )
-    measured = BoundedDeltaMeasuredReport(
-        schema_version=BOUNDED_DELTA_ACCUMULATOR_SCHEMA_VERSION,
-        label=BOUNDED_DELTA_ACCUMULATOR_LABEL,
-        candidate_name=admission_contract.candidate_name,
-        candidate_changed_count=candidate_changed_count,
-        candidate_union_count=len(exact.candidate_ids | bounded.candidate_ids),
-        candidate_changed_fraction=candidate_fraction,
-        direction_changed_count=direction_changed,
-        accepted_changed_count=accepted_changed_count,
-        accepted_union_count=len(exact.accepted_ids | bounded.accepted_ids),
-        accepted_changed_fraction=accepted_fraction,
-        deferred_changed_count=deferred_changed_count,
-        deferred_union_count=len(exact.deferred_ids | bounded.deferred_ids),
-        deferred_changed_fraction=deferred_fraction,
-        q_changed_count=q_changed_count,
-        q_changed_union_count=len(exact.q_changed_ids | bounded.q_changed_ids),
-        q_changed_fraction=q_fraction,
-        backlog_key_changed_count=backlog_changed_count,
-        backlog_key_union_count=len(exact_backlog_ids | bounded_backlog_ids),
-        backlog_key_changed_fraction=backlog_fraction,
-        cap_frontier_rank_delta=rank_delta,
-        hot_risk_changed_count=hot_risk_changed,
-        max_abs_acc_error=max_abs_error,
-        p95_abs_acc_error=_p95(all_errors),
-        fired_or_accepted_residual_changed_count=len(fired_or_accepted_residual_changed),
-        fired_or_accepted_residual_identities_sha256=_identity_sha256(
-            fired_or_accepted_residual_changed
-        ),
-        hot_residual_changed_count=len(hot_residual_changed),
-        hot_residual_identities_sha256=_identity_sha256(hot_residual_changed),
-        accumulator_residual_hash_match=residual_hash_match,
-        exact_accumulator_residuals_sha256=exact_hashes,
-        bounded_accumulator_residuals_sha256=bounded_hashes,
-        exact_candidate_identities_sha256=_identity_sha256(exact.candidate_ids),
-        bounded_candidate_identities_sha256=_identity_sha256(bounded.candidate_ids),
-        exact_accepted_identities_sha256=_identity_sha256(exact.accepted_ids),
-        bounded_accepted_identities_sha256=_identity_sha256(bounded.accepted_ids),
-        exact_deferred_identities_sha256=_identity_sha256(exact.deferred_ids),
-        bounded_deferred_identities_sha256=_identity_sha256(bounded.deferred_ids),
-        oracle_parity={
-            "same_initial_q": True,
-            "same_votes_sha256": True,
-            "votes_sha256": vote_hash,
-            "same_cap_spec": True,
-            "cap_spec_sha256": cap_hash,
-            "same_deferred_backlog": not bounded_backlog_policy_active,
-            "bounded_backlog_policy_active": bounded_backlog_policy_active,
-            "exact_input_deferred_backlog_count": len(_backlog_key_set(exact_input_backlog)),
-            "bounded_input_deferred_backlog_count": len(_backlog_key_set(bounded_input_backlog_for_hash)),
-            "exact_output_deferred_backlog_count": len(exact_backlog_ids),
-            "bounded_stored_deferred_backlog_count": len(bounded_backlog_ids),
-            "deferred_backlog_keys_sha256": _backlog_keys_sha256(exact_input_backlog),
-            "exact_input_deferred_backlog_keys_sha256": _backlog_keys_sha256(exact_input_backlog),
-            "bounded_input_deferred_backlog_keys_sha256": _backlog_keys_sha256(
-                bounded_input_backlog_for_hash
-            ),
-            "exact_output_deferred_backlog_keys_sha256": _identity_sha256(exact_backlog_ids),
-            "bounded_stored_deferred_backlog_keys_sha256": _identity_sha256(bounded_backlog_ids),
-            "same_tensor_offsets": True,
-            "tensor_offsets_sha256": offsets_hash,
-            "path_difference": path_difference,
-        },
-    )
-    guard_eval = _evaluate_guardrail(guard, measured)
-    admission_eval = _evaluate_bounded_delta_admission(admission_contract, measured)
-    if not guard_eval.guard_passed:
-        classification = BOUNDED_DELTA_GUARDRAIL_FAILED
-    elif not ledger.claimable_physical_sub2:
-        classification = BOUNDED_DELTA_LEDGER_FAILED
-    elif not admission_eval.admission_passed:
-        classification = BOUNDED_DELTA_ADMISSION_FAILED
-    else:
-        classification = BOUNDED_DELTA_WITH_REPORT
-
-    return BoundedDeltaReferenceReport(
-        schema_version=BOUNDED_DELTA_ACCUMULATOR_SCHEMA_VERSION,
-        label=BOUNDED_DELTA_ACCUMULATOR_LABEL,
-        candidate_name=admission_contract.candidate_name,
-        classification=classification,
-        ledger=ledger,
+    return compare_bounded_delta_paths_to_int16_oracle(
+        inputs=inputs,
+        q_ledger_row=q_ledger_row,
+        exact_path=exact,
+        bounded_path=bounded,
         storage_projection=projection,
         guard_spec=guard,
-        admission_contract=admission_contract,
-        measured_report=measured,
-        guard_passed=guard_eval.guard_passed,
-        failed_metrics=guard_eval.failed_metrics,
-        admission_passed=admission_eval.admission_passed,
-        admission_failed_surfaces=admission_eval.failed_surfaces,
-        candidate_assessment=bounded_delta_candidate_assessment(
-            candidate_name=admission_contract.candidate_name
-        ),
-        rejection_telemetry=admission_eval.rejection_telemetry,
-        raw_arrays_included=False,
+        candidate_name=admission_contract.candidate_name,
+        global_cap_spec=global_cap_spec,
+        exact_input_states=exact_states,
+        bounded_input_states=bounded_states,
+        exact_input_backlog=deferred_backlog or {},
+        bounded_input_backlog=bounded_input_backlog or {},
+        bounded_stored_backlog=bounded_output_backlog,
+        tensor_offsets=offsets,
+        bounded_backlog_policy_active=bounded_backlog_policy_active,
+        path_difference=path_difference,
+        next_candidate_if_failed=next_candidate,
         non_claims=(
             "no production vote_update/global_rate_cap replacement",
             "no GPU lane",
@@ -1778,7 +1887,6 @@ def compare_bounded_delta_step_to_int16_oracle(
             "no decision_exact claim",
             "compact counts/hashes only; no raw per-weight arrays",
         ),
-        next_candidate_if_failed=next_candidate,
     )
 
 
@@ -1803,6 +1911,7 @@ __all__ = [
     "bounded_delta_admission_contract",
     "bounded_delta_candidate_assessment",
     "bounded_delta_inclusive_ledger",
+    "compare_bounded_delta_paths_to_int16_oracle",
     "compare_bounded_delta_step_to_int16_oracle",
     "decode_bounded_accumulator_to_i16",
     "encode_budget_capped_hybrid_reference",

@@ -13,15 +13,23 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
     BOUNDED_DELTA_WITH_REPORT,
     BoundedDeltaGuardSpec,
     BoundedDeltaOracleInput,
+    COARSE_SIGNED_CHARGE_SPARSE_FRONTIER_CANDIDATE,
+    EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE,
+    HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE,
     compare_bounded_delta_step_to_int16_oracle,
     project_bounded_delta_accumulator_bpw,
 )
 from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict import (
+    ACCUMULATOR_FREE_NULL_BASELINE,
     BACKLOG_K_POLICIES,
+    CANDIDATE_ADMISSION_DIAGNOSTIC_LABEL,
     CUMULATIVE_SCHEDULE_MODE,
     HOT_BUDGET_POINT_LABELS,
     ONE_STEP_LOCAL_DIAGNOSTIC_MODE,
+    ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC,
     run_representative_bounded_delta_drift_verdict,
+    run_candidate_admission_diagnostic,
+    validate_candidate_admission_diagnostic_report,
     validate_representative_bounded_delta_drift_verdict_report,
 )
 from calm.hrm_text_158.native_full_stack.global_rate_cap import GlobalRateCapSpec
@@ -85,6 +93,11 @@ def _assert_no_tensors(value: Any) -> None:
 @lru_cache(maxsize=1)
 def _representative_report():
     return run_representative_bounded_delta_drift_verdict()
+
+
+@lru_cache(maxsize=1)
+def _candidate_admission_report():
+    return run_candidate_admission_diagnostic()
 
 
 def test_bounded_backlog_policy_is_opt_in_and_charged_as_actual_stored_backlog():
@@ -329,3 +342,57 @@ def test_primary_cumulative_curve_charges_bounded_backlog_and_reports_raw_drift(
     assert bounded_report.measured_report.candidate_union_count >= 0
     assert bounded_report.measured_report.accepted_union_count >= 0
     assert bounded_report.measured_report.backlog_key_union_count > 0
+
+
+def test_candidate_admission_diagnostic_is_null_anchored_and_oracle_upper_bound():
+    report = _candidate_admission_report()
+    payload = report.to_dict()
+
+    validate_candidate_admission_diagnostic_report(report)
+    assert report.label == CANDIDATE_ADMISSION_DIAGNOSTIC_LABEL
+    assert report.null_baseline_label == ACCUMULATOR_FREE_NULL_BASELINE
+    assert "upper bound" in " ".join(report.non_claims)
+    by_name = {run.candidate_name: run for run in report.candidate_runs}
+
+    assert set(by_name) == {
+        HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE,
+        EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE,
+        COARSE_SIGNED_CHARGE_SPARSE_FRONTIER_CANDIDATE,
+    }
+    for run in report.candidate_runs:
+        assert run.builder_label == ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC
+        assert len(run.per_step_reports) == 4
+        assert run.terminal_decision.oracle_upper_bound_only is True
+        for step in run.per_step_reports:
+            assert step.builder_label == ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC
+            assert step.null_baseline_comparison.compared_surfaces == (
+                "accepted_rows",
+                "deferred_rows",
+                "final_q_changes",
+                "backlog_carry",
+            )
+            assert step.bounded_delta_report.measured_report.oracle_parity["builder_label"] == (
+                ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC
+            )
+    assert (
+        by_name[HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE]
+        .per_step_reports[-1]
+        .backlog_truncation_attribution
+        .bounded_stored_truncation_count
+        == 0
+    )
+    assert (
+        by_name[EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE]
+        .per_step_reports[-1]
+        .backlog_truncation_attribution
+        .bounded_stored_truncation_count
+        > 0
+    )
+    assert (
+        by_name[COARSE_SIGNED_CHARGE_SPARSE_FRONTIER_CANDIDATE]
+        .per_step_reports[-1]
+        .backlog_truncation_attribution
+        .bounded_stored_truncation_count
+        > 0
+    )
+    _assert_no_tensors(payload)
