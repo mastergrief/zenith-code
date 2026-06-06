@@ -20,8 +20,15 @@ from calm.hrm_text_158.native_full_stack.global_rate_cap_gpu import (
     DEFAULT_GLOBAL_RATE_CAP_GPU_ARTIFACT_PATH,
     GLOBAL_RATE_CAP_GPU_ARTIFACT_ENV,
     GLOBAL_RATE_CAP_TORCH_CUDA_REFERENCE_SCOPE,
+    QACC_KERNEL_PROCEED_K1K2,
+    QACC_KERNEL_REVISE_STAGE_SHAPE,
+    QACC_KERNEL_STOP_NO_EXPECTED_SPEEDUP,
+    QACC_KERNEL_STOP_PARITY_FAILURE,
+    QAccKernelParityReport,
+    QAccKernelResidencyReport,
     RUN_GPU_GLOBAL_RATE_CAP_ENV,
     apply_global_rate_cap_torch_cuda_reference_under_margin,
+    build_qacc_kernel_stop_go_artifact,
     select_global_rate_cap_rows_torch_cuda_reference,
     write_global_rate_cap_gpu_receipt_artifact,
 )
@@ -164,6 +171,144 @@ def test_gpu_global_cap_rejects_unsupported_ordering_modes_without_policy_scienc
                 [],
                 GlobalRateCapSpec(cap=1, step=1, ordering_mode=mode),
             )
+
+
+def _exact_parity() -> QAccKernelParityReport:
+    return QAccKernelParityReport(
+        q_output_exact_match=True,
+        accumulator_output_exact_match=True,
+        pre_veto_selected_indices_exact_match=True,
+        selected_directions_exact_match=True,
+        selected_thresholds_exact_match=True,
+        accepted_deferred_identity_exact_match=True,
+        backlog_keys_exact_match=True,
+        q_changed_count_exact_match=True,
+        max_abs_diff_q=0,
+        max_abs_diff_acc=0,
+    )
+
+
+def _resident_hot_loop() -> QAccKernelResidencyReport:
+    return QAccKernelResidencyReport(
+        cpu_selected_rows_materialized_before_q_acc_apply=False,
+        python_row_lists_materialized_before_q_acc_apply=False,
+        accepted_deferred_row_tensors_device_resident_until_receipt=True,
+        local_preplan_backend="cuda_reference",
+        pre_veto_selection_backend="cuda_reference",
+        global_cap_selection_backend="cuda_reference",
+        sparse_apply_backend="cuda_reference",
+    )
+
+
+def test_qacc_kernel_stop_go_artifact_recommends_proceed_for_material_kernelizable_share():
+    artifact = build_qacc_kernel_stop_go_artifact(
+        representative_label="tier_b_like_fixture",
+        tensor_shapes_by_state={"proj_in": [64, 65], "proj_out": [64, 65]},
+        candidate_count=256,
+        pre_veto_selected_count=128,
+        accepted_count=64,
+        deferred_count=64,
+        replay_veto_count=3,
+        local_preplan_wall_ms=3.0,
+        pre_veto_selection_wall_ms=0.8,
+        global_cap_selection_wall_ms=0.7,
+        sparse_apply_wall_ms=2.5,
+        host_orchestration_wall_ms=1.0,
+        peak_allocated_bytes=1024,
+        peak_reserved_bytes=2048,
+        parity=_exact_parity(),
+        residency=_resident_hot_loop(),
+    )
+
+    assert artifact.recommendation == QACC_KERNEL_PROCEED_K1K2
+    assert artifact.parity.exact_pass is True
+    assert artifact.residency.hot_loop_resident is True
+    assert artifact.kernelizable_share > 0.25
+    assert artifact.to_dict()["phase_wall_ms"]["total"] > 0.0
+
+
+def test_qacc_kernel_stop_go_artifact_recommends_revise_when_host_dominates():
+    artifact = build_qacc_kernel_stop_go_artifact(
+        representative_label="host_dominant_fixture",
+        tensor_shapes_by_state={"proj_in": [32, 32]},
+        candidate_count=32,
+        pre_veto_selected_count=16,
+        accepted_count=16,
+        deferred_count=0,
+        replay_veto_count=0,
+        local_preplan_wall_ms=1.0,
+        pre_veto_selection_wall_ms=0.2,
+        global_cap_selection_wall_ms=0.2,
+        sparse_apply_wall_ms=0.8,
+        host_orchestration_wall_ms=3.5,
+        peak_allocated_bytes=512,
+        peak_reserved_bytes=1024,
+        parity=_exact_parity(),
+        residency=_resident_hot_loop(),
+    )
+
+    assert artifact.recommendation == QACC_KERNEL_REVISE_STAGE_SHAPE
+    assert artifact.host_orchestration_share > 0.50
+
+
+def test_qacc_kernel_stop_go_artifact_recommends_stop_for_parity_failure():
+    parity = QAccKernelParityReport(
+        q_output_exact_match=True,
+        accumulator_output_exact_match=False,
+        pre_veto_selected_indices_exact_match=True,
+        selected_directions_exact_match=True,
+        selected_thresholds_exact_match=True,
+        accepted_deferred_identity_exact_match=True,
+        backlog_keys_exact_match=True,
+        q_changed_count_exact_match=True,
+        max_abs_diff_q=0,
+        max_abs_diff_acc=2,
+    )
+    artifact = build_qacc_kernel_stop_go_artifact(
+        representative_label="parity_fail_fixture",
+        tensor_shapes_by_state={"proj_in": [16, 16]},
+        candidate_count=8,
+        pre_veto_selected_count=4,
+        accepted_count=4,
+        deferred_count=0,
+        replay_veto_count=0,
+        local_preplan_wall_ms=2.0,
+        pre_veto_selection_wall_ms=0.5,
+        global_cap_selection_wall_ms=0.5,
+        sparse_apply_wall_ms=2.0,
+        host_orchestration_wall_ms=0.5,
+        peak_allocated_bytes=256,
+        peak_reserved_bytes=512,
+        parity=parity,
+        residency=_resident_hot_loop(),
+    )
+
+    assert artifact.recommendation == QACC_KERNEL_STOP_PARITY_FAILURE
+    assert artifact.parity.exact_pass is False
+
+
+def test_qacc_kernel_stop_go_artifact_recommends_stop_when_kernelizable_share_is_too_small():
+    artifact = build_qacc_kernel_stop_go_artifact(
+        representative_label="tiny_kernelizable_fixture",
+        tensor_shapes_by_state={"proj_in": [16, 16]},
+        candidate_count=8,
+        pre_veto_selected_count=4,
+        accepted_count=4,
+        deferred_count=0,
+        replay_veto_count=0,
+        local_preplan_wall_ms=0.2,
+        pre_veto_selection_wall_ms=0.4,
+        global_cap_selection_wall_ms=0.4,
+        sparse_apply_wall_ms=0.2,
+        host_orchestration_wall_ms=0.6,
+        peak_allocated_bytes=256,
+        peak_reserved_bytes=512,
+        parity=_exact_parity(),
+        residency=_resident_hot_loop(),
+    )
+
+    assert artifact.recommendation == QACC_KERNEL_STOP_NO_EXPECTED_SPEEDUP
+    assert artifact.kernelizable_share < 0.25
 
 
 @GPU_GLOBAL_RATE_CAP_SELECTION

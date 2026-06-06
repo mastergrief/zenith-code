@@ -43,6 +43,13 @@ GLOBAL_RATE_CAP_GPU_SCHEMA_VERSION = (
 GLOBAL_RATE_CAP_TORCH_CUDA_REFERENCE_SCOPE = (
     "global_rate_cap_torch_cuda_reference_margin_only_no_policy_change"
 )
+QACC_KERNEL_STOP_GO_SCHEMA_VERSION = "hrm_text_158_qacc_kernel_stop_go/v0.scale_smoke"
+QACC_KERNEL_PROCEED_K1K2 = "proceed_k1k2"
+QACC_KERNEL_REVISE_STAGE_SHAPE = "revise_stage_shape"
+QACC_KERNEL_STOP_NO_EXPECTED_SPEEDUP = "stop_no_expected_speedup"
+QACC_KERNEL_STOP_PARITY_FAILURE = "stop_parity_failure"
+QACC_KERNEL_MATERIAL_SHARE_THRESHOLD = 0.25
+QACC_KERNEL_HOST_DOMINANT_SHARE_THRESHOLD = 0.50
 
 
 @dataclass(frozen=True)
@@ -150,8 +157,275 @@ class DeviceGlobalRateCapApplyResult:
         }
 
 
+@dataclass(frozen=True)
+class QAccKernelParityReport:
+    q_output_exact_match: bool
+    accumulator_output_exact_match: bool
+    pre_veto_selected_indices_exact_match: bool
+    selected_directions_exact_match: bool
+    selected_thresholds_exact_match: bool
+    accepted_deferred_identity_exact_match: bool
+    backlog_keys_exact_match: bool
+    q_changed_count_exact_match: bool
+    max_abs_diff_q: int
+    max_abs_diff_acc: int
+
+    @property
+    def exact_pass(self) -> bool:
+        return (
+            self.q_output_exact_match
+            and self.accumulator_output_exact_match
+            and self.pre_veto_selected_indices_exact_match
+            and self.selected_directions_exact_match
+            and self.selected_thresholds_exact_match
+            and self.accepted_deferred_identity_exact_match
+            and self.backlog_keys_exact_match
+            and self.q_changed_count_exact_match
+            and int(self.max_abs_diff_q) == 0
+            and int(self.max_abs_diff_acc) == 0
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "q_output_exact_match": bool(self.q_output_exact_match),
+            "accumulator_output_exact_match": bool(self.accumulator_output_exact_match),
+            "pre_veto_selected_indices_exact_match": bool(self.pre_veto_selected_indices_exact_match),
+            "selected_directions_exact_match": bool(self.selected_directions_exact_match),
+            "selected_thresholds_exact_match": bool(self.selected_thresholds_exact_match),
+            "accepted_deferred_identity_exact_match": bool(self.accepted_deferred_identity_exact_match),
+            "backlog_keys_exact_match": bool(self.backlog_keys_exact_match),
+            "q_changed_count_exact_match": bool(self.q_changed_count_exact_match),
+            "max_abs_diff_q": int(self.max_abs_diff_q),
+            "max_abs_diff_acc": int(self.max_abs_diff_acc),
+            "exact_pass": bool(self.exact_pass),
+        }
+
+
+@dataclass(frozen=True)
+class QAccKernelResidencyReport:
+    cpu_selected_rows_materialized_before_q_acc_apply: bool
+    python_row_lists_materialized_before_q_acc_apply: bool
+    accepted_deferred_row_tensors_device_resident_until_receipt: bool
+    local_preplan_backend: str
+    pre_veto_selection_backend: str
+    global_cap_selection_backend: str
+    sparse_apply_backend: str
+    host_orchestration_backend: str = "python_control"
+
+    @property
+    def hot_loop_resident(self) -> bool:
+        return (
+            not self.cpu_selected_rows_materialized_before_q_acc_apply
+            and not self.python_row_lists_materialized_before_q_acc_apply
+            and self.accepted_deferred_row_tensors_device_resident_until_receipt
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "cpu_selected_rows_materialized_before_q_acc_apply": bool(
+                self.cpu_selected_rows_materialized_before_q_acc_apply
+            ),
+            "python_row_lists_materialized_before_q_acc_apply": bool(
+                self.python_row_lists_materialized_before_q_acc_apply
+            ),
+            "accepted_deferred_row_tensors_device_resident_until_receipt": bool(
+                self.accepted_deferred_row_tensors_device_resident_until_receipt
+            ),
+            "local_preplan_backend": self.local_preplan_backend,
+            "pre_veto_selection_backend": self.pre_veto_selection_backend,
+            "global_cap_selection_backend": self.global_cap_selection_backend,
+            "sparse_apply_backend": self.sparse_apply_backend,
+            "host_orchestration_backend": self.host_orchestration_backend,
+            "hot_loop_resident": bool(self.hot_loop_resident),
+        }
+
+
+@dataclass(frozen=True)
+class QAccKernelStopGoArtifact:
+    schema_version: str
+    representative_label: str
+    tensor_shapes_by_state: dict[str, list[int]]
+    total_numel: int
+    candidate_count: int
+    pre_veto_selected_count: int
+    accepted_count: int
+    deferred_count: int
+    replay_veto_count: int
+    phase_wall_ms: dict[str, float]
+    peak_allocated_bytes: int
+    peak_reserved_bytes: int
+    parity: QAccKernelParityReport
+    residency: QAccKernelResidencyReport
+    kernelizable_wall_ms: float
+    kernelizable_share: float
+    host_orchestration_share: float
+    recommendation: str
+    rationale: str
+    material_kernelizable_share_threshold: float
+    host_orchestration_dominant_share_threshold: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "representative_label": self.representative_label,
+            "tensor_shapes_by_state": {
+                str(key): [int(dim) for dim in value]
+                for key, value in self.tensor_shapes_by_state.items()
+            },
+            "total_numel": int(self.total_numel),
+            "candidate_count": int(self.candidate_count),
+            "pre_veto_selected_count": int(self.pre_veto_selected_count),
+            "accepted_count": int(self.accepted_count),
+            "deferred_count": int(self.deferred_count),
+            "replay_veto_count": int(self.replay_veto_count),
+            "phase_wall_ms": {
+                str(key): float(value) for key, value in self.phase_wall_ms.items()
+            },
+            "peak_allocated_bytes": int(self.peak_allocated_bytes),
+            "peak_reserved_bytes": int(self.peak_reserved_bytes),
+            "parity": self.parity.to_dict(),
+            "residency": self.residency.to_dict(),
+            "kernelizable_wall_ms": float(self.kernelizable_wall_ms),
+            "kernelizable_share": float(self.kernelizable_share),
+            "host_orchestration_share": float(self.host_orchestration_share),
+            "recommendation": self.recommendation,
+            "rationale": self.rationale,
+            "material_kernelizable_share_threshold": float(
+                self.material_kernelizable_share_threshold
+            ),
+            "host_orchestration_dominant_share_threshold": float(
+                self.host_orchestration_dominant_share_threshold
+            ),
+        }
+
+
 def _safe_ratio(numerator: int, denominator: int) -> float:
     return float(numerator) / float(denominator) if denominator else 0.0
+
+
+def build_qacc_kernel_stop_go_artifact(
+    *,
+    representative_label: str,
+    tensor_shapes_by_state: dict[str, list[int] | tuple[int, ...]],
+    candidate_count: int,
+    pre_veto_selected_count: int,
+    accepted_count: int,
+    deferred_count: int,
+    replay_veto_count: int,
+    local_preplan_wall_ms: float,
+    pre_veto_selection_wall_ms: float,
+    global_cap_selection_wall_ms: float,
+    sparse_apply_wall_ms: float,
+    host_orchestration_wall_ms: float,
+    peak_allocated_bytes: int,
+    peak_reserved_bytes: int,
+    parity: QAccKernelParityReport,
+    residency: QAccKernelResidencyReport,
+    material_kernelizable_share_threshold: float = QACC_KERNEL_MATERIAL_SHARE_THRESHOLD,
+    host_orchestration_dominant_share_threshold: float = (
+        QACC_KERNEL_HOST_DOMINANT_SHARE_THRESHOLD
+    ),
+) -> QAccKernelStopGoArtifact:
+    if not representative_label:
+        raise ValueError("representative_label must be non-empty")
+    if not tensor_shapes_by_state:
+        raise ValueError("tensor_shapes_by_state must be non-empty")
+    for name, value in {
+        "candidate_count": candidate_count,
+        "pre_veto_selected_count": pre_veto_selected_count,
+        "accepted_count": accepted_count,
+        "deferred_count": deferred_count,
+        "replay_veto_count": replay_veto_count,
+        "peak_allocated_bytes": peak_allocated_bytes,
+        "peak_reserved_bytes": peak_reserved_bytes,
+    }.items():
+        if int(value) < 0:
+            raise ValueError(f"{name} must be >= 0")
+    phase_wall_ms = {
+        "local_preplan": float(local_preplan_wall_ms),
+        "pre_veto_selection": float(pre_veto_selection_wall_ms),
+        "global_cap_selection": float(global_cap_selection_wall_ms),
+        "sparse_apply": float(sparse_apply_wall_ms),
+        "host_orchestration": float(host_orchestration_wall_ms),
+    }
+    for name, value in phase_wall_ms.items():
+        if value < 0.0:
+            raise ValueError(f"{name} wall time must be >= 0")
+    if float(material_kernelizable_share_threshold) <= 0.0:
+        raise ValueError("material_kernelizable_share_threshold must be > 0")
+    if float(host_orchestration_dominant_share_threshold) <= 0.0:
+        raise ValueError("host_orchestration_dominant_share_threshold must be > 0")
+
+    normalized_shapes = {
+        str(state_key): [int(dim) for dim in shape]
+        for state_key, shape in tensor_shapes_by_state.items()
+    }
+    total_numel = 0
+    for shape in normalized_shapes.values():
+        numel = 1
+        for dim in shape:
+            if int(dim) <= 0:
+                raise ValueError("tensor shapes must have positive dims")
+            numel *= int(dim)
+        total_numel += int(numel)
+
+    total_wall_ms = float(sum(phase_wall_ms.values()))
+    if total_wall_ms <= 0.0:
+        raise ValueError("total wall time must be > 0")
+    kernelizable_wall_ms = (
+        float(phase_wall_ms["local_preplan"]) + float(phase_wall_ms["sparse_apply"])
+    )
+    kernelizable_share = float(kernelizable_wall_ms / total_wall_ms)
+    host_share = float(phase_wall_ms["host_orchestration"] / total_wall_ms)
+    material_subphase_ms = max(
+        float(phase_wall_ms["local_preplan"]),
+        float(phase_wall_ms["sparse_apply"]),
+    )
+    material_subphase_share = float(material_subphase_ms / total_wall_ms)
+
+    if not parity.exact_pass:
+        recommendation = QACC_KERNEL_STOP_PARITY_FAILURE
+        rationale = "exact parity failed on one or more locked qacc surfaces"
+    elif not residency.hot_loop_resident:
+        recommendation = QACC_KERNEL_REVISE_STAGE_SHAPE
+        rationale = "device residency was present but hot-loop residency was not yet honest"
+    elif host_share >= float(host_orchestration_dominant_share_threshold):
+        recommendation = QACC_KERNEL_REVISE_STAGE_SHAPE
+        rationale = "host orchestration dominates total wall time; revise staged shape before K1/K2"
+    elif material_subphase_share >= float(material_kernelizable_share_threshold):
+        recommendation = QACC_KERNEL_PROCEED_K1K2
+        rationale = (
+            "exact parity held and a kernelizable subphase is a material share of total wall time"
+        )
+    else:
+        recommendation = QACC_KERNEL_STOP_NO_EXPECTED_SPEEDUP
+        rationale = "exact parity held but kernelizable subphases are too small to move end-to-end runtime"
+
+    return QAccKernelStopGoArtifact(
+        schema_version=QACC_KERNEL_STOP_GO_SCHEMA_VERSION,
+        representative_label=representative_label,
+        tensor_shapes_by_state=normalized_shapes,
+        total_numel=int(total_numel),
+        candidate_count=int(candidate_count),
+        pre_veto_selected_count=int(pre_veto_selected_count),
+        accepted_count=int(accepted_count),
+        deferred_count=int(deferred_count),
+        replay_veto_count=int(replay_veto_count),
+        phase_wall_ms={**phase_wall_ms, "total": float(total_wall_ms)},
+        peak_allocated_bytes=int(peak_allocated_bytes),
+        peak_reserved_bytes=int(peak_reserved_bytes),
+        parity=parity,
+        residency=residency,
+        kernelizable_wall_ms=float(kernelizable_wall_ms),
+        kernelizable_share=float(kernelizable_share),
+        host_orchestration_share=float(host_share),
+        recommendation=recommendation,
+        rationale=rationale,
+        material_kernelizable_share_threshold=float(material_kernelizable_share_threshold),
+        host_orchestration_dominant_share_threshold=float(
+            host_orchestration_dominant_share_threshold
+        ),
+    )
 
 
 def _tensor_sha256(tensor: torch.Tensor) -> str:
