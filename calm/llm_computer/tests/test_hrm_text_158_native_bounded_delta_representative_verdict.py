@@ -37,6 +37,8 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_CANDIDATE,
     PATH_B_DEFER_UNTIL_FIT_TTL2_PLAUSIBILITY_PRECHECK_LABEL,
     PATH_B_DEFER_UNTIL_FIT_TTL2_PLAUSIBILITY_PRECHECK_CANDIDATE,
+    PATH_B_DEFER_UNTIL_FIT_REPRESENTATIVENESS_SCREEN_LABEL,
+    PATH_B_DEFER_UNTIL_FIT_REPRESENTATIVENESS_SCREEN_CANDIDATE,
     PATH_B_IDENTITY_FREE_TIE_RULE_CLASSIFIER_CANDIDATE,
     ONLINE_ESTIMABILITY_TIE_MASK_LABEL,
     ONLINE_ESTIMABLE_TIE_MASK_CANDIDATE,
@@ -68,6 +70,11 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     CARRY_FAMILY_QUOTA_RELEASE,
     CARRY_SUBCASE_CLASS_UNIFORM_BOUNDED_EXTRA_DEVIATION,
     DEFER_UNTIL_FIT_TTL2_NO_FIT_ON_STATE_PATH,
+    DEFER_REPRESENTATIVENESS_CONTINUING_PRESSURE_CONTROL,
+    DEFER_REPRESENTATIVENESS_CONSTANT_ROWS_RELAXED_CAP,
+    DEFER_REPRESENTATIVENESS_REDUCED_PRESSURE_SAME_CAP,
+    DEFER_REPRESENTATIVENESS_DRAIN_REGIME_FOUND_CANDIDATE_ONLY,
+    DEFER_REPRESENTATIVENESS_NO_NEARBY_DRAIN,
     INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT,
     AGGREGATE_RUNTIME_SEMANTICS_DEFINITION_PLAN,
     CAP_PRESSURE_FRONTIER_ONLY_UNDERFILL_NO_REALLOCATION,
@@ -103,6 +110,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     run_path_b_defer_all_baseline_parity_probe,
     run_path_b_aggregate_state_runtime_semantics_definition,
     run_defer_until_fit_ttl2_fit_plausibility_precheck,
+    run_defer_until_fit_representativeness_screen,
     run_real_backlog_lower_bound_diagnostic,
     run_tie_frontier_reservation_lower_bound_diagnostic,
     run_scale_appropriate_b_storage_comparison,
@@ -115,6 +123,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     validate_path_b_defer_all_baseline_parity_probe_report,
     validate_path_b_aggregate_state_runtime_semantics_report,
     validate_defer_until_fit_ttl2_fit_plausibility_precheck_report,
+    validate_defer_until_fit_representativeness_screen_report,
     validate_real_backlog_lower_bound_diagnostic_report,
     validate_tie_frontier_reservation_lower_bound_report,
     validate_scale_appropriate_b_storage_comparison_report,
@@ -236,6 +245,11 @@ def _path_b_aggregate_state_runtime_semantics_report():
 @lru_cache(maxsize=1)
 def _defer_until_fit_ttl2_fit_plausibility_precheck_report():
     return run_defer_until_fit_ttl2_fit_plausibility_precheck()
+
+
+@lru_cache(maxsize=1)
+def _defer_until_fit_representativeness_screen_report():
+    return run_defer_until_fit_representativeness_screen()
 
 
 def test_bounded_backlog_policy_is_opt_in_and_charged_as_actual_stored_backlog():
@@ -1442,6 +1456,210 @@ def test_defer_until_fit_ttl2_validator_rejects_identity_order_action_input_leak
         match="TTL2 action-input schema leaked a forbidden identity/order key",
     ):
         validate_defer_until_fit_ttl2_fit_plausibility_precheck_report(bad_report)
+
+
+def test_defer_until_fit_representativeness_screen_finds_relaxed_cap_candidate_only_and_keeps_banked_controls_stable():
+    baseline_report = _path_b_defer_all_baseline_parity_probe_report()
+    ttl2_report = _defer_until_fit_ttl2_fit_plausibility_precheck_report()
+    report = _defer_until_fit_representativeness_screen_report()
+    payload = report.to_dict()
+
+    validate_defer_until_fit_representativeness_screen_report(report)
+    assert baseline_report.terminal_decision.terminal_label == CARRY_CANDIDATE_EARNED
+    assert ttl2_report.terminal_decision.terminal_label == DEFER_UNTIL_FIT_TTL2_NO_FIT_ON_STATE_PATH
+    assert report.label == PATH_B_DEFER_UNTIL_FIT_REPRESENTATIVENESS_SCREEN_LABEL
+    assert report.candidate_name == (
+        PATH_B_DEFER_UNTIL_FIT_REPRESENTATIVENESS_SCREEN_CANDIDATE
+    )
+    assert report.source_baseline_label == PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_LABEL
+    assert report.source_baseline_terminal_label == CARRY_CANDIDATE_EARNED
+    assert report.source_aggregate_runtime_label == (
+        PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_LABEL
+    )
+    assert report.source_aggregate_runtime_terminal_label == (
+        INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT
+    )
+    assert report.source_ttl2_label == (
+        PATH_B_DEFER_UNTIL_FIT_TTL2_PLAUSIBILITY_PRECHECK_LABEL
+    )
+    assert report.source_ttl2_terminal_label == DEFER_UNTIL_FIT_TTL2_NO_FIT_ON_STATE_PATH
+    assert report.source_defer_family_variant_name == (
+        CARRY_FAMILY_CLASS_UNIFORM_DEFER_UNTIL_FIT
+    )
+    assert report.ttl_steps_charged == 2
+
+    variants = {variant.variant_name: variant for variant in report.variant_reports}
+    assert tuple(variants) == (
+        DEFER_REPRESENTATIVENESS_CONTINUING_PRESSURE_CONTROL,
+        DEFER_REPRESENTATIVENESS_CONSTANT_ROWS_RELAXED_CAP,
+        DEFER_REPRESENTATIVENESS_REDUCED_PRESSURE_SAME_CAP,
+    )
+
+    control = variants[DEFER_REPRESENTATIVENESS_CONTINUING_PRESSURE_CONTROL]
+    assert control.variant_role == "control"
+    assert tuple(control.pressure_source_schedule_names) == (
+        "backlog_growth",
+        "backlog_growth",
+    )
+    assert tuple(control.cap_sequence) == (256, 256)
+    assert [step.schedule_name for step in control.future_step_reports] == [
+        "backlog_growth_ttl2_future_1",
+        "backlog_growth_ttl2_future_2",
+    ]
+    assert [step.step for step in control.future_step_reports] == [5, 6]
+    assert [step.start_index for step in control.future_step_reports] == [4864, 5632]
+    assert [step.rows_per_tensor for step in control.future_step_reports] == [768, 768]
+    assert [step.vote_abs for step in control.future_step_reports] == [24, 24]
+    assert [
+        step.packet_step_reports[0].total_projected_class_mass
+        for step in control.future_step_reports
+    ] == [768, 1152]
+    assert control.any_legal_consume_event is False
+    assert control.first_legal_fit_schedule_name is None
+    assert control.first_legal_fit_step is None
+    assert control.first_legal_fit_packet_name is None
+
+    relaxed = variants[DEFER_REPRESENTATIVENESS_CONSTANT_ROWS_RELAXED_CAP]
+    assert relaxed.variant_role == "non_control"
+    assert tuple(relaxed.pressure_source_schedule_names) == (
+        "backlog_growth",
+        "backlog_growth",
+    )
+    assert tuple(relaxed.cap_sequence) == (768, 1152)
+    assert [step.start_index for step in relaxed.future_step_reports] == [4864, 5632]
+    assert [step.rows_per_tensor for step in relaxed.future_step_reports] == [768, 768]
+    assert [step.vote_abs for step in relaxed.future_step_reports] == [24, 24]
+    assert [
+        step.packet_step_reports[0].total_projected_class_mass
+        for step in relaxed.future_step_reports
+    ] == [768, 1152]
+    assert relaxed.any_legal_consume_event is True
+    assert relaxed.first_legal_fit_schedule_name == (
+        "backlog_growth_ttl2_future_1_relaxed_cap"
+    )
+    assert relaxed.first_legal_fit_step == 5
+    assert relaxed.first_legal_fit_packet_name == "proj_in:q0:d-1"
+    assert relaxed.claims_sustained_drain is False
+    assert relaxed.representativeness_only is True
+
+    reduced = variants[DEFER_REPRESENTATIVENESS_REDUCED_PRESSURE_SAME_CAP]
+    assert reduced.variant_role == "non_control"
+    assert tuple(reduced.pressure_source_schedule_names) == (
+        "moderate_unsaturated",
+        "sparse_unsaturated",
+    )
+    assert tuple(reduced.cap_sequence) == (256, 256)
+    assert [step.start_index for step in reduced.future_step_reports] == [4864, 5024]
+    assert [step.rows_per_tensor for step in reduced.future_step_reports] == [160, 32]
+    assert [step.vote_abs for step in reduced.future_step_reports] == [16, 12]
+    assert [
+        step.packet_step_reports[0].total_projected_class_mass
+        for step in reduced.future_step_reports
+    ] == [768, 768]
+    assert reduced.any_legal_consume_event is False
+    assert reduced.first_legal_fit_schedule_name is None
+    assert reduced.first_legal_fit_step is None
+    assert reduced.first_legal_fit_packet_name is None
+
+    decision = report.terminal_decision
+    assert (
+        decision.terminal_label
+        == DEFER_REPRESENTATIVENESS_DRAIN_REGIME_FOUND_CANDIDATE_ONLY
+    )
+    assert decision.control_variant_name == (
+        DEFER_REPRESENTATIVENESS_CONTINUING_PRESSURE_CONTROL
+    )
+    assert decision.control_reproduced_no_fit_closure is True
+    assert tuple(decision.draining_variant_names) == (
+        DEFER_REPRESENTATIVENESS_CONSTANT_ROWS_RELAXED_CAP,
+    )
+    assert tuple(decision.non_draining_variant_names) == (
+        DEFER_REPRESENTATIVENESS_REDUCED_PRESSURE_SAME_CAP,
+    )
+    assert decision.first_legal_fit_variant_name == (
+        DEFER_REPRESENTATIVENESS_CONSTANT_ROWS_RELAXED_CAP
+    )
+    assert decision.first_legal_fit_schedule_name == (
+        "backlog_growth_ttl2_future_1_relaxed_cap"
+    )
+    assert decision.first_legal_fit_step == 5
+    assert decision.first_legal_fit_packet_name == "proj_in:q0:d-1"
+    assert decision.new_charged_family_plan_earned is True
+    assert decision.carry_parked is False
+    assert decision.next_slice_if_no_nearby_drain is None
+    assert decision.candidate_only is True
+    assert decision.dyn200_earned is False
+    assert decision.learner_sub2_claimed is False
+
+    _assert_no_tensors(payload)
+
+
+
+def test_defer_until_fit_representativeness_validator_rejects_no_drain_terminal_when_relaxed_cap_drains():
+    report = _defer_until_fit_representativeness_screen_report()
+    bad_report = replace(
+        report,
+        terminal_decision=replace(
+            report.terminal_decision,
+            terminal_label=DEFER_REPRESENTATIVENESS_NO_NEARBY_DRAIN,
+            draining_variant_names=(),
+            non_draining_variant_names=(
+                DEFER_REPRESENTATIVENESS_CONSTANT_ROWS_RELAXED_CAP,
+                DEFER_REPRESENTATIVENESS_REDUCED_PRESSURE_SAME_CAP,
+            ),
+            first_legal_fit_variant_name=None,
+            first_legal_fit_schedule_name=None,
+            first_legal_fit_step=None,
+            first_legal_fit_packet_name=None,
+            new_charged_family_plan_earned=False,
+            carry_parked=True,
+            next_slice_if_no_nearby_drain=LEARNING_RETENTION_TOLERANCE_PROBE,
+            reason="synthetic validator regression guard",
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="no-nearby-drain terminal iff no non-control variant has a legal consume event",
+    ):
+        validate_defer_until_fit_representativeness_screen_report(bad_report)
+
+
+
+def test_defer_until_fit_representativeness_validator_rejects_stale_packet_legal_flag():
+    report = _defer_until_fit_representativeness_screen_report()
+    relaxed_variant = next(
+        variant
+        for variant in report.variant_reports
+        if variant.variant_name == DEFER_REPRESENTATIVENESS_CONSTANT_ROWS_RELAXED_CAP
+    )
+    first_step = relaxed_variant.future_step_reports[0]
+    bad_packet = replace(
+        first_step.packet_step_reports[0],
+        full_class_consume_legal=False,
+    )
+    bad_step = replace(
+        first_step,
+        packet_step_reports=(bad_packet, *first_step.packet_step_reports[1:]),
+    )
+    bad_variant = replace(
+        relaxed_variant,
+        future_step_reports=(bad_step, *relaxed_variant.future_step_reports[1:]),
+    )
+    bad_report = replace(
+        report,
+        variant_reports=tuple(
+            bad_variant if variant.variant_name == bad_variant.variant_name else variant
+            for variant in report.variant_reports
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="representativeness packet legal flag drifted from the packet fields",
+    ):
+        validate_defer_until_fit_representativeness_screen_report(bad_report)
+
 
 
 def test_path_b_aggregate_state_runtime_validator_rejects_negative_candidate_residual():

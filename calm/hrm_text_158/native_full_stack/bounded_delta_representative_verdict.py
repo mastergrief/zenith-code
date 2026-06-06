@@ -408,6 +408,33 @@ DEFER_UNTIL_FIT_TTL2_FORBIDDEN_ACTION_INPUT_KEY_FRAGMENTS = (
     "flat_index",
 )
 DEFER_UNTIL_FIT_TTL2_HORIZON_STEPS = 2
+PATH_B_DEFER_UNTIL_FIT_REPRESENTATIVENESS_SCREEN_SCHEMA_VERSION = (
+    "hrm_text_158_c1p1l_path_b_defer_until_fit_representativeness_screen/v0"
+)
+PATH_B_DEFER_UNTIL_FIT_REPRESENTATIVENESS_SCREEN_LABEL = (
+    "c1p1l_path_b_defer_until_fit_representativeness_screen"
+)
+PATH_B_DEFER_UNTIL_FIT_REPRESENTATIVENESS_SCREEN_CANDIDATE = (
+    "defer_until_fit_representativeness_screen"
+)
+DEFER_REPRESENTATIVENESS_CONTINUING_PRESSURE_CONTROL = (
+    "continuing_pressure_control"
+)
+DEFER_REPRESENTATIVENESS_CONSTANT_ROWS_RELAXED_CAP = (
+    "constant_rows_relaxed_cap"
+)
+DEFER_REPRESENTATIVENESS_REDUCED_PRESSURE_SAME_CAP = (
+    "reduced_pressure_same_cap"
+)
+DEFER_REPRESENTATIVENESS_DRAIN_REGIME_FOUND_CANDIDATE_ONLY = (
+    "defer_representativeness_drain_regime_found_candidate_only"
+)
+DEFER_REPRESENTATIVENESS_NO_NEARBY_DRAIN = (
+    "defer_representativeness_no_nearby_drain"
+)
+DEFER_REPRESENTATIVENESS_INCONCLUSIVE = (
+    "defer_representativeness_inconclusive"
+)
 
 
 def representative_engineering_guard_spec() -> BoundedDeltaGuardSpec:
@@ -9276,6 +9303,168 @@ class DeferUntilFitTtl2FitPlausibilityPrecheckReport:
 
 
 @dataclass(frozen=True)
+class DeferUntilFitRepresentativenessFutureStepReport:
+    schedule_name: str
+    step: int
+    age_steps: int
+    start_index: int
+    rows_per_tensor: int
+    vote_abs: int
+    global_cap: int
+    expected_regime: str
+    candidate_row_count: int
+    backlog_count: int
+    packet_step_reports: tuple[DeferUntilFitTtl2PacketStepReport, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schedule_name": self.schedule_name,
+            "step": int(self.step),
+            "age_steps": int(self.age_steps),
+            "start_index": int(self.start_index),
+            "rows_per_tensor": int(self.rows_per_tensor),
+            "vote_abs": int(self.vote_abs),
+            "global_cap": int(self.global_cap),
+            "expected_regime": self.expected_regime,
+            "candidate_row_count": int(self.candidate_row_count),
+            "backlog_count": int(self.backlog_count),
+            "packet_step_reports": [
+                report.to_dict() for report in self.packet_step_reports
+            ],
+        }
+
+
+@dataclass(frozen=True)
+class DeferUntilFitRepresentativenessVariantReport:
+    variant_name: str
+    variant_role: str
+    pressure_source_schedule_names: tuple[str, ...]
+    cap_sequence: tuple[int, ...]
+    future_step_reports: tuple[DeferUntilFitRepresentativenessFutureStepReport, ...]
+    first_legal_fit_schedule_name: str | None
+    first_legal_fit_step: int | None
+    first_legal_fit_packet_name: str | None
+    any_legal_consume_event: bool
+    claims_sustained_drain: bool
+    representativeness_only: bool
+    candidate_only: bool
+    dyn200_earned: bool
+    learner_sub2_claimed: bool
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "variant_name": self.variant_name,
+            "variant_role": self.variant_role,
+            "pressure_source_schedule_names": list(
+                self.pressure_source_schedule_names
+            ),
+            "cap_sequence": [int(value) for value in self.cap_sequence],
+            "future_step_reports": [
+                report.to_dict() for report in self.future_step_reports
+            ],
+            "first_legal_fit_schedule_name": self.first_legal_fit_schedule_name,
+            "first_legal_fit_step": self.first_legal_fit_step,
+            "first_legal_fit_packet_name": self.first_legal_fit_packet_name,
+            "any_legal_consume_event": bool(self.any_legal_consume_event),
+            "claims_sustained_drain": bool(self.claims_sustained_drain),
+            "representativeness_only": bool(self.representativeness_only),
+            "candidate_only": bool(self.candidate_only),
+            "dyn200_earned": bool(self.dyn200_earned),
+            "learner_sub2_claimed": bool(self.learner_sub2_claimed),
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class DeferUntilFitRepresentativenessDecision:
+    terminal_label: str
+    control_variant_name: str
+    control_reproduced_no_fit_closure: bool
+    draining_variant_names: tuple[str, ...]
+    non_draining_variant_names: tuple[str, ...]
+    first_legal_fit_variant_name: str | None
+    first_legal_fit_schedule_name: str | None
+    first_legal_fit_step: int | None
+    first_legal_fit_packet_name: str | None
+    new_charged_family_plan_earned: bool
+    carry_parked: bool
+    next_slice_if_no_nearby_drain: str | None
+    candidate_only: bool
+    dyn200_earned: bool
+    learner_sub2_claimed: bool
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "terminal_label": self.terminal_label,
+            "control_variant_name": self.control_variant_name,
+            "control_reproduced_no_fit_closure": bool(
+                self.control_reproduced_no_fit_closure
+            ),
+            "draining_variant_names": list(self.draining_variant_names),
+            "non_draining_variant_names": list(self.non_draining_variant_names),
+            "first_legal_fit_variant_name": self.first_legal_fit_variant_name,
+            "first_legal_fit_schedule_name": self.first_legal_fit_schedule_name,
+            "first_legal_fit_step": self.first_legal_fit_step,
+            "first_legal_fit_packet_name": self.first_legal_fit_packet_name,
+            "new_charged_family_plan_earned": bool(
+                self.new_charged_family_plan_earned
+            ),
+            "carry_parked": bool(self.carry_parked),
+            "next_slice_if_no_nearby_drain": self.next_slice_if_no_nearby_drain,
+            "candidate_only": bool(self.candidate_only),
+            "dyn200_earned": bool(self.dyn200_earned),
+            "learner_sub2_claimed": bool(self.learner_sub2_claimed),
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class DeferUntilFitRepresentativenessScreenReport:
+    schema_version: str
+    label: str
+    source_bindingness: Any
+    field_coverage: SourceFieldCoverage
+    candidate_name: str
+    source_baseline_label: str
+    source_baseline_terminal_label: str
+    source_aggregate_runtime_label: str
+    source_aggregate_runtime_terminal_label: str
+    source_ttl2_label: str
+    source_ttl2_terminal_label: str
+    source_defer_family_variant_name: str
+    ttl_steps_charged: int
+    variant_reports: tuple[DeferUntilFitRepresentativenessVariantReport, ...]
+    terminal_decision: DeferUntilFitRepresentativenessDecision
+    raw_arrays_included: bool
+    non_claims: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "label": self.label,
+            "source_bindingness": self.source_bindingness.to_dict(),
+            "field_coverage": self.field_coverage.to_dict(),
+            "candidate_name": self.candidate_name,
+            "source_baseline_label": self.source_baseline_label,
+            "source_baseline_terminal_label": self.source_baseline_terminal_label,
+            "source_aggregate_runtime_label": self.source_aggregate_runtime_label,
+            "source_aggregate_runtime_terminal_label": self.source_aggregate_runtime_terminal_label,
+            "source_ttl2_label": self.source_ttl2_label,
+            "source_ttl2_terminal_label": self.source_ttl2_terminal_label,
+            "source_defer_family_variant_name": self.source_defer_family_variant_name,
+            "ttl_steps_charged": int(self.ttl_steps_charged),
+            "variant_reports": [
+                report.to_dict() for report in self.variant_reports
+            ],
+            "terminal_decision": self.terminal_decision.to_dict(),
+            "raw_arrays_included": bool(self.raw_arrays_included),
+            "non_claims": list(self.non_claims),
+        }
+
+
+@dataclass(frozen=True)
 class _DeferUntilFitTtl2PacketContext:
     packet_name: str
     priority_rank: int
@@ -10227,6 +10416,695 @@ def validate_tie_frontier_reservation_lower_bound_report(
     _assert_no_tensors(report.to_dict())
 
 
+
+def _pre_registered_vote_pressure_step_by_name(name: str) -> VotePressureStepSpec:
+    for step in PRE_REGISTERED_VOTE_PRESSURE_SCHEDULE:
+        if step.name == str(name):
+            return step
+    raise ValueError(f"pre-registered vote-pressure step {name!r} missing")
+
+
+
+def _path_b_exact_and_defer_all_replay_steps_extension(
+    step_specs: Sequence[VotePressureStepSpec],
+) -> tuple[_PathBReplayStepState, ...]:
+    replay_pairs = _path_b_exact_and_defer_all_replay_steps()
+    replay_states = _copy_state_map(replay_pairs[-1][1].output_states)
+    replay_backlog = _copy_backlog(replay_pairs[-1][1].output_backlog)
+    future_steps: list[_PathBReplayStepState] = []
+    for schedule_step in step_specs:
+        replay_trace_step = _path_b_current_trace_step(
+            states_by_key=replay_states,
+            deferred_backlog=replay_backlog,
+            schedule_step=schedule_step,
+        )
+        replay_step = _path_b_replay_step_from_mutated_partition(replay_trace_step)
+        future_steps.append(replay_step)
+        replay_states = _copy_state_map(replay_step.output_states)
+        replay_backlog = _copy_backlog(replay_step.output_backlog)
+    return tuple(future_steps)
+
+
+
+def _path_b_defer_until_fit_representativeness_relaxed_cap_step_specs(
+    ttl2_report: DeferUntilFitTtl2FitPlausibilityPrecheckReport,
+) -> tuple[VotePressureStepSpec, ...]:
+    control_specs = _path_b_defer_until_fit_ttl2_future_step_specs()
+    if len(control_specs) != len(ttl2_report.future_step_reports):
+        raise ValueError(
+            "representativeness relaxed-cap ladder requires the committed TTL2 control horizon"
+        )
+    specs: list[VotePressureStepSpec] = []
+    for control_spec, control_step_report in zip(
+        control_specs,
+        ttl2_report.future_step_reports,
+    ):
+        target_cap = max(
+            int(packet.total_projected_class_mass)
+            for packet in control_step_report.packet_step_reports
+        )
+        if target_cap <= int(control_spec.cap):
+            raise ValueError(
+                "representativeness relaxed-cap ladder must start above the control cap"
+            )
+        specs.append(
+            VotePressureStepSpec(
+                name=f"{control_spec.name}_relaxed_cap",
+                step=int(control_spec.step),
+                rows_per_tensor=int(control_spec.rows_per_tensor),
+                start_index=int(control_spec.start_index),
+                vote_abs=int(control_spec.vote_abs),
+                cap=int(target_cap),
+                expected_regime=(
+                    "representativeness-only relaxed-cap continuation from "
+                    f"{control_spec.name}; same rows/vote shape and advanced row window, "
+                    "with cap lifted to the smallest observed full-class-admitting mass on the control path"
+                ),
+            )
+        )
+    return tuple(specs)
+
+
+
+def _path_b_defer_until_fit_representativeness_reduced_pressure_same_cap_step_specs(
+) -> tuple[VotePressureStepSpec, ...]:
+    control_specs = _path_b_defer_until_fit_ttl2_future_step_specs()
+    if len(control_specs) != DEFER_UNTIL_FIT_TTL2_HORIZON_STEPS:
+        raise ValueError(
+            "representativeness reduced-pressure screen requires the committed TTL2 control horizon"
+        )
+    moderate = _pre_registered_vote_pressure_step_by_name("moderate_unsaturated")
+    sparse = _pre_registered_vote_pressure_step_by_name("sparse_unsaturated")
+    first_start_index = int(control_specs[0].start_index)
+    second_start_index = first_start_index + int(moderate.rows_per_tensor)
+    tensor_numel = int(next(iter(_initial_states().values())).q_levels.numel())
+    specs = (
+        VotePressureStepSpec(
+            name=f"{control_specs[0].name}_{moderate.name}_same_cap",
+            step=int(control_specs[0].step),
+            rows_per_tensor=int(moderate.rows_per_tensor),
+            start_index=int(first_start_index),
+            vote_abs=int(moderate.vote_abs),
+            cap=int(control_specs[0].cap),
+            expected_regime=(
+                "representativeness-only same-cap continuation using the named "
+                "moderate_unsaturated pressure shape on an advanced row window"
+            ),
+        ),
+        VotePressureStepSpec(
+            name=f"{control_specs[1].name}_{sparse.name}_same_cap",
+            step=int(control_specs[1].step),
+            rows_per_tensor=int(sparse.rows_per_tensor),
+            start_index=int(second_start_index),
+            vote_abs=int(sparse.vote_abs),
+            cap=int(control_specs[1].cap),
+            expected_regime=(
+                "representativeness-only same-cap continuation using the named "
+                "sparse_unsaturated pressure shape on the next advanced row window"
+            ),
+        ),
+    )
+    for schedule_step in specs:
+        start_index = int(schedule_step.start_index)
+        rows_per_tensor = int(schedule_step.rows_per_tensor)
+        if start_index < 0 or start_index + rows_per_tensor > tensor_numel:
+            raise ValueError(
+                "representativeness reduced-pressure screen stepped outside the native tensor window"
+            )
+    return specs
+
+
+
+def _path_b_defer_until_fit_representativeness_future_step_report(
+    *,
+    packet_contexts: Sequence[_DeferUntilFitTtl2PacketContext],
+    schedule_step: VotePressureStepSpec,
+    future_step: _PathBReplayStepState,
+    age_steps: int,
+) -> DeferUntilFitRepresentativenessFutureStepReport:
+    residual_cap = int(future_step.global_cap)
+    packet_step_reports: list[DeferUntilFitTtl2PacketStepReport] = []
+    for packet_context in packet_contexts:
+        packet_report = _path_b_defer_until_fit_ttl2_packet_step_report(
+            packet_context=packet_context,
+            future_step=future_step,
+            age_steps=age_steps,
+            residual_cap_entering_packet=residual_cap,
+        )
+        packet_step_reports.append(packet_report)
+        if packet_report.full_class_consume_legal:
+            residual_cap -= int(packet_report.total_projected_class_mass)
+    return DeferUntilFitRepresentativenessFutureStepReport(
+        schedule_name=schedule_step.name,
+        step=int(schedule_step.step),
+        age_steps=int(age_steps),
+        start_index=int(schedule_step.start_index),
+        rows_per_tensor=int(schedule_step.rows_per_tensor),
+        vote_abs=int(schedule_step.vote_abs),
+        global_cap=int(future_step.global_cap),
+        expected_regime=schedule_step.expected_regime,
+        candidate_row_count=int(len(future_step.candidate_row_ids)),
+        backlog_count=int(len(future_step.backlog_ids)),
+        packet_step_reports=tuple(packet_step_reports),
+    )
+
+
+
+def _path_b_defer_until_fit_representativeness_variant_report(
+    *,
+    variant_name: str,
+    variant_role: str,
+    pressure_source_schedule_names: tuple[str, ...],
+    step_specs: Sequence[VotePressureStepSpec],
+    packet_contexts: Sequence[_DeferUntilFitTtl2PacketContext],
+) -> DeferUntilFitRepresentativenessVariantReport:
+    future_replay_steps = _path_b_exact_and_defer_all_replay_steps_extension(step_specs)
+    if len(future_replay_steps) != len(step_specs):
+        raise ValueError(
+            "representativeness variant replay length drifted from the declared future schedule"
+        )
+    future_step_reports = tuple(
+        _path_b_defer_until_fit_representativeness_future_step_report(
+            packet_contexts=packet_contexts,
+            schedule_step=schedule_step,
+            future_step=future_step,
+            age_steps=age_steps,
+        )
+        for age_steps, (schedule_step, future_step) in enumerate(
+            zip(step_specs, future_replay_steps),
+            start=1,
+        )
+    )
+    first_schedule_name = None
+    first_step = None
+    first_packet_name = None
+    for step_report in future_step_reports:
+        fit_packet = next(
+            (
+                packet.packet_name
+                for packet in step_report.packet_step_reports
+                if packet.full_class_consume_legal
+            ),
+            None,
+        )
+        if fit_packet is not None:
+            first_schedule_name = step_report.schedule_name
+            first_step = int(step_report.step)
+            first_packet_name = fit_packet
+            break
+    any_legal_consume_event = first_schedule_name is not None
+    if variant_name == DEFER_REPRESENTATIVENESS_CONTINUING_PRESSURE_CONTROL:
+        reason = (
+            "continuing-pressure control reuses the banked TTL2 future path and must stay a no-fit negative control"
+        )
+    elif any_legal_consume_event:
+        reason = (
+            "at least one lawful full-class consume event appears under this nearby drain regime; the result is representativeness-only and does not claim sustained drain"
+        )
+    else:
+        reason = (
+            "no lawful full-class consume event appears within this explicitly charged nearby drain regime"
+        )
+    return DeferUntilFitRepresentativenessVariantReport(
+        variant_name=variant_name,
+        variant_role=variant_role,
+        pressure_source_schedule_names=tuple(pressure_source_schedule_names),
+        cap_sequence=tuple(int(step.cap) for step in step_specs),
+        future_step_reports=future_step_reports,
+        first_legal_fit_schedule_name=first_schedule_name,
+        first_legal_fit_step=first_step,
+        first_legal_fit_packet_name=first_packet_name,
+        any_legal_consume_event=bool(any_legal_consume_event),
+        claims_sustained_drain=False,
+        representativeness_only=True,
+        candidate_only=True,
+        dyn200_earned=False,
+        learner_sub2_claimed=False,
+        reason=reason,
+    )
+
+
+
+def _path_b_defer_until_fit_representativeness_non_claims() -> tuple[str, ...]:
+    return (
+        "CPU-only nearby-drain representativeness screen layered beside the banked 4-step baseline and TTL2 seams",
+        "continuing_pressure_control must reproduce the committed 1f980c6 continuing-pressure no-fit closure",
+        "a single lawful full-class consume event is treated as an existence-only screen; sustained drain is explicitly not claimed",
+        "any positive is representativeness-only and earns a new charged family/ledger plan with explicit cap and pressure assumptions",
+        "candidate-only; no dyn200, no learner/sub-2 claim, no raw per-weight arrays",
+    )
+
+
+
+def _path_b_defer_until_fit_representativeness_terminal_decision(
+    variant_reports: Sequence[DeferUntilFitRepresentativenessVariantReport],
+) -> DeferUntilFitRepresentativenessDecision:
+    if not variant_reports:
+        raise ValueError("representativeness screen requires at least one variant report")
+    by_name = {variant.variant_name: variant for variant in variant_reports}
+    control = by_name.get(DEFER_REPRESENTATIVENESS_CONTINUING_PRESSURE_CONTROL)
+    if control is None:
+        raise ValueError("representativeness screen requires the continuing-pressure control")
+    control_reproduced_no_fit_closure = not bool(control.any_legal_consume_event)
+    non_control_reports = [
+        variant
+        for variant in variant_reports
+        if variant.variant_name != DEFER_REPRESENTATIVENESS_CONTINUING_PRESSURE_CONTROL
+    ]
+    draining_variant_names = tuple(
+        variant.variant_name
+        for variant in non_control_reports
+        if variant.any_legal_consume_event
+    )
+    non_draining_variant_names = tuple(
+        variant.variant_name
+        for variant in non_control_reports
+        if not variant.any_legal_consume_event
+    )
+    if not control_reproduced_no_fit_closure:
+        return DeferUntilFitRepresentativenessDecision(
+            terminal_label=DEFER_REPRESENTATIVENESS_INCONCLUSIVE,
+            control_variant_name=DEFER_REPRESENTATIVENESS_CONTINUING_PRESSURE_CONTROL,
+            control_reproduced_no_fit_closure=False,
+            draining_variant_names=draining_variant_names,
+            non_draining_variant_names=non_draining_variant_names,
+            first_legal_fit_variant_name=None,
+            first_legal_fit_schedule_name=None,
+            first_legal_fit_step=None,
+            first_legal_fit_packet_name=None,
+            new_charged_family_plan_earned=False,
+            carry_parked=False,
+            next_slice_if_no_nearby_drain=None,
+            candidate_only=True,
+            dyn200_earned=False,
+            learner_sub2_claimed=False,
+            reason=(
+                "the continuing-pressure control no longer reproduces the banked TTL2 no-fit closure, so the nearby-drain screen is honestly inconclusive"
+            ),
+        )
+    if draining_variant_names:
+        legal_events = [
+            (
+                int(variant.first_legal_fit_step),
+                variant_index,
+                variant,
+            )
+            for variant_index, variant in enumerate(non_control_reports)
+            if variant.first_legal_fit_step is not None
+        ]
+        earliest_variant = min(legal_events, key=lambda item: (item[0], item[1]))[2]
+        return DeferUntilFitRepresentativenessDecision(
+            terminal_label=DEFER_REPRESENTATIVENESS_DRAIN_REGIME_FOUND_CANDIDATE_ONLY,
+            control_variant_name=DEFER_REPRESENTATIVENESS_CONTINUING_PRESSURE_CONTROL,
+            control_reproduced_no_fit_closure=True,
+            draining_variant_names=draining_variant_names,
+            non_draining_variant_names=non_draining_variant_names,
+            first_legal_fit_variant_name=earliest_variant.variant_name,
+            first_legal_fit_schedule_name=earliest_variant.first_legal_fit_schedule_name,
+            first_legal_fit_step=earliest_variant.first_legal_fit_step,
+            first_legal_fit_packet_name=earliest_variant.first_legal_fit_packet_name,
+            new_charged_family_plan_earned=True,
+            carry_parked=False,
+            next_slice_if_no_nearby_drain=None,
+            candidate_only=True,
+            dyn200_earned=False,
+            learner_sub2_claimed=False,
+            reason=(
+                "at least one non-control nearby drain regime admits a lawful full-class consume event while the continuing-pressure control stays negative; this is representativeness-only and earns a new charged family/ledger plan"
+            ),
+        )
+    return DeferUntilFitRepresentativenessDecision(
+        terminal_label=DEFER_REPRESENTATIVENESS_NO_NEARBY_DRAIN,
+        control_variant_name=DEFER_REPRESENTATIVENESS_CONTINUING_PRESSURE_CONTROL,
+        control_reproduced_no_fit_closure=True,
+        draining_variant_names=(),
+        non_draining_variant_names=non_draining_variant_names,
+        first_legal_fit_variant_name=None,
+        first_legal_fit_schedule_name=None,
+        first_legal_fit_step=None,
+        first_legal_fit_packet_name=None,
+        new_charged_family_plan_earned=False,
+        carry_parked=True,
+        next_slice_if_no_nearby_drain=LEARNING_RETENTION_TOLERANCE_PROBE,
+        candidate_only=True,
+        dyn200_earned=False,
+        learner_sub2_claimed=False,
+        reason=(
+            "no nearby drain regime admits a lawful full-class consume event while the control stays negative, so carry is parked and the defer-all learning/retention tolerance probe becomes the next honest slice"
+        ),
+    )
+
+
+
+def run_defer_until_fit_representativeness_screen(
+) -> DeferUntilFitRepresentativenessScreenReport:
+    baseline_report = run_path_b_defer_all_baseline_parity_probe()
+    validate_path_b_defer_all_baseline_parity_probe_report(baseline_report)
+    if baseline_report.terminal_decision.terminal_label != CARRY_CANDIDATE_EARNED:
+        raise ValueError(
+            "representativeness screen requires the committed carry-candidate baseline source"
+        )
+    aggregate_report = run_path_b_aggregate_state_runtime_semantics_definition()
+    validate_path_b_aggregate_state_runtime_semantics_report(aggregate_report)
+    if (
+        aggregate_report.terminal_decision.terminal_label
+        != INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT
+    ):
+        raise ValueError(
+            "representativeness screen requires the committed aggregate-runtime inconclusive source"
+        )
+    ttl2_report = run_defer_until_fit_ttl2_fit_plausibility_precheck()
+    validate_defer_until_fit_ttl2_fit_plausibility_precheck_report(ttl2_report)
+    if (
+        ttl2_report.terminal_decision.terminal_label
+        != DEFER_UNTIL_FIT_TTL2_NO_FIT_ON_STATE_PATH
+    ):
+        raise ValueError(
+            "representativeness screen requires the committed TTL2 no-fit source"
+        )
+    family_by_variant = {
+        family.variant_name: family for family in aggregate_report.family_reports
+    }
+    defer_family = family_by_variant[CARRY_FAMILY_CLASS_UNIFORM_DEFER_UNTIL_FIT]
+    if defer_family.lifecycle_spec.ttl_steps != DEFER_UNTIL_FIT_TTL2_HORIZON_STEPS:
+        raise ValueError(
+            "representativeness screen requires the charged ttl_steps=2 defer family"
+        )
+    packet_contexts = _path_b_defer_until_fit_packet_contexts()
+    control_specs = _path_b_defer_until_fit_ttl2_future_step_specs()
+    relaxed_cap_specs = (
+        _path_b_defer_until_fit_representativeness_relaxed_cap_step_specs(ttl2_report)
+    )
+    reduced_pressure_specs = (
+        _path_b_defer_until_fit_representativeness_reduced_pressure_same_cap_step_specs()
+    )
+    variant_reports = (
+        _path_b_defer_until_fit_representativeness_variant_report(
+            variant_name=DEFER_REPRESENTATIVENESS_CONTINUING_PRESSURE_CONTROL,
+            variant_role="control",
+            pressure_source_schedule_names=tuple(
+                PRE_REGISTERED_VOTE_PRESSURE_SCHEDULE[-1].name
+                for _ in control_specs
+            ),
+            step_specs=control_specs,
+            packet_contexts=packet_contexts,
+        ),
+        _path_b_defer_until_fit_representativeness_variant_report(
+            variant_name=DEFER_REPRESENTATIVENESS_CONSTANT_ROWS_RELAXED_CAP,
+            variant_role="non_control",
+            pressure_source_schedule_names=tuple(
+                PRE_REGISTERED_VOTE_PRESSURE_SCHEDULE[-1].name
+                for _ in relaxed_cap_specs
+            ),
+            step_specs=relaxed_cap_specs,
+            packet_contexts=packet_contexts,
+        ),
+        _path_b_defer_until_fit_representativeness_variant_report(
+            variant_name=DEFER_REPRESENTATIVENESS_REDUCED_PRESSURE_SAME_CAP,
+            variant_role="non_control",
+            pressure_source_schedule_names=(
+                "moderate_unsaturated",
+                "sparse_unsaturated",
+            ),
+            step_specs=reduced_pressure_specs,
+            packet_contexts=packet_contexts,
+        ),
+    )
+    bindingness = pre_register_source_bindingness(
+        source_kind=SOURCE_KIND_GENERATED_NATIVE_LOOP,
+        coverage=SourceFieldCoverage.full_generated_native_loop(),
+    )
+    return DeferUntilFitRepresentativenessScreenReport(
+        schema_version=PATH_B_DEFER_UNTIL_FIT_REPRESENTATIVENESS_SCREEN_SCHEMA_VERSION,
+        label=PATH_B_DEFER_UNTIL_FIT_REPRESENTATIVENESS_SCREEN_LABEL,
+        source_bindingness=bindingness,
+        field_coverage=SourceFieldCoverage.full_generated_native_loop(),
+        candidate_name=PATH_B_DEFER_UNTIL_FIT_REPRESENTATIVENESS_SCREEN_CANDIDATE,
+        source_baseline_label=baseline_report.label,
+        source_baseline_terminal_label=baseline_report.terminal_decision.terminal_label,
+        source_aggregate_runtime_label=aggregate_report.label,
+        source_aggregate_runtime_terminal_label=(
+            aggregate_report.terminal_decision.terminal_label
+        ),
+        source_ttl2_label=ttl2_report.label,
+        source_ttl2_terminal_label=ttl2_report.terminal_decision.terminal_label,
+        source_defer_family_variant_name=CARRY_FAMILY_CLASS_UNIFORM_DEFER_UNTIL_FIT,
+        ttl_steps_charged=DEFER_UNTIL_FIT_TTL2_HORIZON_STEPS,
+        variant_reports=variant_reports,
+        terminal_decision=_path_b_defer_until_fit_representativeness_terminal_decision(
+            variant_reports
+        ),
+        raw_arrays_included=False,
+        non_claims=_path_b_defer_until_fit_representativeness_non_claims(),
+    )
+
+
+
+def validate_defer_until_fit_representativeness_screen_report(
+    report: DeferUntilFitRepresentativenessScreenReport,
+) -> None:
+    if (
+        report.schema_version
+        != PATH_B_DEFER_UNTIL_FIT_REPRESENTATIVENESS_SCREEN_SCHEMA_VERSION
+    ):
+        raise ValueError("unexpected representativeness screen schema version")
+    if report.label != PATH_B_DEFER_UNTIL_FIT_REPRESENTATIVENESS_SCREEN_LABEL:
+        raise ValueError("unexpected representativeness screen label")
+    if (
+        report.candidate_name
+        != PATH_B_DEFER_UNTIL_FIT_REPRESENTATIVENESS_SCREEN_CANDIDATE
+    ):
+        raise ValueError("unexpected representativeness screen candidate")
+    if report.source_baseline_label != PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_LABEL:
+        raise ValueError("representativeness screen must cite the committed baseline label")
+    if report.source_baseline_terminal_label != CARRY_CANDIDATE_EARNED:
+        raise ValueError("representativeness screen must inherit the carry-candidate baseline")
+    if report.source_aggregate_runtime_label != PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_LABEL:
+        raise ValueError("representativeness screen must cite the committed aggregate-runtime label")
+    if report.source_aggregate_runtime_terminal_label != INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT:
+        raise ValueError("representativeness screen must inherit the aggregate-runtime inconclusive source")
+    if report.source_ttl2_label != PATH_B_DEFER_UNTIL_FIT_TTL2_PLAUSIBILITY_PRECHECK_LABEL:
+        raise ValueError("representativeness screen must cite the committed TTL2 label")
+    if report.source_ttl2_terminal_label != DEFER_UNTIL_FIT_TTL2_NO_FIT_ON_STATE_PATH:
+        raise ValueError("representativeness screen must inherit the committed TTL2 no-fit source")
+    if report.source_defer_family_variant_name != CARRY_FAMILY_CLASS_UNIFORM_DEFER_UNTIL_FIT:
+        raise ValueError("representativeness screen must stay on the charged defer-until-fit family")
+    if int(report.ttl_steps_charged) != int(DEFER_UNTIL_FIT_TTL2_HORIZON_STEPS):
+        raise ValueError("representativeness screen must keep the charged TTL2 horizon")
+    expected_variant_order = (
+        DEFER_REPRESENTATIVENESS_CONTINUING_PRESSURE_CONTROL,
+        DEFER_REPRESENTATIVENESS_CONSTANT_ROWS_RELAXED_CAP,
+        DEFER_REPRESENTATIVENESS_REDUCED_PRESSURE_SAME_CAP,
+    )
+    actual_variant_order = tuple(
+        variant.variant_name for variant in report.variant_reports
+    )
+    if actual_variant_order != expected_variant_order:
+        raise ValueError("representativeness screen variant order drifted from the gated table")
+    control_specs = _path_b_defer_until_fit_ttl2_future_step_specs()
+    reduced_named_specs = (
+        _pre_registered_vote_pressure_step_by_name("moderate_unsaturated"),
+        _pre_registered_vote_pressure_step_by_name("sparse_unsaturated"),
+    )
+    draining_variant_names: list[str] = []
+    non_draining_variant_names: list[str] = []
+    first_legal_events: list[tuple[int, int, str, str, str]] = []
+    for variant_index, variant in enumerate(report.variant_reports):
+        if variant.variant_role not in {"control", "non_control"}:
+            raise ValueError("representativeness variant role must stay control/non_control")
+        if len(variant.pressure_source_schedule_names) != len(variant.future_step_reports):
+            raise ValueError("representativeness pressure-source names must align with future steps")
+        if tuple(int(value) for value in variant.cap_sequence) != tuple(
+            int(step.global_cap) for step in variant.future_step_reports
+        ):
+            raise ValueError("representativeness cap sequence drifted from the future step reports")
+        if variant.claims_sustained_drain:
+            raise ValueError("representativeness screen must not claim sustained drain")
+        if not variant.representativeness_only:
+            raise ValueError("representativeness screen variants must stay representativeness-only")
+        if variant.candidate_only is not True or variant.dyn200_earned or variant.learner_sub2_claimed:
+            raise ValueError("representativeness screen variants must stay candidate-only with no dyn200/learner claim")
+        first_fit_schedule_name = None
+        first_fit_step = None
+        first_fit_packet_name = None
+        any_legal_consume_event = False
+        for age_steps, step_report in enumerate(variant.future_step_reports, start=1):
+            if int(step_report.age_steps) != int(age_steps):
+                raise ValueError("representativeness future-step ages must stay contiguous")
+            if not step_report.packet_step_reports:
+                raise ValueError("representativeness future steps must report packet-level fits")
+            for packet in step_report.packet_step_reports:
+                if packet.residual_cap_entering_packet < 0:
+                    raise ValueError("representativeness residual cap must stay non-negative")
+                expected_legal = bool(
+                    int(packet.projected_class_count) == 1
+                    and int(packet.total_projected_class_mass) > 0
+                    and int(packet.total_projected_class_mass)
+                    <= int(packet.residual_cap_entering_packet)
+                )
+                if int(packet.total_projected_class_mass) != sum(
+                    int(value) for value in packet.projected_class_cardinalities
+                ):
+                    raise ValueError(
+                        "representativeness projected class mass drifted from the class-cardinality tuple"
+                    )
+                if int(packet.false_positive_mass) != (
+                    int(packet.total_projected_class_mass)
+                    - int(packet.recovered_dropped_audit_mass)
+                ):
+                    raise ValueError(
+                        "representativeness false-positive mass drifted from projected mass minus recovered audit mass"
+                    )
+                if bool(packet.full_class_consume_legal) != bool(expected_legal):
+                    raise ValueError(
+                        "representativeness packet legal flag drifted from the packet fields"
+                    )
+                expected_missed = (
+                    0 if expected_legal else int(packet.recovered_dropped_audit_mass)
+                )
+                if int(packet.missed_represented_mass) != int(expected_missed):
+                    raise ValueError(
+                        "representativeness missed mass drifted from the recomputed legal predicate"
+                    )
+                if packet.missed_represented_mass < 0 or packet.false_positive_mass < 0:
+                    raise ValueError("representativeness packet counts must stay non-negative")
+                if expected_legal and not any_legal_consume_event:
+                    any_legal_consume_event = True
+                    first_fit_schedule_name = step_report.schedule_name
+                    first_fit_step = int(step_report.step)
+                    first_fit_packet_name = packet.packet_name
+            if variant.variant_name == DEFER_REPRESENTATIVENESS_CONTINUING_PRESSURE_CONTROL:
+                control_spec = control_specs[age_steps - 1]
+                if step_report.schedule_name != control_spec.name:
+                    raise ValueError("continuing-pressure control drifted from the banked TTL2 step names")
+                if step_report.step != int(control_spec.step):
+                    raise ValueError("continuing-pressure control drifted from the banked TTL2 step numbers")
+                if step_report.start_index != int(control_spec.start_index):
+                    raise ValueError("continuing-pressure control drifted from the banked TTL2 windows")
+                if step_report.rows_per_tensor != int(control_spec.rows_per_tensor):
+                    raise ValueError("continuing-pressure control rows drifted from the banked TTL2 schedule")
+                if step_report.vote_abs != int(control_spec.vote_abs):
+                    raise ValueError("continuing-pressure control vote magnitude drifted from the banked TTL2 schedule")
+                if step_report.global_cap != int(control_spec.cap):
+                    raise ValueError("continuing-pressure control cap drifted from the banked TTL2 schedule")
+                if variant.pressure_source_schedule_names[age_steps - 1] != PRE_REGISTERED_VOTE_PRESSURE_SCHEDULE[-1].name:
+                    raise ValueError("continuing-pressure control must source pressure from backlog_growth")
+            elif variant.variant_name == DEFER_REPRESENTATIVENESS_CONSTANT_ROWS_RELAXED_CAP:
+                control_spec = control_specs[age_steps - 1]
+                if step_report.step != int(control_spec.step):
+                    raise ValueError("relaxed-cap variant must keep the control step numbers")
+                if step_report.start_index != int(control_spec.start_index):
+                    raise ValueError("relaxed-cap variant must keep the control windows")
+                if step_report.rows_per_tensor != int(control_spec.rows_per_tensor):
+                    raise ValueError("relaxed-cap variant must keep the control row count")
+                if step_report.vote_abs != int(control_spec.vote_abs):
+                    raise ValueError("relaxed-cap variant must keep the control vote magnitude")
+                if step_report.global_cap <= int(control_spec.cap):
+                    raise ValueError("relaxed-cap variant must lift cap above the control cap")
+                if variant.pressure_source_schedule_names[age_steps - 1] != PRE_REGISTERED_VOTE_PRESSURE_SCHEDULE[-1].name:
+                    raise ValueError("relaxed-cap variant must keep backlog_growth as its pressure source")
+            elif variant.variant_name == DEFER_REPRESENTATIVENESS_REDUCED_PRESSURE_SAME_CAP:
+                reduced_spec = reduced_named_specs[age_steps - 1]
+                if step_report.global_cap != int(control_specs[age_steps - 1].cap):
+                    raise ValueError("reduced-pressure variant must keep the control cap")
+                if step_report.rows_per_tensor != int(reduced_spec.rows_per_tensor):
+                    raise ValueError("reduced-pressure variant rows drifted from the named prereg shape")
+                if step_report.vote_abs != int(reduced_spec.vote_abs):
+                    raise ValueError("reduced-pressure variant vote magnitude drifted from the named prereg shape")
+                if variant.pressure_source_schedule_names[age_steps - 1] != reduced_spec.name:
+                    raise ValueError("reduced-pressure variant must cite the named prereg pressure sources")
+        if bool(variant.any_legal_consume_event) != bool(any_legal_consume_event):
+            raise ValueError("representativeness legal-event flag drifted from the packet reports")
+        if variant.first_legal_fit_schedule_name != first_fit_schedule_name:
+            raise ValueError("representativeness first-fit schedule drifted from the packet reports")
+        if variant.first_legal_fit_step != first_fit_step:
+            raise ValueError("representativeness first-fit step drifted from the packet reports")
+        if variant.first_legal_fit_packet_name != first_fit_packet_name:
+            raise ValueError("representativeness first-fit packet drifted from the packet reports")
+        if variant.variant_name != DEFER_REPRESENTATIVENESS_CONTINUING_PRESSURE_CONTROL:
+            if any_legal_consume_event:
+                draining_variant_names.append(variant.variant_name)
+                if first_fit_step is None or first_fit_schedule_name is None or first_fit_packet_name is None:
+                    raise ValueError("draining variants must expose an explicit first legal fit")
+                first_legal_events.append(
+                    (
+                        int(first_fit_step),
+                        int(variant_index),
+                        variant.variant_name,
+                        first_fit_schedule_name,
+                        first_fit_packet_name,
+                    )
+                )
+            else:
+                non_draining_variant_names.append(variant.variant_name)
+    decision = report.terminal_decision
+    if decision.control_variant_name != DEFER_REPRESENTATIVENESS_CONTINUING_PRESSURE_CONTROL:
+        raise ValueError("representativeness decision must name the continuing-pressure control")
+    control_reproduced_no_fit_closure = not report.variant_reports[0].any_legal_consume_event
+    if bool(decision.control_reproduced_no_fit_closure) != bool(control_reproduced_no_fit_closure):
+        raise ValueError("representativeness control-closure flag drifted from the control variant")
+    if decision.candidate_only is not True or decision.dyn200_earned or decision.learner_sub2_claimed:
+        raise ValueError("representativeness decision must stay candidate-only with no dyn200/learner claim")
+    if decision.terminal_label == DEFER_REPRESENTATIVENESS_DRAIN_REGIME_FOUND_CANDIDATE_ONLY:
+        if not control_reproduced_no_fit_closure:
+            raise ValueError("drain-found terminal requires the control no-fit closure")
+        if not draining_variant_names:
+            raise ValueError("drain-found terminal iff at least one non-control variant has a legal consume event")
+        if tuple(decision.draining_variant_names) != tuple(draining_variant_names):
+            raise ValueError("representativeness draining variants drifted from the variant reports")
+        if tuple(decision.non_draining_variant_names) != tuple(non_draining_variant_names):
+            raise ValueError("representativeness non-draining variants drifted from the variant reports")
+        if not decision.new_charged_family_plan_earned or decision.carry_parked:
+            raise ValueError("drain-found terminal must earn a new charged family plan and must not park carry")
+        if decision.next_slice_if_no_nearby_drain is not None:
+            raise ValueError("drain-found terminal must not pre-assign the no-nearby-drain next slice")
+        earliest_event = min(first_legal_events, key=lambda item: (item[0], item[1]))
+        if decision.first_legal_fit_variant_name != earliest_event[2]:
+            raise ValueError("drain-found terminal must cite the earliest legal-fit variant")
+        if decision.first_legal_fit_schedule_name != earliest_event[3]:
+            raise ValueError("drain-found terminal must cite the earliest legal-fit schedule")
+        if decision.first_legal_fit_step != earliest_event[0]:
+            raise ValueError("drain-found terminal must cite the earliest legal-fit step")
+        if decision.first_legal_fit_packet_name != earliest_event[4]:
+            raise ValueError("drain-found terminal must cite the earliest legal-fit packet")
+    elif decision.terminal_label == DEFER_REPRESENTATIVENESS_NO_NEARBY_DRAIN:
+        if not control_reproduced_no_fit_closure:
+            raise ValueError("no-nearby-drain terminal requires the control no-fit closure")
+        if draining_variant_names:
+            raise ValueError("no-nearby-drain terminal iff no non-control variant has a legal consume event")
+        if tuple(decision.draining_variant_names) != tuple(draining_variant_names):
+            raise ValueError("representativeness draining variants drifted from the variant reports")
+        if tuple(decision.non_draining_variant_names) != tuple(non_draining_variant_names):
+            raise ValueError("representativeness non-draining variants drifted from the variant reports")
+        if decision.new_charged_family_plan_earned or not decision.carry_parked:
+            raise ValueError("no-nearby-drain terminal must park carry and must not earn a new charged family plan")
+        if decision.next_slice_if_no_nearby_drain != LEARNING_RETENTION_TOLERANCE_PROBE:
+            raise ValueError("no-nearby-drain terminal must route to the learning/retention tolerance probe")
+        if any(
+            value is not None
+            for value in (
+                decision.first_legal_fit_variant_name,
+                decision.first_legal_fit_schedule_name,
+                decision.first_legal_fit_step,
+                decision.first_legal_fit_packet_name,
+            )
+        ):
+            raise ValueError("no-nearby-drain terminal must not cite a legal-fit event")
+    elif decision.terminal_label == DEFER_REPRESENTATIVENESS_INCONCLUSIVE:
+        if tuple(decision.draining_variant_names) != tuple(draining_variant_names):
+            raise ValueError("representativeness draining variants drifted from the variant reports")
+        if tuple(decision.non_draining_variant_names) != tuple(non_draining_variant_names):
+            raise ValueError("representativeness non-draining variants drifted from the variant reports")
+        if control_reproduced_no_fit_closure and (
+            len(draining_variant_names) + len(non_draining_variant_names)
+            == len(report.variant_reports) - 1
+        ):
+            raise ValueError("representativeness screen must not report inconclusive once every non-control variant was evaluated cleanly")
+    else:
+        raise ValueError("unexpected representativeness screen terminal label")
+    _assert_no_tensors(report.to_dict())
+
+
 __all__ = [
     "ABSOLUTE_COUNT_LOWER_BOUND_DIAGNOSTIC",
     "ACCUMULATOR_FREE_NULL_BASELINE",
@@ -10279,6 +11157,9 @@ __all__ = [
     "PATH_B_DEFER_UNTIL_FIT_TTL2_PLAUSIBILITY_PRECHECK_SCHEMA_VERSION",
     "PATH_B_DEFER_UNTIL_FIT_TTL2_PLAUSIBILITY_PRECHECK_LABEL",
     "PATH_B_DEFER_UNTIL_FIT_TTL2_PLAUSIBILITY_PRECHECK_CANDIDATE",
+    "PATH_B_DEFER_UNTIL_FIT_REPRESENTATIVENESS_SCREEN_SCHEMA_VERSION",
+    "PATH_B_DEFER_UNTIL_FIT_REPRESENTATIVENESS_SCREEN_LABEL",
+    "PATH_B_DEFER_UNTIL_FIT_REPRESENTATIVENESS_SCREEN_CANDIDATE",
     "BASELINE_SUFFICIENT_NO_CARRY_NEEDED",
     "CARRY_CANDIDATE_EARNED",
     "CARRY_SEMANTICS_CANDIDATE",
@@ -10288,6 +11169,12 @@ __all__ = [
     "DEFER_UNTIL_FIT_FIRST_FIT_PLAUSIBLE_CANDIDATE_ONLY",
     "DEFER_UNTIL_FIT_TTL2_NO_FIT_ON_STATE_PATH",
     "DEFER_UNTIL_FIT_HORIZON_MEASUREMENT_INCONCLUSIVE",
+    "DEFER_REPRESENTATIVENESS_CONTINUING_PRESSURE_CONTROL",
+    "DEFER_REPRESENTATIVENESS_CONSTANT_ROWS_RELAXED_CAP",
+    "DEFER_REPRESENTATIVENESS_REDUCED_PRESSURE_SAME_CAP",
+    "DEFER_REPRESENTATIVENESS_DRAIN_REGIME_FOUND_CANDIDATE_ONLY",
+    "DEFER_REPRESENTATIVENESS_NO_NEARBY_DRAIN",
+    "DEFER_REPRESENTATIVENESS_INCONCLUSIVE",
     "IMMEDIATE_RECOVERY_SEMANTICS_EXHAUSTED_ON_THIS_STATE_PATH",
     "CARRY_FAMILY_QUOTA_RELEASE",
     "CARRY_FAMILY_CLASS_UNIFORM_ACCEPT_ALL_IF_FIT",
@@ -10351,6 +11238,10 @@ __all__ = [
     "DeferUntilFitTtl2FutureStepReport",
     "DeferUntilFitTtl2Decision",
     "DeferUntilFitTtl2FitPlausibilityPrecheckReport",
+    "DeferUntilFitRepresentativenessFutureStepReport",
+    "DeferUntilFitRepresentativenessVariantReport",
+    "DeferUntilFitRepresentativenessDecision",
+    "DeferUntilFitRepresentativenessScreenReport",
     "AggregateStateLifecycleSpec",
     "AggregateStateProjectionClassReport",
     "AggregateStateRuntimeFamilyReport",
@@ -10398,6 +11289,7 @@ __all__ = [
     "run_path_b_defer_all_baseline_parity_probe",
     "run_path_b_aggregate_state_runtime_semantics_definition",
     "run_defer_until_fit_ttl2_fit_plausibility_precheck",
+    "run_defer_until_fit_representativeness_screen",
     "run_real_backlog_lower_bound_diagnostic",
     "run_tie_frontier_reservation_lower_bound_diagnostic",
     "run_scale_appropriate_b_storage_comparison",
@@ -10410,6 +11302,7 @@ __all__ = [
     "validate_path_b_defer_all_baseline_parity_probe_report",
     "validate_path_b_aggregate_state_runtime_semantics_report",
     "validate_defer_until_fit_ttl2_fit_plausibility_precheck_report",
+    "validate_defer_until_fit_representativeness_screen_report",
     "validate_real_backlog_lower_bound_diagnostic_report",
     "validate_tie_frontier_reservation_lower_bound_report",
     "validate_scale_appropriate_b_storage_comparison_report",
