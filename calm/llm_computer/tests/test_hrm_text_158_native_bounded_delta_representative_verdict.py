@@ -29,6 +29,8 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     CANDIDATE_ADMISSION_DIAGNOSTIC_LABEL,
     CUMULATIVE_SCHEDULE_MODE,
     DECISION_STATISTIC_UPPER_BOUND_LABEL,
+    PATH_B_IDENTITY_FREE_TIE_RULE_CLASSIFIER_LABEL,
+    PATH_B_IDENTITY_FREE_TIE_RULE_CLASSIFIER_CANDIDATE,
     ONLINE_ESTIMABILITY_TIE_MASK_LABEL,
     ONLINE_ESTIMABLE_TIE_MASK_CANDIDATE,
     HOT_BUDGET_POINT_LABELS,
@@ -37,6 +39,19 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     K_SWEEP_MINIMAL_VIABLE_PASS,
     K_SWEEP_REPRESENTATION_WALL,
     OBSERVABLE_RANK_FEATURES_INSUFFICIENT,
+    CLASS_ACTION_ACCEPT_ALL_MIXED_CLASSES,
+    CLASS_ACTION_DEFER_ALL_MIXED_CLASSES_NO_BACKFILL,
+    STRICTLY_NEW_EMITTED_IDENTITY_FREE_OBSERVABLE_SPLIT,
+    AGGREGATE_STATE_REDEFINITION,
+    CANDIDATE_FAMILY_CLASS_UNIFORM_CAP_OVERFLOW_NEGATIVE,
+    CANDIDATE_FAMILY_CLASS_UNIFORM_BOUNDED_DEVIATION_CANDIDATE_ONLY,
+    CANDIDATE_FAMILY_NO_EMITTED_IDENTITY_FREE_SPLIT_OBSERVABLE,
+    CANDIDATE_FAMILY_AGGREGATE_STATE_BOUNDED_PERSISTENT_BITS_CANDIDATE_ONLY,
+    CANDIDATE_FAMILY_AGGREGATE_STATE_RUNTIME_SEMANTICS_UNSPECIFIED,
+    RUNTIME_TIE_RULE_MUTATION_PARITY_PROBE,
+    LEARNING_RETENTION_TOLERANCE_PROBE,
+    CAP_PRESSURE_FRONTIER_ONLY_UNDERFILL_NO_REALLOCATION,
+    CAP_PRESSURE_FRONTIER_OVERFLOW_REQUIRES_ILLEGAL_SUBSET_SELECTION,
     STRICT_OBSERVABLE_TIE_MASK_EXACT_RECOVERABLE_IDENTITY_FREE_CANDIDATE_ONLY,
     STRICT_OBSERVABLE_TIE_MASK_NOT_IDENTIFIABLE_IDENTITY_BOUND,
     STRICT_OBSERVABLE_TIE_MASK_PARTIALLY_RECOVERABLE_NOT_EXACT,
@@ -64,6 +79,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     run_candidate_capacity_localization_diagnostic,
     run_decision_statistic_upper_bound_diagnostic,
     run_online_estimable_tie_mask_diagnostic,
+    run_path_b_identity_free_tie_rule_classifier,
     run_real_backlog_lower_bound_diagnostic,
     run_tie_frontier_reservation_lower_bound_diagnostic,
     run_scale_appropriate_b_storage_comparison,
@@ -72,6 +88,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     validate_candidate_capacity_localization_report,
     validate_decision_statistic_upper_bound_report,
     validate_online_estimable_tie_mask_report,
+    validate_path_b_identity_free_tie_rule_classifier_report,
     validate_real_backlog_lower_bound_diagnostic_report,
     validate_tie_frontier_reservation_lower_bound_report,
     validate_scale_appropriate_b_storage_comparison_report,
@@ -173,6 +190,11 @@ def _tie_frontier_reservation_lower_bound_report():
 @lru_cache(maxsize=1)
 def _online_estimable_tie_mask_report():
     return run_online_estimable_tie_mask_diagnostic()
+
+
+@lru_cache(maxsize=1)
+def _path_b_identity_free_tie_rule_classifier_report():
+    return run_path_b_identity_free_tie_rule_classifier()
 
 
 def test_bounded_backlog_policy_is_opt_in_and_charged_as_actual_stored_backlog():
@@ -967,4 +989,103 @@ def test_online_estimable_tie_mask_lands_on_identity_bound_negative():
     assert nonzero_group.mixed_acceptance is False
     assert nonzero_group.canonical_prefix_matches_exact is True
     assert nonzero_group.reversed_prefix_matches_exact is True
+    _assert_no_tensors(payload)
+
+
+
+def test_path_b_identity_free_tie_rule_classifier_classifies_families_without_runtime_mutation():
+    report = _path_b_identity_free_tie_rule_classifier_report()
+    payload = report.to_dict()
+
+    validate_path_b_identity_free_tie_rule_classifier_report(report)
+    assert report.label == PATH_B_IDENTITY_FREE_TIE_RULE_CLASSIFIER_LABEL
+    assert report.candidate_name == PATH_B_IDENTITY_FREE_TIE_RULE_CLASSIFIER_CANDIDATE
+    assert report.source_online_estimability_terminal_label == (
+        STRICT_OBSERVABLE_TIE_MASK_NOT_IDENTIFIABLE_IDENTITY_BOUND
+    )
+
+    families = {entry.variant_name: entry for entry in report.family_reports}
+    accept_all = families[CLASS_ACTION_ACCEPT_ALL_MIXED_CLASSES]
+    assert accept_all.terminal_label == CANDIDATE_FAMILY_CLASS_UNIFORM_CAP_OVERFLOW_NEGATIVE
+    assert accept_all.earned_downstream_test is None
+    cap_saturated_accept_all = next(
+        step for step in accept_all.step_deviation_reports if step.schedule_name == "cap_saturated"
+    )
+    assert cap_saturated_accept_all.rule_accepted_count == 768
+    assert cap_saturated_accept_all.extra_accepts == 512
+    assert cap_saturated_accept_all.cap_overflow == 512
+    assert cap_saturated_accept_all.q_delta_footprint_bound == 512
+    assert cap_saturated_accept_all.cap_pressure_effect == (
+        CAP_PRESSURE_FRONTIER_OVERFLOW_REQUIRES_ILLEGAL_SUBSET_SELECTION
+    )
+    backlog_accept_all = next(
+        step for step in accept_all.step_deviation_reports if step.schedule_name == "backlog_growth"
+    )
+    assert backlog_accept_all.rule_accepted_count == 1280
+    assert backlog_accept_all.extra_accepts == 1024
+    assert backlog_accept_all.cap_overflow == 1024
+
+    defer_all = families[CLASS_ACTION_DEFER_ALL_MIXED_CLASSES_NO_BACKFILL]
+    assert defer_all.terminal_label == (
+        CANDIDATE_FAMILY_CLASS_UNIFORM_BOUNDED_DEVIATION_CANDIDATE_ONLY
+    )
+    assert defer_all.earned_downstream_test == RUNTIME_TIE_RULE_MUTATION_PARITY_PROBE
+    assert defer_all.persistent_state_bits_delta == 0
+    assert defer_all.why_not_oracle_mask is not None
+    cap_saturated_defer_all = next(
+        step for step in defer_all.step_deviation_reports if step.schedule_name == "cap_saturated"
+    )
+    assert cap_saturated_defer_all.rule_accepted_count == 0
+    assert cap_saturated_defer_all.missed_oracle_accepts == 256
+    assert cap_saturated_defer_all.extra_accepts == 0
+    assert cap_saturated_defer_all.accepted_set_symmetric_difference == 256
+    assert cap_saturated_defer_all.cap_underfill == 256
+    assert cap_saturated_defer_all.q_delta_footprint_bound == 256
+    assert cap_saturated_defer_all.class_local is True
+    assert cap_saturated_defer_all.cap_pressure_effect == (
+        CAP_PRESSURE_FRONTIER_ONLY_UNDERFILL_NO_REALLOCATION
+    )
+    assert defer_all.deviation_vector is not None
+    assert defer_all.deviation_vector.peak_missed_oracle_accepts == 256
+    assert defer_all.deviation_vector.peak_extra_accepts == 0
+    assert defer_all.deviation_vector.peak_cap_underfill == 256
+    assert defer_all.deviation_vector.peak_q_delta_footprint_bound == 256
+
+    emitted_split = families[STRICTLY_NEW_EMITTED_IDENTITY_FREE_OBSERVABLE_SPLIT]
+    assert emitted_split.terminal_label == (
+        CANDIDATE_FAMILY_NO_EMITTED_IDENTITY_FREE_SPLIT_OBSERVABLE
+    )
+    assert emitted_split.additional_emitted_observable_keys_checked == ()
+    assert emitted_split.earned_downstream_test is None
+
+    aggregate_state = families[AGGREGATE_STATE_REDEFINITION]
+    assert aggregate_state.terminal_label == (
+        CANDIDATE_FAMILY_AGGREGATE_STATE_RUNTIME_SEMANTICS_UNSPECIFIED
+    )
+    assert aggregate_state.earned_downstream_test is None
+    assert aggregate_state.persistent_state_bits_delta is None
+    assert aggregate_state.persistent_ledger_charge is not None
+    assert aggregate_state.persistent_ledger_charge.total_bits == 466
+    assert aggregate_state.persistent_ledger_charge.bits_per_eligible_weight == pytest.approx(
+        0.0284423828125
+    )
+    assert aggregate_state.persistent_ledger_charge.bounded_under_strictest_headroom is True
+    assert aggregate_state.persistent_ledger_charge.class_key_bits == 134
+    assert aggregate_state.persistent_ledger_charge.aggregate_payload_bits == 19
+    assert aggregate_state.persistent_ledger_charge.metadata_bits == 64
+    assert aggregate_state.persistent_ledger_charge.carry_bits == 16
+    assert aggregate_state.why_not_oracle_mask is None
+    assert aggregate_state.deviation_vector is None
+    assert aggregate_state.step_deviation_reports == ()
+
+    assert tuple(report.terminal_decision.candidate_variants) == (
+        CLASS_ACTION_DEFER_ALL_MIXED_CLASSES_NO_BACKFILL,
+    )
+    assert tuple(report.terminal_decision.negative_variants) == (
+        CLASS_ACTION_ACCEPT_ALL_MIXED_CLASSES,
+        STRICTLY_NEW_EMITTED_IDENTITY_FREE_OBSERVABLE_SPLIT,
+        AGGREGATE_STATE_REDEFINITION,
+    )
+    assert report.terminal_decision.dyn200_earned is False
+    assert report.terminal_decision.oracle_mask_hybrid_revived is False
     _assert_no_tensors(payload)

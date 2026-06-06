@@ -271,6 +271,57 @@ STRICT_OBSERVABLE_TIE_MASK_FORBIDDEN_PREDICTOR_INPUT_KEY_FRAGMENTS = (
     "accepted",
     "oracle",
 )
+PATH_B_IDENTITY_FREE_TIE_RULE_CLASSIFIER_SCHEMA_VERSION = (
+    "hrm_text_158_c1p1h_path_b_identity_free_tie_rule_classifier/v0"
+)
+PATH_B_IDENTITY_FREE_TIE_RULE_CLASSIFIER_LABEL = (
+    "c1p1h_path_b_identity_free_tie_rule_classifier"
+)
+PATH_B_IDENTITY_FREE_TIE_RULE_CLASSIFIER_CANDIDATE = (
+    "path_b_identity_free_tie_rule_family_classifier"
+)
+CLASS_ACTION_ACCEPT_ALL_MIXED_CLASSES = "class_action_accept_all_mixed_classes"
+CLASS_ACTION_DEFER_ALL_MIXED_CLASSES_NO_BACKFILL = (
+    "class_action_defer_all_mixed_classes_no_backfill"
+)
+STRICTLY_NEW_EMITTED_IDENTITY_FREE_OBSERVABLE_SPLIT = (
+    "strictly_new_emitted_identity_free_observable_split"
+)
+AGGREGATE_STATE_REDEFINITION = "aggregate_state_redefinition"
+CANDIDATE_FAMILY_REQUIRES_IDENTITY_OR_ORDER_SUBSET_SELECTION = (
+    "candidate_family_requires_identity_or_order_subset_selection"
+)
+CANDIDATE_FAMILY_CLASS_UNIFORM_CAP_OVERFLOW_NEGATIVE = (
+    "candidate_family_class_uniform_cap_overflow_negative"
+)
+CANDIDATE_FAMILY_CLASS_UNIFORM_BOUNDED_DEVIATION_CANDIDATE_ONLY = (
+    "candidate_family_class_uniform_bounded_deviation_candidate_only"
+)
+CANDIDATE_FAMILY_NO_EMITTED_IDENTITY_FREE_SPLIT_OBSERVABLE = (
+    "candidate_family_no_emitted_identity_free_split_observable"
+)
+CANDIDATE_FAMILY_EMITTED_IDENTITY_FREE_SPLIT_CANDIDATE_ONLY = (
+    "candidate_family_emitted_identity_free_split_candidate_only"
+)
+CANDIDATE_FAMILY_AGGREGATE_STATE_UNBOUNDED_PERSISTENT_BITS_NEGATIVE = (
+    "candidate_family_aggregate_state_unbounded_persistent_bits_negative"
+)
+CANDIDATE_FAMILY_AGGREGATE_STATE_BOUNDED_PERSISTENT_BITS_CANDIDATE_ONLY = (
+    "candidate_family_aggregate_state_bounded_persistent_bits_candidate_only"
+)
+CANDIDATE_FAMILY_AGGREGATE_STATE_RUNTIME_SEMANTICS_UNSPECIFIED = (
+    "candidate_family_aggregate_state_runtime_semantics_unspecified"
+)
+RUNTIME_TIE_RULE_MUTATION_PARITY_PROBE = "runtime_tie_rule_mutation_parity_probe"
+LEARNING_RETENTION_TOLERANCE_PROBE = "learning_retention_tolerance_probe"
+CAP_PRESSURE_FRONTIER_ONLY_UNDERFILL_NO_REALLOCATION = (
+    "frontier_only_underfill_no_reallocation"
+)
+CAP_PRESSURE_FRONTIER_OVERFLOW_REQUIRES_ILLEGAL_SUBSET_SELECTION = (
+    "frontier_overflow_requires_illegal_subset_selection"
+)
+PATH_B_AGGREGATE_STATE_METADATA_BITS = 64
+PATH_B_AGGREGATE_STATE_CARRY_BITS = 16
 
 
 def representative_engineering_guard_spec() -> BoundedDeltaGuardSpec:
@@ -6313,6 +6364,752 @@ def validate_online_estimable_tie_mask_report(
     _assert_no_tensors(report.to_dict())
 
 
+@dataclass(frozen=True)
+class PathBStepDeviationReport:
+    schedule_name: str
+    step: int
+    global_cap: int
+    oracle_accepted_count: int
+    rule_accepted_count: int
+    mixed_class_candidate_row_count: int
+    mixed_class_oracle_accepted_count: int
+    missed_oracle_accepts: int
+    extra_accepts: int
+    accepted_set_symmetric_difference: int
+    cap_overflow: int
+    cap_underfill: int
+    q_delta_footprint_bound: int
+    class_local: bool
+    cap_pressure_effect: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schedule_name": self.schedule_name,
+            "step": int(self.step),
+            "global_cap": int(self.global_cap),
+            "oracle_accepted_count": int(self.oracle_accepted_count),
+            "rule_accepted_count": int(self.rule_accepted_count),
+            "mixed_class_candidate_row_count": int(self.mixed_class_candidate_row_count),
+            "mixed_class_oracle_accepted_count": int(self.mixed_class_oracle_accepted_count),
+            "missed_oracle_accepts": int(self.missed_oracle_accepts),
+            "extra_accepts": int(self.extra_accepts),
+            "accepted_set_symmetric_difference": int(
+                self.accepted_set_symmetric_difference
+            ),
+            "cap_overflow": int(self.cap_overflow),
+            "cap_underfill": int(self.cap_underfill),
+            "q_delta_footprint_bound": int(self.q_delta_footprint_bound),
+            "class_local": bool(self.class_local),
+            "cap_pressure_effect": self.cap_pressure_effect,
+        }
+
+
+@dataclass(frozen=True)
+class PathBDeviationVectorSummary:
+    peak_missed_oracle_accepts: int
+    peak_extra_accepts: int
+    peak_accepted_set_symmetric_difference: int
+    peak_cap_overflow: int
+    peak_cap_underfill: int
+    peak_q_delta_footprint_bound: int
+    all_steps_class_local: bool
+    cap_pressure_effects: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "peak_missed_oracle_accepts": int(self.peak_missed_oracle_accepts),
+            "peak_extra_accepts": int(self.peak_extra_accepts),
+            "peak_accepted_set_symmetric_difference": int(
+                self.peak_accepted_set_symmetric_difference
+            ),
+            "peak_cap_overflow": int(self.peak_cap_overflow),
+            "peak_cap_underfill": int(self.peak_cap_underfill),
+            "peak_q_delta_footprint_bound": int(self.peak_q_delta_footprint_bound),
+            "all_steps_class_local": bool(self.all_steps_class_local),
+            "cap_pressure_effects": list(self.cap_pressure_effects),
+        }
+
+
+@dataclass(frozen=True)
+class PathBPersistentLedgerCharge:
+    total_bits: int
+    bits_per_eligible_weight: float
+    bounded_under_strictest_headroom: bool
+    purely_transient_recomputed: bool
+    concurrent_class_count: int
+    class_key_bits: int
+    aggregate_payload_bits: int
+    metadata_bits: int
+    carry_bits: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "total_bits": int(self.total_bits),
+            "bits_per_eligible_weight": float(self.bits_per_eligible_weight),
+            "bounded_under_strictest_headroom": bool(
+                self.bounded_under_strictest_headroom
+            ),
+            "purely_transient_recomputed": bool(self.purely_transient_recomputed),
+            "concurrent_class_count": int(self.concurrent_class_count),
+            "class_key_bits": int(self.class_key_bits),
+            "aggregate_payload_bits": int(self.aggregate_payload_bits),
+            "metadata_bits": int(self.metadata_bits),
+            "carry_bits": int(self.carry_bits),
+        }
+
+
+@dataclass(frozen=True)
+class PathBMechanismFamilyReport:
+    family_name: str
+    variant_name: str
+    terminal_label: str
+    uses_only_emitted_current_step_observables: bool
+    acts_uniformly_per_equal_feature_class: bool
+    requires_forbidden_identity_or_order: bool
+    additional_emitted_observable_keys_checked: tuple[str, ...]
+    step_deviation_reports: tuple[PathBStepDeviationReport, ...]
+    deviation_vector: PathBDeviationVectorSummary | None
+    persistent_ledger_charge: PathBPersistentLedgerCharge | None
+    earned_downstream_test: str | None
+    persistent_state_bits_delta: int | None
+    why_not_oracle_mask: str | None
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "family_name": self.family_name,
+            "variant_name": self.variant_name,
+            "terminal_label": self.terminal_label,
+            "uses_only_emitted_current_step_observables": bool(
+                self.uses_only_emitted_current_step_observables
+            ),
+            "acts_uniformly_per_equal_feature_class": bool(
+                self.acts_uniformly_per_equal_feature_class
+            ),
+            "requires_forbidden_identity_or_order": bool(
+                self.requires_forbidden_identity_or_order
+            ),
+            "additional_emitted_observable_keys_checked": list(
+                self.additional_emitted_observable_keys_checked
+            ),
+            "step_deviation_reports": [
+                step.to_dict() for step in self.step_deviation_reports
+            ],
+            "deviation_vector": (
+                None if self.deviation_vector is None else self.deviation_vector.to_dict()
+            ),
+            "persistent_ledger_charge": (
+                None
+                if self.persistent_ledger_charge is None
+                else self.persistent_ledger_charge.to_dict()
+            ),
+            "earned_downstream_test": self.earned_downstream_test,
+            "persistent_state_bits_delta": self.persistent_state_bits_delta,
+            "why_not_oracle_mask": self.why_not_oracle_mask,
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class PathBClassifierDecision:
+    candidate_variants: tuple[str, ...]
+    negative_variants: tuple[str, ...]
+    candidate_family_count: int
+    negative_family_count: int
+    dyn200_earned: bool
+    oracle_mask_hybrid_revived: bool
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "candidate_variants": list(self.candidate_variants),
+            "negative_variants": list(self.negative_variants),
+            "candidate_family_count": int(self.candidate_family_count),
+            "negative_family_count": int(self.negative_family_count),
+            "dyn200_earned": bool(self.dyn200_earned),
+            "oracle_mask_hybrid_revived": bool(self.oracle_mask_hybrid_revived),
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class PathBIdentityFreeTieRuleClassifierReport:
+    schema_version: str
+    label: str
+    source_bindingness: Any
+    field_coverage: SourceFieldCoverage
+    candidate_name: str
+    source_online_estimability_label: str
+    source_online_estimability_terminal_label: str
+    strictest_required_q_regime_name: str
+    strictest_headroom_bits_per_weight: float
+    family_reports: tuple[PathBMechanismFamilyReport, ...]
+    terminal_decision: PathBClassifierDecision
+    raw_arrays_included: bool
+    non_claims: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "label": self.label,
+            "source_bindingness": self.source_bindingness.to_dict(),
+            "field_coverage": self.field_coverage.to_dict(),
+            "candidate_name": self.candidate_name,
+            "source_online_estimability_label": self.source_online_estimability_label,
+            "source_online_estimability_terminal_label": self.source_online_estimability_terminal_label,
+            "strictest_required_q_regime_name": self.strictest_required_q_regime_name,
+            "strictest_headroom_bits_per_weight": float(
+                self.strictest_headroom_bits_per_weight
+            ),
+            "family_reports": [family.to_dict() for family in self.family_reports],
+            "terminal_decision": self.terminal_decision.to_dict(),
+            "raw_arrays_included": bool(self.raw_arrays_included),
+            "non_claims": list(self.non_claims),
+        }
+
+
+@dataclass(frozen=True)
+class _PathBStepContext:
+    schedule_name: str
+    step: int
+    global_cap: int
+    oracle_accepted_count: int
+    non_mixed_oracle_accepted_count: int
+    mixed_class_candidate_row_count: int
+    mixed_class_oracle_accepted_count: int
+    mixed_class_count: int
+
+
+def _path_b_decisive_step_contexts(
+    online_report: ObservableTieMaskOnlineEstimabilityReport,
+) -> tuple[_PathBStepContext, ...]:
+    decision_report = run_decision_statistic_upper_bound_diagnostic()
+    decision_by_name = {step.schedule_name: step for step in decision_report.step_reports}
+    by_name: dict[str, list[ObservableTieMaskBucketReport]] = {}
+    for bucket in online_report.bucket_reports:
+        by_name.setdefault(bucket.schedule_name, []).append(bucket)
+    contexts: list[_PathBStepContext] = []
+    for step_report in decision_report.step_reports:
+        step_buckets = by_name.get(step_report.schedule_name)
+        if not step_buckets:
+            continue
+        mixed_candidate_row_count = sum(
+            int(bucket.candidate_row_count) for bucket in step_buckets
+        )
+        mixed_oracle_accepted_count = sum(
+            int(bucket.accepted_row_count) for bucket in step_buckets
+        )
+        contexts.append(
+            _PathBStepContext(
+                schedule_name=step_report.schedule_name,
+                step=int(step_report.step),
+                global_cap=int(step_report.global_cap),
+                oracle_accepted_count=int(step_report.accepted_row_count),
+                non_mixed_oracle_accepted_count=int(step_report.accepted_row_count)
+                - int(mixed_oracle_accepted_count),
+                mixed_class_candidate_row_count=int(mixed_candidate_row_count),
+                mixed_class_oracle_accepted_count=int(mixed_oracle_accepted_count),
+                mixed_class_count=len(step_buckets),
+            )
+        )
+    return tuple(contexts)
+
+
+def _path_b_step_deviation_accept_all(
+    context: _PathBStepContext,
+) -> PathBStepDeviationReport:
+    rule_accepted_count = (
+        int(context.non_mixed_oracle_accepted_count)
+        + int(context.mixed_class_candidate_row_count)
+    )
+    extra_accepts = max(0, rule_accepted_count - int(context.oracle_accepted_count))
+    accepted_set_symmetric_difference = int(extra_accepts)
+    return PathBStepDeviationReport(
+        schedule_name=context.schedule_name,
+        step=int(context.step),
+        global_cap=int(context.global_cap),
+        oracle_accepted_count=int(context.oracle_accepted_count),
+        rule_accepted_count=int(rule_accepted_count),
+        mixed_class_candidate_row_count=int(context.mixed_class_candidate_row_count),
+        mixed_class_oracle_accepted_count=int(context.mixed_class_oracle_accepted_count),
+        missed_oracle_accepts=0,
+        extra_accepts=int(extra_accepts),
+        accepted_set_symmetric_difference=int(accepted_set_symmetric_difference),
+        cap_overflow=max(0, int(rule_accepted_count) - int(context.global_cap)),
+        cap_underfill=0,
+        q_delta_footprint_bound=int(accepted_set_symmetric_difference),
+        class_local=True,
+        cap_pressure_effect=(
+            CAP_PRESSURE_FRONTIER_OVERFLOW_REQUIRES_ILLEGAL_SUBSET_SELECTION
+        ),
+    )
+
+
+def _path_b_step_deviation_defer_all_no_backfill(
+    context: _PathBStepContext,
+) -> PathBStepDeviationReport:
+    rule_accepted_count = int(context.non_mixed_oracle_accepted_count)
+    missed_oracle_accepts = int(context.mixed_class_oracle_accepted_count)
+    accepted_set_symmetric_difference = int(missed_oracle_accepts)
+    return PathBStepDeviationReport(
+        schedule_name=context.schedule_name,
+        step=int(context.step),
+        global_cap=int(context.global_cap),
+        oracle_accepted_count=int(context.oracle_accepted_count),
+        rule_accepted_count=int(rule_accepted_count),
+        mixed_class_candidate_row_count=int(context.mixed_class_candidate_row_count),
+        mixed_class_oracle_accepted_count=int(context.mixed_class_oracle_accepted_count),
+        missed_oracle_accepts=int(missed_oracle_accepts),
+        extra_accepts=0,
+        accepted_set_symmetric_difference=int(accepted_set_symmetric_difference),
+        cap_overflow=0,
+        cap_underfill=max(0, int(context.global_cap) - int(rule_accepted_count)),
+        q_delta_footprint_bound=int(accepted_set_symmetric_difference),
+        class_local=True,
+        cap_pressure_effect=CAP_PRESSURE_FRONTIER_ONLY_UNDERFILL_NO_REALLOCATION,
+    )
+
+
+def _path_b_deviation_vector_summary(
+    step_reports: Sequence[PathBStepDeviationReport],
+) -> PathBDeviationVectorSummary:
+    if not step_reports:
+        raise ValueError("path-(b) deviation summary requires at least one step report")
+    return PathBDeviationVectorSummary(
+        peak_missed_oracle_accepts=max(
+            int(step.missed_oracle_accepts) for step in step_reports
+        ),
+        peak_extra_accepts=max(int(step.extra_accepts) for step in step_reports),
+        peak_accepted_set_symmetric_difference=max(
+            int(step.accepted_set_symmetric_difference) for step in step_reports
+        ),
+        peak_cap_overflow=max(int(step.cap_overflow) for step in step_reports),
+        peak_cap_underfill=max(int(step.cap_underfill) for step in step_reports),
+        peak_q_delta_footprint_bound=max(
+            int(step.q_delta_footprint_bound) for step in step_reports
+        ),
+        all_steps_class_local=all(bool(step.class_local) for step in step_reports),
+        cap_pressure_effects=tuple(
+            dict.fromkeys(step.cap_pressure_effect for step in step_reports)
+        ),
+    )
+
+
+def _path_b_zero_persistent_ledger_charge() -> PathBPersistentLedgerCharge:
+    return PathBPersistentLedgerCharge(
+        total_bits=0,
+        bits_per_eligible_weight=0.0,
+        bounded_under_strictest_headroom=True,
+        purely_transient_recomputed=True,
+        concurrent_class_count=0,
+        class_key_bits=0,
+        aggregate_payload_bits=0,
+        metadata_bits=0,
+        carry_bits=0,
+    )
+
+
+def _path_b_additional_emitted_feature_keys() -> tuple[str, ...]:
+    trace_steps, _ = _build_exact_schedule_trace()
+    emitted_keys: set[str] = set()
+    for trace_step in trace_steps:
+        if trace_step.schedule_step.name not in {"cap_saturated", "backlog_growth"}:
+            continue
+        for row in _strict_observable_tie_mask_rows(trace_step):
+            emitted_keys |= set(row.feature_payload())
+    return tuple(
+        sorted(
+            emitted_keys - set(STRICT_OBSERVABLE_TIE_MASK_ALLOWED_WITHIN_BUCKET_FEATURE_KEYS)
+        )
+    )
+
+
+def _path_b_aggregate_state_class_key_bits() -> int:
+    return (
+        _enum_bit_width(len(PRIMARY_STATE_KEYS))
+        + _enum_bit_width(3)
+        + _enum_bit_width(2)
+        + _enum_bit_width(3)
+        + 16
+        + 16
+        + 32
+        + 32
+        + 32
+    )
+
+
+def _path_b_aggregate_state_ledger_charge(
+    online_report: ObservableTieMaskOnlineEstimabilityReport,
+) -> PathBPersistentLedgerCharge:
+    contexts = _path_b_decisive_step_contexts(online_report)
+    if not contexts:
+        raise ValueError("path-(b) aggregate-state ledger charge requires decisive step contexts")
+    strict_row = _q_ledger_row_by_name(online_report.strictest_required_q_regime_name)
+    max_mixed_class_row_count = max(
+        int(context.mixed_class_candidate_row_count / context.mixed_class_count)
+        for context in contexts
+        if int(context.mixed_class_count) > 0
+    )
+    concurrent_class_count = max(int(context.mixed_class_count) for context in contexts)
+    class_key_bits = _path_b_aggregate_state_class_key_bits()
+    aggregate_payload_bits = _count_bit_width(max_mixed_class_row_count) + _count_bit_width(
+        max(int(context.global_cap) for context in contexts)
+    )
+    total_bits = (
+        class_key_bits
+        + aggregate_payload_bits
+        + int(PATH_B_AGGREGATE_STATE_METADATA_BITS)
+        + int(PATH_B_AGGREGATE_STATE_CARRY_BITS)
+    ) * int(concurrent_class_count)
+    bits_per_eligible_weight = float(total_bits) / float(int(strict_row.eligible_weight_count))
+    return PathBPersistentLedgerCharge(
+        total_bits=int(total_bits),
+        bits_per_eligible_weight=float(bits_per_eligible_weight),
+        bounded_under_strictest_headroom=bool(
+            bits_per_eligible_weight
+            <= float(online_report.strictest_headroom_bits_per_weight) + 1e-12
+        ),
+        purely_transient_recomputed=False,
+        concurrent_class_count=int(concurrent_class_count),
+        class_key_bits=int(class_key_bits),
+        aggregate_payload_bits=int(aggregate_payload_bits),
+        metadata_bits=int(PATH_B_AGGREGATE_STATE_METADATA_BITS),
+        carry_bits=int(PATH_B_AGGREGATE_STATE_CARRY_BITS),
+    )
+
+
+def _path_b_class_action_accept_all_report(
+    online_report: ObservableTieMaskOnlineEstimabilityReport,
+) -> PathBMechanismFamilyReport:
+    step_reports = tuple(
+        _path_b_step_deviation_accept_all(context)
+        for context in _path_b_decisive_step_contexts(online_report)
+    )
+    return PathBMechanismFamilyReport(
+        family_name="class_action",
+        variant_name=CLASS_ACTION_ACCEPT_ALL_MIXED_CLASSES,
+        terminal_label=CANDIDATE_FAMILY_CLASS_UNIFORM_CAP_OVERFLOW_NEGATIVE,
+        uses_only_emitted_current_step_observables=True,
+        acts_uniformly_per_equal_feature_class=True,
+        requires_forbidden_identity_or_order=False,
+        additional_emitted_observable_keys_checked=(),
+        step_deviation_reports=step_reports,
+        deviation_vector=_path_b_deviation_vector_summary(step_reports),
+        persistent_ledger_charge=None,
+        earned_downstream_test=None,
+        persistent_state_bits_delta=None,
+        why_not_oracle_mask=None,
+        reason=(
+            "accepting every row in each mixed equal-feature class is identity-free and uniform, but it "
+            "immediately overflows the global cap on the committed decisive buckets"
+        ),
+    )
+
+
+def _path_b_class_action_defer_all_report(
+    online_report: ObservableTieMaskOnlineEstimabilityReport,
+) -> PathBMechanismFamilyReport:
+    step_reports = tuple(
+        _path_b_step_deviation_defer_all_no_backfill(context)
+        for context in _path_b_decisive_step_contexts(online_report)
+    )
+    zero_charge = _path_b_zero_persistent_ledger_charge()
+    return PathBMechanismFamilyReport(
+        family_name="class_action",
+        variant_name=CLASS_ACTION_DEFER_ALL_MIXED_CLASSES_NO_BACKFILL,
+        terminal_label=CANDIDATE_FAMILY_CLASS_UNIFORM_BOUNDED_DEVIATION_CANDIDATE_ONLY,
+        uses_only_emitted_current_step_observables=True,
+        acts_uniformly_per_equal_feature_class=True,
+        requires_forbidden_identity_or_order=False,
+        additional_emitted_observable_keys_checked=(),
+        step_deviation_reports=step_reports,
+        deviation_vector=_path_b_deviation_vector_summary(step_reports),
+        persistent_ledger_charge=zero_charge,
+        earned_downstream_test=RUNTIME_TIE_RULE_MUTATION_PARITY_PROBE,
+        persistent_state_bits_delta=0,
+        why_not_oracle_mask=(
+            "defer-all/no-backfill changes the tie rule itself and never attempts to recover the "
+            "unidentifiable per-row oracle mask"
+        ),
+        reason=(
+            "deferring every mixed equal-feature class with no downstream refill is deterministic, "
+            "identity-free, and carries a bounded class-local deviation vector worth a runtime parity probe"
+        ),
+    )
+
+
+def _path_b_emitted_observable_split_report(
+    online_report: ObservableTieMaskOnlineEstimabilityReport,
+) -> PathBMechanismFamilyReport:
+    additional_keys = _path_b_additional_emitted_feature_keys()
+    terminal = CANDIDATE_FAMILY_NO_EMITTED_IDENTITY_FREE_SPLIT_OBSERVABLE
+    reason = (
+        "the current approved observable schema already exhausts the emitted current-step cap/vote "
+        "features used on the committed decisive buckets; there is no additional emitted identity-free "
+        "observable left in this slice to split the mixed classes"
+    )
+    if additional_keys:
+        terminal = CANDIDATE_FAMILY_EMITTED_IDENTITY_FREE_SPLIT_CANDIDATE_ONLY
+        reason = (
+            "an emitted current-step observable outside the current audited schema is available and would "
+            "need a separate gated admission before this family could advance"
+        )
+    return PathBMechanismFamilyReport(
+        family_name="emitted_observable_split",
+        variant_name=STRICTLY_NEW_EMITTED_IDENTITY_FREE_OBSERVABLE_SPLIT,
+        terminal_label=terminal,
+        uses_only_emitted_current_step_observables=True,
+        acts_uniformly_per_equal_feature_class=False,
+        requires_forbidden_identity_or_order=False,
+        additional_emitted_observable_keys_checked=additional_keys,
+        step_deviation_reports=(),
+        deviation_vector=None,
+        persistent_ledger_charge=None,
+        earned_downstream_test=None,
+        persistent_state_bits_delta=None,
+        why_not_oracle_mask=None,
+        reason=reason,
+    )
+
+
+def _path_b_aggregate_state_redefinition_report(
+    online_report: ObservableTieMaskOnlineEstimabilityReport,
+) -> PathBMechanismFamilyReport:
+    ledger_charge = _path_b_aggregate_state_ledger_charge(online_report)
+    if ledger_charge.bounded_under_strictest_headroom:
+        terminal = CANDIDATE_FAMILY_AGGREGATE_STATE_RUNTIME_SEMANTICS_UNSPECIFIED
+        reason = (
+            "the aggregate-state family has a bounded full persistent representation under the strict "
+            "sub-2 headroom, but it does not advance in this slice because its induced runtime action "
+            "semantics are still unspecified"
+        )
+    else:
+        terminal = CANDIDATE_FAMILY_AGGREGATE_STATE_UNBOUNDED_PERSISTENT_BITS_NEGATIVE
+        reason = (
+            "the aggregate-state redefinition would replace an unidentifiable mask with over-budget or "
+            "unbounded persistent state, so it does not advance"
+        )
+    return PathBMechanismFamilyReport(
+        family_name="aggregate_state_redefinition",
+        variant_name=AGGREGATE_STATE_REDEFINITION,
+        terminal_label=terminal,
+        uses_only_emitted_current_step_observables=True,
+        acts_uniformly_per_equal_feature_class=True,
+        requires_forbidden_identity_or_order=False,
+        additional_emitted_observable_keys_checked=(),
+        step_deviation_reports=(),
+        deviation_vector=None,
+        persistent_ledger_charge=ledger_charge,
+        earned_downstream_test=None,
+        persistent_state_bits_delta=None,
+        why_not_oracle_mask=None,
+        reason=reason,
+    )
+
+
+def _path_b_classifier_non_claims() -> tuple[str, ...]:
+    return (
+        "CPU-only analytic classifier over the committed c593a4d decisive buckets",
+        "candidate advances earn only downstream tolerance probes, not learner success or dyn200",
+        "class-action candidates change the tie rule rather than recovering the unidentifiable oracle mask",
+        "aggregate-state candidates must charge the full persistent representation against the strict sub-2 headroom",
+        "no oracle-mask hybrid revival",
+        "no GPU lane, no kernel path, no raw per-weight arrays",
+    )
+
+
+def _path_b_classifier_terminal_decision(
+    family_reports: Sequence[PathBMechanismFamilyReport],
+) -> PathBClassifierDecision:
+    candidate_variants = tuple(
+        report.variant_name
+        for report in family_reports
+        if report.terminal_label in {
+            CANDIDATE_FAMILY_CLASS_UNIFORM_BOUNDED_DEVIATION_CANDIDATE_ONLY,
+            CANDIDATE_FAMILY_EMITTED_IDENTITY_FREE_SPLIT_CANDIDATE_ONLY,
+        }
+    )
+    negative_variants = tuple(
+        report.variant_name
+        for report in family_reports
+        if report.variant_name not in candidate_variants
+    )
+    return PathBClassifierDecision(
+        candidate_variants=candidate_variants,
+        negative_variants=negative_variants,
+        candidate_family_count=len(candidate_variants),
+        negative_family_count=len(negative_variants),
+        dyn200_earned=False,
+        oracle_mask_hybrid_revived=False,
+        reason=(
+            "path-(b) classification complete: only identity-free rules with bounded, explicit deviation "
+            "vectors and bounded persistent-state charges advance to downstream tolerance probes"
+        ),
+    )
+
+
+def run_path_b_identity_free_tie_rule_classifier() -> PathBIdentityFreeTieRuleClassifierReport:
+    online_report = run_online_estimable_tie_mask_diagnostic()
+    if online_report.terminal_decision.terminal_label != STRICT_OBSERVABLE_TIE_MASK_NOT_IDENTIFIABLE_IDENTITY_BOUND:
+        raise ValueError("path-(b) classifier requires the committed online-estimability identity-bound source")
+    family_reports = (
+        _path_b_class_action_accept_all_report(online_report),
+        _path_b_class_action_defer_all_report(online_report),
+        _path_b_emitted_observable_split_report(online_report),
+        _path_b_aggregate_state_redefinition_report(online_report),
+    )
+    bindingness = pre_register_source_bindingness(
+        source_kind=SOURCE_KIND_GENERATED_NATIVE_LOOP,
+        coverage=SourceFieldCoverage.full_generated_native_loop(),
+    )
+    return PathBIdentityFreeTieRuleClassifierReport(
+        schema_version=PATH_B_IDENTITY_FREE_TIE_RULE_CLASSIFIER_SCHEMA_VERSION,
+        label=PATH_B_IDENTITY_FREE_TIE_RULE_CLASSIFIER_LABEL,
+        source_bindingness=bindingness,
+        field_coverage=SourceFieldCoverage.full_generated_native_loop(),
+        candidate_name=PATH_B_IDENTITY_FREE_TIE_RULE_CLASSIFIER_CANDIDATE,
+        source_online_estimability_label=online_report.label,
+        source_online_estimability_terminal_label=(
+            online_report.terminal_decision.terminal_label
+        ),
+        strictest_required_q_regime_name=online_report.strictest_required_q_regime_name,
+        strictest_headroom_bits_per_weight=float(
+            online_report.strictest_headroom_bits_per_weight
+        ),
+        family_reports=family_reports,
+        terminal_decision=_path_b_classifier_terminal_decision(family_reports),
+        raw_arrays_included=False,
+        non_claims=_path_b_classifier_non_claims(),
+    )
+
+
+def validate_path_b_identity_free_tie_rule_classifier_report(
+    report: PathBIdentityFreeTieRuleClassifierReport,
+) -> None:
+    if report.schema_version != PATH_B_IDENTITY_FREE_TIE_RULE_CLASSIFIER_SCHEMA_VERSION:
+        raise ValueError("unexpected path-(b) classifier schema version")
+    if report.label != PATH_B_IDENTITY_FREE_TIE_RULE_CLASSIFIER_LABEL:
+        raise ValueError("unexpected path-(b) classifier label")
+    if report.candidate_name != PATH_B_IDENTITY_FREE_TIE_RULE_CLASSIFIER_CANDIDATE:
+        raise ValueError("path-(b) classifier candidate drifted")
+    if report.source_online_estimability_label != ONLINE_ESTIMABILITY_TIE_MASK_LABEL:
+        raise ValueError("path-(b) classifier must cite the committed online-estimability source")
+    if report.source_online_estimability_terminal_label != STRICT_OBSERVABLE_TIE_MASK_NOT_IDENTIFIABLE_IDENTITY_BOUND:
+        raise ValueError("path-(b) classifier must inherit the identity-bound online-estimability source")
+    expected_variants = (
+        CLASS_ACTION_ACCEPT_ALL_MIXED_CLASSES,
+        CLASS_ACTION_DEFER_ALL_MIXED_CLASSES_NO_BACKFILL,
+        STRICTLY_NEW_EMITTED_IDENTITY_FREE_OBSERVABLE_SPLIT,
+        AGGREGATE_STATE_REDEFINITION,
+    )
+    actual_variants = tuple(report_entry.variant_name for report_entry in report.family_reports)
+    if actual_variants != expected_variants:
+        raise ValueError("path-(b) classifier family ordering drifted from the gated plan")
+    by_variant = {entry.variant_name: entry for entry in report.family_reports}
+
+    accept_all = by_variant[CLASS_ACTION_ACCEPT_ALL_MIXED_CLASSES]
+    if accept_all.terminal_label != CANDIDATE_FAMILY_CLASS_UNIFORM_CAP_OVERFLOW_NEGATIVE:
+        raise ValueError("accept-all class-action rule must stay a cap-overflow negative on the committed trace")
+    if accept_all.earned_downstream_test is not None or accept_all.persistent_state_bits_delta is not None:
+        raise ValueError("negative accept-all class-action rule must not earn a downstream test or persistent delta")
+    if len(accept_all.step_deviation_reports) != 2:
+        raise ValueError("accept-all class-action rule must report both decisive steps")
+    if any(step.cap_overflow <= 0 for step in accept_all.step_deviation_reports):
+        raise ValueError("accept-all class-action rule must overflow the cap on every decisive step")
+    if any(
+        step.cap_pressure_effect != CAP_PRESSURE_FRONTIER_OVERFLOW_REQUIRES_ILLEGAL_SUBSET_SELECTION
+        for step in accept_all.step_deviation_reports
+    ):
+        raise ValueError("accept-all class-action rule must carry the overflow cap-pressure effect")
+
+    defer_all = by_variant[CLASS_ACTION_DEFER_ALL_MIXED_CLASSES_NO_BACKFILL]
+    if defer_all.terminal_label != CANDIDATE_FAMILY_CLASS_UNIFORM_BOUNDED_DEVIATION_CANDIDATE_ONLY:
+        raise ValueError("defer-all/no-backfill class-action rule must stay the bounded-deviation candidate")
+    if defer_all.earned_downstream_test != RUNTIME_TIE_RULE_MUTATION_PARITY_PROBE:
+        raise ValueError("defer-all/no-backfill class-action rule must earn the runtime parity probe")
+    if defer_all.persistent_state_bits_delta != 0:
+        raise ValueError("defer-all/no-backfill class-action rule must carry zero persistent-state bits delta")
+    if defer_all.why_not_oracle_mask is None:
+        raise ValueError("candidate class-action rule must emit the why-not-oracle-mask non-claim")
+    if defer_all.persistent_ledger_charge is None or not defer_all.persistent_ledger_charge.purely_transient_recomputed:
+        raise ValueError("candidate class-action rule must explicitly declare its zero-bit transient ledger charge")
+    if defer_all.deviation_vector is None:
+        raise ValueError("candidate class-action rule must emit the full deviation vector")
+    if any(step.cap_underfill <= 0 for step in defer_all.step_deviation_reports):
+        raise ValueError("defer-all/no-backfill class-action rule must underfill the cap on every decisive step")
+    if any(step.extra_accepts != 0 for step in defer_all.step_deviation_reports):
+        raise ValueError("defer-all/no-backfill class-action rule must not add extra accepts on the committed trace")
+    if any(
+        step.cap_pressure_effect != CAP_PRESSURE_FRONTIER_ONLY_UNDERFILL_NO_REALLOCATION
+        for step in defer_all.step_deviation_reports
+    ):
+        raise ValueError("defer-all/no-backfill class-action rule must declare the no-reallocation cap-pressure effect")
+
+    emitted_split = by_variant[STRICTLY_NEW_EMITTED_IDENTITY_FREE_OBSERVABLE_SPLIT]
+    if emitted_split.terminal_label != CANDIDATE_FAMILY_NO_EMITTED_IDENTITY_FREE_SPLIT_OBSERVABLE:
+        raise ValueError("family-(2) must stay negative until a real emitted split observable exists")
+    if emitted_split.additional_emitted_observable_keys_checked:
+        raise ValueError("family-(2) should have no extra emitted split observables on the committed trace")
+    if emitted_split.earned_downstream_test is not None:
+        raise ValueError("family-(2) negative must not earn a downstream test")
+
+    aggregate = by_variant[AGGREGATE_STATE_REDEFINITION]
+    if aggregate.terminal_label not in {
+        CANDIDATE_FAMILY_AGGREGATE_STATE_RUNTIME_SEMANTICS_UNSPECIFIED,
+        CANDIDATE_FAMILY_AGGREGATE_STATE_UNBOUNDED_PERSISTENT_BITS_NEGATIVE,
+    }:
+        raise ValueError("family-(3) must stay non-advancing until concrete runtime semantics are defined")
+    if aggregate.earned_downstream_test is not None:
+        raise ValueError("family-(3) must not earn a downstream test while runtime semantics are unspecified")
+    if aggregate.persistent_state_bits_delta is not None:
+        raise ValueError("family-(3) must not claim a persistent-state delta advance while runtime semantics are unspecified")
+    if aggregate.persistent_ledger_charge is None:
+        raise ValueError("family-(3) feasibility note must emit the full persistent ledger charge")
+    if aggregate.persistent_ledger_charge.total_bits <= 0:
+        raise ValueError("family-(3) feasibility note must charge a positive persistent aggregate representation")
+    if aggregate.terminal_label == CANDIDATE_FAMILY_AGGREGATE_STATE_RUNTIME_SEMANTICS_UNSPECIFIED and not aggregate.persistent_ledger_charge.bounded_under_strictest_headroom:
+        raise ValueError("family-(3) bounded feasibility note must stay under the strictest headroom")
+    if aggregate.deviation_vector is not None:
+        raise ValueError("family-(3) must not borrow a runtime deviation vector before defining runtime semantics")
+    if aggregate.step_deviation_reports:
+        raise ValueError("family-(3) must not borrow step-level runtime deviation reports before defining runtime semantics")
+    if aggregate.why_not_oracle_mask is not None:
+        raise ValueError("family-(3) should stay a feasibility note rather than a candidate rule in this slice")
+
+    candidate_variants = {
+        report_entry.variant_name
+        for report_entry in report.family_reports
+        if report_entry.terminal_label in {
+            CANDIDATE_FAMILY_CLASS_UNIFORM_BOUNDED_DEVIATION_CANDIDATE_ONLY,
+            CANDIDATE_FAMILY_EMITTED_IDENTITY_FREE_SPLIT_CANDIDATE_ONLY,
+        }
+    }
+    negative_variants = {
+        report_entry.variant_name
+        for report_entry in report.family_reports
+        if report_entry.variant_name not in candidate_variants
+    }
+    if tuple(report.terminal_decision.candidate_variants) != tuple(
+        report_entry.variant_name
+        for report_entry in report.family_reports
+        if report_entry.variant_name in candidate_variants
+    ):
+        raise ValueError("path-(b) classifier candidate list drifted from the family terminals")
+    if tuple(report.terminal_decision.negative_variants) != tuple(
+        report_entry.variant_name
+        for report_entry in report.family_reports
+        if report_entry.variant_name in negative_variants
+    ):
+        raise ValueError("path-(b) classifier negative list drifted from the family terminals")
+    if report.terminal_decision.candidate_family_count != len(candidate_variants):
+        raise ValueError("path-(b) classifier candidate-family count drifted from the family terminals")
+    if report.terminal_decision.negative_family_count != len(negative_variants):
+        raise ValueError("path-(b) classifier negative-family count drifted from the family terminals")
+    if report.terminal_decision.dyn200_earned or report.terminal_decision.oracle_mask_hybrid_revived:
+        raise ValueError("path-(b) classifier must not claim dyn200 or revive the oracle-mask hybrid")
+    _assert_no_tensors(report.to_dict())
+
+
 def _validate_decision_statistic_statistic_input(
     step_report: DecisionStatisticStepReport,
 ) -> None:
@@ -6651,6 +7448,9 @@ __all__ = [
     "CUMULATIVE_SCHEDULE_MODE",
     "DECISION_STATISTIC_UPPER_BOUND_LABEL",
     "ONLINE_ESTIMABILITY_TIE_MASK_LABEL",
+    "PATH_B_IDENTITY_FREE_TIE_RULE_CLASSIFIER_LABEL",
+    "PATH_B_IDENTITY_FREE_TIE_RULE_CLASSIFIER_SCHEMA_VERSION",
+    "PATH_B_IDENTITY_FREE_TIE_RULE_CLASSIFIER_CANDIDATE",
     "ONLINE_ESTIMABILITY_TIE_MASK_SCHEMA_VERSION",
     "ONLINE_ESTIMABLE_TIE_MASK_CANDIDATE",
     "DECISION_STATISTIC_UPPER_BOUND_PASS",
@@ -6664,6 +7464,20 @@ __all__ = [
     "STRICT_OBSERVABLE_TIE_MASK_EXACT_RECOVERABLE_IDENTITY_FREE_CANDIDATE_ONLY",
     "STRICT_OBSERVABLE_TIE_MASK_NOT_IDENTIFIABLE_IDENTITY_BOUND",
     "STRICT_OBSERVABLE_TIE_MASK_PARTIALLY_RECOVERABLE_NOT_EXACT",
+    "CLASS_ACTION_ACCEPT_ALL_MIXED_CLASSES",
+    "CLASS_ACTION_DEFER_ALL_MIXED_CLASSES_NO_BACKFILL",
+    "STRICTLY_NEW_EMITTED_IDENTITY_FREE_OBSERVABLE_SPLIT",
+    "AGGREGATE_STATE_REDEFINITION",
+    "CANDIDATE_FAMILY_REQUIRES_IDENTITY_OR_ORDER_SUBSET_SELECTION",
+    "CANDIDATE_FAMILY_CLASS_UNIFORM_CAP_OVERFLOW_NEGATIVE",
+    "CANDIDATE_FAMILY_CLASS_UNIFORM_BOUNDED_DEVIATION_CANDIDATE_ONLY",
+    "CANDIDATE_FAMILY_NO_EMITTED_IDENTITY_FREE_SPLIT_OBSERVABLE",
+    "CANDIDATE_FAMILY_EMITTED_IDENTITY_FREE_SPLIT_CANDIDATE_ONLY",
+    "CANDIDATE_FAMILY_AGGREGATE_STATE_UNBOUNDED_PERSISTENT_BITS_NEGATIVE",
+    "CANDIDATE_FAMILY_AGGREGATE_STATE_BOUNDED_PERSISTENT_BITS_CANDIDATE_ONLY",
+    "CANDIDATE_FAMILY_AGGREGATE_STATE_RUNTIME_SEMANTICS_UNSPECIFIED",
+    "RUNTIME_TIE_RULE_MUTATION_PARITY_PROBE",
+    "LEARNING_RETENTION_TOLERANCE_PROBE",
     "ONE_STEP_LOCAL_DIAGNOSTIC_MODE",
     "ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC",
     "PER_ROW_COMPRESSION_CLOSED_BY_EASY_CASE_LOWER_BOUND",
@@ -6687,6 +7501,8 @@ __all__ = [
     "TIE_FRONTIER_RESERVATION_LABEL",
     "TIE_FRONTIER_RESERVATION_SCHEMA_VERSION",
     "STRICT_OBSERVABLE_TIE_MASK_SHUFFLE_FALSIFIER",
+    "CAP_PRESSURE_FRONTIER_ONLY_UNDERFILL_NO_REALLOCATION",
+    "CAP_PRESSURE_FRONTIER_OVERFLOW_REQUIRES_ILLEGAL_SUBSET_SELECTION",
     "TIE_MEMBERSHIP_MASK_ENCODING",
     "TIE_RESERVATION_BREAKS_SUB2",
     "TIE_SELECTED_OFFSET_ENCODING",
@@ -6701,6 +7517,12 @@ __all__ = [
     "ObservableTieMaskFeatureClassReport",
     "ObservableTieMaskOnlineEstimabilityDecision",
     "ObservableTieMaskOnlineEstimabilityReport",
+    "PathBStepDeviationReport",
+    "PathBDeviationVectorSummary",
+    "PathBPersistentLedgerCharge",
+    "PathBMechanismFamilyReport",
+    "PathBClassifierDecision",
+    "PathBIdentityFreeTieRuleClassifierReport",
     "TieFrontierObservedBucketReport",
     "TieFrontierReservationDecision",
     "TieFrontierReservationLowerBoundReport",
@@ -6739,6 +7561,7 @@ __all__ = [
     "run_candidate_capacity_localization_diagnostic",
     "run_decision_statistic_upper_bound_diagnostic",
     "run_online_estimable_tie_mask_diagnostic",
+    "run_path_b_identity_free_tie_rule_classifier",
     "run_real_backlog_lower_bound_diagnostic",
     "run_tie_frontier_reservation_lower_bound_diagnostic",
     "run_scale_appropriate_b_storage_comparison",
@@ -6747,6 +7570,7 @@ __all__ = [
     "validate_candidate_capacity_localization_report",
     "validate_decision_statistic_upper_bound_report",
     "validate_online_estimable_tie_mask_report",
+    "validate_path_b_identity_free_tie_rule_classifier_report",
     "validate_real_backlog_lower_bound_diagnostic_report",
     "validate_tie_frontier_reservation_lower_bound_report",
     "validate_scale_appropriate_b_storage_comparison_report",
