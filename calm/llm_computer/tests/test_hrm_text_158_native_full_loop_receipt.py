@@ -25,6 +25,8 @@ from calm.hrm_text_158.native_full_stack.full_loop_receipt import (
     TINY_TWO_PROJECTION_FIXTURE_NAME,
     measure_tiny_two_projection_fixture_budget,
     run_native_full_loop_engineering_receipt,
+    tiny_full_loop_vote_update_spec,
+    tiny_full_loop_votes_for_step,
     tiny_two_projection_vote_cap_fixture,
 )
 from calm.hrm_text_158.native_full_stack.global_rate_cap_gpu import (
@@ -80,6 +82,26 @@ def test_tiny_fixture_budget_computes_own_160_entry_ledger_not_prior_large_value
     assert report.packed_inclusive_physical_bits_per_weight != pytest.approx(
         PRIOR_LARGE_FIXTURE_REFERENCE["packed_inclusive_physical_bits_per_weight"],
     )
+
+
+def test_tiny_vote_helpers_preserve_two_step_contract_and_allow_explicit_cycle():
+    step1 = tiny_full_loop_votes_for_step(1, device="cpu")
+    step2 = tiny_full_loop_votes_for_step(2, device="cpu")
+    step3 = tiny_full_loop_votes_for_step(3, device="cpu", repeat_cycle=True)
+    step4 = tiny_full_loop_votes_for_step(4, device="cpu", repeat_cycle=True)
+    spec = tiny_full_loop_vote_update_spec()
+
+    with pytest.raises(ValueError, match="exactly two steps"):
+        tiny_full_loop_votes_for_step(3, device="cpu")
+
+    assert torch.equal(step1["proj_in"], step3["proj_in"])
+    assert torch.equal(step1["proj_out"], step3["proj_out"])
+    assert torch.equal(step2["proj_in"], step4["proj_in"])
+    assert torch.equal(step2["proj_out"], step4["proj_out"])
+    assert spec.threshold_abs == 2
+    assert spec.max_abs_per_tensor == 4
+    assert spec.accumulator_clip_min == -32768
+    assert spec.accumulator_clip_max == 32767
 
 
 def test_receipt_labels_reference_harness_and_defers_science_not_acquisition():

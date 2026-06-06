@@ -257,6 +257,33 @@ def measure_tiny_two_projection_fixture_budget(
     )
 
 
+def tiny_full_loop_vote_update_spec() -> VoteUpdateSpec:
+    """Return the fixed per-step vote/update spec used by the tiny receipt stitch."""
+
+    return VoteUpdateSpec(
+        threshold_abs=2,
+        accumulator_clip_min=-32768,
+        accumulator_clip_max=32767,
+        decay_numerator=1,
+        decay_denominator=1,
+        max_abs_per_tensor=4,
+        fraction_per_tensor=1.0,
+    )
+
+
+def tiny_full_loop_votes_for_step(
+    step: int,
+    *,
+    device: torch.device | str = "cpu",
+    repeat_cycle: bool = False,
+) -> dict[str, torch.Tensor]:
+    """Return the tiny receipt vote pattern, optionally cycling past step 2."""
+
+    device = torch.device(device)
+    normalized_step = _normalize_tiny_loop_pattern_step(step, repeat_cycle=repeat_cycle)
+    return _votes_for_step(normalized_step, device=device)
+
+
 def run_native_full_loop_engineering_receipt(
     *,
     device: torch.device | str = "cuda",
@@ -369,15 +396,7 @@ def _execute_tiny_loop(
     qscale_states = dict(fixture.qscale_states)
     accumulators = dict(fixture.accumulators)
     input_tensor = fixture.input_tensor
-    spec = VoteUpdateSpec(
-        threshold_abs=2,
-        accumulator_clip_min=-32768,
-        accumulator_clip_max=32767,
-        decay_numerator=1,
-        decay_denominator=1,
-        max_abs_per_tensor=4,
-        fraction_per_tensor=1.0,
-    )
+    spec = tiny_full_loop_vote_update_spec()
     tensor_offsets = _tensor_offsets(qscale_states)
     deferred_backlog: dict[str, dict[int, dict[str, int]]] | None = None
     previous_output_hashes: dict[str, str] | None = None
@@ -885,6 +904,17 @@ def _accepted_row_tensors(
             device=device,
         ),
     )
+
+
+def _normalize_tiny_loop_pattern_step(step: int, *, repeat_cycle: bool) -> int:
+    step_i = int(step)
+    if step_i < 1:
+        raise ValueError(f"tiny full-loop step must be >= 1, got {step}")
+    if step_i <= TINY_LOOP_STEP_COUNT:
+        return step_i
+    if not repeat_cycle:
+        raise ValueError(f"tiny full-loop fixture has exactly two steps, got {step}")
+    return ((step_i - 1) % TINY_LOOP_STEP_COUNT) + 1
 
 
 def _votes_for_step(step: int, *, device: torch.device) -> dict[str, torch.Tensor]:

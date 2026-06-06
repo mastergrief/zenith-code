@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+import time
 from typing import Any, Mapping, Sequence
 
 import torch
@@ -37,14 +38,25 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
     BoundedDeltaReferenceReport,
     BoundedDeltaStorageProjection,
     _backlog_key_set,
+    _build_measured_report_from_paths,
+    _evaluate_bounded_delta_admission,
+    _evaluate_guardrail,
     _identity_sha256,
     _run_reference_path,
+    bounded_delta_admission_contract,
     bounded_delta_inclusive_ledger,
     compare_bounded_delta_paths_to_int16_oracle,
     compare_bounded_delta_step_to_int16_oracle,
     decode_bounded_accumulator_to_i16,
     encode_budget_capped_hybrid_reference,
     project_bounded_delta_accumulator_bpw,
+)
+from calm.hrm_text_158.native_full_stack.full_loop_receipt import (
+    TINY_LOOP_GLOBAL_CAP,
+    measure_tiny_two_projection_fixture_budget,
+    tiny_full_loop_vote_update_spec,
+    tiny_full_loop_votes_for_step,
+    tiny_two_projection_vote_cap_fixture,
 )
 from calm.hrm_text_158.native_full_stack.global_rate_cap import (
     GlobalRateCapSpec,
@@ -54,7 +66,7 @@ from calm.hrm_text_158.native_full_stack.q_entropy_packing import (
     Base3QEntropyLedgerRow,
     default_base3_q_entropy_ledger_table,
 )
-from calm.hrm_text_158.native_full_stack.vote_update import VoteUpdateState
+from calm.hrm_text_158.native_full_stack.vote_update import VoteUpdateInputs, VoteUpdateState
 
 
 REPRESENTATIVE_VERDICT_SCHEMA_VERSION = (
@@ -82,7 +94,49 @@ CANDIDATE_ADMISSION_DIAGNOSTIC_SCHEMA_VERSION = (
 CANDIDATE_ADMISSION_DIAGNOSTIC_LABEL = (
     "c1p1c_candidate_admission_oracle_upper_bound_diagnostic"
 )
+CAPACITY_LOCALIZATION_DIAGNOSTIC_SCHEMA_VERSION = (
+    "hrm_text_158_c1p1c_capacity_localization_diagnostic/v0"
+)
+CAPACITY_LOCALIZATION_DIAGNOSTIC_LABEL = (
+    "c1p1c_candidate_capacity_localization_oracle_upper_bound_diagnostic"
+)
 COARSE_SIGNED_CHARGE_BLOCK_SIZE = 8
+A_COLD_EXCEPTION_BUDGET_LEVER_LABEL = (
+    "cold_exception_budget_lever_requires_surface_faithful_tighter_encoding"
+)
+A_FUNDAMENTALLY_OVER_LABEL = "fundamentally_over_hot_cold_split_wrong_shape"
+K_SWEEP_MINIMAL_VIABLE_PASS = "minimal_viable_k_upper_bound_pass"
+K_SWEEP_JOINT_INFEASIBLE = "joint_infeasible_surface_faithful_breaks_sub2"
+K_SWEEP_REPRESENTATION_WALL = "representation_level_capacity_wall"
+REAL_BACKLOG_LOWER_BOUND_SCHEMA_VERSION = (
+    "hrm_text_158_c1p1c_real_backlog_lower_bound_diagnostic/v0"
+)
+REAL_BACKLOG_LOWER_BOUND_LABEL = (
+    "c1p1c_sparse_amortized_real_backlog_lower_bound_diagnostic"
+)
+PER_ROW_COMPRESSION_CLOSED_TINY_FIXTURE_LOWER_BOUND_ONLY = (
+    "per_row_compression_closed_tiny_fixture_lower_bound_only"
+)
+PER_ROW_COMPRESSION_CLOSED_BY_EASY_CASE_LOWER_BOUND = (
+    PER_ROW_COMPRESSION_CLOSED_TINY_FIXTURE_LOWER_BOUND_ONLY
+)
+SPARSE_AMORTIZED_CANDIDATE_RESURRECTED_FOR_HARDER_TRACE = (
+    "sparse_amortized_candidate_resurrected_for_harder_trace"
+)
+REPRESENTATIVE_TRACE_UNDERPOWERED_FOR_CLOSURE = (
+    "representative_trace_underpowered_for_closure"
+)
+TINY_FIXTURE_HEADROOM_SOURCE = "tiny_two_projection_fixture_budget"
+LOWER_BOUND_TRACE_STOP_NONTRIVIAL = "nontrivial_backlog_reached"
+LOWER_BOUND_TRACE_STOP_PLATEAU = "backlog_identity_plateau"
+LOWER_BOUND_TRACE_STOP_CPU_SECONDS = "cpu_seconds_budget_hit"
+LOWER_BOUND_TRACE_STOP_MAX_STEPS = "max_steps_budget_hit"
+LOWER_BOUND_TRACE_PLATEAU_PATIENCE_STEPS = 2
+LOWER_BOUND_TRACE_MAX_STEPS = 8
+LOWER_BOUND_TRACE_MAX_SECONDS = 2.0
+LOWER_BOUND_TRACE_NONTRIVIAL_BACKLOG_SIZE = 2
+LOWER_BOUND_TRACE_NONTRIVIAL_UNIQUE_IDENTITIES = 2
+LOWER_BOUND_TRACE_NONTRIVIAL_MEMBERSHIP_CHANGES = 2
 
 
 def representative_engineering_guard_spec() -> BoundedDeltaGuardSpec:
@@ -580,6 +634,486 @@ class CandidateAdmissionDiagnosticReport:
         }
 
 
+@dataclass(frozen=True)
+class CandidateCapacityStepReport:
+    schedule_name: str
+    step: int
+    k_label: str
+    k_value: int | None
+    bounded_delta_report: BoundedDeltaReferenceReport
+    backlog_truncation_attribution: BacklogTruncationAttribution
+    protected_surface_destructive_approximation_present: bool
+    surface_fidelity_clears: bool
+    packed_inclusive_physical_bits_per_weight: float
+    delta_over_2bpw: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schedule_name": self.schedule_name,
+            "step": int(self.step),
+            "k_label": self.k_label,
+            "k_value": self.k_value,
+            "bounded_delta_report": self.bounded_delta_report.to_dict(),
+            "backlog_truncation_attribution": self.backlog_truncation_attribution.to_dict(),
+            "protected_surface_destructive_approximation_present": bool(
+                self.protected_surface_destructive_approximation_present
+            ),
+            "surface_fidelity_clears": bool(self.surface_fidelity_clears),
+            "packed_inclusive_physical_bits_per_weight": float(
+                self.packed_inclusive_physical_bits_per_weight
+            ),
+            "delta_over_2bpw": float(self.delta_over_2bpw),
+        }
+
+
+@dataclass(frozen=True)
+class CandidateABudgetReadout:
+    schedule_name: str
+    step: int
+    packed_inclusive_physical_bits_per_weight: float
+    delta_over_2bpw: float
+    hot_exact_bits: int
+    cold_exception_bits: int
+    backlog_bits: int
+    metadata_bits: int
+    dense_cold_bits: float
+    original_classification: str
+    original_rejection_summary: str
+    cold_zero_counterfactual_bits_per_weight: float
+    cold_zero_counterfactual_delta_over_2bpw: float
+    cold_zero_counterfactual_clears_sub2: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schedule_name": self.schedule_name,
+            "step": int(self.step),
+            "packed_inclusive_physical_bits_per_weight": float(
+                self.packed_inclusive_physical_bits_per_weight
+            ),
+            "delta_over_2bpw": float(self.delta_over_2bpw),
+            "hot_exact_bits": int(self.hot_exact_bits),
+            "cold_exception_bits": int(self.cold_exception_bits),
+            "backlog_bits": int(self.backlog_bits),
+            "metadata_bits": int(self.metadata_bits),
+            "dense_cold_bits": float(self.dense_cold_bits),
+            "original_classification": self.original_classification,
+            "original_rejection_summary": self.original_rejection_summary,
+            "cold_zero_counterfactual_bits_per_weight": float(
+                self.cold_zero_counterfactual_bits_per_weight
+            ),
+            "cold_zero_counterfactual_delta_over_2bpw": float(
+                self.cold_zero_counterfactual_delta_over_2bpw
+            ),
+            "cold_zero_counterfactual_clears_sub2": bool(
+                self.cold_zero_counterfactual_clears_sub2
+            ),
+        }
+
+
+@dataclass(frozen=True)
+class CandidateABudgetLocalizationReport:
+    candidate_name: str
+    per_step_readouts: tuple[CandidateABudgetReadout, ...]
+    terminal_budget_direction_label: str
+    original_terminal_classification: str
+    original_terminal_rejection_summary: str
+    cold_zero_counterfactual_terminal_bits_per_weight: float
+    cold_zero_counterfactual_terminal_delta_over_2bpw: float
+    cold_zero_counterfactual_terminal_clears_sub2: bool
+    non_claim: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "candidate_name": self.candidate_name,
+            "per_step_readouts": [step.to_dict() for step in self.per_step_readouts],
+            "terminal_budget_direction_label": self.terminal_budget_direction_label,
+            "original_terminal_classification": self.original_terminal_classification,
+            "original_terminal_rejection_summary": self.original_terminal_rejection_summary,
+            "cold_zero_counterfactual_terminal_bits_per_weight": float(
+                self.cold_zero_counterfactual_terminal_bits_per_weight
+            ),
+            "cold_zero_counterfactual_terminal_delta_over_2bpw": float(
+                self.cold_zero_counterfactual_terminal_delta_over_2bpw
+            ),
+            "cold_zero_counterfactual_terminal_clears_sub2": bool(
+                self.cold_zero_counterfactual_terminal_clears_sub2
+            ),
+            "non_claim": self.non_claim,
+        }
+
+
+@dataclass(frozen=True)
+class CandidateKSweepEntry:
+    candidate_name: str
+    k_label: str
+    k_value: int | None
+    per_step_reports: tuple[CandidateCapacityStepReport, ...]
+    all_steps_surface_fidelity_clears: bool
+    all_steps_claimable_physical_sub2_with_guardrail: bool
+    terminal_surface_fidelity_clears: bool
+    terminal_claimable_physical_sub2_with_guardrail: bool
+    terminal_protected_surface_destructive_approximation_present: bool
+    terminal_packed_inclusive_physical_bits_per_weight: float
+    terminal_delta_over_2bpw: float
+    terminal_rejection_summary: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "candidate_name": self.candidate_name,
+            "k_label": self.k_label,
+            "k_value": self.k_value,
+            "per_step_reports": [step.to_dict() for step in self.per_step_reports],
+            "all_steps_surface_fidelity_clears": bool(self.all_steps_surface_fidelity_clears),
+            "all_steps_claimable_physical_sub2_with_guardrail": bool(
+                self.all_steps_claimable_physical_sub2_with_guardrail
+            ),
+            "terminal_surface_fidelity_clears": bool(self.terminal_surface_fidelity_clears),
+            "terminal_claimable_physical_sub2_with_guardrail": bool(
+                self.terminal_claimable_physical_sub2_with_guardrail
+            ),
+            "terminal_protected_surface_destructive_approximation_present": bool(
+                self.terminal_protected_surface_destructive_approximation_present
+            ),
+            "terminal_packed_inclusive_physical_bits_per_weight": float(
+                self.terminal_packed_inclusive_physical_bits_per_weight
+            ),
+            "terminal_delta_over_2bpw": float(self.terminal_delta_over_2bpw),
+            "terminal_rejection_summary": self.terminal_rejection_summary,
+        }
+
+
+@dataclass(frozen=True)
+class CandidateKSweepDecision:
+    candidate_name: str
+    status: str
+    decisive_k_label: str
+    decisive_k_value: int | None
+    oracle_upper_bound_only: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "candidate_name": self.candidate_name,
+            "status": self.status,
+            "decisive_k_label": self.decisive_k_label,
+            "decisive_k_value": self.decisive_k_value,
+            "oracle_upper_bound_only": bool(self.oracle_upper_bound_only),
+        }
+
+
+@dataclass(frozen=True)
+class CandidateKSweepRunReport:
+    candidate_name: str
+    sweep_entries: tuple[CandidateKSweepEntry, ...]
+    terminal_decision: CandidateKSweepDecision
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "candidate_name": self.candidate_name,
+            "sweep_entries": [entry.to_dict() for entry in self.sweep_entries],
+            "terminal_decision": self.terminal_decision.to_dict(),
+        }
+
+
+@dataclass(frozen=True)
+class CandidateCapacityLocalizationReport:
+    schema_version: str
+    label: str
+    source_bindingness: Any
+    field_coverage: SourceFieldCoverage
+    q_ledger_regime_name: str
+    guard_spec: BoundedDeltaGuardSpec
+    candidate_a_budget_report: CandidateABudgetLocalizationReport
+    backlog_k_schedule: tuple[str, ...]
+    sweep_runs: tuple[CandidateKSweepRunReport, ...]
+    raw_arrays_included: bool
+    non_claims: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "label": self.label,
+            "source_bindingness": self.source_bindingness.to_dict(),
+            "field_coverage": self.field_coverage.to_dict(),
+            "q_ledger_regime_name": self.q_ledger_regime_name,
+            "guard_spec": self.guard_spec.to_dict(),
+            "candidate_a_budget_report": self.candidate_a_budget_report.to_dict(),
+            "backlog_k_schedule": list(self.backlog_k_schedule),
+            "sweep_runs": [run.to_dict() for run in self.sweep_runs],
+            "raw_arrays_included": bool(self.raw_arrays_included),
+            "non_claims": list(self.non_claims),
+        }
+
+
+@dataclass(frozen=True)
+class RealBacklogTraceStepReport:
+    schedule_name: str
+    step: int
+    vote_pattern_step: int
+    pre_cap_demand_count: int
+    exact_candidate_count: int
+    exact_accepted_count: int
+    exact_deferred_count: int
+    exact_fired_count: int
+    exact_output_backlog_count: int
+    exact_output_backlog_identities_sha256: str
+    backlog_membership_changed_count_from_prior_step: int
+    cumulative_unique_backlog_identity_count: int
+    backlog_max_age_steps: int
+    backlog_max_defer_count: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schedule_name": self.schedule_name,
+            "step": int(self.step),
+            "vote_pattern_step": int(self.vote_pattern_step),
+            "pre_cap_demand_count": int(self.pre_cap_demand_count),
+            "exact_candidate_count": int(self.exact_candidate_count),
+            "exact_accepted_count": int(self.exact_accepted_count),
+            "exact_deferred_count": int(self.exact_deferred_count),
+            "exact_fired_count": int(self.exact_fired_count),
+            "exact_output_backlog_count": int(self.exact_output_backlog_count),
+            "exact_output_backlog_identities_sha256": self.exact_output_backlog_identities_sha256,
+            "backlog_membership_changed_count_from_prior_step": int(
+                self.backlog_membership_changed_count_from_prior_step
+            ),
+            "cumulative_unique_backlog_identity_count": int(
+                self.cumulative_unique_backlog_identity_count
+            ),
+            "backlog_max_age_steps": int(self.backlog_max_age_steps),
+            "backlog_max_defer_count": int(self.backlog_max_defer_count),
+        }
+
+
+@dataclass(frozen=True)
+class RealBacklogTraceSummaryReport:
+    stop_reason: str
+    stop_step: int
+    plateau_patience_steps: int
+    max_steps_budget: int
+    cpu_seconds_budget: float
+    elapsed_seconds: float
+    saw_any_backlog: bool
+    nontrivial_backlog_reached: bool
+    plateau_detected: bool
+    max_exact_output_backlog_count: int
+    cumulative_unique_backlog_identity_count: int
+    cumulative_backlog_membership_changed_count: int
+    max_exact_backlog_age_steps: int
+    max_exact_backlog_defer_count: int
+    per_step_reports: tuple[RealBacklogTraceStepReport, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "stop_reason": self.stop_reason,
+            "stop_step": int(self.stop_step),
+            "plateau_patience_steps": int(self.plateau_patience_steps),
+            "max_steps_budget": int(self.max_steps_budget),
+            "cpu_seconds_budget": float(self.cpu_seconds_budget),
+            "elapsed_seconds": float(self.elapsed_seconds),
+            "saw_any_backlog": bool(self.saw_any_backlog),
+            "nontrivial_backlog_reached": bool(self.nontrivial_backlog_reached),
+            "plateau_detected": bool(self.plateau_detected),
+            "max_exact_output_backlog_count": int(self.max_exact_output_backlog_count),
+            "cumulative_unique_backlog_identity_count": int(
+                self.cumulative_unique_backlog_identity_count
+            ),
+            "cumulative_backlog_membership_changed_count": int(
+                self.cumulative_backlog_membership_changed_count
+            ),
+            "max_exact_backlog_age_steps": int(self.max_exact_backlog_age_steps),
+            "max_exact_backlog_defer_count": int(self.max_exact_backlog_defer_count),
+            "per_step_reports": [step.to_dict() for step in self.per_step_reports],
+        }
+
+
+@dataclass(frozen=True)
+class RealBacklogLowerBoundStepReport:
+    schedule_name: str
+    step: int
+    k_label: str
+    k_value: int | None
+    guard_passed: bool
+    admission_passed: bool
+    surface_fidelity_clears: bool
+    failed_metrics: tuple[str, ...]
+    admission_failed_surfaces: tuple[str, ...]
+    rejection_summary: str
+    protected_surface_destructive_approximation_present: bool
+    bounded_delta_acc_bits_per_weight: float
+    backlog_entry_count: int
+    hot_exact_row_count: int
+    event_delta_count: int
+    measured_report: BoundedDeltaMeasuredReport
+    backlog_truncation_attribution: BacklogTruncationAttribution
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schedule_name": self.schedule_name,
+            "step": int(self.step),
+            "k_label": self.k_label,
+            "k_value": self.k_value,
+            "guard_passed": bool(self.guard_passed),
+            "admission_passed": bool(self.admission_passed),
+            "surface_fidelity_clears": bool(self.surface_fidelity_clears),
+            "failed_metrics": list(self.failed_metrics),
+            "admission_failed_surfaces": list(self.admission_failed_surfaces),
+            "rejection_summary": self.rejection_summary,
+            "protected_surface_destructive_approximation_present": bool(
+                self.protected_surface_destructive_approximation_present
+            ),
+            "bounded_delta_acc_bits_per_weight": float(self.bounded_delta_acc_bits_per_weight),
+            "backlog_entry_count": int(self.backlog_entry_count),
+            "hot_exact_row_count": int(self.hot_exact_row_count),
+            "event_delta_count": int(self.event_delta_count),
+            "measured_report": self.measured_report.to_dict(),
+            "backlog_truncation_attribution": self.backlog_truncation_attribution.to_dict(),
+        }
+
+
+@dataclass(frozen=True)
+class RealBacklogLowerBoundSweepEntry:
+    candidate_name: str
+    k_label: str
+    k_value: int | None
+    per_step_reports: tuple[RealBacklogLowerBoundStepReport, ...]
+    all_steps_surface_fidelity_clears: bool
+    peak_bounded_delta_acc_bits_per_weight: float
+    terminal_bounded_delta_acc_bits_per_weight: float
+    terminal_rejection_summary: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "candidate_name": self.candidate_name,
+            "k_label": self.k_label,
+            "k_value": self.k_value,
+            "per_step_reports": [step.to_dict() for step in self.per_step_reports],
+            "all_steps_surface_fidelity_clears": bool(self.all_steps_surface_fidelity_clears),
+            "peak_bounded_delta_acc_bits_per_weight": float(
+                self.peak_bounded_delta_acc_bits_per_weight
+            ),
+            "terminal_bounded_delta_acc_bits_per_weight": float(
+                self.terminal_bounded_delta_acc_bits_per_weight
+            ),
+            "terminal_rejection_summary": self.terminal_rejection_summary,
+        }
+
+
+@dataclass(frozen=True)
+class RealBacklogLowerBoundDecision:
+    terminal_label: str
+    headroom_source: str
+    eligible_weight_count: int
+    q_packed_data_bits_per_weight: float
+    q_packed_metadata_bits_per_weight: float
+    q_packed_total_bits_per_weight: float
+    frozen_scale_fp32_bits_per_weight: float
+    actual_remaining_accumulator_headroom_bits_per_weight: float
+    minimal_surface_faithful_k_label: str | None
+    minimal_surface_faithful_k_value: int | None
+    minimal_surface_faithful_peak_bounded_delta_acc_bits_per_weight: float | None
+    headroom_minus_minimal_surface_faithful_peak_bits_per_weight: float | None
+    minimal_surface_faithful_k_fits_headroom: bool
+    global_per_row_compression_closed: bool
+    branch_a_trigger: bool
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "terminal_label": self.terminal_label,
+            "headroom_source": self.headroom_source,
+            "eligible_weight_count": int(self.eligible_weight_count),
+            "q_packed_data_bits_per_weight": float(self.q_packed_data_bits_per_weight),
+            "q_packed_metadata_bits_per_weight": float(self.q_packed_metadata_bits_per_weight),
+            "q_packed_total_bits_per_weight": float(self.q_packed_total_bits_per_weight),
+            "frozen_scale_fp32_bits_per_weight": float(
+                self.frozen_scale_fp32_bits_per_weight
+            ),
+            "actual_remaining_accumulator_headroom_bits_per_weight": float(
+                self.actual_remaining_accumulator_headroom_bits_per_weight
+            ),
+            "minimal_surface_faithful_k_label": self.minimal_surface_faithful_k_label,
+            "minimal_surface_faithful_k_value": self.minimal_surface_faithful_k_value,
+            "minimal_surface_faithful_peak_bounded_delta_acc_bits_per_weight": (
+                None
+                if self.minimal_surface_faithful_peak_bounded_delta_acc_bits_per_weight is None
+                else float(self.minimal_surface_faithful_peak_bounded_delta_acc_bits_per_weight)
+            ),
+            "headroom_minus_minimal_surface_faithful_peak_bits_per_weight": (
+                None
+                if self.headroom_minus_minimal_surface_faithful_peak_bits_per_weight is None
+                else float(self.headroom_minus_minimal_surface_faithful_peak_bits_per_weight)
+            ),
+            "minimal_surface_faithful_k_fits_headroom": bool(
+                self.minimal_surface_faithful_k_fits_headroom
+            ),
+            "global_per_row_compression_closed": bool(
+                self.global_per_row_compression_closed
+            ),
+            "branch_a_trigger": bool(self.branch_a_trigger),
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class RealBacklogLowerBoundReport:
+    schema_version: str
+    label: str
+    source_bindingness: Any
+    field_coverage: SourceFieldCoverage
+    q_persistent_budget_label: str
+    candidate_name: str
+    guard_spec: BoundedDeltaGuardSpec
+    exact_trace_summary: RealBacklogTraceSummaryReport
+    backlog_k_schedule: tuple[str, ...]
+    sweep_entries: tuple[RealBacklogLowerBoundSweepEntry, ...]
+    terminal_decision: RealBacklogLowerBoundDecision
+    raw_arrays_included: bool
+    non_claims: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "label": self.label,
+            "source_bindingness": self.source_bindingness.to_dict(),
+            "field_coverage": self.field_coverage.to_dict(),
+            "q_persistent_budget_label": self.q_persistent_budget_label,
+            "candidate_name": self.candidate_name,
+            "guard_spec": self.guard_spec.to_dict(),
+            "exact_trace_summary": self.exact_trace_summary.to_dict(),
+            "backlog_k_schedule": list(self.backlog_k_schedule),
+            "sweep_entries": [entry.to_dict() for entry in self.sweep_entries],
+            "terminal_decision": self.terminal_decision.to_dict(),
+            "raw_arrays_included": bool(self.raw_arrays_included),
+            "non_claims": list(self.non_claims),
+        }
+
+
+@dataclass(frozen=True)
+class _ExactScheduleTraceStep:
+    schedule_step: VotePressureStepSpec
+    inputs: tuple[BoundedDeltaOracleInput, ...]
+    tensor_offsets: dict[str, int]
+    cap_spec: GlobalRateCapSpec
+    exact_input_states: dict[str, VoteUpdateState]
+    exact_input_backlog: dict[str, dict[int, dict[str, int]]]
+    exact_path: Any
+    exact_output_backlog: dict[str, dict[int, dict[str, int]]]
+
+
+@dataclass(frozen=True)
+class _RealBacklogTraceStep:
+    schedule_name: str
+    step: int
+    vote_pattern_step: int
+    inputs: tuple[BoundedDeltaOracleInput, ...]
+    tensor_offsets: dict[str, int]
+    cap_spec: GlobalRateCapSpec
+    exact_input_states: dict[str, VoteUpdateState]
+    exact_input_backlog: dict[str, dict[int, dict[str, int]]]
+    exact_path: Any
+    exact_output_backlog: dict[str, dict[int, dict[str, int]]]
+
+
 def _step_report_from_reference(
     *,
     schedule_name: str,
@@ -871,6 +1405,10 @@ def _oracle_upper_bound_non_claims(*, candidate_name: str) -> tuple[str, ...]:
     )
 
 
+def _delta_over_2bpw(bits_per_weight: float) -> float:
+    return float(bits_per_weight) - 2.0
+
+
 def _candidate_path_difference(
     *,
     candidate_name: str,
@@ -889,6 +1427,365 @@ def _candidate_path_difference(
     return (
         "oracle upper bound candidate path differs by coarse signed cold-field approximation plus "
         f"sparse exact frontier overrides and bounded backlog truncate_k{int(backlog_policy_k or 0)} carry-forward"
+    )
+
+
+def _build_exact_schedule_trace() -> tuple[tuple[_ExactScheduleTraceStep, ...], int]:
+    exact_states = _initial_states()
+    exact_backlog: dict[str, dict[int, dict[str, int]]] = {}
+    trace_steps: list[_ExactScheduleTraceStep] = []
+    max_exact_output_backlog_count = 0
+    for schedule_step in PRE_REGISTERED_VOTE_PRESSURE_SCHEDULE:
+        inputs, offsets = _make_step_inputs(exact_states, schedule_step)
+        cap_spec = GlobalRateCapSpec(cap=int(schedule_step.cap), step=int(schedule_step.step))
+        exact_path = _run_reference_path(
+            inputs,
+            states_by_key=exact_states,
+            global_cap_spec=cap_spec,
+            deferred_backlog=exact_backlog,
+            tensor_offsets=offsets,
+        )
+        if exact_path.cap_result is None:
+            raise ValueError("capacity localization trace requires global cap results")
+        exact_output_backlog = _copy_backlog(exact_path.cap_result.deferred_backlog)
+        max_exact_output_backlog_count = max(
+            max_exact_output_backlog_count,
+            _backlog_entry_count(exact_output_backlog),
+        )
+        trace_steps.append(
+            _ExactScheduleTraceStep(
+                schedule_step=schedule_step,
+                inputs=tuple(inputs),
+                tensor_offsets=dict(offsets),
+                cap_spec=cap_spec,
+                exact_input_states=_copy_state_map(exact_states),
+                exact_input_backlog=_copy_backlog(exact_backlog),
+                exact_path=exact_path,
+                exact_output_backlog=exact_output_backlog,
+            )
+        )
+        exact_states = _states_from_path(exact_path)
+        exact_backlog = exact_output_backlog
+    return tuple(trace_steps), int(max_exact_output_backlog_count)
+
+
+def _protected_surface_destructive_approximation_present(
+    report: BoundedDeltaReferenceReport,
+) -> bool:
+    protected = set(report.admission_contract.exact_surfaces)
+    return any(
+        item.surface in protected and item.status == "destructive_approximation"
+        for item in report.rejection_telemetry.surfaces
+    )
+
+
+def _capacity_step_report(
+    *,
+    schedule_name: str,
+    step: int,
+    k_label: str,
+    k_value: int | None,
+    report: BoundedDeltaReferenceReport,
+    exact_input_backlog: Mapping[str, Mapping[int, Mapping[str, int]]],
+    bounded_input_backlog: Mapping[str, Mapping[int, Mapping[str, int]]],
+    exact_output_backlog: Mapping[str, Mapping[int, Mapping[str, int]]],
+    bounded_stored_backlog: Mapping[str, Mapping[int, Mapping[str, int]]],
+) -> CandidateCapacityStepReport:
+    truncation = _backlog_truncation_report(
+        report=report,
+        exact_input_backlog=exact_input_backlog,
+        bounded_input_backlog=bounded_input_backlog,
+        exact_output_backlog=exact_output_backlog,
+        bounded_stored_backlog=bounded_stored_backlog,
+    )
+    bpw = float(report.ledger.packed_inclusive_physical_bits_per_weight)
+    return CandidateCapacityStepReport(
+        schedule_name=schedule_name,
+        step=int(step),
+        k_label=k_label,
+        k_value=k_value,
+        bounded_delta_report=report,
+        backlog_truncation_attribution=truncation,
+        protected_surface_destructive_approximation_present=(
+            _protected_surface_destructive_approximation_present(report)
+        ),
+        surface_fidelity_clears=bool(report.guard_passed and report.admission_passed),
+        packed_inclusive_physical_bits_per_weight=bpw,
+        delta_over_2bpw=_delta_over_2bpw(bpw),
+    )
+
+
+def _cold_zero_counterfactual_projection(
+    projection: BoundedDeltaStorageProjection,
+) -> BoundedDeltaStorageProjection:
+    return project_bounded_delta_accumulator_bpw(
+        eligible_weight_count=int(projection.eligible_weight_count),
+        hot_exact_row_count=int(projection.hot_exact_row_count),
+        cold_exception_row_count=0,
+        event_delta_count=int(projection.event_delta_count),
+        backlog_entry_count=int(projection.backlog_entry_count),
+        index_bits_per_row=int(projection.index_bits_per_row),
+        hot_value_bits_per_row=int(projection.hot_value_bits_per_row),
+        hot_flag_bits_per_row=int(projection.hot_flag_bits_per_row),
+        cold_exception_value_bits_per_row=int(projection.cold_exception_value_bits_per_row),
+        cold_exception_flag_bits_per_row=int(projection.cold_exception_flag_bits_per_row),
+        event_delta_bits_per_entry=int(projection.event_delta_bits_per_entry),
+        event_delta_flag_bits_per_entry=int(projection.event_delta_flag_bits_per_entry),
+        backlog_age_bits_per_entry=int(projection.backlog_age_bits_per_entry),
+        backlog_defer_count_bits_per_entry=int(projection.backlog_defer_count_bits_per_entry),
+        tensor_metadata_bits=int(projection.tensor_metadata_bits),
+        bucket_metadata_bits=int(projection.bucket_metadata_bits),
+        scale_metadata_bits=int(projection.scale_metadata_bits),
+        guardrail_metadata_bits=int(projection.guardrail_metadata_bits),
+        dense_cold_bits_per_weight=float(projection.dense_cold_bits_per_weight),
+    )
+
+
+def _candidate_a_budget_readout(
+    step_report: CandidateCapacityStepReport,
+) -> CandidateABudgetReadout:
+    projection = step_report.bounded_delta_report.storage_projection
+    counterfactual = _cold_zero_counterfactual_projection(projection)
+    return CandidateABudgetReadout(
+        schedule_name=step_report.schedule_name,
+        step=int(step_report.step),
+        packed_inclusive_physical_bits_per_weight=float(
+            step_report.packed_inclusive_physical_bits_per_weight
+        ),
+        delta_over_2bpw=float(step_report.delta_over_2bpw),
+        hot_exact_bits=int(projection.hot_exact_bits),
+        cold_exception_bits=int(projection.cold_exception_bits),
+        backlog_bits=int(projection.backlog_bits),
+        metadata_bits=int(projection.metadata_bits),
+        dense_cold_bits=float(projection.dense_cold_bits),
+        original_classification=step_report.bounded_delta_report.classification,
+        original_rejection_summary=step_report.bounded_delta_report.rejection_telemetry.summary,
+        cold_zero_counterfactual_bits_per_weight=float(
+            counterfactual.bounded_delta_acc_bits_per_weight
+            + step_report.bounded_delta_report.ledger.q_packed_total_bits_per_weight
+            + step_report.bounded_delta_report.ledger.frozen_scale_fp32_bits_per_weight
+        ),
+        cold_zero_counterfactual_delta_over_2bpw=_delta_over_2bpw(
+            counterfactual.bounded_delta_acc_bits_per_weight
+            + step_report.bounded_delta_report.ledger.q_packed_total_bits_per_weight
+            + step_report.bounded_delta_report.ledger.frozen_scale_fp32_bits_per_weight
+        ),
+        cold_zero_counterfactual_clears_sub2=bool(
+            (
+                counterfactual.bounded_delta_acc_bits_per_weight
+                + step_report.bounded_delta_report.ledger.q_packed_total_bits_per_weight
+                + step_report.bounded_delta_report.ledger.frozen_scale_fp32_bits_per_weight
+            )
+            < 2.0
+        ),
+    )
+
+
+def _candidate_a_terminal_budget_direction(
+    readouts: Sequence[CandidateABudgetReadout],
+) -> str:
+    if any(
+        item.delta_over_2bpw > 0.0 and item.cold_zero_counterfactual_delta_over_2bpw > 0.0
+        for item in readouts
+    ):
+        return A_FUNDAMENTALLY_OVER_LABEL
+    return A_COLD_EXCEPTION_BUDGET_LEVER_LABEL
+
+
+def _backlog_k_values(max_exact_output_backlog_count: int) -> tuple[int, ...]:
+    values: list[int] = []
+    current = 32
+    target = max(32, int(max_exact_output_backlog_count))
+    while current < target:
+        values.append(int(current))
+        current *= 2
+    values.append(int(current))
+    return tuple(values)
+
+
+def _trace_step_schedule_name(trace_step: Any) -> str:
+    if hasattr(trace_step, "schedule_name"):
+        return str(trace_step.schedule_name)
+    return str(trace_step.schedule_step.name)
+
+
+def _trace_step_number(trace_step: Any) -> int:
+    if hasattr(trace_step, "step"):
+        return int(trace_step.step)
+    return int(trace_step.schedule_step.step)
+
+
+def _run_candidate_capacity_sweep(
+    *,
+    candidate_name: str,
+    trace_steps: Sequence[_ExactScheduleTraceStep],
+    q_ledger: Base3QEntropyLedgerRow,
+    guard_spec: BoundedDeltaGuardSpec,
+    backlog_policy_k: int | None,
+    k_label: str,
+) -> CandidateKSweepEntry:
+    bounded_states = _copy_state_map(_initial_states())
+    bounded_backlog: dict[str, dict[int, dict[str, int]]] = {}
+    step_reports: list[CandidateCapacityStepReport] = []
+    eligible = int(q_ledger.eligible_weight_count)
+    for trace_step in trace_steps:
+        candidate_input_backlog = _copy_backlog(bounded_backlog)
+        candidate_inputs, bounded_input_states, event_delta_count, dense_cold_bpw = (
+            _candidate_inputs_and_states(
+                candidate_name=candidate_name,
+                inputs=trace_step.inputs,
+                source_states=bounded_states,
+                carried_backlog=candidate_input_backlog,
+                exact_path=trace_step.exact_path,
+            )
+        )
+        bounded_path = _run_reference_path(
+            candidate_inputs,
+            states_by_key=bounded_input_states,
+            global_cap_spec=trace_step.cap_spec,
+            deferred_backlog=candidate_input_backlog,
+            tensor_offsets=trace_step.tensor_offsets,
+        )
+        if bounded_path.cap_result is None:
+            raise ValueError("candidate capacity sweep requires bounded cap results")
+        if backlog_policy_k is None:
+            bounded_stored_backlog = _copy_backlog(bounded_path.cap_result.deferred_backlog)
+        else:
+            bounded_stored_backlog = _select_stored_backlog(
+                bounded_path.cap_result.deferred_backlog,
+                priority_identities=trace_step.exact_path.ordered_row_ids,
+                max_entries=int(backlog_policy_k),
+            )
+        hot_row_count = _hot_count(
+            {item.state_key: item.hot_exact_indices for item in candidate_inputs}
+        )
+        report = compare_bounded_delta_paths_to_int16_oracle(
+            inputs=candidate_inputs,
+            q_ledger_row=q_ledger,
+            exact_path=trace_step.exact_path,
+            bounded_path=bounded_path,
+            storage_projection=project_bounded_delta_accumulator_bpw(
+                eligible_weight_count=eligible,
+                hot_exact_row_count=hot_row_count,
+                event_delta_count=event_delta_count,
+                backlog_entry_count=_backlog_entry_count(bounded_stored_backlog),
+                tensor_metadata_bits=len(PRIMARY_STATE_KEYS) * DEFAULT_TENSOR_METADATA_BITS_PER_INPUT,
+                bucket_metadata_bits=DEFAULT_BUCKET_METADATA_BITS,
+                scale_metadata_bits=DEFAULT_SCALE_METADATA_BITS,
+                guardrail_metadata_bits=DEFAULT_GUARDRAIL_METADATA_BITS,
+                dense_cold_bits_per_weight=dense_cold_bpw,
+            ),
+            guard_spec=guard_spec,
+            candidate_name=candidate_name,
+            global_cap_spec=trace_step.cap_spec,
+            exact_input_states=trace_step.exact_input_states,
+            bounded_input_states=bounded_input_states,
+            exact_input_backlog=trace_step.exact_input_backlog,
+            bounded_input_backlog=candidate_input_backlog,
+            bounded_stored_backlog=bounded_stored_backlog,
+            tensor_offsets=trace_step.tensor_offsets,
+            bounded_backlog_policy_active=(
+                _backlog_key_set(trace_step.exact_input_backlog)
+                != _backlog_key_set(candidate_input_backlog)
+                or _backlog_key_set(trace_step.exact_output_backlog)
+                != _backlog_key_set(bounded_stored_backlog)
+            ),
+            path_difference=_candidate_path_difference(
+                candidate_name=candidate_name,
+                backlog_policy_k=backlog_policy_k,
+            ),
+            oracle_parity_overrides={
+                "cumulative_carry_forward": True,
+                "bounded_reinitialized_from_exact": False,
+                "builder_label": ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC,
+                "swept_backlog_k_label": k_label,
+            },
+            non_claims=_oracle_upper_bound_non_claims(candidate_name=candidate_name),
+        )
+        step_reports.append(
+            _capacity_step_report(
+                schedule_name=_trace_step_schedule_name(trace_step),
+                step=_trace_step_number(trace_step),
+                k_label=k_label,
+                k_value=backlog_policy_k,
+                report=report,
+                exact_input_backlog=trace_step.exact_input_backlog,
+                bounded_input_backlog=candidate_input_backlog,
+                exact_output_backlog=trace_step.exact_output_backlog,
+                bounded_stored_backlog=bounded_stored_backlog,
+            )
+        )
+        bounded_states = _states_from_path(bounded_path)
+        bounded_backlog = _copy_backlog(bounded_stored_backlog)
+    terminal = step_reports[-1]
+    return CandidateKSweepEntry(
+        candidate_name=candidate_name,
+        k_label=k_label,
+        k_value=backlog_policy_k,
+        per_step_reports=tuple(step_reports),
+        all_steps_surface_fidelity_clears=all(
+            step.surface_fidelity_clears for step in step_reports
+        ),
+        all_steps_claimable_physical_sub2_with_guardrail=all(
+            step.bounded_delta_report.claimable_physical_sub2_with_guardrail
+            for step in step_reports
+        ),
+        terminal_surface_fidelity_clears=bool(terminal.surface_fidelity_clears),
+        terminal_claimable_physical_sub2_with_guardrail=bool(
+            terminal.bounded_delta_report.claimable_physical_sub2_with_guardrail
+        ),
+        terminal_protected_surface_destructive_approximation_present=bool(
+            terminal.protected_surface_destructive_approximation_present
+        ),
+        terminal_packed_inclusive_physical_bits_per_weight=float(
+            terminal.packed_inclusive_physical_bits_per_weight
+        ),
+        terminal_delta_over_2bpw=float(terminal.delta_over_2bpw),
+        terminal_rejection_summary=terminal.bounded_delta_report.rejection_telemetry.summary,
+    )
+
+
+def _candidate_k_sweep_decision(
+    *,
+    candidate_name: str,
+    sweep_entries: Sequence[CandidateKSweepEntry],
+) -> CandidateKSweepDecision:
+    viable = next(
+        (
+            entry
+            for entry in sweep_entries
+            if entry.all_steps_surface_fidelity_clears
+            and entry.all_steps_claimable_physical_sub2_with_guardrail
+        ),
+        None,
+    )
+    if viable is not None:
+        return CandidateKSweepDecision(
+            candidate_name=candidate_name,
+            status=K_SWEEP_MINIMAL_VIABLE_PASS,
+            decisive_k_label=viable.k_label,
+            decisive_k_value=viable.k_value,
+            oracle_upper_bound_only=True,
+        )
+    surface_clear = next(
+        (entry for entry in sweep_entries if entry.all_steps_surface_fidelity_clears),
+        None,
+    )
+    if surface_clear is not None:
+        return CandidateKSweepDecision(
+            candidate_name=candidate_name,
+            status=K_SWEEP_JOINT_INFEASIBLE,
+            decisive_k_label=surface_clear.k_label,
+            decisive_k_value=surface_clear.k_value,
+            oracle_upper_bound_only=True,
+        )
+    unbounded = sweep_entries[-1]
+    return CandidateKSweepDecision(
+        candidate_name=candidate_name,
+        status=K_SWEEP_REPRESENTATION_WALL,
+        decisive_k_label=unbounded.k_label,
+        decisive_k_value=unbounded.k_value,
+        oracle_upper_bound_only=True,
     )
 
 
@@ -1404,6 +2301,665 @@ def run_candidate_admission_diagnostic() -> CandidateAdmissionDiagnosticReport:
     )
 
 
+def run_candidate_capacity_localization_diagnostic() -> CandidateCapacityLocalizationReport:
+    """Localize whether A/B/C nulls are budget-lever, k-starvation, or redesign walls."""
+
+    q_ledger = _prior_large_q_ledger()
+    guard_spec = representative_engineering_guard_spec()
+    bindingness = pre_register_source_bindingness(
+        source_kind=SOURCE_KIND_GENERATED_NATIVE_LOOP,
+        coverage=SourceFieldCoverage.full_generated_native_loop(),
+    )
+    baseline_report = run_candidate_admission_diagnostic()
+    by_name = {run.candidate_name: run for run in baseline_report.candidate_runs}
+
+    candidate_a_run = by_name[HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE]
+    a_readouts = tuple(
+        _candidate_a_budget_readout(step)
+        for step in (
+            CandidateCapacityStepReport(
+                schedule_name=step.schedule_name,
+                step=int(step.step),
+                k_label="baseline",
+                k_value=None,
+                bounded_delta_report=step.bounded_delta_report,
+                backlog_truncation_attribution=step.backlog_truncation_attribution,
+                protected_surface_destructive_approximation_present=(
+                    _protected_surface_destructive_approximation_present(step.bounded_delta_report)
+                ),
+                surface_fidelity_clears=bool(
+                    step.bounded_delta_report.guard_passed
+                    and step.bounded_delta_report.admission_passed
+                ),
+                packed_inclusive_physical_bits_per_weight=float(
+                    step.bounded_delta_report.ledger.packed_inclusive_physical_bits_per_weight
+                ),
+                delta_over_2bpw=_delta_over_2bpw(
+                    step.bounded_delta_report.ledger.packed_inclusive_physical_bits_per_weight
+                ),
+            )
+            for step in candidate_a_run.per_step_reports
+        )
+    )
+    a_terminal = a_readouts[-1]
+    candidate_a_budget_report = CandidateABudgetLocalizationReport(
+        candidate_name=HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE,
+        per_step_readouts=a_readouts,
+        terminal_budget_direction_label=_candidate_a_terminal_budget_direction(a_readouts),
+        original_terminal_classification=(
+            candidate_a_run.per_step_reports[-1].bounded_delta_report.classification
+        ),
+        original_terminal_rejection_summary=(
+            candidate_a_run.per_step_reports[-1].bounded_delta_report.rejection_telemetry.summary
+        ),
+        cold_zero_counterfactual_terminal_bits_per_weight=float(
+            a_terminal.cold_zero_counterfactual_bits_per_weight
+        ),
+        cold_zero_counterfactual_terminal_delta_over_2bpw=float(
+            a_terminal.cold_zero_counterfactual_delta_over_2bpw
+        ),
+        cold_zero_counterfactual_terminal_clears_sub2=bool(
+            a_terminal.cold_zero_counterfactual_clears_sub2
+        ),
+        non_claim=(
+            "cold-zero counterfactual isolates the budget lever only; salvage still requires a "
+            "future surface-faithful tighter-cold encoding"
+        ),
+    )
+
+    trace_steps, max_exact_output_backlog_count = _build_exact_schedule_trace()
+    backlog_k_values = _backlog_k_values(max_exact_output_backlog_count)
+    backlog_k_schedule = tuple([str(value) for value in backlog_k_values] + ["unbounded"])
+    sweep_runs: list[CandidateKSweepRunReport] = []
+    for candidate_name in (
+        EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE,
+        COARSE_SIGNED_CHARGE_SPARSE_FRONTIER_CANDIDATE,
+    ):
+        sweep_entries = tuple(
+            [
+                _run_candidate_capacity_sweep(
+                    candidate_name=candidate_name,
+                    trace_steps=trace_steps,
+                    q_ledger=q_ledger,
+                    guard_spec=guard_spec,
+                    backlog_policy_k=int(k_value),
+                    k_label=str(int(k_value)),
+                )
+                for k_value in backlog_k_values
+            ]
+            + [
+                _run_candidate_capacity_sweep(
+                    candidate_name=candidate_name,
+                    trace_steps=trace_steps,
+                    q_ledger=q_ledger,
+                    guard_spec=guard_spec,
+                    backlog_policy_k=None,
+                    k_label="unbounded",
+                )
+            ]
+        )
+        sweep_runs.append(
+            CandidateKSweepRunReport(
+                candidate_name=candidate_name,
+                sweep_entries=sweep_entries,
+                terminal_decision=_candidate_k_sweep_decision(
+                    candidate_name=candidate_name,
+                    sweep_entries=sweep_entries,
+                ),
+            )
+        )
+
+    return CandidateCapacityLocalizationReport(
+        schema_version=CAPACITY_LOCALIZATION_DIAGNOSTIC_SCHEMA_VERSION,
+        label=CAPACITY_LOCALIZATION_DIAGNOSTIC_LABEL,
+        source_bindingness=bindingness,
+        field_coverage=SourceFieldCoverage.full_generated_native_loop(),
+        q_ledger_regime_name=q_ledger.regime_name,
+        guard_spec=guard_spec,
+        candidate_a_budget_report=candidate_a_budget_report,
+        backlog_k_schedule=backlog_k_schedule,
+        sweep_runs=tuple(sweep_runs),
+        raw_arrays_included=False,
+        non_claims=(
+            "CPU-only oracle-upper-bound capacity localization",
+            "A cold-zero counterfactual is a budget-lever direction signal only",
+            "B/C k-sweep varies backlog capacity only; all other schedule/oracle terms are fixed",
+            "PASS would still be oracle-upper-bound only, not a deployable codec",
+            "no GPU lane",
+            "compact counts/hashes only; no raw per-weight arrays",
+        ),
+    )
+
+
+def _protected_surface_destructive_approximation_present_from_rejection(
+    *,
+    exact_surfaces: Sequence[str],
+    rejection_telemetry: Any,
+) -> bool:
+    protected = set(str(surface) for surface in exact_surfaces)
+    return any(
+        item.surface in protected and item.status == "destructive_approximation"
+        for item in rejection_telemetry.surfaces
+    )
+
+
+def _tensor_offsets_for_state_map(
+    states: Mapping[str, VoteUpdateState],
+) -> dict[str, int]:
+    offsets: dict[str, int] = {}
+    cursor = 0
+    for state_key, state in states.items():
+        offsets[str(state_key)] = cursor
+        cursor += int(state.q_levels.numel())
+    return offsets
+
+
+def _lower_bound_trace_schedule_name(*, step: int, vote_pattern_step: int) -> str:
+    return f"tiny_native_full_loop_step_{int(step)}_pattern_{int(vote_pattern_step)}"
+
+
+def _lower_bound_trace_is_nontrivial(
+    *,
+    max_exact_output_backlog_count: int,
+    cumulative_unique_backlog_identity_count: int,
+    cumulative_backlog_membership_changed_count: int,
+    max_exact_backlog_defer_count: int,
+) -> bool:
+    return bool(
+        int(max_exact_output_backlog_count) >= LOWER_BOUND_TRACE_NONTRIVIAL_BACKLOG_SIZE
+        or int(cumulative_unique_backlog_identity_count)
+        >= LOWER_BOUND_TRACE_NONTRIVIAL_UNIQUE_IDENTITIES
+        or int(cumulative_backlog_membership_changed_count)
+        >= LOWER_BOUND_TRACE_NONTRIVIAL_MEMBERSHIP_CHANGES
+        or int(max_exact_backlog_defer_count) >= 2
+    )
+
+
+def _lower_bound_backlog_k_values(max_exact_output_backlog_count: int) -> tuple[int, ...]:
+    upper = max(0, int(max_exact_output_backlog_count))
+    return tuple(range(0, upper + 1))
+
+
+def _build_real_backlog_trace() -> tuple[
+    tuple[_RealBacklogTraceStep, ...],
+    RealBacklogTraceSummaryReport,
+]:
+    fixture = tiny_two_projection_vote_cap_fixture(device="cpu")
+    state_keys = tuple(fixture.qscale_states.keys())
+    states = {
+        state_key: VoteUpdateState(
+            q_levels=fixture.qscale_states[state_key].q_levels.detach().clone().contiguous(),
+            accumulators=fixture.accumulators[state_key].detach().clone().contiguous(),
+        )
+        for state_key in state_keys
+    }
+    exact_backlog: dict[str, dict[int, dict[str, int]]] = {}
+    spec = tiny_full_loop_vote_update_spec()
+    started = time.perf_counter()
+    previous_backlog_ids: set[tuple[str, int]] = set()
+    previous_backlog_hash: str | None = None
+    plateau_streak = 0
+    saw_any_backlog = False
+    nontrivial_backlog_reached = False
+    plateau_detected = False
+    max_exact_output_backlog_count = 0
+    cumulative_unique_backlog_ids: set[tuple[str, int]] = set()
+    cumulative_backlog_membership_changed_count = 0
+    max_exact_backlog_age_steps = 0
+    max_exact_backlog_defer_count = 0
+    trace_steps: list[_RealBacklogTraceStep] = []
+    step_reports: list[RealBacklogTraceStepReport] = []
+    stop_reason = LOWER_BOUND_TRACE_STOP_MAX_STEPS
+
+    for step in range(1, LOWER_BOUND_TRACE_MAX_STEPS + 1):
+        vote_pattern_step = ((int(step) - 1) % 2) + 1
+        votes_by_state = tiny_full_loop_votes_for_step(
+            step,
+            device="cpu",
+            repeat_cycle=True,
+        )
+        inputs = tuple(
+            BoundedDeltaOracleInput(
+                state_key=state_key,
+                state=states[state_key],
+                vote_inputs=VoteUpdateInputs(votes=votes_by_state[state_key]),
+                vote_spec=spec,
+            )
+            for state_key in state_keys
+        )
+        tensor_offsets = _tensor_offsets_for_state_map(states)
+        cap_spec = GlobalRateCapSpec(cap=TINY_LOOP_GLOBAL_CAP, step=int(step))
+        exact_path = _run_reference_path(
+            inputs,
+            states_by_key=states,
+            global_cap_spec=cap_spec,
+            deferred_backlog=exact_backlog,
+            tensor_offsets=tensor_offsets,
+        )
+        if exact_path.cap_result is None:
+            raise ValueError("real backlog lower-bound trace requires global cap results")
+        exact_output_backlog = _copy_backlog(exact_path.cap_result.deferred_backlog)
+        current_backlog_ids = _backlog_key_set(exact_output_backlog)
+        saw_any_backlog = saw_any_backlog or bool(current_backlog_ids)
+        backlog_membership_changed_count = len(previous_backlog_ids ^ current_backlog_ids)
+        cumulative_backlog_membership_changed_count += backlog_membership_changed_count
+        cumulative_unique_backlog_ids |= current_backlog_ids
+        backlog_count = len(current_backlog_ids)
+        max_exact_output_backlog_count = max(max_exact_output_backlog_count, backlog_count)
+        backlog_age_steps = int(
+            exact_path.cap_result.step_summary["deferred_backlog_max_age_steps"]
+        )
+        backlog_defer_count = int(
+            exact_path.cap_result.step_summary["deferred_backlog_max_defer_count"]
+        )
+        max_exact_backlog_age_steps = max(max_exact_backlog_age_steps, backlog_age_steps)
+        max_exact_backlog_defer_count = max(
+            max_exact_backlog_defer_count,
+            backlog_defer_count,
+        )
+        current_backlog_hash = _identity_sha256(current_backlog_ids)
+        if current_backlog_ids and previous_backlog_hash == current_backlog_hash:
+            plateau_streak += 1
+        else:
+            plateau_streak = 0
+        nontrivial_backlog_reached = _lower_bound_trace_is_nontrivial(
+            max_exact_output_backlog_count=max_exact_output_backlog_count,
+            cumulative_unique_backlog_identity_count=len(cumulative_unique_backlog_ids),
+            cumulative_backlog_membership_changed_count=(
+                cumulative_backlog_membership_changed_count
+            ),
+            max_exact_backlog_defer_count=max_exact_backlog_defer_count,
+        )
+        plateau_detected = bool(current_backlog_ids) and (
+            plateau_streak >= LOWER_BOUND_TRACE_PLATEAU_PATIENCE_STEPS
+        )
+        trace_steps.append(
+            _RealBacklogTraceStep(
+                schedule_name=_lower_bound_trace_schedule_name(
+                    step=step,
+                    vote_pattern_step=vote_pattern_step,
+                ),
+                step=int(step),
+                vote_pattern_step=vote_pattern_step,
+                inputs=inputs,
+                tensor_offsets=tensor_offsets,
+                cap_spec=cap_spec,
+                exact_input_states=_copy_state_map(states),
+                exact_input_backlog=_copy_backlog(exact_backlog),
+                exact_path=exact_path,
+                exact_output_backlog=exact_output_backlog,
+            )
+        )
+        step_reports.append(
+            RealBacklogTraceStepReport(
+                schedule_name=_lower_bound_trace_schedule_name(
+                    step=step,
+                    vote_pattern_step=vote_pattern_step,
+                ),
+                step=int(step),
+                vote_pattern_step=vote_pattern_step,
+                pre_cap_demand_count=int(
+                    exact_path.cap_result.step_summary["global_pre_cap_would_apply_count"]
+                ),
+                exact_candidate_count=len(exact_path.candidate_ids),
+                exact_accepted_count=len(exact_path.accepted_ids),
+                exact_deferred_count=len(exact_path.deferred_ids),
+                exact_fired_count=len(exact_path.fired_ids),
+                exact_output_backlog_count=backlog_count,
+                exact_output_backlog_identities_sha256=current_backlog_hash,
+                backlog_membership_changed_count_from_prior_step=(
+                    backlog_membership_changed_count
+                ),
+                cumulative_unique_backlog_identity_count=len(cumulative_unique_backlog_ids),
+                backlog_max_age_steps=backlog_age_steps,
+                backlog_max_defer_count=backlog_defer_count,
+            )
+        )
+        states = _states_from_path(exact_path)
+        exact_backlog = exact_output_backlog
+        previous_backlog_ids = current_backlog_ids
+        previous_backlog_hash = current_backlog_hash
+        if nontrivial_backlog_reached:
+            stop_reason = LOWER_BOUND_TRACE_STOP_NONTRIVIAL
+            break
+        if plateau_detected:
+            stop_reason = LOWER_BOUND_TRACE_STOP_PLATEAU
+            break
+        if (time.perf_counter() - started) >= LOWER_BOUND_TRACE_MAX_SECONDS:
+            stop_reason = LOWER_BOUND_TRACE_STOP_CPU_SECONDS
+            break
+
+    elapsed_seconds = time.perf_counter() - started
+    return (
+        tuple(trace_steps),
+        RealBacklogTraceSummaryReport(
+            stop_reason=stop_reason,
+            stop_step=len(trace_steps),
+            plateau_patience_steps=LOWER_BOUND_TRACE_PLATEAU_PATIENCE_STEPS,
+            max_steps_budget=LOWER_BOUND_TRACE_MAX_STEPS,
+            cpu_seconds_budget=LOWER_BOUND_TRACE_MAX_SECONDS,
+            elapsed_seconds=elapsed_seconds,
+            saw_any_backlog=saw_any_backlog,
+            nontrivial_backlog_reached=nontrivial_backlog_reached,
+            plateau_detected=plateau_detected,
+            max_exact_output_backlog_count=max_exact_output_backlog_count,
+            cumulative_unique_backlog_identity_count=len(cumulative_unique_backlog_ids),
+            cumulative_backlog_membership_changed_count=(
+                cumulative_backlog_membership_changed_count
+            ),
+            max_exact_backlog_age_steps=max_exact_backlog_age_steps,
+            max_exact_backlog_defer_count=max_exact_backlog_defer_count,
+            per_step_reports=tuple(step_reports),
+        ),
+    )
+
+
+def _run_real_backlog_lower_bound_sweep(
+    *,
+    trace_steps: Sequence[_RealBacklogTraceStep],
+    guard_spec: BoundedDeltaGuardSpec,
+    backlog_policy_k: int | None,
+    k_label: str,
+) -> RealBacklogLowerBoundSweepEntry:
+    if not trace_steps:
+        raise ValueError("real backlog lower-bound sweep requires at least one trace step")
+    candidate_name = EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE
+    contract = bounded_delta_admission_contract(candidate_name=candidate_name)
+    bounded_states = _copy_state_map(trace_steps[0].exact_input_states)
+    bounded_backlog: dict[str, dict[int, dict[str, int]]] = {}
+    step_reports: list[RealBacklogLowerBoundStepReport] = []
+
+    for trace_step in trace_steps:
+        candidate_input_backlog = _copy_backlog(bounded_backlog)
+        candidate_inputs, bounded_input_states, event_delta_count, _ = (
+            _candidate_inputs_and_states(
+                candidate_name=candidate_name,
+                inputs=trace_step.inputs,
+                source_states=bounded_states,
+                carried_backlog=candidate_input_backlog,
+                exact_path=trace_step.exact_path,
+            )
+        )
+        bounded_path = _run_reference_path(
+            candidate_inputs,
+            states_by_key=bounded_input_states,
+            global_cap_spec=trace_step.cap_spec,
+            deferred_backlog=candidate_input_backlog,
+            tensor_offsets=trace_step.tensor_offsets,
+        )
+        if bounded_path.cap_result is None:
+            raise ValueError("real backlog lower-bound sweep requires bounded cap results")
+        if backlog_policy_k is None:
+            bounded_stored_backlog = _copy_backlog(bounded_path.cap_result.deferred_backlog)
+        else:
+            bounded_stored_backlog = _select_stored_backlog(
+                bounded_path.cap_result.deferred_backlog,
+                priority_identities=trace_step.exact_path.ordered_row_ids,
+                max_entries=int(backlog_policy_k),
+            )
+        hot_row_count = _hot_count(
+            {item.state_key: item.hot_exact_indices for item in candidate_inputs}
+        )
+        projection = project_bounded_delta_accumulator_bpw(
+            eligible_weight_count=sum(
+                int(item.state.q_levels.numel()) for item in candidate_inputs
+            ),
+            hot_exact_row_count=hot_row_count,
+            event_delta_count=event_delta_count,
+            backlog_entry_count=_backlog_entry_count(bounded_stored_backlog),
+            tensor_metadata_bits=len(candidate_inputs) * DEFAULT_TENSOR_METADATA_BITS_PER_INPUT,
+            bucket_metadata_bits=DEFAULT_BUCKET_METADATA_BITS,
+            scale_metadata_bits=DEFAULT_SCALE_METADATA_BITS,
+            guardrail_metadata_bits=DEFAULT_GUARDRAIL_METADATA_BITS,
+        )
+        measured = _build_measured_report_from_paths(
+            inputs=candidate_inputs,
+            candidate_name=candidate_name,
+            exact_path=trace_step.exact_path,
+            bounded_path=bounded_path,
+            global_cap_spec=trace_step.cap_spec,
+            exact_input_states=trace_step.exact_input_states,
+            bounded_input_states=bounded_input_states,
+            exact_input_backlog=trace_step.exact_input_backlog,
+            bounded_input_backlog=candidate_input_backlog,
+            bounded_stored_backlog=bounded_stored_backlog,
+            tensor_offsets=trace_step.tensor_offsets,
+            bounded_backlog_policy_active=(
+                _backlog_key_set(trace_step.exact_input_backlog)
+                != _backlog_key_set(candidate_input_backlog)
+                or _backlog_key_set(trace_step.exact_output_backlog)
+                != _backlog_key_set(bounded_stored_backlog)
+            ),
+            path_difference=_candidate_path_difference(
+                candidate_name=candidate_name,
+                backlog_policy_k=backlog_policy_k,
+            ),
+            oracle_parity_overrides={
+                "cumulative_carry_forward": True,
+                "bounded_reinitialized_from_exact": False,
+                "builder_label": REAL_BACKLOG_LOWER_BOUND_LABEL,
+                "swept_backlog_k_label": k_label,
+                "trace_source": "tiny_native_full_loop_reference_stitch",
+            },
+        )
+        guard_eval = _evaluate_guardrail(guard_spec, measured)
+        admission_eval = _evaluate_bounded_delta_admission(contract, measured)
+        step_reports.append(
+            RealBacklogLowerBoundStepReport(
+                schedule_name=trace_step.schedule_name,
+                step=int(trace_step.step),
+                k_label=k_label,
+                k_value=backlog_policy_k,
+                guard_passed=bool(guard_eval.guard_passed),
+                admission_passed=bool(admission_eval.admission_passed),
+                surface_fidelity_clears=bool(
+                    guard_eval.guard_passed and admission_eval.admission_passed
+                ),
+                failed_metrics=tuple(guard_eval.failed_metrics),
+                admission_failed_surfaces=tuple(admission_eval.failed_surfaces),
+                rejection_summary=admission_eval.rejection_telemetry.summary,
+                protected_surface_destructive_approximation_present=(
+                    _protected_surface_destructive_approximation_present_from_rejection(
+                        exact_surfaces=contract.exact_surfaces,
+                        rejection_telemetry=admission_eval.rejection_telemetry,
+                    )
+                ),
+                bounded_delta_acc_bits_per_weight=float(
+                    projection.bounded_delta_acc_bits_per_weight
+                ),
+                backlog_entry_count=int(projection.backlog_entry_count),
+                hot_exact_row_count=int(projection.hot_exact_row_count),
+                event_delta_count=int(projection.event_delta_count),
+                measured_report=measured,
+                backlog_truncation_attribution=_backlog_truncation_report(
+                    report=type(
+                        "_SurfaceOnlyReport",
+                        (),
+                        {
+                            "measured_report": measured,
+                            "rejection_telemetry": admission_eval.rejection_telemetry,
+                        },
+                    )(),
+                    exact_input_backlog=trace_step.exact_input_backlog,
+                    bounded_input_backlog=candidate_input_backlog,
+                    exact_output_backlog=trace_step.exact_output_backlog,
+                    bounded_stored_backlog=bounded_stored_backlog,
+                ),
+            )
+        )
+        bounded_states = _states_from_path(bounded_path)
+        bounded_backlog = _copy_backlog(bounded_stored_backlog)
+
+    terminal = step_reports[-1]
+    return RealBacklogLowerBoundSweepEntry(
+        candidate_name=candidate_name,
+        k_label=k_label,
+        k_value=backlog_policy_k,
+        per_step_reports=tuple(step_reports),
+        all_steps_surface_fidelity_clears=all(
+            step.surface_fidelity_clears for step in step_reports
+        ),
+        peak_bounded_delta_acc_bits_per_weight=max(
+            step.bounded_delta_acc_bits_per_weight for step in step_reports
+        ),
+        terminal_bounded_delta_acc_bits_per_weight=float(
+            terminal.bounded_delta_acc_bits_per_weight
+        ),
+        terminal_rejection_summary=terminal.rejection_summary,
+    )
+
+
+def _real_backlog_lower_bound_decision(
+    *,
+    trace_summary: RealBacklogTraceSummaryReport,
+    sweep_entries: Sequence[RealBacklogLowerBoundSweepEntry],
+    budget_report: Any,
+) -> RealBacklogLowerBoundDecision:
+    actual_headroom_bits_per_weight = float(
+        budget_report.required_acc_bits_per_weight_for_sub2_physical_q_with_scale_and_metadata
+    )
+    minimal_surface_faithful = next(
+        (entry for entry in sweep_entries if entry.all_steps_surface_fidelity_clears),
+        None,
+    )
+    minimal_peak = (
+        None
+        if minimal_surface_faithful is None
+        else float(minimal_surface_faithful.peak_bounded_delta_acc_bits_per_weight)
+    )
+    headroom_minus_minimal = (
+        None
+        if minimal_peak is None
+        else float(actual_headroom_bits_per_weight) - float(minimal_peak)
+    )
+    minimal_fits_headroom = bool(
+        minimal_peak is not None and float(minimal_peak) <= float(actual_headroom_bits_per_weight)
+    )
+    if trace_summary.nontrivial_backlog_reached and minimal_fits_headroom:
+        label = SPARSE_AMORTIZED_CANDIDATE_RESURRECTED_FOR_HARDER_TRACE
+        reason = (
+            "nontrivial backlog/churn surfaced on the tiny native stitch and the minimal "
+            f"surface-faithful k={minimal_surface_faithful.k_label} peak acc bpw "
+            f"{minimal_peak:.6f} fits tiny-fixture headroom {float(actual_headroom_bits_per_weight):.6f}; "
+            "this is still not a global closure or branch trigger"
+        )
+    elif trace_summary.saw_any_backlog and (
+        trace_summary.plateau_detected or trace_summary.nontrivial_backlog_reached
+    ):
+        label = PER_ROW_COMPRESSION_CLOSED_BY_EASY_CASE_LOWER_BOUND
+        if minimal_surface_faithful is None:
+            reason = (
+                "even the unbounded lower-bound sweep never cleared the protected "
+                "decision surfaces, so backlog capacity is not the missing lever here"
+            )
+        else:
+            reason = (
+                f"minimal surface-faithful k={minimal_surface_faithful.k_label} still peaks at "
+                f"{minimal_peak:.6f} acc bpw against tiny-fixture headroom "
+                f"{float(actual_headroom_bits_per_weight):.6f}; tiny-fixture-only lower bound, "
+                "not global closure"
+            )
+    else:
+        label = REPRESENTATIVE_TRACE_UNDERPOWERED_FOR_CLOSURE
+        reason = (
+            f"trace stop={trace_summary.stop_reason}; saw_any_backlog={trace_summary.saw_any_backlog}; "
+            f"minimal surface-faithful k={None if minimal_surface_faithful is None else minimal_surface_faithful.k_label}"
+        )
+    return RealBacklogLowerBoundDecision(
+        terminal_label=label,
+        headroom_source=TINY_FIXTURE_HEADROOM_SOURCE,
+        eligible_weight_count=int(budget_report.eligible_weight_count),
+        q_packed_data_bits_per_weight=float(budget_report.q_packed_data_bits_per_weight),
+        q_packed_metadata_bits_per_weight=float(
+            budget_report.q_packed_metadata_bits_per_weight
+        ),
+        q_packed_total_bits_per_weight=float(budget_report.q_packed_total_bits_per_weight),
+        frozen_scale_fp32_bits_per_weight=float(
+            budget_report.frozen_scale_fp32_bits_per_weight
+        ),
+        actual_remaining_accumulator_headroom_bits_per_weight=float(
+            actual_headroom_bits_per_weight
+        ),
+        minimal_surface_faithful_k_label=(
+            None if minimal_surface_faithful is None else minimal_surface_faithful.k_label
+        ),
+        minimal_surface_faithful_k_value=(
+            None if minimal_surface_faithful is None else minimal_surface_faithful.k_value
+        ),
+        minimal_surface_faithful_peak_bounded_delta_acc_bits_per_weight=minimal_peak,
+        headroom_minus_minimal_surface_faithful_peak_bits_per_weight=(
+            headroom_minus_minimal
+        ),
+        minimal_surface_faithful_k_fits_headroom=minimal_fits_headroom,
+        global_per_row_compression_closed=False,
+        branch_a_trigger=False,
+        reason=reason,
+    )
+
+
+def run_real_backlog_lower_bound_diagnostic() -> RealBacklogLowerBoundReport:
+    """Characterize the B candidate against the cheapest real backlog-bearing stitch."""
+
+    guard_spec = representative_engineering_guard_spec()
+    bindingness = pre_register_source_bindingness(
+        source_kind=SOURCE_KIND_GENERATED_NATIVE_LOOP,
+        coverage=SourceFieldCoverage.full_generated_native_loop(),
+    )
+    trace_steps, trace_summary = _build_real_backlog_trace()
+    backlog_k_values = _lower_bound_backlog_k_values(
+        trace_summary.max_exact_output_backlog_count
+    )
+    backlog_k_schedule = tuple([str(value) for value in backlog_k_values] + ["unbounded"])
+    sweep_entries = tuple(
+        [
+            _run_real_backlog_lower_bound_sweep(
+                trace_steps=trace_steps,
+                guard_spec=guard_spec,
+                backlog_policy_k=int(k_value),
+                k_label=str(int(k_value)),
+            )
+            for k_value in backlog_k_values
+        ]
+        + [
+            _run_real_backlog_lower_bound_sweep(
+                trace_steps=trace_steps,
+                guard_spec=guard_spec,
+                backlog_policy_k=None,
+                k_label="unbounded",
+            )
+        ]
+    )
+    budget_report = measure_tiny_two_projection_fixture_budget(device="cpu")
+    return RealBacklogLowerBoundReport(
+        schema_version=REAL_BACKLOG_LOWER_BOUND_SCHEMA_VERSION,
+        label=REAL_BACKLOG_LOWER_BOUND_LABEL,
+        source_bindingness=bindingness,
+        field_coverage=SourceFieldCoverage.full_generated_native_loop(),
+        q_persistent_budget_label=budget_report.label,
+        candidate_name=EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE,
+        guard_spec=guard_spec,
+        exact_trace_summary=trace_summary,
+        backlog_k_schedule=backlog_k_schedule,
+        sweep_entries=sweep_entries,
+        terminal_decision=_real_backlog_lower_bound_decision(
+            trace_summary=trace_summary,
+            sweep_entries=sweep_entries,
+            budget_report=budget_report,
+        ),
+        raw_arrays_included=False,
+        non_claims=(
+            "CPU-only tiny native full-loop lower-bound diagnostic",
+            "uses the current tiny fixture q+scale headroom, not a sub-2 q upgrade claim",
+            "global_per_row_compression_closed=false",
+            "branch_a_trigger=false",
+            "surface-faithful pass is a routing signal only, not a deployable codec",
+            "no GPU lane",
+            "no trainer/live-run/checkpoint/creditdir mutation",
+            "compact counts/hashes only; no raw per-weight arrays",
+        ),
+    )
+
+
 def _assert_no_tensors(value: Any) -> None:
     if isinstance(value, torch.Tensor):
         raise ValueError("representative verdict payload must not include raw tensors")
@@ -1474,28 +3030,167 @@ def validate_candidate_admission_diagnostic_report(
     _assert_no_tensors(report.to_dict())
 
 
+def validate_candidate_capacity_localization_report(
+    report: CandidateCapacityLocalizationReport,
+) -> None:
+    if report.schema_version != CAPACITY_LOCALIZATION_DIAGNOSTIC_SCHEMA_VERSION:
+        raise ValueError("unexpected candidate capacity localization schema version")
+    if report.candidate_a_budget_report.candidate_name != HYBRID_HOT_EXACT_COLD_DEFAULT_CANDIDATE:
+        raise ValueError("capacity localization must carry the A budget report")
+    if report.candidate_a_budget_report.terminal_budget_direction_label not in {
+        A_COLD_EXCEPTION_BUDGET_LEVER_LABEL,
+        A_FUNDAMENTALLY_OVER_LABEL,
+    }:
+        raise ValueError("unexpected A terminal budget-direction label")
+    if not report.backlog_k_schedule or report.backlog_k_schedule[-1] != "unbounded":
+        raise ValueError("capacity localization backlog schedule must end with unbounded")
+    if len(report.sweep_runs) != 2:
+        raise ValueError("capacity localization must include exactly the B and C sweeps")
+    for run in report.sweep_runs:
+        if run.terminal_decision.status not in {
+            K_SWEEP_MINIMAL_VIABLE_PASS,
+            K_SWEEP_JOINT_INFEASIBLE,
+            K_SWEEP_REPRESENTATION_WALL,
+        }:
+            raise ValueError("unexpected k-sweep terminal decision")
+        if len(run.sweep_entries) != len(report.backlog_k_schedule):
+            raise ValueError("each k-sweep run must cover the preregistered k schedule")
+        for entry in run.sweep_entries:
+            if len(entry.per_step_reports) != len(PRE_REGISTERED_VOTE_PRESSURE_SCHEDULE):
+                raise ValueError("each k entry must cover the full pre-registered schedule")
+            for step in entry.per_step_reports:
+                parity = step.bounded_delta_report.measured_report.oracle_parity
+                if parity.get("builder_label") != ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC:
+                    raise ValueError("capacity localization must preserve the oracle-upper-bound builder label")
+                if not bool(parity.get("cumulative_carry_forward")):
+                    raise ValueError("capacity localization must preserve cumulative carry-forward")
+    _assert_no_tensors(report.to_dict())
+
+
+def validate_real_backlog_lower_bound_diagnostic_report(
+    report: RealBacklogLowerBoundReport,
+) -> None:
+    if report.schema_version != REAL_BACKLOG_LOWER_BOUND_SCHEMA_VERSION:
+        raise ValueError("unexpected real backlog lower-bound schema version")
+    if report.candidate_name != EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE:
+        raise ValueError("real backlog lower-bound must stay B-only")
+    if report.terminal_decision.terminal_label not in {
+        PER_ROW_COMPRESSION_CLOSED_BY_EASY_CASE_LOWER_BOUND,
+        SPARSE_AMORTIZED_CANDIDATE_RESURRECTED_FOR_HARDER_TRACE,
+        REPRESENTATIVE_TRACE_UNDERPOWERED_FOR_CLOSURE,
+    }:
+        raise ValueError("unexpected real backlog lower-bound terminal label")
+    if report.terminal_decision.headroom_source != TINY_FIXTURE_HEADROOM_SOURCE:
+        raise ValueError("real backlog lower-bound must declare the tiny-fixture headroom source")
+    if bool(report.terminal_decision.global_per_row_compression_closed):
+        raise ValueError("tiny-fixture lower-bound must not claim global per-row compression closure")
+    if bool(report.terminal_decision.branch_a_trigger):
+        raise ValueError("tiny-fixture lower-bound must not trigger branch (a)")
+    recomputed_headroom = (
+        2.0
+        - float(report.terminal_decision.q_packed_total_bits_per_weight)
+        - float(report.terminal_decision.frozen_scale_fp32_bits_per_weight)
+    )
+    if not math.isclose(
+        float(report.terminal_decision.actual_remaining_accumulator_headroom_bits_per_weight),
+        recomputed_headroom,
+        abs_tol=1e-12,
+    ):
+        raise ValueError("real backlog lower-bound headroom must be 2.0 - q_total - scale")
+    if report.exact_trace_summary.stop_reason not in {
+        LOWER_BOUND_TRACE_STOP_NONTRIVIAL,
+        LOWER_BOUND_TRACE_STOP_PLATEAU,
+        LOWER_BOUND_TRACE_STOP_CPU_SECONDS,
+        LOWER_BOUND_TRACE_STOP_MAX_STEPS,
+    }:
+        raise ValueError("unexpected lower-bound trace stop reason")
+    if not report.exact_trace_summary.per_step_reports:
+        raise ValueError("real backlog lower-bound requires at least one trace step")
+    if not report.backlog_k_schedule or report.backlog_k_schedule[-1] != "unbounded":
+        raise ValueError("real backlog lower-bound backlog schedule must end with unbounded")
+    if len(report.sweep_entries) != len(report.backlog_k_schedule):
+        raise ValueError("real backlog lower-bound must sweep the declared k schedule")
+    if (
+        report.terminal_decision.minimal_surface_faithful_k_label is not None
+        and report.terminal_decision.minimal_surface_faithful_k_label
+        not in report.backlog_k_schedule
+    ):
+        raise ValueError("minimal surface-faithful k must come from the declared schedule")
+    if report.terminal_decision.terminal_label == SPARSE_AMORTIZED_CANDIDATE_RESURRECTED_FOR_HARDER_TRACE:
+        if not report.exact_trace_summary.nontrivial_backlog_reached:
+            raise ValueError("resurrection requires a nontrivial backlog trace")
+        if not report.terminal_decision.minimal_surface_faithful_k_fits_headroom:
+            raise ValueError("resurrection requires the minimal surface-faithful k to fit headroom")
+    if report.terminal_decision.terminal_label == PER_ROW_COMPRESSION_CLOSED_BY_EASY_CASE_LOWER_BOUND:
+        if report.terminal_decision.minimal_surface_faithful_k_fits_headroom:
+            raise ValueError("easy-case closure must not claim the minimal k fits headroom")
+    for entry, expected_k_label in zip(report.sweep_entries, report.backlog_k_schedule):
+        if entry.k_label != expected_k_label:
+            raise ValueError("sweep entries must preserve backlog schedule order")
+        if len(entry.per_step_reports) != len(report.exact_trace_summary.per_step_reports):
+            raise ValueError("each lower-bound sweep entry must cover the traced steps")
+        for step in entry.per_step_reports:
+            parity = step.measured_report.oracle_parity
+            if parity.get("builder_label") != REAL_BACKLOG_LOWER_BOUND_LABEL:
+                raise ValueError("lower-bound sweep must preserve the lower-bound builder label")
+            if not bool(parity.get("cumulative_carry_forward")):
+                raise ValueError("lower-bound sweep must preserve cumulative carry-forward")
+    _assert_no_tensors(report.to_dict())
+
+
 __all__ = [
     "ACCUMULATOR_FREE_NULL_BASELINE",
+    "A_COLD_EXCEPTION_BUDGET_LEVER_LABEL",
+    "A_FUNDAMENTALLY_OVER_LABEL",
     "BACKLOG_K_POLICIES",
+    "CAPACITY_LOCALIZATION_DIAGNOSTIC_LABEL",
+    "CAPACITY_LOCALIZATION_DIAGNOSTIC_SCHEMA_VERSION",
     "CANDIDATE_ADMISSION_DIAGNOSTIC_LABEL",
     "CANDIDATE_ADMISSION_DIAGNOSTIC_SCHEMA_VERSION",
     "CUMULATIVE_SCHEDULE_MODE",
     "HOT_BUDGET_POINT_LABELS",
+    "K_SWEEP_JOINT_INFEASIBLE",
+    "K_SWEEP_MINIMAL_VIABLE_PASS",
+    "K_SWEEP_REPRESENTATION_WALL",
     "ONE_STEP_LOCAL_DIAGNOSTIC_MODE",
     "ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC",
+    "PER_ROW_COMPRESSION_CLOSED_BY_EASY_CASE_LOWER_BOUND",
+    "PER_ROW_COMPRESSION_CLOSED_TINY_FIXTURE_LOWER_BOUND_ONLY",
     "PRIMARY_CURVE_LABEL",
+    "REAL_BACKLOG_LOWER_BOUND_LABEL",
+    "REAL_BACKLOG_LOWER_BOUND_SCHEMA_VERSION",
+    "REPRESENTATIVE_TRACE_UNDERPOWERED_FOR_CLOSURE",
     "REPRESENTATIVE_VERDICT_LABEL",
     "REPRESENTATIVE_VERDICT_SCHEMA_VERSION",
+    "RealBacklogLowerBoundDecision",
+    "RealBacklogLowerBoundReport",
+    "RealBacklogLowerBoundStepReport",
+    "RealBacklogLowerBoundSweepEntry",
+    "RealBacklogTraceStepReport",
+    "RealBacklogTraceSummaryReport",
+    "SPARSE_AMORTIZED_CANDIDATE_RESURRECTED_FOR_HARDER_TRACE",
+    "TINY_FIXTURE_HEADROOM_SOURCE",
+    "CandidateABudgetLocalizationReport",
+    "CandidateABudgetReadout",
     "CandidateAdmissionDiagnosticReport",
     "CandidateAdmissionDiagnosticRunReport",
     "CandidateAdmissionDiagnosticStepReport",
+    "CandidateCapacityLocalizationReport",
+    "CandidateCapacityStepReport",
+    "CandidateKSweepDecision",
+    "CandidateKSweepEntry",
+    "CandidateKSweepRunReport",
     "CandidatePromotionDecision",
     "RepresentativeCurveRunReport",
     "RepresentativeDriftVerdictReport",
     "RepresentativeStepReport",
     "representative_engineering_guard_spec",
     "run_candidate_admission_diagnostic",
+    "run_candidate_capacity_localization_diagnostic",
+    "run_real_backlog_lower_bound_diagnostic",
     "run_representative_bounded_delta_drift_verdict",
     "validate_candidate_admission_diagnostic_report",
+    "validate_candidate_capacity_localization_report",
+    "validate_real_backlog_lower_bound_diagnostic_report",
     "validate_representative_bounded_delta_drift_verdict_report",
 ]

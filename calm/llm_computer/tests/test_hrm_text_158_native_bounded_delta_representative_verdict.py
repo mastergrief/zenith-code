@@ -33,11 +33,18 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     K_SWEEP_REPRESENTATION_WALL,
     ONE_STEP_LOCAL_DIAGNOSTIC_MODE,
     ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC,
+    PER_ROW_COMPRESSION_CLOSED_TINY_FIXTURE_LOWER_BOUND_ONLY,
+    REAL_BACKLOG_LOWER_BOUND_LABEL,
+    REPRESENTATIVE_TRACE_UNDERPOWERED_FOR_CLOSURE,
+    SPARSE_AMORTIZED_CANDIDATE_RESURRECTED_FOR_HARDER_TRACE,
+    TINY_FIXTURE_HEADROOM_SOURCE,
     run_candidate_admission_diagnostic,
     run_candidate_capacity_localization_diagnostic,
+    run_real_backlog_lower_bound_diagnostic,
     run_representative_bounded_delta_drift_verdict,
     validate_candidate_admission_diagnostic_report,
     validate_candidate_capacity_localization_report,
+    validate_real_backlog_lower_bound_diagnostic_report,
     validate_representative_bounded_delta_drift_verdict_report,
 )
 from calm.hrm_text_158.native_full_stack.global_rate_cap import GlobalRateCapSpec
@@ -111,6 +118,11 @@ def _candidate_admission_report():
 @lru_cache(maxsize=1)
 def _capacity_localization_report():
     return run_candidate_capacity_localization_diagnostic()
+
+
+@lru_cache(maxsize=1)
+def _real_backlog_lower_bound_report():
+    return run_real_backlog_lower_bound_diagnostic()
 
 
 def test_bounded_backlog_policy_is_opt_in_and_charged_as_actual_stored_backlog():
@@ -467,5 +479,54 @@ def test_candidate_capacity_localization_reports_a_budget_direction_and_bc_k_swe
             assert step.backlog_truncation_attribution.bounded_stored_truncation_count == 0
             assert step.bounded_delta_report.measured_report.oracle_parity["builder_label"] == (
                 ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC
+            )
+    _assert_no_tensors(payload)
+
+
+def test_real_backlog_lower_bound_reports_trace_strength_and_headroom_comparison():
+    report = _real_backlog_lower_bound_report()
+    payload = report.to_dict()
+
+    validate_real_backlog_lower_bound_diagnostic_report(report)
+    assert report.label == REAL_BACKLOG_LOWER_BOUND_LABEL
+    assert report.candidate_name == EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE
+    assert report.terminal_decision.terminal_label == (
+        PER_ROW_COMPRESSION_CLOSED_TINY_FIXTURE_LOWER_BOUND_ONLY
+    )
+    assert report.terminal_decision.headroom_source == TINY_FIXTURE_HEADROOM_SOURCE
+    assert report.backlog_k_schedule[-1] == "unbounded"
+    assert len(report.exact_trace_summary.per_step_reports) == 1
+    assert report.exact_trace_summary.stop_reason == "nontrivial_backlog_reached"
+    assert report.exact_trace_summary.nontrivial_backlog_reached is True
+    assert report.exact_trace_summary.plateau_detected is False
+    assert report.terminal_decision.eligible_weight_count == 160
+    assert report.terminal_decision.q_packed_data_bits_per_weight == pytest.approx(2.0)
+    assert report.terminal_decision.q_packed_metadata_bits_per_weight == pytest.approx(3.2)
+    assert report.terminal_decision.q_packed_total_bits_per_weight == pytest.approx(5.2)
+    assert report.terminal_decision.frozen_scale_fp32_bits_per_weight == pytest.approx(0.4)
+    assert (
+        report.terminal_decision.actual_remaining_accumulator_headroom_bits_per_weight
+        == pytest.approx(-3.6)
+    )
+    assert report.terminal_decision.minimal_surface_faithful_k_label == "5"
+    assert report.terminal_decision.minimal_surface_faithful_k_value == 5
+    assert (
+        report.terminal_decision.minimal_surface_faithful_peak_bounded_delta_acc_bits_per_weight
+        == pytest.approx(3.5)
+    )
+    assert (
+        report.terminal_decision.headroom_minus_minimal_surface_faithful_peak_bits_per_weight
+        == pytest.approx(-7.1)
+    )
+    assert report.terminal_decision.minimal_surface_faithful_k_fits_headroom is False
+    assert report.terminal_decision.global_per_row_compression_closed is False
+    assert report.terminal_decision.branch_a_trigger is False
+    assert report.sweep_entries[0].k_label == report.backlog_k_schedule[0]
+    assert report.sweep_entries[-1].k_label == "unbounded"
+    for entry in report.sweep_entries:
+        assert len(entry.per_step_reports) == len(report.exact_trace_summary.per_step_reports)
+        for step in entry.per_step_reports:
+            assert step.measured_report.oracle_parity["builder_label"] == (
+                REAL_BACKLOG_LOWER_BOUND_LABEL
             )
     _assert_no_tensors(payload)
