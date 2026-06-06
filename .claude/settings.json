@@ -22,6 +22,14 @@
             "command": ".claude/hooks/post-compact-directive.py"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/auto-research-resume-directive.py"
+          }
+        ]
       }
     ],
     "PreToolUse": [
