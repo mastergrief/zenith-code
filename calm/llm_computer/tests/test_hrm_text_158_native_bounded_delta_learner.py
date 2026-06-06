@@ -37,6 +37,12 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     run_c2_bounded_delta_cpu_dry_run,
     validate_authoritative_resume_payload,
 )
+from calm.hrm_text_158.native_full_stack.global_rate_cap import (
+    C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME,
+    DEFER_ALL_NO_BACKFILL_TIE_RULE_MODE,
+    EXACT_GLOBAL_CAP_TIE_RULE_MODE,
+    GlobalRateCapSpec,
+)
 from calm.hrm_text_158.native_full_stack.vote_update import (
     VoteUpdateInputs,
     VoteUpdateSpec,
@@ -153,6 +159,54 @@ def test_bounded_delta_step_passes_replay_and_pc_aux_maps_to_vote_update():
     assert stats["pc_aux_negative_count"] == 1
     assert stats["pc_aux_veto_count"] == 1
     assert stats["post_veto_applied_flip_count"] == 0
+
+
+def test_bounded_delta_step_global_cap_tie_rule_wiring_is_opt_in_and_shadowed():
+    state = make_bounded_tensor_state(
+        "toy.proj",
+        torch.tensor([0, 0], dtype=torch.int8),
+        0.5,
+        torch.zeros(2, dtype=torch.int16),
+    )
+    votes = torch.tensor([12, 12], dtype=torch.int16)
+    spec = VoteUpdateSpec(
+        threshold_abs=10,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=2,
+    )
+    cap_spec = GlobalRateCapSpec(cap=1, step=3)
+
+    exact = apply_bounded_delta_vote_step(
+        {"toy.proj": state},
+        {"toy.proj": votes},
+        {"toy.proj": spec},
+        global_cap_spec=cap_spec,
+        global_cap_tie_rule_mode=EXACT_GLOBAL_CAP_TIE_RULE_MODE,
+        global_cap_contract_name=C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME,
+    )
+    defer_all = apply_bounded_delta_vote_step(
+        {"toy.proj": state},
+        {"toy.proj": votes},
+        {"toy.proj": spec},
+        global_cap_spec=cap_spec,
+        global_cap_tie_rule_mode=DEFER_ALL_NO_BACKFILL_TIE_RULE_MODE,
+        global_cap_contract_name=C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME,
+    )
+
+    assert exact.tensor_states["toy.proj"].q_levels.tolist() == [1, 0]
+    assert defer_all.tensor_states["toy.proj"].q_levels.tolist() == [0, 0]
+    assert exact.global_summary["global_tie_rule_mode"] == EXACT_GLOBAL_CAP_TIE_RULE_MODE
+    assert defer_all.global_summary["global_tie_rule_mode"] == DEFER_ALL_NO_BACKFILL_TIE_RULE_MODE
+    assert defer_all.global_summary["global_rate_cap_contract_name"] == (
+        C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME
+    )
+    assert defer_all.global_summary["drop_exercised_basis"] == "same_step_same_pre_state_shadow"
+    assert defer_all.global_summary["exact_shadow_full_demand_sha256"] == defer_all.global_summary["defer_full_demand_sha256"]
+    assert defer_all.global_summary["dropped_mass_count"] == 1
+    assert defer_all.global_summary["mixed_class_count"] == 1
+    assert exact.global_summary["global_rate_cap_accepted_count"] == 1
+    assert defer_all.global_summary["global_rate_cap_accepted_count"] == 0
 
 
 def test_bounded_delta_step_validates_aux_map_keys_and_dtypes():

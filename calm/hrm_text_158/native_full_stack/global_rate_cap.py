@@ -11,11 +11,13 @@ from dataclasses import dataclass
 from enum import Enum
 import copy
 import hashlib
+import json
 from typing import Any
 
 import torch
 
 from calm.hrm_text_158.native_full_stack.vote_update import (
+    VoteUpdateInputs,
     VoteUpdatePlan,
     VoteUpdateState,
     _safe_ratio,
@@ -31,6 +33,18 @@ CPU_GLUE_NOT_KERNEL_NOTE = (
     "global-rate-cap selection is thin cross-tensor CPU/control-flow glue; "
     "it has no GPU receipt by design in Slice 2B"
 )
+GLOBAL_CAP_CONTRACT_OFF = "off"
+EXACT_GLOBAL_CAP_TIE_RULE_MODE = "exact_global_cap"
+DEFER_ALL_NO_BACKFILL_TIE_RULE_MODE = "defer_all_no_backfill"
+GLOBAL_TIE_RULE_MODES = (
+    EXACT_GLOBAL_CAP_TIE_RULE_MODE,
+    DEFER_ALL_NO_BACKFILL_TIE_RULE_MODE,
+)
+C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME = (
+    "c1_banked_faithful_long_run_global_cap"
+)
+C1_BANKED_FAITHFUL_LONG_RUN_FINITE_SCHEDULE_SOURCE = (512, 512, 256, 256)
+C1_BANKED_FAITHFUL_LONG_RUN_TRANSLATION = "steps 1..2 cap=512; steps >=3 cap=256"
 
 
 class GlobalRateCapOrderingMode(str, Enum):
@@ -74,6 +88,7 @@ class GlobalRateCapTensorInput:
     state_key: str
     state: VoteUpdateState
     plan: VoteUpdatePlan
+    vote_inputs: VoteUpdateInputs | None = None
 
 
 @dataclass(frozen=True)
@@ -135,6 +150,61 @@ def scratch_s1_global_cap_contract() -> dict[str, Any]:
             "demand_gt_cap_implies_saturated_and_deferred",
         ],
     }
+
+
+def c1_banked_faithful_long_run_global_cap_for_step(step: int) -> int:
+    step_i = int(step)
+    if step_i < 1:
+        raise ValueError(f"step must be >=1 for c1 banked-faithful contract, got {step}")
+    return 512 if step_i <= 2 else 256
+
+
+def c1_banked_faithful_long_run_global_cap_contract() -> dict[str, Any]:
+    return {
+        "schema": "c1_banked_faithful_long_run_global_cap_contract/v1",
+        "name": C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME,
+        "helper": "c1_banked_faithful_long_run_global_cap_for_step",
+        "enabled": True,
+        "experimental": True,
+        "active_runtime_control": False,
+        "finite_schedule_source": list(C1_BANKED_FAITHFUL_LONG_RUN_FINITE_SCHEDULE_SOURCE),
+        "long_run_translation": C1_BANKED_FAITHFUL_LONG_RUN_TRANSLATION,
+        "per_step_assertions": [
+            "step in {1,2} implies global_rate_cap_cap == 512",
+            "step >= 3 implies global_rate_cap_cap == 256",
+            "q_changed_count == global_rate_cap_applied_count",
+            "drop_exercised gating only claims pressured steps with global_rate_cap_cap == 256",
+        ],
+    }
+
+
+def named_global_cap_contract_receipt(contract_name: str) -> dict[str, Any]:
+    name = str(contract_name)
+    if name == GLOBAL_CAP_CONTRACT_OFF:
+        return {
+            "name": GLOBAL_CAP_CONTRACT_OFF,
+            "enabled": False,
+            "active_runtime_control": False,
+        }
+    if name == C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME:
+        return c1_banked_faithful_long_run_global_cap_contract()
+    raise ValueError(f"unknown global cap contract {contract_name!r}")
+
+
+def resolve_named_global_cap_spec(
+    contract_name: str,
+    *,
+    step: int,
+) -> GlobalRateCapSpec | None:
+    name = str(contract_name)
+    if name == GLOBAL_CAP_CONTRACT_OFF:
+        return None
+    if name == C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME:
+        return GlobalRateCapSpec(
+            cap=c1_banked_faithful_long_run_global_cap_for_step(int(step)),
+            step=int(step),
+        )
+    raise ValueError(f"unknown global cap contract {contract_name!r}")
 
 
 def tensor_offsets_for_vote_update_states(
@@ -209,6 +279,8 @@ def validate_global_rate_cap_inputs(inputs: list[GlobalRateCapTensorInput]) -> N
             raise ValueError(f"plan q shape mismatch for {item.state_key}")
         if item.plan.new_acc_i32.shape != item.state.accumulators.shape:
             raise ValueError(f"plan accumulator shape mismatch for {item.state_key}")
+        if item.vote_inputs is not None and item.vote_inputs.votes.shape != item.state.q_levels.shape:
+            raise ValueError(f"vote input shape mismatch for {item.state_key}")
         if item.plan.applied_indices.numel() != item.plan.applied_directions.numel():
             raise ValueError(f"applied index/direction mismatch for {item.state_key}")
         if item.plan.applied_indices.numel() != item.plan.applied_thresholds.numel():
@@ -342,6 +414,199 @@ def _rows_by_key(rows: list[GlobalRateCapRow]) -> dict[str, set[int]]:
     return out
 
 
+def validate_global_tie_rule_mode(tie_rule_mode: str) -> str:
+    mode = str(tie_rule_mode)
+    if mode not in GLOBAL_TIE_RULE_MODES:
+        raise ValueError(
+            f"global tie rule mode must be one of {GLOBAL_TIE_RULE_MODES}, got {tie_rule_mode!r}"
+        )
+    return mode
+
+
+def _identity_sha256(identities: set[tuple[str, int]]) -> str:
+    payload = [[state_key, int(flat_index)] for state_key, flat_index in sorted(identities)]
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode(
+            "utf-8"
+        )
+    ).hexdigest()
+
+
+@dataclass(frozen=True)
+class _ObservableTieRuleRow:
+    state_key: str
+    flat_index: int
+    current_q_level: int
+    move_direction: int
+    vote_sign: int
+    vote_value: int
+    vote_abs: int
+    abs_new_acc: int
+    threshold_abs: int
+    margin_abs_over_threshold: int
+    replay_ce_veto_vote_sign: int | None = None
+    replay_ce_veto_vote_value: int | None = None
+    replay_ce_veto_move_sign: int | None = None
+    pc_aux_vote_sign: int | None = None
+    pc_aux_vote_value: int | None = None
+    pc_aux_move_sign: int | None = None
+
+    @property
+    def identity(self) -> tuple[str, int]:
+        return (self.state_key, int(self.flat_index))
+
+    @property
+    def bucket_key(self) -> tuple[str, int, int]:
+        return (self.state_key, int(self.current_q_level), int(self.move_direction))
+
+    def feature_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "vote_sign": int(self.vote_sign),
+            "vote_value": int(self.vote_value),
+            "vote_abs": int(self.vote_abs),
+            "abs_new_acc": int(self.abs_new_acc),
+            "threshold_abs": int(self.threshold_abs),
+            "margin_abs_over_threshold": int(self.margin_abs_over_threshold),
+        }
+        optional_fields = {
+            "replay_ce_veto_vote_sign": self.replay_ce_veto_vote_sign,
+            "replay_ce_veto_vote_value": self.replay_ce_veto_vote_value,
+            "replay_ce_veto_move_sign": self.replay_ce_veto_move_sign,
+            "pc_aux_vote_sign": self.pc_aux_vote_sign,
+            "pc_aux_vote_value": self.pc_aux_vote_value,
+            "pc_aux_move_sign": self.pc_aux_move_sign,
+        }
+        for key, value in optional_fields.items():
+            if value is not None:
+                payload[key] = int(value)
+        return payload
+
+    def feature_key(self) -> tuple[tuple[str, Any], ...]:
+        payload = self.feature_payload()
+        return tuple((key, payload[key]) for key in sorted(payload))
+
+
+def _sign_int(value: int | None) -> int | None:
+    if value is None:
+        return None
+    value_i = int(value)
+    if value_i > 0:
+        return 1
+    if value_i < 0:
+        return -1
+    return 0
+
+
+def _flat_optional_int(tensor: torch.Tensor | None, flat_index: int) -> int | None:
+    if tensor is None:
+        return None
+    return int(tensor.flatten()[int(flat_index)].item())
+
+
+def _observable_tie_rule_rows(
+    inputs: list[GlobalRateCapTensorInput],
+    rows: list[GlobalRateCapRow],
+) -> tuple[_ObservableTieRuleRow, ...]:
+    inputs_by_state = {item.state_key: item for item in inputs}
+    observable_rows: list[_ObservableTieRuleRow] = []
+    for row in rows:
+        item = inputs_by_state[row.state_key]
+        if item.vote_inputs is None:
+            raise ValueError(
+                "defer_all_no_backfill tie-rule mode requires vote_inputs on every "
+                "GlobalRateCapTensorInput"
+            )
+        vote_inputs = item.vote_inputs
+        plan = item.plan
+        state = item.state
+        flat_index = int(row.flat_index)
+        vote_value = int(vote_inputs.votes.flatten()[flat_index].item())
+        observable_rows.append(
+            _ObservableTieRuleRow(
+                state_key=row.state_key,
+                flat_index=flat_index,
+                current_q_level=int(state.q_levels.flatten()[flat_index].item()),
+                move_direction=int(plan.applied_directions[int(row.local_pos)].item()),
+                vote_sign=int(_sign_int(vote_value)),
+                vote_value=int(vote_value),
+                vote_abs=abs(int(vote_value)),
+                abs_new_acc=int(row.abs_new_acc),
+                threshold_abs=int(row.threshold_abs),
+                margin_abs_over_threshold=int(row.margin_abs_over_threshold),
+                replay_ce_veto_vote_sign=_sign_int(
+                    _flat_optional_int(vote_inputs.replay_ce_veto_votes, flat_index)
+                ),
+                replay_ce_veto_vote_value=_flat_optional_int(
+                    vote_inputs.replay_ce_veto_votes,
+                    flat_index,
+                ),
+                replay_ce_veto_move_sign=_sign_int(
+                    _flat_optional_int(vote_inputs.replay_ce_veto_moves, flat_index)
+                ),
+                pc_aux_vote_sign=_sign_int(_flat_optional_int(vote_inputs.pc_aux_votes, flat_index)),
+                pc_aux_vote_value=_flat_optional_int(vote_inputs.pc_aux_votes, flat_index),
+                pc_aux_move_sign=_sign_int(_flat_optional_int(vote_inputs.pc_aux_moves, flat_index)),
+            )
+        )
+    return tuple(observable_rows)
+
+
+def _defer_all_no_backfill_partition(
+    inputs: list[GlobalRateCapTensorInput],
+    rows: list[GlobalRateCapRow],
+    accepted_rows: list[GlobalRateCapRow],
+    deferred_rows: list[GlobalRateCapRow],
+) -> dict[str, Any]:
+    observable_rows = _observable_tie_rule_rows(inputs, rows)
+    exact_accepted = {row.identity() for row in accepted_rows}
+    exact_deferred = {row.identity() for row in deferred_rows}
+    by_bucket: dict[tuple[str, int, int], list[_ObservableTieRuleRow]] = {}
+    for row in observable_rows:
+        by_bucket.setdefault(row.bucket_key, []).append(row)
+    dropped_ids: set[tuple[str, int]] = set()
+    mixed_class_count = 0
+    mixed_class_row_count = 0
+    max_mixed_class_cardinality = 0
+    for bucket_rows in by_bucket.values():
+        by_feature: dict[tuple[tuple[str, Any], ...], list[_ObservableTieRuleRow]] = {}
+        for row in bucket_rows:
+            by_feature.setdefault(row.feature_key(), []).append(row)
+        for class_rows in by_feature.values():
+            class_ids = {row.identity for row in class_rows}
+            class_accepted = class_ids & exact_accepted
+            if 0 < len(class_accepted) < len(class_ids):
+                mixed_class_count += 1
+                mixed_class_row_count += len(class_ids)
+                max_mixed_class_cardinality = max(max_mixed_class_cardinality, len(class_ids))
+                dropped_ids |= class_accepted
+    replay_accepted = exact_accepted - dropped_ids
+    replay_deferred = exact_deferred | dropped_ids
+    replay_accepted_rows = [row for row in rows if row.identity() in replay_accepted]
+    replay_deferred_rows = [row for row in rows if row.identity() in replay_deferred]
+    full_demand_sha = _row_global_index_sha(rows)
+    return {
+        "accepted_rows": replay_accepted_rows,
+        "deferred_rows": replay_deferred_rows,
+        "drop_exercised_basis": "same_step_same_pre_state_shadow",
+        "exact_shadow_full_demand_sha256": full_demand_sha,
+        "defer_full_demand_sha256": full_demand_sha,
+        "exact_shadow_accepted_sha256": _row_global_index_sha(accepted_rows),
+        "defer_accepted_sha256": _row_global_index_sha(replay_accepted_rows),
+        "exact_shadow_deferred_sha256": _row_global_index_sha(deferred_rows),
+        "defer_deferred_sha256": _row_global_index_sha(replay_deferred_rows),
+        "exact_shadow_accepted_count": len(accepted_rows),
+        "defer_accepted_count": len(replay_accepted_rows),
+        "exact_shadow_deferred_count": len(deferred_rows),
+        "defer_deferred_count": len(replay_deferred_rows),
+        "mixed_class_count": int(mixed_class_count),
+        "mixed_class_row_count": int(mixed_class_row_count),
+        "max_mixed_class_cardinality": int(max_mixed_class_cardinality),
+        "dropped_mass_count": len(dropped_ids),
+        "dropped_mass_identities_sha256": _identity_sha256(dropped_ids),
+        "drop_exercised": bool(mixed_class_count > 0 and dropped_ids),
+    }
+
+
 def _apply_threshold_residual(
     new_acc_i32: torch.Tensor,
     indices: torch.Tensor,
@@ -362,6 +627,8 @@ def apply_global_rate_cap_reference(
     *,
     deferred_backlog: dict[str, dict[int, dict[str, int]]] | None = None,
     tensor_offsets: dict[str, int] | None = None,
+    tie_rule_mode: str = EXACT_GLOBAL_CAP_TIE_RULE_MODE,
+    contract_name: str | None = None,
 ) -> GlobalRateCapResult:
     """Apply cap-bounded global selection to copies of q/acc tensors.
 
@@ -372,11 +639,37 @@ def apply_global_rate_cap_reference(
 
     spec.validate()
     offsets = tensor_offsets or tensor_offsets_for_vote_update_states(inputs)
+    tie_mode = validate_global_tie_rule_mode(tie_rule_mode)
     rows, accepted_rows, deferred_rows = select_global_rate_cap_rows(
         inputs,
         spec,
         tensor_offsets=offsets,
     )
+    shadow_summary = {
+        "pre_cap_demand_sha256": _row_global_index_sha(rows),
+        "global_tie_rule_mode": tie_mode,
+        "exact_shadow_full_demand_sha256": _row_global_index_sha(rows),
+        "exact_shadow_accepted_sha256": _row_global_index_sha(accepted_rows),
+        "exact_shadow_deferred_sha256": _row_global_index_sha(deferred_rows),
+        "mixed_class_count": 0,
+        "mixed_class_row_count": 0,
+        "max_mixed_class_cardinality": 0,
+        "dropped_mass_count": 0,
+        "dropped_mass_identities_sha256": _identity_sha256(set()),
+        "drop_exercised": False,
+    }
+    if contract_name is not None:
+        shadow_summary["global_rate_cap_contract_name"] = str(contract_name)
+    if tie_mode == DEFER_ALL_NO_BACKFILL_TIE_RULE_MODE:
+        partition = _defer_all_no_backfill_partition(
+            inputs,
+            rows,
+            accepted_rows,
+            deferred_rows,
+        )
+        accepted_rows = partition["accepted_rows"]
+        deferred_rows = partition["deferred_rows"]
+        shadow_summary.update(partition)
     accepted_by_key = _rows_by_key(accepted_rows)
     deferred_by_key = _rows_by_key(deferred_rows)
     backlog = copy.deepcopy(deferred_backlog or {})
@@ -546,6 +839,7 @@ def apply_global_rate_cap_reference(
         "accepted_from_prior_deferred_count": accepted_from_prior_deferred,
         "accepted_fresh_count": accepted_count - accepted_from_prior_deferred,
         "q_changed_count": total_q_changed,
+        **shadow_summary,
         **age_summary,
     }
     return GlobalRateCapResult(

@@ -12,12 +12,20 @@ import torch
 
 from calm.hrm_text_158.native_full_stack.global_rate_cap import (
     CAP_ORDERING_HASH_SEED,
+    C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME,
     CPU_GLUE_NOT_KERNEL_NOTE,
     DEFERRED_NON_SCOPE,
+    DEFER_ALL_NO_BACKFILL_TIE_RULE_MODE,
+    EXACT_GLOBAL_CAP_TIE_RULE_MODE,
+    GLOBAL_CAP_CONTRACT_OFF,
     GlobalRateCapOrderingMode,
     GlobalRateCapSpec,
     GlobalRateCapTensorInput,
     apply_global_rate_cap_reference,
+    c1_banked_faithful_long_run_global_cap_contract,
+    c1_banked_faithful_long_run_global_cap_for_step,
+    named_global_cap_contract_receipt,
+    resolve_named_global_cap_spec,
     scratch_s1_global_cap_contract,
     scratch_s1_global_cap_for_step,
     select_global_rate_cap_rows,
@@ -73,7 +81,12 @@ def _tensor_input(
     state = _state(q, acc)
     inputs = _inputs(votes, **vote_kwargs)
     plan = plan_integer_vote_update_reference(state, inputs, _spec())
-    return GlobalRateCapTensorInput(state_key=state_key, state=state, plan=plan)
+    return GlobalRateCapTensorInput(
+        state_key=state_key,
+        state=state,
+        plan=plan,
+        vote_inputs=inputs,
+    )
 
 
 def test_scratch_s1_global_cap_schedule_and_contract():
@@ -90,6 +103,39 @@ def test_scratch_s1_global_cap_schedule_and_contract():
     assert contract["max"] == 1024
     assert contract["anneal_step"] == 256
     assert "q_changed_count == global_rate_cap_applied_count" in contract["per_step_assertions"]
+
+
+def test_c1_banked_faithful_long_run_contract_schedule_and_named_resolution():
+    assert c1_banked_faithful_long_run_global_cap_for_step(1) == 512
+    assert c1_banked_faithful_long_run_global_cap_for_step(2) == 512
+    assert c1_banked_faithful_long_run_global_cap_for_step(3) == 256
+    assert c1_banked_faithful_long_run_global_cap_for_step(9999) == 256
+    with pytest.raises(ValueError, match="step must be >=1"):
+        c1_banked_faithful_long_run_global_cap_for_step(0)
+
+    contract = c1_banked_faithful_long_run_global_cap_contract()
+    assert contract["name"] == C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME
+    assert contract["finite_schedule_source"] == [512, 512, 256, 256]
+    assert contract["long_run_translation"] == "steps 1..2 cap=512; steps >=3 cap=256"
+
+    off_receipt = named_global_cap_contract_receipt(GLOBAL_CAP_CONTRACT_OFF)
+    assert off_receipt["name"] == GLOBAL_CAP_CONTRACT_OFF
+    assert off_receipt["enabled"] is False
+
+    named_receipt = named_global_cap_contract_receipt(
+        C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME
+    )
+    assert named_receipt["name"] == C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME
+    assert named_receipt["active_runtime_control"] is False
+
+    resolved = resolve_named_global_cap_spec(
+        C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME,
+        step=4,
+    )
+    assert resolved is not None
+    assert resolved.cap == 256
+    assert resolved.step == 4
+    assert resolve_named_global_cap_spec(GLOBAL_CAP_CONTRACT_OFF, step=4) is None
 
 
 def test_ordering_modes_match_live_static_dispatch():
@@ -264,3 +310,47 @@ def test_deferred_non_scope_guards_and_cpu_glue_honesty():
     assert result.step_summary["bad_pressure_drain_policy"] == DEFERRED_NON_SCOPE
     assert result.step_summary["cpu_glue_not_kernel"] is True
     assert "no GPU receipt" in CPU_GLUE_NOT_KERNEL_NOTE
+
+
+def test_defer_all_no_backfill_uses_same_pre_state_shadow_and_drops_mixed_class_accepts():
+    item = _tensor_input(
+        "synthetic.defer_all",
+        [0, 0],
+        [0, 0],
+        [30, 30],
+    )
+
+    exact = apply_global_rate_cap_reference(
+        [item],
+        GlobalRateCapSpec(cap=1, step=3),
+        tie_rule_mode=EXACT_GLOBAL_CAP_TIE_RULE_MODE,
+        contract_name=C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME,
+        tensor_offsets={"synthetic.defer_all": 0},
+    )
+    defer_all = apply_global_rate_cap_reference(
+        [item],
+        GlobalRateCapSpec(cap=1, step=3),
+        tie_rule_mode=DEFER_ALL_NO_BACKFILL_TIE_RULE_MODE,
+        contract_name=C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME,
+        tensor_offsets={"synthetic.defer_all": 0},
+    )
+
+    assert exact.step_summary["global_tie_rule_mode"] == EXACT_GLOBAL_CAP_TIE_RULE_MODE
+    assert defer_all.step_summary["global_tie_rule_mode"] == DEFER_ALL_NO_BACKFILL_TIE_RULE_MODE
+    assert defer_all.step_summary["global_rate_cap_contract_name"] == (
+        C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME
+    )
+    assert defer_all.step_summary["drop_exercised_basis"] == "same_step_same_pre_state_shadow"
+    assert defer_all.step_summary["exact_shadow_full_demand_sha256"] == defer_all.step_summary["defer_full_demand_sha256"]
+    assert defer_all.step_summary["mixed_class_count"] == 1
+    assert defer_all.step_summary["mixed_class_row_count"] == 2
+    assert defer_all.step_summary["dropped_mass_count"] == 1
+    assert defer_all.step_summary["drop_exercised"] is True
+    assert exact.step_summary["global_rate_cap_accepted_count"] == 1
+    assert defer_all.step_summary["global_rate_cap_accepted_count"] == 0
+    assert defer_all.step_summary["global_rate_cap_deferred_count"] == 2
+    assert defer_all.step_summary["exact_shadow_accepted_count"] == 1
+    assert defer_all.step_summary["defer_accepted_count"] == 0
+    assert [row.flat_index for row in exact.accepted_rows] == [0]
+    assert defer_all.accepted_rows == []
+    assert sorted(row.flat_index for row in defer_all.deferred_rows) == [0, 1]

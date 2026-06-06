@@ -52,6 +52,15 @@ from calm.hrm_text_158.curriculum.language_supports import (
     build_l0c1_support,
     build_l0c2k1_identity_full_support,
 )
+from calm.hrm_text_158.native_full_stack.global_rate_cap import (
+    C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME,
+    DEFER_ALL_NO_BACKFILL_TIE_RULE_MODE,
+    EXACT_GLOBAL_CAP_TIE_RULE_MODE,
+    GLOBAL_CAP_CONTRACT_OFF,
+    GLOBAL_TIE_RULE_MODES,
+    named_global_cap_contract_receipt,
+    resolve_named_global_cap_spec,
+)
 from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     BOUNDED_DELTA_CHECKPOINT_SCHEMA_VERSION,
     BOUNDED_DELTA_LEARNER_SCHEMA_VERSION,
@@ -113,6 +122,10 @@ C2P2_NULL_ESCALATION_RULE = (
     "If C2.2 returns a classified null, escalate inside the same harness with "
     "an inline int16/dense-acc control; historical receipt 1779747988676 is "
     "context only, not a same-harness paired control."
+)
+GLOBAL_CAP_CONTRACT_CHOICES = (
+    GLOBAL_CAP_CONTRACT_OFF,
+    C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME,
 )
 FORWARD_LEVEL_INIT_FIDELITY_STE_ATOL = 1e-3
 FORWARD_LEVEL_INIT_FIDELITY_TOLERANCE_REASON = (
@@ -2305,6 +2318,30 @@ def classify_c2p2_null(
     return "q-move-no-accuracy"
 
 
+def update_strict_exact_stop_state(
+    *,
+    step: int,
+    audit_report: Mapping[str, Any],
+    stop_on_strict_exact: bool,
+    matched_continued_training_horizon_steps: int,
+    first_strict_exact_step: int | None,
+) -> tuple[int | None, str | None]:
+    if not bool(stop_on_strict_exact) or not bool(audit_report.get("acquired")):
+        return first_strict_exact_step, None
+    first_step = int(step) if first_strict_exact_step is None else int(first_strict_exact_step)
+    horizon = int(matched_continued_training_horizon_steps)
+    if horizon < 0:
+        raise ValueError("matched_continued_training_horizon_steps must be non-negative")
+    if int(step) >= first_step + horizon:
+        token = (
+            "strict_exact_acquired"
+            if horizon == 0
+            else "strict_exact_acquired_matched_horizon"
+        )
+        return first_step, token
+    return first_step, None
+
+
 def build_acquisition_trajectory(
     *,
     audit_enabled: bool,
@@ -2313,6 +2350,7 @@ def build_acquisition_trajectory(
     support_cycler_proof: Mapping[str, Any],
     audit_interval: int,
     stop_on_strict_exact: bool,
+    matched_continued_training_horizon_steps: int,
     max_steps_hard: int,
     stop_reason: str,
     timing_summary: Mapping[str, Any] | None = None,
@@ -2353,6 +2391,9 @@ def build_acquisition_trajectory(
             "replay": "OUT/pure-rung",
             "audit_interval": int(audit_interval),
             "stop_on_strict_exact": bool(stop_on_strict_exact),
+            "matched_continued_training_horizon_steps": int(
+                matched_continued_training_horizon_steps
+            ),
             "max_steps_hard": int(max_steps_hard),
             "steps_upper_bound": C2P2_DEFAULT_MAX_STEPS_HARD,
             "acquire_gate": f"{C2P2_STRICT_EXACT_TARGET}/{C2P2_STRICT_EXACT_TARGET} strict-exact",
@@ -2940,6 +2981,9 @@ def run_bounded_delta_steps(
     audit_callback: Callable[[int, Mapping[str, Any]], dict[str, Any]] | None = None,
     audit_interval: int = 0,
     stop_on_strict_exact: bool = False,
+    matched_continued_training_horizon_steps: int = 0,
+    global_cap_contract: str = GLOBAL_CAP_CONTRACT_OFF,
+    tie_rule_mode: str = EXACT_GLOBAL_CAP_TIE_RULE_MODE,
     b2_full_verdict_mode: bool = False,
     b2_full_prior_snapshot_callback: Callable[
         [int, Mapping[str, Any], Mapping[str, Any], Mapping[str, Mapping[str, Any]]],
@@ -3027,8 +3071,10 @@ def run_bounded_delta_steps(
     )
     if retained_support_sets and float(b2_parent_consistency_weight) > 0.0 and b2_parent_model is None:
         raise ValueError("B2 parent-consistency aux requires a frozen parent model")
+    first_strict_exact_step: int | None = None
 
     def maybe_audit(step: int, *, final: bool = False) -> str | None:
+        nonlocal first_strict_exact_step
         if audit_callback is None:
             return None
         if int(step) == 0:
@@ -3100,9 +3146,16 @@ def run_bounded_delta_steps(
             if b2_full_verdict_state.get("combined_stop", {}).get("triggered"):
                 return "b2_full_target_coverage_retain_stop"
             return None
-        if bool(stop_on_strict_exact) and bool(audit_report.get("acquired")):
-            return "strict_exact_acquired"
-        return None
+        first_strict_exact_step, stop_token = update_strict_exact_stop_state(
+            step=int(step),
+            audit_report=audit_report,
+            stop_on_strict_exact=bool(stop_on_strict_exact),
+            matched_continued_training_horizon_steps=int(
+                matched_continued_training_horizon_steps
+            ),
+            first_strict_exact_step=first_strict_exact_step,
+        )
+        return stop_token
 
     if front_c_identity_collector is not None:
         with progress.phase("front_c_identity_step0", step=0):
@@ -3283,6 +3336,10 @@ def run_bounded_delta_steps(
                     step=int(step),
                     total_steps=int(steps),
                 )
+                global_cap_spec = resolve_named_global_cap_spec(
+                    str(global_cap_contract),
+                    step=int(step),
+                )
 
                 step_result = apply_bounded_delta_vote_step(
                     states,
@@ -3293,6 +3350,13 @@ def run_bounded_delta_steps(
                     pc_aux_votes_by_key=pc_aux_votes_by_key,
                     pc_aux_moves_by_key=pc_aux_moves_by_key,
                     pc_aux_mode=str(b2_pc_aux_mode),
+                    global_cap_spec=global_cap_spec,
+                    global_cap_tie_rule_mode=str(tie_rule_mode),
+                    global_cap_contract_name=(
+                        str(global_cap_contract)
+                        if global_cap_spec is not None
+                        else None
+                    ),
                     front_c_identity_observer=front_c_identity_observer,
                 )
                 states = step_result.tensor_states
@@ -3423,6 +3487,7 @@ def run_c2p1_probe(
     max_abs_per_tensor: int = 4096,
     audit_interval: int = 0,
     stop_on_strict_exact: bool = False,
+    matched_continued_training_horizon_steps: int = 0,
     max_steps_hard: int = C2P2_DEFAULT_MAX_STEPS_HARD,
     emit_progress: bool = False,
     phase_timeout_seconds: float = 0.0,
@@ -3430,6 +3495,8 @@ def run_c2p1_probe(
     max_silent_phase_seconds: float | None = None,
     enabled: bool | None = None,
     allow_gpu_launch: bool = False,
+    global_cap_contract: str = GLOBAL_CAP_CONTRACT_OFF,
+    tie_rule_mode: str = EXACT_GLOBAL_CAP_TIE_RULE_MODE,
     prior_audit_supports: str | Sequence[str] | None = None,
     b2_retained_supports: str | Sequence[str] | None = None,
     b2_parent_consistency_weight: float = 0.0,
@@ -3450,6 +3517,21 @@ def run_c2p1_probe(
         )
     if int(audit_interval) < 0:
         raise ValueError("audit_interval must be non-negative")
+    if int(matched_continued_training_horizon_steps) < 0:
+        raise ValueError("matched_continued_training_horizon_steps must be non-negative")
+    global_cap_contract_receipt = named_global_cap_contract_receipt(str(global_cap_contract))
+    if str(tie_rule_mode) not in GLOBAL_TIE_RULE_MODES:
+        raise ValueError(
+            f"tie_rule_mode must be one of {GLOBAL_TIE_RULE_MODES}, got {tie_rule_mode!r}"
+        )
+    if (
+        str(global_cap_contract) == GLOBAL_CAP_CONTRACT_OFF
+        and str(tie_rule_mode) != EXACT_GLOBAL_CAP_TIE_RULE_MODE
+    ):
+        raise ValueError(
+            "tie_rule_mode requires a non-off global_cap_contract; "
+            "use exact_global_cap when global_cap_contract=off"
+        )
     requested_prior_audit_supports = parse_prior_audit_supports(prior_audit_supports)
     requested_b2_retained_supports = parse_b2_retained_supports(b2_retained_supports)
     if b2_full_verdict_mode:
@@ -3782,6 +3864,11 @@ def run_c2p1_probe(
             audit_callback=audit_callback if audit_enabled else None,
             audit_interval=int(audit_interval),
             stop_on_strict_exact=bool(stop_on_strict_exact),
+            matched_continued_training_horizon_steps=int(
+                matched_continued_training_horizon_steps
+            ),
+            global_cap_contract=str(global_cap_contract),
+            tie_rule_mode=str(tie_rule_mode),
             b2_full_verdict_mode=bool(b2_full_verdict_mode),
             b2_full_prior_snapshot_callback=b2_full_prior_snapshot_callback,
             b2_full_audit_export_callback=b2_full_audit_export_callback,
@@ -3930,6 +4017,11 @@ def run_c2p1_probe(
         "max_steps_hard": int(max_steps_hard),
         "audit_interval": int(audit_interval),
         "stop_on_strict_exact": bool(stop_on_strict_exact),
+        "matched_continued_training_horizon_steps": int(
+            matched_continued_training_horizon_steps
+        ),
+        "global_cap_contract": global_cap_contract_receipt,
+        "tie_rule_mode": str(tie_rule_mode),
         "stop_reason": stop_reason,
         "forward_backward_update_executed": bool(steps > 0),
         "step0_optimizer_identity_proof": step0_optimizer_identity_proof,
@@ -3947,6 +4039,9 @@ def run_c2p1_probe(
             support_cycler_proof=support_cycler_proof,
             audit_interval=int(audit_interval),
             stop_on_strict_exact=bool(stop_on_strict_exact),
+            matched_continued_training_horizon_steps=int(
+                matched_continued_training_horizon_steps
+            ),
             max_steps_hard=int(max_steps_hard),
             stop_reason=stop_reason,
             timing_summary=timing_summary,
@@ -3999,6 +4094,37 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--init-fidelity-atol", type=float, default=0.0)
     ap.add_argument("--audit-interval", type=int, default=0)
     ap.add_argument("--stop-on-strict-exact", action="store_true")
+    ap.add_argument(
+        "--matched-continued-training-horizon-steps",
+        type=int,
+        default=0,
+        help=(
+            "When --stop-on-strict-exact is enabled, continue the same training "
+            "recipe for this many additional steps after first acquisition "
+            "before stopping. Default 0 stops immediately on first acquire."
+        ),
+    )
+    ap.add_argument(
+        "--global-cap-contract",
+        choices=GLOBAL_CAP_CONTRACT_CHOICES,
+        default=GLOBAL_CAP_CONTRACT_OFF,
+        help=(
+            "Opt-in global cap contract. "
+            f"`{GLOBAL_CAP_CONTRACT_OFF}` preserves the legacy local per-tensor path; "
+            f"`{C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME}` enables the "
+            "banked-faithful long-run global cap used by the c1 tie-rule probe."
+        ),
+    )
+    ap.add_argument(
+        "--tie-rule-mode",
+        choices=GLOBAL_TIE_RULE_MODES,
+        default=EXACT_GLOBAL_CAP_TIE_RULE_MODE,
+        help=(
+            "Tie-rule mode inside an active global-cap contract. "
+            "Default exact_global_cap keeps rows[:cap] unchanged; "
+            "defer_all_no_backfill defers mixed-class oracle-accepted rows without backfill."
+        ),
+    )
     ap.add_argument(
         "--prior-audit-supports",
         default="",
@@ -4116,6 +4242,9 @@ def main(argv: list[str] | None = None) -> int:
         max_abs_per_tensor=args.max_abs_per_tensor,
         audit_interval=args.audit_interval,
         stop_on_strict_exact=args.stop_on_strict_exact,
+        matched_continued_training_horizon_steps=args.matched_continued_training_horizon_steps,
+        global_cap_contract=args.global_cap_contract,
+        tie_rule_mode=args.tie_rule_mode,
         prior_audit_supports=args.prior_audit_supports,
         b2_retained_supports=args.b2_retained_supports,
         b2_parent_consistency_weight=args.b2_parent_consistency_weight,

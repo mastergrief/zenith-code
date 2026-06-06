@@ -28,6 +28,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
     encode_budget_capped_hybrid_reference,
 )
 from calm.hrm_text_158.native_full_stack.global_rate_cap import (
+    EXACT_GLOBAL_CAP_TIE_RULE_MODE,
     GlobalRateCapSpec,
     GlobalRateCapTensorInput,
     apply_global_rate_cap_reference,
@@ -936,6 +937,8 @@ def apply_bounded_delta_vote_step(
     pc_aux_moves_by_key: Mapping[str, torch.Tensor] | None = None,
     pc_aux_mode: str = "telemetry",
     global_cap_spec: GlobalRateCapSpec | None = None,
+    global_cap_tie_rule_mode: str = EXACT_GLOBAL_CAP_TIE_RULE_MODE,
+    global_cap_contract_name: str | None = None,
     deferred_backlog: dict[str, dict[int, dict[str, int]]] | None = None,
     hot_exact_indices_by_key: Mapping[str, Sequence[int]] | None = None,
     cold_default_value: int | None = None,
@@ -949,6 +952,11 @@ def apply_bounded_delta_vote_step(
     _validate_optional_vote_map_keys("replay_ce_veto_moves_by_key", replay_ce_veto_moves_by_key, expected_keys)
     _validate_optional_vote_map_keys("pc_aux_votes_by_key", pc_aux_votes_by_key, expected_keys)
     _validate_optional_vote_map_keys("pc_aux_moves_by_key", pc_aux_moves_by_key, expected_keys)
+    if global_cap_spec is None and global_cap_tie_rule_mode != EXACT_GLOBAL_CAP_TIE_RULE_MODE:
+        raise ValueError(
+            "global_cap_tie_rule_mode requires an active global_cap_spec; "
+            "non-global paths must stay exact_global_cap"
+        )
     hot_by_key = hot_exact_indices_by_key or {}
     vote_update_states: dict[str, VoteUpdateState] = {}
     inputs_by_key: dict[str, VoteUpdateInputs] = {}
@@ -994,13 +1002,22 @@ def apply_bounded_delta_vote_step(
         vote_update_states[state_key] = vu_state
         inputs_by_key[state_key] = inputs
         plans_by_key[state_key] = plan
-        cap_inputs.append(GlobalRateCapTensorInput(state_key, vu_state, plan))
+        cap_inputs.append(
+            GlobalRateCapTensorInput(
+                state_key=state_key,
+                state=vu_state,
+                plan=plan,
+                vote_inputs=inputs,
+            )
+        )
 
     if global_cap_spec is not None:
         cap_result = apply_global_rate_cap_reference(
             cap_inputs,
             global_cap_spec,
             deferred_backlog=deferred_backlog,
+            tie_rule_mode=global_cap_tie_rule_mode,
+            contract_name=global_cap_contract_name,
         )
         q_acc_by_key = {
             item.state_key: (item.q_levels, item.accumulators, item.stats)

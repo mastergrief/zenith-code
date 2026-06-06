@@ -26,6 +26,7 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     B1_PRIOR_AUDIT_PINS,
     B1_PRIOR_AUDIT_SCHEMA_VERSION,
     B1_PRIOR_AUDIT_SUPPORTS,
+    C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME,
     C2P2_DEFAULT_GPU_SILENT_PHASE_TIMEOUT_SECONDS,
     C2P2_FAULTHANDLER_SCHEMA_VERSION,
     B2_FULL_VERDICT_SCHEMA_VERSION,
@@ -34,7 +35,9 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     C2P2_TIMING_SCHEMA_VERSION,
     C2PhaseTimeout,
     DEFAULT_PARENT_SHA256,
+    EXACT_GLOBAL_CAP_TIE_RULE_MODE,
     FORWARD_LEVEL_INIT_FIDELITY_STE_ATOL,
+    GLOBAL_CAP_CONTRACT_OFF,
     HISTORICAL_IDENTITY_CONTROL,
     PhaseProgress,
     RUN_C2_ACQUISITION_PROBE_ENV,
@@ -73,6 +76,7 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     score_strict_exact_and_parsed_from_logits,
     select_eligible_bitlinears,
     snapshot_b2_full_coverage_tracker,
+    update_strict_exact_stop_state,
     update_b2_full_coverage_tracker,
     _capture_eligible_module_outputs,
     enforce_phase_bound,
@@ -671,6 +675,9 @@ def test_b2_full_snapshot_state_dedupes_same_step_combined_stop_and_terminal():
 def test_b2_full_cli_flag_defaults_off_and_support_validation_is_preload(tmp_path):
     args = build_arg_parser().parse_args([])
     assert args.b2_full_verdict_mode is False
+    assert args.global_cap_contract == GLOBAL_CAP_CONTRACT_OFF
+    assert args.tie_rule_mode == EXACT_GLOBAL_CAP_TIE_RULE_MODE
+    assert args.matched_continued_training_horizon_steps == 0
     assert args.max_silent_phase_seconds is None
     assert resolve_max_silent_phase_seconds(
         allow_gpu_launch=args.allow_gpu_launch,
@@ -711,6 +718,48 @@ def test_b2_full_cli_flag_defaults_off_and_support_validation_is_preload(tmp_pat
             prior_audit_supports="L0b,math_a0,L0c1",
             b2_retained_supports="L0b,math_a0",
         )
+
+
+def test_strict_exact_stop_state_honors_matched_continued_training_horizon():
+    first_step, token = update_strict_exact_stop_state(
+        step=10,
+        audit_report={"acquired": True},
+        stop_on_strict_exact=True,
+        matched_continued_training_horizon_steps=50,
+        first_strict_exact_step=None,
+    )
+    assert first_step == 10
+    assert token is None
+
+    first_step, token = update_strict_exact_stop_state(
+        step=59,
+        audit_report={"acquired": True},
+        stop_on_strict_exact=True,
+        matched_continued_training_horizon_steps=50,
+        first_strict_exact_step=first_step,
+    )
+    assert first_step == 10
+    assert token is None
+
+    first_step, token = update_strict_exact_stop_state(
+        step=60,
+        audit_report={"acquired": True},
+        stop_on_strict_exact=True,
+        matched_continued_training_horizon_steps=50,
+        first_strict_exact_step=first_step,
+    )
+    assert first_step == 10
+    assert token == "strict_exact_acquired_matched_horizon"
+
+    first_step, token = update_strict_exact_stop_state(
+        step=4,
+        audit_report={"acquired": True},
+        stop_on_strict_exact=True,
+        matched_continued_training_horizon_steps=0,
+        first_strict_exact_step=None,
+    )
+    assert first_step == 4
+    assert token == "strict_exact_acquired"
 
 
 def test_audit_score_counts_known_k_and_parsed_independently():
@@ -1487,6 +1536,77 @@ def test_tiny_prior_audit_is_report_only_and_preserves_state_hash_parity(tmp_pat
     assert "parent_baseline_vs_final" in prior_audit["deltas"]["L0c1"]
 
     assert _state_parity_subset(off_receipt) == _state_parity_subset(on_receipt)
+
+
+def test_explicit_global_cap_off_keeps_tiny_state_parity(tmp_path: Path):
+    parent = tmp_path / "tiny_parent.pt"
+    torch.save(_tiny_parent_blob(batch_size=32), parent)
+    parent_sha = file_sha256(parent)
+    common = {
+        "parent": parent,
+        "parent_sha256": parent_sha,
+        "device": "cpu",
+        "eligible_scope": "first-bitlinear",
+        "steps": 1,
+        "batch_size": 32,
+        "max_len": TINY_ARCH["max_len"],
+        "curriculum_seed": 17,
+        "enabled": True,
+    }
+
+    implicit_off = run_c2p1_probe(
+        **common,
+        scratch_root=tmp_path / "scratch_implicit_off",
+    )
+    explicit_off = run_c2p1_probe(
+        **common,
+        scratch_root=tmp_path / "scratch_explicit_off",
+        global_cap_contract=GLOBAL_CAP_CONTRACT_OFF,
+        tie_rule_mode=EXACT_GLOBAL_CAP_TIE_RULE_MODE,
+    )
+
+    assert implicit_off["global_cap_contract"]["name"] == GLOBAL_CAP_CONTRACT_OFF
+    assert implicit_off["global_cap_contract"]["enabled"] is False
+    assert explicit_off["global_cap_contract"]["name"] == GLOBAL_CAP_CONTRACT_OFF
+    assert explicit_off["tie_rule_mode"] == EXACT_GLOBAL_CAP_TIE_RULE_MODE
+    assert _state_parity_subset(implicit_off) == _state_parity_subset(explicit_off)
+
+
+def test_tiny_exact_global_cap_receipt_exposes_banked_faithful_contract(tmp_path: Path):
+    parent = tmp_path / "tiny_parent.pt"
+    torch.save(_tiny_parent_blob(batch_size=16), parent)
+    parent_sha = file_sha256(parent)
+
+    receipt = run_c2p1_probe(
+        parent=parent,
+        parent_sha256=parent_sha,
+        scratch_root=tmp_path / "scratch_global_cap_exact",
+        device="cpu",
+        eligible_scope="first-bitlinear",
+        steps=1,
+        batch_size=16,
+        max_len=TINY_ARCH["max_len"],
+        curriculum_seed=17,
+        enabled=True,
+        global_cap_contract=C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME,
+        tie_rule_mode=EXACT_GLOBAL_CAP_TIE_RULE_MODE,
+    )
+
+    assert receipt["global_cap_contract"]["name"] == (
+        C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME
+    )
+    assert receipt["global_cap_contract"]["finite_schedule_source"] == [512, 512, 256, 256]
+    assert receipt["global_cap_contract"]["long_run_translation"] == (
+        "steps 1..2 cap=512; steps >=3 cap=256"
+    )
+    assert receipt["tie_rule_mode"] == EXACT_GLOBAL_CAP_TIE_RULE_MODE
+    summary = receipt["step_reports"]["1"]["step_result"]["global_summary"]
+    assert summary["global_rate_cap_enabled"] is True
+    assert summary["global_rate_cap_contract_name"] == (
+        C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME
+    )
+    assert summary["global_tie_rule_mode"] == EXACT_GLOBAL_CAP_TIE_RULE_MODE
+    assert summary["global_rate_cap_cap"] == 512
 
 
 def test_tiny_cpu_audit_receipt_proves_distinct_support_batches_and_step0_baseline(tmp_path: Path):
