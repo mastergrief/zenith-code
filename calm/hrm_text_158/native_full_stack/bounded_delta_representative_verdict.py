@@ -212,6 +212,65 @@ TIE_FRONTIER_RESERVATION_FITS_HEADROOM_CANDIDATE_HYBRID = (
 )
 TIE_RESERVATION_BREAKS_SUB2 = "tie_reservation_breaks_sub2"
 TIE_DENSITY_AMBIGUOUS_NEEDS_TRACE = "tie_density_ambiguous_needs_trace"
+ONLINE_ESTIMABILITY_TIE_MASK_SCHEMA_VERSION = (
+    "hrm_text_158_c1p1g_strict_observable_tie_mask_online_estimability_diagnostic/v0"
+)
+ONLINE_ESTIMABILITY_TIE_MASK_LABEL = (
+    "c1p1g_strict_observable_tie_mask_online_estimability_diagnostic"
+)
+ONLINE_ESTIMABLE_TIE_MASK_CANDIDATE = (
+    "branch_a_online_estimable_tie_mask_candidate_hybrid"
+)
+STRICT_OBSERVABLE_TIE_MASK_NOT_IDENTIFIABLE_IDENTITY_BOUND = (
+    "strict_observable_tie_mask_not_identifiable_identity_bound"
+)
+STRICT_OBSERVABLE_TIE_MASK_EXACT_RECOVERABLE_IDENTITY_FREE_CANDIDATE_ONLY = (
+    "strict_observable_tie_mask_exact_recoverable_identity_free_candidate_only"
+)
+STRICT_OBSERVABLE_TIE_MASK_PARTIALLY_RECOVERABLE_NOT_EXACT = (
+    "strict_observable_tie_mask_partially_recoverable_not_exact"
+)
+STRICT_OBSERVABLE_TIE_MASK_SHUFFLE_FALSIFIER = (
+    "within_equal_feature_group_reverse_order_falsifier"
+)
+STRICT_OBSERVABLE_TIE_MASK_ALLOWED_BUCKET_KEY_DIMENSIONS = (
+    "state_key",
+    "current_q_level",
+    "move_direction",
+)
+STRICT_OBSERVABLE_TIE_MASK_ALLOWED_WITHIN_BUCKET_FEATURE_KEYS = (
+    "vote_sign",
+    "vote_value",
+    "vote_abs",
+    "abs_new_acc",
+    "threshold_abs",
+    "margin_abs_over_threshold",
+    "replay_ce_veto_vote_sign",
+    "replay_ce_veto_vote_value",
+    "replay_ce_veto_move_sign",
+    "pc_aux_vote_sign",
+    "pc_aux_vote_value",
+    "pc_aux_move_sign",
+)
+STRICT_OBSERVABLE_TIE_MASK_ALLOWED_BUCKET_AGGREGATE_KEYS = (
+    "global_cap",
+    "candidate_row_count",
+    "higher_priority_row_count",
+    "residual_cap_slots_entering_bucket",
+)
+STRICT_OBSERVABLE_TIE_MASK_FORBIDDEN_PREDICTOR_INPUT_KEY_FRAGMENTS = (
+    "flat_index",
+    "global_flat_index",
+    "local_pos",
+    "identity",
+    "row_id",
+    "rank_position",
+    "rank",
+    "order",
+    "backlog",
+    "accepted",
+    "oracle",
+)
 
 
 def representative_engineering_guard_spec() -> BoundedDeltaGuardSpec:
@@ -1930,6 +1989,224 @@ class TieFrontierReservationLowerBoundReport:
                 bucket.to_dict() for bucket in self.observed_failing_bucket_reports
             ],
             "row_comparisons": [row.to_dict() for row in self.row_comparisons],
+            "terminal_decision": self.terminal_decision.to_dict(),
+            "raw_arrays_included": bool(self.raw_arrays_included),
+            "non_claims": list(self.non_claims),
+        }
+
+
+@dataclass(frozen=True)
+class ObservableTieMaskFeatureClassReport:
+    feature_payload: dict[str, Any]
+    row_count: int
+    accepted_count: int
+    deferred_count: int
+    mixed_acceptance: bool
+    best_case_identity_free_correct_count: int
+    best_case_identity_free_hamming_lower_bound: int
+    canonical_prefix_matches_exact: bool
+    reversed_prefix_matches_exact: bool
+    exact_accepted_identities_sha256: str
+    canonical_prefix_accepted_identities_sha256: str
+    reversed_prefix_accepted_identities_sha256: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "feature_payload": dict(self.feature_payload),
+            "row_count": int(self.row_count),
+            "accepted_count": int(self.accepted_count),
+            "deferred_count": int(self.deferred_count),
+            "mixed_acceptance": bool(self.mixed_acceptance),
+            "best_case_identity_free_correct_count": int(
+                self.best_case_identity_free_correct_count
+            ),
+            "best_case_identity_free_hamming_lower_bound": int(
+                self.best_case_identity_free_hamming_lower_bound
+            ),
+            "canonical_prefix_matches_exact": bool(
+                self.canonical_prefix_matches_exact
+            ),
+            "reversed_prefix_matches_exact": bool(
+                self.reversed_prefix_matches_exact
+            ),
+            "exact_accepted_identities_sha256": self.exact_accepted_identities_sha256,
+            "canonical_prefix_accepted_identities_sha256": self.canonical_prefix_accepted_identities_sha256,
+            "reversed_prefix_accepted_identities_sha256": self.reversed_prefix_accepted_identities_sha256,
+        }
+
+
+@dataclass(frozen=True)
+class ObservableTieMaskBucketReport:
+    schedule_name: str
+    step: int
+    state_key: str
+    current_q_level: int
+    move_direction: int
+    global_cap: int
+    candidate_row_count: int
+    accepted_row_count: int
+    deferred_row_count: int
+    higher_priority_row_count: int
+    residual_cap_slots_entering_bucket: int
+    feature_class_reports: tuple[ObservableTieMaskFeatureClassReport, ...]
+    mixed_feature_class_count: int
+    mixed_feature_class_row_count: int
+    exact_identity_free_recovery_possible: bool
+    exact_mask_recovery_rate: float
+    best_case_identity_free_correct_count: int
+    best_case_identity_free_hamming_lower_bound: int
+    best_case_identity_free_mask_accuracy_upper_bound: float
+    canonical_order_leaky_matches_exact: bool
+    reversed_order_leaky_matches_exact: bool
+    within_class_reverse_order_changes_order_leaky_mask: bool
+    order_dependence_witnessed: bool
+    exact_accepted_identities_sha256: str
+    canonical_order_leaky_accepted_identities_sha256: str
+    reversed_order_leaky_accepted_identities_sha256: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schedule_name": self.schedule_name,
+            "step": int(self.step),
+            "state_key": self.state_key,
+            "current_q_level": int(self.current_q_level),
+            "move_direction": int(self.move_direction),
+            "global_cap": int(self.global_cap),
+            "candidate_row_count": int(self.candidate_row_count),
+            "accepted_row_count": int(self.accepted_row_count),
+            "deferred_row_count": int(self.deferred_row_count),
+            "higher_priority_row_count": int(self.higher_priority_row_count),
+            "residual_cap_slots_entering_bucket": int(
+                self.residual_cap_slots_entering_bucket
+            ),
+            "feature_class_reports": [
+                report.to_dict() for report in self.feature_class_reports
+            ],
+            "mixed_feature_class_count": int(self.mixed_feature_class_count),
+            "mixed_feature_class_row_count": int(self.mixed_feature_class_row_count),
+            "exact_identity_free_recovery_possible": bool(
+                self.exact_identity_free_recovery_possible
+            ),
+            "exact_mask_recovery_rate": float(self.exact_mask_recovery_rate),
+            "best_case_identity_free_correct_count": int(
+                self.best_case_identity_free_correct_count
+            ),
+            "best_case_identity_free_hamming_lower_bound": int(
+                self.best_case_identity_free_hamming_lower_bound
+            ),
+            "best_case_identity_free_mask_accuracy_upper_bound": float(
+                self.best_case_identity_free_mask_accuracy_upper_bound
+            ),
+            "canonical_order_leaky_matches_exact": bool(
+                self.canonical_order_leaky_matches_exact
+            ),
+            "reversed_order_leaky_matches_exact": bool(
+                self.reversed_order_leaky_matches_exact
+            ),
+            "within_class_reverse_order_changes_order_leaky_mask": bool(
+                self.within_class_reverse_order_changes_order_leaky_mask
+            ),
+            "order_dependence_witnessed": bool(self.order_dependence_witnessed),
+            "exact_accepted_identities_sha256": self.exact_accepted_identities_sha256,
+            "canonical_order_leaky_accepted_identities_sha256": self.canonical_order_leaky_accepted_identities_sha256,
+            "reversed_order_leaky_accepted_identities_sha256": self.reversed_order_leaky_accepted_identities_sha256,
+        }
+
+
+@dataclass(frozen=True)
+class ObservableTieMaskOnlineEstimabilityDecision:
+    terminal_label: str
+    decisive_bucket_count: int
+    exact_recoverable_bucket_count: int
+    first_failure_bucket: str | None
+    worst_bucket_best_case_identity_free_mask_accuracy_upper_bound: float
+    any_mixed_feature_class_split: bool
+    any_order_dependence_witnessed: bool
+    online_realizable_candidate_hybrid: bool
+    implementation_design_earned: bool
+    path_b_identity_free_redesign_earned: bool
+    global_per_row_compression_closed: bool
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "terminal_label": self.terminal_label,
+            "decisive_bucket_count": int(self.decisive_bucket_count),
+            "exact_recoverable_bucket_count": int(self.exact_recoverable_bucket_count),
+            "first_failure_bucket": self.first_failure_bucket,
+            "worst_bucket_best_case_identity_free_mask_accuracy_upper_bound": float(
+                self.worst_bucket_best_case_identity_free_mask_accuracy_upper_bound
+            ),
+            "any_mixed_feature_class_split": bool(
+                self.any_mixed_feature_class_split
+            ),
+            "any_order_dependence_witnessed": bool(
+                self.any_order_dependence_witnessed
+            ),
+            "online_realizable_candidate_hybrid": bool(
+                self.online_realizable_candidate_hybrid
+            ),
+            "implementation_design_earned": bool(
+                self.implementation_design_earned
+            ),
+            "path_b_identity_free_redesign_earned": bool(
+                self.path_b_identity_free_redesign_earned
+            ),
+            "global_per_row_compression_closed": bool(
+                self.global_per_row_compression_closed
+            ),
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class ObservableTieMaskOnlineEstimabilityReport:
+    schema_version: str
+    label: str
+    source_bindingness: Any
+    field_coverage: SourceFieldCoverage
+    candidate_name: str
+    source_tie_frontier_reservation_label: str
+    source_tie_frontier_reservation_terminal_label: str
+    source_decision_statistic_terminal_label: str
+    strictest_required_q_regime_name: str
+    strictest_headroom_bits_per_weight: float
+    allowed_bucket_key_dimensions: tuple[str, ...]
+    allowed_within_bucket_feature_keys: tuple[str, ...]
+    allowed_bucket_aggregate_keys: tuple[str, ...]
+    forbidden_predictor_input_key_fragments: tuple[str, ...]
+    shuffle_falsifier: str
+    bucket_reports: tuple[ObservableTieMaskBucketReport, ...]
+    terminal_decision: ObservableTieMaskOnlineEstimabilityDecision
+    raw_arrays_included: bool
+    non_claims: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "label": self.label,
+            "source_bindingness": self.source_bindingness.to_dict(),
+            "field_coverage": self.field_coverage.to_dict(),
+            "candidate_name": self.candidate_name,
+            "source_tie_frontier_reservation_label": self.source_tie_frontier_reservation_label,
+            "source_tie_frontier_reservation_terminal_label": self.source_tie_frontier_reservation_terminal_label,
+            "source_decision_statistic_terminal_label": self.source_decision_statistic_terminal_label,
+            "strictest_required_q_regime_name": self.strictest_required_q_regime_name,
+            "strictest_headroom_bits_per_weight": float(
+                self.strictest_headroom_bits_per_weight
+            ),
+            "allowed_bucket_key_dimensions": list(self.allowed_bucket_key_dimensions),
+            "allowed_within_bucket_feature_keys": list(
+                self.allowed_within_bucket_feature_keys
+            ),
+            "allowed_bucket_aggregate_keys": list(
+                self.allowed_bucket_aggregate_keys
+            ),
+            "forbidden_predictor_input_key_fragments": list(
+                self.forbidden_predictor_input_key_fragments
+            ),
+            "shuffle_falsifier": self.shuffle_falsifier,
+            "bucket_reports": [bucket.to_dict() for bucket in self.bucket_reports],
             "terminal_decision": self.terminal_decision.to_dict(),
             "raw_arrays_included": bool(self.raw_arrays_included),
             "non_claims": list(self.non_claims),
@@ -4106,6 +4383,137 @@ class _ObservableDecisionRow:
         return (self.state_key, int(self.current_q_level), int(self.move_direction))
 
 
+@dataclass(frozen=True)
+class _StrictObservableTieMaskRow:
+    state_key: str
+    flat_index: int
+    current_q_level: int
+    move_direction: int
+    vote_sign: int
+    vote_value: int
+    vote_abs: int
+    abs_new_acc: int
+    threshold_abs: int
+    margin_abs_over_threshold: int
+    replay_ce_veto_vote_sign: int | None = None
+    replay_ce_veto_vote_value: int | None = None
+    replay_ce_veto_move_sign: int | None = None
+    pc_aux_vote_sign: int | None = None
+    pc_aux_vote_value: int | None = None
+    pc_aux_move_sign: int | None = None
+
+    @property
+    def identity(self) -> tuple[str, int]:
+        return (self.state_key, int(self.flat_index))
+
+    @property
+    def bucket_key(self) -> tuple[str, int, int]:
+        return (self.state_key, int(self.current_q_level), int(self.move_direction))
+
+    def feature_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "vote_sign": int(self.vote_sign),
+            "vote_value": int(self.vote_value),
+            "vote_abs": int(self.vote_abs),
+            "abs_new_acc": int(self.abs_new_acc),
+            "threshold_abs": int(self.threshold_abs),
+            "margin_abs_over_threshold": int(self.margin_abs_over_threshold),
+        }
+        optional_fields = {
+            "replay_ce_veto_vote_sign": self.replay_ce_veto_vote_sign,
+            "replay_ce_veto_vote_value": self.replay_ce_veto_vote_value,
+            "replay_ce_veto_move_sign": self.replay_ce_veto_move_sign,
+            "pc_aux_vote_sign": self.pc_aux_vote_sign,
+            "pc_aux_vote_value": self.pc_aux_vote_value,
+            "pc_aux_move_sign": self.pc_aux_move_sign,
+        }
+        for key, value in optional_fields.items():
+            if value is not None:
+                payload[key] = int(value)
+        return payload
+
+    def feature_key(self) -> tuple[tuple[str, Any], ...]:
+        payload = self.feature_payload()
+        return tuple((key, payload[key]) for key in sorted(payload))
+
+
+def _sign_int(value: int | None) -> int | None:
+    if value is None:
+        return None
+    value_i = int(value)
+    if value_i > 0:
+        return 1
+    if value_i < 0:
+        return -1
+    return 0
+
+
+def _flat_optional_int(tensor: torch.Tensor | None, flat_index: int) -> int | None:
+    if tensor is None:
+        return None
+    return int(tensor.flatten()[int(flat_index)].item())
+
+
+def _strict_observable_tie_mask_rows(
+    trace_step: _ExactScheduleTraceStep,
+) -> tuple[_StrictObservableTieMaskRow, ...]:
+    cap_result = trace_step.exact_path.cap_result
+    if cap_result is None:
+        raise ValueError("online-estimability diagnostic requires global cap rows")
+    inputs_by_state = {item.state_key: item for item in trace_step.inputs}
+    rows: list[_StrictObservableTieMaskRow] = []
+    for row in cap_result.rows:
+        input_item = inputs_by_state[row.state_key]
+        state = trace_step.exact_input_states[row.state_key]
+        flat_index = int(row.flat_index)
+        vote_value = int(input_item.vote_inputs.votes.flatten()[flat_index].item())
+        rows.append(
+            _StrictObservableTieMaskRow(
+                state_key=row.state_key,
+                flat_index=flat_index,
+                current_q_level=int(state.q_levels.flatten()[flat_index].item()),
+                move_direction=int(
+                    trace_step.exact_path.plans[row.state_key]
+                    .applied_directions[int(row.local_pos)]
+                    .item()
+                ),
+                vote_sign=int(_sign_int(vote_value)),
+                vote_value=int(vote_value),
+                vote_abs=abs(int(vote_value)),
+                abs_new_acc=int(row.abs_new_acc),
+                threshold_abs=int(row.threshold_abs),
+                margin_abs_over_threshold=int(row.margin_abs_over_threshold),
+                replay_ce_veto_vote_sign=_sign_int(
+                    _flat_optional_int(
+                        input_item.vote_inputs.replay_ce_veto_votes,
+                        flat_index,
+                    )
+                ),
+                replay_ce_veto_vote_value=_flat_optional_int(
+                    input_item.vote_inputs.replay_ce_veto_votes,
+                    flat_index,
+                ),
+                replay_ce_veto_move_sign=_sign_int(
+                    _flat_optional_int(
+                        input_item.vote_inputs.replay_ce_veto_moves,
+                        flat_index,
+                    )
+                ),
+                pc_aux_vote_sign=_sign_int(
+                    _flat_optional_int(input_item.vote_inputs.pc_aux_votes, flat_index)
+                ),
+                pc_aux_vote_value=_flat_optional_int(
+                    input_item.vote_inputs.pc_aux_votes,
+                    flat_index,
+                ),
+                pc_aux_move_sign=_sign_int(
+                    _flat_optional_int(input_item.vote_inputs.pc_aux_moves, flat_index)
+                ),
+            )
+        )
+    return tuple(rows)
+
+
 def _enum_bit_width(num_values: int) -> int:
     count = int(num_values)
     if count <= 1:
@@ -5326,6 +5734,585 @@ def validate_scale_appropriate_b_storage_comparison_report(
     _assert_no_tensors(report.to_dict())
 
 
+def _observable_tie_bucket_locator(
+    schedule_name: str,
+    state_key: str,
+    current_q_level: int,
+    move_direction: int,
+) -> str:
+    return (
+        f"{schedule_name}:{state_key}/q{int(current_q_level)}/d{int(move_direction)}"
+    )
+
+
+def _strict_observable_tie_mask_bucket_report(
+    *,
+    source_bucket: TieFrontierObservedBucketReport,
+    trace_step: _ExactScheduleTraceStep,
+) -> ObservableTieMaskBucketReport:
+    cap_result = trace_step.exact_path.cap_result
+    if cap_result is None:
+        raise ValueError("online-estimability diagnostic requires a cap-result trace")
+    bucket_key = (
+        source_bucket.state_key,
+        int(source_bucket.current_q_level),
+        int(source_bucket.move_direction),
+    )
+    observable_rows = [
+        row
+        for row in _strict_observable_tie_mask_rows(trace_step)
+        if row.bucket_key == bucket_key
+    ]
+    if len(observable_rows) != int(source_bucket.candidate_row_count):
+        raise ValueError("online-estimability bucket drifted from the observed tie-frontier candidates")
+    exact_accepted_all = {
+        (row.state_key, int(row.flat_index)) for row in cap_result.accepted_rows
+    }
+    exact_accepted = {
+        row.identity for row in observable_rows if row.identity in exact_accepted_all
+    }
+    if len(exact_accepted) != int(source_bucket.accepted_row_count):
+        raise ValueError("online-estimability bucket drifted from the exact accepted count")
+    sorted_scores = sorted((row.abs_new_acc for row in observable_rows), reverse=True)
+    accepted_row_count = int(source_bucket.accepted_row_count)
+    boundary_score = int(sorted_scores[accepted_row_count - 1])
+    higher_priority_row_count = sum(
+        int(row.abs_new_acc) > boundary_score for row in observable_rows
+    )
+    residual_cap_slots_entering_bucket = (
+        accepted_row_count - int(higher_priority_row_count)
+    )
+    if residual_cap_slots_entering_bucket < 0:
+        raise ValueError("residual cap slots must not go negative")
+    by_feature: dict[tuple[tuple[str, Any], ...], list[_StrictObservableTieMaskRow]] = {}
+    for row in observable_rows:
+        by_feature.setdefault(row.feature_key(), []).append(row)
+    feature_class_reports: list[ObservableTieMaskFeatureClassReport] = []
+    canonical_order_leaky_accepted: set[tuple[str, int]] = set()
+    reversed_order_leaky_accepted: set[tuple[str, int]] = set()
+    best_case_correct = 0
+    best_case_hamming = 0
+    mixed_feature_class_count = 0
+    mixed_feature_class_row_count = 0
+    exact_identity_free_recovery_possible = True
+    for feature_key in sorted(by_feature):
+        class_rows = by_feature[feature_key]
+        exact_class_accepted = {
+            row.identity for row in class_rows if row.identity in exact_accepted
+        }
+        class_row_count = len(class_rows)
+        class_accepted_count = len(exact_class_accepted)
+        class_deferred_count = class_row_count - class_accepted_count
+        mixed_acceptance = bool(0 < class_accepted_count < class_row_count)
+        if mixed_acceptance:
+            mixed_feature_class_count += 1
+            mixed_feature_class_row_count += class_row_count
+            exact_identity_free_recovery_possible = False
+        best_case_correct += max(class_accepted_count, class_deferred_count)
+        best_case_hamming += min(class_accepted_count, class_deferred_count)
+        canonical_prefix = {
+            row.identity for row in class_rows[:class_accepted_count]
+        }
+        reversed_prefix = {
+            row.identity
+            for row in list(reversed(class_rows))[:class_accepted_count]
+        }
+        canonical_order_leaky_accepted |= canonical_prefix
+        reversed_order_leaky_accepted |= reversed_prefix
+        feature_class_reports.append(
+            ObservableTieMaskFeatureClassReport(
+                feature_payload=dict(class_rows[0].feature_payload()),
+                row_count=int(class_row_count),
+                accepted_count=int(class_accepted_count),
+                deferred_count=int(class_deferred_count),
+                mixed_acceptance=bool(mixed_acceptance),
+                best_case_identity_free_correct_count=int(
+                    max(class_accepted_count, class_deferred_count)
+                ),
+                best_case_identity_free_hamming_lower_bound=int(
+                    min(class_accepted_count, class_deferred_count)
+                ),
+                canonical_prefix_matches_exact=bool(
+                    canonical_prefix == exact_class_accepted
+                ),
+                reversed_prefix_matches_exact=bool(
+                    reversed_prefix == exact_class_accepted
+                ),
+                exact_accepted_identities_sha256=_identity_sha256(exact_class_accepted),
+                canonical_prefix_accepted_identities_sha256=_identity_sha256(
+                    canonical_prefix
+                ),
+                reversed_prefix_accepted_identities_sha256=_identity_sha256(
+                    reversed_prefix
+                ),
+            )
+        )
+    candidate_row_count = len(observable_rows)
+    best_case_accuracy = float(best_case_correct) / float(candidate_row_count)
+    canonical_matches_exact = canonical_order_leaky_accepted == exact_accepted
+    reversed_matches_exact = reversed_order_leaky_accepted == exact_accepted
+    within_class_reverse_order_changes = (
+        canonical_order_leaky_accepted != reversed_order_leaky_accepted
+    )
+    order_dependence_witnessed = bool(
+        canonical_matches_exact
+        and not reversed_matches_exact
+        and within_class_reverse_order_changes
+    )
+    return ObservableTieMaskBucketReport(
+        schedule_name=source_bucket.schedule_name,
+        step=int(source_bucket.step),
+        state_key=source_bucket.state_key,
+        current_q_level=int(source_bucket.current_q_level),
+        move_direction=int(source_bucket.move_direction),
+        global_cap=int(trace_step.cap_spec.cap),
+        candidate_row_count=int(candidate_row_count),
+        accepted_row_count=int(accepted_row_count),
+        deferred_row_count=int(candidate_row_count - accepted_row_count),
+        higher_priority_row_count=int(higher_priority_row_count),
+        residual_cap_slots_entering_bucket=int(residual_cap_slots_entering_bucket),
+        feature_class_reports=tuple(feature_class_reports),
+        mixed_feature_class_count=int(mixed_feature_class_count),
+        mixed_feature_class_row_count=int(mixed_feature_class_row_count),
+        exact_identity_free_recovery_possible=bool(
+            exact_identity_free_recovery_possible
+        ),
+        exact_mask_recovery_rate=1.0 if exact_identity_free_recovery_possible else 0.0,
+        best_case_identity_free_correct_count=int(best_case_correct),
+        best_case_identity_free_hamming_lower_bound=int(best_case_hamming),
+        best_case_identity_free_mask_accuracy_upper_bound=float(best_case_accuracy),
+        canonical_order_leaky_matches_exact=bool(canonical_matches_exact),
+        reversed_order_leaky_matches_exact=bool(reversed_matches_exact),
+        within_class_reverse_order_changes_order_leaky_mask=bool(
+            within_class_reverse_order_changes
+        ),
+        order_dependence_witnessed=bool(order_dependence_witnessed),
+        exact_accepted_identities_sha256=_identity_sha256(exact_accepted),
+        canonical_order_leaky_accepted_identities_sha256=_identity_sha256(
+            canonical_order_leaky_accepted
+        ),
+        reversed_order_leaky_accepted_identities_sha256=_identity_sha256(
+            reversed_order_leaky_accepted
+        ),
+    )
+
+
+def _strict_observable_tie_mask_terminal_decision(
+    bucket_reports: Sequence[ObservableTieMaskBucketReport],
+) -> ObservableTieMaskOnlineEstimabilityDecision:
+    if not bucket_reports:
+        raise ValueError("online-estimability diagnostic requires at least one decisive bucket")
+    exact_recoverable_buckets = [
+        bucket
+        for bucket in bucket_reports
+        if bucket.exact_identity_free_recovery_possible
+        and not bucket.order_dependence_witnessed
+    ]
+    failed_buckets = [
+        bucket
+        for bucket in bucket_reports
+        if not (
+            bucket.exact_identity_free_recovery_possible
+            and not bucket.order_dependence_witnessed
+        )
+    ]
+    first_failure = failed_buckets[0] if failed_buckets else None
+    any_mixed = any(
+        int(bucket.mixed_feature_class_count) > 0 for bucket in bucket_reports
+    )
+    any_order_dependence = any(
+        bool(bucket.order_dependence_witnessed) for bucket in bucket_reports
+    )
+    worst_bucket = min(
+        bucket_reports,
+        key=lambda bucket: bucket.best_case_identity_free_mask_accuracy_upper_bound,
+    )
+    first_failure_bucket = None
+    if first_failure is not None:
+        first_failure_bucket = _observable_tie_bucket_locator(
+            first_failure.schedule_name,
+            first_failure.state_key,
+            int(first_failure.current_q_level),
+            int(first_failure.move_direction),
+        )
+    if len(exact_recoverable_buckets) == len(bucket_reports):
+        terminal_label = (
+            STRICT_OBSERVABLE_TIE_MASK_EXACT_RECOVERABLE_IDENTITY_FREE_CANDIDATE_ONLY
+        )
+        reason = (
+            "the pinned current-step observable schema exactly recovers every decisive tie bucket "
+            "and survives the within-class reverse-order falsifier; the hybrid earns an "
+            "implementation-design slice only"
+        )
+        online_realizable = True
+        implementation_design_earned = True
+        path_b_earned = False
+    elif exact_recoverable_buckets:
+        terminal_label = STRICT_OBSERVABLE_TIE_MASK_PARTIALLY_RECOVERABLE_NOT_EXACT
+        reason = (
+            "some decisive buckets are identity-free recoverable, but exact tie-mask recovery still "
+            f"fails first at {first_failure_bucket}; the current state path still earns path (b)"
+        )
+        online_realizable = False
+        implementation_design_earned = False
+        path_b_earned = True
+    else:
+        terminal_label = STRICT_OBSERVABLE_TIE_MASK_NOT_IDENTIFIABLE_IDENTITY_BOUND
+        reason = (
+            "the strongest allowed current-step observable schema still leaves mixed equal-feature "
+            f"classes first at {first_failure_bucket}; exact recovery is identity-bound and any "
+            "apparent prefix match depends on stable cap order"
+        )
+        online_realizable = False
+        implementation_design_earned = False
+        path_b_earned = True
+    return ObservableTieMaskOnlineEstimabilityDecision(
+        terminal_label=terminal_label,
+        decisive_bucket_count=int(len(bucket_reports)),
+        exact_recoverable_bucket_count=int(len(exact_recoverable_buckets)),
+        first_failure_bucket=first_failure_bucket,
+        worst_bucket_best_case_identity_free_mask_accuracy_upper_bound=float(
+            worst_bucket.best_case_identity_free_mask_accuracy_upper_bound
+        ),
+        any_mixed_feature_class_split=bool(any_mixed),
+        any_order_dependence_witnessed=bool(any_order_dependence),
+        online_realizable_candidate_hybrid=bool(online_realizable),
+        implementation_design_earned=bool(implementation_design_earned),
+        path_b_identity_free_redesign_earned=bool(path_b_earned),
+        global_per_row_compression_closed=False,
+        reason=reason,
+    )
+
+
+def _online_estimable_tie_mask_non_claims() -> tuple[str, ...]:
+    return (
+        "CPU-only strict observable/transient identifiability diagnostic over the committed exact cap trace",
+        "negative is limited to this pinned observable schema and state path, not a global impossibility claim",
+        "positive would earn implementation-design only; still candidate-only and not a learner claim",
+        "global_per_row_compression_closed=false",
+        "no dyn200, no GPU lane, no kernel path",
+        "compact hashes and aggregate counts only; no raw per-weight arrays",
+    )
+
+
+def run_online_estimable_tie_mask_diagnostic() -> ObservableTieMaskOnlineEstimabilityReport:
+    tie_report = run_tie_frontier_reservation_lower_bound_diagnostic()
+    if tie_report.terminal_decision.terminal_label != TIE_FRONTIER_RESERVATION_FITS_HEADROOM_CANDIDATE_HYBRID:
+        raise ValueError("online-estimability diagnostic requires the candidate-hybrid tie-frontier source")
+    trace_steps, _ = _build_exact_schedule_trace()
+    trace_by_name = {step.schedule_step.name: step for step in trace_steps}
+    bucket_reports = tuple(
+        _strict_observable_tie_mask_bucket_report(
+            source_bucket=source_bucket,
+            trace_step=trace_by_name[source_bucket.schedule_name],
+        )
+        for source_bucket in tie_report.observed_failing_bucket_reports
+    )
+    bindingness = pre_register_source_bindingness(
+        source_kind=SOURCE_KIND_GENERATED_NATIVE_LOOP,
+        coverage=SourceFieldCoverage.full_generated_native_loop(),
+    )
+    return ObservableTieMaskOnlineEstimabilityReport(
+        schema_version=ONLINE_ESTIMABILITY_TIE_MASK_SCHEMA_VERSION,
+        label=ONLINE_ESTIMABILITY_TIE_MASK_LABEL,
+        source_bindingness=bindingness,
+        field_coverage=SourceFieldCoverage.full_generated_native_loop(),
+        candidate_name=ONLINE_ESTIMABLE_TIE_MASK_CANDIDATE,
+        source_tie_frontier_reservation_label=tie_report.label,
+        source_tie_frontier_reservation_terminal_label=(
+            tie_report.terminal_decision.terminal_label
+        ),
+        source_decision_statistic_terminal_label=(
+            tie_report.source_decision_statistic_terminal_label
+        ),
+        strictest_required_q_regime_name=tie_report.strictest_required_q_regime_name,
+        strictest_headroom_bits_per_weight=float(
+            tie_report.strictest_headroom_bits_per_weight
+        ),
+        allowed_bucket_key_dimensions=(
+            STRICT_OBSERVABLE_TIE_MASK_ALLOWED_BUCKET_KEY_DIMENSIONS
+        ),
+        allowed_within_bucket_feature_keys=(
+            STRICT_OBSERVABLE_TIE_MASK_ALLOWED_WITHIN_BUCKET_FEATURE_KEYS
+        ),
+        allowed_bucket_aggregate_keys=(
+            STRICT_OBSERVABLE_TIE_MASK_ALLOWED_BUCKET_AGGREGATE_KEYS
+        ),
+        forbidden_predictor_input_key_fragments=(
+            STRICT_OBSERVABLE_TIE_MASK_FORBIDDEN_PREDICTOR_INPUT_KEY_FRAGMENTS
+        ),
+        shuffle_falsifier=STRICT_OBSERVABLE_TIE_MASK_SHUFFLE_FALSIFIER,
+        bucket_reports=bucket_reports,
+        terminal_decision=_strict_observable_tie_mask_terminal_decision(
+            bucket_reports
+        ),
+        raw_arrays_included=False,
+        non_claims=_online_estimable_tie_mask_non_claims(),
+    )
+
+
+def _validate_online_estimable_tie_mask_feature_schema(
+    report: ObservableTieMaskOnlineEstimabilityReport,
+) -> None:
+    if tuple(report.allowed_bucket_key_dimensions) != (
+        STRICT_OBSERVABLE_TIE_MASK_ALLOWED_BUCKET_KEY_DIMENSIONS
+    ):
+        raise ValueError("online-estimability bucket-key schema drifted from the approved input set")
+    if tuple(report.allowed_within_bucket_feature_keys) != (
+        STRICT_OBSERVABLE_TIE_MASK_ALLOWED_WITHIN_BUCKET_FEATURE_KEYS
+    ):
+        raise ValueError("online-estimability feature-key schema drifted from the approved input set")
+    if tuple(report.allowed_bucket_aggregate_keys) != (
+        STRICT_OBSERVABLE_TIE_MASK_ALLOWED_BUCKET_AGGREGATE_KEYS
+    ):
+        raise ValueError("online-estimability aggregate-key schema drifted from the approved input set")
+    if tuple(report.forbidden_predictor_input_key_fragments) != (
+        STRICT_OBSERVABLE_TIE_MASK_FORBIDDEN_PREDICTOR_INPUT_KEY_FRAGMENTS
+    ):
+        raise ValueError("online-estimability forbidden-key fragments drifted from the co-lead gate")
+    allowed_keys = (
+        set(report.allowed_bucket_key_dimensions)
+        | set(report.allowed_within_bucket_feature_keys)
+        | set(report.allowed_bucket_aggregate_keys)
+    )
+    for key in allowed_keys:
+        lowered = key.lower()
+        if any(
+            fragment in lowered
+            for fragment in report.forbidden_predictor_input_key_fragments
+        ):
+            raise ValueError("online-estimability allowed schema leaked a forbidden predictor key")
+
+
+def validate_online_estimable_tie_mask_report(
+    report: ObservableTieMaskOnlineEstimabilityReport,
+) -> None:
+    if report.schema_version != ONLINE_ESTIMABILITY_TIE_MASK_SCHEMA_VERSION:
+        raise ValueError("unexpected online-estimability schema version")
+    if report.label != ONLINE_ESTIMABILITY_TIE_MASK_LABEL:
+        raise ValueError("unexpected online-estimability label")
+    if report.candidate_name != ONLINE_ESTIMABLE_TIE_MASK_CANDIDATE:
+        raise ValueError("online-estimability candidate drifted from the branch-(a) hybrid tie mask")
+    if report.source_tie_frontier_reservation_label != TIE_FRONTIER_RESERVATION_LABEL:
+        raise ValueError("online-estimability diagnostic must cite the committed tie-frontier source")
+    if report.source_tie_frontier_reservation_terminal_label != TIE_FRONTIER_RESERVATION_FITS_HEADROOM_CANDIDATE_HYBRID:
+        raise ValueError("online-estimability diagnostic must inherit the candidate-hybrid-alive source")
+    if report.source_decision_statistic_terminal_label != OBSERVABLE_RANK_FEATURES_INSUFFICIENT:
+        raise ValueError("online-estimability diagnostic must keep the branch-(a) source lineage")
+    if report.shuffle_falsifier != STRICT_OBSERVABLE_TIE_MASK_SHUFFLE_FALSIFIER:
+        raise ValueError("online-estimability shuffle falsifier drifted from the plan gate")
+    if report.terminal_decision.terminal_label not in {
+        STRICT_OBSERVABLE_TIE_MASK_NOT_IDENTIFIABLE_IDENTITY_BOUND,
+        STRICT_OBSERVABLE_TIE_MASK_EXACT_RECOVERABLE_IDENTITY_FREE_CANDIDATE_ONLY,
+        STRICT_OBSERVABLE_TIE_MASK_PARTIALLY_RECOVERABLE_NOT_EXACT,
+    }:
+        raise ValueError("unexpected online-estimability terminal label")
+    if bool(report.terminal_decision.global_per_row_compression_closed):
+        raise ValueError("online-estimability diagnostic must not claim global closure")
+    _validate_online_estimable_tie_mask_feature_schema(report)
+    if not report.bucket_reports:
+        raise ValueError("online-estimability diagnostic must report at least one decisive bucket")
+    seen_bucket_keys: set[tuple[str, str, int, int]] = set()
+    exact_recoverable_bucket_count = 0
+    any_mixed = False
+    any_order_dependence = False
+    for bucket in report.bucket_reports:
+        bucket_key = (
+            bucket.schedule_name,
+            bucket.state_key,
+            int(bucket.current_q_level),
+            int(bucket.move_direction),
+        )
+        if bucket_key in seen_bucket_keys:
+            raise ValueError("online-estimability bucket keys must stay unique")
+        seen_bucket_keys.add(bucket_key)
+        if bucket.state_key not in PRIMARY_STATE_KEYS:
+            raise ValueError("online-estimability bucket used an unknown state_key")
+        if int(bucket.current_q_level) not in (-1, 0, 1):
+            raise ValueError("online-estimability bucket used an invalid q level")
+        if int(bucket.move_direction) not in (-1, 1):
+            raise ValueError("online-estimability bucket used an invalid move direction")
+        if bucket.candidate_row_count != bucket.accepted_row_count + bucket.deferred_row_count:
+            raise ValueError("online-estimability bucket must partition every candidate row")
+        if bucket.residual_cap_slots_entering_bucket != (
+            bucket.accepted_row_count - bucket.higher_priority_row_count
+        ):
+            raise ValueError("online-estimability residual-cap slots drifted from accepted minus higher-priority rows")
+        feature_row_total = sum(
+            group.row_count for group in bucket.feature_class_reports
+        )
+        feature_accepted_total = sum(
+            group.accepted_count for group in bucket.feature_class_reports
+        )
+        feature_deferred_total = sum(
+            group.deferred_count for group in bucket.feature_class_reports
+        )
+        mixed_feature_class_count = sum(
+            1 for group in bucket.feature_class_reports if group.mixed_acceptance
+        )
+        mixed_feature_class_row_count = sum(
+            group.row_count for group in bucket.feature_class_reports if group.mixed_acceptance
+        )
+        best_case_correct = sum(
+            group.best_case_identity_free_correct_count
+            for group in bucket.feature_class_reports
+        )
+        best_case_hamming = sum(
+            group.best_case_identity_free_hamming_lower_bound
+            for group in bucket.feature_class_reports
+        )
+        if feature_row_total != bucket.candidate_row_count:
+            raise ValueError("online-estimability feature classes must cover every bucket row")
+        if feature_accepted_total != bucket.accepted_row_count:
+            raise ValueError("online-estimability feature classes drifted from the exact accepted count")
+        if feature_deferred_total != bucket.deferred_row_count:
+            raise ValueError("online-estimability feature classes drifted from the exact deferred count")
+        if mixed_feature_class_count != bucket.mixed_feature_class_count:
+            raise ValueError("online-estimability mixed-class count drifted from the feature reports")
+        if mixed_feature_class_row_count != bucket.mixed_feature_class_row_count:
+            raise ValueError("online-estimability mixed-class row count drifted from the feature reports")
+        if best_case_correct != bucket.best_case_identity_free_correct_count:
+            raise ValueError("online-estimability best-case correct count drifted from the feature reports")
+        if best_case_hamming != bucket.best_case_identity_free_hamming_lower_bound:
+            raise ValueError("online-estimability best-case Hamming bound drifted from the feature reports")
+        expected_accuracy = float(best_case_correct) / float(bucket.candidate_row_count)
+        if abs(expected_accuracy - bucket.best_case_identity_free_mask_accuracy_upper_bound) > 1e-12:
+            raise ValueError("online-estimability best-case accuracy upper bound drifted from the counts")
+        expected_exact = mixed_feature_class_count == 0
+        if bool(bucket.exact_identity_free_recovery_possible) != bool(expected_exact):
+            raise ValueError("online-estimability exact-recovery flag drifted from the mixed-class test")
+        if float(bucket.exact_mask_recovery_rate) != (1.0 if expected_exact else 0.0):
+            raise ValueError("online-estimability exact-recovery rate drifted from the bucket verdict")
+        if expected_exact and bucket.best_case_identity_free_hamming_lower_bound != 0:
+            raise ValueError("exactly recoverable buckets must carry zero Hamming lower bound")
+        if not expected_exact and bucket.best_case_identity_free_hamming_lower_bound <= 0:
+            raise ValueError("non-identifiable buckets must carry a positive Hamming lower bound")
+        for group in bucket.feature_class_reports:
+            payload_keys = set(group.feature_payload)
+            if not payload_keys:
+                raise ValueError("online-estimability feature classes must carry an explicit payload")
+            if not payload_keys <= set(report.allowed_within_bucket_feature_keys):
+                raise ValueError("online-estimability feature payload used a non-approved key")
+            for key in payload_keys:
+                lowered = key.lower()
+                if any(
+                    fragment in lowered
+                    for fragment in report.forbidden_predictor_input_key_fragments
+                ):
+                    raise ValueError("online-estimability feature payload leaked a forbidden predictor key")
+            if group.row_count != group.accepted_count + group.deferred_count:
+                raise ValueError("online-estimability feature-class counts must partition the class")
+            if bool(group.mixed_acceptance) != bool(0 < group.accepted_count < group.row_count):
+                raise ValueError("online-estimability mixed-acceptance flag drifted from the class counts")
+            if group.best_case_identity_free_correct_count != max(
+                group.accepted_count,
+                group.deferred_count,
+            ):
+                raise ValueError("online-estimability best-case class correct count drifted from majority labeling")
+            if group.best_case_identity_free_hamming_lower_bound != min(
+                group.accepted_count,
+                group.deferred_count,
+            ):
+                raise ValueError("online-estimability class Hamming bound drifted from majority labeling")
+            if group.mixed_acceptance and (
+                group.canonical_prefix_accepted_identities_sha256
+                == group.reversed_prefix_accepted_identities_sha256
+            ):
+                raise ValueError("mixed feature classes must change under the reverse-order falsifier")
+            if not group.mixed_acceptance and not (
+                group.canonical_prefix_matches_exact
+                and group.reversed_prefix_matches_exact
+            ):
+                raise ValueError("pure feature classes must stay exact under either within-class order")
+        if bool(bucket.within_class_reverse_order_changes_order_leaky_mask) != bool(
+            bucket.canonical_order_leaky_accepted_identities_sha256
+            != bucket.reversed_order_leaky_accepted_identities_sha256
+        ):
+            raise ValueError("online-estimability order-change flag drifted from the bucket hashes")
+        expected_order_dependence = bool(
+            bucket.canonical_order_leaky_matches_exact
+            and not bucket.reversed_order_leaky_matches_exact
+            and bucket.within_class_reverse_order_changes_order_leaky_mask
+        )
+        if bool(bucket.order_dependence_witnessed) != expected_order_dependence:
+            raise ValueError("online-estimability order-dependence witness drifted from the falsifier hashes")
+        if bucket.exact_identity_free_recovery_possible and bucket.order_dependence_witnessed:
+            raise ValueError("exactly recoverable buckets must not rely on order dependence")
+        exact_recoverable_bucket_count += int(
+            bucket.exact_identity_free_recovery_possible
+            and not bucket.order_dependence_witnessed
+        )
+        any_mixed = any_mixed or bool(bucket.mixed_feature_class_count)
+        any_order_dependence = any_order_dependence or bool(bucket.order_dependence_witnessed)
+    failures = [
+        bucket
+        for bucket in report.bucket_reports
+        if not (
+            bucket.exact_identity_free_recovery_possible
+            and not bucket.order_dependence_witnessed
+        )
+    ]
+    first_failure_bucket = None
+    if failures:
+        first_failure = failures[0]
+        first_failure_bucket = _observable_tie_bucket_locator(
+            first_failure.schedule_name,
+            first_failure.state_key,
+            int(first_failure.current_q_level),
+            int(first_failure.move_direction),
+        )
+    worst_bucket = min(
+        report.bucket_reports,
+        key=lambda bucket: bucket.best_case_identity_free_mask_accuracy_upper_bound,
+    )
+    if report.terminal_decision.decisive_bucket_count != len(report.bucket_reports):
+        raise ValueError("online-estimability decisive-bucket count drifted from the report")
+    if report.terminal_decision.exact_recoverable_bucket_count != exact_recoverable_bucket_count:
+        raise ValueError("online-estimability exact-recoverable bucket count drifted from the report")
+    if report.terminal_decision.first_failure_bucket != first_failure_bucket:
+        raise ValueError("online-estimability first-failure bucket drifted from the report order")
+    if abs(
+        report.terminal_decision.worst_bucket_best_case_identity_free_mask_accuracy_upper_bound
+        - worst_bucket.best_case_identity_free_mask_accuracy_upper_bound
+    ) > 1e-12:
+        raise ValueError("online-estimability worst-bucket accuracy bound drifted from the bucket reports")
+    if bool(report.terminal_decision.any_mixed_feature_class_split) != bool(any_mixed):
+        raise ValueError("online-estimability mixed-feature split flag drifted from the bucket reports")
+    if bool(report.terminal_decision.any_order_dependence_witnessed) != bool(any_order_dependence):
+        raise ValueError("online-estimability order-dependence flag drifted from the bucket reports")
+    label = report.terminal_decision.terminal_label
+    if label == STRICT_OBSERVABLE_TIE_MASK_EXACT_RECOVERABLE_IDENTITY_FREE_CANDIDATE_ONLY:
+        if failures:
+            raise ValueError("online-estimability exact-recoverable terminal requires every bucket to pass")
+        if not (
+            report.terminal_decision.online_realizable_candidate_hybrid
+            and report.terminal_decision.implementation_design_earned
+            and not report.terminal_decision.path_b_identity_free_redesign_earned
+        ):
+            raise ValueError("exact-recoverable terminal must earn implementation design and not path (b)")
+    elif label == STRICT_OBSERVABLE_TIE_MASK_PARTIALLY_RECOVERABLE_NOT_EXACT:
+        if not (0 < exact_recoverable_bucket_count < len(report.bucket_reports)):
+            raise ValueError("partial terminal requires some but not all decisive buckets to be exactly recoverable")
+        if (
+            report.terminal_decision.online_realizable_candidate_hybrid
+            or report.terminal_decision.implementation_design_earned
+            or not report.terminal_decision.path_b_identity_free_redesign_earned
+        ):
+            raise ValueError("partial terminal must still reject online realizability and earn path (b)")
+    else:
+        if exact_recoverable_bucket_count != 0:
+            raise ValueError("identity-bound terminal requires zero exactly recoverable decisive buckets")
+        if (
+            report.terminal_decision.online_realizable_candidate_hybrid
+            or report.terminal_decision.implementation_design_earned
+            or not report.terminal_decision.path_b_identity_free_redesign_earned
+        ):
+            raise ValueError("identity-bound terminal must reject online realizability and earn path (b)")
+        if not (any_mixed or any_order_dependence):
+            raise ValueError("identity-bound terminal requires a real mixed-class or order-dependence failure")
+    _assert_no_tensors(report.to_dict())
+
+
 def _validate_decision_statistic_statistic_input(
     step_report: DecisionStatisticStepReport,
 ) -> None:
@@ -5663,6 +6650,9 @@ __all__ = [
     "CANDIDATE_ADMISSION_DIAGNOSTIC_SCHEMA_VERSION",
     "CUMULATIVE_SCHEDULE_MODE",
     "DECISION_STATISTIC_UPPER_BOUND_LABEL",
+    "ONLINE_ESTIMABILITY_TIE_MASK_LABEL",
+    "ONLINE_ESTIMABILITY_TIE_MASK_SCHEMA_VERSION",
+    "ONLINE_ESTIMABLE_TIE_MASK_CANDIDATE",
     "DECISION_STATISTIC_UPPER_BOUND_PASS",
     "DECISION_STATISTIC_UPPER_BOUND_SCHEMA_VERSION",
     "HOT_BUDGET_POINT_LABELS",
@@ -5671,6 +6661,9 @@ __all__ = [
     "K_SWEEP_MINIMAL_VIABLE_PASS",
     "K_SWEEP_REPRESENTATION_WALL",
     "OBSERVABLE_RANK_FEATURES_INSUFFICIENT",
+    "STRICT_OBSERVABLE_TIE_MASK_EXACT_RECOVERABLE_IDENTITY_FREE_CANDIDATE_ONLY",
+    "STRICT_OBSERVABLE_TIE_MASK_NOT_IDENTIFIABLE_IDENTITY_BOUND",
+    "STRICT_OBSERVABLE_TIE_MASK_PARTIALLY_RECOVERABLE_NOT_EXACT",
     "ONE_STEP_LOCAL_DIAGNOSTIC_MODE",
     "ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC",
     "PER_ROW_COMPRESSION_CLOSED_BY_EASY_CASE_LOWER_BOUND",
@@ -5693,6 +6686,7 @@ __all__ = [
     "TIE_FRONTIER_RESERVATION_FITS_HEADROOM_CANDIDATE_HYBRID",
     "TIE_FRONTIER_RESERVATION_LABEL",
     "TIE_FRONTIER_RESERVATION_SCHEMA_VERSION",
+    "STRICT_OBSERVABLE_TIE_MASK_SHUFFLE_FALSIFIER",
     "TIE_MEMBERSHIP_MASK_ENCODING",
     "TIE_RESERVATION_BREAKS_SUB2",
     "TIE_SELECTED_OFFSET_ENCODING",
@@ -5703,6 +6697,10 @@ __all__ = [
     "DecisionStatisticStepReport",
     "DecisionStatisticUpperBoundDecision",
     "DecisionStatisticUpperBoundReport",
+    "ObservableTieMaskBucketReport",
+    "ObservableTieMaskFeatureClassReport",
+    "ObservableTieMaskOnlineEstimabilityDecision",
+    "ObservableTieMaskOnlineEstimabilityReport",
     "TieFrontierObservedBucketReport",
     "TieFrontierReservationDecision",
     "TieFrontierReservationLowerBoundReport",
@@ -5740,6 +6738,7 @@ __all__ = [
     "run_candidate_admission_diagnostic",
     "run_candidate_capacity_localization_diagnostic",
     "run_decision_statistic_upper_bound_diagnostic",
+    "run_online_estimable_tie_mask_diagnostic",
     "run_real_backlog_lower_bound_diagnostic",
     "run_tie_frontier_reservation_lower_bound_diagnostic",
     "run_scale_appropriate_b_storage_comparison",
@@ -5747,6 +6746,7 @@ __all__ = [
     "validate_candidate_admission_diagnostic_report",
     "validate_candidate_capacity_localization_report",
     "validate_decision_statistic_upper_bound_report",
+    "validate_online_estimable_tie_mask_report",
     "validate_real_backlog_lower_bound_diagnostic_report",
     "validate_tie_frontier_reservation_lower_bound_report",
     "validate_scale_appropriate_b_storage_comparison_report",

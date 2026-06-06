@@ -29,12 +29,18 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     CANDIDATE_ADMISSION_DIAGNOSTIC_LABEL,
     CUMULATIVE_SCHEDULE_MODE,
     DECISION_STATISTIC_UPPER_BOUND_LABEL,
+    ONLINE_ESTIMABILITY_TIE_MASK_LABEL,
+    ONLINE_ESTIMABLE_TIE_MASK_CANDIDATE,
     HOT_BUDGET_POINT_LABELS,
     OBSERVED_TIE_RESERVATION_DIAGNOSTIC,
     K_SWEEP_JOINT_INFEASIBLE,
     K_SWEEP_MINIMAL_VIABLE_PASS,
     K_SWEEP_REPRESENTATION_WALL,
     OBSERVABLE_RANK_FEATURES_INSUFFICIENT,
+    STRICT_OBSERVABLE_TIE_MASK_EXACT_RECOVERABLE_IDENTITY_FREE_CANDIDATE_ONLY,
+    STRICT_OBSERVABLE_TIE_MASK_NOT_IDENTIFIABLE_IDENTITY_BOUND,
+    STRICT_OBSERVABLE_TIE_MASK_PARTIALLY_RECOVERABLE_NOT_EXACT,
+    STRICT_OBSERVABLE_TIE_MASK_SHUFFLE_FALSIFIER,
     ONE_STEP_LOCAL_DIAGNOSTIC_MODE,
     ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC,
     PER_ROW_COMPRESSION_CLOSED_TINY_FIXTURE_LOWER_BOUND_ONLY,
@@ -57,6 +63,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     run_candidate_admission_diagnostic,
     run_candidate_capacity_localization_diagnostic,
     run_decision_statistic_upper_bound_diagnostic,
+    run_online_estimable_tie_mask_diagnostic,
     run_real_backlog_lower_bound_diagnostic,
     run_tie_frontier_reservation_lower_bound_diagnostic,
     run_scale_appropriate_b_storage_comparison,
@@ -64,6 +71,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     validate_candidate_admission_diagnostic_report,
     validate_candidate_capacity_localization_report,
     validate_decision_statistic_upper_bound_report,
+    validate_online_estimable_tie_mask_report,
     validate_real_backlog_lower_bound_diagnostic_report,
     validate_tie_frontier_reservation_lower_bound_report,
     validate_scale_appropriate_b_storage_comparison_report,
@@ -160,6 +168,11 @@ def _decision_statistic_upper_bound_report():
 @lru_cache(maxsize=1)
 def _tie_frontier_reservation_lower_bound_report():
     return run_tie_frontier_reservation_lower_bound_diagnostic()
+
+
+@lru_cache(maxsize=1)
+def _online_estimable_tie_mask_report():
+    return run_online_estimable_tie_mask_diagnostic()
 
 
 def test_bounded_backlog_policy_is_opt_in_and_charged_as_actual_stored_backlog():
@@ -836,4 +849,122 @@ def test_tie_frontier_reservation_lower_bound_keeps_hybrid_alive_as_a_candidate_
         THEORETICAL_LOWER_BOUND_NON_DECISIVE
     )
     assert one_scale_backlog.selected_offset_bits_per_weight == pytest.approx(0.3125)
+    _assert_no_tensors(payload)
+
+
+def test_online_estimable_tie_mask_lands_on_identity_bound_negative():
+    report = _online_estimable_tie_mask_report()
+    payload = report.to_dict()
+
+    validate_online_estimable_tie_mask_report(report)
+    assert report.label == ONLINE_ESTIMABILITY_TIE_MASK_LABEL
+    assert report.candidate_name == ONLINE_ESTIMABLE_TIE_MASK_CANDIDATE
+    assert report.source_tie_frontier_reservation_label == TIE_FRONTIER_RESERVATION_LABEL
+    assert report.source_tie_frontier_reservation_terminal_label == (
+        TIE_FRONTIER_RESERVATION_FITS_HEADROOM_CANDIDATE_HYBRID
+    )
+    assert report.source_decision_statistic_terminal_label == (
+        OBSERVABLE_RANK_FEATURES_INSUFFICIENT
+    )
+    assert report.shuffle_falsifier == STRICT_OBSERVABLE_TIE_MASK_SHUFFLE_FALSIFIER
+    assert report.terminal_decision.terminal_label == (
+        STRICT_OBSERVABLE_TIE_MASK_NOT_IDENTIFIABLE_IDENTITY_BOUND
+    )
+    assert report.terminal_decision.online_realizable_candidate_hybrid is False
+    assert report.terminal_decision.implementation_design_earned is False
+    assert report.terminal_decision.path_b_identity_free_redesign_earned is True
+    assert report.terminal_decision.decisive_bucket_count == 4
+    assert report.terminal_decision.exact_recoverable_bucket_count == 0
+    assert report.terminal_decision.first_failure_bucket == "cap_saturated:proj_in/q0/d-1"
+    assert report.terminal_decision.worst_bucket_best_case_identity_free_mask_accuracy_upper_bound == pytest.approx(
+        2.0 / 3.0
+    )
+
+    bucket_keys = {
+        (bucket.schedule_name, bucket.state_key, bucket.move_direction): bucket
+        for bucket in report.bucket_reports
+    }
+    cap_neg = bucket_keys[("cap_saturated", "proj_in", -1)]
+    assert cap_neg.global_cap == 256
+    assert cap_neg.candidate_row_count == 384
+    assert cap_neg.accepted_row_count == 128
+    assert cap_neg.higher_priority_row_count == 0
+    assert cap_neg.residual_cap_slots_entering_bucket == 128
+    assert cap_neg.mixed_feature_class_count == 1
+    assert cap_neg.mixed_feature_class_row_count == 384
+    assert cap_neg.exact_identity_free_recovery_possible is False
+    assert cap_neg.exact_mask_recovery_rate == pytest.approx(0.0)
+    assert cap_neg.best_case_identity_free_hamming_lower_bound == 128
+    assert cap_neg.best_case_identity_free_mask_accuracy_upper_bound == pytest.approx(
+        2.0 / 3.0
+    )
+    assert cap_neg.canonical_order_leaky_matches_exact is True
+    assert cap_neg.reversed_order_leaky_matches_exact is False
+    assert cap_neg.order_dependence_witnessed is True
+    cap_mixed = cap_neg.feature_class_reports[0]
+    assert cap_mixed.feature_payload == {
+        "vote_sign": -1,
+        "vote_value": -24,
+        "vote_abs": 24,
+        "abs_new_acc": 24,
+        "threshold_abs": 10,
+        "margin_abs_over_threshold": 14,
+    }
+    assert cap_mixed.row_count == 384
+    assert cap_mixed.accepted_count == 128
+    assert cap_mixed.deferred_count == 256
+    assert cap_mixed.mixed_acceptance is True
+    assert cap_mixed.best_case_identity_free_hamming_lower_bound == 128
+    assert cap_mixed.canonical_prefix_matches_exact is True
+    assert cap_mixed.reversed_prefix_matches_exact is False
+
+    backlog_neg = bucket_keys[("backlog_growth", "proj_in", -1)]
+    assert backlog_neg.candidate_row_count == 640
+    assert backlog_neg.accepted_row_count == 128
+    assert backlog_neg.higher_priority_row_count == 0
+    assert backlog_neg.residual_cap_slots_entering_bucket == 128
+    assert backlog_neg.mixed_feature_class_count == 1
+    assert backlog_neg.mixed_feature_class_row_count == 256
+    assert backlog_neg.exact_identity_free_recovery_possible is False
+    assert backlog_neg.exact_mask_recovery_rate == pytest.approx(0.0)
+    assert backlog_neg.best_case_identity_free_hamming_lower_bound == 128
+    assert backlog_neg.best_case_identity_free_mask_accuracy_upper_bound == pytest.approx(
+        0.8
+    )
+    assert backlog_neg.canonical_order_leaky_matches_exact is True
+    assert backlog_neg.reversed_order_leaky_matches_exact is False
+    assert backlog_neg.order_dependence_witnessed is True
+    backlog_groups = {
+        tuple(sorted(group.feature_payload.items())): group
+        for group in backlog_neg.feature_class_reports
+    }
+    zero_vote_group = backlog_groups[(
+        ("abs_new_acc", 24),
+        ("margin_abs_over_threshold", 14),
+        ("threshold_abs", 10),
+        ("vote_abs", 0),
+        ("vote_sign", 0),
+        ("vote_value", 0),
+    )]
+    assert zero_vote_group.row_count == 256
+    assert zero_vote_group.accepted_count == 128
+    assert zero_vote_group.deferred_count == 128
+    assert zero_vote_group.mixed_acceptance is True
+    assert zero_vote_group.best_case_identity_free_hamming_lower_bound == 128
+    assert zero_vote_group.canonical_prefix_matches_exact is True
+    assert zero_vote_group.reversed_prefix_matches_exact is False
+    nonzero_group = backlog_groups[(
+        ("abs_new_acc", 24),
+        ("margin_abs_over_threshold", 14),
+        ("threshold_abs", 10),
+        ("vote_abs", 24),
+        ("vote_sign", -1),
+        ("vote_value", -24),
+    )]
+    assert nonzero_group.row_count == 384
+    assert nonzero_group.accepted_count == 0
+    assert nonzero_group.deferred_count == 384
+    assert nonzero_group.mixed_acceptance is False
+    assert nonzero_group.canonical_prefix_matches_exact is True
+    assert nonzero_group.reversed_prefix_matches_exact is True
     _assert_no_tensors(payload)
