@@ -1,6 +1,7 @@
 """C1.1c representative bounded-delta drift-vs-budget verdict tests."""
 from __future__ import annotations
 
+from dataclasses import replace
 from functools import lru_cache
 from typing import Any
 
@@ -32,6 +33,8 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     PATH_B_IDENTITY_FREE_TIE_RULE_CLASSIFIER_LABEL,
     PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_LABEL,
     PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_CANDIDATE,
+    PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_LABEL,
+    PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_CANDIDATE,
     PATH_B_IDENTITY_FREE_TIE_RULE_CLASSIFIER_CANDIDATE,
     ONLINE_ESTIMABILITY_TIE_MASK_LABEL,
     ONLINE_ESTIMABLE_TIE_MASK_CANDIDATE,
@@ -54,6 +57,14 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     LEARNING_RETENTION_TOLERANCE_PROBE,
     BASELINE_SUFFICIENT_NO_CARRY_NEEDED,
     CARRY_CANDIDATE_EARNED,
+    CARRY_SEMANTICS_CANDIDATE,
+    CARRY_SEMANTICS_CAP_OVERFLOW_OR_BITS_UNBOUNDED,
+    CARRY_SEMANTICS_UNLAWFUL_REQUIRES_IDENTITY_OR_ORDER,
+    CARRY_FAMILY_CLASS_UNIFORM_ACCEPT_ALL_IF_FIT,
+    CARRY_FAMILY_CLASS_UNIFORM_DEFER_UNTIL_FIT,
+    CARRY_FAMILY_CLASS_UNIFORM_WITH_EXTRA_DEVIATION,
+    CARRY_FAMILY_QUOTA_RELEASE,
+    CARRY_SUBCASE_CLASS_UNIFORM_BOUNDED_EXTRA_DEVIATION,
     INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT,
     AGGREGATE_RUNTIME_SEMANTICS_DEFINITION_PLAN,
     CAP_PRESSURE_FRONTIER_ONLY_UNDERFILL_NO_REALLOCATION,
@@ -87,6 +98,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     run_online_estimable_tie_mask_diagnostic,
     run_path_b_identity_free_tie_rule_classifier,
     run_path_b_defer_all_baseline_parity_probe,
+    run_path_b_aggregate_state_runtime_semantics_definition,
     run_real_backlog_lower_bound_diagnostic,
     run_tie_frontier_reservation_lower_bound_diagnostic,
     run_scale_appropriate_b_storage_comparison,
@@ -97,6 +109,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     validate_online_estimable_tie_mask_report,
     validate_path_b_identity_free_tie_rule_classifier_report,
     validate_path_b_defer_all_baseline_parity_probe_report,
+    validate_path_b_aggregate_state_runtime_semantics_report,
     validate_real_backlog_lower_bound_diagnostic_report,
     validate_tie_frontier_reservation_lower_bound_report,
     validate_scale_appropriate_b_storage_comparison_report,
@@ -208,6 +221,11 @@ def _path_b_identity_free_tie_rule_classifier_report():
 @lru_cache(maxsize=1)
 def _path_b_defer_all_baseline_parity_probe_report():
     return run_path_b_defer_all_baseline_parity_probe()
+
+
+@lru_cache(maxsize=1)
+def _path_b_aggregate_state_runtime_semantics_report():
+    return run_path_b_aggregate_state_runtime_semantics_definition()
 
 
 def test_bounded_backlog_policy_is_opt_in_and_charged_as_actual_stored_backlog():
@@ -1183,3 +1201,180 @@ def test_path_b_identity_free_tie_rule_classifier_classifies_families_without_ru
     assert report.terminal_decision.dyn200_earned is False
     assert report.terminal_decision.oracle_mask_hybrid_revived is False
     _assert_no_tensors(payload)
+
+def test_path_b_aggregate_state_runtime_semantics_definition_charges_projection_and_stays_horizon_inconclusive():
+    report = _path_b_aggregate_state_runtime_semantics_report()
+    payload = report.to_dict()
+
+    validate_path_b_aggregate_state_runtime_semantics_report(report)
+    assert report.label == PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_LABEL
+    assert report.candidate_name == PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_CANDIDATE
+    assert report.source_baseline_label == PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_LABEL
+    assert report.source_baseline_terminal_label == CARRY_CANDIDATE_EARNED
+
+    decision = report.terminal_decision
+    assert decision.terminal_label == INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT
+    assert (
+        decision.immediate_recovery_semantics_exhausted_on_this_state_path is True
+    )
+    assert tuple(decision.candidate_family_names) == ()
+    assert tuple(decision.inconclusive_family_names) == (
+        CARRY_FAMILY_CLASS_UNIFORM_DEFER_UNTIL_FIT,
+    )
+    assert tuple(decision.negative_family_names) == (
+        CARRY_FAMILY_QUOTA_RELEASE,
+        CARRY_FAMILY_CLASS_UNIFORM_ACCEPT_ALL_IF_FIT,
+        CARRY_FAMILY_CLASS_UNIFORM_WITH_EXTRA_DEVIATION,
+    )
+    assert decision.future_observable_split_possible_any is False
+    assert decision.peak_total_bits == 478
+    assert decision.peak_bits_per_eligible_weight == pytest.approx(0.0291748046875)
+    assert decision.learning_retention_tolerance_probe_earned is False
+    assert decision.candidate_only is True
+    assert decision.dyn200_earned is False
+    assert decision.learner_sub2_claimed is False
+    assert "immediate recovery semantics are exhausted on this state path" in decision.reason
+
+    families = {family.variant_name: family for family in report.family_reports}
+    assert tuple(families) == (
+        CARRY_FAMILY_QUOTA_RELEASE,
+        CARRY_FAMILY_CLASS_UNIFORM_ACCEPT_ALL_IF_FIT,
+        CARRY_FAMILY_CLASS_UNIFORM_WITH_EXTRA_DEVIATION,
+        CARRY_FAMILY_CLASS_UNIFORM_DEFER_UNTIL_FIT,
+    )
+
+    quota_release = families[CARRY_FAMILY_QUOTA_RELEASE]
+    assert quota_release.terminal_label == CARRY_SEMANTICS_UNLAWFUL_REQUIRES_IDENTITY_OR_ORDER
+    assert quota_release.candidate_subcase is None
+    assert quota_release.carry_matched_row_count == 768
+    assert quota_release.recovered_dropped_count == 256
+    assert quota_release.false_positive_accept_count == 0
+    assert quota_release.missed_represented_count == 0
+    assert tuple(quota_release.collision_class_cardinalities) == (384, 384)
+    assert quota_release.future_observable_split_possible is False
+    assert quota_release.ledger_charge.total_bits == 468
+    assert quota_release.ledger_charge.bits_per_eligible_weight == pytest.approx(
+        0.028564453125
+    )
+    assert quota_release.ledger_charge.projection_bits == 2
+    assert quota_release.ledger_charge.ttl_bits == 0
+    assert quota_release.lifecycle_spec.ttl_steps is None
+    assert quota_release.earned_downstream_test is None
+
+    accept_all = families[CARRY_FAMILY_CLASS_UNIFORM_ACCEPT_ALL_IF_FIT]
+    assert accept_all.terminal_label == CARRY_SEMANTICS_CAP_OVERFLOW_OR_BITS_UNBOUNDED
+    assert accept_all.candidate_subcase is None
+    assert accept_all.initial_residual_cap == 256
+    assert accept_all.post_action_residual_cap == 256
+    assert accept_all.recovered_dropped_count == 256
+    assert accept_all.false_positive_accept_count == 512
+    assert accept_all.missed_represented_count == 0
+    assert accept_all.ledger_charge.total_bits == 468
+    assert accept_all.lifecycle_spec.ttl_steps is None
+    assert accept_all.earned_downstream_test is None
+
+    bounded_extra = families[CARRY_FAMILY_CLASS_UNIFORM_WITH_EXTRA_DEVIATION]
+    assert bounded_extra.terminal_label == CARRY_SEMANTICS_CAP_OVERFLOW_OR_BITS_UNBOUNDED
+    assert bounded_extra.candidate_subcase is None
+    assert bounded_extra.initial_residual_cap == 256
+    assert bounded_extra.post_action_residual_cap == 256
+    assert bounded_extra.recovered_dropped_count == 256
+    assert bounded_extra.false_positive_accept_count == 512
+    assert bounded_extra.missed_represented_count == 0
+    assert bounded_extra.ledger_charge.total_bits == 468
+    assert bounded_extra.lifecycle_spec.ttl_steps is None
+    assert bounded_extra.earned_downstream_test is None
+
+    defer_until_fit = families[CARRY_FAMILY_CLASS_UNIFORM_DEFER_UNTIL_FIT]
+    assert defer_until_fit.terminal_label == INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT
+    assert defer_until_fit.candidate_subcase is None
+    assert defer_until_fit.initial_residual_cap == 256
+    assert defer_until_fit.post_action_residual_cap == 256
+    assert defer_until_fit.recovered_dropped_count == 0
+    assert defer_until_fit.false_positive_accept_count == 0
+    assert defer_until_fit.missed_represented_count == 256
+    assert defer_until_fit.ledger_charge.total_bits == 478
+    assert defer_until_fit.ledger_charge.bits_per_eligible_weight == pytest.approx(
+        0.0291748046875
+    )
+    assert defer_until_fit.ledger_charge.projection_bits == 2
+    assert defer_until_fit.ledger_charge.ttl_bits == 4
+    assert defer_until_fit.ledger_charge.age_bits == 4
+    assert defer_until_fit.ledger_charge.active_slot_bits == 2
+    assert defer_until_fit.lifecycle_spec.ttl_steps == 2
+    assert defer_until_fit.lifecycle_spec.active_carry_count_bound == 2
+    assert defer_until_fit.earned_downstream_test is None
+
+    for family in report.family_reports:
+        assert family.carry_matched_row_count == 768
+        assert tuple(family.collision_class_cardinalities) == (384, 384)
+        assert family.future_observable_split_possible is False
+        assert len(family.projection_class_reports) == 2
+        signs = sorted(
+            class_report.origin_feature_payload["vote_sign"]
+            for class_report in family.projection_class_reports
+        )
+        assert signs == [-1, 1]
+        for class_report in family.projection_class_reports:
+            assert class_report.origin_schedule_name == "cap_saturated"
+            assert class_report.future_schedule_name == "backlog_growth"
+            assert class_report.state_key == "proj_in"
+            assert class_report.current_q_level == 0
+            assert class_report.origin_class_cardinality == 384
+            assert class_report.future_class_cardinality == 384
+            assert class_report.future_class_count_in_bucket == 2
+            assert class_report.projection_bits_for_class == 1
+            assert class_report.recovered_dropped_count == 128
+            assert class_report.matched_not_recovered_count == 256
+            assert class_report.future_observable_split_possible is False
+            assert class_report.origin_feature_payload["vote_abs"] == 24
+            assert class_report.future_feature_payload["vote_abs"] == 0
+            assert class_report.future_feature_payload["vote_sign"] == 0
+            assert class_report.future_feature_payload["vote_value"] == 0
+
+    _assert_no_tensors(payload)
+
+def test_path_b_aggregate_state_runtime_validator_rejects_negative_candidate_residual():
+    report = _path_b_aggregate_state_runtime_semantics_report()
+    bounded_extra = next(
+        family
+        for family in report.family_reports
+        if family.variant_name == CARRY_FAMILY_CLASS_UNIFORM_WITH_EXTRA_DEVIATION
+    )
+    bad_family = replace(
+        bounded_extra,
+        terminal_label=CARRY_SEMANTICS_CANDIDATE,
+        candidate_subcase=CARRY_SUBCASE_CLASS_UNIFORM_BOUNDED_EXTRA_DEVIATION,
+        post_action_residual_cap=-1,
+        earned_downstream_test=LEARNING_RETENTION_TOLERANCE_PROBE,
+    )
+    bad_report = replace(
+        report,
+        family_reports=tuple(
+            bad_family if family.variant_name == bad_family.variant_name else family
+            for family in report.family_reports
+        ),
+        terminal_decision=replace(
+            report.terminal_decision,
+            terminal_label=CARRY_SEMANTICS_CANDIDATE,
+            immediate_recovery_semantics_exhausted_on_this_state_path=False,
+            candidate_family_names=(
+                CARRY_FAMILY_CLASS_UNIFORM_WITH_EXTRA_DEVIATION,
+            ),
+            inconclusive_family_names=(),
+            negative_family_names=(
+                CARRY_FAMILY_QUOTA_RELEASE,
+                CARRY_FAMILY_CLASS_UNIFORM_ACCEPT_ALL_IF_FIT,
+                CARRY_FAMILY_CLASS_UNIFORM_DEFER_UNTIL_FIT,
+            ),
+            learning_retention_tolerance_probe_earned=True,
+            reason="synthetic validator regression guard",
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="full-class accept family cannot drive residual cap negative",
+    ):
+        validate_path_b_aggregate_state_runtime_semantics_report(bad_report)
+

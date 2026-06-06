@@ -337,6 +337,39 @@ INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT = "inconclusive_needs_loop_measurement"
 AGGREGATE_RUNTIME_SEMANTICS_DEFINITION_PLAN = (
     "aggregate_runtime_semantics_definition_plan"
 )
+PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_SCHEMA_VERSION = (
+    "hrm_text_158_c1p1j_path_b_aggregate_state_runtime_semantics_definition/v0"
+)
+PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_LABEL = (
+    "c1p1j_path_b_aggregate_state_runtime_semantics_definition"
+)
+PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_CANDIDATE = (
+    "path_b_aggregate_state_runtime_semantics_definition"
+)
+CARRY_SEMANTICS_CANDIDATE = "carry_semantics_candidate"
+CARRY_SEMANTICS_UNLAWFUL_REQUIRES_IDENTITY_OR_ORDER = (
+    "carry_semantics_unlawful_requires_identity_or_order"
+)
+CARRY_SEMANTICS_CAP_OVERFLOW_OR_BITS_UNBOUNDED = (
+    "carry_semantics_cap_overflow_or_bits_unbounded"
+)
+IMMEDIATE_RECOVERY_SEMANTICS_EXHAUSTED_ON_THIS_STATE_PATH = (
+    "immediate_recovery_semantics_exhausted_on_this_state_path"
+)
+CARRY_FAMILY_QUOTA_RELEASE = "carry_quota_release"
+CARRY_FAMILY_CLASS_UNIFORM_ACCEPT_ALL_IF_FIT = (
+    "carry_class_uniform_accept_all_if_fit"
+)
+CARRY_FAMILY_CLASS_UNIFORM_WITH_EXTRA_DEVIATION = (
+    "carry_class_uniform_with_extra_deviation"
+)
+CARRY_FAMILY_CLASS_UNIFORM_DEFER_UNTIL_FIT = (
+    "carry_class_uniform_defer_until_fit"
+)
+CARRY_SUBCASE_EXACT_RECOVERY = "exact_recovery"
+CARRY_SUBCASE_CLASS_UNIFORM_BOUNDED_EXTRA_DEVIATION = (
+    "class_uniform_recovery_with_bounded_extra_deviation"
+)
 
 
 def representative_engineering_guard_spec() -> BoundedDeltaGuardSpec:
@@ -7848,6 +7881,25 @@ def _path_b_defer_all_baseline_terminal_decision(
     )
 
 
+def _path_b_exact_and_defer_all_replay_steps(
+    ) -> tuple[tuple[_ExactScheduleTraceStep, _PathBReplayStepState], ...]:
+    exact_trace_steps, _ = _build_exact_schedule_trace()
+    replay_states = _initial_states()
+    replay_backlog: dict[str, dict[int, dict[str, int]]] = {}
+    replay_pairs: list[tuple[_ExactScheduleTraceStep, _PathBReplayStepState]] = []
+    for exact_trace_step in exact_trace_steps:
+        replay_trace_step = _path_b_current_trace_step(
+            states_by_key=replay_states,
+            deferred_backlog=replay_backlog,
+            schedule_step=exact_trace_step.schedule_step,
+        )
+        replay_step = _path_b_replay_step_from_mutated_partition(replay_trace_step)
+        replay_pairs.append((exact_trace_step, replay_step))
+        replay_states = _copy_state_map(replay_step.output_states)
+        replay_backlog = _copy_backlog(replay_step.output_backlog)
+    return tuple(replay_pairs)
+
+
 def run_path_b_defer_all_baseline_parity_probe() -> PathBDeferAllBaselineParityProbeReport:
     classifier_report = run_path_b_identity_free_tie_rule_classifier()
     validate_path_b_identity_free_tie_rule_classifier_report(classifier_report)
@@ -7859,27 +7911,15 @@ def run_path_b_defer_all_baseline_parity_probe() -> PathBDeferAllBaselineParityP
         raise ValueError(
             "path-(b) baseline parity probe requires the committed defer-all runtime mutation trigger"
         )
-    exact_trace_steps, _ = _build_exact_schedule_trace()
-    replay_states = _initial_states()
-    replay_backlog: dict[str, dict[int, dict[str, int]]] = {}
-    replay_steps: list[_PathBReplayStepState] = []
-    step_reports: list[PathBDeferAllBaselineStepReport] = []
-    for exact_trace_step in exact_trace_steps:
-        replay_trace_step = _path_b_current_trace_step(
-            states_by_key=replay_states,
-            deferred_backlog=replay_backlog,
-            schedule_step=exact_trace_step.schedule_step,
+    replay_pairs = _path_b_exact_and_defer_all_replay_steps()
+    replay_steps = [replay_step for _, replay_step in replay_pairs]
+    step_reports = [
+        _path_b_defer_all_baseline_step_report(
+            exact_trace_step=exact_trace_step,
+            replay_step=replay_step,
         )
-        replay_step = _path_b_replay_step_from_mutated_partition(replay_trace_step)
-        replay_steps.append(replay_step)
-        step_reports.append(
-            _path_b_defer_all_baseline_step_report(
-                exact_trace_step=exact_trace_step,
-                replay_step=replay_step,
-            )
-        )
-        replay_states = _copy_state_map(replay_step.output_states)
-        replay_backlog = _copy_backlog(replay_step.output_backlog)
+        for exact_trace_step, replay_step in replay_pairs
+    ]
     origin_reports = _path_b_dropped_mass_origin_reports(replay_steps)
     bindingness = pre_register_source_bindingness(
         source_kind=SOURCE_KIND_GENERATED_NATIVE_LOOP,
@@ -8050,6 +8090,952 @@ def validate_path_b_defer_all_baseline_parity_probe_report(
     else:
         if report.terminal_decision.aggregate_runtime_semantics_definition_plan_earned:
             raise ValueError("inconclusive terminal must not earn the aggregate runtime-semantics-definition plan")
+    _assert_no_tensors(report.to_dict())
+
+
+@dataclass(frozen=True)
+class AggregateStateRuntimeLedgerCharge:
+    base_total_bits: int
+    total_bits: int
+    bits_per_eligible_weight: float
+    bounded_under_strictest_headroom: bool
+    concurrent_class_count: int
+    class_key_bits: int
+    aggregate_payload_bits: int
+    metadata_bits: int
+    carry_bits: int
+    projection_bits: int
+    ttl_bits: int
+    age_bits: int
+    merge_counter_bits: int
+    active_slot_bits: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "base_total_bits": int(self.base_total_bits),
+            "total_bits": int(self.total_bits),
+            "bits_per_eligible_weight": float(self.bits_per_eligible_weight),
+            "bounded_under_strictest_headroom": bool(
+                self.bounded_under_strictest_headroom
+            ),
+            "concurrent_class_count": int(self.concurrent_class_count),
+            "class_key_bits": int(self.class_key_bits),
+            "aggregate_payload_bits": int(self.aggregate_payload_bits),
+            "metadata_bits": int(self.metadata_bits),
+            "carry_bits": int(self.carry_bits),
+            "projection_bits": int(self.projection_bits),
+            "ttl_bits": int(self.ttl_bits),
+            "age_bits": int(self.age_bits),
+            "merge_counter_bits": int(self.merge_counter_bits),
+            "active_slot_bits": int(self.active_slot_bits),
+        }
+
+
+@dataclass(frozen=True)
+class AggregateStateLifecycleSpec:
+    create_policy: str
+    merge_policy: str
+    consume_policy: str
+    expire_policy: str
+    ttl_steps: int | None
+    active_carry_count_bound: int
+    predeclared_inter_class_priority: str
+    notes: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "create_policy": self.create_policy,
+            "merge_policy": self.merge_policy,
+            "consume_policy": self.consume_policy,
+            "expire_policy": self.expire_policy,
+            "ttl_steps": self.ttl_steps,
+            "active_carry_count_bound": int(self.active_carry_count_bound),
+            "predeclared_inter_class_priority": self.predeclared_inter_class_priority,
+            "notes": self.notes,
+        }
+
+
+@dataclass(frozen=True)
+class AggregateStateProjectionClassReport:
+    origin_schedule_name: str
+    future_schedule_name: str
+    state_key: str
+    current_q_level: int
+    move_direction: int
+    origin_feature_payload: dict[str, Any]
+    future_feature_payload: dict[str, Any]
+    origin_class_cardinality: int
+    future_class_cardinality: int
+    future_class_count_in_bucket: int
+    projection_bits_for_class: int
+    carry_matched_row_count: int
+    recovered_dropped_count: int
+    matched_not_recovered_count: int
+    future_observable_split_possible: bool
+    future_observable_split_reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "origin_schedule_name": self.origin_schedule_name,
+            "future_schedule_name": self.future_schedule_name,
+            "state_key": self.state_key,
+            "current_q_level": int(self.current_q_level),
+            "move_direction": int(self.move_direction),
+            "origin_feature_payload": dict(self.origin_feature_payload),
+            "future_feature_payload": dict(self.future_feature_payload),
+            "origin_class_cardinality": int(self.origin_class_cardinality),
+            "future_class_cardinality": int(self.future_class_cardinality),
+            "future_class_count_in_bucket": int(self.future_class_count_in_bucket),
+            "projection_bits_for_class": int(self.projection_bits_for_class),
+            "carry_matched_row_count": int(self.carry_matched_row_count),
+            "recovered_dropped_count": int(self.recovered_dropped_count),
+            "matched_not_recovered_count": int(self.matched_not_recovered_count),
+            "future_observable_split_possible": bool(
+                self.future_observable_split_possible
+            ),
+            "future_observable_split_reason": self.future_observable_split_reason,
+        }
+
+
+@dataclass(frozen=True)
+class AggregateStateRuntimeFamilyReport:
+    family_name: str
+    variant_name: str
+    terminal_label: str
+    candidate_subcase: str | None
+    action_order_policy: str
+    immediate_action_policy: str
+    initial_residual_cap: int
+    post_action_residual_cap: int
+    carry_matched_row_count: int
+    recovered_dropped_count: int
+    false_positive_accept_count: int
+    missed_represented_count: int
+    collision_class_cardinalities: tuple[int, ...]
+    future_observable_split_possible: bool
+    projection_class_reports: tuple[AggregateStateProjectionClassReport, ...]
+    lifecycle_spec: AggregateStateLifecycleSpec
+    ledger_charge: AggregateStateRuntimeLedgerCharge
+    earned_downstream_test: str | None
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "family_name": self.family_name,
+            "variant_name": self.variant_name,
+            "terminal_label": self.terminal_label,
+            "candidate_subcase": self.candidate_subcase,
+            "action_order_policy": self.action_order_policy,
+            "immediate_action_policy": self.immediate_action_policy,
+            "initial_residual_cap": int(self.initial_residual_cap),
+            "post_action_residual_cap": int(self.post_action_residual_cap),
+            "carry_matched_row_count": int(self.carry_matched_row_count),
+            "recovered_dropped_count": int(self.recovered_dropped_count),
+            "false_positive_accept_count": int(self.false_positive_accept_count),
+            "missed_represented_count": int(self.missed_represented_count),
+            "collision_class_cardinalities": [
+                int(value) for value in self.collision_class_cardinalities
+            ],
+            "future_observable_split_possible": bool(
+                self.future_observable_split_possible
+            ),
+            "projection_class_reports": [
+                report.to_dict() for report in self.projection_class_reports
+            ],
+            "lifecycle_spec": self.lifecycle_spec.to_dict(),
+            "ledger_charge": self.ledger_charge.to_dict(),
+            "earned_downstream_test": self.earned_downstream_test,
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class AggregateStateRuntimeSemanticsDecision:
+    terminal_label: str
+    immediate_recovery_semantics_exhausted_on_this_state_path: bool
+    candidate_family_names: tuple[str, ...]
+    inconclusive_family_names: tuple[str, ...]
+    negative_family_names: tuple[str, ...]
+    future_observable_split_possible_any: bool
+    peak_total_bits: int
+    peak_bits_per_eligible_weight: float
+    learning_retention_tolerance_probe_earned: bool
+    candidate_only: bool
+    dyn200_earned: bool
+    learner_sub2_claimed: bool
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "terminal_label": self.terminal_label,
+            "immediate_recovery_semantics_exhausted_on_this_state_path": bool(
+                self.immediate_recovery_semantics_exhausted_on_this_state_path
+            ),
+            "candidate_family_names": list(self.candidate_family_names),
+            "inconclusive_family_names": list(self.inconclusive_family_names),
+            "negative_family_names": list(self.negative_family_names),
+            "future_observable_split_possible_any": bool(
+                self.future_observable_split_possible_any
+            ),
+            "peak_total_bits": int(self.peak_total_bits),
+            "peak_bits_per_eligible_weight": float(self.peak_bits_per_eligible_weight),
+            "learning_retention_tolerance_probe_earned": bool(
+                self.learning_retention_tolerance_probe_earned
+            ),
+            "candidate_only": bool(self.candidate_only),
+            "dyn200_earned": bool(self.dyn200_earned),
+            "learner_sub2_claimed": bool(self.learner_sub2_claimed),
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class AggregateStateRuntimeSemanticsReport:
+    schema_version: str
+    label: str
+    source_bindingness: Any
+    field_coverage: SourceFieldCoverage
+    candidate_name: str
+    source_baseline_label: str
+    source_baseline_terminal_label: str
+    family_reports: tuple[AggregateStateRuntimeFamilyReport, ...]
+    terminal_decision: AggregateStateRuntimeSemanticsDecision
+    raw_arrays_included: bool
+    non_claims: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "label": self.label,
+            "source_bindingness": self.source_bindingness.to_dict(),
+            "field_coverage": self.field_coverage.to_dict(),
+            "candidate_name": self.candidate_name,
+            "source_baseline_label": self.source_baseline_label,
+            "source_baseline_terminal_label": self.source_baseline_terminal_label,
+            "family_reports": [family.to_dict() for family in self.family_reports],
+            "terminal_decision": self.terminal_decision.to_dict(),
+            "raw_arrays_included": bool(self.raw_arrays_included),
+            "non_claims": list(self.non_claims),
+        }
+
+
+@dataclass(frozen=True)
+class _AggregateStateProjectionContext:
+    origin_schedule_name: str
+    future_schedule_name: str
+    future_global_cap: int
+    projection_class_reports: tuple[AggregateStateProjectionClassReport, ...]
+
+
+def _path_b_first_represented_projection_context() -> _AggregateStateProjectionContext:
+    replay_pairs = _path_b_exact_and_defer_all_replay_steps()
+    for origin_exact, origin_replay in replay_pairs[:-1]:
+        for _, future_replay in replay_pairs[replay_pairs.index((origin_exact, origin_replay)) + 1 :]:
+            re_presented = origin_replay.dropped_ids & future_replay.candidate_row_ids
+            if not re_presented:
+                continue
+            origin_rows_by_id = {row.identity: row for row in origin_replay.observable_rows}
+            future_rows_by_id = {row.identity: row for row in future_replay.observable_rows}
+            future_bucket_feature_sets: dict[tuple[str, int, int], set[tuple[tuple[str, Any], ...]]] = {}
+            future_class_rows: dict[
+                tuple[tuple[str, int, int], tuple[tuple[str, Any], ...]],
+                list[_StrictObservableTieMaskRow],
+            ] = {}
+            for row in future_replay.observable_rows:
+                future_bucket_feature_sets.setdefault(row.bucket_key, set()).add(
+                    row.feature_key()
+                )
+                future_class_rows.setdefault(
+                    (row.bucket_key, row.feature_key()), []
+                ).append(row)
+            by_future_group: dict[
+                tuple[tuple[str, int, int], tuple[tuple[str, Any], ...]],
+                list[tuple[str, int]],
+            ] = {}
+            for identity in sorted(re_presented):
+                future_row = future_rows_by_id.get(identity)
+                if future_row is None:
+                    raise ValueError("future projection identity missing from the replay rows")
+                by_future_group.setdefault(
+                    (future_row.bucket_key, future_row.feature_key()), []
+                ).append(identity)
+            projection_reports: list[AggregateStateProjectionClassReport] = []
+            for (bucket_key, feature_key), identities in sorted(
+                by_future_group.items(),
+                key=lambda item: (item[0][0], item[0][1]),
+            ):
+                class_rows = future_class_rows[(bucket_key, feature_key)]
+                origin_feature_rows = [origin_rows_by_id[identity] for identity in identities]
+                origin_bucket_key = origin_feature_rows[0].bucket_key
+                origin_feature_key = origin_feature_rows[0].feature_key()
+                origin_class_rows = [
+                    row
+                    for row in origin_replay.observable_rows
+                    if row.bucket_key == origin_bucket_key
+                    and row.feature_key() == origin_feature_key
+                ]
+                future_class_count_in_bucket = len(
+                    future_bucket_feature_sets[bucket_key]
+                )
+                projection_reports.append(
+                    AggregateStateProjectionClassReport(
+                        origin_schedule_name=origin_replay.schedule_name,
+                        future_schedule_name=future_replay.schedule_name,
+                        state_key=str(bucket_key[0]),
+                        current_q_level=int(bucket_key[1]),
+                        move_direction=int(bucket_key[2]),
+                        origin_feature_payload=dict(origin_feature_rows[0].feature_payload()),
+                        future_feature_payload=dict(class_rows[0].feature_payload()),
+                        origin_class_cardinality=len(origin_class_rows),
+                        future_class_cardinality=len(class_rows),
+                        future_class_count_in_bucket=int(future_class_count_in_bucket),
+                        projection_bits_for_class=_enum_bit_width(
+                            int(future_class_count_in_bucket)
+                        ),
+                        carry_matched_row_count=len(class_rows),
+                        recovered_dropped_count=len(identities),
+                        matched_not_recovered_count=len(class_rows) - len(identities),
+                        future_observable_split_possible=False,
+                        future_observable_split_reason=(
+                            "the best-case future projection can target the 384-row future class, "
+                            "but every row inside that class shares the full allowed future-step "
+                            "observable signature, so no lawful 384->128 split remains"
+                        ),
+                    )
+                )
+            return _AggregateStateProjectionContext(
+                origin_schedule_name=origin_replay.schedule_name,
+                future_schedule_name=future_replay.schedule_name,
+                future_global_cap=int(future_replay.global_cap),
+                projection_class_reports=tuple(projection_reports),
+            )
+    raise ValueError(
+        "aggregate-state runtime semantics require a deferred origin that re-presents later"
+    )
+
+
+def _path_b_projection_collision_class_cardinalities(
+    projection_reports: Sequence[AggregateStateProjectionClassReport],
+) -> tuple[int, ...]:
+    return tuple(
+        int(report.future_class_cardinality) for report in projection_reports
+    )
+
+
+def _path_b_projection_order_key(
+    report: AggregateStateProjectionClassReport,
+) -> tuple[int, str, int, int, tuple[tuple[str, Any], ...]]:
+    return (
+        -int(report.recovered_dropped_count),
+        str(report.state_key),
+        int(report.current_q_level),
+        int(report.move_direction),
+        tuple(sorted(report.future_feature_payload.items())),
+    )
+
+
+def _path_b_aggregate_state_runtime_ledger_charge(
+    online_report: ObservableTieMaskOnlineEstimabilityReport,
+    projection_reports: Sequence[AggregateStateProjectionClassReport],
+    *,
+    ttl_bits: int = 0,
+    age_bits: int = 0,
+    merge_counter_bits: int = 0,
+    active_slot_bits: int = 0,
+) -> AggregateStateRuntimeLedgerCharge:
+    base = _path_b_aggregate_state_ledger_charge(online_report)
+    strict_row = _q_ledger_row_by_name(online_report.strictest_required_q_regime_name)
+    projection_bits = sum(
+        int(report.projection_bits_for_class) for report in projection_reports
+    )
+    total_bits = (
+        int(base.total_bits)
+        + int(projection_bits)
+        + int(ttl_bits)
+        + int(age_bits)
+        + int(merge_counter_bits)
+        + int(active_slot_bits)
+    )
+    bits_per_weight = float(total_bits) / float(int(strict_row.eligible_weight_count))
+    return AggregateStateRuntimeLedgerCharge(
+        base_total_bits=int(base.total_bits),
+        total_bits=int(total_bits),
+        bits_per_eligible_weight=float(bits_per_weight),
+        bounded_under_strictest_headroom=bool(
+            bits_per_weight
+            <= float(online_report.strictest_headroom_bits_per_weight) + 1e-12
+        ),
+        concurrent_class_count=int(base.concurrent_class_count),
+        class_key_bits=int(base.class_key_bits),
+        aggregate_payload_bits=int(base.aggregate_payload_bits),
+        metadata_bits=int(base.metadata_bits),
+        carry_bits=int(base.carry_bits),
+        projection_bits=int(projection_bits),
+        ttl_bits=int(ttl_bits),
+        age_bits=int(age_bits),
+        merge_counter_bits=int(merge_counter_bits),
+        active_slot_bits=int(active_slot_bits),
+    )
+
+
+def _path_b_immediate_aggregate_lifecycle_spec(
+    *,
+    projection_reports: Sequence[AggregateStateProjectionClassReport],
+    action_description: str,
+) -> AggregateStateLifecycleSpec:
+    return AggregateStateLifecycleSpec(
+        create_policy=(
+            "create one carry packet per origin mixed class with stored debt equal to the "
+            "dropped-row count and a charged future-class projection selector"
+        ),
+        merge_policy=(
+            "none needed on the observed immediate-recovery path; no duplicate future class key "
+            "is created before the first future projection"
+        ),
+        consume_policy=action_description,
+        expire_policy=(
+            "none needed for immediate-recovery semantics on this state path because the packet is "
+            "consumed or ruled out at the first future projection"
+        ),
+        ttl_steps=None,
+        active_carry_count_bound=len(tuple(projection_reports)),
+        predeclared_inter_class_priority=(
+            "carried classes ordered by stored debt descending then class key lexicographic over "
+            "(state_key, current_q_level, move_direction, projected future feature payload)"
+        ),
+        notes=(
+            "immediate-recovery families pay only the charged future projection selector beyond the "
+            "base aggregate-state feasibility note"
+        ),
+    )
+
+
+def _path_b_defer_until_fit_lifecycle_spec(
+    *,
+    projection_reports: Sequence[AggregateStateProjectionClassReport],
+) -> AggregateStateLifecycleSpec:
+    return AggregateStateLifecycleSpec(
+        create_policy=(
+            "when a projected carried class exceeds residual cap, persist the full class packet with "
+            "its stored debt and charged future-class projection selector"
+        ),
+        merge_policy=(
+            "merge identical carried class packets by summing debt counts under the same class key; "
+            "no separate merge counter is needed on this state path"
+        ),
+        consume_policy=(
+            "accept the full carried class only when its class_cardinality <= residual_cap under the "
+            "predeclared class-level priority order, then consume the packet"
+        ),
+        expire_policy=(
+            "expire the packet when its TTL elapses without a lawful full-class fit"
+        ),
+        ttl_steps=2,
+        active_carry_count_bound=len(tuple(projection_reports)),
+        predeclared_inter_class_priority=(
+            "carried classes ordered by stored debt descending then class key lexicographic over "
+            "(state_key, current_q_level, move_direction, projected future feature payload)"
+        ),
+        notes=(
+            "this family is lawful only as an all-or-none class packet; if a full class does not fit, "
+            "the whole class is deferred with no within-class quota or subset selection"
+        ),
+    )
+
+
+def _path_b_aggregate_projection_totals(
+    projection_reports: Sequence[AggregateStateProjectionClassReport],
+) -> tuple[int, int]:
+    return (
+        sum(int(report.carry_matched_row_count) for report in projection_reports),
+        sum(int(report.recovered_dropped_count) for report in projection_reports),
+    )
+
+
+def _path_b_aggregate_quota_release_report(
+    online_report: ObservableTieMaskOnlineEstimabilityReport,
+    context: _AggregateStateProjectionContext,
+) -> AggregateStateRuntimeFamilyReport:
+    projection_reports = context.projection_class_reports
+    carry_matched_row_count, recovered_dropped_count = (
+        _path_b_aggregate_projection_totals(projection_reports)
+    )
+    ledger_charge = _path_b_aggregate_state_runtime_ledger_charge(
+        online_report,
+        projection_reports,
+    )
+    return AggregateStateRuntimeFamilyReport(
+        family_name="aggregate_state_runtime_semantics",
+        variant_name=CARRY_FAMILY_QUOTA_RELEASE,
+        terminal_label=CARRY_SEMANTICS_UNLAWFUL_REQUIRES_IDENTITY_OR_ORDER,
+        candidate_subcase=None,
+        action_order_policy=(
+            "carried classes ordered by stored debt descending then class key lexicographic"
+        ),
+        immediate_action_policy=(
+            "release only the stored debt-count quota inside each projected future class"
+        ),
+        initial_residual_cap=int(context.future_global_cap),
+        post_action_residual_cap=int(context.future_global_cap),
+        carry_matched_row_count=int(carry_matched_row_count),
+        recovered_dropped_count=int(recovered_dropped_count),
+        false_positive_accept_count=0,
+        missed_represented_count=0,
+        collision_class_cardinalities=_path_b_projection_collision_class_cardinalities(
+            projection_reports
+        ),
+        future_observable_split_possible=False,
+        projection_class_reports=projection_reports,
+        lifecycle_spec=_path_b_immediate_aggregate_lifecycle_spec(
+            projection_reports=projection_reports,
+            action_description=(
+                "consume the packet by releasing its stored debt-count quota inside the matched class"
+            ),
+        ),
+        ledger_charge=ledger_charge,
+        earned_downstream_test=None,
+        reason=(
+            "even after charging a best-case future-class projection selector, each matched future "
+            "class is 384 rows while only 128 rows are the recovered dropped mass, so quota release "
+            "would require a within-class A<T subset selection that reintroduces identity/order"
+        ),
+    )
+
+
+def _path_b_aggregate_full_class_accept_report(
+    online_report: ObservableTieMaskOnlineEstimabilityReport,
+    context: _AggregateStateProjectionContext,
+    *,
+    variant_name: str,
+    allow_extra_deviation: bool,
+) -> AggregateStateRuntimeFamilyReport:
+    projection_reports = tuple(
+        sorted(context.projection_class_reports, key=_path_b_projection_order_key)
+    )
+    carry_matched_row_count, recovered_dropped_count = (
+        _path_b_aggregate_projection_totals(projection_reports)
+    )
+    false_positive_accept_count = sum(
+        int(report.matched_not_recovered_count) for report in projection_reports
+    )
+    residual_cap = int(context.future_global_cap)
+    class_sizes = [int(report.future_class_cardinality) for report in projection_reports]
+    total_class_mass = sum(class_sizes)
+    fits_residual_cap = total_class_mass <= residual_cap
+    ledger_charge = _path_b_aggregate_state_runtime_ledger_charge(
+        online_report,
+        projection_reports,
+    )
+    if not fits_residual_cap:
+        terminal_label = CARRY_SEMANTICS_CAP_OVERFLOW_OR_BITS_UNBOUNDED
+        candidate_subcase = None
+        earned_downstream_test = None
+        reason = (
+            "the best-case projected future classes total "
+            f"{int(total_class_mass)} rows while the global residual cap is only {int(context.future_global_cap)}, "
+            "so a lawful all-or-none accept-all action cannot recover them without overflowing the cap"
+        )
+    elif allow_extra_deviation:
+        terminal_label = CARRY_SEMANTICS_CANDIDATE
+        candidate_subcase = (
+            CARRY_SUBCASE_EXACT_RECOVERY
+            if false_positive_accept_count == 0
+            else CARRY_SUBCASE_CLASS_UNIFORM_BOUNDED_EXTRA_DEVIATION
+        )
+        earned_downstream_test = LEARNING_RETENTION_TOLERANCE_PROBE
+        reason = (
+            "the projected future classes fit the residual cap and can be accepted uniformly; the "
+            "remaining question is whether the charged false positives are behaviorally tolerable"
+        )
+    else:
+        terminal_label = CARRY_SEMANTICS_UNLAWFUL_REQUIRES_IDENTITY_OR_ORDER
+        candidate_subcase = None
+        earned_downstream_test = None
+        reason = (
+            "the projected future classes only recover the dropped rows by accepting an additional "
+            f"{int(false_positive_accept_count)} non-dropped rows, so exact recovery would still need a "
+            "forbidden within-class subset"
+        )
+    return AggregateStateRuntimeFamilyReport(
+        family_name="aggregate_state_runtime_semantics",
+        variant_name=variant_name,
+        terminal_label=terminal_label,
+        candidate_subcase=candidate_subcase,
+        action_order_policy=(
+            "carried classes ordered by stored debt descending then class key lexicographic"
+        ),
+        immediate_action_policy=(
+            "accept the full projected future class packet(s) iff their cumulative class mass fits within "
+            "residual_cap under the predeclared priority order; otherwise the family fails immediate cap-fit"
+        ),
+        initial_residual_cap=int(context.future_global_cap),
+        post_action_residual_cap=int(
+            context.future_global_cap - total_class_mass
+            if fits_residual_cap
+            else context.future_global_cap
+        ),
+        carry_matched_row_count=int(carry_matched_row_count),
+        recovered_dropped_count=int(recovered_dropped_count),
+        false_positive_accept_count=int(false_positive_accept_count),
+        missed_represented_count=0,
+        collision_class_cardinalities=_path_b_projection_collision_class_cardinalities(
+            projection_reports
+        ),
+        future_observable_split_possible=False,
+        projection_class_reports=projection_reports,
+        lifecycle_spec=_path_b_immediate_aggregate_lifecycle_spec(
+            projection_reports=projection_reports,
+            action_description=(
+                "consume the packet by accepting the full projected future class as one class-uniform unit"
+            ),
+        ),
+        ledger_charge=ledger_charge,
+        earned_downstream_test=earned_downstream_test,
+        reason=reason,
+    )
+
+
+def _path_b_aggregate_defer_until_fit_report(
+    online_report: ObservableTieMaskOnlineEstimabilityReport,
+    context: _AggregateStateProjectionContext,
+) -> AggregateStateRuntimeFamilyReport:
+    projection_reports = tuple(
+        sorted(context.projection_class_reports, key=_path_b_projection_order_key)
+    )
+    carry_matched_row_count, recovered_dropped_count = (
+        _path_b_aggregate_projection_totals(projection_reports)
+    )
+    ledger_charge = _path_b_aggregate_state_runtime_ledger_charge(
+        online_report,
+        projection_reports,
+        ttl_bits=len(projection_reports) * 2,
+        age_bits=len(projection_reports) * 2,
+        merge_counter_bits=0,
+        active_slot_bits=_count_bit_width(len(projection_reports)),
+    )
+    if not ledger_charge.bounded_under_strictest_headroom:
+        terminal_label = CARRY_SEMANTICS_CAP_OVERFLOW_OR_BITS_UNBOUNDED
+        reason = (
+            "the defer-until-fit lifecycle requires more persistent bits than the strictest remaining "
+            "sub-2 accumulator headroom allows"
+        )
+    else:
+        terminal_label = INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT
+        reason = (
+            "the class-packet defer-until-fit lifecycle is lawful and still bounded after charging its "
+            "TTL/age/active-slot fields, but the one-future-step trace cannot observe a later step where "
+            "the full 384-row projected classes might fit the residual cap"
+        )
+    return AggregateStateRuntimeFamilyReport(
+        family_name="aggregate_state_runtime_semantics",
+        variant_name=CARRY_FAMILY_CLASS_UNIFORM_DEFER_UNTIL_FIT,
+        terminal_label=terminal_label,
+        candidate_subcase=None,
+        action_order_policy=(
+            "carried classes ordered by stored debt descending then class key lexicographic"
+        ),
+        immediate_action_policy=(
+            "defer the full projected future class when class_cardinality > residual_cap; accept only on a later "
+            "step where the full class fits"
+        ),
+        initial_residual_cap=int(context.future_global_cap),
+        post_action_residual_cap=int(context.future_global_cap),
+        carry_matched_row_count=int(carry_matched_row_count),
+        recovered_dropped_count=0,
+        false_positive_accept_count=0,
+        missed_represented_count=int(recovered_dropped_count),
+        collision_class_cardinalities=_path_b_projection_collision_class_cardinalities(
+            projection_reports
+        ),
+        future_observable_split_possible=False,
+        projection_class_reports=projection_reports,
+        lifecycle_spec=_path_b_defer_until_fit_lifecycle_spec(
+            projection_reports=projection_reports,
+        ),
+        ledger_charge=ledger_charge,
+        earned_downstream_test=None,
+        reason=reason,
+    )
+
+
+def _path_b_aggregate_state_runtime_non_claims() -> tuple[str, ...]:
+    return (
+        "CPU-first analytic theorem over the committed 2702312 defer-all replay traces",
+        "future projection is a charged best-case class-level selector, not a free identity-like row pointer",
+        "exact row recovery may not be claimed when future_observable_split_possible is false inside the projected class",
+        "no terminal claims global carry exhaustion; negatives are scoped to immediate recovery on this state path unless a deferred lawful lifecycle is itself impossible or over-budget",
+        "candidate-only; no dyn200, no learner/sub-2 claim, no aggregate-state retention run in this slice",
+    )
+
+
+def _path_b_aggregate_state_runtime_terminal_decision(
+    family_reports: Sequence[AggregateStateRuntimeFamilyReport],
+) -> AggregateStateRuntimeSemanticsDecision:
+    candidate_families = tuple(
+        report.variant_name
+        for report in family_reports
+        if report.terminal_label == CARRY_SEMANTICS_CANDIDATE
+    )
+    inconclusive_families = tuple(
+        report.variant_name
+        for report in family_reports
+        if report.terminal_label == INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT
+    )
+    negative_families = tuple(
+        report.variant_name
+        for report in family_reports
+        if report.variant_name not in candidate_families
+        and report.variant_name not in inconclusive_families
+    )
+    immediate_families = {
+        CARRY_FAMILY_QUOTA_RELEASE,
+        CARRY_FAMILY_CLASS_UNIFORM_ACCEPT_ALL_IF_FIT,
+        CARRY_FAMILY_CLASS_UNIFORM_WITH_EXTRA_DEVIATION,
+    }
+    immediate_negative = all(
+        next(report for report in family_reports if report.variant_name == variant_name).terminal_label
+        != CARRY_SEMANTICS_CANDIDATE
+        for variant_name in immediate_families
+    )
+    future_observable_split_possible_any = any(
+        report.future_observable_split_possible for report in family_reports
+    )
+    peak_total_bits = max(int(report.ledger_charge.total_bits) for report in family_reports)
+    peak_bits_per_weight = max(
+        float(report.ledger_charge.bits_per_eligible_weight) for report in family_reports
+    )
+    if candidate_families:
+        terminal_label = CARRY_SEMANTICS_CANDIDATE
+        reason = (
+            "at least one aggregate-state runtime semantics family survives the theorem and earns the "
+            "downstream learning_retention_tolerance_probe"
+        )
+    elif inconclusive_families:
+        terminal_label = INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT
+        reason = (
+            "immediate recovery semantics are exhausted on this state path, but a lawful defer-until-fit "
+            "class-packet lifecycle remains bounded and unobserved beyond the current horizon"
+        )
+    else:
+        terminal_label = IMMEDIATE_RECOVERY_SEMANTICS_EXHAUSTED_ON_THIS_STATE_PATH
+        reason = (
+            "every immediate aggregate-state recovery family is negative on this state path and no lawful "
+            "deferred class-packet lifecycle survives the budget/cap checks"
+        )
+    return AggregateStateRuntimeSemanticsDecision(
+        terminal_label=terminal_label,
+        immediate_recovery_semantics_exhausted_on_this_state_path=bool(immediate_negative),
+        candidate_family_names=candidate_families,
+        inconclusive_family_names=inconclusive_families,
+        negative_family_names=negative_families,
+        future_observable_split_possible_any=bool(future_observable_split_possible_any),
+        peak_total_bits=int(peak_total_bits),
+        peak_bits_per_eligible_weight=float(peak_bits_per_weight),
+        learning_retention_tolerance_probe_earned=bool(candidate_families),
+        candidate_only=True,
+        dyn200_earned=False,
+        learner_sub2_claimed=False,
+        reason=reason,
+    )
+
+
+def run_path_b_aggregate_state_runtime_semantics_definition() -> AggregateStateRuntimeSemanticsReport:
+    baseline_report = run_path_b_defer_all_baseline_parity_probe()
+    validate_path_b_defer_all_baseline_parity_probe_report(baseline_report)
+    if baseline_report.terminal_decision.terminal_label != CARRY_CANDIDATE_EARNED:
+        raise ValueError(
+            "aggregate-state runtime semantics require the committed defer-all carry candidate source"
+        )
+    online_report = run_online_estimable_tie_mask_diagnostic()
+    projection_context = _path_b_first_represented_projection_context()
+    family_reports = (
+        _path_b_aggregate_quota_release_report(online_report, projection_context),
+        _path_b_aggregate_full_class_accept_report(
+            online_report,
+            projection_context,
+            variant_name=CARRY_FAMILY_CLASS_UNIFORM_ACCEPT_ALL_IF_FIT,
+            allow_extra_deviation=False,
+        ),
+        _path_b_aggregate_full_class_accept_report(
+            online_report,
+            projection_context,
+            variant_name=CARRY_FAMILY_CLASS_UNIFORM_WITH_EXTRA_DEVIATION,
+            allow_extra_deviation=True,
+        ),
+        _path_b_aggregate_defer_until_fit_report(online_report, projection_context),
+    )
+    bindingness = pre_register_source_bindingness(
+        source_kind=SOURCE_KIND_GENERATED_NATIVE_LOOP,
+        coverage=SourceFieldCoverage.full_generated_native_loop(),
+    )
+    return AggregateStateRuntimeSemanticsReport(
+        schema_version=PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_SCHEMA_VERSION,
+        label=PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_LABEL,
+        source_bindingness=bindingness,
+        field_coverage=SourceFieldCoverage.full_generated_native_loop(),
+        candidate_name=PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_CANDIDATE,
+        source_baseline_label=baseline_report.label,
+        source_baseline_terminal_label=baseline_report.terminal_decision.terminal_label,
+        family_reports=family_reports,
+        terminal_decision=_path_b_aggregate_state_runtime_terminal_decision(
+            family_reports
+        ),
+        raw_arrays_included=False,
+        non_claims=_path_b_aggregate_state_runtime_non_claims(),
+    )
+
+
+def validate_path_b_aggregate_state_runtime_semantics_report(
+    report: AggregateStateRuntimeSemanticsReport,
+) -> None:
+    if report.schema_version != PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_SCHEMA_VERSION:
+        raise ValueError("unexpected aggregate-state runtime semantics schema version")
+    if report.label != PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_LABEL:
+        raise ValueError("unexpected aggregate-state runtime semantics label")
+    if report.candidate_name != PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_CANDIDATE:
+        raise ValueError("unexpected aggregate-state runtime semantics candidate")
+    if report.source_baseline_label != PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_LABEL:
+        raise ValueError("aggregate-state runtime semantics must cite the committed baseline label")
+    if report.source_baseline_terminal_label != CARRY_CANDIDATE_EARNED:
+        raise ValueError("aggregate-state runtime semantics must inherit the carry-candidate baseline")
+    expected_variants = (
+        CARRY_FAMILY_QUOTA_RELEASE,
+        CARRY_FAMILY_CLASS_UNIFORM_ACCEPT_ALL_IF_FIT,
+        CARRY_FAMILY_CLASS_UNIFORM_WITH_EXTRA_DEVIATION,
+        CARRY_FAMILY_CLASS_UNIFORM_DEFER_UNTIL_FIT,
+    )
+    actual_variants = tuple(report_entry.variant_name for report_entry in report.family_reports)
+    if actual_variants != expected_variants:
+        raise ValueError("aggregate-state runtime semantics family ordering drifted from the gated plan")
+    by_variant = {entry.variant_name: entry for entry in report.family_reports}
+    for family in report.family_reports:
+        class_totals = sum(
+            int(class_report.carry_matched_row_count)
+            for class_report in family.projection_class_reports
+        )
+        recovered_totals = sum(
+            int(class_report.recovered_dropped_count)
+            for class_report in family.projection_class_reports
+        )
+        if int(family.carry_matched_row_count) != int(class_totals):
+            raise ValueError("family carry-matched total drifted from the projection class reports")
+        if family.variant_name == CARRY_FAMILY_CLASS_UNIFORM_DEFER_UNTIL_FIT:
+            if int(family.recovered_dropped_count) != 0:
+                raise ValueError("defer-until-fit should not claim recovered dropped mass on this observed horizon")
+            if int(family.missed_represented_count) != int(recovered_totals):
+                raise ValueError("defer-until-fit missed represented mass must equal the projected recoverable mass on this horizon")
+        elif int(family.recovered_dropped_count) != int(recovered_totals):
+            raise ValueError("family recovered-dropped total drifted from the projection class reports")
+        if tuple(family.collision_class_cardinalities) != tuple(
+            int(class_report.future_class_cardinality)
+            for class_report in family.projection_class_reports
+        ):
+            raise ValueError("family collision class cardinalities drifted from the projection class reports")
+        if family.variant_name == CARRY_FAMILY_CLASS_UNIFORM_DEFER_UNTIL_FIT:
+            if family.lifecycle_spec.ttl_steps is None:
+                raise ValueError("defer-until-fit must carry an explicit TTL")
+            if family.ledger_charge.total_bits <= family.ledger_charge.base_total_bits:
+                raise ValueError("defer-until-fit must recharge beyond the base feasibility note")
+        else:
+            if family.lifecycle_spec.ttl_steps is not None:
+                raise ValueError("immediate families must not smuggle a TTL")
+        if family.variant_name == CARRY_FAMILY_QUOTA_RELEASE:
+            if family.terminal_label != CARRY_SEMANTICS_UNLAWFUL_REQUIRES_IDENTITY_OR_ORDER:
+                raise ValueError("quota release must stay unlawful when future observable split is impossible")
+            if family.false_positive_accept_count != 0:
+                raise ValueError("quota release exact-claim family must not accept false positives")
+        if family.variant_name in {
+            CARRY_FAMILY_CLASS_UNIFORM_ACCEPT_ALL_IF_FIT,
+            CARRY_FAMILY_CLASS_UNIFORM_WITH_EXTRA_DEVIATION,
+        }:
+            if family.initial_residual_cap <= 0:
+                raise ValueError("full-class accept families require a positive residual cap")
+            projected_class_mass = sum(
+                int(class_report.future_class_cardinality)
+                for class_report in family.projection_class_reports
+            )
+            if family.post_action_residual_cap < 0:
+                raise ValueError("full-class accept family cannot drive residual cap negative")
+            if family.post_action_residual_cap > family.initial_residual_cap:
+                raise ValueError("full-class accept family cannot increase residual cap above its initial value")
+            accepted_class_mass = int(family.initial_residual_cap) - int(
+                family.post_action_residual_cap
+            )
+            if accepted_class_mass not in {0, int(projected_class_mass)}:
+                raise ValueError(
+                    "full-class accept family residual accounting must be all-or-none over the projected class mass"
+                )
+            if (
+                family.terminal_label == CARRY_SEMANTICS_CANDIDATE
+                and int(projected_class_mass) > int(family.initial_residual_cap)
+            ):
+                raise ValueError(
+                    "candidate full-class accept family exceeds the initial residual cap"
+                )
+        if family.variant_name == CARRY_FAMILY_CLASS_UNIFORM_ACCEPT_ALL_IF_FIT and family.terminal_label == CARRY_SEMANTICS_CANDIDATE:
+            if family.false_positive_accept_count != 0:
+                raise ValueError("exact full-class family may only be a candidate when false positives are zero")
+            if family.post_action_residual_cap != family.initial_residual_cap - projected_class_mass:
+                raise ValueError(
+                    "candidate full-class accept residual cap must equal the initial residual minus the accepted class mass"
+                )
+        if family.variant_name == CARRY_FAMILY_CLASS_UNIFORM_WITH_EXTRA_DEVIATION and family.terminal_label == CARRY_SEMANTICS_CANDIDATE:
+            if family.earned_downstream_test != LEARNING_RETENTION_TOLERANCE_PROBE:
+                raise ValueError("bounded-extra-deviation candidate must earn the tolerance probe")
+            if family.post_action_residual_cap != family.initial_residual_cap - projected_class_mass:
+                raise ValueError(
+                    "candidate full-class accept residual cap must equal the initial residual minus the accepted class mass"
+                )
+        if family.variant_name == CARRY_FAMILY_CLASS_UNIFORM_DEFER_UNTIL_FIT and family.terminal_label == INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT:
+            if family.missed_represented_count <= 0:
+                raise ValueError("inconclusive defer-until-fit must leave represented mass unconsumed on this horizon")
+        for class_report in family.projection_class_reports:
+            if class_report.future_class_count_in_bucket <= 0:
+                raise ValueError("projection class must report a positive future class-count in its bucket")
+            if class_report.projection_bits_for_class != _enum_bit_width(
+                int(class_report.future_class_count_in_bucket)
+            ):
+                raise ValueError("projection bits must match the charged future-class selector width")
+            if class_report.recovered_dropped_count > class_report.future_class_cardinality:
+                raise ValueError("recovered dropped mass cannot exceed the projected future class")
+            if class_report.matched_not_recovered_count != (
+                class_report.future_class_cardinality - class_report.recovered_dropped_count
+            ):
+                raise ValueError("matched-not-recovered count drifted from the projected future class size")
+            if class_report.future_observable_split_possible:
+                raise ValueError("the committed trace should not permit a future 384->128 identity-free split")
+    decision = report.terminal_decision
+    if decision.candidate_only is not True or decision.dyn200_earned or decision.learner_sub2_claimed:
+        raise ValueError("aggregate-state runtime semantics must stay candidate-only with no dyn200/learner claim")
+    if tuple(decision.candidate_family_names) != tuple(
+        family.variant_name for family in report.family_reports if family.terminal_label == CARRY_SEMANTICS_CANDIDATE
+    ):
+        raise ValueError("candidate family list drifted from the family terminals")
+    if tuple(decision.inconclusive_family_names) != tuple(
+        family.variant_name
+        for family in report.family_reports
+        if family.terminal_label == INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT
+    ):
+        raise ValueError("inconclusive family list drifted from the family terminals")
+    if tuple(decision.negative_family_names) != tuple(
+        family.variant_name
+        for family in report.family_reports
+        if family.terminal_label not in {CARRY_SEMANTICS_CANDIDATE, INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT}
+    ):
+        raise ValueError("negative family list drifted from the family terminals")
+    if decision.terminal_label == CARRY_SEMANTICS_CANDIDATE:
+        if not decision.learning_retention_tolerance_probe_earned:
+            raise ValueError("candidate terminal must earn the downstream tolerance probe")
+    elif decision.terminal_label == INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT:
+        if not decision.inconclusive_family_names:
+            raise ValueError("inconclusive terminal requires at least one inconclusive family")
+    elif decision.terminal_label == IMMEDIATE_RECOVERY_SEMANTICS_EXHAUSTED_ON_THIS_STATE_PATH:
+        if decision.inconclusive_family_names:
+            raise ValueError("immediate-recovery exhaustion must not keep an inconclusive family alive")
+        if not decision.immediate_recovery_semantics_exhausted_on_this_state_path:
+            raise ValueError("immediate-recovery exhaustion label requires the immediate-negative flag")
+    else:
+        raise ValueError("unexpected aggregate-state runtime semantics terminal label")
     _assert_no_tensors(report.to_dict())
 
 
@@ -8424,9 +9410,22 @@ __all__ = [
     "PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_SCHEMA_VERSION",
     "PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_LABEL",
     "PATH_B_DEFER_ALL_BASELINE_PARITY_PROBE_CANDIDATE",
+    "PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_SCHEMA_VERSION",
+    "PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_LABEL",
+    "PATH_B_AGGREGATE_STATE_RUNTIME_SEMANTICS_CANDIDATE",
     "BASELINE_SUFFICIENT_NO_CARRY_NEEDED",
     "CARRY_CANDIDATE_EARNED",
+    "CARRY_SEMANTICS_CANDIDATE",
+    "CARRY_SEMANTICS_UNLAWFUL_REQUIRES_IDENTITY_OR_ORDER",
+    "CARRY_SEMANTICS_CAP_OVERFLOW_OR_BITS_UNBOUNDED",
     "INCONCLUSIVE_NEEDS_LOOP_MEASUREMENT",
+    "IMMEDIATE_RECOVERY_SEMANTICS_EXHAUSTED_ON_THIS_STATE_PATH",
+    "CARRY_FAMILY_QUOTA_RELEASE",
+    "CARRY_FAMILY_CLASS_UNIFORM_ACCEPT_ALL_IF_FIT",
+    "CARRY_FAMILY_CLASS_UNIFORM_WITH_EXTRA_DEVIATION",
+    "CARRY_FAMILY_CLASS_UNIFORM_DEFER_UNTIL_FIT",
+    "CARRY_SUBCASE_EXACT_RECOVERY",
+    "CARRY_SUBCASE_CLASS_UNIFORM_BOUNDED_EXTRA_DEVIATION",
     "AGGREGATE_RUNTIME_SEMANTICS_DEFINITION_PLAN",
     "ONE_STEP_LOCAL_DIAGNOSTIC_MODE",
     "ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC",
@@ -8477,6 +9476,12 @@ __all__ = [
     "PathBDroppedMassOriginReport",
     "PathBDeferAllBaselineDecision",
     "PathBDeferAllBaselineParityProbeReport",
+    "AggregateStateRuntimeLedgerCharge",
+    "AggregateStateLifecycleSpec",
+    "AggregateStateProjectionClassReport",
+    "AggregateStateRuntimeFamilyReport",
+    "AggregateStateRuntimeSemanticsDecision",
+    "AggregateStateRuntimeSemanticsReport",
     "TieFrontierObservedBucketReport",
     "TieFrontierReservationDecision",
     "TieFrontierReservationLowerBoundReport",
@@ -8517,6 +9522,7 @@ __all__ = [
     "run_online_estimable_tie_mask_diagnostic",
     "run_path_b_identity_free_tie_rule_classifier",
     "run_path_b_defer_all_baseline_parity_probe",
+    "run_path_b_aggregate_state_runtime_semantics_definition",
     "run_real_backlog_lower_bound_diagnostic",
     "run_tie_frontier_reservation_lower_bound_diagnostic",
     "run_scale_appropriate_b_storage_comparison",
@@ -8527,6 +9533,7 @@ __all__ = [
     "validate_online_estimable_tie_mask_report",
     "validate_path_b_identity_free_tie_rule_classifier_report",
     "validate_path_b_defer_all_baseline_parity_probe_report",
+    "validate_path_b_aggregate_state_runtime_semantics_report",
     "validate_real_backlog_lower_bound_diagnostic_report",
     "validate_tie_frontier_reservation_lower_bound_report",
     "validate_scale_appropriate_b_storage_comparison_report",
