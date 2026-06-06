@@ -137,6 +137,30 @@ LOWER_BOUND_TRACE_MAX_SECONDS = 2.0
 LOWER_BOUND_TRACE_NONTRIVIAL_BACKLOG_SIZE = 2
 LOWER_BOUND_TRACE_NONTRIVIAL_UNIQUE_IDENTITIES = 2
 LOWER_BOUND_TRACE_NONTRIVIAL_MEMBERSHIP_CHANGES = 2
+SCALE_APPROPRIATE_B_STORAGE_SCHEMA_VERSION = (
+    "hrm_text_158_c1p1d_scale_appropriate_b_storage_comparison/v0"
+)
+SCALE_APPROPRIATE_B_STORAGE_LABEL = (
+    "c1p1d_scale_appropriate_b_storage_rate_comparison"
+)
+ABSOLUTE_COUNT_LOWER_BOUND_DIAGNOSTIC = "absolute_count_lower_bound_non_decisive"
+RATE_HELD_B_STORAGE_DIAGNOSTIC = "rate_held_b_storage_bpw"
+RATE_HELD_B_STILL_OVER_SCALE_HEADROOM_CANDIDATE_BRANCH_A = (
+    "rate_held_b_still_over_scale_headroom_candidate_branch_a"
+)
+SCALE_APPROPRIATE_COMPARISON_AMBIGUOUS_NEEDS_BACKLOG_DENSITY_TRACE = (
+    "scale_appropriate_comparison_ambiguous_needs_backlog_density_trace"
+)
+RATE_HELD_COUNT_ROUNDING_POLICY = (
+    "ceil_positive_density_per_step_to_target_eligible_weight_count"
+)
+SCALE_REQUIRED_Q_LEDGER_ROWS = (
+    "prior_large_fixture_base3_q",
+    "illustrative_4096x4096_one_tensor_one_scale_base3_q",
+)
+SCALE_SENSITIVITY_Q_LEDGER_ROWS = (
+    "illustrative_4096x4096_one_tensor_per_row_scale_base3_q",
+)
 
 
 def representative_engineering_guard_spec() -> BoundedDeltaGuardSpec:
@@ -159,6 +183,13 @@ def _prior_large_q_ledger() -> Base3QEntropyLedgerRow:
         if row.regime_name == "prior_large_fixture_base3_q":
             return row
     raise ValueError("prior_large_fixture_base3_q ledger row missing")
+
+
+def _q_ledger_row_by_name(regime_name: str) -> Base3QEntropyLedgerRow:
+    for row in default_base3_q_entropy_ledger_table():
+        if row.regime_name == str(regime_name):
+            return row
+    raise ValueError(f"{regime_name} ledger row missing")
 
 
 def _backlog_entry_count(backlog: Mapping[str, Mapping[int, Mapping[str, int]]]) -> int:
@@ -1082,6 +1113,188 @@ class RealBacklogLowerBoundReport:
             "exact_trace_summary": self.exact_trace_summary.to_dict(),
             "backlog_k_schedule": list(self.backlog_k_schedule),
             "sweep_entries": [entry.to_dict() for entry in self.sweep_entries],
+            "terminal_decision": self.terminal_decision.to_dict(),
+            "raw_arrays_included": bool(self.raw_arrays_included),
+            "non_claims": list(self.non_claims),
+        }
+
+
+@dataclass(frozen=True)
+class ScaleAppropriateProjectionStepReport:
+    schedule_name: str
+    step: int
+    projection_label: str
+    source_hot_exact_row_count: int
+    source_event_delta_count: int
+    source_backlog_entry_count: int
+    target_hot_exact_row_count: int
+    target_event_delta_count: int
+    target_backlog_entry_count: int
+    target_index_bits_per_row: int
+    tensor_metadata_bits: int
+    bucket_metadata_bits: int
+    scale_metadata_bits: int
+    guardrail_metadata_bits: int
+    bounded_delta_acc_bits_per_weight: float
+    exceeds_scale_headroom: bool
+    decisive_for_branch: bool
+    rounding_policy: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schedule_name": self.schedule_name,
+            "step": int(self.step),
+            "projection_label": self.projection_label,
+            "source_hot_exact_row_count": int(self.source_hot_exact_row_count),
+            "source_event_delta_count": int(self.source_event_delta_count),
+            "source_backlog_entry_count": int(self.source_backlog_entry_count),
+            "target_hot_exact_row_count": int(self.target_hot_exact_row_count),
+            "target_event_delta_count": int(self.target_event_delta_count),
+            "target_backlog_entry_count": int(self.target_backlog_entry_count),
+            "target_index_bits_per_row": int(self.target_index_bits_per_row),
+            "tensor_metadata_bits": int(self.tensor_metadata_bits),
+            "bucket_metadata_bits": int(self.bucket_metadata_bits),
+            "scale_metadata_bits": int(self.scale_metadata_bits),
+            "guardrail_metadata_bits": int(self.guardrail_metadata_bits),
+            "bounded_delta_acc_bits_per_weight": float(
+                self.bounded_delta_acc_bits_per_weight
+            ),
+            "exceeds_scale_headroom": bool(self.exceeds_scale_headroom),
+            "decisive_for_branch": bool(self.decisive_for_branch),
+            "rounding_policy": self.rounding_policy,
+        }
+
+
+@dataclass(frozen=True)
+class ScaleAppropriateLedgerComparisonReport:
+    q_regime_name: str
+    row_role: str
+    eligible_weight_count: int
+    q_packed_data_bits_per_weight: float
+    q_packed_metadata_bits_per_weight: float
+    q_packed_total_bits_per_weight: float
+    frozen_scale_fp32_bits_per_weight: float
+    scale_appropriate_headroom_bits_per_weight: float
+    density_assumption: str
+    absolute_count_lower_bound_step_reports: tuple[ScaleAppropriateProjectionStepReport, ...]
+    rate_held_b_storage_step_reports: tuple[ScaleAppropriateProjectionStepReport, ...]
+    absolute_count_lower_bound_peak_bounded_delta_acc_bits_per_weight: float
+    rate_held_b_storage_peak_bounded_delta_acc_bits_per_weight: float
+    absolute_count_lower_bound_exceeds_scale_headroom: bool
+    rate_held_b_storage_exceeds_scale_headroom: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "q_regime_name": self.q_regime_name,
+            "row_role": self.row_role,
+            "eligible_weight_count": int(self.eligible_weight_count),
+            "q_packed_data_bits_per_weight": float(self.q_packed_data_bits_per_weight),
+            "q_packed_metadata_bits_per_weight": float(
+                self.q_packed_metadata_bits_per_weight
+            ),
+            "q_packed_total_bits_per_weight": float(self.q_packed_total_bits_per_weight),
+            "frozen_scale_fp32_bits_per_weight": float(
+                self.frozen_scale_fp32_bits_per_weight
+            ),
+            "scale_appropriate_headroom_bits_per_weight": float(
+                self.scale_appropriate_headroom_bits_per_weight
+            ),
+            "density_assumption": self.density_assumption,
+            "absolute_count_lower_bound_step_reports": [
+                step.to_dict() for step in self.absolute_count_lower_bound_step_reports
+            ],
+            "rate_held_b_storage_step_reports": [
+                step.to_dict() for step in self.rate_held_b_storage_step_reports
+            ],
+            "absolute_count_lower_bound_peak_bounded_delta_acc_bits_per_weight": float(
+                self.absolute_count_lower_bound_peak_bounded_delta_acc_bits_per_weight
+            ),
+            "rate_held_b_storage_peak_bounded_delta_acc_bits_per_weight": float(
+                self.rate_held_b_storage_peak_bounded_delta_acc_bits_per_weight
+            ),
+            "absolute_count_lower_bound_exceeds_scale_headroom": bool(
+                self.absolute_count_lower_bound_exceeds_scale_headroom
+            ),
+            "rate_held_b_storage_exceeds_scale_headroom": bool(
+                self.rate_held_b_storage_exceeds_scale_headroom
+            ),
+        }
+
+
+@dataclass(frozen=True)
+class ScaleAppropriateComparisonDecision:
+    terminal_label: str
+    required_rows: tuple[str, ...]
+    rate_held_density_assumption_explicit: bool
+    required_rows_all_rate_held_exceed_scale_headroom: bool
+    any_required_absolute_count_lower_bound_exceeds_scale_headroom: bool
+    candidate_branch_a_trigger_earned: bool
+    global_per_row_compression_closed: bool
+    branch_a_trigger: bool
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "terminal_label": self.terminal_label,
+            "required_rows": list(self.required_rows),
+            "rate_held_density_assumption_explicit": bool(
+                self.rate_held_density_assumption_explicit
+            ),
+            "required_rows_all_rate_held_exceed_scale_headroom": bool(
+                self.required_rows_all_rate_held_exceed_scale_headroom
+            ),
+            "any_required_absolute_count_lower_bound_exceeds_scale_headroom": bool(
+                self.any_required_absolute_count_lower_bound_exceeds_scale_headroom
+            ),
+            "candidate_branch_a_trigger_earned": bool(
+                self.candidate_branch_a_trigger_earned
+            ),
+            "global_per_row_compression_closed": bool(
+                self.global_per_row_compression_closed
+            ),
+            "branch_a_trigger": bool(self.branch_a_trigger),
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class ScaleAppropriateBStorageComparisonReport:
+    schema_version: str
+    label: str
+    source_bindingness: Any
+    field_coverage: SourceFieldCoverage
+    candidate_name: str
+    source_lower_bound_label: str
+    source_terminal_label: str
+    source_minimal_surface_faithful_k_label: str
+    source_minimal_surface_faithful_k_value: int
+    source_tiny_eligible_weight_count: int
+    density_rounding_policy: str
+    required_q_ledger_rows: tuple[str, ...]
+    sensitivity_q_ledger_rows: tuple[str, ...]
+    row_comparisons: tuple[ScaleAppropriateLedgerComparisonReport, ...]
+    terminal_decision: ScaleAppropriateComparisonDecision
+    raw_arrays_included: bool
+    non_claims: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "label": self.label,
+            "source_bindingness": self.source_bindingness.to_dict(),
+            "field_coverage": self.field_coverage.to_dict(),
+            "candidate_name": self.candidate_name,
+            "source_lower_bound_label": self.source_lower_bound_label,
+            "source_terminal_label": self.source_terminal_label,
+            "source_minimal_surface_faithful_k_label": self.source_minimal_surface_faithful_k_label,
+            "source_minimal_surface_faithful_k_value": int(
+                self.source_minimal_surface_faithful_k_value
+            ),
+            "source_tiny_eligible_weight_count": int(self.source_tiny_eligible_weight_count),
+            "density_rounding_policy": self.density_rounding_policy,
+            "required_q_ledger_rows": list(self.required_q_ledger_rows),
+            "sensitivity_q_ledger_rows": list(self.sensitivity_q_ledger_rows),
+            "row_comparisons": [row.to_dict() for row in self.row_comparisons],
             "terminal_decision": self.terminal_decision.to_dict(),
             "raw_arrays_included": bool(self.raw_arrays_included),
             "non_claims": list(self.non_claims),
@@ -2960,6 +3173,287 @@ def run_real_backlog_lower_bound_diagnostic() -> RealBacklogLowerBoundReport:
     )
 
 
+def _scale_count_with_density(
+    *,
+    source_count: int,
+    source_eligible_weight_count: int,
+    target_eligible_weight_count: int,
+) -> int:
+    source = int(source_count)
+    if source <= 0:
+        return 0
+    scaled = math.ceil(
+        float(source) / float(int(source_eligible_weight_count)) * float(int(target_eligible_weight_count))
+    )
+    return min(int(target_eligible_weight_count), int(max(1, scaled)))
+
+
+def _scale_density_assumption(
+    source_step_reports: Sequence[RealBacklogLowerBoundStepReport],
+    *,
+    source_eligible_weight_count: int,
+) -> str:
+    parts = []
+    for step in source_step_reports:
+        parts.append(
+            f"{step.schedule_name}: hot={int(step.hot_exact_row_count)}/{int(source_eligible_weight_count)} "
+            f"event={int(step.event_delta_count)}/{int(source_eligible_weight_count)} "
+            f"backlog={int(step.backlog_entry_count)}/{int(source_eligible_weight_count)}"
+        )
+    return "; ".join(parts)
+
+
+def _scale_projection_step_report(
+    *,
+    source_step: RealBacklogLowerBoundStepReport,
+    q_ledger_row: Base3QEntropyLedgerRow,
+    projection_label: str,
+    target_hot_exact_row_count: int,
+    target_event_delta_count: int,
+    target_backlog_entry_count: int,
+    decisive_for_branch: bool,
+    rounding_policy: str,
+) -> ScaleAppropriateProjectionStepReport:
+    projection = project_bounded_delta_accumulator_bpw(
+        eligible_weight_count=int(q_ledger_row.eligible_weight_count),
+        hot_exact_row_count=int(target_hot_exact_row_count),
+        event_delta_count=int(target_event_delta_count),
+        backlog_entry_count=int(target_backlog_entry_count),
+        tensor_metadata_bits=int(q_ledger_row.q_state_count)
+        * DEFAULT_TENSOR_METADATA_BITS_PER_INPUT,
+        bucket_metadata_bits=DEFAULT_BUCKET_METADATA_BITS,
+        scale_metadata_bits=DEFAULT_SCALE_METADATA_BITS,
+        guardrail_metadata_bits=DEFAULT_GUARDRAIL_METADATA_BITS,
+    )
+    headroom = float(q_ledger_row.remaining_accumulator_budget_bits_per_weight)
+    bpw = float(projection.bounded_delta_acc_bits_per_weight)
+    return ScaleAppropriateProjectionStepReport(
+        schedule_name=source_step.schedule_name,
+        step=int(source_step.step),
+        projection_label=projection_label,
+        source_hot_exact_row_count=int(source_step.hot_exact_row_count),
+        source_event_delta_count=int(source_step.event_delta_count),
+        source_backlog_entry_count=int(source_step.backlog_entry_count),
+        target_hot_exact_row_count=int(target_hot_exact_row_count),
+        target_event_delta_count=int(target_event_delta_count),
+        target_backlog_entry_count=int(target_backlog_entry_count),
+        target_index_bits_per_row=int(projection.index_bits_per_row),
+        tensor_metadata_bits=int(projection.tensor_metadata_bits),
+        bucket_metadata_bits=int(projection.bucket_metadata_bits),
+        scale_metadata_bits=int(projection.scale_metadata_bits),
+        guardrail_metadata_bits=int(projection.guardrail_metadata_bits),
+        bounded_delta_acc_bits_per_weight=bpw,
+        exceeds_scale_headroom=bool(bpw > headroom),
+        decisive_for_branch=bool(decisive_for_branch),
+        rounding_policy=rounding_policy,
+    )
+
+
+def _scale_appropriate_comparison_for_row(
+    *,
+    q_ledger_row: Base3QEntropyLedgerRow,
+    row_role: str,
+    source_step_reports: Sequence[RealBacklogLowerBoundStepReport],
+    source_eligible_weight_count: int,
+) -> ScaleAppropriateLedgerComparisonReport:
+    density_assumption = _scale_density_assumption(
+        source_step_reports,
+        source_eligible_weight_count=source_eligible_weight_count,
+    )
+    absolute_reports = tuple(
+        _scale_projection_step_report(
+            source_step=step,
+            q_ledger_row=q_ledger_row,
+            projection_label=ABSOLUTE_COUNT_LOWER_BOUND_DIAGNOSTIC,
+            target_hot_exact_row_count=int(step.hot_exact_row_count),
+            target_event_delta_count=int(step.event_delta_count),
+            target_backlog_entry_count=int(step.backlog_entry_count),
+            decisive_for_branch=False,
+            rounding_policy="hold_absolute_counts_fixed_under_target_index_meta",
+        )
+        for step in source_step_reports
+    )
+    rate_reports = tuple(
+        _scale_projection_step_report(
+            source_step=step,
+            q_ledger_row=q_ledger_row,
+            projection_label=RATE_HELD_B_STORAGE_DIAGNOSTIC,
+            target_hot_exact_row_count=_scale_count_with_density(
+                source_count=int(step.hot_exact_row_count),
+                source_eligible_weight_count=source_eligible_weight_count,
+                target_eligible_weight_count=int(q_ledger_row.eligible_weight_count),
+            ),
+            target_event_delta_count=_scale_count_with_density(
+                source_count=int(step.event_delta_count),
+                source_eligible_weight_count=source_eligible_weight_count,
+                target_eligible_weight_count=int(q_ledger_row.eligible_weight_count),
+            ),
+            target_backlog_entry_count=_scale_count_with_density(
+                source_count=int(step.backlog_entry_count),
+                source_eligible_weight_count=source_eligible_weight_count,
+                target_eligible_weight_count=int(q_ledger_row.eligible_weight_count),
+            ),
+            decisive_for_branch=True,
+            rounding_policy=RATE_HELD_COUNT_ROUNDING_POLICY,
+        )
+        for step in source_step_reports
+    )
+    absolute_peak = max(step.bounded_delta_acc_bits_per_weight for step in absolute_reports)
+    rate_peak = max(step.bounded_delta_acc_bits_per_weight for step in rate_reports)
+    headroom = float(q_ledger_row.remaining_accumulator_budget_bits_per_weight)
+    return ScaleAppropriateLedgerComparisonReport(
+        q_regime_name=q_ledger_row.regime_name,
+        row_role=row_role,
+        eligible_weight_count=int(q_ledger_row.eligible_weight_count),
+        q_packed_data_bits_per_weight=float(q_ledger_row.q_packed_data_bits_per_weight),
+        q_packed_metadata_bits_per_weight=float(
+            q_ledger_row.q_packed_metadata_bits_per_weight
+        ),
+        q_packed_total_bits_per_weight=float(q_ledger_row.q_packed_total_bits_per_weight),
+        frozen_scale_fp32_bits_per_weight=float(
+            q_ledger_row.frozen_scale_fp32_bits_per_weight
+        ),
+        scale_appropriate_headroom_bits_per_weight=headroom,
+        density_assumption=density_assumption,
+        absolute_count_lower_bound_step_reports=absolute_reports,
+        rate_held_b_storage_step_reports=rate_reports,
+        absolute_count_lower_bound_peak_bounded_delta_acc_bits_per_weight=float(
+            absolute_peak
+        ),
+        rate_held_b_storage_peak_bounded_delta_acc_bits_per_weight=float(rate_peak),
+        absolute_count_lower_bound_exceeds_scale_headroom=bool(absolute_peak > headroom),
+        rate_held_b_storage_exceeds_scale_headroom=bool(rate_peak > headroom),
+    )
+
+
+def _scale_appropriate_b_storage_decision(
+    row_comparisons: Sequence[ScaleAppropriateLedgerComparisonReport],
+) -> ScaleAppropriateComparisonDecision:
+    required_rows = tuple(
+        row for row in row_comparisons if row.row_role == "required_gate"
+    )
+    if not required_rows:
+        raise ValueError("scale-appropriate B comparison requires required gate rows")
+    required_row_names = tuple(row.q_regime_name for row in required_rows)
+    all_required_rate_held_exceed = all(
+        row.rate_held_b_storage_exceeds_scale_headroom for row in required_rows
+    )
+    any_required_absolute_exceed = any(
+        row.absolute_count_lower_bound_exceeds_scale_headroom for row in required_rows
+    )
+    if all_required_rate_held_exceed:
+        label = RATE_HELD_B_STILL_OVER_SCALE_HEADROOM_CANDIDATE_BRANCH_A
+        reason = (
+            "rate-held B storage stays above scale-appropriate accumulator headroom on every "
+            f"required row ({', '.join(required_row_names)}); this earns a candidate structural-pivot "
+            "trigger under the explicit tiny-density assumption, while branch_a_trigger remains false "
+            "until Claude routes it"
+        )
+        candidate_branch = True
+    else:
+        failing = ", ".join(
+            row.q_regime_name
+            for row in required_rows
+            if not row.rate_held_b_storage_exceeds_scale_headroom
+        )
+        label = SCALE_APPROPRIATE_COMPARISON_AMBIGUOUS_NEEDS_BACKLOG_DENSITY_TRACE
+        reason = (
+            "rate-held B storage does not cleanly exceed scale headroom on every required row "
+            f"(non-exceeding: {failing or 'none'}); absolute-count rows remain non-decisive, so the "
+            "next honest step is a backlog-density trace"
+        )
+        candidate_branch = False
+    return ScaleAppropriateComparisonDecision(
+        terminal_label=label,
+        required_rows=required_row_names,
+        rate_held_density_assumption_explicit=True,
+        required_rows_all_rate_held_exceed_scale_headroom=bool(
+            all_required_rate_held_exceed
+        ),
+        any_required_absolute_count_lower_bound_exceeds_scale_headroom=bool(
+            any_required_absolute_exceed
+        ),
+        candidate_branch_a_trigger_earned=bool(candidate_branch),
+        global_per_row_compression_closed=False,
+        branch_a_trigger=False,
+        reason=reason,
+    )
+
+
+def run_scale_appropriate_b_storage_comparison() -> ScaleAppropriateBStorageComparisonReport:
+    """Compare Slice 1c's minimal surface-faithful B storage against scale headroom."""
+
+    lower_bound = run_real_backlog_lower_bound_diagnostic()
+    minimal_surface_faithful = next(
+        (
+            entry
+            for entry in lower_bound.sweep_entries
+            if entry.k_label == lower_bound.terminal_decision.minimal_surface_faithful_k_label
+        ),
+        None,
+    )
+    if minimal_surface_faithful is None:
+        raise ValueError("Slice 1d requires the committed Slice 1c minimal surface-faithful B entry")
+    source_eligible = int(lower_bound.terminal_decision.eligible_weight_count)
+    bindingness = pre_register_source_bindingness(
+        source_kind=SOURCE_KIND_GENERATED_NATIVE_LOOP,
+        coverage=SourceFieldCoverage.full_generated_native_loop(),
+    )
+    row_comparisons = tuple(
+        [
+            _scale_appropriate_comparison_for_row(
+                q_ledger_row=_q_ledger_row_by_name(regime_name),
+                row_role="required_gate",
+                source_step_reports=minimal_surface_faithful.per_step_reports,
+                source_eligible_weight_count=source_eligible,
+            )
+            for regime_name in SCALE_REQUIRED_Q_LEDGER_ROWS
+        ]
+        + [
+            _scale_appropriate_comparison_for_row(
+                q_ledger_row=_q_ledger_row_by_name(regime_name),
+                row_role="sensitivity_only",
+                source_step_reports=minimal_surface_faithful.per_step_reports,
+                source_eligible_weight_count=source_eligible,
+            )
+            for regime_name in SCALE_SENSITIVITY_Q_LEDGER_ROWS
+        ]
+    )
+    return ScaleAppropriateBStorageComparisonReport(
+        schema_version=SCALE_APPROPRIATE_B_STORAGE_SCHEMA_VERSION,
+        label=SCALE_APPROPRIATE_B_STORAGE_LABEL,
+        source_bindingness=bindingness,
+        field_coverage=SourceFieldCoverage.full_generated_native_loop(),
+        candidate_name=EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE,
+        source_lower_bound_label=lower_bound.label,
+        source_terminal_label=lower_bound.terminal_decision.terminal_label,
+        source_minimal_surface_faithful_k_label=(
+            lower_bound.terminal_decision.minimal_surface_faithful_k_label or "missing"
+        ),
+        source_minimal_surface_faithful_k_value=int(
+            lower_bound.terminal_decision.minimal_surface_faithful_k_value or -1
+        ),
+        source_tiny_eligible_weight_count=source_eligible,
+        density_rounding_policy=RATE_HELD_COUNT_ROUNDING_POLICY,
+        required_q_ledger_rows=SCALE_REQUIRED_Q_LEDGER_ROWS,
+        sensitivity_q_ledger_rows=SCALE_SENSITIVITY_Q_LEDGER_ROWS,
+        row_comparisons=row_comparisons,
+        terminal_decision=_scale_appropriate_b_storage_decision(row_comparisons),
+        raw_arrays_included=False,
+        non_claims=(
+            "CPU-only scale-appropriate comparison built on the Slice 1c oracle-upper-bound B seam",
+            "rate-held rows assume tiny-trace hot/event/backlog density scales by eligible weight",
+            "absolute_count_lower_bound rows are non-decisive diagnostics only",
+            "global_per_row_compression_closed=false",
+            "branch_a_trigger=false",
+            "candidate_branch_a_trigger_earned is advisory-only until Claude routes it",
+            "no GPU lane",
+            "no dyn200, no heavier backlog-density trace in this slice",
+            "compact counts/hashes only; no raw per-weight arrays",
+        ),
+    )
+
+
 def _assert_no_tensors(value: Any) -> None:
     if isinstance(value, torch.Tensor):
         raise ValueError("representative verdict payload must not include raw tensors")
@@ -3138,7 +3632,64 @@ def validate_real_backlog_lower_bound_diagnostic_report(
     _assert_no_tensors(report.to_dict())
 
 
+def validate_scale_appropriate_b_storage_comparison_report(
+    report: ScaleAppropriateBStorageComparisonReport,
+) -> None:
+    if report.schema_version != SCALE_APPROPRIATE_B_STORAGE_SCHEMA_VERSION:
+        raise ValueError("unexpected scale-appropriate B comparison schema version")
+    if report.candidate_name != EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE:
+        raise ValueError("scale-appropriate B comparison must stay B-only")
+    if tuple(report.required_q_ledger_rows) != SCALE_REQUIRED_Q_LEDGER_ROWS:
+        raise ValueError("required q-ledger rows drifted from the gated Slice 1d set")
+    if tuple(report.sensitivity_q_ledger_rows) != SCALE_SENSITIVITY_Q_LEDGER_ROWS:
+        raise ValueError("sensitivity q-ledger rows drifted from the gated Slice 1d set")
+    if report.terminal_decision.terminal_label not in {
+        RATE_HELD_B_STILL_OVER_SCALE_HEADROOM_CANDIDATE_BRANCH_A,
+        SCALE_APPROPRIATE_COMPARISON_AMBIGUOUS_NEEDS_BACKLOG_DENSITY_TRACE,
+    }:
+        raise ValueError("unexpected scale-appropriate B comparison terminal label")
+    if bool(report.terminal_decision.global_per_row_compression_closed):
+        raise ValueError("scale-appropriate B comparison must not claim global closure")
+    if bool(report.terminal_decision.branch_a_trigger):
+        raise ValueError("scale-appropriate B comparison must not self-trigger branch routing")
+    required_rows = {
+        row.q_regime_name: row for row in report.row_comparisons if row.row_role == "required_gate"
+    }
+    if set(required_rows) != set(SCALE_REQUIRED_Q_LEDGER_ROWS):
+        raise ValueError("scale-appropriate B comparison must cover the required gate rows exactly")
+    for row in report.row_comparisons:
+        if not row.absolute_count_lower_bound_step_reports:
+            raise ValueError("each scale row must keep the absolute-count diagnostic path")
+        if not row.rate_held_b_storage_step_reports:
+            raise ValueError("each scale row must keep the rate-held decisive path")
+        if row.absolute_count_lower_bound_step_reports[0].projection_label != ABSOLUTE_COUNT_LOWER_BOUND_DIAGNOSTIC:
+            raise ValueError("absolute-count diagnostic label drifted")
+        if row.rate_held_b_storage_step_reports[0].projection_label != RATE_HELD_B_STORAGE_DIAGNOSTIC:
+            raise ValueError("rate-held diagnostic label drifted")
+        if any(step.decisive_for_branch for step in row.absolute_count_lower_bound_step_reports):
+            raise ValueError("absolute-count diagnostics must stay non-decisive")
+        if not all(step.decisive_for_branch for step in row.rate_held_b_storage_step_reports):
+            raise ValueError("rate-held rows must stay the decisive comparator")
+        if not all(
+            step.rounding_policy == RATE_HELD_COUNT_ROUNDING_POLICY
+            for step in row.rate_held_b_storage_step_reports
+        ):
+            raise ValueError("rate-held rows must declare the gated density rounding policy")
+        if row.rate_held_b_storage_peak_bounded_delta_acc_bits_per_weight < row.absolute_count_lower_bound_peak_bounded_delta_acc_bits_per_weight:
+            raise ValueError("rate-held peak bpw must not undercut the absolute-count lower bound")
+    if report.terminal_decision.candidate_branch_a_trigger_earned:
+        if not report.terminal_decision.required_rows_all_rate_held_exceed_scale_headroom:
+            raise ValueError("candidate branch-a trigger requires all required rows to exceed headroom")
+        if report.terminal_decision.terminal_label != RATE_HELD_B_STILL_OVER_SCALE_HEADROOM_CANDIDATE_BRANCH_A:
+            raise ValueError("candidate branch-a trigger must carry the rate-held over-headroom label")
+    else:
+        if report.terminal_decision.terminal_label != SCALE_APPROPRIATE_COMPARISON_AMBIGUOUS_NEEDS_BACKLOG_DENSITY_TRACE:
+            raise ValueError("non-triggered scale comparison must land on the ambiguity label")
+    _assert_no_tensors(report.to_dict())
+
+
 __all__ = [
+    "ABSOLUTE_COUNT_LOWER_BOUND_DIAGNOSTIC",
     "ACCUMULATOR_FREE_NULL_BASELINE",
     "A_COLD_EXCEPTION_BUDGET_LEVER_LABEL",
     "A_FUNDAMENTALLY_OVER_LABEL",
@@ -3157,17 +3708,27 @@ __all__ = [
     "PER_ROW_COMPRESSION_CLOSED_BY_EASY_CASE_LOWER_BOUND",
     "PER_ROW_COMPRESSION_CLOSED_TINY_FIXTURE_LOWER_BOUND_ONLY",
     "PRIMARY_CURVE_LABEL",
+    "RATE_HELD_B_STILL_OVER_SCALE_HEADROOM_CANDIDATE_BRANCH_A",
+    "RATE_HELD_B_STORAGE_DIAGNOSTIC",
+    "RATE_HELD_COUNT_ROUNDING_POLICY",
     "REAL_BACKLOG_LOWER_BOUND_LABEL",
     "REAL_BACKLOG_LOWER_BOUND_SCHEMA_VERSION",
     "REPRESENTATIVE_TRACE_UNDERPOWERED_FOR_CLOSURE",
     "REPRESENTATIVE_VERDICT_LABEL",
     "REPRESENTATIVE_VERDICT_SCHEMA_VERSION",
+    "SCALE_APPROPRIATE_B_STORAGE_LABEL",
+    "SCALE_APPROPRIATE_B_STORAGE_SCHEMA_VERSION",
+    "SCALE_APPROPRIATE_COMPARISON_AMBIGUOUS_NEEDS_BACKLOG_DENSITY_TRACE",
     "RealBacklogLowerBoundDecision",
     "RealBacklogLowerBoundReport",
     "RealBacklogLowerBoundStepReport",
     "RealBacklogLowerBoundSweepEntry",
     "RealBacklogTraceStepReport",
     "RealBacklogTraceSummaryReport",
+    "ScaleAppropriateBStorageComparisonReport",
+    "ScaleAppropriateComparisonDecision",
+    "ScaleAppropriateLedgerComparisonReport",
+    "ScaleAppropriateProjectionStepReport",
     "SPARSE_AMORTIZED_CANDIDATE_RESURRECTED_FOR_HARDER_TRACE",
     "TINY_FIXTURE_HEADROOM_SOURCE",
     "CandidateABudgetLocalizationReport",
@@ -3188,9 +3749,11 @@ __all__ = [
     "run_candidate_admission_diagnostic",
     "run_candidate_capacity_localization_diagnostic",
     "run_real_backlog_lower_bound_diagnostic",
+    "run_scale_appropriate_b_storage_comparison",
     "run_representative_bounded_delta_drift_verdict",
     "validate_candidate_admission_diagnostic_report",
     "validate_candidate_capacity_localization_report",
     "validate_real_backlog_lower_bound_diagnostic_report",
+    "validate_scale_appropriate_b_storage_comparison_report",
     "validate_representative_bounded_delta_drift_verdict_report",
 ]

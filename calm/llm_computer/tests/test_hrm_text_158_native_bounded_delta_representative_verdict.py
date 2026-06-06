@@ -20,6 +20,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
     project_bounded_delta_accumulator_bpw,
 )
 from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict import (
+    ABSOLUTE_COUNT_LOWER_BOUND_DIAGNOSTIC,
     ACCUMULATOR_FREE_NULL_BASELINE,
     A_COLD_EXCEPTION_BUDGET_LEVER_LABEL,
     A_FUNDAMENTALLY_OVER_LABEL,
@@ -34,17 +35,24 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     ONE_STEP_LOCAL_DIAGNOSTIC_MODE,
     ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC,
     PER_ROW_COMPRESSION_CLOSED_TINY_FIXTURE_LOWER_BOUND_ONLY,
+    RATE_HELD_B_STILL_OVER_SCALE_HEADROOM_CANDIDATE_BRANCH_A,
+    RATE_HELD_B_STORAGE_DIAGNOSTIC,
+    RATE_HELD_COUNT_ROUNDING_POLICY,
     REAL_BACKLOG_LOWER_BOUND_LABEL,
     REPRESENTATIVE_TRACE_UNDERPOWERED_FOR_CLOSURE,
+    SCALE_APPROPRIATE_B_STORAGE_LABEL,
+    SCALE_APPROPRIATE_COMPARISON_AMBIGUOUS_NEEDS_BACKLOG_DENSITY_TRACE,
     SPARSE_AMORTIZED_CANDIDATE_RESURRECTED_FOR_HARDER_TRACE,
     TINY_FIXTURE_HEADROOM_SOURCE,
     run_candidate_admission_diagnostic,
     run_candidate_capacity_localization_diagnostic,
     run_real_backlog_lower_bound_diagnostic,
+    run_scale_appropriate_b_storage_comparison,
     run_representative_bounded_delta_drift_verdict,
     validate_candidate_admission_diagnostic_report,
     validate_candidate_capacity_localization_report,
     validate_real_backlog_lower_bound_diagnostic_report,
+    validate_scale_appropriate_b_storage_comparison_report,
     validate_representative_bounded_delta_drift_verdict_report,
 )
 from calm.hrm_text_158.native_full_stack.global_rate_cap import GlobalRateCapSpec
@@ -123,6 +131,11 @@ def _capacity_localization_report():
 @lru_cache(maxsize=1)
 def _real_backlog_lower_bound_report():
     return run_real_backlog_lower_bound_diagnostic()
+
+
+@lru_cache(maxsize=1)
+def _scale_appropriate_b_storage_report():
+    return run_scale_appropriate_b_storage_comparison()
 
 
 def test_bounded_backlog_policy_is_opt_in_and_charged_as_actual_stored_backlog():
@@ -529,4 +542,94 @@ def test_real_backlog_lower_bound_reports_trace_strength_and_headroom_comparison
             assert step.measured_report.oracle_parity["builder_label"] == (
                 REAL_BACKLOG_LOWER_BOUND_LABEL
             )
+    _assert_no_tensors(payload)
+
+
+def test_scale_appropriate_b_storage_uses_rate_held_rows_for_the_decision():
+    report = _scale_appropriate_b_storage_report()
+    payload = report.to_dict()
+
+    validate_scale_appropriate_b_storage_comparison_report(report)
+    assert report.label == SCALE_APPROPRIATE_B_STORAGE_LABEL
+    assert report.candidate_name == EVENT_CODED_CROSSING_RESIDUAL_LOG_CANDIDATE
+    assert report.source_terminal_label == PER_ROW_COMPRESSION_CLOSED_TINY_FIXTURE_LOWER_BOUND_ONLY
+    assert report.source_minimal_surface_faithful_k_label == "5"
+    assert report.source_minimal_surface_faithful_k_value == 5
+    assert report.source_tiny_eligible_weight_count == 160
+    assert report.density_rounding_policy == RATE_HELD_COUNT_ROUNDING_POLICY
+    assert report.terminal_decision.terminal_label == (
+        RATE_HELD_B_STILL_OVER_SCALE_HEADROOM_CANDIDATE_BRANCH_A
+    )
+    assert report.terminal_decision.candidate_branch_a_trigger_earned is True
+    assert report.terminal_decision.branch_a_trigger is False
+    assert report.terminal_decision.global_per_row_compression_closed is False
+    assert report.terminal_decision.required_rows_all_rate_held_exceed_scale_headroom is True
+    assert report.terminal_decision.rate_held_density_assumption_explicit is True
+
+    by_name = {row.q_regime_name: row for row in report.row_comparisons}
+    assert set(report.required_q_ledger_rows) == {
+        "prior_large_fixture_base3_q",
+        "illustrative_4096x4096_one_tensor_one_scale_base3_q",
+    }
+    assert set(report.sensitivity_q_ledger_rows) == {
+        "illustrative_4096x4096_one_tensor_per_row_scale_base3_q",
+    }
+    for name in report.required_q_ledger_rows:
+        row = by_name[name]
+        assert row.row_role == "required_gate"
+        assert row.rate_held_b_storage_exceeds_scale_headroom is True
+        assert row.rate_held_b_storage_peak_bounded_delta_acc_bits_per_weight > (
+            row.scale_appropriate_headroom_bits_per_weight
+        )
+        assert row.absolute_count_lower_bound_peak_bounded_delta_acc_bits_per_weight < (
+            row.rate_held_b_storage_peak_bounded_delta_acc_bits_per_weight
+        )
+        assert row.absolute_count_lower_bound_step_reports[0].projection_label == (
+            ABSOLUTE_COUNT_LOWER_BOUND_DIAGNOSTIC
+        )
+        assert row.absolute_count_lower_bound_step_reports[0].decisive_for_branch is False
+        assert row.rate_held_b_storage_step_reports[0].projection_label == (
+            RATE_HELD_B_STORAGE_DIAGNOSTIC
+        )
+        assert row.rate_held_b_storage_step_reports[0].decisive_for_branch is True
+        assert row.rate_held_b_storage_step_reports[0].rounding_policy == (
+            RATE_HELD_COUNT_ROUNDING_POLICY
+        )
+        assert "hot=2/160" in row.density_assumption
+        assert "event=2/160" in row.density_assumption
+        assert "backlog=5/160" in row.density_assumption
+    prior_large = by_name["prior_large_fixture_base3_q"]
+    assert prior_large.scale_appropriate_headroom_bits_per_weight == pytest.approx(
+        0.38232421875
+    )
+    assert prior_large.absolute_count_lower_bound_peak_bounded_delta_acc_bits_per_weight == pytest.approx(
+        0.0335693359375
+    )
+    assert prior_large.rate_held_b_storage_peak_bounded_delta_acc_bits_per_weight == pytest.approx(
+        2.25
+    )
+    assert prior_large.rate_held_b_storage_step_reports[0].target_hot_exact_row_count == 205
+    assert prior_large.rate_held_b_storage_step_reports[0].target_event_delta_count == 205
+    assert prior_large.rate_held_b_storage_step_reports[0].target_backlog_entry_count == 512
+    one_scale_4096 = by_name["illustrative_4096x4096_one_tensor_one_scale_base3_q"]
+    assert one_scale_4096.scale_appropriate_headroom_bits_per_weight == pytest.approx(
+        0.3999824523925781
+    )
+    assert one_scale_4096.absolute_count_lower_bound_peak_bounded_delta_acc_bits_per_weight == pytest.approx(
+        3.814697265625e-05
+    )
+    assert one_scale_4096.rate_held_b_storage_peak_bounded_delta_acc_bits_per_weight == pytest.approx(
+        2.800015449523926
+    )
+    assert one_scale_4096.rate_held_b_storage_step_reports[0].target_hot_exact_row_count == 209716
+    assert one_scale_4096.rate_held_b_storage_step_reports[0].target_event_delta_count == 209716
+    assert one_scale_4096.rate_held_b_storage_step_reports[0].target_backlog_entry_count == 524288
+    sensitivity = by_name["illustrative_4096x4096_one_tensor_per_row_scale_base3_q"]
+    assert sensitivity.row_role == "sensitivity_only"
+    assert sensitivity.scale_appropriate_headroom_bits_per_weight == pytest.approx(
+        0.39217185974121094
+    )
+    assert sensitivity.rate_held_b_storage_peak_bounded_delta_acc_bits_per_weight == pytest.approx(
+        2.800015449523926
+    )
     _assert_no_tensors(payload)
