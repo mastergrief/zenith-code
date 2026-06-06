@@ -30,6 +30,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     CUMULATIVE_SCHEDULE_MODE,
     DECISION_STATISTIC_UPPER_BOUND_LABEL,
     HOT_BUDGET_POINT_LABELS,
+    OBSERVED_TIE_RESERVATION_DIAGNOSTIC,
     K_SWEEP_JOINT_INFEASIBLE,
     K_SWEEP_MINIMAL_VIABLE_PASS,
     K_SWEEP_REPRESENTATION_WALL,
@@ -40,23 +41,31 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     RATE_HELD_B_STILL_OVER_SCALE_HEADROOM_CANDIDATE_BRANCH_A,
     RATE_HELD_B_STORAGE_DIAGNOSTIC,
     RATE_HELD_COUNT_ROUNDING_POLICY,
+    RATE_HELD_TIE_RESERVATION_DIAGNOSTIC,
     REAL_BACKLOG_LOWER_BOUND_LABEL,
     REPRESENTATIVE_TRACE_UNDERPOWERED_FOR_CLOSURE,
     SCALE_APPROPRIATE_B_STORAGE_LABEL,
     SCALE_APPROPRIATE_COMPARISON_AMBIGUOUS_NEEDS_BACKLOG_DENSITY_TRACE,
     SPARSE_AMORTIZED_CANDIDATE_RESURRECTED_FOR_HARDER_TRACE,
+    THEORETICAL_LOWER_BOUND_NON_DECISIVE,
+    TIE_FRONTIER_RESERVATION_FITS_HEADROOM_CANDIDATE_HYBRID,
+    TIE_FRONTIER_RESERVATION_LABEL,
+    TIE_MEMBERSHIP_MASK_ENCODING,
+    TIE_SELECTED_OFFSET_ENCODING,
     TINY_FIXTURE_HEADROOM_SOURCE,
     VIRTUAL_DECISION_STATISTIC_CANDIDATE,
     run_candidate_admission_diagnostic,
     run_candidate_capacity_localization_diagnostic,
     run_decision_statistic_upper_bound_diagnostic,
     run_real_backlog_lower_bound_diagnostic,
+    run_tie_frontier_reservation_lower_bound_diagnostic,
     run_scale_appropriate_b_storage_comparison,
     run_representative_bounded_delta_drift_verdict,
     validate_candidate_admission_diagnostic_report,
     validate_candidate_capacity_localization_report,
     validate_decision_statistic_upper_bound_report,
     validate_real_backlog_lower_bound_diagnostic_report,
+    validate_tie_frontier_reservation_lower_bound_report,
     validate_scale_appropriate_b_storage_comparison_report,
     validate_representative_bounded_delta_drift_verdict_report,
 )
@@ -146,6 +155,11 @@ def _scale_appropriate_b_storage_report():
 @lru_cache(maxsize=1)
 def _decision_statistic_upper_bound_report():
     return run_decision_statistic_upper_bound_diagnostic()
+
+
+@lru_cache(maxsize=1)
+def _tie_frontier_reservation_lower_bound_report():
+    return run_tie_frontier_reservation_lower_bound_diagnostic()
 
 
 def test_bounded_backlog_policy_is_opt_in_and_charged_as_actual_stored_backlog():
@@ -707,4 +721,119 @@ def test_decision_statistic_upper_bound_fits_headroom_but_fails_shuffle_falsifie
         0.010009765625
     )
     assert backlog_growth.observable_rank_features_sufficient is False
+    _assert_no_tensors(payload)
+
+
+def test_tie_frontier_reservation_lower_bound_keeps_hybrid_alive_as_a_candidate_only():
+    report = _tie_frontier_reservation_lower_bound_report()
+    payload = report.to_dict()
+
+    validate_tie_frontier_reservation_lower_bound_report(report)
+    assert report.label == TIE_FRONTIER_RESERVATION_LABEL
+    assert report.source_decision_statistic_label == DECISION_STATISTIC_UPPER_BOUND_LABEL
+    assert report.source_decision_statistic_terminal_label == (
+        OBSERVABLE_RANK_FEATURES_INSUFFICIENT
+    )
+    assert report.strictest_required_q_regime_name == "prior_large_fixture_base3_q"
+    assert report.strictest_headroom_bits_per_weight == pytest.approx(0.38232421875)
+    assert report.terminal_decision.terminal_label == (
+        TIE_FRONTIER_RESERVATION_FITS_HEADROOM_CANDIDATE_HYBRID
+    )
+    assert report.terminal_decision.candidate_hybrid_alive is True
+    assert report.terminal_decision.global_per_row_compression_closed is False
+    assert report.terminal_decision.branch_a_trigger is False
+    assert report.terminal_decision.any_required_row_joint_ta_ambiguous is False
+    assert report.terminal_decision.required_rows_all_rate_held_fit_strictest_headroom is True
+    assert report.terminal_decision.theoretical_lower_bound_non_decisive is True
+    assert report.terminal_decision.peak_rate_held_q_regime_name == (
+        "prior_large_fixture_base3_q"
+    )
+    assert report.terminal_decision.peak_rate_held_step == "backlog_growth"
+    assert report.terminal_decision.peak_rate_held_encoding_label == (
+        TIE_MEMBERSHIP_MASK_ENCODING
+    )
+    assert report.terminal_decision.peak_rate_held_combined_bits_per_weight == pytest.approx(
+        0.088134765625
+    )
+
+    observed = {
+        (bucket.schedule_name, bucket.state_key, bucket.move_direction): bucket
+        for bucket in report.observed_failing_bucket_reports
+    }
+    assert len(observed) == 4
+    cap_neg = observed[("cap_saturated", "proj_in", -1)]
+    assert cap_neg.tie_group_size == 384
+    assert cap_neg.exact_accepted_within_tie_count == 128
+    assert cap_neg.theoretical_lower_bound_bits == 349
+    assert cap_neg.mask_bits == 384
+    assert cap_neg.selected_offset_bits == 1152
+    assert cap_neg.decisive_practical_encoding_label == TIE_MEMBERSHIP_MASK_ENCODING
+    assert cap_neg.plateau_covers_entire_bucket is True
+    backlog_pos = observed[("backlog_growth", "proj_in", 1)]
+    assert backlog_pos.tie_group_size == 640
+    assert backlog_pos.exact_accepted_within_tie_count == 128
+    assert backlog_pos.theoretical_lower_bound_bits == 458
+    assert backlog_pos.mask_bits == 640
+    assert backlog_pos.selected_offset_bits == 1280
+    assert backlog_pos.decisive_practical_encoding_label == TIE_MEMBERSHIP_MASK_ENCODING
+
+    by_name = {row.q_regime_name: row for row in report.row_comparisons}
+    prior_large = by_name["prior_large_fixture_base3_q"]
+    assert prior_large.joint_ta_scaling_model_defensible is True
+    assert prior_large.rate_held_fits_strictest_headroom is True
+    assert prior_large.rate_held_peak_combined_bits_per_weight == pytest.approx(
+        0.088134765625
+    )
+    prior_backlog = next(
+        step for step in prior_large.rate_held_step_reports if step.schedule_name == "backlog_growth"
+    )
+    assert prior_backlog.projection_label == RATE_HELD_TIE_RESERVATION_DIAGNOSTIC
+    assert prior_backlog.decisive_practical_encoding_label == TIE_MEMBERSHIP_MASK_ENCODING
+    assert prior_backlog.theoretical_lower_bound_total_bits == 916
+    assert prior_backlog.mask_total_bits == 1280
+    assert prior_backlog.selected_offset_total_bits == 2560
+    assert prior_backlog.decisive_tie_reservation_total_bits == prior_backlog.mask_total_bits
+    assert prior_backlog.decisive_tie_reservation_total_bits == sum(
+        bucket.decisive_practical_bits for bucket in prior_backlog.bucket_reports
+    )
+    assert all(
+        bucket.decisive_practical_bits == bucket.mask_bits
+        for bucket in prior_backlog.bucket_reports
+    )
+    assert all(
+        bucket.theoretical_lower_bound_bits <= bucket.decisive_practical_bits
+        for bucket in prior_backlog.bucket_reports
+    )
+    assert prior_backlog.decisive_tie_reservation_bits_per_weight == pytest.approx(0.078125)
+    assert prior_backlog.combined_decisive_bits_per_weight == pytest.approx(0.088134765625)
+    assert prior_backlog.combined_decisive_bits_per_weight == pytest.approx(
+        prior_backlog.decision_statistic_bits_per_weight
+        + prior_backlog.decisive_tie_reservation_bits_per_weight
+    )
+    assert prior_large.absolute_count_step_reports[0].projection_label == (
+        OBSERVED_TIE_RESERVATION_DIAGNOSTIC
+    )
+    assert all(
+        bucket.joint_ta_scaling_model
+        == "hold_observed_TA_fixed_absolute_count_diagnostic_only"
+        for bucket in prior_large.absolute_count_step_reports[0].bucket_reports
+    )
+
+    one_scale = by_name["illustrative_4096x4096_one_tensor_one_scale_base3_q"]
+    assert one_scale.row_role == "required_gate"
+    assert one_scale.rate_held_peak_combined_bits_per_weight == pytest.approx(
+        0.0781395435333252
+    )
+    one_scale_backlog = next(
+        step for step in one_scale.rate_held_step_reports if step.schedule_name == "backlog_growth"
+    )
+    assert one_scale_backlog.bucket_reports[0].target_tie_group_size == 655360
+    assert one_scale_backlog.bucket_reports[0].target_exact_accepted_within_tie_count == 131072
+    assert one_scale_backlog.bucket_reports[0].decisive_practical_encoding_label == (
+        TIE_MEMBERSHIP_MASK_ENCODING
+    )
+    assert one_scale_backlog.bucket_reports[0].joint_ta_scaling_model != (
+        THEORETICAL_LOWER_BOUND_NON_DECISIVE
+    )
+    assert one_scale_backlog.selected_offset_bits_per_weight == pytest.approx(0.3125)
     _assert_no_tensors(payload)

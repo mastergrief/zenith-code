@@ -181,6 +181,37 @@ DECISION_STATISTIC_SHUFFLE_FALSIFIER = "per_bucket_reverse_order_tie_falsifier"
 DECISION_STATISTIC_SEED_BITS = 0
 DECISION_STATISTIC_CUTOFF_BIT_WIDTH = 0
 DECISION_STATISTIC_METADATA_BITS = 64
+TIE_FRONTIER_RESERVATION_SCHEMA_VERSION = (
+    "hrm_text_158_c1p1f_tie_frontier_reservation_lower_bound_diagnostic/v0"
+)
+TIE_FRONTIER_RESERVATION_LABEL = (
+    "c1p1f_tie_frontier_reservation_lower_bound_diagnostic"
+)
+TIE_FRONTIER_RESERVATION_CANDIDATE = (
+    "branch_a_tie_frontier_exact_reservation_candidate_hybrid"
+)
+THEORETICAL_LOWER_BOUND_NON_DECISIVE = "theoretical_lower_bound_non_decisive"
+TIE_MEMBERSHIP_MASK_ENCODING = "exact_tie_membership_mask"
+TIE_SELECTED_OFFSET_ENCODING = (
+    "accepted_selected_offsets_from_current_transient_rank_order"
+)
+OBSERVED_TIE_RESERVATION_DIAGNOSTIC = (
+    "observed_frontier_tie_reservation_absolute_count_diagnostic_only"
+)
+RATE_HELD_TIE_RESERVATION_DIAGNOSTIC = (
+    "joint_ta_rate_held_frontier_tie_reservation"
+)
+FULL_PLATEAU_JOINT_TA_SCALING_MODEL = (
+    "full_plateau_joint_ta_density_rate_hold_from_observed_quantized_frontier"
+)
+TIE_RESERVATION_FITS_HEADROOM_CANDIDATE_HYBRID = (
+    "tie_reservation_fits_headroom_candidate_hybrid"
+)
+TIE_FRONTIER_RESERVATION_FITS_HEADROOM_CANDIDATE_HYBRID = (
+    TIE_RESERVATION_FITS_HEADROOM_CANDIDATE_HYBRID
+)
+TIE_RESERVATION_BREAKS_SUB2 = "tie_reservation_breaks_sub2"
+TIE_DENSITY_AMBIGUOUS_NEEDS_TRACE = "tie_density_ambiguous_needs_trace"
 
 
 def representative_engineering_guard_spec() -> BoundedDeltaGuardSpec:
@@ -1553,6 +1584,352 @@ class DecisionStatisticUpperBoundReport:
             "statistic_mode": self.statistic_mode,
             "shuffle_falsifier": self.shuffle_falsifier,
             "step_reports": [step.to_dict() for step in self.step_reports],
+            "terminal_decision": self.terminal_decision.to_dict(),
+            "raw_arrays_included": bool(self.raw_arrays_included),
+            "non_claims": list(self.non_claims),
+        }
+
+
+@dataclass(frozen=True)
+class TieFrontierObservedBucketReport:
+    schedule_name: str
+    step: int
+    state_key: str
+    current_q_level: int
+    move_direction: int
+    candidate_row_count: int
+    accepted_row_count: int
+    boundary_abs_new_acc: int
+    tie_group_size: int
+    exact_accepted_within_tie_count: int
+    tie_group_density_per_eligible_weight: float
+    accepted_within_tie_density_per_eligible_weight: float
+    theoretical_lower_bound_bits: int
+    mask_bits: int
+    selected_offset_bits: int
+    decisive_practical_encoding_label: str
+    decisive_practical_bits: int
+    plateau_covers_entire_bucket: bool
+    exact_tie_members_sha256: str
+    exact_tie_accepted_sha256: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schedule_name": self.schedule_name,
+            "step": int(self.step),
+            "state_key": self.state_key,
+            "current_q_level": int(self.current_q_level),
+            "move_direction": int(self.move_direction),
+            "candidate_row_count": int(self.candidate_row_count),
+            "accepted_row_count": int(self.accepted_row_count),
+            "boundary_abs_new_acc": int(self.boundary_abs_new_acc),
+            "tie_group_size": int(self.tie_group_size),
+            "exact_accepted_within_tie_count": int(
+                self.exact_accepted_within_tie_count
+            ),
+            "tie_group_density_per_eligible_weight": float(
+                self.tie_group_density_per_eligible_weight
+            ),
+            "accepted_within_tie_density_per_eligible_weight": float(
+                self.accepted_within_tie_density_per_eligible_weight
+            ),
+            "theoretical_lower_bound_bits": int(self.theoretical_lower_bound_bits),
+            "mask_bits": int(self.mask_bits),
+            "selected_offset_bits": int(self.selected_offset_bits),
+            "decisive_practical_encoding_label": self.decisive_practical_encoding_label,
+            "decisive_practical_bits": int(self.decisive_practical_bits),
+            "plateau_covers_entire_bucket": bool(self.plateau_covers_entire_bucket),
+            "exact_tie_members_sha256": self.exact_tie_members_sha256,
+            "exact_tie_accepted_sha256": self.exact_tie_accepted_sha256,
+        }
+
+
+@dataclass(frozen=True)
+class TieReservationProjectionBucketReport:
+    schedule_name: str
+    step: int
+    state_key: str
+    current_q_level: int
+    move_direction: int
+    source_tie_group_size: int
+    source_exact_accepted_within_tie_count: int
+    source_tie_group_density_per_eligible_weight: float
+    source_accepted_within_tie_density_per_eligible_weight: float
+    target_tie_group_size: int
+    target_exact_accepted_within_tie_count: int
+    tie_group_density_per_eligible_weight: float
+    accepted_within_tie_density_per_eligible_weight: float
+    theoretical_lower_bound_bits: int
+    mask_bits: int
+    selected_offset_bits: int
+    decisive_practical_encoding_label: str
+    decisive_practical_bits: int
+    joint_ta_scaling_model: str
+    scaling_model_defensible: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schedule_name": self.schedule_name,
+            "step": int(self.step),
+            "state_key": self.state_key,
+            "current_q_level": int(self.current_q_level),
+            "move_direction": int(self.move_direction),
+            "source_tie_group_size": int(self.source_tie_group_size),
+            "source_exact_accepted_within_tie_count": int(
+                self.source_exact_accepted_within_tie_count
+            ),
+            "source_tie_group_density_per_eligible_weight": float(
+                self.source_tie_group_density_per_eligible_weight
+            ),
+            "source_accepted_within_tie_density_per_eligible_weight": float(
+                self.source_accepted_within_tie_density_per_eligible_weight
+            ),
+            "target_tie_group_size": int(self.target_tie_group_size),
+            "target_exact_accepted_within_tie_count": int(
+                self.target_exact_accepted_within_tie_count
+            ),
+            "tie_group_density_per_eligible_weight": float(
+                self.tie_group_density_per_eligible_weight
+            ),
+            "accepted_within_tie_density_per_eligible_weight": float(
+                self.accepted_within_tie_density_per_eligible_weight
+            ),
+            "theoretical_lower_bound_bits": int(self.theoretical_lower_bound_bits),
+            "mask_bits": int(self.mask_bits),
+            "selected_offset_bits": int(self.selected_offset_bits),
+            "decisive_practical_encoding_label": self.decisive_practical_encoding_label,
+            "decisive_practical_bits": int(self.decisive_practical_bits),
+            "joint_ta_scaling_model": self.joint_ta_scaling_model,
+            "scaling_model_defensible": bool(self.scaling_model_defensible),
+        }
+
+
+@dataclass(frozen=True)
+class TieReservationStepProjectionReport:
+    schedule_name: str
+    step: int
+    projection_label: str
+    target_q_regime_name: str
+    source_eligible_weight_count: int
+    target_eligible_weight_count: int
+    source_candidate_row_count: int
+    source_accepted_row_count: int
+    source_deferred_row_count: int
+    target_candidate_row_count: int
+    target_accepted_row_count: int
+    target_deferred_row_count: int
+    decision_statistic_total_bits: int
+    decision_statistic_bits_per_weight: float
+    bucket_reports: tuple[TieReservationProjectionBucketReport, ...]
+    theoretical_lower_bound_total_bits: int
+    theoretical_lower_bound_bits_per_weight: float
+    mask_total_bits: int
+    mask_bits_per_weight: float
+    selected_offset_total_bits: int
+    selected_offset_bits_per_weight: float
+    decisive_practical_encoding_label: str
+    decisive_tie_reservation_total_bits: int
+    decisive_tie_reservation_bits_per_weight: float
+    combined_decisive_bits_per_weight: float
+    strictest_headroom_bits_per_weight: float
+    fits_strictest_headroom: bool
+    diagnostic_only: bool
+    joint_ta_scaling_model: str
+    scaling_model_defensible: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schedule_name": self.schedule_name,
+            "step": int(self.step),
+            "projection_label": self.projection_label,
+            "target_q_regime_name": self.target_q_regime_name,
+            "source_eligible_weight_count": int(self.source_eligible_weight_count),
+            "target_eligible_weight_count": int(self.target_eligible_weight_count),
+            "source_candidate_row_count": int(self.source_candidate_row_count),
+            "source_accepted_row_count": int(self.source_accepted_row_count),
+            "source_deferred_row_count": int(self.source_deferred_row_count),
+            "target_candidate_row_count": int(self.target_candidate_row_count),
+            "target_accepted_row_count": int(self.target_accepted_row_count),
+            "target_deferred_row_count": int(self.target_deferred_row_count),
+            "decision_statistic_total_bits": int(self.decision_statistic_total_bits),
+            "decision_statistic_bits_per_weight": float(
+                self.decision_statistic_bits_per_weight
+            ),
+            "bucket_reports": [bucket.to_dict() for bucket in self.bucket_reports],
+            "theoretical_lower_bound_total_bits": int(
+                self.theoretical_lower_bound_total_bits
+            ),
+            "theoretical_lower_bound_bits_per_weight": float(
+                self.theoretical_lower_bound_bits_per_weight
+            ),
+            "mask_total_bits": int(self.mask_total_bits),
+            "mask_bits_per_weight": float(self.mask_bits_per_weight),
+            "selected_offset_total_bits": int(self.selected_offset_total_bits),
+            "selected_offset_bits_per_weight": float(self.selected_offset_bits_per_weight),
+            "decisive_practical_encoding_label": self.decisive_practical_encoding_label,
+            "decisive_tie_reservation_total_bits": int(
+                self.decisive_tie_reservation_total_bits
+            ),
+            "decisive_tie_reservation_bits_per_weight": float(
+                self.decisive_tie_reservation_bits_per_weight
+            ),
+            "combined_decisive_bits_per_weight": float(
+                self.combined_decisive_bits_per_weight
+            ),
+            "strictest_headroom_bits_per_weight": float(
+                self.strictest_headroom_bits_per_weight
+            ),
+            "fits_strictest_headroom": bool(self.fits_strictest_headroom),
+            "diagnostic_only": bool(self.diagnostic_only),
+            "joint_ta_scaling_model": self.joint_ta_scaling_model,
+            "scaling_model_defensible": bool(self.scaling_model_defensible),
+        }
+
+
+@dataclass(frozen=True)
+class TieReservationRowComparisonReport:
+    q_regime_name: str
+    row_role: str
+    eligible_weight_count: int
+    row_headroom_bits_per_weight: float
+    strictest_headroom_bits_per_weight: float
+    observed_tie_density_assumption: str
+    joint_ta_scaling_model: str
+    joint_ta_scaling_model_defensible: bool
+    absolute_count_step_reports: tuple[TieReservationStepProjectionReport, ...]
+    rate_held_step_reports: tuple[TieReservationStepProjectionReport, ...]
+    absolute_count_peak_combined_bits_per_weight: float
+    rate_held_peak_combined_bits_per_weight: float
+    rate_held_fits_strictest_headroom: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "q_regime_name": self.q_regime_name,
+            "row_role": self.row_role,
+            "eligible_weight_count": int(self.eligible_weight_count),
+            "row_headroom_bits_per_weight": float(self.row_headroom_bits_per_weight),
+            "strictest_headroom_bits_per_weight": float(
+                self.strictest_headroom_bits_per_weight
+            ),
+            "observed_tie_density_assumption": self.observed_tie_density_assumption,
+            "joint_ta_scaling_model": self.joint_ta_scaling_model,
+            "joint_ta_scaling_model_defensible": bool(
+                self.joint_ta_scaling_model_defensible
+            ),
+            "absolute_count_step_reports": [
+                step.to_dict() for step in self.absolute_count_step_reports
+            ],
+            "rate_held_step_reports": [
+                step.to_dict() for step in self.rate_held_step_reports
+            ],
+            "absolute_count_peak_combined_bits_per_weight": float(
+                self.absolute_count_peak_combined_bits_per_weight
+            ),
+            "rate_held_peak_combined_bits_per_weight": float(
+                self.rate_held_peak_combined_bits_per_weight
+            ),
+            "rate_held_fits_strictest_headroom": bool(
+                self.rate_held_fits_strictest_headroom
+            ),
+        }
+
+
+@dataclass(frozen=True)
+class TieFrontierReservationDecision:
+    terminal_label: str
+    required_rows: tuple[str, ...]
+    strictest_required_q_regime_name: str
+    strictest_headroom_bits_per_weight: float
+    joint_ta_scaling_model: str
+    joint_ta_scaling_model_defensible: bool
+    peak_rate_held_combined_bits_per_weight: float
+    peak_rate_held_step: str
+    peak_rate_held_q_regime_name: str
+    peak_rate_held_encoding_label: str
+    theoretical_lower_bound_non_decisive: bool
+    required_rows_all_rate_held_fit_strictest_headroom: bool
+    any_required_row_joint_ta_ambiguous: bool
+    candidate_hybrid_alive: bool
+    global_per_row_compression_closed: bool
+    branch_a_trigger: bool
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "terminal_label": self.terminal_label,
+            "required_rows": list(self.required_rows),
+            "strictest_required_q_regime_name": self.strictest_required_q_regime_name,
+            "strictest_headroom_bits_per_weight": float(
+                self.strictest_headroom_bits_per_weight
+            ),
+            "joint_ta_scaling_model": self.joint_ta_scaling_model,
+            "joint_ta_scaling_model_defensible": bool(
+                self.joint_ta_scaling_model_defensible
+            ),
+            "peak_rate_held_combined_bits_per_weight": float(
+                self.peak_rate_held_combined_bits_per_weight
+            ),
+            "peak_rate_held_step": self.peak_rate_held_step,
+            "peak_rate_held_q_regime_name": self.peak_rate_held_q_regime_name,
+            "peak_rate_held_encoding_label": self.peak_rate_held_encoding_label,
+            "theoretical_lower_bound_non_decisive": bool(
+                self.theoretical_lower_bound_non_decisive
+            ),
+            "required_rows_all_rate_held_fit_strictest_headroom": bool(
+                self.required_rows_all_rate_held_fit_strictest_headroom
+            ),
+            "any_required_row_joint_ta_ambiguous": bool(
+                self.any_required_row_joint_ta_ambiguous
+            ),
+            "candidate_hybrid_alive": bool(self.candidate_hybrid_alive),
+            "global_per_row_compression_closed": bool(
+                self.global_per_row_compression_closed
+            ),
+            "branch_a_trigger": bool(self.branch_a_trigger),
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class TieFrontierReservationLowerBoundReport:
+    schema_version: str
+    label: str
+    source_bindingness: Any
+    field_coverage: SourceFieldCoverage
+    candidate_name: str
+    source_decision_statistic_label: str
+    source_decision_statistic_terminal_label: str
+    strictest_required_q_regime_name: str
+    strictest_headroom_bits_per_weight: float
+    source_eligible_weight_count: int
+    required_q_ledger_rows: tuple[str, ...]
+    sensitivity_q_ledger_rows: tuple[str, ...]
+    observed_failing_bucket_reports: tuple[TieFrontierObservedBucketReport, ...]
+    row_comparisons: tuple[TieReservationRowComparisonReport, ...]
+    terminal_decision: TieFrontierReservationDecision
+    raw_arrays_included: bool
+    non_claims: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "label": self.label,
+            "source_bindingness": self.source_bindingness.to_dict(),
+            "field_coverage": self.field_coverage.to_dict(),
+            "candidate_name": self.candidate_name,
+            "source_decision_statistic_label": self.source_decision_statistic_label,
+            "source_decision_statistic_terminal_label": self.source_decision_statistic_terminal_label,
+            "strictest_required_q_regime_name": self.strictest_required_q_regime_name,
+            "strictest_headroom_bits_per_weight": float(
+                self.strictest_headroom_bits_per_weight
+            ),
+            "source_eligible_weight_count": int(self.source_eligible_weight_count),
+            "required_q_ledger_rows": list(self.required_q_ledger_rows),
+            "sensitivity_q_ledger_rows": list(self.sensitivity_q_ledger_rows),
+            "observed_failing_bucket_reports": [
+                bucket.to_dict() for bucket in self.observed_failing_bucket_reports
+            ],
+            "row_comparisons": [row.to_dict() for row in self.row_comparisons],
             "terminal_decision": self.terminal_decision.to_dict(),
             "raw_arrays_included": bool(self.raw_arrays_included),
             "non_claims": list(self.non_claims),
@@ -4140,6 +4517,581 @@ def run_decision_statistic_upper_bound_diagnostic() -> DecisionStatisticUpperBou
     )
 
 
+def _log2_choose_ceil(total_count: int, selected_count: int) -> int:
+    total = int(total_count)
+    selected = int(selected_count)
+    if total <= 0 or selected < 0 or selected > total:
+        raise ValueError("tie-frontier lower bound requires 0 <= A <= T and T > 0")
+    if selected == 0 or selected == total:
+        return 0
+    value = (
+        math.lgamma(total + 1)
+        - math.lgamma(selected + 1)
+        - math.lgamma(total - selected + 1)
+    ) / math.log(2.0)
+    return int(math.ceil(value - 1e-12))
+
+
+def _practical_tie_encoding_choice(*, tie_group_size: int, accepted_count: int) -> tuple[str, int]:
+    mask_bits = int(tie_group_size)
+    offset_bits = int(accepted_count) * _count_bit_width(int(tie_group_size) - 1)
+    if mask_bits <= offset_bits:
+        return TIE_MEMBERSHIP_MASK_ENCODING, mask_bits
+    return TIE_SELECTED_OFFSET_ENCODING, offset_bits
+
+
+def _decision_statistic_projection_bits(
+    *,
+    source_step_report: DecisionStatisticStepReport,
+    target_eligible_weight_count: int,
+    source_eligible_weight_count: int,
+) -> tuple[int, float, int, int, int]:
+    target_candidate_row_count = _scale_count_with_density(
+        source_count=int(source_step_report.candidate_row_count),
+        source_eligible_weight_count=source_eligible_weight_count,
+        target_eligible_weight_count=target_eligible_weight_count,
+    )
+    target_accepted_row_count = _scale_count_with_density(
+        source_count=int(source_step_report.accepted_row_count),
+        source_eligible_weight_count=source_eligible_weight_count,
+        target_eligible_weight_count=target_eligible_weight_count,
+    )
+    target_deferred_row_count = _scale_count_with_density(
+        source_count=int(source_step_report.deferred_row_count),
+        source_eligible_weight_count=source_eligible_weight_count,
+        target_eligible_weight_count=target_eligible_weight_count,
+    )
+    total_bits = (
+        len(source_step_report.bucket_summaries)
+        * (
+            _decision_statistic_bucket_key_bit_width()
+            + _count_bit_width(target_accepted_row_count)
+            + _count_bit_width(target_candidate_row_count)
+            + DECISION_STATISTIC_CUTOFF_BIT_WIDTH
+        )
+        + DECISION_STATISTIC_SEED_BITS
+        + DECISION_STATISTIC_METADATA_BITS
+    )
+    bits_per_weight = float(total_bits) / float(int(target_eligible_weight_count))
+    return (
+        int(total_bits),
+        float(bits_per_weight),
+        int(target_candidate_row_count),
+        int(target_accepted_row_count),
+        int(target_deferred_row_count),
+    )
+
+
+def _tie_bucket_identity_sets(
+    *,
+    trace_step: _ExactScheduleTraceStep,
+    bucket: DecisionStatisticBucketSummary,
+) -> tuple[set[tuple[str, int]], set[tuple[str, int]], int, bool]:
+    cap_result = trace_step.exact_path.cap_result
+    if cap_result is None:
+        raise ValueError("tie-frontier lower-bound diagnostic requires a cap-result trace")
+    exact_accepted = {(row.state_key, int(row.flat_index)) for row in cap_result.accepted_rows}
+    matching_rows = [
+        row
+        for row in _decision_statistic_observable_rows(trace_step)
+        if row.state_key == bucket.state_key
+        and int(row.current_q_level) == int(bucket.current_q_level)
+        and int(row.move_direction) == int(bucket.move_direction)
+    ]
+    accepted_count = int(bucket.accepted_count)
+    sorted_scores = sorted((row.abs_new_acc for row in matching_rows), reverse=True)
+    boundary_score = int(sorted_scores[accepted_count - 1])
+    tie_rows = {row.identity for row in matching_rows if int(row.abs_new_acc) == boundary_score}
+    accepted_within_tie = tie_rows & exact_accepted
+    plateau_covers_entire_bucket = len(tie_rows) == len(matching_rows)
+    return tie_rows, accepted_within_tie, boundary_score, plateau_covers_entire_bucket
+
+
+def _observed_tie_frontier_bucket_reports(
+    *,
+    source_step_reports: Sequence[DecisionStatisticStepReport],
+    trace_steps: Sequence[_ExactScheduleTraceStep],
+    source_eligible_weight_count: int,
+) -> tuple[TieFrontierObservedBucketReport, ...]:
+    trace_by_name = {step.schedule_step.name: step for step in trace_steps}
+    reports: list[TieFrontierObservedBucketReport] = []
+    for step_report in source_step_reports:
+        if int(step_report.frontier_tie_bucket_count) <= 0:
+            continue
+        trace_step = trace_by_name[step_report.schedule_name]
+        for bucket in step_report.bucket_summaries:
+            if not bool(bucket.frontier_tie_crosses_boundary):
+                continue
+            tie_rows, accepted_within_tie, boundary_score, plateau_covers_entire_bucket = (
+                _tie_bucket_identity_sets(trace_step=trace_step, bucket=bucket)
+            )
+            tie_group_size = len(tie_rows)
+            exact_accepted_within_tie_count = len(accepted_within_tie)
+            theoretical_lower_bound_bits = _log2_choose_ceil(
+                tie_group_size,
+                exact_accepted_within_tie_count,
+            )
+            decisive_label, decisive_bits = _practical_tie_encoding_choice(
+                tie_group_size=tie_group_size,
+                accepted_count=exact_accepted_within_tie_count,
+            )
+            reports.append(
+                TieFrontierObservedBucketReport(
+                    schedule_name=step_report.schedule_name,
+                    step=int(step_report.step),
+                    state_key=bucket.state_key,
+                    current_q_level=int(bucket.current_q_level),
+                    move_direction=int(bucket.move_direction),
+                    candidate_row_count=int(bucket.candidate_row_count),
+                    accepted_row_count=int(bucket.accepted_count),
+                    boundary_abs_new_acc=int(boundary_score),
+                    tie_group_size=int(tie_group_size),
+                    exact_accepted_within_tie_count=int(exact_accepted_within_tie_count),
+                    tie_group_density_per_eligible_weight=float(tie_group_size)
+                    / float(source_eligible_weight_count),
+                    accepted_within_tie_density_per_eligible_weight=float(
+                        exact_accepted_within_tie_count
+                    )
+                    / float(source_eligible_weight_count),
+                    theoretical_lower_bound_bits=int(theoretical_lower_bound_bits),
+                    mask_bits=int(tie_group_size),
+                    selected_offset_bits=int(exact_accepted_within_tie_count)
+                    * _count_bit_width(int(tie_group_size) - 1),
+                    decisive_practical_encoding_label=decisive_label,
+                    decisive_practical_bits=int(decisive_bits),
+                    plateau_covers_entire_bucket=bool(plateau_covers_entire_bucket),
+                    exact_tie_members_sha256=_identity_sha256(tie_rows),
+                    exact_tie_accepted_sha256=_identity_sha256(accepted_within_tie),
+                )
+            )
+    return tuple(reports)
+
+
+def _observed_tie_density_assumption(
+    bucket_reports: Sequence[TieFrontierObservedBucketReport],
+    *,
+    source_eligible_weight_count: int,
+) -> str:
+    parts = []
+    for bucket in bucket_reports:
+        parts.append(
+            f"{bucket.schedule_name}:{bucket.state_key}/q{int(bucket.current_q_level)}/d{int(bucket.move_direction)} "
+            f"T={int(bucket.tie_group_size)}/{int(source_eligible_weight_count)} "
+            f"A={int(bucket.exact_accepted_within_tie_count)}/{int(source_eligible_weight_count)}"
+        )
+    return "; ".join(parts)
+
+
+def _joint_ta_scaling_model_defensible(
+    bucket_reports: Sequence[TieFrontierObservedBucketReport],
+) -> bool:
+    return bool(bucket_reports) and all(
+        bool(bucket.plateau_covers_entire_bucket) for bucket in bucket_reports
+    )
+
+
+def _project_tie_reservation_bucket(
+    *,
+    source_bucket: TieFrontierObservedBucketReport,
+    source_eligible_weight_count: int,
+    target_eligible_weight_count: int,
+    projection_label: str,
+    scaling_model_defensible: bool,
+) -> TieReservationProjectionBucketReport:
+    if projection_label == OBSERVED_TIE_RESERVATION_DIAGNOSTIC:
+        target_tie_group_size = int(source_bucket.tie_group_size)
+        target_exact_accepted_within_tie_count = int(
+            source_bucket.exact_accepted_within_tie_count
+        )
+        scaling_model = "hold_observed_TA_fixed_absolute_count_diagnostic_only"
+    elif projection_label == RATE_HELD_TIE_RESERVATION_DIAGNOSTIC:
+        target_tie_group_size = _scale_count_with_density(
+            source_count=int(source_bucket.tie_group_size),
+            source_eligible_weight_count=source_eligible_weight_count,
+            target_eligible_weight_count=target_eligible_weight_count,
+        )
+        target_exact_accepted_within_tie_count = _scale_count_with_density(
+            source_count=int(source_bucket.exact_accepted_within_tie_count),
+            source_eligible_weight_count=source_eligible_weight_count,
+            target_eligible_weight_count=target_eligible_weight_count,
+        )
+        scaling_model = FULL_PLATEAU_JOINT_TA_SCALING_MODEL
+    else:
+        raise ValueError(f"unsupported tie-reservation projection label {projection_label!r}")
+    target_exact_accepted_within_tie_count = min(
+        int(target_tie_group_size),
+        int(target_exact_accepted_within_tie_count),
+    )
+    theoretical_lower_bound_bits = _log2_choose_ceil(
+        target_tie_group_size,
+        target_exact_accepted_within_tie_count,
+    )
+    decisive_label, decisive_bits = _practical_tie_encoding_choice(
+        tie_group_size=target_tie_group_size,
+        accepted_count=target_exact_accepted_within_tie_count,
+    )
+    return TieReservationProjectionBucketReport(
+        schedule_name=source_bucket.schedule_name,
+        step=int(source_bucket.step),
+        state_key=source_bucket.state_key,
+        current_q_level=int(source_bucket.current_q_level),
+        move_direction=int(source_bucket.move_direction),
+        source_tie_group_size=int(source_bucket.tie_group_size),
+        source_exact_accepted_within_tie_count=int(
+            source_bucket.exact_accepted_within_tie_count
+        ),
+        source_tie_group_density_per_eligible_weight=float(
+            source_bucket.tie_group_density_per_eligible_weight
+        ),
+        source_accepted_within_tie_density_per_eligible_weight=float(
+            source_bucket.accepted_within_tie_density_per_eligible_weight
+        ),
+        target_tie_group_size=int(target_tie_group_size),
+        target_exact_accepted_within_tie_count=int(
+            target_exact_accepted_within_tie_count
+        ),
+        tie_group_density_per_eligible_weight=float(target_tie_group_size)
+        / float(target_eligible_weight_count),
+        accepted_within_tie_density_per_eligible_weight=float(
+            target_exact_accepted_within_tie_count
+        )
+        / float(target_eligible_weight_count),
+        theoretical_lower_bound_bits=int(theoretical_lower_bound_bits),
+        mask_bits=int(target_tie_group_size),
+        selected_offset_bits=int(target_exact_accepted_within_tie_count)
+        * _count_bit_width(int(target_tie_group_size) - 1),
+        decisive_practical_encoding_label=decisive_label,
+        decisive_practical_bits=int(decisive_bits),
+        joint_ta_scaling_model=scaling_model,
+        scaling_model_defensible=bool(scaling_model_defensible),
+    )
+
+
+def _projection_decisive_label(
+    bucket_reports: Sequence[TieReservationProjectionBucketReport],
+) -> str:
+    labels = {bucket.decisive_practical_encoding_label for bucket in bucket_reports}
+    if len(labels) == 1:
+        return next(iter(labels))
+    return "mixed_per_bucket_min_practical_exact_retention"
+
+
+def _tie_reservation_step_projection_report(
+    *,
+    source_step_report: DecisionStatisticStepReport,
+    source_bucket_reports: Sequence[TieFrontierObservedBucketReport],
+    source_eligible_weight_count: int,
+    q_ledger_row: Base3QEntropyLedgerRow,
+    strictest_headroom_bits_per_weight: float,
+    projection_label: str,
+    scaling_model_defensible: bool,
+) -> TieReservationStepProjectionReport:
+    bucket_reports = tuple(
+        _project_tie_reservation_bucket(
+            source_bucket=bucket,
+            source_eligible_weight_count=source_eligible_weight_count,
+            target_eligible_weight_count=int(q_ledger_row.eligible_weight_count),
+            projection_label=projection_label,
+            scaling_model_defensible=scaling_model_defensible,
+        )
+        for bucket in source_bucket_reports
+    )
+    decision_statistic_total_bits, decision_statistic_bits_per_weight, target_candidate_row_count, target_accepted_row_count, target_deferred_row_count = (
+        _decision_statistic_projection_bits(
+            source_step_report=source_step_report,
+            target_eligible_weight_count=int(q_ledger_row.eligible_weight_count),
+            source_eligible_weight_count=source_eligible_weight_count,
+        )
+    )
+    theoretical_total_bits = sum(bucket.theoretical_lower_bound_bits for bucket in bucket_reports)
+    mask_total_bits = sum(bucket.mask_bits for bucket in bucket_reports)
+    selected_offset_total_bits = sum(bucket.selected_offset_bits for bucket in bucket_reports)
+    decisive_total_bits = sum(bucket.decisive_practical_bits for bucket in bucket_reports)
+    target_eligible = int(q_ledger_row.eligible_weight_count)
+    return TieReservationStepProjectionReport(
+        schedule_name=source_step_report.schedule_name,
+        step=int(source_step_report.step),
+        projection_label=projection_label,
+        target_q_regime_name=q_ledger_row.regime_name,
+        source_eligible_weight_count=int(source_eligible_weight_count),
+        target_eligible_weight_count=target_eligible,
+        source_candidate_row_count=int(source_step_report.candidate_row_count),
+        source_accepted_row_count=int(source_step_report.accepted_row_count),
+        source_deferred_row_count=int(source_step_report.deferred_row_count),
+        target_candidate_row_count=int(target_candidate_row_count),
+        target_accepted_row_count=int(target_accepted_row_count),
+        target_deferred_row_count=int(target_deferred_row_count),
+        decision_statistic_total_bits=int(decision_statistic_total_bits),
+        decision_statistic_bits_per_weight=float(decision_statistic_bits_per_weight),
+        bucket_reports=bucket_reports,
+        theoretical_lower_bound_total_bits=int(theoretical_total_bits),
+        theoretical_lower_bound_bits_per_weight=float(theoretical_total_bits)
+        / float(target_eligible),
+        mask_total_bits=int(mask_total_bits),
+        mask_bits_per_weight=float(mask_total_bits) / float(target_eligible),
+        selected_offset_total_bits=int(selected_offset_total_bits),
+        selected_offset_bits_per_weight=float(selected_offset_total_bits)
+        / float(target_eligible),
+        decisive_practical_encoding_label=_projection_decisive_label(bucket_reports),
+        decisive_tie_reservation_total_bits=int(decisive_total_bits),
+        decisive_tie_reservation_bits_per_weight=float(decisive_total_bits)
+        / float(target_eligible),
+        combined_decisive_bits_per_weight=float(decision_statistic_bits_per_weight)
+        + float(decisive_total_bits) / float(target_eligible),
+        strictest_headroom_bits_per_weight=float(strictest_headroom_bits_per_weight),
+        fits_strictest_headroom=(
+            float(decision_statistic_bits_per_weight)
+            + float(decisive_total_bits) / float(target_eligible)
+            <= float(strictest_headroom_bits_per_weight) + 1e-12
+        ),
+        diagnostic_only=projection_label == OBSERVED_TIE_RESERVATION_DIAGNOSTIC,
+        joint_ta_scaling_model=(
+            "hold_observed_TA_fixed_absolute_count_diagnostic_only"
+            if projection_label == OBSERVED_TIE_RESERVATION_DIAGNOSTIC
+            else FULL_PLATEAU_JOINT_TA_SCALING_MODEL
+        ),
+        scaling_model_defensible=bool(scaling_model_defensible),
+    )
+
+
+def _failing_step_bucket_groups(
+    observed_bucket_reports: Sequence[TieFrontierObservedBucketReport],
+) -> dict[str, tuple[TieFrontierObservedBucketReport, ...]]:
+    grouped: dict[str, list[TieFrontierObservedBucketReport]] = {}
+    for bucket in observed_bucket_reports:
+        grouped.setdefault(bucket.schedule_name, []).append(bucket)
+    return {
+        name: tuple(sorted(reports, key=lambda item: (item.state_key, item.move_direction)))
+        for name, reports in grouped.items()
+    }
+
+
+def _tie_reservation_row_comparison_for_row(
+    *,
+    q_ledger_row: Base3QEntropyLedgerRow,
+    row_role: str,
+    source_step_reports: Sequence[DecisionStatisticStepReport],
+    observed_bucket_reports: Sequence[TieFrontierObservedBucketReport],
+    source_eligible_weight_count: int,
+    strictest_headroom_bits_per_weight: float,
+) -> TieReservationRowComparisonReport:
+    bucket_groups = _failing_step_bucket_groups(observed_bucket_reports)
+    scaling_model_defensible = _joint_ta_scaling_model_defensible(observed_bucket_reports)
+    absolute_reports = tuple(
+        _tie_reservation_step_projection_report(
+            source_step_report=step,
+            source_bucket_reports=bucket_groups[step.schedule_name],
+            source_eligible_weight_count=source_eligible_weight_count,
+            q_ledger_row=q_ledger_row,
+            strictest_headroom_bits_per_weight=strictest_headroom_bits_per_weight,
+            projection_label=OBSERVED_TIE_RESERVATION_DIAGNOSTIC,
+            scaling_model_defensible=True,
+        )
+        for step in source_step_reports
+        if step.schedule_name in bucket_groups
+    )
+    rate_held_reports = tuple(
+        _tie_reservation_step_projection_report(
+            source_step_report=step,
+            source_bucket_reports=bucket_groups[step.schedule_name],
+            source_eligible_weight_count=source_eligible_weight_count,
+            q_ledger_row=q_ledger_row,
+            strictest_headroom_bits_per_weight=strictest_headroom_bits_per_weight,
+            projection_label=RATE_HELD_TIE_RESERVATION_DIAGNOSTIC,
+            scaling_model_defensible=scaling_model_defensible,
+        )
+        for step in source_step_reports
+        if step.schedule_name in bucket_groups
+    )
+    absolute_peak = max(
+        step.combined_decisive_bits_per_weight for step in absolute_reports
+    )
+    rate_peak = max(step.combined_decisive_bits_per_weight for step in rate_held_reports)
+    return TieReservationRowComparisonReport(
+        q_regime_name=q_ledger_row.regime_name,
+        row_role=row_role,
+        eligible_weight_count=int(q_ledger_row.eligible_weight_count),
+        row_headroom_bits_per_weight=float(
+            q_ledger_row.remaining_accumulator_budget_bits_per_weight
+        ),
+        strictest_headroom_bits_per_weight=float(strictest_headroom_bits_per_weight),
+        observed_tie_density_assumption=_observed_tie_density_assumption(
+            observed_bucket_reports,
+            source_eligible_weight_count=source_eligible_weight_count,
+        ),
+        joint_ta_scaling_model=FULL_PLATEAU_JOINT_TA_SCALING_MODEL,
+        joint_ta_scaling_model_defensible=bool(scaling_model_defensible),
+        absolute_count_step_reports=absolute_reports,
+        rate_held_step_reports=rate_held_reports,
+        absolute_count_peak_combined_bits_per_weight=float(absolute_peak),
+        rate_held_peak_combined_bits_per_weight=float(rate_peak),
+        rate_held_fits_strictest_headroom=bool(
+            rate_peak <= float(strictest_headroom_bits_per_weight) + 1e-12
+        ),
+    )
+
+
+def _tie_frontier_reservation_decision(
+    row_comparisons: Sequence[TieReservationRowComparisonReport],
+    *,
+    strictest_required_row: ScaleAppropriateLedgerComparisonReport,
+) -> TieFrontierReservationDecision:
+    required_rows = [row for row in row_comparisons if row.row_role == "required_gate"]
+    if not required_rows:
+        raise ValueError("tie-frontier lower-bound diagnostic requires the Slice 1d required rows")
+    any_ambiguous = any(not row.joint_ta_scaling_model_defensible for row in required_rows)
+    all_fit = all(row.rate_held_fits_strictest_headroom for row in required_rows)
+    peak_row = max(
+        required_rows,
+        key=lambda row: row.rate_held_peak_combined_bits_per_weight,
+    )
+    peak_step = max(
+        peak_row.rate_held_step_reports,
+        key=lambda step: step.combined_decisive_bits_per_weight,
+    )
+    if any_ambiguous:
+        terminal_label = TIE_DENSITY_AMBIGUOUS_NEEDS_TRACE
+        reason = (
+            "no defensible joint T/A scaling model was available for every required row; "
+            "honest terminal is ambiguity rather than fixed tiny-multiplicity fit"
+        )
+    elif not all_fit:
+        terminal_label = TIE_RESERVATION_BREAKS_SUB2
+        reason = (
+            "decision-statistic bpw plus the decisive practical exact-tie reservation bpw "
+            f"exceeded the strictest Slice 1d headroom first at {peak_row.q_regime_name}/"
+            f"{peak_step.schedule_name}"
+        )
+    else:
+        terminal_label = TIE_RESERVATION_FITS_HEADROOM_CANDIDATE_HYBRID
+        reason = (
+            "under the full-plateau joint T/A rate-held model, the decisive practical exact-tie "
+            "reservation plus the branch-(a) decision statistic stays below the strictest Slice 1d "
+            "headroom on every required row; hybrid survives as a candidate only"
+        )
+    return TieFrontierReservationDecision(
+        terminal_label=terminal_label,
+        required_rows=tuple(SCALE_REQUIRED_Q_LEDGER_ROWS),
+        strictest_required_q_regime_name=strictest_required_row.q_regime_name,
+        strictest_headroom_bits_per_weight=float(
+            strictest_required_row.scale_appropriate_headroom_bits_per_weight
+        ),
+        joint_ta_scaling_model=FULL_PLATEAU_JOINT_TA_SCALING_MODEL,
+        joint_ta_scaling_model_defensible=not any_ambiguous,
+        peak_rate_held_combined_bits_per_weight=float(
+            peak_row.rate_held_peak_combined_bits_per_weight
+        ),
+        peak_rate_held_step=peak_step.schedule_name,
+        peak_rate_held_q_regime_name=peak_row.q_regime_name,
+        peak_rate_held_encoding_label=peak_step.decisive_practical_encoding_label,
+        theoretical_lower_bound_non_decisive=True,
+        required_rows_all_rate_held_fit_strictest_headroom=bool(all_fit),
+        any_required_row_joint_ta_ambiguous=bool(any_ambiguous),
+        candidate_hybrid_alive=(
+            terminal_label == TIE_RESERVATION_FITS_HEADROOM_CANDIDATE_HYBRID
+        ),
+        global_per_row_compression_closed=False,
+        branch_a_trigger=False,
+        reason=reason,
+    )
+
+
+def _tie_frontier_reservation_non_claims() -> tuple[str, ...]:
+    return (
+        "CPU-only lower-bound diagnostic built on the committed branch-(a) exact trace",
+        "theoretical lower bound is non-decisive unless a recoverable enumerative codec is separately validated",
+        "practical exact-retention encodings are mask and selected-offset list only",
+        "selected offsets are recomputed from current transient observable rank order, not persisted identity state",
+        "candidate_hybrid only; no dyn200, no online-estimability claim, no global closure",
+        "global_per_row_compression_closed=false",
+        "branch_a_trigger=false",
+        "compact validation hashes only; no row IDs or ordered IDs in the persisted payload",
+    )
+
+
+def run_tie_frontier_reservation_lower_bound_diagnostic() -> TieFrontierReservationLowerBoundReport:
+    """Measure the honest lower bound for exact frontier-tie retention on top of branch-(a)."""
+
+    scale_report = run_scale_appropriate_b_storage_comparison()
+    strictest_required_row = _strictest_required_scale_row(scale_report)
+    decision_report = run_decision_statistic_upper_bound_diagnostic()
+    trace_steps, _ = _build_exact_schedule_trace()
+    source_step_reports = tuple(
+        step
+        for step in decision_report.step_reports
+        if int(step.frontier_tie_bucket_count) > 0
+    )
+    observed_bucket_reports = _observed_tie_frontier_bucket_reports(
+        source_step_reports=source_step_reports,
+        trace_steps=trace_steps,
+        source_eligible_weight_count=int(
+            decision_report.strictest_required_eligible_weight_count
+        ),
+    )
+    bindingness = pre_register_source_bindingness(
+        source_kind=SOURCE_KIND_GENERATED_NATIVE_LOOP,
+        coverage=SourceFieldCoverage.full_generated_native_loop(),
+    )
+    row_comparisons = tuple(
+        [
+            _tie_reservation_row_comparison_for_row(
+                q_ledger_row=_q_ledger_row_by_name(regime_name),
+                row_role="required_gate",
+                source_step_reports=source_step_reports,
+                observed_bucket_reports=observed_bucket_reports,
+                source_eligible_weight_count=int(
+                    decision_report.strictest_required_eligible_weight_count
+                ),
+                strictest_headroom_bits_per_weight=float(
+                    strictest_required_row.scale_appropriate_headroom_bits_per_weight
+                ),
+            )
+            for regime_name in SCALE_REQUIRED_Q_LEDGER_ROWS
+        ]
+        + [
+            _tie_reservation_row_comparison_for_row(
+                q_ledger_row=_q_ledger_row_by_name(regime_name),
+                row_role="sensitivity_only",
+                source_step_reports=source_step_reports,
+                observed_bucket_reports=observed_bucket_reports,
+                source_eligible_weight_count=int(
+                    decision_report.strictest_required_eligible_weight_count
+                ),
+                strictest_headroom_bits_per_weight=float(
+                    strictest_required_row.scale_appropriate_headroom_bits_per_weight
+                ),
+            )
+            for regime_name in SCALE_SENSITIVITY_Q_LEDGER_ROWS
+        ]
+    )
+    return TieFrontierReservationLowerBoundReport(
+        schema_version=TIE_FRONTIER_RESERVATION_SCHEMA_VERSION,
+        label=TIE_FRONTIER_RESERVATION_LABEL,
+        source_bindingness=bindingness,
+        field_coverage=SourceFieldCoverage.full_generated_native_loop(),
+        candidate_name=TIE_FRONTIER_RESERVATION_CANDIDATE,
+        source_decision_statistic_label=decision_report.label,
+        source_decision_statistic_terminal_label=decision_report.terminal_decision.terminal_label,
+        strictest_required_q_regime_name=strictest_required_row.q_regime_name,
+        strictest_headroom_bits_per_weight=float(
+            strictest_required_row.scale_appropriate_headroom_bits_per_weight
+        ),
+        source_eligible_weight_count=int(
+            decision_report.strictest_required_eligible_weight_count
+        ),
+        required_q_ledger_rows=SCALE_REQUIRED_Q_LEDGER_ROWS,
+        sensitivity_q_ledger_rows=SCALE_SENSITIVITY_Q_LEDGER_ROWS,
+        observed_failing_bucket_reports=observed_bucket_reports,
+        row_comparisons=row_comparisons,
+        terminal_decision=_tie_frontier_reservation_decision(
+            row_comparisons,
+            strictest_required_row=strictest_required_row,
+        ),
+        raw_arrays_included=False,
+        non_claims=_tie_frontier_reservation_non_claims(),
+    )
+
+
 def _assert_no_tensors(value: Any) -> None:
     if isinstance(value, torch.Tensor):
         raise ValueError("representative verdict payload must not include raw tensors")
@@ -4541,6 +5493,164 @@ def validate_decision_statistic_upper_bound_report(
     _assert_no_tensors(report.to_dict())
 
 
+def _expected_bucket_decisive_bits(
+    bucket: TieReservationProjectionBucketReport,
+) -> int:
+    label = bucket.decisive_practical_encoding_label
+    if label == TIE_MEMBERSHIP_MASK_ENCODING:
+        return int(bucket.mask_bits)
+    if label == TIE_SELECTED_OFFSET_ENCODING:
+        return int(bucket.selected_offset_bits)
+    raise ValueError("bucket decisive practical encoding must be an exact practical encoding")
+
+
+def validate_tie_frontier_reservation_lower_bound_report(
+    report: TieFrontierReservationLowerBoundReport,
+) -> None:
+    if report.schema_version != TIE_FRONTIER_RESERVATION_SCHEMA_VERSION:
+        raise ValueError("unexpected tie-frontier reservation schema version")
+    if report.label != TIE_FRONTIER_RESERVATION_LABEL:
+        raise ValueError("unexpected tie-frontier reservation label")
+    if report.candidate_name != TIE_FRONTIER_RESERVATION_CANDIDATE:
+        raise ValueError("tie-frontier reservation diagnostic candidate drifted")
+    if report.source_decision_statistic_label != DECISION_STATISTIC_UPPER_BOUND_LABEL:
+        raise ValueError("tie-frontier reservation diagnostic must cite the committed branch-(a) label")
+    if report.source_decision_statistic_terminal_label != OBSERVABLE_RANK_FEATURES_INSUFFICIENT:
+        raise ValueError("tie-frontier reservation diagnostic must inherit the branch-(a) insufficiency source")
+    if tuple(report.required_q_ledger_rows) != SCALE_REQUIRED_Q_LEDGER_ROWS:
+        raise ValueError("tie-frontier reservation required rows drifted from Slice 1d")
+    if tuple(report.sensitivity_q_ledger_rows) != SCALE_SENSITIVITY_Q_LEDGER_ROWS:
+        raise ValueError("tie-frontier reservation sensitivity rows drifted from Slice 1d")
+    if report.terminal_decision.terminal_label not in {
+        TIE_RESERVATION_FITS_HEADROOM_CANDIDATE_HYBRID,
+        TIE_RESERVATION_BREAKS_SUB2,
+        TIE_DENSITY_AMBIGUOUS_NEEDS_TRACE,
+    }:
+        raise ValueError("unexpected tie-frontier reservation terminal label")
+    if bool(report.terminal_decision.global_per_row_compression_closed):
+        raise ValueError("tie-frontier reservation diagnostic must not claim global closure")
+    if bool(report.terminal_decision.branch_a_trigger):
+        raise ValueError("tie-frontier reservation diagnostic must not self-trigger branch routing")
+    if not report.observed_failing_bucket_reports:
+        raise ValueError("tie-frontier reservation diagnostic requires observed failing buckets")
+    for bucket in report.observed_failing_bucket_reports:
+        if bucket.tie_group_size <= 0:
+            raise ValueError("observed tie buckets must have positive tie group size")
+        if bucket.exact_accepted_within_tie_count <= 0:
+            raise ValueError("observed tie buckets must retain at least one exact accepted row")
+        if bucket.exact_accepted_within_tie_count > bucket.tie_group_size:
+            raise ValueError("observed tie bucket accepted count cannot exceed tie group size")
+        if bucket.decisive_practical_encoding_label not in {
+            TIE_MEMBERSHIP_MASK_ENCODING,
+            TIE_SELECTED_OFFSET_ENCODING,
+        }:
+            raise ValueError("observed tie bucket decisive encoding drifted")
+        if bucket.theoretical_lower_bound_bits > bucket.decisive_practical_bits:
+            raise ValueError("practical exact-retention encoding cannot beat the theoretical lower bound")
+    row_map = {row.q_regime_name: row for row in report.row_comparisons}
+    if set(name for name in row_map if row_map[name].row_role == "required_gate") != set(SCALE_REQUIRED_Q_LEDGER_ROWS):
+        raise ValueError("tie-frontier reservation diagnostic must cover the required rows exactly")
+    for row in report.row_comparisons:
+        if not row.absolute_count_step_reports or not row.rate_held_step_reports:
+            raise ValueError("each tie-frontier row must keep both absolute-count and rate-held reports")
+        for step in row.absolute_count_step_reports:
+            if not bool(step.diagnostic_only):
+                raise ValueError("absolute-count tie reservation reports must stay diagnostic only")
+            if step.projection_label != OBSERVED_TIE_RESERVATION_DIAGNOSTIC:
+                raise ValueError("absolute-count tie reservation label drifted")
+        for step in row.rate_held_step_reports:
+            if bool(step.diagnostic_only):
+                raise ValueError("rate-held tie reservation reports must stay decisive")
+            if step.projection_label != RATE_HELD_TIE_RESERVATION_DIAGNOSTIC:
+                raise ValueError("rate-held tie reservation label drifted")
+            if step.decisive_practical_encoding_label == THEORETICAL_LOWER_BOUND_NON_DECISIVE:
+                raise ValueError("theoretical lower bound must not be used as the decisive practical encoding")
+            bucket_expected_decisive_total = 0
+            bucket_mask_total = 0
+            bucket_offset_total = 0
+            bucket_theoretical_total = 0
+            bucket_labels: set[str] = set()
+            for bucket in step.bucket_reports:
+                expected_bucket_decisive_bits = _expected_bucket_decisive_bits(bucket)
+                if int(bucket.decisive_practical_bits) != int(expected_bucket_decisive_bits):
+                    raise ValueError("bucket decisive practical bits must equal the chosen practical encoding bits")
+                if int(bucket.theoretical_lower_bound_bits) > int(bucket.decisive_practical_bits):
+                    raise ValueError("bucket theoretical lower bound must stay <= decisive practical bits")
+                bucket_expected_decisive_total += int(expected_bucket_decisive_bits)
+                bucket_mask_total += int(bucket.mask_bits)
+                bucket_offset_total += int(bucket.selected_offset_bits)
+                bucket_theoretical_total += int(bucket.theoretical_lower_bound_bits)
+                bucket_labels.add(str(bucket.decisive_practical_encoding_label))
+            if int(step.mask_total_bits) != int(bucket_mask_total):
+                raise ValueError("step mask total must equal the sum over projected buckets")
+            if int(step.selected_offset_total_bits) != int(bucket_offset_total):
+                raise ValueError("step offset total must equal the sum over projected buckets")
+            if int(step.theoretical_lower_bound_total_bits) != int(bucket_theoretical_total):
+                raise ValueError("step theoretical lower-bound total must equal the sum over projected buckets")
+            if int(step.decisive_tie_reservation_total_bits) != int(bucket_expected_decisive_total):
+                raise ValueError("step decisive tie total must equal the sum of chosen practical bucket encodings")
+            target_eligible = int(step.target_eligible_weight_count)
+            if not math.isclose(
+                float(step.mask_bits_per_weight),
+                float(step.mask_total_bits) / float(target_eligible),
+                abs_tol=1e-12,
+            ):
+                raise ValueError("step mask bpw must equal mask total / eligible weights")
+            if not math.isclose(
+                float(step.selected_offset_bits_per_weight),
+                float(step.selected_offset_total_bits) / float(target_eligible),
+                abs_tol=1e-12,
+            ):
+                raise ValueError("step offset bpw must equal offset total / eligible weights")
+            if not math.isclose(
+                float(step.theoretical_lower_bound_bits_per_weight),
+                float(step.theoretical_lower_bound_total_bits) / float(target_eligible),
+                abs_tol=1e-12,
+            ):
+                raise ValueError("step theoretical lower-bound bpw must equal total / eligible weights")
+            if not math.isclose(
+                float(step.decisive_tie_reservation_bits_per_weight),
+                float(step.decisive_tie_reservation_total_bits) / float(target_eligible),
+                abs_tol=1e-12,
+            ):
+                raise ValueError("step decisive tie bpw must equal decisive total / eligible weights")
+            if not math.isclose(
+                float(step.combined_decisive_bits_per_weight),
+                float(step.decision_statistic_bits_per_weight)
+                + float(step.decisive_tie_reservation_bits_per_weight),
+                abs_tol=1e-12,
+            ):
+                raise ValueError("step combined bpw must equal decision-statistic bpw + decisive tie bpw")
+            if len(bucket_labels) == 1:
+                expected_label = next(iter(bucket_labels))
+            else:
+                expected_label = "mixed_per_bucket_min_practical_exact_retention"
+            if step.decisive_practical_encoding_label != expected_label:
+                raise ValueError("step decisive encoding label must reflect the chosen bucket practical encodings")
+            if step.scaling_model_defensible:
+                if step.joint_ta_scaling_model != FULL_PLATEAU_JOINT_TA_SCALING_MODEL:
+                    raise ValueError("defensible rate-held tie model drifted from the full-plateau contract")
+        if not math.isclose(
+            row.rate_held_peak_combined_bits_per_weight,
+            max(step.combined_decisive_bits_per_weight for step in row.rate_held_step_reports),
+            abs_tol=1e-12,
+        ):
+            raise ValueError("rate-held peak bpw drifted from the step reports")
+    required_rows = [row for row in report.row_comparisons if row.row_role == "required_gate"]
+    any_ambiguous = any(not row.joint_ta_scaling_model_defensible for row in required_rows)
+    all_fit = all(row.rate_held_fits_strictest_headroom for row in required_rows)
+    if report.terminal_decision.terminal_label == TIE_DENSITY_AMBIGUOUS_NEEDS_TRACE:
+        if not any_ambiguous:
+            raise ValueError("ambiguous terminal requires at least one required-row scaling ambiguity")
+    elif report.terminal_decision.terminal_label == TIE_RESERVATION_BREAKS_SUB2:
+        if any_ambiguous or all_fit:
+            raise ValueError("break terminal requires defensible scaling and an actual strictest-headroom miss")
+    else:
+        if any_ambiguous or not all_fit:
+            raise ValueError("candidate-hybrid fit requires defensible scaling and fits on every required row")
+    _assert_no_tensors(report.to_dict())
+
+
 __all__ = [
     "ABSOLUTE_COUNT_LOWER_BOUND_DIAGNOSTIC",
     "ACCUMULATOR_FREE_NULL_BASELINE",
@@ -4556,6 +5666,7 @@ __all__ = [
     "DECISION_STATISTIC_UPPER_BOUND_PASS",
     "DECISION_STATISTIC_UPPER_BOUND_SCHEMA_VERSION",
     "HOT_BUDGET_POINT_LABELS",
+    "OBSERVED_TIE_RESERVATION_DIAGNOSTIC",
     "K_SWEEP_JOINT_INFEASIBLE",
     "K_SWEEP_MINIMAL_VIABLE_PASS",
     "K_SWEEP_REPRESENTATION_WALL",
@@ -4569,11 +5680,22 @@ __all__ = [
     "RATE_HELD_B_STORAGE_DIAGNOSTIC",
     "RATE_HELD_COUNT_ROUNDING_POLICY",
     "REAL_BACKLOG_LOWER_BOUND_LABEL",
+    "RATE_HELD_TIE_RESERVATION_DIAGNOSTIC",
     "REAL_BACKLOG_LOWER_BOUND_SCHEMA_VERSION",
     "REPRESENTATIVE_TRACE_UNDERPOWERED_FOR_CLOSURE",
     "REPRESENTATIVE_VERDICT_LABEL",
     "REPRESENTATIVE_VERDICT_SCHEMA_VERSION",
     "SCALE_APPROPRIATE_B_STORAGE_LABEL",
+    "THEORETICAL_LOWER_BOUND_NON_DECISIVE",
+    "TIE_DENSITY_AMBIGUOUS_NEEDS_TRACE",
+    "TIE_FRONTIER_RESERVATION_CANDIDATE",
+    "TIE_FRONTIER_RESERVATION_FITS_HEADROOM_CANDIDATE_HYBRID",
+    "TIE_FRONTIER_RESERVATION_FITS_HEADROOM_CANDIDATE_HYBRID",
+    "TIE_FRONTIER_RESERVATION_LABEL",
+    "TIE_FRONTIER_RESERVATION_SCHEMA_VERSION",
+    "TIE_MEMBERSHIP_MASK_ENCODING",
+    "TIE_RESERVATION_BREAKS_SUB2",
+    "TIE_SELECTED_OFFSET_ENCODING",
     "SCALE_APPROPRIATE_B_STORAGE_SCHEMA_VERSION",
     "SCALE_APPROPRIATE_COMPARISON_AMBIGUOUS_NEEDS_BACKLOG_DENSITY_TRACE",
     "DecisionStatisticBucketSummary",
@@ -4581,6 +5703,12 @@ __all__ = [
     "DecisionStatisticStepReport",
     "DecisionStatisticUpperBoundDecision",
     "DecisionStatisticUpperBoundReport",
+    "TieFrontierObservedBucketReport",
+    "TieFrontierReservationDecision",
+    "TieFrontierReservationLowerBoundReport",
+    "TieReservationProjectionBucketReport",
+    "TieReservationRowComparisonReport",
+    "TieReservationStepProjectionReport",
     "RealBacklogLowerBoundDecision",
     "RealBacklogLowerBoundReport",
     "RealBacklogLowerBoundStepReport",
@@ -4613,12 +5741,14 @@ __all__ = [
     "run_candidate_capacity_localization_diagnostic",
     "run_decision_statistic_upper_bound_diagnostic",
     "run_real_backlog_lower_bound_diagnostic",
+    "run_tie_frontier_reservation_lower_bound_diagnostic",
     "run_scale_appropriate_b_storage_comparison",
     "run_representative_bounded_delta_drift_verdict",
     "validate_candidate_admission_diagnostic_report",
     "validate_candidate_capacity_localization_report",
     "validate_decision_statistic_upper_bound_report",
     "validate_real_backlog_lower_bound_diagnostic_report",
+    "validate_tie_frontier_reservation_lower_bound_report",
     "validate_scale_appropriate_b_storage_comparison_report",
     "validate_representative_bounded_delta_drift_verdict_report",
     "VIRTUAL_DECISION_STATISTIC_CANDIDATE",
