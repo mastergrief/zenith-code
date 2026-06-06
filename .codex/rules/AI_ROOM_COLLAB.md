@@ -18,8 +18,9 @@ Codex's "no subagents" policy (`.codex/AGENTS.md`) is unaffected.
 Operating shape: **Gabe is the human direction owner; Claude and codex
 are technical research/strategy co-leads; Claude is additionally the
 operations/orchestration lead.** Gabe seeds → claude+codex co-hypothesize/
-challenge → `training-dev` owns the plan + implementation + test/runs/
-execution (incl. GPU launch/run/watch) under gate → claude+codex
+challenge → `training-dev` owns the plan + implementation + run-development
+(incl. GPU launch/run/watch), with `test-operator` executing exact gated
+proof/launch packets, under gate → claude+codex
 review/audit → commit → iterate. Claude+co_lead review/audit, NOT execute
 (Claude alone gates material actions); direct Claude repo-file edits or runs
 require a persisted named exception or break-glass reason.
@@ -40,8 +41,9 @@ require a persisted named exception or break-glass reason.
 - **Claude (operations/orchestration lead)**: AUQ capture/relay, board
   orchestration, role bootstrap/dispatch, training launch/run dispatch +
   review (`training-dev` executes + watches), plan/validation/commit/push/
-  launch gates, synthesis. Routes plan + implementation + test/runs/
-  execution to `training-dev` by default; direct-Claude repo-file edits or
+  launch gates, synthesis. Routes plan + implementation + run-development to
+  `training-dev` by default (deterministic exact proof/launch packets may
+  route to `test-operator` under gate); direct-Claude repo-file edits or
   runs need an explicit persisted named exception or break-glass reason.
 - **Named Codex roles (under the co-leads + gates)**: `training-dev`
   (default always-on mutating lane that OWNS plan + implementation +
@@ -51,15 +53,19 @@ require a persisted named exception or break-glass reason.
   always-on means lane/default route, not a retained handle;
   fresh/recycled per child task),
   `curriculum` (read-only planner), `audit` (read-only gate/metric
-  auditor).
+  auditor), `test-operator` (cheap deterministic proof-runner: runs an
+  already-specified packet, monitors NDJSON/logs/artifacts, posts validation
+  receipts to BOTH co-leads; no source edits / mechanism design / commits;
+  fixes route to `training-dev`).
 
 ## Cross-thread is mandatory at thinking boundaries
 
 Every thinking-class step in the R&D loop cross-threads. Codex
 participates at: **hypothesize, plan, devil's-advocate, creativity,
 audit-result, iterate**. Codex does NOT cross-thread at: **build,
-test, commit** — implementation + test/runs/execution stay with the single
-executor, normally `training-dev` under gate; Claude orchestrates/gates/
+test, commit** — implementation + run-development stay with the single
+executor, normally `training-dev` under gate (deterministic exact
+proof/launch packets may run via `test-operator`); Claude orchestrates/gates/
 synthesizes and co_lead audits.
 
 This is the default rate of the channel, not occasional. Cross-thread

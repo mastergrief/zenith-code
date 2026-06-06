@@ -2,7 +2,6 @@
 
 **IMPORTANT**: Assume nothing. Hypothesis, Build, Test, Commit & Iterate. First Principles thinking. Do not discount anything until it's built and tested.
 
-Use `apply_patch` for small/manual file edits when available. Use `python3` or Serena semantic edit tools for bulk, generated, or semantic edits. If the preferred edit path is blocked or impractical, state the blocker before using the fallback.
 
 Fork of `ultraworkers/claw-code` with a Python agent harness, CALM reasoning engine, native HRM-Text-1.58 training stack (active lane), Rust port, and adjacent HRM + LLM-Computer CRLM/substrate stack.
 
@@ -53,7 +52,7 @@ No subagents by default: work directly with Edit/Write/Read/Grep/Bash for the ac
 
 Gabe is the human direction owner / research sponsor / final risk-cost-goal authority. Claude and `codex_co_lead` are technical research/strategy co-leads. Claude is additionally operations/execution lead: AUQ capture/relay, board orchestration, role bootstrap/dispatch, training launch/run/watch, validation/commit/push gates, and final synthesis.
 
-Named Codex roles do specialized slice work under the co-leads + gates. `training-dev` is the default always-on mutating lane for HRM and main-repo docs/config/tooling/scripts/tests/curriculum/probe repo-file work; `curriculum` is read-only planning; `audit` is read-only gate/metric review. Mutating work routes to `training-dev`, not the read-only co-lead handle, unless an explicit named exception says otherwise; always-on means lane/default route, not a permanently retained handle.
+Named Codex roles do specialized slice work under the co-leads + gates. `training-dev` is the default always-on mutating lane for HRM and main-repo docs/config/tooling/scripts/tests/curriculum/probe repo-file work; `curriculum` is read-only planning; `audit` is read-only gate/metric review; `test-operator` is the cheap deterministic proof-runner (runs an already-specified packet, monitors NDJSON/logs/artifacts, posts validation receipts to BOTH co-leads; no source edits / mechanism design / commits / dispatch; fixes route to `training-dev`). Mutating work routes to `training-dev`, not the read-only co-lead handle, unless an explicit named exception says otherwise; always-on means lane/default route, not a permanently retained handle.
 
 Non-trivial cross-agent work follows:
 

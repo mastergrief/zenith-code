@@ -15,7 +15,9 @@ training-launch dispatcher + reviewer (`training-dev` runs + watches),
 material gatekeeper (plan / validation / commit / push / launch), and
 final synthesizer. `codex_co_lead` is read-only (review/audit) — it does
 NOT implement or run; `training-dev` owns plan + implementation +
-test/runs/execution; mutating repo-file work + runs go to a named role.
+run-development (deterministic exact proof/launch packet execution may route
+to `test-operator` under gate); mutating repo-file work + runs go to a named
+role.
 
 Operating shapes:
 
@@ -34,7 +36,11 @@ Operating shapes:
   dispatch/provenance must name cwd/target; STOP only when actual
   cwd/target contradicts that packet or a material gate), `curriculum`
   (read-only split/support planner), `audit` (read-only gate/metric
-  auditor). Slice-scoped; always-on means default lane/route, not a
+  auditor), `test-operator` (cheap deterministic proof-runner: runs an
+  already-specified launch/proof packet, monitors NDJSON/logs/artifacts,
+  posts validation receipts to BOTH co-leads; no source edits / mechanism
+  design / commits / dispatch; fixes route to `training-dev`). Slice-scoped;
+  always-on means default lane/route, not a
   permanently retained handle, so recycle after the shipped slice unless
   claude scopes a small adjacent follow-up with `RETAIN OVERRIDE`.
 - **As an ad-hoc named worker handle** (cold-context, separate evidence

@@ -15,7 +15,8 @@ Operating shape: **Gabe is the human direction owner; Claude and
 `codex_co_lead` are technical research/strategy co-leads; Claude is
 additionally the operations/orchestration lead.** Gabe seeds a direction →
 claude+codex co-hypothesize/challenge → `training-dev` owns the plan +
-implementation + test/runs/execution (incl. GPU launch/run/watch) under
+implementation + run-development (incl. GPU launch/run/watch), with
+`test-operator` executing exact gated proof/launch packets, under
 explicit gate → claude+codex review/audit → commit → iterate. Claude and
 co_lead review/audit, NOT execute (Claude alone gates material actions) —
 direct Claude repo-file edits or runs require a persisted named exception
@@ -41,8 +42,10 @@ Test, Iterate").
   orchestration, role bootstrap/dispatch, training launch/run dispatch +
   review (`training-dev` executes + watches), plan/validation/commit/push/
   launch gatekeeping, final synthesis. Routes plan + implementation +
-  test/runs/execution to `training-dev` by default; direct-Claude repo-file
-  edits or runs require an explicit persisted named exception or break-glass
+  run-development to `training-dev` by default (deterministic exact
+  proof/launch packets may route to `test-operator` under gate);
+  direct-Claude repo-file edits or runs require an explicit persisted named
+  exception or break-glass
   reason. Ensures one active executor per slice — no concurrent edits.
 - **Named Codex roles (specialized lanes, under the co-leads + gates)**:
   `training-dev` (default always-on mutating lane that OWNS plan +
@@ -54,14 +57,19 @@ Test, Iterate").
   lane/default route, not a retained handle; fresh/recycled per child
   task),
   `curriculum` (read-only split/support/stop-condition planner), `audit`
-  (read-only training receipt/gate/metric auditor).
+  (read-only training receipt/gate/metric auditor), `test-operator`
+  (cheap deterministic proof-runner: runs an already-specified launch/proof
+  packet, monitors named NDJSON/logs/artifacts, posts validation receipts to
+  BOTH co-leads; danger-full-access for temp/log/artifact/tmux only, NOT
+  source authority; NO source edits / mechanism design / commits / dispatch;
+  underspecified packet → STOP + report; fixes route back to `training-dev`).
 
 ## Cross-thread is mandatory at thinking boundaries
 
 Every thinking-class step in the R&D loop cross-threads to codex.
 Implementation-class repo-file steps don't cross-thread — they run on a
 single active executor, normally `training-dev` under gate — which owns
-implementation + test/runs/execution. Claude orchestrates/gates/synthesizes
+implementation + run-development. Claude orchestrates/gates/synthesizes
 and co_lead audits; direct-Claude repo-file mutation or runs need an
 explicit named exception or break-glass reason.
 
@@ -72,7 +80,7 @@ explicit named exception or break-glass reason.
 | Devil's advocate | thinking | **yes** — codex argues the counter-case |
 | Creativity / alternatives | thinking | **yes** — codex generates orthogonal paths |
 | Build | implementation | **no** — executor solo; mutating repo-file work defaults to `training-dev`, direct Claude only by persisted named exception or break-glass reason |
-| Test / Run | implementation | **no** — `training-dev` runs/executes + watches; claude + co_lead review/audit |
+| Test / Run | implementation | **no** — `training-dev` runs/executes + watches (or `test-operator` for deterministic exact-packet proof runs); claude + co_lead review/audit |
 | Audit result | thinking | **yes** — codex audits the receipt |
 | Commit | implementation | **no** — Claude (commit gatekeeper), after audit clears |
 | Iterate | thinking | **yes** — back to hypothesize with audit signal |

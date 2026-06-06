@@ -20,9 +20,10 @@ boundary applies.
 Dispatch the narrowest task that adds independent evidence. Don't
 spawn for trivial non-mutating work, social reassurance, orchestration,
 AUQ, board actions, gates, or synthesis claude owns directly. Plan,
-implementation, and test/runs/execution route to `training-dev` by
-default; direct Claude repo-file edits or runs require a persisted named
-exception or break-glass reason. Workers are slice-scoped — old
+implementation, and run-development route to `training-dev` by default
+(deterministic exact proof/launch packet execution may route to
+`test-operator` under gate); direct Claude repo-file edits or runs require
+a persisted named exception or break-glass reason. Workers are slice-scoped — old
 grounding biases fresh work, recycle after shipped slices unless
 explicitly scoping a small adjacent follow-up.
 
@@ -39,8 +40,9 @@ operations/orchestration lead: orchestrator, AUQ/board dispatcher,
 training-launch dispatcher + reviewer (`training-dev` runs + watches),
 material gatekeeper (plan / validation / commit / push / launch gates),
 and final synthesizer. `codex_co_lead` is read-only (review/audit);
-`training-dev` owns plan + implementation + test/runs/execution; mutating
-repo-file work + runs route to a named role.
+`training-dev` owns plan + implementation + run-development (deterministic
+exact proof/launch packet execution may route to `test-operator` under
+gate); mutating repo-file work + runs route to a named role.
 
 **Named Codex role lanes** — the *normal* route for gated mutating
 Codex repo-file work, not exceptional spawn:
@@ -61,6 +63,15 @@ Codex repo-file work, not exceptional spawn:
   `.pt` commits for HRM runtime/research outputs.
 - **`curriculum`** — read-only split/support/stop-condition planner.
 - **`audit`** — read-only training receipt/gate/metric auditor.
+- **`test-operator`** — deterministic launch-packet/proof executor
+  (gpt-5.4-mini; danger-full-access for temp/log/artifact/tmux writes, NOT
+  source authority). Runs an already-specified packet exactly, monitors the
+  named NDJSON/logs/terminal/artifacts, posts validation receipts to BOTH
+  co-leads (its role prompt mandates `to=[claude, codex_co_lead]` on every
+  material output). FORBIDDEN: source edits, mechanism/scaffold design,
+  debugging improvisation, commits/pushes, alternate success criteria.
+  Underspecified packet → STOP + `PLAN REQUEST`/`HARNESS AMBIGUOUS`.
+  Fixes/redesign route to `training-dev`.
 
 **Role vs handle**: `role="<name>"` loads the role home
 (`~/.ai-room/.codex-roles/<role>/config.toml`, role CODEX_HOME,
