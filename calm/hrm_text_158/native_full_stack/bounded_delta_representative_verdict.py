@@ -161,6 +161,26 @@ SCALE_REQUIRED_Q_LEDGER_ROWS = (
 SCALE_SENSITIVITY_Q_LEDGER_ROWS = (
     "illustrative_4096x4096_one_tensor_per_row_scale_base3_q",
 )
+DECISION_STATISTIC_UPPER_BOUND_SCHEMA_VERSION = (
+    "hrm_text_158_c1p1e_decision_statistic_upper_bound_diagnostic/v0"
+)
+DECISION_STATISTIC_UPPER_BOUND_LABEL = (
+    "c1p1e_branch_a_virtual_decision_statistic_upper_bound_diagnostic"
+)
+VIRTUAL_DECISION_STATISTIC_CANDIDATE = "branch_a_virtual_decision_statistic"
+DECISION_STATISTIC_UPPER_BOUND_PASS = "decision_statistic_upper_bound_pass"
+OBSERVABLE_RANK_FEATURES_INSUFFICIENT = "observable_rank_features_insufficient"
+STATISTIC_BUDGET_BREAKS_SUB2 = "statistic_budget_breaks_sub2"
+DECISION_STATISTIC_BUCKET_KEY_DIMENSIONS = (
+    "state_key",
+    "current_q_level",
+    "move_direction",
+)
+DECISION_STATISTIC_COUNT_ONLY_MODE = "per_bucket_accepted_and_deferred_counts_only"
+DECISION_STATISTIC_SHUFFLE_FALSIFIER = "per_bucket_reverse_order_tie_falsifier"
+DECISION_STATISTIC_SEED_BITS = 0
+DECISION_STATISTIC_CUTOFF_BIT_WIDTH = 0
+DECISION_STATISTIC_METADATA_BITS = 64
 
 
 def representative_engineering_guard_spec() -> BoundedDeltaGuardSpec:
@@ -1295,6 +1315,244 @@ class ScaleAppropriateBStorageComparisonReport:
             "required_q_ledger_rows": list(self.required_q_ledger_rows),
             "sensitivity_q_ledger_rows": list(self.sensitivity_q_ledger_rows),
             "row_comparisons": [row.to_dict() for row in self.row_comparisons],
+            "terminal_decision": self.terminal_decision.to_dict(),
+            "raw_arrays_included": bool(self.raw_arrays_included),
+            "non_claims": list(self.non_claims),
+        }
+
+
+@dataclass(frozen=True)
+class DecisionStatisticSchemaReport:
+    bucket_key_dimensions: tuple[str, ...]
+    bucket_cardinality_bound: int
+    observed_bucket_count: int
+    bucket_key_bit_width: int
+    accepted_count_bit_width: int
+    deferred_count_bit_width: int
+    cutoff_bit_width: int
+    seed_bits: int
+    metadata_bits: int
+    total_bits: int
+    strictest_required_q_regime_name: str
+    strictest_required_eligible_weight_count: int
+    strictest_required_headroom_bits_per_weight: float
+    total_bits_per_weight_strictest_required_row: float
+    fits_strictest_required_headroom: bool
+    inclusive_sub2_if_installed: bool
+    statistic_mode: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "bucket_key_dimensions": list(self.bucket_key_dimensions),
+            "bucket_cardinality_bound": int(self.bucket_cardinality_bound),
+            "observed_bucket_count": int(self.observed_bucket_count),
+            "bucket_key_bit_width": int(self.bucket_key_bit_width),
+            "accepted_count_bit_width": int(self.accepted_count_bit_width),
+            "deferred_count_bit_width": int(self.deferred_count_bit_width),
+            "cutoff_bit_width": int(self.cutoff_bit_width),
+            "seed_bits": int(self.seed_bits),
+            "metadata_bits": int(self.metadata_bits),
+            "total_bits": int(self.total_bits),
+            "strictest_required_q_regime_name": self.strictest_required_q_regime_name,
+            "strictest_required_eligible_weight_count": int(
+                self.strictest_required_eligible_weight_count
+            ),
+            "strictest_required_headroom_bits_per_weight": float(
+                self.strictest_required_headroom_bits_per_weight
+            ),
+            "total_bits_per_weight_strictest_required_row": float(
+                self.total_bits_per_weight_strictest_required_row
+            ),
+            "fits_strictest_required_headroom": bool(
+                self.fits_strictest_required_headroom
+            ),
+            "inclusive_sub2_if_installed": bool(self.inclusive_sub2_if_installed),
+            "statistic_mode": self.statistic_mode,
+        }
+
+
+@dataclass(frozen=True)
+class DecisionStatisticBucketSummary:
+    state_key: str
+    current_q_level: int
+    move_direction: int
+    accepted_count: int
+    deferred_count: int
+    candidate_row_count: int
+    decisive_bucket: bool
+    frontier_tie_crosses_boundary: bool
+
+    def statistic_input_dict(self) -> dict[str, Any]:
+        return {
+            "state_key": self.state_key,
+            "current_q_level": int(self.current_q_level),
+            "move_direction": int(self.move_direction),
+            "accepted_count": int(self.accepted_count),
+            "deferred_count": int(self.deferred_count),
+        }
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = self.statistic_input_dict()
+        payload.update(
+            {
+                "candidate_row_count": int(self.candidate_row_count),
+                "decisive_bucket": bool(self.decisive_bucket),
+                "frontier_tie_crosses_boundary": bool(
+                    self.frontier_tie_crosses_boundary
+                ),
+            }
+        )
+        return payload
+
+
+@dataclass(frozen=True)
+class DecisionStatisticStepReport:
+    schedule_name: str
+    step: int
+    global_cap: int
+    candidate_row_count: int
+    accepted_row_count: int
+    deferred_row_count: int
+    candidate_rows_fully_transient_observable: bool
+    bucket_summaries: tuple[DecisionStatisticBucketSummary, ...]
+    statistic_schema: DecisionStatisticSchemaReport
+    shuffle_falsifier: str
+    frontier_tie_bucket_count: int
+    canonical_matches_exact: bool
+    shuffled_matches_exact: bool
+    shuffle_preserves_outcome: bool
+    observable_rank_features_sufficient: bool
+    insufficiency_reason: str | None
+    exact_accepted_identities_sha256: str
+    canonical_accepted_identities_sha256: str
+    shuffled_accepted_identities_sha256: str
+    exact_deferred_identities_sha256: str
+    canonical_deferred_identities_sha256: str
+    shuffled_deferred_identities_sha256: str
+    exact_q_changed_identities_sha256: str
+    canonical_q_changed_identities_sha256: str
+    shuffled_q_changed_identities_sha256: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schedule_name": self.schedule_name,
+            "step": int(self.step),
+            "global_cap": int(self.global_cap),
+            "candidate_row_count": int(self.candidate_row_count),
+            "accepted_row_count": int(self.accepted_row_count),
+            "deferred_row_count": int(self.deferred_row_count),
+            "candidate_rows_fully_transient_observable": bool(
+                self.candidate_rows_fully_transient_observable
+            ),
+            "bucket_summaries": [bucket.to_dict() for bucket in self.bucket_summaries],
+            "statistic_schema": self.statistic_schema.to_dict(),
+            "shuffle_falsifier": self.shuffle_falsifier,
+            "frontier_tie_bucket_count": int(self.frontier_tie_bucket_count),
+            "canonical_matches_exact": bool(self.canonical_matches_exact),
+            "shuffled_matches_exact": bool(self.shuffled_matches_exact),
+            "shuffle_preserves_outcome": bool(self.shuffle_preserves_outcome),
+            "observable_rank_features_sufficient": bool(
+                self.observable_rank_features_sufficient
+            ),
+            "insufficiency_reason": self.insufficiency_reason,
+            "exact_accepted_identities_sha256": self.exact_accepted_identities_sha256,
+            "canonical_accepted_identities_sha256": self.canonical_accepted_identities_sha256,
+            "shuffled_accepted_identities_sha256": self.shuffled_accepted_identities_sha256,
+            "exact_deferred_identities_sha256": self.exact_deferred_identities_sha256,
+            "canonical_deferred_identities_sha256": self.canonical_deferred_identities_sha256,
+            "shuffled_deferred_identities_sha256": self.shuffled_deferred_identities_sha256,
+            "exact_q_changed_identities_sha256": self.exact_q_changed_identities_sha256,
+            "canonical_q_changed_identities_sha256": self.canonical_q_changed_identities_sha256,
+            "shuffled_q_changed_identities_sha256": self.shuffled_q_changed_identities_sha256,
+        }
+
+
+@dataclass(frozen=True)
+class DecisionStatisticUpperBoundDecision:
+    terminal_label: str
+    strictest_required_q_regime_name: str
+    strictest_required_headroom_bits_per_weight: float
+    peak_statistic_bits_per_weight: float
+    peak_statistic_step: str
+    budget_fits_strictest_required_headroom: bool
+    inclusive_sub2_if_installed: bool
+    first_budget_failure_step: str | None
+    first_insufficient_step: str | None
+    any_step_frontier_tie_crosses_boundary: bool
+    all_steps_shuffle_preserve_outcome: bool
+    global_per_row_compression_closed: bool
+    branch_a_trigger: bool
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "terminal_label": self.terminal_label,
+            "strictest_required_q_regime_name": self.strictest_required_q_regime_name,
+            "strictest_required_headroom_bits_per_weight": float(
+                self.strictest_required_headroom_bits_per_weight
+            ),
+            "peak_statistic_bits_per_weight": float(self.peak_statistic_bits_per_weight),
+            "peak_statistic_step": self.peak_statistic_step,
+            "budget_fits_strictest_required_headroom": bool(
+                self.budget_fits_strictest_required_headroom
+            ),
+            "inclusive_sub2_if_installed": bool(self.inclusive_sub2_if_installed),
+            "first_budget_failure_step": self.first_budget_failure_step,
+            "first_insufficient_step": self.first_insufficient_step,
+            "any_step_frontier_tie_crosses_boundary": bool(
+                self.any_step_frontier_tie_crosses_boundary
+            ),
+            "all_steps_shuffle_preserve_outcome": bool(
+                self.all_steps_shuffle_preserve_outcome
+            ),
+            "global_per_row_compression_closed": bool(
+                self.global_per_row_compression_closed
+            ),
+            "branch_a_trigger": bool(self.branch_a_trigger),
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class DecisionStatisticUpperBoundReport:
+    schema_version: str
+    label: str
+    source_bindingness: Any
+    field_coverage: SourceFieldCoverage
+    candidate_name: str
+    source_scale_comparison_label: str
+    source_scale_terminal_label: str
+    strictest_required_q_regime_name: str
+    strictest_required_eligible_weight_count: int
+    strictest_required_headroom_bits_per_weight: float
+    bucket_key_dimensions: tuple[str, ...]
+    statistic_mode: str
+    shuffle_falsifier: str
+    step_reports: tuple[DecisionStatisticStepReport, ...]
+    terminal_decision: DecisionStatisticUpperBoundDecision
+    raw_arrays_included: bool
+    non_claims: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "label": self.label,
+            "source_bindingness": self.source_bindingness.to_dict(),
+            "field_coverage": self.field_coverage.to_dict(),
+            "candidate_name": self.candidate_name,
+            "source_scale_comparison_label": self.source_scale_comparison_label,
+            "source_scale_terminal_label": self.source_scale_terminal_label,
+            "strictest_required_q_regime_name": self.strictest_required_q_regime_name,
+            "strictest_required_eligible_weight_count": int(
+                self.strictest_required_eligible_weight_count
+            ),
+            "strictest_required_headroom_bits_per_weight": float(
+                self.strictest_required_headroom_bits_per_weight
+            ),
+            "bucket_key_dimensions": list(self.bucket_key_dimensions),
+            "statistic_mode": self.statistic_mode,
+            "shuffle_falsifier": self.shuffle_falsifier,
+            "step_reports": [step.to_dict() for step in self.step_reports],
             "terminal_decision": self.terminal_decision.to_dict(),
             "raw_arrays_included": bool(self.raw_arrays_included),
             "non_claims": list(self.non_claims),
@@ -3454,6 +3712,434 @@ def run_scale_appropriate_b_storage_comparison() -> ScaleAppropriateBStorageComp
     )
 
 
+@dataclass(frozen=True)
+class _ObservableDecisionRow:
+    state_key: str
+    flat_index: int
+    current_q_level: int
+    move_direction: int
+    abs_new_acc: int
+
+    @property
+    def identity(self) -> tuple[str, int]:
+        return (self.state_key, int(self.flat_index))
+
+    @property
+    def bucket_key(self) -> tuple[str, int, int]:
+        return (self.state_key, int(self.current_q_level), int(self.move_direction))
+
+
+def _enum_bit_width(num_values: int) -> int:
+    count = int(num_values)
+    if count <= 1:
+        return 0
+    return int(math.ceil(math.log2(count)))
+
+
+def _count_bit_width(max_value: int) -> int:
+    value = int(max_value)
+    if value <= 0:
+        return 0
+    return int(math.ceil(math.log2(value + 1)))
+
+
+def _decision_statistic_bucket_cardinality_bound() -> int:
+    return len(PRIMARY_STATE_KEYS) * 3 * 2
+
+
+def _decision_statistic_bucket_key_bit_width() -> int:
+    return (
+        _enum_bit_width(len(PRIMARY_STATE_KEYS))
+        + _enum_bit_width(3)
+        + _enum_bit_width(2)
+    )
+
+
+def _strictest_required_scale_row(
+    report: ScaleAppropriateBStorageComparisonReport,
+) -> ScaleAppropriateLedgerComparisonReport:
+    required_rows = [row for row in report.row_comparisons if row.row_role == "required_gate"]
+    if not required_rows:
+        raise ValueError("decision statistic diagnostic requires the Slice 1d required rows")
+    return min(
+        required_rows,
+        key=lambda row: float(row.scale_appropriate_headroom_bits_per_weight),
+    )
+
+
+def _decision_statistic_observable_rows(
+    trace_step: _ExactScheduleTraceStep,
+) -> tuple[_ObservableDecisionRow, ...]:
+    cap_result = trace_step.exact_path.cap_result
+    if cap_result is None:
+        raise ValueError("decision statistic diagnostic requires global cap rows")
+    rows: list[_ObservableDecisionRow] = []
+    for row in cap_result.rows:
+        state = trace_step.exact_input_states[row.state_key]
+        current_q_level = int(state.q_levels.flatten()[int(row.flat_index)].item())
+        direction = int(
+            trace_step.exact_path.plans[row.state_key]
+            .applied_directions[int(row.local_pos)]
+            .item()
+        )
+        rows.append(
+            _ObservableDecisionRow(
+                state_key=row.state_key,
+                flat_index=int(row.flat_index),
+                current_q_level=current_q_level,
+                move_direction=direction,
+                abs_new_acc=int(row.abs_new_acc),
+            )
+        )
+    return tuple(rows)
+
+
+def _decision_statistic_bucket_summaries(
+    observable_rows: Sequence[_ObservableDecisionRow],
+    *,
+    exact_accepted: set[tuple[str, int]],
+    exact_deferred: set[tuple[str, int]],
+) -> tuple[DecisionStatisticBucketSummary, ...]:
+    by_bucket: dict[tuple[str, int, int], list[_ObservableDecisionRow]] = {}
+    for row in observable_rows:
+        by_bucket.setdefault(row.bucket_key, []).append(row)
+    summaries: list[DecisionStatisticBucketSummary] = []
+    for bucket_key in sorted(by_bucket):
+        rows = by_bucket[bucket_key]
+        candidate_row_count = len(rows)
+        accepted_count = sum(row.identity in exact_accepted for row in rows)
+        deferred_count = sum(row.identity in exact_deferred for row in rows)
+        decisive_bucket = 0 < accepted_count < candidate_row_count
+        scores = sorted((row.abs_new_acc for row in rows), reverse=True)
+        frontier_tie_crosses_boundary = bool(
+            decisive_bucket
+            and scores[accepted_count - 1] == scores[accepted_count]
+        )
+        summaries.append(
+            DecisionStatisticBucketSummary(
+                state_key=bucket_key[0],
+                current_q_level=int(bucket_key[1]),
+                move_direction=int(bucket_key[2]),
+                accepted_count=int(accepted_count),
+                deferred_count=int(deferred_count),
+                candidate_row_count=int(candidate_row_count),
+                decisive_bucket=bool(decisive_bucket),
+                frontier_tie_crosses_boundary=bool(frontier_tie_crosses_boundary),
+            )
+        )
+    return tuple(summaries)
+
+
+def _decision_statistic_schema_report(
+    *,
+    bucket_summaries: Sequence[DecisionStatisticBucketSummary],
+    candidate_row_count: int,
+    global_cap: int,
+    strictest_required_row: ScaleAppropriateLedgerComparisonReport,
+) -> DecisionStatisticSchemaReport:
+    observed_bucket_count = len(tuple(bucket_summaries))
+    bucket_key_bit_width = _decision_statistic_bucket_key_bit_width()
+    accepted_count_bit_width = _count_bit_width(global_cap)
+    deferred_count_bit_width = _count_bit_width(candidate_row_count)
+    total_bits = (
+        observed_bucket_count
+        * (
+            bucket_key_bit_width
+            + accepted_count_bit_width
+            + deferred_count_bit_width
+            + DECISION_STATISTIC_CUTOFF_BIT_WIDTH
+        )
+        + DECISION_STATISTIC_SEED_BITS
+        + DECISION_STATISTIC_METADATA_BITS
+    )
+    eligible = int(strictest_required_row.eligible_weight_count)
+    bits_per_weight = float(total_bits) / float(eligible) if eligible else 0.0
+    headroom = float(strictest_required_row.scale_appropriate_headroom_bits_per_weight)
+    fits = bits_per_weight <= headroom + 1e-12
+    return DecisionStatisticSchemaReport(
+        bucket_key_dimensions=DECISION_STATISTIC_BUCKET_KEY_DIMENSIONS,
+        bucket_cardinality_bound=_decision_statistic_bucket_cardinality_bound(),
+        observed_bucket_count=int(observed_bucket_count),
+        bucket_key_bit_width=int(bucket_key_bit_width),
+        accepted_count_bit_width=int(accepted_count_bit_width),
+        deferred_count_bit_width=int(deferred_count_bit_width),
+        cutoff_bit_width=int(DECISION_STATISTIC_CUTOFF_BIT_WIDTH),
+        seed_bits=int(DECISION_STATISTIC_SEED_BITS),
+        metadata_bits=int(DECISION_STATISTIC_METADATA_BITS),
+        total_bits=int(total_bits),
+        strictest_required_q_regime_name=strictest_required_row.q_regime_name,
+        strictest_required_eligible_weight_count=int(eligible),
+        strictest_required_headroom_bits_per_weight=headroom,
+        total_bits_per_weight_strictest_required_row=float(bits_per_weight),
+        fits_strictest_required_headroom=bool(fits),
+        inclusive_sub2_if_installed=bool(fits),
+        statistic_mode=DECISION_STATISTIC_COUNT_ONLY_MODE,
+    )
+
+
+def _reconstruct_decision_sets_from_bucket_counts(
+    observable_rows: Sequence[_ObservableDecisionRow],
+    bucket_summaries: Sequence[DecisionStatisticBucketSummary],
+    *,
+    reverse_bucket_order: bool,
+) -> tuple[set[tuple[str, int]], set[tuple[str, int]], set[tuple[str, int]]]:
+    summary_by_key = {
+        (bucket.state_key, int(bucket.current_q_level), int(bucket.move_direction)): bucket
+        for bucket in bucket_summaries
+    }
+    by_bucket: dict[tuple[str, int, int], list[_ObservableDecisionRow]] = {}
+    for row in observable_rows:
+        by_bucket.setdefault(row.bucket_key, []).append(row)
+    accepted: set[tuple[str, int]] = set()
+    deferred: set[tuple[str, int]] = set()
+    for bucket_key in sorted(by_bucket):
+        rows = list(by_bucket[bucket_key])
+        if reverse_bucket_order:
+            rows.reverse()
+        ordered = sorted(rows, key=lambda item: -item.abs_new_acc)
+        summary = summary_by_key[bucket_key]
+        if summary.accepted_count + summary.deferred_count != len(ordered):
+            raise ValueError("decision statistic reconstruction must cover every cap row")
+        accepted |= {row.identity for row in ordered[: int(summary.accepted_count)]}
+        deferred |= {
+            row.identity
+            for row in ordered[
+                int(summary.accepted_count) : int(summary.accepted_count)
+                + int(summary.deferred_count)
+            ]
+        }
+    return accepted, deferred, set(accepted)
+
+
+def _decision_statistic_step_report(
+    *,
+    trace_step: _ExactScheduleTraceStep,
+    strictest_required_row: ScaleAppropriateLedgerComparisonReport,
+) -> DecisionStatisticStepReport:
+    cap_result = trace_step.exact_path.cap_result
+    if cap_result is None:
+        raise ValueError("decision statistic diagnostic requires cap-result exact paths")
+    observable_rows = _decision_statistic_observable_rows(trace_step)
+    exact_accepted = {(row.state_key, int(row.flat_index)) for row in cap_result.accepted_rows}
+    exact_deferred = {(row.state_key, int(row.flat_index)) for row in cap_result.deferred_rows}
+    exact_q_changed = set(trace_step.exact_path.q_changed_ids)
+    bucket_summaries = _decision_statistic_bucket_summaries(
+        observable_rows,
+        exact_accepted=exact_accepted,
+        exact_deferred=exact_deferred,
+    )
+    schema = _decision_statistic_schema_report(
+        bucket_summaries=bucket_summaries,
+        candidate_row_count=len(observable_rows),
+        global_cap=int(trace_step.cap_spec.cap),
+        strictest_required_row=strictest_required_row,
+    )
+    canonical_accepted, canonical_deferred, canonical_q_changed = (
+        _reconstruct_decision_sets_from_bucket_counts(
+            observable_rows,
+            bucket_summaries,
+            reverse_bucket_order=False,
+        )
+    )
+    shuffled_accepted, shuffled_deferred, shuffled_q_changed = (
+        _reconstruct_decision_sets_from_bucket_counts(
+            observable_rows,
+            bucket_summaries,
+            reverse_bucket_order=True,
+        )
+    )
+    canonical_matches_exact = (
+        canonical_accepted == exact_accepted
+        and canonical_deferred == exact_deferred
+        and canonical_q_changed == exact_q_changed
+    )
+    shuffled_matches_exact = (
+        shuffled_accepted == exact_accepted
+        and shuffled_deferred == exact_deferred
+        and shuffled_q_changed == exact_q_changed
+    )
+    shuffle_preserves_outcome = (
+        canonical_accepted == shuffled_accepted
+        and canonical_deferred == shuffled_deferred
+        and canonical_q_changed == shuffled_q_changed
+    )
+    frontier_tie_bucket_count = sum(
+        1 for bucket in bucket_summaries if bucket.frontier_tie_crosses_boundary
+    )
+    observable_rank_features_sufficient = bool(
+        canonical_matches_exact and shuffled_matches_exact and shuffle_preserves_outcome
+    )
+    insufficiency_reason: str | None = None
+    if not observable_rank_features_sufficient:
+        if frontier_tie_bucket_count > 0 and not shuffle_preserves_outcome:
+            insufficiency_reason = (
+                "counts-only statistic depends on row-identity order inside decisive tied buckets"
+            )
+        elif not canonical_matches_exact:
+            insufficiency_reason = (
+                "counts-only statistic failed canonical exact accepted/deferred/q reconstruction"
+            )
+        elif not shuffled_matches_exact:
+            insufficiency_reason = (
+                "reverse-order tie falsifier changed accepted/deferred/q reconstruction"
+            )
+        else:
+            insufficiency_reason = (
+                "observable rank features were not sufficient under the declared falsifier"
+            )
+    return DecisionStatisticStepReport(
+        schedule_name=trace_step.schedule_step.name,
+        step=int(trace_step.schedule_step.step),
+        global_cap=int(trace_step.cap_spec.cap),
+        candidate_row_count=len(observable_rows),
+        accepted_row_count=len(exact_accepted),
+        deferred_row_count=len(exact_deferred),
+        candidate_rows_fully_transient_observable=True,
+        bucket_summaries=bucket_summaries,
+        statistic_schema=schema,
+        shuffle_falsifier=DECISION_STATISTIC_SHUFFLE_FALSIFIER,
+        frontier_tie_bucket_count=int(frontier_tie_bucket_count),
+        canonical_matches_exact=bool(canonical_matches_exact),
+        shuffled_matches_exact=bool(shuffled_matches_exact),
+        shuffle_preserves_outcome=bool(shuffle_preserves_outcome),
+        observable_rank_features_sufficient=bool(observable_rank_features_sufficient),
+        insufficiency_reason=insufficiency_reason,
+        exact_accepted_identities_sha256=_identity_sha256(exact_accepted),
+        canonical_accepted_identities_sha256=_identity_sha256(canonical_accepted),
+        shuffled_accepted_identities_sha256=_identity_sha256(shuffled_accepted),
+        exact_deferred_identities_sha256=_identity_sha256(exact_deferred),
+        canonical_deferred_identities_sha256=_identity_sha256(canonical_deferred),
+        shuffled_deferred_identities_sha256=_identity_sha256(shuffled_deferred),
+        exact_q_changed_identities_sha256=_identity_sha256(exact_q_changed),
+        canonical_q_changed_identities_sha256=_identity_sha256(canonical_q_changed),
+        shuffled_q_changed_identities_sha256=_identity_sha256(shuffled_q_changed),
+    )
+
+
+def _decision_statistic_terminal_decision(
+    step_reports: Sequence[DecisionStatisticStepReport],
+    *,
+    strictest_required_row: ScaleAppropriateLedgerComparisonReport,
+) -> DecisionStatisticUpperBoundDecision:
+    if not step_reports:
+        raise ValueError("decision statistic diagnostic requires at least one step report")
+    peak_step = max(
+        step_reports,
+        key=lambda step: step.statistic_schema.total_bits_per_weight_strictest_required_row,
+    )
+    budget_failures = [
+        step.schedule_name
+        for step in step_reports
+        if not step.statistic_schema.fits_strictest_required_headroom
+    ]
+    insufficiencies = [
+        step.schedule_name
+        for step in step_reports
+        if not step.observable_rank_features_sufficient
+    ]
+    if budget_failures:
+        terminal_label = STATISTIC_BUDGET_BREAKS_SUB2
+        reason = (
+            "low-cardinality decision statistic exceeded the strictest Slice 1d headroom "
+            f"first at {budget_failures[0]}"
+        )
+    elif insufficiencies:
+        terminal_label = OBSERVABLE_RANK_FEATURES_INSUFFICIENT
+        reason = (
+            "counts-only bucket statistic fits the strictest Slice 1d headroom but fails "
+            f"the reverse-order tie falsifier first at {insufficiencies[0]}; exact recovery "
+            "depends on row-identity order inside decisive tied buckets"
+        )
+    else:
+        terminal_label = DECISION_STATISTIC_UPPER_BOUND_PASS
+        reason = (
+            "counts-only bucket statistic fits the strictest Slice 1d headroom and survives "
+            "the declared reverse-order tie falsifier on every preregistered step"
+        )
+    return DecisionStatisticUpperBoundDecision(
+        terminal_label=terminal_label,
+        strictest_required_q_regime_name=strictest_required_row.q_regime_name,
+        strictest_required_headroom_bits_per_weight=float(
+            strictest_required_row.scale_appropriate_headroom_bits_per_weight
+        ),
+        peak_statistic_bits_per_weight=float(
+            peak_step.statistic_schema.total_bits_per_weight_strictest_required_row
+        ),
+        peak_statistic_step=peak_step.schedule_name,
+        budget_fits_strictest_required_headroom=not budget_failures,
+        inclusive_sub2_if_installed=not budget_failures,
+        first_budget_failure_step=budget_failures[0] if budget_failures else None,
+        first_insufficient_step=insufficiencies[0] if insufficiencies else None,
+        any_step_frontier_tie_crosses_boundary=any(
+            step.frontier_tie_bucket_count > 0 for step in step_reports
+        ),
+        all_steps_shuffle_preserve_outcome=all(
+            step.shuffle_preserves_outcome for step in step_reports
+        ),
+        global_per_row_compression_closed=False,
+        branch_a_trigger=False,
+        reason=reason,
+    )
+
+
+def _decision_statistic_non_claims() -> tuple[str, ...]:
+    return (
+        "CPU-only oracle-derived upper bound over the preregistered exact cap trace",
+        "persistent input is limited to low-cardinality bucket counts keyed by state/q/direction",
+        "reverse-order tie falsifier is a hard anti-leak gate, not an optional sensitivity check",
+        "PASS is an oracle-derived upper bound only, not a deployable online estimator",
+        "global_per_row_compression_closed=false",
+        "branch_a_trigger=false",
+        "no dyn200, no GPU lane, no kernel path",
+        "compact aggregate hashes only in validation output; no raw per-weight arrays",
+    )
+
+
+def run_decision_statistic_upper_bound_diagnostic() -> DecisionStatisticUpperBoundReport:
+    """Test branch-(a) with a low-cardinality, identity-free decision statistic."""
+
+    scale_report = run_scale_appropriate_b_storage_comparison()
+    strictest_required_row = _strictest_required_scale_row(scale_report)
+    trace_steps, _ = _build_exact_schedule_trace()
+    step_reports = tuple(
+        _decision_statistic_step_report(
+            trace_step=trace_step,
+            strictest_required_row=strictest_required_row,
+        )
+        for trace_step in trace_steps
+    )
+    bindingness = pre_register_source_bindingness(
+        source_kind=SOURCE_KIND_GENERATED_NATIVE_LOOP,
+        coverage=SourceFieldCoverage.full_generated_native_loop(),
+    )
+    return DecisionStatisticUpperBoundReport(
+        schema_version=DECISION_STATISTIC_UPPER_BOUND_SCHEMA_VERSION,
+        label=DECISION_STATISTIC_UPPER_BOUND_LABEL,
+        source_bindingness=bindingness,
+        field_coverage=SourceFieldCoverage.full_generated_native_loop(),
+        candidate_name=VIRTUAL_DECISION_STATISTIC_CANDIDATE,
+        source_scale_comparison_label=scale_report.label,
+        source_scale_terminal_label=scale_report.terminal_decision.terminal_label,
+        strictest_required_q_regime_name=strictest_required_row.q_regime_name,
+        strictest_required_eligible_weight_count=int(
+            strictest_required_row.eligible_weight_count
+        ),
+        strictest_required_headroom_bits_per_weight=float(
+            strictest_required_row.scale_appropriate_headroom_bits_per_weight
+        ),
+        bucket_key_dimensions=DECISION_STATISTIC_BUCKET_KEY_DIMENSIONS,
+        statistic_mode=DECISION_STATISTIC_COUNT_ONLY_MODE,
+        shuffle_falsifier=DECISION_STATISTIC_SHUFFLE_FALSIFIER,
+        step_reports=step_reports,
+        terminal_decision=_decision_statistic_terminal_decision(
+            step_reports,
+            strictest_required_row=strictest_required_row,
+        ),
+        raw_arrays_included=False,
+        non_claims=_decision_statistic_non_claims(),
+    )
+
+
 def _assert_no_tensors(value: Any) -> None:
     if isinstance(value, torch.Tensor):
         raise ValueError("representative verdict payload must not include raw tensors")
@@ -3688,6 +4374,173 @@ def validate_scale_appropriate_b_storage_comparison_report(
     _assert_no_tensors(report.to_dict())
 
 
+def _validate_decision_statistic_statistic_input(
+    step_report: DecisionStatisticStepReport,
+) -> None:
+    allowed_schema_keys = {
+        "bucket_key_dimensions",
+        "bucket_cardinality_bound",
+        "observed_bucket_count",
+        "bucket_key_bit_width",
+        "accepted_count_bit_width",
+        "deferred_count_bit_width",
+        "cutoff_bit_width",
+        "seed_bits",
+        "metadata_bits",
+        "total_bits",
+        "strictest_required_q_regime_name",
+        "strictest_required_eligible_weight_count",
+        "strictest_required_headroom_bits_per_weight",
+        "total_bits_per_weight_strictest_required_row",
+        "fits_strictest_required_headroom",
+        "inclusive_sub2_if_installed",
+        "statistic_mode",
+    }
+    schema_payload = step_report.statistic_schema.to_dict()
+    if set(schema_payload) != allowed_schema_keys:
+        raise ValueError("decision statistic schema payload drifted from the preregistered fields")
+    allowed_bucket_keys = {
+        "state_key",
+        "current_q_level",
+        "move_direction",
+        "accepted_count",
+        "deferred_count",
+    }
+    for bucket in step_report.bucket_summaries:
+        payload = bucket.statistic_input_dict()
+        if set(payload) != allowed_bucket_keys:
+            raise ValueError("decision statistic bucket payload drifted from the aggregate-only field set")
+
+
+def validate_decision_statistic_upper_bound_report(
+    report: DecisionStatisticUpperBoundReport,
+) -> None:
+    if report.schema_version != DECISION_STATISTIC_UPPER_BOUND_SCHEMA_VERSION:
+        raise ValueError("unexpected decision statistic upper-bound schema version")
+    if report.label != DECISION_STATISTIC_UPPER_BOUND_LABEL:
+        raise ValueError("unexpected decision statistic upper-bound label")
+    if report.candidate_name != VIRTUAL_DECISION_STATISTIC_CANDIDATE:
+        raise ValueError("decision statistic diagnostic must stay on the branch-(a) virtual candidate")
+    if report.source_scale_comparison_label != SCALE_APPROPRIATE_B_STORAGE_LABEL:
+        raise ValueError("decision statistic diagnostic must cite the committed Slice 1d source label")
+    if report.source_scale_terminal_label != RATE_HELD_B_STILL_OVER_SCALE_HEADROOM_CANDIDATE_BRANCH_A:
+        raise ValueError("decision statistic diagnostic must inherit the Slice 1d branch-(a) source trigger")
+    if tuple(report.bucket_key_dimensions) != DECISION_STATISTIC_BUCKET_KEY_DIMENSIONS:
+        raise ValueError("decision statistic bucket keys drifted from the low-cardinality contract")
+    if report.statistic_mode != DECISION_STATISTIC_COUNT_ONLY_MODE:
+        raise ValueError("decision statistic mode drifted from the counts-only contract")
+    if report.shuffle_falsifier != DECISION_STATISTIC_SHUFFLE_FALSIFIER:
+        raise ValueError("decision statistic shuffle falsifier drifted from the gated anti-leak check")
+    if report.terminal_decision.terminal_label not in {
+        DECISION_STATISTIC_UPPER_BOUND_PASS,
+        OBSERVABLE_RANK_FEATURES_INSUFFICIENT,
+        STATISTIC_BUDGET_BREAKS_SUB2,
+    }:
+        raise ValueError("unexpected decision statistic terminal label")
+    if bool(report.terminal_decision.global_per_row_compression_closed):
+        raise ValueError("decision statistic diagnostic must not claim global closure")
+    if bool(report.terminal_decision.branch_a_trigger):
+        raise ValueError("decision statistic diagnostic must not self-trigger branch routing")
+    if len(report.step_reports) != len(PRE_REGISTERED_VOTE_PRESSURE_SCHEDULE):
+        raise ValueError("decision statistic diagnostic must cover the full preregistered schedule")
+    expected_names = [step.name for step in PRE_REGISTERED_VOTE_PRESSURE_SCHEDULE]
+    actual_names = [step.schedule_name for step in report.step_reports]
+    if actual_names != expected_names:
+        raise ValueError("decision statistic step order drifted from the preregistered schedule")
+    for step_report, schedule_step in zip(report.step_reports, PRE_REGISTERED_VOTE_PRESSURE_SCHEDULE):
+        if int(step_report.step) != int(schedule_step.step):
+            raise ValueError("decision statistic step number drifted from the preregistered schedule")
+        if not step_report.candidate_rows_fully_transient_observable:
+            raise ValueError("branch-(a) candidate rows must remain transient-observable only")
+        if step_report.candidate_row_count != step_report.accepted_row_count + step_report.deferred_row_count:
+            raise ValueError("decision statistic step must partition every cap row into accepted or deferred")
+        if step_report.statistic_schema.observed_bucket_count != len(step_report.bucket_summaries):
+            raise ValueError("decision statistic observed bucket count must match the reported buckets")
+        if step_report.statistic_schema.bucket_cardinality_bound != _decision_statistic_bucket_cardinality_bound():
+            raise ValueError("decision statistic bucket bound drifted from the low-cardinality feature lattice")
+        if step_report.statistic_schema.observed_bucket_count > step_report.statistic_schema.bucket_cardinality_bound:
+            raise ValueError("decision statistic used more buckets than the low-cardinality bound allows")
+        if tuple(step_report.statistic_schema.bucket_key_dimensions) != DECISION_STATISTIC_BUCKET_KEY_DIMENSIONS:
+            raise ValueError("decision statistic schema bucket dimensions drifted")
+        if step_report.statistic_schema.cutoff_bit_width != DECISION_STATISTIC_CUTOFF_BIT_WIDTH:
+            raise ValueError("decision statistic cutoff bit-width drifted from the counts-only contract")
+        if step_report.statistic_schema.seed_bits != DECISION_STATISTIC_SEED_BITS:
+            raise ValueError("decision statistic seed bits drifted from the gated plan")
+        if step_report.statistic_schema.metadata_bits != DECISION_STATISTIC_METADATA_BITS:
+            raise ValueError("decision statistic metadata bits drifted from the preregistered ledger")
+        if step_report.statistic_schema.statistic_mode != DECISION_STATISTIC_COUNT_ONLY_MODE:
+            raise ValueError("decision statistic schema mode drifted from the counts-only contract")
+        if bool(step_report.statistic_schema.fits_strictest_required_headroom) != bool(
+            step_report.statistic_schema.inclusive_sub2_if_installed
+        ):
+            raise ValueError("decision statistic headroom fit and inclusive-sub2 flags must agree")
+        if step_report.frontier_tie_bucket_count != sum(
+            1 for bucket in step_report.bucket_summaries if bucket.frontier_tie_crosses_boundary
+        ):
+            raise ValueError("decision statistic frontier-tie count drifted from the bucket summaries")
+        seen_bucket_keys: set[tuple[str, int, int]] = set()
+        for bucket in step_report.bucket_summaries:
+            bucket_key = (bucket.state_key, int(bucket.current_q_level), int(bucket.move_direction))
+            if bucket_key in seen_bucket_keys:
+                raise ValueError("decision statistic bucket keys must stay unique")
+            seen_bucket_keys.add(bucket_key)
+            if bucket.state_key not in PRIMARY_STATE_KEYS:
+                raise ValueError("decision statistic bucket used an unknown state_key")
+            if int(bucket.current_q_level) not in (-1, 0, 1):
+                raise ValueError("decision statistic bucket used an invalid q level")
+            if int(bucket.move_direction) not in (-1, 1):
+                raise ValueError("decision statistic bucket used an invalid move direction")
+            if bucket.accepted_count + bucket.deferred_count != bucket.candidate_row_count:
+                raise ValueError("decision statistic bucket counts must partition the bucket candidates")
+            if bool(bucket.decisive_bucket) != bool(0 < bucket.accepted_count < bucket.candidate_row_count):
+                raise ValueError("decision statistic decisive-bucket flag drifted from the counts")
+            if bucket.frontier_tie_crosses_boundary and not bucket.decisive_bucket:
+                raise ValueError("decision statistic frontier ties are only meaningful on decisive buckets")
+        _validate_decision_statistic_statistic_input(step_report)
+        if step_report.observable_rank_features_sufficient:
+            if not (
+                step_report.canonical_matches_exact
+                and step_report.shuffled_matches_exact
+                and step_report.shuffle_preserves_outcome
+            ):
+                raise ValueError("decision statistic sufficiency requires exact canonical+shuffled agreement")
+        else:
+            if step_report.insufficiency_reason is None:
+                raise ValueError("decision statistic insufficiency must name a reason")
+    budget_failures = [
+        step.schedule_name
+        for step in report.step_reports
+        if not step.statistic_schema.fits_strictest_required_headroom
+    ]
+    insufficiencies = [
+        step.schedule_name
+        for step in report.step_reports
+        if not step.observable_rank_features_sufficient
+    ]
+    if report.terminal_decision.terminal_label == DECISION_STATISTIC_UPPER_BOUND_PASS:
+        if budget_failures or insufficiencies:
+            raise ValueError("decision statistic PASS requires no budget failures and no sufficiency failures")
+    elif report.terminal_decision.terminal_label == STATISTIC_BUDGET_BREAKS_SUB2:
+        if not budget_failures:
+            raise ValueError("budget-break terminal requires an actual budget failure")
+    else:
+        if budget_failures:
+            raise ValueError("observable-rank insufficiency must not mask a prior budget failure")
+        if not insufficiencies:
+            raise ValueError("observable-rank insufficiency terminal requires a real sufficiency failure")
+    if report.terminal_decision.first_budget_failure_step != (
+        budget_failures[0] if budget_failures else None
+    ):
+        raise ValueError("decision statistic first budget failure step drifted from the step reports")
+    if report.terminal_decision.first_insufficient_step != (
+        insufficiencies[0] if insufficiencies else None
+    ):
+        raise ValueError("decision statistic first insufficiency step drifted from the step reports")
+    if report.terminal_decision.peak_statistic_step not in actual_names:
+        raise ValueError("decision statistic peak step must name one of the traced steps")
+    _assert_no_tensors(report.to_dict())
+
+
 __all__ = [
     "ABSOLUTE_COUNT_LOWER_BOUND_DIAGNOSTIC",
     "ACCUMULATOR_FREE_NULL_BASELINE",
@@ -3699,10 +4552,14 @@ __all__ = [
     "CANDIDATE_ADMISSION_DIAGNOSTIC_LABEL",
     "CANDIDATE_ADMISSION_DIAGNOSTIC_SCHEMA_VERSION",
     "CUMULATIVE_SCHEDULE_MODE",
+    "DECISION_STATISTIC_UPPER_BOUND_LABEL",
+    "DECISION_STATISTIC_UPPER_BOUND_PASS",
+    "DECISION_STATISTIC_UPPER_BOUND_SCHEMA_VERSION",
     "HOT_BUDGET_POINT_LABELS",
     "K_SWEEP_JOINT_INFEASIBLE",
     "K_SWEEP_MINIMAL_VIABLE_PASS",
     "K_SWEEP_REPRESENTATION_WALL",
+    "OBSERVABLE_RANK_FEATURES_INSUFFICIENT",
     "ONE_STEP_LOCAL_DIAGNOSTIC_MODE",
     "ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC",
     "PER_ROW_COMPRESSION_CLOSED_BY_EASY_CASE_LOWER_BOUND",
@@ -3719,6 +4576,11 @@ __all__ = [
     "SCALE_APPROPRIATE_B_STORAGE_LABEL",
     "SCALE_APPROPRIATE_B_STORAGE_SCHEMA_VERSION",
     "SCALE_APPROPRIATE_COMPARISON_AMBIGUOUS_NEEDS_BACKLOG_DENSITY_TRACE",
+    "DecisionStatisticBucketSummary",
+    "DecisionStatisticSchemaReport",
+    "DecisionStatisticStepReport",
+    "DecisionStatisticUpperBoundDecision",
+    "DecisionStatisticUpperBoundReport",
     "RealBacklogLowerBoundDecision",
     "RealBacklogLowerBoundReport",
     "RealBacklogLowerBoundStepReport",
@@ -3730,6 +4592,7 @@ __all__ = [
     "ScaleAppropriateLedgerComparisonReport",
     "ScaleAppropriateProjectionStepReport",
     "SPARSE_AMORTIZED_CANDIDATE_RESURRECTED_FOR_HARDER_TRACE",
+    "STATISTIC_BUDGET_BREAKS_SUB2",
     "TINY_FIXTURE_HEADROOM_SOURCE",
     "CandidateABudgetLocalizationReport",
     "CandidateABudgetReadout",
@@ -3748,12 +4611,15 @@ __all__ = [
     "representative_engineering_guard_spec",
     "run_candidate_admission_diagnostic",
     "run_candidate_capacity_localization_diagnostic",
+    "run_decision_statistic_upper_bound_diagnostic",
     "run_real_backlog_lower_bound_diagnostic",
     "run_scale_appropriate_b_storage_comparison",
     "run_representative_bounded_delta_drift_verdict",
     "validate_candidate_admission_diagnostic_report",
     "validate_candidate_capacity_localization_report",
+    "validate_decision_statistic_upper_bound_report",
     "validate_real_backlog_lower_bound_diagnostic_report",
     "validate_scale_appropriate_b_storage_comparison_report",
     "validate_representative_bounded_delta_drift_verdict_report",
+    "VIRTUAL_DECISION_STATISTIC_CANDIDATE",
 ]

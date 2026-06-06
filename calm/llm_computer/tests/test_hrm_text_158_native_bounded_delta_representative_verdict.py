@@ -28,10 +28,12 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     CAPACITY_LOCALIZATION_DIAGNOSTIC_LABEL,
     CANDIDATE_ADMISSION_DIAGNOSTIC_LABEL,
     CUMULATIVE_SCHEDULE_MODE,
+    DECISION_STATISTIC_UPPER_BOUND_LABEL,
     HOT_BUDGET_POINT_LABELS,
     K_SWEEP_JOINT_INFEASIBLE,
     K_SWEEP_MINIMAL_VIABLE_PASS,
     K_SWEEP_REPRESENTATION_WALL,
+    OBSERVABLE_RANK_FEATURES_INSUFFICIENT,
     ONE_STEP_LOCAL_DIAGNOSTIC_MODE,
     ORACLE_UPPER_BOUND_ADMISSION_DIAGNOSTIC,
     PER_ROW_COMPRESSION_CLOSED_TINY_FIXTURE_LOWER_BOUND_ONLY,
@@ -44,13 +46,16 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_representative_verdict im
     SCALE_APPROPRIATE_COMPARISON_AMBIGUOUS_NEEDS_BACKLOG_DENSITY_TRACE,
     SPARSE_AMORTIZED_CANDIDATE_RESURRECTED_FOR_HARDER_TRACE,
     TINY_FIXTURE_HEADROOM_SOURCE,
+    VIRTUAL_DECISION_STATISTIC_CANDIDATE,
     run_candidate_admission_diagnostic,
     run_candidate_capacity_localization_diagnostic,
+    run_decision_statistic_upper_bound_diagnostic,
     run_real_backlog_lower_bound_diagnostic,
     run_scale_appropriate_b_storage_comparison,
     run_representative_bounded_delta_drift_verdict,
     validate_candidate_admission_diagnostic_report,
     validate_candidate_capacity_localization_report,
+    validate_decision_statistic_upper_bound_report,
     validate_real_backlog_lower_bound_diagnostic_report,
     validate_scale_appropriate_b_storage_comparison_report,
     validate_representative_bounded_delta_drift_verdict_report,
@@ -136,6 +141,11 @@ def _real_backlog_lower_bound_report():
 @lru_cache(maxsize=1)
 def _scale_appropriate_b_storage_report():
     return run_scale_appropriate_b_storage_comparison()
+
+
+@lru_cache(maxsize=1)
+def _decision_statistic_upper_bound_report():
+    return run_decision_statistic_upper_bound_diagnostic()
 
 
 def test_bounded_backlog_policy_is_opt_in_and_charged_as_actual_stored_backlog():
@@ -632,4 +642,69 @@ def test_scale_appropriate_b_storage_uses_rate_held_rows_for_the_decision():
     assert sensitivity.rate_held_b_storage_peak_bounded_delta_acc_bits_per_weight == pytest.approx(
         2.800015449523926
     )
+    _assert_no_tensors(payload)
+
+
+def test_decision_statistic_upper_bound_fits_headroom_but_fails_shuffle_falsifier():
+    report = _decision_statistic_upper_bound_report()
+    payload = report.to_dict()
+
+    validate_decision_statistic_upper_bound_report(report)
+    assert report.label == DECISION_STATISTIC_UPPER_BOUND_LABEL
+    assert report.candidate_name == VIRTUAL_DECISION_STATISTIC_CANDIDATE
+    assert report.source_scale_comparison_label == SCALE_APPROPRIATE_B_STORAGE_LABEL
+    assert report.source_scale_terminal_label == (
+        RATE_HELD_B_STILL_OVER_SCALE_HEADROOM_CANDIDATE_BRANCH_A
+    )
+    assert report.strictest_required_q_regime_name == "prior_large_fixture_base3_q"
+    assert report.strictest_required_eligible_weight_count == 16384
+    assert report.strictest_required_headroom_bits_per_weight == pytest.approx(
+        0.38232421875
+    )
+    assert report.terminal_decision.terminal_label == OBSERVABLE_RANK_FEATURES_INSUFFICIENT
+    assert report.terminal_decision.budget_fits_strictest_required_headroom is True
+    assert report.terminal_decision.inclusive_sub2_if_installed is True
+    assert report.terminal_decision.first_budget_failure_step is None
+    assert report.terminal_decision.first_insufficient_step == "cap_saturated"
+    assert report.terminal_decision.peak_statistic_step == "backlog_growth"
+    assert report.terminal_decision.peak_statistic_bits_per_weight == pytest.approx(
+        0.010009765625
+    )
+    assert report.terminal_decision.any_step_frontier_tie_crosses_boundary is True
+    assert report.terminal_decision.all_steps_shuffle_preserve_outcome is False
+
+    by_name = {step.schedule_name: step for step in report.step_reports}
+    assert by_name["sparse_unsaturated"].observable_rank_features_sufficient is True
+    assert by_name["moderate_unsaturated"].observable_rank_features_sufficient is True
+
+    cap_saturated = by_name["cap_saturated"]
+    assert cap_saturated.candidate_row_count == 1536
+    assert cap_saturated.accepted_row_count == 256
+    assert cap_saturated.deferred_row_count == 1280
+    assert cap_saturated.statistic_schema.total_bits == 160
+    assert cap_saturated.statistic_schema.total_bits_per_weight_strictest_required_row == pytest.approx(
+        0.009765625
+    )
+    assert cap_saturated.statistic_schema.fits_strictest_required_headroom is True
+    assert cap_saturated.frontier_tie_bucket_count == 2
+    assert cap_saturated.canonical_matches_exact is True
+    assert cap_saturated.shuffled_matches_exact is False
+    assert cap_saturated.shuffle_preserves_outcome is False
+    assert "row-identity order" in (cap_saturated.insufficiency_reason or "")
+    cap_buckets = {
+        (bucket.state_key, bucket.current_q_level, bucket.move_direction): bucket
+        for bucket in cap_saturated.bucket_summaries
+    }
+    assert cap_buckets[("proj_in", 0, -1)].frontier_tie_crosses_boundary is True
+    assert cap_buckets[("proj_in", 0, 1)].frontier_tie_crosses_boundary is True
+    assert cap_buckets[("proj_out", 0, -1)].accepted_count == 0
+    assert cap_buckets[("proj_out", 0, 1)].accepted_count == 0
+
+    backlog_growth = by_name["backlog_growth"]
+    assert backlog_growth.candidate_row_count == 2816
+    assert backlog_growth.statistic_schema.total_bits == 164
+    assert backlog_growth.statistic_schema.total_bits_per_weight_strictest_required_row == pytest.approx(
+        0.010009765625
+    )
+    assert backlog_growth.observable_rank_features_sufficient is False
     _assert_no_tensors(payload)
