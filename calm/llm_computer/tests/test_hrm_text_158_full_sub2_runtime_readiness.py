@@ -15,6 +15,7 @@ from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
     FIXTURE_MISSING_ATTENTION,
     FIXTURE_MISSING_BACKWARD,
     FIXTURE_PRE_FULL_STACK_DIAGNOSTIC,
+    FIXTURE_STEP2A_CANDIDATE_PERSISTENT_CORE_ABSENCE,
     FIXTURE_TRANSIENT_FP_DEBT,
     FULL_SUB2_RUNTIME_CLASSIFICATIONS,
     FULL_SUB2_RUNTIME_REQUIRED_SURFACES,
@@ -26,7 +27,10 @@ from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
     SURFACE_ACTIVATIONS_RESIDUALS,
     SURFACE_ATTENTION_KV_ATTENTION_BUFFERS,
     SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS,
+    SURFACE_DENSE_INT16_PERSISTENT_ACCUMULATOR_ABSENCE,
     SURFACE_FP_EXCEPTIONS_LEDGER,
+    SURFACE_PERSISTENT_QACC_AUTHORITY,
+    SURFACE_Q_SIDECAR_VOTE_CARRIER,
     FullSub2RuntimeSurfaceReceipt,
     build_full_sub2_runtime_ready_for_science,
     fixture_full_sub2_runtime_ready_for_science,
@@ -134,6 +138,25 @@ def test_transient_fp_debt_blocks_main_science_without_becoming_exception():
     assert receipt.transient_fp_debt_surface_names != receipt.explicit_exception_surface_names
 
 
+def test_step2a_candidate_fixture_keeps_live_rows_non_sub2():
+    receipt = fixture_full_sub2_runtime_ready_for_science(
+        FIXTURE_STEP2A_CANDIDATE_PERSISTENT_CORE_ABSENCE
+    )
+    classes = {surface.surface_id: surface.classification for surface in receipt.surfaces}
+
+    assert receipt.ready_for_main_science is False
+    assert receipt.main_science_launch_blocked is True
+    assert classes[SURFACE_PERSISTENT_QACC_AUTHORITY] == RUNTIME_CLASS_TRANSIENT_FP_DEBT
+    assert (
+        classes[SURFACE_DENSE_INT16_PERSISTENT_ACCUMULATOR_ABSENCE]
+        == RUNTIME_CLASS_MISSING
+    )
+    assert classes[SURFACE_Q_SIDECAR_VOTE_CARRIER] == RUNTIME_CLASS_PRE_FULL_STACK_DIAGNOSTIC
+    assert SURFACE_PERSISTENT_QACC_AUTHORITY in receipt.blocker_surface_names
+    assert SURFACE_DENSE_INT16_PERSISTENT_ACCUMULATOR_ABSENCE in receipt.blocker_surface_names
+    assert SURFACE_Q_SIDECAR_VOTE_CARRIER in receipt.blocker_surface_names
+
+
 def test_explicit_exception_requires_fail_closed_fields():
     surfaces = _replace_surface(
         SURFACE_FP_EXCEPTIONS_LEDGER,
@@ -220,4 +243,3 @@ def test_readiness_classes_are_exact_five_class_prereg():
         RUNTIME_CLASS_PRE_FULL_STACK_DIAGNOSTIC,
         RUNTIME_CLASS_MISSING,
     )
-

@@ -105,6 +105,9 @@ FIXTURE_MISSING_ATTENTION = "missing_attention_kv_attention_buffers"
 FIXTURE_MISSING_BACKWARD = "missing_backward_saved_tensors_transients"
 FIXTURE_PRE_FULL_STACK_DIAGNOSTIC = "pre_full_stack_diagnostic"
 FIXTURE_TRANSIENT_FP_DEBT = "transient_fp_debt"
+FIXTURE_STEP2A_CANDIDATE_PERSISTENT_CORE_ABSENCE = (
+    "step2a_candidate_persistent_core_absence"
+)
 
 FULL_SUB2_RUNTIME_FIXTURE_NAMES = (
     FIXTURE_CURRENT_REPO,
@@ -114,6 +117,7 @@ FULL_SUB2_RUNTIME_FIXTURE_NAMES = (
     FIXTURE_MISSING_BACKWARD,
     FIXTURE_PRE_FULL_STACK_DIAGNOSTIC,
     FIXTURE_TRANSIENT_FP_DEBT,
+    FIXTURE_STEP2A_CANDIDATE_PERSISTENT_CORE_ABSENCE,
 )
 
 
@@ -622,6 +626,52 @@ def current_repo_scaffold_surfaces() -> tuple[FullSub2RuntimeSurfaceReceipt, ...
     return tuple(surfaces)
 
 
+def step2a_candidate_persistent_core_absence_surfaces() -> tuple[
+    FullSub2RuntimeSurfaceReceipt, ...
+]:
+    """Candidate receipt fixture that deliberately leaves live rows blocking."""
+
+    surfaces = current_repo_scaffold_surfaces()
+    surfaces = _with_surface(
+        surfaces,
+        SURFACE_PERSISTENT_QACC_AUTHORITY,
+        classification=RUNTIME_CLASS_TRANSIENT_FP_DEBT,
+        reason=(
+            "Step 2A proves a CPU/reference candidate receipt only; live q/acc "
+            "authority still routes through the existing dense/int16 control seams"
+        ),
+        source_anchor="calm/hrm_text_158/native_full_stack/persistent_core_sub2_absence.py:1",
+        proof_artifact_or_test="calm/llm_computer/tests/test_hrm_text_158_persistent_core_sub2_absence.py",
+        diagnostic_exception_reason="candidate q/acc authority can be inspected, but live authority is not converted",
+        why_cheaper_than_full_stack_first="candidate-only CPU receipt is cheaper than a trainer authority conversion",
+    )
+    surfaces = _with_surface(
+        surfaces,
+        SURFACE_DENSE_INT16_PERSISTENT_ACCUMULATOR_ABSENCE,
+        classification=RUNTIME_CLASS_MISSING,
+        reason=(
+            "candidate sidecar persistence has no dense shadow, but live "
+            "persistent_state_budget/vote_update still expose int16 accumulator authority"
+        ),
+        source_anchor="calm/hrm_text_158/native_full_stack/vote_update.py:203",
+        proof_artifact_or_test="calm/llm_computer/tests/test_hrm_text_158_persistent_core_sub2_absence.py::test_step2a_candidate_fixture_does_not_flip_live_rows",
+    )
+    surfaces = _with_surface(
+        surfaces,
+        SURFACE_Q_SIDECAR_VOTE_CARRIER,
+        classification=RUNTIME_CLASS_PRE_FULL_STACK_DIAGNOSTIC,
+        reason=(
+            "sidecar carrier is candidate/reference proof only; Step 2B must convert "
+            "a trainer-used authority seam before this live row can become sub2"
+        ),
+        source_anchor="calm/hrm_text_158/native_full_stack/sub2_native_birth_sidecar_runtime.py:1",
+        proof_artifact_or_test="calm/llm_computer/tests/test_hrm_text_158_persistent_core_sub2_absence.py",
+        diagnostic_exception_reason="candidate carrier can be audited before live authority conversion",
+        why_cheaper_than_full_stack_first="CPU/reference candidate proof is cheaper than live vote-update API churn",
+    )
+    return tuple(surfaces)
+
+
 def fixture_full_sub2_runtime_ready_for_science(
     fixture_name: str = FIXTURE_CURRENT_REPO,
 ) -> FullSub2RuntimeReadyForScienceReceipt:
@@ -678,8 +728,9 @@ def fixture_full_sub2_runtime_ready_for_science(
             diagnostic_exception_reason="transient FP debt can be measured before full replacement",
             why_cheaper_than_full_stack_first="debt classification is cheaper than mechanism science launch",
         )
+    elif fixture_name == FIXTURE_STEP2A_CANDIDATE_PERSISTENT_CORE_ABSENCE:
+        surfaces = step2a_candidate_persistent_core_absence_surfaces()
     else:
         valid = ", ".join(FULL_SUB2_RUNTIME_FIXTURE_NAMES)
         raise ValueError(f"unknown full-sub2 readiness fixture {fixture_name!r}; valid={valid}")
     return build_full_sub2_runtime_ready_for_science(surfaces)
-
