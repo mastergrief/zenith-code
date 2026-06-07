@@ -7,7 +7,7 @@ gpu:0 resource-lane run because CPU tests cannot measure CUDA activation peaks.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Mapping, Sequence
 
 
 ACTIVATION_RELIEF_SCHEMA_VERSION = "hrm_text_158_activation_relief/v0.lossless_recompute"
@@ -15,6 +15,28 @@ BACKWARD_RECOMPUTE_RECEIPT_SCHEMA_VERSION = (
     "hrm_text_158_backward_saved_tensors_recompute/v0.saved_tensor_hook"
 )
 BACKWARD_RECOMPUTE_TARGET_NAME = "step3a1_backward_saved_tensors_recompute"
+ACTIVATION_RESIDUALS_FAIL_CLOSED_RECEIPT_SCHEMA_VERSION = (
+    "hrm_text_158_activation_residuals_fail_closed/v0.live_tensor_seams"
+)
+ACTIVATION_RESIDUALS_FAIL_CLOSED_TARGET_NAME = (
+    "step3a2_activation_residuals_fail_closed"
+)
+ACTIVATION_RESIDUAL_TARGET_FAMILIES = (
+    "recurrent.z_L_update",
+    "recurrent.z_H_update",
+    "residual.post_attn",
+    "residual.post_mlp",
+)
+ACTIVATION_RESIDUALS_BLOCKED_REASON = (
+    "fail-closed activation/residual live-tensor harness only; live BF16/FP "
+    "tensor seams are observed and no real sub2/remat/offload/no-hidden-BF16 "
+    "proof is present"
+)
+ZL_INIT_FP_EXCEPTION_CLASSIFICATION = "fp_exception_non_eligible_hrm_tensor"
+ZL_INIT_FP_EXCEPTION_REGISTRY_ANCHOR = (
+    "calm/hrm_text_158/native_full_stack/fp_exceptions.py:30"
+)
+ZL_INIT_HRM_SOURCE_ANCHOR = "calm/hrm_text_158/hrm.py:122"
 
 MODE_OFF = "off"
 MODE_LOSSLESS_RECOMPUTE = "lossless_recompute"
@@ -34,6 +56,13 @@ BACKWARD_RECOMPUTE_NON_CLAIMS = (
     "boundary z_H/z_L activation/residual tensors remain live BF16/FP boundary state and are not sub2 in Step 3A1",
     "attention/KV buffers, optimizer credit state, and native kernel residency remain outside this proof",
     "proof is CPU/small-smoke only and does not launch GPU, write checkpoints, or mutate .pt artifacts",
+)
+ACTIVATION_RESIDUALS_FAIL_CLOSED_NON_CLAIMS = (
+    "activation/residual live-tensor observation is not learning, acquisition, retention, or throughput",
+    "observer callbacks returning BF16/FP tensors are blocker evidence, not sub2 credit",
+    "this receipt does not cover attention/KV buffers, optimizer credit state, or native hot-path residency",
+    "this receipt does not launch GPU, prove CUDA memory relief, write checkpoints, or mutate .pt artifacts",
+    "zL_init is cross-referenced as existing non-eligible persistent FP debt, not solved by activation seams",
 )
 
 DEFERRED_GPU_MEASUREMENT_NOTE = (
@@ -183,6 +212,92 @@ class BackwardRecomputeSavedTensorReceipt:
             "recompute_saved_tensor_count": self.recompute_saved_tensor_count,
             "no_extra_internal_payload_claim": self.no_extra_internal_payload_claim,
             "caveat": self.caveat,
+            "non_claims": list(self.non_claims),
+        }
+
+
+@dataclass(frozen=True)
+class ActivationResidualLiveTensorFamilyObservation:
+    family: str
+    observed_count: int
+    shapes: tuple[tuple[int, ...], ...]
+    dtypes: tuple[str, ...]
+    devices: tuple[str, ...]
+    requires_grad_values: tuple[bool, ...]
+    mechanism: str = "observer_returns_original_tensor"
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "family": self.family,
+            "observed_count": self.observed_count,
+            "shapes": [list(shape) for shape in self.shapes],
+            "dtypes": list(self.dtypes),
+            "devices": list(self.devices),
+            "requires_grad_values": list(self.requires_grad_values),
+            "mechanism": self.mechanism,
+        }
+
+
+@dataclass(frozen=True)
+class ZLInitPersistentNonClaim:
+    name: str
+    classification: str
+    registry_anchor: str
+    source_anchor: str
+    dtype: str
+    shape: tuple[int, ...]
+    persistent: bool
+    non_claim: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "classification": self.classification,
+            "registry_anchor": self.registry_anchor,
+            "source_anchor": self.source_anchor,
+            "dtype": self.dtype,
+            "shape": list(self.shape),
+            "persistent": self.persistent,
+            "non_claim": self.non_claim,
+        }
+
+
+@dataclass(frozen=True)
+class ActivationResidualsFailClosedReceipt:
+    schema_version: str
+    target_name: str
+    target_families: tuple[str, ...]
+    activations_residuals_sub2_claim: bool
+    real_sub2_or_remat_or_offload_mechanism_present: bool
+    no_hidden_bf16_authority_proven: bool
+    gpu_memory_receipt_present: bool
+    lossy_or_compression_claim: bool
+    ready_to_flip: bool
+    blocked_reason: str
+    observed_families: tuple[ActivationResidualLiveTensorFamilyObservation, ...]
+    zL_init_non_claim: ZLInitPersistentNonClaim
+    smallest_missing_proof: str
+    non_claims: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema_version": self.schema_version,
+            "target_name": self.target_name,
+            "target_families": list(self.target_families),
+            "activations_residuals_sub2_claim": self.activations_residuals_sub2_claim,
+            "real_sub2_or_remat_or_offload_mechanism_present": (
+                self.real_sub2_or_remat_or_offload_mechanism_present
+            ),
+            "no_hidden_bf16_authority_proven": self.no_hidden_bf16_authority_proven,
+            "gpu_memory_receipt_present": self.gpu_memory_receipt_present,
+            "lossy_or_compression_claim": self.lossy_or_compression_claim,
+            "ready_to_flip": self.ready_to_flip,
+            "blocked_reason": self.blocked_reason,
+            "observed_families": [
+                observation.to_dict() for observation in self.observed_families
+            ],
+            "zL_init_non_claim": self.zL_init_non_claim.to_dict(),
+            "smallest_missing_proof": self.smallest_missing_proof,
             "non_claims": list(self.non_claims),
         }
 
@@ -441,6 +556,238 @@ def validate_backward_recompute_saved_tensor_receipt(
         raise ValueError("backward recompute caveat must avoid zero-tensors-anywhere overclaim")
     if "z_H/z_L activation/residual" not in receipt.caveat:
         raise ValueError("backward recompute caveat must preserve activation/residual boundary")
+
+
+def _require_nonempty_string(value: object, *, field_name: str) -> str:
+    text = str(value)
+    if not text.strip():
+        raise ValueError(f"{field_name} must be non-empty")
+    return text
+
+
+def _shape_tuple(value: object, *, field_name: str) -> tuple[int, ...]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        raise TypeError(f"{field_name} must be a sequence of integer dimensions")
+    shape = tuple(int(dim) for dim in value)
+    if not shape:
+        raise ValueError(f"{field_name} must be non-empty")
+    return shape
+
+
+def _summarize_activation_residual_live_tensor_families(
+    seam_events: Sequence[Mapping[str, object]],
+) -> tuple[ActivationResidualLiveTensorFamilyObservation, ...]:
+    grouped: dict[str, list[Mapping[str, object]]] = {
+        family: [] for family in ACTIVATION_RESIDUAL_TARGET_FAMILIES
+    }
+    for event in seam_events:
+        family = event.get("family", event.get("name"))
+        if family not in grouped:
+            raise ValueError(
+                "activation/residual seam event family must be one of exactly "
+                f"{ACTIVATION_RESIDUAL_TARGET_FAMILIES!r}; got {family!r}"
+            )
+        grouped[str(family)].append(event)
+
+    missing = [family for family, events in grouped.items() if not events]
+    if missing:
+        raise ValueError(
+            "activation/residual receipt missing required target families: "
+            + ", ".join(missing)
+        )
+
+    observations: list[ActivationResidualLiveTensorFamilyObservation] = []
+    for family in ACTIVATION_RESIDUAL_TARGET_FAMILIES:
+        events = grouped[family]
+        observations.append(
+            ActivationResidualLiveTensorFamilyObservation(
+                family=family,
+                observed_count=len(events),
+                shapes=tuple(
+                    sorted(
+                        {
+                            _shape_tuple(
+                                event.get("shape", ()),
+                                field_name=f"{family}.shape",
+                            )
+                            for event in events
+                        }
+                    )
+                ),
+                dtypes=tuple(
+                    sorted(
+                        {
+                            _require_nonempty_string(
+                                event.get("dtype", ""),
+                                field_name=f"{family}.dtype",
+                            )
+                            for event in events
+                        }
+                    )
+                ),
+                devices=tuple(
+                    sorted(
+                        {
+                            _require_nonempty_string(
+                                event.get("device", ""),
+                                field_name=f"{family}.device",
+                            )
+                            for event in events
+                        }
+                    )
+                ),
+                requires_grad_values=tuple(
+                    sorted({bool(event.get("requires_grad", False)) for event in events})
+                ),
+            )
+        )
+    return tuple(observations)
+
+
+def _zL_init_non_claim_from_observation(
+    zL_init_observation: Mapping[str, object],
+) -> ZLInitPersistentNonClaim:
+    return ZLInitPersistentNonClaim(
+        name=_require_nonempty_string(
+            zL_init_observation.get("name", "zL_init"),
+            field_name="zL_init.name",
+        ),
+        classification=_require_nonempty_string(
+            zL_init_observation.get(
+                "classification",
+                ZL_INIT_FP_EXCEPTION_CLASSIFICATION,
+            ),
+            field_name="zL_init.classification",
+        ),
+        registry_anchor=_require_nonempty_string(
+            zL_init_observation.get(
+                "registry_anchor",
+                ZL_INIT_FP_EXCEPTION_REGISTRY_ANCHOR,
+            ),
+            field_name="zL_init.registry_anchor",
+        ),
+        source_anchor=_require_nonempty_string(
+            zL_init_observation.get(
+                "source_anchor",
+                ZL_INIT_HRM_SOURCE_ANCHOR,
+            ),
+            field_name="zL_init.source_anchor",
+        ),
+        dtype=_require_nonempty_string(
+            zL_init_observation.get("dtype", ""),
+            field_name="zL_init.dtype",
+        ),
+        shape=_shape_tuple(
+            zL_init_observation.get("shape", ()),
+            field_name="zL_init.shape",
+        ),
+        persistent=bool(zL_init_observation.get("persistent", False)),
+        non_claim=(
+            "zL_init is a persistent BF16/FP initial-state buffer covered by "
+            "the existing non_eligible_hrm_tensors FP exception; activation "
+            "seam observation does not convert or solve it"
+        ),
+    )
+
+
+def build_activation_residuals_fail_closed_receipt(
+    *,
+    seam_events: Sequence[Mapping[str, object]],
+    zL_init_observation: Mapping[str, object],
+    activations_residuals_sub2_claim: bool = False,
+    real_sub2_or_remat_or_offload_mechanism_present: bool = False,
+    no_hidden_bf16_authority_proven: bool = False,
+    gpu_memory_receipt_present: bool = False,
+    lossy_or_compression_claim: bool = False,
+    ready_to_flip: bool = False,
+    smallest_missing_proof: str = (
+        "real activation/residual sub2 representation or lossless remat/offload "
+        "mechanism plus GPU memory receipt and no-hidden-BF16 authority proof"
+    ),
+) -> ActivationResidualsFailClosedReceipt:
+    """Build the Step 3A2 fail-closed activation/residual blocker receipt."""
+
+    receipt = ActivationResidualsFailClosedReceipt(
+        schema_version=ACTIVATION_RESIDUALS_FAIL_CLOSED_RECEIPT_SCHEMA_VERSION,
+        target_name=ACTIVATION_RESIDUALS_FAIL_CLOSED_TARGET_NAME,
+        target_families=ACTIVATION_RESIDUAL_TARGET_FAMILIES,
+        activations_residuals_sub2_claim=bool(activations_residuals_sub2_claim),
+        real_sub2_or_remat_or_offload_mechanism_present=bool(
+            real_sub2_or_remat_or_offload_mechanism_present
+        ),
+        no_hidden_bf16_authority_proven=bool(no_hidden_bf16_authority_proven),
+        gpu_memory_receipt_present=bool(gpu_memory_receipt_present),
+        lossy_or_compression_claim=bool(lossy_or_compression_claim),
+        ready_to_flip=bool(ready_to_flip),
+        blocked_reason=ACTIVATION_RESIDUALS_BLOCKED_REASON,
+        observed_families=_summarize_activation_residual_live_tensor_families(
+            seam_events
+        ),
+        zL_init_non_claim=_zL_init_non_claim_from_observation(zL_init_observation),
+        smallest_missing_proof=_require_nonempty_string(
+            smallest_missing_proof,
+            field_name="smallest_missing_proof",
+        ),
+        non_claims=ACTIVATION_RESIDUALS_FAIL_CLOSED_NON_CLAIMS,
+    )
+    validate_activation_residuals_fail_closed_receipt(receipt)
+    return receipt
+
+
+def validate_activation_residuals_fail_closed_receipt(
+    receipt: ActivationResidualsFailClosedReceipt,
+) -> None:
+    if receipt.schema_version != ACTIVATION_RESIDUALS_FAIL_CLOSED_RECEIPT_SCHEMA_VERSION:
+        raise ValueError("activation/residual fail-closed receipt schema mismatch")
+    if receipt.target_name != ACTIVATION_RESIDUALS_FAIL_CLOSED_TARGET_NAME:
+        raise ValueError("activation/residual fail-closed receipt target mismatch")
+    if receipt.target_families != ACTIVATION_RESIDUAL_TARGET_FAMILIES:
+        raise ValueError("activation/residual target families must be exactly registered")
+    observed_names = tuple(observation.family for observation in receipt.observed_families)
+    if observed_names != ACTIVATION_RESIDUAL_TARGET_FAMILIES:
+        raise ValueError("activation/residual observed families must match target families")
+    for observation in receipt.observed_families:
+        if observation.observed_count <= 0:
+            raise ValueError(f"{observation.family} must have at least one live tensor")
+        if observation.mechanism != "observer_returns_original_tensor":
+            raise ValueError("Step 3A2 accepts only observer-returned original tensors")
+        if not observation.shapes or not observation.dtypes or not observation.devices:
+            raise ValueError(f"{observation.family} is missing tensor metadata")
+    zL = receipt.zL_init_non_claim
+    if zL.name != "zL_init":
+        raise ValueError("zL_init non-claim must identify zL_init")
+    if zL.classification != ZL_INIT_FP_EXCEPTION_CLASSIFICATION:
+        raise ValueError("zL_init must use the existing non-eligible FP classification")
+    if zL.registry_anchor != ZL_INIT_FP_EXCEPTION_REGISTRY_ANCHOR:
+        raise ValueError("zL_init must cite the existing fp_exceptions.py registry entry")
+    if zL.source_anchor != ZL_INIT_HRM_SOURCE_ANCHOR:
+        raise ValueError("zL_init must cite the HRM persistent buffer source anchor")
+    if not zL.persistent:
+        raise ValueError("zL_init must be classified as a persistent buffer non-claim")
+    if "non_eligible_hrm_tensors" not in zL.non_claim:
+        raise ValueError("zL_init non-claim must cross-reference non_eligible_hrm_tensors")
+    if receipt.lossy_or_compression_claim:
+        raise ValueError("lossy/compression wording cannot satisfy activation/residual sub2")
+    required_proofs = (
+        receipt.real_sub2_or_remat_or_offload_mechanism_present
+        and receipt.no_hidden_bf16_authority_proven
+        and receipt.gpu_memory_receipt_present
+    )
+    if receipt.activations_residuals_sub2_claim and not (
+        required_proofs and receipt.ready_to_flip
+    ):
+        raise ValueError(
+            "activations_residuals_sub2_claim requires real "
+            "sub2/remat/offload/no-hidden-BF16 proof and ready_to_flip=True"
+        )
+    if receipt.ready_to_flip and not required_proofs:
+        raise ValueError("ready_to_flip requires all activation/residual proof gates")
+    if not receipt.activations_residuals_sub2_claim and receipt.ready_to_flip:
+        raise ValueError("ready_to_flip cannot be true without a sub2 claim")
+    if receipt.blocked_reason != ACTIVATION_RESIDUALS_BLOCKED_REASON:
+        raise ValueError("activation/residual blocked reason must be exact")
+    if receipt.non_claims != ACTIVATION_RESIDUALS_FAIL_CLOSED_NON_CLAIMS:
+        raise ValueError("activation/residual receipt non-claims must be exact")
 
 
 def validate_activation_relief_measurement(

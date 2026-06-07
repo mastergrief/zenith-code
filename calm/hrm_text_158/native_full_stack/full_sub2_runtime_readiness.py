@@ -11,6 +11,8 @@ from typing import Any, Mapping, Sequence
 
 from calm.hrm_text_158.native_full_stack.activation_relief import (
     ACTIVATION_RELIEF_SCHEMA_VERSION,
+    ACTIVATION_RESIDUALS_BLOCKED_REASON,
+    ACTIVATION_RESIDUALS_FAIL_CLOSED_RECEIPT_SCHEMA_VERSION,
     BACKWARD_RECOMPUTE_RECEIPT_SCHEMA_VERSION,
 )
 from calm.hrm_text_158.native_full_stack.attention_kv_buffers import (
@@ -86,6 +88,9 @@ FULL_SUB2_RUNTIME_SOURCE_SEAMS = {
     "strict_sub2_scaffold": STRICT_SUB2_CANDIDATE_RUNTIME_SCAFFOLD_SCHEMA_VERSION,
     "persistent_state_budget": PERSISTENT_STATE_BUDGET_SCHEMA_VERSION,
     "activation_relief": ACTIVATION_RELIEF_SCHEMA_VERSION,
+    "activation_residuals_fail_closed": (
+        ACTIVATION_RESIDUALS_FAIL_CLOSED_RECEIPT_SCHEMA_VERSION
+    ),
     "backward_recompute": BACKWARD_RECOMPUTE_RECEIPT_SCHEMA_VERSION,
     "attention_kv_buffers": ATTENTION_KV_BUFFER_SCHEMA_VERSION,
     "recurrent_state_buffers": RECURRENT_STATE_BUFFER_SCHEMA_VERSION,
@@ -105,6 +110,9 @@ FIXTURE_GATED_SUB2_CHECKPOINT_PATH = "gated_sub2_checkpoint_path"
 FIXTURE_GATED_SUB2_CHECKPOINT_PATH_BACKWARD_RECOMPUTE = (
     "gated_sub2_checkpoint_path_backward_recompute"
 )
+FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ACTIVATION_RESIDUALS_BLOCKED = (
+    "gated_sub2_checkpoint_path_activation_residuals_blocked"
+)
 FIXTURE_MAIN_READY = "main_ready"
 FIXTURE_MISSING_ACTIVATIONS = "missing_activations_residuals"
 FIXTURE_MISSING_ATTENTION = "missing_attention_kv_attention_buffers"
@@ -119,6 +127,7 @@ FULL_SUB2_RUNTIME_FIXTURE_NAMES = (
     FIXTURE_CURRENT_REPO,
     FIXTURE_GATED_SUB2_CHECKPOINT_PATH,
     FIXTURE_GATED_SUB2_CHECKPOINT_PATH_BACKWARD_RECOMPUTE,
+    FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ACTIVATION_RESIDUALS_BLOCKED,
     FIXTURE_MAIN_READY,
     FIXTURE_MISSING_ACTIVATIONS,
     FIXTURE_MISSING_ATTENTION,
@@ -720,6 +729,31 @@ def gated_sub2_checkpoint_path_backward_recompute_surfaces() -> tuple[
     )
 
 
+def gated_sub2_checkpoint_path_activation_residuals_blocked_surfaces() -> tuple[
+    FullSub2RuntimeSurfaceReceipt, ...
+]:
+    """Step 3A2 readiness variant: activation/residual row remains blocked."""
+
+    surfaces = gated_sub2_checkpoint_path_backward_recompute_surfaces()
+    return _with_surface(
+        surfaces,
+        SURFACE_ACTIVATIONS_RESIDUALS,
+        classification=RUNTIME_CLASS_PRE_FULL_STACK_DIAGNOSTIC,
+        reason=(
+            f"{ACTIVATION_RESIDUALS_BLOCKED_REASON}; zL_init is cross-referenced "
+            "as existing non_eligible_hrm_tensors FP exception debt and is not "
+            "solved by activation seam observation"
+        ),
+        source_anchor="calm/hrm_text_158/native_full_stack/activation_relief.py:1",
+        proof_artifact_or_test=(
+            "calm/llm_computer/tests/test_hrm_text_158_activation_relief.py::"
+            "test_activation_residuals_fail_closed_receipt_enumerates_live_tensor_families_without_flip"
+        ),
+        diagnostic_exception_reason="activation policy shape can be audited before full-stack runtime",
+        why_cheaper_than_full_stack_first="CPU policy validation is cheaper than GPU memory proof",
+    )
+
+
 def step2a_candidate_persistent_core_absence_surfaces() -> tuple[
     FullSub2RuntimeSurfaceReceipt, ...
 ]:
@@ -775,6 +809,8 @@ def fixture_full_sub2_runtime_ready_for_science(
         surfaces = gated_sub2_checkpoint_path_surfaces()
     elif fixture_name == FIXTURE_GATED_SUB2_CHECKPOINT_PATH_BACKWARD_RECOMPUTE:
         surfaces = gated_sub2_checkpoint_path_backward_recompute_surfaces()
+    elif fixture_name == FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ACTIVATION_RESIDUALS_BLOCKED:
+        surfaces = gated_sub2_checkpoint_path_activation_residuals_blocked_surfaces()
     elif fixture_name == FIXTURE_MAIN_READY:
         surfaces = main_ready_fixture_surfaces()
     elif fixture_name == FIXTURE_MISSING_ACTIVATIONS:

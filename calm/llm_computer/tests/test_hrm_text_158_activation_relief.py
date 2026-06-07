@@ -12,6 +12,9 @@ from calm.hrm_text_158 import (
 )
 from calm.hrm_text_158.lm_head import IGNORE_LABEL_ID
 from calm.hrm_text_158.native_full_stack import (
+    ACTIVATION_RESIDUALS_FAIL_CLOSED_RECEIPT_SCHEMA_VERSION,
+    ACTIVATION_RESIDUALS_FAIL_CLOSED_TARGET_NAME,
+    ACTIVATION_RESIDUAL_TARGET_FAMILIES,
     BACKWARD_RECOMPUTE_NO_EXTRA_INTERNAL_PAYLOAD_CLAIM,
     DEFERRED_GPU_MEASUREMENT_NOTE,
     MODE_LOSSLESS_RECOMPUTE,
@@ -20,11 +23,16 @@ from calm.hrm_text_158.native_full_stack import (
     TERMINAL_DEPENDENT_TUNING_FIELDS,
     TIER1_LOSSLESS_RECOMPUTE,
     TIER2_LOSSY_ACTIVATION_STORAGE_DEFERRED,
+    ZL_INIT_FP_EXCEPTION_CLASSIFICATION,
+    ZL_INIT_FP_EXCEPTION_REGISTRY_ANCHOR,
+    ZL_INIT_HRM_SOURCE_ANCHOR,
     ActivationReliefPolicy,
+    build_activation_residuals_fail_closed_receipt,
     build_backward_recompute_saved_tensor_receipt,
     normalize_activation_relief_policy,
     recurrence_checkpoint_decisions,
     validate_activation_relief_measurement,
+    validate_activation_residuals_fail_closed_receipt,
     validate_backward_recompute_saved_tensor_receipt,
 )
 
@@ -159,6 +167,48 @@ def _saved_tensor_proof(bp_steps: int) -> dict[str, object]:
         "baseline_saved_tensor_count": len(baseline),
         "recompute_saved_tensor_count": len(recompute),
     }
+
+
+def _activation_residual_live_tensor_proof():
+    torch.manual_seed(1803)
+    hrm = HierarchicalReasoningModel(_tiny_config())
+    hrm.train()
+    x = torch.randn(2, 16, 32, requires_grad=True)
+    sep = torch.tensor([5, 7], dtype=torch.long)
+    pos = torch.arange(16, dtype=torch.long).unsqueeze(0).expand(2, -1)
+    events: list[dict[str, object]] = []
+
+    def seam(family: str, tensor: torch.Tensor) -> torch.Tensor:
+        if family in ACTIVATION_RESIDUAL_TARGET_FAMILIES:
+            events.append(
+                {
+                    "family": family,
+                    "shape": tuple(tensor.shape),
+                    "dtype": str(tensor.dtype),
+                    "device": str(tensor.device),
+                    "requires_grad": bool(tensor.requires_grad),
+                }
+            )
+        return tensor
+
+    hrm(
+        None,
+        x,
+        bp_steps=5,
+        sep_positions=sep,
+        position_ids=pos,
+        activation_codec_seam=seam,
+    )
+    zL_init_observation = {
+        "name": "zL_init",
+        "classification": ZL_INIT_FP_EXCEPTION_CLASSIFICATION,
+        "registry_anchor": ZL_INIT_FP_EXCEPTION_REGISTRY_ANCHOR,
+        "source_anchor": ZL_INIT_HRM_SOURCE_ANCHOR,
+        "dtype": str(hrm.zL_init.dtype),
+        "shape": tuple(hrm.zL_init.shape),
+        "persistent": "zL_init" in dict(hrm.named_buffers()),
+    }
+    return events, zL_init_observation
 
 
 def test_policy_contract_is_lossless_first_and_terminal_sizing_is_abstract():
@@ -411,4 +461,75 @@ def test_backward_recompute_receipt_rejects_lossy_cache_reentrant_and_internal_p
             L_cycles=3,
             bp_steps=5,
             saved_tensor_proof=dict(proof, observed_internal_payload_tensor_count=1),
+        )
+
+
+def test_activation_residuals_fail_closed_receipt_enumerates_live_tensor_families_without_flip():
+    events, zL_init_observation = _activation_residual_live_tensor_proof()
+    receipt = build_activation_residuals_fail_closed_receipt(
+        seam_events=events,
+        zL_init_observation=zL_init_observation,
+    )
+    validate_activation_residuals_fail_closed_receipt(receipt)
+
+    observed_counts = {
+        observation.family: observation.observed_count
+        for observation in receipt.observed_families
+    }
+    observed_dtypes = {
+        observation.family: observation.dtypes
+        for observation in receipt.observed_families
+    }
+
+    assert receipt.schema_version == ACTIVATION_RESIDUALS_FAIL_CLOSED_RECEIPT_SCHEMA_VERSION
+    assert receipt.target_name == ACTIVATION_RESIDUALS_FAIL_CLOSED_TARGET_NAME
+    assert receipt.target_families == ACTIVATION_RESIDUAL_TARGET_FAMILIES
+    assert receipt.activations_residuals_sub2_claim is False
+    assert receipt.ready_to_flip is False
+    assert receipt.real_sub2_or_remat_or_offload_mechanism_present is False
+    assert receipt.no_hidden_bf16_authority_proven is False
+    assert receipt.gpu_memory_receipt_present is False
+    assert observed_counts == {
+        "recurrent.z_L_update": 6,
+        "recurrent.z_H_update": 2,
+        "residual.post_attn": 8,
+        "residual.post_mlp": 8,
+    }
+    assert set(observed_dtypes) == set(ACTIVATION_RESIDUAL_TARGET_FAMILIES)
+    assert all(dtypes == ("torch.float32",) for dtypes in observed_dtypes.values())
+    assert receipt.zL_init_non_claim.classification == ZL_INIT_FP_EXCEPTION_CLASSIFICATION
+    assert receipt.zL_init_non_claim.registry_anchor == ZL_INIT_FP_EXCEPTION_REGISTRY_ANCHOR
+    assert receipt.zL_init_non_claim.source_anchor == ZL_INIT_HRM_SOURCE_ANCHOR
+    assert receipt.zL_init_non_claim.dtype == "torch.bfloat16"
+    assert receipt.zL_init_non_claim.persistent is True
+    assert "non_eligible_hrm_tensors" in receipt.zL_init_non_claim.non_claim
+    assert any("attention/KV buffers" in non_claim for non_claim in receipt.non_claims)
+    assert any("optimizer credit state" in non_claim for non_claim in receipt.non_claims)
+    assert any("GPU" in non_claim for non_claim in receipt.non_claims)
+    assert any("blocker evidence" in non_claim for non_claim in receipt.non_claims)
+
+
+def test_activation_residuals_fail_closed_receipt_rejects_missing_tags_claims_and_lossy_wording():
+    events, zL_init_observation = _activation_residual_live_tensor_proof()
+
+    with pytest.raises(ValueError, match="missing required target families"):
+        build_activation_residuals_fail_closed_receipt(
+            seam_events=[
+                event for event in events if event["family"] != "residual.post_mlp"
+            ],
+            zL_init_observation=zL_init_observation,
+        )
+
+    with pytest.raises(ValueError, match="requires real sub2/remat/offload"):
+        build_activation_residuals_fail_closed_receipt(
+            seam_events=events,
+            zL_init_observation=zL_init_observation,
+            activations_residuals_sub2_claim=True,
+        )
+
+    with pytest.raises(ValueError, match="lossy/compression"):
+        build_activation_residuals_fail_closed_receipt(
+            seam_events=events,
+            zL_init_observation=zL_init_observation,
+            lossy_or_compression_claim=True,
         )

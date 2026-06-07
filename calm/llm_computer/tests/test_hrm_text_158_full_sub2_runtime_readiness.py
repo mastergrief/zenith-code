@@ -12,6 +12,7 @@ import calm.hrm_text_158.native_full_stack as native_full_stack
 from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
     FIXTURE_CURRENT_REPO,
     FIXTURE_GATED_SUB2_CHECKPOINT_PATH,
+    FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ACTIVATION_RESIDUALS_BLOCKED,
     FIXTURE_GATED_SUB2_CHECKPOINT_PATH_BACKWARD_RECOMPUTE,
     FIXTURE_MAIN_READY,
     FIXTURE_MISSING_ACTIVATIONS,
@@ -39,6 +40,7 @@ from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
     FullSub2RuntimeSurfaceReceipt,
     build_full_sub2_runtime_ready_for_science,
     fixture_full_sub2_runtime_ready_for_science,
+    gated_sub2_checkpoint_path_activation_residuals_blocked_surfaces,
     gated_sub2_checkpoint_path_backward_recompute_surfaces,
     gated_sub2_checkpoint_path_surfaces,
     main_ready_fixture_surfaces,
@@ -268,6 +270,81 @@ def test_gated_backward_recompute_fixture_flips_only_backward_saved_tensors():
     }.issubset(set(recompute.blocker_surface_names))
 
 
+def test_gated_activation_residuals_blocked_fixture_updates_only_activation_reason_and_proof():
+    current = fixture_full_sub2_runtime_ready_for_science(FIXTURE_CURRENT_REPO)
+    gated = fixture_full_sub2_runtime_ready_for_science(
+        FIXTURE_GATED_SUB2_CHECKPOINT_PATH
+    )
+    recompute = fixture_full_sub2_runtime_ready_for_science(
+        FIXTURE_GATED_SUB2_CHECKPOINT_PATH_BACKWARD_RECOMPUTE
+    )
+    blocked = fixture_full_sub2_runtime_ready_for_science(
+        FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ACTIVATION_RESIDUALS_BLOCKED
+    )
+    validate_full_sub2_runtime_ready_for_science_receipt(blocked)
+
+    current_classes = {
+        surface.surface_id: surface.classification for surface in current.surfaces
+    }
+    gated_classes = {
+        surface.surface_id: surface.classification for surface in gated.surfaces
+    }
+    recompute_classes = {
+        surface.surface_id: surface.classification for surface in recompute.surfaces
+    }
+    blocked_classes = {
+        surface.surface_id: surface.classification for surface in blocked.surfaces
+    }
+    recompute_surfaces = {
+        surface.surface_id: surface.to_dict() for surface in recompute.surfaces
+    }
+    blocked_surfaces = {
+        surface.surface_id: surface.to_dict() for surface in blocked.surfaces
+    }
+
+    assert current_classes[SURFACE_ACTIVATIONS_RESIDUALS] != RUNTIME_CLASS_SUB2
+    assert gated_classes[SURFACE_ACTIVATIONS_RESIDUALS] != RUNTIME_CLASS_SUB2
+    assert recompute_classes[SURFACE_ACTIVATIONS_RESIDUALS] != RUNTIME_CLASS_SUB2
+    assert blocked_classes == recompute_classes
+    assert blocked_classes[SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS] == RUNTIME_CLASS_SUB2
+    assert (
+        blocked_classes[SURFACE_ACTIVATIONS_RESIDUALS]
+        == RUNTIME_CLASS_PRE_FULL_STACK_DIAGNOSTIC
+    )
+
+    changed_surface_ids = {
+        surface_id
+        for surface_id, recompute_surface in recompute_surfaces.items()
+        if blocked_surfaces[surface_id] != recompute_surface
+    }
+    assert changed_surface_ids == {SURFACE_ACTIVATIONS_RESIDUALS}
+    activation_recompute = recompute_surfaces[SURFACE_ACTIVATIONS_RESIDUALS]
+    activation_blocked = blocked_surfaces[SURFACE_ACTIVATIONS_RESIDUALS]
+    changed_activation_fields = {
+        field
+        for field, recompute_value in activation_recompute.items()
+        if activation_blocked[field] != recompute_value
+    }
+    assert changed_activation_fields == {"reason", "proof_artifact_or_test"}
+    assert "fail-closed activation/residual live-tensor harness" in activation_blocked["reason"]
+    assert "zL_init" in activation_blocked["reason"]
+    assert "non_eligible_hrm_tensors" in activation_blocked["reason"]
+    assert (
+        "test_activation_residuals_fail_closed_receipt_enumerates_live_tensor_families_without_flip"
+        in activation_blocked["proof_artifact_or_test"]
+    )
+    assert blocked.ready_for_main_science is False
+    assert blocked.main_science_launch_blocked is True
+    assert blocked.ready_for_pre_full_stack_diagnostic is True
+    assert {
+        SURFACE_ACTIVATIONS_RESIDUALS,
+        SURFACE_ATTENTION_KV_ATTENTION_BUFFERS,
+        SURFACE_OPTIMIZER_CREDIT_STATE,
+        SURFACE_NATIVE_KERNELIZED_HOT_PATH,
+    }.issubset(set(blocked.blocker_surface_names))
+    assert SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS not in blocked.blocker_surface_names
+
+
 def test_explicit_exception_requires_fail_closed_fields():
     surfaces = _replace_surface(
         SURFACE_FP_EXCEPTIONS_LEDGER,
@@ -311,11 +388,23 @@ def test_export_api_smoke():
         native_full_stack.FIXTURE_GATED_SUB2_CHECKPOINT_PATH_BACKWARD_RECOMPUTE
         == FIXTURE_GATED_SUB2_CHECKPOINT_PATH_BACKWARD_RECOMPUTE
     )
+    assert (
+        native_full_stack.FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ACTIVATION_RESIDUALS_BLOCKED
+        == FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ACTIVATION_RESIDUALS_BLOCKED
+    )
     assert native_full_stack.RUNTIME_CLASS_TRANSIENT_FP_DEBT == RUNTIME_CLASS_TRANSIENT_FP_DEBT
     assert "FIXTURE_GATED_SUB2_CHECKPOINT_PATH" in native_full_stack.__all__
     assert "FIXTURE_GATED_SUB2_CHECKPOINT_PATH_BACKWARD_RECOMPUTE" in native_full_stack.__all__
+    assert (
+        "FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ACTIVATION_RESIDUALS_BLOCKED"
+        in native_full_stack.__all__
+    )
     assert "fixture_full_sub2_runtime_ready_for_science" in native_full_stack.__all__
     assert "gated_sub2_checkpoint_path_backward_recompute_surfaces" in native_full_stack.__all__
+    assert (
+        "gated_sub2_checkpoint_path_activation_residuals_blocked_surfaces"
+        in native_full_stack.__all__
+    )
     assert "gated_sub2_checkpoint_path_surfaces" in native_full_stack.__all__
     receipt = native_full_stack.fixture_full_sub2_runtime_ready_for_science(
         FIXTURE_PRE_FULL_STACK_DIAGNOSTIC
@@ -325,6 +414,10 @@ def test_export_api_smoke():
     assert gated_surfaces == gated_sub2_checkpoint_path_surfaces()
     recompute_surfaces = native_full_stack.gated_sub2_checkpoint_path_backward_recompute_surfaces()
     assert recompute_surfaces == gated_sub2_checkpoint_path_backward_recompute_surfaces()
+    blocked_surfaces = (
+        native_full_stack.gated_sub2_checkpoint_path_activation_residuals_blocked_surfaces()
+    )
+    assert blocked_surfaces == gated_sub2_checkpoint_path_activation_residuals_blocked_surfaces()
 
 
 @pytest.mark.parametrize(
@@ -446,6 +539,40 @@ def test_cli_gated_backward_recompute_expect_ready_still_blocks_with_diagnostic_
         SURFACE_NATIVE_KERNELIZED_HOT_PATH,
     }.issubset(set(payload["blocker_surface_names"]))
     assert SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS not in payload["blocker_surface_names"]
+
+
+def test_cli_gated_activation_residuals_blocked_expect_ready_emits_blocker_reason(tmp_path):
+    json_out = tmp_path / "gated_sub2_checkpoint_path_activation_residuals_blocked.json"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--fixture",
+            FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ACTIVATION_RESIDUALS_BLOCKED,
+            "--json-out",
+            str(json_out),
+            "--expect-ready",
+        ],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    assert result.returncode == 2
+    assert json_out.exists()
+    payload = json.loads(json_out.read_text(encoding="utf-8"))
+    surfaces = {surface["surface_id"]: surface for surface in payload["surfaces"]}
+    activation = surfaces[SURFACE_ACTIVATIONS_RESIDUALS]
+    assert payload["ready_for_main_science"] is False
+    assert payload["main_science_launch_blocked"] is True
+    assert payload["ready_for_pre_full_stack_diagnostic"] is True
+    assert activation["classification"] == RUNTIME_CLASS_PRE_FULL_STACK_DIAGNOSTIC
+    assert "fail-closed activation/residual live-tensor harness" in activation["reason"]
+    assert "zL_init" in activation["reason"]
+    assert SURFACE_ACTIVATIONS_RESIDUALS in payload["blocker_surface_names"]
+    assert SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS not in payload["blocker_surface_names"]
+    assert "activations_residuals" in result.stdout
 
 
 def test_readiness_classes_are_exact_five_class_prereg():
