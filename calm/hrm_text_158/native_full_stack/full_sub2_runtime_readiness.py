@@ -99,6 +99,7 @@ FULL_SUB2_RUNTIME_NON_CLAIMS = (
 )
 
 FIXTURE_CURRENT_REPO = "current_repo_scaffold"
+FIXTURE_GATED_SUB2_CHECKPOINT_PATH = "gated_sub2_checkpoint_path"
 FIXTURE_MAIN_READY = "main_ready"
 FIXTURE_MISSING_ACTIVATIONS = "missing_activations_residuals"
 FIXTURE_MISSING_ATTENTION = "missing_attention_kv_attention_buffers"
@@ -111,6 +112,7 @@ FIXTURE_STEP2A_CANDIDATE_PERSISTENT_CORE_ABSENCE = (
 
 FULL_SUB2_RUNTIME_FIXTURE_NAMES = (
     FIXTURE_CURRENT_REPO,
+    FIXTURE_GATED_SUB2_CHECKPOINT_PATH,
     FIXTURE_MAIN_READY,
     FIXTURE_MISSING_ACTIVATIONS,
     FIXTURE_MISSING_ATTENTION,
@@ -118,6 +120,10 @@ FULL_SUB2_RUNTIME_FIXTURE_NAMES = (
     FIXTURE_PRE_FULL_STACK_DIAGNOSTIC,
     FIXTURE_TRANSIENT_FP_DEBT,
     FIXTURE_STEP2A_CANDIDATE_PERSISTENT_CORE_ABSENCE,
+)
+
+GATED_SUB2_CHECKPOINT_PATH_REASON = (
+    "gated default-off sidecar checkpoint path only; default runtime not sub2"
 )
 
 
@@ -626,6 +632,61 @@ def current_repo_scaffold_surfaces() -> tuple[FullSub2RuntimeSurfaceReceipt, ...
     return tuple(surfaces)
 
 
+def gated_sub2_checkpoint_path_surfaces() -> tuple[
+    FullSub2RuntimeSurfaceReceipt, ...
+]:
+    """Readiness variant for the gated, default-off 2C4a checkpoint path."""
+
+    surfaces = current_repo_scaffold_surfaces()
+    surfaces = _with_surface(
+        surfaces,
+        SURFACE_PERSISTENT_QACC_AUTHORITY,
+        classification=RUNTIME_CLASS_SUB2,
+        reason=(
+            f"{GATED_SUB2_CHECKPOINT_PATH_REASON}; 2C4a commit 9600c36 builds a "
+            "reconstructable q+scale+bounded sidecar checkpoint path that excludes "
+            "eligible BitLinear.weight from authoritative model_state and rejects "
+            "raw eligible-weight fallback"
+        ),
+        source_anchor="calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py:600",
+        proof_artifact_or_test=(
+            "calm/llm_computer/tests/test_hrm_text_158_trainer_sub2_authority.py::"
+            "test_roundtrip_receipt_excludes_fp_masters_and_falsifies_poisoned_forward"
+        ),
+    )
+    surfaces = _with_surface(
+        surfaces,
+        SURFACE_DENSE_INT16_PERSISTENT_ACCUMULATOR_ABSENCE,
+        classification=RUNTIME_CLASS_SUB2,
+        reason=(
+            f"{GATED_SUB2_CHECKPOINT_PATH_REASON}; 2C4a commit 9600c36 "
+            "saves/loads no dense int16 authority and loader rejects "
+            "exact_accumulator_shadow plus top-level/per-tensor dense-int16 sidecar flags"
+        ),
+        source_anchor="calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py:652",
+        proof_artifact_or_test=(
+            "calm/llm_computer/tests/test_hrm_text_158_trainer_sub2_authority.py::"
+            "test_roundtrip_checkpoint_loader_rejects_dense_int16_sidecar_flags"
+        ),
+    )
+    surfaces = _with_surface(
+        surfaces,
+        SURFACE_Q_SIDECAR_VOTE_CARRIER,
+        classification=RUNTIME_CLASS_SUB2,
+        reason=(
+            f"{GATED_SUB2_CHECKPOINT_PATH_REASON}; 2C4a commit 9600c36 proves "
+            "poisoned FP-master bypass falsification and a post-resume shadow-free "
+            "authority update whose sidecar payload hash roundtrips after second load"
+        ),
+        source_anchor="calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py:1151",
+        proof_artifact_or_test=(
+            "calm/llm_computer/tests/test_hrm_text_158_trainer_sub2_authority.py::"
+            "test_roundtrip_receipt_excludes_fp_masters_and_falsifies_poisoned_forward"
+        ),
+    )
+    return tuple(surfaces)
+
+
 def step2a_candidate_persistent_core_absence_surfaces() -> tuple[
     FullSub2RuntimeSurfaceReceipt, ...
 ]:
@@ -677,6 +738,8 @@ def fixture_full_sub2_runtime_ready_for_science(
 ) -> FullSub2RuntimeReadyForScienceReceipt:
     if fixture_name == FIXTURE_CURRENT_REPO:
         surfaces = current_repo_scaffold_surfaces()
+    elif fixture_name == FIXTURE_GATED_SUB2_CHECKPOINT_PATH:
+        surfaces = gated_sub2_checkpoint_path_surfaces()
     elif fixture_name == FIXTURE_MAIN_READY:
         surfaces = main_ready_fixture_surfaces()
     elif fixture_name == FIXTURE_MISSING_ACTIVATIONS:

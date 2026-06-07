@@ -10,6 +10,8 @@ import pytest
 
 import calm.hrm_text_158.native_full_stack as native_full_stack
 from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
+    FIXTURE_CURRENT_REPO,
+    FIXTURE_GATED_SUB2_CHECKPOINT_PATH,
     FIXTURE_MAIN_READY,
     FIXTURE_MISSING_ACTIVATIONS,
     FIXTURE_MISSING_ATTENTION,
@@ -29,17 +31,23 @@ from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
     SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS,
     SURFACE_DENSE_INT16_PERSISTENT_ACCUMULATOR_ABSENCE,
     SURFACE_FP_EXCEPTIONS_LEDGER,
+    SURFACE_NATIVE_KERNELIZED_HOT_PATH,
+    SURFACE_OPTIMIZER_CREDIT_STATE,
     SURFACE_PERSISTENT_QACC_AUTHORITY,
     SURFACE_Q_SIDECAR_VOTE_CARRIER,
     FullSub2RuntimeSurfaceReceipt,
     build_full_sub2_runtime_ready_for_science,
     fixture_full_sub2_runtime_ready_for_science,
+    gated_sub2_checkpoint_path_surfaces,
     main_ready_fixture_surfaces,
     validate_full_sub2_runtime_ready_for_science_receipt,
 )
 
 
 SCRIPT = Path("scripts/hrm_text_158_full_sub2_runtime_readiness.py")
+GATED_SUB2_CHECKPOINT_PATH_REASON = (
+    "gated default-off sidecar checkpoint path only; default runtime not sub2"
+)
 
 
 def _main_ready_receipt():
@@ -157,6 +165,52 @@ def test_step2a_candidate_fixture_keeps_live_rows_non_sub2():
     assert SURFACE_Q_SIDECAR_VOTE_CARRIER in receipt.blocker_surface_names
 
 
+def test_gated_sub2_checkpoint_path_fixture_flips_only_persistent_core_rows():
+    current = fixture_full_sub2_runtime_ready_for_science(FIXTURE_CURRENT_REPO)
+    gated = fixture_full_sub2_runtime_ready_for_science(
+        FIXTURE_GATED_SUB2_CHECKPOINT_PATH
+    )
+    validate_full_sub2_runtime_ready_for_science_receipt(gated)
+    current_classes = {
+        surface.surface_id: surface.classification for surface in current.surfaces
+    }
+    gated_classes = {
+        surface.surface_id: surface.classification for surface in gated.surfaces
+    }
+    gated_reasons = {surface.surface_id: surface.reason for surface in gated.surfaces}
+    flipped_surface_ids = {
+        SURFACE_PERSISTENT_QACC_AUTHORITY,
+        SURFACE_DENSE_INT16_PERSISTENT_ACCUMULATOR_ABSENCE,
+        SURFACE_Q_SIDECAR_VOTE_CARRIER,
+    }
+    changed_surface_ids = {
+        surface_id
+        for surface_id, current_class in current_classes.items()
+        if gated_classes[surface_id] != current_class
+    }
+
+    assert current_classes[SURFACE_PERSISTENT_QACC_AUTHORITY] != RUNTIME_CLASS_SUB2
+    assert (
+        current_classes[SURFACE_DENSE_INT16_PERSISTENT_ACCUMULATOR_ABSENCE]
+        != RUNTIME_CLASS_SUB2
+    )
+    assert current_classes[SURFACE_Q_SIDECAR_VOTE_CARRIER] != RUNTIME_CLASS_SUB2
+    assert changed_surface_ids == flipped_surface_ids
+    for surface_id in flipped_surface_ids:
+        assert gated_classes[surface_id] == RUNTIME_CLASS_SUB2
+        assert GATED_SUB2_CHECKPOINT_PATH_REASON in gated_reasons[surface_id]
+        assert "9600c36" in gated_reasons[surface_id]
+    assert gated.ready_for_main_science is False
+    assert gated.main_science_launch_blocked is True
+    assert {
+        SURFACE_OPTIMIZER_CREDIT_STATE,
+        SURFACE_ACTIVATIONS_RESIDUALS,
+        SURFACE_ATTENTION_KV_ATTENTION_BUFFERS,
+        SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS,
+        SURFACE_NATIVE_KERNELIZED_HOT_PATH,
+    }.issubset(set(gated.blocker_surface_names))
+
+
 def test_explicit_exception_requires_fail_closed_fields():
     surfaces = _replace_surface(
         SURFACE_FP_EXCEPTIONS_LEDGER,
@@ -192,12 +246,20 @@ def test_duplicate_surface_id_fails_validation():
 
 def test_export_api_smoke():
     assert native_full_stack.FULL_SUB2_RUNTIME_CLASSIFICATIONS == FULL_SUB2_RUNTIME_CLASSIFICATIONS
+    assert (
+        native_full_stack.FIXTURE_GATED_SUB2_CHECKPOINT_PATH
+        == FIXTURE_GATED_SUB2_CHECKPOINT_PATH
+    )
     assert native_full_stack.RUNTIME_CLASS_TRANSIENT_FP_DEBT == RUNTIME_CLASS_TRANSIENT_FP_DEBT
+    assert "FIXTURE_GATED_SUB2_CHECKPOINT_PATH" in native_full_stack.__all__
     assert "fixture_full_sub2_runtime_ready_for_science" in native_full_stack.__all__
+    assert "gated_sub2_checkpoint_path_surfaces" in native_full_stack.__all__
     receipt = native_full_stack.fixture_full_sub2_runtime_ready_for_science(
         FIXTURE_PRE_FULL_STACK_DIAGNOSTIC
     )
     assert receipt.ready_for_pre_full_stack_diagnostic is True
+    gated_surfaces = native_full_stack.gated_sub2_checkpoint_path_surfaces()
+    assert gated_surfaces == gated_sub2_checkpoint_path_surfaces()
 
 
 @pytest.mark.parametrize(
@@ -233,6 +295,46 @@ def test_cli_expect_ready_negative_writes_json(tmp_path, fixture_name, surface_i
     assert payload["main_science_launch_blocked"] is True
     assert surface_id in payload["missing_surface_names"]
     assert surface_id in payload["blocker_surface_names"]
+
+
+def test_cli_gated_sub2_checkpoint_path_expect_ready_still_blocks(tmp_path):
+    json_out = tmp_path / "gated_sub2_checkpoint_path.json"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--fixture",
+            FIXTURE_GATED_SUB2_CHECKPOINT_PATH,
+            "--json-out",
+            str(json_out),
+            "--expect-ready",
+        ],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    assert result.returncode == 2
+    assert json_out.exists()
+    payload = json.loads(json_out.read_text(encoding="utf-8"))
+    surfaces = {surface["surface_id"]: surface for surface in payload["surfaces"]}
+    assert payload["ready_for_main_science"] is False
+    assert payload["main_science_launch_blocked"] is True
+    for surface_id in (
+        SURFACE_PERSISTENT_QACC_AUTHORITY,
+        SURFACE_DENSE_INT16_PERSISTENT_ACCUMULATOR_ABSENCE,
+        SURFACE_Q_SIDECAR_VOTE_CARRIER,
+    ):
+        assert surfaces[surface_id]["classification"] == RUNTIME_CLASS_SUB2
+        assert GATED_SUB2_CHECKPOINT_PATH_REASON in surfaces[surface_id]["reason"]
+    assert {
+        SURFACE_OPTIMIZER_CREDIT_STATE,
+        SURFACE_ACTIVATIONS_RESIDUALS,
+        SURFACE_ATTENTION_KV_ATTENTION_BUFFERS,
+        SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS,
+        SURFACE_NATIVE_KERNELIZED_HOT_PATH,
+    }.issubset(set(payload["blocker_surface_names"]))
 
 
 def test_readiness_classes_are_exact_five_class_prereg():

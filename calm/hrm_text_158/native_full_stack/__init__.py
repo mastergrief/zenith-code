@@ -69,6 +69,7 @@ from calm.hrm_text_158.native_full_stack.fp_exceptions import (
 )
 from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
     FIXTURE_CURRENT_REPO,
+    FIXTURE_GATED_SUB2_CHECKPOINT_PATH,
     FIXTURE_MAIN_READY,
     FIXTURE_MISSING_ACTIVATIONS,
     FIXTURE_MISSING_ATTENTION,
@@ -102,6 +103,7 @@ from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
     build_full_sub2_runtime_ready_for_science,
     current_repo_scaffold_surfaces,
     fixture_full_sub2_runtime_ready_for_science,
+    gated_sub2_checkpoint_path_surfaces,
     main_ready_fixture_surfaces,
     step2a_candidate_persistent_core_absence_surfaces,
     validate_full_sub2_runtime_ready_for_science_receipt,
@@ -565,6 +567,7 @@ __all__ = [
     "PersistentStateBudgetReport",
     "PersistentCoreSub2AbsenceCandidateReceipt",
     "FIXTURE_CURRENT_REPO",
+    "FIXTURE_GATED_SUB2_CHECKPOINT_PATH",
     "FIXTURE_MAIN_READY",
     "FIXTURE_MISSING_ACTIVATIONS",
     "FIXTURE_MISSING_ATTENTION",
@@ -599,6 +602,7 @@ __all__ = [
     "build_live_local_sub2_authority_receipt",
     "current_repo_scaffold_surfaces",
     "fixture_full_sub2_runtime_ready_for_science",
+    "gated_sub2_checkpoint_path_surfaces",
     "main_ready_fixture_surfaces",
     "step2a_candidate_persistent_core_absence_surfaces",
     "build_persistent_core_sub2_absence_candidate_receipt",
