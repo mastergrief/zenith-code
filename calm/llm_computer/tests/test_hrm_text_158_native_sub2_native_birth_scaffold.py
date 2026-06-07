@@ -12,8 +12,13 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
 )
 from calm.hrm_text_158.native_full_stack.sub2_native_birth_scaffold import (
     ACQUISITION_GATE_DEFERRED,
+    ACQUISITION_GATE_RESULT,
+    ACQUISITION_GATE_RUNNING,
     ACQUISITION_GATE_UNBLOCKED_NOT_RUN,
     DENSE_TRANSIENT_CREDIT_ROLE_TRAINING_COMPUTE_CONTROL_ONLY,
+    HYBRID_MOVEMENT_CONTRACT_SCOPE,
+    HYBRID_MOVEMENT_METRIC_NAME,
+    HYBRID_PERSISTENT_MODE_APPLIED_CROSSING_DIRECTION_PLUS_4BIT_RESIDUAL,
     HYBRID_SCOPE_DECISION_LOCKED_ANSWER,
     HYBRID_SCOPE_DECISION_LOCKED_OPTION,
     HYBRID_SCOPE_DECISION_SOURCE_MSG_ID,
@@ -22,8 +27,12 @@ from calm.hrm_text_158.native_full_stack.sub2_native_birth_scaffold import (
     RUNTIME_STATE_AUTHORITY_SUB2_PERSISTENT_HYBRID_DENSE_TRANSIENT_CREDIT,
     RUNTIME_STATE_AUTHORITY_SUB2_SCAFFOLD_ONLY,
     attach_strict_sub2_scoped_candidate_proof,
+    build_hybrid_persistent_sidecar_ledger,
     build_strict_sub2_candidate_runtime_scaffold,
+    build_strict_sub2_hybrid_runtime_movement_overlay,
+    validate_hybrid_persistent_sidecar_ledger,
     validate_strict_sub2_candidate_runtime_scaffold_report,
+    validate_strict_sub2_hybrid_runtime_movement_overlay,
 )
 
 
@@ -104,6 +113,18 @@ def _build_report():
         activation_paid_bits_ledger=_activation_ledger(),
         live_both_gate=_live_both_gate(),
         hot_loop_residency=_hot_loop_residency(),
+    )
+
+
+def _build_hybrid_overlay():
+    return build_strict_sub2_hybrid_runtime_movement_overlay(
+        logical_shapes=tuple(_eligible_shapes().values()),
+        event_counts=(8, 8),
+        persistent_mode=HYBRID_PERSISTENT_MODE_APPLIED_CROSSING_DIRECTION_PLUS_4BIT_RESIDUAL,
+        residual_bits_per_event=4,
+        persistent_dense_shadow_present=False,
+        persistent_dense_shadow_bytes=0,
+        local_update_law_label=ALGORITHMIC_LOCAL_VOTE_UPDATE_EXECUTABLE_NOT_PHYSICAL_SUB2,
     )
 
 
@@ -258,9 +279,97 @@ def test_scaffold_accepts_scoped_accumulator_local_vote_update_proof_without_ful
         promoted.scoped_candidate_proof["runtime_state_authority_after"]
         == promoted.runtime_state_authority
     )
-    persistent = {row.name: row for row in promoted.persistent_candidate_rows}
-    assert persistent["accumulator_substitute"].classification == LEDGER_CLASS_NOT_YET
-    assert persistent["accumulator_substitute"].in_candidate_authority is False
+
+
+def test_hybrid_sidecar_ledger_reports_explicit_4bit_codec_budget():
+    ledger = build_hybrid_persistent_sidecar_ledger(
+        logical_shapes=tuple(_eligible_shapes().values()),
+        event_counts=(8, 8),
+        persistent_mode=HYBRID_PERSISTENT_MODE_APPLIED_CROSSING_DIRECTION_PLUS_4BIT_RESIDUAL,
+        residual_bits_per_event=4,
+    )
+
+    validate_hybrid_persistent_sidecar_ledger(ledger)
+
+    assert ledger.persistent_mode == HYBRID_PERSISTENT_MODE_APPLIED_CROSSING_DIRECTION_PLUS_4BIT_RESIDUAL
+    assert ledger.direction_bits_per_event == 1
+    assert ledger.residual_bits_per_event == 4
+    assert ledger.total_event_count == 16
+    assert ledger.total_metadata_bits > 0
+    assert ledger.index_bits_kind == "per_tensor_local"
+    assert ledger.packet_count_bits_formula == "ceil(log2(numel + 1)) per tensor"
+    assert ledger.row_only_lt2 is True
+    assert ledger.inclusive_lt2 is True
+    assert ledger.inclusive_bits_per_weight == pytest.approx(
+        ledger.q_bits_per_weight
+        + ledger.frozen_scale_bits_per_weight
+        + ledger.sidecar_bits_per_weight
+    )
+    assert len(ledger.shape_breakdown) == 2
+    assert all(int(row["index_bits"]) > 0 for row in ledger.shape_breakdown)
+    assert all(int(row["packet_count_bits"]) > 0 for row in ledger.shape_breakdown)
+
+
+def test_hybrid_runtime_overlay_is_fail_closed_and_non_overclaiming():
+    report = _build_hybrid_overlay()
+
+    validate_strict_sub2_hybrid_runtime_movement_overlay(report)
+
+    assert report.runtime_state_authority == (
+        RUNTIME_STATE_AUTHORITY_SUB2_PERSISTENT_HYBRID_DENSE_TRANSIENT_CREDIT
+    )
+    assert report.persistent_mode == HYBRID_PERSISTENT_MODE_APPLIED_CROSSING_DIRECTION_PLUS_4BIT_RESIDUAL
+    assert report.pass_report is True
+    assert report.persistent_dense_shadow_present is False
+    assert report.persistent_dense_shadow_bytes == 0
+    assert report.bounded_only_collapse is True
+    assert report.local_update_law_reused is True
+    assert report.second_update_law_required is False
+    assert report.dense_transient_credit_allowed is True
+    assert (
+        report.dense_transient_credit_role
+        == DENSE_TRANSIENT_CREDIT_ROLE_TRAINING_COMPUTE_CONTROL_ONLY
+    )
+    assert report.transient_debt_present is True
+    assert report.persistent_sub2_hybrid_only is True
+    assert report.full_runtime_sub2_achieved is False
+    assert report.candidate_runtime_complete is False
+    assert report.acquisition_science_status == ACQUISITION_GATE_UNBLOCKED_NOT_RUN
+    assert report.acquisition_achieved is False
+    assert report.movement_contract_scope == HYBRID_MOVEMENT_CONTRACT_SCOPE
+    assert report.movement_metric_name == HYBRID_MOVEMENT_METRIC_NAME
+    assert report.movement_metric_min_delta == 1
+    assert report.q_changed_must_be_positive is True
+    assert report.hard_fail_required_false is True
+    assert report.persistent_authority_row_names == (
+        "q_storage",
+        "frozen_scales_fp32_metadata",
+        "accumulator_sidecar",
+    )
+    assert "accumulator_substitute" in report.blocked_row_names
+    assert "attention_kv_append_update" in report.blocked_row_names
+    assert "qacc_hot_loop_residency" in report.blocked_row_names
+    ledger = report.persistent_sidecar_ledger
+    assert ledger["inclusive_lt2"] is True
+    assert ledger["residual_bits_per_event"] == 4
+    assert ledger["total_event_count"] == 16
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "match"),
+    [
+        ("persistent_dense_shadow_present", True, "cannot persist dense shadow state"),
+        ("full_runtime_sub2_achieved", True, "cannot claim full_runtime_sub2_achieved"),
+        ("transient_debt_present", False, "must disclose transient_debt_present=true"),
+        ("candidate_runtime_complete", True, "cannot claim candidate_runtime_complete"),
+    ],
+)
+def test_hybrid_runtime_overlay_validator_rejects_overclaim_and_missing_debt(field, value, match):
+    report = _build_hybrid_overlay()
+    bad_report = replace(report, **{field: value})
+
+    with pytest.raises(ValueError, match=match):
+        validate_strict_sub2_hybrid_runtime_movement_overlay(bad_report)
 
 
 def test_scaffold_rejects_scoped_candidate_proof_with_dense_decode_or_wrong_null_taxonomy():
