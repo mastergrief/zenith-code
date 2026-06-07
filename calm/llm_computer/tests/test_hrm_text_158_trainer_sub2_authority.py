@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import inspect
 from pathlib import Path
 
 import pytest
@@ -11,11 +12,13 @@ import calm.hrm_text_158.native_full_stack as native_full_stack
 from calm.hrm_text_158.bit_linear import BitLinear
 from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
     TRAINER_SUB2_AUTHORITY_NON_CLAIMS,
+    TRAINER_SUB2_ACTIVE_CONTROL_PARAMETER_NAMES,
     TRAINER_SUB2_LOCAL_UPDATE_NON_CLAIMS,
     build_trainer_sub2_authority_construction_receipt,
     build_trainer_sub2_authority_local_update_receipt,
     select_trainer_eligible_bitlinears,
     trainer_authoritative_forward_context,
+    trainer_local_update_builder_active_control_parameters,
     validate_trainer_sub2_authority_construction_receipt,
     validate_trainer_sub2_authority_local_update_receipt,
 )
@@ -192,6 +195,17 @@ def test_local_update_receipt_runs_trainer_style_qacc_update_and_exact_parity():
     validate_trainer_sub2_authority_local_update_receipt(receipt)
     assert receipt.pass_receipt is True
     assert receipt.default_off_trainer_local_qacc_update_proof_exercised is True
+    assert receipt.default_off_trainer_active_controls_inactive_proven is True
+    assert receipt.global_cap_spec_passed is False
+    assert receipt.global_rate_cap_enabled is False
+    assert receipt.deferred_backlog_input_present is False
+    assert receipt.deferred_backlog_output_entry_count == 0
+    assert receipt.replay_ce_veto_maps_present is False
+    assert receipt.pc_aux_maps_present is False
+    assert receipt.pc_aux_mode_effective == "not_enabled"
+    assert receipt.front_c_identity_observer_present is False
+    assert receipt.candidate_mode_rejects_active_controls is True
+    assert receipt.trainer_builder_has_no_active_control_parameters is True
     assert receipt.trainer_entrypoint_uses_candidate is False
     assert receipt.live_runtime_authority_converted is False
     assert receipt.readiness_row_flip_authorized is False
@@ -208,6 +222,14 @@ def test_local_update_receipt_runs_trainer_style_qacc_update_and_exact_parity():
     assert "dense_oracle_qacc_reference_result" in receipt.transient_over2_tensors
     assert receipt.non_claims == TRAINER_SUB2_LOCAL_UPDATE_NON_CLAIMS
     assert receipt.candidate_step_summary["candidate_local_update_pass"] is True
+    assert (
+        receipt.candidate_step_summary[
+            "default_off_trainer_active_controls_inactive_proven"
+        ]
+        is True
+    )
+    assert receipt.candidate_step_summary["global_rate_cap_enabled"] is False
+    assert receipt.candidate_step_summary["deferred_backlog_output_entry_count"] == 0
     assert receipt.candidate_step_summary["candidate_dense_decode_used"] is False
     assert receipt.candidate_step_summary["candidate_dense_vote_authority_used"] is False
     proof = receipt.forward_backward_capture_proof["weighted_grad_capture_by_key"]["proj"]
@@ -265,6 +287,68 @@ def test_local_update_receipt_forbidden_broad_claims_fail_validation():
         validate_trainer_sub2_authority_local_update_receipt(
             replace(receipt, eligible_fp_masters_byte_identical=False)
         )
+    with pytest.raises(ValueError, match="active controls inactive proof"):
+        validate_trainer_sub2_authority_local_update_receipt(
+            replace(receipt, default_off_trainer_active_controls_inactive_proven=False)
+        )
+    with pytest.raises(ValueError, match="global cap spec"):
+        validate_trainer_sub2_authority_local_update_receipt(
+            replace(receipt, global_cap_spec_passed=True)
+        )
+    with pytest.raises(ValueError, match="global cap"):
+        validate_trainer_sub2_authority_local_update_receipt(
+            replace(receipt, global_rate_cap_enabled=True)
+        )
+    with pytest.raises(ValueError, match="deferred backlog input"):
+        validate_trainer_sub2_authority_local_update_receipt(
+            replace(receipt, deferred_backlog_input_present=True)
+        )
+    with pytest.raises(ValueError, match="deferred backlog"):
+        validate_trainer_sub2_authority_local_update_receipt(
+            replace(receipt, deferred_backlog_output_entry_count=1)
+        )
+    with pytest.raises(ValueError, match="replay CE veto"):
+        validate_trainer_sub2_authority_local_update_receipt(
+            replace(receipt, replay_ce_veto_maps_present=True)
+        )
+    with pytest.raises(ValueError, match="PC auxiliary maps"):
+        validate_trainer_sub2_authority_local_update_receipt(
+            replace(receipt, pc_aux_maps_present=True)
+        )
+    with pytest.raises(ValueError, match="PC auxiliary mode"):
+        validate_trainer_sub2_authority_local_update_receipt(
+            replace(receipt, pc_aux_mode_effective="veto")
+        )
+    with pytest.raises(ValueError, match="front-C"):
+        validate_trainer_sub2_authority_local_update_receipt(
+            replace(receipt, front_c_identity_observer_present=True)
+        )
+    with pytest.raises(ValueError, match="active-control rejection"):
+        validate_trainer_sub2_authority_local_update_receipt(
+            replace(receipt, candidate_mode_rejects_active_controls=False)
+        )
+    with pytest.raises(ValueError, match="no trainer active-control parameters"):
+        validate_trainer_sub2_authority_local_update_receipt(
+            replace(receipt, trainer_builder_has_no_active_control_parameters=False)
+        )
+    bad_summary = dict(receipt.candidate_step_summary)
+    bad_summary["global_rate_cap_enabled"] = True
+    with pytest.raises(ValueError, match="candidate summary.*global cap"):
+        validate_trainer_sub2_authority_local_update_receipt(
+            replace(receipt, candidate_step_summary=bad_summary)
+        )
+
+
+def test_local_update_builder_has_no_active_control_parameters():
+    signature = inspect.signature(build_trainer_sub2_authority_local_update_receipt)
+    forbidden = sorted(
+        name
+        for name in signature.parameters
+        if name in TRAINER_SUB2_ACTIVE_CONTROL_PARAMETER_NAMES
+    )
+
+    assert forbidden == []
+    assert trainer_local_update_builder_active_control_parameters() == ()
 
 
 def test_trainer_default_off_smoke_still_writes_checkpoint(tmp_path, monkeypatch):

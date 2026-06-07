@@ -1068,6 +1068,8 @@ def apply_bounded_delta_vote_step(
             raise ValueError("candidate_mode does not cover front_c live identity observation")
         if global_cap_spec is not None:
             raise ValueError("candidate_mode local vote-update proof does not cover global cap")
+        if deferred_backlog is not None:
+            raise ValueError("candidate_mode local vote-update proof does not cover deferred backlog")
         if (
             replay_ce_veto_votes_by_key is not None
             or replay_ce_veto_moves_by_key is not None

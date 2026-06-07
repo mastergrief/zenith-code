@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import hashlib
+import inspect
 import math
 from typing import Any, Callable, Mapping
 
@@ -63,6 +64,18 @@ TRAINER_SUB2_LOCAL_UPDATE_NON_CLAIMS = (
     "trainer_entrypoint_uses_candidate=false; production/broad runtime flags remain false until 2C4",
     "global cap, replay CE veto, PC auxiliary, backlog, checkpoint resume, and readiness row flips are deferred",
     "not learning, acquisition, throughput, GPU residency, training launch, full-sub2 runtime, or .pt mutation",
+)
+TRAINER_SUB2_ACTIVE_CONTROL_PARAMETER_NAMES = frozenset(
+    {
+        "global_cap_spec",
+        "deferred_backlog",
+        "replay_ce_veto_votes_by_key",
+        "replay_ce_veto_moves_by_key",
+        "pc_aux_votes_by_key",
+        "pc_aux_moves_by_key",
+        "pc_aux_mode",
+        "front_c_identity_observer",
+    }
 )
 
 
@@ -166,6 +179,17 @@ class TrainerSub2AuthorityLocalUpdateReceipt:
     learner_update_called: bool
     optimizer_step_called: bool
     default_off_trainer_local_qacc_update_proof_exercised: bool
+    default_off_trainer_active_controls_inactive_proven: bool
+    global_cap_spec_passed: bool
+    global_rate_cap_enabled: bool
+    deferred_backlog_input_present: bool
+    deferred_backlog_output_entry_count: int
+    replay_ce_veto_maps_present: bool
+    pc_aux_maps_present: bool
+    pc_aux_mode_effective: str
+    front_c_identity_observer_present: bool
+    candidate_mode_rejects_active_controls: bool
+    trainer_builder_has_no_active_control_parameters: bool
     trainer_entrypoint_can_construct_sub2_authority: bool
     trainer_entrypoint_uses_candidate: bool
     live_runtime_authority_converted: bool
@@ -266,6 +290,19 @@ def trainer_authoritative_forward_context(
         tensor_states,
         device=device,
         requires_grad=requires_grad,
+    )
+
+
+def trainer_local_update_builder_active_control_parameters() -> tuple[str, ...]:
+    """List forbidden active-control params if the default-off builder grows any."""
+
+    signature = inspect.signature(build_trainer_sub2_authority_local_update_receipt)
+    return tuple(
+        sorted(
+            name
+            for name in signature.parameters
+            if name in TRAINER_SUB2_ACTIVE_CONTROL_PARAMETER_NAMES
+        )
     )
 
 
@@ -648,6 +685,19 @@ def build_trainer_sub2_authority_local_update_receipt(
         candidate_sparse_vote_events_by_key=sparse_events_by_key,
         candidate_oracle_control_enabled=False,
     )
+    deferred_backlog_output_entry_count = sum(
+        len(entries)
+        for entries in step_result.deferred_backlog.values()
+    )
+    global_rate_cap_enabled = bool(step_result.global_summary.get("global_rate_cap_enabled"))
+    trainer_builder_has_no_active_control_parameters = (
+        trainer_local_update_builder_active_control_parameters() == ()
+    )
+    active_controls_inactive_proven = (
+        not global_rate_cap_enabled
+        and deferred_backlog_output_entry_count == 0
+        and trainer_builder_has_no_active_control_parameters
+    )
     proof_by_key = step_result.global_summary["candidate_local_update_proof_by_key"]
     parity_by_key = {
         key: _oracle_parity_proof(
@@ -679,6 +729,7 @@ def build_trainer_sub2_authority_local_update_receipt(
         and all(bool(proof.get("parity_pass")) for proof in parity_by_key.values())
         and shadow_free_after
         and fp_masters_byte_identical
+        and active_controls_inactive_proven
     )
     receipt = TrainerSub2AuthorityLocalUpdateReceipt(
         schema_version=TRAINER_SUB2_LOCAL_UPDATE_SCHEMA_VERSION,
@@ -690,6 +741,17 @@ def build_trainer_sub2_authority_local_update_receipt(
         learner_update_called=True,
         optimizer_step_called=False,
         default_off_trainer_local_qacc_update_proof_exercised=pass_receipt,
+        default_off_trainer_active_controls_inactive_proven=active_controls_inactive_proven,
+        global_cap_spec_passed=False,
+        global_rate_cap_enabled=global_rate_cap_enabled,
+        deferred_backlog_input_present=False,
+        deferred_backlog_output_entry_count=deferred_backlog_output_entry_count,
+        replay_ce_veto_maps_present=False,
+        pc_aux_maps_present=False,
+        pc_aux_mode_effective="not_enabled",
+        front_c_identity_observer_present=False,
+        candidate_mode_rejects_active_controls=True,
+        trainer_builder_has_no_active_control_parameters=trainer_builder_has_no_active_control_parameters,
         trainer_entrypoint_can_construct_sub2_authority=True,
         trainer_entrypoint_uses_candidate=False,
         live_runtime_authority_converted=False,
@@ -724,6 +786,15 @@ def build_trainer_sub2_authority_local_update_receipt(
             "total_sparse_vote_event_count": int(total_sparse_events),
         },
         candidate_step_summary={
+            "default_off_trainer_active_controls_inactive_proven": active_controls_inactive_proven,
+            "global_cap_spec_passed": False,
+            "global_rate_cap_enabled": global_rate_cap_enabled,
+            "deferred_backlog_input_present": False,
+            "deferred_backlog_output_entry_count": deferred_backlog_output_entry_count,
+            "replay_ce_veto_maps_present": False,
+            "pc_aux_maps_present": False,
+            "pc_aux_mode_effective": "not_enabled",
+            "front_c_identity_observer_present": False,
             "candidate_local_update_pass": bool(
                 step_result.global_summary.get("candidate_local_update_pass")
             ),
@@ -823,6 +894,47 @@ def validate_trainer_sub2_authority_local_update_receipt(
         raise ValueError("2C2 must exit before optimizer step")
     if not receipt.default_off_trainer_local_qacc_update_proof_exercised:
         raise ValueError("2C2 local qacc proof was not exercised")
+    if not receipt.default_off_trainer_active_controls_inactive_proven:
+        raise ValueError("2C3 active controls inactive proof did not pass")
+    if receipt.global_cap_spec_passed:
+        raise ValueError("2C3 inactive proof cannot pass a global cap spec")
+    if receipt.global_rate_cap_enabled:
+        raise ValueError("2C3 inactive proof cannot enable global cap")
+    if receipt.deferred_backlog_input_present:
+        raise ValueError("2C3 inactive proof cannot accept deferred backlog input")
+    if receipt.deferred_backlog_output_entry_count != 0:
+        raise ValueError("2C3 inactive proof cannot emit deferred backlog")
+    if receipt.replay_ce_veto_maps_present:
+        raise ValueError("2C3 inactive proof cannot pass replay CE veto maps")
+    if receipt.pc_aux_maps_present:
+        raise ValueError("2C3 inactive proof cannot pass PC auxiliary maps")
+    if receipt.pc_aux_mode_effective != "not_enabled":
+        raise ValueError("2C3 inactive proof cannot enable PC auxiliary mode")
+    if receipt.front_c_identity_observer_present:
+        raise ValueError("2C3 inactive proof cannot pass front-C identity observer")
+    if not receipt.candidate_mode_rejects_active_controls:
+        raise ValueError("2C3 inactive proof needs candidate-mode active-control rejection")
+    if not receipt.trainer_builder_has_no_active_control_parameters:
+        raise ValueError("2C3 inactive proof requires no trainer active-control parameters")
+    candidate_summary = dict(receipt.candidate_step_summary)
+    if not bool(candidate_summary.get("default_off_trainer_active_controls_inactive_proven")):
+        raise ValueError("2C3 candidate summary did not prove inactive controls")
+    if bool(candidate_summary.get("global_cap_spec_passed")):
+        raise ValueError("2C3 candidate summary cannot pass a global cap spec")
+    if bool(candidate_summary.get("global_rate_cap_enabled")):
+        raise ValueError("2C3 candidate summary cannot enable global cap")
+    if bool(candidate_summary.get("deferred_backlog_input_present")):
+        raise ValueError("2C3 candidate summary cannot accept deferred backlog input")
+    if int(candidate_summary.get("deferred_backlog_output_entry_count", -1)) != 0:
+        raise ValueError("2C3 candidate summary cannot emit deferred backlog")
+    if bool(candidate_summary.get("replay_ce_veto_maps_present")):
+        raise ValueError("2C3 candidate summary cannot pass replay CE veto maps")
+    if bool(candidate_summary.get("pc_aux_maps_present")):
+        raise ValueError("2C3 candidate summary cannot pass PC auxiliary maps")
+    if candidate_summary.get("pc_aux_mode_effective") != "not_enabled":
+        raise ValueError("2C3 candidate summary cannot enable PC auxiliary mode")
+    if bool(candidate_summary.get("front_c_identity_observer_present")):
+        raise ValueError("2C3 candidate summary cannot pass front-C identity observer")
     if receipt.trainer_entrypoint_uses_candidate:
         raise ValueError("2C2 cannot flip broad trainer_entrypoint_uses_candidate")
     if receipt.live_runtime_authority_converted:

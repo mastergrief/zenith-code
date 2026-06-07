@@ -228,6 +228,102 @@ def test_bounded_delta_step_global_cap_tie_rule_wiring_is_opt_in_and_shadowed():
         json.dumps(receipt_fragment, sort_keys=True)
 
 
+def test_candidate_mode_rejects_active_controls_and_deferred_backlog():
+    state = make_bounded_tensor_state(
+        "toy.proj",
+        torch.tensor([0], dtype=torch.int8),
+        0.5,
+        torch.zeros(1, dtype=torch.int16),
+    )
+    votes = torch.tensor([12], dtype=torch.int16)
+    spec = VoteUpdateSpec(
+        threshold_abs=10,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=1,
+    )
+    base_kwargs = dict(
+        candidate_mode=ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
+        candidate_sparse_vote_events_by_key={"toy.proj": {0: 12}},
+        candidate_oracle_control_enabled=False,
+    )
+
+    active_cases = [
+        (
+            {"global_cap_spec": GlobalRateCapSpec(cap=1, step=0)},
+            "global cap",
+        ),
+        (
+            {"deferred_backlog": {"toy.proj": {0: {"defer_count": 1}}}},
+            "deferred backlog",
+        ),
+        (
+            {
+                "replay_ce_veto_votes_by_key": {
+                    "toy.proj": torch.zeros(1, dtype=torch.int16)
+                },
+                "replay_ce_veto_moves_by_key": {
+                    "toy.proj": torch.zeros(1, dtype=torch.int8)
+                },
+            },
+            "replay/pc auxiliary",
+        ),
+        (
+            {
+                "pc_aux_votes_by_key": {
+                    "toy.proj": torch.zeros(1, dtype=torch.int16)
+                },
+                "pc_aux_moves_by_key": {
+                    "toy.proj": torch.zeros(1, dtype=torch.int8)
+                },
+            },
+            "replay/pc auxiliary",
+        ),
+        (
+            {"front_c_identity_observer": lambda payload: payload},
+            "front_c live identity",
+        ),
+    ]
+
+    for extra_kwargs, error in active_cases:
+        with pytest.raises(ValueError, match=error):
+            apply_bounded_delta_vote_step(
+                {"toy.proj": state},
+                {"toy.proj": votes},
+                {"toy.proj": spec},
+                **base_kwargs,
+                **extra_kwargs,
+            )
+
+
+def test_candidate_mode_success_keeps_active_controls_inactive():
+    state = make_bounded_tensor_state(
+        "toy.proj",
+        torch.tensor([0], dtype=torch.int8),
+        0.5,
+        torch.zeros(1, dtype=torch.int16),
+    )
+    votes = torch.tensor([12], dtype=torch.int16)
+    spec = VoteUpdateSpec(
+        threshold_abs=10,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=1,
+    )
+
+    result = apply_bounded_delta_vote_step(
+        {"toy.proj": state},
+        {"toy.proj": votes},
+        {"toy.proj": spec},
+        candidate_mode=ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
+        candidate_sparse_vote_events_by_key={"toy.proj": {0: 12}},
+        candidate_oracle_control_enabled=False,
+    )
+
+    assert result.global_summary["global_rate_cap_enabled"] is False
+    assert result.deferred_backlog == {}
+
+
 def test_bounded_delta_step_validates_aux_map_keys_and_dtypes():
     state = make_bounded_tensor_state("toy.proj", torch.tensor([0], dtype=torch.int8), 0.5)
     votes = torch.tensor([12], dtype=torch.int16)
