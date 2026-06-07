@@ -41,6 +41,7 @@ from calm.hrm_text_158.native_full_stack.source_pointers import (
     SourcePointer,
 )
 from calm.hrm_text_158.native_full_stack.vote_update import (
+    LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
     VoteUpdateInputs,
     VoteUpdatePlan,
     VoteUpdateSpec,
@@ -60,6 +61,8 @@ BOUNDED_DELTA_CHECKPOINT_SCHEMA_VERSION = (
 S1_ORACLE_REANCHOR_SCHEMA_VERSION = "hrm_text_158_c2p0_s1_oracle_reanchor/v0"
 S1_PROJECTION_LAW = "ported_s1_gradient_sign_to_ternary_move"
 S1_RANK_BUCKET_VOTE_LAW = "ported_s1_rank_bucketed_integer_votes"
+S1_SIGN_PRESSURE_VOTE_LAW = "rank_free_sign_pressure_constant_threshold_votes"
+S1_INVERTED_SIGN_PRESSURE_VOTE_LAW = "inverted_rank_free_sign_pressure_constant_threshold_votes"
 AUTHORITATIVE_STATE_SOURCE = "q_scale_bounded_delta_state_of_truth"
 BOUNDED_UPDATE_ATTRIBUTION = "q_acc_backlog_changed_by_bounded_delta_vote_update_only"
 DEFAULT_DRY_RUN_PARENT_HASH_BASIS = "no_parent_checkpoint_path_supplied_no_pt_touch"
@@ -317,6 +320,57 @@ def credit_from_weighted_grad(weighted_grad: torch.Tensor, *, scheme: str = "ful
             out[nonzero] = values[nonzero].sign() * torch.pow(2.0, exponents)
         return -out
     raise ValueError(f"unsupported credit scheme {scheme!r}")
+
+
+def sign_pressure_int16_votes(
+    projected_moves: torch.Tensor,
+    vote_spec: VoteUpdateSpec,
+    *,
+    inverted: bool = False,
+) -> torch.Tensor:
+    """Rank-free diagnostic votes: every nonzero move crosses by threshold_abs."""
+
+    vote_spec.validate()
+    if projected_moves.dtype != torch.int8:
+        raise ValueError(f"projected_moves must be torch.int8, got {projected_moves.dtype}")
+    threshold = int(vote_spec.threshold_abs)
+    direction = -1 if bool(inverted) else 1
+    flat_moves = projected_moves.detach().flatten().to(torch.int16)
+    votes = torch.zeros_like(flat_moves, dtype=torch.int16)
+    nonzero = flat_moves != 0
+    votes[nonzero] = (flat_moves[nonzero] * int(direction) * threshold).to(torch.int16)
+    return votes.view_as(projected_moves)
+
+
+def compact_vote_pressure_summary(votes: torch.Tensor) -> dict[str, Any]:
+    """Compact receipt metrics for vote pressure without raw per-proposal arrays."""
+
+    flat = votes.detach().cpu().flatten().to(torch.int16)
+    nonzero = flat[flat != 0]
+    abs_values = nonzero.abs().to(torch.float32)
+    summary: dict[str, Any] = {
+        "vote_nonzero_count": int(nonzero.numel()),
+        "vote_positive_count": int((nonzero > 0).sum().item()),
+        "vote_negative_count": int((nonzero < 0).sum().item()),
+        "raw_per_proposal_arrays_included": False,
+    }
+    if abs_values.numel() == 0:
+        summary.update(
+            {
+                "vote_abs_min": 0,
+                "vote_abs_median": 0.0,
+                "vote_abs_max": 0,
+            },
+        )
+        return summary
+    summary.update(
+        {
+            "vote_abs_min": int(abs_values.min().item()),
+            "vote_abs_median": float(abs_values.median().item()),
+            "vote_abs_max": int(abs_values.max().item()),
+        },
+    )
+    return summary
 
 
 @dataclass(frozen=True)
@@ -1043,6 +1097,9 @@ def apply_bounded_delta_vote_step(
     candidate_mode: str | None = None,
     candidate_sparse_vote_events_by_key: Mapping[str, Mapping[int, int]] | None = None,
     candidate_oracle_control_enabled: bool = True,
+    local_selection_ordering_mode: str = LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+    local_selection_ordering_seed: int = 0,
+    local_selection_ordering_step: int = 0,
 ) -> BoundedDeltaLearnerStepResult:
     if set(tensor_states) != set(votes_by_key) or set(tensor_states) != set(vote_specs_by_key):
         raise ValueError("tensor_states, votes_by_key, and vote_specs_by_key must have identical keys")
@@ -1064,6 +1121,8 @@ def apply_bounded_delta_vote_step(
     if candidate_mode is not None:
         if candidate_mode != ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE:
             raise ValueError(f"unsupported candidate_mode {candidate_mode!r}")
+        if str(local_selection_ordering_mode) != LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX:
+            raise ValueError("candidate_mode local vote-update proof does not cover alternate local ordering")
         if front_c_identity_observer is not None:
             raise ValueError("candidate_mode does not cover front_c live identity observation")
         if global_cap_spec is not None:
@@ -1115,6 +1174,9 @@ def apply_bounded_delta_vote_step(
                     prior_state.vote_update_state(),
                     VoteUpdateInputs(votes=dense_votes),
                     vote_specs_by_key[state_key],
+                    local_selection_ordering_mode=str(local_selection_ordering_mode),
+                    local_selection_ordering_seed=int(local_selection_ordering_seed),
+                    local_selection_ordering_step=int(local_selection_ordering_step),
                 )
                 candidate_decode = decode_bounded_accumulator_to_i16(next_state.bounded_accumulator)
                 oracle_applied = tuple(
@@ -1272,7 +1334,14 @@ def apply_bounded_delta_vote_step(
             pc_aux_mode=pc_aux_mode,
         )
         spec = vote_specs_by_key[state_key]
-        plan = plan_integer_vote_update_reference(vu_state, inputs, spec)
+        plan = plan_integer_vote_update_reference(
+            vu_state,
+            inputs,
+            spec,
+            local_selection_ordering_mode=str(local_selection_ordering_mode),
+            local_selection_ordering_seed=int(local_selection_ordering_seed),
+            local_selection_ordering_step=int(local_selection_ordering_step),
+        )
         vote_update_states[state_key] = vu_state
         inputs_by_key[state_key] = inputs
         plans_by_key[state_key] = plan
@@ -1300,6 +1369,9 @@ def apply_bounded_delta_vote_step(
         backlog = cap_result.deferred_backlog
         summary = dict(cap_result.step_summary)
         summary["global_rate_cap_enabled"] = True
+        summary["local_selection_ordering_mode"] = str(local_selection_ordering_mode)
+        summary["local_selection_ordering_seed"] = int(local_selection_ordering_seed)
+        summary["local_selection_ordering_step"] = int(local_selection_ordering_step)
     else:
         q_acc_by_key = {}
         for state_key in sorted(tensor_states):
@@ -1307,11 +1379,17 @@ def apply_bounded_delta_vote_step(
                 vote_update_states[state_key],
                 inputs_by_key[state_key],
                 vote_specs_by_key[state_key],
+                local_selection_ordering_mode=str(local_selection_ordering_mode),
+                local_selection_ordering_seed=int(local_selection_ordering_seed),
+                local_selection_ordering_step=int(local_selection_ordering_step),
             )
             q_acc_by_key[state_key] = (result.q_levels, result.accumulators, result.stats)
         backlog = deferred_backlog or {}
         summary = {
             "global_rate_cap_enabled": False,
+            "local_selection_ordering_mode": str(local_selection_ordering_mode),
+            "local_selection_ordering_seed": int(local_selection_ordering_seed),
+            "local_selection_ordering_step": int(local_selection_ordering_step),
             "q_changed_count": sum(
                 int(stats.get("q_changed_count", 0))
                 for _, _, stats in q_acc_by_key.values()
@@ -1604,13 +1682,16 @@ __all__ = [
     "RankVoteBin",
     "RankVoteSpec",
     "RUN_BOUNDED_DELTA_LEARNER_ENV",
+    "S1_INVERTED_SIGN_PRESSURE_VOTE_LAW",
     "S1_ORACLE_REANCHOR_SCHEMA_VERSION",
     "S1_PROJECTION_LAW",
     "S1_RANK_BUCKET_VOTE_LAW",
+    "S1_SIGN_PRESSURE_VOTE_LAW",
     "apply_bounded_delta_vote_step",
     "authoritative_forward_context",
     "build_authoritative_checkpoint_payload",
     "build_optimizer_excluding_eligible_masters",
+    "compact_vote_pressure_summary",
     "credit_from_weighted_grad",
     "default_dry_run_rank_vote_spec",
     "derive_bounded_tensor_state_from_weight",
@@ -1623,6 +1704,7 @@ __all__ = [
     "rank_bucketed_int16_votes",
     "reanchor_s1_oracle_hash",
     "run_c2_bounded_delta_cpu_dry_run",
+    "sign_pressure_int16_votes",
     "snapshot_eligible_master_sha256",
     "tensor_sha256",
     "ternarize_weight_to_q_scale",

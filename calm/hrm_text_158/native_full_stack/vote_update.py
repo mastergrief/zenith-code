@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+import hashlib
 import os
 from typing import Optional
 
@@ -37,6 +38,8 @@ INT16_ACC_TRANSITIONAL_NOTE = (
     "vote/accumulator storage is not implemented in Slice 2A."
 )
 DEFERRED_GLOBAL_CAP = "deferred_global_cap"
+LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX = "current_abs_new_acc_then_index"
+LOCAL_SELECTION_ORDER_DETERMINISTIC_HASH_MATCHED = "deterministic_hash_shuffle_order_matched"
 
 
 class VoteUpdateQFormat(str, Enum):
@@ -210,6 +213,40 @@ def _validate_future_formats(state: VoteUpdateState, inputs: VoteUpdateInputs) -
     inputs.normalized_pc_aux_mode
 
 
+def _local_selection_order(
+    *,
+    candidate_idx: torch.Tensor,
+    new_acc_i32: torch.Tensor,
+    numel: int,
+    mode: str,
+    ordering_seed: int,
+    ordering_step: int,
+) -> torch.Tensor:
+    normalized_mode = str(mode)
+    if normalized_mode == LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX:
+        abs_score = new_acc_i32[candidate_idx].abs().to(torch.int64)
+        idx64 = candidate_idx.to(torch.int64)
+        composite = abs_score * (int(numel) + 1) + (int(numel) - idx64)
+        return torch.argsort(composite, descending=True)
+    if normalized_mode == LOCAL_SELECTION_ORDER_DETERMINISTIC_HASH_MATCHED:
+        keyed: list[tuple[bytes, int]] = []
+        for position, flat_index in enumerate(candidate_idx.detach().cpu().to(torch.int64).tolist()):
+            digest = hashlib.sha256(
+                (
+                    f"hrm_text_158_local_selection_order|seed={int(ordering_seed)}|"
+                    f"step={int(ordering_step)}|index={int(flat_index)}"
+                ).encode("utf-8")
+            ).digest()
+            keyed.append((digest, int(position)))
+        keyed.sort()
+        return torch.tensor(
+            [position for _digest, position in keyed],
+            dtype=torch.int64,
+            device=candidate_idx.device,
+        )
+    raise ValueError(f"unsupported local_selection_ordering_mode {mode!r}")
+
+
 def validate_vote_update_contract(
     state: VoteUpdateState,
     inputs: VoteUpdateInputs,
@@ -272,6 +309,9 @@ def plan_integer_vote_update_reference(
     spec: VoteUpdateSpec,
     *,
     validate_q_levels: bool = True,
+    local_selection_ordering_mode: str = LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+    local_selection_ordering_seed: int = 0,
+    local_selection_ordering_step: int = 0,
 ) -> VoteUpdatePlan:
     """Non-mutating exact local update plan for q:int8 + acc/vote:int16."""
 
@@ -282,6 +322,13 @@ def plan_integer_vote_update_reference(
     threshold = int(spec.threshold_abs)
     numel = int(q_levels.numel())
     max_flips = spec.max_flips(numel)
+    if str(local_selection_ordering_mode) not in {
+        LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+        LOCAL_SELECTION_ORDER_DETERMINISTIC_HASH_MATCHED,
+    }:
+        raise ValueError(
+            f"unsupported local_selection_ordering_mode {local_selection_ordering_mode!r}"
+        )
 
     q_i16 = q_levels.flatten().to(torch.int16)
     acc_i32 = accumulators.flatten().to(torch.int32)
@@ -310,10 +357,14 @@ def plan_integer_vote_update_reference(
     pc_aux_vetoed = candidate_idx[:0]
 
     if candidate_idx.numel() > 0 and max_flips > 0:
-        abs_score = new_acc_i32[candidate_idx].abs().to(torch.int64)
-        idx64 = candidate_idx.to(torch.int64)
-        composite = abs_score * (numel + 1) + (numel - idx64)
-        order = torch.argsort(composite, descending=True)
+        order = _local_selection_order(
+            candidate_idx=candidate_idx,
+            new_acc_i32=new_acc_i32,
+            numel=numel,
+            mode=str(local_selection_ordering_mode),
+            ordering_seed=int(local_selection_ordering_seed),
+            ordering_step=int(local_selection_ordering_step),
+        )
         pre_veto_selected = candidate_idx[order[:max_flips]]
         selected_thresholds = torch.full_like(pre_veto_selected, threshold, dtype=torch.int32)
         directions = torch.where(new_acc_i32[pre_veto_selected] >= threshold, 1, -1).to(torch.int16)
@@ -364,6 +415,9 @@ def plan_integer_vote_update_reference(
     stats: dict[str, int | float | bool | str] = {
         "scope": "per_tensor_local_update",
         "global_cap_policy": DEFERRED_GLOBAL_CAP,
+        "local_selection_ordering_mode": str(local_selection_ordering_mode),
+        "local_selection_ordering_seed": int(local_selection_ordering_seed),
+        "local_selection_ordering_step": int(local_selection_ordering_step),
         "threshold_jitter_policy": "deferred_reject",
         "candidate_count": int(candidate_idx.numel()),
         "max_flips": int(max_flips),
@@ -412,6 +466,9 @@ def apply_integer_vote_update_reference(
     spec: VoteUpdateSpec,
     *,
     validate_q_levels: bool = True,
+    local_selection_ordering_mode: str = LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+    local_selection_ordering_seed: int = 0,
+    local_selection_ordering_step: int = 0,
 ) -> VoteUpdateResult:
     """Apply the exact local update law to copies and return new q/acc tensors."""
 
@@ -420,6 +477,9 @@ def apply_integer_vote_update_reference(
         inputs,
         spec,
         validate_q_levels=validate_q_levels,
+        local_selection_ordering_mode=str(local_selection_ordering_mode),
+        local_selection_ordering_seed=int(local_selection_ordering_seed),
+        local_selection_ordering_step=int(local_selection_ordering_step),
     )
     threshold = int(spec.threshold_abs)
     q_i16 = plan.q_i16.flatten().clone()

@@ -22,6 +22,14 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     authoritative_forward_context,
     make_bounded_tensor_state,
 )
+from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
+    ARM_A0_RANK_BUCKET_CURRENT,
+    ARM_A1_RANK_BUCKET_ORDER_MATCHED,
+    ARM_B_RANK_FREE_SIGN_PRESSURE,
+    FIXED_RANK_BUCKET_NON_TARGET_AUX,
+    TIE_POLICY_CURRENT_MARGIN_INDEX,
+    TIE_POLICY_DETERMINISTIC_HASH_MATCHED,
+)
 from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     B1_PRIOR_AUDIT_PINS,
     B1_PRIOR_AUDIT_SCHEMA_VERSION,
@@ -261,6 +269,106 @@ def _state_parity_subset(receipt: dict) -> dict:
         "authoritative_state_sha256": checkpoint["authoritative_state_sha256"],
         "tensor_summaries": checkpoint["tensor_summaries"],
     }
+
+
+def test_science_arm_vote_builder_keeps_a0_default_and_adds_order_matched_b():
+    state = make_bounded_tensor_state(
+        "toy.proj",
+        torch.tensor([[-1, 0, 0, 1]], dtype=torch.int8),
+        0.5,
+        torch.zeros((1, 4), dtype=torch.int16),
+    )
+    weighted_grads = {"toy.proj": torch.tensor([[-1.0, -2.0, 3.0, 4.0]])}
+    rank_spec = probe_module.default_dry_run_rank_vote_spec()
+    vote_spec = probe_module.default_vote_update_spec(max_abs_per_tensor=16)
+
+    a0_votes, a0_pressure, a0_finite = probe_module._weighted_grads_to_science_arm_votes(
+        weighted_grads,
+        {"toy.proj": state},
+        rank_spec=rank_spec,
+        vote_spec=vote_spec,
+        science_arm=ARM_A0_RANK_BUCKET_CURRENT,
+    )
+    a1_votes, a1_pressure, a1_finite = probe_module._weighted_grads_to_science_arm_votes(
+        weighted_grads,
+        {"toy.proj": state},
+        rank_spec=rank_spec,
+        vote_spec=vote_spec,
+        science_arm=ARM_A1_RANK_BUCKET_ORDER_MATCHED,
+    )
+    b_votes, b_pressure, b_finite = probe_module._weighted_grads_to_science_arm_votes(
+        weighted_grads,
+        {"toy.proj": state},
+        rank_spec=rank_spec,
+        vote_spec=vote_spec,
+        science_arm=ARM_B_RANK_FREE_SIGN_PRESSURE,
+    )
+
+    assert a0_finite is True
+    assert a1_finite is True
+    assert b_finite is True
+    assert a0_votes["toy.proj"].tolist() == a1_votes["toy.proj"].tolist()
+    assert a0_pressure["toy.proj"]["tie_policy_id"] == TIE_POLICY_CURRENT_MARGIN_INDEX
+    assert a1_pressure["toy.proj"]["tie_policy_id"] == TIE_POLICY_DETERMINISTIC_HASH_MATCHED
+    assert b_pressure["toy.proj"]["tie_policy_id"] == TIE_POLICY_DETERMINISTIC_HASH_MATCHED
+    assert b_votes["toy.proj"].tolist() == [[1, 1, -1, -1]]
+    assert b_pressure["toy.proj"]["vote_abs_min"] == 1
+    assert b_pressure["toy.proj"]["vote_abs_max"] == 1
+    assert probe_module.FIXED_RANK_BUCKET_NON_TARGET_AUX == FIXED_RANK_BUCKET_NON_TARGET_AUX
+
+
+def test_science_arm_a1_local_ordering_is_operational_when_global_cap_off():
+    state = make_bounded_tensor_state(
+        "toy.proj",
+        torch.zeros((1, 4), dtype=torch.int8),
+        0.5,
+        torch.zeros((1, 4), dtype=torch.int16),
+    )
+    weighted_grads = {"toy.proj": torch.tensor([[-1.0, -2.0, -3.0, -4.0]])}
+    rank_spec = probe_module.default_dry_run_rank_vote_spec()
+    vote_spec = probe_module.default_vote_update_spec(max_abs_per_tensor=1)
+    states = {"toy.proj": state}
+    specs = {"toy.proj": vote_spec}
+
+    def run_arm(arm: str):
+        votes, _pressure, _finite = probe_module._weighted_grads_to_science_arm_votes(
+            weighted_grads,
+            states,
+            rank_spec=rank_spec,
+            vote_spec=vote_spec,
+            science_arm=arm,
+        )
+        return probe_module.apply_bounded_delta_vote_step(
+            states,
+            votes,
+            specs,
+            local_selection_ordering_mode=probe_module._science_local_selection_ordering_mode(arm),
+            local_selection_ordering_seed=probe_module.SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
+            local_selection_ordering_step=1,
+        )
+
+    a0_result = run_arm(ARM_A0_RANK_BUCKET_CURRENT)
+    a1_result = run_arm(ARM_A1_RANK_BUCKET_ORDER_MATCHED)
+    b_result = run_arm(ARM_B_RANK_FREE_SIGN_PRESSURE)
+
+    assert a0_result.global_summary["global_rate_cap_enabled"] is False
+    assert a1_result.global_summary["global_rate_cap_enabled"] is False
+    assert b_result.global_summary["global_rate_cap_enabled"] is False
+    assert a0_result.tensor_states["toy.proj"].q_levels.tolist() == [[0, 1, 0, 0]]
+    assert a1_result.tensor_states["toy.proj"].q_levels.tolist() == [[0, 0, 1, 0]]
+    assert b_result.tensor_states["toy.proj"].q_levels.tolist() == [[0, 0, 1, 0]]
+    assert (
+        a1_result.tensor_stats["toy.proj"]["local_selection_ordering_mode"]
+        == TIE_POLICY_DETERMINISTIC_HASH_MATCHED
+    )
+    assert (
+        b_result.tensor_stats["toy.proj"]["local_selection_ordering_mode"]
+        == TIE_POLICY_DETERMINISTIC_HASH_MATCHED
+    )
+    assert (
+        a0_result.tensor_stats["toy.proj"]["local_selection_ordering_mode"]
+        == TIE_POLICY_CURRENT_MARGIN_INDEX
+    )
 
 
 def _forward_init_value_subset(

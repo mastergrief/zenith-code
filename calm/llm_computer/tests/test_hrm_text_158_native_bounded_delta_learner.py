@@ -40,6 +40,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     rank_bucketed_int16_votes,
     reanchor_s1_oracle_hash,
     run_c2_bounded_delta_cpu_dry_run,
+    sign_pressure_int16_votes,
     validate_authoritative_resume_payload,
 )
 from calm.hrm_text_158.native_full_stack.global_rate_cap import (
@@ -89,6 +90,25 @@ def test_s1_projection_and_rank_bucket_votes_port_sign_and_rank_law():
     # Four candidates: smallest abs credit gets vote 1, the rest land in the
     # inclusive upper rank bucket with vote 4, signed by the projected move.
     assert votes.tolist() == [[1, 4, -4, -4, 0, 0]]
+
+
+def test_sign_pressure_votes_use_constant_threshold_and_no_credit_rank():
+    q = torch.tensor([[-1, 0, 0, 1, -1, 1]], dtype=torch.int8)
+    grad = torch.tensor([[-1.0, -2.0, 3.0, 4.0, 5.0, -6.0]])
+    moves = project_s1_gradient_to_moves(grad, q)
+    spec = VoteUpdateSpec(
+        threshold_abs=7,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+    )
+
+    votes = sign_pressure_int16_votes(moves, spec)
+    inverted = sign_pressure_int16_votes(moves, spec, inverted=True)
+
+    assert moves.tolist() == [[1, 1, -1, -1, 0, 0]]
+    assert votes.dtype == torch.int16
+    assert votes.tolist() == [[7, 7, -7, -7, 0, 0]]
+    assert inverted.tolist() == [[-7, -7, 7, 7, 0, 0]]
 
 
 def test_bounded_delta_step_updates_q_acc_backlog_and_attributes_bounded_updates():

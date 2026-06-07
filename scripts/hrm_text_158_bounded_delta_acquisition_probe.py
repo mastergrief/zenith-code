@@ -58,6 +58,8 @@ from calm.hrm_text_158.native_full_stack.global_rate_cap import (
     EXACT_GLOBAL_CAP_TIE_RULE_MODE,
     GLOBAL_CAP_CONTRACT_OFF,
     GLOBAL_TIE_RULE_MODES,
+    GlobalRateCapOrderingMode,
+    GlobalRateCapSpec,
     named_global_cap_contract_receipt,
     resolve_named_global_cap_spec,
 )
@@ -65,12 +67,15 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     BOUNDED_DELTA_CHECKPOINT_SCHEMA_VERSION,
     BOUNDED_DELTA_LEARNER_SCHEMA_VERSION,
     BOUNDED_UPDATE_ATTRIBUTION,
+    S1_INVERTED_SIGN_PRESSURE_VOTE_LAW,
     S1_PROJECTION_LAW,
     S1_RANK_BUCKET_VOTE_LAW,
+    S1_SIGN_PRESSURE_VOTE_LAW,
     apply_bounded_delta_vote_step,
     authoritative_forward_context,
     build_authoritative_checkpoint_payload,
     build_optimizer_excluding_eligible_masters,
+    compact_vote_pressure_summary,
     credit_from_weighted_grad,
     default_dry_run_rank_vote_spec,
     derive_bounded_tensor_state_from_weight,
@@ -78,13 +83,27 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     project_s1_gradient_to_moves,
     prove_eligible_master_identity_after_optimizer_step,
     rank_bucketed_int16_votes,
+    sign_pressure_int16_votes,
     tensor_sha256,
     validate_authoritative_resume_payload,
 )
 from calm.hrm_text_158.native_full_stack.front_c_live_identity_emission import (
     FrontCLiveIdentityCollector,
 )
-from calm.hrm_text_158.native_full_stack.vote_update import VoteUpdateSpec
+from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
+    ARM_A0_RANK_BUCKET_CURRENT,
+    ARM_A1_RANK_BUCKET_ORDER_MATCHED,
+    ARM_B_RANK_FREE_SIGN_PRESSURE,
+    ARM_INVERTED_SIGN_PRESSURE,
+    FIXED_RANK_BUCKET_NON_TARGET_AUX,
+    TIE_POLICY_CURRENT_MARGIN_INDEX,
+    TIE_POLICY_DETERMINISTIC_HASH_MATCHED,
+)
+from calm.hrm_text_158.native_full_stack.vote_update import (
+    LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+    LOCAL_SELECTION_ORDER_DETERMINISTIC_HASH_MATCHED,
+    VoteUpdateSpec,
+)
 from scripts.train_hrm_text_158 import HrmTextGsm8kDataset
 
 
@@ -106,6 +125,13 @@ B2_FULL_VERDICT_SCHEMA_VERSION = "hrm_text_158_b2_full_retention_verdict/v0"
 B2_RETAINED_SUPPORTS: tuple[str, ...] = ("L0b", "math_a0")
 B2_FULL_STOP_SUPPORTS: tuple[str, ...] = ("L0b", "math_a0")
 B2_PC_AUX_MODES: tuple[str, ...] = ("telemetry", "veto")
+SCIENCE_ARM_CHOICES: tuple[str, ...] = (
+    ARM_A0_RANK_BUCKET_CURRENT,
+    ARM_A1_RANK_BUCKET_ORDER_MATCHED,
+    ARM_B_RANK_FREE_SIGN_PRESSURE,
+    ARM_INVERTED_SIGN_PRESSURE,
+)
+SCIENCE_LOCAL_SELECTION_ORDERING_SEED = 17
 C2P2_STRICT_EXACT_TARGET = 90
 C2P2_DEFAULT_MAX_STEPS_HARD = 1500
 C2P2_DEFAULT_GPU_SILENT_PHASE_TIMEOUT_SECONDS = 300.0
@@ -2789,6 +2815,94 @@ def _weighted_grads_to_vote_aux_maps(
     return votes_by_key, moves_by_key
 
 
+def _science_arm_vote_law(science_arm: str) -> str:
+    arm = str(science_arm)
+    if arm in {ARM_A0_RANK_BUCKET_CURRENT, ARM_A1_RANK_BUCKET_ORDER_MATCHED}:
+        return S1_RANK_BUCKET_VOTE_LAW
+    if arm == ARM_B_RANK_FREE_SIGN_PRESSURE:
+        return S1_SIGN_PRESSURE_VOTE_LAW
+    if arm == ARM_INVERTED_SIGN_PRESSURE:
+        return S1_INVERTED_SIGN_PRESSURE_VOTE_LAW
+    raise ValueError(f"unknown science arm {science_arm!r}")
+
+
+def _science_arm_tie_policy(science_arm: str) -> str:
+    arm = str(science_arm)
+    if arm == ARM_A0_RANK_BUCKET_CURRENT:
+        return TIE_POLICY_CURRENT_MARGIN_INDEX
+    if arm in {
+        ARM_A1_RANK_BUCKET_ORDER_MATCHED,
+        ARM_B_RANK_FREE_SIGN_PRESSURE,
+        ARM_INVERTED_SIGN_PRESSURE,
+    }:
+        return TIE_POLICY_DETERMINISTIC_HASH_MATCHED
+    raise ValueError(f"unknown science arm {science_arm!r}")
+
+
+def _science_local_selection_ordering_mode(science_arm: str) -> str:
+    arm = str(science_arm)
+    if arm == ARM_A0_RANK_BUCKET_CURRENT:
+        return LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX
+    if arm in {
+        ARM_A1_RANK_BUCKET_ORDER_MATCHED,
+        ARM_B_RANK_FREE_SIGN_PRESSURE,
+        ARM_INVERTED_SIGN_PRESSURE,
+    }:
+        return LOCAL_SELECTION_ORDER_DETERMINISTIC_HASH_MATCHED
+    raise ValueError(f"unknown science arm {science_arm!r}")
+
+
+def _science_global_cap_spec_for_arm(
+    global_cap_spec: GlobalRateCapSpec | None,
+    *,
+    science_arm: str,
+) -> GlobalRateCapSpec | None:
+    if global_cap_spec is None or str(science_arm) == ARM_A0_RANK_BUCKET_CURRENT:
+        return global_cap_spec
+    return GlobalRateCapSpec(
+        cap=int(global_cap_spec.cap),
+        step=int(global_cap_spec.step),
+        ordering_mode=GlobalRateCapOrderingMode.HASH_SHUFFLE,
+        ordering_seed=int(global_cap_spec.ordering_seed),
+        functional_veto_policy=global_cap_spec.functional_veto_policy,
+        bad_pressure_drain_policy=global_cap_spec.bad_pressure_drain_policy,
+        mutate_outputs=bool(global_cap_spec.mutate_outputs),
+    )
+
+
+def _weighted_grads_to_science_arm_votes(
+    weighted_grads: Mapping[str, torch.Tensor],
+    tensor_states: Mapping[str, Any],
+    *,
+    rank_spec: Any,
+    vote_spec: VoteUpdateSpec,
+    science_arm: str,
+) -> tuple[dict[str, torch.Tensor], dict[str, Any], bool]:
+    if str(science_arm) not in SCIENCE_ARM_CHOICES:
+        raise ValueError(f"science_arm must be one of {SCIENCE_ARM_CHOICES}, got {science_arm!r}")
+    votes_by_key: dict[str, torch.Tensor] = {}
+    pressure_by_key: dict[str, Any] = {}
+    finite_weighted_grad = True
+    inverted = str(science_arm) == ARM_INVERTED_SIGN_PRESSURE
+    for key, weighted_grad in weighted_grads.items():
+        finite_weighted_grad = finite_weighted_grad and bool(torch.isfinite(weighted_grad).all().item())
+        moves = project_s1_gradient_to_moves(weighted_grad, tensor_states[key].q_levels)
+        if str(science_arm) in {ARM_A0_RANK_BUCKET_CURRENT, ARM_A1_RANK_BUCKET_ORDER_MATCHED}:
+            credit = credit_from_weighted_grad(weighted_grad)
+            votes = rank_bucketed_int16_votes(credit, moves, rank_spec)
+        else:
+            votes = sign_pressure_int16_votes(moves, vote_spec, inverted=inverted)
+        votes_by_key[key] = votes
+        pressure_by_key[key] = {
+            "state_key": key,
+            "science_arm": str(science_arm),
+            "vote_law": _science_arm_vote_law(str(science_arm)),
+            "tie_policy_id": _science_arm_tie_policy(str(science_arm)),
+            **compact_vote_pressure_summary(votes),
+        }
+    return votes_by_key, pressure_by_key, finite_weighted_grad
+
+
 def _compute_ce_weighted_grads(
     model: LMHead,
     batch: Mapping[str, torch.Tensor],
@@ -2984,6 +3098,7 @@ def run_bounded_delta_steps(
     matched_continued_training_horizon_steps: int = 0,
     global_cap_contract: str = GLOBAL_CAP_CONTRACT_OFF,
     tie_rule_mode: str = EXACT_GLOBAL_CAP_TIE_RULE_MODE,
+    science_arm: str = ARM_A0_RANK_BUCKET_CURRENT,
     b2_full_verdict_mode: bool = False,
     b2_full_prior_snapshot_callback: Callable[
         [int, Mapping[str, Any], Mapping[str, Any], Mapping[str, Mapping[str, Any]]],
@@ -3004,6 +3119,8 @@ def run_bounded_delta_steps(
     phase_progress: PhaseProgress | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], str, int, dict[str, Any] | None]:
     model.train()
+    if str(science_arm) not in SCIENCE_ARM_CHOICES:
+        raise ValueError(f"science_arm must be one of {SCIENCE_ARM_CHOICES}, got {science_arm!r}")
     progress = phase_progress or PhaseProgress(enabled=False, device=device)
     rank_spec = default_dry_run_rank_vote_spec()
     vote_spec = default_vote_update_spec(max_abs_per_tensor)
@@ -3012,7 +3129,14 @@ def run_bounded_delta_steps(
         "rank_vote_spec": rank_spec.to_live_dict(),
         "vote_update_spec": asdict(vote_spec),
         "projection_law": S1_PROJECTION_LAW,
-        "vote_law": S1_RANK_BUCKET_VOTE_LAW,
+        "vote_law": _science_arm_vote_law(str(science_arm)),
+        "science_arm": str(science_arm),
+        "target_vote_law": _science_arm_vote_law(str(science_arm)),
+        "target_tie_policy_id": _science_arm_tie_policy(str(science_arm)),
+        "local_selection_ordering_mode": _science_local_selection_ordering_mode(str(science_arm)),
+        "local_selection_ordering_seed": SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
+        "aux_vote_law": FIXED_RANK_BUCKET_NON_TARGET_AUX,
+        "default_rank_bucket_path_unchanged": str(science_arm) == ARM_A0_RANK_BUCKET_CURRENT,
     }
     optimizer, optimizer_checks = build_optimizer_excluding_eligible_masters(
         model,
@@ -3324,13 +3448,13 @@ def run_bounded_delta_steps(
                     "target_rows_excluded_from_pc": True,
                 }
             with progress.phase("step_update", step=int(step)):
-                votes_by_key = {}
-                finite_weighted_grad = True
-                for key, weighted_grad in weighted_grads.items():
-                    finite_weighted_grad = finite_weighted_grad and bool(torch.isfinite(weighted_grad).all().item())
-                    credit = credit_from_weighted_grad(weighted_grad)
-                    moves = project_s1_gradient_to_moves(weighted_grad, states[key].q_levels)
-                    votes_by_key[key] = rank_bucketed_int16_votes(credit, moves, rank_spec)
+                votes_by_key, vote_pressure_by_key, finite_weighted_grad = _weighted_grads_to_science_arm_votes(
+                    weighted_grads,
+                    states,
+                    rank_spec=rank_spec,
+                    vote_spec=vote_spec,
+                    science_arm=str(science_arm),
+                )
                 front_c_identity_observer = make_front_c_identity_observer_for_step(
                     front_c_identity_collector,
                     step=int(step),
@@ -3339,6 +3463,10 @@ def run_bounded_delta_steps(
                 global_cap_spec = resolve_named_global_cap_spec(
                     str(global_cap_contract),
                     step=int(step),
+                )
+                effective_global_cap_spec = _science_global_cap_spec_for_arm(
+                    global_cap_spec,
+                    science_arm=str(science_arm),
                 )
 
                 step_result = apply_bounded_delta_vote_step(
@@ -3350,13 +3478,16 @@ def run_bounded_delta_steps(
                     pc_aux_votes_by_key=pc_aux_votes_by_key,
                     pc_aux_moves_by_key=pc_aux_moves_by_key,
                     pc_aux_mode=str(b2_pc_aux_mode),
-                    global_cap_spec=global_cap_spec,
+                    global_cap_spec=effective_global_cap_spec,
                     global_cap_tie_rule_mode=str(tie_rule_mode),
                     global_cap_contract_name=(
                         str(global_cap_contract)
-                        if global_cap_spec is not None
+                        if effective_global_cap_spec is not None
                         else None
                     ),
+                    local_selection_ordering_mode=_science_local_selection_ordering_mode(str(science_arm)),
+                    local_selection_ordering_seed=SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
+                    local_selection_ordering_step=int(step),
                     front_c_identity_observer=front_c_identity_observer,
                 )
                 states = step_result.tensor_states
@@ -3381,6 +3512,14 @@ def run_bounded_delta_steps(
                     "metrics": _metrics_to_dict(metrics),
                     "bp_steps": int(extras["bp_steps"]),
                     "q_changed_count": q_changed_count,
+                    "science_arm": str(science_arm),
+                    "target_vote_law": _science_arm_vote_law(str(science_arm)),
+                    "target_tie_policy_id": _science_arm_tie_policy(str(science_arm)),
+                    "local_selection_ordering_mode": _science_local_selection_ordering_mode(str(science_arm)),
+                    "local_selection_ordering_seed": SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
+                    "local_selection_ordering_step": int(step),
+                    "aux_vote_law": FIXED_RANK_BUCKET_NON_TARGET_AUX,
+                    "vote_pressure": vote_pressure_by_key,
                     "support_batch": dict(step_batch_metadata),
                     "b2_retained_support": b2_step_receipt,
                     "step_result": step_result.to_compact_dict(),
@@ -3507,8 +3646,11 @@ def run_c2p1_probe(
     front_c_identity_emission_artifact: Path | None = None,
     front_c_identity_emission_interval: int = 0,
     front_c_independent_oracle: bool = False,
+    science_arm: str = ARM_A0_RANK_BUCKET_CURRENT,
 ) -> dict[str, Any]:
     assert_default_off(enabled)
+    if str(science_arm) not in SCIENCE_ARM_CHOICES:
+        raise ValueError(f"science_arm must be one of {SCIENCE_ARM_CHOICES}, got {science_arm!r}")
     if int(max_steps_hard) <= 0:
         raise ValueError("max_steps_hard must be positive")
     if int(steps) > int(max_steps_hard):
@@ -3869,6 +4011,7 @@ def run_c2p1_probe(
             ),
             global_cap_contract=str(global_cap_contract),
             tie_rule_mode=str(tie_rule_mode),
+            science_arm=str(science_arm),
             b2_full_verdict_mode=bool(b2_full_verdict_mode),
             b2_full_prior_snapshot_callback=b2_full_prior_snapshot_callback,
             b2_full_audit_export_callback=b2_full_audit_export_callback,
@@ -4022,6 +4165,13 @@ def run_c2p1_probe(
         ),
         "global_cap_contract": global_cap_contract_receipt,
         "tie_rule_mode": str(tie_rule_mode),
+        "science_arm": str(science_arm),
+        "target_vote_law": _science_arm_vote_law(str(science_arm)),
+        "target_tie_policy_id": _science_arm_tie_policy(str(science_arm)),
+        "local_selection_ordering_mode": _science_local_selection_ordering_mode(str(science_arm)),
+        "local_selection_ordering_seed": SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
+        "aux_vote_law": FIXED_RANK_BUCKET_NON_TARGET_AUX,
+        "default_rank_bucket_path_unchanged": str(science_arm) == ARM_A0_RANK_BUCKET_CURRENT,
         "stop_reason": stop_reason,
         "forward_backward_update_executed": bool(steps > 0),
         "step0_optimizer_identity_proof": step0_optimizer_identity_proof,
@@ -4123,6 +4273,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "Tie-rule mode inside an active global-cap contract. "
             "Default exact_global_cap keeps rows[:cap] unchanged; "
             "defer_all_no_backfill defers mixed-class oracle-accepted rows without backfill."
+        ),
+    )
+    ap.add_argument(
+        "--science-arm",
+        choices=SCIENCE_ARM_CHOICES,
+        default=ARM_A0_RANK_BUCKET_CURRENT,
+        help=(
+            "Default-off optimizer/update-law science arm. A0 preserves the "
+            "current rank-bucket/current-ordering path; A1/B/inverted are "
+            "diagnostic-only arms for the Step-1 science packet."
         ),
     )
     ap.add_argument(
@@ -4255,6 +4415,7 @@ def main(argv: list[str] | None = None) -> int:
         front_c_identity_emission_artifact=args.front_c_identity_emission_artifact,
         front_c_identity_emission_interval=args.front_c_identity_emission_interval,
         front_c_independent_oracle=args.front_c_independent_oracle,
+        science_arm=args.science_arm,
         max_steps_hard=args.max_steps_hard,
         emit_progress=args.emit_progress,
         phase_timeout_seconds=args.phase_timeout_seconds,
