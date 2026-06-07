@@ -756,6 +756,10 @@ def train(
     # (falls back to l0b_consistency_batch, then 8).
     retained_support_profile: list[tuple[str, float]] | None = None,
     retained_support_batch: int | None = None,
+    # 2C1 proof-only hook: construct/count trainer q+scale+bounded authority
+    # after model load and exit before normal optimizer/training side effects.
+    sub2_authority_construction_proof: bool = False,
+    sub2_authority_eligible_scope: str = "all-bitlinear",
     # Diagnostic ONLY (codex msg 1779652915624): when True, build the training
     # DataLoader WITHOUT the explicit seeded generator (pre-1656ead global-RNG
     # shuffle order). Default False keeps the deterministic seeded generator.
@@ -1272,6 +1276,36 @@ def train(
          "count": s["count"], "hash": s["hash"]}
         for s in active_supports
     ]
+
+    if sub2_authority_construction_proof:
+        from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
+            build_trainer_sub2_authority_construction_receipt,
+        )
+
+        receipt = build_trainer_sub2_authority_construction_receipt(
+            m,
+            use_ternary_bulk=use_ternary_bulk,
+            eligible_scope=sub2_authority_eligible_scope,
+            lr=lr,
+            weight_decay=weight_decay,
+            step=0,
+        )
+        print(
+            "[hrm158] 2C1 sub2-authority construction proof: "
+            f"pass={receipt.pass_receipt} "
+            f"eligible_modules={receipt.eligible_module_count} "
+            f"eligible_weights={receipt.eligible_weight_count} "
+            f"authority_bpw={receipt.persistent_authority_bits_per_weight:.6f} "
+            f"optimizer_excluded={receipt.optimizer_exclusion_proof.get('pass')} "
+            "dry_run=True checkpoint_written=False learner_update_called=False",
+            flush=True,
+        )
+        print(
+            "[hrm158] 2C1 sub2-authority construction proof: EXITING before "
+            "normal optimizer/training/checkpoint side effects",
+            flush=True,
+        )
+        return
 
     # Optimizer + LR schedule
     opt = torch.optim.AdamW(m.parameters(), lr=lr, betas=(0.9, 0.95), weight_decay=weight_decay)
@@ -1813,6 +1847,17 @@ if __name__ == "__main__":
     ap.add_argument("--retained-support-batch", type=int, default=None,
                     help="K rows per retained-support side batch (per support, "
                          "K-cyclic). Falls back to --l0b-consistency-batch, then 8.")
+    ap.add_argument("--sub2-authority-construction-proof", action="store_true",
+                    help="2C1 proof-only, default-off: after model construction/"
+                         "load, construct/count the trainer-facing q+scale+bounded "
+                         "authority payload and exit before normal optimizer/"
+                         "training/checkpoint side effects. Requires "
+                         "--use-ternary-bulk; no update parity or row flip claim.")
+    ap.add_argument("--sub2-authority-eligible-scope", type=str,
+                    default="all-bitlinear",
+                    choices=["first-bitlinear", "all-bitlinear"],
+                    help="2C1 proof-only eligible BitLinear scope for "
+                         "--sub2-authority-construction-proof.")
     ap.add_argument("--legacy-loader-shuffle", action="store_true",
                     help="DIAGNOSTIC ONLY (not recipe-default): build the training "
                          "DataLoader without the explicit seeded generator, restoring "
@@ -1893,6 +1938,8 @@ if __name__ == "__main__":
         l0b_consistency_batch=args.l0b_consistency_batch,
         retained_support_profile=_retained_profile,
         retained_support_batch=args.retained_support_batch,
+        sub2_authority_construction_proof=args.sub2_authority_construction_proof,
+        sub2_authority_eligible_scope=args.sub2_authority_eligible_scope,
         legacy_loader_shuffle=args.legacy_loader_shuffle,
         dry_run=args.dry_run,
     )

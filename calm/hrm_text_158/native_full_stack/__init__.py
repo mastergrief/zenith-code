@@ -179,6 +179,17 @@ from calm.hrm_text_158.native_full_stack.live_local_sub2_authority import (
     build_live_local_sub2_authority_receipt,
     validate_live_local_sub2_authority_receipt,
 )
+from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
+    TRAINER_SUB2_AUTHORITY_NON_CLAIMS,
+    TRAINER_SUB2_AUTHORITY_SCHEMA_VERSION,
+    TRAINER_SUB2_AUTHORITY_TARGET_NAME,
+    TrainerSub2AuthorityConstructionReceipt,
+    build_trainer_sub2_authority_construction_receipt,
+    derive_trainer_sub2_authority_states,
+    select_trainer_eligible_bitlinears,
+    trainer_authoritative_forward_context,
+    validate_trainer_sub2_authority_construction_receipt,
+)
 from calm.hrm_text_158.native_full_stack.metrics import (
     ACCEPTANCE_METRICS,
     AcceptanceMetric,
@@ -585,4 +596,13 @@ __all__ = [
     "pack_ternary_q_2bit_reference",
     "unpack_ternary_q_2bit_reference",
     "validate_persistent_state_budget_report",
+    "TRAINER_SUB2_AUTHORITY_NON_CLAIMS",
+    "TRAINER_SUB2_AUTHORITY_SCHEMA_VERSION",
+    "TRAINER_SUB2_AUTHORITY_TARGET_NAME",
+    "TrainerSub2AuthorityConstructionReceipt",
+    "build_trainer_sub2_authority_construction_receipt",
+    "derive_trainer_sub2_authority_states",
+    "select_trainer_eligible_bitlinears",
+    "trainer_authoritative_forward_context",
+    "validate_trainer_sub2_authority_construction_receipt",
 ]
