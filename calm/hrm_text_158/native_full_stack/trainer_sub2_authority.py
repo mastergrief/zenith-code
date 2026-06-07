@@ -10,12 +10,16 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import hashlib
 import inspect
+import json
 import math
 from typing import Any, Callable, Mapping
 
 import torch
 
 from calm.hrm_text_158.bit_linear import BitLinear
+from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
+    BoundedDeltaAccumulatorState,
+)
 from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
     BoundedDeltaTensorState,
@@ -49,6 +53,10 @@ TRAINER_SUB2_LOCAL_UPDATE_SCHEMA_VERSION = (
     "hrm_text_158_2c2_trainer_sub2_authority/v0.local_update_proof"
 )
 TRAINER_SUB2_LOCAL_UPDATE_TARGET_NAME = "step2c2_trainer_local_qacc_update_proof"
+TRAINER_SUB2_ROUNDTRIP_SCHEMA_VERSION = (
+    "hrm_text_158_2c4a_trainer_sub2_authority/v0.roundtrip_resume_update_proof"
+)
+TRAINER_SUB2_ROUNDTRIP_TARGET_NAME = "step2c4a_trainer_authority_checkpoint_roundtrip"
 TRAINER_SUB2_AUTHORITY_NON_CLAIMS = (
     "2C1 proves default-off construction/counting/payload validation only",
     "trainer_entrypoint_uses_candidate=false; no learner update is invoked",
@@ -64,6 +72,14 @@ TRAINER_SUB2_LOCAL_UPDATE_NON_CLAIMS = (
     "trainer_entrypoint_uses_candidate=false; production/broad runtime flags remain false until 2C4",
     "global cap, replay CE veto, PC auxiliary, backlog, checkpoint resume, and readiness row flips are deferred",
     "not learning, acquisition, throughput, GPU residency, training launch, full-sub2 runtime, or .pt mutation",
+)
+TRAINER_SUB2_ROUNDTRIP_NON_CLAIMS = (
+    "2C4a proves reconstructable trainer-used sidecar checkpoint/resume/update proof only",
+    "eligible FP masters are excluded from authoritative model_state and explicitly non-authoritative",
+    "poisoned FP-master falsification covers the resumed proof path, not broad production runtime",
+    "dense int16 accumulators remain proof-only transient and are not saved/loaded as authority",
+    "normal BitLinear weight forward remains the legacy path and is not claimed as sub2",
+    "readiness row flips, Step 3, GPU launch, native-birth, acquisition, retention, learning, and .pt commits are deferred",
 )
 TRAINER_SUB2_ACTIVE_CONTROL_PARAMETER_NAMES = frozenset(
     {
@@ -223,6 +239,63 @@ class TrainerSub2AuthorityLocalUpdateReceipt:
         )
         payload["eligible_state_keys"] = list(self.eligible_state_keys)
         payload["transient_over2_tensors"] = list(self.transient_over2_tensors)
+        payload["proof_anchors"] = list(self.proof_anchors)
+        payload["non_claims"] = list(self.non_claims)
+        return payload
+
+
+@dataclass(frozen=True)
+class TrainerSub2AuthorityRoundtripReceipt:
+    schema_version: str
+    target_name: str
+    pass_receipt: bool
+    dry_run: bool
+    gpu_launched: bool
+    checkpoint_written: bool
+    learner_update_called: bool
+    optimizer_step_called: bool
+    persistent_authority_state_roundtrip_pass: bool
+    trainer_state_mutation_uses_sub2_authority: bool
+    resumed_forward_uses_sidecar_authority: bool
+    poisoned_fp_master_bypass_falsified: bool
+    eligible_fp_masters_authoritative: bool
+    eligible_fp_master_keys_excluded_from_authoritative_model_state: bool
+    raw_state_dict_eligible_weight_fallback_rejected: bool
+    normal_bitlinear_weight_forward_not_claimed: bool
+    dense_int16_persistent_accumulator_saved: bool
+    dense_int16_persistent_accumulator_loaded: bool
+    q_scale_sidecar_bounded_hash_roundtrip_pass: bool
+    post_resume_update_mutated_resumed_sub2_authority: bool
+    update_law_quality_claim: bool
+    learning_claim: bool
+    optimizer_credit_state_resolved: bool
+    credit_ranking_uninformative_update_law_pivot_deferred: bool
+    trainer_entrypoint_can_construct_sub2_authority: bool
+    trainer_entrypoint_uses_candidate: bool
+    live_runtime_authority_converted: bool
+    readiness_row_flip_authorized: bool
+    readiness_row_flip_authorized_surface_names: tuple[str, ...]
+    broad_runtime_authority_converted: bool
+    full_sub2_runtime_readiness_claim: bool
+    use_ternary_bulk_required: bool
+    use_ternary_bulk_observed: bool
+    eligible_scope: str
+    eligible_module_count: int
+    eligible_state_keys: tuple[str, ...]
+    eligible_weight_count: int
+    checkpoint_payload_summary: dict[str, Any]
+    checkpoint_load_proof: dict[str, Any]
+    poison_forward_proof: dict[str, Any]
+    post_resume_update_proof: dict[str, Any]
+    proof_anchors: tuple[str, ...]
+    non_claims: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = asdict(self)
+        payload["readiness_row_flip_authorized_surface_names"] = list(
+            self.readiness_row_flip_authorized_surface_names
+        )
+        payload["eligible_state_keys"] = list(self.eligible_state_keys)
         payload["proof_anchors"] = list(self.proof_anchors)
         payload["non_claims"] = list(self.non_claims)
         return payload
@@ -396,6 +469,246 @@ def _eligible_master_hashes(eligible_modules: Mapping[str, BitLinear]) -> dict[s
         str(key): tensor_sha256(module.weight.detach())
         for key, module in sorted(eligible_modules.items())
     }
+
+
+def _eligible_weight_state_keys(eligible_modules: Mapping[str, BitLinear]) -> tuple[str, ...]:
+    return tuple(f"{key}.weight" for key in sorted(str(item) for item in eligible_modules))
+
+
+def _tensor_sha_or_none(value: torch.Tensor | None) -> str | None:
+    return tensor_sha256(value) if value is not None else None
+
+
+def _roundtrip_tensor_sha256(tensor: torch.Tensor) -> str:
+    cpu = tensor.detach().cpu().contiguous()
+    h = hashlib.sha256()
+    h.update(str(cpu.dtype).encode("utf-8"))
+    h.update(str(tuple(cpu.shape)).encode("utf-8"))
+    if cpu.dtype == torch.bfloat16:
+        h.update(cpu.view(torch.int16).numpy().tobytes())
+    else:
+        h.update(cpu.numpy().tobytes())
+    return h.hexdigest()
+
+
+def _roundtrip_canonicalize(value: Any) -> Any:
+    if isinstance(value, torch.Tensor):
+        tensor = value.detach().cpu().contiguous()
+        return {
+            "dtype": str(tensor.dtype),
+            "shape": list(tensor.shape),
+            "sha256": _roundtrip_tensor_sha256(tensor),
+        }
+    if isinstance(value, Mapping):
+        return {str(key): _roundtrip_canonicalize(item) for key, item in sorted(value.items())}
+    if isinstance(value, (tuple, list)):
+        return [_roundtrip_canonicalize(item) for item in value]
+    return value
+
+
+def _roundtrip_payload_sha256(payload: Mapping[str, Any]) -> str:
+    canonical = _roundtrip_canonicalize(payload)
+    encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _tensor_state_roundtrip_payload(state: BoundedDeltaTensorState) -> dict[str, Any]:
+    bounded = state.bounded_accumulator
+    return {
+        "state_key": str(state.state_key),
+        "q_levels": state.q_levels.detach().cpu().to(torch.int8).contiguous(),
+        "q_sha256": tensor_sha256(state.q_levels),
+        "frozen_scale": state.frozen_scale.detach().cpu().to(torch.float32).contiguous(),
+        "frozen_scale_sha256": tensor_sha256(
+            state.frozen_scale.detach().cpu().to(torch.float32).contiguous()
+        ),
+        "bounded_accumulator": {
+            "logical_shape": tuple(int(dim) for dim in bounded.logical_shape),
+            "cold_default_value": int(bounded.cold_default_value),
+            "hot_exact_indices": tuple(int(item) for item in bounded.hot_exact_indices),
+            "hot_exact_values": tuple(int(item) for item in bounded.hot_exact_values),
+            "cold_exception_indices": tuple(int(item) for item in bounded.cold_exception_indices),
+            "cold_exception_values": tuple(int(item) for item in bounded.cold_exception_values),
+            "candidate_name": str(bounded.candidate_name),
+            "raw_arrays_serialized_for_resume_only": True,
+            "dense_int16_accumulator_persisted": False,
+            "hot_exact_indices_sha256": _identity_sha256(
+                state.state_key,
+                tuple(int(item) for item in bounded.hot_exact_indices),
+            ),
+            "hot_exact_values_sha256": _ordered_value_sha256(
+                state.state_key,
+                "hot_exact_value",
+                {
+                    int(index): int(value)
+                    for index, value in zip(bounded.hot_exact_indices, bounded.hot_exact_values)
+                },
+            ),
+            "cold_exception_indices_sha256": _identity_sha256(
+                state.state_key,
+                tuple(int(item) for item in bounded.cold_exception_indices),
+            ),
+            "cold_exception_values_sha256": _ordered_value_sha256(
+                state.state_key,
+                "cold_exception_value",
+                {
+                    int(index): int(value)
+                    for index, value in zip(
+                        bounded.cold_exception_indices,
+                        bounded.cold_exception_values,
+                    )
+                },
+            ),
+        },
+        "exact_accumulator_shadow_saved": False,
+        "exact_accumulator_shadow_sha256": _tensor_sha_or_none(state.exact_accumulator_shadow),
+    }
+
+
+def _state_from_roundtrip_payload(payload: Mapping[str, Any]) -> BoundedDeltaTensorState:
+    bounded_payload = dict(payload.get("bounded_accumulator") or {})
+    bounded = BoundedDeltaAccumulatorState(
+        logical_shape=tuple(int(dim) for dim in bounded_payload["logical_shape"]),
+        cold_default_value=int(bounded_payload["cold_default_value"]),
+        hot_exact_indices=tuple(int(item) for item in bounded_payload["hot_exact_indices"]),
+        hot_exact_values=tuple(int(item) for item in bounded_payload["hot_exact_values"]),
+        cold_exception_indices=tuple(int(item) for item in bounded_payload["cold_exception_indices"]),
+        cold_exception_values=tuple(int(item) for item in bounded_payload["cold_exception_values"]),
+        candidate_name=str(bounded_payload["candidate_name"]),
+        raw_arrays_included=False,
+    )
+    q_levels = payload["q_levels"].detach().cpu().to(torch.int8).contiguous()
+    frozen_scale = payload["frozen_scale"].detach().cpu().to(torch.float32).contiguous()
+    if tensor_sha256(q_levels) != str(payload.get("q_sha256")):
+        raise ValueError("2C4a q sidecar hash mismatch on load")
+    if tensor_sha256(frozen_scale) != str(payload.get("frozen_scale_sha256")):
+        raise ValueError("2C4a frozen-scale sidecar hash mismatch on load")
+    if bool(payload.get("exact_accumulator_shadow_saved")):
+        raise ValueError("2C4a sidecar must not save dense exact accumulator shadows")
+    if bool(bounded_payload.get("dense_int16_accumulator_persisted")):
+        raise ValueError("2C4a sidecar must not persist dense int16 accumulators")
+    return BoundedDeltaTensorState(
+        state_key=str(payload["state_key"]),
+        q_levels=q_levels,
+        frozen_scale=frozen_scale,
+        bounded_accumulator=bounded,
+        exact_accumulator_shadow=None,
+        bounded_accumulator_fresh_for_exact_shadow=False,
+    )
+
+
+def build_trainer_sub2_authority_checkpoint_blob(
+    model: torch.nn.Module,
+    *,
+    eligible_modules: Mapping[str, BitLinear],
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+    step: int = 0,
+) -> dict[str, Any]:
+    """Build a 2C4a reconstructable sidecar checkpoint blob.
+
+    Eligible BitLinear FP masters are deliberately excluded from model_state.
+    The q+scale+bounded sidecar is the only authoritative eligible-weight state.
+    """
+
+    eligible_weight_keys = _eligible_weight_state_keys(eligible_modules)
+    missing = set(eligible_modules) - set(tensor_states)
+    if missing:
+        raise ValueError(f"2C4a missing tensor states for eligible modules: {sorted(missing)}")
+    raw_model_state = model.state_dict()
+    model_state = {
+        str(key): value.detach().cpu().clone()
+        for key, value in raw_model_state.items()
+        if str(key) not in set(eligible_weight_keys)
+    }
+    tensor_payloads = {
+        str(key): _tensor_state_roundtrip_payload(tensor_states[str(key)])
+        for key in sorted(eligible_modules)
+    }
+    sidecar = {
+        "schema_version": TRAINER_SUB2_ROUNDTRIP_SCHEMA_VERSION,
+        "artifact_role": "trainer_sub2_authoritative_sidecar",
+        "step": int(step),
+        "eligible_state_keys": tuple(sorted(tensor_payloads)),
+        "eligible_weight_state_keys": eligible_weight_keys,
+        "tensor_payloads": tensor_payloads,
+        "eligible_fp_masters_authoritative": False,
+        "dense_int16_persistent_accumulator_saved": False,
+        "normal_bitlinear_weight_forward_not_claimed": True,
+    }
+    sidecar["authoritative_state_payload_sha256"] = _roundtrip_payload_sha256(sidecar)
+    blob = {
+        "schema_version": TRAINER_SUB2_ROUNDTRIP_SCHEMA_VERSION,
+        "artifact_role": "trainer_sub2_checkpoint_blob",
+        "model_state": model_state,
+        "trainer_sub2_authority": sidecar,
+        "checkpoint_written": False,
+        "gpu_launched": False,
+        "optimizer_state_included": False,
+    }
+    blob["checkpoint_blob_sha256"] = _roundtrip_payload_sha256(blob)
+    return blob
+
+
+def load_trainer_sub2_authority_checkpoint_blob(
+    model: torch.nn.Module,
+    blob: Mapping[str, Any],
+    *,
+    eligible_modules: Mapping[str, BitLinear],
+    device: torch.device | str = "cpu",
+) -> dict[str, BoundedDeltaTensorState]:
+    if blob.get("schema_version") != TRAINER_SUB2_ROUNDTRIP_SCHEMA_VERSION:
+        raise ValueError("2C4a checkpoint blob schema mismatch")
+    model_state = dict(blob.get("model_state") or {})
+    eligible_weight_keys = set(_eligible_weight_state_keys(eligible_modules))
+    present_eligible = sorted(eligible_weight_keys.intersection(model_state))
+    if present_eligible:
+        raise ValueError(
+            "2C4a raw state_dict eligible-weight fallback rejected: "
+            f"{present_eligible}"
+        )
+    missing, unexpected = model.load_state_dict(model_state, strict=False)
+    missing_set = set(str(key) for key in missing)
+    if missing_set != eligible_weight_keys or unexpected:
+        raise ValueError(
+            "2C4a checkpoint load requires strict non-eligible model_state and "
+            f"exact eligible-weight omissions; missing={sorted(missing_set)} "
+            f"unexpected={list(unexpected)}"
+        )
+    sidecar = dict(blob.get("trainer_sub2_authority") or {})
+    if sidecar.get("schema_version") != TRAINER_SUB2_ROUNDTRIP_SCHEMA_VERSION:
+        raise ValueError("2C4a sidecar schema mismatch")
+    if bool(sidecar.get("dense_int16_persistent_accumulator_saved")):
+        raise ValueError("2C4a sidecar must not save dense int16 persistent accumulators")
+    declared_hash = str(sidecar.get("authoritative_state_payload_sha256"))
+    sidecar_without_hash = dict(sidecar)
+    sidecar_without_hash.pop("authoritative_state_payload_sha256", None)
+    if declared_hash != _roundtrip_payload_sha256(sidecar_without_hash):
+        raise ValueError("2C4a sidecar authoritative payload hash mismatch")
+    states = {
+        str(key): _state_from_roundtrip_payload(payload)
+        for key, payload in sorted((sidecar.get("tensor_payloads") or {}).items())
+    }
+    if set(states) != set(eligible_modules):
+        raise ValueError("2C4a sidecar state keys do not match eligible modules")
+    if any(state.exact_accumulator_shadow is not None for state in states.values()):
+        raise ValueError("2C4a loaded sidecar must not contain dense exact accumulator shadows")
+    return {
+        key: BoundedDeltaTensorState(
+            state_key=state.state_key,
+            q_levels=state.q_levels.to(device="cpu").contiguous(),
+            frozen_scale=state.frozen_scale.to(device="cpu").contiguous(),
+            bounded_accumulator=state.bounded_accumulator,
+            exact_accumulator_shadow=None,
+            bounded_accumulator_fresh_for_exact_shadow=False,
+        )
+        for key, state in states.items()
+    }
+
+
+def _default_forward_output(model: torch.nn.Module, batch: Mapping[str, Any]) -> torch.Tensor:
+    if "x" not in batch:
+        raise ValueError("2C4a default forward output requires batch['x']; pass forward_output_fn")
+    return model(batch["x"])
 
 
 def _oracle_parity_proof(
@@ -835,6 +1148,332 @@ def build_trainer_sub2_authority_local_update_receipt(
     return receipt
 
 
+def build_trainer_sub2_authority_roundtrip_receipt(
+    model: torch.nn.Module,
+    *,
+    fresh_model_fn: Callable[[], torch.nn.Module],
+    batch: Mapping[str, Any],
+    forward_loss_fn: Callable[[torch.nn.Module, Mapping[str, Any]], torch.Tensor],
+    use_ternary_bulk: bool,
+    forward_output_fn: Callable[[torch.nn.Module, Mapping[str, Any]], torch.Tensor] | None = None,
+    eligible_scope: str = "all-bitlinear",
+    device: torch.device | str = "cpu",
+    lr: float = 0.0,
+    weight_decay: float = 0.0,
+    step: int = 0,
+    vote_update_spec: VoteUpdateSpec | None = None,
+    poison_value: float = 17.0,
+) -> TrainerSub2AuthorityRoundtripReceipt:
+    """Run the gated 2C4a checkpoint/resume/update poison-falsification proof."""
+
+    output_fn = forward_output_fn or _default_forward_output
+    eligible = select_trainer_eligible_bitlinears(
+        model,
+        use_ternary_bulk=use_ternary_bulk,
+        eligible_scope=eligible_scope,
+    )
+    states = derive_trainer_sub2_authority_states(eligible)
+    blob = build_trainer_sub2_authority_checkpoint_blob(
+        model,
+        eligible_modules=eligible,
+        tensor_states=states,
+        step=int(step),
+    )
+    eligible_weight_keys = _eligible_weight_state_keys(eligible)
+    excluded = all(key not in blob["model_state"] for key in eligible_weight_keys)
+
+    raw_fallback_rejected = False
+    poisoned_blob = dict(blob)
+    poisoned_model_state = dict(blob["model_state"])
+    first_key = eligible_weight_keys[0]
+    poisoned_model_state[first_key] = eligible[sorted(eligible)[0]].weight.detach().cpu().clone()
+    poisoned_blob["model_state"] = poisoned_model_state
+    try:
+        raw_fresh = fresh_model_fn().to(device=device)
+        raw_eligible = select_trainer_eligible_bitlinears(
+            raw_fresh,
+            use_ternary_bulk=use_ternary_bulk,
+            eligible_scope=eligible_scope,
+        )
+        load_trainer_sub2_authority_checkpoint_blob(
+            raw_fresh,
+            poisoned_blob,
+            eligible_modules=raw_eligible,
+            device=device,
+        )
+    except ValueError as exc:
+        raw_fallback_rejected = "raw state_dict eligible-weight fallback rejected" in str(exc)
+
+    resumed_model = fresh_model_fn().to(device=device)
+    resumed_eligible = select_trainer_eligible_bitlinears(
+        resumed_model,
+        use_ternary_bulk=use_ternary_bulk,
+        eligible_scope=eligible_scope,
+    )
+    loaded_states = load_trainer_sub2_authority_checkpoint_blob(
+        resumed_model,
+        blob,
+        eligible_modules=resumed_eligible,
+        device=device,
+    )
+    reblob = build_trainer_sub2_authority_checkpoint_blob(
+        resumed_model,
+        eligible_modules=resumed_eligible,
+        tensor_states=loaded_states,
+        step=int(step),
+    )
+    roundtrip_hash_pass = (
+        str(blob["trainer_sub2_authority"]["authoritative_state_payload_sha256"])
+        == str(reblob["trainer_sub2_authority"]["authoritative_state_payload_sha256"])
+    )
+    q_scale_bounded_hash_pass = all(
+        tensor_sha256(states[key].q_levels) == tensor_sha256(loaded_states[key].q_levels)
+        and tensor_sha256(states[key].frozen_scale) == tensor_sha256(loaded_states[key].frozen_scale)
+        and _roundtrip_payload_sha256(
+            _tensor_state_roundtrip_payload(states[key])["bounded_accumulator"]
+        )
+        == _roundtrip_payload_sha256(
+            _tensor_state_roundtrip_payload(loaded_states[key])["bounded_accumulator"]
+        )
+        for key in sorted(states)
+    )
+
+    prior_training = bool(resumed_model.training)
+    try:
+        resumed_model.train(False)
+        with trainer_authoritative_forward_context(
+            resumed_eligible,
+            loaded_states,
+            device=device,
+            requires_grad=False,
+        ):
+            expected_sidecar_output = output_fn(resumed_model, batch).detach().cpu()
+        with torch.no_grad():
+            for module in resumed_eligible.values():
+                module.weight.fill_(float(poison_value))
+        normal_poisoned_output = output_fn(resumed_model, batch).detach().cpu()
+        with trainer_authoritative_forward_context(
+            resumed_eligible,
+            loaded_states,
+            device=device,
+            requires_grad=False,
+        ):
+            resumed_sidecar_output = output_fn(resumed_model, batch).detach().cpu()
+    finally:
+        resumed_model.train(prior_training)
+
+    normal_poison_sensitivity = not torch.allclose(
+        expected_sidecar_output,
+        normal_poisoned_output,
+        atol=1e-6,
+        rtol=1e-6,
+    )
+    resumed_uses_sidecar = torch.allclose(
+        expected_sidecar_output,
+        resumed_sidecar_output,
+        atol=1e-6,
+        rtol=1e-6,
+    )
+    poisoned_bypass_falsified = bool(normal_poison_sensitivity and resumed_uses_sidecar)
+
+    rank_spec = default_dry_run_rank_vote_spec()
+    update_spec = vote_update_spec or _default_local_vote_update_spec()
+    vote_specs_by_key = {key: update_spec for key in loaded_states}
+    dense_votes_by_key: dict[str, torch.Tensor] = {}
+    sparse_events_by_key: dict[str, dict[int, int]] = {}
+    loss_finite = False
+    prior_training = bool(resumed_model.training)
+    try:
+        resumed_model.train(True)
+        resumed_model.zero_grad(set_to_none=True)
+        with trainer_authoritative_forward_context(
+            resumed_eligible,
+            loaded_states,
+            device=device,
+            requires_grad=True,
+        ) as handle:
+            loss = forward_loss_fn(resumed_model, batch)
+            if not isinstance(loss, torch.Tensor):
+                raise TypeError("2C4a forward_loss_fn must return a torch.Tensor loss")
+            loss_to_backward = loss if loss.numel() == 1 else loss.mean()
+            loss_finite = bool(torch.isfinite(loss_to_backward.detach()).item())
+            loss_to_backward.backward()
+            for key, state in sorted(loaded_states.items()):
+                weighted_grad = handle.weighted_grad(key)
+                credit = credit_from_weighted_grad(weighted_grad)
+                moves = project_s1_gradient_to_moves(weighted_grad, state.q_levels)
+                votes = rank_bucketed_int16_votes(credit, moves, rank_spec)
+                dense_votes_by_key[key] = votes.detach().cpu().to(torch.int16).contiguous()
+                sparse_events_by_key[key] = _sparse_vote_events(votes)
+    finally:
+        resumed_model.train(prior_training)
+
+    step_result = apply_bounded_delta_vote_step(
+        loaded_states,
+        dense_votes_by_key,
+        vote_specs_by_key,
+        candidate_mode=ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
+        candidate_sparse_vote_events_by_key=sparse_events_by_key,
+        candidate_oracle_control_enabled=False,
+    )
+    post_blob = build_trainer_sub2_authority_checkpoint_blob(
+        resumed_model,
+        eligible_modules=resumed_eligible,
+        tensor_states=step_result.tensor_states,
+        step=int(step) + 1,
+    )
+    post_resume_mutated = (
+        str(post_blob["trainer_sub2_authority"]["authoritative_state_payload_sha256"])
+        != str(blob["trainer_sub2_authority"]["authoritative_state_payload_sha256"])
+        and int(step_result.global_summary.get("q_changed_count", 0)) > 0
+    )
+    post_model = fresh_model_fn().to(device=device)
+    post_eligible = select_trainer_eligible_bitlinears(
+        post_model,
+        use_ternary_bulk=use_ternary_bulk,
+        eligible_scope=eligible_scope,
+    )
+    post_loaded_states = load_trainer_sub2_authority_checkpoint_blob(
+        post_model,
+        post_blob,
+        eligible_modules=post_eligible,
+        device=device,
+    )
+    post_reblob = build_trainer_sub2_authority_checkpoint_blob(
+        post_model,
+        eligible_modules=post_eligible,
+        tensor_states=post_loaded_states,
+        step=int(step) + 1,
+    )
+    post_payload_hash_roundtrip_pass = (
+        str(post_blob["trainer_sub2_authority"]["authoritative_state_payload_sha256"])
+        == str(post_reblob["trainer_sub2_authority"]["authoritative_state_payload_sha256"])
+    )
+    post_survives_rebuild = (
+        set(post_loaded_states) == set(step_result.tensor_states)
+        and post_payload_hash_roundtrip_pass
+    )
+    shadow_free_loaded = all(state.exact_accumulator_shadow is None for state in loaded_states.values())
+    shadow_free_post = all(state.exact_accumulator_shadow is None for state in step_result.tensor_states.values())
+    total_sparse_events = sum(len(events) for events in sparse_events_by_key.values())
+    dense_saved = bool(blob["trainer_sub2_authority"].get("dense_int16_persistent_accumulator_saved"))
+    dense_loaded = any(state.exact_accumulator_shadow is not None for state in loaded_states.values())
+    pass_receipt = bool(
+        excluded
+        and raw_fallback_rejected
+        and roundtrip_hash_pass
+        and q_scale_bounded_hash_pass
+        and poisoned_bypass_falsified
+        and loss_finite
+        and total_sparse_events > 0
+        and bool(step_result.global_summary.get("candidate_local_update_pass"))
+        and post_resume_mutated
+        and post_survives_rebuild
+        and shadow_free_loaded
+        and shadow_free_post
+        and not dense_saved
+        and not dense_loaded
+    )
+    receipt = TrainerSub2AuthorityRoundtripReceipt(
+        schema_version=TRAINER_SUB2_ROUNDTRIP_SCHEMA_VERSION,
+        target_name=TRAINER_SUB2_ROUNDTRIP_TARGET_NAME,
+        pass_receipt=pass_receipt,
+        dry_run=True,
+        gpu_launched=False,
+        checkpoint_written=False,
+        learner_update_called=True,
+        optimizer_step_called=False,
+        persistent_authority_state_roundtrip_pass=bool(roundtrip_hash_pass),
+        trainer_state_mutation_uses_sub2_authority=bool(post_resume_mutated),
+        resumed_forward_uses_sidecar_authority=bool(resumed_uses_sidecar),
+        poisoned_fp_master_bypass_falsified=bool(poisoned_bypass_falsified),
+        eligible_fp_masters_authoritative=False,
+        eligible_fp_master_keys_excluded_from_authoritative_model_state=bool(excluded),
+        raw_state_dict_eligible_weight_fallback_rejected=bool(raw_fallback_rejected),
+        normal_bitlinear_weight_forward_not_claimed=True,
+        dense_int16_persistent_accumulator_saved=False,
+        dense_int16_persistent_accumulator_loaded=False,
+        q_scale_sidecar_bounded_hash_roundtrip_pass=bool(q_scale_bounded_hash_pass),
+        post_resume_update_mutated_resumed_sub2_authority=bool(
+            post_resume_mutated and post_survives_rebuild
+        ),
+        update_law_quality_claim=False,
+        learning_claim=False,
+        optimizer_credit_state_resolved=False,
+        credit_ranking_uninformative_update_law_pivot_deferred=True,
+        trainer_entrypoint_can_construct_sub2_authority=True,
+        trainer_entrypoint_uses_candidate=False,
+        live_runtime_authority_converted=False,
+        readiness_row_flip_authorized=False,
+        readiness_row_flip_authorized_surface_names=(),
+        broad_runtime_authority_converted=False,
+        full_sub2_runtime_readiness_claim=False,
+        use_ternary_bulk_required=True,
+        use_ternary_bulk_observed=bool(use_ternary_bulk),
+        eligible_scope=str(eligible_scope),
+        eligible_module_count=len(eligible),
+        eligible_state_keys=tuple(sorted(states)),
+        eligible_weight_count=sum(int(state.q_levels.numel()) for state in states.values()),
+        checkpoint_payload_summary={
+            "schema_version": blob["schema_version"],
+            "model_state_key_count": len(blob["model_state"]),
+            "eligible_weight_state_keys": list(eligible_weight_keys),
+            "eligible_weight_keys_excluded": bool(excluded),
+            "authoritative_state_payload_sha256": blob["trainer_sub2_authority"][
+                "authoritative_state_payload_sha256"
+            ],
+            "post_update_authoritative_state_payload_sha256": post_blob[
+                "trainer_sub2_authority"
+            ]["authoritative_state_payload_sha256"],
+            "checkpoint_blob_sha256": blob["checkpoint_blob_sha256"],
+            "checkpoint_written": False,
+            "optimizer_state_included": False,
+        },
+        checkpoint_load_proof={
+            "strict_noneligible_model_state_load": True,
+            "missing_keys_exactly_eligible_weights": True,
+            "raw_state_dict_eligible_weight_fallback_rejected": bool(raw_fallback_rejected),
+            "loaded_exact_accumulator_shadow_count": 0,
+            "post_update_payload_survives_rebuild": bool(post_survives_rebuild),
+            "post_update_payload_hash_roundtrip_pass": bool(post_payload_hash_roundtrip_pass),
+        },
+        poison_forward_proof={
+            "poison_value": float(poison_value),
+            "normal_no_context_forward_changed_after_poison": bool(normal_poison_sensitivity),
+            "resumed_context_forward_matches_sidecar_expected": bool(resumed_uses_sidecar),
+            "expected_sidecar_output_sha256": _roundtrip_tensor_sha256(expected_sidecar_output),
+            "normal_poisoned_output_sha256": _roundtrip_tensor_sha256(normal_poisoned_output),
+            "resumed_sidecar_output_sha256": _roundtrip_tensor_sha256(resumed_sidecar_output),
+        },
+        post_resume_update_proof={
+            "loss_finite": bool(loss_finite),
+            "candidate_mode": ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
+            "total_sparse_vote_event_count": int(total_sparse_events),
+            "q_changed_count": int(step_result.global_summary.get("q_changed_count", 0)),
+            "candidate_local_update_pass": bool(
+                step_result.global_summary.get("candidate_local_update_pass")
+            ),
+            "candidate_dense_decode_used": bool(
+                step_result.global_summary.get("candidate_dense_decode_used")
+            ),
+            "candidate_dense_vote_authority_used": bool(
+                step_result.global_summary.get("candidate_dense_vote_authority_used")
+            ),
+            "post_resume_update_mutated_resumed_sub2_authority": bool(post_resume_mutated),
+        },
+        proof_anchors=(
+            "trainer_sub2_authority.py:build_trainer_sub2_authority_checkpoint_blob",
+            "trainer_sub2_authority.py:load_trainer_sub2_authority_checkpoint_blob",
+            "bounded_delta_learner.py:679",
+            "bounded_delta_learner.py:1025",
+            "bit_linear.py:108",
+        ),
+        non_claims=TRAINER_SUB2_ROUNDTRIP_NON_CLAIMS,
+    )
+    validate_trainer_sub2_authority_roundtrip_receipt(receipt)
+    return receipt
+
+
 def validate_trainer_sub2_authority_construction_receipt(
     receipt: TrainerSub2AuthorityConstructionReceipt,
 ) -> None:
@@ -977,3 +1616,101 @@ def validate_trainer_sub2_authority_local_update_receipt(
         raise ValueError("2C2 non-claims changed")
     if not receipt.pass_receipt:
         raise ValueError("2C2 trainer local update proof did not pass")
+
+
+def validate_trainer_sub2_authority_roundtrip_receipt(
+    receipt: TrainerSub2AuthorityRoundtripReceipt,
+) -> None:
+    if receipt.schema_version != TRAINER_SUB2_ROUNDTRIP_SCHEMA_VERSION:
+        raise ValueError("2C4a trainer authority roundtrip schema version mismatch")
+    if receipt.target_name != TRAINER_SUB2_ROUNDTRIP_TARGET_NAME:
+        raise ValueError("2C4a trainer authority roundtrip target name mismatch")
+    if not receipt.dry_run or receipt.gpu_launched or receipt.checkpoint_written:
+        raise ValueError("2C4a must stay dry-run/no GPU/no committed checkpoint")
+    if not receipt.learner_update_called:
+        raise ValueError("2C4a must exercise a post-resume local authority update")
+    if receipt.optimizer_step_called:
+        raise ValueError("2C4a must exit before optimizer step")
+    required_true = {
+        "persistent authority state roundtrip": receipt.persistent_authority_state_roundtrip_pass,
+        "trainer state mutation uses sub2 authority": receipt.trainer_state_mutation_uses_sub2_authority,
+        "resumed forward uses sidecar authority": receipt.resumed_forward_uses_sidecar_authority,
+        "poisoned FP-master bypass falsified": receipt.poisoned_fp_master_bypass_falsified,
+        "eligible FP master keys excluded": (
+            receipt.eligible_fp_master_keys_excluded_from_authoritative_model_state
+        ),
+        "raw state_dict eligible fallback rejected": (
+            receipt.raw_state_dict_eligible_weight_fallback_rejected
+        ),
+        "normal BitLinear weight forward not claimed": (
+            receipt.normal_bitlinear_weight_forward_not_claimed
+        ),
+        "q/scale/bounded hash roundtrip": receipt.q_scale_sidecar_bounded_hash_roundtrip_pass,
+        "post-resume authority mutation": (
+            receipt.post_resume_update_mutated_resumed_sub2_authority
+        ),
+        "credit-ranking pivot deferred": (
+            receipt.credit_ranking_uninformative_update_law_pivot_deferred
+        ),
+    }
+    for label, value in required_true.items():
+        if not bool(value):
+            raise ValueError(f"2C4a missing required proof: {label}")
+    forbidden_true = {
+        "eligible FP masters authoritative": receipt.eligible_fp_masters_authoritative,
+        "dense int16 persistent accumulator saved": (
+            receipt.dense_int16_persistent_accumulator_saved
+        ),
+        "dense int16 persistent accumulator loaded": (
+            receipt.dense_int16_persistent_accumulator_loaded
+        ),
+        "update law quality claim": receipt.update_law_quality_claim,
+        "learning claim": receipt.learning_claim,
+        "optimizer credit state resolved": receipt.optimizer_credit_state_resolved,
+        "broad trainer_entrypoint_uses_candidate": receipt.trainer_entrypoint_uses_candidate,
+        "live runtime conversion": receipt.live_runtime_authority_converted,
+        "readiness row flip": receipt.readiness_row_flip_authorized,
+        "broad runtime authority conversion": receipt.broad_runtime_authority_converted,
+        "full-sub2 readiness claim": receipt.full_sub2_runtime_readiness_claim,
+    }
+    for label, value in forbidden_true.items():
+        if bool(value):
+            raise ValueError(f"2C4a forbidden claim/flag set: {label}")
+    if receipt.readiness_row_flip_authorized_surface_names:
+        raise ValueError("2C4a cannot authorize readiness-row surface names")
+    if not receipt.use_ternary_bulk_required or not receipt.use_ternary_bulk_observed:
+        raise ValueError("2C4a requires observed ternary bulk")
+    if receipt.eligible_module_count <= 0 or receipt.eligible_weight_count <= 0:
+        raise ValueError("2C4a needs at least one eligible BitLinear module")
+    if bool(receipt.checkpoint_payload_summary.get("checkpoint_written")):
+        raise ValueError("2C4a checkpoint payload must remain memory/tmp proof only")
+    if not bool(receipt.checkpoint_payload_summary.get("eligible_weight_keys_excluded")):
+        raise ValueError("2C4a checkpoint payload did not exclude eligible FP masters")
+    if not bool(receipt.checkpoint_load_proof.get("strict_noneligible_model_state_load")):
+        raise ValueError("2C4a strict non-eligible load proof missing")
+    if not bool(receipt.checkpoint_load_proof.get("missing_keys_exactly_eligible_weights")):
+        raise ValueError("2C4a load did not prove exact eligible-weight omissions")
+    if int(receipt.checkpoint_load_proof.get("loaded_exact_accumulator_shadow_count", -1)) != 0:
+        raise ValueError("2C4a loaded dense exact accumulator shadows")
+    if not bool(receipt.checkpoint_load_proof.get("post_update_payload_hash_roundtrip_pass")):
+        raise ValueError("2C4a post-update payload hash did not roundtrip after second load")
+    poison = dict(receipt.poison_forward_proof)
+    if not bool(poison.get("normal_no_context_forward_changed_after_poison")):
+        raise ValueError("2C4a poison proof did not show normal FP-master sensitivity")
+    if not bool(poison.get("resumed_context_forward_matches_sidecar_expected")):
+        raise ValueError("2C4a poison proof did not show resumed sidecar authority")
+    update = dict(receipt.post_resume_update_proof)
+    if not bool(update.get("candidate_local_update_pass")):
+        raise ValueError("2C4a post-resume candidate update did not pass")
+    if int(update.get("total_sparse_vote_event_count", 0)) <= 0:
+        raise ValueError("2C4a post-resume update needs sparse vote events")
+    if int(update.get("q_changed_count", 0)) <= 0:
+        raise ValueError("2C4a post-resume update must mutate q authority")
+    if bool(update.get("candidate_dense_decode_used")):
+        raise ValueError("2C4a candidate update cannot dense-decode as authority")
+    if bool(update.get("candidate_dense_vote_authority_used")):
+        raise ValueError("2C4a candidate update cannot use dense vote authority")
+    if tuple(receipt.non_claims) != TRAINER_SUB2_ROUNDTRIP_NON_CLAIMS:
+        raise ValueError("2C4a non-claims changed")
+    if not receipt.pass_receipt:
+        raise ValueError("2C4a trainer authority roundtrip proof did not pass")

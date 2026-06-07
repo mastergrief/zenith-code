@@ -762,6 +762,10 @@ def train(
     # 2C2 proof-only hook: run one default-off trainer local qacc update proof
     # and exit before normal optimizer/training/checkpoint side effects.
     sub2_authority_local_update_proof: bool = False,
+    # 2C4a proof-only hook: build/load a reconstructable sidecar checkpoint,
+    # falsify poisoned FP-master bypass, run one post-resume authority update,
+    # and exit before normal optimizer/training/checkpoint side effects.
+    sub2_authority_roundtrip_proof: bool = False,
     sub2_authority_eligible_scope: str = "all-bitlinear",
     # Diagnostic ONLY (codex msg 1779652915624): when True, build the training
     # DataLoader WITHOUT the explicit seeded generator (pre-1656ead global-RNG
@@ -1280,11 +1284,87 @@ def train(
         for s in active_supports
     ]
 
-    if sub2_authority_construction_proof and sub2_authority_local_update_proof:
+    _sub2_proof_flags = [
+        sub2_authority_construction_proof,
+        sub2_authority_local_update_proof,
+        sub2_authority_roundtrip_proof,
+    ]
+    if sum(1 for item in _sub2_proof_flags if item) > 1:
         raise ValueError(
-            "--sub2-authority-construction-proof and "
-            "--sub2-authority-local-update-proof are mutually exclusive"
+            "--sub2-authority-construction-proof, "
+            "--sub2-authority-local-update-proof, and "
+            "--sub2-authority-roundtrip-proof are mutually exclusive"
         )
+
+    if sub2_authority_roundtrip_proof:
+        from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
+            build_trainer_sub2_authority_roundtrip_receipt,
+        )
+
+        proof_batch = next(iter(loader))
+        proof_total_steps = max(1, epochs * len(loader))
+
+        def _proof_child_batch(batch):
+            inputs = batch["inputs"].to(device)
+            labels = batch["labels"].to(device)
+            sep_positions = batch["sep_positions"].to(device)
+            B, L = inputs.shape
+            position_ids = torch.arange(L, dtype=torch.long, device=device).unsqueeze(0).expand(B, -1)
+            return {
+                "inputs": inputs,
+                "labels": labels,
+                "sep_positions": sep_positions,
+                "position_ids": position_ids,
+            }
+
+        def _proof_forward_loss(model, batch):
+            extras = model.compute_train_extra_args(0, proof_total_steps)
+            _carry, loss_main, _metrics = model(None, _proof_child_batch(batch), **extras)
+            return loss_main
+
+        def _proof_forward_output(model, batch):
+            extras = model.compute_train_extra_args(0, proof_total_steps)
+            _carry, _loss_main, metrics = model(
+                None,
+                _proof_child_batch(batch),
+                return_logits=True,
+                **extras,
+            )
+            return metrics["logits"]
+
+        def _fresh_model():
+            fresh_hrm = HierarchicalReasoningModel(cfg)
+            return LMHead(fresh_hrm, LMHeadConfig(vocab_size=tok.vocab_size))
+
+        receipt = build_trainer_sub2_authority_roundtrip_receipt(
+            m,
+            fresh_model_fn=_fresh_model,
+            batch=proof_batch,
+            forward_loss_fn=_proof_forward_loss,
+            forward_output_fn=_proof_forward_output,
+            use_ternary_bulk=use_ternary_bulk,
+            eligible_scope=sub2_authority_eligible_scope,
+            device=device,
+            lr=lr,
+            weight_decay=weight_decay,
+            step=0,
+        )
+        print(
+            "[hrm158] 2C4a sub2-authority checkpoint roundtrip proof: "
+            f"pass={receipt.pass_receipt} "
+            f"eligible_modules={receipt.eligible_module_count} "
+            f"roundtrip={receipt.persistent_authority_state_roundtrip_pass} "
+            f"poison_falsified={receipt.poisoned_fp_master_bypass_falsified} "
+            f"post_resume_mutated={receipt.post_resume_update_mutated_resumed_sub2_authority} "
+            "dry_run=True checkpoint_written=False optimizer_step_called=False row_flip=False",
+            flush=True,
+        )
+        print(
+            "[hrm158] 2C4a sub2-authority checkpoint roundtrip proof: EXITING before "
+            "normal optimizer/training/checkpoint side effects",
+            flush=True,
+        )
+        return
 
     if sub2_authority_local_update_proof:
         from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
@@ -1920,12 +2000,20 @@ if __name__ == "__main__":
                          "captured weighted gradients and exit before normal "
                          "optimizer/training/checkpoint side effects. Requires "
                          "--use-ternary-bulk; local update only, no row flip claim.")
+    ap.add_argument("--sub2-authority-roundtrip-proof", action="store_true",
+                    help="2C4a proof-only, default-off: after model construction/"
+                         "load, build/load a reconstructable q+scale+bounded "
+                         "authority sidecar, falsify poisoned FP-master bypass, "
+                         "run one post-resume local authority update, and exit "
+                         "before normal optimizer/training/checkpoint side effects. "
+                         "Requires --use-ternary-bulk; no readiness row flip claim.")
     ap.add_argument("--sub2-authority-eligible-scope", type=str,
                     default="all-bitlinear",
                     choices=["first-bitlinear", "all-bitlinear"],
-                    help="2C1/2C2 proof-only eligible BitLinear scope for "
+                    help="2C1/2C2/2C4a proof-only eligible BitLinear scope for "
                          "--sub2-authority-construction-proof or "
-                         "--sub2-authority-local-update-proof.")
+                         "--sub2-authority-local-update-proof or "
+                         "--sub2-authority-roundtrip-proof.")
     ap.add_argument("--legacy-loader-shuffle", action="store_true",
                     help="DIAGNOSTIC ONLY (not recipe-default): build the training "
                          "DataLoader without the explicit seeded generator, restoring "
@@ -2008,6 +2096,7 @@ if __name__ == "__main__":
         retained_support_batch=args.retained_support_batch,
         sub2_authority_construction_proof=args.sub2_authority_construction_proof,
         sub2_authority_local_update_proof=args.sub2_authority_local_update_proof,
+        sub2_authority_roundtrip_proof=args.sub2_authority_roundtrip_proof,
         sub2_authority_eligible_scope=args.sub2_authority_eligible_scope,
         legacy_loader_shuffle=args.legacy_loader_shuffle,
         dry_run=args.dry_run,

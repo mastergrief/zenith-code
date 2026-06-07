@@ -1,6 +1,7 @@
 """Tests for the 2C1 trainer sub-2 authority construction proof."""
 from __future__ import annotations
 
+import copy
 from dataclasses import replace
 import inspect
 from pathlib import Path
@@ -14,13 +15,20 @@ from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
     TRAINER_SUB2_AUTHORITY_NON_CLAIMS,
     TRAINER_SUB2_ACTIVE_CONTROL_PARAMETER_NAMES,
     TRAINER_SUB2_LOCAL_UPDATE_NON_CLAIMS,
+    TRAINER_SUB2_ROUNDTRIP_NON_CLAIMS,
+    _roundtrip_payload_sha256,
+    build_trainer_sub2_authority_checkpoint_blob,
     build_trainer_sub2_authority_construction_receipt,
     build_trainer_sub2_authority_local_update_receipt,
+    build_trainer_sub2_authority_roundtrip_receipt,
+    derive_trainer_sub2_authority_states,
+    load_trainer_sub2_authority_checkpoint_blob,
     select_trainer_eligible_bitlinears,
     trainer_authoritative_forward_context,
     trainer_local_update_builder_active_control_parameters,
     validate_trainer_sub2_authority_construction_receipt,
     validate_trainer_sub2_authority_local_update_receipt,
+    validate_trainer_sub2_authority_roundtrip_receipt,
 )
 
 
@@ -62,6 +70,18 @@ def _make_q_change_tiny_model() -> _TinyTernary:
 
 def _tiny_mse_loss(model: torch.nn.Module, batch: dict) -> torch.Tensor:
     return torch.nn.functional.mse_loss(model(batch["x"]), batch["target"])
+
+
+def _make_roundtrip_blob():
+    model = _make_q_change_tiny_model()
+    eligible = select_trainer_eligible_bitlinears(model, use_ternary_bulk=True)
+    states = derive_trainer_sub2_authority_states(eligible)
+    blob = build_trainer_sub2_authority_checkpoint_blob(
+        model,
+        eligible_modules=eligible,
+        tensor_states=states,
+    )
+    return model, eligible, blob
 
 
 def _common_train_kwargs(tmp_path: Path, **overrides) -> dict:
@@ -351,6 +371,175 @@ def test_local_update_builder_has_no_active_control_parameters():
     assert trainer_local_update_builder_active_control_parameters() == ()
 
 
+def test_roundtrip_receipt_excludes_fp_masters_and_falsifies_poisoned_forward():
+    model = _make_q_change_tiny_model()
+    batch = {
+        "x": torch.arange(32, dtype=torch.float32).view(2, 16) / 16.0,
+        "target": torch.ones(2, 4),
+    }
+
+    receipt = build_trainer_sub2_authority_roundtrip_receipt(
+        model,
+        fresh_model_fn=_make_q_change_tiny_model,
+        batch=batch,
+        forward_loss_fn=_tiny_mse_loss,
+        use_ternary_bulk=True,
+        eligible_scope="all-bitlinear",
+    )
+
+    validate_trainer_sub2_authority_roundtrip_receipt(receipt)
+    assert receipt.pass_receipt is True
+    assert receipt.persistent_authority_state_roundtrip_pass is True
+    assert receipt.trainer_state_mutation_uses_sub2_authority is True
+    assert receipt.resumed_forward_uses_sidecar_authority is True
+    assert receipt.poisoned_fp_master_bypass_falsified is True
+    assert receipt.eligible_fp_masters_authoritative is False
+    assert receipt.eligible_fp_master_keys_excluded_from_authoritative_model_state is True
+    assert receipt.raw_state_dict_eligible_weight_fallback_rejected is True
+    assert receipt.normal_bitlinear_weight_forward_not_claimed is True
+    assert receipt.dense_int16_persistent_accumulator_saved is False
+    assert receipt.dense_int16_persistent_accumulator_loaded is False
+    assert receipt.q_scale_sidecar_bounded_hash_roundtrip_pass is True
+    assert receipt.post_resume_update_mutated_resumed_sub2_authority is True
+    assert receipt.update_law_quality_claim is False
+    assert receipt.learning_claim is False
+    assert receipt.optimizer_credit_state_resolved is False
+    assert receipt.credit_ranking_uninformative_update_law_pivot_deferred is True
+    assert receipt.trainer_entrypoint_uses_candidate is False
+    assert receipt.live_runtime_authority_converted is False
+    assert receipt.readiness_row_flip_authorized is False
+    assert receipt.broad_runtime_authority_converted is False
+    assert receipt.full_sub2_runtime_readiness_claim is False
+    assert receipt.checkpoint_payload_summary["eligible_weight_keys_excluded"] is True
+    assert receipt.checkpoint_load_proof["strict_noneligible_model_state_load"] is True
+    assert receipt.checkpoint_load_proof["missing_keys_exactly_eligible_weights"] is True
+    assert receipt.checkpoint_load_proof["post_update_payload_hash_roundtrip_pass"] is True
+    assert receipt.poison_forward_proof["normal_no_context_forward_changed_after_poison"] is True
+    assert receipt.poison_forward_proof["resumed_context_forward_matches_sidecar_expected"] is True
+    assert receipt.post_resume_update_proof["candidate_local_update_pass"] is True
+    assert receipt.post_resume_update_proof["q_changed_count"] > 0
+    assert receipt.non_claims == TRAINER_SUB2_ROUNDTRIP_NON_CLAIMS
+
+
+def test_roundtrip_checkpoint_loader_rejects_eligible_raw_weight_fallback():
+    model, _eligible, blob = _make_roundtrip_blob()
+    bad_blob = copy.deepcopy(blob)
+    bad_blob["model_state"]["proj.weight"] = model.proj.weight.detach().cpu().clone()
+    fresh = _make_q_change_tiny_model()
+    fresh_eligible = select_trainer_eligible_bitlinears(fresh, use_ternary_bulk=True)
+
+    with pytest.raises(ValueError, match="raw state_dict eligible-weight fallback rejected"):
+        load_trainer_sub2_authority_checkpoint_blob(
+            fresh,
+            bad_blob,
+            eligible_modules=fresh_eligible,
+        )
+
+
+def test_roundtrip_checkpoint_loader_rejects_corrupted_sidecar_hash():
+    _model, _eligible, blob = _make_roundtrip_blob()
+    bad_blob = copy.deepcopy(blob)
+    bad_blob["trainer_sub2_authority"]["authoritative_state_payload_sha256"] = "0" * 64
+    fresh = _make_q_change_tiny_model()
+    fresh_eligible = select_trainer_eligible_bitlinears(fresh, use_ternary_bulk=True)
+
+    with pytest.raises(ValueError, match="authoritative payload hash mismatch"):
+        load_trainer_sub2_authority_checkpoint_blob(
+            fresh,
+            bad_blob,
+            eligible_modules=fresh_eligible,
+        )
+
+
+def test_roundtrip_checkpoint_loader_rejects_dense_int16_sidecar_flags():
+    _model, _eligible, blob = _make_roundtrip_blob()
+    bad_top = copy.deepcopy(blob)
+    bad_top["trainer_sub2_authority"]["dense_int16_persistent_accumulator_saved"] = True
+    fresh_top = _make_q_change_tiny_model()
+    fresh_top_eligible = select_trainer_eligible_bitlinears(fresh_top, use_ternary_bulk=True)
+
+    with pytest.raises(ValueError, match="dense int16 persistent accumulators"):
+        load_trainer_sub2_authority_checkpoint_blob(
+            fresh_top,
+            bad_top,
+            eligible_modules=fresh_top_eligible,
+        )
+
+    bad_bounded = copy.deepcopy(blob)
+    sidecar = bad_bounded["trainer_sub2_authority"]
+    sidecar["tensor_payloads"]["proj"]["bounded_accumulator"][
+        "dense_int16_accumulator_persisted"
+    ] = True
+    sidecar_without_hash = dict(sidecar)
+    sidecar_without_hash.pop("authoritative_state_payload_sha256", None)
+    sidecar["authoritative_state_payload_sha256"] = _roundtrip_payload_sha256(
+        sidecar_without_hash
+    )
+    fresh_bounded = _make_q_change_tiny_model()
+    fresh_bounded_eligible = select_trainer_eligible_bitlinears(
+        fresh_bounded,
+        use_ternary_bulk=True,
+    )
+
+    with pytest.raises(ValueError, match="dense int16 accumulators"):
+        load_trainer_sub2_authority_checkpoint_blob(
+            fresh_bounded,
+            bad_bounded,
+            eligible_modules=fresh_bounded_eligible,
+        )
+
+
+def test_roundtrip_checkpoint_loader_rejects_noneligible_state_drift():
+    _model, _eligible, blob = _make_roundtrip_blob()
+    bad_blob = copy.deepcopy(blob)
+    bad_state = dict(blob["model_state"])
+    bad_state.pop("tail.weight")
+    bad_blob["model_state"] = bad_state
+    fresh = _make_q_change_tiny_model()
+    fresh_eligible = select_trainer_eligible_bitlinears(fresh, use_ternary_bulk=True)
+
+    with pytest.raises(ValueError, match="strict non-eligible model_state"):
+        load_trainer_sub2_authority_checkpoint_blob(
+            fresh,
+            bad_blob,
+            eligible_modules=fresh_eligible,
+        )
+
+
+def test_roundtrip_receipt_forbidden_claims_fail_validation():
+    receipt = build_trainer_sub2_authority_roundtrip_receipt(
+        _make_q_change_tiny_model(),
+        fresh_model_fn=_make_q_change_tiny_model,
+        batch={
+            "x": torch.arange(32, dtype=torch.float32).view(2, 16) / 16.0,
+            "target": torch.ones(2, 4),
+        },
+        forward_loss_fn=_tiny_mse_loss,
+        use_ternary_bulk=True,
+    )
+
+    with pytest.raises(ValueError, match="readiness row flip"):
+        validate_trainer_sub2_authority_roundtrip_receipt(
+            replace(receipt, readiness_row_flip_authorized=True)
+        )
+    with pytest.raises(ValueError, match="learning claim"):
+        validate_trainer_sub2_authority_roundtrip_receipt(
+            replace(receipt, learning_claim=True)
+        )
+    with pytest.raises(ValueError, match="eligible FP masters authoritative"):
+        validate_trainer_sub2_authority_roundtrip_receipt(
+            replace(receipt, eligible_fp_masters_authoritative=True)
+        )
+    with pytest.raises(ValueError, match="dense int16 persistent accumulator saved"):
+        validate_trainer_sub2_authority_roundtrip_receipt(
+            replace(receipt, dense_int16_persistent_accumulator_saved=True)
+        )
+    with pytest.raises(ValueError, match="poisoned FP-master bypass falsified"):
+        validate_trainer_sub2_authority_roundtrip_receipt(
+            replace(receipt, poisoned_fp_master_bypass_falsified=False)
+        )
+
+
 def test_trainer_default_off_smoke_still_writes_checkpoint(tmp_path, monkeypatch):
     from scripts import train_hrm_text_158 as trainer
 
@@ -409,6 +598,26 @@ def test_trainer_enabled_2c2_local_update_proof_exits_before_checkpoint_write(tm
     assert not ckpt_root.with_name(ckpt_root.stem + "_step00001.pt").exists()
 
 
+def test_trainer_enabled_2c4a_roundtrip_proof_exits_before_checkpoint_write(tmp_path, monkeypatch):
+    from scripts import train_hrm_text_158 as trainer
+
+    rows = _make_tiny_gsm8k_rows()
+    monkeypatch.setattr(trainer, "load_gsm8k_splits", _splits_loader_factory(rows))
+    kwargs = _common_train_kwargs(
+        tmp_path,
+        save_at_steps=[1],
+        use_ternary_bulk=True,
+        sub2_authority_roundtrip_proof=True,
+        sub2_authority_eligible_scope="first-bitlinear",
+    )
+
+    trainer.train(**kwargs, splits_loader=_splits_loader_factory(rows))
+
+    ckpt_root = Path(kwargs["checkpoint_path"])
+    assert not ckpt_root.exists()
+    assert not ckpt_root.with_name(ckpt_root.stem + "_step00001.pt").exists()
+
+
 def test_trainer_enabled_2c1_proof_requires_ternary_bulk(tmp_path, monkeypatch):
     from scripts import train_hrm_text_158 as trainer
 
@@ -439,6 +648,21 @@ def test_trainer_enabled_2c2_proof_requires_ternary_bulk(tmp_path, monkeypatch):
         trainer.train(**kwargs, splits_loader=_splits_loader_factory(rows))
 
 
+def test_trainer_enabled_2c4a_proof_requires_ternary_bulk(tmp_path, monkeypatch):
+    from scripts import train_hrm_text_158 as trainer
+
+    rows = _make_tiny_gsm8k_rows()
+    monkeypatch.setattr(trainer, "load_gsm8k_splits", _splits_loader_factory(rows))
+    kwargs = _common_train_kwargs(
+        tmp_path,
+        sub2_authority_roundtrip_proof=True,
+        use_ternary_bulk=False,
+    )
+
+    with pytest.raises(RuntimeError, match="requires --use-ternary-bulk"):
+        trainer.train(**kwargs, splits_loader=_splits_loader_factory(rows))
+
+
 def test_exports_from_native_full_stack_facade():
     receipt = native_full_stack.build_trainer_sub2_authority_construction_receipt(
         _TinyTernary(),
@@ -453,9 +677,22 @@ def test_exports_from_native_full_stack_facade():
         forward_loss_fn=_tiny_mse_loss,
         use_ternary_bulk=True,
     )
+    roundtrip_receipt = native_full_stack.build_trainer_sub2_authority_roundtrip_receipt(
+        _make_q_change_tiny_model(),
+        fresh_model_fn=_make_q_change_tiny_model,
+        batch={
+            "x": torch.arange(32, dtype=torch.float32).view(2, 16) / 16.0,
+            "target": torch.ones(2, 4),
+        },
+        forward_loss_fn=_tiny_mse_loss,
+        use_ternary_bulk=True,
+    )
 
     assert receipt.pass_receipt is True
     assert local_receipt.pass_receipt is True
+    assert roundtrip_receipt.pass_receipt is True
     assert "build_trainer_sub2_authority_construction_receipt" in native_full_stack.__all__
     assert "build_trainer_sub2_authority_local_update_receipt" in native_full_stack.__all__
     assert "validate_trainer_sub2_authority_local_update_receipt" in native_full_stack.__all__
+    assert "build_trainer_sub2_authority_roundtrip_receipt" in native_full_stack.__all__
+    assert "validate_trainer_sub2_authority_roundtrip_receipt" in native_full_stack.__all__
