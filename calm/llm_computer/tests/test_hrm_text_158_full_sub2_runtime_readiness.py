@@ -15,6 +15,7 @@ from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
     FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ACTIVATION_RESIDUALS_BLOCKED,
     FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ATTENTION_KV_BLOCKED,
     FIXTURE_GATED_SUB2_CHECKPOINT_PATH_BACKWARD_RECOMPUTE,
+    FIXTURE_GATED_SUB2_CHECKPOINT_PATH_NATIVE_KERNELIZED_HOT_PATH_BLOCKED,
     FIXTURE_GATED_SUB2_CHECKPOINT_PATH_OPTIMIZER_CREDIT_STATE_BLOCKED,
     FIXTURE_MAIN_READY,
     FIXTURE_MISSING_ACTIVATIONS,
@@ -45,6 +46,7 @@ from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
     gated_sub2_checkpoint_path_activation_residuals_blocked_surfaces,
     gated_sub2_checkpoint_path_attention_kv_blocked_surfaces,
     gated_sub2_checkpoint_path_backward_recompute_surfaces,
+    gated_sub2_checkpoint_path_native_kernelized_hot_path_blocked_surfaces,
     gated_sub2_checkpoint_path_optimizer_credit_state_blocked_surfaces,
     gated_sub2_checkpoint_path_surfaces,
     main_ready_fixture_surfaces,
@@ -501,6 +503,10 @@ def test_export_api_smoke():
         native_full_stack.FIXTURE_GATED_SUB2_CHECKPOINT_PATH_OPTIMIZER_CREDIT_STATE_BLOCKED
         == FIXTURE_GATED_SUB2_CHECKPOINT_PATH_OPTIMIZER_CREDIT_STATE_BLOCKED
     )
+    assert (
+        native_full_stack.FIXTURE_GATED_SUB2_CHECKPOINT_PATH_NATIVE_KERNELIZED_HOT_PATH_BLOCKED
+        == FIXTURE_GATED_SUB2_CHECKPOINT_PATH_NATIVE_KERNELIZED_HOT_PATH_BLOCKED
+    )
     assert native_full_stack.RUNTIME_CLASS_TRANSIENT_FP_DEBT == RUNTIME_CLASS_TRANSIENT_FP_DEBT
     assert "FIXTURE_GATED_SUB2_CHECKPOINT_PATH" in native_full_stack.__all__
     assert "FIXTURE_GATED_SUB2_CHECKPOINT_PATH_BACKWARD_RECOMPUTE" in native_full_stack.__all__
@@ -514,6 +520,10 @@ def test_export_api_smoke():
     )
     assert (
         "FIXTURE_GATED_SUB2_CHECKPOINT_PATH_OPTIMIZER_CREDIT_STATE_BLOCKED"
+        in native_full_stack.__all__
+    )
+    assert (
+        "FIXTURE_GATED_SUB2_CHECKPOINT_PATH_NATIVE_KERNELIZED_HOT_PATH_BLOCKED"
         in native_full_stack.__all__
     )
     assert "fixture_full_sub2_runtime_ready_for_science" in native_full_stack.__all__
@@ -553,6 +563,13 @@ def test_export_api_smoke():
     assert (
         optimizer_blocked_surfaces
         == gated_sub2_checkpoint_path_optimizer_credit_state_blocked_surfaces()
+    )
+    native_blocked_surfaces = (
+        native_full_stack.gated_sub2_checkpoint_path_native_kernelized_hot_path_blocked_surfaces()
+    )
+    assert (
+        native_blocked_surfaces
+        == gated_sub2_checkpoint_path_native_kernelized_hot_path_blocked_surfaces()
     )
 
 
@@ -791,6 +808,47 @@ def test_cli_gated_optimizer_credit_state_blocked_expect_ready_emits_blocker_rea
     assert "optimizer_credit_state" in result.stdout
 
 
+def test_cli_gated_native_kernelized_hot_path_blocked_expect_ready_emits_blocker_reason(tmp_path):
+    json_out = tmp_path / "gated_sub2_checkpoint_path_native_kernelized_hot_path_blocked.json"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--fixture",
+            FIXTURE_GATED_SUB2_CHECKPOINT_PATH_NATIVE_KERNELIZED_HOT_PATH_BLOCKED,
+            "--json-out",
+            str(json_out),
+            "--expect-ready",
+        ],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    assert result.returncode == 2
+    assert json_out.exists()
+    payload = json.loads(json_out.read_text(encoding="utf-8"))
+    surfaces = {surface["surface_id"]: surface for surface in payload["surfaces"]}
+    native = surfaces[SURFACE_NATIVE_KERNELIZED_HOT_PATH]
+    assert payload["ready_for_main_science"] is False
+    assert payload["main_science_launch_blocked"] is True
+    assert payload["ready_for_pre_full_stack_diagnostic"] is True
+    assert native["classification"] == RUNTIME_CLASS_PRE_FULL_STACK_DIAGNOSTIC
+    assert "fail-closed native kernelized hot-path harness" in native["reason"]
+    assert "qacc_kernelized=false" in native["reason"]
+    assert "device=cuda" in native["reason"]
+    assert "CPU row materialization" in native["reason"]
+    assert set(payload["blocker_surface_names"]) == {
+        SURFACE_ACTIVATIONS_RESIDUALS,
+        SURFACE_ATTENTION_KV_ATTENTION_BUFFERS,
+        SURFACE_OPTIMIZER_CREDIT_STATE,
+        SURFACE_NATIVE_KERNELIZED_HOT_PATH,
+    }
+    assert SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS not in payload["blocker_surface_names"]
+    assert "native_kernelized_hot_path" in result.stdout
+
+
 def test_gated_optimizer_credit_state_blocked_fixture_updates_only_optimizer_debt_fields():
     attention_blocked = fixture_full_sub2_runtime_ready_for_science(
         FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ATTENTION_KV_BLOCKED
@@ -871,6 +929,90 @@ def test_gated_optimizer_credit_state_blocked_fixture_updates_only_optimizer_deb
     }
     assert SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS not in (
         optimizer_blocked.blocker_surface_names
+    )
+
+
+def test_gated_native_kernelized_hot_path_blocked_fixture_updates_only_native_fields():
+    optimizer_blocked = fixture_full_sub2_runtime_ready_for_science(
+        FIXTURE_GATED_SUB2_CHECKPOINT_PATH_OPTIMIZER_CREDIT_STATE_BLOCKED
+    )
+    native_blocked = fixture_full_sub2_runtime_ready_for_science(
+        FIXTURE_GATED_SUB2_CHECKPOINT_PATH_NATIVE_KERNELIZED_HOT_PATH_BLOCKED
+    )
+    validate_full_sub2_runtime_ready_for_science_receipt(native_blocked)
+
+    optimizer_classes = {
+        surface.surface_id: surface.classification
+        for surface in optimizer_blocked.surfaces
+    }
+    native_classes = {
+        surface.surface_id: surface.classification
+        for surface in native_blocked.surfaces
+    }
+    optimizer_surfaces = {
+        surface.surface_id: surface.to_dict()
+        for surface in optimizer_blocked.surfaces
+    }
+    native_surfaces = {
+        surface.surface_id: surface.to_dict()
+        for surface in native_blocked.surfaces
+    }
+
+    assert native_classes == optimizer_classes
+    assert (
+        native_classes[SURFACE_NATIVE_KERNELIZED_HOT_PATH]
+        == RUNTIME_CLASS_PRE_FULL_STACK_DIAGNOSTIC
+    )
+    assert (
+        native_classes[SURFACE_OPTIMIZER_CREDIT_STATE]
+        == RUNTIME_CLASS_TRANSIENT_FP_DEBT
+    )
+    assert (
+        native_classes[SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS]
+        == RUNTIME_CLASS_SUB2
+    )
+
+    changed_surface_ids = {
+        surface_id
+        for surface_id, optimizer_surface in optimizer_surfaces.items()
+        if native_surfaces[surface_id] != optimizer_surface
+    }
+    assert changed_surface_ids == {SURFACE_NATIVE_KERNELIZED_HOT_PATH}
+    native_before = optimizer_surfaces[SURFACE_NATIVE_KERNELIZED_HOT_PATH]
+    native_after = native_surfaces[SURFACE_NATIVE_KERNELIZED_HOT_PATH]
+    changed_native_fields = {
+        field
+        for field, before_value in native_before.items()
+        if native_after[field] != before_value
+    }
+    assert changed_native_fields == {
+        "reason",
+        "proof_artifact_or_test",
+        "source_anchor",
+    }
+    assert "fail-closed native kernelized hot-path harness" in native_after["reason"]
+    assert "qacc_kernelized=false" in native_after["reason"]
+    assert "Triton preplan" in native_after["reason"]
+    assert "final-row torch-CUDA reference" in native_after["reason"]
+    assert "MARGIN-only/default-off reference" in native_after["reason"]
+    assert "native custom kernel speed claim" in native_after["reason"]
+    assert "device=cuda" in native_after["reason"]
+    assert "native_kernelized_hot_path.py" in native_after["source_anchor"]
+    assert (
+        "test_native_kernelized_hot_path_receipt_enumerates_current_blockers_without_flip"
+        in native_after["proof_artifact_or_test"]
+    )
+    assert native_blocked.ready_for_main_science is False
+    assert native_blocked.main_science_launch_blocked is True
+    assert native_blocked.ready_for_pre_full_stack_diagnostic is True
+    assert set(native_blocked.blocker_surface_names) == {
+        SURFACE_ACTIVATIONS_RESIDUALS,
+        SURFACE_ATTENTION_KV_ATTENTION_BUFFERS,
+        SURFACE_OPTIMIZER_CREDIT_STATE,
+        SURFACE_NATIVE_KERNELIZED_HOT_PATH,
+    }
+    assert SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS not in (
+        native_blocked.blocker_surface_names
     )
 
 

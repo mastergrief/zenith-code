@@ -24,6 +24,10 @@ from calm.hrm_text_158.native_full_stack.fp_exceptions import FP_EXCEPTION_REGIS
 from calm.hrm_text_158.native_full_stack.full_loop_receipt import (
     FULL_LOOP_RECEIPT_SCHEMA_VERSION,
 )
+from calm.hrm_text_158.native_full_stack.native_kernelized_hot_path import (
+    NATIVE_KERNELIZED_HOT_PATH_BLOCKED_REASON,
+    NATIVE_KERNELIZED_HOT_PATH_FAIL_CLOSED_RECEIPT_SCHEMA_VERSION,
+)
 from calm.hrm_text_158.native_full_stack.optimizer_credit_state import (
     OPTIMIZER_CREDIT_STATE_BLOCKED_REASON,
     OPTIMIZER_CREDIT_STATE_FAIL_CLOSED_RECEIPT_SCHEMA_VERSION,
@@ -103,6 +107,9 @@ FULL_SUB2_RUNTIME_SOURCE_SEAMS = {
     "optimizer_credit_state": (
         OPTIMIZER_CREDIT_STATE_FAIL_CLOSED_RECEIPT_SCHEMA_VERSION
     ),
+    "native_kernelized_hot_path": (
+        NATIVE_KERNELIZED_HOT_PATH_FAIL_CLOSED_RECEIPT_SCHEMA_VERSION
+    ),
     "recurrent_state_buffers": RECURRENT_STATE_BUFFER_SCHEMA_VERSION,
     "full_loop_receipt": FULL_LOOP_RECEIPT_SCHEMA_VERSION,
     "sidecar_runtime": SUB2_HYBRID_SIDECAR_RUNTIME_SCHEMA_VERSION,
@@ -129,6 +136,9 @@ FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ATTENTION_KV_BLOCKED = (
 FIXTURE_GATED_SUB2_CHECKPOINT_PATH_OPTIMIZER_CREDIT_STATE_BLOCKED = (
     "gated_sub2_checkpoint_path_optimizer_credit_state_blocked"
 )
+FIXTURE_GATED_SUB2_CHECKPOINT_PATH_NATIVE_KERNELIZED_HOT_PATH_BLOCKED = (
+    "gated_sub2_checkpoint_path_native_kernelized_hot_path_blocked"
+)
 FIXTURE_MAIN_READY = "main_ready"
 FIXTURE_MISSING_ACTIVATIONS = "missing_activations_residuals"
 FIXTURE_MISSING_ATTENTION = "missing_attention_kv_attention_buffers"
@@ -146,6 +156,7 @@ FULL_SUB2_RUNTIME_FIXTURE_NAMES = (
     FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ACTIVATION_RESIDUALS_BLOCKED,
     FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ATTENTION_KV_BLOCKED,
     FIXTURE_GATED_SUB2_CHECKPOINT_PATH_OPTIMIZER_CREDIT_STATE_BLOCKED,
+    FIXTURE_GATED_SUB2_CHECKPOINT_PATH_NATIVE_KERNELIZED_HOT_PATH_BLOCKED,
     FIXTURE_MAIN_READY,
     FIXTURE_MISSING_ACTIVATIONS,
     FIXTURE_MISSING_ATTENTION,
@@ -824,6 +835,33 @@ def gated_sub2_checkpoint_path_optimizer_credit_state_blocked_surfaces() -> tupl
     )
 
 
+def gated_sub2_checkpoint_path_native_kernelized_hot_path_blocked_surfaces() -> tuple[
+    FullSub2RuntimeSurfaceReceipt, ...
+]:
+    """Step 4A readiness variant: native/kernelized hot-path row remains blocked."""
+
+    surfaces = gated_sub2_checkpoint_path_optimizer_credit_state_blocked_surfaces()
+    return _with_surface(
+        surfaces,
+        SURFACE_NATIVE_KERNELIZED_HOT_PATH,
+        classification=RUNTIME_CLASS_PRE_FULL_STACK_DIAGNOSTIC,
+        reason=(
+            f"{NATIVE_KERNELIZED_HOT_PATH_BLOCKED_REASON}; device=cuda/VRAM "
+            "residency is not hot-loop residency, and CPU row materialization "
+            "before q/acc apply keeps the native hot path blocked"
+        ),
+        source_anchor=(
+            "calm/hrm_text_158/native_full_stack/native_kernelized_hot_path.py:1"
+        ),
+        proof_artifact_or_test=(
+            "calm/llm_computer/tests/test_hrm_text_158_native_kernelized_hot_path.py::"
+            "test_native_kernelized_hot_path_receipt_enumerates_current_blockers_without_flip"
+        ),
+        diagnostic_exception_reason="hot-loop contract can be checked before occupying GPU with science",
+        why_cheaper_than_full_stack_first="CPU/static contract proof is cheaper than GPU residency proof",
+    )
+
+
 def step2a_candidate_persistent_core_absence_surfaces() -> tuple[
     FullSub2RuntimeSurfaceReceipt, ...
 ]:
@@ -888,6 +926,13 @@ def fixture_full_sub2_runtime_ready_for_science(
         == FIXTURE_GATED_SUB2_CHECKPOINT_PATH_OPTIMIZER_CREDIT_STATE_BLOCKED
     ):
         surfaces = gated_sub2_checkpoint_path_optimizer_credit_state_blocked_surfaces()
+    elif (
+        fixture_name
+        == FIXTURE_GATED_SUB2_CHECKPOINT_PATH_NATIVE_KERNELIZED_HOT_PATH_BLOCKED
+    ):
+        surfaces = (
+            gated_sub2_checkpoint_path_native_kernelized_hot_path_blocked_surfaces()
+        )
     elif fixture_name == FIXTURE_MAIN_READY:
         surfaces = main_ready_fixture_surfaces()
     elif fixture_name == FIXTURE_MISSING_ACTIVATIONS:
