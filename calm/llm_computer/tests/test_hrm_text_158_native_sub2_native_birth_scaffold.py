@@ -12,8 +12,14 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
 )
 from calm.hrm_text_158.native_full_stack.sub2_native_birth_scaffold import (
     ACQUISITION_GATE_DEFERRED,
+    ACQUISITION_GATE_UNBLOCKED_NOT_RUN,
+    DENSE_TRANSIENT_CREDIT_ROLE_TRAINING_COMPUTE_CONTROL_ONLY,
+    HYBRID_SCOPE_DECISION_LOCKED_ANSWER,
+    HYBRID_SCOPE_DECISION_LOCKED_OPTION,
+    HYBRID_SCOPE_DECISION_SOURCE_MSG_ID,
     LEDGER_CLASS_LEQ2,
     LEDGER_CLASS_NOT_YET,
+    RUNTIME_STATE_AUTHORITY_SUB2_PERSISTENT_HYBRID_DENSE_TRANSIENT_CREDIT,
     RUNTIME_STATE_AUTHORITY_SUB2_SCAFFOLD_ONLY,
     attach_strict_sub2_scoped_candidate_proof,
     build_strict_sub2_candidate_runtime_scaffold,
@@ -92,22 +98,52 @@ def _hot_loop_residency():
     }
 
 
-def test_strict_sub2_scaffold_is_fail_closed_and_scaffold_only():
-    report = build_strict_sub2_candidate_runtime_scaffold(
+def _build_report():
+    return build_strict_sub2_candidate_runtime_scaffold(
         eligible_module_shapes=_eligible_shapes(),
         activation_paid_bits_ledger=_activation_ledger(),
         live_both_gate=_live_both_gate(),
         hot_loop_residency=_hot_loop_residency(),
     )
 
+
+def test_strict_sub2_scaffold_is_fail_closed_hybrid_boundary_only():
+    report = _build_report()
+
     validate_strict_sub2_candidate_runtime_scaffold_report(report)
 
-    assert report.runtime_state_authority == RUNTIME_STATE_AUTHORITY_SUB2_SCAFFOLD_ONLY
+    assert (
+        report.runtime_state_authority
+        == RUNTIME_STATE_AUTHORITY_SUB2_PERSISTENT_HYBRID_DENSE_TRANSIENT_CREDIT
+    )
     assert report.pass_report is True
     assert report.candidate_runtime_complete is False
     assert report.physical_persistent_target_pass is True
     assert report.physical_persistent_bpw < 2.0
-    assert report.acquisition_gate["status"] == ACQUISITION_GATE_DEFERRED
+    assert report.physical_persistent_interpretation
+    assert report.persistent_sub2_hybrid_only is True
+    assert report.dense_transient_credit_allowed is True
+    assert (
+        report.dense_transient_credit_role
+        == DENSE_TRANSIENT_CREDIT_ROLE_TRAINING_COMPUTE_CONTROL_ONLY
+    )
+    assert report.dense_transient_credit_counted_in_physical_persistent_bpw is False
+    assert report.transient_debt_present is True
+    assert report.transient_debt_non_blocking is True
+    assert report.transient_debt_row_names == (
+        "activations_and_residual_runtime_packability",
+        "attention_kv_append_update",
+        "qacc_hot_loop_residency",
+    )
+    assert report.full_runtime_sub2_achieved is False
+    assert report.native_transient_sub2_achieved is False
+    assert report.fully_fp_free_achieved is False
+    assert report.scope_decision_source_msg_id == HYBRID_SCOPE_DECISION_SOURCE_MSG_ID
+    assert report.scope_decision_locked_option == HYBRID_SCOPE_DECISION_LOCKED_OPTION
+    assert report.scope_decision_locked_answer == HYBRID_SCOPE_DECISION_LOCKED_ANSWER
+    assert report.acquisition_science_status == ACQUISITION_GATE_UNBLOCKED_NOT_RUN
+    assert report.acquisition_achieved is False
+    assert report.acquisition_gate["status"] == ACQUISITION_GATE_UNBLOCKED_NOT_RUN
 
     persistent = {row.name: row for row in report.persistent_candidate_rows}
     assert persistent["q_storage"].classification == LEDGER_CLASS_LEQ2
@@ -133,12 +169,7 @@ def test_strict_sub2_scaffold_is_fail_closed_and_scaffold_only():
 
 
 def test_strict_sub2_scaffold_validator_rejects_blocked_candidate_authority_row():
-    report = build_strict_sub2_candidate_runtime_scaffold(
-        eligible_module_shapes=_eligible_shapes(),
-        activation_paid_bits_ledger=_activation_ledger(),
-        live_both_gate=_live_both_gate(),
-        hot_loop_residency=_hot_loop_residency(),
-    )
+    report = _build_report()
     q_storage = report.persistent_candidate_rows[0]
     bad_row = replace(
         q_storage,
@@ -159,15 +190,18 @@ def test_strict_sub2_scaffold_validator_rejects_blocked_candidate_authority_row(
 def test_native_full_stack_public_exports_include_strict_sub2_scaffold_symbols():
     names = {
         "ACQUISITION_GATE_DEFERRED",
+        "ACQUISITION_GATE_UNBLOCKED_NOT_RUN",
+        "DENSE_TRANSIENT_CREDIT_ROLE_TRAINING_COMPUTE_CONTROL_ONLY",
+        "HYBRID_SCOPE_DECISION_LOCKED_ANSWER",
+        "HYBRID_SCOPE_DECISION_LOCKED_OPTION",
+        "HYBRID_SCOPE_DECISION_SOURCE_MSG_ID",
         "LEDGER_CLASS_EXECUTABLE",
         "LEDGER_CLASS_LEQ2",
         "LEDGER_CLASS_NOT_YET",
         "RUNTIME_STATE_AUTHORITY_DENSE_CONTROL",
         "RUNTIME_STATE_AUTHORITY_SUB2_CANDIDATE_EXECUTABLE",
+        "RUNTIME_STATE_AUTHORITY_SUB2_PERSISTENT_HYBRID_DENSE_TRANSIENT_CREDIT",
         "RUNTIME_STATE_AUTHORITY_SUB2_SCAFFOLD_ONLY",
-        "STRICT_SUB2_CANDIDATE_RUNTIME_SCAFFOLD_LABEL",
-        "STRICT_SUB2_CANDIDATE_RUNTIME_SCAFFOLD_SCHEMA_VERSION",
-        "STRICT_SUB2_CANDIDATE_RUNTIME_TARGET_NAME",
         "StrictSub2CandidateRuntimeScaffoldReport",
         "StrictSub2ScaffoldRow",
         "attach_strict_sub2_scoped_candidate_proof",
@@ -182,12 +216,7 @@ def test_native_full_stack_public_exports_include_strict_sub2_scaffold_symbols()
 
 
 def test_scaffold_accepts_scoped_accumulator_local_vote_update_proof_without_full_promotion():
-    report = build_strict_sub2_candidate_runtime_scaffold(
-        eligible_module_shapes=_eligible_shapes(),
-        activation_paid_bits_ledger=_activation_ledger(),
-        live_both_gate=_live_both_gate(),
-        hot_loop_residency=_hot_loop_residency(),
-    )
+    report = _build_report()
     scoped = {
         "surface": "accumulator_substitute",
         "scoped_label": ALGORITHMIC_LOCAL_VOTE_UPDATE_EXECUTABLE_NOT_PHYSICAL_SUB2,
@@ -216,11 +245,18 @@ def test_scaffold_accepts_scoped_accumulator_local_vote_update_proof_without_ful
     )
 
     validate_strict_sub2_candidate_runtime_scaffold_report(promoted)
-    assert promoted.runtime_state_authority == RUNTIME_STATE_AUTHORITY_SUB2_SCAFFOLD_ONLY
+    assert (
+        promoted.runtime_state_authority
+        == RUNTIME_STATE_AUTHORITY_SUB2_PERSISTENT_HYBRID_DENSE_TRANSIENT_CREDIT
+    )
     assert promoted.candidate_runtime_complete is False
     assert (
         promoted.scoped_candidate_proof["scoped_label"]
         == ALGORITHMIC_LOCAL_VOTE_UPDATE_EXECUTABLE_NOT_PHYSICAL_SUB2
+    )
+    assert (
+        promoted.scoped_candidate_proof["runtime_state_authority_after"]
+        == promoted.runtime_state_authority
     )
     persistent = {row.name: row for row in promoted.persistent_candidate_rows}
     assert persistent["accumulator_substitute"].classification == LEDGER_CLASS_NOT_YET
@@ -228,18 +264,13 @@ def test_scaffold_accepts_scoped_accumulator_local_vote_update_proof_without_ful
 
 
 def test_scaffold_rejects_scoped_candidate_proof_with_dense_decode_or_wrong_null_taxonomy():
-    report = build_strict_sub2_candidate_runtime_scaffold(
-        eligible_module_shapes=_eligible_shapes(),
-        activation_paid_bits_ledger=_activation_ledger(),
-        live_both_gate=_live_both_gate(),
-        hot_loop_residency=_hot_loop_residency(),
-    )
+    report = _build_report()
     bad_dense = {
         "surface": "accumulator_substitute",
         "scoped_label": ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
         "terminal_classification": ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
         "pass": True,
-        "runtime_state_authority_after": RUNTIME_STATE_AUTHORITY_SUB2_SCAFFOLD_ONLY,
+        "runtime_state_authority_after": RUNTIME_STATE_AUTHORITY_SUB2_PERSISTENT_HYBRID_DENSE_TRANSIENT_CREDIT,
         "candidate_dense_decode_used": True,
         "candidate_accumulator_transient_over2_used": False,
         "candidate_vote_transient_over2_used": False,
@@ -273,18 +304,13 @@ def test_scaffold_rejects_scoped_candidate_proof_with_dense_decode_or_wrong_null
 
 
 def test_scaffold_rejects_positive_scoped_candidate_without_storage_projection_or_with_bpw_ge_2():
-    report = build_strict_sub2_candidate_runtime_scaffold(
-        eligible_module_shapes=_eligible_shapes(),
-        activation_paid_bits_ledger=_activation_ledger(),
-        live_both_gate=_live_both_gate(),
-        hot_loop_residency=_hot_loop_residency(),
-    )
+    report = _build_report()
     missing_projection = {
         "surface": "accumulator_substitute",
         "scoped_label": ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
         "terminal_classification": ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
         "pass": True,
-        "runtime_state_authority_after": RUNTIME_STATE_AUTHORITY_SUB2_SCAFFOLD_ONLY,
+        "runtime_state_authority_after": RUNTIME_STATE_AUTHORITY_SUB2_PERSISTENT_HYBRID_DENSE_TRANSIENT_CREDIT,
         "candidate_dense_decode_used": False,
         "candidate_accumulator_transient_over2_used": False,
         "candidate_vote_transient_over2_used": False,
@@ -306,4 +332,72 @@ def test_scaffold_rejects_positive_scoped_candidate_without_storage_projection_o
         attach_strict_sub2_scoped_candidate_proof(
             report,
             scoped_candidate_proof=bad_bpw,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value", "match"),
+    [
+        ("full_runtime_sub2_achieved", True, "full_runtime_sub2_achieved"),
+        ("native_transient_sub2_achieved", True, "native_transient_sub2_achieved"),
+        ("fully_fp_free_achieved", True, "fully_fp_free_achieved"),
+        (
+            "dense_transient_credit_counted_in_physical_persistent_bpw",
+            True,
+            "cannot count dense transient credit",
+        ),
+        ("candidate_runtime_complete", True, "candidate_runtime_complete=false"),
+        ("acquisition_achieved", True, "acquisition_achieved=true"),
+    ],
+)
+def test_hybrid_validator_rejects_overclaim_flags(field_name: str, value, match: str):
+    report = _build_report()
+    bad_report = replace(report, **{field_name: value})
+
+    with pytest.raises(ValueError, match=match):
+        validate_strict_sub2_candidate_runtime_scaffold_report(bad_report)
+
+
+def test_hybrid_validator_rejects_missing_transient_debt_rows_or_scope_provenance():
+    report = _build_report()
+
+    with pytest.raises(ValueError, match="transient_debt_row_names"):
+        validate_strict_sub2_candidate_runtime_scaffold_report(
+            replace(report, transient_debt_row_names=())
+        )
+    with pytest.raises(ValueError, match="scope decision source msg id"):
+        validate_strict_sub2_candidate_runtime_scaffold_report(
+            replace(report, scope_decision_source_msg_id="")
+        )
+
+
+def test_hybrid_validator_rejects_off_path_row_counted_in_persistent_bpw():
+    report = _build_report()
+    off_path = report.off_path_control_rows[0]
+    bad_off_path = replace(
+        off_path,
+        in_candidate_authority=True,
+        counted_in_physical_persistent_bpw=True,
+        bits_per_weight=1.0,
+        blocker=False,
+    )
+    bad_report = replace(
+        report,
+        off_path_control_rows=(bad_off_path,) + report.off_path_control_rows[1:],
+    )
+
+    with pytest.raises(ValueError, match="off-path or adjacent runtime sections"):
+        validate_strict_sub2_candidate_runtime_scaffold_report(bad_report)
+
+
+def test_hybrid_validator_rejects_acquisition_claims_or_deferred_status_regression():
+    report = _build_report()
+
+    with pytest.raises(ValueError, match="acquisition_science_status=unblocked_not_run"):
+        validate_strict_sub2_candidate_runtime_scaffold_report(
+            replace(report, acquisition_science_status=ACQUISITION_GATE_DEFERRED)
+        )
+    with pytest.raises(ValueError, match="acquisition gate at unblocked_not_run"):
+        validate_strict_sub2_candidate_runtime_scaffold_report(
+            replace(report, acquisition_gate={**report.acquisition_gate, "status": ACQUISITION_GATE_DEFERRED})
         )

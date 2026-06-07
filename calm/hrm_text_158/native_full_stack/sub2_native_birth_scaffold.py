@@ -42,6 +42,9 @@ STRICT_SUB2_CANDIDATE_RUNTIME_TARGET_NAME = (
 
 RUNTIME_STATE_AUTHORITY_DENSE_CONTROL = "dense_control"
 RUNTIME_STATE_AUTHORITY_SUB2_SCAFFOLD_ONLY = "sub2_scaffold_only"
+RUNTIME_STATE_AUTHORITY_SUB2_PERSISTENT_HYBRID_DENSE_TRANSIENT_CREDIT = (
+    "sub2_persistent_hybrid_dense_transient_credit"
+)
 RUNTIME_STATE_AUTHORITY_SUB2_CANDIDATE_EXECUTABLE = "sub2_candidate_executable"
 
 LEDGER_CLASS_LEQ2 = "<=2_bits"
@@ -53,6 +56,14 @@ OFF_PATH_CONTROL_SECTION = "off_path_control"
 ADJACENT_RUNTIME_SECTION = "adjacent_runtime"
 
 ACQUISITION_GATE_DEFERRED = "deferred_until_after_parity_non_regression"
+ACQUISITION_GATE_UNBLOCKED_NOT_RUN = "unblocked_not_run"
+
+HYBRID_SCOPE_DECISION_SOURCE_MSG_ID = "1780806189949-f8a44a15"
+HYBRID_SCOPE_DECISION_LOCKED_OPTION = "Option A"
+HYBRID_SCOPE_DECISION_LOCKED_ANSWER = "Pragmatic hybrid"
+DENSE_TRANSIENT_CREDIT_ROLE_TRAINING_COMPUTE_CONTROL_ONLY = (
+    "training_compute_control_only"
+)
 
 
 @dataclass(frozen=True)
@@ -83,6 +94,21 @@ class StrictSub2CandidateRuntimeScaffoldReport:
     physical_persistent_target_bpw: float
     physical_persistent_target_pass: bool
     physical_persistent_interpretation: str
+    persistent_sub2_hybrid_only: bool
+    dense_transient_credit_allowed: bool
+    dense_transient_credit_role: str
+    dense_transient_credit_counted_in_physical_persistent_bpw: bool
+    transient_debt_present: bool
+    transient_debt_non_blocking: bool
+    transient_debt_row_names: tuple[str, ...]
+    full_runtime_sub2_achieved: bool
+    native_transient_sub2_achieved: bool
+    fully_fp_free_achieved: bool
+    scope_decision_source_msg_id: str
+    scope_decision_locked_option: str
+    scope_decision_locked_answer: str
+    acquisition_science_status: str
+    acquisition_achieved: bool
     candidate_runtime_complete: bool
     candidate_authority_row_names: tuple[str, ...]
     blocker_names: tuple[str, ...]
@@ -110,6 +136,23 @@ class StrictSub2CandidateRuntimeScaffoldReport:
             "physical_persistent_target_bpw": float(self.physical_persistent_target_bpw),
             "physical_persistent_target_pass": bool(self.physical_persistent_target_pass),
             "physical_persistent_interpretation": self.physical_persistent_interpretation,
+            "persistent_sub2_hybrid_only": bool(self.persistent_sub2_hybrid_only),
+            "dense_transient_credit_allowed": bool(self.dense_transient_credit_allowed),
+            "dense_transient_credit_role": self.dense_transient_credit_role,
+            "dense_transient_credit_counted_in_physical_persistent_bpw": bool(
+                self.dense_transient_credit_counted_in_physical_persistent_bpw
+            ),
+            "transient_debt_present": bool(self.transient_debt_present),
+            "transient_debt_non_blocking": bool(self.transient_debt_non_blocking),
+            "transient_debt_row_names": list(self.transient_debt_row_names),
+            "full_runtime_sub2_achieved": bool(self.full_runtime_sub2_achieved),
+            "native_transient_sub2_achieved": bool(self.native_transient_sub2_achieved),
+            "fully_fp_free_achieved": bool(self.fully_fp_free_achieved),
+            "scope_decision_source_msg_id": self.scope_decision_source_msg_id,
+            "scope_decision_locked_option": self.scope_decision_locked_option,
+            "scope_decision_locked_answer": self.scope_decision_locked_answer,
+            "acquisition_science_status": self.acquisition_science_status,
+            "acquisition_achieved": bool(self.acquisition_achieved),
             "candidate_runtime_complete": bool(self.candidate_runtime_complete),
             "candidate_authority_row_names": list(self.candidate_authority_row_names),
             "blocker_names": list(self.blocker_names),
@@ -183,17 +226,32 @@ def validate_strict_sub2_candidate_runtime_scaffold_report(
     if report.runtime_state_authority not in {
         RUNTIME_STATE_AUTHORITY_DENSE_CONTROL,
         RUNTIME_STATE_AUTHORITY_SUB2_SCAFFOLD_ONLY,
+        RUNTIME_STATE_AUTHORITY_SUB2_PERSISTENT_HYBRID_DENSE_TRANSIENT_CREDIT,
         RUNTIME_STATE_AUTHORITY_SUB2_CANDIDATE_EXECUTABLE,
     }:
         raise ValueError("unknown runtime_state_authority")
-    if report.runtime_state_authority != RUNTIME_STATE_AUTHORITY_SUB2_SCAFFOLD_ONLY:
-        raise ValueError("this slice must emit runtime_state_authority=sub2_scaffold_only")
+    if report.runtime_state_authority not in {
+        RUNTIME_STATE_AUTHORITY_SUB2_SCAFFOLD_ONLY,
+        RUNTIME_STATE_AUTHORITY_SUB2_PERSISTENT_HYBRID_DENSE_TRANSIENT_CREDIT,
+    }:
+        raise ValueError(
+            "this slice must emit runtime_state_authority=sub2_scaffold_only or "
+            "sub2_persistent_hybrid_dense_transient_credit"
+        )
+    hybrid_authority = (
+        report.runtime_state_authority
+        == RUNTIME_STATE_AUTHORITY_SUB2_PERSISTENT_HYBRID_DENSE_TRANSIENT_CREDIT
+    )
     allowed = {LEDGER_CLASS_LEQ2, LEDGER_CLASS_EXECUTABLE, LEDGER_CLASS_NOT_YET}
     for row in _all_rows(report):
         if row.classification not in allowed:
             raise ValueError(f"unknown ledger row classification for {row.name!r}")
         if row.counted_in_physical_persistent_bpw and not row.in_candidate_authority:
             raise ValueError(f"{row.name!r} cannot count toward persistent bpw outside candidate authority")
+        if row.section != PERSISTENT_CANDIDATE_SECTION and row.counted_in_physical_persistent_bpw:
+            raise ValueError(
+                f"{row.name!r} cannot count toward persistent bpw from off-path or adjacent runtime sections"
+            )
         if row.in_candidate_authority and row.classification == LEDGER_CLASS_NOT_YET:
             raise ValueError(f"{row.name!r} cannot be in candidate authority while blocked")
         if row.counted_in_physical_persistent_bpw:
@@ -212,8 +270,49 @@ def validate_strict_sub2_candidate_runtime_scaffold_report(
         raise ValueError("physical_persistent_target_pass must be computed from the binding subtotal")
     if report.candidate_runtime_complete:
         raise ValueError("this scaffold slice must stay non-executable/candidate_runtime_complete=false")
-    if report.acquisition_gate.get("status") != ACQUISITION_GATE_DEFERRED:
-        raise ValueError("acquisition must be explicitly deferred in the scaffold-first slice")
+    acquisition_status = report.acquisition_gate.get("status")
+    if acquisition_status not in {
+        ACQUISITION_GATE_DEFERRED,
+        ACQUISITION_GATE_UNBLOCKED_NOT_RUN,
+    }:
+        raise ValueError("acquisition gate status is unknown")
+    adjacent_names = tuple(row.name for row in report.adjacent_runtime_rows)
+    if hybrid_authority:
+        if not bool(report.persistent_sub2_hybrid_only):
+            raise ValueError("hybrid authority must set persistent_sub2_hybrid_only=true")
+        if not bool(report.dense_transient_credit_allowed):
+            raise ValueError("hybrid authority must set dense_transient_credit_allowed=true")
+        if (
+            report.dense_transient_credit_role
+            != DENSE_TRANSIENT_CREDIT_ROLE_TRAINING_COMPUTE_CONTROL_ONLY
+        ):
+            raise ValueError("hybrid authority must disclose dense_transient_credit_role=training_compute_control_only")
+        if bool(report.dense_transient_credit_counted_in_physical_persistent_bpw):
+            raise ValueError("hybrid authority cannot count dense transient credit in physical_persistent_bpw")
+        if not bool(report.transient_debt_present):
+            raise ValueError("hybrid authority must set transient_debt_present=true")
+        if not bool(report.transient_debt_non_blocking):
+            raise ValueError("hybrid authority must set transient_debt_non_blocking=true")
+        if tuple(report.transient_debt_row_names) != adjacent_names or not adjacent_names:
+            raise ValueError("hybrid authority must disclose a non-empty exact transient_debt_row_names list")
+        if bool(report.full_runtime_sub2_achieved):
+            raise ValueError("hybrid authority cannot claim full_runtime_sub2_achieved")
+        if bool(report.native_transient_sub2_achieved):
+            raise ValueError("hybrid authority cannot claim native_transient_sub2_achieved")
+        if bool(report.fully_fp_free_achieved):
+            raise ValueError("hybrid authority cannot claim fully_fp_free_achieved")
+        if report.scope_decision_source_msg_id != HYBRID_SCOPE_DECISION_SOURCE_MSG_ID:
+            raise ValueError("hybrid authority must disclose the locked scope decision source msg id")
+        if report.scope_decision_locked_option != HYBRID_SCOPE_DECISION_LOCKED_OPTION:
+            raise ValueError("hybrid authority must disclose the locked scope decision option")
+        if report.scope_decision_locked_answer != HYBRID_SCOPE_DECISION_LOCKED_ANSWER:
+            raise ValueError("hybrid authority must disclose the locked scope decision answer")
+        if report.acquisition_science_status != ACQUISITION_GATE_UNBLOCKED_NOT_RUN:
+            raise ValueError("hybrid authority must disclose acquisition_science_status=unblocked_not_run")
+        if bool(report.acquisition_achieved):
+            raise ValueError("hybrid authority cannot claim acquisition_achieved=true")
+        if acquisition_status != ACQUISITION_GATE_UNBLOCKED_NOT_RUN:
+            raise ValueError("hybrid authority must leave acquisition gate at unblocked_not_run")
     serialized = str(report.to_dict())
     if "justified_fp_exception" in serialized:
         raise ValueError("justified_fp_exception labels are forbidden in the candidate path")
@@ -230,8 +329,8 @@ def validate_strict_sub2_candidate_runtime_scaffold_report(
         proof = dict(report.scoped_candidate_proof)
         if proof.get("surface") != "accumulator_substitute":
             raise ValueError("scoped candidate proof must stay on accumulator_substitute only")
-        if proof.get("runtime_state_authority_after") != RUNTIME_STATE_AUTHORITY_SUB2_SCAFFOLD_ONLY:
-            raise ValueError("scoped candidate proof must leave runtime_state_authority scaffold-only")
+        if proof.get("runtime_state_authority_after") != report.runtime_state_authority:
+            raise ValueError("scoped candidate proof must leave runtime_state_authority aligned with the report authority")
         if bool(proof.get("candidate_dense_decode_used")):
             raise ValueError("scoped candidate proof cannot use dense decode on the candidate path")
         if bool(proof.get("candidate_accumulator_transient_over2_used")):
@@ -474,19 +573,21 @@ def build_strict_sub2_candidate_runtime_scaffold(
         "acquisition_not_used_as_first_gate": True,
     }
     acquisition_gate = {
-        "status": ACQUISITION_GATE_DEFERRED,
+        "status": ACQUISITION_GATE_UNBLOCKED_NOT_RUN,
         "support_name": "L0c2-K2-addition-120",
         "reason": (
-            "fork-b scaffold-first: the first executable proof is strict ledger + "
-            "runtime authority + dense-baseline parity/non-regression, not acquisition"
+            "Option A boundary encoded: persistent learner/runtime state is the hard <2 gate, "
+            "dense transient credit stays allowed training-compute/control, and the next step is "
+            "an acquisition smoke that remains not-yet-run in this slice"
         ),
     }
 
+    transient_debt_row_names = tuple(row.name for row in adjacent_runtime_rows)
     report = StrictSub2CandidateRuntimeScaffoldReport(
         schema_version=STRICT_SUB2_CANDIDATE_RUNTIME_SCAFFOLD_SCHEMA_VERSION,
         label=STRICT_SUB2_CANDIDATE_RUNTIME_SCAFFOLD_LABEL,
         target_name=STRICT_SUB2_CANDIDATE_RUNTIME_TARGET_NAME,
-        runtime_state_authority=RUNTIME_STATE_AUTHORITY_SUB2_SCAFFOLD_ONLY,
+        runtime_state_authority=RUNTIME_STATE_AUTHORITY_SUB2_PERSISTENT_HYBRID_DENSE_TRANSIENT_CREDIT,
         pass_report=True,
         eligible_module_count=len(ordered_shapes),
         eligible_weight_count=eligible_weight_count,
@@ -494,9 +595,25 @@ def build_strict_sub2_candidate_runtime_scaffold(
         physical_persistent_target_bpw=2.0,
         physical_persistent_target_pass=bool(physical_persistent_bpw < 2.0),
         physical_persistent_interpretation=(
-            "candidate-authority subtotal only; fail-closed scaffold excludes blockers/"
-            "off-path controls from the binding persistent learner-state sum"
+            "binding subtotal covers persistent learner/runtime state only; dense transient "
+            "credit and adjacent runtime debt are explicit, non-blocking, and excluded from "
+            "the physical_persistent_bpw gate"
         ),
+        persistent_sub2_hybrid_only=True,
+        dense_transient_credit_allowed=True,
+        dense_transient_credit_role=DENSE_TRANSIENT_CREDIT_ROLE_TRAINING_COMPUTE_CONTROL_ONLY,
+        dense_transient_credit_counted_in_physical_persistent_bpw=False,
+        transient_debt_present=True,
+        transient_debt_non_blocking=True,
+        transient_debt_row_names=transient_debt_row_names,
+        full_runtime_sub2_achieved=False,
+        native_transient_sub2_achieved=False,
+        fully_fp_free_achieved=False,
+        scope_decision_source_msg_id=HYBRID_SCOPE_DECISION_SOURCE_MSG_ID,
+        scope_decision_locked_option=HYBRID_SCOPE_DECISION_LOCKED_OPTION,
+        scope_decision_locked_answer=HYBRID_SCOPE_DECISION_LOCKED_ANSWER,
+        acquisition_science_status=ACQUISITION_GATE_UNBLOCKED_NOT_RUN,
+        acquisition_achieved=False,
         candidate_runtime_complete=False,
         candidate_authority_row_names=candidate_authority_row_names,
         blocker_names=blocker_names,
@@ -510,10 +627,12 @@ def build_strict_sub2_candidate_runtime_scaffold(
         hidden_fp_learner_fail_state=HIDDEN_FP_LEARNER_FAIL_STATE,
         scoped_candidate_proof=None,
         non_claims=(
-            "scaffold-only; no sub-2 learner achieved claim",
-            "runtime_state_authority stays sub2_scaffold_only in this slice",
+            "persistent-sub2 hybrid only; no full-runtime sub-2 claim",
+            "dense transient credit is allowed training-compute/control and remains non-persistent debt",
+            "native transient sub-2 is not achieved in this slice",
+            "fully fp-free runtime is not achieved in this slice",
             "no executable bounded-delta authority until a real materialize/update/collapse path exists",
-            "no acquisition or retention claim in this slice",
+            "acquisition science is unblocked but not yet run in this slice",
         ),
     )
     validate_strict_sub2_candidate_runtime_scaffold_report(report)
@@ -525,9 +644,11 @@ def attach_strict_sub2_scoped_candidate_proof(
     *,
     scoped_candidate_proof: Mapping[str, Any],
 ) -> StrictSub2CandidateRuntimeScaffoldReport:
+    proof = dict(scoped_candidate_proof)
+    proof["runtime_state_authority_after"] = report.runtime_state_authority
     updated = replace(
         report,
-        scoped_candidate_proof=dict(scoped_candidate_proof),
+        scoped_candidate_proof=proof,
     )
     validate_strict_sub2_candidate_runtime_scaffold_report(updated)
     return updated
@@ -535,11 +656,13 @@ def attach_strict_sub2_scoped_candidate_proof(
 
 __all__ = [
     "ACQUISITION_GATE_DEFERRED",
+    "ACQUISITION_GATE_UNBLOCKED_NOT_RUN",
     "LEDGER_CLASS_EXECUTABLE",
     "LEDGER_CLASS_LEQ2",
     "LEDGER_CLASS_NOT_YET",
     "RUNTIME_STATE_AUTHORITY_DENSE_CONTROL",
     "RUNTIME_STATE_AUTHORITY_SUB2_CANDIDATE_EXECUTABLE",
+    "RUNTIME_STATE_AUTHORITY_SUB2_PERSISTENT_HYBRID_DENSE_TRANSIENT_CREDIT",
     "RUNTIME_STATE_AUTHORITY_SUB2_SCAFFOLD_ONLY",
     "STRICT_SUB2_CANDIDATE_RUNTIME_SCAFFOLD_LABEL",
     "STRICT_SUB2_CANDIDATE_RUNTIME_SCAFFOLD_SCHEMA_VERSION",
@@ -549,4 +672,8 @@ __all__ = [
     "attach_strict_sub2_scoped_candidate_proof",
     "build_strict_sub2_candidate_runtime_scaffold",
     "validate_strict_sub2_candidate_runtime_scaffold_report",
+    "DENSE_TRANSIENT_CREDIT_ROLE_TRAINING_COMPUTE_CONTROL_ONLY",
+    "HYBRID_SCOPE_DECISION_LOCKED_ANSWER",
+    "HYBRID_SCOPE_DECISION_LOCKED_OPTION",
+    "HYBRID_SCOPE_DECISION_SOURCE_MSG_ID",
 ]
