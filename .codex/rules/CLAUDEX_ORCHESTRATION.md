@@ -16,8 +16,10 @@ material gatekeeper (plan / validation / commit / push / launch), and
 final synthesizer. `codex_co_lead` is read-only (review/audit) — it does
 NOT implement or run; `training-dev` owns plan + implementation +
 run-development (deterministic exact proof/launch packet execution may route
-to `test-operator` under gate); mutating repo-file work + runs go to a named
-role.
+to `test-operator` under gate; bounded terminal packets may route to
+`codex-terminal` only when the parent dispatch/gate permits terminal handoff
+or Claude explicitly dispatches it); mutating repo-file work + runs go to a
+named role.
 
 Operating shapes:
 
@@ -39,7 +41,17 @@ Operating shapes:
   auditor), `test-operator` (cheap deterministic proof-runner: runs an
   already-specified launch/proof packet, monitors NDJSON/logs/artifacts,
   posts validation receipts to BOTH co-leads; no source edits / mechanism
-  design / commits / dispatch; fixes route to `training-dev`). Slice-scoped;
+  design / commits / dispatch; fixes route to `training-dev`),
+  `codex-terminal` (gpt-5.4-mini/xhigh bounded terminal handoff for
+  `training-dev` command churn: py_compile, focused pytest/lint/typecheck,
+  command smoke, small log/tmux monitoring, artifact hashes; exact/bounded
+  command sets only; temp/log/artifact/tmux scope, NOT source authority; no
+  source edits / fixes / dep installs / alternate retries / commits / pushes
+  / science launch, stamp, or re-authorization; underspecified packet → STOP
+  + `PLAN REQUEST`/`HARNESS AMBIGUOUS`; cleanup only packet-created scope;
+  default reports to `training-dev`/requester, formal gate/proof/launch
+  receipts also to BOTH co-leads; distinct from `test-operator`, the formal
+  launch/proof runner). Slice-scoped;
   always-on means default lane/route, not a
   permanently retained handle, so recycle after the shipped slice unless
   claude scopes a small adjacent follow-up with `RETAIN OVERRIDE`.
@@ -56,6 +68,11 @@ assigns / dispatches / gates; you do NOT self-dispatch. GPT-backed role homes
 (`model="gpt-*"`) inherit base Codex auth via an `auth.json` symlink →
 `~/.codex/auth.json` (bootstrap-maintained); every worker role needs the
 ai-room MCP; `training-dev` omits Serena by design.
+
+`training-dev` may REQUEST/ROUTE bounded terminal packets to
+`codex-terminal` ONLY when the parent dispatch/gate permits terminal handoff
+OR Claude explicitly dispatches it; implementation ownership stays with
+`training-dev`, and `codex-terminal` returns terminal facts, not fixes/plans.
 
 ## Worker workflow (received-dispatch perspective)
 

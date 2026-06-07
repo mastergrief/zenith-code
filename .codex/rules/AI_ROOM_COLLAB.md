@@ -20,7 +20,8 @@ are technical research/strategy co-leads; Claude is additionally the
 operations/orchestration lead.** Gabe seeds → claude+codex co-hypothesize/
 challenge → `training-dev` owns the plan + implementation + run-development
 (incl. GPU launch/run/watch), with `test-operator` executing exact gated
-proof/launch packets, under gate → claude+codex
+proof/launch packets and `codex-terminal` handling gate-permitted bounded
+terminal packets, under gate → claude+codex
 review/audit → commit → iterate. Claude+co_lead review/audit, NOT execute
 (Claude alone gates material actions); direct Claude repo-file edits or runs
 require a persisted named exception or break-glass reason.
@@ -43,8 +44,10 @@ require a persisted named exception or break-glass reason.
   review (`training-dev` executes + watches), plan/validation/commit/push/
   launch gates, synthesis. Routes plan + implementation + run-development to
   `training-dev` by default (deterministic exact proof/launch packets may
-  route to `test-operator` under gate); direct-Claude repo-file edits or
-  runs need an explicit persisted named exception or break-glass reason.
+  route to `test-operator` under gate; bounded terminal packets may route to
+  `codex-terminal` only when the parent dispatch/gate permits terminal
+  handoff or Claude explicitly dispatches it); direct-Claude repo-file edits
+  or runs need an explicit persisted named exception or break-glass reason.
 - **Named Codex roles (under the co-leads + gates)**: `training-dev`
   (default always-on mutating lane that OWNS plan + implementation +
   test/runs/execution for explicitly dispatched + gated HRM and main-repo
@@ -56,7 +59,16 @@ require a persisted named exception or break-glass reason.
   auditor), `test-operator` (cheap deterministic proof-runner: runs an
   already-specified packet, monitors NDJSON/logs/artifacts, posts validation
   receipts to BOTH co-leads; no source edits / mechanism design / commits;
-  fixes route to `training-dev`).
+  fixes route to `training-dev`), `codex-terminal` (gpt-5.4-mini/xhigh
+  bounded terminal handoff for `training-dev` command churn: py_compile,
+  focused pytest/lint/typecheck, command smoke, small log/tmux monitoring,
+  artifact hashes; exact/bounded command sets only; temp/log/artifact/tmux
+  scope, NOT source authority; no source edits / fixes / dep installs /
+  alternate retries / commits / pushes / science launch, stamp, or
+  re-authorization; underspecified packet → STOP + `PLAN REQUEST`/
+  `HARNESS AMBIGUOUS`; cleanup only packet-created scope; default reports to
+  `training-dev`/requester, formal gate/proof/launch receipts also to BOTH
+  co-leads).
 
 ## Cross-thread is mandatory at thinking boundaries
 
@@ -64,9 +76,13 @@ Every thinking-class step in the R&D loop cross-threads. Codex
 participates at: **hypothesize, plan, devil's-advocate, creativity,
 audit-result, iterate**. Codex does NOT cross-thread at: **build,
 test, commit** — implementation + run-development stay with the single
-executor, normally `training-dev` under gate (deterministic exact
-proof/launch packets may run via `test-operator`); Claude orchestrates/gates/
-synthesizes and co_lead audits.
+executor, normally `training-dev` under gate. `training-dev` may REQUEST/ROUTE
+bounded terminal packets to `codex-terminal` ONLY when the parent
+dispatch/gate permits terminal handoff OR Claude explicitly dispatches it;
+implementation ownership stays with `training-dev`, and `codex-terminal`
+returns terminal facts, not fixes/plans. Deterministic exact proof/launch
+packets may run via `test-operator`; Claude orchestrates/gates/synthesizes
+and co_lead audits.
 
 This is the default rate of the channel, not occasional. Cross-thread
 even when claude looks confident; the challenge round catches the
