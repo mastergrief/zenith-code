@@ -12,6 +12,7 @@ from calm.hrm_text_158 import (
 )
 from calm.hrm_text_158.lm_head import IGNORE_LABEL_ID
 from calm.hrm_text_158.native_full_stack import (
+    BACKWARD_RECOMPUTE_NO_EXTRA_INTERNAL_PAYLOAD_CLAIM,
     DEFERRED_GPU_MEASUREMENT_NOTE,
     MODE_LOSSLESS_RECOMPUTE,
     MODE_LOSSY_ACTIVATION_STORAGE,
@@ -20,9 +21,11 @@ from calm.hrm_text_158.native_full_stack import (
     TIER1_LOSSLESS_RECOMPUTE,
     TIER2_LOSSY_ACTIVATION_STORAGE_DEFERRED,
     ActivationReliefPolicy,
+    build_backward_recompute_saved_tensor_receipt,
     normalize_activation_relief_policy,
     recurrence_checkpoint_decisions,
     validate_activation_relief_measurement,
+    validate_backward_recompute_saved_tensor_receipt,
 )
 
 
@@ -92,6 +95,70 @@ def _assert_named_grads_identical(
             assert left[name] is None and right[name] is None, f"grad presence mismatch for {name}"
         else:
             torch.testing.assert_close(left[name], right[name], atol=0.0, rtol=0.0)
+
+
+def _hrm_forward_saved_tensor_events(*, activation_relief_policy=None, bp_steps: int = 5):
+    torch.manual_seed(1701)
+    hrm = HierarchicalReasoningModel(_tiny_config())
+    hrm.train()
+    x = torch.randn(2, 16, 32, requires_grad=True)
+    sep = torch.tensor([5, 7], dtype=torch.long)
+    pos = torch.arange(16, dtype=torch.long).unsqueeze(0).expand(2, -1)
+    events: list[dict[str, object]] = []
+
+    def pack_hook(tensor: torch.Tensor):
+        events.append(
+            {
+                "shape": tuple(tensor.shape),
+                "numel": int(tensor.numel()),
+                "dtype": str(tensor.dtype),
+                "requires_grad": bool(tensor.requires_grad),
+            }
+        )
+        return tensor
+
+    def unpack_hook(tensor: torch.Tensor):
+        return tensor
+
+    with torch.autograd.graph.saved_tensors_hooks(pack_hook, unpack_hook):
+        _, hidden = hrm(
+            None,
+            x,
+            bp_steps=bp_steps,
+            sep_positions=sep,
+            position_ids=pos,
+            activation_relief_policy=activation_relief_policy,
+        )
+    hidden.square().sum().backward()
+    return events
+
+
+def _saved_tensor_proof(bp_steps: int) -> dict[str, object]:
+    baseline = _hrm_forward_saved_tensor_events(bp_steps=bp_steps)
+    recompute = _hrm_forward_saved_tensor_events(
+        activation_relief_policy=MODE_LOSSLESS_RECOMPUTE,
+        bp_steps=bp_steps,
+    )
+    boundary_shape = (2, 16, 32)
+    boundary_dtype = "torch.float32"
+    boundary_count = sum(
+        1
+        for event in recompute
+        if event["shape"] == boundary_shape and event["dtype"] == boundary_dtype
+    )
+    dummy_count = sum(1 for event in recompute if event["shape"] == (0,))
+    return {
+        "saved_tensor_hook_source": "torch.autograd.graph.saved_tensors_hooks",
+        "boundary_tensor_shape": boundary_shape,
+        "boundary_tensor_dtype": boundary_dtype,
+        "observed_boundary_tensor_count": boundary_count,
+        "observed_checkpoint_dummy_tensor_count": dummy_count,
+        "observed_internal_payload_tensor_count": len(recompute)
+        - boundary_count
+        - dummy_count,
+        "baseline_saved_tensor_count": len(baseline),
+        "recompute_saved_tensor_count": len(recompute),
+    }
 
 
 def test_policy_contract_is_lossless_first_and_terminal_sizing_is_abstract():
@@ -258,3 +325,90 @@ def test_default_off_and_enabled_recompute_are_bit_identical_in_loss_logits_and_
     torch.testing.assert_close(loss_off, loss_recompute, atol=0.0, rtol=0.0)
     torch.testing.assert_close(logits_off, logits_recompute, atol=0.0, rtol=0.0)
     _assert_named_grads_identical(grads_off, grads_recompute)
+
+
+def test_backward_recompute_receipt_uses_saved_tensors_hooks_for_no_extra_internal_payload():
+    receipt = build_backward_recompute_saved_tensor_receipt(
+        H_cycles=2,
+        L_cycles=3,
+        bp_steps=5,
+        saved_tensor_proof=_saved_tensor_proof(bp_steps=5),
+    )
+    validate_backward_recompute_saved_tensor_receipt(receipt)
+
+    assert receipt.policy_mode == MODE_LOSSLESS_RECOMPUTE
+    assert receipt.default_runtime_sub2_claim is False
+    assert receipt.activations_residuals_sub2_claim is False
+    assert receipt.lossless_not_lossy is True
+    assert receipt.kv_cache_side_effects_forbidden is True
+    assert receipt.no_gpu is True
+    assert receipt.no_pt is True
+    assert receipt.no_learning_or_throughput_claim is True
+    assert receipt.checkpointed_grad_enabled_calls == (
+        ("H", 0),
+        ("L", 3),
+        ("L", 4),
+        ("L", 5),
+        ("H", 1),
+    )
+    assert receipt.observed_boundary_tensor_count == 10
+    assert receipt.observed_checkpoint_dummy_tensor_count == 5
+    assert receipt.observed_internal_payload_tensor_count == 0
+    assert receipt.recompute_saved_tensor_count == 15
+    assert receipt.baseline_saved_tensor_count > receipt.recompute_saved_tensor_count
+    assert (
+        receipt.no_extra_internal_payload_claim
+        == BACKWARD_RECOMPUTE_NO_EXTRA_INTERNAL_PAYLOAD_CLAIM
+    )
+    assert "not a zero-tensors-anywhere claim" in receipt.caveat
+    assert "z_H/z_L activation/residual" in receipt.caveat
+
+    bp2_receipt = build_backward_recompute_saved_tensor_receipt(
+        H_cycles=2,
+        L_cycles=3,
+        bp_steps=2,
+        saved_tensor_proof=_saved_tensor_proof(bp_steps=2),
+    )
+    assert bp2_receipt.checkpointed_grad_enabled_calls == (("L", 5), ("H", 1))
+    assert bp2_receipt.observed_boundary_tensor_count == 4
+    assert bp2_receipt.observed_checkpoint_dummy_tensor_count == 2
+    assert bp2_receipt.observed_internal_payload_tensor_count == 0
+
+
+def test_backward_recompute_receipt_rejects_lossy_cache_reentrant_and_internal_payloads():
+    proof = _saved_tensor_proof(bp_steps=5)
+
+    with pytest.raises(NotImplementedError, match="Tier-2/deferred"):
+        build_backward_recompute_saved_tensor_receipt(
+            H_cycles=2,
+            L_cycles=3,
+            bp_steps=5,
+            saved_tensor_proof=proof,
+            policy=MODE_LOSSY_ACTIVATION_STORAGE,
+        )
+    with pytest.raises(ValueError, match="use_reentrant=False"):
+        build_backward_recompute_saved_tensor_receipt(
+            H_cycles=2,
+            L_cycles=3,
+            bp_steps=5,
+            saved_tensor_proof=proof,
+            policy=ActivationReliefPolicy(
+                mode=MODE_LOSSLESS_RECOMPUTE,
+                use_reentrant=True,
+            ),
+        )
+    with pytest.raises(ValueError, match="kv_cache is present"):
+        build_backward_recompute_saved_tensor_receipt(
+            H_cycles=2,
+            L_cycles=3,
+            bp_steps=5,
+            saved_tensor_proof=proof,
+            kv_cache_present=True,
+        )
+    with pytest.raises(ValueError, match="internal recurrence payload"):
+        build_backward_recompute_saved_tensor_receipt(
+            H_cycles=2,
+            L_cycles=3,
+            bp_steps=5,
+            saved_tensor_proof=dict(proof, observed_internal_payload_tensor_count=1),
+        )

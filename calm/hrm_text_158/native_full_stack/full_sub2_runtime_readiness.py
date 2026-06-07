@@ -11,6 +11,7 @@ from typing import Any, Mapping, Sequence
 
 from calm.hrm_text_158.native_full_stack.activation_relief import (
     ACTIVATION_RELIEF_SCHEMA_VERSION,
+    BACKWARD_RECOMPUTE_RECEIPT_SCHEMA_VERSION,
 )
 from calm.hrm_text_158.native_full_stack.attention_kv_buffers import (
     ATTENTION_KV_BUFFER_SCHEMA_VERSION,
@@ -85,6 +86,7 @@ FULL_SUB2_RUNTIME_SOURCE_SEAMS = {
     "strict_sub2_scaffold": STRICT_SUB2_CANDIDATE_RUNTIME_SCAFFOLD_SCHEMA_VERSION,
     "persistent_state_budget": PERSISTENT_STATE_BUDGET_SCHEMA_VERSION,
     "activation_relief": ACTIVATION_RELIEF_SCHEMA_VERSION,
+    "backward_recompute": BACKWARD_RECOMPUTE_RECEIPT_SCHEMA_VERSION,
     "attention_kv_buffers": ATTENTION_KV_BUFFER_SCHEMA_VERSION,
     "recurrent_state_buffers": RECURRENT_STATE_BUFFER_SCHEMA_VERSION,
     "full_loop_receipt": FULL_LOOP_RECEIPT_SCHEMA_VERSION,
@@ -100,6 +102,9 @@ FULL_SUB2_RUNTIME_NON_CLAIMS = (
 
 FIXTURE_CURRENT_REPO = "current_repo_scaffold"
 FIXTURE_GATED_SUB2_CHECKPOINT_PATH = "gated_sub2_checkpoint_path"
+FIXTURE_GATED_SUB2_CHECKPOINT_PATH_BACKWARD_RECOMPUTE = (
+    "gated_sub2_checkpoint_path_backward_recompute"
+)
 FIXTURE_MAIN_READY = "main_ready"
 FIXTURE_MISSING_ACTIVATIONS = "missing_activations_residuals"
 FIXTURE_MISSING_ATTENTION = "missing_attention_kv_attention_buffers"
@@ -113,6 +118,7 @@ FIXTURE_STEP2A_CANDIDATE_PERSISTENT_CORE_ABSENCE = (
 FULL_SUB2_RUNTIME_FIXTURE_NAMES = (
     FIXTURE_CURRENT_REPO,
     FIXTURE_GATED_SUB2_CHECKPOINT_PATH,
+    FIXTURE_GATED_SUB2_CHECKPOINT_PATH_BACKWARD_RECOMPUTE,
     FIXTURE_MAIN_READY,
     FIXTURE_MISSING_ACTIVATIONS,
     FIXTURE_MISSING_ATTENTION,
@@ -124,6 +130,9 @@ FULL_SUB2_RUNTIME_FIXTURE_NAMES = (
 
 GATED_SUB2_CHECKPOINT_PATH_REASON = (
     "gated default-off sidecar checkpoint path only; default runtime not sub2"
+)
+GATED_LOSSLESS_RECOMPUTE_REASON = (
+    "gated default-off lossless recompute path only; default runtime not sub2"
 )
 
 
@@ -687,6 +696,30 @@ def gated_sub2_checkpoint_path_surfaces() -> tuple[
     return tuple(surfaces)
 
 
+def gated_sub2_checkpoint_path_backward_recompute_surfaces() -> tuple[
+    FullSub2RuntimeSurfaceReceipt, ...
+]:
+    """Step 3A1 readiness variant: backward saved tensors only."""
+
+    surfaces = gated_sub2_checkpoint_path_surfaces()
+    return _with_surface(
+        surfaces,
+        SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS,
+        classification=RUNTIME_CLASS_SUB2,
+        reason=(
+            f"{GATED_LOSSLESS_RECOMPUTE_REASON}; Step 3A1 saved-tensor-hook "
+            "receipt proves no extra stored internal recurrence-block saved "
+            "payload while boundary z_H/z_L inputs remain accounted under "
+            "activations_residuals"
+        ),
+        source_anchor="calm/hrm_text_158/native_full_stack/activation_relief.py:295",
+        proof_artifact_or_test=(
+            "calm/llm_computer/tests/test_hrm_text_158_activation_relief.py::"
+            "test_backward_recompute_receipt_uses_saved_tensors_hooks_for_no_extra_internal_payload"
+        ),
+    )
+
+
 def step2a_candidate_persistent_core_absence_surfaces() -> tuple[
     FullSub2RuntimeSurfaceReceipt, ...
 ]:
@@ -740,6 +773,8 @@ def fixture_full_sub2_runtime_ready_for_science(
         surfaces = current_repo_scaffold_surfaces()
     elif fixture_name == FIXTURE_GATED_SUB2_CHECKPOINT_PATH:
         surfaces = gated_sub2_checkpoint_path_surfaces()
+    elif fixture_name == FIXTURE_GATED_SUB2_CHECKPOINT_PATH_BACKWARD_RECOMPUTE:
+        surfaces = gated_sub2_checkpoint_path_backward_recompute_surfaces()
     elif fixture_name == FIXTURE_MAIN_READY:
         surfaces = main_ready_fixture_surfaces()
     elif fixture_name == FIXTURE_MISSING_ACTIVATIONS:
