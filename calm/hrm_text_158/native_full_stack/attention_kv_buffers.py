@@ -7,7 +7,7 @@ framework-internal SDPA workspace as GPU-measured/deferred.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Mapping, Sequence
 
 import torch
 
@@ -32,6 +32,43 @@ TIER2_LOSSY_ATTENTION_KV_COMPRESSION_DEFERRED = (
 MATERIALIZED_ALLOCATION_ONLY = "materialized_allocation_only"
 RUNTIME_CACHE_NOT_STATE_DICT = "runtime_only_not_state_dict"
 SDPA_WORKSPACE_GPU_MEASURED_DEFERRED = "sdpa_workspace_gpu_measured_deferred"
+
+ATTENTION_KV_FAIL_CLOSED_RECEIPT_SCHEMA_VERSION = (
+    "hrm_text_158_attention_kv_fail_closed/v0.live_tensor_seams"
+)
+ATTENTION_KV_FAIL_CLOSED_TARGET_NAME = "step3b_attention_kv_fail_closed"
+ATTENTION_KV_REQUIRED_OBSERVED_FAMILIES = (
+    "attn.gqkv.query_post_rope",
+    "attn.gqkv.key_post_rope",
+    "attn.gqkv.value",
+)
+ATTENTION_KV_ALLOWED_OBSERVED_FAMILIES = ATTENTION_KV_REQUIRED_OBSERVED_FAMILIES
+ATTENTION_KV_BLOCKED_REASON = (
+    "fail-closed attention/KV live-tensor harness only; live BF16/FP q/k/v "
+    "tensor seams plus estimator/deferred runtime cache surfaces are observed "
+    "and no real sub2/eviction/offload/compression/no-hidden-BF16/GPU "
+    "memory-throughput proof is present"
+)
+ATTENTION_KV_PREFIX_LM_MASK_CAVEAT = (
+    "PrefixLM mask is a materialized attention surface, not an observed-family "
+    "substitute or sub2 proof"
+)
+ATTENTION_KV_GQA_REPEAT_CAVEAT = (
+    "GQA repeated K/V tensors are materialized attention surfaces, not an "
+    "observed-family substitute or sub2 proof"
+)
+ATTENTION_KV_RUNTIME_CACHE_SCOPE = (
+    "runtime KVCache is inference/probe-only, not state_dict, and the training "
+    "path bypasses cached attention"
+)
+ATTENTION_KV_FAIL_CLOSED_NON_CLAIMS = (
+    "attention q/k/v live-tensor observation is not learning, acquisition, retention, or throughput",
+    "observer callbacks returning BF16/FP q/k/v tensors are blocker evidence, not sub2 credit",
+    "PrefixLM mask and GQA repeated K/V surfaces are caveats/non-claims, not observed-family substitutes",
+    "SDPA workspace remains GPU-measured/deferred and is not proven by this CPU receipt",
+    "runtime KVCache is inference/probe-only, not state_dict, and training bypasses cached attention",
+    "this receipt does not launch GPU, prove memory/throughput relief, write checkpoints, or mutate .pt artifacts",
+)
 
 REQUIRED_ATTENTION_KV_MEASUREMENT_FIELDS = (
     "peak_allocated_bytes",
@@ -199,6 +236,108 @@ class AttentionKVBufferEstimate:
     visible_attention: VisibleAttentionMemoryEstimate
 
 
+@dataclass(frozen=True)
+class AttentionKVLiveTensorFamilyObservation:
+    family: str
+    observed_count: int
+    shapes: tuple[tuple[int, ...], ...]
+    dtypes: tuple[str, ...]
+    devices: tuple[str, ...]
+    requires_grad_values: tuple[bool, ...]
+    mechanism: str = "observer_returns_original_tensor"
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "family": self.family,
+            "observed_count": self.observed_count,
+            "shapes": [list(shape) for shape in self.shapes],
+            "dtypes": list(self.dtypes),
+            "devices": list(self.devices),
+            "requires_grad_values": list(self.requires_grad_values),
+            "mechanism": self.mechanism,
+        }
+
+
+@dataclass(frozen=True)
+class AttentionKVCaveatSummary:
+    prefix_lm_mask_caveat: str
+    gqa_repeat_caveat: str
+    sdpa_workspace_caveat: str
+    runtime_cache_persistence: str
+    runtime_cache_training_bypass: bool
+    runtime_cache_state_dict_claim: bool
+    materialized_allocation_policy: str
+    runtime_cache_scope: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "prefix_lm_mask_caveat": self.prefix_lm_mask_caveat,
+            "gqa_repeat_caveat": self.gqa_repeat_caveat,
+            "sdpa_workspace_caveat": self.sdpa_workspace_caveat,
+            "runtime_cache_persistence": self.runtime_cache_persistence,
+            "runtime_cache_training_bypass": self.runtime_cache_training_bypass,
+            "runtime_cache_state_dict_claim": self.runtime_cache_state_dict_claim,
+            "materialized_allocation_policy": self.materialized_allocation_policy,
+            "runtime_cache_scope": self.runtime_cache_scope,
+        }
+
+
+@dataclass(frozen=True)
+class AttentionKVFailClosedReceipt:
+    schema_version: str
+    target_name: str
+    allowed_observed_families: tuple[str, ...]
+    required_observed_families: tuple[str, ...]
+    attention_kv_attention_buffers_sub2_claim: bool
+    real_sub2_representation_present: bool
+    lossless_eviction_or_offload_proof_present: bool
+    compression_proof_present: bool
+    fidelity_acquisition_revalidation_present: bool
+    no_hidden_bf16_authority_proven: bool
+    gpu_memory_throughput_receipt_present: bool
+    generic_lossy_or_compression_wording: bool
+    ready_to_flip: bool
+    blocked_reason: str
+    observed_families: tuple[AttentionKVLiveTensorFamilyObservation, ...]
+    caveats: AttentionKVCaveatSummary
+    smallest_missing_proof: str
+    non_claims: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema_version": self.schema_version,
+            "target_name": self.target_name,
+            "allowed_observed_families": list(self.allowed_observed_families),
+            "required_observed_families": list(self.required_observed_families),
+            "attention_kv_attention_buffers_sub2_claim": (
+                self.attention_kv_attention_buffers_sub2_claim
+            ),
+            "real_sub2_representation_present": self.real_sub2_representation_present,
+            "lossless_eviction_or_offload_proof_present": (
+                self.lossless_eviction_or_offload_proof_present
+            ),
+            "compression_proof_present": self.compression_proof_present,
+            "fidelity_acquisition_revalidation_present": (
+                self.fidelity_acquisition_revalidation_present
+            ),
+            "no_hidden_bf16_authority_proven": self.no_hidden_bf16_authority_proven,
+            "gpu_memory_throughput_receipt_present": (
+                self.gpu_memory_throughput_receipt_present
+            ),
+            "generic_lossy_or_compression_wording": (
+                self.generic_lossy_or_compression_wording
+            ),
+            "ready_to_flip": self.ready_to_flip,
+            "blocked_reason": self.blocked_reason,
+            "observed_families": [
+                observation.to_dict() for observation in self.observed_families
+            ],
+            "caveats": self.caveats.to_dict(),
+            "smallest_missing_proof": self.smallest_missing_proof,
+            "non_claims": list(self.non_claims),
+        }
+
+
 def attention_kv_key_schedule(
     *,
     H_cycles: int,
@@ -330,6 +469,241 @@ def validate_attention_kv_mode(mode: str) -> str:
             "acquisition re-validation before any claim"
         )
     raise ValueError(f"unknown attention/KV mode: {mode!r}")
+
+
+def _require_nonempty_string(value: object, *, field_name: str) -> str:
+    text = str(value)
+    if not text.strip():
+        raise ValueError(f"{field_name} must be non-empty")
+    return text
+
+
+def _shape_tuple(value: object, *, field_name: str) -> tuple[int, ...]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        raise TypeError(f"{field_name} must be a sequence of integer dimensions")
+    shape = tuple(int(dim) for dim in value)
+    if not shape:
+        raise ValueError(f"{field_name} must be non-empty")
+    return shape
+
+
+def _summarize_attention_kv_live_tensor_families(
+    seam_events: Sequence[Mapping[str, object]],
+) -> tuple[AttentionKVLiveTensorFamilyObservation, ...]:
+    grouped: dict[str, list[Mapping[str, object]]] = {
+        family: [] for family in ATTENTION_KV_ALLOWED_OBSERVED_FAMILIES
+    }
+    for event in seam_events:
+        family = event.get("family", event.get("name"))
+        if family not in grouped:
+            raise ValueError(
+                "attention/KV receipt observed families must be exactly the "
+                f"Step 3B allowlist {ATTENTION_KV_ALLOWED_OBSERVED_FAMILIES!r}; "
+                f"got {family!r}"
+            )
+        grouped[str(family)].append(event)
+
+    missing = [family for family, events in grouped.items() if not events]
+    if missing:
+        raise ValueError(
+            "attention/KV receipt missing required observed families: "
+            + ", ".join(missing)
+        )
+
+    observations: list[AttentionKVLiveTensorFamilyObservation] = []
+    for family in ATTENTION_KV_REQUIRED_OBSERVED_FAMILIES:
+        events = grouped[family]
+        observations.append(
+            AttentionKVLiveTensorFamilyObservation(
+                family=family,
+                observed_count=len(events),
+                shapes=tuple(
+                    sorted(
+                        {
+                            _shape_tuple(
+                                event.get("shape", ()),
+                                field_name=f"{family}.shape",
+                            )
+                            for event in events
+                        }
+                    )
+                ),
+                dtypes=tuple(
+                    sorted(
+                        {
+                            _require_nonempty_string(
+                                event.get("dtype", ""),
+                                field_name=f"{family}.dtype",
+                            )
+                            for event in events
+                        }
+                    )
+                ),
+                devices=tuple(
+                    sorted(
+                        {
+                            _require_nonempty_string(
+                                event.get("device", ""),
+                                field_name=f"{family}.device",
+                            )
+                            for event in events
+                        }
+                    )
+                ),
+                requires_grad_values=tuple(
+                    sorted({bool(event.get("requires_grad", False)) for event in events})
+                ),
+            )
+        )
+    return tuple(observations)
+
+
+def build_attention_kv_fail_closed_receipt(
+    *,
+    seam_events: Sequence[Mapping[str, object]],
+    attention_kv_attention_buffers_sub2_claim: bool = False,
+    real_sub2_representation_present: bool = False,
+    lossless_eviction_or_offload_proof_present: bool = False,
+    compression_proof_present: bool = False,
+    fidelity_acquisition_revalidation_present: bool = False,
+    no_hidden_bf16_authority_proven: bool = False,
+    gpu_memory_throughput_receipt_present: bool = False,
+    generic_lossy_or_compression_wording: bool = False,
+    ready_to_flip: bool = False,
+    smallest_missing_proof: str = (
+        "real attention/KV sub2 representation or lossless eviction/offload or "
+        "compression proof with fidelity/acquisition revalidation, plus "
+        "no-hidden-BF16 authority proof and GPU memory/throughput receipt"
+    ),
+) -> AttentionKVFailClosedReceipt:
+    """Build the Step 3B fail-closed attention/KV blocker receipt."""
+
+    receipt = AttentionKVFailClosedReceipt(
+        schema_version=ATTENTION_KV_FAIL_CLOSED_RECEIPT_SCHEMA_VERSION,
+        target_name=ATTENTION_KV_FAIL_CLOSED_TARGET_NAME,
+        allowed_observed_families=ATTENTION_KV_ALLOWED_OBSERVED_FAMILIES,
+        required_observed_families=ATTENTION_KV_REQUIRED_OBSERVED_FAMILIES,
+        attention_kv_attention_buffers_sub2_claim=bool(
+            attention_kv_attention_buffers_sub2_claim
+        ),
+        real_sub2_representation_present=bool(real_sub2_representation_present),
+        lossless_eviction_or_offload_proof_present=bool(
+            lossless_eviction_or_offload_proof_present
+        ),
+        compression_proof_present=bool(compression_proof_present),
+        fidelity_acquisition_revalidation_present=bool(
+            fidelity_acquisition_revalidation_present
+        ),
+        no_hidden_bf16_authority_proven=bool(no_hidden_bf16_authority_proven),
+        gpu_memory_throughput_receipt_present=bool(
+            gpu_memory_throughput_receipt_present
+        ),
+        generic_lossy_or_compression_wording=bool(generic_lossy_or_compression_wording),
+        ready_to_flip=bool(ready_to_flip),
+        blocked_reason=ATTENTION_KV_BLOCKED_REASON,
+        observed_families=_summarize_attention_kv_live_tensor_families(seam_events),
+        caveats=AttentionKVCaveatSummary(
+            prefix_lm_mask_caveat=ATTENTION_KV_PREFIX_LM_MASK_CAVEAT,
+            gqa_repeat_caveat=ATTENTION_KV_GQA_REPEAT_CAVEAT,
+            sdpa_workspace_caveat=SDPA_WORKSPACE_GPU_MEASURED_DEFERRED,
+            runtime_cache_persistence=RUNTIME_CACHE_NOT_STATE_DICT,
+            runtime_cache_training_bypass=True,
+            runtime_cache_state_dict_claim=False,
+            materialized_allocation_policy=MATERIALIZED_ALLOCATION_ONLY,
+            runtime_cache_scope=ATTENTION_KV_RUNTIME_CACHE_SCOPE,
+        ),
+        smallest_missing_proof=_require_nonempty_string(
+            smallest_missing_proof,
+            field_name="smallest_missing_proof",
+        ),
+        non_claims=ATTENTION_KV_FAIL_CLOSED_NON_CLAIMS,
+    )
+    validate_attention_kv_fail_closed_receipt(receipt)
+    return receipt
+
+
+def validate_attention_kv_fail_closed_receipt(
+    receipt: AttentionKVFailClosedReceipt,
+) -> None:
+    if receipt.schema_version != ATTENTION_KV_FAIL_CLOSED_RECEIPT_SCHEMA_VERSION:
+        raise ValueError("attention/KV fail-closed receipt schema mismatch")
+    if receipt.target_name != ATTENTION_KV_FAIL_CLOSED_TARGET_NAME:
+        raise ValueError("attention/KV fail-closed receipt target mismatch")
+    if receipt.allowed_observed_families != ATTENTION_KV_ALLOWED_OBSERVED_FAMILIES:
+        raise ValueError("attention/KV allowed observed families must be exact")
+    if receipt.required_observed_families != ATTENTION_KV_REQUIRED_OBSERVED_FAMILIES:
+        raise ValueError("attention/KV required observed families must be exact")
+    observed_names = tuple(observation.family for observation in receipt.observed_families)
+    if observed_names != ATTENTION_KV_REQUIRED_OBSERVED_FAMILIES:
+        raise ValueError("attention/KV observed families must match required q/k/v set")
+    counts = tuple(observation.observed_count for observation in receipt.observed_families)
+    if any(count <= 0 for count in counts):
+        raise ValueError("attention/KV q/k/v families must all be observed")
+    if len(set(counts)) != 1:
+        raise ValueError("attention/KV q/k/v observed counts must have parity")
+    for observation in receipt.observed_families:
+        if observation.mechanism != "observer_returns_original_tensor":
+            raise ValueError("Step 3B accepts only observer-returned original tensors")
+        if not observation.shapes or not observation.dtypes or not observation.devices:
+            raise ValueError(f"{observation.family} is missing tensor metadata")
+
+    caveats = receipt.caveats
+    if caveats.prefix_lm_mask_caveat != ATTENTION_KV_PREFIX_LM_MASK_CAVEAT:
+        raise ValueError("attention/KV receipt must carry the PrefixLM mask caveat")
+    if caveats.gqa_repeat_caveat != ATTENTION_KV_GQA_REPEAT_CAVEAT:
+        raise ValueError("attention/KV receipt must carry the GQA repeat caveat")
+    if caveats.sdpa_workspace_caveat != SDPA_WORKSPACE_GPU_MEASURED_DEFERRED:
+        raise ValueError("attention/KV receipt must keep SDPA workspace GPU-deferred")
+    if caveats.runtime_cache_persistence != RUNTIME_CACHE_NOT_STATE_DICT:
+        raise ValueError("attention/KV receipt must keep runtime KVCache out of state_dict")
+    if caveats.runtime_cache_training_bypass is not True:
+        raise ValueError("attention/KV receipt must state training bypasses cached attention")
+    if caveats.runtime_cache_state_dict_claim is not False:
+        raise ValueError("attention/KV receipt must not claim KVCache state_dict authority")
+    if caveats.materialized_allocation_policy != MATERIALIZED_ALLOCATION_ONLY:
+        raise ValueError("attention/KV receipt must keep materialized-allocation caveat")
+    if caveats.runtime_cache_scope != ATTENTION_KV_RUNTIME_CACHE_SCOPE:
+        raise ValueError("attention/KV receipt must carry the runtime cache scope caveat")
+
+    compression_gate = (
+        receipt.compression_proof_present
+        and receipt.fidelity_acquisition_revalidation_present
+    )
+    representation_gate = (
+        receipt.real_sub2_representation_present
+        or receipt.lossless_eviction_or_offload_proof_present
+        or compression_gate
+    )
+    required_proofs = (
+        representation_gate
+        and receipt.no_hidden_bf16_authority_proven
+        and receipt.gpu_memory_throughput_receipt_present
+    )
+    if receipt.generic_lossy_or_compression_wording and not (
+        compression_gate
+        and receipt.no_hidden_bf16_authority_proven
+        and receipt.gpu_memory_throughput_receipt_present
+    ):
+        raise ValueError(
+            "generic compression/lossy wording requires explicit fidelity/acquisition "
+            "revalidation plus no-hidden-BF16 and GPU memory/throughput proof"
+        )
+    if receipt.attention_kv_attention_buffers_sub2_claim and not (
+        required_proofs and receipt.ready_to_flip
+    ):
+        raise ValueError(
+            "attention_kv_attention_buffers_sub2_claim requires real representation "
+            "or lossless eviction/offload or compression+fidelity proof, plus "
+            "no-hidden-BF16, GPU memory/throughput proof, and ready_to_flip=True"
+        )
+    if receipt.ready_to_flip and not (
+        receipt.attention_kv_attention_buffers_sub2_claim and required_proofs
+    ):
+        raise ValueError("ready_to_flip cannot be true without all attention/KV proof gates")
+    if receipt.blocked_reason != ATTENTION_KV_BLOCKED_REASON:
+        raise ValueError("attention/KV blocked reason must be exact")
+    if receipt.non_claims != ATTENTION_KV_FAIL_CLOSED_NON_CLAIMS:
+        raise ValueError("attention/KV receipt non-claims must be exact")
 
 
 def _require_numeric(receipt: Mapping[str, object], field: str) -> int | float:

@@ -16,7 +16,9 @@ from calm.hrm_text_158.native_full_stack.activation_relief import (
     BACKWARD_RECOMPUTE_RECEIPT_SCHEMA_VERSION,
 )
 from calm.hrm_text_158.native_full_stack.attention_kv_buffers import (
+    ATTENTION_KV_BLOCKED_REASON,
     ATTENTION_KV_BUFFER_SCHEMA_VERSION,
+    ATTENTION_KV_FAIL_CLOSED_RECEIPT_SCHEMA_VERSION,
 )
 from calm.hrm_text_158.native_full_stack.fp_exceptions import FP_EXCEPTION_REGISTRY
 from calm.hrm_text_158.native_full_stack.full_loop_receipt import (
@@ -93,6 +95,7 @@ FULL_SUB2_RUNTIME_SOURCE_SEAMS = {
     ),
     "backward_recompute": BACKWARD_RECOMPUTE_RECEIPT_SCHEMA_VERSION,
     "attention_kv_buffers": ATTENTION_KV_BUFFER_SCHEMA_VERSION,
+    "attention_kv_fail_closed": ATTENTION_KV_FAIL_CLOSED_RECEIPT_SCHEMA_VERSION,
     "recurrent_state_buffers": RECURRENT_STATE_BUFFER_SCHEMA_VERSION,
     "full_loop_receipt": FULL_LOOP_RECEIPT_SCHEMA_VERSION,
     "sidecar_runtime": SUB2_HYBRID_SIDECAR_RUNTIME_SCHEMA_VERSION,
@@ -113,6 +116,9 @@ FIXTURE_GATED_SUB2_CHECKPOINT_PATH_BACKWARD_RECOMPUTE = (
 FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ACTIVATION_RESIDUALS_BLOCKED = (
     "gated_sub2_checkpoint_path_activation_residuals_blocked"
 )
+FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ATTENTION_KV_BLOCKED = (
+    "gated_sub2_checkpoint_path_attention_kv_blocked"
+)
 FIXTURE_MAIN_READY = "main_ready"
 FIXTURE_MISSING_ACTIVATIONS = "missing_activations_residuals"
 FIXTURE_MISSING_ATTENTION = "missing_attention_kv_attention_buffers"
@@ -128,6 +134,7 @@ FULL_SUB2_RUNTIME_FIXTURE_NAMES = (
     FIXTURE_GATED_SUB2_CHECKPOINT_PATH,
     FIXTURE_GATED_SUB2_CHECKPOINT_PATH_BACKWARD_RECOMPUTE,
     FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ACTIVATION_RESIDUALS_BLOCKED,
+    FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ATTENTION_KV_BLOCKED,
     FIXTURE_MAIN_READY,
     FIXTURE_MISSING_ACTIVATIONS,
     FIXTURE_MISSING_ATTENTION,
@@ -754,6 +761,31 @@ def gated_sub2_checkpoint_path_activation_residuals_blocked_surfaces() -> tuple[
     )
 
 
+def gated_sub2_checkpoint_path_attention_kv_blocked_surfaces() -> tuple[
+    FullSub2RuntimeSurfaceReceipt, ...
+]:
+    """Step 3B readiness variant: attention/KV row remains blocked."""
+
+    surfaces = gated_sub2_checkpoint_path_activation_residuals_blocked_surfaces()
+    return _with_surface(
+        surfaces,
+        SURFACE_ATTENTION_KV_ATTENTION_BUFFERS,
+        classification=RUNTIME_CLASS_PRE_FULL_STACK_DIAGNOSTIC,
+        reason=(
+            f"{ATTENTION_KV_BLOCKED_REASON}; q/k/v seam observations, PrefixLM "
+            "mask, GQA repeat, SDPA workspace, and runtime KVCache caveats are "
+            "blocker evidence, not sub2 credit"
+        ),
+        source_anchor="calm/hrm_text_158/native_full_stack/attention_kv_buffers.py:1",
+        proof_artifact_or_test=(
+            "calm/llm_computer/tests/test_hrm_text_158_attention_kv_buffers.py::"
+            "test_attention_kv_fail_closed_receipt_enumerates_qkv_allowlist_without_flip"
+        ),
+        diagnostic_exception_reason="attention/KV byte accounting can be audited before full runtime replacement",
+        why_cheaper_than_full_stack_first="static estimator validation is cheaper than GPU science launch",
+    )
+
+
 def step2a_candidate_persistent_core_absence_surfaces() -> tuple[
     FullSub2RuntimeSurfaceReceipt, ...
 ]:
@@ -811,6 +843,8 @@ def fixture_full_sub2_runtime_ready_for_science(
         surfaces = gated_sub2_checkpoint_path_backward_recompute_surfaces()
     elif fixture_name == FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ACTIVATION_RESIDUALS_BLOCKED:
         surfaces = gated_sub2_checkpoint_path_activation_residuals_blocked_surfaces()
+    elif fixture_name == FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ATTENTION_KV_BLOCKED:
+        surfaces = gated_sub2_checkpoint_path_attention_kv_blocked_surfaces()
     elif fixture_name == FIXTURE_MAIN_READY:
         surfaces = main_ready_fixture_surfaces()
     elif fixture_name == FIXTURE_MISSING_ACTIVATIONS:

@@ -13,6 +13,7 @@ from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
     FIXTURE_CURRENT_REPO,
     FIXTURE_GATED_SUB2_CHECKPOINT_PATH,
     FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ACTIVATION_RESIDUALS_BLOCKED,
+    FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ATTENTION_KV_BLOCKED,
     FIXTURE_GATED_SUB2_CHECKPOINT_PATH_BACKWARD_RECOMPUTE,
     FIXTURE_MAIN_READY,
     FIXTURE_MISSING_ACTIVATIONS,
@@ -41,6 +42,7 @@ from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
     build_full_sub2_runtime_ready_for_science,
     fixture_full_sub2_runtime_ready_for_science,
     gated_sub2_checkpoint_path_activation_residuals_blocked_surfaces,
+    gated_sub2_checkpoint_path_attention_kv_blocked_surfaces,
     gated_sub2_checkpoint_path_backward_recompute_surfaces,
     gated_sub2_checkpoint_path_surfaces,
     main_ready_fixture_surfaces,
@@ -345,6 +347,103 @@ def test_gated_activation_residuals_blocked_fixture_updates_only_activation_reas
     assert SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS not in blocked.blocker_surface_names
 
 
+def test_gated_attention_kv_blocked_fixture_updates_only_attention_reason_and_proof():
+    current = fixture_full_sub2_runtime_ready_for_science(FIXTURE_CURRENT_REPO)
+    gated = fixture_full_sub2_runtime_ready_for_science(
+        FIXTURE_GATED_SUB2_CHECKPOINT_PATH
+    )
+    recompute = fixture_full_sub2_runtime_ready_for_science(
+        FIXTURE_GATED_SUB2_CHECKPOINT_PATH_BACKWARD_RECOMPUTE
+    )
+    activation_blocked = fixture_full_sub2_runtime_ready_for_science(
+        FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ACTIVATION_RESIDUALS_BLOCKED
+    )
+    attention_blocked = fixture_full_sub2_runtime_ready_for_science(
+        FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ATTENTION_KV_BLOCKED
+    )
+    validate_full_sub2_runtime_ready_for_science_receipt(attention_blocked)
+
+    current_classes = {
+        surface.surface_id: surface.classification for surface in current.surfaces
+    }
+    gated_classes = {
+        surface.surface_id: surface.classification for surface in gated.surfaces
+    }
+    recompute_classes = {
+        surface.surface_id: surface.classification for surface in recompute.surfaces
+    }
+    activation_blocked_classes = {
+        surface.surface_id: surface.classification
+        for surface in activation_blocked.surfaces
+    }
+    attention_blocked_classes = {
+        surface.surface_id: surface.classification
+        for surface in attention_blocked.surfaces
+    }
+    activation_blocked_surfaces = {
+        surface.surface_id: surface.to_dict()
+        for surface in activation_blocked.surfaces
+    }
+    attention_blocked_surfaces = {
+        surface.surface_id: surface.to_dict()
+        for surface in attention_blocked.surfaces
+    }
+
+    assert current_classes[SURFACE_ATTENTION_KV_ATTENTION_BUFFERS] != RUNTIME_CLASS_SUB2
+    assert gated_classes[SURFACE_ATTENTION_KV_ATTENTION_BUFFERS] != RUNTIME_CLASS_SUB2
+    assert recompute_classes[SURFACE_ATTENTION_KV_ATTENTION_BUFFERS] != RUNTIME_CLASS_SUB2
+    assert attention_blocked_classes == activation_blocked_classes
+    assert (
+        attention_blocked_classes[SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS]
+        == RUNTIME_CLASS_SUB2
+    )
+    assert (
+        attention_blocked_classes[SURFACE_ACTIVATIONS_RESIDUALS]
+        == RUNTIME_CLASS_PRE_FULL_STACK_DIAGNOSTIC
+    )
+    assert (
+        attention_blocked_classes[SURFACE_ATTENTION_KV_ATTENTION_BUFFERS]
+        == RUNTIME_CLASS_PRE_FULL_STACK_DIAGNOSTIC
+    )
+
+    changed_surface_ids = {
+        surface_id
+        for surface_id, activation_surface in activation_blocked_surfaces.items()
+        if attention_blocked_surfaces[surface_id] != activation_surface
+    }
+    assert changed_surface_ids == {SURFACE_ATTENTION_KV_ATTENTION_BUFFERS}
+    attention_before = activation_blocked_surfaces[SURFACE_ATTENTION_KV_ATTENTION_BUFFERS]
+    attention_after = attention_blocked_surfaces[SURFACE_ATTENTION_KV_ATTENTION_BUFFERS]
+    changed_attention_fields = {
+        field
+        for field, before_value in attention_before.items()
+        if attention_after[field] != before_value
+    }
+    assert changed_attention_fields == {"reason", "proof_artifact_or_test"}
+    assert "fail-closed attention/KV live-tensor harness" in attention_after["reason"]
+    assert "q/k/v seam observations" in attention_after["reason"]
+    assert "PrefixLM mask" in attention_after["reason"]
+    assert "GQA repeat" in attention_after["reason"]
+    assert "SDPA workspace" in attention_after["reason"]
+    assert "runtime KVCache" in attention_after["reason"]
+    assert (
+        "test_attention_kv_fail_closed_receipt_enumerates_qkv_allowlist_without_flip"
+        in attention_after["proof_artifact_or_test"]
+    )
+    assert attention_blocked.ready_for_main_science is False
+    assert attention_blocked.main_science_launch_blocked is True
+    assert attention_blocked.ready_for_pre_full_stack_diagnostic is True
+    assert set(attention_blocked.blocker_surface_names) == {
+        SURFACE_ACTIVATIONS_RESIDUALS,
+        SURFACE_ATTENTION_KV_ATTENTION_BUFFERS,
+        SURFACE_OPTIMIZER_CREDIT_STATE,
+        SURFACE_NATIVE_KERNELIZED_HOT_PATH,
+    }
+    assert SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS not in (
+        attention_blocked.blocker_surface_names
+    )
+
+
 def test_explicit_exception_requires_fail_closed_fields():
     surfaces = _replace_surface(
         SURFACE_FP_EXCEPTIONS_LEDGER,
@@ -392,6 +491,10 @@ def test_export_api_smoke():
         native_full_stack.FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ACTIVATION_RESIDUALS_BLOCKED
         == FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ACTIVATION_RESIDUALS_BLOCKED
     )
+    assert (
+        native_full_stack.FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ATTENTION_KV_BLOCKED
+        == FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ATTENTION_KV_BLOCKED
+    )
     assert native_full_stack.RUNTIME_CLASS_TRANSIENT_FP_DEBT == RUNTIME_CLASS_TRANSIENT_FP_DEBT
     assert "FIXTURE_GATED_SUB2_CHECKPOINT_PATH" in native_full_stack.__all__
     assert "FIXTURE_GATED_SUB2_CHECKPOINT_PATH_BACKWARD_RECOMPUTE" in native_full_stack.__all__
@@ -399,10 +502,18 @@ def test_export_api_smoke():
         "FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ACTIVATION_RESIDUALS_BLOCKED"
         in native_full_stack.__all__
     )
+    assert (
+        "FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ATTENTION_KV_BLOCKED"
+        in native_full_stack.__all__
+    )
     assert "fixture_full_sub2_runtime_ready_for_science" in native_full_stack.__all__
     assert "gated_sub2_checkpoint_path_backward_recompute_surfaces" in native_full_stack.__all__
     assert (
         "gated_sub2_checkpoint_path_activation_residuals_blocked_surfaces"
+        in native_full_stack.__all__
+    )
+    assert (
+        "gated_sub2_checkpoint_path_attention_kv_blocked_surfaces"
         in native_full_stack.__all__
     )
     assert "gated_sub2_checkpoint_path_surfaces" in native_full_stack.__all__
@@ -418,6 +529,10 @@ def test_export_api_smoke():
         native_full_stack.gated_sub2_checkpoint_path_activation_residuals_blocked_surfaces()
     )
     assert blocked_surfaces == gated_sub2_checkpoint_path_activation_residuals_blocked_surfaces()
+    attention_blocked_surfaces = (
+        native_full_stack.gated_sub2_checkpoint_path_attention_kv_blocked_surfaces()
+    )
+    assert attention_blocked_surfaces == gated_sub2_checkpoint_path_attention_kv_blocked_surfaces()
 
 
 @pytest.mark.parametrize(
@@ -573,6 +688,46 @@ def test_cli_gated_activation_residuals_blocked_expect_ready_emits_blocker_reaso
     assert SURFACE_ACTIVATIONS_RESIDUALS in payload["blocker_surface_names"]
     assert SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS not in payload["blocker_surface_names"]
     assert "activations_residuals" in result.stdout
+
+
+def test_cli_gated_attention_kv_blocked_expect_ready_emits_blocker_reason(tmp_path):
+    json_out = tmp_path / "gated_sub2_checkpoint_path_attention_kv_blocked.json"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--fixture",
+            FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ATTENTION_KV_BLOCKED,
+            "--json-out",
+            str(json_out),
+            "--expect-ready",
+        ],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    assert result.returncode == 2
+    assert json_out.exists()
+    payload = json.loads(json_out.read_text(encoding="utf-8"))
+    surfaces = {surface["surface_id"]: surface for surface in payload["surfaces"]}
+    attention = surfaces[SURFACE_ATTENTION_KV_ATTENTION_BUFFERS]
+    assert payload["ready_for_main_science"] is False
+    assert payload["main_science_launch_blocked"] is True
+    assert payload["ready_for_pre_full_stack_diagnostic"] is True
+    assert attention["classification"] == RUNTIME_CLASS_PRE_FULL_STACK_DIAGNOSTIC
+    assert "fail-closed attention/KV live-tensor harness" in attention["reason"]
+    assert "q/k/v seam observations" in attention["reason"]
+    assert "runtime KVCache" in attention["reason"]
+    assert set(payload["blocker_surface_names"]) == {
+        SURFACE_ACTIVATIONS_RESIDUALS,
+        SURFACE_ATTENTION_KV_ATTENTION_BUFFERS,
+        SURFACE_OPTIMIZER_CREDIT_STATE,
+        SURFACE_NATIVE_KERNELIZED_HOT_PATH,
+    }
+    assert SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS not in payload["blocker_surface_names"]
+    assert "attention_kv_attention_buffers" in result.stdout
 
 
 def test_readiness_classes_are_exact_five_class_prereg():
