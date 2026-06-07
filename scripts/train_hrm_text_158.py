@@ -759,6 +759,9 @@ def train(
     # 2C1 proof-only hook: construct/count trainer q+scale+bounded authority
     # after model load and exit before normal optimizer/training side effects.
     sub2_authority_construction_proof: bool = False,
+    # 2C2 proof-only hook: run one default-off trainer local qacc update proof
+    # and exit before normal optimizer/training/checkpoint side effects.
+    sub2_authority_local_update_proof: bool = False,
     sub2_authority_eligible_scope: str = "all-bitlinear",
     # Diagnostic ONLY (codex msg 1779652915624): when True, build the training
     # DataLoader WITHOUT the explicit seeded generator (pre-1656ead global-RNG
@@ -1276,6 +1279,64 @@ def train(
          "count": s["count"], "hash": s["hash"]}
         for s in active_supports
     ]
+
+    if sub2_authority_construction_proof and sub2_authority_local_update_proof:
+        raise ValueError(
+            "--sub2-authority-construction-proof and "
+            "--sub2-authority-local-update-proof are mutually exclusive"
+        )
+
+    if sub2_authority_local_update_proof:
+        from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
+            build_trainer_sub2_authority_local_update_receipt,
+        )
+
+        proof_batch = next(iter(loader))
+        proof_total_steps = max(1, epochs * len(loader))
+
+        def _proof_forward_loss(model, batch):
+            inputs = batch["inputs"].to(device)
+            labels = batch["labels"].to(device)
+            sep_positions = batch["sep_positions"].to(device)
+            B, L = inputs.shape
+            position_ids = torch.arange(L, dtype=torch.long, device=device).unsqueeze(0).expand(B, -1)
+            child_batch = {
+                "inputs": inputs,
+                "labels": labels,
+                "sep_positions": sep_positions,
+                "position_ids": position_ids,
+            }
+            extras = model.compute_train_extra_args(0, proof_total_steps)
+            _carry, loss_main, _metrics = model(None, child_batch, **extras)
+            return loss_main
+
+        receipt = build_trainer_sub2_authority_local_update_receipt(
+            m,
+            batch=proof_batch,
+            forward_loss_fn=_proof_forward_loss,
+            use_ternary_bulk=use_ternary_bulk,
+            eligible_scope=sub2_authority_eligible_scope,
+            device=device,
+            lr=lr,
+            weight_decay=weight_decay,
+            step=0,
+        )
+        print(
+            "[hrm158] 2C2 sub2-authority local qacc update proof: "
+            f"pass={receipt.pass_receipt} "
+            f"eligible_modules={receipt.eligible_module_count} "
+            f"sparse_events={receipt.total_sparse_vote_event_count} "
+            f"q_changed={receipt.q_changed_count} "
+            f"masters_byte_identical={receipt.eligible_fp_masters_byte_identical} "
+            "dry_run=True checkpoint_written=False optimizer_step_called=False",
+            flush=True,
+        )
+        print(
+            "[hrm158] 2C2 sub2-authority local qacc update proof: EXITING before "
+            "normal optimizer/training/checkpoint side effects",
+            flush=True,
+        )
+        return
 
     if sub2_authority_construction_proof:
         from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
@@ -1853,11 +1914,18 @@ if __name__ == "__main__":
                          "authority payload and exit before normal optimizer/"
                          "training/checkpoint side effects. Requires "
                          "--use-ternary-bulk; no update parity or row flip claim.")
+    ap.add_argument("--sub2-authority-local-update-proof", action="store_true",
+                    help="2C2 proof-only, default-off: after model construction/"
+                         "load, run one trainer-style local qacc update proof from "
+                         "captured weighted gradients and exit before normal "
+                         "optimizer/training/checkpoint side effects. Requires "
+                         "--use-ternary-bulk; local update only, no row flip claim.")
     ap.add_argument("--sub2-authority-eligible-scope", type=str,
                     default="all-bitlinear",
                     choices=["first-bitlinear", "all-bitlinear"],
-                    help="2C1 proof-only eligible BitLinear scope for "
-                         "--sub2-authority-construction-proof.")
+                    help="2C1/2C2 proof-only eligible BitLinear scope for "
+                         "--sub2-authority-construction-proof or "
+                         "--sub2-authority-local-update-proof.")
     ap.add_argument("--legacy-loader-shuffle", action="store_true",
                     help="DIAGNOSTIC ONLY (not recipe-default): build the training "
                          "DataLoader without the explicit seeded generator, restoring "
@@ -1939,6 +2007,7 @@ if __name__ == "__main__":
         retained_support_profile=_retained_profile,
         retained_support_batch=args.retained_support_batch,
         sub2_authority_construction_proof=args.sub2_authority_construction_proof,
+        sub2_authority_local_update_proof=args.sub2_authority_local_update_proof,
         sub2_authority_eligible_scope=args.sub2_authority_eligible_scope,
         legacy_loader_shuffle=args.legacy_loader_shuffle,
         dry_run=args.dry_run,

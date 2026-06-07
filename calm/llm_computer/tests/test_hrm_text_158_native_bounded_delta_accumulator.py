@@ -1,6 +1,7 @@
 """C1.1c bounded-delta accumulator ledger/oracle tests."""
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 import pytest
@@ -91,6 +92,40 @@ def _assert_no_tensors(value: Any) -> None:
     elif isinstance(value, (list, tuple)):
         for child in value:
             _assert_no_tensors(child)
+
+
+def _identity_sha(state_key: str, indices: tuple[int, ...]) -> str:
+    h = hashlib.sha256()
+    for index in sorted(indices):
+        h.update(state_key.encode("utf-8"))
+        h.update(b":")
+        h.update(str(int(index)).encode("utf-8"))
+        h.update(b"\n")
+    return h.hexdigest()
+
+
+def _ordered_identity_sha(state_key: str, indices: tuple[int, ...]) -> str:
+    h = hashlib.sha256()
+    for index in indices:
+        h.update(state_key.encode("utf-8"))
+        h.update(b":")
+        h.update(str(int(index)).encode("utf-8"))
+        h.update(b"\n")
+    return h.hexdigest()
+
+
+def _ordered_value_sha(state_key: str, label: str, values: dict[int, int]) -> str:
+    h = hashlib.sha256()
+    for index, value in values.items():
+        h.update(state_key.encode("utf-8"))
+        h.update(b":")
+        h.update(label.encode("utf-8"))
+        h.update(b":")
+        h.update(str(int(index)).encode("utf-8"))
+        h.update(b"=")
+        h.update(str(int(value)).encode("utf-8"))
+        h.update(b"\n")
+    return h.hexdigest()
 
 
 def test_inclusive_ledger_rejects_dense_cold_under_prior_large_budget():
@@ -231,6 +266,24 @@ def test_direct_bounded_local_vote_update_executes_sparse_event_domain_without_d
     )
     oracle = apply_integer_vote_update_reference(state, votes, spec)
     decoded = decode_bounded_accumulator_to_i16(result.next_bounded_accumulator)
+    applied = tuple(
+        int(index)
+        for index in oracle.plan.applied_indices.detach().cpu().to(torch.int64).tolist()
+    )
+    directions = {
+        int(index): int(direction)
+        for index, direction in zip(
+            applied,
+            oracle.plan.applied_directions.detach().cpu().to(torch.int16).tolist(),
+        )
+    }
+    thresholds = {
+        int(index): int(threshold)
+        for index, threshold in zip(
+            applied,
+            oracle.plan.applied_thresholds.detach().cpu().to(torch.int32).tolist(),
+        )
+    }
 
     assert result.proof["pass"] is True
     assert result.proof["candidate_dense_decode_used"] is False
@@ -240,8 +293,24 @@ def test_direct_bounded_local_vote_update_executes_sparse_event_domain_without_d
     assert result.proof["coverage_domain"]["no_global_cap"] is True
     assert result.proof["coverage_domain"]["sparse_vote_events_only"] is True
     assert result.proof["coverage_domain"]["supports_default_mass_crossing"] is False
+    assert result.proof["candidate_count"] == int(oracle.plan.candidate_indices.numel())
+    assert result.proof["max_flips"] == spec.max_flips(4)
+    assert result.proof["pre_veto_selected_flip_count"] == int(oracle.plan.applied_indices.numel())
     assert result.proof["q_changed_count"] == 2
     assert result.proof["applied_row_count"] == 2
+    assert result.proof["applied_row_identities_sha256"] == _identity_sha("toy.local", applied)
+    assert (
+        result.proof["ordered_applied_row_identities_sha256"]
+        == _ordered_identity_sha("toy.local", applied)
+    )
+    assert (
+        result.proof["applied_directions_sha256"]
+        == _ordered_value_sha("toy.local", "direction", directions)
+    )
+    assert (
+        result.proof["applied_thresholds_sha256"]
+        == _ordered_value_sha("toy.local", "threshold", thresholds)
+    )
     assert result.next_q_levels.tolist() == [1, 0, -1, 0]
     assert decoded.tolist() == [1, 0, -1, 0]
     assert oracle.q_levels.tolist() == [1, 0, -1, 0]
@@ -261,6 +330,42 @@ def test_direct_bounded_local_vote_update_executes_sparse_event_domain_without_d
     assert result.proof["scoped_physical_budget_claim"] == "algorithmic_only_not_physical_sub2"
     assert result.proof["q_storage_physical_budget_covered_by_scoped_proof"] is False
     assert result.proof["frozen_scale_physical_budget_covered_by_scoped_proof"] is False
+    _assert_no_tensors(result.proof)
+
+
+def test_direct_bounded_local_vote_update_respects_q_boundary_noop_without_threshold_consumption():
+    state = _state(
+        4,
+        acc_overrides={0: 9, 1: -9},
+        q_overrides={0: 1, 1: -1},
+    )
+    votes = _inputs(4, {0: 2, 1: -2})
+    bounded = encode_budget_capped_hybrid_reference(
+        state,
+        hot_exact_indices=(0, 1),
+        cold_default_value=0,
+    )
+
+    result = execute_direct_bounded_local_vote_update_candidate(
+        state_key="toy.boundary",
+        q_levels=state.q_levels,
+        bounded_accumulator=bounded,
+        sparse_vote_events={0: 2, 1: -2},
+        vote_spec=_spec(max_abs_per_tensor=4),
+    )
+    decoded = decode_bounded_accumulator_to_i16(result.next_bounded_accumulator)
+
+    assert result.proof["pass"] is True
+    assert result.proof["candidate_count"] == 0
+    assert result.proof["applied_row_count"] == 0
+    assert result.proof["q_changed_count"] == 0
+    assert result.next_q_levels.tolist() == [1, -1, 0, 0]
+    assert decoded.tolist() == [11, -11, 0, 0]
+    assert result.proof["residual_after_threshold_sha256"] == _ordered_value_sha(
+        "toy.boundary",
+        "",
+        {},
+    )
     _assert_no_tensors(result.proof)
 
 

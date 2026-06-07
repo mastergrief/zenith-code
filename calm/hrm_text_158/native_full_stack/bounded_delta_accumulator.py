@@ -127,6 +127,30 @@ def _identity_sha256(identities: set[tuple[str, int]]) -> str:
     return h.hexdigest()
 
 
+def _ordered_identity_sha256(state_key: str, indices: Sequence[int]) -> str:
+    h = hashlib.sha256()
+    for index in indices:
+        h.update(str(state_key).encode("utf-8"))
+        h.update(b":")
+        h.update(str(int(index)).encode("utf-8"))
+        h.update(b"\n")
+    return h.hexdigest()
+
+
+def _ordered_value_sha256(state_key: str, label: str, values: Mapping[int, int]) -> str:
+    h = hashlib.sha256()
+    for index, value in values.items():
+        h.update(str(state_key).encode("utf-8"))
+        h.update(b":")
+        h.update(str(label).encode("utf-8"))
+        h.update(b":")
+        h.update(str(int(index)).encode("utf-8"))
+        h.update(b"=")
+        h.update(str(int(value)).encode("utf-8"))
+        h.update(b"\n")
+    return h.hexdigest()
+
+
 def _symmetric_fraction(
     exact: set[tuple[str, int]],
     bounded: set[tuple[str, int]],
@@ -985,8 +1009,12 @@ def execute_direct_bounded_local_vote_update_candidate(
     applied_indices = tuple(ordered_candidates[:max_flips])
     q_after = q_flat.clone()
     residual_after_threshold: dict[int, int] = {}
+    applied_directions_by_index: dict[int, int] = {}
+    applied_thresholds_by_index: dict[int, int] = {}
     for index in applied_indices:
         direction = 1 if int(support_after[index]) >= threshold else -1
+        applied_directions_by_index[index] = int(direction)
+        applied_thresholds_by_index[index] = int(threshold)
         q_after[index] = int(max(-1, min(1, int(q_after[index].item()) + direction)))
         residual = int(support_after[index]) - (direction * threshold)
         residual = _clip_i16(residual, -threshold + 1, threshold - 1)
@@ -1058,6 +1086,9 @@ def execute_direct_bounded_local_vote_update_candidate(
         "domain_gap_detail": None,
         "default_mass_crossing_count": 0,
         "event_vote_count": int(len(sparse_votes)),
+        "candidate_count": int(len(candidate_indices)),
+        "max_flips": int(max_flips),
+        "pre_veto_selected_flip_count": int(len(applied_indices)),
         "support_row_count": int(len(explicit_support)),
         "hot_exact_row_count_before": int(len(bounded_accumulator.hot_exact_indices)),
         "cold_exception_row_count_before": int(len(bounded_accumulator.cold_exception_indices)),
@@ -1070,6 +1101,20 @@ def execute_direct_bounded_local_vote_update_candidate(
         "applied_row_count": int(len(applied_indices)),
         "applied_row_identities_sha256": _identity_sha256(
             {(state_key, int(index)) for index in applied_indices},
+        ),
+        "ordered_applied_row_identities_sha256": _ordered_identity_sha256(
+            state_key,
+            applied_indices,
+        ),
+        "applied_directions_sha256": _ordered_value_sha256(
+            state_key,
+            "direction",
+            applied_directions_by_index,
+        ),
+        "applied_thresholds_sha256": _ordered_value_sha256(
+            state_key,
+            "threshold",
+            applied_thresholds_by_index,
         ),
         "residual_after_threshold_sha256": _sparse_value_sha256(
             state_key,
