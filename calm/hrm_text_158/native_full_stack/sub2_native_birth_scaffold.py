@@ -10,6 +10,7 @@ an executable sub-2 learner. Instead it emits:
 """
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass, replace
 from typing import Any, Mapping, Sequence
 
@@ -64,6 +65,25 @@ HYBRID_SCOPE_DECISION_LOCKED_ANSWER = "Pragmatic hybrid"
 DENSE_TRANSIENT_CREDIT_ROLE_TRAINING_COMPUTE_CONTROL_ONLY = (
     "training_compute_control_only"
 )
+STRICT_SUB2_HYBRID_PERSISTENT_SIDECAR_LEDGER_SCHEMA_VERSION = (
+    "hrm_text_158_strict_sub2_hybrid_persistent_sidecar_ledger/v0"
+)
+STRICT_SUB2_HYBRID_RUNTIME_MOVEMENT_OVERLAY_SCHEMA_VERSION = (
+    "hrm_text_158_strict_sub2_hybrid_runtime_movement_overlay/v0"
+)
+STRICT_SUB2_HYBRID_RUNTIME_MOVEMENT_OVERLAY_LABEL = (
+    "strict_sub2_hybrid_runtime_movement_overlay"
+)
+HYBRID_PERSISTENT_MODE_APPLIED_CROSSING_DIRECTION_PLUS_4BIT_RESIDUAL = (
+    "applied_crossing_direction_plus_4bit_residual"
+)
+HYBRID_PERSISTENT_MODE_ZERO_PERSISTENT_ACCUMULATOR = (
+    "zero_persistent_accumulator"
+)
+HYBRID_MOVEMENT_CONTRACT_SCOPE = "native_hybrid_persistent_sub2_movement_smoke"
+HYBRID_MOVEMENT_METRIC_NAME = "support_wide_strict_exact_best_delta"
+ACQUISITION_GATE_RUNNING = "running"
+ACQUISITION_GATE_RESULT = "result"
 
 
 @dataclass(frozen=True)
@@ -171,6 +191,120 @@ class StrictSub2CandidateRuntimeScaffoldReport:
         }
 
 
+@dataclass(frozen=True)
+class HybridPersistentSidecarLedger:
+    schema_version: str
+    label: str
+    persistent_mode: str
+    eligible_module_count: int
+    eligible_weight_count: int
+    total_event_count: int
+    index_bits_kind: str
+    direction_bits_per_event: int
+    residual_bits_per_event: int
+    total_metadata_bits: int
+    packet_count_bits_formula: str
+    q_bits_per_weight: float
+    frozen_scale_bits_per_weight: float
+    sidecar_bits_per_weight: float
+    inclusive_bits_per_weight: float
+    row_only_lt2: bool
+    inclusive_lt2: bool
+    shape_breakdown: tuple[dict[str, Any], ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "label": self.label,
+            "persistent_mode": self.persistent_mode,
+            "eligible_module_count": int(self.eligible_module_count),
+            "eligible_weight_count": int(self.eligible_weight_count),
+            "total_event_count": int(self.total_event_count),
+            "index_bits_kind": self.index_bits_kind,
+            "direction_bits_per_event": int(self.direction_bits_per_event),
+            "residual_bits_per_event": int(self.residual_bits_per_event),
+            "total_metadata_bits": int(self.total_metadata_bits),
+            "packet_count_bits_formula": self.packet_count_bits_formula,
+            "q_bits_per_weight": float(self.q_bits_per_weight),
+            "frozen_scale_bits_per_weight": float(self.frozen_scale_bits_per_weight),
+            "sidecar_bits_per_weight": float(self.sidecar_bits_per_weight),
+            "inclusive_bits_per_weight": float(self.inclusive_bits_per_weight),
+            "row_only_lt2": bool(self.row_only_lt2),
+            "inclusive_lt2": bool(self.inclusive_lt2),
+            "shape_breakdown": [dict(row) for row in self.shape_breakdown],
+        }
+
+
+@dataclass(frozen=True)
+class StrictSub2HybridRuntimeMovementOverlay:
+    schema_version: str
+    label: str
+    base_scaffold_schema_version: str
+    base_scaffold_label: str
+    runtime_state_authority: str
+    persistent_mode: str
+    pass_report: bool
+    persistent_dense_shadow_present: bool
+    persistent_dense_shadow_bytes: int
+    bounded_only_collapse: bool
+    local_update_law_label: str
+    local_update_law_reused: bool
+    second_update_law_required: bool
+    dense_transient_credit_allowed: bool
+    dense_transient_credit_role: str
+    transient_debt_present: bool
+    persistent_sub2_hybrid_only: bool
+    full_runtime_sub2_achieved: bool
+    candidate_runtime_complete: bool
+    acquisition_science_status: str
+    acquisition_achieved: bool
+    movement_contract_scope: str
+    movement_metric_name: str
+    movement_metric_min_delta: int
+    q_changed_must_be_positive: bool
+    hard_fail_required_false: bool
+    live_dense_transient_selection_role: str
+    persistent_authority_row_names: tuple[str, ...]
+    blocked_row_names: tuple[str, ...]
+    persistent_sidecar_ledger: dict[str, Any]
+    claim_boundary: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "label": self.label,
+            "base_scaffold_schema_version": self.base_scaffold_schema_version,
+            "base_scaffold_label": self.base_scaffold_label,
+            "runtime_state_authority": self.runtime_state_authority,
+            "persistent_mode": self.persistent_mode,
+            "pass": bool(self.pass_report),
+            "persistent_dense_shadow_present": bool(self.persistent_dense_shadow_present),
+            "persistent_dense_shadow_bytes": int(self.persistent_dense_shadow_bytes),
+            "bounded_only_collapse": bool(self.bounded_only_collapse),
+            "local_update_law_label": self.local_update_law_label,
+            "local_update_law_reused": bool(self.local_update_law_reused),
+            "second_update_law_required": bool(self.second_update_law_required),
+            "dense_transient_credit_allowed": bool(self.dense_transient_credit_allowed),
+            "dense_transient_credit_role": self.dense_transient_credit_role,
+            "transient_debt_present": bool(self.transient_debt_present),
+            "persistent_sub2_hybrid_only": bool(self.persistent_sub2_hybrid_only),
+            "full_runtime_sub2_achieved": bool(self.full_runtime_sub2_achieved),
+            "candidate_runtime_complete": bool(self.candidate_runtime_complete),
+            "acquisition_science_status": self.acquisition_science_status,
+            "acquisition_achieved": bool(self.acquisition_achieved),
+            "movement_contract_scope": self.movement_contract_scope,
+            "movement_metric_name": self.movement_metric_name,
+            "movement_metric_min_delta": int(self.movement_metric_min_delta),
+            "q_changed_must_be_positive": bool(self.q_changed_must_be_positive),
+            "hard_fail_required_false": bool(self.hard_fail_required_false),
+            "live_dense_transient_selection_role": self.live_dense_transient_selection_role,
+            "persistent_authority_row_names": list(self.persistent_authority_row_names),
+            "blocked_row_names": list(self.blocked_row_names),
+            "persistent_sidecar_ledger": dict(self.persistent_sidecar_ledger),
+            "claim_boundary": list(self.claim_boundary),
+        }
+
+
 def _shape_tuple(shape: Sequence[int]) -> tuple[int, ...]:
     out = tuple(int(dim) for dim in shape)
     if not out or any(dim <= 0 for dim in out):
@@ -183,6 +317,13 @@ def _numel(shape: Sequence[int]) -> int:
     for dim in shape:
         out *= int(dim)
     return int(out)
+
+
+def _index_bits_for_numel(numel: int) -> int:
+    numel = int(numel)
+    if numel <= 0:
+        raise ValueError("numel must be > 0")
+    return int(math.ceil(math.log2(numel))) if numel > 1 else 1
 
 
 def _scale_bits_per_weight(scale_count: int, eligible_weight_count: int) -> float:
@@ -212,6 +353,404 @@ def _all_rows(
         + report.off_path_control_rows
         + report.adjacent_runtime_rows
     )
+
+
+def validate_hybrid_persistent_sidecar_ledger(
+    ledger: HybridPersistentSidecarLedger,
+) -> None:
+    if (
+        ledger.schema_version
+        != STRICT_SUB2_HYBRID_PERSISTENT_SIDECAR_LEDGER_SCHEMA_VERSION
+    ):
+        raise ValueError("hybrid persistent sidecar ledger schema version mismatch")
+    if ledger.label != "strict_sub2_hybrid_persistent_sidecar_ledger":
+        raise ValueError("hybrid persistent sidecar ledger label mismatch")
+    if ledger.persistent_mode not in {
+        HYBRID_PERSISTENT_MODE_APPLIED_CROSSING_DIRECTION_PLUS_4BIT_RESIDUAL,
+        HYBRID_PERSISTENT_MODE_ZERO_PERSISTENT_ACCUMULATOR,
+    }:
+        raise ValueError("unknown hybrid persistent sidecar mode")
+    if int(ledger.eligible_module_count) <= 0:
+        raise ValueError("eligible_module_count must be > 0")
+    if int(ledger.eligible_weight_count) <= 0:
+        raise ValueError("eligible_weight_count must be > 0")
+    if int(ledger.total_event_count) < 0:
+        raise ValueError("total_event_count must be >= 0")
+    if ledger.index_bits_kind != "per_tensor_local":
+        raise ValueError("index_bits_kind must disclose per_tensor_local accounting")
+    if int(ledger.direction_bits_per_event) != 1:
+        raise ValueError("direction_bits_per_event must be 1")
+    if ledger.persistent_mode == HYBRID_PERSISTENT_MODE_APPLIED_CROSSING_DIRECTION_PLUS_4BIT_RESIDUAL:
+        if int(ledger.residual_bits_per_event) != 4:
+            raise ValueError("4-bit sidecar mode must disclose residual_bits_per_event=4")
+    if int(ledger.residual_bits_per_event) < 0:
+        raise ValueError("residual_bits_per_event must be >= 0")
+    if int(ledger.total_metadata_bits) < 0:
+        raise ValueError("total_metadata_bits must be >= 0")
+    if ledger.packet_count_bits_formula != "ceil(log2(numel + 1)) per tensor":
+        raise ValueError("packet_count_bits_formula must stay explicit")
+    if float(ledger.q_bits_per_weight) <= 0.0:
+        raise ValueError("q_bits_per_weight must be > 0")
+    if float(ledger.frozen_scale_bits_per_weight) < 0.0:
+        raise ValueError("frozen_scale_bits_per_weight must be >= 0")
+    if float(ledger.sidecar_bits_per_weight) < 0.0:
+        raise ValueError("sidecar_bits_per_weight must be >= 0")
+    if abs(
+        float(ledger.inclusive_bits_per_weight)
+        - (
+            float(ledger.q_bits_per_weight)
+            + float(ledger.frozen_scale_bits_per_weight)
+            + float(ledger.sidecar_bits_per_weight)
+        )
+    ) > 1e-12:
+        raise ValueError("inclusive_bits_per_weight must equal q + scale + sidecar")
+    if bool(ledger.row_only_lt2) != (float(ledger.sidecar_bits_per_weight) < 2.0):
+        raise ValueError("row_only_lt2 must be computed from sidecar_bits_per_weight")
+    if bool(ledger.inclusive_lt2) != (float(ledger.inclusive_bits_per_weight) < 2.0):
+        raise ValueError("inclusive_lt2 must be computed from inclusive_bits_per_weight")
+    breakdown = tuple(ledger.shape_breakdown)
+    if len(breakdown) != int(ledger.eligible_module_count):
+        raise ValueError("shape_breakdown length must equal eligible_module_count")
+    event_total = 0
+    metadata_total = 0
+    eligible_total = 0
+    sidecar_total_bits = 0
+    for row in breakdown:
+        shape = tuple(int(dim) for dim in row.get("shape", ()))
+        if not shape or any(dim <= 0 for dim in shape):
+            raise ValueError("shape_breakdown rows must disclose positive shapes")
+        eligible = int(row.get("eligible_weight_count", 0))
+        if eligible != _numel(shape):
+            raise ValueError("shape_breakdown eligible_weight_count must match shape numel")
+        event_count = int(row.get("event_count", -1))
+        if event_count < 0 or event_count > eligible:
+            raise ValueError("shape_breakdown event_count must be in [0, eligible_weight_count]")
+        index_bits = int(row.get("index_bits", 0))
+        if index_bits != _index_bits_for_numel(eligible):
+            raise ValueError("shape_breakdown index_bits must be the local per-tensor index width")
+        packet_count_bits = int(row.get("packet_count_bits", -1))
+        expected_packet_bits = int(math.ceil(math.log2(eligible + 1)))
+        if packet_count_bits != expected_packet_bits:
+            raise ValueError("shape_breakdown packet_count_bits must equal ceil(log2(numel + 1))")
+        metadata_bits = int(row.get("metadata_bits", -1))
+        if metadata_bits < packet_count_bits:
+            raise ValueError("shape_breakdown metadata_bits must include packet_count_bits")
+        total_bits = int(row.get("total_bits", -1))
+        expected_total_bits = metadata_bits + event_count * (
+            index_bits
+            + int(ledger.direction_bits_per_event)
+            + int(ledger.residual_bits_per_event)
+        )
+        if total_bits != expected_total_bits:
+            raise ValueError("shape_breakdown total_bits must match the explicit codec formula")
+        event_total += event_count
+        metadata_total += metadata_bits
+        eligible_total += eligible
+        sidecar_total_bits += total_bits
+    if event_total != int(ledger.total_event_count):
+        raise ValueError("total_event_count must equal the sum of shape_breakdown event counts")
+    if metadata_total != int(ledger.total_metadata_bits):
+        raise ValueError("total_metadata_bits must equal the sum of shape_breakdown metadata bits")
+    if eligible_total != int(ledger.eligible_weight_count):
+        raise ValueError("eligible_weight_count must equal the sum of shape_breakdown eligible weights")
+    if abs(float(ledger.sidecar_bits_per_weight) - (float(sidecar_total_bits) / float(eligible_total))) > 1e-12:
+        raise ValueError("sidecar_bits_per_weight must equal aggregate sidecar bits / eligible_weight_count")
+
+
+def build_hybrid_persistent_sidecar_ledger(
+    *,
+    logical_shapes: Sequence[Sequence[int]],
+    event_counts: Sequence[int],
+    persistent_mode: str,
+    residual_bits_per_event: int,
+    direction_bits_per_event: int = 1,
+    extra_metadata_bits_per_tensor: int = 0,
+    target_bits_per_weight: float = 2.0,
+) -> HybridPersistentSidecarLedger:
+    if not logical_shapes:
+        raise ValueError("logical_shapes must be non-empty")
+    if len(logical_shapes) != len(event_counts):
+        raise ValueError("logical_shapes and event_counts must have identical length")
+    ordered_shapes = tuple(_shape_tuple(shape) for shape in logical_shapes)
+    if int(direction_bits_per_event) != 1:
+        raise ValueError("direction_bits_per_event must stay 1 for this codec family")
+    if int(residual_bits_per_event) < 0:
+        raise ValueError("residual_bits_per_event must be >= 0")
+    if int(extra_metadata_bits_per_tensor) < 0:
+        raise ValueError("extra_metadata_bits_per_tensor must be >= 0")
+    eligible_weight_count = sum(_numel(shape) for shape in ordered_shapes)
+    q_row = base3_q_entropy_ledger_for_shapes(
+        regime_name="strict_sub2_hybrid_sidecar_q_shape_ledger",
+        logical_shapes=ordered_shapes,
+        scale_count=0,
+        accumulator_bits_per_weight=0.0,
+    )
+    scale_bpw = _scale_bits_per_weight(len(ordered_shapes), eligible_weight_count)
+    shape_breakdown: list[dict[str, Any]] = []
+    total_event_count = 0
+    total_metadata_bits = 0
+    total_sidecar_bits = 0
+    for shape, raw_event_count in zip(ordered_shapes, event_counts):
+        eligible = _numel(shape)
+        event_count = int(raw_event_count)
+        if event_count < 0 or event_count > eligible:
+            raise ValueError("event_counts entries must be in [0, tensor_numel]")
+        index_bits = _index_bits_for_numel(eligible)
+        packet_count_bits = int(math.ceil(math.log2(eligible + 1)))
+        metadata_bits = packet_count_bits + int(extra_metadata_bits_per_tensor)
+        total_bits = metadata_bits + event_count * (
+            index_bits
+            + int(direction_bits_per_event)
+            + int(residual_bits_per_event)
+        )
+        shape_breakdown.append(
+            {
+                "shape": list(shape),
+                "eligible_weight_count": int(eligible),
+                "event_count": int(event_count),
+                "index_bits": int(index_bits),
+                "packet_count_bits": int(packet_count_bits),
+                "metadata_bits": int(metadata_bits),
+                "total_bits": int(total_bits),
+                "bits_per_weight": float(total_bits) / float(eligible),
+            }
+        )
+        total_event_count += event_count
+        total_metadata_bits += metadata_bits
+        total_sidecar_bits += total_bits
+    sidecar_bpw = float(total_sidecar_bits) / float(eligible_weight_count)
+    inclusive_bpw = (
+        float(q_row.q_packed_total_bits_per_weight)
+        + float(scale_bpw)
+        + float(sidecar_bpw)
+    )
+    ledger = HybridPersistentSidecarLedger(
+        schema_version=STRICT_SUB2_HYBRID_PERSISTENT_SIDECAR_LEDGER_SCHEMA_VERSION,
+        label="strict_sub2_hybrid_persistent_sidecar_ledger",
+        persistent_mode=persistent_mode,
+        eligible_module_count=len(ordered_shapes),
+        eligible_weight_count=eligible_weight_count,
+        total_event_count=int(total_event_count),
+        index_bits_kind="per_tensor_local",
+        direction_bits_per_event=int(direction_bits_per_event),
+        residual_bits_per_event=int(residual_bits_per_event),
+        total_metadata_bits=int(total_metadata_bits),
+        packet_count_bits_formula="ceil(log2(numel + 1)) per tensor",
+        q_bits_per_weight=float(q_row.q_packed_total_bits_per_weight),
+        frozen_scale_bits_per_weight=float(scale_bpw),
+        sidecar_bits_per_weight=float(sidecar_bpw),
+        inclusive_bits_per_weight=float(inclusive_bpw),
+        row_only_lt2=bool(sidecar_bpw < float(target_bits_per_weight)),
+        inclusive_lt2=bool(inclusive_bpw < float(target_bits_per_weight)),
+        shape_breakdown=tuple(shape_breakdown),
+    )
+    validate_hybrid_persistent_sidecar_ledger(ledger)
+    return ledger
+
+
+def validate_strict_sub2_hybrid_runtime_movement_overlay(
+    report: StrictSub2HybridRuntimeMovementOverlay,
+) -> None:
+    if (
+        report.schema_version
+        != STRICT_SUB2_HYBRID_RUNTIME_MOVEMENT_OVERLAY_SCHEMA_VERSION
+    ):
+        raise ValueError("hybrid runtime movement overlay schema version mismatch")
+    if report.label != STRICT_SUB2_HYBRID_RUNTIME_MOVEMENT_OVERLAY_LABEL:
+        raise ValueError("hybrid runtime movement overlay label mismatch")
+    if (
+        report.base_scaffold_schema_version
+        != STRICT_SUB2_CANDIDATE_RUNTIME_SCAFFOLD_SCHEMA_VERSION
+    ):
+        raise ValueError("base scaffold schema version mismatch")
+    if report.base_scaffold_label != STRICT_SUB2_CANDIDATE_RUNTIME_SCAFFOLD_LABEL:
+        raise ValueError("base scaffold label mismatch")
+    if (
+        report.runtime_state_authority
+        != RUNTIME_STATE_AUTHORITY_SUB2_PERSISTENT_HYBRID_DENSE_TRANSIENT_CREDIT
+    ):
+        raise ValueError("hybrid runtime overlay must stay on the Option A hybrid authority")
+    if report.persistent_mode not in {
+        HYBRID_PERSISTENT_MODE_APPLIED_CROSSING_DIRECTION_PLUS_4BIT_RESIDUAL,
+        HYBRID_PERSISTENT_MODE_ZERO_PERSISTENT_ACCUMULATOR,
+    }:
+        raise ValueError("unknown hybrid runtime overlay persistent_mode")
+    if bool(report.persistent_dense_shadow_present):
+        raise ValueError("hybrid runtime overlay cannot persist dense shadow state")
+    if int(report.persistent_dense_shadow_bytes) != 0:
+        raise ValueError("persistent_dense_shadow_bytes must be 0 on the candidate path")
+    if not bool(report.bounded_only_collapse):
+        raise ValueError("hybrid runtime overlay must disclose bounded_only_collapse=true")
+    if not bool(report.local_update_law_reused):
+        raise ValueError("hybrid runtime overlay must reuse the already-proved local update law")
+    if bool(report.second_update_law_required):
+        raise ValueError("hybrid runtime overlay must fail closed on second_update_law_required")
+    if not bool(report.dense_transient_credit_allowed):
+        raise ValueError("hybrid runtime overlay must disclose dense_transient_credit_allowed=true")
+    if (
+        report.dense_transient_credit_role
+        != DENSE_TRANSIENT_CREDIT_ROLE_TRAINING_COMPUTE_CONTROL_ONLY
+    ):
+        raise ValueError("hybrid runtime overlay must preserve the training_compute_control_only role")
+    if not bool(report.transient_debt_present):
+        raise ValueError("hybrid runtime overlay must disclose transient_debt_present=true")
+    if not bool(report.persistent_sub2_hybrid_only):
+        raise ValueError("hybrid runtime overlay must preserve persistent_sub2_hybrid_only=true")
+    if bool(report.full_runtime_sub2_achieved):
+        raise ValueError("hybrid runtime overlay cannot claim full_runtime_sub2_achieved")
+    if bool(report.candidate_runtime_complete):
+        raise ValueError("hybrid runtime overlay cannot claim candidate_runtime_complete")
+    if report.acquisition_science_status not in {
+        ACQUISITION_GATE_UNBLOCKED_NOT_RUN,
+        ACQUISITION_GATE_RUNNING,
+        ACQUISITION_GATE_RESULT,
+    }:
+        raise ValueError("hybrid runtime overlay acquisition_science_status is unknown")
+    if bool(report.acquisition_achieved):
+        raise ValueError("hybrid runtime overlay cannot claim acquisition_achieved under this slice")
+    if report.movement_contract_scope != HYBRID_MOVEMENT_CONTRACT_SCOPE:
+        raise ValueError("hybrid runtime overlay must use the movement-first sibling contract scope")
+    if report.movement_metric_name != HYBRID_MOVEMENT_METRIC_NAME:
+        raise ValueError("hybrid runtime overlay must lock the movement metric name")
+    if int(report.movement_metric_min_delta) != 1:
+        raise ValueError("hybrid runtime overlay must require best strict-exact delta >= 1")
+    if not bool(report.q_changed_must_be_positive):
+        raise ValueError("hybrid runtime overlay must require q_changed_count > 0")
+    if not bool(report.hard_fail_required_false):
+        raise ValueError("hybrid runtime overlay must keep the no-hard-fail bar explicit")
+    if (
+        report.live_dense_transient_selection_role
+        != DENSE_TRANSIENT_CREDIT_ROLE_TRAINING_COMPUTE_CONTROL_ONLY
+    ):
+        raise ValueError("hybrid runtime overlay must disclose the dense-transient selector role exactly")
+    if tuple(report.persistent_authority_row_names) != (
+        "q_storage",
+        "frozen_scales_fp32_metadata",
+        "accumulator_sidecar",
+    ):
+        raise ValueError("hybrid runtime overlay must name q + frozen scales + accumulator_sidecar as the persistent authority rows")
+    if "accumulator_substitute" not in tuple(report.blocked_row_names):
+        raise ValueError("hybrid runtime overlay must keep accumulator_substitute blocked")
+    if "attention_kv_append_update" not in tuple(report.blocked_row_names):
+        raise ValueError("hybrid runtime overlay must keep attention_kv_append_update blocked")
+    if "qacc_hot_loop_residency" not in tuple(report.blocked_row_names):
+        raise ValueError("hybrid runtime overlay must keep qacc_hot_loop_residency blocked")
+    ledger = HybridPersistentSidecarLedger(
+        schema_version=str(report.persistent_sidecar_ledger.get("schema_version")),
+        label=str(report.persistent_sidecar_ledger.get("label")),
+        persistent_mode=str(report.persistent_sidecar_ledger.get("persistent_mode")),
+        eligible_module_count=int(report.persistent_sidecar_ledger.get("eligible_module_count", 0)),
+        eligible_weight_count=int(report.persistent_sidecar_ledger.get("eligible_weight_count", 0)),
+        total_event_count=int(report.persistent_sidecar_ledger.get("total_event_count", 0)),
+        index_bits_kind=str(report.persistent_sidecar_ledger.get("index_bits_kind")),
+        direction_bits_per_event=int(report.persistent_sidecar_ledger.get("direction_bits_per_event", 0)),
+        residual_bits_per_event=int(report.persistent_sidecar_ledger.get("residual_bits_per_event", 0)),
+        total_metadata_bits=int(report.persistent_sidecar_ledger.get("total_metadata_bits", 0)),
+        packet_count_bits_formula=str(report.persistent_sidecar_ledger.get("packet_count_bits_formula")),
+        q_bits_per_weight=float(report.persistent_sidecar_ledger.get("q_bits_per_weight", 0.0)),
+        frozen_scale_bits_per_weight=float(report.persistent_sidecar_ledger.get("frozen_scale_bits_per_weight", 0.0)),
+        sidecar_bits_per_weight=float(report.persistent_sidecar_ledger.get("sidecar_bits_per_weight", 0.0)),
+        inclusive_bits_per_weight=float(report.persistent_sidecar_ledger.get("inclusive_bits_per_weight", 0.0)),
+        row_only_lt2=bool(report.persistent_sidecar_ledger.get("row_only_lt2")),
+        inclusive_lt2=bool(report.persistent_sidecar_ledger.get("inclusive_lt2")),
+        shape_breakdown=tuple(
+            dict(row)
+            for row in report.persistent_sidecar_ledger.get("shape_breakdown", ())
+        ),
+    )
+    validate_hybrid_persistent_sidecar_ledger(ledger)
+    if ledger.persistent_mode != report.persistent_mode:
+        raise ValueError("overlay persistent_mode must match persistent_sidecar_ledger persistent_mode")
+    if bool(report.pass_report) != bool(
+        ledger.inclusive_lt2
+        and not report.persistent_dense_shadow_present
+        and int(report.persistent_dense_shadow_bytes) == 0
+        and report.bounded_only_collapse
+        and report.local_update_law_reused
+        and not report.second_update_law_required
+        and report.dense_transient_credit_allowed
+        and report.transient_debt_present
+        and report.persistent_sub2_hybrid_only
+        and not report.full_runtime_sub2_achieved
+        and not report.candidate_runtime_complete
+    ):
+        raise ValueError("hybrid runtime overlay pass flag must be computed from the explicit non-overclaim gates")
+
+
+def build_strict_sub2_hybrid_runtime_movement_overlay(
+    *,
+    logical_shapes: Sequence[Sequence[int]],
+    event_counts: Sequence[int],
+    persistent_mode: str,
+    residual_bits_per_event: int,
+    persistent_dense_shadow_present: bool,
+    persistent_dense_shadow_bytes: int,
+    local_update_law_label: str,
+    acquisition_science_status: str = ACQUISITION_GATE_UNBLOCKED_NOT_RUN,
+    acquisition_achieved: bool = False,
+) -> StrictSub2HybridRuntimeMovementOverlay:
+    ledger = build_hybrid_persistent_sidecar_ledger(
+        logical_shapes=logical_shapes,
+        event_counts=event_counts,
+        persistent_mode=persistent_mode,
+        residual_bits_per_event=residual_bits_per_event,
+    )
+    report = StrictSub2HybridRuntimeMovementOverlay(
+        schema_version=STRICT_SUB2_HYBRID_RUNTIME_MOVEMENT_OVERLAY_SCHEMA_VERSION,
+        label=STRICT_SUB2_HYBRID_RUNTIME_MOVEMENT_OVERLAY_LABEL,
+        base_scaffold_schema_version=STRICT_SUB2_CANDIDATE_RUNTIME_SCAFFOLD_SCHEMA_VERSION,
+        base_scaffold_label=STRICT_SUB2_CANDIDATE_RUNTIME_SCAFFOLD_LABEL,
+        runtime_state_authority=RUNTIME_STATE_AUTHORITY_SUB2_PERSISTENT_HYBRID_DENSE_TRANSIENT_CREDIT,
+        persistent_mode=persistent_mode,
+        pass_report=bool(
+            ledger.inclusive_lt2
+            and not bool(persistent_dense_shadow_present)
+            and int(persistent_dense_shadow_bytes) == 0
+        ),
+        persistent_dense_shadow_present=bool(persistent_dense_shadow_present),
+        persistent_dense_shadow_bytes=int(persistent_dense_shadow_bytes),
+        bounded_only_collapse=True,
+        local_update_law_label=local_update_law_label,
+        local_update_law_reused=True,
+        second_update_law_required=False,
+        dense_transient_credit_allowed=True,
+        dense_transient_credit_role=DENSE_TRANSIENT_CREDIT_ROLE_TRAINING_COMPUTE_CONTROL_ONLY,
+        transient_debt_present=True,
+        persistent_sub2_hybrid_only=True,
+        full_runtime_sub2_achieved=False,
+        candidate_runtime_complete=False,
+        acquisition_science_status=acquisition_science_status,
+        acquisition_achieved=bool(acquisition_achieved),
+        movement_contract_scope=HYBRID_MOVEMENT_CONTRACT_SCOPE,
+        movement_metric_name=HYBRID_MOVEMENT_METRIC_NAME,
+        movement_metric_min_delta=1,
+        q_changed_must_be_positive=True,
+        hard_fail_required_false=True,
+        live_dense_transient_selection_role=DENSE_TRANSIENT_CREDIT_ROLE_TRAINING_COMPUTE_CONTROL_ONLY,
+        persistent_authority_row_names=(
+            "q_storage",
+            "frozen_scales_fp32_metadata",
+            "accumulator_sidecar",
+        ),
+        blocked_row_names=(
+            "accumulator_substitute",
+            "attention_kv_append_update",
+            "qacc_hot_loop_residency",
+            "dense_int16_accumulator_control",
+            "fp_shell_and_noneligible_fp_controls",
+        ),
+        persistent_sidecar_ledger=ledger.to_dict(),
+        claim_boundary=(
+            "persistent-sub2 hybrid movement smoke only",
+            "dense transient selection is training-control only",
+            "not full-runtime sub-2",
+            "not native transient sub-2",
+            "not fp-free runtime",
+            "not 120/120 acquisition",
+        ),
+    )
+    validate_strict_sub2_hybrid_runtime_movement_overlay(report)
+    return report
 
 
 def validate_strict_sub2_candidate_runtime_scaffold_report(
@@ -656,10 +1195,16 @@ def attach_strict_sub2_scoped_candidate_proof(
 
 __all__ = [
     "ACQUISITION_GATE_DEFERRED",
+    "ACQUISITION_GATE_RESULT",
+    "ACQUISITION_GATE_RUNNING",
     "ACQUISITION_GATE_UNBLOCKED_NOT_RUN",
     "LEDGER_CLASS_EXECUTABLE",
     "LEDGER_CLASS_LEQ2",
     "LEDGER_CLASS_NOT_YET",
+    "HYBRID_MOVEMENT_CONTRACT_SCOPE",
+    "HYBRID_MOVEMENT_METRIC_NAME",
+    "HYBRID_PERSISTENT_MODE_APPLIED_CROSSING_DIRECTION_PLUS_4BIT_RESIDUAL",
+    "HYBRID_PERSISTENT_MODE_ZERO_PERSISTENT_ACCUMULATOR",
     "RUNTIME_STATE_AUTHORITY_DENSE_CONTROL",
     "RUNTIME_STATE_AUTHORITY_SUB2_CANDIDATE_EXECUTABLE",
     "RUNTIME_STATE_AUTHORITY_SUB2_PERSISTENT_HYBRID_DENSE_TRANSIENT_CREDIT",
@@ -667,11 +1212,20 @@ __all__ = [
     "STRICT_SUB2_CANDIDATE_RUNTIME_SCAFFOLD_LABEL",
     "STRICT_SUB2_CANDIDATE_RUNTIME_SCAFFOLD_SCHEMA_VERSION",
     "STRICT_SUB2_CANDIDATE_RUNTIME_TARGET_NAME",
+    "STRICT_SUB2_HYBRID_PERSISTENT_SIDECAR_LEDGER_SCHEMA_VERSION",
+    "STRICT_SUB2_HYBRID_RUNTIME_MOVEMENT_OVERLAY_LABEL",
+    "STRICT_SUB2_HYBRID_RUNTIME_MOVEMENT_OVERLAY_SCHEMA_VERSION",
+    "HybridPersistentSidecarLedger",
+    "StrictSub2HybridRuntimeMovementOverlay",
     "StrictSub2CandidateRuntimeScaffoldReport",
     "StrictSub2ScaffoldRow",
     "attach_strict_sub2_scoped_candidate_proof",
+    "build_hybrid_persistent_sidecar_ledger",
     "build_strict_sub2_candidate_runtime_scaffold",
+    "build_strict_sub2_hybrid_runtime_movement_overlay",
     "validate_strict_sub2_candidate_runtime_scaffold_report",
+    "validate_hybrid_persistent_sidecar_ledger",
+    "validate_strict_sub2_hybrid_runtime_movement_overlay",
     "DENSE_TRANSIENT_CREDIT_ROLE_TRAINING_COMPUTE_CONTROL_ONLY",
     "HYBRID_SCOPE_DECISION_LOCKED_ANSWER",
     "HYBRID_SCOPE_DECISION_LOCKED_OPTION",
