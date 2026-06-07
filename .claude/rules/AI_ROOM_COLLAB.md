@@ -74,7 +74,10 @@ Test, Iterate").
   science launch, stamp, or re-authorization; underspecified packet → STOP +
   `PLAN REQUEST`/`HARNESS AMBIGUOUS`; cleanup only packet-created scope;
   default reports to `training-dev`/requester, formal gate/proof/launch
-  receipts also to BOTH co-leads).
+  receipts also to BOTH co-leads; a terminal **co-processor, not a second
+  developer** — terminal facts are evidence inputs only, never gates/criteria/
+  override; see `CLAUDEX_ORCHESTRATION.md` §"codex-terminal co-processor
+  discipline").
 
 ## Cross-thread is mandatory at thinking boundaries
 

@@ -74,6 +74,47 @@ ai-room MCP; `training-dev` omits Serena by design.
 OR Claude explicitly dispatches it; implementation ownership stays with
 `training-dev`, and `codex-terminal` returns terminal facts, not fixes/plans.
 
+## codex-terminal co-processor discipline
+
+`codex-terminal` is a terminal **co-processor, not a second developer** — it
+saves `training-dev` tokens on command churn while `training-dev` stays the
+thinker/owner.
+
+- **`training-dev` owns thinking**: plan, source edits, bug interpretation,
+  mechanism/architecture choices, acceptance criteria, final validation
+  interpretation.
+- **`codex-terminal` owns bounded command churn**: `py_compile`, focused
+  pytest, grep/sha checks, dry-runs, artifact inspection, log tails,
+  process/GPU status, timing summaries.
+- **`test-operator`** stays the formal proof/launch runner for acceptance
+  evidence + terminal receipts.
+
+**Routing rule**: judgment about mechanism / architecture / code changes /
+what-to-edit-next stays with `training-dev`; "run this exact thing and tell me
+what happened" routes to `codex-terminal`. `codex-terminal` terminal facts are
+**evidence inputs only** — they do not grant material gates, change acceptance
+criteria, or override `training-dev`/claude/co_lead interpretation.
+
+**Handoff packet shape**:
+
+```text
+TERMINAL HANDOFF
+cwd:
+env:
+commands:
+timeout:
+success criteria:
+failure criteria:
+artifacts to summarize:
+return format:
+```
+
+**Compact return discipline**: no raw log dumps unless requested; return exit
+code, duration, first failing assertion/error, artifact paths + sha when
+relevant, last ~20 relevant lines, and binary pass/fail vs stated criteria.
+Long jobs → milestone-driven updates only (first progress, phase change,
+terminal, timeout/stall, unexpected error).
+
 ## Worker workflow (received-dispatch perspective)
 
 1. **Read the board task** — verify provenance + decision contract
