@@ -126,6 +126,18 @@ all/random/inverted → rate-cap/trust-region lever; random matches/beats
 current → ranking/update-law problem; inverted wins → sign/direction problem;
 no arm improves → representation-not-viable / insufficient-separation.
 
+**Sub-2-first launch gate**: no main mechanism-science launch until the
+executable `full_sub2_runtime_ready_for_science` checker passes — OR a named
+`pre_full_stack_diagnostic` exception is justified BEFORE launch (diagnostic
+reason + why cheaper than completing the full stack first). Readiness is
+fail-closed over a stable surface enum; classes are `sub2` /
+`explicit_exception` / `transient_fp_debt` / `pre_full_stack_diagnostic` /
+`missing`. `transient_fp_debt` (dense transient credit / FP captures) and
+`pre_full_stack_diagnostic` block main science and never count as sub-2;
+main-ready requires missing=0, diagnostic=0, transient_fp_debt=0, all non-sub2
+rows justified `explicit_exception`s. The executable checker + its receipt are
+authoritative — this rule is the invariant pointer, not a second semantics body.
+
 ## Validation
 
 - Producer/consumer watcher for live runs; CPU smoke validates **schema only,
