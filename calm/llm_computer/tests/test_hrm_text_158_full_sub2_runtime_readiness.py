@@ -15,6 +15,7 @@ from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
     FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ACTIVATION_RESIDUALS_BLOCKED,
     FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ATTENTION_KV_BLOCKED,
     FIXTURE_GATED_SUB2_CHECKPOINT_PATH_BACKWARD_RECOMPUTE,
+    FIXTURE_GATED_SUB2_CHECKPOINT_PATH_OPTIMIZER_CREDIT_STATE_BLOCKED,
     FIXTURE_MAIN_READY,
     FIXTURE_MISSING_ACTIVATIONS,
     FIXTURE_MISSING_ATTENTION,
@@ -44,6 +45,7 @@ from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
     gated_sub2_checkpoint_path_activation_residuals_blocked_surfaces,
     gated_sub2_checkpoint_path_attention_kv_blocked_surfaces,
     gated_sub2_checkpoint_path_backward_recompute_surfaces,
+    gated_sub2_checkpoint_path_optimizer_credit_state_blocked_surfaces,
     gated_sub2_checkpoint_path_surfaces,
     main_ready_fixture_surfaces,
     validate_full_sub2_runtime_ready_for_science_receipt,
@@ -495,6 +497,10 @@ def test_export_api_smoke():
         native_full_stack.FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ATTENTION_KV_BLOCKED
         == FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ATTENTION_KV_BLOCKED
     )
+    assert (
+        native_full_stack.FIXTURE_GATED_SUB2_CHECKPOINT_PATH_OPTIMIZER_CREDIT_STATE_BLOCKED
+        == FIXTURE_GATED_SUB2_CHECKPOINT_PATH_OPTIMIZER_CREDIT_STATE_BLOCKED
+    )
     assert native_full_stack.RUNTIME_CLASS_TRANSIENT_FP_DEBT == RUNTIME_CLASS_TRANSIENT_FP_DEBT
     assert "FIXTURE_GATED_SUB2_CHECKPOINT_PATH" in native_full_stack.__all__
     assert "FIXTURE_GATED_SUB2_CHECKPOINT_PATH_BACKWARD_RECOMPUTE" in native_full_stack.__all__
@@ -506,6 +512,10 @@ def test_export_api_smoke():
         "FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ATTENTION_KV_BLOCKED"
         in native_full_stack.__all__
     )
+    assert (
+        "FIXTURE_GATED_SUB2_CHECKPOINT_PATH_OPTIMIZER_CREDIT_STATE_BLOCKED"
+        in native_full_stack.__all__
+    )
     assert "fixture_full_sub2_runtime_ready_for_science" in native_full_stack.__all__
     assert "gated_sub2_checkpoint_path_backward_recompute_surfaces" in native_full_stack.__all__
     assert (
@@ -514,6 +524,10 @@ def test_export_api_smoke():
     )
     assert (
         "gated_sub2_checkpoint_path_attention_kv_blocked_surfaces"
+        in native_full_stack.__all__
+    )
+    assert (
+        "gated_sub2_checkpoint_path_optimizer_credit_state_blocked_surfaces"
         in native_full_stack.__all__
     )
     assert "gated_sub2_checkpoint_path_surfaces" in native_full_stack.__all__
@@ -533,6 +547,13 @@ def test_export_api_smoke():
         native_full_stack.gated_sub2_checkpoint_path_attention_kv_blocked_surfaces()
     )
     assert attention_blocked_surfaces == gated_sub2_checkpoint_path_attention_kv_blocked_surfaces()
+    optimizer_blocked_surfaces = (
+        native_full_stack.gated_sub2_checkpoint_path_optimizer_credit_state_blocked_surfaces()
+    )
+    assert (
+        optimizer_blocked_surfaces
+        == gated_sub2_checkpoint_path_optimizer_credit_state_blocked_surfaces()
+    )
 
 
 @pytest.mark.parametrize(
@@ -728,6 +749,129 @@ def test_cli_gated_attention_kv_blocked_expect_ready_emits_blocker_reason(tmp_pa
     }
     assert SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS not in payload["blocker_surface_names"]
     assert "attention_kv_attention_buffers" in result.stdout
+
+
+def test_cli_gated_optimizer_credit_state_blocked_expect_ready_emits_blocker_reason(tmp_path):
+    json_out = tmp_path / "gated_sub2_checkpoint_path_optimizer_credit_state_blocked.json"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--fixture",
+            FIXTURE_GATED_SUB2_CHECKPOINT_PATH_OPTIMIZER_CREDIT_STATE_BLOCKED,
+            "--json-out",
+            str(json_out),
+            "--expect-ready",
+        ],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    assert result.returncode == 2
+    assert json_out.exists()
+    payload = json.loads(json_out.read_text(encoding="utf-8"))
+    surfaces = {surface["surface_id"]: surface for surface in payload["surfaces"]}
+    optimizer = surfaces[SURFACE_OPTIMIZER_CREDIT_STATE]
+    assert payload["ready_for_main_science"] is False
+    assert payload["main_science_launch_blocked"] is True
+    assert payload["ready_for_pre_full_stack_diagnostic"] is True
+    assert optimizer["classification"] == RUNTIME_CLASS_TRANSIENT_FP_DEBT
+    assert "fail-closed optimizer/credit-state harness" in optimizer["reason"]
+    assert "weighted_grad" in optimizer["reason"]
+    assert "credit_capture_tensors" in optimizer["reason"]
+    assert set(payload["blocker_surface_names"]) == {
+        SURFACE_ACTIVATIONS_RESIDUALS,
+        SURFACE_ATTENTION_KV_ATTENTION_BUFFERS,
+        SURFACE_OPTIMIZER_CREDIT_STATE,
+        SURFACE_NATIVE_KERNELIZED_HOT_PATH,
+    }
+    assert SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS not in payload["blocker_surface_names"]
+    assert "optimizer_credit_state" in result.stdout
+
+
+def test_gated_optimizer_credit_state_blocked_fixture_updates_only_optimizer_debt_fields():
+    attention_blocked = fixture_full_sub2_runtime_ready_for_science(
+        FIXTURE_GATED_SUB2_CHECKPOINT_PATH_ATTENTION_KV_BLOCKED
+    )
+    optimizer_blocked = fixture_full_sub2_runtime_ready_for_science(
+        FIXTURE_GATED_SUB2_CHECKPOINT_PATH_OPTIMIZER_CREDIT_STATE_BLOCKED
+    )
+    validate_full_sub2_runtime_ready_for_science_receipt(optimizer_blocked)
+
+    attention_classes = {
+        surface.surface_id: surface.classification
+        for surface in attention_blocked.surfaces
+    }
+    optimizer_classes = {
+        surface.surface_id: surface.classification
+        for surface in optimizer_blocked.surfaces
+    }
+    attention_surfaces = {
+        surface.surface_id: surface.to_dict()
+        for surface in attention_blocked.surfaces
+    }
+    optimizer_surfaces = {
+        surface.surface_id: surface.to_dict()
+        for surface in optimizer_blocked.surfaces
+    }
+
+    assert optimizer_classes == attention_classes
+    assert (
+        optimizer_classes[SURFACE_OPTIMIZER_CREDIT_STATE]
+        == RUNTIME_CLASS_TRANSIENT_FP_DEBT
+    )
+    assert (
+        optimizer_classes[SURFACE_ATTENTION_KV_ATTENTION_BUFFERS]
+        == RUNTIME_CLASS_PRE_FULL_STACK_DIAGNOSTIC
+    )
+    assert (
+        optimizer_classes[SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS]
+        == RUNTIME_CLASS_SUB2
+    )
+
+    changed_surface_ids = {
+        surface_id
+        for surface_id, attention_surface in attention_surfaces.items()
+        if optimizer_surfaces[surface_id] != attention_surface
+    }
+    assert changed_surface_ids == {SURFACE_OPTIMIZER_CREDIT_STATE}
+    optimizer_before = attention_surfaces[SURFACE_OPTIMIZER_CREDIT_STATE]
+    optimizer_after = optimizer_surfaces[SURFACE_OPTIMIZER_CREDIT_STATE]
+    changed_optimizer_fields = {
+        field
+        for field, before_value in optimizer_before.items()
+        if optimizer_after[field] != before_value
+    }
+    assert changed_optimizer_fields == {
+        "reason",
+        "proof_artifact_or_test",
+        "source_anchor",
+    }
+    assert "fail-closed optimizer/credit-state harness" in optimizer_after["reason"]
+    assert "weighted_grad" in optimizer_after["reason"]
+    assert "credit" in optimizer_after["reason"]
+    assert "projected_moves" in optimizer_after["reason"]
+    assert "dense_rank_votes" in optimizer_after["reason"]
+    assert "credit_capture_tensors" in optimizer_after["reason"]
+    assert "optimizer_credit_state.py" in optimizer_after["source_anchor"]
+    assert (
+        "test_optimizer_credit_state_fail_closed_receipt_enumerates_dense_debt_without_flip"
+        in optimizer_after["proof_artifact_or_test"]
+    )
+    assert optimizer_blocked.ready_for_main_science is False
+    assert optimizer_blocked.main_science_launch_blocked is True
+    assert optimizer_blocked.ready_for_pre_full_stack_diagnostic is True
+    assert set(optimizer_blocked.blocker_surface_names) == {
+        SURFACE_ACTIVATIONS_RESIDUALS,
+        SURFACE_ATTENTION_KV_ATTENTION_BUFFERS,
+        SURFACE_OPTIMIZER_CREDIT_STATE,
+        SURFACE_NATIVE_KERNELIZED_HOT_PATH,
+    }
+    assert SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS not in (
+        optimizer_blocked.blocker_surface_names
+    )
 
 
 def test_readiness_classes_are_exact_five_class_prereg():
