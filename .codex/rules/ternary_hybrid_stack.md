@@ -100,6 +100,33 @@ Always report FP-free claims as three separate ledgers; never collapse them.
   use the **per-row effective threshold** and the **exact live cap-priority
   rows**; static threshold is metadata only.
 
+## Fastest-science loop
+
+Optimize **information per GPU-minute**, not training volume. The control law:
+
+- **Pre-register the branch classifier before launch** — every run decides
+  between NAMED branches (which next mechanism it selects), not just
+  better/worse. No verdict the prereg didn't define.
+- **CPU for schema/parity/safety only; GPU for science** (`workflow.md`
+  §"Full-GPU for trainer-loop work").
+- **N=20 only as a preterminal screen** (obvious null / bug / liveness);
+  **N=50 or the prereg equivalent for a branch verdict.**
+- **One variable per run** unless prereg'd as a factorial (§"Research
+  invariants").
+- **Tiny route patches, not architecture rewrites** — earn the rewrite with a
+  measurement first.
+- **Role routing**: command churn → `codex-terminal`; thinking/context →
+  `training-dev`; exact-packet terminal receipts → `test-operator`
+  (`CLAUDEX_ORCHESTRATION.md` §"codex-terminal co-processor discipline").
+- **Commit every useful null** — a clean negative shrinks the search space
+  (`workflow.md` §"Informative null results").
+
+Exemplar (a pattern, NOT a privileged mechanism): the lane3 shadow-prefix
+curve picks the next mechanism from one run — current low-K beats
+all/random/inverted → rate-cap/trust-region lever; random matches/beats
+current → ranking/update-law problem; inverted wins → sign/direction problem;
+no arm improves → representation-not-viable / insufficient-separation.
+
 ## Validation
 
 - Producer/consumer watcher for live runs; CPU smoke validates **schema only,
