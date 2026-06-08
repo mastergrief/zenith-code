@@ -94,6 +94,8 @@ from calm.hrm_text_158.native_full_stack.front_c_live_identity_emission import (
 from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
     ORACLE_SCREEN_MODE_CHOICES,
     ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY,
+    ORACLE_SCREEN_MODE_CREDIT_RANKING_PIVOT_MEASUREMENT,
+    run_credit_ranking_pivot_measurement_oracle_screen,
     run_candidate_set_viability_oracle_screen,
 )
 from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
@@ -3986,21 +3988,35 @@ def run_c2p1_probe(
             total_steps=int(steps),
         )
     if oracle_screen_mode is not None:
-        if str(oracle_screen_mode) != ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY:
-            raise RuntimeError(f"unsupported oracle screen mode {oracle_screen_mode!r}")
         extras = model.compute_train_extra_args(1, max(1, int(steps)))
-        oracle_screen = run_candidate_set_viability_oracle_screen(
-            model=model,
-            batch=model_batch,
-            tensor_states=tensor_states,
-            eligible_modules=eligible,
-            device=torch_device,
-            max_abs_per_tensor=int(max_abs_per_tensor),
-            extras=extras,
-            max_sampled_candidates=oracle_screen_budget,
-            max_seconds=oracle_screen_max_seconds,
-            phase_progress=phase_progress,
-        )
+        if str(oracle_screen_mode) == ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY:
+            oracle_screen = run_candidate_set_viability_oracle_screen(
+                model=model,
+                batch=model_batch,
+                tensor_states=tensor_states,
+                eligible_modules=eligible,
+                device=torch_device,
+                max_abs_per_tensor=int(max_abs_per_tensor),
+                extras=extras,
+                max_sampled_candidates=oracle_screen_budget,
+                max_seconds=oracle_screen_max_seconds,
+                phase_progress=phase_progress,
+            )
+        elif str(oracle_screen_mode) == ORACLE_SCREEN_MODE_CREDIT_RANKING_PIVOT_MEASUREMENT:
+            oracle_screen = run_credit_ranking_pivot_measurement_oracle_screen(
+                model=model,
+                batch=model_batch,
+                tensor_states=tensor_states,
+                eligible_modules=eligible,
+                device=torch_device,
+                max_abs_per_tensor=int(max_abs_per_tensor),
+                extras=extras,
+                max_sampled_candidates=oracle_screen_budget,
+                max_seconds=oracle_screen_max_seconds,
+                phase_progress=phase_progress,
+            )
+        else:
+            raise RuntimeError(f"unsupported oracle screen mode {oracle_screen_mode!r}")
         with phase_progress.phase("checkpoint_payload"):
             checkpoint_payload = build_authoritative_checkpoint_payload(
                 tensor_states,

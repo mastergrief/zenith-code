@@ -20,6 +20,8 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     BRANCH_CURRENT_ORDER_NOT_NECESSARY,
     BRANCH_CURRENT_QACC_MARGIN_ORDER_BUNDLE_CARRIER,
     BRANCH_INSUFFICIENT_SEPARATION,
+    BRANCH_MEASUREMENT_AMBIGUOUS_NO_BRANCH,
+    BRANCH_MEASUREMENT_AMBIGUOUS_TIE_BAND_ALIASING,
     BRANCH_MASS_CONFOUNDED_CURRENT_ORDER_SIGNAL,
     BRANCH_MEASUREMENT_LOSS_POWERED,
     BRANCH_MEASUREMENT_ORDER_SENSITIVE,
@@ -29,6 +31,9 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE,
     BRANCH_PARTIAL_LOCAL_SIGNAL,
     BRANCH_POWERED_NEGATIVE_OR_LOSS_ONLY,
+    BRANCH_PREREGISTERED_CHEAP_LEARNER_FEATURE_FAMILY_CANNOT_PREDICT_REGRET,
+    CREDIT_RANKING_PIVOT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND,
+    CREDIT_RANKING_PIVOT_MEASUREMENT_PACKET_KIND,
     BRANCH_PRIOR_NULL_SETUP_UNVERIFIED,
     BRANCH_RANK_FREE_POSITIVE,
     BRANCH_RANK_MAGNITUDE_CONDITIONED_ON_CURRENT_ORDER,
@@ -68,6 +73,8 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     STEP6_SUPPORT_ORDER_SEEDS,
     build_candidate_set_viability_oracle_screen_packet,
     build_candidate_set_viability_oracle_screen_launch_bundle,
+    build_credit_ranking_pivot_measurement_launch_bundle,
+    build_credit_ranking_pivot_measurement_packet,
     build_measurement_power_then_trust_region_packet,
     build_powered_rank_signal_decomposition_packet,
     build_order_averaged_a0_component_decomposition_packet,
@@ -88,6 +95,8 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     validate_measurement_power_then_trust_region_packet,
     validate_candidate_set_viability_oracle_screen_launch_bundle,
     validate_candidate_set_viability_oracle_screen_packet,
+    validate_credit_ranking_pivot_measurement_launch_bundle,
+    validate_credit_ranking_pivot_measurement_packet,
     validate_optimizer_update_law_launch_bundle,
     validate_optimizer_update_law_science_packet,
     validate_order_averaged_a0_component_decomposition_packet,
@@ -1718,6 +1727,199 @@ def test_oracle_screen_launch_bundle_validator_rejects_scope_drift(mutation, err
         validate_candidate_set_viability_oracle_screen_launch_bundle(packet)
 
 
+def test_credit_ranking_pivot_packet_declares_compact_stage_a_and_bounded_stage_b():
+    packet = build_credit_ranking_pivot_measurement_packet(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+    )
+
+    validate_credit_ranking_pivot_measurement_packet(packet)
+    assert packet["packet_kind"] == CREDIT_RANKING_PIVOT_MEASUREMENT_PACKET_KIND
+    assert packet["diagnostic_class"] == "pre_full_stack_diagnostic"
+    assert packet["author_only"] is True
+    assert packet["commands_executed"] is False
+    assert packet["gpu_launched"] is False
+    assert packet["pt_mutated"] is False
+    assert packet["same_candidate_set_required"] is True
+    assert packet["oracle_feasibility_budget"]["max_sampled_candidates"] == 32
+    assert packet["oracle_feasibility_budget"]["max_seconds"] == oracle_screen_budget_max_seconds(
+        32
+    )
+    summary = packet["compact_summary_schema"]
+    assert summary["compact_summary_only"] is True
+    assert set(summary["allowed_fields"]) == {
+        "candidate_count",
+        "sampled_candidate_count",
+        "sampled_candidate_table",
+        "score_family_metrics",
+        "stage_a_null_guard",
+        "tie_band_ambiguity",
+        "local_apply_magnitude_smoke",
+        "telemetry",
+    }
+    contract = packet["measurement_contract"]
+    assert contract["score_family"]["primary"] == "S_vote_margin"
+    assert contract["score_family"]["hash_control_role"] == "null_distribution_only"
+    assert contract["stage_a"]["non_predictive_branch_label"] == (
+        BRANCH_PREREGISTERED_CHEAP_LEARNER_FEATURE_FAMILY_CANNOT_PREDICT_REGRET
+    )
+    assert contract["stage_a"]["oracle_best_sampled_rank_position_poor_fraction"] == 0.25
+    assert contract["stage_a"]["oracle_best_sampled_rank_position_poor_threshold_rule"] == (
+        "ceil(fraction * sampled_candidate_count)"
+    )
+    assert contract["stage_a"]["predictive_seed_label"] == "primary_score_predictive_for_local_regret"
+    assert contract["tie_band_ambiguity_guard"]["ambiguous_if_regret_spread_ratio_gt"] == 0.25
+    assert contract["tie_band_ambiguity_guard"]["ambiguous_branch_label"] == (
+        BRANCH_MEASUREMENT_AMBIGUOUS_TIE_BAND_ALIASING
+    )
+    assert contract["stage_b_local_apply_magnitude_smoke"][
+        "current_spec_is_non_definitive_without_live_full_cap"
+    ] is True
+    assert contract["stage_b_local_apply_magnitude_smoke"][
+        "definitive_b_requires_follow_on"
+    ] is True
+    assert contract["allowed_seed_local_labels"] == [
+        BRANCH_PREREGISTERED_CHEAP_LEARNER_FEATURE_FAMILY_CANNOT_PREDICT_REGRET,
+        "primary_score_predictive_for_local_regret",
+        BRANCH_MEASUREMENT_AMBIGUOUS_TIE_BAND_ALIASING,
+        BRANCH_MEASUREMENT_AMBIGUOUS_NO_BRANCH,
+    ]
+
+
+def test_credit_ranking_pivot_launch_bundle_pins_budget32_and_fixed_two_seed_commands():
+    packet = build_credit_ranking_pivot_measurement_launch_bundle(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+        repo_root="/repo",
+        run_root="/tmp/hrm158-credit-ranking-pivot",
+    )
+
+    validate_credit_ranking_pivot_measurement_launch_bundle(packet)
+    assert packet["packet_kind"] == CREDIT_RANKING_PIVOT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND
+    assert packet["screen_rows"] == 20
+    assert packet["curriculum_seed"] == 17
+    assert packet["support_order_seeds"] == list(ORACLE_SCREEN_CONTRAST_SEEDS)
+    assert packet["same_candidate_set_required"] is True
+    assert packet["oracle_feasibility_budget"]["max_sampled_candidates"] == 32
+    assert packet["oracle_feasibility_budget"]["max_seconds"] == oracle_screen_budget_max_seconds(
+        32
+    )
+    assert packet["science_contract"]["packet_kind"] == CREDIT_RANKING_PIVOT_MEASUREMENT_PACKET_KIND
+    assert packet["measurement_contract"] == packet["science_contract"]["measurement_contract"]
+    assert packet["terminal_criteria"]["branch_classifier"] == [
+        BRANCH_PREREGISTERED_CHEAP_LEARNER_FEATURE_FAMILY_CANNOT_PREDICT_REGRET,
+        "primary_score_predictive_for_local_regret",
+        BRANCH_MEASUREMENT_AMBIGUOUS_TIE_BAND_ALIASING,
+        BRANCH_MEASUREMENT_AMBIGUOUS_NO_BRANCH,
+    ]
+    assert len(packet["commands"]) == 2
+    assert {command["support_order_seed"] for command in packet["commands"]} == {43, 29}
+    assert all(
+        command["oracle_screen_mode"] == "credit_ranking_pivot_measurement"
+        for command in packet["commands"]
+    )
+    assert all(command["max_sampled_candidates"] == 32 for command in packet["commands"])
+    assert all(
+        command["oracle_max_seconds"] == oracle_screen_budget_max_seconds(32)
+        for command in packet["commands"]
+    )
+
+
+@pytest.mark.parametrize(
+    "mutation,error",
+    [
+        (
+            lambda packet: packet.update({"same_candidate_set_required": False}),
+            "same candidate set",
+        ),
+        (
+            lambda packet: packet["oracle_feasibility_budget"].update(
+                {"max_sampled_candidates": 8}
+            ),
+            "budget 32",
+        ),
+        (
+            lambda packet: packet["compact_summary_schema"].update(
+                {"raw_candidate_scores": True}
+            ),
+            "raw proposal arrays",
+        ),
+        (
+            lambda packet: packet["artifact_policy"].update(
+                {"compact_json_ndjson_only": False}
+            ),
+            "compact JSON/NDJSON",
+        ),
+        (
+            lambda packet: packet["measurement_contract"][
+                "stage_b_local_apply_magnitude_smoke"
+            ].update({"current_spec_is_non_definitive_without_live_full_cap": False}),
+            "non-definitive without live full cap",
+        ),
+        (
+            lambda packet: packet["measurement_contract"][
+                "stage_b_local_apply_magnitude_smoke"
+            ].update({"definitive_b_requires_follow_on": False}),
+            "require follow-on for definitive b",
+        ),
+    ],
+)
+def test_credit_ranking_pivot_packet_validator_rejects_fail_closed_scope_drift(
+    mutation,
+    error,
+):
+    packet = build_credit_ranking_pivot_measurement_packet(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+    )
+    mutation(packet)
+
+    with pytest.raises(ValueError, match=error):
+        validate_credit_ranking_pivot_measurement_packet(packet)
+
+
+@pytest.mark.parametrize(
+    "mutation,error",
+    [
+        (
+            lambda packet: packet["commands"][0].update({"support_order_seed": 17}),
+            "contrast seeds",
+        ),
+        (
+            lambda packet: packet["commands"][0].update({"max_sampled_candidates": 64}),
+            "must be 32",
+        ),
+        (
+            lambda packet: packet["oracle_feasibility_budget"].update(
+                {"max_sampled_candidates": 64}
+            ),
+            "budget 32",
+        ),
+        (
+            lambda packet: packet["commands"][0]["argv"].__setitem__(
+                packet["commands"][0]["argv"].index("--oracle-screen-mode") + 1,
+                "candidate_set_viability",
+            ),
+            "credit_ranking_pivot_measurement",
+        ),
+    ],
+)
+def test_credit_ranking_pivot_launch_bundle_validator_rejects_seed_and_budget_drift(
+    mutation,
+    error,
+):
+    packet = build_credit_ranking_pivot_measurement_launch_bundle(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+        repo_root="/repo",
+        run_root="/tmp/hrm158-credit-ranking-pivot",
+    )
+    mutation(packet)
+
+    with pytest.raises(ValueError, match=error):
+        validate_credit_ranking_pivot_measurement_launch_bundle(packet)
+
+
 def test_packet_script_writes_compact_launch_packet_with_null_gate(tmp_path: Path, capsys):
     parent = tmp_path / "parent.pt"
     parent.write_bytes(b"read-only parent bytes")
@@ -2066,4 +2268,92 @@ def test_packet_script_writes_oracle_screen_launch_bundle(
     assert all("--science-arm" not in command["argv"] for command in packet["commands"])
     assert json.loads(capsys.readouterr().out)["packet_kind"] == (
         ORACLE_SCREEN_LAUNCH_BUNDLE_PACKET_KIND
+    )
+
+
+def test_packet_script_writes_credit_ranking_pivot_author_packet(
+    tmp_path: Path,
+    capsys,
+):
+    parent = tmp_path / "parent.pt"
+    parent.write_bytes(b"read-only parent bytes")
+    parent_sha = hashlib.sha256(b"read-only parent bytes").hexdigest()
+    out = tmp_path / "credit-ranking-pivot-packet.json"
+
+    exit_code = packet_main(
+        [
+            "--packet-kind",
+            CREDIT_RANKING_PIVOT_MEASUREMENT_PACKET_KIND,
+            "--parent",
+            str(parent),
+            "--parent-sha256",
+            parent_sha,
+            "--json-out",
+            str(out),
+        ],
+    )
+
+    assert exit_code == 0
+    packet = json.loads(out.read_text(encoding="utf-8"))
+    validate_credit_ranking_pivot_measurement_packet(packet)
+    assert packet["packet_kind"] == CREDIT_RANKING_PIVOT_MEASUREMENT_PACKET_KIND
+    assert packet["launch_gate_id"] is None
+    assert packet["commands_executed"] is False
+    assert packet["gpu_launched"] is False
+    assert packet["pt_mutated"] is False
+    assert packet["parent_hash_basis"] == "read_only_parent_file_sha256"
+    assert packet["dry_run_packet_written"] is True
+    assert packet["gpu_launch_command_authorized"] is False
+    assert packet["oracle_screen_launch_gate_required"] is True
+    assert packet["oracle_feasibility_budget"]["max_sampled_candidates"] == 32
+    assert json.loads(capsys.readouterr().out)["packet_kind"] == (
+        CREDIT_RANKING_PIVOT_MEASUREMENT_PACKET_KIND
+    )
+
+
+def test_packet_script_writes_credit_ranking_pivot_launch_bundle(
+    tmp_path: Path,
+    capsys,
+):
+    parent = tmp_path / "parent.pt"
+    parent.write_bytes(b"read-only parent bytes")
+    parent_sha = hashlib.sha256(b"read-only parent bytes").hexdigest()
+    out = tmp_path / "credit-ranking-pivot-launch-bundle.json"
+    run_root = tmp_path / "run"
+
+    exit_code = packet_main(
+        [
+            "--packet-kind",
+            CREDIT_RANKING_PIVOT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND,
+            "--parent",
+            str(parent),
+            "--parent-sha256",
+            parent_sha,
+            "--json-out",
+            str(out),
+            "--run-root",
+            str(run_root),
+        ],
+    )
+
+    assert exit_code == 0
+    packet = json.loads(out.read_text(encoding="utf-8"))
+    validate_credit_ranking_pivot_measurement_launch_bundle(packet)
+    assert packet["packet_kind"] == CREDIT_RANKING_PIVOT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND
+    assert packet["launch_gate_id"] is None
+    assert packet["commands_executed"] is False
+    assert packet["gpu_launched"] is False
+    assert packet["pt_mutated"] is False
+    assert packet["parent_hash_basis"] == "read_only_parent_file_sha256"
+    assert packet["dry_run_packet_written"] is True
+    assert packet["gpu_launch_command_authorized"] is False
+    assert packet["oracle_screen_launch_gate_required"] is True
+    assert packet["oracle_feasibility_budget"]["max_sampled_candidates"] == 32
+    assert len(packet["commands"]) == 2
+    assert {
+        command["argv"][command["argv"].index("--support-order-seed") + 1]
+        for command in packet["commands"]
+    } == {"29", "43"}
+    assert json.loads(capsys.readouterr().out)["packet_kind"] == (
+        CREDIT_RANKING_PIVOT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND
     )

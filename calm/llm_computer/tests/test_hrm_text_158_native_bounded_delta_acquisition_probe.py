@@ -26,17 +26,29 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     ARM_A0_RANK_BUCKET_CURRENT,
     ARM_A1_RANK_BUCKET_ORDER_MATCHED,
     ARM_B_RANK_FREE_SIGN_PRESSURE,
+    BRANCH_MEASUREMENT_AMBIGUOUS_NO_BRANCH,
+    BRANCH_MEASUREMENT_AMBIGUOUS_TIE_BAND_ALIASING,
     BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE,
+    BRANCH_PREREGISTERED_CHEAP_LEARNER_FEATURE_FAMILY_CANNOT_PREDICT_REGRET,
     FIXED_RANK_BUCKET_NON_TARGET_AUX,
     ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES,
     ORACLE_SCREEN_BRANCHES,
+    PIVOT_MEASUREMENT_LOCAL_APPLY_VARIANT_CURRENT_SPEC,
+    PIVOT_MEASUREMENT_LOCAL_APPLY_VARIANT_PREFIX_CAP_1024,
+    PIVOT_MEASUREMENT_LOCAL_APPLY_VARIANT_TOP1,
+    PIVOT_MEASUREMENT_PREDICTIVE_SEED_LABEL,
     TIE_POLICY_CURRENT_MARGIN_INDEX,
     TIE_POLICY_DETERMINISTIC_HASH_MATCHED,
     oracle_screen_budget_max_seconds,
 )
 from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
+    ORACLE_SCREEN_MODE_CREDIT_RANKING_PIVOT_MEASUREMENT,
+    _pivot_is_poor_rank_position,
+    _pivot_poor_rank_position_threshold,
+    _pivot_tie_band_is_ambiguous,
     _sampled_rank_fraction,
     _sampled_rank_position,
+    run_credit_ranking_pivot_measurement_oracle_screen,
     run_candidate_set_viability_oracle_screen,
 )
 from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
@@ -829,6 +841,16 @@ def test_b2_full_cli_flag_defaults_off_and_support_validation_is_preload(tmp_pat
         ]
     )
     assert oracle_budget_args.oracle_screen_max_sampled_candidates == 32
+    pivot_args = build_arg_parser().parse_args(
+        [
+            "--oracle-screen-mode",
+            ORACLE_SCREEN_MODE_CREDIT_RANKING_PIVOT_MEASUREMENT,
+            "--oracle-screen-max-sampled-candidates",
+            "32",
+        ]
+    )
+    assert pivot_args.oracle_screen_mode == ORACLE_SCREEN_MODE_CREDIT_RANKING_PIVOT_MEASUREMENT
+    assert pivot_args.oracle_screen_max_sampled_candidates == 32
 
     with pytest.raises(ValueError, match="requires retained supports"):
         run_c2p1_probe(
@@ -1675,6 +1697,31 @@ def test_oracle_sampled_rank_fraction_uses_sampled_order_not_raw_rank():
     assert deterministic_fraction <= 1.0
 
 
+def test_credit_ranking_pivot_poor_rank_threshold_uses_zero_based_sampled_position():
+    assert _pivot_poor_rank_position_threshold(32) == 8
+    assert _sampled_rank_fraction(7, 32) == 0.25
+    assert _pivot_is_poor_rank_position(7, 32) is False
+    assert _pivot_is_poor_rank_position(8, 32) is True
+
+
+def test_credit_ranking_pivot_tie_band_ambiguity_requires_high_regret_spread():
+    assert _pivot_tie_band_is_ambiguous(
+        oracle_best_candidate_present=True,
+        band_candidate_count=2,
+        regret_spread_ratio=0.20,
+    ) is False
+    assert _pivot_tie_band_is_ambiguous(
+        oracle_best_candidate_present=True,
+        band_candidate_count=2,
+        regret_spread_ratio=0.25,
+    ) is False
+    assert _pivot_tie_band_is_ambiguous(
+        oracle_best_candidate_present=True,
+        band_candidate_count=2,
+        regret_spread_ratio=0.30,
+    ) is True
+
+
 def test_tiny_oracle_screen_mode_returns_compact_non_persistent_receipt(tmp_path: Path):
     parent = tmp_path / "tiny_parent.pt"
     torch.save(_tiny_parent_blob(batch_size=8), parent)
@@ -1738,6 +1785,149 @@ def test_tiny_oracle_screen_mode_returns_compact_non_persistent_receipt(tmp_path
     assert wider_inputs["oracle_best_current_rank_fraction"] <= 1.0
     assert wider_inputs["oracle_best_deterministic_hash_rank_fraction"] <= 1.0
     assert oracle["compact_summary"]["wider_screen_interpretation_inputs"] == wider_inputs
+    assert Path(receipt["receipt_path"]).exists()
+
+
+def test_direct_credit_ranking_pivot_runner_emits_compact_stage_a_and_stage_b_smoke():
+    model, batch, eligible, states = _tiny_forward_fixture(batch_size=8)
+    receipt = run_credit_ranking_pivot_measurement_oracle_screen(
+        model=model,
+        batch=batch,
+        tensor_states=states,
+        eligible_modules=eligible,
+        device=torch.device("cpu"),
+        max_abs_per_tensor=4096,
+        extras=model.compute_train_extra_args(1, 1),
+        max_sampled_candidates=32,
+        max_seconds=oracle_screen_budget_max_seconds(32),
+    )
+
+    assert receipt["mode"] == ORACLE_SCREEN_MODE_CREDIT_RANKING_PIVOT_MEASUREMENT
+    assert receipt["same_candidate_set_required"] is True
+    assert receipt["candidate_count"] >= receipt["sampled_candidate_count"] > 0
+    assert receipt["max_sampled_candidates"] == 32
+    assert receipt["oracle_feasible"] is True
+    assert receipt["branch_classification"] in {
+        BRANCH_PREREGISTERED_CHEAP_LEARNER_FEATURE_FAMILY_CANNOT_PREDICT_REGRET,
+        PIVOT_MEASUREMENT_PREDICTIVE_SEED_LABEL,
+        BRANCH_MEASUREMENT_AMBIGUOUS_TIE_BAND_ALIASING,
+        BRANCH_MEASUREMENT_AMBIGUOUS_NO_BRANCH,
+    }
+    compact = receipt["compact_summary"]
+    assert set(compact) == {
+        "candidate_count",
+        "sampled_candidate_count",
+        "sampled_candidate_table",
+        "score_family_metrics",
+        "stage_a_null_guard",
+        "tie_band_ambiguity",
+        "local_apply_magnitude_smoke",
+        "telemetry",
+    }
+    assert compact["candidate_count"] == receipt["candidate_count"]
+    assert compact["sampled_candidate_count"] == receipt["sampled_candidate_count"]
+    assert compact["sampled_candidate_table"]
+    first_row = compact["sampled_candidate_table"][0]
+    assert "deterministic_hash_rank_position" not in first_row
+    assert set(first_row["score_rank_positions"]) == {
+        "S_vote_margin",
+        "S_vote_only",
+        "S_margin_only",
+        "S_current",
+    }
+    metrics_by_score = compact["score_family_metrics"]["metrics_by_score_id"]
+    assert metrics_by_score["S_vote_margin"]["score_id"] == "S_vote_margin"
+    assert metrics_by_score["S_vote_margin"][
+        "oracle_best_sampled_rank_position_poor_threshold"
+    ] == _pivot_poor_rank_position_threshold(receipt["sampled_candidate_count"])
+    assert compact["stage_a_null_guard"]["score_id"] == "S_vote_margin"
+    assert isinstance(compact["stage_a_null_guard"]["passes"], bool)
+    assert compact["telemetry"]["deterministic_hash_control_only"] is True
+    assert set(compact["telemetry"]["binary_top_k_ce_improving_capture"]) == {
+        "S_vote_margin",
+        "S_vote_only",
+        "S_margin_only",
+        "S_current",
+    }
+    smoke = compact["local_apply_magnitude_smoke"]
+    assert compact["tie_band_ambiguity"]["ambiguous_if_regret_spread_ratio_gt"] == 0.25
+    assert smoke["current_spec_is_non_definitive_without_live_full_cap"] is True
+    assert smoke["definitive_b_requires_follow_on"] is True
+    assert {
+        variant["variant_id"]
+        for variant in smoke["variants"]
+    } == {
+        PIVOT_MEASUREMENT_LOCAL_APPLY_VARIANT_TOP1,
+        PIVOT_MEASUREMENT_LOCAL_APPLY_VARIANT_PREFIX_CAP_1024,
+        PIVOT_MEASUREMENT_LOCAL_APPLY_VARIANT_CURRENT_SPEC,
+    }
+    assert receipt["non_persistence"]["q_persisted"] is False
+    assert receipt["non_persistence"]["checkpoint_written"] is False
+
+
+def test_direct_credit_ranking_pivot_runner_budget_overrun_fails_closed_ambiguous():
+    model, batch, eligible, states = _tiny_forward_fixture(batch_size=8)
+    receipt = run_credit_ranking_pivot_measurement_oracle_screen(
+        model=model,
+        batch=batch,
+        tensor_states=states,
+        eligible_modules=eligible,
+        device=torch.device("cpu"),
+        max_abs_per_tensor=4096,
+        extras=model.compute_train_extra_args(1, 1),
+        max_sampled_candidates=32,
+        max_seconds=-1.0,
+    )
+
+    assert receipt["budget_exceeded"] is True
+    assert receipt["oracle_feasible"] is False
+    assert receipt["branch_classification"] == BRANCH_MEASUREMENT_AMBIGUOUS_NO_BRANCH
+
+
+def test_tiny_credit_ranking_pivot_mode_returns_compact_non_persistent_receipt(
+    tmp_path: Path,
+):
+    parent = tmp_path / "tiny_parent.pt"
+    torch.save(_tiny_parent_blob(batch_size=8), parent)
+    parent_sha = file_sha256(parent)
+
+    receipt = run_c2p1_probe(
+        parent=parent,
+        parent_sha256=parent_sha,
+        scratch_root=tmp_path / "scratch_credit_ranking_pivot",
+        device="cpu",
+        eligible_scope="first-bitlinear",
+        steps=1,
+        batch_size=8,
+        max_len=TINY_ARCH["max_len"],
+        curriculum_seed=17,
+        enabled=True,
+        oracle_screen_mode=ORACLE_SCREEN_MODE_CREDIT_RANKING_PIVOT_MEASUREMENT,
+        oracle_screen_max_sampled_candidates=32,
+    )
+
+    assert receipt["science_arm"] is None
+    assert receipt["oracle_screen_mode"] == ORACLE_SCREEN_MODE_CREDIT_RANKING_PIVOT_MEASUREMENT
+    assert receipt["stop_reason"] == "oracle_screen_completed"
+    oracle = receipt["oracle_screen"]
+    assert oracle["mode"] == ORACLE_SCREEN_MODE_CREDIT_RANKING_PIVOT_MEASUREMENT
+    assert oracle["same_candidate_set_required"] is True
+    assert oracle["candidate_count"] >= oracle["sampled_candidate_count"] > 0
+    assert oracle["max_sampled_candidates"] == 32
+    assert oracle["branch_classification"] in {
+        BRANCH_PREREGISTERED_CHEAP_LEARNER_FEATURE_FAMILY_CANNOT_PREDICT_REGRET,
+        PIVOT_MEASUREMENT_PREDICTIVE_SEED_LABEL,
+        BRANCH_MEASUREMENT_AMBIGUOUS_TIE_BAND_ALIASING,
+        BRANCH_MEASUREMENT_AMBIGUOUS_NO_BRANCH,
+    }
+    assert (
+        oracle["compact_summary"]["local_apply_magnitude_smoke"][
+            "current_spec_is_non_definitive_without_live_full_cap"
+        ]
+        is True
+    )
+    assert oracle["non_persistence"]["q_persisted"] is False
+    assert oracle["non_persistence"]["checkpoint_written"] is False
     assert Path(receipt["receipt_path"]).exists()
 
 

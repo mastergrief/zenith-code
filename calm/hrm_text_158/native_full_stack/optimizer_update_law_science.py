@@ -38,6 +38,12 @@ ORACLE_SCREEN_PACKET_KIND = (
 ORACLE_SCREEN_LAUNCH_BUNDLE_PACKET_KIND = (
     "candidate_set_viability_oracle_screen_launch_bundle"
 )
+CREDIT_RANKING_PIVOT_MEASUREMENT_PACKET_KIND = (
+    "pre_full_stack_diagnostic__credit_ranking_pivot_measurement"
+)
+CREDIT_RANKING_PIVOT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND = (
+    "credit_ranking_pivot_measurement_launch_bundle"
+)
 
 SCIENCE_MODE_PRETERMINAL_SCREEN = "preterminal_screen"
 SCIENCE_MODE_BRANCH_VERDICT = "branch_verdict"
@@ -112,6 +118,13 @@ BRANCH_CANDIDATE_GENERATION_BAD_OR_NO_LOCAL_SIGNAL = (
     "candidate_generation_bad_or_no_local_signal"
 )
 BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE = "oracle_infeasible_or_too_expensive"
+BRANCH_PREREGISTERED_CHEAP_LEARNER_FEATURE_FAMILY_CANNOT_PREDICT_REGRET = (
+    "preregistered_cheap_learner_feature_family_cannot_predict_regret"
+)
+BRANCH_MEASUREMENT_AMBIGUOUS_TIE_BAND_ALIASING = (
+    "measurement_ambiguous_tie_band_aliasing"
+)
+BRANCH_MEASUREMENT_AMBIGUOUS_NO_BRANCH = "measurement_ambiguous_no_branch"
 ORACLE_SCREEN_BRANCHES = (
     BRANCH_CANDIDATE_SET_VIABLE_CREDIT_RANKING_BAD,
     BRANCH_SCHEDULER_ONLY_ORDER_SENSITIVE,
@@ -136,6 +149,32 @@ ORACLE_WIDER_SCREEN_INTERPRETATION_VERDICTS = (
 ORACLE_WIDER_SCREEN_NEGATIVE_PASSTHROUGH_BRANCHES = (
     BRANCH_CANDIDATE_GENERATION_BAD_OR_NO_LOCAL_SIGNAL,
     BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE,
+)
+PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES = 32
+PIVOT_MEASUREMENT_TOP_K = 5
+PIVOT_MEASUREMENT_PRIMARY_SCORE_ID = "S_vote_margin"
+PIVOT_MEASUREMENT_ABLATION_SCORE_IDS = (
+    "S_vote_only",
+    "S_margin_only",
+    "S_current",
+)
+PIVOT_MEASUREMENT_NULL_HASH_SEEDS = (3, 5, 7, 11, 13, 17, 19, 23)
+PIVOT_MEASUREMENT_NULL_RANDOM_SEEDS = (31, 37, 41, 43, 47, 53, 59, 61)
+PIVOT_MEASUREMENT_AUC_NON_PREDICTIVE_MAX = 0.55
+PIVOT_MEASUREMENT_AUC_PREDICTIVE_MIN = 0.60
+PIVOT_MEASUREMENT_NULL_AUC_MARGIN_MIN = 0.05
+PIVOT_MEASUREMENT_NULL_PERCENTILE_MIN = 0.75
+PIVOT_MEASUREMENT_POOR_RANK_FRACTION_MIN = 0.25
+PIVOT_MEASUREMENT_TIE_BAND_REGRET_SPREAD_RATIO_MAX = 0.25
+PIVOT_MEASUREMENT_PREDICTIVE_SEED_LABEL = "primary_score_predictive_for_local_regret"
+PIVOT_MEASUREMENT_LOCAL_APPLY_VARIANT_TOP1 = "top1_unit"
+PIVOT_MEASUREMENT_LOCAL_APPLY_VARIANT_PREFIX_CAP_1024 = "prefix_cap1024"
+PIVOT_MEASUREMENT_LOCAL_APPLY_VARIANT_CURRENT_SPEC = "current_spec"
+CREDIT_RANKING_PIVOT_MEASUREMENT_BRANCHES = (
+    BRANCH_PREREGISTERED_CHEAP_LEARNER_FEATURE_FAMILY_CANNOT_PREDICT_REGRET,
+    PIVOT_MEASUREMENT_PREDICTIVE_SEED_LABEL,
+    BRANCH_MEASUREMENT_AMBIGUOUS_TIE_BAND_ALIASING,
+    BRANCH_MEASUREMENT_AMBIGUOUS_NO_BRANCH,
 )
 OPTIMIZER_UPDATE_LAW_BRANCHES = (
     BRANCH_RANK_FREE_POSITIVE,
@@ -1123,6 +1162,121 @@ def default_oracle_wider_screen_interpretation_contract(
                 "update_law_or_credit_ranking_pivot"
             ),
         },
+    }
+
+
+def default_credit_ranking_pivot_compact_summary_schema() -> dict[str, Any]:
+    allowed_fields = [
+        "candidate_count",
+        "sampled_candidate_count",
+        "sampled_candidate_table",
+        "score_family_metrics",
+        "stage_a_null_guard",
+        "tie_band_ambiguity",
+        "local_apply_magnitude_smoke",
+        "telemetry",
+    ]
+    return {
+        "compact_summary_only": True,
+        "allowed_fields": allowed_fields,
+        "required_fields": allowed_fields,
+        "raw_per_proposal_arrays": False,
+        "raw_candidate_scores": False,
+        "raw_local_loss_deltas": False,
+    }
+
+
+def default_credit_ranking_pivot_measurement_contract() -> dict[str, Any]:
+    return {
+        "contract_kind": "credit_ranking_pivot_separating_measurement",
+        "candidate_generation_fixed": True,
+        "same_candidate_set_required": True,
+        "contrast_support_order_seeds": list(ORACLE_SCREEN_CONTRAST_SEEDS),
+        "required_max_sampled_candidates": PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES,
+        "top_k": PIVOT_MEASUREMENT_TOP_K,
+        "learner_available_ranking_input_fields": [
+            "candidate_id",
+            "state_key",
+            "flat_index",
+            "vote_value",
+            "abs_vote_value",
+            "current_margin_abs",
+            "current_rank_position",
+            "tie_band_id",
+        ],
+        "oracle_only_label_fields": [
+            "candidate_loss",
+            "local_loss_delta",
+            "regret_vs_oracle_top1_local_loss_delta",
+            "oracle_best_sampled_rank_position",
+        ],
+        "score_family": {
+            "primary": PIVOT_MEASUREMENT_PRIMARY_SCORE_ID,
+            "ablations": list(PIVOT_MEASUREMENT_ABLATION_SCORE_IDS),
+            "decision_basis": "primary_plus_ablation_report_no_post_hoc_best_of_many",
+            "hash_control_role": "null_distribution_only",
+            "null_distribution": {
+                "deterministic_hash_seeds": list(PIVOT_MEASUREMENT_NULL_HASH_SEEDS),
+                "random_permutation_seeds": list(PIVOT_MEASUREMENT_NULL_RANDOM_SEEDS),
+                "comparison_basis": "combined_null_median_and_percentile",
+            },
+        },
+        "stage_a": {
+            "decision_metrics": [
+                "oracle_top_k_overlap_fraction",
+                "oracle_top_k_regret_capture_ratio",
+                "oracle_top_k_gap_ratio",
+                "pairwise_auc",
+                "null_median_auc_margin",
+                "null_percentile",
+            ],
+            "pairwise_auc_non_predictive_max": PIVOT_MEASUREMENT_AUC_NON_PREDICTIVE_MAX,
+            "pairwise_auc_predictive_min": PIVOT_MEASUREMENT_AUC_PREDICTIVE_MIN,
+            "oracle_best_sampled_rank_position_poor_fraction": (
+                PIVOT_MEASUREMENT_POOR_RANK_FRACTION_MIN
+            ),
+            "oracle_best_sampled_rank_position_poor_threshold_rule": (
+                "ceil(fraction * sampled_candidate_count)"
+            ),
+            "null_guard": {
+                "median_auc_margin_min": PIVOT_MEASUREMENT_NULL_AUC_MARGIN_MIN,
+                "percentile_min": PIVOT_MEASUREMENT_NULL_PERCENTILE_MIN,
+                "not_heavy_ci": True,
+            },
+            "non_predictive_branch_label": (
+                BRANCH_PREREGISTERED_CHEAP_LEARNER_FEATURE_FAMILY_CANNOT_PREDICT_REGRET
+            ),
+            "predictive_seed_label": PIVOT_MEASUREMENT_PREDICTIVE_SEED_LABEL,
+        },
+        "tie_band_ambiguity_guard": {
+            "score_family": PIVOT_MEASUREMENT_PRIMARY_SCORE_ID,
+            "oracle_best_in_band_required": True,
+            "ambiguous_if_regret_spread_ratio_gt": (
+                PIVOT_MEASUREMENT_TIE_BAND_REGRET_SPREAD_RATIO_MAX
+            ),
+            "ambiguous_branch_label": BRANCH_MEASUREMENT_AMBIGUOUS_TIE_BAND_ALIASING,
+        },
+        "stage_b_local_apply_magnitude_smoke": {
+            "contract_kind": "local_apply_magnitude_smoke_only",
+            "variant_ids": [
+                PIVOT_MEASUREMENT_LOCAL_APPLY_VARIANT_TOP1,
+                PIVOT_MEASUREMENT_LOCAL_APPLY_VARIANT_PREFIX_CAP_1024,
+                PIVOT_MEASUREMENT_LOCAL_APPLY_VARIANT_CURRENT_SPEC,
+            ],
+            "current_spec_is_non_definitive_without_live_full_cap": True,
+            "definitive_b_requires_follow_on": True,
+        },
+        "stage_c_follow_on": {
+            "separately_gated_required": True,
+            "broad_arm_forbidden": True,
+            "no_acquisition_or_retention_claim_before_receipt": True,
+        },
+        "allowed_seed_local_labels": [
+            BRANCH_PREREGISTERED_CHEAP_LEARNER_FEATURE_FAMILY_CANNOT_PREDICT_REGRET,
+            PIVOT_MEASUREMENT_PREDICTIVE_SEED_LABEL,
+            BRANCH_MEASUREMENT_AMBIGUOUS_TIE_BAND_ALIASING,
+            BRANCH_MEASUREMENT_AMBIGUOUS_NO_BRANCH,
+        ],
     }
 
 
@@ -2504,6 +2658,270 @@ def build_candidate_set_viability_oracle_screen_launch_bundle(
         ],
     }
     validate_candidate_set_viability_oracle_screen_launch_bundle(packet)
+    return packet
+
+
+def build_credit_ranking_pivot_measurement_packet(
+    *,
+    parent_path: str | Path,
+    parent_sha256: str,
+    launch_gate_id: str | None = None,
+) -> dict[str, Any]:
+    budget = PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES
+    packet = {
+        "schema_version": OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION,
+        "packet_kind": CREDIT_RANKING_PIVOT_MEASUREMENT_PACKET_KIND,
+        "target_name": CREDIT_RANKING_PIVOT_MEASUREMENT_PACKET_KIND,
+        "artifact_role": "credit_ranking_pivot_measurement_author_packet",
+        "diagnostic_class": DIAGNOSTIC_CLASS_PRE_FULL_STACK,
+        "pre_full_stack_diagnostic": True,
+        "author_only": True,
+        "commands_executed": False,
+        "gpu_launched": False,
+        "launch_gate_id": launch_gate_id,
+        "pt_mutated": False,
+        "readiness_claim": False,
+        "full_sub2_claim": False,
+        "ready_for_main_science": False,
+        "carrier_claim": False,
+        "checkpoint_written": False,
+        "optimizer_credit_state_row_flip": False,
+        "optimizer_credit_state_science_dependent": True,
+        "branch_result": None,
+        "qacc_kernelized": False,
+        "parent_path": str(parent_path),
+        "parent_sha256": str(parent_sha256),
+        "arms": default_oracle_screen_arms(),
+        "same_candidate_set_required": True,
+        "seed_order_contract": default_oracle_screen_seed_order_contract(),
+        "oracle_feasibility_budget": default_oracle_feasibility_budget_for(
+            max_sampled_candidates=budget
+        ),
+        "oracle_non_persistence_contract": default_oracle_non_persistence_contract(),
+        "compact_summary_schema": default_credit_ranking_pivot_compact_summary_schema(),
+        "measurement_contract": default_credit_ranking_pivot_measurement_contract(),
+        "artifact_policy": {
+            "compact_json_ndjson_only": True,
+            "raw_per_proposal_arrays": False,
+            "pt_writes_allowed": False,
+            "oracle_artifact_path": None,
+        },
+        "non_claims": [
+            "packet scaffold only; no measurement execution",
+            "no GPU launch from packet authoring",
+            "no .pt mutation or checkpoint promotion",
+            "measurement keeps candidate generation fixed",
+            "deterministic hash remains null/control only",
+            "no readiness row flip",
+            "no carrier or full-sub2 runtime claim",
+            "optimizer_credit_state remains science-dependent",
+        ],
+    }
+    validate_credit_ranking_pivot_measurement_packet(packet)
+    return packet
+
+
+def _build_credit_ranking_pivot_measurement_command_record(
+    *,
+    repo_root: str | Path,
+    run_root: str | Path,
+    parent_path: str | Path,
+    parent_sha256: str,
+    support_order_seed: int,
+    device: str,
+    phase_timeout_seconds: int | float,
+    total_timeout_seconds: int | float,
+    max_silent_phase_seconds: int | float,
+) -> dict[str, Any]:
+    budget = PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES
+    seed_label = _support_order_seed_label(int(support_order_seed))
+    scratch_root = _path_join(run_root, seed_label)
+    receipt_path = _path_join(scratch_root, "receipt.json")
+    stdout_path = _path_join(scratch_root, "stdout.ndjson")
+    stderr_path = _path_join(scratch_root, "stderr.log")
+    argv = [
+        "python3",
+        "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+        "--enable-bounded-delta-probe",
+        "--allow-gpu-launch",
+        "--oracle-screen-mode",
+        "credit_ranking_pivot_measurement",
+        "--phase",
+        f"credit-ranking-pivot-measurement-n20-{seed_label}",
+        "--device",
+        str(device),
+        "--parent",
+        str(parent_path),
+        "--parent-sha256",
+        str(parent_sha256),
+        "--scratch-root",
+        scratch_root,
+        "--curriculum-seed",
+        str(STEP6_CURRICULUM_SEED),
+        "--support-order-seed",
+        str(int(support_order_seed)),
+        "--oracle-screen-max-sampled-candidates",
+        str(budget),
+        "--batch-size",
+        str(ORACLE_SCREEN_N20_ROWS),
+        "--steps",
+        "1",
+        "--max-steps-hard",
+        "1",
+        "--max-abs-per-tensor",
+        str(STEP3_BASELINE_MAX_ABS_PER_TENSOR),
+        "--emit-progress",
+        "--phase-timeout-seconds",
+        str(phase_timeout_seconds),
+        "--total-timeout-seconds",
+        str(total_timeout_seconds),
+        "--max-silent-phase-seconds",
+        str(max_silent_phase_seconds),
+    ]
+    return {
+        "mode": "credit_ranking_pivot_measurement_n20",
+        "phase_role": "credit_ranking_pivot_measurement",
+        "support_order_seed": int(support_order_seed),
+        "seed_label": seed_label,
+        "oracle_screen_mode": "credit_ranking_pivot_measurement",
+        "screen_rows": ORACLE_SCREEN_N20_ROWS,
+        "n_rows": ORACLE_SCREEN_N20_ROWS,
+        "steps_requested": 1,
+        "steps_source": "fixed_single_support_batch_credit_ranking_pivot_measurement",
+        "batch_size": ORACLE_SCREEN_N20_ROWS,
+        "curriculum_seed": STEP6_CURRICULUM_SEED,
+        "same_candidate_set_required": True,
+        "max_sampled_candidates": budget,
+        "oracle_max_seconds": oracle_screen_budget_max_seconds(budget),
+        "max_abs_per_tensor": STEP3_BASELINE_MAX_ABS_PER_TENSOR,
+        "fraction_per_tensor": STEP3_FRACTION_PER_TENSOR,
+        "global_cap_contract": "off",
+        "cwd": str(repo_root),
+        "env": {
+            "HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE": "1",
+            "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH": "1",
+        },
+        "argv": argv,
+        "stdout_path": stdout_path,
+        "stderr_path": stderr_path,
+        "receipt_path": receipt_path,
+        "scratch_root": scratch_root,
+        "enabled_if": "fixed contrast seeds 43 and 29 only; same candidate set once per seed",
+        "expected_exit_policy": "exit_0_required_else_stop_no_retry_no_verdict",
+    }
+
+
+def build_credit_ranking_pivot_measurement_launch_bundle(
+    *,
+    parent_path: str | Path,
+    parent_sha256: str,
+    repo_root: str | Path,
+    run_root: str | Path,
+    device: str = "cuda:0",
+    launch_gate_id: str | None = None,
+    symbolic_resource_lane: str = "gpu:0",
+    phase_timeout_seconds: int | float = 1800,
+    total_timeout_seconds: int | float = 7200,
+    max_silent_phase_seconds: int | float = 300,
+) -> dict[str, Any]:
+    budget = PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES
+    science_contract = packet_without_runtime_results(
+        build_credit_ranking_pivot_measurement_packet(
+            parent_path=parent_path,
+            parent_sha256=parent_sha256,
+            launch_gate_id=None,
+        ),
+    )
+    commands = [
+        _build_credit_ranking_pivot_measurement_command_record(
+            repo_root=repo_root,
+            run_root=run_root,
+            parent_path=parent_path,
+            parent_sha256=parent_sha256,
+            support_order_seed=int(seed),
+            device=device,
+            phase_timeout_seconds=phase_timeout_seconds,
+            total_timeout_seconds=total_timeout_seconds,
+            max_silent_phase_seconds=max_silent_phase_seconds,
+        )
+        for seed in ORACLE_SCREEN_CONTRAST_SEEDS
+    ]
+    packet = {
+        "schema_version": OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION,
+        "packet_kind": CREDIT_RANKING_PIVOT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND,
+        "target_name": CREDIT_RANKING_PIVOT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND,
+        "artifact_role": "credit_ranking_pivot_measurement_launch_bundle_author_packet",
+        "diagnostic_class": DIAGNOSTIC_CLASS_PRE_FULL_STACK,
+        "pre_full_stack_diagnostic": True,
+        "author_only": True,
+        "commands_executed": False,
+        "gpu_launched": False,
+        "launch_gate_id": launch_gate_id,
+        "pt_mutated": False,
+        "readiness_claim": False,
+        "full_sub2_claim": False,
+        "ready_for_main_science": False,
+        "carrier_claim": False,
+        "checkpoint_written": False,
+        "optimizer_credit_state_row_flip": False,
+        "optimizer_credit_state_science_dependent": True,
+        "branch_result": None,
+        "qacc_kernelized": False,
+        "parent_path": str(parent_path),
+        "parent_sha256": str(parent_sha256),
+        "science_contract": science_contract,
+        "screen_rows": ORACLE_SCREEN_N20_ROWS,
+        "curriculum_seed": STEP6_CURRICULUM_SEED,
+        "support_order_seeds": list(ORACLE_SCREEN_CONTRAST_SEEDS),
+        "same_candidate_set_required": True,
+        "oracle_feasibility_budget": default_oracle_feasibility_budget_for(
+            max_sampled_candidates=budget
+        ),
+        "oracle_non_persistence_contract": default_oracle_non_persistence_contract(),
+        "compact_summary_schema": default_credit_ranking_pivot_compact_summary_schema(),
+        "measurement_contract": default_credit_ranking_pivot_measurement_contract(),
+        "commands": commands,
+        "resource_lane": default_resource_lane_contract(
+            symbolic_lane=symbolic_resource_lane,
+        ),
+        "watcher_audit_bundle": default_watcher_bundle(),
+        "phase_budgets": default_phase_budgets(),
+        "terminal_criteria": {
+            **default_terminal_criteria(),
+            "branch_classifier": [
+                BRANCH_PREREGISTERED_CHEAP_LEARNER_FEATURE_FAMILY_CANNOT_PREDICT_REGRET,
+                "primary_score_predictive_for_local_regret",
+                BRANCH_MEASUREMENT_AMBIGUOUS_TIE_BAND_ALIASING,
+                BRANCH_MEASUREMENT_AMBIGUOUS_NO_BRANCH,
+            ],
+            "same_candidate_set_required": True,
+            "support_order_seeds": list(ORACLE_SCREEN_CONTRAST_SEEDS),
+            "n20_screen_rows": ORACLE_SCREEN_N20_ROWS,
+            "required_max_sampled_candidates": budget,
+            "qacc_kernelized": False,
+            "device_residency_not_hot_loop_residency": True,
+        },
+        "hash_gate_policy": default_hash_gate_policy(),
+        "compact_instrumentation_only": True,
+        "raw_per_proposal_arrays_included": False,
+        "artifact_policy": {
+            "compact_json_ndjson_only": True,
+            "raw_per_proposal_arrays": False,
+            "pt_writes_allowed": False,
+        },
+        "non_claims": [
+            "author-only credit-ranking pivot launch bundle",
+            "same candidate set generated once per seed and evaluated under learner-score diagnostics",
+            "deterministic hash remains a null/control distribution only",
+            "no GPU launch from this packet-authoring step",
+            "no resource lane acquired by this packet",
+            "no .pt mutation or checkpoint promotion",
+            "no readiness row flip",
+            "no carrier or full-sub2 runtime claim",
+            "qacc_vote_select_apply_update remains CPU-reference/default-off, not kernelized",
+        ],
+    }
+    validate_credit_ranking_pivot_measurement_launch_bundle(packet)
     return packet
 
 
@@ -4180,6 +4598,137 @@ def _validate_oracle_wider_screen_interpretation_contract(contract: Mapping[str,
         raise ValueError("oracle wider-screen next-branch mapping drifted")
 
 
+def _validate_credit_ranking_pivot_compact_summary_schema(schema: Mapping[str, Any]) -> None:
+    expected_fields = set(default_credit_ranking_pivot_compact_summary_schema()["allowed_fields"])
+    if not bool(schema.get("compact_summary_only")):
+        raise ValueError("credit-ranking pivot receipt must be compact-summary-only")
+    if set(schema.get("allowed_fields") or ()) != expected_fields:
+        raise ValueError("credit-ranking pivot compact summary allowed fields drifted")
+    if set(schema.get("required_fields") or ()) != expected_fields:
+        raise ValueError("credit-ranking pivot compact summary required fields drifted")
+    for field in ("raw_per_proposal_arrays", "raw_candidate_scores", "raw_local_loss_deltas"):
+        if bool(schema.get(field)):
+            raise ValueError("credit-ranking pivot compact summary must reject raw proposal arrays")
+
+
+def _validate_credit_ranking_pivot_measurement_contract(contract: Mapping[str, Any]) -> None:
+    if contract.get("contract_kind") != "credit_ranking_pivot_separating_measurement":
+        raise ValueError("credit-ranking pivot contract kind drifted")
+    if not bool(contract.get("candidate_generation_fixed")):
+        raise ValueError("credit-ranking pivot contract must keep candidate generation fixed")
+    if not bool(contract.get("same_candidate_set_required")):
+        raise ValueError("credit-ranking pivot contract must require the same candidate set")
+    if contract.get("contrast_support_order_seeds") != list(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError("credit-ranking pivot contract contrast seeds drifted")
+    if int(contract.get("required_max_sampled_candidates", -1)) != PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES:
+        raise ValueError("credit-ranking pivot contract must pin budget 32")
+    if int(contract.get("top_k", -1)) != PIVOT_MEASUREMENT_TOP_K:
+        raise ValueError("credit-ranking pivot contract top_k drifted")
+    if list(contract.get("learner_available_ranking_input_fields") or ()) != [
+        "candidate_id",
+        "state_key",
+        "flat_index",
+        "vote_value",
+        "abs_vote_value",
+        "current_margin_abs",
+        "current_rank_position",
+        "tie_band_id",
+    ]:
+        raise ValueError("credit-ranking pivot learner-available input fields drifted")
+    if list(contract.get("oracle_only_label_fields") or ()) != [
+        "candidate_loss",
+        "local_loss_delta",
+        "regret_vs_oracle_top1_local_loss_delta",
+        "oracle_best_sampled_rank_position",
+    ]:
+        raise ValueError("credit-ranking pivot oracle-only label fields drifted")
+    score_family = contract.get("score_family") or {}
+    if score_family.get("primary") != PIVOT_MEASUREMENT_PRIMARY_SCORE_ID:
+        raise ValueError("credit-ranking pivot primary score id drifted")
+    if list(score_family.get("ablations") or ()) != list(PIVOT_MEASUREMENT_ABLATION_SCORE_IDS):
+        raise ValueError("credit-ranking pivot ablation score ids drifted")
+    if score_family.get("decision_basis") != "primary_plus_ablation_report_no_post_hoc_best_of_many":
+        raise ValueError("credit-ranking pivot score-family decision basis drifted")
+    if score_family.get("hash_control_role") != "null_distribution_only":
+        raise ValueError("credit-ranking pivot hash control must remain null-only")
+    null_distribution = score_family.get("null_distribution") or {}
+    if null_distribution.get("deterministic_hash_seeds") != list(PIVOT_MEASUREMENT_NULL_HASH_SEEDS):
+        raise ValueError("credit-ranking pivot null hash seeds drifted")
+    if null_distribution.get("random_permutation_seeds") != list(PIVOT_MEASUREMENT_NULL_RANDOM_SEEDS):
+        raise ValueError("credit-ranking pivot null random seeds drifted")
+    stage_a = contract.get("stage_a") or {}
+    if list(stage_a.get("decision_metrics") or ()) != [
+        "oracle_top_k_overlap_fraction",
+        "oracle_top_k_regret_capture_ratio",
+        "oracle_top_k_gap_ratio",
+        "pairwise_auc",
+        "null_median_auc_margin",
+        "null_percentile",
+    ]:
+        raise ValueError("credit-ranking pivot Stage-A decision metrics drifted")
+    if float(stage_a.get("pairwise_auc_non_predictive_max", -1.0)) != PIVOT_MEASUREMENT_AUC_NON_PREDICTIVE_MAX:
+        raise ValueError("credit-ranking pivot non-predictive AUC threshold drifted")
+    if float(stage_a.get("pairwise_auc_predictive_min", -1.0)) != PIVOT_MEASUREMENT_AUC_PREDICTIVE_MIN:
+        raise ValueError("credit-ranking pivot predictive AUC threshold drifted")
+    if float(
+        stage_a.get("oracle_best_sampled_rank_position_poor_fraction", -1.0)
+    ) != PIVOT_MEASUREMENT_POOR_RANK_FRACTION_MIN:
+        raise ValueError("credit-ranking pivot poor-rank position fraction drifted")
+    if stage_a.get("oracle_best_sampled_rank_position_poor_threshold_rule") != (
+        "ceil(fraction * sampled_candidate_count)"
+    ):
+        raise ValueError("credit-ranking pivot poor-rank threshold rule drifted")
+    null_guard = stage_a.get("null_guard") or {}
+    if float(null_guard.get("median_auc_margin_min", -1.0)) != PIVOT_MEASUREMENT_NULL_AUC_MARGIN_MIN:
+        raise ValueError("credit-ranking pivot null median margin drifted")
+    if float(null_guard.get("percentile_min", -1.0)) != PIVOT_MEASUREMENT_NULL_PERCENTILE_MIN:
+        raise ValueError("credit-ranking pivot null percentile threshold drifted")
+    if not bool(null_guard.get("not_heavy_ci")):
+        raise ValueError("credit-ranking pivot null guard must stay lightweight")
+    if stage_a.get("non_predictive_branch_label") != BRANCH_PREREGISTERED_CHEAP_LEARNER_FEATURE_FAMILY_CANNOT_PREDICT_REGRET:
+        raise ValueError("credit-ranking pivot non-predictive branch label drifted")
+    if stage_a.get("predictive_seed_label") != PIVOT_MEASUREMENT_PREDICTIVE_SEED_LABEL:
+        raise ValueError("credit-ranking pivot predictive seed label drifted")
+    ambiguity = contract.get("tie_band_ambiguity_guard") or {}
+    if ambiguity.get("score_family") != PIVOT_MEASUREMENT_PRIMARY_SCORE_ID:
+        raise ValueError("credit-ranking pivot tie-band score family drifted")
+    if not bool(ambiguity.get("oracle_best_in_band_required")):
+        raise ValueError("credit-ranking pivot tie-band guard must require oracle-best in-band")
+    if float(
+        ambiguity.get("ambiguous_if_regret_spread_ratio_gt", -1.0)
+    ) != PIVOT_MEASUREMENT_TIE_BAND_REGRET_SPREAD_RATIO_MAX:
+        raise ValueError("credit-ranking pivot tie-band regret-spread threshold drifted")
+    if ambiguity.get("ambiguous_branch_label") != BRANCH_MEASUREMENT_AMBIGUOUS_TIE_BAND_ALIASING:
+        raise ValueError("credit-ranking pivot tie-band ambiguous branch drifted")
+    stage_b = contract.get("stage_b_local_apply_magnitude_smoke") or {}
+    if stage_b.get("contract_kind") != "local_apply_magnitude_smoke_only":
+        raise ValueError("credit-ranking pivot Stage-B contract kind drifted")
+    if list(stage_b.get("variant_ids") or ()) != [
+        PIVOT_MEASUREMENT_LOCAL_APPLY_VARIANT_TOP1,
+        PIVOT_MEASUREMENT_LOCAL_APPLY_VARIANT_PREFIX_CAP_1024,
+        PIVOT_MEASUREMENT_LOCAL_APPLY_VARIANT_CURRENT_SPEC,
+    ]:
+        raise ValueError("credit-ranking pivot Stage-B variant ids drifted")
+    if not bool(stage_b.get("current_spec_is_non_definitive_without_live_full_cap")):
+        raise ValueError("credit-ranking pivot Stage-B must remain non-definitive without live full cap")
+    if not bool(stage_b.get("definitive_b_requires_follow_on")):
+        raise ValueError("credit-ranking pivot Stage-B must require follow-on for definitive b")
+    stage_c = contract.get("stage_c_follow_on") or {}
+    if not bool(stage_c.get("separately_gated_required")):
+        raise ValueError("credit-ranking pivot Stage-C must remain separately gated")
+    if not bool(stage_c.get("broad_arm_forbidden")):
+        raise ValueError("credit-ranking pivot Stage-C must forbid broad-arm expansion")
+    if not bool(stage_c.get("no_acquisition_or_retention_claim_before_receipt")):
+        raise ValueError("credit-ranking pivot Stage-C must forbid acquisition/retention claims")
+    if list(contract.get("allowed_seed_local_labels") or ()) != [
+        BRANCH_PREREGISTERED_CHEAP_LEARNER_FEATURE_FAMILY_CANNOT_PREDICT_REGRET,
+        PIVOT_MEASUREMENT_PREDICTIVE_SEED_LABEL,
+        BRANCH_MEASUREMENT_AMBIGUOUS_TIE_BAND_ALIASING,
+        BRANCH_MEASUREMENT_AMBIGUOUS_NO_BRANCH,
+    ]:
+        raise ValueError("credit-ranking pivot allowed seed-local labels drifted")
+
+
 def _validate_oracle_global_non_persistence(value: Any, *, path: str = "packet") -> None:
     for key, child in _walk_items(value):
         key_text = str(key)
@@ -4432,6 +4981,341 @@ def validate_candidate_set_viability_oracle_screen_launch_bundle(packet: Mapping
         raise ValueError("oracle-screen launch bundle artifact policy must reject .pt writes")
 
 
+def validate_credit_ranking_pivot_measurement_packet(packet: Mapping[str, Any]) -> None:
+    if packet.get("schema_version") != OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION:
+        raise ValueError("unsupported credit-ranking pivot measurement packet schema")
+    if packet.get("diagnostic_class") != DIAGNOSTIC_CLASS_PRE_FULL_STACK:
+        raise ValueError("credit-ranking pivot packet must be pre_full_stack_diagnostic")
+    _validate_author_only_fields(
+        packet,
+        expected_packet_kind=CREDIT_RANKING_PIVOT_MEASUREMENT_PACKET_KIND,
+        label="author-only credit-ranking pivot measurement packet",
+    )
+    for field in _READINESS_FORBIDDEN_TRUE_FIELDS:
+        _require_false(packet, field)
+    if bool(packet.get("carrier_claim")) or bool(packet.get("q_sidecar_carrier_claim")):
+        raise ValueError("credit-ranking pivot packet must not make a carrier claim")
+    if bool(packet.get("qacc_kernelized")):
+        raise ValueError("credit-ranking pivot packet must keep qacc_kernelized=false")
+    if not bool(packet.get("optimizer_credit_state_science_dependent")):
+        raise ValueError(
+            "credit-ranking pivot packet must keep optimizer_credit_state science-dependent"
+        )
+    if not bool(packet.get("same_candidate_set_required")):
+        raise ValueError("credit-ranking pivot packet must require the same candidate set")
+    if bool(packet.get("oracle_state_survives_into_learner")):
+        raise ValueError("oracle state must not survive into learner fields")
+    _reject_raw_arrays(packet)
+    _validate_oracle_global_non_persistence(packet)
+    _validate_oracle_screen_arms(packet.get("arms") or ())
+    _validate_oracle_seed_order_contract(packet.get("seed_order_contract") or {})
+    feasibility_budget = packet.get("oracle_feasibility_budget") or {}
+    selected_budget = int(feasibility_budget.get("max_sampled_candidates", -1))
+    if selected_budget != PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES:
+        raise ValueError("credit-ranking pivot packet must pin budget 32")
+    _validate_oracle_feasibility_budget(feasibility_budget)
+    _validate_oracle_non_persistence(packet.get("oracle_non_persistence_contract") or {})
+    _validate_credit_ranking_pivot_compact_summary_schema(
+        packet.get("compact_summary_schema") or {}
+    )
+    _validate_credit_ranking_pivot_measurement_contract(
+        packet.get("measurement_contract") or {}
+    )
+    artifact_policy = packet.get("artifact_policy") or {}
+    if not bool(artifact_policy.get("compact_json_ndjson_only")):
+        raise ValueError(
+            "credit-ranking pivot packet artifact policy must require compact JSON/NDJSON"
+        )
+    if bool(artifact_policy.get("raw_per_proposal_arrays")):
+        raise ValueError("credit-ranking pivot packet must reject raw per-proposal arrays")
+    if bool(artifact_policy.get("pt_writes_allowed")):
+        raise ValueError("credit-ranking pivot packet artifact policy must reject .pt writes")
+    oracle_artifact_path = artifact_policy.get("oracle_artifact_path")
+    if oracle_artifact_path is not None and str(oracle_artifact_path).endswith(".pt"):
+        raise ValueError("credit-ranking pivot packet artifact path must not target .pt artifacts")
+
+
+def _validate_credit_ranking_pivot_measurement_command_record(
+    command: Mapping[str, Any],
+) -> None:
+    missing = [field for field in _COMMAND_REQUIRED_FIELDS if field not in command]
+    if missing:
+        raise ValueError(
+            f"credit-ranking pivot command record missing required fields: {missing}"
+        )
+    if str(command.get("mode")) != "credit_ranking_pivot_measurement_n20":
+        raise ValueError(
+            "credit-ranking pivot command mode must be credit_ranking_pivot_measurement_n20"
+        )
+    if str(command.get("phase_role")) != "credit_ranking_pivot_measurement":
+        raise ValueError("credit-ranking pivot command phase_role drifted")
+    if str(command.get("oracle_screen_mode")) != "credit_ranking_pivot_measurement":
+        raise ValueError(
+            "credit-ranking pivot command must pin credit_ranking_pivot_measurement mode"
+        )
+    if not bool(command.get("same_candidate_set_required")):
+        raise ValueError("credit-ranking pivot command must require same candidate set")
+    if int(command.get("support_order_seed", -1)) not in ORACLE_SCREEN_CONTRAST_SEEDS:
+        raise ValueError(
+            "credit-ranking pivot command support_order_seed must be one of the contrast seeds"
+        )
+    if str(command.get("seed_label")) != _support_order_seed_label(
+        int(command["support_order_seed"])
+    ):
+        raise ValueError("credit-ranking pivot command seed_label drifted from support_order_seed")
+    if int(command.get("screen_rows", -1)) != ORACLE_SCREEN_N20_ROWS:
+        raise ValueError("credit-ranking pivot command screen_rows must be 20")
+    if int(command.get("n_rows", -1)) != ORACLE_SCREEN_N20_ROWS:
+        raise ValueError("credit-ranking pivot command n_rows must equal screen_rows")
+    if int(command.get("steps_requested", -1)) != 1:
+        raise ValueError("credit-ranking pivot command steps_requested must be 1")
+    if (
+        command.get("steps_source")
+        != "fixed_single_support_batch_credit_ranking_pivot_measurement"
+    ):
+        raise ValueError("credit-ranking pivot command steps_source drifted")
+    if int(command.get("batch_size", -1)) != ORACLE_SCREEN_N20_ROWS:
+        raise ValueError("credit-ranking pivot command batch_size must equal N=20 screen rows")
+    if int(command.get("curriculum_seed", -1)) != STEP6_CURRICULUM_SEED:
+        raise ValueError("credit-ranking pivot command curriculum_seed must stay pinned to 17")
+    budget = int(command.get("max_sampled_candidates", -1))
+    if budget != PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES:
+        raise ValueError("credit-ranking pivot command max_sampled_candidates must be 32")
+    if float(command.get("oracle_max_seconds", -1.0)) != oracle_screen_budget_max_seconds(
+        budget
+    ):
+        raise ValueError("credit-ranking pivot command oracle_max_seconds drifted")
+    if int(command.get("max_abs_per_tensor", -1)) != STEP3_BASELINE_MAX_ABS_PER_TENSOR:
+        raise ValueError(
+            "credit-ranking pivot command max_abs_per_tensor must stay at the baseline cap"
+        )
+    if float(command.get("fraction_per_tensor", -1.0)) != STEP3_FRACTION_PER_TENSOR:
+        raise ValueError("credit-ranking pivot command fraction_per_tensor must stay at 1.0")
+    if command.get("global_cap_contract") != "off":
+        raise ValueError("credit-ranking pivot command must keep global cap off")
+    env = command.get("env")
+    if not isinstance(env, Mapping):
+        raise ValueError("credit-ranking pivot command env must be a mapping")
+    if env.get("HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE") != "1":
+        raise ValueError(
+            "credit-ranking pivot command env missing HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE=1"
+        )
+    if env.get("HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH") != "1":
+        raise ValueError(
+            "credit-ranking pivot command env missing HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1"
+        )
+    argv = command.get("argv")
+    if not isinstance(argv, list) or not all(isinstance(item, str) for item in argv):
+        raise ValueError("credit-ranking pivot command argv must be a list[str]")
+    required_args = {
+        "--enable-bounded-delta-probe",
+        "--allow-gpu-launch",
+        "--oracle-screen-mode",
+        "--device",
+        "--parent",
+        "--parent-sha256",
+        "--scratch-root",
+        "--curriculum-seed",
+        "--support-order-seed",
+        "--oracle-screen-max-sampled-candidates",
+        "--batch-size",
+        "--steps",
+        "--max-steps-hard",
+        "--max-abs-per-tensor",
+        "--emit-progress",
+    }
+    if not required_args.issubset(set(argv)):
+        raise ValueError(
+            "credit-ranking pivot command argv missing required probe launch arguments"
+        )
+    if "--science-arm" in argv:
+        raise ValueError(
+            "credit-ranking pivot command must route through --oracle-screen-mode, not --science-arm"
+        )
+    expected_flag_values = (
+        ("--oracle-screen-mode", "credit_ranking_pivot_measurement"),
+        ("--curriculum-seed", str(STEP6_CURRICULUM_SEED)),
+        ("--support-order-seed", str(int(command["support_order_seed"]))),
+        (
+            "--oracle-screen-max-sampled-candidates",
+            str(PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES),
+        ),
+        ("--batch-size", str(ORACLE_SCREEN_N20_ROWS)),
+        ("--steps", "1"),
+        ("--max-steps-hard", "1"),
+        ("--max-abs-per-tensor", str(STEP3_BASELINE_MAX_ABS_PER_TENSOR)),
+    )
+    for flag, expected in expected_flag_values:
+        try:
+            observed = argv[argv.index(flag) + 1]
+        except (ValueError, IndexError) as exc:
+            raise ValueError(f"credit-ranking pivot command argv missing {flag} value") from exc
+        if observed != expected:
+            raise ValueError(
+                f"credit-ranking pivot command argv {flag} must be {expected!r}, got {observed!r}"
+            )
+    try:
+        device = argv[argv.index("--device") + 1]
+    except (ValueError, IndexError) as exc:
+        raise ValueError("credit-ranking pivot command argv missing --device value") from exc
+    if not device.startswith("cuda:"):
+        raise ValueError(
+            "credit-ranking pivot command argv --device must target CUDA for launch bundle"
+        )
+    for path_field in ("stdout_path", "stderr_path", "receipt_path", "scratch_root"):
+        value = str(command.get(path_field))
+        if not value:
+            raise ValueError(f"credit-ranking pivot command {path_field} must be non-empty")
+        if value.endswith(".pt"):
+            raise ValueError(
+                f"credit-ranking pivot command {path_field} cannot target .pt artifacts"
+            )
+    if command.get("expected_exit_policy") != "exit_0_required_else_stop_no_retry_no_verdict":
+        raise ValueError("credit-ranking pivot command expected_exit_policy must fail closed")
+
+
+def validate_credit_ranking_pivot_measurement_launch_bundle(
+    packet: Mapping[str, Any],
+) -> None:
+    if packet.get("schema_version") != OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION:
+        raise ValueError(
+            "unsupported credit-ranking pivot measurement launch bundle schema"
+        )
+    if packet.get("diagnostic_class") != DIAGNOSTIC_CLASS_PRE_FULL_STACK:
+        raise ValueError(
+            "credit-ranking pivot measurement launch bundle must be pre_full_stack_diagnostic"
+        )
+    _validate_author_only_fields(
+        packet,
+        expected_packet_kind=CREDIT_RANKING_PIVOT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND,
+        label="author-only credit-ranking pivot measurement launch bundle",
+    )
+    for field in _READINESS_FORBIDDEN_TRUE_FIELDS:
+        _require_false(packet, field)
+    if bool(packet.get("carrier_claim")) or bool(packet.get("q_sidecar_carrier_claim")):
+        raise ValueError(
+            "credit-ranking pivot measurement launch bundle must not make a carrier claim"
+        )
+    if bool(packet.get("qacc_kernelized")):
+        raise ValueError(
+            "credit-ranking pivot measurement launch bundle must keep qacc_kernelized=false"
+        )
+    if not bool(packet.get("optimizer_credit_state_science_dependent")):
+        raise ValueError(
+            "credit-ranking pivot measurement launch bundle must keep optimizer_credit_state science-dependent"
+        )
+    if int(packet.get("screen_rows", -1)) != ORACLE_SCREEN_N20_ROWS:
+        raise ValueError(
+            "credit-ranking pivot measurement launch bundle must pin N=20 rows"
+        )
+    if int(packet.get("curriculum_seed", -1)) != STEP6_CURRICULUM_SEED:
+        raise ValueError(
+            "credit-ranking pivot measurement launch bundle curriculum_seed must stay pinned to 17"
+        )
+    if packet.get("support_order_seeds") != list(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError(
+            "credit-ranking pivot measurement launch bundle must pin the contrast support-order seeds"
+        )
+    if not bool(packet.get("same_candidate_set_required")):
+        raise ValueError(
+            "credit-ranking pivot measurement launch bundle must require the same candidate set"
+        )
+    _reject_raw_arrays(packet)
+    _validate_resource_lane(packet.get("resource_lane") or {})
+    _validate_phase_budgets(packet.get("phase_budgets") or {})
+    _validate_oracle_global_non_persistence(packet)
+    feasibility_budget = packet.get("oracle_feasibility_budget") or {}
+    selected_budget = int(feasibility_budget.get("max_sampled_candidates", -1))
+    if selected_budget != PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES:
+        raise ValueError(
+            "credit-ranking pivot measurement launch bundle must pin budget 32"
+        )
+    _validate_oracle_feasibility_budget(feasibility_budget)
+    _validate_oracle_non_persistence(packet.get("oracle_non_persistence_contract") or {})
+    _validate_credit_ranking_pivot_compact_summary_schema(
+        packet.get("compact_summary_schema") or {}
+    )
+    _validate_credit_ranking_pivot_measurement_contract(
+        packet.get("measurement_contract") or {}
+    )
+    science_contract = packet.get("science_contract")
+    if not isinstance(science_contract, Mapping):
+        raise ValueError(
+            "credit-ranking pivot measurement launch bundle must embed the science_contract packet"
+        )
+    validate_credit_ranking_pivot_measurement_packet(science_contract)
+    if str(science_contract.get("parent_path")) != str(packet.get("parent_path")):
+        raise ValueError(
+            "embedded credit-ranking pivot science contract parent_path must match launch bundle"
+        )
+    if str(science_contract.get("parent_sha256")) != str(packet.get("parent_sha256")):
+        raise ValueError(
+            "embedded credit-ranking pivot science contract parent_sha256 must match launch bundle"
+        )
+    if science_contract.get("measurement_contract") != packet.get("measurement_contract"):
+        raise ValueError(
+            "credit-ranking pivot measurement_contract must match embedded science_contract"
+        )
+    terminal = packet.get("terminal_criteria") or {}
+    if terminal.get("branch_classifier") != list(CREDIT_RANKING_PIVOT_MEASUREMENT_BRANCHES):
+        raise ValueError(
+            "credit-ranking pivot launch bundle terminal branch classifier drifted"
+        )
+    if not bool(terminal.get("same_candidate_set_required")):
+        raise ValueError(
+            "credit-ranking pivot launch bundle terminal criteria must require same candidate set"
+        )
+    if terminal.get("support_order_seeds") != list(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError(
+            "credit-ranking pivot launch bundle terminal criteria support_order_seeds drifted"
+        )
+    if int(terminal.get("n20_screen_rows", -1)) != ORACLE_SCREEN_N20_ROWS:
+        raise ValueError(
+            "credit-ranking pivot launch bundle terminal criteria must pin N=20 rows"
+        )
+    if int(terminal.get("required_max_sampled_candidates", -1)) != (
+        PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES
+    ):
+        raise ValueError(
+            "credit-ranking pivot launch bundle terminal criteria must pin budget 32"
+        )
+    if bool(terminal.get("qacc_kernelized")):
+        raise ValueError(
+            "credit-ranking pivot launch bundle terminal criteria must keep qacc_kernelized=false"
+        )
+    if not bool(terminal.get("device_residency_not_hot_loop_residency")):
+        raise ValueError(
+            "credit-ranking pivot launch bundle must disclaim device residency vs hot-loop residency"
+        )
+    commands = packet.get("commands")
+    if not isinstance(commands, list):
+        raise ValueError("credit-ranking pivot launch bundle commands must be a list")
+    if len(commands) != len(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError(
+            "credit-ranking pivot launch bundle must include exactly one command per contrast seed"
+        )
+    seen = {int(command.get("support_order_seed", -1)) for command in commands}
+    if seen != set(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError(
+            "credit-ranking pivot launch bundle command seeds drifted from the contrast seeds contract"
+        )
+    for command in commands:
+        _validate_credit_ranking_pivot_measurement_command_record(command)
+    artifact_policy = packet.get("artifact_policy") or {}
+    if not bool(artifact_policy.get("compact_json_ndjson_only")):
+        raise ValueError(
+            "credit-ranking pivot launch bundle artifact policy must require compact JSON/NDJSON"
+        )
+    if bool(artifact_policy.get("raw_per_proposal_arrays")):
+        raise ValueError(
+            "credit-ranking pivot launch bundle must reject raw per-proposal arrays"
+        )
+    if bool(artifact_policy.get("pt_writes_allowed")):
+        raise ValueError(
+            "credit-ranking pivot launch bundle artifact policy must reject .pt writes"
+        )
+
+
 def packet_without_runtime_results(packet: Mapping[str, Any]) -> dict[str, Any]:
     out = deepcopy(dict(packet))
     out.pop("runtime_results", None)
@@ -4453,11 +5337,16 @@ __all__ = [
     "BRANCH_DIRECTION_PROJECTION_WRONG",
     "BRANCH_INSUFFICIENT_SEPARATION",
     "BRANCH_MEASUREMENT_LOSS_POWERED",
+    "BRANCH_MEASUREMENT_AMBIGUOUS_NO_BRANCH",
+    "BRANCH_MEASUREMENT_AMBIGUOUS_TIE_BAND_ALIASING",
     "BRANCH_MEASUREMENT_ORDER_SENSITIVE",
     "BRANCH_MEASUREMENT_POWERED",
     "BRANCH_MEASUREMENT_UNDERPOWERED",
     "BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE",
     "BRANCH_POWERED_NEGATIVE_OR_LOSS_ONLY",
+    "BRANCH_PREREGISTERED_CHEAP_LEARNER_FEATURE_FAMILY_CANNOT_PREDICT_REGRET",
+    "CREDIT_RANKING_PIVOT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND",
+    "CREDIT_RANKING_PIVOT_MEASUREMENT_PACKET_KIND",
     "BRANCH_CURRENT_ORDER_NOT_NECESSARY",
     "BRANCH_CURRENT_QACC_MARGIN_ORDER_BUNDLE_CARRIER",
     "BRANCH_MASS_CONFOUNDED_CURRENT_ORDER_SIGNAL",
@@ -4519,6 +5408,8 @@ __all__ = [
     "build_measurement_power_then_trust_region_packet",
     "build_candidate_set_viability_oracle_screen_launch_bundle",
     "build_candidate_set_viability_oracle_screen_packet",
+    "build_credit_ranking_pivot_measurement_launch_bundle",
+    "build_credit_ranking_pivot_measurement_packet",
     "build_optimizer_update_law_launch_bundle",
     "build_optimizer_update_law_science_packet",
     "build_order_averaged_a0_component_decomposition_packet",
@@ -4557,6 +5448,8 @@ __all__ = [
     "validate_measurement_power_then_trust_region_packet",
     "validate_candidate_set_viability_oracle_screen_launch_bundle",
     "validate_candidate_set_viability_oracle_screen_packet",
+    "validate_credit_ranking_pivot_measurement_launch_bundle",
+    "validate_credit_ranking_pivot_measurement_packet",
     "validate_optimizer_update_law_launch_bundle",
     "validate_optimizer_update_law_science_packet",
     "validate_order_averaged_a0_component_decomposition_packet",
