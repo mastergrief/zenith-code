@@ -21,10 +21,8 @@ Dispatch the narrowest task that adds independent evidence. Don't
 spawn for trivial non-mutating work, social reassurance, orchestration,
 AUQ, board actions, gates, or synthesis claude owns directly. Plan,
 implementation, and run-development route to `training-dev` by default
-(deterministic exact proof/launch packet execution may route to
-`test-operator` under gate; bounded terminal packets may route to
-`codex-terminal` only when the parent dispatch/gate permits terminal handoff
-or Claude explicitly dispatches it); direct Claude repo-file edits or runs require
+(deterministic exact proof/launch packet execution routes to
+`test-operator` under gate); direct Claude repo-file edits or runs require
 a persisted named exception or break-glass reason. Workers are slice-scoped — old
 grounding biases fresh work, recycle after shipped slices unless
 explicitly scoping a small adjacent follow-up.
@@ -43,9 +41,8 @@ training-launch dispatcher + reviewer (`training-dev` runs + watches),
 material gatekeeper (plan / validation / commit / push / launch gates),
 and final synthesizer. `codex_co_lead` is read-only (review/audit);
 `training-dev` owns plan + implementation + run-development (deterministic
-exact proof/launch packet execution may route to `test-operator` under
-gate; bounded terminal packets may route to `codex-terminal` under the same
-handoff gate); mutating repo-file work + runs route to a named role.
+exact proof/launch packet execution routes to `test-operator` under
+gate); mutating repo-file work + runs route to a named role.
 
 **Named Codex role lanes** — the *normal* route for gated mutating
 Codex repo-file work, not exceptional spawn:
@@ -63,13 +60,9 @@ Codex repo-file work, not exceptional spawn:
   boundary**: dispatch/provenance MUST name cwd and target path; STOP
   only when actual cwd/target contradicts that packet or a material
   gate. Plan gate before edits; commit/push only on explicit gates; no
-  `.pt` commits for HRM runtime/research outputs. `training-dev` may
-  REQUEST/ROUTE bounded terminal packets to `codex-terminal` ONLY when the
-  parent dispatch/gate permits terminal handoff OR Claude explicitly
-  dispatches it; implementation ownership stays with `training-dev`, and
-  `codex-terminal` returns terminal facts, not fixes/plans.
-- **`curriculum`** — read-only split/support/stop-condition planner.
-- **`audit`** — read-only training receipt/gate/metric auditor.
+  `.pt` commits for HRM runtime/research outputs. `training-dev` runs its
+  own bounded terminal churn (py_compile, focused pytest/lint, dry-runs,
+  log/artifact inspection); implementation ownership stays with `training-dev`.
 - **`test-operator`** — deterministic launch-packet/proof executor
   (gpt-5.4-mini; danger-full-access for temp/log/artifact/tmux writes, NOT
   source authority). Runs an already-specified packet exactly, monitors the
@@ -79,18 +72,6 @@ Codex repo-file work, not exceptional spawn:
   debugging improvisation, commits/pushes, alternate success criteria.
   Underspecified packet → STOP + `PLAN REQUEST`/`HARNESS AMBIGUOUS`.
   Fixes/redesign route to `training-dev`.
-- **`codex-terminal`** — bounded terminal-handoff executor
-  (gpt-5.4-mini/xhigh; danger-full-access for temp/log/artifact/tmux writes,
-  NOT source authority). Runs exact/bounded command sets for `training-dev`
-  command churn: py_compile, focused pytest/lint/typecheck, command smoke,
-  small log/tmux monitoring, artifact hashes. FORBIDDEN: source edits, fixes,
-  dependency installs, alternate retries, commits/pushes, science launch,
-  stamp, or re-authorization. Underspecified packet → STOP +
-  `PLAN REQUEST`/`HARNESS AMBIGUOUS`. Cleanup stays within packet-created
-  temp/artifact/process/resource-lane scope, even after failure/timeout,
-  unless explicitly authorized. Default reports to `training-dev`/requester;
-  formal gate/proof/launch receipts also go to BOTH co-leads. Distinct from
-  `test-operator`, which remains the formal launch/proof runner.
 
 **Role vs handle**: `role="<name>"` loads the role home
 (`~/.ai-room/.codex-roles/<role>/config.toml`, role CODEX_HOME,
@@ -110,47 +91,6 @@ OAuth-fallback at spawn, not a handle error. `developer` includes Serena;
 contracts, reviews receipts; **claude** spawns / assigns / dispatches /
 gates. Worker strategy flows *through* claude.
 
-## codex-terminal co-processor discipline
-
-`codex-terminal` is a terminal **co-processor, not a second developer** — it
-saves `training-dev` tokens on command churn while `training-dev` stays the
-thinker/owner.
-
-- **`training-dev` owns thinking**: plan, source edits, bug interpretation,
-  mechanism/architecture choices, acceptance criteria, final validation
-  interpretation.
-- **`codex-terminal` owns bounded command churn**: `py_compile`, focused
-  pytest, grep/sha checks, dry-runs, artifact inspection, log tails,
-  process/GPU status, timing summaries.
-- **`test-operator`** stays the formal proof/launch runner for acceptance
-  evidence + terminal receipts.
-
-**Routing rule**: judgment about mechanism / architecture / code changes /
-what-to-edit-next stays with `training-dev`; "run this exact thing and tell me
-what happened" routes to `codex-terminal`. `codex-terminal` terminal facts are
-**evidence inputs only** — they do not grant material gates, change acceptance
-criteria, or override `training-dev`/claude/co_lead interpretation.
-
-**Handoff packet shape**:
-
-```text
-TERMINAL HANDOFF
-cwd:
-env:
-commands:
-timeout:
-success criteria:
-failure criteria:
-artifacts to summarize:
-return format:
-```
-
-**Compact return discipline**: no raw log dumps unless requested; return exit
-code, duration, first failing assertion/error, artifact paths + sha when
-relevant, last ~20 relevant lines, and binary pass/fail vs stated criteria.
-Long jobs → milestone-driven updates only (first progress, phase change,
-terminal, timeout/stall, unexpected error).
-
 ## When to spawn additional handles
 
 Beyond the named lanes above, spawn an *ad-hoc* named worker handle only
@@ -169,7 +109,7 @@ more, don't spawn — give it to co_lead.
 
 ```
 claude creates board task with provenance + decision contract
-  → spawns the narrowest handle (normally training-dev for repo-file mutation, test-operator for formal exact proof/launch packets, codex-terminal for permitted bounded terminal handoff, or co_lead for read-only audit)
+  → spawns the narrowest handle (normally training-dev for repo-file mutation, test-operator for formal exact proof/launch packets, or co_lead for read-only audit)
   → handle grounds with read-only evidence + posts plan
   → claude gives +1 implement or redirects
   → handle implements or proves within scope

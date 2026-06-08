@@ -15,10 +15,8 @@ training-launch dispatcher + reviewer (`training-dev` runs + watches),
 material gatekeeper (plan / validation / commit / push / launch), and
 final synthesizer. `codex_co_lead` is read-only (review/audit) — it does
 NOT implement or run; `training-dev` owns plan + implementation +
-run-development (deterministic exact proof/launch packet execution may route
-to `test-operator` under gate; bounded terminal packets may route to
-`codex-terminal` only when the parent dispatch/gate permits terminal handoff
-or Claude explicitly dispatches it); mutating repo-file work + runs go to a
+run-development (deterministic exact proof/launch packet execution routes
+to `test-operator` under gate); mutating repo-file work + runs go to a
 named role.
 
 Operating shapes:
@@ -33,25 +31,14 @@ Operating shapes:
   gated repo-file task/repo/path or run; common lanes: HRM training-run
   development incl. GPU launch/run/watch, curriculum support, probes/tests,
   scripts, code/data, plus main-repo docs/config/hooks/tooling/scripts/
-  tests/probe support; developer template, no Serena; **cwd is a
-  provenance/dispatch match check, not a repo permission boundary** —
-  dispatch/provenance must name cwd/target; STOP only when actual
-  cwd/target contradicts that packet or a material gate), `curriculum`
-  (read-only split/support planner), `audit` (read-only gate/metric
-  auditor), `test-operator` (cheap deterministic proof-runner: runs an
+  tests/probe support; runs its own bounded terminal churn; developer
+  template, no Serena; **cwd is a provenance/dispatch match check, not a
+  repo permission boundary** — dispatch/provenance must name cwd/target;
+  STOP only when actual cwd/target contradicts that packet or a material
+  gate) and `test-operator` (cheap deterministic proof-runner: runs an
   already-specified launch/proof packet, monitors NDJSON/logs/artifacts,
   posts validation receipts to BOTH co-leads; no source edits / mechanism
-  design / commits / dispatch; fixes route to `training-dev`),
-  `codex-terminal` (gpt-5.4-mini/xhigh bounded terminal handoff for
-  `training-dev` command churn: py_compile, focused pytest/lint/typecheck,
-  command smoke, small log/tmux monitoring, artifact hashes; exact/bounded
-  command sets only; temp/log/artifact/tmux scope, NOT source authority; no
-  source edits / fixes / dep installs / alternate retries / commits / pushes
-  / science launch, stamp, or re-authorization; underspecified packet → STOP
-  + `PLAN REQUEST`/`HARNESS AMBIGUOUS`; cleanup only packet-created scope;
-  default reports to `training-dev`/requester, formal gate/proof/launch
-  receipts also to BOTH co-leads; distinct from `test-operator`, the formal
-  launch/proof runner). Slice-scoped;
+  design / commits / dispatch; fixes route to `training-dev`). Slice-scoped;
   always-on means default lane/route, not a
   permanently retained handle, so recycle after the shipped slice unless
   claude scopes a small adjacent follow-up with `RETAIN OVERRIDE`.
@@ -68,52 +55,6 @@ assigns / dispatches / gates; you do NOT self-dispatch. GPT-backed role homes
 (`model="gpt-*"`) inherit base Codex auth via an `auth.json` symlink →
 `~/.codex/auth.json` (bootstrap-maintained); every worker role needs the
 ai-room MCP; `training-dev` omits Serena by design.
-
-`training-dev` may REQUEST/ROUTE bounded terminal packets to
-`codex-terminal` ONLY when the parent dispatch/gate permits terminal handoff
-OR Claude explicitly dispatches it; implementation ownership stays with
-`training-dev`, and `codex-terminal` returns terminal facts, not fixes/plans.
-
-## codex-terminal co-processor discipline
-
-`codex-terminal` is a terminal **co-processor, not a second developer** — it
-saves `training-dev` tokens on command churn while `training-dev` stays the
-thinker/owner.
-
-- **`training-dev` owns thinking**: plan, source edits, bug interpretation,
-  mechanism/architecture choices, acceptance criteria, final validation
-  interpretation.
-- **`codex-terminal` owns bounded command churn**: `py_compile`, focused
-  pytest, grep/sha checks, dry-runs, artifact inspection, log tails,
-  process/GPU status, timing summaries.
-- **`test-operator`** stays the formal proof/launch runner for acceptance
-  evidence + terminal receipts.
-
-**Routing rule**: judgment about mechanism / architecture / code changes /
-what-to-edit-next stays with `training-dev`; "run this exact thing and tell me
-what happened" routes to `codex-terminal`. `codex-terminal` terminal facts are
-**evidence inputs only** — they do not grant material gates, change acceptance
-criteria, or override `training-dev`/claude/co_lead interpretation.
-
-**Handoff packet shape**:
-
-```text
-TERMINAL HANDOFF
-cwd:
-env:
-commands:
-timeout:
-success criteria:
-failure criteria:
-artifacts to summarize:
-return format:
-```
-
-**Compact return discipline**: no raw log dumps unless requested; return exit
-code, duration, first failing assertion/error, artifact paths + sha when
-relevant, last ~20 relevant lines, and binary pass/fail vs stated criteria.
-Long jobs → milestone-driven updates only (first progress, phase change,
-terminal, timeout/stall, unexpected error).
 
 ## Worker workflow (received-dispatch perspective)
 

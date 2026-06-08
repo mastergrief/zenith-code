@@ -51,7 +51,7 @@ Direct tools are default for orchestration, AUQ, board dispatch, training launch
 
 Gabe is the human direction owner / research sponsor / final risk-cost-goal authority. Claude and `codex_co_lead` are technical research/strategy co-leads. Claude is additionally operations/execution lead: AUQ capture/relay, board orchestration, role bootstrap/dispatch, training launch/run/watch, validation/commit/push gates, and final synthesis.
 
-Mutating repo-file work routes to `training-dev` by default for HRM and main-repo docs/config/tooling/scripts/tests/curriculum/probe support; direct Claude repo-file edits require a persisted named exception or break-glass reason. `training-dev` is the always-on lane, not a permanently retained handle; `curriculum` is read-only planning; `audit` is read-only gate/metric review; `test-operator` is the formal proof/launch runner; `codex-terminal` is the bounded terminal executor for training-dev command churn — a co-processor, not a second developer; its terminal facts are evidence inputs only. Detailed lane boundaries live in the ai-room rules.
+Mutating repo-file work routes to `training-dev` by default for HRM and main-repo docs/config/tooling/scripts/tests/curriculum/probe support; direct Claude repo-file edits require a persisted named exception or break-glass reason. `training-dev` is the always-on lane (not a permanently retained handle) and runs its own bounded terminal churn; `test-operator` is the formal proof/launch runner. Detailed lane boundaries live in the ai-room rules.
 
 Non-trivial cross-agent work follows:
 

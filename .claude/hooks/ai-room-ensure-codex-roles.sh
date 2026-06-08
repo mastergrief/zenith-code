@@ -48,8 +48,8 @@ ai-room ensure-co-lead --channel "$CHANNEL" --cwd "$PROJECT_DIR" \
 
 # 2. Standing claudex lanes (training-dev mutating + test-operator
 #    deterministic proof-runner) in THIS channel as auto codex_N handles.
-#    curriculum/audit remain explicit-dispatch roles, not SessionStart
-#    standing roles. Skip a role if already live.
+#    Any other role is explicit-dispatch only, not a SessionStart
+#    standing role. Skip a role if already live.
 AI_ROOM_CHANNEL="$CHANNEL" AI_ROOM_CWD="$PROJECT_DIR" python3 - <<'PY' || echo "WARN role-spawn block failed (non-fatal)"
 import importlib.util, json, os, pathlib, sys
 

@@ -16,8 +16,7 @@ Operating shape: **Gabe is the human direction owner; Claude and
 additionally the operations/orchestration lead.** Gabe seeds a direction →
 claude+codex co-hypothesize/challenge → `training-dev` owns the plan +
 implementation + run-development (incl. GPU launch/run/watch), with
-`test-operator` executing exact gated proof/launch packets and
-`codex-terminal` handling gate-permitted bounded terminal packets, under
+`test-operator` executing exact gated proof/launch packets, under
 explicit gate → claude+codex review/audit → commit → iterate. Claude and
 co_lead review/audit, NOT execute (Claude alone gates material actions) —
 direct Claude repo-file edits or runs require a persisted named exception
@@ -44,9 +43,7 @@ Test, Iterate").
   review (`training-dev` executes + watches), plan/validation/commit/push/
   launch gatekeeping, final synthesis. Routes plan + implementation +
   run-development to `training-dev` by default (deterministic exact
-  proof/launch packets may route to `test-operator` under gate; bounded
-  terminal packets may route to `codex-terminal` only when the parent
-  dispatch/gate permits terminal handoff or Claude explicitly dispatches it);
+  proof/launch packets may route to `test-operator` under gate);
   direct-Claude repo-file edits or runs require an explicit persisted named
   exception or break-glass
   reason. Ensures one active executor per slice — no concurrent edits.
@@ -55,29 +52,15 @@ Test, Iterate").
   implementation + test/runs/execution for explicitly dispatched + gated
   work: HRM training-run development incl. GPU launch/run/watch,
   scripts, probes/tests, curriculum support, code/data, and main-repo
-  docs/config/tooling/scripts/tests/probe support; cwd by task class;
-  developer template, no Serena; after a plan gate; always-on means
-  lane/default route, not a retained handle; fresh/recycled per child
-  task),
-  `curriculum` (read-only split/support/stop-condition planner), `audit`
-  (read-only training receipt/gate/metric auditor), `test-operator`
+  docs/config/tooling/scripts/tests/probe support; runs its own bounded
+  terminal churn; cwd by task class; developer template, no Serena; after a
+  plan gate; always-on means lane/default route, not a retained handle;
+  fresh/recycled per child task) and `test-operator`
   (cheap deterministic proof-runner: runs an already-specified launch/proof
   packet, monitors named NDJSON/logs/artifacts, posts validation receipts to
   BOTH co-leads; danger-full-access for temp/log/artifact/tmux only, NOT
   source authority; NO source edits / mechanism design / commits / dispatch;
-  underspecified packet → STOP + report; fixes route back to `training-dev`),
-  `codex-terminal` (gpt-5.4-mini/xhigh bounded terminal handoff for
-  `training-dev` command churn: py_compile, focused pytest/lint/typecheck,
-  command smoke, small log/tmux monitoring, artifact hashes; exact/bounded
-  command sets only; temp/log/artifact/tmux scope, NOT source authority; NO
-  source edits / fixes / dep installs / alternate retries / commits / pushes /
-  science launch, stamp, or re-authorization; underspecified packet → STOP +
-  `PLAN REQUEST`/`HARNESS AMBIGUOUS`; cleanup only packet-created scope;
-  default reports to `training-dev`/requester, formal gate/proof/launch
-  receipts also to BOTH co-leads; a terminal **co-processor, not a second
-  developer** — terminal facts are evidence inputs only, never gates/criteria/
-  override; see `CLAUDEX_ORCHESTRATION.md` §"codex-terminal co-processor
-  discipline").
+  underspecified packet → STOP + report; fixes route back to `training-dev`).
 
 ## Cross-thread is mandatory at thinking boundaries
 
@@ -95,7 +78,7 @@ explicit named exception or break-glass reason.
 | Devil's advocate | thinking | **yes** — codex argues the counter-case |
 | Creativity / alternatives | thinking | **yes** — codex generates orthogonal paths |
 | Build | implementation | **no** — executor solo; mutating repo-file work defaults to `training-dev`, direct Claude only by persisted named exception or break-glass reason |
-| Test / Run | implementation | **no** — `training-dev` owns execution; `training-dev` may REQUEST/ROUTE bounded terminal packets to `codex-terminal` ONLY when the parent dispatch/gate permits terminal handoff OR Claude explicitly dispatches it; `test-operator` remains the formal exact-packet proof/launch runner; claude + co_lead review/audit |
+| Test / Run | implementation | **no** — `training-dev` owns execution and its own bounded terminal churn; `test-operator` runs formal exact-packet proof/launch packets under gate; claude + co_lead review/audit |
 | Audit result | thinking | **yes** — codex audits the receipt |
 | Commit | implementation | **no** — Claude (commit gatekeeper), after audit clears |
 | Iterate | thinking | **yes** — back to hypothesize with audit signal |

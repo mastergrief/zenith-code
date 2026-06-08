@@ -68,8 +68,8 @@ PY
 )
 
 # Live claudex roles: handle:role (role = codex_home basename) from fresh leases.
-# These are the lease-backed claudex workers (co_lead + training-dev/curriculum/
-# audit). Fault-tolerant.
+# These are the lease-backed claudex workers (e.g. co_lead, training-dev,
+# test-operator). Fault-tolerant.
 CLAUDEX_ROLES=$(python3 - "$LEASE_DIR" <<'PY'
 import json, os, sys, glob
 from datetime import datetime, timezone
