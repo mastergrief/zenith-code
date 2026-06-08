@@ -28,6 +28,9 @@ STEP4_POWERED_RANK_SIGNAL_DECOMPOSITION_PACKET_KIND = (
 STEP5_SUPPORT_ORDER_TRAJECTORY_ROBUSTNESS_PACKET_KIND = (
     "support_order_trajectory_robustness"
 )
+STEP6_ORDER_AVERAGED_A0_COMPONENT_DECOMPOSITION_PACKET_KIND = (
+    "step6_order_averaged_a0_component_decomposition_packet"
+)
 
 SCIENCE_MODE_PRETERMINAL_SCREEN = "preterminal_screen"
 SCIENCE_MODE_BRANCH_VERDICT = "branch_verdict"
@@ -79,6 +82,8 @@ BRANCH_CURRENT_ORDER_NOT_NECESSARY = "current_order_not_necessary"
 BRANCH_PARTIAL_LOCAL_SIGNAL = "partial_local_signal_not_carrier"
 BRANCH_NO_MATCH_DIFFERENT_CREDIT_SOURCE = "no_match_pivot_different_credit_source"
 BRANCH_MASS_CONFOUNDED_CURRENT_ORDER_SIGNAL = "mass_confounded_current_order_signal"
+BRANCH_A0_COMPONENT_ORDER_ROBUST = "A0_component_order_robust"
+BRANCH_MEASUREMENT_ORDER_SENSITIVE = "measurement_order_sensitive__redesign_scheduler_or_update_law"
 OPTIMIZER_UPDATE_LAW_BRANCHES = (
     BRANCH_RANK_FREE_POSITIVE,
     BRANCH_RANKING_STILL_REQUIRED,
@@ -173,6 +178,20 @@ STEP5_CURRICULUM_SEED = 17
 STEP5_STRICT_FLOOR_COUNT = 10
 STEP5_STRICT_TOTAL = 90
 STEP5_STRICT_MARGIN_COUNT = 5
+STEP6_PHASE_STEPS = {
+    STEP4_PHASE_RANK_SIGNAL_150: 150,
+}
+STEP6_PHASES = tuple(STEP6_PHASE_STEPS)
+STEP6_ARM_IDS = (
+    ARM_A0_RANK_BUCKET_CURRENT,
+    ARM_A1_RANK_BUCKET_ORDER_MATCHED,
+    ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER,
+)
+STEP6_SUPPORT_ORDER_SEEDS: tuple[int | None, ...] = (None, 29, 43)
+STEP6_FIXED_PREREG_NEW_SEED = 43
+STEP6_CURRICULUM_SEED = 17
+STEP6_MAX_ARM_RUNS = 9
+STEP6_GPU_HOUR_CEILING = 2.0
 STEP4_MATCH_STRICT_GAP_MAX = 3
 STEP4_MATCH_STRICT_TOTAL = 90
 STEP4_MASS_RATIO_MIN = 0.75
@@ -739,6 +758,74 @@ def default_step5_pass_rule() -> dict[str, Any]:
         "ready_for_main_science_after_pass": False,
         "qacc_kernelized": False,
     }
+
+
+def _support_order_seed_label(seed: int | None) -> str:
+    return "original" if seed is None else f"seed{int(seed)}"
+
+
+def default_step6_science_arms() -> list[dict[str, Any]]:
+    by_id = {
+        str(arm["arm_id"]): dict(arm)
+        for arm in default_step4_science_arms()
+    }
+    return [by_id[arm_id] for arm_id in STEP6_ARM_IDS]
+
+
+def default_step6_support_order_proof_contract() -> dict[str, Any]:
+    return {
+        "seed_matrix": [
+            {
+                "support_order_seed": seed,
+                "seed_label": _support_order_seed_label(seed),
+                "argv_omits_support_order_seed": seed is None,
+                "support_order_permutation_required": seed is not None,
+            }
+            for seed in STEP6_SUPPORT_ORDER_SEEDS
+        ],
+        "curriculum_seed": STEP6_CURRICULUM_SEED,
+        "fixed_preregistered_new_seed": STEP6_FIXED_PREREG_NEW_SEED,
+        "post_hoc_seed_selection_allowed": False,
+        "original_trajectory_contract": (
+            "support_order_seed=null and argv omits --support-order-seed"
+        ),
+        "seeded_trajectory_contract": (
+            "seed29 and seed43 include --support-order-seed with the fixed value"
+        ),
+        "support_content_unchanged_basis": "order_invariant_multiset_hash16",
+        "legacy_support_content_hash16_semantics": "ordered_batch_hashes_order_sensitive",
+        "ordered_support_content_hash16_is_invariant": False,
+    }
+
+
+def default_step6_stability_rule() -> dict[str, Any]:
+    return {
+        "label": "order_averaged_a0_component_stability_rule",
+        "primary_evidence": "seed_level_dominance",
+        "dominant_arm": ARM_A0_RANK_BUCKET_CURRENT,
+        "must_beat_arms": [
+            ARM_A1_RANK_BUCKET_ORDER_MATCHED,
+            ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER,
+        ],
+        "min_seeds_dominating": 2,
+        "total_seeds": len(STEP6_SUPPORT_ORDER_SEEDS),
+        "paired_loss_support_required": True,
+        "paired_loss_comparisons": ["A0_minus_A1", "A0_minus_C"],
+        "paired_loss_ci": "95% bootstrap",
+        "pooled_paired_row_loss_role": "secondary_supporting_only",
+        "pooled_loss_cannot_override_seed_level_instability": True,
+        "positive_classification": BRANCH_A0_COMPONENT_ORDER_ROBUST,
+        "negative_or_unstable_classification": BRANCH_MEASUREMENT_ORDER_SENSITIVE,
+        "partial_result_allowed_if_only_one_comparator_clears": True,
+        "no_carrier_readiness_or_full_sub2_claim": True,
+    }
+
+
+def default_step6_mass_confound_rule() -> dict[str, Any]:
+    rule = default_step4_mass_confound_rule()
+    rule["compares"] = ["A0_vs_A1", "A0_vs_C"]
+    rule["step6_role"] = "A0 component attribution mass-confound guard"
+    return rule
 
 
 def step4_arm_matches_a0(
@@ -1556,6 +1643,270 @@ def build_support_order_trajectory_robustness_packet(
     return packet
 
 
+def _build_step6_probe_command_record(
+    *,
+    repo_root: str | Path,
+    run_root: str | Path,
+    parent_path: str | Path,
+    parent_sha256: str,
+    arm_id: str,
+    support_order_seed: int | None,
+    device: str,
+    phase_timeout_seconds: int | float,
+    total_timeout_seconds: int | float,
+    max_silent_phase_seconds: int | float,
+) -> dict[str, Any]:
+    phase = STEP4_PHASE_RANK_SIGNAL_150
+    steps_requested = int(STEP6_PHASE_STEPS[phase])
+    seed_label = _support_order_seed_label(support_order_seed)
+    scratch_root = _path_join(run_root, phase, seed_label, str(arm_id))
+    receipt_path = _path_join(scratch_root, "receipt.json")
+    stdout_path = _path_join(scratch_root, "stdout.ndjson")
+    stderr_path = _path_join(scratch_root, "stderr.log")
+    argv = [
+        "python3",
+        "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+        "--enable-bounded-delta-probe",
+        "--allow-gpu-launch",
+        "--phase",
+        f"optimizer-update-law-step6-order-averaged-{seed_label}-{arm_id}",
+        "--device",
+        str(device),
+        "--parent",
+        str(parent_path),
+        "--parent-sha256",
+        str(parent_sha256),
+        "--scratch-root",
+        scratch_root,
+        "--curriculum-seed",
+        str(STEP6_CURRICULUM_SEED),
+    ]
+    if support_order_seed is not None:
+        argv.extend(["--support-order-seed", str(int(support_order_seed))])
+    argv.extend(
+        [
+            "--steps",
+            str(steps_requested),
+            "--max-steps-hard",
+            str(max(STEP6_PHASE_STEPS.values())),
+            "--audit-interval",
+            str(steps_requested),
+            "--science-arm",
+            str(arm_id),
+            "--max-abs-per-tensor",
+            str(STEP3_BASELINE_MAX_ABS_PER_TENSOR),
+            "--emit-progress",
+            "--phase-timeout-seconds",
+            str(phase_timeout_seconds),
+            "--total-timeout-seconds",
+            str(total_timeout_seconds),
+            "--max-silent-phase-seconds",
+            str(max_silent_phase_seconds),
+        ],
+    )
+    return {
+        "mode": phase,
+        "phase_role": "order_averaged_a0_component_decomposition",
+        "arm_id": str(arm_id),
+        "science_arm": str(arm_id),
+        "seed_label": seed_label,
+        "support_order_seed": support_order_seed,
+        "support_order_permutation_required": support_order_seed is not None,
+        "fresh_step6_evidence": True,
+        "context_only": False,
+        "classifier_evidence": True,
+        "n_rows": steps_requested,
+        "steps_requested": steps_requested,
+        "steps_source": "STEP6_PHASE_STEPS[mode]",
+        "curriculum_seed": STEP6_CURRICULUM_SEED,
+        "qacc_kernelized": False,
+        "max_abs_per_tensor": STEP3_BASELINE_MAX_ABS_PER_TENSOR,
+        "fraction_per_tensor": STEP3_FRACTION_PER_TENSOR,
+        "global_cap_contract": "off",
+        "cwd": str(repo_root),
+        "env": {
+            "HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE": "1",
+            "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH": "1",
+        },
+        "argv": argv,
+        "stdout_path": stdout_path,
+        "stderr_path": stderr_path,
+        "receipt_path": receipt_path,
+        "scratch_root": scratch_root,
+        "enabled_if": "Step-6 fixed fresh-all-9 order-averaged A0 decomposition packet",
+        "expected_exit_policy": "exit_0_required_else_stop_no_retry_no_verdict",
+    }
+
+
+def build_order_averaged_a0_component_decomposition_packet(
+    *,
+    parent_path: str | Path,
+    parent_sha256: str,
+    repo_root: str | Path,
+    run_root: str | Path,
+    device: str = "cuda:0",
+    launch_gate_id: str | None = None,
+    symbolic_resource_lane: str = "gpu:0",
+    phase_timeout_seconds: int | float = 1800,
+    total_timeout_seconds: int | float = 7200,
+    max_silent_phase_seconds: int | float = 300,
+) -> dict[str, Any]:
+    commands = [
+        _build_step6_probe_command_record(
+            repo_root=repo_root,
+            run_root=run_root,
+            parent_path=parent_path,
+            parent_sha256=parent_sha256,
+            arm_id=arm_id,
+            support_order_seed=support_order_seed,
+            device=device,
+            phase_timeout_seconds=phase_timeout_seconds,
+            total_timeout_seconds=total_timeout_seconds,
+            max_silent_phase_seconds=max_silent_phase_seconds,
+        )
+        for support_order_seed in STEP6_SUPPORT_ORDER_SEEDS
+        for arm_id in STEP6_ARM_IDS
+    ]
+    packet = {
+        "schema_version": OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION,
+        "packet_kind": STEP6_ORDER_AVERAGED_A0_COMPONENT_DECOMPOSITION_PACKET_KIND,
+        "target_name": "step6_order_averaged_a0_component_decomposition_packet",
+        "artifact_role": "optimizer_update_law_order_averaged_a0_component_author_packet",
+        "diagnostic_class": DIAGNOSTIC_CLASS_PRE_FULL_STACK,
+        "pre_full_stack_diagnostic": True,
+        "author_only": True,
+        "commands_executed": False,
+        "gpu_launched": False,
+        "launch_gate_id": launch_gate_id,
+        "pt_mutated": False,
+        "readiness_claim": False,
+        "full_sub2_claim": False,
+        "ready_for_main_science": False,
+        "checkpoint_written": False,
+        "optimizer_credit_state_row_flip": False,
+        "optimizer_credit_state_science_dependent": True,
+        "branch_result": None,
+        "qacc_kernelized": False,
+        "qacc_cpu_reference_caveat": (
+            "qacc vote/select/apply/update remains CPU-reference/default-off; "
+            "this packet is not a hot-loop kernel residency proof"
+        ),
+        "parent_path": str(parent_path),
+        "parent_sha256": str(parent_sha256),
+        "prior_verdict_parent_ref": default_prior_verdict_parent_ref(
+            parent_path=parent_path,
+            parent_sha256=parent_sha256,
+        ),
+        "mode_sequence": list(STEP6_PHASES),
+        "support_order_seeds": list(STEP6_SUPPORT_ORDER_SEEDS),
+        "curriculum_seed": STEP6_CURRICULUM_SEED,
+        "support_order_proof_contract": default_step6_support_order_proof_contract(),
+        "power_ladder": {
+            "steps_first": 150,
+            "steps_optional_continuation": None,
+            "max_steps_hard": max(STEP6_PHASE_STEPS.values()),
+            "continuation_enabled_if": "disabled; Step-6 is 150-only",
+            "floor": default_step3_power_floor(),
+        },
+        "order_averaged_stability_rule": default_step6_stability_rule(),
+        "mass_confound_rule": default_step6_mass_confound_rule(),
+        "context_only_prior_receipts": [
+            {
+                "label": "step4_original_order_context",
+                "context_only": True,
+                "classifier_evidence": False,
+                "reason": "motivated order-averaged design; not Step-6 verdict evidence",
+            },
+            {
+                "label": "step5_seed29_context",
+                "context_only": True,
+                "classifier_evidence": False,
+                "reason": "falsified C single-order claim; not Step-6 verdict evidence",
+            },
+        ],
+        "success_boundary": {
+            "positive_label": BRANCH_A0_COMPONENT_ORDER_ROBUST,
+            "positive_requires": [
+                "A0 beats A1 and C in at least 2/3 preregistered seeds",
+                "per-seed paired loss supports A0 over A1 and C",
+                "pooled paired-row loss is secondary and cannot override seed instability",
+                "A0_vs_A1 and A0_vs_C mass-confound tables reported",
+                "fresh Step-6 receipts only; Step-4/5 receipts are context-only",
+            ],
+            "unstable_label": BRANCH_MEASUREMENT_ORDER_SENSITIVE,
+            "readiness_after_pass": False,
+            "carrier_claim_after_pass": False,
+        },
+        "arms": default_step6_science_arms(),
+        "commands": commands,
+        "cost_ceiling": {
+            "max_arm_runs": STEP6_MAX_ARM_RUNS,
+            "max_gpu_hours": STEP6_GPU_HOUR_CEILING,
+            "stop_before_launch_if_exceeded": True,
+        },
+        "resource_lane": default_resource_lane_contract(
+            symbolic_lane=symbolic_resource_lane,
+        ),
+        "watcher_audit_bundle": default_watcher_bundle(),
+        "phase_budgets": default_phase_budgets(),
+        "terminal_criteria": {
+            **default_terminal_criteria(),
+            "branch_classifier": [
+                BRANCH_A0_COMPONENT_ORDER_ROBUST,
+                BRANCH_MEASUREMENT_ORDER_SENSITIVE,
+                BRANCH_PARTIAL_LOCAL_SIGNAL,
+            ],
+            "order_averaged_stability_rule": default_step6_stability_rule(),
+            "mass_confound_rule": default_step6_mass_confound_rule(),
+            "terminal_receipt_required_tables": [
+                "strict_count_distributions_by_arm_across_seeds",
+                "paired_loss_A0_minus_A1_and_A0_minus_C_per_seed",
+                "pooled_paired_row_loss_secondary_only",
+                "seed_wise_rank_ordering",
+                "mass_confound_A0_vs_A1_and_A0_vs_C",
+                "fresh_step6_vs_context_only_evidence_ledger",
+                "device_vs_hot_loop_qacc_kernelized_false",
+            ],
+            "terminal_receipt_required_proofs": [
+                "parent_sha256_pre_post_unchanged",
+                "resource_lane_released",
+                "artifact_paths",
+                "support_order_seed_matrix_original_29_43",
+                "original_argv_omits_support_order_seed",
+                "seed29_seed43_argv_include_support_order_seed",
+                "fresh_step6_receipts_only_for_classifier",
+            ],
+            "qacc_kernelized": False,
+            "device_residency_not_hot_loop_residency": True,
+            "ready_for_main_science_after_pass": False,
+            "carrier_claim_after_pass": False,
+        },
+        "hash_gate_policy": default_hash_gate_policy(),
+        "compact_instrumentation_only": True,
+        "raw_per_proposal_arrays_included": False,
+        "artifact_policy": {
+            "compact_json_ndjson_only": True,
+            "raw_per_proposal_arrays": False,
+            "pt_writes_allowed": False,
+        },
+        "non_claims": [
+            "author-only Step-6 packet",
+            "fresh-all-9 order-averaged A0/A1/C measurement-validity diagnostic",
+            "no GPU launch from this packet-authoring step",
+            "no resource lane acquired by this packet",
+            "no .pt mutation",
+            "no readiness row flip",
+            "no carrier claim even on pass",
+            "no full-sub2 runtime claim",
+            "ready_for_main_science remains false",
+            "qacc_vote_select_apply_update remains CPU-reference/default-off, not kernelized",
+            "Step-4/5 receipts are context-only rationale, not classifier evidence",
+        ],
+    }
+    validate_order_averaged_a0_component_decomposition_packet(packet)
+    return packet
+
+
 def _walk_items(value: Any) -> Sequence[Any]:
     if isinstance(value, Mapping):
         return list(value.items())
@@ -2349,6 +2700,25 @@ def _validate_step4_mass_rule(rule: Mapping[str, Any]) -> None:
         raise ValueError("Step-4 mass-confounded branch must not be carrier-ready")
 
 
+def _validate_step6_mass_rule(rule: Mapping[str, Any]) -> None:
+    if rule.get("classification") != BRANCH_MASS_CONFOUNDED_CURRENT_ORDER_SIGNAL:
+        raise ValueError("Step-6 mass rule must classify mass-confounded current-order signal")
+    if set(rule.get("compares") or ()) != {"A0_vs_A1", "A0_vs_C"}:
+        raise ValueError("Step-6 mass rule must compare A0 vs A1 and A0 vs C")
+    if tuple(rule.get("count_metrics") or ()) != STEP4_MASS_COUNT_METRICS:
+        raise ValueError("Step-6 mass rule count metrics drifted")
+    if tuple(rule.get("pressure_metrics") or ()) != STEP4_MASS_PRESSURE_METRICS:
+        raise ValueError("Step-6 mass rule pressure metrics drifted")
+    if float(rule.get("ratio_min_inclusive", -1.0)) != STEP4_MASS_RATIO_MIN:
+        raise ValueError("Step-6 mass rule ratio_min must be 0.75")
+    if float(rule.get("ratio_max_inclusive", -1.0)) != STEP4_MASS_RATIO_MAX:
+        raise ValueError("Step-6 mass rule ratio_max must be 1.25")
+    if float(rule.get("absolute_delta_min_inclusive", -1.0)) != STEP4_MASS_ABS_DELTA_MIN:
+        raise ValueError("Step-6 mass rule absolute delta minimum must be 4")
+    if not bool(rule.get("not_carrier_ready")):
+        raise ValueError("Step-6 mass-confounded branch must not be carrier-ready")
+
+
 def validate_powered_rank_signal_decomposition_packet(packet: Mapping[str, Any]) -> None:
     if packet.get("schema_version") != OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION:
         raise ValueError("unsupported optimizer update-law Step-4 packet schema")
@@ -2685,6 +3055,318 @@ def validate_support_order_trajectory_robustness_packet(packet: Mapping[str, Any
         raise ValueError("Step-5 artifact policy must reject .pt writes")
 
 
+def _validate_step6_command_record(command: Mapping[str, Any]) -> None:
+    missing = [field for field in _COMMAND_REQUIRED_FIELDS if field not in command]
+    if missing:
+        raise ValueError(f"Step-6 command record missing required fields: {missing}")
+    mode = str(command.get("mode"))
+    arm_id = str(command.get("arm_id"))
+    science_arm = str(command.get("science_arm"))
+    if mode != STEP4_PHASE_RANK_SIGNAL_150:
+        raise ValueError("Step-6 command mode must be rank_signal_150 only")
+    if arm_id not in STEP6_ARM_IDS:
+        raise ValueError(f"Step-6 command record has unsupported arm_id {arm_id!r}")
+    if science_arm != arm_id or science_arm not in STEP6_ARM_IDS:
+        raise ValueError("Step-6 command science_arm must match a Step-6 arm_id")
+    if int(command.get("n_rows", -1)) != 150 or int(command.get("steps_requested", -2)) != 150:
+        raise ValueError("Step-6 command steps_requested must be exactly 150")
+    if command.get("steps_source") != "STEP6_PHASE_STEPS[mode]":
+        raise ValueError("Step-6 command steps_source must document STEP6_PHASE_STEPS")
+    if int(command.get("curriculum_seed", -1)) != STEP6_CURRICULUM_SEED:
+        raise ValueError("Step-6 command curriculum_seed must be 17")
+    if bool(command.get("qacc_kernelized")):
+        raise ValueError("Step-6 command must keep qacc_kernelized=false")
+    if int(command.get("max_abs_per_tensor", -1)) != STEP3_BASELINE_MAX_ABS_PER_TENSOR:
+        raise ValueError("Step-6 command max_abs_per_tensor must keep baseline 4096")
+    if float(command.get("fraction_per_tensor", -1.0)) != STEP3_FRACTION_PER_TENSOR:
+        raise ValueError("Step-6 command fraction_per_tensor must be 1.0")
+    if command.get("global_cap_contract") != "off":
+        raise ValueError("Step-6 command global cap must stay off")
+    if not bool(command.get("fresh_step6_evidence")):
+        raise ValueError("Step-6 command must be fresh Step-6 evidence")
+    if bool(command.get("context_only")):
+        raise ValueError("Step-6 command cannot be context_only reused evidence")
+    if not bool(command.get("classifier_evidence")):
+        raise ValueError("Step-6 command must be classifier evidence")
+    env = command.get("env")
+    if not isinstance(env, Mapping):
+        raise ValueError("Step-6 command env must be a mapping")
+    if env.get("HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE") != "1":
+        raise ValueError("Step-6 command env missing HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE=1")
+    if env.get("HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH") != "1":
+        raise ValueError("Step-6 command env missing HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1")
+    argv = command.get("argv")
+    if not isinstance(argv, list) or not all(isinstance(item, str) for item in argv):
+        raise ValueError("Step-6 command argv must be a list[str]")
+    required_args = {
+        "--enable-bounded-delta-probe",
+        "--allow-gpu-launch",
+        "--device",
+        "--parent",
+        "--parent-sha256",
+        "--scratch-root",
+        "--curriculum-seed",
+        "--steps",
+        "--max-steps-hard",
+        "--audit-interval",
+        "--science-arm",
+        "--max-abs-per-tensor",
+        "--emit-progress",
+    }
+    if not required_args.issubset(set(argv)):
+        raise ValueError("Step-6 command argv missing required probe launch arguments")
+    expected_flag_values = (
+        ("--science-arm", science_arm),
+        ("--curriculum-seed", str(STEP6_CURRICULUM_SEED)),
+        ("--steps", "150"),
+        ("--max-steps-hard", "150"),
+        ("--audit-interval", "150"),
+        ("--max-abs-per-tensor", str(STEP3_BASELINE_MAX_ABS_PER_TENSOR)),
+    )
+    for flag, expected in expected_flag_values:
+        try:
+            observed = argv[argv.index(flag) + 1]
+        except (ValueError, IndexError) as exc:
+            raise ValueError(f"Step-6 command argv missing {flag} value") from exc
+        if observed != expected:
+            raise ValueError(f"Step-6 command argv {flag} must be {expected!r}, got {observed!r}")
+    seed = command.get("support_order_seed")
+    seed_label = str(command.get("seed_label"))
+    if seed not in STEP6_SUPPORT_ORDER_SEEDS:
+        raise ValueError("Step-6 command support_order_seed must be one of null, 29, 43")
+    if seed is None:
+        if seed_label != "original":
+            raise ValueError("Step-6 original trajectory seed_label must be original")
+        if "--support-order-seed" in argv:
+            raise ValueError("Step-6 original trajectory argv must omit --support-order-seed")
+        if bool(command.get("support_order_permutation_required")):
+            raise ValueError("Step-6 original trajectory must not require support-order permutation")
+    else:
+        seed_int = int(seed)
+        if seed_label != f"seed{seed_int}":
+            raise ValueError("Step-6 seeded trajectory seed_label must match support_order_seed")
+        if "--support-order-seed" not in argv:
+            raise ValueError("Step-6 seeded trajectory argv must include --support-order-seed")
+        try:
+            observed_seed = argv[argv.index("--support-order-seed") + 1]
+        except (ValueError, IndexError) as exc:
+            raise ValueError("Step-6 seeded trajectory argv missing --support-order-seed value") from exc
+        if observed_seed != str(seed_int):
+            raise ValueError("Step-6 seeded trajectory argv support-order seed drifted")
+        if not bool(command.get("support_order_permutation_required")):
+            raise ValueError("Step-6 seeded trajectory must require support-order permutation")
+    if STEP4_PHASE_RANK_SIGNAL_300 in argv or "300" in {
+        str(command.get("n_rows")),
+        str(command.get("steps_requested")),
+    }:
+        raise ValueError("Step-6 command must not include 300-step continuation")
+    try:
+        device = argv[argv.index("--device") + 1]
+    except (ValueError, IndexError) as exc:
+        raise ValueError("Step-6 command argv missing --device value") from exc
+    if not device.startswith("cuda:"):
+        raise ValueError("Step-6 command argv --device must target CUDA for launch packet")
+    for path_field in ("stdout_path", "stderr_path", "receipt_path", "scratch_root"):
+        value = str(command.get(path_field))
+        if not value:
+            raise ValueError(f"Step-6 command {path_field} must be non-empty")
+        if value.endswith(".pt"):
+            raise ValueError(f"Step-6 command {path_field} cannot target .pt artifacts")
+    if command.get("expected_exit_policy") != "exit_0_required_else_stop_no_retry_no_verdict":
+        raise ValueError("Step-6 command expected_exit_policy must fail closed")
+
+
+def _validate_step6_context_only_receipts(entries: Sequence[Mapping[str, Any]]) -> None:
+    expected_labels = {"step4_original_order_context", "step5_seed29_context"}
+    if len(entries) != len(expected_labels):
+        raise ValueError("Step-6 context-only prior receipt ledger must list exactly Step-4 and Step-5 context")
+    observed_labels = {str(entry.get("label")) for entry in entries}
+    if observed_labels != expected_labels:
+        raise ValueError("Step-6 context-only prior receipt ledger labels must be Step-4 and Step-5")
+    for entry in entries:
+        if not bool(entry.get("context_only")):
+            raise ValueError("Step-6 reused historical receipt evidence must be marked context_only")
+        if bool(entry.get("classifier_evidence")):
+            raise ValueError("Step-6 classifier evidence must not come from reused Step-4/5 receipts")
+
+
+def _validate_step6_support_order_contract(contract: Mapping[str, Any]) -> None:
+    seeds = contract.get("seed_matrix") or ()
+    if not isinstance(seeds, list) or len(seeds) != len(STEP6_SUPPORT_ORDER_SEEDS):
+        raise ValueError("Step-6 support-order contract must define exactly three seed specs")
+    observed = [item.get("support_order_seed") for item in seeds]
+    if observed != list(STEP6_SUPPORT_ORDER_SEEDS):
+        raise ValueError("Step-6 seed specs must be [null, 29, 43] in preregistered order")
+    original = seeds[0]
+    if original.get("seed_label") != "original" or not bool(original.get("argv_omits_support_order_seed")):
+        raise ValueError("Step-6 original seed spec must omit --support-order-seed")
+    for item, expected_seed in zip(seeds[1:], STEP6_SUPPORT_ORDER_SEEDS[1:]):
+        if item.get("seed_label") != f"seed{expected_seed}":
+            raise ValueError("Step-6 seeded specs must have stable seed labels")
+        if bool(item.get("argv_omits_support_order_seed")):
+            raise ValueError("Step-6 seeded specs must include --support-order-seed")
+        if not bool(item.get("support_order_permutation_required")):
+            raise ValueError("Step-6 seeded specs must require support-order permutation")
+    if int(contract.get("curriculum_seed", -1)) != STEP6_CURRICULUM_SEED:
+        raise ValueError("Step-6 support-order contract must pin curriculum_seed=17")
+    if int(contract.get("fixed_preregistered_new_seed", -1)) != STEP6_FIXED_PREREG_NEW_SEED:
+        raise ValueError("Step-6 support-order contract must pin seed43 as fixed prereg")
+    if bool(contract.get("post_hoc_seed_selection_allowed")):
+        raise ValueError("Step-6 support-order contract must reject post-hoc seed selection")
+    if contract.get("support_content_unchanged_basis") != "order_invariant_multiset_hash16":
+        raise ValueError("Step-6 support_content_unchanged basis must be order-invariant")
+    if bool(contract.get("ordered_support_content_hash16_is_invariant")):
+        raise ValueError("Step-6 ordered support_content_hash16 must not be treated as invariant")
+
+
+def validate_order_averaged_a0_component_decomposition_packet(packet: Mapping[str, Any]) -> None:
+    if packet.get("schema_version") != OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION:
+        raise ValueError("unsupported optimizer update-law Step-6 packet schema")
+    if packet.get("diagnostic_class") != DIAGNOSTIC_CLASS_PRE_FULL_STACK:
+        raise ValueError("Step-6 packet must be pre_full_stack_diagnostic")
+    _validate_author_only_fields(
+        packet,
+        expected_packet_kind=STEP6_ORDER_AVERAGED_A0_COMPONENT_DECOMPOSITION_PACKET_KIND,
+        label="author-only Step-6 packet",
+    )
+    if bool(packet.get("ready_for_main_science")):
+        raise ValueError("Step-6 packet must keep ready_for_main_science=false")
+    if bool(packet.get("qacc_kernelized")):
+        raise ValueError("Step-6 packet must keep qacc_kernelized=false")
+    if not bool(packet.get("optimizer_credit_state_science_dependent")):
+        raise ValueError("Step-6 packet must state optimizer_credit_state remains science-dependent")
+    _reject_raw_arrays(packet)
+    _validate_resource_lane(packet.get("resource_lane") or {})
+    _validate_phase_budgets(packet.get("phase_budgets") or {})
+    _validate_author_hash_gates(packet)
+    if packet.get("mode_sequence") != list(STEP6_PHASES):
+        raise ValueError("Step-6 mode_sequence must be rank_signal_150 only")
+    if packet.get("support_order_seeds") != list(STEP6_SUPPORT_ORDER_SEEDS):
+        raise ValueError("Step-6 support_order_seeds must be [null, 29, 43]")
+    if int(packet.get("curriculum_seed", -1)) != STEP6_CURRICULUM_SEED:
+        raise ValueError("Step-6 packet must pin curriculum_seed=17")
+    _validate_step6_support_order_contract(packet.get("support_order_proof_contract") or {})
+    _validate_step6_context_only_receipts(packet.get("context_only_prior_receipts") or ())
+
+    by_arm = {str(arm.get("arm_id")): dict(arm) for arm in packet.get("arms") or ()}
+    if set(by_arm) != set(STEP6_ARM_IDS):
+        raise ValueError("Step-6 packet must include exactly A0/A1/C arms")
+    if ARM_B_RANK_FREE_SIGN_PRESSURE in by_arm or ARM_INVERTED_SIGN_PRESSURE in by_arm:
+        raise ValueError("Step-6 packet must not include B or inverted arms")
+    if by_arm[ARM_A0_RANK_BUCKET_CURRENT].get("tie_policy_id") != TIE_POLICY_CURRENT_MARGIN_INDEX:
+        raise ValueError("Step-6 A0 must keep current qacc-margin/index ordering")
+    if by_arm[ARM_A1_RANK_BUCKET_ORDER_MATCHED].get("tie_policy_id") != TIE_POLICY_DETERMINISTIC_HASH_MATCHED:
+        raise ValueError("Step-6 A1 must keep deterministic order-matched tie policy")
+    c_arm = by_arm[ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER]
+    if c_arm.get("vote_law") != "rank_free_sign_pressure":
+        raise ValueError("Step-6 C arm must use rank_free_sign_pressure vote law")
+    if c_arm.get("tie_policy_id") != TIE_POLICY_CURRENT_MARGIN_INDEX:
+        raise ValueError("Step-6 C arm must use current qacc-margin/order bundle")
+
+    power = packet.get("power_ladder") or {}
+    if int(power.get("steps_first", -1)) != 150:
+        raise ValueError("Step-6 power ladder first rung must be 150 steps")
+    if power.get("steps_optional_continuation") is not None:
+        raise ValueError("Step-6 power ladder must not define a 300-step continuation")
+    if int(power.get("max_steps_hard", -1)) != 150:
+        raise ValueError("Step-6 power ladder max_steps_hard must be 150")
+    continuation = str(power.get("continuation_enabled_if", ""))
+    if "disabled" not in continuation or "150-only" not in continuation:
+        raise ValueError("Step-6 continuation rule must be disabled 150-only")
+    _validate_step3_power_floor(power.get("floor") or {})
+    _validate_step6_mass_rule(packet.get("mass_confound_rule") or {})
+
+    stability = packet.get("order_averaged_stability_rule") or {}
+    if stability.get("primary_evidence") != "seed_level_dominance":
+        raise ValueError("Step-6 stability rule must use seed-level dominance as primary evidence")
+    if stability.get("dominant_arm") != ARM_A0_RANK_BUCKET_CURRENT:
+        raise ValueError("Step-6 stability rule must test A0 dominance")
+    if set(stability.get("must_beat_arms") or ()) != {
+        ARM_A1_RANK_BUCKET_ORDER_MATCHED,
+        ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER,
+    }:
+        raise ValueError("Step-6 stability rule must require A0 beating A1 and C")
+    if int(stability.get("min_seeds_dominating", -1)) != 2:
+        raise ValueError("Step-6 stability rule must require dominance in at least 2/3 seeds")
+    if int(stability.get("total_seeds", -1)) != 3:
+        raise ValueError("Step-6 stability rule must cover exactly three seeds")
+    if not bool(stability.get("pooled_loss_cannot_override_seed_level_instability")):
+        raise ValueError("Step-6 pooled loss must not override seed-level instability")
+    if stability.get("positive_classification") != BRANCH_A0_COMPONENT_ORDER_ROBUST:
+        raise ValueError("Step-6 positive classification drifted")
+    if stability.get("negative_or_unstable_classification") != BRANCH_MEASUREMENT_ORDER_SENSITIVE:
+        raise ValueError("Step-6 unstable classification drifted")
+    if not bool(stability.get("no_carrier_readiness_or_full_sub2_claim")):
+        raise ValueError("Step-6 stability rule must forbid carrier/readiness/full-sub2 claims")
+
+    cost = packet.get("cost_ceiling") or {}
+    if int(cost.get("max_arm_runs", -1)) != STEP6_MAX_ARM_RUNS:
+        raise ValueError("Step-6 cost ceiling must cap at 9 arm-runs")
+    if float(cost.get("max_gpu_hours", -1.0)) > STEP6_GPU_HOUR_CEILING:
+        raise ValueError("Step-6 cost ceiling must stay <=2 GPU-hours")
+    if not bool(cost.get("stop_before_launch_if_exceeded")):
+        raise ValueError("Step-6 cost ceiling must stop before launch if exceeded")
+
+    terminal = packet.get("terminal_criteria") or {}
+    if bool(terminal.get("qacc_kernelized")):
+        raise ValueError("Step-6 terminal criteria must keep qacc_kernelized=false")
+    if bool(terminal.get("ready_for_main_science_after_pass")):
+        raise ValueError("Step-6 terminal criteria must keep ready_for_main_science=false")
+    if bool(terminal.get("carrier_claim_after_pass")):
+        raise ValueError("Step-6 terminal criteria must not make a carrier claim")
+    if terminal.get("order_averaged_stability_rule") != stability:
+        raise ValueError("Step-6 terminal stability rule must match packet stability rule")
+    _validate_step6_mass_rule(terminal.get("mass_confound_rule") or {})
+    terminal_tables = set(terminal.get("terminal_receipt_required_tables") or ())
+    required_tables = {
+        "strict_count_distributions_by_arm_across_seeds",
+        "paired_loss_A0_minus_A1_and_A0_minus_C_per_seed",
+        "pooled_paired_row_loss_secondary_only",
+        "seed_wise_rank_ordering",
+        "mass_confound_A0_vs_A1_and_A0_vs_C",
+        "fresh_step6_vs_context_only_evidence_ledger",
+        "device_vs_hot_loop_qacc_kernelized_false",
+    }
+    if terminal_tables != required_tables:
+        raise ValueError("Step-6 terminal receipt table requirements drifted")
+    terminal_proofs = set(terminal.get("terminal_receipt_required_proofs") or ())
+    required_proofs = {
+        "parent_sha256_pre_post_unchanged",
+        "resource_lane_released",
+        "artifact_paths",
+        "support_order_seed_matrix_original_29_43",
+        "original_argv_omits_support_order_seed",
+        "seed29_seed43_argv_include_support_order_seed",
+        "fresh_step6_receipts_only_for_classifier",
+    }
+    if terminal_proofs != required_proofs:
+        raise ValueError("Step-6 terminal receipt proof requirements drifted")
+
+    commands = packet.get("commands")
+    if not isinstance(commands, list):
+        raise ValueError("Step-6 packet commands must be a list")
+    if len(commands) != STEP6_MAX_ARM_RUNS:
+        raise ValueError("Step-6 packet must render exactly 9 commands")
+    seen = {
+        (cmd.get("support_order_seed"), str(cmd.get("arm_id")))
+        for cmd in commands
+    }
+    expected = {
+        (seed, arm_id)
+        for seed in STEP6_SUPPORT_ORDER_SEEDS
+        for arm_id in STEP6_ARM_IDS
+    }
+    if seen != expected:
+        raise ValueError("Step-6 packet must render seeds [null, 29, 43] x arms [A0,A1,C]")
+    for command in commands:
+        _validate_step6_command_record(command)
+    artifact_policy = packet.get("artifact_policy") or {}
+    if not bool(artifact_policy.get("compact_json_ndjson_only")):
+        raise ValueError("Step-6 artifact policy must require compact JSON/NDJSON")
+    if bool(artifact_policy.get("pt_writes_allowed")):
+        raise ValueError("Step-6 artifact policy must reject .pt writes")
+
+
 def packet_without_runtime_results(packet: Mapping[str, Any]) -> dict[str, Any]:
     out = deepcopy(dict(packet))
     out.pop("runtime_results", None)
@@ -2703,6 +3385,7 @@ __all__ = [
     "BRANCH_DIRECTION_PROJECTION_WRONG",
     "BRANCH_INSUFFICIENT_SEPARATION",
     "BRANCH_MEASUREMENT_LOSS_POWERED",
+    "BRANCH_MEASUREMENT_ORDER_SENSITIVE",
     "BRANCH_MEASUREMENT_POWERED",
     "BRANCH_MEASUREMENT_UNDERPOWERED",
     "BRANCH_POWERED_NEGATIVE_OR_LOSS_ONLY",
@@ -2712,6 +3395,7 @@ __all__ = [
     "BRANCH_NO_MATCH_DIFFERENT_CREDIT_SOURCE",
     "BRANCH_PARTIAL_LOCAL_SIGNAL",
     "BRANCH_PRIOR_NULL_SETUP_UNVERIFIED",
+    "BRANCH_A0_COMPONENT_ORDER_ROBUST",
     "BRANCH_RANK_FREE_POSITIVE",
     "BRANCH_RANK_MAGNITUDE_CONDITIONED_ON_CURRENT_ORDER",
     "BRANCH_RANKING_STILL_REQUIRED",
@@ -2738,11 +3422,18 @@ __all__ = [
     "STEP5_STRICT_TOTAL",
     "STEP5_SUPPORT_ORDER_SEED",
     "STEP5_SUPPORT_ORDER_TRAJECTORY_ROBUSTNESS_PACKET_KIND",
+    "STEP6_ARM_IDS",
+    "STEP6_CURRICULUM_SEED",
+    "STEP6_FIXED_PREREG_NEW_SEED",
+    "STEP6_MAX_ARM_RUNS",
+    "STEP6_ORDER_AVERAGED_A0_COMPONENT_DECOMPOSITION_PACKET_KIND",
+    "STEP6_SUPPORT_ORDER_SEEDS",
     "TIE_POLICY_CURRENT_MARGIN_INDEX",
     "TIE_POLICY_DETERMINISTIC_HASH_MATCHED",
     "build_measurement_power_then_trust_region_packet",
     "build_optimizer_update_law_launch_bundle",
     "build_optimizer_update_law_science_packet",
+    "build_order_averaged_a0_component_decomposition_packet",
     "build_powered_rank_signal_decomposition_packet",
     "build_support_order_trajectory_robustness_packet",
     "classify_optimizer_update_law_branch",
@@ -2761,6 +3452,10 @@ __all__ = [
     "default_step5_pass_rule",
     "default_step5_science_arms",
     "default_step5_support_order_proof_contract",
+    "default_step6_mass_confound_rule",
+    "default_step6_science_arms",
+    "default_step6_stability_rule",
+    "default_step6_support_order_proof_contract",
     "default_screen_before_verdict_dependency",
     "default_terminal_criteria",
     "default_verdict_rule",
@@ -2771,6 +3466,7 @@ __all__ = [
     "validate_measurement_power_then_trust_region_packet",
     "validate_optimizer_update_law_launch_bundle",
     "validate_optimizer_update_law_science_packet",
+    "validate_order_averaged_a0_component_decomposition_packet",
     "validate_powered_rank_signal_decomposition_packet",
     "validate_support_order_trajectory_robustness_packet",
 ]

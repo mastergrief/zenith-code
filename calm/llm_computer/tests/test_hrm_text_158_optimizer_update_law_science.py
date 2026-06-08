@@ -19,6 +19,7 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     BRANCH_INSUFFICIENT_SEPARATION,
     BRANCH_MASS_CONFOUNDED_CURRENT_ORDER_SIGNAL,
     BRANCH_MEASUREMENT_LOSS_POWERED,
+    BRANCH_MEASUREMENT_ORDER_SENSITIVE,
     BRANCH_MEASUREMENT_POWERED,
     BRANCH_MEASUREMENT_UNDERPOWERED,
     BRANCH_NO_MATCH_DIFFERENT_CREDIT_SOURCE,
@@ -28,6 +29,7 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     BRANCH_RANK_FREE_POSITIVE,
     BRANCH_RANK_MAGNITUDE_CONDITIONED_ON_CURRENT_ORDER,
     BRANCH_TIE_POLICY_OR_OVERUPDATE,
+    BRANCH_A0_COMPONENT_ORDER_ROBUST,
     CONTROL_PARITY_FRACTION_MAX,
     CONTROL_PARITY_FRACTION_MIN,
     FIXED_RANK_BUCKET_NON_TARGET_AUX,
@@ -41,8 +43,12 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     STEP4_POWERED_RANK_SIGNAL_DECOMPOSITION_PACKET_KIND,
     STEP5_SUPPORT_ORDER_SEED,
     STEP5_SUPPORT_ORDER_TRAJECTORY_ROBUSTNESS_PACKET_KIND,
+    STEP6_FIXED_PREREG_NEW_SEED,
+    STEP6_ORDER_AVERAGED_A0_COMPONENT_DECOMPOSITION_PACKET_KIND,
+    STEP6_SUPPORT_ORDER_SEEDS,
     build_measurement_power_then_trust_region_packet,
     build_powered_rank_signal_decomposition_packet,
+    build_order_averaged_a0_component_decomposition_packet,
     build_support_order_trajectory_robustness_packet,
     TIE_POLICY_CURRENT_MARGIN_INDEX,
     TIE_POLICY_DETERMINISTIC_HASH_MATCHED,
@@ -57,6 +63,7 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     validate_measurement_power_then_trust_region_packet,
     validate_optimizer_update_law_launch_bundle,
     validate_optimizer_update_law_science_packet,
+    validate_order_averaged_a0_component_decomposition_packet,
     validate_powered_rank_signal_decomposition_packet,
     validate_support_order_trajectory_robustness_packet,
 )
@@ -1022,6 +1029,233 @@ def test_step5_validator_rejects_false_invariant_and_scope_drift(mutation, error
         validate_support_order_trajectory_robustness_packet(packet)
 
 
+def test_step6_order_averaged_packet_is_fresh_all_9_author_only():
+    packet = build_order_averaged_a0_component_decomposition_packet(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+        repo_root="/repo",
+        run_root="/tmp/hrm158-step6",
+    )
+
+    validate_order_averaged_a0_component_decomposition_packet(packet)
+    assert packet["packet_kind"] == STEP6_ORDER_AVERAGED_A0_COMPONENT_DECOMPOSITION_PACKET_KIND
+    assert packet["author_only"] is True
+    assert packet["gpu_launched"] is False
+    assert packet["launch_gate_id"] is None
+    assert packet["pt_mutated"] is False
+    assert packet["checkpoint_written"] is False
+    assert packet["readiness_claim"] is False
+    assert packet["full_sub2_claim"] is False
+    assert packet["ready_for_main_science"] is False
+    assert packet["qacc_kernelized"] is False
+    assert "CPU-reference/default-off" in packet["qacc_cpu_reference_caveat"]
+    assert packet["support_order_seeds"] == list(STEP6_SUPPORT_ORDER_SEEDS)
+    assert packet["support_order_proof_contract"]["fixed_preregistered_new_seed"] == (
+        STEP6_FIXED_PREREG_NEW_SEED
+    )
+    assert packet["support_order_proof_contract"]["post_hoc_seed_selection_allowed"] is False
+
+    arms = {arm["arm_id"]: arm for arm in packet["arms"]}
+    assert set(arms) == {
+        ARM_A0_RANK_BUCKET_CURRENT,
+        ARM_A1_RANK_BUCKET_ORDER_MATCHED,
+        ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER,
+    }
+    assert ARM_B_RANK_FREE_SIGN_PRESSURE not in arms
+    assert ARM_INVERTED_SIGN_PRESSURE not in arms
+
+    assert packet["mode_sequence"] == ["rank_signal_150"]
+    assert packet["power_ladder"]["steps_first"] == 150
+    assert packet["power_ladder"]["steps_optional_continuation"] is None
+    assert packet["power_ladder"]["max_steps_hard"] == 150
+    assert packet["cost_ceiling"]["max_arm_runs"] == 9
+    assert packet["cost_ceiling"]["max_gpu_hours"] == 2.0
+
+    stability = packet["order_averaged_stability_rule"]
+    assert stability["primary_evidence"] == "seed_level_dominance"
+    assert stability["positive_classification"] == BRANCH_A0_COMPONENT_ORDER_ROBUST
+    assert stability["negative_or_unstable_classification"] == BRANCH_MEASUREMENT_ORDER_SENSITIVE
+    assert stability["min_seeds_dominating"] == 2
+    assert stability["pooled_loss_cannot_override_seed_level_instability"] is True
+    assert stability["no_carrier_readiness_or_full_sub2_claim"] is True
+    assert set(packet["mass_confound_rule"]["compares"]) == {"A0_vs_A1", "A0_vs_C"}
+    assert set(packet["terminal_criteria"]["mass_confound_rule"]["compares"]) == {
+        "A0_vs_A1",
+        "A0_vs_C",
+    }
+
+    context = packet["context_only_prior_receipts"]
+    assert context
+    assert all(entry["context_only"] is True for entry in context)
+    assert all(entry["classifier_evidence"] is False for entry in context)
+
+    commands = packet["commands"]
+    assert len(commands) == 9
+    assert {
+        (command["support_order_seed"], command["arm_id"])
+        for command in commands
+    } == {
+        (seed, arm)
+        for seed in (None, 29, 43)
+        for arm in {
+            ARM_A0_RANK_BUCKET_CURRENT,
+            ARM_A1_RANK_BUCKET_ORDER_MATCHED,
+            ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER,
+        }
+    }
+    for command in commands:
+        argv = command["argv"]
+        assert command["steps_requested"] == 150
+        assert command["curriculum_seed"] == 17
+        assert command["qacc_kernelized"] is False
+        assert command["fresh_step6_evidence"] is True
+        assert command["context_only"] is False
+        assert command["classifier_evidence"] is True
+        assert argv[argv.index("--curriculum-seed") + 1] == "17"
+        assert argv[argv.index("--steps") + 1] == "150"
+        assert argv[argv.index("--audit-interval") + 1] == "150"
+        assert argv[argv.index("--max-steps-hard") + 1] == "150"
+        assert "rank_signal_300" not in argv
+        assert ARM_B_RANK_FREE_SIGN_PRESSURE not in argv
+        assert ARM_INVERTED_SIGN_PRESSURE not in argv
+        if command["support_order_seed"] is None:
+            assert command["seed_label"] == "original"
+            assert command["support_order_permutation_required"] is False
+            assert "--support-order-seed" not in argv
+        else:
+            assert command["support_order_seed"] in {29, 43}
+            assert command["support_order_permutation_required"] is True
+            assert argv[argv.index("--support-order-seed") + 1] == str(
+                command["support_order_seed"],
+            )
+
+
+@pytest.mark.parametrize(
+    "mutation,error",
+    [
+        (
+            lambda packet: packet["arms"].append(
+                {
+                    "arm_id": ARM_B_RANK_FREE_SIGN_PRESSURE,
+                    "vote_law": "rank_free_sign_pressure",
+                    "tie_policy_id": TIE_POLICY_DETERMINISTIC_HASH_MATCHED,
+                    "required": True,
+                },
+            ),
+            "exactly A0/A1/C",
+        ),
+        (
+            lambda packet: packet["arms"].append(
+                {
+                    "arm_id": ARM_INVERTED_SIGN_PRESSURE,
+                    "vote_law": "inverted_rank_free_sign_pressure",
+                    "tie_policy_id": TIE_POLICY_DETERMINISTIC_HASH_MATCHED,
+                    "required": False,
+                },
+            ),
+            "exactly A0/A1/C",
+        ),
+        (
+            lambda packet: packet["commands"].append({**packet["commands"][0]}),
+            "exactly 9 commands",
+        ),
+        (
+            lambda packet: packet["commands"][0].update({"mode": "rank_signal_300"}),
+            "rank_signal_150 only",
+        ),
+        (
+            lambda packet: packet["commands"][0]["argv"].extend(["--support-order-seed", "17"]),
+            "original trajectory argv must omit",
+        ),
+        (
+            lambda packet: packet["commands"][3]["argv"].remove("--support-order-seed"),
+            "seeded trajectory argv must include",
+        ),
+        (
+            lambda packet: packet["commands"][6].update({"support_order_seed": 44}),
+            "null, 29, 43",
+        ),
+        (
+            lambda packet: packet["support_order_proof_contract"].update(
+                {"fixed_preregistered_new_seed": 44},
+            ),
+            "seed43",
+        ),
+        (
+            lambda packet: packet["support_order_proof_contract"].update(
+                {"post_hoc_seed_selection_allowed": True},
+            ),
+            "post-hoc",
+        ),
+        (
+            lambda packet: packet["context_only_prior_receipts"][0].update(
+                {"classifier_evidence": True},
+            ),
+            "classifier evidence",
+        ),
+        (
+            lambda packet: packet.update({"context_only_prior_receipts": []}),
+            "exactly Step-4 and Step-5 context",
+        ),
+        (
+            lambda packet: packet.pop("context_only_prior_receipts"),
+            "exactly Step-4 and Step-5 context",
+        ),
+        (
+            lambda packet: packet["context_only_prior_receipts"][0].update(
+                {"label": "step4_reused_classifier_evidence"},
+            ),
+            "labels must be Step-4 and Step-5",
+        ),
+        (
+            lambda packet: packet["mass_confound_rule"].update(
+                {"compares": ["C_vs_A0", "C_vs_B"]},
+            ),
+            "A0 vs A1 and A0 vs C",
+        ),
+        (
+            lambda packet: packet["order_averaged_stability_rule"].update(
+                {"primary_evidence": "pooled_loss"},
+            ),
+            "seed-level dominance",
+        ),
+        (
+            lambda packet: packet["order_averaged_stability_rule"].update(
+                {"pooled_loss_cannot_override_seed_level_instability": False},
+            ),
+            "pooled loss",
+        ),
+        (
+            lambda packet: packet.update({"ready_for_main_science": True}),
+            "ready_for_main_science",
+        ),
+        (
+            lambda packet: packet.update({"full_sub2_claim": True}),
+            "full_sub2",
+        ),
+        (
+            lambda packet: packet.update({"qacc_kernelized": True}),
+            "qacc_kernelized",
+        ),
+        (
+            lambda packet: packet.update({"raw_per_proposal_arrays_included": True}),
+            "raw per-proposal arrays",
+        ),
+    ],
+)
+def test_step6_validator_rejects_scope_drift_and_reuse_evidence(mutation, error):
+    packet = build_order_averaged_a0_component_decomposition_packet(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+        repo_root="/repo",
+        run_root="/tmp/hrm158-step6",
+    )
+    mutation(packet)
+
+    with pytest.raises(ValueError, match=error):
+        validate_order_averaged_a0_component_decomposition_packet(packet)
+
+
 def test_packet_script_writes_compact_launch_packet_with_null_gate(tmp_path: Path, capsys):
     parent = tmp_path / "parent.pt"
     parent.write_bytes(b"read-only parent bytes")
@@ -1210,4 +1444,59 @@ def test_packet_script_writes_step5_support_order_packet(tmp_path: Path, capsys)
     } == {"29"}
     assert json.loads(capsys.readouterr().out)["packet_kind"] == (
         STEP5_SUPPORT_ORDER_TRAJECTORY_ROBUSTNESS_PACKET_KIND
+    )
+
+
+def test_packet_script_writes_step6_order_averaged_packet(tmp_path: Path, capsys):
+    parent = tmp_path / "parent.pt"
+    parent.write_bytes(b"read-only parent bytes")
+    parent_sha = hashlib.sha256(b"read-only parent bytes").hexdigest()
+    out = tmp_path / "step6-packet.json"
+    run_root = tmp_path / "run"
+
+    exit_code = packet_main(
+        [
+            "--packet-kind",
+            STEP6_ORDER_AVERAGED_A0_COMPONENT_DECOMPOSITION_PACKET_KIND,
+            "--parent",
+            str(parent),
+            "--parent-sha256",
+            parent_sha,
+            "--json-out",
+            str(out),
+            "--run-root",
+            str(run_root),
+        ],
+    )
+
+    assert exit_code == 0
+    packet = json.loads(out.read_text(encoding="utf-8"))
+    validate_order_averaged_a0_component_decomposition_packet(packet)
+    assert packet["packet_kind"] == STEP6_ORDER_AVERAGED_A0_COMPONENT_DECOMPOSITION_PACKET_KIND
+    assert packet["launch_gate_id"] is None
+    assert packet["commands_executed"] is False
+    assert packet["gpu_launched"] is False
+    assert packet["pt_mutated"] is False
+    assert packet["parent_hash_basis"] == "read_only_parent_file_sha256"
+    assert packet["dry_run_packet_written"] is True
+    assert packet["gpu_launch_command_authorized"] is False
+    assert packet["step6_launch_gate_required"] is True
+    assert len(packet["commands"]) == 9
+    original_commands = [
+        command for command in packet["commands"]
+        if command["support_order_seed"] is None
+    ]
+    seeded_commands = [
+        command for command in packet["commands"]
+        if command["support_order_seed"] in {29, 43}
+    ]
+    assert len(original_commands) == 3
+    assert len(seeded_commands) == 6
+    assert all("--support-order-seed" not in command["argv"] for command in original_commands)
+    assert {
+        command["argv"][command["argv"].index("--support-order-seed") + 1]
+        for command in seeded_commands
+    } == {"29", "43"}
+    assert json.loads(capsys.readouterr().out)["packet_kind"] == (
+        STEP6_ORDER_AVERAGED_A0_COMPONENT_DECOMPOSITION_PACKET_KIND
     )
