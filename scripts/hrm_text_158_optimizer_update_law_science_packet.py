@@ -21,8 +21,11 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     SCIENCE_MODE_PRETERMINAL_SCREEN,
     STEP1_DRY_RUN_PACKET_KIND,
     STEP2_LAUNCH_BUNDLE_PACKET_KIND,
+    STEP3_MEASUREMENT_POWER_TRUST_REGION_PACKET_KIND,
+    build_measurement_power_then_trust_region_packet,
     build_optimizer_update_law_launch_bundle,
     build_optimizer_update_law_science_packet,
+    validate_measurement_power_then_trust_region_packet,
     validate_optimizer_update_law_launch_bundle,
     validate_optimizer_update_law_science_packet,
 )
@@ -44,7 +47,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--parent-sha256", default=DEFAULT_PARENT_SHA256)
     ap.add_argument(
         "--packet-kind",
-        choices=(STEP1_DRY_RUN_PACKET_KIND, STEP2_LAUNCH_BUNDLE_PACKET_KIND),
+        choices=(
+            STEP1_DRY_RUN_PACKET_KIND,
+            STEP2_LAUNCH_BUNDLE_PACKET_KIND,
+            STEP3_MEASUREMENT_POWER_TRUST_REGION_PACKET_KIND,
+        ),
         default=STEP1_DRY_RUN_PACKET_KIND,
     )
     ap.add_argument(
@@ -100,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
         packet["step2_launch_gate_required"] = True
         validator = validate_optimizer_update_law_science_packet
         default_name = "optimizer_update_law_science_packet.json"
-    else:
+    elif args.packet_kind == STEP2_LAUNCH_BUNDLE_PACKET_KIND:
         packet = build_optimizer_update_law_launch_bundle(
             parent_path=parent,
             parent_sha256=parent_sha,
@@ -119,6 +126,25 @@ def main(argv: list[str] | None = None) -> int:
         packet["step2_launch_gate_required"] = True
         validator = validate_optimizer_update_law_launch_bundle
         default_name = "optimizer_update_law_step2_launch_bundle.json"
+    else:
+        packet = build_measurement_power_then_trust_region_packet(
+            parent_path=parent,
+            parent_sha256=parent_sha,
+            repo_root=REPO_ROOT,
+            run_root=args.run_root,
+            device=str(args.device),
+            launch_gate_id=None,
+            symbolic_resource_lane=str(args.symbolic_resource_lane),
+            phase_timeout_seconds=args.phase_timeout_seconds,
+            total_timeout_seconds=args.total_timeout_seconds,
+            max_silent_phase_seconds=args.max_silent_phase_seconds,
+        )
+        packet["parent_hash_basis"] = parent_hash_basis
+        packet["dry_run_packet_written"] = True
+        packet["gpu_launch_command_authorized"] = False
+        packet["step3_launch_gate_required"] = True
+        validator = validate_measurement_power_then_trust_region_packet
+        default_name = "optimizer_update_law_step3_measurement_power_then_trust_region_packet.json"
     validator(packet)
     out_path = args.json_out or (Path(args.scratch_root) / default_name)
     _write_json_atomic(out_path, packet)

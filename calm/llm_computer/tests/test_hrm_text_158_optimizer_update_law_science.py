@@ -10,9 +10,14 @@ import pytest
 from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     ARM_A0_RANK_BUCKET_CURRENT,
     ARM_A1_RANK_BUCKET_ORDER_MATCHED,
+    ARM_B_CAP_MAX_ABS_1024,
     ARM_B_RANK_FREE_SIGN_PRESSURE,
     ARM_INVERTED_SIGN_PRESSURE,
     BRANCH_INSUFFICIENT_SEPARATION,
+    BRANCH_MEASUREMENT_LOSS_POWERED,
+    BRANCH_MEASUREMENT_POWERED,
+    BRANCH_MEASUREMENT_UNDERPOWERED,
+    BRANCH_POWERED_NEGATIVE_OR_LOSS_ONLY,
     BRANCH_PRIOR_NULL_SETUP_UNVERIFIED,
     BRANCH_RANK_FREE_POSITIVE,
     BRANCH_TIE_POLICY_OR_OVERUPDATE,
@@ -23,11 +28,17 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     SCIENCE_MODE_PRETERMINAL_SCREEN,
     STEP1_DRY_RUN_PACKET_KIND,
     STEP2_LAUNCH_BUNDLE_PACKET_KIND,
+    STEP3_BASELINE_MAX_ABS_PER_TENSOR,
+    STEP3_CAP_MAX_ABS_PER_TENSOR,
+    STEP3_MEASUREMENT_POWER_TRUST_REGION_PACKET_KIND,
+    build_measurement_power_then_trust_region_packet,
     TIE_POLICY_CURRENT_MARGIN_INDEX,
     TIE_POLICY_DETERMINISTIC_HASH_MATCHED,
     build_optimizer_update_law_launch_bundle,
     build_optimizer_update_law_science_packet,
     classify_optimizer_update_law_branch,
+    classify_step3_power_floor,
+    validate_measurement_power_then_trust_region_packet,
     validate_optimizer_update_law_launch_bundle,
     validate_optimizer_update_law_science_packet,
 )
@@ -425,6 +436,186 @@ def test_step2_launch_bundle_validator_rejects_runtime_and_dependency_confusion(
         validate_optimizer_update_law_launch_bundle(bundle)
 
 
+def test_step3_measurement_power_trust_region_packet_pins_cap_and_power_floor():
+    packet = build_measurement_power_then_trust_region_packet(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+        repo_root="/repo",
+        run_root="/tmp/hrm158-step3",
+    )
+
+    validate_measurement_power_then_trust_region_packet(packet)
+    assert packet["packet_kind"] == STEP3_MEASUREMENT_POWER_TRUST_REGION_PACKET_KIND
+    assert packet["author_only"] is True
+    assert packet["commands_executed"] is False
+    assert packet["gpu_launched"] is False
+    assert packet["launch_gate_id"] is None
+    assert packet["pt_mutated"] is False
+    assert packet["readiness_claim"] is False
+    assert packet["full_sub2_claim"] is False
+    assert packet["branch_result"] is None
+    assert packet["mode_sequence"] == [
+        "measurement_power_150",
+        "measurement_power_300",
+        "trust_region_cap_150",
+        "trust_region_cap_300",
+    ]
+
+    power = packet["power_ladder"]
+    assert power["steps_first"] == 150
+    assert power["steps_optional_continuation"] == 300
+    assert power["max_steps_hard"] == 300
+    floor = power["floor"]
+    assert floor["strict_exact_floor"]["non_inverted_only"] is True
+    assert floor["strict_exact_floor"]["count"] == 10
+    assert floor["strict_exact_floor"]["total"] == 90
+    assert floor["paired_loss_floor"]["bootstrap_ci"] == "95%"
+    assert floor["paired_loss_floor"]["ci_must_exclude_zero"] is True
+    assert floor["classifications"]["no_floor"] == BRANCH_MEASUREMENT_UNDERPOWERED
+    assert floor["classifications"]["strict_exact_floor"] == BRANCH_MEASUREMENT_POWERED
+    assert floor["classifications"]["favorable_paired_loss_ci"] == BRANCH_MEASUREMENT_LOSS_POWERED
+    assert floor["classifications"]["strict_below_floor_and_only_b_minus_a0_loss_favors_a0"] == (
+        BRANCH_POWERED_NEGATIVE_OR_LOSS_ONLY
+    )
+    assert "B-A0-loss-only" in floor["phase2_unlock_rule"]
+    assert "no acquisition claim" in floor["phase2_unlock_rule"]
+
+    trust_region = packet["trust_region"]
+    assert trust_region["variable"] == "max_abs_per_tensor"
+    assert trust_region["baseline_value"] == STEP3_BASELINE_MAX_ABS_PER_TENSOR
+    assert trust_region["cap_value"] == STEP3_CAP_MAX_ABS_PER_TENSOR
+    assert trust_region["fraction_per_tensor"] == 1.0
+    assert trust_region["global_cap_contract"] == "off"
+    assert trust_region["global_cap_deferred"] is True
+    cap = trust_region["effective_cap"]
+    assert cap["baseline_max_abs_per_tensor"] == 4096
+    assert cap["cap_max_abs_per_tensor"] == 1024
+    assert cap["fraction_per_tensor"] == 1.0
+    assert cap["tensor_count_reduced"] == 1
+    assert cap["total_allowed_flips_baseline"] == 4096
+    assert cap["total_allowed_flips_cap"] == 1024
+    assert cap["cap_effective"] is True
+    assert cap["if_cap_effective_false"] == "cap_noop"
+
+    arms = {arm["arm_id"]: arm for arm in packet["arms"]}
+    assert arms[ARM_B_CAP_MAX_ABS_1024]["vote_law"] == "rank_free_sign_pressure"
+    assert arms[ARM_B_CAP_MAX_ABS_1024]["tie_policy_id"] == TIE_POLICY_DETERMINISTIC_HASH_MATCHED
+    assert arms[ARM_B_CAP_MAX_ABS_1024]["max_abs_per_tensor"] == 1024
+
+    commands = packet["commands"]
+    assert len(commands) == 18
+    assert sum(1 for cmd in commands if cmd["phase_role"] == "measurement_power") == 8
+    assert sum(1 for cmd in commands if cmd["phase_role"] == "trust_region_cap") == 10
+    cap_commands = [cmd for cmd in commands if cmd["arm_id"] == ARM_B_CAP_MAX_ABS_1024]
+    assert len(cap_commands) == 2
+    for command in cap_commands:
+        assert command["mode"] in {"trust_region_cap_150", "trust_region_cap_300"}
+        assert command["science_arm"] == ARM_B_RANK_FREE_SIGN_PRESSURE
+        assert command["max_abs_per_tensor"] == 1024
+        assert command["argv"][command["argv"].index("--science-arm") + 1] == ARM_B_RANK_FREE_SIGN_PRESSURE
+        assert command["argv"][command["argv"].index("--max-abs-per-tensor") + 1] == "1024"
+    for command in commands:
+        assert command["argv"][command["argv"].index("--max-steps-hard") + 1] == "300"
+        assert command["global_cap_contract"] == "off"
+        assert command["fraction_per_tensor"] == 1.0
+
+
+@pytest.mark.parametrize(
+    "mutation,error",
+    [
+        (
+            lambda packet: packet["trust_region"]["effective_cap"].update({"cap_effective": False}),
+            "cap_effective",
+        ),
+        (
+            lambda packet: packet["trust_region"]["effective_cap"].update({"tensor_count_reduced": 0}),
+            "tensor_count_reduced",
+        ),
+        (
+            lambda packet: packet["trust_region"]["effective_cap"].update(
+                {"total_allowed_flips_cap": 4096},
+            ),
+            "total_allowed_flips_cap",
+        ),
+        (
+            lambda packet: packet["commands"][0]["argv"].__setitem__(
+                packet["commands"][0]["argv"].index("--max-abs-per-tensor") + 1,
+                "1024",
+            ),
+            "--max-abs-per-tensor",
+        ),
+    ],
+)
+def test_step3_validator_rejects_ineffective_cap_or_mismatched_command(mutation, error):
+    packet = build_measurement_power_then_trust_region_packet(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+        repo_root="/repo",
+        run_root="/tmp/hrm158-step3",
+    )
+    mutation(packet)
+
+    with pytest.raises(ValueError, match=error):
+        validate_measurement_power_then_trust_region_packet(packet)
+
+
+def test_step3_power_floor_classifier_blocks_b_a0_loss_only_negative_unlock():
+    assert classify_step3_power_floor(
+        non_inverted_strict_exact_counts={
+            ARM_A0_RANK_BUCKET_CURRENT: 9,
+            ARM_A1_RANK_BUCKET_ORDER_MATCHED: 4,
+            ARM_B_RANK_FREE_SIGN_PRESSURE: 3,
+        },
+        paired_loss_ci_excludes_zero={"B_minus_A0": True},
+        paired_loss_winner={"B_minus_A0": "A0"},
+    ) == BRANCH_POWERED_NEGATIVE_OR_LOSS_ONLY
+    assert classify_step3_power_floor(
+        non_inverted_strict_exact_counts=[9, 4, 3],
+        paired_loss_ci_excludes_zero=False,
+    ) == BRANCH_MEASUREMENT_UNDERPOWERED
+    assert classify_step3_power_floor(
+        non_inverted_strict_exact_counts=[10, 4, 3],
+        paired_loss_ci_excludes_zero=False,
+    ) == BRANCH_MEASUREMENT_POWERED
+    assert classify_step3_power_floor(
+        non_inverted_strict_exact_counts=[9, 4, 3],
+        paired_loss_ci_excludes_zero={"A1_minus_B": True},
+        paired_loss_winner={"A1_minus_B": "B"},
+    ) == BRANCH_MEASUREMENT_LOSS_POWERED
+
+
+@pytest.mark.parametrize(
+    "mutation,error",
+    [
+        (
+            lambda packet: packet["power_ladder"]["floor"]["strict_exact_floor"].update({"count": 9}),
+            "strict_exact floor count",
+        ),
+        (
+            lambda packet: packet["power_ladder"]["floor"]["classifications"].pop(
+                "strict_below_floor_and_only_b_minus_a0_loss_favors_a0",
+            ),
+            "powered_negative_or_loss_only",
+        ),
+        (
+            lambda packet: packet["power_ladder"]["floor"].update({"phase2_unlock_rule": "loss CI clears"}),
+            "B-A0-loss-only acquisition-capable phase2",
+        ),
+    ],
+)
+def test_step3_validator_rejects_power_floor_drift(mutation, error):
+    packet = build_measurement_power_then_trust_region_packet(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+        repo_root="/repo",
+        run_root="/tmp/hrm158-step3",
+    )
+    mutation(packet)
+
+    with pytest.raises(ValueError, match=error):
+        validate_measurement_power_then_trust_region_packet(packet)
+
+
 def test_packet_script_writes_compact_launch_packet_with_null_gate(tmp_path: Path, capsys):
     parent = tmp_path / "parent.pt"
     parent.write_bytes(b"read-only parent bytes")
@@ -490,3 +681,43 @@ def test_packet_script_writes_step2_author_only_launch_bundle(tmp_path: Path, ca
     assert packet["step2_launch_gate_required"] is True
     assert len(packet["commands"]) == 8
     assert json.loads(capsys.readouterr().out)["packet_kind"] == STEP2_LAUNCH_BUNDLE_PACKET_KIND
+
+
+def test_packet_script_writes_step3_author_only_measurement_power_packet(tmp_path: Path, capsys):
+    parent = tmp_path / "parent.pt"
+    parent.write_bytes(b"read-only parent bytes")
+    parent_sha = hashlib.sha256(b"read-only parent bytes").hexdigest()
+    out = tmp_path / "step3-packet.json"
+    run_root = tmp_path / "run"
+
+    exit_code = packet_main(
+        [
+            "--packet-kind",
+            STEP3_MEASUREMENT_POWER_TRUST_REGION_PACKET_KIND,
+            "--parent",
+            str(parent),
+            "--parent-sha256",
+            parent_sha,
+            "--json-out",
+            str(out),
+            "--run-root",
+            str(run_root),
+        ],
+    )
+
+    assert exit_code == 0
+    packet = json.loads(out.read_text(encoding="utf-8"))
+    validate_measurement_power_then_trust_region_packet(packet)
+    assert packet["packet_kind"] == STEP3_MEASUREMENT_POWER_TRUST_REGION_PACKET_KIND
+    assert packet["launch_gate_id"] is None
+    assert packet["commands_executed"] is False
+    assert packet["gpu_launched"] is False
+    assert packet["pt_mutated"] is False
+    assert packet["parent_hash_basis"] == "read_only_parent_file_sha256"
+    assert packet["dry_run_packet_written"] is True
+    assert packet["gpu_launch_command_authorized"] is False
+    assert packet["step3_launch_gate_required"] is True
+    assert len(packet["commands"]) == 18
+    assert json.loads(capsys.readouterr().out)["packet_kind"] == (
+        STEP3_MEASUREMENT_POWER_TRUST_REGION_PACKET_KIND
+    )
