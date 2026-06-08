@@ -28,11 +28,15 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     ARM_B_RANK_FREE_SIGN_PRESSURE,
     BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE,
     FIXED_RANK_BUCKET_NON_TARGET_AUX,
+    ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES,
     ORACLE_SCREEN_BRANCHES,
     TIE_POLICY_CURRENT_MARGIN_INDEX,
     TIE_POLICY_DETERMINISTIC_HASH_MATCHED,
+    oracle_screen_budget_max_seconds,
 )
 from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
+    _sampled_rank_fraction,
+    _sampled_rank_position,
     run_candidate_set_viability_oracle_screen,
 )
 from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
@@ -790,6 +794,7 @@ def test_b2_full_cli_flag_defaults_off_and_support_validation_is_preload(tmp_pat
     args = build_arg_parser().parse_args([])
     assert args.b2_full_verdict_mode is False
     assert args.oracle_screen_mode is None
+    assert args.oracle_screen_max_sampled_candidates == 8
     assert args.global_cap_contract == GLOBAL_CAP_CONTRACT_OFF
     assert args.tie_rule_mode == EXACT_GLOBAL_CAP_TIE_RULE_MODE
     assert args.matched_continued_training_horizon_steps == 0
@@ -815,6 +820,15 @@ def test_b2_full_cli_flag_defaults_off_and_support_validation_is_preload(tmp_pat
         ["--oracle-screen-mode", ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY]
     )
     assert oracle_args.oracle_screen_mode == ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY
+    oracle_budget_args = build_arg_parser().parse_args(
+        [
+            "--oracle-screen-mode",
+            ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY,
+            "--oracle-screen-max-sampled-candidates",
+            "32",
+        ]
+    )
+    assert oracle_budget_args.oracle_screen_max_sampled_candidates == 32
 
     with pytest.raises(ValueError, match="requires retained supports"):
         run_c2p1_probe(
@@ -1570,6 +1584,23 @@ def test_direct_oracle_screen_runner_keeps_parent_state_unmutated_and_emits_comp
     assert receipt["candidate_count"] >= receipt["sampled_candidate_count"] > 0
     assert receipt["branch_classification"] in ORACLE_SCREEN_BRANCHES
     assert receipt["compact_summary"]["local_loss_delta_deciles"]["best_local_loss_delta"] is not None
+    wider_inputs = receipt["wider_screen_interpretation_inputs"]
+    assert wider_inputs["max_sampled_candidates"] in ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES
+    assert wider_inputs["oracle_best_current_rank_position"] is not None
+    assert wider_inputs["oracle_best_current_sampled_rank_position"] is not None
+    assert wider_inputs["oracle_best_current_rank_fraction"] is not None
+    assert wider_inputs["oracle_best_deterministic_hash_rank_position"] is not None
+    assert wider_inputs["oracle_best_deterministic_hash_sampled_rank_position"] is not None
+    assert wider_inputs["oracle_best_deterministic_hash_rank_fraction"] is not None
+    assert wider_inputs["current_vs_oracle_top1_gap"] is not None
+    assert (
+        wider_inputs["current_vs_oracle_top1_gap_denominator_abs_oracle_top1_local_loss_delta"]
+        is not None
+    )
+    assert wider_inputs["ce_improving_candidate_fraction"] is not None
+    assert wider_inputs["oracle_best_current_rank_fraction"] <= 1.0
+    assert wider_inputs["oracle_best_deterministic_hash_rank_fraction"] <= 1.0
+    assert receipt["compact_summary"]["wider_screen_interpretation_inputs"] == wider_inputs
     assert receipt["non_persistence"]["q_persisted"] is False
     assert receipt["non_persistence"]["checkpoint_written"] is False
     for key, tensor_state in states.items():
@@ -1598,6 +1629,52 @@ def test_direct_oracle_screen_runner_budget_overrun_classifies_infeasible():
     assert receipt["branch_classification"] == BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE
 
 
+def test_oracle_sampled_rank_fraction_uses_sampled_order_not_raw_rank():
+    sampled_candidates = [
+        {
+            "candidate_id": "oracle-best",
+            "current_rank_position": 300_000,
+            "deterministic_hash_rank_position": 500_000,
+            "local_loss_delta": -0.50,
+        },
+        {
+            "candidate_id": "runner-up",
+            "current_rank_position": 400_000,
+            "deterministic_hash_rank_position": 600_000,
+            "local_loss_delta": -0.25,
+        },
+    ]
+    current_top = sorted(
+        sampled_candidates,
+        key=lambda candidate: (
+            int(candidate["current_rank_position"]),
+            str(candidate["candidate_id"]),
+        ),
+    )
+    deterministic_top = sorted(
+        sampled_candidates,
+        key=lambda candidate: (
+            int(candidate["deterministic_hash_rank_position"]),
+            str(candidate["candidate_id"]),
+        ),
+    )
+
+    current_position = _sampled_rank_position(current_top, "oracle-best")
+    deterministic_position = _sampled_rank_position(deterministic_top, "oracle-best")
+    current_fraction = _sampled_rank_fraction(current_position, len(sampled_candidates))
+    deterministic_fraction = _sampled_rank_fraction(
+        deterministic_position,
+        len(sampled_candidates),
+    )
+
+    assert current_position == 0
+    assert deterministic_position == 0
+    assert current_fraction == 0.5
+    assert deterministic_fraction == 0.5
+    assert current_fraction <= 1.0
+    assert deterministic_fraction <= 1.0
+
+
 def test_tiny_oracle_screen_mode_returns_compact_non_persistent_receipt(tmp_path: Path):
     parent = tmp_path / "tiny_parent.pt"
     torch.save(_tiny_parent_blob(batch_size=8), parent)
@@ -1615,6 +1692,7 @@ def test_tiny_oracle_screen_mode_returns_compact_non_persistent_receipt(tmp_path
         curriculum_seed=17,
         enabled=True,
         oracle_screen_mode=ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY,
+        oracle_screen_max_sampled_candidates=32,
     )
 
     assert receipt["gpu_launched"] is False
@@ -1634,6 +1712,8 @@ def test_tiny_oracle_screen_mode_returns_compact_non_persistent_receipt(tmp_path
     assert oracle["screen_rows"] == 8
     assert oracle["candidate_count"] >= oracle["sampled_candidate_count"]
     assert oracle["sampled_candidate_count"] <= oracle["max_sampled_candidates"]
+    assert oracle["max_sampled_candidates"] == 32
+    assert oracle["max_seconds"] == oracle_screen_budget_max_seconds(32)
     assert oracle["branch_classification"] in ORACLE_SCREEN_BRANCHES
     assert oracle["non_persistence"]["q_persisted"] is False
     assert oracle["non_persistence"]["checkpoint_written"] is False
@@ -1641,6 +1721,23 @@ def test_tiny_oracle_screen_mode_returns_compact_non_persistent_receipt(tmp_path
     assert oracle["non_persistence"]["screen_state_mutated"] is False
     assert oracle["compact_summary"]["candidate_count"] == oracle["candidate_count"]
     assert oracle["compact_summary"]["sampled_candidate_count"] == oracle["sampled_candidate_count"]
+    wider_inputs = oracle["wider_screen_interpretation_inputs"]
+    assert wider_inputs["max_sampled_candidates"] == 32
+    assert wider_inputs["oracle_best_current_rank_position"] is not None
+    assert wider_inputs["oracle_best_current_sampled_rank_position"] is not None
+    assert wider_inputs["oracle_best_current_rank_fraction"] is not None
+    assert wider_inputs["oracle_best_deterministic_hash_rank_position"] is not None
+    assert wider_inputs["oracle_best_deterministic_hash_sampled_rank_position"] is not None
+    assert wider_inputs["oracle_best_deterministic_hash_rank_fraction"] is not None
+    assert wider_inputs["current_vs_oracle_top1_gap"] is not None
+    assert (
+        wider_inputs["current_vs_oracle_top1_gap_denominator_abs_oracle_top1_local_loss_delta"]
+        is not None
+    )
+    assert wider_inputs["ce_improving_candidate_fraction"] is not None
+    assert wider_inputs["oracle_best_current_rank_fraction"] <= 1.0
+    assert wider_inputs["oracle_best_deterministic_hash_rank_fraction"] <= 1.0
+    assert oracle["compact_summary"]["wider_screen_interpretation_inputs"] == wider_inputs
     assert Path(receipt["receipt_path"]).exists()
 
 

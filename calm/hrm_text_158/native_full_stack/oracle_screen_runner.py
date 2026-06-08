@@ -72,6 +72,24 @@ def _rank_decile(position: int | None, total: int) -> int | None:
     return min(9, int((int(position) * 10) / max(1, int(total))))
 
 
+def _sampled_rank_position(
+    ordered_candidates: Sequence[Mapping[str, Any]],
+    candidate_id: str | None,
+) -> int | None:
+    if candidate_id is None:
+        return None
+    for position, candidate in enumerate(ordered_candidates):
+        if str(candidate.get("candidate_id")) == str(candidate_id):
+            return position
+    return None
+
+
+def _sampled_rank_fraction(position: int | None, sampled_candidate_count: int) -> float | None:
+    if position is None or sampled_candidate_count <= 0:
+        return None
+    return float((int(position) + 1) / int(sampled_candidate_count))
+
+
 def _single_flip_spec(base_spec: VoteUpdateSpec) -> VoteUpdateSpec:
     return VoteUpdateSpec(
         threshold_abs=int(base_spec.threshold_abs),
@@ -422,6 +440,78 @@ def run_candidate_set_viability_oracle_screen(
         None,
     )
     loss_deltas = [float(candidate["local_loss_delta"]) for candidate in sampled_candidates]
+    ce_improving_candidate_count = sum(
+        1 for delta in loss_deltas if delta < -ORACLE_SCREEN_IMPROVEMENT_EPS
+    )
+    ce_improving_candidate_fraction = (
+        float(ce_improving_candidate_count / sampled_count) if sampled_count > 0 else None
+    )
+    oracle_best_candidate_id = str(oracle_top[0]["candidate_id"]) if oracle_top else None
+    oracle_best_current_rank_position = (
+        int(oracle_top[0]["current_rank_position"]) if oracle_top else None
+    )
+    oracle_best_deterministic_hash_rank_position = (
+        int(oracle_top[0]["deterministic_hash_rank_position"]) if oracle_top else None
+    )
+    oracle_best_current_sampled_rank_position = _sampled_rank_position(
+        current_top,
+        oracle_best_candidate_id,
+    )
+    oracle_best_deterministic_hash_sampled_rank_position = _sampled_rank_position(
+        deterministic_top,
+        oracle_best_candidate_id,
+    )
+    oracle_best_current_rank_fraction = _sampled_rank_fraction(
+        oracle_best_current_sampled_rank_position,
+        sampled_count,
+    )
+    oracle_best_deterministic_hash_rank_fraction = _sampled_rank_fraction(
+        oracle_best_deterministic_hash_sampled_rank_position,
+        sampled_count,
+    )
+    current_vs_oracle_top1_gap = (
+        float(current_top1_delta - oracle_top1_delta)
+        if current_top1_delta is not None and oracle_top1_delta is not None
+        else None
+    )
+    current_vs_oracle_top1_gap_denominator_abs_oracle_top1_local_loss_delta = (
+        abs(float(oracle_top1_delta)) if oracle_top1_delta is not None else None
+    )
+    current_vs_oracle_top1_gap_ratio = None
+    if (
+        current_vs_oracle_top1_gap is not None
+        and current_vs_oracle_top1_gap_denominator_abs_oracle_top1_local_loss_delta
+        is not None
+        and current_vs_oracle_top1_gap_denominator_abs_oracle_top1_local_loss_delta > 0.0
+    ):
+        current_vs_oracle_top1_gap_ratio = float(
+            current_vs_oracle_top1_gap
+            / current_vs_oracle_top1_gap_denominator_abs_oracle_top1_local_loss_delta
+        )
+    wider_screen_interpretation_inputs = {
+        "sampled_candidate_count": sampled_count,
+        "max_sampled_candidates": int(max_sampled_candidates),
+        "oracle_best_current_rank_position": oracle_best_current_rank_position,
+        "oracle_best_current_sampled_rank_position": (
+            oracle_best_current_sampled_rank_position
+        ),
+        "oracle_best_current_rank_fraction": oracle_best_current_rank_fraction,
+        "oracle_best_deterministic_hash_rank_position": (
+            oracle_best_deterministic_hash_rank_position
+        ),
+        "oracle_best_deterministic_hash_sampled_rank_position": (
+            oracle_best_deterministic_hash_sampled_rank_position
+        ),
+        "oracle_best_deterministic_hash_rank_fraction": (
+            oracle_best_deterministic_hash_rank_fraction
+        ),
+        "current_vs_oracle_top1_gap": current_vs_oracle_top1_gap,
+        "current_vs_oracle_top1_gap_denominator_abs_oracle_top1_local_loss_delta": (
+            current_vs_oracle_top1_gap_denominator_abs_oracle_top1_local_loss_delta
+        ),
+        "current_vs_oracle_top1_gap_ratio": current_vs_oracle_top1_gap_ratio,
+        "ce_improving_candidate_fraction": ce_improving_candidate_fraction,
+    }
     compact_summary = {
         "candidate_count": len(candidate_by_id),
         "sampled_candidate_count": sampled_count,
@@ -467,15 +557,14 @@ def run_candidate_set_viability_oracle_screen(
             "best_local_loss_delta": min(loss_deltas) if loss_deltas else None,
             "median_local_loss_delta": median(loss_deltas) if loss_deltas else None,
             "worst_local_loss_delta": max(loss_deltas) if loss_deltas else None,
-            "ce_improving_candidate_count": sum(
-                1 for delta in loss_deltas if delta < -ORACLE_SCREEN_IMPROVEMENT_EPS
-            ),
+            "ce_improving_candidate_count": ce_improving_candidate_count,
         },
         "paired_loss_branch_fields": {
             **branch_inputs,
             "current_top1_local_loss_delta": current_top1_delta,
             "oracle_top1_local_loss_delta": oracle_top1_delta,
         },
+        "wider_screen_interpretation_inputs": wider_screen_interpretation_inputs,
     }
     return {
         "schema": "hrm_text_158_candidate_set_viability_oracle_screen_runtime/v0",
@@ -495,6 +584,7 @@ def run_candidate_set_viability_oracle_screen(
         "budget_exceeded": bool(budget_exceeded),
         "oracle_feasible": bool(oracle_feasible),
         "compact_summary": compact_summary,
+        "wider_screen_interpretation_inputs": wider_screen_interpretation_inputs,
         "branch_inputs": branch_inputs,
         "branch_classification": branch_classification,
         "non_persistence": {

@@ -17,6 +17,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from calm.hrm_text_158.native_full_stack.bounded_delta_learner import file_sha256
 from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
+    ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES,
     SCIENCE_MODE_BRANCH_VERDICT,
     SCIENCE_MODE_PRETERMINAL_SCREEN,
     ORACLE_SCREEN_LAUNCH_BUNDLE_PACKET_KIND,
@@ -88,6 +89,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--run-root",
         type=Path,
         default=Path("/tmp/hrm158_optimizer_update_law_step2_launch_bundle"),
+    )
+    ap.add_argument(
+        "--oracle-screen-max-sampled-candidates",
+        type=int,
+        choices=ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES,
+        default=8,
+        help=(
+            "Closed-set candidate sample budget for oracle-screen packet kinds. "
+            "Pinned allowed values only; launch time budget is derived from this tier."
+        ),
     )
     ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--symbolic-resource-lane", default="gpu:0")
@@ -228,6 +239,7 @@ def main(argv: list[str] | None = None) -> int:
             parent_sha256=parent_sha,
             repo_root=REPO_ROOT,
             run_root=args.run_root,
+            max_sampled_candidates=args.oracle_screen_max_sampled_candidates,
             device=str(args.device),
             launch_gate_id=None,
             symbolic_resource_lane=str(args.symbolic_resource_lane),
@@ -246,6 +258,7 @@ def main(argv: list[str] | None = None) -> int:
             parent_path=parent,
             parent_sha256=parent_sha,
             launch_gate_id=None,
+            max_sampled_candidates=args.oracle_screen_max_sampled_candidates,
         )
         packet["parent_hash_basis"] = parent_hash_basis
         packet["dry_run_packet_written"] = True

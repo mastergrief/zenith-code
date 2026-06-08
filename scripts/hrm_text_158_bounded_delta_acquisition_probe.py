@@ -103,8 +103,11 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER,
     ARM_INVERTED_SIGN_PRESSURE,
     FIXED_RANK_BUCKET_NON_TARGET_AUX,
+    ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES,
+    ORACLE_SCREEN_FEASIBILITY_MAX_SAMPLED_CANDIDATES,
     TIE_POLICY_CURRENT_MARGIN_INDEX,
     TIE_POLICY_DETERMINISTIC_HASH_MATCHED,
+    oracle_screen_budget_max_seconds,
 )
 from calm.hrm_text_158.native_full_stack.vote_update import (
     LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
@@ -3757,7 +3760,14 @@ def run_c2p1_probe(
     front_c_independent_oracle: bool = False,
     science_arm: str = ARM_A0_RANK_BUCKET_CURRENT,
     oracle_screen_mode: str | None = None,
+    oracle_screen_max_sampled_candidates: int = ORACLE_SCREEN_FEASIBILITY_MAX_SAMPLED_CANDIDATES,
 ) -> dict[str, Any]:
+    oracle_screen_budget = int(oracle_screen_max_sampled_candidates)
+    if oracle_screen_budget not in ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES:
+        raise ValueError(
+            "oracle_screen_max_sampled_candidates must be one of "
+            f"{ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES}"
+        )
     assert_default_off(enabled)
     if oracle_screen_mode is not None and str(oracle_screen_mode) not in ORACLE_SCREEN_MODE_CHOICES:
         raise ValueError(
@@ -3859,6 +3869,7 @@ def run_c2p1_probe(
             raise ValueError("oracle_screen_mode does not support b2_full_verdict_mode")
         if front_c_identity_emission_artifact is not None or bool(front_c_independent_oracle):
             raise ValueError("oracle_screen_mode does not support Front-C identity emission")
+    oracle_screen_max_seconds = oracle_screen_budget_max_seconds(oracle_screen_budget)
     b2_support_batch_sizes = {
         "L0b": int(b2_l0b_batch_size),
         "math_a0": int(b2_math_a0_batch_size),
@@ -3986,6 +3997,8 @@ def run_c2p1_probe(
             device=torch_device,
             max_abs_per_tensor=int(max_abs_per_tensor),
             extras=extras,
+            max_sampled_candidates=oracle_screen_budget,
+            max_seconds=oracle_screen_max_seconds,
             phase_progress=phase_progress,
         )
         with phase_progress.phase("checkpoint_payload"):
@@ -4600,6 +4613,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     ap.add_argument(
+        "--oracle-screen-max-sampled-candidates",
+        type=int,
+        choices=ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES,
+        default=ORACLE_SCREEN_FEASIBILITY_MAX_SAMPLED_CANDIDATES,
+        help=(
+            "Closed-set oracle-screen sample budget. The runtime max-seconds tier "
+            "is derived from this value and pinned fail-closed."
+        ),
+    )
+    ap.add_argument(
         "--prior-audit-supports",
         default="",
         help=(
@@ -4732,6 +4755,7 @@ def main(argv: list[str] | None = None) -> int:
         front_c_independent_oracle=args.front_c_independent_oracle,
         science_arm=args.science_arm,
         oracle_screen_mode=args.oracle_screen_mode,
+        oracle_screen_max_sampled_candidates=args.oracle_screen_max_sampled_candidates,
         max_steps_hard=args.max_steps_hard,
         emit_progress=args.emit_progress,
         phase_timeout_seconds=args.phase_timeout_seconds,

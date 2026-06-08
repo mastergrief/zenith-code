@@ -41,12 +41,18 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     ORACLE_ARM_CURRENT_CREDIT_RANK_BUCKET_CURRENT_ORDER,
     ORACLE_ARM_DETERMINISTIC_HASH_SAME_VOTES,
     ORACLE_ARM_DIAGNOSTIC_LOCAL_LOSS_DELTA,
+    ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES,
     ORACLE_SCREEN_BRANCHES,
     ORACLE_SCREEN_CONTRAST_SEEDS,
     ORACLE_SCREEN_LAUNCH_BUNDLE_PACKET_KIND,
+    ORACLE_SCREEN_MAX_SECONDS_BY_BUDGET,
     ORACLE_SCREEN_PACKET_KIND,
     ORACLE_SCREEN_PROMOTION_ORDER_SEEDS,
     ORACLE_SCREEN_SCIENCE_CONTRACT_COMMIT_SHA,
+    ORACLE_WIDER_SCREEN_INTERPRETATION_VERDICTS,
+    ORACLE_WIDER_SCREEN_VERDICT_CREDIT_RANKING_BAD,
+    ORACLE_WIDER_SCREEN_VERDICT_RANKING_EFFECTIVELY_OK,
+    ORACLE_WIDER_SCREEN_VERDICT_RANKING_SUBOPTIMAL,
     SCIENCE_MODE_BRANCH_VERDICT,
     SCIENCE_MODE_PRETERMINAL_SCREEN,
     STEP1_DRY_RUN_PACKET_KIND,
@@ -75,6 +81,8 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     classify_step4_rank_signal_decomposition,
     classify_step3_power_floor,
     default_step4_mass_confound_rule,
+    oracle_screen_budget_max_seconds,
+    oracle_screen_effectively_ok_rank_position_exclusive_bound,
     step4_arm_matches_a0,
     step4_mass_confound_detected,
     validate_measurement_power_then_trust_region_packet,
@@ -1323,6 +1331,15 @@ def test_oracle_screen_packet_declares_three_arms_and_hard_non_persistence():
     budget = packet["oracle_feasibility_budget"]
     assert budget["probe_required_before_full_screen"] is True
     assert budget["budget_present"] is True
+    assert budget["allowed_max_sampled_candidates"] == list(
+        ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES
+    )
+    assert budget["max_sampled_candidates"] == 8
+    assert budget["max_seconds_by_budget"] == {
+        str(candidate_budget): seconds
+        for candidate_budget, seconds in ORACLE_SCREEN_MAX_SECONDS_BY_BUDGET.items()
+    }
+    assert budget["max_seconds"] == oracle_screen_budget_max_seconds(8)
     assert budget["classify_branch_on_missing_overrun_or_unsafe"] == (
         BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE
     )
@@ -1337,6 +1354,7 @@ def test_oracle_screen_packet_declares_three_arms_and_hard_non_persistence():
         "credit_rank_deciles",
         "local_loss_delta_deciles",
         "paired_loss_branch_fields",
+        "wider_screen_interpretation_inputs",
     }
     assert summary["raw_per_proposal_arrays"] is False
 
@@ -1365,13 +1383,56 @@ def test_oracle_screen_packet_pins_seed_order_contract_and_classifier_branches()
     assert classifier["exactly_one_branch"] is True
     assert set(classifier["allowed_branches"]) == set(ORACLE_SCREEN_BRANCHES)
 
+    interpretation = packet["wider_screen_interpretation_contract"]
+    assert interpretation["runtime_branch_classification_semantics_frozen"] is True
+    assert interpretation["max_sampled_candidates"] == 8
+    assert interpretation["tier_max_seconds"] == oracle_screen_budget_max_seconds(8)
+    assert interpretation["positive_interpretation_verdicts"] == list(
+        ORACLE_WIDER_SCREEN_INTERPRETATION_VERDICTS
+    )
+    assert interpretation["negative_low_level_passthrough"] == [
+        BRANCH_CANDIDATE_GENERATION_BAD_OR_NO_LOCAL_SIGNAL,
+        BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE,
+    ]
+    ok_band = interpretation["ranking_effectively_ok"]
+    assert ok_band["oracle_best_current_rank_position_lt_rule"]["position_source"] == (
+        "oracle_best_current_sampled_rank_position"
+    )
+    assert ok_band["oracle_best_current_rank_position_lt_rule"]["absolute_floor_positions"] == 5
+    assert ok_band["oracle_best_current_rank_position_lt_examples"] == {
+        str(candidate_budget): oracle_screen_effectively_ok_rank_position_exclusive_bound(
+            candidate_budget
+        )
+        for candidate_budget in ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES
+    }
+    assert ok_band["current_vs_oracle_top1_gap_ratio_max_inclusive"] == 0.25
+    bad_band = interpretation["credit_ranking_bad"]
+    assert bad_band["rank_fraction_source"] == "oracle_best_current_sampled_rank_position"
+    assert bad_band["oracle_best_current_rank_fraction_gt"] == 0.25
+    assert bad_band["current_vs_oracle_top1_gap_ratio_gt"] == 0.50
+    assert interpretation["next_branch_by_interpretation"] == {
+        ORACLE_WIDER_SCREEN_VERDICT_RANKING_EFFECTIVELY_OK: (
+            "ranking_not_the_bottleneck__reopen_scheduler_cap_backlog_multi_step"
+        ),
+        ORACLE_WIDER_SCREEN_VERDICT_RANKING_SUBOPTIMAL: (
+            "credit_magnitude_or_rank_bin_calibration"
+        ),
+        ORACLE_WIDER_SCREEN_VERDICT_CREDIT_RANKING_BAD: (
+            "update_law_or_credit_ranking_pivot"
+        ),
+    }
 
-def test_oracle_screen_launch_bundle_embeds_afbe598_contract_and_fixed_two_seed_commands():
+
+@pytest.mark.parametrize("budget", [32, 64])
+def test_oracle_screen_launch_bundle_embeds_afbe598_contract_and_fixed_two_seed_commands(
+    budget: int,
+):
     packet = build_candidate_set_viability_oracle_screen_launch_bundle(
         parent_path="parent.pt",
         parent_sha256="abc123",
         repo_root="/repo",
         run_root="/tmp/hrm158-oracle-screen",
+        max_sampled_candidates=budget,
     )
 
     validate_candidate_set_viability_oracle_screen_launch_bundle(packet)
@@ -1384,13 +1445,34 @@ def test_oracle_screen_launch_bundle_embeds_afbe598_contract_and_fixed_two_seed_
     assert packet["science_contract"]["packet_kind"] == ORACLE_SCREEN_PACKET_KIND
     assert packet["science_contract"]["parent_path"] == "parent.pt"
     assert packet["science_contract"]["parent_sha256"] == "abc123"
+    assert packet["oracle_feasibility_budget"]["max_sampled_candidates"] == budget
+    assert packet["oracle_feasibility_budget"]["max_seconds"] == oracle_screen_budget_max_seconds(
+        budget
+    )
+    assert packet["wider_screen_interpretation_contract"]["max_sampled_candidates"] == budget
     assert len(packet["commands"]) == 2
     assert {command["support_order_seed"] for command in packet["commands"]} == {43, 29}
     assert {command["seed_label"] for command in packet["commands"]} == {"seed43", "seed29"}
     assert all(command["oracle_screen_mode"] == "candidate_set_viability" for command in packet["commands"])
     assert all(command["batch_size"] == 20 for command in packet["commands"])
     assert all(command["steps_requested"] == 1 for command in packet["commands"])
+    assert all(command["max_sampled_candidates"] == budget for command in packet["commands"])
+    assert all(
+        command["oracle_max_seconds"] == oracle_screen_budget_max_seconds(budget)
+        for command in packet["commands"]
+    )
     assert all("--oracle-screen-mode" in command["argv"] for command in packet["commands"])
+    assert all(
+        "--oracle-screen-max-sampled-candidates" in command["argv"]
+        for command in packet["commands"]
+    )
+    assert all(
+        command["argv"][
+            command["argv"].index("--oracle-screen-max-sampled-candidates") + 1
+        ]
+        == str(budget)
+        for command in packet["commands"]
+    )
     assert all("--science-arm" not in command["argv"] for command in packet["commands"])
 
 
@@ -1517,6 +1599,18 @@ def test_oracle_screen_classifier_returns_exactly_one_branch(kwargs, expected):
             "budget must be present",
         ),
         (
+            lambda packet: packet["oracle_feasibility_budget"].update(
+                {"max_sampled_candidates": 16}
+            ),
+            "one of \\{8,32,64\\}",
+        ),
+        (
+            lambda packet: packet["wider_screen_interpretation_contract"].update(
+                {"max_sampled_candidates": 16}
+            ),
+            "one of \\{8,32,64\\}",
+        ),
+        (
             lambda packet: packet["compact_summary_schema"].update(
                 {"raw_local_loss_deltas": True},
             ),
@@ -1551,6 +1645,12 @@ def test_oracle_screen_classifier_returns_exactly_one_branch(kwargs, expected):
                 {"contrast_support_order_seeds": [29, 43]},
             ),
             "contrast seeds",
+        ),
+        (
+            lambda packet: packet["wider_screen_interpretation_contract"][
+                "ranking_effectively_ok"
+            ].update({"current_vs_oracle_top1_gap_ratio_max_inclusive": 0.2}),
+            "gap-ratio ceiling",
         ),
     ],
 )
@@ -1598,6 +1698,10 @@ def _remove_flag_with_value(argv: list[str], flag: str) -> None:
         (
             lambda packet: packet["commands"][0].update({"batch_size": 19}),
             "batch_size must equal N=20",
+        ),
+        (
+            lambda packet: packet["commands"][0].update({"max_sampled_candidates": 16}),
+            "one of \\{8,32,64\\}",
         ),
     ],
 )
@@ -1876,6 +1980,8 @@ def test_packet_script_writes_oracle_screen_author_packet(tmp_path: Path, capsys
             parent_sha,
             "--json-out",
             str(out),
+            "--oracle-screen-max-sampled-candidates",
+            "32",
         ],
     )
 
@@ -1891,14 +1997,24 @@ def test_packet_script_writes_oracle_screen_author_packet(tmp_path: Path, capsys
     assert packet["dry_run_packet_written"] is True
     assert packet["gpu_launch_command_authorized"] is False
     assert packet["oracle_screen_launch_gate_required"] is True
+    assert packet["oracle_feasibility_budget"]["max_sampled_candidates"] == 32
+    assert packet["oracle_feasibility_budget"]["max_seconds"] == oracle_screen_budget_max_seconds(
+        32
+    )
+    assert packet["wider_screen_interpretation_contract"]["max_sampled_candidates"] == 32
     assert json.loads(capsys.readouterr().out)["packet_kind"] == ORACLE_SCREEN_PACKET_KIND
 
 
-def test_packet_script_writes_oracle_screen_launch_bundle(tmp_path: Path, capsys):
+@pytest.mark.parametrize("budget", [32, 64])
+def test_packet_script_writes_oracle_screen_launch_bundle(
+    tmp_path: Path,
+    capsys,
+    budget: int,
+):
     parent = tmp_path / "parent.pt"
     parent.write_bytes(b"read-only parent bytes")
     parent_sha = hashlib.sha256(b"read-only parent bytes").hexdigest()
-    out = tmp_path / "oracle-screen-launch-bundle.json"
+    out = tmp_path / f"oracle-screen-launch-bundle-{budget}.json"
     run_root = tmp_path / "run"
 
     exit_code = packet_main(
@@ -1913,6 +2029,8 @@ def test_packet_script_writes_oracle_screen_launch_bundle(tmp_path: Path, capsys
             str(out),
             "--run-root",
             str(run_root),
+            "--oracle-screen-max-sampled-candidates",
+            str(budget),
         ],
     )
 
@@ -1928,11 +2046,24 @@ def test_packet_script_writes_oracle_screen_launch_bundle(tmp_path: Path, capsys
     assert packet["dry_run_packet_written"] is True
     assert packet["gpu_launch_command_authorized"] is False
     assert packet["oracle_screen_launch_gate_required"] is True
+    assert packet["oracle_feasibility_budget"]["max_sampled_candidates"] == budget
+    assert packet["oracle_feasibility_budget"]["max_seconds"] == oracle_screen_budget_max_seconds(
+        budget
+    )
+    assert packet["wider_screen_interpretation_contract"]["max_sampled_candidates"] == budget
     assert len(packet["commands"]) == 2
     assert {command["argv"][command["argv"].index("--support-order-seed") + 1] for command in packet["commands"]} == {
         "29",
         "43",
     }
+    assert all(
+        command["argv"][
+            command["argv"].index("--oracle-screen-max-sampled-candidates") + 1
+        ]
+        == str(budget)
+        for command in packet["commands"]
+    )
+    assert all("--science-arm" not in command["argv"] for command in packet["commands"])
     assert json.loads(capsys.readouterr().out)["packet_kind"] == (
         ORACLE_SCREEN_LAUNCH_BUNDLE_PACKET_KIND
     )

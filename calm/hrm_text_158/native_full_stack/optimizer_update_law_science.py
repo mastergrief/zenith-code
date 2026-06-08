@@ -8,6 +8,7 @@ vote-law variable from tie/order effects.
 from __future__ import annotations
 
 from copy import deepcopy
+import math
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -115,6 +116,24 @@ ORACLE_SCREEN_BRANCHES = (
     BRANCH_CANDIDATE_SET_VIABLE_CREDIT_RANKING_BAD,
     BRANCH_SCHEDULER_ONLY_ORDER_SENSITIVE,
     BRANCH_CREDIT_MAGNITUDE_BAD_SIGN_USABLE,
+    BRANCH_CANDIDATE_GENERATION_BAD_OR_NO_LOCAL_SIGNAL,
+    BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE,
+)
+ORACLE_WIDER_SCREEN_VERDICT_RANKING_EFFECTIVELY_OK = (
+    "candidate_set_viable__ranking_effectively_ok__reopen_scheduler_cap"
+)
+ORACLE_WIDER_SCREEN_VERDICT_RANKING_SUBOPTIMAL = (
+    "candidate_set_viable__ranking_suboptimal__promote_credit_magnitude_calibration"
+)
+ORACLE_WIDER_SCREEN_VERDICT_CREDIT_RANKING_BAD = (
+    "candidate_set_viable__credit_ranking_bad__pivot_update_law"
+)
+ORACLE_WIDER_SCREEN_INTERPRETATION_VERDICTS = (
+    ORACLE_WIDER_SCREEN_VERDICT_RANKING_EFFECTIVELY_OK,
+    ORACLE_WIDER_SCREEN_VERDICT_RANKING_SUBOPTIMAL,
+    ORACLE_WIDER_SCREEN_VERDICT_CREDIT_RANKING_BAD,
+)
+ORACLE_WIDER_SCREEN_NEGATIVE_PASSTHROUGH_BRANCHES = (
     BRANCH_CANDIDATE_GENERATION_BAD_OR_NO_LOCAL_SIGNAL,
     BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE,
 )
@@ -246,8 +265,14 @@ ORACLE_SCREEN_CONTRAST_SEEDS = (43, 29)
 ORACLE_SCREEN_PROMOTION_ORDER_SEEDS: tuple[int | None, ...] = (None, 29, 43)
 ORACLE_SCREEN_N20_ROWS = 20
 ORACLE_SCREEN_PROMOTION_ROWS = 50
+ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES = (8, 32, 64)
 ORACLE_SCREEN_FEASIBILITY_MAX_SAMPLED_CANDIDATES = 8
 ORACLE_SCREEN_FEASIBILITY_MAX_SECONDS = 30.0
+ORACLE_SCREEN_MAX_SECONDS_BY_BUDGET = {
+    8: 30.0,
+    32: 120.0,
+    64: 240.0,
+}
 ORACLE_SCREEN_SCIENCE_CONTRACT_COMMIT_SHA = (
     "afbe598de6d81a776bf2bd9fc12115cf1293f9d6"
 )
@@ -271,6 +296,23 @@ STEP4_MASS_PRESSURE_METRICS = (
 
 def _path_join(root: str | Path, *parts: str) -> str:
     return str(Path(root).joinpath(*parts))
+
+
+def oracle_screen_budget_max_seconds(max_sampled_candidates: int) -> float:
+    budget = int(max_sampled_candidates)
+    if budget not in ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES:
+        raise ValueError(
+            "oracle-screen max_sampled_candidates must be one of "
+            f"{ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES}"
+        )
+    return float(ORACLE_SCREEN_MAX_SECONDS_BY_BUDGET[budget])
+
+
+def oracle_screen_effectively_ok_rank_position_exclusive_bound(
+    sampled_candidate_count: int,
+) -> int:
+    sampled = max(1, int(sampled_candidate_count))
+    return max(5, int(math.ceil(0.10 * sampled)))
 
 
 def default_science_arms(*, include_inverted: bool = True) -> list[dict[str, Any]]:
@@ -928,11 +970,23 @@ def default_oracle_screen_arms() -> list[dict[str, Any]]:
 
 
 def default_oracle_feasibility_budget() -> dict[str, Any]:
+    return default_oracle_feasibility_budget_for(
+        max_sampled_candidates=ORACLE_SCREEN_FEASIBILITY_MAX_SAMPLED_CANDIDATES
+    )
+
+
+def default_oracle_feasibility_budget_for(*, max_sampled_candidates: int) -> dict[str, Any]:
+    budget = int(max_sampled_candidates)
     return {
         "probe_required_before_full_screen": True,
         "budget_present": True,
-        "max_sampled_candidates": ORACLE_SCREEN_FEASIBILITY_MAX_SAMPLED_CANDIDATES,
-        "max_seconds": ORACLE_SCREEN_FEASIBILITY_MAX_SECONDS,
+        "allowed_max_sampled_candidates": list(ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES),
+        "max_sampled_candidates": budget,
+        "max_seconds_by_budget": {
+            str(candidate_budget): float(seconds)
+            for candidate_budget, seconds in ORACLE_SCREEN_MAX_SECONDS_BY_BUDGET.items()
+        },
+        "max_seconds": oracle_screen_budget_max_seconds(budget),
         "reject_if_over_budget": True,
         "reject_if_unsafe": True,
         "classify_branch_on_missing_overrun_or_unsafe": BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE,
@@ -962,6 +1016,7 @@ def default_oracle_compact_summary_schema() -> dict[str, Any]:
         "credit_rank_deciles",
         "local_loss_delta_deciles",
         "paired_loss_branch_fields",
+        "wider_screen_interpretation_inputs",
     ]
     return {
         "compact_summary_only": True,
@@ -1004,6 +1059,70 @@ def default_oracle_screen_classifier_contract() -> dict[str, Any]:
             BRANCH_CREDIT_MAGNITUDE_BAD_SIGN_USABLE,
             BRANCH_CANDIDATE_SET_VIABLE_CREDIT_RANKING_BAD,
         ],
+    }
+
+
+def default_oracle_wider_screen_interpretation_contract(
+    *,
+    max_sampled_candidates: int,
+) -> dict[str, Any]:
+    budget = int(max_sampled_candidates)
+    return {
+        "contract_kind": "wider_confirmation_diagnostic_interpretation",
+        "runtime_branch_classification_semantics_frozen": True,
+        "runtime_branch_classification_field": "branch_classification",
+        "positive_interpretation_verdicts": list(
+            ORACLE_WIDER_SCREEN_INTERPRETATION_VERDICTS
+        ),
+        "negative_low_level_passthrough": list(
+            ORACLE_WIDER_SCREEN_NEGATIVE_PASSTHROUGH_BRANCHES
+        ),
+        "allowed_max_sampled_candidates": list(
+            ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES
+        ),
+        "max_sampled_candidates": budget,
+        "tier_max_seconds": oracle_screen_budget_max_seconds(budget),
+        "contrast_support_order_seeds": list(ORACLE_SCREEN_CONTRAST_SEEDS),
+        "rank_position_index_base": 0,
+        "ranking_effectively_ok": {
+            "every_feasible_contrast_cell_required": True,
+            "current_credit_rank_recovers_improvement_required": True,
+            "oracle_best_current_rank_position_lt_rule": {
+                "position_source": "oracle_best_current_sampled_rank_position",
+                "absolute_floor_positions": 5,
+                "fraction_of_sampled_candidate_count": 0.10,
+                "comparison": "<",
+                "uses_sampled_candidate_count": True,
+            },
+            "oracle_best_current_rank_position_lt_examples": {
+                str(candidate_budget): oracle_screen_effectively_ok_rank_position_exclusive_bound(
+                    candidate_budget
+                )
+                for candidate_budget in ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES
+            },
+            "current_vs_oracle_top1_gap_ratio_max_inclusive": 0.25,
+        },
+        "credit_ranking_bad": {
+            "any_feasible_contrast_cell_rank_recovers_false": True,
+            "widest_executed_budget_all_contrast_seeds_required": True,
+            "rank_fraction_source": "oracle_best_current_sampled_rank_position",
+            "oracle_best_current_rank_fraction_gt": 0.25,
+            "current_vs_oracle_top1_gap_ratio_gt": 0.50,
+        },
+        "ranking_suboptimal": {
+            "feasible_between_positive_and_negative_bands": True,
+        },
+        "next_branch_by_interpretation": {
+            ORACLE_WIDER_SCREEN_VERDICT_RANKING_EFFECTIVELY_OK: (
+                "ranking_not_the_bottleneck__reopen_scheduler_cap_backlog_multi_step"
+            ),
+            ORACLE_WIDER_SCREEN_VERDICT_RANKING_SUBOPTIMAL: (
+                "credit_magnitude_or_rank_bin_calibration"
+            ),
+            ORACLE_WIDER_SCREEN_VERDICT_CREDIT_RANKING_BAD: (
+                "update_law_or_credit_ranking_pivot"
+            ),
+        },
     }
 
 
@@ -2113,7 +2232,9 @@ def build_candidate_set_viability_oracle_screen_packet(
     parent_path: str | Path,
     parent_sha256: str,
     launch_gate_id: str | None = None,
+    max_sampled_candidates: int = ORACLE_SCREEN_FEASIBILITY_MAX_SAMPLED_CANDIDATES,
 ) -> dict[str, Any]:
+    budget = int(max_sampled_candidates)
     packet = {
         "schema_version": OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION,
         "packet_kind": ORACLE_SCREEN_PACKET_KIND,
@@ -2140,10 +2261,17 @@ def build_candidate_set_viability_oracle_screen_packet(
         "arms": default_oracle_screen_arms(),
         "same_candidate_set_required": True,
         "seed_order_contract": default_oracle_screen_seed_order_contract(),
-        "oracle_feasibility_budget": default_oracle_feasibility_budget(),
+        "oracle_feasibility_budget": default_oracle_feasibility_budget_for(
+            max_sampled_candidates=budget
+        ),
         "oracle_non_persistence_contract": default_oracle_non_persistence_contract(),
         "compact_summary_schema": default_oracle_compact_summary_schema(),
         "classifier_contract": default_oracle_screen_classifier_contract(),
+        "wider_screen_interpretation_contract": (
+            default_oracle_wider_screen_interpretation_contract(
+                max_sampled_candidates=budget
+            )
+        ),
         "fallback": {
             "fallback_mode": "decile_only_concordance",
             "oracle_applied_arm_allowed": False,
@@ -2177,11 +2305,13 @@ def _build_oracle_screen_probe_command_record(
     parent_path: str | Path,
     parent_sha256: str,
     support_order_seed: int,
+    max_sampled_candidates: int,
     device: str,
     phase_timeout_seconds: int | float,
     total_timeout_seconds: int | float,
     max_silent_phase_seconds: int | float,
 ) -> dict[str, Any]:
+    budget = int(max_sampled_candidates)
     seed_label = _support_order_seed_label(int(support_order_seed))
     scratch_root = _path_join(run_root, seed_label)
     receipt_path = _path_join(scratch_root, "receipt.json")
@@ -2208,6 +2338,8 @@ def _build_oracle_screen_probe_command_record(
         str(STEP6_CURRICULUM_SEED),
         "--support-order-seed",
         str(int(support_order_seed)),
+        "--oracle-screen-max-sampled-candidates",
+        str(budget),
         "--batch-size",
         str(ORACLE_SCREEN_N20_ROWS),
         "--steps",
@@ -2237,8 +2369,8 @@ def _build_oracle_screen_probe_command_record(
         "batch_size": ORACLE_SCREEN_N20_ROWS,
         "curriculum_seed": STEP6_CURRICULUM_SEED,
         "same_candidate_set_required": True,
-        "max_sampled_candidates": ORACLE_SCREEN_FEASIBILITY_MAX_SAMPLED_CANDIDATES,
-        "oracle_max_seconds": ORACLE_SCREEN_FEASIBILITY_MAX_SECONDS,
+        "max_sampled_candidates": budget,
+        "oracle_max_seconds": oracle_screen_budget_max_seconds(budget),
         "max_abs_per_tensor": STEP3_BASELINE_MAX_ABS_PER_TENSOR,
         "fraction_per_tensor": STEP3_FRACTION_PER_TENSOR,
         "global_cap_contract": "off",
@@ -2263,6 +2395,7 @@ def build_candidate_set_viability_oracle_screen_launch_bundle(
     parent_sha256: str,
     repo_root: str | Path,
     run_root: str | Path,
+    max_sampled_candidates: int = ORACLE_SCREEN_FEASIBILITY_MAX_SAMPLED_CANDIDATES,
     device: str = "cuda:0",
     launch_gate_id: str | None = None,
     symbolic_resource_lane: str = "gpu:0",
@@ -2270,11 +2403,13 @@ def build_candidate_set_viability_oracle_screen_launch_bundle(
     total_timeout_seconds: int | float = 7200,
     max_silent_phase_seconds: int | float = 300,
 ) -> dict[str, Any]:
+    budget = int(max_sampled_candidates)
     science_contract = packet_without_runtime_results(
         build_candidate_set_viability_oracle_screen_packet(
             parent_path=parent_path,
             parent_sha256=parent_sha256,
             launch_gate_id=None,
+            max_sampled_candidates=budget,
         ),
     )
     commands = [
@@ -2284,6 +2419,7 @@ def build_candidate_set_viability_oracle_screen_launch_bundle(
             parent_path=parent_path,
             parent_sha256=parent_sha256,
             support_order_seed=int(seed),
+            max_sampled_candidates=budget,
             device=device,
             phase_timeout_seconds=phase_timeout_seconds,
             total_timeout_seconds=total_timeout_seconds,
@@ -2320,10 +2456,17 @@ def build_candidate_set_viability_oracle_screen_launch_bundle(
         "curriculum_seed": STEP6_CURRICULUM_SEED,
         "support_order_seeds": list(ORACLE_SCREEN_CONTRAST_SEEDS),
         "same_candidate_set_required": True,
-        "oracle_feasibility_budget": default_oracle_feasibility_budget(),
+        "oracle_feasibility_budget": default_oracle_feasibility_budget_for(
+            max_sampled_candidates=budget
+        ),
         "oracle_non_persistence_contract": default_oracle_non_persistence_contract(),
         "compact_summary_schema": default_oracle_compact_summary_schema(),
         "classifier_contract": default_oracle_screen_classifier_contract(),
+        "wider_screen_interpretation_contract": (
+            default_oracle_wider_screen_interpretation_contract(
+                max_sampled_candidates=budget
+            )
+        ),
         "commands": commands,
         "resource_lane": default_resource_lane_contract(
             symbolic_lane=symbolic_resource_lane,
@@ -3850,7 +3993,9 @@ def _validate_oracle_feasibility_budget(budget: Mapping[str, Any]) -> None:
     required = {
         "probe_required_before_full_screen",
         "budget_present",
+        "allowed_max_sampled_candidates",
         "max_sampled_candidates",
+        "max_seconds_by_budget",
         "max_seconds",
         "reject_if_over_budget",
         "reject_if_unsafe",
@@ -3863,10 +4008,23 @@ def _validate_oracle_feasibility_budget(budget: Mapping[str, Any]) -> None:
         raise ValueError("oracle feasibility budget must be present")
     if not bool(budget.get("probe_required_before_full_screen")):
         raise ValueError("oracle feasibility probe must precede full screen")
-    if int(budget.get("max_sampled_candidates", 0)) <= 0:
-        raise ValueError("oracle feasibility max_sampled_candidates must be positive")
-    if float(budget.get("max_seconds", 0.0)) <= 0.0:
-        raise ValueError("oracle feasibility max_seconds must be positive")
+    if list(budget.get("allowed_max_sampled_candidates") or ()) != list(
+        ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES
+    ):
+        raise ValueError("oracle feasibility budget allowed_max_sampled_candidates drifted")
+    expected_seconds_by_budget = {
+        str(candidate_budget): float(seconds)
+        for candidate_budget, seconds in ORACLE_SCREEN_MAX_SECONDS_BY_BUDGET.items()
+    }
+    if dict(budget.get("max_seconds_by_budget") or {}) != expected_seconds_by_budget:
+        raise ValueError("oracle feasibility budget max_seconds_by_budget drifted")
+    selected_budget = int(budget.get("max_sampled_candidates", 0))
+    if selected_budget not in ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES:
+        raise ValueError("oracle feasibility max_sampled_candidates must be one of {8,32,64}")
+    if float(budget.get("max_seconds", 0.0)) != oracle_screen_budget_max_seconds(
+        selected_budget
+    ):
+        raise ValueError("oracle feasibility max_seconds must match the pinned budget tier")
     if not bool(budget.get("reject_if_over_budget")) or not bool(budget.get("reject_if_unsafe")):
         raise ValueError("oracle feasibility budget must reject overrun or unsafe probes")
     if budget.get("classify_branch_on_missing_overrun_or_unsafe") != BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE:
@@ -3937,6 +4095,91 @@ def _validate_oracle_classifier_contract(contract: Mapping[str, Any]) -> None:
         raise ValueError("oracle classifier must document priority order")
 
 
+def _validate_oracle_wider_screen_interpretation_contract(contract: Mapping[str, Any]) -> None:
+    if contract.get("contract_kind") != "wider_confirmation_diagnostic_interpretation":
+        raise ValueError("oracle wider-screen interpretation contract kind drifted")
+    if not bool(contract.get("runtime_branch_classification_semantics_frozen")):
+        raise ValueError("oracle wider-screen interpretation must freeze runtime branch semantics")
+    if contract.get("runtime_branch_classification_field") != "branch_classification":
+        raise ValueError("oracle wider-screen interpretation must read branch_classification")
+    if list(contract.get("positive_interpretation_verdicts") or ()) != list(
+        ORACLE_WIDER_SCREEN_INTERPRETATION_VERDICTS
+    ):
+        raise ValueError("oracle wider-screen interpretation positive verdicts drifted")
+    if list(contract.get("negative_low_level_passthrough") or ()) != list(
+        ORACLE_WIDER_SCREEN_NEGATIVE_PASSTHROUGH_BRANCHES
+    ):
+        raise ValueError("oracle wider-screen interpretation negative passthrough drifted")
+    if list(contract.get("allowed_max_sampled_candidates") or ()) != list(
+        ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES
+    ):
+        raise ValueError("oracle wider-screen interpretation allowed budgets drifted")
+    selected_budget = int(contract.get("max_sampled_candidates", 0))
+    if selected_budget not in ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES:
+        raise ValueError("oracle wider-screen interpretation budget must be one of {8,32,64}")
+    if float(contract.get("tier_max_seconds", 0.0)) != oracle_screen_budget_max_seconds(
+        selected_budget
+    ):
+        raise ValueError("oracle wider-screen interpretation tier_max_seconds drifted")
+    if contract.get("contrast_support_order_seeds") != list(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError("oracle wider-screen interpretation contrast seeds drifted")
+    if int(contract.get("rank_position_index_base", -1)) != 0:
+        raise ValueError("oracle wider-screen interpretation rank positions must stay zero-based")
+    effectively_ok = contract.get("ranking_effectively_ok") or {}
+    if not bool(effectively_ok.get("every_feasible_contrast_cell_required")):
+        raise ValueError("oracle wider-screen OK band must require every feasible contrast cell")
+    if not bool(effectively_ok.get("current_credit_rank_recovers_improvement_required")):
+        raise ValueError("oracle wider-screen OK band must require rank_recovers=true")
+    ok_rule = effectively_ok.get("oracle_best_current_rank_position_lt_rule") or {}
+    if ok_rule.get("position_source") != "oracle_best_current_sampled_rank_position":
+        raise ValueError("oracle wider-screen OK band must read sampled-order rank position")
+    if int(ok_rule.get("absolute_floor_positions", -1)) != 5:
+        raise ValueError("oracle wider-screen OK band absolute floor must stay 5")
+    if float(ok_rule.get("fraction_of_sampled_candidate_count", -1.0)) != 0.10:
+        raise ValueError("oracle wider-screen OK band sampled fraction must stay 0.10")
+    if ok_rule.get("comparison") != "<":
+        raise ValueError("oracle wider-screen OK band rank comparison must stay <")
+    if not bool(ok_rule.get("uses_sampled_candidate_count")):
+        raise ValueError("oracle wider-screen OK band must use sampled_candidate_count")
+    expected_examples = {
+        str(candidate_budget): oracle_screen_effectively_ok_rank_position_exclusive_bound(
+            candidate_budget
+        )
+        for candidate_budget in ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES
+    }
+    if dict(effectively_ok.get("oracle_best_current_rank_position_lt_examples") or {}) != expected_examples:
+        raise ValueError("oracle wider-screen OK band examples drifted")
+    if float(effectively_ok.get("current_vs_oracle_top1_gap_ratio_max_inclusive", -1.0)) != 0.25:
+        raise ValueError("oracle wider-screen OK band gap-ratio ceiling must stay 0.25")
+    ranking_bad = contract.get("credit_ranking_bad") or {}
+    if not bool(ranking_bad.get("any_feasible_contrast_cell_rank_recovers_false")):
+        raise ValueError("oracle wider-screen BAD band must guard rank_recovers=false")
+    if not bool(ranking_bad.get("widest_executed_budget_all_contrast_seeds_required")):
+        raise ValueError("oracle wider-screen BAD band must require both widest-budget contrast seeds")
+    if ranking_bad.get("rank_fraction_source") != "oracle_best_current_sampled_rank_position":
+        raise ValueError("oracle wider-screen BAD band must read sampled-order rank fraction")
+    if float(ranking_bad.get("oracle_best_current_rank_fraction_gt", -1.0)) != 0.25:
+        raise ValueError("oracle wider-screen BAD band rank-fraction threshold must stay 0.25")
+    if float(ranking_bad.get("current_vs_oracle_top1_gap_ratio_gt", -1.0)) != 0.50:
+        raise ValueError("oracle wider-screen BAD band gap-ratio threshold must stay 0.50")
+    ranking_suboptimal = contract.get("ranking_suboptimal") or {}
+    if not bool(ranking_suboptimal.get("feasible_between_positive_and_negative_bands")):
+        raise ValueError("oracle wider-screen suboptimal band must be the feasible-between-bands fallback")
+    expected_next = {
+        ORACLE_WIDER_SCREEN_VERDICT_RANKING_EFFECTIVELY_OK: (
+            "ranking_not_the_bottleneck__reopen_scheduler_cap_backlog_multi_step"
+        ),
+        ORACLE_WIDER_SCREEN_VERDICT_RANKING_SUBOPTIMAL: (
+            "credit_magnitude_or_rank_bin_calibration"
+        ),
+        ORACLE_WIDER_SCREEN_VERDICT_CREDIT_RANKING_BAD: (
+            "update_law_or_credit_ranking_pivot"
+        ),
+    }
+    if dict(contract.get("next_branch_by_interpretation") or {}) != expected_next:
+        raise ValueError("oracle wider-screen next-branch mapping drifted")
+
+
 def _validate_oracle_global_non_persistence(value: Any, *, path: str = "packet") -> None:
     for key, child in _walk_items(value):
         key_text = str(key)
@@ -3978,6 +4221,9 @@ def validate_candidate_set_viability_oracle_screen_packet(packet: Mapping[str, A
     _validate_oracle_non_persistence(packet.get("oracle_non_persistence_contract") or {})
     _validate_oracle_compact_summary_schema(packet.get("compact_summary_schema") or {})
     _validate_oracle_classifier_contract(packet.get("classifier_contract") or {})
+    _validate_oracle_wider_screen_interpretation_contract(
+        packet.get("wider_screen_interpretation_contract") or {}
+    )
     fallback = packet.get("fallback") or {}
     if fallback.get("fallback_mode") != "decile_only_concordance":
         raise ValueError("oracle fallback must be decile-only concordance")
@@ -4021,9 +4267,12 @@ def _validate_oracle_screen_command_record(command: Mapping[str, Any]) -> None:
         raise ValueError("oracle-screen command batch_size must equal N=20 screen rows")
     if int(command.get("curriculum_seed", -1)) != STEP6_CURRICULUM_SEED:
         raise ValueError("oracle-screen command curriculum_seed must stay pinned to 17")
-    if int(command.get("max_sampled_candidates", -1)) != ORACLE_SCREEN_FEASIBILITY_MAX_SAMPLED_CANDIDATES:
-        raise ValueError("oracle-screen command max_sampled_candidates drifted")
-    if float(command.get("oracle_max_seconds", -1.0)) != ORACLE_SCREEN_FEASIBILITY_MAX_SECONDS:
+    budget = int(command.get("max_sampled_candidates", -1))
+    if budget not in ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES:
+        raise ValueError("oracle-screen command max_sampled_candidates must be one of {8,32,64}")
+    if float(command.get("oracle_max_seconds", -1.0)) != oracle_screen_budget_max_seconds(
+        budget
+    ):
         raise ValueError("oracle-screen command oracle_max_seconds drifted")
     if int(command.get("max_abs_per_tensor", -1)) != STEP3_BASELINE_MAX_ABS_PER_TENSOR:
         raise ValueError("oracle-screen command max_abs_per_tensor must stay at the baseline cap")
@@ -4051,6 +4300,7 @@ def _validate_oracle_screen_command_record(command: Mapping[str, Any]) -> None:
         "--scratch-root",
         "--curriculum-seed",
         "--support-order-seed",
+        "--oracle-screen-max-sampled-candidates",
         "--batch-size",
         "--steps",
         "--max-steps-hard",
@@ -4065,6 +4315,7 @@ def _validate_oracle_screen_command_record(command: Mapping[str, Any]) -> None:
         ("--oracle-screen-mode", "candidate_set_viability"),
         ("--curriculum-seed", str(STEP6_CURRICULUM_SEED)),
         ("--support-order-seed", str(int(command["support_order_seed"]))),
+        ("--oracle-screen-max-sampled-candidates", str(budget)),
         ("--batch-size", str(ORACLE_SCREEN_N20_ROWS)),
         ("--steps", "1"),
         ("--max-steps-hard", "1"),
@@ -4133,6 +4384,9 @@ def validate_candidate_set_viability_oracle_screen_launch_bundle(packet: Mapping
     _validate_oracle_non_persistence(packet.get("oracle_non_persistence_contract") or {})
     _validate_oracle_compact_summary_schema(packet.get("compact_summary_schema") or {})
     _validate_oracle_classifier_contract(packet.get("classifier_contract") or {})
+    _validate_oracle_wider_screen_interpretation_contract(
+        packet.get("wider_screen_interpretation_contract") or {}
+    )
     science_contract = packet.get("science_contract")
     if not isinstance(science_contract, Mapping):
         raise ValueError("oracle-screen launch bundle must embed the science_contract packet")
@@ -4141,6 +4395,13 @@ def validate_candidate_set_viability_oracle_screen_launch_bundle(packet: Mapping
         raise ValueError("embedded oracle-screen science contract parent_path must match launch bundle")
     if str(science_contract.get("parent_sha256")) != str(packet.get("parent_sha256")):
         raise ValueError("embedded oracle-screen science contract parent_sha256 must match launch bundle")
+    if (
+        science_contract.get("wider_screen_interpretation_contract")
+        != packet.get("wider_screen_interpretation_contract")
+    ):
+        raise ValueError(
+            "oracle-screen launch bundle wider_screen_interpretation_contract must match science_contract"
+        )
     terminal = packet.get("terminal_criteria") or {}
     if terminal.get("branch_classifier") != list(ORACLE_SCREEN_BRANCHES):
         raise ValueError("oracle-screen launch bundle terminal branch classifier drifted")
@@ -4216,13 +4477,19 @@ __all__ = [
     "ORACLE_ARM_CURRENT_CREDIT_RANK_BUCKET_CURRENT_ORDER",
     "ORACLE_ARM_DETERMINISTIC_HASH_SAME_VOTES",
     "ORACLE_ARM_DIAGNOSTIC_LOCAL_LOSS_DELTA",
+    "ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES",
     "ORACLE_SCREEN_ARM_IDS",
     "ORACLE_SCREEN_BRANCHES",
     "ORACLE_SCREEN_CONTRAST_SEEDS",
     "ORACLE_SCREEN_LAUNCH_BUNDLE_PACKET_KIND",
+    "ORACLE_SCREEN_MAX_SECONDS_BY_BUDGET",
     "ORACLE_SCREEN_PACKET_KIND",
     "ORACLE_SCREEN_PROMOTION_ORDER_SEEDS",
     "ORACLE_SCREEN_SCIENCE_CONTRACT_COMMIT_SHA",
+    "ORACLE_WIDER_SCREEN_INTERPRETATION_VERDICTS",
+    "ORACLE_WIDER_SCREEN_VERDICT_CREDIT_RANKING_BAD",
+    "ORACLE_WIDER_SCREEN_VERDICT_RANKING_EFFECTIVELY_OK",
+    "ORACLE_WIDER_SCREEN_VERDICT_RANKING_SUBOPTIMAL",
     "OPTIMIZER_UPDATE_LAW_BRANCHES",
     "OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION",
     "SCIENCE_MODE_BRANCH_VERDICT",
@@ -4282,6 +4549,8 @@ __all__ = [
     "default_terminal_criteria",
     "default_verdict_rule",
     "default_watcher_bundle",
+    "oracle_screen_budget_max_seconds",
+    "oracle_screen_effectively_ok_rank_position_exclusive_bound",
     "packet_without_runtime_results",
     "step4_arm_matches_a0",
     "step4_mass_confound_detected",
