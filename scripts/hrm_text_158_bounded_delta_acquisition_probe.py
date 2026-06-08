@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import random
 import re
 import signal
 import statistics
@@ -295,6 +296,78 @@ def _support_batch_metadata(
     }
 
 
+def _support_order_flat_row_ids(support_batches: Sequence[Mapping[str, Any]]) -> list[str]:
+    row_ids: list[str] = []
+    for batch in support_batches:
+        metadata = batch.get("metadata", {})
+        row_ids.extend(str(row_id) for row_id in metadata.get("row_ids", ()))
+    return row_ids
+
+
+def _support_ordered_traversal_hash16(
+    support_batches: Sequence[Mapping[str, Any]],
+) -> str:
+    return _sha16(_support_order_flat_row_ids(support_batches))
+
+
+def _support_order_invariant_multiset_hash16(
+    support_batches: Sequence[Mapping[str, Any]],
+) -> str:
+    return _sha16(sorted(_support_order_flat_row_ids(support_batches)))
+
+
+def build_support_order_trajectory_proof(
+    original_support_batches: Sequence[Mapping[str, Any]],
+    traversed_support_batches: Sequence[Mapping[str, Any]],
+    *,
+    support_order_seed: int | None,
+) -> dict[str, Any]:
+    original_ordered = _support_ordered_traversal_hash16(original_support_batches)
+    traversed_ordered = _support_ordered_traversal_hash16(traversed_support_batches)
+    original_invariant = _support_order_invariant_multiset_hash16(original_support_batches)
+    traversed_invariant = _support_order_invariant_multiset_hash16(traversed_support_batches)
+    return {
+        "support_order_seed": None if support_order_seed is None else int(support_order_seed),
+        "support_order_permutation_enabled": support_order_seed is not None,
+        "support_order_original_ordered_traversal_hash16": original_ordered,
+        "support_order_permuted_ordered_traversal_hash16": traversed_ordered,
+        "support_order_original_invariant_multiset_hash16": original_invariant,
+        "support_order_permuted_invariant_multiset_hash16": traversed_invariant,
+        "support_order_changed": original_ordered != traversed_ordered,
+        "support_content_unchanged": original_invariant == traversed_invariant,
+        "support_content_unchanged_basis": "order_invariant_multiset_hash16",
+        "legacy_support_content_hash16_semantics": "ordered_batch_hashes_order_sensitive",
+        "ordered_support_content_hash16_is_invariant": False,
+        "support_order_original_first_row_ids": _support_order_flat_row_ids(original_support_batches)[:8],
+        "support_order_permuted_first_row_ids": _support_order_flat_row_ids(traversed_support_batches)[:8],
+    }
+
+
+def _permute_support_batches(
+    support_batches: Sequence[dict[str, Any]],
+    *,
+    support_order_seed: int,
+) -> list[dict[str, Any]]:
+    rng = random.Random(int(support_order_seed))
+    permuted_indices = list(range(len(support_batches)))
+    rng.shuffle(permuted_indices)
+    permuted: list[dict[str, Any]] = []
+    for new_index, original_index in enumerate(permuted_indices):
+        item = support_batches[original_index]
+        metadata = dict(item["metadata"])
+        metadata["original_batch_index"] = int(metadata.get("batch_index", original_index))
+        metadata["batch_index"] = int(new_index)
+        metadata["support_order_position"] = int(new_index)
+        metadata["support_order_original_position"] = int(original_index)
+        permuted.append(
+            {
+                **item,
+                "metadata": metadata,
+            }
+        )
+    return permuted
+
+
 def build_identity_full_support_batches(
     *,
     tok: Any,
@@ -302,9 +375,12 @@ def build_identity_full_support_batches(
     batch_size: int,
     curriculum_seed: int,
     device: torch.device,
+    support_order_seed: int | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     if int(batch_size) <= 0:
         raise ValueError("batch_size must be positive")
+    if support_order_seed is not None and int(support_order_seed) < 0:
+        raise ValueError("support_order_seed must be non-negative when set")
     rows = identity_full_rows(int(curriculum_seed))
     usable_rows = _identity_full_usable_rows(rows, tok=tok, max_len=int(max_len))
     dataset = HrmTextGsm8kDataset(
@@ -343,6 +419,26 @@ def build_identity_full_support_batches(
             }
         )
         row_offset += row_count
+    original_support_batches = list(support_batches)
+    if support_order_seed is not None:
+        support_batches = _permute_support_batches(
+            support_batches,
+            support_order_seed=int(support_order_seed),
+        )
+    support_order_proof = build_support_order_trajectory_proof(
+        original_support_batches,
+        support_batches,
+        support_order_seed=support_order_seed,
+    )
+    if (
+        support_order_seed is not None
+        and len(support_batches) > 1
+        and not support_order_proof["support_order_changed"]
+    ):
+        raise RuntimeError(
+            "support-order permutation did not change traversal order; "
+            f"seed={int(support_order_seed)} batch_count={len(support_batches)}"
+        )
     distinct_batch_hashes = {
         item["metadata"]["batch_content_hash16"]
         for item in support_batches
@@ -365,6 +461,7 @@ def build_identity_full_support_batches(
                 for batch in support_batches
             ]
         ),
+        **support_order_proof,
         "first_questions": [row["question"] for row in rows[: min(3, len(rows))]],
         "batch_metadata": [
             item["metadata"]
@@ -3627,6 +3724,7 @@ def run_c2p1_probe(
     batch_size: int = 1,
     max_len: int | None = None,
     curriculum_seed: int = 17,
+    support_order_seed: int | None = None,
     init_fidelity_atol: float = 0.0,
     require_q_change: bool = False,
     max_abs_per_tensor: int = 4096,
@@ -3667,6 +3765,8 @@ def run_c2p1_probe(
         raise ValueError("audit_interval must be non-negative")
     if int(matched_continued_training_horizon_steps) < 0:
         raise ValueError("matched_continued_training_horizon_steps must be non-negative")
+    if support_order_seed is not None and int(support_order_seed) < 0:
+        raise ValueError("support_order_seed must be non-negative when set")
     global_cap_contract_receipt = named_global_cap_contract_receipt(str(global_cap_contract))
     if str(tie_rule_mode) not in GLOBAL_TIE_RULE_MODES:
         raise ValueError(
@@ -3771,6 +3871,7 @@ def run_c2p1_probe(
             batch_size=int(batch_size),
             curriculum_seed=int(curriculum_seed),
             device=torch_device,
+            support_order_seed=support_order_seed,
         )
     prior_support_sets: dict[str, dict[str, Any]] = {}
     if requested_prior_audit_supports:
@@ -4241,6 +4342,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--parent-sha256", default=DEFAULT_PARENT_SHA256)
     ap.add_argument("--scratch-root", type=Path, default=Path("/tmp/hrm158_c2_gpu_probe/c2p1_impl_cpu"))
     ap.add_argument("--curriculum-seed", type=int, default=17)
+    ap.add_argument(
+        "--support-order-seed",
+        type=int,
+        default=None,
+        help=(
+            "Default-off support traversal permutation seed. When set, the "
+            "identity-full support set is preserved but the cyclic step-batch "
+            "trajectory order changes, with ordered and order-invariant hashes "
+            "recorded in the receipt."
+        ),
+    )
     ap.add_argument("--batch-size", type=int, default=1)
     ap.add_argument("--max-len", type=int, default=None)
     ap.add_argument("--eligible-scope", choices=["first-bitlinear", "all-bitlinear"], default="first-bitlinear")
@@ -4403,6 +4515,7 @@ def main(argv: list[str] | None = None) -> int:
         batch_size=args.batch_size,
         max_len=args.max_len,
         curriculum_seed=args.curriculum_seed,
+        support_order_seed=args.support_order_seed,
         init_fidelity_atol=args.init_fidelity_atol,
         require_q_change=args.require_q_change,
         max_abs_per_tensor=args.max_abs_per_tensor,

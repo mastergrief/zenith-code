@@ -23,14 +23,17 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     STEP2_LAUNCH_BUNDLE_PACKET_KIND,
     STEP3_MEASUREMENT_POWER_TRUST_REGION_PACKET_KIND,
     STEP4_POWERED_RANK_SIGNAL_DECOMPOSITION_PACKET_KIND,
+    STEP5_SUPPORT_ORDER_TRAJECTORY_ROBUSTNESS_PACKET_KIND,
     build_measurement_power_then_trust_region_packet,
     build_optimizer_update_law_launch_bundle,
     build_optimizer_update_law_science_packet,
     build_powered_rank_signal_decomposition_packet,
+    build_support_order_trajectory_robustness_packet,
     validate_measurement_power_then_trust_region_packet,
     validate_optimizer_update_law_launch_bundle,
     validate_optimizer_update_law_science_packet,
     validate_powered_rank_signal_decomposition_packet,
+    validate_support_order_trajectory_robustness_packet,
 )
 from scripts.hrm_text_158_bounded_delta_acquisition_probe import DEFAULT_PARENT, DEFAULT_PARENT_SHA256
 
@@ -55,6 +58,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
             STEP2_LAUNCH_BUNDLE_PACKET_KIND,
             STEP3_MEASUREMENT_POWER_TRUST_REGION_PACKET_KIND,
             STEP4_POWERED_RANK_SIGNAL_DECOMPOSITION_PACKET_KIND,
+            STEP5_SUPPORT_ORDER_TRAJECTORY_ROBUSTNESS_PACKET_KIND,
         ),
         default=STEP1_DRY_RUN_PACKET_KIND,
     )
@@ -149,7 +153,7 @@ def main(argv: list[str] | None = None) -> int:
         packet["step3_launch_gate_required"] = True
         validator = validate_measurement_power_then_trust_region_packet
         default_name = "optimizer_update_law_step3_measurement_power_then_trust_region_packet.json"
-    else:
+    elif args.packet_kind == STEP4_POWERED_RANK_SIGNAL_DECOMPOSITION_PACKET_KIND:
         packet = build_powered_rank_signal_decomposition_packet(
             parent_path=parent,
             parent_sha256=parent_sha,
@@ -168,6 +172,25 @@ def main(argv: list[str] | None = None) -> int:
         packet["step4_launch_gate_required"] = True
         validator = validate_powered_rank_signal_decomposition_packet
         default_name = "optimizer_update_law_step4_powered_rank_signal_decomposition_packet.json"
+    else:
+        packet = build_support_order_trajectory_robustness_packet(
+            parent_path=parent,
+            parent_sha256=parent_sha,
+            repo_root=REPO_ROOT,
+            run_root=args.run_root,
+            device=str(args.device),
+            launch_gate_id=None,
+            symbolic_resource_lane=str(args.symbolic_resource_lane),
+            phase_timeout_seconds=args.phase_timeout_seconds,
+            total_timeout_seconds=args.total_timeout_seconds,
+            max_silent_phase_seconds=args.max_silent_phase_seconds,
+        )
+        packet["parent_hash_basis"] = parent_hash_basis
+        packet["dry_run_packet_written"] = True
+        packet["gpu_launch_command_authorized"] = False
+        packet["step5_launch_gate_required"] = True
+        validator = validate_support_order_trajectory_robustness_packet
+        default_name = "support_order_trajectory_robustness_packet.json"
     validator(packet)
     out_path = args.json_out or (Path(args.scratch_root) / default_name)
     _write_json_atomic(out_path, packet)

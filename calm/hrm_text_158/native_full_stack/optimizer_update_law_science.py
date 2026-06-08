@@ -25,6 +25,9 @@ STEP3_MEASUREMENT_POWER_TRUST_REGION_PACKET_KIND = (
 STEP4_POWERED_RANK_SIGNAL_DECOMPOSITION_PACKET_KIND = (
     "step4_powered_rank_signal_decomposition_packet"
 )
+STEP5_SUPPORT_ORDER_TRAJECTORY_ROBUSTNESS_PACKET_KIND = (
+    "support_order_trajectory_robustness"
+)
 
 SCIENCE_MODE_PRETERMINAL_SCREEN = "preterminal_screen"
 SCIENCE_MODE_BRANCH_VERDICT = "branch_verdict"
@@ -155,6 +158,21 @@ STEP4_ARM_IDS = (
     ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER,
     ARM_INVERTED_SIGN_PRESSURE,
 )
+STEP5_PHASE_STEPS = {
+    STEP4_PHASE_RANK_SIGNAL_150: 150,
+}
+STEP5_PHASES = tuple(STEP5_PHASE_STEPS)
+STEP5_ARM_IDS = (
+    ARM_A0_RANK_BUCKET_CURRENT,
+    ARM_B_RANK_FREE_SIGN_PRESSURE,
+    ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER,
+    ARM_INVERTED_SIGN_PRESSURE,
+)
+STEP5_SUPPORT_ORDER_SEED = 29
+STEP5_CURRICULUM_SEED = 17
+STEP5_STRICT_FLOOR_COUNT = 10
+STEP5_STRICT_TOTAL = 90
+STEP5_STRICT_MARGIN_COUNT = 5
 STEP4_MATCH_STRICT_GAP_MAX = 3
 STEP4_MATCH_STRICT_TOTAL = 90
 STEP4_MASS_RATIO_MIN = 0.75
@@ -665,6 +683,61 @@ def default_step4_mass_confound_rule() -> dict[str, Any]:
         ),
         "if_match_to_A0_but_material_mass_difference": BRANCH_MASS_CONFOUNDED_CURRENT_ORDER_SIGNAL,
         "not_carrier_ready": True,
+    }
+
+
+def default_step5_science_arms() -> list[dict[str, Any]]:
+    by_id = {
+        str(arm["arm_id"]): dict(arm)
+        for arm in default_step4_science_arms()
+    }
+    return [by_id[arm_id] for arm_id in STEP5_ARM_IDS]
+
+
+def default_step5_support_order_proof_contract() -> dict[str, Any]:
+    return {
+        "support_order_seed": STEP5_SUPPORT_ORDER_SEED,
+        "curriculum_seed": STEP5_CURRICULUM_SEED,
+        "ordered_hash_fields_required": [
+            "support_order_original_ordered_traversal_hash16",
+            "support_order_permuted_ordered_traversal_hash16",
+        ],
+        "ordered_hashes_must_differ": True,
+        "order_invariant_hash_fields_required": [
+            "support_order_original_invariant_multiset_hash16",
+            "support_order_permuted_invariant_multiset_hash16",
+        ],
+        "order_invariant_hashes_must_match": True,
+        "support_content_unchanged_basis": "order_invariant_multiset_hash16",
+        "legacy_support_content_hash16_semantics": "ordered_batch_hashes_order_sensitive",
+        "ordered_support_content_hash16_is_invariant": False,
+        "false_invariant_trap": (
+            "support_content_unchanged must not be derived from support_content_hash16; "
+            "support_content_hash16 is ordered and must change when traversal changes"
+        ),
+    }
+
+
+def default_step5_pass_rule() -> dict[str, Any]:
+    return {
+        "label": "support_order_trajectory_robustness_pass_rule",
+        "strict_total": STEP5_STRICT_TOTAL,
+        "C_strict_floor_count": STEP5_STRICT_FLOOR_COUNT,
+        "C_margin_over_max_A0_B_count": STEP5_STRICT_MARGIN_COUNT,
+        "paired_loss_required": {
+            "comparisons": ["C_minus_A0", "C_minus_B"],
+            "mean_must_be_less_than": 0.0,
+            "ci": "95% bootstrap",
+            "ci_high_must_be_less_than": 0.0,
+        },
+        "mass_confound_rule": default_step4_mass_confound_rule(),
+        "mass_confound_pass_rule": (
+            "C_vs_A0 and C_vs_B ratios must stay in [0.75,1.25] unless "
+            "abs_delta<4; missing metric fails closed"
+        ),
+        "inverted_falsifier": "inverted_sign_pressure must not exceed C strict-exact",
+        "ready_for_main_science_after_pass": False,
+        "qacc_kernelized": False,
     }
 
 
@@ -1251,6 +1324,235 @@ def build_powered_rank_signal_decomposition_packet(
         ],
     }
     validate_powered_rank_signal_decomposition_packet(packet)
+    return packet
+
+
+def _build_step5_probe_command_record(
+    *,
+    repo_root: str | Path,
+    run_root: str | Path,
+    parent_path: str | Path,
+    parent_sha256: str,
+    arm_id: str,
+    device: str,
+    phase_timeout_seconds: int | float,
+    total_timeout_seconds: int | float,
+    max_silent_phase_seconds: int | float,
+) -> dict[str, Any]:
+    phase = STEP4_PHASE_RANK_SIGNAL_150
+    steps_requested = int(STEP5_PHASE_STEPS[phase])
+    scratch_root = _path_join(run_root, phase, str(arm_id))
+    receipt_path = _path_join(scratch_root, "receipt.json")
+    stdout_path = _path_join(scratch_root, "stdout.ndjson")
+    stderr_path = _path_join(scratch_root, "stderr.log")
+    argv = [
+        "python3",
+        "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+        "--enable-bounded-delta-probe",
+        "--allow-gpu-launch",
+        "--phase",
+        f"optimizer-update-law-step5-support-order-{arm_id}",
+        "--device",
+        str(device),
+        "--parent",
+        str(parent_path),
+        "--parent-sha256",
+        str(parent_sha256),
+        "--scratch-root",
+        scratch_root,
+        "--curriculum-seed",
+        str(STEP5_CURRICULUM_SEED),
+        "--support-order-seed",
+        str(STEP5_SUPPORT_ORDER_SEED),
+        "--steps",
+        str(steps_requested),
+        "--max-steps-hard",
+        str(max(STEP5_PHASE_STEPS.values())),
+        "--audit-interval",
+        str(steps_requested),
+        "--science-arm",
+        str(arm_id),
+        "--max-abs-per-tensor",
+        str(STEP3_BASELINE_MAX_ABS_PER_TENSOR),
+        "--emit-progress",
+        "--phase-timeout-seconds",
+        str(phase_timeout_seconds),
+        "--total-timeout-seconds",
+        str(total_timeout_seconds),
+        "--max-silent-phase-seconds",
+        str(max_silent_phase_seconds),
+    ]
+    return {
+        "mode": phase,
+        "phase_role": "support_order_trajectory_robustness",
+        "arm_id": str(arm_id),
+        "science_arm": str(arm_id),
+        "n_rows": steps_requested,
+        "steps_requested": steps_requested,
+        "steps_source": "STEP5_PHASE_STEPS[mode]",
+        "curriculum_seed": STEP5_CURRICULUM_SEED,
+        "support_order_seed": STEP5_SUPPORT_ORDER_SEED,
+        "support_order_permutation_required": True,
+        "qacc_kernelized": False,
+        "max_abs_per_tensor": STEP3_BASELINE_MAX_ABS_PER_TENSOR,
+        "fraction_per_tensor": STEP3_FRACTION_PER_TENSOR,
+        "global_cap_contract": "off",
+        "cwd": str(repo_root),
+        "env": {
+            "HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE": "1",
+            "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH": "1",
+        },
+        "argv": argv,
+        "stdout_path": stdout_path,
+        "stderr_path": stderr_path,
+        "receipt_path": receipt_path,
+        "scratch_root": scratch_root,
+        "enabled_if": "Step-5 fixed 150-only support-order robustness packet",
+        "expected_exit_policy": "exit_0_required_else_stop_no_retry_no_verdict",
+    }
+
+
+def build_support_order_trajectory_robustness_packet(
+    *,
+    parent_path: str | Path,
+    parent_sha256: str,
+    repo_root: str | Path,
+    run_root: str | Path,
+    device: str = "cuda:0",
+    launch_gate_id: str | None = None,
+    symbolic_resource_lane: str = "gpu:0",
+    phase_timeout_seconds: int | float = 1800,
+    total_timeout_seconds: int | float = 7200,
+    max_silent_phase_seconds: int | float = 300,
+) -> dict[str, Any]:
+    commands = [
+        _build_step5_probe_command_record(
+            repo_root=repo_root,
+            run_root=run_root,
+            parent_path=parent_path,
+            parent_sha256=parent_sha256,
+            arm_id=arm_id,
+            device=device,
+            phase_timeout_seconds=phase_timeout_seconds,
+            total_timeout_seconds=total_timeout_seconds,
+            max_silent_phase_seconds=max_silent_phase_seconds,
+        )
+        for arm_id in STEP5_ARM_IDS
+    ]
+    packet = {
+        "schema_version": OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION,
+        "packet_kind": STEP5_SUPPORT_ORDER_TRAJECTORY_ROBUSTNESS_PACKET_KIND,
+        "target_name": "support_order_trajectory_robustness_packet",
+        "artifact_role": "optimizer_update_law_support_order_trajectory_robustness_author_packet",
+        "diagnostic_class": DIAGNOSTIC_CLASS_PRE_FULL_STACK,
+        "pre_full_stack_diagnostic": True,
+        "author_only": True,
+        "commands_executed": False,
+        "gpu_launched": False,
+        "launch_gate_id": launch_gate_id,
+        "pt_mutated": False,
+        "readiness_claim": False,
+        "full_sub2_claim": False,
+        "ready_for_main_science": False,
+        "checkpoint_written": False,
+        "optimizer_credit_state_row_flip": False,
+        "optimizer_credit_state_science_dependent": True,
+        "branch_result": None,
+        "qacc_kernelized": False,
+        "qacc_cpu_reference_caveat": (
+            "qacc vote/select/apply/update remains CPU-reference/default-off; "
+            "this packet is not a hot-loop kernel residency proof"
+        ),
+        "parent_path": str(parent_path),
+        "parent_sha256": str(parent_sha256),
+        "prior_verdict_parent_ref": default_prior_verdict_parent_ref(
+            parent_path=parent_path,
+            parent_sha256=parent_sha256,
+        ),
+        "mode_sequence": list(STEP5_PHASES),
+        "support_order_seed": STEP5_SUPPORT_ORDER_SEED,
+        "curriculum_seed": STEP5_CURRICULUM_SEED,
+        "support_order_proof_contract": default_step5_support_order_proof_contract(),
+        "power_ladder": {
+            "steps_first": 150,
+            "steps_optional_continuation": None,
+            "max_steps_hard": max(STEP5_PHASE_STEPS.values()),
+            "continuation_enabled_if": "disabled; Step-5 is 150-only",
+            "floor": default_step3_power_floor(),
+        },
+        "pass_rule": default_step5_pass_rule(),
+        "mass_confound_rule": default_step4_mass_confound_rule(),
+        "success_boundary": {
+            "positive_label": BRANCH_CURRENT_QACC_MARGIN_ORDER_BUNDLE_CARRIER,
+            "positive_requires": [
+                "C.strict >= 10/90",
+                "C.strict - max(A0.strict,B.strict) >= 5",
+                "C_minus_A0 paired-loss mean<0 and 95% CI high<0",
+                "C_minus_B paired-loss mean<0 and 95% CI high<0",
+                "C_vs_A0 and C_vs_B mass-confound pass",
+                "inverted_sign_pressure does not exceed C",
+            ],
+            "readiness_after_pass": False,
+            "not_independent_seed_robustness": True,
+        },
+        "arms": default_step5_science_arms(),
+        "commands": commands,
+        "resource_lane": default_resource_lane_contract(
+            symbolic_lane=symbolic_resource_lane,
+        ),
+        "watcher_audit_bundle": default_watcher_bundle(),
+        "phase_budgets": default_phase_budgets(),
+        "terminal_criteria": {
+            **default_terminal_criteria(),
+            "branch_classifier": [
+                BRANCH_CURRENT_QACC_MARGIN_ORDER_BUNDLE_CARRIER,
+                BRANCH_MASS_CONFOUNDED_CURRENT_ORDER_SIGNAL,
+                BRANCH_POWERED_NEGATIVE_OR_LOSS_ONLY,
+            ],
+            "pass_rule": default_step5_pass_rule(),
+            "mass_confound_rule": default_step4_mass_confound_rule(),
+            "terminal_receipt_required_tables": [
+                "strict_exact_by_arm",
+                "paired_loss_C_minus_A0_and_C_minus_B",
+                "mass_confound_C_vs_A0_and_C_vs_B",
+                "device_vs_hot_loop_qacc_kernelized_false",
+            ],
+            "terminal_receipt_required_proofs": [
+                "parent_sha256_pre_post_unchanged",
+                "resource_lane_released",
+                "artifact_paths",
+                "support_order_seed",
+                "support_order_original_ordered_traversal_hash16",
+                "support_order_permuted_ordered_traversal_hash16",
+                "support_order_original_invariant_multiset_hash16",
+                "support_order_permuted_invariant_multiset_hash16",
+                "support_content_unchanged_from_order_invariant_hash",
+            ],
+            "qacc_kernelized": False,
+            "device_residency_not_hot_loop_residency": True,
+            "ready_for_main_science_after_pass": False,
+        },
+        "hash_gate_policy": default_hash_gate_policy(),
+        "compact_instrumentation_only": True,
+        "raw_per_proposal_arrays_included": False,
+        "artifact_policy": {
+            "compact_json_ndjson_only": True,
+            "raw_per_proposal_arrays": False,
+            "pt_writes_allowed": False,
+        },
+        "non_claims": [
+            "author-only Step-5 packet",
+            "support_order_trajectory_robustness, not independent-seed robustness",
+            "no GPU launch from this packet-authoring step",
+            "no resource lane acquired by this packet",
+            "no .pt mutation",
+            "no readiness row flip",
+            "no full-sub2 runtime claim",
+            "ready_for_main_science remains false",
+            "qacc_vote_select_apply_update remains CPU-reference/default-off, not kernelized",
+        ],
+    }
+    validate_support_order_trajectory_robustness_packet(packet)
     return packet
 
 
@@ -2146,6 +2448,243 @@ def validate_powered_rank_signal_decomposition_packet(packet: Mapping[str, Any])
         raise ValueError("Step-4 artifact policy must reject .pt writes")
 
 
+def _validate_step5_command_record(command: Mapping[str, Any]) -> None:
+    missing = [field for field in _COMMAND_REQUIRED_FIELDS if field not in command]
+    if missing:
+        raise ValueError(f"Step-5 command record missing required fields: {missing}")
+    mode = str(command.get("mode"))
+    arm_id = str(command.get("arm_id"))
+    science_arm = str(command.get("science_arm"))
+    if mode != STEP4_PHASE_RANK_SIGNAL_150:
+        raise ValueError("Step-5 command mode must be rank_signal_150 only")
+    if arm_id not in STEP5_ARM_IDS:
+        raise ValueError(f"Step-5 command record has unsupported arm_id {arm_id!r}")
+    if science_arm != arm_id or science_arm not in STEP5_ARM_IDS:
+        raise ValueError("Step-5 command science_arm must match a Step-5 arm_id")
+    if int(command.get("n_rows", -1)) != 150 or int(command.get("steps_requested", -2)) != 150:
+        raise ValueError("Step-5 command steps_requested must be exactly 150")
+    if command.get("steps_source") != "STEP5_PHASE_STEPS[mode]":
+        raise ValueError("Step-5 command steps_source must document STEP5_PHASE_STEPS")
+    if int(command.get("curriculum_seed", -1)) != STEP5_CURRICULUM_SEED:
+        raise ValueError("Step-5 command curriculum_seed must be 17")
+    if int(command.get("support_order_seed", -1)) != STEP5_SUPPORT_ORDER_SEED:
+        raise ValueError("Step-5 command support_order_seed must be 29")
+    if not bool(command.get("support_order_permutation_required")):
+        raise ValueError("Step-5 command must require support-order permutation")
+    if bool(command.get("qacc_kernelized")):
+        raise ValueError("Step-5 command must keep qacc_kernelized=false")
+    if int(command.get("max_abs_per_tensor", -1)) != STEP3_BASELINE_MAX_ABS_PER_TENSOR:
+        raise ValueError("Step-5 command max_abs_per_tensor must keep baseline 4096")
+    if float(command.get("fraction_per_tensor", -1.0)) != STEP3_FRACTION_PER_TENSOR:
+        raise ValueError("Step-5 command fraction_per_tensor must be 1.0")
+    if command.get("global_cap_contract") != "off":
+        raise ValueError("Step-5 command global cap must stay off")
+    env = command.get("env")
+    if not isinstance(env, Mapping):
+        raise ValueError("Step-5 command env must be a mapping")
+    if env.get("HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE") != "1":
+        raise ValueError("Step-5 command env missing HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE=1")
+    if env.get("HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH") != "1":
+        raise ValueError("Step-5 command env missing HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1")
+    argv = command.get("argv")
+    if not isinstance(argv, list) or not all(isinstance(item, str) for item in argv):
+        raise ValueError("Step-5 command argv must be a list[str]")
+    required_args = {
+        "--enable-bounded-delta-probe",
+        "--allow-gpu-launch",
+        "--device",
+        "--parent",
+        "--parent-sha256",
+        "--scratch-root",
+        "--curriculum-seed",
+        "--support-order-seed",
+        "--steps",
+        "--max-steps-hard",
+        "--audit-interval",
+        "--science-arm",
+        "--max-abs-per-tensor",
+        "--emit-progress",
+    }
+    if not required_args.issubset(set(argv)):
+        raise ValueError("Step-5 command argv missing required probe launch arguments")
+    expected_flag_values = (
+        ("--science-arm", science_arm),
+        ("--curriculum-seed", str(STEP5_CURRICULUM_SEED)),
+        ("--support-order-seed", str(STEP5_SUPPORT_ORDER_SEED)),
+        ("--steps", "150"),
+        ("--max-steps-hard", "150"),
+        ("--audit-interval", "150"),
+        ("--max-abs-per-tensor", str(STEP3_BASELINE_MAX_ABS_PER_TENSOR)),
+    )
+    for flag, expected in expected_flag_values:
+        try:
+            observed = argv[argv.index(flag) + 1]
+        except (ValueError, IndexError) as exc:
+            raise ValueError(f"Step-5 command argv missing {flag} value") from exc
+        if observed != expected:
+            raise ValueError(f"Step-5 command argv {flag} must be {expected!r}, got {observed!r}")
+    if STEP4_PHASE_RANK_SIGNAL_300 in argv or "300" in {
+        str(command.get("n_rows")),
+        str(command.get("steps_requested")),
+    }:
+        raise ValueError("Step-5 command must not include 300-step continuation")
+    try:
+        device = argv[argv.index("--device") + 1]
+    except (ValueError, IndexError) as exc:
+        raise ValueError("Step-5 command argv missing --device value") from exc
+    if not device.startswith("cuda:"):
+        raise ValueError("Step-5 command argv --device must target CUDA for launch packet")
+    for path_field in ("stdout_path", "stderr_path", "receipt_path", "scratch_root"):
+        value = str(command.get(path_field))
+        if not value:
+            raise ValueError(f"Step-5 command {path_field} must be non-empty")
+        if value.endswith(".pt"):
+            raise ValueError(f"Step-5 command {path_field} cannot target .pt artifacts")
+    if command.get("expected_exit_policy") != "exit_0_required_else_stop_no_retry_no_verdict":
+        raise ValueError("Step-5 command expected_exit_policy must fail closed")
+
+
+def _validate_step5_support_order_contract(contract: Mapping[str, Any]) -> None:
+    if int(contract.get("support_order_seed", -1)) != STEP5_SUPPORT_ORDER_SEED:
+        raise ValueError("Step-5 support-order contract must pin support_order_seed=29")
+    if int(contract.get("curriculum_seed", -1)) != STEP5_CURRICULUM_SEED:
+        raise ValueError("Step-5 support-order contract must pin curriculum_seed=17")
+    if contract.get("support_content_unchanged_basis") != "order_invariant_multiset_hash16":
+        raise ValueError("Step-5 support_content_unchanged basis must be order-invariant")
+    if bool(contract.get("ordered_support_content_hash16_is_invariant")):
+        raise ValueError("Step-5 ordered support_content_hash16 must not be treated as invariant")
+    if contract.get("legacy_support_content_hash16_semantics") != "ordered_batch_hashes_order_sensitive":
+        raise ValueError("Step-5 must document legacy support_content_hash16 as order-sensitive")
+    if not bool(contract.get("ordered_hashes_must_differ")):
+        raise ValueError("Step-5 contract must require ordered traversal hashes to differ")
+    if not bool(contract.get("order_invariant_hashes_must_match")):
+        raise ValueError("Step-5 contract must require invariant hashes to match")
+    false_trap = str(contract.get("false_invariant_trap", ""))
+    if "support_content_hash16" not in false_trap or "must not be derived" not in false_trap:
+        raise ValueError("Step-5 false-invariant trap must reject support_content_hash16 basis")
+
+
+def validate_support_order_trajectory_robustness_packet(packet: Mapping[str, Any]) -> None:
+    if packet.get("schema_version") != OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION:
+        raise ValueError("unsupported optimizer update-law Step-5 packet schema")
+    if packet.get("diagnostic_class") != DIAGNOSTIC_CLASS_PRE_FULL_STACK:
+        raise ValueError("Step-5 packet must be pre_full_stack_diagnostic")
+    _validate_author_only_fields(
+        packet,
+        expected_packet_kind=STEP5_SUPPORT_ORDER_TRAJECTORY_ROBUSTNESS_PACKET_KIND,
+        label="author-only Step-5 packet",
+    )
+    if bool(packet.get("ready_for_main_science")):
+        raise ValueError("Step-5 packet must keep ready_for_main_science=false")
+    if bool(packet.get("qacc_kernelized")):
+        raise ValueError("Step-5 packet must keep qacc_kernelized=false")
+    if not bool(packet.get("optimizer_credit_state_science_dependent")):
+        raise ValueError("Step-5 packet must state optimizer_credit_state remains science-dependent")
+    _reject_raw_arrays(packet)
+    _validate_resource_lane(packet.get("resource_lane") or {})
+    _validate_phase_budgets(packet.get("phase_budgets") or {})
+    _validate_author_hash_gates(packet)
+    if int(packet.get("support_order_seed", -1)) != STEP5_SUPPORT_ORDER_SEED:
+        raise ValueError("Step-5 packet support_order_seed must be 29")
+    if int(packet.get("curriculum_seed", -1)) != STEP5_CURRICULUM_SEED:
+        raise ValueError("Step-5 packet curriculum_seed must be 17")
+    _validate_step5_support_order_contract(packet.get("support_order_proof_contract") or {})
+
+    by_arm = {str(arm.get("arm_id")): dict(arm) for arm in packet.get("arms") or ()}
+    if set(by_arm) != set(STEP5_ARM_IDS):
+        raise ValueError("Step-5 packet must include exactly A0/B/C/inverted arms and no A1")
+    if ARM_A1_RANK_BUCKET_ORDER_MATCHED in by_arm:
+        raise ValueError("Step-5 packet must not include A1")
+    if by_arm[ARM_A0_RANK_BUCKET_CURRENT].get("tie_policy_id") != TIE_POLICY_CURRENT_MARGIN_INDEX:
+        raise ValueError("Step-5 A0 must keep current qacc-margin/index ordering")
+    if by_arm[ARM_B_RANK_FREE_SIGN_PRESSURE].get("tie_policy_id") != TIE_POLICY_DETERMINISTIC_HASH_MATCHED:
+        raise ValueError("Step-5 B must keep deterministic order-matched tie policy")
+    c_arm = by_arm[ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER]
+    if c_arm.get("vote_law") != "rank_free_sign_pressure":
+        raise ValueError("Step-5 C arm must use rank_free_sign_pressure vote law")
+    if c_arm.get("tie_policy_id") != TIE_POLICY_CURRENT_MARGIN_INDEX:
+        raise ValueError("Step-5 C arm must use current qacc-margin/order bundle")
+    if by_arm[ARM_INVERTED_SIGN_PRESSURE].get("tie_policy_id") != TIE_POLICY_DETERMINISTIC_HASH_MATCHED:
+        raise ValueError("Step-5 inverted falsifier must share B deterministic tie policy")
+
+    if packet.get("mode_sequence") != list(STEP5_PHASES):
+        raise ValueError("Step-5 mode_sequence must be rank_signal_150 only")
+    power = packet.get("power_ladder") or {}
+    if int(power.get("steps_first", -1)) != 150:
+        raise ValueError("Step-5 power ladder first rung must be 150 steps")
+    if power.get("steps_optional_continuation") is not None:
+        raise ValueError("Step-5 power ladder must not define a 300-step continuation")
+    if int(power.get("max_steps_hard", -1)) != 150:
+        raise ValueError("Step-5 power ladder max_steps_hard must be 150")
+    continuation = str(power.get("continuation_enabled_if", ""))
+    if "disabled" not in continuation or "150-only" not in continuation:
+        raise ValueError("Step-5 continuation rule must be disabled 150-only")
+    _validate_step3_power_floor(power.get("floor") or {})
+    _validate_step4_mass_rule(packet.get("mass_confound_rule") or {})
+    pass_rule = packet.get("pass_rule") or {}
+    if int(pass_rule.get("C_strict_floor_count", -1)) != STEP5_STRICT_FLOOR_COUNT:
+        raise ValueError("Step-5 pass rule must require C.strict >= 10/90")
+    if int(pass_rule.get("C_margin_over_max_A0_B_count", -1)) != STEP5_STRICT_MARGIN_COUNT:
+        raise ValueError("Step-5 pass rule must require C margin >= 5 over A0/B")
+    if bool(pass_rule.get("qacc_kernelized")):
+        raise ValueError("Step-5 pass rule must keep qacc_kernelized=false")
+    paired = pass_rule.get("paired_loss_required") or {}
+    if set(paired.get("comparisons") or ()) != {"C_minus_A0", "C_minus_B"}:
+        raise ValueError("Step-5 pass rule must require C-A0 and C-B paired loss")
+    if float(paired.get("mean_must_be_less_than", 1.0)) != 0.0:
+        raise ValueError("Step-5 paired-loss mean threshold must be 0")
+    if float(paired.get("ci_high_must_be_less_than", 1.0)) != 0.0:
+        raise ValueError("Step-5 paired-loss CI-high threshold must be 0")
+
+    terminal = packet.get("terminal_criteria") or {}
+    _validate_step4_mass_rule(terminal.get("mass_confound_rule") or {})
+    if bool(terminal.get("qacc_kernelized")):
+        raise ValueError("Step-5 terminal criteria must keep qacc_kernelized=false")
+    if bool(terminal.get("ready_for_main_science_after_pass")):
+        raise ValueError("Step-5 terminal criteria must keep ready_for_main_science=false")
+    terminal_tables = set(terminal.get("terminal_receipt_required_tables") or ())
+    required_tables = {
+        "strict_exact_by_arm",
+        "paired_loss_C_minus_A0_and_C_minus_B",
+        "mass_confound_C_vs_A0_and_C_vs_B",
+        "device_vs_hot_loop_qacc_kernelized_false",
+    }
+    if terminal_tables != required_tables:
+        raise ValueError("Step-5 terminal receipt table requirements drifted")
+    terminal_proofs = set(terminal.get("terminal_receipt_required_proofs") or ())
+    required_proofs = {
+        "parent_sha256_pre_post_unchanged",
+        "resource_lane_released",
+        "artifact_paths",
+        "support_order_seed",
+        "support_order_original_ordered_traversal_hash16",
+        "support_order_permuted_ordered_traversal_hash16",
+        "support_order_original_invariant_multiset_hash16",
+        "support_order_permuted_invariant_multiset_hash16",
+        "support_content_unchanged_from_order_invariant_hash",
+    }
+    if terminal_proofs != required_proofs:
+        raise ValueError("Step-5 terminal receipt proof requirements drifted")
+
+    commands = packet.get("commands")
+    if not isinstance(commands, list):
+        raise ValueError("Step-5 packet commands must be a list")
+    seen = {(str(cmd.get("mode")), str(cmd.get("arm_id"))) for cmd in commands}
+    expected = {
+        (STEP4_PHASE_RANK_SIGNAL_150, arm_id)
+        for arm_id in STEP5_ARM_IDS
+    }
+    if seen != expected:
+        raise ValueError("Step-5 packet must include exactly four 150-only commands")
+    for command in commands:
+        _validate_step5_command_record(command)
+    artifact_policy = packet.get("artifact_policy") or {}
+    if not bool(artifact_policy.get("compact_json_ndjson_only")):
+        raise ValueError("Step-5 artifact policy must require compact JSON/NDJSON")
+    if bool(artifact_policy.get("pt_writes_allowed")):
+        raise ValueError("Step-5 artifact policy must reject .pt writes")
+
+
 def packet_without_runtime_results(packet: Mapping[str, Any]) -> dict[str, Any]:
     out = deepcopy(dict(packet))
     out.pop("runtime_results", None)
@@ -2192,12 +2731,20 @@ __all__ = [
     "STEP3_MEASUREMENT_POWER_TRUST_REGION_PACKET_KIND",
     "STEP4_MATCH_STRICT_GAP_MAX",
     "STEP4_POWERED_RANK_SIGNAL_DECOMPOSITION_PACKET_KIND",
+    "STEP5_ARM_IDS",
+    "STEP5_CURRICULUM_SEED",
+    "STEP5_STRICT_FLOOR_COUNT",
+    "STEP5_STRICT_MARGIN_COUNT",
+    "STEP5_STRICT_TOTAL",
+    "STEP5_SUPPORT_ORDER_SEED",
+    "STEP5_SUPPORT_ORDER_TRAJECTORY_ROBUSTNESS_PACKET_KIND",
     "TIE_POLICY_CURRENT_MARGIN_INDEX",
     "TIE_POLICY_DETERMINISTIC_HASH_MATCHED",
     "build_measurement_power_then_trust_region_packet",
     "build_optimizer_update_law_launch_bundle",
     "build_optimizer_update_law_science_packet",
     "build_powered_rank_signal_decomposition_packet",
+    "build_support_order_trajectory_robustness_packet",
     "classify_optimizer_update_law_branch",
     "classify_step4_rank_signal_decomposition",
     "classify_step3_power_floor",
@@ -2211,6 +2758,9 @@ __all__ = [
     "default_step4_mass_confound_rule",
     "default_step4_match_to_a0_rule",
     "default_step4_science_arms",
+    "default_step5_pass_rule",
+    "default_step5_science_arms",
+    "default_step5_support_order_proof_contract",
     "default_screen_before_verdict_dependency",
     "default_terminal_criteria",
     "default_verdict_rule",
@@ -2222,4 +2772,5 @@ __all__ = [
     "validate_optimizer_update_law_launch_bundle",
     "validate_optimizer_update_law_science_packet",
     "validate_powered_rank_signal_decomposition_packet",
+    "validate_support_order_trajectory_robustness_packet",
 ]

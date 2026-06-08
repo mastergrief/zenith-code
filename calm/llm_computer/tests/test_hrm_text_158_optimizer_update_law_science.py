@@ -39,8 +39,11 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     STEP3_CAP_MAX_ABS_PER_TENSOR,
     STEP3_MEASUREMENT_POWER_TRUST_REGION_PACKET_KIND,
     STEP4_POWERED_RANK_SIGNAL_DECOMPOSITION_PACKET_KIND,
+    STEP5_SUPPORT_ORDER_SEED,
+    STEP5_SUPPORT_ORDER_TRAJECTORY_ROBUSTNESS_PACKET_KIND,
     build_measurement_power_then_trust_region_packet,
     build_powered_rank_signal_decomposition_packet,
+    build_support_order_trajectory_robustness_packet,
     TIE_POLICY_CURRENT_MARGIN_INDEX,
     TIE_POLICY_DETERMINISTIC_HASH_MATCHED,
     build_optimizer_update_law_launch_bundle,
@@ -55,7 +58,9 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     validate_optimizer_update_law_launch_bundle,
     validate_optimizer_update_law_science_packet,
     validate_powered_rank_signal_decomposition_packet,
+    validate_support_order_trajectory_robustness_packet,
 )
+from scripts.hrm_text_158_bounded_delta_acquisition_probe import build_support_order_trajectory_proof
 from scripts.hrm_text_158_optimizer_update_law_science_packet import main as packet_main
 
 
@@ -851,6 +856,172 @@ def test_step4_validator_rejects_fold_drift(mutation, error):
         validate_powered_rank_signal_decomposition_packet(packet)
 
 
+def test_step5_support_order_trajectory_packet_is_four_arm_150_only():
+    packet = build_support_order_trajectory_robustness_packet(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+        repo_root="/repo",
+        run_root="/tmp/hrm158-step5",
+    )
+
+    validate_support_order_trajectory_robustness_packet(packet)
+    assert packet["packet_kind"] == STEP5_SUPPORT_ORDER_TRAJECTORY_ROBUSTNESS_PACKET_KIND
+    assert packet["author_only"] is True
+    assert packet["gpu_launched"] is False
+    assert packet["launch_gate_id"] is None
+    assert packet["pt_mutated"] is False
+    assert packet["checkpoint_written"] is False
+    assert packet["readiness_claim"] is False
+    assert packet["full_sub2_claim"] is False
+    assert packet["ready_for_main_science"] is False
+    assert packet["qacc_kernelized"] is False
+    assert "CPU-reference/default-off" in packet["qacc_cpu_reference_caveat"]
+    assert packet["support_order_seed"] == STEP5_SUPPORT_ORDER_SEED
+    assert packet["curriculum_seed"] == 17
+
+    arms = {arm["arm_id"]: arm for arm in packet["arms"]}
+    assert set(arms) == {
+        ARM_A0_RANK_BUCKET_CURRENT,
+        ARM_B_RANK_FREE_SIGN_PRESSURE,
+        ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER,
+        ARM_INVERTED_SIGN_PRESSURE,
+    }
+    assert ARM_A1_RANK_BUCKET_ORDER_MATCHED not in arms
+    assert packet["mode_sequence"] == ["rank_signal_150"]
+    assert packet["power_ladder"]["steps_first"] == 150
+    assert packet["power_ladder"]["steps_optional_continuation"] is None
+    assert packet["power_ladder"]["max_steps_hard"] == 150
+    assert packet["pass_rule"]["C_strict_floor_count"] == 10
+    assert packet["pass_rule"]["C_margin_over_max_A0_B_count"] == 5
+    assert set(packet["pass_rule"]["paired_loss_required"]["comparisons"]) == {
+        "C_minus_A0",
+        "C_minus_B",
+    }
+    assert packet["support_order_proof_contract"]["support_content_unchanged_basis"] == (
+        "order_invariant_multiset_hash16"
+    )
+    assert packet["support_order_proof_contract"]["ordered_support_content_hash16_is_invariant"] is False
+
+    commands = packet["commands"]
+    assert len(commands) == 4
+    assert {(command["mode"], command["arm_id"]) for command in commands} == {
+        ("rank_signal_150", ARM_A0_RANK_BUCKET_CURRENT),
+        ("rank_signal_150", ARM_B_RANK_FREE_SIGN_PRESSURE),
+        ("rank_signal_150", ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER),
+        ("rank_signal_150", ARM_INVERTED_SIGN_PRESSURE),
+    }
+    for command in commands:
+        argv = command["argv"]
+        assert command["steps_requested"] == 150
+        assert command["support_order_seed"] == 29
+        assert command["curriculum_seed"] == 17
+        assert command["qacc_kernelized"] is False
+        assert "--support-order-seed" in argv
+        assert argv[argv.index("--support-order-seed") + 1] == "29"
+        assert argv[argv.index("--curriculum-seed") + 1] == "17"
+        assert argv[argv.index("--steps") + 1] == "150"
+        assert argv[argv.index("--audit-interval") + 1] == "150"
+        assert argv[argv.index("--max-steps-hard") + 1] == "150"
+        assert ARM_A1_RANK_BUCKET_ORDER_MATCHED not in argv
+        assert "rank_signal_300" not in argv
+
+
+def test_step5_support_order_hash_proof_uses_invariant_not_ordered_hash():
+    original = [
+        {"metadata": {"row_ids": ["0:aaa"], "batch_content_hash16": "aaa", "batch_index": 0}},
+        {"metadata": {"row_ids": ["1:bbb"], "batch_content_hash16": "bbb", "batch_index": 1}},
+        {"metadata": {"row_ids": ["2:ccc"], "batch_content_hash16": "ccc", "batch_index": 2}},
+    ]
+    permuted = [original[2], original[0], original[1]]
+
+    proof = build_support_order_trajectory_proof(
+        original,
+        permuted,
+        support_order_seed=STEP5_SUPPORT_ORDER_SEED,
+    )
+
+    assert proof["support_order_seed"] == STEP5_SUPPORT_ORDER_SEED
+    assert proof["support_order_permutation_enabled"] is True
+    assert proof["support_order_changed"] is True
+    assert proof["support_content_unchanged"] is True
+    assert proof["support_content_unchanged_basis"] == "order_invariant_multiset_hash16"
+    assert proof["support_order_original_ordered_traversal_hash16"] != (
+        proof["support_order_permuted_ordered_traversal_hash16"]
+    )
+    assert proof["support_order_original_invariant_multiset_hash16"] == (
+        proof["support_order_permuted_invariant_multiset_hash16"]
+    )
+    assert proof["ordered_support_content_hash16_is_invariant"] is False
+
+
+@pytest.mark.parametrize(
+    "mutation,error",
+    [
+        (
+            lambda packet: packet["arms"].append(
+                {
+                    "arm_id": ARM_A1_RANK_BUCKET_ORDER_MATCHED,
+                    "vote_law": "current_rank_bucket",
+                    "tie_policy_id": TIE_POLICY_DETERMINISTIC_HASH_MATCHED,
+                    "required": True,
+                },
+            ),
+            "no A1",
+        ),
+        (
+            lambda packet: packet["commands"].append(
+                {
+                    **packet["commands"][0],
+                    "mode": "rank_signal_300",
+                    "n_rows": 300,
+                    "steps_requested": 300,
+                },
+            ),
+            "four 150-only commands",
+        ),
+        (
+            lambda packet: packet["support_order_proof_contract"].update(
+                {"support_content_unchanged_basis": "support_content_hash16"},
+            ),
+            "order-invariant",
+        ),
+        (
+            lambda packet: packet["support_order_proof_contract"].update(
+                {"ordered_support_content_hash16_is_invariant": True},
+            ),
+            "ordered support_content_hash16",
+        ),
+        (
+            lambda packet: packet.update({"ready_for_main_science": True}),
+            "ready_for_main_science",
+        ),
+        (
+            lambda packet: packet.update({"full_sub2_claim": True}),
+            "full_sub2",
+        ),
+        (
+            lambda packet: packet.update({"qacc_kernelized": True}),
+            "qacc_kernelized",
+        ),
+        (
+            lambda packet: packet.update({"raw_per_proposal_arrays_included": True}),
+            "raw per-proposal arrays",
+        ),
+    ],
+)
+def test_step5_validator_rejects_false_invariant_and_scope_drift(mutation, error):
+    packet = build_support_order_trajectory_robustness_packet(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+        repo_root="/repo",
+        run_root="/tmp/hrm158-step5",
+    )
+    mutation(packet)
+
+    with pytest.raises(ValueError, match=error):
+        validate_support_order_trajectory_robustness_packet(packet)
+
+
 def test_packet_script_writes_compact_launch_packet_with_null_gate(tmp_path: Path, capsys):
     parent = tmp_path / "parent.pt"
     parent.write_bytes(b"read-only parent bytes")
@@ -995,4 +1166,48 @@ def test_packet_script_writes_step4_author_only_rank_signal_packet(tmp_path: Pat
     assert len(packet["commands"]) == 10
     assert json.loads(capsys.readouterr().out)["packet_kind"] == (
         STEP4_POWERED_RANK_SIGNAL_DECOMPOSITION_PACKET_KIND
+    )
+
+
+def test_packet_script_writes_step5_support_order_packet(tmp_path: Path, capsys):
+    parent = tmp_path / "parent.pt"
+    parent.write_bytes(b"read-only parent bytes")
+    parent_sha = hashlib.sha256(b"read-only parent bytes").hexdigest()
+    out = tmp_path / "step5-packet.json"
+    run_root = tmp_path / "run"
+
+    exit_code = packet_main(
+        [
+            "--packet-kind",
+            STEP5_SUPPORT_ORDER_TRAJECTORY_ROBUSTNESS_PACKET_KIND,
+            "--parent",
+            str(parent),
+            "--parent-sha256",
+            parent_sha,
+            "--json-out",
+            str(out),
+            "--run-root",
+            str(run_root),
+        ],
+    )
+
+    assert exit_code == 0
+    packet = json.loads(out.read_text(encoding="utf-8"))
+    validate_support_order_trajectory_robustness_packet(packet)
+    assert packet["packet_kind"] == STEP5_SUPPORT_ORDER_TRAJECTORY_ROBUSTNESS_PACKET_KIND
+    assert packet["launch_gate_id"] is None
+    assert packet["commands_executed"] is False
+    assert packet["gpu_launched"] is False
+    assert packet["pt_mutated"] is False
+    assert packet["parent_hash_basis"] == "read_only_parent_file_sha256"
+    assert packet["dry_run_packet_written"] is True
+    assert packet["gpu_launch_command_authorized"] is False
+    assert packet["step5_launch_gate_required"] is True
+    assert len(packet["commands"]) == 4
+    assert {
+        command["argv"][command["argv"].index("--support-order-seed") + 1]
+        for command in packet["commands"]
+    } == {"29"}
+    assert json.loads(capsys.readouterr().out)["packet_kind"] == (
+        STEP5_SUPPORT_ORDER_TRAJECTORY_ROBUSTNESS_PACKET_KIND
     )
