@@ -43,8 +43,10 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     ORACLE_ARM_DIAGNOSTIC_LOCAL_LOSS_DELTA,
     ORACLE_SCREEN_BRANCHES,
     ORACLE_SCREEN_CONTRAST_SEEDS,
+    ORACLE_SCREEN_LAUNCH_BUNDLE_PACKET_KIND,
     ORACLE_SCREEN_PACKET_KIND,
     ORACLE_SCREEN_PROMOTION_ORDER_SEEDS,
+    ORACLE_SCREEN_SCIENCE_CONTRACT_COMMIT_SHA,
     SCIENCE_MODE_BRANCH_VERDICT,
     SCIENCE_MODE_PRETERMINAL_SCREEN,
     STEP1_DRY_RUN_PACKET_KIND,
@@ -59,6 +61,7 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     STEP6_ORDER_AVERAGED_A0_COMPONENT_DECOMPOSITION_PACKET_KIND,
     STEP6_SUPPORT_ORDER_SEEDS,
     build_candidate_set_viability_oracle_screen_packet,
+    build_candidate_set_viability_oracle_screen_launch_bundle,
     build_measurement_power_then_trust_region_packet,
     build_powered_rank_signal_decomposition_packet,
     build_order_averaged_a0_component_decomposition_packet,
@@ -75,6 +78,7 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     step4_arm_matches_a0,
     step4_mass_confound_detected,
     validate_measurement_power_then_trust_region_packet,
+    validate_candidate_set_viability_oracle_screen_launch_bundle,
     validate_candidate_set_viability_oracle_screen_packet,
     validate_optimizer_update_law_launch_bundle,
     validate_optimizer_update_law_science_packet,
@@ -1362,6 +1366,34 @@ def test_oracle_screen_packet_pins_seed_order_contract_and_classifier_branches()
     assert set(classifier["allowed_branches"]) == set(ORACLE_SCREEN_BRANCHES)
 
 
+def test_oracle_screen_launch_bundle_embeds_afbe598_contract_and_fixed_two_seed_commands():
+    packet = build_candidate_set_viability_oracle_screen_launch_bundle(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+        repo_root="/repo",
+        run_root="/tmp/hrm158-oracle-screen",
+    )
+
+    validate_candidate_set_viability_oracle_screen_launch_bundle(packet)
+    assert packet["packet_kind"] == ORACLE_SCREEN_LAUNCH_BUNDLE_PACKET_KIND
+    assert packet["science_contract_commit_sha"] == ORACLE_SCREEN_SCIENCE_CONTRACT_COMMIT_SHA
+    assert packet["screen_rows"] == 20
+    assert packet["curriculum_seed"] == 17
+    assert packet["support_order_seeds"] == list(ORACLE_SCREEN_CONTRAST_SEEDS)
+    assert packet["same_candidate_set_required"] is True
+    assert packet["science_contract"]["packet_kind"] == ORACLE_SCREEN_PACKET_KIND
+    assert packet["science_contract"]["parent_path"] == "parent.pt"
+    assert packet["science_contract"]["parent_sha256"] == "abc123"
+    assert len(packet["commands"]) == 2
+    assert {command["support_order_seed"] for command in packet["commands"]} == {43, 29}
+    assert {command["seed_label"] for command in packet["commands"]} == {"seed43", "seed29"}
+    assert all(command["oracle_screen_mode"] == "candidate_set_viability" for command in packet["commands"])
+    assert all(command["batch_size"] == 20 for command in packet["commands"])
+    assert all(command["steps_requested"] == 1 for command in packet["commands"])
+    assert all("--oracle-screen-mode" in command["argv"] for command in packet["commands"])
+    assert all("--science-arm" not in command["argv"] for command in packet["commands"])
+
+
 @pytest.mark.parametrize(
     "kwargs,expected",
     [
@@ -1531,6 +1563,55 @@ def test_oracle_screen_validator_rejects_persistence_and_scope_drift(mutation, e
 
     with pytest.raises(ValueError, match=error):
         validate_candidate_set_viability_oracle_screen_packet(packet)
+
+
+def _remove_flag_with_value(argv: list[str], flag: str) -> None:
+    index = argv.index(flag)
+    del argv[index: index + 2]
+
+
+@pytest.mark.parametrize(
+    "mutation,error",
+    [
+        (
+            lambda packet: _remove_flag_with_value(
+                packet["commands"][0]["argv"],
+                "--oracle-screen-mode",
+            ),
+            "missing required probe launch arguments",
+        ),
+        (
+            lambda packet: packet["commands"][0]["argv"].__setitem__(
+                packet["commands"][0]["argv"].index("--oracle-screen-mode") + 1,
+                "wrong_oracle_mode",
+            ),
+            "--oracle-screen-mode must be 'candidate_set_viability'",
+        ),
+        (
+            lambda packet: packet["commands"][0]["argv"].extend(["--science-arm", ARM_A0_RANK_BUCKET_CURRENT]),
+            "--oracle-screen-mode",
+        ),
+        (
+            lambda packet: packet.update({"science_contract_commit_sha": "deadbeef"}),
+            "afbe598",
+        ),
+        (
+            lambda packet: packet["commands"][0].update({"batch_size": 19}),
+            "batch_size must equal N=20",
+        ),
+    ],
+)
+def test_oracle_screen_launch_bundle_validator_rejects_scope_drift(mutation, error):
+    packet = build_candidate_set_viability_oracle_screen_launch_bundle(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+        repo_root="/repo",
+        run_root="/tmp/hrm158-oracle-screen",
+    )
+    mutation(packet)
+
+    with pytest.raises(ValueError, match=error):
+        validate_candidate_set_viability_oracle_screen_launch_bundle(packet)
 
 
 def test_packet_script_writes_compact_launch_packet_with_null_gate(tmp_path: Path, capsys):
@@ -1811,3 +1892,47 @@ def test_packet_script_writes_oracle_screen_author_packet(tmp_path: Path, capsys
     assert packet["gpu_launch_command_authorized"] is False
     assert packet["oracle_screen_launch_gate_required"] is True
     assert json.loads(capsys.readouterr().out)["packet_kind"] == ORACLE_SCREEN_PACKET_KIND
+
+
+def test_packet_script_writes_oracle_screen_launch_bundle(tmp_path: Path, capsys):
+    parent = tmp_path / "parent.pt"
+    parent.write_bytes(b"read-only parent bytes")
+    parent_sha = hashlib.sha256(b"read-only parent bytes").hexdigest()
+    out = tmp_path / "oracle-screen-launch-bundle.json"
+    run_root = tmp_path / "run"
+
+    exit_code = packet_main(
+        [
+            "--packet-kind",
+            ORACLE_SCREEN_LAUNCH_BUNDLE_PACKET_KIND,
+            "--parent",
+            str(parent),
+            "--parent-sha256",
+            parent_sha,
+            "--json-out",
+            str(out),
+            "--run-root",
+            str(run_root),
+        ],
+    )
+
+    assert exit_code == 0
+    packet = json.loads(out.read_text(encoding="utf-8"))
+    validate_candidate_set_viability_oracle_screen_launch_bundle(packet)
+    assert packet["packet_kind"] == ORACLE_SCREEN_LAUNCH_BUNDLE_PACKET_KIND
+    assert packet["launch_gate_id"] is None
+    assert packet["commands_executed"] is False
+    assert packet["gpu_launched"] is False
+    assert packet["pt_mutated"] is False
+    assert packet["parent_hash_basis"] == "read_only_parent_file_sha256"
+    assert packet["dry_run_packet_written"] is True
+    assert packet["gpu_launch_command_authorized"] is False
+    assert packet["oracle_screen_launch_gate_required"] is True
+    assert len(packet["commands"]) == 2
+    assert {command["argv"][command["argv"].index("--support-order-seed") + 1] for command in packet["commands"]} == {
+        "29",
+        "43",
+    }
+    assert json.loads(capsys.readouterr().out)["packet_kind"] == (
+        ORACLE_SCREEN_LAUNCH_BUNDLE_PACKET_KIND
+    )

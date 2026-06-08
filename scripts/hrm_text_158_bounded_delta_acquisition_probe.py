@@ -91,6 +91,11 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
 from calm.hrm_text_158.native_full_stack.front_c_live_identity_emission import (
     FrontCLiveIdentityCollector,
 )
+from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
+    ORACLE_SCREEN_MODE_CHOICES,
+    ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY,
+    run_candidate_set_viability_oracle_screen,
+)
 from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     ARM_A0_RANK_BUCKET_CURRENT,
     ARM_A1_RANK_BUCKET_ORDER_MATCHED,
@@ -3751,9 +3756,14 @@ def run_c2p1_probe(
     front_c_identity_emission_interval: int = 0,
     front_c_independent_oracle: bool = False,
     science_arm: str = ARM_A0_RANK_BUCKET_CURRENT,
+    oracle_screen_mode: str | None = None,
 ) -> dict[str, Any]:
     assert_default_off(enabled)
-    if str(science_arm) not in SCIENCE_ARM_CHOICES:
+    if oracle_screen_mode is not None and str(oracle_screen_mode) not in ORACLE_SCREEN_MODE_CHOICES:
+        raise ValueError(
+            f"oracle_screen_mode must be one of {ORACLE_SCREEN_MODE_CHOICES}, got {oracle_screen_mode!r}"
+        )
+    if oracle_screen_mode is None and str(science_arm) not in SCIENCE_ARM_CHOICES:
         raise ValueError(f"science_arm must be one of {SCIENCE_ARM_CHOICES}, got {science_arm!r}")
     if int(max_steps_hard) <= 0:
         raise ValueError("max_steps_hard must be positive")
@@ -3826,6 +3836,29 @@ def run_c2p1_probe(
                 "Front-C identity emission requires prior audit supports "
                 f"{required_front_c_prior}; missing {tuple(missing_front_c_prior)}"
             )
+    if oracle_screen_mode is not None:
+        if int(steps) != 1:
+            raise ValueError("oracle_screen_mode requires steps=1 because the screen evaluates one support batch")
+        if int(batch_size) <= 0:
+            raise ValueError("oracle_screen_mode requires batch_size > 0")
+        if requested_prior_audit_supports:
+            raise ValueError("oracle_screen_mode does not support prior_audit_supports")
+        if requested_b2_retained_supports:
+            raise ValueError("oracle_screen_mode does not support b2_retained_supports")
+        if float(b2_parent_consistency_weight) != 0.0:
+            raise ValueError("oracle_screen_mode does not support parent-consistency auxiliary paths")
+        if str(global_cap_contract) != GLOBAL_CAP_CONTRACT_OFF:
+            raise ValueError("oracle_screen_mode requires global_cap_contract=off")
+        if str(tie_rule_mode) != EXACT_GLOBAL_CAP_TIE_RULE_MODE:
+            raise ValueError("oracle_screen_mode requires tie_rule_mode=exact_global_cap")
+        if bool(stop_on_strict_exact):
+            raise ValueError("oracle_screen_mode does not support stop_on_strict_exact")
+        if int(matched_continued_training_horizon_steps) != 0:
+            raise ValueError("oracle_screen_mode requires matched_continued_training_horizon_steps=0")
+        if bool(b2_full_verdict_mode):
+            raise ValueError("oracle_screen_mode does not support b2_full_verdict_mode")
+        if front_c_identity_emission_artifact is not None or bool(front_c_independent_oracle):
+            raise ValueError("oracle_screen_mode does not support Front-C identity emission")
     b2_support_batch_sizes = {
         "L0b": int(b2_l0b_batch_size),
         "math_a0": int(b2_math_a0_batch_size),
@@ -3941,6 +3974,160 @@ def run_c2p1_probe(
             eligible_scope=eligible_scope,
             total_steps=int(steps),
         )
+    if oracle_screen_mode is not None:
+        if str(oracle_screen_mode) != ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY:
+            raise RuntimeError(f"unsupported oracle screen mode {oracle_screen_mode!r}")
+        extras = model.compute_train_extra_args(1, max(1, int(steps)))
+        oracle_screen = run_candidate_set_viability_oracle_screen(
+            model=model,
+            batch=model_batch,
+            tensor_states=tensor_states,
+            eligible_modules=eligible,
+            device=torch_device,
+            max_abs_per_tensor=int(max_abs_per_tensor),
+            extras=extras,
+            phase_progress=phase_progress,
+        )
+        with phase_progress.phase("checkpoint_payload"):
+            checkpoint_payload = build_authoritative_checkpoint_payload(
+                tensor_states,
+                step=0,
+                updater_config={
+                    "oracle_screen_mode": str(oracle_screen_mode),
+                    "projection_law": S1_PROJECTION_LAW,
+                    "vote_law": S1_RANK_BUCKET_VOTE_LAW,
+                },
+                oracle_receipt=None,
+                dry_run=True,
+                checkpoint_written=False,
+            )
+            validate_authoritative_resume_payload(checkpoint_payload)
+        with phase_progress.phase("parent_hash_after"):
+            parent_hash_after = file_sha256(parent)
+        parent_hash_unchanged = parent_hash_before == parent_hash_after
+        if not parent_hash_unchanged:
+            raise RuntimeError("parent checkpoint hash changed during oracle screen")
+        total_run_duration_seconds = _timing_duration_seconds(
+            run_timing_start,
+            torch_device,
+        )
+        receipt = {
+            "schema": C2P1_HARNESS_SCHEMA_VERSION,
+            "c2p0_schema": BOUNDED_DELTA_LEARNER_SCHEMA_VERSION,
+            "bounded_delta_checkpoint_schema": BOUNDED_DELTA_CHECKPOINT_SCHEMA_VERSION,
+            "phase": phase,
+            "implementation_gpu_validation_split": True,
+            "gpu_launch_authorized": bool(torch_device.type == "cuda"),
+            "gpu_launched": bool(torch_device.type == "cuda"),
+            "device": str(torch_device),
+            "device_guard": device_guard,
+            "faulthandler": faulthandler_report,
+            "silent_phase_guard": {
+                "default_on_with_allow_gpu_launch": True,
+                "allow_gpu_launch": bool(allow_gpu_launch),
+                "max_silent_phase_seconds": silent_phase_timeout_seconds,
+                "last_active_phase_path": str(last_active_phase_path),
+                "fail_closed_mechanism": "faulthandler.dump_traceback_later(exit=True)",
+            },
+            "dry_run": True,
+            "checkpoint_written": False,
+            "creditdir_mutated": False,
+            "banked_pt_mutated": False,
+            "parent": str(parent),
+            "parent_hash_before": parent_hash_before,
+            "parent_hash_after": parent_hash_after,
+            "parent_hash_unchanged": parent_hash_unchanged,
+            "model_config": {
+                "max_seq_len": int(cfg.max_seq_len),
+                "n_layers": int(cfg.n_layers),
+                "hidden_size": int(cfg.hidden_size),
+                "num_heads": int(cfg.num_heads),
+                "H_cycles": int(cfg.H_cycles),
+                "L_cycles": int(cfg.L_cycles),
+                "half_layers": bool(cfg.half_layers),
+                "use_ternary_bulk": bool(cfg.use_ternary_bulk),
+            },
+            "batch": batch_proof,
+            "identity_full_control": support_control_proof,
+            "support_cycler": support_cycler_proof,
+            "eligible_scope": eligible_scope,
+            "eligible_module_count": len(eligible),
+            "eligible_modules": sorted(eligible),
+            "weight_level_init_fidelity": init_fidelity,
+            "forward_level_init_fidelity": forward_init_fidelity,
+            "steps_requested": int(steps),
+            "steps_completed": int(steps),
+            "max_steps_hard": int(max_steps_hard),
+            "audit_interval": int(audit_interval),
+            "stop_on_strict_exact": False,
+            "matched_continued_training_horizon_steps": 0,
+            "global_cap_contract": global_cap_contract_receipt,
+            "tie_rule_mode": str(tie_rule_mode),
+            "science_arm": None,
+            "oracle_screen_mode": str(oracle_screen_mode),
+            "target_vote_law": S1_RANK_BUCKET_VOTE_LAW,
+            "target_tie_policy_id": TIE_POLICY_CURRENT_MARGIN_INDEX,
+            "local_selection_ordering_mode": LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+            "local_selection_ordering_seed": 17,
+            "local_selection_ordering_step": 1,
+            "aux_vote_law": FIXED_RANK_BUCKET_NON_TARGET_AUX,
+            "default_rank_bucket_path_unchanged": True,
+            "stop_reason": "oracle_screen_completed",
+            "forward_backward_update_executed": False,
+            "step0_optimizer_identity_proof": prove_step0_optimizer_identity(model, eligible),
+            "bounded_update_attribution": BOUNDED_UPDATE_ATTRIBUTION,
+            "step_reports": {},
+            "audit_reports": {},
+            "prior_audit": build_prior_audit_receipt(
+                requested_supports=(),
+                support_sets={},
+                start_reports={},
+                final_reports={},
+            ),
+            "b2_retention": build_b2_retention_receipt(
+                requested_supports=(),
+                support_sets={},
+                step_reports={},
+                pc_aux_mode=str(b2_pc_aux_mode),
+                parent_consistency_weight=0.0,
+            ),
+            "front_c_identity_emission": {"enabled": False},
+            "timing_summary": {
+                "schema": C2P2_TIMING_SCHEMA_VERSION,
+                "step_reports": {},
+                "audit_reports": {},
+                "total_run_duration_seconds": total_run_duration_seconds,
+            },
+            "acquisition_trajectory": build_acquisition_trajectory(
+                audit_enabled=False,
+                audit_reports={},
+                step_reports={},
+                support_cycler_proof=support_cycler_proof,
+                audit_interval=0,
+                stop_on_strict_exact=False,
+                matched_continued_training_horizon_steps=0,
+                max_steps_hard=int(max_steps_hard),
+                stop_reason="oracle_screen_completed",
+                timing_summary={
+                    "schema": C2P2_TIMING_SCHEMA_VERSION,
+                    "step_reports": {},
+                    "audit_reports": {},
+                    "total_run_duration_seconds": total_run_duration_seconds,
+                },
+            ),
+            "checkpoint_payload": checkpoint_payload,
+            "memory": cuda_memory_receipt(torch_device),
+            "oracle_screen": oracle_screen,
+            "branch_classification": oracle_screen["branch_classification"],
+            "phase_telemetry": phase_progress.to_dict(),
+        }
+        receipt_path = scratch_root / "receipt.json"
+        receipt["receipt_path"] = str(receipt_path)
+        with phase_progress.phase("receipt_write", path=str(receipt_path)):
+            receipt["phase_telemetry"] = phase_progress.to_dict()
+            receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
+        receipt["phase_telemetry"] = phase_progress.to_dict()
+        return receipt
 
     prior_audit_start_reports: dict[str, dict[str, Any]] = {}
     if prior_support_sets:
@@ -4404,6 +4591,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     ap.add_argument(
+        "--oracle-screen-mode",
+        choices=ORACLE_SCREEN_MODE_CHOICES,
+        default=None,
+        help=(
+            "Optional narrow oracle-screen mode. Keeps the candidate-set-viability "
+            "runner off the generic science-arm path."
+        ),
+    )
+    ap.add_argument(
         "--prior-audit-supports",
         default="",
         help=(
@@ -4535,6 +4731,7 @@ def main(argv: list[str] | None = None) -> int:
         front_c_identity_emission_interval=args.front_c_identity_emission_interval,
         front_c_independent_oracle=args.front_c_independent_oracle,
         science_arm=args.science_arm,
+        oracle_screen_mode=args.oracle_screen_mode,
         max_steps_hard=args.max_steps_hard,
         emit_progress=args.emit_progress,
         phase_timeout_seconds=args.phase_timeout_seconds,

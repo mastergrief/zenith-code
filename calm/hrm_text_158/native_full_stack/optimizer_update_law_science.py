@@ -34,6 +34,9 @@ STEP6_ORDER_AVERAGED_A0_COMPONENT_DECOMPOSITION_PACKET_KIND = (
 ORACLE_SCREEN_PACKET_KIND = (
     "pre_full_stack_diagnostic__candidate_set_viability_oracle_screen"
 )
+ORACLE_SCREEN_LAUNCH_BUNDLE_PACKET_KIND = (
+    "candidate_set_viability_oracle_screen_launch_bundle"
+)
 
 SCIENCE_MODE_PRETERMINAL_SCREEN = "preterminal_screen"
 SCIENCE_MODE_BRANCH_VERDICT = "branch_verdict"
@@ -245,6 +248,9 @@ ORACLE_SCREEN_N20_ROWS = 20
 ORACLE_SCREEN_PROMOTION_ROWS = 50
 ORACLE_SCREEN_FEASIBILITY_MAX_SAMPLED_CANDIDATES = 8
 ORACLE_SCREEN_FEASIBILITY_MAX_SECONDS = 30.0
+ORACLE_SCREEN_SCIENCE_CONTRACT_COMMIT_SHA = (
+    "afbe598de6d81a776bf2bd9fc12115cf1293f9d6"
+)
 STEP4_MATCH_STRICT_GAP_MAX = 3
 STEP4_MATCH_STRICT_TOTAL = 90
 STEP4_MASS_RATIO_MIN = 0.75
@@ -2164,6 +2170,200 @@ def build_candidate_set_viability_oracle_screen_packet(
     return packet
 
 
+def _build_oracle_screen_probe_command_record(
+    *,
+    repo_root: str | Path,
+    run_root: str | Path,
+    parent_path: str | Path,
+    parent_sha256: str,
+    support_order_seed: int,
+    device: str,
+    phase_timeout_seconds: int | float,
+    total_timeout_seconds: int | float,
+    max_silent_phase_seconds: int | float,
+) -> dict[str, Any]:
+    seed_label = _support_order_seed_label(int(support_order_seed))
+    scratch_root = _path_join(run_root, seed_label)
+    receipt_path = _path_join(scratch_root, "receipt.json")
+    stdout_path = _path_join(scratch_root, "stdout.ndjson")
+    stderr_path = _path_join(scratch_root, "stderr.log")
+    argv = [
+        "python3",
+        "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+        "--enable-bounded-delta-probe",
+        "--allow-gpu-launch",
+        "--oracle-screen-mode",
+        "candidate_set_viability",
+        "--phase",
+        f"optimizer-update-law-oracle-screen-n20-{seed_label}",
+        "--device",
+        str(device),
+        "--parent",
+        str(parent_path),
+        "--parent-sha256",
+        str(parent_sha256),
+        "--scratch-root",
+        scratch_root,
+        "--curriculum-seed",
+        str(STEP6_CURRICULUM_SEED),
+        "--support-order-seed",
+        str(int(support_order_seed)),
+        "--batch-size",
+        str(ORACLE_SCREEN_N20_ROWS),
+        "--steps",
+        "1",
+        "--max-steps-hard",
+        "1",
+        "--max-abs-per-tensor",
+        str(STEP3_BASELINE_MAX_ABS_PER_TENSOR),
+        "--emit-progress",
+        "--phase-timeout-seconds",
+        str(phase_timeout_seconds),
+        "--total-timeout-seconds",
+        str(total_timeout_seconds),
+        "--max-silent-phase-seconds",
+        str(max_silent_phase_seconds),
+    ]
+    return {
+        "mode": "oracle_screen_n20",
+        "phase_role": "candidate_set_viability_oracle_screen",
+        "support_order_seed": int(support_order_seed),
+        "seed_label": seed_label,
+        "oracle_screen_mode": "candidate_set_viability",
+        "screen_rows": ORACLE_SCREEN_N20_ROWS,
+        "n_rows": ORACLE_SCREEN_N20_ROWS,
+        "steps_requested": 1,
+        "steps_source": "fixed_single_support_batch_oracle_screen",
+        "batch_size": ORACLE_SCREEN_N20_ROWS,
+        "curriculum_seed": STEP6_CURRICULUM_SEED,
+        "same_candidate_set_required": True,
+        "max_sampled_candidates": ORACLE_SCREEN_FEASIBILITY_MAX_SAMPLED_CANDIDATES,
+        "oracle_max_seconds": ORACLE_SCREEN_FEASIBILITY_MAX_SECONDS,
+        "max_abs_per_tensor": STEP3_BASELINE_MAX_ABS_PER_TENSOR,
+        "fraction_per_tensor": STEP3_FRACTION_PER_TENSOR,
+        "global_cap_contract": "off",
+        "cwd": str(repo_root),
+        "env": {
+            "HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE": "1",
+            "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH": "1",
+        },
+        "argv": argv,
+        "stdout_path": stdout_path,
+        "stderr_path": stderr_path,
+        "receipt_path": receipt_path,
+        "scratch_root": scratch_root,
+        "enabled_if": "fixed contrast seeds 43 and 29 only; same candidate set once per seed",
+        "expected_exit_policy": "exit_0_required_else_stop_no_retry_no_verdict",
+    }
+
+
+def build_candidate_set_viability_oracle_screen_launch_bundle(
+    *,
+    parent_path: str | Path,
+    parent_sha256: str,
+    repo_root: str | Path,
+    run_root: str | Path,
+    device: str = "cuda:0",
+    launch_gate_id: str | None = None,
+    symbolic_resource_lane: str = "gpu:0",
+    phase_timeout_seconds: int | float = 1800,
+    total_timeout_seconds: int | float = 7200,
+    max_silent_phase_seconds: int | float = 300,
+) -> dict[str, Any]:
+    science_contract = packet_without_runtime_results(
+        build_candidate_set_viability_oracle_screen_packet(
+            parent_path=parent_path,
+            parent_sha256=parent_sha256,
+            launch_gate_id=None,
+        ),
+    )
+    commands = [
+        _build_oracle_screen_probe_command_record(
+            repo_root=repo_root,
+            run_root=run_root,
+            parent_path=parent_path,
+            parent_sha256=parent_sha256,
+            support_order_seed=int(seed),
+            device=device,
+            phase_timeout_seconds=phase_timeout_seconds,
+            total_timeout_seconds=total_timeout_seconds,
+            max_silent_phase_seconds=max_silent_phase_seconds,
+        )
+        for seed in ORACLE_SCREEN_CONTRAST_SEEDS
+    ]
+    packet = {
+        "schema_version": OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION,
+        "packet_kind": ORACLE_SCREEN_LAUNCH_BUNDLE_PACKET_KIND,
+        "target_name": ORACLE_SCREEN_LAUNCH_BUNDLE_PACKET_KIND,
+        "artifact_role": "candidate_set_viability_oracle_screen_launch_bundle_author_packet",
+        "diagnostic_class": DIAGNOSTIC_CLASS_PRE_FULL_STACK,
+        "pre_full_stack_diagnostic": True,
+        "author_only": True,
+        "commands_executed": False,
+        "gpu_launched": False,
+        "launch_gate_id": launch_gate_id,
+        "pt_mutated": False,
+        "readiness_claim": False,
+        "full_sub2_claim": False,
+        "ready_for_main_science": False,
+        "carrier_claim": False,
+        "checkpoint_written": False,
+        "optimizer_credit_state_row_flip": False,
+        "optimizer_credit_state_science_dependent": True,
+        "branch_result": None,
+        "qacc_kernelized": False,
+        "parent_path": str(parent_path),
+        "parent_sha256": str(parent_sha256),
+        "science_contract_commit_sha": ORACLE_SCREEN_SCIENCE_CONTRACT_COMMIT_SHA,
+        "science_contract": science_contract,
+        "screen_rows": ORACLE_SCREEN_N20_ROWS,
+        "curriculum_seed": STEP6_CURRICULUM_SEED,
+        "support_order_seeds": list(ORACLE_SCREEN_CONTRAST_SEEDS),
+        "same_candidate_set_required": True,
+        "oracle_feasibility_budget": default_oracle_feasibility_budget(),
+        "oracle_non_persistence_contract": default_oracle_non_persistence_contract(),
+        "compact_summary_schema": default_oracle_compact_summary_schema(),
+        "classifier_contract": default_oracle_screen_classifier_contract(),
+        "commands": commands,
+        "resource_lane": default_resource_lane_contract(
+            symbolic_lane=symbolic_resource_lane,
+        ),
+        "watcher_audit_bundle": default_watcher_bundle(),
+        "phase_budgets": default_phase_budgets(),
+        "terminal_criteria": {
+            **default_terminal_criteria(),
+            "branch_classifier": list(ORACLE_SCREEN_BRANCHES),
+            "same_candidate_set_required": True,
+            "support_order_seeds": list(ORACLE_SCREEN_CONTRAST_SEEDS),
+            "n20_screen_rows": ORACLE_SCREEN_N20_ROWS,
+            "qacc_kernelized": False,
+            "device_residency_not_hot_loop_residency": True,
+        },
+        "hash_gate_policy": default_hash_gate_policy(),
+        "compact_instrumentation_only": True,
+        "raw_per_proposal_arrays_included": False,
+        "artifact_policy": {
+            "compact_json_ndjson_only": True,
+            "raw_per_proposal_arrays": False,
+            "pt_writes_allowed": False,
+        },
+        "non_claims": [
+            "author-only oracle-screen launch bundle",
+            "embeds afbe598 science contract without mutating it",
+            "fixed N=20 contrast screen only; promotion to N=50x3 remains separately gated",
+            "same candidate set generated once per seed and rescored under three arms",
+            "no GPU launch from this packet-authoring step",
+            "no resource lane acquired by this packet",
+            "no .pt mutation or checkpoint promotion",
+            "no readiness row flip",
+            "no carrier or full-sub2 runtime claim",
+            "qacc_vote_select_apply_update remains CPU-reference/default-off, not kernelized",
+        ],
+    }
+    validate_candidate_set_viability_oracle_screen_launch_bundle(packet)
+    return packet
+
+
 def _walk_items(value: Any) -> Sequence[Any]:
     if isinstance(value, Mapping):
         return list(value.items())
@@ -3793,6 +3993,184 @@ def validate_candidate_set_viability_oracle_screen_packet(packet: Mapping[str, A
         raise ValueError("oracle artifact path must not target .pt artifacts")
 
 
+def _validate_oracle_screen_command_record(command: Mapping[str, Any]) -> None:
+    missing = [field for field in _COMMAND_REQUIRED_FIELDS if field not in command]
+    if missing:
+        raise ValueError(f"oracle-screen command record missing required fields: {missing}")
+    if str(command.get("mode")) != "oracle_screen_n20":
+        raise ValueError("oracle-screen command mode must be oracle_screen_n20")
+    if str(command.get("phase_role")) != "candidate_set_viability_oracle_screen":
+        raise ValueError("oracle-screen command phase_role drifted")
+    if str(command.get("oracle_screen_mode")) != "candidate_set_viability":
+        raise ValueError("oracle-screen command must pin candidate_set_viability mode")
+    if not bool(command.get("same_candidate_set_required")):
+        raise ValueError("oracle-screen command must require same candidate set")
+    if int(command.get("support_order_seed", -1)) not in ORACLE_SCREEN_CONTRAST_SEEDS:
+        raise ValueError("oracle-screen command support_order_seed must be one of the contrast seeds")
+    if str(command.get("seed_label")) != _support_order_seed_label(int(command["support_order_seed"])):
+        raise ValueError("oracle-screen command seed_label drifted from support_order_seed")
+    if int(command.get("screen_rows", -1)) != ORACLE_SCREEN_N20_ROWS:
+        raise ValueError("oracle-screen command screen_rows must be 20")
+    if int(command.get("n_rows", -1)) != ORACLE_SCREEN_N20_ROWS:
+        raise ValueError("oracle-screen command n_rows must equal screen_rows")
+    if int(command.get("steps_requested", -1)) != 1:
+        raise ValueError("oracle-screen command steps_requested must be 1")
+    if command.get("steps_source") != "fixed_single_support_batch_oracle_screen":
+        raise ValueError("oracle-screen command steps_source drifted")
+    if int(command.get("batch_size", -1)) != ORACLE_SCREEN_N20_ROWS:
+        raise ValueError("oracle-screen command batch_size must equal N=20 screen rows")
+    if int(command.get("curriculum_seed", -1)) != STEP6_CURRICULUM_SEED:
+        raise ValueError("oracle-screen command curriculum_seed must stay pinned to 17")
+    if int(command.get("max_sampled_candidates", -1)) != ORACLE_SCREEN_FEASIBILITY_MAX_SAMPLED_CANDIDATES:
+        raise ValueError("oracle-screen command max_sampled_candidates drifted")
+    if float(command.get("oracle_max_seconds", -1.0)) != ORACLE_SCREEN_FEASIBILITY_MAX_SECONDS:
+        raise ValueError("oracle-screen command oracle_max_seconds drifted")
+    if int(command.get("max_abs_per_tensor", -1)) != STEP3_BASELINE_MAX_ABS_PER_TENSOR:
+        raise ValueError("oracle-screen command max_abs_per_tensor must stay at the baseline cap")
+    if float(command.get("fraction_per_tensor", -1.0)) != STEP3_FRACTION_PER_TENSOR:
+        raise ValueError("oracle-screen command fraction_per_tensor must stay at 1.0")
+    if command.get("global_cap_contract") != "off":
+        raise ValueError("oracle-screen command must keep global cap off")
+    env = command.get("env")
+    if not isinstance(env, Mapping):
+        raise ValueError("oracle-screen command env must be a mapping")
+    if env.get("HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE") != "1":
+        raise ValueError("oracle-screen command env missing HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE=1")
+    if env.get("HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH") != "1":
+        raise ValueError("oracle-screen command env missing HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1")
+    argv = command.get("argv")
+    if not isinstance(argv, list) or not all(isinstance(item, str) for item in argv):
+        raise ValueError("oracle-screen command argv must be a list[str]")
+    required_args = {
+        "--enable-bounded-delta-probe",
+        "--allow-gpu-launch",
+        "--oracle-screen-mode",
+        "--device",
+        "--parent",
+        "--parent-sha256",
+        "--scratch-root",
+        "--curriculum-seed",
+        "--support-order-seed",
+        "--batch-size",
+        "--steps",
+        "--max-steps-hard",
+        "--max-abs-per-tensor",
+        "--emit-progress",
+    }
+    if not required_args.issubset(set(argv)):
+        raise ValueError("oracle-screen command argv missing required probe launch arguments")
+    if "--science-arm" in argv:
+        raise ValueError("oracle-screen command must route through --oracle-screen-mode, not --science-arm")
+    expected_flag_values = (
+        ("--oracle-screen-mode", "candidate_set_viability"),
+        ("--curriculum-seed", str(STEP6_CURRICULUM_SEED)),
+        ("--support-order-seed", str(int(command["support_order_seed"]))),
+        ("--batch-size", str(ORACLE_SCREEN_N20_ROWS)),
+        ("--steps", "1"),
+        ("--max-steps-hard", "1"),
+        ("--max-abs-per-tensor", str(STEP3_BASELINE_MAX_ABS_PER_TENSOR)),
+    )
+    for flag, expected in expected_flag_values:
+        try:
+            observed = argv[argv.index(flag) + 1]
+        except (ValueError, IndexError) as exc:
+            raise ValueError(f"oracle-screen command argv missing {flag} value") from exc
+        if observed != expected:
+            raise ValueError(
+                f"oracle-screen command argv {flag} must be {expected!r}, got {observed!r}"
+            )
+    try:
+        device = argv[argv.index("--device") + 1]
+    except (ValueError, IndexError) as exc:
+        raise ValueError("oracle-screen command argv missing --device value") from exc
+    if not device.startswith("cuda:"):
+        raise ValueError("oracle-screen command argv --device must target CUDA for launch bundle")
+    for path_field in ("stdout_path", "stderr_path", "receipt_path", "scratch_root"):
+        value = str(command.get(path_field))
+        if not value:
+            raise ValueError(f"oracle-screen command {path_field} must be non-empty")
+        if value.endswith(".pt"):
+            raise ValueError(f"oracle-screen command {path_field} cannot target .pt artifacts")
+    if command.get("expected_exit_policy") != "exit_0_required_else_stop_no_retry_no_verdict":
+        raise ValueError("oracle-screen command expected_exit_policy must fail closed")
+
+
+def validate_candidate_set_viability_oracle_screen_launch_bundle(packet: Mapping[str, Any]) -> None:
+    if packet.get("schema_version") != OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION:
+        raise ValueError("unsupported optimizer update-law oracle-screen launch bundle schema")
+    if packet.get("diagnostic_class") != DIAGNOSTIC_CLASS_PRE_FULL_STACK:
+        raise ValueError("oracle-screen launch bundle must be pre_full_stack_diagnostic")
+    _validate_author_only_fields(
+        packet,
+        expected_packet_kind=ORACLE_SCREEN_LAUNCH_BUNDLE_PACKET_KIND,
+        label="author-only oracle-screen launch bundle",
+    )
+    for field in _READINESS_FORBIDDEN_TRUE_FIELDS:
+        _require_false(packet, field)
+    if bool(packet.get("carrier_claim")) or bool(packet.get("q_sidecar_carrier_claim")):
+        raise ValueError("oracle-screen launch bundle must not make a carrier claim")
+    if bool(packet.get("qacc_kernelized")):
+        raise ValueError("oracle-screen launch bundle must keep qacc_kernelized=false")
+    if not bool(packet.get("optimizer_credit_state_science_dependent")):
+        raise ValueError(
+            "oracle-screen launch bundle must keep optimizer_credit_state science-dependent"
+        )
+    if int(packet.get("screen_rows", -1)) != ORACLE_SCREEN_N20_ROWS:
+        raise ValueError("oracle-screen launch bundle must pin N=20 rows")
+    if int(packet.get("curriculum_seed", -1)) != STEP6_CURRICULUM_SEED:
+        raise ValueError("oracle-screen launch bundle curriculum_seed must stay pinned to 17")
+    if packet.get("support_order_seeds") != list(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError("oracle-screen launch bundle must pin the contrast support-order seeds")
+    if not bool(packet.get("same_candidate_set_required")):
+        raise ValueError("oracle-screen launch bundle must require the same candidate set")
+    if packet.get("science_contract_commit_sha") != ORACLE_SCREEN_SCIENCE_CONTRACT_COMMIT_SHA:
+        raise ValueError("oracle-screen launch bundle must embed the committed afbe598 science contract")
+    _reject_raw_arrays(packet)
+    _validate_resource_lane(packet.get("resource_lane") or {})
+    _validate_phase_budgets(packet.get("phase_budgets") or {})
+    _validate_oracle_global_non_persistence(packet)
+    _validate_oracle_feasibility_budget(packet.get("oracle_feasibility_budget") or {})
+    _validate_oracle_non_persistence(packet.get("oracle_non_persistence_contract") or {})
+    _validate_oracle_compact_summary_schema(packet.get("compact_summary_schema") or {})
+    _validate_oracle_classifier_contract(packet.get("classifier_contract") or {})
+    science_contract = packet.get("science_contract")
+    if not isinstance(science_contract, Mapping):
+        raise ValueError("oracle-screen launch bundle must embed the science_contract packet")
+    validate_candidate_set_viability_oracle_screen_packet(science_contract)
+    if str(science_contract.get("parent_path")) != str(packet.get("parent_path")):
+        raise ValueError("embedded oracle-screen science contract parent_path must match launch bundle")
+    if str(science_contract.get("parent_sha256")) != str(packet.get("parent_sha256")):
+        raise ValueError("embedded oracle-screen science contract parent_sha256 must match launch bundle")
+    terminal = packet.get("terminal_criteria") or {}
+    if terminal.get("branch_classifier") != list(ORACLE_SCREEN_BRANCHES):
+        raise ValueError("oracle-screen launch bundle terminal branch classifier drifted")
+    if not bool(terminal.get("same_candidate_set_required")):
+        raise ValueError("oracle-screen launch bundle terminal criteria must require same candidate set")
+    if terminal.get("support_order_seeds") != list(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError("oracle-screen launch bundle terminal criteria support_order_seeds drifted")
+    if int(terminal.get("n20_screen_rows", -1)) != ORACLE_SCREEN_N20_ROWS:
+        raise ValueError("oracle-screen launch bundle terminal criteria must pin N=20 rows")
+    if bool(terminal.get("qacc_kernelized")):
+        raise ValueError("oracle-screen launch bundle terminal criteria must keep qacc_kernelized=false")
+    if not bool(terminal.get("device_residency_not_hot_loop_residency")):
+        raise ValueError("oracle-screen launch bundle must disclaim device residency vs hot-loop residency")
+    commands = packet.get("commands")
+    if not isinstance(commands, list):
+        raise ValueError("oracle-screen launch bundle commands must be a list")
+    if len(commands) != len(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError("oracle-screen launch bundle must include exactly one command per contrast seed")
+    seen = {int(command.get("support_order_seed", -1)) for command in commands}
+    if seen != set(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError("oracle-screen launch bundle command seeds drifted from the contrast contract")
+    for command in commands:
+        _validate_oracle_screen_command_record(command)
+    artifact_policy = packet.get("artifact_policy") or {}
+    if not bool(artifact_policy.get("compact_json_ndjson_only")):
+        raise ValueError("oracle-screen launch bundle artifact policy must require compact JSON/NDJSON")
+    if bool(artifact_policy.get("pt_writes_allowed")):
+        raise ValueError("oracle-screen launch bundle artifact policy must reject .pt writes")
+
+
 def packet_without_runtime_results(packet: Mapping[str, Any]) -> dict[str, Any]:
     out = deepcopy(dict(packet))
     out.pop("runtime_results", None)
@@ -3841,8 +4219,10 @@ __all__ = [
     "ORACLE_SCREEN_ARM_IDS",
     "ORACLE_SCREEN_BRANCHES",
     "ORACLE_SCREEN_CONTRAST_SEEDS",
+    "ORACLE_SCREEN_LAUNCH_BUNDLE_PACKET_KIND",
     "ORACLE_SCREEN_PACKET_KIND",
     "ORACLE_SCREEN_PROMOTION_ORDER_SEEDS",
+    "ORACLE_SCREEN_SCIENCE_CONTRACT_COMMIT_SHA",
     "OPTIMIZER_UPDATE_LAW_BRANCHES",
     "OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION",
     "SCIENCE_MODE_BRANCH_VERDICT",
@@ -3870,6 +4250,7 @@ __all__ = [
     "TIE_POLICY_CURRENT_MARGIN_INDEX",
     "TIE_POLICY_DETERMINISTIC_HASH_MATCHED",
     "build_measurement_power_then_trust_region_packet",
+    "build_candidate_set_viability_oracle_screen_launch_bundle",
     "build_candidate_set_viability_oracle_screen_packet",
     "build_optimizer_update_law_launch_bundle",
     "build_optimizer_update_law_science_packet",
@@ -3905,6 +4286,7 @@ __all__ = [
     "step4_arm_matches_a0",
     "step4_mass_confound_detected",
     "validate_measurement_power_then_trust_region_packet",
+    "validate_candidate_set_viability_oracle_screen_launch_bundle",
     "validate_candidate_set_viability_oracle_screen_packet",
     "validate_optimizer_update_law_launch_bundle",
     "validate_optimizer_update_law_science_packet",

@@ -26,9 +26,14 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     ARM_A0_RANK_BUCKET_CURRENT,
     ARM_A1_RANK_BUCKET_ORDER_MATCHED,
     ARM_B_RANK_FREE_SIGN_PRESSURE,
+    BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE,
     FIXED_RANK_BUCKET_NON_TARGET_AUX,
+    ORACLE_SCREEN_BRANCHES,
     TIE_POLICY_CURRENT_MARGIN_INDEX,
     TIE_POLICY_DETERMINISTIC_HASH_MATCHED,
+)
+from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
+    run_candidate_set_viability_oracle_screen,
 )
 from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     B1_PRIOR_AUDIT_PINS,
@@ -47,6 +52,7 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     FORWARD_LEVEL_INIT_FIDELITY_STE_ATOL,
     GLOBAL_CAP_CONTRACT_OFF,
     HISTORICAL_IDENTITY_CONTROL,
+    ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY,
     PhaseProgress,
     RUN_C2_ACQUISITION_PROBE_ENV,
     RUN_C2_GPU_LAUNCH_ENV,
@@ -783,6 +789,7 @@ def test_b2_full_snapshot_state_dedupes_same_step_combined_stop_and_terminal():
 def test_b2_full_cli_flag_defaults_off_and_support_validation_is_preload(tmp_path):
     args = build_arg_parser().parse_args([])
     assert args.b2_full_verdict_mode is False
+    assert args.oracle_screen_mode is None
     assert args.global_cap_contract == GLOBAL_CAP_CONTRACT_OFF
     assert args.tie_rule_mode == EXACT_GLOBAL_CAP_TIE_RULE_MODE
     assert args.matched_continued_training_horizon_steps == 0
@@ -804,6 +811,10 @@ def test_b2_full_cli_flag_defaults_off_and_support_validation_is_preload(tmp_pat
         allow_gpu_launch=override_args.allow_gpu_launch,
         max_silent_phase_seconds=override_args.max_silent_phase_seconds,
     ) is None
+    oracle_args = build_arg_parser().parse_args(
+        ["--oracle-screen-mode", ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY]
+    )
+    assert oracle_args.oracle_screen_mode == ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY
 
     with pytest.raises(ValueError, match="requires retained supports"):
         run_c2p1_probe(
@@ -1532,6 +1543,104 @@ def test_tiny_real_model_cpu_step_receipt_is_scratch_only(tmp_path: Path):
         assert tensor_summary["bounded_accumulator_rebuilt_for_parity"] is True
         assert tensor_summary["bounded_decode_parity_checked"] is True
         assert tensor_summary["exact_shadow_matches_bounded_decode"] is True
+    assert Path(receipt["receipt_path"]).exists()
+
+
+def test_direct_oracle_screen_runner_keeps_parent_state_unmutated_and_emits_compact_loss_delta():
+    model, batch, eligible, states = _tiny_forward_fixture(batch_size=8)
+    q_before = {
+        key: tensor_state.q_levels.clone()
+        for key, tensor_state in states.items()
+    }
+    acc_before = {
+        key: tensor_state.exact_accumulator_shadow.clone()
+        for key, tensor_state in states.items()
+    }
+
+    receipt = run_candidate_set_viability_oracle_screen(
+        model=model,
+        batch=batch,
+        tensor_states=states,
+        eligible_modules=eligible,
+        device=torch.device("cpu"),
+        max_abs_per_tensor=4096,
+        extras=model.compute_train_extra_args(1, 1),
+    )
+
+    assert receipt["candidate_count"] >= receipt["sampled_candidate_count"] > 0
+    assert receipt["branch_classification"] in ORACLE_SCREEN_BRANCHES
+    assert receipt["compact_summary"]["local_loss_delta_deciles"]["best_local_loss_delta"] is not None
+    assert receipt["non_persistence"]["q_persisted"] is False
+    assert receipt["non_persistence"]["checkpoint_written"] is False
+    for key, tensor_state in states.items():
+        assert torch.equal(tensor_state.q_levels, q_before[key])
+        assert torch.equal(tensor_state.exact_accumulator_shadow, acc_before[key])
+
+
+def test_direct_oracle_screen_runner_budget_overrun_classifies_infeasible():
+    model, batch, eligible, states = _tiny_forward_fixture(batch_size=8)
+
+    receipt = run_candidate_set_viability_oracle_screen(
+        model=model,
+        batch=batch,
+        tensor_states=states,
+        eligible_modules=eligible,
+        device=torch.device("cpu"),
+        max_abs_per_tensor=4096,
+        extras=model.compute_train_extra_args(1, 1),
+        max_seconds=-1.0,
+    )
+
+    assert receipt["candidate_count"] > 0
+    assert receipt["sampled_candidate_count"] == 0
+    assert receipt["oracle_feasible"] is False
+    assert receipt["budget_exceeded"] is True
+    assert receipt["branch_classification"] == BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE
+
+
+def test_tiny_oracle_screen_mode_returns_compact_non_persistent_receipt(tmp_path: Path):
+    parent = tmp_path / "tiny_parent.pt"
+    torch.save(_tiny_parent_blob(batch_size=8), parent)
+    parent_sha = file_sha256(parent)
+
+    receipt = run_c2p1_probe(
+        parent=parent,
+        parent_sha256=parent_sha,
+        scratch_root=tmp_path / "scratch_oracle_screen",
+        device="cpu",
+        eligible_scope="first-bitlinear",
+        steps=1,
+        batch_size=8,
+        max_len=TINY_ARCH["max_len"],
+        curriculum_seed=17,
+        enabled=True,
+        oracle_screen_mode=ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY,
+    )
+
+    assert receipt["gpu_launched"] is False
+    assert receipt["checkpoint_written"] is False
+    assert receipt["parent_hash_before"] == parent_sha
+    assert receipt["parent_hash_after"] == parent_sha
+    assert receipt["parent_hash_unchanged"] is True
+    assert receipt["forward_backward_update_executed"] is False
+    assert receipt["science_arm"] is None
+    assert receipt["oracle_screen_mode"] == ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY
+    assert receipt["stop_reason"] == "oracle_screen_completed"
+    assert receipt["step_reports"] == {}
+    assert receipt["audit_reports"] == {}
+    oracle = receipt["oracle_screen"]
+    assert oracle["mode"] == ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY
+    assert oracle["same_candidate_set_required"] is True
+    assert oracle["screen_rows"] == 8
+    assert oracle["candidate_count"] >= oracle["sampled_candidate_count"]
+    assert oracle["sampled_candidate_count"] <= oracle["max_sampled_candidates"]
+    assert oracle["branch_classification"] in ORACLE_SCREEN_BRANCHES
+    assert oracle["non_persistence"]["q_persisted"] is False
+    assert oracle["non_persistence"]["checkpoint_written"] is False
+    assert oracle["non_persistence"]["pt_writes_allowed"] is False
+    assert oracle["non_persistence"]["screen_state_mutated"] is False
+    assert oracle["compact_summary"]["candidate_count"] == oracle["candidate_count"]
+    assert oracle["compact_summary"]["sampled_candidate_count"] == oracle["sampled_candidate_count"]
     assert Path(receipt["receipt_path"]).exists()
 
 
