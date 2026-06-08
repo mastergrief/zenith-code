@@ -12,14 +12,21 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     ARM_A1_RANK_BUCKET_ORDER_MATCHED,
     ARM_B_CAP_MAX_ABS_1024,
     ARM_B_RANK_FREE_SIGN_PRESSURE,
+    ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER,
     ARM_INVERTED_SIGN_PRESSURE,
+    BRANCH_CURRENT_ORDER_NOT_NECESSARY,
+    BRANCH_CURRENT_QACC_MARGIN_ORDER_BUNDLE_CARRIER,
     BRANCH_INSUFFICIENT_SEPARATION,
+    BRANCH_MASS_CONFOUNDED_CURRENT_ORDER_SIGNAL,
     BRANCH_MEASUREMENT_LOSS_POWERED,
     BRANCH_MEASUREMENT_POWERED,
     BRANCH_MEASUREMENT_UNDERPOWERED,
+    BRANCH_NO_MATCH_DIFFERENT_CREDIT_SOURCE,
+    BRANCH_PARTIAL_LOCAL_SIGNAL,
     BRANCH_POWERED_NEGATIVE_OR_LOSS_ONLY,
     BRANCH_PRIOR_NULL_SETUP_UNVERIFIED,
     BRANCH_RANK_FREE_POSITIVE,
+    BRANCH_RANK_MAGNITUDE_CONDITIONED_ON_CURRENT_ORDER,
     BRANCH_TIE_POLICY_OR_OVERUPDATE,
     CONTROL_PARITY_FRACTION_MAX,
     CONTROL_PARITY_FRACTION_MIN,
@@ -31,16 +38,23 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     STEP3_BASELINE_MAX_ABS_PER_TENSOR,
     STEP3_CAP_MAX_ABS_PER_TENSOR,
     STEP3_MEASUREMENT_POWER_TRUST_REGION_PACKET_KIND,
+    STEP4_POWERED_RANK_SIGNAL_DECOMPOSITION_PACKET_KIND,
     build_measurement_power_then_trust_region_packet,
+    build_powered_rank_signal_decomposition_packet,
     TIE_POLICY_CURRENT_MARGIN_INDEX,
     TIE_POLICY_DETERMINISTIC_HASH_MATCHED,
     build_optimizer_update_law_launch_bundle,
     build_optimizer_update_law_science_packet,
     classify_optimizer_update_law_branch,
+    classify_step4_rank_signal_decomposition,
     classify_step3_power_floor,
+    default_step4_mass_confound_rule,
+    step4_arm_matches_a0,
+    step4_mass_confound_detected,
     validate_measurement_power_then_trust_region_packet,
     validate_optimizer_update_law_launch_bundle,
     validate_optimizer_update_law_science_packet,
+    validate_powered_rank_signal_decomposition_packet,
 )
 from scripts.hrm_text_158_optimizer_update_law_science_packet import main as packet_main
 
@@ -616,6 +630,227 @@ def test_step3_validator_rejects_power_floor_drift(mutation, error):
         validate_measurement_power_then_trust_region_packet(packet)
 
 
+def test_step4_rank_signal_packet_adds_c_only_for_step4_and_keeps_legacy_stable():
+    step1 = build_optimizer_update_law_science_packet(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+    )
+    step3 = build_measurement_power_then_trust_region_packet(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+        repo_root="/repo",
+        run_root="/tmp/hrm158-step3",
+    )
+    step4 = build_powered_rank_signal_decomposition_packet(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+        repo_root="/repo",
+        run_root="/tmp/hrm158-step4",
+    )
+
+    assert ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER not in {
+        arm["arm_id"] for arm in step1["arms"]
+    }
+    assert ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER not in {
+        arm["arm_id"] for arm in step3["arms"]
+    }
+    validate_powered_rank_signal_decomposition_packet(step4)
+    assert step4["packet_kind"] == STEP4_POWERED_RANK_SIGNAL_DECOMPOSITION_PACKET_KIND
+    assert step4["author_only"] is True
+    assert step4["gpu_launched"] is False
+    assert step4["launch_gate_id"] is None
+    assert step4["pt_mutated"] is False
+    assert step4["checkpoint_written"] is False
+    assert step4["readiness_claim"] is False
+    assert step4["full_sub2_claim"] is False
+    assert step4["ready_for_main_science"] is False
+    assert step4["branch_result"] is None
+    assert step4["optimizer_credit_state_science_dependent"] is True
+
+    arms = {arm["arm_id"]: arm for arm in step4["arms"]}
+    assert set(arms) == {
+        ARM_A0_RANK_BUCKET_CURRENT,
+        ARM_A1_RANK_BUCKET_ORDER_MATCHED,
+        ARM_B_RANK_FREE_SIGN_PRESSURE,
+        ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER,
+        ARM_INVERTED_SIGN_PRESSURE,
+    }
+    c_arm = arms[ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER]
+    assert c_arm["vote_law"] == "rank_free_sign_pressure"
+    assert c_arm["tie_policy_id"] == TIE_POLICY_CURRENT_MARGIN_INDEX
+    assert "not pure current-order rank" in c_arm["claim_caveat"]
+
+    assert step4["mode_sequence"] == ["rank_signal_150", "rank_signal_300"]
+    assert step4["power_ladder"]["steps_first"] == 150
+    assert step4["power_ladder"]["steps_optional_continuation"] == 300
+    assert "clear misses stop at 150" in step4["power_ladder"]["continuation_enabled_if"]
+    assert step4["match_to_A0_rule"]["strict_gap_max"] == 3
+    assert step4["match_to_A0_rule"]["carrier_named_only_on_match_to_A0"] is True
+    assert step4["mass_confound_rule"]["ratio_min_inclusive"] == 0.75
+    assert step4["mass_confound_rule"]["ratio_max_inclusive"] == 1.25
+    assert step4["mass_confound_rule"]["absolute_delta_min_inclusive"] == 4.0
+    assert step4["success_boundary"]["C_claim"] == BRANCH_CURRENT_QACC_MARGIN_ORDER_BUNDLE_CARRIER
+    assert step4["success_boundary"]["C_mass_confounded_branch"] == (
+        BRANCH_MASS_CONFOUNDED_CURRENT_ORDER_SIGNAL
+    )
+    assert "margin-vs-index split deferred" in step4["success_boundary"]["C_claim_caveat"]
+
+    commands = step4["commands"]
+    assert len(commands) == 10
+    assert {(cmd["mode"], cmd["arm_id"]) for cmd in commands} == {
+        (phase, arm)
+        for phase in {"rank_signal_150", "rank_signal_300"}
+        for arm in set(arms)
+    }
+    c_commands = [
+        command for command in commands
+        if command["arm_id"] == ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER
+    ]
+    assert len(c_commands) == 2
+    for command in c_commands:
+        assert command["science_arm"] == ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER
+        assert command["argv"][command["argv"].index("--science-arm") + 1] == (
+            ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER
+        )
+        assert command["argv"][command["argv"].index("--max-abs-per-tensor") + 1] == "4096"
+        assert command["global_cap_contract"] == "off"
+
+
+def test_step4_match_to_a0_and_mass_confounded_classification_are_quantitative():
+    assert step4_arm_matches_a0(
+        arm_strict_exact_count=18,
+        a0_strict_exact_count=21,
+        paired_loss_ci_low=-0.05,
+        paired_loss_ci_high=0.08,
+    )
+    assert step4_arm_matches_a0(
+        arm_strict_exact_count=20,
+        a0_strict_exact_count=21,
+        paired_loss_ci_low=-0.20,
+        paired_loss_ci_high=-0.01,
+    )
+    assert not step4_arm_matches_a0(
+        arm_strict_exact_count=17,
+        a0_strict_exact_count=21,
+        paired_loss_ci_low=-0.05,
+        paired_loss_ci_high=0.08,
+    )
+    assert not step4_arm_matches_a0(
+        arm_strict_exact_count=20,
+        a0_strict_exact_count=21,
+        paired_loss_ci_low=0.01,
+        paired_loss_ci_high=0.20,
+    )
+
+    reference = {
+        "q_changed_count": 100,
+        "candidate_count": 200,
+        "pre_veto_selected_count": 100,
+        "applied_count": 90,
+        "vote_nonzero_count": 1000,
+        "vote_abs_median": 2,
+        "vote_abs_max": 4,
+    }
+    close_candidate = {
+        "q_changed_count": 105,
+        "candidate_count": 205,
+        "pre_veto_selected_count": 100,
+        "applied_count": 91,
+        "vote_nonzero_count": 1005,
+        "vote_abs_median": 2,
+        "vote_abs_max": 4,
+    }
+    mass_shifted_candidate = {
+        **close_candidate,
+        "q_changed_count": 140,
+    }
+    assert step4_mass_confound_detected(reference=reference, candidate=close_candidate) is False
+    assert step4_mass_confound_detected(reference=reference, candidate=mass_shifted_candidate) is True
+    with pytest.raises(ValueError, match="vote_abs_max"):
+        step4_mass_confound_detected(
+            reference=reference,
+            candidate={k: v for k, v in close_candidate.items() if k != "vote_abs_max"},
+            rule=default_step4_mass_confound_rule(),
+        )
+
+    assert classify_step4_rank_signal_decomposition(
+        c_matches_a0=True,
+        c_mass_confounded=True,
+        any_non_reference_matches_a0=True,
+    ) == BRANCH_MASS_CONFOUNDED_CURRENT_ORDER_SIGNAL
+    assert classify_step4_rank_signal_decomposition(
+        c_matches_a0=True,
+        c_mass_confounded=False,
+        any_non_reference_matches_a0=True,
+    ) == BRANCH_CURRENT_QACC_MARGIN_ORDER_BUNDLE_CARRIER
+    assert classify_step4_rank_signal_decomposition(
+        c_matches_a0=False,
+        c_mass_confounded=False,
+        a1_matches_a0=True,
+        any_non_reference_matches_a0=True,
+    ) == BRANCH_CURRENT_ORDER_NOT_NECESSARY
+    assert classify_step4_rank_signal_decomposition(
+        c_matches_a0=False,
+        c_mass_confounded=False,
+        a0_beats_c=True,
+        a1_beats_b=False,
+        any_non_reference_matches_a0=False,
+    ) == BRANCH_RANK_MAGNITUDE_CONDITIONED_ON_CURRENT_ORDER
+    assert classify_step4_rank_signal_decomposition(
+        c_matches_a0=False,
+        c_mass_confounded=False,
+        any_non_reference_matches_a0=False,
+    ) == BRANCH_NO_MATCH_DIFFERENT_CREDIT_SOURCE
+    assert classify_step4_rank_signal_decomposition(
+        c_matches_a0=False,
+        c_mass_confounded=False,
+        any_non_reference_matches_a0=True,
+    ) == BRANCH_PARTIAL_LOCAL_SIGNAL
+
+
+@pytest.mark.parametrize(
+    "mutation,error",
+    [
+        (
+            lambda packet: packet["arms"].pop(ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER),
+            "exactly A0/A1/B/C/inverted",
+        ),
+        (
+            lambda packet: packet["arms"][ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER].update(
+                {"claim_caveat": "pure current-order rank"},
+            ),
+            "pure current-order rank",
+        ),
+        (
+            lambda packet: packet["match_to_A0_rule"].update({"strict_gap_max": 4}),
+            "strict_gap_max",
+        ),
+        (
+            lambda packet: packet["mass_confound_rule"].update({"ratio_max_inclusive": 1.5}),
+            "ratio_max",
+        ),
+        (
+            lambda packet: packet.update({"ready_for_main_science": True}),
+            "ready_for_main_science",
+        ),
+    ],
+)
+def test_step4_validator_rejects_fold_drift(mutation, error):
+    packet = build_powered_rank_signal_decomposition_packet(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+        repo_root="/repo",
+        run_root="/tmp/hrm158-step4",
+    )
+    packet["arms"] = {arm["arm_id"]: arm for arm in packet["arms"]}
+    mutation(packet)
+    if isinstance(packet["arms"], dict):
+        packet["arms"] = list(packet["arms"].values())
+
+    with pytest.raises(ValueError, match=error):
+        validate_powered_rank_signal_decomposition_packet(packet)
+
+
 def test_packet_script_writes_compact_launch_packet_with_null_gate(tmp_path: Path, capsys):
     parent = tmp_path / "parent.pt"
     parent.write_bytes(b"read-only parent bytes")
@@ -720,4 +955,44 @@ def test_packet_script_writes_step3_author_only_measurement_power_packet(tmp_pat
     assert len(packet["commands"]) == 18
     assert json.loads(capsys.readouterr().out)["packet_kind"] == (
         STEP3_MEASUREMENT_POWER_TRUST_REGION_PACKET_KIND
+    )
+
+
+def test_packet_script_writes_step4_author_only_rank_signal_packet(tmp_path: Path, capsys):
+    parent = tmp_path / "parent.pt"
+    parent.write_bytes(b"read-only parent bytes")
+    parent_sha = hashlib.sha256(b"read-only parent bytes").hexdigest()
+    out = tmp_path / "step4-packet.json"
+    run_root = tmp_path / "run"
+
+    exit_code = packet_main(
+        [
+            "--packet-kind",
+            STEP4_POWERED_RANK_SIGNAL_DECOMPOSITION_PACKET_KIND,
+            "--parent",
+            str(parent),
+            "--parent-sha256",
+            parent_sha,
+            "--json-out",
+            str(out),
+            "--run-root",
+            str(run_root),
+        ],
+    )
+
+    assert exit_code == 0
+    packet = json.loads(out.read_text(encoding="utf-8"))
+    validate_powered_rank_signal_decomposition_packet(packet)
+    assert packet["packet_kind"] == STEP4_POWERED_RANK_SIGNAL_DECOMPOSITION_PACKET_KIND
+    assert packet["launch_gate_id"] is None
+    assert packet["commands_executed"] is False
+    assert packet["gpu_launched"] is False
+    assert packet["pt_mutated"] is False
+    assert packet["parent_hash_basis"] == "read_only_parent_file_sha256"
+    assert packet["dry_run_packet_written"] is True
+    assert packet["gpu_launch_command_authorized"] is False
+    assert packet["step4_launch_gate_required"] is True
+    assert len(packet["commands"]) == 10
+    assert json.loads(capsys.readouterr().out)["packet_kind"] == (
+        STEP4_POWERED_RANK_SIGNAL_DECOMPOSITION_PACKET_KIND
     )

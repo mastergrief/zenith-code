@@ -94,6 +94,7 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     ARM_A0_RANK_BUCKET_CURRENT,
     ARM_A1_RANK_BUCKET_ORDER_MATCHED,
     ARM_B_RANK_FREE_SIGN_PRESSURE,
+    ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER,
     ARM_INVERTED_SIGN_PRESSURE,
     FIXED_RANK_BUCKET_NON_TARGET_AUX,
     TIE_POLICY_CURRENT_MARGIN_INDEX,
@@ -129,6 +130,7 @@ SCIENCE_ARM_CHOICES: tuple[str, ...] = (
     ARM_A0_RANK_BUCKET_CURRENT,
     ARM_A1_RANK_BUCKET_ORDER_MATCHED,
     ARM_B_RANK_FREE_SIGN_PRESSURE,
+    ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER,
     ARM_INVERTED_SIGN_PRESSURE,
 )
 SCIENCE_LOCAL_SELECTION_ORDERING_SEED = 17
@@ -2819,7 +2821,7 @@ def _science_arm_vote_law(science_arm: str) -> str:
     arm = str(science_arm)
     if arm in {ARM_A0_RANK_BUCKET_CURRENT, ARM_A1_RANK_BUCKET_ORDER_MATCHED}:
         return S1_RANK_BUCKET_VOTE_LAW
-    if arm == ARM_B_RANK_FREE_SIGN_PRESSURE:
+    if arm in {ARM_B_RANK_FREE_SIGN_PRESSURE, ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER}:
         return S1_SIGN_PRESSURE_VOTE_LAW
     if arm == ARM_INVERTED_SIGN_PRESSURE:
         return S1_INVERTED_SIGN_PRESSURE_VOTE_LAW
@@ -2829,6 +2831,8 @@ def _science_arm_vote_law(science_arm: str) -> str:
 def _science_arm_tie_policy(science_arm: str) -> str:
     arm = str(science_arm)
     if arm == ARM_A0_RANK_BUCKET_CURRENT:
+        return TIE_POLICY_CURRENT_MARGIN_INDEX
+    if arm == ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER:
         return TIE_POLICY_CURRENT_MARGIN_INDEX
     if arm in {
         ARM_A1_RANK_BUCKET_ORDER_MATCHED,
@@ -2842,6 +2846,8 @@ def _science_arm_tie_policy(science_arm: str) -> str:
 def _science_local_selection_ordering_mode(science_arm: str) -> str:
     arm = str(science_arm)
     if arm == ARM_A0_RANK_BUCKET_CURRENT:
+        return LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX
+    if arm == ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER:
         return LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX
     if arm in {
         ARM_A1_RANK_BUCKET_ORDER_MATCHED,

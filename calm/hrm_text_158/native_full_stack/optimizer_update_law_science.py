@@ -22,6 +22,9 @@ STEP2_LAUNCH_BUNDLE_PACKET_KIND = "step2_launch_bundle"
 STEP3_MEASUREMENT_POWER_TRUST_REGION_PACKET_KIND = (
     "step3_measurement_power_then_trust_region_packet"
 )
+STEP4_POWERED_RANK_SIGNAL_DECOMPOSITION_PACKET_KIND = (
+    "step4_powered_rank_signal_decomposition_packet"
+)
 
 SCIENCE_MODE_PRETERMINAL_SCREEN = "preterminal_screen"
 SCIENCE_MODE_BRANCH_VERDICT = "branch_verdict"
@@ -33,6 +36,7 @@ SCIENCE_MODE_ROWS = {
 ARM_A0_RANK_BUCKET_CURRENT = "A0_rank_bucket_current_ordering"
 ARM_A1_RANK_BUCKET_ORDER_MATCHED = "A1_rank_bucket_order_matched"
 ARM_B_RANK_FREE_SIGN_PRESSURE = "B_rank_free_sign_pressure"
+ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER = "C_rank_free_sign_current_margin_order"
 ARM_B_CAP_MAX_ABS_1024 = "B_cap_max_abs_1024"
 ARM_INVERTED_SIGN_PRESSURE = "inverted_sign_pressure"
 SCIENCE_ARM_IDS = (
@@ -62,6 +66,16 @@ BRANCH_MEASUREMENT_UNDERPOWERED = "measurement_underpowered"
 BRANCH_MEASUREMENT_POWERED = "measurement_powered"
 BRANCH_MEASUREMENT_LOSS_POWERED = "measurement_loss_powered"
 BRANCH_POWERED_NEGATIVE_OR_LOSS_ONLY = "powered_negative_or_loss_only"
+BRANCH_CURRENT_QACC_MARGIN_ORDER_BUNDLE_CARRIER = (
+    "current_order_qacc_margin_bundle_carrier_candidate"
+)
+BRANCH_RANK_MAGNITUDE_CONDITIONED_ON_CURRENT_ORDER = (
+    "rank_magnitude_conditioned_on_current_order"
+)
+BRANCH_CURRENT_ORDER_NOT_NECESSARY = "current_order_not_necessary"
+BRANCH_PARTIAL_LOCAL_SIGNAL = "partial_local_signal_not_carrier"
+BRANCH_NO_MATCH_DIFFERENT_CREDIT_SOURCE = "no_match_pivot_different_credit_source"
+BRANCH_MASS_CONFOUNDED_CURRENT_ORDER_SIGNAL = "mass_confounded_current_order_signal"
 OPTIMIZER_UPDATE_LAW_BRANCHES = (
     BRANCH_RANK_FREE_POSITIVE,
     BRANCH_RANKING_STILL_REQUIRED,
@@ -127,6 +141,36 @@ STEP3_BASELINE_MAX_ABS_PER_TENSOR = 4096
 STEP3_CAP_MAX_ABS_PER_TENSOR = 1024
 STEP3_FRACTION_PER_TENSOR = 1.0
 STEP3_EFFECTIVE_CAP_TARGET_TENSOR_NUMELS = (2048 * 512,)
+STEP4_PHASE_RANK_SIGNAL_150 = "rank_signal_150"
+STEP4_PHASE_RANK_SIGNAL_300 = "rank_signal_300"
+STEP4_PHASE_STEPS = {
+    STEP4_PHASE_RANK_SIGNAL_150: 150,
+    STEP4_PHASE_RANK_SIGNAL_300: 300,
+}
+STEP4_PHASES = (STEP4_PHASE_RANK_SIGNAL_150, STEP4_PHASE_RANK_SIGNAL_300)
+STEP4_ARM_IDS = (
+    ARM_A0_RANK_BUCKET_CURRENT,
+    ARM_A1_RANK_BUCKET_ORDER_MATCHED,
+    ARM_B_RANK_FREE_SIGN_PRESSURE,
+    ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER,
+    ARM_INVERTED_SIGN_PRESSURE,
+)
+STEP4_MATCH_STRICT_GAP_MAX = 3
+STEP4_MATCH_STRICT_TOTAL = 90
+STEP4_MASS_RATIO_MIN = 0.75
+STEP4_MASS_RATIO_MAX = 1.25
+STEP4_MASS_ABS_DELTA_MIN = 4.0
+STEP4_MASS_COUNT_METRICS = (
+    "q_changed_count",
+    "candidate_count",
+    "pre_veto_selected_count",
+    "applied_count",
+    "vote_nonzero_count",
+)
+STEP4_MASS_PRESSURE_METRICS = (
+    "vote_abs_median",
+    "vote_abs_max",
+)
 
 
 def _path_join(root: str | Path, *parts: str) -> str:
@@ -567,6 +611,125 @@ def default_step3_effective_cap_audit(
     }
 
 
+def default_step4_science_arms() -> list[dict[str, Any]]:
+    arms = [
+        arm
+        for arm in default_science_arms(include_inverted=False)
+    ]
+    arms.append(
+        {
+            "arm_id": ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER,
+            "vote_law": "rank_free_sign_pressure",
+            "ordering_role": "current_qacc_margin_order_bundle_probe",
+            "tie_policy_id": TIE_POLICY_CURRENT_MARGIN_INDEX,
+            "claim_caveat": "current qacc-margin/order bundle; not pure current-order rank",
+            "required": True,
+        },
+    )
+    arms.append(
+        {
+            "arm_id": ARM_INVERTED_SIGN_PRESSURE,
+            "vote_law": "inverted_rank_free_sign_pressure",
+            "ordering_role": "direction_falsifier_same_ordering_as_A1",
+            "tie_policy_id": TIE_POLICY_DETERMINISTIC_HASH_MATCHED,
+            "required": False,
+        },
+    )
+    return arms
+
+
+def default_step4_match_to_a0_rule() -> dict[str, Any]:
+    return {
+        "strict_gap_max": STEP4_MATCH_STRICT_GAP_MAX,
+        "strict_total": STEP4_MATCH_STRICT_TOTAL,
+        "paired_loss_comparison": "arm_minus_A0",
+        "paired_loss_ci": "95% bootstrap",
+        "paired_loss_match_if": "ci_crosses_zero_or_entirely_below_zero",
+        "carrier_named_only_on_match_to_A0": True,
+        "beat_A1_or_B_is_not_a_carrier_claim": True,
+    }
+
+
+def default_step4_mass_confound_rule() -> dict[str, Any]:
+    return {
+        "classification": BRANCH_MASS_CONFOUNDED_CURRENT_ORDER_SIGNAL,
+        "compares": ["C_vs_A0", "C_vs_B"],
+        "count_metrics": list(STEP4_MASS_COUNT_METRICS),
+        "pressure_metrics": list(STEP4_MASS_PRESSURE_METRICS),
+        "ratio_min_inclusive": STEP4_MASS_RATIO_MIN,
+        "ratio_max_inclusive": STEP4_MASS_RATIO_MAX,
+        "absolute_delta_min_inclusive": STEP4_MASS_ABS_DELTA_MIN,
+        "material_if": (
+            "any metric has abs(delta)>=4 and ratio outside [0.75,1.25]; "
+            "missing metric is fail-closed"
+        ),
+        "if_match_to_A0_but_material_mass_difference": BRANCH_MASS_CONFOUNDED_CURRENT_ORDER_SIGNAL,
+        "not_carrier_ready": True,
+    }
+
+
+def step4_arm_matches_a0(
+    *,
+    arm_strict_exact_count: int,
+    a0_strict_exact_count: int,
+    paired_loss_ci_low: float,
+    paired_loss_ci_high: float,
+    strict_gap_max: int = STEP4_MATCH_STRICT_GAP_MAX,
+) -> bool:
+    strict_gap = int(a0_strict_exact_count) - int(arm_strict_exact_count)
+    loss_ci_matches = float(paired_loss_ci_low) <= 0.0 <= float(paired_loss_ci_high)
+    loss_ci_favors_arm = float(paired_loss_ci_high) < 0.0
+    return strict_gap <= int(strict_gap_max) and (loss_ci_matches or loss_ci_favors_arm)
+
+
+def step4_mass_confound_detected(
+    *,
+    reference: Mapping[str, int | float],
+    candidate: Mapping[str, int | float],
+    rule: Mapping[str, Any] | None = None,
+) -> bool:
+    active_rule = dict(rule or default_step4_mass_confound_rule())
+    metrics = list(active_rule.get("count_metrics") or ()) + list(active_rule.get("pressure_metrics") or ())
+    if not metrics:
+        raise ValueError("Step-4 mass-confound rule must name metrics")
+    ratio_min = float(active_rule.get("ratio_min_inclusive", STEP4_MASS_RATIO_MIN))
+    ratio_max = float(active_rule.get("ratio_max_inclusive", STEP4_MASS_RATIO_MAX))
+    abs_delta_min = float(active_rule.get("absolute_delta_min_inclusive", STEP4_MASS_ABS_DELTA_MIN))
+    for metric in metrics:
+        if metric not in reference or metric not in candidate:
+            raise ValueError(f"Step-4 mass-confound metric missing: {metric}")
+        ref_value = float(reference[metric])
+        cand_value = float(candidate[metric])
+        abs_delta = abs(cand_value - ref_value)
+        denominator = max(abs(ref_value), 1.0)
+        ratio = abs(cand_value) / denominator
+        if abs_delta >= abs_delta_min and (ratio < ratio_min or ratio > ratio_max):
+            return True
+    return False
+
+
+def classify_step4_rank_signal_decomposition(
+    *,
+    c_matches_a0: bool,
+    c_mass_confounded: bool,
+    a1_matches_a0: bool = False,
+    a0_beats_c: bool = False,
+    a1_beats_b: bool = False,
+    any_non_reference_matches_a0: bool = False,
+) -> str:
+    if bool(c_matches_a0) and bool(c_mass_confounded):
+        return BRANCH_MASS_CONFOUNDED_CURRENT_ORDER_SIGNAL
+    if bool(c_matches_a0):
+        return BRANCH_CURRENT_QACC_MARGIN_ORDER_BUNDLE_CARRIER
+    if bool(a1_matches_a0):
+        return BRANCH_CURRENT_ORDER_NOT_NECESSARY
+    if bool(a0_beats_c) and not bool(a1_beats_b):
+        return BRANCH_RANK_MAGNITUDE_CONDITIONED_ON_CURRENT_ORDER
+    if not bool(any_non_reference_matches_a0):
+        return BRANCH_NO_MATCH_DIFFERENT_CREDIT_SOURCE
+    return BRANCH_PARTIAL_LOCAL_SIGNAL
+
+
 def default_prior_verdict_parent_ref(
     *,
     parent_path: str | Path,
@@ -886,6 +1049,208 @@ def build_measurement_power_then_trust_region_packet(
         ],
     }
     validate_measurement_power_then_trust_region_packet(packet)
+    return packet
+
+
+def _build_step4_probe_command_record(
+    *,
+    repo_root: str | Path,
+    run_root: str | Path,
+    parent_path: str | Path,
+    parent_sha256: str,
+    phase: str,
+    arm_id: str,
+    device: str,
+    phase_timeout_seconds: int | float,
+    total_timeout_seconds: int | float,
+    max_silent_phase_seconds: int | float,
+) -> dict[str, Any]:
+    steps_requested = int(STEP4_PHASE_STEPS[str(phase)])
+    scratch_root = _path_join(run_root, str(phase), str(arm_id))
+    receipt_path = _path_join(scratch_root, "receipt.json")
+    stdout_path = _path_join(scratch_root, "stdout.ndjson")
+    stderr_path = _path_join(scratch_root, "stderr.log")
+    argv = [
+        "python3",
+        "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+        "--enable-bounded-delta-probe",
+        "--allow-gpu-launch",
+        "--phase",
+        f"optimizer-update-law-step4-{phase}-{arm_id}",
+        "--device",
+        str(device),
+        "--parent",
+        str(parent_path),
+        "--parent-sha256",
+        str(parent_sha256),
+        "--scratch-root",
+        scratch_root,
+        "--steps",
+        str(steps_requested),
+        "--max-steps-hard",
+        str(max(STEP4_PHASE_STEPS.values())),
+        "--audit-interval",
+        str(steps_requested),
+        "--science-arm",
+        str(arm_id),
+        "--max-abs-per-tensor",
+        str(STEP3_BASELINE_MAX_ABS_PER_TENSOR),
+        "--emit-progress",
+        "--phase-timeout-seconds",
+        str(phase_timeout_seconds),
+        "--total-timeout-seconds",
+        str(total_timeout_seconds),
+        "--max-silent-phase-seconds",
+        str(max_silent_phase_seconds),
+    ]
+    return {
+        "mode": str(phase),
+        "phase_role": "rank_signal_decomposition",
+        "arm_id": str(arm_id),
+        "science_arm": str(arm_id),
+        "n_rows": steps_requested,
+        "steps_requested": steps_requested,
+        "steps_source": "STEP4_PHASE_STEPS[mode]",
+        "max_abs_per_tensor": STEP3_BASELINE_MAX_ABS_PER_TENSOR,
+        "fraction_per_tensor": STEP3_FRACTION_PER_TENSOR,
+        "global_cap_contract": "off",
+        "cwd": str(repo_root),
+        "env": {
+            "HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE": "1",
+            "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH": "1",
+        },
+        "argv": argv,
+        "stdout_path": stdout_path,
+        "stderr_path": stderr_path,
+        "receipt_path": receipt_path,
+        "scratch_root": scratch_root,
+        "enabled_if": "150 first; 300 only if 150 is powered but ambiguous",
+        "expected_exit_policy": "exit_0_required_else_stop_no_retry_no_verdict",
+    }
+
+
+def build_powered_rank_signal_decomposition_packet(
+    *,
+    parent_path: str | Path,
+    parent_sha256: str,
+    repo_root: str | Path,
+    run_root: str | Path,
+    device: str = "cuda:0",
+    launch_gate_id: str | None = None,
+    symbolic_resource_lane: str = "gpu:0",
+    phase_timeout_seconds: int | float = 1800,
+    total_timeout_seconds: int | float = 14400,
+    max_silent_phase_seconds: int | float = 300,
+) -> dict[str, Any]:
+    commands = [
+        _build_step4_probe_command_record(
+            repo_root=repo_root,
+            run_root=run_root,
+            parent_path=parent_path,
+            parent_sha256=parent_sha256,
+            phase=phase,
+            arm_id=arm_id,
+            device=device,
+            phase_timeout_seconds=phase_timeout_seconds,
+            total_timeout_seconds=total_timeout_seconds,
+            max_silent_phase_seconds=max_silent_phase_seconds,
+        )
+        for phase in STEP4_PHASES
+        for arm_id in STEP4_ARM_IDS
+    ]
+    packet = {
+        "schema_version": OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION,
+        "packet_kind": STEP4_POWERED_RANK_SIGNAL_DECOMPOSITION_PACKET_KIND,
+        "target_name": "step4_powered_rank_signal_decomposition_packet",
+        "artifact_role": "optimizer_update_law_rank_signal_decomposition_author_packet",
+        "diagnostic_class": DIAGNOSTIC_CLASS_PRE_FULL_STACK,
+        "pre_full_stack_diagnostic": True,
+        "author_only": True,
+        "commands_executed": False,
+        "gpu_launched": False,
+        "launch_gate_id": launch_gate_id,
+        "pt_mutated": False,
+        "readiness_claim": False,
+        "full_sub2_claim": False,
+        "ready_for_main_science": False,
+        "checkpoint_written": False,
+        "optimizer_credit_state_row_flip": False,
+        "optimizer_credit_state_science_dependent": True,
+        "branch_result": None,
+        "parent_path": str(parent_path),
+        "parent_sha256": str(parent_sha256),
+        "prior_verdict_parent_ref": default_prior_verdict_parent_ref(
+            parent_path=parent_path,
+            parent_sha256=parent_sha256,
+        ),
+        "mode_sequence": list(STEP4_PHASES),
+        "power_ladder": {
+            "steps_first": 150,
+            "steps_optional_continuation": 300,
+            "max_steps_hard": max(STEP4_PHASE_STEPS.values()),
+            "continuation_enabled_if": (
+                "150-step rung is powered but match-to-A0 result is ambiguous; "
+                "clear misses stop at 150"
+            ),
+            "floor": default_step3_power_floor(),
+        },
+        "match_to_A0_rule": default_step4_match_to_a0_rule(),
+        "mass_confound_rule": default_step4_mass_confound_rule(),
+        "success_boundary": {
+            "carrier_named_only_on_match_to_A0": True,
+            "C_claim": BRANCH_CURRENT_QACC_MARGIN_ORDER_BUNDLE_CARRIER,
+            "C_claim_caveat": "current qacc-margin/order bundle; margin-vs-index split deferred",
+            "C_mass_confounded_branch": BRANCH_MASS_CONFOUNDED_CURRENT_ORDER_SIGNAL,
+            "A1_matches_A0_branch": BRANCH_CURRENT_ORDER_NOT_NECESSARY,
+            "rank_magnitude_branch": BRANCH_RANK_MAGNITUDE_CONDITIONED_ON_CURRENT_ORDER,
+            "no_match_pivot": BRANCH_NO_MATCH_DIFFERENT_CREDIT_SOURCE,
+        },
+        "arms": default_step4_science_arms(),
+        "commands": commands,
+        "resource_lane": default_resource_lane_contract(
+            symbolic_lane=symbolic_resource_lane,
+        ),
+        "watcher_audit_bundle": default_watcher_bundle(),
+        "phase_budgets": default_phase_budgets(),
+        "terminal_criteria": {
+            **default_terminal_criteria(),
+            "branch_classifier": [
+                BRANCH_CURRENT_QACC_MARGIN_ORDER_BUNDLE_CARRIER,
+                BRANCH_RANK_MAGNITUDE_CONDITIONED_ON_CURRENT_ORDER,
+                BRANCH_CURRENT_ORDER_NOT_NECESSARY,
+                BRANCH_PARTIAL_LOCAL_SIGNAL,
+                BRANCH_NO_MATCH_DIFFERENT_CREDIT_SOURCE,
+                BRANCH_MASS_CONFOUNDED_CURRENT_ORDER_SIGNAL,
+                BRANCH_MEASUREMENT_UNDERPOWERED,
+                BRANCH_MEASUREMENT_POWERED,
+                BRANCH_MEASUREMENT_LOSS_POWERED,
+                BRANCH_POWERED_NEGATIVE_OR_LOSS_ONLY,
+            ],
+            "step4_power_floor": default_step3_power_floor(),
+            "match_to_A0_rule": default_step4_match_to_a0_rule(),
+            "mass_confound_rule": default_step4_mass_confound_rule(),
+            "no_carrier_claim_on_beating_A1_or_B_only": True,
+        },
+        "hash_gate_policy": default_hash_gate_policy(),
+        "compact_instrumentation_only": True,
+        "raw_per_proposal_arrays_included": False,
+        "artifact_policy": {
+            "compact_json_ndjson_only": True,
+            "raw_per_proposal_arrays": False,
+            "pt_writes_allowed": False,
+        },
+        "non_claims": [
+            "author-only Step-4 packet",
+            "no GPU launch from this packet-authoring step",
+            "no resource lane acquired by this packet",
+            "no .pt mutation",
+            "no readiness row flip",
+            "no full-sub2 runtime claim",
+            "optimizer_credit_state remains science-dependent",
+            "C is current qacc-margin/order bundle, not pure current-order rank",
+        ],
+    }
+    validate_powered_rank_signal_decomposition_packet(packet)
     return packet
 
 
@@ -1230,6 +1595,87 @@ def _validate_step3_command_record(command: Mapping[str, Any]) -> None:
         raise ValueError("Step-3 command expected_exit_policy must fail closed")
 
 
+def _validate_step4_command_record(command: Mapping[str, Any]) -> None:
+    missing = [field for field in _COMMAND_REQUIRED_FIELDS if field not in command]
+    if missing:
+        raise ValueError(f"Step-4 command record missing required fields: {missing}")
+    mode = str(command.get("mode"))
+    arm_id = str(command.get("arm_id"))
+    science_arm = str(command.get("science_arm"))
+    if mode not in STEP4_PHASE_STEPS:
+        raise ValueError(f"Step-4 command record has unsupported mode {mode!r}")
+    if arm_id not in STEP4_ARM_IDS:
+        raise ValueError(f"Step-4 command record has unsupported arm_id {arm_id!r}")
+    if science_arm != arm_id or science_arm not in STEP4_ARM_IDS:
+        raise ValueError("Step-4 command science_arm must match a Step-4 arm_id")
+    if int(command.get("max_abs_per_tensor", -1)) != STEP3_BASELINE_MAX_ABS_PER_TENSOR:
+        raise ValueError("Step-4 command max_abs_per_tensor must keep baseline 4096")
+    if float(command.get("fraction_per_tensor", -1.0)) != STEP3_FRACTION_PER_TENSOR:
+        raise ValueError("Step-4 command fraction_per_tensor must be 1.0")
+    if command.get("global_cap_contract") != "off":
+        raise ValueError("Step-4 command global cap must stay off")
+    n_rows = int(command.get("n_rows", -1))
+    steps_requested = int(command.get("steps_requested", -2))
+    expected_steps = int(STEP4_PHASE_STEPS[mode])
+    if n_rows != expected_steps or steps_requested != expected_steps:
+        raise ValueError("Step-4 command steps_requested must match phase steps")
+    if command.get("steps_source") != "STEP4_PHASE_STEPS[mode]":
+        raise ValueError("Step-4 command steps_source must document STEP4_PHASE_STEPS")
+    env = command.get("env")
+    if not isinstance(env, Mapping):
+        raise ValueError("Step-4 command env must be a mapping")
+    if env.get("HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE") != "1":
+        raise ValueError("Step-4 command env missing HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE=1")
+    if env.get("HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH") != "1":
+        raise ValueError("Step-4 command env missing HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1")
+    argv = command.get("argv")
+    if not isinstance(argv, list) or not all(isinstance(item, str) for item in argv):
+        raise ValueError("Step-4 command argv must be a list[str]")
+    required_args = {
+        "--enable-bounded-delta-probe",
+        "--allow-gpu-launch",
+        "--device",
+        "--parent",
+        "--parent-sha256",
+        "--scratch-root",
+        "--steps",
+        "--max-steps-hard",
+        "--audit-interval",
+        "--science-arm",
+        "--max-abs-per-tensor",
+        "--emit-progress",
+    }
+    if not required_args.issubset(set(argv)):
+        raise ValueError("Step-4 command argv missing required probe launch arguments")
+    expected_flag_values = (
+        ("--science-arm", science_arm),
+        ("--steps", str(expected_steps)),
+        ("--max-steps-hard", str(max(STEP4_PHASE_STEPS.values()))),
+        ("--max-abs-per-tensor", str(STEP3_BASELINE_MAX_ABS_PER_TENSOR)),
+    )
+    for flag, expected in expected_flag_values:
+        try:
+            observed = argv[argv.index(flag) + 1]
+        except (ValueError, IndexError) as exc:
+            raise ValueError(f"Step-4 command argv missing {flag} value") from exc
+        if observed != expected:
+            raise ValueError(f"Step-4 command argv {flag} must be {expected!r}, got {observed!r}")
+    try:
+        device = argv[argv.index("--device") + 1]
+    except (ValueError, IndexError) as exc:
+        raise ValueError("Step-4 command argv missing --device value") from exc
+    if not device.startswith("cuda:"):
+        raise ValueError("Step-4 command argv --device must target CUDA for launch packet")
+    for path_field in ("stdout_path", "stderr_path", "receipt_path", "scratch_root"):
+        value = str(command.get(path_field))
+        if not value:
+            raise ValueError(f"Step-4 command {path_field} must be non-empty")
+        if value.endswith(".pt"):
+            raise ValueError(f"Step-4 command {path_field} cannot target .pt artifacts")
+    if command.get("expected_exit_policy") != "exit_0_required_else_stop_no_retry_no_verdict":
+        raise ValueError("Step-4 command expected_exit_policy must fail closed")
+
+
 def _validate_command_record(command: Mapping[str, Any]) -> None:
     missing = [field for field in _COMMAND_REQUIRED_FIELDS if field not in command]
     if missing:
@@ -1565,6 +2011,141 @@ def validate_measurement_power_then_trust_region_packet(packet: Mapping[str, Any
         raise ValueError("Step-3 artifact policy must reject .pt writes")
 
 
+def _validate_step4_match_rule(rule: Mapping[str, Any]) -> None:
+    if int(rule.get("strict_gap_max", -1)) != STEP4_MATCH_STRICT_GAP_MAX:
+        raise ValueError("Step-4 match rule strict_gap_max must be 3")
+    if int(rule.get("strict_total", -1)) != STEP4_MATCH_STRICT_TOTAL:
+        raise ValueError("Step-4 match rule strict_total must be 90")
+    if rule.get("paired_loss_comparison") != "arm_minus_A0":
+        raise ValueError("Step-4 match rule must compare arm_minus_A0")
+    if rule.get("paired_loss_ci") != "95% bootstrap":
+        raise ValueError("Step-4 match rule must pin 95% bootstrap CI")
+    if rule.get("paired_loss_match_if") != "ci_crosses_zero_or_entirely_below_zero":
+        raise ValueError("Step-4 match rule must allow CI crosses zero or favors arm")
+    if not bool(rule.get("carrier_named_only_on_match_to_A0")):
+        raise ValueError("Step-4 match rule must name carrier only on match-to-A0")
+    if not bool(rule.get("beat_A1_or_B_is_not_a_carrier_claim")):
+        raise ValueError("Step-4 match rule must reject beat-A1/B-only carrier claims")
+
+
+def _validate_step4_mass_rule(rule: Mapping[str, Any]) -> None:
+    if rule.get("classification") != BRANCH_MASS_CONFOUNDED_CURRENT_ORDER_SIGNAL:
+        raise ValueError("Step-4 mass rule must classify mass-confounded current-order signal")
+    if set(rule.get("compares") or ()) != {"C_vs_A0", "C_vs_B"}:
+        raise ValueError("Step-4 mass rule must compare C vs A0 and C vs B")
+    if tuple(rule.get("count_metrics") or ()) != STEP4_MASS_COUNT_METRICS:
+        raise ValueError("Step-4 mass rule count metrics drifted")
+    if tuple(rule.get("pressure_metrics") or ()) != STEP4_MASS_PRESSURE_METRICS:
+        raise ValueError("Step-4 mass rule pressure metrics drifted")
+    if float(rule.get("ratio_min_inclusive", -1.0)) != STEP4_MASS_RATIO_MIN:
+        raise ValueError("Step-4 mass rule ratio_min must be 0.75")
+    if float(rule.get("ratio_max_inclusive", -1.0)) != STEP4_MASS_RATIO_MAX:
+        raise ValueError("Step-4 mass rule ratio_max must be 1.25")
+    if float(rule.get("absolute_delta_min_inclusive", -1.0)) != STEP4_MASS_ABS_DELTA_MIN:
+        raise ValueError("Step-4 mass rule absolute delta minimum must be 4")
+    if not bool(rule.get("not_carrier_ready")):
+        raise ValueError("Step-4 mass-confounded branch must not be carrier-ready")
+
+
+def validate_powered_rank_signal_decomposition_packet(packet: Mapping[str, Any]) -> None:
+    if packet.get("schema_version") != OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION:
+        raise ValueError("unsupported optimizer update-law Step-4 packet schema")
+    if packet.get("diagnostic_class") != DIAGNOSTIC_CLASS_PRE_FULL_STACK:
+        raise ValueError("Step-4 packet must be pre_full_stack_diagnostic")
+    _validate_author_only_fields(
+        packet,
+        expected_packet_kind=STEP4_POWERED_RANK_SIGNAL_DECOMPOSITION_PACKET_KIND,
+        label="author-only Step-4 packet",
+    )
+    if bool(packet.get("ready_for_main_science")):
+        raise ValueError("Step-4 packet must keep ready_for_main_science=false")
+    if not bool(packet.get("optimizer_credit_state_science_dependent")):
+        raise ValueError("Step-4 packet must state optimizer_credit_state remains science-dependent")
+    _reject_raw_arrays(packet)
+    _validate_resource_lane(packet.get("resource_lane") or {})
+    _validate_phase_budgets(packet.get("phase_budgets") or {})
+    _validate_author_hash_gates(packet)
+
+    by_arm = {str(arm.get("arm_id")): dict(arm) for arm in packet.get("arms") or ()}
+    if set(by_arm) != set(STEP4_ARM_IDS):
+        raise ValueError("Step-4 packet must include exactly A0/A1/B/C/inverted arms")
+    _validate_arms([by_arm[arm_id] for arm_id in SCIENCE_ARM_IDS])
+    c_arm = by_arm[ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER]
+    if c_arm.get("vote_law") != "rank_free_sign_pressure":
+        raise ValueError("Step-4 C arm must use rank_free_sign_pressure vote law")
+    if c_arm.get("tie_policy_id") != TIE_POLICY_CURRENT_MARGIN_INDEX:
+        raise ValueError("Step-4 C arm must use current qacc-margin/order bundle")
+    if "not pure current-order rank" not in str(c_arm.get("claim_caveat", "")):
+        raise ValueError("Step-4 C arm must disclaim pure current-order rank")
+
+    if packet.get("mode_sequence") != list(STEP4_PHASES):
+        raise ValueError("Step-4 mode_sequence must be rank_signal_150 then rank_signal_300")
+    power = packet.get("power_ladder") or {}
+    if int(power.get("steps_first", -1)) != 150:
+        raise ValueError("Step-4 power ladder first rung must be 150 steps")
+    if int(power.get("steps_optional_continuation", -1)) != 300:
+        raise ValueError("Step-4 power ladder continuation must be 300 steps")
+    if int(power.get("max_steps_hard", -1)) != max(STEP4_PHASE_STEPS.values()):
+        raise ValueError("Step-4 power ladder max_steps_hard must be 300")
+    continuation = str(power.get("continuation_enabled_if", ""))
+    if "ambiguous" not in continuation or "clear misses stop at 150" not in continuation:
+        raise ValueError("Step-4 continuation rule must be 300-only-if-ambiguous")
+    _validate_step3_power_floor(power.get("floor") or {})
+    _validate_step4_match_rule(packet.get("match_to_A0_rule") or {})
+    _validate_step4_mass_rule(packet.get("mass_confound_rule") or {})
+
+    success = packet.get("success_boundary") or {}
+    if not bool(success.get("carrier_named_only_on_match_to_A0")):
+        raise ValueError("Step-4 success boundary must require match-to-A0")
+    if success.get("C_claim") != BRANCH_CURRENT_QACC_MARGIN_ORDER_BUNDLE_CARRIER:
+        raise ValueError("Step-4 C claim branch drifted")
+    if success.get("C_mass_confounded_branch") != BRANCH_MASS_CONFOUNDED_CURRENT_ORDER_SIGNAL:
+        raise ValueError("Step-4 mass-confounded branch drifted")
+    if "margin-vs-index split deferred" not in str(success.get("C_claim_caveat", "")):
+        raise ValueError("Step-4 C claim caveat must defer margin-vs-index split")
+
+    terminal = packet.get("terminal_criteria") or {}
+    terminal_branches = set(terminal.get("branch_classifier") or ())
+    expected_branches = {
+        BRANCH_CURRENT_QACC_MARGIN_ORDER_BUNDLE_CARRIER,
+        BRANCH_RANK_MAGNITUDE_CONDITIONED_ON_CURRENT_ORDER,
+        BRANCH_CURRENT_ORDER_NOT_NECESSARY,
+        BRANCH_PARTIAL_LOCAL_SIGNAL,
+        BRANCH_NO_MATCH_DIFFERENT_CREDIT_SOURCE,
+        BRANCH_MASS_CONFOUNDED_CURRENT_ORDER_SIGNAL,
+        BRANCH_MEASUREMENT_UNDERPOWERED,
+        BRANCH_MEASUREMENT_POWERED,
+        BRANCH_MEASUREMENT_LOSS_POWERED,
+        BRANCH_POWERED_NEGATIVE_OR_LOSS_ONLY,
+    }
+    if terminal_branches != expected_branches:
+        raise ValueError("Step-4 terminal branch classifier drifted")
+    _validate_step3_power_floor(terminal.get("step4_power_floor") or {})
+    _validate_step4_match_rule(terminal.get("match_to_A0_rule") or {})
+    _validate_step4_mass_rule(terminal.get("mass_confound_rule") or {})
+    if not bool(terminal.get("no_carrier_claim_on_beating_A1_or_B_only")):
+        raise ValueError("Step-4 terminal criteria must block beat-A1/B-only carrier claims")
+
+    commands = packet.get("commands")
+    if not isinstance(commands, list):
+        raise ValueError("Step-4 packet commands must be a list")
+    seen = {(str(cmd.get("mode")), str(cmd.get("arm_id"))) for cmd in commands}
+    expected = {
+        (phase, arm_id)
+        for phase in STEP4_PHASES
+        for arm_id in STEP4_ARM_IDS
+    }
+    if seen != expected:
+        raise ValueError("Step-4 packet must include each arm at 150 and 300")
+    for command in commands:
+        _validate_step4_command_record(command)
+    artifact_policy = packet.get("artifact_policy") or {}
+    if not bool(artifact_policy.get("compact_json_ndjson_only")):
+        raise ValueError("Step-4 artifact policy must require compact JSON/NDJSON")
+    if bool(artifact_policy.get("pt_writes_allowed")):
+        raise ValueError("Step-4 artifact policy must reject .pt writes")
+
+
 def packet_without_runtime_results(packet: Mapping[str, Any]) -> dict[str, Any]:
     out = deepcopy(dict(packet))
     out.pop("runtime_results", None)
@@ -1577,6 +2158,7 @@ __all__ = [
     "ARM_A1_RANK_BUCKET_ORDER_MATCHED",
     "ARM_B_CAP_MAX_ABS_1024",
     "ARM_B_RANK_FREE_SIGN_PRESSURE",
+    "ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER",
     "ARM_INVERTED_SIGN_PRESSURE",
     "BRANCH_CREDIT_SOURCE_NOT_SUFFICIENT",
     "BRANCH_DIRECTION_PROJECTION_WRONG",
@@ -1585,8 +2167,14 @@ __all__ = [
     "BRANCH_MEASUREMENT_POWERED",
     "BRANCH_MEASUREMENT_UNDERPOWERED",
     "BRANCH_POWERED_NEGATIVE_OR_LOSS_ONLY",
+    "BRANCH_CURRENT_ORDER_NOT_NECESSARY",
+    "BRANCH_CURRENT_QACC_MARGIN_ORDER_BUNDLE_CARRIER",
+    "BRANCH_MASS_CONFOUNDED_CURRENT_ORDER_SIGNAL",
+    "BRANCH_NO_MATCH_DIFFERENT_CREDIT_SOURCE",
+    "BRANCH_PARTIAL_LOCAL_SIGNAL",
     "BRANCH_PRIOR_NULL_SETUP_UNVERIFIED",
     "BRANCH_RANK_FREE_POSITIVE",
+    "BRANCH_RANK_MAGNITUDE_CONDITIONED_ON_CURRENT_ORDER",
     "BRANCH_RANKING_STILL_REQUIRED",
     "BRANCH_TIE_POLICY_OR_OVERUPDATE",
     "CONTROL_PARITY_FRACTION_MAX",
@@ -1602,12 +2190,16 @@ __all__ = [
     "STEP3_CAP_MAX_ABS_PER_TENSOR",
     "STEP3_BASELINE_MAX_ABS_PER_TENSOR",
     "STEP3_MEASUREMENT_POWER_TRUST_REGION_PACKET_KIND",
+    "STEP4_MATCH_STRICT_GAP_MAX",
+    "STEP4_POWERED_RANK_SIGNAL_DECOMPOSITION_PACKET_KIND",
     "TIE_POLICY_CURRENT_MARGIN_INDEX",
     "TIE_POLICY_DETERMINISTIC_HASH_MATCHED",
     "build_measurement_power_then_trust_region_packet",
     "build_optimizer_update_law_launch_bundle",
     "build_optimizer_update_law_science_packet",
+    "build_powered_rank_signal_decomposition_packet",
     "classify_optimizer_update_law_branch",
+    "classify_step4_rank_signal_decomposition",
     "classify_step3_power_floor",
     "default_control_parity_gate",
     "default_hash_gate_policy",
@@ -1616,12 +2208,18 @@ __all__ = [
     "default_science_arms",
     "default_step3_effective_cap_audit",
     "default_step3_power_floor",
+    "default_step4_mass_confound_rule",
+    "default_step4_match_to_a0_rule",
+    "default_step4_science_arms",
     "default_screen_before_verdict_dependency",
     "default_terminal_criteria",
     "default_verdict_rule",
     "default_watcher_bundle",
     "packet_without_runtime_results",
+    "step4_arm_matches_a0",
+    "step4_mass_confound_detected",
     "validate_measurement_power_then_trust_region_packet",
     "validate_optimizer_update_law_launch_bundle",
     "validate_optimizer_update_law_science_packet",
+    "validate_powered_rank_signal_decomposition_packet",
 ]
