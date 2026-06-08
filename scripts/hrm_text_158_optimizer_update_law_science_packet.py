@@ -19,18 +19,21 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import file_sha25
 from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     SCIENCE_MODE_BRANCH_VERDICT,
     SCIENCE_MODE_PRETERMINAL_SCREEN,
+    ORACLE_SCREEN_PACKET_KIND,
     STEP1_DRY_RUN_PACKET_KIND,
     STEP2_LAUNCH_BUNDLE_PACKET_KIND,
     STEP3_MEASUREMENT_POWER_TRUST_REGION_PACKET_KIND,
     STEP4_POWERED_RANK_SIGNAL_DECOMPOSITION_PACKET_KIND,
     STEP5_SUPPORT_ORDER_TRAJECTORY_ROBUSTNESS_PACKET_KIND,
     STEP6_ORDER_AVERAGED_A0_COMPONENT_DECOMPOSITION_PACKET_KIND,
+    build_candidate_set_viability_oracle_screen_packet,
     build_measurement_power_then_trust_region_packet,
     build_optimizer_update_law_launch_bundle,
     build_optimizer_update_law_science_packet,
     build_order_averaged_a0_component_decomposition_packet,
     build_powered_rank_signal_decomposition_packet,
     build_support_order_trajectory_robustness_packet,
+    validate_candidate_set_viability_oracle_screen_packet,
     validate_measurement_power_then_trust_region_packet,
     validate_optimizer_update_law_launch_bundle,
     validate_optimizer_update_law_science_packet,
@@ -63,6 +66,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
             STEP4_POWERED_RANK_SIGNAL_DECOMPOSITION_PACKET_KIND,
             STEP5_SUPPORT_ORDER_TRAJECTORY_ROBUSTNESS_PACKET_KIND,
             STEP6_ORDER_AVERAGED_A0_COMPONENT_DECOMPOSITION_PACKET_KIND,
+            ORACLE_SCREEN_PACKET_KIND,
         ),
         default=STEP1_DRY_RUN_PACKET_KIND,
     )
@@ -195,7 +199,7 @@ def main(argv: list[str] | None = None) -> int:
         packet["step5_launch_gate_required"] = True
         validator = validate_support_order_trajectory_robustness_packet
         default_name = "support_order_trajectory_robustness_packet.json"
-    else:
+    elif args.packet_kind == STEP6_ORDER_AVERAGED_A0_COMPONENT_DECOMPOSITION_PACKET_KIND:
         packet = build_order_averaged_a0_component_decomposition_packet(
             parent_path=parent,
             parent_sha256=parent_sha,
@@ -214,6 +218,18 @@ def main(argv: list[str] | None = None) -> int:
         packet["step6_launch_gate_required"] = True
         validator = validate_order_averaged_a0_component_decomposition_packet
         default_name = "step6_order_averaged_a0_component_decomposition_packet.json"
+    else:
+        packet = build_candidate_set_viability_oracle_screen_packet(
+            parent_path=parent,
+            parent_sha256=parent_sha,
+            launch_gate_id=None,
+        )
+        packet["parent_hash_basis"] = parent_hash_basis
+        packet["dry_run_packet_written"] = True
+        packet["gpu_launch_command_authorized"] = False
+        packet["oracle_screen_launch_gate_required"] = True
+        validator = validate_candidate_set_viability_oracle_screen_packet
+        default_name = "candidate_set_viability_oracle_screen_packet.json"
     validator(packet)
     out_path = args.json_out or (Path(args.scratch_root) / default_name)
     _write_json_atomic(out_path, packet)

@@ -31,6 +31,9 @@ STEP5_SUPPORT_ORDER_TRAJECTORY_ROBUSTNESS_PACKET_KIND = (
 STEP6_ORDER_AVERAGED_A0_COMPONENT_DECOMPOSITION_PACKET_KIND = (
     "step6_order_averaged_a0_component_decomposition_packet"
 )
+ORACLE_SCREEN_PACKET_KIND = (
+    "pre_full_stack_diagnostic__candidate_set_viability_oracle_screen"
+)
 
 SCIENCE_MODE_PRETERMINAL_SCREEN = "preterminal_screen"
 SCIENCE_MODE_BRANCH_VERDICT = "branch_verdict"
@@ -45,11 +48,23 @@ ARM_B_RANK_FREE_SIGN_PRESSURE = "B_rank_free_sign_pressure"
 ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER = "C_rank_free_sign_current_margin_order"
 ARM_B_CAP_MAX_ABS_1024 = "B_cap_max_abs_1024"
 ARM_INVERTED_SIGN_PRESSURE = "inverted_sign_pressure"
+ORACLE_ARM_CURRENT_CREDIT_RANK_BUCKET_CURRENT_ORDER = (
+    "current_credit_rank_bucket_current_order"
+)
+ORACLE_ARM_DETERMINISTIC_HASH_SAME_VOTES = "deterministic_hash_same_votes"
+ORACLE_ARM_DIAGNOSTIC_LOCAL_LOSS_DELTA = (
+    "diagnostic_local_loss_delta_oracle_same_candidates"
+)
 SCIENCE_ARM_IDS = (
     ARM_A0_RANK_BUCKET_CURRENT,
     ARM_A1_RANK_BUCKET_ORDER_MATCHED,
     ARM_B_RANK_FREE_SIGN_PRESSURE,
     ARM_INVERTED_SIGN_PRESSURE,
+)
+ORACLE_SCREEN_ARM_IDS = (
+    ORACLE_ARM_CURRENT_CREDIT_RANK_BUCKET_CURRENT_ORDER,
+    ORACLE_ARM_DETERMINISTIC_HASH_SAME_VOTES,
+    ORACLE_ARM_DIAGNOSTIC_LOCAL_LOSS_DELTA,
 )
 
 TIE_POLICY_CURRENT_MARGIN_INDEX = "current_abs_new_acc_then_index"
@@ -84,6 +99,22 @@ BRANCH_NO_MATCH_DIFFERENT_CREDIT_SOURCE = "no_match_pivot_different_credit_sourc
 BRANCH_MASS_CONFOUNDED_CURRENT_ORDER_SIGNAL = "mass_confounded_current_order_signal"
 BRANCH_A0_COMPONENT_ORDER_ROBUST = "A0_component_order_robust"
 BRANCH_MEASUREMENT_ORDER_SENSITIVE = "measurement_order_sensitive__redesign_scheduler_or_update_law"
+BRANCH_CANDIDATE_SET_VIABLE_CREDIT_RANKING_BAD = (
+    "candidate_set_viable_credit_ranking_bad"
+)
+BRANCH_SCHEDULER_ONLY_ORDER_SENSITIVE = "scheduler_only_order_sensitive"
+BRANCH_CREDIT_MAGNITUDE_BAD_SIGN_USABLE = "credit_magnitude_bad_sign_usable"
+BRANCH_CANDIDATE_GENERATION_BAD_OR_NO_LOCAL_SIGNAL = (
+    "candidate_generation_bad_or_no_local_signal"
+)
+BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE = "oracle_infeasible_or_too_expensive"
+ORACLE_SCREEN_BRANCHES = (
+    BRANCH_CANDIDATE_SET_VIABLE_CREDIT_RANKING_BAD,
+    BRANCH_SCHEDULER_ONLY_ORDER_SENSITIVE,
+    BRANCH_CREDIT_MAGNITUDE_BAD_SIGN_USABLE,
+    BRANCH_CANDIDATE_GENERATION_BAD_OR_NO_LOCAL_SIGNAL,
+    BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE,
+)
 OPTIMIZER_UPDATE_LAW_BRANCHES = (
     BRANCH_RANK_FREE_POSITIVE,
     BRANCH_RANKING_STILL_REQUIRED,
@@ -107,6 +138,22 @@ _RAW_ARRAY_KEY_FRAGMENTS = (
     "per_proposal_array",
     "raw_proposal_array",
 )
+_ORACLE_GLOBAL_FORBIDDEN_TRUE_KEYS = {
+    "q_persisted",
+    "q_persist_allowed",
+    "oracle_state_survives_into_learner",
+    "learner_teacher_promotion",
+    "learner_teacher_promotion_allowed",
+    "checkpoint_promotional",
+    "checkpoint_promotion_claim",
+    "readiness_fullsub2_carrier_claim_allowed",
+}
+_ORACLE_GLOBAL_PT_PATH_KEYS = {
+    "oracle_artifact_path",
+    "oracle_checkpoint_path",
+    "oracle_state_path",
+    "q_persist_path",
+}
 _AUTHOR_PACKET_RUNTIME_RESULT_FIELDS = (
     "runtime_results",
     "arm_metrics",
@@ -192,6 +239,12 @@ STEP6_FIXED_PREREG_NEW_SEED = 43
 STEP6_CURRICULUM_SEED = 17
 STEP6_MAX_ARM_RUNS = 9
 STEP6_GPU_HOUR_CEILING = 2.0
+ORACLE_SCREEN_CONTRAST_SEEDS = (43, 29)
+ORACLE_SCREEN_PROMOTION_ORDER_SEEDS: tuple[int | None, ...] = (None, 29, 43)
+ORACLE_SCREEN_N20_ROWS = 20
+ORACLE_SCREEN_PROMOTION_ROWS = 50
+ORACLE_SCREEN_FEASIBILITY_MAX_SAMPLED_CANDIDATES = 8
+ORACLE_SCREEN_FEASIBILITY_MAX_SECONDS = 30.0
 STEP4_MATCH_STRICT_GAP_MAX = 3
 STEP4_MATCH_STRICT_TOTAL = 90
 STEP4_MASS_RATIO_MIN = 0.75
@@ -828,6 +881,126 @@ def default_step6_mass_confound_rule() -> dict[str, Any]:
     return rule
 
 
+def default_oracle_screen_arms() -> list[dict[str, Any]]:
+    return [
+        {
+            "arm_id": ORACLE_ARM_CURRENT_CREDIT_RANK_BUCKET_CURRENT_ORDER,
+            "role": "A0 baseline path",
+            "candidate_set": "same_projected_move_candidate_set",
+            "vote_source": "current_credit_rank_bucket",
+            "ordering_role": "current_order",
+            "oracle_applied": False,
+            "q_persisted": False,
+            "raw_per_proposal_arrays_included": False,
+            "required": True,
+        },
+        {
+            "arm_id": ORACLE_ARM_DETERMINISTIC_HASH_SAME_VOTES,
+            "role": "A1-style scheduler anchor only",
+            "candidate_set": "same_projected_move_candidate_set",
+            "vote_source": "same_votes_as_current_credit_rank_bucket",
+            "ordering_role": "deterministic_hash_same_votes",
+            "oracle_applied": False,
+            "q_persisted": False,
+            "raw_per_proposal_arrays_included": False,
+            "required": True,
+        },
+        {
+            "arm_id": ORACLE_ARM_DIAGNOSTIC_LOCAL_LOSS_DELTA,
+            "role": "bounded objective-local CE-delta oracle",
+            "candidate_set": "same_projected_move_candidate_set",
+            "vote_source": "diagnostic_local_loss_delta",
+            "ordering_role": "oracle_rank_same_candidates",
+            "oracle_applied": False,
+            "q_persisted": False,
+            "learner_teacher_promotion": False,
+            "checkpoint_promotional": False,
+            "raw_per_proposal_arrays_included": False,
+            "required": True,
+        },
+    ]
+
+
+def default_oracle_feasibility_budget() -> dict[str, Any]:
+    return {
+        "probe_required_before_full_screen": True,
+        "budget_present": True,
+        "max_sampled_candidates": ORACLE_SCREEN_FEASIBILITY_MAX_SAMPLED_CANDIDATES,
+        "max_seconds": ORACLE_SCREEN_FEASIBILITY_MAX_SECONDS,
+        "reject_if_over_budget": True,
+        "reject_if_unsafe": True,
+        "classify_branch_on_missing_overrun_or_unsafe": BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE,
+    }
+
+
+def default_oracle_non_persistence_contract() -> dict[str, Any]:
+    return {
+        "q_persist_allowed": False,
+        "q_persisted": False,
+        "oracle_state_survives_into_learner": False,
+        "learner_teacher_promotion_allowed": False,
+        "learner_teacher_promotion": False,
+        "checkpoint_promotional": False,
+        "checkpoint_written": False,
+        "pt_writes_allowed": False,
+        "readiness_fullsub2_carrier_claim_allowed": False,
+    }
+
+
+def default_oracle_compact_summary_schema() -> dict[str, Any]:
+    allowed_fields = [
+        "candidate_count",
+        "sampled_candidate_count",
+        "top_k",
+        "sign_concordance",
+        "credit_rank_deciles",
+        "local_loss_delta_deciles",
+        "paired_loss_branch_fields",
+    ]
+    return {
+        "compact_summary_only": True,
+        "allowed_fields": allowed_fields,
+        "required_fields": allowed_fields,
+        "raw_per_proposal_arrays": False,
+        "raw_candidate_scores": False,
+        "raw_local_loss_deltas": False,
+    }
+
+
+def default_oracle_screen_seed_order_contract() -> dict[str, Any]:
+    return {
+        "contrast_support_order_seeds": list(ORACLE_SCREEN_CONTRAST_SEEDS),
+        "contrast_seed_roles": {
+            "seed43": "A0-bad contrast",
+            "seed29": "A0-good contrast",
+        },
+        "n20_screen_rows": ORACLE_SCREEN_N20_ROWS,
+        "n20_screen_is_launch_gated": True,
+        "promotion_condition": {
+            "promote_to_n50_x_3_orderings": True,
+            "promotion_rows": ORACLE_SCREEN_PROMOTION_ROWS,
+            "support_order_seeds": list(ORACLE_SCREEN_PROMOTION_ORDER_SEEDS),
+            "only_if_non_null": True,
+            "only_if_not_artifact_confounded": True,
+            "post_hoc_seed_selection_allowed": False,
+        },
+    }
+
+
+def default_oracle_screen_classifier_contract() -> dict[str, Any]:
+    return {
+        "exactly_one_branch": True,
+        "allowed_branches": list(ORACLE_SCREEN_BRANCHES),
+        "priority_order": [
+            BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE,
+            BRANCH_CANDIDATE_GENERATION_BAD_OR_NO_LOCAL_SIGNAL,
+            BRANCH_SCHEDULER_ONLY_ORDER_SENSITIVE,
+            BRANCH_CREDIT_MAGNITUDE_BAD_SIGN_USABLE,
+            BRANCH_CANDIDATE_SET_VIABLE_CREDIT_RANKING_BAD,
+        ],
+    }
+
+
 def step4_arm_matches_a0(
     *,
     arm_strict_exact_count: int,
@@ -888,6 +1061,28 @@ def classify_step4_rank_signal_decomposition(
     if not bool(any_non_reference_matches_a0):
         return BRANCH_NO_MATCH_DIFFERENT_CREDIT_SOURCE
     return BRANCH_PARTIAL_LOCAL_SIGNAL
+
+
+def classify_candidate_set_viability_oracle_screen(
+    *,
+    oracle_feasible: bool,
+    candidate_set_contains_ce_improving_move: bool,
+    current_credit_rank_recovers_improvement: bool = False,
+    deterministic_hash_recovers_improvement: bool = False,
+    credit_sign_concordance_positive: bool = False,
+    oracle_advantage_over_current: bool = False,
+) -> str:
+    if not bool(oracle_feasible):
+        return BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE
+    if not bool(candidate_set_contains_ce_improving_move):
+        return BRANCH_CANDIDATE_GENERATION_BAD_OR_NO_LOCAL_SIGNAL
+    if bool(deterministic_hash_recovers_improvement) and not bool(current_credit_rank_recovers_improvement):
+        return BRANCH_SCHEDULER_ONLY_ORDER_SENSITIVE
+    if bool(credit_sign_concordance_positive) and not bool(current_credit_rank_recovers_improvement):
+        return BRANCH_CREDIT_MAGNITUDE_BAD_SIGN_USABLE
+    if bool(oracle_advantage_over_current) or not bool(current_credit_rank_recovers_improvement):
+        return BRANCH_CANDIDATE_SET_VIABLE_CREDIT_RANKING_BAD
+    return BRANCH_CANDIDATE_GENERATION_BAD_OR_NO_LOCAL_SIGNAL
 
 
 def default_prior_verdict_parent_ref(
@@ -1904,6 +2099,68 @@ def build_order_averaged_a0_component_decomposition_packet(
         ],
     }
     validate_order_averaged_a0_component_decomposition_packet(packet)
+    return packet
+
+
+def build_candidate_set_viability_oracle_screen_packet(
+    *,
+    parent_path: str | Path,
+    parent_sha256: str,
+    launch_gate_id: str | None = None,
+) -> dict[str, Any]:
+    packet = {
+        "schema_version": OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION,
+        "packet_kind": ORACLE_SCREEN_PACKET_KIND,
+        "target_name": ORACLE_SCREEN_PACKET_KIND,
+        "artifact_role": "candidate_set_viability_oracle_screen_author_packet",
+        "diagnostic_class": DIAGNOSTIC_CLASS_PRE_FULL_STACK,
+        "pre_full_stack_diagnostic": True,
+        "author_only": True,
+        "commands_executed": False,
+        "gpu_launched": False,
+        "launch_gate_id": launch_gate_id,
+        "pt_mutated": False,
+        "readiness_claim": False,
+        "full_sub2_claim": False,
+        "ready_for_main_science": False,
+        "carrier_claim": False,
+        "checkpoint_written": False,
+        "optimizer_credit_state_row_flip": False,
+        "optimizer_credit_state_science_dependent": True,
+        "branch_result": None,
+        "qacc_kernelized": False,
+        "parent_path": str(parent_path),
+        "parent_sha256": str(parent_sha256),
+        "arms": default_oracle_screen_arms(),
+        "same_candidate_set_required": True,
+        "seed_order_contract": default_oracle_screen_seed_order_contract(),
+        "oracle_feasibility_budget": default_oracle_feasibility_budget(),
+        "oracle_non_persistence_contract": default_oracle_non_persistence_contract(),
+        "compact_summary_schema": default_oracle_compact_summary_schema(),
+        "classifier_contract": default_oracle_screen_classifier_contract(),
+        "fallback": {
+            "fallback_mode": "decile_only_concordance",
+            "oracle_applied_arm_allowed": False,
+            "enabled_if": "oracle_applied_arm_reads_as_leakage_risky",
+        },
+        "artifact_policy": {
+            "compact_json_ndjson_only": True,
+            "raw_per_proposal_arrays": False,
+            "pt_writes_allowed": False,
+            "oracle_artifact_path": None,
+        },
+        "non_claims": [
+            "packet scaffold only; no oracle execution",
+            "no GPU launch from packet authoring",
+            "no .pt mutation or checkpoint promotion",
+            "diagnostic_local_loss_delta never persists q",
+            "oracle is not a learner or teacher",
+            "no readiness row flip",
+            "no carrier or full-sub2 runtime claim",
+            "optimizer_credit_state remains science-dependent",
+        ],
+    }
+    validate_candidate_set_viability_oracle_screen_packet(packet)
     return packet
 
 
@@ -3367,6 +3624,175 @@ def validate_order_averaged_a0_component_decomposition_packet(packet: Mapping[st
         raise ValueError("Step-6 artifact policy must reject .pt writes")
 
 
+def _validate_oracle_screen_arms(arms: Sequence[Mapping[str, Any]]) -> None:
+    by_id = {str(arm.get("arm_id")): dict(arm) for arm in arms}
+    if set(by_id) != set(ORACLE_SCREEN_ARM_IDS):
+        raise ValueError("oracle screen packet must include exactly the 3 registered arms")
+    for arm_id, arm in by_id.items():
+        if arm.get("candidate_set") != "same_projected_move_candidate_set":
+            raise ValueError("oracle screen arms must use the same projected-move candidate set")
+        if bool(arm.get("q_persisted")):
+            raise ValueError("oracle screen arm must not persist q")
+        if bool(arm.get("raw_per_proposal_arrays_included")):
+            raise ValueError("oracle screen arm must not include raw per-proposal arrays")
+        if arm_id != ORACLE_ARM_DIAGNOSTIC_LOCAL_LOSS_DELTA and bool(arm.get("oracle_applied")):
+            raise ValueError("only diagnostic_local_loss_delta may name an oracle arm")
+    oracle_arm = by_id[ORACLE_ARM_DIAGNOSTIC_LOCAL_LOSS_DELTA]
+    if bool(oracle_arm.get("learner_teacher_promotion")):
+        raise ValueError("diagnostic oracle must not be learner/teacher promotional")
+    if bool(oracle_arm.get("checkpoint_promotional")):
+        raise ValueError("diagnostic oracle must not be checkpoint-promotional")
+    if oracle_arm.get("vote_source") != "diagnostic_local_loss_delta":
+        raise ValueError("diagnostic oracle arm must use diagnostic_local_loss_delta")
+
+
+def _validate_oracle_feasibility_budget(budget: Mapping[str, Any]) -> None:
+    required = {
+        "probe_required_before_full_screen",
+        "budget_present",
+        "max_sampled_candidates",
+        "max_seconds",
+        "reject_if_over_budget",
+        "reject_if_unsafe",
+        "classify_branch_on_missing_overrun_or_unsafe",
+    }
+    missing = sorted(required - set(budget))
+    if missing:
+        raise ValueError(f"oracle feasibility budget missing required fields: {missing}")
+    if not bool(budget.get("budget_present")):
+        raise ValueError("oracle feasibility budget must be present")
+    if not bool(budget.get("probe_required_before_full_screen")):
+        raise ValueError("oracle feasibility probe must precede full screen")
+    if int(budget.get("max_sampled_candidates", 0)) <= 0:
+        raise ValueError("oracle feasibility max_sampled_candidates must be positive")
+    if float(budget.get("max_seconds", 0.0)) <= 0.0:
+        raise ValueError("oracle feasibility max_seconds must be positive")
+    if not bool(budget.get("reject_if_over_budget")) or not bool(budget.get("reject_if_unsafe")):
+        raise ValueError("oracle feasibility budget must reject overrun or unsafe probes")
+    if budget.get("classify_branch_on_missing_overrun_or_unsafe") != BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE:
+        raise ValueError("oracle feasibility failure must classify infeasible/too expensive")
+
+
+def _validate_oracle_non_persistence(contract: Mapping[str, Any]) -> None:
+    required_false = {
+        "q_persist_allowed",
+        "q_persisted",
+        "oracle_state_survives_into_learner",
+        "learner_teacher_promotion_allowed",
+        "learner_teacher_promotion",
+        "checkpoint_promotional",
+        "checkpoint_written",
+        "pt_writes_allowed",
+        "readiness_fullsub2_carrier_claim_allowed",
+    }
+    missing = sorted(required_false - set(contract))
+    if missing:
+        raise ValueError(f"oracle non-persistence contract missing required fields: {missing}")
+    for field in required_false:
+        if bool(contract.get(field)):
+            raise ValueError(f"oracle non-persistence contract requires {field}=false")
+
+
+def _validate_oracle_compact_summary_schema(schema: Mapping[str, Any]) -> None:
+    expected_fields = set(default_oracle_compact_summary_schema()["allowed_fields"])
+    if not bool(schema.get("compact_summary_only")):
+        raise ValueError("oracle receipt must be compact-summary-only")
+    if set(schema.get("allowed_fields") or ()) != expected_fields:
+        raise ValueError("oracle compact summary allowed fields drifted")
+    if set(schema.get("required_fields") or ()) != expected_fields:
+        raise ValueError("oracle compact summary required fields drifted")
+    for field in ("raw_per_proposal_arrays", "raw_candidate_scores", "raw_local_loss_deltas"):
+        if bool(schema.get(field)):
+            raise ValueError("oracle compact summary must reject raw proposal arrays")
+
+
+def _validate_oracle_seed_order_contract(contract: Mapping[str, Any]) -> None:
+    if contract.get("contrast_support_order_seeds") != list(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError("oracle screen contrast seeds must be [43, 29]")
+    if int(contract.get("n20_screen_rows", -1)) != ORACLE_SCREEN_N20_ROWS:
+        raise ValueError("oracle screen N=20 row contract drifted")
+    if not bool(contract.get("n20_screen_is_launch_gated")):
+        raise ValueError("oracle N=20 screen must remain separately launch-gated")
+    promotion = contract.get("promotion_condition") or {}
+    if not bool(promotion.get("promote_to_n50_x_3_orderings")):
+        raise ValueError("oracle screen promotion condition must name N=50 x 3 orderings")
+    if int(promotion.get("promotion_rows", -1)) != ORACLE_SCREEN_PROMOTION_ROWS:
+        raise ValueError("oracle screen promotion rows must be 50")
+    if promotion.get("support_order_seeds") != list(ORACLE_SCREEN_PROMOTION_ORDER_SEEDS):
+        raise ValueError("oracle screen promotion order seeds must be [null, 29, 43]")
+    if not bool(promotion.get("only_if_non_null")):
+        raise ValueError("oracle screen promotion requires non-null result")
+    if not bool(promotion.get("only_if_not_artifact_confounded")):
+        raise ValueError("oracle screen promotion requires no artifact confound")
+    if bool(promotion.get("post_hoc_seed_selection_allowed")):
+        raise ValueError("oracle screen must reject post-hoc seed selection")
+
+
+def _validate_oracle_classifier_contract(contract: Mapping[str, Any]) -> None:
+    if not bool(contract.get("exactly_one_branch")):
+        raise ValueError("oracle classifier must return exactly one branch")
+    if set(contract.get("allowed_branches") or ()) != set(ORACLE_SCREEN_BRANCHES):
+        raise ValueError("oracle classifier allowed branches drifted")
+    if not (contract.get("priority_order") or ()):
+        raise ValueError("oracle classifier must document priority order")
+
+
+def _validate_oracle_global_non_persistence(value: Any, *, path: str = "packet") -> None:
+    for key, child in _walk_items(value):
+        key_text = str(key)
+        child_path = f"{path}.{key_text}"
+        if key_text in _ORACLE_GLOBAL_FORBIDDEN_TRUE_KEYS and bool(child):
+            raise ValueError(f"{child_path} violates oracle non-persistence boundary")
+        if key_text in _ORACLE_GLOBAL_PT_PATH_KEYS and str(child).endswith(".pt"):
+            raise ValueError(f"{child_path} must not target .pt artifacts")
+        _validate_oracle_global_non_persistence(child, path=child_path)
+
+
+def validate_candidate_set_viability_oracle_screen_packet(packet: Mapping[str, Any]) -> None:
+    if packet.get("schema_version") != OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION:
+        raise ValueError("unsupported optimizer update-law oracle-screen packet schema")
+    if packet.get("diagnostic_class") != DIAGNOSTIC_CLASS_PRE_FULL_STACK:
+        raise ValueError("oracle-screen packet must be pre_full_stack_diagnostic")
+    _validate_author_only_fields(
+        packet,
+        expected_packet_kind=ORACLE_SCREEN_PACKET_KIND,
+        label="author-only oracle-screen packet",
+    )
+    for field in _READINESS_FORBIDDEN_TRUE_FIELDS:
+        _require_false(packet, field)
+    if bool(packet.get("carrier_claim")) or bool(packet.get("q_sidecar_carrier_claim")):
+        raise ValueError("oracle-screen packet must not make a carrier claim")
+    if bool(packet.get("qacc_kernelized")):
+        raise ValueError("oracle-screen packet must keep qacc_kernelized=false")
+    if not bool(packet.get("optimizer_credit_state_science_dependent")):
+        raise ValueError("oracle-screen packet must keep optimizer_credit_state science-dependent")
+    if not bool(packet.get("same_candidate_set_required")):
+        raise ValueError("oracle-screen packet must require the same candidate set")
+    if bool(packet.get("oracle_state_survives_into_learner")):
+        raise ValueError("oracle state must not survive into learner fields")
+    _reject_raw_arrays(packet)
+    _validate_oracle_global_non_persistence(packet)
+    _validate_oracle_screen_arms(packet.get("arms") or ())
+    _validate_oracle_seed_order_contract(packet.get("seed_order_contract") or {})
+    _validate_oracle_feasibility_budget(packet.get("oracle_feasibility_budget") or {})
+    _validate_oracle_non_persistence(packet.get("oracle_non_persistence_contract") or {})
+    _validate_oracle_compact_summary_schema(packet.get("compact_summary_schema") or {})
+    _validate_oracle_classifier_contract(packet.get("classifier_contract") or {})
+    fallback = packet.get("fallback") or {}
+    if fallback.get("fallback_mode") != "decile_only_concordance":
+        raise ValueError("oracle fallback must be decile-only concordance")
+    if bool(fallback.get("oracle_applied_arm_allowed")):
+        raise ValueError("decile-only fallback must not allow oracle-applied arm")
+    artifact_policy = packet.get("artifact_policy") or {}
+    if not bool(artifact_policy.get("compact_json_ndjson_only")):
+        raise ValueError("oracle artifact policy must require compact JSON/NDJSON")
+    if bool(artifact_policy.get("pt_writes_allowed")):
+        raise ValueError("oracle artifact policy must reject .pt writes")
+    oracle_artifact_path = artifact_policy.get("oracle_artifact_path")
+    if oracle_artifact_path is not None and str(oracle_artifact_path).endswith(".pt"):
+        raise ValueError("oracle artifact path must not target .pt artifacts")
+
+
 def packet_without_runtime_results(packet: Mapping[str, Any]) -> dict[str, Any]:
     out = deepcopy(dict(packet))
     out.pop("runtime_results", None)
@@ -3381,6 +3807,9 @@ __all__ = [
     "ARM_B_RANK_FREE_SIGN_PRESSURE",
     "ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER",
     "ARM_INVERTED_SIGN_PRESSURE",
+    "BRANCH_CANDIDATE_GENERATION_BAD_OR_NO_LOCAL_SIGNAL",
+    "BRANCH_CANDIDATE_SET_VIABLE_CREDIT_RANKING_BAD",
+    "BRANCH_CREDIT_MAGNITUDE_BAD_SIGN_USABLE",
     "BRANCH_CREDIT_SOURCE_NOT_SUFFICIENT",
     "BRANCH_DIRECTION_PROJECTION_WRONG",
     "BRANCH_INSUFFICIENT_SEPARATION",
@@ -3388,6 +3817,7 @@ __all__ = [
     "BRANCH_MEASUREMENT_ORDER_SENSITIVE",
     "BRANCH_MEASUREMENT_POWERED",
     "BRANCH_MEASUREMENT_UNDERPOWERED",
+    "BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE",
     "BRANCH_POWERED_NEGATIVE_OR_LOSS_ONLY",
     "BRANCH_CURRENT_ORDER_NOT_NECESSARY",
     "BRANCH_CURRENT_QACC_MARGIN_ORDER_BUNDLE_CARRIER",
@@ -3399,11 +3829,20 @@ __all__ = [
     "BRANCH_RANK_FREE_POSITIVE",
     "BRANCH_RANK_MAGNITUDE_CONDITIONED_ON_CURRENT_ORDER",
     "BRANCH_RANKING_STILL_REQUIRED",
+    "BRANCH_SCHEDULER_ONLY_ORDER_SENSITIVE",
     "BRANCH_TIE_POLICY_OR_OVERUPDATE",
     "CONTROL_PARITY_FRACTION_MAX",
     "CONTROL_PARITY_FRACTION_MIN",
     "DIAGNOSTIC_CLASS_PRE_FULL_STACK",
     "FIXED_RANK_BUCKET_NON_TARGET_AUX",
+    "ORACLE_ARM_CURRENT_CREDIT_RANK_BUCKET_CURRENT_ORDER",
+    "ORACLE_ARM_DETERMINISTIC_HASH_SAME_VOTES",
+    "ORACLE_ARM_DIAGNOSTIC_LOCAL_LOSS_DELTA",
+    "ORACLE_SCREEN_ARM_IDS",
+    "ORACLE_SCREEN_BRANCHES",
+    "ORACLE_SCREEN_CONTRAST_SEEDS",
+    "ORACLE_SCREEN_PACKET_KIND",
+    "ORACLE_SCREEN_PROMOTION_ORDER_SEEDS",
     "OPTIMIZER_UPDATE_LAW_BRANCHES",
     "OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION",
     "SCIENCE_MODE_BRANCH_VERDICT",
@@ -3431,11 +3870,13 @@ __all__ = [
     "TIE_POLICY_CURRENT_MARGIN_INDEX",
     "TIE_POLICY_DETERMINISTIC_HASH_MATCHED",
     "build_measurement_power_then_trust_region_packet",
+    "build_candidate_set_viability_oracle_screen_packet",
     "build_optimizer_update_law_launch_bundle",
     "build_optimizer_update_law_science_packet",
     "build_order_averaged_a0_component_decomposition_packet",
     "build_powered_rank_signal_decomposition_packet",
     "build_support_order_trajectory_robustness_packet",
+    "classify_candidate_set_viability_oracle_screen",
     "classify_optimizer_update_law_branch",
     "classify_step4_rank_signal_decomposition",
     "classify_step3_power_floor",
@@ -3464,6 +3905,7 @@ __all__ = [
     "step4_arm_matches_a0",
     "step4_mass_confound_detected",
     "validate_measurement_power_then_trust_region_packet",
+    "validate_candidate_set_viability_oracle_screen_packet",
     "validate_optimizer_update_law_launch_bundle",
     "validate_optimizer_update_law_science_packet",
     "validate_order_averaged_a0_component_decomposition_packet",

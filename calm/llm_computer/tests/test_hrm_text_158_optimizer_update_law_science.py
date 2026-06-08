@@ -14,6 +14,9 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     ARM_B_RANK_FREE_SIGN_PRESSURE,
     ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER,
     ARM_INVERTED_SIGN_PRESSURE,
+    BRANCH_CANDIDATE_GENERATION_BAD_OR_NO_LOCAL_SIGNAL,
+    BRANCH_CANDIDATE_SET_VIABLE_CREDIT_RANKING_BAD,
+    BRANCH_CREDIT_MAGNITUDE_BAD_SIGN_USABLE,
     BRANCH_CURRENT_ORDER_NOT_NECESSARY,
     BRANCH_CURRENT_QACC_MARGIN_ORDER_BUNDLE_CARRIER,
     BRANCH_INSUFFICIENT_SEPARATION,
@@ -23,16 +26,25 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     BRANCH_MEASUREMENT_POWERED,
     BRANCH_MEASUREMENT_UNDERPOWERED,
     BRANCH_NO_MATCH_DIFFERENT_CREDIT_SOURCE,
+    BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE,
     BRANCH_PARTIAL_LOCAL_SIGNAL,
     BRANCH_POWERED_NEGATIVE_OR_LOSS_ONLY,
     BRANCH_PRIOR_NULL_SETUP_UNVERIFIED,
     BRANCH_RANK_FREE_POSITIVE,
     BRANCH_RANK_MAGNITUDE_CONDITIONED_ON_CURRENT_ORDER,
+    BRANCH_SCHEDULER_ONLY_ORDER_SENSITIVE,
     BRANCH_TIE_POLICY_OR_OVERUPDATE,
     BRANCH_A0_COMPONENT_ORDER_ROBUST,
     CONTROL_PARITY_FRACTION_MAX,
     CONTROL_PARITY_FRACTION_MIN,
     FIXED_RANK_BUCKET_NON_TARGET_AUX,
+    ORACLE_ARM_CURRENT_CREDIT_RANK_BUCKET_CURRENT_ORDER,
+    ORACLE_ARM_DETERMINISTIC_HASH_SAME_VOTES,
+    ORACLE_ARM_DIAGNOSTIC_LOCAL_LOSS_DELTA,
+    ORACLE_SCREEN_BRANCHES,
+    ORACLE_SCREEN_CONTRAST_SEEDS,
+    ORACLE_SCREEN_PACKET_KIND,
+    ORACLE_SCREEN_PROMOTION_ORDER_SEEDS,
     SCIENCE_MODE_BRANCH_VERDICT,
     SCIENCE_MODE_PRETERMINAL_SCREEN,
     STEP1_DRY_RUN_PACKET_KIND,
@@ -46,6 +58,7 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     STEP6_FIXED_PREREG_NEW_SEED,
     STEP6_ORDER_AVERAGED_A0_COMPONENT_DECOMPOSITION_PACKET_KIND,
     STEP6_SUPPORT_ORDER_SEEDS,
+    build_candidate_set_viability_oracle_screen_packet,
     build_measurement_power_then_trust_region_packet,
     build_powered_rank_signal_decomposition_packet,
     build_order_averaged_a0_component_decomposition_packet,
@@ -54,6 +67,7 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     TIE_POLICY_DETERMINISTIC_HASH_MATCHED,
     build_optimizer_update_law_launch_bundle,
     build_optimizer_update_law_science_packet,
+    classify_candidate_set_viability_oracle_screen,
     classify_optimizer_update_law_branch,
     classify_step4_rank_signal_decomposition,
     classify_step3_power_floor,
@@ -61,6 +75,7 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     step4_arm_matches_a0,
     step4_mass_confound_detected,
     validate_measurement_power_then_trust_region_packet,
+    validate_candidate_set_viability_oracle_screen_packet,
     validate_optimizer_update_law_launch_bundle,
     validate_optimizer_update_law_science_packet,
     validate_order_averaged_a0_component_decomposition_packet,
@@ -1256,6 +1271,268 @@ def test_step6_validator_rejects_scope_drift_and_reuse_evidence(mutation, error)
         validate_order_averaged_a0_component_decomposition_packet(packet)
 
 
+def test_oracle_screen_packet_declares_three_arms_and_hard_non_persistence():
+    packet = build_candidate_set_viability_oracle_screen_packet(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+    )
+
+    validate_candidate_set_viability_oracle_screen_packet(packet)
+    assert packet["packet_kind"] == ORACLE_SCREEN_PACKET_KIND
+    assert packet["diagnostic_class"] == "pre_full_stack_diagnostic"
+    assert packet["author_only"] is True
+    assert packet["commands_executed"] is False
+    assert packet["gpu_launched"] is False
+    assert packet["launch_gate_id"] is None
+    assert packet["pt_mutated"] is False
+    assert packet["checkpoint_written"] is False
+    assert packet["readiness_claim"] is False
+    assert packet["full_sub2_claim"] is False
+    assert packet["ready_for_main_science"] is False
+    assert packet["carrier_claim"] is False
+    assert packet["optimizer_credit_state_row_flip"] is False
+    assert packet["optimizer_credit_state_science_dependent"] is True
+    assert packet["same_candidate_set_required"] is True
+
+    arms = {arm["arm_id"]: arm for arm in packet["arms"]}
+    assert set(arms) == {
+        ORACLE_ARM_CURRENT_CREDIT_RANK_BUCKET_CURRENT_ORDER,
+        ORACLE_ARM_DETERMINISTIC_HASH_SAME_VOTES,
+        ORACLE_ARM_DIAGNOSTIC_LOCAL_LOSS_DELTA,
+    }
+    assert {arm["candidate_set"] for arm in arms.values()} == {
+        "same_projected_move_candidate_set",
+    }
+    assert arms[ORACLE_ARM_DIAGNOSTIC_LOCAL_LOSS_DELTA]["vote_source"] == (
+        "diagnostic_local_loss_delta"
+    )
+    assert arms[ORACLE_ARM_DIAGNOSTIC_LOCAL_LOSS_DELTA]["q_persisted"] is False
+    assert arms[ORACLE_ARM_DIAGNOSTIC_LOCAL_LOSS_DELTA]["learner_teacher_promotion"] is False
+    assert arms[ORACLE_ARM_DIAGNOSTIC_LOCAL_LOSS_DELTA]["checkpoint_promotional"] is False
+
+    non_persist = packet["oracle_non_persistence_contract"]
+    assert non_persist["q_persist_allowed"] is False
+    assert non_persist["oracle_state_survives_into_learner"] is False
+    assert non_persist["learner_teacher_promotion_allowed"] is False
+    assert non_persist["pt_writes_allowed"] is False
+
+    budget = packet["oracle_feasibility_budget"]
+    assert budget["probe_required_before_full_screen"] is True
+    assert budget["budget_present"] is True
+    assert budget["classify_branch_on_missing_overrun_or_unsafe"] == (
+        BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE
+    )
+
+    summary = packet["compact_summary_schema"]
+    assert summary["compact_summary_only"] is True
+    assert set(summary["allowed_fields"]) == {
+        "candidate_count",
+        "sampled_candidate_count",
+        "top_k",
+        "sign_concordance",
+        "credit_rank_deciles",
+        "local_loss_delta_deciles",
+        "paired_loss_branch_fields",
+    }
+    assert summary["raw_per_proposal_arrays"] is False
+
+
+def test_oracle_screen_packet_pins_seed_order_contract_and_classifier_branches():
+    packet = build_candidate_set_viability_oracle_screen_packet(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+    )
+
+    seed_contract = packet["seed_order_contract"]
+    assert seed_contract["contrast_support_order_seeds"] == list(ORACLE_SCREEN_CONTRAST_SEEDS)
+    assert seed_contract["contrast_seed_roles"]["seed43"] == "A0-bad contrast"
+    assert seed_contract["contrast_seed_roles"]["seed29"] == "A0-good contrast"
+    assert seed_contract["n20_screen_rows"] == 20
+    assert seed_contract["n20_screen_is_launch_gated"] is True
+    promotion = seed_contract["promotion_condition"]
+    assert promotion["promote_to_n50_x_3_orderings"] is True
+    assert promotion["promotion_rows"] == 50
+    assert promotion["support_order_seeds"] == list(ORACLE_SCREEN_PROMOTION_ORDER_SEEDS)
+    assert promotion["only_if_non_null"] is True
+    assert promotion["only_if_not_artifact_confounded"] is True
+    assert promotion["post_hoc_seed_selection_allowed"] is False
+
+    classifier = packet["classifier_contract"]
+    assert classifier["exactly_one_branch"] is True
+    assert set(classifier["allowed_branches"]) == set(ORACLE_SCREEN_BRANCHES)
+
+
+@pytest.mark.parametrize(
+    "kwargs,expected",
+    [
+        (
+            {
+                "oracle_feasible": False,
+                "candidate_set_contains_ce_improving_move": True,
+            },
+            BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE,
+        ),
+        (
+            {
+                "oracle_feasible": True,
+                "candidate_set_contains_ce_improving_move": False,
+            },
+            BRANCH_CANDIDATE_GENERATION_BAD_OR_NO_LOCAL_SIGNAL,
+        ),
+        (
+            {
+                "oracle_feasible": True,
+                "candidate_set_contains_ce_improving_move": True,
+                "current_credit_rank_recovers_improvement": False,
+                "deterministic_hash_recovers_improvement": True,
+            },
+            BRANCH_SCHEDULER_ONLY_ORDER_SENSITIVE,
+        ),
+        (
+            {
+                "oracle_feasible": True,
+                "candidate_set_contains_ce_improving_move": True,
+                "current_credit_rank_recovers_improvement": False,
+                "credit_sign_concordance_positive": True,
+            },
+            BRANCH_CREDIT_MAGNITUDE_BAD_SIGN_USABLE,
+        ),
+        (
+            {
+                "oracle_feasible": True,
+                "candidate_set_contains_ce_improving_move": True,
+                "current_credit_rank_recovers_improvement": False,
+                "oracle_advantage_over_current": True,
+            },
+            BRANCH_CANDIDATE_SET_VIABLE_CREDIT_RANKING_BAD,
+        ),
+    ],
+)
+def test_oracle_screen_classifier_returns_exactly_one_branch(kwargs, expected):
+    assert classify_candidate_set_viability_oracle_screen(**kwargs) == expected
+    assert expected in ORACLE_SCREEN_BRANCHES
+
+
+@pytest.mark.parametrize(
+    "mutation,error",
+    [
+        (
+            lambda packet: packet.update({"readiness_claim": True}),
+            "readiness_claim",
+        ),
+        (
+            lambda packet: packet.update({"full_sub2_claim": True}),
+            "full_sub2_claim",
+        ),
+        (
+            lambda packet: packet.update({"carrier_claim": True}),
+            "carrier claim",
+        ),
+        (
+            lambda packet: packet.update({"qacc_kernelized": True}),
+            "qacc_kernelized",
+        ),
+        (
+            lambda packet: packet["arms"][2].update({"q_persisted": True}),
+            "packet.arms.2.q_persisted",
+        ),
+        (
+            lambda packet: packet.update({"q_persisted": True}),
+            "packet.q_persisted",
+        ),
+        (
+            lambda packet: packet.update(
+                {"nested_oracle_probe": {"q_persisted": True}},
+            ),
+            "packet.nested_oracle_probe.q_persisted",
+        ),
+        (
+            lambda packet: packet["arms"][2].update({"learner_teacher_promotion": True}),
+            "packet.arms.2.learner_teacher_promotion",
+        ),
+        (
+            lambda packet: packet.update({"learner_teacher_promotion": True}),
+            "packet.learner_teacher_promotion",
+        ),
+        (
+            lambda packet: packet.update(
+                {"diagnostic_oracle": {"learner_teacher_promotion": True}},
+            ),
+            "packet.diagnostic_oracle.learner_teacher_promotion",
+        ),
+        (
+            lambda packet: packet.update({"checkpoint_promotional": True}),
+            "packet.checkpoint_promotional",
+        ),
+        (
+            lambda packet: packet.update(
+                {"nested_oracle_probe": {"checkpoint_promotion_claim": True}},
+            ),
+            "packet.nested_oracle_probe.checkpoint_promotion_claim",
+        ),
+        (
+            lambda packet: packet["oracle_non_persistence_contract"].update(
+                {"oracle_state_survives_into_learner": True},
+            ),
+            "packet.oracle_non_persistence_contract.oracle_state_survives_into_learner",
+        ),
+        (
+            lambda packet: packet["oracle_feasibility_budget"].pop("max_seconds"),
+            "missing required fields",
+        ),
+        (
+            lambda packet: packet["oracle_feasibility_budget"].update({"budget_present": False}),
+            "budget must be present",
+        ),
+        (
+            lambda packet: packet["compact_summary_schema"].update(
+                {"raw_local_loss_deltas": True},
+            ),
+            "raw proposal arrays",
+        ),
+        (
+            lambda packet: packet.update({"raw_per_proposal_arrays_included": True}),
+            "raw per-proposal arrays",
+        ),
+        (
+            lambda packet: packet["artifact_policy"].update(
+                {"oracle_artifact_path": "/tmp/oracle.pt"},
+            ),
+            ".pt artifacts",
+        ),
+        (
+            lambda packet: packet.update({"oracle_artifact_path": "/tmp/oracle.pt"}),
+            "packet.oracle_artifact_path",
+        ),
+        (
+            lambda packet: packet.update(
+                {"extra_oracle_artifacts": {"oracle_artifact_path": "/tmp/oracle.pt"}},
+            ),
+            "packet.extra_oracle_artifacts.oracle_artifact_path",
+        ),
+        (
+            lambda packet: packet["classifier_contract"].update({"allowed_branches": []}),
+            "allowed branches",
+        ),
+        (
+            lambda packet: packet["seed_order_contract"].update(
+                {"contrast_support_order_seeds": [29, 43]},
+            ),
+            "contrast seeds",
+        ),
+    ],
+)
+def test_oracle_screen_validator_rejects_persistence_and_scope_drift(mutation, error):
+    packet = build_candidate_set_viability_oracle_screen_packet(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+    )
+    mutation(packet)
+
+    with pytest.raises(ValueError, match=error):
+        validate_candidate_set_viability_oracle_screen_packet(packet)
+
+
 def test_packet_script_writes_compact_launch_packet_with_null_gate(tmp_path: Path, capsys):
     parent = tmp_path / "parent.pt"
     parent.write_bytes(b"read-only parent bytes")
@@ -1500,3 +1777,37 @@ def test_packet_script_writes_step6_order_averaged_packet(tmp_path: Path, capsys
     assert json.loads(capsys.readouterr().out)["packet_kind"] == (
         STEP6_ORDER_AVERAGED_A0_COMPONENT_DECOMPOSITION_PACKET_KIND
     )
+
+
+def test_packet_script_writes_oracle_screen_author_packet(tmp_path: Path, capsys):
+    parent = tmp_path / "parent.pt"
+    parent.write_bytes(b"read-only parent bytes")
+    parent_sha = hashlib.sha256(b"read-only parent bytes").hexdigest()
+    out = tmp_path / "oracle-screen-packet.json"
+
+    exit_code = packet_main(
+        [
+            "--packet-kind",
+            ORACLE_SCREEN_PACKET_KIND,
+            "--parent",
+            str(parent),
+            "--parent-sha256",
+            parent_sha,
+            "--json-out",
+            str(out),
+        ],
+    )
+
+    assert exit_code == 0
+    packet = json.loads(out.read_text(encoding="utf-8"))
+    validate_candidate_set_viability_oracle_screen_packet(packet)
+    assert packet["packet_kind"] == ORACLE_SCREEN_PACKET_KIND
+    assert packet["launch_gate_id"] is None
+    assert packet["commands_executed"] is False
+    assert packet["gpu_launched"] is False
+    assert packet["pt_mutated"] is False
+    assert packet["parent_hash_basis"] == "read_only_parent_file_sha256"
+    assert packet["dry_run_packet_written"] is True
+    assert packet["gpu_launch_command_authorized"] is False
+    assert packet["oracle_screen_launch_gate_required"] is True
+    assert json.loads(capsys.readouterr().out)["packet_kind"] == ORACLE_SCREEN_PACKET_KIND
