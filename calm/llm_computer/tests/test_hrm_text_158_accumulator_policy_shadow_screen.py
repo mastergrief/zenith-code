@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from calm.hrm_text_158.native_full_stack.accumulator_policy_shadow_screen import (
+    ACCUMULATOR_POLICY_SHADOW_SCREEN_SCHEMA_VERSION_DYNAMICS,
     ARM_ACCUMULATOR_ONLY,
     ARM_ACCUMULATOR_PLUS_TRANSIENT,
     ARM_INT16_BASELINE,
@@ -16,7 +17,9 @@ from calm.hrm_text_158.native_full_stack.accumulator_policy_shadow_screen import
     FAIL_ACCUMULATOR_FIELDS_UNAVAILABLE,
     FAIL_MULTI_SOURCE_FUSION_REJECTED,
     FAIL_NO_REAL_CANDIDATE_TABLE,
+    FAIL_NO_REAL_SEQUENTIAL_CAPTURE,
     FAIL_TRANSIENT_FIELDS_UNAVAILABLE,
+    LABEL_ACCUMULATOR_IMPROVES_BUT_NOT_ENOUGH,
     LABEL_ACCUMULATOR_TRACKS_INT16_POLICY,
     LABEL_SCREEN_HARNESS_OR_GATE_FAIL,
     LABEL_STATIC_PROXY_NOT_PERSISTENT_DYNAMICS,
@@ -25,12 +28,24 @@ from calm.hrm_text_158.native_full_stack.accumulator_policy_shadow_screen import
     PRE_FULL_STACK_DIAGNOSTIC_ONLY,
     REQUIRED_SHADOW_ARMS,
     REQUIRED_THRESHOLD_FIELDS,
+    REAL_SEQUENTIAL_TRACE_REPLAY_RECEIPT_KIND,
     REAL_TABLE_REPLAY_RECEIPT_KIND,
     SOURCE_KIND_ACTIVATION_CREDIT_MEASUREMENT,
     SOURCE_KIND_WITHIN_TIE_BAND_DISCRIMINATOR,
+    SYNTHETIC_DYNAMICS_RECEIPT_KIND,
+    TRACE_TEMPORALITY_SEQUENTIAL_OPTIMIZER_STEPS,
     TRACE_TEMPORALITY_STATIC_SNAPSHOT,
+    TRACKING_SCOPE_OPTIMIZER_STEP_TRAJECTORY,
     TRACKING_SCOPE_SNAPSHOT_SCREEN,
+    _DynamicsArmShadowState,
+    _dynamics_flip_policy_score,
+    _row_only_flip_policy_score,
+    _row_only_selection_at_step,
+    _select_dynamics_candidate,
+    build_synthetic_temporal_within_tie_band_stream,
+    run_accumulator_policy_dynamics_screen,
     run_accumulator_policy_shadow_screen,
+    run_real_sequential_trace_replay_from_paths,
     run_real_table_static_proxy_replay_from_paths,
 )
 
@@ -353,3 +368,121 @@ def test_real_replay_rejects_multi_mode_fusion_without_alignment_proof(
         ]
         is True
     )
+
+
+def test_dynamics_synthetic_harness_never_emits_temporal_tracking_label() -> None:
+    receipt = run_accumulator_policy_dynamics_screen(steps=50)
+
+    assert receipt["schema_version"] == ACCUMULATOR_POLICY_SHADOW_SCREEN_SCHEMA_VERSION_DYNAMICS
+    assert receipt["receipt_kind"] == SYNTHETIC_DYNAMICS_RECEIPT_KIND
+    assert receipt["harness_validation_only"] is True
+    assert receipt["trace_temporality"] == TRACE_TEMPORALITY_SEQUENTIAL_OPTIMIZER_STEPS
+    assert receipt["tracking_scope"] == TRACKING_SCOPE_OPTIMIZER_STEP_TRAJECTORY
+    assert receipt["dynamics_verdict_allowed"] is False
+    assert receipt["primary_label"] != LABEL_ACCUMULATOR_TRACKS_INT16_POLICY
+    assert receipt["diagnostic_contract"]["satisfied"] is True
+
+
+def test_dynamics_state_carry_isolation_forces_shadow_not_row_only_pick() -> None:
+    stream = build_synthetic_temporal_within_tie_band_stream(
+        steps=50,
+        candidates_per_step=2,
+        mode="state_carry_isolation",
+    )
+    isolation_step = stream[-1]
+    candidates = isolation_step["candidates"]
+    carried_state = run_accumulator_policy_dynamics_screen(
+        candidate_stream=stream[:-1],
+        steps=49,
+    )["arms"][ARM_ACCUMULATOR_ONLY]["final_shadow_state"]
+    carried_i32 = int(carried_state["carried_accumulator_i32"])
+
+    row_only_pick = _row_only_selection_at_step(candidates, rate_cap=1)[0]
+    dynamics_pick = _select_dynamics_candidate(
+        candidates,
+        arm=ARM_ACCUMULATOR_ONLY,
+        shadow_state=_DynamicsArmShadowState(carried_accumulator_i32=carried_i32),
+        rate_cap=1,
+    )[0]
+
+    assert row_only_pick == "s0049:c0"
+    assert dynamics_pick == "s0049:c1"
+    assert _row_only_flip_policy_score(candidates[0]) > _row_only_flip_policy_score(
+        candidates[1]
+    )
+    assert _dynamics_flip_policy_score(
+        candidates[1],
+        carried_accumulator_i32=carried_i32,
+    ) > _dynamics_flip_policy_score(
+        candidates[0],
+        carried_accumulator_i32=carried_i32,
+    )
+
+    receipt = run_accumulator_policy_dynamics_screen(candidate_stream=stream, steps=50)
+    assert receipt["arms"][ARM_ACCUMULATOR_ONLY]["final_shadow_state"][
+        "carried_accumulator_i32"
+    ] == 18
+
+
+def test_dynamics_classifier_taxonomy_on_synthetic_modes() -> None:
+    expected_by_mode = {
+        "accumulator_tracks": LABEL_ACCUMULATOR_TRACKS_INT16_POLICY,
+        "transient_carries": LABEL_TRANSIENT_CARRIES_SELECTION,
+        "accumulator_null": LABEL_ACCUMULATOR_IMPROVES_BUT_NOT_ENOUGH,
+    }
+    observed: dict[str, str] = {}
+    for mode, expected in expected_by_mode.items():
+        receipt = run_accumulator_policy_dynamics_screen(
+            steps=50,
+            synthetic_mode=mode,
+        )
+        observed[mode] = receipt["raw_primary_label"]
+        assert receipt["raw_primary_label"] == expected
+
+    assert len(set(observed.values())) == 3
+    transient = run_accumulator_policy_dynamics_screen(
+        steps=50,
+        synthetic_mode="transient_carries",
+    )
+    assert transient["aggregate_metrics"]["transient_only_advantage_vs_accumulator"] > (
+        transient["thresholds"]["max_transient_only_advantage_allowed"]
+    )
+    tracks = run_accumulator_policy_dynamics_screen(
+        steps=50,
+        synthetic_mode="accumulator_tracks",
+    )
+    assert tracks["primary_label"] == LABEL_ACCUMULATOR_IMPROVES_BUT_NOT_ENOUGH
+
+
+def test_real_sequential_replay_fail_closed_until_b2b_capture(tmp_path: Path) -> None:
+    source = _write_receipt(
+        tmp_path / "within.json",
+        mode=SOURCE_KIND_WITHIN_TIE_BAND_DISCRIMINATOR,
+        rows=[
+            _within_tie_band_row("a", 0, -0.30),
+            _within_tie_band_row("b", 1, -0.20),
+        ],
+    )
+
+    receipt = run_real_sequential_trace_replay_from_paths(
+        [source],
+        stable_copy_dir=tmp_path / "stable",
+    )
+
+    assert receipt["receipt_kind"] == REAL_SEQUENTIAL_TRACE_REPLAY_RECEIPT_KIND
+    assert receipt["dynamics_verdict_allowed"] is False
+    assert receipt["primary_label"] == LABEL_SCREEN_HARNESS_OR_GATE_FAIL
+    assert FAIL_NO_REAL_SEQUENTIAL_CAPTURE in receipt["failure_reasons"]
+    assert receipt["real_sequential_replay"]["no_real_sequential_capture"] is True
+    assert receipt["aggregate_metrics"]["optimizer_step_count"] == 0
+
+
+def test_dynamics_contract_fail_closed_on_stream_drift() -> None:
+    receipt = run_accumulator_policy_dynamics_screen(
+        steps=50,
+        candidate_stream_hash_overrides={ARM_ACCUMULATOR_ONLY: "drifted-stream"},
+    )
+
+    assert receipt["screen_harness_or_gate_fail"] is True
+    assert receipt["primary_label"] == LABEL_SCREEN_HARNESS_OR_GATE_FAIL
+    assert "same_candidate_stream" in receipt["failure_reasons"]

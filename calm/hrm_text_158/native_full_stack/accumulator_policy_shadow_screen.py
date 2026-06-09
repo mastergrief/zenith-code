@@ -21,6 +21,9 @@ from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
 ACCUMULATOR_POLICY_SHADOW_SCREEN_SCHEMA_VERSION = (
     "hrm_text_158_accumulator_policy_shadow_screen/v0.cpu_synthetic_contract"
 )
+ACCUMULATOR_POLICY_SHADOW_SCREEN_SCHEMA_VERSION_DYNAMICS = (
+    "hrm_text_158_accumulator_policy_shadow_screen/v1.sequential_dynamics_contract"
+)
 B7B_SCREEN_DIAGNOSTIC_CONTRACT_ID = (
     "measurement_only_pre_full_stack_diagnostic/b7b_screen_a/v0"
 )
@@ -89,8 +92,14 @@ REAL_TABLE_TRANSIENT_FIELDS = (
     "diag_fisher",
 )
 TRACE_TEMPORALITY_STATIC_SNAPSHOT = "static_candidate_universe_snapshot"
+TRACE_TEMPORALITY_SEQUENTIAL_OPTIMIZER_STEPS = "sequential_optimizer_steps"
 TRACKING_SCOPE_SNAPSHOT_SCREEN = "snapshot_screen"
+TRACKING_SCOPE_OPTIMIZER_STEP_TRAJECTORY = "optimizer_step_trajectory"
 REAL_TABLE_REPLAY_RECEIPT_KIND = "cpu_real_table_static_proxy_replay"
+SYNTHETIC_DYNAMICS_RECEIPT_KIND = "cpu_synthetic_dynamics_harness_validation"
+REAL_SEQUENTIAL_TRACE_REPLAY_RECEIPT_KIND = "cpu_real_sequential_trace_replay"
+FAIL_NO_REAL_SEQUENTIAL_CAPTURE = "no_real_sequential_capture"
+SYNTHETIC_FLIP_POLICY_THRESHOLD_ABS = 20
 FAIL_NO_REAL_CANDIDATE_TABLE = "no_real_candidate_table_found"
 FAIL_ACCUMULATOR_FIELDS_UNAVAILABLE = "accumulator_fields_unavailable"
 FAIL_TRANSIENT_FIELDS_UNAVAILABLE = "transient_fields_unavailable"
@@ -268,6 +277,289 @@ def build_synthetic_shadow_candidate_stream(
             )
         stream.append({"step": step, "candidates": tuple(candidates)})
     return tuple(stream)
+
+
+@dataclass(frozen=True)
+class _DynamicsArmShadowState:
+    """Per-arm persistent shadow state carried across optimizer steps."""
+
+    carried_accumulator_i32: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"carried_accumulator_i32": int(self.carried_accumulator_i32)}
+
+
+def _within_tie_band_candidate_row(
+    *,
+    step: int,
+    candidate_index: int,
+    candidate_id: str,
+    current_rank_position: int,
+    pre_accumulator_i16: int,
+    new_acc_i32_signed: int,
+    proximity_to_threshold: int,
+    local_loss_delta: float,
+    oracle_gain: float | None = None,
+) -> dict[str, Any]:
+    proposal_direction = 1 if int(new_acc_i32_signed) >= 0 else -1
+    threshold_residual_signed = int(new_acc_i32_signed) - (
+        proposal_direction * SYNTHETIC_FLIP_POLICY_THRESHOLD_ABS
+    )
+    return {
+        "candidate_id": candidate_id,
+        "step": int(step),
+        "candidate_index": int(candidate_index),
+        "current_rank_position": int(current_rank_position),
+        "pre_accumulator_i16": int(pre_accumulator_i16),
+        "new_acc_i32_signed": int(new_acc_i32_signed),
+        "proximity_to_threshold": int(proximity_to_threshold),
+        "proposal_direction": int(proposal_direction),
+        "threshold_residual_signed": int(threshold_residual_signed),
+        "local_loss_delta": float(local_loss_delta),
+        "oracle_gain": round(
+            float(oracle_gain if oracle_gain is not None else max(0.0, -local_loss_delta)),
+            6,
+        ),
+        "int16_score": round(float(-current_rank_position), 6),
+        "transient_score": round(float(-local_loss_delta), 6),
+    }
+
+
+def build_synthetic_temporal_within_tie_band_stream(
+    *,
+    steps: int = 50,
+    candidates_per_step: int = 4,
+    mode: str = "accumulator_tracks",
+) -> tuple[dict[str, Any], ...]:
+    """Build a deterministic within_tie_band temporal stream without baked scores.
+
+    Rows expose flip-policy inputs only. The dynamics harness derives selection
+    from carried shadow state plus per-row fields, never from a pre-baked
+    ``accumulator_score``.
+    """
+
+    if steps <= 0:
+        raise ValueError("steps must be positive")
+    if candidates_per_step < 2:
+        raise ValueError("candidates_per_step must be at least 2")
+    valid_modes = {
+        "accumulator_tracks",
+        "accumulator_improves",
+        "transient_carries",
+        "accumulator_null",
+        "state_carry_isolation",
+    }
+    if mode not in valid_modes:
+        raise ValueError(
+            f"unknown synthetic temporal stream mode {mode!r}; valid={sorted(valid_modes)}"
+        )
+
+    stream: list[dict[str, Any]] = []
+    for step in range(steps):
+        oracle_idx = step % candidates_per_step
+        decoy_idx = (oracle_idx + 1) % candidates_per_step
+        candidates: list[dict[str, Any]] = []
+        for idx in range(candidates_per_step):
+            oracle_gain = 1.0 if idx == oracle_idx else 0.45 - 0.05 * idx
+            if idx == decoy_idx:
+                oracle_gain = 0.62
+            local_loss_delta = -float(oracle_gain)
+            rank = 0 if idx == oracle_idx else idx + 1
+            pre_acc = 5 + idx
+            new_acc = 12 + idx
+            proximity = abs(abs(new_acc) - SYNTHETIC_FLIP_POLICY_THRESHOLD_ABS)
+
+            if mode == "accumulator_tracks":
+                if idx == oracle_idx:
+                    proximity = 1
+                    pre_acc = SYNTHETIC_FLIP_POLICY_THRESHOLD_ABS - 2
+                    new_acc = SYNTHETIC_FLIP_POLICY_THRESHOLD_ABS - 1
+                else:
+                    proximity = 12 + idx
+                    new_acc = SYNTHETIC_FLIP_POLICY_THRESHOLD_ABS + 8 + idx
+            elif mode == "accumulator_improves":
+                if idx == oracle_idx:
+                    proximity = 4
+                    new_acc = SYNTHETIC_FLIP_POLICY_THRESHOLD_ABS - 4
+                elif idx == decoy_idx:
+                    proximity = 2
+                    new_acc = SYNTHETIC_FLIP_POLICY_THRESHOLD_ABS - 2
+                else:
+                    proximity = 10 + idx
+                    new_acc = SYNTHETIC_FLIP_POLICY_THRESHOLD_ABS + 6 + idx
+            elif mode == "transient_carries":
+                if idx == oracle_idx:
+                    local_loss_delta = -0.95
+                else:
+                    local_loss_delta = -0.10 - 0.01 * idx
+            elif mode == "accumulator_null":
+                if idx == oracle_idx:
+                    proximity = 40
+                    pre_acc = 60
+                    new_acc = 90
+                    local_loss_delta = -0.05
+                else:
+                    proximity = 1
+                    pre_acc = 1
+                    new_acc = 2
+                    local_loss_delta = -0.80
+            elif mode == "state_carry_isolation":
+                if step < steps - 1:
+                    if idx == 0:
+                        proximity = 4
+                        pre_acc = 18
+                        new_acc = 25
+                    else:
+                        proximity = 12 + idx
+                        pre_acc = 4 + idx
+                        new_acc = 8 + idx
+                else:
+                    if idx == 0:
+                        proximity = 0
+                        pre_acc = 5
+                        new_acc = 10
+                    elif idx == 1:
+                        proximity = 5
+                        pre_acc = 15
+                        new_acc = 18
+                    else:
+                        proximity = 20 + idx
+                        pre_acc = 2 + idx
+                        new_acc = 4 + idx
+
+            candidates.append(
+                _within_tie_band_candidate_row(
+                    step=step,
+                    candidate_index=idx,
+                    candidate_id=f"s{step:04d}:c{idx}",
+                    current_rank_position=rank,
+                    pre_accumulator_i16=pre_acc,
+                    new_acc_i32_signed=new_acc,
+                    proximity_to_threshold=proximity,
+                    local_loss_delta=local_loss_delta,
+                    oracle_gain=oracle_gain,
+                )
+            )
+        stream.append(
+            {
+                "step": int(step),
+                "optimizer_step_index": int(step),
+                "source_kind": SOURCE_KIND_WITHIN_TIE_BAND_DISCRIMINATOR,
+                "candidates": tuple(candidates),
+            }
+        )
+    return tuple(stream)
+
+
+def _row_only_flip_policy_score(row: Mapping[str, Any]) -> float:
+    """Static per-row flip score — the B1 static-score trap if used for dynamics."""
+
+    return -float(row["proximity_to_threshold"])
+
+
+def _dynamics_flip_policy_score(
+    row: Mapping[str, Any],
+    *,
+    carried_accumulator_i32: int,
+) -> float:
+    """Score a candidate using carried shadow state plus within_tie_band flip inputs."""
+
+    row_delta = int(row["new_acc_i32_signed"]) - int(row["pre_accumulator_i16"])
+    projected = int(carried_accumulator_i32) + row_delta
+    proximity = abs(abs(projected) - SYNTHETIC_FLIP_POLICY_THRESHOLD_ABS)
+    return -float(proximity)
+
+
+def _commit_shadow_state_after_selection(
+    state: _DynamicsArmShadowState,
+    *,
+    arm: str,
+    winner_row: Mapping[str, Any],
+) -> _DynamicsArmShadowState:
+    """Winner-commit: only the selected candidate's flip outcome updates carry."""
+
+    if arm not in (ARM_ACCUMULATOR_ONLY, ARM_ACCUMULATOR_PLUS_TRANSIENT):
+        return state
+    return _DynamicsArmShadowState(
+        carried_accumulator_i32=int(winner_row["new_acc_i32_signed"]),
+    )
+
+
+def _select_dynamics_candidate(
+    candidates: Sequence[Mapping[str, Any]],
+    *,
+    arm: str,
+    shadow_state: _DynamicsArmShadowState,
+    rate_cap: int,
+) -> tuple[str, ...]:
+    if arm == ARM_INT16_BASELINE:
+        score_key = "int16_score"
+        ranked = sorted(
+            candidates,
+            key=lambda row: (float(row[score_key]), str(row["candidate_id"])),
+            reverse=True,
+        )
+    elif arm == ARM_ACCUMULATOR_ONLY:
+        ranked = sorted(
+            candidates,
+            key=lambda row: (
+                _dynamics_flip_policy_score(
+                    row,
+                    carried_accumulator_i32=shadow_state.carried_accumulator_i32,
+                ),
+                str(row["candidate_id"]),
+            ),
+            reverse=True,
+        )
+    elif arm == ARM_TRANSIENT_RESOLVER_ONLY:
+        ranked = sorted(
+            candidates,
+            key=lambda row: (float(row["transient_score"]), str(row["candidate_id"])),
+            reverse=True,
+        )
+    elif arm == ARM_ACCUMULATOR_PLUS_TRANSIENT:
+        ranked = sorted(
+            candidates,
+            key=lambda row: (
+                _dynamics_flip_policy_score(
+                    row,
+                    carried_accumulator_i32=shadow_state.carried_accumulator_i32,
+                )
+                + float(row["transient_score"]),
+                str(row["candidate_id"]),
+            ),
+            reverse=True,
+        )
+    else:
+        raise ValueError(f"unknown shadow arm {arm!r}")
+    return tuple(str(row["candidate_id"]) for row in ranked[:rate_cap])
+
+
+def _row_only_selection_at_step(
+    candidates: Sequence[Mapping[str, Any]],
+    *,
+    rate_cap: int,
+) -> tuple[str, ...]:
+    ranked = sorted(
+        candidates,
+        key=lambda row: (_row_only_flip_policy_score(row), str(row["candidate_id"])),
+        reverse=True,
+    )
+    return tuple(str(row["candidate_id"]) for row in ranked[:rate_cap])
+
+
+def _dynamics_state_hash(
+    arm: str,
+    shadow_states_by_step: Sequence[_DynamicsArmShadowState],
+    selected_by_step: Sequence[tuple[str, ...]],
+) -> str:
+    return _stable_hash16(
+        {
+            "arm": arm,
+            "shadow_states": [state.to_dict() for state in shadow_states_by_step],
+            "selected_by_step": list(selected_by_step),
+        }
+    )
 
 
 def _source_kind_from_oracle_screen(oracle_screen: Mapping[str, Any]) -> str:
@@ -974,3 +1266,236 @@ def run_real_table_static_proxy_replay_from_paths(
         }
     )
     return receipt
+
+
+def run_accumulator_policy_dynamics_screen(
+    *,
+    candidate_stream: Sequence[Mapping[str, Any]] | None = None,
+    steps: int = 50,
+    rate_cap: int = 1,
+    thresholds: Mapping[str, Any] | None = None,
+    arm_ledger_overrides: Mapping[str, Mapping[str, Any]] | None = None,
+    candidate_stream_hash_overrides: Mapping[str, str] | None = None,
+    q_mutation_applied_to_model: bool = False,
+    synthetic_mode: str = "accumulator_tracks",
+    harness_validation_only: bool = True,
+) -> dict[str, Any]:
+    """Run the CPU stateful shadow-accumulator dynamics screen.
+
+    Synthetic runs are harness-validation only: they prove state-carry machinery
+    but must not emit ``accumulator_tracks_int16_policy`` as temporal evidence.
+    """
+
+    if rate_cap <= 0:
+        raise ValueError("rate_cap must be positive")
+    stream = tuple(
+        candidate_stream
+        if candidate_stream is not None
+        else build_synthetic_temporal_within_tie_band_stream(
+            steps=steps,
+            mode=synthetic_mode,
+        )
+    )
+    if not stream:
+        raise ValueError("candidate_stream must not be empty")
+    thresholds_payload = dict(DEFAULT_PREREG_THRESHOLDS)
+    thresholds_payload.update(dict(thresholds or {}))
+    ledgers = _merge_ledgers(arm_ledger_overrides)
+
+    candidate_stream_hash = _stable_hash16(stream)
+    candidate_stream_hashes_by_arm = {
+        arm: candidate_stream_hash for arm in REQUIRED_SHADOW_ARMS
+    }
+    candidate_stream_hashes_by_arm.update(dict(candidate_stream_hash_overrides or {}))
+
+    shadow_states_by_arm: dict[str, list[_DynamicsArmShadowState]] = {
+        arm: [_DynamicsArmShadowState()] for arm in REQUIRED_SHADOW_ARMS
+    }
+    selections_by_arm: dict[str, list[tuple[str, ...]]] = {
+        arm: [] for arm in REQUIRED_SHADOW_ARMS
+    }
+    shadow_trace_by_arm: dict[str, list[_DynamicsArmShadowState]] = {
+        arm: [] for arm in REQUIRED_SHADOW_ARMS
+    }
+
+    for step in stream:
+        candidates = step["candidates"]
+        for arm in REQUIRED_SHADOW_ARMS:
+            current_state = shadow_states_by_arm[arm][-1]
+            shadow_trace_by_arm[arm].append(current_state)
+            selected = _select_dynamics_candidate(
+                candidates,
+                arm=arm,
+                shadow_state=current_state,
+                rate_cap=rate_cap,
+            )
+            selections_by_arm[arm].append(selected)
+            winner_id = selected[0] if selected else None
+            winner_row = next(
+                (
+                    row
+                    for row in candidates
+                    if str(row["candidate_id"]) == winner_id
+                ),
+                candidates[0],
+            )
+            shadow_states_by_arm[arm].append(
+                _commit_shadow_state_after_selection(
+                    current_state,
+                    arm=arm,
+                    winner_row=winner_row,
+                )
+            )
+
+    selections_tuple_by_arm = {
+        arm: tuple(selected_by_step) for arm, selected_by_step in selections_by_arm.items()
+    }
+    int16_by_step = selections_tuple_by_arm[ARM_INT16_BASELINE]
+    metrics_by_arm = {
+        arm: _arm_metrics(
+            stream=stream,
+            selected_by_step=selected_by_step,
+            int16_by_step=int16_by_step,
+            rate_cap=rate_cap,
+        )
+        for arm, selected_by_step in selections_tuple_by_arm.items()
+    }
+    transient_only_advantage = (
+        metrics_by_arm[ARM_TRANSIENT_RESOLVER_ONLY]["regret_capture_vs_oracle"]
+        - metrics_by_arm[ARM_ACCUMULATOR_ONLY]["regret_capture_vs_oracle"]
+    )
+
+    arms_payload: dict[str, dict[str, Any]] = {}
+    for arm, ledger in ledgers.items():
+        selected_by_step = selections_tuple_by_arm[arm]
+        arms_payload[arm] = {
+            **ledger.to_dict(),
+            "metrics": metrics_by_arm[arm],
+            "selected_candidate_ids_hash16": _stable_hash16(selected_by_step),
+            "arm_state_hash": _dynamics_state_hash(
+                arm,
+                shadow_trace_by_arm[arm],
+                selected_by_step,
+            ),
+            "shadow_state_trace_hash16": _stable_hash16(
+                [state.to_dict() for state in shadow_trace_by_arm[arm]]
+            ),
+            "final_shadow_state": shadow_states_by_arm[arm][-1].to_dict(),
+        }
+
+    receipt: dict[str, Any] = {
+        "schema_version": ACCUMULATOR_POLICY_SHADOW_SCREEN_SCHEMA_VERSION_DYNAMICS,
+        "contract_id": B7B_SCREEN_DIAGNOSTIC_CONTRACT_ID,
+        "receipt_kind": SYNTHETIC_DYNAMICS_RECEIPT_KIND,
+        "pre_full_stack_diagnostic_only": True,
+        "measurement_only_pre_full_stack_diagnostic": True,
+        "runtime_readiness_claim": False,
+        "training_or_acquisition_claim": False,
+        "q_mutation_applied_to_model": bool(q_mutation_applied_to_model),
+        "compact_receipt": True,
+        "harness_validation_only": bool(harness_validation_only),
+        "trace_temporality": TRACE_TEMPORALITY_SEQUENTIAL_OPTIMIZER_STEPS,
+        "tracking_scope": TRACKING_SCOPE_OPTIMIZER_STEP_TRAJECTORY,
+        "steps": len(stream),
+        "rate_cap": int(rate_cap),
+        "verdict_allowed": len(stream) >= int(thresholds_payload["min_steps_for_verdict"]),
+        "thresholds": thresholds_payload,
+        "readiness_current_repo": _current_repo_readiness_summary(),
+        "candidate_stream_hash": candidate_stream_hash,
+        "candidate_stream_hashes_by_arm": candidate_stream_hashes_by_arm,
+        "divergent_arm_state_hashes_allowed": True,
+        "arms": arms_payload,
+        "aggregate_metrics": {
+            "transient_only_advantage_vs_accumulator": transient_only_advantage,
+            "optimizer_step_count": len(stream),
+            "candidate_stream_candidate_count": sum(
+                len(step["candidates"]) for step in stream
+            ),
+        },
+    }
+    diagnostic_contract = _diagnostic_contract_state(
+        receipt=receipt,
+        ledgers=ledgers,
+        candidate_stream_hashes_by_arm=candidate_stream_hashes_by_arm,
+    )
+    raw_primary_label = _classify(
+        contract_satisfied=bool(diagnostic_contract["satisfied"]),
+        steps=len(stream),
+        thresholds=thresholds_payload,
+        metrics_by_arm=metrics_by_arm,
+    )
+    if harness_validation_only and raw_primary_label == LABEL_ACCUMULATOR_TRACKS_INT16_POLICY:
+        primary_label = LABEL_ACCUMULATOR_IMPROVES_BUT_NOT_ENOUGH
+    else:
+        primary_label = raw_primary_label
+
+    dynamics_verdict_allowed = not harness_validation_only and len(stream) >= int(
+        thresholds_payload["min_steps_for_verdict"]
+    )
+    receipt["diagnostic_contract"] = diagnostic_contract
+    receipt["primary_label"] = primary_label
+    receipt["raw_primary_label"] = raw_primary_label
+    receipt["taxonomy_labels"] = [PRE_FULL_STACK_DIAGNOSTIC_ONLY, primary_label]
+    receipt["dynamics_verdict_allowed"] = dynamics_verdict_allowed
+    receipt["screen_harness_or_gate_fail"] = (
+        primary_label == LABEL_SCREEN_HARNESS_OR_GATE_FAIL
+    )
+    receipt["failure_reasons"] = list(diagnostic_contract["failure_reasons"])
+    return receipt
+
+
+def run_real_sequential_trace_replay_from_paths(
+    receipt_paths: Sequence[str | Path],
+    *,
+    stable_copy_dir: str | Path | None = None,
+    rate_cap: int = 1,
+) -> dict[str, Any]:
+    """Fail-closed real sequential replay entrypoint until B2b capture exists."""
+
+    source_records, replay_paths, copy_failures = _copy_sources_to_stable_scratch(
+        receipt_paths,
+        stable_copy_dir,
+    )
+    failure_reasons = list(copy_failures)
+    if not replay_paths:
+        failure_reasons.append(FAIL_NO_REAL_CANDIDATE_TABLE)
+    failure_reasons.append(FAIL_NO_REAL_SEQUENTIAL_CAPTURE)
+    unique_failure_reasons = list(dict.fromkeys(failure_reasons))
+    return {
+        "schema_version": ACCUMULATOR_POLICY_SHADOW_SCREEN_SCHEMA_VERSION_DYNAMICS,
+        "contract_id": B7B_SCREEN_DIAGNOSTIC_CONTRACT_ID,
+        "receipt_kind": REAL_SEQUENTIAL_TRACE_REPLAY_RECEIPT_KIND,
+        "pre_full_stack_diagnostic_only": True,
+        "measurement_only_pre_full_stack_diagnostic": True,
+        "runtime_readiness_claim": False,
+        "training_or_acquisition_claim": False,
+        "q_mutation_applied_to_model": False,
+        "compact_receipt": True,
+        "harness_validation_only": False,
+        "trace_temporality": TRACE_TEMPORALITY_SEQUENTIAL_OPTIMIZER_STEPS,
+        "tracking_scope": TRACKING_SCOPE_OPTIMIZER_STEP_TRAJECTORY,
+        "dynamics_verdict_allowed": False,
+        "primary_label": LABEL_SCREEN_HARNESS_OR_GATE_FAIL,
+        "taxonomy_labels": [
+            PRE_FULL_STACK_DIAGNOSTIC_ONLY,
+            LABEL_SCREEN_HARNESS_OR_GATE_FAIL,
+        ],
+        "screen_harness_or_gate_fail": True,
+        "failure_reasons": unique_failure_reasons,
+        "readiness_current_repo": _current_repo_readiness_summary(),
+        "real_sequential_replay": {
+            "source_records": [dict(record) for record in source_records],
+            "source_path_count": len(replay_paths),
+            "ephemeral_source": any(
+                bool(record.get("ephemeral_source")) for record in source_records
+            ),
+            "no_real_sequential_capture": True,
+        },
+        "aggregate_metrics": {
+            "optimizer_step_count": 0,
+            "candidate_stream_candidate_count": 0,
+            "dynamics_verdict_allowed": False,
+        },
+        "rate_cap": int(rate_cap),
+        "verdict_allowed": False,
+    }
