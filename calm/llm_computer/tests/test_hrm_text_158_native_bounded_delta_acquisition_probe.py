@@ -100,6 +100,8 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     B1_PRIOR_AUDIT_PINS,
     B1_PRIOR_AUDIT_SCHEMA_VERSION,
     B1_PRIOR_AUDIT_SUPPORTS,
+    B2B_BOUNDED_STEPS_AGGREGATE_TIMEOUT_EXEMPTION_V1,
+    BOUNDED_STEPS_AGGREGATE_PHASE,
     C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME,
     C2P2_DEFAULT_GPU_SILENT_PHASE_TIMEOUT_SECONDS,
     C2P2_FAULTHANDLER_SCHEMA_VERSION,
@@ -114,6 +116,8 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     GLOBAL_CAP_CONTRACT_OFF,
     HISTORICAL_IDENTITY_CONTROL,
     ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY,
+    PHASE_TIMEOUT_EXEMPTION_CONTRACT_OFF,
+    PHASE_TIMEOUT_EXEMPTION_SCHEMA_VERSION,
     PhaseProgress,
     RUN_C2_ACQUISITION_PROBE_ENV,
     RUN_C2_GPU_LAUNCH_ENV,
@@ -128,6 +132,7 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     build_identity_full_support_batches,
     build_b2_retained_support_sets,
     build_model_from_checkpoint,
+    build_phase_timeout_exemption_receipt,
     build_prior_audit_support_batches,
     build_prior_audit_support_rows,
     compare_module_output_fidelity,
@@ -149,12 +154,14 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     register_probe_faulthandler,
     reset_cuda_memory_stats,
     resolve_max_silent_phase_seconds,
+    resolve_phase_timeout_exemptions,
     run_c2p1_probe,
     score_strict_exact_and_parsed_from_logits,
     select_eligible_bitlinears,
     snapshot_b2_full_coverage_tracker,
     update_strict_exact_stop_state,
     update_b2_full_coverage_tracker,
+    validate_b2b_phase_timeout_launch_requirements,
     _capture_eligible_module_outputs,
     enforce_phase_bound,
 )
@@ -1619,6 +1626,192 @@ def test_phase_progress_exception_preserves_liveness_failure_sentinel(tmp_path: 
     assert last_active.get("guard_event") != "cleared"
 
 
+def test_phase_timeout_exemption_contract_default_off():
+    assert resolve_phase_timeout_exemptions(contract=PHASE_TIMEOUT_EXEMPTION_CONTRACT_OFF) == frozenset()
+    receipt = build_phase_timeout_exemption_receipt(
+        contract=PHASE_TIMEOUT_EXEMPTION_CONTRACT_OFF,
+        phase_timeout_seconds=0.0,
+        silent_phase_timeout_seconds=None,
+        total_timeout_seconds=0.0,
+    )
+    assert receipt["schema"] == PHASE_TIMEOUT_EXEMPTION_SCHEMA_VERSION
+    assert receipt["enabled"] is False
+    assert receipt["contract"] == PHASE_TIMEOUT_EXEMPTION_CONTRACT_OFF
+    assert receipt["exempt_phase_count"] == 0
+    assert receipt["exempt_phases"] == []
+
+
+def test_phase_timeout_exemption_unknown_contract_fail_closed():
+    with pytest.raises(ValueError, match="phase_timeout_exemption_contract must be one of"):
+        resolve_phase_timeout_exemptions(contract="not-a-real-contract")
+
+
+def test_phase_timeout_exemption_named_contract_stable_hash():
+    exempt = resolve_phase_timeout_exemptions(
+        contract=B2B_BOUNDED_STEPS_AGGREGATE_TIMEOUT_EXEMPTION_V1
+    )
+    assert exempt == frozenset({BOUNDED_STEPS_AGGREGATE_PHASE})
+    receipt = build_phase_timeout_exemption_receipt(
+        contract=B2B_BOUNDED_STEPS_AGGREGATE_TIMEOUT_EXEMPTION_V1,
+        phase_timeout_seconds=600.0,
+        silent_phase_timeout_seconds=300.0,
+        total_timeout_seconds=7200.0,
+    )
+    assert receipt["enabled"] is True
+    assert receipt["exempt_phase_count"] == 1
+    assert receipt["exempt_phases"] == [BOUNDED_STEPS_AGGREGATE_PHASE]
+    assert receipt["exempt_phase_hash"].startswith("sha256:")
+    repeat = build_phase_timeout_exemption_receipt(
+        contract=B2B_BOUNDED_STEPS_AGGREGATE_TIMEOUT_EXEMPTION_V1,
+        phase_timeout_seconds=600.0,
+        silent_phase_timeout_seconds=300.0,
+        total_timeout_seconds=7200.0,
+    )
+    assert repeat["exempt_phase_hash"] == receipt["exempt_phase_hash"]
+
+
+def test_phase_progress_bounded_steps_exemption_under_fake_clock():
+    class FakeClock:
+        def __init__(self) -> None:
+            self.now = 0.0
+
+        def __call__(self) -> float:
+            return self.now
+
+    clock = FakeClock()
+    progress = PhaseProgress(
+        enabled=False,
+        device=torch.device("cpu"),
+        phase_timeout_seconds=1.0,
+        phase_timeout_exemptions=resolve_phase_timeout_exemptions(
+            contract=B2B_BOUNDED_STEPS_AGGREGATE_TIMEOUT_EXEMPTION_V1
+        ),
+        phase_timeout_exemption_contract=B2B_BOUNDED_STEPS_AGGREGATE_TIMEOUT_EXEMPTION_V1,
+        clock=clock,
+    )
+
+    with progress.phase(BOUNDED_STEPS_AGGREGATE_PHASE, steps=3):
+        clock.now = 5.0
+
+    telemetry = progress.to_dict()
+    assert telemetry["phase_timeout_exemption_contract"] == (
+        B2B_BOUNDED_STEPS_AGGREGATE_TIMEOUT_EXEMPTION_V1
+    )
+    assert telemetry["phase_timeout_exemptions"] == [BOUNDED_STEPS_AGGREGATE_PHASE]
+    end_event = telemetry["events"][-1]
+    assert end_event["event"] == "end"
+    assert end_event["phase_timeout_exempted"] is True
+    assert end_event["scalar_phase_timeout_seconds"] == 1.0
+
+
+def test_phase_progress_nested_phase_timeout_still_fires_with_exemption(tmp_path: Path):
+    class FakeClock:
+        def __init__(self) -> None:
+            self.now = 0.0
+
+        def __call__(self) -> float:
+            return self.now
+
+    clock = FakeClock()
+    progress = PhaseProgress(
+        enabled=False,
+        device=torch.device("cpu"),
+        phase_timeout_seconds=0.5,
+        silent_phase_timeout_seconds=5.0,
+        last_active_phase_path=tmp_path / "last_active_phase.json",
+        arm_faulthandler_timer=False,
+        phase_timeout_exemptions=resolve_phase_timeout_exemptions(
+            contract=B2B_BOUNDED_STEPS_AGGREGATE_TIMEOUT_EXEMPTION_V1
+        ),
+        phase_timeout_exemption_contract=B2B_BOUNDED_STEPS_AGGREGATE_TIMEOUT_EXEMPTION_V1,
+        clock=clock,
+    )
+
+    with progress.phase(BOUNDED_STEPS_AGGREGATE_PHASE):
+        with pytest.raises(C2PhaseTimeout) as excinfo:
+            with progress.phase("step_update", step=1):
+                clock.now = 1.0
+    assert excinfo.value.payload["phase"] == "step_update"
+    assert excinfo.value.payload["bound_kind"] == "phase"
+
+
+def test_phase_progress_silent_liveness_still_fires_on_active_bounded_steps_with_exemption(
+    tmp_path: Path,
+):
+    class FakeClock:
+        def __init__(self) -> None:
+            self.now = 0.0
+
+        def __call__(self) -> float:
+            return self.now
+
+    clock = FakeClock()
+    progress = PhaseProgress(
+        enabled=False,
+        device=torch.device("cpu"),
+        phase_timeout_seconds=1.0,
+        silent_phase_timeout_seconds=5.0,
+        last_active_phase_path=tmp_path / "last_active_phase.json",
+        arm_faulthandler_timer=False,
+        phase_timeout_exemptions=resolve_phase_timeout_exemptions(
+            contract=B2B_BOUNDED_STEPS_AGGREGATE_TIMEOUT_EXEMPTION_V1
+        ),
+        phase_timeout_exemption_contract=B2B_BOUNDED_STEPS_AGGREGATE_TIMEOUT_EXEMPTION_V1,
+        clock=clock,
+    )
+
+    with pytest.raises(C2PhaseTimeout) as excinfo:
+        with progress.phase(BOUNDED_STEPS_AGGREGATE_PHASE):
+            clock.now = 5.5
+            progress.check_stale_active_phase()
+    assert excinfo.value.payload["phase"] == BOUNDED_STEPS_AGGREGATE_PHASE
+    assert excinfo.value.payload["bound_kind"] == "silent_phase"
+
+
+def test_b2b_phase_timeout_validation_rejects_packet_zero_shape():
+    with pytest.raises(ValueError, match="packet-0-style --phase-timeout-seconds 0"):
+        validate_b2b_phase_timeout_launch_requirements(
+            b2b_sequential_capture_enabled=True,
+            phase_timeout_seconds=0.0,
+            phase_timeout_exemption_contract=B2B_BOUNDED_STEPS_AGGREGATE_TIMEOUT_EXEMPTION_V1,
+            total_timeout_seconds=7200.0,
+            silent_phase_timeout_seconds=300.0,
+            allow_gpu_launch=False,
+            max_silent_phase_seconds=300.0,
+        )
+
+
+def test_b2b_phase_timeout_validation_rejects_missing_named_contract():
+    with pytest.raises(ValueError, match="requires --phase-timeout-exemption-contract="):
+        validate_b2b_phase_timeout_launch_requirements(
+            b2b_sequential_capture_enabled=True,
+            phase_timeout_seconds=600.0,
+            phase_timeout_exemption_contract=PHASE_TIMEOUT_EXEMPTION_CONTRACT_OFF,
+            total_timeout_seconds=7200.0,
+            silent_phase_timeout_seconds=300.0,
+            allow_gpu_launch=False,
+            max_silent_phase_seconds=300.0,
+        )
+
+
+def test_b2b_phase_timeout_validation_accepts_positive_scalar_plus_contract():
+    validate_b2b_phase_timeout_launch_requirements(
+        b2b_sequential_capture_enabled=True,
+        phase_timeout_seconds=600.0,
+        phase_timeout_exemption_contract=B2B_BOUNDED_STEPS_AGGREGATE_TIMEOUT_EXEMPTION_V1,
+        total_timeout_seconds=7200.0,
+        silent_phase_timeout_seconds=300.0,
+        allow_gpu_launch=False,
+        max_silent_phase_seconds=300.0,
+    )
+
+
+def test_arg_parser_default_off_phase_timeout_exemption_contract():
+    parser = build_arg_parser()
+    args = parser.parse_args([])
+    assert args.phase_timeout_exemption_contract == PHASE_TIMEOUT_EXEMPTION_CONTRACT_OFF
+
+
 def test_run_c2p1_probe_receipt_terminal_status_fields(tmp_path: Path):
     parent = tmp_path / "tiny_parent.pt"
     scratch_root = tmp_path / "scratch"
@@ -1651,6 +1844,11 @@ def test_run_c2p1_probe_receipt_terminal_status_fields(tmp_path: Path):
     assert disk_receipt["terminal_status"] == expected
     assert "exit_code" not in receipt["terminal_status"]
     assert "exit_code" not in disk_receipt["terminal_status"]
+    assert receipt["phase_timeout_exemption"]["enabled"] is False
+    assert receipt["phase_timeout_exemption"]["contract"] == PHASE_TIMEOUT_EXEMPTION_CONTRACT_OFF
+    assert receipt["phase_telemetry"]["phase_timeout_exemption_contract"] == (
+        PHASE_TIMEOUT_EXEMPTION_CONTRACT_OFF
+    )
 
 
 def test_register_probe_faulthandler_enable_failure_fails_closed():

@@ -166,6 +166,16 @@ SCIENCE_LOCAL_SELECTION_ORDERING_SEED = 17
 C2P2_STRICT_EXACT_TARGET = 90
 C2P2_DEFAULT_MAX_STEPS_HARD = 1500
 C2P2_DEFAULT_GPU_SILENT_PHASE_TIMEOUT_SECONDS = 300.0
+PHASE_TIMEOUT_EXEMPTION_SCHEMA_VERSION = "hrm_text_158_phase_timeout_exemption/v0"
+PHASE_TIMEOUT_EXEMPTION_CONTRACT_OFF = "off"
+B2B_BOUNDED_STEPS_AGGREGATE_TIMEOUT_EXEMPTION_V1 = (
+    "b2b_bounded_steps_aggregate_timeout_exemption_v1"
+)
+PHASE_TIMEOUT_EXEMPTION_CONTRACT_CHOICES = (
+    PHASE_TIMEOUT_EXEMPTION_CONTRACT_OFF,
+    B2B_BOUNDED_STEPS_AGGREGATE_TIMEOUT_EXEMPTION_V1,
+)
+BOUNDED_STEPS_AGGREGATE_PHASE = "bounded_steps"
 C2P2_NULL_TAXONOMY = (
     "no-q-move",
     "q-move-no-accuracy",
@@ -1253,6 +1263,126 @@ def resolve_max_silent_phase_seconds(
     return None
 
 
+def resolve_phase_timeout_exemptions(*, contract: str) -> frozenset[str]:
+    contract_name = str(contract)
+    if contract_name == PHASE_TIMEOUT_EXEMPTION_CONTRACT_OFF:
+        return frozenset()
+    if contract_name == B2B_BOUNDED_STEPS_AGGREGATE_TIMEOUT_EXEMPTION_V1:
+        return frozenset({BOUNDED_STEPS_AGGREGATE_PHASE})
+    raise ValueError(
+        "phase_timeout_exemption_contract must be one of "
+        f"{PHASE_TIMEOUT_EXEMPTION_CONTRACT_CHOICES}, got {contract_name!r}"
+    )
+
+
+def _canonical_exempt_phase_hash(exempt_phases: Sequence[str]) -> str:
+    canonical = json.dumps(
+        sorted(str(phase) for phase in exempt_phases),
+        separators=(",", ":"),
+    )
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return f"sha256:{digest}"
+
+
+def build_phase_timeout_exemption_receipt(
+    *,
+    contract: str,
+    phase_timeout_seconds: float | int | None,
+    silent_phase_timeout_seconds: float | int | None,
+    total_timeout_seconds: float | int | None,
+) -> dict[str, Any]:
+    contract_name = str(contract)
+    exempt_phases = sorted(resolve_phase_timeout_exemptions(contract=contract_name))
+    enabled = bool(exempt_phases)
+    receipt: dict[str, Any] = {
+        "schema": PHASE_TIMEOUT_EXEMPTION_SCHEMA_VERSION,
+        "enabled": enabled,
+        "contract": (
+            PHASE_TIMEOUT_EXEMPTION_CONTRACT_OFF if not enabled else contract_name
+        ),
+        "exempt_phases": exempt_phases,
+        "exempt_phase_count": len(exempt_phases),
+        "exempt_phase_hash": _canonical_exempt_phase_hash(exempt_phases),
+        "default_on": False,
+        "requires_explicit_launch_command_entry": True,
+        "phase_timeout_seconds_must_be_positive": enabled,
+        "silent_phase_guard_required": enabled,
+        "total_timeout_required": enabled,
+        "claim_boundary": (
+            "exempts aggregate bounded_steps post-exit duration only; "
+            "nested phases and silent/total liveness remain fail-closed"
+        ),
+    }
+    if enabled:
+        receipt["phase_timeout_seconds"] = _timeout_or_none(phase_timeout_seconds)
+        receipt["silent_phase_timeout_seconds"] = _timeout_or_none(
+            silent_phase_timeout_seconds
+        )
+        receipt["total_timeout_seconds"] = _timeout_or_none(total_timeout_seconds)
+    return receipt
+
+
+def validate_b2b_phase_timeout_launch_requirements(
+    *,
+    b2b_sequential_capture_enabled: bool,
+    phase_timeout_seconds: float | int,
+    phase_timeout_exemption_contract: str,
+    total_timeout_seconds: float | int,
+    silent_phase_timeout_seconds: float | int | None,
+    allow_gpu_launch: bool,
+    max_silent_phase_seconds: float | int | None,
+) -> None:
+    """Validate B2b launch timeout requirements after WS-C exemption infra lands.
+
+    Post-WS-C B2b packets must not use packet-0-style ``--phase-timeout-seconds 0``.
+    Launch packets must state a positive scalar phase cap and declare which
+    first-milestone nested-phase budget that cap covers.
+    """
+    if not b2b_sequential_capture_enabled:
+        return
+
+    resolved_silent = resolve_max_silent_phase_seconds(
+        allow_gpu_launch=allow_gpu_launch,
+        max_silent_phase_seconds=max_silent_phase_seconds,
+    )
+    effective_silent = (
+        silent_phase_timeout_seconds
+        if silent_phase_timeout_seconds is not None
+        else resolved_silent
+    )
+    contract = str(phase_timeout_exemption_contract)
+    scalar_timeout = float(phase_timeout_seconds)
+    total_timeout = float(total_timeout_seconds)
+
+    if scalar_timeout <= 0.0:
+        raise ValueError(
+            "b2b sequential capture requires a positive --phase-timeout-seconds "
+            "(packet-0-style --phase-timeout-seconds 0 is invalid post-WS-C; "
+            "re-draft with positive scalar cap + "
+            f"--phase-timeout-exemption-contract={B2B_BOUNDED_STEPS_AGGREGATE_TIMEOUT_EXEMPTION_V1} "
+            "for aggregate bounded_steps only). Launch packets must also declare "
+            "which first-milestone nested-phase budget the scalar cap covers "
+            "(e.g. step, step_update, b2b_sequential_capture)."
+        )
+    if contract != B2B_BOUNDED_STEPS_AGGREGATE_TIMEOUT_EXEMPTION_V1:
+        raise ValueError(
+            "b2b sequential capture requires "
+            f"--phase-timeout-exemption-contract={B2B_BOUNDED_STEPS_AGGREGATE_TIMEOUT_EXEMPTION_V1} "
+            "when using the aggregate bounded_steps exemption; "
+            f"got {contract!r}. Post-WS-C, packet-0-style --phase-timeout-seconds 0 "
+            "without the named contract is invalid."
+        )
+    if _timeout_or_none(effective_silent) is None:
+        raise ValueError(
+            "b2b sequential capture requires an effective silent-phase guard "
+            "(positive --max-silent-phase-seconds or --allow-gpu-launch default)."
+        )
+    if _timeout_or_none(total_timeout) is None:
+        raise ValueError(
+            "b2b sequential capture requires a positive --total-timeout-seconds."
+        )
+
+
 def register_probe_faulthandler(
     *,
     enable_fn: Callable[..., Any] | None = None,
@@ -1381,6 +1511,8 @@ class PhaseProgress:
         silent_phase_timeout_seconds: float | int | None = None,
         last_active_phase_path: Path | None = None,
         arm_faulthandler_timer: bool = True,
+        phase_timeout_exemptions: frozenset[str] | set[str] | None = None,
+        phase_timeout_exemption_contract: str = PHASE_TIMEOUT_EXEMPTION_CONTRACT_OFF,
         clock: Callable[[], float] = time.perf_counter,
     ) -> None:
         self.enabled = bool(enabled)
@@ -1390,6 +1522,10 @@ class PhaseProgress:
         self.silent_phase_timeout_seconds = _timeout_or_none(silent_phase_timeout_seconds)
         self.last_active_phase_path = last_active_phase_path
         self.arm_faulthandler_timer = bool(arm_faulthandler_timer)
+        self.phase_timeout_exemption_contract = str(phase_timeout_exemption_contract)
+        self.phase_timeout_exemptions = frozenset(
+            str(phase) for phase in (phase_timeout_exemptions or ())
+        )
         self.clock = clock
         self.started_at = float(self.clock())
         self.events: list[dict[str, Any]] = []
@@ -1407,6 +1543,11 @@ class PhaseProgress:
 
     def _elapsed(self) -> float:
         return max(0.0, float(self.clock() - self.started_at))
+
+    def _phase_timeout_for(self, phase: str) -> float | None:
+        if str(phase) in self.phase_timeout_exemptions:
+            return None
+        return self.phase_timeout_seconds
 
     def mark(self, phase: str, event: str, **fields: Any) -> dict[str, Any]:
         payload = {
@@ -1595,7 +1736,7 @@ class PhaseProgress:
             enforce_phase_bound(
                 phase=phase,
                 duration_seconds=duration,
-                timeout_seconds=self.phase_timeout_seconds,
+                timeout_seconds=self._phase_timeout_for(phase),
                 bound_kind="phase",
             )
             self._check_total_bound(phase)
@@ -1607,7 +1748,15 @@ class PhaseProgress:
             }
             self.mark(phase, "timeout", **timeout_fields, **fields)
             raise
-        self.mark(phase, "end", duration_seconds=duration, **fields)
+        end_fields = dict(fields)
+        if (
+            str(phase) in self.phase_timeout_exemptions
+            and self.phase_timeout_seconds is not None
+            and duration > float(self.phase_timeout_seconds)
+        ):
+            end_fields["phase_timeout_exempted"] = True
+            end_fields["scalar_phase_timeout_seconds"] = self.phase_timeout_seconds
+        self.mark(phase, "end", duration_seconds=duration, **end_fields)
         self._write_cleared_last_active_phase_if_idle(phase)
 
     def to_dict(self) -> dict[str, Any]:
@@ -1615,6 +1764,8 @@ class PhaseProgress:
             "schema": C2P2_PHASE_TELEMETRY_SCHEMA_VERSION,
             "enabled": bool(self.enabled),
             "phase_timeout_seconds": self.phase_timeout_seconds,
+            "phase_timeout_exemption_contract": self.phase_timeout_exemption_contract,
+            "phase_timeout_exemptions": sorted(self.phase_timeout_exemptions),
             "total_timeout_seconds": self.total_timeout_seconds,
             "silent_phase_timeout_seconds": self.silent_phase_timeout_seconds,
             "last_active_phase_path": (
@@ -4025,6 +4176,7 @@ def run_c2p1_probe(
     phase_timeout_seconds: float = 0.0,
     total_timeout_seconds: float = 0.0,
     max_silent_phase_seconds: float | None = None,
+    phase_timeout_exemption_contract: str = PHASE_TIMEOUT_EXEMPTION_CONTRACT_OFF,
     enabled: bool | None = None,
     allow_gpu_launch: bool = False,
     global_cap_contract: str = GLOBAL_CAP_CONTRACT_OFF,
@@ -4172,6 +4324,18 @@ def run_c2p1_probe(
             )
         if b2b_sequential_capture_out is None:
             b2b_sequential_capture_out = scratch_root / "b2b_sequential_trace.ndjson"
+    phase_timeout_exemptions = resolve_phase_timeout_exemptions(
+        contract=str(phase_timeout_exemption_contract)
+    )
+    validate_b2b_phase_timeout_launch_requirements(
+        b2b_sequential_capture_enabled=bool(b2b_sequential_capture_enabled),
+        phase_timeout_seconds=float(phase_timeout_seconds),
+        phase_timeout_exemption_contract=str(phase_timeout_exemption_contract),
+        total_timeout_seconds=float(total_timeout_seconds),
+        silent_phase_timeout_seconds=max_silent_phase_seconds,
+        allow_gpu_launch=bool(allow_gpu_launch),
+        max_silent_phase_seconds=max_silent_phase_seconds,
+    )
     oracle_screen_max_seconds = oracle_screen_budget_max_seconds(oracle_screen_budget)
     b2_support_batch_sizes = {
         "L0b": int(b2_l0b_batch_size),
@@ -4186,6 +4350,12 @@ def run_c2p1_probe(
         allow_gpu_launch=bool(allow_gpu_launch),
         max_silent_phase_seconds=max_silent_phase_seconds,
     )
+    phase_timeout_exemption_receipt = build_phase_timeout_exemption_receipt(
+        contract=str(phase_timeout_exemption_contract),
+        phase_timeout_seconds=float(phase_timeout_seconds),
+        silent_phase_timeout_seconds=silent_phase_timeout_seconds,
+        total_timeout_seconds=float(total_timeout_seconds),
+    )
     last_active_phase_path = scratch_root / "last_active_phase.json"
     phase_progress = PhaseProgress(
         enabled=bool(emit_progress),
@@ -4194,6 +4364,8 @@ def run_c2p1_probe(
         total_timeout_seconds=float(total_timeout_seconds),
         silent_phase_timeout_seconds=silent_phase_timeout_seconds,
         last_active_phase_path=last_active_phase_path,
+        phase_timeout_exemptions=phase_timeout_exemptions,
+        phase_timeout_exemption_contract=str(phase_timeout_exemption_contract),
     )
     if torch_device.type == "cuda":
         with phase_progress.phase("cuda_memory_reset"):
@@ -4807,6 +4979,7 @@ def run_c2p1_probe(
             "last_active_phase_path": str(last_active_phase_path),
             "fail_closed_mechanism": "faulthandler.dump_traceback_later(exit=True)",
         },
+        "phase_timeout_exemption": phase_timeout_exemption_receipt,
         "dry_run": True,
         "checkpoint_written": False,
         "creditdir_mutated": False,
@@ -5111,6 +5284,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--phase-timeout-seconds", type=float, default=0.0)
     ap.add_argument("--total-timeout-seconds", type=float, default=0.0)
     ap.add_argument(
+        "--phase-timeout-exemption-contract",
+        choices=PHASE_TIMEOUT_EXEMPTION_CONTRACT_CHOICES,
+        default=PHASE_TIMEOUT_EXEMPTION_CONTRACT_OFF,
+        help=(
+            "Default-off named exemption for aggregate bounded_steps phase timeout "
+            "only. When enabled, nested phases keep the scalar "
+            "--phase-timeout-seconds; silent-phase and total timeouts remain "
+            "fail-closed. B2b durable launches require positive "
+            "--phase-timeout-seconds plus "
+            f"{B2B_BOUNDED_STEPS_AGGREGATE_TIMEOUT_EXEMPTION_V1}; "
+            "packet-0-style --phase-timeout-seconds 0 is invalid post-WS-C. "
+            "Launch packets must declare which first-milestone nested-phase "
+            "budget the scalar cap covers."
+        ),
+    )
+    ap.add_argument(
         "--max-silent-phase-seconds",
         type=float,
         default=None,
@@ -5168,6 +5357,7 @@ def main(argv: list[str] | None = None) -> int:
         phase_timeout_seconds=args.phase_timeout_seconds,
         total_timeout_seconds=args.total_timeout_seconds,
         max_silent_phase_seconds=args.max_silent_phase_seconds,
+        phase_timeout_exemption_contract=args.phase_timeout_exemption_contract,
         enabled=args.enable_bounded_delta_probe,
         allow_gpu_launch=args.allow_gpu_launch,
     )
