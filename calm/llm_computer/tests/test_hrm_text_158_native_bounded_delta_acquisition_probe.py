@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from pathlib import Path
 import sys
 
@@ -1453,7 +1454,7 @@ def test_phase_progress_fails_closed_when_faulthandler_timer_cannot_arm(monkeypa
 
 
 def test_register_probe_faulthandler_enable_failure_fails_closed():
-    def fake_enable(*, all_threads: bool) -> None:
+    def fake_enable(*, file, all_threads: bool) -> None:
         raise RuntimeError("enable unavailable")
 
     with pytest.raises(RuntimeError, match="failed to enable faulthandler for probe"):
@@ -1526,12 +1527,14 @@ def test_register_probe_faulthandler_reports_signal_paths_without_signalling():
     def fake_is_enabled() -> bool:
         return bool(enabled["value"])
 
-    def fake_enable(*, all_threads: bool) -> None:
-        calls.append(("enable", all_threads))
+    def fake_enable(*, file, all_threads: bool) -> None:
+        assert file is sys.stderr
+        calls.append(("enable", all_threads, file.fileno()))
         enabled["value"] = True
 
-    def fake_register(sig, *, all_threads: bool, chain: bool) -> None:
-        calls.append(("register", int(sig), all_threads, chain))
+    def fake_register(sig, *, file, all_threads: bool, chain: bool) -> None:
+        assert file is sys.stderr
+        calls.append(("register", int(sig), all_threads, chain, file.fileno()))
 
     report = register_probe_faulthandler(
         enable_fn=fake_enable,
@@ -1542,7 +1545,7 @@ def test_register_probe_faulthandler_reports_signal_paths_without_signalling():
     assert report["schema"] == C2P2_FAULTHANDLER_SCHEMA_VERSION
     assert report["enabled_before"] is False
     assert report["enabled_after"] is True
-    assert ("enable", True) in calls
+    assert any(call[0] == "enable" and call[1] is True for call in calls)
     assert report["signals"]["SIGABRT"]["status"] == "handled_by_faulthandler_enable"
     if getattr(probe_module.signal, "SIGQUIT", None) is not None:
         assert report["signals"]["SIGQUIT"]["status"] == "registered"
@@ -2154,6 +2157,9 @@ def test_activation_credit_env_log_capture_materializes_named_stream_files(
     with activation_credit_env_log_capture():
         print('{"event":"stdout"}')
         print("stderr-line", file=sys.stderr)
+        stderr_fd = sys.stderr.fileno()
+        assert isinstance(stderr_fd, int)
+        os.write(stderr_fd, b"fd-stderr-line\n")
 
     captured = capsys.readouterr()
     assert '{"event":"stdout"}' in captured.out
@@ -2161,7 +2167,50 @@ def test_activation_credit_env_log_capture_materializes_named_stream_files(
     assert stdout_path.exists()
     assert stderr_path.exists()
     assert '{"event":"stdout"}' in stdout_path.read_text(encoding="utf-8")
-    assert "stderr-line" in stderr_path.read_text(encoding="utf-8")
+    stderr_text = stderr_path.read_text(encoding="utf-8")
+    assert "stderr-line" in stderr_text
+    assert "fd-stderr-line" in stderr_text
+
+
+def test_register_probe_faulthandler_succeeds_under_activation_credit_env_log_capture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    stdout_path = tmp_path / "stdout.ndjson"
+    stderr_path = tmp_path / "stderr.log"
+    monkeypatch.setenv(ACTIVATION_CREDIT_STDOUT_PATH_ENV, str(stdout_path))
+    monkeypatch.setenv(ACTIVATION_CREDIT_STDERR_PATH_ENV, str(stderr_path))
+    calls = []
+    enabled = {"value": False}
+    seen_fd = {"value": None}
+
+    def fake_is_enabled() -> bool:
+        return bool(enabled["value"])
+
+    def fake_enable(*, file, all_threads: bool) -> None:
+        assert file is sys.stderr
+        seen_fd["value"] = file.fileno()
+        calls.append(("enable", all_threads, seen_fd["value"]))
+        enabled["value"] = True
+
+    def fake_register(sig, *, file, all_threads: bool, chain: bool) -> None:
+        assert file is sys.stderr
+        calls.append(("register", int(sig), all_threads, chain, file.fileno()))
+
+    with activation_credit_env_log_capture():
+        stderr_fd = sys.stderr.fileno()
+        report = register_probe_faulthandler(
+            enable_fn=fake_enable,
+            register_fn=fake_register,
+            is_enabled_fn=fake_is_enabled,
+        )
+
+    assert stderr_path.exists()
+    assert seen_fd["value"] == stderr_fd
+    assert report["enabled_after"] is True
+    assert ("enable", True, stderr_fd) in calls
+    if getattr(probe_module.signal, "SIGQUIT", None) is not None:
+        assert any(call[0] == "register" and call[4] == stderr_fd for call in calls)
 
 
 def test_activation_credit_cli_main_logs_traceback_to_named_stderr(

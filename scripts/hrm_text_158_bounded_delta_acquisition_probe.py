@@ -169,8 +169,13 @@ C2P2_NULL_TAXONOMY = (
 
 
 class _MirrorTextStream:
-    def __init__(self, *streams: Any) -> None:
+    def __init__(
+        self,
+        *streams: Any,
+        fileno_stream: Any | None = None,
+    ) -> None:
         self._streams = streams
+        self._fileno_stream = fileno_stream
         self.encoding = getattr(streams[0], "encoding", "utf-8") if streams else "utf-8"
 
     def write(self, data: str) -> int:
@@ -181,6 +186,12 @@ class _MirrorTextStream:
     def flush(self) -> None:
         for stream in self._streams:
             stream.flush()
+
+    def fileno(self) -> int:
+        self.flush()
+        if self._fileno_stream is None:
+            raise AttributeError("_MirrorTextStream has no fileno delegate")
+        return int(self._fileno_stream.fileno())
 
     def isatty(self) -> bool:
         return any(getattr(stream, "isatty", lambda: False)() for stream in self._streams)
@@ -205,14 +216,22 @@ def activation_credit_env_log_capture() -> Any:
             stdout_handle = stack.enter_context(
                 stdout_file.open("w", encoding="utf-8", buffering=1)
             )
-            stdout_target = _MirrorTextStream(sys.stdout, stdout_handle)
+            stdout_target = _MirrorTextStream(
+                sys.stdout,
+                stdout_handle,
+                fileno_stream=stdout_handle,
+            )
         if stderr_path:
             stderr_file = Path(stderr_path)
             stderr_file.parent.mkdir(parents=True, exist_ok=True)
             stderr_handle = stack.enter_context(
                 stderr_file.open("w", encoding="utf-8", buffering=1)
             )
-            stderr_target = _MirrorTextStream(sys.stderr, stderr_handle)
+            stderr_target = _MirrorTextStream(
+                sys.stderr,
+                stderr_handle,
+                fileno_stream=stderr_handle,
+            )
         stack.enter_context(redirect_stdout(stdout_target))
         stack.enter_context(redirect_stderr(stderr_target))
         yield
@@ -1241,7 +1260,7 @@ def register_probe_faulthandler(
     }
     if not report["enabled_before"]:
         try:
-            enable(all_threads=True)
+            enable(file=sys.stderr, all_threads=True)
         except Exception as exc:
             report["enable_error"] = {
                 "type": type(exc).__name__,
@@ -1255,7 +1274,7 @@ def register_probe_faulthandler(
         report["signals"]["SIGQUIT"] = {"status": "unavailable"}
     else:
         try:
-            register(sigquit, all_threads=True, chain=False)
+            register(sigquit, file=sys.stderr, all_threads=True, chain=False)
             report["signals"]["SIGQUIT"] = {
                 "status": "registered",
                 "signal": int(sigquit),
