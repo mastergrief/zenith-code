@@ -41,12 +41,38 @@ KNOWN_BRANCH4_AUC_TOLERANCE = 1e-12
 SUB2_ORDINAL_SWEEP_SCHEMA_VERSION = (
     "hrm_text_158_activation_credit_sub2_ordinal_sweep/v0"
 )
+SUB2_TIEBREAK_SIDECAR_SWEEP_SCHEMA_VERSION = (
+    "hrm_text_158_activation_credit_sub2_tiebreak_sidecar_sweep/v0"
+)
 SUB2_ORDINAL_SWEEP_LEVELS = (5, 4, 3, 2)
+SIDECAR_PERSISTENT_LEVELS = (2, 3)
 CALIBRATION_ONLINE_CANDIDATE_QUANTILE = "online_candidate_quantile"
 CALIBRATION_SEED43_THRESHOLDS_OOS = "seed43_thresholds_oos_to_seed29"
+SIDECAR_CALIBRATION_BUCKET_ONLINE = "within_bucket_online_quantile"
+SIDECAR_CALIBRATION_SEED43_BUCKET_OOS = "seed43_bucket_thresholds_oos_to_seed29"
 ORDINAL_TOP_BUCKET_RULE_ID = "ordinal_top_bucket"
 ORDINAL_ARGMAX_SET_RULE_ID = "ordinal_argmax_set"
 DIAGNOSTIC_FLAT_INDEX_TIE_BREAKER_ID = "diagnostic_flat_index_min"
+DIAGNOSTIC_CANDIDATE_ORDER_TIE_BREAKER_ID = "diagnostic_candidate_order_min"
+DIAGNOSTIC_CANDIDATE_HASH_TIE_BREAKER_ID = "diagnostic_candidate_id_hash_min"
+STRICT_ADDITIVE_BUDGET_MODEL_ID = (
+    "strict_dense_additive_ternary_primary_plus_sidecar_v0"
+)
+PRIMARY_TERNARY_PERSISTENT_BITS = math.log2(3)
+PERSISTENT_BUDGET_BITS = 2.0
+SIDECAR_TRANSIENT_SCALAR_IDS = (
+    "taylor_benefit",
+    "abs_grad_proxy",
+    "signed_neg_grad_proxy_times_candidate_delta_weight",
+    "snr",
+    "diag_fisher",
+)
+SIDECAR_PERSISTENT_SCALAR_IDS = (
+    "abs_grad_proxy",
+    "signed_neg_grad_proxy_times_candidate_delta_weight",
+    "snr",
+    "diag_fisher",
+)
 BRANCH_REOPEN_ENCODER_DESIGN = "reopen_encoder_design"
 BRANCH_CALIBRATION_FAILURE = "calibration_failure"
 BRANCH_TERNARY_SUB2_UNIQUE = "ternary_sub2_ordinal_unique_success"
@@ -57,6 +83,12 @@ BRANCH_TWO_BIT_BOUNDARY_UNIQUE = "two_bit_boundary_unique_success"
 BRANCH_TWO_BIT_BOUNDARY_SHORTLIST = "two_bit_boundary_shortlist_success"
 BRANCH_FLOOR_ABOVE_TWO_BIT = "ordinal_quantization_floor_above_two_bit"
 BRANCH_NO_CLEAR_ORDINAL = "no_clear_ordinal_branch"
+B7A_LABEL_PERSISTENT_SUB2_UNIQUE = "persistent_sub2_sidecar_unique_success"
+B7A_LABEL_TRANSIENT_RESOLVER_SUCCESS = "transient_resolver_success"
+B7A_LABEL_PERSISTENT_EXCEEDS_BUDGET = "persistent_sidecar_success_exceeds_budget"
+B7A_LABEL_ZERO_STATE_DIAGNOSTIC_ONLY = "zero_state_diagnostic_only_success"
+B7A_LABEL_NO_UNIQUE_RESOLVER = "no_unique_resolver"
+B7A_LABEL_PROXY_ONLY_B7B_REQUIRED = "b7a_proxy_only_b7b_required"
 BRANCH_LABEL_PRIORITY = (
     BRANCH_REOPEN_ENCODER_DESIGN,
     BRANCH_CALIBRATION_FAILURE,
@@ -66,6 +98,13 @@ BRANCH_LABEL_PRIORITY = (
     BRANCH_TWO_BIT_BOUNDARY_SHORTLIST,
     BRANCH_FLOOR_ABOVE_TWO_BIT,
     BRANCH_NO_CLEAR_ORDINAL,
+)
+B7A_LABEL_PRIORITY = (
+    B7A_LABEL_PERSISTENT_SUB2_UNIQUE,
+    B7A_LABEL_TRANSIENT_RESOLVER_SUCCESS,
+    B7A_LABEL_PERSISTENT_EXCEEDS_BUDGET,
+    B7A_LABEL_ZERO_STATE_DIAGNOSTIC_ONLY,
+    B7A_LABEL_NO_UNIQUE_RESOLVER,
 )
 
 REQUIRED_RECEIPT_ROW_FIELDS = (
@@ -318,6 +357,54 @@ def _candidate_ids_hash16(candidate_ids: Sequence[str]) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
 
 
+def _candidate_hash_sort_key(row: Mapping[str, Any]) -> tuple[bytes, str]:
+    candidate_id = str(row["candidate_id"])
+    return (
+        hashlib.sha256(f"b7a|candidate_id={candidate_id}".encode("utf-8")).digest(),
+        candidate_id,
+    )
+
+
+def _scalar_spec_by_id(scalar_id: str) -> ScalarSpec:
+    for spec in SCALAR_SPECS:
+        if spec.scalar_id == scalar_id:
+            return spec
+    raise ValueError(f"unknown scalar_id {scalar_id!r}")
+
+
+def _rank_order_ids(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    value_fn: Callable[[Mapping[str, Any]], float],
+    direction: int,
+) -> list[str]:
+    return [
+        str(row["candidate_id"])
+        for row in _sorted_rows_for_direction(
+            rows,
+            value_fn=value_fn,
+            direction=int(direction),
+        )
+    ]
+
+
+def _unique_scalar_argmax(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    value_fn: Callable[[Mapping[str, Any]], float],
+    direction: int,
+) -> tuple[list[Mapping[str, Any]], float | None]:
+    if not rows:
+        return [], None
+    scored = [
+        (float(direction) * float(value_fn(row)), row)
+        for row in rows
+    ]
+    best_score = max(score for score, _row in scored)
+    selected = [row for score, row in scored if score == best_score]
+    return selected, float(best_score)
+
+
 def _ordinal_thresholds_from_scores(
     scores: Sequence[float],
     *,
@@ -370,6 +457,19 @@ def _diagnostic_flat_index_tiebreak_row(
     )
 
 
+def _ordinal_top_bucket_rows(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    ordinals_by_id: Mapping[str, int],
+) -> list[Mapping[str, Any]]:
+    max_ordinal = max(int(value) for value in ordinals_by_id.values())
+    return [
+        row
+        for row in rows
+        if int(ordinals_by_id[str(row["candidate_id"])]) == max_ordinal
+    ]
+
+
 def _ordinal_bucket_metrics(
     rows: Sequence[Mapping[str, Any]],
     *,
@@ -380,11 +480,7 @@ def _ordinal_bucket_metrics(
     oracle_best = _oracle_best_row(rows)
     oracle_best_id = str(oracle_best["candidate_id"])
     max_ordinal = max(int(value) for value in ordinals_by_id.values())
-    top_bucket = [
-        row
-        for row in rows
-        if int(ordinals_by_id[str(row["candidate_id"])]) == max_ordinal
-    ]
+    top_bucket = _ordinal_top_bucket_rows(rows, ordinals_by_id=ordinals_by_id)
     top_bucket_ids = [str(row["candidate_id"]) for row in top_bucket]
     contains_oracle = oracle_best_id in set(top_bucket_ids)
     top_bucket_size = len(top_bucket)
@@ -444,6 +540,64 @@ def _ordinal_results_for_calibration(
     seed29_rows: Sequence[Mapping[str, Any]],
     fixed_direction: int,
 ) -> dict[str, Any]:
+    context = _ordinal_context_for_calibration(
+        level=level,
+        calibration_id=calibration_id,
+        seed43_rows=seed43_rows,
+        seed29_rows=seed29_rows,
+        fixed_direction=fixed_direction,
+    )
+    seed43_metrics = _ordinal_bucket_metrics(
+        seed43_rows,
+        ordinals_by_id=context[SEED43_LABEL]["ordinals_by_id"],
+        level=level,
+        thresholds=context[SEED43_LABEL]["thresholds"],
+    )
+    seed29_metrics = _ordinal_bucket_metrics(
+        seed29_rows,
+        ordinals_by_id=context[SEED29_LABEL]["ordinals_by_id"],
+        level=level,
+        thresholds=context[SEED29_LABEL]["thresholds"],
+    )
+    return {
+        "calibration_id": calibration_id,
+        "seed43_threshold_source": "seed43_candidate_scores",
+        "seed29_threshold_source": context["seed29_threshold_source"],
+        SEED43_LABEL: seed43_metrics,
+        SEED29_LABEL: seed29_metrics,
+        "both_seeds": {
+            "unique_ordinal_top1": bool(
+                seed43_metrics["unique_ordinal_top1"]
+                and seed29_metrics["unique_ordinal_top1"]
+            ),
+            "top_bucket_contains_oracle": bool(
+                seed43_metrics["top_bucket_contains_oracle"]
+                and seed29_metrics["top_bucket_contains_oracle"]
+            ),
+            "shortlist_success_needs_tiebreak": bool(
+                seed43_metrics["top_bucket_contains_oracle"]
+                and seed29_metrics["top_bucket_contains_oracle"]
+                and not (
+                    seed43_metrics["unique_ordinal_top1"]
+                    and seed29_metrics["unique_ordinal_top1"]
+                )
+            ),
+            "diagnostic_tiebreak_top1": bool(
+                seed43_metrics["diagnostic_tiebreak"]["deterministic_tiebreak_top1"]
+                and seed29_metrics["diagnostic_tiebreak"]["deterministic_tiebreak_top1"]
+            ),
+        },
+    }
+
+
+def _ordinal_context_for_calibration(
+    *,
+    level: int,
+    calibration_id: str,
+    seed43_rows: Sequence[Mapping[str, Any]],
+    seed29_rows: Sequence[Mapping[str, Any]],
+    fixed_direction: int,
+) -> dict[str, Any]:
     seed43_scores = _score_by_candidate_id(seed43_rows, direction=fixed_direction)
     seed29_scores = _score_by_candidate_id(seed29_rows, direction=fixed_direction)
     if calibration_id == CALIBRATION_ONLINE_CANDIDATE_QUANTILE:
@@ -471,49 +625,22 @@ def _ordinal_results_for_calibration(
         candidate_id: _ordinal_bin(score, thresholds=seed29_thresholds, levels=level)
         for candidate_id, score in seed29_scores.items()
     }
-    seed43_metrics = _ordinal_bucket_metrics(
-        seed43_rows,
-        ordinals_by_id=seed43_ordinals,
-        level=level,
-        thresholds=seed43_thresholds,
-    )
-    seed29_metrics = _ordinal_bucket_metrics(
-        seed29_rows,
-        ordinals_by_id=seed29_ordinals,
-        level=level,
-        thresholds=seed29_thresholds,
-    )
     return {
         "calibration_id": calibration_id,
-        "seed43_threshold_source": "seed43_candidate_scores",
         "seed29_threshold_source": (
             "seed29_candidate_scores"
             if calibration_id == CALIBRATION_ONLINE_CANDIDATE_QUANTILE
             else "seed43_candidate_scores"
         ),
-        SEED43_LABEL: seed43_metrics,
-        SEED29_LABEL: seed29_metrics,
-        "both_seeds": {
-            "unique_ordinal_top1": bool(
-                seed43_metrics["unique_ordinal_top1"]
-                and seed29_metrics["unique_ordinal_top1"]
-            ),
-            "top_bucket_contains_oracle": bool(
-                seed43_metrics["top_bucket_contains_oracle"]
-                and seed29_metrics["top_bucket_contains_oracle"]
-            ),
-            "shortlist_success_needs_tiebreak": bool(
-                seed43_metrics["top_bucket_contains_oracle"]
-                and seed29_metrics["top_bucket_contains_oracle"]
-                and not (
-                    seed43_metrics["unique_ordinal_top1"]
-                    and seed29_metrics["unique_ordinal_top1"]
-                )
-            ),
-            "diagnostic_tiebreak_top1": bool(
-                seed43_metrics["diagnostic_tiebreak"]["deterministic_tiebreak_top1"]
-                and seed29_metrics["diagnostic_tiebreak"]["deterministic_tiebreak_top1"]
-            ),
+        SEED43_LABEL: {
+            "scores_by_id": seed43_scores,
+            "thresholds": seed43_thresholds,
+            "ordinals_by_id": seed43_ordinals,
+        },
+        SEED29_LABEL: {
+            "scores_by_id": seed29_scores,
+            "thresholds": seed29_thresholds,
+            "ordinals_by_id": seed29_ordinals,
         },
     }
 
@@ -673,6 +800,505 @@ def _sub2_ordinal_sweep(
             "no raw-continuous tie-break inside ordinal buckets",
             "diagnostic flat-index tie-break is not a credit mechanism and is never primary success",
             "shortlist success is not learner/runtime/GPU wiring readiness",
+        ],
+    }
+
+
+def _ternary_bucket_contexts(
+    seed43_rows: Sequence[Mapping[str, Any]],
+    seed29_rows: Sequence[Mapping[str, Any]],
+    *,
+    fixed_direction: int,
+) -> list[dict[str, Any]]:
+    contexts: list[dict[str, Any]] = []
+    rows_by_seed = {
+        SEED43_LABEL: seed43_rows,
+        SEED29_LABEL: seed29_rows,
+    }
+    for calibration_id in (
+        CALIBRATION_ONLINE_CANDIDATE_QUANTILE,
+        CALIBRATION_SEED43_THRESHOLDS_OOS,
+    ):
+        ordinal_context = _ordinal_context_for_calibration(
+            level=3,
+            calibration_id=calibration_id,
+            seed43_rows=seed43_rows,
+            seed29_rows=seed29_rows,
+            fixed_direction=fixed_direction,
+        )
+        for seed_label, rows in rows_by_seed.items():
+            seed_context = ordinal_context[seed_label]
+            bucket_rows = _ordinal_top_bucket_rows(
+                rows,
+                ordinals_by_id=seed_context["ordinals_by_id"],
+            )
+            oracle_best = _oracle_best_row(rows)
+            contexts.append(
+                {
+                    "primary_calibration_id": calibration_id,
+                    "seed": seed_label,
+                    "rows": rows,
+                    "bucket_rows": bucket_rows,
+                    "bucket_candidate_ids_hash16": _candidate_ids_hash16(
+                        [str(row["candidate_id"]) for row in bucket_rows],
+                    ),
+                    "bucket_size": len(bucket_rows),
+                    "oracle_best_candidate_id": str(oracle_best["candidate_id"]),
+                    "primary_taylor_order_ids": _rank_order_ids(
+                        bucket_rows,
+                        value_fn=_scalar_spec_by_id("taylor_benefit").compute,
+                        direction=fixed_direction,
+                    ),
+                    "primary_thresholds": seed_context["thresholds"],
+                }
+            )
+    return contexts
+
+
+def _selected_rows_payload(
+    selected_rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    selected_ids = [str(row["candidate_id"]) for row in selected_rows]
+    return {
+        "selected_candidate_count": len(selected_rows),
+        "selected_candidate_id": selected_ids[0] if len(selected_ids) == 1 else None,
+        "selected_candidate_ids_hash16": _candidate_ids_hash16(selected_ids),
+    }
+
+
+def _base_resolver_observation(
+    context: Mapping[str, Any],
+    *,
+    resolver_id: str,
+    tier: str,
+    selected_rows: Sequence[Mapping[str, Any]],
+    persistent_state_bits: float,
+    extra_state_bits: float,
+    fp_transient: bool,
+    diagnostic_only: bool,
+    credit_mechanistic: bool,
+    not_new_evidence: bool,
+    same_scalar_as_bucket: bool,
+    same_rank_as_bucket: bool,
+    budget_model_id: str | None = None,
+    calibration_scope: str | None = None,
+    calibration_state_bits_or_shared_cost: str | None = None,
+    sidecar_level: int | None = None,
+    sidecar_persistent_bits: float | None = None,
+    resolver_score: float | None = None,
+) -> dict[str, Any]:
+    selected_payload = _selected_rows_payload(selected_rows)
+    oracle_id = str(context["oracle_best_candidate_id"])
+    unique_selects_oracle = bool(
+        selected_payload["selected_candidate_count"] == 1
+        and selected_payload["selected_candidate_id"] == oracle_id
+    )
+    combined_persistent_bits = float(
+        PRIMARY_TERNARY_PERSISTENT_BITS + persistent_state_bits
+    )
+    qualifies_under_persistent_budget = bool(
+        combined_persistent_bits <= PERSISTENT_BUDGET_BITS
+        and not diagnostic_only
+        and (
+            fp_transient
+            or (
+                budget_model_id == STRICT_ADDITIVE_BUDGET_MODEL_ID
+                and calibration_state_bits_or_shared_cost == "0"
+            )
+        )
+    )
+    return {
+        "resolver_id": resolver_id,
+        "tier": tier,
+        "primary_calibration_id": context["primary_calibration_id"],
+        "seed": context["seed"],
+        "bucket_candidate_ids_hash16": context["bucket_candidate_ids_hash16"],
+        "bucket_size": int(context["bucket_size"]),
+        "oracle_best_candidate_id": oracle_id,
+        **selected_payload,
+        "unique_selects_oracle": unique_selects_oracle,
+        "qualifies_under_persistent_budget": qualifies_under_persistent_budget,
+        "primary_persistent_bits": float(PRIMARY_TERNARY_PERSISTENT_BITS),
+        "persistent_state_bits": float(persistent_state_bits),
+        "extra_state_bits": float(extra_state_bits),
+        "combined_persistent_bits": combined_persistent_bits,
+        "persistent_budget_bits": float(PERSISTENT_BUDGET_BITS),
+        "fp_transient": bool(fp_transient),
+        "diagnostic_only": bool(diagnostic_only),
+        "credit_mechanistic": bool(credit_mechanistic),
+        "not_new_evidence": bool(not_new_evidence),
+        "same_scalar_as_bucket": bool(same_scalar_as_bucket),
+        "same_rank_as_bucket": bool(same_rank_as_bucket),
+        "budget_model_id": budget_model_id,
+        "calibration_scope": calibration_scope,
+        "calibration_state_bits_or_shared_cost": calibration_state_bits_or_shared_cost,
+        "sidecar_level": sidecar_level,
+        "sidecar_persistent_bits": sidecar_persistent_bits,
+        "resolver_score": resolver_score,
+        "b7b_accumulator_dynamics_required": True,
+        "primary_success_allowed": bool(
+            not diagnostic_only
+            and not not_new_evidence
+            and unique_selects_oracle
+            and (fp_transient or qualifies_under_persistent_budget)
+        ),
+    }
+
+
+def _diagnostic_resolver_observations(context: Mapping[str, Any]) -> list[dict[str, Any]]:
+    bucket_rows = list(context["bucket_rows"])
+    resolver_rows: list[tuple[str, Mapping[str, Any] | None]] = [
+        (
+            DIAGNOSTIC_FLAT_INDEX_TIE_BREAKER_ID,
+            _diagnostic_flat_index_tiebreak_row(bucket_rows),
+        ),
+        (
+            DIAGNOSTIC_CANDIDATE_ORDER_TIE_BREAKER_ID,
+            bucket_rows[0] if bucket_rows else None,
+        ),
+        (
+            DIAGNOSTIC_CANDIDATE_HASH_TIE_BREAKER_ID,
+            min(bucket_rows, key=_candidate_hash_sort_key) if bucket_rows else None,
+        ),
+    ]
+    observations: list[dict[str, Any]] = []
+    for resolver_id, row in resolver_rows:
+        selected_rows = [row] if row is not None else []
+        observations.append(
+            _base_resolver_observation(
+                context,
+                resolver_id=resolver_id,
+                tier="zero_extra_state_diagnostic",
+                selected_rows=selected_rows,
+                persistent_state_bits=0.0,
+                extra_state_bits=0.0,
+                fp_transient=False,
+                diagnostic_only=True,
+                credit_mechanistic=False,
+                not_new_evidence=True,
+                same_scalar_as_bucket=False,
+                same_rank_as_bucket=False,
+            )
+        )
+    return observations
+
+
+def _transient_resolver_observation(
+    context: Mapping[str, Any],
+    *,
+    spec: ScalarSpec,
+    direction: int,
+    primary_taylor_direction: int,
+) -> dict[str, Any]:
+    bucket_rows = list(context["bucket_rows"])
+    selected_rows, best_score = _unique_scalar_argmax(
+        bucket_rows,
+        value_fn=spec.compute,
+        direction=direction,
+    )
+    resolver_order = _rank_order_ids(
+        bucket_rows,
+        value_fn=spec.compute,
+        direction=direction,
+    )
+    primary_order = list(context["primary_taylor_order_ids"])
+    same_scalar = spec.scalar_id == "taylor_benefit"
+    same_rank = resolver_order == primary_order
+    return _base_resolver_observation(
+        context,
+        resolver_id=f"transient_fp_scalar:{spec.scalar_id}",
+        tier="transient_fp_scalar",
+        selected_rows=selected_rows,
+        persistent_state_bits=0.0,
+        extra_state_bits=0.0,
+        fp_transient=True,
+        diagnostic_only=False,
+        credit_mechanistic=True,
+        not_new_evidence=bool(same_scalar or same_rank),
+        same_scalar_as_bucket=same_scalar,
+        same_rank_as_bucket=same_rank,
+        budget_model_id="primary_ternary_persistent_plus_transient_fp_resolver_v0",
+        calibration_scope="per_step_forward_backward_transient",
+        calibration_state_bits_or_shared_cost="0",
+        resolver_score=best_score,
+    ) | {
+        "fixed_direction": int(direction),
+        "primary_taylor_fixed_direction": int(primary_taylor_direction),
+    }
+
+
+def _sidecar_thresholds_for_contexts(
+    seed43_bucket_rows: Sequence[Mapping[str, Any]],
+    seed29_bucket_rows: Sequence[Mapping[str, Any]],
+    *,
+    spec: ScalarSpec,
+    direction: int,
+    level: int,
+    sidecar_calibration_id: str,
+) -> dict[str, tuple[float, ...]]:
+    seed43_scores = [
+        float(direction) * float(spec.compute(row))
+        for row in seed43_bucket_rows
+    ]
+    seed29_scores = [
+        float(direction) * float(spec.compute(row))
+        for row in seed29_bucket_rows
+    ]
+    seed43_thresholds = _ordinal_thresholds_from_scores(seed43_scores, levels=level)
+    if sidecar_calibration_id == SIDECAR_CALIBRATION_BUCKET_ONLINE:
+        seed29_thresholds = _ordinal_thresholds_from_scores(seed29_scores, levels=level)
+    elif sidecar_calibration_id == SIDECAR_CALIBRATION_SEED43_BUCKET_OOS:
+        seed29_thresholds = seed43_thresholds
+    else:
+        raise ValueError(f"unsupported sidecar calibration {sidecar_calibration_id!r}")
+    return {
+        SEED43_LABEL: seed43_thresholds,
+        SEED29_LABEL: seed29_thresholds,
+    }
+
+
+def _persistent_sidecar_observation(
+    context: Mapping[str, Any],
+    *,
+    spec: ScalarSpec,
+    direction: int,
+    level: int,
+    sidecar_calibration_id: str,
+    thresholds: Sequence[float],
+) -> dict[str, Any]:
+    bucket_rows = list(context["bucket_rows"])
+    ordinals_by_id = {
+        str(row["candidate_id"]): _ordinal_bin(
+            float(direction) * float(spec.compute(row)),
+            thresholds=thresholds,
+            levels=level,
+        )
+        for row in bucket_rows
+    }
+    selected_rows = _ordinal_top_bucket_rows(bucket_rows, ordinals_by_id=ordinals_by_id)
+    sidecar_bits = float(math.log2(level))
+    return _base_resolver_observation(
+        context,
+        resolver_id=(
+            f"persistent_ordinal_sidecar:{spec.scalar_id}:"
+            f"level{level}:{sidecar_calibration_id}"
+        ),
+        tier="persistent_discrete_sidecar",
+        selected_rows=selected_rows,
+        persistent_state_bits=sidecar_bits,
+        extra_state_bits=sidecar_bits,
+        fp_transient=False,
+        diagnostic_only=False,
+        credit_mechanistic=True,
+        not_new_evidence=False,
+        same_scalar_as_bucket=False,
+        same_rank_as_bucket=False,
+        budget_model_id=STRICT_ADDITIVE_BUDGET_MODEL_ID,
+        calibration_scope=sidecar_calibration_id,
+        calibration_state_bits_or_shared_cost=(
+            "adaptive_threshold_state_not_free_under_strict_default"
+            if sidecar_calibration_id == SIDECAR_CALIBRATION_BUCKET_ONLINE
+            else "shared_seed43_thresholds_not_costed_as_free_for_success"
+        ),
+        sidecar_level=level,
+        sidecar_persistent_bits=sidecar_bits,
+    ) | {
+        "fixed_direction": int(direction),
+        "sidecar_thresholds": [float(threshold) for threshold in thresholds],
+    }
+
+
+def _aggregate_resolver_observations(
+    observations: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    grouped: dict[str, list[Mapping[str, Any]]] = {}
+    for observation in observations:
+        grouped.setdefault(str(observation["resolver_id"]), []).append(observation)
+    aggregates: dict[str, Any] = {}
+    for resolver_id, rows in grouped.items():
+        aggregate_unique = bool(rows) and all(
+            bool(row["unique_selects_oracle"]) for row in rows
+        )
+        aggregate_budget = bool(rows) and all(
+            bool(row["qualifies_under_persistent_budget"]) for row in rows
+        )
+        aggregate_new_evidence = bool(rows) and all(
+            not bool(row["not_new_evidence"]) for row in rows
+        )
+        tiers = sorted({str(row["tier"]) for row in rows})
+        aggregates[resolver_id] = {
+            "resolver_id": resolver_id,
+            "tier": tiers[0] if len(tiers) == 1 else "mixed",
+            "observation_count": len(rows),
+            "aggregate_scope": "both_seeds_x_both_primary_calibrations",
+            "unique_selects_oracle_all": aggregate_unique,
+            "qualifies_under_persistent_budget_all": aggregate_budget,
+            "new_evidence_all": aggregate_new_evidence,
+            "diagnostic_only": all(bool(row["diagnostic_only"]) for row in rows),
+            "fp_transient": all(bool(row["fp_transient"]) for row in rows),
+            "any_same_rank_as_bucket": any(bool(row["same_rank_as_bucket"]) for row in rows),
+            "any_not_new_evidence": any(bool(row["not_new_evidence"]) for row in rows),
+            "max_combined_persistent_bits": max(
+                float(row["combined_persistent_bits"]) for row in rows
+            ),
+            "primary_success_allowed_all": bool(
+                aggregate_unique
+                and aggregate_new_evidence
+                and all(bool(row["primary_success_allowed"]) for row in rows)
+            ),
+        }
+    return aggregates
+
+
+def _b7a_label_decision(aggregates: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
+    labels: list[str] = [B7A_LABEL_PROXY_ONLY_B7B_REQUIRED]
+    if any(
+        bool(row["tier"] == "persistent_discrete_sidecar")
+        and bool(row["unique_selects_oracle_all"])
+        and bool(row["qualifies_under_persistent_budget_all"])
+        for row in aggregates.values()
+    ):
+        labels.append(B7A_LABEL_PERSISTENT_SUB2_UNIQUE)
+    if any(
+        bool(row["tier"] == "transient_fp_scalar")
+        and bool(row["unique_selects_oracle_all"])
+        and bool(row["new_evidence_all"])
+        for row in aggregates.values()
+    ):
+        labels.append(B7A_LABEL_TRANSIENT_RESOLVER_SUCCESS)
+    if any(
+        bool(row["tier"] == "persistent_discrete_sidecar")
+        and bool(row["unique_selects_oracle_all"])
+        and not bool(row["qualifies_under_persistent_budget_all"])
+        for row in aggregates.values()
+    ):
+        labels.append(B7A_LABEL_PERSISTENT_EXCEEDS_BUDGET)
+    if any(
+        bool(row["diagnostic_only"])
+        and bool(row["unique_selects_oracle_all"])
+        for row in aggregates.values()
+    ):
+        labels.append(B7A_LABEL_ZERO_STATE_DIAGNOSTIC_ONLY)
+    if len(labels) == 1:
+        labels.append(B7A_LABEL_NO_UNIQUE_RESOLVER)
+    primary_label = next(
+        label for label in B7A_LABEL_PRIORITY if label in labels
+    )
+    return {
+        "all_applicable_labels": labels,
+        "primary_label": primary_label,
+        "proxy_caveat_label": B7A_LABEL_PROXY_ONLY_B7B_REQUIRED,
+        "priority_order": list(B7A_LABEL_PRIORITY),
+        "aggregate_scope": "both_seeds_x_both_primary_calibrations",
+    }
+
+
+def _sub2_tiebreak_sidecar_sweep(
+    seed43_rows: Sequence[Mapping[str, Any]],
+    seed29_rows: Sequence[Mapping[str, Any]],
+    *,
+    scalar_results: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    primary_direction = int(scalar_results["taylor_benefit"]["raw_continuous"]["fixed_direction"])
+    contexts = _ternary_bucket_contexts(
+        seed43_rows,
+        seed29_rows,
+        fixed_direction=primary_direction,
+    )
+    observations: list[dict[str, Any]] = []
+    for context in contexts:
+        observations.extend(_diagnostic_resolver_observations(context))
+        for scalar_id in SIDECAR_TRANSIENT_SCALAR_IDS:
+            spec = _scalar_spec_by_id(scalar_id)
+            direction = int(scalar_results[scalar_id]["raw_continuous"]["fixed_direction"])
+            observations.append(
+                _transient_resolver_observation(
+                    context,
+                    spec=spec,
+                    direction=direction,
+                    primary_taylor_direction=primary_direction,
+                )
+            )
+    context_by_cal_seed = {
+        (context["primary_calibration_id"], context["seed"]): context
+        for context in contexts
+    }
+    for primary_calibration_id in (
+        CALIBRATION_ONLINE_CANDIDATE_QUANTILE,
+        CALIBRATION_SEED43_THRESHOLDS_OOS,
+    ):
+        seed43_context = context_by_cal_seed[(primary_calibration_id, SEED43_LABEL)]
+        seed29_context = context_by_cal_seed[(primary_calibration_id, SEED29_LABEL)]
+        for scalar_id in SIDECAR_PERSISTENT_SCALAR_IDS:
+            spec = _scalar_spec_by_id(scalar_id)
+            direction = int(scalar_results[scalar_id]["raw_continuous"]["fixed_direction"])
+            for level in SIDECAR_PERSISTENT_LEVELS:
+                for sidecar_calibration_id in (
+                    SIDECAR_CALIBRATION_BUCKET_ONLINE,
+                    SIDECAR_CALIBRATION_SEED43_BUCKET_OOS,
+                ):
+                    thresholds_by_seed = _sidecar_thresholds_for_contexts(
+                        seed43_context["bucket_rows"],
+                        seed29_context["bucket_rows"],
+                        spec=spec,
+                        direction=direction,
+                        level=level,
+                        sidecar_calibration_id=sidecar_calibration_id,
+                    )
+                    for context in (seed43_context, seed29_context):
+                        observations.append(
+                            _persistent_sidecar_observation(
+                                context,
+                                spec=spec,
+                                direction=direction,
+                                level=level,
+                                sidecar_calibration_id=sidecar_calibration_id,
+                                thresholds=thresholds_by_seed[context["seed"]],
+                            )
+                        )
+    aggregates = _aggregate_resolver_observations(observations)
+    return {
+        "schema_version": SUB2_TIEBREAK_SIDECAR_SWEEP_SCHEMA_VERSION,
+        "source_bucket": {
+            "source_payload_key": "sub2_ordinal_sweep",
+            "level": 3,
+            "primary_scalar_id": "taylor_benefit",
+            "primary_persistent_bits": float(PRIMARY_TERNARY_PERSISTENT_BITS),
+            "primary_calibration_classes": [
+                CALIBRATION_ONLINE_CANDIDATE_QUANTILE,
+                CALIBRATION_SEED43_THRESHOLDS_OOS,
+            ],
+        },
+        "budget_policy": {
+            "budget_model_id": STRICT_ADDITIVE_BUDGET_MODEL_ID,
+            "persistent_budget_bits": float(PERSISTENT_BUDGET_BITS),
+            "strict_additive_default": True,
+            "non_additive_or_amortized_model_applied": False,
+            "calibration_threshold_state_is_not_free_for_persistent_success": True,
+        },
+        "resolver_tiers": {
+            "zero_extra_state_diagnostics": {
+                "diagnostic_only": True,
+                "primary_success_allowed": False,
+            },
+            "transient_fp_scalars": {
+                "fp_transient": True,
+                "persistent_state_bits": 0,
+                "success_label_meaning": "sub2_persistent_with_fp_transient_resolver_not_fp_free",
+            },
+            "persistent_discrete_sidecars": {
+                "levels": list(SIDECAR_PERSISTENT_LEVELS),
+                "strict_additive_combined_bits": "log2(3)+log2(sidecar_levels)",
+            },
+        },
+        "observations": observations,
+        "aggregate_results": aggregates,
+        "label_decision": _b7a_label_decision(aggregates),
+        "non_claims": [
+            "b7a is a single-step ceiling proxy; b7b accumulator dynamics remain required",
+            "zero-state diagnostics are never success labels",
+            "transient FP resolver success is not FP-free full-runtime sub-2",
+            "persistent sidecar unique selection is not sub-2 success unless the combined persistent budget qualifies",
         ],
     }
 
@@ -1119,6 +1745,11 @@ def build_activation_credit_ceiling_audit(
         seed29_receipt.rows,
         primary_scalar_result=scalar_results["taylor_benefit"],
     )
+    sub2_tiebreak_sidecar_sweep = _sub2_tiebreak_sidecar_sweep(
+        seed43_receipt.rows,
+        seed29_receipt.rows,
+        scalar_results=scalar_results,
+    )
     return {
         "schema_version": ACTIVATION_CREDIT_CEILING_AUDIT_SCHEMA_VERSION,
         "target_name": ACTIVATION_CREDIT_CEILING_AUDIT_TARGET_NAME,
@@ -1162,6 +1793,11 @@ def build_activation_credit_ceiling_audit(
                 "learner-available levels without using raw continuous values "
                 "inside the top bucket; flat-index tie-break is diagnostic only"
             ),
+            "sub2_tiebreak_sidecar_sweep_note": (
+                "sidecar sweep resolves only inside the B6 ternary top bucket "
+                "and reports unique selection separately from persistent-budget "
+                "qualification"
+            ),
         },
         "decision_authorized_scalar_ids": [
             spec.scalar_id for spec in SCALAR_SPECS if spec.decision_authority_allowed
@@ -1172,6 +1808,7 @@ def build_activation_credit_ceiling_audit(
         "scalar_results": scalar_results,
         "primary_loss_decomposition": primary_loss,
         "sub2_ordinal_sweep": sub2_ordinal_sweep,
+        "sub2_tiebreak_sidecar_sweep": sub2_tiebreak_sidecar_sweep,
         "known_branch4_anchor_reproduction": _known_anchor_reproduction(
             scalar_results,
         ),

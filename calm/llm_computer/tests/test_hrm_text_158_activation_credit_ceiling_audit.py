@@ -318,6 +318,35 @@ def test_activation_credit_ceiling_audit_classifies_receipt_family_bucket_tiebre
         ternary_online["seed43"]["diagnostic_tiebreak"]["primary_success_allowed"]
         is False
     )
+    b7a = receipt["sub2_tiebreak_sidecar_sweep"]
+    assert b7a["source_bucket"]["level"] == 3
+    assert b7a["budget_policy"]["strict_additive_default"] is True
+    assert (
+        b7a["label_decision"]["proxy_caveat_label"]
+        == "b7a_proxy_only_b7b_required"
+    )
+    assert "b7a_proxy_only_b7b_required" in b7a["label_decision"][
+        "all_applicable_labels"
+    ]
+    taylor_aggregate = b7a["aggregate_results"]["transient_fp_scalar:taylor_benefit"]
+    assert taylor_aggregate["observation_count"] == 4
+    assert taylor_aggregate["unique_selects_oracle_all"] is True
+    assert taylor_aggregate["any_not_new_evidence"] is True
+    assert taylor_aggregate["primary_success_allowed_all"] is False
+    abs_grad_aggregate = b7a["aggregate_results"]["transient_fp_scalar:abs_grad_proxy"]
+    assert abs_grad_aggregate["any_same_rank_as_bucket"] is True
+    assert abs_grad_aggregate["primary_success_allowed_all"] is False
+    diagnostic_observations = [
+        observation
+        for observation in b7a["observations"]
+        if observation["tier"] == "zero_extra_state_diagnostic"
+    ]
+    assert diagnostic_observations
+    assert all(
+        observation["diagnostic_only"] is True
+        and observation["primary_success_allowed"] is False
+        for observation in diagnostic_observations
+    )
 
 
 def test_activation_credit_ceiling_audit_fails_closed_on_row_count_mismatch(
@@ -745,6 +774,119 @@ def test_sub2_ordinal_sweep_label_priority_surfaces_calibration_failure(
     assert level3[CALIBRATION_SEED43_THRESHOLDS_OOS]["seed29"][
         "top_bucket_contains_oracle"
     ] is False
+
+
+def test_b7a_persistent_sidecar_unique_selection_stays_over_budget(
+    tmp_path: Path,
+) -> None:
+    rows = [
+        _row(
+            candidate_id="oracle",
+            regret=0.0,
+            local_loss_delta=-0.40,
+            taylor_benefit=0.90,
+            taylor_q5=2,
+            grad_proxy=-0.90,
+            delta_weight=1.0,
+            snr=0.20,
+            snr_q5=0,
+            diag_fisher=0.90,
+            diag_q5=2,
+            current_rank_position=0,
+            current_margin_abs=4.0,
+            vote_value=4.0,
+            topology=0,
+        ),
+        _row(
+            candidate_id="other_top_bucket",
+            regret=0.1,
+            local_loss_delta=-0.30,
+            taylor_benefit=0.80,
+            taylor_q5=2,
+            grad_proxy=-0.80,
+            delta_weight=1.0,
+            snr=0.30,
+            snr_q5=0,
+            diag_fisher=0.10,
+            diag_q5=0,
+            current_rank_position=1,
+            current_margin_abs=4.0,
+            vote_value=4.0,
+            topology=0,
+        ),
+        _row(
+            candidate_id="low_a",
+            regret=0.2,
+            local_loss_delta=-0.20,
+            taylor_benefit=0.10,
+            taylor_q5=0,
+            grad_proxy=-0.10,
+            delta_weight=1.0,
+            snr=0.40,
+            snr_q5=1,
+            diag_fisher=0.05,
+            diag_q5=0,
+            current_rank_position=2,
+            current_margin_abs=4.0,
+            vote_value=-4.0,
+            topology=1,
+        ),
+        _row(
+            candidate_id="low_b",
+            regret=0.3,
+            local_loss_delta=-0.10,
+            taylor_benefit=0.00,
+            taylor_q5=0,
+            grad_proxy=-0.01,
+            delta_weight=1.0,
+            snr=0.50,
+            snr_q5=1,
+            diag_fisher=0.00,
+            diag_q5=0,
+            current_rank_position=3,
+            current_margin_abs=4.0,
+            vote_value=-4.0,
+            topology=1,
+        ),
+    ]
+    seed43_path = tmp_path / "seed43.json"
+    seed29_path = tmp_path / "seed29.json"
+    _write_receipt(seed43_path, _receipt_payload(rows=rows, family_auc=0.55))
+    _write_receipt(seed29_path, _receipt_payload(rows=rows, family_auc=0.56))
+
+    receipt = build_activation_credit_ceiling_audit(
+        seed43_receipt_path=seed43_path,
+        seed29_receipt_path=seed29_path,
+    )
+
+    b7a = receipt["sub2_tiebreak_sidecar_sweep"]
+    resolver_id = (
+        "persistent_ordinal_sidecar:diag_fisher:level3:"
+        "within_bucket_online_quantile"
+    )
+    aggregate = b7a["aggregate_results"][resolver_id]
+    assert aggregate["unique_selects_oracle_all"] is True
+    assert aggregate["qualifies_under_persistent_budget_all"] is False
+    assert aggregate["max_combined_persistent_bits"] > 2.0
+    assert "persistent_sidecar_success_exceeds_budget" in b7a["label_decision"][
+        "all_applicable_labels"
+    ]
+    observations = [
+        observation
+        for observation in b7a["observations"]
+        if observation["resolver_id"] == resolver_id
+    ]
+    assert {observation["calibration_scope"] for observation in observations} == {
+        "within_bucket_online_quantile"
+    }
+    assert all(
+        observation["budget_model_id"]
+        == "strict_dense_additive_ternary_primary_plus_sidecar_v0"
+        and observation["qualifies_under_persistent_budget"] is False
+        and observation["calibration_state_bits_or_shared_cost"]
+        == "adaptive_threshold_state_not_free_under_strict_default"
+        for observation in observations
+    )
 
 
 def test_sub2_ordinal_sweep_regret_metric_mirrors_oracle_runner_formula() -> None:

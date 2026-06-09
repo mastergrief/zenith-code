@@ -20,7 +20,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
             "Emit the tracked activation-credit raw-vs-compressed ceiling audit, "
-            "including the offline sub-2 ordinal sweep payload."
+            "including the offline sub-2 ordinal and sidecar cost-ledger sweep payloads."
         )
     )
     parser.add_argument("--seed43-receipt", type=Path, required=True)
