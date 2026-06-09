@@ -3932,6 +3932,8 @@ def _build_activation_credit_scale_smoke_command_record(
         "env": {
             "HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE": "1",
             "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH": "1",
+            ACTIVATION_CREDIT_STDOUT_PATH_ENV: stdout_path,
+            ACTIVATION_CREDIT_STDERR_PATH_ENV: stderr_path,
         },
         "argv": argv,
         "stdout_path": stdout_path,
@@ -7397,6 +7399,12 @@ def _validate_activation_credit_command_record(
         raise ValueError(
             f"{label} command env missing HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1"
         )
+    stdout_path = str(command.get("stdout_path"))
+    stderr_path = str(command.get("stderr_path"))
+    if env.get(ACTIVATION_CREDIT_STDOUT_PATH_ENV) != stdout_path:
+        raise ValueError(f"{label} command env stdout path must match stdout_path")
+    if env.get(ACTIVATION_CREDIT_STDERR_PATH_ENV) != stderr_path:
+        raise ValueError(f"{label} command env stderr path must match stderr_path")
     argv = command.get("argv")
     if not isinstance(argv, list) or not all(isinstance(item, str) for item in argv):
         raise ValueError(f"{label} command argv must be a list[str]")
@@ -7473,17 +7481,6 @@ def _validate_activation_credit_measurement_command_record(
         steps_source="fixed_single_support_batch_activation_credit_measurement",
         label="activation-credit measurement",
     )
-    env = command.get("env") or {}
-    stdout_path = str(command.get("stdout_path"))
-    stderr_path = str(command.get("stderr_path"))
-    if env.get(ACTIVATION_CREDIT_STDOUT_PATH_ENV) != stdout_path:
-        raise ValueError(
-            "activation-credit measurement command env stdout path must match stdout_path"
-        )
-    if env.get(ACTIVATION_CREDIT_STDERR_PATH_ENV) != stderr_path:
-        raise ValueError(
-            "activation-credit measurement command env stderr path must match stderr_path"
-        )
 
 
 def validate_activation_credit_measurement_launch_bundle(

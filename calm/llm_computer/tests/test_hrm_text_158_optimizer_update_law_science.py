@@ -2148,6 +2148,11 @@ def test_activation_credit_scale_smoke_launch_bundle_pins_budget8_and_batch4_com
         == ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE
         for command in packet["commands"]
     )
+    assert all(
+        command["env"][ACTIVATION_CREDIT_STDOUT_PATH_ENV] == command["stdout_path"]
+        and command["env"][ACTIVATION_CREDIT_STDERR_PATH_ENV] == command["stderr_path"]
+        for command in packet["commands"]
+    )
 
 
 @pytest.mark.parametrize(
@@ -2335,6 +2340,44 @@ def test_activation_credit_smoke_launch_bundle_validator_rejects_budget_batch_an
     ],
 )
 def test_activation_credit_smoke_launch_bundle_validator_rejects_stale_terminal_verdict_keys_by_name_and_occupancy_drift(
+    mutation,
+    error,
+):
+    packet = build_activation_credit_scale_smoke_launch_bundle(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+        repo_root="/repo",
+        run_root="/tmp/hrm158-activation-credit-smoke",
+    )
+    mutation(packet)
+
+    with pytest.raises(ValueError, match=error):
+        validate_activation_credit_scale_smoke_launch_bundle(packet)
+
+
+@pytest.mark.parametrize(
+    "mutation,error",
+    [
+        (
+            lambda packet: packet["commands"][0].update(
+                {
+                    "env": {
+                        "HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE": "1",
+                        "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH": "1",
+                    }
+                }
+            ),
+            "env stdout path must match stdout_path",
+        ),
+        (
+            lambda packet: packet["commands"][0]["env"].update(
+                {ACTIVATION_CREDIT_STDERR_PATH_ENV: "/tmp/drifted-stderr.log"}
+            ),
+            "env stderr path must match stderr_path",
+        ),
+    ],
+)
+def test_activation_credit_smoke_launch_bundle_validator_rejects_missing_or_drifted_log_path_env(
     mutation,
     error,
 ):
@@ -3043,6 +3086,11 @@ def test_packet_script_writes_activation_credit_smoke_launch_bundle(
         ACTIVATION_CREDIT_SMOKE_MAX_SAMPLED_CANDIDATES
     )
     assert len(packet["commands"]) == 2
+    assert all(
+        command["env"][ACTIVATION_CREDIT_STDOUT_PATH_ENV] == command["stdout_path"]
+        and command["env"][ACTIVATION_CREDIT_STDERR_PATH_ENV] == command["stderr_path"]
+        for command in packet["commands"]
+    )
     assert json.loads(capsys.readouterr().out)["packet_kind"] == (
         ACTIVATION_CREDIT_SCALE_SMOKE_LAUNCH_BUNDLE_PACKET_KIND
     )
