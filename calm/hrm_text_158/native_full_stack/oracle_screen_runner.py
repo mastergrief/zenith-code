@@ -1745,6 +1745,334 @@ def _score_family_metrics(
     return metrics, ordered_ids, position_by_id
 
 
+def canonical_within_tie_band_rows_for_b2b_hash(
+    rows: Sequence[Mapping[str, Any]],
+) -> tuple[dict[str, Any], ...]:
+    """Canonical row shape for B2b trace source_table_hash / replay integrity."""
+
+    return tuple(
+        {
+            "candidate_id": str(row["candidate_id"]),
+            "current_rank_position": int(row["current_rank_position"]),
+            "local_loss_delta": float(row["local_loss_delta"]),
+            "pre_accumulator_i16": int(row["pre_accumulator_i16"]),
+            "new_acc_i32_signed": int(row["new_acc_i32_signed"]),
+            "proximity_to_threshold": int(row["proximity_to_threshold"]),
+        }
+        for row in sorted(rows, key=lambda item: str(item["candidate_id"]))
+    )
+
+
+def _b2b_hash16(payload: Any) -> str:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:16]
+
+
+def hash_bounded_delta_tensor_states_pre_update(
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+) -> str:
+    """Hash eligible tensor vote state before an optimizer step mutates it."""
+
+    payload: list[dict[str, str]] = []
+    for state_key in sorted(tensor_states):
+        vote_state = tensor_states[state_key].vote_update_state()
+        q_digest = hashlib.sha256(
+            vote_state.q_levels.detach().cpu().numpy().tobytes()
+        ).hexdigest()[:16]
+        acc_digest = hashlib.sha256(
+            vote_state.accumulators.detach().cpu().numpy().tobytes()
+        ).hexdigest()[:16]
+        payload.append(
+            {
+                "state_key": str(state_key),
+                "q_levels_hash16": q_digest,
+                "accumulators_hash16": acc_digest,
+            }
+        )
+    return _b2b_hash16(payload)
+
+
+def build_compact_within_tie_band_sampled_table_rows(
+    sampled_candidates: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Shared compact within_tie_band table rows for oracle screen and B2b capture."""
+
+    return [
+        {
+            "candidate_id": str(candidate["candidate_id"]),
+            "in_target_tie_band": (
+                str(candidate["tie_band_id"]) == WITHIN_TIE_BAND_TARGET_TIE_BAND_ID
+            ),
+            "state_key": str(candidate["state_key"]),
+            "flat_index": int(candidate["flat_index"]),
+            "vote_value": int(candidate["vote_value"]),
+            "abs_vote_value": int(candidate["abs_vote_value"]),
+            "current_margin_abs": int(candidate["current_margin_abs"]),
+            "current_rank_position": int(candidate["current_rank_position"]),
+            "tie_band_id": str(candidate["tie_band_id"]),
+            "current_q_level": int(candidate["current_q_level"]),
+            "pre_accumulator_i16": int(candidate["pre_accumulator_i16"]),
+            "new_acc_i32_signed": int(candidate["new_acc_i32_signed"]),
+            "proposal_direction": int(candidate["proposal_direction"]),
+            "threshold_residual_signed": int(candidate["threshold_residual_signed"]),
+            "proximity_to_threshold": int(candidate["proximity_to_threshold"]),
+            "state_candidate_count": int(candidate["state_candidate_count"]),
+            "current_rank_quartile_within_state": int(
+                candidate["current_rank_quartile_within_state"]
+            ),
+            "flat_index_quartile": int(candidate["flat_index_quartile"]),
+            "transition_class": str(candidate["transition_class"]),
+            "candidate_loss": float(candidate["candidate_loss"]),
+            "local_loss_delta": float(candidate["local_loss_delta"]),
+            "regret_vs_target_tie_band_oracle_top1_local_loss_delta": (
+                float(candidate["regret_vs_target_tie_band_oracle_top1_local_loss_delta"])
+                if candidate.get("regret_vs_target_tie_band_oracle_top1_local_loss_delta")
+                is not None
+                else None
+            ),
+        }
+        for candidate in sorted(
+            sampled_candidates,
+            key=lambda item: (
+                str(item["tie_band_id"]) != WITHIN_TIE_BAND_TARGET_TIE_BAND_ID,
+                int(item["current_rank_position"]),
+                str(item["candidate_id"]),
+            ),
+        )
+    ]
+
+
+def build_within_tie_band_candidate_universe_from_votes(
+    *,
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+    votes_by_key: Mapping[str, torch.Tensor],
+    max_abs_per_tensor: int,
+    max_sampled_candidates: int,
+) -> dict[str, Any]:
+    """Build within_tie_band candidate metadata from pre-update votes (same-vote path)."""
+
+    base_spec = VoteUpdateSpec(
+        threshold_abs=1,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=int(max_abs_per_tensor),
+    )
+    candidate_by_id: dict[str, dict[str, Any]] = {}
+    for state_key, state in sorted(tensor_states.items()):
+        vote_state = state.vote_update_state()
+        votes = votes_by_key[state_key]
+        current_ordered, unordered, new_acc = _ordered_candidate_indices(
+            state=vote_state,
+            votes=votes,
+            spec=base_spec,
+            ordering_mode=LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+        )
+        deterministic_ordered, deterministic_unordered, _ = _ordered_candidate_indices(
+            state=vote_state,
+            votes=votes,
+            spec=base_spec,
+            ordering_mode=LOCAL_SELECTION_ORDER_DETERMINISTIC_HASH_MATCHED,
+        )
+        if unordered != deterministic_unordered:
+            raise RuntimeError(
+                "within-tie-band candidate set drifted across scheduler orderings"
+            )
+        current_rank = {
+            int(flat_index): int(position)
+            for position, flat_index in enumerate(current_ordered)
+        }
+        deterministic_rank = {
+            int(flat_index): int(position)
+            for position, flat_index in enumerate(deterministic_ordered)
+        }
+        vote_flat = votes.flatten().to(torch.int32)
+        q_flat = vote_state.q_levels.flatten().to(torch.int32)
+        acc_flat = vote_state.accumulators.flatten().to(torch.int32)
+        state_candidate_count = len(unordered)
+        tensor_numel = int(vote_state.q_levels.numel())
+        for flat_index in unordered:
+            vote_value = int(vote_flat[int(flat_index)].item())
+            new_acc_signed = int(new_acc[int(flat_index)].item())
+            current_margin_abs = int(abs(new_acc_signed))
+            abs_vote_value = int(abs(vote_value))
+            current_rank_position = int(current_rank[int(flat_index)])
+            current_q_level = int(q_flat[int(flat_index)].item())
+            pre_accumulator_i16 = int(acc_flat[int(flat_index)].item())
+            proposal_direction = _sign_int(new_acc_signed)
+            threshold_residual_signed = int(
+                new_acc_signed - proposal_direction * int(base_spec.threshold_abs)
+            )
+            proximity_to_threshold = int(
+                abs(abs(new_acc_signed) - int(base_spec.threshold_abs))
+            )
+            candidate_id = _candidate_id(state_key, int(flat_index))
+            candidate_by_id[candidate_id] = {
+                "candidate_id": candidate_id,
+                "state_key": state_key,
+                "flat_index": int(flat_index),
+                "vote_value": vote_value,
+                "abs_vote_value": abs_vote_value,
+                "current_rank_position": current_rank_position,
+                "deterministic_hash_rank_position": deterministic_rank[int(flat_index)],
+                "current_margin_abs": current_margin_abs,
+                "tie_band_id": _pivot_tie_band_id(
+                    abs_vote_value=abs_vote_value,
+                    current_margin_abs=current_margin_abs,
+                ),
+                "current_q_level": current_q_level,
+                "pre_accumulator_i16": pre_accumulator_i16,
+                "new_acc_i32_signed": new_acc_signed,
+                "proposal_direction": proposal_direction,
+                "threshold_residual_signed": threshold_residual_signed,
+                "proximity_to_threshold": proximity_to_threshold,
+                "tensor_numel": tensor_numel,
+                "state_candidate_count": state_candidate_count,
+                "current_rank_fraction_within_state": _ordinal_fraction(
+                    current_rank_position,
+                    state_candidate_count,
+                ),
+                "current_rank_quartile_within_state": _quartile_index(
+                    current_rank_position,
+                    state_candidate_count,
+                ),
+                "flat_index_fraction": _ordinal_fraction(
+                    int(flat_index),
+                    tensor_numel,
+                ),
+                "flat_index_quartile": _quartile_index(
+                    int(flat_index),
+                    tensor_numel,
+                ),
+                "transition_class": f"q{current_q_level}|dir{proposal_direction}",
+            }
+    current_ordered_ids = [
+        candidate["candidate_id"]
+        for candidate in sorted(
+            candidate_by_id.values(),
+            key=lambda candidate: (
+                int(candidate["current_rank_position"]),
+                str(candidate["state_key"]),
+                int(candidate["flat_index"]),
+            ),
+        )
+    ]
+    deterministic_ordered_ids = [
+        candidate["candidate_id"]
+        for candidate in sorted(
+            candidate_by_id.values(),
+            key=lambda candidate: (
+                int(candidate["deterministic_hash_rank_position"]),
+                str(candidate["state_key"]),
+                int(candidate["flat_index"]),
+            ),
+        )
+    ]
+    sampled_ids = _sample_candidate_ids(
+        current_ordered_ids,
+        deterministic_ordered_ids,
+        max_sampled_candidates=int(max_sampled_candidates),
+    )
+    return {
+        "base_spec": base_spec,
+        "one_flip_spec": _single_flip_spec(base_spec),
+        "votes_by_key": votes_by_key,
+        "candidate_by_id": candidate_by_id,
+        "sampled_ids": sampled_ids,
+    }
+
+
+def capture_b2b_sequential_pre_update_step(
+    *,
+    model: LMHead,
+    batch: Mapping[str, torch.Tensor],
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+    eligible_modules: Mapping[str, BitLinear],
+    device: torch.device,
+    extras: Mapping[str, Any],
+    votes_by_key: Mapping[str, torch.Tensor],
+    baseline_loss: float,
+    optimizer_step_index: int,
+    max_abs_per_tensor: int,
+    max_sampled_candidates: int,
+    max_seconds: float,
+    source_kind: str = "within_tie_band_discriminator",
+    phase_progress: Any | None = None,
+) -> dict[str, Any]:
+    """Capture one B2b sequential step from pre-update same-vote candidate evaluation."""
+
+    if int(max_sampled_candidates) != PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES:
+        raise ValueError(
+            "B2b sequential capture requires max_sampled_candidates == 32"
+        )
+    universe = build_within_tie_band_candidate_universe_from_votes(
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+        max_abs_per_tensor=int(max_abs_per_tensor),
+        max_sampled_candidates=int(max_sampled_candidates),
+    )
+    pre_update_state_hash = hash_bounded_delta_tensor_states_pre_update(tensor_states)
+    sampled_candidates, _oracle_top, budget_exceeded, elapsed_seconds = (
+        _evaluate_sampled_candidates_for_oracle_screen(
+            model=model,
+            batch=batch,
+            tensor_states=tensor_states,
+            eligible_modules=eligible_modules,
+            device=device,
+            extras=extras,
+            votes_by_key=universe["votes_by_key"],
+            candidate_by_id=universe["candidate_by_id"],
+            sampled_ids=universe["sampled_ids"],
+            baseline_loss=float(baseline_loss),
+            one_flip_spec=universe["one_flip_spec"],
+            max_seconds=float(max_seconds),
+            phase_progress=phase_progress,
+        )
+    )
+    target_band_oracle_top1_delta = None
+    target_band_candidates = [
+        dict(candidate)
+        for candidate in sampled_candidates
+        if str(candidate["tie_band_id"]) == WITHIN_TIE_BAND_TARGET_TIE_BAND_ID
+    ]
+    if target_band_candidates:
+        target_band_oracle_top = sorted(
+            target_band_candidates,
+            key=lambda candidate: (
+                float(candidate["local_loss_delta"]),
+                str(candidate["candidate_id"]),
+            ),
+        )
+        target_band_oracle_top1_delta = float(
+            target_band_oracle_top[0]["local_loss_delta"]
+        )
+    for candidate in sampled_candidates:
+        if (
+            str(candidate["tie_band_id"]) == WITHIN_TIE_BAND_TARGET_TIE_BAND_ID
+            and target_band_oracle_top1_delta is not None
+        ):
+            candidate["regret_vs_target_tie_band_oracle_top1_local_loss_delta"] = float(
+                candidate["local_loss_delta"] - target_band_oracle_top1_delta
+            )
+        else:
+            candidate["regret_vs_target_tie_band_oracle_top1_local_loss_delta"] = None
+    sampled_candidate_table = build_compact_within_tie_band_sampled_table_rows(
+        sampled_candidates
+    )
+    canonical_rows = canonical_within_tie_band_rows_for_b2b_hash(sampled_candidate_table)
+    source_table_hash = _b2b_hash16(canonical_rows)
+    return {
+        "source_kind": str(source_kind),
+        "optimizer_step_index": int(optimizer_step_index),
+        "pre_update_state_hash": pre_update_state_hash,
+        "source_table_hash": source_table_hash,
+        "sampled_candidate_table": sampled_candidate_table,
+        "capture_side": "pre_update_same_vote",
+        "sampled_candidate_count": len(sampled_candidate_table),
+        "budget_exceeded": bool(budget_exceeded),
+        "evaluation_elapsed_seconds": float(elapsed_seconds),
+    }
+
+
 def _build_oracle_candidate_universe(
     *,
     model: LMHead,
@@ -1773,122 +2101,16 @@ def _build_oracle_candidate_universe(
             device=device,
             extras=extras,
         )
-    candidate_by_id: dict[str, dict[str, Any]] = {}
-    with _maybe_phase(phase_progress, "step_update", step=1):
-        for state_key, state in sorted(tensor_states.items()):
-            vote_state = state.vote_update_state()
-            votes = votes_by_key[state_key]
-            current_ordered, unordered, new_acc = _ordered_candidate_indices(
-                state=vote_state,
-                votes=votes,
-                spec=base_spec,
-                ordering_mode=LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
-            )
-            deterministic_ordered, deterministic_unordered, _ = _ordered_candidate_indices(
-                state=vote_state,
-                votes=votes,
-                spec=base_spec,
-                ordering_mode=LOCAL_SELECTION_ORDER_DETERMINISTIC_HASH_MATCHED,
-            )
-            if unordered != deterministic_unordered:
-                raise RuntimeError(
-                    "oracle screen candidate set drifted across scheduler orderings"
-                )
-            current_rank = {
-                int(flat_index): int(position)
-                for position, flat_index in enumerate(current_ordered)
-            }
-            deterministic_rank = {
-                int(flat_index): int(position)
-                for position, flat_index in enumerate(deterministic_ordered)
-            }
-            vote_flat = votes.flatten().to(torch.int32)
-            q_flat = vote_state.q_levels.flatten().to(torch.int32)
-            acc_flat = vote_state.accumulators.flatten().to(torch.int32)
-            state_candidate_count = len(unordered)
-            tensor_numel = int(vote_state.q_levels.numel())
-            for flat_index in unordered:
-                vote_value = int(vote_flat[int(flat_index)].item())
-                new_acc_signed = int(new_acc[int(flat_index)].item())
-                current_margin_abs = int(abs(new_acc_signed))
-                abs_vote_value = int(abs(vote_value))
-                current_rank_position = int(current_rank[int(flat_index)])
-                current_q_level = int(q_flat[int(flat_index)].item())
-                pre_accumulator_i16 = int(acc_flat[int(flat_index)].item())
-                proposal_direction = _sign_int(new_acc_signed)
-                threshold_residual_signed = int(
-                    new_acc_signed - proposal_direction * int(base_spec.threshold_abs)
-                )
-                proximity_to_threshold = int(
-                    abs(abs(new_acc_signed) - int(base_spec.threshold_abs))
-                )
-                candidate_id = _candidate_id(state_key, int(flat_index))
-                candidate_by_id[candidate_id] = {
-                    "candidate_id": candidate_id,
-                    "state_key": state_key,
-                    "flat_index": int(flat_index),
-                    "vote_value": vote_value,
-                    "abs_vote_value": abs_vote_value,
-                    "current_rank_position": current_rank_position,
-                    "deterministic_hash_rank_position": deterministic_rank[int(flat_index)],
-                    "current_margin_abs": current_margin_abs,
-                    "tie_band_id": _pivot_tie_band_id(
-                        abs_vote_value=abs_vote_value,
-                        current_margin_abs=current_margin_abs,
-                    ),
-                    "current_q_level": current_q_level,
-                    "pre_accumulator_i16": pre_accumulator_i16,
-                    "new_acc_i32_signed": new_acc_signed,
-                    "proposal_direction": proposal_direction,
-                    "threshold_residual_signed": threshold_residual_signed,
-                    "proximity_to_threshold": proximity_to_threshold,
-                    "tensor_numel": tensor_numel,
-                    "state_candidate_count": state_candidate_count,
-                    "current_rank_fraction_within_state": _ordinal_fraction(
-                        current_rank_position,
-                        state_candidate_count,
-                    ),
-                    "current_rank_quartile_within_state": _quartile_index(
-                        current_rank_position,
-                        state_candidate_count,
-                    ),
-                    "flat_index_fraction": _ordinal_fraction(
-                        int(flat_index),
-                        tensor_numel,
-                    ),
-                    "flat_index_quartile": _quartile_index(
-                        int(flat_index),
-                        tensor_numel,
-                    ),
-                    "transition_class": f"q{current_q_level}|dir{proposal_direction}",
-                }
-        current_ordered_ids = [
-            candidate["candidate_id"]
-            for candidate in sorted(
-                candidate_by_id.values(),
-                key=lambda candidate: (
-                    int(candidate["current_rank_position"]),
-                    str(candidate["state_key"]),
-                    int(candidate["flat_index"]),
-                ),
-            )
-        ]
-        deterministic_ordered_ids = [
-            candidate["candidate_id"]
-            for candidate in sorted(
-                candidate_by_id.values(),
-                key=lambda candidate: (
-                    int(candidate["deterministic_hash_rank_position"]),
-                    str(candidate["state_key"]),
-                    int(candidate["flat_index"]),
-                ),
-            )
-        ]
-        sampled_ids = _sample_candidate_ids(
-            current_ordered_ids,
-            deterministic_ordered_ids,
-            max_sampled_candidates=int(max_sampled_candidates),
-        )
+    universe = build_within_tie_band_candidate_universe_from_votes(
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+        max_abs_per_tensor=int(max_abs_per_tensor),
+        max_sampled_candidates=int(max_sampled_candidates),
+    )
+    base_spec = universe["base_spec"]
+    one_flip_spec = universe["one_flip_spec"]
+    candidate_by_id = universe["candidate_by_id"]
+    sampled_ids = list(universe["sampled_ids"])
     return {
         "baseline_loss": float(baseline_loss),
         "base_spec": base_spec,
@@ -2685,49 +2907,9 @@ def run_within_tie_band_discriminator_oracle_screen(
     else:
         branch_classification = BRANCH_WITHIN_TIE_BAND_AMBIGUOUS_NO_BRANCH
     target_band_top_k = min(PIVOT_MEASUREMENT_TOP_K, len(target_band_oracle_top))
-    sampled_candidate_table = [
-        {
-            "candidate_id": str(candidate["candidate_id"]),
-            "in_target_tie_band": (
-                str(candidate["tie_band_id"]) == WITHIN_TIE_BAND_TARGET_TIE_BAND_ID
-            ),
-            "state_key": str(candidate["state_key"]),
-            "flat_index": int(candidate["flat_index"]),
-            "vote_value": int(candidate["vote_value"]),
-            "abs_vote_value": int(candidate["abs_vote_value"]),
-            "current_margin_abs": int(candidate["current_margin_abs"]),
-            "current_rank_position": int(candidate["current_rank_position"]),
-            "tie_band_id": str(candidate["tie_band_id"]),
-            "current_q_level": int(candidate["current_q_level"]),
-            "pre_accumulator_i16": int(candidate["pre_accumulator_i16"]),
-            "new_acc_i32_signed": int(candidate["new_acc_i32_signed"]),
-            "proposal_direction": int(candidate["proposal_direction"]),
-            "threshold_residual_signed": int(candidate["threshold_residual_signed"]),
-            "proximity_to_threshold": int(candidate["proximity_to_threshold"]),
-            "state_candidate_count": int(candidate["state_candidate_count"]),
-            "current_rank_quartile_within_state": int(
-                candidate["current_rank_quartile_within_state"]
-            ),
-            "flat_index_quartile": int(candidate["flat_index_quartile"]),
-            "transition_class": str(candidate["transition_class"]),
-            "candidate_loss": float(candidate["candidate_loss"]),
-            "local_loss_delta": float(candidate["local_loss_delta"]),
-            "regret_vs_target_tie_band_oracle_top1_local_loss_delta": (
-                float(candidate["regret_vs_target_tie_band_oracle_top1_local_loss_delta"])
-                if candidate["regret_vs_target_tie_band_oracle_top1_local_loss_delta"]
-                is not None
-                else None
-            ),
-        }
-        for candidate in sorted(
-            sampled_candidates,
-            key=lambda candidate: (
-                str(candidate["tie_band_id"]) != WITHIN_TIE_BAND_TARGET_TIE_BAND_ID,
-                int(candidate["current_rank_position"]),
-                str(candidate["candidate_id"]),
-            ),
-        )
-    ]
+    sampled_candidate_table = build_compact_within_tie_band_sampled_table_rows(
+        sampled_candidates
+    )
     compact_summary = {
         "candidate_count": len(candidate_by_id),
         "sampled_candidate_count": sampled_count,
@@ -3465,5 +3647,10 @@ __all__ = [
     "run_activation_credit_scale_smoke_oracle_screen",
     "run_credit_ranking_pivot_measurement_oracle_screen",
     "run_candidate_set_viability_oracle_screen",
+    "build_compact_within_tie_band_sampled_table_rows",
+    "build_within_tie_band_candidate_universe_from_votes",
+    "canonical_within_tie_band_rows_for_b2b_hash",
+    "capture_b2b_sequential_pre_update_step",
+    "hash_bounded_delta_tensor_states_pre_update",
     "run_within_tie_band_discriminator_oracle_screen",
 ]

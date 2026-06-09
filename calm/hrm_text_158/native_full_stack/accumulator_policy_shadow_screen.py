@@ -99,6 +99,19 @@ REAL_TABLE_REPLAY_RECEIPT_KIND = "cpu_real_table_static_proxy_replay"
 SYNTHETIC_DYNAMICS_RECEIPT_KIND = "cpu_synthetic_dynamics_harness_validation"
 REAL_SEQUENTIAL_TRACE_REPLAY_RECEIPT_KIND = "cpu_real_sequential_trace_replay"
 FAIL_NO_REAL_SEQUENTIAL_CAPTURE = "no_real_sequential_capture"
+FAIL_NON_MONOTONIC_STEP_INDEX = "non_monotonic_optimizer_step_index"
+FAIL_MISSING_OPTIMIZER_STEP_INDEX = "missing_optimizer_step_index"
+FAIL_MISSING_SOURCE_TABLE_HASH = "missing_source_table_hash"
+FAIL_SOURCE_TABLE_HASH_MISMATCH = "source_table_hash_mismatch"
+FAIL_INSUFFICIENT_OPTIMIZER_STEPS = "insufficient_optimizer_steps_for_verdict"
+FAIL_MIXED_SOURCE_KIND = "mixed_source_kind"
+FAIL_MULTIPLE_SEQUENTIAL_TRACES_REJECTED_WITHOUT_ALIGNMENT_PROOF = (
+    "multiple_sequential_traces_rejected_without_alignment_proof"
+)
+FAIL_TRACE_HASH_MISMATCH = "trace_hash_mismatch"
+B2B_SEQUENTIAL_TRACE_SCHEMA = "hrm_text_158_b2b_sequential_within_tie_band_trace/v0"
+B2B_SEQUENTIAL_CAPTURE_RECEIPT_KIND = "b2b_sequential_within_tie_band_capture"
+REAL_SEQUENTIAL_TRACE_PROOF_SIDE = "cpu_real_sequential_trace_replay"
 SYNTHETIC_FLIP_POLICY_THRESHOLD_ABS = 20
 FAIL_NO_REAL_CANDIDATE_TABLE = "no_real_candidate_table_found"
 FAIL_ACCUMULATOR_FIELDS_UNAVAILABLE = "accumulator_fields_unavailable"
@@ -1444,31 +1457,252 @@ def run_accumulator_policy_dynamics_screen(
     return receipt
 
 
-def run_real_sequential_trace_replay_from_paths(
-    receipt_paths: Sequence[str | Path],
+def _candidate_from_b2b_sequential_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Convert a compact B2b within_tie_band table row into a dynamics candidate."""
+
+    local_loss_delta = float(row["local_loss_delta"])
+    current_rank_position = int(row["current_rank_position"])
+    return {
+        "candidate_id": str(row["candidate_id"]),
+        "current_rank_position": current_rank_position,
+        "pre_accumulator_i16": int(row["pre_accumulator_i16"]),
+        "new_acc_i32_signed": int(row["new_acc_i32_signed"]),
+        "proximity_to_threshold": int(row["proximity_to_threshold"]),
+        "local_loss_delta": local_loss_delta,
+        "oracle_gain": max(0.0, float(-local_loss_delta)),
+        "int16_score": float(-current_rank_position),
+        "transient_score": float(-local_loss_delta),
+    }
+
+
+def _canonical_b2b_table_rows(rows: Sequence[Mapping[str, Any]]) -> tuple[dict[str, Any], ...]:
+    return tuple(
+        {
+            "candidate_id": str(row["candidate_id"]),
+            "current_rank_position": int(row["current_rank_position"]),
+            "local_loss_delta": float(row["local_loss_delta"]),
+            "pre_accumulator_i16": int(row["pre_accumulator_i16"]),
+            "new_acc_i32_signed": int(row["new_acc_i32_signed"]),
+            "proximity_to_threshold": int(row["proximity_to_threshold"]),
+        }
+        for row in sorted(rows, key=lambda item: str(item["candidate_id"]))
+    )
+
+
+def _extract_b2b_sequential_step(
+    record: Mapping[str, Any],
+    *,
+    path: Path,
+    line_index: int,
+    expected_source_kind: str | None,
+) -> tuple[dict[str, Any] | None, list[str]]:
+    failure_reasons: list[str] = []
+    source_kind = str(record.get("source_kind") or "")
+    if not source_kind:
+        return None, [FAIL_MIXED_SOURCE_KIND]
+    if expected_source_kind is None:
+        expected_source_kind = source_kind
+    elif source_kind != expected_source_kind:
+        return None, [FAIL_MIXED_SOURCE_KIND]
+
+    if "optimizer_step_index" not in record:
+        return None, [FAIL_MISSING_OPTIMIZER_STEP_INDEX]
+    optimizer_step_index = int(record["optimizer_step_index"])
+    if optimizer_step_index <= 0:
+        return None, [FAIL_MISSING_OPTIMIZER_STEP_INDEX]
+
+    rows = list(record.get("sampled_candidate_table") or [])
+    if not rows:
+        return None, [FAIL_NO_REAL_CANDIDATE_TABLE]
+
+    missing_common = _missing_fields(rows, REAL_TABLE_COMMON_FIELDS, require_non_null=True)
+    missing_accumulator = _missing_fields(rows, REAL_TABLE_ACCUMULATOR_FIELDS)
+    if missing_common:
+        failure_reasons.extend(
+            f"missing_common_field:{field}" for field in missing_common
+        )
+    if missing_accumulator:
+        failure_reasons.append(FAIL_ACCUMULATOR_FIELDS_UNAVAILABLE)
+    if failure_reasons:
+        return None, failure_reasons
+
+    canonical_rows = _canonical_b2b_table_rows(rows)
+    computed_hash = _stable_hash16(canonical_rows)
+    recorded_hash = record.get("source_table_hash")
+    if recorded_hash is None:
+        failure_reasons.append(FAIL_MISSING_SOURCE_TABLE_HASH)
+    elif str(recorded_hash) != computed_hash:
+        failure_reasons.append(FAIL_SOURCE_TABLE_HASH_MISMATCH)
+    if failure_reasons:
+        return None, failure_reasons
+
+    candidates = tuple(
+        _candidate_from_b2b_sequential_row(row) for row in canonical_rows
+    )
+    return {
+        "step": int(optimizer_step_index),
+        "optimizer_step_index": int(optimizer_step_index),
+        "source_path": str(path),
+        "source_line_index": int(line_index),
+        "source_kind": source_kind,
+        "source_table_hash": computed_hash,
+        "pre_update_state_hash": (
+            str(record["pre_update_state_hash"])
+            if record.get("pre_update_state_hash") is not None
+            else None
+        ),
+        "candidates": candidates,
+        "candidate_count": len(candidates),
+        "post_update_telemetry": dict(record.get("post_update_telemetry") or {}),
+        "arm_availability": {
+            ARM_INT16_BASELINE: True,
+            ARM_ACCUMULATOR_ONLY: True,
+            ARM_TRANSIENT_RESOLVER_ONLY: True,
+            ARM_ACCUMULATOR_PLUS_TRANSIENT: True,
+        },
+    }, []
+
+
+def _load_b2b_sequential_trace_steps(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
+    failure_reasons: list[str] = []
+    steps: list[dict[str, Any]] = []
+    expected_source_kind: str | None = None
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        return [], [f"real_sequential_trace_load_error:{type(exc).__name__}"]
+
+    for line_index, raw_line in enumerate(lines):
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            failure_reasons.append(f"real_sequential_trace_json_error:line_{line_index}")
+            continue
+        if not isinstance(record, Mapping):
+            failure_reasons.append(f"real_sequential_trace_shape_error:line_{line_index}")
+            continue
+        schema = record.get("schema")
+        if schema == B2B_SEQUENTIAL_TRACE_SCHEMA:
+            continue
+        step, step_failures = _extract_b2b_sequential_step(
+            record,
+            path=path,
+            line_index=line_index,
+            expected_source_kind=expected_source_kind,
+        )
+        if step is None:
+            failure_reasons.extend(step_failures)
+            continue
+        if expected_source_kind is None:
+            expected_source_kind = str(step["source_kind"])
+        steps.append(step)
+
+    if len(steps) >= 2:
+        indices = [int(step["optimizer_step_index"]) for step in steps]
+        if indices != sorted(indices) or len(set(indices)) != len(indices):
+            failure_reasons.append(FAIL_NON_MONOTONIC_STEP_INDEX)
+            return [], list(dict.fromkeys(failure_reasons))
+    return steps, list(dict.fromkeys(failure_reasons))
+
+
+def build_real_sequential_trace_candidate_stream(
+    trace_paths: Sequence[str | Path],
     *,
     stable_copy_dir: str | Path | None = None,
-    rate_cap: int = 1,
-) -> dict[str, Any]:
-    """Fail-closed real sequential replay entrypoint until B2b capture exists."""
+    min_steps_for_verdict: int | None = None,
+) -> tuple[tuple[dict[str, Any], ...], dict[str, Any], list[str]]:
+    """Load B2b sequential within_tie_band trace artifacts for CPU replay."""
+
+    min_steps = int(
+        min_steps_for_verdict
+        if min_steps_for_verdict is not None
+        else DEFAULT_PREREG_THRESHOLDS["min_steps_for_verdict"]
+    )
+    failure_reasons: list[str] = []
+    if len(trace_paths) != 1:
+        failure_reasons.append(
+            FAIL_MULTIPLE_SEQUENTIAL_TRACES_REJECTED_WITHOUT_ALIGNMENT_PROOF
+        )
+        return (), {}, list(dict.fromkeys(failure_reasons))
 
     source_records, replay_paths, copy_failures = _copy_sources_to_stable_scratch(
-        receipt_paths,
+        trace_paths,
         stable_copy_dir,
     )
     failure_reasons = list(copy_failures)
-    if not replay_paths:
-        failure_reasons.append(FAIL_NO_REAL_CANDIDATE_TABLE)
-    failure_reasons.append(FAIL_NO_REAL_SEQUENTIAL_CAPTURE)
+    stream: list[dict[str, Any]] = []
+    source_kinds: list[str] = []
+    trace_hashes: list[str] = []
+
+    for path in replay_paths:
+        steps, load_failures = _load_b2b_sequential_trace_steps(Path(path))
+        failure_reasons.extend(load_failures)
+        for step in steps:
+            source_kinds.append(str(step["source_kind"]))
+            trace_hashes.append(str(step["source_table_hash"]))
+            stream.append(step)
+
+    stream.sort(key=lambda step: int(step["optimizer_step_index"]))
+    if stream:
+        indices = [int(step["optimizer_step_index"]) for step in stream]
+        if indices != list(range(1, len(indices) + 1)):
+            failure_reasons.append(FAIL_NON_MONOTONIC_STEP_INDEX)
+            stream = []
+    unique_source_kinds = tuple(sorted(set(source_kinds)))
+    if len(unique_source_kinds) > 1:
+        failure_reasons.append(FAIL_MIXED_SOURCE_KIND)
+        stream = []
+    trace_hash = _stable_hash16(trace_hashes) if trace_hashes else None
+    if stream and len(stream) < min_steps:
+        failure_reasons.append(FAIL_INSUFFICIENT_OPTIMIZER_STEPS)
+
+    metadata = {
+        "source_records": source_records,
+        "source_kinds": list(unique_source_kinds),
+        "optimizer_step_count": len(stream),
+        "trace_hash": trace_hash,
+        "step_source_table_hashes": trace_hashes,
+        "ephemeral_source": any(
+            bool(record.get("ephemeral_source")) for record in source_records
+        ),
+        "multi_source_fusion_rejected_without_alignment_proof": (
+            FAIL_MIXED_SOURCE_KIND in failure_reasons
+        ),
+        "multiple_sequential_traces_rejected_without_alignment_proof": (
+            FAIL_MULTIPLE_SEQUENTIAL_TRACES_REJECTED_WITHOUT_ALIGNMENT_PROOF
+            in failure_reasons
+        ),
+    }
+    return tuple(stream), metadata, list(dict.fromkeys(failure_reasons))
+
+
+def _real_sequential_fail_receipt(
+    *,
+    failure_reasons: Sequence[str],
+    source_records: Sequence[Mapping[str, Any]] = (),
+    metadata: Mapping[str, Any] | None = None,
+    rate_cap: int = 1,
+) -> dict[str, Any]:
     unique_failure_reasons = list(dict.fromkeys(failure_reasons))
+    if FAIL_NO_REAL_SEQUENTIAL_CAPTURE not in unique_failure_reasons:
+        if not any(
+            reason.startswith("real_sequential_trace_") for reason in unique_failure_reasons
+        ):
+            unique_failure_reasons.append(FAIL_NO_REAL_SEQUENTIAL_CAPTURE)
+    metadata_payload = dict(metadata or {})
     return {
         "schema_version": ACCUMULATOR_POLICY_SHADOW_SCREEN_SCHEMA_VERSION_DYNAMICS,
         "contract_id": B7B_SCREEN_DIAGNOSTIC_CONTRACT_ID,
         "receipt_kind": REAL_SEQUENTIAL_TRACE_REPLAY_RECEIPT_KIND,
+        "proof_side": REAL_SEQUENTIAL_TRACE_PROOF_SIDE,
         "pre_full_stack_diagnostic_only": True,
         "measurement_only_pre_full_stack_diagnostic": True,
         "runtime_readiness_claim": False,
         "training_or_acquisition_claim": False,
+        "full_sub2_claim": False,
         "q_mutation_applied_to_model": False,
         "compact_receipt": True,
         "harness_validation_only": False,
@@ -1485,17 +1719,101 @@ def run_real_sequential_trace_replay_from_paths(
         "readiness_current_repo": _current_repo_readiness_summary(),
         "real_sequential_replay": {
             "source_records": [dict(record) for record in source_records],
-            "source_path_count": len(replay_paths),
-            "ephemeral_source": any(
-                bool(record.get("ephemeral_source")) for record in source_records
-            ),
-            "no_real_sequential_capture": True,
+            **metadata_payload,
+            "no_real_sequential_capture": FAIL_NO_REAL_SEQUENTIAL_CAPTURE
+            in unique_failure_reasons,
         },
         "aggregate_metrics": {
-            "optimizer_step_count": 0,
+            "optimizer_step_count": int(metadata_payload.get("optimizer_step_count", 0)),
             "candidate_stream_candidate_count": 0,
             "dynamics_verdict_allowed": False,
         },
         "rate_cap": int(rate_cap),
         "verdict_allowed": False,
     }
+
+
+def run_real_sequential_trace_replay_from_paths(
+    receipt_paths: Sequence[str | Path],
+    *,
+    stable_copy_dir: str | Path | None = None,
+    rate_cap: int = 1,
+) -> dict[str, Any]:
+    """Replay saved B2b sequential within_tie_band traces through the dynamics screen."""
+
+    stream, metadata, load_failure_reasons = build_real_sequential_trace_candidate_stream(
+        receipt_paths,
+        stable_copy_dir=stable_copy_dir,
+    )
+    source_records = metadata.get("source_records", ())
+    if not stream:
+        return _real_sequential_fail_receipt(
+            failure_reasons=load_failure_reasons or [FAIL_NO_REAL_SEQUENTIAL_CAPTURE],
+            source_records=source_records,
+            metadata=metadata,
+            rate_cap=rate_cap,
+        )
+
+    blocking_failures = [
+        reason
+        for reason in load_failure_reasons
+        if reason
+        in {
+            FAIL_MIXED_SOURCE_KIND,
+            FAIL_MULTIPLE_SEQUENTIAL_TRACES_REJECTED_WITHOUT_ALIGNMENT_PROOF,
+            FAIL_NON_MONOTONIC_STEP_INDEX,
+            FAIL_MISSING_OPTIMIZER_STEP_INDEX,
+            FAIL_MISSING_SOURCE_TABLE_HASH,
+            FAIL_SOURCE_TABLE_HASH_MISMATCH,
+            FAIL_ACCUMULATOR_FIELDS_UNAVAILABLE,
+            FAIL_NO_REAL_CANDIDATE_TABLE,
+        }
+    ]
+    if blocking_failures:
+        return _real_sequential_fail_receipt(
+            failure_reasons=blocking_failures,
+            source_records=source_records,
+            metadata=metadata,
+            rate_cap=rate_cap,
+        )
+
+    receipt = run_accumulator_policy_dynamics_screen(
+        candidate_stream=stream,
+        rate_cap=rate_cap,
+        harness_validation_only=False,
+    )
+    receipt.update(
+        {
+            "receipt_kind": REAL_SEQUENTIAL_TRACE_REPLAY_RECEIPT_KIND,
+            "proof_side": REAL_SEQUENTIAL_TRACE_PROOF_SIDE,
+            "measurement_only_pre_full_stack_diagnostic": True,
+            "runtime_readiness_claim": False,
+            "training_or_acquisition_claim": False,
+            "full_sub2_claim": False,
+            "q_mutation_applied_to_model": False,
+            "trace_temporality": TRACE_TEMPORALITY_SEQUENTIAL_OPTIMIZER_STEPS,
+            "tracking_scope": TRACKING_SCOPE_OPTIMIZER_STEP_TRAJECTORY,
+            "real_sequential_replay": {
+                **metadata,
+                "source_path_count": len(metadata.get("source_records", ())),
+                "no_real_sequential_capture": False,
+            },
+        }
+    )
+    if FAIL_INSUFFICIENT_OPTIMIZER_STEPS in load_failure_reasons:
+        receipt["dynamics_verdict_allowed"] = False
+        receipt["screen_harness_or_gate_fail"] = True
+        receipt["primary_label"] = LABEL_SCREEN_HARNESS_OR_GATE_FAIL
+        receipt["taxonomy_labels"] = [
+            PRE_FULL_STACK_DIAGNOSTIC_ONLY,
+            LABEL_SCREEN_HARNESS_OR_GATE_FAIL,
+        ]
+        receipt["failure_reasons"] = list(
+            dict.fromkeys(
+                list(receipt.get("failure_reasons", []))
+                + [FAIL_INSUFFICIENT_OPTIMIZER_STEPS]
+            )
+        )
+        receipt["aggregate_metrics"]["dynamics_verdict_allowed"] = False
+        receipt["verdict_allowed"] = False
+    return receipt

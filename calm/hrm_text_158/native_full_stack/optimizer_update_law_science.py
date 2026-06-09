@@ -50,6 +50,13 @@ WITHIN_TIE_BAND_DISCRIMINATOR_PACKET_KIND = (
 WITHIN_TIE_BAND_DISCRIMINATOR_LAUNCH_BUNDLE_PACKET_KIND = (
     "within_tie_band_discriminator_measurement_launch_bundle"
 )
+B2B_SEQUENTIAL_WITHIN_TIE_BAND_PACKET_KIND = (
+    "pre_full_stack_diagnostic__b2b_sequential_within_tie_band_capture"
+)
+B2B_SEQUENTIAL_WITHIN_TIE_BAND_LAUNCH_BUNDLE_PACKET_KIND = (
+    "b2b_sequential_within_tie_band_capture_launch_bundle"
+)
+B2B_SEQUENTIAL_STEPS_FOR_VERDICT = 50
 ACTIVATION_CREDIT_MEASUREMENT_PACKET_KIND = (
     "pre_full_stack_diagnostic__activation_credit_measurement"
 )
@@ -8233,6 +8240,376 @@ def validate_within_tie_band_discriminator_launch_bundle(
         )
 
 
+def default_b2b_sequential_within_tie_band_compact_summary_schema() -> dict[str, Any]:
+    return {
+        "allowed_fields": [
+            "optimizer_step_index",
+            "pre_update_state_hash",
+            "source_table_hash",
+            "sampled_candidate_count",
+            "post_update_telemetry",
+        ],
+    }
+
+
+def default_b2b_sequential_within_tie_band_measurement_contract() -> dict[str, Any]:
+    return {
+        "contract_kind": "b2b_sequential_within_tie_band_optimizer_step_capture",
+        "source_kind": "within_tie_band_discriminator",
+        "trace_temporality": "sequential_optimizer_steps",
+        "tracking_scope": "optimizer_step_trajectory",
+        "min_steps_for_verdict": B2B_SEQUENTIAL_STEPS_FOR_VERDICT,
+        "max_sampled_candidates": PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES,
+        "capture_side": "pre_update_same_vote",
+        "pre_full_stack_diagnostic_only": True,
+        "measurement_only_pre_full_stack_diagnostic": True,
+        "runtime_readiness_claim": False,
+        "training_or_acquisition_claim": False,
+        "full_sub2_claim": False,
+        "q_mutation_applied_to_model": True,
+        "accumulator_arm_algorithmic_proxy_not_physical_sub2": True,
+    }
+
+
+def build_b2b_sequential_within_tie_band_packet(
+    *,
+    parent_path: str | Path,
+    parent_sha256: str,
+    launch_gate_id: str | None = None,
+) -> dict[str, Any]:
+    packet = {
+        "schema_version": OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION,
+        "packet_kind": B2B_SEQUENTIAL_WITHIN_TIE_BAND_PACKET_KIND,
+        "target_name": B2B_SEQUENTIAL_WITHIN_TIE_BAND_PACKET_KIND,
+        "artifact_role": "b2b_sequential_within_tie_band_author_packet",
+        "diagnostic_class": DIAGNOSTIC_CLASS_PRE_FULL_STACK,
+        "pre_full_stack_diagnostic": True,
+        "author_only": True,
+        "commands_executed": False,
+        "gpu_launched": False,
+        "launch_gate_id": launch_gate_id,
+        "pt_mutated": False,
+        "readiness_claim": False,
+        "full_sub2_claim": False,
+        "ready_for_main_science": False,
+        "carrier_claim": False,
+        "checkpoint_written": False,
+        "optimizer_credit_state_row_flip": False,
+        "optimizer_credit_state_science_dependent": True,
+        "branch_result": None,
+        "qacc_kernelized": False,
+        "parent_path": str(parent_path),
+        "parent_sha256": str(parent_sha256),
+        "arms": default_oracle_screen_arms(),
+        "same_candidate_set_required": False,
+        "seed_order_contract": default_oracle_screen_seed_order_contract(),
+        "oracle_feasibility_budget": default_oracle_feasibility_budget_for(
+            max_sampled_candidates=PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES
+        ),
+        "oracle_non_persistence_contract": default_oracle_non_persistence_contract(),
+        "compact_summary_schema": default_b2b_sequential_within_tie_band_compact_summary_schema(),
+        "measurement_contract": default_b2b_sequential_within_tie_band_measurement_contract(),
+        "artifact_policy": {
+            "compact_json_ndjson_only": True,
+            "raw_per_proposal_arrays": False,
+            "pt_writes_allowed": False,
+            "oracle_artifact_path": None,
+        },
+        "non_claims": [
+            "packet scaffold only; no measurement execution",
+            "no GPU launch from packet authoring",
+            "no .pt mutation or checkpoint promotion",
+            "sequential optimizer-step capture only; not single-step oracle screen",
+            "capture rows are pre-update same-vote; post-update outcomes are telemetry only",
+            "no readiness row flip",
+            "no carrier or full-sub2 runtime claim",
+            "optimizer_credit_state remains science-dependent",
+        ],
+    }
+    validate_b2b_sequential_within_tie_band_packet(packet)
+    return packet
+
+
+def _build_b2b_sequential_within_tie_band_command_record(
+    *,
+    repo_root: str | Path,
+    run_root: str | Path,
+    parent_path: str | Path,
+    parent_sha256: str,
+    support_order_seed: int,
+    device: str,
+    phase_timeout_seconds: int | float,
+    total_timeout_seconds: int | float,
+    max_silent_phase_seconds: int | float,
+) -> dict[str, Any]:
+    budget = PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES
+    seed_label = _support_order_seed_label(int(support_order_seed))
+    scratch_root = _path_join(run_root, seed_label)
+    trace_path = _path_join(scratch_root, "b2b_sequential_trace.ndjson")
+    receipt_path = _path_join(scratch_root, "receipt.json")
+    stdout_path = _path_join(scratch_root, "stdout.ndjson")
+    stderr_path = _path_join(scratch_root, "stderr.log")
+    argv = [
+        "python3",
+        "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+        "--enable-bounded-delta-probe",
+        "--allow-gpu-launch",
+        "--b2b-sequential-within-tie-band-capture",
+        "--b2b-sequential-capture-out",
+        trace_path,
+        "--b2b-sequential-min-steps-for-verdict",
+        str(B2B_SEQUENTIAL_STEPS_FOR_VERDICT),
+        "--b2b-sequential-max-sampled-candidates",
+        str(budget),
+        "--phase",
+        f"b2b-sequential-within-tie-band-{seed_label}",
+        "--device",
+        str(device),
+        "--parent",
+        str(parent_path),
+        "--parent-sha256",
+        str(parent_sha256),
+        "--scratch-root",
+        scratch_root,
+        "--curriculum-seed",
+        str(STEP6_CURRICULUM_SEED),
+        "--support-order-seed",
+        str(int(support_order_seed)),
+        "--batch-size",
+        str(ORACLE_SCREEN_N20_ROWS),
+        "--steps",
+        str(B2B_SEQUENTIAL_STEPS_FOR_VERDICT),
+        "--max-steps-hard",
+        str(B2B_SEQUENTIAL_STEPS_FOR_VERDICT),
+        "--max-abs-per-tensor",
+        str(STEP3_BASELINE_MAX_ABS_PER_TENSOR),
+        "--emit-progress",
+        "--phase-timeout-seconds",
+        str(phase_timeout_seconds),
+        "--total-timeout-seconds",
+        str(total_timeout_seconds),
+        "--max-silent-phase-seconds",
+        str(max_silent_phase_seconds),
+    ]
+    return {
+        "mode": "b2b_sequential_within_tie_band_n50",
+        "phase_role": "b2b_sequential_within_tie_band_capture",
+        "support_order_seed": int(support_order_seed),
+        "seed_label": seed_label,
+        "b2b_sequential_capture": True,
+        "steps_requested": B2B_SEQUENTIAL_STEPS_FOR_VERDICT,
+        "steps_source": "fixed_sequential_optimizer_steps_b2b_within_tie_band_capture",
+        "batch_size": ORACLE_SCREEN_N20_ROWS,
+        "curriculum_seed": STEP6_CURRICULUM_SEED,
+        "max_sampled_candidates": budget,
+        "b2b_sequential_capture_out": trace_path,
+        "max_abs_per_tensor": STEP3_BASELINE_MAX_ABS_PER_TENSOR,
+        "global_cap_contract": "off",
+        "cwd": str(repo_root),
+        "env": {
+            "HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE": "1",
+            "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH": "1",
+        },
+        "argv": argv,
+        "stdout_path": stdout_path,
+        "stderr_path": stderr_path,
+        "receipt_path": receipt_path,
+        "scratch_root": scratch_root,
+        "enabled_if": "fixed contrast seeds 43 and 29 only; independent sequential traces",
+        "expected_exit_policy": "exit_0_required_else_stop_no_retry_no_verdict",
+    }
+
+
+def build_b2b_sequential_within_tie_band_launch_bundle(
+    *,
+    parent_path: str | Path,
+    parent_sha256: str,
+    repo_root: str | Path,
+    run_root: str | Path,
+    device: str = "cuda:0",
+    launch_gate_id: str | None = None,
+    symbolic_resource_lane: str = "gpu:0",
+    phase_timeout_seconds: int | float = 1800,
+    total_timeout_seconds: int | float = 7200,
+    max_silent_phase_seconds: int | float = 300,
+) -> dict[str, Any]:
+    budget = PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES
+    science_contract = packet_without_runtime_results(
+        build_b2b_sequential_within_tie_band_packet(
+            parent_path=parent_path,
+            parent_sha256=parent_sha256,
+            launch_gate_id=None,
+        ),
+    )
+    commands = [
+        _build_b2b_sequential_within_tie_band_command_record(
+            repo_root=repo_root,
+            run_root=run_root,
+            parent_path=parent_path,
+            parent_sha256=parent_sha256,
+            support_order_seed=int(seed),
+            device=device,
+            phase_timeout_seconds=phase_timeout_seconds,
+            total_timeout_seconds=total_timeout_seconds,
+            max_silent_phase_seconds=max_silent_phase_seconds,
+        )
+        for seed in ORACLE_SCREEN_CONTRAST_SEEDS
+    ]
+    packet = {
+        "schema_version": OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION,
+        "packet_kind": B2B_SEQUENTIAL_WITHIN_TIE_BAND_LAUNCH_BUNDLE_PACKET_KIND,
+        "target_name": B2B_SEQUENTIAL_WITHIN_TIE_BAND_LAUNCH_BUNDLE_PACKET_KIND,
+        "artifact_role": "b2b_sequential_within_tie_band_launch_bundle_author_packet",
+        "diagnostic_class": DIAGNOSTIC_CLASS_PRE_FULL_STACK,
+        "pre_full_stack_diagnostic": True,
+        "author_only": True,
+        "commands_executed": False,
+        "gpu_launched": False,
+        "launch_gate_id": launch_gate_id,
+        "pt_mutated": False,
+        "readiness_claim": False,
+        "full_sub2_claim": False,
+        "ready_for_main_science": False,
+        "carrier_claim": False,
+        "checkpoint_written": False,
+        "optimizer_credit_state_row_flip": False,
+        "optimizer_credit_state_science_dependent": True,
+        "branch_result": None,
+        "qacc_kernelized": False,
+        "parent_path": str(parent_path),
+        "parent_sha256": str(parent_sha256),
+        "science_contract": science_contract,
+        "screen_rows": ORACLE_SCREEN_N20_ROWS,
+        "curriculum_seed": STEP6_CURRICULUM_SEED,
+        "support_order_seeds": list(ORACLE_SCREEN_CONTRAST_SEEDS),
+        "same_candidate_set_required": False,
+        "oracle_feasibility_budget": default_oracle_feasibility_budget_for(
+            max_sampled_candidates=budget
+        ),
+        "oracle_non_persistence_contract": default_oracle_non_persistence_contract(),
+        "compact_summary_schema": default_b2b_sequential_within_tie_band_compact_summary_schema(),
+        "measurement_contract": default_b2b_sequential_within_tie_band_measurement_contract(),
+        "commands": commands,
+        "resource_lane": default_resource_lane_contract(
+            symbolic_lane=symbolic_resource_lane,
+        ),
+        "watcher_audit_bundle": default_watcher_bundle(),
+        "phase_budgets": default_phase_budgets(),
+        "terminal_criteria": {
+            **default_terminal_criteria(),
+            "support_order_seeds": list(ORACLE_SCREEN_CONTRAST_SEEDS),
+            "n20_screen_rows": ORACLE_SCREEN_N20_ROWS,
+            "required_max_sampled_candidates": budget,
+            "required_optimizer_steps": B2B_SEQUENTIAL_STEPS_FOR_VERDICT,
+            "qacc_kernelized": False,
+            "device_residency_not_hot_loop_residency": True,
+        },
+        "hash_gate_policy": default_hash_gate_policy(),
+        "compact_instrumentation_only": True,
+        "raw_per_proposal_arrays_included": False,
+        "artifact_policy": {
+            "compact_json_ndjson_only": True,
+            "raw_per_proposal_arrays": False,
+            "pt_writes_allowed": False,
+        },
+        "non_claims": [
+            "author-only B2b sequential within-tie-band capture launch bundle",
+            "independent sequential traces per contrast seed; never stitched",
+            "capture rows are pre-update same-vote; post-update outcomes are telemetry only",
+            "no GPU launch from this packet-authoring step",
+            "no resource lane acquired by this packet",
+            "no .pt mutation or checkpoint promotion",
+            "no readiness row flip",
+            "no carrier or full-sub2 runtime claim",
+            "qacc_vote_select_apply_update remains CPU-reference/default-off, not kernelized",
+        ],
+    }
+    validate_b2b_sequential_within_tie_band_launch_bundle(packet)
+    return packet
+
+
+def _validate_b2b_sequential_within_tie_band_measurement_contract(
+    contract: Mapping[str, Any],
+) -> None:
+    if contract.get("contract_kind") != "b2b_sequential_within_tie_band_optimizer_step_capture":
+        raise ValueError("B2b sequential measurement contract kind mismatch")
+    if not bool(contract.get("pre_full_stack_diagnostic_only")):
+        raise ValueError("B2b sequential measurement contract must stay diagnostic-only")
+    if bool(contract.get("runtime_readiness_claim")):
+        raise ValueError("B2b sequential measurement contract must not claim runtime readiness")
+    if bool(contract.get("training_or_acquisition_claim")):
+        raise ValueError("B2b sequential measurement contract must not claim training/acquisition")
+    if bool(contract.get("full_sub2_claim")):
+        raise ValueError("B2b sequential measurement contract must not claim full-sub2")
+    if str(contract.get("capture_side")) != "pre_update_same_vote":
+        raise ValueError("B2b sequential measurement contract must pin pre_update_same_vote capture")
+
+
+def validate_b2b_sequential_within_tie_band_packet(packet: Mapping[str, Any]) -> None:
+    if packet.get("schema_version") != OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION:
+        raise ValueError("unsupported B2b sequential packet schema")
+    _validate_author_only_fields(
+        packet,
+        expected_packet_kind=B2B_SEQUENTIAL_WITHIN_TIE_BAND_PACKET_KIND,
+        label="author-only B2b sequential within-tie-band packet",
+    )
+    for field in _READINESS_FORBIDDEN_TRUE_FIELDS:
+        _require_false(packet, field)
+    _validate_b2b_sequential_within_tie_band_measurement_contract(
+        packet.get("measurement_contract") or {}
+    )
+    artifact_policy = packet.get("artifact_policy") or {}
+    if bool(artifact_policy.get("pt_writes_allowed")):
+        raise ValueError("B2b sequential packet must reject .pt writes")
+
+
+def _validate_b2b_sequential_within_tie_band_command_record(
+    command: Mapping[str, Any],
+) -> None:
+    if str(command.get("mode")) != "b2b_sequential_within_tie_band_n50":
+        raise ValueError("B2b sequential command mode mismatch")
+    if not bool(command.get("b2b_sequential_capture")):
+        raise ValueError("B2b sequential command must set b2b_sequential_capture=true")
+    if int(command.get("steps_requested", -1)) != B2B_SEQUENTIAL_STEPS_FOR_VERDICT:
+        raise ValueError("B2b sequential command must request 50 optimizer steps")
+    if int(command.get("max_sampled_candidates", -1)) != PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES:
+        raise ValueError("B2b sequential command must pin max_sampled_candidates=32")
+    argv = list(command.get("argv") or [])
+    if "--b2b-sequential-within-tie-band-capture" not in argv:
+        raise ValueError("B2b sequential command argv must include capture flag")
+    if "--oracle-screen-mode" in argv:
+        raise ValueError("B2b sequential command must not use oracle_screen_mode")
+
+
+def validate_b2b_sequential_within_tie_band_launch_bundle(
+    packet: Mapping[str, Any],
+) -> None:
+    if packet.get("schema_version") != OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION:
+        raise ValueError("unsupported B2b sequential launch bundle schema")
+    _validate_author_only_fields(
+        packet,
+        expected_packet_kind=B2B_SEQUENTIAL_WITHIN_TIE_BAND_LAUNCH_BUNDLE_PACKET_KIND,
+        label="author-only B2b sequential launch bundle",
+    )
+    for field in _READINESS_FORBIDDEN_TRUE_FIELDS:
+        _require_false(packet, field)
+    _validate_b2b_sequential_within_tie_band_measurement_contract(
+        packet.get("measurement_contract") or {}
+    )
+    science_contract = packet.get("science_contract")
+    if not isinstance(science_contract, Mapping):
+        raise ValueError("B2b sequential launch bundle must embed science_contract")
+    validate_b2b_sequential_within_tie_band_packet(science_contract)
+    commands = packet.get("commands") or []
+    if len(commands) != len(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError("B2b sequential launch bundle must include one command per contrast seed")
+    for command in commands:
+        _validate_b2b_sequential_within_tie_band_command_record(command)
+    artifact_policy = packet.get("artifact_policy") or {}
+    if bool(artifact_policy.get("pt_writes_allowed")):
+        raise ValueError("B2b sequential launch bundle must reject .pt writes")
+
+
 def packet_without_runtime_results(packet: Mapping[str, Any]) -> dict[str, Any]:
     out = deepcopy(dict(packet))
     out.pop("runtime_results", None)
@@ -8247,7 +8624,9 @@ __all__ = [
     "ARM_B_RANK_FREE_SIGN_PRESSURE",
     "ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER",
     "ARM_INVERTED_SIGN_PRESSURE",
-    "BRANCH_CANDIDATE_GENERATION_BAD_OR_NO_LOCAL_SIGNAL",
+    "B2B_SEQUENTIAL_STEPS_FOR_VERDICT",
+    "B2B_SEQUENTIAL_WITHIN_TIE_BAND_LAUNCH_BUNDLE_PACKET_KIND",
+    "B2B_SEQUENTIAL_WITHIN_TIE_BAND_PACKET_KIND",
     "BRANCH_CANDIDATE_SET_VIABLE_CREDIT_RANKING_BAD",
     "BRANCH_CREDIT_MAGNITUDE_BAD_SIGN_USABLE",
     "BRANCH_CREDIT_SOURCE_NOT_SUFFICIENT",
@@ -8352,6 +8731,8 @@ __all__ = [
     "build_activation_credit_measurement_launch_bundle",
     "build_activation_credit_measurement_packet",
     "build_activation_credit_scale_smoke_launch_bundle",
+    "build_b2b_sequential_within_tie_band_launch_bundle",
+    "build_b2b_sequential_within_tie_band_packet",
     "build_candidate_set_viability_oracle_screen_launch_bundle",
     "build_candidate_set_viability_oracle_screen_packet",
     "build_credit_ranking_pivot_measurement_launch_bundle",
@@ -8397,6 +8778,8 @@ __all__ = [
     "validate_activation_credit_measurement_launch_bundle",
     "validate_activation_credit_measurement_packet",
     "validate_activation_credit_scale_smoke_launch_bundle",
+    "validate_b2b_sequential_within_tie_band_launch_bundle",
+    "validate_b2b_sequential_within_tie_band_packet",
     "validate_candidate_set_viability_oracle_screen_launch_bundle",
     "validate_candidate_set_viability_oracle_screen_packet",
     "validate_credit_ranking_pivot_measurement_launch_bundle",

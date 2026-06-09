@@ -27,6 +27,9 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     ACTIVATION_CREDIT_STDERR_PATH_ENV,
     ACTIVATION_CREDIT_STDOUT_PATH_ENV,
     ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD,
+    B2B_SEQUENTIAL_STEPS_FOR_VERDICT,
+    B2B_SEQUENTIAL_WITHIN_TIE_BAND_LAUNCH_BUNDLE_PACKET_KIND,
+    B2B_SEQUENTIAL_WITHIN_TIE_BAND_PACKET_KIND,
     ARM_A0_RANK_BUCKET_CURRENT,
     ARM_A1_RANK_BUCKET_ORDER_MATCHED,
     ARM_B_CAP_MAX_ABS_1024,
@@ -99,6 +102,8 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     build_activation_credit_measurement_launch_bundle,
     build_activation_credit_measurement_packet,
     build_activation_credit_scale_smoke_launch_bundle,
+    build_b2b_sequential_within_tie_band_launch_bundle,
+    build_b2b_sequential_within_tie_band_packet,
     build_candidate_set_viability_oracle_screen_packet,
     build_candidate_set_viability_oracle_screen_launch_bundle,
     build_credit_ranking_pivot_measurement_launch_bundle,
@@ -126,6 +131,8 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     validate_activation_credit_measurement_launch_bundle,
     validate_activation_credit_measurement_packet,
     validate_activation_credit_scale_smoke_launch_bundle,
+    validate_b2b_sequential_within_tie_band_launch_bundle,
+    validate_b2b_sequential_within_tie_band_packet,
     validate_candidate_set_viability_oracle_screen_launch_bundle,
     validate_candidate_set_viability_oracle_screen_packet,
     validate_credit_ranking_pivot_measurement_launch_bundle,
@@ -2558,6 +2565,55 @@ def test_within_tie_band_launch_bundle_pins_budget32_and_fixed_two_seed_commands
         for command in packet["commands"]
     )
     assert all(command["max_sampled_candidates"] == 32 for command in packet["commands"])
+
+
+def test_b2b_sequential_packet_author_scaffold_is_non_executing():
+    packet = build_b2b_sequential_within_tie_band_packet(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+    )
+
+    validate_b2b_sequential_within_tie_band_packet(packet)
+    assert packet["packet_kind"] == B2B_SEQUENTIAL_WITHIN_TIE_BAND_PACKET_KIND
+    assert packet["author_only"] is True
+    assert packet["commands_executed"] is False
+    assert packet["gpu_launched"] is False
+    assert packet["pt_mutated"] is False
+    contract = packet["measurement_contract"]
+    assert contract["capture_side"] == "pre_update_same_vote"
+    assert contract["min_steps_for_verdict"] == B2B_SEQUENTIAL_STEPS_FOR_VERDICT
+    assert contract["pre_full_stack_diagnostic_only"] is True
+    assert contract["runtime_readiness_claim"] is False
+    assert contract["training_or_acquisition_claim"] is False
+    assert contract["full_sub2_claim"] is False
+
+
+def test_b2b_sequential_launch_bundle_pins_fifty_step_capture_commands():
+    packet = build_b2b_sequential_within_tie_band_launch_bundle(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+        repo_root="/repo",
+        run_root="/tmp/hrm158-b2b-sequential",
+    )
+
+    validate_b2b_sequential_within_tie_band_launch_bundle(packet)
+    assert packet["packet_kind"] == B2B_SEQUENTIAL_WITHIN_TIE_BAND_LAUNCH_BUNDLE_PACKET_KIND
+    assert packet["commands_executed"] is False
+    assert packet["gpu_launched"] is False
+    assert len(packet["commands"]) == 2
+    assert {command["support_order_seed"] for command in packet["commands"]} == {43, 29}
+    assert all(command["b2b_sequential_capture"] for command in packet["commands"])
+    assert all(
+        command["steps_requested"] == B2B_SEQUENTIAL_STEPS_FOR_VERDICT
+        for command in packet["commands"]
+    )
+    assert all(
+        "--b2b-sequential-within-tie-band-capture" in command["argv"]
+        for command in packet["commands"]
+    )
+    assert all(
+        "--oracle-screen-mode" not in command["argv"] for command in packet["commands"]
+    )
 
 
 @pytest.mark.parametrize(

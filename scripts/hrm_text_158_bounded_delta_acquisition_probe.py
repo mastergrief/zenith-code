@@ -92,6 +92,13 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
 from calm.hrm_text_158.native_full_stack.front_c_live_identity_emission import (
     FrontCLiveIdentityCollector,
 )
+from calm.hrm_text_158.native_full_stack.accumulator_policy_shadow_screen import (
+    B2B_SEQUENTIAL_CAPTURE_RECEIPT_KIND,
+    B2B_SEQUENTIAL_TRACE_SCHEMA,
+    SOURCE_KIND_WITHIN_TIE_BAND_DISCRIMINATOR,
+    TRACE_TEMPORALITY_SEQUENTIAL_OPTIMIZER_STEPS,
+    TRACKING_SCOPE_OPTIMIZER_STEP_TRAJECTORY,
+)
 from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
     ORACLE_SCREEN_MODE_CHOICES,
     ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_MEASUREMENT,
@@ -99,6 +106,7 @@ from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
     ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY,
     ORACLE_SCREEN_MODE_CREDIT_RANKING_PIVOT_MEASUREMENT,
     ORACLE_SCREEN_MODE_WITHIN_TIE_BAND_DISCRIMINATOR,
+    capture_b2b_sequential_pre_update_step,
     run_activation_credit_measurement_oracle_screen,
     run_activation_credit_scale_smoke_oracle_screen,
     run_credit_ranking_pivot_measurement_oracle_screen,
@@ -116,6 +124,7 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     FIXED_RANK_BUCKET_NON_TARGET_AUX,
     ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES,
     ORACLE_SCREEN_FEASIBILITY_MAX_SAMPLED_CANDIDATES,
+    PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES,
     TIE_POLICY_CURRENT_MARGIN_INDEX,
     TIE_POLICY_DETERMINISTIC_HASH_MATCHED,
     oracle_screen_budget_max_seconds,
@@ -3268,6 +3277,57 @@ def build_b2_retention_receipt(
     }
 
 
+def _init_b2b_sequential_trace_capture(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"schema": B2B_SEQUENTIAL_TRACE_SCHEMA}, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _append_b2b_sequential_trace_step(path: Path, step_record: Mapping[str, Any]) -> None:
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(dict(step_record), sort_keys=True) + "\n")
+
+
+def build_b2b_sequential_capture_receipt(
+    *,
+    capture_out: Path,
+    steps_captured: int,
+    min_steps_for_verdict: int,
+    trace_hashes: Sequence[str],
+    parent_hash_unchanged: bool,
+    max_sampled_candidates: int,
+) -> dict[str, Any]:
+    trace_hash = _sha16(list(trace_hashes)) if trace_hashes else None
+    verdict_eligible = int(steps_captured) >= int(min_steps_for_verdict)
+    return {
+        "receipt_kind": B2B_SEQUENTIAL_CAPTURE_RECEIPT_KIND,
+        "proof_side": "b2b_sequential_within_tie_band_capture",
+        "pre_full_stack_diagnostic_only": True,
+        "measurement_only_pre_full_stack_diagnostic": True,
+        "runtime_readiness_claim": False,
+        "training_or_acquisition_claim": False,
+        "full_sub2_claim": False,
+        "q_mutation_applied_to_model": True,
+        "accumulator_arm_algorithmic_proxy_not_physical_sub2": True,
+        "source_kind": SOURCE_KIND_WITHIN_TIE_BAND_DISCRIMINATOR,
+        "trace_temporality": TRACE_TEMPORALITY_SEQUENTIAL_OPTIMIZER_STEPS,
+        "tracking_scope": TRACKING_SCOPE_OPTIMIZER_STEP_TRAJECTORY,
+        "capture_out": str(capture_out),
+        "optimizer_steps_captured": int(steps_captured),
+        "min_steps_for_verdict": int(min_steps_for_verdict),
+        "verdict_eligible": bool(verdict_eligible),
+        "trace_hash": trace_hash,
+        "max_sampled_candidates": int(max_sampled_candidates),
+        "checkpoint_written": False,
+        "creditdir_mutated": False,
+        "banked_pt_mutated": False,
+        "parent_hash_unchanged": bool(parent_hash_unchanged),
+        "pt_writes_allowed": False,
+    }
+
+
 def run_bounded_delta_steps(
     model: LMHead,
     batch: Mapping[str, torch.Tensor],
@@ -3308,7 +3368,20 @@ def run_bounded_delta_steps(
     ] | None = None,
     front_c_identity_collector: FrontCLiveIdentityCollector | None = None,
     phase_progress: PhaseProgress | None = None,
-) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], str, int, dict[str, Any] | None]:
+    b2b_sequential_capture_enabled: bool = False,
+    b2b_sequential_capture_out: Path | None = None,
+    b2b_sequential_min_steps_for_verdict: int = 50,
+    b2b_sequential_max_sampled_candidates: int = PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES,
+) -> tuple[
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+    str,
+    int,
+    dict[str, Any] | None,
+    dict[str, Any] | None,
+]:
     model.train()
     if str(science_arm) not in SCIENCE_ARM_CHOICES:
         raise ValueError(f"science_arm must be one of {SCIENCE_ARM_CHOICES}, got {science_arm!r}")
@@ -3387,6 +3460,20 @@ def run_bounded_delta_steps(
     if retained_support_sets and float(b2_parent_consistency_weight) > 0.0 and b2_parent_model is None:
         raise ValueError("B2 parent-consistency aux requires a frozen parent model")
     first_strict_exact_step: int | None = None
+    b2b_trace_hashes: list[str] = []
+    if b2b_sequential_capture_enabled:
+        if b2b_sequential_capture_out is None:
+            raise ValueError(
+                "b2b sequential capture requires --b2b-sequential-capture-out"
+            )
+        if (
+            int(b2b_sequential_max_sampled_candidates)
+            != PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES
+        ):
+            raise ValueError(
+                "b2b sequential capture requires max_sampled_candidates == 32"
+            )
+        _init_b2b_sequential_trace_capture(Path(b2b_sequential_capture_out))
 
     def maybe_audit(step: int, *, final: bool = False) -> str | None:
         nonlocal first_strict_exact_step
@@ -3488,6 +3575,7 @@ def run_bounded_delta_steps(
             else initial_stop,
             0,
             b2_full_verdict_state,
+            None,
         )
     if steps <= 0:
         return (
@@ -3498,6 +3586,7 @@ def run_bounded_delta_steps(
             "no_steps",
             0,
             b2_full_verdict_state,
+            None,
         )
 
     stop_reason = "max_steps_completed"
@@ -3660,6 +3749,30 @@ def run_bounded_delta_steps(
                     science_arm=str(science_arm),
                 )
 
+                b2b_step_capture: dict[str, Any] | None = None
+                if b2b_sequential_capture_enabled:
+                    with progress.phase("b2b_sequential_capture", step=int(step)):
+                        b2b_step_capture = capture_b2b_sequential_pre_update_step(
+                            model=model,
+                            batch=step_batch,
+                            tensor_states=states,
+                            eligible_modules=eligible_modules,
+                            device=device,
+                            extras=extras,
+                            votes_by_key=votes_by_key,
+                            baseline_loss=float(loss.detach().cpu().item()),
+                            optimizer_step_index=int(step),
+                            max_abs_per_tensor=int(max_abs_per_tensor),
+                            max_sampled_candidates=int(
+                                b2b_sequential_max_sampled_candidates
+                            ),
+                            max_seconds=oracle_screen_budget_max_seconds(
+                                int(b2b_sequential_max_sampled_candidates)
+                            ),
+                            source_kind=SOURCE_KIND_WITHIN_TIE_BAND_DISCRIMINATOR,
+                            phase_progress=progress,
+                        )
+
                 step_result = apply_bounded_delta_vote_step(
                     states,
                     votes_by_key,
@@ -3683,6 +3796,17 @@ def run_bounded_delta_steps(
                 )
                 states = step_result.tensor_states
                 q_changed_count = int(step_result.global_summary.get("q_changed_count", 0))
+                if b2b_sequential_capture_enabled and b2b_step_capture is not None:
+                    assert b2b_sequential_capture_out is not None
+                    trace_record = dict(b2b_step_capture)
+                    trace_record["post_update_telemetry"] = {
+                        "q_changed_count": q_changed_count,
+                    }
+                    _append_b2b_sequential_trace_step(
+                        Path(b2b_sequential_capture_out),
+                        trace_record,
+                    )
+                    b2b_trace_hashes.append(str(b2b_step_capture["source_table_hash"]))
                 if require_q_change and q_changed_count <= 0:
                     raise RuntimeError("bounded-delta step produced no q movement under --require-q-change")
                 identity_proof = prove_eligible_master_identity_after_optimizer_step(
@@ -3716,6 +3840,14 @@ def run_bounded_delta_steps(
                     "step_result": step_result.to_compact_dict(),
                     "optimizer_identity_proof": identity_proof,
                 }
+                if b2b_step_capture is not None:
+                    step_reports[str(step)]["b2b_sequential_capture"] = {
+                        "capture_side": b2b_step_capture["capture_side"],
+                        "source_table_hash": b2b_step_capture["source_table_hash"],
+                        "pre_update_state_hash": b2b_step_capture["pre_update_state_hash"],
+                        "sampled_candidate_count": b2b_step_capture["sampled_candidate_count"],
+                        "post_update_q_changed_count": q_changed_count,
+                    }
         steps_completed = step
         if (
             audit_callback is not None
@@ -3738,6 +3870,16 @@ def run_bounded_delta_steps(
                 if stop_token == "strict_exact_acquired"
                 else stop_token
             )
+    b2b_capture_receipt: dict[str, Any] | None = None
+    if b2b_sequential_capture_enabled and b2b_sequential_capture_out is not None:
+        b2b_capture_receipt = build_b2b_sequential_capture_receipt(
+            capture_out=Path(b2b_sequential_capture_out),
+            steps_captured=len(b2b_trace_hashes),
+            min_steps_for_verdict=int(b2b_sequential_min_steps_for_verdict),
+            trace_hashes=b2b_trace_hashes,
+            parent_hash_unchanged=True,
+            max_sampled_candidates=int(b2b_sequential_max_sampled_candidates),
+        )
     return (
         step_reports,
         updater_config,
@@ -3746,6 +3888,7 @@ def run_bounded_delta_steps(
         stop_reason,
         steps_completed,
         b2_full_verdict_state,
+        b2b_capture_receipt,
     )
 
 
@@ -3841,6 +3984,10 @@ def run_c2p1_probe(
     science_arm: str = ARM_A0_RANK_BUCKET_CURRENT,
     oracle_screen_mode: str | None = None,
     oracle_screen_max_sampled_candidates: int = ORACLE_SCREEN_FEASIBILITY_MAX_SAMPLED_CANDIDATES,
+    b2b_sequential_capture_enabled: bool = False,
+    b2b_sequential_capture_out: Path | None = None,
+    b2b_sequential_min_steps_for_verdict: int = 50,
+    b2b_sequential_max_sampled_candidates: int = PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES,
 ) -> dict[str, Any]:
     oracle_screen_budget = int(oracle_screen_max_sampled_candidates)
     if oracle_screen_budget not in ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES:
@@ -3949,6 +4096,24 @@ def run_c2p1_probe(
             raise ValueError("oracle_screen_mode does not support b2_full_verdict_mode")
         if front_c_identity_emission_artifact is not None or bool(front_c_independent_oracle):
             raise ValueError("oracle_screen_mode does not support Front-C identity emission")
+    if b2b_sequential_capture_enabled:
+        if oracle_screen_mode is not None:
+            raise ValueError(
+                "b2b sequential capture cannot run together with oracle_screen_mode"
+            )
+        if int(steps) <= 0:
+            raise ValueError("b2b sequential capture requires steps > 0")
+        if int(b2b_sequential_min_steps_for_verdict) <= 0:
+            raise ValueError("b2b sequential min steps for verdict must be positive")
+        if (
+            int(b2b_sequential_max_sampled_candidates)
+            != PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES
+        ):
+            raise ValueError(
+                "b2b sequential capture requires max_sampled_candidates == 32"
+            )
+        if b2b_sequential_capture_out is None:
+            b2b_sequential_capture_out = scratch_root / "b2b_sequential_trace.ndjson"
     oracle_screen_max_seconds = oracle_screen_budget_max_seconds(oracle_screen_budget)
     b2_support_batch_sizes = {
         "L0b": int(b2_l0b_batch_size),
@@ -4420,6 +4585,7 @@ def run_c2p1_probe(
             )
             return str(audit_path)
 
+    b2b_capture_receipt: dict[str, Any] | None = None
     with phase_progress.phase("bounded_steps"):
         (
             step_reports,
@@ -4429,6 +4595,7 @@ def run_c2p1_probe(
             stop_reason,
             steps_completed,
             b2_full_verdict_state,
+            b2b_capture_receipt,
         ) = run_bounded_delta_steps(
             model,
             model_batch,
@@ -4457,6 +4624,12 @@ def run_c2p1_probe(
             b2_full_audit_export_callback=b2_full_audit_export_callback,
             front_c_identity_collector=front_c_identity_collector,
             phase_progress=phase_progress,
+            b2b_sequential_capture_enabled=bool(b2b_sequential_capture_enabled),
+            b2b_sequential_capture_out=b2b_sequential_capture_out,
+            b2b_sequential_min_steps_for_verdict=int(b2b_sequential_min_steps_for_verdict),
+            b2b_sequential_max_sampled_candidates=int(
+                b2b_sequential_max_sampled_candidates
+            ),
         )
     prior_audit_final_reports: dict[str, dict[str, Any]] = {}
     if prior_support_sets:
@@ -4494,6 +4667,8 @@ def run_c2p1_probe(
     parent_hash_unchanged = parent_hash_before == parent_hash_after
     if not parent_hash_unchanged:
         raise RuntimeError("parent checkpoint hash changed during C2.1 probe")
+    if b2b_capture_receipt is not None:
+        b2b_capture_receipt["parent_hash_unchanged"] = bool(parent_hash_unchanged)
     total_run_duration_seconds = _timing_duration_seconds(
         run_timing_start,
         torch_device,
@@ -4639,6 +4814,7 @@ def run_c2p1_probe(
         "checkpoint_payload": checkpoint_payload,
         "memory": cuda_memory_receipt(torch_device),
         "phase_telemetry": phase_progress.to_dict(),
+        "b2b_sequential_capture": b2b_capture_receipt,
     }
     if b2_full_verdict_mode:
         assert b2_full_verdict_receipt is not None
@@ -4754,6 +4930,32 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "Closed-set oracle-screen sample budget. The runtime max-seconds tier "
             "is derived from this value and pinned fail-closed."
         ),
+    )
+    ap.add_argument(
+        "--b2b-sequential-within-tie-band-capture",
+        action="store_true",
+        help=(
+            "Capture pre-update same-vote within_tie_band tables across real "
+            "optimizer steps into an NDJSON trace (no oracle_screen_mode)."
+        ),
+    )
+    ap.add_argument(
+        "--b2b-sequential-capture-out",
+        type=Path,
+        default=None,
+        help="Output NDJSON trace path for B2b sequential capture.",
+    )
+    ap.add_argument(
+        "--b2b-sequential-min-steps-for-verdict",
+        type=int,
+        default=50,
+        help="Minimum captured optimizer steps before B2c replay verdict is allowed.",
+    )
+    ap.add_argument(
+        "--b2b-sequential-max-sampled-candidates",
+        type=int,
+        default=PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES,
+        help="Per-step within_tie_band sample budget for B2b capture (must be 32).",
     )
     ap.add_argument(
         "--prior-audit-supports",
@@ -4889,6 +5091,10 @@ def main(argv: list[str] | None = None) -> int:
         science_arm=args.science_arm,
         oracle_screen_mode=args.oracle_screen_mode,
         oracle_screen_max_sampled_candidates=args.oracle_screen_max_sampled_candidates,
+        b2b_sequential_capture_enabled=args.b2b_sequential_within_tie_band_capture,
+        b2b_sequential_capture_out=args.b2b_sequential_capture_out,
+        b2b_sequential_min_steps_for_verdict=args.b2b_sequential_min_steps_for_verdict,
+        b2b_sequential_max_sampled_candidates=args.b2b_sequential_max_sampled_candidates,
         max_steps_hard=args.max_steps_hard,
         emit_progress=args.emit_progress,
         phase_timeout_seconds=args.phase_timeout_seconds,

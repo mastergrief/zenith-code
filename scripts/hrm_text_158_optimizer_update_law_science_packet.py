@@ -20,6 +20,8 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     ACTIVATION_CREDIT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND,
     ACTIVATION_CREDIT_MEASUREMENT_PACKET_KIND,
     ACTIVATION_CREDIT_SCALE_SMOKE_LAUNCH_BUNDLE_PACKET_KIND,
+    B2B_SEQUENTIAL_WITHIN_TIE_BAND_LAUNCH_BUNDLE_PACKET_KIND,
+    B2B_SEQUENTIAL_WITHIN_TIE_BAND_PACKET_KIND,
     CREDIT_RANKING_PIVOT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND,
     CREDIT_RANKING_PIVOT_MEASUREMENT_PACKET_KIND,
     ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES,
@@ -38,6 +40,8 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     build_activation_credit_measurement_launch_bundle,
     build_activation_credit_measurement_packet,
     build_activation_credit_scale_smoke_launch_bundle,
+    build_b2b_sequential_within_tie_band_launch_bundle,
+    build_b2b_sequential_within_tie_band_packet,
     build_credit_ranking_pivot_measurement_launch_bundle,
     build_credit_ranking_pivot_measurement_packet,
     build_candidate_set_viability_oracle_screen_launch_bundle,
@@ -53,6 +57,8 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     validate_activation_credit_measurement_launch_bundle,
     validate_activation_credit_measurement_packet,
     validate_activation_credit_scale_smoke_launch_bundle,
+    validate_b2b_sequential_within_tie_band_launch_bundle,
+    validate_b2b_sequential_within_tie_band_packet,
     validate_credit_ranking_pivot_measurement_launch_bundle,
     validate_credit_ranking_pivot_measurement_packet,
     validate_candidate_set_viability_oracle_screen_launch_bundle,
@@ -100,6 +106,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
             ACTIVATION_CREDIT_MEASUREMENT_PACKET_KIND,
             ACTIVATION_CREDIT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND,
             ACTIVATION_CREDIT_SCALE_SMOKE_LAUNCH_BUNDLE_PACKET_KIND,
+            B2B_SEQUENTIAL_WITHIN_TIE_BAND_LAUNCH_BUNDLE_PACKET_KIND,
+            B2B_SEQUENTIAL_WITHIN_TIE_BAND_PACKET_KIND,
         ),
         default=STEP1_DRY_RUN_PACKET_KIND,
     )
@@ -393,6 +401,37 @@ def main(argv: list[str] | None = None) -> int:
         packet["oracle_screen_launch_gate_required"] = True
         validator = validate_activation_credit_scale_smoke_launch_bundle
         default_name = "activation_credit_scale_smoke_launch_bundle.json"
+    elif args.packet_kind == B2B_SEQUENTIAL_WITHIN_TIE_BAND_LAUNCH_BUNDLE_PACKET_KIND:
+        packet = build_b2b_sequential_within_tie_band_launch_bundle(
+            parent_path=parent,
+            parent_sha256=parent_sha,
+            repo_root=REPO_ROOT,
+            run_root=args.run_root,
+            device=str(args.device),
+            launch_gate_id=None,
+            symbolic_resource_lane=str(args.symbolic_resource_lane),
+            phase_timeout_seconds=args.phase_timeout_seconds,
+            total_timeout_seconds=args.total_timeout_seconds,
+            max_silent_phase_seconds=args.max_silent_phase_seconds,
+        )
+        packet["parent_hash_basis"] = parent_hash_basis
+        packet["dry_run_packet_written"] = True
+        packet["gpu_launch_command_authorized"] = False
+        packet["oracle_screen_launch_gate_required"] = True
+        validator = validate_b2b_sequential_within_tie_band_launch_bundle
+        default_name = "b2b_sequential_within_tie_band_launch_bundle.json"
+    elif args.packet_kind == B2B_SEQUENTIAL_WITHIN_TIE_BAND_PACKET_KIND:
+        packet = build_b2b_sequential_within_tie_band_packet(
+            parent_path=parent,
+            parent_sha256=parent_sha,
+            launch_gate_id=None,
+        )
+        packet["parent_hash_basis"] = parent_hash_basis
+        packet["dry_run_packet_written"] = True
+        packet["gpu_launch_command_authorized"] = False
+        packet["oracle_screen_launch_gate_required"] = True
+        validator = validate_b2b_sequential_within_tie_band_packet
+        default_name = "b2b_sequential_within_tie_band_packet.json"
     else:
         packet = build_candidate_set_viability_oracle_screen_packet(
             parent_path=parent,
