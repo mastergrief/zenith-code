@@ -1,4 +1,4 @@
-"""CPU synthetic shadow-policy contract for the B7b accumulator screen.
+"""CPU shadow-policy contracts for the B7b accumulator screen.
 
 This is a measurement-contract harness only. It does not run training, mutate a
 model, launch GPU work, or claim full-sub2 runtime readiness.
@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
@@ -51,12 +53,49 @@ LABEL_ACCUMULATOR_IMPROVES_BUT_NOT_ENOUGH = "accumulator_improves_but_not_enough
 LABEL_TRANSIENT_CARRIES_SELECTION = "transient_carries_selection"
 LABEL_ACCUMULATOR_NO_TRACKING_NULL = "accumulator_no_tracking_null"
 LABEL_SCREEN_HARNESS_OR_GATE_FAIL = "screen_harness_or_gate_fail"
+LABEL_STATIC_PROXY_NOT_PERSISTENT_DYNAMICS = "static_proxy_not_persistent_dynamics"
+LABEL_STATIC_PROXY_UNAVAILABLE = "static_proxy_unavailable"
+LABEL_STATIC_TRANSIENT_PROXY_AVAILABLE = "static_transient_proxy_available"
+LABEL_STATIC_ACCUMULATOR_PROXY_AVAILABLE = "static_accumulator_proxy_available"
+LABEL_STATIC_ACCUMULATOR_AND_TRANSIENT_PROXY_AVAILABLE = (
+    "static_accumulator_and_transient_proxy_available"
+)
 ACCUMULATOR_POLICY_TAXONOMY_LABELS = (
     LABEL_ACCUMULATOR_TRACKS_INT16_POLICY,
     LABEL_ACCUMULATOR_IMPROVES_BUT_NOT_ENOUGH,
     LABEL_TRANSIENT_CARRIES_SELECTION,
     LABEL_ACCUMULATOR_NO_TRACKING_NULL,
     LABEL_SCREEN_HARNESS_OR_GATE_FAIL,
+)
+SOURCE_KIND_ACTIVATION_CREDIT_MEASUREMENT = "activation_credit_measurement"
+SOURCE_KIND_WITHIN_TIE_BAND_DISCRIMINATOR = "within_tie_band_discriminator"
+SUPPORTED_REAL_TABLE_SOURCE_KINDS = (
+    SOURCE_KIND_ACTIVATION_CREDIT_MEASUREMENT,
+    SOURCE_KIND_WITHIN_TIE_BAND_DISCRIMINATOR,
+)
+REAL_TABLE_COMMON_FIELDS = (
+    "candidate_id",
+    "current_rank_position",
+    "local_loss_delta",
+)
+REAL_TABLE_ACCUMULATOR_FIELDS = (
+    "pre_accumulator_i16",
+    "new_acc_i32_signed",
+    "proximity_to_threshold",
+)
+REAL_TABLE_TRANSIENT_FIELDS = (
+    "taylor_benefit",
+    "snr",
+    "diag_fisher",
+)
+TRACE_TEMPORALITY_STATIC_SNAPSHOT = "static_candidate_universe_snapshot"
+TRACKING_SCOPE_SNAPSHOT_SCREEN = "snapshot_screen"
+REAL_TABLE_REPLAY_RECEIPT_KIND = "cpu_real_table_static_proxy_replay"
+FAIL_NO_REAL_CANDIDATE_TABLE = "no_real_candidate_table_found"
+FAIL_ACCUMULATOR_FIELDS_UNAVAILABLE = "accumulator_fields_unavailable"
+FAIL_TRANSIENT_FIELDS_UNAVAILABLE = "transient_fields_unavailable"
+FAIL_MULTI_SOURCE_FUSION_REJECTED = (
+    "multi_source_fusion_rejected_without_alignment_proof"
 )
 
 DEFAULT_PREREG_THRESHOLDS: dict[str, float | int | bool] = {
@@ -128,6 +167,52 @@ def _stable_hash16(payload: Any) -> str:
     return hashlib.sha256(encoded).hexdigest()[:16]
 
 
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _copy_sources_to_stable_scratch(
+    source_paths: Sequence[str | Path],
+    stable_copy_dir: str | Path | None,
+) -> tuple[list[dict[str, Any]], list[Path], list[str]]:
+    source_records: list[dict[str, Any]] = []
+    replay_paths: list[Path] = []
+    failure_reasons: list[str] = []
+    scratch = Path(stable_copy_dir) if stable_copy_dir is not None else None
+    if scratch is not None:
+        scratch.mkdir(parents=True, exist_ok=True)
+
+    for index, raw_path in enumerate(source_paths):
+        source_path = Path(raw_path)
+        record: dict[str, Any] = {
+            "source_path": str(source_path),
+            "source_hash": None,
+            "copied_path": None,
+            "copied_hash": None,
+            "ephemeral_source": True,
+        }
+        if not source_path.exists():
+            failure_reasons.append(FAIL_NO_REAL_CANDIDATE_TABLE)
+            source_records.append(record)
+            continue
+        source_hash = _file_sha256(source_path)
+        record["source_hash"] = source_hash
+        if scratch is None:
+            replay_path = source_path
+        else:
+            replay_path = scratch / f"source_{index:02d}_{source_hash[:16]}.json"
+            shutil.copy2(source_path, replay_path)
+            record["copied_path"] = str(replay_path)
+            record["copied_hash"] = _file_sha256(replay_path)
+        replay_paths.append(replay_path)
+        source_records.append(record)
+    return source_records, replay_paths, failure_reasons
+
+
 def build_synthetic_shadow_candidate_stream(
     *,
     steps: int = 50,
@@ -183,6 +268,261 @@ def build_synthetic_shadow_candidate_stream(
             )
         stream.append({"step": step, "candidates": tuple(candidates)})
     return tuple(stream)
+
+
+def _source_kind_from_oracle_screen(oracle_screen: Mapping[str, Any]) -> str:
+    mode = str(oracle_screen.get("mode") or "")
+    if mode not in SUPPORTED_REAL_TABLE_SOURCE_KINDS:
+        raise ValueError(
+            f"unsupported real table source kind {mode!r}; "
+            f"valid={list(SUPPORTED_REAL_TABLE_SOURCE_KINDS)}"
+        )
+    return mode
+
+
+def _missing_fields(
+    rows: Sequence[Mapping[str, Any]],
+    required_fields: Sequence[str],
+    *,
+    require_non_null: bool = False,
+) -> tuple[str, ...]:
+    missing: set[str] = set()
+    if not rows:
+        return tuple(required_fields)
+    for field in required_fields:
+        if any(
+            field not in row or (require_non_null and row[field] is None)
+            for row in rows
+        ):
+            missing.add(field)
+    return tuple(sorted(missing))
+
+
+def _real_table_static_proxy_label(
+    *,
+    accumulator_available: bool,
+    transient_available: bool,
+) -> str:
+    if accumulator_available and transient_available:
+        return LABEL_STATIC_ACCUMULATOR_AND_TRANSIENT_PROXY_AVAILABLE
+    if accumulator_available:
+        return LABEL_STATIC_ACCUMULATOR_PROXY_AVAILABLE
+    if transient_available:
+        return LABEL_STATIC_TRANSIENT_PROXY_AVAILABLE
+    return LABEL_STATIC_PROXY_UNAVAILABLE
+
+
+def _candidate_from_real_table_row(
+    row: Mapping[str, Any],
+    *,
+    source_kind: str,
+    snapshot_index: int,
+    row_index: int,
+) -> dict[str, Any]:
+    candidate_id = str(row["candidate_id"])
+    local_loss_delta = float(row["local_loss_delta"])
+    current_rank_position = int(row["current_rank_position"])
+    accumulator_score = 0.0
+    transient_score = 0.0
+    if source_kind == SOURCE_KIND_WITHIN_TIE_BAND_DISCRIMINATOR:
+        accumulator_score = float(-int(row["proximity_to_threshold"]))
+        accumulator_score += abs(float(row["new_acc_i32_signed"])) * 1e-9
+    elif source_kind == SOURCE_KIND_ACTIVATION_CREDIT_MEASUREMENT:
+        transient_score = float(row.get("taylor_benefit") or 0.0)
+    else:
+        raise ValueError(f"unsupported real table source kind {source_kind!r}")
+    return {
+        "candidate_id": candidate_id,
+        "snapshot_index": int(snapshot_index),
+        "candidate_index": int(row_index),
+        "oracle_gain": max(0.0, float(-local_loss_delta)),
+        "int16_score": float(-current_rank_position),
+        "accumulator_score": float(accumulator_score),
+        "transient_score": float(transient_score),
+    }
+
+
+def _extract_real_table_from_receipt(
+    payload: Mapping[str, Any],
+    *,
+    path: Path,
+    snapshot_index: int,
+) -> tuple[dict[str, Any] | None, list[str]]:
+    oracle_screen = dict(payload.get("oracle_screen") or {})
+    failure_reasons: list[str] = []
+    if not oracle_screen:
+        return None, [FAIL_NO_REAL_CANDIDATE_TABLE]
+    source_kind = _source_kind_from_oracle_screen(oracle_screen)
+    compact = dict(oracle_screen.get("compact_summary") or {})
+    rows = list(compact.get("sampled_candidate_table") or [])
+    if not rows:
+        return None, [FAIL_NO_REAL_CANDIDATE_TABLE]
+
+    missing_common = _missing_fields(
+        rows,
+        REAL_TABLE_COMMON_FIELDS,
+        require_non_null=True,
+    )
+    missing_accumulator = _missing_fields(rows, REAL_TABLE_ACCUMULATOR_FIELDS)
+    missing_transient = _missing_fields(rows, REAL_TABLE_TRANSIENT_FIELDS)
+    accumulator_available = not missing_accumulator
+    transient_available = not missing_transient
+    if missing_common:
+        failure_reasons.extend(
+            f"missing_common_field:{field}" for field in missing_common
+        )
+    if not accumulator_available:
+        failure_reasons.append(FAIL_ACCUMULATOR_FIELDS_UNAVAILABLE)
+    if not transient_available:
+        failure_reasons.append(FAIL_TRANSIENT_FIELDS_UNAVAILABLE)
+    if source_kind == SOURCE_KIND_ACTIVATION_CREDIT_MEASUREMENT and not transient_available:
+        return None, failure_reasons
+    if (
+        source_kind == SOURCE_KIND_WITHIN_TIE_BAND_DISCRIMINATOR
+        and not accumulator_available
+    ):
+        return None, failure_reasons
+    if missing_common:
+        return None, failure_reasons
+
+    candidates = tuple(
+        _candidate_from_real_table_row(
+            row,
+            source_kind=source_kind,
+            snapshot_index=snapshot_index,
+            row_index=row_index,
+        )
+        for row_index, row in enumerate(rows)
+    )
+    return {
+        "step": int(snapshot_index),
+        "snapshot_index": int(snapshot_index),
+        "source_path": str(path),
+        "source_kind": source_kind,
+        "candidates": candidates,
+        "source_table_hash": _stable_hash16(rows),
+        "candidate_count": len(candidates),
+        "arm_availability": {
+            ARM_INT16_BASELINE: True,
+            ARM_ACCUMULATOR_ONLY: bool(accumulator_available),
+            ARM_TRANSIENT_RESOLVER_ONLY: bool(transient_available),
+            ARM_ACCUMULATOR_PLUS_TRANSIENT: bool(
+                accumulator_available and transient_available
+            ),
+        },
+        "missing_fields": {
+            "common": list(missing_common),
+            "accumulator": list(missing_accumulator),
+            "transient": list(missing_transient),
+        },
+    }, failure_reasons
+
+
+def _real_table_fail_receipt(
+    *,
+    failure_reasons: Sequence[str],
+    source_records: Sequence[Mapping[str, Any]] = (),
+    source_kinds: Sequence[str] = (),
+    table_count: int = 0,
+) -> dict[str, Any]:
+    unique_failure_reasons = list(dict.fromkeys(failure_reasons))
+    if LABEL_STATIC_PROXY_NOT_PERSISTENT_DYNAMICS not in unique_failure_reasons:
+        unique_failure_reasons.append(LABEL_STATIC_PROXY_NOT_PERSISTENT_DYNAMICS)
+    return {
+        "schema_version": ACCUMULATOR_POLICY_SHADOW_SCREEN_SCHEMA_VERSION,
+        "contract_id": B7B_SCREEN_DIAGNOSTIC_CONTRACT_ID,
+        "receipt_kind": REAL_TABLE_REPLAY_RECEIPT_KIND,
+        "pre_full_stack_diagnostic_only": True,
+        "measurement_only_pre_full_stack_diagnostic": True,
+        "runtime_readiness_claim": False,
+        "training_or_acquisition_claim": False,
+        "q_mutation_applied_to_model": False,
+        "compact_receipt": True,
+        "trace_temporality": TRACE_TEMPORALITY_STATIC_SNAPSHOT,
+        "tracking_scope": TRACKING_SCOPE_SNAPSHOT_SCREEN,
+        "dynamics_verdict_allowed": False,
+        "primary_label": LABEL_SCREEN_HARNESS_OR_GATE_FAIL,
+        "static_proxy_label": LABEL_STATIC_PROXY_UNAVAILABLE,
+        "taxonomy_labels": [
+            PRE_FULL_STACK_DIAGNOSTIC_ONLY,
+            LABEL_SCREEN_HARNESS_OR_GATE_FAIL,
+        ],
+        "screen_harness_or_gate_fail": True,
+        "failure_reasons": unique_failure_reasons,
+        "readiness_current_repo": _current_repo_readiness_summary(),
+        "real_table_replay": {
+            "source_records": [dict(record) for record in source_records],
+            "source_kinds": list(source_kinds),
+            "table_count": int(table_count),
+            "aggregated_snapshot_steps": int(table_count),
+            "ephemeral_source": any(
+                bool(record.get("ephemeral_source")) for record in source_records
+            ),
+            "multi_source_fusion_rejected_without_alignment_proof": (
+                FAIL_MULTI_SOURCE_FUSION_REJECTED in unique_failure_reasons
+            ),
+        },
+        "aggregate_metrics": {
+            "candidate_table_count": int(table_count),
+            "aggregated_snapshot_steps": int(table_count),
+        },
+    }
+
+
+def build_real_table_static_candidate_stream(
+    receipt_paths: Sequence[str | Path],
+    *,
+    stable_copy_dir: str | Path | None = None,
+) -> tuple[tuple[dict[str, Any], ...], dict[str, Any], list[str]]:
+    """Load one real oracle table source kind into B1 static snapshot rows.
+
+    This helper is intentionally replay-only: it reads saved JSON receipts and
+    optionally copies them to a stable scratch path before replay. It never
+    launches a capture, loads a checkpoint, mutates q, or writes ``.pt`` files.
+    """
+
+    source_records, replay_paths, copy_failures = _copy_sources_to_stable_scratch(
+        receipt_paths,
+        stable_copy_dir,
+    )
+    failure_reasons = list(copy_failures)
+    stream: list[dict[str, Any]] = []
+    source_kinds: list[str] = []
+    for snapshot_index, path in enumerate(replay_paths):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            table, table_failures = _extract_real_table_from_receipt(
+                payload,
+                path=path,
+                snapshot_index=snapshot_index,
+            )
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            table = None
+            table_failures = [f"real_table_load_error:{type(exc).__name__}"]
+        failure_reasons.extend(table_failures)
+        if table is None:
+            continue
+        source_kinds.append(str(table["source_kind"]))
+        stream.append(table)
+
+    unique_source_kinds = tuple(sorted(set(source_kinds)))
+    if len(unique_source_kinds) > 1:
+        failure_reasons.append(FAIL_MULTI_SOURCE_FUSION_REJECTED)
+        stream = []
+    metadata = {
+        "source_records": source_records,
+        "source_kinds": list(unique_source_kinds),
+        "table_count": len(stream),
+        "aggregated_snapshot_steps": len(stream),
+        "candidate_table_hashes": [step["source_table_hash"] for step in stream],
+        "ephemeral_source": any(
+            bool(record.get("ephemeral_source")) for record in source_records
+        ),
+        "multi_source_fusion_rejected_without_alignment_proof": (
+            FAIL_MULTI_SOURCE_FUSION_REJECTED in failure_reasons
+        ),
+    }
+    return tuple(stream), metadata, list(dict.fromkeys(failure_reasons))
 
 
 def _current_repo_readiness_summary() -> dict[str, Any]:
@@ -547,4 +887,90 @@ def run_accumulator_policy_shadow_screen(
         primary_label == LABEL_SCREEN_HARNESS_OR_GATE_FAIL
     )
     receipt["failure_reasons"] = list(diagnostic_contract["failure_reasons"])
+    return receipt
+
+
+def run_real_table_static_proxy_replay_from_paths(
+    receipt_paths: Sequence[str | Path],
+    *,
+    stable_copy_dir: str | Path | None = None,
+    rate_cap: int = 1,
+) -> dict[str, Any]:
+    """Replay saved real oracle tables as a B1 static snapshot screen.
+
+    B1 is deliberately not a temporal optimizer trajectory. Static snapshot
+    agreement can promote a later B2 dynamics seam, but it can never prove
+    ``accumulator_tracks_int16_policy`` here.
+    """
+
+    stream, metadata, load_failure_reasons = build_real_table_static_candidate_stream(
+        receipt_paths,
+        stable_copy_dir=stable_copy_dir,
+    )
+    if not stream:
+        return _real_table_fail_receipt(
+            failure_reasons=load_failure_reasons or [FAIL_NO_REAL_CANDIDATE_TABLE],
+            source_records=metadata.get("source_records", ()),
+            source_kinds=metadata.get("source_kinds", ()),
+            table_count=int(metadata.get("table_count", 0)),
+        )
+
+    receipt = run_accumulator_policy_shadow_screen(
+        candidate_stream=stream,
+        rate_cap=rate_cap,
+    )
+    arm_availability: dict[str, bool] = {
+        arm: all(
+            bool(step["arm_availability"].get(arm, False))
+            for step in stream
+        )
+        for arm in REQUIRED_SHADOW_ARMS
+    }
+    accumulator_available = bool(arm_availability[ARM_ACCUMULATOR_ONLY])
+    transient_available = bool(arm_availability[ARM_TRANSIENT_RESOLVER_ONLY])
+    failure_reasons = list(load_failure_reasons)
+    if not accumulator_available:
+        failure_reasons.append(FAIL_ACCUMULATOR_FIELDS_UNAVAILABLE)
+    if not transient_available:
+        failure_reasons.append(FAIL_TRANSIENT_FIELDS_UNAVAILABLE)
+    failure_reasons.append(LABEL_STATIC_PROXY_NOT_PERSISTENT_DYNAMICS)
+    unique_failure_reasons = list(dict.fromkeys(failure_reasons))
+
+    receipt.update(
+        {
+            "receipt_kind": REAL_TABLE_REPLAY_RECEIPT_KIND,
+            "measurement_only_pre_full_stack_diagnostic": True,
+            "trace_temporality": TRACE_TEMPORALITY_STATIC_SNAPSHOT,
+            "tracking_scope": TRACKING_SCOPE_SNAPSHOT_SCREEN,
+            "dynamics_verdict_allowed": False,
+            "real_table_replay": {
+                **metadata,
+                "arm_availability": arm_availability,
+                "candidate_source_paths": [
+                    step["source_path"] for step in stream
+                ],
+                "candidate_table_count": int(metadata["table_count"]),
+            },
+            "static_proxy_label": _real_table_static_proxy_label(
+                accumulator_available=accumulator_available,
+                transient_available=transient_available,
+            ),
+            "primary_label": LABEL_SCREEN_HARNESS_OR_GATE_FAIL,
+            "taxonomy_labels": [
+                PRE_FULL_STACK_DIAGNOSTIC_ONLY,
+                LABEL_SCREEN_HARNESS_OR_GATE_FAIL,
+            ],
+            "screen_harness_or_gate_fail": True,
+            "failure_reasons": unique_failure_reasons,
+            "verdict_allowed": False,
+        }
+    )
+    receipt["aggregate_metrics"].pop("candidate_stream_step_count", None)
+    receipt["aggregate_metrics"].update(
+        {
+            "candidate_table_count": int(metadata["table_count"]),
+            "aggregated_snapshot_steps": int(metadata["aggregated_snapshot_steps"]),
+            "dynamics_verdict_allowed": False,
+        }
+    )
     return receipt
