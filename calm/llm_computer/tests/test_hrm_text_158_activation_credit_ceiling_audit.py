@@ -6,7 +6,12 @@ from pathlib import Path
 import pytest
 
 from calm.hrm_text_158.native_full_stack.activation_credit_ceiling_audit import (
+    CALIBRATION_ONLINE_CANDIDATE_QUANTILE,
+    CALIBRATION_SEED43_THRESHOLDS_OOS,
+    DIAGNOSTIC_FLAT_INDEX_TIE_BREAKER_ID,
     LABEL_LEAK_UPPER_BOUND_TAG,
+    _loss_spread_ratio_mirror,
+    _positive_improvement_mass_mirror,
     build_activation_credit_ceiling_audit,
 )
 from scripts.hrm_text_158_activation_credit_ceiling_audit import main as ceiling_audit_main
@@ -285,6 +290,34 @@ def test_activation_credit_ceiling_audit_classifies_receipt_family_bucket_tiebre
         scalar_id != f"{LABEL_LEAK_UPPER_BOUND_TAG}__neg_local_loss_delta"
         for scalar_id in receipt["decision_authorized_scalar_ids"]
     )
+    sweep = receipt["sub2_ordinal_sweep"]
+    assert sweep["primary_scalar_id"] == "taylor_benefit"
+    assert sweep["fixed_direction"] == 1
+    assert sweep["levels"] == [5, 4, 3, 2]
+    assert set(sweep["calibration_classes"]) == {
+        CALIBRATION_ONLINE_CANDIDATE_QUANTILE,
+        CALIBRATION_SEED43_THRESHOLDS_OOS,
+    }
+    ternary_online = sweep["results"]["3"][CALIBRATION_ONLINE_CANDIDATE_QUANTILE]
+    assert ternary_online["both_seeds"]["top_bucket_contains_oracle"] is True
+    assert ternary_online["both_seeds"]["unique_ordinal_top1"] is False
+    assert (
+        sweep["label_decision"]["primary_label"]
+        == "ternary_sub2_ordinal_shortlist_success_needs_tiebreak"
+    )
+    assert (
+        "ternary_sub2_ordinal_shortlist_success_needs_tiebreak"
+        in sweep["label_decision"]["all_applicable_labels"]
+    )
+    assert sweep["primary_rule"]["uses_raw_continuous_inside_bucket"] is False
+    assert (
+        ternary_online["seed43"]["diagnostic_tiebreak"]["tie_breaker_id"]
+        == DIAGNOSTIC_FLAT_INDEX_TIE_BREAKER_ID
+    )
+    assert (
+        ternary_online["seed43"]["diagnostic_tiebreak"]["primary_success_allowed"]
+        is False
+    )
 
 
 def test_activation_credit_ceiling_audit_fails_closed_on_row_count_mismatch(
@@ -498,6 +531,242 @@ def test_activation_credit_ceiling_audit_q5_bin_index_uses_raw_fixed_direction(
         primary["q5_bin_index"]["seed29"]["auc"]
         < primary["q5_bin_index"]["reverse_direction"]["seed29"]["auc"]
     )
+
+
+def test_sub2_ordinal_sweep_diagnostic_tiebreak_does_not_use_raw_score(
+    tmp_path: Path,
+) -> None:
+    rows = [
+        _row(
+            candidate_id="oracle_lower_score",
+            regret=0.0,
+            local_loss_delta=-0.30,
+            taylor_benefit=0.80,
+            taylor_q5=2,
+            grad_proxy=-0.80,
+            delta_weight=1.0,
+            snr=0.70,
+            snr_q5=1,
+            diag_fisher=0.10,
+            diag_q5=0,
+            current_rank_position=0,
+            current_margin_abs=4.0,
+            vote_value=4.0,
+            topology=0,
+        ),
+        _row(
+            candidate_id="higher_raw_score",
+            regret=0.1,
+            local_loss_delta=-0.20,
+            taylor_benefit=0.90,
+            taylor_q5=2,
+            grad_proxy=-0.90,
+            delta_weight=1.0,
+            snr=0.60,
+            snr_q5=1,
+            diag_fisher=0.20,
+            diag_q5=0,
+            current_rank_position=1,
+            current_margin_abs=4.0,
+            vote_value=4.0,
+            topology=0,
+        ),
+        _row(
+            candidate_id="low",
+            regret=0.2,
+            local_loss_delta=-0.10,
+            taylor_benefit=0.10,
+            taylor_q5=0,
+            grad_proxy=-0.10,
+            delta_weight=1.0,
+            snr=0.50,
+            snr_q5=0,
+            diag_fisher=0.30,
+            diag_q5=1,
+            current_rank_position=2,
+            current_margin_abs=4.0,
+            vote_value=-4.0,
+            topology=1,
+        ),
+    ]
+    seed43_path = tmp_path / "seed43.json"
+    seed29_path = tmp_path / "seed29.json"
+    _write_receipt(seed43_path, _receipt_payload(rows=rows, family_auc=0.55))
+    _write_receipt(seed29_path, _receipt_payload(rows=rows, family_auc=0.56))
+
+    receipt = build_activation_credit_ceiling_audit(
+        seed43_receipt_path=seed43_path,
+        seed29_receipt_path=seed29_path,
+    )
+
+    level2 = receipt["sub2_ordinal_sweep"]["results"]["2"][
+        CALIBRATION_ONLINE_CANDIDATE_QUANTILE
+    ]["seed43"]
+    assert level2["top_bucket_contains_oracle"] is True
+    assert level2["top_bucket_size"] == 2
+    assert level2["unique_ordinal_top1"] is False
+    assert level2["diagnostic_tiebreak"]["extra_state_bits"] == 0
+    assert level2["diagnostic_tiebreak"]["credit_mechanistic"] is False
+    assert level2["diagnostic_tiebreak"]["primary_success_allowed"] is False
+    assert level2["diagnostic_tiebreak"]["selected_candidate_id"] == "oracle_lower_score"
+    assert level2["diagnostic_tiebreak"]["deterministic_tiebreak_top1"] is True
+
+
+def test_sub2_ordinal_sweep_label_priority_surfaces_calibration_failure(
+    tmp_path: Path,
+) -> None:
+    seed43_rows = [
+        _row(
+            candidate_id="oracle",
+            regret=0.0,
+            local_loss_delta=-0.30,
+            taylor_benefit=20.0,
+            taylor_q5=4,
+            grad_proxy=-20.0,
+            delta_weight=1.0,
+            snr=0.90,
+            snr_q5=2,
+            diag_fisher=0.10,
+            diag_q5=0,
+            current_rank_position=0,
+            current_margin_abs=4.0,
+            vote_value=4.0,
+            topology=0,
+        ),
+        _row(
+            candidate_id="middle",
+            regret=0.1,
+            local_loss_delta=-0.20,
+            taylor_benefit=10.0,
+            taylor_q5=2,
+            grad_proxy=-10.0,
+            delta_weight=1.0,
+            snr=0.80,
+            snr_q5=1,
+            diag_fisher=0.20,
+            diag_q5=0,
+            current_rank_position=1,
+            current_margin_abs=4.0,
+            vote_value=4.0,
+            topology=0,
+        ),
+        _row(
+            candidate_id="low",
+            regret=0.2,
+            local_loss_delta=-0.10,
+            taylor_benefit=0.0,
+            taylor_q5=0,
+            grad_proxy=-0.10,
+            delta_weight=1.0,
+            snr=0.70,
+            snr_q5=0,
+            diag_fisher=0.30,
+            diag_q5=1,
+            current_rank_position=2,
+            current_margin_abs=4.0,
+            vote_value=-4.0,
+            topology=1,
+        ),
+    ]
+    seed29_rows = [
+        _row(
+            candidate_id="oracle",
+            regret=0.0,
+            local_loss_delta=-0.30,
+            taylor_benefit=5.0,
+            taylor_q5=2,
+            grad_proxy=-5.0,
+            delta_weight=1.0,
+            snr=0.90,
+            snr_q5=2,
+            diag_fisher=0.10,
+            diag_q5=0,
+            current_rank_position=0,
+            current_margin_abs=4.0,
+            vote_value=4.0,
+            topology=0,
+        ),
+        _row(
+            candidate_id="oos_higher",
+            regret=0.1,
+            local_loss_delta=-0.20,
+            taylor_benefit=15.0,
+            taylor_q5=4,
+            grad_proxy=-15.0,
+            delta_weight=1.0,
+            snr=0.80,
+            snr_q5=1,
+            diag_fisher=0.20,
+            diag_q5=0,
+            current_rank_position=1,
+            current_margin_abs=4.0,
+            vote_value=4.0,
+            topology=0,
+        ),
+        _row(
+            candidate_id="low",
+            regret=0.2,
+            local_loss_delta=-0.10,
+            taylor_benefit=-5.0,
+            taylor_q5=0,
+            grad_proxy=5.0,
+            delta_weight=1.0,
+            snr=0.70,
+            snr_q5=0,
+            diag_fisher=0.30,
+            diag_q5=1,
+            current_rank_position=2,
+            current_margin_abs=4.0,
+            vote_value=-4.0,
+            topology=1,
+        ),
+    ]
+    seed43_path = tmp_path / "seed43.json"
+    seed29_path = tmp_path / "seed29.json"
+    _write_receipt(seed43_path, _receipt_payload(rows=seed43_rows, family_auc=0.55))
+    _write_receipt(seed29_path, _receipt_payload(rows=seed29_rows, family_auc=0.56))
+
+    receipt = build_activation_credit_ceiling_audit(
+        seed43_receipt_path=seed43_path,
+        seed29_receipt_path=seed29_path,
+    )
+
+    label_decision = receipt["sub2_ordinal_sweep"]["label_decision"]
+    assert label_decision["primary_label"] == "calibration_failure"
+    assert "calibration_failure" in label_decision["all_applicable_labels"]
+    assert (
+        "ternary_sub2_ordinal_shortlist_success_needs_tiebreak"
+        in label_decision["all_applicable_labels"]
+    )
+    level3 = receipt["sub2_ordinal_sweep"]["results"]["3"]
+    assert level3[CALIBRATION_ONLINE_CANDIDATE_QUANTILE]["seed29"][
+        "top_bucket_contains_oracle"
+    ] is True
+    assert level3[CALIBRATION_SEED43_THRESHOLDS_OOS]["seed29"][
+        "top_bucket_contains_oracle"
+    ] is False
+
+
+def test_sub2_ordinal_sweep_regret_metric_mirrors_oracle_runner_formula() -> None:
+    rows = [
+        {"candidate_id": "A", "local_loss_delta": -0.30},
+        {"candidate_id": "B", "local_loss_delta": -0.10},
+        {"candidate_id": "C", "local_loss_delta": 0.05},
+    ]
+
+    assert _positive_improvement_mass_mirror(rows) == pytest.approx(0.40)
+    assert _loss_spread_ratio_mirror(
+        rows,
+        oracle_top1_delta=-0.30,
+    ) == pytest.approx((0.05 - -0.30) / 0.30)
+    assert _loss_spread_ratio_mirror(
+        [{"candidate_id": "flat", "local_loss_delta": 0.0}],
+        oracle_top1_delta=0.0,
+    ) == 0.0
+    assert _loss_spread_ratio_mirror(
+        [{"candidate_id": "spread", "local_loss_delta": 0.1}],
+        oracle_top1_delta=None,
+    ) is None
 
 
 def test_activation_credit_ceiling_audit_cli_writes_json_and_flags_leak(

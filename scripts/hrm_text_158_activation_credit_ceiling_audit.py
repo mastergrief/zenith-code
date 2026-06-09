@@ -18,7 +18,10 @@ from calm.hrm_text_158.native_full_stack.activation_credit_ceiling_audit import 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Emit the tracked activation-credit raw-vs-compressed ceiling audit."
+        description=(
+            "Emit the tracked activation-credit raw-vs-compressed ceiling audit, "
+            "including the offline sub-2 ordinal sweep payload."
+        )
     )
     parser.add_argument("--seed43-receipt", type=Path, required=True)
     parser.add_argument("--seed29-receipt", type=Path, required=True)

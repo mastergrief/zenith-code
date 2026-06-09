@@ -1,8 +1,10 @@
 """Tracked raw-vs-compressed activation-credit ceiling audit over receipt artifacts."""
 from __future__ import annotations
 
+import hashlib
 import json
 import math
+from bisect import bisect_right
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
@@ -36,6 +38,35 @@ PRIMARY_RAW_AUC_MIN = 0.95
 PRIMARY_Q5_ORDINAL_AUC_MIN = 0.85
 PRIMARY_MATERIAL_AUC_DROP_MIN = 0.10
 KNOWN_BRANCH4_AUC_TOLERANCE = 1e-12
+SUB2_ORDINAL_SWEEP_SCHEMA_VERSION = (
+    "hrm_text_158_activation_credit_sub2_ordinal_sweep/v0"
+)
+SUB2_ORDINAL_SWEEP_LEVELS = (5, 4, 3, 2)
+CALIBRATION_ONLINE_CANDIDATE_QUANTILE = "online_candidate_quantile"
+CALIBRATION_SEED43_THRESHOLDS_OOS = "seed43_thresholds_oos_to_seed29"
+ORDINAL_TOP_BUCKET_RULE_ID = "ordinal_top_bucket"
+ORDINAL_ARGMAX_SET_RULE_ID = "ordinal_argmax_set"
+DIAGNOSTIC_FLAT_INDEX_TIE_BREAKER_ID = "diagnostic_flat_index_min"
+BRANCH_REOPEN_ENCODER_DESIGN = "reopen_encoder_design"
+BRANCH_CALIBRATION_FAILURE = "calibration_failure"
+BRANCH_TERNARY_SUB2_UNIQUE = "ternary_sub2_ordinal_unique_success"
+BRANCH_TERNARY_SUB2_SHORTLIST = (
+    "ternary_sub2_ordinal_shortlist_success_needs_tiebreak"
+)
+BRANCH_TWO_BIT_BOUNDARY_UNIQUE = "two_bit_boundary_unique_success"
+BRANCH_TWO_BIT_BOUNDARY_SHORTLIST = "two_bit_boundary_shortlist_success"
+BRANCH_FLOOR_ABOVE_TWO_BIT = "ordinal_quantization_floor_above_two_bit"
+BRANCH_NO_CLEAR_ORDINAL = "no_clear_ordinal_branch"
+BRANCH_LABEL_PRIORITY = (
+    BRANCH_REOPEN_ENCODER_DESIGN,
+    BRANCH_CALIBRATION_FAILURE,
+    BRANCH_TERNARY_SUB2_UNIQUE,
+    BRANCH_TERNARY_SUB2_SHORTLIST,
+    BRANCH_TWO_BIT_BOUNDARY_UNIQUE,
+    BRANCH_TWO_BIT_BOUNDARY_SHORTLIST,
+    BRANCH_FLOOR_ABOVE_TWO_BIT,
+    BRANCH_NO_CLEAR_ORDINAL,
+)
 
 REQUIRED_RECEIPT_ROW_FIELDS = (
     "candidate_id",
@@ -252,6 +283,398 @@ def _pairwise_auc(
     if total <= 0:
         return 0.5
     return float(wins / total)
+
+
+def _positive_improvement_mass_mirror(
+    candidates: Sequence[Mapping[str, Any]],
+) -> float:
+    """Mirror oracle_screen_runner._positive_improvement_mass without heavy imports."""
+    return float(
+        sum(max(0.0, -float(candidate["local_loss_delta"])) for candidate in candidates)
+    )
+
+
+def _loss_spread_ratio_mirror(
+    candidates: Sequence[Mapping[str, Any]],
+    *,
+    oracle_top1_delta: float | None,
+) -> float | None:
+    """Mirror oracle_screen_runner._loss_spread_ratio without heavy imports."""
+    if not candidates:
+        return None
+    deltas = [float(candidate["local_loss_delta"]) for candidate in candidates]
+    spread = float(max(deltas) - min(deltas))
+    if oracle_top1_delta is None:
+        return None
+    if abs(float(oracle_top1_delta)) > ORACLE_SCREEN_IMPROVEMENT_EPS:
+        return float(spread / abs(float(oracle_top1_delta)))
+    if spread <= ORACLE_SCREEN_IMPROVEMENT_EPS:
+        return 0.0
+    return None
+
+
+def _candidate_ids_hash16(candidate_ids: Sequence[str]) -> str:
+    encoded = "\n".join(sorted(str(candidate_id) for candidate_id in candidate_ids))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
+
+
+def _ordinal_thresholds_from_scores(
+    scores: Sequence[float],
+    *,
+    levels: int,
+) -> tuple[float, ...]:
+    if int(levels) < 2:
+        raise ValueError("ordinal levels must be >= 2")
+    if not scores:
+        raise ValueError("cannot calibrate ordinal thresholds without scores")
+    ordered = sorted(float(score) for score in scores)
+    thresholds: list[float] = []
+    for cut_index in range(1, int(levels)):
+        cut_position = int(math.ceil(len(ordered) * cut_index / int(levels))) - 1
+        cut_position = max(0, min(len(ordered) - 1, cut_position))
+        thresholds.append(float(ordered[cut_position]))
+    return tuple(thresholds)
+
+
+def _ordinal_bin(score: float, *, thresholds: Sequence[float], levels: int) -> int:
+    return min(int(levels) - 1, int(bisect_right(tuple(thresholds), float(score))))
+
+
+def _score_by_candidate_id(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    direction: int,
+) -> dict[str, float]:
+    return {
+        str(row["candidate_id"]): float(direction) * _float_row_field(row, "taylor_benefit")
+        for row in rows
+    }
+
+
+def _diagnostic_flat_index_tiebreak_row(
+    bucket_rows: Sequence[Mapping[str, Any]],
+) -> Mapping[str, Any] | None:
+    if not bucket_rows:
+        return None
+    row_position_by_id = {
+        str(row["candidate_id"]): int(position)
+        for position, row in enumerate(bucket_rows)
+    }
+    return min(
+        bucket_rows,
+        key=lambda row: (
+            int(row["flat_index"]) if row.get("flat_index") is not None else 2**63 - 1,
+            row_position_by_id[str(row["candidate_id"])],
+            str(row["candidate_id"]),
+        ),
+    )
+
+
+def _ordinal_bucket_metrics(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    ordinals_by_id: Mapping[str, int],
+    level: int,
+    thresholds: Sequence[float],
+) -> dict[str, Any]:
+    oracle_best = _oracle_best_row(rows)
+    oracle_best_id = str(oracle_best["candidate_id"])
+    max_ordinal = max(int(value) for value in ordinals_by_id.values())
+    top_bucket = [
+        row
+        for row in rows
+        if int(ordinals_by_id[str(row["candidate_id"])]) == max_ordinal
+    ]
+    top_bucket_ids = [str(row["candidate_id"]) for row in top_bucket]
+    contains_oracle = oracle_best_id in set(top_bucket_ids)
+    top_bucket_size = len(top_bucket)
+    diagnostic_row = _diagnostic_flat_index_tiebreak_row(top_bucket)
+    diagnostic_id = (
+        str(diagnostic_row["candidate_id"]) if diagnostic_row is not None else None
+    )
+    band_improvement_mass = _positive_improvement_mass_mirror(rows)
+    bucket_improvement_mass = _positive_improvement_mass_mirror(top_bucket)
+    oracle_top1_delta = _float_row_field(oracle_best, "local_loss_delta")
+    return {
+        "level": int(level),
+        "thresholds": [float(threshold) for threshold in thresholds],
+        "rule_id": ORDINAL_TOP_BUCKET_RULE_ID,
+        "argmax_set_rule_id": ORDINAL_ARGMAX_SET_RULE_ID,
+        "auc": _pairwise_auc(
+            rows,
+            value_fn=lambda row: float(ordinals_by_id[str(row["candidate_id"])]),
+            direction=1,
+        ),
+        "oracle_best_candidate_id": oracle_best_id,
+        "oracle_best_ordinal": int(ordinals_by_id[oracle_best_id]),
+        "max_ordinal": int(max_ordinal),
+        "top_bucket_contains_oracle": bool(contains_oracle),
+        "top_bucket_size": int(top_bucket_size),
+        "top_bucket_fraction": float(top_bucket_size / max(1, len(rows))),
+        "top_bucket_candidate_ids_hash16": _candidate_ids_hash16(top_bucket_ids),
+        "top_bucket_regret_spread_ratio": _loss_spread_ratio_mirror(
+            top_bucket,
+            oracle_top1_delta=oracle_top1_delta,
+        ),
+        "top_bucket_regret_capture_ratio": (
+            float(bucket_improvement_mass / band_improvement_mass)
+            if band_improvement_mass > ORACLE_SCREEN_IMPROVEMENT_EPS
+            else 0.0
+        ),
+        "unique_ordinal_top1": bool(contains_oracle and top_bucket_size == 1),
+        "ready_for_gpu_wiring": False,
+        "diagnostic_tiebreak": {
+            "tie_breaker_id": DIAGNOSTIC_FLAT_INDEX_TIE_BREAKER_ID,
+            "extra_state_bits": 0,
+            "credit_mechanistic": False,
+            "diagnostic_only": True,
+            "primary_success_allowed": False,
+            "ready_for_gpu_wiring_allowed": False,
+            "selected_candidate_id": diagnostic_id,
+            "deterministic_tiebreak_top1": bool(diagnostic_id == oracle_best_id),
+        },
+    }
+
+
+def _ordinal_results_for_calibration(
+    *,
+    level: int,
+    calibration_id: str,
+    seed43_rows: Sequence[Mapping[str, Any]],
+    seed29_rows: Sequence[Mapping[str, Any]],
+    fixed_direction: int,
+) -> dict[str, Any]:
+    seed43_scores = _score_by_candidate_id(seed43_rows, direction=fixed_direction)
+    seed29_scores = _score_by_candidate_id(seed29_rows, direction=fixed_direction)
+    if calibration_id == CALIBRATION_ONLINE_CANDIDATE_QUANTILE:
+        seed43_thresholds = _ordinal_thresholds_from_scores(
+            tuple(seed43_scores.values()),
+            levels=level,
+        )
+        seed29_thresholds = _ordinal_thresholds_from_scores(
+            tuple(seed29_scores.values()),
+            levels=level,
+        )
+    elif calibration_id == CALIBRATION_SEED43_THRESHOLDS_OOS:
+        seed43_thresholds = _ordinal_thresholds_from_scores(
+            tuple(seed43_scores.values()),
+            levels=level,
+        )
+        seed29_thresholds = seed43_thresholds
+    else:
+        raise ValueError(f"unsupported ordinal calibration {calibration_id!r}")
+    seed43_ordinals = {
+        candidate_id: _ordinal_bin(score, thresholds=seed43_thresholds, levels=level)
+        for candidate_id, score in seed43_scores.items()
+    }
+    seed29_ordinals = {
+        candidate_id: _ordinal_bin(score, thresholds=seed29_thresholds, levels=level)
+        for candidate_id, score in seed29_scores.items()
+    }
+    seed43_metrics = _ordinal_bucket_metrics(
+        seed43_rows,
+        ordinals_by_id=seed43_ordinals,
+        level=level,
+        thresholds=seed43_thresholds,
+    )
+    seed29_metrics = _ordinal_bucket_metrics(
+        seed29_rows,
+        ordinals_by_id=seed29_ordinals,
+        level=level,
+        thresholds=seed29_thresholds,
+    )
+    return {
+        "calibration_id": calibration_id,
+        "seed43_threshold_source": "seed43_candidate_scores",
+        "seed29_threshold_source": (
+            "seed29_candidate_scores"
+            if calibration_id == CALIBRATION_ONLINE_CANDIDATE_QUANTILE
+            else "seed43_candidate_scores"
+        ),
+        SEED43_LABEL: seed43_metrics,
+        SEED29_LABEL: seed29_metrics,
+        "both_seeds": {
+            "unique_ordinal_top1": bool(
+                seed43_metrics["unique_ordinal_top1"]
+                and seed29_metrics["unique_ordinal_top1"]
+            ),
+            "top_bucket_contains_oracle": bool(
+                seed43_metrics["top_bucket_contains_oracle"]
+                and seed29_metrics["top_bucket_contains_oracle"]
+            ),
+            "shortlist_success_needs_tiebreak": bool(
+                seed43_metrics["top_bucket_contains_oracle"]
+                and seed29_metrics["top_bucket_contains_oracle"]
+                and not (
+                    seed43_metrics["unique_ordinal_top1"]
+                    and seed29_metrics["unique_ordinal_top1"]
+                )
+            ),
+            "diagnostic_tiebreak_top1": bool(
+                seed43_metrics["diagnostic_tiebreak"]["deterministic_tiebreak_top1"]
+                and seed29_metrics["diagnostic_tiebreak"]["deterministic_tiebreak_top1"]
+            ),
+        },
+    }
+
+
+def _ordinal_level_success(
+    level_result: Mapping[str, Any],
+    *,
+    unique: bool,
+) -> bool:
+    for calibration_id in (
+        CALIBRATION_ONLINE_CANDIDATE_QUANTILE,
+        CALIBRATION_SEED43_THRESHOLDS_OOS,
+    ):
+        both = level_result[calibration_id]["both_seeds"]
+        if unique and bool(both["unique_ordinal_top1"]):
+            return True
+        if not unique and bool(both["top_bucket_contains_oracle"]):
+            return True
+    return False
+
+
+def _ordinal_online_to_fixed_calibration_failure(level_result: Mapping[str, Any]) -> bool:
+    online = level_result[CALIBRATION_ONLINE_CANDIDATE_QUANTILE]
+    fixed = level_result[CALIBRATION_SEED43_THRESHOLDS_OOS]
+    online_seed29 = online[SEED29_LABEL]
+    fixed_seed29 = fixed[SEED29_LABEL]
+    if bool(online_seed29["unique_ordinal_top1"]) and not bool(
+        fixed_seed29["unique_ordinal_top1"]
+    ):
+        return True
+    if bool(online_seed29["top_bucket_contains_oracle"]) and not bool(
+        fixed_seed29["top_bucket_contains_oracle"]
+    ):
+        return True
+    return False
+
+
+def _ordinal_branch_labels(
+    results_by_level: Mapping[str, Mapping[str, Any]],
+    *,
+    raw_metrics: Mapping[str, Any],
+) -> dict[str, Any]:
+    labels: list[str] = []
+    level3 = results_by_level["3"]
+    level4 = results_by_level["4"]
+    level5 = results_by_level["5"]
+    any_ordinal_contains = any(
+        bool(calibration[seed_label]["top_bucket_contains_oracle"])
+        for level_result in results_by_level.values()
+        for calibration_id in (
+            CALIBRATION_ONLINE_CANDIDATE_QUANTILE,
+            CALIBRATION_SEED43_THRESHOLDS_OOS,
+        )
+        for calibration in (level_result[calibration_id],)
+        for seed_label in (SEED43_LABEL, SEED29_LABEL)
+    )
+    if _raw_signal_strong(raw_metrics) and not any_ordinal_contains:
+        labels.append(BRANCH_REOPEN_ENCODER_DESIGN)
+    if any(
+        _ordinal_online_to_fixed_calibration_failure(level_result)
+        for level_result in results_by_level.values()
+    ):
+        labels.append(BRANCH_CALIBRATION_FAILURE)
+    if _ordinal_level_success(level3, unique=True):
+        labels.append(BRANCH_TERNARY_SUB2_UNIQUE)
+    elif _ordinal_level_success(level3, unique=False):
+        labels.append(BRANCH_TERNARY_SUB2_SHORTLIST)
+    level3_contains = _ordinal_level_success(level3, unique=False)
+    if not level3_contains and _ordinal_level_success(level4, unique=True):
+        labels.append(BRANCH_TWO_BIT_BOUNDARY_UNIQUE)
+    elif not level3_contains and _ordinal_level_success(level4, unique=False):
+        labels.append(BRANCH_TWO_BIT_BOUNDARY_SHORTLIST)
+    level4_contains = _ordinal_level_success(level4, unique=False)
+    if (
+        not level3_contains
+        and not level4_contains
+        and _ordinal_level_success(level5, unique=False)
+    ):
+        labels.append(BRANCH_FLOOR_ABOVE_TWO_BIT)
+    if not labels:
+        labels.append(BRANCH_NO_CLEAR_ORDINAL)
+    primary_label = next(label for label in BRANCH_LABEL_PRIORITY if label in labels)
+    return {
+        "all_applicable_labels": labels,
+        "primary_label": primary_label,
+        "priority_order": list(BRANCH_LABEL_PRIORITY),
+        "support": {
+            "raw_signal_strong": _raw_signal_strong(raw_metrics),
+            "any_ordinal_top_bucket_contains_oracle": any_ordinal_contains,
+            "level3_any_calibration_contains_oracle": level3_contains,
+            "level4_any_calibration_contains_oracle": level4_contains,
+            "calibration_failure_detected": BRANCH_CALIBRATION_FAILURE in labels,
+        },
+    }
+
+
+def _sub2_ordinal_sweep(
+    seed43_rows: Sequence[Mapping[str, Any]],
+    seed29_rows: Sequence[Mapping[str, Any]],
+    *,
+    primary_scalar_result: Mapping[str, Any],
+) -> dict[str, Any]:
+    raw_metrics = primary_scalar_result["raw_continuous"]
+    fixed_direction = int(raw_metrics["fixed_direction"])
+    results_by_level: dict[str, dict[str, Any]] = {}
+    for level in SUB2_ORDINAL_SWEEP_LEVELS:
+        results_by_level[str(level)] = {
+            CALIBRATION_ONLINE_CANDIDATE_QUANTILE: _ordinal_results_for_calibration(
+                level=level,
+                calibration_id=CALIBRATION_ONLINE_CANDIDATE_QUANTILE,
+                seed43_rows=seed43_rows,
+                seed29_rows=seed29_rows,
+                fixed_direction=fixed_direction,
+            ),
+            CALIBRATION_SEED43_THRESHOLDS_OOS: _ordinal_results_for_calibration(
+                level=level,
+                calibration_id=CALIBRATION_SEED43_THRESHOLDS_OOS,
+                seed43_rows=seed43_rows,
+                seed29_rows=seed29_rows,
+                fixed_direction=fixed_direction,
+            ),
+        }
+    return {
+        "schema_version": SUB2_ORDINAL_SWEEP_SCHEMA_VERSION,
+        "primary_scalar_id": "taylor_benefit",
+        "fixed_direction": fixed_direction,
+        "fixed_direction_source": "seed43_raw_continuous",
+        "levels": list(SUB2_ORDINAL_SWEEP_LEVELS),
+        "calibration_classes": {
+            CALIBRATION_ONLINE_CANDIDATE_QUANTILE: {
+                "description": "candidate-set quantile thresholds calibrated independently per seed from learner-available scores only",
+            },
+            CALIBRATION_SEED43_THRESHOLDS_OOS: {
+                "description": "seed43 candidate-score thresholds fixed and applied out-of-sample to seed29",
+            },
+        },
+        "primary_rule": {
+            "rule_id": ORDINAL_TOP_BUCKET_RULE_ID,
+            "argmax_set_rule_id": ORDINAL_ARGMAX_SET_RULE_ID,
+            "extra_state_bits": 0,
+            "uses_raw_continuous_inside_bucket": False,
+        },
+        "diagnostic_tie_breaker": {
+            "tie_breaker_id": DIAGNOSTIC_FLAT_INDEX_TIE_BREAKER_ID,
+            "extra_state_bits": 0,
+            "credit_mechanistic": False,
+            "diagnostic_only": True,
+            "primary_success_allowed": False,
+            "ready_for_gpu_wiring_allowed": False,
+        },
+        "results": results_by_level,
+        "label_decision": _ordinal_branch_labels(
+            results_by_level,
+            raw_metrics=raw_metrics,
+        ),
+        "non_claims": [
+            "no raw-continuous tie-break inside ordinal buckets",
+            "diagnostic flat-index tie-break is not a credit mechanism and is never primary success",
+            "shortlist success is not learner/runtime/GPU wiring readiness",
+        ],
+    }
 
 
 def _rank_metrics(
@@ -691,6 +1114,11 @@ def build_activation_credit_ceiling_audit(
         for spec in SCALAR_SPECS
     }
     primary_loss = scalar_results["taylor_benefit"]["loss_decomposition"]
+    sub2_ordinal_sweep = _sub2_ordinal_sweep(
+        seed43_receipt.rows,
+        seed29_receipt.rows,
+        primary_scalar_result=scalar_results["taylor_benefit"],
+    )
     return {
         "schema_version": ACTIVATION_CREDIT_CEILING_AUDIT_SCHEMA_VERSION,
         "target_name": ACTIVATION_CREDIT_CEILING_AUDIT_TARGET_NAME,
@@ -729,6 +1157,11 @@ def build_activation_credit_ceiling_audit(
                 "label-leak upper-bound rows are emitted for sanity only, tagged "
                 f"{LABEL_LEAK_UPPER_BOUND_TAG}, and excluded from decision authority"
             ),
+            "sub2_ordinal_sweep_note": (
+                "ordinal sweep bins seed43-fixed taylor_benefit scores into "
+                "learner-available levels without using raw continuous values "
+                "inside the top bucket; flat-index tie-break is diagnostic only"
+            ),
         },
         "decision_authorized_scalar_ids": [
             spec.scalar_id for spec in SCALAR_SPECS if spec.decision_authority_allowed
@@ -738,6 +1171,7 @@ def build_activation_credit_ceiling_audit(
         ],
         "scalar_results": scalar_results,
         "primary_loss_decomposition": primary_loss,
+        "sub2_ordinal_sweep": sub2_ordinal_sweep,
         "known_branch4_anchor_reproduction": _known_anchor_reproduction(
             scalar_results,
         ),
