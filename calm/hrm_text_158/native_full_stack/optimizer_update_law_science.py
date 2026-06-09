@@ -261,6 +261,18 @@ ACTIVATION_CREDIT_FAIL_CLOSED_REGRET_SPREAD_RATIO_GT = (
 )
 ACTIVATION_CREDIT_SMOKE_MAX_SAMPLED_CANDIDATES = 8
 ACTIVATION_CREDIT_SMOKE_BATCH_SIZE = 4
+ACTIVATION_CREDIT_SMOKE_REQUIRED_PER_SEED_RECEIPT_FIELDS = (
+    "target_band_candidate_count",
+    "grad_proxy_candidate_count",
+)
+ACTIVATION_CREDIT_SMOKE_OCCUPANCY_MISS_LABEL = "occupancy_miss"
+ACTIVATION_CREDIT_SMOKE_INCONCLUSIVE_GATHER_TIMING_ONLY = (
+    "inconclusive_on_gather_timing_only"
+)
+ACTIVATION_CREDIT_SMOKE_GATHER_FAILURE_REPAIR_SIGNAL = (
+    "smoke_failure_repair_signal"
+)
+ACTIVATION_CREDIT_SMOKE_RESMOKE_BUDGETS = (12, 16)
 ACTIVATION_CREDIT_MAGNITUDE_BIN_COUNT = 2
 ACTIVATION_CREDIT_TOPOLOGY_ROW_BLOCK_SIZE = 128
 ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED = 71
@@ -1840,11 +1852,54 @@ def default_activation_credit_scale_smoke_contract() -> dict[str, Any]:
         "smoke_branch_classification_must_be_null": True,
         "required_grad_proxy_candidate_count_positive": True,
         "policy_verdict_forbidden": True,
+        "occupancy_outcome_contract": default_activation_credit_scale_smoke_outcome_contract(),
         "allowed_policy_facing_fields": [
             "credit_sign",
             "credit_magnitude_bin",
             "signed_alignment",
         ],
+    }
+
+
+def default_activation_credit_scale_smoke_outcome_contract() -> dict[str, Any]:
+    return {
+        "per_seed_receipt_fields_required": list(
+            ACTIVATION_CREDIT_SMOKE_REQUIRED_PER_SEED_RECEIPT_FIELDS
+        ),
+        "pass_requires_any_seed_positive_fields": list(
+            ACTIVATION_CREDIT_SMOKE_REQUIRED_PER_SEED_RECEIPT_FIELDS
+        ),
+        "per_seed_target_band_zero_label": ACTIVATION_CREDIT_SMOKE_OCCUPANCY_MISS_LABEL,
+        "per_seed_target_band_zero_is_code_failure": False,
+        "all_seeds_target_band_zero_outcome": (
+            ACTIVATION_CREDIT_SMOKE_INCONCLUSIVE_GATHER_TIMING_ONLY
+        ),
+        "all_seeds_target_band_zero_reprobe_budgets": list(
+            ACTIVATION_CREDIT_SMOKE_RESMOKE_BUDGETS
+        ),
+        "all_seeds_target_band_zero_blocks_full_read": True,
+        "target_band_positive_grad_proxy_zero_outcome": (
+            ACTIVATION_CREDIT_SMOKE_GATHER_FAILURE_REPAIR_SIGNAL
+        ),
+        "target_band_positive_grad_proxy_zero_is_occupancy_miss": False,
+        "target_band_positive_grad_proxy_zero_is_code_failure": True,
+    }
+
+
+def default_activation_credit_scale_smoke_terminal_criteria() -> dict[str, Any]:
+    return {
+        "branch_classifier": None,
+        "same_candidate_set_required": True,
+        "support_order_seeds": list(ORACLE_SCREEN_CONTRAST_SEEDS),
+        "required_max_sampled_candidates": ACTIVATION_CREDIT_SMOKE_MAX_SAMPLED_CANDIDATES,
+        "required_batch_size": ACTIVATION_CREDIT_SMOKE_BATCH_SIZE,
+        "required_eligible_scope": ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE,
+        "required_grad_proxy_candidate_count_positive": True,
+        "smoke_branch_classification_must_be_null": True,
+        "policy_verdict_forbidden": True,
+        "qacc_kernelized": False,
+        "device_residency_not_hot_loop_residency": True,
+        "occupancy_outcome_contract": default_activation_credit_scale_smoke_outcome_contract(),
     }
 
 
@@ -3949,20 +4004,7 @@ def build_activation_credit_scale_smoke_launch_bundle(
         ),
         "watcher_audit_bundle": default_activation_credit_watcher_bundle(),
         "phase_budgets": default_activation_credit_phase_budgets(smoke=True),
-        "terminal_criteria": {
-            **default_terminal_criteria(),
-            "branch_classifier": None,
-            "same_candidate_set_required": True,
-            "support_order_seeds": list(ORACLE_SCREEN_CONTRAST_SEEDS),
-            "required_max_sampled_candidates": budget,
-            "required_batch_size": ACTIVATION_CREDIT_SMOKE_BATCH_SIZE,
-            "required_eligible_scope": ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE,
-            "required_grad_proxy_candidate_count_positive": True,
-            "smoke_branch_classification_must_be_null": True,
-            "policy_verdict_forbidden": True,
-            "qacc_kernelized": False,
-            "device_residency_not_hot_loop_residency": True,
-        },
+        "terminal_criteria": default_activation_credit_scale_smoke_terminal_criteria(),
         "hash_gate_policy": default_hash_gate_policy(),
         "compact_instrumentation_only": True,
         "raw_per_proposal_arrays_included": False,
@@ -4258,6 +4300,18 @@ def _walk_items(value: Any) -> Sequence[Any]:
     if isinstance(value, tuple):
         return list(enumerate(value))
     return ()
+
+
+def _contains_nested_key(value: Any, key_name: str) -> bool:
+    if isinstance(value, Mapping):
+        if key_name in value:
+            return True
+        return any(_contains_nested_key(child, key_name) for child in value.values())
+    if isinstance(value, list):
+        return any(_contains_nested_key(child, key_name) for child in value)
+    if isinstance(value, tuple):
+        return any(_contains_nested_key(child, key_name) for child in value)
+    return False
 
 
 def _reject_raw_arrays(value: Any, *, path: str = "packet") -> None:
@@ -6375,12 +6429,64 @@ def _validate_activation_credit_scale_smoke_contract(contract: Mapping[str, Any]
         raise ValueError("activation-credit smoke contract must require grad_proxy_candidate_count > 0")
     if not bool(contract.get("policy_verdict_forbidden")):
         raise ValueError("activation-credit smoke contract must forbid policy verdicts")
+    _validate_activation_credit_scale_smoke_outcome_contract(
+        contract.get("occupancy_outcome_contract") or {},
+        label="activation-credit smoke contract occupancy outcome contract",
+    )
     if list(contract.get("allowed_policy_facing_fields") or ()) != [
         "credit_sign",
         "credit_magnitude_bin",
         "signed_alignment",
     ]:
         raise ValueError("activation-credit smoke policy-facing fields drifted")
+
+
+def _validate_activation_credit_scale_smoke_outcome_contract(
+    contract: Mapping[str, Any],
+    *,
+    label: str,
+) -> None:
+    required_fields = list(ACTIVATION_CREDIT_SMOKE_REQUIRED_PER_SEED_RECEIPT_FIELDS)
+    if list(contract.get("per_seed_receipt_fields_required") or ()) != required_fields:
+        raise ValueError(
+            f"{label} must require per-seed target_band_candidate_count and grad_proxy_candidate_count"
+        )
+    if list(contract.get("pass_requires_any_seed_positive_fields") or ()) != required_fields:
+        raise ValueError(
+            f"{label} must require at least one seed with positive target_band_candidate_count and grad_proxy_candidate_count"
+        )
+    if contract.get("per_seed_target_band_zero_label") != ACTIVATION_CREDIT_SMOKE_OCCUPANCY_MISS_LABEL:
+        raise ValueError(f"{label} occupancy_miss label drifted")
+    if bool(contract.get("per_seed_target_band_zero_is_code_failure")):
+        raise ValueError(f"{label} must not treat occupancy_miss as a code failure")
+    if contract.get("all_seeds_target_band_zero_outcome") != (
+        ACTIVATION_CREDIT_SMOKE_INCONCLUSIVE_GATHER_TIMING_ONLY
+    ):
+        raise ValueError(
+            f"{label} must classify both-seed occupancy misses as inconclusive_on_gather_timing_only"
+        )
+    if list(contract.get("all_seeds_target_band_zero_reprobe_budgets") or ()) != list(
+        ACTIVATION_CREDIT_SMOKE_RESMOKE_BUDGETS
+    ):
+        raise ValueError(f"{label} must require minimal re-smoke budgets [12, 16]")
+    if not bool(contract.get("all_seeds_target_band_zero_blocks_full_read")):
+        raise ValueError(
+            f"{label} must block the full read after an inconclusive timing-only smoke"
+        )
+    if contract.get("target_band_positive_grad_proxy_zero_outcome") != (
+        ACTIVATION_CREDIT_SMOKE_GATHER_FAILURE_REPAIR_SIGNAL
+    ):
+        raise ValueError(
+            f"{label} must classify target-band-positive/grad-proxy-zero as a repair signal"
+        )
+    if bool(contract.get("target_band_positive_grad_proxy_zero_is_occupancy_miss")):
+        raise ValueError(
+            f"{label} must not treat target-band-positive/grad-proxy-zero as occupancy_miss"
+        )
+    if not bool(contract.get("target_band_positive_grad_proxy_zero_is_code_failure")):
+        raise ValueError(
+            f"{label} must treat target-band-positive/grad-proxy-zero as a code failure"
+        )
 
 
 def _validate_within_tie_band_discriminator_compact_summary_schema(
@@ -7616,6 +7722,11 @@ def validate_activation_credit_scale_smoke_launch_bundle(
         raise ValueError(
             "activation-credit smoke launch bundle terminal branch_classifier must stay null"
         )
+    for stale_key in ("control_parity_gate", "prior_null_setup_gate", "verdict_rule"):
+        if _contains_nested_key(terminal, stale_key):
+            raise ValueError(
+                f"activation-credit smoke launch bundle terminal criteria must not contain {stale_key}"
+            )
     if not bool(terminal.get("same_candidate_set_required")):
         raise ValueError(
             "activation-credit smoke launch bundle terminal criteria must require same candidate set"
@@ -7656,6 +7767,10 @@ def validate_activation_credit_scale_smoke_launch_bundle(
         raise ValueError(
             "activation-credit smoke launch bundle must disclaim device residency vs hot-loop residency"
         )
+    _validate_activation_credit_scale_smoke_outcome_contract(
+        terminal.get("occupancy_outcome_contract") or {},
+        label="activation-credit smoke launch bundle terminal occupancy outcome contract",
+    )
     commands = packet.get("commands")
     if not isinstance(commands, list):
         raise ValueError("activation-credit smoke launch bundle commands must be a list")

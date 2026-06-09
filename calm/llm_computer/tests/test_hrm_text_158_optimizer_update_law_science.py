@@ -2095,6 +2095,29 @@ def test_activation_credit_scale_smoke_launch_bundle_pins_budget8_and_batch4_com
         ACTIVATION_CREDIT_SMOKE_MAX_SAMPLED_CANDIDATES
     )
     assert packet["terminal_criteria"]["required_batch_size"] == ACTIVATION_CREDIT_SMOKE_BATCH_SIZE
+    assert {
+        "control_parity_gate",
+        "prior_null_setup_gate",
+        "verdict_rule",
+    }.isdisjoint(packet["terminal_criteria"])
+    occupancy = packet["terminal_criteria"]["occupancy_outcome_contract"]
+    assert occupancy == packet["scale_smoke_contract"]["occupancy_outcome_contract"]
+    assert occupancy["per_seed_receipt_fields_required"] == [
+        "target_band_candidate_count",
+        "grad_proxy_candidate_count",
+    ]
+    assert occupancy["pass_requires_any_seed_positive_fields"] == [
+        "target_band_candidate_count",
+        "grad_proxy_candidate_count",
+    ]
+    assert occupancy["per_seed_target_band_zero_label"] == "occupancy_miss"
+    assert occupancy["all_seeds_target_band_zero_outcome"] == (
+        "inconclusive_on_gather_timing_only"
+    )
+    assert occupancy["all_seeds_target_band_zero_reprobe_budgets"] == [12, 16]
+    assert occupancy["target_band_positive_grad_proxy_zero_outcome"] == (
+        "smoke_failure_repair_signal"
+    )
     assert len(packet["commands"]) == 2
     assert {command["support_order_seed"] for command in packet["commands"]} == {43, 29}
     assert all(
@@ -2209,6 +2232,51 @@ def test_activation_credit_launch_bundle_validator_rejects_budget_batch_and_scop
     ],
 )
 def test_activation_credit_smoke_launch_bundle_validator_rejects_budget_batch_and_branch_drift(
+    mutation,
+    error,
+):
+    packet = build_activation_credit_scale_smoke_launch_bundle(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+        repo_root="/repo",
+        run_root="/tmp/hrm158-activation-credit-smoke",
+    )
+    mutation(packet)
+
+    with pytest.raises(ValueError, match=error):
+        validate_activation_credit_scale_smoke_launch_bundle(packet)
+
+
+@pytest.mark.parametrize(
+    "mutation,error",
+    [
+        (
+            lambda packet: packet["terminal_criteria"].update({"control_parity_gate": {}}),
+            "must not contain control_parity_gate",
+        ),
+        (
+            lambda packet: packet["terminal_criteria"].update({"prior_null_setup_gate": {}}),
+            "must not contain prior_null_setup_gate",
+        ),
+        (
+            lambda packet: packet["terminal_criteria"].update({"verdict_rule": {}}),
+            "must not contain verdict_rule",
+        ),
+        (
+            lambda packet: packet["terminal_criteria"]["occupancy_outcome_contract"].update(
+                {"per_seed_target_band_zero_label": "soft_fail"}
+            ),
+            "occupancy_miss label drifted",
+        ),
+        (
+            lambda packet: packet["terminal_criteria"]["occupancy_outcome_contract"].update(
+                {"all_seeds_target_band_zero_reprobe_budgets": [32]}
+            ),
+            "re-smoke budgets \\[12, 16\\]",
+        ),
+    ],
+)
+def test_activation_credit_smoke_launch_bundle_validator_rejects_stale_terminal_verdict_keys_by_name_and_occupancy_drift(
     mutation,
     error,
 ):
