@@ -8,12 +8,24 @@ from pathlib import Path
 import pytest
 
 from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
+    ACTIVATION_CREDIT_BRANCHES,
+    ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED,
+    ACTIVATION_CREDIT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND,
+    ACTIVATION_CREDIT_MEASUREMENT_PACKET_KIND,
+    ACTIVATION_CREDIT_PRIMARY_FAMILY_ID,
+    ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE,
+    ACTIVATION_CREDIT_SCALE_SMOKE_LAUNCH_BUNDLE_PACKET_KIND,
+    ACTIVATION_CREDIT_SMOKE_BATCH_SIZE,
+    ACTIVATION_CREDIT_SMOKE_MAX_SAMPLED_CANDIDATES,
     ARM_A0_RANK_BUCKET_CURRENT,
     ARM_A1_RANK_BUCKET_ORDER_MATCHED,
     ARM_B_CAP_MAX_ABS_1024,
     ARM_B_RANK_FREE_SIGN_PRESSURE,
     ARM_C_RANK_FREE_SIGN_CURRENT_MARGIN_ORDER,
     ARM_INVERTED_SIGN_PRESSURE,
+    BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH,
+    BRANCH_ACTIVATION_CREDIT_CANDIDATE_SIGNAL,
+    BRANCH_ACTIVATION_CREDIT_MISSING_SIGNAL_DEEPER_THAN_FIRST_ORDER_CREDIT_STORAGE,
     BRANCH_CANDIDATE_GENERATION_BAD_OR_NO_LOCAL_SIGNAL,
     BRANCH_CANDIDATE_SET_VIABLE_CREDIT_RANKING_BAD,
     BRANCH_CREDIT_MAGNITUDE_BAD_SIGN_USABLE,
@@ -74,6 +86,9 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     STEP6_FIXED_PREREG_NEW_SEED,
     STEP6_ORDER_AVERAGED_A0_COMPONENT_DECOMPOSITION_PACKET_KIND,
     STEP6_SUPPORT_ORDER_SEEDS,
+    build_activation_credit_measurement_launch_bundle,
+    build_activation_credit_measurement_packet,
+    build_activation_credit_scale_smoke_launch_bundle,
     build_candidate_set_viability_oracle_screen_packet,
     build_candidate_set_viability_oracle_screen_launch_bundle,
     build_credit_ranking_pivot_measurement_launch_bundle,
@@ -98,6 +113,9 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     step4_arm_matches_a0,
     step4_mass_confound_detected,
     validate_measurement_power_then_trust_region_packet,
+    validate_activation_credit_measurement_launch_bundle,
+    validate_activation_credit_measurement_packet,
+    validate_activation_credit_scale_smoke_launch_bundle,
     validate_candidate_set_viability_oracle_screen_launch_bundle,
     validate_candidate_set_viability_oracle_screen_packet,
     validate_credit_ranking_pivot_measurement_launch_bundle,
@@ -1930,6 +1948,282 @@ def test_credit_ranking_pivot_launch_bundle_validator_rejects_seed_and_budget_dr
         validate_credit_ranking_pivot_measurement_launch_bundle(packet)
 
 
+def test_activation_credit_packet_declares_device_resident_within_band_contract():
+    packet = build_activation_credit_measurement_packet(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+    )
+
+    validate_activation_credit_measurement_packet(packet)
+    assert packet["packet_kind"] == ACTIVATION_CREDIT_MEASUREMENT_PACKET_KIND
+    assert packet["diagnostic_class"] == "pre_full_stack_diagnostic"
+    assert packet["author_only"] is True
+    assert packet["commands_executed"] is False
+    assert packet["gpu_launched"] is False
+    assert packet["pt_mutated"] is False
+    assert packet["eligible_scope"] == ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE
+    assert packet["same_candidate_set_required"] is True
+    assert packet["oracle_feasibility_budget"]["max_sampled_candidates"] == 32
+    assert packet["oracle_feasibility_budget"]["max_seconds"] == oracle_screen_budget_max_seconds(
+        32
+    )
+    assert packet["scale_smoke_required_before_full_eval"] is True
+    assert packet["scale_smoke_launch_bundle_packet_kind"] == (
+        ACTIVATION_CREDIT_SCALE_SMOKE_LAUNCH_BUNDLE_PACKET_KIND
+    )
+    assert packet["fresh_confirmation_seed_required_for_persistent_followup"] == (
+        ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED
+    )
+    summary = packet["compact_summary_schema"]
+    assert summary["compact_summary_only"] is True
+    assert set(summary["allowed_fields"]) == {
+        "candidate_count",
+        "sampled_candidate_count",
+        "sampled_candidate_table",
+        "target_tie_band",
+        "family_metrics",
+        "telemetry",
+    }
+    contract = packet["measurement_contract"]
+    assert contract["required_eligible_scope"] == ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE
+    assert contract["activation_credit_source"]["capture_device_mode"] == "device_resident"
+    assert contract["activation_credit_source"]["grad_proxy_compute_mode"] == (
+        "candidate_only_gather"
+    )
+    assert contract["activation_credit_source"]["no_extra_response_label_mask"] is True
+    assert contract["feature_construction"]["primary_family_excludes_credit_sign"] is True
+    assert contract["feature_construction"]["credit_magnitude_bin_count"] == 2
+    assert contract["family_discriminator"]["primary"] == ACTIVATION_CREDIT_PRIMARY_FAMILY_ID
+    assert contract["family_discriminator"]["fields_by_family_id"][
+        ACTIVATION_CREDIT_PRIMARY_FAMILY_ID
+    ] == ["signed_alignment", "credit_magnitude_bin"]
+    assert contract["scale_smoke_gate"]["required_max_sampled_candidates"] == 8
+    assert contract["scale_smoke_gate"]["required_batch_size"] == 4
+    assert contract["fresh_confirmation_gate"][
+        "required_seed_before_persistent_followup"
+    ] == ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED
+    assert contract["allowed_seed_local_labels"] == list(ACTIVATION_CREDIT_BRANCHES)
+
+
+def test_activation_credit_launch_bundle_pins_budget32_and_fixed_two_seed_commands():
+    packet = build_activation_credit_measurement_launch_bundle(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+        repo_root="/repo",
+        run_root="/tmp/hrm158-activation-credit",
+    )
+
+    validate_activation_credit_measurement_launch_bundle(packet)
+    assert packet["packet_kind"] == ACTIVATION_CREDIT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND
+    assert packet["eligible_scope"] == ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE
+    assert packet["screen_rows"] == 20
+    assert packet["curriculum_seed"] == 17
+    assert packet["support_order_seeds"] == list(ORACLE_SCREEN_CONTRAST_SEEDS)
+    assert packet["same_candidate_set_required"] is True
+    assert packet["scale_smoke_required_before_full_eval"] is True
+    assert packet["oracle_feasibility_budget"]["max_sampled_candidates"] == 32
+    assert packet["oracle_feasibility_budget"]["max_seconds"] == oracle_screen_budget_max_seconds(
+        32
+    )
+    assert packet["science_contract"]["packet_kind"] == ACTIVATION_CREDIT_MEASUREMENT_PACKET_KIND
+    assert packet["measurement_contract"] == packet["science_contract"]["measurement_contract"]
+    assert packet["terminal_criteria"]["branch_classifier"] == [
+        BRANCH_ACTIVATION_CREDIT_CANDIDATE_SIGNAL,
+        BRANCH_ACTIVATION_CREDIT_MISSING_SIGNAL_DEEPER_THAN_FIRST_ORDER_CREDIT_STORAGE,
+        BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH,
+    ]
+    assert packet["terminal_criteria"]["required_eligible_scope"] == (
+        ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE
+    )
+    assert packet["terminal_criteria"][
+        "fresh_confirmation_seed_required_for_persistent_followup"
+    ] == ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED
+    assert len(packet["commands"]) == 2
+    assert {command["support_order_seed"] for command in packet["commands"]} == {43, 29}
+    assert all(
+        command["oracle_screen_mode"] == "activation_credit_measurement"
+        for command in packet["commands"]
+    )
+    assert all(command["max_sampled_candidates"] == 32 for command in packet["commands"])
+    assert all(command["batch_size"] == 20 for command in packet["commands"])
+    assert all(
+        command["eligible_scope"] == ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE
+        for command in packet["commands"]
+    )
+    assert all(
+        "--eligible-scope" in command["argv"]
+        and command["argv"][command["argv"].index("--eligible-scope") + 1]
+        == ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE
+        for command in packet["commands"]
+    )
+
+
+def test_activation_credit_scale_smoke_launch_bundle_pins_budget8_and_batch4_commands():
+    packet = build_activation_credit_scale_smoke_launch_bundle(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+        repo_root="/repo",
+        run_root="/tmp/hrm158-activation-credit-smoke",
+    )
+
+    validate_activation_credit_scale_smoke_launch_bundle(packet)
+    assert packet["packet_kind"] == ACTIVATION_CREDIT_SCALE_SMOKE_LAUNCH_BUNDLE_PACKET_KIND
+    assert packet["eligible_scope"] == ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE
+    assert packet["screen_rows"] == ACTIVATION_CREDIT_SMOKE_BATCH_SIZE
+    assert packet["curriculum_seed"] == 17
+    assert packet["support_order_seeds"] == list(ORACLE_SCREEN_CONTRAST_SEEDS)
+    assert packet["same_candidate_set_required"] is True
+    assert packet["oracle_feasibility_budget"]["max_sampled_candidates"] == (
+        ACTIVATION_CREDIT_SMOKE_MAX_SAMPLED_CANDIDATES
+    )
+    assert packet["oracle_feasibility_budget"]["max_seconds"] == oracle_screen_budget_max_seconds(
+        ACTIVATION_CREDIT_SMOKE_MAX_SAMPLED_CANDIDATES
+    )
+    assert set(packet["compact_summary_schema"]["allowed_fields"]) == {
+        "target_tie_band_id",
+        "target_band_candidate_count",
+        "grad_proxy_candidate_count",
+        "magnitude_bin_threshold",
+        "magnitude_bin_histogram",
+        "magnitude_bin_degenerate",
+        "singleton_magnitude_source_count",
+        "sampled_target_band_rows",
+    }
+    assert packet["scale_smoke_contract"]["required_batch_size"] == ACTIVATION_CREDIT_SMOKE_BATCH_SIZE
+    assert packet["terminal_criteria"]["branch_classifier"] is None
+    assert packet["terminal_criteria"]["required_max_sampled_candidates"] == (
+        ACTIVATION_CREDIT_SMOKE_MAX_SAMPLED_CANDIDATES
+    )
+    assert packet["terminal_criteria"]["required_batch_size"] == ACTIVATION_CREDIT_SMOKE_BATCH_SIZE
+    assert len(packet["commands"]) == 2
+    assert {command["support_order_seed"] for command in packet["commands"]} == {43, 29}
+    assert all(
+        command["oracle_screen_mode"] == "activation_credit_scale_smoke"
+        for command in packet["commands"]
+    )
+    assert all(
+        command["max_sampled_candidates"] == ACTIVATION_CREDIT_SMOKE_MAX_SAMPLED_CANDIDATES
+        for command in packet["commands"]
+    )
+    assert all(command["batch_size"] == ACTIVATION_CREDIT_SMOKE_BATCH_SIZE for command in packet["commands"])
+    assert all(
+        "--eligible-scope" in command["argv"]
+        and command["argv"][command["argv"].index("--eligible-scope") + 1]
+        == ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE
+        for command in packet["commands"]
+    )
+
+
+@pytest.mark.parametrize(
+    "mutation,error",
+    [
+        (
+            lambda packet: packet["measurement_contract"]["family_discriminator"][
+                "fields_by_family_id"
+            ].update({ACTIVATION_CREDIT_PRIMARY_FAMILY_ID: [
+                "signed_alignment",
+                "credit_magnitude_bin",
+                "credit_sign",
+            ]}),
+            "exclude credit_sign",
+        ),
+        (
+            lambda packet: packet["measurement_contract"]["fresh_confirmation_gate"].update(
+                {"required_seed_before_persistent_followup": 43}
+            ),
+            "fresh confirmation seed",
+        ),
+        (
+            lambda packet: packet.update({"eligible_scope": "all-bitlinear"}),
+            "eligible_scope=first-bitlinear",
+        ),
+    ],
+)
+def test_activation_credit_packet_validator_rejects_primary_family_seed_and_scope_drift(
+    mutation,
+    error,
+):
+    packet = build_activation_credit_measurement_packet(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+    )
+    mutation(packet)
+
+    with pytest.raises(ValueError, match=error):
+        validate_activation_credit_measurement_packet(packet)
+
+
+@pytest.mark.parametrize(
+    "mutation,error",
+    [
+        (
+            lambda packet: packet["commands"][0].update({"max_sampled_candidates": 64}),
+            "must pin budget 32|max_sampled_candidates drifted",
+        ),
+        (
+            lambda packet: packet["commands"][0].update({"batch_size": 8}),
+            "batch_size drifted",
+        ),
+        (
+            lambda packet: packet["commands"][0]["argv"].__setitem__(
+                packet["commands"][0]["argv"].index("--eligible-scope") + 1,
+                "all-bitlinear",
+            ),
+            "eligible-scope|first-bitlinear",
+        ),
+    ],
+)
+def test_activation_credit_launch_bundle_validator_rejects_budget_batch_and_scope_drift(
+    mutation,
+    error,
+):
+    packet = build_activation_credit_measurement_launch_bundle(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+        repo_root="/repo",
+        run_root="/tmp/hrm158-activation-credit",
+    )
+    mutation(packet)
+
+    with pytest.raises(ValueError, match=error):
+        validate_activation_credit_measurement_launch_bundle(packet)
+
+
+@pytest.mark.parametrize(
+    "mutation,error",
+    [
+        (
+            lambda packet: packet["commands"][0].update({"max_sampled_candidates": 32}),
+            "must pin budget 8|max_sampled_candidates drifted",
+        ),
+        (
+            lambda packet: packet["commands"][0].update({"batch_size": 8}),
+            "batch size 4|batch_size drifted",
+        ),
+        (
+            lambda packet: packet["terminal_criteria"].update(
+                {"branch_classifier": list(ACTIVATION_CREDIT_BRANCHES)}
+            ),
+            "branch_classifier must stay null",
+        ),
+    ],
+)
+def test_activation_credit_smoke_launch_bundle_validator_rejects_budget_batch_and_branch_drift(
+    mutation,
+    error,
+):
+    packet = build_activation_credit_scale_smoke_launch_bundle(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+        repo_root="/repo",
+        run_root="/tmp/hrm158-activation-credit-smoke",
+    )
+    mutation(packet)
+
+    with pytest.raises(ValueError, match=error):
+        validate_activation_credit_scale_smoke_launch_bundle(packet)
+
+
 def test_within_tie_band_packet_declares_one_sided_null_guards_and_fragmentation_audit():
     packet = build_within_tie_band_discriminator_packet(
         parent_path="parent.pt",
@@ -2491,6 +2785,140 @@ def test_packet_script_writes_credit_ranking_pivot_launch_bundle(
     } == {"29", "43"}
     assert json.loads(capsys.readouterr().out)["packet_kind"] == (
         CREDIT_RANKING_PIVOT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND
+    )
+
+
+def test_packet_script_writes_activation_credit_author_packet(
+    tmp_path: Path,
+    capsys,
+):
+    parent = tmp_path / "parent.pt"
+    parent.write_bytes(b"read-only parent bytes")
+    parent_sha = hashlib.sha256(b"read-only parent bytes").hexdigest()
+    out = tmp_path / "activation-credit-packet.json"
+
+    exit_code = packet_main(
+        [
+            "--packet-kind",
+            ACTIVATION_CREDIT_MEASUREMENT_PACKET_KIND,
+            "--parent",
+            str(parent),
+            "--parent-sha256",
+            parent_sha,
+            "--json-out",
+            str(out),
+        ],
+    )
+
+    assert exit_code == 0
+    packet = json.loads(out.read_text(encoding="utf-8"))
+    validate_activation_credit_measurement_packet(packet)
+    assert packet["packet_kind"] == ACTIVATION_CREDIT_MEASUREMENT_PACKET_KIND
+    assert packet["launch_gate_id"] is None
+    assert packet["commands_executed"] is False
+    assert packet["gpu_launched"] is False
+    assert packet["pt_mutated"] is False
+    assert packet["parent_hash_basis"] == "read_only_parent_file_sha256"
+    assert packet["dry_run_packet_written"] is True
+    assert packet["gpu_launch_command_authorized"] is False
+    assert packet["oracle_screen_launch_gate_required"] is True
+    assert packet["oracle_feasibility_budget"]["max_sampled_candidates"] == 32
+    assert json.loads(capsys.readouterr().out)["packet_kind"] == (
+        ACTIVATION_CREDIT_MEASUREMENT_PACKET_KIND
+    )
+
+
+def test_packet_script_writes_activation_credit_launch_bundle(
+    tmp_path: Path,
+    capsys,
+):
+    parent = tmp_path / "parent.pt"
+    parent.write_bytes(b"read-only parent bytes")
+    parent_sha = hashlib.sha256(b"read-only parent bytes").hexdigest()
+    out = tmp_path / "activation-credit-launch-bundle.json"
+    run_root = tmp_path / "run"
+
+    exit_code = packet_main(
+        [
+            "--packet-kind",
+            ACTIVATION_CREDIT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND,
+            "--parent",
+            str(parent),
+            "--parent-sha256",
+            parent_sha,
+            "--json-out",
+            str(out),
+            "--run-root",
+            str(run_root),
+        ],
+    )
+
+    assert exit_code == 0
+    packet = json.loads(out.read_text(encoding="utf-8"))
+    validate_activation_credit_measurement_launch_bundle(packet)
+    assert packet["packet_kind"] == ACTIVATION_CREDIT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND
+    assert packet["launch_gate_id"] is None
+    assert packet["commands_executed"] is False
+    assert packet["gpu_launched"] is False
+    assert packet["pt_mutated"] is False
+    assert packet["parent_hash_basis"] == "read_only_parent_file_sha256"
+    assert packet["dry_run_packet_written"] is True
+    assert packet["gpu_launch_command_authorized"] is False
+    assert packet["oracle_screen_launch_gate_required"] is True
+    assert packet["oracle_feasibility_budget"]["max_sampled_candidates"] == 32
+    assert len(packet["commands"]) == 2
+    assert {
+        command["argv"][command["argv"].index("--support-order-seed") + 1]
+        for command in packet["commands"]
+    } == {"29", "43"}
+    assert json.loads(capsys.readouterr().out)["packet_kind"] == (
+        ACTIVATION_CREDIT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND
+    )
+
+
+def test_packet_script_writes_activation_credit_smoke_launch_bundle(
+    tmp_path: Path,
+    capsys,
+):
+    parent = tmp_path / "parent.pt"
+    parent.write_bytes(b"read-only parent bytes")
+    parent_sha = hashlib.sha256(b"read-only parent bytes").hexdigest()
+    out = tmp_path / "activation-credit-smoke-launch-bundle.json"
+    run_root = tmp_path / "run"
+
+    exit_code = packet_main(
+        [
+            "--packet-kind",
+            ACTIVATION_CREDIT_SCALE_SMOKE_LAUNCH_BUNDLE_PACKET_KIND,
+            "--parent",
+            str(parent),
+            "--parent-sha256",
+            parent_sha,
+            "--json-out",
+            str(out),
+            "--run-root",
+            str(run_root),
+        ],
+    )
+
+    assert exit_code == 0
+    packet = json.loads(out.read_text(encoding="utf-8"))
+    validate_activation_credit_scale_smoke_launch_bundle(packet)
+    assert packet["packet_kind"] == ACTIVATION_CREDIT_SCALE_SMOKE_LAUNCH_BUNDLE_PACKET_KIND
+    assert packet["launch_gate_id"] is None
+    assert packet["commands_executed"] is False
+    assert packet["gpu_launched"] is False
+    assert packet["pt_mutated"] is False
+    assert packet["parent_hash_basis"] == "read_only_parent_file_sha256"
+    assert packet["dry_run_packet_written"] is True
+    assert packet["gpu_launch_command_authorized"] is False
+    assert packet["oracle_screen_launch_gate_required"] is True
+    assert packet["oracle_feasibility_budget"]["max_sampled_candidates"] == (
+        ACTIVATION_CREDIT_SMOKE_MAX_SAMPLED_CANDIDATES
+    )
+    assert len(packet["commands"]) == 2
+    assert json.loads(capsys.readouterr().out)["packet_kind"] == (
+        ACTIVATION_CREDIT_SCALE_SMOKE_LAUNCH_BUNDLE_PACKET_KIND
     )
 
 

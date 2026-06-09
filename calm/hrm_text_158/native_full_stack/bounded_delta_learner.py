@@ -69,6 +69,8 @@ DEFAULT_DRY_RUN_PARENT_HASH_BASIS = "no_parent_checkpoint_path_supplied_no_pt_to
 FRONT_C_LIVE_OBSERVATION_SCHEMA_VERSION = (
     "hrm_text_158_front_c/v0.live_identity_observation_cloned_cpu"
 )
+AUTHORITATIVE_CAPTURE_MODE_CPU_LEGACY = "cpu_legacy"
+AUTHORITATIVE_CAPTURE_MODE_DEVICE_RESIDENT = "device_resident"
 
 
 def _canonical_json(data: Any) -> str:
@@ -297,14 +299,92 @@ def weighted_grad_from_captures(
     if len(inputs) < len(grad_outputs):
         raise ValueError("capture call-count mismatch")
     paired_inputs = inputs[-len(grad_outputs):]
-    weighted_grad = torch.zeros(tuple(int(dim) for dim in weight_shape), dtype=torch.float32)
+    weight_dims = tuple(int(dim) for dim in weight_shape)
+    if len(weight_dims) != 2:
+        raise ValueError(f"weight_shape must be rank-2, got {weight_dims}")
+    reference_input = _as_bsi(
+        paired_inputs[0].detach().to(torch.float32),
+        name="input",
+    )
+    weighted_grad = torch.zeros(
+        weight_dims,
+        dtype=torch.float32,
+        device=reference_input.device,
+    )
     for inp, grad_out in zip(paired_inputs, reversed(list(grad_outputs))):
+        input_bsi = _as_bsi(inp.detach().to(torch.float32), name="input")
+        grad_out_bso = _as_bsi(grad_out.detach().to(torch.float32), name="grad_out")
+        if input_bsi.device != grad_out_bso.device:
+            raise ValueError(
+                "inputs and grad_outputs must share the same device for weighted_grad reconstruction"
+            )
         weighted_grad += torch.einsum(
             "bso,bsi->oi",
-            _as_bsi(grad_out.detach().to(torch.float32), name="grad_out"),
-            _as_bsi(inp.detach().to(torch.float32), name="input"),
+            grad_out_bso,
+            input_bsi,
         )
     return weighted_grad
+
+
+def candidate_weighted_grad_proxies_from_captures(
+    inputs: Sequence[torch.Tensor],
+    grad_outputs: Sequence[torch.Tensor],
+    *,
+    flat_indices: Sequence[int],
+    weight_shape: Sequence[int],
+) -> torch.Tensor:
+    """Gather candidate-local first-order credit without reconstructing the full weight gradient."""
+
+    if not inputs or not grad_outputs:
+        raise ValueError("inputs and grad_outputs must be non-empty")
+    if len(inputs) < len(grad_outputs):
+        raise ValueError("capture call-count mismatch")
+    weight_dims = tuple(int(dim) for dim in weight_shape)
+    if len(weight_dims) != 2:
+        raise ValueError(f"weight_shape must be rank-2, got {weight_dims}")
+    out_features, in_features = weight_dims
+    flat_index_list = [int(index) for index in flat_indices]
+    if not flat_index_list:
+        return torch.zeros((0,), dtype=torch.float32)
+    if any(index < 0 or index >= out_features * in_features for index in flat_index_list):
+        raise ValueError("flat_indices must lie inside the flattened weight tensor")
+    paired_inputs = inputs[-len(grad_outputs):]
+    reference_input = _as_bsi(
+        paired_inputs[0].detach().to(torch.float32),
+        name="input",
+    )
+    index_device = reference_input.device
+    flat_index_tensor = torch.tensor(
+        flat_index_list,
+        dtype=torch.int64,
+        device=index_device,
+    )
+    row_indices = torch.div(flat_index_tensor, int(in_features), rounding_mode="floor")
+    col_indices = torch.remainder(flat_index_tensor, int(in_features))
+    proxies = torch.zeros(
+        (len(flat_index_list),),
+        dtype=torch.float32,
+        device=index_device,
+    )
+    for inp, grad_out in zip(paired_inputs, reversed(list(grad_outputs))):
+        input_bsi = _as_bsi(inp.detach().to(torch.float32), name="input")
+        grad_out_bso = _as_bsi(grad_out.detach().to(torch.float32), name="grad_out")
+        if input_bsi.device != grad_out_bso.device:
+            raise ValueError(
+                "inputs and grad_outputs must share the same device for candidate credit gathering"
+            )
+        if input_bsi.device != index_device:
+            row_local = row_indices.to(device=input_bsi.device)
+            col_local = col_indices.to(device=input_bsi.device)
+        else:
+            row_local = row_indices
+            col_local = col_indices
+        gathered_inputs = torch.index_select(input_bsi, dim=-1, index=col_local)
+        gathered_grad_outputs = torch.index_select(grad_out_bso, dim=-1, index=row_local)
+        proxies += (gathered_inputs * gathered_grad_outputs).sum(dim=(0, 1)).to(
+            device=index_device
+        )
+    return proxies
 
 
 def credit_from_weighted_grad(weighted_grad: torch.Tensor, *, scheme: str = "full_magnitude_ceiling") -> torch.Tensor:
@@ -706,6 +786,7 @@ class AuthoritativeForwardHandle:
     current_weights: dict[str, torch.Tensor]
     captures: dict[str, dict[str, list[torch.Tensor]]]
     capture_enabled: bool
+    capture_device_mode: str
 
     def weighted_grad(self, state_key: str) -> torch.Tensor:
         if state_key not in self.current_weights:
@@ -729,6 +810,33 @@ class AuthoritativeForwardHandle:
             weight_shape=tuple(self.current_weights[state_key].shape),
         )
 
+    def candidate_weighted_grad_proxies(
+        self,
+        state_key: str,
+        flat_indices: Sequence[int],
+    ) -> torch.Tensor:
+        if state_key not in self.current_weights:
+            raise KeyError(state_key)
+        if not self.capture_enabled:
+            raise RuntimeError(
+                "candidate_weighted_grad_proxies is unavailable because "
+                "authoritative_forward_context capture is disabled; use "
+                "requires_grad=True when candidate-local weighted gradients are needed"
+            )
+        capture = self.captures[state_key]
+        if not capture["inputs"] or not capture["grad_outputs"]:
+            raise RuntimeError(
+                "candidate_weighted_grad_proxies requires captured inputs and grad_outputs; "
+                "ensure the eligible module was invoked under a differentiable "
+                "authoritative_forward_context"
+            )
+        return candidate_weighted_grad_proxies_from_captures(
+            capture["inputs"],
+            capture["grad_outputs"],
+            flat_indices=flat_indices,
+            weight_shape=tuple(self.current_weights[state_key].shape),
+        )
+
 
 @contextmanager
 def authoritative_forward_context(
@@ -737,10 +845,20 @@ def authoritative_forward_context(
     *,
     device: torch.device | str = "cpu",
     requires_grad: bool,
+    capture_device_mode: str = AUTHORITATIVE_CAPTURE_MODE_CPU_LEGACY,
 ) -> Any:
     missing = set(eligible_modules) - set(tensor_states)
     if missing:
         raise ValueError(f"missing tensor state for eligible modules: {sorted(missing)}")
+    if capture_device_mode not in {
+        AUTHORITATIVE_CAPTURE_MODE_CPU_LEGACY,
+        AUTHORITATIVE_CAPTURE_MODE_DEVICE_RESIDENT,
+    }:
+        raise ValueError(
+            "capture_device_mode must be one of "
+            f"{AUTHORITATIVE_CAPTURE_MODE_CPU_LEGACY!r}, "
+            f"{AUTHORITATIVE_CAPTURE_MODE_DEVICE_RESIDENT!r}"
+        )
     originals = {state_key: module.forward for state_key, module in eligible_modules.items()}
     capture_enabled = bool(requires_grad)
     current_weights = {
@@ -758,13 +876,18 @@ def authoritative_forward_context(
     for state_key, module in eligible_modules.items():
         def _forward(self: Any, input: torch.Tensor, *, key: str = state_key) -> torch.Tensor:
             if capture_enabled:
-                captures[key]["inputs"].append(input.detach().cpu())
+                captured_input = input.detach()
+                if capture_device_mode == AUTHORITATIVE_CAPTURE_MODE_CPU_LEGACY:
+                    captured_input = captured_input.cpu()
+                captures[key]["inputs"].append(captured_input)
             out = F.linear(input, current_weights[key], self.bias)
             if capture_enabled and out.requires_grad:
                 out.register_hook(
                     lambda grad, capture_key=key: captures[capture_key]["grad_outputs"].append(
-                        grad.detach().cpu(),
-                    ),
+                        grad.detach().cpu()
+                        if capture_device_mode == AUTHORITATIVE_CAPTURE_MODE_CPU_LEGACY
+                        else grad.detach(),
+                    )
                 )
             return out
 
@@ -774,6 +897,7 @@ def authoritative_forward_context(
             current_weights=current_weights,
             captures=captures,
             capture_enabled=capture_enabled,
+            capture_device_mode=capture_device_mode,
         )
     finally:
         for state_key, module in eligible_modules.items():
@@ -1672,6 +1796,8 @@ def run_c2_bounded_delta_cpu_dry_run(
 
 
 __all__ = [
+    "AUTHORITATIVE_CAPTURE_MODE_CPU_LEGACY",
+    "AUTHORITATIVE_CAPTURE_MODE_DEVICE_RESIDENT",
     "AUTHORITATIVE_STATE_SOURCE",
     "BOUNDED_DELTA_CHECKPOINT_SCHEMA_VERSION",
     "BOUNDED_DELTA_LEARNER_SCHEMA_VERSION",
@@ -1691,6 +1817,7 @@ __all__ = [
     "authoritative_forward_context",
     "build_authoritative_checkpoint_payload",
     "build_optimizer_excluding_eligible_masters",
+    "candidate_weighted_grad_proxies_from_captures",
     "compact_vote_pressure_summary",
     "credit_from_weighted_grad",
     "default_dry_run_rank_vote_spec",

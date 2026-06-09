@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager, nullcontext
 import hashlib
+import json
 import math
 import random
 from statistics import median
@@ -20,6 +21,7 @@ import torch
 from calm.hrm_text_158 import LMHead
 from calm.hrm_text_158.bit_linear import BitLinear
 from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
+    AUTHORITATIVE_CAPTURE_MODE_DEVICE_RESIDENT,
     BoundedDeltaTensorState,
     VoteUpdateInputs,
     VoteUpdateSpec,
@@ -35,6 +37,23 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     BRANCH_MEASUREMENT_AMBIGUOUS_TIE_BAND_ALIASING,
     BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE,
     BRANCH_PREREGISTERED_CHEAP_LEARNER_FEATURE_FAMILY_CANNOT_PREDICT_REGRET,
+    BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH,
+    BRANCH_ACTIVATION_CREDIT_CANDIDATE_SIGNAL,
+    BRANCH_ACTIVATION_CREDIT_MISSING_SIGNAL_DEEPER_THAN_FIRST_ORDER_CREDIT_STORAGE,
+    ACTIVATION_CREDIT_ABLATION_FAMILY_IDS,
+    ACTIVATION_CREDIT_BRANCHES,
+    ACTIVATION_CREDIT_FAIL_CLOSED_BUCKET_FRACTION_GT,
+    ACTIVATION_CREDIT_FAIL_CLOSED_REGRET_SPREAD_RATIO_GT,
+    ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED,
+    ACTIVATION_CREDIT_MAGNITUDE_BIN_COUNT,
+    ACTIVATION_CREDIT_MATCHED_HASH_SIGNAL_MIN,
+    ACTIVATION_CREDIT_PREDICTIVE_BUCKET_FRACTION_MAX,
+    ACTIVATION_CREDIT_PREDICTIVE_REGRET_CAPTURE_RATIO_MIN,
+    ACTIVATION_CREDIT_PREDICTIVE_REGRET_SPREAD_RATIO_MAX,
+    ACTIVATION_CREDIT_PRIMARY_FAMILY_ID,
+    ACTIVATION_CREDIT_TARGET_TIE_BAND_ID,
+    ACTIVATION_CREDIT_TOPOLOGY_CONTROL_FAMILY_ID,
+    ACTIVATION_CREDIT_TOPOLOGY_ROW_BLOCK_SIZE,
     BRANCH_WITHIN_TIE_BAND_AMBIGUOUS_NO_BRANCH,
     BRANCH_WITHIN_TIE_BAND_LEARNER_FEATURES_SEPARATE_REGRET,
     BRANCH_WITHIN_TIE_BAND_NEEDS_NEW_LEARNER_STATE,
@@ -88,10 +107,18 @@ ORACLE_SCREEN_MODE_CREDIT_RANKING_PIVOT_MEASUREMENT = (
 ORACLE_SCREEN_MODE_WITHIN_TIE_BAND_DISCRIMINATOR = (
     "within_tie_band_discriminator"
 )
+ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_MEASUREMENT = (
+    "activation_credit_measurement"
+)
+ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_SCALE_SMOKE = (
+    "activation_credit_scale_smoke"
+)
 ORACLE_SCREEN_MODE_CHOICES = (
     ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY,
     ORACLE_SCREEN_MODE_CREDIT_RANKING_PIVOT_MEASUREMENT,
     ORACLE_SCREEN_MODE_WITHIN_TIE_BAND_DISCRIMINATOR,
+    ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_MEASUREMENT,
+    ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_SCALE_SMOKE,
 )
 ORACLE_SCREEN_TOP_K = 5
 ORACLE_SCREEN_ORDERING_SEED = 17
@@ -375,6 +402,7 @@ def run_candidate_set_viability_oracle_screen(
                 for position, flat_index in enumerate(deterministic_ordered)
             }
             vote_flat = votes.flatten().to(torch.int32)
+            q_flat = vote_state.q_levels.detach().cpu().to(torch.int16).flatten()
             for flat_index in unordered:
                 candidate_id = _candidate_id(state_key, int(flat_index))
                 candidate_by_id[candidate_id] = {
@@ -384,6 +412,7 @@ def run_candidate_set_viability_oracle_screen(
                     "vote_value": int(vote_flat[int(flat_index)].item()),
                     "current_rank_position": current_rank[int(flat_index)],
                     "deterministic_hash_rank_position": deterministic_rank[int(flat_index)],
+                    "current_q_level": int(q_flat[int(flat_index)].item()),
                     "current_margin_abs": int(abs(int(new_acc[int(flat_index)].item()))),
                 }
         current_ordered_ids = [
@@ -439,6 +468,11 @@ def run_candidate_set_viability_oracle_screen(
                 raise RuntimeError(
                     "oracle screen single-candidate application drifted from the planned candidate identity"
                 )
+            candidate["candidate_delta_sign"] = _candidate_delta_sign_from_one_flip(
+                q_after_one_flip=result.q_levels,
+                flat_index=flat_index,
+                current_q_level=int(candidate["current_q_level"]),
+            )
             candidate_states = dict(tensor_states)
             candidate_states[state_key] = make_live_shadow_tensor_state(
                 tensor_states[state_key],
@@ -1029,6 +1063,320 @@ def _within_tie_band_family_metrics(
         ),
         "null_control_hash_only": True,
     }
+
+
+def _flat_weight_row_col(flat_index: int, in_features: int) -> tuple[int, int]:
+    if int(in_features) <= 0:
+        raise ValueError("in_features must be positive")
+    return int(flat_index) // int(in_features), int(flat_index) % int(in_features)
+
+
+def _candidate_delta_sign_from_one_flip(
+    *,
+    q_after_one_flip: torch.Tensor,
+    flat_index: int,
+    current_q_level: int,
+) -> int:
+    q_after = int(q_after_one_flip.view(-1)[int(flat_index)].item())
+    return _sign_int(q_after - int(current_q_level))
+
+
+def _compute_activation_credit_candidate_proxies(
+    *,
+    model: LMHead,
+    batch: Mapping[str, torch.Tensor],
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+    eligible_modules: Mapping[str, BitLinear],
+    device: torch.device,
+    extras: Mapping[str, Any],
+    candidate_by_id: Mapping[str, Mapping[str, Any]],
+    selected_candidate_ids: Sequence[str],
+    phase_progress: Any | None,
+) -> dict[str, Any]:
+    selected_ids = [str(candidate_id) for candidate_id in selected_candidate_ids]
+    selected_by_state: dict[str, list[str]] = {}
+    for candidate_id in selected_ids:
+        candidate = candidate_by_id.get(candidate_id)
+        if candidate is None:
+            raise KeyError(f"unknown activation-credit candidate_id {candidate_id!r}")
+        selected_by_state.setdefault(str(candidate["state_key"]), []).append(candidate_id)
+    proxy_by_id: dict[str, float] = {}
+    capture_device_summary: dict[str, dict[str, list[str]]] = {}
+    any_capture_crossed_cpu = False
+    forward_backward_start = time.perf_counter()
+    model.zero_grad(set_to_none=True)
+    with authoritative_forward_context(
+        eligible_modules,
+        tensor_states,
+        device=device,
+        requires_grad=True,
+        capture_device_mode=AUTHORITATIVE_CAPTURE_MODE_DEVICE_RESIDENT,
+    ) as handle:
+        with _maybe_phase(phase_progress, "activation_credit_forward_backward", step=1):
+            _carry, loss, _metrics = model(None, dict(batch), **extras)
+            loss.backward()
+        forward_backward_seconds = float(time.perf_counter() - forward_backward_start)
+        gather_start = time.perf_counter()
+        with _maybe_phase(phase_progress, "activation_credit_gather", step=1):
+            for state_key, candidate_ids in sorted(selected_by_state.items()):
+                flat_indices = [
+                    int(candidate_by_id[candidate_id]["flat_index"])
+                    for candidate_id in candidate_ids
+                ]
+                proxies = handle.candidate_weighted_grad_proxies(
+                    state_key,
+                    flat_indices,
+                )
+                capture = handle.captures[state_key]
+                device_summary = {
+                    "inputs": sorted({str(t.device) for t in capture["inputs"]}),
+                    "grad_outputs": sorted(
+                        {str(t.device) for t in capture["grad_outputs"]}
+                    ),
+                }
+                capture_device_summary[state_key] = device_summary
+                if device.type == "cuda":
+                    any_capture_crossed_cpu = any(
+                        torch.device(device_name).type == "cpu"
+                        for device_name in (
+                            device_summary["inputs"] + device_summary["grad_outputs"]
+                        )
+                    )
+                for candidate_id, proxy in zip(candidate_ids, proxies.detach().to(torch.float32)):
+                    proxy_by_id[str(candidate_id)] = float(proxy.item())
+    model.zero_grad(set_to_none=True)
+    gather_seconds = float(time.perf_counter() - gather_start)
+    return {
+        "grad_proxy_by_candidate_id": proxy_by_id,
+        "capture_device_mode": handle.capture_device_mode,
+        "capture_device_summary": capture_device_summary,
+        "gather_device": str(device),
+        "any_capture_crossed_cpu": bool(any_capture_crossed_cpu),
+        "forward_backward_seconds": forward_backward_seconds,
+        "grad_proxy_accumulation_seconds": gather_seconds,
+    }
+
+
+def _assign_activation_credit_features(
+    target_band_candidates: Sequence[dict[str, Any]],
+) -> dict[str, Any]:
+    valid_abs_values = [
+        float(candidate["activation_credit_abs"])
+        for candidate in target_band_candidates
+        if bool(candidate.get("activation_feature_valid"))
+    ]
+    magnitude_bin_threshold = median(valid_abs_values) if valid_abs_values else None
+    degenerate = (
+        len(valid_abs_values) < 4
+        or not valid_abs_values
+        or max(valid_abs_values) - min(valid_abs_values) <= ORACLE_SCREEN_IMPROVEMENT_EPS
+    )
+    histogram: dict[str, int] = {}
+    for candidate in target_band_candidates:
+        if not bool(candidate.get("activation_feature_valid")):
+            candidate["credit_magnitude_bin"] = None
+            continue
+        if degenerate or magnitude_bin_threshold is None:
+            candidate["credit_magnitude_bin"] = 0
+        else:
+            candidate["credit_magnitude_bin"] = int(
+                float(candidate["activation_credit_abs"]) >= float(magnitude_bin_threshold)
+            )
+        bucket_key = str(int(candidate["credit_magnitude_bin"]))
+        histogram[bucket_key] = int(histogram.get(bucket_key, 0) + 1)
+    if sum(histogram.values()) > 0 and len(histogram) < ACTIVATION_CREDIT_MAGNITUDE_BIN_COUNT:
+        degenerate = True
+    return {
+        "magnitude_bin_threshold": magnitude_bin_threshold,
+        "magnitude_bin_histogram": histogram,
+        "magnitude_bin_degenerate": bool(degenerate),
+        "valid_target_band_candidate_count": len(valid_abs_values),
+        "singleton_magnitude_source_count": int(sum(1 for count in histogram.values() if count == 1)),
+    }
+
+
+def _activation_credit_family_key(
+    candidate: Mapping[str, Any],
+    *,
+    family_id: str,
+) -> tuple[Any, ...]:
+    if family_id == ACTIVATION_CREDIT_PRIMARY_FAMILY_ID:
+        return (
+            int(candidate["signed_alignment"]),
+            int(candidate["credit_magnitude_bin"]),
+        )
+    if family_id == "F_alignment_only":
+        return (int(candidate["signed_alignment"]),)
+    if family_id == "F_magbin_only":
+        return (int(candidate["credit_magnitude_bin"]),)
+    if family_id == "F_sign_only":
+        return (int(candidate["credit_sign"]),)
+    if family_id == "F_align_magbin_transition":
+        return (
+            int(candidate["signed_alignment"]),
+            int(candidate["credit_magnitude_bin"]),
+            str(candidate["transition_class"]),
+        )
+    if family_id == ACTIVATION_CREDIT_TOPOLOGY_CONTROL_FAMILY_ID:
+        return (int(candidate["topology_row_block_128"]),)
+    raise ValueError(f"unsupported activation-credit family_id {family_id!r}")
+
+
+def _activation_credit_family_metrics(
+    *,
+    target_band_candidates: Sequence[Mapping[str, Any]],
+    family_id: str,
+    oracle_best_candidate: Mapping[str, Any],
+    oracle_top1_delta: float | None,
+) -> dict[str, Any]:
+    groups: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+    for candidate in target_band_candidates:
+        groups.setdefault(
+            _activation_credit_family_key(candidate, family_id=family_id),
+            [],
+        ).append(dict(candidate))
+    bucket_sizes = sorted((len(group) for group in groups.values()), reverse=True)
+    histogram: dict[str, int] = {}
+    for size in bucket_sizes:
+        histogram[str(int(size))] = int(histogram.get(str(int(size)), 0) + 1)
+    oracle_key = _activation_credit_family_key(
+        oracle_best_candidate,
+        family_id=family_id,
+    )
+    oracle_bucket = list(groups.get(oracle_key, []))
+    bucket_ids = {str(candidate["candidate_id"]) for candidate in oracle_bucket}
+    band_count = len(target_band_candidates)
+    band_top_k = min(PIVOT_MEASUREMENT_TOP_K, band_count)
+    band_top = sorted(
+        target_band_candidates,
+        key=lambda candidate: (
+            float(candidate["local_loss_delta"]),
+            str(candidate["candidate_id"]),
+        ),
+    )[:band_top_k]
+    band_top_ids = {str(candidate["candidate_id"]) for candidate in band_top}
+    band_improvement_mass = _positive_improvement_mass(target_band_candidates)
+    bucket_improvement_mass = _positive_improvement_mass(oracle_bucket)
+    regret_capture_ratio = (
+        float(bucket_improvement_mass / band_improvement_mass)
+        if band_improvement_mass > ORACLE_SCREEN_IMPROVEMENT_EPS
+        else 0.0
+    )
+    position_by_id = {
+        str(candidate["candidate_id"]): int(position)
+        for position, candidate in enumerate(
+            sorted(
+                target_band_candidates,
+                key=lambda candidate: (
+                    str(candidate["candidate_id"]) not in bucket_ids,
+                    int(candidate["current_rank_position"]),
+                    str(candidate["candidate_id"]),
+                ),
+            )
+        )
+    }
+    null_bucket_fractions: list[float] = []
+    null_capture_ratios: list[float] = []
+    target_band_by_id = {
+        str(candidate["candidate_id"]): dict(candidate)
+        for candidate in target_band_candidates
+    }
+    for seed in PIVOT_MEASUREMENT_NULL_HASH_SEEDS:
+        ordered_ids = _deterministic_hash_ordered_candidate_ids(
+            target_band_candidates,
+            seed=int(seed),
+            salt="hrm_text_158_activation_credit_null_hash",
+        )
+        ordered_candidates = [target_band_by_id[candidate_id] for candidate_id in ordered_ids]
+        cursor = 0
+        null_bucket: list[dict[str, Any]] = []
+        for size in bucket_sizes:
+            bucket = ordered_candidates[cursor : cursor + int(size)]
+            cursor += int(size)
+            if any(
+                str(candidate["candidate_id"]) == str(oracle_best_candidate["candidate_id"])
+                for candidate in bucket
+            ):
+                null_bucket = list(bucket)
+                break
+        if not null_bucket:
+            raise RuntimeError(
+                "activation-credit matched-cardinality null partition dropped the oracle-best candidate"
+            )
+        null_bucket_fractions.append(float(len(null_bucket) / max(1, band_count)))
+        null_bucket_improvement_mass = _positive_improvement_mass(null_bucket)
+        null_capture_ratios.append(
+            float(null_bucket_improvement_mass / band_improvement_mass)
+            if band_improvement_mass > ORACLE_SCREEN_IMPROVEMENT_EPS
+            else 0.0
+        )
+    return {
+        "family_id": family_id,
+        "bucket_count": len(groups),
+        "bucket_cardinality_histogram": histogram,
+        "singleton_bucket_count": int(histogram.get("1", 0)),
+        "oracle_best_bucket_candidate_count": len(oracle_bucket),
+        "oracle_best_bucket_candidate_ids_hash16": _candidate_ids_hash16(list(bucket_ids)),
+        "oracle_best_bucket_fraction": float(len(oracle_bucket) / max(1, band_count)),
+        "oracle_best_bucket_regret_spread_ratio": _loss_spread_ratio(
+            oracle_bucket,
+            oracle_top1_delta=oracle_top1_delta,
+        ),
+        "oracle_best_bucket_regret_capture_ratio": regret_capture_ratio,
+        "oracle_best_bucket_top_k_capture_fraction": (
+            float(len(bucket_ids & band_top_ids) / band_top_k)
+            if band_top_k > 0
+            else 0.0
+        ),
+        "within_band_pairwise_auc_report_only": _pairwise_auc_from_positions(
+            target_band_candidates,
+            position_by_id=position_by_id,
+        ),
+        "matched_hash_seed_count": len(PIVOT_MEASUREMENT_NULL_HASH_SEEDS),
+        "matched_hash_null_fraction_gte_observed_bucket_fraction": _fraction_gte_observed(
+            null_bucket_fractions,
+            float(len(oracle_bucket) / max(1, band_count)),
+        ),
+        "matched_hash_null_fraction_lte_observed_regret_capture_ratio": _fraction_lte_observed(
+            null_capture_ratios,
+            regret_capture_ratio,
+        ),
+        "null_control_hash_only": True,
+    }
+
+
+def _activation_credit_family_is_predictive(metrics: Mapping[str, Any]) -> bool:
+    return bool(
+        float(metrics["oracle_best_bucket_fraction"])
+        <= ACTIVATION_CREDIT_PREDICTIVE_BUCKET_FRACTION_MAX
+        and metrics["oracle_best_bucket_regret_spread_ratio"] is not None
+        and float(metrics["oracle_best_bucket_regret_spread_ratio"])
+        <= ACTIVATION_CREDIT_PREDICTIVE_REGRET_SPREAD_RATIO_MAX
+        and float(metrics["oracle_best_bucket_regret_capture_ratio"])
+        >= ACTIVATION_CREDIT_PREDICTIVE_REGRET_CAPTURE_RATIO_MIN
+        and float(metrics["matched_hash_null_fraction_gte_observed_bucket_fraction"])
+        >= ACTIVATION_CREDIT_MATCHED_HASH_SIGNAL_MIN
+        and float(metrics["matched_hash_null_fraction_lte_observed_regret_capture_ratio"])
+        >= ACTIVATION_CREDIT_MATCHED_HASH_SIGNAL_MIN
+    )
+
+
+def _activation_credit_family_is_fail_closed(metrics: Mapping[str, Any]) -> bool:
+    return bool(
+        (
+            float(metrics["oracle_best_bucket_fraction"])
+            > ACTIVATION_CREDIT_FAIL_CLOSED_BUCKET_FRACTION_GT
+            or (
+                metrics["oracle_best_bucket_regret_spread_ratio"] is not None
+                and float(metrics["oracle_best_bucket_regret_spread_ratio"])
+                > ACTIVATION_CREDIT_FAIL_CLOSED_REGRET_SPREAD_RATIO_GT
+            )
+        )
+        and float(metrics["matched_hash_null_fraction_gte_observed_bucket_fraction"])
+        < ACTIVATION_CREDIT_MATCHED_HASH_SIGNAL_MIN
+        and float(metrics["matched_hash_null_fraction_lte_observed_regret_capture_ratio"])
+        < ACTIVATION_CREDIT_MATCHED_HASH_SIGNAL_MIN
+    )
 
 
 def _random_permutation_candidate_ids(
@@ -2174,13 +2522,548 @@ def run_within_tie_band_discriminator_oracle_screen(
     }
 
 
+def run_activation_credit_scale_smoke_oracle_screen(
+    *,
+    model: LMHead,
+    batch: Mapping[str, torch.Tensor],
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+    eligible_modules: Mapping[str, BitLinear],
+    device: torch.device,
+    max_abs_per_tensor: int,
+    extras: Mapping[str, Any],
+    max_sampled_candidates: int = 8,
+    max_seconds: float | None = None,
+    phase_progress: Any | None = None,
+) -> dict[str, Any]:
+    if int(max_sampled_candidates) != 8:
+        raise ValueError("activation-credit scale smoke requires max_sampled_candidates == 8")
+    if max_seconds is None:
+        max_seconds = oracle_screen_budget_max_seconds(int(max_sampled_candidates))
+    universe_start = time.perf_counter()
+    universe = _build_oracle_candidate_universe(
+        model=model,
+        batch=batch,
+        tensor_states=tensor_states,
+        eligible_modules=eligible_modules,
+        device=device,
+        max_abs_per_tensor=int(max_abs_per_tensor),
+        extras=extras,
+        max_sampled_candidates=int(max_sampled_candidates),
+        phase_progress=phase_progress,
+    )
+    background_candidate_generation_seconds = float(time.perf_counter() - universe_start)
+    base_spec = universe["base_spec"]
+    one_flip_spec = universe["one_flip_spec"]
+    votes_by_key = universe["votes_by_key"]
+    candidate_by_id = universe["candidate_by_id"]
+    sampled_ids = list(universe["sampled_ids"])
+    target_band_candidates = [
+        dict(candidate_by_id[candidate_id])
+        for candidate_id in sampled_ids
+        if str(candidate_by_id[candidate_id]["tie_band_id"])
+        == ACTIVATION_CREDIT_TARGET_TIE_BAND_ID
+    ]
+    for candidate in target_band_candidates:
+        state_key = str(candidate["state_key"])
+        flat_index = int(candidate["flat_index"])
+        sparse_votes = torch.zeros_like(votes_by_key[state_key], dtype=torch.int16)
+        sparse_votes.view(-1)[flat_index] = votes_by_key[state_key].view(-1)[flat_index]
+        result = apply_integer_vote_update_reference(
+            tensor_states[state_key].vote_update_state(),
+            VoteUpdateInputs(votes=sparse_votes),
+            one_flip_spec,
+            local_selection_ordering_mode=LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+            local_selection_ordering_seed=ORACLE_SCREEN_ORDERING_SEED,
+            local_selection_ordering_step=ORACLE_SCREEN_ORDERING_STEP,
+        )
+        candidate["candidate_delta_sign"] = _candidate_delta_sign_from_one_flip(
+            q_after_one_flip=result.q_levels,
+            flat_index=flat_index,
+            current_q_level=int(candidate["current_q_level"]),
+        )
+    proxy_receipt = _compute_activation_credit_candidate_proxies(
+        model=model,
+        batch=batch,
+        tensor_states=tensor_states,
+        eligible_modules=eligible_modules,
+        device=device,
+        extras=extras,
+        candidate_by_id=candidate_by_id,
+        selected_candidate_ids=[candidate["candidate_id"] for candidate in target_band_candidates],
+        phase_progress=phase_progress,
+    )
+    if device.type == "cuda" and bool(proxy_receipt["any_capture_crossed_cpu"]):
+        raise RuntimeError("activation-credit smoke grad_proxy capture crossed CPU")
+    emit_start = time.perf_counter()
+    with _maybe_phase(phase_progress, "activation_credit_emit", step=1):
+        for candidate in target_band_candidates:
+            proxy = proxy_receipt["grad_proxy_by_candidate_id"].get(str(candidate["candidate_id"]))
+            row_index, col_index = _flat_weight_row_col(
+                int(candidate["flat_index"]),
+                int(tensor_states[str(candidate["state_key"])].vote_update_state().q_levels.shape[-1]),
+            )
+            credit_value = None if proxy is None else float(-proxy)
+            candidate_delta_sign = int(candidate.get("candidate_delta_sign", 0))
+            candidate["activation_credit_row_index"] = row_index
+            candidate["activation_credit_col_index"] = col_index
+            candidate["topology_row_block_128"] = int(
+                row_index // ACTIVATION_CREDIT_TOPOLOGY_ROW_BLOCK_SIZE
+            )
+            candidate["credit_sign"] = (
+                _sign_int(credit_value) if credit_value is not None else None
+            )
+            candidate["activation_credit_abs"] = (
+                float(abs(credit_value)) if credit_value is not None else None
+            )
+            candidate["signed_alignment"] = (
+                _sign_int(float(credit_value) * float(candidate_delta_sign))
+                if credit_value is not None and candidate_delta_sign != 0
+                else 0
+            )
+            candidate["activation_feature_valid"] = bool(
+                credit_value is not None and candidate_delta_sign != 0
+            )
+        feature_summary = _assign_activation_credit_features(target_band_candidates)
+        compact_summary = {
+            "target_tie_band_id": ACTIVATION_CREDIT_TARGET_TIE_BAND_ID,
+            "target_band_candidate_count": len(target_band_candidates),
+            "grad_proxy_candidate_count": sum(
+                1 for candidate in target_band_candidates if bool(candidate["activation_feature_valid"])
+            ),
+            "magnitude_bin_threshold": feature_summary["magnitude_bin_threshold"],
+            "magnitude_bin_histogram": feature_summary["magnitude_bin_histogram"],
+            "magnitude_bin_degenerate": feature_summary["magnitude_bin_degenerate"],
+            "singleton_magnitude_source_count": feature_summary[
+                "singleton_magnitude_source_count"
+            ],
+            "sampled_target_band_rows": [
+                {
+                    "candidate_id": str(candidate["candidate_id"]),
+                    "state_key": str(candidate["state_key"]),
+                    "flat_index": int(candidate["flat_index"]),
+                    "candidate_delta_sign": int(candidate.get("candidate_delta_sign", 0)),
+                    "credit_sign": candidate["credit_sign"],
+                    "credit_magnitude_bin": candidate["credit_magnitude_bin"],
+                    "signed_alignment": int(candidate["signed_alignment"]),
+                    "topology_row_block_128": int(candidate["topology_row_block_128"]),
+                    "activation_feature_valid": bool(candidate["activation_feature_valid"]),
+                }
+                for candidate in target_band_candidates
+            ],
+        }
+    binning_emission_seconds = float(time.perf_counter() - emit_start)
+    return {
+        "schema": "hrm_text_158_activation_credit_scale_smoke_runtime/v0",
+        "mode": ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_SCALE_SMOKE,
+        "same_candidate_set_required": True,
+        "branch_classification": None,
+        "screen_rows": int(batch["inputs"].shape[0]),
+        "candidate_count": len(candidate_by_id),
+        "sampled_candidate_count": len(sampled_ids),
+        "target_tie_band_id": ACTIVATION_CREDIT_TARGET_TIE_BAND_ID,
+        "grad_proxy_candidate_count": sum(
+            1 for candidate in target_band_candidates if bool(candidate["activation_feature_valid"])
+        ),
+        "oracle_feasible": True,
+        "background_candidate_generation_seconds": background_candidate_generation_seconds,
+        "observer_forward_backward_seconds": proxy_receipt["forward_backward_seconds"],
+        "grad_proxy_accumulation_seconds": proxy_receipt["grad_proxy_accumulation_seconds"],
+        "binning_emission_seconds": binning_emission_seconds,
+        "capture_device_mode": proxy_receipt["capture_device_mode"],
+        "capture_device_summary": proxy_receipt["capture_device_summary"],
+        "gather_device": proxy_receipt["gather_device"],
+        "any_capture_crossed_cpu": proxy_receipt["any_capture_crossed_cpu"],
+        "peak_device_memory_bytes": (
+            int(torch.cuda.max_memory_allocated(device))
+            if device.type == "cuda"
+            else None
+        ),
+        "compact_summary": compact_summary,
+        "artifact_size_bytes_estimate": len(
+            json.dumps(compact_summary, sort_keys=True).encode("utf-8")
+        ),
+        "non_persistence": {
+            "q_persisted": False,
+            "checkpoint_written": False,
+            "pt_writes_allowed": False,
+            "screen_state_mutated": False,
+        },
+    }
+
+
+def run_activation_credit_measurement_oracle_screen(
+    *,
+    model: LMHead,
+    batch: Mapping[str, torch.Tensor],
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+    eligible_modules: Mapping[str, BitLinear],
+    device: torch.device,
+    max_abs_per_tensor: int,
+    extras: Mapping[str, Any],
+    max_sampled_candidates: int = PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES,
+    max_seconds: float | None = None,
+    phase_progress: Any | None = None,
+) -> dict[str, Any]:
+    if int(max_sampled_candidates) != PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES:
+        raise ValueError(
+            "activation-credit measurement requires max_sampled_candidates == 32"
+        )
+    if max_seconds is None:
+        max_seconds = oracle_screen_budget_max_seconds(int(max_sampled_candidates))
+    universe_start = time.perf_counter()
+    universe = _build_oracle_candidate_universe(
+        model=model,
+        batch=batch,
+        tensor_states=tensor_states,
+        eligible_modules=eligible_modules,
+        device=device,
+        max_abs_per_tensor=int(max_abs_per_tensor),
+        extras=extras,
+        max_sampled_candidates=int(max_sampled_candidates),
+        phase_progress=phase_progress,
+    )
+    background_candidate_generation_seconds = float(time.perf_counter() - universe_start)
+    baseline_loss = float(universe["baseline_loss"])
+    one_flip_spec = universe["one_flip_spec"]
+    votes_by_key = universe["votes_by_key"]
+    candidate_by_id = universe["candidate_by_id"]
+    sampled_ids = list(universe["sampled_ids"])
+    sampled_candidates, oracle_top, budget_exceeded, elapsed_seconds = (
+        _evaluate_sampled_candidates_for_oracle_screen(
+            model=model,
+            batch=batch,
+            tensor_states=tensor_states,
+            eligible_modules=eligible_modules,
+            device=device,
+            extras=extras,
+            votes_by_key=votes_by_key,
+            candidate_by_id=candidate_by_id,
+            sampled_ids=sampled_ids,
+            baseline_loss=baseline_loss,
+            one_flip_spec=one_flip_spec,
+            max_seconds=float(max_seconds),
+            phase_progress=phase_progress,
+        )
+    )
+    sampled_count = len(sampled_candidates)
+    oracle_top1_delta = float(oracle_top[0]["local_loss_delta"]) if oracle_top else None
+    oracle_position_by_id = {
+        str(candidate["candidate_id"]): int(position)
+        for position, candidate in enumerate(oracle_top)
+    }
+    for candidate in sampled_candidates:
+        oracle_position = oracle_position_by_id.get(str(candidate["candidate_id"]))
+        candidate["oracle_best_sampled_rank_position"] = (
+            int(oracle_position) if oracle_position is not None else None
+        )
+    target_band_candidates = [
+        dict(candidate)
+        for candidate in sampled_candidates
+        if str(candidate["tie_band_id"]) == ACTIVATION_CREDIT_TARGET_TIE_BAND_ID
+    ]
+    for candidate in target_band_candidates:
+        state_key = str(candidate["state_key"])
+        flat_index = int(candidate["flat_index"])
+        sparse_votes = torch.zeros_like(votes_by_key[state_key], dtype=torch.int16)
+        sparse_votes.view(-1)[flat_index] = votes_by_key[state_key].view(-1)[flat_index]
+        result = apply_integer_vote_update_reference(
+            tensor_states[state_key].vote_update_state(),
+            VoteUpdateInputs(votes=sparse_votes),
+            one_flip_spec,
+            local_selection_ordering_mode=LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+            local_selection_ordering_seed=ORACLE_SCREEN_ORDERING_SEED,
+            local_selection_ordering_step=ORACLE_SCREEN_ORDERING_STEP,
+        )
+        candidate["candidate_delta_sign"] = _candidate_delta_sign_from_one_flip(
+            q_after_one_flip=result.q_levels,
+            flat_index=flat_index,
+            current_q_level=int(candidate["current_q_level"]),
+        )
+    target_band_oracle_top = sorted(
+        target_band_candidates,
+        key=lambda candidate: (
+            float(candidate["local_loss_delta"]),
+            str(candidate["candidate_id"]),
+        ),
+    )
+    target_band_oracle_best_candidate = (
+        dict(target_band_oracle_top[0]) if target_band_oracle_top else None
+    )
+    target_band_oracle_top1_delta = (
+        float(target_band_oracle_best_candidate["local_loss_delta"])
+        if target_band_oracle_best_candidate is not None
+        else None
+    )
+    for candidate in sampled_candidates:
+        if (
+            str(candidate["tie_band_id"]) == ACTIVATION_CREDIT_TARGET_TIE_BAND_ID
+            and target_band_oracle_top1_delta is not None
+        ):
+            candidate["regret_vs_target_tie_band_oracle_top1_local_loss_delta"] = float(
+                candidate["local_loss_delta"] - target_band_oracle_top1_delta
+            )
+        else:
+            candidate["regret_vs_target_tie_band_oracle_top1_local_loss_delta"] = None
+    proxy_receipt = _compute_activation_credit_candidate_proxies(
+        model=model,
+        batch=batch,
+        tensor_states=tensor_states,
+        eligible_modules=eligible_modules,
+        device=device,
+        extras=extras,
+        candidate_by_id=candidate_by_id,
+        selected_candidate_ids=[candidate["candidate_id"] for candidate in target_band_candidates],
+        phase_progress=phase_progress,
+    )
+    if device.type == "cuda" and bool(proxy_receipt["any_capture_crossed_cpu"]):
+        raise RuntimeError("activation-credit measurement grad_proxy capture crossed CPU")
+    emit_start = time.perf_counter()
+    with _maybe_phase(phase_progress, "activation_credit_emit", step=1):
+        by_id = {str(candidate["candidate_id"]): candidate for candidate in target_band_candidates}
+        for candidate in target_band_candidates:
+            proxy = proxy_receipt["grad_proxy_by_candidate_id"].get(str(candidate["candidate_id"]))
+            row_index, col_index = _flat_weight_row_col(
+                int(candidate["flat_index"]),
+                int(tensor_states[str(candidate["state_key"])].vote_update_state().q_levels.shape[-1]),
+            )
+            credit_value = None if proxy is None else float(-proxy)
+            candidate_delta_sign = int(candidate.get("candidate_delta_sign", 0))
+            candidate["activation_credit_row_index"] = row_index
+            candidate["activation_credit_col_index"] = col_index
+            candidate["topology_row_block_128"] = int(
+                row_index // ACTIVATION_CREDIT_TOPOLOGY_ROW_BLOCK_SIZE
+            )
+            candidate["credit_sign"] = (
+                _sign_int(credit_value) if credit_value is not None else None
+            )
+            candidate["activation_credit_abs"] = (
+                float(abs(credit_value)) if credit_value is not None else None
+            )
+            candidate["signed_alignment"] = (
+                _sign_int(float(credit_value) * float(candidate_delta_sign))
+                if credit_value is not None and candidate_delta_sign != 0
+                else 0
+            )
+            candidate["activation_feature_valid"] = bool(
+                credit_value is not None and candidate_delta_sign != 0
+            )
+        feature_summary = _assign_activation_credit_features(target_band_candidates)
+        for candidate in sampled_candidates:
+            activation_candidate = by_id.get(str(candidate["candidate_id"]))
+            if activation_candidate is None:
+                candidate["candidate_delta_sign"] = candidate.get("candidate_delta_sign")
+                candidate["credit_sign"] = None
+                candidate["credit_magnitude_bin"] = None
+                candidate["signed_alignment"] = None
+                candidate["topology_row_block_128"] = None
+                candidate["activation_feature_valid"] = False
+                continue
+            candidate.update(
+                {
+                    "candidate_delta_sign": int(activation_candidate.get("candidate_delta_sign", 0)),
+                    "credit_sign": activation_candidate["credit_sign"],
+                    "credit_magnitude_bin": activation_candidate["credit_magnitude_bin"],
+                    "signed_alignment": int(activation_candidate["signed_alignment"]),
+                    "topology_row_block_128": int(
+                        activation_candidate["topology_row_block_128"]
+                    ),
+                    "activation_feature_valid": bool(
+                        activation_candidate["activation_feature_valid"]
+                    ),
+                }
+            )
+        valid_target_band_candidates = [
+            candidate
+            for candidate in target_band_candidates
+            if bool(candidate["activation_feature_valid"])
+        ]
+        valid_oracle_best_candidate = (
+            by_id.get(str(target_band_oracle_best_candidate["candidate_id"]))
+            if target_band_oracle_best_candidate is not None
+            else None
+        )
+        metrics_by_family_id: dict[str, dict[str, Any]] = {}
+        family_ids = (
+            ACTIVATION_CREDIT_PRIMARY_FAMILY_ID,
+            *ACTIVATION_CREDIT_ABLATION_FAMILY_IDS,
+            ACTIVATION_CREDIT_TOPOLOGY_CONTROL_FAMILY_ID,
+        )
+        if valid_oracle_best_candidate is not None and bool(valid_oracle_best_candidate.get("activation_feature_valid")):
+            for family_id in family_ids:
+                metrics_by_family_id[family_id] = _activation_credit_family_metrics(
+                    target_band_candidates=valid_target_band_candidates,
+                    family_id=family_id,
+                    oracle_best_candidate=valid_oracle_best_candidate,
+                    oracle_top1_delta=target_band_oracle_top1_delta,
+                )
+    binning_emission_seconds = float(time.perf_counter() - emit_start)
+    primary_metrics = metrics_by_family_id.get(ACTIVATION_CREDIT_PRIMARY_FAMILY_ID)
+    topology_metrics = metrics_by_family_id.get(ACTIVATION_CREDIT_TOPOLOGY_CONTROL_FAMILY_ID)
+    topology_predictive = bool(
+        topology_metrics is not None and _activation_credit_family_is_predictive(topology_metrics)
+    )
+    magnitude_bin_degenerate = bool(feature_summary["magnitude_bin_degenerate"])
+    predictive = bool(
+        primary_metrics is not None
+        and not magnitude_bin_degenerate
+        and _activation_credit_family_is_predictive(primary_metrics)
+        and not topology_predictive
+    )
+    fail_closed = bool(
+        metrics_by_family_id
+        and all(
+            family_id in metrics_by_family_id
+            for family_id in (
+                ACTIVATION_CREDIT_PRIMARY_FAMILY_ID,
+                *ACTIVATION_CREDIT_ABLATION_FAMILY_IDS,
+            )
+        )
+        and not magnitude_bin_degenerate
+        and not topology_predictive
+        and all(
+            _activation_credit_family_is_fail_closed(metrics_by_family_id[family_id])
+            for family_id in (
+                ACTIVATION_CREDIT_PRIMARY_FAMILY_ID,
+                *ACTIVATION_CREDIT_ABLATION_FAMILY_IDS,
+            )
+            if family_id in metrics_by_family_id
+        )
+    )
+    if not bool(not budget_exceeded and sampled_count > 0):
+        branch_classification = BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH
+    elif not target_band_candidates:
+        branch_classification = BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH
+    elif magnitude_bin_degenerate:
+        branch_classification = BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH
+    elif predictive:
+        branch_classification = BRANCH_ACTIVATION_CREDIT_CANDIDATE_SIGNAL
+    elif fail_closed:
+        branch_classification = (
+            BRANCH_ACTIVATION_CREDIT_MISSING_SIGNAL_DEEPER_THAN_FIRST_ORDER_CREDIT_STORAGE
+        )
+    else:
+        branch_classification = BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH
+    compact_summary = {
+        "candidate_count": len(candidate_by_id),
+        "sampled_candidate_count": sampled_count,
+        "sampled_candidate_table": [
+            {
+                "candidate_id": str(candidate["candidate_id"]),
+                "in_target_tie_band": (
+                    str(candidate["tie_band_id"]) == ACTIVATION_CREDIT_TARGET_TIE_BAND_ID
+                ),
+                "state_key": str(candidate["state_key"]),
+                "flat_index": int(candidate["flat_index"]),
+                "vote_value": int(candidate["vote_value"]),
+                "current_margin_abs": int(candidate["current_margin_abs"]),
+                "current_rank_position": int(candidate["current_rank_position"]),
+                "transition_class": str(candidate["transition_class"]),
+                "candidate_delta_sign": candidate.get("candidate_delta_sign"),
+                "credit_sign": candidate.get("credit_sign"),
+                "credit_magnitude_bin": candidate.get("credit_magnitude_bin"),
+                "signed_alignment": candidate.get("signed_alignment"),
+                "topology_row_block_128": candidate.get("topology_row_block_128"),
+                "activation_feature_valid": bool(candidate.get("activation_feature_valid")),
+                "candidate_loss": float(candidate["candidate_loss"]),
+                "local_loss_delta": float(candidate["local_loss_delta"]),
+                "regret_vs_target_tie_band_oracle_top1_local_loss_delta": (
+                    float(candidate["regret_vs_target_tie_band_oracle_top1_local_loss_delta"])
+                    if candidate["regret_vs_target_tie_band_oracle_top1_local_loss_delta"]
+                    is not None
+                    else None
+                ),
+            }
+            for candidate in sorted(
+                sampled_candidates,
+                key=lambda candidate: (
+                    str(candidate["tie_band_id"]) != ACTIVATION_CREDIT_TARGET_TIE_BAND_ID,
+                    int(candidate["current_rank_position"]),
+                    str(candidate["candidate_id"]),
+                ),
+            )
+        ],
+        "target_tie_band": {
+            "target_tie_band_id": ACTIVATION_CREDIT_TARGET_TIE_BAND_ID,
+            "band_candidate_count": len(target_band_candidates),
+            "valid_activation_candidate_count": feature_summary["valid_target_band_candidate_count"],
+            "band_candidate_ids_hash16": _candidate_ids_hash16(
+                [str(candidate["candidate_id"]) for candidate in target_band_candidates]
+            ),
+            "band_candidate_fraction_of_sample": (
+                float(len(target_band_candidates) / sampled_count) if sampled_count > 0 else 0.0
+            ),
+            "target_tie_band_oracle_best_candidate_id": (
+                str(target_band_oracle_best_candidate["candidate_id"])
+                if target_band_oracle_best_candidate is not None
+                else None
+            ),
+            "magnitude_bin_threshold": feature_summary["magnitude_bin_threshold"],
+            "magnitude_bin_histogram": feature_summary["magnitude_bin_histogram"],
+            "magnitude_bin_degenerate": feature_summary["magnitude_bin_degenerate"],
+            "singleton_magnitude_source_count": feature_summary["singleton_magnitude_source_count"],
+            "fresh_confirmation_seed_required_for_persistent_followup": ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED,
+        },
+        "family_metrics": {
+            "decision_basis": "primary_plus_ablation_report_no_post_hoc_best_of_many",
+            "primary_family_id": ACTIVATION_CREDIT_PRIMARY_FAMILY_ID,
+            "topology_control_family_id": ACTIVATION_CREDIT_TOPOLOGY_CONTROL_FAMILY_ID,
+            "metrics_by_family_id": metrics_by_family_id,
+        },
+        "telemetry": {
+            "same_candidate_set_required": True,
+            "deterministic_hash_control_only": True,
+            "capture_device_mode": proxy_receipt["capture_device_mode"],
+            "capture_device_summary": proxy_receipt["capture_device_summary"],
+            "gather_device": proxy_receipt["gather_device"],
+            "any_capture_crossed_cpu": proxy_receipt["any_capture_crossed_cpu"],
+            "observer_forward_backward_seconds": proxy_receipt["forward_backward_seconds"],
+            "grad_proxy_accumulation_seconds": proxy_receipt["grad_proxy_accumulation_seconds"],
+            "background_candidate_generation_seconds": background_candidate_generation_seconds,
+            "oracle_evaluation_seconds": float(elapsed_seconds),
+            "binning_emission_seconds": binning_emission_seconds,
+            "topology_control_predictive": topology_predictive,
+            "topology_control_positive_forces_ambiguous": True,
+        },
+    }
+    return {
+        "schema": "hrm_text_158_activation_credit_measurement_runtime/v0",
+        "mode": ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_MEASUREMENT,
+        "same_candidate_set_required": True,
+        "screen_rows": int(batch["inputs"].shape[0]),
+        "baseline_loss": float(baseline_loss),
+        "candidate_count": len(candidate_by_id),
+        "sampled_candidate_count": sampled_count,
+        "sample_truncated": bool(len(candidate_by_id) > sampled_count),
+        "sampled_candidate_ids_hash16": _candidate_ids_hash16(
+            [str(candidate["candidate_id"]) for candidate in sampled_candidates]
+        ),
+        "max_sampled_candidates": int(max_sampled_candidates),
+        "max_seconds": float(max_seconds),
+        "elapsed_seconds": float(elapsed_seconds),
+        "budget_exceeded": bool(budget_exceeded),
+        "oracle_feasible": bool(not budget_exceeded),
+        "compact_summary": compact_summary,
+        "branch_classification": branch_classification,
+        "non_persistence": {
+            "q_persisted": False,
+            "checkpoint_written": False,
+            "pt_writes_allowed": False,
+            "screen_state_mutated": False,
+        },
+    }
+
+
 __all__ = [
+    "ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_MEASUREMENT",
+    "ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_SCALE_SMOKE",
     "ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY",
     "ORACLE_SCREEN_MODE_CREDIT_RANKING_PIVOT_MEASUREMENT",
     "ORACLE_SCREEN_MODE_WITHIN_TIE_BAND_DISCRIMINATOR",
     "ORACLE_SCREEN_MODE_CHOICES",
     "_fraction_gte_observed",
     "_fraction_lte_observed",
+    "run_activation_credit_measurement_oracle_screen",
+    "run_activation_credit_scale_smoke_oracle_screen",
     "run_credit_ranking_pivot_measurement_oracle_screen",
     "run_candidate_set_viability_oracle_screen",
     "run_within_tie_band_discriminator_oracle_screen",

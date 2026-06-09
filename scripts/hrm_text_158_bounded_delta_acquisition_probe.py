@@ -93,9 +93,13 @@ from calm.hrm_text_158.native_full_stack.front_c_live_identity_emission import (
 )
 from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
     ORACLE_SCREEN_MODE_CHOICES,
+    ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_MEASUREMENT,
+    ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_SCALE_SMOKE,
     ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY,
     ORACLE_SCREEN_MODE_CREDIT_RANKING_PIVOT_MEASUREMENT,
     ORACLE_SCREEN_MODE_WITHIN_TIE_BAND_DISCRIMINATOR,
+    run_activation_credit_measurement_oracle_screen,
+    run_activation_credit_scale_smoke_oracle_screen,
     run_credit_ranking_pivot_measurement_oracle_screen,
     run_candidate_set_viability_oracle_screen,
     run_within_tie_band_discriminator_oracle_screen,
@@ -4019,6 +4023,32 @@ def run_c2p1_probe(
             )
         elif str(oracle_screen_mode) == ORACLE_SCREEN_MODE_WITHIN_TIE_BAND_DISCRIMINATOR:
             oracle_screen = run_within_tie_band_discriminator_oracle_screen(
+                model=model,
+                batch=model_batch,
+                tensor_states=tensor_states,
+                eligible_modules=eligible,
+                device=torch_device,
+                max_abs_per_tensor=int(max_abs_per_tensor),
+                extras=extras,
+                max_sampled_candidates=oracle_screen_budget,
+                max_seconds=oracle_screen_max_seconds,
+                phase_progress=phase_progress,
+            )
+        elif str(oracle_screen_mode) == ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_SCALE_SMOKE:
+            oracle_screen = run_activation_credit_scale_smoke_oracle_screen(
+                model=model,
+                batch=model_batch,
+                tensor_states=tensor_states,
+                eligible_modules=eligible,
+                device=torch_device,
+                max_abs_per_tensor=int(max_abs_per_tensor),
+                extras=extras,
+                max_sampled_candidates=oracle_screen_budget,
+                max_seconds=oracle_screen_max_seconds,
+                phase_progress=phase_progress,
+            )
+        elif str(oracle_screen_mode) == ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_MEASUREMENT:
+            oracle_screen = run_activation_credit_measurement_oracle_screen(
                 model=model,
                 batch=model_batch,
                 tensor_states=tensor_states,

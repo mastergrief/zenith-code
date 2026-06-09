@@ -20,12 +20,16 @@ from calm.hrm_text_158.curriculum import BroadTokenizer
 from calm.hrm_text_158.lm_head import IGNORE_LABEL_ID
 from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     authoritative_forward_context,
+    candidate_weighted_grad_proxies_from_captures,
     make_bounded_tensor_state,
 )
 from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     ARM_A0_RANK_BUCKET_CURRENT,
     ARM_A1_RANK_BUCKET_ORDER_MATCHED,
     ARM_B_RANK_FREE_SIGN_PRESSURE,
+    BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH,
+    BRANCH_ACTIVATION_CREDIT_CANDIDATE_SIGNAL,
+    BRANCH_ACTIVATION_CREDIT_MISSING_SIGNAL_DEEPER_THAN_FIRST_ORDER_CREDIT_STORAGE,
     BRANCH_MEASUREMENT_AMBIGUOUS_NO_BRANCH,
     BRANCH_MEASUREMENT_AMBIGUOUS_TIE_BAND_ALIASING,
     BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE,
@@ -46,6 +50,8 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     oracle_screen_budget_max_seconds,
 )
 from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
+    ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_MEASUREMENT,
+    ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_SCALE_SMOKE,
     ORACLE_SCREEN_MODE_CREDIT_RANKING_PIVOT_MEASUREMENT,
     ORACLE_SCREEN_MODE_WITHIN_TIE_BAND_DISCRIMINATOR,
     _fraction_gte_observed,
@@ -56,6 +62,8 @@ from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
     _sampled_rank_fraction,
     _sampled_rank_position,
     _within_tie_band_family_metrics,
+    run_activation_credit_measurement_oracle_screen,
+    run_activation_credit_scale_smoke_oracle_screen,
     run_credit_ranking_pivot_measurement_oracle_screen,
     run_candidate_set_viability_oracle_screen,
     run_within_tie_band_discriminator_oracle_screen,
@@ -1938,6 +1946,194 @@ def test_tiny_credit_ranking_pivot_mode_returns_compact_non_persistent_receipt(
     assert oracle["non_persistence"]["q_persisted"] is False
     assert oracle["non_persistence"]["checkpoint_written"] is False
     assert Path(receipt["receipt_path"]).exists()
+
+
+def test_candidate_weighted_grad_proxies_preserve_invocation_pairing_order():
+    inputs = [
+        torch.tensor([[[1.0, 10.0]]], dtype=torch.float32),
+        torch.tensor([[[100.0, 1000.0]]], dtype=torch.float32),
+    ]
+    grad_outputs = [
+        torch.tensor([[[2.0, 20.0]]], dtype=torch.float32),
+        torch.tensor([[[3.0, 30.0]]], dtype=torch.float32),
+    ]
+
+    proxies = candidate_weighted_grad_proxies_from_captures(
+        inputs,
+        grad_outputs,
+        flat_indices=[0, 3],
+        weight_shape=(2, 2),
+    )
+
+    assert proxies.tolist() == pytest.approx(
+        [
+            (1.0 * 3.0) + (100.0 * 2.0),
+            (10.0 * 30.0) + (1000.0 * 20.0),
+        ]
+    )
+
+
+def test_direct_activation_credit_scale_smoke_runner_emits_device_resident_telemetry():
+    model, batch, eligible, states = _tiny_forward_fixture(batch_size=8)
+    receipt = run_activation_credit_scale_smoke_oracle_screen(
+        model=model,
+        batch=batch,
+        tensor_states=states,
+        eligible_modules=eligible,
+        device=torch.device("cpu"),
+        max_abs_per_tensor=4096,
+        extras=model.compute_train_extra_args(1, 1),
+        max_sampled_candidates=8,
+        max_seconds=oracle_screen_budget_max_seconds(8),
+    )
+
+    assert receipt["mode"] == ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_SCALE_SMOKE
+    assert receipt["same_candidate_set_required"] is True
+    assert receipt["branch_classification"] is None
+    assert receipt["sampled_candidate_count"] > 0
+    assert receipt["capture_device_mode"] == "device_resident"
+    assert receipt["gather_device"] == "cpu"
+    _assert_finite_non_negative(receipt["background_candidate_generation_seconds"])
+    _assert_finite_non_negative(receipt["observer_forward_backward_seconds"])
+    _assert_finite_non_negative(receipt["grad_proxy_accumulation_seconds"])
+    _assert_finite_non_negative(receipt["binning_emission_seconds"])
+    compact = receipt["compact_summary"]
+    assert set(compact) == {
+        "target_tie_band_id",
+        "target_band_candidate_count",
+        "grad_proxy_candidate_count",
+        "magnitude_bin_threshold",
+        "magnitude_bin_histogram",
+        "magnitude_bin_degenerate",
+        "singleton_magnitude_source_count",
+        "sampled_target_band_rows",
+    }
+    assert compact["target_tie_band_id"] == "voteabs=4|marginabs=4"
+    assert receipt["non_persistence"]["q_persisted"] is False
+    assert receipt["non_persistence"]["checkpoint_written"] is False
+
+
+def test_direct_activation_credit_measurement_runner_emits_compact_family_metrics():
+    model, batch, eligible, states = _tiny_forward_fixture(batch_size=8)
+    receipt = run_activation_credit_measurement_oracle_screen(
+        model=model,
+        batch=batch,
+        tensor_states=states,
+        eligible_modules=eligible,
+        device=torch.device("cpu"),
+        max_abs_per_tensor=4096,
+        extras=model.compute_train_extra_args(1, 1),
+        max_sampled_candidates=32,
+        max_seconds=oracle_screen_budget_max_seconds(32),
+    )
+
+    assert receipt["mode"] == ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_MEASUREMENT
+    assert receipt["same_candidate_set_required"] is True
+    assert receipt["candidate_count"] >= receipt["sampled_candidate_count"] > 0
+    assert receipt["max_sampled_candidates"] == 32
+    assert receipt["branch_classification"] in {
+        BRANCH_ACTIVATION_CREDIT_CANDIDATE_SIGNAL,
+        BRANCH_ACTIVATION_CREDIT_MISSING_SIGNAL_DEEPER_THAN_FIRST_ORDER_CREDIT_STORAGE,
+        BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH,
+    }
+    compact = receipt["compact_summary"]
+    assert set(compact) == {
+        "candidate_count",
+        "sampled_candidate_count",
+        "sampled_candidate_table",
+        "target_tie_band",
+        "family_metrics",
+        "telemetry",
+    }
+    assert compact["target_tie_band"]["target_tie_band_id"] == "voteabs=4|marginabs=4"
+    assert compact["target_tie_band"][
+        "fresh_confirmation_seed_required_for_persistent_followup"
+    ] == 71
+    assert compact["family_metrics"]["primary_family_id"] == "F_align_magbin"
+    assert compact["family_metrics"]["topology_control_family_id"] == (
+        "F_topology_lane_head_row_block128"
+    )
+    first_row = compact["sampled_candidate_table"][0]
+    assert {
+        "candidate_delta_sign",
+        "credit_sign",
+        "credit_magnitude_bin",
+        "signed_alignment",
+        "topology_row_block_128",
+        "activation_feature_valid",
+    }.issubset(first_row)
+    target_band_rows = [
+        row for row in compact["sampled_candidate_table"] if bool(row["in_target_tie_band"])
+    ]
+    assert target_band_rows
+    assert any(int(row["candidate_delta_sign"]) != 0 for row in target_band_rows)
+    assert any(bool(row["activation_feature_valid"]) for row in target_band_rows)
+    assert compact["telemetry"]["capture_device_mode"] == "device_resident"
+    assert compact["telemetry"]["gather_device"] == "cpu"
+    assert receipt["non_persistence"]["q_persisted"] is False
+    assert receipt["non_persistence"]["checkpoint_written"] is False
+
+
+def test_tiny_activation_credit_modes_return_compact_non_persistent_receipts(
+    tmp_path: Path,
+):
+    parent = tmp_path / "tiny_parent.pt"
+    torch.save(_tiny_parent_blob(batch_size=8), parent)
+    parent_sha = file_sha256(parent)
+
+    smoke_receipt = run_c2p1_probe(
+        parent=parent,
+        parent_sha256=parent_sha,
+        scratch_root=tmp_path / "scratch_activation_credit_smoke",
+        device="cpu",
+        eligible_scope="first-bitlinear",
+        steps=1,
+        batch_size=4,
+        max_len=TINY_ARCH["max_len"],
+        curriculum_seed=17,
+        enabled=True,
+        oracle_screen_mode=ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_SCALE_SMOKE,
+        oracle_screen_max_sampled_candidates=8,
+    )
+    assert smoke_receipt["science_arm"] is None
+    assert smoke_receipt["oracle_screen_mode"] == ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_SCALE_SMOKE
+    assert smoke_receipt["stop_reason"] == "oracle_screen_completed"
+    smoke_oracle = smoke_receipt["oracle_screen"]
+    assert smoke_oracle["mode"] == ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_SCALE_SMOKE
+    assert smoke_oracle["branch_classification"] is None
+    assert smoke_oracle["capture_device_mode"] == "device_resident"
+    assert smoke_oracle["non_persistence"]["q_persisted"] is False
+    assert Path(smoke_receipt["receipt_path"]).exists()
+
+    full_receipt = run_c2p1_probe(
+        parent=parent,
+        parent_sha256=parent_sha,
+        scratch_root=tmp_path / "scratch_activation_credit_full",
+        device="cpu",
+        eligible_scope="first-bitlinear",
+        steps=1,
+        batch_size=8,
+        max_len=TINY_ARCH["max_len"],
+        curriculum_seed=17,
+        enabled=True,
+        oracle_screen_mode=ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_MEASUREMENT,
+        oracle_screen_max_sampled_candidates=32,
+    )
+    assert full_receipt["science_arm"] is None
+    assert full_receipt["oracle_screen_mode"] == ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_MEASUREMENT
+    assert full_receipt["stop_reason"] == "oracle_screen_completed"
+    full_oracle = full_receipt["oracle_screen"]
+    assert full_oracle["mode"] == ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_MEASUREMENT
+    assert full_oracle["branch_classification"] in {
+        BRANCH_ACTIVATION_CREDIT_CANDIDATE_SIGNAL,
+        BRANCH_ACTIVATION_CREDIT_MISSING_SIGNAL_DEEPER_THAN_FIRST_ORDER_CREDIT_STORAGE,
+        BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH,
+    }
+    assert full_oracle["compact_summary"]["target_tie_band"][
+        "fresh_confirmation_seed_required_for_persistent_followup"
+    ] == 71
+    assert full_oracle["non_persistence"]["q_persisted"] is False
+    assert Path(full_receipt["receipt_path"]).exists()
 
 
 def test_within_tie_band_null_fraction_helpers_are_directional():

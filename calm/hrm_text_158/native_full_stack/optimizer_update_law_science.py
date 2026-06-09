@@ -50,6 +50,15 @@ WITHIN_TIE_BAND_DISCRIMINATOR_PACKET_KIND = (
 WITHIN_TIE_BAND_DISCRIMINATOR_LAUNCH_BUNDLE_PACKET_KIND = (
     "within_tie_band_discriminator_measurement_launch_bundle"
 )
+ACTIVATION_CREDIT_MEASUREMENT_PACKET_KIND = (
+    "pre_full_stack_diagnostic__activation_credit_measurement"
+)
+ACTIVATION_CREDIT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND = (
+    "activation_credit_measurement_launch_bundle"
+)
+ACTIVATION_CREDIT_SCALE_SMOKE_LAUNCH_BUNDLE_PACKET_KIND = (
+    "activation_credit_scale_smoke_launch_bundle"
+)
 
 SCIENCE_MODE_PRETERMINAL_SCREEN = "preterminal_screen"
 SCIENCE_MODE_BRANCH_VERDICT = "branch_verdict"
@@ -211,6 +220,50 @@ WITHIN_TIE_BAND_DISCRIMINATOR_BRANCHES = (
     BRANCH_WITHIN_TIE_BAND_NEEDS_NEW_LEARNER_STATE,
     BRANCH_WITHIN_TIE_BAND_AMBIGUOUS_NO_BRANCH,
 )
+BRANCH_ACTIVATION_CREDIT_CANDIDATE_SIGNAL = "activation_credit_candidate_signal"
+BRANCH_ACTIVATION_CREDIT_MISSING_SIGNAL_DEEPER_THAN_FIRST_ORDER_CREDIT_STORAGE = (
+    "activation_credit_missing_signal_deeper_than_first_order_credit_storage"
+)
+BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH = (
+    "activation_credit_ambiguous_no_branch"
+)
+ACTIVATION_CREDIT_BRANCHES = (
+    BRANCH_ACTIVATION_CREDIT_CANDIDATE_SIGNAL,
+    BRANCH_ACTIVATION_CREDIT_MISSING_SIGNAL_DEEPER_THAN_FIRST_ORDER_CREDIT_STORAGE,
+    BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH,
+)
+ACTIVATION_CREDIT_PRIMARY_FAMILY_ID = "F_align_magbin"
+ACTIVATION_CREDIT_ABLATION_FAMILY_IDS = (
+    "F_alignment_only",
+    "F_magbin_only",
+    "F_sign_only",
+    "F_align_magbin_transition",
+)
+ACTIVATION_CREDIT_TOPOLOGY_CONTROL_FAMILY_ID = (
+    "F_topology_lane_head_row_block128"
+)
+ACTIVATION_CREDIT_TARGET_TIE_BAND_ID = WITHIN_TIE_BAND_TARGET_TIE_BAND_ID
+ACTIVATION_CREDIT_MATCHED_HASH_SIGNAL_MIN = WITHIN_TIE_BAND_MATCHED_HASH_SIGNAL_MIN
+ACTIVATION_CREDIT_PREDICTIVE_BUCKET_FRACTION_MAX = (
+    WITHIN_TIE_BAND_PREDICTIVE_BUCKET_FRACTION_MAX
+)
+ACTIVATION_CREDIT_PREDICTIVE_REGRET_SPREAD_RATIO_MAX = (
+    WITHIN_TIE_BAND_PREDICTIVE_REGRET_SPREAD_RATIO_MAX
+)
+ACTIVATION_CREDIT_PREDICTIVE_REGRET_CAPTURE_RATIO_MIN = (
+    WITHIN_TIE_BAND_PREDICTIVE_REGRET_CAPTURE_RATIO_MIN
+)
+ACTIVATION_CREDIT_FAIL_CLOSED_BUCKET_FRACTION_GT = (
+    WITHIN_TIE_BAND_FAIL_CLOSED_BUCKET_FRACTION_GT
+)
+ACTIVATION_CREDIT_FAIL_CLOSED_REGRET_SPREAD_RATIO_GT = (
+    WITHIN_TIE_BAND_FAIL_CLOSED_REGRET_SPREAD_RATIO_GT
+)
+ACTIVATION_CREDIT_SMOKE_MAX_SAMPLED_CANDIDATES = 8
+ACTIVATION_CREDIT_SMOKE_BATCH_SIZE = 4
+ACTIVATION_CREDIT_MAGNITUDE_BIN_COUNT = 2
+ACTIVATION_CREDIT_TOPOLOGY_ROW_BLOCK_SIZE = 128
+ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED = 71
 OPTIMIZER_UPDATE_LAW_BRANCHES = (
     BRANCH_RANK_FREE_POSITIVE,
     BRANCH_RANKING_STILL_REQUIRED,
@@ -350,6 +403,10 @@ ORACLE_SCREEN_MAX_SECONDS_BY_BUDGET = {
 ORACLE_SCREEN_SCIENCE_CONTRACT_COMMIT_SHA = (
     "afbe598de6d81a776bf2bd9fc12115cf1293f9d6"
 )
+ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE = "first-bitlinear"
+ACTIVATION_CREDIT_MEASUREMENT_BATCH_SIZE = ORACLE_SCREEN_N20_ROWS
+ACTIVATION_CREDIT_GRAD_PROXY_COMPUTE_MODE = "candidate_only_gather"
+ACTIVATION_CREDIT_CAPTURE_DEVICE_MODE = "device_resident"
 STEP4_MATCH_STRICT_GAP_MAX = 3
 STEP4_MATCH_STRICT_TOTAL = 90
 STEP4_MASS_RATIO_MIN = 0.75
@@ -689,6 +746,35 @@ def default_phase_budgets() -> dict[str, Any]:
     }
 
 
+def default_activation_credit_phase_budgets(*, smoke: bool) -> dict[str, Any]:
+    forward_backward_seconds = 60 if smoke else 180
+    gather_seconds = 30 if smoke else 120
+    emit_seconds = 30 if smoke else 90
+    flush_seconds = 20 if smoke else 60
+    return {
+        "forward_backward": {
+            "first_milestone_seconds": forward_backward_seconds,
+            "probe_phase_markers": ["activation_credit_forward_backward"],
+        },
+        "vote_gen_update": {
+            "first_milestone_seconds": gather_seconds,
+            "probe_phase_markers": ["activation_credit_gather"],
+        },
+        "emission_accounting": {
+            "first_milestone_seconds": emit_seconds,
+            "probe_phase_markers": ["activation_credit_emit"],
+        },
+        "artifact_flush": {
+            "first_milestone_seconds": flush_seconds,
+            "probe_phase_markers": ["checkpoint_payload", "receipt_write"],
+        },
+        "background_candidate_generation": {
+            "first_milestone_seconds": forward_backward_seconds,
+            "probe_phase_markers": ["step_forward_backward", "step_update", "audit"],
+        },
+    }
+
+
 def default_watcher_bundle() -> dict[str, Any]:
     return {
         "watcher_kind": "line_oriented_progress_monitor",
@@ -715,6 +801,20 @@ def default_watcher_bundle() -> dict[str, Any]:
         },
         "terminal_receipt_required": True,
     }
+
+
+def default_activation_credit_watcher_bundle() -> dict[str, Any]:
+    bundle = deepcopy(default_watcher_bundle())
+    progress_filters = list(bundle.get("progress_filters") or ())
+    for marker in (
+        "activation_credit_forward_backward",
+        "activation_credit_gather",
+        "activation_credit_emit",
+    ):
+        if marker not in progress_filters:
+            progress_filters.append(marker)
+    bundle["progress_filters"] = progress_filters
+    return bundle
 
 
 def default_screen_before_verdict_dependency() -> dict[str, Any]:
@@ -1489,6 +1589,262 @@ def default_within_tie_band_discriminator_measurement_contract() -> dict[str, An
             "singleton_bucket_count_required": True,
         },
         "allowed_seed_local_labels": list(WITHIN_TIE_BAND_DISCRIMINATOR_BRANCHES),
+    }
+
+
+def default_activation_credit_compact_summary_schema() -> dict[str, Any]:
+    allowed_fields = [
+        "candidate_count",
+        "sampled_candidate_count",
+        "sampled_candidate_table",
+        "target_tie_band",
+        "family_metrics",
+        "telemetry",
+    ]
+    return {
+        "compact_summary_only": True,
+        "allowed_fields": allowed_fields,
+        "required_fields": allowed_fields,
+        "raw_per_proposal_arrays": False,
+        "raw_candidate_scores": False,
+        "raw_local_loss_deltas": False,
+    }
+
+
+def default_activation_credit_scale_smoke_compact_summary_schema() -> dict[str, Any]:
+    allowed_fields = [
+        "target_tie_band_id",
+        "target_band_candidate_count",
+        "grad_proxy_candidate_count",
+        "magnitude_bin_threshold",
+        "magnitude_bin_histogram",
+        "magnitude_bin_degenerate",
+        "singleton_magnitude_source_count",
+        "sampled_target_band_rows",
+    ]
+    return {
+        "compact_summary_only": True,
+        "allowed_fields": allowed_fields,
+        "required_fields": allowed_fields,
+        "raw_per_proposal_arrays": False,
+        "raw_candidate_scores": False,
+        "raw_local_loss_deltas": False,
+    }
+
+
+def default_activation_credit_measurement_contract() -> dict[str, Any]:
+    learner_available_fields = [
+        "candidate_id",
+        "state_key",
+        "flat_index",
+        "vote_value",
+        "current_margin_abs",
+        "current_rank_position",
+        "tie_band_id",
+        "transition_class",
+        "candidate_delta_sign",
+        "credit_sign",
+        "credit_magnitude_bin",
+        "signed_alignment",
+        "topology_row_block_128",
+        "activation_feature_valid",
+    ]
+    return {
+        "contract_kind": "activation_credit_within_tie_band_measurement",
+        "candidate_generation_fixed": True,
+        "same_candidate_set_required": True,
+        "contrast_support_order_seeds": list(ORACLE_SCREEN_CONTRAST_SEEDS),
+        "required_max_sampled_candidates": PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES,
+        "required_eligible_scope": ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE,
+        "target_tie_band_id": ACTIVATION_CREDIT_TARGET_TIE_BAND_ID,
+        "oracle_best_in_target_tie_band_required": True,
+        "top_k": PIVOT_MEASUREMENT_TOP_K,
+        "rank_position_index_base": 0,
+        "activation_credit_source": {
+            "grad_proxy_formula": "sum(dL/dy_row * x_col) over autograd-captured invocations/positions; no extra response-label mask",
+            "capture_device_mode": ACTIVATION_CREDIT_CAPTURE_DEVICE_MODE,
+            "grad_proxy_compute_mode": ACTIVATION_CREDIT_GRAD_PROXY_COMPUTE_MODE,
+            "candidate_only_gather_required": True,
+            "no_extra_response_label_mask": True,
+            "fixed_background_candidate_generation_allowed": True,
+            "fixed_background_must_be_labeled_non_hot_loop": True,
+            "fp_proxy_transient_eval_only": True,
+            "policy_facing_fields": [
+                "credit_sign",
+                "credit_magnitude_bin",
+                "signed_alignment",
+            ],
+        },
+        "feature_construction": {
+            "candidate_delta_sign_source": "sign(q_after_one_flip[flat_index] - current_q_level)",
+            "candidate_delta_sign_zero_invalidates_row": True,
+            "signed_alignment_formula": "sign(-grad_proxy * candidate_delta_sign)",
+            "primary_family_excludes_credit_sign": True,
+            "credit_sign_report_only_ablation": True,
+            "credit_magnitude_bin_count": ACTIVATION_CREDIT_MAGNITUDE_BIN_COUNT,
+            "credit_magnitude_bin_strategy": "median_split_over_sampled_target_band_abs_grad_proxy",
+            "magnitude_bin_degenerate_if_all_tie_or_lt4": True,
+            "degenerate_branch_label": BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH,
+        },
+        "learner_available_ranking_input_fields": learner_available_fields,
+        "learner_available_field_provenance": {
+            "candidate_id": "_build_oracle_candidate_universe:_candidate_id(state_key, flat_index)",
+            "state_key": "_build_oracle_candidate_universe: loop key before oracle evaluation",
+            "flat_index": "_build_oracle_candidate_universe: unordered candidate index from _ordered_candidate_indices",
+            "vote_value": "_build_oracle_candidate_universe: vote_flat[flat_index] before _evaluate_loss",
+            "current_margin_abs": "_build_oracle_candidate_universe: abs(new_acc[flat_index]) before _evaluate_loss",
+            "current_rank_position": "_build_oracle_candidate_universe: enumerate(current_ordered) within state",
+            "tie_band_id": "_build_oracle_candidate_universe: _pivot_tie_band_id(abs(vote_value), current_margin_abs)",
+            "transition_class": "_build_oracle_candidate_universe: tuple(current_q_level, proposal_direction)",
+            "candidate_delta_sign": "_evaluate_sampled_candidates_for_oracle_screen: sign(q_after_one_flip[flat_index] - current_q_level)",
+            "credit_sign": "run_activation_credit_measurement_oracle_screen: sign(-grad_proxy) report-only ablation",
+            "credit_magnitude_bin": "run_activation_credit_measurement_oracle_screen: median split over target-band abs(grad_proxy)",
+            "signed_alignment": "run_activation_credit_measurement_oracle_screen: sign(-grad_proxy * candidate_delta_sign)",
+            "topology_row_block_128": "run_activation_credit_measurement_oracle_screen: row_index // 128 from flat_index decomposition",
+            "activation_feature_valid": "run_activation_credit_measurement_oracle_screen: grad_proxy available and candidate_delta_sign != 0",
+        },
+        "oracle_only_label_fields": [
+            "candidate_loss",
+            "local_loss_delta",
+            "regret_vs_target_tie_band_oracle_top1_local_loss_delta",
+            "target_tie_band_oracle_best_candidate_id",
+        ],
+        "family_discriminator": {
+            "primary": ACTIVATION_CREDIT_PRIMARY_FAMILY_ID,
+            "ablations": list(ACTIVATION_CREDIT_ABLATION_FAMILY_IDS),
+            "topology_control": ACTIVATION_CREDIT_TOPOLOGY_CONTROL_FAMILY_ID,
+            "fields_by_family_id": {
+                ACTIVATION_CREDIT_PRIMARY_FAMILY_ID: [
+                    "signed_alignment",
+                    "credit_magnitude_bin",
+                ],
+                "F_alignment_only": [
+                    "signed_alignment",
+                ],
+                "F_magbin_only": [
+                    "credit_magnitude_bin",
+                ],
+                "F_sign_only": [
+                    "credit_sign",
+                ],
+                "F_align_magbin_transition": [
+                    "signed_alignment",
+                    "credit_magnitude_bin",
+                    "transition_class",
+                ],
+                ACTIVATION_CREDIT_TOPOLOGY_CONTROL_FAMILY_ID: [
+                    "topology_row_block_128",
+                ],
+            },
+            "decision_basis": "primary_plus_ablation_report_no_post_hoc_best_of_many",
+            "hash_control_role": "null_distribution_only",
+            "null_distribution": {
+                "deterministic_hash_seeds": list(PIVOT_MEASUREMENT_NULL_HASH_SEEDS),
+                "matched_cardinality_bucket_partitions": True,
+                "smaller_bucket_fraction_guard_field": (
+                    "matched_hash_null_fraction_gte_observed_bucket_fraction"
+                ),
+                "smaller_bucket_fraction_guard_comparison": "fraction_gte_observed",
+                "larger_regret_capture_guard_field": (
+                    "matched_hash_null_fraction_lte_observed_regret_capture_ratio"
+                ),
+                "larger_regret_capture_guard_comparison": "fraction_lte_observed",
+            },
+        },
+        "within_band_decision": {
+            "decision_metrics": [
+                "oracle_best_bucket_fraction",
+                "oracle_best_bucket_regret_spread_ratio",
+                "oracle_best_bucket_regret_capture_ratio",
+                "oracle_best_bucket_top_k_capture_fraction",
+                "matched_hash_null_fraction_gte_observed_bucket_fraction",
+                "matched_hash_null_fraction_lte_observed_regret_capture_ratio",
+                "within_band_pairwise_auc_report_only",
+            ],
+            "target_tie_band_missing_branch_label": (
+                BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH
+            ),
+            "predictive_branch_label": BRANCH_ACTIVATION_CREDIT_CANDIDATE_SIGNAL,
+            "predictive_family_id": ACTIVATION_CREDIT_PRIMARY_FAMILY_ID,
+            "predictive_bucket_fraction_max": (
+                ACTIVATION_CREDIT_PREDICTIVE_BUCKET_FRACTION_MAX
+            ),
+            "predictive_regret_spread_ratio_max": (
+                ACTIVATION_CREDIT_PREDICTIVE_REGRET_SPREAD_RATIO_MAX
+            ),
+            "predictive_regret_capture_ratio_min": (
+                ACTIVATION_CREDIT_PREDICTIVE_REGRET_CAPTURE_RATIO_MIN
+            ),
+            "predictive_matched_hash_guard_min": (
+                ACTIVATION_CREDIT_MATCHED_HASH_SIGNAL_MIN
+            ),
+            "fail_closed_branch_label": (
+                BRANCH_ACTIVATION_CREDIT_MISSING_SIGNAL_DEEPER_THAN_FIRST_ORDER_CREDIT_STORAGE
+            ),
+            "fail_closed_requires_all_preregistered_families": True,
+            "fail_closed_bucket_fraction_gt": (
+                ACTIVATION_CREDIT_FAIL_CLOSED_BUCKET_FRACTION_GT
+            ),
+            "fail_closed_regret_spread_ratio_gt": (
+                ACTIVATION_CREDIT_FAIL_CLOSED_REGRET_SPREAD_RATIO_GT
+            ),
+            "fail_closed_matched_hash_signal_min": (
+                ACTIVATION_CREDIT_MATCHED_HASH_SIGNAL_MIN
+            ),
+            "topology_control_family_id": ACTIVATION_CREDIT_TOPOLOGY_CONTROL_FAMILY_ID,
+            "topology_control_positive_forces_ambiguous": True,
+            "ambiguous_branch_label": BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH,
+        },
+        "fragmentation_audit": {
+            "bucket_cardinality_histogram_required": True,
+            "singleton_bucket_count_required": True,
+            "magnitude_bin_histogram_required": True,
+            "singleton_magnitude_source_count_required": True,
+        },
+        "scale_smoke_gate": {
+            "required_before_full_eval": True,
+            "smoke_launch_bundle_packet_kind": (
+                ACTIVATION_CREDIT_SCALE_SMOKE_LAUNCH_BUNDLE_PACKET_KIND
+            ),
+            "required_max_sampled_candidates": (
+                ACTIVATION_CREDIT_SMOKE_MAX_SAMPLED_CANDIDATES
+            ),
+            "required_batch_size": ACTIVATION_CREDIT_SMOKE_BATCH_SIZE,
+            "smoke_branch_classification_must_be_null": True,
+            "required_grad_proxy_candidate_count_positive": True,
+        },
+        "fresh_confirmation_gate": {
+            "required_seed_before_persistent_followup": (
+                ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED
+            ),
+            "two_seed_positive_label": BRANCH_ACTIVATION_CREDIT_CANDIDATE_SIGNAL,
+            "persistent_followup_forbidden_before_fresh_confirmation": True,
+        },
+        "allowed_seed_local_labels": list(ACTIVATION_CREDIT_BRANCHES),
+    }
+
+
+def default_activation_credit_scale_smoke_contract() -> dict[str, Any]:
+    return {
+        "contract_kind": "activation_credit_scale_smoke_only",
+        "same_candidate_set_required": True,
+        "contrast_support_order_seeds": list(ORACLE_SCREEN_CONTRAST_SEEDS),
+        "required_max_sampled_candidates": ACTIVATION_CREDIT_SMOKE_MAX_SAMPLED_CANDIDATES,
+        "required_batch_size": ACTIVATION_CREDIT_SMOKE_BATCH_SIZE,
+        "required_eligible_scope": ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE,
+        "target_tie_band_id": ACTIVATION_CREDIT_TARGET_TIE_BAND_ID,
+        "capture_device_mode": ACTIVATION_CREDIT_CAPTURE_DEVICE_MODE,
+        "grad_proxy_compute_mode": ACTIVATION_CREDIT_GRAD_PROXY_COMPUTE_MODE,
+        "no_extra_response_label_mask": True,
+        "fixed_background_must_be_labeled_non_hot_loop": True,
+        "smoke_branch_classification_must_be_null": True,
+        "required_grad_proxy_candidate_count_positive": True,
+        "policy_verdict_forbidden": True,
+        "allowed_policy_facing_fields": [
+            "credit_sign",
+            "credit_magnitude_bin",
+            "signed_alignment",
+        ],
     }
 
 
@@ -3137,6 +3493,502 @@ def build_credit_ranking_pivot_measurement_launch_bundle(
     return packet
 
 
+def build_activation_credit_measurement_packet(
+    *,
+    parent_path: str | Path,
+    parent_sha256: str,
+    launch_gate_id: str | None = None,
+) -> dict[str, Any]:
+    budget = PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES
+    packet = {
+        "schema_version": OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION,
+        "packet_kind": ACTIVATION_CREDIT_MEASUREMENT_PACKET_KIND,
+        "target_name": ACTIVATION_CREDIT_MEASUREMENT_PACKET_KIND,
+        "artifact_role": "activation_credit_measurement_author_packet",
+        "diagnostic_class": DIAGNOSTIC_CLASS_PRE_FULL_STACK,
+        "pre_full_stack_diagnostic": True,
+        "author_only": True,
+        "commands_executed": False,
+        "gpu_launched": False,
+        "launch_gate_id": launch_gate_id,
+        "pt_mutated": False,
+        "readiness_claim": False,
+        "full_sub2_claim": False,
+        "ready_for_main_science": False,
+        "carrier_claim": False,
+        "checkpoint_written": False,
+        "optimizer_credit_state_row_flip": False,
+        "optimizer_credit_state_science_dependent": True,
+        "branch_result": None,
+        "qacc_kernelized": False,
+        "parent_path": str(parent_path),
+        "parent_sha256": str(parent_sha256),
+        "eligible_scope": ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE,
+        "arms": default_oracle_screen_arms(),
+        "same_candidate_set_required": True,
+        "seed_order_contract": default_oracle_screen_seed_order_contract(),
+        "oracle_feasibility_budget": default_oracle_feasibility_budget_for(
+            max_sampled_candidates=budget
+        ),
+        "oracle_non_persistence_contract": default_oracle_non_persistence_contract(),
+        "compact_summary_schema": default_activation_credit_compact_summary_schema(),
+        "measurement_contract": default_activation_credit_measurement_contract(),
+        "scale_smoke_required_before_full_eval": True,
+        "scale_smoke_launch_bundle_packet_kind": (
+            ACTIVATION_CREDIT_SCALE_SMOKE_LAUNCH_BUNDLE_PACKET_KIND
+        ),
+        "fresh_confirmation_seed_required_for_persistent_followup": (
+            ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED
+        ),
+        "artifact_policy": {
+            "compact_json_ndjson_only": True,
+            "raw_per_proposal_arrays": False,
+            "pt_writes_allowed": False,
+            "oracle_artifact_path": None,
+        },
+        "non_claims": [
+            "packet scaffold only; no measurement execution",
+            "no GPU launch from packet authoring",
+            "no .pt mutation or checkpoint promotion",
+            "measurement keeps candidate generation fixed and target tie-band fixed",
+            "device-resident activation-credit path only; legacy background path must remain explicitly non-hot-loop if unchanged",
+            "deterministic hash remains null/control only",
+            "no readiness row flip",
+            "no carrier or full-sub2 runtime claim",
+            "optimizer_credit_state remains science-dependent",
+            "no persistent eligibility build before fresh seed 71 confirmation",
+            "full activation-credit read remains blocked on the de-risk smoke receipt",
+        ],
+    }
+    validate_activation_credit_measurement_packet(packet)
+    return packet
+
+
+def _build_activation_credit_measurement_command_record(
+    *,
+    repo_root: str | Path,
+    run_root: str | Path,
+    parent_path: str | Path,
+    parent_sha256: str,
+    support_order_seed: int,
+    device: str,
+    phase_timeout_seconds: int | float,
+    total_timeout_seconds: int | float,
+    max_silent_phase_seconds: int | float,
+) -> dict[str, Any]:
+    budget = PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES
+    seed_label = _support_order_seed_label(int(support_order_seed))
+    scratch_root = _path_join(run_root, seed_label)
+    receipt_path = _path_join(scratch_root, "receipt.json")
+    stdout_path = _path_join(scratch_root, "stdout.ndjson")
+    stderr_path = _path_join(scratch_root, "stderr.log")
+    argv = [
+        "python3",
+        "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+        "--enable-bounded-delta-probe",
+        "--allow-gpu-launch",
+        "--oracle-screen-mode",
+        "activation_credit_measurement",
+        "--phase",
+        f"activation-credit-measurement-n20-{seed_label}",
+        "--device",
+        str(device),
+        "--parent",
+        str(parent_path),
+        "--parent-sha256",
+        str(parent_sha256),
+        "--scratch-root",
+        scratch_root,
+        "--curriculum-seed",
+        str(STEP6_CURRICULUM_SEED),
+        "--support-order-seed",
+        str(int(support_order_seed)),
+        "--oracle-screen-max-sampled-candidates",
+        str(budget),
+        "--batch-size",
+        str(ACTIVATION_CREDIT_MEASUREMENT_BATCH_SIZE),
+        "--eligible-scope",
+        ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE,
+        "--steps",
+        "1",
+        "--max-steps-hard",
+        "1",
+        "--max-abs-per-tensor",
+        str(STEP3_BASELINE_MAX_ABS_PER_TENSOR),
+        "--emit-progress",
+        "--phase-timeout-seconds",
+        str(phase_timeout_seconds),
+        "--total-timeout-seconds",
+        str(total_timeout_seconds),
+        "--max-silent-phase-seconds",
+        str(max_silent_phase_seconds),
+    ]
+    return {
+        "mode": "activation_credit_measurement_n20",
+        "phase_role": "activation_credit_measurement",
+        "support_order_seed": int(support_order_seed),
+        "seed_label": seed_label,
+        "oracle_screen_mode": "activation_credit_measurement",
+        "screen_rows": ACTIVATION_CREDIT_MEASUREMENT_BATCH_SIZE,
+        "n_rows": ACTIVATION_CREDIT_MEASUREMENT_BATCH_SIZE,
+        "steps_requested": 1,
+        "steps_source": "fixed_single_support_batch_activation_credit_measurement",
+        "batch_size": ACTIVATION_CREDIT_MEASUREMENT_BATCH_SIZE,
+        "eligible_scope": ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE,
+        "curriculum_seed": STEP6_CURRICULUM_SEED,
+        "same_candidate_set_required": True,
+        "max_sampled_candidates": budget,
+        "oracle_max_seconds": oracle_screen_budget_max_seconds(budget),
+        "max_abs_per_tensor": STEP3_BASELINE_MAX_ABS_PER_TENSOR,
+        "fraction_per_tensor": STEP3_FRACTION_PER_TENSOR,
+        "global_cap_contract": "off",
+        "capture_device_mode": ACTIVATION_CREDIT_CAPTURE_DEVICE_MODE,
+        "grad_proxy_compute_mode": ACTIVATION_CREDIT_GRAD_PROXY_COMPUTE_MODE,
+        "no_extra_response_label_mask": True,
+        "fp_proxy_transient_eval_only": True,
+        "cwd": str(repo_root),
+        "env": {
+            "HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE": "1",
+            "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH": "1",
+        },
+        "argv": argv,
+        "stdout_path": stdout_path,
+        "stderr_path": stderr_path,
+        "receipt_path": receipt_path,
+        "scratch_root": scratch_root,
+        "enabled_if": "fixed contrast seeds 43 and 29 only; same candidate set once per seed; smoke receipt must clear first",
+        "expected_exit_policy": "exit_0_required_else_stop_no_retry_no_verdict",
+    }
+
+
+def build_activation_credit_measurement_launch_bundle(
+    *,
+    parent_path: str | Path,
+    parent_sha256: str,
+    repo_root: str | Path,
+    run_root: str | Path,
+    device: str = "cuda:0",
+    launch_gate_id: str | None = None,
+    symbolic_resource_lane: str = "gpu:0",
+    phase_timeout_seconds: int | float = 1800,
+    total_timeout_seconds: int | float = 7200,
+    max_silent_phase_seconds: int | float = 300,
+) -> dict[str, Any]:
+    budget = PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES
+    science_contract = packet_without_runtime_results(
+        build_activation_credit_measurement_packet(
+            parent_path=parent_path,
+            parent_sha256=parent_sha256,
+            launch_gate_id=None,
+        ),
+    )
+    commands = [
+        _build_activation_credit_measurement_command_record(
+            repo_root=repo_root,
+            run_root=run_root,
+            parent_path=parent_path,
+            parent_sha256=parent_sha256,
+            support_order_seed=int(seed),
+            device=device,
+            phase_timeout_seconds=phase_timeout_seconds,
+            total_timeout_seconds=total_timeout_seconds,
+            max_silent_phase_seconds=max_silent_phase_seconds,
+        )
+        for seed in ORACLE_SCREEN_CONTRAST_SEEDS
+    ]
+    packet = {
+        "schema_version": OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION,
+        "packet_kind": ACTIVATION_CREDIT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND,
+        "target_name": ACTIVATION_CREDIT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND,
+        "artifact_role": "activation_credit_measurement_launch_bundle_author_packet",
+        "diagnostic_class": DIAGNOSTIC_CLASS_PRE_FULL_STACK,
+        "pre_full_stack_diagnostic": True,
+        "author_only": True,
+        "commands_executed": False,
+        "gpu_launched": False,
+        "launch_gate_id": launch_gate_id,
+        "pt_mutated": False,
+        "readiness_claim": False,
+        "full_sub2_claim": False,
+        "ready_for_main_science": False,
+        "carrier_claim": False,
+        "checkpoint_written": False,
+        "optimizer_credit_state_row_flip": False,
+        "optimizer_credit_state_science_dependent": True,
+        "branch_result": None,
+        "qacc_kernelized": False,
+        "parent_path": str(parent_path),
+        "parent_sha256": str(parent_sha256),
+        "eligible_scope": ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE,
+        "science_contract": science_contract,
+        "screen_rows": ACTIVATION_CREDIT_MEASUREMENT_BATCH_SIZE,
+        "curriculum_seed": STEP6_CURRICULUM_SEED,
+        "support_order_seeds": list(ORACLE_SCREEN_CONTRAST_SEEDS),
+        "same_candidate_set_required": True,
+        "oracle_feasibility_budget": default_oracle_feasibility_budget_for(
+            max_sampled_candidates=budget
+        ),
+        "oracle_non_persistence_contract": default_oracle_non_persistence_contract(),
+        "compact_summary_schema": default_activation_credit_compact_summary_schema(),
+        "measurement_contract": default_activation_credit_measurement_contract(),
+        "scale_smoke_required_before_full_eval": True,
+        "scale_smoke_launch_bundle_packet_kind": (
+            ACTIVATION_CREDIT_SCALE_SMOKE_LAUNCH_BUNDLE_PACKET_KIND
+        ),
+        "commands": commands,
+        "resource_lane": default_resource_lane_contract(
+            symbolic_lane=symbolic_resource_lane,
+        ),
+        "watcher_audit_bundle": default_activation_credit_watcher_bundle(),
+        "phase_budgets": default_activation_credit_phase_budgets(smoke=False),
+        "terminal_criteria": {
+            **default_terminal_criteria(),
+            "branch_classifier": list(ACTIVATION_CREDIT_BRANCHES),
+            "same_candidate_set_required": True,
+            "support_order_seeds": list(ORACLE_SCREEN_CONTRAST_SEEDS),
+            "n20_screen_rows": ACTIVATION_CREDIT_MEASUREMENT_BATCH_SIZE,
+            "required_max_sampled_candidates": budget,
+            "required_eligible_scope": ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE,
+            "fresh_confirmation_seed_required_for_persistent_followup": (
+                ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED
+            ),
+            "topology_control_positive_forces_ambiguous": True,
+            "qacc_kernelized": False,
+            "device_residency_not_hot_loop_residency": True,
+        },
+        "hash_gate_policy": default_hash_gate_policy(),
+        "compact_instrumentation_only": True,
+        "raw_per_proposal_arrays_included": False,
+        "artifact_policy": {
+            "compact_json_ndjson_only": True,
+            "raw_per_proposal_arrays": False,
+            "pt_writes_allowed": False,
+        },
+        "non_claims": [
+            "author-only activation-credit launch bundle",
+            "same candidate set generated once per seed and evaluated inside the fixed target tie band",
+            "deterministic hash remains a null/control distribution only",
+            "legacy candidate generation may remain fixed-background reference and must not be described as GPU-hot-loop if unchanged",
+            "new activation-credit grad_proxy path must stay device-resident",
+            "no GPU launch from this packet-authoring step",
+            "no resource lane acquired by this packet",
+            "no .pt mutation or checkpoint promotion",
+            "no readiness row flip",
+            "no carrier or full-sub2 runtime claim",
+            "qacc_vote_select_apply_update remains CPU-reference/default-off, not kernelized",
+            "no persistent eligibility build before fresh seed 71 confirmation",
+            "full activation-credit read remains blocked on the de-risk smoke receipt",
+        ],
+    }
+    validate_activation_credit_measurement_launch_bundle(packet)
+    return packet
+
+
+def _build_activation_credit_scale_smoke_command_record(
+    *,
+    repo_root: str | Path,
+    run_root: str | Path,
+    parent_path: str | Path,
+    parent_sha256: str,
+    support_order_seed: int,
+    device: str,
+    phase_timeout_seconds: int | float,
+    total_timeout_seconds: int | float,
+    max_silent_phase_seconds: int | float,
+) -> dict[str, Any]:
+    budget = ACTIVATION_CREDIT_SMOKE_MAX_SAMPLED_CANDIDATES
+    seed_label = _support_order_seed_label(int(support_order_seed))
+    scratch_root = _path_join(run_root, seed_label)
+    receipt_path = _path_join(scratch_root, "receipt.json")
+    stdout_path = _path_join(scratch_root, "stdout.ndjson")
+    stderr_path = _path_join(scratch_root, "stderr.log")
+    argv = [
+        "python3",
+        "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+        "--enable-bounded-delta-probe",
+        "--allow-gpu-launch",
+        "--oracle-screen-mode",
+        "activation_credit_scale_smoke",
+        "--phase",
+        f"activation-credit-scale-smoke-b4-k8-{seed_label}",
+        "--device",
+        str(device),
+        "--parent",
+        str(parent_path),
+        "--parent-sha256",
+        str(parent_sha256),
+        "--scratch-root",
+        scratch_root,
+        "--curriculum-seed",
+        str(STEP6_CURRICULUM_SEED),
+        "--support-order-seed",
+        str(int(support_order_seed)),
+        "--oracle-screen-max-sampled-candidates",
+        str(budget),
+        "--batch-size",
+        str(ACTIVATION_CREDIT_SMOKE_BATCH_SIZE),
+        "--eligible-scope",
+        ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE,
+        "--steps",
+        "1",
+        "--max-steps-hard",
+        "1",
+        "--max-abs-per-tensor",
+        str(STEP3_BASELINE_MAX_ABS_PER_TENSOR),
+        "--emit-progress",
+        "--phase-timeout-seconds",
+        str(phase_timeout_seconds),
+        "--total-timeout-seconds",
+        str(total_timeout_seconds),
+        "--max-silent-phase-seconds",
+        str(max_silent_phase_seconds),
+    ]
+    return {
+        "mode": "activation_credit_scale_smoke_b4_k8",
+        "phase_role": "activation_credit_scale_smoke",
+        "support_order_seed": int(support_order_seed),
+        "seed_label": seed_label,
+        "oracle_screen_mode": "activation_credit_scale_smoke",
+        "screen_rows": ACTIVATION_CREDIT_SMOKE_BATCH_SIZE,
+        "n_rows": ACTIVATION_CREDIT_SMOKE_BATCH_SIZE,
+        "steps_requested": 1,
+        "steps_source": "fixed_single_support_batch_activation_credit_scale_smoke",
+        "batch_size": ACTIVATION_CREDIT_SMOKE_BATCH_SIZE,
+        "eligible_scope": ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE,
+        "curriculum_seed": STEP6_CURRICULUM_SEED,
+        "same_candidate_set_required": True,
+        "max_sampled_candidates": budget,
+        "oracle_max_seconds": oracle_screen_budget_max_seconds(budget),
+        "max_abs_per_tensor": STEP3_BASELINE_MAX_ABS_PER_TENSOR,
+        "fraction_per_tensor": STEP3_FRACTION_PER_TENSOR,
+        "global_cap_contract": "off",
+        "capture_device_mode": ACTIVATION_CREDIT_CAPTURE_DEVICE_MODE,
+        "grad_proxy_compute_mode": ACTIVATION_CREDIT_GRAD_PROXY_COMPUTE_MODE,
+        "no_extra_response_label_mask": True,
+        "fp_proxy_transient_eval_only": True,
+        "cwd": str(repo_root),
+        "env": {
+            "HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE": "1",
+            "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH": "1",
+        },
+        "argv": argv,
+        "stdout_path": stdout_path,
+        "stderr_path": stderr_path,
+        "receipt_path": receipt_path,
+        "scratch_root": scratch_root,
+        "enabled_if": "fixed contrast seeds 43 and 29 only; scale-smoke only; no policy verdict",
+        "expected_exit_policy": "exit_0_required_else_stop_no_retry_no_verdict",
+    }
+
+
+def build_activation_credit_scale_smoke_launch_bundle(
+    *,
+    parent_path: str | Path,
+    parent_sha256: str,
+    repo_root: str | Path,
+    run_root: str | Path,
+    device: str = "cuda:0",
+    launch_gate_id: str | None = None,
+    symbolic_resource_lane: str = "gpu:0",
+    phase_timeout_seconds: int | float = 1800,
+    total_timeout_seconds: int | float = 7200,
+    max_silent_phase_seconds: int | float = 300,
+) -> dict[str, Any]:
+    budget = ACTIVATION_CREDIT_SMOKE_MAX_SAMPLED_CANDIDATES
+    commands = [
+        _build_activation_credit_scale_smoke_command_record(
+            repo_root=repo_root,
+            run_root=run_root,
+            parent_path=parent_path,
+            parent_sha256=parent_sha256,
+            support_order_seed=int(seed),
+            device=device,
+            phase_timeout_seconds=phase_timeout_seconds,
+            total_timeout_seconds=total_timeout_seconds,
+            max_silent_phase_seconds=max_silent_phase_seconds,
+        )
+        for seed in ORACLE_SCREEN_CONTRAST_SEEDS
+    ]
+    packet = {
+        "schema_version": OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION,
+        "packet_kind": ACTIVATION_CREDIT_SCALE_SMOKE_LAUNCH_BUNDLE_PACKET_KIND,
+        "target_name": ACTIVATION_CREDIT_SCALE_SMOKE_LAUNCH_BUNDLE_PACKET_KIND,
+        "artifact_role": "activation_credit_scale_smoke_launch_bundle_author_packet",
+        "diagnostic_class": DIAGNOSTIC_CLASS_PRE_FULL_STACK,
+        "pre_full_stack_diagnostic": True,
+        "author_only": True,
+        "commands_executed": False,
+        "gpu_launched": False,
+        "launch_gate_id": launch_gate_id,
+        "pt_mutated": False,
+        "readiness_claim": False,
+        "full_sub2_claim": False,
+        "ready_for_main_science": False,
+        "carrier_claim": False,
+        "checkpoint_written": False,
+        "optimizer_credit_state_row_flip": False,
+        "optimizer_credit_state_science_dependent": True,
+        "branch_result": None,
+        "qacc_kernelized": False,
+        "parent_path": str(parent_path),
+        "parent_sha256": str(parent_sha256),
+        "eligible_scope": ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE,
+        "screen_rows": ACTIVATION_CREDIT_SMOKE_BATCH_SIZE,
+        "curriculum_seed": STEP6_CURRICULUM_SEED,
+        "support_order_seeds": list(ORACLE_SCREEN_CONTRAST_SEEDS),
+        "same_candidate_set_required": True,
+        "oracle_feasibility_budget": default_oracle_feasibility_budget_for(
+            max_sampled_candidates=budget
+        ),
+        "oracle_non_persistence_contract": default_oracle_non_persistence_contract(),
+        "compact_summary_schema": default_activation_credit_scale_smoke_compact_summary_schema(),
+        "scale_smoke_contract": default_activation_credit_scale_smoke_contract(),
+        "commands": commands,
+        "resource_lane": default_resource_lane_contract(
+            symbolic_lane=symbolic_resource_lane,
+        ),
+        "watcher_audit_bundle": default_activation_credit_watcher_bundle(),
+        "phase_budgets": default_activation_credit_phase_budgets(smoke=True),
+        "terminal_criteria": {
+            **default_terminal_criteria(),
+            "branch_classifier": None,
+            "same_candidate_set_required": True,
+            "support_order_seeds": list(ORACLE_SCREEN_CONTRAST_SEEDS),
+            "required_max_sampled_candidates": budget,
+            "required_batch_size": ACTIVATION_CREDIT_SMOKE_BATCH_SIZE,
+            "required_eligible_scope": ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE,
+            "required_grad_proxy_candidate_count_positive": True,
+            "smoke_branch_classification_must_be_null": True,
+            "policy_verdict_forbidden": True,
+            "qacc_kernelized": False,
+            "device_residency_not_hot_loop_residency": True,
+        },
+        "hash_gate_policy": default_hash_gate_policy(),
+        "compact_instrumentation_only": True,
+        "raw_per_proposal_arrays_included": False,
+        "artifact_policy": {
+            "compact_json_ndjson_only": True,
+            "raw_per_proposal_arrays": False,
+            "pt_writes_allowed": False,
+        },
+        "non_claims": [
+            "author-only activation-credit scale-smoke launch bundle",
+            "same candidate set generated once per seed and evaluated only for scale/de-risk telemetry",
+            "deterministic hash remains a null/control distribution only",
+            "legacy candidate generation may remain fixed-background reference and must not be described as GPU-hot-loop if unchanged",
+            "new activation-credit grad_proxy path must stay device-resident",
+            "no policy verdict or persistent eligibility claim from the smoke",
+            "no GPU launch from this packet-authoring step",
+            "no resource lane acquired by this packet",
+            "no .pt mutation or checkpoint promotion",
+            "no readiness row flip",
+            "qacc_vote_select_apply_update remains CPU-reference/default-off, not kernelized",
+        ],
+    }
+    validate_activation_credit_scale_smoke_launch_bundle(packet)
+    return packet
+
+
 def build_within_tie_band_discriminator_packet(
     *,
     parent_path: str | Path,
@@ -3941,6 +4793,31 @@ def _validate_phase_budgets(phase_budgets: Mapping[str, Any]) -> None:
             raise ValueError(f"phase budget {key} must have positive first_milestone_seconds")
         if not budget.get("probe_phase_markers"):
             raise ValueError(f"phase budget {key} must name probe phase markers")
+
+
+def _validate_activation_credit_phase_budgets(
+    phase_budgets: Mapping[str, Any],
+    *,
+    smoke: bool,
+) -> None:
+    _validate_phase_budgets(phase_budgets)
+    expected = default_activation_credit_phase_budgets(smoke=smoke)
+    for key, expected_budget in expected.items():
+        budget = phase_budgets.get(key)
+        if not isinstance(budget, Mapping):
+            raise ValueError(f"activation-credit phase budget {key} missing")
+        if int(budget.get("first_milestone_seconds", -1)) != int(
+            expected_budget["first_milestone_seconds"]
+        ):
+            raise ValueError(
+                f"activation-credit phase budget {key} first_milestone_seconds drifted"
+            )
+        if list(budget.get("probe_phase_markers") or ()) != list(
+            expected_budget["probe_phase_markers"]
+        ):
+            raise ValueError(
+                f"activation-credit phase budget {key} probe_phase_markers drifted"
+            )
 
 
 def _validate_author_hash_gates(packet: Mapping[str, Any]) -> None:
@@ -5202,6 +6079,310 @@ def _validate_credit_ranking_pivot_measurement_contract(contract: Mapping[str, A
         raise ValueError("credit-ranking pivot allowed seed-local labels drifted")
 
 
+def _validate_activation_credit_compact_summary_schema(schema: Mapping[str, Any]) -> None:
+    expected_fields = set(default_activation_credit_compact_summary_schema()["allowed_fields"])
+    if not bool(schema.get("compact_summary_only")):
+        raise ValueError("activation-credit receipt must be compact-summary-only")
+    if set(schema.get("allowed_fields") or ()) != expected_fields:
+        raise ValueError("activation-credit compact summary allowed fields drifted")
+    if set(schema.get("required_fields") or ()) != expected_fields:
+        raise ValueError("activation-credit compact summary required fields drifted")
+    for field in ("raw_per_proposal_arrays", "raw_candidate_scores", "raw_local_loss_deltas"):
+        if bool(schema.get(field)):
+            raise ValueError("activation-credit compact summary must reject raw proposal arrays")
+
+
+def _validate_activation_credit_scale_smoke_compact_summary_schema(
+    schema: Mapping[str, Any],
+) -> None:
+    expected_fields = set(
+        default_activation_credit_scale_smoke_compact_summary_schema()["allowed_fields"]
+    )
+    if not bool(schema.get("compact_summary_only")):
+        raise ValueError("activation-credit smoke receipt must be compact-summary-only")
+    if set(schema.get("allowed_fields") or ()) != expected_fields:
+        raise ValueError("activation-credit smoke compact summary allowed fields drifted")
+    if set(schema.get("required_fields") or ()) != expected_fields:
+        raise ValueError("activation-credit smoke compact summary required fields drifted")
+    for field in ("raw_per_proposal_arrays", "raw_candidate_scores", "raw_local_loss_deltas"):
+        if bool(schema.get(field)):
+            raise ValueError(
+                "activation-credit smoke compact summary must reject raw proposal arrays"
+            )
+
+
+def _validate_activation_credit_measurement_contract(contract: Mapping[str, Any]) -> None:
+    if contract.get("contract_kind") != "activation_credit_within_tie_band_measurement":
+        raise ValueError("activation-credit contract kind drifted")
+    if not bool(contract.get("candidate_generation_fixed")):
+        raise ValueError("activation-credit contract must keep candidate generation fixed")
+    if not bool(contract.get("same_candidate_set_required")):
+        raise ValueError("activation-credit contract must require the same candidate set")
+    if contract.get("contrast_support_order_seeds") != list(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError("activation-credit contract contrast seeds drifted")
+    if int(contract.get("required_max_sampled_candidates", -1)) != (
+        PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES
+    ):
+        raise ValueError("activation-credit contract must pin budget 32")
+    if contract.get("required_eligible_scope") != ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE:
+        raise ValueError("activation-credit contract eligible_scope drifted")
+    if contract.get("target_tie_band_id") != ACTIVATION_CREDIT_TARGET_TIE_BAND_ID:
+        raise ValueError("activation-credit contract target tie band drifted")
+    if not bool(contract.get("oracle_best_in_target_tie_band_required")):
+        raise ValueError(
+            "activation-credit contract must require oracle-best inside the target tie band"
+        )
+    if int(contract.get("top_k", -1)) != PIVOT_MEASUREMENT_TOP_K:
+        raise ValueError("activation-credit contract top_k drifted")
+    if int(contract.get("rank_position_index_base", -1)) != 0:
+        raise ValueError("activation-credit contract must keep zero-based rank positions")
+    source = contract.get("activation_credit_source") or {}
+    if source.get("capture_device_mode") != ACTIVATION_CREDIT_CAPTURE_DEVICE_MODE:
+        raise ValueError("activation-credit source must pin device_resident capture")
+    if source.get("grad_proxy_compute_mode") != ACTIVATION_CREDIT_GRAD_PROXY_COMPUTE_MODE:
+        raise ValueError("activation-credit source must pin candidate-only gather")
+    if not bool(source.get("candidate_only_gather_required")):
+        raise ValueError("activation-credit source must require candidate-only gather")
+    if not bool(source.get("no_extra_response_label_mask")):
+        raise ValueError("activation-credit source must forbid extra response-label masking")
+    if not bool(source.get("fixed_background_candidate_generation_allowed")):
+        raise ValueError(
+            "activation-credit source must preserve honest fixed-background candidate generation wording"
+        )
+    if not bool(source.get("fixed_background_must_be_labeled_non_hot_loop")):
+        raise ValueError(
+            "activation-credit source must label fixed-background candidate generation non-hot-loop"
+        )
+    if not bool(source.get("fp_proxy_transient_eval_only")):
+        raise ValueError("activation-credit source must keep fp proxy transient-eval-only")
+    if list(source.get("policy_facing_fields") or ()) != [
+        "credit_sign",
+        "credit_magnitude_bin",
+        "signed_alignment",
+    ]:
+        raise ValueError("activation-credit policy-facing fields drifted")
+    construction = contract.get("feature_construction") or {}
+    if construction.get("candidate_delta_sign_source") != (
+        "sign(q_after_one_flip[flat_index] - current_q_level)"
+    ):
+        raise ValueError("activation-credit candidate_delta_sign source drifted")
+    if not bool(construction.get("candidate_delta_sign_zero_invalidates_row")):
+        raise ValueError("activation-credit zero candidate_delta_sign must invalidate the row")
+    if construction.get("signed_alignment_formula") != "sign(-grad_proxy * candidate_delta_sign)":
+        raise ValueError("activation-credit signed_alignment formula drifted")
+    if not bool(construction.get("primary_family_excludes_credit_sign")):
+        raise ValueError("activation-credit primary family must exclude credit_sign")
+    if not bool(construction.get("credit_sign_report_only_ablation")):
+        raise ValueError("activation-credit credit_sign must remain report-only ablation")
+    if int(construction.get("credit_magnitude_bin_count", -1)) != ACTIVATION_CREDIT_MAGNITUDE_BIN_COUNT:
+        raise ValueError("activation-credit magnitude-bin count drifted")
+    if construction.get("credit_magnitude_bin_strategy") != (
+        "median_split_over_sampled_target_band_abs_grad_proxy"
+    ):
+        raise ValueError("activation-credit magnitude-bin strategy drifted")
+    if not bool(construction.get("magnitude_bin_degenerate_if_all_tie_or_lt4")):
+        raise ValueError("activation-credit degenerate-bin rule drifted")
+    if construction.get("degenerate_branch_label") != BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH:
+        raise ValueError("activation-credit degenerate branch label drifted")
+    learner_fields = [
+        "candidate_id",
+        "state_key",
+        "flat_index",
+        "vote_value",
+        "current_margin_abs",
+        "current_rank_position",
+        "tie_band_id",
+        "transition_class",
+        "candidate_delta_sign",
+        "credit_sign",
+        "credit_magnitude_bin",
+        "signed_alignment",
+        "topology_row_block_128",
+        "activation_feature_valid",
+    ]
+    if list(contract.get("learner_available_ranking_input_fields") or ()) != learner_fields:
+        raise ValueError("activation-credit learner-available input fields drifted")
+    provenance = contract.get("learner_available_field_provenance") or {}
+    if set(provenance.keys()) != set(learner_fields):
+        raise ValueError("activation-credit learner-available provenance keys drifted")
+    if not all(isinstance(provenance[field], str) and provenance[field] for field in learner_fields):
+        raise ValueError("activation-credit learner-available provenance must stay source-backed text")
+    if list(contract.get("oracle_only_label_fields") or ()) != [
+        "candidate_loss",
+        "local_loss_delta",
+        "regret_vs_target_tie_band_oracle_top1_local_loss_delta",
+        "target_tie_band_oracle_best_candidate_id",
+    ]:
+        raise ValueError("activation-credit oracle-only label fields drifted")
+    family = contract.get("family_discriminator") or {}
+    if family.get("primary") != ACTIVATION_CREDIT_PRIMARY_FAMILY_ID:
+        raise ValueError("activation-credit primary family id drifted")
+    if list(family.get("ablations") or ()) != list(ACTIVATION_CREDIT_ABLATION_FAMILY_IDS):
+        raise ValueError("activation-credit ablation family ids drifted")
+    if family.get("topology_control") != ACTIVATION_CREDIT_TOPOLOGY_CONTROL_FAMILY_ID:
+        raise ValueError("activation-credit topology control family drifted")
+    fields_by_family = family.get("fields_by_family_id") or {}
+    if fields_by_family.get(ACTIVATION_CREDIT_PRIMARY_FAMILY_ID) != [
+        "signed_alignment",
+        "credit_magnitude_bin",
+    ]:
+        raise ValueError("activation-credit primary family must exclude credit_sign")
+    if fields_by_family.get("F_alignment_only") != ["signed_alignment"]:
+        raise ValueError("activation-credit alignment-only family drifted")
+    if fields_by_family.get("F_magbin_only") != ["credit_magnitude_bin"]:
+        raise ValueError("activation-credit magnitude-only family drifted")
+    if fields_by_family.get("F_sign_only") != ["credit_sign"]:
+        raise ValueError("activation-credit sign-only family drifted")
+    if fields_by_family.get("F_align_magbin_transition") != [
+        "signed_alignment",
+        "credit_magnitude_bin",
+        "transition_class",
+    ]:
+        raise ValueError("activation-credit transition ablation family drifted")
+    if fields_by_family.get(ACTIVATION_CREDIT_TOPOLOGY_CONTROL_FAMILY_ID) != [
+        "topology_row_block_128"
+    ]:
+        raise ValueError("activation-credit topology control fields drifted")
+    if family.get("decision_basis") != "primary_plus_ablation_report_no_post_hoc_best_of_many":
+        raise ValueError("activation-credit family decision basis drifted")
+    if family.get("hash_control_role") != "null_distribution_only":
+        raise ValueError("activation-credit hash control must remain null-only")
+    null_distribution = family.get("null_distribution") or {}
+    if null_distribution.get("deterministic_hash_seeds") != list(PIVOT_MEASUREMENT_NULL_HASH_SEEDS):
+        raise ValueError("activation-credit null hash seeds drifted")
+    if not bool(null_distribution.get("matched_cardinality_bucket_partitions")):
+        raise ValueError("activation-credit null distribution must keep matched partitions")
+    if null_distribution.get("smaller_bucket_fraction_guard_field") != (
+        "matched_hash_null_fraction_gte_observed_bucket_fraction"
+    ):
+        raise ValueError("activation-credit smaller-bucket guard field drifted")
+    if null_distribution.get("smaller_bucket_fraction_guard_comparison") != "fraction_gte_observed":
+        raise ValueError("activation-credit smaller-bucket guard comparison drifted")
+    if null_distribution.get("larger_regret_capture_guard_field") != (
+        "matched_hash_null_fraction_lte_observed_regret_capture_ratio"
+    ):
+        raise ValueError("activation-credit regret-capture guard field drifted")
+    if null_distribution.get("larger_regret_capture_guard_comparison") != "fraction_lte_observed":
+        raise ValueError("activation-credit regret-capture guard comparison drifted")
+    decision = contract.get("within_band_decision") or {}
+    if list(decision.get("decision_metrics") or ()) != [
+        "oracle_best_bucket_fraction",
+        "oracle_best_bucket_regret_spread_ratio",
+        "oracle_best_bucket_regret_capture_ratio",
+        "oracle_best_bucket_top_k_capture_fraction",
+        "matched_hash_null_fraction_gte_observed_bucket_fraction",
+        "matched_hash_null_fraction_lte_observed_regret_capture_ratio",
+        "within_band_pairwise_auc_report_only",
+    ]:
+        raise ValueError("activation-credit decision metrics drifted")
+    if decision.get("target_tie_band_missing_branch_label") != BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH:
+        raise ValueError("activation-credit target-tie-band missing branch drifted")
+    if decision.get("predictive_branch_label") != BRANCH_ACTIVATION_CREDIT_CANDIDATE_SIGNAL:
+        raise ValueError("activation-credit predictive branch label drifted")
+    if decision.get("predictive_family_id") != ACTIVATION_CREDIT_PRIMARY_FAMILY_ID:
+        raise ValueError("activation-credit predictive family id drifted")
+    if float(decision.get("predictive_bucket_fraction_max", -1.0)) != ACTIVATION_CREDIT_PREDICTIVE_BUCKET_FRACTION_MAX:
+        raise ValueError("activation-credit predictive bucket fraction drifted")
+    if float(decision.get("predictive_regret_spread_ratio_max", -1.0)) != ACTIVATION_CREDIT_PREDICTIVE_REGRET_SPREAD_RATIO_MAX:
+        raise ValueError("activation-credit predictive regret spread threshold drifted")
+    if float(decision.get("predictive_regret_capture_ratio_min", -1.0)) != ACTIVATION_CREDIT_PREDICTIVE_REGRET_CAPTURE_RATIO_MIN:
+        raise ValueError("activation-credit predictive regret capture threshold drifted")
+    if float(decision.get("predictive_matched_hash_guard_min", -1.0)) != ACTIVATION_CREDIT_MATCHED_HASH_SIGNAL_MIN:
+        raise ValueError("activation-credit predictive matched-hash threshold drifted")
+    if decision.get("fail_closed_branch_label") != (
+        BRANCH_ACTIVATION_CREDIT_MISSING_SIGNAL_DEEPER_THAN_FIRST_ORDER_CREDIT_STORAGE
+    ):
+        raise ValueError("activation-credit fail-closed branch label drifted")
+    if not bool(decision.get("fail_closed_requires_all_preregistered_families")):
+        raise ValueError("activation-credit fail-closed rule must require all preregistered families")
+    if float(decision.get("fail_closed_bucket_fraction_gt", -1.0)) != ACTIVATION_CREDIT_FAIL_CLOSED_BUCKET_FRACTION_GT:
+        raise ValueError("activation-credit fail-closed bucket fraction drifted")
+    if float(decision.get("fail_closed_regret_spread_ratio_gt", -1.0)) != ACTIVATION_CREDIT_FAIL_CLOSED_REGRET_SPREAD_RATIO_GT:
+        raise ValueError("activation-credit fail-closed regret spread threshold drifted")
+    if float(decision.get("fail_closed_matched_hash_signal_min", -1.0)) != ACTIVATION_CREDIT_MATCHED_HASH_SIGNAL_MIN:
+        raise ValueError("activation-credit fail-closed matched-hash threshold drifted")
+    if decision.get("topology_control_family_id") != ACTIVATION_CREDIT_TOPOLOGY_CONTROL_FAMILY_ID:
+        raise ValueError("activation-credit topology control family id drifted")
+    if not bool(decision.get("topology_control_positive_forces_ambiguous")):
+        raise ValueError("activation-credit topology control must force ambiguous on positive")
+    if decision.get("ambiguous_branch_label") != BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH:
+        raise ValueError("activation-credit ambiguous branch label drifted")
+    fragmentation = contract.get("fragmentation_audit") or {}
+    if not bool(fragmentation.get("bucket_cardinality_histogram_required")):
+        raise ValueError("activation-credit fragmentation audit must require bucket histogram")
+    if not bool(fragmentation.get("singleton_bucket_count_required")):
+        raise ValueError("activation-credit fragmentation audit must require singleton bucket count")
+    if not bool(fragmentation.get("magnitude_bin_histogram_required")):
+        raise ValueError("activation-credit fragmentation audit must require magnitude-bin histogram")
+    if not bool(fragmentation.get("singleton_magnitude_source_count_required")):
+        raise ValueError(
+            "activation-credit fragmentation audit must require singleton magnitude-source count"
+        )
+    smoke_gate = contract.get("scale_smoke_gate") or {}
+    if not bool(smoke_gate.get("required_before_full_eval")):
+        raise ValueError("activation-credit full eval must require the de-risk smoke first")
+    if smoke_gate.get("smoke_launch_bundle_packet_kind") != (
+        ACTIVATION_CREDIT_SCALE_SMOKE_LAUNCH_BUNDLE_PACKET_KIND
+    ):
+        raise ValueError("activation-credit smoke launch bundle kind drifted")
+    if int(smoke_gate.get("required_max_sampled_candidates", -1)) != ACTIVATION_CREDIT_SMOKE_MAX_SAMPLED_CANDIDATES:
+        raise ValueError("activation-credit smoke gate must pin budget 8")
+    if int(smoke_gate.get("required_batch_size", -1)) != ACTIVATION_CREDIT_SMOKE_BATCH_SIZE:
+        raise ValueError("activation-credit smoke gate must pin batch size 4")
+    if not bool(smoke_gate.get("smoke_branch_classification_must_be_null")):
+        raise ValueError("activation-credit smoke gate must keep branch_classification=null")
+    if not bool(smoke_gate.get("required_grad_proxy_candidate_count_positive")):
+        raise ValueError("activation-credit smoke gate must require grad_proxy_candidate_count > 0")
+    fresh = contract.get("fresh_confirmation_gate") or {}
+    if int(fresh.get("required_seed_before_persistent_followup", -1)) != ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED:
+        raise ValueError("activation-credit fresh confirmation seed drifted")
+    if fresh.get("two_seed_positive_label") != BRANCH_ACTIVATION_CREDIT_CANDIDATE_SIGNAL:
+        raise ValueError("activation-credit two-seed positive label drifted")
+    if not bool(fresh.get("persistent_followup_forbidden_before_fresh_confirmation")):
+        raise ValueError("activation-credit must forbid persistent followup before fresh confirmation")
+    if list(contract.get("allowed_seed_local_labels") or ()) != list(ACTIVATION_CREDIT_BRANCHES):
+        raise ValueError("activation-credit allowed seed-local labels drifted")
+
+
+def _validate_activation_credit_scale_smoke_contract(contract: Mapping[str, Any]) -> None:
+    if contract.get("contract_kind") != "activation_credit_scale_smoke_only":
+        raise ValueError("activation-credit smoke contract kind drifted")
+    if not bool(contract.get("same_candidate_set_required")):
+        raise ValueError("activation-credit smoke contract must require the same candidate set")
+    if contract.get("contrast_support_order_seeds") != list(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError("activation-credit smoke contract contrast seeds drifted")
+    if int(contract.get("required_max_sampled_candidates", -1)) != ACTIVATION_CREDIT_SMOKE_MAX_SAMPLED_CANDIDATES:
+        raise ValueError("activation-credit smoke contract must pin budget 8")
+    if int(contract.get("required_batch_size", -1)) != ACTIVATION_CREDIT_SMOKE_BATCH_SIZE:
+        raise ValueError("activation-credit smoke contract must pin batch size 4")
+    if contract.get("required_eligible_scope") != ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE:
+        raise ValueError("activation-credit smoke contract eligible_scope drifted")
+    if contract.get("target_tie_band_id") != ACTIVATION_CREDIT_TARGET_TIE_BAND_ID:
+        raise ValueError("activation-credit smoke contract target tie band drifted")
+    if contract.get("capture_device_mode") != ACTIVATION_CREDIT_CAPTURE_DEVICE_MODE:
+        raise ValueError("activation-credit smoke contract must pin device_resident capture")
+    if contract.get("grad_proxy_compute_mode") != ACTIVATION_CREDIT_GRAD_PROXY_COMPUTE_MODE:
+        raise ValueError("activation-credit smoke contract must pin candidate-only gather")
+    if not bool(contract.get("no_extra_response_label_mask")):
+        raise ValueError("activation-credit smoke contract must forbid extra response-label masking")
+    if not bool(contract.get("fixed_background_must_be_labeled_non_hot_loop")):
+        raise ValueError(
+            "activation-credit smoke contract must label fixed-background candidate generation non-hot-loop"
+        )
+    if not bool(contract.get("smoke_branch_classification_must_be_null")):
+        raise ValueError("activation-credit smoke contract must keep branch_classification=null")
+    if not bool(contract.get("required_grad_proxy_candidate_count_positive")):
+        raise ValueError("activation-credit smoke contract must require grad_proxy_candidate_count > 0")
+    if not bool(contract.get("policy_verdict_forbidden")):
+        raise ValueError("activation-credit smoke contract must forbid policy verdicts")
+    if list(contract.get("allowed_policy_facing_fields") or ()) != [
+        "credit_sign",
+        "credit_magnitude_bin",
+        "signed_alignment",
+    ]:
+        raise ValueError("activation-credit smoke policy-facing fields drifted")
+
+
 def _validate_within_tie_band_discriminator_compact_summary_schema(
     schema: Mapping[str, Any],
 ) -> None:
@@ -5964,6 +7145,546 @@ def validate_credit_ranking_pivot_measurement_launch_bundle(
         )
 
 
+def validate_activation_credit_measurement_packet(packet: Mapping[str, Any]) -> None:
+    if packet.get("schema_version") != OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION:
+        raise ValueError("unsupported activation-credit measurement packet schema")
+    if packet.get("diagnostic_class") != DIAGNOSTIC_CLASS_PRE_FULL_STACK:
+        raise ValueError("activation-credit packet must be pre_full_stack_diagnostic")
+    _validate_author_only_fields(
+        packet,
+        expected_packet_kind=ACTIVATION_CREDIT_MEASUREMENT_PACKET_KIND,
+        label="author-only activation-credit measurement packet",
+    )
+    for field in _READINESS_FORBIDDEN_TRUE_FIELDS:
+        _require_false(packet, field)
+    if bool(packet.get("carrier_claim")) or bool(packet.get("q_sidecar_carrier_claim")):
+        raise ValueError("activation-credit packet must not make a carrier claim")
+    if bool(packet.get("qacc_kernelized")):
+        raise ValueError("activation-credit packet must keep qacc_kernelized=false")
+    if not bool(packet.get("optimizer_credit_state_science_dependent")):
+        raise ValueError(
+            "activation-credit packet must keep optimizer_credit_state science-dependent"
+        )
+    if packet.get("eligible_scope") != ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE:
+        raise ValueError("activation-credit packet must pin eligible_scope=first-bitlinear")
+    if not bool(packet.get("same_candidate_set_required")):
+        raise ValueError("activation-credit packet must require the same candidate set")
+    if bool(packet.get("oracle_state_survives_into_learner")):
+        raise ValueError("oracle state must not survive into learner fields")
+    _reject_raw_arrays(packet)
+    _validate_oracle_global_non_persistence(packet)
+    _validate_oracle_screen_arms(packet.get("arms") or ())
+    _validate_oracle_seed_order_contract(packet.get("seed_order_contract") or {})
+    feasibility_budget = packet.get("oracle_feasibility_budget") or {}
+    selected_budget = int(feasibility_budget.get("max_sampled_candidates", -1))
+    if selected_budget != PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES:
+        raise ValueError("activation-credit packet must pin budget 32")
+    _validate_oracle_feasibility_budget(feasibility_budget)
+    _validate_oracle_non_persistence(packet.get("oracle_non_persistence_contract") or {})
+    _validate_activation_credit_compact_summary_schema(
+        packet.get("compact_summary_schema") or {}
+    )
+    _validate_activation_credit_measurement_contract(
+        packet.get("measurement_contract") or {}
+    )
+    if not bool(packet.get("scale_smoke_required_before_full_eval")):
+        raise ValueError("activation-credit packet must require the de-risk smoke first")
+    if packet.get("scale_smoke_launch_bundle_packet_kind") != (
+        ACTIVATION_CREDIT_SCALE_SMOKE_LAUNCH_BUNDLE_PACKET_KIND
+    ):
+        raise ValueError("activation-credit packet smoke launch bundle kind drifted")
+    if int(packet.get("fresh_confirmation_seed_required_for_persistent_followup", -1)) != (
+        ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED
+    ):
+        raise ValueError("activation-credit packet fresh confirmation seed drifted")
+    artifact_policy = packet.get("artifact_policy") or {}
+    if not bool(artifact_policy.get("compact_json_ndjson_only")):
+        raise ValueError(
+            "activation-credit packet artifact policy must require compact JSON/NDJSON"
+        )
+    if bool(artifact_policy.get("raw_per_proposal_arrays")):
+        raise ValueError("activation-credit packet must reject raw per-proposal arrays")
+    if bool(artifact_policy.get("pt_writes_allowed")):
+        raise ValueError("activation-credit packet artifact policy must reject .pt writes")
+    oracle_artifact_path = artifact_policy.get("oracle_artifact_path")
+    if oracle_artifact_path is not None and str(oracle_artifact_path).endswith(".pt"):
+        raise ValueError("activation-credit packet artifact path must not target .pt artifacts")
+
+
+def _validate_activation_credit_command_record(
+    command: Mapping[str, Any],
+    *,
+    mode: str,
+    phase_role: str,
+    oracle_screen_mode: str,
+    batch_size: int,
+    budget: int,
+    steps_source: str,
+    label: str,
+) -> None:
+    missing = [field for field in _COMMAND_REQUIRED_FIELDS if field not in command]
+    if missing:
+        raise ValueError(f"{label} command record missing required fields: {missing}")
+    if str(command.get("mode")) != mode:
+        raise ValueError(f"{label} command mode drifted")
+    if str(command.get("phase_role")) != phase_role:
+        raise ValueError(f"{label} command phase_role drifted")
+    if str(command.get("oracle_screen_mode")) != oracle_screen_mode:
+        raise ValueError(f"{label} command must pin {oracle_screen_mode} mode")
+    if not bool(command.get("same_candidate_set_required")):
+        raise ValueError(f"{label} command must require same candidate set")
+    if int(command.get("support_order_seed", -1)) not in ORACLE_SCREEN_CONTRAST_SEEDS:
+        raise ValueError(f"{label} command support_order_seed must be one of the contrast seeds")
+    if str(command.get("seed_label")) != _support_order_seed_label(
+        int(command["support_order_seed"])
+    ):
+        raise ValueError(f"{label} command seed_label drifted from support_order_seed")
+    if int(command.get("screen_rows", -1)) != batch_size:
+        raise ValueError(f"{label} command screen_rows drifted")
+    if int(command.get("n_rows", -1)) != batch_size:
+        raise ValueError(f"{label} command n_rows must equal screen_rows")
+    if int(command.get("steps_requested", -1)) != 1:
+        raise ValueError(f"{label} command steps_requested must be 1")
+    if command.get("steps_source") != steps_source:
+        raise ValueError(f"{label} command steps_source drifted")
+    if int(command.get("batch_size", -1)) != batch_size:
+        raise ValueError(f"{label} command batch_size drifted")
+    if command.get("eligible_scope") != ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE:
+        raise ValueError(f"{label} command must pin eligible_scope=first-bitlinear")
+    if int(command.get("curriculum_seed", -1)) != STEP6_CURRICULUM_SEED:
+        raise ValueError(f"{label} command curriculum_seed must stay pinned to 17")
+    if int(command.get("max_sampled_candidates", -1)) != budget:
+        raise ValueError(f"{label} command max_sampled_candidates drifted")
+    if float(command.get("oracle_max_seconds", -1.0)) != oracle_screen_budget_max_seconds(
+        budget
+    ):
+        raise ValueError(f"{label} command oracle_max_seconds drifted")
+    if int(command.get("max_abs_per_tensor", -1)) != STEP3_BASELINE_MAX_ABS_PER_TENSOR:
+        raise ValueError(f"{label} command max_abs_per_tensor must stay at the baseline cap")
+    if float(command.get("fraction_per_tensor", -1.0)) != STEP3_FRACTION_PER_TENSOR:
+        raise ValueError(f"{label} command fraction_per_tensor must stay at 1.0")
+    if command.get("global_cap_contract") != "off":
+        raise ValueError(f"{label} command must keep global cap off")
+    if command.get("capture_device_mode") != ACTIVATION_CREDIT_CAPTURE_DEVICE_MODE:
+        raise ValueError(f"{label} command must pin device_resident capture")
+    if command.get("grad_proxy_compute_mode") != ACTIVATION_CREDIT_GRAD_PROXY_COMPUTE_MODE:
+        raise ValueError(f"{label} command must pin candidate-only gather")
+    if not bool(command.get("no_extra_response_label_mask")):
+        raise ValueError(f"{label} command must forbid extra response-label masking")
+    if not bool(command.get("fp_proxy_transient_eval_only")):
+        raise ValueError(f"{label} command must keep fp proxy transient-eval-only")
+    env = command.get("env")
+    if not isinstance(env, Mapping):
+        raise ValueError(f"{label} command env must be a mapping")
+    if env.get("HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE") != "1":
+        raise ValueError(
+            f"{label} command env missing HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE=1"
+        )
+    if env.get("HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH") != "1":
+        raise ValueError(
+            f"{label} command env missing HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1"
+        )
+    argv = command.get("argv")
+    if not isinstance(argv, list) or not all(isinstance(item, str) for item in argv):
+        raise ValueError(f"{label} command argv must be a list[str]")
+    required_args = {
+        "--enable-bounded-delta-probe",
+        "--allow-gpu-launch",
+        "--oracle-screen-mode",
+        "--device",
+        "--parent",
+        "--parent-sha256",
+        "--scratch-root",
+        "--curriculum-seed",
+        "--support-order-seed",
+        "--oracle-screen-max-sampled-candidates",
+        "--batch-size",
+        "--eligible-scope",
+        "--steps",
+        "--max-steps-hard",
+        "--max-abs-per-tensor",
+        "--emit-progress",
+    }
+    if not required_args.issubset(set(argv)):
+        raise ValueError(f"{label} command argv missing required probe launch arguments")
+    if "--science-arm" in argv:
+        raise ValueError(
+            f"{label} command must route through --oracle-screen-mode, not --science-arm"
+        )
+    expected_flag_values = (
+        ("--oracle-screen-mode", oracle_screen_mode),
+        ("--curriculum-seed", str(STEP6_CURRICULUM_SEED)),
+        ("--support-order-seed", str(int(command["support_order_seed"]))),
+        ("--oracle-screen-max-sampled-candidates", str(budget)),
+        ("--batch-size", str(batch_size)),
+        ("--eligible-scope", ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE),
+        ("--steps", "1"),
+        ("--max-steps-hard", "1"),
+        ("--max-abs-per-tensor", str(STEP3_BASELINE_MAX_ABS_PER_TENSOR)),
+    )
+    for flag, expected in expected_flag_values:
+        try:
+            observed = argv[argv.index(flag) + 1]
+        except (ValueError, IndexError) as exc:
+            raise ValueError(f"{label} command argv missing {flag} value") from exc
+        if observed != expected:
+            raise ValueError(
+                f"{label} command argv {flag} must be {expected!r}, got {observed!r}"
+            )
+    try:
+        device = argv[argv.index("--device") + 1]
+    except (ValueError, IndexError) as exc:
+        raise ValueError(f"{label} command argv missing --device value") from exc
+    if not device.startswith("cuda:"):
+        raise ValueError(f"{label} command argv --device must target CUDA for launch bundle")
+    for path_field in ("stdout_path", "stderr_path", "receipt_path", "scratch_root"):
+        value = str(command.get(path_field))
+        if not value:
+            raise ValueError(f"{label} command {path_field} must be non-empty")
+        if value.endswith(".pt"):
+            raise ValueError(f"{label} command {path_field} cannot target .pt artifacts")
+    if command.get("expected_exit_policy") != "exit_0_required_else_stop_no_retry_no_verdict":
+        raise ValueError(f"{label} command expected_exit_policy must fail closed")
+
+
+def _validate_activation_credit_measurement_command_record(
+    command: Mapping[str, Any],
+) -> None:
+    _validate_activation_credit_command_record(
+        command,
+        mode="activation_credit_measurement_n20",
+        phase_role="activation_credit_measurement",
+        oracle_screen_mode="activation_credit_measurement",
+        batch_size=ACTIVATION_CREDIT_MEASUREMENT_BATCH_SIZE,
+        budget=PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES,
+        steps_source="fixed_single_support_batch_activation_credit_measurement",
+        label="activation-credit measurement",
+    )
+
+
+def validate_activation_credit_measurement_launch_bundle(
+    packet: Mapping[str, Any],
+) -> None:
+    if packet.get("schema_version") != OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION:
+        raise ValueError("unsupported activation-credit measurement launch bundle schema")
+    if packet.get("diagnostic_class") != DIAGNOSTIC_CLASS_PRE_FULL_STACK:
+        raise ValueError(
+            "activation-credit measurement launch bundle must be pre_full_stack_diagnostic"
+        )
+    _validate_author_only_fields(
+        packet,
+        expected_packet_kind=ACTIVATION_CREDIT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND,
+        label="author-only activation-credit measurement launch bundle",
+    )
+    for field in _READINESS_FORBIDDEN_TRUE_FIELDS:
+        _require_false(packet, field)
+    if bool(packet.get("carrier_claim")) or bool(packet.get("q_sidecar_carrier_claim")):
+        raise ValueError("activation-credit measurement launch bundle must not make a carrier claim")
+    if bool(packet.get("qacc_kernelized")):
+        raise ValueError(
+            "activation-credit measurement launch bundle must keep qacc_kernelized=false"
+        )
+    if not bool(packet.get("optimizer_credit_state_science_dependent")):
+        raise ValueError(
+            "activation-credit measurement launch bundle must keep optimizer_credit_state science-dependent"
+        )
+    if packet.get("eligible_scope") != ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE:
+        raise ValueError(
+            "activation-credit measurement launch bundle must pin eligible_scope=first-bitlinear"
+        )
+    if int(packet.get("screen_rows", -1)) != ACTIVATION_CREDIT_MEASUREMENT_BATCH_SIZE:
+        raise ValueError("activation-credit measurement launch bundle must pin N=20 rows")
+    if int(packet.get("curriculum_seed", -1)) != STEP6_CURRICULUM_SEED:
+        raise ValueError(
+            "activation-credit measurement launch bundle curriculum_seed must stay pinned to 17"
+        )
+    if packet.get("support_order_seeds") != list(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError(
+            "activation-credit measurement launch bundle must pin the contrast support-order seeds"
+        )
+    if not bool(packet.get("same_candidate_set_required")):
+        raise ValueError(
+            "activation-credit measurement launch bundle must require the same candidate set"
+        )
+    if not bool(packet.get("scale_smoke_required_before_full_eval")):
+        raise ValueError(
+            "activation-credit measurement launch bundle must require the de-risk smoke first"
+        )
+    if packet.get("scale_smoke_launch_bundle_packet_kind") != (
+        ACTIVATION_CREDIT_SCALE_SMOKE_LAUNCH_BUNDLE_PACKET_KIND
+    ):
+        raise ValueError("activation-credit measurement launch bundle smoke packet kind drifted")
+    _reject_raw_arrays(packet)
+    _validate_resource_lane(packet.get("resource_lane") or {})
+    _validate_activation_credit_phase_budgets(packet.get("phase_budgets") or {}, smoke=False)
+    _validate_oracle_global_non_persistence(packet)
+    feasibility_budget = packet.get("oracle_feasibility_budget") or {}
+    selected_budget = int(feasibility_budget.get("max_sampled_candidates", -1))
+    if selected_budget != PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES:
+        raise ValueError("activation-credit measurement launch bundle must pin budget 32")
+    _validate_oracle_feasibility_budget(feasibility_budget)
+    _validate_oracle_non_persistence(packet.get("oracle_non_persistence_contract") or {})
+    _validate_activation_credit_compact_summary_schema(
+        packet.get("compact_summary_schema") or {}
+    )
+    _validate_activation_credit_measurement_contract(
+        packet.get("measurement_contract") or {}
+    )
+    watcher = packet.get("watcher_audit_bundle") or {}
+    progress_filters = set(watcher.get("progress_filters") or ())
+    if not {
+        "activation_credit_forward_backward",
+        "activation_credit_gather",
+        "activation_credit_emit",
+    }.issubset(progress_filters):
+        raise ValueError(
+            "activation-credit measurement launch bundle watcher must include activation_credit phase markers"
+        )
+    science_contract = packet.get("science_contract")
+    if not isinstance(science_contract, Mapping):
+        raise ValueError(
+            "activation-credit measurement launch bundle must embed the science_contract packet"
+        )
+    validate_activation_credit_measurement_packet(science_contract)
+    if str(science_contract.get("parent_path")) != str(packet.get("parent_path")):
+        raise ValueError(
+            "embedded activation-credit science contract parent_path must match launch bundle"
+        )
+    if str(science_contract.get("parent_sha256")) != str(packet.get("parent_sha256")):
+        raise ValueError(
+            "embedded activation-credit science contract parent_sha256 must match launch bundle"
+        )
+    if science_contract.get("measurement_contract") != packet.get("measurement_contract"):
+        raise ValueError(
+            "activation-credit measurement_contract must match embedded science_contract"
+        )
+    terminal = packet.get("terminal_criteria") or {}
+    if terminal.get("branch_classifier") != list(ACTIVATION_CREDIT_BRANCHES):
+        raise ValueError(
+            "activation-credit launch bundle terminal branch classifier drifted"
+        )
+    if not bool(terminal.get("same_candidate_set_required")):
+        raise ValueError(
+            "activation-credit launch bundle terminal criteria must require same candidate set"
+        )
+    if terminal.get("support_order_seeds") != list(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError(
+            "activation-credit launch bundle terminal criteria support_order_seeds drifted"
+        )
+    if int(terminal.get("n20_screen_rows", -1)) != ACTIVATION_CREDIT_MEASUREMENT_BATCH_SIZE:
+        raise ValueError(
+            "activation-credit launch bundle terminal criteria must pin N=20 rows"
+        )
+    if int(terminal.get("required_max_sampled_candidates", -1)) != (
+        PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES
+    ):
+        raise ValueError(
+            "activation-credit launch bundle terminal criteria must pin budget 32"
+        )
+    if terminal.get("required_eligible_scope") != ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE:
+        raise ValueError(
+            "activation-credit launch bundle terminal criteria eligible_scope drifted"
+        )
+    if int(
+        terminal.get("fresh_confirmation_seed_required_for_persistent_followup", -1)
+    ) != ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED:
+        raise ValueError(
+            "activation-credit launch bundle terminal fresh confirmation seed drifted"
+        )
+    if not bool(terminal.get("topology_control_positive_forces_ambiguous")):
+        raise ValueError(
+            "activation-credit topology control must force ambiguous on positive"
+        )
+    if bool(terminal.get("qacc_kernelized")):
+        raise ValueError(
+            "activation-credit launch bundle terminal criteria must keep qacc_kernelized=false"
+        )
+    if not bool(terminal.get("device_residency_not_hot_loop_residency")):
+        raise ValueError(
+            "activation-credit launch bundle must disclaim device residency vs hot-loop residency"
+        )
+    commands = packet.get("commands")
+    if not isinstance(commands, list):
+        raise ValueError("activation-credit launch bundle commands must be a list")
+    if len(commands) != len(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError(
+            "activation-credit launch bundle must include exactly one command per contrast seed"
+        )
+    seen = {int(command.get("support_order_seed", -1)) for command in commands}
+    if seen != set(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError(
+            "activation-credit launch bundle command seeds drifted from the contrast seeds contract"
+        )
+    for command in commands:
+        _validate_activation_credit_measurement_command_record(command)
+    artifact_policy = packet.get("artifact_policy") or {}
+    if not bool(artifact_policy.get("compact_json_ndjson_only")):
+        raise ValueError(
+            "activation-credit launch bundle artifact policy must require compact JSON/NDJSON"
+        )
+    if bool(artifact_policy.get("raw_per_proposal_arrays")):
+        raise ValueError("activation-credit launch bundle must reject raw per-proposal arrays")
+    if bool(artifact_policy.get("pt_writes_allowed")):
+        raise ValueError("activation-credit launch bundle artifact policy must reject .pt writes")
+
+
+def _validate_activation_credit_scale_smoke_command_record(
+    command: Mapping[str, Any],
+) -> None:
+    _validate_activation_credit_command_record(
+        command,
+        mode="activation_credit_scale_smoke_b4_k8",
+        phase_role="activation_credit_scale_smoke",
+        oracle_screen_mode="activation_credit_scale_smoke",
+        batch_size=ACTIVATION_CREDIT_SMOKE_BATCH_SIZE,
+        budget=ACTIVATION_CREDIT_SMOKE_MAX_SAMPLED_CANDIDATES,
+        steps_source="fixed_single_support_batch_activation_credit_scale_smoke",
+        label="activation-credit smoke",
+    )
+
+
+def validate_activation_credit_scale_smoke_launch_bundle(
+    packet: Mapping[str, Any],
+) -> None:
+    if packet.get("schema_version") != OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION:
+        raise ValueError("unsupported activation-credit smoke launch bundle schema")
+    if packet.get("diagnostic_class") != DIAGNOSTIC_CLASS_PRE_FULL_STACK:
+        raise ValueError(
+            "activation-credit smoke launch bundle must be pre_full_stack_diagnostic"
+        )
+    _validate_author_only_fields(
+        packet,
+        expected_packet_kind=ACTIVATION_CREDIT_SCALE_SMOKE_LAUNCH_BUNDLE_PACKET_KIND,
+        label="author-only activation-credit smoke launch bundle",
+    )
+    for field in _READINESS_FORBIDDEN_TRUE_FIELDS:
+        _require_false(packet, field)
+    if bool(packet.get("carrier_claim")) or bool(packet.get("q_sidecar_carrier_claim")):
+        raise ValueError("activation-credit smoke launch bundle must not make a carrier claim")
+    if bool(packet.get("qacc_kernelized")):
+        raise ValueError("activation-credit smoke launch bundle must keep qacc_kernelized=false")
+    if not bool(packet.get("optimizer_credit_state_science_dependent")):
+        raise ValueError(
+            "activation-credit smoke launch bundle must keep optimizer_credit_state science-dependent"
+        )
+    if packet.get("eligible_scope") != ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE:
+        raise ValueError(
+            "activation-credit smoke launch bundle must pin eligible_scope=first-bitlinear"
+        )
+    if int(packet.get("screen_rows", -1)) != ACTIVATION_CREDIT_SMOKE_BATCH_SIZE:
+        raise ValueError("activation-credit smoke launch bundle must pin batch size 4")
+    if int(packet.get("curriculum_seed", -1)) != STEP6_CURRICULUM_SEED:
+        raise ValueError(
+            "activation-credit smoke launch bundle curriculum_seed must stay pinned to 17"
+        )
+    if packet.get("support_order_seeds") != list(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError(
+            "activation-credit smoke launch bundle must pin the contrast support-order seeds"
+        )
+    if not bool(packet.get("same_candidate_set_required")):
+        raise ValueError(
+            "activation-credit smoke launch bundle must require the same candidate set"
+        )
+    _reject_raw_arrays(packet)
+    _validate_resource_lane(packet.get("resource_lane") or {})
+    _validate_activation_credit_phase_budgets(packet.get("phase_budgets") or {}, smoke=True)
+    _validate_oracle_global_non_persistence(packet)
+    feasibility_budget = packet.get("oracle_feasibility_budget") or {}
+    selected_budget = int(feasibility_budget.get("max_sampled_candidates", -1))
+    if selected_budget != ACTIVATION_CREDIT_SMOKE_MAX_SAMPLED_CANDIDATES:
+        raise ValueError("activation-credit smoke launch bundle must pin budget 8")
+    _validate_oracle_feasibility_budget(feasibility_budget)
+    _validate_oracle_non_persistence(packet.get("oracle_non_persistence_contract") or {})
+    _validate_activation_credit_scale_smoke_compact_summary_schema(
+        packet.get("compact_summary_schema") or {}
+    )
+    _validate_activation_credit_scale_smoke_contract(
+        packet.get("scale_smoke_contract") or {}
+    )
+    watcher = packet.get("watcher_audit_bundle") or {}
+    progress_filters = set(watcher.get("progress_filters") or ())
+    if not {
+        "activation_credit_forward_backward",
+        "activation_credit_gather",
+        "activation_credit_emit",
+    }.issubset(progress_filters):
+        raise ValueError(
+            "activation-credit smoke launch bundle watcher must include activation_credit phase markers"
+        )
+    terminal = packet.get("terminal_criteria") or {}
+    if terminal.get("branch_classifier") is not None:
+        raise ValueError(
+            "activation-credit smoke launch bundle terminal branch_classifier must stay null"
+        )
+    if not bool(terminal.get("same_candidate_set_required")):
+        raise ValueError(
+            "activation-credit smoke launch bundle terminal criteria must require same candidate set"
+        )
+    if terminal.get("support_order_seeds") != list(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError(
+            "activation-credit smoke launch bundle terminal criteria support_order_seeds drifted"
+        )
+    if int(terminal.get("required_max_sampled_candidates", -1)) != ACTIVATION_CREDIT_SMOKE_MAX_SAMPLED_CANDIDATES:
+        raise ValueError(
+            "activation-credit smoke launch bundle terminal criteria must pin budget 8"
+        )
+    if int(terminal.get("required_batch_size", -1)) != ACTIVATION_CREDIT_SMOKE_BATCH_SIZE:
+        raise ValueError(
+            "activation-credit smoke launch bundle terminal criteria must pin batch size 4"
+        )
+    if terminal.get("required_eligible_scope") != ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE:
+        raise ValueError(
+            "activation-credit smoke launch bundle terminal criteria eligible_scope drifted"
+        )
+    if not bool(terminal.get("required_grad_proxy_candidate_count_positive")):
+        raise ValueError(
+            "activation-credit smoke launch bundle terminal criteria must require grad_proxy_candidate_count > 0"
+        )
+    if not bool(terminal.get("smoke_branch_classification_must_be_null")):
+        raise ValueError(
+            "activation-credit smoke launch bundle terminal criteria must keep branch_classification=null"
+        )
+    if not bool(terminal.get("policy_verdict_forbidden")):
+        raise ValueError(
+            "activation-credit smoke launch bundle terminal criteria must forbid policy verdicts"
+        )
+    if bool(terminal.get("qacc_kernelized")):
+        raise ValueError(
+            "activation-credit smoke launch bundle terminal criteria must keep qacc_kernelized=false"
+        )
+    if not bool(terminal.get("device_residency_not_hot_loop_residency")):
+        raise ValueError(
+            "activation-credit smoke launch bundle must disclaim device residency vs hot-loop residency"
+        )
+    commands = packet.get("commands")
+    if not isinstance(commands, list):
+        raise ValueError("activation-credit smoke launch bundle commands must be a list")
+    if len(commands) != len(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError(
+            "activation-credit smoke launch bundle must include exactly one command per contrast seed"
+        )
+    seen = {int(command.get("support_order_seed", -1)) for command in commands}
+    if seen != set(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError(
+            "activation-credit smoke launch bundle command seeds drifted from the contrast seeds contract"
+        )
+    for command in commands:
+        _validate_activation_credit_scale_smoke_command_record(command)
+    artifact_policy = packet.get("artifact_policy") or {}
+    if not bool(artifact_policy.get("compact_json_ndjson_only")):
+        raise ValueError(
+            "activation-credit smoke launch bundle artifact policy must require compact JSON/NDJSON"
+        )
+    if bool(artifact_policy.get("raw_per_proposal_arrays")):
+        raise ValueError(
+            "activation-credit smoke launch bundle must reject raw per-proposal arrays"
+        )
+    if bool(artifact_policy.get("pt_writes_allowed")):
+        raise ValueError(
+            "activation-credit smoke launch bundle artifact policy must reject .pt writes"
+        )
+
+
 def validate_within_tie_band_discriminator_packet(packet: Mapping[str, Any]) -> None:
     if packet.get("schema_version") != OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION:
         raise ValueError("unsupported within-tie-band packet schema")
@@ -6326,9 +8047,26 @@ __all__ = [
     "BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE",
     "BRANCH_POWERED_NEGATIVE_OR_LOSS_ONLY",
     "BRANCH_PREREGISTERED_CHEAP_LEARNER_FEATURE_FAMILY_CANNOT_PREDICT_REGRET",
+    "BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH",
+    "BRANCH_ACTIVATION_CREDIT_CANDIDATE_SIGNAL",
+    "BRANCH_ACTIVATION_CREDIT_MISSING_SIGNAL_DEEPER_THAN_FIRST_ORDER_CREDIT_STORAGE",
     "BRANCH_WITHIN_TIE_BAND_AMBIGUOUS_NO_BRANCH",
     "BRANCH_WITHIN_TIE_BAND_LEARNER_FEATURES_SEPARATE_REGRET",
     "BRANCH_WITHIN_TIE_BAND_NEEDS_NEW_LEARNER_STATE",
+    "ACTIVATION_CREDIT_BRANCHES",
+    "ACTIVATION_CREDIT_CAPTURE_DEVICE_MODE",
+    "ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED",
+    "ACTIVATION_CREDIT_GRAD_PROXY_COMPUTE_MODE",
+    "ACTIVATION_CREDIT_MAGNITUDE_BIN_COUNT",
+    "ACTIVATION_CREDIT_MEASUREMENT_BATCH_SIZE",
+    "ACTIVATION_CREDIT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND",
+    "ACTIVATION_CREDIT_MEASUREMENT_PACKET_KIND",
+    "ACTIVATION_CREDIT_PRIMARY_FAMILY_ID",
+    "ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE",
+    "ACTIVATION_CREDIT_SCALE_SMOKE_LAUNCH_BUNDLE_PACKET_KIND",
+    "ACTIVATION_CREDIT_SMOKE_BATCH_SIZE",
+    "ACTIVATION_CREDIT_SMOKE_MAX_SAMPLED_CANDIDATES",
+    "ACTIVATION_CREDIT_TOPOLOGY_CONTROL_FAMILY_ID",
     "CREDIT_RANKING_PIVOT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND",
     "CREDIT_RANKING_PIVOT_MEASUREMENT_PACKET_KIND",
     "BRANCH_CURRENT_ORDER_NOT_NECESSARY",
@@ -6396,6 +8134,9 @@ __all__ = [
     "WITHIN_TIE_BAND_PRIMARY_FAMILY_ID",
     "WITHIN_TIE_BAND_TARGET_TIE_BAND_ID",
     "build_measurement_power_then_trust_region_packet",
+    "build_activation_credit_measurement_launch_bundle",
+    "build_activation_credit_measurement_packet",
+    "build_activation_credit_scale_smoke_launch_bundle",
     "build_candidate_set_viability_oracle_screen_launch_bundle",
     "build_candidate_set_viability_oracle_screen_packet",
     "build_credit_ranking_pivot_measurement_launch_bundle",
@@ -6438,6 +8179,9 @@ __all__ = [
     "step4_arm_matches_a0",
     "step4_mass_confound_detected",
     "validate_measurement_power_then_trust_region_packet",
+    "validate_activation_credit_measurement_launch_bundle",
+    "validate_activation_credit_measurement_packet",
+    "validate_activation_credit_scale_smoke_launch_bundle",
     "validate_candidate_set_viability_oracle_screen_launch_bundle",
     "validate_candidate_set_viability_oracle_screen_packet",
     "validate_credit_ranking_pivot_measurement_launch_bundle",
