@@ -1,6 +1,6 @@
 # Ternary-Hybrid Training Stack — receipts arc
 
-Query-triggered receipts for `.claude/rules/ternary_hybrid_stack.md` (the
+Query-triggered receipts for `.codex/rules/ternary_hybrid_stack.md` (the
 FP-free / sub-2-bit-persistent ternary-training research lane). The rule file
 holds current invariants only; per-run measurements, attribution receipts,
 mechanism nulls, chain-head shas, and msg IDs land here + on the ai-room board
