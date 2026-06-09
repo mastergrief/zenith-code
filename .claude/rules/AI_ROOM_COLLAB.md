@@ -48,19 +48,15 @@ Test, Iterate").
   exception or break-glass
   reason. Ensures one active executor per slice — no concurrent edits.
 - **Named Codex roles (specialized lanes, under the co-leads + gates)**:
-  `training-dev` (default always-on mutating lane that OWNS plan +
-  implementation + test/runs/execution for explicitly dispatched + gated
-  work: HRM training-run development incl. GPU launch/run/watch,
-  scripts, probes/tests, curriculum support, code/data, and main-repo
-  docs/config/tooling/scripts/tests/probe support; runs its own bounded
-  terminal churn; cwd by task class; developer template, no Serena; after a
-  plan gate; always-on means lane/default route, not a retained handle;
-  fresh/recycled per child task) and `test-operator`
-  (cheap deterministic proof-runner: runs an already-specified launch/proof
-  packet, monitors named NDJSON/logs/artifacts, posts validation receipts to
-  BOTH co-leads; danger-full-access for temp/log/artifact/tmux only, NOT
-  source authority; NO source edits / mechanism design / commits / dispatch;
-  underspecified packet → STOP + report; fixes route back to `training-dev`).
+  `training-dev` (default mutating lane for dispatched + gated HRM and
+  main-repo work) owns the plan/packet, implementation review, final
+  receipt, and any commit/push/run handoff. After Claude `+1 implement`,
+  it may invoke the native `.codex/agents/developer.toml` executor for
+  bounded edits/tests; that executor has no room handle, task ownership,
+  dispatch, or gate authority, and its receipt is only `subagent-claimed`
+  until `training-dev` verifies it; no Claude/co_lead gate rests on that
+  receipt alone. `test-operator` remains the exact-packet
+  proof/launch runner; fixes route back to `training-dev`.
 
 ## Cross-thread is mandatory at thinking boundaries
 

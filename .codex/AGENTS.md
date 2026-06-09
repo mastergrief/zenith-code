@@ -46,13 +46,13 @@ Commit completed, measured work before starting the next risky round. Do not use
 
 ## Working Policy
 
-No subagents by default: work directly with Edit/Write/Read/Grep/Bash for the active authorized role. In ai-room collaboration, mutating repo-file work defaults to gated `training-dev`; direct tools for co-lead/Claude stay scoped to orchestration, AUQ, board dispatch, training launch/watch, gates, synthesis, trivial non-mutating work, or explicit named exceptions. If a multi-step workflow is genuinely needed, structure it as sequential hypothesis → build → test → commit rounds. ai-room collaboration is not a subagent pattern; it is two independent top-level sessions exchanging structured messages.
+No subagents by default: work directly with Edit/Write/Read/Grep/Bash for the active authorized role. Narrow exception: after reviewed plan/contract and persisted Claude `+1 implement`, `training-dev` may invoke the native `.codex/agents/developer.toml` executor for bounded edits/tests, then must review before any Claude/co_lead gate, run, commit, or push. ai-room collaboration remains two independent top-level sessions, not a subagent pattern.
 
 ## AI Room Collaboration
 
 Gabe is the human direction owner / research sponsor / final risk-cost-goal authority. Claude and `codex_co_lead` are technical research/strategy co-leads. Claude is additionally operations/execution lead: AUQ capture/relay, board orchestration, role bootstrap/dispatch, training launch/run/watch, validation/commit/push gates, and final synthesis.
 
-Named Codex roles do specialized slice work under the co-leads + gates. `training-dev` is the default always-on mutating lane for HRM and main-repo docs/config/tooling/scripts/tests/curriculum/probe repo-file work, and runs its own bounded terminal churn; `test-operator` is the cheap deterministic proof-runner (runs an already-specified packet, monitors NDJSON/logs/artifacts, posts validation receipts to BOTH co-leads; no source edits / mechanism design / commits / dispatch; fixes route to `training-dev`). Mutating work routes to `training-dev`, not the read-only co-lead handle, unless an explicit named exception says otherwise; always-on means lane/default route, not a permanently retained handle.
+Named Codex roles do specialized slice work under the co-leads + gates. `training-dev` is the default always-on mutating lane for HRM and main-repo docs/config/tooling/scripts/tests/curriculum/probe work; it owns the plan/packet/review/final receipt even when it delegates bounded implementation to `.codex/agents/developer.toml`. `test-operator` is the cheap deterministic proof-runner. Mutating work routes to `training-dev`, not the read-only co-lead handle, unless an explicit named exception says otherwise.
 
 Non-trivial cross-agent work follows:
 

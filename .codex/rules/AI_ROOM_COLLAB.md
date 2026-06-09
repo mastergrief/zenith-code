@@ -46,16 +46,15 @@ require a persisted named exception or break-glass reason.
   route to `test-operator` under gate); direct-Claude repo-file edits
   or runs need an explicit persisted named exception or break-glass reason.
 - **Named Codex roles (under the co-leads + gates)**: `training-dev`
-  (default always-on mutating lane that OWNS plan + implementation +
-  test/runs/execution for explicitly dispatched + gated HRM and main-repo
-  work: training-run development incl. GPU launch/run/watch, scripts,
-  probes/tests, curriculum support, docs/config/tooling, code/data; runs
-  its own bounded terminal churn; always-on means lane/default route, not a
-  retained handle; fresh/recycled per child task) and `test-operator`
-  (cheap deterministic proof-runner: runs an already-specified packet,
-  monitors NDJSON/logs/artifacts, posts validation receipts to BOTH
-  co-leads; no source edits / mechanism design / commits; fixes route to
-  `training-dev`).
+  (default mutating lane for dispatched + gated HRM and main-repo work)
+  owns the plan/packet, implementation review, final receipt, and any
+  commit/push/run handoff. After Claude `+1 implement`, it may invoke the
+  native `.codex/agents/developer.toml` executor for bounded edits/tests;
+  that executor has no room handle, task ownership, dispatch, or gate
+  authority, and its receipt is only `subagent-claimed` until
+  `training-dev` verifies it; no Claude/co_lead gate rests on that receipt
+  alone. `test-operator` remains the exact-packet
+  proof/launch runner; fixes route to `training-dev`.
 
 ## Cross-thread is mandatory at thinking boundaries
 

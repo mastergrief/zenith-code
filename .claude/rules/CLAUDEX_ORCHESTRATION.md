@@ -48,21 +48,18 @@ gate); mutating repo-file work + runs route to a named role.
 Codex repo-file work, not exceptional spawn:
 
 - **`training-dev`** — default always-on mutating lane (developer
-  template, **no Serena**) that OWNS plan + implementation +
-  test/runs/execution for any explicitly dispatched + gated repo-file
-  path or run. Common lanes: HRM training-run development incl. GPU
-  launch/run/watch,
-  curriculum support, probes/tests, scripts, code/data, plus main-repo
-  docs/config/hooks/tooling/scripts/tests/probe support. **Always-on**
-  means the default lane/route, NOT a permanently retained handle:
-  fresh-per-child-task and recycle/`RETAIN OVERRIDE` boundaries remain.
-  **cwd is a provenance/dispatch match check, not a repo permission
-  boundary**: dispatch/provenance MUST name cwd and target path; STOP
-  only when actual cwd/target contradicts that packet or a material
-  gate. Plan gate before edits; commit/push only on explicit gates; no
-  `.pt` commits for HRM runtime/research outputs. `training-dev` runs its
-  own bounded terminal churn (py_compile, focused pytest/lint, dry-runs,
-  log/artifact inspection); implementation ownership stays with `training-dev`.
+  template, **no Serena**) for explicitly dispatched + gated repo-file
+  paths or runs. It owns the plan/packet, implementation review, final
+  receipt, and any commit/push/run handoff; after Claude `+1 implement`,
+  it may invoke the native `.codex/agents/developer.toml` executor for
+  bounded edits/tests. That executor has no room handle, task ownership,
+  dispatch, or gate authority; `subagent-claimed` output becomes
+  gate-relevant only after `training-dev-verified` review; no gate rests on
+  that receipt alone. **cwd is a
+  provenance/dispatch match check, not a repo permission boundary**.
+  Plan gate before edits; commit/push only on explicit gates; no `.pt`
+  commits for HRM runtime/research outputs. `training-dev` still runs its
+  own bounded terminal churn and owns implementation.
 - **`test-operator`** — deterministic launch-packet/proof executor
   (gpt-5.4-mini; danger-full-access for temp/log/artifact/tmux writes, NOT
   source authority). Runs an already-specified packet exactly, monitors the
@@ -78,14 +75,16 @@ Codex repo-file work, not exceptional spawn:
 `CLAUDEX_ROLE`); the **routable owner/target is a `codex_N` handle** —
 the role name is NOT a valid room handle. Spawn `role=<name>` (auto or
 explicit `codex_N`); set the task owner + dispatch target to the
-returned `codex_N`, keeping role/lane explicit in the post.
+returned `codex_N`, keeping role/lane explicit in the post. The native
+developer executor is not a `codex_N` handle and cannot receive
+`task_dispatch` or gate kinds; it reports only through `training-dev`.
 
 **Worker bootstrap**: every ai-room worker role needs the ai-room MCP.
 GPT-backed role homes (`model = "gpt-*"`) inherit base Codex auth via an
 `auth.json` symlink → `~/.codex/auth.json` (the bootstrap maintains it;
 DeepSeek roles use separate auth). Missing auth → the worker fails an
-OAuth-fallback at spawn, not a handle error. `developer` includes Serena;
-`training-dev` intentionally omits it.
+OAuth-fallback at spawn, not a handle error. The native developer executor is
+local-only and reports through `training-dev`; `training-dev` omits Serena.
 
 **Not a second dispatcher**: `codex_co_lead` recommends routes, drafts
 contracts, reviews receipts; **claude** spawns / assigns / dispatches /
@@ -122,8 +121,8 @@ claude creates board task with provenance + decision contract
 ```
 
 Claude is load-bearing reviewer at plan, validation/diff, commit, and
-push gates. Same-model peers may cross-review for hygiene, not in
-place of claude's gate.
+push gates, including delegated developer-executor output. Same-model
+peers may cross-review for hygiene, not in place of claude's gate.
 
 ## Worker lifecycle boundaries
 

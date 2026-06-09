@@ -26,35 +26,32 @@ Operating shapes:
   child-task boundary; the audit cycle across tasks is the lane's
   purpose. **Read-only — does NOT write code.**
 - **As a named Codex role** (normal route for gated mutating worker
-  slices): `training-dev` (default always-on mutating lane that OWNS plan
-  + implementation + test/runs/execution for any explicitly dispatched +
-  gated repo-file task/repo/path or run; common lanes: HRM training-run
-  development incl. GPU launch/run/watch, curriculum support, probes/tests,
-  scripts, code/data, plus main-repo docs/config/hooks/tooling/scripts/
-  tests/probe support; runs its own bounded terminal churn; developer
-  template, no Serena; **cwd is a provenance/dispatch match check, not a
-  repo permission boundary** — dispatch/provenance must name cwd/target;
-  STOP only when actual cwd/target contradicts that packet or a material
-  gate) and `test-operator` (cheap deterministic proof-runner: runs an
-  already-specified launch/proof packet, monitors NDJSON/logs/artifacts,
-  posts validation receipts to BOTH co-leads; no source edits / mechanism
-  design / commits / dispatch; fixes route to `training-dev`). Slice-scoped;
-  always-on means default lane/route, not a
-  permanently retained handle, so recycle after the shipped slice unless
-  claude scopes a small adjacent follow-up with `RETAIN OVERRIDE`.
+  slices): `training-dev` owns the plan/packet, implementation review,
+  final receipt, and any commit/push/run handoff for dispatched + gated
+  repo-file tasks or runs. After Claude `+1 implement`, it may invoke the
+  native `.codex/agents/developer.toml` executor for bounded edits/tests;
+  `subagent-claimed` output becomes gate-relevant only after
+  `training-dev-verified` review; no gate rests on that receipt alone.
+  `training-dev` remains the only room
+  owner/executor lane and runs bounded terminal churn; **cwd is a
+  provenance/dispatch match check, not a repo permission boundary**. The
+  `test-operator` remains the exact-packet proof/launch runner, with fixes
+  routed to `training-dev`. Slice-scoped; always-on means default lane/route,
+  not a permanently retained handle.
 - **As an ad-hoc named worker handle** (cold-context, separate evidence
   class, or co_lead capacity overflow): slice-scoped, same recycle
   expectation.
 
 **Role vs handle**: `role="<name>"` loads the role home (role CODEX_HOME
 + `CLAUDEX_ROLE`); the routable owner/target is a `codex_N` handle — the
-role name is NOT a valid room handle. `training-dev` being always-on
-means claude always has that lane available as the default mutating
-route; it does NOT make one stale handle authoritative. claude spawns /
-assigns / dispatches / gates; you do NOT self-dispatch. GPT-backed role homes
-(`model="gpt-*"`) inherit base Codex auth via an `auth.json` symlink →
-`~/.codex/auth.json` (bootstrap-maintained); every worker role needs the
-ai-room MCP; `training-dev` omits Serena by design.
+role name is NOT a valid room handle. The native developer executor is not a
+`codex_N` handle and cannot receive `task_dispatch` or gate kinds; it reports
+only through `training-dev`. `training-dev` being always-on means claude has
+that lane available by default, not that one stale handle is authoritative.
+claude spawns / assigns / dispatches / gates; you do NOT self-dispatch.
+GPT-backed role homes inherit base Codex auth via an `auth.json` symlink; every
+ai-room worker role needs ai-room MCP. The native developer executor is local-only
+and reports through `training-dev`; `training-dev` omits Serena by design.
 
 ## Worker workflow (received-dispatch perspective)
 

@@ -45,13 +45,13 @@ Commit completed, measured work before starting the next risky round. Do not use
 
 ## Working Policy
 
-Direct tools are default for orchestration, AUQ, board dispatch, training launch/watch, gates, synthesis, trivial non-mutating work, and explicit named exceptions. Mutating repo-file work (training-run development, scripts, probes/tests, curriculum support, docs/config/tooling) defaults to gated `training-dev`, not direct Claude editing. Slash commands with documented agent use can override their own flow; otherwise avoid spawning agents "just in case." ai-room collaboration is not a subagent pattern: it is two independent top-level sessions exchanging structured messages.
+Direct tools are default for orchestration, AUQ, board dispatch, training launch/watch, gates, synthesis, trivial non-mutating work, and explicit named exceptions. Mutating repo-file work defaults to gated `training-dev`; narrow exception: after reviewed plan/contract + Claude `+1 implement`, `training-dev` may invoke `.codex/agents/developer.toml` for bounded edits/tests, then must review before any gate, run, commit, or push. ai-room collaboration is not a subagent pattern.
 
 ## AI Room Collaboration
 
 Gabe is the human direction owner / research sponsor / final risk-cost-goal authority. Claude and `codex_co_lead` are technical research/strategy co-leads. Claude is additionally operations/execution lead: AUQ capture/relay, board orchestration, role bootstrap/dispatch, training launch/run/watch, validation/commit/push gates, and final synthesis.
 
-Mutating repo-file work routes to `training-dev` by default for HRM and main-repo docs/config/tooling/scripts/tests/curriculum/probe support; direct Claude repo-file edits require a persisted named exception or break-glass reason. `training-dev` is the always-on lane (not a permanently retained handle) and runs its own bounded terminal churn; `test-operator` is the formal proof/launch runner. Detailed lane boundaries live in the ai-room rules.
+Mutating repo-file work routes to `training-dev` by default for HRM and main-repo docs/config/tooling/scripts/tests/curriculum/probe support; direct Claude repo-file edits require a persisted named exception or break-glass reason. `training-dev` is the always-on lane, owns any delegated developer-executor output, and remains responsible for the reviewed receipt; `test-operator` is the formal proof/launch runner. Detailed lane boundaries live in the ai-room rules.
 
 Non-trivial cross-agent work follows:
 
