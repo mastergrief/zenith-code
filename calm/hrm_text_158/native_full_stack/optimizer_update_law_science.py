@@ -44,6 +44,12 @@ CREDIT_RANKING_PIVOT_MEASUREMENT_PACKET_KIND = (
 CREDIT_RANKING_PIVOT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND = (
     "credit_ranking_pivot_measurement_launch_bundle"
 )
+WITHIN_TIE_BAND_DISCRIMINATOR_PACKET_KIND = (
+    "pre_full_stack_diagnostic__within_tie_band_discriminator_measurement"
+)
+WITHIN_TIE_BAND_DISCRIMINATOR_LAUNCH_BUNDLE_PACKET_KIND = (
+    "within_tie_band_discriminator_measurement_launch_bundle"
+)
 
 SCIENCE_MODE_PRETERMINAL_SCREEN = "preterminal_screen"
 SCIENCE_MODE_BRANCH_VERDICT = "branch_verdict"
@@ -125,6 +131,15 @@ BRANCH_MEASUREMENT_AMBIGUOUS_TIE_BAND_ALIASING = (
     "measurement_ambiguous_tie_band_aliasing"
 )
 BRANCH_MEASUREMENT_AMBIGUOUS_NO_BRANCH = "measurement_ambiguous_no_branch"
+BRANCH_WITHIN_TIE_BAND_LEARNER_FEATURES_SEPARATE_REGRET = (
+    "within_tie_band_learner_features_separate_regret"
+)
+BRANCH_WITHIN_TIE_BAND_NEEDS_NEW_LEARNER_STATE = (
+    "within_tie_band_needs_new_learner_state"
+)
+BRANCH_WITHIN_TIE_BAND_AMBIGUOUS_NO_BRANCH = (
+    "within_tie_band_ambiguous_no_branch"
+)
 ORACLE_SCREEN_BRANCHES = (
     BRANCH_CANDIDATE_SET_VIABLE_CREDIT_RANKING_BAD,
     BRANCH_SCHEDULER_ONLY_ORDER_SENSITIVE,
@@ -175,6 +190,26 @@ CREDIT_RANKING_PIVOT_MEASUREMENT_BRANCHES = (
     PIVOT_MEASUREMENT_PREDICTIVE_SEED_LABEL,
     BRANCH_MEASUREMENT_AMBIGUOUS_TIE_BAND_ALIASING,
     BRANCH_MEASUREMENT_AMBIGUOUS_NO_BRANCH,
+)
+WITHIN_TIE_BAND_TARGET_TIE_BAND_ID = "voteabs=4|marginabs=4"
+WITHIN_TIE_BAND_PRIMARY_FAMILY_ID = "F_state_transition_rankq"
+WITHIN_TIE_BAND_ABLATION_FAMILY_IDS = (
+    "F_transition_rankq",
+    "F_state_transition",
+    "F_transition_only",
+    "F_rankq_only",
+    "F_flatq_only",
+)
+WITHIN_TIE_BAND_MATCHED_HASH_SIGNAL_MIN = 0.75
+WITHIN_TIE_BAND_PREDICTIVE_BUCKET_FRACTION_MAX = 0.25
+WITHIN_TIE_BAND_PREDICTIVE_REGRET_SPREAD_RATIO_MAX = 0.25
+WITHIN_TIE_BAND_PREDICTIVE_REGRET_CAPTURE_RATIO_MIN = 0.50
+WITHIN_TIE_BAND_FAIL_CLOSED_BUCKET_FRACTION_GT = 0.50
+WITHIN_TIE_BAND_FAIL_CLOSED_REGRET_SPREAD_RATIO_GT = 0.50
+WITHIN_TIE_BAND_DISCRIMINATOR_BRANCHES = (
+    BRANCH_WITHIN_TIE_BAND_LEARNER_FEATURES_SEPARATE_REGRET,
+    BRANCH_WITHIN_TIE_BAND_NEEDS_NEW_LEARNER_STATE,
+    BRANCH_WITHIN_TIE_BAND_AMBIGUOUS_NO_BRANCH,
 )
 OPTIMIZER_UPDATE_LAW_BRANCHES = (
     BRANCH_RANK_FREE_POSITIVE,
@@ -1277,6 +1312,183 @@ def default_credit_ranking_pivot_measurement_contract() -> dict[str, Any]:
             BRANCH_MEASUREMENT_AMBIGUOUS_TIE_BAND_ALIASING,
             BRANCH_MEASUREMENT_AMBIGUOUS_NO_BRANCH,
         ],
+    }
+
+
+def default_within_tie_band_discriminator_compact_summary_schema() -> dict[str, Any]:
+    allowed_fields = [
+        "candidate_count",
+        "sampled_candidate_count",
+        "sampled_candidate_table",
+        "target_tie_band",
+        "family_metrics",
+        "telemetry",
+    ]
+    return {
+        "compact_summary_only": True,
+        "allowed_fields": allowed_fields,
+        "required_fields": allowed_fields,
+        "raw_per_proposal_arrays": False,
+        "raw_candidate_scores": False,
+        "raw_local_loss_deltas": False,
+    }
+
+
+def default_within_tie_band_discriminator_measurement_contract() -> dict[str, Any]:
+    learner_available_fields = [
+        "candidate_id",
+        "state_key",
+        "flat_index",
+        "vote_value",
+        "abs_vote_value",
+        "current_margin_abs",
+        "current_rank_position",
+        "tie_band_id",
+        "current_q_level",
+        "pre_accumulator_i16",
+        "new_acc_i32_signed",
+        "proposal_direction",
+        "threshold_residual_signed",
+        "proximity_to_threshold",
+        "tensor_numel",
+        "state_candidate_count",
+        "current_rank_fraction_within_state",
+        "current_rank_quartile_within_state",
+        "flat_index_fraction",
+        "flat_index_quartile",
+        "transition_class",
+    ]
+    return {
+        "contract_kind": "within_tie_band_learner_available_discriminator_measurement",
+        "candidate_generation_fixed": True,
+        "same_candidate_set_required": True,
+        "contrast_support_order_seeds": list(ORACLE_SCREEN_CONTRAST_SEEDS),
+        "required_max_sampled_candidates": PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES,
+        "target_tie_band_id": WITHIN_TIE_BAND_TARGET_TIE_BAND_ID,
+        "oracle_best_in_target_tie_band_required": True,
+        "top_k": PIVOT_MEASUREMENT_TOP_K,
+        "rank_position_index_base": 0,
+        "learner_available_ranking_input_fields": learner_available_fields,
+        "learner_available_field_provenance": {
+            "candidate_id": "_build_oracle_candidate_universe:_candidate_id(state_key, flat_index)",
+            "state_key": "_build_oracle_candidate_universe: loop key before oracle evaluation",
+            "flat_index": "_build_oracle_candidate_universe: unordered candidate index from _ordered_candidate_indices",
+            "vote_value": "_build_oracle_candidate_universe: vote_flat[flat_index] before _evaluate_loss",
+            "abs_vote_value": "_build_oracle_candidate_universe: abs(vote_value) before _evaluate_loss",
+            "current_margin_abs": "_build_oracle_candidate_universe: abs(new_acc[flat_index]) before _evaluate_loss",
+            "current_rank_position": "_build_oracle_candidate_universe: enumerate(current_ordered) within state",
+            "tie_band_id": "_build_oracle_candidate_universe: _pivot_tie_band_id(abs_vote_value, current_margin_abs)",
+            "current_q_level": "_build_oracle_candidate_universe: state.vote_update_state().q_levels[flat_index]",
+            "pre_accumulator_i16": "_build_oracle_candidate_universe: state.vote_update_state().accumulators[flat_index]",
+            "new_acc_i32_signed": "_build_oracle_candidate_universe: new_acc[flat_index] from _ordered_candidate_indices",
+            "proposal_direction": "_build_oracle_candidate_universe: sign(new_acc_i32_signed)",
+            "threshold_residual_signed": "_build_oracle_candidate_universe: new_acc_i32_signed - proposal_direction * threshold_abs",
+            "proximity_to_threshold": "_build_oracle_candidate_universe: abs(abs(new_acc_i32_signed) - threshold_abs)",
+            "tensor_numel": "_build_oracle_candidate_universe: state.vote_update_state().q_levels.numel()",
+            "state_candidate_count": "_build_oracle_candidate_universe: len(unordered) within state",
+            "current_rank_fraction_within_state": "_build_oracle_candidate_universe: (current_rank_position + 1) / state_candidate_count",
+            "current_rank_quartile_within_state": "_build_oracle_candidate_universe: quartile(current_rank_position, state_candidate_count)",
+            "flat_index_fraction": "_build_oracle_candidate_universe: (flat_index + 1) / tensor_numel",
+            "flat_index_quartile": "_build_oracle_candidate_universe: quartile(flat_index, tensor_numel)",
+            "transition_class": "_build_oracle_candidate_universe: tuple(current_q_level, proposal_direction)",
+        },
+        "oracle_only_label_fields": [
+            "candidate_loss",
+            "local_loss_delta",
+            "regret_vs_target_tie_band_oracle_top1_local_loss_delta",
+            "target_tie_band_oracle_best_candidate_id",
+        ],
+        "family_discriminator": {
+            "primary": WITHIN_TIE_BAND_PRIMARY_FAMILY_ID,
+            "ablations": list(WITHIN_TIE_BAND_ABLATION_FAMILY_IDS),
+            "fields_by_family_id": {
+                WITHIN_TIE_BAND_PRIMARY_FAMILY_ID: [
+                    "state_key",
+                    "transition_class",
+                    "current_rank_quartile_within_state",
+                ],
+                "F_transition_rankq": [
+                    "transition_class",
+                    "current_rank_quartile_within_state",
+                ],
+                "F_state_transition": [
+                    "state_key",
+                    "transition_class",
+                ],
+                "F_transition_only": [
+                    "transition_class",
+                ],
+                "F_rankq_only": [
+                    "current_rank_quartile_within_state",
+                ],
+                "F_flatq_only": [
+                    "flat_index_quartile",
+                ],
+            },
+            "decision_basis": "primary_plus_ablation_report_no_post_hoc_best_of_many",
+            "hash_control_role": "null_distribution_only",
+            "null_distribution": {
+                "deterministic_hash_seeds": list(PIVOT_MEASUREMENT_NULL_HASH_SEEDS),
+                "matched_cardinality_bucket_partitions": True,
+                "smaller_bucket_fraction_guard_field": (
+                    "matched_hash_null_fraction_gte_observed_bucket_fraction"
+                ),
+                "smaller_bucket_fraction_guard_comparison": "fraction_gte_observed",
+                "larger_regret_capture_guard_field": (
+                    "matched_hash_null_fraction_lte_observed_regret_capture_ratio"
+                ),
+                "larger_regret_capture_guard_comparison": "fraction_lte_observed",
+            },
+        },
+        "within_band_decision": {
+            "decision_metrics": [
+                "oracle_best_bucket_fraction",
+                "oracle_best_bucket_regret_spread_ratio",
+                "oracle_best_bucket_regret_capture_ratio",
+                "oracle_best_bucket_top_k_capture_fraction",
+                "matched_hash_null_fraction_gte_observed_bucket_fraction",
+                "matched_hash_null_fraction_lte_observed_regret_capture_ratio",
+                "within_band_pairwise_auc_report_only",
+            ],
+            "target_tie_band_missing_branch_label": (
+                BRANCH_WITHIN_TIE_BAND_AMBIGUOUS_NO_BRANCH
+            ),
+            "predictive_branch_label": (
+                BRANCH_WITHIN_TIE_BAND_LEARNER_FEATURES_SEPARATE_REGRET
+            ),
+            "predictive_family_id": WITHIN_TIE_BAND_PRIMARY_FAMILY_ID,
+            "predictive_bucket_fraction_max": (
+                WITHIN_TIE_BAND_PREDICTIVE_BUCKET_FRACTION_MAX
+            ),
+            "predictive_regret_spread_ratio_max": (
+                WITHIN_TIE_BAND_PREDICTIVE_REGRET_SPREAD_RATIO_MAX
+            ),
+            "predictive_regret_capture_ratio_min": (
+                WITHIN_TIE_BAND_PREDICTIVE_REGRET_CAPTURE_RATIO_MIN
+            ),
+            "predictive_matched_hash_guard_min": (
+                WITHIN_TIE_BAND_MATCHED_HASH_SIGNAL_MIN
+            ),
+            "fail_closed_branch_label": (
+                BRANCH_WITHIN_TIE_BAND_NEEDS_NEW_LEARNER_STATE
+            ),
+            "fail_closed_requires_all_preregistered_families": True,
+            "fail_closed_bucket_fraction_gt": (
+                WITHIN_TIE_BAND_FAIL_CLOSED_BUCKET_FRACTION_GT
+            ),
+            "fail_closed_regret_spread_ratio_gt": (
+                WITHIN_TIE_BAND_FAIL_CLOSED_REGRET_SPREAD_RATIO_GT
+            ),
+            "fail_closed_matched_hash_signal_min": (
+                WITHIN_TIE_BAND_MATCHED_HASH_SIGNAL_MIN
+            ),
+            "ambiguous_branch_label": BRANCH_WITHIN_TIE_BAND_AMBIGUOUS_NO_BRANCH,
+        },
+        "fragmentation_audit": {
+            "bucket_cardinality_histogram_required": True,
+            "singleton_bucket_count_required": True,
+        },
+        "allowed_seed_local_labels": list(WITHIN_TIE_BAND_DISCRIMINATOR_BRANCHES),
     }
 
 
@@ -2922,6 +3134,267 @@ def build_credit_ranking_pivot_measurement_launch_bundle(
         ],
     }
     validate_credit_ranking_pivot_measurement_launch_bundle(packet)
+    return packet
+
+
+def build_within_tie_band_discriminator_packet(
+    *,
+    parent_path: str | Path,
+    parent_sha256: str,
+    launch_gate_id: str | None = None,
+) -> dict[str, Any]:
+    budget = PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES
+    packet = {
+        "schema_version": OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION,
+        "packet_kind": WITHIN_TIE_BAND_DISCRIMINATOR_PACKET_KIND,
+        "target_name": WITHIN_TIE_BAND_DISCRIMINATOR_PACKET_KIND,
+        "artifact_role": "within_tie_band_discriminator_author_packet",
+        "diagnostic_class": DIAGNOSTIC_CLASS_PRE_FULL_STACK,
+        "pre_full_stack_diagnostic": True,
+        "author_only": True,
+        "commands_executed": False,
+        "gpu_launched": False,
+        "launch_gate_id": launch_gate_id,
+        "pt_mutated": False,
+        "readiness_claim": False,
+        "full_sub2_claim": False,
+        "ready_for_main_science": False,
+        "carrier_claim": False,
+        "checkpoint_written": False,
+        "optimizer_credit_state_row_flip": False,
+        "optimizer_credit_state_science_dependent": True,
+        "branch_result": None,
+        "qacc_kernelized": False,
+        "parent_path": str(parent_path),
+        "parent_sha256": str(parent_sha256),
+        "arms": default_oracle_screen_arms(),
+        "same_candidate_set_required": True,
+        "seed_order_contract": default_oracle_screen_seed_order_contract(),
+        "oracle_feasibility_budget": default_oracle_feasibility_budget_for(
+            max_sampled_candidates=budget
+        ),
+        "oracle_non_persistence_contract": default_oracle_non_persistence_contract(),
+        "compact_summary_schema": default_within_tie_band_discriminator_compact_summary_schema(),
+        "measurement_contract": default_within_tie_band_discriminator_measurement_contract(),
+        "artifact_policy": {
+            "compact_json_ndjson_only": True,
+            "raw_per_proposal_arrays": False,
+            "pt_writes_allowed": False,
+            "oracle_artifact_path": None,
+        },
+        "non_claims": [
+            "packet scaffold only; no measurement execution",
+            "no GPU launch from packet authoring",
+            "no .pt mutation or checkpoint promotion",
+            "measurement keeps candidate generation fixed and target tie-band fixed",
+            "deterministic hash remains null/control only",
+            "no readiness row flip",
+            "no carrier or full-sub2 runtime claim",
+            "optimizer_credit_state remains science-dependent",
+            "no stage-b apply-magnitude or budget-64 expansion on this slice",
+        ],
+    }
+    validate_within_tie_band_discriminator_packet(packet)
+    return packet
+
+
+def _build_within_tie_band_discriminator_command_record(
+    *,
+    repo_root: str | Path,
+    run_root: str | Path,
+    parent_path: str | Path,
+    parent_sha256: str,
+    support_order_seed: int,
+    device: str,
+    phase_timeout_seconds: int | float,
+    total_timeout_seconds: int | float,
+    max_silent_phase_seconds: int | float,
+) -> dict[str, Any]:
+    budget = PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES
+    seed_label = _support_order_seed_label(int(support_order_seed))
+    scratch_root = _path_join(run_root, seed_label)
+    receipt_path = _path_join(scratch_root, "receipt.json")
+    stdout_path = _path_join(scratch_root, "stdout.ndjson")
+    stderr_path = _path_join(scratch_root, "stderr.log")
+    argv = [
+        "python3",
+        "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+        "--enable-bounded-delta-probe",
+        "--allow-gpu-launch",
+        "--oracle-screen-mode",
+        "within_tie_band_discriminator",
+        "--phase",
+        f"within-tie-band-discriminator-n20-{seed_label}",
+        "--device",
+        str(device),
+        "--parent",
+        str(parent_path),
+        "--parent-sha256",
+        str(parent_sha256),
+        "--scratch-root",
+        scratch_root,
+        "--curriculum-seed",
+        str(STEP6_CURRICULUM_SEED),
+        "--support-order-seed",
+        str(int(support_order_seed)),
+        "--oracle-screen-max-sampled-candidates",
+        str(budget),
+        "--batch-size",
+        str(ORACLE_SCREEN_N20_ROWS),
+        "--steps",
+        "1",
+        "--max-steps-hard",
+        "1",
+        "--max-abs-per-tensor",
+        str(STEP3_BASELINE_MAX_ABS_PER_TENSOR),
+        "--emit-progress",
+        "--phase-timeout-seconds",
+        str(phase_timeout_seconds),
+        "--total-timeout-seconds",
+        str(total_timeout_seconds),
+        "--max-silent-phase-seconds",
+        str(max_silent_phase_seconds),
+    ]
+    return {
+        "mode": "within_tie_band_discriminator_n20",
+        "phase_role": "within_tie_band_discriminator",
+        "support_order_seed": int(support_order_seed),
+        "seed_label": seed_label,
+        "oracle_screen_mode": "within_tie_band_discriminator",
+        "screen_rows": ORACLE_SCREEN_N20_ROWS,
+        "n_rows": ORACLE_SCREEN_N20_ROWS,
+        "steps_requested": 1,
+        "steps_source": "fixed_single_support_batch_within_tie_band_discriminator",
+        "batch_size": ORACLE_SCREEN_N20_ROWS,
+        "curriculum_seed": STEP6_CURRICULUM_SEED,
+        "same_candidate_set_required": True,
+        "max_sampled_candidates": budget,
+        "oracle_max_seconds": oracle_screen_budget_max_seconds(budget),
+        "max_abs_per_tensor": STEP3_BASELINE_MAX_ABS_PER_TENSOR,
+        "fraction_per_tensor": STEP3_FRACTION_PER_TENSOR,
+        "global_cap_contract": "off",
+        "cwd": str(repo_root),
+        "env": {
+            "HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE": "1",
+            "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH": "1",
+        },
+        "argv": argv,
+        "stdout_path": stdout_path,
+        "stderr_path": stderr_path,
+        "receipt_path": receipt_path,
+        "scratch_root": scratch_root,
+        "enabled_if": "fixed contrast seeds 43 and 29 only; same candidate set once per seed",
+        "expected_exit_policy": "exit_0_required_else_stop_no_retry_no_verdict",
+    }
+
+
+def build_within_tie_band_discriminator_launch_bundle(
+    *,
+    parent_path: str | Path,
+    parent_sha256: str,
+    repo_root: str | Path,
+    run_root: str | Path,
+    device: str = "cuda:0",
+    launch_gate_id: str | None = None,
+    symbolic_resource_lane: str = "gpu:0",
+    phase_timeout_seconds: int | float = 1800,
+    total_timeout_seconds: int | float = 7200,
+    max_silent_phase_seconds: int | float = 300,
+) -> dict[str, Any]:
+    budget = PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES
+    science_contract = packet_without_runtime_results(
+        build_within_tie_band_discriminator_packet(
+            parent_path=parent_path,
+            parent_sha256=parent_sha256,
+            launch_gate_id=None,
+        ),
+    )
+    commands = [
+        _build_within_tie_band_discriminator_command_record(
+            repo_root=repo_root,
+            run_root=run_root,
+            parent_path=parent_path,
+            parent_sha256=parent_sha256,
+            support_order_seed=int(seed),
+            device=device,
+            phase_timeout_seconds=phase_timeout_seconds,
+            total_timeout_seconds=total_timeout_seconds,
+            max_silent_phase_seconds=max_silent_phase_seconds,
+        )
+        for seed in ORACLE_SCREEN_CONTRAST_SEEDS
+    ]
+    packet = {
+        "schema_version": OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION,
+        "packet_kind": WITHIN_TIE_BAND_DISCRIMINATOR_LAUNCH_BUNDLE_PACKET_KIND,
+        "target_name": WITHIN_TIE_BAND_DISCRIMINATOR_LAUNCH_BUNDLE_PACKET_KIND,
+        "artifact_role": "within_tie_band_discriminator_launch_bundle_author_packet",
+        "diagnostic_class": DIAGNOSTIC_CLASS_PRE_FULL_STACK,
+        "pre_full_stack_diagnostic": True,
+        "author_only": True,
+        "commands_executed": False,
+        "gpu_launched": False,
+        "launch_gate_id": launch_gate_id,
+        "pt_mutated": False,
+        "readiness_claim": False,
+        "full_sub2_claim": False,
+        "ready_for_main_science": False,
+        "carrier_claim": False,
+        "checkpoint_written": False,
+        "optimizer_credit_state_row_flip": False,
+        "optimizer_credit_state_science_dependent": True,
+        "branch_result": None,
+        "qacc_kernelized": False,
+        "parent_path": str(parent_path),
+        "parent_sha256": str(parent_sha256),
+        "science_contract": science_contract,
+        "screen_rows": ORACLE_SCREEN_N20_ROWS,
+        "curriculum_seed": STEP6_CURRICULUM_SEED,
+        "support_order_seeds": list(ORACLE_SCREEN_CONTRAST_SEEDS),
+        "same_candidate_set_required": True,
+        "oracle_feasibility_budget": default_oracle_feasibility_budget_for(
+            max_sampled_candidates=budget
+        ),
+        "oracle_non_persistence_contract": default_oracle_non_persistence_contract(),
+        "compact_summary_schema": default_within_tie_band_discriminator_compact_summary_schema(),
+        "measurement_contract": default_within_tie_band_discriminator_measurement_contract(),
+        "commands": commands,
+        "resource_lane": default_resource_lane_contract(
+            symbolic_lane=symbolic_resource_lane,
+        ),
+        "watcher_audit_bundle": default_watcher_bundle(),
+        "phase_budgets": default_phase_budgets(),
+        "terminal_criteria": {
+            **default_terminal_criteria(),
+            "branch_classifier": list(WITHIN_TIE_BAND_DISCRIMINATOR_BRANCHES),
+            "same_candidate_set_required": True,
+            "support_order_seeds": list(ORACLE_SCREEN_CONTRAST_SEEDS),
+            "n20_screen_rows": ORACLE_SCREEN_N20_ROWS,
+            "required_max_sampled_candidates": budget,
+            "qacc_kernelized": False,
+            "device_residency_not_hot_loop_residency": True,
+        },
+        "hash_gate_policy": default_hash_gate_policy(),
+        "compact_instrumentation_only": True,
+        "raw_per_proposal_arrays_included": False,
+        "artifact_policy": {
+            "compact_json_ndjson_only": True,
+            "raw_per_proposal_arrays": False,
+            "pt_writes_allowed": False,
+        },
+        "non_claims": [
+            "author-only within-tie-band discriminator launch bundle",
+            "same candidate set generated once per seed and evaluated inside the fixed target tie band",
+            "deterministic hash remains a null/control distribution only",
+            "no GPU launch from this packet-authoring step",
+            "no resource lane acquired by this packet",
+            "no .pt mutation or checkpoint promotion",
+            "no readiness row flip",
+            "no carrier or full-sub2 runtime claim",
+            "qacc_vote_select_apply_update remains CPU-reference/default-off, not kernelized",
+            "no stage-b apply-magnitude or budget-64 expansion on this slice",
+        ],
+    }
+    validate_within_tie_band_discriminator_launch_bundle(packet)
     return packet
 
 
@@ -4729,6 +5202,181 @@ def _validate_credit_ranking_pivot_measurement_contract(contract: Mapping[str, A
         raise ValueError("credit-ranking pivot allowed seed-local labels drifted")
 
 
+def _validate_within_tie_band_discriminator_compact_summary_schema(
+    schema: Mapping[str, Any],
+) -> None:
+    expected_fields = set(
+        default_within_tie_band_discriminator_compact_summary_schema()["allowed_fields"]
+    )
+    if not bool(schema.get("compact_summary_only")):
+        raise ValueError("within-tie-band receipt must be compact-summary-only")
+    if set(schema.get("allowed_fields") or ()) != expected_fields:
+        raise ValueError("within-tie-band compact summary allowed fields drifted")
+    if set(schema.get("required_fields") or ()) != expected_fields:
+        raise ValueError("within-tie-band compact summary required fields drifted")
+    for field in ("raw_per_proposal_arrays", "raw_candidate_scores", "raw_local_loss_deltas"):
+        if bool(schema.get(field)):
+            raise ValueError("within-tie-band compact summary must reject raw proposal arrays")
+
+
+def _validate_within_tie_band_discriminator_measurement_contract(
+    contract: Mapping[str, Any],
+) -> None:
+    if contract.get("contract_kind") != "within_tie_band_learner_available_discriminator_measurement":
+        raise ValueError("within-tie-band contract kind drifted")
+    if not bool(contract.get("candidate_generation_fixed")):
+        raise ValueError("within-tie-band contract must keep candidate generation fixed")
+    if not bool(contract.get("same_candidate_set_required")):
+        raise ValueError("within-tie-band contract must require the same candidate set")
+    if contract.get("contrast_support_order_seeds") != list(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError("within-tie-band contract contrast seeds drifted")
+    if int(contract.get("required_max_sampled_candidates", -1)) != PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES:
+        raise ValueError("within-tie-band contract must pin budget 32")
+    if contract.get("target_tie_band_id") != WITHIN_TIE_BAND_TARGET_TIE_BAND_ID:
+        raise ValueError("within-tie-band contract target tie band drifted")
+    if not bool(contract.get("oracle_best_in_target_tie_band_required")):
+        raise ValueError("within-tie-band contract must require oracle-best inside the target tie band")
+    if int(contract.get("top_k", -1)) != PIVOT_MEASUREMENT_TOP_K:
+        raise ValueError("within-tie-band contract top_k drifted")
+    if int(contract.get("rank_position_index_base", -1)) != 0:
+        raise ValueError("within-tie-band contract must keep zero-based rank positions")
+    learner_fields = [
+        "candidate_id",
+        "state_key",
+        "flat_index",
+        "vote_value",
+        "abs_vote_value",
+        "current_margin_abs",
+        "current_rank_position",
+        "tie_band_id",
+        "current_q_level",
+        "pre_accumulator_i16",
+        "new_acc_i32_signed",
+        "proposal_direction",
+        "threshold_residual_signed",
+        "proximity_to_threshold",
+        "tensor_numel",
+        "state_candidate_count",
+        "current_rank_fraction_within_state",
+        "current_rank_quartile_within_state",
+        "flat_index_fraction",
+        "flat_index_quartile",
+        "transition_class",
+    ]
+    if list(contract.get("learner_available_ranking_input_fields") or ()) != learner_fields:
+        raise ValueError("within-tie-band learner-available input fields drifted")
+    provenance = contract.get("learner_available_field_provenance") or {}
+    if set(provenance.keys()) != set(learner_fields):
+        raise ValueError("within-tie-band learner-available provenance keys drifted")
+    if not all(isinstance(provenance[field], str) and provenance[field] for field in learner_fields):
+        raise ValueError("within-tie-band learner-available provenance must stay source-backed text")
+    if list(contract.get("oracle_only_label_fields") or ()) != [
+        "candidate_loss",
+        "local_loss_delta",
+        "regret_vs_target_tie_band_oracle_top1_local_loss_delta",
+        "target_tie_band_oracle_best_candidate_id",
+    ]:
+        raise ValueError("within-tie-band oracle-only label fields drifted")
+    family = contract.get("family_discriminator") or {}
+    if family.get("primary") != WITHIN_TIE_BAND_PRIMARY_FAMILY_ID:
+        raise ValueError("within-tie-band primary family id drifted")
+    if list(family.get("ablations") or ()) != list(WITHIN_TIE_BAND_ABLATION_FAMILY_IDS):
+        raise ValueError("within-tie-band ablation family ids drifted")
+    expected_family_fields = {
+        WITHIN_TIE_BAND_PRIMARY_FAMILY_ID: [
+            "state_key",
+            "transition_class",
+            "current_rank_quartile_within_state",
+        ],
+        "F_transition_rankq": [
+            "transition_class",
+            "current_rank_quartile_within_state",
+        ],
+        "F_state_transition": [
+            "state_key",
+            "transition_class",
+        ],
+        "F_transition_only": [
+            "transition_class",
+        ],
+        "F_rankq_only": [
+            "current_rank_quartile_within_state",
+        ],
+        "F_flatq_only": [
+            "flat_index_quartile",
+        ],
+    }
+    if dict(family.get("fields_by_family_id") or {}) != expected_family_fields:
+        raise ValueError("within-tie-band family field mapping drifted")
+    if family.get("decision_basis") != "primary_plus_ablation_report_no_post_hoc_best_of_many":
+        raise ValueError("within-tie-band decision basis drifted")
+    if family.get("hash_control_role") != "null_distribution_only":
+        raise ValueError("within-tie-band hash control must remain null-only")
+    null_distribution = family.get("null_distribution") or {}
+    if null_distribution.get("deterministic_hash_seeds") != list(PIVOT_MEASUREMENT_NULL_HASH_SEEDS):
+        raise ValueError("within-tie-band deterministic-hash seeds drifted")
+    if not bool(null_distribution.get("matched_cardinality_bucket_partitions")):
+        raise ValueError("within-tie-band null control must keep matched-cardinality partitions")
+    if null_distribution.get("smaller_bucket_fraction_guard_field") != (
+        "matched_hash_null_fraction_gte_observed_bucket_fraction"
+    ):
+        raise ValueError("within-tie-band smaller-bucket guard field drifted")
+    if null_distribution.get("smaller_bucket_fraction_guard_comparison") != "fraction_gte_observed":
+        raise ValueError("within-tie-band smaller-bucket guard comparator drifted")
+    if null_distribution.get("larger_regret_capture_guard_field") != (
+        "matched_hash_null_fraction_lte_observed_regret_capture_ratio"
+    ):
+        raise ValueError("within-tie-band regret-capture guard field drifted")
+    if null_distribution.get("larger_regret_capture_guard_comparison") != "fraction_lte_observed":
+        raise ValueError("within-tie-band regret-capture guard comparator drifted")
+    decision = contract.get("within_band_decision") or {}
+    if list(decision.get("decision_metrics") or ()) != [
+        "oracle_best_bucket_fraction",
+        "oracle_best_bucket_regret_spread_ratio",
+        "oracle_best_bucket_regret_capture_ratio",
+        "oracle_best_bucket_top_k_capture_fraction",
+        "matched_hash_null_fraction_gte_observed_bucket_fraction",
+        "matched_hash_null_fraction_lte_observed_regret_capture_ratio",
+        "within_band_pairwise_auc_report_only",
+    ]:
+        raise ValueError("within-tie-band decision metrics drifted")
+    if any("percentile" in str(metric) for metric in decision.get("decision_metrics") or ()):
+        raise ValueError("within-tie-band decision metrics must encode comparator direction explicitly")
+    if decision.get("target_tie_band_missing_branch_label") != BRANCH_WITHIN_TIE_BAND_AMBIGUOUS_NO_BRANCH:
+        raise ValueError("within-tie-band target-band-missing branch drifted")
+    if decision.get("predictive_branch_label") != BRANCH_WITHIN_TIE_BAND_LEARNER_FEATURES_SEPARATE_REGRET:
+        raise ValueError("within-tie-band predictive branch label drifted")
+    if decision.get("predictive_family_id") != WITHIN_TIE_BAND_PRIMARY_FAMILY_ID:
+        raise ValueError("within-tie-band predictive family id drifted")
+    if float(decision.get("predictive_bucket_fraction_max", -1.0)) != WITHIN_TIE_BAND_PREDICTIVE_BUCKET_FRACTION_MAX:
+        raise ValueError("within-tie-band predictive bucket-fraction threshold drifted")
+    if float(decision.get("predictive_regret_spread_ratio_max", -1.0)) != WITHIN_TIE_BAND_PREDICTIVE_REGRET_SPREAD_RATIO_MAX:
+        raise ValueError("within-tie-band predictive regret-spread threshold drifted")
+    if float(decision.get("predictive_regret_capture_ratio_min", -1.0)) != WITHIN_TIE_BAND_PREDICTIVE_REGRET_CAPTURE_RATIO_MIN:
+        raise ValueError("within-tie-band predictive regret-capture threshold drifted")
+    if float(decision.get("predictive_matched_hash_guard_min", -1.0)) != WITHIN_TIE_BAND_MATCHED_HASH_SIGNAL_MIN:
+        raise ValueError("within-tie-band predictive matched-hash threshold drifted")
+    if decision.get("fail_closed_branch_label") != BRANCH_WITHIN_TIE_BAND_NEEDS_NEW_LEARNER_STATE:
+        raise ValueError("within-tie-band fail-closed branch label drifted")
+    if not bool(decision.get("fail_closed_requires_all_preregistered_families")):
+        raise ValueError("within-tie-band fail-closed branch must require all preregistered families")
+    if float(decision.get("fail_closed_bucket_fraction_gt", -1.0)) != WITHIN_TIE_BAND_FAIL_CLOSED_BUCKET_FRACTION_GT:
+        raise ValueError("within-tie-band fail-closed bucket-fraction threshold drifted")
+    if float(decision.get("fail_closed_regret_spread_ratio_gt", -1.0)) != WITHIN_TIE_BAND_FAIL_CLOSED_REGRET_SPREAD_RATIO_GT:
+        raise ValueError("within-tie-band fail-closed regret-spread threshold drifted")
+    if float(decision.get("fail_closed_matched_hash_signal_min", -1.0)) != WITHIN_TIE_BAND_MATCHED_HASH_SIGNAL_MIN:
+        raise ValueError("within-tie-band fail-closed matched-hash threshold drifted")
+    if decision.get("ambiguous_branch_label") != BRANCH_WITHIN_TIE_BAND_AMBIGUOUS_NO_BRANCH:
+        raise ValueError("within-tie-band ambiguous branch label drifted")
+    fragmentation = contract.get("fragmentation_audit") or {}
+    if not bool(fragmentation.get("bucket_cardinality_histogram_required")):
+        raise ValueError("within-tie-band contract must require bucket cardinality histograms")
+    if not bool(fragmentation.get("singleton_bucket_count_required")):
+        raise ValueError("within-tie-band contract must require singleton bucket counts")
+    if list(contract.get("allowed_seed_local_labels") or ()) != list(WITHIN_TIE_BAND_DISCRIMINATOR_BRANCHES):
+        raise ValueError("within-tie-band allowed seed-local labels drifted")
+
+
 def _validate_oracle_global_non_persistence(value: Any, *, path: str = "packet") -> None:
     for key, child in _walk_items(value):
         key_text = str(key)
@@ -5316,6 +5964,339 @@ def validate_credit_ranking_pivot_measurement_launch_bundle(
         )
 
 
+def validate_within_tie_band_discriminator_packet(packet: Mapping[str, Any]) -> None:
+    if packet.get("schema_version") != OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION:
+        raise ValueError("unsupported within-tie-band packet schema")
+    if packet.get("diagnostic_class") != DIAGNOSTIC_CLASS_PRE_FULL_STACK:
+        raise ValueError("within-tie-band packet must be pre_full_stack_diagnostic")
+    _validate_author_only_fields(
+        packet,
+        expected_packet_kind=WITHIN_TIE_BAND_DISCRIMINATOR_PACKET_KIND,
+        label="author-only within-tie-band discriminator packet",
+    )
+    for field in _READINESS_FORBIDDEN_TRUE_FIELDS:
+        _require_false(packet, field)
+    if bool(packet.get("carrier_claim")) or bool(packet.get("q_sidecar_carrier_claim")):
+        raise ValueError("within-tie-band packet must not make a carrier claim")
+    if bool(packet.get("qacc_kernelized")):
+        raise ValueError("within-tie-band packet must keep qacc_kernelized=false")
+    if not bool(packet.get("optimizer_credit_state_science_dependent")):
+        raise ValueError(
+            "within-tie-band packet must keep optimizer_credit_state science-dependent"
+        )
+    if not bool(packet.get("same_candidate_set_required")):
+        raise ValueError("within-tie-band packet must require the same candidate set")
+    if bool(packet.get("oracle_state_survives_into_learner")):
+        raise ValueError("oracle state must not survive into learner fields")
+    _reject_raw_arrays(packet)
+    _validate_oracle_global_non_persistence(packet)
+    _validate_oracle_screen_arms(packet.get("arms") or ())
+    _validate_oracle_seed_order_contract(packet.get("seed_order_contract") or {})
+    feasibility_budget = packet.get("oracle_feasibility_budget") or {}
+    selected_budget = int(feasibility_budget.get("max_sampled_candidates", -1))
+    if selected_budget != PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES:
+        raise ValueError("within-tie-band packet must pin budget 32")
+    _validate_oracle_feasibility_budget(feasibility_budget)
+    _validate_oracle_non_persistence(packet.get("oracle_non_persistence_contract") or {})
+    _validate_within_tie_band_discriminator_compact_summary_schema(
+        packet.get("compact_summary_schema") or {}
+    )
+    _validate_within_tie_band_discriminator_measurement_contract(
+        packet.get("measurement_contract") or {}
+    )
+    artifact_policy = packet.get("artifact_policy") or {}
+    if not bool(artifact_policy.get("compact_json_ndjson_only")):
+        raise ValueError(
+            "within-tie-band packet artifact policy must require compact JSON/NDJSON"
+        )
+    if bool(artifact_policy.get("raw_per_proposal_arrays")):
+        raise ValueError("within-tie-band packet must reject raw per-proposal arrays")
+    if bool(artifact_policy.get("pt_writes_allowed")):
+        raise ValueError("within-tie-band packet artifact policy must reject .pt writes")
+    oracle_artifact_path = artifact_policy.get("oracle_artifact_path")
+    if oracle_artifact_path is not None and str(oracle_artifact_path).endswith(".pt"):
+        raise ValueError("within-tie-band packet artifact path must not target .pt artifacts")
+
+
+def _validate_within_tie_band_discriminator_command_record(
+    command: Mapping[str, Any],
+) -> None:
+    missing = [field for field in _COMMAND_REQUIRED_FIELDS if field not in command]
+    if missing:
+        raise ValueError(
+            f"within-tie-band command record missing required fields: {missing}"
+        )
+    if str(command.get("mode")) != "within_tie_band_discriminator_n20":
+        raise ValueError(
+            "within-tie-band command mode must be within_tie_band_discriminator_n20"
+        )
+    if str(command.get("phase_role")) != "within_tie_band_discriminator":
+        raise ValueError("within-tie-band command phase_role drifted")
+    if str(command.get("oracle_screen_mode")) != "within_tie_band_discriminator":
+        raise ValueError(
+            "within-tie-band command must pin within_tie_band_discriminator mode"
+        )
+    if not bool(command.get("same_candidate_set_required")):
+        raise ValueError("within-tie-band command must require same candidate set")
+    if int(command.get("support_order_seed", -1)) not in ORACLE_SCREEN_CONTRAST_SEEDS:
+        raise ValueError(
+            "within-tie-band command support_order_seed must be one of the contrast seeds"
+        )
+    if str(command.get("seed_label")) != _support_order_seed_label(
+        int(command["support_order_seed"])
+    ):
+        raise ValueError("within-tie-band command seed_label drifted from support_order_seed")
+    if int(command.get("screen_rows", -1)) != ORACLE_SCREEN_N20_ROWS:
+        raise ValueError("within-tie-band command screen_rows must be 20")
+    if int(command.get("n_rows", -1)) != ORACLE_SCREEN_N20_ROWS:
+        raise ValueError("within-tie-band command n_rows must equal screen_rows")
+    if int(command.get("steps_requested", -1)) != 1:
+        raise ValueError("within-tie-band command steps_requested must be 1")
+    if (
+        command.get("steps_source")
+        != "fixed_single_support_batch_within_tie_band_discriminator"
+    ):
+        raise ValueError("within-tie-band command steps_source drifted")
+    if int(command.get("batch_size", -1)) != ORACLE_SCREEN_N20_ROWS:
+        raise ValueError("within-tie-band command batch_size must equal N=20 screen rows")
+    if int(command.get("curriculum_seed", -1)) != STEP6_CURRICULUM_SEED:
+        raise ValueError("within-tie-band command curriculum_seed must stay pinned to 17")
+    budget = int(command.get("max_sampled_candidates", -1))
+    if budget != PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES:
+        raise ValueError("within-tie-band command max_sampled_candidates must be 32")
+    if float(command.get("oracle_max_seconds", -1.0)) != oracle_screen_budget_max_seconds(
+        budget
+    ):
+        raise ValueError("within-tie-band command oracle_max_seconds drifted")
+    if int(command.get("max_abs_per_tensor", -1)) != STEP3_BASELINE_MAX_ABS_PER_TENSOR:
+        raise ValueError(
+            "within-tie-band command max_abs_per_tensor must stay at the baseline cap"
+        )
+    if float(command.get("fraction_per_tensor", -1.0)) != STEP3_FRACTION_PER_TENSOR:
+        raise ValueError("within-tie-band command fraction_per_tensor must stay at 1.0")
+    if command.get("global_cap_contract") != "off":
+        raise ValueError("within-tie-band command must keep global cap off")
+    env = command.get("env")
+    if not isinstance(env, Mapping):
+        raise ValueError("within-tie-band command env must be a mapping")
+    if env.get("HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE") != "1":
+        raise ValueError(
+            "within-tie-band command env missing HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE=1"
+        )
+    if env.get("HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH") != "1":
+        raise ValueError(
+            "within-tie-band command env missing HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1"
+        )
+    argv = command.get("argv")
+    if not isinstance(argv, list) or not all(isinstance(item, str) for item in argv):
+        raise ValueError("within-tie-band command argv must be a list[str]")
+    required_args = {
+        "--enable-bounded-delta-probe",
+        "--allow-gpu-launch",
+        "--oracle-screen-mode",
+        "--device",
+        "--parent",
+        "--parent-sha256",
+        "--scratch-root",
+        "--curriculum-seed",
+        "--support-order-seed",
+        "--oracle-screen-max-sampled-candidates",
+        "--batch-size",
+        "--steps",
+        "--max-steps-hard",
+        "--max-abs-per-tensor",
+        "--emit-progress",
+    }
+    if not required_args.issubset(set(argv)):
+        raise ValueError(
+            "within-tie-band command argv missing required probe launch arguments"
+        )
+    if "--science-arm" in argv:
+        raise ValueError(
+            "within-tie-band command must route through --oracle-screen-mode, not --science-arm"
+        )
+    expected_flag_values = (
+        ("--oracle-screen-mode", "within_tie_band_discriminator"),
+        ("--curriculum-seed", str(STEP6_CURRICULUM_SEED)),
+        ("--support-order-seed", str(int(command["support_order_seed"]))),
+        (
+            "--oracle-screen-max-sampled-candidates",
+            str(PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES),
+        ),
+        ("--batch-size", str(ORACLE_SCREEN_N20_ROWS)),
+        ("--steps", "1"),
+        ("--max-steps-hard", "1"),
+        ("--max-abs-per-tensor", str(STEP3_BASELINE_MAX_ABS_PER_TENSOR)),
+    )
+    for flag, expected in expected_flag_values:
+        try:
+            observed = argv[argv.index(flag) + 1]
+        except (ValueError, IndexError) as exc:
+            raise ValueError(f"within-tie-band command argv missing {flag} value") from exc
+        if observed != expected:
+            raise ValueError(
+                f"within-tie-band command argv {flag} must be {expected!r}, got {observed!r}"
+            )
+    try:
+        device = argv[argv.index("--device") + 1]
+    except (ValueError, IndexError) as exc:
+        raise ValueError("within-tie-band command argv missing --device value") from exc
+    if not device.startswith("cuda:"):
+        raise ValueError(
+            "within-tie-band command argv --device must target CUDA for launch bundle"
+        )
+    for path_field in ("stdout_path", "stderr_path", "receipt_path", "scratch_root"):
+        value = str(command.get(path_field))
+        if not value:
+            raise ValueError(f"within-tie-band command {path_field} must be non-empty")
+        if value.endswith(".pt"):
+            raise ValueError(
+                f"within-tie-band command {path_field} cannot target .pt artifacts"
+            )
+    if command.get("expected_exit_policy") != "exit_0_required_else_stop_no_retry_no_verdict":
+        raise ValueError("within-tie-band command expected_exit_policy must fail closed")
+
+
+def validate_within_tie_band_discriminator_launch_bundle(
+    packet: Mapping[str, Any],
+) -> None:
+    if packet.get("schema_version") != OPTIMIZER_UPDATE_LAW_SCIENCE_SCHEMA_VERSION:
+        raise ValueError("unsupported within-tie-band launch bundle schema")
+    if packet.get("diagnostic_class") != DIAGNOSTIC_CLASS_PRE_FULL_STACK:
+        raise ValueError(
+            "within-tie-band launch bundle must be pre_full_stack_diagnostic"
+        )
+    _validate_author_only_fields(
+        packet,
+        expected_packet_kind=WITHIN_TIE_BAND_DISCRIMINATOR_LAUNCH_BUNDLE_PACKET_KIND,
+        label="author-only within-tie-band discriminator launch bundle",
+    )
+    for field in _READINESS_FORBIDDEN_TRUE_FIELDS:
+        _require_false(packet, field)
+    if bool(packet.get("carrier_claim")) or bool(packet.get("q_sidecar_carrier_claim")):
+        raise ValueError(
+            "within-tie-band launch bundle must not make a carrier claim"
+        )
+    if bool(packet.get("qacc_kernelized")):
+        raise ValueError("within-tie-band launch bundle must keep qacc_kernelized=false")
+    if not bool(packet.get("optimizer_credit_state_science_dependent")):
+        raise ValueError(
+            "within-tie-band launch bundle must keep optimizer_credit_state science-dependent"
+        )
+    if int(packet.get("screen_rows", -1)) != ORACLE_SCREEN_N20_ROWS:
+        raise ValueError("within-tie-band launch bundle must pin N=20 rows")
+    if int(packet.get("curriculum_seed", -1)) != STEP6_CURRICULUM_SEED:
+        raise ValueError(
+            "within-tie-band launch bundle curriculum_seed must stay pinned to 17"
+        )
+    if packet.get("support_order_seeds") != list(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError(
+            "within-tie-band launch bundle must pin the contrast support-order seeds"
+        )
+    if not bool(packet.get("same_candidate_set_required")):
+        raise ValueError(
+            "within-tie-band launch bundle must require the same candidate set"
+        )
+    _reject_raw_arrays(packet)
+    _validate_resource_lane(packet.get("resource_lane") or {})
+    _validate_phase_budgets(packet.get("phase_budgets") or {})
+    _validate_oracle_global_non_persistence(packet)
+    feasibility_budget = packet.get("oracle_feasibility_budget") or {}
+    selected_budget = int(feasibility_budget.get("max_sampled_candidates", -1))
+    if selected_budget != PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES:
+        raise ValueError("within-tie-band launch bundle must pin budget 32")
+    _validate_oracle_feasibility_budget(feasibility_budget)
+    _validate_oracle_non_persistence(packet.get("oracle_non_persistence_contract") or {})
+    _validate_within_tie_band_discriminator_compact_summary_schema(
+        packet.get("compact_summary_schema") or {}
+    )
+    _validate_within_tie_band_discriminator_measurement_contract(
+        packet.get("measurement_contract") or {}
+    )
+    science_contract = packet.get("science_contract")
+    if not isinstance(science_contract, Mapping):
+        raise ValueError(
+            "within-tie-band launch bundle must embed the science_contract packet"
+        )
+    validate_within_tie_band_discriminator_packet(science_contract)
+    if str(science_contract.get("parent_path")) != str(packet.get("parent_path")):
+        raise ValueError(
+            "embedded within-tie-band science contract parent_path must match launch bundle"
+        )
+    if str(science_contract.get("parent_sha256")) != str(packet.get("parent_sha256")):
+        raise ValueError(
+            "embedded within-tie-band science contract parent_sha256 must match launch bundle"
+        )
+    if science_contract.get("measurement_contract") != packet.get("measurement_contract"):
+        raise ValueError(
+            "within-tie-band measurement_contract must match embedded science_contract"
+        )
+    terminal = packet.get("terminal_criteria") or {}
+    if terminal.get("branch_classifier") != list(WITHIN_TIE_BAND_DISCRIMINATOR_BRANCHES):
+        raise ValueError(
+            "within-tie-band launch bundle terminal branch classifier drifted"
+        )
+    if not bool(terminal.get("same_candidate_set_required")):
+        raise ValueError(
+            "within-tie-band launch bundle terminal criteria must require same candidate set"
+        )
+    if terminal.get("support_order_seeds") != list(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError(
+            "within-tie-band launch bundle terminal criteria support_order_seeds drifted"
+        )
+    if int(terminal.get("n20_screen_rows", -1)) != ORACLE_SCREEN_N20_ROWS:
+        raise ValueError(
+            "within-tie-band launch bundle terminal criteria must pin N=20 rows"
+        )
+    if int(terminal.get("required_max_sampled_candidates", -1)) != PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES:
+        raise ValueError(
+            "within-tie-band launch bundle terminal criteria must pin budget 32"
+        )
+    if bool(terminal.get("qacc_kernelized")):
+        raise ValueError(
+            "within-tie-band launch bundle terminal criteria must keep qacc_kernelized=false"
+        )
+    if not bool(terminal.get("device_residency_not_hot_loop_residency")):
+        raise ValueError(
+            "within-tie-band launch bundle terminal criteria must preserve device-vs-hot-loop wording"
+        )
+    if not bool(packet.get("compact_instrumentation_only")):
+        raise ValueError(
+            "within-tie-band launch bundle must stay compact-instrumentation-only"
+        )
+    if bool(packet.get("raw_per_proposal_arrays_included")):
+        raise ValueError(
+            "within-tie-band launch bundle must reject raw per-proposal arrays"
+        )
+    commands = packet.get("commands")
+    if not isinstance(commands, list):
+        raise ValueError("within-tie-band launch bundle commands must be a list")
+    if len(commands) != len(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError(
+            "within-tie-band launch bundle must include exactly one command per contrast seed"
+        )
+    seen = {int(command.get("support_order_seed", -1)) for command in commands}
+    if seen != set(ORACLE_SCREEN_CONTRAST_SEEDS):
+        raise ValueError(
+            "within-tie-band launch bundle command seeds drifted from the contrast seeds contract"
+        )
+    for command in commands:
+        _validate_within_tie_band_discriminator_command_record(command)
+    artifact_policy = packet.get("artifact_policy") or {}
+    if not bool(artifact_policy.get("compact_json_ndjson_only")):
+        raise ValueError(
+            "within-tie-band launch bundle artifact policy must require compact JSON/NDJSON"
+        )
+    if bool(artifact_policy.get("raw_per_proposal_arrays")):
+        raise ValueError(
+            "within-tie-band launch bundle must reject raw per-proposal arrays"
+        )
+    if bool(artifact_policy.get("pt_writes_allowed")):
+        raise ValueError(
+            "within-tie-band launch bundle artifact policy must reject .pt writes"
+        )
+
+
 def packet_without_runtime_results(packet: Mapping[str, Any]) -> dict[str, Any]:
     out = deepcopy(dict(packet))
     out.pop("runtime_results", None)
@@ -5345,6 +6326,9 @@ __all__ = [
     "BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE",
     "BRANCH_POWERED_NEGATIVE_OR_LOSS_ONLY",
     "BRANCH_PREREGISTERED_CHEAP_LEARNER_FEATURE_FAMILY_CANNOT_PREDICT_REGRET",
+    "BRANCH_WITHIN_TIE_BAND_AMBIGUOUS_NO_BRANCH",
+    "BRANCH_WITHIN_TIE_BAND_LEARNER_FEATURES_SEPARATE_REGRET",
+    "BRANCH_WITHIN_TIE_BAND_NEEDS_NEW_LEARNER_STATE",
     "CREDIT_RANKING_PIVOT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND",
     "CREDIT_RANKING_PIVOT_MEASUREMENT_PACKET_KIND",
     "BRANCH_CURRENT_ORDER_NOT_NECESSARY",
@@ -5405,6 +6389,12 @@ __all__ = [
     "STEP6_SUPPORT_ORDER_SEEDS",
     "TIE_POLICY_CURRENT_MARGIN_INDEX",
     "TIE_POLICY_DETERMINISTIC_HASH_MATCHED",
+    "WITHIN_TIE_BAND_ABLATION_FAMILY_IDS",
+    "WITHIN_TIE_BAND_DISCRIMINATOR_BRANCHES",
+    "WITHIN_TIE_BAND_DISCRIMINATOR_LAUNCH_BUNDLE_PACKET_KIND",
+    "WITHIN_TIE_BAND_DISCRIMINATOR_PACKET_KIND",
+    "WITHIN_TIE_BAND_PRIMARY_FAMILY_ID",
+    "WITHIN_TIE_BAND_TARGET_TIE_BAND_ID",
     "build_measurement_power_then_trust_region_packet",
     "build_candidate_set_viability_oracle_screen_launch_bundle",
     "build_candidate_set_viability_oracle_screen_packet",
@@ -5415,6 +6405,8 @@ __all__ = [
     "build_order_averaged_a0_component_decomposition_packet",
     "build_powered_rank_signal_decomposition_packet",
     "build_support_order_trajectory_robustness_packet",
+    "build_within_tie_band_discriminator_launch_bundle",
+    "build_within_tie_band_discriminator_packet",
     "classify_candidate_set_viability_oracle_screen",
     "classify_optimizer_update_law_branch",
     "classify_step4_rank_signal_decomposition",
@@ -5455,4 +6447,6 @@ __all__ = [
     "validate_order_averaged_a0_component_decomposition_packet",
     "validate_powered_rank_signal_decomposition_packet",
     "validate_support_order_trajectory_robustness_packet",
+    "validate_within_tie_band_discriminator_launch_bundle",
+    "validate_within_tie_band_discriminator_packet",
 ]

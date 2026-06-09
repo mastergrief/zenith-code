@@ -32,6 +32,9 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     BRANCH_PARTIAL_LOCAL_SIGNAL,
     BRANCH_POWERED_NEGATIVE_OR_LOSS_ONLY,
     BRANCH_PREREGISTERED_CHEAP_LEARNER_FEATURE_FAMILY_CANNOT_PREDICT_REGRET,
+    BRANCH_WITHIN_TIE_BAND_AMBIGUOUS_NO_BRANCH,
+    BRANCH_WITHIN_TIE_BAND_LEARNER_FEATURES_SEPARATE_REGRET,
+    BRANCH_WITHIN_TIE_BAND_NEEDS_NEW_LEARNER_STATE,
     CREDIT_RANKING_PIVOT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND,
     CREDIT_RANKING_PIVOT_MEASUREMENT_PACKET_KIND,
     BRANCH_PRIOR_NULL_SETUP_UNVERIFIED,
@@ -75,6 +78,8 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     build_candidate_set_viability_oracle_screen_launch_bundle,
     build_credit_ranking_pivot_measurement_launch_bundle,
     build_credit_ranking_pivot_measurement_packet,
+    build_within_tie_band_discriminator_launch_bundle,
+    build_within_tie_band_discriminator_packet,
     build_measurement_power_then_trust_region_packet,
     build_powered_rank_signal_decomposition_packet,
     build_order_averaged_a0_component_decomposition_packet,
@@ -97,11 +102,16 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     validate_candidate_set_viability_oracle_screen_packet,
     validate_credit_ranking_pivot_measurement_launch_bundle,
     validate_credit_ranking_pivot_measurement_packet,
+    validate_within_tie_band_discriminator_launch_bundle,
+    validate_within_tie_band_discriminator_packet,
     validate_optimizer_update_law_launch_bundle,
     validate_optimizer_update_law_science_packet,
     validate_order_averaged_a0_component_decomposition_packet,
     validate_powered_rank_signal_decomposition_packet,
     validate_support_order_trajectory_robustness_packet,
+    WITHIN_TIE_BAND_DISCRIMINATOR_LAUNCH_BUNDLE_PACKET_KIND,
+    WITHIN_TIE_BAND_DISCRIMINATOR_PACKET_KIND,
+    WITHIN_TIE_BAND_PRIMARY_FAMILY_ID,
 )
 from scripts.hrm_text_158_bounded_delta_acquisition_probe import build_support_order_trajectory_proof
 from scripts.hrm_text_158_optimizer_update_law_science_packet import main as packet_main
@@ -1920,6 +1930,131 @@ def test_credit_ranking_pivot_launch_bundle_validator_rejects_seed_and_budget_dr
         validate_credit_ranking_pivot_measurement_launch_bundle(packet)
 
 
+def test_within_tie_band_packet_declares_one_sided_null_guards_and_fragmentation_audit():
+    packet = build_within_tie_band_discriminator_packet(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+    )
+
+    validate_within_tie_band_discriminator_packet(packet)
+    assert packet["packet_kind"] == WITHIN_TIE_BAND_DISCRIMINATOR_PACKET_KIND
+    assert packet["diagnostic_class"] == "pre_full_stack_diagnostic"
+    assert packet["author_only"] is True
+    assert packet["commands_executed"] is False
+    assert packet["gpu_launched"] is False
+    assert packet["pt_mutated"] is False
+    assert packet["same_candidate_set_required"] is True
+    assert packet["oracle_feasibility_budget"]["max_sampled_candidates"] == 32
+    assert packet["oracle_feasibility_budget"]["max_seconds"] == oracle_screen_budget_max_seconds(
+        32
+    )
+    summary = packet["compact_summary_schema"]
+    assert summary["compact_summary_only"] is True
+    assert set(summary["allowed_fields"]) == {
+        "candidate_count",
+        "sampled_candidate_count",
+        "sampled_candidate_table",
+        "target_tie_band",
+        "family_metrics",
+        "telemetry",
+    }
+    contract = packet["measurement_contract"]
+    assert contract["target_tie_band_id"] == "voteabs=4|marginabs=4"
+    assert contract["family_discriminator"]["primary"] == WITHIN_TIE_BAND_PRIMARY_FAMILY_ID
+    null_contract = contract["family_discriminator"]["null_distribution"]
+    assert null_contract["smaller_bucket_fraction_guard_field"] == (
+        "matched_hash_null_fraction_gte_observed_bucket_fraction"
+    )
+    assert null_contract["larger_regret_capture_guard_field"] == (
+        "matched_hash_null_fraction_lte_observed_regret_capture_ratio"
+    )
+    decision = contract["within_band_decision"]
+    assert decision["predictive_branch_label"] == (
+        BRANCH_WITHIN_TIE_BAND_LEARNER_FEATURES_SEPARATE_REGRET
+    )
+    assert decision["fail_closed_branch_label"] == BRANCH_WITHIN_TIE_BAND_NEEDS_NEW_LEARNER_STATE
+    assert decision["ambiguous_branch_label"] == BRANCH_WITHIN_TIE_BAND_AMBIGUOUS_NO_BRANCH
+    assert contract["fragmentation_audit"]["bucket_cardinality_histogram_required"] is True
+    assert contract["fragmentation_audit"]["singleton_bucket_count_required"] is True
+
+
+def test_within_tie_band_launch_bundle_pins_budget32_and_fixed_two_seed_commands():
+    packet = build_within_tie_band_discriminator_launch_bundle(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+        repo_root="/repo",
+        run_root="/tmp/hrm158-within-tie-band",
+    )
+
+    validate_within_tie_band_discriminator_launch_bundle(packet)
+    assert packet["packet_kind"] == WITHIN_TIE_BAND_DISCRIMINATOR_LAUNCH_BUNDLE_PACKET_KIND
+    assert packet["screen_rows"] == 20
+    assert packet["curriculum_seed"] == 17
+    assert packet["support_order_seeds"] == list(ORACLE_SCREEN_CONTRAST_SEEDS)
+    assert packet["same_candidate_set_required"] is True
+    assert packet["oracle_feasibility_budget"]["max_sampled_candidates"] == 32
+    assert packet["oracle_feasibility_budget"]["max_seconds"] == oracle_screen_budget_max_seconds(
+        32
+    )
+    assert packet["science_contract"]["packet_kind"] == WITHIN_TIE_BAND_DISCRIMINATOR_PACKET_KIND
+    assert packet["measurement_contract"] == packet["science_contract"]["measurement_contract"]
+    assert packet["terminal_criteria"]["branch_classifier"] == [
+        BRANCH_WITHIN_TIE_BAND_LEARNER_FEATURES_SEPARATE_REGRET,
+        BRANCH_WITHIN_TIE_BAND_NEEDS_NEW_LEARNER_STATE,
+        BRANCH_WITHIN_TIE_BAND_AMBIGUOUS_NO_BRANCH,
+    ]
+    assert len(packet["commands"]) == 2
+    assert {command["support_order_seed"] for command in packet["commands"]} == {43, 29}
+    assert all(
+        command["oracle_screen_mode"] == "within_tie_band_discriminator"
+        for command in packet["commands"]
+    )
+    assert all(command["max_sampled_candidates"] == 32 for command in packet["commands"])
+
+
+@pytest.mark.parametrize(
+    "mutation,error",
+    [
+        (
+            lambda packet: packet["measurement_contract"]["family_discriminator"][
+                "null_distribution"
+            ].update(
+                {
+                    "smaller_bucket_fraction_guard_field": (
+                        "matched_hash_null_fraction_lte_observed_bucket_fraction"
+                    )
+                }
+            ),
+            "smaller-bucket guard field",
+        ),
+        (
+            lambda packet: packet["measurement_contract"]["family_discriminator"][
+                "null_distribution"
+            ].update(
+                {
+                    "larger_regret_capture_guard_field": (
+                        "matched_hash_null_fraction_gte_observed_regret_capture_ratio"
+                    )
+                }
+            ),
+            "regret-capture guard field",
+        ),
+    ],
+)
+def test_within_tie_band_packet_validator_rejects_reversed_one_sided_null_guards(
+    mutation,
+    error,
+):
+    packet = build_within_tie_band_discriminator_packet(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+    )
+    mutation(packet)
+
+    with pytest.raises(ValueError, match=error):
+        validate_within_tie_band_discriminator_packet(packet)
+
+
 def test_packet_script_writes_compact_launch_packet_with_null_gate(tmp_path: Path, capsys):
     parent = tmp_path / "parent.pt"
     parent.write_bytes(b"read-only parent bytes")
@@ -2356,4 +2491,92 @@ def test_packet_script_writes_credit_ranking_pivot_launch_bundle(
     } == {"29", "43"}
     assert json.loads(capsys.readouterr().out)["packet_kind"] == (
         CREDIT_RANKING_PIVOT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND
+    )
+
+
+def test_packet_script_writes_within_tie_band_author_packet(
+    tmp_path: Path,
+    capsys,
+):
+    parent = tmp_path / "parent.pt"
+    parent.write_bytes(b"read-only parent bytes")
+    parent_sha = hashlib.sha256(b"read-only parent bytes").hexdigest()
+    out = tmp_path / "within-tie-band-packet.json"
+
+    exit_code = packet_main(
+        [
+            "--packet-kind",
+            WITHIN_TIE_BAND_DISCRIMINATOR_PACKET_KIND,
+            "--parent",
+            str(parent),
+            "--parent-sha256",
+            parent_sha,
+            "--json-out",
+            str(out),
+        ],
+    )
+
+    assert exit_code == 0
+    packet = json.loads(out.read_text(encoding="utf-8"))
+    validate_within_tie_band_discriminator_packet(packet)
+    assert packet["packet_kind"] == WITHIN_TIE_BAND_DISCRIMINATOR_PACKET_KIND
+    assert packet["launch_gate_id"] is None
+    assert packet["commands_executed"] is False
+    assert packet["gpu_launched"] is False
+    assert packet["pt_mutated"] is False
+    assert packet["parent_hash_basis"] == "read_only_parent_file_sha256"
+    assert packet["dry_run_packet_written"] is True
+    assert packet["gpu_launch_command_authorized"] is False
+    assert packet["oracle_screen_launch_gate_required"] is True
+    assert packet["oracle_feasibility_budget"]["max_sampled_candidates"] == 32
+    assert json.loads(capsys.readouterr().out)["packet_kind"] == (
+        WITHIN_TIE_BAND_DISCRIMINATOR_PACKET_KIND
+    )
+
+
+def test_packet_script_writes_within_tie_band_launch_bundle(
+    tmp_path: Path,
+    capsys,
+):
+    parent = tmp_path / "parent.pt"
+    parent.write_bytes(b"read-only parent bytes")
+    parent_sha = hashlib.sha256(b"read-only parent bytes").hexdigest()
+    out = tmp_path / "within-tie-band-launch-bundle.json"
+    run_root = tmp_path / "run"
+
+    exit_code = packet_main(
+        [
+            "--packet-kind",
+            WITHIN_TIE_BAND_DISCRIMINATOR_LAUNCH_BUNDLE_PACKET_KIND,
+            "--parent",
+            str(parent),
+            "--parent-sha256",
+            parent_sha,
+            "--json-out",
+            str(out),
+            "--run-root",
+            str(run_root),
+        ],
+    )
+
+    assert exit_code == 0
+    packet = json.loads(out.read_text(encoding="utf-8"))
+    validate_within_tie_band_discriminator_launch_bundle(packet)
+    assert packet["packet_kind"] == WITHIN_TIE_BAND_DISCRIMINATOR_LAUNCH_BUNDLE_PACKET_KIND
+    assert packet["launch_gate_id"] is None
+    assert packet["commands_executed"] is False
+    assert packet["gpu_launched"] is False
+    assert packet["pt_mutated"] is False
+    assert packet["parent_hash_basis"] == "read_only_parent_file_sha256"
+    assert packet["dry_run_packet_written"] is True
+    assert packet["gpu_launch_command_authorized"] is False
+    assert packet["oracle_screen_launch_gate_required"] is True
+    assert packet["oracle_feasibility_budget"]["max_sampled_candidates"] == 32
+    assert len(packet["commands"]) == 2
+    assert {
+        command["argv"][command["argv"].index("--support-order-seed") + 1]
+        for command in packet["commands"]
+    } == {"29", "43"}
+    assert json.loads(capsys.readouterr().out)["packet_kind"] == (
+        WITHIN_TIE_BAND_DISCRIMINATOR_LAUNCH_BUNDLE_PACKET_KIND
     )

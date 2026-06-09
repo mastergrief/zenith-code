@@ -30,6 +30,8 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     STEP4_POWERED_RANK_SIGNAL_DECOMPOSITION_PACKET_KIND,
     STEP5_SUPPORT_ORDER_TRAJECTORY_ROBUSTNESS_PACKET_KIND,
     STEP6_ORDER_AVERAGED_A0_COMPONENT_DECOMPOSITION_PACKET_KIND,
+    WITHIN_TIE_BAND_DISCRIMINATOR_LAUNCH_BUNDLE_PACKET_KIND,
+    WITHIN_TIE_BAND_DISCRIMINATOR_PACKET_KIND,
     build_credit_ranking_pivot_measurement_launch_bundle,
     build_credit_ranking_pivot_measurement_packet,
     build_candidate_set_viability_oracle_screen_launch_bundle,
@@ -40,6 +42,8 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     build_order_averaged_a0_component_decomposition_packet,
     build_powered_rank_signal_decomposition_packet,
     build_support_order_trajectory_robustness_packet,
+    build_within_tie_band_discriminator_launch_bundle,
+    build_within_tie_band_discriminator_packet,
     validate_credit_ranking_pivot_measurement_launch_bundle,
     validate_credit_ranking_pivot_measurement_packet,
     validate_candidate_set_viability_oracle_screen_launch_bundle,
@@ -50,6 +54,8 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     validate_order_averaged_a0_component_decomposition_packet,
     validate_powered_rank_signal_decomposition_packet,
     validate_support_order_trajectory_robustness_packet,
+    validate_within_tie_band_discriminator_launch_bundle,
+    validate_within_tie_band_discriminator_packet,
 )
 from scripts.hrm_text_158_bounded_delta_acquisition_probe import DEFAULT_PARENT, DEFAULT_PARENT_SHA256
 
@@ -80,6 +86,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
             ORACLE_SCREEN_LAUNCH_BUNDLE_PACKET_KIND,
             CREDIT_RANKING_PIVOT_MEASUREMENT_PACKET_KIND,
             CREDIT_RANKING_PIVOT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND,
+            WITHIN_TIE_BAND_DISCRIMINATOR_PACKET_KIND,
+            WITHIN_TIE_BAND_DISCRIMINATOR_LAUNCH_BUNDLE_PACKET_KIND,
         ),
         default=STEP1_DRY_RUN_PACKET_KIND,
     )
@@ -292,6 +300,37 @@ def main(argv: list[str] | None = None) -> int:
         packet["oracle_screen_launch_gate_required"] = True
         validator = validate_credit_ranking_pivot_measurement_packet
         default_name = "credit_ranking_pivot_measurement_packet.json"
+    elif args.packet_kind == WITHIN_TIE_BAND_DISCRIMINATOR_LAUNCH_BUNDLE_PACKET_KIND:
+        packet = build_within_tie_band_discriminator_launch_bundle(
+            parent_path=parent,
+            parent_sha256=parent_sha,
+            repo_root=REPO_ROOT,
+            run_root=args.run_root,
+            device=str(args.device),
+            launch_gate_id=None,
+            symbolic_resource_lane=str(args.symbolic_resource_lane),
+            phase_timeout_seconds=args.phase_timeout_seconds,
+            total_timeout_seconds=args.total_timeout_seconds,
+            max_silent_phase_seconds=args.max_silent_phase_seconds,
+        )
+        packet["parent_hash_basis"] = parent_hash_basis
+        packet["dry_run_packet_written"] = True
+        packet["gpu_launch_command_authorized"] = False
+        packet["oracle_screen_launch_gate_required"] = True
+        validator = validate_within_tie_band_discriminator_launch_bundle
+        default_name = "within_tie_band_discriminator_launch_bundle.json"
+    elif args.packet_kind == WITHIN_TIE_BAND_DISCRIMINATOR_PACKET_KIND:
+        packet = build_within_tie_band_discriminator_packet(
+            parent_path=parent,
+            parent_sha256=parent_sha,
+            launch_gate_id=None,
+        )
+        packet["parent_hash_basis"] = parent_hash_basis
+        packet["dry_run_packet_written"] = True
+        packet["gpu_launch_command_authorized"] = False
+        packet["oracle_screen_launch_gate_required"] = True
+        validator = validate_within_tie_band_discriminator_packet
+        default_name = "within_tie_band_discriminator_packet.json"
     else:
         packet = build_candidate_set_viability_oracle_screen_packet(
             parent_path=parent,

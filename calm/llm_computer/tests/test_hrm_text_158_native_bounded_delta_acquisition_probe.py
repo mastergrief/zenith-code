@@ -30,6 +30,9 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     BRANCH_MEASUREMENT_AMBIGUOUS_TIE_BAND_ALIASING,
     BRANCH_ORACLE_INFEASIBLE_OR_TOO_EXPENSIVE,
     BRANCH_PREREGISTERED_CHEAP_LEARNER_FEATURE_FAMILY_CANNOT_PREDICT_REGRET,
+    BRANCH_WITHIN_TIE_BAND_AMBIGUOUS_NO_BRANCH,
+    BRANCH_WITHIN_TIE_BAND_LEARNER_FEATURES_SEPARATE_REGRET,
+    BRANCH_WITHIN_TIE_BAND_NEEDS_NEW_LEARNER_STATE,
     FIXED_RANK_BUCKET_NON_TARGET_AUX,
     ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES,
     ORACLE_SCREEN_BRANCHES,
@@ -39,17 +42,23 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     PIVOT_MEASUREMENT_PREDICTIVE_SEED_LABEL,
     TIE_POLICY_CURRENT_MARGIN_INDEX,
     TIE_POLICY_DETERMINISTIC_HASH_MATCHED,
+    WITHIN_TIE_BAND_PRIMARY_FAMILY_ID,
     oracle_screen_budget_max_seconds,
 )
 from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
     ORACLE_SCREEN_MODE_CREDIT_RANKING_PIVOT_MEASUREMENT,
+    ORACLE_SCREEN_MODE_WITHIN_TIE_BAND_DISCRIMINATOR,
+    _fraction_gte_observed,
+    _fraction_lte_observed,
     _pivot_is_poor_rank_position,
     _pivot_poor_rank_position_threshold,
     _pivot_tie_band_is_ambiguous,
     _sampled_rank_fraction,
     _sampled_rank_position,
+    _within_tie_band_family_metrics,
     run_credit_ranking_pivot_measurement_oracle_screen,
     run_candidate_set_viability_oracle_screen,
+    run_within_tie_band_discriminator_oracle_screen,
 )
 from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     B1_PRIOR_AUDIT_PINS,
@@ -1926,6 +1935,166 @@ def test_tiny_credit_ranking_pivot_mode_returns_compact_non_persistent_receipt(
         ]
         is True
     )
+    assert oracle["non_persistence"]["q_persisted"] is False
+    assert oracle["non_persistence"]["checkpoint_written"] is False
+    assert Path(receipt["receipt_path"]).exists()
+
+
+def test_within_tie_band_null_fraction_helpers_are_directional():
+    assert _fraction_gte_observed([0.10, 0.25, 0.50], 0.25) == pytest.approx(2.0 / 3.0)
+    assert _fraction_lte_observed([0.10, 0.25, 0.50], 0.25) == pytest.approx(2.0 / 3.0)
+
+
+def test_within_tie_band_family_metrics_emit_histogram_and_one_sided_null_guards():
+    target_band_candidates = [
+        {
+            "candidate_id": "a",
+            "state_key": "layer0.weight",
+            "transition_class": "q0|dir1",
+            "current_rank_quartile_within_state": 0,
+            "flat_index_quartile": 0,
+            "current_rank_position": 0,
+            "local_loss_delta": -1.0,
+        },
+        {
+            "candidate_id": "b",
+            "state_key": "layer0.weight",
+            "transition_class": "q0|dir1",
+            "current_rank_quartile_within_state": 0,
+            "flat_index_quartile": 1,
+            "current_rank_position": 1,
+            "local_loss_delta": -0.6,
+        },
+        {
+            "candidate_id": "c",
+            "state_key": "layer1.weight",
+            "transition_class": "q0|dir1",
+            "current_rank_quartile_within_state": 1,
+            "flat_index_quartile": 2,
+            "current_rank_position": 2,
+            "local_loss_delta": -0.2,
+        },
+        {
+            "candidate_id": "d",
+            "state_key": "layer2.weight",
+            "transition_class": "q-1|dir1",
+            "current_rank_quartile_within_state": 2,
+            "flat_index_quartile": 3,
+            "current_rank_position": 3,
+            "local_loss_delta": 0.1,
+        },
+    ]
+
+    metrics = _within_tie_band_family_metrics(
+        target_band_candidates=target_band_candidates,
+        family_id=WITHIN_TIE_BAND_PRIMARY_FAMILY_ID,
+        oracle_best_candidate=target_band_candidates[0],
+        oracle_top1_delta=-1.0,
+    )
+
+    assert metrics["family_id"] == WITHIN_TIE_BAND_PRIMARY_FAMILY_ID
+    assert metrics["bucket_count"] == 3
+    assert metrics["bucket_cardinality_histogram"] == {"1": 2, "2": 1}
+    assert metrics["singleton_bucket_count"] == 2
+    assert metrics["oracle_best_bucket_candidate_count"] == 2
+    assert metrics["oracle_best_bucket_fraction"] == pytest.approx(0.5)
+    assert metrics["oracle_best_bucket_regret_capture_ratio"] > 0.5
+    assert 0.0 <= metrics["matched_hash_null_fraction_gte_observed_bucket_fraction"] <= 1.0
+    assert 0.0 <= metrics["matched_hash_null_fraction_lte_observed_regret_capture_ratio"] <= 1.0
+
+
+def test_direct_within_tie_band_runner_emits_compact_family_metrics():
+    model, batch, eligible, states = _tiny_forward_fixture(batch_size=8)
+    receipt = run_within_tie_band_discriminator_oracle_screen(
+        model=model,
+        batch=batch,
+        tensor_states=states,
+        eligible_modules=eligible,
+        device=torch.device("cpu"),
+        max_abs_per_tensor=4096,
+        extras=model.compute_train_extra_args(1, 1),
+        max_sampled_candidates=32,
+        max_seconds=oracle_screen_budget_max_seconds(32),
+    )
+
+    assert receipt["mode"] == ORACLE_SCREEN_MODE_WITHIN_TIE_BAND_DISCRIMINATOR
+    assert receipt["same_candidate_set_required"] is True
+    assert receipt["candidate_count"] >= receipt["sampled_candidate_count"] > 0
+    assert receipt["max_sampled_candidates"] == 32
+    assert receipt["oracle_feasible"] is True
+    assert receipt["branch_classification"] in {
+        BRANCH_WITHIN_TIE_BAND_LEARNER_FEATURES_SEPARATE_REGRET,
+        BRANCH_WITHIN_TIE_BAND_NEEDS_NEW_LEARNER_STATE,
+        BRANCH_WITHIN_TIE_BAND_AMBIGUOUS_NO_BRANCH,
+    }
+    compact = receipt["compact_summary"]
+    assert set(compact) == {
+        "candidate_count",
+        "sampled_candidate_count",
+        "sampled_candidate_table",
+        "target_tie_band",
+        "family_metrics",
+        "telemetry",
+    }
+    assert compact["target_tie_band"]["target_tie_band_id"] == "voteabs=4|marginabs=4"
+    assert compact["telemetry"]["deterministic_hash_control_only"] is True
+    first_row = compact["sampled_candidate_table"][0]
+    assert {
+        "current_q_level",
+        "pre_accumulator_i16",
+        "new_acc_i32_signed",
+        "proposal_direction",
+        "threshold_residual_signed",
+        "current_rank_quartile_within_state",
+        "flat_index_quartile",
+        "transition_class",
+    }.issubset(first_row)
+    if compact["target_tie_band"]["band_candidate_count"] == 0:
+        assert compact["family_metrics"]["metrics_by_family_id"] == {}
+        assert receipt["branch_classification"] == BRANCH_WITHIN_TIE_BAND_AMBIGUOUS_NO_BRANCH
+    else:
+        primary = compact["family_metrics"]["metrics_by_family_id"][
+            WITHIN_TIE_BAND_PRIMARY_FAMILY_ID
+        ]
+        assert "matched_hash_null_fraction_gte_observed_bucket_fraction" in primary
+        assert "matched_hash_null_fraction_lte_observed_regret_capture_ratio" in primary
+        assert "bucket_cardinality_histogram" in primary
+        assert "singleton_bucket_count" in primary
+
+
+def test_tiny_within_tie_band_mode_returns_compact_non_persistent_receipt(
+    tmp_path: Path,
+):
+    parent = tmp_path / "tiny_parent.pt"
+    torch.save(_tiny_parent_blob(batch_size=8), parent)
+    parent_sha = file_sha256(parent)
+
+    receipt = run_c2p1_probe(
+        parent=parent,
+        parent_sha256=parent_sha,
+        scratch_root=tmp_path / "scratch_within_tie_band",
+        device="cpu",
+        eligible_scope="first-bitlinear",
+        steps=1,
+        batch_size=8,
+        max_len=TINY_ARCH["max_len"],
+        curriculum_seed=17,
+        enabled=True,
+        oracle_screen_mode=ORACLE_SCREEN_MODE_WITHIN_TIE_BAND_DISCRIMINATOR,
+        oracle_screen_max_sampled_candidates=32,
+    )
+
+    assert receipt["science_arm"] is None
+    assert receipt["oracle_screen_mode"] == ORACLE_SCREEN_MODE_WITHIN_TIE_BAND_DISCRIMINATOR
+    assert receipt["stop_reason"] == "oracle_screen_completed"
+    oracle = receipt["oracle_screen"]
+    assert oracle["mode"] == ORACLE_SCREEN_MODE_WITHIN_TIE_BAND_DISCRIMINATOR
+    assert oracle["same_candidate_set_required"] is True
+    assert oracle["branch_classification"] in {
+        BRANCH_WITHIN_TIE_BAND_LEARNER_FEATURES_SEPARATE_REGRET,
+        BRANCH_WITHIN_TIE_BAND_NEEDS_NEW_LEARNER_STATE,
+        BRANCH_WITHIN_TIE_BAND_AMBIGUOUS_NO_BRANCH,
+    }
     assert oracle["non_persistence"]["q_persisted"] is False
     assert oracle["non_persistence"]["checkpoint_written"] is False
     assert Path(receipt["receipt_path"]).exists()
