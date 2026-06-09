@@ -135,6 +135,8 @@ ORACLE_SCREEN_TOP_K = 5
 ORACLE_SCREEN_ORDERING_SEED = 17
 ORACLE_SCREEN_ORDERING_STEP = 1
 ORACLE_SCREEN_IMPROVEMENT_EPS = 1e-12
+B2B_CANDIDATE_APPLY_POLICY = "full_vote_planned_candidate_force_apply_v1"
+B2B_ESTIMAND_NON_COMPARABLE_TO_SINGLE_STEP_ORACLE = True
 
 
 @contextmanager
@@ -2010,24 +2012,39 @@ def capture_b2b_sequential_pre_update_step(
         max_abs_per_tensor=int(max_abs_per_tensor),
         max_sampled_candidates=int(max_sampled_candidates),
     )
-    pre_update_state_hash = hash_bounded_delta_tensor_states_pre_update(tensor_states)
-    sampled_candidates, _oracle_top, budget_exceeded, elapsed_seconds = (
-        _evaluate_sampled_candidates_for_oracle_screen(
-            model=model,
-            batch=batch,
-            tensor_states=tensor_states,
-            eligible_modules=eligible_modules,
-            device=device,
-            extras=extras,
-            votes_by_key=universe["votes_by_key"],
-            candidate_by_id=universe["candidate_by_id"],
-            sampled_ids=universe["sampled_ids"],
-            baseline_loss=float(baseline_loss),
-            one_flip_spec=universe["one_flip_spec"],
-            max_seconds=float(max_seconds),
-            phase_progress=phase_progress,
+    if len(universe["sampled_ids"]) < int(max_sampled_candidates):
+        raise RuntimeError(
+            "B2b capture requires exactly "
+            f"{int(max_sampled_candidates)} sampled candidates from the full-vote universe"
         )
+    pre_update_state_hash = hash_bounded_delta_tensor_states_pre_update(tensor_states)
+    (
+        sampled_candidates,
+        _oracle_top,
+        budget_exceeded,
+        elapsed_seconds,
+        singleton_audit,
+    ) = _evaluate_b2b_planned_candidates_for_sequential_capture(
+        model=model,
+        batch=batch,
+        tensor_states=tensor_states,
+        eligible_modules=eligible_modules,
+        device=device,
+        extras=extras,
+        votes_by_key=universe["votes_by_key"],
+        candidate_by_id=universe["candidate_by_id"],
+        sampled_ids=universe["sampled_ids"],
+        baseline_loss=float(baseline_loss),
+        base_spec=universe["base_spec"],
+        one_flip_spec=universe["one_flip_spec"],
+        max_seconds=float(max_seconds),
+        phase_progress=phase_progress,
     )
+    if len(sampled_candidates) < int(max_sampled_candidates):
+        raise RuntimeError(
+            "B2b capture requires exactly "
+            f"{int(max_sampled_candidates)} evaluated planned candidates per step"
+        )
     target_band_oracle_top1_delta = None
     target_band_candidates = [
         dict(candidate)
@@ -2067,9 +2084,14 @@ def capture_b2b_sequential_pre_update_step(
         "source_table_hash": source_table_hash,
         "sampled_candidate_table": sampled_candidate_table,
         "capture_side": "pre_update_same_vote",
+        "candidate_apply_policy": B2B_CANDIDATE_APPLY_POLICY,
+        "estimand_non_comparable_to_single_step_sparse_singleton_oracle": (
+            B2B_ESTIMAND_NON_COMPARABLE_TO_SINGLE_STEP_ORACLE
+        ),
         "sampled_candidate_count": len(sampled_candidate_table),
         "budget_exceeded": bool(budget_exceeded),
         "evaluation_elapsed_seconds": float(elapsed_seconds),
+        **singleton_audit,
     }
 
 
@@ -2202,6 +2224,178 @@ def _evaluate_sparse_selected_candidate_ids(
         "per_state_counts": per_state_counts,
         "loss": float(variant_loss),
     }
+
+
+def _audit_sparse_singleton_identity_for_candidate(
+    *,
+    tensor_state: BoundedDeltaTensorState,
+    votes: torch.Tensor,
+    candidate: Mapping[str, Any],
+    one_flip_spec: VoteUpdateSpec,
+) -> dict[str, Any]:
+    """Audit-only sparse singleton identity check; never raises."""
+
+    flat_index = int(candidate["flat_index"])
+    sparse_votes = torch.zeros_like(votes, dtype=torch.int16)
+    sparse_votes.view(-1)[flat_index] = votes.view(-1)[flat_index]
+    result = apply_integer_vote_update_reference(
+        tensor_state.vote_update_state(),
+        VoteUpdateInputs(votes=sparse_votes),
+        one_flip_spec,
+        local_selection_ordering_mode=LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+        local_selection_ordering_seed=ORACLE_SCREEN_ORDERING_SEED,
+        local_selection_ordering_step=ORACLE_SCREEN_ORDERING_STEP,
+    )
+    applied_indices = (
+        result.plan.applied_indices.detach().cpu().to(torch.int64).tolist()
+    )
+    expected = [flat_index]
+    drifted = applied_indices != expected
+    return {
+        "expected_flat_index": flat_index,
+        "applied_indices": applied_indices,
+        "drifted": bool(drifted),
+    }
+
+
+def _apply_full_vote_planned_candidate_shadow_update(
+    *,
+    prior_state: BoundedDeltaTensorState,
+    candidate: Mapping[str, Any],
+    threshold_abs: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Force-apply exactly flat_index using full-vote planned candidate metadata."""
+
+    flat_index = int(candidate["flat_index"])
+    proposal_direction = int(candidate["proposal_direction"])
+    new_acc_i32_signed = int(candidate["new_acc_i32_signed"])
+    threshold = int(threshold_abs)
+    vote_state = prior_state.vote_update_state()
+    q_i16 = vote_state.q_levels.flatten().to(torch.int16).clone()
+    acc_i32 = vote_state.accumulators.flatten().to(torch.int32).clone()
+    q_i16[flat_index] = (q_i16[flat_index] + proposal_direction).clamp(-1, 1)
+    residual = new_acc_i32_signed - proposal_direction * threshold
+    low = -threshold + 1
+    high = threshold - 1
+    acc_i32[flat_index] = int(max(low, min(high, residual)))
+    q_out = q_i16.view_as(vote_state.q_levels).to(torch.int8).contiguous()
+    acc_out = acc_i32.view_as(vote_state.accumulators).to(torch.int16).contiguous()
+    return q_out, acc_out
+
+
+def _summarize_sparse_singleton_identity_audit(
+    audit_records: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    checked_count = len(audit_records)
+    drift_records = [
+        {
+            "expected_flat_index": int(record["expected_flat_index"]),
+            "applied_indices": list(record["applied_indices"]),
+        }
+        for record in audit_records
+        if bool(record["drifted"])
+    ]
+    drift_count = len(drift_records)
+    histogram: dict[str, int] = {}
+    for record in drift_records:
+        key = json.dumps(record["applied_indices"], sort_keys=True)
+        histogram[key] = int(histogram.get(key, 0)) + 1
+    return {
+        "sparse_singleton_identity_checked_count": checked_count,
+        "sparse_singleton_identity_applied_match_count": checked_count - drift_count,
+        "sparse_singleton_identity_drift_count": drift_count,
+        "sparse_singleton_drift_histogram": histogram,
+        "sparse_singleton_drift_hash16": (
+            _b2b_hash16(drift_records) if drift_records else None
+        ),
+    }
+
+
+def _evaluate_b2b_planned_candidates_for_sequential_capture(
+    *,
+    model: LMHead,
+    batch: Mapping[str, torch.Tensor],
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+    eligible_modules: Mapping[str, BitLinear],
+    device: torch.device,
+    extras: Mapping[str, Any],
+    votes_by_key: Mapping[str, torch.Tensor],
+    candidate_by_id: Mapping[str, Mapping[str, Any]],
+    sampled_ids: Sequence[str],
+    baseline_loss: float,
+    base_spec: VoteUpdateSpec,
+    one_flip_spec: VoteUpdateSpec,
+    max_seconds: float,
+    phase_progress: Any | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], bool, float, dict[str, Any]]:
+    budget_start = time.perf_counter()
+    sampled_candidates: list[dict[str, Any]] = []
+    audit_records: list[dict[str, Any]] = []
+    budget_exceeded = False
+    with _maybe_phase(phase_progress, "audit", step=1):
+        for candidate_id in sampled_ids:
+            if time.perf_counter() - budget_start > float(max_seconds):
+                budget_exceeded = True
+                break
+            candidate = dict(candidate_by_id[candidate_id])
+            state_key = str(candidate["state_key"])
+            flat_index = int(candidate["flat_index"])
+            prior_state = tensor_states[state_key]
+            audit_records.append(
+                _audit_sparse_singleton_identity_for_candidate(
+                    tensor_state=prior_state,
+                    votes=votes_by_key[state_key],
+                    candidate=candidate,
+                    one_flip_spec=one_flip_spec,
+                )
+            )
+            q_levels, accumulators = _apply_full_vote_planned_candidate_shadow_update(
+                prior_state=prior_state,
+                candidate=candidate,
+                threshold_abs=int(base_spec.threshold_abs),
+            )
+            candidate_states = dict(tensor_states)
+            candidate_states[state_key] = make_live_shadow_tensor_state(
+                prior_state,
+                q_levels,
+                accumulators,
+            )
+            candidate_loss = _evaluate_loss(
+                model,
+                batch,
+                candidate_states,
+                eligible_modules,
+                device=device,
+                extras=extras,
+            )
+            candidate["candidate_apply_policy"] = B2B_CANDIDATE_APPLY_POLICY
+            candidate["candidate_delta_sign"] = _candidate_delta_sign_from_one_flip(
+                q_after_one_flip=q_levels,
+                flat_index=flat_index,
+                current_q_level=int(candidate["current_q_level"]),
+            )
+            candidate["candidate_loss"] = float(candidate_loss)
+            candidate["local_loss_delta"] = float(candidate_loss - baseline_loss)
+            sampled_candidates.append(candidate)
+    oracle_top = sorted(
+        sampled_candidates,
+        key=lambda candidate: (
+            float(candidate["local_loss_delta"]),
+            str(candidate["candidate_id"]),
+        ),
+    )
+    singleton_audit = _summarize_sparse_singleton_identity_audit(audit_records)
+    singleton_audit["candidate_apply_policy"] = B2B_CANDIDATE_APPLY_POLICY
+    singleton_audit[
+        "estimand_non_comparable_to_single_step_sparse_singleton_oracle"
+    ] = B2B_ESTIMAND_NON_COMPARABLE_TO_SINGLE_STEP_ORACLE
+    return (
+        sampled_candidates,
+        oracle_top,
+        bool(budget_exceeded),
+        float(time.perf_counter() - budget_start),
+        singleton_audit,
+    )
 
 
 def _evaluate_sampled_candidates_for_oracle_screen(
@@ -3650,6 +3844,11 @@ __all__ = [
     "build_compact_within_tie_band_sampled_table_rows",
     "build_within_tie_band_candidate_universe_from_votes",
     "canonical_within_tie_band_rows_for_b2b_hash",
+    "B2B_CANDIDATE_APPLY_POLICY",
+    "B2B_ESTIMAND_NON_COMPARABLE_TO_SINGLE_STEP_ORACLE",
+    "_apply_full_vote_planned_candidate_shadow_update",
+    "_audit_sparse_singleton_identity_for_candidate",
+    "_evaluate_b2b_planned_candidates_for_sequential_capture",
     "capture_b2b_sequential_pre_update_step",
     "hash_bounded_delta_tensor_states_pre_update",
     "run_within_tie_band_discriminator_oracle_screen",

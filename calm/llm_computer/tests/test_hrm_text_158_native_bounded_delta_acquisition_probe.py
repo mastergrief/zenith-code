@@ -6,6 +6,7 @@ import math
 import os
 from pathlib import Path
 import sys
+from typing import Any
 
 import pytest
 import torch
@@ -21,6 +22,7 @@ from calm.hrm_text_158.bit_linear import BitLinear
 from calm.hrm_text_158.curriculum import BroadTokenizer
 from calm.hrm_text_158.lm_head import IGNORE_LABEL_ID
 from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
+    VoteUpdateSpec,
     authoritative_forward_context,
     candidate_weighted_grad_and_diag_fisher_proxies_from_captures,
     candidate_weighted_grad_proxies_from_captures,
@@ -54,6 +56,7 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     FIXED_RANK_BUCKET_NON_TARGET_AUX,
     ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES,
     ORACLE_SCREEN_BRANCHES,
+    PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES,
     PIVOT_MEASUREMENT_LOCAL_APPLY_VARIANT_CURRENT_SPEC,
     PIVOT_MEASUREMENT_LOCAL_APPLY_VARIANT_PREFIX_CAP_1024,
     PIVOT_MEASUREMENT_LOCAL_APPLY_VARIANT_TOP1,
@@ -64,11 +67,17 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     oracle_screen_budget_max_seconds,
 )
 from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
+    B2B_CANDIDATE_APPLY_POLICY,
     ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_MEASUREMENT,
     ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_SCALE_SMOKE,
     ORACLE_SCREEN_MODE_CREDIT_RANKING_PIVOT_MEASUREMENT,
     ORACLE_SCREEN_MODE_WITHIN_TIE_BAND_DISCRIMINATOR,
+    _apply_full_vote_planned_candidate_shadow_update,
+    _audit_sparse_singleton_identity_for_candidate,
+    _compute_baseline_votes,
     _candidate_delta_weight_from_one_flip,
+    _evaluate_b2b_planned_candidates_for_sequential_capture,
+    _evaluate_sampled_candidates_for_oracle_screen,
     _fraction_gte_observed,
     _fraction_lte_observed,
     _assign_activation_credit_features,
@@ -77,7 +86,10 @@ from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
     _pivot_tie_band_is_ambiguous,
     _sampled_rank_fraction,
     _sampled_rank_position,
+    _single_flip_spec,
     _within_tie_band_family_metrics,
+    build_within_tie_band_candidate_universe_from_votes,
+    capture_b2b_sequential_pre_update_step,
     run_activation_credit_measurement_oracle_screen,
     run_activation_credit_scale_smoke_oracle_screen,
     run_credit_ranking_pivot_measurement_oracle_screen,
@@ -2820,3 +2832,209 @@ def test_default_derivation_import_is_exercised_for_script_surface():
 
     assert state.state_key == "proj"
     assert state.q_levels.dtype == torch.int8
+
+
+def _singleton_drift_fixture(
+    state_key: str,
+) -> tuple[Any, torch.Tensor, dict[str, Any], VoteUpdateSpec, VoteUpdateSpec]:
+    base_spec = VoteUpdateSpec(
+        threshold_abs=1,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=2,
+        fraction_per_tensor=1.0,
+        decay_numerator=1,
+        decay_denominator=1,
+    )
+    one_flip_spec = _single_flip_spec(base_spec)
+    q = torch.tensor([0, 0], dtype=torch.int8)
+    acc = torch.tensor([0, 50], dtype=torch.int16)
+    state = make_bounded_tensor_state(state_key, q, 1.0, acc)
+    votes = torch.tensor([5, 0], dtype=torch.int16)
+    candidate = {
+        "candidate_id": f"{state_key}:0",
+        "state_key": state_key,
+        "flat_index": 0,
+        "current_q_level": 0,
+        "proposal_direction": 1,
+        "new_acc_i32_signed": 5,
+    }
+    return state, votes, candidate, base_spec, one_flip_spec
+
+
+def test_b2b_sparse_singleton_drift_cpu_repro_force_apply_mutates_only_flat_index() -> None:
+    _model, _batch, _eligible, states = _tiny_forward_fixture(batch_size=8)
+    state_key = next(iter(states))
+    state, votes, candidate, base_spec, one_flip_spec = _singleton_drift_fixture(state_key)
+    audit = _audit_sparse_singleton_identity_for_candidate(
+        tensor_state=state,
+        votes=votes,
+        candidate=candidate,
+        one_flip_spec=one_flip_spec,
+    )
+    assert audit["drifted"] is True
+    assert audit["applied_indices"] == [1]
+
+    q_out, acc_out = _apply_full_vote_planned_candidate_shadow_update(
+        prior_state=state,
+        candidate=candidate,
+        threshold_abs=int(base_spec.threshold_abs),
+    )
+    assert int(q_out.view(-1)[0].item()) == 1
+    assert int(q_out.view(-1)[1].item()) == 0
+    assert int(acc_out.view(-1)[0].item()) == 0
+    assert int(acc_out.view(-1)[1].item()) == 50
+
+
+def test_b2b_planned_candidate_evaluator_records_drift_telemetry_without_raising(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model, batch, eligible, states = _tiny_forward_fixture(batch_size=8)
+    state_key = next(iter(states))
+    state, votes, candidate, base_spec, one_flip_spec = _singleton_drift_fixture(state_key)
+    states = {state_key: state}
+    votes_by_key = {state_key: votes}
+    candidate_by_id = {candidate["candidate_id"]: candidate}
+
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.oracle_screen_runner._evaluate_loss",
+        lambda *args, **kwargs: 1.25,
+    )
+
+    sampled, _oracle_top, budget_exceeded, _elapsed, singleton_audit = (
+        _evaluate_b2b_planned_candidates_for_sequential_capture(
+            model=model,
+            batch=batch,
+            tensor_states=states,
+            eligible_modules=eligible,
+            device=torch.device("cpu"),
+            extras=model.compute_train_extra_args(1, 1),
+            votes_by_key=votes_by_key,
+            candidate_by_id=candidate_by_id,
+            sampled_ids=[candidate["candidate_id"]],
+            baseline_loss=1.0,
+            base_spec=base_spec,
+            one_flip_spec=one_flip_spec,
+            max_seconds=30.0,
+            phase_progress=None,
+        )
+    )
+
+    assert budget_exceeded is False
+    assert len(sampled) == 1
+    assert sampled[0]["candidate_apply_policy"] == B2B_CANDIDATE_APPLY_POLICY
+    assert singleton_audit["sparse_singleton_identity_checked_count"] == 1
+    assert singleton_audit["sparse_singleton_identity_drift_count"] == 1
+
+
+def test_legacy_oracle_screen_sparse_singleton_identity_still_raises_on_drift(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model, batch, eligible, states = _tiny_forward_fixture(batch_size=8)
+    state_key = next(iter(states))
+    state, votes, candidate, _base_spec, one_flip_spec = _singleton_drift_fixture(state_key)
+    states = {state_key: state}
+    votes_by_key = {state_key: votes}
+    candidate_by_id = {candidate["candidate_id"]: candidate}
+
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.oracle_screen_runner._evaluate_loss",
+        lambda *args, **kwargs: 1.25,
+    )
+
+    with pytest.raises(RuntimeError, match="drifted from the planned candidate identity"):
+        _evaluate_sampled_candidates_for_oracle_screen(
+            model=model,
+            batch=batch,
+            tensor_states=states,
+            eligible_modules=eligible,
+            device=torch.device("cpu"),
+            extras=model.compute_train_extra_args(1, 1),
+            votes_by_key=votes_by_key,
+            candidate_by_id=candidate_by_id,
+            sampled_ids=[candidate["candidate_id"]],
+            baseline_loss=1.0,
+            one_flip_spec=one_flip_spec,
+            max_seconds=30.0,
+            phase_progress=None,
+        )
+
+
+def test_b2b_capture_emits_apply_policy_and_drift_telemetry() -> None:
+    model, batch, eligible, states = _tiny_forward_fixture(batch_size=8)
+    extras = model.compute_train_extra_args(1, 1)
+    baseline_loss, votes_by_key = _compute_baseline_votes(
+        model,
+        batch,
+        states,
+        eligible,
+        device=torch.device("cpu"),
+        extras=extras,
+    )
+
+    capture = capture_b2b_sequential_pre_update_step(
+        model=model,
+        batch=batch,
+        tensor_states=states,
+        eligible_modules=eligible,
+        device=torch.device("cpu"),
+        extras=extras,
+        votes_by_key=votes_by_key,
+        baseline_loss=float(baseline_loss),
+        optimizer_step_index=1,
+        max_abs_per_tensor=4096,
+        max_sampled_candidates=PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES,
+        max_seconds=oracle_screen_budget_max_seconds(
+            PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES
+        ),
+    )
+
+    assert capture["candidate_apply_policy"] == B2B_CANDIDATE_APPLY_POLICY
+    assert capture["sampled_candidate_count"] == PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES
+    assert capture["sparse_singleton_identity_checked_count"] == (
+        PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES
+    )
+    assert capture["estimand_non_comparable_to_single_step_sparse_singleton_oracle"] is True
+
+
+def test_b2b_capture_fail_closed_when_fewer_than_thirty_two_sampled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model, batch, eligible, states = _tiny_forward_fixture(batch_size=8)
+    extras = model.compute_train_extra_args(1, 1)
+    _baseline_loss, votes_by_key = _compute_baseline_votes(
+        model,
+        batch,
+        states,
+        eligible,
+        device=torch.device("cpu"),
+        extras=extras,
+    )
+
+    def _short_universe(**kwargs: Any) -> dict[str, Any]:
+        universe = build_within_tie_band_candidate_universe_from_votes(**kwargs)
+        universe["sampled_ids"] = list(universe["sampled_ids"][:2])
+        return universe
+
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.oracle_screen_runner.build_within_tie_band_candidate_universe_from_votes",
+        _short_universe,
+    )
+
+    with pytest.raises(RuntimeError, match="requires exactly 32 sampled candidates"):
+        capture_b2b_sequential_pre_update_step(
+            model=model,
+            batch=batch,
+            tensor_states=states,
+            eligible_modules=eligible,
+            device=torch.device("cpu"),
+            extras=extras,
+            votes_by_key=votes_by_key,
+            baseline_loss=1.0,
+            optimizer_step_index=1,
+            max_abs_per_tensor=4096,
+            max_sampled_candidates=PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES,
+            max_seconds=oracle_screen_budget_max_seconds(
+                PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES
+            ),
+        )

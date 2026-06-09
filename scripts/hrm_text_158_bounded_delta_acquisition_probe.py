@@ -3320,6 +3320,10 @@ def build_b2b_sequential_capture_receipt(
         "verdict_eligible": bool(verdict_eligible),
         "trace_hash": trace_hash,
         "max_sampled_candidates": int(max_sampled_candidates),
+        "candidate_apply_policy": "full_vote_planned_candidate_force_apply_v1",
+        "b2b_oracle_estimand": "full_vote_planned_candidate_marginal",
+        "cross_comparable_to_single_step_oracle_screen": False,
+        "estimand_non_comparable_to_single_step_sparse_singleton_oracle": True,
         "checkpoint_written": False,
         "creditdir_mutated": False,
         "banked_pt_mutated": False,
@@ -3843,9 +3847,16 @@ def run_bounded_delta_steps(
                 if b2b_step_capture is not None:
                     step_reports[str(step)]["b2b_sequential_capture"] = {
                         "capture_side": b2b_step_capture["capture_side"],
+                        "candidate_apply_policy": b2b_step_capture["candidate_apply_policy"],
                         "source_table_hash": b2b_step_capture["source_table_hash"],
                         "pre_update_state_hash": b2b_step_capture["pre_update_state_hash"],
                         "sampled_candidate_count": b2b_step_capture["sampled_candidate_count"],
+                        "sparse_singleton_identity_checked_count": b2b_step_capture[
+                            "sparse_singleton_identity_checked_count"
+                        ],
+                        "sparse_singleton_identity_drift_count": b2b_step_capture[
+                            "sparse_singleton_identity_drift_count"
+                        ],
                         "post_update_q_changed_count": q_changed_count,
                     }
         steps_completed = step

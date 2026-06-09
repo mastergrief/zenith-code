@@ -2581,6 +2581,9 @@ def test_b2b_sequential_packet_author_scaffold_is_non_executing():
     assert packet["pt_mutated"] is False
     contract = packet["measurement_contract"]
     assert contract["capture_side"] == "pre_update_same_vote"
+    assert contract["candidate_apply_policy"] == "full_vote_planned_candidate_force_apply_v1"
+    assert contract["cross_comparable_to_single_step_oracle_screen"] is False
+    assert contract["estimand_non_comparable_to_single_step_sparse_singleton_oracle"] is True
     assert contract["min_steps_for_verdict"] == B2B_SEQUENTIAL_STEPS_FOR_VERDICT
     assert contract["pre_full_stack_diagnostic_only"] is True
     assert contract["runtime_readiness_claim"] is False
