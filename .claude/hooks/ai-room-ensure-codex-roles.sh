@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # SessionStart helper: idempotently ensure the standing co-lead +
 # worker lanes are live for the derived channel — codex_co_lead via the
-# proven ensure-co-lead CLI path, plus training-dev (standing mutating worker
-# lane) and test-operator (standing deterministic proof-runner lane) in THIS
+# proven ensure-co-lead CLI path, plus training-dev (standing plan/review
+# lane), trainer-implement (standing bounded implementation executor lane),
+# and test-operator (standing deterministic proof-runner lane) in THIS
 # channel via lease-backed auto codex_N handles.
 #
 # Idempotent: a role whose live-lease codex_home basename already matches is
@@ -11,10 +12,11 @@
 # are logged and never break Claude startup. Backgrounded by .claude/settings.json.
 # All output → the log; stdout stays clean.
 #
-# Role safety: training-dev and test-operator are full-access but spawned IDLE
-# in this channel — standing workers, NOT auto-dispatched work. training-dev
-# mutating repo-file work and any test-operator proof run still require an
-# explicit Claude task/approval (or launch) gate per
+# Role safety: training-dev, trainer-implement, and test-operator are spawned
+# IDLE in this channel — standing workers, NOT auto-dispatched work.
+# training-dev planning/review, trainer-implement bounded edits (require a
+# persisted Claude `+1 implement`), and any test-operator proof run still
+# require an explicit Claude task/approval (or launch) gate per
 # .claude/rules/CLAUDEX_ORCHESTRATION.md. test-operator full access is
 # temp/log/artifact/tmux only, never source authority.
 #
@@ -46,16 +48,17 @@ echo "channel=$CHANNEL cwd=$PROJECT_DIR"
 ai-room ensure-co-lead --channel "$CHANNEL" --cwd "$PROJECT_DIR" \
   || echo "WARN ensure-co-lead failed (non-fatal)"
 
-# 2. Standing claudex lanes (training-dev mutating + test-operator
-#    deterministic proof-runner) in THIS channel as auto codex_N handles.
-#    Any other role is explicit-dispatch only, not a SessionStart
-#    standing role. Skip a role if already live.
+# 2. Standing claudex lanes (training-dev plan/review + trainer-implement
+#    bounded implementation + test-operator deterministic proof-runner) in
+#    THIS channel as auto codex_N handles. Any other role is
+#    explicit-dispatch only, not a SessionStart standing role. Skip a role
+#    if already live.
 AI_ROOM_CHANNEL="$CHANNEL" AI_ROOM_CWD="$PROJECT_DIR" python3 - <<'PY' || echo "WARN role-spawn block failed (non-fatal)"
 import importlib.util, json, os, pathlib, sys
 
 CHANNEL = os.environ["AI_ROOM_CHANNEL"]
 CWD = os.environ["AI_ROOM_CWD"]
-ROLES = ["training-dev", "test-operator"]
+ROLES = ["training-dev", "trainer-implement", "test-operator"]
 SPAWN_TIMEOUT = 120.0
 
 
