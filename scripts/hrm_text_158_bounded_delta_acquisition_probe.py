@@ -1507,17 +1507,46 @@ class PhaseProgress:
             self._cancel_faulthandler_timer()
             raise
 
-    def _exit_phase(self, phase: str) -> None:
+    def _pop_phase_from_stack(self, phase: str) -> None:
         if self._phase_stack and self._phase_stack[-1]["phase"] == str(phase):
             self._phase_stack.pop()
-        else:
-            for index in range(len(self._phase_stack) - 1, -1, -1):
-                if self._phase_stack[index]["phase"] == str(phase):
-                    del self._phase_stack[index]
-                    break
+            return
+        for index in range(len(self._phase_stack) - 1, -1, -1):
+            if self._phase_stack[index]["phase"] == str(phase):
+                del self._phase_stack[index]
+                break
+
+    def _exit_phase_stack(self, phase: str) -> None:
+        self._pop_phase_from_stack(phase)
         self._cancel_faulthandler_timer()
         if self._phase_stack:
             self._arm_current_phase(self._phase_stack[-1], guard_event="resume")
+
+    def _exit_phase(self, phase: str) -> None:
+        self._exit_phase_stack(phase)
+
+    def _cleared_active_phase_payload(self, phase: str) -> dict[str, Any]:
+        return {
+            "schema": C2P2_PHASE_TELEMETRY_SCHEMA_VERSION,
+            "event": "active_phase_guard",
+            "guard_event": "cleared",
+            "phase_status": "completed",
+            "phase": str(phase),
+            "liveness_failure": False,
+            "elapsed_since_start_seconds": self._elapsed(),
+            "device": str(self.device),
+            "pid": int(os.getpid()),
+            "resource_snapshot": _proc_self_resource_snapshot(),
+        }
+
+    def _write_cleared_last_active_phase_if_idle(self, phase: str) -> None:
+        if self._phase_stack:
+            return
+        if self.last_active_phase_path is None:
+            return
+        payload = self._cleared_active_phase_payload(phase)
+        self._last_active_phase_payload = payload
+        self._write_last_active_phase(payload)
 
     def check_stale_active_phase(self) -> dict[str, Any] | None:
         if self.silent_phase_timeout_seconds is None or not self._phase_stack:
@@ -1579,6 +1608,7 @@ class PhaseProgress:
             self.mark(phase, "timeout", **timeout_fields, **fields)
             raise
         self.mark(phase, "end", duration_seconds=duration, **fields)
+        self._write_cleared_last_active_phase_if_idle(phase)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1597,6 +1627,23 @@ class PhaseProgress:
             "event_count": len(self.events),
             "events": list(self.events),
         }
+
+
+def build_receipt_terminal_status(
+    *,
+    stop_reason: str,
+    steps_completed: int,
+    steps_requested: int,
+    producer_clean_completion: bool = True,
+) -> dict[str, Any]:
+    return {
+        "stop_reason": str(stop_reason),
+        "steps_completed": int(steps_completed),
+        "steps_requested": int(steps_requested),
+        "producer_clean_completion": bool(producer_clean_completion),
+        "planned_return_code": 0,
+        "classification_source": "receipt_fields+wrapper_rc+stdout_phase_end",
+    }
 
 
 def _median_or_none(values: Sequence[float]) -> float | None:
@@ -4445,6 +4492,11 @@ def run_c2p1_probe(
         }
         receipt_path = scratch_root / "receipt.json"
         receipt["receipt_path"] = str(receipt_path)
+        receipt["terminal_status"] = build_receipt_terminal_status(
+            stop_reason=str(receipt["stop_reason"]),
+            steps_completed=int(receipt["steps_completed"]),
+            steps_requested=int(receipt["steps_requested"]),
+        )
         with phase_progress.phase("receipt_write", path=str(receipt_path)):
             receipt["phase_telemetry"] = phase_progress.to_dict()
             receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
@@ -4843,6 +4895,11 @@ def run_c2p1_probe(
     )
     receipt_path = scratch_root / "receipt.json"
     receipt["receipt_path"] = str(receipt_path)
+    receipt["terminal_status"] = build_receipt_terminal_status(
+        stop_reason=str(stop_reason),
+        steps_completed=int(steps_completed),
+        steps_requested=int(steps),
+    )
     with phase_progress.phase("receipt_write", path=str(receipt_path)):
         receipt["phase_telemetry"] = phase_progress.to_dict()
         receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")

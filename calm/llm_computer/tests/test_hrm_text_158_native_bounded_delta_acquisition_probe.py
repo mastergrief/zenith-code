@@ -1383,9 +1383,9 @@ def test_phase_progress_silent_phase_guard_breaches_before_phase_exit(tmp_path: 
         clock=clock,
     )
 
-    with progress.phase("step_update", step=1):
-        clock.now = 5.5
-        with pytest.raises(C2PhaseTimeout) as excinfo:
+    with pytest.raises(C2PhaseTimeout) as excinfo:
+        with progress.phase("step_update", step=1):
+            clock.now = 5.5
             progress.check_stale_active_phase()
 
     payload = excinfo.value.payload
@@ -1477,6 +1477,182 @@ def test_phase_progress_fails_closed_when_faulthandler_timer_cannot_arm(monkeypa
     assert ("dump", 7.0, False, True) in calls
 
 
+def test_phase_progress_nested_exit_rearms_parent_without_cleared_record(tmp_path: Path):
+    class FakeClock:
+        def __init__(self) -> None:
+            self.now = 0.0
+
+        def __call__(self) -> float:
+            return self.now
+
+    clock = FakeClock()
+    last_active_path = tmp_path / "last_active_phase.json"
+    progress = PhaseProgress(
+        enabled=False,
+        device=torch.device("cpu"),
+        silent_phase_timeout_seconds=5.0,
+        last_active_phase_path=last_active_path,
+        arm_faulthandler_timer=False,
+        clock=clock,
+    )
+
+    with progress.phase("parent", parent_flag=1):
+        with progress.phase("child", child_flag=2):
+            clock.now = 1.0
+        last_active = json.loads(last_active_path.read_text(encoding="utf-8"))
+        assert last_active["phase"] == "parent"
+        assert last_active["guard_event"] == "resume"
+        assert last_active["parent_flag"] == 1
+        assert last_active["failure_class"] == "LIVENESS_FAILURE"
+        assert last_active.get("guard_event") != "cleared"
+        assert last_active.get("phase_status") != "completed"
+
+    last_active = json.loads(last_active_path.read_text(encoding="utf-8"))
+    assert last_active["guard_event"] == "cleared"
+    assert last_active["phase_status"] == "completed"
+    assert last_active["phase"] == "parent"
+    assert last_active["liveness_failure"] is False
+    assert "failure_class" not in last_active
+
+
+def test_phase_progress_clean_success_writes_cleared_last_active_phase(tmp_path: Path):
+    progress = PhaseProgress(
+        enabled=False,
+        device=torch.device("cpu"),
+        silent_phase_timeout_seconds=5.0,
+        last_active_phase_path=tmp_path / "last_active_phase.json",
+        arm_faulthandler_timer=False,
+    )
+
+    with progress.phase("only_phase", step=1):
+        pass
+
+    last_active = json.loads(
+        (tmp_path / "last_active_phase.json").read_text(encoding="utf-8")
+    )
+    assert last_active["guard_event"] == "cleared"
+    assert last_active["phase_status"] == "completed"
+    assert last_active["phase"] == "only_phase"
+    assert last_active["liveness_failure"] is False
+    assert "failure_class" not in last_active
+
+
+def test_phase_progress_hung_timeout_still_records_liveness_failure(tmp_path: Path):
+    class FakeClock:
+        def __init__(self) -> None:
+            self.now = 0.0
+
+        def __call__(self) -> float:
+            return self.now
+
+    clock = FakeClock()
+    last_active_path = tmp_path / "last_active_phase.json"
+    progress = PhaseProgress(
+        enabled=False,
+        device=torch.device("cpu"),
+        silent_phase_timeout_seconds=5.0,
+        last_active_phase_path=last_active_path,
+        arm_faulthandler_timer=False,
+        clock=clock,
+    )
+
+    with pytest.raises(C2PhaseTimeout):
+        with progress.phase("step_update", step=1):
+            clock.now = 5.5
+            progress.check_stale_active_phase()
+
+    last_active = json.loads(last_active_path.read_text(encoding="utf-8"))
+    assert last_active["failure_class"] == "LIVENESS_FAILURE"
+    assert last_active.get("guard_event") != "cleared"
+
+
+def test_phase_progress_post_body_timeout_does_not_clear_last_active_phase(
+    tmp_path: Path,
+):
+    class FakeClock:
+        def __init__(self) -> None:
+            self.now = 0.0
+
+        def __call__(self) -> float:
+            return self.now
+
+    clock = FakeClock()
+    last_active_path = tmp_path / "last_active_phase.json"
+    progress = PhaseProgress(
+        enabled=False,
+        device=torch.device("cpu"),
+        phase_timeout_seconds=0.5,
+        silent_phase_timeout_seconds=5.0,
+        last_active_phase_path=last_active_path,
+        arm_faulthandler_timer=False,
+        clock=clock,
+    )
+
+    with pytest.raises(C2PhaseTimeout):
+        with progress.phase("slow_phase", token=7):
+            clock.now = 1.0
+
+    last_active = json.loads(last_active_path.read_text(encoding="utf-8"))
+    assert last_active["phase"] == "slow_phase"
+    assert last_active["failure_class"] == "LIVENESS_FAILURE"
+    assert last_active.get("guard_event") != "cleared"
+
+
+def test_phase_progress_exception_preserves_liveness_failure_sentinel(tmp_path: Path):
+    last_active_path = tmp_path / "last_active_phase.json"
+    progress = PhaseProgress(
+        enabled=False,
+        device=torch.device("cpu"),
+        silent_phase_timeout_seconds=5.0,
+        last_active_phase_path=last_active_path,
+        arm_faulthandler_timer=False,
+    )
+
+    with pytest.raises(ValueError, match="boom"):
+        with progress.phase("bad_phase", tag=1):
+            raise ValueError("boom")
+
+    last_active = json.loads(last_active_path.read_text(encoding="utf-8"))
+    assert last_active["phase"] == "bad_phase"
+    assert last_active["guard_event"] == "enter"
+    assert last_active["failure_class"] == "LIVENESS_FAILURE"
+    assert last_active.get("guard_event") != "cleared"
+
+
+def test_run_c2p1_probe_receipt_terminal_status_fields(tmp_path: Path):
+    parent = tmp_path / "tiny_parent.pt"
+    scratch_root = tmp_path / "scratch"
+    torch.save(_tiny_parent_blob(), parent)
+    parent_sha = file_sha256(parent)
+
+    receipt = run_c2p1_probe(
+        parent=parent,
+        parent_sha256=parent_sha,
+        scratch_root=scratch_root,
+        device="cpu",
+        eligible_scope="first-bitlinear",
+        steps=0,
+        batch_size=2,
+        max_len=TINY_ARCH["max_len"],
+        curriculum_seed=17,
+        enabled=True,
+    )
+
+    expected = {
+        "stop_reason": "no_steps",
+        "steps_completed": 0,
+        "steps_requested": 0,
+        "producer_clean_completion": True,
+        "planned_return_code": 0,
+        "classification_source": "receipt_fields+wrapper_rc+stdout_phase_end",
+    }
+    assert receipt["terminal_status"] == expected
+    disk_receipt = json.loads((scratch_root / "receipt.json").read_text(encoding="utf-8"))
+    assert disk_receipt["terminal_status"] == expected
+    assert "exit_code" not in receipt["terminal_status"]
+    assert "exit_code" not in disk_receipt["terminal_status"]
+
+
 def test_register_probe_faulthandler_enable_failure_fails_closed():
     def fake_enable(*, file, all_threads: bool) -> None:
         raise RuntimeError("enable unavailable")
@@ -1536,8 +1712,11 @@ def test_tiny_step0_receipt_write_uses_guarded_phase(monkeypatch, tmp_path: Path
     ]
     assert [event["event"] for event in events] == ["start", "end"]
     last_active = json.loads((scratch_root / "last_active_phase.json").read_text(encoding="utf-8"))
+    assert last_active["guard_event"] == "cleared"
+    assert last_active["phase_status"] == "completed"
     assert last_active["phase"] == "receipt_write"
-    assert last_active["budget_seconds"] == 11.0
+    assert last_active["liveness_failure"] is False
+    assert "failure_class" not in last_active
     assert ("dump", 11.0, False, True) in calls
     assert receipt_write_armed == [True]
     disk_receipt = json.loads((scratch_root / "receipt.json").read_text(encoding="utf-8"))
