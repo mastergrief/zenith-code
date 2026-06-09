@@ -26,6 +26,9 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     make_bounded_tensor_state,
 )
 from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
+    ACTIVATION_CREDIT_MAGNITUDE_Q5_BIN_COUNT,
+    ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE,
+    ACTIVATION_CREDIT_PRIMARY_FAMILY_ID,
     ACTIVATION_CREDIT_STDERR_PATH_ENV,
     ACTIVATION_CREDIT_STDOUT_PATH_ENV,
     ARM_A0_RANK_BUCKET_CURRENT,
@@ -60,6 +63,7 @@ from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
     ORACLE_SCREEN_MODE_WITHIN_TIE_BAND_DISCRIMINATOR,
     _fraction_gte_observed,
     _fraction_lte_observed,
+    _assign_activation_credit_features,
     _pivot_is_poor_rank_position,
     _pivot_poor_rank_position_threshold,
     _pivot_tie_band_is_ambiguous,
@@ -2057,7 +2061,7 @@ def test_direct_activation_credit_measurement_runner_emits_compact_family_metric
     assert compact["target_tie_band"][
         "fresh_confirmation_seed_required_for_persistent_followup"
     ] == 71
-    assert compact["family_metrics"]["primary_family_id"] == "F_align_magbin"
+    assert compact["family_metrics"]["primary_family_id"] == ACTIVATION_CREDIT_PRIMARY_FAMILY_ID
     assert compact["family_metrics"]["topology_control_family_id"] == (
         "F_topology_lane_head_row_block128"
     )
@@ -2066,20 +2070,103 @@ def test_direct_activation_credit_measurement_runner_emits_compact_family_metric
         "candidate_delta_sign",
         "credit_sign",
         "credit_magnitude_bin",
+        "credit_magnitude_q5_bin",
         "signed_alignment",
         "topology_row_block_128",
         "activation_feature_valid",
     }.issubset(first_row)
+    assert compact["target_tie_band"]["magnitude_q5_guard_min_bucket_size"] == (
+        ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE
+    )
+    assert "magnitude_q5_bin_degenerate" in compact["target_tie_band"]
+    assert "magnitude_q5_non_memorization_ok" in compact["target_tie_band"]
     target_band_rows = [
         row for row in compact["sampled_candidate_table"] if bool(row["in_target_tie_band"])
     ]
     assert target_band_rows
     assert any(int(row["candidate_delta_sign"]) != 0 for row in target_band_rows)
     assert any(bool(row["activation_feature_valid"]) for row in target_band_rows)
+    if compact["target_tie_band"]["magnitude_q5_bin_degenerate"]:
+        assert ACTIVATION_CREDIT_PRIMARY_FAMILY_ID not in compact["family_metrics"][
+            "metrics_by_family_id"
+        ]
+    else:
+        primary = compact["family_metrics"]["metrics_by_family_id"][
+            ACTIVATION_CREDIT_PRIMARY_FAMILY_ID
+        ]
+        assert primary["singleton_bucket_count"] == 0
+        assert min(
+            int(size)
+            for size, count in primary["bucket_cardinality_histogram"].items()
+            if int(count) > 0
+        ) >= ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE
     assert compact["telemetry"]["capture_device_mode"] == "device_resident"
     assert compact["telemetry"]["gather_device"] == "cpu"
     assert receipt["non_persistence"]["q_persisted"] is False
     assert receipt["non_persistence"]["checkpoint_written"] is False
+
+
+def test_activation_credit_feature_assignment_emits_non_memorizing_q5_bins():
+    candidates = [
+        {
+            "candidate_id": f"c{index:02d}",
+            "activation_feature_valid": True,
+            "activation_credit_abs": float(index + 1),
+        }
+        for index in range(26)
+    ]
+
+    summary = _assign_activation_credit_features(candidates)
+
+    assert summary["magnitude_q5_bin_degenerate"] is False
+    assert summary["magnitude_q5_non_memorization_ok"] is True
+    assert summary["magnitude_q5_bin_histogram"] == {"0": 6, "1": 5, "2": 5, "3": 5, "4": 5}
+    assert summary["magnitude_q5_min_bucket_size"] == ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE
+    assert summary["magnitude_q5_singleton_bucket_count"] == 0
+    assert summary["magnitude_q5_guard_reason"] is None
+    assert {
+        int(candidate["credit_magnitude_q5_bin"])
+        for candidate in candidates
+    } == set(range(ACTIVATION_CREDIT_MAGNITUDE_Q5_BIN_COUNT))
+
+
+def test_activation_credit_feature_assignment_rejects_q5_when_min_bucket_guard_fails():
+    candidates = [
+        {
+            "candidate_id": f"c{index:02d}",
+            "activation_feature_valid": True,
+            "activation_credit_abs": float(index + 1),
+        }
+        for index in range(24)
+    ]
+
+    summary = _assign_activation_credit_features(candidates)
+
+    assert summary["magnitude_q5_bin_degenerate"] is True
+    assert summary["magnitude_q5_non_memorization_ok"] is False
+    assert summary["magnitude_q5_min_bucket_size"] == 4
+    assert summary["magnitude_q5_guard_reason"] == "min_bucket_lt_guard"
+    assert all(candidate["credit_magnitude_q5_bin"] is None for candidate in candidates)
+
+
+def test_activation_credit_feature_assignment_rejects_q5_when_ties_cross_bucket_boundary():
+    values = [1, 2, 3, 4, 5, 6, 6] + list(range(7, 26))
+    candidates = [
+        {
+            "candidate_id": f"c{index:02d}",
+            "activation_feature_valid": True,
+            "activation_credit_abs": float(value),
+        }
+        for index, value in enumerate(values)
+    ]
+
+    summary = _assign_activation_credit_features(candidates)
+
+    assert summary["magnitude_q5_bin_degenerate"] is True
+    assert summary["magnitude_q5_non_memorization_ok"] is False
+    assert summary["magnitude_q5_guard_reason"] == "tie_boundary"
+    assert summary["magnitude_q5_bin_histogram"] == {}
+    assert all(candidate["credit_magnitude_q5_bin"] is None for candidate in candidates)
 
 
 def test_tiny_activation_credit_modes_return_compact_non_persistent_receipts(

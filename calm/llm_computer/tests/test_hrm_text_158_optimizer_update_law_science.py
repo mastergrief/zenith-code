@@ -8,8 +8,12 @@ from pathlib import Path
 import pytest
 
 from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
+    ACTIVATION_CREDIT_ALIGN_MAGBIN_ABLATION_FAMILY_ID,
+    ACTIVATION_CREDIT_ALIGN_Q5_ABLATION_FAMILY_ID,
     ACTIVATION_CREDIT_BRANCHES,
     ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED,
+    ACTIVATION_CREDIT_MAGNITUDE_Q5_BIN_COUNT,
+    ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE,
     ACTIVATION_CREDIT_MEASUREMENT_LAUNCH_BUNDLE_PACKET_KIND,
     ACTIVATION_CREDIT_MEASUREMENT_PACKET_KIND,
     ACTIVATION_CREDIT_PRIMARY_FAMILY_ID,
@@ -1995,9 +1999,21 @@ def test_activation_credit_packet_declares_device_resident_within_band_contract(
     assert contract["activation_credit_source"]["no_extra_response_label_mask"] is True
     assert contract["feature_construction"]["primary_family_excludes_credit_sign"] is True
     assert contract["feature_construction"]["credit_magnitude_bin_count"] == 2
+    assert contract["feature_construction"]["credit_magnitude_q5_bin_count"] == (
+        ACTIVATION_CREDIT_MAGNITUDE_Q5_BIN_COUNT
+    )
+    assert contract["feature_construction"]["credit_magnitude_q5_min_bucket_size"] == (
+        ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE
+    )
     assert contract["family_discriminator"]["primary"] == ACTIVATION_CREDIT_PRIMARY_FAMILY_ID
     assert contract["family_discriminator"]["fields_by_family_id"][
         ACTIVATION_CREDIT_PRIMARY_FAMILY_ID
+    ] == ["credit_magnitude_q5_bin"]
+    assert contract["family_discriminator"]["fields_by_family_id"][
+        ACTIVATION_CREDIT_ALIGN_Q5_ABLATION_FAMILY_ID
+    ] == ["signed_alignment", "credit_magnitude_q5_bin"]
+    assert contract["family_discriminator"]["fields_by_family_id"][
+        ACTIVATION_CREDIT_ALIGN_MAGBIN_ABLATION_FAMILY_ID
     ] == ["signed_alignment", "credit_magnitude_bin"]
     assert contract["scale_smoke_gate"]["required_max_sampled_candidates"] == 8
     assert contract["scale_smoke_gate"]["required_batch_size"] == 4
@@ -2005,6 +2021,11 @@ def test_activation_credit_packet_declares_device_resident_within_band_contract(
         "required_seed_before_persistent_followup"
     ] == ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED
     assert contract["allowed_seed_local_labels"] == list(ACTIVATION_CREDIT_BRANCHES)
+    assert contract["fragmentation_audit"]["q5_min_bucket_candidate_count_required"] == (
+        ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE
+    )
+    assert contract["fragmentation_audit"]["q5_singleton_buckets_forbidden"] is True
+    assert contract["fragmentation_audit"]["q5_ties_force_ambiguous"] is True
 
 
 def test_activation_credit_launch_bundle_pins_budget32_and_fixed_two_seed_commands():
@@ -2162,11 +2183,10 @@ def test_activation_credit_scale_smoke_launch_bundle_pins_budget8_and_batch4_com
             lambda packet: packet["measurement_contract"]["family_discriminator"][
                 "fields_by_family_id"
             ].update({ACTIVATION_CREDIT_PRIMARY_FAMILY_ID: [
-                "signed_alignment",
-                "credit_magnitude_bin",
+                "credit_magnitude_q5_bin",
                 "credit_sign",
             ]}),
-            "exclude credit_sign",
+            "q5 primary family drifted",
         ),
         (
             lambda packet: packet["measurement_contract"]["fresh_confirmation_gate"].update(
@@ -2181,6 +2201,37 @@ def test_activation_credit_scale_smoke_launch_bundle_pins_budget8_and_batch4_com
     ],
 )
 def test_activation_credit_packet_validator_rejects_primary_family_seed_and_scope_drift(
+    mutation,
+    error,
+):
+    packet = build_activation_credit_measurement_packet(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+    )
+    mutation(packet)
+
+    with pytest.raises(ValueError, match=error):
+        validate_activation_credit_measurement_packet(packet)
+
+
+@pytest.mark.parametrize(
+    "mutation,error",
+    [
+        (
+            lambda packet: packet["measurement_contract"]["feature_construction"].update(
+                {"credit_magnitude_q5_min_bucket_size": 4}
+            ),
+            "q5 min bucket size drifted",
+        ),
+        (
+            lambda packet: packet["measurement_contract"]["fragmentation_audit"].update(
+                {"q5_ties_force_ambiguous": False}
+            ),
+            "q5 tie guard drifted",
+        ),
+    ],
+)
+def test_activation_credit_packet_validator_rejects_q5_guard_drift(
     mutation,
     error,
 ):
@@ -3036,6 +3087,10 @@ def test_packet_script_writes_activation_credit_launch_bundle(
     assert packet["oracle_screen_launch_gate_required"] is True
     assert packet["oracle_feasibility_budget"]["max_sampled_candidates"] == 32
     assert len(packet["commands"]) == 2
+    assert (
+        packet["measurement_contract"]["family_discriminator"]["primary"]
+        == ACTIVATION_CREDIT_PRIMARY_FAMILY_ID
+    )
     assert {
         command["argv"][command["argv"].index("--support-order-seed") + 1]
         for command in packet["commands"]

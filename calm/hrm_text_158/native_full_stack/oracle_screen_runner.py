@@ -41,11 +41,15 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     BRANCH_ACTIVATION_CREDIT_CANDIDATE_SIGNAL,
     BRANCH_ACTIVATION_CREDIT_MISSING_SIGNAL_DEEPER_THAN_FIRST_ORDER_CREDIT_STORAGE,
     ACTIVATION_CREDIT_ABLATION_FAMILY_IDS,
+    ACTIVATION_CREDIT_ALIGN_MAGBIN_ABLATION_FAMILY_ID,
+    ACTIVATION_CREDIT_ALIGN_Q5_ABLATION_FAMILY_ID,
     ACTIVATION_CREDIT_BRANCHES,
     ACTIVATION_CREDIT_FAIL_CLOSED_BUCKET_FRACTION_GT,
     ACTIVATION_CREDIT_FAIL_CLOSED_REGRET_SPREAD_RATIO_GT,
     ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED,
     ACTIVATION_CREDIT_MAGNITUDE_BIN_COUNT,
+    ACTIVATION_CREDIT_MAGNITUDE_Q5_BIN_COUNT,
+    ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE,
     ACTIVATION_CREDIT_MATCHED_HASH_SIGNAL_MIN,
     ACTIVATION_CREDIT_PREDICTIVE_BUCKET_FRACTION_MAX,
     ACTIVATION_CREDIT_PREDICTIVE_REGRET_CAPTURE_RATIO_MIN,
@@ -1028,6 +1032,7 @@ def _within_tie_band_family_metrics(
         "family_id": family_id,
         "bucket_count": len(groups),
         "bucket_cardinality_histogram": histogram,
+        "min_bucket_candidate_count": min(bucket_sizes, default=0),
         "singleton_bucket_count": int(histogram.get("1", 0)),
         "oracle_best_bucket_candidate_count": len(oracle_bucket),
         "oracle_best_bucket_candidate_ids_hash16": _candidate_ids_hash16(
@@ -1157,13 +1162,27 @@ def _compute_activation_credit_candidate_proxies(
     }
 
 
+def _balanced_bucket_sizes(total: int, bucket_count: int) -> list[int]:
+    if int(total) <= 0 or int(bucket_count) <= 0:
+        return []
+    base, remainder = divmod(int(total), int(bucket_count))
+    return [
+        int(base + (1 if bucket_index < remainder else 0))
+        for bucket_index in range(int(bucket_count))
+    ]
+
+
 def _assign_activation_credit_features(
     target_band_candidates: Sequence[dict[str, Any]],
 ) -> dict[str, Any]:
-    valid_abs_values = [
-        float(candidate["activation_credit_abs"])
+    valid_candidates = [
+        candidate
         for candidate in target_band_candidates
         if bool(candidate.get("activation_feature_valid"))
+    ]
+    valid_abs_values = [
+        float(candidate["activation_credit_abs"])
+        for candidate in valid_candidates
     ]
     magnitude_bin_threshold = median(valid_abs_values) if valid_abs_values else None
     degenerate = (
@@ -1171,10 +1190,11 @@ def _assign_activation_credit_features(
         or not valid_abs_values
         or max(valid_abs_values) - min(valid_abs_values) <= ORACLE_SCREEN_IMPROVEMENT_EPS
     )
-    histogram: dict[str, int] = {}
+    magnitude_bin_histogram: dict[str, int] = {}
     for candidate in target_band_candidates:
         if not bool(candidate.get("activation_feature_valid")):
             candidate["credit_magnitude_bin"] = None
+            candidate["credit_magnitude_q5_bin"] = None
             continue
         if degenerate or magnitude_bin_threshold is None:
             candidate["credit_magnitude_bin"] = 0
@@ -1183,15 +1203,90 @@ def _assign_activation_credit_features(
                 float(candidate["activation_credit_abs"]) >= float(magnitude_bin_threshold)
             )
         bucket_key = str(int(candidate["credit_magnitude_bin"]))
-        histogram[bucket_key] = int(histogram.get(bucket_key, 0) + 1)
-    if sum(histogram.values()) > 0 and len(histogram) < ACTIVATION_CREDIT_MAGNITUDE_BIN_COUNT:
+        magnitude_bin_histogram[bucket_key] = int(
+            magnitude_bin_histogram.get(bucket_key, 0) + 1
+        )
+    if (
+        sum(magnitude_bin_histogram.values()) > 0
+        and len(magnitude_bin_histogram) < ACTIVATION_CREDIT_MAGNITUDE_BIN_COUNT
+    ):
         degenerate = True
+    q5_histogram: dict[str, int] = {}
+    q5_guard_reason: str | None = None
+    q5_bucket_sizes = _balanced_bucket_sizes(
+        len(valid_candidates),
+        ACTIVATION_CREDIT_MAGNITUDE_Q5_BIN_COUNT,
+    )
+    q5_min_bucket_size = min(q5_bucket_sizes, default=0)
+    q5_singleton_bucket_count = int(sum(1 for count in q5_bucket_sizes if count == 1))
+    q5_degenerate = not valid_candidates
+    if q5_degenerate:
+        q5_guard_reason = "no_valid_candidates"
+    elif q5_min_bucket_size < ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE:
+        q5_degenerate = True
+        q5_guard_reason = "min_bucket_lt_guard"
+    elif q5_singleton_bucket_count > 0:
+        q5_degenerate = True
+        q5_guard_reason = "singleton_bucket"
+    else:
+        ordered_valid_candidates = sorted(
+            valid_candidates,
+            key=lambda candidate: (
+                float(candidate["activation_credit_abs"]),
+                str(candidate["candidate_id"]),
+            ),
+        )
+        cursor = 0
+        q5_degenerate = False
+        for bucket_index, bucket_size in enumerate(q5_bucket_sizes):
+            next_cursor = cursor + int(bucket_size)
+            if bucket_index < len(q5_bucket_sizes) - 1:
+                left_value = float(
+                    ordered_valid_candidates[next_cursor - 1]["activation_credit_abs"]
+                )
+                right_value = float(
+                    ordered_valid_candidates[next_cursor]["activation_credit_abs"]
+                )
+                if math.isclose(
+                    left_value,
+                    right_value,
+                    abs_tol=ORACLE_SCREEN_IMPROVEMENT_EPS,
+                ):
+                    q5_guard_reason = "tie_boundary"
+                    q5_degenerate = True
+                    break
+            cursor = next_cursor
+        if not q5_degenerate:
+            cursor = 0
+            for bucket_index, bucket_size in enumerate(q5_bucket_sizes):
+                bucket = ordered_valid_candidates[cursor : cursor + int(bucket_size)]
+                cursor += int(bucket_size)
+                q5_histogram[str(int(bucket_index))] = len(bucket)
+                for candidate in bucket:
+                    candidate["credit_magnitude_q5_bin"] = int(bucket_index)
+    if q5_degenerate:
+        for candidate in valid_candidates:
+            candidate["credit_magnitude_q5_bin"] = None
     return {
         "magnitude_bin_threshold": magnitude_bin_threshold,
-        "magnitude_bin_histogram": histogram,
+        "magnitude_bin_histogram": magnitude_bin_histogram,
         "magnitude_bin_degenerate": bool(degenerate),
         "valid_target_band_candidate_count": len(valid_abs_values),
-        "singleton_magnitude_source_count": int(sum(1 for count in histogram.values() if count == 1)),
+        "singleton_magnitude_source_count": int(
+            sum(1 for count in magnitude_bin_histogram.values() if count == 1)
+        ),
+        "magnitude_q5_bin_histogram": q5_histogram,
+        "magnitude_q5_bin_degenerate": bool(q5_degenerate),
+        "magnitude_q5_min_bucket_size": int(q5_min_bucket_size),
+        "magnitude_q5_guard_min_bucket_size": ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE,
+        "magnitude_q5_singleton_bucket_count": q5_singleton_bucket_count,
+        "magnitude_q5_guard_reason": q5_guard_reason,
+        "magnitude_q5_non_memorization_ok": bool(
+            not q5_degenerate
+            and q5_min_bucket_size >= ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE
+            and q5_singleton_bucket_count == 0
+            and len(q5_histogram) == ACTIVATION_CREDIT_MAGNITUDE_Q5_BIN_COUNT
+        ),
     }
 
 
@@ -1201,6 +1296,13 @@ def _activation_credit_family_key(
     family_id: str,
 ) -> tuple[Any, ...]:
     if family_id == ACTIVATION_CREDIT_PRIMARY_FAMILY_ID:
+        return (int(candidate["credit_magnitude_q5_bin"]),)
+    if family_id == ACTIVATION_CREDIT_ALIGN_Q5_ABLATION_FAMILY_ID:
+        return (
+            int(candidate["signed_alignment"]),
+            int(candidate["credit_magnitude_q5_bin"]),
+        )
+    if family_id == ACTIVATION_CREDIT_ALIGN_MAGBIN_ABLATION_FAMILY_ID:
         return (
             int(candidate["signed_alignment"]),
             int(candidate["credit_magnitude_bin"]),
@@ -2854,6 +2956,7 @@ def run_activation_credit_measurement_oracle_screen(
                 candidate["candidate_delta_sign"] = candidate.get("candidate_delta_sign")
                 candidate["credit_sign"] = None
                 candidate["credit_magnitude_bin"] = None
+                candidate["credit_magnitude_q5_bin"] = None
                 candidate["signed_alignment"] = None
                 candidate["topology_row_block_128"] = None
                 candidate["activation_feature_valid"] = False
@@ -2863,6 +2966,7 @@ def run_activation_credit_measurement_oracle_screen(
                     "candidate_delta_sign": int(activation_candidate.get("candidate_delta_sign", 0)),
                     "credit_sign": activation_candidate["credit_sign"],
                     "credit_magnitude_bin": activation_candidate["credit_magnitude_bin"],
+                    "credit_magnitude_q5_bin": activation_candidate["credit_magnitude_q5_bin"],
                     "signed_alignment": int(activation_candidate["signed_alignment"]),
                     "topology_row_block_128": int(
                         activation_candidate["topology_row_block_128"]
@@ -2888,8 +2992,15 @@ def run_activation_credit_measurement_oracle_screen(
             *ACTIVATION_CREDIT_ABLATION_FAMILY_IDS,
             ACTIVATION_CREDIT_TOPOLOGY_CONTROL_FAMILY_ID,
         )
+        q5_degenerate = bool(feature_summary["magnitude_q5_bin_degenerate"])
+        q5_family_ids = {
+            ACTIVATION_CREDIT_PRIMARY_FAMILY_ID,
+            ACTIVATION_CREDIT_ALIGN_Q5_ABLATION_FAMILY_ID,
+        }
         if valid_oracle_best_candidate is not None and bool(valid_oracle_best_candidate.get("activation_feature_valid")):
             for family_id in family_ids:
+                if q5_degenerate and family_id in q5_family_ids:
+                    continue
                 metrics_by_family_id[family_id] = _activation_credit_family_metrics(
                     target_band_candidates=valid_target_band_candidates,
                     family_id=family_id,
@@ -2902,10 +3013,10 @@ def run_activation_credit_measurement_oracle_screen(
     topology_predictive = bool(
         topology_metrics is not None and _activation_credit_family_is_predictive(topology_metrics)
     )
-    magnitude_bin_degenerate = bool(feature_summary["magnitude_bin_degenerate"])
+    magnitude_q5_degenerate = bool(feature_summary["magnitude_q5_bin_degenerate"])
     predictive = bool(
         primary_metrics is not None
-        and not magnitude_bin_degenerate
+        and not magnitude_q5_degenerate
         and _activation_credit_family_is_predictive(primary_metrics)
         and not topology_predictive
     )
@@ -2918,7 +3029,7 @@ def run_activation_credit_measurement_oracle_screen(
                 *ACTIVATION_CREDIT_ABLATION_FAMILY_IDS,
             )
         )
-        and not magnitude_bin_degenerate
+        and not magnitude_q5_degenerate
         and not topology_predictive
         and all(
             _activation_credit_family_is_fail_closed(metrics_by_family_id[family_id])
@@ -2933,7 +3044,7 @@ def run_activation_credit_measurement_oracle_screen(
         branch_classification = BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH
     elif not target_band_candidates:
         branch_classification = BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH
-    elif magnitude_bin_degenerate:
+    elif magnitude_q5_degenerate:
         branch_classification = BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH
     elif predictive:
         branch_classification = BRANCH_ACTIVATION_CREDIT_CANDIDATE_SIGNAL
@@ -2961,6 +3072,7 @@ def run_activation_credit_measurement_oracle_screen(
                 "candidate_delta_sign": candidate.get("candidate_delta_sign"),
                 "credit_sign": candidate.get("credit_sign"),
                 "credit_magnitude_bin": candidate.get("credit_magnitude_bin"),
+                "credit_magnitude_q5_bin": candidate.get("credit_magnitude_q5_bin"),
                 "signed_alignment": candidate.get("signed_alignment"),
                 "topology_row_block_128": candidate.get("topology_row_block_128"),
                 "activation_feature_valid": bool(candidate.get("activation_feature_valid")),
@@ -3001,6 +3113,13 @@ def run_activation_credit_measurement_oracle_screen(
             "magnitude_bin_histogram": feature_summary["magnitude_bin_histogram"],
             "magnitude_bin_degenerate": feature_summary["magnitude_bin_degenerate"],
             "singleton_magnitude_source_count": feature_summary["singleton_magnitude_source_count"],
+            "magnitude_q5_bin_histogram": feature_summary["magnitude_q5_bin_histogram"],
+            "magnitude_q5_bin_degenerate": feature_summary["magnitude_q5_bin_degenerate"],
+            "magnitude_q5_min_bucket_size": feature_summary["magnitude_q5_min_bucket_size"],
+            "magnitude_q5_guard_min_bucket_size": feature_summary["magnitude_q5_guard_min_bucket_size"],
+            "magnitude_q5_singleton_bucket_count": feature_summary["magnitude_q5_singleton_bucket_count"],
+            "magnitude_q5_guard_reason": feature_summary["magnitude_q5_guard_reason"],
+            "magnitude_q5_non_memorization_ok": feature_summary["magnitude_q5_non_memorization_ok"],
             "fresh_confirmation_seed_required_for_persistent_followup": ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED,
         },
         "family_metrics": {

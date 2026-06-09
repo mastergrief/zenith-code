@@ -232,8 +232,12 @@ ACTIVATION_CREDIT_BRANCHES = (
     BRANCH_ACTIVATION_CREDIT_MISSING_SIGNAL_DEEPER_THAN_FIRST_ORDER_CREDIT_STORAGE,
     BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH,
 )
-ACTIVATION_CREDIT_PRIMARY_FAMILY_ID = "F_align_magbin"
+ACTIVATION_CREDIT_PRIMARY_FAMILY_ID = "F_magq5_only"
+ACTIVATION_CREDIT_ALIGN_Q5_ABLATION_FAMILY_ID = "F_align_magq5"
+ACTIVATION_CREDIT_ALIGN_MAGBIN_ABLATION_FAMILY_ID = "F_align_magbin"
 ACTIVATION_CREDIT_ABLATION_FAMILY_IDS = (
+    ACTIVATION_CREDIT_ALIGN_Q5_ABLATION_FAMILY_ID,
+    ACTIVATION_CREDIT_ALIGN_MAGBIN_ABLATION_FAMILY_ID,
     "F_alignment_only",
     "F_magbin_only",
     "F_sign_only",
@@ -274,6 +278,8 @@ ACTIVATION_CREDIT_SMOKE_GATHER_FAILURE_REPAIR_SIGNAL = (
 )
 ACTIVATION_CREDIT_SMOKE_RESMOKE_BUDGETS = (12, 16)
 ACTIVATION_CREDIT_MAGNITUDE_BIN_COUNT = 2
+ACTIVATION_CREDIT_MAGNITUDE_Q5_BIN_COUNT = 5
+ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE = 5
 ACTIVATION_CREDIT_TOPOLOGY_ROW_BLOCK_SIZE = 128
 ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED = 71
 ACTIVATION_CREDIT_STDOUT_PATH_ENV = "HRM_TEXT_158_STDOUT_PATH"
@@ -1659,6 +1665,7 @@ def default_activation_credit_measurement_contract() -> dict[str, Any]:
         "candidate_delta_sign",
         "credit_sign",
         "credit_magnitude_bin",
+        "credit_magnitude_q5_bin",
         "signed_alignment",
         "topology_row_block_128",
         "activation_feature_valid",
@@ -1686,6 +1693,7 @@ def default_activation_credit_measurement_contract() -> dict[str, Any]:
             "policy_facing_fields": [
                 "credit_sign",
                 "credit_magnitude_bin",
+                "credit_magnitude_q5_bin",
                 "signed_alignment",
             ],
         },
@@ -1698,6 +1706,11 @@ def default_activation_credit_measurement_contract() -> dict[str, Any]:
             "credit_magnitude_bin_count": ACTIVATION_CREDIT_MAGNITUDE_BIN_COUNT,
             "credit_magnitude_bin_strategy": "median_split_over_sampled_target_band_abs_grad_proxy",
             "magnitude_bin_degenerate_if_all_tie_or_lt4": True,
+            "credit_magnitude_q5_bin_count": ACTIVATION_CREDIT_MAGNITUDE_Q5_BIN_COUNT,
+            "credit_magnitude_q5_strategy": "equal_frequency_quintiles_over_target_band_abs_grad_proxy",
+            "credit_magnitude_q5_min_bucket_size": ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE,
+            "credit_magnitude_q5_ties_force_ambiguous": True,
+            "credit_magnitude_q5_singleton_buckets_forbidden": True,
             "degenerate_branch_label": BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH,
         },
         "learner_available_ranking_input_fields": learner_available_fields,
@@ -1713,6 +1726,7 @@ def default_activation_credit_measurement_contract() -> dict[str, Any]:
             "candidate_delta_sign": "_evaluate_sampled_candidates_for_oracle_screen: sign(q_after_one_flip[flat_index] - current_q_level)",
             "credit_sign": "run_activation_credit_measurement_oracle_screen: sign(-grad_proxy) report-only ablation",
             "credit_magnitude_bin": "run_activation_credit_measurement_oracle_screen: median split over target-band abs(grad_proxy)",
+            "credit_magnitude_q5_bin": "run_activation_credit_measurement_oracle_screen: equal-frequency quintile bin over target-band abs(grad_proxy) when the q5 guard clears",
             "signed_alignment": "run_activation_credit_measurement_oracle_screen: sign(-grad_proxy * candidate_delta_sign)",
             "topology_row_block_128": "run_activation_credit_measurement_oracle_screen: row_index // 128 from flat_index decomposition",
             "activation_feature_valid": "run_activation_credit_measurement_oracle_screen: grad_proxy available and candidate_delta_sign != 0",
@@ -1729,6 +1743,13 @@ def default_activation_credit_measurement_contract() -> dict[str, Any]:
             "topology_control": ACTIVATION_CREDIT_TOPOLOGY_CONTROL_FAMILY_ID,
             "fields_by_family_id": {
                 ACTIVATION_CREDIT_PRIMARY_FAMILY_ID: [
+                    "credit_magnitude_q5_bin",
+                ],
+                ACTIVATION_CREDIT_ALIGN_Q5_ABLATION_FAMILY_ID: [
+                    "signed_alignment",
+                    "credit_magnitude_q5_bin",
+                ],
+                ACTIVATION_CREDIT_ALIGN_MAGBIN_ABLATION_FAMILY_ID: [
                     "signed_alignment",
                     "credit_magnitude_bin",
                 ],
@@ -1814,6 +1835,10 @@ def default_activation_credit_measurement_contract() -> dict[str, Any]:
             "singleton_bucket_count_required": True,
             "magnitude_bin_histogram_required": True,
             "singleton_magnitude_source_count_required": True,
+            "q5_min_bucket_candidate_count_required": ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE,
+            "q5_singleton_buckets_forbidden": True,
+            "q5_ties_force_ambiguous": True,
+            "q5_guard_failure_branch_label": BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH,
         },
         "scale_smoke_gate": {
             "required_before_full_eval": True,
@@ -6221,6 +6246,7 @@ def _validate_activation_credit_measurement_contract(contract: Mapping[str, Any]
     if list(source.get("policy_facing_fields") or ()) != [
         "credit_sign",
         "credit_magnitude_bin",
+        "credit_magnitude_q5_bin",
         "signed_alignment",
     ]:
         raise ValueError("activation-credit policy-facing fields drifted")
@@ -6245,6 +6271,18 @@ def _validate_activation_credit_measurement_contract(contract: Mapping[str, Any]
         raise ValueError("activation-credit magnitude-bin strategy drifted")
     if not bool(construction.get("magnitude_bin_degenerate_if_all_tie_or_lt4")):
         raise ValueError("activation-credit degenerate-bin rule drifted")
+    if int(construction.get("credit_magnitude_q5_bin_count", -1)) != ACTIVATION_CREDIT_MAGNITUDE_Q5_BIN_COUNT:
+        raise ValueError("activation-credit q5 bin count drifted")
+    if construction.get("credit_magnitude_q5_strategy") != (
+        "equal_frequency_quintiles_over_target_band_abs_grad_proxy"
+    ):
+        raise ValueError("activation-credit q5 strategy drifted")
+    if int(construction.get("credit_magnitude_q5_min_bucket_size", -1)) != ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE:
+        raise ValueError("activation-credit q5 min bucket size drifted")
+    if not bool(construction.get("credit_magnitude_q5_ties_force_ambiguous")):
+        raise ValueError("activation-credit q5 tie guard drifted")
+    if not bool(construction.get("credit_magnitude_q5_singleton_buckets_forbidden")):
+        raise ValueError("activation-credit q5 singleton guard drifted")
     if construction.get("degenerate_branch_label") != BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH:
         raise ValueError("activation-credit degenerate branch label drifted")
     learner_fields = [
@@ -6259,6 +6297,7 @@ def _validate_activation_credit_measurement_contract(contract: Mapping[str, Any]
         "candidate_delta_sign",
         "credit_sign",
         "credit_magnitude_bin",
+        "credit_magnitude_q5_bin",
         "signed_alignment",
         "topology_row_block_128",
         "activation_feature_valid",
@@ -6286,10 +6325,19 @@ def _validate_activation_credit_measurement_contract(contract: Mapping[str, Any]
         raise ValueError("activation-credit topology control family drifted")
     fields_by_family = family.get("fields_by_family_id") or {}
     if fields_by_family.get(ACTIVATION_CREDIT_PRIMARY_FAMILY_ID) != [
+        "credit_magnitude_q5_bin",
+    ]:
+        raise ValueError("activation-credit q5 primary family drifted")
+    if fields_by_family.get(ACTIVATION_CREDIT_ALIGN_Q5_ABLATION_FAMILY_ID) != [
+        "signed_alignment",
+        "credit_magnitude_q5_bin",
+    ]:
+        raise ValueError("activation-credit q5 alignment ablation drifted")
+    if fields_by_family.get(ACTIVATION_CREDIT_ALIGN_MAGBIN_ABLATION_FAMILY_ID) != [
         "signed_alignment",
         "credit_magnitude_bin",
     ]:
-        raise ValueError("activation-credit primary family must exclude credit_sign")
+        raise ValueError("activation-credit legacy alignment+magnitude family drifted")
     if fields_by_family.get("F_alignment_only") != ["signed_alignment"]:
         raise ValueError("activation-credit alignment-only family drifted")
     if fields_by_family.get("F_magbin_only") != ["credit_magnitude_bin"]:
@@ -6381,6 +6429,14 @@ def _validate_activation_credit_measurement_contract(contract: Mapping[str, Any]
         raise ValueError(
             "activation-credit fragmentation audit must require singleton magnitude-source count"
         )
+    if int(fragmentation.get("q5_min_bucket_candidate_count_required", -1)) != ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE:
+        raise ValueError("activation-credit fragmentation audit q5 min bucket size drifted")
+    if not bool(fragmentation.get("q5_singleton_buckets_forbidden")):
+        raise ValueError("activation-credit fragmentation audit q5 singleton guard drifted")
+    if not bool(fragmentation.get("q5_ties_force_ambiguous")):
+        raise ValueError("activation-credit fragmentation audit q5 tie guard drifted")
+    if fragmentation.get("q5_guard_failure_branch_label") != BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH:
+        raise ValueError("activation-credit fragmentation audit q5 guard branch drifted")
     smoke_gate = contract.get("scale_smoke_gate") or {}
     if not bool(smoke_gate.get("required_before_full_eval")):
         raise ValueError("activation-credit full eval must require the de-risk smoke first")
