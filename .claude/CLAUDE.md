@@ -63,7 +63,7 @@ intent → decision contract → route → plan gate → implementation/proof
 Key invariants:
 - Board-first: create/start shared tasks before implementation work that outlives one exchange.
 - Provenance: cross-session dispatches carry verbatim Gabe quote, scope, chosen option, and rejected alternatives when relevant.
-- Material gates: persisted Claude-authored non-ack `+1 implement`, `+1 commit`, and `+1 push` records are authority; remembered/paraphrased gates are not.
+- Material gates: persisted Claude-authored non-ack `+1 implement`, `+1 commit`, `+1 push`, and explicit `+1 commit+push` records are authority; remembered/paraphrased gates are not. Ordinary `+1 commit` does not authorize push unless the gate text is `+1 commit+push`.
 - Capture then relay: non-trivial durable Gabe decisions are captured chat-side and immediately relayed to the room before material action.
 - `ai_room_task_update` is durable board state but not a wake; pair required action with a direct addressed post.
 - Before idle, run `ai_room_resume_check`; board state is canonical.

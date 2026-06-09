@@ -65,7 +65,7 @@ Key invariants:
 - Session start: when ai-room MCP is registered, call `ai_room_resume_check` before the first user reply and follow any directive.
 - Board-first: create/start shared tasks before implementation work that outlives one exchange.
 - Provenance: cross-session dispatches carry verbatim Gabe quote, scope, chosen option, and rejected alternatives when relevant.
-- Material gates: persisted Claude-authored non-ack `+1 implement`, `+1 commit`, and `+1 push` records are authority; remembered/paraphrased gates are not.
+- Material gates: persisted Claude-authored non-ack `+1 implement`, `+1 commit`, `+1 push`, and explicit `+1 commit+push` records are authority; remembered/paraphrased gates are not. Ordinary `+1 commit` does not authorize push unless the gate text is `+1 commit+push`.
 - Ingress-owned provenance: Gabe-via-codex means this side owns the packet; Gabe-via-Claude means Claude owns it and Codex audits.
 - Codex never directly asks Gabe for non-trivial durable decisions; route questions through Claude's AUQ flow.
 - `ai_room_task_update` is durable board state but not a wake; pair required action with a direct addressed post.
