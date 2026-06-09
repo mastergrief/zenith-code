@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 
 from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
-    ACTIVATION_CREDIT_ALIGN_MAGBIN_ABLATION_FAMILY_ID,
-    ACTIVATION_CREDIT_ALIGN_Q5_ABLATION_FAMILY_ID,
     ACTIVATION_CREDIT_BRANCHES,
+    ACTIVATION_CREDIT_DIAG_FISHER_Q5_ABLATION_FAMILY_ID,
+    ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD,
     ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED,
     ACTIVATION_CREDIT_MAGNITUDE_Q5_BIN_COUNT,
     ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE,
@@ -19,10 +19,14 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     ACTIVATION_CREDIT_PRIMARY_FAMILY_ID,
     ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE,
     ACTIVATION_CREDIT_SCALE_SMOKE_LAUNCH_BUNDLE_PACKET_KIND,
+    ACTIVATION_CREDIT_SECOND_ORDER_SNR_EPS,
+    ACTIVATION_CREDIT_SNR_Q5_ABLATION_FAMILY_ID,
+    ACTIVATION_CREDIT_SNR_Q5_FIELD,
     ACTIVATION_CREDIT_SMOKE_BATCH_SIZE,
     ACTIVATION_CREDIT_SMOKE_MAX_SAMPLED_CANDIDATES,
     ACTIVATION_CREDIT_STDERR_PATH_ENV,
     ACTIVATION_CREDIT_STDOUT_PATH_ENV,
+    ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD,
     ARM_A0_RANK_BUCKET_CURRENT,
     ARM_A1_RANK_BUCKET_ORDER_MATCHED,
     ARM_B_CAP_MAX_ABS_1024,
@@ -1996,31 +2000,49 @@ def test_activation_credit_packet_declares_device_resident_within_band_contract(
     assert contract["activation_credit_source"]["grad_proxy_compute_mode"] == (
         "candidate_only_gather"
     )
+    assert contract["activation_credit_source"]["diag_fisher_reuses_grad_proxy_captures"] is True
+    assert contract["activation_credit_source"]["second_backward_forbidden"] is True
     assert contract["activation_credit_source"]["no_extra_response_label_mask"] is True
-    assert contract["feature_construction"]["primary_family_excludes_credit_sign"] is True
-    assert contract["feature_construction"]["credit_magnitude_bin_count"] == 2
-    assert contract["feature_construction"]["credit_magnitude_q5_bin_count"] == (
+    assert contract["activation_credit_source"]["policy_facing_fields"] == [
+        ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD,
+        ACTIVATION_CREDIT_SNR_Q5_FIELD,
+        ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD,
+    ]
+    assert contract["feature_construction"]["candidate_delta_weight_effective_weight_space"] is True
+    assert contract["feature_construction"]["diag_fisher_surrogate_kind"] == (
+        "empirical_fisher_gauss_newton_diagonal"
+    )
+    assert contract["feature_construction"]["second_order_snr_eps"] == (
+        ACTIVATION_CREDIT_SECOND_ORDER_SNR_EPS
+    )
+    assert contract["feature_construction"]["q5_bin_count"] == (
         ACTIVATION_CREDIT_MAGNITUDE_Q5_BIN_COUNT
     )
-    assert contract["feature_construction"]["credit_magnitude_q5_min_bucket_size"] == (
+    assert contract["feature_construction"]["q5_min_bucket_size"] == (
         ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE
     )
     assert contract["family_discriminator"]["primary"] == ACTIVATION_CREDIT_PRIMARY_FAMILY_ID
     assert contract["family_discriminator"]["fields_by_family_id"][
         ACTIVATION_CREDIT_PRIMARY_FAMILY_ID
-    ] == ["credit_magnitude_q5_bin"]
+    ] == [ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD]
     assert contract["family_discriminator"]["fields_by_family_id"][
-        ACTIVATION_CREDIT_ALIGN_Q5_ABLATION_FAMILY_ID
-    ] == ["signed_alignment", "credit_magnitude_q5_bin"]
+        ACTIVATION_CREDIT_SNR_Q5_ABLATION_FAMILY_ID
+    ] == [ACTIVATION_CREDIT_SNR_Q5_FIELD]
     assert contract["family_discriminator"]["fields_by_family_id"][
-        ACTIVATION_CREDIT_ALIGN_MAGBIN_ABLATION_FAMILY_ID
-    ] == ["signed_alignment", "credit_magnitude_bin"]
+        ACTIVATION_CREDIT_DIAG_FISHER_Q5_ABLATION_FAMILY_ID
+    ] == [ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD]
     assert contract["scale_smoke_gate"]["required_max_sampled_candidates"] == 8
     assert contract["scale_smoke_gate"]["required_batch_size"] == 4
     assert contract["fresh_confirmation_gate"][
         "required_seed_before_persistent_followup"
     ] == ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED
     assert contract["allowed_seed_local_labels"] == list(ACTIVATION_CREDIT_BRANCHES)
+    assert contract["fragmentation_audit"]["candidate_delta_weight_support_required"] is True
+    assert contract["fragmentation_audit"]["q5_primary_prefix"] == "taylor_benefit_q5"
+    assert contract["fragmentation_audit"]["q5_report_only_prefixes"] == [
+        "snr_q5",
+        "diagfisher_q5",
+    ]
     assert contract["fragmentation_audit"]["q5_min_bucket_candidate_count_required"] == (
         ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE
     )
@@ -2050,6 +2072,12 @@ def test_activation_credit_launch_bundle_pins_budget32_and_fixed_two_seed_comman
     )
     assert packet["science_contract"]["packet_kind"] == ACTIVATION_CREDIT_MEASUREMENT_PACKET_KIND
     assert packet["measurement_contract"] == packet["science_contract"]["measurement_contract"]
+    assert packet["measurement_contract"]["within_band_decision"]["predictive_family_id"] == (
+        ACTIVATION_CREDIT_PRIMARY_FAMILY_ID
+    )
+    assert packet["measurement_contract"]["feature_construction"]["second_order_snr_eps"] == (
+        ACTIVATION_CREDIT_SECOND_ORDER_SNR_EPS
+    )
     assert packet["terminal_criteria"]["branch_classifier"] == [
         BRANCH_ACTIVATION_CREDIT_CANDIDATE_SIGNAL,
         BRANCH_ACTIVATION_CREDIT_MISSING_SIGNAL_DEEPER_THAN_FIRST_ORDER_CREDIT_STORAGE,
@@ -2183,10 +2211,10 @@ def test_activation_credit_scale_smoke_launch_bundle_pins_budget8_and_batch4_com
             lambda packet: packet["measurement_contract"]["family_discriminator"][
                 "fields_by_family_id"
             ].update({ACTIVATION_CREDIT_PRIMARY_FAMILY_ID: [
-                "credit_magnitude_q5_bin",
-                "credit_sign",
+                ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD,
+                ACTIVATION_CREDIT_SNR_Q5_FIELD,
             ]}),
-            "q5 primary family drifted",
+            "second-order q5 primary family drifted",
         ),
         (
             lambda packet: packet["measurement_contract"]["fresh_confirmation_gate"].update(
@@ -2219,7 +2247,7 @@ def test_activation_credit_packet_validator_rejects_primary_family_seed_and_scop
     [
         (
             lambda packet: packet["measurement_contract"]["feature_construction"].update(
-                {"credit_magnitude_q5_min_bucket_size": 4}
+                {"q5_min_bucket_size": 4}
             ),
             "q5 min bucket size drifted",
         ),
@@ -2228,6 +2256,12 @@ def test_activation_credit_packet_validator_rejects_primary_family_seed_and_scop
                 {"q5_ties_force_ambiguous": False}
             ),
             "q5 tie guard drifted",
+        ),
+        (
+            lambda packet: packet["measurement_contract"]["feature_construction"].update(
+                {"second_order_snr_eps": 1e-8}
+            ),
+            "second-order snr eps drifted",
         ),
     ],
 )

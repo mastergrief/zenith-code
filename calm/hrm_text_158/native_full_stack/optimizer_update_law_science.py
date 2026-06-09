@@ -232,20 +232,23 @@ ACTIVATION_CREDIT_BRANCHES = (
     BRANCH_ACTIVATION_CREDIT_MISSING_SIGNAL_DEEPER_THAN_FIRST_ORDER_CREDIT_STORAGE,
     BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH,
 )
-ACTIVATION_CREDIT_PRIMARY_FAMILY_ID = "F_magq5_only"
-ACTIVATION_CREDIT_ALIGN_Q5_ABLATION_FAMILY_ID = "F_align_magq5"
-ACTIVATION_CREDIT_ALIGN_MAGBIN_ABLATION_FAMILY_ID = "F_align_magbin"
+ACTIVATION_CREDIT_PRIMARY_FAMILY_ID = "F_taylor_benefit_q5"
+ACTIVATION_CREDIT_SNR_Q5_ABLATION_FAMILY_ID = "F_snr_q5"
+ACTIVATION_CREDIT_DIAG_FISHER_Q5_ABLATION_FAMILY_ID = "F_diagfisher_q5"
 ACTIVATION_CREDIT_ABLATION_FAMILY_IDS = (
-    ACTIVATION_CREDIT_ALIGN_Q5_ABLATION_FAMILY_ID,
-    ACTIVATION_CREDIT_ALIGN_MAGBIN_ABLATION_FAMILY_ID,
-    "F_alignment_only",
-    "F_magbin_only",
-    "F_sign_only",
-    "F_align_magbin_transition",
+    ACTIVATION_CREDIT_SNR_Q5_ABLATION_FAMILY_ID,
+    ACTIVATION_CREDIT_DIAG_FISHER_Q5_ABLATION_FAMILY_ID,
 )
 ACTIVATION_CREDIT_TOPOLOGY_CONTROL_FAMILY_ID = (
     "F_topology_lane_head_row_block128"
 )
+ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD = "taylor_benefit_q5_bin"
+ACTIVATION_CREDIT_SNR_Q5_FIELD = "snr_q5_bin"
+ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD = "diagfisher_q5_bin"
+ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX = "taylor_benefit_q5"
+ACTIVATION_CREDIT_SNR_Q5_PREFIX = "snr_q5"
+ACTIVATION_CREDIT_DIAG_FISHER_Q5_PREFIX = "diagfisher_q5"
+ACTIVATION_CREDIT_SECOND_ORDER_SNR_EPS = 1e-12
 ACTIVATION_CREDIT_TARGET_TIE_BAND_ID = WITHIN_TIE_BAND_TARGET_TIE_BAND_ID
 ACTIVATION_CREDIT_MATCHED_HASH_SIGNAL_MIN = WITHIN_TIE_BAND_MATCHED_HASH_SIGNAL_MIN
 ACTIVATION_CREDIT_PREDICTIVE_BUCKET_FRACTION_MAX = (
@@ -1663,10 +1666,10 @@ def default_activation_credit_measurement_contract() -> dict[str, Any]:
         "tie_band_id",
         "transition_class",
         "candidate_delta_sign",
-        "credit_sign",
-        "credit_magnitude_bin",
-        "credit_magnitude_q5_bin",
-        "signed_alignment",
+        "candidate_delta_weight",
+        ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD,
+        ACTIVATION_CREDIT_SNR_Q5_FIELD,
+        ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD,
         "topology_row_block_128",
         "activation_feature_valid",
     ]
@@ -1683,34 +1686,52 @@ def default_activation_credit_measurement_contract() -> dict[str, Any]:
         "rank_position_index_base": 0,
         "activation_credit_source": {
             "grad_proxy_formula": "sum(dL/dy_row * x_col) over autograd-captured invocations/positions; no extra response-label mask",
+            "diag_fisher_formula": "sum((dL/dy_row)^2 * (x_col)^2) over the exact grad_proxy captures; empirical Fisher / Gauss-Newton diagonal surrogate only",
             "capture_device_mode": ACTIVATION_CREDIT_CAPTURE_DEVICE_MODE,
             "grad_proxy_compute_mode": ACTIVATION_CREDIT_GRAD_PROXY_COMPUTE_MODE,
             "candidate_only_gather_required": True,
+            "diag_fisher_reuses_grad_proxy_captures": True,
+            "second_backward_forbidden": True,
             "no_extra_response_label_mask": True,
             "fixed_background_candidate_generation_allowed": True,
             "fixed_background_must_be_labeled_non_hot_loop": True,
             "fp_proxy_transient_eval_only": True,
+            "transient_eval_only_scalar_fields": [
+                "grad_proxy",
+                "diag_fisher",
+                "taylor_benefit",
+                "snr",
+            ],
             "policy_facing_fields": [
-                "credit_sign",
-                "credit_magnitude_bin",
-                "credit_magnitude_q5_bin",
-                "signed_alignment",
+                ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD,
+                ACTIVATION_CREDIT_SNR_Q5_FIELD,
+                ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD,
             ],
         },
         "feature_construction": {
             "candidate_delta_sign_source": "sign(q_after_one_flip[flat_index] - current_q_level)",
+            "candidate_delta_weight_source": "((q_after_one_flip[flat_index] - current_q_level) * frozen_scale_scalar)",
+            "candidate_delta_weight_effective_weight_space": True,
             "candidate_delta_sign_zero_invalidates_row": True,
-            "signed_alignment_formula": "sign(-grad_proxy * candidate_delta_sign)",
-            "primary_family_excludes_credit_sign": True,
-            "credit_sign_report_only_ablation": True,
-            "credit_magnitude_bin_count": ACTIVATION_CREDIT_MAGNITUDE_BIN_COUNT,
-            "credit_magnitude_bin_strategy": "median_split_over_sampled_target_band_abs_grad_proxy",
-            "magnitude_bin_degenerate_if_all_tie_or_lt4": True,
-            "credit_magnitude_q5_bin_count": ACTIVATION_CREDIT_MAGNITUDE_Q5_BIN_COUNT,
-            "credit_magnitude_q5_strategy": "equal_frequency_quintiles_over_target_band_abs_grad_proxy",
-            "credit_magnitude_q5_min_bucket_size": ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE,
-            "credit_magnitude_q5_ties_force_ambiguous": True,
-            "credit_magnitude_q5_singleton_buckets_forbidden": True,
+            "diag_fisher_surrogate_kind": "empirical_fisher_gauss_newton_diagonal",
+            "taylor_benefit_formula": "-grad_proxy * candidate_delta_weight - 0.5 * diag_fisher * candidate_delta_weight^2",
+            "snr_formula": "abs(grad_proxy) / sqrt(diag_fisher + second_order_snr_eps)",
+            "second_order_snr_eps": ACTIVATION_CREDIT_SECOND_ORDER_SNR_EPS,
+            "q5_bin_count": ACTIVATION_CREDIT_MAGNITUDE_Q5_BIN_COUNT,
+            "q5_strategy": "equal_frequency_quintiles_over_target_band_scalar_values",
+            "q5_value_field_by_family_id": {
+                ACTIVATION_CREDIT_PRIMARY_FAMILY_ID: "taylor_benefit",
+                ACTIVATION_CREDIT_SNR_Q5_ABLATION_FAMILY_ID: "snr",
+                ACTIVATION_CREDIT_DIAG_FISHER_Q5_ABLATION_FAMILY_ID: "diag_fisher",
+            },
+            "q5_output_field_by_family_id": {
+                ACTIVATION_CREDIT_PRIMARY_FAMILY_ID: ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD,
+                ACTIVATION_CREDIT_SNR_Q5_ABLATION_FAMILY_ID: ACTIVATION_CREDIT_SNR_Q5_FIELD,
+                ACTIVATION_CREDIT_DIAG_FISHER_Q5_ABLATION_FAMILY_ID: ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD,
+            },
+            "q5_min_bucket_size": ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE,
+            "q5_ties_force_ambiguous": True,
+            "q5_singleton_buckets_forbidden": True,
             "degenerate_branch_label": BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH,
         },
         "learner_available_ranking_input_fields": learner_available_fields,
@@ -1724,12 +1745,12 @@ def default_activation_credit_measurement_contract() -> dict[str, Any]:
             "tie_band_id": "_build_oracle_candidate_universe: _pivot_tie_band_id(abs(vote_value), current_margin_abs)",
             "transition_class": "_build_oracle_candidate_universe: tuple(current_q_level, proposal_direction)",
             "candidate_delta_sign": "_evaluate_sampled_candidates_for_oracle_screen: sign(q_after_one_flip[flat_index] - current_q_level)",
-            "credit_sign": "run_activation_credit_measurement_oracle_screen: sign(-grad_proxy) report-only ablation",
-            "credit_magnitude_bin": "run_activation_credit_measurement_oracle_screen: median split over target-band abs(grad_proxy)",
-            "credit_magnitude_q5_bin": "run_activation_credit_measurement_oracle_screen: equal-frequency quintile bin over target-band abs(grad_proxy) when the q5 guard clears",
-            "signed_alignment": "run_activation_credit_measurement_oracle_screen: sign(-grad_proxy * candidate_delta_sign)",
+            "candidate_delta_weight": "run_activation_credit_measurement_oracle_screen: (q_after_one_flip[flat_index] - current_q_level) * frozen_scale_scalar in effective-weight space",
+            ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD: "run_activation_credit_measurement_oracle_screen: equal-frequency quintile bin over target-band taylor_benefit when the primary q5 guard clears",
+            ACTIVATION_CREDIT_SNR_Q5_FIELD: "run_activation_credit_measurement_oracle_screen: equal-frequency quintile bin over target-band snr when the report-only q5 guard clears",
+            ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD: "run_activation_credit_measurement_oracle_screen: equal-frequency quintile bin over target-band diag_fisher (empirical Fisher / Gauss-Newton diagonal surrogate) when the report-only q5 guard clears",
             "topology_row_block_128": "run_activation_credit_measurement_oracle_screen: row_index // 128 from flat_index decomposition",
-            "activation_feature_valid": "run_activation_credit_measurement_oracle_screen: grad_proxy available and candidate_delta_sign != 0",
+            "activation_feature_valid": "run_activation_credit_measurement_oracle_screen: grad_proxy and diag_fisher available and candidate_delta_sign != 0",
         },
         "oracle_only_label_fields": [
             "candidate_loss",
@@ -1743,29 +1764,13 @@ def default_activation_credit_measurement_contract() -> dict[str, Any]:
             "topology_control": ACTIVATION_CREDIT_TOPOLOGY_CONTROL_FAMILY_ID,
             "fields_by_family_id": {
                 ACTIVATION_CREDIT_PRIMARY_FAMILY_ID: [
-                    "credit_magnitude_q5_bin",
+                    ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD,
                 ],
-                ACTIVATION_CREDIT_ALIGN_Q5_ABLATION_FAMILY_ID: [
-                    "signed_alignment",
-                    "credit_magnitude_q5_bin",
+                ACTIVATION_CREDIT_SNR_Q5_ABLATION_FAMILY_ID: [
+                    ACTIVATION_CREDIT_SNR_Q5_FIELD,
                 ],
-                ACTIVATION_CREDIT_ALIGN_MAGBIN_ABLATION_FAMILY_ID: [
-                    "signed_alignment",
-                    "credit_magnitude_bin",
-                ],
-                "F_alignment_only": [
-                    "signed_alignment",
-                ],
-                "F_magbin_only": [
-                    "credit_magnitude_bin",
-                ],
-                "F_sign_only": [
-                    "credit_sign",
-                ],
-                "F_align_magbin_transition": [
-                    "signed_alignment",
-                    "credit_magnitude_bin",
-                    "transition_class",
+                ACTIVATION_CREDIT_DIAG_FISHER_Q5_ABLATION_FAMILY_ID: [
+                    ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD,
                 ],
                 ACTIVATION_CREDIT_TOPOLOGY_CONTROL_FAMILY_ID: [
                     "topology_row_block_128",
@@ -1833,8 +1838,12 @@ def default_activation_credit_measurement_contract() -> dict[str, Any]:
         "fragmentation_audit": {
             "bucket_cardinality_histogram_required": True,
             "singleton_bucket_count_required": True,
-            "magnitude_bin_histogram_required": True,
-            "singleton_magnitude_source_count_required": True,
+            "candidate_delta_weight_support_required": True,
+            "q5_primary_prefix": ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX,
+            "q5_report_only_prefixes": [
+                ACTIVATION_CREDIT_SNR_Q5_PREFIX,
+                ACTIVATION_CREDIT_DIAG_FISHER_Q5_PREFIX,
+            ],
             "q5_min_bucket_candidate_count_required": ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE,
             "q5_singleton_buckets_forbidden": True,
             "q5_ties_force_ambiguous": True,
@@ -6243,11 +6252,25 @@ def _validate_activation_credit_measurement_contract(contract: Mapping[str, Any]
         )
     if not bool(source.get("fp_proxy_transient_eval_only")):
         raise ValueError("activation-credit source must keep fp proxy transient-eval-only")
+    if source.get("diag_fisher_formula") != (
+        "sum((dL/dy_row)^2 * (x_col)^2) over the exact grad_proxy captures; empirical Fisher / Gauss-Newton diagonal surrogate only"
+    ):
+        raise ValueError("activation-credit diag_fisher formula drifted")
+    if not bool(source.get("diag_fisher_reuses_grad_proxy_captures")):
+        raise ValueError("activation-credit diag_fisher must reuse grad_proxy captures")
+    if not bool(source.get("second_backward_forbidden")):
+        raise ValueError("activation-credit diag_fisher must forbid a second backward")
+    if list(source.get("transient_eval_only_scalar_fields") or ()) != [
+        "grad_proxy",
+        "diag_fisher",
+        "taylor_benefit",
+        "snr",
+    ]:
+        raise ValueError("activation-credit transient eval-only scalar fields drifted")
     if list(source.get("policy_facing_fields") or ()) != [
-        "credit_sign",
-        "credit_magnitude_bin",
-        "credit_magnitude_q5_bin",
-        "signed_alignment",
+        ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD,
+        ACTIVATION_CREDIT_SNR_Q5_FIELD,
+        ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD,
     ]:
         raise ValueError("activation-credit policy-facing fields drifted")
     construction = contract.get("feature_construction") or {}
@@ -6255,33 +6278,45 @@ def _validate_activation_credit_measurement_contract(contract: Mapping[str, Any]
         "sign(q_after_one_flip[flat_index] - current_q_level)"
     ):
         raise ValueError("activation-credit candidate_delta_sign source drifted")
+    if construction.get("candidate_delta_weight_source") != (
+        "((q_after_one_flip[flat_index] - current_q_level) * frozen_scale_scalar)"
+    ):
+        raise ValueError("activation-credit candidate_delta_weight source drifted")
+    if not bool(construction.get("candidate_delta_weight_effective_weight_space")):
+        raise ValueError("activation-credit candidate_delta_weight must stay in effective-weight space")
     if not bool(construction.get("candidate_delta_sign_zero_invalidates_row")):
         raise ValueError("activation-credit zero candidate_delta_sign must invalidate the row")
-    if construction.get("signed_alignment_formula") != "sign(-grad_proxy * candidate_delta_sign)":
-        raise ValueError("activation-credit signed_alignment formula drifted")
-    if not bool(construction.get("primary_family_excludes_credit_sign")):
-        raise ValueError("activation-credit primary family must exclude credit_sign")
-    if not bool(construction.get("credit_sign_report_only_ablation")):
-        raise ValueError("activation-credit credit_sign must remain report-only ablation")
-    if int(construction.get("credit_magnitude_bin_count", -1)) != ACTIVATION_CREDIT_MAGNITUDE_BIN_COUNT:
-        raise ValueError("activation-credit magnitude-bin count drifted")
-    if construction.get("credit_magnitude_bin_strategy") != (
-        "median_split_over_sampled_target_band_abs_grad_proxy"
+    if construction.get("diag_fisher_surrogate_kind") != "empirical_fisher_gauss_newton_diagonal":
+        raise ValueError("activation-credit diag_fisher surrogate kind drifted")
+    if construction.get("taylor_benefit_formula") != (
+        "-grad_proxy * candidate_delta_weight - 0.5 * diag_fisher * candidate_delta_weight^2"
     ):
-        raise ValueError("activation-credit magnitude-bin strategy drifted")
-    if not bool(construction.get("magnitude_bin_degenerate_if_all_tie_or_lt4")):
-        raise ValueError("activation-credit degenerate-bin rule drifted")
-    if int(construction.get("credit_magnitude_q5_bin_count", -1)) != ACTIVATION_CREDIT_MAGNITUDE_Q5_BIN_COUNT:
+        raise ValueError("activation-credit taylor_benefit formula drifted")
+    if construction.get("snr_formula") != "abs(grad_proxy) / sqrt(diag_fisher + second_order_snr_eps)":
+        raise ValueError("activation-credit snr formula drifted")
+    if float(construction.get("second_order_snr_eps", -1.0)) != ACTIVATION_CREDIT_SECOND_ORDER_SNR_EPS:
+        raise ValueError("activation-credit second-order snr eps drifted")
+    if int(construction.get("q5_bin_count", -1)) != ACTIVATION_CREDIT_MAGNITUDE_Q5_BIN_COUNT:
         raise ValueError("activation-credit q5 bin count drifted")
-    if construction.get("credit_magnitude_q5_strategy") != (
-        "equal_frequency_quintiles_over_target_band_abs_grad_proxy"
-    ):
+    if construction.get("q5_strategy") != "equal_frequency_quintiles_over_target_band_scalar_values":
         raise ValueError("activation-credit q5 strategy drifted")
-    if int(construction.get("credit_magnitude_q5_min_bucket_size", -1)) != ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE:
+    if construction.get("q5_value_field_by_family_id") != {
+        ACTIVATION_CREDIT_PRIMARY_FAMILY_ID: "taylor_benefit",
+        ACTIVATION_CREDIT_SNR_Q5_ABLATION_FAMILY_ID: "snr",
+        ACTIVATION_CREDIT_DIAG_FISHER_Q5_ABLATION_FAMILY_ID: "diag_fisher",
+    }:
+        raise ValueError("activation-credit q5 value fields drifted")
+    if construction.get("q5_output_field_by_family_id") != {
+        ACTIVATION_CREDIT_PRIMARY_FAMILY_ID: ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD,
+        ACTIVATION_CREDIT_SNR_Q5_ABLATION_FAMILY_ID: ACTIVATION_CREDIT_SNR_Q5_FIELD,
+        ACTIVATION_CREDIT_DIAG_FISHER_Q5_ABLATION_FAMILY_ID: ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD,
+    }:
+        raise ValueError("activation-credit q5 output fields drifted")
+    if int(construction.get("q5_min_bucket_size", -1)) != ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE:
         raise ValueError("activation-credit q5 min bucket size drifted")
-    if not bool(construction.get("credit_magnitude_q5_ties_force_ambiguous")):
+    if not bool(construction.get("q5_ties_force_ambiguous")):
         raise ValueError("activation-credit q5 tie guard drifted")
-    if not bool(construction.get("credit_magnitude_q5_singleton_buckets_forbidden")):
+    if not bool(construction.get("q5_singleton_buckets_forbidden")):
         raise ValueError("activation-credit q5 singleton guard drifted")
     if construction.get("degenerate_branch_label") != BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH:
         raise ValueError("activation-credit degenerate branch label drifted")
@@ -6295,10 +6330,10 @@ def _validate_activation_credit_measurement_contract(contract: Mapping[str, Any]
         "tie_band_id",
         "transition_class",
         "candidate_delta_sign",
-        "credit_sign",
-        "credit_magnitude_bin",
-        "credit_magnitude_q5_bin",
-        "signed_alignment",
+        "candidate_delta_weight",
+        ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD,
+        ACTIVATION_CREDIT_SNR_Q5_FIELD,
+        ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD,
         "topology_row_block_128",
         "activation_feature_valid",
     ]
@@ -6325,31 +6360,17 @@ def _validate_activation_credit_measurement_contract(contract: Mapping[str, Any]
         raise ValueError("activation-credit topology control family drifted")
     fields_by_family = family.get("fields_by_family_id") or {}
     if fields_by_family.get(ACTIVATION_CREDIT_PRIMARY_FAMILY_ID) != [
-        "credit_magnitude_q5_bin",
+        ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD,
     ]:
-        raise ValueError("activation-credit q5 primary family drifted")
-    if fields_by_family.get(ACTIVATION_CREDIT_ALIGN_Q5_ABLATION_FAMILY_ID) != [
-        "signed_alignment",
-        "credit_magnitude_q5_bin",
+        raise ValueError("activation-credit second-order q5 primary family drifted")
+    if fields_by_family.get(ACTIVATION_CREDIT_SNR_Q5_ABLATION_FAMILY_ID) != [
+        ACTIVATION_CREDIT_SNR_Q5_FIELD,
     ]:
-        raise ValueError("activation-credit q5 alignment ablation drifted")
-    if fields_by_family.get(ACTIVATION_CREDIT_ALIGN_MAGBIN_ABLATION_FAMILY_ID) != [
-        "signed_alignment",
-        "credit_magnitude_bin",
+        raise ValueError("activation-credit snr q5 ablation drifted")
+    if fields_by_family.get(ACTIVATION_CREDIT_DIAG_FISHER_Q5_ABLATION_FAMILY_ID) != [
+        ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD,
     ]:
-        raise ValueError("activation-credit legacy alignment+magnitude family drifted")
-    if fields_by_family.get("F_alignment_only") != ["signed_alignment"]:
-        raise ValueError("activation-credit alignment-only family drifted")
-    if fields_by_family.get("F_magbin_only") != ["credit_magnitude_bin"]:
-        raise ValueError("activation-credit magnitude-only family drifted")
-    if fields_by_family.get("F_sign_only") != ["credit_sign"]:
-        raise ValueError("activation-credit sign-only family drifted")
-    if fields_by_family.get("F_align_magbin_transition") != [
-        "signed_alignment",
-        "credit_magnitude_bin",
-        "transition_class",
-    ]:
-        raise ValueError("activation-credit transition ablation family drifted")
+        raise ValueError("activation-credit diag_fisher q5 ablation drifted")
     if fields_by_family.get(ACTIVATION_CREDIT_TOPOLOGY_CONTROL_FAMILY_ID) != [
         "topology_row_block_128"
     ]:
@@ -6423,12 +6444,15 @@ def _validate_activation_credit_measurement_contract(contract: Mapping[str, Any]
         raise ValueError("activation-credit fragmentation audit must require bucket histogram")
     if not bool(fragmentation.get("singleton_bucket_count_required")):
         raise ValueError("activation-credit fragmentation audit must require singleton bucket count")
-    if not bool(fragmentation.get("magnitude_bin_histogram_required")):
-        raise ValueError("activation-credit fragmentation audit must require magnitude-bin histogram")
-    if not bool(fragmentation.get("singleton_magnitude_source_count_required")):
-        raise ValueError(
-            "activation-credit fragmentation audit must require singleton magnitude-source count"
-        )
+    if not bool(fragmentation.get("candidate_delta_weight_support_required")):
+        raise ValueError("activation-credit fragmentation audit must require candidate_delta_weight support")
+    if fragmentation.get("q5_primary_prefix") != ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX:
+        raise ValueError("activation-credit fragmentation audit primary q5 prefix drifted")
+    if list(fragmentation.get("q5_report_only_prefixes") or ()) != [
+        ACTIVATION_CREDIT_SNR_Q5_PREFIX,
+        ACTIVATION_CREDIT_DIAG_FISHER_Q5_PREFIX,
+    ]:
+        raise ValueError("activation-credit fragmentation audit report-only q5 prefixes drifted")
     if int(fragmentation.get("q5_min_bucket_candidate_count_required", -1)) != ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE:
         raise ValueError("activation-credit fragmentation audit q5 min bucket size drifted")
     if not bool(fragmentation.get("q5_singleton_buckets_forbidden")):

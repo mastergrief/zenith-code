@@ -41,9 +41,10 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     BRANCH_ACTIVATION_CREDIT_CANDIDATE_SIGNAL,
     BRANCH_ACTIVATION_CREDIT_MISSING_SIGNAL_DEEPER_THAN_FIRST_ORDER_CREDIT_STORAGE,
     ACTIVATION_CREDIT_ABLATION_FAMILY_IDS,
-    ACTIVATION_CREDIT_ALIGN_MAGBIN_ABLATION_FAMILY_ID,
-    ACTIVATION_CREDIT_ALIGN_Q5_ABLATION_FAMILY_ID,
     ACTIVATION_CREDIT_BRANCHES,
+    ACTIVATION_CREDIT_DIAG_FISHER_Q5_ABLATION_FAMILY_ID,
+    ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD,
+    ACTIVATION_CREDIT_DIAG_FISHER_Q5_PREFIX,
     ACTIVATION_CREDIT_FAIL_CLOSED_BUCKET_FRACTION_GT,
     ACTIVATION_CREDIT_FAIL_CLOSED_REGRET_SPREAD_RATIO_GT,
     ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED,
@@ -55,7 +56,13 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     ACTIVATION_CREDIT_PREDICTIVE_REGRET_CAPTURE_RATIO_MIN,
     ACTIVATION_CREDIT_PREDICTIVE_REGRET_SPREAD_RATIO_MAX,
     ACTIVATION_CREDIT_PRIMARY_FAMILY_ID,
+    ACTIVATION_CREDIT_SECOND_ORDER_SNR_EPS,
+    ACTIVATION_CREDIT_SNR_Q5_ABLATION_FAMILY_ID,
+    ACTIVATION_CREDIT_SNR_Q5_FIELD,
+    ACTIVATION_CREDIT_SNR_Q5_PREFIX,
     ACTIVATION_CREDIT_TARGET_TIE_BAND_ID,
+    ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD,
+    ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX,
     ACTIVATION_CREDIT_TOPOLOGY_CONTROL_FAMILY_ID,
     ACTIVATION_CREDIT_TOPOLOGY_ROW_BLOCK_SIZE,
     BRANCH_WITHIN_TIE_BAND_AMBIGUOUS_NO_BRANCH,
@@ -1086,6 +1093,17 @@ def _candidate_delta_sign_from_one_flip(
     return _sign_int(q_after - int(current_q_level))
 
 
+def _candidate_delta_weight_from_one_flip(
+    *,
+    q_after_one_flip: torch.Tensor,
+    flat_index: int,
+    current_q_level: int,
+    frozen_scale_scalar: float,
+) -> float:
+    q_after = int(q_after_one_flip.view(-1)[int(flat_index)].item())
+    return float((q_after - int(current_q_level)) * float(frozen_scale_scalar))
+
+
 def _compute_activation_credit_candidate_proxies(
     *,
     model: LMHead,
@@ -1106,6 +1124,7 @@ def _compute_activation_credit_candidate_proxies(
             raise KeyError(f"unknown activation-credit candidate_id {candidate_id!r}")
         selected_by_state.setdefault(str(candidate["state_key"]), []).append(candidate_id)
     proxy_by_id: dict[str, float] = {}
+    diag_fisher_by_id: dict[str, float] = {}
     capture_device_summary: dict[str, dict[str, list[str]]] = {}
     any_capture_crossed_cpu = False
     forward_backward_start = time.perf_counter()
@@ -1128,7 +1147,7 @@ def _compute_activation_credit_candidate_proxies(
                     int(candidate_by_id[candidate_id]["flat_index"])
                     for candidate_id in candidate_ids
                 ]
-                proxies = handle.candidate_weighted_grad_proxies(
+                proxies, diag_fisher = handle.candidate_weighted_grad_and_diag_fisher_proxies(
                     state_key,
                     flat_indices,
                 )
@@ -1147,12 +1166,18 @@ def _compute_activation_credit_candidate_proxies(
                             device_summary["inputs"] + device_summary["grad_outputs"]
                         )
                     )
-                for candidate_id, proxy in zip(candidate_ids, proxies.detach().to(torch.float32)):
+                for candidate_id, proxy, fisher in zip(
+                    candidate_ids,
+                    proxies.detach().to(torch.float32),
+                    diag_fisher.detach().to(torch.float32),
+                ):
                     proxy_by_id[str(candidate_id)] = float(proxy.item())
+                    diag_fisher_by_id[str(candidate_id)] = float(fisher.item())
     model.zero_grad(set_to_none=True)
     gather_seconds = float(time.perf_counter() - gather_start)
     return {
         "grad_proxy_by_candidate_id": proxy_by_id,
+        "diag_fisher_by_candidate_id": diag_fisher_by_id,
         "capture_device_mode": handle.capture_device_mode,
         "capture_device_summary": capture_device_summary,
         "gather_device": str(device),
@@ -1170,6 +1195,116 @@ def _balanced_bucket_sizes(total: int, bucket_count: int) -> list[int]:
         int(base + (1 if bucket_index < remainder else 0))
         for bucket_index in range(int(bucket_count))
     ]
+
+
+def _scalar_support_summary(values: Sequence[float]) -> dict[str, Any]:
+    finite_values = [
+        float(value)
+        for value in values
+        if math.isfinite(float(value))
+    ]
+    if not finite_values:
+        return {
+            "min": None,
+            "max": None,
+            "distinct_count": 0,
+            "histogram": {},
+        }
+    histogram: dict[str, int] = {}
+    for value in finite_values:
+        key = f"{float(value):.12g}"
+        histogram[key] = int(histogram.get(key, 0) + 1)
+    return {
+        "min": float(min(finite_values)),
+        "max": float(max(finite_values)),
+        "distinct_count": int(len(histogram)),
+        "histogram": histogram,
+    }
+
+
+def _assign_equal_frequency_q5_bins(
+    candidates: Sequence[dict[str, Any]],
+    *,
+    value_field: str,
+    output_field: str,
+    prefix: str,
+) -> dict[str, Any]:
+    valid_candidates = [
+        candidate
+        for candidate in candidates
+        if bool(candidate.get("activation_feature_valid"))
+        and candidate.get(value_field) is not None
+        and math.isfinite(float(candidate[value_field]))
+    ]
+    for candidate in candidates:
+        candidate[output_field] = None
+    q5_histogram: dict[str, int] = {}
+    q5_guard_reason: str | None = None
+    q5_bucket_sizes = _balanced_bucket_sizes(
+        len(valid_candidates),
+        ACTIVATION_CREDIT_MAGNITUDE_Q5_BIN_COUNT,
+    )
+    q5_min_bucket_size = min(q5_bucket_sizes, default=0)
+    q5_singleton_bucket_count = int(sum(1 for count in q5_bucket_sizes if count == 1))
+    q5_degenerate = not valid_candidates
+    if q5_degenerate:
+        q5_guard_reason = "no_valid_candidates"
+    elif q5_min_bucket_size < ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE:
+        q5_degenerate = True
+        q5_guard_reason = "min_bucket_lt_guard"
+    elif q5_singleton_bucket_count > 0:
+        q5_degenerate = True
+        q5_guard_reason = "singleton_bucket"
+    else:
+        ordered_valid_candidates = sorted(
+            valid_candidates,
+            key=lambda candidate: (
+                float(candidate[value_field]),
+                str(candidate["candidate_id"]),
+            ),
+        )
+        cursor = 0
+        q5_degenerate = False
+        for bucket_index, bucket_size in enumerate(q5_bucket_sizes):
+            next_cursor = cursor + int(bucket_size)
+            if bucket_index < len(q5_bucket_sizes) - 1:
+                left_value = float(
+                    ordered_valid_candidates[next_cursor - 1][value_field]
+                )
+                right_value = float(
+                    ordered_valid_candidates[next_cursor][value_field]
+                )
+                if math.isclose(
+                    left_value,
+                    right_value,
+                    abs_tol=ORACLE_SCREEN_IMPROVEMENT_EPS,
+                ):
+                    q5_guard_reason = "tie_boundary"
+                    q5_degenerate = True
+                    break
+            cursor = next_cursor
+        if not q5_degenerate:
+            cursor = 0
+            for bucket_index, bucket_size in enumerate(q5_bucket_sizes):
+                bucket = ordered_valid_candidates[cursor : cursor + int(bucket_size)]
+                cursor += int(bucket_size)
+                q5_histogram[str(int(bucket_index))] = len(bucket)
+                for candidate in bucket:
+                    candidate[output_field] = int(bucket_index)
+    return {
+        f"{prefix}_bin_histogram": q5_histogram,
+        f"{prefix}_bin_degenerate": bool(q5_degenerate),
+        f"{prefix}_min_bucket_size": int(q5_min_bucket_size),
+        f"{prefix}_guard_min_bucket_size": ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE,
+        f"{prefix}_singleton_bucket_count": q5_singleton_bucket_count,
+        f"{prefix}_guard_reason": q5_guard_reason,
+        f"{prefix}_non_memorization_ok": bool(
+            not q5_degenerate
+            and q5_min_bucket_size >= ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE
+            and q5_singleton_bucket_count == 0
+            and len(q5_histogram) == ACTIVATION_CREDIT_MAGNITUDE_Q5_BIN_COUNT
+        ),
+    }
 
 
 def _assign_activation_credit_features(
@@ -1290,35 +1425,80 @@ def _assign_activation_credit_features(
     }
 
 
+def _assign_second_order_activation_credit_features(
+    target_band_candidates: Sequence[dict[str, Any]],
+) -> dict[str, Any]:
+    valid_candidates = [
+        candidate
+        for candidate in target_band_candidates
+        if bool(candidate.get("activation_feature_valid"))
+    ]
+    candidate_delta_weights = [
+        float(candidate["candidate_delta_weight"])
+        for candidate in target_band_candidates
+        if candidate.get("candidate_delta_weight") is not None
+    ]
+    for candidate in target_band_candidates:
+        if not bool(candidate.get("activation_feature_valid")):
+            candidate["taylor_benefit"] = None
+            candidate["snr"] = None
+            candidate["diag_fisher"] = None
+            candidate[ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD] = None
+            candidate[ACTIVATION_CREDIT_SNR_Q5_FIELD] = None
+            candidate[ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD] = None
+            continue
+        grad_proxy = float(candidate["grad_proxy"])
+        diag_fisher = float(candidate["diag_fisher"])
+        candidate_delta_weight = float(candidate["candidate_delta_weight"])
+        candidate["taylor_benefit"] = float(
+            (-grad_proxy * candidate_delta_weight)
+            - (0.5 * diag_fisher * (candidate_delta_weight ** 2))
+        )
+        candidate["snr"] = float(
+            abs(grad_proxy) / math.sqrt(diag_fisher + ACTIVATION_CREDIT_SECOND_ORDER_SNR_EPS)
+        )
+    summary: dict[str, Any] = {
+        "valid_target_band_candidate_count": len(valid_candidates),
+        "candidate_delta_weight_support": _scalar_support_summary(candidate_delta_weights),
+    }
+    summary.update(
+        _assign_equal_frequency_q5_bins(
+            target_band_candidates,
+            value_field="taylor_benefit",
+            output_field=ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD,
+            prefix=ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX,
+        )
+    )
+    summary.update(
+        _assign_equal_frequency_q5_bins(
+            target_band_candidates,
+            value_field="snr",
+            output_field=ACTIVATION_CREDIT_SNR_Q5_FIELD,
+            prefix=ACTIVATION_CREDIT_SNR_Q5_PREFIX,
+        )
+    )
+    summary.update(
+        _assign_equal_frequency_q5_bins(
+            target_band_candidates,
+            value_field="diag_fisher",
+            output_field=ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD,
+            prefix=ACTIVATION_CREDIT_DIAG_FISHER_Q5_PREFIX,
+        )
+    )
+    return summary
+
+
 def _activation_credit_family_key(
     candidate: Mapping[str, Any],
     *,
     family_id: str,
 ) -> tuple[Any, ...]:
     if family_id == ACTIVATION_CREDIT_PRIMARY_FAMILY_ID:
-        return (int(candidate["credit_magnitude_q5_bin"]),)
-    if family_id == ACTIVATION_CREDIT_ALIGN_Q5_ABLATION_FAMILY_ID:
-        return (
-            int(candidate["signed_alignment"]),
-            int(candidate["credit_magnitude_q5_bin"]),
-        )
-    if family_id == ACTIVATION_CREDIT_ALIGN_MAGBIN_ABLATION_FAMILY_ID:
-        return (
-            int(candidate["signed_alignment"]),
-            int(candidate["credit_magnitude_bin"]),
-        )
-    if family_id == "F_alignment_only":
-        return (int(candidate["signed_alignment"]),)
-    if family_id == "F_magbin_only":
-        return (int(candidate["credit_magnitude_bin"]),)
-    if family_id == "F_sign_only":
-        return (int(candidate["credit_sign"]),)
-    if family_id == "F_align_magbin_transition":
-        return (
-            int(candidate["signed_alignment"]),
-            int(candidate["credit_magnitude_bin"]),
-            str(candidate["transition_class"]),
-        )
+        return (int(candidate[ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD]),)
+    if family_id == ACTIVATION_CREDIT_SNR_Q5_ABLATION_FAMILY_ID:
+        return (int(candidate[ACTIVATION_CREDIT_SNR_Q5_FIELD]),)
+    if family_id == ACTIVATION_CREDIT_DIAG_FISHER_Q5_ABLATION_FAMILY_ID:
+        return (int(candidate[ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD]),)
     if family_id == ACTIVATION_CREDIT_TOPOLOGY_CONTROL_FAMILY_ID:
         return (int(candidate["topology_row_block_128"]),)
     raise ValueError(f"unsupported activation-credit family_id {family_id!r}")
@@ -2683,6 +2863,14 @@ def run_activation_credit_scale_smoke_oracle_screen(
             flat_index=flat_index,
             current_q_level=int(candidate["current_q_level"]),
         )
+        candidate["candidate_delta_weight"] = _candidate_delta_weight_from_one_flip(
+            q_after_one_flip=result.q_levels,
+            flat_index=flat_index,
+            current_q_level=int(candidate["current_q_level"]),
+            frozen_scale_scalar=float(
+                tensor_states[state_key].frozen_scale.detach().cpu().item()
+            ),
+        )
     proxy_receipt = _compute_activation_credit_candidate_proxies(
         model=model,
         batch=batch,
@@ -2881,6 +3069,14 @@ def run_activation_credit_measurement_oracle_screen(
             flat_index=flat_index,
             current_q_level=int(candidate["current_q_level"]),
         )
+        candidate["candidate_delta_weight"] = _candidate_delta_weight_from_one_flip(
+            q_after_one_flip=result.q_levels,
+            flat_index=flat_index,
+            current_q_level=int(candidate["current_q_level"]),
+            frozen_scale_scalar=float(
+                tensor_states[state_key].frozen_scale.detach().cpu().item()
+            ),
+        )
     target_band_oracle_top = sorted(
         target_band_candidates,
         key=lambda candidate: (
@@ -2924,50 +3120,62 @@ def run_activation_credit_measurement_oracle_screen(
         by_id = {str(candidate["candidate_id"]): candidate for candidate in target_band_candidates}
         for candidate in target_band_candidates:
             proxy = proxy_receipt["grad_proxy_by_candidate_id"].get(str(candidate["candidate_id"]))
+            diag_fisher = proxy_receipt["diag_fisher_by_candidate_id"].get(
+                str(candidate["candidate_id"])
+            )
             row_index, col_index = _flat_weight_row_col(
                 int(candidate["flat_index"]),
                 int(tensor_states[str(candidate["state_key"])].vote_update_state().q_levels.shape[-1]),
             )
-            credit_value = None if proxy is None else float(-proxy)
-            candidate_delta_sign = int(candidate.get("candidate_delta_sign", 0))
+            grad_proxy = None if proxy is None else float(proxy)
+            diag_fisher_value = None if diag_fisher is None else float(diag_fisher)
             candidate["activation_credit_row_index"] = row_index
             candidate["activation_credit_col_index"] = col_index
             candidate["topology_row_block_128"] = int(
                 row_index // ACTIVATION_CREDIT_TOPOLOGY_ROW_BLOCK_SIZE
             )
-            candidate["credit_sign"] = (
-                _sign_int(credit_value) if credit_value is not None else None
-            )
-            candidate["activation_credit_abs"] = (
-                float(abs(credit_value)) if credit_value is not None else None
-            )
-            candidate["signed_alignment"] = (
-                _sign_int(float(credit_value) * float(candidate_delta_sign))
-                if credit_value is not None and candidate_delta_sign != 0
-                else 0
-            )
+            candidate["grad_proxy"] = grad_proxy
+            candidate["diag_fisher"] = diag_fisher_value
             candidate["activation_feature_valid"] = bool(
-                credit_value is not None and candidate_delta_sign != 0
+                grad_proxy is not None
+                and diag_fisher_value is not None
+                and int(candidate.get("candidate_delta_sign", 0)) != 0
             )
-        feature_summary = _assign_activation_credit_features(target_band_candidates)
+        feature_summary = _assign_second_order_activation_credit_features(
+            target_band_candidates
+        )
         for candidate in sampled_candidates:
             activation_candidate = by_id.get(str(candidate["candidate_id"]))
             if activation_candidate is None:
                 candidate["candidate_delta_sign"] = candidate.get("candidate_delta_sign")
-                candidate["credit_sign"] = None
-                candidate["credit_magnitude_bin"] = None
-                candidate["credit_magnitude_q5_bin"] = None
-                candidate["signed_alignment"] = None
+                candidate["candidate_delta_weight"] = None
+                candidate["grad_proxy"] = None
+                candidate["diag_fisher"] = None
+                candidate["taylor_benefit"] = None
+                candidate["snr"] = None
+                candidate[ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD] = None
+                candidate[ACTIVATION_CREDIT_SNR_Q5_FIELD] = None
+                candidate[ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD] = None
                 candidate["topology_row_block_128"] = None
                 candidate["activation_feature_valid"] = False
                 continue
             candidate.update(
                 {
                     "candidate_delta_sign": int(activation_candidate.get("candidate_delta_sign", 0)),
-                    "credit_sign": activation_candidate["credit_sign"],
-                    "credit_magnitude_bin": activation_candidate["credit_magnitude_bin"],
-                    "credit_magnitude_q5_bin": activation_candidate["credit_magnitude_q5_bin"],
-                    "signed_alignment": int(activation_candidate["signed_alignment"]),
+                    "candidate_delta_weight": activation_candidate["candidate_delta_weight"],
+                    "grad_proxy": activation_candidate["grad_proxy"],
+                    "diag_fisher": activation_candidate["diag_fisher"],
+                    "taylor_benefit": activation_candidate["taylor_benefit"],
+                    "snr": activation_candidate["snr"],
+                    ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD: activation_candidate[
+                        ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD
+                    ],
+                    ACTIVATION_CREDIT_SNR_Q5_FIELD: activation_candidate[
+                        ACTIVATION_CREDIT_SNR_Q5_FIELD
+                    ],
+                    ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD: activation_candidate[
+                        ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD
+                    ],
                     "topology_row_block_128": int(
                         activation_candidate["topology_row_block_128"]
                     ),
@@ -2992,14 +3200,21 @@ def run_activation_credit_measurement_oracle_screen(
             *ACTIVATION_CREDIT_ABLATION_FAMILY_IDS,
             ACTIVATION_CREDIT_TOPOLOGY_CONTROL_FAMILY_ID,
         )
-        q5_degenerate = bool(feature_summary["magnitude_q5_bin_degenerate"])
-        q5_family_ids = {
-            ACTIVATION_CREDIT_PRIMARY_FAMILY_ID,
-            ACTIVATION_CREDIT_ALIGN_Q5_ABLATION_FAMILY_ID,
+        primary_q5_degenerate = bool(
+            feature_summary[f"{ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX}_bin_degenerate"]
+        )
+        q5_degenerate_by_family = {
+            ACTIVATION_CREDIT_PRIMARY_FAMILY_ID: primary_q5_degenerate,
+            ACTIVATION_CREDIT_SNR_Q5_ABLATION_FAMILY_ID: bool(
+                feature_summary[f"{ACTIVATION_CREDIT_SNR_Q5_PREFIX}_bin_degenerate"]
+            ),
+            ACTIVATION_CREDIT_DIAG_FISHER_Q5_ABLATION_FAMILY_ID: bool(
+                feature_summary[f"{ACTIVATION_CREDIT_DIAG_FISHER_Q5_PREFIX}_bin_degenerate"]
+            ),
         }
         if valid_oracle_best_candidate is not None and bool(valid_oracle_best_candidate.get("activation_feature_valid")):
             for family_id in family_ids:
-                if q5_degenerate and family_id in q5_family_ids:
+                if q5_degenerate_by_family.get(family_id, False):
                     continue
                 metrics_by_family_id[family_id] = _activation_credit_family_metrics(
                     target_band_candidates=valid_target_band_candidates,
@@ -3013,10 +3228,12 @@ def run_activation_credit_measurement_oracle_screen(
     topology_predictive = bool(
         topology_metrics is not None and _activation_credit_family_is_predictive(topology_metrics)
     )
-    magnitude_q5_degenerate = bool(feature_summary["magnitude_q5_bin_degenerate"])
+    primary_q5_degenerate = bool(
+        feature_summary[f"{ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX}_bin_degenerate"]
+    )
     predictive = bool(
         primary_metrics is not None
-        and not magnitude_q5_degenerate
+        and not primary_q5_degenerate
         and _activation_credit_family_is_predictive(primary_metrics)
         and not topology_predictive
     )
@@ -3029,7 +3246,7 @@ def run_activation_credit_measurement_oracle_screen(
                 *ACTIVATION_CREDIT_ABLATION_FAMILY_IDS,
             )
         )
-        and not magnitude_q5_degenerate
+        and not primary_q5_degenerate
         and not topology_predictive
         and all(
             _activation_credit_family_is_fail_closed(metrics_by_family_id[family_id])
@@ -3044,7 +3261,7 @@ def run_activation_credit_measurement_oracle_screen(
         branch_classification = BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH
     elif not target_band_candidates:
         branch_classification = BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH
-    elif magnitude_q5_degenerate:
+    elif primary_q5_degenerate:
         branch_classification = BRANCH_ACTIVATION_CREDIT_AMBIGUOUS_NO_BRANCH
     elif predictive:
         branch_classification = BRANCH_ACTIVATION_CREDIT_CANDIDATE_SIGNAL
@@ -3070,10 +3287,20 @@ def run_activation_credit_measurement_oracle_screen(
                 "current_rank_position": int(candidate["current_rank_position"]),
                 "transition_class": str(candidate["transition_class"]),
                 "candidate_delta_sign": candidate.get("candidate_delta_sign"),
-                "credit_sign": candidate.get("credit_sign"),
-                "credit_magnitude_bin": candidate.get("credit_magnitude_bin"),
-                "credit_magnitude_q5_bin": candidate.get("credit_magnitude_q5_bin"),
-                "signed_alignment": candidate.get("signed_alignment"),
+                "candidate_delta_weight": candidate.get("candidate_delta_weight"),
+                "grad_proxy": candidate.get("grad_proxy"),
+                "diag_fisher": candidate.get("diag_fisher"),
+                "taylor_benefit": candidate.get("taylor_benefit"),
+                "snr": candidate.get("snr"),
+                ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD: candidate.get(
+                    ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD
+                ),
+                ACTIVATION_CREDIT_SNR_Q5_FIELD: candidate.get(
+                    ACTIVATION_CREDIT_SNR_Q5_FIELD
+                ),
+                ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD: candidate.get(
+                    ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD
+                ),
                 "topology_row_block_128": candidate.get("topology_row_block_128"),
                 "activation_feature_valid": bool(candidate.get("activation_feature_valid")),
                 "candidate_loss": float(candidate["candidate_loss"]),
@@ -3109,17 +3336,70 @@ def run_activation_credit_measurement_oracle_screen(
                 if target_band_oracle_best_candidate is not None
                 else None
             ),
-            "magnitude_bin_threshold": feature_summary["magnitude_bin_threshold"],
-            "magnitude_bin_histogram": feature_summary["magnitude_bin_histogram"],
-            "magnitude_bin_degenerate": feature_summary["magnitude_bin_degenerate"],
-            "singleton_magnitude_source_count": feature_summary["singleton_magnitude_source_count"],
-            "magnitude_q5_bin_histogram": feature_summary["magnitude_q5_bin_histogram"],
-            "magnitude_q5_bin_degenerate": feature_summary["magnitude_q5_bin_degenerate"],
-            "magnitude_q5_min_bucket_size": feature_summary["magnitude_q5_min_bucket_size"],
-            "magnitude_q5_guard_min_bucket_size": feature_summary["magnitude_q5_guard_min_bucket_size"],
-            "magnitude_q5_singleton_bucket_count": feature_summary["magnitude_q5_singleton_bucket_count"],
-            "magnitude_q5_guard_reason": feature_summary["magnitude_q5_guard_reason"],
-            "magnitude_q5_non_memorization_ok": feature_summary["magnitude_q5_non_memorization_ok"],
+            "candidate_delta_weight_support": feature_summary["candidate_delta_weight_support"],
+            f"{ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX}_bin_histogram": feature_summary[
+                f"{ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX}_bin_histogram"
+            ],
+            f"{ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX}_bin_degenerate": feature_summary[
+                f"{ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX}_bin_degenerate"
+            ],
+            f"{ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX}_min_bucket_size": feature_summary[
+                f"{ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX}_min_bucket_size"
+            ],
+            f"{ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX}_guard_min_bucket_size": feature_summary[
+                f"{ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX}_guard_min_bucket_size"
+            ],
+            f"{ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX}_singleton_bucket_count": feature_summary[
+                f"{ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX}_singleton_bucket_count"
+            ],
+            f"{ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX}_guard_reason": feature_summary[
+                f"{ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX}_guard_reason"
+            ],
+            f"{ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX}_non_memorization_ok": feature_summary[
+                f"{ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX}_non_memorization_ok"
+            ],
+            f"{ACTIVATION_CREDIT_SNR_Q5_PREFIX}_bin_histogram": feature_summary[
+                f"{ACTIVATION_CREDIT_SNR_Q5_PREFIX}_bin_histogram"
+            ],
+            f"{ACTIVATION_CREDIT_SNR_Q5_PREFIX}_bin_degenerate": feature_summary[
+                f"{ACTIVATION_CREDIT_SNR_Q5_PREFIX}_bin_degenerate"
+            ],
+            f"{ACTIVATION_CREDIT_SNR_Q5_PREFIX}_min_bucket_size": feature_summary[
+                f"{ACTIVATION_CREDIT_SNR_Q5_PREFIX}_min_bucket_size"
+            ],
+            f"{ACTIVATION_CREDIT_SNR_Q5_PREFIX}_guard_min_bucket_size": feature_summary[
+                f"{ACTIVATION_CREDIT_SNR_Q5_PREFIX}_guard_min_bucket_size"
+            ],
+            f"{ACTIVATION_CREDIT_SNR_Q5_PREFIX}_singleton_bucket_count": feature_summary[
+                f"{ACTIVATION_CREDIT_SNR_Q5_PREFIX}_singleton_bucket_count"
+            ],
+            f"{ACTIVATION_CREDIT_SNR_Q5_PREFIX}_guard_reason": feature_summary[
+                f"{ACTIVATION_CREDIT_SNR_Q5_PREFIX}_guard_reason"
+            ],
+            f"{ACTIVATION_CREDIT_SNR_Q5_PREFIX}_non_memorization_ok": feature_summary[
+                f"{ACTIVATION_CREDIT_SNR_Q5_PREFIX}_non_memorization_ok"
+            ],
+            f"{ACTIVATION_CREDIT_DIAG_FISHER_Q5_PREFIX}_bin_histogram": feature_summary[
+                f"{ACTIVATION_CREDIT_DIAG_FISHER_Q5_PREFIX}_bin_histogram"
+            ],
+            f"{ACTIVATION_CREDIT_DIAG_FISHER_Q5_PREFIX}_bin_degenerate": feature_summary[
+                f"{ACTIVATION_CREDIT_DIAG_FISHER_Q5_PREFIX}_bin_degenerate"
+            ],
+            f"{ACTIVATION_CREDIT_DIAG_FISHER_Q5_PREFIX}_min_bucket_size": feature_summary[
+                f"{ACTIVATION_CREDIT_DIAG_FISHER_Q5_PREFIX}_min_bucket_size"
+            ],
+            f"{ACTIVATION_CREDIT_DIAG_FISHER_Q5_PREFIX}_guard_min_bucket_size": feature_summary[
+                f"{ACTIVATION_CREDIT_DIAG_FISHER_Q5_PREFIX}_guard_min_bucket_size"
+            ],
+            f"{ACTIVATION_CREDIT_DIAG_FISHER_Q5_PREFIX}_singleton_bucket_count": feature_summary[
+                f"{ACTIVATION_CREDIT_DIAG_FISHER_Q5_PREFIX}_singleton_bucket_count"
+            ],
+            f"{ACTIVATION_CREDIT_DIAG_FISHER_Q5_PREFIX}_guard_reason": feature_summary[
+                f"{ACTIVATION_CREDIT_DIAG_FISHER_Q5_PREFIX}_guard_reason"
+            ],
+            f"{ACTIVATION_CREDIT_DIAG_FISHER_Q5_PREFIX}_non_memorization_ok": feature_summary[
+                f"{ACTIVATION_CREDIT_DIAG_FISHER_Q5_PREFIX}_non_memorization_ok"
+            ],
             "fresh_confirmation_seed_required_for_persistent_followup": ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED,
         },
         "family_metrics": {

@@ -326,14 +326,14 @@ def weighted_grad_from_captures(
     return weighted_grad
 
 
-def candidate_weighted_grad_proxies_from_captures(
+def candidate_weighted_grad_and_diag_fisher_proxies_from_captures(
     inputs: Sequence[torch.Tensor],
     grad_outputs: Sequence[torch.Tensor],
     *,
     flat_indices: Sequence[int],
     weight_shape: Sequence[int],
-) -> torch.Tensor:
-    """Gather candidate-local first-order credit without reconstructing the full weight gradient."""
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Gather candidate-local first-order credit and a diagonal-Fisher surrogate from one capture surface."""
 
     if not inputs or not grad_outputs:
         raise ValueError("inputs and grad_outputs must be non-empty")
@@ -345,7 +345,8 @@ def candidate_weighted_grad_proxies_from_captures(
     out_features, in_features = weight_dims
     flat_index_list = [int(index) for index in flat_indices]
     if not flat_index_list:
-        return torch.zeros((0,), dtype=torch.float32)
+        empty = torch.zeros((0,), dtype=torch.float32)
+        return empty, empty.clone()
     if any(index < 0 or index >= out_features * in_features for index in flat_index_list):
         raise ValueError("flat_indices must lie inside the flattened weight tensor")
     paired_inputs = inputs[-len(grad_outputs):]
@@ -362,6 +363,11 @@ def candidate_weighted_grad_proxies_from_captures(
     row_indices = torch.div(flat_index_tensor, int(in_features), rounding_mode="floor")
     col_indices = torch.remainder(flat_index_tensor, int(in_features))
     proxies = torch.zeros(
+        (len(flat_index_list),),
+        dtype=torch.float32,
+        device=index_device,
+    )
+    diag_fisher = torch.zeros(
         (len(flat_index_list),),
         dtype=torch.float32,
         device=index_device,
@@ -384,6 +390,27 @@ def candidate_weighted_grad_proxies_from_captures(
         proxies += (gathered_inputs * gathered_grad_outputs).sum(dim=(0, 1)).to(
             device=index_device
         )
+        diag_fisher += (
+            gathered_inputs.square() * gathered_grad_outputs.square()
+        ).sum(dim=(0, 1)).to(device=index_device)
+    return proxies, diag_fisher
+
+
+def candidate_weighted_grad_proxies_from_captures(
+    inputs: Sequence[torch.Tensor],
+    grad_outputs: Sequence[torch.Tensor],
+    *,
+    flat_indices: Sequence[int],
+    weight_shape: Sequence[int],
+) -> torch.Tensor:
+    """Gather candidate-local first-order credit without reconstructing the full weight gradient."""
+
+    proxies, _diag_fisher = candidate_weighted_grad_and_diag_fisher_proxies_from_captures(
+        inputs,
+        grad_outputs,
+        flat_indices=flat_indices,
+        weight_shape=weight_shape,
+    )
     return proxies
 
 
@@ -831,6 +858,33 @@ class AuthoritativeForwardHandle:
                 "authoritative_forward_context"
             )
         return candidate_weighted_grad_proxies_from_captures(
+            capture["inputs"],
+            capture["grad_outputs"],
+            flat_indices=flat_indices,
+            weight_shape=tuple(self.current_weights[state_key].shape),
+        )
+
+    def candidate_weighted_grad_and_diag_fisher_proxies(
+        self,
+        state_key: str,
+        flat_indices: Sequence[int],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if state_key not in self.current_weights:
+            raise KeyError(state_key)
+        if not self.capture_enabled:
+            raise RuntimeError(
+                "candidate_weighted_grad_and_diag_fisher_proxies is unavailable because "
+                "authoritative_forward_context capture is disabled; use "
+                "requires_grad=True when candidate-local credit signals are needed"
+            )
+        capture = self.captures[state_key]
+        if not capture["inputs"] or not capture["grad_outputs"]:
+            raise RuntimeError(
+                "candidate_weighted_grad_and_diag_fisher_proxies requires captured inputs "
+                "and grad_outputs; ensure the eligible module was invoked under a "
+                "differentiable authoritative_forward_context"
+            )
+        return candidate_weighted_grad_and_diag_fisher_proxies_from_captures(
             capture["inputs"],
             capture["grad_outputs"],
             flat_indices=flat_indices,
@@ -1817,6 +1871,7 @@ __all__ = [
     "authoritative_forward_context",
     "build_authoritative_checkpoint_payload",
     "build_optimizer_excluding_eligible_masters",
+    "candidate_weighted_grad_and_diag_fisher_proxies_from_captures",
     "candidate_weighted_grad_proxies_from_captures",
     "compact_vote_pressure_summary",
     "credit_from_weighted_grad",

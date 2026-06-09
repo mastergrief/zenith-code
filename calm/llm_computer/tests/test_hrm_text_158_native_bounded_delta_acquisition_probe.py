@@ -22,15 +22,22 @@ from calm.hrm_text_158.curriculum import BroadTokenizer
 from calm.hrm_text_158.lm_head import IGNORE_LABEL_ID
 from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     authoritative_forward_context,
+    candidate_weighted_grad_and_diag_fisher_proxies_from_captures,
     candidate_weighted_grad_proxies_from_captures,
     make_bounded_tensor_state,
 )
 from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
+    ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD,
+    ACTIVATION_CREDIT_DIAG_FISHER_Q5_PREFIX,
     ACTIVATION_CREDIT_MAGNITUDE_Q5_BIN_COUNT,
     ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE,
     ACTIVATION_CREDIT_PRIMARY_FAMILY_ID,
+    ACTIVATION_CREDIT_SNR_Q5_FIELD,
+    ACTIVATION_CREDIT_SNR_Q5_PREFIX,
     ACTIVATION_CREDIT_STDERR_PATH_ENV,
     ACTIVATION_CREDIT_STDOUT_PATH_ENV,
+    ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD,
+    ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX,
     ARM_A0_RANK_BUCKET_CURRENT,
     ARM_A1_RANK_BUCKET_ORDER_MATCHED,
     ARM_B_RANK_FREE_SIGN_PRESSURE,
@@ -61,6 +68,7 @@ from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
     ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_SCALE_SMOKE,
     ORACLE_SCREEN_MODE_CREDIT_RANKING_PIVOT_MEASUREMENT,
     ORACLE_SCREEN_MODE_WITHIN_TIE_BAND_DISCRIMINATOR,
+    _candidate_delta_weight_from_one_flip,
     _fraction_gte_observed,
     _fraction_lte_observed,
     _assign_activation_credit_features,
@@ -1960,7 +1968,7 @@ def test_tiny_credit_ranking_pivot_mode_returns_compact_non_persistent_receipt(
     assert Path(receipt["receipt_path"]).exists()
 
 
-def test_candidate_weighted_grad_proxies_preserve_invocation_pairing_order():
+def test_candidate_weighted_grad_and_diag_fisher_proxies_preserve_invocation_pairing_order():
     inputs = [
         torch.tensor([[[1.0, 10.0]]], dtype=torch.float32),
         torch.tensor([[[100.0, 1000.0]]], dtype=torch.float32),
@@ -1970,7 +1978,7 @@ def test_candidate_weighted_grad_proxies_preserve_invocation_pairing_order():
         torch.tensor([[[3.0, 30.0]]], dtype=torch.float32),
     ]
 
-    proxies = candidate_weighted_grad_proxies_from_captures(
+    proxies, diag_fisher = candidate_weighted_grad_and_diag_fisher_proxies_from_captures(
         inputs,
         grad_outputs,
         flat_indices=[0, 3],
@@ -1983,6 +1991,35 @@ def test_candidate_weighted_grad_proxies_preserve_invocation_pairing_order():
             (10.0 * 30.0) + (1000.0 * 20.0),
         ]
     )
+    assert diag_fisher.tolist() == pytest.approx(
+        [
+            (1.0**2 * 3.0**2) + (100.0**2 * 2.0**2),
+            (10.0**2 * 30.0**2) + (1000.0**2 * 20.0**2),
+        ]
+    )
+    assert candidate_weighted_grad_proxies_from_captures(
+        inputs,
+        grad_outputs,
+        flat_indices=[0, 3],
+        weight_shape=(2, 2),
+    ).tolist() == pytest.approx(proxies.tolist())
+
+
+def test_candidate_delta_weight_uses_effective_weight_delta():
+    q_after_one_flip = torch.tensor([[1, -1], [0, 1]], dtype=torch.int8)
+
+    assert _candidate_delta_weight_from_one_flip(
+        q_after_one_flip=q_after_one_flip,
+        flat_index=0,
+        current_q_level=0,
+        frozen_scale_scalar=0.25,
+    ) == pytest.approx(0.25)
+    assert _candidate_delta_weight_from_one_flip(
+        q_after_one_flip=q_after_one_flip,
+        flat_index=1,
+        current_q_level=1,
+        frozen_scale_scalar=0.25,
+    ) == pytest.approx(-0.5)
 
 
 def test_direct_activation_credit_scale_smoke_runner_emits_device_resident_telemetry():
@@ -2068,25 +2105,48 @@ def test_direct_activation_credit_measurement_runner_emits_compact_family_metric
     first_row = compact["sampled_candidate_table"][0]
     assert {
         "candidate_delta_sign",
-        "credit_sign",
-        "credit_magnitude_bin",
-        "credit_magnitude_q5_bin",
-        "signed_alignment",
+        "candidate_delta_weight",
+        "grad_proxy",
+        "diag_fisher",
+        "taylor_benefit",
+        "snr",
+        ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD,
+        ACTIVATION_CREDIT_SNR_Q5_FIELD,
+        ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD,
         "topology_row_block_128",
         "activation_feature_valid",
     }.issubset(first_row)
-    assert compact["target_tie_band"]["magnitude_q5_guard_min_bucket_size"] == (
-        ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE
+    assert compact["target_tie_band"]["candidate_delta_weight_support"]["distinct_count"] >= 1
+    assert compact["target_tie_band"][
+        f"{ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX}_guard_min_bucket_size"
+    ] == ACTIVATION_CREDIT_MAGNITUDE_Q5_MIN_BUCKET_SIZE
+    assert (
+        f"{ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX}_bin_degenerate"
+        in compact["target_tie_band"]
     )
-    assert "magnitude_q5_bin_degenerate" in compact["target_tie_band"]
-    assert "magnitude_q5_non_memorization_ok" in compact["target_tie_band"]
+    assert (
+        f"{ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX}_non_memorization_ok"
+        in compact["target_tie_band"]
+    )
+    assert f"{ACTIVATION_CREDIT_SNR_Q5_PREFIX}_bin_degenerate" in compact["target_tie_band"]
+    assert (
+        f"{ACTIVATION_CREDIT_DIAG_FISHER_Q5_PREFIX}_bin_degenerate"
+        in compact["target_tie_band"]
+    )
     target_band_rows = [
         row for row in compact["sampled_candidate_table"] if bool(row["in_target_tie_band"])
     ]
     assert target_band_rows
     assert any(int(row["candidate_delta_sign"]) != 0 for row in target_band_rows)
+    assert any(
+        row["candidate_delta_weight"] is not None
+        and float(row["candidate_delta_weight"]) != 0.0
+        for row in target_band_rows
+    )
     assert any(bool(row["activation_feature_valid"]) for row in target_band_rows)
-    if compact["target_tie_band"]["magnitude_q5_bin_degenerate"]:
+    if compact["target_tie_band"][
+        f"{ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_PREFIX}_bin_degenerate"
+    ]:
         assert ACTIVATION_CREDIT_PRIMARY_FAMILY_ID not in compact["family_metrics"][
             "metrics_by_family_id"
         ]
