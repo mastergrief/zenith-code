@@ -17,6 +17,8 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     ACTIVATION_CREDIT_SCALE_SMOKE_LAUNCH_BUNDLE_PACKET_KIND,
     ACTIVATION_CREDIT_SMOKE_BATCH_SIZE,
     ACTIVATION_CREDIT_SMOKE_MAX_SAMPLED_CANDIDATES,
+    ACTIVATION_CREDIT_STDERR_PATH_ENV,
+    ACTIVATION_CREDIT_STDOUT_PATH_ENV,
     ARM_A0_RANK_BUCKET_CURRENT,
     ARM_A1_RANK_BUCKET_ORDER_MATCHED,
     ARM_B_CAP_MAX_ABS_1024,
@@ -2038,6 +2040,12 @@ def test_activation_credit_launch_bundle_pins_budget32_and_fixed_two_seed_comman
     assert packet["terminal_criteria"][
         "fresh_confirmation_seed_required_for_persistent_followup"
     ] == ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED
+    assert packet["terminal_criteria"]["topology_control_positive_forces_ambiguous"] is True
+    assert {
+        "control_parity_gate",
+        "prior_null_setup_gate",
+        "verdict_rule",
+    }.isdisjoint(packet["terminal_criteria"])
     assert len(packet["commands"]) == 2
     assert {command["support_order_seed"] for command in packet["commands"]} == {43, 29}
     assert all(
@@ -2054,6 +2062,11 @@ def test_activation_credit_launch_bundle_pins_budget32_and_fixed_two_seed_comman
         "--eligible-scope" in command["argv"]
         and command["argv"][command["argv"].index("--eligible-scope") + 1]
         == ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE
+        for command in packet["commands"]
+    )
+    assert all(
+        command["env"][ACTIVATION_CREDIT_STDOUT_PATH_ENV] == command["stdout_path"]
+        and command["env"][ACTIVATION_CREDIT_STDERR_PATH_ENV] == command["stderr_path"]
         for command in packet["commands"]
     )
 
@@ -2197,6 +2210,51 @@ def test_activation_credit_packet_validator_rejects_primary_family_seed_and_scop
     ],
 )
 def test_activation_credit_launch_bundle_validator_rejects_budget_batch_and_scope_drift(
+    mutation,
+    error,
+):
+    packet = build_activation_credit_measurement_launch_bundle(
+        parent_path="parent.pt",
+        parent_sha256="abc123",
+        repo_root="/repo",
+        run_root="/tmp/hrm158-activation-credit",
+    )
+    mutation(packet)
+
+    with pytest.raises(ValueError, match=error):
+        validate_activation_credit_measurement_launch_bundle(packet)
+
+
+@pytest.mark.parametrize(
+    "mutation,error",
+    [
+        (
+            lambda packet: packet["terminal_criteria"].update({"control_parity_gate": {}}),
+            "must not contain control_parity_gate",
+        ),
+        (
+            lambda packet: packet["terminal_criteria"].update({"prior_null_setup_gate": {}}),
+            "must not contain prior_null_setup_gate",
+        ),
+        (
+            lambda packet: packet["terminal_criteria"].update({"verdict_rule": {}}),
+            "must not contain verdict_rule",
+        ),
+        (
+            lambda packet: packet["commands"][0]["env"].update(
+                {ACTIVATION_CREDIT_STDOUT_PATH_ENV: "/tmp/drifted-stdout.ndjson"}
+            ),
+            "env stdout path must match stdout_path",
+        ),
+        (
+            lambda packet: packet["commands"][0]["env"].update(
+                {ACTIVATION_CREDIT_STDERR_PATH_ENV: "/tmp/drifted-stderr.log"}
+            ),
+            "env stderr path must match stderr_path",
+        ),
+    ],
+)
+def test_activation_credit_launch_bundle_validator_rejects_stale_terminal_keys_and_log_path_drift(
     mutation,
     error,
 ):

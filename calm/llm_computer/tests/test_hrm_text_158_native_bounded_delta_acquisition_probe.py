@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
+import sys
 
 import pytest
 import torch
@@ -24,6 +25,8 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     make_bounded_tensor_state,
 )
 from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
+    ACTIVATION_CREDIT_STDERR_PATH_ENV,
+    ACTIVATION_CREDIT_STDOUT_PATH_ENV,
     ARM_A0_RANK_BUCKET_CURRENT,
     ARM_A1_RANK_BUCKET_ORDER_MATCHED,
     ARM_B_RANK_FREE_SIGN_PRESSURE,
@@ -89,6 +92,8 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     PhaseProgress,
     RUN_C2_ACQUISITION_PROBE_ENV,
     RUN_C2_GPU_LAUNCH_ENV,
+    _cli_main,
+    activation_credit_env_log_capture,
     aggregate_identity_full_audit_batch_reports,
     b2_full_coverage_gate_met,
     b2_full_required_snapshot_names,
@@ -2134,6 +2139,51 @@ def test_tiny_activation_credit_modes_return_compact_non_persistent_receipts(
     ] == 71
     assert full_oracle["non_persistence"]["q_persisted"] is False
     assert Path(full_receipt["receipt_path"]).exists()
+
+
+def test_activation_credit_env_log_capture_materializes_named_stream_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys,
+):
+    stdout_path = tmp_path / "stdout.ndjson"
+    stderr_path = tmp_path / "stderr.log"
+    monkeypatch.setenv(ACTIVATION_CREDIT_STDOUT_PATH_ENV, str(stdout_path))
+    monkeypatch.setenv(ACTIVATION_CREDIT_STDERR_PATH_ENV, str(stderr_path))
+
+    with activation_credit_env_log_capture():
+        print('{"event":"stdout"}')
+        print("stderr-line", file=sys.stderr)
+
+    captured = capsys.readouterr()
+    assert '{"event":"stdout"}' in captured.out
+    assert "stderr-line" in captured.err
+    assert stdout_path.exists()
+    assert stderr_path.exists()
+    assert '{"event":"stdout"}' in stdout_path.read_text(encoding="utf-8")
+    assert "stderr-line" in stderr_path.read_text(encoding="utf-8")
+
+
+def test_activation_credit_cli_main_logs_traceback_to_named_stderr(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    stdout_path = tmp_path / "stdout.ndjson"
+    stderr_path = tmp_path / "stderr.log"
+    monkeypatch.setenv(ACTIVATION_CREDIT_STDOUT_PATH_ENV, str(stdout_path))
+    monkeypatch.setenv(ACTIVATION_CREDIT_STDERR_PATH_ENV, str(stderr_path))
+
+    def _boom(argv: list[str] | None = None) -> int:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(probe_module, "main", _boom)
+
+    assert _cli_main([]) == 1
+    assert stdout_path.exists()
+    assert stderr_path.exists()
+    stderr_text = stderr_path.read_text(encoding="utf-8")
+    assert "Traceback (most recent call last)" in stderr_text
+    assert "RuntimeError: boom" in stderr_text
 
 
 def test_within_tie_band_null_fraction_helpers_are_directional():

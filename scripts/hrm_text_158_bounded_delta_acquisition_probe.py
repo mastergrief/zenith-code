@@ -10,7 +10,7 @@ gates.
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import asdict
 import faulthandler
 import hashlib
@@ -23,6 +23,7 @@ import signal
 import statistics
 import sys
 import time
+import traceback
 from typing import Any, Callable, Mapping, Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -105,6 +106,8 @@ from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
     run_within_tie_band_discriminator_oracle_screen,
 )
 from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
+    ACTIVATION_CREDIT_STDERR_PATH_ENV,
+    ACTIVATION_CREDIT_STDOUT_PATH_ENV,
     ARM_A0_RANK_BUCKET_CURRENT,
     ARM_A1_RANK_BUCKET_ORDER_MATCHED,
     ARM_B_RANK_FREE_SIGN_PRESSURE,
@@ -163,6 +166,56 @@ C2P2_NULL_TAXONOMY = (
     "audit-mismatch",
     "runtime-resource-failure",
 )
+
+
+class _MirrorTextStream:
+    def __init__(self, *streams: Any) -> None:
+        self._streams = streams
+        self.encoding = getattr(streams[0], "encoding", "utf-8") if streams else "utf-8"
+
+    def write(self, data: str) -> int:
+        for stream in self._streams:
+            stream.write(data)
+        return len(data)
+
+    def flush(self) -> None:
+        for stream in self._streams:
+            stream.flush()
+
+    def isatty(self) -> bool:
+        return any(getattr(stream, "isatty", lambda: False)() for stream in self._streams)
+
+    def writable(self) -> bool:
+        return True
+
+
+@contextmanager
+def activation_credit_env_log_capture() -> Any:
+    stdout_path = os.environ.get(ACTIVATION_CREDIT_STDOUT_PATH_ENV)
+    stderr_path = os.environ.get(ACTIVATION_CREDIT_STDERR_PATH_ENV)
+    if not stdout_path and not stderr_path:
+        yield
+        return
+    with ExitStack() as stack:
+        stdout_target = sys.stdout
+        stderr_target = sys.stderr
+        if stdout_path:
+            stdout_file = Path(stdout_path)
+            stdout_file.parent.mkdir(parents=True, exist_ok=True)
+            stdout_handle = stack.enter_context(
+                stdout_file.open("w", encoding="utf-8", buffering=1)
+            )
+            stdout_target = _MirrorTextStream(sys.stdout, stdout_handle)
+        if stderr_path:
+            stderr_file = Path(stderr_path)
+            stderr_file.parent.mkdir(parents=True, exist_ok=True)
+            stderr_handle = stack.enter_context(
+                stderr_file.open("w", encoding="utf-8", buffering=1)
+            )
+            stderr_target = _MirrorTextStream(sys.stderr, stderr_handle)
+        stack.enter_context(redirect_stdout(stdout_target))
+        stack.enter_context(redirect_stderr(stderr_target))
+        yield
 C2P2_NULL_ESCALATION_RULE = (
     "If C2.2 returns a classified null, escalate inside the same harness with "
     "an inline int16/dense-acc control; historical receipt 1779747988676 is "
@@ -4829,5 +4882,14 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def _cli_main(argv: list[str] | None = None) -> int:
+    with activation_credit_env_log_capture():
+        try:
+            return main(argv)
+        except Exception:
+            traceback.print_exc()
+            return 1
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(_cli_main())

@@ -276,6 +276,8 @@ ACTIVATION_CREDIT_SMOKE_RESMOKE_BUDGETS = (12, 16)
 ACTIVATION_CREDIT_MAGNITUDE_BIN_COUNT = 2
 ACTIVATION_CREDIT_TOPOLOGY_ROW_BLOCK_SIZE = 128
 ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED = 71
+ACTIVATION_CREDIT_STDOUT_PATH_ENV = "HRM_TEXT_158_STDOUT_PATH"
+ACTIVATION_CREDIT_STDERR_PATH_ENV = "HRM_TEXT_158_STDERR_PATH"
 OPTIMIZER_UPDATE_LAW_BRANCHES = (
     BRANCH_RANK_FREE_POSITIVE,
     BRANCH_RANKING_STILL_REQUIRED,
@@ -1900,6 +1902,23 @@ def default_activation_credit_scale_smoke_terminal_criteria() -> dict[str, Any]:
         "qacc_kernelized": False,
         "device_residency_not_hot_loop_residency": True,
         "occupancy_outcome_contract": default_activation_credit_scale_smoke_outcome_contract(),
+    }
+
+
+def default_activation_credit_measurement_terminal_criteria() -> dict[str, Any]:
+    return {
+        "branch_classifier": list(ACTIVATION_CREDIT_BRANCHES),
+        "same_candidate_set_required": True,
+        "support_order_seeds": list(ORACLE_SCREEN_CONTRAST_SEEDS),
+        "n20_screen_rows": ACTIVATION_CREDIT_MEASUREMENT_BATCH_SIZE,
+        "required_max_sampled_candidates": PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES,
+        "required_eligible_scope": ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE,
+        "fresh_confirmation_seed_required_for_persistent_followup": (
+            ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED
+        ),
+        "topology_control_positive_forces_ambiguous": True,
+        "qacc_kernelized": False,
+        "device_residency_not_hot_loop_residency": True,
     }
 
 
@@ -3705,6 +3724,8 @@ def _build_activation_credit_measurement_command_record(
         "env": {
             "HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE": "1",
             "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH": "1",
+            ACTIVATION_CREDIT_STDOUT_PATH_ENV: stdout_path,
+            ACTIVATION_CREDIT_STDERR_PATH_ENV: stderr_path,
         },
         "argv": argv,
         "stdout_path": stdout_path,
@@ -3796,21 +3817,7 @@ def build_activation_credit_measurement_launch_bundle(
         ),
         "watcher_audit_bundle": default_activation_credit_watcher_bundle(),
         "phase_budgets": default_activation_credit_phase_budgets(smoke=False),
-        "terminal_criteria": {
-            **default_terminal_criteria(),
-            "branch_classifier": list(ACTIVATION_CREDIT_BRANCHES),
-            "same_candidate_set_required": True,
-            "support_order_seeds": list(ORACLE_SCREEN_CONTRAST_SEEDS),
-            "n20_screen_rows": ACTIVATION_CREDIT_MEASUREMENT_BATCH_SIZE,
-            "required_max_sampled_candidates": budget,
-            "required_eligible_scope": ACTIVATION_CREDIT_REQUIRED_ELIGIBLE_SCOPE,
-            "fresh_confirmation_seed_required_for_persistent_followup": (
-                ACTIVATION_CREDIT_FRESH_CONFIRMATION_SEED
-            ),
-            "topology_control_positive_forces_ambiguous": True,
-            "qacc_kernelized": False,
-            "device_residency_not_hot_loop_residency": True,
-        },
+        "terminal_criteria": default_activation_credit_measurement_terminal_criteria(),
         "hash_gate_policy": default_hash_gate_policy(),
         "compact_instrumentation_only": True,
         "raw_per_proposal_arrays_included": False,
@@ -7466,6 +7473,17 @@ def _validate_activation_credit_measurement_command_record(
         steps_source="fixed_single_support_batch_activation_credit_measurement",
         label="activation-credit measurement",
     )
+    env = command.get("env") or {}
+    stdout_path = str(command.get("stdout_path"))
+    stderr_path = str(command.get("stderr_path"))
+    if env.get(ACTIVATION_CREDIT_STDOUT_PATH_ENV) != stdout_path:
+        raise ValueError(
+            "activation-credit measurement command env stdout path must match stdout_path"
+        )
+    if env.get(ACTIVATION_CREDIT_STDERR_PATH_ENV) != stderr_path:
+        raise ValueError(
+            "activation-credit measurement command env stderr path must match stderr_path"
+        )
 
 
 def validate_activation_credit_measurement_launch_bundle(
@@ -7569,6 +7587,11 @@ def validate_activation_credit_measurement_launch_bundle(
         raise ValueError(
             "activation-credit launch bundle terminal branch classifier drifted"
         )
+    for stale_key in ("control_parity_gate", "prior_null_setup_gate", "verdict_rule"):
+        if _contains_nested_key(terminal, stale_key):
+            raise ValueError(
+                f"activation-credit launch bundle terminal criteria must not contain {stale_key}"
+            )
     if not bool(terminal.get("same_candidate_set_required")):
         raise ValueError(
             "activation-credit launch bundle terminal criteria must require same candidate set"
