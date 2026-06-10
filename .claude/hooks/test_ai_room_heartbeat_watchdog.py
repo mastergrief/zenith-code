@@ -378,3 +378,25 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_gate_history_counts_escalate_not_rewake_substring():
+    """Escalate bodies contain 'after N automatic GATE_REWAKEs'; a REWAKE-first
+    substring match would count them as rewakes -> infinite re-escalation."""
+    import ai_room_heartbeat_watchdog as wd
+
+    gate_id = "1781118980331-8dc20b0f"
+    escalate_body = (
+        f"GATE_ESCALATE — worker codex_1 unresponsive to gate {gate_id} "
+        "after 2 automatic GATE_REWAKEs (deadline 600s + 2 re-wakes)."
+    )
+    records = [{"from": wd.WATCHDOG_FROM, "body": escalate_body}]
+    n_rewake, n_escalate = wd.gate_watchdog_history(records, gate_id)
+    assert n_escalate == 1
+    assert n_rewake == 0
+    decision = wd.decide_gate(
+        {"worker": "codex_1", "gate_id": gate_id, "deadline_secs": 600},
+        n_rewake,
+        n_escalate,
+    )
+    assert decision["action"] == "clean"

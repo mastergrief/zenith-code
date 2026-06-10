@@ -457,10 +457,13 @@ def gate_watchdog_history(records, gate_id):
         body = _body(rec)
         if gate_id not in body:
             continue
-        if "GATE_REWAKE" in body:
-            n_rewake += 1
-        elif "GATE_ESCALATE" in body:
+        # ESCALATE first: escalate bodies contain "after N automatic
+        # GATE_REWAKEs", so a REWAKE-first substring match would count
+        # escalations as rewakes and re-escalate forever.
+        if "GATE_ESCALATE" in body:
             n_escalate += 1
+        elif "GATE_REWAKE" in body:
+            n_rewake += 1
     return n_rewake, n_escalate
 
 
