@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# post-terminal-stub — operator-independent terminal receipt stub.
+#
+# WHY: run artifacts are already operator-independent (exit_code.txt, manifests,
+# receipts on disk), but the terminal ROOM POST still depended on the operator
+# LLM remembering to send it — the failure mode of 2026-06-10 (Phase 3 executed
+# silently; receipt never posted). This script moves the terminal post into the
+# run script itself: packets call it as the LAST line so the room always gets a
+# minimal validation_receipt stub the moment the run terminates, regardless of
+# operator behavior. The operator's full formatted receipt remains required by
+# contract but is no longer the only terminal record.
+#
+# USAGE (packet tail, after exit_code capture; never before):
+#   bin/post-terminal-stub \
+#     --from codex_2 \
+#     --gate 1781106771499-304a7b22 \
+#     --run-root "$AUDIT_ROOT" \
+#     --exit-code "$body_ec" \
+#     [--receipt "$OUTPUT_RECEIPT"] \
+#     [--label-key primary_label] \
+#     [--channel claw-code] \
+#     [--dry-run]
+#
+# Behavior:
+#   - Composes a one-paragraph stub: gate id, run root, exit code, receipt path
+#     + sha256, and (best-effort) the receipt's primary_label/determinism field.
+#   - Posts it as a reply to the gate id (kind=validation_receipt, to=claude)
+#     via the ai-room CLI so it threads into the gate's pending-response slot.
+#   - FAIL-SOFT: always exits 0. A posting failure must never change the run's
+#     terminal semantics; the failure is printed to stderr for run.log capture.
+#   - Channel defaults: --channel flag > $AI_ROOM_CHANNEL > claw-code.
+set -u
+
+FROM="" GATE="" RUN_ROOT="" EXIT_CODE="" RECEIPT="" LABEL_KEY="primary_label"
+CHANNEL="${AI_ROOM_CHANNEL:-claw-code}" DRY_RUN=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --from)       FROM="$2"; shift 2 ;;
+    --gate)       GATE="$2"; shift 2 ;;
+    --run-root)   RUN_ROOT="$2"; shift 2 ;;
+    --exit-code)  EXIT_CODE="$2"; shift 2 ;;
+    --receipt)    RECEIPT="$2"; shift 2 ;;
+    --label-key)  LABEL_KEY="$2"; shift 2 ;;
+    --channel)    CHANNEL="$2"; shift 2 ;;
+    --dry-run)    DRY_RUN=1; shift ;;
+    *) echo "post-terminal-stub: unknown arg $1" >&2; shift ;;
+  esac
+done
+
+if [ -z "$FROM" ] || [ -z "$GATE" ] || [ -z "$RUN_ROOT" ] || [ -z "$EXIT_CODE" ]; then
+  echo "post-terminal-stub: missing required arg (--from/--gate/--run-root/--exit-code); skipping post (fail-soft)" >&2
+  exit 0
+fi
+
+RECEIPT_LINE="receipt: none"
+LABEL_LINE=""
+if [ -n "$RECEIPT" ] && [ -f "$RECEIPT" ]; then
+  RECEIPT_SHA=$(sha256sum "$RECEIPT" 2>/dev/null | cut -d' ' -f1)
+  RECEIPT_LINE="receipt: $RECEIPT sha256=$RECEIPT_SHA"
+  LABEL_VAL=$(python3 - "$RECEIPT" "$LABEL_KEY" 2>/dev/null <<'PY'
+import json, sys
+try:
+    r = json.load(open(sys.argv[1]))
+    v = r.get(sys.argv[2])
+    if v is not None:
+        print(v)
+except Exception:
+    pass
+PY
+)
+  if [ -n "${LABEL_VAL:-}" ]; then
+    LABEL_LINE=" ${LABEL_KEY}=${LABEL_VAL};"
+  fi
+elif [ -n "$RECEIPT" ]; then
+  RECEIPT_LINE="receipt: $RECEIPT MISSING"
+fi
+
+BODY="AUTO TERMINAL STUB (script-posted, operator-independent) — gate ${GATE}: run terminated. exit_code=${EXIT_CODE};${LABEL_LINE} run_root=${RUN_ROOT}; ${RECEIPT_LINE}. This stub is posted by the run script itself per the terminal-stub convention; the operator's full validation_receipt follows separately and remains required. Artifacts on disk are authoritative."
+
+if [ "$DRY_RUN" = "1" ]; then
+  echo "DRY-RUN post-terminal-stub: channel=$CHANNEL from=$FROM reply_to=$GATE"
+  echo "BODY: $BODY"
+  exit 0
+fi
+
+AI_ROOM_BIN=$(command -v ai-room || echo "$HOME/.local/bin/ai-room")
+if ! "$AI_ROOM_BIN" --channel "$CHANNEL" reply "$FROM" "$GATE" --to claude \
+    --kind validation_receipt "$BODY" >&2; then
+  echo "post-terminal-stub: ai-room post FAILED (fail-soft; artifacts on disk remain authoritative)" >&2
+fi
+exit 0
