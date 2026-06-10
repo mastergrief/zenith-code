@@ -78,15 +78,26 @@ fi
 
 BODY="AUTO TERMINAL STUB (script-posted, operator-independent) — gate ${GATE}: run terminated. exit_code=${EXIT_CODE};${LABEL_LINE} run_root=${RUN_ROOT}; ${RECEIPT_LINE}. This stub is posted by the run script itself per the terminal-stub convention; the operator's full validation_receipt follows separately and remains required. Artifacts on disk are authoritative."
 
+# CLI contract (ai_room_lib/message_args.py): kind=validation_receipt REQUIRES
+# --command and --result; --exit-code is optional structured metadata.
+STUB_COMMAND="bin/post-terminal-stub (script-posted at run termination)"
+STUB_RESULT="exit_code=${EXIT_CODE}${LABEL_LINE:-}"
+
 if [ "$DRY_RUN" = "1" ]; then
   echo "DRY-RUN post-terminal-stub: channel=$CHANNEL from=$FROM reply_to=$GATE"
+  echo "COMMAND: $STUB_COMMAND"
+  echo "RESULT: $STUB_RESULT"
   echo "BODY: $BODY"
   exit 0
 fi
 
 AI_ROOM_BIN=$(command -v ai-room || echo "$HOME/.local/bin/ai-room")
 if ! "$AI_ROOM_BIN" --channel "$CHANNEL" reply "$FROM" "$GATE" --to claude \
-    --kind validation_receipt "$BODY" >&2; then
+    --kind validation_receipt \
+    --command "$STUB_COMMAND" \
+    --result "$STUB_RESULT" \
+    --exit-code "$EXIT_CODE" \
+    "$BODY" >&2; then
   echo "post-terminal-stub: ai-room post FAILED (fail-soft; artifacts on disk remain authoritative)" >&2
 fi
 exit 0
