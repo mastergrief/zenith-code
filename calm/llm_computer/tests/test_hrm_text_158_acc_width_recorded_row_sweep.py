@@ -7,6 +7,7 @@ import pytest
 
 from calm.hrm_text_158.native_full_stack.acc_width_recorded_row_sweep import (
     ACC_WIDTH_RECORDED_ROW_SWEEP_SCHEMA_VERSION,
+    CANONICAL_VOTE_UPDATE_THRESHOLD_ABS,
     LABEL_ACC_NOT_SHRINKABLE,
     LABEL_ACC_SHRINK_AGGRESSIVE,
     LABEL_ACC_SHRINK_PARTIAL,
@@ -19,7 +20,10 @@ from calm.hrm_text_158.native_full_stack.acc_width_recorded_row_sweep import (
     assert_observed_clip_matches_declared,
     assert_trace_family_source_clip_is_pm127,
     build_acc_width_recorded_row_sweep,
+    check_estimand_vacuity,
     compose_vote_spec_from_production_sources,
+    count_recomputed_new_acc_mismatches_vs_reference,
+    crosscheck_threshold_abs_from_recorded_rows,
     derive_threshold_abs_from_recorded_rows,
     resolve_vote_spec,
     build_required_field_inventory,
@@ -45,7 +49,7 @@ def _vote_spec(
     *,
     clip_min: int = -127,
     clip_max: int = 127,
-    threshold_abs: int = 20,
+    threshold_abs: int = CANONICAL_VOTE_UPDATE_THRESHOLD_ABS,
 ) -> VoteSpecParsed:
     return VoteSpecParsed(
         threshold_abs=threshold_abs,
@@ -66,7 +70,7 @@ def _row(
     q_level: int = 0,
     in_band: bool = True,
     local_loss_delta: float = -0.5,
-    threshold_abs: int = 20,
+    threshold_abs: int = CANONICAL_VOTE_UPDATE_THRESHOLD_ABS,
 ) -> dict[str, object]:
     proposal_direction = 1 if int(new_acc) >= 0 else -1
     threshold = int(threshold_abs)
@@ -120,7 +124,7 @@ def _write_capture_receipt(
     *,
     clip_min: int = -127,
     clip_max: int = 127,
-    threshold_abs: int = 20,
+    threshold_abs: int = CANONICAL_VOTE_UPDATE_THRESHOLD_ABS,
 ) -> None:
     path.write_text(
         json.dumps(
@@ -248,7 +252,7 @@ def test_non_pm127_capture_fails_prereg_semantics(tmp_path: Path) -> None:
 def test_parse_vote_spec_reads_capture_receipt_clip_bounds() -> None:
     payload = {
         "vote_update_spec": {
-            "threshold_abs": 20,
+            "threshold_abs": CANONICAL_VOTE_UPDATE_THRESHOLD_ABS,
             "accumulator_clip_min": -127,
             "accumulator_clip_max": 127,
             "decay_numerator": 1,
@@ -282,6 +286,21 @@ def test_w16_lane_bit_identical_to_recorded_new_acc() -> None:
     )
     assert lane["bit_identical_to_recorded_new_acc"] is True
     assert lane["w16_mismatch_rows"] == []
+    assert lane["w16_new_acc_mismatch_count"] == 0
+
+
+def test_non_w16_lane_does_not_claim_bit_identical() -> None:
+    steps = _fixture_steps_bit_identical()
+    vote_spec = _vote_spec()
+    lane = replay_width_lane(
+        steps,
+        vote_spec=vote_spec,
+        width=8,
+        applied_candidate_ids_by_step={},
+    )
+    assert lane["bit_identical_to_recorded_new_acc"] is None
+    assert lane["bit_identical_scope"] == "not_applicable_non_w16"
+    assert lane["w16_new_acc_mismatch_count"] is None
 
 
 def test_w8_lane_reference_identical_under_effective_clip() -> None:
@@ -473,8 +492,18 @@ def test_w_min_headroom_safe_skips_invariant_low_width_without_headroom() -> Non
 def test_derive_threshold_abs_from_recorded_rows_fixture() -> None:
     steps = _fixture_steps_bit_identical()
     threshold, provenance = derive_threshold_abs_from_recorded_rows(steps)
-    assert threshold == 20
+    assert threshold == CANONICAL_VOTE_UPDATE_THRESHOLD_ABS
     assert provenance["threshold_source"] == "recorded_row_residual_proximity_relation"
+
+
+def test_crosscheck_threshold_abs_matches_canonical_fixture() -> None:
+    steps = _fixture_steps_bit_identical()
+    passed, provenance = crosscheck_threshold_abs_from_recorded_rows(
+        steps,
+        expected_threshold_abs=CANONICAL_VOTE_UPDATE_THRESHOLD_ABS,
+    )
+    assert passed is True
+    assert provenance["threshold_crosscheck"] == "passed"
 
 
 def test_compose_vote_spec_from_production_capture_shape() -> None:
@@ -486,10 +515,12 @@ def test_compose_vote_spec_from_production_capture_shape() -> None:
     )
     assert failures == []
     assert vote_spec is not None
-    assert vote_spec.threshold_abs == 20
+    assert vote_spec.threshold_abs == CANONICAL_VOTE_UPDATE_THRESHOLD_ABS
     assert vote_spec.accumulator_clip_min == -127
     assert vote_spec.accumulator_clip_max == 127
     assert provenance["clip_source"] == "vote_update_source_at_pinned_head"
+    assert provenance["threshold_source"] == "canonical_default_spec_accumulator_real_dynamics_verdict"
+    assert provenance["threshold_crosscheck"]["threshold_crosscheck"] == "passed"
     assert provenance["max_abs_per_tensor"] == 32
 
 
@@ -528,7 +559,7 @@ def test_resolve_vote_spec_uses_composed_path_without_spec_block(
         width_grid=(16, 8),
     )
     assert receipt["vote_spec_provenance"]["parse_path"] == "composed_production_fallback"
-    assert receipt["vote_spec"]["threshold_abs"] == 20
+    assert receipt["vote_spec"]["threshold_abs"] == CANONICAL_VOTE_UPDATE_THRESHOLD_ABS
     assert receipt["vote_spec_provenance"]["max_abs_per_tensor"] == 32
     assert receipt["clip_bound_assertion"]["passed"] is True
 
@@ -536,7 +567,7 @@ def test_resolve_vote_spec_uses_composed_path_without_spec_block(
 def test_resolve_vote_spec_prefers_capture_spec_block_when_present() -> None:
     payload = {
         "vote_update_spec": {
-            "threshold_abs": 20,
+            "threshold_abs": CANONICAL_VOTE_UPDATE_THRESHOLD_ABS,
             "accumulator_clip_min": -127,
             "accumulator_clip_max": 127,
             "decay_numerator": 1,
@@ -594,10 +625,9 @@ def test_composed_spec_path_succeeds_without_capture_spec_block(
     assert provenance["clip_source"] == "vote_update_source_at_pinned_head"
     assert provenance["max_abs_source"] == "manifest_parameters"
     assert provenance["max_abs_per_tensor"] == 32
-    assert provenance["threshold"]["threshold_source"] == (
-        "recorded_row_residual_proximity_relation"
-    )
-    assert receipt["vote_spec"]["threshold_abs"] == 20
+    assert provenance["threshold_source"] == "canonical_default_spec_accumulator_real_dynamics_verdict"
+    assert provenance["threshold_crosscheck"]["threshold_crosscheck"] == "passed"
+    assert receipt["vote_spec"]["threshold_abs"] == CANONICAL_VOTE_UPDATE_THRESHOLD_ABS
     assert receipt["clip_bound_assertion"]["passed"] is True
     assert "capture_receipt_parse_error" not in receipt["failure_reasons"]
 
@@ -622,8 +652,108 @@ def test_composed_spec_row_inconsistency_harness_fails(tmp_path: Path) -> None:
         width_grid=(16, 8),
     )
     assert receipt["primary_label"] == LABEL_SCREEN_HARNESS_OR_GATE_FAIL
-    assert "threshold_derivation_fail" in receipt["failure_reasons"]
+    assert "threshold_row_crosscheck_fail" in receipt["failure_reasons"]
     assert receipt["vote_spec"] is None
+
+
+def test_estimand_vacuity_guard_zero_applied_flip_stream() -> None:
+    vote_spec = _vote_spec()
+    failures = check_estimand_vacuity(
+        vote_spec,
+        max_abs_replayed_candidate_stream=25,
+        max_abs_acc_applied=0,
+    )
+    assert "estimand_vacuous_zero_applied_flip_stream" in failures
+
+
+def test_estimand_vacuity_guard_degenerate_threshold() -> None:
+    vote_spec = _vote_spec(threshold_abs=1)
+    failures = check_estimand_vacuity(
+        vote_spec,
+        max_abs_replayed_candidate_stream=5,
+        max_abs_acc_applied=5,
+    )
+    assert "estimand_vacuous_threshold" in failures
+
+
+def test_estimand_vacuity_guard_uniform_crossings() -> None:
+    vote_spec = _vote_spec()
+    reference_lane = {"row_crossings": {(1, 1): True, (1, 2): True}}
+    failures = check_estimand_vacuity(
+        vote_spec,
+        max_abs_replayed_candidate_stream=25,
+        max_abs_acc_applied=5,
+        reference_lane=reference_lane,
+    )
+    assert "estimand_vacuous_uniform_crossings" in failures
+
+
+def test_w2_reports_mismatch_vs_w16_reference_on_large_acc_fixture() -> None:
+    rows = [
+        _row(
+            "large",
+            flat_index=1,
+            pre_acc=80,
+            vote=6,
+            new_acc=86,
+            q_level=0,
+        )
+    ]
+    steps = [_step(1, rows, q_changed_count=0)]
+    vote_spec = _vote_spec()
+    lane16 = replay_width_lane(steps, vote_spec=vote_spec, width=16, applied_candidate_ids_by_step={})
+    lane2 = replay_width_lane(steps, vote_spec=vote_spec, width=2, applied_candidate_ids_by_step={})
+    assert lane2["bit_identical_to_recorded_new_acc"] is None
+    assert count_recomputed_new_acc_mismatches_vs_reference(lane2, reference_lane=lane16) > 0
+
+
+def test_threshold_row_derivation_mismatch_surfaced_non_fatal() -> None:
+    steps = _fixture_steps_bit_identical()
+    for step in steps:
+        for row in step["sampled_candidate_table"]:
+            row["threshold_residual_signed"] = int(row["new_acc_i32_signed"]) - 1
+            row["proximity_to_threshold"] = abs(abs(int(row["new_acc_i32_signed"])) - 1)
+    passed, provenance = crosscheck_threshold_abs_from_recorded_rows(
+        steps,
+        expected_threshold_abs=CANONICAL_VOTE_UPDATE_THRESHOLD_ABS,
+    )
+    assert passed is True
+    assert provenance["threshold_crosscheck"] == "threshold_row_derivation_mismatch"
+    assert provenance["derived_threshold_abs"] == 1
+    assert provenance["expected_threshold_abs"] == CANONICAL_VOTE_UPDATE_THRESHOLD_ABS
+
+
+def test_vacuous_zero_applied_stream_harness_fails_before_classification(
+    tmp_path: Path,
+) -> None:
+    rows = [
+        _row(
+            "static",
+            flat_index=1,
+            pre_acc=10,
+            vote=15,
+            new_acc=25,
+            local_loss_delta=-0.9,
+        )
+    ]
+    steps = [_step(1, rows, q_changed_count=0)]
+    trace = tmp_path / "trace.jsonl"
+    capture = tmp_path / "capture.json"
+    b2c = tmp_path / "b2c.json"
+    audit = tmp_path / "audit.json"
+    _write_trace(trace, steps)
+    _write_capture_receipt(capture)
+    b2c.write_text("{}", encoding="utf-8")
+    audit.write_text("{}", encoding="utf-8")
+    receipt = build_acc_width_recorded_row_sweep(
+        stable_trace_path=trace,
+        capture_receipt_path=capture,
+        b2c_receipt_path=b2c,
+        audit_receipt_path=audit,
+        width_grid=(16, 8),
+    )
+    assert receipt["primary_label"] == LABEL_SCREEN_HARNESS_OR_GATE_FAIL
+    assert "estimand_vacuous_zero_applied_flip_stream" in receipt["failure_reasons"]
 
 
 def test_composed_non_pm127_clip_fails_prereg_semantics(

@@ -45,6 +45,10 @@ DEFAULT_WIDTH_GRID = (16, 12, 10, 8, 6, 4, 3, 2)
 DEFAULT_HEADROOM_FACTOR = 2.0
 TRACE_FAMILY_SOURCE_CLIP_MIN = -127
 TRACE_FAMILY_SOURCE_CLIP_MAX = 127
+# Canonical attested threshold from accumulator_real_dynamics_verdict.default_vote_update_spec.
+CANONICAL_VOTE_UPDATE_THRESHOLD_ABS = 10
+CANONICAL_THRESHOLD_SOURCE = "canonical_default_spec_accumulator_real_dynamics_verdict"
+MIN_NON_DEGENERATE_THRESHOLD_ABS = 2
 
 REQUIRED_TRACE_ROW_FIELDS = (
     "pre_accumulator_i16",
@@ -310,6 +314,70 @@ def derive_threshold_abs_from_recorded_rows(
     }
 
 
+def crosscheck_threshold_abs_from_recorded_rows(
+    steps: Sequence[Mapping[str, Any]],
+    *,
+    expected_threshold_abs: int,
+) -> tuple[bool, dict[str, Any]]:
+    """Cross-check row residual/proximity relation against source-or-attested threshold."""
+
+    derived, row_provenance = derive_threshold_abs_from_recorded_rows(steps)
+    if derived is None:
+        return False, {
+            "failure": "threshold_row_crosscheck_fail",
+            "expected_threshold_abs": int(expected_threshold_abs),
+            "row_provenance": row_provenance,
+        }
+    if int(derived) != int(expected_threshold_abs):
+        return True, {
+            "threshold_crosscheck": "threshold_row_derivation_mismatch",
+            "expected_threshold_abs": int(expected_threshold_abs),
+            "derived_threshold_abs": int(derived),
+            "row_provenance": row_provenance,
+            "surfaced_loudly": True,
+        }
+    return True, {
+        "threshold_crosscheck": "passed",
+        "expected_threshold_abs": int(expected_threshold_abs),
+        "derived_threshold_abs": int(derived),
+        "row_provenance": row_provenance,
+    }
+
+
+def count_recomputed_new_acc_mismatches_vs_reference(
+    lane: Mapping[str, Any],
+    *,
+    reference_lane: Mapping[str, Any],
+) -> int:
+    ref_new_acc = dict(reference_lane.get("row_recomputed_new_acc") or {})
+    lane_new_acc = dict(lane.get("row_recomputed_new_acc") or {})
+    all_keys = set(ref_new_acc) | set(lane_new_acc)
+    return sum(1 for key in all_keys if ref_new_acc.get(key) != lane_new_acc.get(key))
+
+
+def check_estimand_vacuity(
+    vote_spec: VoteSpecParsed,
+    *,
+    max_abs_replayed_candidate_stream: int,
+    max_abs_acc_applied: int,
+    reference_lane: Mapping[str, Any] | None = None,
+) -> list[str]:
+    """Reject vacuous estimands before width classification."""
+
+    failures: list[str] = []
+    if int(vote_spec.threshold_abs) < MIN_NON_DEGENERATE_THRESHOLD_ABS:
+        failures.append("estimand_vacuous_threshold")
+    if int(max_abs_replayed_candidate_stream) == 0:
+        failures.append("estimand_vacuous_zero_replayed_candidate_stream")
+    if int(max_abs_acc_applied) == 0:
+        failures.append("estimand_vacuous_zero_applied_flip_stream")
+    if reference_lane is not None:
+        crossings = dict(reference_lane.get("row_crossings") or {})
+        if crossings and all(bool(value) for value in crossings.values()):
+            failures.append("estimand_vacuous_uniform_crossings")
+    return failures
+
+
 def parse_manifest_parameters(
     manifest_payload: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
@@ -333,11 +401,19 @@ def compose_vote_spec_from_production_sources(
     provenance["decay_source"] = "vote_update_source_at_pinned_head"
     provenance.update(source_constants)
 
-    threshold_abs, threshold_provenance = derive_threshold_abs_from_recorded_rows(steps)
-    provenance["threshold"] = threshold_provenance
-    if threshold_abs is None:
-        failures.append("threshold_derivation_fail")
+    threshold_abs = CANONICAL_VOTE_UPDATE_THRESHOLD_ABS
+    provenance["threshold_source"] = CANONICAL_THRESHOLD_SOURCE
+    provenance["threshold_abs"] = int(threshold_abs)
+    crosscheck_ok, crosscheck = crosscheck_threshold_abs_from_recorded_rows(
+        steps,
+        expected_threshold_abs=threshold_abs,
+    )
+    provenance["threshold_crosscheck"] = crosscheck
+    if not crosscheck_ok:
+        failures.append(str(crosscheck.get("failure", "threshold_row_crosscheck_fail")))
         return None, provenance, failures
+    if crosscheck.get("threshold_crosscheck") == "threshold_row_derivation_mismatch":
+        provenance["threshold_row_derivation_mismatch"] = crosscheck
 
     manifest_parameters = parse_manifest_parameters(manifest_payload)
     if "max_abs_per_tensor" in manifest_parameters:
@@ -365,7 +441,21 @@ def resolve_vote_spec(
 ) -> tuple[VoteSpecParsed | None, dict[str, Any], list[str]]:
     parsed = try_parse_vote_spec_from_capture_receipt(capture_payload)
     if parsed is not None:
-        return parsed, {"parse_path": "capture_receipt_spec_block"}, []
+        crosscheck_ok, crosscheck = crosscheck_threshold_abs_from_recorded_rows(
+            steps,
+            expected_threshold_abs=parsed.threshold_abs,
+        )
+        provenance = {
+            "parse_path": "capture_receipt_spec_block",
+            "threshold_crosscheck": crosscheck,
+        }
+        if not crosscheck_ok:
+            return None, provenance, [
+                str(crosscheck.get("failure", "threshold_row_crosscheck_fail"))
+            ]
+        if crosscheck.get("threshold_crosscheck") == "threshold_row_derivation_mismatch":
+            provenance["threshold_row_derivation_mismatch"] = crosscheck
+        return parsed, provenance, []
 
     return compose_vote_spec_from_production_sources(
         steps,
@@ -616,8 +706,9 @@ def replay_width_lane(
     recorded_band_membership_echo: dict[tuple[int, int], bool] = {}
     row_recomputed_new_acc: dict[tuple[int, int], int] = {}
     applied_post_flip_abs: list[int] = []
-    bit_identical_to_recorded = True
-    mismatched_rows: list[dict[str, Any]] = []
+    w16_mismatch_rows: list[dict[str, Any]] = []
+    compare_bit_identical = int(width) == 16
+    bit_identical_to_recorded = True if compare_bit_identical else None
 
     for step in steps:
         step_index = int(step["optimizer_step_index"])
@@ -652,17 +743,18 @@ def replay_width_lane(
             )
             recorded_band_membership_echo[key] = bool(row.get("in_target_tie_band"))
 
-            recorded_new_acc = int(row["new_acc_i32_signed"])
-            if width == 16 and new_acc != recorded_new_acc:
-                bit_identical_to_recorded = False
-                mismatched_rows.append(
-                    {
-                        "optimizer_step_index": step_index,
-                        "flat_index": flat_index,
-                        "recorded_new_acc_i32_signed": recorded_new_acc,
-                        "recomputed_new_acc_i32_signed": new_acc,
-                    }
-                )
+            if compare_bit_identical:
+                recorded_new_acc = int(row["new_acc_i32_signed"])
+                if new_acc != recorded_new_acc:
+                    bit_identical_to_recorded = False
+                    w16_mismatch_rows.append(
+                        {
+                            "optimizer_step_index": step_index,
+                            "flat_index": flat_index,
+                            "recorded_new_acc_i32_signed": recorded_new_acc,
+                            "recomputed_new_acc_i32_signed": new_acc,
+                        }
+                    )
 
         if q_changed and applied_flat is not None:
             applied_row = next(
@@ -705,8 +797,17 @@ def replay_width_lane(
         "max_abs_acc_applied_flips": (
             max(applied_post_flip_abs) if applied_post_flip_abs else 0
         ),
+        "max_abs_replayed_candidate_stream": (
+            max((abs(value) for value in row_recomputed_new_acc.values()), default=0)
+        ),
+        "bit_identical_scope": (
+            "w16_reference_only" if compare_bit_identical else "not_applicable_non_w16"
+        ),
         "bit_identical_to_recorded_new_acc": bit_identical_to_recorded,
-        "w16_mismatch_rows": mismatched_rows,
+        "w16_new_acc_mismatch_count": (
+            len(w16_mismatch_rows) if compare_bit_identical else None
+        ),
+        "w16_mismatch_rows": w16_mismatch_rows if compare_bit_identical else [],
     }
 
 
@@ -757,7 +858,7 @@ def compute_w_min_invariant(
     reference_lane = lane_by_width.get(reference_width)
     if reference_lane is None:
         return None
-    if not reference_lane.get("bit_identical_to_recorded_new_acc", False):
+    if reference_lane.get("bit_identical_to_recorded_new_acc") is not True:
         return None
     ordered = sorted(int(width) for width in width_grid)
     for width in ordered:
@@ -778,7 +879,7 @@ def compute_w_min_headroom_safe(
     reference_lane = lane_by_width.get(reference_width)
     if reference_lane is None:
         return None
-    if not reference_lane.get("bit_identical_to_recorded_new_acc", False):
+    if reference_lane.get("bit_identical_to_recorded_new_acc") is not True:
         return None
     ordered = sorted(int(width) for width in width_grid)
     for width in ordered:
@@ -787,6 +888,8 @@ def compute_w_min_headroom_safe(
         if not inv["coarse_crossing_invariant"]:
             continue
         max_abs = int(lane.get("max_abs_acc_applied_flips", 0))
+        if max_abs <= 0:
+            continue
         if headroom_passes(
             int(width),
             max_abs_acc_applied=max_abs,
@@ -1001,38 +1104,87 @@ def build_acc_width_recorded_row_sweep(
             )
             lane_by_width[width] = lane
             reference_lane = lane_by_width.get(16)
-            invariance = (
-                coarse_invariant_vs_reference(lane, reference_lane=reference_lane)
-                if reference_lane is not None and width != 16
-                else {
-                    "coarse_crossing_invariant": lane.get(
-                        "bit_identical_to_recorded_new_acc", False
-                    ),
-                    "mismatch_count": len(lane.get("w16_mismatch_rows") or []),
-                    "mismatches": lane.get("w16_mismatch_rows") or [],
-                }
+            if width == 16:
+                w16_mismatch_count = int(lane.get("w16_new_acc_mismatch_count") or 0)
+                width_results.append(
+                    {
+                        "width": int(width),
+                        "effective_clip_min": lane["effective_clip_min"],
+                        "effective_clip_max": lane["effective_clip_max"],
+                        "bit_identical_scope": lane.get("bit_identical_scope"),
+                        "bit_identical_to_recorded_new_acc": lane.get(
+                            "bit_identical_to_recorded_new_acc"
+                        ),
+                        "w16_new_acc_mismatch_count": w16_mismatch_count,
+                        "crossing_mismatch_count_vs_w16": 0,
+                        "coarse_crossing_invariant": w16_mismatch_count == 0,
+                        "max_abs_acc_applied_flips": int(
+                            lane.get("max_abs_acc_applied_flips", 0)
+                        ),
+                        "max_abs_replayed_candidate_stream": int(
+                            lane.get("max_abs_replayed_candidate_stream", 0)
+                        ),
+                        "mismatch_count_vs_w16_reference": 0,
+                    }
+                )
+                if lane.get("bit_identical_to_recorded_new_acc") is not True:
+                    harness_failures.append("w16_not_bit_identical_to_reference")
+            else:
+                invariance = coarse_invariant_vs_reference(
+                    lane,
+                    reference_lane=reference_lane,
+                )
+                crossing_mismatch_count = int(invariance["mismatch_count"])
+                mismatch_vs_w16_reference = (
+                    count_recomputed_new_acc_mismatches_vs_reference(
+                        lane,
+                        reference_lane=reference_lane,
+                    )
+                    if reference_lane is not None
+                    else None
+                )
+                width_results.append(
+                    {
+                        "width": int(width),
+                        "effective_clip_min": lane["effective_clip_min"],
+                        "effective_clip_max": lane["effective_clip_max"],
+                        "bit_identical_scope": lane.get("bit_identical_scope"),
+                        "bit_identical_to_recorded_new_acc": None,
+                        "w16_new_acc_mismatch_count": None,
+                        "mismatch_count_vs_w16_reference": mismatch_vs_w16_reference,
+                        "crossing_mismatch_count_vs_w16": crossing_mismatch_count,
+                        "coarse_crossing_invariant": bool(
+                            invariance["coarse_crossing_invariant"]
+                        ),
+                        "max_abs_acc_applied_flips": int(
+                            lane.get("max_abs_acc_applied_flips", 0)
+                        ),
+                        "max_abs_replayed_candidate_stream": int(
+                            lane.get("max_abs_replayed_candidate_stream", 0)
+                        ),
+                    }
+                )
+                if width == 8 and not invariance["coarse_crossing_invariant"]:
+                    harness_failures.append("w8_not_reference_invariant")
+
+    max_abs_acc_applied = 0
+    max_abs_replayed_candidate_stream = 0
+    reference_lane = lane_by_width.get(16)
+    if reference_lane is not None:
+        max_abs_acc_applied = int(reference_lane.get("max_abs_acc_applied_flips", 0))
+        max_abs_replayed_candidate_stream = int(
+            reference_lane.get("max_abs_replayed_candidate_stream", 0)
+        )
+
+    if vote_spec is not None and lane_by_width:
+        harness_failures.extend(
+            check_estimand_vacuity(
+                vote_spec,
+                max_abs_replayed_candidate_stream=max_abs_replayed_candidate_stream,
+                max_abs_acc_applied=max_abs_acc_applied,
+                reference_lane=reference_lane,
             )
-            width_results.append(
-                {
-                    "width": int(width),
-                    "effective_clip_min": lane["effective_clip_min"],
-                    "effective_clip_max": lane["effective_clip_max"],
-                    "coarse_crossing_invariant": bool(
-                        invariance["coarse_crossing_invariant"]
-                    ),
-                    "mismatch_count": int(invariance["mismatch_count"]),
-                    "bit_identical_to_recorded_new_acc": bool(
-                        lane.get("bit_identical_to_recorded_new_acc", False)
-                    ),
-                    "max_abs_acc_applied_flips": int(
-                        lane.get("max_abs_acc_applied_flips", 0)
-                    ),
-                }
-            )
-            if width == 16 and not lane.get("bit_identical_to_recorded_new_acc", False):
-                harness_failures.append("w16_not_bit_identical_to_reference")
-            if width == 8 and not invariance["coarse_crossing_invariant"]:
-                harness_failures.append("w8_not_reference_invariant")
+        )
 
     w_min_invariant = (
         compute_w_min_invariant(widths, lane_by_width=lane_by_width, reference_width=16)
@@ -1050,10 +1202,12 @@ def build_acc_width_recorded_row_sweep(
         else None
     )
     w_min = w_min_headroom_safe
-    max_abs_acc_applied = 0
-    if lane_by_width.get(16) is not None:
-        max_abs_acc_applied = int(lane_by_width[16].get("max_abs_acc_applied_flips", 0))
-    headroom_ok = w_min_headroom_safe is not None
+    headroom_ok = (
+        w_min_headroom_safe is not None
+        and max_abs_acc_applied > 0
+        and vote_spec is not None
+        and int(vote_spec.threshold_abs) >= MIN_NON_DEGENERATE_THRESHOLD_ABS
+    )
     branch = classify_w_min_label(
         w_min_headroom_safe,
         harness_failures=harness_failures,
@@ -1123,6 +1277,11 @@ def build_acc_width_recorded_row_sweep(
             "max_recorded_abs_acc_on_applied_flips * headroom_factor <= (2^(W-1)-1)"
         ),
         "max_abs_acc_applied_flips": max_abs_acc_applied,
+        "max_abs_replayed_candidate_stream": max_abs_replayed_candidate_stream,
+        "estimand_vacuity_guard": {
+            "min_non_degenerate_threshold_abs": MIN_NON_DEGENERATE_THRESHOLD_ABS,
+            "requires_nonzero_applied_flip_stream": True,
+        },
         "headroom_pass": bool(headroom_ok),
         "source_semantics_prereg": source_semantics_prereg,
         "primary_label": branch["primary_label"],
