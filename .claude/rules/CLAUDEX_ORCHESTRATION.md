@@ -25,21 +25,24 @@ read-only.
 
 **Named Codex role lanes** — normal route for gated mutating repo-file work:
 
-- **`training-dev`** — planning/contract/review/handoff lane (developer template,
-  no Serena). Owns plan/packet, convergence review, receipt, commit/push
-  handoff — **NOT** default implementation or formal run execution. Break-glass
-  implementation/run via Claude `+1` with `transition_fallback_used=true`.
-  Legacy path: after `+1 implement` may invoke `.codex/agents/developer.toml`
-  (`subagent-claimed` until `training-dev-verified`). **cwd = provenance/dispatch
-  match, not repo permission.** No `.pt` commits.
+- **`training-dev`** — planning/contract/packet lane (developer template,
+  no Serena). Owns plan/packet drafting and run-packet contracts — **NOT**
+  implementation review (implementation receipts route to claude+co_lead
+  directly), **NOT** default implementation or formal run execution.
+  Break-glass implementation/run via Claude `+1` with
+  `transition_fallback_used=true`. Legacy path: after `+1 implement` may invoke
+  `.codex/agents/developer.toml` (`subagent-claimed` until verified). **cwd =
+  provenance/dispatch match, not repo permission.** No `.pt` commits.
 - **`trainer-implement`** — **default** bounded implementation executor;
   **health-proven existing backend/config** — do NOT change backend as the fix.
-  Dispatched under `training-dev` plan/review for approved slices; edits +
-  focused developer validation in scope; receipts to `training-dev` (co-leads
-  on material gate blockers). FORBIDDEN: spawn/kill/grant/dispatch, training
-  launch, commit/push unless parent gate authorizes. Break-glass backend change
-  only via Claude `+1` with `transition_fallback_used=true`. Role home:
-  `~/.ai-room/.codex-roles/trainer-implement/`.
+  Dispatched against the claude+co_lead-reviewed `training-dev` plan; edits +
+  focused developer validation in scope; **receipts to claude + codex_co_lead
+  directly (dual implementation review — training-dev is not in this loop)**;
+  on dual accept the slice proceeds to claude commit/push gates, then run
+  packets route to `test-operator`. FORBIDDEN: spawn/kill/grant/dispatch,
+  training launch, commit/push unless the claude gate authorizes. Break-glass
+  backend change only via Claude `+1` with `transition_fallback_used=true`.
+  Role home: `~/.ai-room/.codex-roles/trainer-implement/`.
 - **`test-operator`** — formal training/proof/test-run packet executor. Runs
   specified packet, monitors artifacts, posts terminal receipts to both
   co-leads. FORBIDDEN: source edits, improvisation, commits/pushes.
@@ -54,12 +57,14 @@ dispatcher**: codex_co_lead recommends; claude spawns/dispatches/gates.
 ## Lifecycle
 
 ```
-claude creates task + provenance → spawns handle → plan → +1 implement
-→ implement/prove → validation receipt → +1 commit → commit → +1 push → push
-→ complete + recycle
+claude creates task + provenance → training-dev plan → claude+co_lead plan
+review → +1 implement → trainer-implement implements → claude+co_lead
+implementation review (dual accept) → +1 commit → commit → +1 push → push
+→ test-operator run packets → complete + recycle
 ```
 
-Claude load-bearing at plan, validation/diff, commit, push gates.
+Claude load-bearing at plan-review, implementation-review, commit, push, and
+launch gates (co_lead co-reviews plan + implementation).
 
 ## Recycle boundaries
 

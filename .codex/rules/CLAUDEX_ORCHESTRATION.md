@@ -14,17 +14,20 @@ Codex executor view of ai-room dispatches. Canonical:
 - **`codex_co_lead`** (default): co-lead audit lane; exempt child-task boundary.
   **Read-only — does NOT write code.**
 - **Named Codex roles**:
-  - **`training-dev`**: planning/contract/review/handoff lane. Owns plan/packet,
-    convergence review, receipt, commit/push handoff — **NOT** default
+  - **`training-dev`**: planning/contract/packet lane. Owns plan/packet
+    drafting and run-packet contracts — **NOT** implementation review
+    (implementation receipts route to claude+co_lead directly), **NOT** default
     implementation or formal run execution. Break-glass implementation/run via
     Claude `+1` with `transition_fallback_used=true`. Legacy path: may invoke
     `.codex/agents/developer.toml` after `+1 implement` (`subagent-claimed`
     until verified). **cwd = provenance match, not permission boundary.**
-  - **`trainer-implement`**: **default** bounded implementation executor under
-    `training-dev` plan/review; **health-proven existing backend/config** — do
-    NOT change backend as the fix. Edits + focused developer validation;
-    receipts to `training-dev` (co-leads on material gate blockers). No
-    spawn/grant/dispatch; no commit/push unless parent gate authorizes. Role
+  - **`trainer-implement`**: **default** bounded implementation executor against
+    the claude+co_lead-reviewed `training-dev` plan; **health-proven existing
+    backend/config** — do NOT change backend as the fix. Edits + focused
+    developer validation; **receipts to claude + codex_co_lead directly (dual
+    implementation review — training-dev is not in this loop)**; on dual accept
+    → claude commit/push gates → run packets to `test-operator`. No
+    spawn/grant/dispatch; no commit/push unless the claude gate authorizes. Role
     home: `~/.ai-room/.codex-roles/trainer-implement/`.
   - **`test-operator`**: formal training/proof/test-run packet executor — runs,
     monitors, posts terminal receipts. Code fixes → `trainer-implement`; packet

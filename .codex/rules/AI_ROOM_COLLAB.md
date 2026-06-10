@@ -11,11 +11,12 @@ charter: `.claude/rules/AI_ROOM_COLLAB.md`. **Not a subagent pattern.**
 **Gabe** = direction owner. **Claude + codex** = co-leads. **Claude** =
 operations/orchestration lead.
 
-Gabe seeds → claude+codex co-hypothesize → `training-dev` plans/contracts/
-reviews and hands off packets; `trainer-implement` bounded-implements approved
-code/config/tooling slices after +1; `test-operator` owns formal training/proof/
-test-run execution → gate → review → commit. Claude+co_lead review/audit, NOT
-execute.
+Gabe seeds → claude+codex co-hypothesize → `training-dev` writes the
+plan/packet → claude+co_lead review the plan → `trainer-implement`
+bounded-implements after +1 → claude+co_lead review the implementation receipt
+directly (training-dev does NOT re-review implementation) → claude commit/push
+gates → `test-operator` owns formal run execution → gate → iterate.
+Claude+co_lead review/audit, NOT execute.
 
 - **Gabe**: seeds, picks risk/cost/goal, final human gates.
 - **Claude + codex**: hypothesis quality, gate design, counter-cases, audit.
@@ -26,17 +27,20 @@ execute.
   `training-dev`; implementation to `trainer-implement`; formal runs to
   `test-operator`.
 - **Named Codex roles**:
-  - **`training-dev`**: planning/contract/review/handoff lane. Owns plan/packet,
-    convergence review, receipt, commit/push handoff — **NOT** default
+  - **`training-dev`**: planning/contract/packet lane. Owns plan/packet
+    drafting and run-packet contracts — **NOT** implementation review
+    (implementation receipts route to claude+co_lead directly), **NOT** default
     implementation or formal run execution. Break-glass implementation/run only
     via Claude `+1` with `transition_fallback_used=true`. Legacy path: may invoke
     `.codex/agents/developer.toml` after `+1 implement` (`subagent-claimed`
     until verified).
-  - **`trainer-implement`**: **default** bounded implementation executor under
-    `training-dev` plan/review; **health-proven existing backend/config** — do
-    NOT change backend as the fix. Edits + focused developer validation;
-    receipts to `training-dev` (co-leads on material gate blockers). No
-    spawn/grant/dispatch; no commit/push unless parent gate authorizes.
+  - **`trainer-implement`**: **default** bounded implementation executor against
+    the claude+co_lead-reviewed `training-dev` plan; **health-proven existing
+    backend/config** — do NOT change backend as the fix. Edits + focused
+    developer validation; **receipts to claude + codex_co_lead directly (dual
+    implementation review — training-dev is not in this loop)**; on dual accept
+    → claude commit/push gates → run packets to `test-operator`. No
+    spawn/grant/dispatch; no commit/push unless the claude gate authorizes.
   - **`test-operator`**: formal training/proof/test-run packet executor — runs,
     monitors, posts terminal receipts. Code fixes → `trainer-implement`; packet
     fixes → `training-dev`.

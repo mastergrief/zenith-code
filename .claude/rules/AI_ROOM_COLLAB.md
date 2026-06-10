@@ -11,12 +11,14 @@ unaffected.
 **Gabe** = human direction owner. **Claude + `codex_co_lead`** = technical
 research/strategy co-leads. **Claude** = operations/orchestration lead.
 
-Gabe seeds → claude+codex co-hypothesize/challenge → `training-dev` plans/
-contracts/reviews and hands off packets; `trainer-implement` bounded-implements
-approved code/config/tooling slices after +1; `test-operator` owns formal
-training/proof/test-run execution → gate → claude+codex review → commit →
-iterate. Claude+co_lead review/audit, NOT execute — direct Claude repo-file
-edits/runs need persisted named exception or break-glass reason.
+Gabe seeds → claude+codex co-hypothesize/challenge → `training-dev` writes the
+plan/packet → **claude+co_lead review the plan** → `trainer-implement`
+bounded-implements the approved slice after +1 → **claude+co_lead review the
+implementation receipt directly (training-dev does NOT re-review
+implementation)** → on dual accept, claude commit/push gates → `test-operator`
+owns formal training/proof/test-run execution → gate → iterate. Claude+co_lead
+review/audit, NOT execute — direct Claude repo-file edits/runs need persisted
+named exception or break-glass reason.
 
 - **Gabe**: seeds problems, picks risk/cost/goal, final human gates.
 - **Claude + `codex_co_lead`**: hypothesis quality, gate design, counter-cases,
@@ -26,20 +28,23 @@ edits/runs need persisted named exception or break-glass reason.
 - **Claude**: AUQ/relay, board/dispatch, launch dispatch+review, plan/
   validation/commit/push/launch gates, synthesis. One active executor per slice.
 - **Named Codex roles** (under co-leads + gates):
-  - **`training-dev`**: planning/contract/review/handoff lane (default for HRM +
-    main-repo slices). Owns plan/packet, convergence review, final receipt,
-    commit/push handoff — **NOT** default implementation or formal run execution.
-    Break-glass implementation/run only via Claude `+1` with
+  - **`training-dev`**: planning/contract/packet lane (default for HRM +
+    main-repo slices). Owns plan/packet drafting and run-packet contracts —
+    **NOT** implementation review (implementation receipts route to
+    claude+co_lead directly), **NOT** default implementation, **NOT** formal
+    run execution. Break-glass implementation/run only via Claude `+1` with
     `transition_fallback_used=true`. Legacy path: after `+1 implement` may invoke
     `.codex/agents/developer.toml` (`subagent-claimed` until verified; no gate
     on that receipt alone).
   - **`trainer-implement`**: **default** bounded implementation executor for
     approved code/config/tooling slices; **health-proven existing
     backend/config** — do NOT change backend as the fix. Edits + focused
-    developer validation in scope; receipts to `training-dev` (both co-leads on
-    material gate blockers). No spawn/grant/dispatch; no commit/push unless
-    parent gate authorizes. Break-glass backend change only via Claude `+1` with
-    `transition_fallback_used=true`.
+    developer validation in scope; **receipts to claude + codex_co_lead
+    directly (dual implementation review — training-dev is not in this loop)**;
+    on dual accept the slice proceeds to claude commit/push gates (executor per
+    gate), then run packets route to `test-operator`. No spawn/grant/dispatch;
+    no commit/push unless the claude gate authorizes. Break-glass backend change
+    only via Claude `+1` with `transition_fallback_used=true`.
   - **`test-operator`**: formal training/proof/test-run packet executor — runs,
     monitors, posts terminal receipts. Code fixes → `trainer-implement`; packet
     fixes → `training-dev`.
@@ -50,7 +55,8 @@ edits/runs need persisted named exception or break-glass reason.
 |---|---|
 | Hypothesize, plan, devil's advocate, creativity, audit, iterate | **yes** |
 | Build, focused impl validation, formal runs, commit | **no** — `trainer-implement`
-  implements after +1; formal training/proof/test runs via `test-operator` |
+  implements after +1 (claude+co_lead review the result); formal
+  training/proof/test runs via `test-operator` |
 
 Default rate, not occasional. Opt-out: mechanical/trivial only. Analog to
 workflow.md "two measurements every round" = **two minds every thinking
