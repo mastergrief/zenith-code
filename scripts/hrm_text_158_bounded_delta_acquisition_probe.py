@@ -99,6 +99,10 @@ from calm.hrm_text_158.native_full_stack.accumulator_policy_shadow_screen import
     TRACE_TEMPORALITY_SEQUENTIAL_OPTIMIZER_STEPS,
     TRACKING_SCOPE_OPTIMIZER_STEP_TRAJECTORY,
 )
+from calm.hrm_text_158.native_full_stack.b2b_capture_receipt_emission import (
+    finalize_b2b_capture_receipt,
+    rewrite_b2b_trace_with_receipt_emissions,
+)
 from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
     ORACLE_SCREEN_MODE_CHOICES,
     ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_MEASUREMENT,
@@ -4081,13 +4085,16 @@ def run_bounded_delta_steps(
             )
     b2b_capture_receipt: dict[str, Any] | None = None
     if b2b_sequential_capture_enabled and b2b_sequential_capture_out is not None:
-        b2b_capture_receipt = build_b2b_sequential_capture_receipt(
-            capture_out=Path(b2b_sequential_capture_out),
-            steps_captured=len(b2b_trace_hashes),
-            min_steps_for_verdict=int(b2b_sequential_min_steps_for_verdict),
-            trace_hashes=b2b_trace_hashes,
-            parent_hash_unchanged=True,
-            max_sampled_candidates=int(b2b_sequential_max_sampled_candidates),
+        rewrite_b2b_trace_with_receipt_emissions(Path(b2b_sequential_capture_out))
+        b2b_capture_receipt = finalize_b2b_capture_receipt(
+            build_b2b_sequential_capture_receipt(
+                capture_out=Path(b2b_sequential_capture_out),
+                steps_captured=len(b2b_trace_hashes),
+                min_steps_for_verdict=int(b2b_sequential_min_steps_for_verdict),
+                trace_hashes=b2b_trace_hashes,
+                parent_hash_unchanged=True,
+                max_sampled_candidates=int(b2b_sequential_max_sampled_candidates),
+            )
         )
     return (
         step_reports,
