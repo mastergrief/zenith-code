@@ -32,10 +32,12 @@ from calm.hrm_text_158.native_full_stack.two_tier_carry_falsifier_battery import
     build_estimand_vacuity_guard,
     build_lane_maps,
     build_two_tier_carry_falsifier_battery,
+    build_warmup_subthreshold_applies,
     classify_battery,
     evaluate_f1_step,
     evaluate_f2_step,
     evaluate_f3_step,
+    is_held_step,
     jaccard_similarity,
     kendall_tau_b,
     run_falsifier_battery,
@@ -432,7 +434,7 @@ def test_f1_trace_policy_mismatch_when_k_exceeds_crossing_count() -> None:
         f1_summary={"held_qualifying_steps": 0},
         f2_summary={"vacuity_triggered": False},
         f3_summary={"held_qualifying_steps": 0},
-        f1_trace_policy_mismatch=True,
+        f1_trace_policy_mismatch_held=True,
     )
     classified = classify_battery(
         f1_pass=False,
@@ -442,7 +444,7 @@ def test_f1_trace_policy_mismatch_when_k_exceeds_crossing_count() -> None:
         harness_failures=[],
     )
     assert classified["primary_label"] == LABEL_SCREEN_HARNESS_OR_GATE_FAIL
-    assert guard["trace_policy_mismatch"] is True
+    assert guard["trace_policy_mismatch_held"] is True
 
 
 def test_field_inventory_gate_lists_acc_width_row_fields(tmp_path: Path) -> None:
@@ -514,3 +516,172 @@ def test_kendall_tau_b_uses_knight_tie_correction() -> None:
 def test_jaccard_edge_cases() -> None:
     assert jaccard_similarity(set(), set()) == 1.0
     assert jaccard_similarity({1, 2}, {2, 3}) == pytest.approx(1 / 3)
+
+
+def test_non_held_trace_policy_mismatch_not_row_one() -> None:
+    """Non-held mismatch steps should not trigger trace_policy_mismatch_held, but should populate warmup block."""
+    vote_spec = _vote_spec()
+    non_held_step_index = 1
+    rows = [_row("a", flat_index=1, pre_acc=0, vote=15, new_acc=15)]
+    step = _step(non_held_step_index, rows, applied_flat_indices=[1, 2, 3])
+    lane_maps = build_lane_maps([step], vote_spec=vote_spec)
+    result = evaluate_f1_step(
+        step,
+        lane_maps=lane_maps,
+        applied_candidate_ids_by_step={},
+    )
+    assert result["qualifying"] is False
+    assert result["skip_reason"] == "trace_policy_mismatch"
+    assert not is_held_step(non_held_step_index)
+    battery = run_falsifier_battery([step], vote_spec=vote_spec)
+    assert battery["trace_policy_mismatch_any_step"] is True
+    assert battery["estimand_vacuity_guard"]["trace_policy_mismatch_held"] is False
+    assert len(battery["warmup_subthreshold_applies"]) == 1
+    warmup = battery["warmup_subthreshold_applies"][0]
+    assert warmup["step"] == non_held_step_index
+    assert warmup["k"] == 3
+    assert warmup["crossing_count"] == 1
+
+
+def test_held_trace_policy_mismatch_still_row_one() -> None:
+    """Held mismatch steps should trigger row 1 via vacuity guard."""
+    vote_spec = _vote_spec()
+    held_step_index = 30
+    rows = [_row("a", flat_index=1, pre_acc=0, vote=15, new_acc=15)]
+    step = _step(held_step_index, rows, applied_flat_indices=[1, 2, 3])
+    lane_maps = build_lane_maps([step], vote_spec=vote_spec)
+    result = evaluate_f1_step(
+        step,
+        lane_maps=lane_maps,
+        applied_candidate_ids_by_step={},
+    )
+    assert result["qualifying"] is False
+    assert result["skip_reason"] == "trace_policy_mismatch"
+    assert is_held_step(held_step_index)
+    battery = run_falsifier_battery([step], vote_spec=vote_spec)
+    assert battery["trace_policy_mismatch_any_step"] is True
+    assert battery["estimand_vacuity_guard"]["trace_policy_mismatch_held"] is True
+    assert battery["classifier"]["primary_label"] == LABEL_SCREEN_HARNESS_OR_GATE_FAIL
+    assert battery["classifier"]["matched_row"] == 1
+    assert len(battery["warmup_subthreshold_applies"]) == 0
+
+
+def test_warmup_block_schema() -> None:
+    """Warmup block entries carry all required fields."""
+    vote_spec = _vote_spec()
+    non_held_step_index = 5
+    rows = [
+        _row("a", flat_index=1, pre_acc=0, vote=15, new_acc=15),
+        _row("b", flat_index=2, pre_acc=0, vote=12, new_acc=12),
+    ]
+    step = _step(non_held_step_index, rows, applied_flat_indices=[1, 2, 3])
+    battery = run_falsifier_battery([step], vote_spec=vote_spec)
+    assert len(battery["warmup_subthreshold_applies"]) == 1
+    entry = battery["warmup_subthreshold_applies"][0]
+    assert "step" in entry
+    assert "k" in entry
+    assert "crossing_count" in entry
+    assert "applied" in entry
+    assert "recompute_disagreements" in entry
+    assert isinstance(entry["applied"], list)
+    for applied_item in entry["applied"]:
+        assert "flat_index" in applied_item
+        assert "in_table" in applied_item
+        if applied_item["in_table"]:
+            assert "pre_accumulator_i16" in applied_item
+            assert "vote_value" in applied_item
+            assert "new_acc_w16_recomputed" in applied_item
+            assert "new_acc_recorded" in applied_item
+            assert "threshold_residual_signed" in applied_item
+            assert "proximity_to_threshold" in applied_item
+
+
+def test_v1_phase_and_rerun_handling() -> None:
+    """v1 phase rerun classification routes to v1 exit code."""
+    base_manifest = _valid_manifest_base()
+    rerun_manifest_v1 = {
+        **base_manifest,
+        "phase": "two_tier_falsifier_battery_v1",
+        "exit_codes": {
+            **base_manifest["exit_codes"],
+            "two_tier_falsifier_battery_v1": 0,
+        },
+    }
+    rerun = verify_manifest_preflight(rerun_manifest_v1, fals_root="/tmp/fals")
+    assert rerun["passed"] is True
+    assert rerun["prior_own_phase_classification"] == "rerun_over_prior_success"
+    launcher_manifest_v1 = {
+        **rerun_manifest_v1,
+        "exit_codes": {
+            **rerun_manifest_v1["exit_codes"],
+            "two_tier_falsifier_battery_v1": 127,
+        },
+    }
+    launcher = verify_manifest_preflight(launcher_manifest_v1, fals_root="/tmp/fals")
+    assert launcher["passed"] is True
+    assert launcher["prior_own_phase_classification"] == "launcher_failed_previous_attempt"
+    stop_manifest_v1 = {
+        **rerun_manifest_v1,
+        "exit_codes": {
+            **rerun_manifest_v1["exit_codes"],
+            "two_tier_falsifier_battery_v1": 3,
+        },
+    }
+    stop = verify_manifest_preflight(stop_manifest_v1, fals_root="/tmp/fals")
+    assert stop["passed"] is False
+    assert "stop_for_review" in stop["failure_reasons"]
+    assert stop["prior_own_phase_classification"] == "stop_for_review"
+    v0_manifest = {
+        **base_manifest,
+        "phase": "two_tier_falsifier_battery_v0",
+        "exit_codes": {
+            **base_manifest["exit_codes"],
+            "two_tier_falsifier_battery_v0": 0,
+        },
+    }
+    v0 = verify_manifest_preflight(v0_manifest, fals_root="/tmp/fals")
+    assert v0["passed"] is True
+
+
+def _clean_pass_rows(flat_start: int = 1) -> list[dict[str, object]]:
+    """32 rows with distinct new_acc 0..31 — inside W6 clip, so both lanes agree
+    exactly: F1 Jaccard 1.0, F2 tau-b 1.0 (496 comparable pairs), F3 argmax agree."""
+    return [
+        _row(
+            f"cand-{flat_start + offset}",
+            flat_index=flat_start + offset,
+            pre_acc=0,
+            vote=offset,
+            new_acc=offset,
+        )
+        for offset in range(32)
+    ]
+
+
+def test_non_held_mismatch_with_passing_held_support_is_not_row_one() -> None:
+    """The amendment's critical behavior: a non-held trace-policy mismatch must
+    NOT route to row 1 when the held split itself is clean — the battery must
+    reach the normal F1/F2/F3 classification (row 5 for this all-pass fixture)."""
+    vote_spec = _vote_spec()
+    mismatch_step = _step(
+        1,
+        [_row("a", flat_index=1, pre_acc=0, vote=15, new_acc=15)],
+        applied_flat_indices=[1, 2, 3],
+    )
+    held_steps = [
+        _step(step_index, _clean_pass_rows(), applied_flat_indices=[30, 31])
+        for step_index in _held_step_indices(HELD_STEP_END - HELD_STEP_START + 1)
+    ]
+    battery = run_falsifier_battery([mismatch_step] + held_steps, vote_spec=vote_spec)
+    guard = battery["estimand_vacuity_guard"]
+    assert battery["trace_policy_mismatch_any_step"] is True
+    assert guard["trace_policy_mismatch_held"] is False
+    assert guard["f1_insufficient_qualifying"] is False
+    assert guard["f2_saturation_vacuous"] is False
+    assert guard["f3_insufficient_qualifying"] is False
+    assert len(battery["warmup_subthreshold_applies"]) == 1
+    assert battery["f1_cap_priority"]["held_pass"] is True
+    assert battery["f2_rank_tau_b"]["held_pass"] is True
+    assert battery["f3_tiebreak"]["held_pass"] is True
+    assert battery["classifier"]["matched_row"] != 1
+    assert battery["classifier"]["matched_row"] == 5

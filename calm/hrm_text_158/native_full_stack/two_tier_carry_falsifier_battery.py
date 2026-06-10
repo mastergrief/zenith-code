@@ -26,8 +26,8 @@ from calm.hrm_text_158.native_full_stack.accumulator_policy_shadow_screen import
     _stable_hash16,
 )
 
-BATTERY_SCHEMA_VERSION = "hrm_text_158_two_tier_carry_falsifier_battery/v0"
-BATTERY_CONTRACT_ID = "two_tier_carry_falsifier_battery_v0"
+BATTERY_SCHEMA_VERSION = "hrm_text_158_two_tier_carry_falsifier_battery/v1"
+BATTERY_CONTRACT_ID = "two_tier_carry_falsifier_battery_v1"
 BATTERY_RECEIPT_KIND = "cpu_read_only_two_tier_carry_falsifier_battery"
 
 W_REF = 16
@@ -49,7 +49,7 @@ BANKED_F4_PRIMARY_LABEL = "transient_compute_control_only"
 EXPECTED_TRACE_HASH = "cb373de78030c5a9"
 REQUIRED_STORAGE_CLASS = "durable_not_tmp"
 
-ALLOWED_PHASES = frozenset({"acc_width_sweep_v0", "two_tier_falsifier_battery_v0"})
+ALLOWED_PHASES = frozenset({"acc_width_sweep_v0", "two_tier_falsifier_battery_v0", "two_tier_falsifier_battery_v1"})
 UPSTREAM_EXIT_KEYS = (
     "b2c_replay",
     "audit_v0",
@@ -491,7 +491,7 @@ def build_estimand_vacuity_guard(
     f1_summary: Mapping[str, Any],
     f2_summary: Mapping[str, Any],
     f3_summary: Mapping[str, Any],
-    f1_trace_policy_mismatch: bool,
+    f1_trace_policy_mismatch_held: bool,
 ) -> dict[str, Any]:
     return {
         "f1_insufficient_qualifying": int(f1_summary["held_qualifying_steps"])
@@ -499,7 +499,7 @@ def build_estimand_vacuity_guard(
         "f2_saturation_vacuous": bool(f2_summary.get("vacuity_triggered")),
         "f3_insufficient_qualifying": int(f3_summary["held_qualifying_steps"])
         < MIN_HELD_QUALIFYING_STEPS,
-        "trace_policy_mismatch": bool(f1_trace_policy_mismatch),
+        "trace_policy_mismatch_held": bool(f1_trace_policy_mismatch_held),
     }
 
 
@@ -518,7 +518,7 @@ def classify_battery(
             "f1_insufficient_qualifying",
             "f2_saturation_vacuous",
             "f3_insufficient_qualifying",
-            "trace_policy_mismatch",
+            "trace_policy_mismatch_held",
         )
     )
     if screen_triggered:
@@ -623,9 +623,10 @@ def verify_manifest_preflight(
             failures.append("missing_trace_hash")
         elif trace_hash != EXPECTED_TRACE_HASH:
             failures.append("trace_hash_mismatch")
-    own_phase_exit = exit_codes.get("two_tier_falsifier_battery_v0")
+    own_phase_exit_key = "two_tier_falsifier_battery_v1" if phase == "two_tier_falsifier_battery_v1" else "two_tier_falsifier_battery_v0"
+    own_phase_exit = exit_codes.get(own_phase_exit_key)
     prior_own_phase_classification: str | None = None
-    if phase == "two_tier_falsifier_battery_v0" and own_phase_exit is not None:
+    if phase in ("two_tier_falsifier_battery_v0", "two_tier_falsifier_battery_v1") and own_phase_exit is not None:
         own_exit = int(own_phase_exit)
         if own_exit == 0:
             prior_own_phase_classification = "rerun_over_prior_success"
@@ -707,6 +708,85 @@ def verify_battery_input_integrity(
     }
 
 
+def build_warmup_subthreshold_applies(
+    steps: Sequence[Mapping[str, Any]],
+    *,
+    lane_maps: LaneMaps,
+    applied_candidate_ids_by_step: Mapping[int, str],
+    mismatch_step_indices: Sequence[int],
+) -> list[dict[str, Any]]:
+    """Build diagnostic block for non-held trace_policy_mismatch steps."""
+    result: list[dict[str, Any]] = []
+    for step_index in mismatch_step_indices:
+        if is_held_step(step_index):
+            continue
+        step = next(
+            (s for s in steps if int(s.get("optimizer_step_index")) == step_index),
+            None,
+        )
+        if step is None:
+            continue
+        applied_indices = _applied_flip_flat_indices(
+            step,
+            applied_candidate_ids_by_step=applied_candidate_ids_by_step,
+        )
+        crossing = _crossing_flat_indices_for_step(step, lane_maps=lane_maps)
+        k = len(applied_indices)
+        crossing_count = len(crossing)
+        applied_list: list[dict[str, Any]] = []
+        for flat_index in applied_indices:
+            key = _row_key(step_index, flat_index)
+            row = next(
+                (
+                    r
+                    for r in step.get("sampled_candidate_table") or ()
+                    if isinstance(r, Mapping) and int(r.get("flat_index")) == flat_index
+                ),
+                None,
+            )
+            if row is not None:
+                new_acc_recomputed = lane_maps.w_ref.get(key, 0)
+                applied_list.append(
+                    {
+                        "flat_index": flat_index,
+                        "in_table": True,
+                        "pre_accumulator_i16": int(row.get("pre_accumulator_i16", 0)),
+                        "vote_value": int(row.get("vote_value", 0)),
+                        "new_acc_w16_recomputed": new_acc_recomputed,
+                        "new_acc_recorded": int(row.get("new_acc_i32_signed", 0)),
+                        "threshold_residual_signed": int(
+                            row.get("threshold_residual_signed", 0)
+                        ),
+                        "proximity_to_threshold": int(
+                            row.get("proximity_to_threshold", 0)
+                        ),
+                    }
+                )
+            else:
+                applied_list.append(
+                    {
+                        "flat_index": flat_index,
+                        "in_table": False,
+                    }
+                )
+        recompute_disagreements = [
+            entry["flat_index"]
+            for entry in applied_list
+            if entry.get("in_table")
+            and int(entry["new_acc_w16_recomputed"]) != int(entry["new_acc_recorded"])
+        ]
+        result.append(
+            {
+                "step": step_index,
+                "k": k,
+                "crossing_count": crossing_count,
+                "applied": applied_list,
+                "recompute_disagreements": recompute_disagreements,
+            }
+        )
+    return result
+
+
 def run_falsifier_battery(
     steps: Sequence[Mapping[str, Any]],
     *,
@@ -730,14 +810,30 @@ def run_falsifier_battery(
     f1_summary = aggregate_f1(f1_steps)
     f2_summary = aggregate_f2(f2_steps)
     f3_summary = aggregate_f3(f3_steps)
-    trace_policy_mismatch = any(
+    trace_policy_mismatch_held = any(
+        item.get("skip_reason") == "trace_policy_mismatch"
+        and is_held_step(int(item["optimizer_step_index"]))
+        for item in f1_steps
+    )
+    trace_policy_mismatch_any_step = any(
         item.get("skip_reason") == "trace_policy_mismatch" for item in f1_steps
+    )
+    mismatch_step_indices = [
+        int(item["optimizer_step_index"])
+        for item in f1_steps
+        if item.get("skip_reason") == "trace_policy_mismatch"
+    ]
+    warmup_subthreshold_applies = build_warmup_subthreshold_applies(
+        steps,
+        lane_maps=lane_maps,
+        applied_candidate_ids_by_step=applied_ids,
+        mismatch_step_indices=mismatch_step_indices,
     )
     vacuity_guard = build_estimand_vacuity_guard(
         f1_summary=f1_summary,
         f2_summary=f2_summary,
         f3_summary=f3_summary,
-        f1_trace_policy_mismatch=trace_policy_mismatch,
+        f1_trace_policy_mismatch_held=trace_policy_mismatch_held,
     )
     classifier = classify_battery(
         f1_pass=bool(f1_summary["held_pass"]),
@@ -776,6 +872,8 @@ def run_falsifier_battery(
             "rederived_in_battery": False,
         },
         "tau_b_formula": "knight_1966_tau_b_tie_correction",
+        "trace_policy_mismatch_any_step": trace_policy_mismatch_any_step,
+        "warmup_subthreshold_applies": warmup_subthreshold_applies,
     }
 
 

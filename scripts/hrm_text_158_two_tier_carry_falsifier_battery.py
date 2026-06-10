@@ -30,7 +30,7 @@ def _required_bound_path(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Emit the CPU read-only two_tier_carry_falsifier_battery_v0 receipt "
+            "Emit the CPU read-only two_tier_carry_falsifier_battery_v1 receipt "
             "over a manifest-bound B2b trace with capture/b2c/audit integrity pins."
         )
     )
