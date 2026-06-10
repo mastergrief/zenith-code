@@ -340,6 +340,24 @@ def test_manifest_preflight_fail_closed_on_missing_or_wrong_pins() -> None:
     assert "missing_manifest_role:b2b_trace" in b2b["failure_reasons"]
 
 
+def test_manifest_bind_with_production_role_names() -> None:
+    base = _valid_manifest_base()
+    prod_manifest = {
+        **base,
+        "artifacts": [
+            {"role": "stable_copy_00", "path": "/tmp/stable.ndjson"},
+            {"role": "b2b_trace", "path": "/tmp/b2b.ndjson"},
+            {"role": "capture_receipt", "path": "/tmp/capture.json"},
+            {"role": "b2c_receipt", "path": "/tmp/b2c.json"},
+            {"role": "audit_receipt", "path": "/tmp/audit.json"},
+            {"role": "acc_receipt", "path": "/tmp/acc_width.json"},
+        ],
+    }
+    ok = verify_manifest_preflight(prod_manifest, fals_root="/tmp/fals")
+    assert ok["passed"] is True
+    assert ok["bound_paths"]["acc_width_receipt"] == "/tmp/acc_width.json"
+
+
 def test_f1_insufficient_qualifying_routes_to_screen_row_one() -> None:
     vote_spec = _vote_spec()
     steps = [

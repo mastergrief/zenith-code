@@ -77,7 +77,7 @@ MANIFEST_ROLE_ALIASES = {
     "capture_receipt": ("capture_receipt",),
     "b2c_receipt": ("b2c_receipt",),
     "audit_receipt": ("audit_receipt",),
-    "acc_width_receipt": ("acc_width_receipt", "acc_width_recorded_row_sweep_receipt"),
+    "acc_width_receipt": ("acc_width_receipt", "acc_width_recorded_row_sweep_receipt", "acc_receipt"),
 }
 REQUIRED_MANIFEST_ROLES = frozenset(MANIFEST_ROLE_ALIASES)
 
