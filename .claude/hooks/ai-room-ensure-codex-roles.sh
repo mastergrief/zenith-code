@@ -50,15 +50,24 @@ ai-room ensure-co-lead --channel "$CHANNEL" --cwd "$PROJECT_DIR" \
 
 # 2. Standing claudex lanes (training-dev plan/review + trainer-implement
 #    bounded implementation + test-operator deterministic proof-runner) in
-#    THIS channel as auto codex_N handles. Any other role is
+#    THIS channel on PINNED handles (codex / codex_1 / codex_2) so the
+#    role↔handle mapping stays stable across sessions (codex_co_lead is
+#    pinned the same way by ensure-co-lead). Any other role is
 #    explicit-dispatch only, not a SessionStart standing role. Skip a role
-#    if already live.
+#    if already live (on any handle); log-and-skip if its pinned handle is
+#    occupied by a different role (never evict).
 AI_ROOM_CHANNEL="$CHANNEL" AI_ROOM_CWD="$PROJECT_DIR" python3 - <<'PY' || echo "WARN role-spawn block failed (non-fatal)"
 import importlib.util, json, os, pathlib, sys
 
 CHANNEL = os.environ["AI_ROOM_CHANNEL"]
 CWD = os.environ["AI_ROOM_CWD"]
-ROLES = ["training-dev", "trainer-implement", "test-operator"]
+# (role, pinned_handle): stable mapping across sessions; handles must match
+# the auto-codex pattern accepted by _spawn_claudex_core's collision guard.
+ROLES = [
+    ("training-dev", "codex"),
+    ("trainer-implement", "codex_1"),
+    ("test-operator", "codex_2"),
+]
 SPAWN_TIMEOUT = 120.0
 
 
@@ -84,27 +93,35 @@ try:
     live_handles = module._discover_live_codex_handles(exclude_handle="")
     leases_dir = pathlib.Path.home() / ".ai-room" / "channels" / CHANNEL / "leases"
     live_roles = set()
+    handle_role = {}
     for h in live_handles:
         try:
             d = json.loads((leases_dir / f"{h}.json").read_text())
             ch = d.get("codex_home")
             if ch:
-                live_roles.add(os.path.basename(ch.rstrip("/")))
+                role_name = os.path.basename(ch.rstrip("/"))
+                live_roles.add(role_name)
+                handle_role[h] = role_name
         except Exception as e:
             log(f"lease read {h} failed: {e}")
-    log(f"live_handles={live_handles} live_roles={sorted(live_roles)}")
+    log(f"live_handles={live_handles} live_roles={sorted(live_roles)} handle_role={handle_role}")
 
     socket_resolution = module._resolve_tmux_socket(CHANNEL)
     if getattr(socket_resolution, "error", None):
         log(f"tmux socket resolve error: {socket_resolution.error} / {getattr(socket_resolution, 'error_detail', '')}")
         socket_resolution = None
 
-    for role in ROLES:
+    for role, pinned_handle in ROLES:
         if role in live_roles:
-            log(f"skip {role} (already live)")
+            holder = next((h for h, r in handle_role.items() if r == role), "?")
+            log(f"skip {role} (already live on {holder})")
             continue
-        log(f"spawn {role} (handle=auto, cwd={CWD})")
-        kwargs = dict(handle=None, cwd=CWD, timeout_seconds=SPAWN_TIMEOUT, role=role)
+        occupant = handle_role.get(pinned_handle)
+        if pinned_handle in live_handles and occupant != role:
+            log(f"skip {role} (pinned handle {pinned_handle} occupied by {occupant!r}; never evict — recycle manually)")
+            continue
+        log(f"spawn {role} (handle={pinned_handle}, cwd={CWD})")
+        kwargs = dict(handle=pinned_handle, cwd=CWD, timeout_seconds=SPAWN_TIMEOUT, role=role)
         if socket_resolution is not None:
             kwargs["tmux_socket"] = socket_resolution.tmux_socket
             kwargs["collab_instance_id"] = socket_resolution.collab_instance_id
