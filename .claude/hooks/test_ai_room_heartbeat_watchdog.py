@@ -212,6 +212,82 @@ case("same_task_other_worker_no_count",
      NOW_OVERDUE, "0", "0", ["ACTION=stall", "RECOMMEND re-drive"])
 
 
+# --- unanswered-gate tracking (2026-06-10 ack-idle hardening) -------------------
+NOW_ANCIENT = "2026-06-03T02:30:00Z"     # >GATE_MAX_AGE (2h) after T_HB
+
+
+def grec(target, ts=T_HB, mid="gate1", deadline=300, body=None):
+    return json.dumps({"ts": ts, "id": mid, "from": "claude", "to": target,
+                       "kind": "task_dispatch", "requires_response_from": target,
+                       "response_deadline_secs": deadline,
+                       "body": body or f"+1 RUN — execute packet now. task {TASK}"})
+
+
+def wreply(frm, ts, mid, reply_to=None, body="start signal: running"):
+    d = {"ts": ts, "id": mid, "from": frm, "kind": "msg", "body": body}
+    if reply_to:
+        d["reply_to"] = reply_to
+    return json.dumps(d)
+
+
+def wd_gate(marker, gate_id, ts, mid):
+    return rec("watchdog", f"{marker} — worker codex_2: gate {gate_id} ...",
+               ts=ts, mid=mid)
+
+
+# G1. unanswered lapsed gate -> GATE_REWAKE (wake, to worker)
+case("gate_unanswered_rewake", [grec("codex_2", mid="g1")],
+     NOW_OVERDUE, "0", "0", ["ACTION=gate_rewake", "WAKE=True", "GATE_REWAKE", "g1"])
+
+# G2. answered via threaded reply -> CLEAN
+case("gate_answered_reply_clean",
+     [grec("codex_2", mid="g2"),
+      wreply("codex_2", "2026-06-03T00:02:00Z", "r2", reply_to="g2")],
+     NOW_OVERDUE, "0", "0", ["CLEAN"])
+
+# G3. answered via body citation (unthreaded operator report) -> CLEAN
+case("gate_answered_citation_clean",
+     [grec("codex_2", mid="g3"),
+      wreply("codex_2", "2026-06-03T00:30:00Z", "r3",
+             body="receipt for gate g3 posted; exit 0")],
+     NOW_OVERDUE, "0", "0", ["CLEAN"])
+
+# G4. superseded by a NEWER claude engagement with the same worker -> CLEAN
+case("gate_superseded_clean",
+     [grec("codex_2", mid="g4"),
+      grec("codex_2", ts="2026-06-03T00:40:00Z", mid="g4b",
+           body="fresh posture brief; reply with ack"),
+      wreply("codex_2", "2026-06-03T00:41:00Z", "r4", reply_to="g4b")],
+     NOW_OVERDUE, "0", "0", ["CLEAN"])
+
+# G5. ancient gate (>GATE_MAX_AGE) -> CLEAN (never resurrected)
+case("gate_ancient_clean", [grec("codex_2", mid="g5")],
+     NOW_ANCIENT, "0", "0", ["CLEAN"])
+
+# G6. two prior GATE_REWAKEs -> escalate to claude (wake)
+case("gate_escalates_after_max_rewakes",
+     [grec("codex_2", mid="g6"),
+      wd_gate("GATE_REWAKE", "g6", T_S1, "gw1"),
+      wd_gate("GATE_REWAKE", "g6", T_S2, "gw2")],
+     NOW_OVERDUE, "0", "0", ["ACTION=gate_escalate", "WAKE=True", "RECOMMEND claude"])
+
+# G7. already escalated -> CLEAN (single escalation, no cry-wolf)
+case("gate_after_escalate_clean",
+     [grec("codex_2", mid="g7"),
+      wd_gate("GATE_REWAKE", "g7", T_S1, "ge1"),
+      wd_gate("GATE_REWAKE", "g7", T_S2, "ge2"),
+      wd_gate("GATE_ESCALATE", "g7", T_S3, "ge3")],
+     NOW_OVERDUE, "0", "0", ["CLEAN"])
+
+# G8. deadline not yet lapsed -> CLEAN
+case("gate_not_due_clean", [grec("codex_2", mid="g8", deadline=86400)],
+     NOW_OVERDUE, "0", "0", ["CLEAN"])
+
+# G9. requires_response_from co_lead (non-worker) -> CLEAN (exempt)
+case("gate_colead_exempt_clean", [grec("codex_co_lead", mid="g9")],
+     NOW_OVERDUE, "0", "0", ["CLEAN"])
+
+
 @extra_test("emit_nonzero_logs_failure_not_posted")
 def test_emit_nonzero_logs_failure_not_posted():
     wd = load_watchdog_module()

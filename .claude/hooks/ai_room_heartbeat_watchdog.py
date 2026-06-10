@@ -35,6 +35,16 @@ terminal never cleans worker A's overdue heartbeat.
 Companion to `worker_gate_wake_pairing_gate.py` (which guarantees claude PAIRS
 the wake when it gates); this catches a worker that wedges AFTER being woken.
 
+UNANSWERED-GATE TRACKING (second detection stream, 2026-06-10): the heartbeat
+stream above only sees workers that POSTED a heartbeat. The ack-idle failure
+(worker reads a deadline-bearing execution gate, its turn ends, nothing ever
+re-fires it) is invisible to it. This stream closes that gap: any claude post
+with `requires_response_from=<worker>` + `response_deadline_secs` whose
+deadline lapsed with NO worker reply (threaded reply_to OR body citation of
+the gate id) gets an automatic GATE_REWAKE posted directly to the worker
+(bounded: GATE_REWAKE_MAX), then a single wake-bearing GATE_ESCALATE to
+claude. Non-destructive throughout — wake and report, never kill.
+
 Usage:
   ai_room_heartbeat_watchdog.py [--dry-run] [--channel-log PATH] [--now ISO]
 Cron (every 7 min):
@@ -62,6 +72,12 @@ RETIRE_THRESHOLD = 3             # exact-worker wake STALLs with no movement bef
                                  # dead heartbeat is retired (ceases alerts; re-monitors
                                  # on a newer heartbeat). Stops dead-handle cry-wolf.
 GPU_ACTIVE_MIB = 2000            # reported only; NOT a movement signal by itself
+GATE_GRACE_SECONDS = 120         # slack past response_deadline_secs before acting
+GATE_REWAKE_MAX = 2              # direct worker re-wakes before escalating to claude
+GATE_REWAKE_DEADLINE = 300       # deadline carried on the automatic re-wake
+GATE_DEFAULT_DEADLINE = 300      # requires_response_from with no explicit deadline
+GATE_MAX_AGE_SECONDS = 7200      # never resurrect gates older than this (recycled
+                                 # handles / superseded work make ancient gates moot)
 PROCESS_PATTERNS = ("transient_fp_credit_science_train", "train_hrm_text_158",
                     "calm.hrm.train")
 NON_WORKER_HANDLES = {"claude", "codex_co_lead", "gabe", "watchdog"}
@@ -359,6 +375,128 @@ def decide(hb, ev, n_extends, n_stalls, n_retired):
                 f"@claude liveness check + decision.")}
 
 
+def find_unanswered_gates(records, now):
+    """Claude-authored deadline-bearing requests to WORKER handles whose deadline
+    (+grace) lapsed with no worker response. A response = any later record from
+    that worker that threads to the gate (reply_to == gate id) OR cites the gate
+    id in its body (covers operators that report without threading).
+
+    Staleness guards: only the LATEST unanswered gate per worker is acted on (a
+    newer claude gate to the same worker supersedes older pending ones), and
+    gates older than GATE_MAX_AGE_SECONDS are never resurrected (recycled
+    handles / closed arcs make ancient gates moot)."""
+    candidates = []
+    for i, rec in enumerate(records):
+        if rec.get("from") != "claude":
+            continue
+        target = rec.get("requires_response_from", "")
+        if not _is_worker(target):
+            continue
+        t = _record_ts(rec)
+        if t is None:
+            continue
+        try:
+            deadline_secs = int(rec.get("response_deadline_secs") or GATE_DEFAULT_DEADLINE)
+        except Exception:
+            deadline_secs = GATE_DEFAULT_DEADLINE
+        gate_id = rec.get("id", "")
+        if not gate_id:
+            continue
+        due = t + deadline_secs + GATE_GRACE_SECONDS
+        if now <= due:
+            continue
+        if now - t > GATE_MAX_AGE_SECONDS:
+            continue  # ancient gate — moot, never resurrect
+        answered = False
+        for later in records[i + 1:]:
+            if later.get("from") != target:
+                continue
+            lt = _record_ts(later)
+            if lt is None or lt <= t:
+                continue
+            if later.get("reply_to") == gate_id or gate_id in _body(later):
+                answered = True
+                break
+        if answered:
+            continue
+        task_m = TASKID_RE.search(_body(rec))
+        candidates.append({"gate_id": gate_id, "worker": target, "gate_ts": t,
+                           "deadline_secs": deadline_secs, "due": due,
+                           "task_id": task_m.group(1) if task_m else ""})
+    # Supersede rule: ANY newer claude deadline-bearing engagement with the same
+    # worker (answered or not) supersedes an older pending gate — a newer
+    # engagement means claude has moved the worker's contract forward (often
+    # after a recycle), and re-driving the old gate would conflict with it.
+    latest_engagement = {}
+    for rec in records:
+        if rec.get("from") != "claude":
+            continue
+        target = rec.get("requires_response_from", "")
+        if not _is_worker(target):
+            continue
+        t = _record_ts(rec)
+        if t is None:
+            continue
+        if target not in latest_engagement or t > latest_engagement[target]:
+            latest_engagement[target] = t
+    out = []
+    for g in candidates:
+        if g["gate_ts"] < latest_engagement.get(g["worker"], g["gate_ts"]):
+            continue  # superseded by a newer engagement with this worker
+        out.append(g)
+    return out
+
+
+def gate_watchdog_history(records, gate_id):
+    """(n_rewakes, n_escalates) — watchdog posts citing this gate id."""
+    n_rewake, n_escalate = 0, 0
+    for rec in records:
+        if rec.get("from") != WATCHDOG_FROM:
+            continue
+        body = _body(rec)
+        if gate_id not in body:
+            continue
+        if "GATE_REWAKE" in body:
+            n_rewake += 1
+        elif "GATE_ESCALATE" in body:
+            n_escalate += 1
+    return n_rewake, n_escalate
+
+
+def decide_gate(gate, n_rewakes, n_escalates):
+    worker, gate_id = gate["worker"], gate["gate_id"]
+    if n_escalates >= 1:
+        return {"action": "clean", "kind": "status_update", "wake": False, "body": ""}
+    if n_rewakes < GATE_REWAKE_MAX:
+        return {"action": "gate_rewake", "kind": "task_dispatch", "wake": True,
+                "to": [worker], "requires_from": worker,
+                "deadline": GATE_REWAKE_DEADLINE, "worker": worker,
+                "body": (
+                    f"GATE_REWAKE — worker {worker}: AUTOMATIC re-wake on unanswered "
+                    f"deadline-bearing gate {gate_id} (deadline "
+                    f"{gate['deadline_secs']}s lapsed; no threaded reply and no body "
+                    f"citation of the gate id found; rewake {n_rewakes + 1} of "
+                    f"{GATE_REWAKE_MAX}). The gate's authority and instructions are "
+                    f"UNCHANGED — re-read gate {gate_id} and act NOW: post the start "
+                    f"signal (or classified blocker) FIRST, then execute, then post the "
+                    f"terminal validation_receipt threaded to the gate. If the work is "
+                    f"already done, post the terminal receipt citing the gate id "
+                    f"immediately. Silence past this re-wake escalates to claude. "
+                    f"Non-destructive watchdog; no state touched. "
+                    f"REPORT_TO: [claude, codex_co_lead] CROSS_THREAD_REQUIRED: yes")}
+    return {"action": "gate_escalate", "kind": "status_update", "wake": True,
+            "to": ["claude", "codex_co_lead"], "requires_from": "claude",
+            "deadline": STALL_RESPONSE_DEADLINE, "worker": worker,
+            "body": (
+                f"GATE_ESCALATE — worker {worker} unresponsive to gate {gate_id} "
+                f"after {n_rewakes} automatic GATE_REWAKEs (deadline "
+                f"{gate['deadline_secs']}s + {GATE_REWAKE_MAX} re-wakes, no threaded "
+                f"reply, no body citation). RECOMMEND claude verify run-dir/disk state "
+                f"(artifacts may exist despite silence — the 2026-06-10 pattern), then "
+                f"recycle-and-redispatch or close on disk verification. "
+                f"@claude decision required. Non-destructive watchdog.")}
+
+
 def _channel_from_log_path(path):
     try:
         p = os.path.abspath(os.path.expanduser(path or ""))
@@ -398,11 +536,14 @@ def emit(decision, dry_run, channel=""):
     cmd = [ai_room]
     if channel:
         cmd += ["--channel", channel]
-    cmd += ["post", WATCHDOG_FROM, "--to", "claude",
-            "--to", "codex_co_lead", "--kind", decision["kind"]]
+    cmd += ["post", WATCHDOG_FROM]
+    for target in decision.get("to") or ["claude", "codex_co_lead"]:
+        cmd += ["--to", target]
+    cmd += ["--kind", decision["kind"]]
     if decision["wake"]:
-        cmd += ["--requires-response-from", "claude",
-                "--response-deadline-secs", str(STALL_RESPONSE_DEADLINE)]
+        cmd += ["--requires-response-from", decision.get("requires_from", "claude"),
+                "--response-deadline-secs",
+                str(decision.get("deadline", STALL_RESPONSE_DEADLINE))]
     cmd += [decision["body"]]
     env = os.environ.copy()
     if channel:
@@ -453,6 +594,14 @@ def main():
             ev = prove_liveness(hb, last_check)
             decision = decide(hb, ev, n_ext, n_stall, n_retired)
             decision["worker"] = hb["worker"]
+            emit(decision, args.dry_run, emit_channel)
+            acted = True
+        for gate in find_unanswered_gates(records, now):
+            n_rewake, n_escalate = gate_watchdog_history(records, gate["gate_id"])
+            decision = decide_gate(gate, n_rewake, n_escalate)
+            if decision.get("action") == "clean":
+                continue
+            decision.setdefault("worker", gate["worker"])
             emit(decision, args.dry_run, emit_channel)
             acted = True
         if not acted:
