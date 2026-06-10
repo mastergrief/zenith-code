@@ -83,8 +83,9 @@ PROCESS_PATTERNS = ("transient_fp_credit_science_train", "train_hrm_text_158",
 NON_WORKER_HANDLES = {"claude", "codex_co_lead", "gabe", "watchdog"}
 WATCHDOG_FROM = "watchdog"
 HEARTBEAT_MARKERS = ("IMPLEMENTING", "MILESTONE HEARTBEAT", "next_heartbeat_due")
-TERMINAL_MARKERS = ("VALIDATION RECEIPT", "CONFOUNDED-NULL", "TERMINAL RECEIPT",
-                    "task_complete", "_acquires", "PACKET HOLE")
+TERMINAL_MARKERS = ("VALIDATION RECEIPT", "VALIDATION_RECEIPT", "CONFOUNDED-NULL",
+                    "TERMINAL RECEIPT", "task_complete", "_acquires", "PACKET HOLE",
+                    "PUSH RECEIPT")
 CODE_PHASES = {"edit", "compile", "cpu-proof", "dry-run", "receipt", ""}
 GPU_PHASES = {"gpu-proof", "launch"}
 
