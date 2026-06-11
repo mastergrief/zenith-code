@@ -9,17 +9,27 @@ from calm.hrm_text_158.native_full_stack.acc_width_recorded_row_sweep import (
     CANONICAL_VOTE_UPDATE_THRESHOLD_ABS,
     VoteSpecParsed,
     load_acc_width_trace_steps,
+    post_flip_residual_clamp,
     replay_width_lane,
 )
 from calm.hrm_text_158.native_full_stack.two_tier_carry_reducers import (
+    FOUR_BIT_SIGNED_RESIDUAL_MAX_ABS,
+    POST_FLIP_RESIDUAL_ENCODING_NAME,
+    POST_FLIP_RESIDUAL_MAG_MAX_AT_THRESHOLD_10,
+    POST_FLIP_RESIDUAL_PACKED_BIT_WIDTH,
+    POST_FLIP_RESIDUAL_PACKED_MAX,
+    REJECTED_POST_FLIP_RESIDUAL_ENCODING_FOUR_BIT_SIGNED,
     VOTE_UPDATE_SOURCE_CLIP_MAX,
     VOTE_UPDATE_SOURCE_CLIP_MIN,
     carry_self_update_row,
     crossing_bool_w6,
     crosses_threshold,
+    decode_post_flip_residual,
     decay_vote_clamp,
     effective_clip_bounds,
     effective_clip_w6,
+    encode_post_flip_residual,
+    encode_post_flip_residual_from_clamped,
 )
 
 TRACE1_PATH = Path(
@@ -195,3 +205,86 @@ def test_w6_vs_w16_crossing_equivalence_over_recorded_rows(
         assert lane6["row_crossings"][key] == w6_cross
 
     assert mismatches == []
+
+
+def _exhaustive_post_flip_residual_domain() -> list[tuple[int, int]]:
+    pairs: list[tuple[int, int]] = []
+    for direction_sign in (-1, 1):
+        for residual_mag in range(POST_FLIP_RESIDUAL_MAG_MAX_AT_THRESHOLD_10 + 1):
+            pairs.append((direction_sign, residual_mag))
+    return pairs
+
+
+@pytest.mark.parametrize(
+    ("direction_sign", "residual_mag"),
+    _exhaustive_post_flip_residual_domain(),
+)
+def test_post_flip_residual_round_trip_exhaustive_domain(
+    direction_sign: int,
+    residual_mag: int,
+) -> None:
+    packed = encode_post_flip_residual(direction_sign, residual_mag)
+    assert 0 <= packed <= POST_FLIP_RESIDUAL_PACKED_MAX
+    assert packed < (1 << POST_FLIP_RESIDUAL_PACKED_BIT_WIDTH)
+    assert decode_post_flip_residual(packed) == (direction_sign, residual_mag)
+
+
+def test_post_flip_residual_encoding_name_and_rejected_four_bit_signed_class() -> None:
+    assert POST_FLIP_RESIDUAL_ENCODING_NAME == (
+        "applied_crossing_direction_plus_4bit_residual"
+    )
+    assert REJECTED_POST_FLIP_RESIDUAL_ENCODING_FOUR_BIT_SIGNED == "4bit_signed"
+    assert FOUR_BIT_SIGNED_RESIDUAL_MAX_ABS == 7
+    assert FOUR_BIT_SIGNED_RESIDUAL_MAX_ABS < POST_FLIP_RESIDUAL_MAG_MAX_AT_THRESHOLD_10
+
+
+@pytest.mark.parametrize("residual_mag", (10, 11, 15))
+def test_encode_post_flip_residual_rejects_mag_at_or_above_threshold(
+    residual_mag: int,
+) -> None:
+    with pytest.raises(ValueError, match="residual_mag"):
+        encode_post_flip_residual(1, residual_mag)
+
+
+def test_encode_post_flip_residual_rejects_invalid_direction_sign() -> None:
+    with pytest.raises(ValueError, match="direction_sign"):
+        encode_post_flip_residual(0, 5)
+
+
+def test_decode_post_flip_residual_rejects_out_of_range_packed_values() -> None:
+    with pytest.raises(ValueError, match="packed post_flip_residual"):
+        decode_post_flip_residual(POST_FLIP_RESIDUAL_PACKED_MAX + 1)
+
+
+def test_four_bit_signed_class_cannot_represent_threshold_minus_one_band() -> None:
+    # 4-bit signed holds at most ±7; threshold_minus_one at T=10 requires ±9.
+    required_abs = POST_FLIP_RESIDUAL_MAG_MAX_AT_THRESHOLD_10
+    assert required_abs > FOUR_BIT_SIGNED_RESIDUAL_MAX_ABS
+
+
+@pytest.mark.parametrize(
+    ("new_acc", "proposal_direction"),
+    (
+        (19, 1),
+        (1, 1),
+        (-19, -1),
+        (-1, -1),
+        (10, 1),
+    ),
+)
+def test_encode_post_flip_residual_from_clamped_applies_clamp_law_first(
+    new_acc: int,
+    proposal_direction: int,
+) -> None:
+    clamped = post_flip_residual_clamp(
+        new_acc,
+        proposal_direction=proposal_direction,
+        threshold_abs=CANONICAL_VOTE_UPDATE_THRESHOLD_ABS,
+    )
+    packed = encode_post_flip_residual_from_clamped(
+        clamped,
+        threshold_abs=CANONICAL_VOTE_UPDATE_THRESHOLD_ABS,
+    )
+    direction_sign, residual_mag = decode_post_flip_residual(packed)
+    signed_residual = direction_sign * residual_mag
+    assert signed_residual == clamped
