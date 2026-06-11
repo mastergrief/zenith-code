@@ -10,23 +10,36 @@ import torch
 
 from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     VoteUpdateSpec,
+    apply_bounded_delta_vote_step,
     make_bounded_tensor_state,
 )
 from calm.hrm_text_158.native_full_stack.grad_proxy_audit import (
+    DRIFT_AUDIT_SAMPLE_COUNT,
+    DRIFT_AUDIT_STEP_INTERVAL,
     GRAD_PROXY_AUDIT_ABORT_NAME,
     GRAD_PROXY_AUDIT_ABORT_REASON,
     GRAD_PROXY_AUDIT_COMPARATOR_SPEC,
+    GRAD_PROXY_AUDIT_ESTIMAND,
     GRAD_PROXY_AUDIT_STATE_SOURCE,
+    POPULATION_MODE_FULL_CROSSING_ELIGIBLE,
+    POPULATION_MODE_SAMPLED_K64,
     GradProxyAuditAborted,
     GradProxyAuditWarmupCapAborted,
+    assert_local_loss_delta_proxy_coverage,
+    build_grad_proxy_local_loss_delta_by_key,
+    build_w6_t10_crossing_candidate_universe_from_votes,
     compute_grad_proxy_pass_bars,
     count_w6_t10_crossing_eligible_from_votes,
     derive_probe_science_arm_votes,
     discover_probe_warmup_audit_anchor,
     run_grad_proxy_audit_at_anchor,
     run_grad_proxy_audit_with_warmup,
+    run_proxy_oracle_drift_audit,
     w6_t10_base_spec,
     write_grad_proxy_audit_abort_receipt,
+)
+from calm.hrm_text_158.native_full_stack.two_tier_transient_selection import (
+    LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
 )
 from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
     _audit_sparse_singleton_identity_for_candidate,
@@ -145,23 +158,10 @@ def _singleton_drift_w6_t10_bundle(
     return state, votes, candidate, base_spec, one_flip_spec
 
 
-def test_proxy_delta_weight_uses_w6_t10_one_flip_spec(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_proxy_delta_weight_uses_w6_t10_one_flip_spec() -> None:
     state_key = "toy.proj"
     state, votes, candidate, expected_spec, _one_flip_spec = _identity_hold_w6_t10_bundle(
         state_key
-    )
-    observed_thresholds: list[int] = []
-    original_apply = apply_integer_vote_update_reference
-
-    def _spy_apply(vote_state, inputs, spec, **kwargs):
-        observed_thresholds.append(int(spec.threshold_abs))
-        return original_apply(vote_state, inputs, spec, **kwargs)
-
-    monkeypatch.setattr(
-        "calm.hrm_text_158.native_full_stack.grad_proxy_audit.apply_integer_vote_update_reference",
-        _spy_apply,
     )
     from calm.hrm_text_158.native_full_stack.grad_proxy_audit import (
         derive_w6_t10_candidate_delta_weight,
@@ -179,8 +179,118 @@ def test_proxy_delta_weight_uses_w6_t10_one_flip_spec(
         candidate=candidate,
         base_spec=expected_spec,
     )
-    assert observed_thresholds == [10]
-    assert weight == pytest.approx(expected)
+    assert int(expected_spec.threshold_abs) == 10
+    assert weight == expected
+
+
+def test_full_pop_vectorized_ingress_scatter_scalar_parity() -> None:
+    from calm.hrm_text_158.native_full_stack.grad_proxy_audit import (
+        _crossing_flat_indices_by_state_key,
+        _scatter_vectorized_grad_proxy_ingress_for_state,
+        derive_w6_t10_candidate_delta_weight,
+    )
+
+    state_key = "toy.proj"
+    q = torch.tensor([0, 0, 0, -1], dtype=torch.int8)
+    acc = torch.tensor([0, 50, -50, 0], dtype=torch.int16)
+    state = make_bounded_tensor_state(state_key, q, 1.0, acc)
+    votes = torch.tensor([12, 12, -12, 12], dtype=torch.int16)
+    tensor_states = {state_key: state}
+    votes_by_key = {state_key: votes}
+    flat_by_state = _crossing_flat_indices_by_state_key(
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+    )
+    flat_indices = flat_by_state[state_key]
+    grad_proxies = torch.tensor(
+        [0.25, -0.5, 0.75, 0.125][: int(flat_indices.numel())],
+        dtype=torch.float32,
+    )
+    vectorized = torch.full((4,), float("nan"), dtype=torch.float32)
+    _scatter_vectorized_grad_proxy_ingress_for_state(
+        local_loss_delta=vectorized,
+        tensor_state=state,
+        votes=votes,
+        flat_indices=flat_indices,
+        grad_proxies=grad_proxies,
+        max_abs_per_tensor=4096,
+    )
+    scalar = torch.full((4,), float("nan"), dtype=torch.float32)
+    universe = build_w6_t10_crossing_candidate_universe_from_votes(
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+        max_abs_per_tensor=4096,
+        max_sampled_candidates=64,
+        population_mode=POPULATION_MODE_FULL_CROSSING_ELIGIBLE,
+    )
+    candidate_by_id = universe["candidate_by_id"]
+    for offset, flat_index in enumerate(flat_indices.tolist()):
+        candidate_id = f"{state_key}:{int(flat_index)}"
+        candidate = candidate_by_id[candidate_id]
+        delta_weight = derive_w6_t10_candidate_delta_weight(
+            tensor_state=state,
+            votes=votes,
+            candidate=candidate,
+            max_abs_per_tensor=4096,
+        )
+        scalar.view(-1)[int(flat_index)] = float(grad_proxies[offset] * delta_weight)
+    assert torch.equal(vectorized, scalar)
+
+
+def test_vectorized_delta_weights_exact_scalar_parity() -> None:
+    from calm.hrm_text_158.native_full_stack.grad_proxy_audit import (
+        _vectorized_w6_t10_delta_weights_at_flat_indices,
+    )
+
+    for bundle in (_identity_hold_w6_t10_bundle, _singleton_drift_w6_t10_bundle):
+        state_key = "toy.proj"
+        state, votes, candidate, base_spec, _one_flip_spec = bundle(state_key)
+        flat_index = int(candidate["flat_index"])
+        flat_indices = torch.tensor([flat_index], dtype=torch.int64)
+        vectorized = _vectorized_w6_t10_delta_weights_at_flat_indices(
+            tensor_state=state,
+            votes=votes,
+            flat_indices=flat_indices,
+            max_abs_per_tensor=4096,
+        )
+        scalar = torch.tensor(
+            [
+                _delta_weight_from_spec(
+                    state=state,
+                    votes=votes,
+                    candidate=candidate,
+                    base_spec=base_spec,
+                )
+            ],
+            dtype=torch.float32,
+        )
+        assert torch.equal(vectorized, scalar)
+
+
+def test_tensorized_crossing_count_matches_row_loop_reducer() -> None:
+    from calm.hrm_text_158.native_full_stack.grad_proxy_audit import (
+        count_w6_t10_crossing_eligible_from_votes,
+        materialize_selector_rows,
+    )
+    from calm.hrm_text_158.native_full_stack.two_tier_transient_selection import (
+        crossing_eligible_flat_indices,
+    )
+
+    state_key = "toy.proj"
+    q = torch.tensor([0, 0, 0, -1], dtype=torch.int8)
+    acc = torch.tensor([0, 50, -50, 0], dtype=torch.int16)
+    state = make_bounded_tensor_state(state_key, q, 1.0, acc)
+    votes = torch.tensor([12, 12, -12, 12], dtype=torch.int16)
+    tensor_states = {state_key: state}
+    votes_by_key = {state_key: votes}
+    tensorized = count_w6_t10_crossing_eligible_from_votes(
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+    )
+    rows = materialize_selector_rows(votes=votes, state=state)
+    row_loop = len(crossing_eligible_flat_indices(rows))
+    assert tensorized == row_loop
+    assert tensorized == 4
 
 
 def test_grad_proxy_audit_fail_closed_on_singleton_identity_drift(
@@ -459,3 +569,245 @@ def test_warmup_determinism_pin_parent_seed44() -> None:
     assert first.crossing_eligible_count_by_step == second.crossing_eligible_count_by_step
     assert first.crossing_eligible_count_by_step[:2] == (0, 0)
     assert first.crossing_eligible_count_by_step[2] > 0
+
+
+def test_population_mode_fork_full_vs_sampled_k64() -> None:
+    state_key = "toy.proj"
+    state, votes, candidate, _base_spec, _one_flip_spec = _identity_hold_w6_t10_bundle(
+        state_key
+    )
+    tensor_states = {state_key: state}
+    votes_by_key = {state_key: votes}
+    full_universe = build_w6_t10_crossing_candidate_universe_from_votes(
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+        max_abs_per_tensor=4096,
+        max_sampled_candidates=64,
+        population_mode=POPULATION_MODE_FULL_CROSSING_ELIGIBLE,
+    )
+    sampled_universe = build_w6_t10_crossing_candidate_universe_from_votes(
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+        max_abs_per_tensor=4096,
+        max_sampled_candidates=64,
+        population_mode=POPULATION_MODE_SAMPLED_K64,
+    )
+    assert full_universe["population_mode"] == POPULATION_MODE_FULL_CROSSING_ELIGIBLE
+    assert sampled_universe["population_mode"] == POPULATION_MODE_SAMPLED_K64
+    assert full_universe["sampled_ids"] == [candidate["candidate_id"]]
+    assert sampled_universe["sampled_ids"] == [candidate["candidate_id"]]
+
+
+def test_assert_local_loss_delta_proxy_coverage_fail_closed() -> None:
+    state_key = "toy.proj"
+    q = torch.tensor([0, 0], dtype=torch.int8)
+    acc = torch.zeros(2, dtype=torch.int16)
+    state = make_bounded_tensor_state(state_key, q, 0.5, acc)
+    votes = torch.tensor([12, 12], dtype=torch.int16)
+    incomplete = {"toy.proj": torch.full((2,), float("nan"), dtype=torch.float32)}
+    incomplete["toy.proj"][0] = -0.1
+    with pytest.raises(ValueError, match="local_loss_delta_proxy_incomplete_coverage"):
+        assert_local_loss_delta_proxy_coverage(
+            local_loss_delta_by_key=incomplete,
+            tensor_states={state_key: state},
+            votes_by_key={state_key: votes},
+        )
+
+
+def test_build_grad_proxy_local_loss_delta_by_key_receipt_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model, batch, eligible, _states = _tiny_forward_fixture(batch_size=8)
+    state_key = next(iter(eligible))
+    state, votes, candidate, _base_spec, _one_flip_spec = _identity_hold_w6_t10_bundle(
+        state_key
+    )
+    tensor_states = {state_key: state}
+    votes_by_key = {state_key: votes}
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.grad_proxy_audit._compute_activation_credit_candidate_proxies",
+        lambda **kwargs: {
+            "grad_proxy_by_candidate_id": {candidate["candidate_id"]: 0.5},
+        },
+    )
+    local_loss_delta_by_key, ingress_receipt = build_grad_proxy_local_loss_delta_by_key(
+        model=model,
+        batch=batch,
+        tensor_states=tensor_states,
+        eligible_modules=eligible,
+        device=torch.device("cpu"),
+        extras=model.compute_train_extra_args(1, 1),
+        votes_by_key=votes_by_key,
+        max_abs_per_tensor=4096,
+        population_mode=POPULATION_MODE_FULL_CROSSING_ELIGIBLE,
+        optimizer_step_index=3,
+    )
+    assert ingress_receipt["grad_proxy_ingress_enabled"] is True
+    assert ingress_receipt["grad_proxy_ingress_estimand"] == GRAD_PROXY_AUDIT_ESTIMAND
+    assert (
+        ingress_receipt["grad_proxy_ingress_population_mode"]
+        == POPULATION_MODE_FULL_CROSSING_ELIGIBLE
+    )
+    assert ingress_receipt["grad_proxy_ingress_crossing_eligible_count"] == 1
+    assert ingress_receipt["grad_proxy_ingress_candidate_count_ingressed"] == 1
+    assert ingress_receipt["candidate_count_ingressed"] == 1
+    assert ingress_receipt["optimizer_step_index"] == 3
+    assert torch.isfinite(local_loss_delta_by_key[state_key].view(-1)[0]).item()
+    assert float(local_loss_delta_by_key[state_key].view(-1)[1].item()) == 0.0
+
+
+def test_run_proxy_oracle_drift_audit_locked_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model, batch, eligible, _states = _tiny_forward_fixture(batch_size=8)
+    state_key = next(iter(eligible))
+    state, votes, candidate, _base_spec, _one_flip_spec = _identity_hold_w6_t10_bundle(
+        state_key
+    )
+    tensor_states = {state_key: state}
+    votes_by_key = {state_key: votes}
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.grad_proxy_audit._compute_activation_credit_candidate_proxies",
+        lambda **kwargs: {
+            "grad_proxy_by_candidate_id": {candidate["candidate_id"]: 0.5},
+        },
+    )
+    local_loss_delta_by_key, _ingress = build_grad_proxy_local_loss_delta_by_key(
+        model=model,
+        batch=batch,
+        tensor_states=tensor_states,
+        eligible_modules=eligible,
+        device=torch.device("cpu"),
+        extras=model.compute_train_extra_args(1, 1),
+        votes_by_key=votes_by_key,
+        max_abs_per_tensor=4096,
+        population_mode=POPULATION_MODE_FULL_CROSSING_ELIGIBLE,
+    )
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.grad_proxy_audit._shadow_local_loss_deltas_for_candidates",
+        lambda **kwargs: [
+            {
+                "candidate_id": candidate["candidate_id"],
+                "state_key": state_key,
+                "flat_index": 0,
+                "grad_proxy": 0.5,
+                "candidate_delta_weight": 1.0,
+                "local_loss_delta_proxy": 0.5,
+                "local_loss_delta_shadow": 0.4,
+            }
+        ],
+    )
+    drift = run_proxy_oracle_drift_audit(
+        model=model,
+        batch=batch,
+        tensor_states=tensor_states,
+        eligible_modules=eligible,
+        device=torch.device("cpu"),
+        extras=model.compute_train_extra_args(1, 1),
+        votes_by_key=votes_by_key,
+        local_loss_delta_by_key=local_loss_delta_by_key,
+        baseline_loss=1.0,
+        max_abs_per_tensor=4096,
+        optimizer_step_index=5,
+        drift_sample_count=DRIFT_AUDIT_SAMPLE_COUNT,
+    )
+    assert drift["proxy_oracle_drift_step"] == 5
+    assert drift["proxy_oracle_drift_sample_count"] <= DRIFT_AUDIT_SAMPLE_COUNT
+    assert drift["proxy_oracle_drift_gating"] is False
+    assert drift["proxy_oracle_drift_comparator_spec"] == GRAD_PROXY_AUDIT_COMPARATOR_SPEC
+    assert drift["proxy_oracle_drift_estimand"] == GRAD_PROXY_AUDIT_ESTIMAND
+    assert "proxy_oracle_drift_tau" in drift
+    assert "proxy_oracle_drift_sign_agreement" in drift
+    assert "proxy_oracle_drift_top8_overlap" in drift
+
+
+def _tensor_state_snapshot(states: dict[str, Any]) -> dict[str, dict[str, list[int]]]:
+    out: dict[str, dict[str, list[int]]] = {}
+    for state_key, state in states.items():
+        vote_state = state.vote_update_state()
+        out[state_key] = {
+            "q_levels": vote_state.q_levels.detach().cpu().flatten().tolist(),
+            "accumulators": vote_state.accumulators.detach().cpu().flatten().tolist(),
+        }
+    return out
+
+
+def test_drift_audit_trajectory_invariant_ten_steps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model, batch, eligible, _states = _tiny_forward_fixture(batch_size=8)
+    state_key = next(iter(eligible))
+    state, votes, candidate, _base_spec, _one_flip_spec = _identity_hold_w6_t10_bundle(
+        state_key
+    )
+    device = torch.device("cpu")
+    extras = model.compute_train_extra_args(1, 1)
+    vote_spec = w6_t10_base_spec(max_abs_per_tensor=4096)
+    vote_specs = {state_key: vote_spec}
+    fixed_local_loss_delta_by_key = {
+        state_key: torch.tensor([-0.25, 0.0], dtype=torch.float32),
+    }
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.grad_proxy_audit._shadow_local_loss_deltas_for_candidates",
+        lambda **kwargs: [
+            {
+                "candidate_id": candidate["candidate_id"],
+                "state_key": state_key,
+                "flat_index": 0,
+                "grad_proxy": 0.25,
+                "candidate_delta_weight": 1.0,
+                "local_loss_delta_proxy": 0.25,
+                "local_loss_delta_shadow": 0.2,
+            }
+        ],
+    )
+
+    def _run_trajectory(*, drift_enabled: bool) -> tuple[dict[str, Any], list[list[int]]]:
+        tensor_states = {state_key: make_bounded_tensor_state(
+            state_key,
+            state.vote_update_state().q_levels.clone(),
+            float(state.frozen_scale.detach().cpu().item()),
+            state.vote_update_state().accumulators.clone(),
+        )}
+        votes_by_key = {state_key: votes.clone()}
+        applied_flips: list[list[int]] = []
+        for step in range(1, 11):
+            local_loss_delta_by_key = {
+                key: tensor.clone()
+                for key, tensor in fixed_local_loss_delta_by_key.items()
+            }
+            if drift_enabled and int(step) % int(DRIFT_AUDIT_STEP_INTERVAL) == 0:
+                run_proxy_oracle_drift_audit(
+                    model=model,
+                    batch=batch,
+                    tensor_states=tensor_states,
+                    eligible_modules=eligible,
+                    device=device,
+                    extras=extras,
+                    votes_by_key=votes_by_key,
+                    local_loss_delta_by_key=local_loss_delta_by_key,
+                    baseline_loss=1.0,
+                    max_abs_per_tensor=4096,
+                    optimizer_step_index=int(step),
+                )
+            step_result = apply_bounded_delta_vote_step(
+                tensor_states,
+                votes_by_key,
+                vote_specs,
+                local_selection_ordering_mode=LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
+                local_selection_ordering_seed=17,
+                local_selection_ordering_step=int(step),
+                two_tier_carry_w6_enabled=True,
+                local_loss_delta_by_key=local_loss_delta_by_key,
+            )
+            tensor_states = step_result.tensor_states
+            applied = []
+            for key, stats in step_result.tensor_stats.items():
+                applied.extend(int(idx) for idx in stats.get("applied_indices", []))
+            applied_flips.append(sorted(applied))
+        return _tensor_state_snapshot(tensor_states), applied_flips
+
+    off_snapshot, off_flips = _run_trajectory(drift_enabled=False)
+    on_snapshot, on_flips = _run_trajectory(drift_enabled=True)
+    assert on_snapshot == off_snapshot
+    assert on_flips == off_flips

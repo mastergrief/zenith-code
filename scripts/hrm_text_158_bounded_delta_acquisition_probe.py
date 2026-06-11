@@ -105,6 +105,14 @@ from calm.hrm_text_158.native_full_stack.b2b_capture_receipt_emission import (
     finalize_b2b_capture_receipt,
     rewrite_b2b_trace_with_receipt_emissions,
 )
+from calm.hrm_text_158.native_full_stack.grad_proxy_audit import (
+    DRIFT_AUDIT_STEP_INTERVAL,
+    POPULATION_MODE_FULL_CROSSING_ELIGIBLE,
+    assert_local_loss_delta_proxy_coverage,
+    build_grad_proxy_local_loss_delta_by_key,
+    count_w6_t10_crossing_eligible_from_votes,
+    run_proxy_oracle_drift_audit,
+)
 from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
     ORACLE_SCREEN_MODE_CHOICES,
     ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_MEASUREMENT,
@@ -3637,6 +3645,19 @@ def _assert_local_loss_delta_crossing_coverage(
         )
 
 
+def _assert_local_loss_delta_proxy_crossing_coverage(
+    *,
+    local_loss_delta_by_key: Mapping[str, torch.Tensor],
+    tensor_states: Mapping[str, Any],
+    votes_by_key: Mapping[str, torch.Tensor],
+) -> None:
+    assert_local_loss_delta_proxy_coverage(
+        local_loss_delta_by_key=local_loss_delta_by_key,
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+    )
+
+
 def _zero_fill_non_crossing_unmeasured_local_loss_deltas(
     *,
     local_loss_delta_by_key: dict[str, torch.Tensor],
@@ -4109,6 +4130,29 @@ def harness_wire_cpu_validation_self_check() -> dict[str, Any]:
         torch.tensor(-0.1, dtype=torch.float32),
     ).item()
     assert float(non_crossing_delta_by_key["toy.proj"][1].item()) == 0.0
+    proxy_delta_by_key = {
+        "toy.proj": torch.full((2,), float("nan"), dtype=torch.float32)
+    }
+    proxy_delta_by_key["toy.proj"][0] = -0.1
+    try:
+        _assert_local_loss_delta_proxy_crossing_coverage(
+            local_loss_delta_by_key=proxy_delta_by_key,
+            tensor_states={"toy.proj": coverage_state},
+            votes_by_key={"toy.proj": torch.tensor([12, 12], dtype=torch.int16)},
+        )
+    except ValueError as exc:
+        assert "local_loss_delta_proxy_incomplete_coverage" in str(exc)
+        assert "toy.proj:1" in str(exc)
+    else:
+        raise AssertionError(
+            "expected ValueError for incomplete proxy crossing-eligible coverage"
+        )
+    proxy_delta_by_key["toy.proj"][1] = -0.2
+    _assert_local_loss_delta_proxy_crossing_coverage(
+        local_loss_delta_by_key=proxy_delta_by_key,
+        tensor_states={"toy.proj": coverage_state},
+        votes_by_key={"toy.proj": torch.tensor([12, 12], dtype=torch.int16)},
+    )
     return {
         "argparse_default_off": True,
         "off_path_kwargs_empty": True,
@@ -4117,6 +4161,8 @@ def harness_wire_cpu_validation_self_check() -> dict[str, Any]:
         "local_loss_delta_crossing_coverage_fail_closed": True,
         "local_loss_delta_full_crossing_coverage_proceeds": True,
         "local_loss_delta_non_crossing_unmeasured_proceeds": True,
+        "local_loss_delta_proxy_crossing_coverage_fail_closed": True,
+        "local_loss_delta_proxy_full_crossing_coverage_proceeds": True,
         "tier_a_index_surface_keys": sorted(TIER_A_PROBE_RECEIPT_INDEX_SURFACE_KEYS),
     }
 
@@ -4176,6 +4222,7 @@ def run_bounded_delta_steps(
     int,
     dict[str, Any] | None,
     dict[str, Any] | None,
+    list[int],
 ]:
     model.train()
     if str(science_arm) not in SCIENCE_ARM_CHOICES:
@@ -4206,6 +4253,7 @@ def run_bounded_delta_steps(
     states = dict(tensor_states)
     step_reports: dict[str, Any] = {}
     audit_reports: dict[str, Any] = {}
+    grad_proxy_ingress_crossing_eligible_count_by_step: list[int] = []
     if support_batches:
         step_batches = list(support_batches)
     else:
@@ -4570,13 +4618,21 @@ def run_bounded_delta_steps(
 
                 pre_apply_states = states
                 local_loss_delta_by_key = None
-                activation_credit_oracle_receipt: dict[str, Any] | None = None
+                grad_proxy_ingress_receipt: dict[str, Any] | None = None
+                proxy_oracle_drift_receipt: dict[str, Any] | None = None
                 if two_tier_carry_w6_enabled:
-                    with progress.phase("two_tier_local_loss_delta_oracle", step=int(step)):
+                    crossing_eligible_count = count_w6_t10_crossing_eligible_from_votes(
+                        tensor_states=pre_apply_states,
+                        votes_by_key=votes_by_key,
+                    )
+                    grad_proxy_ingress_crossing_eligible_count_by_step.append(
+                        int(crossing_eligible_count)
+                    )
+                    with progress.phase("two_tier_grad_proxy_ingress", step=int(step)):
                         (
                             local_loss_delta_by_key,
-                            activation_credit_oracle_receipt,
-                        ) = _build_local_loss_delta_by_key_from_activation_credit_oracle(
+                            grad_proxy_ingress_receipt,
+                        ) = build_grad_proxy_local_loss_delta_by_key(
                             model=model,
                             batch=step_batch,
                             tensor_states=pre_apply_states,
@@ -4585,11 +4641,25 @@ def run_bounded_delta_steps(
                             extras=extras,
                             votes_by_key=votes_by_key,
                             max_abs_per_tensor=int(max_abs_per_tensor),
-                            max_sampled_candidates=int(
-                                oracle_screen_max_sampled_candidates
-                            ),
+                            population_mode=POPULATION_MODE_FULL_CROSSING_ELIGIBLE,
                             phase_progress=progress,
+                            optimizer_step_index=int(step),
                         )
+                    if int(step) % int(DRIFT_AUDIT_STEP_INTERVAL) == 0:
+                        with progress.phase("proxy_oracle_drift_audit", step=int(step)):
+                            proxy_oracle_drift_receipt = run_proxy_oracle_drift_audit(
+                                model=model,
+                                batch=step_batch,
+                                tensor_states=pre_apply_states,
+                                eligible_modules=eligible_modules,
+                                device=device,
+                                extras=extras,
+                                votes_by_key=votes_by_key,
+                                local_loss_delta_by_key=local_loss_delta_by_key,
+                                baseline_loss=float(loss.detach().cpu().item()),
+                                max_abs_per_tensor=int(max_abs_per_tensor),
+                                optimizer_step_index=int(step),
+                            )
                 two_tier_vote_step_kwargs = _bounded_delta_vote_step_two_tier_kwargs(
                     two_tier_carry_w6_enabled=bool(two_tier_carry_w6_enabled),
                     local_loss_delta_by_key=local_loss_delta_by_key,
@@ -4687,9 +4757,13 @@ def run_bounded_delta_steps(
                     "step_result": step_result_compact,
                     "optimizer_identity_proof": identity_proof,
                 }
-                if activation_credit_oracle_receipt is not None:
-                    step_reports[str(step)]["activation_credit_oracle"] = (
-                        activation_credit_oracle_receipt
+                if grad_proxy_ingress_receipt is not None:
+                    step_reports[str(step)]["grad_proxy_ingress"] = (
+                        grad_proxy_ingress_receipt
+                    )
+                if proxy_oracle_drift_receipt is not None:
+                    step_reports[str(step)]["proxy_oracle_drift"] = (
+                        proxy_oracle_drift_receipt
                     )
                 if b2b_step_capture is not None:
                     step_reports[str(step)]["b2b_sequential_capture"] = {
@@ -4750,6 +4824,7 @@ def run_bounded_delta_steps(
         steps_completed,
         b2_full_verdict_state,
         b2b_capture_receipt,
+        grad_proxy_ingress_crossing_eligible_count_by_step,
     )
 
 
@@ -5484,6 +5559,7 @@ def run_c2p1_probe(
             steps_completed,
             b2_full_verdict_state,
             b2b_capture_receipt,
+            grad_proxy_ingress_crossing_eligible_count_by_step,
         ) = run_bounded_delta_steps(
             model,
             model_batch,
@@ -5729,6 +5805,16 @@ def run_c2p1_probe(
                 "two_tier_carry_w6_enabled": True,
                 "harness_wire_tier_a_index_surface_keys": sorted(
                     TIER_A_PROBE_RECEIPT_INDEX_SURFACE_KEYS
+                ),
+                "grad_proxy_ingress_enabled": True,
+                "grad_proxy_ingress_estimand": (
+                    "first_order_grad_proxy_weighted_local_loss_delta"
+                ),
+                "grad_proxy_ingress_population_mode": (
+                    POPULATION_MODE_FULL_CROSSING_ELIGIBLE
+                ),
+                "grad_proxy_ingress_crossing_eligible_count_by_step": list(
+                    grad_proxy_ingress_crossing_eligible_count_by_step
                 ),
             }
         )

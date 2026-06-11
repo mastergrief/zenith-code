@@ -871,8 +871,15 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     _front_c_cloned_observation,
 )
 from calm.hrm_text_158.native_full_stack.two_tier_carry_reducers import carry_self_update_row
+from calm.hrm_text_158.native_full_stack.grad_proxy_audit import (
+    count_w6_t10_crossing_eligible_from_votes,
+)
 from calm.hrm_text_158.native_full_stack.two_tier_step_orchestrator import (
+    plan_two_tier_step,
     run_two_tier_optimizer_step,
+)
+from calm.hrm_text_158.native_full_stack.two_tier_threshold_semantics import (
+    CROSSING_THRESHOLD_ABS,
 )
 from calm.hrm_text_158.native_full_stack.two_tier_transient_selection import (
     LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
@@ -880,6 +887,7 @@ from calm.hrm_text_158.native_full_stack.two_tier_transient_selection import (
 from calm.hrm_text_158.native_full_stack.vote_update import (
     LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
     plan_integer_vote_update_reference,
+    plan_two_tier_vote_update_reference,
 )
 
 B6_OFF_GOLDEN_SHA256 = "0b3a999592469c3b8b5e43644891e5d4c39dadf2b52cd5d72494fa95cd29756b"
@@ -2308,7 +2316,7 @@ def test_b6_flag_on_matches_orchestrator_fixture():
         {
             "candidate_id": "0",
             "flat_index": 0,
-            "vote_value": 3,
+            "vote_value": 12,
             "pre_accumulator_i16": 0,
             "current_q_level": 0,
             "local_loss_delta": -0.9,
@@ -2317,7 +2325,7 @@ def test_b6_flag_on_matches_orchestrator_fixture():
         {
             "candidate_id": "2",
             "flat_index": 2,
-            "vote_value": -3,
+            "vote_value": -12,
             "pre_accumulator_i16": 0,
             "current_q_level": 0,
             "local_loss_delta": -0.8,
@@ -2330,11 +2338,15 @@ def test_b6_flag_on_matches_orchestrator_fixture():
         q_level_by_flat_index={0: 0, 2: 0},
         rate_cap=8,
         warmup=False,
-        threshold_abs=2,
+        threshold_abs=CROSSING_THRESHOLD_ABS,
     )
-    deltas = torch.tensor([-0.9, 0.0, -0.8, 0.0], dtype=torch.float32)
+    kwargs = _b6_backlog_case_kwargs(two_tier_carry_w6_enabled=True)
+    kwargs["votes_by_key"] = {"toy.proj": torch.tensor([12, 0, -12, 0], dtype=torch.int16)}
+    kwargs["local_loss_delta_by_key"] = {
+        "toy.proj": torch.tensor([-0.9, 0.0, -0.8, 0.0], dtype=torch.float32),
+    }
     learner = apply_bounded_delta_vote_step(
-        **_b6_backlog_case_kwargs(two_tier_carry_w6_enabled=True, local_loss_delta=deltas),
+        **kwargs,
         local_selection_ordering_mode=LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
     )
     key = "toy.proj"
@@ -2376,6 +2388,105 @@ def test_b6_flag_on_fail_closed_missing_local_loss_delta_key():
             two_tier_carry_w6_enabled=True,
             local_selection_ordering_mode=LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
         )
+
+
+def test_b6_flag_on_fresh_parent_subthreshold_vote_spec_does_not_apply_at_t10():
+    numel = 8192
+    state = make_bounded_tensor_state(
+        "toy.proj",
+        torch.zeros(numel, dtype=torch.int8),
+        0.5,
+        torch.zeros(numel, dtype=torch.int16),
+    )
+    votes = torch.full((numel,), 4, dtype=torch.int16)
+    spec = VoteUpdateSpec(
+        threshold_abs=1,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=4096,
+    )
+    tensor_states = {"toy.proj": state}
+    votes_by_key = {"toy.proj": votes}
+    assert count_w6_t10_crossing_eligible_from_votes(
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+    ) == 0
+    result = apply_bounded_delta_vote_step(
+        tensor_states,
+        votes_by_key,
+        {"toy.proj": spec},
+        local_loss_delta_by_key={
+            "toy.proj": torch.zeros(numel, dtype=torch.float32),
+        },
+        two_tier_carry_w6_enabled=True,
+        local_selection_ordering_mode=LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
+    )
+    stats = result.tensor_stats["toy.proj"]
+    assert stats["candidate_count"] == 0
+    assert stats["post_veto_applied_flip_count"] == 0
+    assert stats["two_tier_threshold_abs"] == stats["two_tier_canonical_threshold_abs"] == 10
+    assert stats["two_tier_vote_spec_threshold_abs"] == 1
+    assert result.tensor_states["toy.proj"].q_levels.eq(0).all()
+
+
+def test_b6_flag_on_plan_two_tier_step_noncanonical_threshold_selects_subthreshold_rows():
+    rows = [
+        {
+            "candidate_id": "0",
+            "flat_index": 0,
+            "vote_value": 4,
+            "pre_accumulator_i16": 0,
+            "current_q_level": 0,
+            "local_loss_delta": 0.0,
+            "in_target_tie_band": True,
+        },
+    ]
+    subthreshold_plan = plan_two_tier_step(
+        rows,
+        carry_by_flat_index={0: 0},
+        q_level_by_flat_index={0: 0},
+        rate_cap=1,
+        warmup=False,
+        threshold_abs=1,
+    )
+    canonical_plan = plan_two_tier_step(
+        rows,
+        carry_by_flat_index={0: 0},
+        q_level_by_flat_index={0: 0},
+        rate_cap=1,
+        warmup=False,
+        threshold_abs=CROSSING_THRESHOLD_ABS,
+    )
+    assert subthreshold_plan.pre_veto_flat_indices == (0,)
+    assert canonical_plan.pre_veto_flat_indices == ()
+
+
+def test_b6_flag_on_vote_update_overrides_noncanonical_spec_threshold():
+    state = make_bounded_tensor_state(
+        "toy.proj",
+        torch.tensor([0], dtype=torch.int8),
+        0.5,
+        torch.zeros(1, dtype=torch.int16),
+    )
+    votes = torch.tensor([4], dtype=torch.int16)
+    spec = VoteUpdateSpec(
+        threshold_abs=1,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=1,
+    )
+    plan = plan_two_tier_vote_update_reference(
+        state.vote_update_state(),
+        VoteUpdateInputs(
+            votes=votes,
+            local_loss_delta=torch.zeros(1, dtype=torch.float32),
+        ),
+        spec,
+        local_selection_ordering_mode=LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
+    )
+    assert int(plan.stats["candidate_count"]) == 0
+    assert int(plan.stats["pre_veto_selected_flip_count"]) == 0
+    assert plan.stats["two_tier_threshold_abs"] == plan.stats["two_tier_canonical_threshold_abs"]
 
 
 def test_b6_flag_on_replay_veto_excludes_applied_writeback():

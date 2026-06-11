@@ -42,6 +42,7 @@ from calm.hrm_text_158.native_full_stack.source_pointers import (
 )
 from calm.hrm_text_158.native_full_stack.two_tier_threshold_semantics import (
     CROSSING_THRESHOLD_ABS,
+    assert_two_tier_threshold_receipt_consistent,
 )
 from calm.hrm_text_158.native_full_stack.two_tier_transient_selection import (
     LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
@@ -1698,6 +1699,8 @@ def apply_bounded_delta_vote_step(
             stats_out["bounded_decode_matches_exact_shadow"] = parity[
                 "exact_shadow_matches_bounded_decode"
             ]
+        if two_tier_carry_w6_enabled:
+            assert_two_tier_threshold_receipt_consistent(stats_out)
         tensor_stats[state_key] = stats_out
     return BoundedDeltaLearnerStepResult(
         tensor_states=next_states,

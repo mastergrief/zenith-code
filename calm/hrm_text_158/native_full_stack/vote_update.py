@@ -21,6 +21,7 @@ from calm.hrm_text_158.native_full_stack.two_tier_step_orchestrator import (
 )
 from calm.hrm_text_158.native_full_stack.two_tier_threshold_semantics import (
     CROSSING_THRESHOLD_ABS,
+    assert_two_tier_threshold_receipt_consistent,
 )
 from calm.hrm_text_158.native_full_stack.two_tier_transient_selection import (
     LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
@@ -409,7 +410,8 @@ def plan_two_tier_vote_update_reference(
     q_levels = state.q_levels
     accumulators = state.accumulators
     votes = inputs.votes
-    threshold = int(spec.threshold_abs)
+    vote_spec_threshold_abs = int(spec.threshold_abs)
+    crossing_threshold_abs = int(CROSSING_THRESHOLD_ABS)
     numel = int(q_levels.numel())
     max_flips = spec.max_flips(numel)
     rows = _materialize_two_tier_rows(state, inputs)
@@ -426,7 +428,7 @@ def plan_two_tier_vote_update_reference(
         rate_cap=int(max_flips),
         warmup=bool(warmup),
         local_selection_ordering_mode=str(local_selection_ordering_mode),
-        threshold_abs=int(threshold),
+        threshold_abs=int(crossing_threshold_abs),
     )
     q_i16 = q_levels.flatten().to(torch.int16)
     new_acc_i32 = torch.zeros(numel, dtype=torch.int32, device=q_levels.device)
@@ -434,7 +436,7 @@ def plan_two_tier_vote_update_reference(
         new_acc_i32[int(flat_index)] = int(carry_after)
     new_acc_i32 = new_acc_i32.view_as(accumulators)
     candidate_idx = torch.tensor(
-        crossing_eligible_flat_indices(rows, threshold_abs=int(threshold)),
+        crossing_eligible_flat_indices(rows, threshold_abs=int(crossing_threshold_abs)),
         dtype=torch.int64,
         device=q_levels.device,
     )
@@ -453,12 +455,16 @@ def plan_two_tier_vote_update_reference(
         pc_aux_negative = pre_veto_selected
         pc_aux_vetoed = pre_veto_selected
     else:
-        selected_thresholds = torch.full_like(pre_veto_selected, threshold, dtype=torch.int32)
+        selected_thresholds = torch.full_like(
+            pre_veto_selected,
+            crossing_threshold_abs,
+            dtype=torch.int32,
+        )
         directions = torch.tensor(
             [
                 _applied_crossing_direction_from_carry(
                     int(two_tier_plan.carry_after_by_flat_index[int(flat_index)]),
-                    threshold_abs=int(threshold),
+                    threshold_abs=int(crossing_threshold_abs),
                 )
                 for flat_index in pre_veto_selected.detach().cpu().tolist()
             ],
@@ -517,9 +523,11 @@ def plan_two_tier_vote_update_reference(
         "vote_nonzero_count": int((votes != 0).sum().item()),
         "acc_abs_max_after_decay_vote": int(new_acc_i32.abs().max().item()) if new_acc_i32.numel() else 0,
         "two_tier_carry_w6_enabled": True,
-        "two_tier_threshold_abs": int(threshold),
+        "two_tier_threshold_abs": int(crossing_threshold_abs),
         "two_tier_canonical_threshold_abs": int(CROSSING_THRESHOLD_ABS),
+        "two_tier_vote_spec_threshold_abs": int(vote_spec_threshold_abs),
     }
+    assert_two_tier_threshold_receipt_consistent(stats)
     return VoteUpdatePlan(
         q_i16=q_i16.view_as(q_levels),
         new_acc_i32=new_acc_i32,
@@ -558,7 +566,7 @@ def apply_two_tier_vote_update_reference(
         local_selection_ordering_step=int(local_selection_ordering_step),
         warmup=bool(warmup),
     )
-    threshold = int(spec.threshold_abs)
+    crossing_threshold_abs = int(CROSSING_THRESHOLD_ABS)
     rows = _materialize_two_tier_rows(state, inputs)
     carry_by_flat_index = {
         int(row["flat_index"]): int(row["pre_accumulator_i16"]) for row in rows
@@ -573,13 +581,13 @@ def apply_two_tier_vote_update_reference(
         rate_cap=int(spec.max_flips(int(state.q_levels.numel()))),
         warmup=bool(warmup),
         local_selection_ordering_mode=str(local_selection_ordering_mode),
-        threshold_abs=int(threshold),
+        threshold_abs=int(crossing_threshold_abs),
     )
     applied_indices = tuple(int(value) for value in plan.applied_indices.detach().cpu().tolist())
     two_tier_result = apply_two_tier_write_backs(
         two_tier_plan,
         applied_indices,
-        threshold_abs=int(threshold),
+        threshold_abs=int(crossing_threshold_abs),
     )
     q_i16 = state.q_levels.flatten().to(torch.int16).clone()
     new_acc_i32 = plan.new_acc_i32.flatten().clone()

@@ -24,6 +24,21 @@ def frozen_threshold_semantics_block() -> dict[str, Any]:
     return dict(FROZEN_THRESHOLD_SEMANTICS)
 
 
+def assert_two_tier_threshold_receipt_consistent(stats: Mapping[str, Any]) -> None:
+    """Fail-closed: two-tier receipts must not split effective vs canonical threshold."""
+
+    if not bool(stats.get("two_tier_carry_w6_enabled")):
+        return
+    effective = int(stats["two_tier_threshold_abs"])
+    canonical = int(stats["two_tier_canonical_threshold_abs"])
+    if effective != canonical:
+        raise ValueError(
+            "two_tier_threshold_receipt_inconsistent: "
+            f"two_tier_threshold_abs={effective} "
+            f"two_tier_canonical_threshold_abs={canonical}"
+        )
+
+
 def resolve_threshold_crosscheck_authority(
     crosscheck_status: str,
     *,
