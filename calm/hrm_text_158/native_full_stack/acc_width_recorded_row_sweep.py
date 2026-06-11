@@ -24,6 +24,13 @@ from calm.hrm_text_158.native_full_stack.accumulator_policy_shadow_screen import
 from calm.hrm_text_158.native_full_stack.transient_selection_information_audit import (
     reconstruct_transient_target,
 )
+from calm.hrm_text_158.native_full_stack.two_tier_carry_reducers import (
+    _clamp,
+    crosses_threshold,
+    decay_vote_clamp,
+    effective_clip_bounds,
+    signed_w_max,
+)
 
 ACC_WIDTH_RECORDED_ROW_SWEEP_SCHEMA_VERSION = (
     "hrm_text_158_acc_width_recorded_row_sweep/v0"
@@ -97,60 +104,6 @@ class VoteSpecParsed:
         }
 
 
-def signed_w_max(width: int) -> int:
-    if width < 2:
-        raise ValueError(f"width must be >= 2, got {width}")
-    return (1 << (int(width) - 1)) - 1
-
-
-def effective_clip_bounds(
-    width: int,
-    source_clip_min: int,
-    source_clip_max: int,
-) -> tuple[int, int]:
-    """effective_clip(W)=±min(source_clip_max, 2^(W-1)-1) composed with source clip."""
-
-    w_max = signed_w_max(width)
-    w_min = -w_max
-    eff_max = min(int(source_clip_max), w_max)
-    eff_min = max(int(source_clip_min), w_min)
-    eff_max = min(eff_max, w_max)
-    eff_min = max(eff_min, w_min)
-    return eff_min, eff_max
-
-
-def _clamp(value: int, lo: int, hi: int) -> int:
-    return max(int(lo), min(int(hi), int(value)))
-
-
-def _decay_accumulator(
-    acc: int,
-    *,
-    decay_numerator: int,
-    decay_denominator: int,
-) -> int:
-    if decay_denominator <= 0:
-        raise ValueError("decay_denominator must be > 0")
-    return (int(acc) * int(decay_numerator)) // int(decay_denominator)
-
-
-def decay_vote_clamp(
-    pre_accumulator: int,
-    vote_value: int,
-    *,
-    clip_min: int,
-    clip_max: int,
-    decay_numerator: int,
-    decay_denominator: int,
-) -> int:
-    decayed = _decay_accumulator(
-        pre_accumulator,
-        decay_numerator=decay_numerator,
-        decay_denominator=decay_denominator,
-    )
-    return _clamp(decayed + int(vote_value), clip_min, clip_max)
-
-
 def post_flip_residual_clamp(
     new_acc: int,
     *,
@@ -162,18 +115,6 @@ def post_flip_residual_clamp(
     lo = -int(threshold_abs) + 1
     hi = int(threshold_abs) - 1
     return _clamp(residual, lo, hi)
-
-
-def crosses_threshold(
-    new_acc: int,
-    *,
-    current_q_level: int,
-    threshold_abs: int,
-) -> bool:
-    q = int(current_q_level)
-    acc = int(new_acc)
-    threshold = int(threshold_abs)
-    return (acc >= threshold and q < 1) or (acc <= -threshold and q > -1)
 
 
 def vote_update_source_constants_at_pinned_head() -> dict[str, int]:
