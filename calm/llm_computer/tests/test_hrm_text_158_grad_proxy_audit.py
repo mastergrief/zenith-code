@@ -1,6 +1,8 @@
 """CPU tests for W6/T=10 grad-proxy audit (slice 3a)."""
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -11,12 +13,20 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     make_bounded_tensor_state,
 )
 from calm.hrm_text_158.native_full_stack.grad_proxy_audit import (
+    GRAD_PROXY_AUDIT_ABORT_NAME,
+    GRAD_PROXY_AUDIT_ABORT_REASON,
     GRAD_PROXY_AUDIT_COMPARATOR_SPEC,
+    GRAD_PROXY_AUDIT_STATE_SOURCE,
     GradProxyAuditAborted,
+    GradProxyAuditWarmupCapAborted,
     compute_grad_proxy_pass_bars,
-    derive_w6_t10_candidate_delta_weight,
-    run_grad_proxy_audit_step1,
+    count_w6_t10_crossing_eligible_from_votes,
+    derive_probe_science_arm_votes,
+    discover_probe_warmup_audit_anchor,
+    run_grad_proxy_audit_at_anchor,
+    run_grad_proxy_audit_with_warmup,
     w6_t10_base_spec,
+    write_grad_proxy_audit_abort_receipt,
 )
 from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
     _audit_sparse_singleton_identity_for_candidate,
@@ -30,6 +40,15 @@ from calm.hrm_text_158.native_full_stack.vote_update import (
 )
 from calm.llm_computer.tests.test_hrm_text_158_native_bounded_delta_acquisition_probe import (
     _tiny_forward_fixture,
+)
+from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+    DEFAULT_PARENT,
+    DEFAULT_PARENT_SHA256,
+    build_identity_full_support_batches,
+    build_model_from_checkpoint,
+    derive_tensor_states_and_check_init_fidelity,
+    load_parent_checkpoint,
+    select_eligible_bitlinears,
 )
 
 
@@ -144,6 +163,10 @@ def test_proxy_delta_weight_uses_w6_t10_one_flip_spec(
         "calm.hrm_text_158.native_full_stack.grad_proxy_audit.apply_integer_vote_update_reference",
         _spy_apply,
     )
+    from calm.hrm_text_158.native_full_stack.grad_proxy_audit import (
+        derive_w6_t10_candidate_delta_weight,
+    )
+
     weight = derive_w6_t10_candidate_delta_weight(
         tensor_state=state,
         votes=votes,
@@ -182,22 +205,23 @@ def test_grad_proxy_audit_fail_closed_on_singleton_identity_drift(
             "crossing_eligible_count": 1,
         },
     )
-    monkeypatch.setattr(
-        "calm.hrm_text_158.native_full_stack.grad_proxy_audit._compute_baseline_votes",
-        lambda *args, **kwargs: (1.0, votes_by_key),
-    )
 
     with pytest.raises(GradProxyAuditAborted, match="singleton_identity_drift"):
-        run_grad_proxy_audit_step1(
+        run_grad_proxy_audit_at_anchor(
             model=model,
             batch=batch,
             tensor_states=states,
+            votes_by_key=votes_by_key,
+            baseline_loss=1.0,
             eligible_modules=eligible,
             device=torch.device("cpu"),
             extras=model.compute_train_extra_args(1, 1),
             max_abs_per_tensor=4096,
             max_audit_candidates=1,
             launch_sha="testsha",
+            audit_step_index=3,
+            audit_warmup_steps_run=2,
+            crossing_eligible_count_by_step=[0, 0, 1],
         )
 
 
@@ -224,10 +248,6 @@ def test_grad_proxy_audit_comparator_spec_mismatch_blocks_pass(
         },
     )
     monkeypatch.setattr(
-        "calm.hrm_text_158.native_full_stack.grad_proxy_audit._compute_baseline_votes",
-        lambda *args, **kwargs: (1.0, votes_by_key),
-    )
-    monkeypatch.setattr(
         "calm.hrm_text_158.native_full_stack.grad_proxy_audit._compute_activation_credit_candidate_proxies",
         lambda **kwargs: {
             "grad_proxy_by_candidate_id": {candidate["candidate_id"]: 0.25},
@@ -250,16 +270,21 @@ def test_grad_proxy_audit_comparator_spec_mismatch_blocks_pass(
         _record_identity_audit,
     )
 
-    receipt = run_grad_proxy_audit_step1(
+    receipt = run_grad_proxy_audit_at_anchor(
         model=model,
         batch=batch,
         tensor_states=states,
+        votes_by_key=votes_by_key,
+        baseline_loss=1.0,
         eligible_modules=eligible,
         device=torch.device("cpu"),
         extras=model.compute_train_extra_args(1, 1),
         max_abs_per_tensor=4096,
         max_audit_candidates=1,
         launch_sha="testsha",
+        audit_step_index=3,
+        audit_warmup_steps_run=2,
+        crossing_eligible_count_by_step=[0, 0, 1],
         comparator_spec="legacy_threshold_abs_1",
     )
     assert len(identity_audits) == 1
@@ -268,6 +293,10 @@ def test_grad_proxy_audit_comparator_spec_mismatch_blocks_pass(
     assert receipt["comparator_spec"] != GRAD_PROXY_AUDIT_COMPARATOR_SPEC
     assert receipt["comparator_spec_mismatch"] is True
     assert receipt["pass_bars"] is None
+    assert receipt["audit_state_source"] == GRAD_PROXY_AUDIT_STATE_SOURCE
+    assert receipt["warmup_two_tier_enabled"] is False
+    assert receipt["audit_step_index"] == 3
+    assert receipt["audit_warmup_steps_run"] == 2
     assert len(receipt["per_candidate"]) == 1
     row = receipt["per_candidate"][0]
     assert row["local_loss_delta_proxy"] == pytest.approx(0.25)
@@ -294,3 +323,139 @@ def test_grad_proxy_audit_comparator_spec_mismatch_blocks_pass(
     )
     assert "kendall_tau" in bars
     assert bars["top8_overlap"] == pytest.approx(1.0)
+
+
+def test_fresh_parent_step1_has_zero_w6_crossings() -> None:
+    model, batch, eligible, states = _tiny_forward_fixture(batch_size=8)
+    device = torch.device("cpu")
+    extras = model.compute_train_extra_args(1, 1)
+    _baseline_loss, votes_by_key = derive_probe_science_arm_votes(
+        model=model,
+        batch=batch,
+        tensor_states=states,
+        eligible_modules=eligible,
+        device=device,
+        extras=extras,
+        max_abs_per_tensor=4096,
+    )
+    assert (
+        count_w6_t10_crossing_eligible_from_votes(
+            tensor_states=states,
+            votes_by_key=votes_by_key,
+        )
+        == 0
+    )
+
+
+def test_write_grad_proxy_audit_abort_receipt(tmp_path: Path) -> None:
+    abort_path = write_grad_proxy_audit_abort_receipt(
+        artifact_dir=tmp_path,
+        crossing_eligible_count_by_step=[0, 0, 0],
+        warmup_steps_run=3,
+        launch_sha="launchsha",
+        parent_sha256="parentsha",
+    )
+    assert abort_path.endswith(GRAD_PROXY_AUDIT_ABORT_NAME)
+    payload = json.loads(Path(abort_path).read_text(encoding="utf-8"))
+    assert payload["reason"] == GRAD_PROXY_AUDIT_ABORT_REASON
+    assert payload["crossing_eligible_count_by_step"] == [0, 0, 0]
+    assert payload["audit_state_source"] == GRAD_PROXY_AUDIT_STATE_SOURCE
+    assert payload["warmup_steps_run"] == 3
+    assert payload["warmup_two_tier_enabled"] is False
+    assert payload["launch_sha"] == "launchsha"
+    assert payload["parent_sha256"] == "parentsha"
+
+
+def test_warmup_cap_abort_is_typed_with_telemetry() -> None:
+    exc = GradProxyAuditWarmupCapAborted(
+        crossing_eligible_count_by_step=[0, 0],
+        warmup_steps_run=2,
+        launch_sha="launchsha",
+        parent_sha256="parentsha",
+    )
+    assert exc.crossing_eligible_count_by_step == [0, 0]
+    assert exc.warmup_steps_run == 2
+    assert exc.launch_sha == "launchsha"
+    assert exc.parent_sha256 == "parentsha"
+
+
+def test_warmup_cap_abort_when_no_crossings_within_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model, batch, eligible, states = _tiny_forward_fixture(batch_size=8)
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.grad_proxy_audit.count_w6_t10_crossing_eligible_from_votes",
+        lambda **kwargs: 0,
+    )
+
+    with pytest.raises(GradProxyAuditWarmupCapAborted) as exc_info:
+        run_grad_proxy_audit_with_warmup(
+            model=model,
+            batch=batch,
+            tensor_states=states,
+            eligible_modules=eligible,
+            device=torch.device("cpu"),
+            extras=model.compute_train_extra_args(1, 1),
+            max_abs_per_tensor=4096,
+            max_audit_candidates=1,
+            launch_sha="launchsha",
+            parent_sha256="parentsha",
+            warmup_max_steps=2,
+        )
+    assert exc_info.value.crossing_eligible_count_by_step == [0, 0]
+    assert exc_info.value.warmup_steps_run == 2
+
+
+@pytest.mark.skipif(
+    not Path(DEFAULT_PARENT).exists(),
+    reason="pinned parent checkpoint required for warm-up determinism pin",
+)
+def test_warmup_determinism_pin_parent_seed44() -> None:
+    device = torch.device("cpu")
+    ckpt, _parent_sha = load_parent_checkpoint(
+        Path(DEFAULT_PARENT),
+        expected_sha256=DEFAULT_PARENT_SHA256,
+    )
+    model, tok, cfg = build_model_from_checkpoint(ckpt, device)
+    support_batches, _support_proof = build_identity_full_support_batches(
+        tok=tok,
+        max_len=int(cfg.max_seq_len),
+        batch_size=1,
+        curriculum_seed=44,
+        device=device,
+        support_order_seed=44,
+    )
+    batch = support_batches[0]["batch"]
+    eligible = select_eligible_bitlinears(model, eligible_scope="first-bitlinear")
+    tensor_states, init_report = derive_tensor_states_and_check_init_fidelity(
+        eligible,
+        threshold=0.0,
+    )
+    assert init_report["all_pass"] is True
+    model.train()
+    extras = model.compute_train_extra_args(1, 1)
+
+    def _discover_once():
+        return discover_probe_warmup_audit_anchor(
+            model=model,
+            batch=batch,
+            tensor_states=tensor_states,
+            eligible_modules=eligible,
+            device=device,
+            extras=extras,
+            max_abs_per_tensor=4096,
+            launch_sha="determinism-pin",
+            warmup_max_steps=8,
+        )
+
+    first = _discover_once()
+    second = _discover_once()
+    assert first.audit_step_index == 3
+    assert second.audit_step_index == 3
+    assert first.audit_warmup_steps_run == 2
+    assert second.audit_warmup_steps_run == 2
+    assert first.crossing_eligible_count == second.crossing_eligible_count
+    assert first.crossing_eligible_count > 0
+    assert first.crossing_eligible_count_by_step == second.crossing_eligible_count_by_step
+    assert first.crossing_eligible_count_by_step[:2] == (0, 0)
+    assert first.crossing_eligible_count_by_step[2] > 0

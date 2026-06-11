@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only W6/T=10 grad-proxy audit (slice 3a, step 1 only)."""
+"""Read-only W6/T=10 grad-proxy audit (slice 3a, probe warm-up relocation)."""
 from __future__ import annotations
 
 import argparse
@@ -10,10 +10,14 @@ from pathlib import Path
 import torch
 
 from calm.hrm_text_158.native_full_stack.grad_proxy_audit import (
+    GRAD_PROXY_AUDIT_ABORT_NAME,
     GRAD_PROXY_AUDIT_RECEIPT_NAME,
     GradProxyAuditAborted,
+    GradProxyAuditWarmupCapAborted,
+    MAX_WARMUP_MAX_STEPS,
     resolve_launch_sha,
     run_grad_proxy_audit_step1,
+    write_grad_proxy_audit_abort_receipt,
     write_grad_proxy_audit_receipt,
 )
 from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
@@ -31,7 +35,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         description=(
             "Read-only M-A precursor: W6/T=10 grad-proxy vs shadow comparator "
-            "audit at optimizer step 1."
+            "audit after probe-mirrored OFF-path warm-up."
         )
     )
     ap.add_argument(
@@ -43,8 +47,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--parent-sha256", default=DEFAULT_PARENT_SHA256)
     ap.add_argument("--artifact-dir", type=Path, required=False)
     ap.add_argument("--max-audit-candidates", type=int, default=64)
+    ap.add_argument(
+        "--warmup-max-steps",
+        type=int,
+        default=MAX_WARMUP_MAX_STEPS,
+        help="Maximum probe-mirrored OFF-path warm-up steps before audit (cap 8).",
+    )
     ap.add_argument("--device", default="cpu")
-    ap.add_argument("--eligible-scope", choices=["first-bitlinear", "all-bitlinear"], default="first-bitlinear")
+    ap.add_argument(
+        "--eligible-scope",
+        choices=["first-bitlinear", "all-bitlinear"],
+        default="first-bitlinear",
+    )
     ap.add_argument("--curriculum-seed", type=int, default=44)
     ap.add_argument("--support-order-seed", type=int, default=44)
     ap.add_argument("--batch-size", type=int, default=1)
@@ -59,6 +73,9 @@ def run_grad_proxy_audit(args: argparse.Namespace) -> dict:
         raise ValueError("--grad-proxy-audit-only is required for this entrypoint")
     if args.artifact_dir is None:
         raise ValueError("--artifact-dir is required")
+    warmup_max_steps = min(int(args.warmup_max_steps), int(MAX_WARMUP_MAX_STEPS))
+    if warmup_max_steps <= 0:
+        raise ValueError("--warmup-max-steps must be positive")
     device = torch.device(str(args.device))
     ckpt, parent_sha = load_parent_checkpoint(
         Path(args.parent),
@@ -97,6 +114,8 @@ def run_grad_proxy_audit(args: argparse.Namespace) -> dict:
         max_abs_per_tensor=int(args.max_abs_per_tensor),
         max_audit_candidates=int(args.max_audit_candidates),
         launch_sha=launch_sha,
+        parent_sha256=parent_sha,
+        warmup_max_steps=warmup_max_steps,
     )
     receipt["parent_sha256"] = parent_sha
     receipt["support_proof"] = support_proof
@@ -110,8 +129,24 @@ def run_grad_proxy_audit(args: argparse.Namespace) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
+    launch_sha = str(args.launch_sha or resolve_launch_sha())
+    parent_sha = str(args.parent_sha256)
     try:
         receipt = run_grad_proxy_audit(args)
+    except GradProxyAuditWarmupCapAborted as exc:
+        if args.artifact_dir is None:
+            print(str(exc), file=sys.stderr)
+            return 2
+        abort_path = write_grad_proxy_audit_abort_receipt(
+            artifact_dir=Path(args.artifact_dir),
+            crossing_eligible_count_by_step=exc.crossing_eligible_count_by_step,
+            warmup_steps_run=exc.warmup_steps_run,
+            launch_sha=launch_sha,
+            parent_sha256=parent_sha,
+        )
+        print(str(exc), file=sys.stderr)
+        print(f"wrote {GRAD_PROXY_AUDIT_ABORT_NAME} -> {abort_path}", file=sys.stderr)
+        return 2
     except GradProxyAuditAborted as exc:
         print(str(exc), file=sys.stderr)
         return 2

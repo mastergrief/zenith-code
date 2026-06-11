@@ -5,6 +5,7 @@ import hashlib
 import json
 import subprocess
 import time
+from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 import torch
@@ -24,7 +25,6 @@ from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
     _candidate_delta_weight_from_one_flip,
     _candidate_id,
     _compute_activation_credit_candidate_proxies,
-    _compute_baseline_votes,
     _evaluate_loss,
     _ordered_candidate_indices,
     _sample_candidate_ids,
@@ -50,10 +50,41 @@ GRAD_PROXY_AUDIT_SCHEMA = "hrm_text_158_grad_proxy_audit_receipt/v0"
 GRAD_PROXY_AUDIT_ESTIMAND = "first_order_grad_proxy_weighted_local_loss_delta"
 GRAD_PROXY_AUDIT_COMPARATOR_SPEC = "threshold_abs_10_w6_carry"
 GRAD_PROXY_AUDIT_RECEIPT_NAME = "grad_proxy_audit_receipt.json"
+GRAD_PROXY_AUDIT_ABORT_NAME = "grad_proxy_audit_abort.json"
+GRAD_PROXY_AUDIT_ABORT_REASON = "no_crossings_within_warmup_cap"
+GRAD_PROXY_AUDIT_STATE_SOURCE = "probe_warmup_pre_apply"
+DEFAULT_WARMUP_MAX_STEPS = 8
+MAX_WARMUP_MAX_STEPS = 8
 
 
 class GradProxyAuditAborted(RuntimeError):
     """Fail-closed abort for non-comparable grad-proxy audit receipts."""
+
+
+class GradProxyAuditWarmupCapAborted(GradProxyAuditAborted):
+    """Fail-closed abort when no W6 crossings appear within the warm-up cap."""
+
+    reason = GRAD_PROXY_AUDIT_ABORT_REASON
+
+    def __init__(
+        self,
+        *,
+        crossing_eligible_count_by_step: Sequence[int],
+        warmup_steps_run: int,
+        launch_sha: str,
+        parent_sha256: str | None = None,
+    ) -> None:
+        super().__init__(
+            "grad_proxy_audit_aborted: no_crossings_within_warmup_cap"
+        )
+        self.crossing_eligible_count_by_step = [
+            int(value) for value in crossing_eligible_count_by_step
+        ]
+        self.warmup_steps_run = int(warmup_steps_run)
+        self.launch_sha = str(launch_sha)
+        self.parent_sha256 = (
+            None if parent_sha256 is None else str(parent_sha256)
+        )
 
 
 def w6_t10_base_spec(*, max_abs_per_tensor: int) -> VoteUpdateSpec:
@@ -193,6 +224,122 @@ def build_w6_t10_crossing_candidate_universe_from_votes(
     }
 
 
+def count_w6_t10_crossing_eligible_from_votes(
+    *,
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+    votes_by_key: Mapping[str, torch.Tensor],
+) -> int:
+    total = 0
+    for state_key, state in tensor_states.items():
+        rows = materialize_selector_rows(
+            votes=votes_by_key[state_key],
+            state=state,
+        )
+        total += len(
+            crossing_eligible_flat_indices(
+                rows,
+                threshold_abs=int(CROSSING_THRESHOLD_ABS),
+            )
+        )
+    return int(total)
+
+
+def _normalize_votes_by_key(
+    votes_by_key: Mapping[str, torch.Tensor],
+) -> dict[str, torch.Tensor]:
+    return {
+        str(state_key): votes.detach().cpu().to(torch.int16).contiguous()
+        for state_key, votes in votes_by_key.items()
+    }
+
+
+def _probe_warmup_helpers() -> dict[str, Any]:
+    from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
+        apply_bounded_delta_vote_step,
+    )
+    from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+        ARM_A0_RANK_BUCKET_CURRENT,
+        SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
+        _compute_ce_weighted_grads,
+        _science_local_selection_ordering_mode,
+        _weighted_grads_to_science_arm_votes,
+        default_dry_run_rank_vote_spec,
+        default_vote_update_spec,
+    )
+
+    return {
+        "ARM_A0_RANK_BUCKET_CURRENT": ARM_A0_RANK_BUCKET_CURRENT,
+        "SCIENCE_LOCAL_SELECTION_ORDERING_SEED": SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
+        "apply_bounded_delta_vote_step": apply_bounded_delta_vote_step,
+        "_compute_ce_weighted_grads": _compute_ce_weighted_grads,
+        "_science_local_selection_ordering_mode": _science_local_selection_ordering_mode,
+        "_weighted_grads_to_science_arm_votes": _weighted_grads_to_science_arm_votes,
+        "default_dry_run_rank_vote_spec": default_dry_run_rank_vote_spec,
+        "default_vote_update_spec": default_vote_update_spec,
+    }
+
+
+def derive_probe_science_arm_votes(
+    *,
+    model: LMHead,
+    batch: Mapping[str, torch.Tensor],
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+    eligible_modules: Mapping[str, BitLinear],
+    device: torch.device,
+    extras: Mapping[str, Any],
+    max_abs_per_tensor: int,
+) -> tuple[float, dict[str, torch.Tensor]]:
+    helpers = _probe_warmup_helpers()
+    weighted_grads, loss, _metrics = helpers["_compute_ce_weighted_grads"](
+        model,
+        batch,
+        tensor_states,
+        eligible_modules,
+        device=device,
+        extras=extras,
+    )
+    rank_spec = helpers["default_dry_run_rank_vote_spec"]()
+    vote_spec = helpers["default_vote_update_spec"](int(max_abs_per_tensor))
+    votes_by_key, _pressure_by_key, finite_weighted_grad = helpers[
+        "_weighted_grads_to_science_arm_votes"
+    ](
+        weighted_grads,
+        tensor_states,
+        rank_spec=rank_spec,
+        vote_spec=vote_spec,
+        science_arm=str(helpers["ARM_A0_RANK_BUCKET_CURRENT"]),
+    )
+    if not bool(finite_weighted_grad):
+        raise RuntimeError("probe science-arm votes require finite weighted grads")
+    return float(loss.detach().cpu().item()), _normalize_votes_by_key(votes_by_key)
+
+
+def apply_probe_off_path_warmup_step(
+    *,
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+    votes_by_key: Mapping[str, torch.Tensor],
+    max_abs_per_tensor: int,
+    warmup_step_index: int,
+) -> dict[str, BoundedDeltaTensorState]:
+    helpers = _probe_warmup_helpers()
+    vote_specs = {
+        state_key: helpers["default_vote_update_spec"](int(max_abs_per_tensor))
+        for state_key in tensor_states
+    }
+    step_result = helpers["apply_bounded_delta_vote_step"](
+        tensor_states,
+        votes_by_key,
+        vote_specs,
+        two_tier_carry_w6_enabled=False,
+        local_selection_ordering_mode=helpers["_science_local_selection_ordering_mode"](
+            str(helpers["ARM_A0_RANK_BUCKET_CURRENT"])
+        ),
+        local_selection_ordering_seed=int(helpers["SCIENCE_LOCAL_SELECTION_ORDERING_SEED"]),
+        local_selection_ordering_step=int(warmup_step_index),
+    )
+    return dict(step_result.tensor_states)
+
+
 def derive_w6_t10_candidate_delta_weight(
     *,
     tensor_state: BoundedDeltaTensorState,
@@ -300,36 +447,38 @@ def compute_grad_proxy_pass_bars(
     }
 
 
-def run_grad_proxy_audit_step1(
+def run_grad_proxy_audit_at_anchor(
     *,
     model: LMHead,
     batch: Mapping[str, torch.Tensor],
     tensor_states: Mapping[str, BoundedDeltaTensorState],
+    votes_by_key: Mapping[str, torch.Tensor],
+    baseline_loss: float,
     eligible_modules: Mapping[str, BitLinear],
     device: torch.device,
     extras: Mapping[str, Any],
     max_abs_per_tensor: int,
     max_audit_candidates: int,
     launch_sha: str,
+    audit_step_index: int,
+    audit_warmup_steps_run: int,
+    crossing_eligible_count_by_step: Sequence[int],
     comparator_spec: str = GRAD_PROXY_AUDIT_COMPARATOR_SPEC,
 ) -> dict[str, Any]:
     if int(max_audit_candidates) <= 0:
         raise ValueError("max_audit_candidates must be positive")
+    if int(audit_step_index) <= 0:
+        raise ValueError("audit_step_index must be positive")
+    if int(audit_warmup_steps_run) < 0:
+        raise ValueError("audit_warmup_steps_run must be non-negative")
     comparator_spec_mismatch = (
         str(comparator_spec) != GRAD_PROXY_AUDIT_COMPARATOR_SPEC
     )
     audit_start = time.perf_counter()
-    baseline_loss, votes_by_key = _compute_baseline_votes(
-        model,
-        batch,
-        tensor_states,
-        eligible_modules,
-        device=device,
-        extras=extras,
-    )
+    normalized_votes_by_key = _normalize_votes_by_key(votes_by_key)
     universe = build_w6_t10_crossing_candidate_universe_from_votes(
         tensor_states=tensor_states,
-        votes_by_key=votes_by_key,
+        votes_by_key=normalized_votes_by_key,
         max_abs_per_tensor=int(max_abs_per_tensor),
         max_sampled_candidates=int(max_audit_candidates),
     )
@@ -345,7 +494,7 @@ def run_grad_proxy_audit_step1(
         candidate = candidate_by_id[candidate_id]
         audit = _audit_sparse_singleton_identity_for_candidate(
             tensor_state=tensor_states[str(candidate["state_key"])],
-            votes=votes_by_key[str(candidate["state_key"])],
+            votes=normalized_votes_by_key[str(candidate["state_key"])],
             candidate=candidate,
             one_flip_spec=one_flip_spec,
         )
@@ -376,7 +525,7 @@ def run_grad_proxy_audit_step1(
         )
         candidate_delta_weight = derive_w6_t10_candidate_delta_weight(
             tensor_state=tensor_states[state_key],
-            votes=votes_by_key[state_key],
+            votes=normalized_votes_by_key[state_key],
             candidate=candidate,
             max_abs_per_tensor=int(max_abs_per_tensor),
         )
@@ -418,7 +567,14 @@ def run_grad_proxy_audit_step1(
         "estimand": GRAD_PROXY_AUDIT_ESTIMAND,
         "comparator_spec": str(comparator_spec),
         "comparator_spec_mismatch": bool(comparator_spec_mismatch),
-        "optimizer_step_index": 1,
+        "optimizer_step_index": int(audit_step_index),
+        "audit_state_source": GRAD_PROXY_AUDIT_STATE_SOURCE,
+        "audit_warmup_steps_run": int(audit_warmup_steps_run),
+        "audit_step_index": int(audit_step_index),
+        "warmup_two_tier_enabled": False,
+        "crossing_eligible_count_by_step": [
+            int(value) for value in crossing_eligible_count_by_step
+        ],
         "baseline_loss": float(baseline_loss),
         "crossing_eligible_count": int(universe["crossing_eligible_count"]),
         "sampled_candidate_count": len(sampled_ids),
@@ -434,6 +590,153 @@ def run_grad_proxy_audit_step1(
     else:
         receipt["pass_bars"] = compute_grad_proxy_pass_bars(per_candidate=per_candidate)
     return receipt
+
+
+@dataclass(frozen=True)
+class ProbeWarmupAuditAnchor:
+    audit_step_index: int
+    audit_warmup_steps_run: int
+    crossing_eligible_count_by_step: tuple[int, ...]
+    crossing_eligible_count: int
+    tensor_states: dict[str, BoundedDeltaTensorState]
+    votes_by_key: dict[str, torch.Tensor]
+    baseline_loss: float
+
+
+def discover_probe_warmup_audit_anchor(
+    *,
+    model: LMHead,
+    batch: Mapping[str, torch.Tensor],
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+    eligible_modules: Mapping[str, BitLinear],
+    device: torch.device,
+    extras: Mapping[str, Any],
+    max_abs_per_tensor: int,
+    launch_sha: str,
+    parent_sha256: str | None = None,
+    warmup_max_steps: int = DEFAULT_WARMUP_MAX_STEPS,
+) -> ProbeWarmupAuditAnchor:
+    warmup_cap = min(int(warmup_max_steps), int(MAX_WARMUP_MAX_STEPS))
+    if warmup_cap <= 0:
+        raise ValueError("warmup_max_steps must be positive")
+    states = dict(tensor_states)
+    crossing_eligible_count_by_step: list[int] = []
+    for step_index in range(1, warmup_cap + 1):
+        baseline_loss, votes_by_key = derive_probe_science_arm_votes(
+            model=model,
+            batch=batch,
+            tensor_states=states,
+            eligible_modules=eligible_modules,
+            device=device,
+            extras=extras,
+            max_abs_per_tensor=int(max_abs_per_tensor),
+        )
+        crossing_count = count_w6_t10_crossing_eligible_from_votes(
+            tensor_states=states,
+            votes_by_key=votes_by_key,
+        )
+        crossing_eligible_count_by_step.append(int(crossing_count))
+        if crossing_count > 0:
+            return ProbeWarmupAuditAnchor(
+                audit_step_index=int(step_index),
+                audit_warmup_steps_run=int(step_index - 1),
+                crossing_eligible_count_by_step=tuple(crossing_eligible_count_by_step),
+                crossing_eligible_count=int(crossing_count),
+                tensor_states=dict(states),
+                votes_by_key={key: tensor for key, tensor in votes_by_key.items()},
+                baseline_loss=float(baseline_loss),
+            )
+        if step_index == warmup_cap:
+            raise GradProxyAuditWarmupCapAborted(
+                crossing_eligible_count_by_step=crossing_eligible_count_by_step,
+                warmup_steps_run=int(warmup_cap),
+                launch_sha=str(launch_sha),
+                parent_sha256=parent_sha256,
+            )
+        states = apply_probe_off_path_warmup_step(
+            tensor_states=states,
+            votes_by_key=votes_by_key,
+            max_abs_per_tensor=int(max_abs_per_tensor),
+            warmup_step_index=int(step_index),
+        )
+    raise RuntimeError("warmup loop exhausted without audit anchor or abort")
+
+
+def run_grad_proxy_audit_with_warmup(
+    *,
+    model: LMHead,
+    batch: Mapping[str, torch.Tensor],
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+    eligible_modules: Mapping[str, BitLinear],
+    device: torch.device,
+    extras: Mapping[str, Any],
+    max_abs_per_tensor: int,
+    max_audit_candidates: int,
+    launch_sha: str,
+    parent_sha256: str | None = None,
+    comparator_spec: str = GRAD_PROXY_AUDIT_COMPARATOR_SPEC,
+    warmup_max_steps: int = DEFAULT_WARMUP_MAX_STEPS,
+) -> dict[str, Any]:
+    anchor = discover_probe_warmup_audit_anchor(
+        model=model,
+        batch=batch,
+        tensor_states=tensor_states,
+        eligible_modules=eligible_modules,
+        device=device,
+        extras=extras,
+        max_abs_per_tensor=int(max_abs_per_tensor),
+        launch_sha=str(launch_sha),
+        parent_sha256=parent_sha256,
+        warmup_max_steps=int(warmup_max_steps),
+    )
+    return run_grad_proxy_audit_at_anchor(
+        model=model,
+        batch=batch,
+        tensor_states=anchor.tensor_states,
+        votes_by_key=anchor.votes_by_key,
+        baseline_loss=anchor.baseline_loss,
+        eligible_modules=eligible_modules,
+        device=device,
+        extras=extras,
+        max_abs_per_tensor=int(max_abs_per_tensor),
+        max_audit_candidates=int(max_audit_candidates),
+        launch_sha=str(launch_sha),
+        audit_step_index=anchor.audit_step_index,
+        audit_warmup_steps_run=anchor.audit_warmup_steps_run,
+        crossing_eligible_count_by_step=list(anchor.crossing_eligible_count_by_step),
+        comparator_spec=str(comparator_spec),
+    )
+
+
+def run_grad_proxy_audit_step1(
+    *,
+    model: LMHead,
+    batch: Mapping[str, torch.Tensor],
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+    eligible_modules: Mapping[str, BitLinear],
+    device: torch.device,
+    extras: Mapping[str, Any],
+    max_abs_per_tensor: int,
+    max_audit_candidates: int,
+    launch_sha: str,
+    parent_sha256: str | None = None,
+    comparator_spec: str = GRAD_PROXY_AUDIT_COMPARATOR_SPEC,
+    warmup_max_steps: int = DEFAULT_WARMUP_MAX_STEPS,
+) -> dict[str, Any]:
+    return run_grad_proxy_audit_with_warmup(
+        model=model,
+        batch=batch,
+        tensor_states=tensor_states,
+        eligible_modules=eligible_modules,
+        device=device,
+        extras=extras,
+        max_abs_per_tensor=int(max_abs_per_tensor),
+        max_audit_candidates=int(max_audit_candidates),
+        launch_sha=str(launch_sha),
+        parent_sha256=parent_sha256,
+        comparator_spec=str(comparator_spec),
+        warmup_max_steps=int(warmup_max_steps),
+    )
 
 
 def resolve_launch_sha() -> str:
@@ -458,6 +761,39 @@ def write_grad_proxy_audit_receipt(
     out_path = out_dir / GRAD_PROXY_AUDIT_RECEIPT_NAME
     out_path.write_text(
         json.dumps(dict(receipt), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    return str(out_path)
+
+
+def write_grad_proxy_audit_abort_receipt(
+    *,
+    artifact_dir: str | Any,
+    crossing_eligible_count_by_step: Sequence[int],
+    warmup_steps_run: int,
+    launch_sha: str,
+    parent_sha256: str | None,
+) -> str:
+    from pathlib import Path
+
+    out_dir = Path(artifact_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "reason": GRAD_PROXY_AUDIT_ABORT_REASON,
+        "crossing_eligible_count_by_step": [
+            int(value) for value in crossing_eligible_count_by_step
+        ],
+        "audit_state_source": GRAD_PROXY_AUDIT_STATE_SOURCE,
+        "warmup_steps_run": int(warmup_steps_run),
+        "warmup_two_tier_enabled": False,
+        "launch_sha": str(launch_sha),
+        "parent_sha256": (
+            None if parent_sha256 is None else str(parent_sha256)
+        ),
+    }
+    out_path = out_dir / GRAD_PROXY_AUDIT_ABORT_NAME
+    out_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True),
         encoding="utf-8",
     )
     return str(out_path)
