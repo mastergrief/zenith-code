@@ -137,6 +137,7 @@ ORACLE_SCREEN_ORDERING_STEP = 1
 ORACLE_SCREEN_IMPROVEMENT_EPS = 1e-12
 B2B_CANDIDATE_APPLY_POLICY = "full_vote_planned_candidate_force_apply_v1"
 B2B_ESTIMAND_NON_COMPARABLE_TO_SINGLE_STEP_ORACLE = True
+ACTIVATION_CREDIT_ORACLE_ESTIMAND = "full_vote_planned_candidate_shadow"
 
 
 @contextmanager
@@ -2398,6 +2399,61 @@ def _evaluate_b2b_planned_candidates_for_sequential_capture(
     )
 
 
+def _evaluate_sampled_candidates_for_activation_credit_oracle(
+    *,
+    model: LMHead,
+    batch: Mapping[str, torch.Tensor],
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+    eligible_modules: Mapping[str, BitLinear],
+    device: torch.device,
+    extras: Mapping[str, Any],
+    votes_by_key: Mapping[str, torch.Tensor],
+    candidate_by_id: Mapping[str, Mapping[str, Any]],
+    sampled_ids: Sequence[str],
+    baseline_loss: float,
+    base_spec: VoteUpdateSpec,
+    one_flip_spec: VoteUpdateSpec,
+    max_seconds: float,
+    phase_progress: Any | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], bool, float, dict[str, Any]]:
+    """Activation-credit ingress: full-vote planned shadow apply + non-raising drift audit."""
+
+    (
+        sampled_candidates,
+        oracle_top,
+        budget_exceeded,
+        elapsed_seconds,
+        singleton_audit,
+    ) = _evaluate_b2b_planned_candidates_for_sequential_capture(
+        model=model,
+        batch=batch,
+        tensor_states=tensor_states,
+        eligible_modules=eligible_modules,
+        device=device,
+        extras=extras,
+        votes_by_key=votes_by_key,
+        candidate_by_id=candidate_by_id,
+        sampled_ids=sampled_ids,
+        baseline_loss=float(baseline_loss),
+        base_spec=base_spec,
+        one_flip_spec=one_flip_spec,
+        max_seconds=float(max_seconds),
+        phase_progress=phase_progress,
+    )
+    ingress_receipt = dict(singleton_audit)
+    ingress_receipt["estimand"] = ACTIVATION_CREDIT_ORACLE_ESTIMAND
+    ingress_receipt[
+        "estimand_non_comparable_to_single_step_sparse_singleton_oracle"
+    ] = B2B_ESTIMAND_NON_COMPARABLE_TO_SINGLE_STEP_ORACLE
+    return (
+        sampled_candidates,
+        oracle_top,
+        bool(budget_exceeded),
+        float(elapsed_seconds),
+        ingress_receipt,
+    )
+
+
 def _evaluate_sampled_candidates_for_oracle_screen(
     *,
     model: LMHead,
@@ -3846,9 +3902,11 @@ __all__ = [
     "canonical_within_tie_band_rows_for_b2b_hash",
     "B2B_CANDIDATE_APPLY_POLICY",
     "B2B_ESTIMAND_NON_COMPARABLE_TO_SINGLE_STEP_ORACLE",
+    "ACTIVATION_CREDIT_ORACLE_ESTIMAND",
     "_apply_full_vote_planned_candidate_shadow_update",
     "_audit_sparse_singleton_identity_for_candidate",
     "_evaluate_b2b_planned_candidates_for_sequential_capture",
+    "_evaluate_sampled_candidates_for_activation_credit_oracle",
     "capture_b2b_sequential_pre_update_step",
     "hash_bounded_delta_tensor_states_pre_update",
     "run_within_tie_band_discriminator_oracle_screen",

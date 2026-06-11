@@ -76,7 +76,9 @@ from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
     _audit_sparse_singleton_identity_for_candidate,
     _compute_baseline_votes,
     _candidate_delta_weight_from_one_flip,
+    ACTIVATION_CREDIT_ORACLE_ESTIMAND,
     _evaluate_b2b_planned_candidates_for_sequential_capture,
+    _evaluate_sampled_candidates_for_activation_credit_oracle,
     _evaluate_sampled_candidates_for_oracle_screen,
     _fraction_gte_observed,
     _fraction_lte_observed,
@@ -3335,6 +3337,51 @@ def test_legacy_oracle_screen_sparse_singleton_identity_still_raises_on_drift(
             max_seconds=30.0,
             phase_progress=None,
         )
+
+
+def test_activation_credit_oracle_full_vote_planned_shadow_does_not_raise_on_drift(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model, batch, eligible, states = _tiny_forward_fixture(batch_size=8)
+    state_key = next(iter(states))
+    state, votes, candidate, base_spec, one_flip_spec = _singleton_drift_fixture(state_key)
+    states = {state_key: state}
+    votes_by_key = {state_key: votes}
+    candidate_by_id = {candidate["candidate_id"]: candidate}
+
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.oracle_screen_runner._evaluate_loss",
+        lambda *args, **kwargs: 1.25,
+    )
+
+    sampled, _oracle_top, budget_exceeded, _elapsed, ingress_receipt = (
+        _evaluate_sampled_candidates_for_activation_credit_oracle(
+            model=model,
+            batch=batch,
+            tensor_states=states,
+            eligible_modules=eligible,
+            device=torch.device("cpu"),
+            extras=model.compute_train_extra_args(1, 1),
+            votes_by_key=votes_by_key,
+            candidate_by_id=candidate_by_id,
+            sampled_ids=[candidate["candidate_id"]],
+            baseline_loss=1.0,
+            base_spec=base_spec,
+            one_flip_spec=one_flip_spec,
+            max_seconds=30.0,
+            phase_progress=None,
+        )
+    )
+
+    assert budget_exceeded is False
+    assert len(sampled) == 1
+    assert sampled[0]["candidate_apply_policy"] == B2B_CANDIDATE_APPLY_POLICY
+    assert ingress_receipt["estimand"] == ACTIVATION_CREDIT_ORACLE_ESTIMAND
+    assert ingress_receipt["sparse_singleton_identity_checked_count"] == 1
+    assert ingress_receipt["sparse_singleton_identity_drift_count"] == 1
+    assert ingress_receipt[
+        "estimand_non_comparable_to_single_step_sparse_singleton_oracle"
+    ] is True
 
 
 def test_b2b_capture_emits_apply_policy_and_drift_telemetry() -> None:

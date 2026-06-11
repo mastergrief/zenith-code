@@ -113,7 +113,7 @@ from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
     ORACLE_SCREEN_MODE_CREDIT_RANKING_PIVOT_MEASUREMENT,
     ORACLE_SCREEN_MODE_WITHIN_TIE_BAND_DISCRIMINATOR,
     _build_oracle_candidate_universe,
-    _evaluate_sampled_candidates_for_oracle_screen,
+    _evaluate_sampled_candidates_for_activation_credit_oracle,
     capture_b2b_sequential_pre_update_step,
     run_activation_credit_measurement_oracle_screen,
     run_activation_credit_scale_smoke_oracle_screen,
@@ -3676,7 +3676,7 @@ def _build_local_loss_delta_by_key_from_activation_credit_oracle(
     max_abs_per_tensor: int,
     max_sampled_candidates: int,
     phase_progress: PhaseProgress | None,
-) -> dict[str, torch.Tensor]:
+) -> tuple[dict[str, torch.Tensor], dict[str, Any]]:
     universe = _build_oracle_candidate_universe(
         model=model,
         batch=batch,
@@ -3688,22 +3688,27 @@ def _build_local_loss_delta_by_key_from_activation_credit_oracle(
         max_sampled_candidates=int(max_sampled_candidates),
         phase_progress=phase_progress,
     )
-    sampled_candidates, _oracle_top, budget_exceeded, _elapsed = (
-        _evaluate_sampled_candidates_for_oracle_screen(
-            model=model,
-            batch=batch,
-            tensor_states=tensor_states,
-            eligible_modules=eligible_modules,
-            device=device,
-            extras=extras,
-            votes_by_key=universe["votes_by_key"],
-            candidate_by_id=universe["candidate_by_id"],
-            sampled_ids=universe["sampled_ids"],
-            baseline_loss=float(universe["baseline_loss"]),
-            one_flip_spec=universe["one_flip_spec"],
-            max_seconds=oracle_screen_budget_max_seconds(int(max_sampled_candidates)),
-            phase_progress=phase_progress,
-        )
+    (
+        sampled_candidates,
+        _oracle_top,
+        budget_exceeded,
+        _elapsed,
+        activation_credit_oracle_receipt,
+    ) = _evaluate_sampled_candidates_for_activation_credit_oracle(
+        model=model,
+        batch=batch,
+        tensor_states=tensor_states,
+        eligible_modules=eligible_modules,
+        device=device,
+        extras=extras,
+        votes_by_key=universe["votes_by_key"],
+        candidate_by_id=universe["candidate_by_id"],
+        sampled_ids=universe["sampled_ids"],
+        baseline_loss=float(universe["baseline_loss"]),
+        base_spec=universe["base_spec"],
+        one_flip_spec=universe["one_flip_spec"],
+        max_seconds=oracle_screen_budget_max_seconds(int(max_sampled_candidates)),
+        phase_progress=phase_progress,
     )
     _assert_local_loss_delta_crossing_coverage(
         tensor_states=tensor_states,
@@ -3729,10 +3734,13 @@ def _build_local_loss_delta_by_key_from_activation_credit_oracle(
         tensor_states=tensor_states,
         votes_by_key=votes_by_key,
     )
-    return {
-        state_key: tensor.detach().cpu().contiguous()
-        for state_key, tensor in local_loss_delta_by_key.items()
-    }
+    return (
+        {
+            state_key: tensor.detach().cpu().contiguous()
+            for state_key, tensor in local_loss_delta_by_key.items()
+        },
+        dict(activation_credit_oracle_receipt),
+    )
 
 
 def _plan_integer_vote_update_for_tier_a_surfaces(
@@ -4562,23 +4570,25 @@ def run_bounded_delta_steps(
 
                 pre_apply_states = states
                 local_loss_delta_by_key = None
+                activation_credit_oracle_receipt: dict[str, Any] | None = None
                 if two_tier_carry_w6_enabled:
                     with progress.phase("two_tier_local_loss_delta_oracle", step=int(step)):
-                        local_loss_delta_by_key = (
-                            _build_local_loss_delta_by_key_from_activation_credit_oracle(
-                                model=model,
-                                batch=step_batch,
-                                tensor_states=pre_apply_states,
-                                eligible_modules=eligible_modules,
-                                device=device,
-                                extras=extras,
-                                votes_by_key=votes_by_key,
-                                max_abs_per_tensor=int(max_abs_per_tensor),
-                                max_sampled_candidates=int(
-                                    oracle_screen_max_sampled_candidates
-                                ),
-                                phase_progress=progress,
-                            )
+                        (
+                            local_loss_delta_by_key,
+                            activation_credit_oracle_receipt,
+                        ) = _build_local_loss_delta_by_key_from_activation_credit_oracle(
+                            model=model,
+                            batch=step_batch,
+                            tensor_states=pre_apply_states,
+                            eligible_modules=eligible_modules,
+                            device=device,
+                            extras=extras,
+                            votes_by_key=votes_by_key,
+                            max_abs_per_tensor=int(max_abs_per_tensor),
+                            max_sampled_candidates=int(
+                                oracle_screen_max_sampled_candidates
+                            ),
+                            phase_progress=progress,
                         )
                 two_tier_vote_step_kwargs = _bounded_delta_vote_step_two_tier_kwargs(
                     two_tier_carry_w6_enabled=bool(two_tier_carry_w6_enabled),
@@ -4677,6 +4687,10 @@ def run_bounded_delta_steps(
                     "step_result": step_result_compact,
                     "optimizer_identity_proof": identity_proof,
                 }
+                if activation_credit_oracle_receipt is not None:
+                    step_reports[str(step)]["activation_credit_oracle"] = (
+                        activation_credit_oracle_receipt
+                    )
                 if b2b_step_capture is not None:
                     step_reports[str(step)]["b2b_sequential_capture"] = {
                         "capture_side": b2b_step_capture["capture_side"],
