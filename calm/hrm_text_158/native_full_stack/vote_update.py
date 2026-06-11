@@ -11,9 +11,22 @@ from dataclasses import dataclass
 from enum import Enum
 import hashlib
 import os
-from typing import Optional
+from typing import Any, Optional
 
 import torch
+
+from calm.hrm_text_158.native_full_stack.two_tier_step_orchestrator import (
+    apply_two_tier_write_backs,
+    plan_two_tier_step,
+)
+from calm.hrm_text_158.native_full_stack.two_tier_threshold_semantics import (
+    CROSSING_THRESHOLD_ABS,
+)
+from calm.hrm_text_158.native_full_stack.two_tier_transient_selection import (
+    LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
+    crossing_eligible_flat_indices,
+    validate_two_tier_selector_inputs,
+)
 
 try:  # Keep CPU/static imports working when Triton is unavailable.
     import triton
@@ -155,6 +168,7 @@ class VoteUpdateInputs:
     pc_aux_moves: Optional[torch.Tensor] = None
     pc_aux_mode: PcAuxMode | str = PcAuxMode.TELEMETRY
     vote_format: VoteUpdateVoteFormat | str = VoteUpdateVoteFormat.INT16_VOTES
+    local_loss_delta: Optional[torch.Tensor] = None
 
     @property
     def normalized_vote_format(self) -> VoteUpdateVoteFormat:
@@ -247,6 +261,350 @@ def _local_selection_order(
     raise ValueError(f"unsupported local_selection_ordering_mode {mode!r}")
 
 
+def _applied_crossing_direction_from_carry(carry_after: int, *, threshold_abs: int) -> int:
+    if int(carry_after) >= int(threshold_abs):
+        return 1
+    if int(carry_after) <= -int(threshold_abs):
+        return -1
+    raise ValueError(
+        "applied write-back requires crossing carry_after at threshold_abs="
+        f"{threshold_abs}, got {carry_after}"
+    )
+
+
+def _partition_pre_veto_by_replay_and_pc_veto(
+    pre_veto_selected: torch.Tensor,
+    directions: torch.Tensor,
+    selected_thresholds: torch.Tensor,
+    inputs: VoteUpdateInputs,
+) -> tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+]:
+    replay_veto_mask = torch.zeros_like(directions, dtype=torch.bool)
+    replay_ce_vetoed = pre_veto_selected[:0]
+    replay_veto_directions = torch.zeros_like(pre_veto_selected[:0], dtype=torch.int16)
+    replay_veto_thresholds = torch.zeros_like(pre_veto_selected[:0], dtype=torch.int32)
+    if inputs.replay_ce_veto_votes is not None:
+        replay_vote = inputs.replay_ce_veto_votes.flatten().to(torch.int32)
+        replay_move = inputs.replay_ce_veto_moves.flatten().to(torch.int32)
+        replay_direction = torch.sign(replay_vote[pre_veto_selected])
+        replay_direction = torch.where(
+            replay_direction != 0,
+            replay_direction,
+            torch.sign(replay_move[pre_veto_selected]),
+        ).to(torch.int16)
+        replay_support = replay_direction * directions
+        replay_veto_mask = replay_support < 0
+        replay_ce_vetoed = pre_veto_selected[replay_veto_mask]
+        replay_veto_directions = directions[replay_veto_mask]
+        replay_veto_thresholds = selected_thresholds[replay_veto_mask]
+    pc_veto_mask = torch.zeros_like(directions, dtype=torch.bool)
+    pc_aux_negative = pre_veto_selected[:0]
+    pc_aux_vetoed = pre_veto_selected[:0]
+    if inputs.pc_aux_votes is not None:
+        pc_vote = inputs.pc_aux_votes.flatten().to(torch.int32)
+        pc_move = inputs.pc_aux_moves.flatten().to(torch.int32)
+        pc_direction = torch.sign(pc_vote[pre_veto_selected])
+        pc_direction = torch.where(
+            pc_direction != 0,
+            pc_direction,
+            torch.sign(pc_move[pre_veto_selected]),
+        ).to(torch.int16)
+        pc_support = pc_direction * directions
+        pc_veto_mask = pc_support < 0
+        pc_aux_negative = pre_veto_selected[pc_veto_mask]
+        if inputs.normalized_pc_aux_mode == PcAuxMode.VETO:
+            # Replay remains the first veto layer; PC-veto only accounts for
+            # additional flips that survived replay.
+            pc_aux_vetoed = pre_veto_selected[pc_veto_mask & ~replay_veto_mask]
+    apply_mask = ~replay_veto_mask
+    if inputs.normalized_pc_aux_mode == PcAuxMode.VETO:
+        apply_mask = apply_mask & ~pc_veto_mask
+    applied = pre_veto_selected[apply_mask]
+    applied_directions = directions[apply_mask]
+    applied_thresholds = selected_thresholds[apply_mask]
+    return (
+        applied,
+        applied_directions,
+        applied_thresholds,
+        replay_ce_vetoed,
+        replay_veto_directions,
+        replay_veto_thresholds,
+        pc_aux_negative,
+        pc_aux_vetoed,
+    )
+
+
+def _apply_replay_veto_residual_clamp(
+    new_acc_i32: torch.Tensor,
+    *,
+    replay_ce_veto_indices: torch.Tensor,
+    replay_veto_directions: torch.Tensor,
+    replay_veto_thresholds: torch.Tensor,
+) -> None:
+    if replay_ce_veto_indices.numel() == 0:
+        return
+    vetoed = replay_ce_veto_indices.to(new_acc_i32.device)
+    directions = replay_veto_directions.to(new_acc_i32.device)
+    thresholds = replay_veto_thresholds.to(new_acc_i32.device)
+    residual = new_acc_i32[vetoed] - directions.to(torch.int32) * thresholds
+    low = -thresholds + 1
+    high = thresholds - 1
+    new_acc_i32[vetoed] = torch.minimum(torch.maximum(residual, low), high)
+
+
+def _materialize_two_tier_rows(
+    state: VoteUpdateState,
+    inputs: VoteUpdateInputs,
+) -> list[dict[str, Any]]:
+    q_levels = state.q_levels.flatten()
+    accumulators = state.accumulators.flatten()
+    votes = inputs.votes.flatten()
+    deltas = inputs.local_loss_delta.flatten()
+    rows: list[dict[str, Any]] = []
+    for flat_index in range(int(q_levels.numel())):
+        rows.append(
+            {
+                "candidate_id": str(flat_index),
+                "flat_index": int(flat_index),
+                "vote_value": int(votes[flat_index].item()),
+                "pre_accumulator_i16": int(accumulators[flat_index].item()),
+                "current_q_level": int(q_levels[flat_index].item()),
+                "local_loss_delta": float(deltas[flat_index].item()),
+                "in_target_tie_band": True,
+            }
+        )
+    return rows
+
+
+def plan_two_tier_vote_update_reference(
+    state: VoteUpdateState,
+    inputs: VoteUpdateInputs,
+    spec: VoteUpdateSpec,
+    *,
+    validate_q_levels: bool = True,
+    local_selection_ordering_mode: str = LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
+    local_selection_ordering_seed: int = 0,
+    local_selection_ordering_step: int = 0,
+    warmup: bool = False,
+) -> VoteUpdatePlan:
+    validate_vote_update_contract(state, inputs, spec, validate_q_levels=validate_q_levels)
+    if str(local_selection_ordering_mode) != LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA:
+        raise ValueError(
+            "two_tier_carry_w6_enabled requires "
+            f"local_selection_ordering_mode={LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA!r}, "
+            f"got {local_selection_ordering_mode!r}"
+        )
+    failures = validate_two_tier_selector_inputs(inputs, enabled=True)
+    if failures:
+        raise ValueError("selector input validation failed: " + ",".join(failures))
+
+    q_levels = state.q_levels
+    accumulators = state.accumulators
+    votes = inputs.votes
+    threshold = int(spec.threshold_abs)
+    numel = int(q_levels.numel())
+    max_flips = spec.max_flips(numel)
+    rows = _materialize_two_tier_rows(state, inputs)
+    carry_by_flat_index = {
+        int(row["flat_index"]): int(row["pre_accumulator_i16"]) for row in rows
+    }
+    q_level_by_flat_index = {
+        int(row["flat_index"]): int(row["current_q_level"]) for row in rows
+    }
+    two_tier_plan = plan_two_tier_step(
+        rows,
+        carry_by_flat_index=carry_by_flat_index,
+        q_level_by_flat_index=q_level_by_flat_index,
+        rate_cap=int(max_flips),
+        warmup=bool(warmup),
+        local_selection_ordering_mode=str(local_selection_ordering_mode),
+        threshold_abs=int(threshold),
+    )
+    q_i16 = q_levels.flatten().to(torch.int16)
+    new_acc_i32 = torch.zeros(numel, dtype=torch.int32, device=q_levels.device)
+    for flat_index, carry_after in sorted(two_tier_plan.carry_after_by_flat_index.items()):
+        new_acc_i32[int(flat_index)] = int(carry_after)
+    new_acc_i32 = new_acc_i32.view_as(accumulators)
+    candidate_idx = torch.tensor(
+        crossing_eligible_flat_indices(rows, threshold_abs=int(threshold)),
+        dtype=torch.int64,
+        device=q_levels.device,
+    )
+    pre_veto_selected = torch.tensor(
+        list(two_tier_plan.pre_veto_flat_indices),
+        dtype=torch.int64,
+        device=q_levels.device,
+    )
+    if pre_veto_selected.numel() == 0:
+        applied = pre_veto_selected
+        applied_directions = torch.zeros_like(pre_veto_selected, dtype=torch.int16)
+        applied_thresholds = torch.zeros_like(pre_veto_selected, dtype=torch.int32)
+        replay_ce_vetoed = pre_veto_selected
+        replay_veto_directions = applied_directions
+        replay_veto_thresholds = applied_thresholds
+        pc_aux_negative = pre_veto_selected
+        pc_aux_vetoed = pre_veto_selected
+    else:
+        selected_thresholds = torch.full_like(pre_veto_selected, threshold, dtype=torch.int32)
+        directions = torch.tensor(
+            [
+                _applied_crossing_direction_from_carry(
+                    int(two_tier_plan.carry_after_by_flat_index[int(flat_index)]),
+                    threshold_abs=int(threshold),
+                )
+                for flat_index in pre_veto_selected.detach().cpu().tolist()
+            ],
+            dtype=torch.int16,
+            device=q_levels.device,
+        )
+        (
+            applied,
+            applied_directions,
+            applied_thresholds,
+            replay_ce_vetoed,
+            replay_veto_directions,
+            replay_veto_thresholds,
+            pc_aux_negative,
+            pc_aux_vetoed,
+        ) = _partition_pre_veto_by_replay_and_pc_veto(
+            pre_veto_selected,
+            directions,
+            selected_thresholds,
+            inputs,
+        )
+
+    pre_veto_count = int(pre_veto_selected.numel())
+    applied_count = int(applied.numel())
+    replay_count = int(replay_ce_vetoed.numel())
+    pc_negative_count = int(pc_aux_negative.numel())
+    pc_veto_count = int(pc_aux_vetoed.numel())
+    stats: dict[str, int | float | bool | str] = {
+        "scope": "per_tensor_local_update",
+        "global_cap_policy": DEFERRED_GLOBAL_CAP,
+        "local_selection_ordering_mode": str(local_selection_ordering_mode),
+        "local_selection_ordering_seed": int(local_selection_ordering_seed),
+        "local_selection_ordering_step": int(local_selection_ordering_step),
+        "threshold_jitter_policy": "deferred_reject",
+        "candidate_count": int(candidate_idx.numel()),
+        "max_flips": int(max_flips),
+        "pre_veto_selected_flip_count": pre_veto_count,
+        "post_veto_would_apply_pre_cap_count": applied_count,
+        "post_veto_acceptance_ratio_pre_cap": _safe_ratio(applied_count, pre_veto_count),
+        "replay_ce_veto_count": replay_count,
+        "pc_aux_negative_count": pc_negative_count,
+        "pc_aux_mode": inputs.normalized_pc_aux_mode.value,
+        "pc_aux_veto_enabled": inputs.normalized_pc_aux_mode == PcAuxMode.VETO,
+        "pc_aux_veto_count": pc_veto_count,
+        "pc_aux_veto_accumulator_residual_policy": (
+            "q_mutation_veto_only_accumulator_retained"
+            if inputs.normalized_pc_aux_mode == PcAuxMode.VETO and inputs.pc_aux_votes is not None
+            else "not_enabled"
+        ),
+        "replay_ce_veto_consumes_threshold_event": inputs.replay_ce_veto_votes is not None,
+        "vetoed_accumulator_residual_policy": (
+            "subtract_threshold_then_clamp_without_q_mutation"
+            if inputs.replay_ce_veto_votes is not None else "not_enabled"
+        ),
+        "vetoed_accumulator_clamp_count": replay_count,
+        "vote_nonzero_count": int((votes != 0).sum().item()),
+        "acc_abs_max_after_decay_vote": int(new_acc_i32.abs().max().item()) if new_acc_i32.numel() else 0,
+        "two_tier_carry_w6_enabled": True,
+        "two_tier_threshold_abs": int(threshold),
+        "two_tier_canonical_threshold_abs": int(CROSSING_THRESHOLD_ABS),
+    }
+    return VoteUpdatePlan(
+        q_i16=q_i16.view_as(q_levels),
+        new_acc_i32=new_acc_i32,
+        candidate_indices=candidate_idx,
+        pre_veto_selected_indices=pre_veto_selected,
+        applied_indices=applied,
+        applied_directions=applied_directions,
+        applied_thresholds=applied_thresholds,
+        replay_ce_veto_indices=replay_ce_vetoed,
+        replay_veto_directions=replay_veto_directions,
+        replay_veto_thresholds=replay_veto_thresholds,
+        pc_aux_negative_indices=pc_aux_negative,
+        pc_aux_veto_indices=pc_aux_vetoed,
+        stats=stats,
+    )
+
+
+def apply_two_tier_vote_update_reference(
+    state: VoteUpdateState,
+    inputs: VoteUpdateInputs,
+    spec: VoteUpdateSpec,
+    *,
+    validate_q_levels: bool = True,
+    local_selection_ordering_mode: str = LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
+    local_selection_ordering_seed: int = 0,
+    local_selection_ordering_step: int = 0,
+    warmup: bool = False,
+) -> VoteUpdateResult:
+    plan = plan_two_tier_vote_update_reference(
+        state,
+        inputs,
+        spec,
+        validate_q_levels=validate_q_levels,
+        local_selection_ordering_mode=str(local_selection_ordering_mode),
+        local_selection_ordering_seed=int(local_selection_ordering_seed),
+        local_selection_ordering_step=int(local_selection_ordering_step),
+        warmup=bool(warmup),
+    )
+    threshold = int(spec.threshold_abs)
+    rows = _materialize_two_tier_rows(state, inputs)
+    carry_by_flat_index = {
+        int(row["flat_index"]): int(row["pre_accumulator_i16"]) for row in rows
+    }
+    q_level_by_flat_index = {
+        int(row["flat_index"]): int(row["current_q_level"]) for row in rows
+    }
+    two_tier_plan = plan_two_tier_step(
+        rows,
+        carry_by_flat_index=carry_by_flat_index,
+        q_level_by_flat_index=q_level_by_flat_index,
+        rate_cap=int(spec.max_flips(int(state.q_levels.numel()))),
+        warmup=bool(warmup),
+        local_selection_ordering_mode=str(local_selection_ordering_mode),
+        threshold_abs=int(threshold),
+    )
+    applied_indices = tuple(int(value) for value in plan.applied_indices.detach().cpu().tolist())
+    two_tier_result = apply_two_tier_write_backs(
+        two_tier_plan,
+        applied_indices,
+        threshold_abs=int(threshold),
+    )
+    q_i16 = state.q_levels.flatten().to(torch.int16).clone()
+    new_acc_i32 = plan.new_acc_i32.flatten().clone()
+    for flat_index, q_level in two_tier_result.q_level_after_by_flat_index.items():
+        q_i16[int(flat_index)] = int(q_level)
+    for flat_index, carry_after in two_tier_result.carry_after_by_flat_index.items():
+        new_acc_i32[int(flat_index)] = int(carry_after)
+    _apply_replay_veto_residual_clamp(
+        new_acc_i32,
+        replay_ce_veto_indices=plan.replay_ce_veto_indices,
+        replay_veto_directions=plan.replay_veto_directions,
+        replay_veto_thresholds=plan.replay_veto_thresholds,
+    )
+    q_out = q_i16.view_as(state.q_levels).to(torch.int8).contiguous()
+    acc_out = new_acc_i32.view_as(state.accumulators).to(torch.int16).contiguous()
+    stats = dict(plan.stats)
+    stats.update({
+        "flip_count": int(plan.applied_indices.numel()),
+        "post_veto_applied_flip_count": int(plan.applied_indices.numel()),
+        "acc_abs_max_after": int(acc_out.abs().max().item()) if acc_out.numel() else 0,
+        "q_changed_count": int((q_out != state.q_levels).sum().item()),
+    })
+    return VoteUpdateResult(q_levels=q_out, accumulators=acc_out, plan=plan, stats=stats)
+
+
 def validate_vote_update_contract(
     state: VoteUpdateState,
     inputs: VoteUpdateInputs,
@@ -312,9 +670,21 @@ def plan_integer_vote_update_reference(
     local_selection_ordering_mode: str = LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
     local_selection_ordering_seed: int = 0,
     local_selection_ordering_step: int = 0,
+    two_tier_carry_w6_enabled: bool = False,
 ) -> VoteUpdatePlan:
     """Non-mutating exact local update plan for q:int8 + acc/vote:int16."""
 
+    if two_tier_carry_w6_enabled:
+        return plan_two_tier_vote_update_reference(
+            state,
+            inputs,
+            spec,
+            validate_q_levels=validate_q_levels,
+            local_selection_ordering_mode=str(local_selection_ordering_mode),
+            local_selection_ordering_seed=int(local_selection_ordering_seed),
+            local_selection_ordering_step=int(local_selection_ordering_step),
+        )
+    # === OFF body unchanged below this line ===
     validate_vote_update_contract(state, inputs, spec, validate_q_levels=validate_q_levels)
     q_levels = state.q_levels
     accumulators = state.accumulators
@@ -368,44 +738,21 @@ def plan_integer_vote_update_reference(
         pre_veto_selected = candidate_idx[order[:max_flips]]
         selected_thresholds = torch.full_like(pre_veto_selected, threshold, dtype=torch.int32)
         directions = torch.where(new_acc_i32[pre_veto_selected] >= threshold, 1, -1).to(torch.int16)
-        replay_veto_mask = torch.zeros_like(directions, dtype=torch.bool)
-        if inputs.replay_ce_veto_votes is not None:
-            replay_vote = inputs.replay_ce_veto_votes.flatten().to(torch.int32)
-            replay_move = inputs.replay_ce_veto_moves.flatten().to(torch.int32)
-            replay_direction = torch.sign(replay_vote[pre_veto_selected])
-            replay_direction = torch.where(
-                replay_direction != 0,
-                replay_direction,
-                torch.sign(replay_move[pre_veto_selected]),
-            ).to(torch.int16)
-            replay_support = replay_direction * directions
-            replay_veto_mask = replay_support < 0
-            replay_ce_vetoed = pre_veto_selected[replay_veto_mask]
-            replay_veto_directions = directions[replay_veto_mask]
-            replay_veto_thresholds = selected_thresholds[replay_veto_mask]
-        pc_veto_mask = torch.zeros_like(directions, dtype=torch.bool)
-        if inputs.pc_aux_votes is not None:
-            pc_vote = inputs.pc_aux_votes.flatten().to(torch.int32)
-            pc_move = inputs.pc_aux_moves.flatten().to(torch.int32)
-            pc_direction = torch.sign(pc_vote[pre_veto_selected])
-            pc_direction = torch.where(
-                pc_direction != 0,
-                pc_direction,
-                torch.sign(pc_move[pre_veto_selected]),
-            ).to(torch.int16)
-            pc_support = pc_direction * directions
-            pc_veto_mask = pc_support < 0
-            pc_aux_negative = pre_veto_selected[pc_veto_mask]
-            if inputs.normalized_pc_aux_mode == PcAuxMode.VETO:
-                # Replay remains the first veto layer; PC-veto only accounts for
-                # additional flips that survived replay.
-                pc_aux_vetoed = pre_veto_selected[pc_veto_mask & ~replay_veto_mask]
-        apply_mask = ~replay_veto_mask
-        if inputs.normalized_pc_aux_mode == PcAuxMode.VETO:
-            apply_mask = apply_mask & ~pc_veto_mask
-        applied = pre_veto_selected[apply_mask]
-        applied_directions = directions[apply_mask]
-        applied_thresholds = selected_thresholds[apply_mask]
+        (
+            applied,
+            applied_directions,
+            applied_thresholds,
+            replay_ce_vetoed,
+            replay_veto_directions,
+            replay_veto_thresholds,
+            pc_aux_negative,
+            pc_aux_vetoed,
+        ) = _partition_pre_veto_by_replay_and_pc_veto(
+            pre_veto_selected,
+            directions,
+            selected_thresholds,
+            inputs,
+        )
 
     pre_veto_count = int(pre_veto_selected.numel())
     applied_count = int(applied.numel())
@@ -469,9 +816,21 @@ def apply_integer_vote_update_reference(
     local_selection_ordering_mode: str = LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
     local_selection_ordering_seed: int = 0,
     local_selection_ordering_step: int = 0,
+    two_tier_carry_w6_enabled: bool = False,
 ) -> VoteUpdateResult:
     """Apply the exact local update law to copies and return new q/acc tensors."""
 
+    if two_tier_carry_w6_enabled:
+        return apply_two_tier_vote_update_reference(
+            state,
+            inputs,
+            spec,
+            validate_q_levels=validate_q_levels,
+            local_selection_ordering_mode=str(local_selection_ordering_mode),
+            local_selection_ordering_seed=int(local_selection_ordering_seed),
+            local_selection_ordering_step=int(local_selection_ordering_step),
+        )
+    # === OFF body unchanged below this line ===
     plan = plan_integer_vote_update_reference(
         state,
         inputs,
@@ -495,14 +854,12 @@ def apply_integer_vote_update_reference(
         high = thresholds - 1
         new_acc_i32[applied] = torch.minimum(torch.maximum(residual, low), high)
 
-    if plan.replay_ce_veto_indices.numel() > 0:
-        vetoed = plan.replay_ce_veto_indices.to(new_acc_i32.device)
-        directions = plan.replay_veto_directions.to(new_acc_i32.device)
-        thresholds = plan.replay_veto_thresholds.to(new_acc_i32.device)
-        residual = new_acc_i32[vetoed] - directions.to(torch.int32) * thresholds
-        low = -thresholds + 1
-        high = thresholds - 1
-        new_acc_i32[vetoed] = torch.minimum(torch.maximum(residual, low), high)
+    _apply_replay_veto_residual_clamp(
+        new_acc_i32,
+        replay_ce_veto_indices=plan.replay_ce_veto_indices,
+        replay_veto_directions=plan.replay_veto_directions,
+        replay_veto_thresholds=plan.replay_veto_thresholds,
+    )
 
     q_out = q_i16.view_as(state.q_levels).to(torch.int8).contiguous()
     acc_out = new_acc_i32.view_as(state.accumulators).to(torch.int16).contiguous()

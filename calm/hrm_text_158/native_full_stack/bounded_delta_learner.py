@@ -40,6 +40,12 @@ from calm.hrm_text_158.native_full_stack.source_pointers import (
     LIVE_S1_TRAINER_POINTER,
     SourcePointer,
 )
+from calm.hrm_text_158.native_full_stack.two_tier_threshold_semantics import (
+    CROSSING_THRESHOLD_ABS,
+)
+from calm.hrm_text_158.native_full_stack.two_tier_transient_selection import (
+    LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
+)
 from calm.hrm_text_158.native_full_stack.vote_update import (
     LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
     VoteUpdateInputs,
@@ -1071,6 +1077,35 @@ def _votes_sha(votes: torch.Tensor) -> str:
     return tensor_sha256(votes.to(torch.int16).contiguous())
 
 
+def _two_tier_enabled_pin_sha256() -> str:
+    pin_tuple = {
+        "enabled": True,
+        "local_selection_ordering_mode": LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
+        "threshold_abs": int(CROSSING_THRESHOLD_ABS),
+        "seam_validator_module": "two_tier_transient_selection",
+    }
+    return _sha256_bytes(_canonical_json(pin_tuple).encode("utf-8"))
+
+
+def _require_local_loss_delta_tensor(
+    name: str,
+    state_key: str,
+    value: torch.Tensor,
+    *,
+    shape: torch.Size,
+) -> torch.Tensor:
+    if value.dtype != torch.float32:
+        raise ValueError(f"{name}[{state_key!r}] local_loss_delta_bad_dtype: expected float32, got {value.dtype}")
+    if tuple(value.shape) != tuple(shape):
+        raise ValueError(
+            f"{name}[{state_key!r}] local_loss_delta_shape_mismatch: "
+            f"got {tuple(value.shape)} expected {tuple(shape)}"
+        )
+    if not bool(torch.isfinite(value).all().item()):
+        raise ValueError(f"{name}[{state_key!r}] local_loss_delta_non_finite")
+    return value.detach().cpu().contiguous()
+
+
 def _validate_optional_vote_map_keys(
     name: str,
     values_by_key: Mapping[str, torch.Tensor] | None,
@@ -1164,6 +1199,7 @@ def _clone_vote_update_inputs_for_front_c(inputs: VoteUpdateInputs) -> VoteUpdat
         pc_aux_moves=clone_optional(inputs.pc_aux_moves),
         pc_aux_mode=inputs.pc_aux_mode,
         vote_format=inputs.vote_format,
+        local_loss_delta=clone_optional(inputs.local_loss_delta),
     )
 
 
@@ -1271,6 +1307,8 @@ def apply_bounded_delta_vote_step(
     hot_exact_indices_by_key: Mapping[str, Sequence[int]] | None = None,
     cold_default_value: int | None = None,
     parity_check: bool = False,
+    local_loss_delta_by_key: Mapping[str, torch.Tensor] | None = None,
+    two_tier_carry_w6_enabled: bool = False,
     front_c_identity_observer: Callable[[Mapping[str, Any]], object] | None = None,
     candidate_mode: str | None = None,
     candidate_sparse_vote_events_by_key: Mapping[str, Mapping[int, int]] | None = None,
@@ -1286,6 +1324,20 @@ def apply_bounded_delta_vote_step(
     _validate_optional_vote_map_keys("replay_ce_veto_moves_by_key", replay_ce_veto_moves_by_key, expected_keys)
     _validate_optional_vote_map_keys("pc_aux_votes_by_key", pc_aux_votes_by_key, expected_keys)
     _validate_optional_vote_map_keys("pc_aux_moves_by_key", pc_aux_moves_by_key, expected_keys)
+    if two_tier_carry_w6_enabled:
+        if str(local_selection_ordering_mode) != LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA:
+            raise ValueError(
+                "two_tier_carry_w6_enabled requires "
+                f"local_selection_ordering_mode={LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA!r}, "
+                f"got {local_selection_ordering_mode!r}"
+            )
+        if local_loss_delta_by_key is None:
+            raise ValueError("local_loss_delta_by_key_required_when_two_tier_enabled")
+        _validate_optional_vote_map_keys(
+            "local_loss_delta_by_key",
+            local_loss_delta_by_key,
+            expected_keys,
+        )
     _validate_candidate_sparse_vote_map_keys(
         "candidate_sparse_vote_events_by_key",
         candidate_sparse_vote_events_by_key,
@@ -1479,6 +1531,14 @@ def apply_bounded_delta_vote_step(
     for state_key, state in sorted(tensor_states.items()):
         vu_state = state.vote_update_state()
         votes = votes_by_key[state_key].detach().cpu().to(torch.int16).contiguous()
+        local_loss_delta = None
+        if two_tier_carry_w6_enabled:
+            local_loss_delta = _require_local_loss_delta_tensor(
+                "local_loss_delta_by_key",
+                state_key,
+                local_loss_delta_by_key[state_key],
+                shape=votes.shape,
+            )
         inputs = VoteUpdateInputs(
             votes=votes,
             replay_ce_veto_votes=_coerce_optional_vote_map_tensor(
@@ -1510,6 +1570,7 @@ def apply_bounded_delta_vote_step(
                 shape=votes.shape,
             ),
             pc_aux_mode=pc_aux_mode,
+            local_loss_delta=local_loss_delta,
         )
         spec = vote_specs_by_key[state_key]
         plan = plan_integer_vote_update_reference(
@@ -1519,6 +1580,7 @@ def apply_bounded_delta_vote_step(
             local_selection_ordering_mode=str(local_selection_ordering_mode),
             local_selection_ordering_seed=int(local_selection_ordering_seed),
             local_selection_ordering_step=int(local_selection_ordering_step),
+            two_tier_carry_w6_enabled=bool(two_tier_carry_w6_enabled),
         )
         vote_update_states[state_key] = vu_state
         inputs_by_key[state_key] = inputs
@@ -1547,9 +1609,10 @@ def apply_bounded_delta_vote_step(
         backlog = cap_result.deferred_backlog
         summary = dict(cap_result.step_summary)
         summary["global_rate_cap_enabled"] = True
-        summary["local_selection_ordering_mode"] = str(local_selection_ordering_mode)
-        summary["local_selection_ordering_seed"] = int(local_selection_ordering_seed)
-        summary["local_selection_ordering_step"] = int(local_selection_ordering_step)
+        if not two_tier_carry_w6_enabled:
+            summary["local_selection_ordering_mode"] = str(local_selection_ordering_mode)
+            summary["local_selection_ordering_seed"] = int(local_selection_ordering_seed)
+            summary["local_selection_ordering_step"] = int(local_selection_ordering_step)
     else:
         q_acc_by_key = {}
         for state_key in sorted(tensor_states):
@@ -1560,19 +1623,26 @@ def apply_bounded_delta_vote_step(
                 local_selection_ordering_mode=str(local_selection_ordering_mode),
                 local_selection_ordering_seed=int(local_selection_ordering_seed),
                 local_selection_ordering_step=int(local_selection_ordering_step),
+                two_tier_carry_w6_enabled=bool(two_tier_carry_w6_enabled),
             )
             q_acc_by_key[state_key] = (result.q_levels, result.accumulators, result.stats)
         backlog = deferred_backlog or {}
         summary = {
             "global_rate_cap_enabled": False,
-            "local_selection_ordering_mode": str(local_selection_ordering_mode),
-            "local_selection_ordering_seed": int(local_selection_ordering_seed),
-            "local_selection_ordering_step": int(local_selection_ordering_step),
             "q_changed_count": sum(
                 int(stats.get("q_changed_count", 0))
                 for _, _, stats in q_acc_by_key.values()
             ),
         }
+        if not two_tier_carry_w6_enabled:
+            summary["local_selection_ordering_mode"] = str(local_selection_ordering_mode)
+            summary["local_selection_ordering_seed"] = int(local_selection_ordering_seed)
+            summary["local_selection_ordering_step"] = int(local_selection_ordering_step)
+    if two_tier_carry_w6_enabled:
+        summary["two_tier_carry_w6_enabled"] = True
+        summary["local_selection_ordering_mode"] = LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA
+        summary["two_tier_enabled_pin_count"] = 1
+        summary["two_tier_enabled_pin_sha256"] = _two_tier_enabled_pin_sha256()
 
     if front_c_identity_observer is not None:
         _ignored_observer_return = front_c_identity_observer(
