@@ -16,26 +16,14 @@ from calm.hrm_text_158.native_full_stack.acc_width_recorded_row_sweep import (
 from calm.hrm_text_158.native_full_stack.accumulator_policy_shadow_screen import (
     B2B_SEQUENTIAL_TRACE_SCHEMA,
 )
-
-# Frozen §2C from transient_selection_interface.md (R2 1781122431786).
-CROSSING_THRESHOLD_ABS = 10
-FROZEN_THRESHOLD_SEMANTICS: dict[str, Any] = {
-    "crossing_threshold_abs": 10,
-    "crossing_threshold_source": "canonical_default_spec_accumulator_real_dynamics_verdict",
-    "crossing_authority": "vote_update_spec",
-    "residual_band_encoding": "threshold_minus_one",
-    "row_fields_authority": "telemetry_not_crossing",
-    "row_crosscheck_policy": "informational",
-}
+from calm.hrm_text_158.native_full_stack.two_tier_threshold_semantics import (
+    CROSSING_THRESHOLD_ABS,
+    FROZEN_THRESHOLD_SEMANTICS,
+    frozen_threshold_semantics_block,
+)
 
 WARMUP_APPLY_CLASS_CANONICAL = "canonical"
 WARMUP_APPLY_CLASS_SUBTHRESHOLD_BOOTSTRAP = "subthreshold_bootstrap"
-
-
-def frozen_threshold_semantics_block() -> dict[str, Any]:
-    """Return the verbatim §2C threshold_semantics block."""
-
-    return dict(FROZEN_THRESHOLD_SEMANTICS)
 
 
 def _applied_flat_indices_for_step(

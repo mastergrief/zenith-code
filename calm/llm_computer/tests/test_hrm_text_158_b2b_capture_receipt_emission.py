@@ -21,6 +21,21 @@ from calm.hrm_text_158.native_full_stack.b2b_capture_receipt_emission import (
     frozen_threshold_semantics_block,
     rewrite_b2b_trace_with_receipt_emissions,
 )
+from calm.hrm_text_158.native_full_stack.two_tier_threshold_semantics import (
+    FROZEN_THRESHOLD_SEMANTICS as MODULE_FROZEN_THRESHOLD_SEMANTICS,
+    THRESHOLD_CROSSCHECK_MISMATCH,
+    frozen_threshold_semantics_block as module_frozen_threshold_semantics_block,
+    resolve_threshold_crosscheck_authority,
+)
+
+PRE_B3_FROZEN_THRESHOLD_SEMANTICS = {
+    "crossing_threshold_abs": 10,
+    "crossing_threshold_source": "canonical_default_spec_accumulator_real_dynamics_verdict",
+    "crossing_authority": "vote_update_spec",
+    "residual_band_encoding": "threshold_minus_one",
+    "row_fields_authority": "telemetry_not_crossing",
+    "row_crosscheck_policy": "informational",
+}
 from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
     capture_b2b_sequential_pre_update_step,
 )
@@ -75,14 +90,25 @@ def _step(
 def test_threshold_semantics_block_is_verbatim_frozen() -> None:
     block = frozen_threshold_semantics_block()
     assert block == FROZEN_THRESHOLD_SEMANTICS
-    assert block == {
-        "crossing_threshold_abs": 10,
-        "crossing_threshold_source": "canonical_default_spec_accumulator_real_dynamics_verdict",
-        "crossing_authority": "vote_update_spec",
-        "residual_band_encoding": "threshold_minus_one",
-        "row_fields_authority": "telemetry_not_crossing",
-        "row_crosscheck_policy": "informational",
-    }
+    assert block == PRE_B3_FROZEN_THRESHOLD_SEMANTICS
+
+
+def test_threshold_semantics_byte_parity_against_pre_b3_literal() -> None:
+    emitted = finalize_b2b_capture_receipt({})["threshold_semantics"]
+    assert emitted == PRE_B3_FROZEN_THRESHOLD_SEMANTICS
+
+
+def test_threshold_semantics_reexport_parity_across_import_paths() -> None:
+    assert FROZEN_THRESHOLD_SEMANTICS == MODULE_FROZEN_THRESHOLD_SEMANTICS
+    assert frozen_threshold_semantics_block() == module_frozen_threshold_semantics_block()
+
+
+def test_threshold_crosscheck_mismatch_resolves_informational_under_frozen_semantics() -> None:
+    assert (
+        resolve_threshold_crosscheck_authority(THRESHOLD_CROSSCHECK_MISMATCH)
+        == "informational"
+    )
+    assert resolve_threshold_crosscheck_authority("passed") == "passed"
 
 
 def test_finalize_b2b_capture_receipt_attaches_threshold_semantics() -> None:
