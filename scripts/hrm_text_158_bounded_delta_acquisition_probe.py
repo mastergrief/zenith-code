@@ -73,6 +73,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     S1_PROJECTION_LAW,
     S1_RANK_BUCKET_VOTE_LAW,
     S1_SIGN_PRESSURE_VOTE_LAW,
+    VoteUpdateInputs,
     apply_bounded_delta_vote_step,
     authoritative_forward_context,
     build_authoritative_checkpoint_payload,
@@ -82,6 +83,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     default_dry_run_rank_vote_spec,
     derive_bounded_tensor_state_from_weight,
     file_sha256,
+    make_bounded_tensor_state,
     project_s1_gradient_to_moves,
     prove_eligible_master_identity_after_optimizer_step,
     rank_bucketed_int16_votes,
@@ -110,6 +112,8 @@ from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
     ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY,
     ORACLE_SCREEN_MODE_CREDIT_RANKING_PIVOT_MEASUREMENT,
     ORACLE_SCREEN_MODE_WITHIN_TIE_BAND_DISCRIMINATOR,
+    _build_oracle_candidate_universe,
+    _evaluate_sampled_candidates_for_oracle_screen,
     capture_b2b_sequential_pre_update_step,
     run_activation_credit_measurement_oracle_screen,
     run_activation_credit_scale_smoke_oracle_screen,
@@ -133,10 +137,15 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     TIE_POLICY_DETERMINISTIC_HASH_MATCHED,
     oracle_screen_budget_max_seconds,
 )
+from calm.hrm_text_158.native_full_stack.two_tier_transient_selection import (
+    LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
+    crossing_eligible_flat_indices,
+)
 from calm.hrm_text_158.native_full_stack.vote_update import (
     LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
     LOCAL_SELECTION_ORDER_DETERMINISTIC_HASH_MATCHED,
     VoteUpdateSpec,
+    plan_integer_vote_update_reference,
 )
 from scripts.train_hrm_text_158 import HrmTextGsm8kDataset
 
@@ -3534,6 +3543,576 @@ def build_b2b_sequential_capture_receipt(
     }
 
 
+TIER_A_PROBE_RECEIPT_INDEX_SURFACE_KEYS: frozenset[str] = frozenset(
+    {
+        "pre_veto_selected_indices",
+        "applied_indices",
+        "replay_ce_veto_indices",
+    }
+)
+
+
+def _optional_step_vote_tensor(
+    values_by_key: Mapping[str, torch.Tensor] | None,
+    state_key: str,
+    *,
+    dtype: torch.dtype,
+) -> torch.Tensor | None:
+    if values_by_key is None:
+        return None
+    return values_by_key[state_key].detach().cpu().to(dtype).contiguous()
+
+
+def _bounded_delta_vote_step_two_tier_kwargs(
+    *,
+    two_tier_carry_w6_enabled: bool,
+    local_loss_delta_by_key: Mapping[str, torch.Tensor] | None,
+) -> dict[str, Any]:
+    if not two_tier_carry_w6_enabled:
+        return {}
+    if local_loss_delta_by_key is None:
+        raise ValueError("local_loss_delta_by_key required when two_tier_carry_w6_enabled")
+    return {
+        "two_tier_carry_w6_enabled": True,
+        "local_loss_delta_by_key": local_loss_delta_by_key,
+    }
+
+
+def _materialize_selector_rows_for_crossing_coverage(
+    *,
+    votes: torch.Tensor,
+    state: Any,
+) -> list[dict[str, Any]]:
+    vu_state = state.vote_update_state()
+    q_levels = vu_state.q_levels.flatten()
+    accumulators = vu_state.accumulators.flatten()
+    vote_flat = votes.flatten()
+    return [
+        {
+            "flat_index": int(flat_index),
+            "vote_value": int(vote_flat[flat_index].item()),
+            "pre_accumulator_i16": int(accumulators[flat_index].item()),
+            "current_q_level": int(q_levels[flat_index].item()),
+        }
+        for flat_index in range(int(q_levels.numel()))
+    ]
+
+
+def _assert_local_loss_delta_crossing_coverage(
+    *,
+    tensor_states: Mapping[str, Any],
+    votes_by_key: Mapping[str, torch.Tensor],
+    sampled_candidates: Sequence[Mapping[str, Any]],
+    budget_exceeded: bool,
+    candidate_count: int,
+    sampled_count: int,
+    max_sampled_candidates: int,
+) -> None:
+    if budget_exceeded:
+        raise ValueError(
+            "local_loss_delta_incomplete_candidate_coverage: "
+            f"oracle_screen_budget_exceeded "
+            f"max_sampled_candidates={int(max_sampled_candidates)}"
+        )
+    measured = {
+        (str(candidate["state_key"]), int(candidate["flat_index"]))
+        for candidate in sampled_candidates
+    }
+    missing: list[str] = []
+    for state_key, state in sorted(tensor_states.items()):
+        rows = _materialize_selector_rows_for_crossing_coverage(
+            votes=votes_by_key[state_key],
+            state=state,
+        )
+        for flat_index in crossing_eligible_flat_indices(rows):
+            if (state_key, flat_index) not in measured:
+                missing.append(f"{state_key}:{flat_index}")
+    if missing:
+        raise ValueError(
+            "local_loss_delta_incomplete_candidate_coverage: "
+            f"unmeasured_crossing_eligible_rows={missing} "
+            f"candidate_count={int(candidate_count)} "
+            f"sampled_count={int(sampled_count)} "
+            f"max_sampled_candidates={int(max_sampled_candidates)}"
+        )
+
+
+def _zero_fill_non_crossing_unmeasured_local_loss_deltas(
+    *,
+    local_loss_delta_by_key: dict[str, torch.Tensor],
+    tensor_states: Mapping[str, Any],
+    votes_by_key: Mapping[str, torch.Tensor],
+) -> None:
+    # Non-crossing rows never enter two-tier selection; only they may remain
+    # zero-filled when unmeasured. Crossing-eligible rows must be measured
+    # before this helper runs (_assert_local_loss_delta_crossing_coverage).
+    for state_key, tensor in local_loss_delta_by_key.items():
+        rows = _materialize_selector_rows_for_crossing_coverage(
+            votes=votes_by_key[state_key],
+            state=tensor_states[state_key],
+        )
+        crossing_eligible = set(crossing_eligible_flat_indices(rows))
+        view = tensor.view(-1)
+        for flat_index in range(int(view.numel())):
+            if flat_index not in crossing_eligible:
+                view[flat_index] = 0.0
+            elif not torch.isfinite(view[flat_index]).item():
+                raise ValueError(
+                    "local_loss_delta_incomplete_candidate_coverage: "
+                    f"unmeasured_crossing_eligible_row state_key={state_key!r} "
+                    f"flat_index={int(flat_index)}"
+                )
+
+
+def _build_local_loss_delta_by_key_from_activation_credit_oracle(
+    *,
+    model: LMHead,
+    batch: Mapping[str, torch.Tensor],
+    tensor_states: Mapping[str, Any],
+    eligible_modules: Mapping[str, BitLinear],
+    device: torch.device,
+    extras: Mapping[str, Any],
+    votes_by_key: Mapping[str, torch.Tensor],
+    max_abs_per_tensor: int,
+    max_sampled_candidates: int,
+    phase_progress: PhaseProgress | None,
+) -> dict[str, torch.Tensor]:
+    universe = _build_oracle_candidate_universe(
+        model=model,
+        batch=batch,
+        tensor_states=tensor_states,
+        eligible_modules=eligible_modules,
+        device=device,
+        max_abs_per_tensor=int(max_abs_per_tensor),
+        extras=extras,
+        max_sampled_candidates=int(max_sampled_candidates),
+        phase_progress=phase_progress,
+    )
+    sampled_candidates, _oracle_top, budget_exceeded, _elapsed = (
+        _evaluate_sampled_candidates_for_oracle_screen(
+            model=model,
+            batch=batch,
+            tensor_states=tensor_states,
+            eligible_modules=eligible_modules,
+            device=device,
+            extras=extras,
+            votes_by_key=universe["votes_by_key"],
+            candidate_by_id=universe["candidate_by_id"],
+            sampled_ids=universe["sampled_ids"],
+            baseline_loss=float(universe["baseline_loss"]),
+            one_flip_spec=universe["one_flip_spec"],
+            max_seconds=oracle_screen_budget_max_seconds(int(max_sampled_candidates)),
+            phase_progress=phase_progress,
+        )
+    )
+    _assert_local_loss_delta_crossing_coverage(
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+        sampled_candidates=sampled_candidates,
+        budget_exceeded=bool(budget_exceeded),
+        candidate_count=len(universe["candidate_by_id"]),
+        sampled_count=len(sampled_candidates),
+        max_sampled_candidates=int(max_sampled_candidates),
+    )
+    local_loss_delta_by_key: dict[str, torch.Tensor] = {
+        state_key: torch.full(votes.shape, float("nan"), dtype=torch.float32)
+        for state_key, votes in votes_by_key.items()
+    }
+    for candidate in sampled_candidates:
+        state_key = str(candidate["state_key"])
+        flat_index = int(candidate["flat_index"])
+        local_loss_delta_by_key[state_key].view(-1)[flat_index] = float(
+            candidate["local_loss_delta"]
+        )
+    _zero_fill_non_crossing_unmeasured_local_loss_deltas(
+        local_loss_delta_by_key=local_loss_delta_by_key,
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+    )
+    return {
+        state_key: tensor.detach().cpu().contiguous()
+        for state_key, tensor in local_loss_delta_by_key.items()
+    }
+
+
+def _plan_integer_vote_update_for_tier_a_surfaces(
+    *,
+    tensor_states: Mapping[str, Any],
+    votes_by_key: Mapping[str, torch.Tensor],
+    vote_specs_by_key: Mapping[str, VoteUpdateSpec],
+    replay_ce_veto_votes_by_key: Mapping[str, torch.Tensor] | None,
+    replay_ce_veto_moves_by_key: Mapping[str, torch.Tensor] | None,
+    pc_aux_votes_by_key: Mapping[str, torch.Tensor] | None,
+    pc_aux_moves_by_key: Mapping[str, torch.Tensor] | None,
+    pc_aux_mode: str,
+    local_loss_delta_by_key: Mapping[str, torch.Tensor],
+    local_selection_ordering_seed: int,
+    local_selection_ordering_step: int,
+) -> dict[str, Any]:
+    plans_by_key: dict[str, Any] = {}
+    for state_key, state in sorted(tensor_states.items()):
+        vu_state = state.vote_update_state()
+        votes = votes_by_key[state_key].detach().cpu().to(torch.int16).contiguous()
+        inputs = VoteUpdateInputs(
+            votes=votes,
+            replay_ce_veto_votes=_optional_step_vote_tensor(
+                replay_ce_veto_votes_by_key,
+                state_key,
+                dtype=torch.int16,
+            ),
+            replay_ce_veto_moves=_optional_step_vote_tensor(
+                replay_ce_veto_moves_by_key,
+                state_key,
+                dtype=torch.int8,
+            ),
+            pc_aux_votes=_optional_step_vote_tensor(
+                pc_aux_votes_by_key,
+                state_key,
+                dtype=torch.int16,
+            ),
+            pc_aux_moves=_optional_step_vote_tensor(
+                pc_aux_moves_by_key,
+                state_key,
+                dtype=torch.int8,
+            ),
+            pc_aux_mode=str(pc_aux_mode),
+            local_loss_delta=local_loss_delta_by_key[state_key].detach().cpu().contiguous(),
+        )
+        plans_by_key[state_key] = plan_integer_vote_update_reference(
+            vu_state,
+            inputs,
+            vote_specs_by_key[state_key],
+            local_selection_ordering_mode=LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
+            local_selection_ordering_seed=int(local_selection_ordering_seed),
+            local_selection_ordering_step=int(local_selection_ordering_step),
+            two_tier_carry_w6_enabled=True,
+        )
+    return plans_by_key
+
+
+def _assert_tier_a_index_surface_count_consistency(
+    state_key: str,
+    *,
+    tensor_stats: Mapping[str, Any],
+    replay_ce_veto_indices: Sequence[int],
+    applied_indices: Sequence[int],
+) -> None:
+    stats = dict(tensor_stats)
+    if "replay_ce_veto_count" in stats:
+        expected = int(stats["replay_ce_veto_count"])
+        actual = len(replay_ce_veto_indices)
+        if actual != expected:
+            raise ValueError(
+                "tier_a_staging_index_surface_replay_ce_veto_count_mismatch: "
+                f"state_key={state_key!r}, replay_ce_veto_indices_len={actual}, "
+                f"replay_ce_veto_count={expected}"
+            )
+    if "post_veto_applied_flip_count" in stats:
+        expected = int(stats["post_veto_applied_flip_count"])
+        actual = len(applied_indices)
+        if actual != expected:
+            raise ValueError(
+                "tier_a_staging_index_surface_post_veto_applied_flip_count_mismatch: "
+                f"state_key={state_key!r}, applied_indices_len={actual}, "
+                f"post_veto_applied_flip_count={expected}"
+            )
+
+
+def _attach_tier_a_staging_index_surfaces_to_compact(
+    step_result_compact: Mapping[str, Any],
+    *,
+    tensor_states: Mapping[str, Any],
+    votes_by_key: Mapping[str, torch.Tensor],
+    vote_specs_by_key: Mapping[str, VoteUpdateSpec],
+    replay_ce_veto_votes_by_key: Mapping[str, torch.Tensor] | None,
+    replay_ce_veto_moves_by_key: Mapping[str, torch.Tensor] | None,
+    pc_aux_votes_by_key: Mapping[str, torch.Tensor] | None,
+    pc_aux_moves_by_key: Mapping[str, torch.Tensor] | None,
+    pc_aux_mode: str,
+    local_loss_delta_by_key: Mapping[str, torch.Tensor],
+    local_selection_ordering_seed: int,
+    local_selection_ordering_step: int,
+) -> dict[str, Any]:
+    compact = dict(step_result_compact)
+    tensor_stats = {
+        state_key: dict(stats)
+        for state_key, stats in dict(compact.get("tensor_stats", {})).items()
+    }
+    plans_by_key = _plan_integer_vote_update_for_tier_a_surfaces(
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+        vote_specs_by_key=vote_specs_by_key,
+        replay_ce_veto_votes_by_key=replay_ce_veto_votes_by_key,
+        replay_ce_veto_moves_by_key=replay_ce_veto_moves_by_key,
+        pc_aux_votes_by_key=pc_aux_votes_by_key,
+        pc_aux_moves_by_key=pc_aux_moves_by_key,
+        pc_aux_mode=str(pc_aux_mode),
+        local_loss_delta_by_key=local_loss_delta_by_key,
+        local_selection_ordering_seed=int(local_selection_ordering_seed),
+        local_selection_ordering_step=int(local_selection_ordering_step),
+    )
+    for state_key, plan in sorted(plans_by_key.items()):
+        stats = dict(tensor_stats[state_key])
+        replay_ce_veto_indices = [
+            int(value) for value in plan.replay_ce_veto_indices.detach().cpu().tolist()
+        ]
+        applied_indices = [
+            int(value) for value in plan.applied_indices.detach().cpu().tolist()
+        ]
+        _assert_tier_a_index_surface_count_consistency(
+            state_key,
+            tensor_stats=stats,
+            replay_ce_veto_indices=replay_ce_veto_indices,
+            applied_indices=applied_indices,
+        )
+        stats["pre_veto_selected_indices"] = [
+            int(value) for value in plan.pre_veto_selected_indices.detach().cpu().tolist()
+        ]
+        stats["applied_indices"] = applied_indices
+        stats["replay_ce_veto_indices"] = replay_ce_veto_indices
+        tensor_stats[state_key] = stats
+    compact["tensor_stats"] = tensor_stats
+    return compact
+
+
+def _strip_tier_a_probe_receipt_extensions(step_result_compact: Mapping[str, Any]) -> dict[str, Any]:
+    compact = dict(step_result_compact)
+    tensor_stats = {}
+    for state_key, stats in dict(compact.get("tensor_stats", {})).items():
+        stripped = {
+            key: value
+            for key, value in dict(stats).items()
+            if key not in TIER_A_PROBE_RECEIPT_INDEX_SURFACE_KEYS
+        }
+        tensor_stats[state_key] = stripped
+    compact["tensor_stats"] = tensor_stats
+    return compact
+
+
+def harness_wire_cpu_validation_self_check() -> dict[str, Any]:
+    parser = build_arg_parser()
+    flag_action = next(
+        action
+        for action in parser._actions
+        if "--two-tier-carry-w6-enabled" in getattr(action, "option_strings", ())
+    )
+    assert flag_action.default is False
+    assert _bounded_delta_vote_step_two_tier_kwargs(
+        two_tier_carry_w6_enabled=False,
+        local_loss_delta_by_key=None,
+    ) == {}
+    fixture_compact = {
+        "schema": "hrm_text_158_c2p0_bounded_delta_step_result/v0.compact",
+        "tensor_stats": {
+            "toy.proj": {
+                "replay_ce_veto_count": 0,
+                "post_veto_applied_flip_count": 1,
+                "q_changed_count": 1,
+            }
+        },
+        "global_summary": {
+            "global_rate_cap_enabled": False,
+            "q_changed_count": 1,
+            "local_selection_ordering_mode": LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+        },
+    }
+    on_path = _attach_tier_a_staging_index_surfaces_to_compact(
+        fixture_compact,
+        tensor_states={
+            "toy.proj": make_bounded_tensor_state(
+                "toy.proj",
+                torch.tensor([0], dtype=torch.int8),
+                0.5,
+                torch.zeros(1, dtype=torch.int16),
+            )
+        },
+        votes_by_key={"toy.proj": torch.tensor([12], dtype=torch.int16)},
+        vote_specs_by_key={
+            "toy.proj": VoteUpdateSpec(
+                threshold_abs=10,
+                accumulator_clip_min=-127,
+                accumulator_clip_max=127,
+                max_abs_per_tensor=1,
+            )
+        },
+        replay_ce_veto_votes_by_key=None,
+        replay_ce_veto_moves_by_key=None,
+        pc_aux_votes_by_key=None,
+        pc_aux_moves_by_key=None,
+        pc_aux_mode="telemetry",
+        local_loss_delta_by_key={"toy.proj": torch.tensor([-0.1], dtype=torch.float32)},
+        local_selection_ordering_seed=SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
+        local_selection_ordering_step=1,
+    )
+    assert "pre_veto_selected_indices" in on_path["tensor_stats"]["toy.proj"]
+    stripped = _strip_tier_a_probe_receipt_extensions(on_path)
+    assert stripped == fixture_compact
+    assert _strip_tier_a_probe_receipt_extensions(fixture_compact) == fixture_compact
+    mismatch_fixture = {
+        **fixture_compact,
+        "tensor_stats": {
+            "toy.proj": {
+                **fixture_compact["tensor_stats"]["toy.proj"],
+                "replay_ce_veto_count": 99,
+            }
+        },
+    }
+    mismatch_kwargs = {
+        "tensor_states": {
+            "toy.proj": make_bounded_tensor_state(
+                "toy.proj",
+                torch.tensor([0], dtype=torch.int8),
+                0.5,
+                torch.zeros(1, dtype=torch.int16),
+            )
+        },
+        "votes_by_key": {"toy.proj": torch.tensor([12], dtype=torch.int16)},
+        "vote_specs_by_key": {
+            "toy.proj": VoteUpdateSpec(
+                threshold_abs=10,
+                accumulator_clip_min=-127,
+                accumulator_clip_max=127,
+                max_abs_per_tensor=1,
+            )
+        },
+        "replay_ce_veto_votes_by_key": None,
+        "replay_ce_veto_moves_by_key": None,
+        "pc_aux_votes_by_key": None,
+        "pc_aux_moves_by_key": None,
+        "pc_aux_mode": "telemetry",
+        "local_loss_delta_by_key": {"toy.proj": torch.tensor([-0.1], dtype=torch.float32)},
+        "local_selection_ordering_seed": SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
+        "local_selection_ordering_step": 1,
+    }
+    try:
+        _attach_tier_a_staging_index_surfaces_to_compact(
+            mismatch_fixture,
+            **mismatch_kwargs,
+        )
+    except ValueError as exc:
+        assert "tier_a_staging_index_surface_replay_ce_veto_count_mismatch" in str(exc)
+    else:
+        raise AssertionError(
+            "expected ValueError for mismatched tier_a replay_ce_veto_count"
+        )
+    coverage_state = make_bounded_tensor_state(
+        "toy.proj",
+        torch.tensor([0, 0], dtype=torch.int8),
+        0.5,
+        torch.zeros(2, dtype=torch.int16),
+    )
+    try:
+        _assert_local_loss_delta_crossing_coverage(
+            tensor_states={"toy.proj": coverage_state},
+            votes_by_key={"toy.proj": torch.tensor([12, 12], dtype=torch.int16)},
+            sampled_candidates=[
+                {
+                    "state_key": "toy.proj",
+                    "flat_index": 0,
+                    "local_loss_delta": -0.1,
+                }
+            ],
+            budget_exceeded=False,
+            candidate_count=2,
+            sampled_count=1,
+            max_sampled_candidates=1,
+        )
+    except ValueError as exc:
+        assert "local_loss_delta_incomplete_candidate_coverage" in str(exc)
+        assert "toy.proj:1" in str(exc)
+    else:
+        raise AssertionError(
+            "expected ValueError for incomplete crossing-eligible coverage"
+        )
+    try:
+        _assert_local_loss_delta_crossing_coverage(
+            tensor_states={"toy.proj": coverage_state},
+            votes_by_key={"toy.proj": torch.tensor([12, 12], dtype=torch.int16)},
+            sampled_candidates=[
+                {
+                    "state_key": "toy.proj",
+                    "flat_index": 0,
+                    "local_loss_delta": -0.1,
+                },
+                {
+                    "state_key": "toy.proj",
+                    "flat_index": 1,
+                    "local_loss_delta": -0.2,
+                },
+            ],
+            budget_exceeded=True,
+            candidate_count=2,
+            sampled_count=2,
+            max_sampled_candidates=1,
+        )
+    except ValueError as exc:
+        assert "local_loss_delta_incomplete_candidate_coverage" in str(exc)
+        assert "oracle_screen_budget_exceeded" in str(exc)
+    else:
+        raise AssertionError(
+            "expected ValueError for oracle_screen_budget_exceeded"
+        )
+    _assert_local_loss_delta_crossing_coverage(
+        tensor_states={"toy.proj": coverage_state},
+        votes_by_key={"toy.proj": torch.tensor([12, 12], dtype=torch.int16)},
+        sampled_candidates=[
+            {
+                "state_key": "toy.proj",
+                "flat_index": 0,
+                "local_loss_delta": -0.1,
+            },
+            {
+                "state_key": "toy.proj",
+                "flat_index": 1,
+                "local_loss_delta": -0.2,
+            },
+        ],
+        budget_exceeded=False,
+        candidate_count=2,
+        sampled_count=2,
+        max_sampled_candidates=2,
+    )
+    _assert_local_loss_delta_crossing_coverage(
+        tensor_states={"toy.proj": coverage_state},
+        votes_by_key={"toy.proj": torch.tensor([12, 1], dtype=torch.int16)},
+        sampled_candidates=[
+            {
+                "state_key": "toy.proj",
+                "flat_index": 0,
+                "local_loss_delta": -0.1,
+            }
+        ],
+        budget_exceeded=False,
+        candidate_count=2,
+        sampled_count=1,
+        max_sampled_candidates=1,
+    )
+    non_crossing_delta_by_key = {
+        "toy.proj": torch.full((2,), float("nan"), dtype=torch.float32)
+    }
+    non_crossing_delta_by_key["toy.proj"][0] = -0.1
+    _zero_fill_non_crossing_unmeasured_local_loss_deltas(
+        local_loss_delta_by_key=non_crossing_delta_by_key,
+        tensor_states={"toy.proj": coverage_state},
+        votes_by_key={"toy.proj": torch.tensor([12, 1], dtype=torch.int16)},
+    )
+    assert torch.isclose(
+        non_crossing_delta_by_key["toy.proj"][0],
+        torch.tensor(-0.1, dtype=torch.float32),
+    ).item()
+    assert float(non_crossing_delta_by_key["toy.proj"][1].item()) == 0.0
+    return {
+        "argparse_default_off": True,
+        "off_path_kwargs_empty": True,
+        "on_only_receipt_extensions_stripped_to_fixture": True,
+        "tier_a_index_surface_count_consistency_fail_closed": True,
+        "local_loss_delta_crossing_coverage_fail_closed": True,
+        "local_loss_delta_full_crossing_coverage_proceeds": True,
+        "local_loss_delta_non_crossing_unmeasured_proceeds": True,
+        "tier_a_index_surface_keys": sorted(TIER_A_PROBE_RECEIPT_INDEX_SURFACE_KEYS),
+    }
+
+
 def run_bounded_delta_steps(
     model: LMHead,
     batch: Mapping[str, torch.Tensor],
@@ -3578,6 +4157,8 @@ def run_bounded_delta_steps(
     b2b_sequential_capture_out: Path | None = None,
     b2b_sequential_min_steps_for_verdict: int = 50,
     b2b_sequential_max_sampled_candidates: int = PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES,
+    two_tier_carry_w6_enabled: bool = False,
+    oracle_screen_max_sampled_candidates: int = ORACLE_SCREEN_FEASIBILITY_MAX_SAMPLED_CANDIDATES,
 ) -> tuple[
     dict[str, Any],
     dict[str, Any],
@@ -3979,6 +4560,35 @@ def run_bounded_delta_steps(
                             phase_progress=progress,
                         )
 
+                pre_apply_states = states
+                local_loss_delta_by_key = None
+                if two_tier_carry_w6_enabled:
+                    with progress.phase("two_tier_local_loss_delta_oracle", step=int(step)):
+                        local_loss_delta_by_key = (
+                            _build_local_loss_delta_by_key_from_activation_credit_oracle(
+                                model=model,
+                                batch=step_batch,
+                                tensor_states=pre_apply_states,
+                                eligible_modules=eligible_modules,
+                                device=device,
+                                extras=extras,
+                                votes_by_key=votes_by_key,
+                                max_abs_per_tensor=int(max_abs_per_tensor),
+                                max_sampled_candidates=int(
+                                    oracle_screen_max_sampled_candidates
+                                ),
+                                phase_progress=progress,
+                            )
+                        )
+                two_tier_vote_step_kwargs = _bounded_delta_vote_step_two_tier_kwargs(
+                    two_tier_carry_w6_enabled=bool(two_tier_carry_w6_enabled),
+                    local_loss_delta_by_key=local_loss_delta_by_key,
+                )
+                step_selection_ordering_mode = (
+                    LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA
+                    if two_tier_carry_w6_enabled
+                    else _science_local_selection_ordering_mode(str(science_arm))
+                )
                 step_result = apply_bounded_delta_vote_step(
                     states,
                     votes_by_key,
@@ -3995,10 +4605,11 @@ def run_bounded_delta_steps(
                         if effective_global_cap_spec is not None
                         else None
                     ),
-                    local_selection_ordering_mode=_science_local_selection_ordering_mode(str(science_arm)),
+                    local_selection_ordering_mode=step_selection_ordering_mode,
                     local_selection_ordering_seed=SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
                     local_selection_ordering_step=int(step),
                     front_c_identity_observer=front_c_identity_observer,
+                    **two_tier_vote_step_kwargs,
                 )
                 states = step_result.tensor_states
                 q_changed_count = int(step_result.global_summary.get("q_changed_count", 0))
@@ -4024,6 +4635,23 @@ def run_bounded_delta_steps(
                     step_timing_start,
                     device,
                 )
+                step_result_compact = step_result.to_compact_dict()
+                if two_tier_carry_w6_enabled:
+                    assert local_loss_delta_by_key is not None
+                    step_result_compact = _attach_tier_a_staging_index_surfaces_to_compact(
+                        step_result_compact,
+                        tensor_states=pre_apply_states,
+                        votes_by_key=votes_by_key,
+                        vote_specs_by_key=vote_specs,
+                        replay_ce_veto_votes_by_key=replay_ce_veto_votes_by_key,
+                        replay_ce_veto_moves_by_key=replay_ce_veto_moves_by_key,
+                        pc_aux_votes_by_key=pc_aux_votes_by_key,
+                        pc_aux_moves_by_key=pc_aux_moves_by_key,
+                        pc_aux_mode=str(b2_pc_aux_mode),
+                        local_loss_delta_by_key=local_loss_delta_by_key,
+                        local_selection_ordering_seed=SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
+                        local_selection_ordering_step=int(step),
+                    )
                 step_reports[str(step)] = {
                     "loss": float(loss.detach().cpu().item()),
                     "loss_finite": bool(torch.isfinite(loss).item()),
@@ -4036,14 +4664,17 @@ def run_bounded_delta_steps(
                     "science_arm": str(science_arm),
                     "target_vote_law": _science_arm_vote_law(str(science_arm)),
                     "target_tie_policy_id": _science_arm_tie_policy(str(science_arm)),
-                    "local_selection_ordering_mode": _science_local_selection_ordering_mode(str(science_arm)),
+                    "local_selection_ordering_mode": step_result.global_summary.get(
+                        "local_selection_ordering_mode",
+                        step_selection_ordering_mode,
+                    ),
                     "local_selection_ordering_seed": SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
                     "local_selection_ordering_step": int(step),
                     "aux_vote_law": FIXED_RANK_BUCKET_NON_TARGET_AUX,
                     "vote_pressure": vote_pressure_by_key,
                     "support_batch": dict(step_batch_metadata),
                     "b2_retained_support": b2_step_receipt,
-                    "step_result": step_result.to_compact_dict(),
+                    "step_result": step_result_compact,
                     "optimizer_identity_proof": identity_proof,
                 }
                 if b2b_step_capture is not None:
@@ -4205,6 +4836,7 @@ def run_c2p1_probe(
     b2b_sequential_capture_out: Path | None = None,
     b2b_sequential_min_steps_for_verdict: int = 50,
     b2b_sequential_max_sampled_candidates: int = PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES,
+    two_tier_carry_w6_enabled: bool = False,
 ) -> dict[str, Any]:
     oracle_screen_budget = int(oracle_screen_max_sampled_candidates)
     if oracle_screen_budget not in ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES:
@@ -4872,6 +5504,10 @@ def run_c2p1_probe(
             b2b_sequential_max_sampled_candidates=int(
                 b2b_sequential_max_sampled_candidates
             ),
+            two_tier_carry_w6_enabled=bool(two_tier_carry_w6_enabled),
+            oracle_screen_max_sampled_candidates=int(
+                oracle_screen_max_sampled_candidates
+            ),
         )
     prior_audit_final_reports: dict[str, dict[str, Any]] = {}
     if prior_support_sets:
@@ -5073,6 +5709,15 @@ def run_c2p1_probe(
                 ),
             }
     )
+    if two_tier_carry_w6_enabled:
+        receipt.update(
+            {
+                "two_tier_carry_w6_enabled": True,
+                "harness_wire_tier_a_index_surface_keys": sorted(
+                    TIER_A_PROBE_RECEIPT_INDEX_SURFACE_KEYS
+                ),
+            }
+        )
     receipt_path = scratch_root / "receipt.json"
     receipt["receipt_path"] = str(receipt_path)
     receipt["terminal_status"] = build_receipt_terminal_status(
@@ -5177,6 +5822,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help=(
             "Closed-set oracle-screen sample budget. The runtime max-seconds tier "
             "is derived from this value and pinned fail-closed."
+        ),
+    )
+    ap.add_argument(
+        "--two-tier-carry-w6-enabled",
+        action="store_true",
+        help=(
+            "Opt-in harness wire for two-tier carry W6: builds per-step "
+            "local_loss_delta_by_key from the activation-credit oracle screen "
+            "and passes two_tier_carry_w6_enabled into apply_bounded_delta_vote_step. "
+            "Default off preserves legacy receipt surfaces."
         ),
     )
     ap.add_argument(
@@ -5359,6 +6014,7 @@ def main(argv: list[str] | None = None) -> int:
         b2b_sequential_capture_out=args.b2b_sequential_capture_out,
         b2b_sequential_min_steps_for_verdict=args.b2b_sequential_min_steps_for_verdict,
         b2b_sequential_max_sampled_candidates=args.b2b_sequential_max_sampled_candidates,
+        two_tier_carry_w6_enabled=args.two_tier_carry_w6_enabled,
         max_steps_hard=args.max_steps_hard,
         emit_progress=args.emit_progress,
         phase_timeout_seconds=args.phase_timeout_seconds,
