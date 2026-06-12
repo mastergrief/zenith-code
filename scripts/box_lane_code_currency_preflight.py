@@ -17,6 +17,7 @@ from calm.hrm_text_158.native_full_stack.box_lane import (
     chain_roots,
     hash_pinned_files,
     load_pinned_manifest,
+    probe_rsync_version,
     run_git,
     sync_pinned_files,
     verify_head_triple,
@@ -94,6 +95,7 @@ def main(argv: list[str] | None = None) -> int:
             mismatches.append(f"missing:{row['rel_path']}")
 
     sync_requested = bool(args.sync and not args.dry_run)
+    rsync_version = probe_rsync_version() if sync_requested else None
     if sync_requested and not mismatches:
         sync_mismatches, pinned_rows = sync_pinned_files(
             repo_root=repo_root,
@@ -117,7 +119,9 @@ def main(argv: list[str] | None = None) -> int:
         remote_chain_root=remote_chain_root,
         remote_repo_root=args.remote_repo,
         mismatches=mismatches,
+        rsync_version=rsync_version,
     )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(json.dumps({"output": str(output_path), "code_currency_pass": manifest["code_currency_pass"]}))
     if mismatches:

@@ -130,6 +130,20 @@ def hash_pinned_files(repo_root: Path, pinned: Sequence[PinnedFile]) -> list[dic
     return rows
 
 
+def probe_rsync_version() -> str:
+    try:
+        completed = subprocess.run(
+            ["rsync", "--version"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return "unknown"
+    lines = (completed.stdout or "").splitlines()
+    return lines[0] if lines else "unknown"
+
+
 def sync_pinned_files(
     *,
     repo_root: Path,
@@ -153,11 +167,26 @@ def sync_pinned_files(
         rsync_cmd = [
             "rsync",
             "-az",
+            "--mkpath",
             str(local_path),
             remote_path,
         ]
-        rsync_runner(rsync_cmd)
-        remote_sha = remote_sha_runner(box, f"{remote_repo}/{rel}")
+        try:
+            rsync_runner(rsync_cmd)
+            remote_sha = remote_sha_runner(box, f"{remote_repo}/{rel}")
+        except subprocess.CalledProcessError as exc:
+            cmd = list(exc.cmd) if isinstance(exc.cmd, (list, tuple)) else [str(exc.cmd)]
+            mismatches.append(f"rsync_transport_failure:{rel}")
+            synced_rows.append(
+                {
+                    **dict(row),
+                    "remote_sha256": None,
+                    "rsync_ok": False,
+                    "rsync_cmd": cmd,
+                    "rsync_exit_code": int(exc.returncode) if exc.returncode is not None else None,
+                }
+            )
+            continue
         ok = remote_sha == producer_sha
         if not ok:
             mismatches.append(f"remote_sha_mismatch:{rel}")
@@ -166,6 +195,7 @@ def sync_pinned_files(
                 **dict(row),
                 "remote_sha256": remote_sha,
                 "rsync_ok": ok,
+                "rsync_cmd": rsync_cmd,
             }
         )
     return mismatches, synced_rows
@@ -184,8 +214,9 @@ def build_code_currency_manifest(
     remote_chain_root: Path,
     remote_repo_root: str,
     mismatches: Sequence[str],
+    rsync_version: str | None = None,
 ) -> dict[str, Any]:
-    return {
+    payload: dict[str, Any] = {
         "schema": "hrm158_box_lane_code_currency_preflight/v1",
         "chain_id": chain_id,
         "head_sha": head_expected,
@@ -203,6 +234,9 @@ def build_code_currency_manifest(
         "remote_chain_root": str(remote_chain_root),
         "remote_repo_root": remote_repo_root,
     }
+    if rsync_version is not None:
+        payload["rsync_version"] = rsync_version
+    return payload
 
 
 def verify_artifact_manifest(entries: Sequence[Mapping[str, Any]]) -> list[str]:

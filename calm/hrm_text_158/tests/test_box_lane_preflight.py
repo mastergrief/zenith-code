@@ -73,6 +73,108 @@ def test_remote_sha_mismatch_exit_11(tmp_path: Path) -> None:
     assert any(m.startswith("remote_sha_mismatch:") for m in mismatches)
 
 
+def test_sync_pinned_files_includes_mkpath(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    rel = Path("scripts/probe.py")
+    path = repo / rel
+    path.parent.mkdir(parents=True)
+    path.write_text("x", encoding="utf-8")
+    rows = hash_pinned_files(repo, [PinnedFile("probe", str(rel))])
+    seen_cmds: list[list[str]] = []
+
+    def capture_rsync(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+        seen_cmds.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    sync_pinned_files(
+        repo_root=repo,
+        remote_repo="/remote/repo",
+        box="box",
+        pinned_rows=rows,
+        rsync_runner=capture_rsync,
+        remote_sha_runner=lambda _box, _remote_rel: str(rows[0]["producer_sha256"]),
+    )
+    assert seen_cmds
+    assert "--mkpath" in seen_cmds[0]
+
+
+def test_sync_pinned_files_rsync_transport_failure_captured(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    rel = Path("scripts/probe.py")
+    path = repo / rel
+    path.parent.mkdir(parents=True)
+    path.write_text("x", encoding="utf-8")
+    rows = hash_pinned_files(repo, [PinnedFile("probe", str(rel))])
+
+    def fail_rsync(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+        raise subprocess.CalledProcessError(3, cmd)
+
+    mismatches, synced_rows = sync_pinned_files(
+        repo_root=repo,
+        remote_repo="/remote/repo",
+        box="box",
+        pinned_rows=rows,
+        rsync_runner=fail_rsync,
+        remote_sha_runner=lambda _box, _remote_rel: "0" * 64,
+    )
+    assert mismatches == [f"rsync_transport_failure:{rel.as_posix()}"]
+    assert synced_rows[0]["rsync_ok"] is False
+    assert synced_rows[0]["rsync_exit_code"] == 3
+    assert "--mkpath" in synced_rows[0]["rsync_cmd"]
+
+
+def test_preflight_rsync_transport_failure_writes_receipt_exit_11(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    rel = Path("scripts/probe.py")
+    path = repo / rel
+    path.parent.mkdir(parents=True)
+    path.write_text("x", encoding="utf-8")
+    manifest_path = tmp_path / "out.json"
+    monkeypatch.setattr(
+        "scripts.box_lane_code_currency_preflight.run_git",
+        lambda _root, *args: "deadbeef",
+    )
+    monkeypatch.setattr(
+        "scripts.box_lane_code_currency_preflight.probe_rsync_version",
+        lambda: "rsync  version 3.2.7",
+    )
+
+    def fail_rsync(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+        raise subprocess.CalledProcessError(3, cmd)
+
+    monkeypatch.setattr("scripts.box_lane_code_currency_preflight._default_rsync_runner", fail_rsync)
+    rc = preflight_main(
+        [
+            "--repo-root",
+            str(repo),
+            "--chain-id",
+            "chain_fixture",
+            "--creditdir",
+            str(tmp_path / "creditdir"),
+            "--head-expected",
+            "deadbeef",
+            "--skip-fetch",
+            "--sync",
+            "--output",
+            str(manifest_path),
+            "--pinned-manifest",
+            str(_write_pinned_manifest(tmp_path, rel)),
+        ]
+    )
+    assert rc == EXIT_CODE_CURRENCY_MISMATCH
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert payload["code_currency_pass"] is False
+    assert payload["sync_requested"] is True
+    assert payload["rsync_version"] == "rsync  version 3.2.7"
+    assert any(m.startswith("rsync_transport_failure:") for m in payload["mismatches"])
+    file_row = payload["files"][0]
+    assert file_row["rsync_ok"] is False
+    assert file_row["rsync_exit_code"] == 3
+    assert "--mkpath" in file_row["rsync_cmd"]
+
+
 def test_dry_run_avoids_ssh_and_rsync(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = tmp_path / "repo"
     rel = Path("scripts/probe.py")
