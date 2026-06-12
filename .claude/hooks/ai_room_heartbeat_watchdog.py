@@ -86,6 +86,16 @@ HEARTBEAT_MARKERS = ("IMPLEMENTING", "MILESTONE HEARTBEAT", "next_heartbeat_due"
 TERMINAL_MARKERS = ("VALIDATION RECEIPT", "VALIDATION_RECEIPT", "CONFOUNDED-NULL",
                     "TERMINAL RECEIPT", "task_complete", "_acquires", "PACKET HOLE",
                     "PUSH RECEIPT")
+# Structural-matching split: line-start markers classify a post only when they
+# BEGIN an unquoted, decoration-stripped line; field/token markers stay
+# containment-matched but never on blockquoted lines. Markers merely QUOTED in
+# ack/review prose must not classify a post (phantom unclearable heartbeats →
+# false RECYCLE alarms).
+HEARTBEAT_LINE_MARKERS = ("IMPLEMENTING", "MILESTONE HEARTBEAT")
+TERMINAL_LINE_MARKERS = ("VALIDATION RECEIPT", "VALIDATION_RECEIPT",
+                         "CONFOUNDED-NULL", "TERMINAL RECEIPT", "PACKET HOLE",
+                         "PUSH RECEIPT")
+TERMINAL_TOKEN_MARKERS = ("task_complete", "_acquires")
 CODE_PHASES = {"edit", "compile", "cpu-proof", "dry-run", "receipt", ""}
 GPU_PHASES = {"gpu-proof", "launch"}
 
@@ -179,6 +189,51 @@ def _build_hb(worker, rec, t_h):
     }
 
 
+def _unquoted_lines(body):
+    """Lines of body that are not markdown blockquotes (`> …`). Quoted lines
+    reproduce OTHER posts' markers verbatim and must never classify this post."""
+    for raw in body.splitlines():
+        if raw.lstrip().startswith(">"):
+            continue
+        yield raw
+
+
+def _strip_line_decor(line):
+    """Strip leading markdown decoration (bold/heading/bullet/emphasis) so
+    `**IMPLEMENTING — …**` still line-start-matches `IMPLEMENTING`."""
+    prev = None
+    line = line.strip()
+    while prev != line:
+        prev = line
+        line = line.lstrip("#*-•·_ \t").strip()
+    return line
+
+
+def _is_heartbeat_body(body):
+    """Heartbeat iff a marker BEGINS an unquoted structural line, or a real
+    `next_heartbeat_due=<ts>` field assignment appears on an unquoted line.
+    Markers quoted mid-sentence (\"ACK — 'IMPLEMENTING — …' received\") do NOT
+    count — that substring match created phantom unclearable heartbeats and 3
+    false RECYCLE alarms."""
+    for raw in _unquoted_lines(body):
+        if _strip_line_decor(raw).startswith(HEARTBEAT_LINE_MARKERS):
+            return True
+        if ISO_DUE_RE.search(raw):
+            return True
+    return False
+
+
+def _is_terminal_body(body):
+    """Terminal iff a terminal marker begins an unquoted structural line, or a
+    machine token (task_complete / _acquires) appears on an unquoted line."""
+    for raw in _unquoted_lines(body):
+        if _strip_line_decor(raw).startswith(TERMINAL_LINE_MARKERS):
+            return True
+        if any(tok in raw for tok in TERMINAL_TOKEN_MARKERS):
+            return True
+    return False
+
+
 def find_active_heartbeats(records):
     """Per-worker latest gated post; return hb dicts for workers whose latest is
     a heartbeat (terminal ⇒ that worker is done). Worker B's terminal cannot
@@ -189,8 +244,8 @@ def find_active_heartbeats(records):
         if not _is_worker(frm):
             continue
         body = _body(rec)
-        is_terminal = any(m in body for m in TERMINAL_MARKERS)
-        is_hb = any(m in body for m in HEARTBEAT_MARKERS)
+        is_terminal = _is_terminal_body(body)
+        is_hb = _is_heartbeat_body(body)
         if not (is_terminal or is_hb):
             continue
         t = _record_ts(rec)
