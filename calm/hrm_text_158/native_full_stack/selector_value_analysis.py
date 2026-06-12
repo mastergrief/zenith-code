@@ -9,8 +9,6 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 DEFAULT_STATE_KEY = "model.H_level.core.layers.0.attn.gqkv_proj"
-REQUIRED_CURRICULUM_SEED = 44
-REQUIRED_SUPPORT_ORDER_SEED = 44
 OUTCOME_EPSILON = 1e-6
 PRIMARY_STEP_MIN = 3
 PRIMARY_STEP_MAX = 10
@@ -46,6 +44,21 @@ DRIFT_CORROBORATION_STEPS = (5, 10, 15, 20)
 
 ON_SCORE_SEMANTICS = "local_loss_delta_at_applied_flat_index"
 OFF_SCORE_SEMANTICS = "abs_new_acc_at_applied_flat_index"
+
+
+@dataclass(frozen=True)
+class ExpectedSeedPair:
+    curriculum_seed: int
+    support_order_seed: int
+
+    @classmethod
+    def parse(cls, value: str) -> ExpectedSeedPair:
+        parts = [part.strip() for part in value.split(",")]
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            raise ValueError(
+                "expected seeds must be CURRICULUM,SUPPORT as two comma-separated integers"
+            )
+        return cls(curriculum_seed=int(parts[0]), support_order_seed=int(parts[1]))
 
 
 @dataclass(frozen=True)
@@ -320,25 +333,37 @@ def extract_outcome_step(
     }
 
 
-def _receipt_seed_guard(receipt: Mapping[str, Any], arm: str) -> list[str]:
+def _receipt_seed_guard(
+    receipt: Mapping[str, Any],
+    arm: str,
+    expected_seeds: ExpectedSeedPair,
+) -> list[str]:
     issues: list[str] = []
     batch = receipt.get("batch") or {}
-    if batch.get("seed") != REQUIRED_CURRICULUM_SEED:
-        issues.append(f"{arm}_batch_seed_not_{REQUIRED_CURRICULUM_SEED}")
-    if batch.get("support_order_seed") != REQUIRED_SUPPORT_ORDER_SEED:
-        issues.append(f"{arm}_support_order_seed_not_{REQUIRED_SUPPORT_ORDER_SEED}")
+    if batch.get("seed") != expected_seeds.curriculum_seed:
+        issues.append(f"{arm}_curriculum_seed_mismatch_declared")
+    if batch.get("support_order_seed") != expected_seeds.support_order_seed:
+        issues.append(f"{arm}_support_order_seed_mismatch_declared")
     return issues
 
 
 def check_schedule_guards(
     on: Mapping[str, Any],
     off: Mapping[str, Any],
+    expected_seeds: ExpectedSeedPair,
 ) -> ScheduleGuardResult:
     issues: list[str] = []
     for receipt, arm in ((on, "on"), (off, "off")):
         if receipt.get("steps_completed") != 10:
             issues.append(f"{arm}_steps_completed_not_10")
-        issues.extend(_receipt_seed_guard(receipt, arm))
+        issues.extend(_receipt_seed_guard(receipt, arm, expected_seeds))
+
+    on_batch = on.get("batch") or {}
+    off_batch = off.get("batch") or {}
+    if on_batch.get("seed") != off_batch.get("seed"):
+        issues.append("cross_arm_curriculum_seed_mismatch")
+    if on_batch.get("support_order_seed") != off_batch.get("support_order_seed"):
+        issues.append("cross_arm_support_order_seed_mismatch")
 
     for step in range(1, 11):
         on_step = on.get("step_reports", {}).get(str(step))
@@ -368,8 +393,9 @@ def check_schedule_guards(
 def build_outcome_tables(
     on: Mapping[str, Any],
     off: Mapping[str, Any],
+    expected_seeds: ExpectedSeedPair,
 ) -> dict[str, Any]:
-    guards = check_schedule_guards(on, off)
+    guards = check_schedule_guards(on, off, expected_seeds)
     per_step: list[dict[str, Any]] = []
     for step in range(1, 11):
         on_row = extract_outcome_step(on, step)
@@ -556,18 +582,20 @@ def run_identity_analysis(
 def run_outcome_analysis(
     on: Mapping[str, Any],
     off: Mapping[str, Any],
+    expected_seeds: ExpectedSeedPair,
 ) -> dict[str, Any]:
-    return build_outcome_tables(on, off)
+    return build_outcome_tables(on, off, expected_seeds)
 
 
 def run_full_analysis(
     on: Mapping[str, Any],
     off: Mapping[str, Any],
+    expected_seeds: ExpectedSeedPair,
     *,
     state_key: str = DEFAULT_STATE_KEY,
 ) -> dict[str, Any]:
     identity = run_identity_analysis(on, off, state_key=state_key, include_overlap_band=True)
-    outcome = run_outcome_analysis(on, off)
+    outcome = run_outcome_analysis(on, off, expected_seeds)
     return {"identity": identity, "outcome": outcome}
 
 
@@ -905,11 +933,12 @@ def classify_why_verdict(
 def run_classify_why_analysis(
     on: Mapping[str, Any],
     off: Mapping[str, Any],
+    expected_seeds: ExpectedSeedPair,
     *,
     corroboration_on: Mapping[str, Any] | None = None,
     state_key: str = DEFAULT_STATE_KEY,
 ) -> dict[str, Any]:
-    guards = check_schedule_guards(on, off)
+    guards = check_schedule_guards(on, off, expected_seeds)
     per_step = build_classify_why_per_step_table(on, off, state_key=state_key)
     stage_c_drift = extract_proxy_drift_anchors(on)
     corroboration_drift = (
@@ -969,6 +998,7 @@ def write_run_manifest(
     on_receipt: Path,
     off_receipt: Path,
     output_paths: Sequence[Path],
+    expected_seeds: ExpectedSeedPair,
     corroboration_on_receipt: Path | None = None,
 ) -> dict[str, Any]:
     input_receipt_sha256: dict[str, str | None] = {
@@ -982,6 +1012,10 @@ def write_run_manifest(
         "mode": mode,
         "argv": list(argv),
         "repo_head": repo_head,
+        "expected_seeds": {
+            "curriculum_seed": expected_seeds.curriculum_seed,
+            "support_order_seed": expected_seeds.support_order_seed,
+        },
         "script_sha256": sha256_file(script_path) if script_path and script_path.exists() else None,
         "input_receipt_sha256": input_receipt_sha256,
         "output_paths": [str(item) for item in output_paths],

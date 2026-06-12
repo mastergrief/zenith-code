@@ -11,6 +11,7 @@ from calm.hrm_text_158.native_full_stack.selector_value_analysis import (
     CLASSIFY_WHY_CANNOT_CLAIMS,
     CLASSIFY_WHY_PRIMARY_VERDICTS,
     DEFAULT_STATE_KEY,
+    ExpectedSeedPair,
     OFF_SCORE_SEMANTICS,
     ON_SCORE_SEMANTICS,
     build_identity_tables,
@@ -26,7 +27,13 @@ from calm.hrm_text_158.native_full_stack.selector_value_analysis import (
     run_full_analysis,
     run_identity_analysis,
 )
-from scripts.hrm_text_158_selector_value_analysis import main as orchestrator_main
+from scripts.hrm_text_158_selector_value_analysis import (
+    build_arg_parser,
+    main as orchestrator_main,
+)
+
+SEEDS_44 = ExpectedSeedPair(curriculum_seed=44, support_order_seed=44)
+SEEDS_43 = ExpectedSeedPair(curriculum_seed=43, support_order_seed=43)
 
 
 def _support_batch(hash16: str = "hash_shared", row_ids: list[str] | None = None) -> dict[str, Any]:
@@ -225,7 +232,7 @@ def test_identity_verdict_explicit_q_rows_no_free_primary() -> None:
 
 def test_outcome_indistinguishable() -> None:
     on, off = _build_primary_receipts(same_indices=True)
-    outcome = build_outcome_tables(on, off)
+    outcome = build_outcome_tables(on, off, SEEDS_44)
     assert outcome["verdict"] == "outcome_indistinguishable"
 
 
@@ -253,6 +260,7 @@ def test_outcome_trajectory_favors_off() -> None:
     outcome = build_outcome_tables(
         _receipt(arm="on", step_reports=on_reports),
         _receipt(arm="off", step_reports=off_reports),
+        SEEDS_44,
     )
     assert outcome["verdict"] == "outcome_trajectory_favors_OFF"
     assert outcome["accuracy_tie_caveat"] is True
@@ -282,6 +290,7 @@ def test_outcome_trajectory_favors_on() -> None:
     outcome = build_outcome_tables(
         _receipt(arm="on", step_reports=on_reports),
         _receipt(arm="off", step_reports=off_reports),
+        SEEDS_44,
     )
     assert outcome["verdict"] == "outcome_trajectory_favors_ON"
 
@@ -312,6 +321,7 @@ def test_exact_accuracy_tie_caveat_does_not_override_loss_direction() -> None:
     outcome = build_outcome_tables(
         _receipt(arm="on", step_reports=on_reports),
         _receipt(arm="off", step_reports=off_reports),
+        SEEDS_44,
     )
     assert outcome["verdict"] == "outcome_trajectory_favors_OFF"
     assert outcome["accuracy_tie_caveat"] is True
@@ -344,6 +354,7 @@ def test_opposite_metric_direction_unresolved() -> None:
     outcome = build_outcome_tables(
         _receipt(arm="on", step_reports=on_reports),
         _receipt(arm="off", step_reports=off_reports),
+        SEEDS_44,
     )
     assert outcome["verdict"] == "outcome_diverges_direction_unresolved"
     assert outcome["unresolved_reason"] == "opposite_metric_direction"
@@ -352,10 +363,64 @@ def test_opposite_metric_direction_unresolved() -> None:
 def test_seed_support_mismatch_invalid() -> None:
     on, off = _build_primary_receipts()
     off["batch"]["seed"] = 17
-    guards = check_schedule_guards(on, off)
+    guards = check_schedule_guards(on, off, SEEDS_44)
     assert guards.ok is False
-    outcome = build_outcome_tables(on, off)
+    assert "off_curriculum_seed_mismatch_declared" in guards.issues
+    assert "cross_arm_curriculum_seed_mismatch" in guards.issues
+    outcome = build_outcome_tables(on, off, SEEDS_44)
     assert outcome["verdict"] == "outcome_analysis_insufficient_surface"
+
+
+def test_matched_43_passes_guards() -> None:
+    on, off = _build_primary_receipts()
+    on["batch"] = {"seed": 43, "support_order_seed": 43}
+    off["batch"] = {"seed": 43, "support_order_seed": 43}
+    guards = check_schedule_guards(on, off, SEEDS_43)
+    assert guards.ok is True
+    outcome = build_outcome_tables(on, off, SEEDS_43)
+    assert outcome["verdict"] != "outcome_analysis_insufficient_surface"
+
+
+def test_cross_arm_seed_mismatch_fails() -> None:
+    on, off = _build_primary_receipts()
+    off["batch"] = {"seed": 43, "support_order_seed": 44}
+    guards = check_schedule_guards(on, off, SEEDS_44)
+    assert guards.ok is False
+    assert "off_curriculum_seed_mismatch_declared" in guards.issues
+    assert "cross_arm_curriculum_seed_mismatch" in guards.issues
+
+
+def test_declared_pair_mismatch_without_cross_arm_failure() -> None:
+    on, off = _build_primary_receipts()
+    on["batch"] = {"seed": 43, "support_order_seed": 43}
+    off["batch"] = {"seed": 43, "support_order_seed": 43}
+    guards = check_schedule_guards(on, off, SEEDS_44)
+    assert guards.ok is False
+    assert "on_curriculum_seed_mismatch_declared" in guards.issues
+    assert "on_support_order_seed_mismatch_declared" in guards.issues
+    assert "off_curriculum_seed_mismatch_declared" in guards.issues
+    assert "off_support_order_seed_mismatch_declared" in guards.issues
+    assert "cross_arm_curriculum_seed_mismatch" not in guards.issues
+    assert "cross_arm_support_order_seed_mismatch" not in guards.issues
+    outcome = build_outcome_tables(on, off, SEEDS_44)
+    assert outcome["verdict"] == "outcome_analysis_insufficient_surface"
+
+
+def test_cross_arm_support_order_mismatch_fails() -> None:
+    on, off = _build_primary_receipts()
+    off["batch"] = {"seed": 44, "support_order_seed": 43}
+    guards = check_schedule_guards(on, off, SEEDS_44)
+    assert guards.ok is False
+    assert "off_support_order_seed_mismatch_declared" in guards.issues
+    assert "cross_arm_support_order_seed_mismatch" in guards.issues
+    assert "cross_arm_curriculum_seed_mismatch" not in guards.issues
+    outcome = build_outcome_tables(on, off, SEEDS_44)
+    assert outcome["verdict"] == "outcome_analysis_insufficient_surface"
+
+
+def test_missing_expected_seeds_flag_fails() -> None:
+    with pytest.raises(SystemExit):
+        build_arg_parser().parse_args(["/tmp/run_root"])
 
 
 def test_overlap_band_subordinate_only() -> None:
@@ -374,13 +439,29 @@ def test_orchestrator_writes_new_artifacts_only(tmp_path: Path) -> None:
     legacy = run_root / "analysis" / "stage_c_summary.json"
     legacy.write_text('{"legacy": true}', encoding="utf-8")
 
-    rc = orchestrator_main([str(run_root), "--mode", "full", "--repo-head", "deadbeef"])
+    rc = orchestrator_main(
+        [
+            str(run_root),
+            "--mode",
+            "full",
+            "--repo-head",
+            "deadbeef",
+            "--expected-seeds",
+            "44,44",
+        ]
+    )
     assert rc == 0
     assert json.loads(legacy.read_text(encoding="utf-8")) == {"legacy": True}
     assert (run_root / "analysis" / "stage_c_identity_summary.json").exists()
     assert (run_root / "analysis" / "stage_c_outcome_summary.json").exists()
     assert (run_root / "analysis" / "stage_c_outcome_memo.md").exists()
-    assert (run_root / "analysis" / "run_manifest.json").exists()
+    manifest = json.loads(
+        (run_root / "analysis" / "run_manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["expected_seeds"] == {
+        "curriculum_seed": 44,
+        "support_order_seed": 44,
+    }
 
 
 def test_load_paired_receipts(tmp_path: Path) -> None:
@@ -393,7 +474,7 @@ def test_load_paired_receipts(tmp_path: Path) -> None:
 
 def test_run_full_analysis_shape() -> None:
     on, off = _build_primary_receipts()
-    payload = run_full_analysis(on, off)
+    payload = run_full_analysis(on, off, SEEDS_44)
     assert "identity" in payload and "outcome" in payload
 
 
@@ -501,14 +582,14 @@ def _build_corroboration_receipt() -> dict[str, Any]:
 
 def test_classify_why_h1_schedule_mismatch_rejected_flag() -> None:
     on, off = _build_primary_receipts()
-    summary = run_classify_why_analysis(on, off)
+    summary = run_classify_why_analysis(on, off, SEEDS_44)
     assert summary["support_schedule_mismatch_rejected"] is True
     assert summary["verdict"] in CLASSIFY_WHY_PRIMARY_VERDICTS
 
 
 def test_classify_why_degenerate_jaccard_correlate_forbidden() -> None:
     on, off = _build_primary_receipts()
-    summary = run_classify_why_analysis(on, off)
+    summary = run_classify_why_analysis(on, off, SEEDS_44)
     h2 = summary["h2_cap_churn_geometry"]
     assert h2["degenerate_jaccard_correlate_forbidden"] is True
     assert "1 - cross_arm_jaccard" not in json.dumps(h2)
@@ -517,11 +598,12 @@ def test_classify_why_degenerate_jaccard_correlate_forbidden() -> None:
 
 def test_classify_why_sparse_tau_requires_corroboration_for_h3_primary() -> None:
     on, off = _build_classify_h3_primary_receipts()
-    without = run_classify_why_analysis(on, off)
+    without = run_classify_why_analysis(on, off, SEEDS_44)
     assert without["verdict"] != "classify_proxy_mismatch_primary"
     with_corr = run_classify_why_analysis(
         on,
         off,
+        SEEDS_44,
         corroboration_on=_build_corroboration_receipt(),
     )
     assert with_corr["verdict"] == "classify_proxy_mismatch_primary"
@@ -530,7 +612,7 @@ def test_classify_why_sparse_tau_requires_corroboration_for_h3_primary() -> None
 
 def test_classify_why_h2_primary_fixture() -> None:
     on, off = _build_classify_h2_primary_receipts()
-    summary = run_classify_why_analysis(on, off)
+    summary = run_classify_why_analysis(on, off, SEEDS_44)
     assert summary["verdict"] == "classify_cap_churn_primary"
     assert summary["h2_cap_churn_geometry"]["on_rotation_standing"] is True
     assert summary["routing_hint"] == "cap_churn_redesign_or_lane_verdict_class_call"
@@ -539,7 +621,7 @@ def test_classify_why_h2_primary_fixture() -> None:
 def test_classify_why_insufficient_surface_on_guard_failure() -> None:
     on, off = _build_primary_receipts()
     off["batch"]["support_order_seed"] = 17
-    summary = run_classify_why_analysis(on, off)
+    summary = run_classify_why_analysis(on, off, SEEDS_44)
     assert summary["verdict"] == "classify_insufficient_surface"
     assert summary["support_schedule_mismatch_rejected"] is False
 
@@ -550,7 +632,7 @@ def test_classify_why_mixed_unresolved_fixture() -> None:
         on["step_reports"][str(step)]["step_result"]["tensor_stats"][DEFAULT_STATE_KEY][
             "cap_window_jaccard_vs_prior_step"
         ] = 0.5
-    summary = run_classify_why_analysis(on, off)
+    summary = run_classify_why_analysis(on, off, SEEDS_44)
     assert summary["verdict"] == "classify_mixed_unresolved"
 
 
@@ -608,6 +690,7 @@ def test_classify_why_h2_h3_tie_returns_mixed_not_cap_churn() -> None:
     summary = run_classify_why_analysis(
         on,
         off,
+        SEEDS_44,
         corroboration_on=_build_corroboration_receipt(),
     )
     assert summary["scores"]["h2"] >= 3
@@ -645,6 +728,8 @@ def test_orchestrator_classify_why_writes_new_artifacts_only(tmp_path: Path) -> 
             str(corr_path),
             "--repo-head",
             "deadbeef",
+            "--expected-seeds",
+            "44,44",
         ]
     )
     assert rc == 0
@@ -675,7 +760,7 @@ def test_outcome_verdict_metric_mismatch_with_indistinguishable_loss() -> None:
             "exact_accuracy_match": False,
         }
     ]
-    guards = check_schedule_guards(*_build_primary_receipts())
+    guards = check_schedule_guards(*_build_primary_receipts(), SEEDS_44)
     payload = outcome_verdict(
         guards=guards,
         trajectory_rows=trajectory_rows,

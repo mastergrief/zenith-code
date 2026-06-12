@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from calm.hrm_text_158.native_full_stack.selector_value_analysis import (
+    ExpectedSeedPair,
     load_paired_receipts,
     run_classify_why_analysis,
     run_full_analysis,
@@ -51,6 +52,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--repo-head",
         default=None,
         help="Optional repo HEAD sha for manifest provenance.",
+    )
+    ap.add_argument(
+        "--expected-seeds",
+        required=True,
+        metavar="CURRICULUM,SUPPORT",
+        help=(
+            "Required declared seed pair for both arms (e.g. 44,44 or 43,43). "
+            "No default — must match receipt batch seeds and cross-arm equality."
+        ),
     )
     return ap
 
@@ -97,6 +107,7 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     on, off = load_paired_receipts(run_root)
+    expected_seeds = ExpectedSeedPair.parse(args.expected_seeds)
     corroboration_on = _load_optional_receipt(corroboration_path)
     output_paths: list[Path] = []
     identity_summary: dict | None = None
@@ -110,7 +121,7 @@ def main(argv: list[str] | None = None) -> int:
         output_paths.append(identity_path)
 
     if args.mode in ("outcome", "full"):
-        outcome_summary = run_outcome_analysis(on, off)
+        outcome_summary = run_outcome_analysis(on, off, expected_seeds)
         outcome_path = analysis_dir / "stage_c_outcome_summary.json"
         outcome_path.write_text(json.dumps(outcome_summary, indent=2), encoding="utf-8")
         output_paths.append(outcome_path)
@@ -119,6 +130,7 @@ def main(argv: list[str] | None = None) -> int:
         classify_why_summary = run_classify_why_analysis(
             on,
             off,
+            expected_seeds,
             corroboration_on=corroboration_on,
         )
         classify_path = analysis_dir / "stage_c_classify_why_summary.json"
@@ -155,6 +167,7 @@ def main(argv: list[str] | None = None) -> int:
         on_receipt=on_receipt,
         off_receipt=off_receipt,
         output_paths=output_paths + [manifest_path],
+        expected_seeds=expected_seeds,
         corroboration_on_receipt=corroboration_path,
     )
     output_paths.append(manifest_path)
