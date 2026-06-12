@@ -28,6 +28,7 @@ here when hardware, GGUF paths, accounts, or VRAM budgets change.
 
 - GPU: NVIDIA GTX 1070 (8 GB VRAM, Pascal CC 6.1) — **no Tensor Cores**; consumer-Pascal native FP16 is ~1:64 of FP32, so its lane is integer/ternary inference + small-model FP32, **NOT** FP16/bf16 training.
 - Reached over LAN via a multiplexed connection; the "audit box" is a plain rsync dir (not git) — see `hrm-158.md` §Validation pre-launch code-currency check.
+  Science-chain roots: `/home/gabe/claw-code-creditdir/transient_fp_credit/<chain_id>` (template: `claw-code-hrm-text-158/.codex/rules/box_lane_chain_template.md`).
 - Role: runs the producer/consumer audit-watcher probe bundle so the 4070 trains uncontended. The native ternary path runs after the portability fix; still measure sm_61 train throughput before committing *training* (vs inference) to it.
 
 **Cloud:**
