@@ -43,10 +43,15 @@ from calm.hrm_text_158.native_full_stack.two_tier_transient_selection import (
     LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
 )
 from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
+    PROBE_CUDA_MEMORY_SNAPSHOTS_JSONL_NAME,
     _audit_sparse_singleton_identity_for_candidate,
     _candidate_delta_weight_from_one_flip,
     _single_flip_spec,
+    capture_cuda_phase_memory_snapshot,
     cuda_phase_memory_snapshot,
+    install_probe_cuda_memory_snapshot_jsonl,
+    read_cuda_memory_snapshot_jsonl,
+    reset_probe_cuda_memory_snapshot_jsonl_writer,
 )
 from calm.hrm_text_158.native_full_stack.vote_update import (
     LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
@@ -876,3 +881,83 @@ def test_install_probe_durable_run_log_writes_stdout(tmp_path: Path) -> None:
         assert "probe-run-log-smoke" in log_path.read_text(encoding="utf-8")
     finally:
         sys.stdout = old_stdout
+
+
+def test_cuda_memory_snapshot_jsonl_emits_at_capture_time(tmp_path: Path) -> None:
+    reset_probe_cuda_memory_snapshot_jsonl_writer()
+    try:
+        jsonl_path = install_probe_cuda_memory_snapshot_jsonl(tmp_path)
+        assert jsonl_path == tmp_path / PROBE_CUDA_MEMORY_SNAPSHOTS_JSONL_NAME
+        capture_cuda_phase_memory_snapshot(
+            torch.device("cpu"),
+            label="pre_two_tier_grad_proxy_ingress",
+            optimizer_step_index=1,
+        )
+        capture_cuda_phase_memory_snapshot(
+            torch.device("cpu"),
+            label="post_step_update",
+            optimizer_step_index=1,
+        )
+        records = read_cuda_memory_snapshot_jsonl(jsonl_path)
+        assert [record["label"] for record in records] == [
+            "pre_two_tier_grad_proxy_ingress",
+            "post_step_update",
+        ]
+        assert records[0]["optimizer_step_index"] == 1
+    finally:
+        reset_probe_cuda_memory_snapshot_jsonl_writer()
+
+
+def test_read_cuda_memory_snapshot_jsonl_tolerates_truncated_final_line(
+    tmp_path: Path,
+) -> None:
+    jsonl_path = tmp_path / PROBE_CUDA_MEMORY_SNAPSHOTS_JSONL_NAME
+    complete = json.dumps(
+        {"label": "pre_two_tier_grad_proxy_ingress", "optimizer_step_index": 10}
+    )
+    jsonl_path.write_text(f"{complete}\n{{\"label\": \"trunc", encoding="utf-8")
+    records = read_cuda_memory_snapshot_jsonl(jsonl_path)
+    assert len(records) == 1
+    assert records[0]["optimizer_step_index"] == 10
+
+
+def test_read_cuda_memory_snapshot_jsonl_rejects_malformed_complete_line(
+    tmp_path: Path,
+) -> None:
+    jsonl_path = tmp_path / PROBE_CUDA_MEMORY_SNAPSHOTS_JSONL_NAME
+    jsonl_path.write_text('{"label":"ok"}\nnot-json\n{"label":"third"}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="malformed cuda_memory_snapshots.jsonl"):
+        read_cuda_memory_snapshot_jsonl(jsonl_path)
+
+
+def test_simulated_phase_sequence_writes_cuda_snapshot_jsonl(tmp_path: Path) -> None:
+    reset_probe_cuda_memory_snapshot_jsonl_writer()
+    try:
+        jsonl_path = install_probe_cuda_memory_snapshot_jsonl(tmp_path)
+        labels = [
+            "pre_two_tier_grad_proxy_ingress",
+            "post_two_tier_grad_proxy_ingress",
+            "activation_credit_gather_pre",
+            "activation_credit_gather_per_state",
+            "activation_credit_gather_post",
+            "pre_proxy_oracle_drift_audit",
+            "post_proxy_oracle_drift_audit",
+            "post_step_update",
+        ]
+        for step in (10, 11):
+            for label in labels:
+                fields: dict[str, Any] = {"optimizer_step_index": step}
+                if label == "activation_credit_gather_per_state":
+                    fields["state_key"] = "blocks.0.mlp.gate_proj"
+                    fields["crossing_count"] = 42
+                capture_cuda_phase_memory_snapshot(
+                    torch.device("cpu"),
+                    label=label,
+                    **fields,
+                )
+        records = read_cuda_memory_snapshot_jsonl(jsonl_path)
+        assert len(records) == len(labels) * 2
+        assert records[-1]["label"] == "post_step_update"
+        assert records[-1]["optimizer_step_index"] == 11
+    finally:
+        reset_probe_cuda_memory_snapshot_jsonl_writer()

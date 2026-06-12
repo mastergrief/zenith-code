@@ -12,6 +12,7 @@ import hashlib
 import json
 import math
 import random
+from pathlib import Path
 from statistics import median
 import time
 from typing import Any, Mapping, Sequence
@@ -138,6 +139,85 @@ ORACLE_SCREEN_IMPROVEMENT_EPS = 1e-12
 B2B_CANDIDATE_APPLY_POLICY = "full_vote_planned_candidate_force_apply_v1"
 B2B_ESTIMAND_NON_COMPARABLE_TO_SINGLE_STEP_ORACLE = True
 ACTIVATION_CREDIT_ORACLE_ESTIMAND = "full_vote_planned_candidate_shadow"
+PROBE_CUDA_MEMORY_SNAPSHOTS_JSONL_NAME = "cuda_memory_snapshots.jsonl"
+
+_active_cuda_memory_snapshot_jsonl_writer: "CudaMemorySnapshotJsonlWriter | None" = None
+
+
+class CudaMemorySnapshotJsonlWriter:
+    """Append-only crash-survivable CUDA snapshot log (one JSON object per line)."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._file = self.path.open("a", encoding="utf-8", buffering=1)
+
+    def emit(self, payload: Mapping[str, Any]) -> None:
+        self._file.write(
+            json.dumps(dict(payload), sort_keys=True, separators=(",", ":"))
+        )
+        self._file.write("\n")
+        self._file.flush()
+
+    def close(self) -> None:
+        self._file.close()
+
+
+def install_probe_cuda_memory_snapshot_jsonl(scratch_root: Path) -> Path:
+    """Open ``$RUN_ROOT/cuda_memory_snapshots.jsonl`` for capture-time emission."""
+
+    global _active_cuda_memory_snapshot_jsonl_writer
+    if _active_cuda_memory_snapshot_jsonl_writer is not None:
+        _active_cuda_memory_snapshot_jsonl_writer.close()
+    path = Path(scratch_root) / PROBE_CUDA_MEMORY_SNAPSHOTS_JSONL_NAME
+    _active_cuda_memory_snapshot_jsonl_writer = CudaMemorySnapshotJsonlWriter(path)
+    return path
+
+
+def reset_probe_cuda_memory_snapshot_jsonl_writer() -> None:
+    global _active_cuda_memory_snapshot_jsonl_writer
+    if _active_cuda_memory_snapshot_jsonl_writer is not None:
+        _active_cuda_memory_snapshot_jsonl_writer.close()
+    _active_cuda_memory_snapshot_jsonl_writer = None
+
+
+def emit_cuda_memory_snapshot_jsonl(payload: Mapping[str, Any]) -> None:
+    writer = _active_cuda_memory_snapshot_jsonl_writer
+    if writer is not None:
+        writer.emit(payload)
+
+
+def read_cuda_memory_snapshot_jsonl(
+    path: Path,
+    *,
+    tolerate_truncated_final_line: bool = True,
+) -> list[dict[str, Any]]:
+    text = Path(path).read_text(encoding="utf-8")
+    if not text:
+        return []
+    lines = text.splitlines()
+    records: list[dict[str, Any]] = []
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError as exc:
+            is_final = index == len(lines) - 1
+            if tolerate_truncated_final_line and is_final:
+                break
+            raise ValueError(
+                "malformed cuda_memory_snapshots.jsonl line "
+                f"{index + 1}: {exc}"
+            ) from exc
+        if not isinstance(parsed, dict):
+            raise ValueError(
+                "cuda_memory_snapshots.jsonl line "
+                f"{index + 1}: expected JSON object"
+            )
+        records.append(parsed)
+    return records
 
 
 def cuda_phase_memory_snapshot(
@@ -177,6 +257,17 @@ def cuda_phase_memory_snapshot(
             ),
         }
     )
+    return payload
+
+
+def capture_cuda_phase_memory_snapshot(
+    device: torch.device,
+    *,
+    label: str,
+    **fields: Any,
+) -> dict[str, Any]:
+    payload = cuda_phase_memory_snapshot(device, label=label, **fields)
+    emit_cuda_memory_snapshot_jsonl(payload)
     return payload
 
 
@@ -1213,7 +1304,7 @@ def _compute_activation_credit_candidate_proxies(
         forward_backward_seconds = float(time.perf_counter() - forward_backward_start)
         gather_start = time.perf_counter()
         cuda_memory_snapshots.append(
-            cuda_phase_memory_snapshot(
+            capture_cuda_phase_memory_snapshot(
                 device,
                 label="activation_credit_gather_pre",
                 optimizer_step_index=phase_step,
@@ -1277,7 +1368,7 @@ def _compute_activation_credit_candidate_proxies(
                         "diag_fisher": fisher_f32,
                     }
                 cuda_memory_snapshots.append(
-                    cuda_phase_memory_snapshot(
+                    capture_cuda_phase_memory_snapshot(
                         device,
                         label="activation_credit_gather_per_state",
                         optimizer_step_index=phase_step,
@@ -1286,7 +1377,7 @@ def _compute_activation_credit_candidate_proxies(
                     )
                 )
         cuda_memory_snapshots.append(
-            cuda_phase_memory_snapshot(
+            capture_cuda_phase_memory_snapshot(
                 device,
                 label="activation_credit_gather_post",
                 optimizer_step_index=phase_step,

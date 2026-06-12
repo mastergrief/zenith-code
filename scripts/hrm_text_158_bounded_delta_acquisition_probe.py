@@ -115,7 +115,8 @@ from calm.hrm_text_158.native_full_stack.grad_proxy_audit import (
     run_proxy_oracle_drift_audit,
 )
 from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
-    cuda_phase_memory_snapshot,
+    capture_cuda_phase_memory_snapshot,
+    install_probe_cuda_memory_snapshot_jsonl,
     ORACLE_SCREEN_MODE_CHOICES,
     ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_MEASUREMENT,
     ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_SCALE_SMOKE,
@@ -4649,7 +4650,7 @@ def run_bounded_delta_steps(
                     step_cuda_memory_snapshots: list[dict[str, Any]] = []
                     if device.type == "cuda":
                         step_cuda_memory_snapshots.append(
-                            cuda_phase_memory_snapshot(
+                            capture_cuda_phase_memory_snapshot(
                                 device,
                                 label="pre_two_tier_grad_proxy_ingress",
                                 optimizer_step_index=int(step),
@@ -4681,7 +4682,7 @@ def run_bounded_delta_steps(
                         )
                     if device.type == "cuda":
                         step_cuda_memory_snapshots.append(
-                            cuda_phase_memory_snapshot(
+                            capture_cuda_phase_memory_snapshot(
                                 device,
                                 label="post_two_tier_grad_proxy_ingress",
                                 optimizer_step_index=int(step),
@@ -4697,7 +4698,7 @@ def run_bounded_delta_steps(
                     if int(step) % int(DRIFT_AUDIT_STEP_INTERVAL) == 0:
                         if device.type == "cuda":
                             step_cuda_memory_snapshots.append(
-                                cuda_phase_memory_snapshot(
+                                capture_cuda_phase_memory_snapshot(
                                     device,
                                     label="pre_proxy_oracle_drift_audit",
                                     optimizer_step_index=int(step),
@@ -4719,7 +4720,7 @@ def run_bounded_delta_steps(
                             )
                         if device.type == "cuda":
                             step_cuda_memory_snapshots.append(
-                                cuda_phase_memory_snapshot(
+                                capture_cuda_phase_memory_snapshot(
                                     device,
                                     label="post_proxy_oracle_drift_audit",
                                     optimizer_step_index=int(step),
@@ -4799,7 +4800,7 @@ def run_bounded_delta_steps(
                     )
                 if two_tier_carry_w6_enabled and device.type == "cuda":
                     step_cuda_memory_snapshots.append(
-                        cuda_phase_memory_snapshot(
+                        capture_cuda_phase_memory_snapshot(
                             device,
                             label="post_step_update",
                             optimizer_step_index=int(step),
@@ -5151,6 +5152,9 @@ def run_c2p1_probe(
     device_guard = assert_probe_device_ready(torch_device)
     scratch_root.mkdir(parents=True, exist_ok=True)
     run_log_path = install_probe_durable_run_log(scratch_root)
+    cuda_memory_snapshots_jsonl_path = install_probe_cuda_memory_snapshot_jsonl(
+        scratch_root
+    )
     faulthandler_report = register_probe_faulthandler()
     silent_phase_timeout_seconds = resolve_max_silent_phase_seconds(
         allow_gpu_launch=bool(allow_gpu_launch),
@@ -5471,6 +5475,9 @@ def run_c2p1_probe(
         receipt_path = scratch_root / "receipt.json"
         receipt["receipt_path"] = str(receipt_path)
         receipt["run_log_path"] = str(run_log_path)
+        receipt["cuda_memory_snapshots_jsonl_path"] = str(
+            cuda_memory_snapshots_jsonl_path
+        )
         receipt["terminal_status"] = build_receipt_terminal_status(
             stop_reason=str(receipt["stop_reason"]),
             steps_completed=int(receipt["steps_completed"]),
@@ -5900,6 +5907,9 @@ def run_c2p1_probe(
     receipt_path = scratch_root / "receipt.json"
     receipt["receipt_path"] = str(receipt_path)
     receipt["run_log_path"] = str(run_log_path)
+    receipt["cuda_memory_snapshots_jsonl_path"] = str(
+        cuda_memory_snapshots_jsonl_path
+    )
     receipt["terminal_status"] = build_receipt_terminal_status(
         stop_reason=str(stop_reason),
         steps_completed=int(steps_completed),
