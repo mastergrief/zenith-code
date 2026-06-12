@@ -23,6 +23,7 @@ from calm.hrm_text_158.curriculum import BroadTokenizer
 from calm.hrm_text_158.lm_head import IGNORE_LABEL_ID
 from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     VoteUpdateSpec,
+    PROXY_GATHER_FLAT_INDEX_CHUNK_SIZE,
     authoritative_forward_context,
     candidate_weighted_grad_and_diag_fisher_proxies_from_captures,
     candidate_weighted_grad_proxies_from_captures,
@@ -2394,6 +2395,151 @@ def test_candidate_weighted_grad_and_diag_fisher_proxies_preserve_invocation_pai
         flat_indices=[0, 3],
         weight_shape=(2, 2),
     ).tolist() == pytest.approx(proxies.tolist())
+
+
+def _proxy_gather_fixture_inputs() -> tuple[list[torch.Tensor], list[torch.Tensor]]:
+    inputs = [
+        torch.tensor([[[1.0, 10.0, 2.0, 11.0]]], dtype=torch.float32),
+        torch.tensor([[[100.0, 1000.0, 200.0, 1100.0]]], dtype=torch.float32),
+    ]
+    grad_outputs = [
+        torch.tensor([[[2.0, 20.0, 3.0, 21.0]]], dtype=torch.float32),
+        torch.tensor([[[3.0, 30.0, 4.0, 31.0]]], dtype=torch.float32),
+    ]
+    return inputs, grad_outputs
+
+
+def test_candidate_weighted_grad_proxy_gather_chunked_matches_single_chunk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inputs, grad_outputs = _proxy_gather_fixture_inputs()
+    flat_indices = list(range(8))
+
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.bounded_delta_learner.PROXY_GATHER_FLAT_INDEX_CHUNK_SIZE",
+        1_000_000,
+    )
+    single_chunk_proxies, single_chunk_fisher = (
+        candidate_weighted_grad_and_diag_fisher_proxies_from_captures(
+            inputs,
+            grad_outputs,
+            flat_indices=flat_indices,
+            weight_shape=(2, 4),
+        )
+    )
+
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.bounded_delta_learner.PROXY_GATHER_FLAT_INDEX_CHUNK_SIZE",
+        1,
+    )
+    per_index_proxies, per_index_fisher = (
+        candidate_weighted_grad_and_diag_fisher_proxies_from_captures(
+            inputs,
+            grad_outputs,
+            flat_indices=flat_indices,
+            weight_shape=(2, 4),
+        )
+    )
+
+    assert torch.equal(single_chunk_proxies, per_index_proxies)
+    assert torch.equal(single_chunk_fisher, per_index_fisher)
+
+
+def test_candidate_weighted_grad_proxy_gather_chunk_boundary_32769(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    torch.manual_seed(44)
+    in_features = 256
+    out_features = 129
+    inputs = [
+        torch.randn(1, 4, in_features, dtype=torch.float32),
+        torch.randn(1, 4, in_features, dtype=torch.float32),
+    ]
+    grad_outputs = [
+        torch.randn(1, 4, out_features, dtype=torch.float32),
+        torch.randn(1, 4, out_features, dtype=torch.float32),
+    ]
+    flat_indices = list(range(32_769))
+
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.bounded_delta_learner.PROXY_GATHER_FLAT_INDEX_CHUNK_SIZE",
+        PROXY_GATHER_FLAT_INDEX_CHUNK_SIZE,
+    )
+    chunked_proxies, chunked_fisher = (
+        candidate_weighted_grad_and_diag_fisher_proxies_from_captures(
+            inputs,
+            grad_outputs,
+            flat_indices=flat_indices,
+            weight_shape=(out_features, in_features),
+        )
+    )
+
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.bounded_delta_learner.PROXY_GATHER_FLAT_INDEX_CHUNK_SIZE",
+        1_000_000,
+    )
+    reference_proxies, reference_fisher = (
+        candidate_weighted_grad_and_diag_fisher_proxies_from_captures(
+            inputs,
+            grad_outputs,
+            flat_indices=flat_indices,
+            weight_shape=(out_features, in_features),
+        )
+    )
+
+    assert torch.equal(chunked_proxies, reference_proxies)
+    assert torch.equal(chunked_fisher, reference_fisher)
+
+
+def test_candidate_weighted_grad_proxy_gather_large_n_cpu_equivalence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    torch.manual_seed(17)
+    out_features = 375
+    in_features = 320
+    weight_shape = (out_features, in_features)
+    numel = out_features * in_features
+    assert numel == 120_000
+    inputs = [
+        torch.randn(1, 8, in_features, dtype=torch.float32),
+        torch.randn(1, 8, in_features, dtype=torch.float32),
+    ]
+    grad_outputs = [
+        torch.randn(1, 8, out_features, dtype=torch.float32),
+        torch.randn(1, 8, out_features, dtype=torch.float32),
+    ]
+    flat_indices = torch.randperm(numel)[:120_000].tolist()
+    assert len(flat_indices) == 120_000
+    assert len(flat_indices) > PROXY_GATHER_FLAT_INDEX_CHUNK_SIZE
+
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.bounded_delta_learner.PROXY_GATHER_FLAT_INDEX_CHUNK_SIZE",
+        PROXY_GATHER_FLAT_INDEX_CHUNK_SIZE,
+    )
+    chunked_proxies, chunked_fisher = (
+        candidate_weighted_grad_and_diag_fisher_proxies_from_captures(
+            inputs,
+            grad_outputs,
+            flat_indices=flat_indices,
+            weight_shape=weight_shape,
+        )
+    )
+
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.bounded_delta_learner.PROXY_GATHER_FLAT_INDEX_CHUNK_SIZE",
+        1_000_000,
+    )
+    reference_proxies, reference_fisher = (
+        candidate_weighted_grad_and_diag_fisher_proxies_from_captures(
+            inputs,
+            grad_outputs,
+            flat_indices=flat_indices,
+            weight_shape=weight_shape,
+        )
+    )
+
+    assert torch.equal(chunked_proxies, reference_proxies)
+    assert torch.equal(chunked_fisher, reference_fisher)
 
 
 def test_candidate_delta_weight_uses_effective_weight_delta():

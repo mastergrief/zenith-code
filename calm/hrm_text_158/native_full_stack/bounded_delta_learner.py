@@ -333,6 +333,46 @@ def weighted_grad_from_captures(
     return weighted_grad
 
 
+# Chunk flat_indices before index_select to cap transient gather peak.
+# peak_bytes ≈ 2 * B * S * chunk_size * 4 @ B=1,S=384 → ~100 MB for 32768.
+# Pre-registered fallback if Stage-2b validation smoke still OOMs: 8192.
+PROXY_GATHER_FLAT_INDEX_CHUNK_SIZE = 32768
+PROXY_GATHER_FLAT_INDEX_CHUNK_SIZE_FALLBACK = 8192
+
+
+def _accumulate_weighted_grad_proxy_chunk_from_captures(
+    paired_inputs: Sequence[torch.Tensor],
+    grad_outputs: Sequence[torch.Tensor],
+    *,
+    row_indices: torch.Tensor,
+    col_indices: torch.Tensor,
+    index_device: torch.device,
+    proxies: torch.Tensor,
+    diag_fisher: torch.Tensor,
+) -> None:
+    for inp, grad_out in zip(paired_inputs, reversed(list(grad_outputs))):
+        input_bsi = _as_bsi(inp.detach().to(torch.float32), name="input")
+        grad_out_bso = _as_bsi(grad_out.detach().to(torch.float32), name="grad_out")
+        if input_bsi.device != grad_out_bso.device:
+            raise ValueError(
+                "inputs and grad_outputs must share the same device for candidate credit gathering"
+            )
+        if input_bsi.device != index_device:
+            row_local = row_indices.to(device=input_bsi.device)
+            col_local = col_indices.to(device=input_bsi.device)
+        else:
+            row_local = row_indices
+            col_local = col_indices
+        gathered_inputs = torch.index_select(input_bsi, dim=-1, index=col_local)
+        gathered_grad_outputs = torch.index_select(grad_out_bso, dim=-1, index=row_local)
+        proxies += (gathered_inputs * gathered_grad_outputs).sum(dim=(0, 1)).to(
+            device=index_device
+        )
+        diag_fisher += (
+            gathered_inputs.square() * gathered_grad_outputs.square()
+        ).sum(dim=(0, 1)).to(device=index_device)
+
+
 def candidate_weighted_grad_and_diag_fisher_proxies_from_captures(
     inputs: Sequence[torch.Tensor],
     grad_outputs: Sequence[torch.Tensor],
@@ -362,13 +402,6 @@ def candidate_weighted_grad_and_diag_fisher_proxies_from_captures(
         name="input",
     )
     index_device = reference_input.device
-    flat_index_tensor = torch.tensor(
-        flat_index_list,
-        dtype=torch.int64,
-        device=index_device,
-    )
-    row_indices = torch.div(flat_index_tensor, int(in_features), rounding_mode="floor")
-    col_indices = torch.remainder(flat_index_tensor, int(in_features))
     proxies = torch.zeros(
         (len(flat_index_list),),
         dtype=torch.float32,
@@ -379,27 +412,31 @@ def candidate_weighted_grad_and_diag_fisher_proxies_from_captures(
         dtype=torch.float32,
         device=index_device,
     )
-    for inp, grad_out in zip(paired_inputs, reversed(list(grad_outputs))):
-        input_bsi = _as_bsi(inp.detach().to(torch.float32), name="input")
-        grad_out_bso = _as_bsi(grad_out.detach().to(torch.float32), name="grad_out")
-        if input_bsi.device != grad_out_bso.device:
-            raise ValueError(
-                "inputs and grad_outputs must share the same device for candidate credit gathering"
-            )
-        if input_bsi.device != index_device:
-            row_local = row_indices.to(device=input_bsi.device)
-            col_local = col_indices.to(device=input_bsi.device)
-        else:
-            row_local = row_indices
-            col_local = col_indices
-        gathered_inputs = torch.index_select(input_bsi, dim=-1, index=col_local)
-        gathered_grad_outputs = torch.index_select(grad_out_bso, dim=-1, index=row_local)
-        proxies += (gathered_inputs * gathered_grad_outputs).sum(dim=(0, 1)).to(
-            device=index_device
+    chunk_size = int(PROXY_GATHER_FLAT_INDEX_CHUNK_SIZE)
+    if chunk_size <= 0:
+        raise ValueError("PROXY_GATHER_FLAT_INDEX_CHUNK_SIZE must be positive")
+    for chunk_start in range(0, len(flat_index_list), chunk_size):
+        chunk_indices = flat_index_list[chunk_start : chunk_start + chunk_size]
+        flat_index_tensor = torch.tensor(
+            chunk_indices,
+            dtype=torch.int64,
+            device=index_device,
         )
-        diag_fisher += (
-            gathered_inputs.square() * gathered_grad_outputs.square()
-        ).sum(dim=(0, 1)).to(device=index_device)
+        row_indices = torch.div(
+            flat_index_tensor,
+            int(in_features),
+            rounding_mode="floor",
+        )
+        col_indices = torch.remainder(flat_index_tensor, int(in_features))
+        _accumulate_weighted_grad_proxy_chunk_from_captures(
+            paired_inputs,
+            grad_outputs,
+            row_indices=row_indices,
+            col_indices=col_indices,
+            index_device=index_device,
+            proxies=proxies[chunk_start : chunk_start + len(chunk_indices)],
+            diag_fisher=diag_fisher[chunk_start : chunk_start + len(chunk_indices)],
+        )
     return proxies, diag_fisher
 
 
