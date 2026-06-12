@@ -493,6 +493,74 @@ def sign_pressure_int16_votes(
     return votes.view_as(projected_moves)
 
 
+def _rank_bin_candidate_counts(
+    credit: torch.Tensor,
+    projected_moves: torch.Tensor,
+    spec: RankVoteSpec,
+) -> tuple[int, list[int]]:
+    """Count rank-bucket candidates per bin without materializing vote tensors."""
+
+    spec.validate()
+    if credit.shape != projected_moves.shape:
+        raise ValueError("credit/projected_moves tensor shape mismatch")
+    flat_credit = credit.detach().flatten().to(torch.float32)
+    flat_moves = projected_moves.detach().flatten().to(torch.int8)
+    candidate_idx = torch.nonzero(flat_moves != 0, as_tuple=False).flatten()
+    candidate_count = int(candidate_idx.numel())
+    bin_counts = [0] * len(spec.rank_bins)
+    if candidate_count == 0:
+        return candidate_count, bin_counts
+    abs_values = flat_credit[candidate_idx].abs()
+    if spec.rank_method == "grouped_bisect_right":
+        rank_positions = _bisect_right_rank_positions_by_equal_value_group(abs_values)
+        ranks = None
+    else:
+        sorted_abs = torch.sort(abs_values).values
+        ranks = torch.searchsorted(sorted_abs, abs_values, right=True).to(torch.float32) / float(
+            candidate_count
+        )
+        rank_positions = None
+    for bin_index, item in enumerate(spec.rank_bins):
+        if spec.rank_method == "grouped_bisect_right":
+            assert rank_positions is not None
+            lo_rank, hi_limit = _rank_bin_bounds(candidate_count, item)
+            mask = (rank_positions >= lo_rank) & (rank_positions < hi_limit)
+        else:
+            assert ranks is not None
+            include_hi_mask = ranks <= float(item.hi_exclusive) if item.include_hi else torch.zeros_like(
+                ranks,
+                dtype=torch.bool,
+            )
+            mask = (ranks >= float(item.lo_inclusive)) & (
+                (ranks < float(item.hi_exclusive)) | include_hi_mask
+            )
+        bin_counts[bin_index] = int(mask.sum().item())
+    return candidate_count, bin_counts
+
+
+def compact_pressure_shape_summary(
+    credit: torch.Tensor,
+    projected_moves: torch.Tensor,
+    spec: RankVoteSpec,
+) -> dict[str, Any]:
+    """Compact rank-bin occupancy mass fractions for pressure-shape agreement."""
+
+    candidate_count, bin_counts = _rank_bin_candidate_counts(credit, projected_moves, spec)
+    if candidate_count == 0:
+        fractions = [0.0] * len(spec.rank_bins)
+    else:
+        fractions = [float(count) / float(candidate_count) for count in bin_counts]
+    return {
+        "schema": "hrm_text_158_pressure_shape_summary/v0",
+        "rank_method": spec.rank_method,
+        "rank_bins": [item.to_dict() for item in spec.rank_bins],
+        "bin_occupancy_count": bin_counts,
+        "bin_mass_fraction": fractions,
+        "candidate_count": candidate_count,
+        "raw_per_proposal_arrays_included": False,
+    }
+
+
 def compact_vote_pressure_summary(votes: torch.Tensor) -> dict[str, Any]:
     """Compact receipt metrics for vote pressure without raw per-proposal arrays."""
 
@@ -1983,6 +2051,7 @@ __all__ = [
     "build_optimizer_excluding_eligible_masters",
     "candidate_weighted_grad_and_diag_fisher_proxies_from_captures",
     "candidate_weighted_grad_proxies_from_captures",
+    "compact_pressure_shape_summary",
     "compact_vote_pressure_summary",
     "credit_from_weighted_grad",
     "default_dry_run_rank_vote_spec",

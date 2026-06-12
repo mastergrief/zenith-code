@@ -78,6 +78,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     authoritative_forward_context,
     build_authoritative_checkpoint_payload,
     build_optimizer_excluding_eligible_masters,
+    compact_pressure_shape_summary,
     compact_vote_pressure_summary,
     credit_from_weighted_grad,
     default_dry_run_rank_vote_spec,
@@ -3328,13 +3329,20 @@ def _weighted_grads_to_science_arm_votes(
         else:
             votes = sign_pressure_int16_votes(moves, vote_spec, inverted=inverted)
         votes_by_key[key] = votes
-        pressure_by_key[key] = {
+        pressure_entry: dict[str, Any] = {
             "state_key": key,
             "science_arm": str(science_arm),
             "vote_law": _science_arm_vote_law(str(science_arm)),
             "tie_policy_id": _science_arm_tie_policy(str(science_arm)),
             **compact_vote_pressure_summary(votes),
         }
+        if str(science_arm) in {ARM_A0_RANK_BUCKET_CURRENT, ARM_A1_RANK_BUCKET_ORDER_MATCHED}:
+            pressure_entry["pressure_shape_summary"] = compact_pressure_shape_summary(
+                credit,
+                moves,
+                rank_spec,
+            )
+        pressure_by_key[key] = pressure_entry
     return votes_by_key, pressure_by_key, finite_weighted_grad
 
 
