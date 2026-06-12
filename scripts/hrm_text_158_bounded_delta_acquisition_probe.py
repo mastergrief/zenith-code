@@ -149,6 +149,7 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     oracle_screen_budget_max_seconds,
 )
 from calm.hrm_text_158.native_full_stack.two_tier_transient_selection import (
+    FORBIDDEN_PERSIST_SELECTOR_SURFACES,
     LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
     crossing_eligible_flat_indices,
 )
@@ -3574,6 +3575,155 @@ TIER_A_PROBE_RECEIPT_INDEX_SURFACE_KEYS: frozenset[str] = frozenset(
     }
 )
 
+# Receipt-only audit telemetry for cap-window identity/quality (Stage B).
+# Non-authoritative: must not feed selection, gating, or runtime decisions.
+# See two_tier_transient_selection.FORBIDDEN_PERSIST_SELECTOR_SURFACES.
+CAP_WINDOW_AUDIT_SURFACE_KEYS: frozenset[str] = frozenset(
+    {
+        "applied_flat_indices_hash16",
+        "top8_flat_indices_hash16",
+        "top64_flat_indices_hash16",
+        "top4096_flat_indices_hash16",
+        "cap_window_jaccard_vs_prior_step",
+        "applied_selection_score_p50",
+        "applied_selection_score_p95",
+        "applied_selection_score_semantics",
+        "cap_window_audit_non_authoritative",
+    }
+)
+
+
+def _sorted_flat_indices_hash16(indices: Sequence[int]) -> str:
+    return _sha16([int(value) for value in sorted(indices)])
+
+
+def _cap_window_jaccard_vs_prior(
+    applied_indices: Sequence[int],
+    prior_applied_indices: Sequence[int] | None,
+) -> float | None:
+    if prior_applied_indices is None:
+        return None
+    current = {int(value) for value in applied_indices}
+    prior = {int(value) for value in prior_applied_indices}
+    if not current and not prior:
+        return 1.0
+    union = current | prior
+    if not union:
+        return 1.0
+    return float(len(current & prior)) / float(len(union))
+
+
+def _within_arm_score_quantiles(
+    values: Sequence[float],
+) -> tuple[float | None, float | None]:
+    if not values:
+        return None, None
+    ordered = sorted(float(value) for value in values)
+    p50 = float(statistics.median(ordered))
+    p95_index = max(0, min(len(ordered) - 1, int(len(ordered) * 0.95)))
+    if len(ordered) > 1 and p95_index == 0:
+        p95_index = len(ordered) - 1
+    p95 = float(ordered[p95_index])
+    return p50, p95
+
+
+def _applied_selection_scores_for_plan(
+    plan: Any,
+    *,
+    local_loss_delta: torch.Tensor | None,
+) -> tuple[float | None, float | None, str]:
+    applied = [
+        int(value) for value in plan.applied_indices.detach().cpu().tolist()
+    ]
+    if not applied:
+        return None, None, "empty_applied_set"
+    if local_loss_delta is not None:
+        delta = local_loss_delta.detach().cpu().to(torch.float32).flatten()
+        scores = [float(delta[int(index)].item()) for index in applied]
+        return (
+            *_within_arm_score_quantiles(scores),
+            "local_loss_delta_at_applied_flat_index",
+        )
+    new_acc = plan.new_acc_i32.detach().cpu().flatten()
+    scores = [float(abs(int(new_acc[int(index)].item()))) for index in applied]
+    return (
+        *_within_arm_score_quantiles(scores),
+        "abs_new_acc_at_applied_flat_index",
+    )
+
+
+def _attach_cap_window_audit_surfaces(
+    step_result_compact: Mapping[str, Any],
+    *,
+    plans_by_key: Mapping[str, Any],
+    prior_applied_by_state_key: Mapping[str, Sequence[int]],
+    local_loss_delta_by_key: Mapping[str, torch.Tensor] | None,
+    optimizer_step_index: int,
+) -> dict[str, Any]:
+    """Attach non-authoritative cap-window audit sketches to step_result compact."""
+
+    compact = dict(step_result_compact)
+    tensor_stats = {
+        state_key: dict(stats)
+        for state_key, stats in dict(compact.get("tensor_stats", {})).items()
+    }
+    for state_key, plan in sorted(plans_by_key.items()):
+        stats = dict(tensor_stats[state_key])
+        applied_indices = [
+            int(value) for value in plan.applied_indices.detach().cpu().tolist()
+        ]
+        pre_veto_indices = [
+            int(value)
+            for value in plan.pre_veto_selected_indices.detach().cpu().tolist()
+        ]
+        local_loss_delta = (
+            local_loss_delta_by_key[state_key]
+            if local_loss_delta_by_key is not None
+            else None
+        )
+        score_p50, score_p95, score_semantics = _applied_selection_scores_for_plan(
+            plan,
+            local_loss_delta=local_loss_delta,
+        )
+        stats["applied_flat_indices_hash16"] = _sorted_flat_indices_hash16(
+            applied_indices
+        )
+        stats["top8_flat_indices_hash16"] = _sorted_flat_indices_hash16(
+            pre_veto_indices[:8]
+        )
+        stats["top64_flat_indices_hash16"] = _sorted_flat_indices_hash16(
+            pre_veto_indices[:64]
+        )
+        stats["top4096_flat_indices_hash16"] = _sorted_flat_indices_hash16(
+            pre_veto_indices[:4096]
+        )
+        stats["cap_window_jaccard_vs_prior_step"] = _cap_window_jaccard_vs_prior(
+            applied_indices,
+            prior_applied_by_state_key.get(state_key),
+        )
+        stats["applied_selection_score_p50"] = score_p50
+        stats["applied_selection_score_p95"] = score_p95
+        stats["applied_selection_score_semantics"] = score_semantics
+        stats["cap_window_audit_non_authoritative"] = True
+        stats["cap_window_audit_optimizer_step_index"] = int(optimizer_step_index)
+        tensor_stats[state_key] = stats
+    compact["tensor_stats"] = tensor_stats
+    compact["cap_window_audit_non_authoritative"] = True
+    compact["cap_window_audit_forbidden_persistent_authority_surfaces"] = list(
+        FORBIDDEN_PERSIST_SELECTOR_SURFACES
+    )
+    return compact
+
+
+def _update_prior_applied_by_state_key(
+    prior_applied_by_state_key: dict[str, list[int]],
+    step_result_compact: Mapping[str, Any],
+) -> None:
+    for state_key, stats in dict(step_result_compact.get("tensor_stats", {})).items():
+        applied = stats.get("applied_indices")
+        if applied is not None:
+            prior_applied_by_state_key[state_key] = [int(value) for value in applied]
+
 
 def _optional_step_vote_tensor(
     values_by_key: Mapping[str, torch.Tensor] | None,
@@ -3832,6 +3982,118 @@ def _plan_integer_vote_update_for_tier_a_surfaces(
             two_tier_carry_w6_enabled=True,
         )
     return plans_by_key
+
+
+def _plan_integer_vote_update_for_control_arm_surfaces(
+    *,
+    tensor_states: Mapping[str, Any],
+    votes_by_key: Mapping[str, torch.Tensor],
+    vote_specs_by_key: Mapping[str, VoteUpdateSpec],
+    replay_ce_veto_votes_by_key: Mapping[str, torch.Tensor] | None,
+    replay_ce_veto_moves_by_key: Mapping[str, torch.Tensor] | None,
+    pc_aux_votes_by_key: Mapping[str, torch.Tensor] | None,
+    pc_aux_moves_by_key: Mapping[str, torch.Tensor] | None,
+    pc_aux_mode: str,
+    local_selection_ordering_mode: str,
+    local_selection_ordering_seed: int,
+    local_selection_ordering_step: int,
+) -> dict[str, Any]:
+    plans_by_key: dict[str, Any] = {}
+    for state_key, state in sorted(tensor_states.items()):
+        vu_state = state.vote_update_state()
+        votes = votes_by_key[state_key].detach().cpu().to(torch.int16).contiguous()
+        inputs = VoteUpdateInputs(
+            votes=votes,
+            replay_ce_veto_votes=_optional_step_vote_tensor(
+                replay_ce_veto_votes_by_key,
+                state_key,
+                dtype=torch.int16,
+            ),
+            replay_ce_veto_moves=_optional_step_vote_tensor(
+                replay_ce_veto_moves_by_key,
+                state_key,
+                dtype=torch.int8,
+            ),
+            pc_aux_votes=_optional_step_vote_tensor(
+                pc_aux_votes_by_key,
+                state_key,
+                dtype=torch.int16,
+            ),
+            pc_aux_moves=_optional_step_vote_tensor(
+                pc_aux_moves_by_key,
+                state_key,
+                dtype=torch.int8,
+            ),
+            pc_aux_mode=str(pc_aux_mode),
+        )
+        plans_by_key[state_key] = plan_integer_vote_update_reference(
+            vu_state,
+            inputs,
+            vote_specs_by_key[state_key],
+            local_selection_ordering_mode=str(local_selection_ordering_mode),
+            local_selection_ordering_seed=int(local_selection_ordering_seed),
+            local_selection_ordering_step=int(local_selection_ordering_step),
+            two_tier_carry_w6_enabled=False,
+        )
+    return plans_by_key
+
+
+def _attach_control_arm_index_surfaces_to_compact(
+    step_result_compact: Mapping[str, Any],
+    *,
+    tensor_states: Mapping[str, Any],
+    votes_by_key: Mapping[str, torch.Tensor],
+    vote_specs_by_key: Mapping[str, VoteUpdateSpec],
+    replay_ce_veto_votes_by_key: Mapping[str, torch.Tensor] | None,
+    replay_ce_veto_moves_by_key: Mapping[str, torch.Tensor] | None,
+    pc_aux_votes_by_key: Mapping[str, torch.Tensor] | None,
+    pc_aux_moves_by_key: Mapping[str, torch.Tensor] | None,
+    pc_aux_mode: str,
+    local_selection_ordering_mode: str,
+    local_selection_ordering_seed: int,
+    local_selection_ordering_step: int,
+) -> dict[str, Any]:
+    compact = dict(step_result_compact)
+    tensor_stats = {
+        state_key: dict(stats)
+        for state_key, stats in dict(compact.get("tensor_stats", {})).items()
+    }
+    plans_by_key = _plan_integer_vote_update_for_control_arm_surfaces(
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+        vote_specs_by_key=vote_specs_by_key,
+        replay_ce_veto_votes_by_key=replay_ce_veto_votes_by_key,
+        replay_ce_veto_moves_by_key=replay_ce_veto_moves_by_key,
+        pc_aux_votes_by_key=pc_aux_votes_by_key,
+        pc_aux_moves_by_key=pc_aux_moves_by_key,
+        pc_aux_mode=str(pc_aux_mode),
+        local_selection_ordering_mode=str(local_selection_ordering_mode),
+        local_selection_ordering_seed=int(local_selection_ordering_seed),
+        local_selection_ordering_step=int(local_selection_ordering_step),
+    )
+    for state_key, plan in sorted(plans_by_key.items()):
+        stats = dict(tensor_stats[state_key])
+        replay_ce_veto_indices = [
+            int(value) for value in plan.replay_ce_veto_indices.detach().cpu().tolist()
+        ]
+        applied_indices = [
+            int(value) for value in plan.applied_indices.detach().cpu().tolist()
+        ]
+        _assert_tier_a_index_surface_count_consistency(
+            state_key,
+            tensor_stats=stats,
+            replay_ce_veto_indices=replay_ce_veto_indices,
+            applied_indices=applied_indices,
+        )
+        stats["pre_veto_selected_indices"] = [
+            int(value)
+            for value in plan.pre_veto_selected_indices.detach().cpu().tolist()
+        ]
+        stats["applied_indices"] = applied_indices
+        stats["replay_ce_veto_indices"] = replay_ce_veto_indices
+        tensor_stats[state_key] = stats
+    compact["tensor_stats"] = tensor_stats
+    return compact
 
 
 def _assert_tier_a_index_surface_count_consistency(
@@ -4449,6 +4711,7 @@ def run_bounded_delta_steps(
 
     stop_reason = "max_steps_completed"
     steps_completed = 0
+    prior_applied_by_state_key: dict[str, list[int]] = {}
     for step in range(1, int(steps) + 1):
         with progress.phase("step", step=int(step)):
             step_timing_start = _timing_start(device)
@@ -4635,6 +4898,7 @@ def run_bounded_delta_steps(
                 local_loss_delta_by_key = None
                 grad_proxy_ingress_receipt: dict[str, Any] | None = None
                 proxy_oracle_drift_receipt: dict[str, Any] | None = None
+                step_cuda_memory_snapshots: list[dict[str, Any]] = []
                 if two_tier_carry_w6_enabled:
                     crossing_eligible_count = count_w6_t10_crossing_eligible_from_votes(
                         tensor_states=pre_apply_states,
@@ -4647,7 +4911,6 @@ def run_bounded_delta_steps(
                     grad_proxy_ingress_crossing_eligible_count_by_step.append(
                         int(crossing_eligible_count)
                     )
-                    step_cuda_memory_snapshots: list[dict[str, Any]] = []
                     if device.type == "cuda":
                         step_cuda_memory_snapshots.append(
                             capture_cuda_phase_memory_snapshot(
@@ -4784,6 +5047,19 @@ def run_bounded_delta_steps(
                 step_result_compact = step_result.to_compact_dict()
                 if two_tier_carry_w6_enabled:
                     assert local_loss_delta_by_key is not None
+                    tier_a_plans_by_key = _plan_integer_vote_update_for_tier_a_surfaces(
+                        tensor_states=pre_apply_states,
+                        votes_by_key=votes_by_key,
+                        vote_specs_by_key=vote_specs,
+                        replay_ce_veto_votes_by_key=replay_ce_veto_votes_by_key,
+                        replay_ce_veto_moves_by_key=replay_ce_veto_moves_by_key,
+                        pc_aux_votes_by_key=pc_aux_votes_by_key,
+                        pc_aux_moves_by_key=pc_aux_moves_by_key,
+                        pc_aux_mode=str(b2_pc_aux_mode),
+                        local_loss_delta_by_key=local_loss_delta_by_key,
+                        local_selection_ordering_seed=SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
+                        local_selection_ordering_step=int(step),
+                    )
                     step_result_compact = _attach_tier_a_staging_index_surfaces_to_compact(
                         step_result_compact,
                         tensor_states=pre_apply_states,
@@ -4798,7 +5074,53 @@ def run_bounded_delta_steps(
                         local_selection_ordering_seed=SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
                         local_selection_ordering_step=int(step),
                     )
-                if two_tier_carry_w6_enabled and device.type == "cuda":
+                    step_result_compact = _attach_cap_window_audit_surfaces(
+                        step_result_compact,
+                        plans_by_key=tier_a_plans_by_key,
+                        prior_applied_by_state_key=prior_applied_by_state_key,
+                        local_loss_delta_by_key=local_loss_delta_by_key,
+                        optimizer_step_index=int(step),
+                    )
+                else:
+                    control_plans_by_key = _plan_integer_vote_update_for_control_arm_surfaces(
+                        tensor_states=pre_apply_states,
+                        votes_by_key=votes_by_key,
+                        vote_specs_by_key=vote_specs,
+                        replay_ce_veto_votes_by_key=replay_ce_veto_votes_by_key,
+                        replay_ce_veto_moves_by_key=replay_ce_veto_moves_by_key,
+                        pc_aux_votes_by_key=pc_aux_votes_by_key,
+                        pc_aux_moves_by_key=pc_aux_moves_by_key,
+                        pc_aux_mode=str(b2_pc_aux_mode),
+                        local_selection_ordering_mode=step_selection_ordering_mode,
+                        local_selection_ordering_seed=SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
+                        local_selection_ordering_step=int(step),
+                    )
+                    step_result_compact = _attach_control_arm_index_surfaces_to_compact(
+                        step_result_compact,
+                        tensor_states=pre_apply_states,
+                        votes_by_key=votes_by_key,
+                        vote_specs_by_key=vote_specs,
+                        replay_ce_veto_votes_by_key=replay_ce_veto_votes_by_key,
+                        replay_ce_veto_moves_by_key=replay_ce_veto_moves_by_key,
+                        pc_aux_votes_by_key=pc_aux_votes_by_key,
+                        pc_aux_moves_by_key=pc_aux_moves_by_key,
+                        pc_aux_mode=str(b2_pc_aux_mode),
+                        local_selection_ordering_mode=step_selection_ordering_mode,
+                        local_selection_ordering_seed=SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
+                        local_selection_ordering_step=int(step),
+                    )
+                    step_result_compact = _attach_cap_window_audit_surfaces(
+                        step_result_compact,
+                        plans_by_key=control_plans_by_key,
+                        prior_applied_by_state_key=prior_applied_by_state_key,
+                        local_loss_delta_by_key=None,
+                        optimizer_step_index=int(step),
+                    )
+                _update_prior_applied_by_state_key(
+                    prior_applied_by_state_key,
+                    step_result_compact,
+                )
+                if device.type == "cuda":
                     step_cuda_memory_snapshots.append(
                         capture_cuda_phase_memory_snapshot(
                             device,
@@ -4835,7 +5157,7 @@ def run_bounded_delta_steps(
                     step_reports[str(step)]["grad_proxy_ingress"] = (
                         grad_proxy_ingress_receipt
                     )
-                if two_tier_carry_w6_enabled:
+                if device.type == "cuda":
                     step_reports[str(step)]["cuda_memory_snapshots"] = list(
                         step_cuda_memory_snapshots
                     )
@@ -5904,6 +6226,13 @@ def run_c2p1_probe(
                 ),
             }
         )
+    receipt["harness_wire_cap_window_audit_surface_keys"] = sorted(
+        CAP_WINDOW_AUDIT_SURFACE_KEYS
+    )
+    receipt["cap_window_audit_non_authoritative"] = True
+    receipt["cap_window_audit_forbidden_persistent_authority_surfaces"] = list(
+        FORBIDDEN_PERSIST_SELECTOR_SURFACES
+    )
     receipt_path = scratch_root / "receipt.json"
     receipt["receipt_path"] = str(receipt_path)
     receipt["run_log_path"] = str(run_log_path)

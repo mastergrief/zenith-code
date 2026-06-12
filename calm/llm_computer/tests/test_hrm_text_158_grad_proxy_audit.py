@@ -57,14 +57,21 @@ from calm.hrm_text_158.native_full_stack.vote_update import (
     LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
     VoteUpdateInputs,
     apply_integer_vote_update_reference,
+    plan_integer_vote_update_reference,
 )
 from calm.llm_computer.tests.test_hrm_text_158_native_bounded_delta_acquisition_probe import (
     _tiny_forward_fixture,
 )
 from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+    CAP_WINDOW_AUDIT_SURFACE_KEYS,
     DEFAULT_PARENT,
     DEFAULT_PARENT_SHA256,
     PROBE_RUN_LOG_NAME,
+    SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
+    _attach_cap_window_audit_surfaces,
+    _attach_control_arm_index_surfaces_to_compact,
+    _cap_window_jaccard_vs_prior,
+    _sorted_flat_indices_hash16,
     build_identity_full_support_batches,
     build_model_from_checkpoint,
     derive_tensor_states_and_check_init_fidelity,
@@ -961,3 +968,128 @@ def test_simulated_phase_sequence_writes_cuda_snapshot_jsonl(tmp_path: Path) -> 
         assert records[-1]["optimizer_step_index"] == 11
     finally:
         reset_probe_cuda_memory_snapshot_jsonl_writer()
+
+
+def test_cap_window_jaccard_math() -> None:
+    assert _cap_window_jaccard_vs_prior([1, 2], None) is None
+    assert _cap_window_jaccard_vs_prior([1, 2], [2, 3]) == pytest.approx(1.0 / 3.0)
+    assert _cap_window_jaccard_vs_prior([], []) == 1.0
+    assert _cap_window_jaccard_vs_prior([1], [1]) == 1.0
+    assert _cap_window_jaccard_vs_prior([1], [2]) == 0.0
+
+
+def test_sorted_flat_indices_hash16_format() -> None:
+    digest = _sorted_flat_indices_hash16([3, 1, 2])
+    assert len(digest) == 16
+    assert all(character in "0123456789abcdef" for character in digest)
+    assert _sorted_flat_indices_hash16([1, 2, 3]) == digest
+
+
+def test_attach_cap_window_audit_surfaces_field_presence() -> None:
+    state = make_bounded_tensor_state(
+        "toy.proj",
+        torch.tensor([0, 0], dtype=torch.int8),
+        0.5,
+        torch.zeros(2, dtype=torch.int16),
+    )
+    votes = torch.tensor([12, -12], dtype=torch.int16)
+    spec = VoteUpdateSpec(
+        threshold_abs=10,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=2,
+    )
+    plan = plan_integer_vote_update_reference(
+        state.vote_update_state(),
+        VoteUpdateInputs(votes=votes),
+        spec,
+        local_selection_ordering_mode=LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+        local_selection_ordering_seed=SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
+        local_selection_ordering_step=1,
+        two_tier_carry_w6_enabled=False,
+    )
+    compact = {
+        "schema": "hrm_text_158_c2p0_bounded_delta_step_result/v0.compact",
+        "tensor_stats": {
+            "toy.proj": {
+                "post_veto_applied_flip_count": int(plan.applied_indices.numel()),
+                "q_changed_count": int(plan.applied_indices.numel()),
+            }
+        },
+    }
+    attached = _attach_cap_window_audit_surfaces(
+        compact,
+        plans_by_key={"toy.proj": plan},
+        prior_applied_by_state_key={},
+        local_loss_delta_by_key=None,
+        optimizer_step_index=1,
+    )
+    stats = attached["tensor_stats"]["toy.proj"]
+    for key in CAP_WINDOW_AUDIT_SURFACE_KEYS:
+        if key == "cap_window_audit_non_authoritative":
+            assert stats[key] is True
+        else:
+            assert key in stats
+    assert attached["cap_window_audit_non_authoritative"] is True
+    assert stats["cap_window_jaccard_vs_prior_step"] is None
+    assert stats["applied_selection_score_semantics"] == (
+        "abs_new_acc_at_applied_flat_index"
+    )
+
+
+def test_attach_control_arm_index_surfaces_off_arm() -> None:
+    state = make_bounded_tensor_state(
+        "toy.proj",
+        torch.tensor([0], dtype=torch.int8),
+        0.5,
+        torch.zeros(1, dtype=torch.int16),
+    )
+    votes = torch.tensor([12], dtype=torch.int16)
+    spec = VoteUpdateSpec(
+        threshold_abs=10,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=1,
+    )
+    fixture_compact = {
+        "schema": "hrm_text_158_c2p0_bounded_delta_step_result/v0.compact",
+        "tensor_stats": {
+            "toy.proj": {
+                "replay_ce_veto_count": 0,
+                "post_veto_applied_flip_count": 1,
+                "q_changed_count": 1,
+            }
+        },
+        "global_summary": {
+            "global_rate_cap_enabled": False,
+            "q_changed_count": 1,
+            "local_selection_ordering_mode": LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+        },
+    }
+    attached = _attach_control_arm_index_surfaces_to_compact(
+        fixture_compact,
+        tensor_states={"toy.proj": state},
+        votes_by_key={"toy.proj": votes},
+        vote_specs_by_key={"toy.proj": spec},
+        replay_ce_veto_votes_by_key=None,
+        replay_ce_veto_moves_by_key=None,
+        pc_aux_votes_by_key=None,
+        pc_aux_moves_by_key=None,
+        pc_aux_mode="telemetry",
+        local_selection_ordering_mode=LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+        local_selection_ordering_seed=SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
+        local_selection_ordering_step=1,
+    )
+    stats = attached["tensor_stats"]["toy.proj"]
+    assert stats["applied_indices"] == [0]
+    assert "pre_veto_selected_indices" in stats
+
+
+def test_off_jsonl_gate_is_device_cuda_only() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    source = (
+        repo_root / "scripts/hrm_text_158_bounded_delta_acquisition_probe.py"
+    ).read_text(encoding="utf-8")
+    assert 'if two_tier_carry_w6_enabled and device.type == "cuda":' not in source
+    assert 'label="post_step_update"' in source
+    assert "if device.type == \"cuda\":" in source
