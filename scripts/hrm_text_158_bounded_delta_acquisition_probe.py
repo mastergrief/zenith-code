@@ -111,9 +111,11 @@ from calm.hrm_text_158.native_full_stack.grad_proxy_audit import (
     assert_local_loss_delta_proxy_coverage,
     build_grad_proxy_local_loss_delta_by_key,
     count_w6_t10_crossing_eligible_from_votes,
+    crossing_count_by_state_key_from_votes,
     run_proxy_oracle_drift_audit,
 )
 from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
+    cuda_phase_memory_snapshot,
     ORACLE_SCREEN_MODE_CHOICES,
     ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_MEASUREMENT,
     ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_SCALE_SMOKE,
@@ -197,6 +199,7 @@ PHASE_TIMEOUT_EXEMPTION_CONTRACT_CHOICES = (
     B2B_BOUNDED_STEPS_AGGREGATE_TIMEOUT_EXEMPTION_V1,
 )
 BOUNDED_STEPS_AGGREGATE_PHASE = "bounded_steps"
+PROBE_RUN_LOG_NAME = "run.log"
 C2P2_NULL_TAXONOMY = (
     "no-q-move",
     "q-move-no-accuracy",
@@ -238,6 +241,17 @@ class _MirrorTextStream:
 
     def writable(self) -> bool:
         return True
+
+
+def install_probe_durable_run_log(scratch_root: Path) -> Path:
+    """Mirror stdout/stderr to ``$RUN_ROOT/run.log`` for the probe process lifetime."""
+
+    log_path = Path(scratch_root) / PROBE_RUN_LOG_NAME
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_file = log_path.open("a", encoding="utf-8", buffering=1)
+    sys.stdout = _MirrorTextStream(sys.stdout, log_file, fileno_stream=sys.stdout)
+    sys.stderr = _MirrorTextStream(sys.stderr, log_file, fileno_stream=sys.stderr)
+    return log_path
 
 
 @contextmanager
@@ -4625,10 +4639,30 @@ def run_bounded_delta_steps(
                         tensor_states=pre_apply_states,
                         votes_by_key=votes_by_key,
                     )
+                    crossing_count_by_state_key = crossing_count_by_state_key_from_votes(
+                        tensor_states=pre_apply_states,
+                        votes_by_key=votes_by_key,
+                    )
                     grad_proxy_ingress_crossing_eligible_count_by_step.append(
                         int(crossing_eligible_count)
                     )
-                    with progress.phase("two_tier_grad_proxy_ingress", step=int(step)):
+                    step_cuda_memory_snapshots: list[dict[str, Any]] = []
+                    if device.type == "cuda":
+                        step_cuda_memory_snapshots.append(
+                            cuda_phase_memory_snapshot(
+                                device,
+                                label="pre_two_tier_grad_proxy_ingress",
+                                optimizer_step_index=int(step),
+                            )
+                        )
+                    with progress.phase(
+                        "two_tier_grad_proxy_ingress",
+                        step=int(step),
+                        grad_proxy_ingress_crossing_eligible_count=int(
+                            crossing_eligible_count
+                        ),
+                        crossing_count_by_state_key=dict(crossing_count_by_state_key),
+                    ):
                         (
                             local_loss_delta_by_key,
                             grad_proxy_ingress_receipt,
@@ -4645,7 +4679,30 @@ def run_bounded_delta_steps(
                             phase_progress=progress,
                             optimizer_step_index=int(step),
                         )
+                    if device.type == "cuda":
+                        step_cuda_memory_snapshots.append(
+                            cuda_phase_memory_snapshot(
+                                device,
+                                label="post_two_tier_grad_proxy_ingress",
+                                optimizer_step_index=int(step),
+                            )
+                        )
+                    if grad_proxy_ingress_receipt is not None:
+                        step_cuda_memory_snapshots.extend(
+                            list(
+                                grad_proxy_ingress_receipt.get("cuda_memory_snapshots")
+                                or []
+                            )
+                        )
                     if int(step) % int(DRIFT_AUDIT_STEP_INTERVAL) == 0:
+                        if device.type == "cuda":
+                            step_cuda_memory_snapshots.append(
+                                cuda_phase_memory_snapshot(
+                                    device,
+                                    label="pre_proxy_oracle_drift_audit",
+                                    optimizer_step_index=int(step),
+                                )
+                            )
                         with progress.phase("proxy_oracle_drift_audit", step=int(step)):
                             proxy_oracle_drift_receipt = run_proxy_oracle_drift_audit(
                                 model=model,
@@ -4659,6 +4716,14 @@ def run_bounded_delta_steps(
                                 baseline_loss=float(loss.detach().cpu().item()),
                                 max_abs_per_tensor=int(max_abs_per_tensor),
                                 optimizer_step_index=int(step),
+                            )
+                        if device.type == "cuda":
+                            step_cuda_memory_snapshots.append(
+                                cuda_phase_memory_snapshot(
+                                    device,
+                                    label="post_proxy_oracle_drift_audit",
+                                    optimizer_step_index=int(step),
+                                )
                             )
                 two_tier_vote_step_kwargs = _bounded_delta_vote_step_two_tier_kwargs(
                     two_tier_carry_w6_enabled=bool(two_tier_carry_w6_enabled),
@@ -4732,6 +4797,14 @@ def run_bounded_delta_steps(
                         local_selection_ordering_seed=SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
                         local_selection_ordering_step=int(step),
                     )
+                if two_tier_carry_w6_enabled and device.type == "cuda":
+                    step_cuda_memory_snapshots.append(
+                        cuda_phase_memory_snapshot(
+                            device,
+                            label="post_step_update",
+                            optimizer_step_index=int(step),
+                        )
+                    )
                 step_reports[str(step)] = {
                     "loss": float(loss.detach().cpu().item()),
                     "loss_finite": bool(torch.isfinite(loss).item()),
@@ -4760,6 +4833,10 @@ def run_bounded_delta_steps(
                 if grad_proxy_ingress_receipt is not None:
                     step_reports[str(step)]["grad_proxy_ingress"] = (
                         grad_proxy_ingress_receipt
+                    )
+                if two_tier_carry_w6_enabled:
+                    step_reports[str(step)]["cuda_memory_snapshots"] = list(
+                        step_cuda_memory_snapshots
                     )
                 if proxy_oracle_drift_receipt is not None:
                     step_reports[str(step)]["proxy_oracle_drift"] = (
@@ -5073,6 +5150,7 @@ def run_c2p1_probe(
     guard_gpu_launch(torch_device, allow_gpu_launch=allow_gpu_launch)
     device_guard = assert_probe_device_ready(torch_device)
     scratch_root.mkdir(parents=True, exist_ok=True)
+    run_log_path = install_probe_durable_run_log(scratch_root)
     faulthandler_report = register_probe_faulthandler()
     silent_phase_timeout_seconds = resolve_max_silent_phase_seconds(
         allow_gpu_launch=bool(allow_gpu_launch),
@@ -5392,6 +5470,7 @@ def run_c2p1_probe(
         }
         receipt_path = scratch_root / "receipt.json"
         receipt["receipt_path"] = str(receipt_path)
+        receipt["run_log_path"] = str(run_log_path)
         receipt["terminal_status"] = build_receipt_terminal_status(
             stop_reason=str(receipt["stop_reason"]),
             steps_completed=int(receipt["steps_completed"]),
@@ -5820,6 +5899,7 @@ def run_c2p1_probe(
         )
     receipt_path = scratch_root / "receipt.json"
     receipt["receipt_path"] = str(receipt_path)
+    receipt["run_log_path"] = str(run_log_path)
     receipt["terminal_status"] = build_receipt_terminal_status(
         stop_reason=str(stop_reason),
         steps_completed=int(steps_completed),

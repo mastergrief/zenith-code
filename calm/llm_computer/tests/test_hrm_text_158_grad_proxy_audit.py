@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,7 @@ from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
     _audit_sparse_singleton_identity_for_candidate,
     _candidate_delta_weight_from_one_flip,
     _single_flip_spec,
+    cuda_phase_memory_snapshot,
 )
 from calm.hrm_text_158.native_full_stack.vote_update import (
     LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
@@ -57,9 +59,11 @@ from calm.llm_computer.tests.test_hrm_text_158_native_bounded_delta_acquisition_
 from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     DEFAULT_PARENT,
     DEFAULT_PARENT_SHA256,
+    PROBE_RUN_LOG_NAME,
     build_identity_full_support_batches,
     build_model_from_checkpoint,
     derive_tensor_states_and_check_init_fidelity,
+    install_probe_durable_run_log,
     load_parent_checkpoint,
     select_eligible_bitlinears,
 )
@@ -649,9 +653,11 @@ def test_build_grad_proxy_local_loss_delta_by_key_receipt_fields(
         == POPULATION_MODE_FULL_CROSSING_ELIGIBLE
     )
     assert ingress_receipt["grad_proxy_ingress_crossing_eligible_count"] == 1
+    assert ingress_receipt["crossing_count_by_state_key"] == {state_key: 1}
     assert ingress_receipt["grad_proxy_ingress_candidate_count_ingressed"] == 1
     assert ingress_receipt["candidate_count_ingressed"] == 1
     assert ingress_receipt["optimizer_step_index"] == 3
+    assert "activation_credit_gather_telemetry_note" in ingress_receipt
     assert torch.isfinite(local_loss_delta_by_key[state_key].view(-1)[0]).item()
     assert float(local_loss_delta_by_key[state_key].view(-1)[1].item()) == 0.0
 
@@ -811,3 +817,62 @@ def test_drift_audit_trajectory_invariant_ten_steps(
     on_snapshot, on_flips = _run_trajectory(drift_enabled=True)
     assert on_snapshot == off_snapshot
     assert on_flips == off_flips
+
+
+def test_cuda_phase_memory_snapshot_cpu_returns_null_fields() -> None:
+    payload = cuda_phase_memory_snapshot(
+        torch.device("cpu"),
+        label="pre_ingress",
+        optimizer_step_index=3,
+    )
+    assert payload["label"] == "pre_ingress"
+    assert payload["optimizer_step_index"] == 3
+    assert payload["cuda_allocated_bytes"] is None
+
+
+def test_build_grad_proxy_passes_optimizer_step_to_proxy_compute(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model, batch, eligible, _states = _tiny_forward_fixture(batch_size=8)
+    state_key = next(iter(eligible))
+    state, votes, candidate, _base_spec, _one_flip_spec = _identity_hold_w6_t10_bundle(
+        state_key
+    )
+    seen: dict[str, Any] = {}
+
+    def _capture_proxy_compute(**kwargs: Any) -> dict[str, Any]:
+        seen.update(kwargs)
+        return {
+            "grad_proxy_by_candidate_id": {candidate["candidate_id"]: 0.5},
+            "cuda_memory_snapshots": [],
+        }
+
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.grad_proxy_audit._compute_activation_credit_candidate_proxies",
+        _capture_proxy_compute,
+    )
+    build_grad_proxy_local_loss_delta_by_key(
+        model=model,
+        batch=batch,
+        tensor_states={state_key: state},
+        eligible_modules=eligible,
+        device=torch.device("cpu"),
+        extras=model.compute_train_extra_args(1, 1),
+        votes_by_key={state_key: votes},
+        max_abs_per_tensor=4096,
+        population_mode=POPULATION_MODE_FULL_CROSSING_ELIGIBLE,
+        optimizer_step_index=11,
+    )
+    assert seen["optimizer_step_index"] == 11
+
+
+def test_install_probe_durable_run_log_writes_stdout(tmp_path: Path) -> None:
+    old_stdout = sys.stdout
+    try:
+        log_path = install_probe_durable_run_log(tmp_path)
+        assert log_path == tmp_path / PROBE_RUN_LOG_NAME
+        print("probe-run-log-smoke", flush=True)
+        sys.stdout.flush()
+        assert "probe-run-log-smoke" in log_path.read_text(encoding="utf-8")
+    finally:
+        sys.stdout = old_stdout

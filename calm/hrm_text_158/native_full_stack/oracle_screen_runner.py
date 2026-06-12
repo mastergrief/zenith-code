@@ -140,6 +140,46 @@ B2B_ESTIMAND_NON_COMPARABLE_TO_SINGLE_STEP_ORACLE = True
 ACTIVATION_CREDIT_ORACLE_ESTIMAND = "full_vote_planned_candidate_shadow"
 
 
+def cuda_phase_memory_snapshot(
+    device: torch.device,
+    *,
+    label: str,
+    **fields: Any,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "label": str(label),
+        **fields,
+    }
+    if device.type != "cuda":
+        payload.update(
+            {
+                "device": str(device),
+                "cuda_allocated_bytes": None,
+                "cuda_reserved_bytes": None,
+                "cuda_max_allocated_bytes": None,
+            }
+        )
+        return payload
+    stats_device = (
+        int(device.index)
+        if device.index is not None
+        else int(torch.cuda.current_device())
+    )
+    torch.cuda.set_device(stats_device)
+    payload.update(
+        {
+            "device": str(device),
+            "cuda_memory_stats_device": int(stats_device),
+            "cuda_allocated_bytes": int(torch.cuda.memory_allocated(stats_device)),
+            "cuda_reserved_bytes": int(torch.cuda.memory_reserved(stats_device)),
+            "cuda_max_allocated_bytes": int(
+                torch.cuda.max_memory_allocated(stats_device)
+            ),
+        }
+    )
+    return payload
+
+
 @contextmanager
 def _maybe_phase(phase_progress: Any | None, phase: str, **metadata: Any):
     ctx = phase_progress.phase(phase, **metadata) if phase_progress is not None else nullcontext()
@@ -1120,6 +1160,7 @@ def _compute_activation_credit_candidate_proxies(
     phase_progress: Any | None,
     flat_indices_by_state: Mapping[str, Sequence[int]] | None = None,
     materialize_proxy_dict: bool = True,
+    optimizer_step_index: int | None = None,
 ) -> dict[str, Any]:
     if flat_indices_by_state is not None:
         selected_by_state: dict[str, list[str]] = {}
@@ -1146,7 +1187,13 @@ def _compute_activation_credit_candidate_proxies(
     diag_fisher_by_id: dict[str, float] = {}
     grad_proxy_tensors_by_state: dict[str, dict[str, torch.Tensor]] = {}
     capture_device_summary: dict[str, dict[str, list[str]]] = {}
+    cuda_memory_snapshots: list[dict[str, Any]] = []
     any_capture_crossed_cpu = False
+    phase_step = (
+        int(optimizer_step_index)
+        if optimizer_step_index is not None
+        else 1
+    )
     forward_backward_start = time.perf_counter()
     model.zero_grad(set_to_none=True)
     with authoritative_forward_context(
@@ -1156,12 +1203,27 @@ def _compute_activation_credit_candidate_proxies(
         requires_grad=True,
         capture_device_mode=AUTHORITATIVE_CAPTURE_MODE_DEVICE_RESIDENT,
     ) as handle:
-        with _maybe_phase(phase_progress, "activation_credit_forward_backward", step=1):
+        with _maybe_phase(
+            phase_progress,
+            "activation_credit_forward_backward",
+            step=int(phase_step),
+        ):
             _carry, loss, _metrics = model(None, dict(batch), **extras)
             loss.backward()
         forward_backward_seconds = float(time.perf_counter() - forward_backward_start)
         gather_start = time.perf_counter()
-        with _maybe_phase(phase_progress, "activation_credit_gather", step=1):
+        cuda_memory_snapshots.append(
+            cuda_phase_memory_snapshot(
+                device,
+                label="activation_credit_gather_pre",
+                optimizer_step_index=phase_step,
+            )
+        )
+        with _maybe_phase(
+            phase_progress,
+            "activation_credit_gather",
+            step=int(phase_step),
+        ):
             if flat_indices_by_state is not None:
                 gather_states = sorted(flat_indices_by_state_tensors.items())
             else:
@@ -1214,6 +1276,22 @@ def _compute_activation_credit_candidate_proxies(
                         "proxies": proxies_f32,
                         "diag_fisher": fisher_f32,
                     }
+                cuda_memory_snapshots.append(
+                    cuda_phase_memory_snapshot(
+                        device,
+                        label="activation_credit_gather_per_state",
+                        optimizer_step_index=phase_step,
+                        state_key=str(state_key),
+                        crossing_count=int(flat_indices_tensor.numel()),
+                    )
+                )
+        cuda_memory_snapshots.append(
+            cuda_phase_memory_snapshot(
+                device,
+                label="activation_credit_gather_post",
+                optimizer_step_index=phase_step,
+            )
+        )
     model.zero_grad(set_to_none=True)
     gather_seconds = float(time.perf_counter() - gather_start)
     return {
@@ -1226,6 +1304,8 @@ def _compute_activation_credit_candidate_proxies(
         "any_capture_crossed_cpu": bool(any_capture_crossed_cpu),
         "forward_backward_seconds": forward_backward_seconds,
         "grad_proxy_accumulation_seconds": gather_seconds,
+        "cuda_memory_snapshots": cuda_memory_snapshots,
+        "optimizer_step_index": int(phase_step),
     }
 
 

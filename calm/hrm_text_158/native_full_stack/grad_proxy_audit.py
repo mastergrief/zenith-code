@@ -64,6 +64,12 @@ POPULATION_MODE_FULL_CROSSING_ELIGIBLE = "full_crossing_eligible"
 DRIFT_AUDIT_SAMPLE_COUNT = 8
 DRIFT_AUDIT_STEP_INTERVAL = 5
 GRAD_PROXY_VECTORIZED_DELTA_CHUNK = 64
+ACTIVATION_CREDIT_GATHER_TELEMETRY_NOTE = (
+    "activation_credit_gather nested phase threads optimizer_step_index when provided; "
+    "M1 attempt #6 showed gather PROG lines absent for steps 1-6 and present from step 7 "
+    "onward — consistent with late-starting full-population gather work rather than a "
+    "hardcoded step counter (fixed in Stage-1 instrumentation)."
+)
 
 
 class GradProxyAuditAborted(RuntimeError):
@@ -250,14 +256,29 @@ def count_w6_t10_crossing_eligible_from_votes(
     tensor_states: Mapping[str, BoundedDeltaTensorState],
     votes_by_key: Mapping[str, torch.Tensor],
 ) -> int:
-    total = 0
-    for state_key, state in tensor_states.items():
+    return int(
+        sum(
+            crossing_count_by_state_key_from_votes(
+                tensor_states=tensor_states,
+                votes_by_key=votes_by_key,
+            ).values()
+        )
+    )
+
+
+def crossing_count_by_state_key_from_votes(
+    *,
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+    votes_by_key: Mapping[str, torch.Tensor],
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for state_key, state in sorted(tensor_states.items()):
         crossing_mask = _crossing_eligible_mask_tensor(
             votes=votes_by_key[state_key],
             state=state,
         )
-        total += int(crossing_mask.sum().item())
-    return int(total)
+        counts[str(state_key)] = int(crossing_mask.sum().item())
+    return counts
 
 
 def _normalize_votes_by_key(
@@ -704,6 +725,10 @@ def build_grad_proxy_local_loss_delta_by_key(
     )
     candidate_by_id = universe["candidate_by_id"]
     ingress_ids = list(universe["sampled_ids"])
+    crossing_count_by_state_key = crossing_count_by_state_key_from_votes(
+        tensor_states=tensor_states,
+        votes_by_key=normalized_votes_by_key,
+    )
     if not ingress_ids:
         local_loss_delta_by_key = {
             state_key: torch.zeros(votes.shape, dtype=torch.float32)
@@ -717,11 +742,15 @@ def build_grad_proxy_local_loss_delta_by_key(
             "grad_proxy_ingress_crossing_eligible_count": int(
                 universe["crossing_eligible_count"]
             ),
+            "crossing_count_by_state_key": dict(crossing_count_by_state_key),
             "grad_proxy_ingress_candidate_count_ingressed": 0,
             "grad_proxy_ingress_candidate_ids_hash16": _candidate_ids_hash16([]),
             "grad_proxy_ingress_gather_seconds": gather_seconds,
             "grad_proxy_gather_seconds": gather_seconds,
             "candidate_count_ingressed": 0,
+            "activation_credit_gather_telemetry_note": (
+                ACTIVATION_CREDIT_GATHER_TELEMETRY_NOTE
+            ),
         }
         if optimizer_step_index is not None:
             ingress_receipt["optimizer_step_index"] = int(optimizer_step_index)
@@ -761,6 +790,7 @@ def build_grad_proxy_local_loss_delta_by_key(
             },
             materialize_proxy_dict=False,
             phase_progress=phase_progress,
+            optimizer_step_index=optimizer_step_index,
         )
     else:
         proxy_receipt = _compute_activation_credit_candidate_proxies(
@@ -773,6 +803,7 @@ def build_grad_proxy_local_loss_delta_by_key(
             candidate_by_id=candidate_by_id,
             selected_candidate_ids=ingress_ids,
             phase_progress=phase_progress,
+            optimizer_step_index=optimizer_step_index,
         )
     proxy_fb_seconds = float(proxy_receipt.get("forward_backward_seconds", 0.0))
     proxy_gather_seconds = float(proxy_receipt.get("grad_proxy_accumulation_seconds", 0.0))
@@ -856,11 +887,14 @@ def build_grad_proxy_local_loss_delta_by_key(
         "grad_proxy_ingress_crossing_eligible_count": int(
             universe["crossing_eligible_count"]
         ),
+        "crossing_count_by_state_key": dict(crossing_count_by_state_key),
         "grad_proxy_ingress_candidate_count_ingressed": len(ingress_ids),
         "grad_proxy_ingress_candidate_ids_hash16": _candidate_ids_hash16(ingress_ids),
         "grad_proxy_ingress_gather_seconds": gather_seconds,
         "grad_proxy_gather_seconds": gather_seconds,
         "candidate_count_ingressed": len(ingress_ids),
+        "activation_credit_gather_telemetry_note": ACTIVATION_CREDIT_GATHER_TELEMETRY_NOTE,
+        "cuda_memory_snapshots": list(proxy_receipt.get("cuda_memory_snapshots") or []),
         "grad_proxy_ingress_phase_seconds": {
             "universe": universe_seconds,
             "proxy_forward_backward": proxy_fb_seconds,
