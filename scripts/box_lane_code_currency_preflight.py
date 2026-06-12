@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+"""Fail-closed box code-currency preflight for science-chain packets (§A)."""
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+from calm.hrm_text_158.native_full_stack.box_lane import (
+    ANALYZER_PINNED_FILES,
+    EXIT_CODE_CURRENCY_MISMATCH,
+    EXIT_OK,
+    PinnedFile,
+    build_code_currency_manifest,
+    chain_roots,
+    hash_pinned_files,
+    load_pinned_manifest,
+    run_git,
+    sync_pinned_files,
+    verify_head_triple,
+)
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser(description="Box-lane code-currency preflight (§A).")
+    ap.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[1])
+    ap.add_argument("--box", default="box")
+    ap.add_argument("--remote-repo", default="/home/gabe/claw-code-hrm-158")
+    ap.add_argument("--chain-id", required=True)
+    ap.add_argument("--creditdir", default="/home/gabe/claw-code-creditdir/transient_fp_credit")
+    ap.add_argument("--head-expected", required=True)
+    ap.add_argument("--pinned-manifest", type=Path, default=None)
+    ap.add_argument("--include-analyzer-surfaces", action="store_true")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument(
+        "--sync",
+        action="store_true",
+        help="Explicitly enable ssh/rsync to box. Default is hash-only (no network).",
+    )
+    ap.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Manifest output path (default: <local_chain_root>/box_code_currency_preflight.json)",
+    )
+    ap.add_argument("--skip-fetch", action="store_true", help="Test hook: skip git fetch.")
+    return ap
+
+
+def _default_rsync_runner(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(cmd, check=True, capture_output=True, text=True)
+
+
+def _default_remote_sha_runner(box: str, remote_rel: str) -> str:
+    proc = subprocess.run(
+        ["ssh", box, "sha256sum", remote_rel],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return proc.stdout.split()[0]
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_arg_parser().parse_args(argv)
+    repo_root = args.repo_root.resolve()
+    local_chain_root, remote_chain_root = chain_roots(args.chain_id, creditdir=args.creditdir)
+    local_chain_root.mkdir(parents=True, exist_ok=True)
+    output_path = args.output or (local_chain_root / "box_code_currency_preflight.json")
+
+    if not args.skip_fetch:
+        subprocess.run(
+            ["git", "fetch", "origin", "refs/heads/feature/hrm-text-1.58"],
+            cwd=repo_root,
+            check=True,
+        )
+    head_now = run_git(repo_root, "rev-parse", "HEAD")
+    fetch_head = run_git(repo_root, "rev-parse", "FETCH_HEAD")
+
+    mismatches = verify_head_triple(
+        head_now=head_now,
+        fetch_head=fetch_head,
+        head_expected=args.head_expected,
+    )
+
+    pinned = load_pinned_manifest(args.pinned_manifest)
+    if args.include_analyzer_surfaces:
+        pinned.extend(PinnedFile(role, rel) for role, rel in ANALYZER_PINNED_FILES)
+    pinned_rows = hash_pinned_files(repo_root, pinned)
+    for row in pinned_rows:
+        if row.get("missing"):
+            mismatches.append(f"missing:{row['rel_path']}")
+
+    sync_requested = bool(args.sync and not args.dry_run)
+    if sync_requested and not mismatches:
+        sync_mismatches, pinned_rows = sync_pinned_files(
+            repo_root=repo_root,
+            remote_repo=args.remote_repo,
+            box=args.box,
+            pinned_rows=pinned_rows,
+            rsync_runner=_default_rsync_runner,
+            remote_sha_runner=_default_remote_sha_runner,
+        )
+        mismatches.extend(sync_mismatches)
+
+    manifest = build_code_currency_manifest(
+        chain_id=args.chain_id,
+        head_expected=args.head_expected,
+        head_now=head_now,
+        fetch_head=fetch_head,
+        pinned_rows=pinned_rows,
+        dry_run=args.dry_run,
+        sync_requested=sync_requested,
+        local_chain_root=local_chain_root,
+        remote_chain_root=remote_chain_root,
+        remote_repo_root=args.remote_repo,
+        mismatches=mismatches,
+    )
+    output_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    print(json.dumps({"output": str(output_path), "code_currency_pass": manifest["code_currency_pass"]}))
+    if mismatches:
+        return EXIT_CODE_CURRENCY_MISMATCH
+    return EXIT_OK
+
+
+if __name__ == "__main__":
+    sys.exit(main())
