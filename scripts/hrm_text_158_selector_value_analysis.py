@@ -10,10 +10,12 @@ from pathlib import Path
 
 from calm.hrm_text_158.native_full_stack.selector_value_analysis import (
     load_paired_receipts,
+    run_classify_why_analysis,
     run_full_analysis,
     run_identity_analysis,
     run_outcome_analysis,
     write_analysis_memo,
+    write_classify_why_memo,
     write_run_manifest,
 )
 
@@ -32,9 +34,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     ap.add_argument(
         "--mode",
-        choices=("identity", "outcome", "full"),
+        choices=("identity", "outcome", "full", "classify_why"),
         default="full",
         help="Analysis mode (default: full).",
+    )
+    ap.add_argument(
+        "--corroboration-on-receipt",
+        type=Path,
+        default=None,
+        help=(
+            "Optional attempt-#6 ON receipt.json for sparse-tau corroboration "
+            "(classify_why mode only)."
+        ),
     )
     ap.add_argument(
         "--repo-head",
@@ -56,6 +67,12 @@ def _resolve_repo_head(explicit: str | None) -> str | None:
         return None
 
 
+def _load_optional_receipt(path: Path | None) -> dict | None:
+    if path is None:
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     run_root = args.run_root.resolve()
@@ -69,10 +86,22 @@ def main(argv: list[str] | None = None) -> int:
             f"Expected paired receipts at {on_receipt} and {off_receipt}"
         )
 
+    corroboration_path = (
+        args.corroboration_on_receipt.resolve()
+        if args.corroboration_on_receipt is not None
+        else None
+    )
+    if corroboration_path is not None and not corroboration_path.exists():
+        raise FileNotFoundError(
+            f"Expected corroboration receipt at {corroboration_path}"
+        )
+
     on, off = load_paired_receipts(run_root)
+    corroboration_on = _load_optional_receipt(corroboration_path)
     output_paths: list[Path] = []
     identity_summary: dict | None = None
     outcome_summary: dict | None = None
+    classify_why_summary: dict | None = None
 
     if args.mode in ("identity", "full"):
         identity_summary = run_identity_analysis(on, off, include_overlap_band=True)
@@ -86,15 +115,36 @@ def main(argv: list[str] | None = None) -> int:
         outcome_path.write_text(json.dumps(outcome_summary, indent=2), encoding="utf-8")
         output_paths.append(outcome_path)
 
-    memo_path = analysis_dir / "stage_c_outcome_memo.md"
-    write_analysis_memo(
-        memo_path,
-        identity=identity_summary,
-        outcome=outcome_summary,
-    )
-    output_paths.append(memo_path)
+    if args.mode == "classify_why":
+        classify_why_summary = run_classify_why_analysis(
+            on,
+            off,
+            corroboration_on=corroboration_on,
+        )
+        classify_path = analysis_dir / "stage_c_classify_why_summary.json"
+        classify_path.write_text(
+            json.dumps(classify_why_summary, indent=2),
+            encoding="utf-8",
+        )
+        output_paths.append(classify_path)
+        classify_memo_path = analysis_dir / "stage_c_classify_why_memo.md"
+        write_classify_why_memo(classify_memo_path, classify_why_summary)
+        output_paths.append(classify_memo_path)
 
-    manifest_path = analysis_dir / "run_manifest.json"
+    if args.mode in ("identity", "outcome", "full"):
+        memo_path = analysis_dir / "stage_c_outcome_memo.md"
+        write_analysis_memo(
+            memo_path,
+            identity=identity_summary,
+            outcome=outcome_summary,
+        )
+        output_paths.append(memo_path)
+
+    manifest_path = (
+        analysis_dir / "stage_c_classify_why_manifest.json"
+        if args.mode == "classify_why"
+        else analysis_dir / "run_manifest.json"
+    )
     write_run_manifest(
         manifest_path,
         run_root=run_root,
@@ -105,20 +155,19 @@ def main(argv: list[str] | None = None) -> int:
         on_receipt=on_receipt,
         off_receipt=off_receipt,
         output_paths=output_paths + [manifest_path],
+        corroboration_on_receipt=corroboration_path,
     )
     output_paths.append(manifest_path)
 
-    print(
-        json.dumps(
-            {
-                "mode": args.mode,
-                "identity_verdict": (identity_summary or {}).get("verdict"),
-                "outcome_verdict": (outcome_summary or {}).get("verdict"),
-                "output_paths": [str(path) for path in output_paths],
-            },
-            indent=2,
-        )
-    )
+    result = {
+        "mode": args.mode,
+        "identity_verdict": (identity_summary or {}).get("verdict"),
+        "outcome_verdict": (outcome_summary or {}).get("verdict"),
+        "classify_why_verdict": (classify_why_summary or {}).get("verdict"),
+        "routing_hint": (classify_why_summary or {}).get("routing_hint"),
+        "output_paths": [str(path) for path in output_paths],
+    }
+    print(json.dumps(result, indent=2))
     return 0
 
 

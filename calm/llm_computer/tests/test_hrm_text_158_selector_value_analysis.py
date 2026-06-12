@@ -8,17 +8,21 @@ from typing import Any
 import pytest
 
 from calm.hrm_text_158.native_full_stack.selector_value_analysis import (
+    CLASSIFY_WHY_CANNOT_CLAIMS,
+    CLASSIFY_WHY_PRIMARY_VERDICTS,
     DEFAULT_STATE_KEY,
     OFF_SCORE_SEMANTICS,
     ON_SCORE_SEMANTICS,
     build_identity_tables,
     build_outcome_tables,
     check_schedule_guards,
+    descriptive_step_delta_association,
     extract_cap_window_steps,
     identity_verdict,
     load_paired_receipts,
     outcome_verdict,
     overlap_band_characterization,
+    run_classify_why_analysis,
     run_full_analysis,
     run_identity_analysis,
 )
@@ -39,20 +43,24 @@ def _tensor_stats(
     votes_sha: str,
     score_semantics: str,
     score_p50: float = 1.0,
+    cap_jaccard: float | None = 0.0,
+    candidate_count: int | None = None,
 ) -> dict[str, Any]:
-    return {
-        DEFAULT_STATE_KEY: {
-            "applied_indices": applied_indices,
-            "applied_flat_indices_hash16": f"h{len(applied_indices)}",
-            "applied_count": len(applied_indices),
-            "q_sha256_after": q_sha,
-            "votes_sha256": votes_sha,
-            "applied_selection_score_p50": score_p50,
-            "applied_selection_score_p95": score_p50,
-            "applied_selection_score_semantics": score_semantics,
-            "cap_window_jaccard_vs_prior_step": 0.0,
-        }
+    payload: dict[str, Any] = {
+        "applied_indices": applied_indices,
+        "applied_flat_indices_hash16": f"h{len(applied_indices)}",
+        "applied_count": len(applied_indices),
+        "q_sha256_after": q_sha,
+        "votes_sha256": votes_sha,
+        "applied_selection_score_p50": score_p50,
+        "applied_selection_score_p95": score_p50,
+        "applied_selection_score_semantics": score_semantics,
     }
+    if cap_jaccard is not None:
+        payload["cap_window_jaccard_vs_prior_step"] = cap_jaccard
+    if candidate_count is not None:
+        payload["candidate_count"] = candidate_count
+    return {DEFAULT_STATE_KEY: payload}
 
 
 def _step_report(
@@ -66,8 +74,13 @@ def _step_report(
     support_hash: str = "hash_shared",
     row_ids: list[str] | None = None,
     exact_accuracy: list[int] | None = None,
+    cap_jaccard: float | None = 0.0,
+    candidate_count: int | None = None,
+    crossing_count: int | None = None,
+    drift_tau: float | None = None,
+    drift_sign_agreement: float | None = None,
 ) -> dict[str, Any]:
-    return {
+    report: dict[str, Any] = {
         "loss": loss,
         "loss_finite": True,
         "metrics": {
@@ -81,9 +94,24 @@ def _step_report(
                 q_sha=q_sha,
                 votes_sha=votes_sha,
                 score_semantics=score_semantics,
+                cap_jaccard=cap_jaccard,
+                candidate_count=candidate_count,
             )
         },
     }
+    if crossing_count is not None:
+        report["grad_proxy_ingress"] = {
+            "crossing_count_by_state_key": {DEFAULT_STATE_KEY: crossing_count}
+        }
+    if drift_tau is not None:
+        report["proxy_oracle_drift"] = {
+            "proxy_oracle_drift_step": step,
+            "proxy_oracle_drift_tau": drift_tau,
+            "proxy_oracle_drift_sign_agreement": drift_sign_agreement,
+            "proxy_oracle_drift_top8_overlap": 0.0,
+            "proxy_oracle_drift_gating": "sparse_anchor",
+        }
+    return report
 
 
 def _receipt(
@@ -367,6 +395,274 @@ def test_run_full_analysis_shape() -> None:
     on, off = _build_primary_receipts()
     payload = run_full_analysis(on, off)
     assert "identity" in payload and "outcome" in payload
+
+
+def _build_classify_h2_primary_receipts() -> tuple[dict[str, Any], dict[str, Any]]:
+    on_reports: dict[int, dict[str, Any]] = {}
+    off_reports: dict[int, dict[str, Any]] = {}
+    for step in range(1, 11):
+        if step <= 2:
+            on_applied: list[int] = []
+            off_applied = list(range(step * 10, step * 10 + 4096))
+            on_loss = off_loss = 1.0
+            crossing = None
+            candidate = None
+        else:
+            on_applied = list(range(step * 1000, step * 1000 + 4096))
+            off_applied = list(range(step * 1000 + 5000, step * 1000 + 9096))
+            on_loss = 2.0 + (step - 2) * 0.5
+            off_loss = 1.0
+            crossing = step * 10
+            candidate = 4096 + (step % 3) * 500
+        on_reports[step] = _step_report(
+            step=step,
+            loss=on_loss,
+            applied_indices=on_applied,
+            q_sha=f"q_on_{step}",
+            votes_sha=f"v_on_{step}",
+            score_semantics=ON_SCORE_SEMANTICS,
+            cap_jaccard=0.0 if step >= 3 else None,
+            crossing_count=crossing,
+        )
+        off_reports[step] = _step_report(
+            step=step,
+            loss=off_loss,
+            applied_indices=off_applied,
+            q_sha=f"q_off_{step}",
+            votes_sha=f"v_off_{step}",
+            score_semantics=OFF_SCORE_SEMANTICS,
+            candidate_count=candidate,
+        )
+    return _receipt(arm="on", step_reports=on_reports), _receipt(
+        arm="off", step_reports=off_reports
+    )
+
+
+def _build_classify_h3_primary_receipts() -> tuple[dict[str, Any], dict[str, Any]]:
+    on_reports: dict[int, dict[str, Any]] = {}
+    off_reports: dict[int, dict[str, Any]] = {}
+    for step in range(1, 11):
+        if step <= 2:
+            on_applied: list[int] = []
+            off_applied = list(range(step * 10, step * 10 + 4096))
+            on_loss = off_loss = 1.0
+        else:
+            on_applied = list(range(step * 1000, step * 1000 + 4096))
+            off_applied = list(range(step * 1000 + 5000, step * 1000 + 9096))
+            on_loss = 4.0 if step in (5, 6, 7) else 1.5
+            off_loss = 1.0
+        drift_tau = None
+        drift_sign = None
+        if step == 5:
+            drift_tau = 0.081
+            drift_sign = 0.5
+        if step == 10:
+            drift_tau = 0.886
+            drift_sign = 0.5
+        on_reports[step] = _step_report(
+            step=step,
+            loss=on_loss,
+            applied_indices=on_applied,
+            q_sha=f"q_on_{step}",
+            votes_sha=f"v_on_{step}",
+            score_semantics=ON_SCORE_SEMANTICS,
+            cap_jaccard=0.0 if step >= 3 else None,
+            drift_tau=drift_tau,
+            drift_sign_agreement=drift_sign,
+        )
+        off_reports[step] = _step_report(
+            step=step,
+            loss=off_loss,
+            applied_indices=off_applied,
+            q_sha=f"q_off_{step}",
+            votes_sha=f"v_off_{step}",
+            score_semantics=OFF_SCORE_SEMANTICS,
+        )
+    return _receipt(arm="on", step_reports=on_reports), _receipt(
+        arm="off", step_reports=off_reports
+    )
+
+
+def _build_corroboration_receipt() -> dict[str, Any]:
+    reports: dict[int, dict[str, Any]] = {}
+    for step, tau in ((5, 0.081), (10, 0.4), (15, 0.7), (20, 0.886)):
+        reports[step] = _step_report(
+            step=step,
+            loss=1.0,
+            applied_indices=list(range(10)),
+            q_sha="q_corr",
+            votes_sha="v_corr",
+            score_semantics=ON_SCORE_SEMANTICS,
+            drift_tau=tau,
+            drift_sign_agreement=0.5,
+        )
+    return _receipt(arm="on", step_reports=reports)
+
+
+def test_classify_why_h1_schedule_mismatch_rejected_flag() -> None:
+    on, off = _build_primary_receipts()
+    summary = run_classify_why_analysis(on, off)
+    assert summary["support_schedule_mismatch_rejected"] is True
+    assert summary["verdict"] in CLASSIFY_WHY_PRIMARY_VERDICTS
+
+
+def test_classify_why_degenerate_jaccard_correlate_forbidden() -> None:
+    on, off = _build_primary_receipts()
+    summary = run_classify_why_analysis(on, off)
+    h2 = summary["h2_cap_churn_geometry"]
+    assert h2["degenerate_jaccard_correlate_forbidden"] is True
+    assert "1 - cross_arm_jaccard" not in json.dumps(h2)
+    assert "degenerate correlate" in " ".join(CLASSIFY_WHY_CANNOT_CLAIMS).lower()
+
+
+def test_classify_why_sparse_tau_requires_corroboration_for_h3_primary() -> None:
+    on, off = _build_classify_h3_primary_receipts()
+    without = run_classify_why_analysis(on, off)
+    assert without["verdict"] != "classify_proxy_mismatch_primary"
+    with_corr = run_classify_why_analysis(
+        on,
+        off,
+        corroboration_on=_build_corroboration_receipt(),
+    )
+    assert with_corr["verdict"] == "classify_proxy_mismatch_primary"
+    assert with_corr["h3_proxy_mismatch"]["stage_c_sparse_tau"]["directionally_consistent"]
+
+
+def test_classify_why_h2_primary_fixture() -> None:
+    on, off = _build_classify_h2_primary_receipts()
+    summary = run_classify_why_analysis(on, off)
+    assert summary["verdict"] == "classify_cap_churn_primary"
+    assert summary["h2_cap_churn_geometry"]["on_rotation_standing"] is True
+    assert summary["routing_hint"] == "cap_churn_redesign_or_lane_verdict_class_call"
+
+
+def test_classify_why_insufficient_surface_on_guard_failure() -> None:
+    on, off = _build_primary_receipts()
+    off["batch"]["support_order_seed"] = 17
+    summary = run_classify_why_analysis(on, off)
+    assert summary["verdict"] == "classify_insufficient_surface"
+    assert summary["support_schedule_mismatch_rejected"] is False
+
+
+def test_classify_why_mixed_unresolved_fixture() -> None:
+    on, off = _build_classify_h3_primary_receipts()
+    for step in range(3, 11):
+        on["step_reports"][str(step)]["step_result"]["tensor_stats"][DEFAULT_STATE_KEY][
+            "cap_window_jaccard_vs_prior_step"
+        ] = 0.5
+    summary = run_classify_why_analysis(on, off)
+    assert summary["verdict"] == "classify_mixed_unresolved"
+
+
+def _build_classify_h2_h3_tie_receipts() -> tuple[dict[str, Any], dict[str, Any]]:
+    on_reports: dict[int, dict[str, Any]] = {}
+    off_reports: dict[int, dict[str, Any]] = {}
+    for step in range(1, 11):
+        if step <= 2:
+            on_applied: list[int] = []
+            off_applied = list(range(step * 10, step * 10 + 4096))
+            on_loss = off_loss = 1.0
+            crossing = None
+            candidate = None
+        else:
+            base = step * 1000
+            shared = step * 50
+            on_applied = list(range(base, base + 4096))
+            off_applied = list(range(base, base + shared)) + list(
+                range(base + 5000, base + 9096 - shared)
+            )
+            on_loss = 6.0 if step in (5, 6, 7) else 1.0 + step * 0.2
+            off_loss = 1.0
+            crossing = step * 10
+            candidate = 4096 + (step % 3) * 500
+        drift_tau = 0.081 if step == 5 else (0.886 if step == 10 else None)
+        drift_sign = 0.5 if step in (5, 10) else None
+        on_reports[step] = _step_report(
+            step=step,
+            loss=on_loss,
+            applied_indices=on_applied,
+            q_sha=f"q_on_{step}",
+            votes_sha=f"v_on_{step}",
+            score_semantics=ON_SCORE_SEMANTICS,
+            cap_jaccard=0.0 if step >= 3 else None,
+            crossing_count=crossing,
+            drift_tau=drift_tau,
+            drift_sign_agreement=drift_sign,
+        )
+        off_reports[step] = _step_report(
+            step=step,
+            loss=off_loss,
+            applied_indices=off_applied,
+            q_sha=f"q_off_{step}",
+            votes_sha=f"v_off_{step}",
+            score_semantics=OFF_SCORE_SEMANTICS,
+            candidate_count=candidate,
+        )
+    return _receipt(arm="on", step_reports=on_reports), _receipt(
+        arm="off", step_reports=off_reports
+    )
+
+
+def test_classify_why_h2_h3_tie_returns_mixed_not_cap_churn() -> None:
+    on, off = _build_classify_h2_h3_tie_receipts()
+    summary = run_classify_why_analysis(
+        on,
+        off,
+        corroboration_on=_build_corroboration_receipt(),
+    )
+    assert summary["scores"]["h2"] >= 3
+    assert summary["scores"]["h3"] >= 3
+    assert summary["scores"]["h2"] == summary["scores"]["h3"]
+    assert summary["verdict"] == "classify_mixed_unresolved"
+    assert summary["routing_hint"] == "confirmatory_seed_if_decision_critical_else_hold"
+
+
+def test_descriptive_step_delta_association_sparse_tau_handling() -> None:
+    assoc = descriptive_step_delta_association([0.1, None, 0.3], [1.0, 2.0, 3.0])
+    assert assoc["insufficient_pairs"] is True
+    assoc_ok = descriptive_step_delta_association([1, 2, 3, 4], [1.0, 1.5, 2.0, 2.5])
+    assert assoc_ok["alignment_fraction"] == 1.0
+    assert assoc_ok["descriptive_only"] is True
+
+
+def test_orchestrator_classify_why_writes_new_artifacts_only(tmp_path: Path) -> None:
+    on, off = _build_classify_h2_primary_receipts()
+    run_root = _write_paired_run(tmp_path, on, off)
+    analysis_dir = run_root / "analysis"
+    analysis_dir.mkdir()
+    legacy_manifest = analysis_dir / "run_manifest.json"
+    legacy_manifest.write_text('{"legacy": true}', encoding="utf-8")
+    corroboration = _build_corroboration_receipt()
+    corr_path = tmp_path / "attempt6_on_receipt.json"
+    corr_path.write_text(json.dumps(corroboration), encoding="utf-8")
+
+    rc = orchestrator_main(
+        [
+            str(run_root),
+            "--mode",
+            "classify_why",
+            "--corroboration-on-receipt",
+            str(corr_path),
+            "--repo-head",
+            "deadbeef",
+        ]
+    )
+    assert rc == 0
+    summary = json.loads(
+        (run_root / "analysis" / "stage_c_classify_why_summary.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    manifest = json.loads(
+        (run_root / "analysis" / "stage_c_classify_why_manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert summary["verdict"] == "classify_cap_churn_primary"
+    assert (run_root / "analysis" / "stage_c_classify_why_memo.md").exists()
+    assert manifest["input_receipt_sha256"]["corroboration_on"] is not None
+    assert json.loads(legacy_manifest.read_text(encoding="utf-8")) == {"legacy": True}
+    assert not (run_root / "analysis" / "stage_c_identity_summary.json").exists()
 
 
 def test_outcome_verdict_metric_mismatch_with_indistinguishable_loss() -> None:

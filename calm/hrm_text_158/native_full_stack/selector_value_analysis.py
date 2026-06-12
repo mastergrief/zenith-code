@@ -27,6 +27,23 @@ FORBIDDEN_CLAIMS = (
     "Population-level or statistically independent claims from N=10 trajectory verdicts",
 )
 
+CLASSIFY_WHY_CANNOT_CLAIMS = FORBIDDEN_CLAIMS + (
+    "Causal or co-located-by-measurement claims from sparse drift anchors",
+    "Population or p-value statistical claims from fixed N=10 trajectory",
+    "Support schedule mismatch as primary explanation when schedule guards pass",
+    "Degenerate correlate against (1 - cross_arm_jaccard) when Jaccard span is narrow",
+)
+
+CLASSIFY_WHY_PRIMARY_VERDICTS = (
+    "classify_cap_churn_primary",
+    "classify_proxy_mismatch_primary",
+    "classify_mixed_unresolved",
+    "classify_insufficient_surface",
+)
+
+BULGE_STEPS = (5, 6, 7)
+DRIFT_CORROBORATION_STEPS = (5, 10, 15, 20)
+
 ON_SCORE_SEMANTICS = "local_loss_delta_at_applied_flat_index"
 OFF_SCORE_SEMANTICS = "abs_new_acc_at_applied_flat_index"
 
@@ -593,6 +610,354 @@ def write_analysis_memo(
     path.write_text("".join(lines), encoding="utf-8")
 
 
+def extract_proxy_drift_anchors(receipt: Mapping[str, Any]) -> dict[int, dict[str, Any]]:
+    anchors: dict[int, dict[str, Any]] = {}
+    for key, entry in receipt.get("step_reports", {}).items():
+        drift = entry.get("proxy_oracle_drift")
+        if not isinstance(drift, Mapping):
+            continue
+        step = int(drift.get("proxy_oracle_drift_step") or key)
+        anchors[step] = {
+            "tau": drift.get("proxy_oracle_drift_tau"),
+            "sign_agreement": drift.get("proxy_oracle_drift_sign_agreement"),
+            "top8_overlap": drift.get("proxy_oracle_drift_top8_overlap"),
+            "gating": drift.get("proxy_oracle_drift_gating"),
+        }
+    return anchors
+
+
+def descriptive_step_delta_association(
+    xs: Sequence[float | int | None],
+    ys: Sequence[float | int | None],
+) -> dict[str, Any]:
+    pairs: list[tuple[float, float]] = []
+    for x, y in zip(xs, ys):
+        if x is None or y is None:
+            continue
+        pairs.append((float(x), float(y)))
+    if len(pairs) < 3:
+        return {
+            "pair_count": len(pairs),
+            "aligned_transitions": 0,
+            "alignment_fraction": None,
+            "descriptive_only": True,
+            "insufficient_pairs": True,
+        }
+    aligned = 0
+    for (x0, y0), (x1, y1) in zip(pairs, pairs[1:]):
+        dx = x1 - x0
+        dy = y1 - y0
+        if dx == 0.0 and dy == 0.0:
+            continue
+        if (dx > 0.0 and dy > 0.0) or (dx < 0.0 and dy < 0.0):
+            aligned += 1
+    transitions = max(len(pairs) - 1, 1)
+    return {
+        "pair_count": len(pairs),
+        "aligned_transitions": aligned,
+        "alignment_fraction": aligned / transitions,
+        "descriptive_only": True,
+        "insufficient_pairs": False,
+    }
+
+
+def _intersection_size(
+    on_applied: Sequence[int],
+    off_applied: Sequence[int],
+) -> int:
+    return len(set(on_applied) & set(off_applied))
+
+
+def build_classify_why_per_step_table(
+    on: Mapping[str, Any],
+    off: Mapping[str, Any],
+    *,
+    state_key: str = DEFAULT_STATE_KEY,
+) -> list[dict[str, Any]]:
+    on_steps = extract_cap_window_steps(on, state_key=state_key)
+    off_steps = extract_cap_window_steps(off, state_key=state_key)
+    drift_anchors = extract_proxy_drift_anchors(on)
+    rows: list[dict[str, Any]] = []
+    for step in range(1, 11):
+        on_row = on_steps.get(step, {})
+        off_row = off_steps.get(step, {})
+        on_applied = list(on_row.get("applied_indices") or [])
+        off_applied = list(off_row.get("applied_indices") or [])
+        on_out = extract_outcome_step(on, step)
+        off_out = extract_outcome_step(off, step)
+        drift = drift_anchors.get(step, {})
+        cross_j = jaccard(on_applied, off_applied) if on_applied and off_applied else None
+        rows.append(
+            {
+                "step": step,
+                "delta_on_minus_off": on_out["loss"] - off_out["loss"],
+                "cross_arm_jaccard": cross_j,
+                "intersection_size": _intersection_size(on_applied, off_applied),
+                "on_cap_jaccard_vs_prior": on_row.get("cap_window_jaccard_vs_prior_step"),
+                "on_crossing_count": on_row.get("crossing"),
+                "off_candidate_count": off_row.get("candidate_count"),
+                "drift_tau": drift.get("tau"),
+                "drift_sign_agreement": drift.get("sign_agreement"),
+                "on_score_p50": on_row.get("score_p50"),
+                "exact_accuracy_on": on_out["exact_accuracy"],
+                "exact_accuracy_off": off_out["exact_accuracy"],
+            }
+        )
+    return rows
+
+
+def _off_candidate_oscillation(per_step: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    values = [
+        float(row["off_candidate_count"])
+        for row in per_step
+        if PRIMARY_STEP_MIN <= int(row["step"]) <= PRIMARY_STEP_MAX
+        and row.get("off_candidate_count") is not None
+    ]
+    if not values:
+        return {"present": False, "oscillation_detected": False}
+    mean_val = statistics.fmean(values)
+    spread = max(values) - min(values)
+    return {
+        "present": True,
+        "min": min(values),
+        "max": max(values),
+        "mean": mean_val,
+        "spread": spread,
+        "oscillation_detected": mean_val > 0.0 and spread / mean_val >= 0.05,
+        "descriptive_only": True,
+    }
+
+
+def _bulge_consistent_with_proxy_mismatch(
+    per_step: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    trajectory = [
+        row
+        for row in per_step
+        if TRAJECTORY_STEP_MIN <= int(row["step"]) <= TRAJECTORY_STEP_MAX
+    ]
+    if not trajectory:
+        return {"consistent_with_proxy_mismatch": False, "note": "no_trajectory_rows"}
+    deltas = {int(row["step"]): float(row["delta_on_minus_off"]) for row in trajectory}
+    bulge_vals = [deltas[step] for step in BULGE_STEPS if step in deltas]
+    if not bulge_vals:
+        return {"consistent_with_proxy_mismatch": False, "note": "no_bulge_rows"}
+    peak_step = max(deltas, key=deltas.get)
+    return {
+        "consistent_with_proxy_mismatch": peak_step in BULGE_STEPS,
+        "peak_delta_step": peak_step,
+        "bulge_mean_delta": statistics.fmean(bulge_vals),
+        "phrasing": "consistent_with_not_co_located_by_measurement",
+        "descriptive_only": True,
+    }
+
+
+def _stage_c_tau_directional(anchors: Mapping[int, Mapping[str, Any]]) -> dict[str, Any]:
+    tau5 = anchors.get(5, {}).get("tau")
+    tau10 = anchors.get(10, {}).get("tau")
+    sign5 = anchors.get(5, {}).get("sign_agreement")
+    sign10 = anchors.get(10, {}).get("sign_agreement")
+    directional = (
+        tau5 is not None
+        and tau10 is not None
+        and float(tau10) > float(tau5)
+    )
+    sign_flat = (
+        sign5 is not None
+        and sign10 is not None
+        and float(sign5) <= 0.5
+        and float(sign10) <= 0.5
+    )
+    return {
+        "tau_step_5": tau5,
+        "tau_step_10": tau10,
+        "directionally_consistent": directional,
+        "sign_agreement_flat": sign_flat,
+        "sparse_anchor_note": "Stage C provides drift anchors at steps 5 and 10 only",
+    }
+
+
+def _attempt6_tau_corroboration(anchors: Mapping[int, Mapping[str, Any]]) -> dict[str, Any]:
+    taus: list[tuple[int, float]] = []
+    for step in DRIFT_CORROBORATION_STEPS:
+        tau = anchors.get(step, {}).get("tau")
+        if tau is not None:
+            taus.append((step, float(tau)))
+    if len(taus) < 2:
+        return {
+            "present": False,
+            "corroborates_rising_structure": False,
+            "note": "insufficient_corroboration_anchors",
+        }
+    values = [value for _, value in taus]
+    non_decreasing = all(values[i] <= values[i + 1] for i in range(len(values) - 1))
+    return {
+        "present": True,
+        "anchors": [{"step": step, "tau": tau} for step, tau in taus],
+        "corroborates_rising_structure": non_decreasing and values[-1] > values[0],
+        "descriptive_only": True,
+        "phrasing": "corroborating_context_not_causal",
+    }
+
+
+def classify_why_verdict(
+    *,
+    guards: ScheduleGuardResult,
+    per_step: Sequence[Mapping[str, Any]],
+    stage_c_drift: Mapping[int, Mapping[str, Any]],
+    corroboration_drift: Mapping[int, Mapping[str, Any]] | None,
+) -> dict[str, Any]:
+    primary_rows = [
+        row for row in per_step if PRIMARY_STEP_MIN <= int(row["step"]) <= PRIMARY_STEP_MAX
+    ]
+    if not guards.ok or not primary_rows:
+        return {
+            "verdict": "classify_insufficient_surface",
+            "support_schedule_mismatch_rejected": False,
+            "routing_hint": "insufficient_surface_hold",
+        }
+
+    support_schedule_mismatch_rejected = True
+    rotation_steps = [
+        row for row in primary_rows if row.get("on_cap_jaccard_vs_prior") is not None
+    ]
+    on_rotation_standing = bool(rotation_steps) and all(
+        float(row["on_cap_jaccard_vs_prior"]) == 0.0 for row in rotation_steps
+    )
+    crossing_series = [row.get("on_crossing_count") for row in primary_rows]
+    intersection_series = [row.get("intersection_size") for row in primary_rows]
+    delta_series = [row.get("delta_on_minus_off") for row in primary_rows]
+    crossing_assoc = descriptive_step_delta_association(crossing_series, delta_series)
+    intersection_assoc = descriptive_step_delta_association(intersection_series, delta_series)
+    off_oscillation = _off_candidate_oscillation(per_step)
+    bulge = _bulge_consistent_with_proxy_mismatch(per_step)
+    stage_c_tau = _stage_c_tau_directional(stage_c_drift)
+    corroboration = _attempt6_tau_corroboration(corroboration_drift or {})
+
+    h2_signals = {
+        "on_rotation_standing": on_rotation_standing,
+        "crossing_growth_descriptive_association": crossing_assoc,
+        "intersection_size_descriptive_association": intersection_assoc,
+        "off_candidate_oscillation": off_oscillation,
+        "degenerate_jaccard_correlate_forbidden": True,
+    }
+    h3_signals = {
+        "stage_c_sparse_tau": stage_c_tau,
+        "attempt6_corroboration": corroboration,
+        "bulge_consistent_with_proxy_mismatch": bulge,
+        "phrasing": "consistent_with_not_co_located_by_measurement",
+    }
+
+    def _alignment_fraction(assoc: Mapping[str, Any]) -> float:
+        value = assoc.get("alignment_fraction")
+        return float(value) if value is not None else 0.0
+
+    h2_score = 0
+    if on_rotation_standing:
+        h2_score += 2
+    if _alignment_fraction(crossing_assoc) >= 0.5:
+        h2_score += 1
+    if _alignment_fraction(intersection_assoc) >= 0.5:
+        h2_score += 1
+    if off_oscillation.get("oscillation_detected"):
+        h2_score += 1
+
+    h3_score = 0
+    if stage_c_tau.get("directionally_consistent"):
+        h3_score += 1
+    if stage_c_tau.get("sign_agreement_flat"):
+        h3_score += 1
+    if corroboration.get("corroborates_rising_structure"):
+        h3_score += 2
+    if bulge.get("consistent_with_proxy_mismatch"):
+        h3_score += 1
+
+    h2_primary_eligible = h2_score >= 3 and on_rotation_standing
+    h3_primary_eligible = (
+        stage_c_tau.get("directionally_consistent")
+        and stage_c_tau.get("sign_agreement_flat")
+        and corroboration.get("corroborates_rising_structure")
+    )
+
+    if h3_primary_eligible and h3_score > h2_score:
+        verdict = "classify_proxy_mismatch_primary"
+        routing_hint = "proxy_mismatch_redesign_or_comparator_packet"
+    elif h2_primary_eligible and h2_score > h3_score:
+        verdict = "classify_cap_churn_primary"
+        routing_hint = "cap_churn_redesign_or_lane_verdict_class_call"
+    elif h2_score >= 2 or h3_score >= 2:
+        verdict = "classify_mixed_unresolved"
+        routing_hint = "confirmatory_seed_if_decision_critical_else_hold"
+    else:
+        verdict = "classify_insufficient_surface"
+        routing_hint = "insufficient_surface_hold"
+
+    return {
+        "verdict": verdict,
+        "support_schedule_mismatch_rejected": support_schedule_mismatch_rejected,
+        "h2_cap_churn_geometry": h2_signals,
+        "h3_proxy_mismatch": h3_signals,
+        "scores": {"h2": h2_score, "h3": h3_score},
+        "routing_hint": routing_hint,
+    }
+
+
+def run_classify_why_analysis(
+    on: Mapping[str, Any],
+    off: Mapping[str, Any],
+    *,
+    corroboration_on: Mapping[str, Any] | None = None,
+    state_key: str = DEFAULT_STATE_KEY,
+) -> dict[str, Any]:
+    guards = check_schedule_guards(on, off)
+    per_step = build_classify_why_per_step_table(on, off, state_key=state_key)
+    stage_c_drift = extract_proxy_drift_anchors(on)
+    corroboration_drift = (
+        extract_proxy_drift_anchors(corroboration_on) if corroboration_on is not None else None
+    )
+    verdict_payload = classify_why_verdict(
+        guards=guards,
+        per_step=per_step,
+        stage_c_drift=stage_c_drift,
+        corroboration_drift=corroboration_drift,
+    )
+    return {
+        "guards": {"ok": guards.ok, "issues": list(guards.issues)},
+        "per_step": per_step,
+        "overlap_band_subordinate": overlap_band_characterization(
+            extract_cap_window_steps(on, state_key=state_key),
+            extract_cap_window_steps(off, state_key=state_key),
+        ),
+        **verdict_payload,
+        "cannot": list(CLASSIFY_WHY_CANNOT_CLAIMS),
+        "trajectory_scope": (
+            "Descriptive classify-why read for fixed N=10 matched-support trajectory only; "
+            "not a population mechanism verdict."
+        ),
+    }
+
+
+def write_classify_why_memo(path: Path, summary: Mapping[str, Any]) -> None:
+    lines = [
+        "# Classify-Why Memo\n\n",
+        f"## Primary verdict: `{summary.get('verdict')}`\n\n",
+        f"- support_schedule_mismatch_rejected: `{summary.get('support_schedule_mismatch_rejected')}`\n",
+        f"- routing_hint: `{summary.get('routing_hint')}`\n",
+        f"- trajectory_scope: {summary.get('trajectory_scope')}\n\n",
+        "## Per-step table\n\n",
+    ]
+    for row in summary.get("per_step") or []:
+        lines.append(
+            f"- step {row['step']}: delta={row['delta_on_minus_off']}, "
+            f"intersection={row['intersection_size']}, crossing={row['on_crossing_count']}, "
+            f"off_candidate={row['off_candidate_count']}, tau={row.get('drift_tau')}\n"
+        )
+    lines.append("\n## Cannot claim\n\n")
+    for claim in summary.get("cannot") or []:
+        lines.append(f"- {claim}\n")
+    path.write_text("".join(lines), encoding="utf-8")
+
+
 def write_run_manifest(
     path: Path,
     *,
@@ -604,17 +969,21 @@ def write_run_manifest(
     on_receipt: Path,
     off_receipt: Path,
     output_paths: Sequence[Path],
+    corroboration_on_receipt: Path | None = None,
 ) -> dict[str, Any]:
+    input_receipt_sha256: dict[str, str | None] = {
+        "on": sha256_file(on_receipt),
+        "off": sha256_file(off_receipt),
+    }
+    if corroboration_on_receipt is not None:
+        input_receipt_sha256["corroboration_on"] = sha256_file(corroboration_on_receipt)
     manifest = {
         "run_root": str(run_root),
         "mode": mode,
         "argv": list(argv),
         "repo_head": repo_head,
         "script_sha256": sha256_file(script_path) if script_path and script_path.exists() else None,
-        "input_receipt_sha256": {
-            "on": sha256_file(on_receipt),
-            "off": sha256_file(off_receipt),
-        },
+        "input_receipt_sha256": input_receipt_sha256,
         "output_paths": [str(item) for item in output_paths],
     }
     path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
