@@ -6,6 +6,7 @@ import math
 import os
 from pathlib import Path
 import sys
+import time
 from typing import Any
 
 import pytest
@@ -107,6 +108,8 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     BOUNDED_STEPS_AGGREGATE_PHASE,
     C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME,
     C2P2_DEFAULT_GPU_SILENT_PHASE_TIMEOUT_SECONDS,
+    C2P2_DEFAULT_PHASE_HEARTBEAT_INTERVAL_SECONDS,
+    C2P2_LONGEST_QUIET_PHASE_REFERENCE_SECONDS,
     C2P2_FAULTHANDLER_SCHEMA_VERSION,
     B2_FULL_VERDICT_SCHEMA_VERSION,
     B2_RETAINED_SUPPORT_SCHEMA_VERSION,
@@ -136,6 +139,7 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     build_b2_retained_support_sets,
     build_model_from_checkpoint,
     build_phase_timeout_exemption_receipt,
+    build_probe_stdout_liveness_receipt,
     build_prior_audit_support_batches,
     build_prior_audit_support_rows,
     compare_module_output_fidelity,
@@ -157,7 +161,9 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     register_probe_faulthandler,
     reset_cuda_memory_stats,
     resolve_max_silent_phase_seconds,
+    resolve_phase_heartbeat_seconds,
     resolve_phase_timeout_exemptions,
+    recommended_watch_wrap_heartbeat_seconds,
     run_c2p1_probe,
     score_strict_exact_and_parsed_from_logits,
     select_eligible_bitlinears,
@@ -165,6 +171,7 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     update_strict_exact_stop_state,
     update_b2_full_coverage_tracker,
     validate_b2b_phase_timeout_launch_requirements,
+    validate_probe_stdout_liveness_config,
     _capture_eligible_module_outputs,
     enforce_phase_bound,
 )
@@ -1372,6 +1379,159 @@ def test_phase_progress_emits_schema_events_and_timeout_payload(capsys):
     assert excinfo.value.payload["phase"] == "synthetic-over-bound"
     assert excinfo.value.payload["event"] == "phase_timeout"
     assert excinfo.value.payload["bound_kind"] == "phase"
+
+
+def test_resolve_phase_heartbeat_seconds_defaults_when_emit_progress_enabled():
+    assert resolve_phase_heartbeat_seconds(
+        emit_progress=True,
+        phase_heartbeat_seconds=None,
+    ) == C2P2_DEFAULT_PHASE_HEARTBEAT_INTERVAL_SECONDS
+    assert (
+        resolve_phase_heartbeat_seconds(
+            emit_progress=False,
+            phase_heartbeat_seconds=None,
+        )
+        is None
+    )
+
+
+def test_probe_stdout_liveness_receipt_and_validation():
+    receipt = build_probe_stdout_liveness_receipt(
+        emit_progress=True,
+        phase_heartbeat_seconds=30.0,
+        watch_wrap_heartbeat_seconds=180.0,
+    )
+    validate_probe_stdout_liveness_config(receipt)
+    assert receipt["watch_wrap_heartbeat_exceeds_longest_quiet_phase"] is True
+    assert receipt["intra_phase_heartbeat_covers_long_phases"] is True
+    assert (
+        recommended_watch_wrap_heartbeat_seconds()
+        > float(C2P2_LONGEST_QUIET_PHASE_REFERENCE_SECONDS)
+    )
+
+    with pytest.raises(ValueError, match="watch_wrap_heartbeat_seconds"):
+        validate_probe_stdout_liveness_config(
+            build_probe_stdout_liveness_receipt(
+                emit_progress=True,
+                phase_heartbeat_seconds=30.0,
+                watch_wrap_heartbeat_seconds=60.0,
+            )
+        )
+
+
+def test_phase_progress_emits_intra_phase_heartbeat(capsys):
+    progress = PhaseProgress(
+        enabled=True,
+        device=torch.device("cpu"),
+        phase_heartbeat_interval_seconds=0.05,
+    )
+
+    with progress.phase("proxy_oracle_drift_audit", step=5):
+        time.sleep(0.12)
+
+    emitted = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    events = [item["event"] for item in emitted]
+    assert events[0] == "start"
+    assert "heartbeat" in events
+    assert events[-1] == "end"
+    assert all(item["phase"] == "proxy_oracle_drift_audit" for item in emitted)
+
+
+def test_phase_progress_heartbeat_thread_joined_on_normal_exit():
+    progress = PhaseProgress(
+        enabled=True,
+        device=torch.device("cpu"),
+        phase_heartbeat_interval_seconds=0.05,
+    )
+    with progress.phase("step_update", step=6):
+        time.sleep(0.12)
+    assert progress.live_heartbeat_thread_count == 0
+
+
+def test_phase_progress_heartbeat_stops_emitting_after_exit(capsys):
+    progress = PhaseProgress(
+        enabled=True,
+        device=torch.device("cpu"),
+        phase_heartbeat_interval_seconds=0.05,
+    )
+    with progress.phase("proxy_oracle_drift_audit", step=5):
+        time.sleep(0.12)
+    during = capsys.readouterr().out
+    assert '"event": "heartbeat"' in during
+    time.sleep(0.12)
+    after = capsys.readouterr().out
+    assert after == ""
+
+
+def test_phase_progress_heartbeat_joined_on_exception_exit():
+    progress = PhaseProgress(
+        enabled=True,
+        device=torch.device("cpu"),
+        phase_heartbeat_interval_seconds=0.05,
+    )
+    with pytest.raises(RuntimeError, match="boom"):
+        with progress.phase("step_update", step=6):
+            time.sleep(0.05)
+            raise RuntimeError("boom")
+    assert progress.live_heartbeat_thread_count == 0
+
+
+def test_argparse_emit_progress_and_phase_heartbeat_seconds_pass_through():
+    args = build_arg_parser().parse_args(
+        [
+            "--emit-progress",
+            "--phase-heartbeat-seconds",
+            "30",
+        ]
+    )
+    assert args.emit_progress is True
+    assert args.phase_heartbeat_seconds == 30.0
+    assert resolve_phase_heartbeat_seconds(
+        emit_progress=args.emit_progress,
+        phase_heartbeat_seconds=args.phase_heartbeat_seconds,
+    ) == 30.0
+
+
+def test_phase_progress_to_dict_includes_heartbeat_interval():
+    progress = PhaseProgress(
+        enabled=True,
+        device=torch.device("cpu"),
+        phase_heartbeat_interval_seconds=30.0,
+    )
+    payload = progress.to_dict()
+    assert payload["phase_heartbeat_interval_seconds"] == 30.0
+
+
+def test_run_c2p1_probe_receipt_embeds_stdout_liveness(tmp_path: Path):
+    parent = tmp_path / "tiny_parent.pt"
+    scratch_root = tmp_path / "scratch"
+    torch.save(_tiny_parent_blob(), parent)
+    parent_sha = file_sha256(parent)
+
+    receipt = run_c2p1_probe(
+        parent=parent,
+        parent_sha256=parent_sha,
+        scratch_root=scratch_root,
+        device="cpu",
+        eligible_scope="first-bitlinear",
+        steps=0,
+        batch_size=2,
+        max_len=TINY_ARCH["max_len"],
+        curriculum_seed=17,
+        emit_progress=True,
+        phase_heartbeat_seconds=30.0,
+        enabled=True,
+    )
+    disk_receipt = json.loads((scratch_root / "receipt.json").read_text(encoding="utf-8"))
+
+    for payload in (receipt, disk_receipt):
+        stdout_liveness = payload["stdout_liveness"]
+        assert stdout_liveness["emit_progress"] is True
+        assert stdout_liveness["phase_heartbeat_seconds"] == 30.0
+        assert stdout_liveness["watch_wrap_heartbeat_exceeds_longest_quiet_phase"] is True
+        assert stdout_liveness["intra_phase_heartbeat_covers_long_phases"] is True
+        assert payload["phase_telemetry"]["enabled"] is True
+        assert payload["phase_telemetry"]["phase_heartbeat_interval_seconds"] == 30.0
 
 
 def test_phase_progress_silent_phase_guard_breaches_before_phase_exit(tmp_path: Path):

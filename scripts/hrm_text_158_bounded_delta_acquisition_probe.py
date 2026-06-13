@@ -22,6 +22,7 @@ import re
 import signal
 import statistics
 import sys
+import threading
 import time
 import traceback
 from typing import Any, Callable, Mapping, Sequence
@@ -193,6 +194,10 @@ SCIENCE_LOCAL_SELECTION_ORDERING_SEED = 17
 C2P2_STRICT_EXACT_TARGET = 90
 C2P2_DEFAULT_MAX_STEPS_HARD = 1500
 C2P2_DEFAULT_GPU_SILENT_PHASE_TIMEOUT_SECONDS = 300.0
+C2P2_DEFAULT_PHASE_HEARTBEAT_INTERVAL_SECONDS = 30.0
+C2P2_LONGEST_QUIET_PHASE_REFERENCE_SECONDS = 80.0
+C2P2_MIN_WATCH_WRAP_HEARTBEAT_SECONDS = 120.0
+C2P2_PROBE_STDOUT_LIVENESS_SCHEMA_VERSION = "hrm_text_158_probe_stdout_liveness/v1"
 PHASE_TIMEOUT_EXEMPTION_SCHEMA_VERSION = "hrm_text_158_phase_timeout_exemption/v0"
 PHASE_TIMEOUT_EXEMPTION_CONTRACT_OFF = "off"
 B2B_BOUNDED_STEPS_AGGREGATE_TIMEOUT_EXEMPTION_V1 = (
@@ -1302,6 +1307,81 @@ def resolve_max_silent_phase_seconds(
     return None
 
 
+def resolve_phase_heartbeat_seconds(
+    *,
+    emit_progress: bool,
+    phase_heartbeat_seconds: float | int | None,
+) -> float | None:
+    if phase_heartbeat_seconds is not None:
+        return _timeout_or_none(phase_heartbeat_seconds)
+    if bool(emit_progress):
+        return C2P2_DEFAULT_PHASE_HEARTBEAT_INTERVAL_SECONDS
+    return None
+
+
+def recommended_watch_wrap_heartbeat_seconds() -> float:
+    return max(
+        float(C2P2_MIN_WATCH_WRAP_HEARTBEAT_SECONDS),
+        float(C2P2_LONGEST_QUIET_PHASE_REFERENCE_SECONDS) * 1.5,
+    )
+
+
+def build_probe_stdout_liveness_receipt(
+    *,
+    emit_progress: bool,
+    phase_heartbeat_seconds: float | int | None,
+    watch_wrap_heartbeat_seconds: float | int | None = None,
+) -> dict[str, Any]:
+    resolved_heartbeat = resolve_phase_heartbeat_seconds(
+        emit_progress=bool(emit_progress),
+        phase_heartbeat_seconds=phase_heartbeat_seconds,
+    )
+    watch_wrap_budget = (
+        float(watch_wrap_heartbeat_seconds)
+        if watch_wrap_heartbeat_seconds is not None
+        else recommended_watch_wrap_heartbeat_seconds()
+    )
+    return {
+        "schema": C2P2_PROBE_STDOUT_LIVENESS_SCHEMA_VERSION,
+        "emit_progress": bool(emit_progress),
+        "phase_heartbeat_seconds": resolved_heartbeat,
+        "longest_quiet_phase_reference_seconds": float(
+            C2P2_LONGEST_QUIET_PHASE_REFERENCE_SECONDS
+        ),
+        "longest_quiet_phase_name": "proxy_oracle_drift_audit",
+        "watch_wrap_heartbeat_seconds": watch_wrap_budget,
+        "watch_wrap_heartbeat_exceeds_longest_quiet_phase": bool(
+            watch_wrap_budget > float(C2P2_LONGEST_QUIET_PHASE_REFERENCE_SECONDS)
+        ),
+        "intra_phase_heartbeat_covers_long_phases": bool(
+            emit_progress
+            and resolved_heartbeat is not None
+            and float(resolved_heartbeat)
+            < float(C2P2_LONGEST_QUIET_PHASE_REFERENCE_SECONDS)
+        ),
+    }
+
+
+def validate_probe_stdout_liveness_config(
+    receipt: Mapping[str, Any],
+) -> None:
+    watch_wrap_budget = float(receipt["watch_wrap_heartbeat_seconds"])
+    longest_quiet = float(receipt["longest_quiet_phase_reference_seconds"])
+    if watch_wrap_budget <= longest_quiet:
+        raise ValueError(
+            "probe stdout liveness config invalid: watch_wrap_heartbeat_seconds "
+            f"{watch_wrap_budget:g} must exceed longest quiet phase "
+            f"{longest_quiet:g}"
+        )
+    if bool(receipt["emit_progress"]):
+        heartbeat = receipt.get("phase_heartbeat_seconds")
+        if heartbeat is None or float(heartbeat) <= 0.0:
+            raise ValueError(
+                "probe stdout liveness config invalid: emit_progress requires "
+                "positive phase_heartbeat_seconds"
+            )
+
+
 def resolve_phase_timeout_exemptions(*, contract: str) -> frozenset[str]:
     contract_name = str(contract)
     if contract_name == PHASE_TIMEOUT_EXEMPTION_CONTRACT_OFF:
@@ -1548,6 +1628,7 @@ class PhaseProgress:
         phase_timeout_seconds: float | int | None = None,
         total_timeout_seconds: float | int | None = None,
         silent_phase_timeout_seconds: float | int | None = None,
+        phase_heartbeat_interval_seconds: float | int | None = None,
         last_active_phase_path: Path | None = None,
         arm_faulthandler_timer: bool = True,
         phase_timeout_exemptions: frozenset[str] | set[str] | None = None,
@@ -1559,6 +1640,9 @@ class PhaseProgress:
         self.phase_timeout_seconds = _timeout_or_none(phase_timeout_seconds)
         self.total_timeout_seconds = _timeout_or_none(total_timeout_seconds)
         self.silent_phase_timeout_seconds = _timeout_or_none(silent_phase_timeout_seconds)
+        self.phase_heartbeat_interval_seconds = _timeout_or_none(
+            phase_heartbeat_interval_seconds
+        )
         self.last_active_phase_path = last_active_phase_path
         self.arm_faulthandler_timer = bool(arm_faulthandler_timer)
         self.phase_timeout_exemption_contract = str(phase_timeout_exemption_contract)
@@ -1570,6 +1654,7 @@ class PhaseProgress:
         self.events: list[dict[str, Any]] = []
         self._phase_stack: list[dict[str, Any]] = []
         self._last_active_phase_payload: dict[str, Any] | None = None
+        self._live_heartbeat_threads: list[threading.Thread] = []
 
     @property
     def active(self) -> bool:
@@ -1697,10 +1782,47 @@ class PhaseProgress:
                 break
 
     def _exit_phase_stack(self, phase: str) -> None:
+        # Nested exit cancels the inner faulthandler timer before re-arming the
+        # parent phase guard (resume), so no stale dump_traceback_later survives.
         self._pop_phase_from_stack(phase)
         self._cancel_faulthandler_timer()
         if self._phase_stack:
             self._arm_current_phase(self._phase_stack[-1], guard_event="resume")
+
+    @property
+    def live_heartbeat_thread_count(self) -> int:
+        self._live_heartbeat_threads = [
+            thread for thread in self._live_heartbeat_threads if thread.is_alive()
+        ]
+        return len(self._live_heartbeat_threads)
+
+    def _register_heartbeat_thread(self, thread: threading.Thread) -> None:
+        self._live_heartbeat_threads.append(thread)
+
+    def _unregister_heartbeat_thread(self, thread: threading.Thread) -> None:
+        while thread in self._live_heartbeat_threads:
+            self._live_heartbeat_threads.remove(thread)
+
+    def _run_phase_heartbeat_loop(
+        self,
+        phase: str,
+        fields: Mapping[str, Any],
+        phase_started_at: float,
+        stop_event: threading.Event,
+    ) -> None:
+        interval = self.phase_heartbeat_interval_seconds
+        if interval is None or float(interval) <= 0.0:
+            return
+        while not stop_event.wait(timeout=float(interval)):
+            if not self._phase_stack or self._phase_stack[-1]["phase"] != str(phase):
+                return
+            elapsed = max(0.0, float(self.clock() - phase_started_at))
+            self.mark(
+                phase,
+                "heartbeat",
+                active_phase_elapsed_seconds=elapsed,
+                **fields,
+            )
 
     def _exit_phase(self, phase: str) -> None:
         self._exit_phase_stack(phase)
@@ -1757,9 +1879,28 @@ class PhaseProgress:
         phase_start = float(self.clock())
         self._enter_phase(phase, phase_start, fields)
         self.mark(phase, "start", **fields)
+        stop_event = threading.Event()
+        heartbeat_thread: threading.Thread | None = None
+        if (
+            self.enabled
+            and self.phase_heartbeat_interval_seconds is not None
+            and float(self.phase_heartbeat_interval_seconds) > 0.0
+        ):
+            heartbeat_thread = threading.Thread(
+                target=self._run_phase_heartbeat_loop,
+                args=(phase, fields, phase_start, stop_event),
+                daemon=True,
+                name=f"phase-heartbeat-{phase}",
+            )
+            heartbeat_thread.start()
+            self._register_heartbeat_thread(heartbeat_thread)
         try:
             yield
         except Exception as exc:
+            if heartbeat_thread is not None:
+                stop_event.set()
+                heartbeat_thread.join(timeout=1.0)
+                self._unregister_heartbeat_thread(heartbeat_thread)
             self._exit_phase(phase)
             self.mark(
                 phase,
@@ -1769,6 +1910,11 @@ class PhaseProgress:
                 **fields,
             )
             raise
+        finally:
+            if heartbeat_thread is not None:
+                stop_event.set()
+                heartbeat_thread.join(timeout=1.0)
+                self._unregister_heartbeat_thread(heartbeat_thread)
         duration = max(0.0, float(self.clock() - phase_start))
         self._exit_phase(phase)
         try:
@@ -1807,6 +1953,7 @@ class PhaseProgress:
             "phase_timeout_exemptions": sorted(self.phase_timeout_exemptions),
             "total_timeout_seconds": self.total_timeout_seconds,
             "silent_phase_timeout_seconds": self.silent_phase_timeout_seconds,
+            "phase_heartbeat_interval_seconds": self.phase_heartbeat_interval_seconds,
             "last_active_phase_path": (
                 None
                 if self.last_active_phase_path is None
@@ -4749,6 +4896,7 @@ def run_bounded_delta_steps(
             0,
             b2_full_verdict_state,
             None,
+            grad_proxy_ingress_crossing_eligible_count_by_step,
         )
     if steps <= 0:
         return (
@@ -4760,6 +4908,7 @@ def run_bounded_delta_steps(
             0,
             b2_full_verdict_state,
             None,
+            grad_proxy_ingress_crossing_eligible_count_by_step,
         )
 
     stop_reason = "max_steps_completed"
@@ -5353,6 +5502,7 @@ def run_c2p1_probe(
     matched_continued_training_horizon_steps: int = 0,
     max_steps_hard: int = C2P2_DEFAULT_MAX_STEPS_HARD,
     emit_progress: bool = False,
+    phase_heartbeat_seconds: float | None = None,
     phase_timeout_seconds: float = 0.0,
     total_timeout_seconds: float = 0.0,
     max_silent_phase_seconds: float | None = None,
@@ -5542,12 +5692,22 @@ def run_c2p1_probe(
         total_timeout_seconds=float(total_timeout_seconds),
     )
     last_active_phase_path = scratch_root / "last_active_phase.json"
+    resolved_phase_heartbeat_seconds = resolve_phase_heartbeat_seconds(
+        emit_progress=bool(emit_progress),
+        phase_heartbeat_seconds=phase_heartbeat_seconds,
+    )
+    stdout_liveness_receipt = build_probe_stdout_liveness_receipt(
+        emit_progress=bool(emit_progress),
+        phase_heartbeat_seconds=resolved_phase_heartbeat_seconds,
+    )
+    validate_probe_stdout_liveness_config(stdout_liveness_receipt)
     phase_progress = PhaseProgress(
         enabled=bool(emit_progress),
         device=torch_device,
         phase_timeout_seconds=float(phase_timeout_seconds),
         total_timeout_seconds=float(total_timeout_seconds),
         silent_phase_timeout_seconds=silent_phase_timeout_seconds,
+        phase_heartbeat_interval_seconds=resolved_phase_heartbeat_seconds,
         last_active_phase_path=last_active_phase_path,
         phase_timeout_exemptions=phase_timeout_exemptions,
         phase_timeout_exemption_contract=str(phase_timeout_exemption_contract),
@@ -5755,6 +5915,7 @@ def run_c2p1_probe(
                 "last_active_phase_path": str(last_active_phase_path),
                 "fail_closed_mechanism": "faulthandler.dump_traceback_later(exit=True)",
             },
+            "stdout_liveness": stdout_liveness_receipt,
             "dry_run": True,
             "checkpoint_written": False,
             "creditdir_mutated": False,
@@ -6173,6 +6334,7 @@ def run_c2p1_probe(
             "last_active_phase_path": str(last_active_phase_path),
             "fail_closed_mechanism": "faulthandler.dump_traceback_later(exit=True)",
         },
+        "stdout_liveness": stdout_liveness_receipt,
         "phase_timeout_exemption": phase_timeout_exemption_receipt,
         "dry_run": True,
         "checkpoint_written": False,
@@ -6515,6 +6677,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     ap.add_argument("--max-steps-hard", type=int, default=C2P2_DEFAULT_MAX_STEPS_HARD)
     ap.add_argument("--emit-progress", action="store_true")
+    ap.add_argument(
+        "--phase-heartbeat-seconds",
+        type=float,
+        default=None,
+        help=(
+            "Emit intra-phase stdout heartbeat JSON every N seconds when "
+            "--emit-progress is set. Defaults to "
+            f"{C2P2_DEFAULT_PHASE_HEARTBEAT_INTERVAL_SECONDS:g}s."
+        ),
+    )
     ap.add_argument("--phase-timeout-seconds", type=float, default=0.0)
     ap.add_argument("--total-timeout-seconds", type=float, default=0.0)
     ap.add_argument(
@@ -6589,6 +6761,7 @@ def main(argv: list[str] | None = None) -> int:
         two_tier_carry_w6_enabled=args.two_tier_carry_w6_enabled,
         max_steps_hard=args.max_steps_hard,
         emit_progress=args.emit_progress,
+        phase_heartbeat_seconds=args.phase_heartbeat_seconds,
         phase_timeout_seconds=args.phase_timeout_seconds,
         total_timeout_seconds=args.total_timeout_seconds,
         max_silent_phase_seconds=args.max_silent_phase_seconds,
