@@ -721,5 +721,487 @@ def run_selector_support_invariance_analysis(
     }
 
 
+CONSENSUS_SCHEMA_VERSION = "hrm_text_158_selector_support_consensus_summary/v1"
+CONSENSUS_BRANCH_PRECEDENCE_SCHEMA = "hrm_text_158_consensus_branch_precedence_receipt/v1"
+CONSENSUS_MIN_VALID_STEPS = 1
+
+
+def _consensus_arm_on_receipts(
+    run_root: Path,
+    labels: Sequence[str],
+) -> dict[str, Mapping[str, Any]]:
+    return {
+        label: load_receipt(run_root / label / "on" / "receipt.json")
+        for label in labels
+    }
+
+
+def _applied_indices_present(
+    receipt: Mapping[str, Any],
+    *,
+    step: int,
+    state_key: str,
+) -> bool:
+    step_entry = receipt.get("step_reports", {}).get(str(step), {})
+    tensor_stats = (step_entry.get("step_result") or {}).get("tensor_stats") or {}
+    module_row = tensor_stats.get(state_key)
+    return isinstance(module_row, Mapping) and "applied_indices" in module_row
+
+
+def _consensus_step_multiway_jaccard(
+    arm_receipts_on: Sequence[Mapping[str, Any]],
+    *,
+    step: int,
+    state_key: str,
+) -> tuple[float | None, str | None]:
+    applied_sets: list[set[int]] = []
+    for receipt in arm_receipts_on:
+        if not _applied_indices_present(receipt, step=step, state_key=state_key):
+            return None, "missing_applied_indices"
+        steps = extract_cap_window_steps(receipt, state_key=state_key)
+        row = steps.get(step, {})
+        applied = row.get("applied_indices") or []
+        applied_sets.append({int(value) for value in applied})
+    union = set().union(*applied_sets) if applied_sets else set()
+    if not union:
+        return None, "empty_union_at_step"
+    intersection = set.intersection(*applied_sets) if applied_sets else set()
+    return float(len(intersection) / len(union)), None
+
+
+def compute_intersection_core_fraction(
+    arm_receipts_on: Sequence[Mapping[str, Any]],
+) -> tuple[float | None, str, dict[str, Any]]:
+    """K-way multi-Jaccard median over steps (module-equal-weight per S1)."""
+
+    if not arm_receipts_on:
+        return None, "branch_7", {"reason": "no_arms"}
+    state_keys = sorted(
+        set.intersection(
+            *[
+                set(_identity_eligible_state_keys(receipt))
+                for receipt in arm_receipts_on
+            ],
+        ),
+    )
+    if not state_keys:
+        state_keys = [DEFAULT_STATE_KEY]
+    step_fractions: list[float] = []
+    invalid_reason: str | None = None
+    for step in range(PRIMARY_STEP_MIN, PRIMARY_STEP_MAX + 1):
+        module_fractions: list[float] = []
+        step_had_data = False
+        for state_key in state_keys:
+            fraction, fail = _consensus_step_multiway_jaccard(
+                arm_receipts_on,
+                step=step,
+                state_key=state_key,
+            )
+            if fail == "missing_applied_indices":
+                return None, "branch_0", {"reason": fail, "step": step, "state_key": state_key}
+            if fail == "empty_union_at_step":
+                invalid_reason = fail
+                continue
+            if fraction is not None:
+                module_fractions.append(fraction)
+                step_had_data = True
+        if module_fractions:
+            step_fractions.append(float(statistics.median(module_fractions)))
+        elif step_had_data:
+            invalid_reason = invalid_reason or "empty_union_at_step"
+    if len(step_fractions) < CONSENSUS_MIN_VALID_STEPS:
+        routed = "branch_0" if invalid_reason == "missing_applied_indices" else "branch_7"
+        return None, routed, {
+            "reason": invalid_reason or "too_few_valid_steps",
+            "valid_step_count": len(step_fractions),
+        }
+    return float(statistics.median(step_fractions)), "none", {
+        "valid_step_count": len(step_fractions),
+        "step_fractions": step_fractions,
+    }
+
+
+def _consensus_pairwise_identity(
+    arm_receipts_on: Mapping[str, Mapping[str, Any]],
+) -> tuple[list[dict[str, Any]], float | None, float | None]:
+    labels = sorted(arm_receipts_on)
+    pairwise: list[dict[str, Any]] = []
+    jaccards: list[float] = []
+    disjoints: list[float] = []
+    for left_label in labels:
+        for right_label in labels:
+            if left_label >= right_label:
+                continue
+            metrics = _cross_seed_identity_metrics(
+                arm_receipts_on[left_label],
+                arm_receipts_on[right_label],
+            )
+            held = metrics.get("held_median_topk_jaccard")
+            disjoint = metrics.get("disjoint_fraction")
+            pairwise.append(
+                {
+                    "left_label": left_label,
+                    "right_label": right_label,
+                    "held_median_topk_jaccard": held,
+                    "disjoint_fraction": disjoint,
+                },
+            )
+            if held is not None and disjoint is not None:
+                jaccards.append(float(held))
+                disjoints.append(float(disjoint))
+    consensus_core = float(statistics.median(jaccards)) if jaccards else None
+    consensus_disjoint = float(statistics.median(disjoints)) if disjoints else None
+    return pairwise, consensus_core, consensus_disjoint
+
+
+def _pair_outcome_agrees(
+    left_direction: str | None,
+    right_direction: str | None,
+) -> bool:
+    return (
+        left_direction is not None
+        and right_direction is not None
+        and left_direction == right_direction
+    )
+
+
+def _pair_outcome_flips(
+    left_direction: str | None,
+    right_direction: str | None,
+) -> bool:
+    return (
+        left_direction in {"favors_off", "favors_on"}
+        and right_direction in {"favors_off", "favors_on"}
+        and left_direction != right_direction
+    )
+
+
+def _consensus_outcome_metrics(
+    run_root: Path,
+    labels: Sequence[str],
+    seed_pairs: Mapping[str, ExpectedSeedPair],
+) -> dict[str, Any]:
+    directions: dict[str, str | None] = {}
+    pairwise_outcome: list[dict[str, Any]] = []
+    for label in labels:
+        on = load_receipt(run_root / label / "on" / "receipt.json")
+        off = load_receipt(run_root / label / "off" / "receipt.json")
+        verdict = _paired_outcome_verdict(on, off, seed_pairs[label])
+        directions[label] = verdict.get("direction")
+    labels_sorted = list(labels)
+    agreeing = 0
+    flipping = 0
+    measurable_pairs = 0
+    for index, left in enumerate(labels_sorted):
+        for right in labels_sorted[index + 1 :]:
+            left_dir = directions[left]
+            right_dir = directions[right]
+            measurable = left_dir is not None and right_dir is not None
+            agrees = _pair_outcome_agrees(left_dir, right_dir)
+            flips = _pair_outcome_flips(left_dir, right_dir)
+            if measurable:
+                measurable_pairs += 1
+            if agrees:
+                agreeing += 1
+            if flips:
+                flipping += 1
+            pairwise_outcome.append(
+                {
+                    "left_label": left,
+                    "right_label": right,
+                    "left_direction": left_dir,
+                    "right_direction": right_dir,
+                    "agrees": agrees,
+                    "flips": flips,
+                    "measurable": measurable,
+                },
+            )
+    all_pairs = len(pairwise_outcome)
+    if measurable_pairs < all_pairs:
+        return {
+            "consensus_outcome_agreement_rate": None,
+            "consensus_order_flip_rate": None,
+            "pairwise_outcome": pairwise_outcome,
+            "all_pairs_measurable": False,
+            "measurable_pair_count": measurable_pairs,
+        }
+    return {
+        "consensus_outcome_agreement_rate": (
+            float(agreeing / all_pairs) if all_pairs else None
+        ),
+        "consensus_order_flip_rate": float(flipping / all_pairs) if all_pairs else None,
+        "pairwise_outcome": pairwise_outcome,
+        "all_pairs_measurable": True,
+        "measurable_pair_count": measurable_pairs,
+    }
+
+
+def _worst_case_branch4_pressure(
+    pairwise_pressure: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    if not pairwise_pressure:
+        return {
+            "branch4_pressure_agreement_established": False,
+            "median_n_comparable_modules": None,
+            "median_median_module_cosine": None,
+            "median_p10_module_cosine": None,
+            "pairwise_pressure": list(pairwise_pressure),
+        }
+    established = all(
+        branch4_pressure_agreement_established(row) for row in pairwise_pressure
+    )
+    n_values = [
+        float(row.get("n_comparable_modules"))
+        for row in pairwise_pressure
+        if row.get("n_comparable_modules") is not None
+    ]
+    median_cos = [
+        float(row.get("median_module_cosine"))
+        for row in pairwise_pressure
+        if row.get("median_module_cosine") is not None
+    ]
+    p10_cos = [
+        float(row.get("p10_module_cosine"))
+        for row in pairwise_pressure
+        if row.get("p10_module_cosine") is not None
+    ]
+    return {
+        "branch4_pressure_agreement_established": established,
+        "median_n_comparable_modules": (
+            float(statistics.median(n_values)) if n_values else None
+        ),
+        "median_median_module_cosine": (
+            float(statistics.median(median_cos)) if median_cos else None
+        ),
+        "median_p10_module_cosine": (
+            float(statistics.median(p10_cos)) if p10_cos else None
+        ),
+        "pairwise_pressure": list(pairwise_pressure),
+    }
+
+
+def classify_consensus_branch_precedence(inputs: Mapping[str, Any]) -> dict[str, Any]:
+    invalid_routed = str(inputs.get("invalid_data_routed") or "none")
+    if invalid_routed == "branch_0":
+        return {
+            "schema": CONSENSUS_BRANCH_PRECEDENCE_SCHEMA,
+            "branch": BRANCH_PRECEDENCE[0],
+            "branch_index": 0,
+            "reason": "invalid_data_fail_safe_branch_0",
+            "invalid_data_routed": invalid_routed,
+            "inputs": dict(inputs),
+            "branch_precedence": list(BRANCH_PRECEDENCE),
+            "no_carry_w6_reopen": True,
+        }
+    if invalid_routed == "branch_7":
+        return {
+            "schema": CONSENSUS_BRANCH_PRECEDENCE_SCHEMA,
+            "branch": BRANCH_PRECEDENCE[7],
+            "branch_index": 7,
+            "reason": "invalid_data_fail_safe_branch_7",
+            "invalid_data_routed": invalid_routed,
+            "inputs": dict(inputs),
+            "branch_precedence": list(BRANCH_PRECEDENCE),
+            "no_carry_w6_reopen": True,
+        }
+
+    preflight_ok = bool(inputs.get("pressure_shape_preflight_pass"))
+    screen_harness_or_gate_fail = bool(inputs.get("screen_harness_or_gate_fail"))
+    intersection_core_fraction = inputs.get("intersection_core_fraction")
+    consensus_core_jaccard = inputs.get("consensus_core_jaccard")
+    consensus_disjoint_fraction = inputs.get("consensus_disjoint_fraction")
+    outcome_agreement_rate = inputs.get("consensus_outcome_agreement_rate")
+    outcome_flip_rate = inputs.get("consensus_order_flip_rate")
+    outcome_measurable = bool(inputs.get("outcome_direction_measurable"))
+    branch4 = inputs.get("branch4_pressure") or {}
+    pressure_established = bool(branch4.get("branch4_pressure_agreement_established"))
+    shadows = inputs.get("shadow_arms") or {}
+    ranking_problem = shadow_ranking_problem(shadows)
+    effectively_disjoint = identity_effectively_disjoint(
+        consensus_core_jaccard,
+        consensus_disjoint_fraction,
+    )
+    terminal_one = (
+        intersection_core_fraction is not None
+        and float(intersection_core_fraction) >= HELD_MEDIAN_TOPK_JACCARD_SUPPORT_INVARIANT_MIN
+        and outcome_agreement_rate is not None
+        and float(outcome_agreement_rate) == 1.0
+        and pressure_established
+        and not ranking_problem
+    )
+    low_overlap = (
+        consensus_core_jaccard is not None
+        and float(consensus_core_jaccard) < BRANCH4_LOW_OVERLAP_HELD_MEDIAN_TOPK_JACCARD_MAX
+    )
+    outcome_flips = outcome_flip_rate is not None and float(outcome_flip_rate) >= 0.5
+
+    branch = BRANCH_PRECEDENCE[-1]
+    reason = "metrics_between_preregistered_thresholds"
+    if not preflight_ok or screen_harness_or_gate_fail:
+        branch = BRANCH_PRECEDENCE[0]
+        reason = "missing_pressure_shape_summary_or_harness_gate_fail"
+    elif terminal_one and outcome_measurable:
+        branch = BRANCH_PRECEDENCE[1]
+        reason = "consensus_recovers_invariant_core"
+    elif effectively_disjoint and outcome_flips and outcome_measurable:
+        branch = BRANCH_PRECEDENCE[2]
+        reason = "ensembles_disjoint_lane_closes"
+    elif low_overlap and pressure_established and not outcome_flips:
+        branch = BRANCH_PRECEDENCE[3]
+        reason = "low_overlap_pressure_agreement_without_outcome_flip"
+    elif ranking_problem:
+        branch = BRANCH_PRECEDENCE[4]
+        reason = "shadow_arms_match_or_beat_primary_ranking_evidence"
+    elif insufficient_selector_separation(
+        held_median_topk_jaccard=consensus_core_jaccard,
+        pressure_established=pressure_established,
+        outcome_direction_flips=outcome_flips,
+        ranking_problem=ranking_problem,
+    ):
+        branch = BRANCH_PRECEDENCE[5]
+        reason = "middle_identity_band_without_mechanism_separation"
+    elif (
+        effectively_disjoint
+        and outcome_agreement_rate is not None
+        and float(outcome_agreement_rate) == 1.0
+        and outcome_measurable
+        and not pressure_established
+    ):
+        branch = BRANCH_PRECEDENCE[6]
+        reason = "disjoint_identity_robust_outcome_low_pressure_agreement"
+    else:
+        branch = BRANCH_PRECEDENCE[7]
+        reason = "metrics_between_preregistered_thresholds"
+
+    return {
+        "schema": CONSENSUS_BRANCH_PRECEDENCE_SCHEMA,
+        "branch": branch,
+        "branch_index": BRANCH_PRECEDENCE.index(branch),
+        "reason": reason,
+        "invalid_data_routed": invalid_routed,
+        "inputs": {
+            "pressure_shape_preflight_pass": preflight_ok,
+            "screen_harness_or_gate_fail": screen_harness_or_gate_fail,
+            "intersection_core_fraction": intersection_core_fraction,
+            "consensus_core_jaccard": consensus_core_jaccard,
+            "consensus_disjoint_fraction": consensus_disjoint_fraction,
+            "consensus_outcome_agreement_rate": outcome_agreement_rate,
+            "consensus_order_flip_rate": outcome_flip_rate,
+            "outcome_direction_measurable": outcome_measurable,
+            "branch4_pressure_agreement_established": pressure_established,
+            "shadow_arms": {
+                SHADOW_ORDER_MATCHED: (shadows.get(SHADOW_ORDER_MATCHED) or {}).get(
+                    "mean_agreement_with_order_matched_proxy",
+                ),
+                SHADOW_INVERTED: (shadows.get(SHADOW_INVERTED) or {}).get(
+                    "mean_inverted_signed_agreement",
+                ),
+                SHADOW_RANDOM_NULL: (shadows.get(SHADOW_RANDOM_NULL) or {}).get(
+                    "mean_uniform_null_distance",
+                ),
+            },
+        },
+        "branch_precedence": list(BRANCH_PRECEDENCE),
+        "no_carry_w6_reopen": True,
+    }
+
+
+def run_selector_support_consensus_analysis(
+    run_root: Path,
+    *,
+    primary_label: str = "S44_ord44",
+    isolation_label: str = "S44_ord43",
+    corroboration_label: str = "S44_ord17",
+    primary_seeds: ExpectedSeedPair | None = None,
+    isolation_seeds: ExpectedSeedPair | None = None,
+    corroboration_seeds: ExpectedSeedPair | None = None,
+) -> dict[str, Any]:
+    labels = [primary_label, isolation_label, corroboration_label]
+    seed_pairs = {
+        primary_label: primary_seeds or ExpectedSeedPair(44, 44),
+        isolation_label: isolation_seeds or ExpectedSeedPair(44, 43),
+        corroboration_label: corroboration_seeds or ExpectedSeedPair(44, 17),
+    }
+    arm_paths = {
+        label: run_root / label / "on" / "receipt.json"
+        for label in labels
+    }
+    preflight_bundle = verify_pressure_shape_preflight_bundle(
+        {
+            f"{label}_on": (
+                load_receipt(path),
+                path,
+            )
+            for label, path in arm_paths.items()
+        },
+    )
+    arm_receipts_on = _consensus_arm_on_receipts(run_root, labels)
+    intersection_core_fraction, invalid_routed, intersection_meta = (
+        compute_intersection_core_fraction(list(arm_receipts_on.values()))
+    )
+    pairwise_identity, consensus_core_jaccard, consensus_disjoint_fraction = (
+        _consensus_pairwise_identity(arm_receipts_on)
+    )
+    outcome_metrics = _consensus_outcome_metrics(run_root, labels, seed_pairs)
+    if not outcome_metrics.get("all_pairs_measurable"):
+        if invalid_routed == "none":
+            invalid_routed = "branch_7"
+            intersection_meta = {
+                **intersection_meta,
+                "reason": "too_few_measurable_pairs",
+            }
+    pairwise_pressure: list[dict[str, Any]] = []
+    for index, left in enumerate(labels):
+        for right in labels[index + 1 :]:
+            pairwise_pressure.append(
+                build_pressure_shape_agreement(
+                    left_receipt=arm_receipts_on[left],
+                    right_receipt=arm_receipts_on[right],
+                    left_label=left,
+                    right_label=right,
+                ),
+            )
+    branch4_pressure = _worst_case_branch4_pressure(pairwise_pressure)
+    reference_shadows = compute_within_run_shadow_arms(arm_receipts_on[primary_label])
+    branch = classify_consensus_branch_precedence(
+        {
+            "pressure_shape_preflight_pass": bool(preflight_bundle.get("pass")),
+            "screen_harness_or_gate_fail": False,
+            "intersection_core_fraction": intersection_core_fraction,
+            "consensus_core_jaccard": consensus_core_jaccard,
+            "consensus_disjoint_fraction": consensus_disjoint_fraction,
+            "consensus_outcome_agreement_rate": outcome_metrics.get(
+                "consensus_outcome_agreement_rate",
+            ),
+            "consensus_order_flip_rate": outcome_metrics.get("consensus_order_flip_rate"),
+            "outcome_direction_measurable": outcome_metrics.get("all_pairs_measurable"),
+            "branch4_pressure": branch4_pressure,
+            "shadow_arms": reference_shadows,
+            "invalid_data_routed": invalid_routed,
+        },
+    )
+    return {
+        "schema": CONSENSUS_SCHEMA_VERSION,
+        "run_root": str(run_root),
+        "arms": labels,
+        "pressure_shape_preflight": preflight_bundle,
+        "consensus_identity": {
+            "intersection_core_fraction": intersection_core_fraction,
+            "consensus_core_jaccard": consensus_core_jaccard,
+            "consensus_disjoint_fraction": consensus_disjoint_fraction,
+            "pairwise_identity": pairwise_identity,
+            "intersection_meta": intersection_meta,
+        },
+        "consensus_outcome": outcome_metrics,
+        "branch4_pressure": branch4_pressure,
+        "branch5_shadow": {
+            "decisive_reference_arm": primary_label,
+            "reference_shadow_block": reference_shadows,
+        },
+        "branch_precedence_receipt": branch,
+        "invalid_data_routed": invalid_routed,
+    }
+
+
 def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()

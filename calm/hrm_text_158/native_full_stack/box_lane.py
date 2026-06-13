@@ -224,6 +224,8 @@ def audit_consensus_bounded_delta_consumer(
     *,
     primary_label: str = "S44",
     isolation_label: str = "S44_iso43",
+    corroboration_label: str | None = None,
+    consensus_mode: bool = False,
     transport_artifacts: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     from calm.hrm_text_158.native_full_stack.pressure_shape_agreement import (
@@ -235,10 +237,18 @@ def audit_consensus_bounded_delta_consumer(
     isolation_on_path = chain_root / isolation_label / "on" / "receipt.json"
     receipts_checked: dict[str, Any] = {}
 
-    for label, path in (
+    receipt_specs: list[tuple[str, Path]] = [
         (f"{primary_label}_on", primary_on_path),
         (f"{isolation_label}_on", isolation_on_path),
-    ):
+    ]
+    if consensus_mode:
+        if corroboration_label is None:
+            issues.append("missing_corroboration_label")
+        else:
+            corroboration_on_path = chain_root / corroboration_label / "on" / "receipt.json"
+            receipt_specs.append((f"{corroboration_label}_on", corroboration_on_path))
+
+    for label, path in receipt_specs:
         if not path.exists():
             issues.append(f"missing_receipt:{label}")
             continue
@@ -271,7 +281,9 @@ def audit_consensus_bounded_delta_consumer(
             elif producer_sha != consumer_sha:
                 issues.append(f"transport_sha_mismatch:{rel}")
 
-    analysis_summary_path = chain_root / "analysis" / "selector_support_invariance_summary.json"
+    analysis_summary_path = chain_root / "analysis" / "selector_support_consensus_summary.json"
+    if not analysis_summary_path.exists():
+        analysis_summary_path = chain_root / "analysis" / "selector_support_invariance_summary.json"
     analysis_payload: dict[str, Any] | None = None
     if analysis_summary_path.exists():
         try:
@@ -279,6 +291,17 @@ def audit_consensus_bounded_delta_consumer(
             branch = (analysis_payload.get("branch_precedence_receipt") or {}).get("branch")
             if not branch:
                 issues.append("analysis_missing_branch_precedence")
+            if consensus_mode and analysis_summary_path.name == "selector_support_consensus_summary.json":
+                identity = analysis_payload.get("consensus_identity") or {}
+                if identity.get("intersection_core_fraction") is None:
+                    issues.append("analysis_missing_intersection_core_fraction")
+                receipt_inputs = (
+                    (analysis_payload.get("branch_precedence_receipt") or {}).get("inputs") or {}
+                )
+                intersection = identity.get("intersection_core_fraction")
+                held = receipt_inputs.get("held_median_topk_jaccard")
+                if held is not None and intersection is not None and held == intersection:
+                    issues.append("intersection_core_fraction_aliased_to_held_median")
         except json.JSONDecodeError:
             issues.append("analysis_summary_parse_error")
 

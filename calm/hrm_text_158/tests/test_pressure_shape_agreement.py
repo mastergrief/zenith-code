@@ -40,11 +40,15 @@ from calm.hrm_text_158.native_full_stack.selector_support_invariance_analysis im
     _single_module_identity_metrics,
     _support_order_outcome_metrics,
     classify_branch_precedence,
+    classify_consensus_branch_precedence,
+    compute_intersection_core_fraction,
     compute_within_run_shadow_arms,
     identity_effectively_disjoint,
+    run_selector_support_consensus_analysis,
     run_selector_support_invariance_analysis,
     shadow_ranking_problem,
     verify_pressure_shape_preflight_bundle,
+    _worst_case_branch4_pressure,
 )
 from calm.hrm_text_158.native_full_stack.selector_value_analysis import (
     DEFAULT_STATE_KEY,
@@ -973,3 +977,264 @@ def test_classify_branch8_measurement_ambiguous() -> None:
         },
     )
     assert branch["branch"] == BRANCH_PRECEDENCE[7]
+
+
+def _consensus_pressure_step(step: int) -> dict:
+    return {
+        "vote_pressure": {
+            DEFAULT_STATE_KEY: {
+                "state_key": DEFAULT_STATE_KEY,
+                "pressure_shape_summary": {
+                    "schema": "hrm_text_158_pressure_shape_summary/v1",
+                    "rank_method": "grouped_bisect_right",
+                    "rank_bins": [],
+                    "bin_occupancy_count": [50, 50],
+                    "bin_mass_fraction": [0.5, 0.5],
+                    "candidate_count": 100,
+                    "raw_per_proposal_arrays_included": False,
+                    "signed_rank_bin_mass": {
+                        "schema": "hrm_text_158_signed_rank_bin_mass/v0",
+                        "pos_bin_fraction": [0.25, 0.25],
+                        "neg_bin_fraction": [0.25, 0.25],
+                        "signed_bin_net_fraction": [0.0, 0.0],
+                        "total_abs_vote_mass": 1.0,
+                        "telemetry_only_net_fraction": True,
+                    },
+                    "counterfactual_signed_rank_bin_mass": {
+                        "a1_order_matched": {
+                            "schema": "hrm_text_158_signed_rank_bin_mass/v0",
+                            "pos_bin_fraction": [0.25, 0.25],
+                            "neg_bin_fraction": [0.25, 0.25],
+                            "signed_bin_net_fraction": [0.0, 0.0],
+                            "total_abs_vote_mass": 1.0,
+                            "telemetry_only_net_fraction": True,
+                        },
+                        "order_matched_basis": "a1_emitted",
+                    },
+                },
+            },
+        },
+        "step_result": {
+            "tensor_stats": {
+                DEFAULT_STATE_KEY: {
+                    "applied_indices": [],
+                },
+            },
+        },
+        "loss": float(step),
+        "loss_finite": True,
+    }
+
+
+def _consensus_receipt(applied_by_step: dict[int, list[int]]) -> dict:
+    step_reports = {}
+    for step in range(3, 11):
+        entry = _consensus_pressure_step(step)
+        entry["step_result"]["tensor_stats"][DEFAULT_STATE_KEY]["applied_indices"] = (
+            applied_by_step.get(step, [1, 2, 3])
+        )
+        step_reports[str(step)] = entry
+    return {
+        "steps_completed": 10,
+        "batch": {"seed": 44, "support_order_seed": 44},
+        "step_reports": step_reports,
+        "terminal_status": {"status": "ok"},
+    }
+
+
+def _write_consensus_k3_run_root(run_root: Path, *, applied_maps: dict[str, dict[int, list[int]]]) -> None:
+    labels = ["S44_ord44", "S44_ord43", "S44_ord17"]
+    for label in labels:
+        for arm in ("on", "off"):
+            path = run_root / label / arm / "receipt.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(_consensus_receipt(applied_maps[label]), indent=2),
+                encoding="utf-8",
+            )
+
+
+def test_consensus_intersection_core_fraction_not_aliased_to_held_median() -> None:
+    same = {step: [1, 2, 3] for step in range(3, 11)}
+    varied = {step: [1, 2, 3, 4] for step in range(3, 11)}
+    receipts = [
+        _consensus_receipt(same),
+        _consensus_receipt(varied),
+        _consensus_receipt(same),
+    ]
+    intersection, routed, _meta = compute_intersection_core_fraction(receipts)
+    pairwise = _cross_seed_identity_metrics(receipts[0], receipts[1])
+    assert routed == "none"
+    assert intersection is not None
+    assert intersection < 1.0
+    assert pairwise["held_median_topk_jaccard"] == pytest.approx(0.75)
+
+
+def test_consensus_empty_union_routes_branch_0_or_7() -> None:
+    empty = {step: [] for step in range(3, 11)}
+    receipts = [_consensus_receipt(empty), _consensus_receipt(empty), _consensus_receipt(empty)]
+    _fraction, routed, _meta = compute_intersection_core_fraction(receipts)
+    branch = classify_consensus_branch_precedence(
+        {
+            "pressure_shape_preflight_pass": True,
+            "invalid_data_routed": routed,
+        },
+    )
+    assert routed in {"branch_0", "branch_7"}
+    assert branch["branch_index"] in {0, 7}
+    assert branch["branch_index"] not in {1, 2}
+
+
+def test_consensus_missing_applied_indices_routes_branch_0_or_7() -> None:
+    bad = _consensus_receipt({step: [1, 2, 3] for step in range(3, 11)})
+    bad["step_reports"]["5"]["step_result"]["tensor_stats"][DEFAULT_STATE_KEY].pop(
+        "applied_indices",
+    )
+    receipts = [
+        bad,
+        _consensus_receipt({step: [1, 2, 3] for step in range(3, 11)}),
+        _consensus_receipt({step: [1, 2, 3] for step in range(3, 11)}),
+    ]
+    _fraction, routed, _meta = compute_intersection_core_fraction(receipts)
+    branch = classify_consensus_branch_precedence({"invalid_data_routed": routed})
+    assert routed == "branch_0"
+    assert branch["branch_index"] == 0
+
+
+def test_consensus_too_few_valid_steps_routes_branch_0_or_7() -> None:
+    empty = {step: [] for step in range(3, 11)}
+    receipts = [
+        _consensus_receipt(empty),
+        _consensus_receipt(empty),
+        _consensus_receipt(empty),
+    ]
+    _fraction, routed, _meta = compute_intersection_core_fraction(receipts)
+    branch = classify_consensus_branch_precedence({"invalid_data_routed": routed})
+    assert routed in {"branch_0", "branch_7"}
+    assert branch["branch_index"] in {0, 7}
+
+
+def test_consensus_branch4_worst_case_veto_one_bad_pair() -> None:
+    good = {
+        "median_module_cosine": 0.9,
+        "p10_module_cosine": 0.7,
+        "n_comparable_modules": 10,
+        "branch4_pressure_agreement_established": True,
+    }
+    bad = {
+        "median_module_cosine": 0.9,
+        "p10_module_cosine": 0.7,
+        "n_comparable_modules": 4,
+        "branch4_pressure_agreement_established": False,
+    }
+    summary = _worst_case_branch4_pressure([good, good, bad])
+    assert summary["branch4_pressure_agreement_established"] is False
+    assert summary["median_median_module_cosine"] == pytest.approx(0.9)
+
+
+def test_consensus_branch2_robust_median_not_one_outlier() -> None:
+    branch = classify_consensus_branch_precedence(
+        {
+            "pressure_shape_preflight_pass": True,
+            "intersection_core_fraction": 0.2,
+            "consensus_core_jaccard": 0.3,
+            "consensus_disjoint_fraction": 0.4,
+            "consensus_outcome_agreement_rate": 1.0,
+            "consensus_order_flip_rate": 0.0,
+            "outcome_direction_measurable": True,
+            "branch4_pressure": {"branch4_pressure_agreement_established": False},
+            "shadow_arms": {},
+            "invalid_data_routed": "none",
+        },
+    )
+    assert branch["branch_index"] != 2
+
+
+def test_consensus_shadow_ranking_routes_precedence_slot4_only_if_terminal1_fails() -> None:
+    shadows = {
+        "branch5_shadow_evidence_sufficient": True,
+        SHADOW_ORDER_MATCHED: {"mean_agreement_with_order_matched_proxy": 0.9},
+        SHADOW_INVERTED: {
+            "mean_inverted_signed_agreement": 0.9,
+            "inverted_direction_degenerate": False,
+        },
+        SHADOW_RANDOM_NULL: {"mean_uniform_null_distance": 0.2},
+    }
+    assert shadow_ranking_problem(shadows) is True
+    branch = classify_consensus_branch_precedence(
+        {
+            "pressure_shape_preflight_pass": True,
+            "intersection_core_fraction": 0.2,
+            "consensus_core_jaccard": 0.2,
+            "consensus_disjoint_fraction": 0.3,
+            "consensus_outcome_agreement_rate": 0.5,
+            "consensus_order_flip_rate": 0.0,
+            "outcome_direction_measurable": True,
+            "branch4_pressure": {"branch4_pressure_agreement_established": False},
+            "shadow_arms": shadows,
+            "invalid_data_routed": "none",
+        },
+    )
+    assert branch["branch_index"] == 4
+
+
+def test_consensus_analyzer_cli_writes_manifest_on_synthetic_k3_run_root(tmp_path: Path) -> None:
+    from scripts.analyze_selector_support_invariance import main as analyzer_main
+
+    applied = {step: [1, 2, 3] for step in range(3, 11)}
+    _write_consensus_k3_run_root(
+        tmp_path,
+        applied_maps={
+            "S44_ord44": applied,
+            "S44_ord43": applied,
+            "S44_ord17": applied,
+        },
+    )
+    rc = analyzer_main(
+        [
+            str(tmp_path),
+            "--consensus",
+            "--primary-label",
+            "S44_ord44",
+            "--isolation-label",
+            "S44_ord43",
+            "--corroboration-label",
+            "S44_ord17",
+        ],
+    )
+    assert rc == 0
+    summary_path = tmp_path / "analysis" / "selector_support_consensus_summary.json"
+    manifest_path = tmp_path / "analysis" / "selector_support_consensus_manifest.json"
+    assert summary_path.exists()
+    assert manifest_path.exists()
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert summary["consensus_identity"]["intersection_core_fraction"] == 1.0
+    assert manifest["intersection_core_fraction"] == 1.0
+    assert manifest["K"] == 3
+
+
+def test_consensus_too_few_measurable_pairs_routes_branch_0_or_7(tmp_path: Path) -> None:
+    applied = {step: [1, 2, 3] for step in range(3, 11)}
+    _write_consensus_k3_run_root(
+        tmp_path,
+        applied_maps={
+            "S44_ord44": applied,
+            "S44_ord43": applied,
+            "S44_ord17": applied,
+        },
+    )
+    bad_off = tmp_path / "S44_ord17" / "off" / "receipt.json"
+    payload = json.loads(bad_off.read_text(encoding="utf-8"))
+    for step in payload["step_reports"]:
+        payload["step_reports"][step].pop("loss", None)
+        payload["step_reports"][step].pop("loss_finite", None)
+    bad_off.write_text(json.dumps(payload), encoding="utf-8")
+    summary = run_selector_support_consensus_analysis(
+        tmp_path,
+        primary_label="S44_ord44",
+        isolation_label="S44_ord43",
+        corroboration_label="S44_ord17",
+    )
+    assert summary["invalid_data_routed"] in {"branch_0", "branch_7"}
+    assert summary["branch_precedence_receipt"]["branch_index"] in {0, 7}

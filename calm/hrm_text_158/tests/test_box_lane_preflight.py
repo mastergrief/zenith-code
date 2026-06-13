@@ -799,3 +799,44 @@ def test_consumer_audit_script_emits_terminal_fail_and_quarantines_pending_arm(
     assert terminal_match.group("status") == "fail"
     states = process_science_chain_log(log_text.splitlines())
     assert states["chain_b"].quarantined is True
+
+
+def _write_consensus_k3_chain_tree(chain_root: Path) -> None:
+    receipt = _s2_good_receipt()
+    for label in ("S44_ord44", "S44_ord43", "S44_ord17"):
+        for arm in ("on", "off"):
+            path = chain_root / label / arm / "receipt.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(receipt), encoding="utf-8")
+
+
+def test_consensus_consumer_audit_fails_missing_third_label(tmp_path: Path) -> None:
+    from calm.hrm_text_158.native_full_stack.box_lane import audit_consensus_bounded_delta_consumer
+
+    chain_root = tmp_path / "chain_a"
+    _write_consensus_k3_chain_tree(chain_root)
+    (chain_root / "S44_ord17").rename(chain_root / "S44_ord17_missing")
+    audit = audit_consensus_bounded_delta_consumer(
+        chain_root,
+        primary_label="S44_ord44",
+        isolation_label="S44_ord43",
+        corroboration_label="S44_ord17",
+        consensus_mode=True,
+    )
+    assert audit["pass"] is False
+    assert any("missing_receipt:" in issue for issue in audit["issues"])
+
+
+def test_consensus_consumer_audit_passes_all_k_labels(tmp_path: Path) -> None:
+    from calm.hrm_text_158.native_full_stack.box_lane import audit_consensus_bounded_delta_consumer
+
+    chain_root = tmp_path / "chain_a"
+    _write_consensus_k3_chain_tree(chain_root)
+    audit = audit_consensus_bounded_delta_consumer(
+        chain_root,
+        primary_label="S44_ord44",
+        isolation_label="S44_ord43",
+        corroboration_label="S44_ord17",
+        consensus_mode=True,
+    )
+    assert audit["pass"] is True

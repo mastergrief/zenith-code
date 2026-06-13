@@ -22,6 +22,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--chain-root", type=Path, required=True)
     ap.add_argument("--primary-label", default="S44")
     ap.add_argument("--isolation-label", default="S44_iso43")
+    ap.add_argument("--corroboration-label", default="S44_ord17")
+    ap.add_argument(
+        "--consensus",
+        action="store_true",
+        help="Require all three K ON labels and consensus analysis cross-checks.",
+    )
     ap.add_argument(
         "--transport-manifest",
         type=Path,
@@ -63,6 +69,8 @@ def main(argv: list[str] | None = None) -> int:
         chain_root,
         primary_label=args.primary_label,
         isolation_label=args.isolation_label,
+        corroboration_label=args.corroboration_label,
+        consensus_mode=args.consensus,
         transport_artifacts=transport_rows,
     )
     output_path = args.output or (chain_root / "box_consensus_consumer_audit.json")
