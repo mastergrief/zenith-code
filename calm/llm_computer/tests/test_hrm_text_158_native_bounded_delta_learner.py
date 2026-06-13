@@ -886,8 +886,10 @@ from calm.hrm_text_158.native_full_stack.two_tier_transient_selection import (
 )
 from calm.hrm_text_158.native_full_stack.vote_update import (
     LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+    apply_two_tier_vote_update_reference,
     plan_integer_vote_update_reference,
     plan_two_tier_vote_update_reference,
+    plan_two_tier_vote_update_reference_legacy,
 )
 
 B6_OFF_GOLDEN_SHA256 = "0b3a999592469c3b8b5e43644891e5d4c39dadf2b52cd5d72494fa95cd29756b"
@@ -2642,3 +2644,235 @@ def test_b6_flag_on_global_cap_operates_after_veto_pre_veto_selection():
     assert on_result.tensor_states["toy.proj"].q_levels.tolist() == [1, 0, 0]
     assert on_result.tensor_states["toy.proj"].exact_accumulator_shadow.tolist() == [2, 2, 12]
     assert on_result.deferred_backlog["toy.proj"][2]["defer_count"] == 1
+
+
+def _b6_two_tier_plan_pair(
+    *,
+    q_values: list[int],
+    acc_values: list[int],
+    vote_values: list[int],
+    delta_values: list[float],
+    max_abs_per_tensor: int,
+    spec_threshold_abs: int = 10,
+):
+    state = make_bounded_tensor_state(
+        "toy.proj",
+        torch.tensor(q_values, dtype=torch.int8),
+        0.5,
+        torch.tensor(acc_values, dtype=torch.int16),
+    )
+    inputs = VoteUpdateInputs(
+        votes=torch.tensor(vote_values, dtype=torch.int16),
+        local_loss_delta=torch.tensor(delta_values, dtype=torch.float32),
+    )
+    spec = VoteUpdateSpec(
+        threshold_abs=int(spec_threshold_abs),
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=int(max_abs_per_tensor),
+    )
+    vote_state = state.vote_update_state()
+    kwargs = dict(
+        state=vote_state,
+        inputs=inputs,
+        spec=spec,
+        local_selection_ordering_mode=LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
+    )
+    return (
+        plan_two_tier_vote_update_reference(**kwargs),
+        plan_two_tier_vote_update_reference_legacy(**kwargs),
+    )
+
+
+def _assert_two_tier_plans_bit_exact(fast, legacy) -> None:
+    assert _b6_tensor_list(fast.pre_veto_selected_indices) == _b6_tensor_list(
+        legacy.pre_veto_selected_indices
+    )
+    assert _b6_tensor_list(fast.candidate_indices) == _b6_tensor_list(legacy.candidate_indices)
+    assert _b6_tensor_list(fast.applied_indices) == _b6_tensor_list(legacy.applied_indices)
+    assert fast.new_acc_i32.tolist() == legacy.new_acc_i32.tolist()
+    for key in (
+        "candidate_count",
+        "pre_veto_selected_flip_count",
+        "two_tier_threshold_abs",
+        "two_tier_canonical_threshold_abs",
+    ):
+        assert fast.stats[key] == legacy.stats[key]
+
+
+def test_two_tier_fast_path_parity_tie_band_local_loss_delta() -> None:
+    """C3: equal-delta tie-band must match legacy flat_index tie-break ordering."""
+
+    fast, legacy = _b6_two_tier_plan_pair(
+        q_values=[0, 0, 0, 0, 0, 0],
+        acc_values=[0, 0, 0, 0, 0, 0],
+        vote_values=[12, 12, 12, 12, 12, 12],
+        delta_values=[0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+        max_abs_per_tensor=2,
+    )
+    _assert_two_tier_plans_bit_exact(fast, legacy)
+    assert _b6_tensor_list(fast.pre_veto_selected_indices) == [0, 1]
+
+
+def test_two_tier_fast_path_parity_toy_tensors() -> None:
+    fast, legacy = _b6_two_tier_plan_pair(
+        q_values=[0, 0, -1, 1],
+        acc_values=[0, 5, -5, 8],
+        vote_values=[12, -3, 12, -12],
+        delta_values=[0.1, 0.5, 0.2, 0.05],
+        max_abs_per_tensor=4,
+    )
+    _assert_two_tier_plans_bit_exact(fast, legacy)
+
+
+def test_two_tier_fast_path_apply_plan_parity_toy_tensors() -> None:
+    state = make_bounded_tensor_state(
+        "toy.proj",
+        torch.tensor([0, 0, -1, 1], dtype=torch.int8),
+        0.5,
+        torch.tensor([0, 5, -5, 8], dtype=torch.int16),
+    )
+    inputs = VoteUpdateInputs(
+        votes=torch.tensor([12, -3, 12, -12], dtype=torch.int16),
+        local_loss_delta=torch.tensor([0.1, 0.5, 0.2, 0.05], dtype=torch.float32),
+    )
+    spec = VoteUpdateSpec(
+        threshold_abs=10,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=4,
+    )
+    kwargs = dict(
+        state=state.vote_update_state(),
+        inputs=inputs,
+        spec=spec,
+        local_selection_ordering_mode=LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
+    )
+    fast_result = apply_two_tier_vote_update_reference(**kwargs)
+    legacy_plan = plan_two_tier_vote_update_reference_legacy(**kwargs)
+    _assert_two_tier_plans_bit_exact(fast_result.plan, legacy_plan)
+
+
+def test_two_tier_fast_path_single_module_1m_liveness() -> None:
+    import time
+
+    numel = 2048 * 512
+    q = torch.zeros(numel, dtype=torch.int8)
+    acc = torch.zeros(numel, dtype=torch.int16)
+    votes = torch.zeros(numel, dtype=torch.int16)
+    votes[0] = 12
+    deltas = torch.linspace(0.0, 1.0, numel, dtype=torch.float32)
+    state = make_bounded_tensor_state("mod0", q, 0.5, acc).vote_update_state()
+    inputs = VoteUpdateInputs(votes=votes, local_loss_delta=deltas)
+    spec = VoteUpdateSpec(
+        threshold_abs=10,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=64,
+    )
+    started = time.perf_counter()
+    result = apply_two_tier_vote_update_reference(
+        state,
+        inputs,
+        spec,
+        local_selection_ordering_mode=LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
+    )
+    elapsed = time.perf_counter() - started
+    assert elapsed < 5.0, f"single-module 1M apply took {elapsed:.2f}s"
+    assert int(result.plan.stats["candidate_count"]) >= 1
+
+
+def test_two_tier_fast_path_all_bitlinear_shape_liveness() -> None:
+    import time
+
+    numel = 2048 * 512
+    spec = VoteUpdateSpec(
+        threshold_abs=10,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=64,
+    )
+    started = time.perf_counter()
+    for module_index in range(32):
+        q = torch.zeros(numel, dtype=torch.int8)
+        acc = torch.zeros(numel, dtype=torch.int16)
+        votes = torch.zeros(numel, dtype=torch.int16)
+        votes[module_index % numel] = 12
+        deltas = torch.linspace(0.0, 1.0, numel, dtype=torch.float32)
+        state = make_bounded_tensor_state(f"mod{module_index}", q, 0.5, acc).vote_update_state()
+        inputs = VoteUpdateInputs(votes=votes, local_loss_delta=deltas)
+        apply_two_tier_vote_update_reference(
+            state,
+            inputs,
+            spec,
+            local_selection_ordering_mode=LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
+        )
+    elapsed = time.perf_counter() - started
+    assert elapsed < 60.0, f"32x1M per-step apply loop took {elapsed:.2f}s"
+
+
+def test_two_tier_fast_path_bounded_delta_apply_single_module_1m_liveness() -> None:
+    import time
+
+    numel = 2048 * 512
+    key = "mod0"
+    q = torch.zeros(numel, dtype=torch.int8)
+    acc = torch.zeros(numel, dtype=torch.int16)
+    votes = torch.zeros(numel, dtype=torch.int16)
+    votes[0] = 12
+    deltas = torch.linspace(0.0, 1.0, numel, dtype=torch.float32)
+    spec = VoteUpdateSpec(
+        threshold_abs=10,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=64,
+    )
+    started = time.perf_counter()
+    apply_bounded_delta_vote_step(
+        tensor_states={key: make_bounded_tensor_state(key, q, 0.5, acc)},
+        votes_by_key={key: votes},
+        vote_specs_by_key={key: spec},
+        local_loss_delta_by_key={key: deltas},
+        two_tier_carry_w6_enabled=True,
+        local_selection_ordering_mode=LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
+    )
+    elapsed = time.perf_counter() - started
+    assert elapsed < 5.0, f"bounded_delta apply single 1M module took {elapsed:.2f}s"
+
+
+def test_two_tier_fast_path_bounded_delta_apply_all_bitlinear_shape_liveness() -> None:
+    import time
+
+    numel = 2048 * 512
+    spec = VoteUpdateSpec(
+        threshold_abs=10,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=64,
+    )
+    tensor_states = {}
+    votes_by_key = {}
+    vote_specs_by_key = {}
+    local_loss_delta_by_key = {}
+    for module_index in range(32):
+        key = f"mod{module_index}"
+        q = torch.zeros(numel, dtype=torch.int8)
+        acc = torch.zeros(numel, dtype=torch.int16)
+        votes = torch.zeros(numel, dtype=torch.int16)
+        votes[module_index % numel] = 12
+        deltas = torch.linspace(0.0, 1.0, numel, dtype=torch.float32)
+        tensor_states[key] = make_bounded_tensor_state(key, q, 0.5, acc)
+        votes_by_key[key] = votes
+        vote_specs_by_key[key] = spec
+        local_loss_delta_by_key[key] = deltas
+    started = time.perf_counter()
+    apply_bounded_delta_vote_step(
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+        vote_specs_by_key=vote_specs_by_key,
+        local_loss_delta_by_key=local_loss_delta_by_key,
+        two_tier_carry_w6_enabled=True,
+        local_selection_ordering_mode=LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
+    )
+    elapsed = time.perf_counter() - started
+    assert elapsed < 60.0, f"bounded_delta apply 32x1M per-step took {elapsed:.2f}s"

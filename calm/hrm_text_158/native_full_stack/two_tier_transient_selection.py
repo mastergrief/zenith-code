@@ -12,10 +12,13 @@ from __future__ import annotations
 import math
 from typing import Any, Mapping, Sequence
 
+import torch
+
 from calm.hrm_text_158.native_full_stack.two_tier_carry_reducers import (
     carry_self_update_row,
     crossing_bool_w6,
     crosses_threshold,
+    effective_clip_w6,
 )
 from calm.hrm_text_158.native_full_stack.two_tier_threshold_semantics import (
     CROSSING_THRESHOLD_ABS,
@@ -174,6 +177,57 @@ def validate_two_tier_selector_inputs(
             require_local_loss_delta=require_local_loss_delta,
         )
     return ["selector_inputs_unsupported_shape"]
+
+
+def carry_after_i32_tensor(
+    acc_i32: torch.Tensor,
+    vote_i32: torch.Tensor,
+    *,
+    decay_numerator: int = 1,
+    decay_denominator: int = 1,
+) -> torch.Tensor:
+    """Vectorized W6 carry-after matching carry_self_update_row(decay=1/1)."""
+
+    clip_min, clip_max = effective_clip_w6()
+    decayed = acc_i32
+    if int(decay_numerator) != 1 or int(decay_denominator) != 1:
+        decayed = (acc_i32 * int(decay_numerator)) // int(decay_denominator)
+    return (decayed + vote_i32).clamp(int(clip_min), int(clip_max))
+
+
+def crossing_eligible_mask_from_tensors(
+    q_i16: torch.Tensor,
+    carry_after_i32: torch.Tensor,
+    *,
+    threshold_abs: int = CROSSING_THRESHOLD_ABS,
+) -> torch.Tensor:
+    """Tensor mask matching crossing_eligible_flat_indices W6 semantics."""
+
+    threshold = int(threshold_abs)
+    return ((carry_after_i32 >= threshold) & (q_i16 < 1)) | (
+        (carry_after_i32 <= -threshold) & (q_i16 > -1)
+    )
+
+
+def select_flat_indices_by_local_loss_delta_tensor(
+    local_loss_delta: torch.Tensor,
+    crossing_mask: torch.Tensor,
+    *,
+    rate_cap: int,
+) -> torch.Tensor:
+    """Select up to rate_cap crossing flat indices by (delta, flat_index) ascending."""
+
+    if int(rate_cap) < 0:
+        raise ValueError(f"rate_cap must be >= 0, got {rate_cap}")
+    crossing_flat = crossing_mask.nonzero(as_tuple=False).flatten().to(torch.int64)
+    if crossing_flat.numel() == 0 or int(rate_cap) == 0:
+        return crossing_flat[:0]
+    deltas_at_crossing = local_loss_delta[crossing_flat]
+    flat_order = torch.argsort(crossing_flat, stable=True)
+    crossing_flat = crossing_flat[flat_order]
+    deltas_at_crossing = deltas_at_crossing[flat_order]
+    delta_order = torch.argsort(deltas_at_crossing, stable=True)
+    return crossing_flat[delta_order[: int(rate_cap)]]
 
 
 def crossing_eligible_flat_indices(

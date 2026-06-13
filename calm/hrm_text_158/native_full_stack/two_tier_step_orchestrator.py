@@ -234,6 +234,30 @@ def _materialize_step_rows(
     return materialized_rows
 
 
+def build_two_tier_step_plan_for_apply(
+    *,
+    carry_after_by_flat_index: Mapping[int, int],
+    q_level_by_flat_index: Mapping[int, int],
+    pre_veto_flat_indices: Sequence[int],
+    materialized_rows: Sequence[Mapping[str, Any]],
+    warmup: bool,
+    local_selection_ordering_mode: str,
+    threshold_abs: int = CROSSING_THRESHOLD_ABS,
+) -> TwoTierStepPlan:
+    """Compact TwoTierStepPlan for apply write-backs without full-map re-materialization."""
+
+    validate_two_tier_step_ordering_mode(local_selection_ordering_mode)
+    return TwoTierStepPlan(
+        warmup=bool(warmup),
+        local_selection_ordering_mode=str(local_selection_ordering_mode),
+        threshold_abs=int(threshold_abs),
+        materialized_rows=tuple(dict(row) for row in materialized_rows),
+        carry_after_by_flat_index=dict(carry_after_by_flat_index),
+        q_level_by_flat_index=dict(q_level_by_flat_index),
+        pre_veto_flat_indices=tuple(int(value) for value in pre_veto_flat_indices),
+    )
+
+
 def _snapshot_q_level_by_flat_index(
     materialized_rows: Sequence[Mapping[str, Any]],
     q_level_by_flat_index: Mapping[int, int],
