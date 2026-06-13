@@ -26,7 +26,7 @@ from calm.hrm_text_158.native_full_stack.selector_value_analysis import (
 )
 
 SCHEMA_VERSION = "hrm_text_158_selector_support_invariance_analysis/v0"
-SHADOW_SCHEMA_VERSION = "hrm_text_158_shadow_arm_branch5/v0"
+SHADOW_SCHEMA_VERSION = "hrm_text_158_shadow_arm_branch5/v1"
 BRANCH_PRECEDENCE_SCHEMA = "hrm_text_158_branch_precedence_receipt/v0"
 
 BRANCH_PRECEDENCE: tuple[str, ...] = (
@@ -83,13 +83,99 @@ def _reverse_bin_mass(fractions: Sequence[float]) -> list[float]:
     return list(reversed([float(value) for value in fractions]))
 
 
+# Branch-5 shadow prereg constants (design v4 artifact ea81106c…).
+EPSILON_UNIFORM = 0.02
+DELTA_ENTROPY = 0.05
+NULL_STRUCTURED_MIN = 0.05
+ORDER_MATCH_HIGH = 0.80
+INV_MATCH_HIGH = 0.80
+BEAT_MARGIN = 0.10
+DIRECTION_ASYMMETRY_MIN = 0.05
+MIN_NON_DEGENERATE_OBS = 4
+MIN_FRACTION_NON_DEGENERATE = 0.5
+MIN_DIRECTION_ASYMMETRIC_OBS = 2
+
+
+def _flatten_signed_2n(pos_fractions: Sequence[float], neg_fractions: Sequence[float]) -> list[float]:
+    vector: list[float] = []
+    for pos, neg in zip(pos_fractions, neg_fractions, strict=True):
+        vector.extend([float(pos), float(neg)])
+    return vector
+
+
+def _swap_pos_neg_2n(pos_fractions: Sequence[float], neg_fractions: Sequence[float]) -> list[float]:
+    return _flatten_signed_2n(list(neg_fractions), list(pos_fractions))
+
+
+def _shape_near_uniform(fractions: Sequence[float]) -> bool:
+    if not fractions:
+        return True
+    n = len(fractions)
+    uniform = 1.0 / float(n)
+    if max(abs(float(value) - uniform) for value in fractions) < EPSILON_UNIFORM:
+        return True
+    max_entropy = math.log(float(n)) if n > 1 else 0.0
+    return _entropy(fractions) >= (1.0 - DELTA_ENTROPY) * max_entropy
+
+
+def _max_direction_asymmetry(pos_fractions: Sequence[float], neg_fractions: Sequence[float]) -> float:
+    if not pos_fractions:
+        return 0.0
+    return max(
+        abs(float(pos) - float(neg)) / (float(pos) + float(neg) + 1e-12)
+        for pos, neg in zip(pos_fractions, neg_fractions, strict=True)
+    )
+
+
+def _signed_agreement_score(primary_2n: Sequence[float], counterfactual_2n: Sequence[float]) -> float:
+    if len(primary_2n) != len(counterfactual_2n) or not primary_2n:
+        return 0.0
+    return 1.0 - _uniform_null_distance(
+        [abs(float(a) - float(b)) for a, b in zip(primary_2n, counterfactual_2n, strict=True)],
+    )
+
+
+def _read_signed_mass(summary: Mapping[str, Any]) -> tuple[list[float], list[float]] | None:
+    signed = summary.get("signed_rank_bin_mass")
+    if not isinstance(signed, Mapping):
+        return None
+    pos = signed.get("pos_bin_fraction")
+    neg = signed.get("neg_bin_fraction")
+    if not isinstance(pos, list) or not isinstance(neg, list) or not pos:
+        return None
+    return [float(value) for value in pos], [float(value) for value in neg]
+
+
+def _read_a1_signed_mass(summary: Mapping[str, Any]) -> tuple[list[float], list[float], str] | None:
+    counterfactual = summary.get("counterfactual_signed_rank_bin_mass")
+    if not isinstance(counterfactual, Mapping):
+        return None
+    a1 = counterfactual.get("a1_order_matched")
+    if not isinstance(a1, Mapping):
+        return None
+    pos = a1.get("pos_bin_fraction")
+    neg = a1.get("neg_bin_fraction")
+    if not isinstance(pos, list) or not isinstance(neg, list) or not pos:
+        return None
+    basis = str(counterfactual.get("order_matched_basis") or "a1_emitted")
+    return [float(value) for value in pos], [float(value) for value in neg], basis
+
+
+def _unsigned_reversal_fallback_2n(fractions: Sequence[float]) -> list[float]:
+    reversed_bins = _reverse_bin_mass([float(value) for value in fractions])
+    return _flatten_signed_2n(reversed_bins, [0.0] * len(reversed_bins))
+
+
 def compute_within_run_shadow_arms(receipt: Mapping[str, Any]) -> dict[str, Any]:
-    """CPU-only branch-5 shadows from compact vote_pressure fields."""
+    """CPU-only branch-5 shadows from compact signed rank-bin mass fields."""
 
     order_matched_scores: list[float] = []
     inverted_scores: list[float] = []
     random_null_scores: list[float] = []
     steps_considered = 0
+    non_degenerate_obs = 0
+    direction_asymmetric_obs = 0
+    order_matched_bases: set[str] = set()
     for step_key, step_entry in receipt.get("step_reports", {}).items():
         step = int(step_key)
         if step < PRIMARY_STEP_MIN or step > PRIMARY_STEP_MAX:
@@ -102,41 +188,66 @@ def compute_within_run_shadow_arms(receipt: Mapping[str, Any]) -> dict[str, Any]
             if not isinstance(pressure_entry, Mapping):
                 continue
             summary = pressure_entry.get("pressure_shape_summary")
-            if isinstance(summary, Mapping):
-                fractions = summary.get("bin_mass_fraction") or []
-                if fractions:
-                    primary = [float(value) for value in fractions]
-                    reversed_bins = _reverse_bin_mass(primary)
-                    order_matched_scores.append(
-                        1.0 - _uniform_null_distance(
-                            [abs(a - b) for a, b in zip(primary, reversed_bins)],
-                        ),
-                    )
-                    random_null_scores.append(_uniform_null_distance(primary))
-            positive = int(pressure_entry.get("vote_positive_count") or 0)
-            negative = int(pressure_entry.get("vote_negative_count") or 0)
-            total = positive + negative
-            if total > 0:
-                primary_balance = positive / total
-                inverted_balance = negative / total
-                inverted_scores.append(1.0 - abs(primary_balance - inverted_balance))
+            if not isinstance(summary, Mapping):
+                continue
+            fractions = summary.get("bin_mass_fraction") or []
+            if fractions:
+                random_null_scores.append(_uniform_null_distance([float(value) for value in fractions]))
+            signed_primary = _read_signed_mass(summary)
+            if signed_primary is None:
+                continue
+            pos_primary, neg_primary = signed_primary
+            if _shape_near_uniform([float(value) for value in fractions]):
+                continue
+            non_degenerate_obs += 1
+            primary_2n = _flatten_signed_2n(pos_primary, neg_primary)
+            a1_payload = _read_a1_signed_mass(summary)
+            if a1_payload is not None:
+                pos_a1, neg_a1, basis = a1_payload
+                order_matched_bases.add(basis)
+                order_cf_2n = _flatten_signed_2n(pos_a1, neg_a1)
+            elif fractions:
+                order_matched_bases.add("reversal_fallback")
+                order_cf_2n = _unsigned_reversal_fallback_2n(fractions)
+            else:
+                continue
+            order_matched_scores.append(_signed_agreement_score(primary_2n, order_cf_2n))
+            if _max_direction_asymmetry(pos_primary, neg_primary) < DIRECTION_ASYMMETRY_MIN:
+                continue
+            direction_asymmetric_obs += 1
+            inverted_cf_2n = _swap_pos_neg_2n(pos_primary, neg_primary)
+            inverted_scores.append(_signed_agreement_score(primary_2n, inverted_cf_2n))
+    total_shape_obs = len(random_null_scores)
+    fraction_non_degenerate = (
+        float(non_degenerate_obs) / float(total_shape_obs) if total_shape_obs else 0.0
+    )
+    branch5_sufficient = (
+        non_degenerate_obs >= MIN_NON_DEGENERATE_OBS
+        and fraction_non_degenerate >= MIN_FRACTION_NON_DEGENERATE
+    )
+    inverted_contributing = direction_asymmetric_obs >= MIN_DIRECTION_ASYMMETRIC_OBS
     return {
         "schema": SHADOW_SCHEMA_VERSION,
         "step_window": {"min": PRIMARY_STEP_MIN, "max": PRIMARY_STEP_MAX},
         "steps_considered": steps_considered,
+        "n_non_degenerate_observations": non_degenerate_obs,
+        "fraction_non_degenerate": fraction_non_degenerate,
+        "n_direction_asymmetric_observations": direction_asymmetric_obs,
+        "order_matched_basis_observed": sorted(order_matched_bases),
         SHADOW_ORDER_MATCHED: {
             "mean_agreement_with_order_matched_proxy": _mean(order_matched_scores),
             "n_module_step_observations": len(order_matched_scores),
         },
         SHADOW_INVERTED: {
-            "mean_inverted_balance_agreement": _mean(inverted_scores),
+            "mean_inverted_signed_agreement": _mean(inverted_scores) if inverted_contributing else None,
             "n_module_step_observations": len(inverted_scores),
+            "inverted_direction_degenerate": not inverted_contributing,
         },
         SHADOW_RANDOM_NULL: {
             "mean_uniform_null_distance": _mean(random_null_scores),
             "n_module_step_observations": len(random_null_scores),
         },
-        "branch5_shadow_evidence_sufficient": steps_considered > 0,
+        "branch5_shadow_evidence_sufficient": branch5_sufficient,
     }
 
 
@@ -318,14 +429,21 @@ def shadow_ranking_problem(shadows: Mapping[str, Any]) -> bool:
     order_matched = (shadows.get(SHADOW_ORDER_MATCHED) or {}).get(
         "mean_agreement_with_order_matched_proxy",
     )
-    inverted = (shadows.get(SHADOW_INVERTED) or {}).get("mean_inverted_balance_agreement")
+    inverted_block = shadows.get(SHADOW_INVERTED) or {}
+    if bool(inverted_block.get("inverted_direction_degenerate")):
+        return False
+    inverted = inverted_block.get("mean_inverted_signed_agreement")
     random_null = (shadows.get(SHADOW_RANDOM_NULL) or {}).get("mean_uniform_null_distance")
     if order_matched is None or inverted is None or random_null is None:
         return False
     order = float(order_matched)
     inv = float(inverted)
     null_distance = float(random_null)
-    return order >= inv or null_distance <= (1.0 - order)
+    if null_distance < NULL_STRUCTURED_MIN:
+        return False
+    dual_match = order >= ORDER_MATCH_HIGH and inv >= INV_MATCH_HIGH
+    inverted_wins = inv >= order + BEAT_MARGIN
+    return dual_match or inverted_wins
 
 
 def classify_branch_precedence(inputs: Mapping[str, Any]) -> dict[str, Any]:
@@ -425,7 +543,7 @@ def classify_branch_precedence(inputs: Mapping[str, Any]) -> dict[str, Any]:
                     "mean_agreement_with_order_matched_proxy",
                 ),
                 SHADOW_INVERTED: (shadows.get(SHADOW_INVERTED) or {}).get(
-                    "mean_inverted_balance_agreement",
+                    "mean_inverted_signed_agreement",
                 ),
                 SHADOW_RANDOM_NULL: (shadows.get(SHADOW_RANDOM_NULL) or {}).get(
                     "mean_uniform_null_distance",

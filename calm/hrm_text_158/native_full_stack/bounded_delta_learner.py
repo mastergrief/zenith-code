@@ -561,6 +561,118 @@ def compact_pressure_shape_summary(
     }
 
 
+SIGNED_RANK_BIN_MASS_SCHEMA = "hrm_text_158_signed_rank_bin_mass/v0"
+
+
+def _per_bin_signed_vote_mass(
+    credit: torch.Tensor,
+    projected_moves: torch.Tensor,
+    votes: torch.Tensor,
+    spec: RankVoteSpec,
+) -> tuple[list[float], list[float], float]:
+    """Aggregate positive/negative vote mass per rank bin."""
+
+    spec.validate()
+    if credit.shape != projected_moves.shape or credit.shape != votes.shape:
+        raise ValueError("credit/projected_moves/votes tensor shape mismatch")
+    flat_credit = credit.detach().flatten().to(torch.float32)
+    flat_moves = projected_moves.detach().flatten().to(torch.int8)
+    flat_votes = votes.detach().flatten().to(torch.float32)
+    candidate_idx = torch.nonzero(flat_moves != 0, as_tuple=False).flatten()
+    pos_mass = [0.0] * len(spec.rank_bins)
+    neg_mass = [0.0] * len(spec.rank_bins)
+    if candidate_idx.numel() == 0:
+        return pos_mass, neg_mass, 0.0
+    abs_values = flat_credit[candidate_idx].abs()
+    if spec.rank_method == "grouped_bisect_right":
+        rank_positions = _bisect_right_rank_positions_by_equal_value_group(abs_values)
+        ranks = None
+    else:
+        sorted_abs = torch.sort(abs_values).values
+        ranks = torch.searchsorted(sorted_abs, abs_values, right=True).to(torch.float32) / float(
+            candidate_idx.numel()
+        )
+        rank_positions = None
+    vote_values = flat_votes[candidate_idx]
+    for bin_index, item in enumerate(spec.rank_bins):
+        if spec.rank_method == "grouped_bisect_right":
+            assert rank_positions is not None
+            lo_rank, hi_limit = _rank_bin_bounds(int(candidate_idx.numel()), item)
+            mask = (rank_positions >= lo_rank) & (rank_positions < hi_limit)
+        else:
+            assert ranks is not None
+            include_hi_mask = ranks <= float(item.hi_exclusive) if item.include_hi else torch.zeros_like(
+                ranks,
+                dtype=torch.bool,
+            )
+            mask = (ranks >= float(item.lo_inclusive)) & (
+                (ranks < float(item.hi_exclusive)) | include_hi_mask
+            )
+        if not bool(mask.any().item()):
+            continue
+        bin_votes = vote_values[mask]
+        pos_mass[bin_index] = float(bin_votes[bin_votes > 0.0].sum().item())
+        neg_mass[bin_index] = float((-bin_votes[bin_votes < 0.0]).sum().item())
+    total_abs = float(flat_votes.abs().sum().item())
+    return pos_mass, neg_mass, total_abs
+
+
+def compact_signed_rank_bin_mass_summary(
+    credit: torch.Tensor,
+    projected_moves: torch.Tensor,
+    spec: RankVoteSpec,
+) -> dict[str, Any]:
+    """Signed rank-bin mass on 2N pos/neg basis for branch-5 shadow arms."""
+
+    votes = rank_bucketed_int16_votes(credit, projected_moves, spec)
+    pos_mass, neg_mass, total_abs = _per_bin_signed_vote_mass(
+        credit,
+        projected_moves,
+        votes,
+        spec,
+    )
+    if total_abs <= 0.0:
+        pos_fraction = [0.0] * len(spec.rank_bins)
+        neg_fraction = [0.0] * len(spec.rank_bins)
+        net_fraction = [0.0] * len(spec.rank_bins)
+    else:
+        pos_fraction = [float(value) / total_abs for value in pos_mass]
+        neg_fraction = [float(value) / total_abs for value in neg_mass]
+        net_fraction = [
+            float(pos - neg) / total_abs for pos, neg in zip(pos_mass, neg_mass, strict=True)
+        ]
+    return {
+        "schema": SIGNED_RANK_BIN_MASS_SCHEMA,
+        "pos_bin_fraction": pos_fraction,
+        "neg_bin_fraction": neg_fraction,
+        "signed_bin_net_fraction": net_fraction,
+        "total_abs_vote_mass": total_abs,
+        "telemetry_only_net_fraction": True,
+    }
+
+
+def build_pressure_shape_summary_v1(
+    credit: torch.Tensor,
+    projected_moves: torch.Tensor,
+    rank_spec: RankVoteSpec,
+    *,
+    a1_rank_spec: RankVoteSpec | None = None,
+) -> dict[str, Any]:
+    """Unsigned occupancy plus signed rank-bin mass and A1 counterfactual."""
+
+    summary = compact_pressure_shape_summary(credit, projected_moves, rank_spec)
+    summary["schema"] = "hrm_text_158_pressure_shape_summary/v1"
+    primary_signed = compact_signed_rank_bin_mass_summary(credit, projected_moves, rank_spec)
+    a1_spec = a1_rank_spec or rank_spec
+    a1_signed = compact_signed_rank_bin_mass_summary(credit, projected_moves, a1_spec)
+    summary["signed_rank_bin_mass"] = primary_signed
+    summary["counterfactual_signed_rank_bin_mass"] = {
+        "a1_order_matched": a1_signed,
+        "order_matched_basis": "a1_emitted",
+    }
+    return summary
+
+
 def compact_vote_pressure_summary(votes: torch.Tensor) -> dict[str, Any]:
     """Compact receipt metrics for vote pressure without raw per-proposal arrays."""
 
@@ -2052,6 +2164,8 @@ __all__ = [
     "candidate_weighted_grad_and_diag_fisher_proxies_from_captures",
     "candidate_weighted_grad_proxies_from_captures",
     "compact_pressure_shape_summary",
+    "compact_signed_rank_bin_mass_summary",
+    "build_pressure_shape_summary_v1",
     "compact_vote_pressure_summary",
     "credit_from_weighted_grad",
     "default_dry_run_rank_vote_spec",

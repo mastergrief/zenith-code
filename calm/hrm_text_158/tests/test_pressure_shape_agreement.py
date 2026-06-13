@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -10,7 +11,9 @@ import torch
 from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     RankVoteBin,
     RankVoteSpec,
+    build_pressure_shape_summary_v1,
     compact_pressure_shape_summary,
+    compact_signed_rank_bin_mass_summary,
     credit_from_weighted_grad,
     project_s1_gradient_to_moves,
     rank_bucketed_int16_votes,
@@ -24,7 +27,11 @@ from calm.hrm_text_158.native_full_stack.pressure_shape_agreement import (
     verify_pressure_shape_summary_preflight,
 )
 from calm.hrm_text_158.native_full_stack.selector_support_invariance_analysis import (
+    BEAT_MARGIN,
     BRANCH_PRECEDENCE,
+    INV_MATCH_HIGH,
+    NULL_STRUCTURED_MIN,
+    ORDER_MATCH_HIGH,
     SHADOW_INVERTED,
     SHADOW_ORDER_MATCHED,
     SHADOW_RANDOM_NULL,
@@ -63,22 +70,81 @@ def _shape_summary(fractions: list[float]) -> dict:
     }
 
 
+def _signed_shape_summary(
+    *,
+    fractions: list[float],
+    pos: list[float],
+    neg: list[float],
+    a1_pos: list[float] | None = None,
+    a1_neg: list[float] | None = None,
+) -> dict:
+    a1_pos = list(a1_pos if a1_pos is not None else pos)
+    a1_neg = list(a1_neg if a1_neg is not None else neg)
+    total_abs = sum(pos) + sum(neg)
+    net = [
+        (float(p) - float(n)) / total_abs if total_abs > 0 else 0.0
+        for p, n in zip(pos, neg, strict=True)
+    ]
+    a1_total = sum(a1_pos) + sum(a1_neg)
+    a1_net = [
+        (float(p) - float(n)) / a1_total if a1_total > 0 else 0.0
+        for p, n in zip(a1_pos, a1_neg, strict=True)
+    ]
+    return {
+        "schema": "hrm_text_158_pressure_shape_summary/v1",
+        "rank_method": "grouped_bisect_right",
+        "rank_bins": [],
+        "bin_occupancy_count": [int(round(100 * value)) for value in fractions],
+        "bin_mass_fraction": fractions,
+        "candidate_count": 100,
+        "raw_per_proposal_arrays_included": False,
+        "signed_rank_bin_mass": {
+            "schema": "hrm_text_158_signed_rank_bin_mass/v0",
+            "pos_bin_fraction": pos,
+            "neg_bin_fraction": neg,
+            "signed_bin_net_fraction": net,
+            "total_abs_vote_mass": total_abs,
+            "telemetry_only_net_fraction": True,
+        },
+        "counterfactual_signed_rank_bin_mass": {
+            "a1_order_matched": {
+                "schema": "hrm_text_158_signed_rank_bin_mass/v0",
+                "pos_bin_fraction": a1_pos,
+                "neg_bin_fraction": a1_neg,
+                "signed_bin_net_fraction": a1_net,
+                "total_abs_vote_mass": a1_total,
+                "telemetry_only_net_fraction": True,
+            },
+            "order_matched_basis": "a1_emitted",
+        },
+    }
+
+
 def _receipt_with_shapes(
     *,
     module_shapes: dict[str, list[float]],
     steps: range,
+    signed_shapes: dict[str, tuple[list[float], list[float]]] | None = None,
 ) -> dict:
     step_reports = {}
     for step in steps:
-        vote_pressure = {
-            state_key: {
+        vote_pressure = {}
+        for state_key, fractions in module_shapes.items():
+            entry = {
                 "state_key": state_key,
                 "vote_positive_count": 1,
                 "vote_negative_count": 1,
-                "pressure_shape_summary": _shape_summary(fractions),
             }
-            for state_key, fractions in module_shapes.items()
-        }
+            if signed_shapes and state_key in signed_shapes:
+                pos, neg = signed_shapes[state_key]
+                entry["pressure_shape_summary"] = _signed_shape_summary(
+                    fractions=fractions,
+                    pos=pos,
+                    neg=neg,
+                )
+            else:
+                entry["pressure_shape_summary"] = _shape_summary(fractions)
+            vote_pressure[state_key] = entry
         step_reports[str(step)] = {"vote_pressure": vote_pressure, "loss": float(step)}
     return {"step_reports": step_reports}
 
@@ -173,10 +239,107 @@ def test_shadow_arms_compute_from_receipt() -> None:
     receipt = _receipt_with_shapes(
         module_shapes={"mod.a": [0.9, 0.1], "mod.b": [0.2, 0.8]},
         steps=range(3, 11),
+        signed_shapes={
+            "mod.a": ([0.7, 0.05], [0.05, 0.05]),
+            "mod.b": ([0.1, 0.6], [0.05, 0.05]),
+        },
     )
     shadows = compute_within_run_shadow_arms(receipt)
     assert shadows["branch5_shadow_evidence_sufficient"] is True
     assert shadows["order_matched_shadow"]["n_module_step_observations"] > 0
+    assert shadows[SHADOW_INVERTED]["inverted_direction_degenerate"] is False
+
+
+def _shadows_ranking_problem() -> dict:
+    return {
+        "branch5_shadow_evidence_sufficient": True,
+        SHADOW_ORDER_MATCHED: {"mean_agreement_with_order_matched_proxy": 0.5},
+        SHADOW_INVERTED: {
+            "mean_inverted_signed_agreement": 0.9,
+            "inverted_direction_degenerate": False,
+        },
+        SHADOW_RANDOM_NULL: {"mean_uniform_null_distance": 0.2},
+    }
+
+
+def test_shadow_ranking_problem_detects_inverted_beats_order() -> None:
+    assert shadow_ranking_problem(_shadows_ranking_problem()) is True
+
+
+def test_shadow_ranking_problem_rejects_uniform_shape_triviality() -> None:
+    shadows = {
+        "branch5_shadow_evidence_sufficient": True,
+        SHADOW_ORDER_MATCHED: {"mean_agreement_with_order_matched_proxy": 0.5},
+        SHADOW_INVERTED: {
+            "mean_inverted_signed_agreement": 0.99,
+            "inverted_direction_degenerate": False,
+        },
+        SHADOW_RANDOM_NULL: {"mean_uniform_null_distance": 1e-6},
+    }
+    assert shadow_ranking_problem(shadows) is False
+
+
+def test_signed_flip_changes_inverted_summary_direction_asymmetric() -> None:
+    q = torch.tensor([[-1, 0, 0, 1, -1, 1]], dtype=torch.int8)
+    grad = torch.tensor([[-1.0, -2.0, 3.0, 4.0, 5.0, -6.0]])
+    spec = _rank_spec()
+    moves = project_s1_gradient_to_moves(grad, q)
+    credit = credit_from_weighted_grad(grad)
+    primary = compact_signed_rank_bin_mass_summary(credit, moves, spec)
+    flipped = compact_signed_rank_bin_mass_summary(credit, -moves, spec)
+    assert primary["pos_bin_fraction"] != flipped["pos_bin_fraction"]
+    assert primary["neg_bin_fraction"] != flipped["neg_bin_fraction"]
+
+
+def test_unsigned_bin_mass_unchanged_under_move_flip() -> None:
+    q = torch.tensor([[-1, 0, 0, 1, -1, 1]], dtype=torch.int8)
+    grad = torch.tensor([[-1.0, -2.0, 3.0, 4.0, 5.0, -6.0]])
+    spec = _rank_spec()
+    moves = project_s1_gradient_to_moves(grad, q)
+    credit = credit_from_weighted_grad(grad)
+    primary = compact_pressure_shape_summary(credit, moves, spec)
+    flipped = compact_pressure_shape_summary(credit, -moves, spec)
+    assert primary["bin_mass_fraction"] == flipped["bin_mass_fraction"]
+
+
+def test_direction_symmetric_marks_inverted_degenerate_not_one() -> None:
+    receipt = _receipt_with_shapes(
+        module_shapes={f"mod.{index}": [0.5, 0.5] for index in range(6)},
+        steps=range(3, 11),
+        signed_shapes={
+            f"mod.{index}": ([0.25, 0.25], [0.25, 0.25])
+            for index in range(6)
+        },
+    )
+    shadows = compute_within_run_shadow_arms(receipt)
+    assert shadows["branch5_shadow_evidence_sufficient"] is False
+    assert shadows[SHADOW_INVERTED]["inverted_direction_degenerate"] is True
+    assert shadows[SHADOW_INVERTED]["mean_inverted_signed_agreement"] is None
+
+
+def test_build_pressure_shape_summary_v1_emits_signed_fields() -> None:
+    q = torch.tensor([[-1, 0, 0, 1]], dtype=torch.int8)
+    grad = torch.tensor([[-1.0, -2.0, 3.0, 4.0]])
+    spec = _rank_spec()
+    moves = project_s1_gradient_to_moves(grad, q)
+    credit = credit_from_weighted_grad(grad)
+    summary = build_pressure_shape_summary_v1(credit, moves, spec)
+    assert summary["schema"] == "hrm_text_158_pressure_shape_summary/v1"
+    assert "signed_rank_bin_mass" in summary
+    assert summary["counterfactual_signed_rank_bin_mass"]["order_matched_basis"] == "a1_emitted"
+
+
+def test_signed_emit_cost_bounded() -> None:
+    q = torch.tensor([[-1, 0, 0, 1, -1, 1]], dtype=torch.int8)
+    grad = torch.tensor([[-1.0, -2.0, 3.0, 4.0, 5.0, -6.0]])
+    spec = _rank_spec()
+    moves = project_s1_gradient_to_moves(grad, q)
+    credit = credit_from_weighted_grad(grad)
+    start = time.perf_counter()
+    for _ in range(200):
+        build_pressure_shape_summary_v1(credit, moves, spec)
+    elapsed_us = (time.perf_counter() - start) * 1e6 / 200.0
+    assert elapsed_us < 5000.0
 
 
 def _branch4_pressure() -> dict:
@@ -186,19 +349,6 @@ def _branch4_pressure() -> dict:
         "p10_module_cosine": 0.65,
         "n_comparable_modules": 8,
     }
-
-
-def _shadows_ranking_problem() -> dict:
-    return {
-        "branch5_shadow_evidence_sufficient": True,
-        SHADOW_ORDER_MATCHED: {"mean_agreement_with_order_matched_proxy": 0.9},
-        SHADOW_INVERTED: {"mean_inverted_balance_agreement": 0.95},
-        SHADOW_RANDOM_NULL: {"mean_uniform_null_distance": 0.05},
-    }
-
-
-def test_shadow_ranking_problem_detects_inverted_beats_order() -> None:
-    assert shadow_ranking_problem(_shadows_ranking_problem()) is True
 
 
 def test_classify_branch1_screen_harness_or_gate_fail() -> None:

@@ -79,6 +79,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     build_authoritative_checkpoint_payload,
     build_optimizer_excluding_eligible_masters,
     compact_pressure_shape_summary,
+    build_pressure_shape_summary_v1,
     compact_vote_pressure_summary,
     credit_from_weighted_grad,
     default_dry_run_rank_vote_spec,
@@ -3337,7 +3338,7 @@ def _weighted_grads_to_science_arm_votes(
             **compact_vote_pressure_summary(votes),
         }
         if str(science_arm) in {ARM_A0_RANK_BUCKET_CURRENT, ARM_A1_RANK_BUCKET_ORDER_MATCHED}:
-            pressure_entry["pressure_shape_summary"] = compact_pressure_shape_summary(
+            pressure_entry["pressure_shape_summary"] = build_pressure_shape_summary_v1(
                 credit,
                 moves,
                 rank_spec,
