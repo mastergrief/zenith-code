@@ -3580,6 +3580,7 @@ TIER_A_PROBE_RECEIPT_INDEX_SURFACE_KEYS: frozenset[str] = frozenset(
     {
         "pre_veto_selected_indices",
         "applied_indices",
+        "post_veto_would_apply_pre_cap_indices",
         "replay_ce_veto_indices",
     }
 )
@@ -4080,6 +4081,9 @@ def _attach_control_arm_index_surfaces_to_compact(
         local_selection_ordering_seed=int(local_selection_ordering_seed),
         local_selection_ordering_step=int(local_selection_ordering_step),
     )
+    global_rate_cap_enabled = bool(
+        dict(compact.get("global_summary", {})).get("global_rate_cap_enabled")
+    )
     for state_key, plan in sorted(plans_by_key.items()):
         stats = dict(tensor_stats[state_key])
         replay_ce_veto_indices = [
@@ -4088,11 +4092,13 @@ def _attach_control_arm_index_surfaces_to_compact(
         applied_indices = [
             int(value) for value in plan.applied_indices.detach().cpu().tolist()
         ]
+        cap_enabled = bool(stats.get("global_rate_cap_enabled", global_rate_cap_enabled))
         _assert_tier_a_index_surface_count_consistency(
             state_key,
             tensor_stats=stats,
             replay_ce_veto_indices=replay_ce_veto_indices,
             applied_indices=applied_indices,
+            global_rate_cap_enabled=cap_enabled,
         )
         stats["pre_veto_selected_indices"] = [
             int(value)
@@ -4111,8 +4117,10 @@ def _assert_tier_a_index_surface_count_consistency(
     tensor_stats: Mapping[str, Any],
     replay_ce_veto_indices: Sequence[int],
     applied_indices: Sequence[int],
+    global_rate_cap_enabled: bool = False,
 ) -> None:
     stats = dict(tensor_stats)
+    cap_enabled = bool(stats.get("global_rate_cap_enabled", global_rate_cap_enabled))
     if "replay_ce_veto_count" in stats:
         expected = int(stats["replay_ce_veto_count"])
         actual = len(replay_ce_veto_indices)
@@ -4122,7 +4130,32 @@ def _assert_tier_a_index_surface_count_consistency(
                 f"state_key={state_key!r}, replay_ce_veto_indices_len={actual}, "
                 f"replay_ce_veto_count={expected}"
             )
-    if "post_veto_applied_flip_count" in stats:
+    if cap_enabled:
+        if "post_veto_would_apply_pre_cap_count" in stats:
+            expected_pre_cap = int(stats["post_veto_would_apply_pre_cap_count"])
+            actual_pre_cap = len(applied_indices)
+            if actual_pre_cap != expected_pre_cap:
+                raise ValueError(
+                    "tier_a_staging_index_surface_post_veto_would_apply_pre_cap_count_mismatch: "
+                    f"state_key={state_key!r}, applied_indices_len={actual_pre_cap}, "
+                    f"post_veto_would_apply_pre_cap_count={expected_pre_cap}"
+                )
+        if "post_veto_applied_flip_count" in stats:
+            expected_post_cap = int(stats["post_veto_applied_flip_count"])
+            if "post_veto_applied_indices" not in stats:
+                raise ValueError(
+                    "tier_a_staging_index_surface_post_veto_applied_indices_missing: "
+                    f"state_key={state_key!r}, post_veto_applied_flip_count={expected_post_cap}"
+                )
+            post_veto_applied_indices = stats["post_veto_applied_indices"]
+            actual_post_cap = len(post_veto_applied_indices)
+            if actual_post_cap != expected_post_cap:
+                raise ValueError(
+                    "tier_a_staging_index_surface_post_veto_applied_flip_count_mismatch: "
+                    f"state_key={state_key!r}, post_veto_applied_indices_len={actual_post_cap}, "
+                    f"post_veto_applied_flip_count={expected_post_cap}"
+                )
+    elif "post_veto_applied_flip_count" in stats:
         expected = int(stats["post_veto_applied_flip_count"])
         actual = len(applied_indices)
         if actual != expected:
@@ -4166,6 +4199,9 @@ def _attach_tier_a_staging_index_surfaces_to_compact(
         local_selection_ordering_seed=int(local_selection_ordering_seed),
         local_selection_ordering_step=int(local_selection_ordering_step),
     )
+    global_rate_cap_enabled = bool(
+        dict(compact.get("global_summary", {})).get("global_rate_cap_enabled")
+    )
     for state_key, plan in sorted(plans_by_key.items()):
         stats = dict(tensor_stats[state_key])
         replay_ce_veto_indices = [
@@ -4174,16 +4210,24 @@ def _attach_tier_a_staging_index_surfaces_to_compact(
         applied_indices = [
             int(value) for value in plan.applied_indices.detach().cpu().tolist()
         ]
+        cap_enabled = bool(stats.get("global_rate_cap_enabled", global_rate_cap_enabled))
         _assert_tier_a_index_surface_count_consistency(
             state_key,
             tensor_stats=stats,
             replay_ce_veto_indices=replay_ce_veto_indices,
             applied_indices=applied_indices,
+            global_rate_cap_enabled=cap_enabled,
         )
         stats["pre_veto_selected_indices"] = [
             int(value) for value in plan.pre_veto_selected_indices.detach().cpu().tolist()
         ]
-        stats["applied_indices"] = applied_indices
+        if cap_enabled:
+            stats["post_veto_would_apply_pre_cap_indices"] = list(applied_indices)
+            stats["applied_indices"] = [
+                int(value) for value in stats["post_veto_applied_indices"]
+            ]
+        else:
+            stats["applied_indices"] = applied_indices
         stats["replay_ce_veto_indices"] = replay_ce_veto_indices
         tensor_stats[state_key] = stats
     compact["tensor_stats"] = tensor_stats

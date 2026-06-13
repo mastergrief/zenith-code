@@ -3608,3 +3608,146 @@ def test_b2b_capture_fail_closed_when_fewer_than_thirty_two_sampled(
                 PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES
             ),
         )
+
+
+def _tier_a_staging_toy_attach_kwargs() -> dict[str, Any]:
+    return {
+        "tensor_states": {
+            "toy.proj": make_bounded_tensor_state(
+                "toy.proj",
+                torch.tensor([0], dtype=torch.int8),
+                0.5,
+                torch.zeros(1, dtype=torch.int16),
+            )
+        },
+        "votes_by_key": {"toy.proj": torch.tensor([12], dtype=torch.int16)},
+        "vote_specs_by_key": {
+            "toy.proj": VoteUpdateSpec(
+                threshold_abs=10,
+                accumulator_clip_min=-127,
+                accumulator_clip_max=127,
+                max_abs_per_tensor=1,
+            )
+        },
+        "replay_ce_veto_votes_by_key": None,
+        "replay_ce_veto_moves_by_key": None,
+        "pc_aux_votes_by_key": None,
+        "pc_aux_moves_by_key": None,
+        "pc_aux_mode": "telemetry",
+        "local_loss_delta_by_key": {
+            "toy.proj": torch.tensor([-0.1], dtype=torch.float32)
+        },
+        "local_selection_ordering_seed": probe_module.SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
+        "local_selection_ordering_step": 1,
+    }
+
+
+def test_harness_wire_cpu_validation_self_check() -> None:
+    receipt = probe_module.harness_wire_cpu_validation_self_check()
+    assert receipt["argparse_default_off"] is True
+    assert receipt["on_only_receipt_extensions_stripped_to_fixture"] is True
+
+
+def test_tier_a_staging_no_cap_regression() -> None:
+    receipt = probe_module.harness_wire_cpu_validation_self_check()
+    assert receipt["tier_a_index_surface_count_consistency_fail_closed"] is True
+
+
+def test_tier_a_staging_saturated_global_cap_assert_split() -> None:
+    state_key = "layers.0.attn.gqkv_proj"
+    replan_indices = list(range(4096))
+    post_cap_indices = list(range(256))
+    stats = {
+        "global_rate_cap_enabled": True,
+        "post_veto_would_apply_pre_cap_count": 4096,
+        "post_veto_applied_flip_count": 256,
+        "post_veto_applied_indices": post_cap_indices,
+    }
+    probe_module._assert_tier_a_index_surface_count_consistency(
+        state_key,
+        tensor_stats=stats,
+        replay_ce_veto_indices=[],
+        applied_indices=replan_indices,
+        global_rate_cap_enabled=True,
+    )
+    with pytest.raises(
+        ValueError,
+        match="tier_a_staging_index_surface_post_veto_applied_flip_count_mismatch",
+    ):
+        probe_module._assert_tier_a_index_surface_count_consistency(
+            state_key,
+            tensor_stats={
+                "post_veto_would_apply_pre_cap_count": 4096,
+                "post_veto_applied_flip_count": 256,
+            },
+            replay_ce_veto_indices=[],
+            applied_indices=replan_indices,
+            global_rate_cap_enabled=False,
+        )
+
+
+def test_tier_a_staging_receipt_uses_post_cap_indices() -> None:
+    fixture_compact = {
+        "schema": "hrm_text_158_c2p0_bounded_delta_step_result/v0.compact",
+        "tensor_stats": {
+            "toy.proj": {
+                "replay_ce_veto_count": 0,
+                "post_veto_would_apply_pre_cap_count": 1,
+                "post_veto_applied_flip_count": 1,
+                "post_veto_applied_indices": [42],
+                "q_changed_count": 1,
+            }
+        },
+        "global_summary": {
+            "global_rate_cap_enabled": True,
+            "q_changed_count": 1,
+            "local_selection_ordering_mode": probe_module.LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+        },
+    }
+    on_path = probe_module._attach_tier_a_staging_index_surfaces_to_compact(
+        fixture_compact,
+        **_tier_a_staging_toy_attach_kwargs(),
+    )
+    stats = on_path["tensor_stats"]["toy.proj"]
+    assert stats["post_veto_would_apply_pre_cap_indices"] == [0]
+    assert stats["applied_indices"] == [42]
+    assert stats["applied_indices"] != stats["post_veto_would_apply_pre_cap_indices"]
+
+
+def test_tier_a_staging_fail_closed_missing_post_cap_indices() -> None:
+    stats = {
+        "global_rate_cap_enabled": True,
+        "post_veto_would_apply_pre_cap_count": 1,
+        "post_veto_applied_flip_count": 1,
+    }
+    with pytest.raises(
+        ValueError,
+        match="tier_a_staging_index_surface_post_veto_applied_indices_missing",
+    ):
+        probe_module._assert_tier_a_index_surface_count_consistency(
+            "toy.proj",
+            tensor_stats=stats,
+            replay_ce_veto_indices=[],
+            applied_indices=[0],
+            global_rate_cap_enabled=True,
+        )
+
+
+def test_tier_a_staging_fail_closed_mismatched_post_cap_indices() -> None:
+    stats = {
+        "global_rate_cap_enabled": True,
+        "post_veto_would_apply_pre_cap_count": 1,
+        "post_veto_applied_flip_count": 2,
+        "post_veto_applied_indices": [0],
+    }
+    with pytest.raises(
+        ValueError,
+        match="tier_a_staging_index_surface_post_veto_applied_flip_count_mismatch",
+    ):
+        probe_module._assert_tier_a_index_surface_count_consistency(
+            "toy.proj",
+            tensor_stats=stats,
+            replay_ce_veto_indices=[],
+            applied_indices=[0],
+            global_rate_cap_enabled=True,
+        )
