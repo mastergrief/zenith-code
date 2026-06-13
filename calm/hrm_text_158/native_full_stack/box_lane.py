@@ -325,6 +325,7 @@ def audit_consensus_bounded_delta_consumer(
 class PinnedFile:
     role: str
     rel_path: str
+    expected_sha256: str | None = None
 
 
 def sha256_file(path: Path) -> str:
@@ -343,7 +344,14 @@ def load_pinned_manifest(path: Path | None) -> list[PinnedFile]:
     pinned: list[PinnedFile] = []
     for entry in files:
         if isinstance(entry, Mapping):
-            pinned.append(PinnedFile(str(entry["role"]), str(entry["rel_path"])))
+            expected = entry.get("sha256")
+            pinned.append(
+                PinnedFile(
+                    str(entry["role"]),
+                    str(entry["rel_path"]),
+                    expected_sha256=str(expected) if expected else None,
+                )
+            )
         else:
             raise ValueError("pinned manifest entries must be objects with role/rel_path")
     return pinned
@@ -384,25 +392,83 @@ def hash_pinned_files(repo_root: Path, pinned: Sequence[PinnedFile]) -> list[dic
     rows: list[dict[str, Any]] = []
     for item in pinned:
         path = repo_root / item.rel_path
+        expected = item.expected_sha256
         if not path.exists():
             rows.append(
                 {
                     "role": item.role,
                     "rel_path": item.rel_path,
+                    "expected_sha256": expected,
                     "missing": True,
                 }
             )
             continue
+        producer_sha = sha256_file(path)
+        producer_matches_expected: bool | None = None
+        if expected is not None:
+            producer_matches_expected = producer_sha == expected
         rows.append(
             {
                 "role": item.role,
                 "rel_path": item.rel_path,
-                "producer_sha256": sha256_file(path),
+                "expected_sha256": expected,
+                "producer_sha256": producer_sha,
+                "producer_matches_expected": producer_matches_expected,
                 "bytes": path.stat().st_size,
                 "missing": False,
             }
         )
     return rows
+
+
+def verify_pinned_sha_expectations(pinned_rows: Sequence[Mapping[str, Any]]) -> list[str]:
+    mismatches: list[str] = []
+    for row in pinned_rows:
+        rel = str(row["rel_path"])
+        if row.get("missing"):
+            mismatches.append(f"missing:{rel}")
+            continue
+        expected = row.get("expected_sha256")
+        if expected is None:
+            continue
+        producer_sha = row.get("producer_sha256")
+        if producer_sha is None:
+            mismatches.append(f"missing:{rel}")
+            continue
+        if producer_sha != expected or row.get("producer_matches_expected") is False:
+            mismatches.append(f"producer_pin_mismatch:{rel}")
+    return mismatches
+
+
+def check_pinned_paths_clean(
+    repo_root: Path,
+    pinned: Sequence[PinnedFile],
+    *,
+    git_runner: Callable[..., str] | None = None,
+) -> list[str]:
+    runner = git_runner or run_git
+    mismatches: list[str] = []
+    for item in pinned:
+        rel = item.rel_path.replace("\\", "/")
+        output = runner(repo_root, "status", "--porcelain", "--", rel)
+        if output.strip():
+            mismatches.append(f"pinned_path_dirty:{rel}")
+    return mismatches
+
+
+def _compute_pinned_file_match(row: Mapping[str, Any], *, sync_requested: bool) -> bool:
+    if row.get("missing"):
+        return False
+    expected = row.get("expected_sha256")
+    if expected is not None:
+        if row.get("producer_matches_expected") is not True:
+            return False
+        if not sync_requested:
+            return True
+        return row.get("remote_matches_expected") is True
+    if sync_requested:
+        return bool(row.get("rsync_ok"))
+    return True
 
 
 def probe_rsync_version() -> str:
@@ -465,10 +531,17 @@ def sync_pinned_files(
         ok = remote_sha == producer_sha
         if not ok:
             mismatches.append(f"remote_sha_mismatch:{rel}")
+        expected = row.get("expected_sha256")
+        remote_matches_expected: bool | None = None
+        if expected is not None:
+            remote_matches_expected = remote_sha == expected
+            if not remote_matches_expected:
+                mismatches.append(f"remote_pin_mismatch:{rel}")
         synced_rows.append(
             {
                 **dict(row),
                 "remote_sha256": remote_sha,
+                "remote_matches_expected": remote_matches_expected,
                 "rsync_ok": ok,
                 "rsync_cmd": rsync_cmd,
             }
@@ -491,6 +564,16 @@ def build_code_currency_manifest(
     mismatches: Sequence[str],
     rsync_version: str | None = None,
 ) -> dict[str, Any]:
+    receipt_files: list[dict[str, Any]] = []
+    pin_enforcement = False
+    for row in pinned_rows:
+        entry = dict(row)
+        if entry.get("expected_sha256") is not None:
+            pin_enforcement = True
+        if not sync_requested:
+            entry.pop("remote_matches_expected", None)
+        entry["match"] = _compute_pinned_file_match(entry, sync_requested=sync_requested)
+        receipt_files.append(entry)
     payload: dict[str, Any] = {
         "schema": "hrm158_box_lane_code_currency_preflight/v1",
         "chain_id": chain_id,
@@ -502,7 +585,7 @@ def build_code_currency_manifest(
         "code_currency_pass": not mismatches,
         "mismatches": list(mismatches),
         "n_files": len(pinned_rows),
-        "files": list(pinned_rows),
+        "files": receipt_files,
         "producer_host": socket.gethostname(),
         "consumer_host": "box",
         "local_chain_root": str(local_chain_root),
@@ -511,6 +594,8 @@ def build_code_currency_manifest(
     }
     if rsync_version is not None:
         payload["rsync_version"] = rsync_version
+    if pin_enforcement:
+        payload["pin_enforcement"] = True
     return payload
 
 

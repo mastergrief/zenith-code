@@ -10,20 +10,30 @@ import pytest
 from calm.hrm_text_158.native_full_stack.box_lane import (
     EXIT_ARTIFACT_RSYNC_MISMATCH,
     EXIT_CODE_CURRENCY_MISMATCH,
+    EXIT_OK,
     EXIT_OVERLAP_FAILURE,
     PinnedFile,
     build_code_currency_manifest,
+    check_pinned_paths_clean,
     classify_overlap,
     hash_pinned_files,
     process_science_chain_log,
+    sha256_file,
     sync_pinned_files,
     validate_chain_id,
     validate_receipt_residency,
     verify_artifact_manifest,
     verify_head_triple,
+    verify_pinned_sha_expectations,
 )
 from scripts.box_lane_chain_watcher import main as watcher_main
 from scripts.box_lane_code_currency_preflight import main as preflight_main
+
+
+def _mock_git_clean_revparse(_root: Path, *args: str) -> str:
+    if args and args[0] == "rev-parse":
+        return "deadbeef"
+    return ""
 
 
 def test_fetch_head_mismatch_fails() -> None:
@@ -134,7 +144,7 @@ def test_preflight_rsync_transport_failure_writes_receipt_exit_11(
     manifest_path = tmp_path / "out.json"
     monkeypatch.setattr(
         "scripts.box_lane_code_currency_preflight.run_git",
-        lambda _root, *args: "deadbeef",
+        _mock_git_clean_revparse,
     )
     monkeypatch.setattr(
         "scripts.box_lane_code_currency_preflight.probe_rsync_version",
@@ -184,7 +194,7 @@ def test_dry_run_avoids_ssh_and_rsync(tmp_path: Path, monkeypatch: pytest.Monkey
     manifest_path = tmp_path / "out.json"
     monkeypatch.setattr(
         "scripts.box_lane_code_currency_preflight.run_git",
-        lambda _root, *args: "deadbeef" if args == ("rev-parse", "HEAD") else "deadbeef",
+        _mock_git_clean_revparse,
     )
 
     def fail_if_called(*_args, **_kwargs):
@@ -226,7 +236,7 @@ def test_default_without_sync_never_networks(tmp_path: Path, monkeypatch: pytest
     manifest_path = tmp_path / "out.json"
     monkeypatch.setattr(
         "scripts.box_lane_code_currency_preflight.run_git",
-        lambda _root, *args: "deadbeef",
+        _mock_git_clean_revparse,
     )
 
     def fail_if_called(*_args, **_kwargs):
@@ -403,7 +413,7 @@ def test_preflight_missing_file_returns_exit_11(tmp_path: Path, monkeypatch: pyt
     manifest_path = tmp_path / "out.json"
     monkeypatch.setattr(
         "scripts.box_lane_code_currency_preflight.run_git",
-        lambda _root, *args: "deadbeef",
+        _mock_git_clean_revparse,
     )
     rc = preflight_main(
         [
@@ -840,3 +850,230 @@ def test_consensus_consumer_audit_passes_all_k_labels(tmp_path: Path) -> None:
         consensus_mode=True,
     )
     assert audit["pass"] is True
+
+
+def _write_pinned_manifest_with_sha(tmp_path: Path, rel: Path, *, content: str = "x\n") -> tuple[Path, str]:
+    repo = tmp_path / "repo"
+    path = repo / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    expected_sha = sha256_file(path)
+    manifest = tmp_path / "pinned.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "files": [
+                    {
+                        "role": "probe",
+                        "rel_path": str(rel).replace("\\", "/"),
+                        "sha256": expected_sha,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    return manifest, expected_sha
+
+
+def test_dirty_pinned_file_fails_pin_mismatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    rel = Path("scripts/probe.py")
+    manifest_path, expected_sha = _write_pinned_manifest_with_sha(tmp_path, rel, content="clean\n")
+    repo = tmp_path / "repo"
+    (repo / rel).write_text("dirty\n", encoding="utf-8")
+    out_path = tmp_path / "out.json"
+    monkeypatch.setattr(
+        "scripts.box_lane_code_currency_preflight.run_git",
+        _mock_git_clean_revparse,
+    )
+    rc = preflight_main(
+        [
+            "--repo-root",
+            str(repo),
+            "--chain-id",
+            "chain_fixture",
+            "--creditdir",
+            str(tmp_path / "creditdir"),
+            "--head-expected",
+            "deadbeef",
+            "--skip-fetch",
+            "--dry-run",
+            "--output",
+            str(out_path),
+            "--pinned-manifest",
+            str(manifest_path),
+        ]
+    )
+    assert rc == EXIT_CODE_CURRENCY_MISMATCH
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload["code_currency_pass"] is False
+    assert any(m.startswith("producer_pin_mismatch:") for m in payload["mismatches"])
+    row = payload["files"][0]
+    assert row["producer_matches_expected"] is False
+    assert "remote_matches_expected" not in row
+
+
+def test_dirty_pinned_path_git_porcelain_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    rel = Path("scripts/probe.py")
+    manifest_path, _ = _write_pinned_manifest_with_sha(tmp_path, rel)
+    repo = tmp_path / "repo"
+    out_path = tmp_path / "out.json"
+
+    def dirty_git(_root: Path, *args: str) -> str:
+        if args[0] == "rev-parse":
+            return "deadbeef"
+        if args[0] == "status":
+            return " M scripts/probe.py\n"
+        return ""
+
+    monkeypatch.setattr("scripts.box_lane_code_currency_preflight.run_git", dirty_git)
+    rc = preflight_main(
+        [
+            "--repo-root",
+            str(repo),
+            "--chain-id",
+            "chain_fixture",
+            "--creditdir",
+            str(tmp_path / "creditdir"),
+            "--head-expected",
+            "deadbeef",
+            "--skip-fetch",
+            "--dry-run",
+            "--output",
+            str(out_path),
+            "--pinned-manifest",
+            str(manifest_path),
+        ]
+    )
+    assert rc == EXIT_CODE_CURRENCY_MISMATCH
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert any(m.startswith("pinned_path_dirty:") for m in payload["mismatches"])
+
+
+def test_all_match_passes_with_expected_sha(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    rel = Path("scripts/probe.py")
+    manifest_path, expected_sha = _write_pinned_manifest_with_sha(tmp_path, rel)
+    repo = tmp_path / "repo"
+    out_path = tmp_path / "out.json"
+    monkeypatch.setattr(
+        "scripts.box_lane_code_currency_preflight.run_git",
+        _mock_git_clean_revparse,
+    )
+
+    def good_remote(_box: str, _remote_rel: str) -> str:
+        return expected_sha
+
+    monkeypatch.setattr(
+        "scripts.box_lane_code_currency_preflight._default_remote_sha_runner",
+        good_remote,
+    )
+    rc = preflight_main(
+        [
+            "--repo-root",
+            str(repo),
+            "--chain-id",
+            "chain_fixture",
+            "--creditdir",
+            str(tmp_path / "creditdir"),
+            "--head-expected",
+            "deadbeef",
+            "--skip-fetch",
+            "--sync",
+            "--output",
+            str(out_path),
+            "--pinned-manifest",
+            str(manifest_path),
+        ]
+    )
+    assert rc == EXIT_OK
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload["code_currency_pass"] is True
+    assert payload["pin_enforcement"] is True
+    row = payload["files"][0]
+    assert row["producer_matches_expected"] is True
+    assert row["remote_matches_expected"] is True
+    assert row["match"] is True
+
+
+def test_legacy_manifest_no_sha_still_passes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = tmp_path / "repo"
+    rel = Path("scripts/probe.py")
+    path = repo / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("x", encoding="utf-8")
+    out_path = tmp_path / "out.json"
+    monkeypatch.setattr(
+        "scripts.box_lane_code_currency_preflight.run_git",
+        _mock_git_clean_revparse,
+    )
+    rc = preflight_main(
+        [
+            "--repo-root",
+            str(repo),
+            "--chain-id",
+            "chain_fixture",
+            "--creditdir",
+            str(tmp_path / "creditdir"),
+            "--head-expected",
+            "deadbeef",
+            "--skip-fetch",
+            "--dry-run",
+            "--output",
+            str(out_path),
+            "--pinned-manifest",
+            str(_write_pinned_manifest(tmp_path, rel)),
+        ]
+    )
+    assert rc == EXIT_OK
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload["code_currency_pass"] is True
+    assert "pin_enforcement" not in payload
+    assert payload["files"][0].get("expected_sha256") is None
+
+
+def test_remote_pin_mismatch_after_rsync(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    rel = Path("scripts/probe.py")
+    path = repo / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("x", encoding="utf-8")
+    expected = sha256_file(path)
+    rows = hash_pinned_files(repo, [PinnedFile("probe", str(rel), expected_sha256=expected)])
+
+    def bad_remote(_box: str, _remote_rel: str) -> str:
+        return "0" * 64
+
+    mismatches, synced = sync_pinned_files(
+        repo_root=repo,
+        remote_repo="/remote/repo",
+        box="box",
+        pinned_rows=rows,
+        rsync_runner=lambda cmd: subprocess.CompletedProcess(cmd, 0, "", ""),
+        remote_sha_runner=bad_remote,
+    )
+    assert any(m.startswith("remote_pin_mismatch:") for m in mismatches)
+    assert synced[0]["remote_matches_expected"] is False
+
+
+def test_verify_pinned_sha_expectations_unit(tmp_path: Path) -> None:
+    rel = "scripts/probe.py"
+    path = tmp_path / rel
+    path.parent.mkdir(parents=True)
+    path.write_text("good", encoding="utf-8")
+    good_sha = sha256_file(path)
+    rows = hash_pinned_files(tmp_path, [PinnedFile("probe", rel, expected_sha256=good_sha)])
+    assert verify_pinned_sha_expectations(rows) == []
+    path.write_text("bad", encoding="utf-8")
+    rows = hash_pinned_files(tmp_path, [PinnedFile("probe", rel, expected_sha256=good_sha)])
+    issues = verify_pinned_sha_expectations(rows)
+    assert issues == [f"producer_pin_mismatch:{rel}"]
+
+
+def test_check_pinned_paths_clean_injectable_git_runner() -> None:
+    pinned = [PinnedFile("probe", "scripts/probe.py", expected_sha256="abc")]
+    issues = check_pinned_paths_clean(
+        Path("/tmp"),
+        pinned,
+        git_runner=lambda _root, *args: " M scripts/probe.py\n",
+    )
+    assert issues == ["pinned_path_dirty:scripts/probe.py"]

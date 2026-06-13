@@ -15,12 +15,14 @@ from calm.hrm_text_158.native_full_stack.box_lane import (
     PinnedFile,
     build_code_currency_manifest,
     chain_roots,
+    check_pinned_paths_clean,
     hash_pinned_files,
     load_pinned_manifest,
     probe_rsync_version,
     run_git,
     sync_pinned_files,
     verify_head_triple,
+    verify_pinned_sha_expectations,
 )
 
 
@@ -90,9 +92,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.include_analyzer_surfaces:
         pinned.extend(PinnedFile(role, rel) for role, rel in ANALYZER_PINNED_FILES)
     pinned_rows = hash_pinned_files(repo_root, pinned)
-    for row in pinned_rows:
-        if row.get("missing"):
-            mismatches.append(f"missing:{row['rel_path']}")
+    mismatches.extend(verify_pinned_sha_expectations(pinned_rows))
+    mismatches.extend(check_pinned_paths_clean(repo_root, pinned, git_runner=run_git))
 
     sync_requested = bool(args.sync and not args.dry_run)
     rsync_version = probe_rsync_version() if sync_requested else None
