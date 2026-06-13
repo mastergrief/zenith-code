@@ -341,11 +341,32 @@ def verify_pressure_shape_preflight_bundle(
     }
 
 
-def _cross_seed_identity_metrics(
+def _identity_eligible_state_keys(receipt: Mapping[str, Any]) -> list[str]:
+    keys: set[str] = set()
+    for step_key, step_entry in receipt.get("step_reports", {}).items():
+        step = int(step_key)
+        if step < PRIMARY_STEP_MIN or step > PRIMARY_STEP_MAX:
+            continue
+        vote_pressure = step_entry.get("vote_pressure")
+        if isinstance(vote_pressure, Mapping) and vote_pressure:
+            keys.update(str(state_key) for state_key in vote_pressure)
+            continue
+        step_result = step_entry.get("step_result")
+        tensor_stats = (
+            step_result.get("tensor_stats")
+            if isinstance(step_result, Mapping)
+            else None
+        )
+        if isinstance(tensor_stats, Mapping):
+            keys.update(str(state_key) for state_key in tensor_stats)
+    return sorted(keys)
+
+
+def _single_module_identity_metrics(
     left_on: Mapping[str, Any],
     right_on: Mapping[str, Any],
     *,
-    state_key: str = DEFAULT_STATE_KEY,
+    state_key: str,
 ) -> dict[str, Any]:
     left_steps = extract_cap_window_steps(left_on, state_key=state_key)
     right_steps = extract_cap_window_steps(right_on, state_key=state_key)
@@ -369,6 +390,58 @@ def _cross_seed_identity_metrics(
         "disjoint_fraction": float(sum(1.0 - value for value in jaccards) / len(jaccards)),
         "step_count": len(jaccards),
     }
+
+
+def _cross_seed_identity_metrics(
+    left_on: Mapping[str, Any],
+    right_on: Mapping[str, Any],
+    *,
+    state_key: str = DEFAULT_STATE_KEY,
+) -> dict[str, Any]:
+    eligible_keys = sorted(
+        set(_identity_eligible_state_keys(left_on))
+        & set(_identity_eligible_state_keys(right_on)),
+    )
+    if not eligible_keys:
+        eligible_keys = [state_key]
+    per_module: dict[str, dict[str, Any]] = {}
+    module_medians: list[float] = []
+    module_disjoints: list[float] = []
+    for key in eligible_keys:
+        module_metrics = _single_module_identity_metrics(left_on, right_on, state_key=key)
+        per_module[key] = module_metrics
+        median_value = module_metrics.get("held_median_topk_jaccard")
+        disjoint_value = module_metrics.get("disjoint_fraction")
+        if median_value is not None and disjoint_value is not None:
+            module_medians.append(float(median_value))
+            module_disjoints.append(float(disjoint_value))
+    if not module_medians:
+        return {
+            "held_median_topk_jaccard": None,
+            "disjoint_fraction": None,
+            "step_count": 0,
+            "n_identity_modules": 0,
+            "per_module_identity": per_module,
+            "default_state_key_metrics": per_module.get(state_key),
+            "identity_aggregate": "median_per_module_median_jaccard_and_median_disjoint",
+        }
+    aggregate = {
+        "held_median_topk_jaccard": float(statistics.median(module_medians)),
+        "disjoint_fraction": float(statistics.median(module_disjoints)),
+        "step_count": max(
+            int(module_metrics.get("step_count") or 0) for module_metrics in per_module.values()
+        ),
+        "n_identity_modules": len(module_medians),
+        "per_module_identity": per_module,
+        "default_state_key_metrics": per_module.get(state_key),
+        "identity_aggregate": "median_per_module_median_jaccard_and_median_disjoint",
+    }
+    if len(eligible_keys) == 1:
+        single = per_module[eligible_keys[0]]
+        aggregate["held_median_topk_jaccard"] = single.get("held_median_topk_jaccard")
+        aggregate["disjoint_fraction"] = single.get("disjoint_fraction")
+        aggregate["step_count"] = int(single.get("step_count") or 0)
+    return aggregate
 
 
 def identity_effectively_disjoint(

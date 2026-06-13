@@ -15,6 +15,10 @@ from calm.hrm_text_158.native_full_stack.selector_value_analysis import (
 
 SCHEMA_VERSION = "hrm_text_158_pressure_shape_agreement/v0"
 PRESSURE_SHAPE_SCHEMA = "hrm_text_158_pressure_shape_summary/v0"
+PRESSURE_SHAPE_SCHEMA_V1 = "hrm_text_158_pressure_shape_summary/v1"
+ACCEPTED_PRESSURE_SHAPE_SCHEMAS = frozenset(
+    {PRESSURE_SHAPE_SCHEMA, PRESSURE_SHAPE_SCHEMA_V1},
+)
 
 BRANCH4_MEDIAN_THRESHOLD = 0.80
 BRANCH4_P10_THRESHOLD = 0.60
@@ -41,7 +45,7 @@ def _extract_shape_vector(entry: Mapping[str, Any]) -> list[float] | None:
     summary = entry.get("pressure_shape_summary")
     if not isinstance(summary, Mapping):
         return None
-    if summary.get("schema") != PRESSURE_SHAPE_SCHEMA:
+    if summary.get("schema") not in ACCEPTED_PRESSURE_SHAPE_SCHEMAS:
         return None
     fractions = summary.get("bin_mass_fraction")
     if not isinstance(fractions, list) or not fractions:
@@ -209,10 +213,11 @@ def verify_pressure_shape_summary_preflight(
             "max": PRIMARY_STEP_MAX,
         },
         "required_fields": [
-            "vote_pressure[*].pressure_shape_summary.schema",
+            "vote_pressure[*].pressure_shape_summary.schema (v0|v1)",
             "vote_pressure[*].pressure_shape_summary.bin_mass_fraction",
             "vote_pressure[*].pressure_shape_summary.raw_per_proposal_arrays_included=false",
         ],
+        "accepted_pressure_shape_schemas": sorted(ACCEPTED_PRESSURE_SHAPE_SCHEMAS),
     }
     if receipt_path is not None:
         payload["receipt_path"] = str(receipt_path)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import statistics
 import time
 from pathlib import Path
 
@@ -36,9 +37,11 @@ from calm.hrm_text_158.native_full_stack.selector_support_invariance_analysis im
     SHADOW_ORDER_MATCHED,
     SHADOW_RANDOM_NULL,
     _cross_seed_identity_metrics,
+    _single_module_identity_metrics,
     _support_order_outcome_metrics,
     classify_branch_precedence,
     compute_within_run_shadow_arms,
+    identity_effectively_disjoint,
     run_selector_support_invariance_analysis,
     shadow_ranking_problem,
     verify_pressure_shape_preflight_bundle,
@@ -196,6 +199,36 @@ def test_branch4_threshold_gate() -> None:
     }
     assert branch4_pressure_agreement_established(passing)
     assert not branch4_pressure_agreement_established(failing)
+
+
+def test_preflight_passes_v1_pressure_shape_summary(tmp_path: Path) -> None:
+    receipt = _receipt_with_shapes(
+        module_shapes={"mod.a": [0.5, 0.5]},
+        steps=range(3, 11),
+        signed_shapes={"mod.a": ([0.25, 0.25], [0.25, 0.25])},
+    )
+    ok, issues = receipt_has_pressure_shape_summary(receipt)
+    assert ok, issues
+    path = tmp_path / "receipt.json"
+    path.write_text(json.dumps(receipt), encoding="utf-8")
+    payload = verify_pressure_shape_summary_preflight(receipt, receipt_path=path)
+    assert payload["pass"] is True
+    vectors = extract_module_pressure_vectors(receipt)
+    assert vectors["mod.a"] == pytest.approx([0.5, 0.5])
+
+
+def test_build_pressure_shape_agreement_v1_matches_v0_unsigned_vectors() -> None:
+    fractions = [0.7, 0.3]
+    v0_receipt = _receipt_with_shapes(
+        module_shapes={"mod.a": fractions},
+        steps=range(3, 11),
+    )
+    v1_receipt = _receipt_with_shapes(
+        module_shapes={"mod.a": fractions},
+        steps=range(3, 11),
+        signed_shapes={"mod.a": ([0.5, 0.1], [0.1, 0.1])},
+    )
+    assert extract_module_pressure_vectors(v0_receipt) == extract_module_pressure_vectors(v1_receipt)
 
 
 def test_preflight_fails_without_pressure_shape_summary(tmp_path: Path) -> None:
@@ -511,19 +544,153 @@ def _receipt_with_applied_indices(
     *,
     applied_by_step: dict[int, list[int]],
     steps: range,
+    state_key: str = DEFAULT_STATE_KEY,
 ) -> dict:
     step_reports = {}
     for step in steps:
         step_reports[str(step)] = {
+            "vote_pressure": {state_key: {"state_key": state_key}},
             "step_result": {
                 "tensor_stats": {
-                    DEFAULT_STATE_KEY: {
+                    state_key: {
                         "applied_indices": applied_by_step.get(step, []),
                     },
                 },
             },
         }
     return {"step_reports": step_reports}
+
+
+def _receipt_with_multi_module_applied_indices(
+    *,
+    applied_by_module_step: dict[str, dict[int, list[int]]],
+    left_right_offset: dict[str, tuple[list[int], list[int]]] | None = None,
+    steps: range,
+    as_left: bool = True,
+) -> dict:
+    step_reports = {}
+    for step in steps:
+        tensor_stats: dict[str, dict] = {}
+        vote_pressure: dict[str, dict] = {}
+        for state_key, applied_by_step in applied_by_module_step.items():
+            if left_right_offset and state_key in left_right_offset:
+                left_indices, right_indices = left_right_offset[state_key]
+                applied = left_indices if as_left else right_indices
+            else:
+                applied = applied_by_step.get(step, [])
+            tensor_stats[state_key] = {"applied_indices": applied}
+            vote_pressure[state_key] = {"state_key": state_key}
+        step_reports[str(step)] = {
+            "vote_pressure": vote_pressure,
+            "step_result": {"tensor_stats": tensor_stats},
+        }
+    return {"step_reports": step_reports}
+
+
+def test_cross_seed_identity_n1_reduces_to_default_state_key() -> None:
+    applied = {step: [1, 2, 3] for step in range(3, 11)}
+    left = _receipt_with_applied_indices(applied_by_step=applied, steps=range(3, 11))
+    right = _receipt_with_applied_indices(
+        applied_by_step={step: [4, 5, 6] for step in range(3, 11)},
+        steps=range(3, 11),
+    )
+    aggregate = _cross_seed_identity_metrics(left, right)
+    single = _single_module_identity_metrics(left, right, state_key=DEFAULT_STATE_KEY)
+    assert aggregate["held_median_topk_jaccard"] == single["held_median_topk_jaccard"]
+    assert aggregate["disjoint_fraction"] == single["disjoint_fraction"]
+    assert aggregate["n_identity_modules"] == 1
+
+
+def test_cross_seed_identity_multi_module_median_aggregate() -> None:
+    overlap_key = "mod.overlap"
+    outlier_key = "mod.outlier"
+    steps = range(3, 11)
+    left = _receipt_with_multi_module_applied_indices(
+        applied_by_module_step={
+            overlap_key: {step: [1, 2, 3] for step in steps},
+            outlier_key: {step: [1, 2, 3] for step in steps},
+        },
+        left_right_offset={
+            overlap_key: ([1, 2], [1, 3, 4, 5, 6, 7, 8]),
+            outlier_key: ([1, 2, 3], [4, 5, 6]),
+        },
+        steps=steps,
+        as_left=True,
+    )
+    right = _receipt_with_multi_module_applied_indices(
+        applied_by_module_step={
+            overlap_key: {step: [1, 2, 3] for step in steps},
+            outlier_key: {step: [1, 2, 3] for step in steps},
+        },
+        left_right_offset={
+            overlap_key: ([1, 2], [1, 3, 4, 5, 6, 7, 8]),
+            outlier_key: ([1, 2, 3], [4, 5, 6]),
+        },
+        steps=steps,
+        as_left=False,
+    )
+    metrics = _cross_seed_identity_metrics(left, right)
+    assert metrics["n_identity_modules"] == 2
+    assert metrics["per_module_identity"][overlap_key]["held_median_topk_jaccard"] == pytest.approx(
+        1.0 / 8.0,
+        rel=1e-6,
+    )
+    assert metrics["per_module_identity"][outlier_key]["held_median_topk_jaccard"] == pytest.approx(0.0)
+    assert metrics["held_median_topk_jaccard"] == pytest.approx(0.0625)
+    assert metrics["disjoint_fraction"] == pytest.approx(0.9375)
+
+
+def test_decision_a_median_disjoint_blocks_outlier_branch3_fire() -> None:
+    steps = range(3, 11)
+    module_keys = [f"mod.{index}" for index in range(10)]
+    overlap_keys = module_keys[:7]
+    outlier_keys = module_keys[7:]
+    left_right_offset: dict[str, tuple[list[int], list[int]]] = {}
+    for key in overlap_keys:
+        left_right_offset[key] = ([1, 2], [1, 3, 4, 5, 6, 7, 8])
+    for key in outlier_keys:
+        left_right_offset[key] = ([1, 2, 3], [4, 5, 6])
+    applied_by_module_step = {key: {step: [1, 2, 3] for step in steps} for key in module_keys}
+    left = _receipt_with_multi_module_applied_indices(
+        applied_by_module_step=applied_by_module_step,
+        left_right_offset=left_right_offset,
+        steps=steps,
+        as_left=True,
+    )
+    right = _receipt_with_multi_module_applied_indices(
+        applied_by_module_step=applied_by_module_step,
+        left_right_offset=left_right_offset,
+        steps=steps,
+        as_left=False,
+    )
+    metrics = _cross_seed_identity_metrics(left, right)
+    module_disjoints = [
+        float(metrics["per_module_identity"][key]["disjoint_fraction"])
+        for key in module_keys
+    ]
+    assert statistics.median(module_disjoints) == pytest.approx(0.875, rel=1e-6)
+    assert sum(module_disjoints) / len(module_disjoints) == pytest.approx(0.9125, rel=1e-6)
+    assert metrics["disjoint_fraction"] == pytest.approx(0.875, rel=1e-6)
+    assert metrics["held_median_topk_jaccard"] == pytest.approx(0.125, rel=1e-6)
+    assert sum(module_disjoints) / len(module_disjoints) >= 0.90
+    assert not identity_effectively_disjoint(
+        metrics["held_median_topk_jaccard"],
+        metrics["disjoint_fraction"],
+    )
+    branch = classify_branch_precedence(
+        {
+            "pressure_shape_preflight_pass": True,
+            "screen_harness_or_gate_fail": False,
+            "pressure_shape_agreement": {},
+            "held_median_topk_jaccard": metrics["held_median_topk_jaccard"],
+            "disjoint_fraction": metrics["disjoint_fraction"],
+            "outcome_direction_agrees": False,
+            "outcome_direction_flips": True,
+            "outcome_direction_measurable": True,
+            "shadow_arms": {},
+        },
+    )
+    assert branch["branch"] != BRANCH_PRECEDENCE[2]
 
 
 def test_d6_support_order_flip_computed_from_paired_verdicts() -> None:
