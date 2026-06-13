@@ -102,6 +102,24 @@ class GradProxyAuditWarmupCapAborted(GradProxyAuditAborted):
         )
 
 
+class UniverseBuildMeasurementAborted(RuntimeError):
+    """Bounded measurement abort with partial universe-build timing (slice-0 telemetry)."""
+
+    def __init__(
+        self,
+        *,
+        reason: str,
+        timing_out: Mapping[str, float],
+        partial_crossing_eligible_count: int,
+        partial_candidate_count: int,
+    ) -> None:
+        super().__init__(f"universe_build_measurement_aborted: {reason}")
+        self.reason = str(reason)
+        self.timing_out = {str(key): float(value) for key, value in timing_out.items()}
+        self.partial_crossing_eligible_count = int(partial_crossing_eligible_count)
+        self.partial_candidate_count = int(partial_candidate_count)
+
+
 def w6_t10_base_spec(*, max_abs_per_tensor: int) -> VoteUpdateSpec:
     return VoteUpdateSpec(
         threshold_abs=int(CROSSING_THRESHOLD_ABS),
@@ -138,16 +156,45 @@ def build_w6_t10_crossing_candidate_universe_from_votes(
     max_abs_per_tensor: int,
     max_sampled_candidates: int,
     population_mode: str = POPULATION_MODE_SAMPLED_K64,
+    timing_out: dict[str, float] | None = None,
+    max_universe_build_seconds: float | None = None,
 ) -> dict[str, Any]:
+    universe_start = time.perf_counter()
+    crossing_sets_seconds = 0.0
+    candidate_dict_seconds = 0.0
     base_spec = w6_t10_base_spec(max_abs_per_tensor=int(max_abs_per_tensor))
     one_flip_spec = _single_flip_spec(base_spec)
     candidate_by_id: dict[str, dict[str, Any]] = {}
     crossing_eligible_count = 0
+
+    def _maybe_abort_universe_build(*, reason: str) -> None:
+        if max_universe_build_seconds is None:
+            return
+        elapsed = float(time.perf_counter() - universe_start)
+        if elapsed < float(max_universe_build_seconds):
+            return
+        partial_timing = {
+            "universe_crossing_sets": float(crossing_sets_seconds),
+            "universe_candidate_dict": float(candidate_dict_seconds),
+            "universe_sort_sample": 0.0,
+            "universe_build_total": elapsed,
+        }
+        if timing_out is not None:
+            timing_out.update(partial_timing)
+        raise UniverseBuildMeasurementAborted(
+            reason=str(reason),
+            timing_out=partial_timing,
+            partial_crossing_eligible_count=int(crossing_eligible_count),
+            partial_candidate_count=len(candidate_by_id),
+        )
+
     for state_key, state in sorted(tensor_states.items()):
         vote_state = state.vote_update_state()
         votes = votes_by_key[state_key]
+        crossing_sets_start = time.perf_counter()
         crossing_mask = _crossing_eligible_mask_tensor(votes=votes, state=state)
         if not bool(crossing_mask.any().item()):
+            crossing_sets_seconds += float(time.perf_counter() - crossing_sets_start)
             continue
         crossing_eligible = {
             int(flat_index)
@@ -187,7 +234,11 @@ def build_w6_t10_crossing_candidate_universe_from_votes(
         vote_flat = votes.flatten().to(torch.int32)
         q_flat = vote_state.q_levels.flatten().to(torch.int32)
         acc_flat = vote_state.accumulators.flatten().to(torch.int32)
+        crossing_sets_seconds += float(time.perf_counter() - crossing_sets_start)
+
+        candidate_dict_start = time.perf_counter()
         for flat_index in filtered_unordered:
+            _maybe_abort_universe_build(reason="candidate_dict_loop_timeout")
             new_acc_signed = int(new_acc[int(flat_index)].item())
             candidate_id = _candidate_id(state_key, int(flat_index))
             candidate_by_id[candidate_id] = {
@@ -204,6 +255,9 @@ def build_w6_t10_crossing_candidate_universe_from_votes(
                 "new_acc_i32_signed": new_acc_signed,
                 "proposal_direction": _sign_int(new_acc_signed),
             }
+        candidate_dict_seconds += float(time.perf_counter() - candidate_dict_start)
+
+    sort_sample_start = time.perf_counter()
     current_ordered_ids = [
         str(candidate["candidate_id"])
         for candidate in sorted(
@@ -240,6 +294,13 @@ def build_w6_t10_crossing_candidate_universe_from_votes(
             f"{POPULATION_MODE_SAMPLED_K64!r} or "
             f"{POPULATION_MODE_FULL_CROSSING_ELIGIBLE!r}, got {population_mode!r}"
         )
+    sort_sample_seconds = float(time.perf_counter() - sort_sample_start)
+    universe_total_seconds = float(time.perf_counter() - universe_start)
+    if timing_out is not None:
+        timing_out["universe_crossing_sets"] = float(crossing_sets_seconds)
+        timing_out["universe_candidate_dict"] = float(candidate_dict_seconds)
+        timing_out["universe_sort_sample"] = float(sort_sample_seconds)
+        timing_out["universe_build_total"] = float(universe_total_seconds)
     return {
         "base_spec": base_spec,
         "one_flip_spec": one_flip_spec,
@@ -279,6 +340,205 @@ def crossing_count_by_state_key_from_votes(
         )
         counts[str(state_key)] = int(crossing_mask.sum().item())
     return counts
+
+
+def fabricate_all_crossing_tensor_batch(
+    *,
+    module_count: int,
+    numel_per_module: int,
+    module_prefix: str = "synthetic.mod",
+    weight_shape: tuple[int, ...] | None = None,
+    frozen_scale: torch.Tensor | float | None = None,
+) -> tuple[dict[str, BoundedDeltaTensorState], dict[str, torch.Tensor]]:
+    """CPU-only synthetic batch where every flat index is crossing-eligible."""
+
+    from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
+        make_bounded_tensor_state,
+    )
+
+    if weight_shape is not None:
+        shape = tuple(int(dim) for dim in weight_shape)
+        shape_numel = 1
+        for dim in shape:
+            shape_numel *= int(dim)
+        if int(shape_numel) != int(numel_per_module):
+            raise ValueError(
+                "weight_shape numel must match numel_per_module: "
+                f"{shape} vs {numel_per_module}"
+            )
+    else:
+        shape = (int(numel_per_module),)
+    scale = 1.0 if frozen_scale is None else frozen_scale
+
+    tensor_states: dict[str, BoundedDeltaTensorState] = {}
+    votes_by_key: dict[str, torch.Tensor] = {}
+    q_template = torch.zeros(shape, dtype=torch.int8)
+    acc_template = torch.full(shape, 9, dtype=torch.int16)
+    votes_template = torch.full(shape, 12, dtype=torch.int16)
+    for module_index in range(module_count):
+        state_key = f"{module_prefix}{module_index}"
+        tensor_states[state_key] = make_bounded_tensor_state(
+            state_key,
+            q_template.clone(),
+            scale,
+            acc_template.clone(),
+        )
+        votes_by_key[state_key] = votes_template.clone()
+    expected = int(module_count) * int(numel_per_module)
+    actual = count_w6_t10_crossing_eligible_from_votes(
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+    )
+    if int(actual) != expected:
+        raise ValueError(f"fixture not all-crossing: got {actual}, expected {expected}")
+    return tensor_states, votes_by_key
+
+
+def _attribute_dominant_universe_subphase(
+    timing: Mapping[str, float],
+) -> tuple[str, dict[str, float]]:
+    candidates = {
+        "universe_candidate_dict": float(timing.get("universe_candidate_dict", 0.0)),
+        "universe_crossing_sets": float(timing.get("universe_crossing_sets", 0.0)),
+        "universe_sort_sample": float(timing.get("universe_sort_sample", 0.0)),
+    }
+    universe_total = float(timing.get("universe_build_total", 0.0))
+    denominator = universe_total if universe_total > 0.0 else 1.0
+    shares = {key: value / denominator for key, value in candidates.items()}
+    dominant = max(candidates, key=candidates.get)
+    return dominant, shares
+
+
+def measure_universe_build_subphase_scale_ladder(
+    *,
+    ladder_points: Sequence[tuple[int, int]] | None = None,
+    max_abs_per_tensor: int = 4096,
+    max_wall_seconds: float = 280.0,
+    production_crossing_eligible_target: int = 11_640_000,
+) -> dict[str, Any]:
+    """Bounded slice-0 measurement: scale ladder + timeout-abort partial receipts."""
+
+    if ladder_points is None:
+        ladder_points = [
+            (1, 10_000),
+            (1, 50_000),
+            (4, 50_000),
+            (8, 100_000),
+            (16, 100_000),
+            (32, 50_000),
+            (32, 100_000),
+        ]
+    runs: list[dict[str, Any]] = []
+    wall_total = 0.0
+    for module_count, numel_per_module in ladder_points:
+        crossing_count = int(module_count) * int(numel_per_module)
+        if wall_total >= max_wall_seconds:
+            runs.append(
+                {
+                    "module_count": module_count,
+                    "numel_per_module": numel_per_module,
+                    "expected_crossing_eligible": crossing_count,
+                    "status": "skipped_wall_budget",
+                }
+            )
+            continue
+        tensor_states, votes_by_key = fabricate_all_crossing_tensor_batch(
+            module_count=module_count,
+            numel_per_module=numel_per_module,
+        )
+        timing_out: dict[str, float] = {}
+        run_wall_start = time.perf_counter()
+        timeout_budget: float | None = None
+        if crossing_count >= 500_000:
+            timeout_budget = min(30.0, max(0.05, max_wall_seconds - wall_total))
+        record: dict[str, Any] = {
+            "module_count": module_count,
+            "numel_per_module": numel_per_module,
+            "expected_crossing_eligible": crossing_count,
+        }
+        try:
+            universe = build_w6_t10_crossing_candidate_universe_from_votes(
+                tensor_states=tensor_states,
+                votes_by_key=votes_by_key,
+                max_abs_per_tensor=max_abs_per_tensor,
+                max_sampled_candidates=64,
+                population_mode=POPULATION_MODE_FULL_CROSSING_ELIGIBLE,
+                timing_out=timing_out,
+                max_universe_build_seconds=timeout_budget,
+            )
+            record.update(
+                {
+                    "status": "completed",
+                    "crossing_eligible_count": universe["crossing_eligible_count"],
+                    "sampled_ids_count": len(universe["sampled_ids"]),
+                    "candidate_dict_size": len(universe["candidate_by_id"]),
+                }
+            )
+        except UniverseBuildMeasurementAborted as exc:
+            timing_out = dict(exc.timing_out)
+            record.update(
+                {
+                    "status": "timeout_abort",
+                    "abort_reason": exc.reason,
+                    "partial_crossing_eligible_count": exc.partial_crossing_eligible_count,
+                    "partial_candidate_count": exc.partial_candidate_count,
+                }
+            )
+        run_wall = float(time.perf_counter() - run_wall_start)
+        wall_total += run_wall
+        dominant, shares = _attribute_dominant_universe_subphase(timing_out)
+        record.update(
+            {
+                "wall_seconds": run_wall,
+                "timing": dict(timing_out),
+                "dominant_subphase": dominant,
+                "subphase_share_of_universe_build": shares,
+            }
+        )
+        runs.append(record)
+
+    projection_points = [
+        (
+            int(run["expected_crossing_eligible"]),
+            float(run["timing"].get("universe_candidate_dict", 0.0)),
+        )
+        for run in runs
+        if run.get("timing", {}).get("universe_candidate_dict")
+    ]
+    projected_candidate_dict_seconds: float | None = None
+    if len(projection_points) >= 2:
+        xs = [point[0] for point in projection_points]
+        ys = [point[1] for point in projection_points]
+        mean_x = sum(xs) / len(xs)
+        mean_y = sum(ys) / len(ys)
+        denom = sum((x - mean_x) ** 2 for x in xs) or 1.0
+        slope = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys)) / denom
+        projected_candidate_dict_seconds = float(
+            slope * float(production_crossing_eligible_target)
+        )
+
+    runs_with_timing = [run for run in runs if run.get("timing")]
+    overall_dominant = None
+    if runs_with_timing:
+        largest = max(runs_with_timing, key=lambda item: item["expected_crossing_eligible"])
+        overall_dominant = str(largest["dominant_subphase"])
+    materialization_dominates = overall_dominant == "universe_candidate_dict"
+    return {
+        "measurement_method": "scale_ladder_with_timeout_abort_partial_receipts",
+        "production_crossing_eligible_target": int(production_crossing_eligible_target),
+        "ladder_runs": runs,
+        "overall_dominant_subphase": overall_dominant,
+        "materialization_dominates": materialization_dominates,
+        "projected_universe_candidate_dict_seconds_at_production": (
+            projected_candidate_dict_seconds
+        ),
+        "wall_seconds_total": wall_total,
+        "r1_fast_path_gate_recommendation": (
+            "authorize_slice_1_fast_path"
+            if materialization_dominates
+            else "replan_required_proxy_gather_or_other_dominates"
+        ),
+    }
 
 
 def _normalize_votes_by_key(
@@ -552,6 +812,52 @@ def _vectorized_w6_t10_delta_weights_at_flat_indices(
     return delta_weights.masked_fill(~has_candidate, 0.0)
 
 
+def _ingress_candidate_ids_from_flat_indices_by_state(
+    flat_indices_by_state: Mapping[str, torch.Tensor],
+) -> list[str]:
+    candidate_ids: list[str] = []
+    for state_key in sorted(flat_indices_by_state):
+        for flat_index in flat_indices_by_state[state_key].flatten().tolist():
+            candidate_ids.append(f"{state_key}:{int(flat_index)}")
+    return candidate_ids
+
+
+INGRESS_CANDIDATE_HASH_BASIS_LEGACY_STRING_IDS = "legacy_sorted_candidate_id_strings_v0"
+INGRESS_CANDIDATE_HASH_BASIS_TENSOR_STATE_KEY_FLAT_INDEX_V1 = (
+    "tensor_state_key_flat_index_v1"
+)
+
+
+def _ingress_candidate_count_from_flat_indices_by_state(
+    flat_indices_by_state: Mapping[str, torch.Tensor],
+) -> int:
+    return sum(
+        int(flat_indices_by_state[state_key].numel())
+        for state_key in sorted(flat_indices_by_state)
+    )
+
+
+def _tensor_native_ingress_candidate_ids_hash16(
+    flat_indices_by_state: Mapping[str, torch.Tensor],
+) -> str:
+    """Deterministic hash over canonical state_key:flat_index without Python string materialization."""
+
+    hasher = hashlib.sha256()
+    for state_key in sorted(flat_indices_by_state):
+        flat_indices = (
+            flat_indices_by_state[state_key]
+            .flatten()
+            .to(dtype=torch.int64)
+            .cpu()
+            .contiguous()
+        )
+        hasher.update(str(state_key).encode("utf-8"))
+        hasher.update(b"\0")
+        hasher.update(flat_indices.numpy().tobytes())
+        hasher.update(b"\0")
+    return hasher.hexdigest()[:16]
+
+
 def _candidate_ids_hash16(candidate_ids: Sequence[str]) -> str:
     values = sorted(str(candidate_id) for candidate_id in candidate_ids)
     return hashlib.sha256("\n".join(values).encode("utf-8")).hexdigest()[:16]
@@ -715,21 +1021,58 @@ def build_grad_proxy_local_loss_delta_by_key(
     optimizer_step_index: int | None = None,
 ) -> tuple[dict[str, torch.Tensor], dict[str, Any]]:
     gather_start = time.perf_counter()
+    normalize_start = time.perf_counter()
     normalized_votes_by_key = _normalize_votes_by_key(votes_by_key)
-    universe = build_w6_t10_crossing_candidate_universe_from_votes(
-        tensor_states=tensor_states,
-        votes_by_key=normalized_votes_by_key,
-        max_abs_per_tensor=int(max_abs_per_tensor),
-        max_sampled_candidates=int(max_sampled_candidates),
-        population_mode=str(population_mode),
-    )
-    candidate_by_id = universe["candidate_by_id"]
-    ingress_ids = list(universe["sampled_ids"])
+    normalize_seconds = float(time.perf_counter() - normalize_start)
+    is_full_crossing = str(population_mode) == POPULATION_MODE_FULL_CROSSING_ELIGIBLE
     crossing_count_by_state_key = crossing_count_by_state_key_from_votes(
         tensor_states=tensor_states,
         votes_by_key=normalized_votes_by_key,
     )
-    if not ingress_ids:
+    universe_timing: dict[str, float] = {}
+    candidate_by_id: dict[str, dict[str, Any]] = {}
+    flat_indices_by_state: dict[str, torch.Tensor] = {}
+    ingress_candidate_count = 0
+    ingress_ids_hash16 = _candidate_ids_hash16([])
+    ingress_hash_basis = INGRESS_CANDIDATE_HASH_BASIS_LEGACY_STRING_IDS
+    ingress_ids: list[str] = []
+    universe_start = time.perf_counter()
+    if is_full_crossing:
+        flat_indices_by_state = _crossing_flat_indices_by_state_key(
+            tensor_states=tensor_states,
+            votes_by_key=normalized_votes_by_key,
+        )
+        crossing_eligible_count = _ingress_candidate_count_from_flat_indices_by_state(
+            flat_indices_by_state
+        )
+        ingress_candidate_count = int(crossing_eligible_count)
+        ingress_ids_hash16 = _tensor_native_ingress_candidate_ids_hash16(
+            flat_indices_by_state
+        )
+        ingress_hash_basis = INGRESS_CANDIDATE_HASH_BASIS_TENSOR_STATE_KEY_FLAT_INDEX_V1
+        universe_timing = {
+            "universe_crossing_sets": 0.0,
+            "universe_candidate_dict": 0.0,
+            "universe_sort_sample": 0.0,
+            "universe_build_total": float(time.perf_counter() - universe_start),
+        }
+    else:
+        universe = build_w6_t10_crossing_candidate_universe_from_votes(
+            tensor_states=tensor_states,
+            votes_by_key=normalized_votes_by_key,
+            max_abs_per_tensor=int(max_abs_per_tensor),
+            max_sampled_candidates=int(max_sampled_candidates),
+            population_mode=str(population_mode),
+            timing_out=universe_timing,
+        )
+        candidate_by_id = universe["candidate_by_id"]
+        ingress_ids = list(universe["sampled_ids"])
+        crossing_eligible_count = int(universe["crossing_eligible_count"])
+        ingress_candidate_count = int(len(ingress_ids))
+        ingress_ids_hash16 = _candidate_ids_hash16(ingress_ids)
+        ingress_hash_basis = INGRESS_CANDIDATE_HASH_BASIS_LEGACY_STRING_IDS
+    universe_seconds = float(time.perf_counter() - universe_start)
+    if ingress_candidate_count == 0:
         local_loss_delta_by_key = {
             state_key: torch.zeros(votes.shape, dtype=torch.float32)
             for state_key, votes in normalized_votes_by_key.items()
@@ -739,18 +1082,41 @@ def build_grad_proxy_local_loss_delta_by_key(
             "grad_proxy_ingress_enabled": True,
             "grad_proxy_ingress_estimand": GRAD_PROXY_AUDIT_ESTIMAND,
             "grad_proxy_ingress_population_mode": str(population_mode),
-            "grad_proxy_ingress_crossing_eligible_count": int(
-                universe["crossing_eligible_count"]
-            ),
+            "grad_proxy_ingress_crossing_eligible_count": int(crossing_eligible_count),
             "crossing_count_by_state_key": dict(crossing_count_by_state_key),
             "grad_proxy_ingress_candidate_count_ingressed": 0,
             "grad_proxy_ingress_candidate_ids_hash16": _candidate_ids_hash16([]),
+            "grad_proxy_ingress_candidate_hash_basis": (
+                INGRESS_CANDIDATE_HASH_BASIS_TENSOR_STATE_KEY_FLAT_INDEX_V1
+                if is_full_crossing
+                else INGRESS_CANDIDATE_HASH_BASIS_LEGACY_STRING_IDS
+            ),
             "grad_proxy_ingress_gather_seconds": gather_seconds,
             "grad_proxy_gather_seconds": gather_seconds,
             "candidate_count_ingressed": 0,
             "activation_credit_gather_telemetry_note": (
                 ACTIVATION_CREDIT_GATHER_TELEMETRY_NOTE
             ),
+            "grad_proxy_ingress_phase_seconds": {
+                "normalize_votes": normalize_seconds,
+                "universe_build": universe_seconds,
+                "universe_crossing_sets": float(
+                    universe_timing.get("universe_crossing_sets", 0.0)
+                ),
+                "universe_candidate_dict": float(
+                    universe_timing.get("universe_candidate_dict", 0.0)
+                ),
+                "universe_sort_sample": float(
+                    universe_timing.get("universe_sort_sample", 0.0)
+                ),
+                "flat_index_python_conversion": 0.0,
+                "proxy_forward_backward": 0.0,
+                "proxy_gather": 0.0,
+                "proxy_total": 0.0,
+                "delta_weight_scatter": 0.0,
+                "coverage": 0.0,
+                "total": gather_seconds,
+            },
         }
         if optimizer_step_index is not None:
             ingress_receipt["optimizer_step_index"] = int(optimizer_step_index)
@@ -761,17 +1127,13 @@ def build_grad_proxy_local_loss_delta_by_key(
             },
             ingress_receipt,
         )
-    universe_seconds = float(time.perf_counter() - gather_start)
     proxy_start = time.perf_counter()
     local_loss_delta_by_key: dict[str, torch.Tensor] = {
         state_key: torch.full(votes.shape, float("nan"), dtype=torch.float32)
         for state_key, votes in normalized_votes_by_key.items()
     }
-    if str(population_mode) == POPULATION_MODE_FULL_CROSSING_ELIGIBLE:
-        flat_indices_by_state = _crossing_flat_indices_by_state_key(
-            tensor_states=tensor_states,
-            votes_by_key=normalized_votes_by_key,
-        )
+    if is_full_crossing:
+        flat_index_python_conversion_seconds = 0.0
         proxy_receipt = _compute_activation_credit_candidate_proxies(
             model=model,
             batch=batch,
@@ -779,20 +1141,15 @@ def build_grad_proxy_local_loss_delta_by_key(
             eligible_modules=eligible_modules,
             device=device,
             extras=extras,
-            candidate_by_id=candidate_by_id,
+            candidate_by_id={},
             selected_candidate_ids=[],
-            flat_indices_by_state={
-                state_key: [
-                    int(flat_index)
-                    for flat_index in flat_indices_tensor.tolist()
-                ]
-                for state_key, flat_indices_tensor in flat_indices_by_state.items()
-            },
+            flat_indices_by_state_tensors=flat_indices_by_state,
             materialize_proxy_dict=False,
             phase_progress=phase_progress,
             optimizer_step_index=optimizer_step_index,
         )
     else:
+        flat_index_python_conversion_seconds = 0.0
         proxy_receipt = _compute_activation_credit_candidate_proxies(
             model=model,
             batch=batch,
@@ -809,47 +1166,23 @@ def build_grad_proxy_local_loss_delta_by_key(
     proxy_gather_seconds = float(proxy_receipt.get("grad_proxy_accumulation_seconds", 0.0))
     proxy_seconds = float(time.perf_counter() - proxy_start)
     delta_scatter_start = time.perf_counter()
-    if str(population_mode) == POPULATION_MODE_FULL_CROSSING_ELIGIBLE:
+    if is_full_crossing:
         tensor_bundles = proxy_receipt.get("grad_proxy_tensors_by_state") or {}
-        if tensor_bundles:
-            for state_key, bundle in sorted(tensor_bundles.items()):
-                _scatter_vectorized_grad_proxy_ingress_for_state(
-                    local_loss_delta=local_loss_delta_by_key[state_key],
-                    tensor_state=tensor_states[state_key],
-                    votes=normalized_votes_by_key[state_key],
-                    flat_indices=bundle["flat_indices"],
-                    grad_proxies=bundle["proxies"],
-                    max_abs_per_tensor=int(max_abs_per_tensor),
+        for state_key, flat_indices_tensor in sorted(flat_indices_by_state.items()):
+            bundle = tensor_bundles.get(state_key)
+            if bundle is None:
+                raise ValueError(
+                    "grad_proxy_ingress_fail_closed: "
+                    f"missing grad_proxy_tensors_by_state for {state_key!r}"
                 )
-        else:
-            grad_proxy_by_id = proxy_receipt["grad_proxy_by_candidate_id"]
-            ingress_by_state: dict[str, list[str]] = {}
-            for candidate_id in ingress_ids:
-                state_key = str(candidate_by_id[candidate_id]["state_key"])
-                ingress_by_state.setdefault(state_key, []).append(str(candidate_id))
-            for state_key, state_candidate_ids in ingress_by_state.items():
-                flat_indices = torch.tensor(
-                    [
-                        int(candidate_by_id[candidate_id]["flat_index"])
-                        for candidate_id in state_candidate_ids
-                    ],
-                    dtype=torch.int64,
-                )
-                grad_proxies = torch.tensor(
-                    [
-                        float(grad_proxy_by_id[candidate_id])
-                        for candidate_id in state_candidate_ids
-                    ],
-                    dtype=torch.float32,
-                )
-                _scatter_vectorized_grad_proxy_ingress_for_state(
-                    local_loss_delta=local_loss_delta_by_key[state_key],
-                    tensor_state=tensor_states[state_key],
-                    votes=normalized_votes_by_key[state_key],
-                    flat_indices=flat_indices,
-                    grad_proxies=grad_proxies,
-                    max_abs_per_tensor=int(max_abs_per_tensor),
-                )
+            _scatter_vectorized_grad_proxy_ingress_for_state(
+                local_loss_delta=local_loss_delta_by_key[state_key],
+                tensor_state=tensor_states[state_key],
+                votes=normalized_votes_by_key[state_key],
+                flat_indices=bundle["flat_indices"],
+                grad_proxies=bundle["proxies"],
+                max_abs_per_tensor=int(max_abs_per_tensor),
+            )
     else:
         grad_proxy_by_id = proxy_receipt["grad_proxy_by_candidate_id"]
         for candidate_id in ingress_ids:
@@ -884,19 +1217,30 @@ def build_grad_proxy_local_loss_delta_by_key(
         "grad_proxy_ingress_enabled": True,
         "grad_proxy_ingress_estimand": GRAD_PROXY_AUDIT_ESTIMAND,
         "grad_proxy_ingress_population_mode": str(population_mode),
-        "grad_proxy_ingress_crossing_eligible_count": int(
-            universe["crossing_eligible_count"]
-        ),
+        "grad_proxy_ingress_crossing_eligible_count": int(crossing_eligible_count),
         "crossing_count_by_state_key": dict(crossing_count_by_state_key),
-        "grad_proxy_ingress_candidate_count_ingressed": len(ingress_ids),
-        "grad_proxy_ingress_candidate_ids_hash16": _candidate_ids_hash16(ingress_ids),
+        "grad_proxy_ingress_candidate_count_ingressed": int(ingress_candidate_count),
+        "grad_proxy_ingress_candidate_ids_hash16": str(ingress_ids_hash16),
+        "grad_proxy_ingress_candidate_hash_basis": str(ingress_hash_basis),
+        "grad_proxy_ingress_full_crossing_fast_path": bool(is_full_crossing),
         "grad_proxy_ingress_gather_seconds": gather_seconds,
         "grad_proxy_gather_seconds": gather_seconds,
-        "candidate_count_ingressed": len(ingress_ids),
+        "candidate_count_ingressed": int(ingress_candidate_count),
         "activation_credit_gather_telemetry_note": ACTIVATION_CREDIT_GATHER_TELEMETRY_NOTE,
         "cuda_memory_snapshots": list(proxy_receipt.get("cuda_memory_snapshots") or []),
         "grad_proxy_ingress_phase_seconds": {
-            "universe": universe_seconds,
+            "normalize_votes": normalize_seconds,
+            "universe_build": universe_seconds,
+            "universe_crossing_sets": float(
+                universe_timing.get("universe_crossing_sets", 0.0)
+            ),
+            "universe_candidate_dict": float(
+                universe_timing.get("universe_candidate_dict", 0.0)
+            ),
+            "universe_sort_sample": float(
+                universe_timing.get("universe_sort_sample", 0.0)
+            ),
+            "flat_index_python_conversion": float(flat_index_python_conversion_seconds),
             "proxy_forward_backward": proxy_fb_seconds,
             "proxy_gather": proxy_gather_seconds,
             "proxy_total": proxy_seconds,

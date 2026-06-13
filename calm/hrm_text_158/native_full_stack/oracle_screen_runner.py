@@ -1250,23 +1250,30 @@ def _compute_activation_credit_candidate_proxies(
     selected_candidate_ids: Sequence[str],
     phase_progress: Any | None,
     flat_indices_by_state: Mapping[str, Sequence[int]] | None = None,
+    flat_indices_by_state_tensors: Mapping[str, torch.Tensor] | None = None,
     materialize_proxy_dict: bool = True,
     optimizer_step_index: int | None = None,
 ) -> dict[str, Any]:
-    if flat_indices_by_state is not None:
-        selected_by_state: dict[str, list[str]] = {}
-        flat_indices_by_state_tensors: dict[str, torch.Tensor] = {
-            str(state_key): torch.tensor(
-                [int(flat_index) for flat_index in flat_indices],
-                dtype=torch.int64,
-            )
-            for state_key, flat_indices in flat_indices_by_state.items()
-            if flat_indices
-        }
+    if flat_indices_by_state is not None and flat_indices_by_state_tensors is not None:
+        raise ValueError(
+            "flat_indices_by_state and flat_indices_by_state_tensors are mutually exclusive"
+        )
+    gather_tensor_by_state: dict[str, torch.Tensor] = {}
+    selected_by_state: dict[str, list[str]] = {}
+    if flat_indices_by_state_tensors is not None:
+        for state_key, flat_indices_tensor in flat_indices_by_state_tensors.items():
+            tensor = flat_indices_tensor.detach().flatten().to(dtype=torch.int64)
+            if int(tensor.numel()) > 0:
+                gather_tensor_by_state[str(state_key)] = tensor
+    elif flat_indices_by_state is not None:
+        for state_key, flat_indices in flat_indices_by_state.items():
+            if flat_indices:
+                gather_tensor_by_state[str(state_key)] = torch.tensor(
+                    [int(flat_index) for flat_index in flat_indices],
+                    dtype=torch.int64,
+                )
     else:
         selected_ids = [str(candidate_id) for candidate_id in selected_candidate_ids]
-        selected_by_state = {}
-        flat_indices_by_state_tensors = {}
         for candidate_id in selected_ids:
             candidate = candidate_by_id.get(candidate_id)
             if candidate is None:
@@ -1287,104 +1294,120 @@ def _compute_activation_credit_candidate_proxies(
     )
     forward_backward_start = time.perf_counter()
     model.zero_grad(set_to_none=True)
-    with authoritative_forward_context(
-        eligible_modules,
-        tensor_states,
-        device=device,
-        requires_grad=True,
-        capture_device_mode=AUTHORITATIVE_CAPTURE_MODE_DEVICE_RESIDENT,
-    ) as handle:
-        with _maybe_phase(
-            phase_progress,
-            "activation_credit_forward_backward",
-            step=int(phase_step),
-        ):
-            _carry, loss, _metrics = model(None, dict(batch), **extras)
-            loss.backward()
-        forward_backward_seconds = float(time.perf_counter() - forward_backward_start)
-        gather_start = time.perf_counter()
-        cuda_memory_snapshots.append(
-            capture_cuda_phase_memory_snapshot(
-                device,
-                label="activation_credit_gather_pre",
-                optimizer_step_index=phase_step,
-            )
-        )
-        with _maybe_phase(
-            phase_progress,
-            "activation_credit_gather",
-            step=int(phase_step),
-        ):
-            if flat_indices_by_state is not None:
-                gather_states = sorted(flat_indices_by_state_tensors.items())
-            else:
-                gather_states = sorted(selected_by_state.items())
-            for state_key, state_payload in gather_states:
-                if flat_indices_by_state is not None:
-                    flat_indices_tensor = state_payload
-                    flat_indices = [int(value) for value in flat_indices_tensor.tolist()]
-                    candidate_ids: list[str] = []
-                else:
-                    candidate_ids = list(state_payload)
-                    flat_indices = [
-                        int(candidate_by_id[candidate_id]["flat_index"])
-                        for candidate_id in candidate_ids
-                    ]
-                    flat_indices_tensor = torch.tensor(
-                        flat_indices,
-                        dtype=torch.int64,
-                    )
-                proxies, diag_fisher = handle.candidate_weighted_grad_and_diag_fisher_proxies(
-                    state_key,
-                    flat_indices,
+    tensor_gather_mode = flat_indices_by_state_tensors is not None or (
+        flat_indices_by_state is not None
+    )
+    if gather_tensor_by_state or selected_by_state:
+        with authoritative_forward_context(
+            eligible_modules,
+            tensor_states,
+            device=device,
+            requires_grad=True,
+            capture_device_mode=AUTHORITATIVE_CAPTURE_MODE_DEVICE_RESIDENT,
+        ) as handle:
+            with _maybe_phase(
+                phase_progress,
+                "activation_credit_forward_backward",
+                step=int(phase_step),
+            ):
+                _carry, loss, _metrics = model(None, dict(batch), **extras)
+                loss.backward()
+            forward_backward_seconds = float(time.perf_counter() - forward_backward_start)
+            gather_start = time.perf_counter()
+            cuda_memory_snapshots.append(
+                capture_cuda_phase_memory_snapshot(
+                    device,
+                    label="activation_credit_gather_pre",
+                    optimizer_step_index=phase_step,
                 )
-                capture = handle.captures[state_key]
-                device_summary = {
-                    "inputs": sorted({str(t.device) for t in capture["inputs"]}),
-                    "grad_outputs": sorted(
-                        {str(t.device) for t in capture["grad_outputs"]}
-                    ),
-                }
-                capture_device_summary[state_key] = device_summary
-                if device.type == "cuda":
-                    any_capture_crossed_cpu = any(
-                        torch.device(device_name).type == "cpu"
-                        for device_name in (
-                            device_summary["inputs"] + device_summary["grad_outputs"]
-                        )
-                    )
-                proxies_f32 = proxies.detach().to(torch.float32).cpu().contiguous()
-                fisher_f32 = diag_fisher.detach().to(torch.float32).cpu().contiguous()
-                if materialize_proxy_dict:
-                    for offset, candidate_id in enumerate(candidate_ids):
-                        proxy_by_id[str(candidate_id)] = float(proxies_f32[offset])
-                        diag_fisher_by_id[str(candidate_id)] = float(
-                            fisher_f32[offset]
-                        )
+            )
+            with _maybe_phase(
+                phase_progress,
+                "activation_credit_gather",
+                step=int(phase_step),
+            ):
+                if tensor_gather_mode:
+                    gather_states = sorted(gather_tensor_by_state.items())
                 else:
-                    grad_proxy_tensors_by_state[str(state_key)] = {
-                        "flat_indices": flat_indices_tensor.cpu().contiguous(),
-                        "proxies": proxies_f32,
-                        "diag_fisher": fisher_f32,
+                    gather_states = sorted(selected_by_state.items())
+                for state_key, state_payload in gather_states:
+                    if tensor_gather_mode:
+                        flat_indices_tensor = state_payload
+                        candidate_ids: list[str] = []
+                    else:
+                        candidate_ids = list(state_payload)
+                        flat_indices_tensor = torch.tensor(
+                            [
+                                int(candidate_by_id[candidate_id]["flat_index"])
+                                for candidate_id in candidate_ids
+                            ],
+                            dtype=torch.int64,
+                        )
+                    proxies, diag_fisher = handle.candidate_weighted_grad_and_diag_fisher_proxies(
+                        state_key,
+                        flat_indices_tensor,
+                    )
+                    capture = handle.captures[state_key]
+                    device_summary = {
+                        "inputs": sorted({str(t.device) for t in capture["inputs"]}),
+                        "grad_outputs": sorted(
+                            {str(t.device) for t in capture["grad_outputs"]}
+                        ),
                     }
-                cuda_memory_snapshots.append(
-                    capture_cuda_phase_memory_snapshot(
-                        device,
-                        label="activation_credit_gather_per_state",
-                        optimizer_step_index=phase_step,
-                        state_key=str(state_key),
-                        crossing_count=int(flat_indices_tensor.numel()),
+                    capture_device_summary[state_key] = device_summary
+                    if device.type == "cuda":
+                        any_capture_crossed_cpu = any(
+                            torch.device(device_name).type == "cpu"
+                            for device_name in (
+                                device_summary["inputs"] + device_summary["grad_outputs"]
+                            )
+                        )
+                    proxies_f32 = proxies.detach().to(torch.float32).cpu().contiguous()
+                    fisher_f32 = diag_fisher.detach().to(torch.float32).cpu().contiguous()
+                    if materialize_proxy_dict:
+                        for offset, candidate_id in enumerate(candidate_ids):
+                            proxy_by_id[str(candidate_id)] = float(proxies_f32[offset])
+                            diag_fisher_by_id[str(candidate_id)] = float(
+                                fisher_f32[offset]
+                            )
+                    else:
+                        grad_proxy_tensors_by_state[str(state_key)] = {
+                            "flat_indices": flat_indices_tensor.cpu().contiguous(),
+                            "proxies": proxies_f32,
+                            "diag_fisher": fisher_f32,
+                        }
+                    cuda_memory_snapshots.append(
+                        capture_cuda_phase_memory_snapshot(
+                            device,
+                            label="activation_credit_gather_per_state",
+                            optimizer_step_index=phase_step,
+                            state_key=str(state_key),
+                            crossing_count=int(flat_indices_tensor.numel()),
+                        )
                     )
+            cuda_memory_snapshots.append(
+                capture_cuda_phase_memory_snapshot(
+                    device,
+                    label="activation_credit_gather_post",
+                    optimizer_step_index=phase_step,
                 )
-        cuda_memory_snapshots.append(
-            capture_cuda_phase_memory_snapshot(
-                device,
-                label="activation_credit_gather_post",
-                optimizer_step_index=phase_step,
             )
+        model.zero_grad(set_to_none=True)
+        gather_seconds = float(time.perf_counter() - gather_start)
+    else:
+        forward_backward_seconds = 0.0
+        gather_seconds = 0.0
+    if not materialize_proxy_dict and flat_indices_by_state_tensors is not None:
+        missing_states = sorted(
+            state_key
+            for state_key in gather_tensor_by_state
+            if state_key not in grad_proxy_tensors_by_state
         )
-    model.zero_grad(set_to_none=True)
-    gather_seconds = float(time.perf_counter() - gather_start)
+        if missing_states:
+            raise ValueError(
+                "grad_proxy_ingress_fail_closed: "
+                f"missing grad_proxy_tensors_by_state for states={missing_states}"
+            )
     return {
         "grad_proxy_by_candidate_id": proxy_by_id,
         "diag_fisher_by_candidate_id": diag_fisher_by_id,

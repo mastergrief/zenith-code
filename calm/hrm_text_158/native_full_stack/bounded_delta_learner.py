@@ -16,7 +16,7 @@ import json
 import os
 from pathlib import Path
 import types
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence, Union
 
 import torch
 import torch.nn.functional as F
@@ -377,7 +377,7 @@ def candidate_weighted_grad_and_diag_fisher_proxies_from_captures(
     inputs: Sequence[torch.Tensor],
     grad_outputs: Sequence[torch.Tensor],
     *,
-    flat_indices: Sequence[int],
+    flat_indices: Union[Sequence[int], torch.Tensor],
     weight_shape: Sequence[int],
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Gather candidate-local first-order credit and a diagonal-Fisher surrogate from one capture surface."""
@@ -390,52 +390,56 @@ def candidate_weighted_grad_and_diag_fisher_proxies_from_captures(
     if len(weight_dims) != 2:
         raise ValueError(f"weight_shape must be rank-2, got {weight_dims}")
     out_features, in_features = weight_dims
-    flat_index_list = [int(index) for index in flat_indices]
-    if not flat_index_list:
+    if isinstance(flat_indices, torch.Tensor):
+        flat_index_tensor = flat_indices.detach().flatten().to(dtype=torch.int64)
+    else:
+        flat_index_tensor = torch.tensor(
+            [int(index) for index in flat_indices],
+            dtype=torch.int64,
+        )
+    if flat_index_tensor.numel() == 0:
         empty = torch.zeros((0,), dtype=torch.float32)
         return empty, empty.clone()
-    if any(index < 0 or index >= out_features * in_features for index in flat_index_list):
-        raise ValueError("flat_indices must lie inside the flattened weight tensor")
     paired_inputs = inputs[-len(grad_outputs):]
     reference_input = _as_bsi(
         paired_inputs[0].detach().to(torch.float32),
         name="input",
     )
     index_device = reference_input.device
+    flat_index_tensor = flat_index_tensor.to(device=index_device)
+    if torch.any(flat_index_tensor < 0).item() or torch.any(
+        flat_index_tensor >= out_features * in_features
+    ).item():
+        raise ValueError("flat_indices must lie inside the flattened weight tensor")
     proxies = torch.zeros(
-        (len(flat_index_list),),
+        (int(flat_index_tensor.numel()),),
         dtype=torch.float32,
         device=index_device,
     )
     diag_fisher = torch.zeros(
-        (len(flat_index_list),),
+        (int(flat_index_tensor.numel()),),
         dtype=torch.float32,
         device=index_device,
     )
     chunk_size = int(PROXY_GATHER_FLAT_INDEX_CHUNK_SIZE)
     if chunk_size <= 0:
         raise ValueError("PROXY_GATHER_FLAT_INDEX_CHUNK_SIZE must be positive")
-    for chunk_start in range(0, len(flat_index_list), chunk_size):
-        chunk_indices = flat_index_list[chunk_start : chunk_start + chunk_size]
-        flat_index_tensor = torch.tensor(
-            chunk_indices,
-            dtype=torch.int64,
-            device=index_device,
-        )
+    for chunk_start in range(0, int(flat_index_tensor.numel()), chunk_size):
+        chunk = flat_index_tensor[chunk_start : chunk_start + chunk_size]
         row_indices = torch.div(
-            flat_index_tensor,
+            chunk,
             int(in_features),
             rounding_mode="floor",
         )
-        col_indices = torch.remainder(flat_index_tensor, int(in_features))
+        col_indices = torch.remainder(chunk, int(in_features))
         _accumulate_weighted_grad_proxy_chunk_from_captures(
             paired_inputs,
             grad_outputs,
             row_indices=row_indices,
             col_indices=col_indices,
             index_device=index_device,
-            proxies=proxies[chunk_start : chunk_start + len(chunk_indices)],
-            diag_fisher=diag_fisher[chunk_start : chunk_start + len(chunk_indices)],
+            proxies=proxies[chunk_start : chunk_start + int(chunk.numel())],
+            diag_fisher=diag_fisher[chunk_start : chunk_start + int(chunk.numel())],
         )
     return proxies, diag_fisher
 
@@ -444,7 +448,7 @@ def candidate_weighted_grad_proxies_from_captures(
     inputs: Sequence[torch.Tensor],
     grad_outputs: Sequence[torch.Tensor],
     *,
-    flat_indices: Sequence[int],
+    flat_indices: Union[Sequence[int], torch.Tensor],
     weight_shape: Sequence[int],
 ) -> torch.Tensor:
     """Gather candidate-local first-order credit without reconstructing the full weight gradient."""
@@ -1064,7 +1068,7 @@ class AuthoritativeForwardHandle:
     def candidate_weighted_grad_proxies(
         self,
         state_key: str,
-        flat_indices: Sequence[int],
+        flat_indices: Union[Sequence[int], torch.Tensor],
     ) -> torch.Tensor:
         if state_key not in self.current_weights:
             raise KeyError(state_key)
@@ -1091,7 +1095,7 @@ class AuthoritativeForwardHandle:
     def candidate_weighted_grad_and_diag_fisher_proxies(
         self,
         state_key: str,
-        flat_indices: Sequence[int],
+        flat_indices: Union[Sequence[int], torch.Tensor],
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if state_key not in self.current_weights:
             raise KeyError(state_key)
