@@ -64,6 +64,18 @@ def _default_remote_sha_runner(box: str, remote_rel: str) -> str:
     return proc.stdout.split()[0]
 
 
+def read_code_currency_pass_from_preflight(chain_root: Path) -> bool:
+    """Fail-closed: only True when preflight JSON explicitly has code_currency_pass==true."""
+    path = chain_root / "prelaunch" / "box_code_currency_preflight.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    return payload.get("code_currency_pass") is True
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     local_chain_root, remote_chain_root = chain_roots(args.chain_id, creditdir=args.creditdir)
@@ -128,9 +140,10 @@ def main(argv: list[str] | None = None) -> int:
 
     now = time.time()
     if args.chain_log is not None:
+        code_currency_pass = read_code_currency_pass_from_preflight(local_chain_root)
         line = format_capture_complete_line(
             chain_id=args.chain_id,
-            code_currency_pass=bool(args.code_currency_pass),
+            code_currency_pass=code_currency_pass,
             artifact_sha_verified=not mismatches,
             ts=now,
             seed=args.seed,

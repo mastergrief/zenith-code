@@ -324,6 +324,156 @@ def test_overlap_earned_when_consumer_starts_before_next_capture(tmp_path: Path)
     assert entry["verdict_eligible"] is True
 
 
+def _write_preflight_code_currency(
+    chain_root: Path,
+    *,
+    code_currency_pass: bool,
+    payload: dict | None = None,
+) -> Path:
+    path = chain_root / "prelaunch" / "box_code_currency_preflight.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    body = dict(payload or {})
+    body.setdefault("code_currency_pin_count", 27)
+    body["code_currency_pass"] = code_currency_pass
+    path.write_text(json.dumps(body), encoding="utf-8")
+    return path
+
+
+def _append_overlap_sequence(chain_log: Path) -> None:
+    with chain_log.open("a", encoding="utf-8") as handle:
+        handle.write(
+            "\n".join(
+                [
+                    "consumer_audit_start: chain_id=chain_a ts=1.5",
+                    "producer_next_capture_start: chain_id=chain_a ts=2.0",
+                    "consumer_terminal: chain_id=chain_a status=pass",
+                ]
+            )
+            + "\n"
+        )
+
+
+def test_transport_reads_preflight_true_enables_pipeline_eligible(tmp_path: Path) -> None:
+    from scripts.box_lane_artifact_transport import main as transport_main
+    from scripts.box_lane_chain_watcher import main as watcher_main
+
+    creditdir = tmp_path / "creditdir"
+    chain_id = "chain_a"
+    chain_root = creditdir / chain_id
+    _write_s2_chain_tree(chain_root)
+    _write_preflight_code_currency(chain_root, code_currency_pass=True)
+    chain_log = tmp_path / "producer.log"
+
+    rc = transport_main(
+        [
+            "--chain-id",
+            chain_id,
+            "--creditdir",
+            str(creditdir),
+            "--chain-log",
+            str(chain_log),
+        ]
+    )
+    assert rc == 0
+    assert "code_currency_pass=true" in chain_log.read_text(encoding="utf-8")
+
+    _append_overlap_sequence(chain_log)
+    manifest = tmp_path / "overlap.json"
+    rc = watcher_main([str(chain_log), "--manifest", str(manifest)])
+    assert rc == 0
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    assert payload["n_overlap"] == 1
+    assert payload["entries"][0]["pipeline_eligible"] is True
+
+
+def test_transport_reads_preflight_false_marks_ineligible(tmp_path: Path) -> None:
+    from scripts.box_lane_artifact_transport import main as transport_main
+
+    creditdir = tmp_path / "creditdir"
+    chain_id = "chain_a"
+    chain_root = creditdir / chain_id
+    _write_s2_chain_tree(chain_root)
+    _write_preflight_code_currency(chain_root, code_currency_pass=False)
+    chain_log = tmp_path / "producer.log"
+
+    rc = transport_main(
+        [
+            "--chain-id",
+            chain_id,
+            "--creditdir",
+            str(creditdir),
+            "--chain-log",
+            str(chain_log),
+        ]
+    )
+    assert rc == 0
+    assert "code_currency_pass=false" in chain_log.read_text(encoding="utf-8")
+
+    states = process_science_chain_log(chain_log.read_text(encoding="utf-8").splitlines())
+    verdict = classify_overlap(states["chain_a"])
+    assert "code_currency_not_passed" in verdict.issues
+    assert verdict.pipeline_eligible is False
+
+
+def test_transport_missing_preflight_fails_closed_for_chain_log(tmp_path: Path) -> None:
+    from scripts.box_lane_artifact_transport import main as transport_main
+
+    creditdir = tmp_path / "creditdir"
+    chain_id = "chain_a"
+    chain_root = creditdir / chain_id
+    _write_s2_chain_tree(chain_root)
+    chain_log = tmp_path / "producer.log"
+
+    rc = transport_main(
+        [
+            "--chain-id",
+            chain_id,
+            "--creditdir",
+            str(creditdir),
+            "--chain-log",
+            str(chain_log),
+        ]
+    )
+    assert rc == 0
+    assert "code_currency_pass=false" in chain_log.read_text(encoding="utf-8")
+
+    states = process_science_chain_log(chain_log.read_text(encoding="utf-8").splitlines())
+    verdict = classify_overlap(states["chain_a"])
+    assert "code_currency_not_passed" in verdict.issues
+    assert verdict.pipeline_eligible is False
+
+
+def test_transport_malformed_preflight_fails_closed_for_chain_log(tmp_path: Path) -> None:
+    from scripts.box_lane_artifact_transport import main as transport_main
+
+    creditdir = tmp_path / "creditdir"
+    chain_id = "chain_a"
+    chain_root = creditdir / chain_id
+    _write_s2_chain_tree(chain_root)
+    malformed = chain_root / "prelaunch" / "box_code_currency_preflight.json"
+    malformed.parent.mkdir(parents=True, exist_ok=True)
+    malformed.write_text("{not json", encoding="utf-8")
+    chain_log = tmp_path / "producer.log"
+
+    rc = transport_main(
+        [
+            "--chain-id",
+            chain_id,
+            "--creditdir",
+            str(creditdir),
+            "--chain-log",
+            str(chain_log),
+        ]
+    )
+    assert rc == 0
+    assert "code_currency_pass=false" in chain_log.read_text(encoding="utf-8")
+
+    states = process_science_chain_log(chain_log.read_text(encoding="utf-8").splitlines())
+    verdict = classify_overlap(states["chain_a"])
+    assert "code_currency_not_passed" in verdict.issues
+    assert verdict.pipeline_eligible is False
+
+
 def test_transport_only_chain_log_is_ineligible_without_terminal_pass(tmp_path: Path) -> None:
     log = tmp_path / "producer.log"
     log.write_text(
