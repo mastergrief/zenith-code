@@ -308,7 +308,12 @@ forward/backward, update, emission/accounting, and artifact flush. A
 watch-wrap heartbeat is not hot-loop progress; per-phase milestones are the
 progress source. No progress past the phase budget is a **liveness failure**:
 stack-sample, kill/release, and classify the run instead of waiting for the
-total timeout. New observer/emitter/collector code at representative scale
+total timeout. A materialization/CPU liveness failure additionally triggers a
+**class audit before relaunch**: enumerate every caller of the offending helper
+AND every full-population `.tolist()`/dict/list build on the hot path, and fix
+the whole class in one slice — chasing sibling sites one launch at a time is
+whack-a-mole (a shared helper has >1 caller; a fixed site usually has a parallel
+one). New observer/emitter/collector code at representative scale
 requires a prior **scale-smoke** or cost model; a co-lead-flagged de-risk smoke
 is not overridable on one-run EV grounds. Receipts must separate DEVICE
 residency from HOT-LOOP residency.
