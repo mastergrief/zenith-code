@@ -21,6 +21,8 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
 )
 from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
     B2B_CANDIDATE_APPLY_POLICY,
+    ORACLE_SCREEN_ORDERING_SEED,
+    ORACLE_SCREEN_ORDERING_STEP,
     _apply_full_vote_planned_candidate_shadow_update,
     _audit_sparse_singleton_identity_for_candidate,
     _candidate_delta_weight_from_one_flip,
@@ -47,8 +49,13 @@ from calm.hrm_text_158.native_full_stack.two_tier_transient_selection import (
 from calm.hrm_text_158.native_full_stack.vote_update import (
     LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
     LOCAL_SELECTION_ORDER_DETERMINISTIC_HASH_MATCHED,
+    VoteUpdateState,
+    _local_selection_order,
     apply_integer_vote_update_reference,
+    plan_integer_vote_update_reference,
 )
+
+_STRICT_SAMPLE_SORT_INT64_MAX = (1 << 63) - 1
 
 GRAD_PROXY_AUDIT_SCHEMA = "hrm_text_158_grad_proxy_audit_receipt/v0"
 GRAD_PROXY_AUDIT_ESTIMAND = "first_order_grad_proxy_weighted_local_loss_delta"
@@ -149,7 +156,252 @@ def materialize_selector_rows(
     ]
 
 
+def _materialize_w6_t10_candidate_dict_entry(
+    *,
+    state_key: str,
+    flat_index: int,
+    current_rank_position: int,
+    deterministic_hash_rank_position: int,
+    vote_flat: torch.Tensor,
+    q_flat: torch.Tensor,
+    acc_flat: torch.Tensor,
+    new_acc: torch.Tensor,
+) -> dict[str, Any]:
+    new_acc_signed = int(new_acc[int(flat_index)].item())
+    candidate_id = _candidate_id(state_key, int(flat_index))
+    return {
+        "candidate_id": candidate_id,
+        "state_key": state_key,
+        "flat_index": int(flat_index),
+        "vote_value": int(vote_flat[int(flat_index)].item()),
+        "current_rank_position": int(current_rank_position),
+        "deterministic_hash_rank_position": int(deterministic_hash_rank_position),
+        "current_q_level": int(q_flat[int(flat_index)].item()),
+        "pre_accumulator_i16": int(acc_flat[int(flat_index)].item()),
+        "new_acc_i32_signed": new_acc_signed,
+        "proposal_direction": _sign_int(new_acc_signed),
+    }
+
+
+def _canonical_state_key_ord_map(
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+) -> tuple[list[str], dict[str, int]]:
+    sorted_keys = sorted(tensor_states.keys())
+    return sorted_keys, {str(key): int(index) for index, key in enumerate(sorted_keys)}
+
+
+def _sampled_universe_global_sort_weights(
+    *,
+    state_count: int,
+    max_flat_index: int,
+    max_rank: int,
+) -> tuple[int, int]:
+    w_flat = int(max_flat_index) + 1
+    max_state_ord = max(0, int(state_count) - 1)
+    w_state = int(state_count) * w_flat
+    if w_state <= max_state_ord * w_flat:
+        raise RuntimeError(
+            "sampled_universe_sort_weight_invariant_failed: "
+            f"w_state={w_state} must exceed max_state_ord*w_flat="
+            f"{max_state_ord * w_flat}"
+        )
+    max_composite = (
+        int(max_rank) * int(w_state)
+        + int(max_state_ord) * int(w_flat)
+        + int(max_flat_index)
+    )
+    if max_composite > _STRICT_SAMPLE_SORT_INT64_MAX:
+        raise RuntimeError(
+            "sampled_universe_sort_key_int64_overflow: "
+            f"max_composite={max_composite} exceeds int64"
+        )
+    return w_flat, w_state
+
+
+def _packed_crossing_sort_key(
+    rank: torch.Tensor,
+    state_key_ord: torch.Tensor,
+    flat_index: torch.Tensor,
+    *,
+    w_state: int,
+    w_flat: int,
+) -> torch.Tensor:
+    rank_i = rank.to(torch.int64)
+    ord_i = state_key_ord.to(torch.int64)
+    flat_i = flat_index.to(torch.int64)
+    composite = rank_i * int(w_state) + ord_i * int(w_flat) + flat_i
+    composite_max = int(composite.max().item()) if composite.numel() else 0
+    composite_min = int(composite.min().item()) if composite.numel() else 0
+    if composite_max > _STRICT_SAMPLE_SORT_INT64_MAX or composite_min < -(1 << 63):
+        raise RuntimeError(
+            "sampled_universe_sort_key_int64_overflow: "
+            f"composite range [{composite_min}, {composite_max}]"
+        )
+    return composite
+
+
+def _vote_plan_rank_and_new_acc_at_crossings(
+    *,
+    vote_state: VoteUpdateState,
+    votes: torch.Tensor,
+    spec: VoteUpdateSpec,
+    crossing_flat: torch.Tensor,
+    ordering_mode: str,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    plan = plan_integer_vote_update_reference(
+        vote_state,
+        VoteUpdateInputs(votes=votes),
+        spec,
+        local_selection_ordering_mode=str(ordering_mode),
+        local_selection_ordering_seed=int(ORACLE_SCREEN_ORDERING_SEED),
+        local_selection_ordering_step=int(ORACLE_SCREEN_ORDERING_STEP),
+    )
+    candidate_idx = plan.candidate_indices.detach().cpu().to(torch.int64)
+    new_acc = plan.new_acc_i32.detach().cpu().to(torch.int32).flatten()
+    numel = int(vote_state.q_levels.numel())
+    crossing_for_sort = crossing_flat[
+        torch.isin(crossing_flat, candidate_idx)
+    ].to(torch.int64)
+    if candidate_idx.numel() == 0 or int(crossing_for_sort.numel()) == 0:
+        return new_acc, torch.empty(0, dtype=torch.int64), crossing_for_sort, candidate_idx
+    order = _local_selection_order(
+        candidate_idx=candidate_idx,
+        new_acc_i32=new_acc,
+        numel=numel,
+        mode=str(ordering_mode),
+        ordering_seed=int(ORACLE_SCREEN_ORDERING_SEED),
+        ordering_step=int(ORACLE_SCREEN_ORDERING_STEP),
+    )
+    ordered = candidate_idx[order]
+    rank_full = torch.full((numel,), -1, dtype=torch.int64)
+    rank_full[ordered] = torch.arange(int(ordered.numel()), dtype=torch.int64)
+    return new_acc, rank_full[crossing_for_sort], crossing_for_sort, candidate_idx
+
+
+def _sample_crossing_row_indices_interleaved(
+    current_perm: torch.Tensor,
+    det_perm: torch.Tensor,
+    *,
+    max_sampled_candidates: int,
+) -> list[int]:
+    if int(max_sampled_candidates) <= 0:
+        return []
+    n_current = int(current_perm.numel())
+    n_det = int(det_perm.numel())
+    if n_current <= int(max_sampled_candidates):
+        return [int(row) for row in current_perm.detach().cpu().tolist()]
+    sampled: list[int] = []
+    seen: set[int] = set()
+    max_len = max(n_current, n_det)
+    for index in range(max_len):
+        for source in (current_perm, det_perm):
+            if index >= int(source.numel()):
+                continue
+            row = int(source[index].item())
+            if row in seen:
+                continue
+            seen.add(row)
+            sampled.append(row)
+            if len(sampled) >= int(max_sampled_candidates):
+                return sampled
+    return sampled
+
+
+def _strict_sampled_universe_materialization_counters(
+    *,
+    full_python_candidate_id_count: int = 0,
+    full_sort_key_entry_count: int = 0,
+    full_entry_by_id_count: int = 0,
+    crossing_mask_tolist_count: int = 0,
+    rank_ties_possible: bool = True,
+    bounded_hash_ordering_residual: bool = True,
+) -> dict[str, int | bool]:
+    return {
+        "full_python_candidate_id_count": int(full_python_candidate_id_count),
+        "full_sort_key_entry_count": int(full_sort_key_entry_count),
+        "full_entry_by_id_count": int(full_entry_by_id_count),
+        "crossing_mask_tolist_count": int(crossing_mask_tolist_count),
+        "rank_ties_possible": bool(rank_ties_possible),
+        "bounded_hash_ordering_residual": bool(bounded_hash_ordering_residual),
+    }
+
+
+def _emit_sampled_universe_build_timing(
+    timing_out: dict[str, float] | None,
+    *,
+    crossing_sets_seconds: float,
+    candidate_dict_seconds: float,
+    sort_sample_seconds: float,
+    universe_total_seconds: float,
+    sampled_crossing_mask_list_seconds: float,
+    sampled_ordered_indices_seconds: float,
+    sampled_rank_maps_seconds: float,
+    sampled_sort_key_construction_seconds: float,
+    sampled_sample_selection_seconds: float,
+    sampled_candidate_dict_k_only_seconds: float,
+) -> None:
+    if timing_out is None:
+        return
+    timing_out["universe_crossing_sets"] = float(crossing_sets_seconds)
+    timing_out["universe_candidate_dict"] = float(candidate_dict_seconds)
+    timing_out["universe_sort_sample"] = float(sort_sample_seconds)
+    timing_out["universe_build_total"] = float(universe_total_seconds)
+    timing_out["sampled_universe_crossing_mask_list"] = float(
+        sampled_crossing_mask_list_seconds
+    )
+    timing_out["sampled_universe_ordered_indices"] = float(
+        sampled_ordered_indices_seconds
+    )
+    timing_out["sampled_universe_rank_maps"] = float(sampled_rank_maps_seconds)
+    timing_out["sampled_universe_candidate_dict_k_only"] = float(
+        sampled_candidate_dict_k_only_seconds
+    )
+    timing_out["sampled_universe_candidate_dict_full"] = 0.0
+    timing_out["sampled_universe_sort_key_construction"] = float(
+        sampled_sort_key_construction_seconds
+    )
+    timing_out["sampled_universe_sample_selection"] = float(
+        sampled_sample_selection_seconds
+    )
+
+
 def build_w6_t10_crossing_candidate_universe_from_votes(
+    *,
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+    votes_by_key: Mapping[str, torch.Tensor],
+    max_abs_per_tensor: int,
+    max_sampled_candidates: int,
+    population_mode: str = POPULATION_MODE_SAMPLED_K64,
+    timing_out: dict[str, float] | None = None,
+    max_universe_build_seconds: float | None = None,
+) -> dict[str, Any]:
+    if str(population_mode) == POPULATION_MODE_SAMPLED_K64:
+        return _build_w6_t10_crossing_candidate_universe_sample_k_before_materialize(
+            tensor_states=tensor_states,
+            votes_by_key=votes_by_key,
+            max_abs_per_tensor=int(max_abs_per_tensor),
+            max_sampled_candidates=int(max_sampled_candidates),
+            timing_out=timing_out,
+            max_universe_build_seconds=max_universe_build_seconds,
+        )
+    if str(population_mode) == POPULATION_MODE_FULL_CROSSING_ELIGIBLE:
+        return build_w6_t10_crossing_candidate_universe_legacy_full_materialize(
+            tensor_states=tensor_states,
+            votes_by_key=votes_by_key,
+            max_abs_per_tensor=int(max_abs_per_tensor),
+            max_sampled_candidates=int(max_sampled_candidates),
+            population_mode=POPULATION_MODE_FULL_CROSSING_ELIGIBLE,
+            timing_out=timing_out,
+            max_universe_build_seconds=max_universe_build_seconds,
+        )
+    raise ValueError(
+        "population_mode must be "
+        f"{POPULATION_MODE_SAMPLED_K64!r} or "
+        f"{POPULATION_MODE_FULL_CROSSING_ELIGIBLE!r}, got {population_mode!r}"
+    )
+
+
+def build_w6_t10_crossing_candidate_universe_legacy_full_materialize(
     *,
     tensor_states: Mapping[str, BoundedDeltaTensorState],
     votes_by_key: Mapping[str, torch.Tensor],
@@ -162,6 +414,12 @@ def build_w6_t10_crossing_candidate_universe_from_votes(
     universe_start = time.perf_counter()
     crossing_sets_seconds = 0.0
     candidate_dict_seconds = 0.0
+    sampled_crossing_mask_list_seconds = 0.0
+    sampled_ordered_indices_seconds = 0.0
+    sampled_rank_maps_seconds = 0.0
+    sampled_sort_key_construction_seconds = 0.0
+    sampled_sample_selection_seconds = 0.0
+    is_sampled_mode = str(population_mode) == POPULATION_MODE_SAMPLED_K64
     base_spec = w6_t10_base_spec(max_abs_per_tensor=int(max_abs_per_tensor))
     one_flip_spec = _single_flip_spec(base_spec)
     candidate_by_id: dict[str, dict[str, Any]] = {}
@@ -179,6 +437,27 @@ def build_w6_t10_crossing_candidate_universe_from_votes(
             "universe_sort_sample": 0.0,
             "universe_build_total": elapsed,
         }
+        if is_sampled_mode:
+            partial_timing.update(
+                {
+                    "sampled_universe_crossing_mask_list": float(
+                        sampled_crossing_mask_list_seconds
+                    ),
+                    "sampled_universe_ordered_indices": float(
+                        sampled_ordered_indices_seconds
+                    ),
+                    "sampled_universe_rank_maps": float(sampled_rank_maps_seconds),
+                    "sampled_universe_candidate_dict_full": float(
+                        candidate_dict_seconds
+                    ),
+                    "sampled_universe_sort_key_construction": float(
+                        sampled_sort_key_construction_seconds
+                    ),
+                    "sampled_universe_sample_selection": float(
+                        sampled_sample_selection_seconds
+                    ),
+                }
+            )
         if timing_out is not None:
             timing_out.update(partial_timing)
         raise UniverseBuildMeasurementAborted(
@@ -196,11 +475,17 @@ def build_w6_t10_crossing_candidate_universe_from_votes(
         if not bool(crossing_mask.any().item()):
             crossing_sets_seconds += float(time.perf_counter() - crossing_sets_start)
             continue
+        mask_list_start = time.perf_counter()
         crossing_eligible = {
             int(flat_index)
             for flat_index in crossing_mask.nonzero(as_tuple=False).flatten().tolist()
         }
         crossing_eligible_count += len(crossing_eligible)
+        if is_sampled_mode:
+            sampled_crossing_mask_list_seconds += float(
+                time.perf_counter() - mask_list_start
+            )
+        ordered_indices_start = time.perf_counter()
         current_ordered, unordered, new_acc = _ordered_candidate_indices(
             state=vote_state,
             votes=votes,
@@ -221,6 +506,11 @@ def build_w6_t10_crossing_candidate_universe_from_votes(
             raise RuntimeError(
                 "W6/T=10 crossing candidate set drifted across scheduler orderings"
             )
+        if is_sampled_mode:
+            sampled_ordered_indices_seconds += float(
+                time.perf_counter() - ordered_indices_start
+            )
+        rank_maps_start = time.perf_counter()
         current_rank = {
             int(flat_index): int(position)
             for position, flat_index in enumerate(current_ordered)
@@ -234,6 +524,8 @@ def build_w6_t10_crossing_candidate_universe_from_votes(
         vote_flat = votes.flatten().to(torch.int32)
         q_flat = vote_state.q_levels.flatten().to(torch.int32)
         acc_flat = vote_state.accumulators.flatten().to(torch.int32)
+        if is_sampled_mode:
+            sampled_rank_maps_seconds += float(time.perf_counter() - rank_maps_start)
         crossing_sets_seconds += float(time.perf_counter() - crossing_sets_start)
 
         candidate_dict_start = time.perf_counter()
@@ -258,6 +550,7 @@ def build_w6_t10_crossing_candidate_universe_from_votes(
         candidate_dict_seconds += float(time.perf_counter() - candidate_dict_start)
 
     sort_sample_start = time.perf_counter()
+    sort_keys_start = time.perf_counter()
     current_ordered_ids = [
         str(candidate["candidate_id"])
         for candidate in sorted(
@@ -280,6 +573,11 @@ def build_w6_t10_crossing_candidate_universe_from_votes(
             ),
         )
     ]
+    if is_sampled_mode:
+        sampled_sort_key_construction_seconds = float(
+            time.perf_counter() - sort_keys_start
+        )
+    sample_selection_start = time.perf_counter()
     if population_mode == POPULATION_MODE_FULL_CROSSING_ELIGIBLE:
         sampled_ids = [str(candidate_id) for candidate_id in deterministic_ordered_ids]
     elif population_mode == POPULATION_MODE_SAMPLED_K64:
@@ -294,6 +592,10 @@ def build_w6_t10_crossing_candidate_universe_from_votes(
             f"{POPULATION_MODE_SAMPLED_K64!r} or "
             f"{POPULATION_MODE_FULL_CROSSING_ELIGIBLE!r}, got {population_mode!r}"
         )
+    if is_sampled_mode:
+        sampled_sample_selection_seconds = float(
+            time.perf_counter() - sample_selection_start
+        )
     sort_sample_seconds = float(time.perf_counter() - sort_sample_start)
     universe_total_seconds = float(time.perf_counter() - universe_start)
     if timing_out is not None:
@@ -301,6 +603,23 @@ def build_w6_t10_crossing_candidate_universe_from_votes(
         timing_out["universe_candidate_dict"] = float(candidate_dict_seconds)
         timing_out["universe_sort_sample"] = float(sort_sample_seconds)
         timing_out["universe_build_total"] = float(universe_total_seconds)
+        if is_sampled_mode:
+            timing_out["sampled_universe_crossing_mask_list"] = float(
+                sampled_crossing_mask_list_seconds
+            )
+            timing_out["sampled_universe_ordered_indices"] = float(
+                sampled_ordered_indices_seconds
+            )
+            timing_out["sampled_universe_rank_maps"] = float(sampled_rank_maps_seconds)
+            timing_out["sampled_universe_candidate_dict_full"] = float(
+                candidate_dict_seconds
+            )
+            timing_out["sampled_universe_sort_key_construction"] = float(
+                sampled_sort_key_construction_seconds
+            )
+            timing_out["sampled_universe_sample_selection"] = float(
+                sampled_sample_selection_seconds
+            )
     return {
         "base_spec": base_spec,
         "one_flip_spec": one_flip_spec,
@@ -309,6 +628,266 @@ def build_w6_t10_crossing_candidate_universe_from_votes(
         "sampled_ids": sampled_ids,
         "crossing_eligible_count": int(crossing_eligible_count),
         "population_mode": str(population_mode),
+    }
+
+
+def _build_w6_t10_crossing_candidate_universe_sample_k_before_materialize(
+    *,
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+    votes_by_key: Mapping[str, torch.Tensor],
+    max_abs_per_tensor: int,
+    max_sampled_candidates: int,
+    timing_out: dict[str, float] | None = None,
+    max_universe_build_seconds: float | None = None,
+) -> dict[str, Any]:
+    universe_start = time.perf_counter()
+    crossing_sets_seconds = 0.0
+    candidate_dict_seconds = 0.0
+    sampled_crossing_mask_list_seconds = 0.0
+    sampled_ordered_indices_seconds = 0.0
+    sampled_rank_maps_seconds = 0.0
+    sampled_sort_key_construction_seconds = 0.0
+    sampled_sample_selection_seconds = 0.0
+    sampled_candidate_dict_k_only_seconds = 0.0
+    base_spec = w6_t10_base_spec(max_abs_per_tensor=int(max_abs_per_tensor))
+    one_flip_spec = _single_flip_spec(base_spec)
+    candidate_by_id: dict[str, dict[str, Any]] = {}
+    crossing_eligible_count = 0
+    state_materialization_context: dict[str, dict[str, torch.Tensor]] = {}
+    sorted_state_keys, state_key_ord_map = _canonical_state_key_ord_map(tensor_states)
+    state_key_by_ord = {
+        int(ordinal): str(state_key) for state_key, ordinal in state_key_ord_map.items()
+    }
+    flat_segments: list[torch.Tensor] = []
+    state_ord_segments: list[torch.Tensor] = []
+    current_rank_segments: list[torch.Tensor] = []
+    det_rank_segments: list[torch.Tensor] = []
+    max_flat_index = 0
+    max_rank_position = 0
+    materialization_counters = _strict_sampled_universe_materialization_counters()
+
+    def _maybe_abort_universe_build(*, reason: str) -> None:
+        if max_universe_build_seconds is None:
+            return
+        elapsed = float(time.perf_counter() - universe_start)
+        if elapsed < float(max_universe_build_seconds):
+            return
+        partial_timing = {
+            "universe_crossing_sets": float(crossing_sets_seconds),
+            "universe_candidate_dict": float(candidate_dict_seconds),
+            "universe_sort_sample": 0.0,
+            "universe_build_total": elapsed,
+            "sampled_universe_crossing_mask_list": float(
+                sampled_crossing_mask_list_seconds
+            ),
+            "sampled_universe_ordered_indices": float(
+                sampled_ordered_indices_seconds
+            ),
+            "sampled_universe_rank_maps": float(sampled_rank_maps_seconds),
+            "sampled_universe_candidate_dict_k_only": float(
+                sampled_candidate_dict_k_only_seconds
+            ),
+            "sampled_universe_candidate_dict_full": 0.0,
+            "sampled_universe_sort_key_construction": float(
+                sampled_sort_key_construction_seconds
+            ),
+            "sampled_universe_sample_selection": float(
+                sampled_sample_selection_seconds
+            ),
+        }
+        if timing_out is not None:
+            timing_out.update(partial_timing)
+        raise UniverseBuildMeasurementAborted(
+            reason=str(reason),
+            timing_out=partial_timing,
+            partial_crossing_eligible_count=int(crossing_eligible_count),
+            partial_candidate_count=len(candidate_by_id),
+        )
+
+    for state_key, state in sorted(tensor_states.items()):
+        vote_state = state.vote_update_state()
+        votes = votes_by_key[state_key]
+        crossing_sets_start = time.perf_counter()
+        crossing_mask = _crossing_eligible_mask_tensor(votes=votes, state=state)
+        if not bool(crossing_mask.any().item()):
+            crossing_sets_seconds += float(time.perf_counter() - crossing_sets_start)
+            continue
+        crossing_flat = crossing_mask.nonzero(as_tuple=False).flatten().to(torch.int64)
+        crossing_eligible_count += int(crossing_flat.numel())
+        ordered_indices_start = time.perf_counter()
+        new_acc, current_rank_at_cross, crossing_for_sort, candidate_idx = (
+            _vote_plan_rank_and_new_acc_at_crossings(
+                vote_state=vote_state,
+                votes=votes,
+                spec=base_spec,
+                crossing_flat=crossing_flat,
+                ordering_mode=LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+            )
+        )
+        _new_acc_det, det_rank_at_cross, crossing_for_sort_det, candidate_idx_det = (
+            _vote_plan_rank_and_new_acc_at_crossings(
+                vote_state=vote_state,
+                votes=votes,
+                spec=base_spec,
+                crossing_flat=crossing_flat,
+                ordering_mode=LOCAL_SELECTION_ORDER_DETERMINISTIC_HASH_MATCHED,
+            )
+        )
+        if not torch.equal(candidate_idx, candidate_idx_det) or not torch.equal(
+            crossing_for_sort, crossing_for_sort_det
+        ):
+            raise RuntimeError(
+                "W6/T=10 crossing candidate set drifted across scheduler orderings"
+            )
+        if int(crossing_for_sort.numel()) > 0 and (
+            int(current_rank_at_cross.numel()) != int(crossing_for_sort.numel())
+            or int(det_rank_at_cross.numel()) != int(crossing_for_sort.numel())
+            or bool((current_rank_at_cross < 0).any().item())
+            or bool((det_rank_at_cross < 0).any().item())
+        ):
+            raise RuntimeError(
+                "W6/T=10 crossing candidate rank lookup failed for scheduler ordering"
+            )
+        sampled_ordered_indices_seconds += float(
+            time.perf_counter() - ordered_indices_start
+        )
+        _maybe_abort_universe_build(reason="ordered_indices_timeout")
+        rank_maps_start = time.perf_counter()
+        vote_flat = votes.flatten().to(torch.int32)
+        q_flat = vote_state.q_levels.flatten().to(torch.int32)
+        acc_flat = vote_state.accumulators.flatten().to(torch.int32)
+        state_materialization_context[str(state_key)] = {
+            "vote_flat": vote_flat,
+            "q_flat": q_flat,
+            "acc_flat": acc_flat,
+            "new_acc": new_acc,
+        }
+        if int(crossing_for_sort.numel()) > 0:
+            state_ord = int(state_key_ord_map[str(state_key)])
+            flat_segments.append(crossing_for_sort)
+            state_ord_segments.append(
+                torch.full(
+                    (int(crossing_for_sort.numel()),),
+                    state_ord,
+                    dtype=torch.int64,
+                )
+            )
+            current_rank_segments.append(current_rank_at_cross.to(torch.int64))
+            det_rank_segments.append(det_rank_at_cross.to(torch.int64))
+            max_flat_index = max(max_flat_index, int(crossing_for_sort.max().item()))
+            max_rank_position = max(
+                max_rank_position,
+                int(current_rank_at_cross.max().item()),
+                int(det_rank_at_cross.max().item()),
+            )
+        sampled_rank_maps_seconds += float(time.perf_counter() - rank_maps_start)
+        crossing_sets_seconds += float(time.perf_counter() - crossing_sets_start)
+
+    sort_sample_start = time.perf_counter()
+    sort_keys_start = time.perf_counter()
+    if crossing_eligible_count == 0:
+        flat_index_all = torch.empty(0, dtype=torch.int64)
+        state_ord_all = torch.empty(0, dtype=torch.int64)
+        current_rank_all = torch.empty(0, dtype=torch.int64)
+        det_rank_all = torch.empty(0, dtype=torch.int64)
+    else:
+        flat_index_all = torch.cat(flat_segments)
+        state_ord_all = torch.cat(state_ord_segments)
+        current_rank_all = torch.cat(current_rank_segments)
+        det_rank_all = torch.cat(det_rank_segments)
+    w_flat, w_state = _sampled_universe_global_sort_weights(
+        state_count=len(sorted_state_keys),
+        max_flat_index=max_flat_index,
+        max_rank=max_rank_position,
+    )
+    current_composite = _packed_crossing_sort_key(
+        current_rank_all,
+        state_ord_all,
+        flat_index_all,
+        w_state=w_state,
+        w_flat=w_flat,
+    )
+    det_composite = _packed_crossing_sort_key(
+        det_rank_all,
+        state_ord_all,
+        flat_index_all,
+        w_state=w_state,
+        w_flat=w_flat,
+    )
+    current_perm = torch.argsort(current_composite, stable=True)
+    det_perm = torch.argsort(det_composite, stable=True)
+    sampled_sort_key_construction_seconds = float(
+        time.perf_counter() - sort_keys_start
+    )
+    sample_selection_start = time.perf_counter()
+    selected_rows = _sample_crossing_row_indices_interleaved(
+        current_perm,
+        det_perm,
+        max_sampled_candidates=int(max_sampled_candidates),
+    )
+    sampled_ids = [
+        _candidate_id(
+            state_key_by_ord[int(state_ord_all[int(row)].item())],
+            int(flat_index_all[int(row)].item()),
+        )
+        for row in selected_rows
+    ]
+    sampled_sample_selection_seconds = float(
+        time.perf_counter() - sample_selection_start
+    )
+    candidate_dict_start = time.perf_counter()
+    for row in selected_rows:
+        _maybe_abort_universe_build(reason="candidate_dict_k_only_timeout")
+        row_index = int(row)
+        state_ord = int(state_ord_all[row_index].item())
+        flat_index = int(flat_index_all[row_index].item())
+        state_key = state_key_by_ord[state_ord]
+        ctx = state_materialization_context[state_key]
+        candidate_id = _candidate_id(state_key, flat_index)
+        candidate_by_id[str(candidate_id)] = _materialize_w6_t10_candidate_dict_entry(
+            state_key=state_key,
+            flat_index=flat_index,
+            current_rank_position=int(current_rank_all[row_index].item()),
+            deterministic_hash_rank_position=int(det_rank_all[row_index].item()),
+            vote_flat=ctx["vote_flat"],
+            q_flat=ctx["q_flat"],
+            acc_flat=ctx["acc_flat"],
+            new_acc=ctx["new_acc"],
+        )
+    sampled_candidate_dict_k_only_seconds = float(
+        time.perf_counter() - candidate_dict_start
+    )
+    candidate_dict_seconds = sampled_candidate_dict_k_only_seconds
+    sort_sample_seconds = float(time.perf_counter() - sort_sample_start)
+    universe_total_seconds = float(time.perf_counter() - universe_start)
+    _emit_sampled_universe_build_timing(
+        timing_out,
+        crossing_sets_seconds=crossing_sets_seconds,
+        candidate_dict_seconds=candidate_dict_seconds,
+        sort_sample_seconds=sort_sample_seconds,
+        universe_total_seconds=universe_total_seconds,
+        sampled_crossing_mask_list_seconds=sampled_crossing_mask_list_seconds,
+        sampled_ordered_indices_seconds=sampled_ordered_indices_seconds,
+        sampled_rank_maps_seconds=sampled_rank_maps_seconds,
+        sampled_sort_key_construction_seconds=sampled_sort_key_construction_seconds,
+        sampled_sample_selection_seconds=sampled_sample_selection_seconds,
+        sampled_candidate_dict_k_only_seconds=sampled_candidate_dict_k_only_seconds,
+    )
+    if timing_out is not None:
+        for key, value in materialization_counters.items():
+            if isinstance(value, bool):
+                timing_out[f"strict_path_{key}"] = float(int(value))
+            else:
+                timing_out[f"strict_path_{key}"] = float(value)
+    return {
+        "base_spec": base_spec,
+        "one_flip_spec": one_flip_spec,
+        "votes_by_key": votes_by_key,
+        "candidate_by_id": candidate_by_id,
+        "sampled_ids": sampled_ids,
+        "crossing_eligible_count": int(crossing_eligible_count),
+        "population_mode": POPULATION_MODE_SAMPLED_K64,
+        "strict_path_materialization_counters": dict(materialization_counters),
     }
 
 
@@ -401,6 +980,39 @@ def _attribute_dominant_universe_subphase(
         "universe_candidate_dict": float(timing.get("universe_candidate_dict", 0.0)),
         "universe_crossing_sets": float(timing.get("universe_crossing_sets", 0.0)),
         "universe_sort_sample": float(timing.get("universe_sort_sample", 0.0)),
+    }
+    universe_total = float(timing.get("universe_build_total", 0.0))
+    denominator = universe_total if universe_total > 0.0 else 1.0
+    shares = {key: value / denominator for key, value in candidates.items()}
+    dominant = max(candidates, key=candidates.get)
+    return dominant, shares
+
+
+def _attribute_dominant_sampled_universe_subphase(
+    timing: Mapping[str, float],
+) -> tuple[str, dict[str, float]]:
+    candidates = {
+        "sampled_universe_candidate_dict_k_only": float(
+            timing.get("sampled_universe_candidate_dict_k_only", 0.0)
+        ),
+        "sampled_universe_candidate_dict_full": float(
+            timing.get("sampled_universe_candidate_dict_full", 0.0)
+        ),
+        "sampled_universe_crossing_mask_list": float(
+            timing.get("sampled_universe_crossing_mask_list", 0.0)
+        ),
+        "sampled_universe_ordered_indices": float(
+            timing.get("sampled_universe_ordered_indices", 0.0)
+        ),
+        "sampled_universe_rank_maps": float(
+            timing.get("sampled_universe_rank_maps", 0.0)
+        ),
+        "sampled_universe_sort_key_construction": float(
+            timing.get("sampled_universe_sort_key_construction", 0.0)
+        ),
+        "sampled_universe_sample_selection": float(
+            timing.get("sampled_universe_sample_selection", 0.0)
+        ),
     }
     universe_total = float(timing.get("universe_build_total", 0.0))
     denominator = universe_total if universe_total > 0.0 else 1.0
@@ -538,6 +1150,256 @@ def measure_universe_build_subphase_scale_ladder(
             if materialization_dominates
             else "replan_required_proxy_gather_or_other_dominates"
         ),
+    }
+
+
+ORACLE_SCREEN_EXCLUSION_RECORD = {
+    "relaunch_scope": "selector_support_consensus_v0",
+    "excluded_surface": (
+        "oracle_screen_runner.run_candidate_set_viability_oracle_screen "
+        "(--oracle-screen-mode launch surface; NOT a selector-chain step)"
+    ),
+    "forbidden_in_this_relaunch": "oracle_screen_runner.py edit",
+    "follow_on": (
+        "Separate bounded-measurement/fix gate if an oracle-screen bundle is queued"
+    ),
+    "same_defect_class": "materialize-before-sample in inline universe build",
+}
+
+
+def capture_legacy_sampled_universe_reference(
+    *,
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+    votes_by_key: Mapping[str, torch.Tensor],
+    max_abs_per_tensor: int,
+    max_sampled_candidates: int,
+) -> dict[str, Any]:
+    """Golden reference snapshot for fix-slice parity (builder behavior unchanged)."""
+
+    universe = build_w6_t10_crossing_candidate_universe_legacy_full_materialize(
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+        max_abs_per_tensor=int(max_abs_per_tensor),
+        max_sampled_candidates=int(max_sampled_candidates),
+        population_mode=POPULATION_MODE_SAMPLED_K64,
+    )
+    sampled_ids = [str(candidate_id) for candidate_id in universe["sampled_ids"]]
+    candidate_fields = {
+        str(candidate_id): dict(universe["candidate_by_id"][candidate_id])
+        for candidate_id in sampled_ids
+    }
+    return {
+        "population_mode": POPULATION_MODE_SAMPLED_K64,
+        "max_sampled_candidates": int(max_sampled_candidates),
+        "crossing_eligible_count": int(universe["crossing_eligible_count"]),
+        "sampled_ids": sampled_ids,
+        "sampled_ids_hash16": _candidate_ids_hash16(sampled_ids),
+        "candidate_fields_by_id": candidate_fields,
+        "candidate_dict_size": len(universe["candidate_by_id"]),
+    }
+
+
+def measure_sampled_universe_build_subphase_scale_ladder(
+    *,
+    ladder_points: Sequence[tuple[int, int]] | None = None,
+    max_abs_per_tensor: int = 4096,
+    max_wall_seconds: float = 280.0,
+    production_crossing_eligible_target: int = 11_640_000,
+    max_sampled_candidates_values: Sequence[int] = (8, 64),
+) -> dict[str, Any]:
+    """Bounded sampled-mode measurement: scale ladder + timeout-abort @ K=8 and K=64."""
+
+    if ladder_points is None:
+        ladder_points = [
+            (1, 10_000),
+            (1, 50_000),
+            (4, 50_000),
+            (8, 100_000),
+            (16, 100_000),
+            (32, 50_000),
+            (32, 100_000),
+        ]
+    measurement_by_k: dict[str, Any] = {}
+    wall_grand_total = 0.0
+    for max_sampled in max_sampled_candidates_values:
+        runs: list[dict[str, Any]] = []
+        wall_total = 0.0
+        for module_count, numel_per_module in ladder_points:
+            crossing_count = int(module_count) * int(numel_per_module)
+            if wall_total >= max_wall_seconds:
+                runs.append(
+                    {
+                        "module_count": module_count,
+                        "numel_per_module": numel_per_module,
+                        "expected_crossing_eligible": crossing_count,
+                        "status": "skipped_wall_budget",
+                    }
+                )
+                continue
+            tensor_states, votes_by_key = fabricate_all_crossing_tensor_batch(
+                module_count=module_count,
+                numel_per_module=numel_per_module,
+            )
+            timing_out: dict[str, float] = {}
+            run_wall_start = time.perf_counter()
+            timeout_budget: float | None = None
+            if crossing_count >= 500_000:
+                timeout_budget = min(30.0, max(0.05, max_wall_seconds - wall_total))
+            record: dict[str, Any] = {
+                "module_count": module_count,
+                "numel_per_module": numel_per_module,
+                "expected_crossing_eligible": crossing_count,
+                "max_sampled_candidates": int(max_sampled),
+            }
+            try:
+                universe = build_w6_t10_crossing_candidate_universe_from_votes(
+                    tensor_states=tensor_states,
+                    votes_by_key=votes_by_key,
+                    max_abs_per_tensor=max_abs_per_tensor,
+                    max_sampled_candidates=int(max_sampled),
+                    population_mode=POPULATION_MODE_SAMPLED_K64,
+                    timing_out=timing_out,
+                    max_universe_build_seconds=timeout_budget,
+                )
+                record.update(
+                    {
+                        "status": "completed",
+                        "crossing_eligible_count": universe["crossing_eligible_count"],
+                        "sampled_ids_count": len(universe["sampled_ids"]),
+                        "candidate_dict_size": len(universe["candidate_by_id"]),
+                        "k_only_materialization": (
+                            int(len(universe["candidate_by_id"]))
+                            == int(len(universe["sampled_ids"]))
+                        ),
+                        "materialize_before_sample_observed": (
+                            int(len(universe["candidate_by_id"]))
+                            > int(len(universe["sampled_ids"]))
+                            and int(universe["crossing_eligible_count"])
+                            > int(max_sampled)
+                        ),
+                    }
+                )
+            except UniverseBuildMeasurementAborted as exc:
+                timing_out = dict(exc.timing_out)
+                record.update(
+                    {
+                        "status": "timeout_abort",
+                        "abort_reason": exc.reason,
+                        "partial_crossing_eligible_count": exc.partial_crossing_eligible_count,
+                        "partial_candidate_count": exc.partial_candidate_count,
+                        "materialize_before_sample_observed": (
+                            int(exc.partial_candidate_count)
+                            < int(exc.partial_crossing_eligible_count)
+                            and int(exc.partial_crossing_eligible_count) > int(max_sampled)
+                        ),
+                    }
+                )
+            run_wall = float(time.perf_counter() - run_wall_start)
+            wall_total += run_wall
+            dominant, shares = _attribute_dominant_sampled_universe_subphase(timing_out)
+            aggregate_dominant, aggregate_shares = _attribute_dominant_universe_subphase(
+                timing_out
+            )
+            record.update(
+                {
+                    "wall_seconds": run_wall,
+                    "timing": dict(timing_out),
+                    "dominant_sampled_subphase": dominant,
+                    "sampled_subphase_share_of_universe_build": shares,
+                    "dominant_aggregate_subphase": aggregate_dominant,
+                    "aggregate_subphase_share_of_universe_build": aggregate_shares,
+                }
+            )
+            runs.append(record)
+
+        projection_points = [
+            (
+                int(run["expected_crossing_eligible"]),
+                float(
+                    run["timing"].get(
+                        "sampled_universe_candidate_dict_k_only",
+                        run["timing"].get("sampled_universe_candidate_dict_full", 0.0),
+                    )
+                ),
+            )
+            for run in runs
+            if run.get("timing")
+        ]
+        projected_dict_seconds: float | None = None
+        if len(projection_points) >= 2:
+            xs = [point[0] for point in projection_points]
+            ys = [point[1] for point in projection_points]
+            mean_x = sum(xs) / len(xs)
+            mean_y = sum(ys) / len(ys)
+            denom = sum((x - mean_x) ** 2 for x in xs) or 1.0
+            slope = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys)) / denom
+            projected_dict_seconds = float(
+                slope * float(production_crossing_eligible_target)
+            )
+
+        runs_with_timing = [run for run in runs if run.get("timing")]
+        overall_dominant = None
+        if runs_with_timing:
+            largest = max(
+                runs_with_timing, key=lambda item: item["expected_crossing_eligible"]
+            )
+            overall_dominant = str(largest["dominant_sampled_subphase"])
+        full_universe_materialization_dominates = overall_dominant in {
+            "sampled_universe_candidate_dict_full",
+            "sampled_universe_candidate_dict_k_only",
+        } and any(
+            bool(run.get("materialize_before_sample_observed"))
+            for run in runs
+            if run.get("status") == "completed"
+        )
+        materialize_before_sample_confirmed = any(
+            bool(run.get("materialize_before_sample_observed"))
+            for run in runs
+            if run.get("status") in {"completed", "timeout_abort"}
+        )
+        k_only_materialization_confirmed = all(
+            bool(run.get("k_only_materialization"))
+            for run in runs
+            if run.get("status") == "completed"
+        )
+        measurement_by_k[str(int(max_sampled))] = {
+            "max_sampled_candidates": int(max_sampled),
+            "ladder_runs": runs,
+            "overall_dominant_sampled_subphase": overall_dominant,
+            "full_universe_materialization_dominates": (
+                full_universe_materialization_dominates
+            ),
+            "materialize_before_sample_confirmed": materialize_before_sample_confirmed,
+            "k_only_materialization_confirmed": k_only_materialization_confirmed,
+            "projected_sampled_universe_candidate_dict_full_seconds_at_production": (
+                projected_dict_seconds
+            ),
+            "wall_seconds_total": wall_total,
+            "r1_builder_fix_gate_recommendation": (
+                "authorize_sample_before_materialize_fix"
+                if materialize_before_sample_confirmed
+                else "sample_before_materialize_fix_validated"
+                if k_only_materialization_confirmed
+                else "replan_required_other_subphase_dominates"
+            ),
+        }
+        wall_grand_total += wall_total
+
+    return {
+        "schema": "grad_proxy_sampled_universe_measurement_slice0/v1",
+        "measurement_method": (
+            "sampled_k64_scale_ladder_with_timeout_abort_partial_receipts"
+        ),
+        "population_mode": POPULATION_MODE_SAMPLED_K64,
+        "production_crossing_eligible_target": int(production_crossing_eligible_target),
+        "measurement_by_k": measurement_by_k,
+        "wall_seconds_total": wall_grand_total,
+        "oracle_screen_exclusion": dict(ORACLE_SCREEN_EXCLUSION_RECORD),
+        "bounded_measurement_r4": {
+            "max_wall_seconds_per_k": float(max_wall_seconds),
+            "fail_closed": True,
+            "receipt_producing_on_timeout": True,
+        },
     }
 
 

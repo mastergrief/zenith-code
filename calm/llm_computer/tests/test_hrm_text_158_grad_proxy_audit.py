@@ -5,7 +5,7 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 import pytest
 import torch
@@ -35,6 +35,8 @@ from calm.hrm_text_158.native_full_stack.grad_proxy_audit import (
     count_w6_t10_crossing_eligible_from_votes,
     fabricate_all_crossing_tensor_batch,
     measure_universe_build_subphase_scale_ladder,
+    measure_sampled_universe_build_subphase_scale_ladder,
+    capture_legacy_sampled_universe_reference,
     derive_probe_science_arm_votes,
     discover_probe_warmup_audit_anchor,
     run_grad_proxy_audit_at_anchor,
@@ -47,9 +49,12 @@ from calm.hrm_text_158.native_full_stack.two_tier_transient_selection import (
     LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
 )
 from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
+    ORACLE_SCREEN_ORDERING_SEED,
+    ORACLE_SCREEN_ORDERING_STEP,
     PROBE_CUDA_MEMORY_SNAPSHOTS_JSONL_NAME,
     _audit_sparse_singleton_identity_for_candidate,
     _candidate_delta_weight_from_one_flip,
+    _ordered_candidate_indices,
     _single_flip_spec,
     capture_cuda_phase_memory_snapshot,
     cuda_phase_memory_snapshot,
@@ -851,6 +856,568 @@ def test_universe_build_timeout_emits_partial_receipt_not_hang() -> None:
     assert float(exc.timing_out.get("universe_crossing_sets", 0.0)) > 0.0
     assert float(exc.timing_out.get("universe_build_total", 0.0)) >= 0.05
     assert timing_out["universe_build_total"] >= 0.05
+
+
+def _snapshot_sampled_universe(universe: dict[str, Any]) -> dict[str, Any]:
+    from calm.hrm_text_158.native_full_stack.grad_proxy_audit import (
+        _candidate_ids_hash16,
+    )
+
+    sampled_ids = [str(candidate_id) for candidate_id in universe["sampled_ids"]]
+    return {
+        "sampled_ids": sampled_ids,
+        "sampled_ids_hash16": _candidate_ids_hash16(sampled_ids),
+        "candidate_fields_by_id": {
+            str(candidate_id): dict(universe["candidate_by_id"][candidate_id])
+            for candidate_id in sampled_ids
+        },
+        "candidate_dict_size": len(universe["candidate_by_id"]),
+        "crossing_eligible_count": int(universe["crossing_eligible_count"]),
+    }
+
+
+def _assert_sampled_universe_bit_exact_vs_legacy(
+    *,
+    tensor_states: dict[str, Any],
+    votes_by_key: dict[str, torch.Tensor],
+    max_abs_per_tensor: int,
+    max_sampled_candidates: int,
+) -> None:
+    legacy = capture_legacy_sampled_universe_reference(
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+        max_abs_per_tensor=max_abs_per_tensor,
+        max_sampled_candidates=max_sampled_candidates,
+    )
+    fast_universe = build_w6_t10_crossing_candidate_universe_from_votes(
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+        max_abs_per_tensor=max_abs_per_tensor,
+        max_sampled_candidates=max_sampled_candidates,
+        population_mode=POPULATION_MODE_SAMPLED_K64,
+    )
+    fast = _snapshot_sampled_universe(fast_universe)
+    assert fast["sampled_ids"] == legacy["sampled_ids"]
+    assert fast["sampled_ids_hash16"] == legacy["sampled_ids_hash16"]
+    assert fast["candidate_fields_by_id"] == legacy["candidate_fields_by_id"]
+    assert fast["crossing_eligible_count"] == legacy["crossing_eligible_count"]
+    assert fast["candidate_dict_size"] == len(legacy["sampled_ids"])
+    assert fast["candidate_dict_size"] <= int(max_sampled_candidates)
+
+
+def _multi_state_tie_crossing_fixture() -> tuple[
+    dict[str, Any], dict[str, torch.Tensor]
+]:
+    state_a = "toy.mod_a"
+    state_b = "toy.mod_b"
+    q_a = torch.tensor([0, 0, 0, -1], dtype=torch.int8)
+    acc_a = torch.tensor([0, 50, -50, 0], dtype=torch.int16)
+    q_b = torch.tensor([0, 0, -1, 0], dtype=torch.int8)
+    acc_b = torch.tensor([25, -25, 0, 75], dtype=torch.int16)
+    votes_a = torch.tensor([12, 12, -12, 12], dtype=torch.int16)
+    votes_b = torch.tensor([8, -8, 8, 8], dtype=torch.int16)
+    tensor_states = {
+        state_a: make_bounded_tensor_state(state_a, q_a, 1.0, acc_a),
+        state_b: make_bounded_tensor_state(state_b, q_b, 1.0, acc_b),
+    }
+    votes_by_key = {state_a: votes_a, state_b: votes_b}
+    return tensor_states, votes_by_key
+
+
+def test_sampled_universe_parity_scaffold_tie_fixture_records_reference() -> None:
+    tensor_states, votes_by_key = _multi_state_tie_crossing_fixture()
+    _assert_sampled_universe_bit_exact_vs_legacy(
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+        max_abs_per_tensor=4096,
+        max_sampled_candidates=64,
+    )
+
+
+def test_sampled_universe_parity_scaffold_state_key_order_permutation_invariant() -> (
+    None
+):
+    tensor_states, votes_by_key = _multi_state_tie_crossing_fixture()
+    _assert_sampled_universe_bit_exact_vs_legacy(
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+        max_abs_per_tensor=4096,
+        max_sampled_candidates=8,
+    )
+    reversed_states = {
+        key: tensor_states[key] for key in reversed(sorted(tensor_states))
+    }
+    reversed_votes = {
+        key: votes_by_key[key] for key in reversed(sorted(votes_by_key))
+    }
+    _assert_sampled_universe_bit_exact_vs_legacy(
+        tensor_states=reversed_states,
+        votes_by_key=reversed_votes,
+        max_abs_per_tensor=4096,
+        max_sampled_candidates=8,
+    )
+
+
+def _blocked_disk_sampled_materialization_counter_expectations(
+  crossing_eligible_count: int,
+) -> dict[str, int]:
+    """Receipt counters that the blocked 9e8ddb21 disk fix would have emitted nonzero."""
+
+    return {
+        "full_python_candidate_id_count": int(crossing_eligible_count),
+        "full_sort_key_entry_count": int(crossing_eligible_count),
+        "full_entry_by_id_count": int(crossing_eligible_count),
+        "crossing_mask_tolist_count": int(crossing_eligible_count),
+    }
+
+
+def _assert_strict_path_materialization_counters_zero(
+    counters: Mapping[str, int | bool],
+) -> None:
+    assert int(counters["full_python_candidate_id_count"]) == 0
+    assert int(counters["full_sort_key_entry_count"]) == 0
+    assert int(counters["full_entry_by_id_count"]) == 0
+    assert int(counters["crossing_mask_tolist_count"]) == 0
+    assert bool(counters["rank_ties_possible"]) is True
+    assert bool(counters["bounded_hash_ordering_residual"]) is True
+
+
+def test_strict_path_materialization_counters_zero_on_tie_fixture() -> None:
+    tensor_states, votes_by_key = _multi_state_tie_crossing_fixture()
+    universe = build_w6_t10_crossing_candidate_universe_from_votes(
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+        max_abs_per_tensor=4096,
+        max_sampled_candidates=8,
+        population_mode=POPULATION_MODE_SAMPLED_K64,
+    )
+    counters = universe["strict_path_materialization_counters"]
+    _assert_strict_path_materialization_counters_zero(counters)
+    blocked = _blocked_disk_sampled_materialization_counter_expectations(
+        int(universe["crossing_eligible_count"])
+    )
+    assert blocked["full_sort_key_entry_count"] > 0
+    assert blocked["crossing_mask_tolist_count"] > 0
+
+
+def test_oracle_screen_ordering_constants_imported_and_rank_parity() -> None:
+    import calm.hrm_text_158.native_full_stack.grad_proxy_audit as grad_proxy_audit
+
+    assert grad_proxy_audit.ORACLE_SCREEN_ORDERING_SEED == ORACLE_SCREEN_ORDERING_SEED
+    assert grad_proxy_audit.ORACLE_SCREEN_ORDERING_STEP == ORACLE_SCREEN_ORDERING_STEP
+    tensor_states, votes_by_key = _multi_state_tie_crossing_fixture()
+    state_key = next(iter(sorted(tensor_states)))
+    state = tensor_states[state_key]
+    vote_state = state.vote_update_state()
+    votes = votes_by_key[state_key]
+    base_spec = w6_t10_base_spec(max_abs_per_tensor=4096)
+    crossing_mask = grad_proxy_audit._crossing_eligible_mask_tensor(
+        votes=votes,
+        state=state,
+    )
+    crossing_flat = crossing_mask.nonzero(as_tuple=False).flatten().to(torch.int64)
+    current_ordered, _unordered, _new_acc = _ordered_candidate_indices(
+        state=vote_state,
+        votes=votes,
+        spec=base_spec,
+        ordering_mode=LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+    )
+    current_rank = {
+        int(flat_index): int(position)
+        for position, flat_index in enumerate(current_ordered)
+    }
+    _plan_new_acc, rank_at_cross, crossing_for_sort, _candidate_idx = (
+        grad_proxy_audit._vote_plan_rank_and_new_acc_at_crossings(
+            vote_state=vote_state,
+            votes=votes,
+            spec=base_spec,
+            crossing_flat=crossing_flat,
+            ordering_mode=LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+        )
+    )
+    for position, flat_tensor in enumerate(crossing_for_sort):
+        flat_index = int(flat_tensor.item())
+        assert int(rank_at_cross[position].item()) == int(current_rank[flat_index])
+
+
+def test_sampled_universe_build_scale_ladder_k8_and_k64_produces_measurement_receipt() -> (
+    None
+):
+    receipt = measure_sampled_universe_build_subphase_scale_ladder(
+        ladder_points=[
+            (1, 10_000),
+            (4, 25_000),
+            (8, 50_000),
+            (16, 50_000),
+        ],
+        max_wall_seconds=120.0,
+        production_crossing_eligible_target=11_640_000,
+        max_sampled_candidates_values=(8, 64),
+    )
+    assert receipt["schema"] == "grad_proxy_sampled_universe_measurement_slice0/v1"
+    assert receipt["population_mode"] == POPULATION_MODE_SAMPLED_K64
+    assert receipt["wall_seconds_total"] < 300.0
+    assert receipt["oracle_screen_exclusion"]["forbidden_in_this_relaunch"] == (
+        "oracle_screen_runner.py edit"
+    )
+    for k_label in ("8", "64"):
+        k_receipt = receipt["measurement_by_k"][k_label]
+        assert k_receipt["max_sampled_candidates"] == int(k_label)
+        assert len(k_receipt["ladder_runs"]) == 4
+        assert k_receipt["materialize_before_sample_confirmed"] is False
+        assert k_receipt["k_only_materialization_confirmed"] is True
+        assert (
+            k_receipt["r1_builder_fix_gate_recommendation"]
+            == "sample_before_materialize_fix_validated"
+        )
+        for run in k_receipt["ladder_runs"]:
+            assert run["status"] in {"completed", "timeout_abort", "skipped_wall_budget"}
+            if run["status"] == "skipped_wall_budget":
+                continue
+            assert run["wall_seconds"] < 120.0
+            timing = run["timing"]
+            assert timing["universe_build_total"] >= 0.0
+            assert "sampled_universe_candidate_dict_k_only" in timing
+            assert timing["sampled_universe_candidate_dict_full"] == 0.0
+            if run["status"] == "completed":
+                assert run["k_only_materialization"] is True
+                assert run["materialize_before_sample_observed"] is False
+                assert run["candidate_dict_size"] == run["sampled_ids_count"]
+
+
+def test_sampled_universe_build_timeout_emits_partial_receipt_not_hang() -> None:
+    tensor_states, votes_by_key = fabricate_all_crossing_tensor_batch(
+        module_count=1,
+        numel_per_module=80_000,
+    )
+    timing_out: dict[str, float] = {}
+    wall_start = time.perf_counter()
+    with pytest.raises(UniverseBuildMeasurementAborted) as exc_info:
+        build_w6_t10_crossing_candidate_universe_from_votes(
+            tensor_states=tensor_states,
+            votes_by_key=votes_by_key,
+            max_abs_per_tensor=4096,
+            max_sampled_candidates=DRIFT_AUDIT_SAMPLE_COUNT,
+            population_mode=POPULATION_MODE_SAMPLED_K64,
+            timing_out=timing_out,
+            max_universe_build_seconds=0.05,
+        )
+    wall_elapsed = time.perf_counter() - wall_start
+    assert wall_elapsed < 5.0
+    exc = exc_info.value
+    assert exc.partial_crossing_eligible_count == 80_000
+    assert float(exc.timing_out.get("sampled_universe_candidate_dict_k_only", 0.0)) >= 0.0
+    assert float(exc.timing_out.get("universe_build_total", 0.0)) >= 0.05
+
+
+def test_sampled_universe_builder_liveness_11_64M_k8_real_wall_lt_300s(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    expected_crossings = 11_639_424
+    numel_per_module = expected_crossings // 32
+    assert numel_per_module * 32 == expected_crossings
+    tensor_states, votes_by_key = fabricate_all_crossing_tensor_batch(
+        module_count=32,
+        numel_per_module=numel_per_module,
+    )
+    timing_out: dict[str, float] = {}
+    wall_start = time.perf_counter()
+    universe = build_w6_t10_crossing_candidate_universe_from_votes(
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+        max_abs_per_tensor=4096,
+        max_sampled_candidates=DRIFT_AUDIT_SAMPLE_COUNT,
+        population_mode=POPULATION_MODE_SAMPLED_K64,
+        timing_out=timing_out,
+    )
+    wall_elapsed = float(time.perf_counter() - wall_start)
+    print(
+        "sampled_builder_liveness_11_64M_k8_timings",
+        json.dumps({"wall_seconds": wall_elapsed, "timing": timing_out}),
+    )
+    captured = capsys.readouterr()
+    assert "sampled_builder_liveness_11_64M_k8_timings" in captured.out
+    assert int(universe["crossing_eligible_count"]) == expected_crossings
+    assert len(universe["sampled_ids"]) <= DRIFT_AUDIT_SAMPLE_COUNT
+    assert len(universe["candidate_by_id"]) == len(universe["sampled_ids"])
+    _assert_strict_path_materialization_counters_zero(
+        universe["strict_path_materialization_counters"]
+    )
+    assert timing_out["sampled_universe_candidate_dict_k_only"] < 1.0
+    assert wall_elapsed < 300.0
+
+
+def test_sampled_universe_builder_liveness_11_64M_k64_real_wall_lt_300s(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    expected_crossings = 11_639_424
+    numel_per_module = expected_crossings // 32
+    tensor_states, votes_by_key = fabricate_all_crossing_tensor_batch(
+        module_count=32,
+        numel_per_module=numel_per_module,
+    )
+    timing_out: dict[str, float] = {}
+    wall_start = time.perf_counter()
+    universe = build_w6_t10_crossing_candidate_universe_from_votes(
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+        max_abs_per_tensor=4096,
+        max_sampled_candidates=64,
+        population_mode=POPULATION_MODE_SAMPLED_K64,
+        timing_out=timing_out,
+    )
+    wall_elapsed = float(time.perf_counter() - wall_start)
+    print(
+        "sampled_builder_liveness_11_64M_k64_timings",
+        json.dumps({"wall_seconds": wall_elapsed, "timing": timing_out}),
+    )
+    captured = capsys.readouterr()
+    assert "sampled_builder_liveness_11_64M_k64_timings" in captured.out
+    assert int(universe["crossing_eligible_count"]) == expected_crossings
+    assert len(universe["sampled_ids"]) <= 64
+    assert len(universe["candidate_by_id"]) == len(universe["sampled_ids"])
+    _assert_strict_path_materialization_counters_zero(
+        universe["strict_path_materialization_counters"]
+    )
+    assert timing_out["sampled_universe_candidate_dict_k_only"] < 1.0
+    assert wall_elapsed < 300.0
+
+
+def test_run_proxy_oracle_drift_audit_11_64M_real_builder_k8_wall_lt_300s(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected_crossings = 11_639_424
+    numel_per_module = expected_crossings // 32
+    tensor_states, votes_by_key = fabricate_all_crossing_tensor_batch(
+        module_count=32,
+        numel_per_module=numel_per_module,
+    )
+    model, batch, eligible, _states = _tiny_forward_fixture(batch_size=8)
+    device = torch.device("cpu")
+    extras = model.compute_train_extra_args(1, 1)
+    local_loss_delta_by_key = {
+        state_key: torch.zeros(votes.shape, dtype=torch.float32)
+        for state_key, votes in votes_by_key.items()
+    }
+
+    def _fast_shadow_rows(**kwargs: Any) -> list[dict[str, Any]]:
+        candidate_by_id = kwargs["candidate_by_id"]
+        return [
+            {
+                "candidate_id": str(candidate_id),
+                "state_key": str(candidate_by_id[candidate_id]["state_key"]),
+                "flat_index": int(candidate_by_id[candidate_id]["flat_index"]),
+                "local_loss_delta_shadow": 0.0,
+                "grad_proxy": 0.0,
+                "candidate_delta_weight": 1.0,
+            }
+            for candidate_id in kwargs["sampled_ids"]
+        ]
+
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.grad_proxy_audit._shadow_local_loss_deltas_for_candidates",
+        _fast_shadow_rows,
+    )
+    wall_start = time.perf_counter()
+    drift = run_proxy_oracle_drift_audit(
+        model=model,
+        batch=batch,
+        tensor_states=tensor_states,
+        eligible_modules=eligible,
+        device=device,
+        extras=extras,
+        votes_by_key=votes_by_key,
+        local_loss_delta_by_key=local_loss_delta_by_key,
+        baseline_loss=1.0,
+        max_abs_per_tensor=4096,
+        optimizer_step_index=10,
+        drift_sample_count=DRIFT_AUDIT_SAMPLE_COUNT,
+    )
+    wall_elapsed = float(time.perf_counter() - wall_start)
+    print(
+        "proxy_oracle_drift_11_64M_real_builder_k8_timings",
+        json.dumps(
+            {
+                "wall_seconds": wall_elapsed,
+                "sample_count": drift["proxy_oracle_drift_sample_count"],
+                "proof_scope": (
+                    "real_downstream_caller_wiring_plus_real_builder_sample_order_proof"
+                ),
+            }
+        ),
+    )
+    captured = capsys.readouterr()
+    assert "proxy_oracle_drift_11_64M_real_builder_k8_timings" in captured.out
+    assert drift["proxy_oracle_drift_sample_count"] <= DRIFT_AUDIT_SAMPLE_COUNT
+    assert wall_elapsed < 300.0
+
+
+def test_run_grad_proxy_audit_at_anchor_11_64M_real_builder_k64_wall_lt_300s(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected_crossings = 11_639_424
+    numel_per_module = expected_crossings // 32
+    tensor_states, votes_by_key = fabricate_all_crossing_tensor_batch(
+        module_count=32,
+        numel_per_module=numel_per_module,
+    )
+    model, batch, eligible, _states = _tiny_forward_fixture(batch_size=8)
+    device = torch.device("cpu")
+    extras = model.compute_train_extra_args(1, 1)
+
+    def _deterministic_proxy(**kwargs: Any) -> dict[str, Any]:
+        selected = [
+            str(candidate_id)
+            for candidate_id in (kwargs.get("selected_candidate_ids") or [])
+        ]
+        return {
+            "grad_proxy_by_candidate_id": {
+                str(candidate_id): 0.0 for candidate_id in selected
+            },
+            "forward_backward_seconds": 0.01,
+            "grad_proxy_accumulation_seconds": 0.01,
+        }
+
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.grad_proxy_audit._compute_activation_credit_candidate_proxies",
+        _deterministic_proxy,
+    )
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.grad_proxy_audit._evaluate_loss",
+        lambda *args, **kwargs: 1.0,
+    )
+    wall_start = time.perf_counter()
+    receipt = run_grad_proxy_audit_at_anchor(
+        model=model,
+        batch=batch,
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+        baseline_loss=1.0,
+        eligible_modules=eligible,
+        device=device,
+        extras=extras,
+        max_abs_per_tensor=4096,
+        max_audit_candidates=64,
+        launch_sha="test",
+        audit_step_index=1,
+        audit_warmup_steps_run=0,
+        crossing_eligible_count_by_step=[expected_crossings],
+    )
+    wall_elapsed = float(time.perf_counter() - wall_start)
+    print(
+        "grad_proxy_audit_at_anchor_11_64M_real_builder_k64_timings",
+        json.dumps(
+            {
+                "wall_seconds": wall_elapsed,
+                "sampled_candidate_count": receipt["sampled_candidate_count"],
+                "proof_scope": (
+                    "real_downstream_caller_wiring_plus_real_builder_sample_order_proof"
+                ),
+            }
+        ),
+    )
+    captured = capsys.readouterr()
+    assert "grad_proxy_audit_at_anchor_11_64M_real_builder_k64_timings" in captured.out
+    assert int(receipt["sampled_candidate_count"]) <= 64
+    assert wall_elapsed < 300.0
+
+
+def test_run_proxy_oracle_drift_audit_real_builder_tie_fixture_wall_lt_30s(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model, batch, eligible, states = _tiny_forward_fixture(batch_size=8)
+    state_key = next(iter(eligible))
+    module = eligible[state_key]
+    weight_shape = tuple(module.weight.shape)
+    numel_per_module = int(module.weight.numel())
+    synthetic_states, synthetic_votes = fabricate_all_crossing_tensor_batch(
+        module_count=1,
+        numel_per_module=numel_per_module,
+        weight_shape=weight_shape,
+        frozen_scale=states[state_key].frozen_scale,
+    )
+    synthetic_key = next(iter(synthetic_states))
+    tensor_states = {state_key: synthetic_states.pop(synthetic_key)}
+    votes_by_key = {state_key: synthetic_votes.pop(synthetic_key)}
+    local_loss_delta_by_key = {
+        state_key: torch.zeros(votes_by_key[state_key].shape, dtype=torch.float32)
+    }
+    wall_start = time.perf_counter()
+    drift = run_proxy_oracle_drift_audit(
+        model=model,
+        batch=batch,
+        tensor_states=tensor_states,
+        eligible_modules={state_key: module},
+        device=torch.device("cpu"),
+        extras=model.compute_train_extra_args(1, 1),
+        votes_by_key=votes_by_key,
+        local_loss_delta_by_key=local_loss_delta_by_key,
+        baseline_loss=1.0,
+        max_abs_per_tensor=4096,
+        optimizer_step_index=10,
+        drift_sample_count=DRIFT_AUDIT_SAMPLE_COUNT,
+    )
+    wall_elapsed = float(time.perf_counter() - wall_start)
+    print(
+        "proxy_oracle_drift_real_builder_tie_timings",
+        json.dumps({"wall_seconds": wall_elapsed, "sample_count": drift["proxy_oracle_drift_sample_count"]}),
+    )
+    captured = capsys.readouterr()
+    assert "proxy_oracle_drift_real_builder_tie_timings" in captured.out
+    assert drift["proxy_oracle_drift_sample_count"] <= DRIFT_AUDIT_SAMPLE_COUNT
+    assert wall_elapsed < 30.0
+
+
+def test_run_grad_proxy_audit_at_anchor_real_builder_tie_fixture_wall_lt_30s(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model, batch, eligible, _states = _tiny_forward_fixture(batch_size=8)
+    state_key = next(iter(eligible))
+    module = eligible[state_key]
+    weight_shape = tuple(module.weight.shape)
+    numel_per_module = int(module.weight.numel())
+    tensor_states, votes_by_key = fabricate_all_crossing_tensor_batch(
+        module_count=1,
+        numel_per_module=numel_per_module,
+        weight_shape=weight_shape,
+        frozen_scale=1.0,
+    )
+    synthetic_key = next(iter(tensor_states))
+    tensor_states = {state_key: tensor_states.pop(synthetic_key)}
+    votes_by_key = {state_key: votes_by_key.pop(synthetic_key)}
+    wall_start = time.perf_counter()
+    receipt = run_grad_proxy_audit_at_anchor(
+        model=model,
+        batch=batch,
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+        baseline_loss=1.0,
+        eligible_modules={state_key: module},
+        device=torch.device("cpu"),
+        extras=model.compute_train_extra_args(1, 1),
+        max_abs_per_tensor=4096,
+        max_audit_candidates=64,
+        launch_sha="test",
+        audit_step_index=1,
+        audit_warmup_steps_run=0,
+        crossing_eligible_count_by_step=[int(numel_per_module)],
+    )
+    wall_elapsed = float(time.perf_counter() - wall_start)
+    print(
+        "grad_proxy_audit_at_anchor_real_builder_timings",
+        json.dumps(
+            {
+                "wall_seconds": wall_elapsed,
+                "sampled_candidate_count": receipt["sampled_candidate_count"],
+            }
+        ),
+    )
+    captured = capsys.readouterr()
+    assert "grad_proxy_audit_at_anchor_real_builder_timings" in captured.out
+    assert int(receipt["sampled_candidate_count"]) <= 64
+    assert wall_elapsed < 30.0
 
 
 def test_run_proxy_oracle_drift_audit_locked_fields(
