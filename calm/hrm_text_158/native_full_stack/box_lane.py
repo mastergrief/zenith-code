@@ -45,6 +45,258 @@ CONSUMER_TERMINAL_RE = re.compile(
     r"consumer_terminal:\s+chain_id=(?P<chain_id>\S+)\s+status=(?P<status>\S+)",
 )
 
+ARTIFACT_TRANSPORT_SCHEMA = "hrm158_box_lane_artifact_transport/v1"
+CONSENSUS_CONSUMER_AUDIT_SCHEMA = "hrm158_box_lane_consensus_consumer_audit/v1"
+
+
+@dataclass(frozen=True)
+class ChainArtifact:
+    role: str
+    rel_path: str
+    optional: bool = False
+
+
+def default_consensus_chain_artifacts(
+    *,
+    labels: Sequence[str] = ("S44", "S44_iso43", "S43"),
+    arms: Sequence[str] = ("on", "off"),
+    include_run_log: bool = True,
+) -> list[ChainArtifact]:
+    artifacts: list[ChainArtifact] = []
+    for label in labels:
+        for arm in arms:
+            artifacts.append(ChainArtifact(f"{label}_{arm}_receipt", f"{label}/{arm}/receipt.json"))
+            if include_run_log:
+                artifacts.append(
+                    ChainArtifact(
+                        f"{label}_{arm}_run_log",
+                        f"{label}/{arm}/run.log",
+                        optional=True,
+                    ),
+                )
+    return artifacts
+
+
+def format_capture_complete_line(
+    *,
+    chain_id: str,
+    code_currency_pass: bool,
+    artifact_sha_verified: bool,
+    ts: float,
+    seed: int | None = None,
+) -> str:
+    seed_token = f" seed={seed}" if seed is not None else ""
+    return (
+        f"capture_complete: chain_id={chain_id}{seed_token} "
+        f"code_currency_pass={'true' if code_currency_pass else 'false'} "
+        f"artifact_sha_verified={'true' if artifact_sha_verified else 'false'} "
+        f"ts={ts}"
+    )
+
+
+def format_consumer_audit_start_line(*, chain_id: str, ts: float) -> str:
+    return f"consumer_audit_start: chain_id={chain_id} ts={ts}"
+
+
+def format_consumer_terminal_line(*, chain_id: str, status: str, ts: float | None = None) -> str:
+    if ts is not None:
+        return f"consumer_terminal: chain_id={chain_id} status={status} ts={ts}"
+    return f"consumer_terminal: chain_id={chain_id} status={status}"
+
+
+def sync_chain_arm_artifacts(
+    *,
+    local_chain_root: Path,
+    remote_chain_root: str,
+    box: str,
+    artifacts: Sequence[ChainArtifact],
+    rsync_runner: Callable[[list[str]], subprocess.CompletedProcess[str]],
+    remote_sha_runner: Callable[[str, str], str | None],
+) -> tuple[list[str], list[dict[str, Any]]]:
+    mismatches: list[str] = []
+    synced_rows: list[dict[str, Any]] = []
+    for artifact in artifacts:
+        rel = artifact.rel_path.replace("\\", "/")
+        local_path = local_chain_root / rel
+        if not local_path.exists():
+            if artifact.optional:
+                synced_rows.append(
+                    {
+                        "role": artifact.role,
+                        "rel_path": rel,
+                        "optional": True,
+                        "missing": True,
+                        "skipped": True,
+                    },
+                )
+                continue
+            mismatches.append(f"missing:{rel}")
+            synced_rows.append(
+                {
+                    "role": artifact.role,
+                    "rel_path": rel,
+                    "optional": artifact.optional,
+                    "missing": True,
+                },
+            )
+            continue
+        producer_sha = sha256_file(local_path)
+        remote_path = f"{box}:{remote_chain_root}/{rel}"
+        rsync_cmd = [
+            "rsync",
+            "-az",
+            "--mkpath",
+            str(local_path),
+            remote_path,
+        ]
+        try:
+            rsync_runner(rsync_cmd)
+            remote_sha = remote_sha_runner(box, f"{remote_chain_root}/{rel}")
+        except subprocess.CalledProcessError as exc:
+            cmd = list(exc.cmd) if isinstance(exc.cmd, (list, tuple)) else [str(exc.cmd)]
+            mismatches.append(f"rsync_transport_failure:{rel}")
+            synced_rows.append(
+                {
+                    "role": artifact.role,
+                    "rel_path": rel,
+                    "optional": artifact.optional,
+                    "producer_sha256": producer_sha,
+                    "consumer_sha256": None,
+                    "remote_sha256": None,
+                    "rsync_ok": False,
+                    "rsync_cmd": cmd,
+                    "rsync_exit_code": int(exc.returncode) if exc.returncode is not None else None,
+                },
+            )
+            continue
+        ok = remote_sha == producer_sha
+        if not ok:
+            mismatches.append(f"artifact_sha_mismatch:{rel}")
+        synced_rows.append(
+            {
+                "role": artifact.role,
+                "rel_path": rel,
+                "optional": artifact.optional,
+                "producer_sha256": producer_sha,
+                "consumer_sha256": remote_sha,
+                "remote_sha256": remote_sha,
+                "rsync_ok": ok,
+                "rsync_cmd": rsync_cmd,
+            },
+        )
+    return mismatches, synced_rows
+
+
+def build_artifact_transport_manifest(
+    *,
+    chain_id: str,
+    local_chain_root: Path,
+    remote_chain_root: str,
+    artifacts: Sequence[Mapping[str, Any]],
+    mismatches: Sequence[str],
+    sync_requested: bool,
+) -> dict[str, Any]:
+    return {
+        "schema": ARTIFACT_TRANSPORT_SCHEMA,
+        "chain_id": chain_id,
+        "local_chain_root": str(local_chain_root),
+        "remote_chain_root": remote_chain_root,
+        "sync_requested": sync_requested,
+        "artifact_transport_pass": not mismatches,
+        "mismatches": list(mismatches),
+        "artifacts": list(artifacts),
+    }
+
+
+def _required_receipt_keys_present(receipt: Mapping[str, Any]) -> list[str]:
+    issues: list[str] = []
+    if not isinstance(receipt.get("step_reports"), Mapping):
+        issues.append("missing_step_reports")
+    terminal = receipt.get("terminal_status")
+    stop_reason = receipt.get("stop_reason")
+    if not isinstance(terminal, Mapping) and not stop_reason:
+        issues.append("missing_terminal_status_or_stop_reason")
+    return issues
+
+
+def audit_consensus_bounded_delta_consumer(
+    chain_root: Path,
+    *,
+    primary_label: str = "S44",
+    isolation_label: str = "S44_iso43",
+    transport_artifacts: Sequence[Mapping[str, Any]] | None = None,
+) -> dict[str, Any]:
+    from calm.hrm_text_158.native_full_stack.pressure_shape_agreement import (
+        verify_pressure_shape_summary_preflight,
+    )
+
+    issues: list[str] = []
+    primary_on_path = chain_root / primary_label / "on" / "receipt.json"
+    isolation_on_path = chain_root / isolation_label / "on" / "receipt.json"
+    receipts_checked: dict[str, Any] = {}
+
+    for label, path in (
+        (f"{primary_label}_on", primary_on_path),
+        (f"{isolation_label}_on", isolation_on_path),
+    ):
+        if not path.exists():
+            issues.append(f"missing_receipt:{label}")
+            continue
+        try:
+            receipt = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            issues.append(f"receipt_parse_error:{label}")
+            continue
+        receipts_checked[label] = {"path": str(path)}
+        issues.extend(f"{label}:{issue}" for issue in _required_receipt_keys_present(receipt))
+        preflight = verify_pressure_shape_summary_preflight(receipt, receipt_path=path)
+        receipts_checked[label]["pressure_shape_preflight"] = preflight
+        if not bool(preflight.get("pass")):
+            issues.append(f"pressure_shape_preflight_fail:{label}")
+
+    if transport_artifacts:
+        for row in transport_artifacts:
+            rel = row.get("rel_path", "?")
+            is_optional = bool(row.get("optional"))
+            is_missing = bool(row.get("missing") or row.get("skipped"))
+            if is_optional and is_missing:
+                continue
+            if is_missing:
+                issues.append(f"transport_missing_required_artifact:{rel}")
+                continue
+            producer_sha = row.get("producer_sha256")
+            consumer_sha = row.get("consumer_sha256") or row.get("remote_sha256")
+            if producer_sha is None or consumer_sha is None:
+                issues.append(f"transport_missing_sha:{rel}")
+            elif producer_sha != consumer_sha:
+                issues.append(f"transport_sha_mismatch:{rel}")
+
+    analysis_summary_path = chain_root / "analysis" / "selector_support_invariance_summary.json"
+    analysis_payload: dict[str, Any] | None = None
+    if analysis_summary_path.exists():
+        try:
+            analysis_payload = json.loads(analysis_summary_path.read_text(encoding="utf-8"))
+            branch = (analysis_payload.get("branch_precedence_receipt") or {}).get("branch")
+            if not branch:
+                issues.append("analysis_missing_branch_precedence")
+        except json.JSONDecodeError:
+            issues.append("analysis_summary_parse_error")
+
+    return {
+        "schema": CONSENSUS_CONSUMER_AUDIT_SCHEMA,
+        "chain_root": str(chain_root),
+        "consumer_scope": "consensus_bounded_delta_receipt_audit",
+        "pass": not issues,
+        "issues": issues,
+        "receipts_checked": receipts_checked,
+        "analysis_summary_present": analysis_summary_path.exists(),
+        "analysis_branch": (
+            (analysis_payload.get("branch_precedence_receipt") or {}).get("branch")
+            if analysis_payload
+            else None
+        ),
+    }
+
 
 @dataclass(frozen=True)
 class PinnedFile:
@@ -309,6 +561,8 @@ def classify_overlap(state: ChainCaptureState) -> OverlapVerdict:
         issues.append("artifact_sha_not_verified")
     if not state.consumer_started:
         issues.append("consumer_not_started")
+    if state.consumer_terminal_status != "pass":
+        issues.append("consumer_terminal_not_pass")
     if issues:
         return OverlapVerdict(
             status="INELIGIBLE",

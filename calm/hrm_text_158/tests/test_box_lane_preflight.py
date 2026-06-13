@@ -314,6 +314,39 @@ def test_overlap_earned_when_consumer_starts_before_next_capture(tmp_path: Path)
     assert entry["verdict_eligible"] is True
 
 
+def test_transport_only_chain_log_is_ineligible_without_terminal_pass(tmp_path: Path) -> None:
+    log = tmp_path / "producer.log"
+    log.write_text(
+        "\n".join(
+            [
+                "capture_complete: chain_id=c1 code_currency_pass=true artifact_sha_verified=true ts=1.0",
+                "producer_next_capture_start: chain_id=c1 ts=2.0",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    states = process_science_chain_log(log.read_text(encoding="utf-8").splitlines())
+    verdict = classify_overlap(states["c1"])
+    assert verdict.status == "INELIGIBLE"
+    assert "consumer_not_started" in verdict.issues
+    assert "consumer_terminal_not_pass" in verdict.issues
+    assert verdict.pipeline_eligible is False
+
+
+def test_stray_consumer_audit_start_without_terminal_pass_is_ineligible() -> None:
+    lines = [
+        "capture_complete: chain_id=c1 code_currency_pass=true artifact_sha_verified=true ts=1.0",
+        "consumer_audit_start: chain_id=c1 ts=1.5",
+        "producer_next_capture_start: chain_id=c1 ts=2.0",
+    ]
+    states = process_science_chain_log(lines)
+    verdict = classify_overlap(states["c1"])
+    assert verdict.status == "INELIGIBLE"
+    assert "consumer_terminal_not_pass" in verdict.issues
+    assert verdict.pipeline_eligible is False
+    assert verdict.verdict_eligible is False
+
+
 def test_cpu_receipt_rejects_hot_loop_laundering() -> None:
     issues = validate_receipt_residency(
         {
@@ -438,3 +471,331 @@ def test_chain_id_validation_allowlist_rejects_invalid_basenames() -> None:
         validate_chain_id("bad id")
     validate_chain_id("chain_fixture")
     validate_chain_id("stage_c_seed2_n10_20260612T125234Z")
+
+
+def _s2_good_receipt() -> dict:
+    """Minimal receipt passing pressure_shape preflight (v1 signed shape)."""
+    step_reports = {}
+    for step in range(3, 11):
+        step_reports[str(step)] = {
+            "vote_pressure": {
+                "mod.a": {
+                    "state_key": "mod.a",
+                    "vote_positive_count": 1,
+                    "vote_negative_count": 1,
+                    "pressure_shape_summary": {
+                        "schema": "hrm_text_158_pressure_shape_summary/v1",
+                        "rank_method": "grouped_bisect_right",
+                        "rank_bins": [],
+                        "bin_occupancy_count": [50, 50],
+                        "bin_mass_fraction": [0.5, 0.5],
+                        "candidate_count": 100,
+                        "raw_per_proposal_arrays_included": False,
+                        "signed_rank_bin_mass": {
+                            "schema": "hrm_text_158_signed_rank_bin_mass/v0",
+                            "pos_bin_fraction": [0.25, 0.25],
+                            "neg_bin_fraction": [0.25, 0.25],
+                            "signed_bin_net_fraction": [0.0, 0.0],
+                            "total_abs_vote_mass": 1.0,
+                            "telemetry_only_net_fraction": True,
+                        },
+                        "counterfactual_signed_rank_bin_mass": {
+                            "a1_order_matched": {
+                                "schema": "hrm_text_158_signed_rank_bin_mass/v0",
+                                "pos_bin_fraction": [0.25, 0.25],
+                                "neg_bin_fraction": [0.25, 0.25],
+                                "signed_bin_net_fraction": [0.0, 0.0],
+                                "total_abs_vote_mass": 1.0,
+                                "telemetry_only_net_fraction": True,
+                            },
+                            "order_matched_basis": "a1_emitted",
+                        },
+                    },
+                },
+            },
+            "loss": float(step),
+        }
+    return {
+        "step_reports": step_reports,
+        "terminal_status": {"status": "complete"},
+    }
+
+
+def _write_s2_chain_tree(chain_root: Path) -> None:
+    receipt = _s2_good_receipt()
+    for label in ("S44", "S44_iso43", "S43"):
+        for arm in ("on", "off"):
+            path = chain_root / label / arm / "receipt.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(receipt), encoding="utf-8")
+
+
+def test_default_consensus_chain_artifacts_expands_concrete_per_arm_rows() -> None:
+    from calm.hrm_text_158.native_full_stack.box_lane import default_consensus_chain_artifacts
+
+    artifacts = default_consensus_chain_artifacts()
+    receipt_roles = [a.role for a in artifacts if a.rel_path.endswith("receipt.json")]
+    assert receipt_roles == [
+        "S44_on_receipt",
+        "S44_off_receipt",
+        "S44_iso43_on_receipt",
+        "S44_iso43_off_receipt",
+        "S43_on_receipt",
+        "S43_off_receipt",
+    ]
+    run_log_roles = [a.role for a in artifacts if a.rel_path.endswith("run.log")]
+    assert run_log_roles == [
+        "S44_on_run_log",
+        "S44_off_run_log",
+        "S44_iso43_on_run_log",
+        "S44_iso43_off_run_log",
+        "S43_on_run_log",
+        "S43_off_run_log",
+    ]
+    assert len(artifacts) == 12
+    assert all(a.optional for a in artifacts if a.rel_path.endswith("run.log"))
+    assert not any(a.optional for a in artifacts if a.rel_path.endswith("receipt.json"))
+
+
+def test_sync_chain_arm_artifacts_includes_mkpath(tmp_path: Path) -> None:
+    chain_root = tmp_path / "chain_a"
+    rel = "S44/on/receipt.json"
+    path = chain_root / rel
+    path.parent.mkdir(parents=True)
+    path.write_text("{}", encoding="utf-8")
+    from calm.hrm_text_158.native_full_stack.box_lane import (
+        ChainArtifact,
+        sha256_file,
+        sync_chain_arm_artifacts,
+    )
+
+    seen_cmds: list[list[str]] = []
+
+    def capture_rsync(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+        seen_cmds.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    sync_chain_arm_artifacts(
+        local_chain_root=chain_root,
+        remote_chain_root="/remote/chain_a",
+        box="box",
+        artifacts=[ChainArtifact("S44_on_receipt", rel)],
+        rsync_runner=capture_rsync,
+        remote_sha_runner=lambda _box, _remote_rel: sha256_file(path),
+    )
+    assert seen_cmds
+    assert "--mkpath" in seen_cmds[0]
+
+
+def test_sync_chain_arm_artifacts_sha_mismatch_fail_closed(tmp_path: Path) -> None:
+    chain_root = tmp_path / "chain_a"
+    rel = "S44/on/receipt.json"
+    path = chain_root / rel
+    path.parent.mkdir(parents=True)
+    path.write_text("{}", encoding="utf-8")
+    from calm.hrm_text_158.native_full_stack.box_lane import (
+        ChainArtifact,
+        sync_chain_arm_artifacts,
+    )
+
+    mismatches, rows = sync_chain_arm_artifacts(
+        local_chain_root=chain_root,
+        remote_chain_root="/remote/chain_a",
+        box="box",
+        artifacts=[ChainArtifact("S44_on_receipt", rel)],
+        rsync_runner=lambda cmd: subprocess.CompletedProcess(cmd, 0, "", ""),
+        remote_sha_runner=lambda _box, _remote_rel: "0" * 64,
+    )
+    assert any(m.startswith("artifact_sha_mismatch:") for m in mismatches)
+    assert rows[0]["rsync_ok"] is False
+
+
+def test_consumer_audit_passes_pressure_shape_preflight(tmp_path: Path) -> None:
+    chain_root = tmp_path / "chain_a"
+    _write_s2_chain_tree(chain_root)
+    from calm.hrm_text_158.native_full_stack.box_lane import audit_consensus_bounded_delta_consumer
+
+    audit = audit_consensus_bounded_delta_consumer(chain_root)
+    assert audit["pass"] is True
+    assert audit["consumer_scope"] == "consensus_bounded_delta_receipt_audit"
+
+
+def test_consumer_audit_fails_pressure_shape_preflight(tmp_path: Path) -> None:
+    chain_root = tmp_path / "chain_a"
+    _write_s2_chain_tree(chain_root)
+    bad = _s2_good_receipt()
+    del bad["step_reports"]["3"]["vote_pressure"]["mod.a"]["pressure_shape_summary"]
+    (chain_root / "S44" / "on" / "receipt.json").write_text(json.dumps(bad), encoding="utf-8")
+    from calm.hrm_text_158.native_full_stack.box_lane import audit_consensus_bounded_delta_consumer
+
+    audit = audit_consensus_bounded_delta_consumer(chain_root)
+    assert audit["pass"] is False
+    assert any("pressure_shape_preflight_fail" in issue for issue in audit["issues"])
+
+
+def test_artifact_transport_local_mode_hashes_without_sync(tmp_path: Path) -> None:
+    from scripts.box_lane_artifact_transport import main as transport_main
+
+    creditdir = tmp_path / "creditdir"
+    chain_root = creditdir / "chain_a"
+    _write_s2_chain_tree(chain_root)
+    manifest_path = chain_root / "box_artifact_transport.json"
+    rc = transport_main(
+        [
+            "--chain-id",
+            "chain_a",
+            "--creditdir",
+            str(creditdir),
+            "--output",
+            str(manifest_path),
+            "--code-currency-pass",
+        ],
+    )
+    assert rc == 0
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert payload["sync_requested"] is False
+    assert payload["artifact_transport_pass"] is True
+
+
+def test_artifact_transport_emits_capture_complete_only(tmp_path: Path) -> None:
+    from scripts.box_lane_artifact_transport import main as transport_main
+
+    creditdir = tmp_path / "creditdir"
+    chain_root = creditdir / "chain_a"
+    _write_s2_chain_tree(chain_root)
+    chain_log = tmp_path / "producer.log"
+    rc = transport_main(
+        [
+            "--chain-id",
+            "chain_a",
+            "--creditdir",
+            str(creditdir),
+            "--chain-log",
+            str(chain_log),
+            "--code-currency-pass",
+        ],
+    )
+    assert rc == 0
+    log_text = chain_log.read_text(encoding="utf-8")
+    assert "capture_complete:" in log_text
+    assert "consumer_audit_start:" not in log_text
+    assert "consumer_terminal:" not in log_text
+
+
+def test_consumer_audit_fails_on_missing_non_optional_transport_row(tmp_path: Path) -> None:
+    from calm.hrm_text_158.native_full_stack.box_lane import audit_consensus_bounded_delta_consumer
+
+    chain_root = tmp_path / "chain_a"
+    _write_s2_chain_tree(chain_root)
+    transport_rows = [
+        {
+            "role": "S44_on_receipt",
+            "rel_path": "S44/on/receipt.json",
+            "optional": False,
+            "missing": True,
+        },
+    ]
+    audit = audit_consensus_bounded_delta_consumer(chain_root, transport_artifacts=transport_rows)
+    assert audit["pass"] is False
+    assert any("transport_missing_required_artifact:" in issue for issue in audit["issues"])
+
+
+def test_missing_non_optional_transport_row_emits_terminal_fail_and_quarantines(
+    tmp_path: Path,
+) -> None:
+    from calm.hrm_text_158.native_full_stack.box_lane import (
+        CONSUMER_TERMINAL_RE,
+        process_science_chain_log,
+    )
+    from scripts.box_lane_consensus_consumer_audit import main as consumer_main
+
+    chain_root = tmp_path / "chain_a"
+    _write_s2_chain_tree(chain_root)
+    transport_manifest = chain_root / "box_artifact_transport.json"
+    transport_manifest.write_text(
+        json.dumps(
+            {
+                "artifacts": [
+                    {
+                        "role": "S44_on_receipt",
+                        "rel_path": "S44/on/receipt.json",
+                        "optional": False,
+                        "missing": True,
+                    },
+                ],
+            },
+        ),
+        encoding="utf-8",
+    )
+    chain_log = tmp_path / "producer.log"
+    chain_log.write_text(
+        "\n".join(
+            [
+                "capture_complete: chain_id=chain_a code_currency_pass=true artifact_sha_verified=true ts=1.0",
+                "producer_next_capture_start: chain_id=chain_b ts=1.5",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    rc = consumer_main(
+        [
+            "--chain-root",
+            str(chain_root),
+            "--chain-id",
+            "chain_a",
+            "--transport-manifest",
+            str(transport_manifest),
+            "--chain-log",
+            str(chain_log),
+        ],
+    )
+    assert rc == EXIT_ARTIFACT_RSYNC_MISMATCH
+    terminal_match = CONSUMER_TERMINAL_RE.search(chain_log.read_text(encoding="utf-8"))
+    assert terminal_match is not None
+    assert terminal_match.group("status") == "fail"
+    states = process_science_chain_log(chain_log.read_text(encoding="utf-8").splitlines())
+    assert states["chain_b"].quarantined is True
+
+
+def test_consumer_audit_script_emits_terminal_fail_and_quarantines_pending_arm(
+    tmp_path: Path,
+) -> None:
+    from calm.hrm_text_158.native_full_stack.box_lane import (
+        CONSUMER_TERMINAL_RE,
+        process_science_chain_log,
+    )
+    from scripts.box_lane_consensus_consumer_audit import main as consumer_main
+
+    chain_root = tmp_path / "chain_a"
+    _write_s2_chain_tree(chain_root)
+    bad = _s2_good_receipt()
+    del bad["step_reports"]["3"]["vote_pressure"]["mod.a"]["pressure_shape_summary"]
+    (chain_root / "S44" / "on" / "receipt.json").write_text(json.dumps(bad), encoding="utf-8")
+    chain_log = tmp_path / "producer.log"
+    chain_log.write_text(
+        "\n".join(
+            [
+                "capture_complete: chain_id=chain_a code_currency_pass=true artifact_sha_verified=true ts=1.0",
+                "producer_next_capture_start: chain_id=chain_b ts=1.5",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    rc = consumer_main(
+        [
+            "--chain-root",
+            str(chain_root),
+            "--chain-id",
+            "chain_a",
+            "--chain-log",
+            str(chain_log),
+        ],
+    )
+    assert rc == EXIT_ARTIFACT_RSYNC_MISMATCH
+    log_text = chain_log.read_text(encoding="utf-8")
+    assert "consumer_audit_start: chain_id=chain_a" in log_text
+    terminal_match = CONSUMER_TERMINAL_RE.search(log_text)
+    assert terminal_match is not None
+    assert terminal_match.group("status") == "fail"
+    states = process_science_chain_log(log_text.splitlines())
+    assert states["chain_b"].quarantined is True
