@@ -157,7 +157,14 @@ from calm.hrm_text_158.native_full_stack.two_tier_transient_selection import (
     crossing_eligible_flat_indices,
 )
 from calm.hrm_text_158.native_full_stack.s3bb_headroom_telemetry import (
+    HEADROOM_WIRING_SIDECAR_FILENAME,
+    HEADROOM_WIRING_SIDECAR_SCHEMA_VERSION,
+    RECEIPT_EMIT_PROFILE_CHOICES,
+    RECEIPT_EMIT_PROFILE_FULL,
+    RECEIPT_EMIT_PROFILE_SLIM,
     S3BB_W6_HEADROOM_DIAGNOSTIC_PHASE,
+    SNAPSHOT_MODE_AGGREGATE_ONLY,
+    SNAPSHOT_MODE_FULL,
     attach_s3bb_headroom_telemetry_to_step_report,
     run_vote_materialization_with_s3bb_boundary_catch,
 )
@@ -4696,6 +4703,8 @@ def run_bounded_delta_steps(
     two_tier_carry_w6_enabled: bool = False,
     oracle_screen_max_sampled_candidates: int = ORACLE_SCREEN_FEASIBILITY_MAX_SAMPLED_CANDIDATES,
     phase: str = "c2p1-real-model-smoke",
+    snapshot_mode: str = SNAPSHOT_MODE_FULL,
+    headroom_wiring_sidecar_path: Path | None = None,
 ) -> tuple[
     dict[str, Any],
     dict[str, Any],
@@ -5269,6 +5278,9 @@ def run_bounded_delta_steps(
                             step_reports[str(step)],
                             phase=str(phase),
                             post_update_states=pre_apply_states,
+                            snapshot_mode=str(snapshot_mode),
+                            headroom_wiring_sidecar_path=headroom_wiring_sidecar_path,
+                            step=int(step),
                         )
                         caught_telemetry = s3bb_boundary_step_report.get(
                             "headroom_telemetry"
@@ -5450,6 +5462,9 @@ def run_bounded_delta_steps(
                     step_reports[str(step)],
                     phase=str(phase),
                     post_update_states=states,
+                    snapshot_mode=str(snapshot_mode),
+                    headroom_wiring_sidecar_path=headroom_wiring_sidecar_path,
+                    step=int(step),
                 )
         steps_completed = step
         if (
@@ -5696,6 +5711,7 @@ def run_c2p1_probe(
     b2b_sequential_max_sampled_candidates: int = PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES,
     two_tier_carry_w6_enabled: bool = False,
     checkpoint_states_dump: Path | None = None,
+    receipt_emit_profile: str = RECEIPT_EMIT_PROFILE_FULL,
 ) -> dict[str, Any]:
     oracle_screen_budget = int(oracle_screen_max_sampled_candidates)
     if oracle_screen_budget not in ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES:
@@ -5843,6 +5859,18 @@ def run_c2p1_probe(
     guard_gpu_launch(torch_device, allow_gpu_launch=allow_gpu_launch)
     device_guard = assert_probe_device_ready(torch_device)
     scratch_root.mkdir(parents=True, exist_ok=True)
+    if str(receipt_emit_profile) not in RECEIPT_EMIT_PROFILE_CHOICES:
+        raise ValueError(
+            f"receipt_emit_profile must be one of {RECEIPT_EMIT_PROFILE_CHOICES}, "
+            f"got {receipt_emit_profile!r}"
+        )
+    slim_receipt_emit = str(receipt_emit_profile) == RECEIPT_EMIT_PROFILE_SLIM
+    snapshot_mode = (
+        SNAPSHOT_MODE_AGGREGATE_ONLY if slim_receipt_emit else SNAPSHOT_MODE_FULL
+    )
+    headroom_wiring_sidecar_path = (
+        scratch_root / HEADROOM_WIRING_SIDECAR_FILENAME if slim_receipt_emit else None
+    )
     run_log_path = install_probe_durable_run_log(scratch_root)
     cuda_memory_snapshots_jsonl_path = install_probe_cuda_memory_snapshot_jsonl(
         scratch_root
@@ -6388,6 +6416,8 @@ def run_c2p1_probe(
                 oracle_screen_max_sampled_candidates
             ),
             phase=str(phase),
+            snapshot_mode=str(snapshot_mode),
+            headroom_wiring_sidecar_path=headroom_wiring_sidecar_path,
         )
     prior_audit_final_reports: dict[str, dict[str, Any]] = {}
     if prior_support_sets:
@@ -6410,21 +6440,30 @@ def run_c2p1_probe(
             "projection_law": S1_PROJECTION_LAW,
             "vote_law": S1_RANK_BUCKET_VOTE_LAW,
         }
-    with phase_progress.phase("checkpoint_payload"):
-        _maybe_log_checkpoint_states_dump(
-            checkpoint_states_dump,
-            tensor_states=final_states,
-        )
-        checkpoint_payload = _build_checkpoint_payload_with_phase_telemetry(
-            phase_progress,
-            final_states,
-            step=int(steps_completed),
-            updater_config=updater_config,
-            oracle_receipt=None,
-            dry_run=True,
-            checkpoint_written=False,
-        )
-        validate_authoritative_resume_payload(checkpoint_payload)
+    if slim_receipt_emit:
+        checkpoint_payload = {
+            "checkpoint_payload_omitted": True,
+            "reason": RECEIPT_EMIT_PROFILE_SLIM,
+            "schema": BOUNDED_DELTA_CHECKPOINT_SCHEMA_VERSION,
+            "dry_run": True,
+            "tensor_count": len(final_states),
+        }
+    else:
+        with phase_progress.phase("checkpoint_payload"):
+            _maybe_log_checkpoint_states_dump(
+                checkpoint_states_dump,
+                tensor_states=final_states,
+            )
+            checkpoint_payload = _build_checkpoint_payload_with_phase_telemetry(
+                phase_progress,
+                final_states,
+                step=int(steps_completed),
+                updater_config=updater_config,
+                oracle_receipt=None,
+                dry_run=True,
+                checkpoint_written=False,
+            )
+            validate_authoritative_resume_payload(checkpoint_payload)
     with phase_progress.phase("parent_hash_after"):
         parent_hash_after = file_sha256(parent)
     parent_hash_unchanged = parent_hash_before == parent_hash_after
@@ -6580,7 +6619,12 @@ def run_c2p1_probe(
         "memory": cuda_memory_receipt(torch_device),
         "phase_telemetry": phase_progress.to_dict(),
         "b2b_sequential_capture": b2b_capture_receipt,
+        "receipt_emit_profile": str(receipt_emit_profile),
     }
+    if slim_receipt_emit:
+        assert headroom_wiring_sidecar_path is not None
+        receipt["headroom_wiring_sidecar_path"] = str(headroom_wiring_sidecar_path)
+        receipt["headroom_wiring_sidecar_schema"] = HEADROOM_WIRING_SIDECAR_SCHEMA_VERSION
     if b2_full_verdict_mode:
         assert b2_full_verdict_receipt is not None
         receipt.update(
@@ -6634,7 +6678,11 @@ def run_c2p1_probe(
     )
     with phase_progress.phase("receipt_write", path=str(receipt_path)):
         receipt["phase_telemetry"] = phase_progress.to_dict()
-        receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
+        if slim_receipt_emit:
+            receipt_text = json.dumps(receipt, separators=(",", ":"), sort_keys=True)
+        else:
+            receipt_text = json.dumps(receipt, indent=2, sort_keys=True)
+        receipt_path.write_text(receipt_text, encoding="utf-8")
     receipt["phase_telemetry"] = phase_progress.to_dict()
     return receipt
 
@@ -6889,6 +6937,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     ap.add_argument(
+        "--receipt-emit-profile",
+        choices=list(RECEIPT_EMIT_PROFILE_CHOICES),
+        default=RECEIPT_EMIT_PROFILE_FULL,
+        help=(
+            "Receipt emission profile. Use s3bb_headroom_diagnostic_slim for "
+            "aggregate-only receipt.json plus chunked headroom_wiring_sidecar.jsonl."
+        ),
+    )
+    ap.add_argument(
         "--max-silent-phase-seconds",
         type=float,
         default=None,
@@ -6952,6 +7009,7 @@ def main(argv: list[str] | None = None) -> int:
         phase_timeout_exemption_contract=args.phase_timeout_exemption_contract,
         enabled=args.enable_bounded_delta_probe,
         allow_gpu_launch=args.allow_gpu_launch,
+        receipt_emit_profile=args.receipt_emit_profile,
     )
     print(json.dumps(receipt, indent=2, sort_keys=True), flush=True)
     return 0

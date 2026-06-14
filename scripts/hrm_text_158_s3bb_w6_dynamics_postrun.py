@@ -9,8 +9,10 @@ from typing import Any
 
 from calm.hrm_text_158.native_full_stack.s3bb_headroom_telemetry import (
     CLASSIFIER_HEADROOM_BREACH,
+    RECEIPT_EMIT_PROFILE_SLIM,
     compare_arm_wiring_guards,
     emit_s3bb_classifier_receipt,
+    resolve_headroom_wiring_sidecar_path,
     validate_headroom_telemetry_block,
 )
 
@@ -38,6 +40,11 @@ def _collect_harness_failures(
         ("oracle", oracle_receipt),
         ("treatment", treatment_receipt),
     ):
+        slim_emit = str(receipt.get("receipt_emit_profile") or "") == RECEIPT_EMIT_PROFILE_SLIM
+        if slim_emit:
+            sidecar_path = resolve_headroom_wiring_sidecar_path(receipt)
+            if sidecar_path is None or not sidecar_path.is_file():
+                failures.append(f"{label}_missing_headroom_wiring_sidecar")
         step_reports = receipt.get("step_reports") or {}
         if not isinstance(step_reports, dict):
             failures.append(f"{label}_step_reports_not_object")
@@ -54,6 +61,8 @@ def _collect_harness_failures(
                 validate_headroom_telemetry_block(telemetry)
             except ValueError as exc:
                 failures.append(f"{label}_step_{step_id}_{exc}")
+            if slim_emit and (telemetry.get("accumulator_snapshots_by_state_key") or {}):
+                failures.append(f"{label}_step_{step_id}_slim_receipt_has_inline_snapshots")
     return failures
 
 
