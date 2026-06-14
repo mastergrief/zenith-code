@@ -156,6 +156,11 @@ from calm.hrm_text_158.native_full_stack.two_tier_transient_selection import (
     LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
     crossing_eligible_flat_indices,
 )
+from calm.hrm_text_158.native_full_stack.s3bb_headroom_telemetry import (
+    S3BB_W6_HEADROOM_DIAGNOSTIC_PHASE,
+    attach_s3bb_headroom_telemetry_to_step_report,
+    run_vote_materialization_with_s3bb_boundary_catch,
+)
 from calm.hrm_text_158.native_full_stack.vote_update import (
     LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
     LOCAL_SELECTION_ORDER_DETERMINISTIC_HASH_MATCHED,
@@ -4690,6 +4695,7 @@ def run_bounded_delta_steps(
     b2b_sequential_max_sampled_candidates: int = PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES,
     two_tier_carry_w6_enabled: bool = False,
     oracle_screen_max_sampled_candidates: int = ORACLE_SCREEN_FEASIBILITY_MAX_SAMPLED_CANDIDATES,
+    phase: str = "c2p1-real-model-smoke",
 ) -> tuple[
     dict[str, Any],
     dict[str, Any],
@@ -5200,28 +5206,86 @@ def run_bounded_delta_steps(
                     if two_tier_carry_w6_enabled
                     else _science_local_selection_ordering_mode(str(science_arm))
                 )
-                step_result = apply_bounded_delta_vote_step(
-                    states,
-                    votes_by_key,
-                    vote_specs,
-                    replay_ce_veto_votes_by_key=replay_ce_veto_votes_by_key,
-                    replay_ce_veto_moves_by_key=replay_ce_veto_moves_by_key,
-                    pc_aux_votes_by_key=pc_aux_votes_by_key,
-                    pc_aux_moves_by_key=pc_aux_moves_by_key,
-                    pc_aux_mode=str(b2_pc_aux_mode),
-                    global_cap_spec=effective_global_cap_spec,
-                    global_cap_tie_rule_mode=str(tie_rule_mode),
-                    global_cap_contract_name=(
-                        str(global_cap_contract)
-                        if effective_global_cap_spec is not None
-                        else None
-                    ),
-                    local_selection_ordering_mode=step_selection_ordering_mode,
-                    local_selection_ordering_seed=SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
-                    local_selection_ordering_step=int(step),
-                    front_c_identity_observer=front_c_identity_observer,
-                    **two_tier_vote_step_kwargs,
-                )
+                s3bb_boundary_step_report: dict[str, Any] = {}
+
+                def _materialize_bounded_delta_vote_step() -> Any:
+                    return apply_bounded_delta_vote_step(
+                        states,
+                        votes_by_key,
+                        vote_specs,
+                        replay_ce_veto_votes_by_key=replay_ce_veto_votes_by_key,
+                        replay_ce_veto_moves_by_key=replay_ce_veto_moves_by_key,
+                        pc_aux_votes_by_key=pc_aux_votes_by_key,
+                        pc_aux_moves_by_key=pc_aux_moves_by_key,
+                        pc_aux_mode=str(b2_pc_aux_mode),
+                        global_cap_spec=effective_global_cap_spec,
+                        global_cap_tie_rule_mode=str(tie_rule_mode),
+                        global_cap_contract_name=(
+                            str(global_cap_contract)
+                            if effective_global_cap_spec is not None
+                            else None
+                        ),
+                        local_selection_ordering_mode=step_selection_ordering_mode,
+                        local_selection_ordering_seed=SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
+                        local_selection_ordering_step=int(step),
+                        front_c_identity_observer=front_c_identity_observer,
+                        **two_tier_vote_step_kwargs,
+                    )
+
+                if str(phase) == S3BB_W6_HEADROOM_DIAGNOSTIC_PHASE:
+                    materialization = run_vote_materialization_with_s3bb_boundary_catch(
+                        phase=str(phase),
+                        step_report=s3bb_boundary_step_report,
+                        materialize=_materialize_bounded_delta_vote_step,
+                    )
+                    if materialization.terminated:
+                        breach_duration_seconds = _timing_duration_seconds(
+                            step_timing_start,
+                            device,
+                        )
+                        step_reports[str(step)] = {
+                            "loss": float(loss.detach().cpu().item()),
+                            "loss_finite": bool(torch.isfinite(loss).item()),
+                            "weighted_grad_finite": bool(finite_weighted_grad),
+                            "aux_weighted_grad_finite": bool(aux_weighted_grad_finite),
+                            "duration_seconds": breach_duration_seconds,
+                            "metrics": _metrics_to_dict(metrics),
+                            "bp_steps": int(extras["bp_steps"]),
+                            "q_changed_count": 0,
+                            "science_arm": str(science_arm),
+                            "target_vote_law": _science_arm_vote_law(str(science_arm)),
+                            "target_tie_policy_id": _science_arm_tie_policy(str(science_arm)),
+                            "local_selection_ordering_mode": step_selection_ordering_mode,
+                            "local_selection_ordering_seed": SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
+                            "local_selection_ordering_step": int(step),
+                            "aux_vote_law": FIXED_RANK_BUCKET_NON_TARGET_AUX,
+                            "vote_pressure": vote_pressure_by_key,
+                            "support_batch": dict(step_batch_metadata),
+                            "b2_retained_support": b2_step_receipt,
+                            "step_result": {"headroom_breach": True},
+                            "optimizer_identity_proof": {"headroom_breach": True},
+                        }
+                        attach_s3bb_headroom_telemetry_to_step_report(
+                            step_reports[str(step)],
+                            phase=str(phase),
+                            post_update_states=pre_apply_states,
+                        )
+                        caught_telemetry = s3bb_boundary_step_report.get(
+                            "headroom_telemetry"
+                        ) or {}
+                        if bool(caught_telemetry.get("boundary_value_error_caught")):
+                            telemetry = step_reports[str(step)]["headroom_telemetry"]
+                            telemetry["boundary_value_error_caught"] = True
+                            telemetry["would_strict_raise_step"] = True
+                            telemetry["strict_raise_count"] = 1
+                        stop_reason = str(
+                            materialization.stop_reason or "headroom_breach"
+                        )
+                        steps_completed = step
+                        break
+                    step_result = materialization.value
+                else:
+                    step_result = _materialize_bounded_delta_vote_step()
                 states = step_result.tensor_states
                 q_changed_count = int(step_result.global_summary.get("q_changed_count", 0))
                 if b2b_sequential_capture_enabled and b2b_step_capture is not None:
@@ -5382,6 +5446,11 @@ def run_bounded_delta_steps(
                         ],
                         "post_update_q_changed_count": q_changed_count,
                     }
+                attach_s3bb_headroom_telemetry_to_step_report(
+                    step_reports[str(step)],
+                    phase=str(phase),
+                    post_update_states=states,
+                )
         steps_completed = step
         if (
             audit_callback is not None
@@ -6318,6 +6387,7 @@ def run_c2p1_probe(
             oracle_screen_max_sampled_candidates=int(
                 oracle_screen_max_sampled_candidates
             ),
+            phase=str(phase),
         )
     prior_audit_final_reports: dict[str, dict[str, Any]] = {}
     if prior_support_sets:

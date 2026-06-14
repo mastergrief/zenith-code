@@ -34,6 +34,11 @@ W6_PACKED_MAX = W6_PACK_MASK
 W6_SIGN_BIT = 1 << (W6_WIDTH_BITS - 1)
 W6_SIGN_EXTEND_OFFSET = 1 << W6_WIDTH_BITS
 
+
+class NarrowCarrierHeadroomBreach(ValueError):
+    """Strict W6 narrow-carrier boundary rejection (out-of-domain accumulator lane)."""
+
+
 CLASSIFIER_S3A_COST_OR_HARNESS_FAIL = "S3A_COST_OR_HARNESS_FAIL"
 CLASSIFIER_S3A_PARITY_DIVERGES = "S3A_PARITY_DIVERGES"
 CLASSIFIER_S3A_VECTOR_PARITY_OK_COST_BOUNDED = "S3A_VECTOR_PARITY_OK_COST_BOUNDED"
@@ -89,7 +94,7 @@ def pack_w6(value: int) -> int:
 
     v = int(value)
     if v < W6_SIGNED_MIN or v > W6_SIGNED_MAX:
-        raise ValueError(
+        raise NarrowCarrierHeadroomBreach(
             f"pack_w6 requires value in [{W6_SIGNED_MIN}, {W6_SIGNED_MAX}], got {value}"
         )
     return v & W6_PACK_MASK
@@ -134,7 +139,7 @@ def pack_w6_tensor(acc: torch.Tensor) -> torch.Tensor:
     values = acc.to(dtype=torch.int32)
     out_of_domain = (values < W6_SIGNED_MIN) | (values > W6_SIGNED_MAX)
     if int(out_of_domain.max()) > 0:
-        raise ValueError(
+        raise NarrowCarrierHeadroomBreach(
             "pack_w6_tensor requires all values in "
             f"[{W6_SIGNED_MIN}, {W6_SIGNED_MAX}]; "
             f"pack_w6 requires value in [{W6_SIGNED_MIN}, {W6_SIGNED_MAX}]"
