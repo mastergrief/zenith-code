@@ -13,6 +13,7 @@ import torch
 from calm.hrm_text_158.native_full_stack.narrow_accumulator_codec import (
     clip_then_pack_w6,
     pack_w6,
+    strict_roundtrip_w6_tensor,
     unpack_w6,
 )
 from calm.hrm_text_158.native_full_stack.two_tier_carry_reducers import (
@@ -34,6 +35,26 @@ CLASSIFIER_PRECEDENCE: tuple[str, ...] = (
     CLASSIFIER_S2_HARNESS_FAIL,
     CLASSIFIER_S2_PARITY_DIVERGES,
     CLASSIFIER_S2_FLAG_OFF_IDENTITY_AND_PARITY_OK,
+)
+
+CLASSIFIER_S3BA_HARNESS_FAIL = "S3BA_HARNESS_FAIL"
+CLASSIFIER_S3BA_PARITY_DIVERGES = "S3BA_PARITY_DIVERGES"
+CLASSIFIER_S3BA_VECTOR_WIRING_OK = "S3BA_VECTOR_WIRING_OK"
+
+CLASSIFIER_S3BA_PRECEDENCE: tuple[str, ...] = (
+    CLASSIFIER_S3BA_HARNESS_FAIL,
+    CLASSIFIER_S3BA_PARITY_DIVERGES,
+    CLASSIFIER_S3BA_VECTOR_WIRING_OK,
+)
+
+S3BA_EXPLICIT_NON_CLAIMS: tuple[str, ...] = (
+    "vectorized_trainer_boundary_wiring_proof_only",
+    "not_gpu_dynamics_parity_s3bb",
+    "not_live_training",
+    "not_checkpoint_pt_mutation",
+    "not_compressed_vote_update_format_enablement",
+    "not_dynamics_stability_full_sub2_readiness",
+    "not_physical_sub2",
 )
 
 EXPLICIT_NON_CLAIMS: tuple[str, ...] = (
@@ -107,11 +128,7 @@ def apply_trainer_boundary_narrow_carrier(
         raise ValueError(f"accumulators must be torch.int16, got {accumulators.dtype}")
     if not narrow_carrier_w6_enabled(enabled=enabled):
         return accumulators
-    if accumulators.is_cuda:
-        raise RuntimeError("narrow carrier trainer integration is CPU-only in S2")
-    flat = accumulators.detach().cpu().flatten().tolist()
-    roundtripped = roundtrip_int16_values_through_trainer_boundary(flat, enabled=True)
-    return torch.tensor(roundtripped, dtype=torch.int16).view_as(accumulators).contiguous()
+    return strict_roundtrip_w6_tensor(accumulators.detach())
 
 
 def count_int16_vs_w6_crossing_mismatches(
@@ -201,4 +218,45 @@ def emit_s2_classifier_receipt(
         "s2_ok_is_not_gpu_parity": True,
         "s2_ok_is_not_checkpoint_mutation": True,
         "s2_ok_is_not_compressed_vote_update": True,
+    }
+
+
+def emit_s3ba_classifier_receipt(
+    *,
+    harness_failures: Sequence[str] | None = None,
+    static_inspection_pass: bool = True,
+    cpu_regression_pass: bool = True,
+    parity_mismatch_count: int = 0,
+    flag_off_identity_pass: bool = True,
+    no_packed_state_leak_pass: bool = True,
+) -> dict[str, Any]:
+    """Emit S3ba classifier receipt with explicit non-claims."""
+
+    failures = list(dict.fromkeys(harness_failures or ()))
+    if failures or not static_inspection_pass:
+        primary = CLASSIFIER_S3BA_HARNESS_FAIL
+    elif (
+        not cpu_regression_pass
+        or int(parity_mismatch_count) > 0
+        or not flag_off_identity_pass
+        or not no_packed_state_leak_pass
+    ):
+        primary = CLASSIFIER_S3BA_PARITY_DIVERGES
+    else:
+        primary = CLASSIFIER_S3BA_VECTOR_WIRING_OK
+
+    return {
+        "slice_id": "narrow_carrier_vectorized_wiring_s3ba_v0",
+        "primary_classifier": primary,
+        "classifier_precedence": list(CLASSIFIER_S3BA_PRECEDENCE),
+        "harness_failures": failures,
+        "static_inspection_pass": bool(static_inspection_pass),
+        "cpu_regression_pass": bool(cpu_regression_pass),
+        "parity_mismatch_count": int(parity_mismatch_count),
+        "flag_off_identity_pass": bool(flag_off_identity_pass),
+        "no_packed_state_leak_pass": bool(no_packed_state_leak_pass),
+        "explicit_non_claims": list(S3BA_EXPLICIT_NON_CLAIMS),
+        "s3ba_ok_is_not_gpu_dynamics": True,
+        "s3ba_ok_is_not_live_training": True,
+        "s3ba_ok_is_not_checkpoint_mutation": True,
     }

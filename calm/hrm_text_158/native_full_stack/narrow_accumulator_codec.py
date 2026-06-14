@@ -1,4 +1,4 @@
-"""CPU-only int16 vote-acc → 6-bit signed-lane accumulator codec seam."""
+"""Int16 vote-acc → 6-bit signed-lane accumulator codec seam (scalar + tensor paths)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -131,13 +131,13 @@ def pack_w6_tensor(acc: torch.Tensor) -> torch.Tensor:
 
     if acc.dtype != torch.int16:
         raise ValueError(f"pack_w6_tensor requires torch.int16, got {acc.dtype}")
-    if acc.is_cuda:
-        raise RuntimeError("pack_w6_tensor is CPU-only in S3a")
     values = acc.to(dtype=torch.int32)
     out_of_domain = (values < W6_SIGNED_MIN) | (values > W6_SIGNED_MAX)
     if int(out_of_domain.max()) > 0:
         raise ValueError(
-            f"pack_w6_tensor requires all values in [{W6_SIGNED_MIN}, {W6_SIGNED_MAX}]"
+            "pack_w6_tensor requires all values in "
+            f"[{W6_SIGNED_MIN}, {W6_SIGNED_MAX}]; "
+            f"pack_w6 requires value in [{W6_SIGNED_MIN}, {W6_SIGNED_MAX}]"
         )
     return (values & W6_PACK_MASK).to(torch.int16)
 
@@ -147,8 +147,6 @@ def unpack_w6_tensor(packed: torch.Tensor) -> torch.Tensor:
 
     if packed.dtype != torch.int16:
         raise ValueError(f"unpack_w6_tensor requires torch.int16, got {packed.dtype}")
-    if packed.is_cuda:
-        raise RuntimeError("unpack_w6_tensor is CPU-only in S3a")
     values = packed.to(dtype=torch.int32)
     out_of_domain = (values < W6_PACKED_MIN) | (values > W6_PACKED_MAX)
     if int(out_of_domain.max()) > 0:
