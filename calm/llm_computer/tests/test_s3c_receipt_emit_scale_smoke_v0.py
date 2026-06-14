@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -300,7 +301,10 @@ def test_slim_postrun_uses_streaming_sidecar(tmp_path: Path) -> None:
 
 
 def test_scale_smoke_mini_profile(tmp_path: Path) -> None:
-    from scripts.hrm_text_158_s3c_receipt_emit_scale_smoke import run_scale_smoke
+    from scripts.hrm_text_158_s3c_receipt_emit_scale_smoke import (
+        METRICS_SCHEMA_VERSION,
+        run_scale_smoke,
+    )
 
     metrics = run_scale_smoke(
         output_dir=tmp_path / "smoke",
@@ -309,5 +313,117 @@ def test_scale_smoke_mini_profile(tmp_path: Path) -> None:
         measured_steps=3,
         warmup_steps=WARMUP_STEPS,
     )
+    assert metrics["metrics_schema_version"] == METRICS_SCHEMA_VERSION
     assert metrics["passed"] is True
     assert metrics["wiring_guards"]["vote_update_state_accumulator_equality_rate"] == 1.0
+    assert "phase_a_data_gen_wall_seconds" in metrics
+    assert "phase_b_sidecar_emit_wall_seconds" in metrics
+    assert "phase_b_prime_aggregate_peak_rss_mib" in metrics
+    assert "phase_c_compare_wall_seconds" in metrics
+    assert metrics["phase_a_data_gen_wall_seconds"] >= 0.0
+
+
+def test_scale_smoke_phase_a_excluded_from_gated_wall(tmp_path: Path) -> None:
+    import numpy as np
+
+    from scripts.hrm_text_158_s3c_receipt_emit_scale_smoke import run_scale_smoke
+
+    def slow_lane_factory(
+        *,
+        module_index: int,
+        step: int,
+        lanes_per_module: int,
+        arm_offset: int,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        time.sleep(0.05)
+        lanes = np.arange(lanes_per_module, dtype=np.int64)
+        acc = ((module_index + step + lanes + arm_offset) % 31) - 15
+        q = ((lanes + module_index) % 3) - 1
+        return acc.astype(np.int16), q.astype(np.int16)
+
+    metrics = run_scale_smoke(
+        output_dir=tmp_path / "slow_gen",
+        modules=1,
+        lanes_per_module=4,
+        measured_steps=1,
+        warmup_steps=WARMUP_STEPS,
+        lane_factory=slow_lane_factory,
+        gate_overrides={"phase_b_sidecar_emit_wall_seconds_lte": 0.05},
+    )
+    assert metrics["phase_a_data_gen_wall_seconds"] >= 0.08
+    assert metrics["phase_b_sidecar_emit_wall_seconds"] < 0.05
+    assert "phase_a_data_gen_wall_seconds" not in metrics["failures"]
+    assert metrics["passed"] is True
+
+
+def test_scale_smoke_disk_precheck_uses_file_size_gate_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import scripts.hrm_text_158_s3c_receipt_emit_scale_smoke as smoke_module
+
+    observed: dict[str, int] = {}
+
+    def capture_precheck(_output_dir: Path, *, sidecar_file_size_budget_bytes: int) -> None:
+        observed["budget"] = sidecar_file_size_budget_bytes
+
+    monkeypatch.setattr(smoke_module, "_disk_precheck", capture_precheck)
+    smoke_module.run_scale_smoke(
+        output_dir=tmp_path / "disk_gate",
+        modules=1,
+        lanes_per_module=4,
+        measured_steps=1,
+        warmup_steps=WARMUP_STEPS,
+    )
+    assert observed["budget"] == smoke_module.GATES["sidecar_file_size_bytes_lte"]
+
+
+def test_scale_smoke_aggregate_mirror_rss_fail_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import scripts.hrm_text_158_s3c_receipt_emit_scale_smoke as smoke_module
+
+    baseline = {"value": 100.0}
+
+    def fake_read_rss_mib() -> float:
+        baseline["value"] += 600.0
+        return baseline["value"]
+
+    monkeypatch.setattr(smoke_module, "_read_rss_mib", fake_read_rss_mib)
+    metrics = smoke_module.run_scale_smoke(
+        output_dir=tmp_path / "aggregate_gate",
+        modules=1,
+        lanes_per_module=8,
+        measured_steps=1,
+        warmup_steps=WARMUP_STEPS,
+    )
+    assert metrics["passed"] is False
+    assert "phase_b_prime_aggregate_peak_rss_mib" in metrics["failures"]
+
+
+def test_scale_smoke_cleanup_removes_sidecars_by_default(tmp_path: Path) -> None:
+    from scripts.hrm_text_158_s3c_receipt_emit_scale_smoke import run_scale_smoke
+
+    output_dir = tmp_path / "cleanup"
+    run_scale_smoke(
+        output_dir=output_dir,
+        modules=1,
+        lanes_per_module=8,
+        measured_steps=1,
+        warmup_steps=WARMUP_STEPS,
+    )
+    assert not (output_dir / "oracle_headroom_wiring_sidecar.jsonl").exists()
+    assert not (output_dir / "treatment_headroom_wiring_sidecar.jsonl").exists()
+
+
+def test_scale_smoke_retain_artifacts_keeps_sidecars(tmp_path: Path) -> None:
+    from scripts.hrm_text_158_s3c_receipt_emit_scale_smoke import run_scale_smoke
+
+    output_dir = tmp_path / "retain"
+    run_scale_smoke(
+        output_dir=output_dir,
+        modules=1,
+        lanes_per_module=8,
+        measured_steps=1,
+        warmup_steps=WARMUP_STEPS,
+        cleanup_sidecars=False,
+    )
+    assert (output_dir / "oracle_headroom_wiring_sidecar.jsonl").exists()
+    assert (output_dir / "treatment_headroom_wiring_sidecar.jsonl").exists()
