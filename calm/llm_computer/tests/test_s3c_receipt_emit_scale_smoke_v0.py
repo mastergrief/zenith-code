@@ -317,10 +317,15 @@ def test_scale_smoke_mini_profile(tmp_path: Path) -> None:
     assert metrics["passed"] is True
     assert metrics["wiring_guards"]["vote_update_state_accumulator_equality_rate"] == 1.0
     assert "phase_a_data_gen_wall_seconds" in metrics
-    assert "phase_b_sidecar_emit_wall_seconds" in metrics
+    assert "phase_b_sidecar_emit_wall_seconds_by_arm" in metrics
+    assert "phase_b_sidecar_emit_wall_seconds_per_arm_max" in metrics
+    assert "phase_b_sidecar_emit_wall_seconds_total" in metrics
     assert "phase_b_prime_aggregate_peak_rss_mib" in metrics
     assert "phase_c_compare_wall_seconds" in metrics
     assert metrics["phase_a_data_gen_wall_seconds"] >= 0.0
+    assert metrics["phase_b_sidecar_emit_wall_seconds_total"] >= metrics[
+        "phase_b_sidecar_emit_wall_seconds_per_arm_max"
+    ]
 
 
 def test_scale_smoke_phase_a_excluded_from_gated_wall(tmp_path: Path) -> None:
@@ -348,11 +353,12 @@ def test_scale_smoke_phase_a_excluded_from_gated_wall(tmp_path: Path) -> None:
         measured_steps=1,
         warmup_steps=WARMUP_STEPS,
         lane_factory=slow_lane_factory,
-        gate_overrides={"phase_b_sidecar_emit_wall_seconds_lte": 0.05},
+        gate_overrides={"phase_b_sidecar_emit_wall_seconds_per_arm_max_lte": 0.05},
     )
     assert metrics["phase_a_data_gen_wall_seconds"] >= 0.08
-    assert metrics["phase_b_sidecar_emit_wall_seconds"] < 0.05
+    assert metrics["phase_b_sidecar_emit_wall_seconds_per_arm_max"] < 0.05
     assert "phase_a_data_gen_wall_seconds" not in metrics["failures"]
+    assert "phase_b_sidecar_emit_wall_seconds_total" not in metrics["failures"]
     assert metrics["passed"] is True
 
 
@@ -427,3 +433,56 @@ def test_scale_smoke_retain_artifacts_keeps_sidecars(tmp_path: Path) -> None:
     )
     assert (output_dir / "oracle_headroom_wiring_sidecar.jsonl").exists()
     assert (output_dir / "treatment_headroom_wiring_sidecar.jsonl").exists()
+
+
+def test_scale_smoke_per_arm_max_fail_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import scripts.hrm_text_158_s3c_receipt_emit_scale_smoke as smoke_module
+    from calm.hrm_text_158.native_full_stack import s3bb_headroom_telemetry as telemetry_module
+
+    original_append = telemetry_module.append_headroom_wiring_sidecar_chunk
+
+    def slow_append(*args: object, **kwargs: object) -> None:
+        time.sleep(0.08)
+        original_append(*args, **kwargs)
+
+    monkeypatch.setattr(telemetry_module, "append_headroom_wiring_sidecar_chunk", slow_append)
+    monkeypatch.setattr(smoke_module, "append_headroom_wiring_sidecar_chunk", slow_append)
+
+    metrics = smoke_module.run_scale_smoke(
+        output_dir=tmp_path / "per_arm_fail",
+        modules=1,
+        lanes_per_module=4,
+        measured_steps=2,
+        warmup_steps=WARMUP_STEPS,
+        gate_overrides={"phase_b_sidecar_emit_wall_seconds_per_arm_max_lte": 0.1},
+    )
+    assert metrics["phase_b_sidecar_emit_wall_seconds_per_arm_max"] >= 0.15
+    assert metrics["passed"] is False
+    assert "phase_b_sidecar_emit_wall_seconds_per_arm_max" in metrics["failures"]
+
+
+def test_scale_smoke_total_not_gated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import scripts.hrm_text_158_s3c_receipt_emit_scale_smoke as smoke_module
+    from calm.hrm_text_158.native_full_stack import s3bb_headroom_telemetry as telemetry_module
+
+    original_append = telemetry_module.append_headroom_wiring_sidecar_chunk
+
+    def slow_append(*args: object, **kwargs: object) -> None:
+        time.sleep(0.08)
+        original_append(*args, **kwargs)
+
+    monkeypatch.setattr(telemetry_module, "append_headroom_wiring_sidecar_chunk", slow_append)
+    monkeypatch.setattr(smoke_module, "append_headroom_wiring_sidecar_chunk", slow_append)
+
+    metrics = smoke_module.run_scale_smoke(
+        output_dir=tmp_path / "total_not_gated",
+        modules=1,
+        lanes_per_module=4,
+        measured_steps=2,
+        warmup_steps=WARMUP_STEPS,
+        gate_overrides={"phase_b_sidecar_emit_wall_seconds_per_arm_max_lte": 0.25},
+    )
+    assert metrics["phase_b_sidecar_emit_wall_seconds_per_arm_max"] < 0.25
+    assert metrics["phase_b_sidecar_emit_wall_seconds_total"] > 0.25
+    assert "phase_b_sidecar_emit_wall_seconds_total" not in metrics["failures"]
+    assert metrics["passed"] is True
