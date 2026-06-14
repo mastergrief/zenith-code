@@ -4,6 +4,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+import torch
+
 from calm.hrm_text_158.native_full_stack.acc_width_recorded_row_sweep import (
     CANONICAL_VOTE_UPDATE_THRESHOLD_ABS,
     DEFAULT_HEADROOM_FACTOR,
@@ -29,6 +31,28 @@ W6_SIGNED_MAX = signed_w_max(W6_WIDTH_BITS)
 W6_PACK_MASK = (1 << W6_WIDTH_BITS) - 1
 W6_PACKED_MIN = 0
 W6_PACKED_MAX = W6_PACK_MASK
+W6_SIGN_BIT = 1 << (W6_WIDTH_BITS - 1)
+W6_SIGN_EXTEND_OFFSET = 1 << W6_WIDTH_BITS
+
+CLASSIFIER_S3A_COST_OR_HARNESS_FAIL = "S3A_COST_OR_HARNESS_FAIL"
+CLASSIFIER_S3A_PARITY_DIVERGES = "S3A_PARITY_DIVERGES"
+CLASSIFIER_S3A_VECTOR_PARITY_OK_COST_BOUNDED = "S3A_VECTOR_PARITY_OK_COST_BOUNDED"
+
+CLASSIFIER_S3A_PRECEDENCE: tuple[str, ...] = (
+    CLASSIFIER_S3A_COST_OR_HARNESS_FAIL,
+    CLASSIFIER_S3A_PARITY_DIVERGES,
+    CLASSIFIER_S3A_VECTOR_PARITY_OK_COST_BOUNDED,
+)
+
+S3A_EXPLICIT_NON_CLAIMS: tuple[str, ...] = (
+    "cpu_vectorized_w6_codec_prerequisite_proof_only",
+    "not_gpu_parity_s3b",
+    "not_trainer_boundary_wiring",
+    "not_live_training",
+    "not_checkpoint_pt_mutation",
+    "not_dynamics_stability_full_sub2_readiness",
+    "not_physical_sub2",
+)
 
 CLASSIFIER_HARNESS_FAIL = "HARNESS_FAIL"
 CLASSIFIER_HEADROOM_OR_DOMAIN_FAIL = "HEADROOM_OR_DOMAIN_FAIL"
@@ -100,6 +124,67 @@ def clip_then_pack_w6(value: int) -> int:
     """Explicit clip-then-pack replay path; separate from strict pack_w6."""
 
     return pack_w6(clip_to_w6(value))
+
+
+def pack_w6_tensor(acc: torch.Tensor) -> torch.Tensor:
+    """Strict vectorized pack: fail-closed outside signed W6 domain [-31, 31]."""
+
+    if acc.dtype != torch.int16:
+        raise ValueError(f"pack_w6_tensor requires torch.int16, got {acc.dtype}")
+    if acc.is_cuda:
+        raise RuntimeError("pack_w6_tensor is CPU-only in S3a")
+    values = acc.to(dtype=torch.int32)
+    out_of_domain = (values < W6_SIGNED_MIN) | (values > W6_SIGNED_MAX)
+    if int(out_of_domain.max()) > 0:
+        raise ValueError(
+            f"pack_w6_tensor requires all values in [{W6_SIGNED_MIN}, {W6_SIGNED_MAX}]"
+        )
+    return (values & W6_PACK_MASK).to(torch.int16)
+
+
+def unpack_w6_tensor(packed: torch.Tensor) -> torch.Tensor:
+    """Strict vectorized unpack from 6-bit lanes to signed int16."""
+
+    if packed.dtype != torch.int16:
+        raise ValueError(f"unpack_w6_tensor requires torch.int16, got {packed.dtype}")
+    if packed.is_cuda:
+        raise RuntimeError("unpack_w6_tensor is CPU-only in S3a")
+    values = packed.to(dtype=torch.int32)
+    out_of_domain = (values < W6_PACKED_MIN) | (values > W6_PACKED_MAX)
+    if int(out_of_domain.max()) > 0:
+        raise ValueError(
+            f"unpack_w6_tensor requires packed lanes in [{W6_PACKED_MIN}, {W6_PACKED_MAX}]"
+        )
+    unsigned = values & W6_PACK_MASK
+    signed = torch.where(
+        unsigned >= W6_SIGN_BIT,
+        unsigned - W6_SIGN_EXTEND_OFFSET,
+        unsigned,
+    )
+    return signed.to(torch.int16)
+
+
+def strict_roundtrip_w6_tensor(acc: torch.Tensor) -> torch.Tensor:
+    """Vectorized strict roundtrip using pack_w6_tensor/unpack_w6_tensor."""
+
+    return unpack_w6_tensor(pack_w6_tensor(acc))
+
+
+def clip_to_w6_tensor(acc: torch.Tensor) -> torch.Tensor:
+    """Replay-only clamp to effective W6 clip bounds."""
+
+    clip_min, clip_max = effective_clip_bounds(
+        W6_WIDTH_BITS,
+        VOTE_UPDATE_SOURCE_CLIP_MIN,
+        VOTE_UPDATE_SOURCE_CLIP_MAX,
+    )
+    return torch.clamp(acc.to(torch.int32), clip_min, clip_max).to(torch.int16)
+
+
+def clip_then_pack_w6_tensor(acc: torch.Tensor) -> torch.Tensor:
+    """Replay-only clip-then-pack; separate from strict pack_w6_tensor."""
+
+    return pack_w6_tensor(clip_to_w6_tensor(acc))
 
 
 def default_vote_spec() -> VoteSpecParsed:
@@ -221,4 +306,40 @@ def emit_codec_classifier_receipt(
         "codec_ready_is_not_trainer_integrated": True,
         "codec_ready_is_not_gpu_parity": True,
         "codec_ready_is_not_full_sub2_runtime": True,
+    }
+
+
+def emit_s3a_classifier_receipt(
+    *,
+    harness_failures: Sequence[str] | None = None,
+    parity_pass: bool = True,
+    static_inspection_pass: bool = True,
+    cost_ratio_at_12288: float | None = None,
+    cost_ratio_pass: bool = True,
+    cost_model_receipt: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Emit S3a classifier receipt with explicit non-claims."""
+
+    failures = list(dict.fromkeys(harness_failures or ()))
+    if failures or not static_inspection_pass or not cost_ratio_pass:
+        primary = CLASSIFIER_S3A_COST_OR_HARNESS_FAIL
+    elif not parity_pass:
+        primary = CLASSIFIER_S3A_PARITY_DIVERGES
+    else:
+        primary = CLASSIFIER_S3A_VECTOR_PARITY_OK_COST_BOUNDED
+
+    return {
+        "slice_id": "vectorized_w6_codec_s3a_v0",
+        "primary_classifier": primary,
+        "classifier_precedence": list(CLASSIFIER_S3A_PRECEDENCE),
+        "harness_failures": failures,
+        "parity_pass": bool(parity_pass),
+        "static_inspection_pass": bool(static_inspection_pass),
+        "cost_ratio_at_12288": cost_ratio_at_12288,
+        "cost_ratio_pass": bool(cost_ratio_pass),
+        "cost_model_receipt": dict(cost_model_receipt or {}),
+        "explicit_non_claims": list(S3A_EXPLICIT_NON_CLAIMS),
+        "s3a_ok_is_not_gpu_parity": True,
+        "s3a_ok_is_not_trainer_wiring": True,
+        "s3a_ok_is_not_live_training": True,
     }
