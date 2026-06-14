@@ -1,0 +1,845 @@
+{
+  "schema": "selector_support_consensus_v1_chain_relaunch_plan/v1",
+  "status": "draft_plan_v5_outcome_producibility_site_d",
+  "revision": "claude_co_lead_block_b1_b4_site_d_classifier_parent_drift_receipt",
+  "claude_plan_review_pass": "1781432646034-6a89a8d9",
+  "co_lead_revise": "1781432789413",
+  "co_lead_launcher_block": "1781433551902",
+  "claude_concur_design_correction": "1781433733291",
+  "launch_ready": false,
+  "gpu_hold": true,
+  "task_id": "1781288635887-402cd3c0",
+  "dispatch": "1781432373715-1f222bc3",
+  "strategic_fork_resolution": {
+    "choice": "B_carefully_gated_6_arm_chain_relaunch",
+    "co_lead_concur": true,
+    "rationale": "Subsumes C-lite real-export RSS measurement (B2 per-tensor RSS on 6 REAL exports; synthetic underrepresents ord44 ~5.1GB peak ~7x). Apparatus goal: serial plumbing proof (Gap-1 transport fail-closed payoff on local SERIAL chain). If ord44 dies, B2 pins tensor/region deterministically. Site D decision from real RSS + MemAvailable in terminal receipt (not unconditional defer).",
+    "supersedes_incident_chain": "selector_support_consensus_v0_20260614T075253Z",
+    "phase1_banked_commit": "abb55357ce412dc30df5364cb488f4ea94ac5c49"
+  },
+  "claim_scope": {
+    "run_class": "plumbing_liveness_smoke",
+    "phase": "c2p1-real-model-smoke",
+    "steps": 10,
+    "claims_this_run": [
+      "6-arm SERIAL box-lane chain completes end-to-end on local RTX 4070 at all-bitlinear scope",
+      "probe ON/OFF receipts emit with pressure_shape_summary v1 per arm",
+      "B2 per-tensor checkpoint export telemetry + RSS curve captured on every arm",
+      "host MemAvailable sampled per arm with PID + teardown_confirmed",
+      "analyzer --consensus produces selector_support_consensus_summary.json + manifest",
+      "consumer audit (--consensus) pass/fail-closed on three S44_ord* labels",
+      "serial plumbing proven: transport pass + analyzer exit 0 + consumer pass + watcher entry SERIAL_FALLBACK with consumer_terminal pass (local-serial mode; NOT overlap pipeline_eligible)"
+    ],
+    "does_not_claim_this_run": [
+      "NO consensus existence verdict (branch-1)",
+      "NO lane-close verdict (branch-2)",
+      "NO native-fault root-cause verdict unless tripwire fires and classifies",
+      "NO Site D _canonical_json optimization",
+      "selector_support_consensus_summary.json is plumbing-only"
+    ],
+    "disposition": "draft_under_hold until dual review + separate +1 GPU launch gate"
+  },
+  "authority": {
+    "packet_author": "codex",
+    "proposed_executor_lane": "trainer-dev",
+    "reviewers": [
+      "claude",
+      "codex_co_lead"
+    ],
+    "gate_sequence": [
+      "dual review this plan artifact (artifact-linted)",
+      "+1 GPU launch gate",
+      "contiguous single chain run + terminal receipt"
+    ]
+  },
+  "code_pins": {
+    "repo": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+    "branch": "feature/hrm-text-1.58",
+    "head_expected": "abb55357ce412dc30df5364cb488f4ea94ac5c49",
+    "head_short": "abb5535",
+    "parent_checkpoint": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+    "parent_sha256": "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec",
+    "parent_read_only_contract": {
+      "hash_before_all_arms": "sha256sum parent .pt recorded in chain receipt before probe 1/6",
+      "hash_after_all_arms": "sha256sum parent .pt recorded after probe 6/6 or tripwire stop",
+      "must_match": true,
+      "note": "parent checkpoint is read-only input; any drift aborts chain"
+    },
+    "instrumentation_commits": {
+      "b1_b2_a1_pre": "8a6143d0f64db92d410aebe745ca47b650d6dc34",
+      "phase1_abc": "abb55357ce412dc30df5364cb488f4ea94ac5c49"
+    }
+  },
+  "run_matrix": {
+    "K": 3,
+    "curriculum_seed_fixed": 44,
+    "support_order_seeds": [
+      17,
+      43,
+      44
+    ],
+    "eligible_scope": "all-bitlinear",
+    "n_eligible_modules": 32,
+    "probe_launches": 6,
+    "arms": [
+      {
+        "label": "S44_ord17",
+        "support_order_seed": 17,
+        "role": "consensus_member"
+      },
+      {
+        "label": "S44_ord43",
+        "support_order_seed": 43,
+        "role": "consensus_member"
+      },
+      {
+        "label": "S44_ord44",
+        "support_order_seed": 44,
+        "role": "reference_arm"
+      }
+    ],
+    "on_off_pairs_per_arm": true,
+    "execution_order": [
+      "S44_ord17 on",
+      "S44_ord17 off",
+      "S44_ord43 on",
+      "S44_ord43 off",
+      "S44_ord44 on",
+      "S44_ord44 off"
+    ],
+    "contiguous_single_chain": true,
+    "resume_forbidden": true,
+    "fresh_scratch_per_arm": true
+  },
+  "box_lane_chain": {
+    "mode": "SERIAL",
+    "host": "local_rtx_4070_wsl",
+    "chain_id_prefix": "selector_support_consensus_v1_",
+    "creditdir": "/home/gabe/claw-code-creditdir/transient_fp_credit",
+    "chain_root_pattern": "{creditdir}/{chain_id}",
+    "run_layout": "{chain_root}/{label}/{on|off}/",
+    "analysis_layout": "{chain_root}/analysis/",
+    "chain_log": "{chain_root}/producer_science_chain.log",
+    "probe_results_jsonl": "{chain_root}/probe_results.jsonl",
+    "sequence": [
+      "prelaunch gates (argv_echo + local code-currency --skip-fetch ONLY + sub2 + optional pressure_shape)",
+      "6 GPU probes SERIAL with per-arm host_mem sampler + watch-wrap timeout",
+      "box_lane_artifact_transport LOCAL-ONLY (NO --sync; --chain-log required)",
+      "analyze_selector_support_invariance.py --consensus",
+      "box_lane_consensus_consumer_audit.py --consensus",
+      "box_lane_chain_watcher on producer_science_chain.log"
+    ],
+    "post_run_commands": {
+      "artifact_transport": {
+        "cmd": "PYTHONPATH=. python3 scripts/box_lane_artifact_transport.py --chain-id {chain_id} --chain-log {chain_root}/producer_science_chain.log --primary-label S44_ord44 --isolation-label S44_ord43 --corroboration-label S44_ord17",
+        "sync_forbidden": true,
+        "chain_log_required": true,
+        "capture_complete_fields": [
+          "code_currency_pass (from prelaunch/box_code_currency_preflight.json)",
+          "artifact_sha_verified (local producer_sha256 hash match)"
+        ],
+        "note": "Default transport path hashes local artifacts only; --sync is NOT used on local 4070 relaunch"
+      },
+      "analyzer": "PYTHONPATH=. python3 scripts/analyze_selector_support_invariance.py {chain_root} --consensus --primary-label S44_ord44 --isolation-label S44_ord43 --corroboration-label S44_ord17 --repo-head abb55357ce412dc30df5364cb488f4ea94ac5c49",
+      "consumer": "PYTHONPATH=. python3 scripts/box_lane_consensus_consumer_audit.py --chain-root {chain_root} --consensus --primary-label S44_ord44 --isolation-label S44_ord43 --corroboration-label S44_ord17 --transport-manifest {chain_root}/box_artifact_transport.json --chain-log {chain_root}/producer_science_chain.log",
+      "watcher": "PYTHONPATH=. python3 scripts/box_lane_chain_watcher.py {chain_root}/producer_science_chain.log --manifest {chain_root}/box_lane_overlap_manifest.json --waive",
+      "watcher_note": "--waive prevents set -e abort on expected SERIAL_FALLBACK; terminal receipt interprets serial_plumbing_proven separately from overlap pipeline_eligible"
+    },
+    "consumer_labels": {
+      "primary_label": "S44_ord44",
+      "isolation_label": "S44_ord43",
+      "corroboration_label": "S44_ord17"
+    }
+  },
+  "code_currency_mode": {
+    "choice": "local_hash_only_equivalent",
+    "rationale": "Chain executes on local 4070 WSL producer; box ssh/rsync not required for this relaunch",
+    "cmd": "PYTHONPATH=. python3 scripts/box_lane_code_currency_preflight.py --skip-fetch --chain-id {chain_id} --head-expected abb55357ce412dc30df5364cb488f4ea94ac5c49 --pinned-manifest {chain_root}/prelaunch/pinned_files_manifest.json --output {chain_root}/prelaunch/box_code_currency_preflight.json",
+    "sync_forbidden": true,
+    "v0_launcher_sync_sites_removed": [
+      "selector_support_consensus_v0_launch.sh:130 box_lane_code_currency_preflight.py --sync",
+      "selector_support_consensus_v0_launch.sh:237 box_lane_artifact_transport.py --sync"
+    ],
+    "proof_obligations": [
+      "git rev-parse HEAD == abb5535",
+      "all 31 manifest entries carry non-empty sha256",
+      "hash_pinned_files producer_matches_expected for all entries",
+      "check_pinned_paths_clean (no dirty pinned paths)",
+      "transport reads code_currency_pass from prelaunch receipt (Gap-1 @ ba0ecb0)",
+      "NEITHER preflight NOR transport invoke --sync on local relaunch"
+    ],
+    "box_sync": {
+      "required": false,
+      "forbidden_in_v1_relaunch": true,
+      "note": "Cross-host --sync deferred; local relaunch is producer-local hash + local artifact_sha_verified only"
+    },
+    "n_files": 31,
+    "legacy_n_files": 27,
+    "added_pins": [
+      "calm/hrm_text_158/native_full_stack/bounded_delta_accumulator.py",
+      "calm/hrm_text_158/native_full_stack/consensus_probe_result_writer.py",
+      "scripts/selector_support_consensus_v1_launch.sh",
+      "scripts/build_consensus_v1_chain_terminal_receipt.py"
+    ]
+  },
+  "pinned_files_manifest": {
+    "head_expected": "abb55357ce412dc30df5364cb488f4ea94ac5c49",
+    "head_short": "abb5535",
+    "n_files": 31,
+    "prelaunch_output_relpath": "prelaunch/pinned_files_manifest.json",
+    "sha_complete_assertion": {
+      "required_count": 31,
+      "rule": "every entry must carry sha256; missing sha256 disables pin_enforcement"
+    },
+    "files": [
+      {
+        "role": "probe_cli",
+        "rel_path": "scripts/probe_hrm_text_158.py",
+        "sha256": "ec2b801557fc28aab76fc065249ba6e3a43d51b840c2950e805c72ceaa5c3657"
+      },
+      {
+        "role": "acc_width_sweep",
+        "rel_path": "scripts/hrm_text_158_acc_width_recorded_row_sweep.py",
+        "sha256": "3db9e3b6eeef19f471817141108e735cb02616d3a3b70efa46d9479bc366b0c9"
+      },
+      {
+        "role": "selection_audit",
+        "rel_path": "scripts/hrm_text_158_transient_selection_information_audit.py",
+        "sha256": "02671891d2169707dd5a19222ddcc1de48604b9af870cf1234051894d34df784"
+      },
+      {
+        "role": "falsifier_battery",
+        "rel_path": "scripts/hrm_text_158_two_tier_carry_falsifier_battery.py",
+        "sha256": "f415a484fbedb9b375bddccad9018f0a54289152d5d7add33bec07dc05fe30bb"
+      },
+      {
+        "role": "credit_bridge",
+        "rel_path": "scripts/hrm_text_158_credit_bridge.py",
+        "sha256": "3846a0754083daa92e195a087bc53ec90ea2868d8685e1af714d9adf86b235ac"
+      },
+      {
+        "role": "parallel_watcher",
+        "rel_path": "scripts/parallel_audit_watcher.py",
+        "sha256": "09c6bdef273f01284111b0809d3dbf84660ff9de17635232fa65a589b87f123f"
+      },
+      {
+        "role": "science_harness",
+        "rel_path": "calm/hrm_text_158/native_full_stack/optimizer_update_law_science.py",
+        "sha256": "076308f2194f97a188c2196cedc69293f6524221b7ee9f9f1abe3d4eb90e9079"
+      },
+      {
+        "role": "selector_value_analysis",
+        "rel_path": "calm/hrm_text_158/native_full_stack/selector_value_analysis.py",
+        "sha256": "04cd1a7667e76cb4bea0790d265d48a8873c1e87fb052e5be57654eeccecfbb5"
+      },
+      {
+        "role": "selector_value_orchestrator",
+        "rel_path": "scripts/hrm_text_158_selector_value_analysis.py",
+        "sha256": "d2d2e6ee70595e655bd2bf133e79877223e5658a111397943fc48f04d61ad398"
+      },
+      {
+        "role": "bounded_delta_probe",
+        "rel_path": "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+        "sha256": "9531dfbd82fc51d3371141a400c5e94b9ead943ed08098ca97b469ff873d543d",
+        "pin_note": "B2 telemetry + Class B liveness @ 8a6143d lineage"
+      },
+      {
+        "role": "analyze_selector_support",
+        "rel_path": "scripts/analyze_selector_support_invariance.py",
+        "sha256": "2ffad27b19e64fe16c51b316cb8938614d8434619f72fe3be447f9fbfa3049dd"
+      },
+      {
+        "role": "pressure_shape_agreement",
+        "rel_path": "calm/hrm_text_158/native_full_stack/pressure_shape_agreement.py",
+        "sha256": "4a77e2674e0b75df835bf94c76f9d81f905f5ead394e991a78f4fac91db1f7be"
+      },
+      {
+        "role": "selector_support_invariance_analysis",
+        "rel_path": "calm/hrm_text_158/native_full_stack/selector_support_invariance_analysis.py",
+        "sha256": "3e228080689ad20dd7e67d4e12f5f21fcfb75bdf698ff35548a6c80121e626bf"
+      },
+      {
+        "role": "bounded_delta_learner",
+        "rel_path": "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+        "sha256": "6e2c0e1eba72477d5e7e7f5d0f9dc81797e0d10a440bda664e4987cdd523d369",
+        "pin_note": "phase-1 A+B+C @ abb5535"
+      },
+      {
+        "role": "grad_proxy_audit",
+        "rel_path": "calm/hrm_text_158/native_full_stack/grad_proxy_audit.py",
+        "sha256": "65c0ce09989d004c962d6d70c8b7a74d81e462e05bb6c6d274de1d81dbc8b8ff"
+      },
+      {
+        "role": "oracle_screen_runner",
+        "rel_path": "calm/hrm_text_158/native_full_stack/oracle_screen_runner.py",
+        "sha256": "af02ae39c6e04c87965341f9ed06888964da31a2cc63605792b2bcf3df57033d"
+      },
+      {
+        "role": "box_lane",
+        "rel_path": "calm/hrm_text_158/native_full_stack/box_lane.py",
+        "sha256": "1b612921a349d3c5a42f8a92ae982cef55bc00dd964622ed6d4a0c1b21755aa3"
+      },
+      {
+        "role": "box_lane_artifact_transport",
+        "rel_path": "scripts/box_lane_artifact_transport.py",
+        "sha256": "ec4688e59ffb33e40e4bfd7f4f9dd335aa5600626181a929878fbf995f5507f2",
+        "pin_note": "Gap-1 code_currency_pass @ ba0ecb0"
+      },
+      {
+        "role": "box_lane_consensus_consumer_audit",
+        "rel_path": "scripts/box_lane_consensus_consumer_audit.py",
+        "sha256": "6c51e142ea6f6a931286292dbb655a3e91a6a320c25c77973daa4e311e4b955e"
+      },
+      {
+        "role": "box_lane_code_currency_preflight",
+        "rel_path": "scripts/box_lane_code_currency_preflight.py",
+        "sha256": "e6cf2d186480243ed381cf7e209e65614ab7f01d1eefba9776de8f8f6ef55df3"
+      },
+      {
+        "role": "box_lane_chain_watcher",
+        "rel_path": "scripts/box_lane_chain_watcher.py",
+        "sha256": "fcd663016afe26b03ef90625aff96d902083cef387055f2b59605bbe9db56d6a"
+      },
+      {
+        "role": "train_hrm_text_158",
+        "rel_path": "scripts/train_hrm_text_158.py",
+        "sha256": "d8cf9ac9144ea5ac75663a3500b15f95e4fdd1cefbb8b62eae1715c6fcefdfae"
+      },
+      {
+        "role": "sub2_readiness_cli",
+        "rel_path": "scripts/hrm_text_158_full_sub2_runtime_readiness.py",
+        "sha256": "10799f14f9e32ebafd1dbc8fd08cdcb0d1f011fc132e6674dbe9d04f7372b3a7"
+      },
+      {
+        "role": "full_sub2_runtime_readiness",
+        "rel_path": "calm/hrm_text_158/native_full_stack/full_sub2_runtime_readiness.py",
+        "sha256": "fefa18d2ceeac78d7e5ad8a2aefc927ac0f9ab7497a9f86f7cd03f921dfb282a"
+      },
+      {
+        "role": "vote_update",
+        "rel_path": "calm/hrm_text_158/native_full_stack/vote_update.py",
+        "sha256": "28f5f4f6c5a2d2b313ec674555689ae6f8509c6c700800b2eca8196eefb703dd"
+      },
+      {
+        "role": "two_tier_transient_selection",
+        "rel_path": "calm/hrm_text_158/native_full_stack/two_tier_transient_selection.py",
+        "sha256": "c41da84a14727781ce500365833e319394a18e06da6f7c09143b87e4a5035dad"
+      },
+      {
+        "role": "two_tier_step_orchestrator",
+        "rel_path": "calm/hrm_text_158/native_full_stack/two_tier_step_orchestrator.py",
+        "sha256": "f7ea6240f4a33d3b4d83f8b0a79108f91070daf1db231334de468523f7d7001e"
+      },
+      {
+        "role": "bounded_delta_accumulator",
+        "rel_path": "calm/hrm_text_158/native_full_stack/bounded_delta_accumulator.py",
+        "sha256": "86c9cb83796bb38f61583894660806a2873e54b4f979856b090c17b756fa2771",
+        "pin_note": "phase-1 Site C @ abb5535"
+      },
+      {
+        "role": "consensus_probe_result_writer",
+        "rel_path": "calm/hrm_text_158/native_full_stack/consensus_probe_result_writer.py",
+        "sha256": "513d01e9c24804377184420a6170573ad64393ff57d4497a5ce9a58d64bd4ac2",
+        "pin_note": "B1 writer @ 8a6143d"
+      },
+      {
+        "role": "consensus_v1_launcher",
+        "rel_path": "scripts/selector_support_consensus_v1_launch.sh",
+        "sha256": "d28a94be7dcdc3a18c883d1057ac8f19a9f44ed23cfeb110003ea5fba813a4c1",
+        "pin_note": "v5 executing surface @ dual-PASS commit"
+      },
+      {
+        "role": "consensus_v1_terminal_receipt_builder",
+        "rel_path": "scripts/build_consensus_v1_chain_terminal_receipt.py",
+        "sha256": "537b0af670a3f6b870cee602864dfa6b46f009137635582d9d96e10131a21434",
+        "pin_note": "Site D classifier + tripwire i/ii/iii"
+      }
+    ]
+  },
+  "launch_env": {
+    "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH": "1",
+    "HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE": "1",
+    "receipt_proof": "prelaunch/launch_env_export.json + per-arm receipt fields"
+  },
+  "probe_argv_contract": {
+    "entrypoint": "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+    "shared_flags": [
+      "--allow-gpu-launch",
+      "--phase",
+      "c2p1-real-model-smoke",
+      "--emit-progress",
+      "--phase-heartbeat-seconds",
+      "30",
+      "--device",
+      "cuda",
+      "--parent",
+      "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+      "--parent-sha256",
+      "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec",
+      "--curriculum-seed",
+      "44",
+      "--eligible-scope",
+      "all-bitlinear",
+      "--steps",
+      "10",
+      "--batch-size",
+      "1",
+      "--global-cap-contract",
+      "c1_banked_faithful_long_run_global_cap"
+    ],
+    "on_only_flags": [
+      "--enable-bounded-delta-probe",
+      "--two-tier-carry-w6-enabled"
+    ],
+    "per_arm_variables": [
+      "--support-order-seed",
+      "--scratch-root"
+    ]
+  },
+  "b2_telemetry": {
+    "enabled": true,
+    "source": "scripts/hrm_text_158_bounded_delta_acquisition_probe.py on_tensor_export callback",
+    "events": [
+      "checkpoint_tensor_export_start",
+      "checkpoint_tensor_export_done",
+      "rss_sample (phase=checkpoint_payload)"
+    ],
+    "per_arm_outputs": {
+      "run_log": "{scratch}/run.log",
+      "receipt_json": "{scratch}/receipt.json",
+      "rss_curve_json": "{scratch}/b2_rss_curve.json"
+    },
+    "dedupe_key": [
+      "phase",
+      "event",
+      "tensor_index",
+      "tensor_key",
+      "elapsed_since_start_seconds"
+    ],
+    "forbidden_counting": "naive grep sum of coalesced PROG + raw stdout"
+  },
+  "host_mem_sampler": {
+    "method": "shell-side background subshell per arm; no probe source edit",
+    "interval_s": 5,
+    "source": "/proc/meminfo MemAvailable_kB",
+    "output": "{scratch}/host_mem_samples.jsonl",
+    "start": "immediately before watch-wrap probe launch",
+    "stop": "after probe exit; teardown required",
+    "receipt_fields": [
+      "host_mem_sampler_pid",
+      "host_mem_sampler_teardown_confirmed",
+      "host_mem_min_available_kib_during_export"
+    ],
+    "start_snippet_executable": "host_mem_sampler() { local out=\"$1\"; while true; do awk '/MemAvailable/ {print \"{\\\"ts\\\":\\\"\" strftime(\"%Y-%m-%dT%H:%M:%SZ\", systime(), 1) \"\\\",\\\"mem_available_kib\\\":\" $2 \"}\"}' /proc/meminfo >> \"$out\"; sleep 5; done; }; host_mem_sampler \"$SCRATCH/host_mem_samples.jsonl\" & SAMPLER_PID=$!; trap 'kill \"$SAMPLER_PID\" 2>/dev/null; wait \"$SAMPLER_PID\" 2>/dev/null; true' EXIT",
+    "teardown_snippet_executable": "kill \"$SAMPLER_PID\" 2>/dev/null; wait \"$SAMPLER_PID\" 2>/dev/null; test ! kill -0 \"$SAMPLER_PID\" 2>/dev/null"
+  },
+  "watch_wrap_and_timeout": {
+    "outer_command": "timeout 900s bin/watch-wrap --heartbeat 180 --coalesce 2.0 --progress '\"event\":\\s*\"(start|end|heartbeat)\"|checkpoint_tensor_export' --error 'Traceback|Error|OOM|Killed|assert|LIVENESS_FAILURE' -- python3 scripts/hrm_text_158_bounded_delta_acquisition_probe.py <argv>",
+    "per_arm_outer_wall_backstop_s": 900,
+    "intra_phase_heartbeat_s": 30,
+    "watch_wrap_heartbeat_s": 180,
+    "checkpoint_states_dump": "OFF"
+  },
+  "tripwire": {
+    "armed": true,
+    "trigger": "ANY arm dies during checkpoint_payload phase",
+    "detection": [
+      "probe exit_code != 0 OR missing receipt.json",
+      "run.log contains LIVENESS_FAILURE in checkpoint_payload window",
+      "unique export_start > unique export_done"
+    ],
+    "action": "STOP chain immediately; do NOT auto-continue remaining arms",
+    "classification_route": "B2 pins dying_tensor_key/index/region -> branch i/ii/iii per pre_registered_outcome_branches",
+    "opportunity": "deterministic pin vs prior blind v0 death",
+    "site_d_gate": "Site D slice only if branch implicates post-export canonical JSON memory-pressure"
+  },
+  "pre_registered_outcome_branches": {
+    "classifier": "terminal_outcome_v1_relaunch",
+    "evaluation_order": [
+      "death_tripwire_branches_i_ii_iii_first",
+      "success_paths_vi_vii_when_6_of_6_clean",
+      "partial_chain_v"
+    ],
+    "branches": [
+      {
+        "id": "i_tensor_pin",
+        "condition": "any arm dies during checkpoint_payload; unique export_start > unique export_done; last start without matching done",
+        "action": "tripwire STOP; B2 pin dying_tensor_key/index",
+        "route": "native fault site OR perf slice gated on pin",
+        "conflate_with_vii": false
+      },
+      {
+        "id": "ii_post_export_region",
+        "condition": "any arm dies after all 32 unique export_done; no receipt.json",
+        "action": "tripwire STOP; B2 pin post-export region",
+        "route": "B2-extension or Site D only if memory-pressure read confirms",
+        "conflate_with_vii": false
+      },
+      {
+        "id": "iii_b2_regression",
+        "condition": "any arm with zero unique checkpoint_tensor_export marks",
+        "action": "tripwire STOP; FAIL instrumentation regression",
+        "conflate_with_vii": false
+      },
+      {
+        "id": "vi_serial_plumbing_proven",
+        "condition": "6/6 probes exit 0 with receipt.json AND artifact_transport_pass AND consumer audit pass AND analyzer exit 0 AND watcher entry status in {SERIAL_FALLBACK, OVERLAP} with consumer_terminal_status=pass and code_currency_pass + artifact_sha_verified on capture_complete",
+        "interpretation": "SERIAL APPARATUS PROVEN \u2014 Gap-1 transport fail-closed + full transport->analyzer->consumer->watcher chain exercised on local 4070. Does NOT require overlap pipeline_eligible (producer_next_capture_start concurrency).",
+        "unblocks": "separate Gabe-gated consensus-verdict step (NOT claimed by this run)",
+        "does_not_claim": "consensus existence verdict, lane-close verdict, or overlap pipelining earned",
+        "requires_receipt_fields": [
+          "serial_plumbing_proven",
+          "watcher_entry_status",
+          "watcher_n_flagged",
+          "artifact_transport_pass",
+          "consumer_audit_pass",
+          "transport_log_path"
+        ],
+        "supersedes_v3_branch": "vi_apparatus_proven (overlap-only; structurally unreachable on local-serial)"
+      },
+      {
+        "id": "vi_overlap_apparatus_proven",
+        "condition": "box-sync path ONLY: watcher entry pipeline_eligible==true (consumer_audit_start_ts < producer_next_start_ts)",
+        "status": "deferred_not_in_v1_local_serial_relaunch",
+        "note": "Requires producer_next_capture_start log token and concurrent producer/consumer \u2014 NOT faked on local SERIAL chain"
+      },
+      {
+        "id": "vii_post_run_plumbing_fail",
+        "condition": "6/6 probes exit 0 with receipt.json AND (artifact_transport_pass==false OR consumer audit fail OR analyzer exit!=0 OR watcher entry INELIGIBLE/QUARANTINED)",
+        "interpretation": "TRANSPORT / ANALYZER / CONSUMER / WATCHER plumbing issue \u2014 NOT a checkpoint_payload death",
+        "forbidden_conflation": "do NOT classify as tripwire branches i/ii/iii",
+        "required_receipt_fields": [
+          "failed_post_run_stage",
+          "watcher_n_flagged",
+          "watcher_overlap_manifest_path",
+          "transport_log_path",
+          "consumer_terminal_status"
+        ],
+        "stage_classification_obligation": "receipt MUST name which post-run stage failed (transport | analyzer | consumer | watcher) and n_flagged reason tokens"
+      },
+      {
+        "id": "v_parent_hash_drift_block",
+        "condition": "parent_hash_before != parent_hash_after at 6/6 stop or tripwire stop",
+        "interpretation": "parent checkpoint mutated during chain \u2014 chain blocked; terminal receipt written before exit",
+        "required_receipt_fields": [
+          "parent_hash_unchanged",
+          "parent_hash_before",
+          "parent_hash_after",
+          "failed_post_run_stage"
+        ],
+        "launcher_path": "re-hash parent at stop -> write_terminal_receipt -> exit 2"
+      },
+      {
+        "id": "v_partial_chain_fail",
+        "condition": "tripwire STOP before 6/6 complete; one or more arms failed or missing receipt",
+        "interpretation": "partial chain; classify failing arm via i/ii/iii; do not evaluate vi/vii until full 6/6 would have completed"
+      }
+    ]
+  },
+  "pipeline_eligible_analysis": {
+    "question": "Does local SERIAL 6-arm relaunch require overlap pipeline_eligible to prove Gap-1 apparatus plumbing?",
+    "answer": "NO for serial plumbing proof; YES only for overlap pipelining proof",
+    "source_anchors": {
+      "classify_overlap": "calm/hrm_text_158/native_full_stack/box_lane.py:656-701",
+      "overlap_requires": "consumer_audit_start_ts < producer_next_start_ts (producer_next_capture_start log token)",
+      "serial_fallback": "status SERIAL_FALLBACK when consumer starts after producer work completes \u2014 expected on local SERIAL chain",
+      "s2_plan": "artifacts/consensus_prep/s2_box_lane_consumer_transport_plan_v1.json overlap_pipelining.first_real_chain=SERIAL recommended; do NOT claim OVERLAP on first chain"
+    },
+    "gap_1_plumbing_requires": [
+      "code_currency_pass propagated to capture_complete (transport reads preflight)",
+      "artifact_sha_verified on capture_complete",
+      "analyzer produces consensus summary",
+      "consumer audit pass on three S44_ord* labels",
+      "watcher manifest written with entry status + issues"
+    ],
+    "gap_1_does_not_require": [
+      "producer_next_capture_start log line",
+      "overlap pipeline_eligible==true",
+      "box --sync rsync"
+    ],
+    "design_choice": "local_serial_with_serial_plumbing_branch (option B); box-sync overlap path deferred (option A)"
+  },
+  "outcome_producibility_matrix": [
+    {
+      "branch": "i_tensor_pin",
+      "classifier": "tripwire: unique export_start > export_done by (tensor_index,tensor_key); parse run.log JSON + receipt phase_telemetry",
+      "receipt_fields": [
+        "dying_tensor_key",
+        "dying_tensor_index",
+        "tripwire_triggered",
+        "outcome_branch"
+      ],
+      "launcher_path": "run_probe classify_tripwire -> write_terminal_receipt(parent re-hash) -> exit 1"
+    },
+    {
+      "branch": "ii_post_export_region",
+      "classifier": "tripwire: 32/32 export_done then death without receipt.json",
+      "receipt_fields": [
+        "all_tensor_exports_done",
+        "tripwire_triggered"
+      ],
+      "launcher_path": "run_probe classify_tripwire -> write_terminal_receipt -> exit 1"
+    },
+    {
+      "branch": "iii_b2_regression",
+      "classifier": "tripwire: zero unique checkpoint_tensor_export marks",
+      "receipt_fields": [
+        "tripwire_triggered",
+        "outcome_branch"
+      ],
+      "launcher_path": "run_probe classify_tripwire -> write_terminal_receipt -> exit 1"
+    },
+    {
+      "branch": "vi_serial_plumbing_proven",
+      "classifier": "6/6 clean + transport_pass + consumer_pass + analyzer_rc==0 + watcher entry SERIAL_FALLBACK/OVERLAP with consumer_terminal pass",
+      "receipt_fields": [
+        "serial_plumbing_proven",
+        "watcher_entry_status",
+        "artifact_transport_pass",
+        "consumer_audit_pass"
+      ],
+      "launcher_path": "post-run stages (set +e capture rc) -> watcher --waive -> write_terminal_receipt always"
+    },
+    {
+      "branch": "vii_post_run_plumbing_fail",
+      "classifier": "6/6 clean but transport/analyzer/consumer/watcher INELIGIBLE failure",
+      "receipt_fields": [
+        "failed_post_run_stage",
+        "post_run_stage_rc",
+        "watcher_entry_issues"
+      ],
+      "launcher_path": "post-run stages capture rc -> write_terminal_receipt even on watcher nonzero (--waive)"
+    },
+    {
+      "branch": "v_parent_hash_drift_block",
+      "classifier": "parent re-hash at 6/6 stop != parent_hash_before",
+      "receipt_fields": [
+        "parent_hash_unchanged",
+        "failed_post_run_stage",
+        "outcome_branch"
+      ],
+      "launcher_path": "write_terminal_receipt(parent re-hash, failed_stage=parent_drift) -> exit 2"
+    },
+    {
+      "branch": "v_partial_chain_fail",
+      "classifier": "probe fail or tripwire before 6/6",
+      "receipt_fields": [
+        "parent_hash_after at stop (re-hashed)",
+        "all required terminal fields"
+      ],
+      "launcher_path": "run_probe fail path -> write_terminal_receipt(parent re-hash) -> exit 1"
+    }
+  ],
+  "real_rss_memory_pressure_read": {
+    "purpose": "Pre-registered Site D decision from real 6-export RSS (synthetic bench underrepresents ord44 peak ~7x)",
+    "measurement_window": "checkpoint_payload phase per arm",
+    "per_arm_required_metrics": [
+      "export_rss_peak_bytes",
+      "export_rss_peak_gib",
+      "export_rss_peak_decimal_gb",
+      "host_mem_min_available_kib_during_checkpoint_payload",
+      "host_mem_min_available_gib"
+    ],
+    "interpretation_rules": [
+      {
+        "id": "site_d_deferred",
+        "when": "clean arm(s) at ~5.1GB real export RSS (~5.0-5.6GB band) WHILE host MemAvailable stays high (A3b-class headroom; min MemAvailable not materially depressed during export)",
+        "conclusion": "memory-pressure is NOT the leading mechanism; Site D (_canonical_json) stays DEFERRED \u2014 not urgent",
+        "site_d_action": "defer"
+      },
+      {
+        "id": "site_d_justified",
+        "when": "any arm dies WITH export RSS spiking toward host limit OR MemAvailable dropping materially low during checkpoint_payload",
+        "conclusion": "memory-pressure CONFIRMED; Site D slice justified \u2014 earn Site D with THIS measurement, not synthetic bench",
+        "site_d_action": "open_separate_gated_site_d_plan"
+      },
+      {
+        "id": "site_d_undetermined",
+        "when": "per-arm export_rss_peak_bytes or host_mem_min_available_kib missing/ambiguous for the decision",
+        "conclusion": "Site D read inconclusive \u2014 manual review required",
+        "site_d_action": "manual_review"
+      }
+    ],
+    "baseline_reference": {
+      "a3_ord44_export_rss_peak_bytes": 5518536704,
+      "a3_ord44_export_rss_peak_gib": 5.14,
+      "a3b_host_mem_available_min_kib_approx": 13107200,
+      "a3b_host_mem_available_min_gib_approx": 12.5,
+      "synthetic_all_bitlinear_export_rss_peak_bytes": 707371008,
+      "synthetic_underrepresents_factor_vs_a3": 7.8,
+      "note": "this relaunch finally measures real per-arm export RSS on all 6 arms; Site D question must be answered in terminal receipt, not left open"
+    },
+    "terminal_receipt_binding": [
+      "memory_pressure_read_id",
+      "site_d_action",
+      "site_d_deciding_metrics",
+      "per_arm_export_rss_peak_bytes",
+      "per_arm_host_mem_min_available_kib_during_checkpoint_payload"
+    ]
+  },
+  "terminal_receipt": {
+    "schema": "hrm_text_158_consensus_v1_chain_relaunch_receipt/v1",
+    "sink": [
+      "claude",
+      "codex_co_lead"
+    ],
+    "required_fields": [
+      "chain_id",
+      "repo_head_sha",
+      "parent_hash_before",
+      "parent_hash_after",
+      "parent_hash_unchanged",
+      "launch_env_exported",
+      "code_currency_pass",
+      "per_arm_rows",
+      "all_arms_pass",
+      "tripwire_triggered",
+      "outcome_branch",
+      "memory_pressure_read_id",
+      "site_d_action",
+      "site_d_deciding_metrics",
+      "failed_post_run_stage",
+      "transport_log_path",
+      "transport_sync_requested",
+      "artifact_transport_pass",
+      "serial_plumbing_proven",
+      "watcher_entry_status",
+      "watcher_entry_issues",
+      "watcher_waived",
+      "consumer_audit_pass",
+      "analyzer_exit_code",
+      "post_run_stage_rc",
+      "draft_under_hold_disposition"
+    ],
+    "per_arm_row_fields": [
+      "probe_num",
+      "label",
+      "arm",
+      "scratch_root",
+      "exit_code",
+      "wall_s",
+      "receipt_emitted",
+      "tensor_export_start_count_unique",
+      "tensor_export_done_count_unique",
+      "rss_peak_bytes",
+      "rss_peak_gib",
+      "rss_peak_decimal_gb",
+      "rss_peak_at_tensor_key",
+      "rss_curve_path",
+      "host_mem_min_available_kib_during_checkpoint_payload",
+      "host_mem_min_available_gib_during_checkpoint_payload",
+      "host_mem_min_available_kib_during_export",
+      "host_mem_sampler_pid",
+      "host_mem_sampler_teardown_confirmed",
+      "dying_tensor_key",
+      "dying_tensor_index",
+      "outcome_branch"
+    ],
+    "watcher_fields": [
+      "watcher_entry_status",
+      "watcher_pipeline_eligible_per_entry",
+      "watcher_n_flagged",
+      "watcher_waived",
+      "watcher_overlap_manifest_path",
+      "failed_post_run_stage"
+    ],
+    "build_method": "shell/python post-chain aggregator over probe_results.jsonl + per-arm artifacts + watcher manifest"
+  },
+  "baseline_comparison": {
+    "v0_incident": {
+      "chain_id": "selector_support_consensus_v0_20260614T075253Z",
+      "failure": "S44_ord44/on silent death in checkpoint_payload",
+      "b2_available": false
+    },
+    "a3_clean": {
+      "chain_id": "selector_support_consensus_a3_ord44_20260614T091837Z",
+      "outcome": "iv_clean_complete_anomaly",
+      "rss_peak_bytes": 5518536704,
+      "export_loop_wall_s": 130.09
+    },
+    "a3b_repeat": {
+      "chain_id": "selector_support_consensus_a3b_ord44_20260614T094119Z",
+      "outcome": "v_non_reproducible_after_b2",
+      "note": "2/2 clean under B2; route to phase-1 then v1 relaunch"
+    }
+  },
+  "prelaunch_gates": [
+    {
+      "id": "argv_echo",
+      "output": "prelaunch/argv_echo.json",
+      "pass": "6 probe argv entries written; matches probe_argv_contract"
+    },
+    {
+      "id": "pinned_manifest_sha_complete",
+      "output": "prelaunch/pinned_files_manifest.json",
+      "pass": "all 31 entries include sha256; n_sha_complete==31"
+    },
+    {
+      "id": "code_currency_local",
+      "cmd": "PYTHONPATH=. python3 scripts/box_lane_code_currency_preflight.py --skip-fetch --chain-id {chain_id} --head-expected abb55357ce412dc30df5364cb488f4ea94ac5c49 --pinned-manifest {chain_root}/prelaunch/pinned_files_manifest.json --output {chain_root}/prelaunch/box_code_currency_preflight.json",
+      "sync_forbidden": true,
+      "pass": "code_currency_pass==true; all pinned files producer_matches_expected; zero dirty pinned paths"
+    },
+    {
+      "id": "sub2_readiness",
+      "cmd": "PYTHONPATH=. python3 scripts/hrm_text_158_full_sub2_runtime_readiness.py --fixture pre_full_stack_diagnostic --json-out {chain_root}/prelaunch/sub2_readiness_receipt.json",
+      "pass": "ready_for_pre_full_stack_diagnostic==true; ready_for_main_science==false"
+    },
+    {
+      "id": "pressure_shape_summary",
+      "optional": true,
+      "non_gating": true,
+      "output": "prelaunch/pressure_shape_summary_preflight.json",
+      "pass": "when v1_plumbing_smoke.json source present: verify_pressure_shape_summary_preflight pass==true; when absent: skip (no silent fail-closed)",
+      "note": "optional smoke fixture; absence does not block launch"
+    }
+  ],
+  "cross_boundary_consistency": {
+    "issue": "v2 declared local_hash_only_equivalent but retained v0 --sync at preflight+transport",
+    "resolution_v3": "All --sync references removed from chain sequence, prelaunch gates, and v1 launcher surface; transport uses local hash + --chain-log capture_complete only",
+    "verified_against_source": [
+      "scripts/box_lane_artifact_transport.py default sync_requested=false; --chain-log writes capture_complete with code_currency_pass + artifact_sha_verified",
+      "scripts/box_lane_code_currency_preflight.py --skip-fetch hash-only without --sync"
+    ]
+  },
+  "launcher_note": {
+    "status": "concrete_executable_surface_at_plus_one_launch_gate",
+    "revision": "v5_site_d_classifier_parent_drift_receipt",
+    "v1_path": "scripts/selector_support_consensus_v1_launch.sh",
+    "basis": "scripts/selector_support_consensus_v0_launch.sh (with sync sites REMOVED)",
+    "head_expected": "abb55357ce412dc30df5364cb488f4ea94ac5c49",
+    "packet_sha_pin_at_launch": "sha256sum of this plan artifact file; recorded in launch receipt (not embedded \u2014 avoids self-hash loop)",
+    "forbidden_in_v1_launcher": [
+      "box_lane_code_currency_preflight.py --sync",
+      "box_lane_artifact_transport.py --sync"
+    ],
+    "required_preflight_cmd": "PYTHONPATH=. python3 scripts/box_lane_code_currency_preflight.py --skip-fetch --chain-id \"$CHAIN_ID\" --head-expected abb55357ce412dc30df5364cb488f4ea94ac5c49 --pinned-manifest \"$CHAIN_ROOT/prelaunch/pinned_files_manifest.json\" --output \"$CHAIN_ROOT/prelaunch/box_code_currency_preflight.json\"",
+    "required_transport_cmd": "PYTHONPATH=. python3 scripts/box_lane_artifact_transport.py --chain-id \"$CHAIN_ID\" --chain-log \"$CHAIN_ROOT/producer_science_chain.log\" --primary-label S44_ord44 --isolation-label S44_ord43 --corroboration-label S44_ord17",
+    "required_updates_at_launch_gate": [
+      "HEAD_EXPECTED=abb5535; PACKET_SHA pinned to v5 plan artifact",
+      "chain_id_prefix selector_support_consensus_v1_",
+      "per-arm host_mem_sampler start/teardown",
+      "B2 rss_curve extraction into per-arm receipt row",
+      "tripwire STOP on checkpoint_payload death (no auto-continue)",
+      "deduped export count builder",
+      "parent sha256 before/after around full chain; receipt on parent drift before exit",
+      "NO --sync on code_currency preflight or artifact transport",
+      "+1 commit gate: pin launcher + receipt builder in manifest (repinned to 31 at dual-PASS commit)"
+    ]
+  },
+  "explicitly_not": [
+    "launch",
+    "push",
+    "commit",
+    "Site D _canonical_json slice",
+    "parity_check=False",
+    "6-arm verdict-scale science",
+    "binary checkpoint-states-dump",
+    "resumed/partial chain"
+  ],
+  "forbidden_at_plan_gate": [
+    "gpu_launch",
+    "push",
+    "verdict_interpretation"
+  ]
+}
