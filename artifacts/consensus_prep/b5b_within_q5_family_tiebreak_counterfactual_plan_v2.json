@@ -1,0 +1,117 @@
+{
+  "schema_version": "hrm_text_158_b5b_within_q5_family_tiebreak_counterfactual_plan/v2",
+  "status": "draft_plan_v2_revised",
+  "task_id": "1781446069451-a3af6105",
+  "supersedes": "1781446293472-63083cbd (v1 plan post)",
+  "slice_id": "B5b_within_q5_family_bucket_tiebreak_counterfactual_v0",
+  "framing": "CPU-only counterfactual replay targeting receipt-family-bucket tiebreak collapse; NOT bit-width step 1; NOT consensus verdict; NOT GPU dynamics",
+  "single_variable": {
+    "name": "within_receipt_family_bucket_tiebreak_key",
+    "fixed": {
+      "family_bucket": "F_taylor_benefit_q5 (ACTIVATION_CREDIT_PRIMARY_FAMILY_ID / taylor_benefit_q5_field)",
+      "uses_raw_continuous_inside_bucket": false
+    },
+    "variants": [
+      {
+        "id": "status_quo",
+        "key": "current_rank_position",
+        "role": "baseline",
+        "persistent_bits": "inherits receipt-family q5 bucket (~2.32 bits)"
+      },
+      {
+        "id": "ternary_eligibility_ordinal",
+        "key": "signed_neg_grad_proxy_times_candidate_delta_weight quantized to level-3 ordinal WITHIN oracle q5 bucket (per-seed calibrated thresholds)",
+        "role": "sub2_primary_candidate",
+        "persistent_bits": "log2(3) ~ 1.585 (< 2 bits) — sub-2-relevant resolution"
+      },
+      {
+        "id": "q5_eligibility_ordinal",
+        "key": "signed_neg_grad_proxy_times_candidate_delta_weight quantized to level-5 ordinal WITHIN oracle q5 bucket",
+        "role": "diagnostic_intermediate_only",
+        "persistent_bits": "log2(5) ~ 2.32 (> 2 bits) — NOT a sub-2 win bar"
+      },
+      {
+        "id": "raw_eligibility_fp",
+        "key": "signed_neg_grad_proxy_times_candidate_delta_weight raw continuous",
+        "role": "label_leak_upper_bound_diagnostic_only",
+        "persistent_bits": "FP — NOT sub-2; decision_authority_allowed=False for success"
+      }
+    ]
+  },
+  "grounding_anchors": {
+    "b5_collapse_label": "receipt_family_bucket_tiebreak_loss (activation_credit_ceiling_audit.py:1557)",
+    "family_auc_anchors": "KNOWN_BRANCH4_RECEIPT_FAMILY_AUC_EXPECTATIONS ~0.581/0.617",
+    "tiebreak_site": "oracle_screen_runner.py:1783-1794 position_by_id sorted by current_rank_position",
+    "primary_invariant": "uses_raw_continuous_inside_bucket=False (activation_credit_ceiling_audit.py:784)",
+    "ternary_shortlist_branch": "ternary_sub2_ordinal_shortlist_success_needs_tiebreak (activation_credit_ceiling_audit.py:78-80,707-710)",
+    "readiness": "full_sub2_runtime_readiness.py ready_for_main_science=False (8 blockers); GPU blocked"
+  },
+  "branch_classifier": {
+    "priority_order": [
+      "BRANCH_HARNESS_OR_INPUT_FAIL",
+      "BRANCH_TIEBREAK_BASELINE_REPRO",
+      "BRANCH_CALIBRATION_FAILURE",
+      "BRANCH_TERNARY_TIEBREAK_RECOVERS",
+      "BRANCH_Q5_ONLY_RECOVERS",
+      "BRANCH_RAW_ONLY_RECOVERS",
+      "BRANCH_ORDINAL_ONLY_NO_INTRA_RANK",
+      "BRANCH_TIEBREAK_STILL_COLLAPSES"
+    ],
+    "definitions": {
+      "BRANCH_HARNESS_OR_INPUT_FAIL": "receipt row validation / required fields fail before metrics",
+      "BRANCH_TIEBREAK_BASELINE_REPRO": "status_quo current_rank_position reproduces ~0.58/0.62 family AUC anchors on seed43+seed29",
+      "BRANCH_CALIBRATION_FAILURE": "online vs seed43-OOS calibration diverges on within-bucket eligibility thresholds",
+      "BRANCH_TERNARY_TIEBREAK_RECOVERS": "level-3 quantized eligibility ordinal tiebreak recovers receipt_family_compressed_auc on BOTH seeds above PRIMARY_RECEIPT_FAMILY_AUC_MAX=0.75 WITHOUT raw-continuous inside bucket — THE sub-2 win",
+      "BRANCH_Q5_ONLY_RECOVERS": "level-5 eligibility ordinal recovers family AUC but level-3 ternary does NOT — diagnostic >2-bit, NOT sub-2 success",
+      "BRANCH_RAW_ONLY_RECOVERS": "only raw FP eligibility scalar recovers — label-leak upper bound (AUC~0.995); explicitly NOT a win; tag like B5 leak",
+      "BRANCH_ORDINAL_ONLY_NO_INTRA_RANK": "pure oracle-bucket membership (no intra-bucket rank) recovers — tiebreak-only fault confirmed",
+      "BRANCH_TIEBREAK_STILL_COLLAPSES": "neither ternary nor q5 eligibility ordinal recovers family AUC materially — reopen bucket/encoder design"
+    }
+  },
+  "success_bar": {
+    "sub2_win": "BRANCH_TERNARY_TIEBREAK_RECOVERS only",
+    "requires": [
+      "both_seeds receipt_family_compressed_auc > PRIMARY_RECEIPT_FAMILY_AUC_MAX (0.75)",
+      "uses_raw_continuous_inside_bucket=false asserted in counterfactual output",
+      "tiebreak driven by level-3 eligibility ordinal within fixed q5 family bucket",
+      "no label-leak scalar as decision authority"
+    ],
+    "explicit_non_wins": [
+      "q5-only recovery (BRANCH_Q5_ONLY_RECOVERS) = diagnostic intermediate",
+      "raw-only recovery (BRANCH_RAW_ONLY_RECOVERS) = label-leak diagnostic"
+    ]
+  },
+  "measurement": {
+    "mode": "CPU replay of existing seed43+seed29 ceiling receipt rows",
+    "mutation": "counterfactual position_by_id recompute only — no receipt/trainer/GPU mutation",
+    "metrics": [
+      "receipt_family_compressed_auc per seed",
+      "q5_ordinal_to_receipt_family_loss",
+      "oracle_best_bucket_regret_capture_ratio",
+      "within_bucket_eligibility_ordinal_level (3 vs 5 vs raw)"
+    ],
+    "cheapest_proof": "replay KNOWN_BRANCH4 receipt fixtures; re-sort position_by_id with registered tiebreak keys; emit branch classifier JSON"
+  },
+  "implement_scope_preview": {
+    "files": [
+      "calm/hrm_text_158/native_full_stack/oracle_screen_runner.py",
+      "calm/hrm_text_158/native_full_stack/activation_credit_ceiling_audit.py",
+      "calm/llm_computer/tests/test_b5b_within_q5_family_tiebreak_counterfactual.py"
+    ],
+    "pattern": "parameterize _activation_credit_family_metrics rank key; add _b5b_tiebreak_counterfactual_replay + branch emitter; reuse _ordinal_bin/_ordinal_thresholds_from_scores for within-bucket eligibility at levels 3 and 5"
+  },
+  "invariants": [
+    "single-variable (tiebreak key + ordinal level)",
+    "classify-before-build",
+    "no-unregistered-rescue",
+    "no int16-to-narrower bit-width as step 1",
+    "no GPU / trainer wiring / receipt mutation in this slice"
+  ],
+  "gate_sequence": [
+    "dual plan review PASS on v2",
+    "+1 implement (CPU hook + branch classifier + pytest)",
+    "dual impl review",
+    "+1 commit (scoped)",
+    "optional: GPU dynamics only after readiness checker clears + separate launch gate"
+  ]
+}

@@ -20,7 +20,13 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     ACTIVATION_CREDIT_TOPOLOGY_CONTROL_FAMILY_ID,
 )
 from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
+    ACTIVATION_CREDIT_TIEBREAK_KEY_CURRENT_RANK,
+    ACTIVATION_CREDIT_TIEBREAK_KEY_ORDINAL_ONLY_NO_INTRA_RANK,
+    ACTIVATION_CREDIT_TIEBREAK_KEY_Q5_ELIGIBILITY_ORDINAL,
+    ACTIVATION_CREDIT_TIEBREAK_KEY_RAW_ELIGIBILITY_FP,
+    ACTIVATION_CREDIT_TIEBREAK_KEY_TERNARY_ELIGIBILITY_ORDINAL,
     ORACLE_SCREEN_IMPROVEMENT_EPS,
+    activation_credit_family_metrics_with_tiebreak,
 )
 
 
@@ -255,6 +261,37 @@ KNOWN_BRANCH4_RECEIPT_FAMILY_AUC_EXPECTATIONS = {
     SEED43_LABEL: 0.5812807881773399,
     SEED29_LABEL: 0.6172839506172839,
 }
+
+B5B_COUNTERFACTUAL_SCHEMA_VERSION = (
+    "hrm_text_158_b5b_within_q5_family_tiebreak_counterfactual/v0"
+)
+B5B_TASK_ID = "1781446069451-a3af6105"
+B5B_BRANCH_HARNESS_OR_INPUT_FAIL = "BRANCH_HARNESS_OR_INPUT_FAIL"
+B5B_BRANCH_TIEBREAK_BASELINE_REPRO = "BRANCH_TIEBREAK_BASELINE_REPRO"
+B5B_BRANCH_CALIBRATION_FAILURE = "BRANCH_CALIBRATION_FAILURE"
+B5B_BRANCH_TERNARY_TIEBREAK_RECOVERS = "BRANCH_TERNARY_TIEBREAK_RECOVERS"
+B5B_BRANCH_Q5_ONLY_RECOVERS = "BRANCH_Q5_ONLY_RECOVERS"
+B5B_BRANCH_RAW_ONLY_RECOVERS = "BRANCH_RAW_ONLY_RECOVERS"
+B5B_BRANCH_ORDINAL_ONLY_NO_INTRA_RANK = "BRANCH_ORDINAL_ONLY_NO_INTRA_RANK"
+B5B_BRANCH_TIEBREAK_STILL_COLLAPSES = "BRANCH_TIEBREAK_STILL_COLLAPSES"
+B5B_BRANCH_PRIORITY = (
+    B5B_BRANCH_HARNESS_OR_INPUT_FAIL,
+    B5B_BRANCH_TIEBREAK_BASELINE_REPRO,
+    B5B_BRANCH_CALIBRATION_FAILURE,
+    B5B_BRANCH_TERNARY_TIEBREAK_RECOVERS,
+    B5B_BRANCH_Q5_ONLY_RECOVERS,
+    B5B_BRANCH_RAW_ONLY_RECOVERS,
+    B5B_BRANCH_ORDINAL_ONLY_NO_INTRA_RANK,
+    B5B_BRANCH_TIEBREAK_STILL_COLLAPSES,
+)
+B5B_TIEBREAK_VARIANT_IDS = (
+    ACTIVATION_CREDIT_TIEBREAK_KEY_CURRENT_RANK,
+    ACTIVATION_CREDIT_TIEBREAK_KEY_TERNARY_ELIGIBILITY_ORDINAL,
+    ACTIVATION_CREDIT_TIEBREAK_KEY_Q5_ELIGIBILITY_ORDINAL,
+    ACTIVATION_CREDIT_TIEBREAK_KEY_RAW_ELIGIBILITY_FP,
+    ACTIVATION_CREDIT_TIEBREAK_KEY_ORDINAL_ONLY_NO_INTRA_RANK,
+)
+B5B_ELIGIBILITY_SCALAR_ID = "signed_neg_grad_proxy_times_candidate_delta_weight"
 
 
 def _json_load(path: Path) -> dict[str, Any]:
@@ -1820,9 +1857,407 @@ def build_activation_credit_ceiling_audit(
     }
 
 
+def _b5b_primary_family_bucket_rows(
+    rows: Sequence[Mapping[str, Any]],
+) -> tuple[Mapping[str, Any], list[dict[str, Any]]]:
+    oracle_best = _oracle_best_row(rows)
+    groups: dict[tuple[int, ...], list[dict[str, Any]]] = {}
+    for row in rows:
+        key = (int(row[ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD]),)
+        groups.setdefault(key, []).append(dict(row))
+    oracle_key = (int(oracle_best[ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD]),)
+    return oracle_best, list(groups.get(oracle_key, []))
+
+
+def _b5b_intra_bucket_tiebreak_key_fn(
+    oracle_bucket_rows: Sequence[Mapping[str, Any]],
+    *,
+    tiebreak_rank_key_id: str,
+    eligibility_direction: int,
+) -> Callable[[Mapping[str, Any]], tuple[Any, ...]]:
+    if tiebreak_rank_key_id == ACTIVATION_CREDIT_TIEBREAK_KEY_CURRENT_RANK:
+        return lambda candidate: (int(candidate["current_rank_position"]),)
+    spec = _scalar_spec_by_id(B5B_ELIGIBILITY_SCALAR_ID)
+    scores_by_id = {
+        str(row["candidate_id"]): float(eligibility_direction) * float(spec.compute(row))
+        for row in oracle_bucket_rows
+    }
+    if tiebreak_rank_key_id == ACTIVATION_CREDIT_TIEBREAK_KEY_ORDINAL_ONLY_NO_INTRA_RANK:
+        return lambda candidate: (0,)
+    if tiebreak_rank_key_id == ACTIVATION_CREDIT_TIEBREAK_KEY_RAW_ELIGIBILITY_FP:
+        return lambda candidate: (-scores_by_id[str(candidate["candidate_id"])],)
+    level = (
+        3
+        if tiebreak_rank_key_id == ACTIVATION_CREDIT_TIEBREAK_KEY_TERNARY_ELIGIBILITY_ORDINAL
+        else 5
+    )
+    thresholds = _ordinal_thresholds_from_scores(
+        tuple(scores_by_id.values()),
+        levels=level,
+    )
+    ordinals_by_id = {
+        candidate_id: _ordinal_bin(score, thresholds=thresholds, levels=level)
+        for candidate_id, score in scores_by_id.items()
+    }
+    return lambda candidate: (-int(ordinals_by_id[str(candidate["candidate_id"])]),)
+
+
+def _b5b_counterfactual_family_auc(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    tiebreak_rank_key_id: str,
+    eligibility_direction: int,
+) -> float:
+    oracle_best, oracle_bucket = _b5b_primary_family_bucket_rows(rows)
+    oracle_top1_delta = float(oracle_best["local_loss_delta"])
+    key_fn = None
+    if tiebreak_rank_key_id != ACTIVATION_CREDIT_TIEBREAK_KEY_CURRENT_RANK:
+        key_fn = _b5b_intra_bucket_tiebreak_key_fn(
+            oracle_bucket,
+            tiebreak_rank_key_id=tiebreak_rank_key_id,
+            eligibility_direction=eligibility_direction,
+        )
+    metrics = activation_credit_family_metrics_with_tiebreak(
+        target_band_candidates=tuple(rows),
+        family_id=ACTIVATION_CREDIT_PRIMARY_FAMILY_ID,
+        oracle_best_candidate=oracle_best,
+        oracle_top1_delta=oracle_top1_delta,
+        intra_bucket_tiebreak_key_fn=key_fn,
+    )
+    return float(metrics["within_band_pairwise_auc_report_only"])
+
+
+def _b5b_family_auc_recovers(aucs_by_seed: Mapping[str, float]) -> bool:
+    return bool(
+        float(aucs_by_seed[SEED43_LABEL]) > PRIMARY_RECEIPT_FAMILY_AUC_MAX
+        and float(aucs_by_seed[SEED29_LABEL]) > PRIMARY_RECEIPT_FAMILY_AUC_MAX
+    )
+
+
+def _b5b_baseline_anchor_reproduced(aucs_by_seed: Mapping[str, float]) -> bool:
+    return bool(
+        _approx_equal(
+            float(aucs_by_seed[SEED43_LABEL]),
+            KNOWN_BRANCH4_RECEIPT_FAMILY_AUC_EXPECTATIONS[SEED43_LABEL],
+            tol=KNOWN_BRANCH4_AUC_TOLERANCE,
+        )
+        and _approx_equal(
+            float(aucs_by_seed[SEED29_LABEL]),
+            KNOWN_BRANCH4_RECEIPT_FAMILY_AUC_EXPECTATIONS[SEED29_LABEL],
+            tol=KNOWN_BRANCH4_AUC_TOLERANCE,
+        )
+    )
+
+
+def _b5b_within_bucket_eligibility_calibration_failure(
+    seed43_rows: Sequence[Mapping[str, Any]],
+    seed29_rows: Sequence[Mapping[str, Any]],
+    *,
+    eligibility_direction: int,
+) -> bool:
+    spec = _scalar_spec_by_id(B5B_ELIGIBILITY_SCALAR_ID)
+    _, seed43_bucket = _b5b_primary_family_bucket_rows(seed43_rows)
+    oracle29, seed29_bucket = _b5b_primary_family_bucket_rows(seed29_rows)
+    if not seed43_bucket or not seed29_bucket:
+        return True
+    level = 3
+    seed43_scores = [
+        float(eligibility_direction) * float(spec.compute(row))
+        for row in seed43_bucket
+    ]
+    seed29_scores = [
+        float(eligibility_direction) * float(spec.compute(row))
+        for row in seed29_bucket
+    ]
+    seed43_thresholds = _ordinal_thresholds_from_scores(seed43_scores, levels=level)
+    seed29_online_thresholds = _ordinal_thresholds_from_scores(
+        seed29_scores,
+        levels=level,
+    )
+    oracle_id = str(oracle29["candidate_id"])
+
+    def _seed29_ordinal_flags(
+        thresholds: Sequence[float],
+    ) -> dict[str, bool]:
+        ordinals = [
+            _ordinal_bin(score, thresholds=thresholds, levels=level)
+            for score in seed29_scores
+        ]
+        max_ordinal = max(ordinals)
+        top_rows = [
+            row
+            for row, ordinal in zip(seed29_bucket, ordinals, strict=True)
+            if int(ordinal) == int(max_ordinal)
+        ]
+        return {
+            "unique_ordinal_top1": bool(
+                len(top_rows) == 1 and str(top_rows[0]["candidate_id"]) == oracle_id
+            ),
+            "top_bucket_contains_oracle": bool(
+                any(str(row["candidate_id"]) == oracle_id for row in top_rows)
+            ),
+        }
+
+    online = _seed29_ordinal_flags(seed29_online_thresholds)
+    oos = _seed29_ordinal_flags(seed43_thresholds)
+    if bool(online["unique_ordinal_top1"]) and not bool(oos["unique_ordinal_top1"]):
+        return True
+    if bool(online["top_bucket_contains_oracle"]) and not bool(
+        oos["top_bucket_contains_oracle"]
+    ):
+        return True
+    return False
+
+
+def _b5b_variant_metadata(tiebreak_rank_key_id: str) -> dict[str, Any]:
+    uses_raw = tiebreak_rank_key_id == ACTIVATION_CREDIT_TIEBREAK_KEY_RAW_ELIGIBILITY_FP
+    if tiebreak_rank_key_id == ACTIVATION_CREDIT_TIEBREAK_KEY_TERNARY_ELIGIBILITY_ORDINAL:
+        role = "sub2_primary_candidate"
+        persistent_bits = float(math.log2(3))
+    elif tiebreak_rank_key_id == ACTIVATION_CREDIT_TIEBREAK_KEY_Q5_ELIGIBILITY_ORDINAL:
+        role = "diagnostic_intermediate_only"
+        persistent_bits = float(math.log2(5))
+    elif tiebreak_rank_key_id == ACTIVATION_CREDIT_TIEBREAK_KEY_RAW_ELIGIBILITY_FP:
+        role = "label_leak_upper_bound_diagnostic_only"
+        persistent_bits = None
+    elif tiebreak_rank_key_id == ACTIVATION_CREDIT_TIEBREAK_KEY_ORDINAL_ONLY_NO_INTRA_RANK:
+        role = "ordinal_membership_diagnostic"
+        persistent_bits = None
+    else:
+        role = "baseline"
+        persistent_bits = float(math.log2(5))
+    return {
+        "tiebreak_rank_key_id": tiebreak_rank_key_id,
+        "role": role,
+        "uses_raw_continuous_inside_bucket": bool(uses_raw),
+        "decision_authority_allowed": False if uses_raw else None,
+        "persistent_bits": persistent_bits,
+    }
+
+
+def _b5b_emit_branch_classifier(
+    *,
+    harness_ok: bool,
+    baseline_reproduced: bool,
+    calibration_failure: bool,
+    ternary_recovers: bool,
+    q5_recovers: bool,
+    raw_recovers: bool,
+    ordinal_only_recovers: bool,
+) -> dict[str, Any]:
+    applicable: list[str] = []
+    if not harness_ok:
+        applicable.append(B5B_BRANCH_HARNESS_OR_INPUT_FAIL)
+    if baseline_reproduced:
+        applicable.append(B5B_BRANCH_TIEBREAK_BASELINE_REPRO)
+    if calibration_failure:
+        applicable.append(B5B_BRANCH_CALIBRATION_FAILURE)
+    if ternary_recovers:
+        applicable.append(B5B_BRANCH_TERNARY_TIEBREAK_RECOVERS)
+    elif q5_recovers:
+        applicable.append(B5B_BRANCH_Q5_ONLY_RECOVERS)
+    elif raw_recovers:
+        applicable.append(B5B_BRANCH_RAW_ONLY_RECOVERS)
+    elif ordinal_only_recovers:
+        applicable.append(B5B_BRANCH_ORDINAL_ONLY_NO_INTRA_RANK)
+    elif harness_ok and baseline_reproduced:
+        applicable.append(B5B_BRANCH_TIEBREAK_STILL_COLLAPSES)
+    science_priority = (
+        B5B_BRANCH_HARNESS_OR_INPUT_FAIL,
+        B5B_BRANCH_CALIBRATION_FAILURE,
+        B5B_BRANCH_TERNARY_TIEBREAK_RECOVERS,
+        B5B_BRANCH_Q5_ONLY_RECOVERS,
+        B5B_BRANCH_RAW_ONLY_RECOVERS,
+        B5B_BRANCH_ORDINAL_ONLY_NO_INTRA_RANK,
+        B5B_BRANCH_TIEBREAK_STILL_COLLAPSES,
+        B5B_BRANCH_TIEBREAK_BASELINE_REPRO,
+    )
+    primary_branch = next(
+        branch for branch in science_priority if branch in applicable
+    )
+    return {
+        "priority_order": list(B5B_BRANCH_PRIORITY),
+        "all_applicable_branches": applicable,
+        "primary_branch": primary_branch,
+        "sub2_win_branch": B5B_BRANCH_TERNARY_TIEBREAK_RECOVERS,
+        "sub2_win": bool(primary_branch == B5B_BRANCH_TERNARY_TIEBREAK_RECOVERS),
+        "explicit_non_win_branches": [
+            B5B_BRANCH_Q5_ONLY_RECOVERS,
+            B5B_BRANCH_RAW_ONLY_RECOVERS,
+        ],
+    }
+
+
+def run_b5b_within_q5_family_tiebreak_counterfactual(
+    *,
+    seed43_receipt_path: str | Path,
+    seed29_receipt_path: str | Path,
+) -> dict[str, Any]:
+    harness_error: str | None = None
+    seed43_receipt: LoadedCeilingAuditReceipt | None = None
+    seed29_receipt: LoadedCeilingAuditReceipt | None = None
+    try:
+        seed43_receipt = load_activation_credit_ceiling_audit_receipt(
+            seed43_receipt_path,
+            seed_label=SEED43_LABEL,
+        )
+        seed29_receipt = load_activation_credit_ceiling_audit_receipt(
+            seed29_receipt_path,
+            seed_label=SEED29_LABEL,
+        )
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        harness_error = str(exc)
+    if (
+        harness_error is not None
+        or seed43_receipt is None
+        or seed29_receipt is None
+    ):
+        branch = _b5b_emit_branch_classifier(
+            harness_ok=False,
+            baseline_reproduced=False,
+            calibration_failure=False,
+            ternary_recovers=False,
+            q5_recovers=False,
+            raw_recovers=False,
+            ordinal_only_recovers=False,
+        )
+        return {
+            "schema_version": B5B_COUNTERFACTUAL_SCHEMA_VERSION,
+            "task_id": B5B_TASK_ID,
+            "harness_ok": False,
+            "harness_error": harness_error,
+            "branch_classifier": branch,
+            "uses_raw_continuous_inside_bucket": False,
+            "success_bar": {
+                "primary_receipt_family_auc_max": float(PRIMARY_RECEIPT_FAMILY_AUC_MAX),
+                "sub2_win_requires_ternary_quantized_ordinal": True,
+            },
+        }
+    eligibility_spec = _scalar_spec_by_id(B5B_ELIGIBILITY_SCALAR_ID)
+    eligibility_direction = _best_seed43_direction(
+        seed43_receipt.rows,
+        value_fn=eligibility_spec.compute,
+    )
+    variant_metrics: dict[str, dict[str, Any]] = {}
+    aucs_by_variant: dict[str, dict[str, float]] = {}
+    for tiebreak_rank_key_id in B5B_TIEBREAK_VARIANT_IDS:
+        seed43_auc = _b5b_counterfactual_family_auc(
+            seed43_receipt.rows,
+            tiebreak_rank_key_id=tiebreak_rank_key_id,
+            eligibility_direction=eligibility_direction,
+        )
+        seed29_auc = _b5b_counterfactual_family_auc(
+            seed29_receipt.rows,
+            tiebreak_rank_key_id=tiebreak_rank_key_id,
+            eligibility_direction=eligibility_direction,
+        )
+        aucs_by_variant[tiebreak_rank_key_id] = {
+            SEED43_LABEL: seed43_auc,
+            SEED29_LABEL: seed29_auc,
+        }
+        metadata = _b5b_variant_metadata(tiebreak_rank_key_id)
+        variant_metrics[tiebreak_rank_key_id] = {
+            **metadata,
+            SEED43_LABEL: {"receipt_family_compressed_auc": seed43_auc},
+            SEED29_LABEL: {"receipt_family_compressed_auc": seed29_auc},
+            "both_seeds_recover": _b5b_family_auc_recovers(
+                {SEED43_LABEL: seed43_auc, SEED29_LABEL: seed29_auc}
+            ),
+        }
+    baseline_aucs = aucs_by_variant[ACTIVATION_CREDIT_TIEBREAK_KEY_CURRENT_RANK]
+    baseline_reproduced = _b5b_baseline_anchor_reproduced(baseline_aucs)
+    harness_ok = bool(baseline_reproduced)
+    calibration_failure = _b5b_within_bucket_eligibility_calibration_failure(
+        seed43_receipt.rows,
+        seed29_receipt.rows,
+        eligibility_direction=eligibility_direction,
+    )
+    ternary_aucs = aucs_by_variant[
+        ACTIVATION_CREDIT_TIEBREAK_KEY_TERNARY_ELIGIBILITY_ORDINAL
+    ]
+    q5_aucs = aucs_by_variant[ACTIVATION_CREDIT_TIEBREAK_KEY_Q5_ELIGIBILITY_ORDINAL]
+    raw_aucs = aucs_by_variant[ACTIVATION_CREDIT_TIEBREAK_KEY_RAW_ELIGIBILITY_FP]
+    ordinal_only_aucs = aucs_by_variant[
+        ACTIVATION_CREDIT_TIEBREAK_KEY_ORDINAL_ONLY_NO_INTRA_RANK
+    ]
+    ternary_recovers = _b5b_family_auc_recovers(ternary_aucs)
+    q5_recovers = _b5b_family_auc_recovers(q5_aucs)
+    raw_recovers = _b5b_family_auc_recovers(raw_aucs)
+    ordinal_only_recovers = _b5b_family_auc_recovers(ordinal_only_aucs)
+    branch_classifier = _b5b_emit_branch_classifier(
+        harness_ok=harness_ok,
+        baseline_reproduced=baseline_reproduced,
+        calibration_failure=calibration_failure,
+        ternary_recovers=ternary_recovers,
+        q5_recovers=q5_recovers,
+        raw_recovers=raw_recovers,
+        ordinal_only_recovers=ordinal_only_recovers,
+    )
+    q5_to_family_loss = {
+        SEED43_LABEL: float(
+            q5_aucs[SEED43_LABEL] - baseline_aucs[SEED43_LABEL]
+        ),
+        SEED29_LABEL: float(
+            q5_aucs[SEED29_LABEL] - baseline_aucs[SEED29_LABEL]
+        ),
+    }
+    return {
+        "schema_version": B5B_COUNTERFACTUAL_SCHEMA_VERSION,
+        "task_id": B5B_TASK_ID,
+        "harness_ok": harness_ok,
+        "baseline_anchor_reproduced": baseline_reproduced,
+        "single_variable": {
+            "name": "within_receipt_family_bucket_tiebreak_key",
+            "family_bucket": ACTIVATION_CREDIT_PRIMARY_FAMILY_ID,
+            "eligibility_scalar_id": B5B_ELIGIBILITY_SCALAR_ID,
+            "eligibility_direction": int(eligibility_direction),
+        },
+        "invariants": {
+            "uses_raw_continuous_inside_bucket": False,
+            "sub2_success_path_requires_quantized_ordinal": True,
+            "no_receipt_mutation": True,
+            "cpu_replay_only": True,
+        },
+        "success_bar": {
+            "primary_receipt_family_auc_max": float(PRIMARY_RECEIPT_FAMILY_AUC_MAX),
+            "sub2_win_branch": B5B_BRANCH_TERNARY_TIEBREAK_RECOVERS,
+            "requires_both_seeds_above_max": True,
+        },
+        "variant_metrics": variant_metrics,
+        "q5_ordinal_to_receipt_family_loss": q5_to_family_loss,
+        "branch_classifier": branch_classifier,
+        "input_receipts": {
+            SEED43_LABEL: {
+                "path": seed43_receipt.path,
+                "sha256": seed43_receipt.sha256,
+            },
+            SEED29_LABEL: {
+                "path": seed29_receipt.path,
+                "sha256": seed29_receipt.sha256,
+            },
+        },
+        "non_claims": [
+            "no runtime/sub-2 persistent claim unless BRANCH_TERNARY_TIEBREAK_RECOVERS",
+            "BRANCH_Q5_ONLY_RECOVERS is diagnostic >2-bit non-win",
+            "BRANCH_RAW_ONLY_RECOVERS is label-leak upper bound non-win",
+            "no GPU / trainer wiring / receipt mutation",
+        ],
+    }
+
+
 __all__ = [
     "ACTIVATION_CREDIT_CEILING_AUDIT_SCHEMA_VERSION",
     "ACTIVATION_CREDIT_CEILING_AUDIT_TARGET_NAME",
+    "B5B_BRANCH_CALIBRATION_FAILURE",
+    "B5B_BRANCH_HARNESS_OR_INPUT_FAIL",
+    "B5B_BRANCH_ORDINAL_ONLY_NO_INTRA_RANK",
+    "B5B_BRANCH_Q5_ONLY_RECOVERS",
+    "B5B_BRANCH_RAW_ONLY_RECOVERS",
+    "B5B_BRANCH_TERNARY_TIEBREAK_RECOVERS",
+    "B5B_BRANCH_TIEBREAK_BASELINE_REPRO",
+    "B5B_BRANCH_TIEBREAK_STILL_COLLAPSES",
+    "B5B_COUNTERFACTUAL_SCHEMA_VERSION",
+    "B5B_TASK_ID",
     "KNOWN_BRANCH4_RAW_AUC_EXPECTATIONS",
     "KNOWN_BRANCH4_RECEIPT_FAMILY_AUC_EXPECTATIONS",
     "LABEL_LEAK_UPPER_BOUND_TAG",
@@ -1830,4 +2265,5 @@ __all__ = [
     "ScalarSpec",
     "build_activation_credit_ceiling_audit",
     "load_activation_credit_ceiling_audit_receipt",
+    "run_b5b_within_q5_family_tiebreak_counterfactual",
 ]

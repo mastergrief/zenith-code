@@ -15,7 +15,7 @@ import random
 from pathlib import Path
 from statistics import median
 import time
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 import torch
 
@@ -1740,12 +1740,44 @@ def _activation_credit_family_key(
     raise ValueError(f"unsupported activation-credit family_id {family_id!r}")
 
 
+ACTIVATION_CREDIT_TIEBREAK_KEY_CURRENT_RANK = "current_rank_position"
+ACTIVATION_CREDIT_TIEBREAK_KEY_TERNARY_ELIGIBILITY_ORDINAL = (
+    "ternary_eligibility_ordinal"
+)
+ACTIVATION_CREDIT_TIEBREAK_KEY_Q5_ELIGIBILITY_ORDINAL = "q5_eligibility_ordinal"
+ACTIVATION_CREDIT_TIEBREAK_KEY_RAW_ELIGIBILITY_FP = "raw_eligibility_fp"
+ACTIVATION_CREDIT_TIEBREAK_KEY_ORDINAL_ONLY_NO_INTRA_RANK = (
+    "ordinal_only_no_intra_rank"
+)
+DEFAULT_ACTIVATION_CREDIT_TIEBREAK_KEY = ACTIVATION_CREDIT_TIEBREAK_KEY_CURRENT_RANK
+
+
+def activation_credit_family_metrics_with_tiebreak(
+    *,
+    target_band_candidates: Sequence[Mapping[str, Any]],
+    family_id: str,
+    oracle_best_candidate: Mapping[str, Any],
+    oracle_top1_delta: float | None,
+    intra_bucket_tiebreak_key_fn: Callable[[Mapping[str, Any]], tuple[Any, ...]]
+    | None = None,
+) -> dict[str, Any]:
+    return _activation_credit_family_metrics(
+        target_band_candidates=target_band_candidates,
+        family_id=family_id,
+        oracle_best_candidate=oracle_best_candidate,
+        oracle_top1_delta=oracle_top1_delta,
+        intra_bucket_tiebreak_key_fn=intra_bucket_tiebreak_key_fn,
+    )
+
+
 def _activation_credit_family_metrics(
     *,
     target_band_candidates: Sequence[Mapping[str, Any]],
     family_id: str,
     oracle_best_candidate: Mapping[str, Any],
     oracle_top1_delta: float | None,
+    intra_bucket_tiebreak_key_fn: Callable[[Mapping[str, Any]], tuple[Any, ...]]
+    | None = None,
 ) -> dict[str, Any]:
     groups: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
     for candidate in target_band_candidates:
@@ -1780,6 +1812,16 @@ def _activation_credit_family_metrics(
         if band_improvement_mass > ORACLE_SCREEN_IMPROVEMENT_EPS
         else 0.0
     )
+
+    def _intra_bucket_tiebreak_sort_key(candidate: Mapping[str, Any]) -> tuple[Any, ...]:
+        candidate_id = str(candidate["candidate_id"])
+        if (
+            intra_bucket_tiebreak_key_fn is not None
+            and candidate_id in bucket_ids
+        ):
+            return intra_bucket_tiebreak_key_fn(candidate)
+        return (int(candidate["current_rank_position"]),)
+
     position_by_id = {
         str(candidate["candidate_id"]): int(position)
         for position, candidate in enumerate(
@@ -1787,7 +1829,7 @@ def _activation_credit_family_metrics(
                 target_band_candidates,
                 key=lambda candidate: (
                     str(candidate["candidate_id"]) not in bucket_ids,
-                    int(candidate["current_rank_position"]),
+                    *_intra_bucket_tiebreak_sort_key(candidate),
                     str(candidate["candidate_id"]),
                 ),
             )
@@ -4118,6 +4160,13 @@ def run_activation_credit_measurement_oracle_screen(
 
 
 __all__ = [
+    "ACTIVATION_CREDIT_TIEBREAK_KEY_CURRENT_RANK",
+    "ACTIVATION_CREDIT_TIEBREAK_KEY_TERNARY_ELIGIBILITY_ORDINAL",
+    "ACTIVATION_CREDIT_TIEBREAK_KEY_Q5_ELIGIBILITY_ORDINAL",
+    "ACTIVATION_CREDIT_TIEBREAK_KEY_RAW_ELIGIBILITY_FP",
+    "ACTIVATION_CREDIT_TIEBREAK_KEY_ORDINAL_ONLY_NO_INTRA_RANK",
+    "DEFAULT_ACTIVATION_CREDIT_TIEBREAK_KEY",
+    "activation_credit_family_metrics_with_tiebreak",
     "ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_MEASUREMENT",
     "ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_SCALE_SMOKE",
     "ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY",
