@@ -340,13 +340,13 @@
       {
         "role": "consensus_probe_result_writer",
         "rel_path": "calm/hrm_text_158/native_full_stack/consensus_probe_result_writer.py",
-        "sha256": "513d01e9c24804377184420a6170573ad64393ff57d4497a5ce9a58d64bd4ac2",
+        "sha256": "ed611385242309aa9068f8bb55822c690853a7cf54cb3b634ce8ff17119a6219",
         "pin_note": "B1 writer @ 8a6143d"
       },
       {
         "role": "consensus_v1_launcher",
         "rel_path": "scripts/selector_support_consensus_v1_launch.sh",
-        "sha256": "d28a94be7dcdc3a18c883d1057ac8f19a9f44ed23cfeb110003ea5fba813a4c1",
+        "sha256": "a818266f1d030da7305051ca0425ab90ffb29a8e2b0073c2ee3b3ea662f0e927",
         "pin_note": "v5 executing surface @ dual-PASS commit"
       },
       {
