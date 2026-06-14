@@ -42,6 +42,8 @@ Always report FP-free claims as three separate ledgers; never collapse them.
   moment replacement) dominates persistent bits and is the next reduction
   target (int16 → narrower / sparser vote rep). Never upgrade "native ternary
   effective-weight training" into "fully FP-free persistent state."
+- **3-ledger = weight-persistent train-state accounting; activations/KV are full-sub2-runtime target surfaces with separate levers.** Activations/residuals, attention-KV buffers, and backward-saved tensors are FP today under the D2.1 BitLinear contract (weights ternarized, activations not), and remain required `full_sub2_runtime` surfaces currently blocking main science. Their path is forward/runtime activation-KV quantization or recompute/compression (separately scoped), NOT the weight vote-accumulator: activations are transient, KV has no trainable optimizer state, no persistent votes to accumulate. Do not conflate the persistent-weight drain (int16 vote-acc) with total-runtime memory (activations/KV scale with batch×seqlen, distinct levers).
+- **Two bit-width axes stay separate.** Persistent train-state WIDTH (q / int16 vote-acc carrier → the sub-2 weight target) is distinct from decision/eligibility QUANTIZATION (ranking discrimination). A decision/receipt-family collapse or null is a representation limit, NOT evidence against persistent-width reduction; decision-family discrimination is a separate axis and B5b/H1 nulls do not close the persistent-width lane.
 
 ## Training dynamics + the stability problem
 

@@ -64,6 +64,34 @@ Redirect: the next branch is sub-2 decision/tiebreak encoding that preserves
 the raw first-order ordinal order. Do NOT pivot to joint/interaction search or
 more second-order scalar algebra on this evidence.
 
+### 2026-06-14 — Receipt-family frontier closed; pivot to int16 vote-acc (B5b / H1 / B0)
+
+Receipt-family AUC track parked after CPU counterfactual nulls on Branch4
+seed43+seed29 historical receipts. Persistent-width lane (int16 vote-acc
+reduction) remains open.
+
+- **B5b** (`BRANCH_TIEBREAK_STILL_COLLAPSES`, commit `96ac7405` on
+  `origin/feature/hrm-text-1.58`): within fixed `F_taylor_benefit_q5` bucket,
+  no intra-bucket tiebreak key recovers receipt-family AUC >0.75
+  (current_rank / ternary_L3 / q5_L5 / raw_fp ~0.60–0.65 on both seeds).
+  Tiebreak key is NOT the collapse lever.
+- **H1** (`NO_BUCKET_ARM_RECOVERS`, commit `b620c3c4`, 9 pre-registered arms):
+  swapping bucket feature/encoder does not recover — best
+  `taylor_L3`/`eligibility_L3` 0.680/0.657 <0.75 both seeds. Bucket
+  representation is NOT the collapse lever.
+- **B0** (`MEASUREMENT_STATE_EXISTS_AND_HEADROOM`, commit `d140f46`): int16
+  vote-acc headroom to `w_min=6` on recorded-row single-trace fixture
+  (16→6 bits; NOT sub-2 — w4/w3/w2 fail crossing invariance). Threshold
+  mismatch `derived=1` vs attested `10` surfaced (replay on attested 10).
+
+Claim boundary: B5b/H1 are informative nulls on decision/receipt-family
+discrimination — they do NOT close the persistent-width lane. B0 sizes the
+prize for int16 vote-acc reduction; does not bank a sub-2 or GPU verdict.
+
+Receipts: plan-dev implementation receipts `1781446970587` (B5b),
+`1781448090254` (H1), `1781449527672` (B0); dual impl review PASS claude +
+co_lead on each.
+
 Receipts:
 
 - Manual row audit / board synthesis: Claude `1780989612006`,
