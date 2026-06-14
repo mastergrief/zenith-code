@@ -379,11 +379,12 @@ def verify_head_triple(
     head_now: str,
     fetch_head: str,
     head_expected: str,
+    require_fetch_head: bool = True,
 ) -> list[str]:
     issues: list[str] = []
     if head_now != head_expected:
         issues.append("HEAD_NOW_MISMATCH")
-    if fetch_head != head_expected:
+    if require_fetch_head and fetch_head != head_expected:
         issues.append("FETCH_HEAD_MISMATCH")
     return issues
 
@@ -563,6 +564,7 @@ def build_code_currency_manifest(
     remote_repo_root: str,
     mismatches: Sequence[str],
     rsync_version: str | None = None,
+    remote_currency_check: str = "enforced",
 ) -> dict[str, Any]:
     receipt_files: list[dict[str, Any]] = []
     pin_enforcement = False
@@ -580,6 +582,7 @@ def build_code_currency_manifest(
         "head_sha": head_expected,
         "head_now": head_now,
         "fetch_head": fetch_head,
+        "remote_currency_check": remote_currency_check,
         "dry_run": dry_run,
         "sync_requested": sync_requested,
         "code_currency_pass": not mismatches,

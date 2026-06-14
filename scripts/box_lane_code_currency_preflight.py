@@ -48,7 +48,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="Manifest output path (default: <local_chain_root>/box_code_currency_preflight.json)",
     )
-    ap.add_argument("--skip-fetch", action="store_true", help="Test hook: skip git fetch.")
+    ap.add_argument("--skip-fetch", action="store_true", help="Local-only mode: skip git fetch and remote FETCH_HEAD currency check.")
     return ap
 
 
@@ -86,7 +86,9 @@ def main(argv: list[str] | None = None) -> int:
         head_now=head_now,
         fetch_head=fetch_head,
         head_expected=args.head_expected,
+        require_fetch_head=not args.skip_fetch,
     )
+    remote_currency_check = "skipped_local_only" if args.skip_fetch else "enforced"
 
     pinned = load_pinned_manifest(args.pinned_manifest)
     if args.include_analyzer_surfaces:
@@ -121,6 +123,7 @@ def main(argv: list[str] | None = None) -> int:
         remote_repo_root=args.remote_repo,
         mismatches=mismatches,
         rsync_version=rsync_version,
+        remote_currency_check=remote_currency_check,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")

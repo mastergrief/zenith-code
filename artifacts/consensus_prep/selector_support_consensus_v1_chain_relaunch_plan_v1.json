@@ -55,8 +55,9 @@
   "code_pins": {
     "repo": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
     "branch": "feature/hrm-text-1.58",
-    "head_expected": "abb55357ce412dc30df5364cb488f4ea94ac5c49",
-    "head_short": "abb5535",
+    "head_expected": "{head_expected}",
+    "head_short": "{head_short}",
+    "head_execution_note": "template tokens only; launch uses HEAD_EXPECTED env override (FIX_COMMIT_SHA post-skip-fetch fix commit)",
     "parent_checkpoint": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
     "parent_sha256": "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec",
     "parent_read_only_contract": {
@@ -140,7 +141,7 @@
         ],
         "note": "Default transport path hashes local artifacts only; --sync is NOT used on local 4070 relaunch"
       },
-      "analyzer": "PYTHONPATH=. python3 scripts/analyze_selector_support_invariance.py {chain_root} --consensus --primary-label S44_ord44 --isolation-label S44_ord43 --corroboration-label S44_ord17 --repo-head abb55357ce412dc30df5364cb488f4ea94ac5c49",
+      "analyzer": "PYTHONPATH=. python3 scripts/analyze_selector_support_invariance.py {chain_root} --consensus --primary-label S44_ord44 --isolation-label S44_ord43 --corroboration-label S44_ord17 --repo-head {head_expected}",
       "consumer": "PYTHONPATH=. python3 scripts/box_lane_consensus_consumer_audit.py --chain-root {chain_root} --consensus --primary-label S44_ord44 --isolation-label S44_ord43 --corroboration-label S44_ord17 --transport-manifest {chain_root}/box_artifact_transport.json --chain-log {chain_root}/producer_science_chain.log",
       "watcher": "PYTHONPATH=. python3 scripts/box_lane_chain_watcher.py {chain_root}/producer_science_chain.log --manifest {chain_root}/box_lane_overlap_manifest.json --waive",
       "watcher_note": "--waive prevents set -e abort on expected SERIAL_FALLBACK; terminal receipt interprets serial_plumbing_proven separately from overlap pipeline_eligible"
@@ -154,14 +155,14 @@
   "code_currency_mode": {
     "choice": "local_hash_only_equivalent",
     "rationale": "Chain executes on local 4070 WSL producer; box ssh/rsync not required for this relaunch",
-    "cmd": "PYTHONPATH=. python3 scripts/box_lane_code_currency_preflight.py --skip-fetch --chain-id {chain_id} --head-expected abb55357ce412dc30df5364cb488f4ea94ac5c49 --pinned-manifest {chain_root}/prelaunch/pinned_files_manifest.json --output {chain_root}/prelaunch/box_code_currency_preflight.json",
+    "cmd": "PYTHONPATH=. python3 scripts/box_lane_code_currency_preflight.py --skip-fetch --chain-id {chain_id} --head-expected {head_expected} --pinned-manifest {chain_root}/prelaunch/pinned_files_manifest.json --output {chain_root}/prelaunch/box_code_currency_preflight.json",
     "sync_forbidden": true,
     "v0_launcher_sync_sites_removed": [
       "selector_support_consensus_v0_launch.sh:130 box_lane_code_currency_preflight.py --sync",
       "selector_support_consensus_v0_launch.sh:237 box_lane_artifact_transport.py --sync"
     ],
     "proof_obligations": [
-      "git rev-parse HEAD == abb5535",
+      "git rev-parse HEAD == HEAD_EXPECTED env at launch (FIX_COMMIT_SHA)",
       "all 31 manifest entries carry non-empty sha256",
       "hash_pinned_files producer_matches_expected for all entries",
       "check_pinned_paths_clean (no dirty pinned paths)",
@@ -183,8 +184,8 @@
     ]
   },
   "pinned_files_manifest": {
-    "head_expected": "abb55357ce412dc30df5364cb488f4ea94ac5c49",
-    "head_short": "abb5535",
+    "head_expected": "{head_expected}",
+    "head_short": "{head_short}",
     "n_files": 31,
     "prelaunch_output_relpath": "prelaunch/pinned_files_manifest.json",
     "sha_complete_assertion": {
@@ -277,7 +278,7 @@
       {
         "role": "box_lane",
         "rel_path": "calm/hrm_text_158/native_full_stack/box_lane.py",
-        "sha256": "1b612921a349d3c5a42f8a92ae982cef55bc00dd964622ed6d4a0c1b21755aa3"
+        "sha256": "d3cbb601ee0831aa62d41b32c875fe749e062fa211310b7ddc5d43f59acbc864"
       },
       {
         "role": "box_lane_artifact_transport",
@@ -293,7 +294,7 @@
       {
         "role": "box_lane_code_currency_preflight",
         "rel_path": "scripts/box_lane_code_currency_preflight.py",
-        "sha256": "e6cf2d186480243ed381cf7e209e65614ab7f01d1eefba9776de8f8f6ef55df3"
+        "sha256": "73d32176b63cbd0fec1bac78c793c694528dea4221a280e1c5246a0b89349de5"
       },
       {
         "role": "box_lane_chain_watcher",
@@ -776,7 +777,7 @@
     },
     {
       "id": "code_currency_local",
-      "cmd": "PYTHONPATH=. python3 scripts/box_lane_code_currency_preflight.py --skip-fetch --chain-id {chain_id} --head-expected abb55357ce412dc30df5364cb488f4ea94ac5c49 --pinned-manifest {chain_root}/prelaunch/pinned_files_manifest.json --output {chain_root}/prelaunch/box_code_currency_preflight.json",
+      "cmd": "PYTHONPATH=. python3 scripts/box_lane_code_currency_preflight.py --skip-fetch --chain-id {chain_id} --head-expected {head_expected} --pinned-manifest {chain_root}/prelaunch/pinned_files_manifest.json --output {chain_root}/prelaunch/box_code_currency_preflight.json",
       "sync_forbidden": true,
       "pass": "code_currency_pass==true; all pinned files producer_matches_expected; zero dirty pinned paths"
     },
@@ -807,16 +808,17 @@
     "revision": "v5_site_d_classifier_parent_drift_receipt",
     "v1_path": "scripts/selector_support_consensus_v1_launch.sh",
     "basis": "scripts/selector_support_consensus_v0_launch.sh (with sync sites REMOVED)",
-    "head_expected": "abb55357ce412dc30df5364cb488f4ea94ac5c49",
+    "head_expected": "{head_expected}",
+    "head_execution_note": "template only; launch uses HEAD_EXPECTED=$FIX_COMMIT_SHA env override at GPU gate",
     "packet_sha_pin_at_launch": "sha256sum of this plan artifact file; recorded in launch receipt (not embedded \u2014 avoids self-hash loop)",
     "forbidden_in_v1_launcher": [
       "box_lane_code_currency_preflight.py --sync",
       "box_lane_artifact_transport.py --sync"
     ],
-    "required_preflight_cmd": "PYTHONPATH=. python3 scripts/box_lane_code_currency_preflight.py --skip-fetch --chain-id \"$CHAIN_ID\" --head-expected abb55357ce412dc30df5364cb488f4ea94ac5c49 --pinned-manifest \"$CHAIN_ROOT/prelaunch/pinned_files_manifest.json\" --output \"$CHAIN_ROOT/prelaunch/box_code_currency_preflight.json\"",
+    "required_preflight_cmd": "PYTHONPATH=. python3 scripts/box_lane_code_currency_preflight.py --skip-fetch --chain-id \"$CHAIN_ID\" --head-expected \"$HEAD_EXPECTED\" --pinned-manifest \"$CHAIN_ROOT/prelaunch/pinned_files_manifest.json\" --output \"$CHAIN_ROOT/prelaunch/box_code_currency_preflight.json\"",
     "required_transport_cmd": "PYTHONPATH=. python3 scripts/box_lane_artifact_transport.py --chain-id \"$CHAIN_ID\" --chain-log \"$CHAIN_ROOT/producer_science_chain.log\" --primary-label S44_ord44 --isolation-label S44_ord43 --corroboration-label S44_ord17",
     "required_updates_at_launch_gate": [
-      "HEAD_EXPECTED=abb5535; PACKET_SHA pinned to v5 plan artifact",
+      "HEAD_EXPECTED=$FIX_COMMIT_SHA; EXPECTED_PACKET_SHA=<post-repin packet sha> (env override required; packet literals are templates)",
       "chain_id_prefix selector_support_consensus_v1_",
       "per-arm host_mem_sampler start/teardown",
       "B2 rss_curve extraction into per-arm receipt row",

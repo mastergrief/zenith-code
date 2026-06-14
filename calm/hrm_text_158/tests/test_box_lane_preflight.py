@@ -45,6 +45,16 @@ def test_fetch_head_mismatch_fails() -> None:
     assert "FETCH_HEAD_MISMATCH" in issues
 
 
+def test_fetch_head_mismatch_skipped_when_not_required() -> None:
+    issues = verify_head_triple(
+        head_now="abc",
+        fetch_head="def",
+        head_expected="abc",
+        require_fetch_head=False,
+    )
+    assert issues == []
+
+
 def test_head_now_mismatch_fails() -> None:
     issues = verify_head_triple(
         head_now="abc",
@@ -52,6 +62,135 @@ def test_head_now_mismatch_fails() -> None:
         head_expected="def",
     )
     assert "HEAD_NOW_MISMATCH" in issues
+
+
+def test_skip_fetch_passes_with_stale_fetch_head_e2e(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    rel = Path("scripts/probe.py")
+    manifest_path, _ = _write_pinned_manifest_with_sha(tmp_path, rel)
+    repo = tmp_path / "repo"
+    out_path = tmp_path / "out.json"
+    head = "19cd9f355f8bc6d00d9098179871dac451bf4aba"
+    stale_fetch = "ba0ecb05deadbeefdeadbeefdeadbeefdeadbeef"
+
+    def git_revparse(_root: Path, *args: str) -> str:
+        if args[0] == "rev-parse" and args[1] == "HEAD":
+            return head
+        if args[0] == "rev-parse" and args[1] == "FETCH_HEAD":
+            return stale_fetch
+        return ""
+
+    monkeypatch.setattr("scripts.box_lane_code_currency_preflight.run_git", git_revparse)
+    rc = preflight_main(
+        [
+            "--repo-root",
+            str(repo),
+            "--chain-id",
+            "chain_fixture",
+            "--creditdir",
+            str(tmp_path / "creditdir"),
+            "--head-expected",
+            head,
+            "--skip-fetch",
+            "--dry-run",
+            "--output",
+            str(out_path),
+            "--pinned-manifest",
+            str(manifest_path),
+        ]
+    )
+    assert rc == EXIT_OK
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload["code_currency_pass"] is True
+    assert payload["remote_currency_check"] == "skipped_local_only"
+    assert payload["head_now"] == head
+    assert payload["fetch_head"] == stale_fetch
+    assert "FETCH_HEAD_MISMATCH" not in payload["mismatches"]
+
+
+def test_strict_mode_fails_with_stale_fetch_head_e2e(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    rel = Path("scripts/probe.py")
+    manifest_path, _ = _write_pinned_manifest_with_sha(tmp_path, rel)
+    repo = tmp_path / "repo"
+    out_path = tmp_path / "out.json"
+    head = "19cd9f355f8bc6d00d9098179871dac451bf4aba"
+    stale_fetch = "ba0ecb05deadbeefdeadbeefdeadbeefdeadbeef"
+
+    def git_revparse(_root: Path, *args: str) -> str:
+        if args[0] == "rev-parse" and args[1] == "HEAD":
+            return head
+        if args[0] == "rev-parse" and args[1] == "FETCH_HEAD":
+            return stale_fetch
+        return ""
+
+    def fake_fetch(*_args, **_kwargs):
+        return subprocess.CompletedProcess([], 0, "", "")
+
+    monkeypatch.setattr("scripts.box_lane_code_currency_preflight.run_git", git_revparse)
+    monkeypatch.setattr(subprocess, "run", fake_fetch)
+    rc = preflight_main(
+        [
+            "--repo-root",
+            str(repo),
+            "--chain-id",
+            "chain_fixture",
+            "--creditdir",
+            str(tmp_path / "creditdir"),
+            "--head-expected",
+            head,
+            "--dry-run",
+            "--output",
+            str(out_path),
+            "--pinned-manifest",
+            str(manifest_path),
+        ]
+    )
+    assert rc == EXIT_CODE_CURRENCY_MISMATCH
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload["code_currency_pass"] is False
+    assert payload["remote_currency_check"] == "enforced"
+    assert "FETCH_HEAD_MISMATCH" in payload["mismatches"]
+
+
+def test_skip_fetch_still_fails_head_now_mismatch_e2e(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    rel = Path("scripts/probe.py")
+    manifest_path, _ = _write_pinned_manifest_with_sha(tmp_path, rel)
+    repo = tmp_path / "repo"
+    out_path = tmp_path / "out.json"
+    head_expected = "19cd9f355f8bc6d00d9098179871dac451bf4aba"
+    head_now = "abb55357ce412dc30df5364cb488f4ea94ac5c49"
+
+    def git_revparse(_root: Path, *args: str) -> str:
+        if args[0] == "rev-parse" and args[1] == "HEAD":
+            return head_now
+        if args[0] == "rev-parse" and args[1] == "FETCH_HEAD":
+            return "ba0ecb05deadbeefdeadbeefdeadbeefdeadbeef"
+        return ""
+
+    monkeypatch.setattr("scripts.box_lane_code_currency_preflight.run_git", git_revparse)
+    rc = preflight_main(
+        [
+            "--repo-root",
+            str(repo),
+            "--chain-id",
+            "chain_fixture",
+            "--creditdir",
+            str(tmp_path / "creditdir"),
+            "--head-expected",
+            head_expected,
+            "--skip-fetch",
+            "--dry-run",
+            "--output",
+            str(out_path),
+            "--pinned-manifest",
+            str(manifest_path),
+        ]
+    )
+    assert rc == EXIT_CODE_CURRENCY_MISMATCH
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload["code_currency_pass"] is False
+    assert payload["remote_currency_check"] == "skipped_local_only"
+    assert "HEAD_NOW_MISMATCH" in payload["mismatches"]
+    assert "FETCH_HEAD_MISMATCH" not in payload["mismatches"]
 
 
 def test_missing_pinned_file_marks_mismatch(tmp_path: Path) -> None:
