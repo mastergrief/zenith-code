@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import math
 import os
+from dataclasses import asdict
 from pathlib import Path
 import sys
 import time
@@ -28,7 +29,10 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     authoritative_forward_context,
     candidate_weighted_grad_and_diag_fisher_proxies_from_captures,
     candidate_weighted_grad_proxies_from_captures,
+    default_dry_run_rank_vote_spec,
     make_bounded_tensor_state,
+    S1_PROJECTION_LAW,
+    S1_RANK_BUCKET_VOTE_LAW,
 )
 from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD,
@@ -174,6 +178,7 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     validate_probe_stdout_liveness_config,
     _capture_eligible_module_outputs,
     enforce_phase_bound,
+    _build_checkpoint_payload_with_phase_telemetry,
 )
 from scripts.train_hrm_text_158 import _build_ckpt_config, SOURCE_PIN
 
@@ -1339,6 +1344,47 @@ def test_forward_level_init_fidelity_hard_fails_on_corrupted_all_bitlinear_q_sta
             eligible_scope="all-bitlinear",
             total_steps=1,
         )
+
+
+
+def _checkpoint_telemetry_updater_config() -> dict[str, Any]:
+    return {
+        "rank_vote_spec": default_dry_run_rank_vote_spec().to_live_dict(),
+        "vote_update_spec": asdict(
+            VoteUpdateSpec(
+                threshold_abs=1,
+                accumulator_clip_min=-127,
+                accumulator_clip_max=127,
+                max_abs_per_tensor=32,
+            )
+        ),
+        "projection_law": S1_PROJECTION_LAW,
+        "vote_law": S1_RANK_BUCKET_VOTE_LAW,
+    }
+
+
+def test_checkpoint_tensor_export_telemetry_emits_per_tensor_marks() -> None:
+    states = {
+        f"toy.{idx}": make_bounded_tensor_state(
+            f"toy.{idx}",
+            torch.zeros(8, dtype=torch.int8),
+            0.5,
+            torch.zeros(8, dtype=torch.int16),
+        )
+        for idx in range(3)
+    }
+    progress = PhaseProgress(enabled=True, device=torch.device("cpu"))
+    with progress.phase("checkpoint_payload"):
+        _build_checkpoint_payload_with_phase_telemetry(
+            progress,
+            states,
+            step=1,
+            updater_config=_checkpoint_telemetry_updater_config(),
+        )
+    events = [event["event"] for event in progress.events if event.get("phase") == "checkpoint_payload"]
+    assert events.count("checkpoint_tensor_export_start") == 3
+    assert events.count("checkpoint_tensor_export_done") == 3
+    assert any(event == "rss_sample" for event in events)
 
 
 def test_phase_progress_emits_schema_events_and_timeout_payload(capsys):

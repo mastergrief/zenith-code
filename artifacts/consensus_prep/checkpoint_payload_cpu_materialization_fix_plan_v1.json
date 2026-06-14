@@ -1,0 +1,59 @@
+{
+  "schema": "checkpoint_payload_cpu_materialization_fix_plan/v1",
+  "status": "implemented_b1_b2_a1_pre",
+  "classification": {
+    "failure_class": "CHECKPOINT_PAYLOAD_CPU_MATERIALIZATION",
+    "leading_mechanism": "in_process_native_fault_during_cpu_export",
+    "refuted": [
+      "external_kill",
+      "host_ram_oom",
+      "passive_python_hang",
+      "watch_wrap_silence_kill",
+      "global_300s_wall_budget"
+    ],
+    "residual": "untraced_sigkill_low_likelihood_until_a3"
+  },
+  "incident": {
+    "chain_id": "selector_support_consensus_v0_20260614T075253Z",
+    "failing_arm": "S44_ord44/on",
+    "repo_head_pin_at_incident": "ba0ecb051fbdd825689e86efe6fc9ab0d93d8574",
+    "packet_pin": "2b1ec738"
+  },
+  "implemented_slice": {
+    "id": "B1+B2+A1-pre",
+    "b1": "durable launcher + json.dumps probe_results writer with receipt-from-fs",
+    "b2": "checkpoint_payload per-tensor progress + ru_maxrss telemetry (instrumentation only)",
+    "a1_pre": "cpu export bench (synthetic all-bitlinear + cold-exception stress)"
+  },
+  "a1_baseline": {
+    "healthy_all_bitlinear": {
+      "wall_seconds": 0.25,
+      "peak_rss_bytes": 705003520,
+      "tensor_count": 32
+    },
+    "cold_exception_stress": {
+      "wall_seconds": 0.15,
+      "peak_rss_bytes": 612167680,
+      "cold_exception_count": 52422
+    },
+    "interpretation": "healthy export cheap; ord44 ~60-90s death is 250x+ anomalous -> data-specific native fault; synthetic cannot hit seed-44 pathology"
+  },
+  "gated_next_steps": {
+    "a3": "single-arm S44_ord44/on GPU-smoke reproducer with B2 instrumentation (primary mechanism pin)",
+    "a2": "class fix sites A-D across all build_authoritative_checkpoint_payload callers (behind A3 receipt)"
+  },
+  "gate_ids": {
+    "implement": "1781426883292",
+    "claude_impl_review_pass": "1781427769893",
+    "co_lead_validation_pass": "1781427843012",
+    "commit": "1781427921009",
+    "executor_override": "1781426966101"
+  },
+  "artifact_role": "diagnostic_non_authoritative",
+  "does_not_claim": [
+    "consensus_verdict",
+    "pipeline_eligible",
+    "a2_class_fix_applied",
+    "ord44_fault_site_pinned"
+  ]
+}

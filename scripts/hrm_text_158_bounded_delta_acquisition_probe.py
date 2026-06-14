@@ -5481,6 +5481,103 @@ def cuda_memory_receipt(device: torch.device) -> dict[str, Any]:
     }
 
 
+def _rss_bytes_self() -> int:
+    import resource
+
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    rss = int(usage.ru_maxrss)
+    if sys.platform == "darwin":
+        return rss
+    return rss * 1024
+
+
+def _build_checkpoint_payload_with_phase_telemetry(
+    phase_progress: PhaseProgress,
+    tensor_states: Mapping[str, Any],
+    *,
+    step: int,
+    updater_config: Mapping[str, Any],
+    oracle_receipt: Mapping[str, Any] | None = None,
+    dry_run: bool = True,
+    checkpoint_written: bool = False,
+) -> dict[str, Any]:
+    peak_rss_bytes = _rss_bytes_self()
+    peak_at_tensor_key: str | None = None
+    export_event_toggle = {"start": True}
+
+    def sample_rss(*, tensor_key: str | None = None) -> None:
+        nonlocal peak_rss_bytes, peak_at_tensor_key
+        current = _rss_bytes_self()
+        if current >= peak_rss_bytes:
+            peak_rss_bytes = current
+            if tensor_key is not None:
+                peak_at_tensor_key = tensor_key
+        fields: dict[str, Any] = {
+            "rss_bytes": current,
+            "rss_peak_bytes": peak_rss_bytes,
+        }
+        if peak_at_tensor_key is not None:
+            fields["rss_peak_at_tensor_key"] = peak_at_tensor_key
+        phase_progress.mark("checkpoint_payload", "rss_sample", **fields)
+
+    def on_tensor_export(tensor_key: str, tensor_index: int, tensor_count: int) -> None:
+        if export_event_toggle["start"]:
+            phase_progress.mark(
+                "checkpoint_payload",
+                "checkpoint_tensor_export_start",
+                tensor_key=tensor_key,
+                tensor_index=tensor_index,
+                tensor_count=tensor_count,
+            )
+            sample_rss(tensor_key=tensor_key)
+            export_event_toggle["start"] = False
+            return
+        phase_progress.mark(
+            "checkpoint_payload",
+            "checkpoint_tensor_export_done",
+            tensor_key=tensor_key,
+            tensor_index=tensor_index,
+            tensor_count=tensor_count,
+        )
+        sample_rss(tensor_key=tensor_key)
+        export_event_toggle["start"] = True
+
+    sample_rss()
+    payload = build_authoritative_checkpoint_payload(
+        tensor_states,
+        step=int(step),
+        updater_config=updater_config,
+        oracle_receipt=oracle_receipt,
+        dry_run=bool(dry_run),
+        checkpoint_written=bool(checkpoint_written),
+        on_tensor_export=on_tensor_export,
+    )
+    sample_rss()
+    return payload
+
+
+def _maybe_log_checkpoint_states_dump(
+    dump_path: Path | None,
+    *,
+    tensor_states: Mapping[str, Any],
+) -> None:
+    if dump_path is None:
+        return
+    print(
+        json.dumps(
+            {
+                "schema": "hrm_text_158_checkpoint_states_dump_deferred/v0",
+                "requested_path": str(dump_path),
+                "tensor_count": len(tensor_states),
+                "bytes_written": 0,
+                "reason": "capture_gate_required_before_runtime_state_dump",
+            },
+            sort_keys=True,
+        ),
+        flush=True,
+    )
+
+
 def run_c2p1_probe(
     *,
     parent: Path,
@@ -5529,6 +5626,7 @@ def run_c2p1_probe(
     b2b_sequential_min_steps_for_verdict: int = 50,
     b2b_sequential_max_sampled_candidates: int = PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES,
     two_tier_carry_w6_enabled: bool = False,
+    checkpoint_states_dump: Path | None = None,
 ) -> dict[str, Any]:
     oracle_screen_budget = int(oracle_screen_max_sampled_candidates)
     if oracle_screen_budget not in ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES:
@@ -6243,7 +6341,12 @@ def run_c2p1_probe(
             "vote_law": S1_RANK_BUCKET_VOTE_LAW,
         }
     with phase_progress.phase("checkpoint_payload"):
-        checkpoint_payload = build_authoritative_checkpoint_payload(
+        _maybe_log_checkpoint_states_dump(
+            checkpoint_states_dump,
+            tensor_states=final_states,
+        )
+        checkpoint_payload = _build_checkpoint_payload_with_phase_telemetry(
+            phase_progress,
             final_states,
             step=int(steps_completed),
             updater_config=updater_config,
@@ -6675,6 +6778,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "oracle control."
         ),
     )
+    ap.add_argument(
+        "--checkpoint-states-dump",
+        type=Path,
+        default=None,
+        help=(
+            "Default-off diagnostic path for post-step tensor state capture. "
+            "Deferred to a later capture gate; no binary artifact is written "
+            "in the B1+B2+A1-pre implement slice."
+        ),
+    )
     ap.add_argument("--max-steps-hard", type=int, default=C2P2_DEFAULT_MAX_STEPS_HARD)
     ap.add_argument("--emit-progress", action="store_true")
     ap.add_argument(
@@ -6759,6 +6872,7 @@ def main(argv: list[str] | None = None) -> int:
         b2b_sequential_min_steps_for_verdict=args.b2b_sequential_min_steps_for_verdict,
         b2b_sequential_max_sampled_candidates=args.b2b_sequential_max_sampled_candidates,
         two_tier_carry_w6_enabled=args.two_tier_carry_w6_enabled,
+        checkpoint_states_dump=args.checkpoint_states_dump,
         max_steps_hard=args.max_steps_hard,
         emit_progress=args.emit_progress,
         phase_heartbeat_seconds=args.phase_heartbeat_seconds,

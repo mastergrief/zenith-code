@@ -1961,11 +1961,17 @@ def build_authoritative_checkpoint_payload(
     oracle_receipt: Mapping[str, Any] | None = None,
     dry_run: bool = False,
     checkpoint_written: bool = False,
+    on_tensor_export: Callable[[str, int, int], None] | None = None,
 ) -> dict[str, Any]:
-    tensor_summaries = {
-        key: state.to_schema_dict()
-        for key, state in sorted(tensor_states.items())
-    }
+    sorted_items = sorted(tensor_states.items())
+    tensor_count = len(sorted_items)
+    tensor_summaries: dict[str, Any] = {}
+    for tensor_index, (key, state) in enumerate(sorted_items):
+        if on_tensor_export is not None:
+            on_tensor_export(key, tensor_index, tensor_count)
+        tensor_summaries[key] = state.to_schema_dict()
+        if on_tensor_export is not None:
+            on_tensor_export(key, tensor_index, tensor_count)
     state_summary_sha = _sha256_bytes(_canonical_json(tensor_summaries).encode("utf-8"))
     return _dict_without_none(
         {
