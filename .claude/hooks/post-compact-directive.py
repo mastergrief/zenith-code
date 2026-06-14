@@ -8,7 +8,7 @@ import sys
 DIRECTIVE = (
     "[standing directive — auto-injected post-compaction]\n"
     "remember: full provenance with you and co_lead, no need for AUQ's, "
-    "auto-research directive, trainer-dev carries plan, implementation and "
+    "auto-research directive, plan-dev carries plan, implementation and "
     "executions/runs. No need to recycle workers, their auto compact is fine."
 )
 

@@ -11,44 +11,38 @@ charter: `.claude/rules/AI_ROOM_COLLAB.md`. **Not a subagent pattern.**
 **Gabe** = direction owner. **Claude + codex** = co-leads. **Claude** =
 operations/orchestration lead.
 
-Gabe seeds → claude+codex co-hypothesize → `training-dev` writes the
-plan/packet → claude+co_lead review the plan → `trainer-implement`
-bounded-implements after +1 → claude+co_lead review the implementation receipt
-directly (training-dev does NOT re-review implementation) → claude commit/push
-gates → `test-operator` owns formal run execution → gate → iterate.
-Claude+co_lead review/audit, NOT execute.
+Gabe seeds → claude+codex co-hypothesize → `plan-dev` writes the
+plan/packet AND bounded-implements after +1 → claude+co_lead review the
+implementation receipt directly → claude commit/push gates → `test-operator`
+owns formal run execution → gate → iterate. Claude+co_lead review/audit, NOT execute.
 
 - **Gabe**: seeds, picks risk/cost/goal, final human gates.
 - **Claude + codex**: hypothesis quality, gate design, counter-cases, audit.
 - **Codex (`codex_co_lead`)**: critique, gate semantics, routing/audit. **Read-only**
-  — planning routes to `training-dev`; bounded implementation routes to
-  `trainer-implement`, NOT this handle.
-- **Claude**: AUQ/relay, board/dispatch, gates, synthesis. Routes planning to
-  `training-dev`; implementation to `trainer-implement`; formal runs to
-  `test-operator`.
+  — planning and bounded implementation route to `plan-dev`, NOT this handle.
+- **Claude**: AUQ/relay, board/dispatch, gates, synthesis. Routes planning and
+  implementation to `plan-dev`; formal runs to `test-operator`.
 - **Named Codex roles**:
-  - **`training-dev`**: planning/contract/packet lane. Owns plan/packet
-    drafting and run-packet contracts — **NOT** implementation review
-    (implementation receipts route to claude+co_lead directly), **NOT** default
-    implementation or formal run execution. Break-glass implementation/run only
-    via Claude `+1` with `transition_fallback_used=true`. Legacy path: may invoke
+  - **`plan-dev`**: planning/contract/packet lane AND **default** bounded
+    implementation executor. Owns plan/packet drafting, run-packet contracts,
+    and approved implementation — **NOT** implementation review (implementation
+    receipts route to claude+co_lead directly), **NOT** formal run execution.
+    Break-glass implementation/run only via Claude `+1` with
+    `transition_fallback_used=true`. Legacy path: may invoke
     `.codex/agents/developer.toml` after `+1 implement` (`subagent-claimed`
-    until verified).
-  - **`trainer-implement`**: **default** bounded implementation executor against
-    the claude+co_lead-reviewed `training-dev` plan; **health-proven existing
-    backend/config** — do NOT change backend as the fix. Edits + focused
-    developer validation; **receipts to claude + codex_co_lead directly (dual
-    implementation review — training-dev is not in this loop)**; on dual accept
-    → claude commit/push gates → run packets to `test-operator`. No
+    until verified). **health-proven existing backend/config** — do NOT change
+    backend as the fix. Edits + focused developer validation; **receipts to
+    claude + codex_co_lead directly (dual implementation review)**; on dual
+    accept → claude commit/push gates → run packets to `test-operator`. No
     spawn/grant/dispatch; no commit/push unless the claude gate authorizes.
   - **`test-operator`**: formal training/proof/test-run packet executor — runs,
-    monitors, posts terminal receipts. Code fixes → `trainer-implement`; packet
-    fixes → `training-dev`.
+    monitors, posts terminal receipts. Code fixes → `plan-dev`; packet
+    fixes → `plan-dev`.
 
 ## Cross-thread at thinking boundaries
 
 Codex at: hypothesize, plan, devil's-advocate, creativity, audit, iterate.
-NOT at: build, focused impl validation, formal runs, commit — `trainer-implement`
+NOT at: build, focused impl validation, formal runs, commit — `plan-dev`
 implements after +1; formal training/proof/test runs via `test-operator`.
 Default rate; challenge even when claude looks confident.
 
@@ -103,9 +97,9 @@ Follow `resume_check` directives.
 
 ## Fast Training Launch Contract
 
-One launch packet contract drafted/reviewed by `training-dev` → one review →
+One launch packet contract drafted/reviewed by `plan-dev` → one review →
 `+1 launch/watch` → `test-operator` runs + terminal receipt (break-glass
-`training-dev` run only via Claude `+1` with `transition_fallback_used=true`).
+`plan-dev` run only via Claude `+1` with `transition_fallback_used=true`).
 Interrupt only for bank/fail/criteria/liveness/deviation. `.pt` not committed.
 
 ## Low-blast-radius commit+push collapse

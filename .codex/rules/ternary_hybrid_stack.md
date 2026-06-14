@@ -1,7 +1,7 @@
 # Ternary-Hybrid Training Stack — FP-free / sub-2-bit-persistent research lane
 
 > Canonical: `.claude/rules/ternary_hybrid_stack.md`. This is codex's lane
-> copy — training-dev owns these trainer internals, so the rule lives in
+> copy — plan-dev owns these trainer internals, so the rule lives in
 > `.codex/rules/` too; keep both in sync. Receipts live on the ai-room board +
 > commit log + `MEMORY/atlas/ternary_hybrid_stack_arc.md`, NOT this rule.
 
@@ -115,9 +115,8 @@ Optimize **information per GPU-minute**, not training volume. The control law:
   invariants").
 - **Tiny route patches, not architecture rewrites** — earn the rewrite with a
   measurement first.
-- **Role routing**: command churn → `codex-terminal`; thinking/context →
-  `training-dev`; exact-packet terminal receipts → `test-operator`
-  (`CLAUDEX_ORCHESTRATION.md` §"codex-terminal co-processor discipline").
+- **Role routing**: command churn / thinking / context → `plan-dev`; exact-packet
+  terminal receipts → `test-operator` (`CLAUDEX_ORCHESTRATION.md`).
 - **Commit every useful null** — a clean negative shrinks the search space
   (`workflow.md` §"Informative null results").
 

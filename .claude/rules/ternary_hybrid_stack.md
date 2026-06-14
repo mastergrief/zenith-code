@@ -114,9 +114,8 @@ Optimize **information per GPU-minute**, not training volume. The control law:
   invariants").
 - **Tiny route patches, not architecture rewrites** — earn the rewrite with a
   measurement first.
-- **Role routing**: command churn → `codex-terminal`; thinking/context →
-  `training-dev`; exact-packet terminal receipts → `test-operator`
-  (`CLAUDEX_ORCHESTRATION.md` §"codex-terminal co-processor discipline").
+- **Role routing**: command churn / thinking / context → `plan-dev`; exact-packet
+  terminal receipts → `test-operator` (`CLAUDEX_ORCHESTRATION.md`).
 - **Commit every useful null** — a clean negative shrinks the search space
   (`workflow.md` §"Informative null results").
 

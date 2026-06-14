@@ -11,50 +11,43 @@ unaffected.
 **Gabe** = human direction owner. **Claude + `codex_co_lead`** = technical
 research/strategy co-leads. **Claude** = operations/orchestration lead.
 
-Gabe seeds → claude+codex co-hypothesize/challenge → `training-dev` writes the
-plan/packet → **claude+co_lead review the plan** → `trainer-implement`
-bounded-implements the approved slice after +1 → **claude+co_lead review the
-implementation receipt directly (training-dev does NOT re-review
-implementation)** → on dual accept, claude commit/push gates → `test-operator`
-owns formal training/proof/test-run execution → gate → iterate. Claude+co_lead
-review/audit, NOT execute — direct Claude repo-file edits/runs need persisted
-named exception or break-glass reason.
+Gabe seeds → claude+codex co-hypothesize/challenge → `plan-dev` writes the
+plan/packet AND bounded-implements the approved slice after +1 → **claude+co_lead
+review the implementation receipt directly** → on dual accept, claude commit/push
+gates → `test-operator` owns formal training/proof/test-run execution → gate →
+iterate. Claude+co_lead review/audit, NOT execute — direct Claude repo-file
+edits/runs need persisted named exception or break-glass reason.
 
 - **Gabe**: seeds problems, picks risk/cost/goal, final human gates.
 - **Claude + `codex_co_lead`**: hypothesis quality, gate design, counter-cases,
   audit. Neither outranks on the technical call. **codex_co_lead** read-only;
-  planning routes to `training-dev`; bounded implementation routes to
-  `trainer-implement`.
+  planning and bounded implementation route to `plan-dev`.
 - **Claude**: AUQ/relay, board/dispatch, launch dispatch+review, plan/
   validation/commit/push/launch gates, synthesis. One active executor per slice.
 - **Named Codex roles** (under co-leads + gates):
-  - **`training-dev`**: planning/contract/packet lane (default for HRM +
-    main-repo slices). Owns plan/packet drafting and run-packet contracts —
+  - **`plan-dev`**: planning/contract/packet lane AND default bounded
+    implementation executor (default for HRM + main-repo slices). Owns
+    plan/packet drafting, run-packet contracts, and approved implementation —
     **NOT** implementation review (implementation receipts route to
-    claude+co_lead directly), **NOT** default implementation, **NOT** formal
-    run execution. Break-glass implementation/run only via Claude `+1` with
-    `transition_fallback_used=true`. Legacy path: after `+1 implement` may invoke
-    `.codex/agents/developer.toml` (`subagent-claimed` until verified; no gate
-    on that receipt alone).
-  - **`trainer-implement`**: **default** bounded implementation executor for
-    approved code/config/tooling slices; **health-proven existing
-    backend/config** — do NOT change backend as the fix. Edits + focused
-    developer validation in scope; **receipts to claude + codex_co_lead
-    directly (dual implementation review — training-dev is not in this loop)**;
-    on dual accept the slice proceeds to claude commit/push gates (executor per
-    gate), then run packets route to `test-operator`. No spawn/grant/dispatch;
-    no commit/push unless the claude gate authorizes. Break-glass backend change
-    only via Claude `+1` with `transition_fallback_used=true`.
+    claude+co_lead directly), **NOT** formal run execution. Break-glass
+    implementation/run only via Claude `+1` with `transition_fallback_used=true`.
+    After `+1 implement` may invoke `.codex/agents/developer.toml`
+    (`subagent-claimed` until verified; no gate on that receipt alone).
+    **health-proven existing backend/config** — do NOT change backend as the fix.
+    Edits + focused developer validation in scope; **receipts to claude +
+    codex_co_lead directly**; on dual accept the slice proceeds to claude
+    commit/push gates, then run packets route to `test-operator`. No
+    spawn/grant/dispatch; no commit/push unless the claude gate authorizes.
   - **`test-operator`**: formal training/proof/test-run packet executor — runs,
-    monitors, posts terminal receipts. Code fixes → `trainer-implement`; packet
-    fixes → `training-dev`.
+    monitors, posts terminal receipts. Code fixes → `plan-dev`; packet
+    fixes → `plan-dev`.
 
 ## Cross-thread at thinking boundaries
 
 | Step | Cross-thread? |
 |---|---|
 | Hypothesize, plan, devil's advocate, creativity, audit, iterate | **yes** |
-| Build, focused impl validation, formal runs, commit | **no** — `trainer-implement`
+| Build, focused impl validation, formal runs, commit | **no** — `plan-dev`
   implements after +1 (claude+co_lead review the result); formal
   training/proof/test runs via `test-operator` |
 
@@ -144,8 +137,8 @@ direct addressed post citing the task_update msg id.
 ## Fast Training Launch Contract
 
 Compress gates, not safety: (1) one launch packet contract drafted/reviewed by
-`training-dev`; (2) one claude+co_lead review → `+1 launch/watch-to-terminal-condition`;
-(3) `test-operator` runs + posts terminal receipt (break-glass `training-dev`
+`plan-dev`; (2) one claude+co_lead review → `+1 launch/watch-to-terminal-condition`;
+(3) `test-operator` runs + posts terminal receipt (break-glass `plan-dev`
 run only via Claude `+1` with `transition_fallback_used=true`); (4) interrupt
 only for bank/fail/criteria/liveness/deviation; (5) one terminal receipt.
 GPU-hot-loop = kernelized execution, not merely `device=cuda:0`. `.pt` not

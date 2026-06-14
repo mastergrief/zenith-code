@@ -11,11 +11,10 @@ boundary (multi-task audit by design).
 
 ## Principle
 
-Dispatch narrowest task with independent evidence. Plan/contracts/review/handoff →
-`training-dev`; bounded implementation → `trainer-implement`; formal
-training/proof/test-run packets → `test-operator`. Workers never `@gabe` —
-bubble to claude (User-input Capture Contract). Workers are slice-scoped;
-recycle after shipped slices.
+Dispatch narrowest task with independent evidence. Plan/contracts/review/handoff
+AND bounded implementation → `plan-dev`; formal training/proof/test-run packets
+→ `test-operator`. Workers never `@gabe` — bubble to claude (User-input Capture
+Contract). Workers are slice-scoped; recycle after shipped slices.
 
 ## Team model + named role lanes
 
@@ -25,40 +24,36 @@ read-only.
 
 **Named Codex role lanes** — normal route for gated mutating repo-file work:
 
-- **`training-dev`** — planning/contract/packet lane (developer template,
-  no Serena). Owns plan/packet drafting and run-packet contracts — **NOT**
-  implementation review (implementation receipts route to claude+co_lead
-  directly), **NOT** default implementation or formal run execution.
-  Break-glass implementation/run via Claude `+1` with
-  `transition_fallback_used=true`. Legacy path: after `+1 implement` may invoke
+- **`plan-dev`** — planning/contract/packet lane AND **default** bounded
+  implementation executor (developer template). Owns plan/packet drafting,
+  run-packet contracts, and approved implementation — **NOT** implementation
+  review (implementation receipts route to claude+co_lead directly), **NOT**
+  formal run execution. Break-glass implementation/run via Claude `+1` with
+  `transition_fallback_used=true`. After `+1 implement` may invoke
   `.codex/agents/developer.toml` (`subagent-claimed` until verified). **cwd =
   provenance/dispatch match, not repo permission.** No `.pt` commits.
-- **`trainer-implement`** — **default** bounded implementation executor;
   **health-proven existing backend/config** — do NOT change backend as the fix.
-  Dispatched against the claude+co_lead-reviewed `training-dev` plan; edits +
-  focused developer validation in scope; **receipts to claude + codex_co_lead
-  directly (dual implementation review — training-dev is not in this loop)**;
-  on dual accept the slice proceeds to claude commit/push gates, then run
-  packets route to `test-operator`. FORBIDDEN: spawn/kill/grant/dispatch,
-  training launch, commit/push unless the claude gate authorizes. Break-glass
-  backend change only via Claude `+1` with `transition_fallback_used=true`.
-  Role home: `~/.ai-room/.codex-roles/trainer-implement/`.
+  Edits + focused developer validation in scope; **receipts to claude +
+  codex_co_lead directly (dual implementation review)**; on dual accept the
+  slice proceeds to claude commit/push gates, then run packets route to
+  `test-operator`. FORBIDDEN: spawn/kill/grant/dispatch, training launch,
+  commit/push unless the claude gate authorizes. Role home:
+  `~/.ai-room/.codex-roles/plan-dev/`.
 - **`test-operator`** — formal training/proof/test-run packet executor. Runs
   specified packet, monitors artifacts, posts terminal receipts to both
   co-leads. FORBIDDEN: source edits, improvisation, commits/pushes.
-  Underspecified → STOP. Code fixes → `trainer-implement`; packet fixes →
-  `training-dev`.
+  Underspecified → STOP. Code fixes → `plan-dev`; packet fixes → `plan-dev`.
 
 **Role vs handle**: `role="<name>"` loads role home; routable target is a
 `codex_N` handle — role name is NOT a room handle. Native developer executor
-is not a `codex_N` handle; reports only through `training-dev`. **Not a second
+is not a `codex_N` handle; reports through `plan-dev`. **Not a second
 dispatcher**: codex_co_lead recommends; claude spawns/dispatches/gates.
 
 ## Lifecycle
 
 ```
-claude creates task + provenance → training-dev plan → claude+co_lead plan
-review → +1 implement → trainer-implement implements → claude+co_lead
+claude creates task + provenance → plan-dev plan → claude+co_lead plan
+review → +1 implement → plan-dev implements → claude+co_lead
 implementation review (dual accept) → +1 commit → commit → +1 push → push
 → test-operator run packets → complete + recycle
 ```

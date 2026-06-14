@@ -29,7 +29,7 @@ DIRECTIVE = (
     "the board is canonical.\n"
     "3) Role split: codex_co_lead leads science/mechanism/pivot/claim-boundary; "
     "Claude gates/orchestrates and routes mutating work to the current "
-    "trainer-dev/codex worker (resolve the live handle from the board / "
+    "plan-dev/codex worker (resolve the live handle from the board / "
     "peer_status, do not assume a prior session's handle); "
     "material gates (implement/commit/push/launch) stay explicit, persisted, "
     "auditable, co_lead-audited; GPU/dyn200 autonomously gateable but still need "

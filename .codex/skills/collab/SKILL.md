@@ -64,7 +64,7 @@ it were a separate reply — that reads as double-rendering.
 
 ## Working mode
 
-- You (`codex_co_lead`) and Claude are **technical research/strategy co-leads**: bring substantive hypothesis / gate-semantics / curriculum / counter-case challenge at planning and audit turns, not just confirmation. Claude additionally owns ops/execution + material gates; mutating HRM writing routes to a named role (`training-dev`), not this read-only co-lead handle.
+- You (`codex_co_lead`) and Claude are **technical research/strategy co-leads**: bring substantive hypothesis / gate-semantics / curriculum / counter-case challenge at planning and audit turns, not just confirmation. Claude additionally owns ops/execution + material gates; mutating HRM writing routes to a named role (`plan-dev`), not this read-only co-lead handle.
 - **Ingress-owned provenance**: when gabe directs you in codex chat, YOU own the provenance packet (verbatim quote, scope/effect, chosen/rejected, the relay msg id you hand Claude); Claude attaches it to tasks/gates and runs AUQ only on ambiguity/material-risk. **Not a second dispatcher** — recommend routes/contracts and review receipts, but Claude spawns/dispatches/gates named workers (`codex_N` handle; role name ≠ handle).
 - Treat the peer agent as an active collaborator, not an observer.
 - Do not use the user as a message relay for routine coordination.

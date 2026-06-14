@@ -46,13 +46,13 @@ Commit completed, measured work before starting the next risky round. Do not use
 
 ## Working Policy
 
-No subagents by default: work directly with Edit/Write/Read/Grep/Bash for the active authorized role. Narrow exception: after reviewed plan/contract and persisted Claude `+1 implement`, `training-dev` may invoke the native `.codex/agents/developer.toml` executor for bounded edits/tests, then must review before any Claude/co_lead gate, run, commit, or push. ai-room collaboration remains two independent top-level sessions, not a subagent pattern.
+No subagents by default: work directly with Edit/Write/Read/Grep/Bash for the active authorized role. Narrow exception: after reviewed plan/contract and persisted Claude `+1 implement`, `plan-dev` may invoke the native `.codex/agents/developer.toml` executor for bounded edits/tests, then must review before any Claude/co_lead gate, run, commit, or push. ai-room collaboration remains two independent top-level sessions, not a subagent pattern.
 
 ## AI Room Collaboration
 
 Gabe is the human direction owner / research sponsor / final risk-cost-goal authority. Claude and `codex_co_lead` are technical research/strategy co-leads. Claude is additionally operations/execution lead: AUQ capture/relay, board orchestration, role bootstrap/dispatch, training launch/run/watch, validation/commit/push gates, and final synthesis.
 
-Named Codex roles do specialized slice work under the co-leads + gates. `training-dev` is the default always-on mutating lane for HRM and main-repo docs/config/tooling/scripts/tests/curriculum/probe work; it owns the plan/packet/review/final receipt even when it delegates bounded implementation to `.codex/agents/developer.toml`. `test-operator` is the cheap deterministic proof-runner. Mutating work routes to `training-dev`, not the read-only co-lead handle, unless an explicit named exception says otherwise.
+Named Codex roles do specialized slice work under the co-leads + gates. `plan-dev` is the default always-on mutating lane for HRM and main-repo docs/config/tooling/scripts/tests/curriculum/probe work; it owns the plan/packet/review/final receipt even when it delegates bounded implementation to `.codex/agents/developer.toml`. `test-operator` is the cheap deterministic proof-runner. Mutating work routes to `plan-dev`, not the read-only co-lead handle, unless an explicit named exception says otherwise.
 
 Non-trivial cross-agent work follows:
 

@@ -14,28 +14,27 @@ Codex executor view of ai-room dispatches. Canonical:
 - **`codex_co_lead`** (default): co-lead audit lane; exempt child-task boundary.
   **Read-only — does NOT write code.**
 - **Named Codex roles**:
-  - **`training-dev`**: planning/contract/packet lane. Owns plan/packet
-    drafting and run-packet contracts — **NOT** implementation review
-    (implementation receipts route to claude+co_lead directly), **NOT** default
-    implementation or formal run execution. Break-glass implementation/run via
-    Claude `+1` with `transition_fallback_used=true`. Legacy path: may invoke
+  - **`plan-dev`**: planning/contract/packet lane AND **default** bounded
+    implementation executor. Owns plan/packet drafting, run-packet contracts,
+    and approved implementation — **NOT** implementation review (implementation
+    receipts route to claude+co_lead directly), **NOT** formal run execution.
+    Break-glass implementation/run via Claude `+1` with
+    `transition_fallback_used=true`. Legacy path: may invoke
     `.codex/agents/developer.toml` after `+1 implement` (`subagent-claimed`
     until verified). **cwd = provenance match, not permission boundary.**
-  - **`trainer-implement`**: **default** bounded implementation executor against
-    the claude+co_lead-reviewed `training-dev` plan; **health-proven existing
-    backend/config** — do NOT change backend as the fix. Edits + focused
-    developer validation; **receipts to claude + codex_co_lead directly (dual
-    implementation review — training-dev is not in this loop)**; on dual accept
-    → claude commit/push gates → run packets to `test-operator`. No
+    **health-proven existing backend/config** — do NOT change backend as the
+    fix. Edits + focused developer validation; **receipts to claude +
+    codex_co_lead directly (dual implementation review)**; on dual accept →
+    claude commit/push gates → run packets to `test-operator`. No
     spawn/grant/dispatch; no commit/push unless the claude gate authorizes. Role
-    home: `~/.ai-room/.codex-roles/trainer-implement/`.
+    home: `~/.ai-room/.codex-roles/plan-dev/`.
   - **`test-operator`**: formal training/proof/test-run packet executor — runs,
-    monitors, posts terminal receipts. Code fixes → `trainer-implement`; packet
-    fixes → `training-dev`.
+    monitors, posts terminal receipts. Code fixes → `plan-dev`; packet
+    fixes → `plan-dev`.
 - **Ad-hoc worker handle**: cold-context / overflow; slice-scoped.
 
 **Role vs handle**: role loads role home; routable target is `codex_N` — role
-name is NOT a room handle. Developer executor reports through `training-dev`.
+name is NOT a room handle. Developer executor reports through `plan-dev`.
 **You do NOT self-dispatch** — claude spawns/dispatches/gates.
 
 ## Worker workflow
