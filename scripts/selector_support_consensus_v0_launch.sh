@@ -178,7 +178,8 @@ PY
   set -e
   end_ts=$(date +%s)
   wall=$((end_ts - start_ts))
-  heartbeats=$(grep -c '"event": "heartbeat"' "$scratch/run.log" 2>/dev/null || echo 0)
+  heartbeats=$(grep -c '"event": "heartbeat"' "$scratch/run.log" 2>/dev/null || true)
+  heartbeats=${heartbeats:-0}
 
   if grep -q 'LIVENESS_FAILURE' "$scratch/run.log" && grep -q 'checkpoint_payload' "$scratch/run.log"; then
     elapsed=$(python3 -c "
@@ -204,12 +205,12 @@ from calm.hrm_text_158.native_full_stack.consensus_probe_result_writer import ap
 
 append_probe_result_jsonl(
     Path(sys.argv[1]),
-    probe_num=int(sys.argv[2]),
+    probe_num=sys.argv[2],
     label=sys.argv[3],
     arm=sys.argv[4],
-    exit_code=int(sys.argv[5]),
-    wall_s=int(sys.argv[6]),
-    heartbeats=int(sys.argv[7]),
+    exit_code=sys.argv[5],
+    wall_s=sys.argv[6],
+    heartbeats=sys.argv[7],
     scratch_root=Path(sys.argv[8]),
 )
 PY

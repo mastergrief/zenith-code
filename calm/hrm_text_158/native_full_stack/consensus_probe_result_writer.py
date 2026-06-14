@@ -6,15 +6,27 @@ from pathlib import Path
 from typing import Any
 
 
+def coerce_nonneg_int(name: str, value: str | int) -> int:
+    """Single robust parse site for launcher-fed numeric fields."""
+    if isinstance(value, int):
+        if value < 0:
+            raise ValueError(f"{name}: negative integer {value!r}")
+        return value
+    text = str(value).strip()
+    if not text or "\n" in text or "\r" in text or not text.isdigit():
+        raise ValueError(f"{name}: invalid non-negative integer {value!r}")
+    return int(text)
+
+
 def append_probe_result_jsonl(
     probe_results_path: Path | str,
     *,
-    probe_num: int,
+    probe_num: str | int,
     label: str,
     arm: str,
-    exit_code: int,
-    wall_s: int,
-    heartbeats: int,
+    exit_code: str | int,
+    wall_s: str | int,
+    heartbeats: str | int,
     scratch_root: Path | str,
 ) -> dict[str, Any]:
     scratch = Path(scratch_root)
@@ -39,14 +51,14 @@ def append_probe_result_jsonl(
             last_active_phase = None
 
     row: dict[str, Any] = {
-        "probe_num": int(probe_num),
+        "probe_num": coerce_nonneg_int("probe_num", probe_num),
         "label": str(label),
         "arm": str(arm),
-        "exit_code": int(exit_code),
-        "wall_s": int(wall_s),
+        "exit_code": coerce_nonneg_int("exit_code", exit_code),
+        "wall_s": coerce_nonneg_int("wall_s", wall_s),
         "receipt": bool(receipt_exists),
         "steps_completed": steps_completed,
-        "heartbeats": int(heartbeats),
+        "heartbeats": coerce_nonneg_int("heartbeats", heartbeats),
     }
     if last_active_phase is not None:
         row["last_active_phase"] = last_active_phase

@@ -304,7 +304,8 @@ PY
 
   end_ts=$(date +%s)
   wall=$((end_ts - start_ts))
-  heartbeats=$(grep -c '"event": "heartbeat"' "$scratch/run.log" 2>/dev/null || echo 0)
+  heartbeats=$(grep -c '"event": "heartbeat"' "$scratch/run.log" 2>/dev/null || true)
+  heartbeats=${heartbeats:-0}
 
   PYTHONPATH=. python3 - <<'PY' "$scratch" "$ARM_METRICS" "$PROBE_NUM" "$label" "$arm" "$sampler_pid_at_start" "$sampler_teardown"
 import json, sys
@@ -413,6 +414,8 @@ PY
     echo "TRIPWIRE: checkpoint_payload failure on $label/$arm — STOP chain"
   fi
 
+  local append_rc=0
+  set +e
   PYTHONPATH=. python3 - <<'PY' "$PROBE_RESULTS" "$PROBE_NUM" "$label" "$arm" "$rc" "$wall" "$heartbeats" "$scratch"
 import sys
 from pathlib import Path
@@ -420,15 +423,24 @@ from calm.hrm_text_158.native_full_stack.consensus_probe_result_writer import ap
 
 append_probe_result_jsonl(
     Path(sys.argv[1]),
-    probe_num=int(sys.argv[2]),
+    probe_num=sys.argv[2],
     label=sys.argv[3],
     arm=sys.argv[4],
-    exit_code=int(sys.argv[5]),
-    wall_s=int(sys.argv[6]),
-    heartbeats=int(sys.argv[7]),
+    exit_code=sys.argv[5],
+    wall_s=sys.argv[6],
+    heartbeats=sys.argv[7],
     scratch_root=Path(sys.argv[8]),
 )
 PY
+  append_rc=$?
+  set -e
+  if [[ $append_rc -ne 0 ]]; then
+    echo "LAUNCHER_AGGREGATION_FAIL: append_probe_result_jsonl rc=$append_rc probe=$PROBE_NUM label=$label arm=$arm"
+    local parent_at_stop
+    parent_at_stop=$(sha256sum "$PARENT_PT" | awk '{print $1}')
+    write_terminal_receipt "$parent_at_stop" "false" "v_launcher_aggregation_fail" "launcher_append"
+    exit 1
+  fi
 
   local receipt_exists=false
   if [[ -f "$scratch/receipt.json" ]]; then
