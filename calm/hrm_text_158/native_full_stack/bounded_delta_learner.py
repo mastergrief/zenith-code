@@ -827,6 +827,11 @@ class BoundedDeltaTensorState:
             self.exact_accumulator_shadow.to(device=device).contiguous()
             if device is not None else self.exact_accumulator_shadow.contiguous()
         )
+        from calm.hrm_text_158.native_full_stack.narrow_carrier_trainer_integration import (
+            apply_trainer_boundary_narrow_carrier,
+        )
+
+        accumulators = apply_trainer_boundary_narrow_carrier(accumulators)
         return VoteUpdateState(
             q_levels=self.q_levels.to(device=device).contiguous() if device is not None else self.q_levels,
             accumulators=accumulators,
