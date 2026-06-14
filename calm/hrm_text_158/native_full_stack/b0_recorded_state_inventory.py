@@ -20,6 +20,10 @@ from calm.hrm_text_158.native_full_stack.accumulator_policy_shadow_screen import
 
 B0_SCHEMA_VERSION = "hrm_text_158_b0_recorded_state_inventory_vote_acc_prize_sizing/v0"
 B0_SLICE_ID = "B0_recorded_state_inventory_vote_acc_prize_sizing_v0"
+B0_MULTI_TRACE_SCHEMA_VERSION = (
+    "hrm_text_158_b0_multi_trace_recorded_state_inventory_vote_acc_prize_sizing/v1"
+)
+B0_MULTI_TRACE_SLICE_ID = "B0_multi_trace_recorded_state_inventory_vote_acc_prize_sizing_v1"
 
 BRANCH_HARNESS_OR_SCOPE_FAIL = "HARNESS_OR_SCOPE_FAIL"
 BRANCH_MEASUREMENT_STATE_EXISTS_AND_HEADROOM = "MEASUREMENT_STATE_EXISTS_AND_HEADROOM"
@@ -29,6 +33,16 @@ MEASUREMENT_SHAPE_BRANCH_PRECEDENCE: tuple[str, ...] = (
     BRANCH_HARNESS_OR_SCOPE_FAIL,
     BRANCH_MEASUREMENT_STATE_EXISTS_AND_HEADROOM,
     BRANCH_MEASUREMENT_STATE_EXISTS_NO_HEADROOM,
+)
+
+CROSS_TRACE_HARNESS_FAIL = "HARNESS_FAIL"
+CROSS_TRACE_TRACE_DEPENDENT_HEADROOM = "TRACE_DEPENDENT_HEADROOM"
+CROSS_TRACE_HOLDS_ACROSS_TRACES = "HOLDS_ACROSS_TRACES"
+
+CROSS_TRACE_BRANCH_PRECEDENCE: tuple[str, ...] = (
+    CROSS_TRACE_HARNESS_FAIL,
+    CROSS_TRACE_TRACE_DEPENDENT_HEADROOM,
+    CROSS_TRACE_HOLDS_ACROSS_TRACES,
 )
 
 SOURCE_KIND_RECORDED_ROW = "recorded_row"
@@ -62,6 +76,25 @@ EXPLICIT_NON_CLAIMS: tuple[str, ...] = (
     "no science banking beyond measurement-shape inventory on this bundle",
 )
 
+MULTI_TRACE_EXPLICIT_NON_CLAIMS: tuple[str, ...] = (
+    "deferred_backlog NOT serialized",
+    "full_tensor_persistent_state pressure NOT claimed",
+    "direction_flip STABILITY NOT claimed",
+    "training_or_acquisition NOT claimed",
+    "runtime_readiness_claim false",
+    "full_sub2_claim false",
+    "tensor_wide_deferred true",
+    "multi_trace true",
+    "no_gpu_dynamics true",
+    "no science banking beyond measurement-shape inventory on these bundles",
+)
+
+MULTI_TRACE_CLAIM_BOUNDARY = (
+    "measurement-shape inventory + prize-sizing generalization only; cross-trace "
+    "branch result, whether HOLDS or TRACE_DEPENDENT, does not close the int16 "
+    "vote-acc reduction lane — it only sizes/generalizes recorded-row headroom"
+)
+
 
 @dataclass(frozen=True)
 class B0BundleSpec:
@@ -77,6 +110,7 @@ class B0BundleSpec:
     frozen_acc_width_receipt_sha256: str
     parent_checkpoint_relpath: str
     parent_sha256: str
+    b2b_trace_ndjson_relpath: str = "b2b_seed44/b2b_sequential_trace.ndjson"
 
     def path(self, relpath: str) -> Path:
         return self.chain_root / relpath
@@ -107,6 +141,36 @@ B0_CAPTURE2_BUNDLE = B0BundleSpec(
         "pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt"
     ),
     parent_sha256="9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec",
+)
+
+B0_TRACE1_BUNDLE = B0BundleSpec(
+    capture_id="trace1",
+    chain_root=CREDITDIR_ROOT / "b2b_recapture_20260610T145044Z",
+    stable_trace_relpath="b2c_replay/stable_copy/source_00_2556fcd31e592c6c.json",
+    capture_receipt_relpath="b2b_seed43/receipt.json",
+    b2c_receipt_relpath="b2c_replay/b2c_final_temporal_verdict_receipt.json",
+    audit_receipt_relpath="audit_v0/transient_selection_information_audit_v0_receipt.json",
+    chain_manifest_relpath="artifact_manifest.json",
+    frozen_acc_width_receipt_relpath=(
+        "baseline_b0/acc_width_sweep/acc_width_recorded_row_sweep_v0_receipt.json"
+    ),
+    expected_input_shas={
+        "stable_trace": "2556fcd31e592c6c59e4784f9b2afe4171e3770b87c05f2b01586e5151fe2d28",
+        "capture_receipt": "b0c0b06443772921e26e3642ed9499306648712f883c460b4aa74ca2ab61c452",
+        "b2c_receipt": "cbe3dc8afb5be7ec606de1ca6006c92e084b107c795041f0e982023e3876b2ba",
+        "audit_receipt": "098649204e17c0a274f2191855867aa149ef16e2d635427c4885fdf5f0b093fe",
+    },
+    frozen_acc_width_receipt_sha256=(
+        "3e3157af6857b91adc2578449fbd0c19ebc24c6f87bfbdbd28958757ae8389ef"
+    ),
+    parent_checkpoint_relpath="",
+    parent_sha256="",
+    b2b_trace_ndjson_relpath="b2b_seed43/b2b_sequential_trace.ndjson",
+)
+
+B0_MULTI_TRACE_BUNDLE_SPECS: tuple[B0BundleSpec, ...] = (
+    B0_TRACE1_BUNDLE,
+    B0_CAPTURE2_BUNDLE,
 )
 
 
@@ -169,7 +233,7 @@ def build_preregistered_source_inventory(spec: B0BundleSpec) -> list[dict[str, A
         ),
         _inventory_entry(
             artifact_id="b2b_trace_ndjson",
-            relpath="b2b_seed44/b2b_sequential_trace.ndjson",
+            relpath=spec.b2b_trace_ndjson_relpath,
             role="b2b_trace",
             source_kind=SOURCE_KIND_STABLE_TRACE,
             sufficient_for_b0=True,
@@ -219,7 +283,7 @@ def build_preregistered_source_inventory(spec: B0BundleSpec) -> list[dict[str, A
         _inventory_entry(
             artifact_id="acc_width_existing_receipt",
             relpath=spec.frozen_acc_width_receipt_relpath,
-            role="baseline_b0_capture2_acc_receipt",
+            role="frozen_acc_width_receipt",
             source_kind=SOURCE_KIND_RECORDED_ROW,
             sufficient_for_b0=True,
             notes="frozen measurement receipt for fingerprint compare",
@@ -523,17 +587,157 @@ def run_b0_recorded_state_inventory_vote_acc_prize_sizing(
     }
 
 
+def _per_trace_harness_failed(trace_result: Mapping[str, Any]) -> bool:
+    shape = dict(trace_result.get("measurement_shape_branch") or {})
+    if shape.get("primary_branch") == BRANCH_HARNESS_OR_SCOPE_FAIL:
+        return True
+    fingerprint = trace_result.get("frozen_fingerprint_compare")
+    if fingerprint is not None and not bool(fingerprint.get("passed")):
+        return True
+    return False
+
+
+def emit_cross_trace_branch_classifier(
+    per_trace_results: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    harness_failures: list[str] = []
+    for trace_result in per_trace_results:
+        capture_id = str(trace_result.get("capture_id", "unknown"))
+        if _per_trace_harness_failed(trace_result):
+            harness_failures.append(capture_id)
+
+    if harness_failures:
+        return {
+            "primary_branch": CROSS_TRACE_HARNESS_FAIL,
+            "branch_precedence": list(CROSS_TRACE_BRANCH_PRECEDENCE),
+            "harness_failures": harness_failures,
+            "trace_count": len(per_trace_results),
+        }
+
+    headroom_flags = [
+        bool(
+            dict(trace_result.get("measurement_shape_branch") or {}).get(
+                "headroom_pass"
+            )
+        )
+        for trace_result in per_trace_results
+    ]
+    w_min_headroom_values = [
+        dict(trace_result.get("prize_sizing") or {}).get("w_min_headroom_safe")
+        for trace_result in per_trace_results
+    ]
+    w_min_values = [
+        dict(trace_result.get("prize_sizing") or {}).get("w_min")
+        for trace_result in per_trace_results
+    ]
+    per_trace_branches = [
+        dict(trace_result.get("measurement_shape_branch") or {}).get("primary_branch")
+        for trace_result in per_trace_results
+    ]
+
+    headroom_diverges = len(set(headroom_flags)) > 1
+    w_min_headroom_diverges = len(set(w_min_headroom_values)) > 1
+    w_min_diverges = len(set(w_min_values)) > 1
+
+    if headroom_diverges or w_min_headroom_diverges or w_min_diverges:
+        return {
+            "primary_branch": CROSS_TRACE_TRACE_DEPENDENT_HEADROOM,
+            "branch_precedence": list(CROSS_TRACE_BRANCH_PRECEDENCE),
+            "harness_failures": [],
+            "trace_count": len(per_trace_results),
+            "headroom_pass_by_trace": headroom_flags,
+            "w_min_headroom_safe_by_trace": w_min_headroom_values,
+            "w_min_by_trace": w_min_values,
+        }
+
+    all_headroom_branches = all(
+        branch == BRANCH_MEASUREMENT_STATE_EXISTS_AND_HEADROOM
+        for branch in per_trace_branches
+    )
+    all_headroom_pass = all(headroom_flags)
+    if all_headroom_branches and all_headroom_pass:
+        return {
+            "primary_branch": CROSS_TRACE_HOLDS_ACROSS_TRACES,
+            "branch_precedence": list(CROSS_TRACE_BRANCH_PRECEDENCE),
+            "harness_failures": [],
+            "trace_count": len(per_trace_results),
+            "w_min_headroom_safe": w_min_headroom_values[0] if w_min_headroom_values else None,
+            "headroom_pass": True,
+            "per_trace_measurement_shape_branches": per_trace_branches,
+        }
+
+    return {
+        "primary_branch": CROSS_TRACE_TRACE_DEPENDENT_HEADROOM,
+        "branch_precedence": list(CROSS_TRACE_BRANCH_PRECEDENCE),
+        "harness_failures": [],
+        "trace_count": len(per_trace_results),
+        "per_trace_measurement_shape_branches": per_trace_branches,
+        "reason": "harness_clean_but_not_uniform_headroom_branch",
+    }
+
+
+def run_b0_multi_trace_recorded_state_inventory(
+    *,
+    bundle_specs: Sequence[B0BundleSpec] = B0_MULTI_TRACE_BUNDLE_SPECS,
+) -> dict[str, Any]:
+    traces: list[dict[str, Any]] = []
+    for spec in bundle_specs:
+        trace_result = run_b0_recorded_state_inventory_vote_acc_prize_sizing(
+            bundle_spec=spec
+        )
+        traces.append(
+            {
+                "capture_id": spec.capture_id,
+                "chain_root": str(spec.chain_root),
+                "schema_version": trace_result["schema_version"],
+                "slice_id": trace_result["slice_id"],
+                "measurement_shape_branch": trace_result["measurement_shape_branch"],
+                "prize_sizing": trace_result["prize_sizing"],
+                "frozen_fingerprint_compare": trace_result.get(
+                    "frozen_fingerprint_compare"
+                ),
+                "threshold_mismatch_hazard": trace_result["threshold_mismatch_hazard"],
+                "single_trace_receipt": trace_result,
+            }
+        )
+
+    cross_trace = emit_cross_trace_branch_classifier(traces)
+    return {
+        "schema_version": B0_MULTI_TRACE_SCHEMA_VERSION,
+        "slice_id": B0_MULTI_TRACE_SLICE_ID,
+        "mode": "multi_trace",
+        "reuse_verdict": "REUSE_EXISTING_SWEEP_NO_NEW_MEASUREMENT_ENGINE",
+        "traces": traces,
+        "cross_trace_branch_classifier": cross_trace,
+        "bundle_sufficiency_verdict": (
+            "recorded_row class ONLY — sufficient for inventory/prize-sizing; "
+            "NOT GPU/tensor-wide/training claims"
+        ),
+        "explicit_non_claims": list(MULTI_TRACE_EXPLICIT_NON_CLAIMS),
+        "claim_boundary": MULTI_TRACE_CLAIM_BOUNDARY,
+    }
+
+
 __all__ = [
     "B0_CAPTURE2_BUNDLE",
+    "B0_MULTI_TRACE_BUNDLE_SPECS",
+    "B0_MULTI_TRACE_SCHEMA_VERSION",
+    "B0_MULTI_TRACE_SLICE_ID",
     "B0_SCHEMA_VERSION",
     "B0_SLICE_ID",
+    "B0_TRACE1_BUNDLE",
     "BRANCH_HARNESS_OR_SCOPE_FAIL",
     "BRANCH_MEASUREMENT_STATE_EXISTS_AND_HEADROOM",
     "BRANCH_MEASUREMENT_STATE_EXISTS_NO_HEADROOM",
+    "CROSS_TRACE_HARNESS_FAIL",
+    "CROSS_TRACE_HOLDS_ACROSS_TRACES",
+    "CROSS_TRACE_TRACE_DEPENDENT_HEADROOM",
     "build_preregistered_source_inventory",
     "bundle_sweep_inputs_available",
     "compare_sweep_fingerprint",
+    "emit_cross_trace_branch_classifier",
     "emit_measurement_shape_branch",
     "extract_threshold_mismatch_hazard",
+    "run_b0_multi_trace_recorded_state_inventory",
     "run_b0_recorded_state_inventory_vote_acc_prize_sizing",
 ]
