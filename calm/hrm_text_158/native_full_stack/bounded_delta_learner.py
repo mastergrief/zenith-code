@@ -25,6 +25,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
     ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
     BOUNDED_DELTA_ACCUMULATOR_SCHEMA_VERSION,
     BoundedDeltaAccumulatorState,
+    bounded_accumulator_decoded_sha256,
     decode_bounded_accumulator_to_i16,
     encode_budget_capped_hybrid_reference,
     execute_direct_bounded_local_vote_update_candidate,
@@ -93,7 +94,14 @@ def tensor_sha256(tensor: torch.Tensor) -> str:
     h = hashlib.sha256()
     h.update(str(cpu.dtype).encode("utf-8"))
     h.update(str(tuple(cpu.shape)).encode("utf-8"))
-    h.update(cpu.numpy().tobytes())
+    flat = cpu.view(-1)
+    if flat.numel() == 0:
+        return h.hexdigest()
+    element_size = flat.element_size()
+    chunk_elems = max(1, (1024 * 1024) // element_size)
+    for start in range(0, flat.numel(), chunk_elems):
+        chunk = flat[start : start + chunk_elems]
+        h.update(chunk.numpy().tobytes())
     return h.hexdigest()
 
 
@@ -793,8 +801,7 @@ class BoundedDeltaTensorState:
 
     def bounded_decode_parity_report(self, *, fail_on_mismatch: bool = False) -> dict[str, Any]:
         parity_state, rebuilt = self._fresh_state_for_bounded_parity()
-        decoded = decode_bounded_accumulator_to_i16(parity_state.bounded_accumulator)
-        decoded_sha = tensor_sha256(decoded)
+        decoded_sha = bounded_accumulator_decoded_sha256(parity_state.bounded_accumulator)
         shadow_sha = tensor_sha256(parity_state.exact_accumulator_shadow)
         matches = decoded_sha == shadow_sha
         if fail_on_mismatch and not matches:
@@ -898,11 +905,18 @@ def _cold_exception_indices_for_exact_preservation(
 ) -> tuple[int, ...]:
     flat = acc.detach().cpu().flatten().to(torch.int16)
     hot = {int(idx) for idx in hot_exact_indices}
-    return tuple(
-        int(idx)
-        for idx, value in enumerate(flat.tolist())
-        if idx not in hot and int(value) != int(cold_default_value)
-    )
+    cold_default = int(cold_default_value)
+    if flat.numel() == 0:
+        return ()
+    hot_mask = torch.zeros(flat.numel(), dtype=torch.bool)
+    if hot:
+        hot_idx = torch.tensor(sorted(hot), dtype=torch.long)
+        hot_mask[hot_idx] = True
+    keep = (flat != cold_default) & ~hot_mask
+    indices = torch.nonzero(keep, as_tuple=False).flatten()
+    if indices.numel() == 0:
+        return ()
+    return tuple(int(idx) for idx in indices.tolist())
 
 
 def make_bounded_tensor_state(

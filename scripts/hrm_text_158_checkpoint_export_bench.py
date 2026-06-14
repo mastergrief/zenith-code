@@ -101,13 +101,14 @@ def run_export_bench(
     *,
     states_source: str,
     cold_exception_count: int | None = None,
+    fixture_build_peak_rss_bytes: int | None = None,
 ) -> dict[str, Any]:
     if torch.cuda.is_available() and os.environ.get("CUDA_VISIBLE_DEVICES", "") != "":
         raise RuntimeError("checkpoint export bench requires CPU-only execution")
 
     updater_config = _default_updater_config()
-    start = time.perf_counter()
-    peak_rss = _rss_bytes_self()
+    export_anchor_rss = _rss_bytes_self()
+    export_start = time.perf_counter()
     payload = build_authoritative_checkpoint_payload(
         tensor_states,
         step=10,
@@ -116,29 +117,35 @@ def run_export_bench(
         dry_run=True,
         checkpoint_written=False,
     )
-    wall_seconds = time.perf_counter() - start
-    peak_rss = max(peak_rss, _rss_bytes_self())
+    export_wall_seconds = time.perf_counter() - export_start
+    export_only_peak_rss_bytes = max(export_anchor_rss, _rss_bytes_self())
 
     summaries = payload["tensor_summaries"]
-    hot_path_sites_exercised = ["A", "B", "C", "D"]
+    hot_path_sites_exercised = ["A", "B", "C"]
     for summary in summaries.values():
         if summary.get("bounded_decode_parity_checked") is not True:
-            raise RuntimeError("bench must exercise parity/decode path (site A/C)")
+            raise RuntimeError("bench must exercise parity/decode path (site C)")
         if not summary.get("q_sha256"):
             raise RuntimeError("bench must exercise tensor_sha256 (site B)")
     if not payload.get("authoritative_state_sha256"):
-        raise RuntimeError("bench must exercise _canonical_json summaries (site D)")
+        raise RuntimeError("bench must exercise canonical summary digest (site D deferred)")
 
     receipt: dict[str, Any] = {
         "schema": "hrm_text_158_checkpoint_export_bench_receipt/v1",
         "states_source": states_source,
         "tensor_count": len(tensor_states),
-        "wall_seconds": wall_seconds,
-        "peak_rss_bytes": peak_rss,
+        "wall_seconds": export_wall_seconds,
+        "export_wall_s": export_wall_seconds,
+        "peak_rss_bytes": export_only_peak_rss_bytes,
+        "export_only_peak_rss_bytes": export_only_peak_rss_bytes,
+        "export_only_peak_rss_gib": round(export_only_peak_rss_bytes / (1024**3), 4),
+        "export_only_peak_rss_decimal_gb": round(export_only_peak_rss_bytes / 1_000_000_000, 4),
         "host": os.uname().nodename,
         "hot_path_sites_exercised": hot_path_sites_exercised,
         "dry_run": True,
     }
+    if fixture_build_peak_rss_bytes is not None:
+        receipt["fixture_build_peak_rss_bytes"] = int(fixture_build_peak_rss_bytes)
     if cold_exception_count is not None:
         receipt["cold_exception_count"] = int(cold_exception_count)
     return receipt
@@ -155,15 +162,23 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
+    fixture_anchor_rss = _rss_bytes_self()
     if args.synthetic_all_bitlinear:
         states = _build_synthetic_all_bitlinear_states()
-        receipt = run_export_bench(states, states_source="synthetic_all_bitlinear")
+        fixture_build_peak = max(fixture_anchor_rss, _rss_bytes_self())
+        receipt = run_export_bench(
+            states,
+            states_source="synthetic_all_bitlinear",
+            fixture_build_peak_rss_bytes=fixture_build_peak,
+        )
     else:
         states, cold_exception_count = _build_synthetic_cold_exception_stress_states()
+        fixture_build_peak = max(fixture_anchor_rss, _rss_bytes_self())
         receipt = run_export_bench(
             states,
             states_source="synthetic_cold_exception_stress",
             cold_exception_count=cold_exception_count,
+            fixture_build_peak_rss_bytes=fixture_build_peak,
         )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")

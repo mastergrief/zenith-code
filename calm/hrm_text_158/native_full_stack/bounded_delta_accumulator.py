@@ -815,6 +815,62 @@ def decode_bounded_accumulator_to_i16(state: BoundedDeltaAccumulatorState) -> to
     return out.view(state.logical_shape).contiguous()
 
 
+def bounded_accumulator_decoded_sha256(state: BoundedDeltaAccumulatorState) -> str:
+    """Hash the dense decoded accumulator without materializing the full tensor."""
+
+    if state.raw_arrays_included:
+        raise ValueError("bounded-delta compact state must not be marked raw-array-inclusive")
+    numel = int(state.logical_numel)
+    shape = tuple(state.logical_shape)
+    default = int(state.cold_default_value)
+    default_bytes = int(default).to_bytes(2, byteorder="little", signed=True)
+    cold_indices = state.cold_exception_indices
+    cold_values = state.cold_exception_values
+    hot_indices = state.hot_exact_indices
+    hot_values = state.hot_exact_values
+    for indices, values, name in (
+        (cold_indices, cold_values, "cold exceptions"),
+        (hot_indices, hot_values, "hot exact rows"),
+    ):
+        if len(indices) != len(values):
+            raise ValueError(f"{name} index/value count mismatch")
+        for index in indices:
+            if index < 0 or index >= numel:
+                raise ValueError(f"{name} contains out-of-range index")
+    overrides: dict[int, int] = {
+        int(index): int(value) for index, value in zip(cold_indices, cold_values)
+    }
+    overrides.update(
+        {int(index): int(value) for index, value in zip(hot_indices, hot_values)}
+    )
+    h = hashlib.sha256()
+    h.update(str(torch.int16).encode("utf-8"))
+    h.update(str(shape).encode("utf-8"))
+    if numel <= 0:
+        return h.hexdigest()
+
+    default_chunk_elems = max(1, (1024 * 1024) // len(default_bytes))
+
+    def _update_default_run(gap_len: int) -> None:
+        if gap_len <= 0:
+            return
+        remaining = gap_len
+        while remaining > 0:
+            chunk = min(remaining, default_chunk_elems)
+            h.update(default_bytes * chunk)
+            remaining -= chunk
+
+    pos = 0
+    for idx in sorted(overrides):
+        if idx > pos:
+            _update_default_run(idx - pos)
+        h.update(int(overrides[idx]).to_bytes(2, byteorder="little", signed=True))
+        pos = idx + 1
+    if pos < numel:
+        _update_default_run(numel - pos)
+    return h.hexdigest()
+
+
 def _bounded_value_dict(
     state: BoundedDeltaAccumulatorState,
 ) -> tuple[dict[int, int], dict[int, int]]:
@@ -2276,6 +2332,7 @@ __all__ = [
     "bounded_delta_inclusive_ledger",
     "compare_bounded_delta_paths_to_int16_oracle",
     "compare_bounded_delta_step_to_int16_oracle",
+    "bounded_accumulator_decoded_sha256",
     "decode_bounded_accumulator_to_i16",
     "encode_budget_capped_hybrid_reference",
     "execute_direct_bounded_local_vote_update_candidate",
