@@ -1760,6 +1760,7 @@ def activation_credit_family_metrics_with_tiebreak(
     oracle_top1_delta: float | None,
     intra_bucket_tiebreak_key_fn: Callable[[Mapping[str, Any]], tuple[Any, ...]]
     | None = None,
+    family_bucket_key_fn: Callable[[Mapping[str, Any]], tuple[Any, ...]] | None = None,
 ) -> dict[str, Any]:
     return _activation_credit_family_metrics(
         target_band_candidates=target_band_candidates,
@@ -1767,7 +1768,19 @@ def activation_credit_family_metrics_with_tiebreak(
         oracle_best_candidate=oracle_best_candidate,
         oracle_top1_delta=oracle_top1_delta,
         intra_bucket_tiebreak_key_fn=intra_bucket_tiebreak_key_fn,
+        family_bucket_key_fn=family_bucket_key_fn,
     )
+
+
+def _activation_credit_family_bucket_key(
+    candidate: Mapping[str, Any],
+    *,
+    family_id: str,
+    family_bucket_key_fn: Callable[[Mapping[str, Any]], tuple[Any, ...]] | None,
+) -> tuple[Any, ...]:
+    if family_bucket_key_fn is not None:
+        return family_bucket_key_fn(candidate)
+    return _activation_credit_family_key(candidate, family_id=family_id)
 
 
 def _activation_credit_family_metrics(
@@ -1778,20 +1791,26 @@ def _activation_credit_family_metrics(
     oracle_top1_delta: float | None,
     intra_bucket_tiebreak_key_fn: Callable[[Mapping[str, Any]], tuple[Any, ...]]
     | None = None,
+    family_bucket_key_fn: Callable[[Mapping[str, Any]], tuple[Any, ...]] | None = None,
 ) -> dict[str, Any]:
     groups: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
     for candidate in target_band_candidates:
         groups.setdefault(
-            _activation_credit_family_key(candidate, family_id=family_id),
+            _activation_credit_family_bucket_key(
+                candidate,
+                family_id=family_id,
+                family_bucket_key_fn=family_bucket_key_fn,
+            ),
             [],
         ).append(dict(candidate))
     bucket_sizes = sorted((len(group) for group in groups.values()), reverse=True)
     histogram: dict[str, int] = {}
     for size in bucket_sizes:
         histogram[str(int(size))] = int(histogram.get(str(int(size)), 0) + 1)
-    oracle_key = _activation_credit_family_key(
+    oracle_key = _activation_credit_family_bucket_key(
         oracle_best_candidate,
         family_id=family_id,
+        family_bucket_key_fn=family_bucket_key_fn,
     )
     oracle_bucket = list(groups.get(oracle_key, []))
     bucket_ids = {str(candidate["candidate_id"]) for candidate in oracle_bucket}

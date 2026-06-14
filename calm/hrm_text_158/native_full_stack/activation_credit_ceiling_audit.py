@@ -2245,6 +2245,484 @@ def run_b5b_within_q5_family_tiebreak_counterfactual(
     }
 
 
+H1_COUNTERFACTUAL_SCHEMA_VERSION = (
+    "hrm_text_158_h1_bucket_swap_counterfactual/v0"
+)
+H1_COUNTERFACTUAL_BUCKET_FIELD = "h1_counterfactual_bucket_bin"
+H1_BRANCH_HARNESS_OR_CALIBRATION_FAIL = "HARNESS_OR_CALIBRATION_FAIL"
+H1_BRANCH_SUB2_L3_BUCKET_RECOVERS = "SUB2_L3_BUCKET_RECOVERS"
+H1_BRANCH_GT2_Q5_OR_L5_ONLY_RECOVERS_DIAGNOSTIC = (
+    "GT2_Q5_OR_L5_ONLY_RECOVERS_DIAGNOSTIC"
+)
+H1_BRANCH_NO_BUCKET_ARM_RECOVERS = "NO_BUCKET_ARM_RECOVERS"
+H1_BRANCH_PRIORITY = (
+    H1_BRANCH_HARNESS_OR_CALIBRATION_FAIL,
+    H1_BRANCH_SUB2_L3_BUCKET_RECOVERS,
+    H1_BRANCH_GT2_Q5_OR_L5_ONLY_RECOVERS_DIAGNOSTIC,
+    H1_BRANCH_NO_BUCKET_ARM_RECOVERS,
+)
+H1_ARM_BASELINE_TAYLOR_Q5 = "ARM_BASELINE_TAYLOR_Q5"
+H1_ARM_SNR_Q5 = "ARM_SNR_Q5"
+H1_ARM_DIAGFISHER_Q5 = "ARM_DIAGFISHER_Q5"
+H1_ARM_TOPOLOGY_BLOCK128 = "ARM_TOPOLOGY_BLOCK128"
+H1_ARM_TAYLOR_L3 = "ARM_TAYLOR_L3"
+H1_ARM_SNR_L3 = "ARM_SNR_L3"
+H1_ARM_DIAGFISHER_L3 = "ARM_DIAGFISHER_L3"
+H1_ARM_ELIGIBILITY_L3 = "ARM_ELIGIBILITY_L3"
+H1_ARM_ELIGIBILITY_L5 = "ARM_ELIGIBILITY_L5"
+
+
+@dataclass(frozen=True)
+class H1ArmSpec:
+    arm_id: str
+    feature: str
+    level: int | str
+    receipt_native_field: str | None
+    diagnostic_family_label: str
+    persistent_bits: float | None
+    recovery_tier: str
+    sub2_relevant: bool
+
+
+H1_PREREGISTERED_ARM_SPECS: tuple[H1ArmSpec, ...] = (
+    H1ArmSpec(
+        arm_id=H1_ARM_BASELINE_TAYLOR_Q5,
+        feature="taylor_benefit",
+        level=5,
+        receipt_native_field=ACTIVATION_CREDIT_TAYLOR_BENEFIT_Q5_FIELD,
+        diagnostic_family_label=ACTIVATION_CREDIT_PRIMARY_FAMILY_ID,
+        persistent_bits=float(math.log2(5)),
+        recovery_tier="harness_anchor",
+        sub2_relevant=False,
+    ),
+    H1ArmSpec(
+        arm_id=H1_ARM_SNR_Q5,
+        feature="snr",
+        level=5,
+        receipt_native_field=ACTIVATION_CREDIT_SNR_Q5_FIELD,
+        diagnostic_family_label=ACTIVATION_CREDIT_SNR_Q5_ABLATION_FAMILY_ID,
+        persistent_bits=float(math.log2(5)),
+        recovery_tier="gt2_diagnostic",
+        sub2_relevant=False,
+    ),
+    H1ArmSpec(
+        arm_id=H1_ARM_DIAGFISHER_Q5,
+        feature="diag_fisher",
+        level=5,
+        receipt_native_field=ACTIVATION_CREDIT_DIAG_FISHER_Q5_FIELD,
+        diagnostic_family_label=ACTIVATION_CREDIT_DIAG_FISHER_Q5_ABLATION_FAMILY_ID,
+        persistent_bits=float(math.log2(5)),
+        recovery_tier="gt2_diagnostic",
+        sub2_relevant=False,
+    ),
+    H1ArmSpec(
+        arm_id=H1_ARM_TOPOLOGY_BLOCK128,
+        feature="topology_row_block_128",
+        level="discrete",
+        receipt_native_field="topology_row_block_128",
+        diagnostic_family_label=ACTIVATION_CREDIT_TOPOLOGY_CONTROL_FAMILY_ID,
+        persistent_bits=None,
+        recovery_tier="negative_control",
+        sub2_relevant=False,
+    ),
+    H1ArmSpec(
+        arm_id=H1_ARM_TAYLOR_L3,
+        feature="taylor_benefit",
+        level=3,
+        receipt_native_field=None,
+        diagnostic_family_label="counterfactual:taylor_L3",
+        persistent_bits=float(math.log2(3)),
+        recovery_tier="sub2_primary",
+        sub2_relevant=True,
+    ),
+    H1ArmSpec(
+        arm_id=H1_ARM_SNR_L3,
+        feature="snr",
+        level=3,
+        receipt_native_field=None,
+        diagnostic_family_label="counterfactual:snr_L3",
+        persistent_bits=float(math.log2(3)),
+        recovery_tier="sub2_primary",
+        sub2_relevant=True,
+    ),
+    H1ArmSpec(
+        arm_id=H1_ARM_DIAGFISHER_L3,
+        feature="diag_fisher",
+        level=3,
+        receipt_native_field=None,
+        diagnostic_family_label="counterfactual:diagfisher_L3",
+        persistent_bits=float(math.log2(3)),
+        recovery_tier="sub2_primary",
+        sub2_relevant=True,
+    ),
+    H1ArmSpec(
+        arm_id=H1_ARM_ELIGIBILITY_L3,
+        feature="signed_neg_grad_proxy_times_candidate_delta_weight",
+        level=3,
+        receipt_native_field=None,
+        diagnostic_family_label="counterfactual:eligibility_L3",
+        persistent_bits=float(math.log2(3)),
+        recovery_tier="sub2_primary",
+        sub2_relevant=True,
+    ),
+    H1ArmSpec(
+        arm_id=H1_ARM_ELIGIBILITY_L5,
+        feature="signed_neg_grad_proxy_times_candidate_delta_weight",
+        level=5,
+        receipt_native_field=None,
+        diagnostic_family_label="counterfactual:eligibility_L5",
+        persistent_bits=float(math.log2(5)),
+        recovery_tier="gt2_diagnostic",
+        sub2_relevant=False,
+    ),
+)
+
+
+def _h1_arm_spec_by_id(arm_id: str) -> H1ArmSpec:
+    for spec in H1_PREREGISTERED_ARM_SPECS:
+        if spec.arm_id == arm_id:
+            return spec
+    raise ValueError(f"unsupported H1 arm_id {arm_id!r}")
+
+
+def _h1_feature_value_fn(feature: str) -> Callable[[Mapping[str, Any]], float]:
+    if feature == "taylor_benefit":
+        return _scalar_spec_by_id("taylor_benefit").compute
+    if feature == "snr":
+        return _scalar_spec_by_id("snr").compute
+    if feature == "diag_fisher":
+        return _scalar_spec_by_id("diag_fisher").compute
+    if feature == "signed_neg_grad_proxy_times_candidate_delta_weight":
+        return _scalar_spec_by_id(B5B_ELIGIBILITY_SCALAR_ID).compute
+    if feature == "topology_row_block_128":
+        return lambda row: float(row["topology_row_block_128"])
+    raise ValueError(f"unsupported H1 feature {feature!r}")
+
+
+def _h1_assign_rebin_bucket_bins(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    arm: H1ArmSpec,
+    direction: int,
+    oos_thresholds: Sequence[float] | None,
+) -> list[dict[str, Any]]:
+    if not isinstance(arm.level, int):
+        raise ValueError(f"re-bin arm {arm.arm_id!r} requires integer level")
+    value_fn = _h1_feature_value_fn(arm.feature)
+    copied = [dict(row) for row in rows]
+    scores = [float(direction) * float(value_fn(row)) for row in copied]
+    if oos_thresholds is None:
+        thresholds = _ordinal_thresholds_from_scores(scores, levels=int(arm.level))
+    else:
+        thresholds = tuple(oos_thresholds)
+    for row, score in zip(copied, scores, strict=True):
+        row[H1_COUNTERFACTUAL_BUCKET_FIELD] = _ordinal_bin(
+            score,
+            thresholds=thresholds,
+            levels=int(arm.level),
+        )
+    return copied
+
+
+def _h1_family_bucket_key_fn_for_arm(arm: H1ArmSpec) -> Callable[[Mapping[str, Any]], tuple[Any, ...]]:
+    if arm.receipt_native_field is not None:
+        field = arm.receipt_native_field
+        return lambda candidate: (int(candidate[field]),)
+    return lambda candidate: (int(candidate[H1_COUNTERFACTUAL_BUCKET_FIELD]),)
+
+
+def _h1_counterfactual_family_auc(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    arm: H1ArmSpec,
+    direction: int,
+    oos_thresholds: Sequence[float] | None = None,
+) -> float:
+    if arm.receipt_native_field is not None:
+        working_rows = [dict(row) for row in rows]
+    else:
+        working_rows = _h1_assign_rebin_bucket_bins(
+            rows,
+            arm=arm,
+            direction=direction,
+            oos_thresholds=oos_thresholds,
+        )
+    oracle_best = _oracle_best_row(working_rows)
+    oracle_top1_delta = float(oracle_best["local_loss_delta"])
+    metrics = activation_credit_family_metrics_with_tiebreak(
+        target_band_candidates=tuple(working_rows),
+        family_id=arm.diagnostic_family_label,
+        oracle_best_candidate=oracle_best,
+        oracle_top1_delta=oracle_top1_delta,
+        family_bucket_key_fn=_h1_family_bucket_key_fn_for_arm(arm),
+    )
+    return float(metrics["within_band_pairwise_auc_report_only"])
+
+
+def _h1_arm_direction(seed43_rows: Sequence[Mapping[str, Any]], *, arm: H1ArmSpec) -> int:
+    return _best_seed43_direction(
+        seed43_rows,
+        value_fn=_h1_feature_value_fn(arm.feature),
+    )
+
+
+def _h1_rebin_calibration_failure(
+    seed43_rows: Sequence[Mapping[str, Any]],
+    seed29_rows: Sequence[Mapping[str, Any]],
+    *,
+    arm: H1ArmSpec,
+    direction: int,
+) -> bool:
+    if arm.receipt_native_field is not None:
+        return False
+    if not isinstance(arm.level, int):
+        return False
+    value_fn = _h1_feature_value_fn(arm.feature)
+    seed43_scores = [float(direction) * float(value_fn(row)) for row in seed43_rows]
+    seed29_scores = [float(direction) * float(value_fn(row)) for row in seed29_rows]
+    seed43_thresholds = _ordinal_thresholds_from_scores(seed43_scores, levels=int(arm.level))
+    seed29_online_thresholds = _ordinal_thresholds_from_scores(
+        seed29_scores,
+        levels=int(arm.level),
+    )
+    oracle29 = _oracle_best_row(seed29_rows)
+    oracle_score = float(direction) * float(value_fn(oracle29))
+    online_bin = _ordinal_bin(
+        oracle_score,
+        thresholds=seed29_online_thresholds,
+        levels=int(arm.level),
+    )
+    oos_bin = _ordinal_bin(
+        oracle_score,
+        thresholds=seed43_thresholds,
+        levels=int(arm.level),
+    )
+    return int(online_bin) != int(oos_bin)
+
+
+def _h1_arm_recovers_both_seeds(arm_metrics: Mapping[str, Any]) -> bool:
+    return bool(
+        float(arm_metrics[SEED43_LABEL]["receipt_family_compressed_auc"])
+        > PRIMARY_RECEIPT_FAMILY_AUC_MAX
+        and float(arm_metrics[SEED29_LABEL]["receipt_family_compressed_auc"])
+        > PRIMARY_RECEIPT_FAMILY_AUC_MAX
+    )
+
+
+def _h1_emit_branch_classifier(
+    *,
+    harness_ok: bool,
+    calibration_failure: bool,
+    topology_negative_control_clears: bool,
+    sub2_l3_winning_arm_ids: Sequence[str],
+    gt2_only_winning_arm_ids: Sequence[str],
+) -> dict[str, Any]:
+    applicable: list[str] = []
+    if not harness_ok or calibration_failure or topology_negative_control_clears:
+        applicable.append(H1_BRANCH_HARNESS_OR_CALIBRATION_FAIL)
+    if sub2_l3_winning_arm_ids:
+        applicable.append(H1_BRANCH_SUB2_L3_BUCKET_RECOVERS)
+    elif gt2_only_winning_arm_ids:
+        applicable.append(H1_BRANCH_GT2_Q5_OR_L5_ONLY_RECOVERS_DIAGNOSTIC)
+    elif harness_ok and not calibration_failure and not topology_negative_control_clears:
+        applicable.append(H1_BRANCH_NO_BUCKET_ARM_RECOVERS)
+    primary_branch = next(
+        branch for branch in H1_BRANCH_PRIORITY if branch in applicable
+    )
+    sub2_bucket_recovery = bool(sub2_l3_winning_arm_ids)
+    winning_arm_ids = list(sub2_l3_winning_arm_ids or gt2_only_winning_arm_ids)
+    winning_arm_persistent_bits = {
+        arm_id: _h1_arm_spec_by_id(arm_id).persistent_bits for arm_id in winning_arm_ids
+    }
+    return {
+        "priority_order": list(H1_BRANCH_PRIORITY),
+        "all_applicable_branches": applicable,
+        "primary_branch": primary_branch,
+        "sub2_win_branch": H1_BRANCH_SUB2_L3_BUCKET_RECOVERS,
+        "sub2_bucket_recovery": sub2_bucket_recovery,
+        "winning_arm_ids": winning_arm_ids,
+        "winning_arm_persistent_bits": winning_arm_persistent_bits,
+        "explicit_non_win_branches": [
+            H1_BRANCH_GT2_Q5_OR_L5_ONLY_RECOVERS_DIAGNOSTIC,
+        ],
+    }
+
+
+def run_h1_bucket_swap_counterfactual(
+    *,
+    seed43_receipt_path: str | Path,
+    seed29_receipt_path: str | Path,
+) -> dict[str, Any]:
+    harness_error: str | None = None
+    seed43_receipt: LoadedCeilingAuditReceipt | None = None
+    seed29_receipt: LoadedCeilingAuditReceipt | None = None
+    try:
+        seed43_receipt = load_activation_credit_ceiling_audit_receipt(
+            seed43_receipt_path,
+            seed_label=SEED43_LABEL,
+        )
+        seed29_receipt = load_activation_credit_ceiling_audit_receipt(
+            seed29_receipt_path,
+            seed_label=SEED29_LABEL,
+        )
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        harness_error = str(exc)
+    if (
+        harness_error is not None
+        or seed43_receipt is None
+        or seed29_receipt is None
+    ):
+        branch = _h1_emit_branch_classifier(
+            harness_ok=False,
+            calibration_failure=False,
+            topology_negative_control_clears=False,
+            sub2_l3_winning_arm_ids=(),
+            gt2_only_winning_arm_ids=(),
+        )
+        return {
+            "schema_version": H1_COUNTERFACTUAL_SCHEMA_VERSION,
+            "task_id": B5B_TASK_ID,
+            "harness_ok": False,
+            "harness_error": harness_error,
+            "branch_classifier": branch,
+            "native_family_registry_unchanged": True,
+        }
+    arm_metrics: dict[str, dict[str, Any]] = {}
+    arm_direction_by_id: dict[str, int] = {}
+    rebin_thresholds_by_arm: dict[str, tuple[float, ...]] = {}
+    for arm in H1_PREREGISTERED_ARM_SPECS:
+        direction = _h1_arm_direction(seed43_receipt.rows, arm=arm)
+        arm_direction_by_id[arm.arm_id] = int(direction)
+        if arm.receipt_native_field is None and isinstance(arm.level, int):
+            value_fn = _h1_feature_value_fn(arm.feature)
+            seed43_scores = [
+                float(direction) * float(value_fn(row))
+                for row in seed43_receipt.rows
+            ]
+            rebin_thresholds_by_arm[arm.arm_id] = _ordinal_thresholds_from_scores(
+                seed43_scores,
+                levels=int(arm.level),
+            )
+        seed43_auc = _h1_counterfactual_family_auc(
+            seed43_receipt.rows,
+            arm=arm,
+            direction=direction,
+            oos_thresholds=None,
+        )
+        seed29_auc = _h1_counterfactual_family_auc(
+            seed29_receipt.rows,
+            arm=arm,
+            direction=direction,
+            oos_thresholds=rebin_thresholds_by_arm.get(arm.arm_id),
+        )
+        metrics = {
+            "arm_id": arm.arm_id,
+            "diagnostic_family_label": arm.diagnostic_family_label,
+            "feature": arm.feature,
+            "level": arm.level,
+            "recovery_tier": arm.recovery_tier,
+            "sub2_relevant": bool(arm.sub2_relevant),
+            "persistent_bits": arm.persistent_bits,
+            "uses_raw_continuous_inside_bucket": False,
+            SEED43_LABEL: {"receipt_family_compressed_auc": seed43_auc},
+            SEED29_LABEL: {"receipt_family_compressed_auc": seed29_auc},
+            "both_seeds_recover": _h1_arm_recovers_both_seeds(
+                {
+                    SEED43_LABEL: {"receipt_family_compressed_auc": seed43_auc},
+                    SEED29_LABEL: {"receipt_family_compressed_auc": seed29_auc},
+                }
+            ),
+        }
+        arm_metrics[arm.arm_id] = metrics
+    baseline = arm_metrics[H1_ARM_BASELINE_TAYLOR_Q5]
+    harness_ok = _b5b_baseline_anchor_reproduced(
+        {
+            SEED43_LABEL: baseline[SEED43_LABEL]["receipt_family_compressed_auc"],
+            SEED29_LABEL: baseline[SEED29_LABEL]["receipt_family_compressed_auc"],
+        }
+    )
+    calibration_failure = any(
+        _h1_rebin_calibration_failure(
+            seed43_receipt.rows,
+            seed29_receipt.rows,
+            arm=arm,
+            direction=arm_direction_by_id[arm.arm_id],
+        )
+        for arm in H1_PREREGISTERED_ARM_SPECS
+        if arm.receipt_native_field is None
+    )
+    topology_negative_control_clears = _h1_arm_recovers_both_seeds(
+        arm_metrics[H1_ARM_TOPOLOGY_BLOCK128]
+    )
+    sub2_l3_winning_arm_ids = [
+        arm.arm_id
+        for arm in H1_PREREGISTERED_ARM_SPECS
+        if arm.recovery_tier == "sub2_primary"
+        and _h1_arm_recovers_both_seeds(arm_metrics[arm.arm_id])
+    ]
+    gt2_only_winning_arm_ids = []
+    if not sub2_l3_winning_arm_ids:
+        gt2_only_winning_arm_ids = [
+            arm.arm_id
+            for arm in H1_PREREGISTERED_ARM_SPECS
+            if arm.recovery_tier == "gt2_diagnostic"
+            and _h1_arm_recovers_both_seeds(arm_metrics[arm.arm_id])
+        ]
+    branch_classifier = _h1_emit_branch_classifier(
+        harness_ok=harness_ok,
+        calibration_failure=calibration_failure,
+        topology_negative_control_clears=topology_negative_control_clears,
+        sub2_l3_winning_arm_ids=sub2_l3_winning_arm_ids,
+        gt2_only_winning_arm_ids=gt2_only_winning_arm_ids,
+    )
+    return {
+        "schema_version": H1_COUNTERFACTUAL_SCHEMA_VERSION,
+        "task_id": B5B_TASK_ID,
+        "harness_ok": harness_ok,
+        "baseline_anchor_reproduced": harness_ok,
+        "single_variable": {
+            "name": "receipt_family_bucket_feature_encoder",
+            "tiebreak_key": ACTIVATION_CREDIT_TIEBREAK_KEY_CURRENT_RANK,
+            "native_family_registry_unchanged": True,
+        },
+        "implementation_seam": {
+            "family_bucket_key_fn": "optional callback on activation_credit_family_metrics_with_tiebreak",
+            "ephemeral_field": H1_COUNTERFACTUAL_BUCKET_FIELD,
+            "receipt_mutation": False,
+        },
+        "invariants": {
+            "uses_raw_continuous_inside_bucket": False,
+            "no_receipt_mutation": True,
+            "cpu_replay_only": True,
+            "finite_preregistered_arms": len(H1_PREREGISTERED_ARM_SPECS),
+        },
+        "success_bar": {
+            "primary_receipt_family_auc_max": float(PRIMARY_RECEIPT_FAMILY_AUC_MAX),
+            "sub2_win_branch": H1_BRANCH_SUB2_L3_BUCKET_RECOVERS,
+            "gt2_diagnostic_branch": H1_BRANCH_GT2_Q5_OR_L5_ONLY_RECOVERS_DIAGNOSTIC,
+        },
+        "arm_metrics": arm_metrics,
+        "branch_classifier": branch_classifier,
+        "calibration_failure": calibration_failure,
+        "topology_negative_control_clears": topology_negative_control_clears,
+        "input_receipts": {
+            SEED43_LABEL: {
+                "path": seed43_receipt.path,
+                "sha256": seed43_receipt.sha256,
+            },
+            SEED29_LABEL: {
+                "path": seed29_receipt.path,
+                "sha256": seed29_receipt.sha256,
+            },
+        },
+        "non_claims": [
+            "no runtime/sub-2 persistent claim unless SUB2_L3_BUCKET_RECOVERS",
+            "GT2_Q5_OR_L5_ONLY_RECOVERS_DIAGNOSTIC is >2-bit diagnostic non-win",
+            "no GPU / trainer wiring / receipt mutation",
+        ],
+    }
+
+
 __all__ = [
     "ACTIVATION_CREDIT_CEILING_AUDIT_SCHEMA_VERSION",
     "ACTIVATION_CREDIT_CEILING_AUDIT_TARGET_NAME",
@@ -2264,6 +2742,17 @@ __all__ = [
     "SCALAR_SPECS",
     "ScalarSpec",
     "build_activation_credit_ceiling_audit",
+    "H1_ARM_BASELINE_TAYLOR_Q5",
+    "H1_ARM_TOPOLOGY_BLOCK128",
+    "H1_BRANCH_GT2_Q5_OR_L5_ONLY_RECOVERS_DIAGNOSTIC",
+    "H1_BRANCH_HARNESS_OR_CALIBRATION_FAIL",
+    "H1_BRANCH_NO_BUCKET_ARM_RECOVERS",
+    "H1_BRANCH_SUB2_L3_BUCKET_RECOVERS",
+    "H1_COUNTERFACTUAL_BUCKET_FIELD",
+    "H1_COUNTERFACTUAL_SCHEMA_VERSION",
+    "H1_PREREGISTERED_ARM_SPECS",
+    "H1ArmSpec",
     "load_activation_credit_ceiling_audit_receipt",
     "run_b5b_within_q5_family_tiebreak_counterfactual",
+    "run_h1_bucket_swap_counterfactual",
 ]
