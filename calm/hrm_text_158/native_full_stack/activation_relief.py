@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 
 ACTIVATION_RELIEF_SCHEMA_VERSION = "hrm_text_158_activation_relief/v0.lossless_recompute"
@@ -880,6 +881,13 @@ LAUNCH_MANIFEST_EMBEDDED_KEYS = (
     "archive_created_at_utc",
     "archive_method",
 )
+REQUIRED_PROOF_ENV_KEYS = (
+    "PYTHONDONTWRITEBYTECODE",
+    "PYTHONPATH",
+    "R1L_LAUNCH_RECEIPT_JSON",
+    "R1L_LAUNCH_LOG",
+    "R1L_W6_PARENT_PATH",
+)
 
 
 @dataclass(frozen=True)
@@ -1407,6 +1415,581 @@ def verify_launch_ancestry_preflight(
     if result.returncode != 0:
         raise ValueError("launch source is not a descendant of R1 CPU base commit")
     return source
+
+
+class R1lLaunchProofAbort(RuntimeError):
+    """Abort R1-L launch proof without minting a receipt."""
+
+
+@dataclass(frozen=True)
+class R1lLaunchProofMeasurements:
+    main_baseline_saved_tensor_count: int
+    main_recompute_saved_tensor_count: int
+    main_saved_tensor_payload_bytes_baseline: int
+    main_saved_tensor_payload_bytes_recompute: int
+    main_internal_payload_tensor_count: int
+    main_recompute_checkpoint_fired: bool
+    retained_side_in_scope: bool
+    retained_side_baseline_saved_tensor_count: int
+    retained_side_recompute_saved_tensor_count: int
+    retained_side_internal_payload_tensor_count: int
+    retained_saved_tensor_payload_bytes_delta: int
+    retained_side_recompute_checkpoint_fired: bool
+    loss_finite_main: bool
+    loss_finite_retained: bool
+    paired_run_count: int
+    cuda_peak_allocated_bytes_baseline_median: int
+    cuda_peak_allocated_bytes_recompute_median: int
+    cuda_peak_reserved_bytes_delta_median: int
+
+
+def _median_int(values: Sequence[int]) -> int:
+    if not values:
+        raise ValueError("median requires at least one value")
+    ordered = sorted(int(value) for value in values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) // 2
+
+
+def _saved_tensor_payload_bytes(events: Sequence[Mapping[str, object]]) -> int:
+    import torch
+
+    total = 0
+    for event in events:
+        shape = tuple(event.get("shape", ()))
+        dtype_name = str(event.get("dtype", "torch.float32")).replace("torch.", "")
+        dtype = getattr(torch, dtype_name, torch.float32)
+        nbytes = int(dtype.itemsize)
+        for dim in shape:
+            nbytes *= int(dim)
+        total += nbytes
+    return total
+
+
+def _proof_env_embedded_from_os() -> dict[str, str]:
+    return {key: str(os.environ.get(key, "")) for key in PROOF_ENV_HASH_KEYS}
+
+
+def _read_launch_manifest_embedded() -> dict[str, str]:
+    manifest_path = os.environ.get("R1L_LAUNCH_MANIFEST_JSON", "").strip()
+    if manifest_path:
+        payload = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise R1lLaunchProofAbort("launch manifest JSON must decode to an object")
+        return {str(key): str(value) for key, value in payload.items()}
+    launch_source = os.environ.get("R1L_LAUNCH_SOURCE_COMMIT_SHA", "").strip()
+    if not launch_source:
+        raise R1lLaunchProofAbort(
+            "R1L_LAUNCH_MANIFEST_JSON or R1L_LAUNCH_SOURCE_COMMIT_SHA is required"
+        )
+    return {
+        "r1_cpu_base_commit_sha": R1_CPU_BASE_COMMIT_SHA,
+        "launch_source_commit_sha": launch_source,
+        "archive_created_at_utc": os.environ.get("R1L_ARCHIVE_CREATED_AT_UTC", ""),
+        "archive_method": os.environ.get("R1L_ARCHIVE_METHOD", "git_archive_HEAD"),
+    }
+
+
+def _read_proof_env_embedded() -> dict[str, str]:
+    env_path = os.environ.get("R1L_LAUNCH_ENV_JSON", "").strip()
+    if env_path:
+        payload = json.loads(Path(env_path).read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise R1lLaunchProofAbort("launch env JSON must decode to an object")
+        embedded = {str(key): str(value) for key, value in payload.items()}
+    else:
+        embedded = _proof_env_embedded_from_os()
+    missing = [
+        key
+        for key in REQUIRED_PROOF_ENV_KEYS
+        if not str(embedded.get(key, "")).strip()
+    ]
+    if missing:
+        raise R1lLaunchProofAbort(
+            "launch proof env missing required keys: " + ", ".join(missing)
+        )
+    return embedded
+
+
+def _log_artifact_sha256_from_env() -> str:
+    log_path = os.environ.get("R1L_LAUNCH_LOG", "").strip()
+    if not log_path:
+        raise R1lLaunchProofAbort("R1L_LAUNCH_LOG is required")
+    log_bytes = Path(log_path).read_bytes()
+    if not log_bytes:
+        raise R1lLaunchProofAbort("R1L_LAUNCH_LOG must be non-empty")
+    return hashlib.sha256(log_bytes).hexdigest()
+
+
+def _validate_launch_measurements_for_mint(
+    measurements: R1lLaunchProofMeasurements,
+) -> None:
+    if not measurements.main_recompute_checkpoint_fired:
+        raise R1lLaunchProofAbort("main recompute checkpoint did not fire")
+    if measurements.main_internal_payload_tensor_count != 0:
+        raise R1lLaunchProofAbort("main internal payload tensors observed")
+    if (
+        measurements.main_baseline_saved_tensor_count
+        <= measurements.main_recompute_saved_tensor_count
+    ):
+        raise R1lLaunchProofAbort("main saved tensor counts invalid")
+    if (
+        measurements.main_saved_tensor_payload_bytes_baseline
+        <= measurements.main_saved_tensor_payload_bytes_recompute
+    ):
+        raise R1lLaunchProofAbort("main saved tensor payload bytes delta invalid")
+    if not measurements.loss_finite_main:
+        raise R1lLaunchProofAbort("main loss non-finite")
+    if measurements.retained_side_in_scope:
+        if not measurements.retained_side_recompute_checkpoint_fired:
+            raise R1lLaunchProofAbort("retained recompute checkpoint did not fire")
+        if measurements.retained_side_internal_payload_tensor_count != 0:
+            raise R1lLaunchProofAbort("retained internal payload tensors observed")
+        if (
+            measurements.retained_side_baseline_saved_tensor_count
+            <= measurements.retained_side_recompute_saved_tensor_count
+        ):
+            raise R1lLaunchProofAbort("retained saved tensor counts invalid")
+        if measurements.retained_saved_tensor_payload_bytes_delta <= 0:
+            raise R1lLaunchProofAbort("retained payload bytes delta invalid")
+        if not measurements.loss_finite_retained:
+            raise R1lLaunchProofAbort("retained loss non-finite")
+    if measurements.paired_run_count < 3:
+        raise R1lLaunchProofAbort("paired_run_count must be >= 3")
+    cuda_delta = (
+        measurements.cuda_peak_allocated_bytes_baseline_median
+        - measurements.cuda_peak_allocated_bytes_recompute_median
+    )
+    threshold = max(
+        8 * 1024 * 1024,
+        int(0.005 * measurements.cuda_peak_allocated_bytes_baseline_median),
+    )
+    if cuda_delta < threshold:
+        raise R1lLaunchProofAbort(
+            f"cuda peak reduction below threshold ({cuda_delta} < {threshold})"
+        )
+
+
+def _execute_r1l_gpu_launch_measurement(
+    *,
+    model: Any,
+    parent_model: Any | None,
+    loader: Any,
+    device: Any,
+    hidden_size: int,
+    cfg: Any,
+    active_supports: Sequence[Mapping[str, Any]],
+    parent_consistency_temp: float,
+    epochs: int,
+    gather_retained_parent_response_logits: Callable[..., Any],
+    parent_consistency_kl: Callable[..., Any],
+    parent_consistency_kl_response_positions: Callable[..., Any],
+) -> R1lLaunchProofMeasurements:
+    import torch
+
+    proof_batch = next(iter(loader))
+    proof_total_steps = max(1, epochs * len(loader))
+    extras_base = model.compute_train_extra_args(1, proof_total_steps)
+    extras_policy = {
+        **extras_base,
+        "activation_relief_policy": MODE_LOSSLESS_RECOMPUTE,
+    }
+
+    def _proof_child_batch(batch):
+        inputs = batch["inputs"].to(device)
+        labels = batch["labels"].to(device)
+        sep_positions = batch["sep_positions"].to(device)
+        bsz, seq_len = inputs.shape
+        position_ids = torch.arange(
+            seq_len, dtype=torch.long, device=device
+        ).unsqueeze(0).expand(bsz, -1)
+        return {
+            "inputs": inputs,
+            "labels": labels,
+            "sep_positions": sep_positions,
+            "position_ids": position_ids,
+        }
+
+    def _collect_saved_tensor_events(run_fn):
+        events: list[dict[str, object]] = []
+
+        def pack_hook(tensor: torch.Tensor):
+            events.append(
+                {
+                    "shape": tuple(tensor.shape),
+                    "dtype": str(tensor.dtype),
+                }
+            )
+            return tensor
+
+        with torch.autograd.graph.saved_tensors_hooks(
+            pack_hook,
+            lambda tensor: tensor,
+        ):
+            run_fn()
+        return events
+
+    child_batch = _proof_child_batch(proof_batch)
+
+    def _run_main_backward(extras):
+        model.zero_grad(set_to_none=True)
+        _new_carry, loss_main, _metrics = model(None, child_batch, **extras)
+        if not torch.isfinite(loss_main):
+            raise R1lLaunchProofAbort(
+                f"main loss non-finite: {loss_main.item()}"
+            )
+        loss_main.backward()
+
+    main_baseline_events = _collect_saved_tensor_events(
+        lambda: _run_main_backward(extras_base)
+    )
+    main_recompute_events = _collect_saved_tensor_events(
+        lambda: _run_main_backward(extras_policy)
+    )
+    main_path_proof = production_saved_tensor_path_proof_from_events(
+        baseline_events=main_baseline_events,
+        recompute_events=main_recompute_events,
+        hidden_size=hidden_size,
+        H_cycles=cfg.H_cycles,
+        L_cycles=cfg.L_cycles,
+        bp_steps=int(extras_base["bp_steps"]),
+    )
+    main_checkpoint_fired = recompute_checkpoint_fired(
+        H_cycles=cfg.H_cycles,
+        L_cycles=cfg.L_cycles,
+        bp_steps=int(extras_base["bp_steps"]),
+    )
+
+    retained_side_in_scope = bool(active_supports)
+    retained_baseline_count = 0
+    retained_recompute_count = 0
+    retained_internal_payload = 0
+    retained_payload_delta = 0
+    retained_checkpoint_fired = False
+    loss_finite_retained = not retained_side_in_scope
+
+    if retained_side_in_scope:
+        _sup = active_supports[0]
+        _idx = _sup["sampler"].next_indices()
+        _picked = [_sup["cache"][i] for i in _idx]
+        s_inputs = torch.stack([p["inputs"] for p in _picked], 0).to(device)
+        s_labels = torch.stack([p["labels"] for p in _picked], 0).to(device)
+        s_sep = torch.stack([p["sep_position"] for p in _picked], 0).to(device)
+        sB, sL = s_inputs.shape
+        s_pos = torch.arange(
+            sL, dtype=torch.long, device=device
+        ).unsqueeze(0).expand(sB, -1)
+        s_batch = {
+            "inputs": s_inputs,
+            "labels": s_labels,
+            "sep_positions": s_sep,
+            "position_ids": s_pos,
+        }
+
+        def _run_retained_backward(extras):
+            model.zero_grad(set_to_none=True)
+            _sc, _sloss, s_metrics = model(
+                None,
+                s_batch,
+                return_logits=True,
+                **extras,
+            )
+            if _sup.get("parent_response_logits_by_bp") is not None:
+                s_parent_response_logits = gather_retained_parent_response_logits(
+                    _sup,
+                    _idx,
+                    int(extras["bp_steps"]),
+                    device,
+                )
+                s_kl = parent_consistency_kl_response_positions(
+                    s_metrics["logits"],
+                    s_parent_response_logits,
+                    s_labels,
+                    temp=parent_consistency_temp,
+                )
+            else:
+                if parent_model is None:
+                    raise R1lLaunchProofAbort(
+                        "retained support requires frozen parent model"
+                    )
+                with torch.no_grad():
+                    _, s_parent_logits = parent_model(
+                        None,
+                        {
+                            "inputs": s_inputs,
+                            "sep_positions": s_sep,
+                            "position_ids": s_pos,
+                        },
+                        **extras,
+                    )
+                s_is_prior = torch.ones(sB, dtype=torch.bool, device=device)
+                s_kl = parent_consistency_kl(
+                    s_metrics["logits"],
+                    s_parent_logits,
+                    s_labels,
+                    s_is_prior,
+                    temp=parent_consistency_temp,
+                )
+            s_loss = _sup["weight"] * s_kl
+            if not torch.isfinite(s_loss):
+                raise R1lLaunchProofAbort(
+                    f"retained loss non-finite: {s_loss.item()}"
+                )
+            s_loss.backward()
+
+        retained_baseline_events = _collect_saved_tensor_events(
+            lambda: _run_retained_backward(extras_base)
+        )
+        retained_recompute_events = _collect_saved_tensor_events(
+            lambda: _run_retained_backward(extras_policy)
+        )
+        retained_path_proof = production_saved_tensor_path_proof_from_events(
+            baseline_events=retained_baseline_events,
+            recompute_events=retained_recompute_events,
+            hidden_size=hidden_size,
+            H_cycles=cfg.H_cycles,
+            L_cycles=cfg.L_cycles,
+            bp_steps=int(extras_base["bp_steps"]),
+        )
+        retained_baseline_count = int(
+            retained_path_proof["baseline_saved_tensor_count"]
+        )
+        retained_recompute_count = int(
+            retained_path_proof["recompute_saved_tensor_count"]
+        )
+        retained_internal_payload = int(
+            retained_path_proof["internal_payload_tensor_count"]
+        )
+        retained_payload_delta = (
+            _saved_tensor_payload_bytes(retained_baseline_events)
+            - _saved_tensor_payload_bytes(retained_recompute_events)
+        )
+        retained_checkpoint_fired = recompute_checkpoint_fired(
+            H_cycles=cfg.H_cycles,
+            L_cycles=cfg.L_cycles,
+            bp_steps=int(extras_base["bp_steps"]),
+        )
+        loss_finite_retained = True
+
+    baseline_peaks: list[int] = []
+    recompute_peaks: list[int] = []
+    reserved_deltas: list[int] = []
+    for _ in range(3):
+        torch.cuda.reset_peak_memory_stats(device)
+        torch.cuda.synchronize(device)
+        reserved_before = int(torch.cuda.max_memory_reserved(device))
+        _run_main_backward(extras_base)
+        torch.cuda.synchronize(device)
+        baseline_peaks.append(int(torch.cuda.max_memory_allocated(device)))
+        reserved_after_base = int(torch.cuda.max_memory_reserved(device))
+
+        torch.cuda.reset_peak_memory_stats(device)
+        torch.cuda.synchronize(device)
+        _run_main_backward(extras_policy)
+        torch.cuda.synchronize(device)
+        recompute_peaks.append(int(torch.cuda.max_memory_allocated(device)))
+        reserved_after_recompute = int(torch.cuda.max_memory_reserved(device))
+        reserved_deltas.append(reserved_after_recompute - reserved_after_base)
+
+    return R1lLaunchProofMeasurements(
+        main_baseline_saved_tensor_count=int(
+            main_path_proof["baseline_saved_tensor_count"]
+        ),
+        main_recompute_saved_tensor_count=int(
+            main_path_proof["recompute_saved_tensor_count"]
+        ),
+        main_saved_tensor_payload_bytes_baseline=_saved_tensor_payload_bytes(
+            main_baseline_events
+        ),
+        main_saved_tensor_payload_bytes_recompute=_saved_tensor_payload_bytes(
+            main_recompute_events
+        ),
+        main_internal_payload_tensor_count=int(
+            main_path_proof["internal_payload_tensor_count"]
+        ),
+        main_recompute_checkpoint_fired=main_checkpoint_fired,
+        retained_side_in_scope=retained_side_in_scope,
+        retained_side_baseline_saved_tensor_count=retained_baseline_count,
+        retained_side_recompute_saved_tensor_count=retained_recompute_count,
+        retained_side_internal_payload_tensor_count=retained_internal_payload,
+        retained_saved_tensor_payload_bytes_delta=retained_payload_delta,
+        retained_side_recompute_checkpoint_fired=retained_checkpoint_fired,
+        loss_finite_main=True,
+        loss_finite_retained=loss_finite_retained,
+        paired_run_count=3,
+        cuda_peak_allocated_bytes_baseline_median=_median_int(baseline_peaks),
+        cuda_peak_allocated_bytes_recompute_median=_median_int(recompute_peaks),
+        cuda_peak_reserved_bytes_delta_median=_median_int(reserved_deltas),
+    )
+
+
+def run_r1l_gpu_launch_proof(
+    *,
+    model: Any,
+    parent_model: Any | None,
+    loader: Any,
+    device: Any,
+    hidden_size: int,
+    cfg: Any,
+    active_supports: Sequence[Mapping[str, Any]],
+    parent_consistency_temp: float,
+    epochs: int,
+    proof_command_argv: Sequence[str],
+    w6_parent_path: str,
+    gather_retained_parent_response_logits: Callable[..., Any],
+    parent_consistency_kl: Callable[..., Any],
+    parent_consistency_kl_response_positions: Callable[..., Any],
+    cuda_is_available_fn: Callable[[], bool] | None = None,
+    measurement_runner: Callable[[], R1lLaunchProofMeasurements] | None = None,
+) -> LaunchRuntimeBackwardValidationReceipt:
+    import torch
+
+    _cuda_available = cuda_is_available_fn or torch.cuda.is_available
+    if not _cuda_available():
+        raise RuntimeError("R1-L launch proof requires CUDA")
+    if os.environ.get("R1L_ANCESTRY_VERIFIED") != "1":
+        raise R1lLaunchProofAbort("R1L_ANCESTRY_VERIFIED must be 1")
+
+    w6_path = Path(w6_parent_path)
+    if not w6_path.is_file():
+        raise R1lLaunchProofAbort(f"w6 parent path not found: {w6_parent_path}")
+    w6_before = hashlib.sha256(w6_path.read_bytes()).hexdigest()
+    if w6_before != W6_PARENT_SHA256_PINNED:
+        raise R1lLaunchProofAbort(
+            f"w6 parent sha256 mismatch (got {w6_before}, expected pinned hash)"
+        )
+
+    manifest_embedded = _read_launch_manifest_embedded()
+    proof_env_embedded = _read_proof_env_embedded()
+    launch_source_commit_sha = manifest_embedded["launch_source_commit_sha"]
+    clean_run_dir_sha256 = os.environ.get("R1L_CLEAN_RUN_DIR_SHA256", "").strip()
+    if not clean_run_dir_sha256:
+        raise R1lLaunchProofAbort("R1L_CLEAN_RUN_DIR_SHA256 is required")
+    log_artifact_sha256 = _log_artifact_sha256_from_env()
+
+    if measurement_runner is None:
+        measurements = _execute_r1l_gpu_launch_measurement(
+            model=model,
+            parent_model=parent_model,
+            loader=loader,
+            device=device,
+            hidden_size=hidden_size,
+            cfg=cfg,
+            active_supports=active_supports,
+            parent_consistency_temp=parent_consistency_temp,
+            epochs=epochs,
+            gather_retained_parent_response_logits=gather_retained_parent_response_logits,
+            parent_consistency_kl=parent_consistency_kl,
+            parent_consistency_kl_response_positions=parent_consistency_kl_response_positions,
+        )
+    else:
+        measurements = measurement_runner()
+
+    _validate_launch_measurements_for_mint(measurements)
+
+    w6_after = hashlib.sha256(w6_path.read_bytes()).hexdigest()
+    if w6_after != w6_before:
+        raise R1lLaunchProofAbort("w6 parent mutated during launch proof")
+
+    model_config_digest_sha256 = _canonical_json_sha256(
+        {
+            "hidden_size": hidden_size,
+            "n_layers": cfg.n_layers,
+            "num_heads": cfg.num_heads,
+            "expansion": cfg.expansion,
+            "H_cycles": cfg.H_cycles,
+            "L_cycles": cfg.L_cycles,
+            "half_layers": cfg.half_layers,
+            "bp_min_steps": cfg.bp_min_steps,
+            "bp_max_steps": cfg.bp_max_steps,
+            "max_seq_len": cfg.max_seq_len,
+        }
+    )
+    proof_batch = next(iter(loader))
+    proof_batch_digest_sha256 = _canonical_json_sha256(
+        {
+            "inputs_shape": tuple(proof_batch["inputs"].shape),
+            "labels_shape": tuple(proof_batch["labels"].shape),
+            "sep_positions_shape": tuple(proof_batch["sep_positions"].shape),
+        }
+    )
+    retained_support_digest_sha256 = _canonical_json_sha256(
+        [
+            {
+                "name": support["name"],
+                "weight": support["weight"],
+                "hash": support["hash"],
+                "count": support["count"],
+            }
+            for support in active_supports
+        ]
+    )
+
+    if measurement_runner is not None:
+        gpu_name = os.environ.get("R1L_GPU_NAME", "synthetic-gpu")
+        gpu_uuid = os.environ.get("R1L_GPU_UUID", "gpu-uuid-test")
+        driver_version = os.environ.get("R1L_GPU_DRIVER_VERSION", "550.00")
+        cuda_version = os.environ.get("R1L_CUDA_VERSION", "12.4")
+        torch_version = str(torch.__version__)
+    else:
+        gpu_name = torch.cuda.get_device_name(torch.cuda.current_device())
+        props = torch.cuda.get_device_properties(torch.cuda.current_device())
+        gpu_uuid = os.environ.get("R1L_GPU_UUID", "").strip() or (
+            f"cuda:{torch.cuda.current_device()}:{getattr(props, 'name', gpu_name)}"
+        )
+        driver_version = str(getattr(torch.version, "cuda", "") or "")
+        cuda_version = driver_version
+        torch_version = str(torch.__version__)
+
+    return build_launch_runtime_backward_validation_receipt(
+        launch_source_commit_sha=launch_source_commit_sha,
+        launch_manifest_embedded=manifest_embedded,
+        proof_env_embedded=proof_env_embedded,
+        proof_command_argv=tuple(str(arg) for arg in proof_command_argv),
+        clean_run_dir_sha256=clean_run_dir_sha256,
+        w6_parent_path=w6_parent_path,
+        w6_parent_sha256=w6_before,
+        gpu_name=gpu_name,
+        gpu_uuid=gpu_uuid,
+        driver_version=driver_version or "unknown",
+        cuda_version=cuda_version or "unknown",
+        torch_version=torch_version,
+        model_config_digest_sha256=model_config_digest_sha256,
+        proof_batch_digest_sha256=proof_batch_digest_sha256,
+        retained_support_digest_sha256=retained_support_digest_sha256,
+        main_baseline_saved_tensor_count=measurements.main_baseline_saved_tensor_count,
+        main_recompute_saved_tensor_count=measurements.main_recompute_saved_tensor_count,
+        main_saved_tensor_payload_bytes_baseline=(
+            measurements.main_saved_tensor_payload_bytes_baseline
+        ),
+        main_saved_tensor_payload_bytes_recompute=(
+            measurements.main_saved_tensor_payload_bytes_recompute
+        ),
+        retained_side_in_scope=measurements.retained_side_in_scope,
+        retained_side_baseline_saved_tensor_count=(
+            measurements.retained_side_baseline_saved_tensor_count
+        ),
+        retained_side_recompute_saved_tensor_count=(
+            measurements.retained_side_recompute_saved_tensor_count
+        ),
+        retained_saved_tensor_payload_bytes_delta=(
+            measurements.retained_saved_tensor_payload_bytes_delta
+        ),
+        paired_run_count=measurements.paired_run_count,
+        cuda_peak_allocated_bytes_baseline_median=(
+            measurements.cuda_peak_allocated_bytes_baseline_median
+        ),
+        cuda_peak_allocated_bytes_recompute_median=(
+            measurements.cuda_peak_allocated_bytes_recompute_median
+        ),
+        cuda_peak_reserved_bytes_delta_median=(
+            measurements.cuda_peak_reserved_bytes_delta_median
+        ),
+        log_artifact_sha256=log_artifact_sha256,
+        ancestry_verified_at_launch_preflight=True,
+    )
 
 
 def build_launch_runtime_backward_validation_receipt(

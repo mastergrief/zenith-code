@@ -1605,24 +1605,92 @@ def train(
         return
 
     if activation_relief_lossless_recompute_launch_proof:
+        import json
         import os
+        import sys
 
-        w6_parent_path = os.environ.get("R1L_W6_PARENT_PATH", "")
+        from calm.hrm_text_158.native_full_stack.activation_relief import (
+            R1lLaunchProofAbort,
+            run_r1l_gpu_launch_proof,
+        )
+
+        if not torch.cuda.is_available():
+            raise RuntimeError("R1-L launch proof requires CUDA")
+
+        w6_parent_path = os.environ.get("R1L_W6_PARENT_PATH", "").strip()
         if not w6_parent_path:
             raise RuntimeError(
                 "R1-L launch proof requires R1L_W6_PARENT_PATH in the environment"
             )
+
+        launch_device = torch.device("cuda")
+        m = m.to(launch_device)
+        if parent_m is not None:
+            parent_m = parent_m.to(launch_device)
+
+        def _launch_gather_retained_parent_response_logits(*_args, **_kwargs):
+            raise RuntimeError(
+                "retained parent logit cache gather is not in the R1-L-LAUNCH-IMPL "
+                "commit slice; parent_m fallback path is used instead"
+            )
+
+        def _launch_parent_consistency_kl_response_positions(*_args, **_kwargs):
+            raise RuntimeError(
+                "retained response-position KL is not in the R1-L-LAUNCH-IMPL "
+                "commit slice; parent_m fallback path is used instead"
+            )
+
+        try:
+            receipt = run_r1l_gpu_launch_proof(
+                model=m,
+                parent_model=parent_m,
+                loader=loader,
+                device=launch_device,
+                hidden_size=hidden_size,
+                cfg=cfg,
+                active_supports=active_supports,
+                parent_consistency_temp=parent_consistency_temp,
+                epochs=epochs,
+                proof_command_argv=tuple(sys.argv),
+                w6_parent_path=w6_parent_path,
+                gather_retained_parent_response_logits=(
+                    _launch_gather_retained_parent_response_logits
+                ),
+                parent_consistency_kl=_parent_consistency_kl,
+                parent_consistency_kl_response_positions=(
+                    _launch_parent_consistency_kl_response_positions
+                ),
+            )
+        except R1lLaunchProofAbort as exc:
+            print(f"[hrm158] R1-L launch proof: NO-MINT — {exc}", flush=True)
+            raise SystemExit(1) from exc
+
+        receipt_json_path = os.environ.get("R1L_LAUNCH_RECEIPT_JSON", "").strip()
+        if not receipt_json_path:
+            raise RuntimeError(
+                "R1-L launch proof requires R1L_LAUNCH_RECEIPT_JSON in the environment"
+            )
+        out_path = Path(receipt_json_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(
+            json.dumps(receipt.to_dict(), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
         print(
-            "[hrm158] R1-L launch proof: CPU-only SCHEMA slice; GPU mint deferred "
-            "to R1-L-LAUNCH packet",
+            "[hrm158] R1-L launch proof: "
+            f"proof_kind={receipt.proof_kind} "
+            f"main_baseline={receipt.main_baseline_saved_tensor_count} "
+            f"main_recompute={receipt.main_recompute_saved_tensor_count} "
+            f"cuda_delta={receipt.cuda_peak_allocated_bytes_delta_median} "
+            f"live_flip_authorized={receipt.live_readiness_row_flip_authorized}",
             flush=True,
         )
         print(
-            f"[hrm158] R1-L launch proof: R1L_W6_PARENT_PATH={w6_parent_path}",
+            f"[hrm158] R1-L launch proof: receipt_json={out_path}",
             flush=True,
         )
         print(
-            "[hrm158] R1-L launch proof: EXITING before GPU launch mint",
+            "[hrm158] R1-L launch proof: EXITING before optimizer step",
             flush=True,
         )
         return
@@ -2602,6 +2670,11 @@ if __name__ == "__main__":
             except ValueError:
                 ap.error(f"--retained-support WEIGHT must be a float; got {_spec!r}")
             _retained_profile.append((_nm.strip(), _wtf))
+
+    import os
+
+    if os.environ.get("R1L_ARGV_PARSE_PROBE") == "1":
+        raise SystemExit(0)
 
     train(
         epochs=args.epochs,

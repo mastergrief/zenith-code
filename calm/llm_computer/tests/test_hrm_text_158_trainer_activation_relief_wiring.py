@@ -1,6 +1,8 @@
 """R1 production trainer activation-relief wiring proof tests."""
 from __future__ import annotations
 
+import hashlib
+import inspect
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -17,10 +19,19 @@ from calm.hrm_text_158 import (
 from calm.hrm_text_158.native_full_stack import (
     MODE_LOSSLESS_RECOMPUTE,
     PROOF_KIND_CPU_PRODUCTION_AUTOGAD_WIRING,
+    R1_CPU_BASE_COMMIT_SHA,
     build_trainer_backward_wiring_proof_receipt,
     validate_trainer_backward_wiring_proof_receipt,
 )
 from scripts.train_hrm_text_158 import SOURCE_PIN, _build_ckpt_config, train
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+W6_PARENT_PATH = (
+    REPO_ROOT
+    / "calm/hrm/checkpoints/"
+    "hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_"
+    "anchorsv1r3_from_L0b_final_step01500.pt"
+)
 
 
 def _make_tiny_gsm8k_rows(n: int = 8) -> list[dict]:
@@ -263,3 +274,117 @@ def test_trainer_backward_wiring_validator_rejects_false_retained_checkpoint_fir
     forged = replace(receipt, retained_side_recompute_checkpoint_fired=False)
     with pytest.raises(ValueError, match="retained-side recompute checkpoint fired"):
         validate_trainer_backward_wiring_proof_receipt(forged)
+
+
+def test_trainer_launch_proof_flag_default_off_matches_wiring_default():
+    from scripts.train_hrm_text_158 import train
+
+    default = inspect.signature(train).parameters[
+        "activation_relief_lossless_recompute_launch_proof"
+    ].default
+    assert default is False
+
+
+def test_trainer_launch_proof_stub_removed_message_absent_when_mocked(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    import os
+
+    from calm.hrm_text_158.native_full_stack import activation_relief
+    from scripts import train_hrm_text_158 as trainer
+
+    monkeypatch.setattr(trainer.torch.cuda, "is_available", lambda: True)
+    from calm.llm_computer.tests.test_hrm_text_158_phase_a_wiring import (
+        TINY_ARCH,
+        _build_tiny_broad_ckpt_blob,
+    )
+
+    parent_path = tmp_path / "parent_R0.pt"
+    torch.save(_build_tiny_broad_ckpt_blob(), parent_path)
+    log_path = tmp_path / "launch.log"
+    log_path.write_bytes(b"RESULT=PASS\n")
+    receipt_path = tmp_path / "receipt.json"
+    manifest_path = tmp_path / "manifest.json"
+    env_path = tmp_path / "env.json"
+    manifest = {
+        "r1_cpu_base_commit_sha": R1_CPU_BASE_COMMIT_SHA,
+        "launch_source_commit_sha": R1_CPU_BASE_COMMIT_SHA,
+        "archive_created_at_utc": "2026-06-15T00:00:00Z",
+        "archive_method": "git_archive_HEAD",
+    }
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONPATH": str(REPO_ROOT),
+        "CUDA_VISIBLE_DEVICES": "0",
+        "R1L_LAUNCH_RECEIPT_JSON": str(receipt_path),
+        "R1L_LAUNCH_LOG": str(log_path),
+        "R1L_W6_PARENT_PATH": str(parent_path),
+        "TORCH_CUDA_ALLOC_CONF": "",
+        "CUBLAS_WORKSPACE_CONFIG": "",
+    }
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    env_path.write_text(json.dumps(env), encoding="utf-8")
+    monkeypatch.setenv("R1L_ANCESTRY_VERIFIED", "1")
+    monkeypatch.setenv("R1L_CLEAN_RUN_DIR_SHA256", "a" * 64)
+    monkeypatch.setenv("R1L_LAUNCH_MANIFEST_JSON", str(manifest_path))
+    monkeypatch.setenv("R1L_LAUNCH_ENV_JSON", str(env_path))
+    monkeypatch.setenv("R1L_LAUNCH_RECEIPT_JSON", str(receipt_path))
+    monkeypatch.setenv("R1L_LAUNCH_LOG", str(log_path))
+    monkeypatch.setenv("R1L_W6_PARENT_PATH", str(parent_path))
+
+    def _fake_launch_proof(**_kwargs):
+        from calm.hrm_text_158.native_full_stack.activation_relief import (
+            build_launch_runtime_backward_validation_receipt,
+        )
+
+        return build_launch_runtime_backward_validation_receipt(
+            launch_source_commit_sha=R1_CPU_BASE_COMMIT_SHA,
+            launch_manifest_embedded=manifest,
+            proof_env_embedded=env,
+            proof_command_argv=("pytest",),
+            clean_run_dir_sha256="a" * 64,
+            w6_parent_path=str(parent_path),
+            gpu_name="synthetic-gpu",
+            gpu_uuid="gpu-uuid-test",
+            driver_version="550.00",
+            cuda_version="12.4",
+            torch_version=torch.__version__,
+            model_config_digest_sha256="b" * 64,
+            proof_batch_digest_sha256="c" * 64,
+            retained_support_digest_sha256="d" * 64,
+            main_baseline_saved_tensor_count=20,
+            main_recompute_saved_tensor_count=15,
+            main_saved_tensor_payload_bytes_baseline=1000,
+            main_saved_tensor_payload_bytes_recompute=800,
+            retained_side_in_scope=True,
+            retained_side_baseline_saved_tensor_count=18,
+            retained_side_recompute_saved_tensor_count=14,
+            retained_saved_tensor_payload_bytes_delta=400,
+            paired_run_count=3,
+            cuda_peak_allocated_bytes_baseline_median=64 * 1024 * 1024,
+            cuda_peak_allocated_bytes_recompute_median=56 * 1024 * 1024,
+            cuda_peak_reserved_bytes_delta_median=0,
+            log_artifact_sha256=hashlib.sha256(log_path.read_bytes()).hexdigest(),
+        )
+
+    monkeypatch.setattr(activation_relief, "run_r1l_gpu_launch_proof", _fake_launch_proof)
+    kwargs = dict(
+        curriculum_rung="R0",
+        use_broad_tokenizer=True,
+        curriculum_n_train=32,
+        curriculum_n_heldout=8,
+        load_from=str(parent_path),
+        retained_support_profile=[("L0b", 0.01)],
+        activation_relief_lossless_recompute_launch_proof=True,
+        checkpoint_path=str(tmp_path / "should_not_write.pt"),
+        epochs=1,
+        batch_size=2,
+        device="cpu",
+        n_train_cap=8,
+        **TINY_ARCH,
+    )
+    trainer.train(**kwargs)
+    out = capsys.readouterr().out
+    assert "EXITING before GPU launch mint" not in out
