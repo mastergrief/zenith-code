@@ -1,6 +1,8 @@
 """CPU/static tests for lossless HRM activation-relief policy."""
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 import torch
 
@@ -27,13 +29,17 @@ from calm.hrm_text_158.native_full_stack import (
     ZL_INIT_FP_EXCEPTION_REGISTRY_ANCHOR,
     ZL_INIT_HRM_SOURCE_ANCHOR,
     ActivationReliefPolicy,
+    PROOF_KIND_CPU_PRODUCTION_AUTOGAD_WIRING,
     build_activation_residuals_fail_closed_receipt,
     build_backward_recompute_saved_tensor_receipt,
+    build_trainer_backward_wiring_proof_receipt,
     normalize_activation_relief_policy,
+    recompute_checkpoint_fired,
     recurrence_checkpoint_decisions,
     validate_activation_relief_measurement,
     validate_activation_residuals_fail_closed_receipt,
     validate_backward_recompute_saved_tensor_receipt,
+    validate_trainer_backward_wiring_proof_receipt,
 )
 
 
@@ -532,4 +538,65 @@ def test_activation_residuals_fail_closed_receipt_rejects_missing_tags_claims_an
             seam_events=events,
             zL_init_observation=zL_init_observation,
             lossy_or_compression_claim=True,
+        )
+
+
+def test_trainer_backward_wiring_receipt_mint_and_validator_roundtrip():
+    main_proof = {
+        "baseline_saved_tensor_count": 20,
+        "recompute_saved_tensor_count": 15,
+        "internal_payload_tensor_count": 0,
+        "recompute_checkpoint_fired": True,
+    }
+    retained_proof = {
+        "baseline_saved_tensor_count": 18,
+        "recompute_saved_tensor_count": 12,
+        "internal_payload_tensor_count": 0,
+        "recompute_checkpoint_fired": True,
+    }
+    receipt = build_trainer_backward_wiring_proof_receipt(
+        source_commit_sha="abc123",
+        proof_command_argv=("pytest",),
+        H_cycles=2,
+        L_cycles=3,
+        bp_steps=5,
+        main_path_proof=main_proof,
+        retained_side_path_proof=retained_proof,
+        retained_side_in_scope=True,
+    )
+    validate_trainer_backward_wiring_proof_receipt(receipt)
+    assert receipt.proof_kind == PROOF_KIND_CPU_PRODUCTION_AUTOGAD_WIRING
+    assert receipt.live_readiness_row_flip_authorized is False
+    assert receipt.readiness_row_flip_authorized_surface_names == ()
+    assert receipt.default_runtime_sub2_claim is False
+    assert receipt.activations_residuals_sub2_claim is False
+    assert receipt.main_baseline_saved_tensor_count > receipt.main_recompute_saved_tensor_count
+    assert receipt.main_internal_payload_tensor_count == 0
+    assert receipt.retained_side_path_proven is True
+
+
+def test_trainer_backward_wiring_receipt_rejects_live_flip_and_sub2_claims():
+    main_proof = {
+        "baseline_saved_tensor_count": 20,
+        "recompute_saved_tensor_count": 15,
+        "internal_payload_tensor_count": 0,
+        "recompute_checkpoint_fired": True,
+    }
+    receipt = build_trainer_backward_wiring_proof_receipt(
+        source_commit_sha="abc123",
+        proof_command_argv=("pytest",),
+        H_cycles=2,
+        L_cycles=3,
+        bp_steps=5,
+        main_path_proof=main_proof,
+        retained_side_in_scope=False,
+        retained_side_skip_reason="no retained supports",
+    )
+    with pytest.raises(ValueError, match="live readiness row flip"):
+        validate_trainer_backward_wiring_proof_receipt(
+            replace(receipt, live_readiness_row_flip_authorized=True)
+        )
+    with pytest.raises(ValueError, match="default runtime or activations sub2"):
+        validate_trainer_backward_wiring_proof_receipt(
+            replace(receipt, default_runtime_sub2_claim=True)
         )

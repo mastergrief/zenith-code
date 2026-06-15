@@ -823,3 +823,405 @@ def validate_activation_relief_measurement(
         raise ValueError("max_safe_batch_size must be > 0")
     if receipt["effective_exposure_per_step"] == 0:
         raise ValueError("effective_exposure_per_step must be > 0")
+
+
+TRAINER_BACKWARD_WIRING_RECEIPT_SCHEMA_VERSION = (
+    "hrm_text_158_r1_backward_wiring/v0.cpu_production_autograd"
+)
+TRAINER_BACKWARD_WIRING_TARGET_NAME = (
+    "r1_backward_saved_tensors_production_wiring"
+)
+PROOF_KIND_CPU_PRODUCTION_AUTOGAD_WIRING = "cpu_production_autograd_wiring"
+PROOF_KIND_LAUNCH_RUNTIME_VALIDATION = "launch_runtime_validation"
+AUTHORIZED_R1_L_SURFACE_TUPLE = ("backward_saved_tensors_transients",)
+TRAINER_BACKWARD_WIRING_NON_CLAIMS = (
+    "proves default-off wiring and production-autograd instrumentation only",
+    "does not authorize live backward_saved_tensors_transients row flip on current_repo_scaffold",
+    "does not substitute for fixture build_backward_recompute_saved_tensor_receipt",
+    "does not claim GPU peak-memory relief, learning, acquisition, throughput, or .pt mutation",
+    "does not claim activations_residuals sub2",
+)
+
+
+@dataclass(frozen=True)
+class TrainerBackwardWiringProofReceipt:
+    """R1 CPU receipt for production trainer backward-path wiring proof."""
+
+    schema_version: str
+    target_name: str
+    proof_kind: str
+    source_commit_sha: str
+    proof_command_argv: tuple[str, ...]
+    activation_relief_wiring_proof_flag: bool
+    policy_mode: str
+    main_path_proven: bool
+    retained_side_path_proven: bool
+    retained_side_in_scope: bool
+    retained_side_skip_reason: str
+    main_recompute_checkpoint_fired: bool
+    main_baseline_saved_tensor_count: int
+    main_recompute_saved_tensor_count: int
+    main_internal_payload_tensor_count: int
+    retained_side_recompute_checkpoint_fired: bool
+    retained_side_baseline_saved_tensor_count: int
+    retained_side_recompute_saved_tensor_count: int
+    retained_side_internal_payload_tensor_count: int
+    default_runtime_sub2_claim: bool
+    activations_residuals_sub2_claim: bool
+    live_readiness_row_flip_authorized: bool
+    readiness_row_flip_authorized_surface_names: tuple[str, ...]
+    backward_recompute_fixture_receipt_sha256: str
+    optimizer_step_called: bool
+    non_claims: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema_version": self.schema_version,
+            "target_name": self.target_name,
+            "proof_kind": self.proof_kind,
+            "source_commit_sha": self.source_commit_sha,
+            "proof_command_argv": list(self.proof_command_argv),
+            "activation_relief_wiring_proof_flag": self.activation_relief_wiring_proof_flag,
+            "policy_mode": self.policy_mode,
+            "main_path_proven": self.main_path_proven,
+            "retained_side_path_proven": self.retained_side_path_proven,
+            "retained_side_in_scope": self.retained_side_in_scope,
+            "retained_side_skip_reason": self.retained_side_skip_reason,
+            "main_recompute_checkpoint_fired": self.main_recompute_checkpoint_fired,
+            "main_baseline_saved_tensor_count": self.main_baseline_saved_tensor_count,
+            "main_recompute_saved_tensor_count": self.main_recompute_saved_tensor_count,
+            "main_internal_payload_tensor_count": self.main_internal_payload_tensor_count,
+            "retained_side_recompute_checkpoint_fired": (
+                self.retained_side_recompute_checkpoint_fired
+            ),
+            "retained_side_baseline_saved_tensor_count": (
+                self.retained_side_baseline_saved_tensor_count
+            ),
+            "retained_side_recompute_saved_tensor_count": (
+                self.retained_side_recompute_saved_tensor_count
+            ),
+            "retained_side_internal_payload_tensor_count": (
+                self.retained_side_internal_payload_tensor_count
+            ),
+            "default_runtime_sub2_claim": self.default_runtime_sub2_claim,
+            "activations_residuals_sub2_claim": self.activations_residuals_sub2_claim,
+            "live_readiness_row_flip_authorized": self.live_readiness_row_flip_authorized,
+            "readiness_row_flip_authorized_surface_names": list(
+                self.readiness_row_flip_authorized_surface_names
+            ),
+            "backward_recompute_fixture_receipt_sha256": (
+                self.backward_recompute_fixture_receipt_sha256
+            ),
+            "optimizer_step_called": self.optimizer_step_called,
+            "non_claims": list(self.non_claims),
+        }
+
+
+@dataclass(frozen=True)
+class LaunchRuntimeBackwardValidationReceipt:
+    """Deferred R1-L receipt shape; synthetic mint allowed in CPU applier tests."""
+
+    proof_kind: str
+    live_readiness_row_flip_authorized: bool
+    readiness_row_flip_authorized_surface_names: tuple[str, ...]
+    source_commit_sha: str
+    launch_runtime_validation_pass: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "proof_kind": self.proof_kind,
+            "live_readiness_row_flip_authorized": self.live_readiness_row_flip_authorized,
+            "readiness_row_flip_authorized_surface_names": list(
+                self.readiness_row_flip_authorized_surface_names
+            ),
+            "source_commit_sha": self.source_commit_sha,
+            "launch_runtime_validation_pass": self.launch_runtime_validation_pass,
+        }
+
+
+def analyze_saved_tensor_hook_events(
+    events: Sequence[Mapping[str, object]],
+    *,
+    boundary_tensor_shape: tuple[int, ...],
+    boundary_tensor_dtype: str,
+) -> dict[str, int]:
+    boundary_count = sum(
+        1
+        for event in events
+        if tuple(event.get("shape", ())) == boundary_tensor_shape
+        and str(event.get("dtype", "")) == boundary_tensor_dtype
+    )
+    dummy_count = sum(1 for event in events if tuple(event.get("shape", ())) == (0,))
+    internal_count = len(events) - boundary_count - dummy_count
+    return {
+        "observed_boundary_tensor_count": boundary_count,
+        "observed_checkpoint_dummy_tensor_count": dummy_count,
+        "observed_internal_payload_tensor_count": internal_count,
+        "saved_tensor_count": len(events),
+    }
+
+
+def production_saved_tensor_path_proof_from_events(
+    *,
+    baseline_events: Sequence[Mapping[str, object]],
+    recompute_events: Sequence[Mapping[str, object]],
+    hidden_size: int,
+    H_cycles: int,
+    L_cycles: int,
+    bp_steps: int,
+) -> dict[str, int]:
+    baseline_count = len(baseline_events)
+    recompute_count = len(recompute_events)
+    if baseline_count <= recompute_count:
+        raise ValueError("saved-tensor proof must show recompute reduces saved tensors")
+
+    dummy_count = sum(
+        1 for event in recompute_events if tuple(event.get("shape", ())) == (0,)
+    )
+    checkpointed_count = sum(
+        1
+        for decision in recurrence_checkpoint_decisions(
+            MODE_LOSSLESS_RECOMPUTE,
+            H_cycles=H_cycles,
+            L_cycles=L_cycles,
+            bp_steps=bp_steps,
+        )
+        if decision.checkpoint
+    )
+    expected_boundary = checkpointed_count * 2
+    expected_dummy = checkpointed_count
+    boundary_like = [
+        event
+        for event in recompute_events
+        if len(tuple(event.get("shape", ()))) == 3
+        and int(tuple(event.get("shape", ()))[-1]) == hidden_size
+    ]
+    internal_payload = max(0, len(boundary_like) - expected_boundary)
+    if dummy_count != expected_dummy:
+        raise ValueError("saved-tensor proof checkpoint dummy tensor count mismatch")
+    if len(boundary_like) != expected_boundary:
+        raise ValueError("saved-tensor proof boundary tensor count mismatch")
+    if internal_payload != 0:
+        raise ValueError("saved-tensor proof observed internal recurrence payload tensors")
+    return {
+        "baseline_saved_tensor_count": baseline_count,
+        "recompute_saved_tensor_count": recompute_count,
+        "internal_payload_tensor_count": internal_payload,
+    }
+
+
+def saved_tensor_path_proof_from_events(
+    *,
+    baseline_events: Sequence[Mapping[str, object]],
+    recompute_events: Sequence[Mapping[str, object]],
+    boundary_tensor_shape: tuple[int, ...],
+    boundary_tensor_dtype: str,
+) -> dict[str, int]:
+    baseline = analyze_saved_tensor_hook_events(
+        baseline_events,
+        boundary_tensor_shape=boundary_tensor_shape,
+        boundary_tensor_dtype=boundary_tensor_dtype,
+    )
+    recompute = analyze_saved_tensor_hook_events(
+        recompute_events,
+        boundary_tensor_shape=boundary_tensor_shape,
+        boundary_tensor_dtype=boundary_tensor_dtype,
+    )
+    if recompute["observed_internal_payload_tensor_count"] != 0:
+        raise ValueError("saved-tensor proof observed internal recurrence payload tensors")
+    if baseline["saved_tensor_count"] <= recompute["saved_tensor_count"]:
+        raise ValueError("saved-tensor proof must show recompute reduces saved tensors")
+    return {
+        "baseline_saved_tensor_count": baseline["saved_tensor_count"],
+        "recompute_saved_tensor_count": recompute["saved_tensor_count"],
+        "internal_payload_tensor_count": recompute["observed_internal_payload_tensor_count"],
+    }
+
+
+def recompute_checkpoint_fired(
+    *,
+    H_cycles: int,
+    L_cycles: int,
+    bp_steps: int,
+) -> bool:
+    decisions = recurrence_checkpoint_decisions(
+        MODE_LOSSLESS_RECOMPUTE,
+        H_cycles=H_cycles,
+        L_cycles=L_cycles,
+        bp_steps=bp_steps,
+    )
+    return any(decision.checkpoint for decision in decisions)
+
+
+def build_trainer_backward_wiring_proof_receipt(
+    *,
+    source_commit_sha: str,
+    proof_command_argv: Sequence[str],
+    H_cycles: int,
+    L_cycles: int,
+    bp_steps: int,
+    main_path_proof: Mapping[str, object],
+    retained_side_path_proof: Mapping[str, object] | None = None,
+    retained_side_in_scope: bool = True,
+    retained_side_skip_reason: str = "",
+    backward_recompute_fixture_receipt_sha256: str = "",
+) -> TrainerBackwardWiringProofReceipt:
+    main_baseline = _require_int(
+        main_path_proof.get("baseline_saved_tensor_count"),
+        field_name="main_baseline_saved_tensor_count",
+    )
+    main_recompute = _require_int(
+        main_path_proof.get("recompute_saved_tensor_count"),
+        field_name="main_recompute_saved_tensor_count",
+    )
+    main_internal = _require_int(
+        main_path_proof.get("internal_payload_tensor_count"),
+        field_name="main_internal_payload_tensor_count",
+    )
+    main_checkpoint_fired = bool(main_path_proof.get("recompute_checkpoint_fired"))
+    if main_internal != 0:
+        raise ValueError("main path internal payload must be zero")
+    if main_baseline <= main_recompute:
+        raise ValueError("main path must show baseline > recompute saved tensors")
+    if not main_checkpoint_fired:
+        raise ValueError("main path recompute checkpoint must fire")
+
+    retained_proven = False
+    retained_checkpoint_fired = False
+    retained_baseline = 0
+    retained_recompute = 0
+    retained_internal = 0
+    if retained_side_in_scope:
+        if retained_side_path_proof is None:
+            raise ValueError("retained-side proof required when retained_side_in_scope")
+        retained_baseline = _require_int(
+            retained_side_path_proof.get("baseline_saved_tensor_count"),
+            field_name="retained_side_baseline_saved_tensor_count",
+        )
+        retained_recompute = _require_int(
+            retained_side_path_proof.get("recompute_saved_tensor_count"),
+            field_name="retained_side_recompute_saved_tensor_count",
+        )
+        retained_internal = _require_int(
+            retained_side_path_proof.get("internal_payload_tensor_count"),
+            field_name="retained_side_internal_payload_tensor_count",
+        )
+        retained_checkpoint_fired = bool(
+            retained_side_path_proof.get("recompute_checkpoint_fired")
+        )
+        if retained_internal != 0:
+            raise ValueError("retained-side internal payload must be zero")
+        if retained_baseline <= retained_recompute:
+            raise ValueError(
+                "retained-side path must show baseline > recompute saved tensors"
+            )
+        if not retained_checkpoint_fired:
+            raise ValueError("retained-side recompute checkpoint must fire")
+        retained_proven = True
+
+    receipt = TrainerBackwardWiringProofReceipt(
+        schema_version=TRAINER_BACKWARD_WIRING_RECEIPT_SCHEMA_VERSION,
+        target_name=TRAINER_BACKWARD_WIRING_TARGET_NAME,
+        proof_kind=PROOF_KIND_CPU_PRODUCTION_AUTOGAD_WIRING,
+        source_commit_sha=_require_nonempty_string(
+            source_commit_sha,
+            field_name="source_commit_sha",
+        ),
+        proof_command_argv=tuple(str(arg) for arg in proof_command_argv),
+        activation_relief_wiring_proof_flag=True,
+        policy_mode=MODE_LOSSLESS_RECOMPUTE,
+        main_path_proven=True,
+        retained_side_path_proven=retained_proven,
+        retained_side_in_scope=retained_side_in_scope,
+        retained_side_skip_reason=str(retained_side_skip_reason),
+        main_recompute_checkpoint_fired=main_checkpoint_fired,
+        main_baseline_saved_tensor_count=main_baseline,
+        main_recompute_saved_tensor_count=main_recompute,
+        main_internal_payload_tensor_count=main_internal,
+        retained_side_recompute_checkpoint_fired=retained_checkpoint_fired,
+        retained_side_baseline_saved_tensor_count=retained_baseline,
+        retained_side_recompute_saved_tensor_count=retained_recompute,
+        retained_side_internal_payload_tensor_count=retained_internal,
+        default_runtime_sub2_claim=False,
+        activations_residuals_sub2_claim=False,
+        live_readiness_row_flip_authorized=False,
+        readiness_row_flip_authorized_surface_names=(),
+        backward_recompute_fixture_receipt_sha256=str(
+            backward_recompute_fixture_receipt_sha256
+        ),
+        optimizer_step_called=False,
+        non_claims=TRAINER_BACKWARD_WIRING_NON_CLAIMS,
+    )
+    validate_trainer_backward_wiring_proof_receipt(receipt)
+    return receipt
+
+
+def validate_trainer_backward_wiring_proof_receipt(
+    receipt: TrainerBackwardWiringProofReceipt,
+) -> None:
+    if receipt.schema_version != TRAINER_BACKWARD_WIRING_RECEIPT_SCHEMA_VERSION:
+        raise ValueError("trainer backward wiring receipt schema mismatch")
+    if receipt.target_name != TRAINER_BACKWARD_WIRING_TARGET_NAME:
+        raise ValueError("trainer backward wiring receipt target mismatch")
+    if receipt.proof_kind != PROOF_KIND_CPU_PRODUCTION_AUTOGAD_WIRING:
+        raise ValueError("trainer backward wiring receipt requires cpu proof kind")
+    if not receipt.activation_relief_wiring_proof_flag:
+        raise ValueError("trainer backward wiring receipt requires wiring proof flag")
+    if receipt.policy_mode != MODE_LOSSLESS_RECOMPUTE:
+        raise ValueError("trainer backward wiring receipt requires lossless_recompute")
+    if not receipt.main_path_proven:
+        raise ValueError("trainer backward wiring receipt requires main path proof")
+    if not receipt.main_recompute_checkpoint_fired:
+        raise ValueError("trainer backward wiring receipt requires main recompute checkpoint fired")
+    if receipt.retained_side_in_scope and not receipt.retained_side_path_proven:
+        raise ValueError("retained-side path must be proven when in scope")
+    if not receipt.retained_side_in_scope and receipt.retained_side_path_proven:
+        raise ValueError("retained-side path cannot be proven when out of scope")
+    if (
+        receipt.retained_side_in_scope
+        and not receipt.retained_side_recompute_checkpoint_fired
+    ):
+        raise ValueError(
+            "trainer backward wiring receipt requires retained-side recompute checkpoint fired"
+        )
+    if receipt.default_runtime_sub2_claim or receipt.activations_residuals_sub2_claim:
+        raise ValueError("CPU wiring receipt cannot claim default runtime or activations sub2")
+    if receipt.live_readiness_row_flip_authorized:
+        raise ValueError("CPU wiring receipt cannot authorize live readiness row flip")
+    if receipt.readiness_row_flip_authorized_surface_names:
+        raise ValueError("CPU wiring receipt must keep authorized surface list empty")
+    if receipt.optimizer_step_called:
+        raise ValueError("CPU wiring receipt must not call optimizer step")
+    if receipt.main_internal_payload_tensor_count != 0:
+        raise ValueError("main path internal payload must be zero")
+    if (
+        receipt.retained_side_in_scope
+        and receipt.retained_side_internal_payload_tensor_count != 0
+    ):
+        raise ValueError("retained-side internal payload must be zero")
+    if receipt.main_baseline_saved_tensor_count <= receipt.main_recompute_saved_tensor_count:
+        raise ValueError("main path must show baseline > recompute saved tensors")
+    if (
+        receipt.retained_side_in_scope
+        and receipt.retained_side_baseline_saved_tensor_count
+        <= receipt.retained_side_recompute_saved_tensor_count
+    ):
+        raise ValueError("retained-side must show baseline > recompute saved tensors")
+    if receipt.non_claims != TRAINER_BACKWARD_WIRING_NON_CLAIMS:
+        raise ValueError("trainer backward wiring receipt non-claims must be exact")
+
+
+def validate_launch_runtime_backward_receipt(
+    receipt: LaunchRuntimeBackwardValidationReceipt,
+) -> None:
+    if receipt.proof_kind != PROOF_KIND_LAUNCH_RUNTIME_VALIDATION:
+        raise ValueError("launch runtime receipt proof_kind mismatch")
+    if not receipt.live_readiness_row_flip_authorized:
+        raise ValueError("launch runtime receipt must authorize live row flip")
+    authorized = tuple(receipt.readiness_row_flip_authorized_surface_names)
+    if authorized != AUTHORIZED_R1_L_SURFACE_TUPLE:
+        raise ValueError("launch runtime receipt authorized surface tuple mismatch")
+    if not _require_nonempty_string(receipt.source_commit_sha, field_name="source_commit_sha"):
+        raise ValueError("launch runtime receipt requires source_commit_sha")
+    if not receipt.launch_runtime_validation_pass:
+        raise ValueError("launch runtime receipt requires launch_runtime_validation_pass")

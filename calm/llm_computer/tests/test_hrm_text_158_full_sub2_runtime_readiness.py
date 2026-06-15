@@ -44,6 +44,7 @@ from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
     SURFACE_Q_SIDECAR_VOTE_CARRIER,
     FullSub2RuntimeSurfaceReceipt,
     apply_live_p1_conversion_surface_overrides,
+    apply_live_r1_backward_wiring_surface_overrides,
     build_full_sub2_runtime_ready_for_science,
     current_repo_scaffold_surfaces,
     fixture_full_sub2_runtime_ready_for_science,
@@ -54,8 +55,20 @@ from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
     gated_sub2_checkpoint_path_optimizer_credit_state_blocked_surfaces,
     gated_sub2_checkpoint_path_surfaces,
     live_p1_authority_conversion_surfaces,
+    live_r1_backward_wiring_surfaces,
     main_ready_fixture_surfaces,
     validate_full_sub2_runtime_ready_for_science_receipt,
+)
+from calm.hrm_text_158.native_full_stack.activation_relief import (
+    AUTHORIZED_R1_L_SURFACE_TUPLE,
+    PROOF_KIND_LAUNCH_RUNTIME_VALIDATION,
+    BackwardRecomputeSavedTensorReceipt,
+    LaunchRuntimeBackwardValidationReceipt,
+    build_backward_recompute_saved_tensor_receipt,
+    build_trainer_backward_wiring_proof_receipt,
+)
+from calm.llm_computer.tests.test_hrm_text_158_activation_relief import (
+    _saved_tensor_proof,
 )
 from calm.llm_computer.tests.test_hrm_text_158_trainer_sub2_authority_live_checkpoint import (
     _mint_live_conversion_receipt,
@@ -1113,3 +1126,109 @@ def test_live_p1_two_row_fallback_keeps_q_sidecar_blocked():
     )
     assert q_sidecar.classification != RUNTIME_CLASS_SUB2
     assert two_row.q_sidecar_deferred_reason
+
+
+def _post_p1_base_surfaces():
+    return apply_live_p1_conversion_surface_overrides(_mint_live_conversion_receipt())
+
+
+def _mint_cpu_wiring_receipt():
+    main_proof = {
+        "baseline_saved_tensor_count": 20,
+        "recompute_saved_tensor_count": 15,
+        "internal_payload_tensor_count": 0,
+        "recompute_checkpoint_fired": True,
+    }
+    return build_trainer_backward_wiring_proof_receipt(
+        source_commit_sha="cpu-wiring-test",
+        proof_command_argv=("pytest",),
+        H_cycles=2,
+        L_cycles=3,
+        bp_steps=5,
+        main_path_proof=main_proof,
+        retained_side_in_scope=False,
+        retained_side_skip_reason="test-only main path",
+    )
+
+
+def _mint_valid_launch_receipt() -> LaunchRuntimeBackwardValidationReceipt:
+    return LaunchRuntimeBackwardValidationReceipt(
+        proof_kind=PROOF_KIND_LAUNCH_RUNTIME_VALIDATION,
+        live_readiness_row_flip_authorized=True,
+        readiness_row_flip_authorized_surface_names=AUTHORIZED_R1_L_SURFACE_TUPLE,
+        source_commit_sha="launch-runtime-test-sha",
+        launch_runtime_validation_pass=True,
+    )
+
+
+def test_live_r1_applier_rejects_fixture_backward_recompute_receipt():
+    fixture_receipt = build_backward_recompute_saved_tensor_receipt(
+        H_cycles=2,
+        L_cycles=3,
+        bp_steps=5,
+        saved_tensor_proof=_saved_tensor_proof(bp_steps=5),
+    )
+    assert isinstance(fixture_receipt, BackwardRecomputeSavedTensorReceipt)
+    with pytest.raises(ValueError, match="fixture backward recompute receipt"):
+        apply_live_r1_backward_wiring_surface_overrides(
+            fixture_receipt,
+            base_surfaces=_post_p1_base_surfaces(),
+        )
+
+
+def test_live_r1_applier_rejects_cpu_wiring_receipt():
+    with pytest.raises(ValueError, match="CPU production autograd wiring"):
+        apply_live_r1_backward_wiring_surface_overrides(
+            _mint_cpu_wiring_receipt(),
+            base_surfaces=_post_p1_base_surfaces(),
+        )
+
+
+def test_live_r1_applier_rejects_forged_launch_runtime_receipt():
+    forged = replace(
+        _mint_valid_launch_receipt(),
+        launch_runtime_validation_pass=False,
+    )
+    with pytest.raises(ValueError, match="launch_runtime_validation_pass"):
+        apply_live_r1_backward_wiring_surface_overrides(
+            forged,
+            base_surfaces=_post_p1_base_surfaces(),
+        )
+
+
+def test_live_r1_launch_runtime_validation_flips_exactly_backward_row():
+    base = _post_p1_base_surfaces()
+    base_by_id = {surface.surface_id: surface for surface in base}
+    receipt = _mint_valid_launch_receipt()
+    readiness = live_r1_backward_wiring_surfaces(
+        receipt,
+        base_surfaces=base,
+    )
+    assert readiness.ready_for_main_science is False
+    assert readiness.ready_for_pre_full_stack_diagnostic is True
+    assert readiness.sub2_surface_count == 4
+    changed = {
+        surface.surface_id
+        for surface in readiness.surfaces
+        if surface.classification != base_by_id[surface.surface_id].classification
+    }
+    assert changed == {SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS}
+    backward = next(
+        surface
+        for surface in readiness.surfaces
+        if surface.surface_id == SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS
+    )
+    assert backward.classification == RUNTIME_CLASS_SUB2
+
+
+def test_current_repo_scaffold_unchanged_by_cpu_wiring_receipt():
+    current = fixture_full_sub2_runtime_ready_for_science(FIXTURE_CURRENT_REPO)
+    assert current.ready_for_pre_full_stack_diagnostic is False
+    backward = next(
+        surface
+        for surface in current.surfaces
+        if surface.surface_id == SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS
+    )
+    assert backward.classification == RUNTIME_CLASS_MISSING
+    with pytest.raises(ValueError, match="CPU production autograd wiring"):
+        apply_live_r1_backward_wiring_surface_overrides(_mint_cpu_wiring_receipt())

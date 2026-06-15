@@ -991,6 +991,109 @@ def live_p1_authority_conversion_surfaces(
     return result
 
 
+def apply_live_r1_backward_wiring_surface_overrides(
+    receipt: Any,
+    *,
+    base_surfaces: Sequence[FullSub2RuntimeSurfaceReceipt] | None = None,
+) -> tuple[FullSub2RuntimeSurfaceReceipt, ...]:
+    from calm.hrm_text_158.native_full_stack.activation_relief import (
+        AUTHORIZED_R1_L_SURFACE_TUPLE,
+        BackwardRecomputeSavedTensorReceipt,
+        LaunchRuntimeBackwardValidationReceipt,
+        PROOF_KIND_CPU_PRODUCTION_AUTOGAD_WIRING,
+        PROOF_KIND_LAUNCH_RUNTIME_VALIDATION,
+        TrainerBackwardWiringProofReceipt,
+        validate_launch_runtime_backward_receipt,
+        validate_trainer_backward_wiring_proof_receipt,
+    )
+
+    if isinstance(receipt, BackwardRecomputeSavedTensorReceipt):
+        raise ValueError(
+            "fixture backward recompute receipt cannot flip live scaffold"
+        )
+    if isinstance(receipt, TrainerBackwardWiringProofReceipt):
+        validate_trainer_backward_wiring_proof_receipt(receipt)
+        raise ValueError(
+            "CPU production autograd wiring receipt cannot flip live scaffold"
+        )
+
+    proof_kind = getattr(receipt, "proof_kind", None)
+    if proof_kind == PROOF_KIND_CPU_PRODUCTION_AUTOGAD_WIRING:
+        raise ValueError(
+            "CPU production autograd wiring receipt cannot flip live scaffold"
+        )
+    if proof_kind != PROOF_KIND_LAUNCH_RUNTIME_VALIDATION:
+        raise ValueError(
+            "only launch_runtime_validation receipts may flip backward row"
+        )
+    if not isinstance(receipt, LaunchRuntimeBackwardValidationReceipt):
+        raise TypeError(
+            "launch runtime receipt must be LaunchRuntimeBackwardValidationReceipt"
+        )
+    validate_launch_runtime_backward_receipt(receipt)
+    if not receipt.live_readiness_row_flip_authorized:
+        raise ValueError("launch runtime receipt does not authorize readiness row flip")
+    authorized = tuple(receipt.readiness_row_flip_authorized_surface_names)
+    if authorized != AUTHORIZED_R1_L_SURFACE_TUPLE:
+        raise ValueError("launch runtime authorized surface tuple mismatch")
+
+    surfaces = list(base_surfaces or current_repo_scaffold_surfaces())
+    base_by_id = {surface.surface_id: surface for surface in surfaces}
+    reason = (
+        f"{GATED_LOSSLESS_RECOMPUTE_REASON}; R1-L launch/runtime validation "
+        f"source_commit_sha={receipt.source_commit_sha}; "
+        "Step 3A1 saved-tensor-hook receipt proves no extra stored internal "
+        "recurrence-block saved payload while boundary z_H/z_L inputs remain "
+        "accounted under activations_residuals"
+    )
+    proof_test = (
+        "calm/llm_computer/tests/test_hrm_text_158_full_sub2_runtime_readiness.py::"
+        "test_live_r1_launch_runtime_validation_flips_exactly_backward_row"
+    )
+    flipped = _with_surface(
+        tuple(surfaces),
+        SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS,
+        classification=RUNTIME_CLASS_SUB2,
+        reason=reason,
+        source_anchor="calm/hrm_text_158/native_full_stack/activation_relief.py:410",
+        proof_artifact_or_test=proof_test,
+    )
+    for surface in flipped:
+        if surface.surface_id == SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS:
+            continue
+        if surface.classification != base_by_id[surface.surface_id].classification:
+            raise ValueError(
+                "launch runtime flip changed more than backward_saved_tensors_transients"
+            )
+
+    result = build_full_sub2_runtime_ready_for_science(flipped)
+    if result.ready_for_main_science:
+        raise ValueError("launch runtime flip must not set ready_for_main_science")
+    if not result.ready_for_pre_full_stack_diagnostic:
+        raise ValueError(
+            "launch runtime flip must set ready_for_pre_full_stack_diagnostic"
+        )
+    if SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS not in {
+        surface.surface_id
+        for surface in flipped
+        if surface.classification == RUNTIME_CLASS_SUB2
+    }:
+        raise ValueError("launch runtime flip must set backward row to sub2")
+    return flipped
+
+
+def live_r1_backward_wiring_surfaces(
+    receipt: Any,
+    *,
+    base_surfaces: Sequence[FullSub2RuntimeSurfaceReceipt] | None = None,
+) -> FullSub2RuntimeReadyForScienceReceipt:
+    overridden = apply_live_r1_backward_wiring_surface_overrides(
+        receipt,
+        base_surfaces=base_surfaces,
+    )
+    return build_full_sub2_runtime_ready_for_science(overridden)
+
+
 def fixture_full_sub2_runtime_ready_for_science(
     fixture_name: str = FIXTURE_CURRENT_REPO,
 ) -> FullSub2RuntimeReadyForScienceReceipt:

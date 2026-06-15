@@ -771,6 +771,8 @@ def train(
     sub2_authority_live_checkpoint: bool = False,
     # P1a proof-only: CPU roundtrip of P1 envelope save/load, exit before optimizer.
     sub2_authority_live_conversion_proof: bool = False,
+    # R1 default-off: CPU production backward-path wiring proof; exits before optimizer.
+    activation_relief_lossless_recompute_wiring_proof: bool = False,
     # Diagnostic ONLY (codex msg 1779652915624): when True, build the training
     # DataLoader WITHOUT the explicit seeded generator (pre-1656ead global-RNG
     # shuffle order). Default False keeps the deterministic seeded generator.
@@ -1321,6 +1323,11 @@ def train(
             "--sub2-authority-roundtrip-proof, and "
             "--sub2-authority-live-conversion-proof are mutually exclusive"
         )
+    if activation_relief_lossless_recompute_wiring_proof and any(_sub2_proof_flags):
+        raise ValueError(
+            "--activation-relief-lossless-recompute-wiring-proof is mutually "
+            "exclusive with sub2 authority proof flags"
+        )
     if sub2_authority_live_checkpoint and any(_sub2_proof_flags):
         raise ValueError(
             "--sub2-authority-live-checkpoint is mutually exclusive with "
@@ -1577,6 +1584,241 @@ def train(
             )
         print(
             "[hrm158] P1 live-conversion proof: EXITING before normal training",
+            flush=True,
+        )
+        return
+
+    if activation_relief_lossless_recompute_wiring_proof:
+        import json
+        import os
+        import subprocess
+        import sys
+
+        from calm.hrm_text_158.native_full_stack.activation_relief import (
+            MODE_LOSSLESS_RECOMPUTE,
+            build_trainer_backward_wiring_proof_receipt,
+            production_saved_tensor_path_proof_from_events,
+            recompute_checkpoint_fired,
+        )
+
+        repo_root = Path(__file__).resolve().parents[1]
+        proof_batch = next(iter(loader))
+        proof_step = 1
+        proof_total_steps = max(1, epochs * len(loader))
+        extras_base = m.compute_train_extra_args(proof_step, proof_total_steps)
+        extras_policy = {
+            **extras_base,
+            "activation_relief_policy": MODE_LOSSLESS_RECOMPUTE,
+        }
+
+        def _proof_child_batch(batch):
+            inputs = batch["inputs"].to(device)
+            labels = batch["labels"].to(device)
+            sep_positions = batch["sep_positions"].to(device)
+            bsz, seq_len = inputs.shape
+            position_ids = torch.arange(
+                seq_len, dtype=torch.long, device=device
+            ).unsqueeze(0).expand(bsz, -1)
+            return {
+                "inputs": inputs,
+                "labels": labels,
+                "sep_positions": sep_positions,
+                "position_ids": position_ids,
+            }
+
+        def _collect_saved_tensor_events(run_fn):
+            events: list[dict[str, object]] = []
+
+            def pack_hook(tensor: torch.Tensor):
+                events.append(
+                    {
+                        "shape": tuple(tensor.shape),
+                        "dtype": str(tensor.dtype),
+                    }
+                )
+                return tensor
+
+            with torch.autograd.graph.saved_tensors_hooks(
+                pack_hook,
+                lambda tensor: tensor,
+            ):
+                run_fn()
+            return events
+
+        child_batch = _proof_child_batch(proof_batch)
+        boundary_shape = (
+            child_batch["inputs"].shape[0],
+            child_batch["inputs"].shape[1],
+            hidden_size,
+        )
+        boundary_dtype = "torch.float32"
+
+        def _run_main_backward(extras):
+            m.zero_grad(set_to_none=True)
+            _new_carry, loss_main, _metrics = m(None, child_batch, **extras)
+            if not torch.isfinite(loss_main):
+                raise RuntimeError(
+                    f"R1 wiring proof main loss non-finite: {loss_main.item()}"
+                )
+            loss_main.backward()
+
+        main_baseline_events = _collect_saved_tensor_events(
+            lambda: _run_main_backward(extras_base)
+        )
+        main_recompute_events = _collect_saved_tensor_events(
+            lambda: _run_main_backward(extras_policy)
+        )
+        main_path_proof = production_saved_tensor_path_proof_from_events(
+            baseline_events=main_baseline_events,
+            recompute_events=main_recompute_events,
+            hidden_size=hidden_size,
+            H_cycles=cfg.H_cycles,
+            L_cycles=cfg.L_cycles,
+            bp_steps=int(extras_base["bp_steps"]),
+        )
+        main_path_proof["recompute_checkpoint_fired"] = recompute_checkpoint_fired(
+            H_cycles=cfg.H_cycles,
+            L_cycles=cfg.L_cycles,
+            bp_steps=int(extras_base["bp_steps"]),
+        )
+
+        retained_side_path_proof = None
+        retained_side_in_scope = bool(active_supports)
+        retained_side_skip_reason = ""
+        if active_supports:
+            _sup = active_supports[0]
+            _idx = _sup["sampler"].next_indices()
+            _picked = [_sup["cache"][i] for i in _idx]
+            s_inputs = torch.stack([p["inputs"] for p in _picked], 0).to(device)
+            s_labels = torch.stack([p["labels"] for p in _picked], 0).to(device)
+            s_sep = torch.stack([p["sep_position"] for p in _picked], 0).to(device)
+            sB, sL = s_inputs.shape
+            s_pos = torch.arange(
+                sL, dtype=torch.long, device=device
+            ).unsqueeze(0).expand(sB, -1)
+            s_batch = {
+                "inputs": s_inputs,
+                "labels": s_labels,
+                "sep_positions": s_sep,
+                "position_ids": s_pos,
+            }
+            retained_boundary_shape = (sB, sL, hidden_size)
+
+            def _run_retained_backward(extras):
+                m.zero_grad(set_to_none=True)
+                _sc, _sloss, s_metrics = m(
+                    None,
+                    s_batch,
+                    return_logits=True,
+                    **extras,
+                )
+                if _sup.get("parent_response_logits_by_bp") is not None:
+                    s_parent_response_logits = _gather_retained_parent_response_logits(
+                        _sup,
+                        _idx,
+                        int(extras["bp_steps"]),
+                        device,
+                    )
+                    s_kl = _parent_consistency_kl_response_positions(
+                        s_metrics["logits"],
+                        s_parent_response_logits,
+                        s_labels,
+                        temp=parent_consistency_temp,
+                    )
+                else:
+                    with torch.no_grad():
+                        _, s_parent_logits = parent_m(
+                            None,
+                            {
+                                "inputs": s_inputs,
+                                "sep_positions": s_sep,
+                                "position_ids": s_pos,
+                            },
+                            **extras,
+                        )
+                    s_is_prior = torch.ones(sB, dtype=torch.bool, device=device)
+                    s_kl = _parent_consistency_kl(
+                        s_metrics["logits"],
+                        s_parent_logits,
+                        s_labels,
+                        s_is_prior,
+                        temp=parent_consistency_temp,
+                    )
+                s_loss = _sup["weight"] * s_kl
+                if not torch.isfinite(s_loss):
+                    raise RuntimeError(
+                        f"R1 wiring proof retained loss non-finite: {s_loss.item()}"
+                    )
+                s_loss.backward()
+
+            retained_baseline_events = _collect_saved_tensor_events(
+                lambda: _run_retained_backward(extras_base)
+            )
+            retained_recompute_events = _collect_saved_tensor_events(
+                lambda: _run_retained_backward(extras_policy)
+            )
+            retained_side_path_proof = production_saved_tensor_path_proof_from_events(
+                baseline_events=retained_baseline_events,
+                recompute_events=retained_recompute_events,
+                hidden_size=hidden_size,
+                H_cycles=cfg.H_cycles,
+                L_cycles=cfg.L_cycles,
+                bp_steps=int(extras_base["bp_steps"]),
+            )
+            retained_side_path_proof["recompute_checkpoint_fired"] = (
+                recompute_checkpoint_fired(
+                    H_cycles=cfg.H_cycles,
+                    L_cycles=cfg.L_cycles,
+                    bp_steps=int(extras_base["bp_steps"]),
+                )
+            )
+        else:
+            retained_side_skip_reason = "no active retained supports in proof run"
+
+        source_commit_sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            text=True,
+        ).strip()
+        receipt = build_trainer_backward_wiring_proof_receipt(
+            source_commit_sha=source_commit_sha,
+            proof_command_argv=tuple(sys.argv),
+            H_cycles=cfg.H_cycles,
+            L_cycles=cfg.L_cycles,
+            bp_steps=int(extras_base["bp_steps"]),
+            main_path_proof=main_path_proof,
+            retained_side_path_proof=retained_side_path_proof,
+            retained_side_in_scope=retained_side_in_scope,
+            retained_side_skip_reason=retained_side_skip_reason,
+        )
+        print(
+            "[hrm158] R1 activation-relief wiring proof: "
+            f"proof_kind={receipt.proof_kind} "
+            f"main_baseline={receipt.main_baseline_saved_tensor_count} "
+            f"main_recompute={receipt.main_recompute_saved_tensor_count} "
+            f"main_internal={receipt.main_internal_payload_tensor_count} "
+            f"retained_in_scope={receipt.retained_side_in_scope} "
+            f"retained_proven={receipt.retained_side_path_proven} "
+            f"live_flip_authorized={receipt.live_readiness_row_flip_authorized}",
+            flush=True,
+        )
+        receipt_json_path = os.environ.get(
+            "R1_BACKWARD_WIRING_RECEIPT_JSON",
+            "",
+        ).strip()
+        if receipt_json_path:
+            out_path = Path(receipt_json_path)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(
+                json.dumps(receipt.to_dict(), indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            print(
+                f"[hrm158] R1 activation-relief wiring proof: receipt_json={out_path}",
+                flush=True,
+            )
+        print(
+            "[hrm158] R1 activation-relief wiring proof: EXITING before optimizer step",
             flush=True,
         )
         return
@@ -2275,6 +2517,12 @@ if __name__ == "__main__":
                     help="P1a proof-only, default-off: build/save/load a temp P1 "
                          "live envelope on CPU and exit before optimizer/training. "
                          "Requires --use-ternary-bulk; no row flip claim.")
+    ap.add_argument("--activation-relief-lossless-recompute-wiring-proof",
+                    action="store_true",
+                    help="R1 proof-only, default-off: exercise production main and "
+                         "retained backward paths under saved_tensors_hooks with "
+                         "lossless_recompute policy wired through extras; exit before "
+                         "optimizer step. No live readiness row flip.")
     ap.add_argument("--legacy-loader-shuffle", action="store_true",
                     help="DIAGNOSTIC ONLY (not recipe-default): build the training "
                          "DataLoader without the explicit seeded generator, restoring "
@@ -2361,6 +2609,9 @@ if __name__ == "__main__":
         sub2_authority_eligible_scope=args.sub2_authority_eligible_scope,
         sub2_authority_live_checkpoint=args.sub2_authority_live_checkpoint,
         sub2_authority_live_conversion_proof=args.sub2_authority_live_conversion_proof,
+        activation_relief_lossless_recompute_wiring_proof=(
+            args.activation_relief_lossless_recompute_wiring_proof
+        ),
         legacy_loader_shuffle=args.legacy_loader_shuffle,
         dry_run=args.dry_run,
     )
