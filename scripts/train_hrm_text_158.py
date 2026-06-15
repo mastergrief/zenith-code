@@ -767,6 +767,10 @@ def train(
     # and exit before normal optimizer/training/checkpoint side effects.
     sub2_authority_roundtrip_proof: bool = False,
     sub2_authority_eligible_scope: str = "all-bitlinear",
+    # P1a: default-off live checkpoint envelope save/load routing.
+    sub2_authority_live_checkpoint: bool = False,
+    # P1a proof-only: CPU roundtrip of P1 envelope save/load, exit before optimizer.
+    sub2_authority_live_conversion_proof: bool = False,
     # Diagnostic ONLY (codex msg 1779652915624): when True, build the training
     # DataLoader WITHOUT the explicit seeded generator (pre-1656ead global-RNG
     # shuffle order). Default False keeps the deterministic seeded generator.
@@ -1205,7 +1209,19 @@ def train(
             current_normalizer_version=tok.normalizer_version,
         )
         print(f"[hrm158] --load-from compat OK; loading model_state strict", flush=True)
-        m.load_state_dict(loaded_ckpt["model_state"], strict=True)
+        from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
+            load_train_checkpoint_into_model,
+        )
+
+        load_train_checkpoint_into_model(
+            m,
+            loaded_ckpt,
+            use_ternary_bulk=use_ternary_bulk,
+            eligible_scope=sub2_authority_eligible_scope,
+            device=device,
+            inference_only=False,
+            sub2_live_enabled=sub2_authority_live_checkpoint,
+        )
         print(f"[hrm158] --load-from loaded; optimizer state + LR schedule will RESET per rung", flush=True)
 
     # Parent-consistency: frozen reference = the --load-from chain head. Dry-run
@@ -1220,7 +1236,15 @@ def train(
             )
         parent_hrm = HierarchicalReasoningModel(cfg)
         parent_m = LMHead(parent_hrm, LMHeadConfig(vocab_size=tok.vocab_size)).to(device)
-        parent_m.load_state_dict(loaded_ckpt["model_state"], strict=True)
+        load_train_checkpoint_into_model(
+            parent_m,
+            loaded_ckpt,
+            use_ternary_bulk=use_ternary_bulk,
+            eligible_scope=sub2_authority_eligible_scope,
+            device=device,
+            inference_only=True,
+            sub2_live_enabled=sub2_authority_live_checkpoint,
+        )
         parent_m.eval()
         for p in parent_m.parameters():
             p.requires_grad_(False)
@@ -1288,13 +1312,109 @@ def train(
         sub2_authority_construction_proof,
         sub2_authority_local_update_proof,
         sub2_authority_roundtrip_proof,
+        sub2_authority_live_conversion_proof,
     ]
     if sum(1 for item in _sub2_proof_flags if item) > 1:
         raise ValueError(
             "--sub2-authority-construction-proof, "
-            "--sub2-authority-local-update-proof, and "
-            "--sub2-authority-roundtrip-proof are mutually exclusive"
+            "--sub2-authority-local-update-proof, "
+            "--sub2-authority-roundtrip-proof, and "
+            "--sub2-authority-live-conversion-proof are mutually exclusive"
         )
+    if sub2_authority_live_checkpoint and any(_sub2_proof_flags):
+        raise ValueError(
+            "--sub2-authority-live-checkpoint is mutually exclusive with "
+            "sub2 authority proof flags"
+        )
+
+    def _checkpoint_save_blob(*, step: int, epoch: int) -> dict:
+        cfg_blob = _build_ckpt_config(
+            m, tok, cfg, max_len, batch_size,
+            curriculum_rung=curriculum_rung,
+            curriculum_seed=curriculum_seed,
+            replay_ratio=effective_replay_ratio if curriculum_rung else 0.0,
+            prior_rungs=prior_rungs,
+            retention_anchor_set=retention_anchor_set,
+            retention_anchor_repeat=retention_anchor_repeat,
+            parent_consistency_weight=parent_consistency_weight,
+            parent_consistency_temp=parent_consistency_temp,
+            retained_support_meta=retained_support_meta,
+            retained_l0b_only=_retained_l0b_only,
+        )
+        if sub2_authority_live_checkpoint:
+            from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
+                save_trainer_sub2_live_checkpoint_envelope,
+            )
+            return save_trainer_sub2_live_checkpoint_envelope(
+                m,
+                use_ternary_bulk=use_ternary_bulk,
+                eligible_scope=sub2_authority_eligible_scope,
+                step=step,
+                epoch=epoch,
+                config=cfg_blob,
+                source_pin=SOURCE_PIN,
+            )
+        return {
+            "model_state": m.state_dict(),
+            "config": cfg_blob,
+            "step": step,
+            "epoch": epoch,
+            "source_pin": SOURCE_PIN,
+        }
+
+    if sub2_authority_live_conversion_proof:
+        import tempfile
+        from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
+            is_p1_live_sub2_checkpoint,
+            load_train_checkpoint_into_model,
+            save_trainer_sub2_live_checkpoint_envelope,
+        )
+
+        if not use_ternary_bulk:
+            raise RuntimeError(
+                "P1 live-conversion proof requires --use-ternary-bulk"
+            )
+        with tempfile.TemporaryDirectory() as _tmpdir:
+            tmp_path = Path(_tmpdir) / "p1_live_conversion_proof.pt"
+            envelope = save_trainer_sub2_live_checkpoint_envelope(
+                m,
+                use_ternary_bulk=use_ternary_bulk,
+                eligible_scope=sub2_authority_eligible_scope,
+                step=0,
+                config={
+                    "proof": "p1_live_conversion",
+                    "use_ternary_bulk": use_ternary_bulk,
+                    "eligible_scope": sub2_authority_eligible_scope,
+                },
+                source_pin=SOURCE_PIN,
+                epoch=0,
+            )
+            torch.save(envelope, tmp_path)
+            reloaded = torch.load(tmp_path, map_location="cpu", weights_only=False)
+            if not is_p1_live_sub2_checkpoint(reloaded):
+                raise RuntimeError("P1 live-conversion proof: envelope detection failed")
+            roundtrip_hrm = HierarchicalReasoningModel(cfg)
+            roundtrip_m = LMHead(roundtrip_hrm, LMHeadConfig(vocab_size=tok.vocab_size)).to(device)
+            rt_result = load_train_checkpoint_into_model(
+                roundtrip_m,
+                reloaded,
+                use_ternary_bulk=use_ternary_bulk,
+                eligible_scope=sub2_authority_eligible_scope,
+                device=device,
+                inference_only=False,
+                sub2_live_enabled=True,
+            )
+            if rt_result.routing != "p1_live":
+                raise RuntimeError(
+                    f"P1 live-conversion proof: expected p1_live routing, got {rt_result.routing!r}"
+                )
+        print(
+            "[hrm158] P1 live-conversion proof: pass=True dry_run=True "
+            "checkpoint_written=True (temp only) optimizer_step_called=False "
+            "row_flip=False EXITING before normal training",
+            flush=True,
+        )
+        return
 
     if sub2_authority_roundtrip_proof:
         from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
@@ -1652,25 +1772,7 @@ def train(
                     Path(checkpoint_path).stem + f"_step{step:05d}.pt"
                 )
                 ckpt_path.parent.mkdir(parents=True, exist_ok=True)
-                ckpt_blob = {
-                    "model_state": m.state_dict(),
-                    "config": _build_ckpt_config(
-                        m, tok, cfg, max_len, batch_size,
-                        curriculum_rung=curriculum_rung,
-                        curriculum_seed=curriculum_seed,
-                        replay_ratio=effective_replay_ratio if curriculum_rung else 0.0,
-                        prior_rungs=prior_rungs,
-                        retention_anchor_set=retention_anchor_set,
-                        retention_anchor_repeat=retention_anchor_repeat,
-                        parent_consistency_weight=parent_consistency_weight,
-                        parent_consistency_temp=parent_consistency_temp,
-                        retained_support_meta=retained_support_meta,
-                        retained_l0b_only=_retained_l0b_only,
-                    ),
-                    "step": step,
-                    "epoch": ep,
-                    "source_pin": SOURCE_PIN,
-                }
+                ckpt_blob = _checkpoint_save_blob(step=step, epoch=ep)
                 torch.save(ckpt_blob, ckpt_path)
                 _cov = "".join(
                     f" {s['name']}_cov={s['sampler'].coverage()}" for s in active_supports
@@ -1697,25 +1799,7 @@ def train(
         print(f"[hrm158] curriculum mode: renaming checkpoint to honest final "
               f"({final_path.name}) — no best-criterion selection ran", flush=True)
     final_path.parent.mkdir(parents=True, exist_ok=True)
-    ckpt_blob = {
-        "model_state": m.state_dict(),
-        "config": _build_ckpt_config(
-            m, tok, cfg, max_len, batch_size,
-            curriculum_rung=curriculum_rung,
-            curriculum_seed=curriculum_seed,
-            replay_ratio=effective_replay_ratio if curriculum_rung else 0.0,
-            prior_rungs=prior_rungs,
-            retention_anchor_set=retention_anchor_set,
-            retention_anchor_repeat=retention_anchor_repeat,
-            parent_consistency_weight=parent_consistency_weight,
-            parent_consistency_temp=parent_consistency_temp,
-            retained_support_meta=retained_support_meta,
-            retained_l0b_only=_retained_l0b_only,
-        ),
-        "step": step,
-        "epoch": ep,
-        "source_pin": SOURCE_PIN,
-    }
+    ckpt_blob = _checkpoint_save_blob(step=step, epoch=ep)
     torch.save(ckpt_blob, final_path)
     _cov = "".join(
         f" {s['name']}_cov={s['sampler'].coverage()}" for s in active_supports
@@ -2010,10 +2094,22 @@ if __name__ == "__main__":
     ap.add_argument("--sub2-authority-eligible-scope", type=str,
                     default="all-bitlinear",
                     choices=["first-bitlinear", "all-bitlinear"],
-                    help="2C1/2C2/2C4a proof-only eligible BitLinear scope for "
+                    help="2C1/2C2/2C4a/P1 proof-only eligible BitLinear scope for "
                          "--sub2-authority-construction-proof or "
                          "--sub2-authority-local-update-proof or "
-                         "--sub2-authority-roundtrip-proof.")
+                         "--sub2-authority-roundtrip-proof or "
+                         "--sub2-authority-live-conversion-proof; also used when "
+                         "--sub2-authority-live-checkpoint saves/loads P1 envelopes.")
+    ap.add_argument("--sub2-authority-live-checkpoint", action="store_true",
+                    help="P1 default-off: save/load trainer checkpoints with the "
+                         "p1_trainer_sub2_authority_live/v0 outer envelope and "
+                         "2C4a inner sidecar. Mutually exclusive with sub2 proof "
+                         "flags. Does NOT flip readiness rows or authorize full "
+                         "optimizer-resume training authority (P1b).")
+    ap.add_argument("--sub2-authority-live-conversion-proof", action="store_true",
+                    help="P1a proof-only, default-off: build/save/load a temp P1 "
+                         "live envelope on CPU and exit before optimizer/training. "
+                         "Requires --use-ternary-bulk; no row flip claim.")
     ap.add_argument("--legacy-loader-shuffle", action="store_true",
                     help="DIAGNOSTIC ONLY (not recipe-default): build the training "
                          "DataLoader without the explicit seeded generator, restoring "
@@ -2098,6 +2194,8 @@ if __name__ == "__main__":
         sub2_authority_local_update_proof=args.sub2_authority_local_update_proof,
         sub2_authority_roundtrip_proof=args.sub2_authority_roundtrip_proof,
         sub2_authority_eligible_scope=args.sub2_authority_eligible_scope,
+        sub2_authority_live_checkpoint=args.sub2_authority_live_checkpoint,
+        sub2_authority_live_conversion_proof=args.sub2_authority_live_conversion_proof,
         legacy_loader_shuffle=args.legacy_loader_shuffle,
         dry_run=args.dry_run,
     )

@@ -705,6 +705,145 @@ def load_trainer_sub2_authority_checkpoint_blob(
     }
 
 
+P1_LIVE_CHECKPOINT_FORMAT = "p1_trainer_sub2_authority_live/v0"
+
+
+@dataclass(frozen=True)
+class TrainerSub2AuthorityLoadResult:
+    authority_states: dict[str, BoundedDeltaTensorState] | None
+    routing: str
+
+
+def is_p1_live_sub2_checkpoint(ckpt: Mapping[str, Any]) -> bool:
+    return (
+        ckpt.get("checkpoint_format") == P1_LIVE_CHECKPOINT_FORMAT
+        and isinstance(ckpt.get("trainer_sub2_authority"), dict)
+    )
+
+
+def reject_p1_live_checkpoint_format_mismatch(ckpt: Mapping[str, Any]) -> None:
+    sidecar = ckpt.get("trainer_sub2_authority")
+    if isinstance(sidecar, dict) and ckpt.get("checkpoint_format") != P1_LIVE_CHECKPOINT_FORMAT:
+        raise ValueError(
+            "P1 live checkpoint format mismatch: trainer_sub2_authority present "
+            f"but checkpoint_format={ckpt.get('checkpoint_format')!r} "
+            f"(expected {P1_LIVE_CHECKPOINT_FORMAT!r})"
+        )
+
+
+def install_persistent_sub2_eval_authority_on_parent(
+    model: torch.nn.Module,
+    states: Mapping[str, BoundedDeltaTensorState],
+    eligible_modules: Mapping[str, BitLinear],
+    *,
+    device: torch.device | str = "cpu",
+) -> None:
+    """Install sidecar authority into BitLinear cached-inference path on parent_m only."""
+
+    if set(states) != set(eligible_modules):
+        raise ValueError("P1 install: state keys must match eligible modules")
+    for key, module in sorted(eligible_modules.items()):
+        if getattr(module, "_p1_persistent_eval_authority_installed", False):
+            raise ValueError(f"P1 install: double-install on {key!r}")
+        state = states[str(key)]
+        if state.exact_accumulator_shadow is not None:
+            state.bounded_decode_parity_report(fail_on_mismatch=True)
+        w = state.materialized_weight(device=device, requires_grad=False)
+        module._cached_weight = w.detach().contiguous()
+        module._cached_active = True
+        module._p1_persistent_eval_authority_installed = True
+    model.eval()
+
+
+def detach_persistent_sub2_eval_authority(
+    eligible_modules: Mapping[str, BitLinear],
+) -> None:
+    for module in eligible_modules.values():
+        if getattr(module, "_p1_persistent_eval_authority_installed", False):
+            module.unfreeze()
+            module._p1_persistent_eval_authority_installed = False
+
+
+def load_train_checkpoint_into_model(
+    model: torch.nn.Module,
+    ckpt: Mapping[str, Any],
+    *,
+    use_ternary_bulk: bool,
+    eligible_scope: str = "all-bitlinear",
+    device: torch.device | str = "cpu",
+    inference_only: bool,
+    sub2_live_enabled: bool,
+) -> TrainerSub2AuthorityLoadResult:
+    reject_p1_live_checkpoint_format_mismatch(ckpt)
+    if is_p1_live_sub2_checkpoint(ckpt):
+        if not sub2_live_enabled:
+            raise ValueError(
+                "P1-format checkpoint requires --sub2-authority-live-checkpoint"
+            )
+        eligible = select_trainer_eligible_bitlinears(
+            model,
+            use_ternary_bulk=use_ternary_bulk,
+            eligible_scope=eligible_scope,
+        )
+        states = load_trainer_sub2_authority_checkpoint_blob(
+            model,
+            ckpt,
+            eligible_modules=eligible,
+            device=device,
+        )
+        if inference_only:
+            install_persistent_sub2_eval_authority_on_parent(
+                model,
+                states,
+                eligible,
+                device=device,
+            )
+        return TrainerSub2AuthorityLoadResult(authority_states=states, routing="p1_live")
+    model_state = ckpt.get("model_state")
+    if model_state is None:
+        raise ValueError("checkpoint missing model_state")
+    model.load_state_dict(model_state, strict=True)
+    return TrainerSub2AuthorityLoadResult(authority_states=None, routing="legacy")
+
+
+def save_trainer_sub2_live_checkpoint_envelope(
+    model: torch.nn.Module,
+    *,
+    tensor_states: Mapping[str, BoundedDeltaTensorState] | None = None,
+    use_ternary_bulk: bool,
+    eligible_scope: str = "all-bitlinear",
+    step: int = 0,
+    config: Mapping[str, Any],
+    source_pin: str,
+    epoch: int = 0,
+) -> dict[str, Any]:
+    eligible = select_trainer_eligible_bitlinears(
+        model,
+        use_ternary_bulk=use_ternary_bulk,
+        eligible_scope=eligible_scope,
+    )
+    states = (
+        dict(tensor_states)
+        if tensor_states is not None
+        else derive_trainer_sub2_authority_states(eligible)
+    )
+    inner = build_trainer_sub2_authority_checkpoint_blob(
+        model,
+        eligible_modules=eligible,
+        tensor_states=states,
+        step=int(step),
+    )
+    return {
+        **inner,
+        "checkpoint_format": P1_LIVE_CHECKPOINT_FORMAT,
+        "config": dict(config),
+        "step": int(step),
+        "epoch": int(epoch),
+        "source_pin": str(source_pin),
+        "checkpoint_written": True,
+    }
+
+
 def _default_forward_output(model: torch.nn.Module, batch: Mapping[str, Any]) -> torch.Tensor:
     if "x" not in batch:
         raise ValueError("2C4a default forward output requires batch['x']; pass forward_output_fn")

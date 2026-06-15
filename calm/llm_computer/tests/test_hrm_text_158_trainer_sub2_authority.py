@@ -12,17 +12,23 @@ import torch
 import calm.hrm_text_158.native_full_stack as native_full_stack
 from calm.hrm_text_158.bit_linear import BitLinear
 from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
+    P1_LIVE_CHECKPOINT_FORMAT,
     TRAINER_SUB2_AUTHORITY_NON_CLAIMS,
     TRAINER_SUB2_ACTIVE_CONTROL_PARAMETER_NAMES,
     TRAINER_SUB2_LOCAL_UPDATE_NON_CLAIMS,
     TRAINER_SUB2_ROUNDTRIP_NON_CLAIMS,
+    TRAINER_SUB2_ROUNDTRIP_SCHEMA_VERSION,
     _roundtrip_payload_sha256,
     build_trainer_sub2_authority_checkpoint_blob,
     build_trainer_sub2_authority_construction_receipt,
     build_trainer_sub2_authority_local_update_receipt,
     build_trainer_sub2_authority_roundtrip_receipt,
     derive_trainer_sub2_authority_states,
+    is_p1_live_sub2_checkpoint,
+    load_train_checkpoint_into_model,
     load_trainer_sub2_authority_checkpoint_blob,
+    reject_p1_live_checkpoint_format_mismatch,
+    save_trainer_sub2_live_checkpoint_envelope,
     select_trainer_eligible_bitlinears,
     trainer_authoritative_forward_context,
     trainer_local_update_builder_active_control_parameters,
@@ -663,6 +669,108 @@ def test_trainer_enabled_2c4a_proof_requires_ternary_bulk(tmp_path, monkeypatch)
         trainer.train(**kwargs, splits_loader=_splits_loader_factory(rows))
 
 
+def _make_p1_live_envelope():
+    model, eligible, blob = _make_roundtrip_blob()
+    envelope = save_trainer_sub2_live_checkpoint_envelope(
+        model,
+        tensor_states=derive_trainer_sub2_authority_states(eligible),
+        use_ternary_bulk=True,
+        eligible_scope="all-bitlinear",
+        step=0,
+        config={"proof": "p1_unit"},
+        source_pin="test",
+        epoch=0,
+    )
+    return model, eligible, envelope
+
+
+def test_p1_v9_detection_seam_legacy_vs_p1_envelope():
+    _model, _eligible, blob = _make_roundtrip_blob()
+    assert is_p1_live_sub2_checkpoint(blob) is False
+    _model2, _eligible2, envelope = _make_p1_live_envelope()
+    assert is_p1_live_sub2_checkpoint(envelope) is True
+    assert envelope["checkpoint_format"] == P1_LIVE_CHECKPOINT_FORMAT
+
+
+def test_p1_v10_inner_schema_tamper_fail_closed():
+    _model, _eligible, envelope = _make_p1_live_envelope()
+    bad = copy.deepcopy(envelope)
+    bad["trainer_sub2_authority"]["schema_version"] = "tampered"
+    sidecar = bad["trainer_sub2_authority"]
+    sidecar_without_hash = dict(sidecar)
+    sidecar_without_hash.pop("authoritative_state_payload_sha256", None)
+    sidecar["authoritative_state_payload_sha256"] = _roundtrip_payload_sha256(
+        sidecar_without_hash
+    )
+    fresh = _make_q_change_tiny_model()
+    fresh_eligible = select_trainer_eligible_bitlinears(fresh, use_ternary_bulk=True)
+    with pytest.raises(ValueError, match="sidecar schema mismatch"):
+        load_train_checkpoint_into_model(
+            fresh,
+            bad,
+            use_ternary_bulk=True,
+            inference_only=False,
+            sub2_live_enabled=True,
+        )
+
+
+def test_p1_v11_outer_format_mismatch_fail_closed():
+    _model, _eligible, blob = _make_roundtrip_blob()
+    bad = copy.deepcopy(blob)
+    bad["checkpoint_format"] = "wrong/format"
+    with pytest.raises(ValueError, match="P1 live checkpoint format mismatch"):
+        reject_p1_live_checkpoint_format_mismatch(bad)
+
+
+def test_p1_v15_p1_format_flag_off_rejects():
+    _model, _eligible, envelope = _make_p1_live_envelope()
+    fresh = _make_q_change_tiny_model()
+    with pytest.raises(ValueError, match="requires --sub2-authority-live-checkpoint"):
+        load_train_checkpoint_into_model(
+            fresh,
+            envelope,
+            use_ternary_bulk=True,
+            inference_only=False,
+            sub2_live_enabled=False,
+        )
+
+
+def test_p1_v5_dense_int16_rejection_on_p1_envelope():
+    _model, _eligible, envelope = _make_p1_live_envelope()
+    bad = copy.deepcopy(envelope)
+    bad["trainer_sub2_authority"]["dense_int16_persistent_accumulator_saved"] = True
+    fresh = _make_q_change_tiny_model()
+    fresh_eligible = select_trainer_eligible_bitlinears(fresh, use_ternary_bulk=True)
+    with pytest.raises(ValueError, match="dense int16 persistent accumulators"):
+        load_train_checkpoint_into_model(
+            fresh,
+            bad,
+            use_ternary_bulk=True,
+            inference_only=False,
+            sub2_live_enabled=True,
+        )
+
+
+def test_trainer_enabled_p1_live_conversion_proof_exits_before_checkpoint_write(tmp_path, monkeypatch):
+    from scripts import train_hrm_text_158 as trainer
+
+    rows = _make_tiny_gsm8k_rows()
+    monkeypatch.setattr(trainer, "load_gsm8k_splits", _splits_loader_factory(rows))
+    kwargs = _common_train_kwargs(
+        tmp_path,
+        save_at_steps=[1],
+        use_ternary_bulk=True,
+        sub2_authority_live_conversion_proof=True,
+        sub2_authority_eligible_scope="first-bitlinear",
+    )
+
+    trainer.train(**kwargs, splits_loader=_splits_loader_factory(rows))
+
+    ckpt_root = Path(kwargs["checkpoint_path"])
+    assert not ckpt_root.exists()
+    assert not ckpt_root.with_name(ckpt_root.stem + "_step00001.pt").exists()
+
+
 def test_exports_from_native_full_stack_facade():
     receipt = native_full_stack.build_trainer_sub2_authority_construction_receipt(
         _TinyTernary(),
@@ -696,3 +804,7 @@ def test_exports_from_native_full_stack_facade():
     assert "validate_trainer_sub2_authority_local_update_receipt" in native_full_stack.__all__
     assert "build_trainer_sub2_authority_roundtrip_receipt" in native_full_stack.__all__
     assert "validate_trainer_sub2_authority_roundtrip_receipt" in native_full_stack.__all__
+    assert "is_p1_live_sub2_checkpoint" in native_full_stack.__all__
+    assert "load_train_checkpoint_into_model" in native_full_stack.__all__
+    assert "save_trainer_sub2_live_checkpoint_envelope" in native_full_stack.__all__
+    assert native_full_stack.P1_LIVE_CHECKPOINT_FORMAT == P1_LIVE_CHECKPOINT_FORMAT
