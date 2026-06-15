@@ -148,6 +148,7 @@ FIXTURE_TRANSIENT_FP_DEBT = "transient_fp_debt"
 FIXTURE_STEP2A_CANDIDATE_PERSISTENT_CORE_ABSENCE = (
     "step2a_candidate_persistent_core_absence"
 )
+FIXTURE_LIVE_P1_AUTHORITY_CONVERSION = "live_p1_authority_conversion"
 
 FULL_SUB2_RUNTIME_FIXTURE_NAMES = (
     FIXTURE_CURRENT_REPO,
@@ -164,6 +165,7 @@ FULL_SUB2_RUNTIME_FIXTURE_NAMES = (
     FIXTURE_PRE_FULL_STACK_DIAGNOSTIC,
     FIXTURE_TRANSIENT_FP_DEBT,
     FIXTURE_STEP2A_CANDIDATE_PERSISTENT_CORE_ABSENCE,
+    FIXTURE_LIVE_P1_AUTHORITY_CONVERSION,
 )
 
 GATED_SUB2_CHECKPOINT_PATH_REASON = (
@@ -908,6 +910,87 @@ def step2a_candidate_persistent_core_absence_surfaces() -> tuple[
     return tuple(surfaces)
 
 
+def apply_live_p1_conversion_surface_overrides(
+    receipt: Any,
+    *,
+    base_surfaces: Sequence[FullSub2RuntimeSurfaceReceipt] | None = None,
+) -> tuple[FullSub2RuntimeSurfaceReceipt, ...]:
+    from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
+        AUTHORIZED_P1B_SURFACE_TUPLE,
+        AUTHORIZED_P1B_SURFACE_TUPLE_2ROW,
+        validate_trainer_sub2_authority_live_conversion_receipt,
+    )
+
+    validate_trainer_sub2_authority_live_conversion_receipt(receipt)
+    if not receipt.readiness_row_flip_authorized:
+        raise ValueError("P1b receipt does not authorize readiness row flips")
+    authorized = tuple(receipt.readiness_row_flip_authorized_surface_names)
+    if authorized not in (AUTHORIZED_P1B_SURFACE_TUPLE, AUTHORIZED_P1B_SURFACE_TUPLE_2ROW):
+        raise ValueError("P1b authorized surface tuple mismatch")
+
+    surfaces = list(base_surfaces or current_repo_scaffold_surfaces())
+    reason_prefix = (
+        f"P1 live conversion receipt source_commit_sha={receipt.source_commit_sha}; "
+        f"p1_envelope_sha256={receipt.p1_envelope_sha256}; "
+        f"inner_payload_sha256={receipt.inner_authoritative_state_payload_sha256}"
+    )
+    proof_test = (
+        "calm/llm_computer/tests/test_hrm_text_158_full_sub2_runtime_readiness.py::"
+        "test_live_p1_authority_conversion_flips_exactly_authorized_rows"
+    )
+    if authorized == AUTHORIZED_P1B_SURFACE_TUPLE:
+        row_specs = {
+            SURFACE_PERSISTENT_QACC_AUTHORITY: (
+                "live production P1 checkpoint authority routing + cached parent install; "
+                f"{reason_prefix}"
+            ),
+            SURFACE_DENSE_INT16_PERSISTENT_ACCUMULATOR_ABSENCE: (
+                "P1 live envelope saves/loads no dense int16 persistent accumulator authority; "
+                f"{reason_prefix}"
+            ),
+            SURFACE_Q_SIDECAR_VOTE_CARRIER: (
+                "P1 live envelope vote-carrier subproof on production load path "
+                f"(q_changed_count={receipt.q_changed_count}); {reason_prefix}"
+            ),
+        }
+    else:
+        row_specs = {
+            SURFACE_PERSISTENT_QACC_AUTHORITY: (
+                "live production P1 checkpoint authority routing + cached parent install; "
+                f"{reason_prefix}"
+            ),
+            SURFACE_DENSE_INT16_PERSISTENT_ACCUMULATOR_ABSENCE: (
+                "P1 live envelope saves/loads no dense int16 persistent accumulator authority; "
+                f"{reason_prefix}"
+            ),
+        }
+
+    for surface_id, reason in row_specs.items():
+        surfaces = list(
+            _with_surface(
+                tuple(surfaces),
+                surface_id,
+                classification=RUNTIME_CLASS_SUB2,
+                reason=reason,
+                source_anchor="calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py:2288",
+                proof_artifact_or_test=proof_test,
+            )
+        )
+    return tuple(surfaces)
+
+
+def live_p1_authority_conversion_surfaces(
+    receipt: Any,
+) -> FullSub2RuntimeReadyForScienceReceipt:
+    overridden = apply_live_p1_conversion_surface_overrides(receipt)
+    result = build_full_sub2_runtime_ready_for_science(overridden)
+    if result.ready_for_main_science or result.ready_for_pre_full_stack_diagnostic:
+        raise ValueError(
+            "P1b live conversion must not set ready_for_main_science or diagnostic readiness"
+        )
+    return result
+
+
 def fixture_full_sub2_runtime_ready_for_science(
     fixture_name: str = FIXTURE_CURRENT_REPO,
 ) -> FullSub2RuntimeReadyForScienceReceipt:
@@ -986,6 +1069,12 @@ def fixture_full_sub2_runtime_ready_for_science(
         )
     elif fixture_name == FIXTURE_STEP2A_CANDIDATE_PERSISTENT_CORE_ABSENCE:
         surfaces = step2a_candidate_persistent_core_absence_surfaces()
+    elif fixture_name == FIXTURE_LIVE_P1_AUTHORITY_CONVERSION:
+        raise ValueError(
+            "live_p1_authority_conversion requires an explicit validated receipt JSON; "
+            "use scripts/hrm_text_158_full_sub2_runtime_readiness.py "
+            "--fixture live_p1_authority_conversion --live-p1-receipt-json PATH"
+        )
     else:
         valid = ", ".join(FULL_SUB2_RUNTIME_FIXTURE_NAMES)
         raise ValueError(f"unknown full-sub2 readiness fixture {fixture_name!r}; valid={valid}")

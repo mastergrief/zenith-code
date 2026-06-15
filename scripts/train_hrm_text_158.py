@@ -1363,10 +1363,18 @@ def train(
         }
 
     if sub2_authority_live_conversion_proof:
+        import hashlib
+        import io
+        import json
+        import os
+        import subprocess
+        import sys
         import tempfile
+
         from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
-            is_p1_live_sub2_checkpoint,
-            load_train_checkpoint_into_model,
+            AUTHORIZED_P1B_SURFACE_TUPLE,
+            build_trainer_sub2_authority_live_conversion_receipt,
+            compute_p1_parent_parity_max_abs_diff_by_site,
             save_trainer_sub2_live_checkpoint_envelope,
         )
 
@@ -1374,44 +1382,201 @@ def train(
             raise RuntimeError(
                 "P1 live-conversion proof requires --use-ternary-bulk"
             )
-        with tempfile.TemporaryDirectory() as _tmpdir:
-            tmp_path = Path(_tmpdir) / "p1_live_conversion_proof.pt"
-            envelope = save_trainer_sub2_live_checkpoint_envelope(
-                m,
-                use_ternary_bulk=use_ternary_bulk,
-                eligible_scope=sub2_authority_eligible_scope,
-                step=0,
-                config={
-                    "proof": "p1_live_conversion",
-                    "use_ternary_bulk": use_ternary_bulk,
-                    "eligible_scope": sub2_authority_eligible_scope,
-                },
-                source_pin=SOURCE_PIN,
-                epoch=0,
+
+        repo_root = Path(__file__).resolve().parents[1]
+        w6_rel = Path(
+            "calm/hrm/checkpoints/"
+            "hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_"
+            "anchorsv1r3_from_L0b_final_step01500.pt"
+        )
+        w6_path = repo_root / w6_rel
+        w6_before = (
+            hashlib.sha256(w6_path.read_bytes()).hexdigest()
+            if w6_path.is_file()
+            else ""
+        )
+
+        proof_batch = next(iter(loader))
+        proof_total_steps = max(1, epochs * len(loader))
+
+        def _proof_child_batch(batch):
+            inputs = batch["inputs"].to(device)
+            labels = batch["labels"].to(device)
+            sep_positions = batch["sep_positions"].to(device)
+            bsz, seq_len = inputs.shape
+            position_ids = torch.arange(
+                seq_len, dtype=torch.long, device=device
+            ).unsqueeze(0).expand(bsz, -1)
+            return {
+                "inputs": inputs,
+                "labels": labels,
+                "sep_positions": sep_positions,
+                "position_ids": position_ids,
+            }
+
+        def _proof_forward_loss(model, batch):
+            extras = model.compute_train_extra_args(0, proof_total_steps)
+            _carry, loss_main, _metrics = model(None, _proof_child_batch(batch), **extras)
+            return loss_main
+
+        def _proof_forward_output(model, batch):
+            extras = model.compute_train_extra_args(0, proof_total_steps)
+            _carry, _loss_main, metrics = model(
+                None,
+                _proof_child_batch(batch),
+                return_logits=True,
+                **extras,
             )
-            torch.save(envelope, tmp_path)
-            reloaded = torch.load(tmp_path, map_location="cpu", weights_only=False)
-            if not is_p1_live_sub2_checkpoint(reloaded):
-                raise RuntimeError("P1 live-conversion proof: envelope detection failed")
-            roundtrip_hrm = HierarchicalReasoningModel(cfg)
-            roundtrip_m = LMHead(roundtrip_hrm, LMHeadConfig(vocab_size=tok.vocab_size)).to(device)
-            rt_result = load_train_checkpoint_into_model(
-                roundtrip_m,
-                reloaded,
-                use_ternary_bulk=use_ternary_bulk,
-                eligible_scope=sub2_authority_eligible_scope,
-                device=device,
-                inference_only=False,
-                sub2_live_enabled=True,
-            )
-            if rt_result.routing != "p1_live":
-                raise RuntimeError(
-                    f"P1 live-conversion proof: expected p1_live routing, got {rt_result.routing!r}"
-                )
+            return metrics["logits"]
+
+        def _proof_forward_logits(model, batch, *, bp_steps: int | None = None):
+            extras = model.compute_train_extra_args(0, proof_total_steps)
+            if bp_steps is not None:
+                extras = dict(extras)
+                extras["bp_steps"] = int(bp_steps)
+            child_batch = _proof_child_batch(batch)
+            model.eval()
+            with torch.no_grad():
+                if "labels" in child_batch:
+                    _carry, _loss, metrics = model(
+                        None, child_batch, return_logits=True, **extras
+                    )
+                    return metrics["logits"]
+                _carry, logits = model(None, child_batch, **extras)
+                return logits
+
+        def _fresh_model():
+            fresh_hrm = HierarchicalReasoningModel(cfg)
+            return LMHead(fresh_hrm, LMHeadConfig(vocab_size=tok.vocab_size))
+
+        cfg_blob = _build_ckpt_config(
+            m,
+            tok,
+            cfg,
+            max_len,
+            batch_size,
+            curriculum_rung=curriculum_rung,
+            curriculum_seed=curriculum_seed,
+            replay_ratio=effective_replay_ratio if curriculum_rung else 0.0,
+            prior_rungs=prior_rungs,
+            retention_anchor_set=retention_anchor_set,
+            retention_anchor_repeat=retention_anchor_repeat,
+            parent_consistency_weight=parent_consistency_weight,
+            parent_consistency_temp=parent_consistency_temp,
+            retained_support_meta=retained_support_meta,
+            retained_l0b_only=_retained_l0b_only,
+        )
+        legacy_checkpoint = {
+            "model_state": {
+                key: value.detach().cpu().clone()
+                for key, value in m.state_dict().items()
+            },
+            "config": cfg_blob,
+            "step": 0,
+            "epoch": 0,
+            "source_pin": SOURCE_PIN,
+        }
+        p1_envelope = save_trainer_sub2_live_checkpoint_envelope(
+            m,
+            use_ternary_bulk=use_ternary_bulk,
+            eligible_scope=sub2_authority_eligible_scope,
+            step=0,
+            config=cfg_blob,
+            source_pin=SOURCE_PIN,
+            epoch=0,
+        )
+        envelope_buffer = io.BytesIO()
+        torch.save(p1_envelope, envelope_buffer)
+        p1_envelope_bytes = envelope_buffer.getvalue()
+
+        child_batch = _proof_child_batch(proof_batch)
+        cache_builder_batch = {
+            key: value
+            for key, value in child_batch.items()
+            if key != "labels"
+        }
+        site_batches = {
+            "main_kl": child_batch,
+            "retained_fallback": child_batch,
+            "cache_builder": cache_builder_batch,
+        }
+
+        def _parity_logits(model, batch):
+            bp_steps = 2 if "labels" not in batch else None
+            return _proof_forward_logits(model, proof_batch, bp_steps=bp_steps)
+
+        parity_max_abs_diff_by_site = compute_p1_parent_parity_max_abs_diff_by_site(
+            legacy_checkpoint=legacy_checkpoint,
+            p1_checkpoint=p1_envelope,
+            fresh_model_fn=_fresh_model,
+            site_batches=site_batches,
+            forward_logits_fn=_parity_logits,
+            use_ternary_bulk=use_ternary_bulk,
+            eligible_scope=sub2_authority_eligible_scope,
+            device=device,
+        )
+
+        source_commit_sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            text=True,
+        ).strip()
+        w6_after = (
+            hashlib.sha256(w6_path.read_bytes()).hexdigest()
+            if w6_path.is_file()
+            else ""
+        )
+
+        receipt = build_trainer_sub2_authority_live_conversion_receipt(
+            p1_checkpoint=p1_envelope,
+            p1_envelope_bytes=p1_envelope_bytes,
+            fresh_model_fn=_fresh_model,
+            batch=proof_batch,
+            forward_loss_fn=_proof_forward_loss,
+            forward_output_fn=_proof_forward_output,
+            parity_max_abs_diff_by_site=parity_max_abs_diff_by_site,
+            use_ternary_bulk=use_ternary_bulk,
+            eligible_scope=sub2_authority_eligible_scope,
+            device=device,
+            step=0,
+            source_commit_sha=source_commit_sha,
+            proof_command_argv=tuple(sys.argv),
+            w6_parent_sha256_before=w6_before,
+            w6_parent_sha256_after=w6_after,
+        )
+
+        row_count = len(receipt.readiness_row_flip_authorized_surface_names)
+        three_row = tuple(receipt.readiness_row_flip_authorized_surface_names) == (
+            AUTHORIZED_P1B_SURFACE_TUPLE
+        )
         print(
-            "[hrm158] P1 live-conversion proof: pass=True dry_run=True "
-            "checkpoint_written=True (temp only) optimizer_step_called=False "
-            "row_flip=False EXITING before normal training",
+            "[hrm158] P1 live-conversion proof: "
+            f"pass={receipt.pass_receipt} "
+            f"dry_run={receipt.dry_run} "
+            f"checkpoint_written={receipt.checkpoint_written} "
+            f"optimizer_step_called={receipt.optimizer_step_called} "
+            f"row_flip={receipt.readiness_row_flip_authorized} "
+            f"sub2_surface_count={row_count} "
+            f"three_row={three_row} "
+            f"q_changed_count={receipt.q_changed_count} "
+            f"q_sidecar_deferred={receipt.q_sidecar_vote_carrier_deferred} "
+            f"deferred_reason={receipt.q_sidecar_deferred_reason!r}",
+            flush=True,
+        )
+        receipt_json_path = os.environ.get("P1B_LIVE_CONVERSION_RECEIPT_JSON", "").strip()
+        if receipt_json_path:
+            out_path = Path(receipt_json_path)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(
+                json.dumps(receipt.to_dict(), indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            print(
+                f"[hrm158] P1 live-conversion proof: receipt_json={out_path}",
+                flush=True,
+            )
+        print(
+            "[hrm158] P1 live-conversion proof: EXITING before normal training",
             flush=True,
         )
         return

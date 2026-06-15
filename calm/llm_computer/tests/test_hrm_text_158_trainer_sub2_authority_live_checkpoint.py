@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import io
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -15,9 +17,15 @@ from calm.hrm_text_158 import (
     LMHeadConfig,
 )
 from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
+    AUTHORIZED_P1B_SURFACE_TUPLE,
+    AUTHORIZED_P1B_SURFACE_TUPLE_2ROW,
+    P1B_VOTE_SMOKE_STEP_BOUND,
+    build_trainer_sub2_authority_live_conversion_receipt,
+    compute_p1_parent_parity_max_abs_diff_by_site,
     load_train_checkpoint_into_model,
     save_trainer_sub2_live_checkpoint_envelope,
     select_trainer_eligible_bitlinears,
+    validate_trainer_sub2_authority_live_conversion_receipt,
 )
 
 W6_PARENT_PATH = (
@@ -279,3 +287,149 @@ def test_p1_install_uses_cached_weight_not_master_weight(parity_models):
     logits_clean = _forward_logits(parent_p1, batches["main_kl"])
     logits_poisoned = _forward_logits(poisoned, batches["main_kl"])
     assert torch.allclose(logits_clean, logits_poisoned, rtol=0.0, atol=P1_PARITY_ATOL)
+
+
+def _repo_head_sha() -> str:
+    repo_root = Path(__file__).resolve().parents[3]
+    return subprocess.check_output(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo_root,
+        text=True,
+    ).strip()
+
+
+def _mint_live_conversion_receipt():
+    source = _make_ternary_lmhead()
+    legacy_ckpt = _legacy_checkpoint(source)
+    p1_ckpt = _p1_envelope(source)
+    envelope_buffer = io.BytesIO()
+    torch.save(p1_ckpt, envelope_buffer)
+    p1_envelope_bytes = envelope_buffer.getvalue()
+    batches = _fixed_batches()
+
+    def _fresh_model():
+        return _fresh_copy(source)
+
+    def _forward_loss(model, batch):
+        total_steps = 10
+        extras = model.compute_train_extra_args(0, total_steps)
+        loss_batch = batches["retained_fallback"]
+        _carry, loss, _metrics = model(None, loss_batch, **extras)
+        return loss
+
+    def _forward_output(model, batch):
+        total_steps = 10
+        extras = model.compute_train_extra_args(0, total_steps)
+        if "labels" not in batch:
+            extras = dict(extras)
+            extras["bp_steps"] = 2
+            _carry, logits = model(None, batch, **extras)
+            return logits
+        _carry, _loss, metrics = model(None, batch, return_logits=True, **extras)
+        return metrics["logits"]
+
+    def _parity_logits(model, batch):
+        if "labels" in batch:
+            return _forward_logits(model, batch)
+        return _forward_logits(model, batch, bp_steps=2)
+
+    parity = compute_p1_parent_parity_max_abs_diff_by_site(
+        legacy_checkpoint=legacy_ckpt,
+        p1_checkpoint=p1_ckpt,
+        fresh_model_fn=_fresh_model,
+        site_batches=batches,
+        forward_logits_fn=_parity_logits,
+        use_ternary_bulk=True,
+    )
+    return build_trainer_sub2_authority_live_conversion_receipt(
+        p1_checkpoint=p1_ckpt,
+        p1_envelope_bytes=p1_envelope_bytes,
+        fresh_model_fn=_fresh_model,
+        batch=batches["retained_fallback"],
+        forward_loss_fn=_forward_loss,
+        forward_output_fn=_forward_output,
+        parity_max_abs_diff_by_site=parity,
+        use_ternary_bulk=True,
+        source_commit_sha=_repo_head_sha(),
+        proof_command_argv=("pytest", "p1b_live_conversion"),
+    )
+
+
+def test_live_conversion_receipt_mint_passes_three_row():
+    assert P1B_VOTE_SMOKE_STEP_BOUND == 1
+    receipt = _mint_live_conversion_receipt()
+    assert receipt.pass_receipt is True
+    authorized = tuple(receipt.readiness_row_flip_authorized_surface_names)
+    assert authorized in (AUTHORIZED_P1B_SURFACE_TUPLE, AUTHORIZED_P1B_SURFACE_TUPLE_2ROW)
+    if authorized == AUTHORIZED_P1B_SURFACE_TUPLE:
+        assert receipt.q_changed_count > 0
+        assert receipt.post_resume_update_mutated is True
+        assert receipt.q_sidecar_vote_carrier_deferred is False
+
+
+def test_validate_live_conversion_receipt_accepts_minted():
+    receipt = _mint_live_conversion_receipt()
+    validate_trainer_sub2_authority_live_conversion_receipt(receipt)
+
+
+def test_live_conversion_vote_subproof_fields_populated():
+    receipt = _mint_live_conversion_receipt()
+    assert receipt.vote_carrier_subproof_exercised is True
+    assert receipt.total_sparse_vote_event_count > 0
+    if tuple(receipt.readiness_row_flip_authorized_surface_names) == AUTHORIZED_P1B_SURFACE_TUPLE:
+        assert receipt.q_changed_count > 0
+        assert receipt.post_resume_update_mutated is True
+        assert receipt.poisoned_fp_master_bypass_falsified is True
+
+
+def test_live_conversion_parity_all_three_sites():
+    receipt = _mint_live_conversion_receipt()
+    for site in ("cache_builder", "main_kl", "retained_fallback"):
+        assert site in receipt.parity_max_abs_diff_by_site
+        assert receipt.parity_max_abs_diff_by_site[site] <= P1_PARITY_ATOL
+    assert receipt.parity_pass is True
+
+
+def test_trainer_live_conversion_proof_mints_receipt_and_exits(tmp_path, monkeypatch):
+    from scripts import train_hrm_text_158 as trainer
+
+    rows = [
+        {
+            "question": f"what is {i + 1} plus {i + 1}?",
+            "expected": 2 * (i + 1),
+        }
+        for i in range(8)
+    ]
+
+    def _loader(val_frac: float = 0.10):
+        return rows, rows[:2], rows[:2]
+
+    monkeypatch.setattr(trainer, "load_gsm8k_splits", _loader)
+    kwargs = dict(
+        epochs=1,
+        batch_size=2,
+        lr=1e-3,
+        weight_decay=0.0,
+        warmup_ratio=0.0,
+        hidden_size=32,
+        n_layers=2,
+        num_heads=2,
+        expansion=4,
+        H_cycles=2,
+        L_cycles=2,
+        half_layers=True,
+        bp_warmup_ratio=0.0,
+        bp_min_steps=2,
+        bp_max_steps=2,
+        max_len=32,
+        seed=158,
+        checkpoint_path=str(tmp_path / "should_not_write.pt"),
+        log_every=1,
+        device="cpu",
+        use_ternary_bulk=True,
+        sub2_authority_live_conversion_proof=True,
+        sub2_authority_eligible_scope="first-bitlinear",
+    )
+    trainer.train(**kwargs, splits_loader=_loader)
+    ckpt_root = Path(kwargs["checkpoint_path"])
+    assert not ckpt_root.exists()

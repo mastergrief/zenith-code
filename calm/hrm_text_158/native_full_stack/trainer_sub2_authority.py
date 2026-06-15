@@ -12,7 +12,7 @@ import hashlib
 import inspect
 import json
 import math
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 import torch
 
@@ -1853,3 +1853,708 @@ def validate_trainer_sub2_authority_roundtrip_receipt(
         raise ValueError("2C4a non-claims changed")
     if not receipt.pass_receipt:
         raise ValueError("2C4a trainer authority roundtrip proof did not pass")
+
+
+TRAINER_SUB2_LIVE_CONVERSION_SCHEMA_VERSION = (
+    "hrm_text_158_p1_trainer_sub2_authority/v0.live_conversion_proof"
+)
+TRAINER_SUB2_LIVE_CONVERSION_TARGET_NAME = (
+    "p1_trainer_live_checkpoint_authority_conversion"
+)
+AUTHORIZED_P1B_SURFACE_TUPLE = (
+    "persistent_qacc_authority",
+    "dense_int16_persistent_accumulator_absence",
+    "q_sidecar_vote_carrier",
+)
+AUTHORIZED_P1B_SURFACE_TUPLE_2ROW = (
+    "persistent_qacc_authority",
+    "dense_int16_persistent_accumulator_absence",
+)
+P1_LIVE_PARITY_ATOL = 1e-5
+P1B_VOTE_SMOKE_STEP_BOUND = 1
+TRAINER_SUB2_LIVE_CONVERSION_NON_CLAIMS = (
+    "P1b proves live production checkpoint save/load routing + eval parent install only",
+    "normal optimizer-resume/full training from P1 sidecar checkpoints is NOT proved",
+    "readiness row flip authorizes persistent-lane surfaces only; main/diag stay blocked",
+    "not learning, acquisition, throughput, GPU residency, banked .pt mutation, or broad runtime conversion",
+)
+
+
+def _sha256_bytes(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _eligible_state_keys_sha256(keys: Sequence[str]) -> str:
+    h = hashlib.sha256()
+    for key in sorted(str(item) for item in keys):
+        h.update(key.encode("utf-8"))
+        h.update(b"\n")
+    return h.hexdigest()
+
+
+@dataclass(frozen=True)
+class TrainerSub2AuthorityLiveConversionReceipt:
+    schema_version: str
+    target_name: str
+    pass_receipt: bool
+    dry_run: bool
+    gpu_launched: bool
+    optimizer_step_called: bool
+    checkpoint_written: bool
+    checkpoint_written_to_banked_parent: bool
+    learner_update_called: bool
+    live_runtime_authority_converted: bool
+    readiness_row_flip_authorized: bool
+    readiness_row_flip_authorized_surface_names: tuple[str, ...]
+    source_commit_sha: str
+    proof_command_argv: tuple[str, ...]
+    checkpoint_format: str
+    p1_envelope_sha256: str
+    inner_authoritative_state_payload_sha256: str
+    eligible_state_keys: tuple[str, ...]
+    eligible_state_keys_sha256: str
+    eligible_module_count: int
+    load_routing_result: str
+    dense_int16_persistent_accumulator_saved: bool
+    dense_int16_persistent_accumulator_loaded: bool
+    raw_state_dict_eligible_weight_fallback_rejected: bool
+    cached_weight_parent_install_proven: bool
+    parity_max_abs_diff_by_site: dict[str, float]
+    parity_pass: bool
+    vote_carrier_subproof_exercised: bool
+    poisoned_fp_master_bypass_falsified: bool
+    total_sparse_vote_event_count: int
+    q_changed_count: int
+    post_resume_update_mutated: bool
+    authority_state_shadow_free_after: bool
+    post_resume_payload_sha256_before: str
+    post_resume_payload_sha256_after: str
+    post_resume_payload_hash_roundtrip_pass: bool
+    loss_finite: bool
+    q_sidecar_vote_carrier_deferred: bool
+    q_sidecar_deferred_reason: str
+    normal_optimizer_resume_from_p1_sidecar_not_proved: bool
+    full_training_authority_from_p1_sidecar_not_proved: bool
+    learning_claim: bool
+    acquisition_claim: bool
+    full_sub2_runtime_readiness_claim: bool
+    ready_for_main_science: bool
+    ready_for_pre_full_stack_diagnostic: bool
+    broad_runtime_authority_conversion: bool
+    w6_parent_sha256_before: str
+    w6_parent_sha256_after: str
+    proof_anchors: tuple[str, ...]
+    non_claims: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = asdict(self)
+        payload["readiness_row_flip_authorized_surface_names"] = list(
+            self.readiness_row_flip_authorized_surface_names
+        )
+        payload["proof_command_argv"] = list(self.proof_command_argv)
+        payload["eligible_state_keys"] = list(self.eligible_state_keys)
+        payload["proof_anchors"] = list(self.proof_anchors)
+        payload["non_claims"] = list(self.non_claims)
+        return payload
+
+
+def live_conversion_receipt_from_dict(payload: Mapping[str, Any]) -> TrainerSub2AuthorityLiveConversionReceipt:
+    return TrainerSub2AuthorityLiveConversionReceipt(
+        schema_version=str(payload["schema_version"]),
+        target_name=str(payload["target_name"]),
+        pass_receipt=bool(payload["pass_receipt"]),
+        dry_run=bool(payload["dry_run"]),
+        gpu_launched=bool(payload["gpu_launched"]),
+        optimizer_step_called=bool(payload["optimizer_step_called"]),
+        checkpoint_written=bool(payload["checkpoint_written"]),
+        checkpoint_written_to_banked_parent=bool(payload["checkpoint_written_to_banked_parent"]),
+        learner_update_called=bool(payload["learner_update_called"]),
+        live_runtime_authority_converted=bool(payload["live_runtime_authority_converted"]),
+        readiness_row_flip_authorized=bool(payload["readiness_row_flip_authorized"]),
+        readiness_row_flip_authorized_surface_names=tuple(
+            str(name) for name in payload["readiness_row_flip_authorized_surface_names"]
+        ),
+        source_commit_sha=str(payload["source_commit_sha"]),
+        proof_command_argv=tuple(str(item) for item in payload["proof_command_argv"]),
+        checkpoint_format=str(payload["checkpoint_format"]),
+        p1_envelope_sha256=str(payload["p1_envelope_sha256"]),
+        inner_authoritative_state_payload_sha256=str(
+            payload["inner_authoritative_state_payload_sha256"]
+        ),
+        eligible_state_keys=tuple(str(key) for key in payload["eligible_state_keys"]),
+        eligible_state_keys_sha256=str(payload["eligible_state_keys_sha256"]),
+        eligible_module_count=int(payload["eligible_module_count"]),
+        load_routing_result=str(payload["load_routing_result"]),
+        dense_int16_persistent_accumulator_saved=bool(
+            payload["dense_int16_persistent_accumulator_saved"]
+        ),
+        dense_int16_persistent_accumulator_loaded=bool(
+            payload["dense_int16_persistent_accumulator_loaded"]
+        ),
+        raw_state_dict_eligible_weight_fallback_rejected=bool(
+            payload["raw_state_dict_eligible_weight_fallback_rejected"]
+        ),
+        cached_weight_parent_install_proven=bool(payload["cached_weight_parent_install_proven"]),
+        parity_max_abs_diff_by_site={
+            str(key): float(value)
+            for key, value in dict(payload["parity_max_abs_diff_by_site"]).items()
+        },
+        parity_pass=bool(payload["parity_pass"]),
+        vote_carrier_subproof_exercised=bool(payload["vote_carrier_subproof_exercised"]),
+        poisoned_fp_master_bypass_falsified=bool(payload["poisoned_fp_master_bypass_falsified"]),
+        total_sparse_vote_event_count=int(payload["total_sparse_vote_event_count"]),
+        q_changed_count=int(payload["q_changed_count"]),
+        post_resume_update_mutated=bool(payload["post_resume_update_mutated"]),
+        authority_state_shadow_free_after=bool(payload["authority_state_shadow_free_after"]),
+        post_resume_payload_sha256_before=str(payload["post_resume_payload_sha256_before"]),
+        post_resume_payload_sha256_after=str(payload["post_resume_payload_sha256_after"]),
+        post_resume_payload_hash_roundtrip_pass=bool(
+            payload["post_resume_payload_hash_roundtrip_pass"]
+        ),
+        loss_finite=bool(payload["loss_finite"]),
+        q_sidecar_vote_carrier_deferred=bool(payload["q_sidecar_vote_carrier_deferred"]),
+        q_sidecar_deferred_reason=str(payload["q_sidecar_deferred_reason"]),
+        normal_optimizer_resume_from_p1_sidecar_not_proved=bool(
+            payload["normal_optimizer_resume_from_p1_sidecar_not_proved"]
+        ),
+        full_training_authority_from_p1_sidecar_not_proved=bool(
+            payload["full_training_authority_from_p1_sidecar_not_proved"]
+        ),
+        learning_claim=bool(payload["learning_claim"]),
+        acquisition_claim=bool(payload["acquisition_claim"]),
+        full_sub2_runtime_readiness_claim=bool(payload["full_sub2_runtime_readiness_claim"]),
+        ready_for_main_science=bool(payload["ready_for_main_science"]),
+        ready_for_pre_full_stack_diagnostic=bool(
+            payload["ready_for_pre_full_stack_diagnostic"]
+        ),
+        broad_runtime_authority_conversion=bool(payload["broad_runtime_authority_conversion"]),
+        w6_parent_sha256_before=str(payload.get("w6_parent_sha256_before", "")),
+        w6_parent_sha256_after=str(payload.get("w6_parent_sha256_after", "")),
+        proof_anchors=tuple(str(item) for item in payload.get("proof_anchors", ())),
+        non_claims=tuple(str(item) for item in payload.get("non_claims", ())),
+    )
+
+
+def _p1_raw_fallback_rejected(
+    *,
+    blob: Mapping[str, Any],
+    eligible: Mapping[str, BitLinear],
+    fresh_model_fn: Callable[[], torch.nn.Module],
+    use_ternary_bulk: bool,
+    eligible_scope: str,
+    device: torch.device | str,
+) -> bool:
+    eligible_weight_keys = _eligible_weight_state_keys(eligible)
+    if not eligible_weight_keys:
+        return False
+    poisoned_blob = dict(blob)
+    poisoned_model_state = dict(blob["model_state"])
+    first_key = eligible_weight_keys[0]
+    poisoned_model_state[first_key] = eligible[sorted(eligible)[0]].weight.detach().cpu().clone()
+    poisoned_blob["model_state"] = poisoned_model_state
+    try:
+        raw_fresh = fresh_model_fn().to(device=device)
+        raw_eligible = select_trainer_eligible_bitlinears(
+            raw_fresh,
+            use_ternary_bulk=use_ternary_bulk,
+            eligible_scope=eligible_scope,
+        )
+        load_trainer_sub2_authority_checkpoint_blob(
+            raw_fresh,
+            poisoned_blob,
+            eligible_modules=raw_eligible,
+            device=device,
+        )
+    except ValueError as exc:
+        return "raw state_dict eligible-weight fallback rejected" in str(exc)
+    return False
+
+
+def _run_live_p1_vote_carrier_subproof(
+    *,
+    resumed_model: torch.nn.Module,
+    loaded_states: Mapping[str, BoundedDeltaTensorState],
+    resumed_eligible: Mapping[str, BitLinear],
+    fresh_model_fn: Callable[[], torch.nn.Module],
+    batch: Mapping[str, Any],
+    forward_loss_fn: Callable[[torch.nn.Module, Mapping[str, Any]], torch.Tensor],
+    forward_output_fn: Callable[[torch.nn.Module, Mapping[str, Any]], torch.Tensor],
+    use_ternary_bulk: bool,
+    eligible_scope: str,
+    device: torch.device | str,
+    step: int,
+    vote_update_spec: VoteUpdateSpec | None,
+    poison_value: float,
+    payload_sha_before: str,
+) -> dict[str, Any]:
+    prior_training = bool(resumed_model.training)
+    try:
+        resumed_model.train(False)
+        with trainer_authoritative_forward_context(
+            resumed_eligible,
+            loaded_states,
+            device=device,
+            requires_grad=False,
+        ):
+            expected_sidecar_output = forward_output_fn(resumed_model, batch).detach().cpu()
+        with torch.no_grad():
+            for module in resumed_eligible.values():
+                module.weight.fill_(float(poison_value))
+        normal_poisoned_output = forward_output_fn(resumed_model, batch).detach().cpu()
+        with trainer_authoritative_forward_context(
+            resumed_eligible,
+            loaded_states,
+            device=device,
+            requires_grad=False,
+        ):
+            resumed_sidecar_output = forward_output_fn(resumed_model, batch).detach().cpu()
+    finally:
+        resumed_model.train(prior_training)
+
+    poisoned_bypass_falsified = bool(
+        not torch.allclose(expected_sidecar_output, normal_poisoned_output, atol=1e-6, rtol=1e-6)
+        and torch.allclose(expected_sidecar_output, resumed_sidecar_output, atol=1e-6, rtol=1e-6)
+    )
+
+    rank_spec = default_dry_run_rank_vote_spec()
+    update_spec = vote_update_spec or _default_local_vote_update_spec()
+    vote_specs_by_key = {key: update_spec for key in loaded_states}
+    dense_votes_by_key: dict[str, torch.Tensor] = {}
+    sparse_events_by_key: dict[str, dict[int, int]] = {}
+    loss_finite = False
+    prior_training = bool(resumed_model.training)
+    try:
+        resumed_model.zero_grad(set_to_none=True)
+        resumed_model.train(True)
+        with trainer_authoritative_forward_context(
+            resumed_eligible,
+            loaded_states,
+            device=device,
+            requires_grad=True,
+        ) as handle:
+            loss = forward_loss_fn(resumed_model, batch)
+            if not isinstance(loss, torch.Tensor):
+                raise TypeError("P1b forward_loss_fn must return a torch.Tensor loss")
+            loss_to_backward = loss if loss.numel() == 1 else loss.mean()
+            loss_finite = bool(torch.isfinite(loss_to_backward.detach()).item())
+            loss_to_backward.backward()
+            for key, state in sorted(loaded_states.items()):
+                weighted_grad = handle.weighted_grad(key)
+                credit = credit_from_weighted_grad(weighted_grad)
+                moves = project_s1_gradient_to_moves(weighted_grad, state.q_levels)
+                votes = rank_bucketed_int16_votes(credit, moves, rank_spec)
+                dense_votes_by_key[key] = votes.detach().cpu().to(torch.int16).contiguous()
+                sparse_events_by_key[key] = _sparse_vote_events(votes)
+    finally:
+        resumed_model.zero_grad(set_to_none=True)
+        resumed_model.train(prior_training)
+
+    step_result = apply_bounded_delta_vote_step(
+        dict(loaded_states),
+        dense_votes_by_key,
+        vote_specs_by_key,
+        candidate_mode=ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
+        candidate_sparse_vote_events_by_key=sparse_events_by_key,
+        candidate_oracle_control_enabled=False,
+    )
+    post_blob = build_trainer_sub2_authority_checkpoint_blob(
+        resumed_model,
+        eligible_modules=resumed_eligible,
+        tensor_states=step_result.tensor_states,
+        step=int(step) + 1,
+    )
+    payload_sha_after = str(
+        post_blob["trainer_sub2_authority"]["authoritative_state_payload_sha256"]
+    )
+    post_resume_mutated = bool(
+        payload_sha_after != str(payload_sha_before)
+        and int(step_result.global_summary.get("q_changed_count", 0)) > 0
+    )
+    post_model = fresh_model_fn().to(device=device)
+    post_eligible = select_trainer_eligible_bitlinears(
+        post_model,
+        use_ternary_bulk=use_ternary_bulk,
+        eligible_scope=eligible_scope,
+    )
+    post_loaded_states = load_trainer_sub2_authority_checkpoint_blob(
+        post_model,
+        post_blob,
+        eligible_modules=post_eligible,
+        device=device,
+    )
+    post_reblob = build_trainer_sub2_authority_checkpoint_blob(
+        post_model,
+        eligible_modules=post_eligible,
+        tensor_states=post_loaded_states,
+        step=int(step) + 1,
+    )
+    roundtrip_pass = (
+        str(post_blob["trainer_sub2_authority"]["authoritative_state_payload_sha256"])
+        == str(post_reblob["trainer_sub2_authority"]["authoritative_state_payload_sha256"])
+    )
+    shadow_free_after = all(
+        state.exact_accumulator_shadow is None
+        for state in step_result.tensor_states.values()
+    )
+    total_sparse_events = sum(len(events) for events in sparse_events_by_key.values())
+    q_changed_count = int(step_result.global_summary.get("q_changed_count", 0))
+    return {
+        "poisoned_fp_master_bypass_falsified": poisoned_bypass_falsified,
+        "total_sparse_vote_event_count": int(total_sparse_events),
+        "q_changed_count": q_changed_count,
+        "post_resume_update_mutated": post_resume_mutated,
+        "authority_state_shadow_free_after": shadow_free_after,
+        "post_resume_payload_sha256_before": str(payload_sha_before),
+        "post_resume_payload_sha256_after": str(payload_sha_after),
+        "post_resume_payload_hash_roundtrip_pass": bool(roundtrip_pass),
+        "loss_finite": bool(loss_finite),
+    }
+
+
+def compute_p1_parent_parity_max_abs_diff_by_site(
+    *,
+    legacy_checkpoint: Mapping[str, Any],
+    p1_checkpoint: Mapping[str, Any],
+    fresh_model_fn: Callable[[], torch.nn.Module],
+    site_batches: Mapping[str, Mapping[str, Any]],
+    forward_logits_fn: Callable[..., torch.Tensor],
+    use_ternary_bulk: bool,
+    eligible_scope: str = "all-bitlinear",
+    device: torch.device | str = "cpu",
+    atol: float = P1_LIVE_PARITY_ATOL,
+) -> dict[str, float]:
+    parent_ref = fresh_model_fn().to(device=device)
+    load_train_checkpoint_into_model(
+        parent_ref,
+        legacy_checkpoint,
+        use_ternary_bulk=use_ternary_bulk,
+        eligible_scope=eligible_scope,
+        device=device,
+        inference_only=True,
+        sub2_live_enabled=False,
+    )
+    parent_ref.eval()
+
+    parent_p1 = fresh_model_fn().to(device=device)
+    load_train_checkpoint_into_model(
+        parent_p1,
+        p1_checkpoint,
+        use_ternary_bulk=use_ternary_bulk,
+        eligible_scope=eligible_scope,
+        device=device,
+        inference_only=True,
+        sub2_live_enabled=True,
+    )
+    parent_p1.eval()
+
+    max_diffs: dict[str, float] = {}
+    for site, batch in site_batches.items():
+        logits_ref = forward_logits_fn(parent_ref, batch).detach().cpu()
+        logits_p1 = forward_logits_fn(parent_p1, batch).detach().cpu()
+        if not torch.isfinite(logits_ref).all() or not torch.isfinite(logits_p1).all():
+            raise ValueError(f"P1 parity site {site!r} produced non-finite logits")
+        max_abs_diff = float((logits_p1 - logits_ref).abs().max().item())
+        if max_abs_diff > float(atol):
+            raise ValueError(
+                f"P1 parity site {site!r} failed: max_abs_diff={max_abs_diff} > {atol}"
+            )
+        max_diffs[str(site)] = max_abs_diff
+    return max_diffs
+
+
+def _vote_subproof_passes_three_row(vote: Mapping[str, Any]) -> bool:
+    return bool(
+        vote.get("loss_finite")
+        and vote.get("poisoned_fp_master_bypass_falsified")
+        and int(vote.get("total_sparse_vote_event_count", 0)) > 0
+        and int(vote.get("q_changed_count", 0)) > 0
+        and vote.get("post_resume_update_mutated")
+        and vote.get("authority_state_shadow_free_after")
+        and vote.get("post_resume_payload_hash_roundtrip_pass")
+    )
+
+
+def build_trainer_sub2_authority_live_conversion_receipt(
+    *,
+    p1_checkpoint: Mapping[str, Any],
+    p1_envelope_bytes: bytes,
+    fresh_model_fn: Callable[[], torch.nn.Module],
+    batch: Mapping[str, Any],
+    forward_loss_fn: Callable[[torch.nn.Module, Mapping[str, Any]], torch.Tensor],
+    forward_output_fn: Callable[[torch.nn.Module, Mapping[str, Any]], torch.Tensor] | None,
+    parity_max_abs_diff_by_site: Mapping[str, float],
+    use_ternary_bulk: bool,
+    eligible_scope: str = "all-bitlinear",
+    device: torch.device | str = "cpu",
+    step: int = 0,
+    source_commit_sha: str = "",
+    proof_command_argv: Sequence[str] = (),
+    vote_update_spec: VoteUpdateSpec | None = None,
+    poison_value: float = 17.0,
+    w6_parent_sha256_before: str = "",
+    w6_parent_sha256_after: str = "",
+) -> TrainerSub2AuthorityLiveConversionReceipt:
+    if not is_p1_live_sub2_checkpoint(p1_checkpoint):
+        raise ValueError("P1b live conversion requires a P1 live checkpoint envelope")
+    if int(P1B_VOTE_SMOKE_STEP_BOUND) != 1:
+        raise ValueError("P1b vote smoke step bound must remain fixed at 1")
+
+    output_fn = forward_output_fn or _default_forward_output
+    inner_authority = dict(p1_checkpoint["trainer_sub2_authority"])
+    payload_sha_before = str(inner_authority["authoritative_state_payload_sha256"])
+    dense_saved = bool(inner_authority.get("dense_int16_persistent_accumulator_saved"))
+    dense_loaded = False
+
+    source_for_blob = fresh_model_fn().to(device=device)
+    source_eligible = select_trainer_eligible_bitlinears(
+        source_for_blob,
+        use_ternary_bulk=use_ternary_bulk,
+        eligible_scope=eligible_scope,
+    )
+    raw_fallback_rejected = _p1_raw_fallback_rejected(
+        blob=p1_checkpoint,
+        eligible=source_eligible,
+        fresh_model_fn=fresh_model_fn,
+        use_ternary_bulk=use_ternary_bulk,
+        eligible_scope=eligible_scope,
+        device=device,
+    )
+
+    resumed_model = fresh_model_fn().to(device=device)
+    load_result = load_train_checkpoint_into_model(
+        resumed_model,
+        p1_checkpoint,
+        use_ternary_bulk=use_ternary_bulk,
+        eligible_scope=eligible_scope,
+        device=device,
+        inference_only=False,
+        sub2_live_enabled=True,
+    )
+    if load_result.routing != "p1_live" or load_result.authority_states is None:
+        raise ValueError("P1b live conversion load did not route through p1_live")
+
+    loaded_states = load_result.authority_states
+    resumed_eligible = select_trainer_eligible_bitlinears(
+        resumed_model,
+        use_ternary_bulk=use_ternary_bulk,
+        eligible_scope=eligible_scope,
+    )
+    dense_loaded = any(state.exact_accumulator_shadow is not None for state in loaded_states.values())
+
+    vote = _run_live_p1_vote_carrier_subproof(
+        resumed_model=resumed_model,
+        loaded_states=loaded_states,
+        resumed_eligible=resumed_eligible,
+        fresh_model_fn=fresh_model_fn,
+        batch=batch,
+        forward_loss_fn=forward_loss_fn,
+        forward_output_fn=output_fn,
+        use_ternary_bulk=use_ternary_bulk,
+        eligible_scope=eligible_scope,
+        device=device,
+        step=int(step),
+        vote_update_spec=vote_update_spec,
+        poison_value=float(poison_value),
+        payload_sha_before=payload_sha_before,
+    )
+
+    parity_map = {str(key): float(value) for key, value in parity_max_abs_diff_by_site.items()}
+    required_sites = ("cache_builder", "main_kl", "retained_fallback")
+    parity_pass = all(site in parity_map for site in required_sites) and all(
+        parity_map[site] <= P1_LIVE_PARITY_ATOL for site in required_sites
+    )
+    cached_install_proven = bool(parity_pass)
+
+    three_row = _vote_subproof_passes_three_row(vote)
+    if three_row:
+        authorized = AUTHORIZED_P1B_SURFACE_TUPLE
+        deferred = False
+        deferred_reason = ""
+    else:
+        authorized = AUTHORIZED_P1B_SURFACE_TUPLE_2ROW
+        deferred = True
+        if int(vote.get("q_changed_count", 0)) <= 0:
+            deferred_reason = (
+                "q_sidecar_vote_carrier deferred: bounded CPU smoke produced "
+                f"q_changed_count={int(vote.get('q_changed_count', 0))} (required >0)"
+            )
+        else:
+            deferred_reason = (
+                "q_sidecar_vote_carrier deferred: vote-carrier subproof gates failed "
+                f"(poison={vote.get('poisoned_fp_master_bypass_falsified')}, "
+                f"mutated={vote.get('post_resume_update_mutated')}, "
+                f"roundtrip={vote.get('post_resume_payload_hash_roundtrip_pass')})"
+            )
+
+    p1_envelope_sha256 = _sha256_bytes(p1_envelope_bytes)
+    base_pass = bool(
+        raw_fallback_rejected
+        and not dense_saved
+        and not dense_loaded
+        and cached_install_proven
+        and str(source_commit_sha).strip()
+        and str(p1_envelope_sha256).strip()
+    )
+    pass_receipt = bool(base_pass)
+
+    eligible_keys = tuple(sorted(loaded_states))
+    receipt = TrainerSub2AuthorityLiveConversionReceipt(
+        schema_version=TRAINER_SUB2_LIVE_CONVERSION_SCHEMA_VERSION,
+        target_name=TRAINER_SUB2_LIVE_CONVERSION_TARGET_NAME,
+        pass_receipt=pass_receipt,
+        dry_run=True,
+        gpu_launched=False,
+        optimizer_step_called=False,
+        checkpoint_written=True,
+        checkpoint_written_to_banked_parent=False,
+        learner_update_called=True,
+        live_runtime_authority_converted=pass_receipt,
+        readiness_row_flip_authorized=pass_receipt,
+        readiness_row_flip_authorized_surface_names=authorized if pass_receipt else (),
+        source_commit_sha=str(source_commit_sha),
+        proof_command_argv=tuple(str(item) for item in proof_command_argv),
+        checkpoint_format=P1_LIVE_CHECKPOINT_FORMAT,
+        p1_envelope_sha256=p1_envelope_sha256,
+        inner_authoritative_state_payload_sha256=payload_sha_before,
+        eligible_state_keys=eligible_keys,
+        eligible_state_keys_sha256=_eligible_state_keys_sha256(eligible_keys),
+        eligible_module_count=len(eligible_keys),
+        load_routing_result=str(load_result.routing),
+        dense_int16_persistent_accumulator_saved=bool(dense_saved),
+        dense_int16_persistent_accumulator_loaded=bool(dense_loaded),
+        raw_state_dict_eligible_weight_fallback_rejected=bool(raw_fallback_rejected),
+        cached_weight_parent_install_proven=bool(cached_install_proven),
+        parity_max_abs_diff_by_site=parity_map,
+        parity_pass=bool(parity_pass),
+        vote_carrier_subproof_exercised=True,
+        poisoned_fp_master_bypass_falsified=bool(vote["poisoned_fp_master_bypass_falsified"]),
+        total_sparse_vote_event_count=int(vote["total_sparse_vote_event_count"]),
+        q_changed_count=int(vote["q_changed_count"]),
+        post_resume_update_mutated=bool(vote["post_resume_update_mutated"]),
+        authority_state_shadow_free_after=bool(vote["authority_state_shadow_free_after"]),
+        post_resume_payload_sha256_before=str(vote["post_resume_payload_sha256_before"]),
+        post_resume_payload_sha256_after=str(vote["post_resume_payload_sha256_after"]),
+        post_resume_payload_hash_roundtrip_pass=bool(
+            vote["post_resume_payload_hash_roundtrip_pass"]
+        ),
+        loss_finite=bool(vote["loss_finite"]),
+        q_sidecar_vote_carrier_deferred=bool(deferred),
+        q_sidecar_deferred_reason=str(deferred_reason),
+        normal_optimizer_resume_from_p1_sidecar_not_proved=True,
+        full_training_authority_from_p1_sidecar_not_proved=True,
+        learning_claim=False,
+        acquisition_claim=False,
+        full_sub2_runtime_readiness_claim=False,
+        ready_for_main_science=False,
+        ready_for_pre_full_stack_diagnostic=False,
+        broad_runtime_authority_conversion=False,
+        w6_parent_sha256_before=str(w6_parent_sha256_before),
+        w6_parent_sha256_after=str(w6_parent_sha256_after),
+        proof_anchors=(
+            "trainer_sub2_authority.py:767",
+            "trainer_sub2_authority.py:809",
+            "trainer_sub2_authority.py:1418",
+            "train_hrm_text_158.py:1551",
+        ),
+        non_claims=TRAINER_SUB2_LIVE_CONVERSION_NON_CLAIMS,
+    )
+    if pass_receipt:
+        validate_trainer_sub2_authority_live_conversion_receipt(receipt)
+    return receipt
+
+
+def _resolve_live_conversion_source_commit_sha() -> str:
+    import subprocess
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[3]
+    return subprocess.check_output(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo_root,
+        text=True,
+    ).strip()
+
+
+def validate_trainer_sub2_authority_live_conversion_receipt(
+    receipt: TrainerSub2AuthorityLiveConversionReceipt,
+) -> None:
+    if receipt.schema_version != TRAINER_SUB2_LIVE_CONVERSION_SCHEMA_VERSION:
+        raise ValueError("P1b live conversion schema version mismatch")
+    if receipt.target_name != TRAINER_SUB2_LIVE_CONVERSION_TARGET_NAME:
+        raise ValueError("P1b live conversion target name mismatch")
+    if not receipt.pass_receipt:
+        raise ValueError("P1b live conversion proof did not pass")
+    if not receipt.dry_run or receipt.gpu_launched or receipt.optimizer_step_called:
+        raise ValueError("P1b must stay CPU dry-run with no optimizer step")
+    if receipt.checkpoint_written_to_banked_parent:
+        raise ValueError("P1b cannot write banked parent checkpoints")
+    if not str(receipt.source_commit_sha).strip():
+        raise ValueError("P1b missing source_commit_sha")
+    if receipt.source_commit_sha != _resolve_live_conversion_source_commit_sha():
+        raise ValueError("P1b stale source_commit_sha")
+    for field_name in (
+        "p1_envelope_sha256",
+        "inner_authoritative_state_payload_sha256",
+        "eligible_state_keys_sha256",
+    ):
+        if not str(getattr(receipt, field_name)).strip():
+            raise ValueError(f"P1b missing hash field {field_name}")
+    if receipt.checkpoint_format != P1_LIVE_CHECKPOINT_FORMAT:
+        raise ValueError("P1b checkpoint_format mismatch")
+    if receipt.load_routing_result != "p1_live":
+        raise ValueError("P1b load_routing_result must be p1_live")
+    authorized = tuple(receipt.readiness_row_flip_authorized_surface_names)
+    if authorized not in (AUTHORIZED_P1B_SURFACE_TUPLE, AUTHORIZED_P1B_SURFACE_TUPLE_2ROW):
+        raise ValueError("P1b readiness_row_flip_authorized_surface_names mismatch")
+    if not receipt.live_runtime_authority_converted or not receipt.readiness_row_flip_authorized:
+        raise ValueError("P1b authorization flags must be true on pass")
+    if receipt.dense_int16_persistent_accumulator_saved or receipt.dense_int16_persistent_accumulator_loaded:
+        raise ValueError("P1b dense-int16 persistent accumulator flags must be false")
+    if not receipt.raw_state_dict_eligible_weight_fallback_rejected:
+        raise ValueError("P1b must prove raw eligible-weight fallback rejection")
+    if not receipt.cached_weight_parent_install_proven or not receipt.parity_pass:
+        raise ValueError("P1b cached parent install / parity proof failed")
+    for site in ("cache_builder", "main_kl", "retained_fallback"):
+        if site not in receipt.parity_max_abs_diff_by_site:
+            raise ValueError(f"P1b missing parity site {site!r}")
+        if float(receipt.parity_max_abs_diff_by_site[site]) > P1_LIVE_PARITY_ATOL:
+            raise ValueError(f"P1b parity site {site!r} over threshold")
+    if authorized == AUTHORIZED_P1B_SURFACE_TUPLE:
+        if receipt.q_sidecar_vote_carrier_deferred:
+            raise ValueError("P1b 3-row receipt cannot defer q_sidecar")
+        if not _vote_subproof_passes_three_row(
+            {
+                "loss_finite": receipt.loss_finite,
+                "poisoned_fp_master_bypass_falsified": receipt.poisoned_fp_master_bypass_falsified,
+                "total_sparse_vote_event_count": receipt.total_sparse_vote_event_count,
+                "q_changed_count": receipt.q_changed_count,
+                "post_resume_update_mutated": receipt.post_resume_update_mutated,
+                "authority_state_shadow_free_after": receipt.authority_state_shadow_free_after,
+                "post_resume_payload_hash_roundtrip_pass": (
+                    receipt.post_resume_payload_hash_roundtrip_pass
+                ),
+            }
+        ):
+            raise ValueError("P1b 3-row vote-carrier subproof gates failed")
+    else:
+        if not receipt.q_sidecar_vote_carrier_deferred:
+            raise ValueError("P1b 2-row receipt must defer q_sidecar")
+        if not str(receipt.q_sidecar_deferred_reason).strip():
+            raise ValueError("P1b 2-row receipt missing q_sidecar_deferred_reason")
+    forbidden_true = {
+        "learning_claim": receipt.learning_claim,
+        "acquisition_claim": receipt.acquisition_claim,
+        "full_sub2_runtime_readiness_claim": receipt.full_sub2_runtime_readiness_claim,
+        "ready_for_main_science": receipt.ready_for_main_science,
+        "ready_for_pre_full_stack_diagnostic": receipt.ready_for_pre_full_stack_diagnostic,
+        "broad_runtime_authority_conversion": receipt.broad_runtime_authority_conversion,
+    }
+    for label, value in forbidden_true.items():
+        if bool(value):
+            raise ValueError(f"P1b forbidden claim set: {label}")
+    if not receipt.normal_optimizer_resume_from_p1_sidecar_not_proved:
+        raise ValueError("P1b must carry optimizer-resume non-claim")
+    if not receipt.full_training_authority_from_p1_sidecar_not_proved:
+        raise ValueError("P1b must carry full-training non-claim")
+    if tuple(receipt.non_claims) != TRAINER_SUB2_LIVE_CONVERSION_NON_CLAIMS:
+        raise ValueError("P1b non-claims changed")

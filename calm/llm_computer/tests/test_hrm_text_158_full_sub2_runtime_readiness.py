@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 import subprocess
 import sys
@@ -17,6 +18,7 @@ from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
     FIXTURE_GATED_SUB2_CHECKPOINT_PATH_BACKWARD_RECOMPUTE,
     FIXTURE_GATED_SUB2_CHECKPOINT_PATH_NATIVE_KERNELIZED_HOT_PATH_BLOCKED,
     FIXTURE_GATED_SUB2_CHECKPOINT_PATH_OPTIMIZER_CREDIT_STATE_BLOCKED,
+    FIXTURE_LIVE_P1_AUTHORITY_CONVERSION,
     FIXTURE_MAIN_READY,
     FIXTURE_MISSING_ACTIVATIONS,
     FIXTURE_MISSING_ATTENTION,
@@ -41,7 +43,9 @@ from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
     SURFACE_PERSISTENT_QACC_AUTHORITY,
     SURFACE_Q_SIDECAR_VOTE_CARRIER,
     FullSub2RuntimeSurfaceReceipt,
+    apply_live_p1_conversion_surface_overrides,
     build_full_sub2_runtime_ready_for_science,
+    current_repo_scaffold_surfaces,
     fixture_full_sub2_runtime_ready_for_science,
     gated_sub2_checkpoint_path_activation_residuals_blocked_surfaces,
     gated_sub2_checkpoint_path_attention_kv_blocked_surfaces,
@@ -49,8 +53,12 @@ from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
     gated_sub2_checkpoint_path_native_kernelized_hot_path_blocked_surfaces,
     gated_sub2_checkpoint_path_optimizer_credit_state_blocked_surfaces,
     gated_sub2_checkpoint_path_surfaces,
+    live_p1_authority_conversion_surfaces,
     main_ready_fixture_surfaces,
     validate_full_sub2_runtime_ready_for_science_receipt,
+)
+from calm.llm_computer.tests.test_hrm_text_158_trainer_sub2_authority_live_checkpoint import (
+    _mint_live_conversion_receipt,
 )
 
 
@@ -1024,3 +1032,84 @@ def test_readiness_classes_are_exact_five_class_prereg():
         RUNTIME_CLASS_PRE_FULL_STACK_DIAGNOSTIC,
         RUNTIME_CLASS_MISSING,
     )
+
+
+def test_live_p1_authority_conversion_flips_exactly_authorized_rows():
+    base = current_repo_scaffold_surfaces()
+    base_by_id = {surface.surface_id: surface for surface in base}
+    receipt = _mint_live_conversion_receipt()
+    readiness = live_p1_authority_conversion_surfaces(receipt)
+    authorized = set(receipt.readiness_row_flip_authorized_surface_names)
+    assert readiness.sub2_surface_count == len(authorized)
+    for surface in readiness.surfaces:
+        if surface.surface_id in authorized:
+            assert surface.classification == RUNTIME_CLASS_SUB2
+        else:
+            assert surface.classification == base_by_id[surface.surface_id].classification
+
+
+def test_live_p1_authority_conversion_keeps_main_and_diag_false():
+    receipt = _mint_live_conversion_receipt()
+    readiness = live_p1_authority_conversion_surfaces(receipt)
+    assert readiness.ready_for_main_science is False
+    assert readiness.ready_for_pre_full_stack_diagnostic is False
+    assert receipt.ready_for_main_science is False
+    assert receipt.ready_for_pre_full_stack_diagnostic is False
+
+
+def test_gated_fixture_does_not_satisfy_live_applier():
+    receipt = _mint_live_conversion_receipt()
+    gated_surfaces = gated_sub2_checkpoint_path_surfaces()
+    live_surfaces = apply_live_p1_conversion_surface_overrides(receipt)
+    q_sidecar_live = next(
+        surface
+        for surface in live_surfaces
+        if surface.surface_id == SURFACE_Q_SIDECAR_VOTE_CARRIER
+    )
+    q_sidecar_gated = next(
+        surface
+        for surface in gated_surfaces
+        if surface.surface_id == SURFACE_Q_SIDECAR_VOTE_CARRIER
+    )
+    assert receipt.p1_envelope_sha256 in q_sidecar_live.reason
+    assert receipt.p1_envelope_sha256 not in q_sidecar_gated.reason
+    assert GATED_SUB2_CHECKPOINT_PATH_REASON in q_sidecar_gated.reason
+
+
+def test_live_p1_applier_without_validated_receipt_raises():
+    with pytest.raises(ValueError):
+        apply_live_p1_conversion_surface_overrides(
+            replace(_mint_live_conversion_receipt(), pass_receipt=False)
+        )
+
+
+def test_live_p1_fixture_name_requires_explicit_receipt_json():
+    with pytest.raises(ValueError, match="explicit validated receipt JSON"):
+        fixture_full_sub2_runtime_ready_for_science(FIXTURE_LIVE_P1_AUTHORITY_CONVERSION)
+
+
+def test_live_p1_two_row_fallback_keeps_q_sidecar_blocked():
+    from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
+        AUTHORIZED_P1B_SURFACE_TUPLE_2ROW,
+        validate_trainer_sub2_authority_live_conversion_receipt,
+    )
+
+    minted = _mint_live_conversion_receipt()
+    two_row = replace(
+        minted,
+        readiness_row_flip_authorized_surface_names=AUTHORIZED_P1B_SURFACE_TUPLE_2ROW,
+        q_sidecar_vote_carrier_deferred=True,
+        q_sidecar_deferred_reason="test 2-row fallback: q_changed_count=0",
+        q_changed_count=0,
+        post_resume_update_mutated=False,
+    )
+    validate_trainer_sub2_authority_live_conversion_receipt(two_row)
+    readiness = live_p1_authority_conversion_surfaces(two_row)
+    assert readiness.sub2_surface_count == 2
+    q_sidecar = next(
+        surface
+        for surface in readiness.surfaces
+        if surface.surface_id == SURFACE_Q_SIDECAR_VOTE_CARRIER
+    )
+    assert q_sidecar.classification != RUNTIME_CLASS_SUB2
+    assert two_row.q_sidecar_deferred_reason

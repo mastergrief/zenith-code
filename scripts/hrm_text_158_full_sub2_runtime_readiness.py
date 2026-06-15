@@ -13,8 +13,14 @@ if str(REPO_ROOT) not in sys.path:
 
 from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
     FIXTURE_CURRENT_REPO,
+    FIXTURE_LIVE_P1_AUTHORITY_CONVERSION,
     FULL_SUB2_RUNTIME_FIXTURE_NAMES,
     fixture_full_sub2_runtime_ready_for_science,
+    live_p1_authority_conversion_surfaces,
+)
+from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
+    live_conversion_receipt_from_dict,
+    validate_trainer_sub2_authority_live_conversion_receipt,
 )
 
 
@@ -29,6 +35,14 @@ def main(argv: list[str] | None = None) -> int:
         help="read-only static fixture to emit",
     )
     parser.add_argument(
+        "--live-p1-receipt-json",
+        type=Path,
+        help=(
+            "required when --fixture live_p1_authority_conversion; "
+            "path to a validated P1b live conversion receipt JSON"
+        ),
+    )
+    parser.add_argument(
         "--json-out",
         type=Path,
         help="optional path for the JSON receipt; stdout is always emitted",
@@ -41,7 +55,30 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--indent", type=int, default=2)
     args = parser.parse_args(argv)
 
-    receipt = fixture_full_sub2_runtime_ready_for_science(args.fixture)
+    if args.fixture == FIXTURE_LIVE_P1_AUTHORITY_CONVERSION:
+        if args.live_p1_receipt_json is None:
+            parser.error(
+                "--fixture live_p1_authority_conversion requires "
+                "--live-p1-receipt-json PATH"
+            )
+        if not args.live_p1_receipt_json.is_file():
+            raise SystemExit(
+                f"live P1 receipt JSON not found: {args.live_p1_receipt_json}"
+            )
+        try:
+            receipt_payload = json.loads(
+                args.live_p1_receipt_json.read_text(encoding="utf-8")
+            )
+        except json.JSONDecodeError as exc:
+            raise SystemExit(
+                f"invalid live P1 receipt JSON: {args.live_p1_receipt_json}: {exc}"
+            ) from exc
+        live_receipt = live_conversion_receipt_from_dict(receipt_payload)
+        validate_trainer_sub2_authority_live_conversion_receipt(live_receipt)
+        receipt = live_p1_authority_conversion_surfaces(live_receipt)
+    else:
+        receipt = fixture_full_sub2_runtime_ready_for_science(args.fixture)
+
     payload = receipt.to_dict()
     encoded = json.dumps(payload, indent=args.indent, sort_keys=True) + "\n"
     if args.json_out is not None:

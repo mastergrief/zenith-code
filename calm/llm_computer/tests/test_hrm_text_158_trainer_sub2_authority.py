@@ -18,6 +18,8 @@ from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
     TRAINER_SUB2_LOCAL_UPDATE_NON_CLAIMS,
     TRAINER_SUB2_ROUNDTRIP_NON_CLAIMS,
     TRAINER_SUB2_ROUNDTRIP_SCHEMA_VERSION,
+    AUTHORIZED_P1B_SURFACE_TUPLE,
+    TrainerSub2AuthorityLiveConversionReceipt,
     _roundtrip_payload_sha256,
     build_trainer_sub2_authority_checkpoint_blob,
     build_trainer_sub2_authority_construction_receipt,
@@ -33,8 +35,12 @@ from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
     trainer_authoritative_forward_context,
     trainer_local_update_builder_active_control_parameters,
     validate_trainer_sub2_authority_construction_receipt,
+    validate_trainer_sub2_authority_live_conversion_receipt,
     validate_trainer_sub2_authority_local_update_receipt,
     validate_trainer_sub2_authority_roundtrip_receipt,
+)
+from calm.llm_computer.tests.test_hrm_text_158_trainer_sub2_authority_live_checkpoint import (
+    _mint_live_conversion_receipt,
 )
 
 
@@ -808,3 +814,109 @@ def test_exports_from_native_full_stack_facade():
     assert "load_train_checkpoint_into_model" in native_full_stack.__all__
     assert "save_trainer_sub2_live_checkpoint_envelope" in native_full_stack.__all__
     assert native_full_stack.P1_LIVE_CHECKPOINT_FORMAT == P1_LIVE_CHECKPOINT_FORMAT
+
+
+def test_validate_live_conversion_rejects_forged_minimal_receipt():
+    forged = TrainerSub2AuthorityLiveConversionReceipt(
+        schema_version="forged",
+        target_name="forged",
+        pass_receipt=True,
+        dry_run=True,
+        gpu_launched=False,
+        optimizer_step_called=False,
+        checkpoint_written=True,
+        checkpoint_written_to_banked_parent=False,
+        learner_update_called=True,
+        live_runtime_authority_converted=True,
+        readiness_row_flip_authorized=True,
+        readiness_row_flip_authorized_surface_names=AUTHORIZED_P1B_SURFACE_TUPLE,
+        source_commit_sha="0" * 40,
+        proof_command_argv=(),
+        checkpoint_format=P1_LIVE_CHECKPOINT_FORMAT,
+        p1_envelope_sha256="",
+        inner_authoritative_state_payload_sha256="",
+        eligible_state_keys=(),
+        eligible_state_keys_sha256="",
+        eligible_module_count=0,
+        load_routing_result="p1_live",
+        dense_int16_persistent_accumulator_saved=False,
+        dense_int16_persistent_accumulator_loaded=False,
+        raw_state_dict_eligible_weight_fallback_rejected=True,
+        cached_weight_parent_install_proven=True,
+        parity_max_abs_diff_by_site={},
+        parity_pass=True,
+        vote_carrier_subproof_exercised=True,
+        poisoned_fp_master_bypass_falsified=True,
+        total_sparse_vote_event_count=1,
+        q_changed_count=1,
+        post_resume_update_mutated=True,
+        authority_state_shadow_free_after=True,
+        post_resume_payload_sha256_before="a",
+        post_resume_payload_sha256_after="b",
+        post_resume_payload_hash_roundtrip_pass=True,
+        loss_finite=True,
+        q_sidecar_vote_carrier_deferred=False,
+        q_sidecar_deferred_reason="",
+        normal_optimizer_resume_from_p1_sidecar_not_proved=True,
+        full_training_authority_from_p1_sidecar_not_proved=True,
+        learning_claim=False,
+        acquisition_claim=False,
+        full_sub2_runtime_readiness_claim=False,
+        ready_for_main_science=False,
+        ready_for_pre_full_stack_diagnostic=False,
+        broad_runtime_authority_conversion=False,
+        w6_parent_sha256_before="",
+        w6_parent_sha256_after="",
+        proof_anchors=(),
+        non_claims=(),
+    )
+    with pytest.raises(ValueError):
+        validate_trainer_sub2_authority_live_conversion_receipt(forged)
+
+
+def test_validate_live_conversion_rejects_wrong_surface_tuple():
+    receipt = replace(
+        _mint_live_conversion_receipt(),
+        readiness_row_flip_authorized_surface_names=(
+            "persistent_qacc_authority",
+            "q_sidecar_vote_carrier",
+        ),
+    )
+    with pytest.raises(ValueError, match="surface"):
+        validate_trainer_sub2_authority_live_conversion_receipt(receipt)
+
+
+def test_validate_live_conversion_rejects_stale_source_commit_sha():
+    receipt = replace(
+        _mint_live_conversion_receipt(),
+        source_commit_sha="deadbeef" * 5,
+    )
+    with pytest.raises(ValueError, match="stale source_commit_sha"):
+        validate_trainer_sub2_authority_live_conversion_receipt(receipt)
+
+
+def test_validate_live_conversion_rejects_parity_over_threshold():
+    receipt = _mint_live_conversion_receipt()
+    bad_parity = dict(receipt.parity_max_abs_diff_by_site)
+    bad_parity["main_kl"] = 1.0
+    bad = replace(receipt, parity_max_abs_diff_by_site=bad_parity, parity_pass=False)
+    with pytest.raises(ValueError, match="parity"):
+        validate_trainer_sub2_authority_live_conversion_receipt(bad)
+
+
+def test_validate_live_conversion_rejects_ready_for_main_science_true():
+    receipt = replace(_mint_live_conversion_receipt(), ready_for_main_science=True)
+    with pytest.raises(ValueError, match="forbidden claim"):
+        validate_trainer_sub2_authority_live_conversion_receipt(receipt)
+
+
+def test_validate_live_conversion_rejects_three_row_without_vote_subproof():
+    receipt = replace(
+        _mint_live_conversion_receipt(),
+        readiness_row_flip_authorized_surface_names=AUTHORIZED_P1B_SURFACE_TUPLE,
+        q_changed_count=0,
+        post_resume_update_mutated=False,
+        q_sidecar_vote_carrier_deferred=False,
+    )
+    with pytest.raises(ValueError, match="vote-carrier|3-row"):
+        validate_trainer_sub2_authority_live_conversion_receipt(receipt)
