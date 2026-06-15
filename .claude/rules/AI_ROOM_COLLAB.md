@@ -12,11 +12,13 @@ unaffected.
 research/strategy co-leads. **Claude** = operations/orchestration lead.
 
 Gabe seeds → claude+codex co-hypothesize/challenge → `plan-dev` writes the
-plan/packet AND bounded-implements the approved slice after +1 → **claude+co_lead
-review the implementation receipt directly** → on dual accept, claude commit/push
-gates → `test-operator` owns formal training/proof/test-run execution → gate →
-iterate. Claude+co_lead review/audit, NOT execute — direct Claude repo-file
-edits/runs need persisted named exception or break-glass reason.
+plan/packet AND bounded-implements the approved slice after +1 → **claude
+gate-1 (verify+freeze or bounce) → co_lead gate-2 (independent review of
+FROZEN handoff) → dual accept** → claude commit/push gates → `test-operator`
+owns formal training/proof/test-run execution → gate → iterate. Thinking stays
+parallel; **artifact review gates are sequential.** Claude+co_lead review/audit,
+NOT execute — direct Claude repo-file edits/runs need persisted named exception
+or break-glass reason.
 
 - **Gabe**: seeds problems, picks risk/cost/goal, final human gates.
 - **Claude + `codex_co_lead`**: hypothesis quality, gate design, counter-cases,
@@ -28,15 +30,16 @@ edits/runs need persisted named exception or break-glass reason.
   - **`plan-dev`**: planning/contract/packet lane AND default bounded
     implementation executor (default for HRM + main-repo slices). Owns
     plan/packet drafting, run-packet contracts, and approved implementation —
-    **NOT** implementation review (implementation receipts route to
-    claude+co_lead directly), **NOT** formal run execution. Break-glass
-    implementation/run only via Claude `+1` with `transition_fallback_used=true`.
-    After `+1 implement` may invoke `.codex/agents/developer.toml`
-    (`subagent-claimed` until verified; no gate on that receipt alone).
-    **health-proven existing backend/config** — do NOT change backend as the fix.
-    Edits + focused developer validation in scope; **receipts to claude +
-    codex_co_lead directly**; on dual accept the slice proceeds to claude
-    commit/push gates, then run packets route to `test-operator`. No
+    **NOT** implementation review (receipts route to claude gate-1 first),
+    **NOT** formal run execution. Break-glass implementation/run only via
+    Claude `+1` with `transition_fallback_used=true`. After `+1 implement` may
+    invoke `.codex/agents/developer.toml` (`subagent-claimed` until verified;
+    no gate on that receipt alone). **health-proven existing backend/config**
+    — do NOT change backend as the fix. Edits + focused developer validation in
+    scope; **receipts to claude FIRST (gate-1)**; include `codex_co_lead` in
+    `REPORT_TO` for audit visibility — co_lead ignores in-flight unless claude
+    requests ideation/blocker-triage. On dual accept proceed to claude commit/
+    push gates, then run packets route to `test-operator`. No
     spawn/grant/dispatch; no commit/push unless the claude gate authorizes.
   - **`test-operator`**: formal training/proof/test-run packet executor — runs,
     monitors, posts terminal receipts. Code fixes → `plan-dev`; packet
@@ -48,10 +51,12 @@ edits/runs need persisted named exception or break-glass reason.
 |---|---|
 | Hypothesize, plan, devil's advocate, creativity, audit, iterate | **yes** |
 | Build, focused impl validation, formal runs, commit | **no** — `plan-dev`
-  implements after +1 (claude+co_lead review the result); formal
-  training/proof/test runs via `test-operator` |
+  implements after +1; claude gate-1 then co_lead gate-2 on frozen receipt;
+  formal training/proof/test runs via `test-operator` |
 
-Default rate, not occasional. Opt-out: mechanical/trivial only. Analog to
+Thinking boundaries: **both minds in parallel.** Artifact review (impl diff,
+launch packet, validation receipt, commit/push-adjacent review): **sequential
+gates.** Default rate, not occasional. Opt-out: mechanical/trivial only. Analog to
 workflow.md "two measurements every round" = **two minds every thinking
 boundary.**
 
@@ -134,13 +139,20 @@ separate gate).
 **`ai_room_task_update` does NOT wake peers** — pair durable corrections with
 direct addressed post citing the task_update msg id.
 
+## Review gate glossary
+
+**REPORT_TO** = audit/provenance visibility (not parallel review). **REVIEW_ORDER**
+= gate sequencing. Freeze discipline: immutable filename per version; on-disk
+sha self-verify before any frozen claim; no in-flight artifact review.
+
 ## Fast Training Launch Contract
 
-Compress gates, not safety: (1) one launch packet contract drafted/reviewed by
-`plan-dev`; (2) one claude+co_lead review → `+1 launch/watch-to-terminal-condition`;
-(3) `test-operator` runs + posts terminal receipt (break-glass `plan-dev`
-run only via Claude `+1` with `transition_fallback_used=true`); (4) interrupt
-only for bank/fail/criteria/liveness/deviation; (5) one terminal receipt.
+Compress gates, not safety: (1) `plan-dev` drafts launch packet; (2) claude
+gate-1 validates hash/paths/preflight + FREEZE; (3) co_lead gate-2 launch-plan
+review of frozen packet; (4) claude `+1 launch/watch-to-terminal-condition`;
+(5) `test-operator` runs + posts terminal receipt (break-glass `plan-dev` run
+only via Claude `+1` with `transition_fallback_used=true`); (6) interrupt only
+for bank/fail/criteria/liveness/deviation; (7) one terminal receipt.
 GPU-hot-loop = kernelized execution, not merely `device=cuda:0`. `.pt` not
 committed.
 

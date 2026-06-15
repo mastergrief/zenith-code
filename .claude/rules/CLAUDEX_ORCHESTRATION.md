@@ -27,21 +27,25 @@ read-only.
 - **`plan-dev`** — planning/contract/packet lane AND **default** bounded
   implementation executor (developer template). Owns plan/packet drafting,
   run-packet contracts, and approved implementation — **NOT** implementation
-  review (implementation receipts route to claude+co_lead directly), **NOT**
+  review (implementation receipts route to claude gate-1 first; co_lead in
+  `REPORT_TO` for visibility only until claude freezes the handoff), **NOT**
   formal run execution. Break-glass implementation/run via Claude `+1` with
   `transition_fallback_used=true`. After `+1 implement` may invoke
   `.codex/agents/developer.toml` (`subagent-claimed` until verified). **cwd =
   provenance/dispatch match, not repo permission.** No `.pt` commits.
   **health-proven existing backend/config** — do NOT change backend as the fix.
-  Edits + focused developer validation in scope; **receipts to claude +
-  codex_co_lead directly (dual implementation review)**; on dual accept the
-  slice proceeds to claude commit/push gates, then run packets route to
-  `test-operator`. FORBIDDEN: spawn/kill/grant/dispatch, training launch,
+  Edits + focused developer validation in scope; **receipts to claude gate-1**
+  (`REPORT_TO` may include co_lead for visibility — actionable review sink is
+  claude until freeze handoff); on dual accept proceed to claude commit/push
+  gates, then run packets route to `test-operator`. FORBIDDEN: spawn/kill/grant/
+  dispatch, training launch,
   commit/push unless the claude gate authorizes. Role home:
   `~/.ai-room/.codex-roles/plan-dev/`.
 - **`test-operator`** — formal training/proof/test-run packet executor. Runs
-  specified packet, monitors artifacts, posts terminal receipts to both
-  co-leads. FORBIDDEN: source edits, improvisation, commits/pushes.
+  specified packet, monitors artifacts, posts the terminal receipt to claude
+  gate-1 (`REPORT_TO` may include co_lead for visibility); co_lead gate-2 only
+  after claude freezes/hands off. FORBIDDEN: source edits, improvisation,
+  commits/pushes.
   Underspecified → STOP. Code fixes → `plan-dev`; packet fixes → `plan-dev`.
 
 **Role vs handle**: `role="<name>"` loads role home; routable target is a
@@ -52,14 +56,15 @@ dispatcher**: codex_co_lead recommends; claude spawns/dispatches/gates.
 ## Lifecycle
 
 ```
-claude creates task + provenance → plan-dev plan → claude+co_lead plan
-review → +1 implement → plan-dev implements → claude+co_lead
-implementation review (dual accept) → +1 commit → commit → +1 push → push
-→ test-operator run packets → complete + recycle
+claude creates task + provenance → plan-dev plan → claude gate-1 freeze →
+co_lead gate-2 plan review → +1 implement → plan-dev implements → claude
+gate-1 → co_lead gate-2 implementation review (dual accept) → +1 commit →
+commit → +1 push → push → test-operator run packets → complete + recycle
 ```
 
-Claude load-bearing at plan-review, implementation-review, commit, push, and
-launch gates (co_lead co-reviews plan + implementation).
+Claude load-bearing at gate-1 freeze/verify, commit, push, and launch gates;
+co_lead gate-2 reviews frozen handoffs only (independent verdict, not rubber-
+stamp).
 
 ## Recycle boundaries
 
@@ -101,7 +106,8 @@ post. **Completed-task ack-idle**: don't `complete` between gates; reopen
 1. Read task; verify provenance + contract.
 2. Ground narrowly (no session-log scans).
 3. Post plan + risk; wait for persisted `+1 implement`.
-4. Implement/prove; post validation receipt.
+4. Implement/prove; post validation receipt to claude gate-1 (not co_lead
+   directly unless `REPORT_TO` visibility only).
 5. Commit after `+1 commit`; push after `+1 push` or `+1 commit+push`.
 6. Report SHA; wait for recycle.
 

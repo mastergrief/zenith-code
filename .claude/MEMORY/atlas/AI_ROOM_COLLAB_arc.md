@@ -98,6 +98,35 @@ session-local view asymmetry (claude's user consent invisible to
 codex) motivates the `## Provenance` block requirement in board
 task descriptions for cross-session dispatches.
 
+## 2026-06-14 Sequential artifact review gates (Gabe directive)
+
+**Motivating incident:** W6 S3c GPU launch packet provenance churn across
+v3 → v4 → v4.1 → v5 (`w6_narrow_carrier_gpu_dynamics_s3c_launch_packet_*`).
+Parallel dual-review while plan-dev edited in-place let claude, co_lead, and
+plan-dev react to a moving target — placeholder SHAs, mutual content-sha
+binding cycles, and contradictory "frozen" room claims. v5 immutable filenames
+(main `5d8c619cdbee7c723a2dd609a7bc1a0f9c71609821d2a7f50db8aad9fcd0c828`,
+replay `0ef2800773a666f7927bbeccc74d5c33a3da3d9d2d677acc8804009f68695dc1`)
+cleared both legs under the prior parallel model before this rule change.
+
+**Gabe directive (verbatim intent):** parallel review causes issues — claude
+is gate-1, co_lead is gate-2. **New semantics:** keep dual visibility;
+sequence artifact gates. `REPORT_TO` = audit/provenance visibility (not
+parallel review). `REVIEW_ORDER` = gate sequencing.
+
+**Authority chain:** claude status `1781474774491-49d0cace`; co-design
+claude `1781474972562` + co_lead `1781475023717`; plan-dev encode dispatch
+`1781475088207-ba0e40a5`.
+
+**Exception preserved:** design/refinement threads may still address BOTH
+co-leads before artifact freeze (thinking parallel); artifact review +
+material gates go sequential.
+
+**Rules landed:** `.claude/rules/AI_ROOM_COLLAB.md` (team model, plan-dev
+lane, cross-thread table, review gate glossary, Fast Training Launch
+Contract), `.claude/rules/CLAUDEX_ORCHESTRATION.md` (lifecycle + worker
+receipt discipline), `.claude/CLAUDE.md` (terse sequential-gate line).
+
 ## Commit ledger for AI-room charter evolution
 
 | Commit | Content |
