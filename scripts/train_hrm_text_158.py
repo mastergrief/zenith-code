@@ -773,6 +773,9 @@ def train(
     sub2_authority_live_conversion_proof: bool = False,
     # R1 default-off: CPU production backward-path wiring proof; exits before optimizer.
     activation_relief_lossless_recompute_wiring_proof: bool = False,
+    # R1-L default-off: GPU launch/runtime validation mint gate; SCHEMA slice exits
+    # before GPU until R1-L-LAUNCH packet authorizes the run.
+    activation_relief_lossless_recompute_launch_proof: bool = False,
     # Diagnostic ONLY (codex msg 1779652915624): when True, build the training
     # DataLoader WITHOUT the explicit seeded generator (pre-1656ead global-RNG
     # shuffle order). Default False keeps the deterministic seeded generator.
@@ -1328,6 +1331,19 @@ def train(
             "--activation-relief-lossless-recompute-wiring-proof is mutually "
             "exclusive with sub2 authority proof flags"
         )
+    if activation_relief_lossless_recompute_launch_proof and any(_sub2_proof_flags):
+        raise ValueError(
+            "--activation-relief-lossless-recompute-launch-proof is mutually "
+            "exclusive with sub2 authority proof flags"
+        )
+    if (
+        activation_relief_lossless_recompute_wiring_proof
+        and activation_relief_lossless_recompute_launch_proof
+    ):
+        raise ValueError(
+            "--activation-relief-lossless-recompute-wiring-proof and "
+            "--activation-relief-lossless-recompute-launch-proof are mutually exclusive"
+        )
     if sub2_authority_live_checkpoint and any(_sub2_proof_flags):
         raise ValueError(
             "--sub2-authority-live-checkpoint is mutually exclusive with "
@@ -1584,6 +1600,29 @@ def train(
             )
         print(
             "[hrm158] P1 live-conversion proof: EXITING before normal training",
+            flush=True,
+        )
+        return
+
+    if activation_relief_lossless_recompute_launch_proof:
+        import os
+
+        w6_parent_path = os.environ.get("R1L_W6_PARENT_PATH", "")
+        if not w6_parent_path:
+            raise RuntimeError(
+                "R1-L launch proof requires R1L_W6_PARENT_PATH in the environment"
+            )
+        print(
+            "[hrm158] R1-L launch proof: CPU-only SCHEMA slice; GPU mint deferred "
+            "to R1-L-LAUNCH packet",
+            flush=True,
+        )
+        print(
+            f"[hrm158] R1-L launch proof: R1L_W6_PARENT_PATH={w6_parent_path}",
+            flush=True,
+        )
+        print(
+            "[hrm158] R1-L launch proof: EXITING before GPU launch mint",
             flush=True,
         )
         return
@@ -2523,6 +2562,11 @@ if __name__ == "__main__":
                          "retained backward paths under saved_tensors_hooks with "
                          "lossless_recompute policy wired through extras; exit before "
                          "optimizer step. No live readiness row flip.")
+    ap.add_argument("--activation-relief-lossless-recompute-launch-proof",
+                    action="store_true",
+                    help="R1-L proof-only, default-off: gate for GPU launch/runtime "
+                         "validation receipt mint. Reads R1L_W6_PARENT_PATH. This "
+                         "SCHEMA slice exits before GPU; full mint is R1-L-LAUNCH.")
     ap.add_argument("--legacy-loader-shuffle", action="store_true",
                     help="DIAGNOSTIC ONLY (not recipe-default): build the training "
                          "DataLoader without the explicit seeded generator, restoring "
@@ -2611,6 +2655,9 @@ if __name__ == "__main__":
         sub2_authority_live_conversion_proof=args.sub2_authority_live_conversion_proof,
         activation_relief_lossless_recompute_wiring_proof=(
             args.activation_relief_lossless_recompute_wiring_proof
+        ),
+        activation_relief_lossless_recompute_launch_proof=(
+            args.activation_relief_lossless_recompute_launch_proof
         ),
         legacy_loader_shuffle=args.legacy_loader_shuffle,
         dry_run=args.dry_run,

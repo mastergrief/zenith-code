@@ -149,6 +149,7 @@ FIXTURE_STEP2A_CANDIDATE_PERSISTENT_CORE_ABSENCE = (
     "step2a_candidate_persistent_core_absence"
 )
 FIXTURE_LIVE_P1_AUTHORITY_CONVERSION = "live_p1_authority_conversion"
+FIXTURE_LIVE_R1_BACKWARD_LAUNCH = "live_r1_backward_launch"
 
 FULL_SUB2_RUNTIME_FIXTURE_NAMES = (
     FIXTURE_CURRENT_REPO,
@@ -166,6 +167,7 @@ FULL_SUB2_RUNTIME_FIXTURE_NAMES = (
     FIXTURE_TRANSIENT_FP_DEBT,
     FIXTURE_STEP2A_CANDIDATE_PERSISTENT_CORE_ABSENCE,
     FIXTURE_LIVE_P1_AUTHORITY_CONVERSION,
+    FIXTURE_LIVE_R1_BACKWARD_LAUNCH,
 )
 
 GATED_SUB2_CHECKPOINT_PATH_REASON = (
@@ -991,6 +993,12 @@ def live_p1_authority_conversion_surfaces(
     return result
 
 
+def post_p1_live_scaffold_surfaces(
+    p1_receipt: Any,
+) -> tuple[FullSub2RuntimeSurfaceReceipt, ...]:
+    return apply_live_p1_conversion_surface_overrides(p1_receipt)
+
+
 def apply_live_r1_backward_wiring_surface_overrides(
     receipt: Any,
     *,
@@ -1041,7 +1049,7 @@ def apply_live_r1_backward_wiring_surface_overrides(
     base_by_id = {surface.surface_id: surface for surface in surfaces}
     reason = (
         f"{GATED_LOSSLESS_RECOMPUTE_REASON}; R1-L launch/runtime validation "
-        f"source_commit_sha={receipt.source_commit_sha}; "
+        f"launch_source_commit_sha={receipt.launch_source_commit_sha}; "
         "Step 3A1 saved-tensor-hook receipt proves no extra stored internal "
         "recurrence-block saved payload while boundary z_H/z_L inputs remain "
         "accounted under activations_residuals"
@@ -1092,6 +1100,17 @@ def live_r1_backward_wiring_surfaces(
         base_surfaces=base_surfaces,
     )
     return build_full_sub2_runtime_ready_for_science(overridden)
+
+
+def live_r1_backward_launch_surfaces(
+    r1l_receipt: Any,
+    p1_receipt: Any,
+) -> FullSub2RuntimeReadyForScienceReceipt:
+    base = post_p1_live_scaffold_surfaces(p1_receipt)
+    return live_r1_backward_wiring_surfaces(
+        r1l_receipt,
+        base_surfaces=base,
+    )
 
 
 def fixture_full_sub2_runtime_ready_for_science(
@@ -1177,6 +1196,13 @@ def fixture_full_sub2_runtime_ready_for_science(
             "live_p1_authority_conversion requires an explicit validated receipt JSON; "
             "use scripts/hrm_text_158_full_sub2_runtime_readiness.py "
             "--fixture live_p1_authority_conversion --live-p1-receipt-json PATH"
+        )
+    elif fixture_name == FIXTURE_LIVE_R1_BACKWARD_LAUNCH:
+        raise ValueError(
+            "live_r1_backward_launch requires validated P1 and R1-L receipts; "
+            "use scripts/hrm_text_158_full_sub2_runtime_readiness.py "
+            "--fixture live_r1_backward_launch --live-p1-receipt-json PATH "
+            "--r1l-receipt-json PATH"
         )
     else:
         valid = ", ".join(FULL_SUB2_RUNTIME_FIXTURE_NAMES)

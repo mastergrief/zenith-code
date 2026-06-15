@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
+import hashlib
 import subprocess
 import sys
 
@@ -62,9 +63,11 @@ from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
 from calm.hrm_text_158.native_full_stack.activation_relief import (
     AUTHORIZED_R1_L_SURFACE_TUPLE,
     PROOF_KIND_LAUNCH_RUNTIME_VALIDATION,
+    R1_CPU_BASE_COMMIT_SHA,
     BackwardRecomputeSavedTensorReceipt,
     LaunchRuntimeBackwardValidationReceipt,
     build_backward_recompute_saved_tensor_receipt,
+    build_launch_runtime_backward_validation_receipt,
     build_trainer_backward_wiring_proof_receipt,
 )
 from calm.llm_computer.tests.test_hrm_text_158_activation_relief import (
@@ -1152,12 +1155,48 @@ def _mint_cpu_wiring_receipt():
 
 
 def _mint_valid_launch_receipt() -> LaunchRuntimeBackwardValidationReceipt:
-    return LaunchRuntimeBackwardValidationReceipt(
-        proof_kind=PROOF_KIND_LAUNCH_RUNTIME_VALIDATION,
-        live_readiness_row_flip_authorized=True,
-        readiness_row_flip_authorized_surface_names=AUTHORIZED_R1_L_SURFACE_TUPLE,
-        source_commit_sha="launch-runtime-test-sha",
-        launch_runtime_validation_pass=True,
+    launch_source = R1_CPU_BASE_COMMIT_SHA
+    manifest = {
+        "r1_cpu_base_commit_sha": R1_CPU_BASE_COMMIT_SHA,
+        "launch_source_commit_sha": launch_source,
+        "archive_created_at_utc": "2026-06-15T00:00:00Z",
+        "archive_method": "git_archive_HEAD",
+    }
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONPATH": ".",
+        "R1L_LAUNCH_RECEIPT_JSON": "/tmp/run/receipts/r1l_launch_runtime_receipt.json",
+        "R1L_LAUNCH_LOG": "/tmp/run/logs/r1l_launch.log",
+        "R1L_W6_PARENT_PATH": "/tmp/run/artifacts/w6_parent_readonly.pt",
+    }
+    return build_launch_runtime_backward_validation_receipt(
+        launch_source_commit_sha=launch_source,
+        launch_manifest_embedded=manifest,
+        proof_env_embedded=env,
+        proof_command_argv=("pytest", "launch"),
+        clean_run_dir_sha256="a" * 64,
+        w6_parent_path="/tmp/run/artifacts/w6_parent_readonly.pt",
+        gpu_name="synthetic-gpu",
+        gpu_uuid="gpu-uuid-test",
+        driver_version="550.00",
+        cuda_version="12.4",
+        torch_version="2.5.0",
+        model_config_digest_sha256="b" * 64,
+        proof_batch_digest_sha256="c" * 64,
+        retained_support_digest_sha256="d" * 64,
+        main_baseline_saved_tensor_count=20,
+        main_recompute_saved_tensor_count=15,
+        main_saved_tensor_payload_bytes_baseline=1000,
+        main_saved_tensor_payload_bytes_recompute=800,
+        retained_side_in_scope=True,
+        retained_side_baseline_saved_tensor_count=18,
+        retained_side_recompute_saved_tensor_count=14,
+        retained_saved_tensor_payload_bytes_delta=400,
+        paired_run_count=3,
+        cuda_peak_allocated_bytes_baseline_median=64 * 1024 * 1024,
+        cuda_peak_allocated_bytes_recompute_median=56 * 1024 * 1024,
+        cuda_peak_reserved_bytes_delta_median=0,
+        log_artifact_sha256=hashlib.sha256(b"r1l launch log bytes").hexdigest(),
     )
 
 

@@ -6,8 +6,12 @@ gpu:0 resource-lane run because CPU tests cannot measure CUDA activation peaks.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Mapping, Sequence
+import hashlib
+import json
+import subprocess
+from dataclasses import dataclass, replace
+from pathlib import Path
+from typing import Any, Mapping, Sequence
 
 
 ACTIVATION_RELIEF_SCHEMA_VERSION = "hrm_text_158_activation_relief/v0.lossless_recompute"
@@ -559,6 +563,8 @@ def validate_backward_recompute_saved_tensor_receipt(
 
 
 def _require_nonempty_string(value: object, *, field_name: str) -> str:
+    if value is None:
+        raise ValueError(f"{field_name} must be present")
     text = str(value)
     if not text.strip():
         raise ValueError(f"{field_name} must be non-empty")
@@ -842,6 +848,39 @@ TRAINER_BACKWARD_WIRING_NON_CLAIMS = (
     "does not claim activations_residuals sub2",
 )
 
+LAUNCH_RUNTIME_BACKWARD_RECEIPT_SCHEMA_VERSION = (
+    "hrm_text_158_r1_backward_launch/v1.gpu_runtime_validation"
+)
+LAUNCH_RUNTIME_BACKWARD_TARGET_NAME = "r1_backward_saved_tensors_launch_runtime"
+R1_CPU_BASE_COMMIT_SHA = "717f6346324388f83126763769c30b9bad53dc45"
+W6_PARENT_SHA256_PINNED = (
+    "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec"
+)
+LAUNCH_RUNTIME_NON_CLAIMS = (
+    "pre_full_stack_diagnostic exception only; NOT ready_for_main_science",
+    "does NOT prove activations_residuals / attention_kv / optimizer_credit_state / native_kernelized_hot_path sub2",
+    "does NOT prove learning, acquisition, retention, or throughput",
+    "does NOT mutate banked W6 parent .pt",
+    "does NOT authorize full training or optimizer resume",
+    "tiny GPU smoke is liveness-only; cannot mint or flip",
+)
+PROOF_ENV_HASH_KEYS = (
+    "PYTHONDONTWRITEBYTECODE",
+    "PYTHONPATH",
+    "CUDA_VISIBLE_DEVICES",
+    "R1L_LAUNCH_RECEIPT_JSON",
+    "R1L_LAUNCH_LOG",
+    "R1L_W6_PARENT_PATH",
+    "TORCH_CUDA_ALLOC_CONF",
+    "CUBLAS_WORKSPACE_CONFIG",
+)
+LAUNCH_MANIFEST_EMBEDDED_KEYS = (
+    "r1_cpu_base_commit_sha",
+    "launch_source_commit_sha",
+    "archive_created_at_utc",
+    "archive_method",
+)
+
 
 @dataclass(frozen=True)
 class TrainerBackwardWiringProofReceipt:
@@ -919,24 +958,733 @@ class TrainerBackwardWiringProofReceipt:
 
 @dataclass(frozen=True)
 class LaunchRuntimeBackwardValidationReceipt:
-    """Deferred R1-L receipt shape; synthetic mint allowed in CPU applier tests."""
+    """R1-L GPU launch/runtime validation receipt (schema v1)."""
 
+    schema_version: str
+    target_name: str
     proof_kind: str
     live_readiness_row_flip_authorized: bool
     readiness_row_flip_authorized_surface_names: tuple[str, ...]
-    source_commit_sha: str
+    r1_cpu_base_commit_sha: str
+    launch_source_commit_sha: str
+    ancestry_verified_at_launch_preflight: bool
     launch_runtime_validation_pass: bool
+    launch_manifest_sha256: str
+    launch_manifest_embedded: Mapping[str, str]
+    proof_env_embedded: Mapping[str, str]
+    proof_command_argv: tuple[str, ...]
+    proof_env_hash_sha256: str
+    clean_run_dir_sha256: str
+    w6_parent_path: str
+    w6_parent_sha256_before: str
+    w6_parent_sha256_after: str
+    gpu_name: str
+    gpu_uuid: str
+    driver_version: str
+    cuda_version: str
+    torch_version: str
+    gpu_identity_sha256: str
+    model_config_digest_sha256: str
+    proof_batch_digest_sha256: str
+    retained_support_digest_sha256: str
+    main_path_proven: bool
+    main_recompute_checkpoint_fired: bool
+    main_baseline_saved_tensor_count: int
+    main_recompute_saved_tensor_count: int
+    main_internal_payload_tensor_count: int
+    main_saved_tensor_payload_bytes_baseline: int
+    main_saved_tensor_payload_bytes_recompute: int
+    main_saved_tensor_payload_bytes_delta: int
+    retained_side_in_scope: bool
+    retained_side_path_proven: bool
+    retained_side_recompute_checkpoint_fired: bool
+    retained_side_baseline_saved_tensor_count: int
+    retained_side_recompute_saved_tensor_count: int
+    retained_side_internal_payload_tensor_count: int
+    retained_saved_tensor_payload_bytes_delta: int
+    paired_run_count: int
+    cuda_peak_allocated_bytes_baseline_median: int
+    cuda_peak_allocated_bytes_recompute_median: int
+    cuda_peak_allocated_bytes_delta_median: int
+    cuda_peak_reduction_threshold_bytes: int
+    cuda_peak_reduction_threshold_met: bool
+    cuda_peak_reserved_bytes_delta_median: int
+    loss_finite_main: bool
+    loss_finite_retained: bool
+    applier_base_surface_count_sub2: int
+    applier_result_sub2_surface_count: int
+    applier_result_ready_for_main_science: bool
+    applier_result_ready_for_pre_full_stack_diagnostic: bool
+    applier_flipped_surface_ids: tuple[str, ...]
+    log_artifact_sha256: str
+    canonical_launch_artifact_sha256: str
+    non_claims: tuple[str, ...]
 
     def to_dict(self) -> dict[str, object]:
         return {
+            "schema_version": self.schema_version,
+            "target_name": self.target_name,
             "proof_kind": self.proof_kind,
             "live_readiness_row_flip_authorized": self.live_readiness_row_flip_authorized,
             "readiness_row_flip_authorized_surface_names": list(
                 self.readiness_row_flip_authorized_surface_names
             ),
-            "source_commit_sha": self.source_commit_sha,
+            "r1_cpu_base_commit_sha": self.r1_cpu_base_commit_sha,
+            "launch_source_commit_sha": self.launch_source_commit_sha,
+            "ancestry_verified_at_launch_preflight": (
+                self.ancestry_verified_at_launch_preflight
+            ),
             "launch_runtime_validation_pass": self.launch_runtime_validation_pass,
+            "launch_manifest_sha256": self.launch_manifest_sha256,
+            "launch_manifest_embedded": dict(self.launch_manifest_embedded),
+            "proof_env_embedded": dict(self.proof_env_embedded),
+            "proof_command_argv": list(self.proof_command_argv),
+            "proof_env_hash_sha256": self.proof_env_hash_sha256,
+            "clean_run_dir_sha256": self.clean_run_dir_sha256,
+            "w6_parent_path": self.w6_parent_path,
+            "w6_parent_sha256_before": self.w6_parent_sha256_before,
+            "w6_parent_sha256_after": self.w6_parent_sha256_after,
+            "gpu_name": self.gpu_name,
+            "gpu_uuid": self.gpu_uuid,
+            "driver_version": self.driver_version,
+            "cuda_version": self.cuda_version,
+            "torch_version": self.torch_version,
+            "gpu_identity_sha256": self.gpu_identity_sha256,
+            "model_config_digest_sha256": self.model_config_digest_sha256,
+            "proof_batch_digest_sha256": self.proof_batch_digest_sha256,
+            "retained_support_digest_sha256": self.retained_support_digest_sha256,
+            "main_path_proven": self.main_path_proven,
+            "main_recompute_checkpoint_fired": self.main_recompute_checkpoint_fired,
+            "main_baseline_saved_tensor_count": self.main_baseline_saved_tensor_count,
+            "main_recompute_saved_tensor_count": self.main_recompute_saved_tensor_count,
+            "main_internal_payload_tensor_count": self.main_internal_payload_tensor_count,
+            "main_saved_tensor_payload_bytes_baseline": (
+                self.main_saved_tensor_payload_bytes_baseline
+            ),
+            "main_saved_tensor_payload_bytes_recompute": (
+                self.main_saved_tensor_payload_bytes_recompute
+            ),
+            "main_saved_tensor_payload_bytes_delta": (
+                self.main_saved_tensor_payload_bytes_delta
+            ),
+            "retained_side_in_scope": self.retained_side_in_scope,
+            "retained_side_path_proven": self.retained_side_path_proven,
+            "retained_side_recompute_checkpoint_fired": (
+                self.retained_side_recompute_checkpoint_fired
+            ),
+            "retained_side_baseline_saved_tensor_count": (
+                self.retained_side_baseline_saved_tensor_count
+            ),
+            "retained_side_recompute_saved_tensor_count": (
+                self.retained_side_recompute_saved_tensor_count
+            ),
+            "retained_side_internal_payload_tensor_count": (
+                self.retained_side_internal_payload_tensor_count
+            ),
+            "retained_saved_tensor_payload_bytes_delta": (
+                self.retained_saved_tensor_payload_bytes_delta
+            ),
+            "paired_run_count": self.paired_run_count,
+            "cuda_peak_allocated_bytes_baseline_median": (
+                self.cuda_peak_allocated_bytes_baseline_median
+            ),
+            "cuda_peak_allocated_bytes_recompute_median": (
+                self.cuda_peak_allocated_bytes_recompute_median
+            ),
+            "cuda_peak_allocated_bytes_delta_median": (
+                self.cuda_peak_allocated_bytes_delta_median
+            ),
+            "cuda_peak_reduction_threshold_bytes": (
+                self.cuda_peak_reduction_threshold_bytes
+            ),
+            "cuda_peak_reduction_threshold_met": self.cuda_peak_reduction_threshold_met,
+            "cuda_peak_reserved_bytes_delta_median": (
+                self.cuda_peak_reserved_bytes_delta_median
+            ),
+            "loss_finite_main": self.loss_finite_main,
+            "loss_finite_retained": self.loss_finite_retained,
+            "applier_base_surface_count_sub2": self.applier_base_surface_count_sub2,
+            "applier_result_sub2_surface_count": self.applier_result_sub2_surface_count,
+            "applier_result_ready_for_main_science": (
+                self.applier_result_ready_for_main_science
+            ),
+            "applier_result_ready_for_pre_full_stack_diagnostic": (
+                self.applier_result_ready_for_pre_full_stack_diagnostic
+            ),
+            "applier_flipped_surface_ids": list(self.applier_flipped_surface_ids),
+            "log_artifact_sha256": self.log_artifact_sha256,
+            "canonical_launch_artifact_sha256": self.canonical_launch_artifact_sha256,
+            "non_claims": list(self.non_claims),
         }
+
+
+def _canonical_json_dumps(obj: object) -> str:
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def _canonical_json_sha256(obj: object) -> str:
+    return hashlib.sha256(_canonical_json_dumps(obj).encode("utf-8")).hexdigest()
+
+
+def compute_proof_env_hash_sha256(env_embedded: Mapping[str, str]) -> str:
+    payload = {key: str(env_embedded.get(key, "")) for key in PROOF_ENV_HASH_KEYS}
+    return _canonical_json_sha256(payload)
+
+
+def compute_launch_manifest_sha256(manifest_embedded: Mapping[str, str]) -> str:
+    return _canonical_json_sha256(dict(manifest_embedded))
+
+
+def compute_gpu_identity_sha256(
+    *,
+    gpu_name: str,
+    gpu_uuid: str,
+    driver_version: str,
+    cuda_version: str,
+    torch_version: str,
+) -> str:
+    return _canonical_json_sha256(
+        {
+            "gpu_name": gpu_name,
+            "gpu_uuid": gpu_uuid,
+            "driver_version": driver_version,
+            "cuda_version": cuda_version,
+            "torch_version": torch_version,
+        }
+    )
+
+
+def compute_canonical_launch_artifact_sha256(receipt_dict: Mapping[str, object]) -> str:
+    payload = dict(receipt_dict)
+    payload["canonical_launch_artifact_sha256"] = None
+    return _canonical_json_sha256(payload)
+
+
+def _embedded_mapping(
+    value: object,
+    *,
+    field_name: str,
+    required_keys: Sequence[str] | None = None,
+) -> dict[str, str]:
+    if not isinstance(value, Mapping):
+        raise TypeError(f"{field_name} must be a mapping")
+    embedded = {str(key): str(item) for key, item in value.items()}
+    if required_keys is not None:
+        missing = [key for key in required_keys if key not in embedded]
+        if missing:
+            raise ValueError(f"{field_name} missing required keys: {', '.join(missing)}")
+    return embedded
+
+
+def _string_tuple(value: object, *, field_name: str) -> tuple[str, ...]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        raise TypeError(f"{field_name} must be a sequence of strings")
+    return tuple(str(item) for item in value)
+
+
+def launch_runtime_backward_receipt_from_dict(
+    payload: Mapping[str, object],
+) -> LaunchRuntimeBackwardValidationReceipt:
+    return LaunchRuntimeBackwardValidationReceipt(
+        schema_version=_require_nonempty_string(
+            payload.get("schema_version"),
+            field_name="schema_version",
+        ),
+        target_name=_require_nonempty_string(
+            payload.get("target_name"),
+            field_name="target_name",
+        ),
+        proof_kind=_require_nonempty_string(payload.get("proof_kind"), field_name="proof_kind"),
+        live_readiness_row_flip_authorized=bool(
+            payload.get("live_readiness_row_flip_authorized")
+        ),
+        readiness_row_flip_authorized_surface_names=_string_tuple(
+            payload.get("readiness_row_flip_authorized_surface_names"),
+            field_name="readiness_row_flip_authorized_surface_names",
+        ),
+        r1_cpu_base_commit_sha=_require_nonempty_string(
+            payload.get("r1_cpu_base_commit_sha"),
+            field_name="r1_cpu_base_commit_sha",
+        ),
+        launch_source_commit_sha=_require_nonempty_string(
+            payload.get("launch_source_commit_sha"),
+            field_name="launch_source_commit_sha",
+        ),
+        ancestry_verified_at_launch_preflight=bool(
+            payload.get("ancestry_verified_at_launch_preflight")
+        ),
+        launch_runtime_validation_pass=bool(payload.get("launch_runtime_validation_pass")),
+        launch_manifest_sha256=_require_nonempty_string(
+            payload.get("launch_manifest_sha256"),
+            field_name="launch_manifest_sha256",
+        ),
+        launch_manifest_embedded=_embedded_mapping(
+            payload.get("launch_manifest_embedded"),
+            field_name="launch_manifest_embedded",
+            required_keys=LAUNCH_MANIFEST_EMBEDDED_KEYS,
+        ),
+        proof_env_embedded=_embedded_mapping(
+            payload.get("proof_env_embedded"),
+            field_name="proof_env_embedded",
+        ),
+        proof_command_argv=_string_tuple(
+            payload.get("proof_command_argv"),
+            field_name="proof_command_argv",
+        ),
+        proof_env_hash_sha256=_require_nonempty_string(
+            payload.get("proof_env_hash_sha256"),
+            field_name="proof_env_hash_sha256",
+        ),
+        clean_run_dir_sha256=_require_nonempty_string(
+            payload.get("clean_run_dir_sha256"),
+            field_name="clean_run_dir_sha256",
+        ),
+        w6_parent_path=_require_nonempty_string(
+            payload.get("w6_parent_path"),
+            field_name="w6_parent_path",
+        ),
+        w6_parent_sha256_before=_require_nonempty_string(
+            payload.get("w6_parent_sha256_before"),
+            field_name="w6_parent_sha256_before",
+        ),
+        w6_parent_sha256_after=_require_nonempty_string(
+            payload.get("w6_parent_sha256_after"),
+            field_name="w6_parent_sha256_after",
+        ),
+        gpu_name=_require_nonempty_string(payload.get("gpu_name"), field_name="gpu_name"),
+        gpu_uuid=_require_nonempty_string(payload.get("gpu_uuid"), field_name="gpu_uuid"),
+        driver_version=_require_nonempty_string(
+            payload.get("driver_version"),
+            field_name="driver_version",
+        ),
+        cuda_version=_require_nonempty_string(
+            payload.get("cuda_version"),
+            field_name="cuda_version",
+        ),
+        torch_version=_require_nonempty_string(
+            payload.get("torch_version"),
+            field_name="torch_version",
+        ),
+        gpu_identity_sha256=_require_nonempty_string(
+            payload.get("gpu_identity_sha256"),
+            field_name="gpu_identity_sha256",
+        ),
+        model_config_digest_sha256=_require_nonempty_string(
+            payload.get("model_config_digest_sha256"),
+            field_name="model_config_digest_sha256",
+        ),
+        proof_batch_digest_sha256=_require_nonempty_string(
+            payload.get("proof_batch_digest_sha256"),
+            field_name="proof_batch_digest_sha256",
+        ),
+        retained_support_digest_sha256=str(payload.get("retained_support_digest_sha256", "")),
+        main_path_proven=bool(payload.get("main_path_proven")),
+        main_recompute_checkpoint_fired=bool(payload.get("main_recompute_checkpoint_fired")),
+        main_baseline_saved_tensor_count=_require_int(
+            payload.get("main_baseline_saved_tensor_count"),
+            field_name="main_baseline_saved_tensor_count",
+        ),
+        main_recompute_saved_tensor_count=_require_int(
+            payload.get("main_recompute_saved_tensor_count"),
+            field_name="main_recompute_saved_tensor_count",
+        ),
+        main_internal_payload_tensor_count=_require_int(
+            payload.get("main_internal_payload_tensor_count"),
+            field_name="main_internal_payload_tensor_count",
+        ),
+        main_saved_tensor_payload_bytes_baseline=_require_int(
+            payload.get("main_saved_tensor_payload_bytes_baseline"),
+            field_name="main_saved_tensor_payload_bytes_baseline",
+        ),
+        main_saved_tensor_payload_bytes_recompute=_require_int(
+            payload.get("main_saved_tensor_payload_bytes_recompute"),
+            field_name="main_saved_tensor_payload_bytes_recompute",
+        ),
+        main_saved_tensor_payload_bytes_delta=_require_int(
+            payload.get("main_saved_tensor_payload_bytes_delta"),
+            field_name="main_saved_tensor_payload_bytes_delta",
+        ),
+        retained_side_in_scope=bool(payload.get("retained_side_in_scope")),
+        retained_side_path_proven=bool(payload.get("retained_side_path_proven")),
+        retained_side_recompute_checkpoint_fired=bool(
+            payload.get("retained_side_recompute_checkpoint_fired")
+        ),
+        retained_side_baseline_saved_tensor_count=_require_int(
+            payload.get("retained_side_baseline_saved_tensor_count"),
+            field_name="retained_side_baseline_saved_tensor_count",
+        ),
+        retained_side_recompute_saved_tensor_count=_require_int(
+            payload.get("retained_side_recompute_saved_tensor_count"),
+            field_name="retained_side_recompute_saved_tensor_count",
+        ),
+        retained_side_internal_payload_tensor_count=_require_int(
+            payload.get("retained_side_internal_payload_tensor_count"),
+            field_name="retained_side_internal_payload_tensor_count",
+        ),
+        retained_saved_tensor_payload_bytes_delta=_require_int(
+            payload.get("retained_saved_tensor_payload_bytes_delta"),
+            field_name="retained_saved_tensor_payload_bytes_delta",
+        ),
+        paired_run_count=_require_int(payload.get("paired_run_count"), field_name="paired_run_count"),
+        cuda_peak_allocated_bytes_baseline_median=_require_int(
+            payload.get("cuda_peak_allocated_bytes_baseline_median"),
+            field_name="cuda_peak_allocated_bytes_baseline_median",
+        ),
+        cuda_peak_allocated_bytes_recompute_median=_require_int(
+            payload.get("cuda_peak_allocated_bytes_recompute_median"),
+            field_name="cuda_peak_allocated_bytes_recompute_median",
+        ),
+        cuda_peak_allocated_bytes_delta_median=_require_int(
+            payload.get("cuda_peak_allocated_bytes_delta_median"),
+            field_name="cuda_peak_allocated_bytes_delta_median",
+        ),
+        cuda_peak_reduction_threshold_bytes=_require_int(
+            payload.get("cuda_peak_reduction_threshold_bytes"),
+            field_name="cuda_peak_reduction_threshold_bytes",
+        ),
+        cuda_peak_reduction_threshold_met=bool(payload.get("cuda_peak_reduction_threshold_met")),
+        cuda_peak_reserved_bytes_delta_median=_require_int(
+            payload.get("cuda_peak_reserved_bytes_delta_median"),
+            field_name="cuda_peak_reserved_bytes_delta_median",
+        ),
+        loss_finite_main=bool(payload.get("loss_finite_main")),
+        loss_finite_retained=bool(payload.get("loss_finite_retained")),
+        applier_base_surface_count_sub2=_require_int(
+            payload.get("applier_base_surface_count_sub2"),
+            field_name="applier_base_surface_count_sub2",
+        ),
+        applier_result_sub2_surface_count=_require_int(
+            payload.get("applier_result_sub2_surface_count"),
+            field_name="applier_result_sub2_surface_count",
+        ),
+        applier_result_ready_for_main_science=bool(
+            payload.get("applier_result_ready_for_main_science")
+        ),
+        applier_result_ready_for_pre_full_stack_diagnostic=bool(
+            payload.get("applier_result_ready_for_pre_full_stack_diagnostic")
+        ),
+        applier_flipped_surface_ids=_string_tuple(
+            payload.get("applier_flipped_surface_ids"),
+            field_name="applier_flipped_surface_ids",
+        ),
+        log_artifact_sha256=_require_nonempty_string(
+            payload.get("log_artifact_sha256"),
+            field_name="log_artifact_sha256",
+        ),
+        canonical_launch_artifact_sha256=_require_nonempty_string(
+            payload.get("canonical_launch_artifact_sha256"),
+            field_name="canonical_launch_artifact_sha256",
+        ),
+        non_claims=_string_tuple(payload.get("non_claims"), field_name="non_claims"),
+    )
+
+
+def verify_launch_ancestry_preflight(
+    *,
+    repo_root: str | Path,
+    launch_source_commit_sha: str | None = None,
+    r1_cpu_base_commit_sha: str = R1_CPU_BASE_COMMIT_SHA,
+) -> str:
+    repo = Path(repo_root)
+    source = launch_source_commit_sha
+    if source is None:
+        source = subprocess.check_output(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            text=True,
+        ).strip()
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "merge-base",
+            "--is-ancestor",
+            r1_cpu_base_commit_sha,
+            source,
+        ],
+        check=False,
+    )
+    if result.returncode != 0:
+        raise ValueError("launch source is not a descendant of R1 CPU base commit")
+    return source
+
+
+def build_launch_runtime_backward_validation_receipt(
+    *,
+    launch_source_commit_sha: str,
+    launch_manifest_embedded: Mapping[str, str],
+    proof_env_embedded: Mapping[str, str],
+    proof_command_argv: Sequence[str],
+    clean_run_dir_sha256: str,
+    w6_parent_path: str,
+    w6_parent_sha256: str = W6_PARENT_SHA256_PINNED,
+    gpu_name: str,
+    gpu_uuid: str,
+    driver_version: str,
+    cuda_version: str,
+    torch_version: str,
+    model_config_digest_sha256: str,
+    proof_batch_digest_sha256: str,
+    retained_support_digest_sha256: str,
+    main_baseline_saved_tensor_count: int,
+    main_recompute_saved_tensor_count: int,
+    main_saved_tensor_payload_bytes_baseline: int,
+    main_saved_tensor_payload_bytes_recompute: int,
+    retained_side_in_scope: bool,
+    retained_side_baseline_saved_tensor_count: int = 0,
+    retained_side_recompute_saved_tensor_count: int = 0,
+    retained_saved_tensor_payload_bytes_delta: int = 0,
+    paired_run_count: int,
+    cuda_peak_allocated_bytes_baseline_median: int,
+    cuda_peak_allocated_bytes_recompute_median: int,
+    cuda_peak_reserved_bytes_delta_median: int,
+    log_artifact_sha256: str,
+    applier_base_surface_count_sub2: int = 3,
+    applier_result_sub2_surface_count: int = 4,
+    ancestry_verified_at_launch_preflight: bool = True,
+    r1_cpu_base_commit_sha: str = R1_CPU_BASE_COMMIT_SHA,
+) -> LaunchRuntimeBackwardValidationReceipt:
+    manifest = dict(launch_manifest_embedded)
+    env = dict(proof_env_embedded)
+    main_delta = main_saved_tensor_payload_bytes_baseline - main_saved_tensor_payload_bytes_recompute
+    cuda_delta = (
+        cuda_peak_allocated_bytes_baseline_median
+        - cuda_peak_allocated_bytes_recompute_median
+    )
+    threshold = max(8 * 1024 * 1024, int(0.005 * cuda_peak_allocated_bytes_baseline_median))
+    gpu_identity_sha256 = compute_gpu_identity_sha256(
+        gpu_name=gpu_name,
+        gpu_uuid=gpu_uuid,
+        driver_version=driver_version,
+        cuda_version=cuda_version,
+        torch_version=torch_version,
+    )
+    receipt_without_hash = LaunchRuntimeBackwardValidationReceipt(
+        schema_version=LAUNCH_RUNTIME_BACKWARD_RECEIPT_SCHEMA_VERSION,
+        target_name=LAUNCH_RUNTIME_BACKWARD_TARGET_NAME,
+        proof_kind=PROOF_KIND_LAUNCH_RUNTIME_VALIDATION,
+        live_readiness_row_flip_authorized=True,
+        readiness_row_flip_authorized_surface_names=AUTHORIZED_R1_L_SURFACE_TUPLE,
+        r1_cpu_base_commit_sha=r1_cpu_base_commit_sha,
+        launch_source_commit_sha=launch_source_commit_sha,
+        ancestry_verified_at_launch_preflight=ancestry_verified_at_launch_preflight,
+        launch_runtime_validation_pass=True,
+        launch_manifest_sha256=compute_launch_manifest_sha256(manifest),
+        launch_manifest_embedded=manifest,
+        proof_env_embedded=env,
+        proof_command_argv=tuple(str(arg) for arg in proof_command_argv),
+        proof_env_hash_sha256=compute_proof_env_hash_sha256(env),
+        clean_run_dir_sha256=clean_run_dir_sha256,
+        w6_parent_path=w6_parent_path,
+        w6_parent_sha256_before=w6_parent_sha256,
+        w6_parent_sha256_after=w6_parent_sha256,
+        gpu_name=gpu_name,
+        gpu_uuid=gpu_uuid,
+        driver_version=driver_version,
+        cuda_version=cuda_version,
+        torch_version=torch_version,
+        gpu_identity_sha256=gpu_identity_sha256,
+        model_config_digest_sha256=model_config_digest_sha256,
+        proof_batch_digest_sha256=proof_batch_digest_sha256,
+        retained_support_digest_sha256=retained_support_digest_sha256,
+        main_path_proven=True,
+        main_recompute_checkpoint_fired=True,
+        main_baseline_saved_tensor_count=main_baseline_saved_tensor_count,
+        main_recompute_saved_tensor_count=main_recompute_saved_tensor_count,
+        main_internal_payload_tensor_count=0,
+        main_saved_tensor_payload_bytes_baseline=main_saved_tensor_payload_bytes_baseline,
+        main_saved_tensor_payload_bytes_recompute=main_saved_tensor_payload_bytes_recompute,
+        main_saved_tensor_payload_bytes_delta=main_delta,
+        retained_side_in_scope=retained_side_in_scope,
+        retained_side_path_proven=retained_side_in_scope,
+        retained_side_recompute_checkpoint_fired=retained_side_in_scope,
+        retained_side_baseline_saved_tensor_count=retained_side_baseline_saved_tensor_count,
+        retained_side_recompute_saved_tensor_count=retained_side_recompute_saved_tensor_count,
+        retained_side_internal_payload_tensor_count=0,
+        retained_saved_tensor_payload_bytes_delta=retained_saved_tensor_payload_bytes_delta,
+        paired_run_count=paired_run_count,
+        cuda_peak_allocated_bytes_baseline_median=cuda_peak_allocated_bytes_baseline_median,
+        cuda_peak_allocated_bytes_recompute_median=cuda_peak_allocated_bytes_recompute_median,
+        cuda_peak_allocated_bytes_delta_median=cuda_delta,
+        cuda_peak_reduction_threshold_bytes=threshold,
+        cuda_peak_reduction_threshold_met=cuda_delta >= threshold,
+        cuda_peak_reserved_bytes_delta_median=cuda_peak_reserved_bytes_delta_median,
+        loss_finite_main=True,
+        loss_finite_retained=retained_side_in_scope,
+        applier_base_surface_count_sub2=applier_base_surface_count_sub2,
+        applier_result_sub2_surface_count=applier_result_sub2_surface_count,
+        applier_result_ready_for_main_science=False,
+        applier_result_ready_for_pre_full_stack_diagnostic=True,
+        applier_flipped_surface_ids=AUTHORIZED_R1_L_SURFACE_TUPLE,
+        log_artifact_sha256=log_artifact_sha256,
+        canonical_launch_artifact_sha256="",
+        non_claims=LAUNCH_RUNTIME_NON_CLAIMS,
+    )
+    canonical_hash = compute_canonical_launch_artifact_sha256(receipt_without_hash.to_dict())
+    receipt = replace(
+        receipt_without_hash,
+        canonical_launch_artifact_sha256=canonical_hash,
+    )
+    validate_launch_runtime_backward_receipt(receipt)
+    return receipt
+
+
+def validate_launch_runtime_backward_receipt(
+    receipt: LaunchRuntimeBackwardValidationReceipt,
+) -> None:
+    if receipt.schema_version != LAUNCH_RUNTIME_BACKWARD_RECEIPT_SCHEMA_VERSION:
+        raise ValueError("launch runtime receipt schema mismatch")
+    if receipt.target_name != LAUNCH_RUNTIME_BACKWARD_TARGET_NAME:
+        raise ValueError("launch runtime receipt target mismatch")
+    if receipt.proof_kind != PROOF_KIND_LAUNCH_RUNTIME_VALIDATION:
+        raise ValueError("launch runtime receipt proof_kind mismatch")
+    if not receipt.live_readiness_row_flip_authorized:
+        raise ValueError("launch runtime receipt must authorize live row flip")
+    authorized = tuple(receipt.readiness_row_flip_authorized_surface_names)
+    if authorized != AUTHORIZED_R1_L_SURFACE_TUPLE:
+        raise ValueError("launch runtime receipt authorized surface tuple mismatch")
+    if receipt.r1_cpu_base_commit_sha != R1_CPU_BASE_COMMIT_SHA:
+        raise ValueError("launch runtime receipt r1_cpu_base_commit_sha mismatch")
+    launch_source = _require_nonempty_string(
+        receipt.launch_source_commit_sha,
+        field_name="launch_source_commit_sha",
+    )
+    manifest_embedded = _embedded_mapping(
+        receipt.launch_manifest_embedded,
+        field_name="launch_manifest_embedded",
+        required_keys=LAUNCH_MANIFEST_EMBEDDED_KEYS,
+    )
+    if launch_source != manifest_embedded["launch_source_commit_sha"]:
+        raise ValueError("launch runtime receipt launch_source_commit_sha mismatch")
+    if manifest_embedded["r1_cpu_base_commit_sha"] != receipt.r1_cpu_base_commit_sha:
+        raise ValueError("launch manifest embedded r1_cpu_base_commit_sha mismatch")
+    if not receipt.ancestry_verified_at_launch_preflight:
+        raise ValueError("launch runtime receipt requires ancestry_verified_at_launch_preflight")
+    if not receipt.launch_runtime_validation_pass:
+        raise ValueError("launch runtime receipt requires launch_runtime_validation_pass")
+    if receipt.launch_manifest_sha256 != compute_launch_manifest_sha256(manifest_embedded):
+        raise ValueError("launch runtime receipt launch_manifest_sha256 mismatch")
+    env_embedded = _embedded_mapping(
+        receipt.proof_env_embedded,
+        field_name="proof_env_embedded",
+    )
+    if receipt.proof_env_hash_sha256 != compute_proof_env_hash_sha256(env_embedded):
+        raise ValueError("launch runtime receipt proof_env_hash_sha256 mismatch")
+    if not receipt.proof_command_argv:
+        raise ValueError("launch runtime receipt requires proof_command_argv")
+    if receipt.w6_parent_sha256_before != W6_PARENT_SHA256_PINNED:
+        raise ValueError("launch runtime receipt w6_parent_sha256_before mismatch")
+    if receipt.w6_parent_sha256_after != receipt.w6_parent_sha256_before:
+        raise ValueError("launch runtime receipt w6_parent_sha256_after mismatch")
+    if not _require_nonempty_string(receipt.w6_parent_path, field_name="w6_parent_path"):
+        raise ValueError("launch runtime receipt requires w6_parent_path")
+    expected_gpu_identity = compute_gpu_identity_sha256(
+        gpu_name=receipt.gpu_name,
+        gpu_uuid=receipt.gpu_uuid,
+        driver_version=receipt.driver_version,
+        cuda_version=receipt.cuda_version,
+        torch_version=receipt.torch_version,
+    )
+    if receipt.gpu_identity_sha256 != expected_gpu_identity:
+        raise ValueError("launch runtime receipt gpu_identity_sha256 mismatch")
+    if not receipt.main_path_proven or not receipt.main_recompute_checkpoint_fired:
+        raise ValueError("launch runtime receipt requires main path mechanism proof")
+    if receipt.main_internal_payload_tensor_count != 0:
+        raise ValueError("launch runtime receipt main internal payload must be zero")
+    if receipt.main_baseline_saved_tensor_count <= receipt.main_recompute_saved_tensor_count:
+        raise ValueError("launch runtime receipt main saved tensor counts invalid")
+    if receipt.main_saved_tensor_payload_bytes_delta <= 0:
+        raise ValueError("launch runtime receipt main payload bytes delta must be > 0")
+    if receipt.retained_side_in_scope:
+        if not receipt.retained_side_path_proven:
+            raise ValueError("launch runtime receipt retained side must be proven when in scope")
+        if not receipt.retained_side_recompute_checkpoint_fired:
+            raise ValueError(
+                "launch runtime receipt retained-side recompute checkpoint must fire"
+            )
+        if receipt.retained_side_internal_payload_tensor_count != 0:
+            raise ValueError("launch runtime receipt retained internal payload must be zero")
+        if (
+            receipt.retained_side_baseline_saved_tensor_count
+            <= receipt.retained_side_recompute_saved_tensor_count
+        ):
+            raise ValueError("launch runtime receipt retained saved tensor counts invalid")
+        if receipt.retained_saved_tensor_payload_bytes_delta <= 0:
+            raise ValueError("launch runtime receipt retained payload bytes delta must be > 0")
+        if not receipt.loss_finite_retained:
+            raise ValueError("launch runtime receipt requires finite retained loss when in scope")
+    if receipt.paired_run_count < 3:
+        raise ValueError("launch runtime receipt requires paired_run_count >= 3")
+    expected_threshold = max(
+        8 * 1024 * 1024,
+        int(0.005 * receipt.cuda_peak_allocated_bytes_baseline_median),
+    )
+    if receipt.cuda_peak_reduction_threshold_bytes != expected_threshold:
+        raise ValueError("launch runtime receipt cuda threshold bytes mismatch")
+    threshold_met = (
+        receipt.cuda_peak_allocated_bytes_delta_median
+        >= receipt.cuda_peak_reduction_threshold_bytes
+    )
+    if receipt.cuda_peak_reduction_threshold_met != threshold_met:
+        raise ValueError("launch runtime receipt cuda threshold met flag mismatch")
+    if not receipt.loss_finite_main:
+        raise ValueError("launch runtime receipt requires finite main loss")
+    if receipt.applier_base_surface_count_sub2 != 3:
+        raise ValueError("launch runtime receipt applier base sub2 count must be 3")
+    if receipt.applier_result_sub2_surface_count != 4:
+        raise ValueError("launch runtime receipt applier result sub2 count must be 4")
+    if receipt.applier_result_ready_for_main_science:
+        raise ValueError("launch runtime receipt applier must not set ready_for_main_science")
+    if not receipt.applier_result_ready_for_pre_full_stack_diagnostic:
+        raise ValueError(
+            "launch runtime receipt applier must set ready_for_pre_full_stack_diagnostic"
+        )
+    if tuple(receipt.applier_flipped_surface_ids) != AUTHORIZED_R1_L_SURFACE_TUPLE:
+        raise ValueError("launch runtime receipt applier flipped surface ids mismatch")
+    if not _require_nonempty_string(
+        receipt.log_artifact_sha256,
+        field_name="log_artifact_sha256",
+    ):
+        raise ValueError("launch runtime receipt requires log_artifact_sha256")
+    if receipt.non_claims != LAUNCH_RUNTIME_NON_CLAIMS:
+        raise ValueError("launch runtime receipt non-claims must be exact")
+    recomputed_hash = compute_canonical_launch_artifact_sha256(receipt.to_dict())
+    if receipt.canonical_launch_artifact_sha256 != recomputed_hash:
+        raise ValueError("launch runtime receipt canonical_launch_artifact_sha256 mismatch")
+
+
+def validate_launch_runtime_backward_artifacts(
+    receipt: LaunchRuntimeBackwardValidationReceipt,
+    *,
+    launch_manifest_bytes: bytes,
+    env_snapshot_bytes: bytes,
+    log_bytes: bytes | None,
+) -> None:
+    if hashlib.sha256(launch_manifest_bytes).hexdigest() != receipt.launch_manifest_sha256:
+        raise ValueError("launch manifest bytes sha256 mismatch")
+    try:
+        manifest_payload = json.loads(launch_manifest_bytes.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError("launch manifest bytes are not valid JSON") from exc
+    if not isinstance(manifest_payload, dict):
+        raise ValueError("launch manifest bytes must decode to an object")
+    if str(manifest_payload.get("r1_cpu_base_commit_sha")) != receipt.r1_cpu_base_commit_sha:
+        raise ValueError("launch manifest r1_cpu_base_commit_sha mismatch")
+    if str(manifest_payload.get("launch_source_commit_sha")) != receipt.launch_source_commit_sha:
+        raise ValueError("launch manifest launch_source_commit_sha mismatch")
+    try:
+        env_payload = json.loads(env_snapshot_bytes.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError("env snapshot bytes are not valid JSON") from exc
+    if not isinstance(env_payload, dict):
+        raise ValueError("env snapshot bytes must decode to an object")
+    env_embedded = {str(key): str(value) for key, value in env_payload.items()}
+    if compute_proof_env_hash_sha256(env_embedded) != receipt.proof_env_hash_sha256:
+        raise ValueError("env snapshot proof_env_hash_sha256 mismatch")
+    if log_bytes is None or not log_bytes:
+        raise ValueError("launch log bytes are required")
+    if hashlib.sha256(log_bytes).hexdigest() != receipt.log_artifact_sha256:
+        raise ValueError("launch log bytes sha256 mismatch")
 
 
 def analyze_saved_tensor_hook_events(
@@ -1209,19 +1957,3 @@ def validate_trainer_backward_wiring_proof_receipt(
         raise ValueError("retained-side must show baseline > recompute saved tensors")
     if receipt.non_claims != TRAINER_BACKWARD_WIRING_NON_CLAIMS:
         raise ValueError("trainer backward wiring receipt non-claims must be exact")
-
-
-def validate_launch_runtime_backward_receipt(
-    receipt: LaunchRuntimeBackwardValidationReceipt,
-) -> None:
-    if receipt.proof_kind != PROOF_KIND_LAUNCH_RUNTIME_VALIDATION:
-        raise ValueError("launch runtime receipt proof_kind mismatch")
-    if not receipt.live_readiness_row_flip_authorized:
-        raise ValueError("launch runtime receipt must authorize live row flip")
-    authorized = tuple(receipt.readiness_row_flip_authorized_surface_names)
-    if authorized != AUTHORIZED_R1_L_SURFACE_TUPLE:
-        raise ValueError("launch runtime receipt authorized surface tuple mismatch")
-    if not _require_nonempty_string(receipt.source_commit_sha, field_name="source_commit_sha"):
-        raise ValueError("launch runtime receipt requires source_commit_sha")
-    if not receipt.launch_runtime_validation_pass:
-        raise ValueError("launch runtime receipt requires launch_runtime_validation_pass")
