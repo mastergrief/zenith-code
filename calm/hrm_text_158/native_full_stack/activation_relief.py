@@ -881,6 +881,7 @@ LAUNCH_MANIFEST_EMBEDDED_KEYS = (
     "archive_created_at_utc",
     "archive_method",
 )
+LAUNCH_LOG_AT_MINT_BASENAME = "launch_log_at_mint.log"
 REQUIRED_PROOF_ENV_KEYS = (
     "PYTHONDONTWRITEBYTECODE",
     "PYTHONPATH",
@@ -1513,14 +1514,28 @@ def _read_proof_env_embedded() -> dict[str, str]:
     return embedded
 
 
-def _log_artifact_sha256_from_env() -> str:
-    log_path = os.environ.get("R1L_LAUNCH_LOG", "").strip()
-    if not log_path:
+def launch_log_at_mint_snapshot_path(*, receipt_json_path: str | None = None) -> Path:
+    receipt_json = (
+        receipt_json_path or os.environ.get("R1L_LAUNCH_RECEIPT_JSON", "")
+    ).strip()
+    if not receipt_json:
+        raise R1lLaunchProofAbort(
+            "R1L_LAUNCH_RECEIPT_JSON is required for launch log snapshot"
+        )
+    return Path(receipt_json).resolve().parent / LAUNCH_LOG_AT_MINT_BASENAME
+
+
+def _snapshot_launch_log_at_mint() -> tuple[Path, str]:
+    log_path = Path(os.environ.get("R1L_LAUNCH_LOG", "").strip())
+    if not log_path.is_file():
         raise R1lLaunchProofAbort("R1L_LAUNCH_LOG is required")
-    log_bytes = Path(log_path).read_bytes()
+    log_bytes = log_path.read_bytes()
     if not log_bytes:
         raise R1lLaunchProofAbort("R1L_LAUNCH_LOG must be non-empty")
-    return hashlib.sha256(log_bytes).hexdigest()
+    snapshot_path = launch_log_at_mint_snapshot_path()
+    snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+    snapshot_path.write_bytes(log_bytes)
+    return snapshot_path, hashlib.sha256(log_bytes).hexdigest()
 
 
 def _validate_launch_measurements_for_mint(
@@ -1867,7 +1882,6 @@ def run_r1l_gpu_launch_proof(
     clean_run_dir_sha256 = os.environ.get("R1L_CLEAN_RUN_DIR_SHA256", "").strip()
     if not clean_run_dir_sha256:
         raise R1lLaunchProofAbort("R1L_CLEAN_RUN_DIR_SHA256 is required")
-    log_artifact_sha256 = _log_artifact_sha256_from_env()
 
     if measurement_runner is None:
         measurements = _execute_r1l_gpu_launch_measurement(
@@ -1892,6 +1906,8 @@ def run_r1l_gpu_launch_proof(
     w6_after = hashlib.sha256(w6_path.read_bytes()).hexdigest()
     if w6_after != w6_before:
         raise R1lLaunchProofAbort("w6 parent mutated during launch proof")
+
+    _, log_artifact_sha256 = _snapshot_launch_log_at_mint()
 
     model_config_digest_sha256 = _canonical_json_sha256(
         {
@@ -2265,9 +2281,9 @@ def validate_launch_runtime_backward_artifacts(
     if compute_proof_env_hash_sha256(env_embedded) != receipt.proof_env_hash_sha256:
         raise ValueError("env snapshot proof_env_hash_sha256 mismatch")
     if log_bytes is None or not log_bytes:
-        raise ValueError("launch log bytes are required")
+        raise ValueError("launch log snapshot bytes are required")
     if hashlib.sha256(log_bytes).hexdigest() != receipt.log_artifact_sha256:
-        raise ValueError("launch log bytes sha256 mismatch")
+        raise ValueError("launch log snapshot bytes sha256 mismatch")
 
 
 def analyze_saved_tensor_hook_events(

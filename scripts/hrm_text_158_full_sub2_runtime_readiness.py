@@ -21,6 +21,7 @@ from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
     live_r1_backward_launch_surfaces,
 )
 from calm.hrm_text_158.native_full_stack.activation_relief import (
+    launch_log_at_mint_snapshot_path,
     launch_runtime_backward_receipt_from_dict,
     validate_launch_runtime_backward_artifacts,
     validate_launch_runtime_backward_receipt,
@@ -48,17 +49,19 @@ def _require_r1l_launch_artifact_paths(
             "R1L_LAUNCH_LOG"
         )
     receipt_json_path = Path(receipt_json)
-    log_path = Path(log_file)
     run_root = receipt_json_path.parent.parent
     manifest_path = run_root / "launch_manifest.json"
     env_snapshot_path = run_root / "launch_env.json"
+    log_snapshot_path = launch_log_at_mint_snapshot_path(
+        receipt_json_path=receipt_json
+    )
     if not manifest_path.is_file():
         raise SystemExit(f"launch manifest not found: {manifest_path}")
     if not env_snapshot_path.is_file():
         raise SystemExit(f"launch env snapshot not found: {env_snapshot_path}")
-    if not log_path.is_file():
-        raise SystemExit(f"launch log not found: {log_path}")
-    return manifest_path, env_snapshot_path, log_path
+    if not log_snapshot_path.is_file():
+        raise SystemExit(f"launch log snapshot not found: {log_snapshot_path}")
+    return manifest_path, env_snapshot_path, log_snapshot_path
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -147,14 +150,14 @@ def main(argv: list[str] | None = None) -> int:
         validate_trainer_sub2_authority_live_conversion_receipt(p1_receipt)
         r1l_receipt = launch_runtime_backward_receipt_from_dict(r1l_payload)
         validate_launch_runtime_backward_receipt(r1l_receipt)
-        manifest_path, env_snapshot_path, log_path = _require_r1l_launch_artifact_paths(
+        manifest_path, env_snapshot_path, log_snapshot_path = _require_r1l_launch_artifact_paths(
             r1l_receipt
         )
         validate_launch_runtime_backward_artifacts(
             r1l_receipt,
             launch_manifest_bytes=manifest_path.read_bytes(),
             env_snapshot_bytes=env_snapshot_path.read_bytes(),
-            log_bytes=log_path.read_bytes(),
+            log_bytes=log_snapshot_path.read_bytes(),
         )
         receipt = live_r1_backward_launch_surfaces(r1l_receipt, p1_receipt)
     else:

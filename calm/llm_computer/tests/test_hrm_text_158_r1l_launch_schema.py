@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import os
 import runpy
 import sys
 from dataclasses import dataclass, replace
@@ -22,6 +23,7 @@ from calm.hrm_text_158.native_full_stack.activation_relief import (
     build_launch_runtime_backward_validation_receipt,
     compute_canonical_launch_artifact_sha256,
     compute_proof_env_hash_sha256,
+    launch_log_at_mint_snapshot_path,
     launch_runtime_backward_receipt_from_dict,
     run_r1l_gpu_launch_proof,
     validate_launch_runtime_backward_artifacts,
@@ -376,7 +378,7 @@ def test_r1l_v17_wrong_r1_cpu_base_rejects():
 def test_r1l_v18_artifact_bound_missing_log_rejects():
     receipt = _mint_valid_launch_receipt()
     manifest_bytes, env_bytes, _ = _artifact_bytes(receipt)
-    with pytest.raises(ValueError, match="launch log bytes are required"):
+    with pytest.raises(ValueError, match="launch log snapshot bytes are required"):
         validate_launch_runtime_backward_artifacts(
             receipt,
             launch_manifest_bytes=manifest_bytes,
@@ -388,7 +390,7 @@ def test_r1l_v18_artifact_bound_missing_log_rejects():
 def test_r1l_v19_artifact_bound_log_mismatch_rejects():
     receipt = _mint_valid_launch_receipt()
     manifest_bytes, env_bytes, _ = _artifact_bytes(receipt)
-    with pytest.raises(ValueError, match="launch log bytes sha256 mismatch"):
+    with pytest.raises(ValueError, match="launch log snapshot bytes sha256 mismatch"):
         validate_launch_runtime_backward_artifacts(
             receipt,
             launch_manifest_bytes=manifest_bytes,
@@ -520,6 +522,8 @@ def _write_live_r1_cli_inputs(
     if write_env:
         env_snapshot_path.write_text(_canonical_json_dumps(env), encoding="utf-8")
     if write_log:
+        snapshot_path = receipts_dir / "launch_log_at_mint.log"
+        snapshot_path.write_bytes(b"r1l launch log bytes")
         log_path.write_bytes(b"r1l launch log bytes")
 
     p1_path = tmp_path / "p1_live_conversion.json"
@@ -560,7 +564,7 @@ def _run_live_r1_cli(
     [
         (False, True, True, "launch manifest not found"),
         (True, False, True, "launch env snapshot not found"),
-        (True, True, False, "launch log not found"),
+        (True, True, False, "launch log snapshot not found"),
     ],
 )
 def test_cli_live_r1_missing_artifact_file_exits_nonzero(
@@ -828,4 +832,72 @@ def test_r1li_v8_ancestry_unset_refuses_mint(tmp_path, monkeypatch):
                 retained_side_recompute_checkpoint_fired=False,
                 loss_finite_retained=True,
             ),
+        )
+
+
+def test_r1l_log_snapshot_mint_creates_frozen_file(tmp_path, monkeypatch):
+    receipt = _run_launch_proof_with_synthetic(
+        monkeypatch,
+        tmp_path,
+        measurements=_valid_synthetic_measurements(),
+    )
+    snapshot_path = launch_log_at_mint_snapshot_path(
+        receipt_json_path=os.environ["R1L_LAUNCH_RECEIPT_JSON"]
+    )
+    live_log_path = Path(os.environ["R1L_LAUNCH_LOG"])
+    assert snapshot_path.is_file()
+    snapshot_sha = hashlib.sha256(snapshot_path.read_bytes()).hexdigest()
+    assert snapshot_sha == receipt.log_artifact_sha256
+    live_log_path.write_bytes(live_log_path.read_bytes() + b"\nPOST_MINT_APPEND\n")
+    assert hashlib.sha256(live_log_path.read_bytes()).hexdigest() != receipt.log_artifact_sha256
+    manifest_bytes, env_bytes, _ = _artifact_bytes(receipt)
+    validate_launch_runtime_backward_artifacts(
+        receipt,
+        launch_manifest_bytes=manifest_bytes,
+        env_snapshot_bytes=env_bytes,
+        log_bytes=snapshot_path.read_bytes(),
+    )
+
+
+def test_r1l_log_snapshot_missing_rejects(tmp_path):
+    receipt = _mint_valid_launch_receipt()
+    manifest_bytes, env_bytes, log_bytes = _artifact_bytes(receipt)
+    with pytest.raises(ValueError, match="launch log snapshot bytes are required"):
+        validate_launch_runtime_backward_artifacts(
+            receipt,
+            launch_manifest_bytes=manifest_bytes,
+            env_snapshot_bytes=env_bytes,
+            log_bytes=None,
+        )
+
+
+def test_r1l_log_snapshot_tampered_rejects():
+    receipt = _mint_valid_launch_receipt()
+    manifest_bytes, env_bytes, _ = _artifact_bytes(receipt)
+    with pytest.raises(ValueError, match="launch log snapshot bytes sha256 mismatch"):
+        validate_launch_runtime_backward_artifacts(
+            receipt,
+            launch_manifest_bytes=manifest_bytes,
+            env_snapshot_bytes=env_bytes,
+            log_bytes=b"tampered snapshot bytes",
+        )
+
+
+def test_r1l_log_snapshot_live_final_bytes_would_fail_old_binding():
+    receipt = _mint_valid_launch_receipt()
+    manifest_bytes, env_bytes, snapshot_bytes = _artifact_bytes(receipt)
+    growing_live_log = snapshot_bytes + b"\nPOST_MINT_TEE_APPEND\n"
+    assert hashlib.sha256(growing_live_log).hexdigest() != receipt.log_artifact_sha256
+    validate_launch_runtime_backward_artifacts(
+        receipt,
+        launch_manifest_bytes=manifest_bytes,
+        env_snapshot_bytes=env_bytes,
+        log_bytes=snapshot_bytes,
+    )
+    with pytest.raises(ValueError, match="launch log snapshot bytes sha256 mismatch"):
+        validate_launch_runtime_backward_artifacts(
+            receipt,
+            launch_manifest_bytes=manifest_bytes,
+            env_snapshot_bytes=env_bytes,
+            log_bytes=growing_live_log,
         )
