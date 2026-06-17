@@ -34,11 +34,15 @@ class SparseVoteEvents:
             raise ValueError("numel must be > 0")
         if self.event_count() == 0:
             return
-        if bool((self.indices < 0).any().item()) or bool((self.indices >= int(numel)).any().item()):
+        idx_min = int(self.indices.min().item())
+        idx_max = int(self.indices.max().item())
+        if idx_min < 0 or idx_max >= int(numel):
             raise ValueError("sparse vote indices out of range")
-        if bool((self.values < -32768).any().item()) or bool((self.values > 32767).any().item()):
+        val_min = int(self.values.min().item())
+        val_max = int(self.values.max().item())
+        if val_min < -32768 or val_max > 32767:
             raise ValueError("sparse vote values must fit int16")
-        if bool((self.values == 0).any().item()):
+        if val_min == 0 or val_max == 0 or bool((self.values == 0).any().item()):
             raise ValueError("sparse vote values must be non-zero")
 
     def event_count(self) -> int:

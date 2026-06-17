@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import hashlib
 import math
+import numpy as np
 from typing import Any, Mapping, Sequence
 
 import torch
@@ -927,6 +928,375 @@ def _sparse_vote_value_at(carrier: SparseVoteEvents, index: int) -> int:
     return int(carrier.values[int(matches[0].item())].item())
 
 
+def _vote_dense_from_carrier(carrier: SparseVoteEvents, *, numel: int) -> torch.Tensor:
+    vote_dense = torch.zeros(numel, dtype=torch.int16)
+    if carrier.event_count():
+        vote_dense[carrier.indices] = carrier.values
+    return vote_dense
+
+
+def _support_mask_from_carrier(
+    *,
+    numel: int,
+    vote_dense: torch.Tensor,
+    bounded_accumulator: BoundedDeltaAccumulatorState,
+) -> torch.Tensor:
+    support_mask = vote_dense != 0
+    if bounded_accumulator.hot_exact_indices:
+        support_mask[
+            torch.tensor(bounded_accumulator.hot_exact_indices, dtype=torch.int64)
+        ] = True
+    if bounded_accumulator.cold_exception_indices:
+        support_mask[
+            torch.tensor(bounded_accumulator.cold_exception_indices, dtype=torch.int64)
+        ] = True
+    return support_mask
+
+
+def _old_values_tensor(
+    *,
+    numel: int,
+    default_before: int,
+    bounded_accumulator: BoundedDeltaAccumulatorState,
+) -> torch.Tensor:
+    old_full = torch.full((numel,), int(default_before), dtype=torch.int32)
+    if bounded_accumulator.hot_exact_indices:
+        old_full[
+            torch.tensor(bounded_accumulator.hot_exact_indices, dtype=torch.int64)
+        ] = torch.tensor(bounded_accumulator.hot_exact_values, dtype=torch.int32)
+    if bounded_accumulator.cold_exception_indices:
+        old_full[
+            torch.tensor(bounded_accumulator.cold_exception_indices, dtype=torch.int64)
+        ] = torch.tensor(bounded_accumulator.cold_exception_values, dtype=torch.int32)
+    return old_full
+
+
+def _execute_direct_bounded_local_vote_update_dense_carrier(
+    *,
+    state_key: str,
+    q_levels: torch.Tensor,
+    bounded_accumulator: BoundedDeltaAccumulatorState,
+    sparse_carrier: SparseVoteEvents,
+    vote_spec: VoteUpdateSpec,
+) -> BoundedDirectLocalUpdateCandidateResult:
+    """Tensor-native dense apply for SparseVoteEvents (r5 STEP 2)."""
+    q_flat = q_levels.detach().cpu().to(torch.int8).flatten().contiguous()
+    numel = int(q_flat.numel())
+    sparse_carrier.validate(numel=numel)
+    hot_map, cold_map = _bounded_value_dict(bounded_accumulator)
+    default_before = int(bounded_accumulator.cold_default_value)
+    dense_vote_authority_used = False
+    event_vote_count = sparse_carrier.event_count()
+
+    vote_dense = _vote_dense_from_carrier(sparse_carrier, numel=numel)
+    support_mask = _support_mask_from_carrier(
+        numel=numel,
+        vote_dense=vote_dense,
+        bounded_accumulator=bounded_accumulator,
+    )
+    support_indices = torch.nonzero(support_mask, as_tuple=False).flatten()
+    support_row_count = int(support_indices.numel())
+
+    clip_min = int(vote_spec.accumulator_clip_min)
+    clip_max = int(vote_spec.accumulator_clip_max)
+    threshold = int(vote_spec.threshold_abs)
+    decay_num = int(vote_spec.decay_numerator)
+    decay_den = int(vote_spec.decay_denominator)
+    default_after = _clip_i16(
+        _truncate_toward_zero_division(default_before * decay_num, decay_den),
+        clip_min,
+        clip_max,
+    )
+    default_direction = 1 if default_after >= threshold else -1 if default_after <= -threshold else 0
+    default_mass_crossing_count = 0
+    if default_direction != 0:
+        if default_direction > 0:
+            crossing_mask = q_flat < 1
+        else:
+            crossing_mask = q_flat > -1
+        default_mass_crossing_count = int((~support_mask & crossing_mask).sum().item())
+
+    coverage_domain = {
+        "schema": BOUNDED_LOCAL_VOTE_UPDATE_PROOF_SCHEMA_VERSION,
+        "state_key": state_key,
+        "no_global_cap": True,
+        "sparse_vote_events_only": True,
+        "supports_replay_ce_veto": False,
+        "supports_pc_aux": False,
+        "supports_global_backlog": False,
+        "supports_default_mass_crossing": False,
+        "supports_dense_vote_authority": False,
+        "supports_dense_shadow_authority": False,
+        "supports_dense_decode_candidate_path": False,
+        "supported_decision_dimensions": [
+            "local_vote_update",
+            "sparse_vote_events",
+            "q_changed_identity_count",
+            "applied_row_identity",
+            "residual_after_threshold",
+            "bounded_checkpoint_serialization",
+        ],
+        "blocked_decision_dimensions": [
+            "global_cap",
+            "replay_ce_veto",
+            "pc_aux",
+            "implicit_default_mass_crossing",
+        ],
+    }
+    storage_projection = project_bounded_delta_accumulator_bpw(
+        eligible_weight_count=numel,
+        hot_exact_row_count=len(bounded_accumulator.hot_exact_indices),
+        cold_exception_row_count=len(bounded_accumulator.cold_exception_indices),
+        dense_cold_bits_per_weight=0.0,
+    )
+
+    if default_mass_crossing_count > 0:
+        proof = {
+            "schema": BOUNDED_LOCAL_VOTE_UPDATE_PROOF_SCHEMA_VERSION,
+            "surface": "accumulator_substitute",
+            "scoped_label": None,
+            "terminal_classification": INTRINSIC_BOUNDED_UPDATE_DOMAIN_GAP,
+            "pass": False,
+            "runtime_state_authority_after": "sub2_persistent_hybrid_dense_transient_credit",
+            "candidate_dense_decode_used": False,
+            "candidate_accumulator_transient_over2_used": False,
+            "candidate_vote_transient_over2_used": False,
+            "candidate_dense_vote_authority_used": dense_vote_authority_used,
+            "dense_oracle_control_used": False,
+            "scoped_physical_budget_claim": "not_applicable_domain_gap",
+            "q_storage_physical_budget_covered_by_scoped_proof": False,
+            "frozen_scale_physical_budget_covered_by_scoped_proof": False,
+            "coverage_domain": coverage_domain,
+            "domain_gap_dimension": "implicit_default_mass_crossing",
+            "domain_gap_detail": (
+                "cold default update would create threshold-crossing mass on rows "
+                "that are not explicitly enumerated in the bounded support"
+            ),
+            "default_mass_crossing_count": int(default_mass_crossing_count),
+            "event_vote_count": int(event_vote_count),
+            "support_row_count": support_row_count,
+            "hot_exact_row_count_before": int(len(bounded_accumulator.hot_exact_indices)),
+            "cold_exception_row_count_before": int(len(bounded_accumulator.cold_exception_indices)),
+            "hot_exact_row_count_after": int(len(bounded_accumulator.hot_exact_indices)),
+            "cold_exception_row_count_after": int(len(bounded_accumulator.cold_exception_indices)),
+            "storage_projection": storage_projection.to_dict(),
+        }
+        return BoundedDirectLocalUpdateCandidateResult(
+            next_bounded_accumulator=bounded_accumulator,
+            next_q_levels=q_flat.view_as(q_levels).clone(),
+            proof=proof,
+        )
+
+    old_full = _old_values_tensor(
+        numel=numel,
+        default_before=default_before,
+        bounded_accumulator=bounded_accumulator,
+    )
+    old_at_support = old_full[support_indices]
+    vote_at_support = vote_dense[support_indices].to(torch.int32)
+    decayed = torch.div(
+        old_at_support * decay_num,
+        decay_den,
+        rounding_mode="trunc",
+    )
+    new_at_support = (decayed + vote_at_support).clamp(clip_min, clip_max).to(torch.int16)
+
+    q_at_support = q_flat[support_indices].to(torch.int32)
+    flip_mask = ((new_at_support >= threshold) & (q_at_support < 1)) | (
+        (new_at_support <= -threshold) & (q_at_support > -1)
+    )
+    flip_idx = support_indices[flip_mask]
+    flip_new = new_at_support[flip_mask]
+    candidate_count = int(flip_idx.numel())
+    max_flips = int(vote_spec.max_flips(numel))
+    applied_idx, applied_new = _select_applied_flip_candidates(
+        flip_idx,
+        flip_new,
+        max_flips=max_flips,
+        numel=numel,
+    )
+
+    q_after = q_flat.clone()
+    residual_after_threshold: dict[int, int] = {}
+    applied_directions_by_index: dict[int, int] = {}
+    applied_thresholds_by_index: dict[int, int] = {}
+    acc_at_support = new_at_support.clone()
+    if applied_idx.numel() > 0:
+        directions = torch.where(
+            applied_new >= threshold,
+            torch.ones_like(applied_new, dtype=torch.int32),
+            -torch.ones_like(applied_new, dtype=torch.int32),
+        )
+        q_applied = q_after[applied_idx].to(torch.int32) + directions
+        q_after[applied_idx] = torch.clamp(q_applied, -1, 1).to(torch.int8)
+        residual_tensor = torch.clamp(
+            applied_new.to(torch.int32) - directions * threshold,
+            -threshold + 1,
+            threshold - 1,
+        ).to(torch.int16)
+        applied_positions = torch.searchsorted(support_indices, applied_idx)
+        acc_at_support[applied_positions] = residual_tensor
+        applied_indices_list = applied_idx.tolist()
+        directions_list = directions.tolist()
+        residual_list = residual_tensor.tolist()
+        for index, direction, residual in zip(
+            applied_indices_list,
+            directions_list,
+            residual_list,
+        ):
+            applied_directions_by_index[int(index)] = int(direction)
+            applied_thresholds_by_index[int(index)] = int(threshold)
+            residual_after_threshold[int(index)] = int(residual)
+    else:
+        applied_indices_list: list[int] = []
+
+    hot_idx_tensor = (
+        torch.tensor(bounded_accumulator.hot_exact_indices, dtype=torch.int64)
+        if bounded_accumulator.hot_exact_indices
+        else None
+    )
+    if hot_idx_tensor is not None and hot_idx_tensor.numel() > 0:
+        hot_in_support = torch.isin(support_indices, hot_idx_tensor)
+    else:
+        hot_in_support = torch.zeros(support_indices.numel(), dtype=torch.bool)
+    cold_exc_pos = (~hot_in_support) & (acc_at_support != int(default_after))
+    next_cold_exception_indices = tuple(support_indices[cold_exc_pos].tolist())
+    next_cold_exception_values = tuple(acc_at_support[cold_exc_pos].tolist())
+    if hot_idx_tensor is not None and hot_idx_tensor.numel() > 0:
+        hot_positions = torch.searchsorted(support_indices, hot_idx_tensor)
+        hot_valid = (hot_positions < support_indices.numel()) & (
+            support_indices[hot_positions] == hot_idx_tensor
+        )
+        hot_values = torch.full(
+            (hot_idx_tensor.numel(),),
+            int(default_after),
+            dtype=torch.int16,
+        )
+        hot_values[hot_valid] = acc_at_support[hot_positions[hot_valid]]
+        next_hot_values = tuple(int(value) for value in hot_values.tolist())
+    else:
+        next_hot_values = ()
+    applied_indices = tuple(applied_indices_list)
+    next_bounded = BoundedDeltaAccumulatorState(
+        logical_shape=bounded_accumulator.logical_shape,
+        cold_default_value=int(default_after),
+        hot_exact_indices=tuple(int(index) for index in bounded_accumulator.hot_exact_indices),
+        hot_exact_values=next_hot_values,
+        cold_exception_indices=next_cold_exception_indices,
+        cold_exception_values=next_cold_exception_values,
+        candidate_name=bounded_accumulator.candidate_name,
+        raw_arrays_included=False,
+    )
+    next_projection = project_bounded_delta_accumulator_bpw(
+        eligible_weight_count=numel,
+        hot_exact_row_count=len(next_bounded.hot_exact_indices),
+        cold_exception_row_count=len(next_bounded.cold_exception_indices),
+        dense_cold_bits_per_weight=0.0,
+    )
+    changed = torch.nonzero(q_flat != q_after, as_tuple=False).flatten()
+    q_changed_indices = tuple(sorted(int(index.item()) for index in changed))
+    accumulator_physical_sub2_pass = (
+        float(next_projection.bounded_delta_acc_bits_per_weight) < 2.0
+    )
+    scoped_positive_label = (
+        ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE
+        if accumulator_physical_sub2_pass
+        else ALGORITHMIC_LOCAL_VOTE_UPDATE_EXECUTABLE_NOT_PHYSICAL_SUB2
+    )
+    proof = {
+        "schema": BOUNDED_LOCAL_VOTE_UPDATE_PROOF_SCHEMA_VERSION,
+        "surface": "accumulator_substitute",
+        "scoped_label": scoped_positive_label,
+        "terminal_classification": scoped_positive_label,
+        "pass": True,
+        "runtime_state_authority_after": "sub2_persistent_hybrid_dense_transient_credit",
+        "candidate_dense_decode_used": False,
+        "candidate_accumulator_transient_over2_used": False,
+        "candidate_vote_transient_over2_used": False,
+        "candidate_dense_vote_authority_used": dense_vote_authority_used,
+        "dense_oracle_control_used": False,
+        "scoped_physical_budget_claim": (
+            "physical_sub2_budgeted"
+            if accumulator_physical_sub2_pass
+            else "algorithmic_only_not_physical_sub2"
+        ),
+        "q_storage_physical_budget_covered_by_scoped_proof": False,
+        "frozen_scale_physical_budget_covered_by_scoped_proof": False,
+        "coverage_domain": coverage_domain,
+        "domain_gap_dimension": None,
+        "domain_gap_detail": None,
+        "default_mass_crossing_count": 0,
+        "event_vote_count": int(event_vote_count),
+        "candidate_count": candidate_count,
+        "max_flips": int(max_flips),
+        "pre_veto_selected_flip_count": int(len(applied_indices)),
+        "support_row_count": support_row_count,
+        "hot_exact_row_count_before": int(len(bounded_accumulator.hot_exact_indices)),
+        "cold_exception_row_count_before": int(len(bounded_accumulator.cold_exception_indices)),
+        "hot_exact_row_count_after": int(len(next_bounded.hot_exact_indices)),
+        "cold_exception_row_count_after": int(len(next_bounded.cold_exception_indices)),
+        "q_changed_count": int(len(q_changed_indices)),
+        "q_changed_identities_sha256": _identity_sha256(
+            {(state_key, int(index)) for index in q_changed_indices},
+        ),
+        "applied_row_count": int(len(applied_indices)),
+        "applied_row_identities_sha256": _identity_sha256(
+            {(state_key, int(index)) for index in applied_indices},
+        ),
+        "ordered_applied_row_identities_sha256": _ordered_identity_sha256(
+            state_key,
+            applied_indices,
+        ),
+        "applied_directions_sha256": _ordered_value_sha256(
+            state_key,
+            "direction",
+            applied_directions_by_index,
+        ),
+        "applied_thresholds_sha256": _ordered_value_sha256(
+            state_key,
+            "threshold",
+            applied_thresholds_by_index,
+        ),
+        "residual_after_threshold_sha256": _sparse_value_sha256(
+            state_key,
+            residual_after_threshold,
+        ),
+        "candidate_q_sha256_after": _tensor_sha256(q_after.view_as(q_levels)),
+        "storage_projection": next_projection.to_dict(),
+        "accumulator_physical_sub2_pass": bool(accumulator_physical_sub2_pass),
+        "bounded_accumulator_summary_after": next_bounded.to_dict(),
+    }
+    return BoundedDirectLocalUpdateCandidateResult(
+        next_bounded_accumulator=next_bounded,
+        next_q_levels=q_after.view_as(q_levels).to(torch.int8).contiguous(),
+        proof=proof,
+    )
+
+
+def _select_applied_flip_candidates(
+    flip_idx: torch.Tensor,
+    flip_new: torch.Tensor,
+    *,
+    max_flips: int,
+    numel: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    if flip_idx.numel() == 0:
+        return flip_idx, flip_new
+    if flip_idx.numel() <= max_flips:
+        order_np = np.lexsort(
+            (flip_idx.cpu().numpy(), (-flip_new.abs()).cpu().numpy()),
+        )
+        order = torch.from_numpy(order_np)
+        return flip_idx[order], flip_new[order]
+    score = flip_new.abs().to(torch.float64) * (float(numel) + 1.0) + (
+        float(numel) - flip_idx.to(torch.float64)
+    )
+    _top_vals, top_pos = torch.topk(score, k=max_flips, largest=True)
+    top_pos_order = torch.argsort(score[top_pos], descending=True)
+    selected = top_pos[top_pos_order]
+    return flip_idx[selected], flip_new[selected]
+
+
 def _sparse_votes_dict_from_mapping(
     sparse_vote_events: Mapping[int, int],
     *,
@@ -960,34 +1330,31 @@ def execute_direct_bounded_local_vote_update_candidate(
         raise ValueError("q_levels shape must match bounded accumulator logical_shape")
     vote_spec.validate()
 
+    if isinstance(sparse_vote_events, SparseVoteEvents):
+        return _execute_direct_bounded_local_vote_update_dense_carrier(
+            state_key=state_key,
+            q_levels=q_levels,
+            bounded_accumulator=bounded_accumulator,
+            sparse_carrier=sparse_vote_events,
+            vote_spec=vote_spec,
+        )
+
     q_flat = q_levels.detach().cpu().to(torch.int8).flatten().contiguous()
     numel = int(q_flat.numel())
     hot_map, cold_map = _bounded_value_dict(bounded_accumulator)
     default_before = int(bounded_accumulator.cold_default_value)
     dense_vote_authority_used = False
-    if isinstance(sparse_vote_events, SparseVoteEvents):
-        sparse_vote_events.validate(numel=numel)
-        sparse_carrier = sparse_vote_events
-        sparse_votes: dict[int, int] | None = None
-        event_vote_count = sparse_carrier.event_count()
-        explicit_support = (
-            set(hot_map) | set(cold_map) | _sparse_index_set_from_carrier(sparse_carrier)
-        )
+    sparse_carrier = None
+    sparse_votes = _sparse_votes_dict_from_mapping(
+        sparse_vote_events,
+        state_key=state_key,
+        numel=numel,
+    )
+    event_vote_count = len(sparse_votes)
+    explicit_support = set(hot_map) | set(cold_map) | set(sparse_votes)
 
-        def vote_at(index: int) -> int:
-            return _sparse_vote_value_at(sparse_carrier, index)
-    else:
-        sparse_carrier = None
-        sparse_votes = _sparse_votes_dict_from_mapping(
-            sparse_vote_events,
-            state_key=state_key,
-            numel=numel,
-        )
-        event_vote_count = len(sparse_votes)
-        explicit_support = set(hot_map) | set(cold_map) | set(sparse_votes)
-
-        def vote_at(index: int) -> int:
-            return sparse_votes.get(index, 0)
+    def vote_at(index: int) -> int:
+        return sparse_votes.get(index, 0)
     clip_min = int(vote_spec.accumulator_clip_min)
     clip_max = int(vote_spec.accumulator_clip_max)
     threshold = int(vote_spec.threshold_abs)
