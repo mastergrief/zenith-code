@@ -18,6 +18,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     apply_bounded_delta_vote_step,
     make_bounded_tensor_state,
 )
+from calm.hrm_text_158.native_full_stack.sparse_vote_events import SparseVoteEvents
 from calm.hrm_text_158.native_full_stack.sub2_native_birth_sidecar_runtime import (
     HybridSidecarPersistentStateReport,
     hybrid_sidecar_persistent_state_report,
@@ -97,7 +98,7 @@ def _default_fixture() -> tuple[
     dict[str, BoundedDeltaTensorState],
     dict[str, torch.Tensor],
     dict[str, VoteUpdateSpec],
-    dict[str, dict[int, int]],
+    dict[str, SparseVoteEvents | dict[int, int]],
 ]:
     state_key = "step2b0.local.proj"
     q_levels = torch.zeros((128, 128), dtype=torch.int8)
@@ -126,7 +127,7 @@ def _default_fixture() -> tuple[
         {state_key: state},
         {state_key: votes},
         {state_key: spec},
-        {state_key: {3: 2, 197: -2}},
+        {state_key: SparseVoteEvents.from_dict({3: 2, 197: -2})},
     )
 
 
@@ -182,7 +183,7 @@ def build_live_local_sub2_authority_receipt(
     tensor_states: Mapping[str, BoundedDeltaTensorState] | None = None,
     votes_by_key: Mapping[str, torch.Tensor] | None = None,
     vote_specs_by_key: Mapping[str, VoteUpdateSpec] | None = None,
-    candidate_sparse_vote_events_by_key: Mapping[str, Mapping[int, int]] | None = None,
+    candidate_sparse_vote_events_by_key: Mapping[str, SparseVoteEvents | Mapping[int, int]] | None = None,
 ) -> LiveLocalSub2AuthorityReceipt:
     """Build the local-only 2B0 receipt without changing trainer authority."""
 

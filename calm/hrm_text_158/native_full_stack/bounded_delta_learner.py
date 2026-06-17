@@ -48,6 +48,7 @@ from calm.hrm_text_158.native_full_stack.two_tier_threshold_semantics import (
 from calm.hrm_text_158.native_full_stack.two_tier_transient_selection import (
     LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
 )
+from calm.hrm_text_158.native_full_stack.sparse_vote_events import SparseVoteEvents
 from calm.hrm_text_158.native_full_stack.vote_update import (
     LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
     VoteUpdateInputs,
@@ -1364,7 +1365,7 @@ def _validate_optional_vote_map_keys(
 
 def _validate_candidate_sparse_vote_map_keys(
     name: str,
-    values_by_key: Mapping[str, Mapping[int, int]] | None,
+    values_by_key: Mapping[str, SparseVoteEvents | Mapping[int, int]] | None,
     expected_keys: set[str],
 ) -> None:
     if values_by_key is None:
@@ -1398,23 +1399,16 @@ def _coerce_optional_vote_map_tensor(
     return value.detach().cpu().contiguous()
 
 
-def _coerce_candidate_sparse_vote_events(
-    values_by_key: Mapping[str, Mapping[int, int]] | None,
+def _resolve_candidate_sparse_events(
+    values_by_key: Mapping[str, SparseVoteEvents | Mapping[int, int]] | None,
     state_key: str,
-) -> dict[int, int]:
+) -> SparseVoteEvents | Mapping[int, int]:
     if values_by_key is None:
         raise ValueError(
             "candidate sparse vote events are required for the direct bounded "
             "candidate path; dense vote authority is unsupported there"
         )
-    raw = values_by_key[state_key]
-    out: dict[int, int] = {}
-    for raw_index, raw_vote in raw.items():
-        index = int(raw_index)
-        vote = int(raw_vote)
-        if vote != 0:
-            out[index] = vote
-    return out
+    return values_by_key[state_key]
 
 
 def _clone_vote_update_state_for_front_c(state: VoteUpdateState) -> VoteUpdateState:
@@ -1552,7 +1546,7 @@ def apply_bounded_delta_vote_step(
     two_tier_carry_w6_enabled: bool = False,
     front_c_identity_observer: Callable[[Mapping[str, Any]], object] | None = None,
     candidate_mode: str | None = None,
-    candidate_sparse_vote_events_by_key: Mapping[str, Mapping[int, int]] | None = None,
+    candidate_sparse_vote_events_by_key: Mapping[str, SparseVoteEvents | Mapping[int, int]] | None = None,
     candidate_oracle_control_enabled: bool = True,
     local_selection_ordering_mode: str = LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
     local_selection_ordering_seed: int = 0,
@@ -1616,7 +1610,7 @@ def apply_bounded_delta_vote_step(
                 state_key=state_key,
                 q_levels=prior_state.q_levels,
                 bounded_accumulator=prior_state.bounded_accumulator,
-                sparse_vote_events=_coerce_candidate_sparse_vote_events(
+                sparse_vote_events=_resolve_candidate_sparse_events(
                     candidate_sparse_vote_events_by_key,
                     state_key,
                 ),

@@ -36,6 +36,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     tensor_sha256,
     validate_authoritative_resume_payload,
 )
+from calm.hrm_text_158.native_full_stack.sparse_vote_events import SparseVoteEvents
 from calm.hrm_text_158.native_full_stack.vote_update import (
     VoteUpdateInputs,
     VoteUpdateResult,
@@ -456,12 +457,8 @@ def _default_local_vote_update_spec() -> VoteUpdateSpec:
     )
 
 
-def _sparse_vote_events(votes: torch.Tensor) -> dict[int, int]:
-    flat = votes.detach().cpu().to(torch.int16).flatten()
-    return {
-        int(index): int(flat[int(index)].item())
-        for index in torch.nonzero(flat != 0, as_tuple=False).flatten().tolist()
-    }
+def _sparse_vote_events(votes: torch.Tensor) -> SparseVoteEvents:
+    return SparseVoteEvents.from_dense_votes(votes)
 
 
 def _eligible_master_hashes(eligible_modules: Mapping[str, BitLinear]) -> dict[str, str]:
@@ -1123,7 +1120,7 @@ def build_trainer_sub2_authority_local_update_receipt(
                     "credit_nonzero_count": int((credit != 0).sum().item()),
                     "projected_move_nonzero_count": int((moves != 0).sum().item()),
                     "dense_rank_vote_nonzero_count": int((votes != 0).sum().item()),
-                    "sparse_vote_event_count": int(len(sparse_events_by_key[key])),
+                    "sparse_vote_event_count": int(sparse_events_by_key[key].event_count()),
                     "weighted_grad_finite": bool(torch.isfinite(weighted_grad).all().item()),
                 }
     finally:
@@ -1168,7 +1165,7 @@ def build_trainer_sub2_authority_local_update_receipt(
         state.exact_accumulator_shadow is None
         for state in step_result.tensor_states.values()
     )
-    total_sparse_events = sum(len(events) for events in sparse_events_by_key.values())
+    total_sparse_events = sum(events.event_count() for events in sparse_events_by_key.values())
     q_changed_count = int(step_result.global_summary.get("q_changed_count", 0))
     pass_receipt = bool(
         loss_finite
@@ -1494,7 +1491,7 @@ def build_trainer_sub2_authority_roundtrip_receipt(
     )
     shadow_free_loaded = all(state.exact_accumulator_shadow is None for state in loaded_states.values())
     shadow_free_post = all(state.exact_accumulator_shadow is None for state in step_result.tensor_states.values())
-    total_sparse_events = sum(len(events) for events in sparse_events_by_key.values())
+    total_sparse_events = sum(events.event_count() for events in sparse_events_by_key.values())
     dense_saved = bool(blob["trainer_sub2_authority"].get("dense_int16_persistent_accumulator_saved"))
     dense_loaded = any(state.exact_accumulator_shadow is not None for state in loaded_states.values())
     pass_receipt = bool(
@@ -2196,7 +2193,7 @@ def _run_live_p1_vote_carrier_subproof(
         state.exact_accumulator_shadow is None
         for state in step_result.tensor_states.values()
     )
-    total_sparse_events = sum(len(events) for events in sparse_events_by_key.values())
+    total_sparse_events = sum(events.event_count() for events in sparse_events_by_key.values())
     q_changed_count = int(step_result.global_summary.get("q_changed_count", 0))
     return {
         "poisoned_fp_master_bypass_falsified": poisoned_bypass_falsified,
