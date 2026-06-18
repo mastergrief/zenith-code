@@ -1525,9 +1525,48 @@ def _front_c_cloned_observation(
     }
 
 
+def _validate_sparse_vote_authority_only_gate(
+    *,
+    sparse_vote_authority_only: bool,
+    votes_by_key: Mapping[str, torch.Tensor] | None,
+    candidate_mode: str | None,
+    candidate_oracle_control_enabled: bool,
+    candidate_sparse_vote_events_by_key: Mapping[str, SparseVoteEvents | Mapping[int, int]] | None,
+    tensor_state_keys: set[str],
+) -> None:
+    if not sparse_vote_authority_only:
+        if votes_by_key is None:
+            raise ValueError(
+                "votes_by_key is required unless sparse_vote_authority_only=True"
+            )
+        return
+    if votes_by_key is not None:
+        raise ValueError("sparse_vote_authority_only requires votes_by_key=None")
+    if candidate_mode != ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE:
+        raise ValueError(
+            "sparse_vote_authority_only requires "
+            f"candidate_mode={ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE!r}"
+        )
+    if bool(candidate_oracle_control_enabled):
+        raise ValueError(
+            "sparse_vote_authority_only requires candidate_oracle_control_enabled=False"
+        )
+    if candidate_sparse_vote_events_by_key is None:
+        raise ValueError(
+            "sparse_vote_authority_only requires candidate_sparse_vote_events_by_key"
+        )
+    sparse_keys = set(candidate_sparse_vote_events_by_key)
+    if sparse_keys != tensor_state_keys:
+        raise ValueError(
+            "candidate_sparse_vote_events_by_key keys must match tensor_states exactly: "
+            f"missing={sorted(tensor_state_keys - sparse_keys)} "
+            f"extra={sorted(sparse_keys - tensor_state_keys)}"
+        )
+
+
 def apply_bounded_delta_vote_step(
     tensor_states: Mapping[str, BoundedDeltaTensorState],
-    votes_by_key: Mapping[str, torch.Tensor],
+    votes_by_key: Mapping[str, torch.Tensor] | None,
     vote_specs_by_key: Mapping[str, VoteUpdateSpec],
     *,
     replay_ce_veto_votes_by_key: Mapping[str, torch.Tensor] | None = None,
@@ -1548,13 +1587,27 @@ def apply_bounded_delta_vote_step(
     candidate_mode: str | None = None,
     candidate_sparse_vote_events_by_key: Mapping[str, SparseVoteEvents | Mapping[int, int]] | None = None,
     candidate_oracle_control_enabled: bool = True,
+    sparse_vote_authority_only: bool = False,
     local_selection_ordering_mode: str = LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
     local_selection_ordering_seed: int = 0,
     local_selection_ordering_step: int = 0,
 ) -> BoundedDeltaLearnerStepResult:
-    if set(tensor_states) != set(votes_by_key) or set(tensor_states) != set(vote_specs_by_key):
-        raise ValueError("tensor_states, votes_by_key, and vote_specs_by_key must have identical keys")
     expected_keys = set(tensor_states)
+    _validate_sparse_vote_authority_only_gate(
+        sparse_vote_authority_only=bool(sparse_vote_authority_only),
+        votes_by_key=votes_by_key,
+        candidate_mode=candidate_mode,
+        candidate_oracle_control_enabled=bool(candidate_oracle_control_enabled),
+        candidate_sparse_vote_events_by_key=candidate_sparse_vote_events_by_key,
+        tensor_state_keys=expected_keys,
+    )
+    if votes_by_key is not None:
+        if set(votes_by_key) != expected_keys or set(tensor_states) != set(vote_specs_by_key):
+            raise ValueError(
+                "tensor_states, votes_by_key, and vote_specs_by_key must have identical keys"
+            )
+    elif set(tensor_states) != set(vote_specs_by_key):
+        raise ValueError("tensor_states and vote_specs_by_key must have identical keys")
     _validate_optional_vote_map_keys("replay_ce_veto_votes_by_key", replay_ce_veto_votes_by_key, expected_keys)
     _validate_optional_vote_map_keys("replay_ce_veto_moves_by_key", replay_ce_veto_moves_by_key, expected_keys)
     _validate_optional_vote_map_keys("pc_aux_votes_by_key", pc_aux_votes_by_key, expected_keys)
@@ -1633,7 +1686,11 @@ def apply_bounded_delta_vote_step(
             proof["oracle_applied_row_identities_sha256"] = None
             proof["oracle_residual_after_threshold_sha256"] = None
             proof["parity_pass"] = None
+            if sparse_vote_authority_only:
+                proof["sparse_vote_authority_only"] = True
+                proof["dense_vote_authority_skipped"] = True
             if candidate_oracle_control_enabled:
+                assert votes_by_key is not None
                 dense_votes = votes_by_key[state_key].detach().cpu().to(torch.int16).contiguous()
                 oracle_result = apply_integer_vote_update_reference(
                     prior_state.vote_update_state(),
@@ -1751,6 +1808,15 @@ def apply_bounded_delta_vote_step(
             "candidate_vote_transient_over2_used": False,
             "candidate_dense_vote_authority_used": False,
         }
+        if sparse_vote_authority_only:
+            summary.update(
+                {
+                    "sparse_vote_authority_only": True,
+                    "dense_vote_authority_skipped": True,
+                    "parity_contract_mode": "SPARSE_EVENT_SHAPE_ONLY",
+                    "pass_receipt": False,
+                }
+            )
         return BoundedDeltaLearnerStepResult(
             tensor_states=next_states,
             tensor_stats=tensor_stats,
@@ -1759,6 +1825,8 @@ def apply_bounded_delta_vote_step(
         )
 
     hot_by_key = hot_exact_indices_by_key or {}
+    if votes_by_key is None:
+        raise ValueError("votes_by_key is required for non-candidate bounded-delta apply paths")
     vote_update_states: dict[str, VoteUpdateState] = {}
     inputs_by_key: dict[str, VoteUpdateInputs] = {}
     plans_by_key = {}
