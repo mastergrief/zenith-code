@@ -25,6 +25,7 @@ from calm.hrm_text_158.native_full_stack.realistic_gradient_parity_probe import 
     MAX_PER_CANDIDATE_RECORDS_PER_KEY,
     MIN_FP_CREDIT_NONZERO,
     MIN_FRACTIONAL_DIVERSITY,
+    FRACTIONAL_DIVERSITY_RELATIVE_BINS,
     MIN_MOVE_CANDIDATES,
     MIN_RANK_GROUPS,
     MIN_TIER_TOTAL_MOVE_CANDIDATES,
@@ -49,6 +50,7 @@ from calm.hrm_text_158.native_full_stack.realistic_gradient_parity_probe import 
     run_tier2_checkpoint_capture,
     capture_tier2_checkpoint_raw_captures,
     validate_realistic_gradient_parity_probe_receipt,
+    _fractional_diversity_count,
     _measurement_validity_for_key,
     _probe_key_from_captures,
 )
@@ -159,6 +161,74 @@ def test_degenerate_capture_measurement_invalid_not_broad():
         fractional_collision_share_of_mismatches=0.0,
     )
     assert verdict.parity_verdict != VERDICT_BROAD_HOLDS
+
+
+def _sub_1e3_credits(*relative_fractions: float) -> torch.Tensor:
+    max_abs = 5.05e-4
+    return torch.tensor(
+        [float(fraction) * max_abs for fraction in relative_fractions],
+        dtype=torch.float32,
+    )
+
+
+def test_fractional_diversity_t1_characterization_locked_at_sixteen():
+    result = run_tier1_trainer_16x16_capture()
+    assert result.per_key_metrics["proj"].validity_detail["fractional_diversity"] == 16
+
+
+@pytest.mark.parametrize(
+    ("credits", "expected"),
+    [
+        (_sub_1e3_credits(1.0, 1.0, 1.0), 1),
+        (_sub_1e3_credits(0.31, 1.0), 2),
+        (_sub_1e3_credits(0.21, 0.51, 1.0), 3),
+    ],
+)
+def test_fractional_diversity_sub_1e3_level_counts(
+    credits: torch.Tensor,
+    expected: int,
+) -> None:
+    assert _fractional_diversity_count(credits) == expected
+
+
+def test_fractional_diversity_sub_1e3_three_level_passes_validity_gate():
+    diversity = _fractional_diversity_count(_sub_1e3_credits(0.21, 0.51, 1.0))
+    valid, _ = _measurement_validity_for_key(
+        captures_present=True,
+        captures_finite=True,
+        move_candidate_count=MIN_MOVE_CANDIDATES,
+        fp_credit_nonzero_count=MIN_FP_CREDIT_NONZERO,
+        fractional_diversity=diversity,
+        rank_group_count=MIN_RANK_GROUPS,
+    )
+    assert diversity == MIN_FRACTIONAL_DIVERSITY
+    assert valid is True
+
+
+def test_fractional_diversity_sub_1e3_two_level_rejected_by_validity_gate():
+    diversity = _fractional_diversity_count(_sub_1e3_credits(0.31, 1.0))
+    valid, _ = _measurement_validity_for_key(
+        captures_present=True,
+        captures_finite=True,
+        move_candidate_count=MIN_MOVE_CANDIDATES,
+        fp_credit_nonzero_count=MIN_FP_CREDIT_NONZERO,
+        fractional_diversity=diversity,
+        rank_group_count=MIN_RANK_GROUPS,
+    )
+    assert diversity == 2
+    assert valid is False
+
+
+def test_fractional_diversity_rounding_avoids_half_bin_fixture_values():
+    # torch.round half-bin ties are banker's rounding; fixtures use off-half fractions.
+    bins = float(FRACTIONAL_DIVERSITY_RELATIVE_BINS)
+    credits = _sub_1e3_credits(0.21, 0.51, 1.0)
+    max_abs = float(credits.abs().max().item())
+    masked = credits[credits.abs() > 0.05 * max_abs]
+    scaled = (masked / max_abs) * bins
+    frac_part = scaled - torch.floor(scaled)
+    assert not torch.any(torch.abs(frac_part - 0.5) < 1e-6)
+    assert _fractional_diversity_count(credits) == 3
 
 
 def test_checkpoint_present_t2_not_run_rejects_proceed():

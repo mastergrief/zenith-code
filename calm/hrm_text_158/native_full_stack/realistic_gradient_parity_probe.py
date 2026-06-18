@@ -62,6 +62,7 @@ T2_CHECKPOINT_ENV_VAR = "HRM_TEXT_158_PROBE_CHECKPOINT"
 MIN_MOVE_CANDIDATES = 8
 MIN_FP_CREDIT_NONZERO = 4
 MIN_FRACTIONAL_DIVERSITY = 3
+FRACTIONAL_DIVERSITY_RELATIVE_BINS = 1000
 MIN_RANK_GROUPS = 2
 MIN_TIER_TOTAL_MOVE_CANDIDATES = 16
 MAX_PER_CANDIDATE_RECORDS_PER_KEY = 64
@@ -408,8 +409,11 @@ def _fractional_diversity_count(fp_credit_sparse: torch.Tensor) -> int:
     masked = abs_values[abs_values > threshold]
     if int(masked.numel()) == 0:
         return 0
-    rounded = torch.round(masked * 1000.0) / 1000.0
-    return int(torch.unique(rounded).numel())
+    normalized = masked / max_abs
+    quantized = torch.round(
+        normalized * float(FRACTIONAL_DIVERSITY_RELATIVE_BINS)
+    ) / float(FRACTIONAL_DIVERSITY_RELATIVE_BINS)
+    return int(torch.unique(quantized).numel())
 
 
 def _rank_group_count(rank_positions: torch.Tensor) -> int:
