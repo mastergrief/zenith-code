@@ -18,6 +18,7 @@ import torch.nn.functional as F
 
 from calm.hrm_text_158.bit_linear import BitLinear
 from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
+    BoundedDeltaTensorState,
     RankVoteSpec,
     credit_from_weighted_grad,
     default_dry_run_rank_vote_spec,
@@ -205,6 +206,21 @@ class TierProbeResult:
     mismatch_clusters: dict[str, Any]
     fractional_collision_examples: list[dict[str, Any]]
     capture_provenance: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class RawKeyCapture:
+    inputs: tuple[torch.Tensor, ...]
+    grad_outputs: tuple[torch.Tensor, ...]
+    q_levels_flat: torch.Tensor
+    weight_shape: tuple[int, int]
+
+
+@dataclass(frozen=True)
+class Tier2RawCaptureBundle:
+    per_key_captures: dict[str, RawKeyCapture]
+    per_key_states: dict[str, BoundedDeltaTensorState]
+    provenance: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -904,15 +920,14 @@ def run_tier1_trainer_16x16_capture(
     )
 
 
-def run_tier2_checkpoint_capture(
+def capture_tier2_checkpoint_raw_captures(
     *,
     checkpoint_path: str,
     checkpoint_sha256: str | None = None,
-    rank_spec: RankVoteSpec | None = None,
     device: torch.device | str = "cpu",
     curriculum_seed: int = 158,
     batch_size: int = 4,
-) -> TierProbeResult:
+) -> Tier2RawCaptureBundle:
     if not Path(checkpoint_path).is_file():
         raise FileNotFoundError(checkpoint_path)
     blob_sha = checkpoint_sha256 or sha256_file(checkpoint_path)
@@ -949,10 +964,9 @@ def run_tier2_checkpoint_capture(
         curriculum_seed=int(curriculum_seed),
         device=torch_device,
     )
-    spec = rank_spec or default_dry_run_rank_vote_spec()
     extras = model.compute_train_extra_args(step=0, total_steps=1)
     prior_training = bool(model.training)
-    per_key_metrics: dict[str, KeyProbeMetrics] = {}
+    per_key_captures: dict[str, RawKeyCapture] = {}
     try:
         model.train(True)
         model.zero_grad(set_to_none=True)
@@ -968,13 +982,11 @@ def run_tier2_checkpoint_capture(
             loss.backward()
             for key, state in states.items():
                 capture = handle.captures[key]
-                per_key_metrics[key] = _probe_key_from_captures(
-                    state_key=key,
-                    inputs=capture["inputs"],
-                    grad_outputs=capture["grad_outputs"],
-                    weight_shape=tuple(state.q_levels.shape),
+                per_key_captures[key] = RawKeyCapture(
+                    inputs=tuple(capture["inputs"]),
+                    grad_outputs=tuple(capture["grad_outputs"]),
                     q_levels_flat=state.q_levels.reshape(-1),
-                    spec=spec,
+                    weight_shape=tuple(int(dim) for dim in state.q_levels.shape),
                 )
     finally:
         model.train(prior_training)
@@ -988,12 +1000,47 @@ def run_tier2_checkpoint_capture(
         "enriched_capture": True,
         "attribution_law_id": INTEGER_MARGINAL_ATTRIBUTION_PRODUCTION_LAW_ID,
         "credit_law_id": INTEGER_SPARSE_RANK_PRODUCTION_CREDIT_LAW_ID,
-        "tensor_keys_probed": sorted(per_key_metrics.keys()),
+        "tensor_keys_probed": sorted(per_key_captures.keys()),
+        "capture_seam_id": "capture_tier2_checkpoint_raw_captures",
     }
+    return Tier2RawCaptureBundle(
+        per_key_captures=per_key_captures,
+        per_key_states=dict(states),
+        provenance=provenance,
+    )
+
+
+def run_tier2_checkpoint_capture(
+    *,
+    checkpoint_path: str,
+    checkpoint_sha256: str | None = None,
+    rank_spec: RankVoteSpec | None = None,
+    device: torch.device | str = "cpu",
+    curriculum_seed: int = 158,
+    batch_size: int = 4,
+) -> TierProbeResult:
+    bundle = capture_tier2_checkpoint_raw_captures(
+        checkpoint_path=checkpoint_path,
+        checkpoint_sha256=checkpoint_sha256,
+        device=device,
+        curriculum_seed=curriculum_seed,
+        batch_size=batch_size,
+    )
+    spec = rank_spec or default_dry_run_rank_vote_spec()
+    per_key_metrics: dict[str, KeyProbeMetrics] = {}
+    for key, capture in bundle.per_key_captures.items():
+        per_key_metrics[key] = _probe_key_from_captures(
+            state_key=key,
+            inputs=capture.inputs,
+            grad_outputs=capture.grad_outputs,
+            weight_shape=capture.weight_shape,
+            q_levels_flat=capture.q_levels_flat,
+            spec=spec,
+        )
     return _finalize_tier_probe_result(
         tier_id="T2",
         per_key_metrics=per_key_metrics,
-        capture_provenance=provenance,
+        capture_provenance=bundle.provenance,
     )
 
 

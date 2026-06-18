@@ -47,8 +47,10 @@ from calm.hrm_text_158.native_full_stack.realistic_gradient_parity_probe import 
     run_realistic_gradient_parity_probe,
     run_tier1_trainer_16x16_capture,
     run_tier2_checkpoint_capture,
+    capture_tier2_checkpoint_raw_captures,
     validate_realistic_gradient_parity_probe_receipt,
     _measurement_validity_for_key,
+    _probe_key_from_captures,
 )
 from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     default_dry_run_rank_vote_spec,
@@ -359,6 +361,44 @@ def test_t2_live_read_only_integration_when_checkpoint_present():
     result = run_tier2_checkpoint_capture(checkpoint_path=str(discovery.checkpoint_path))
     assert result.tier_id == "T2"
     assert len(result.tensor_key_sample_set) > 0
+
+
+@pytest.mark.skipif(
+    not Path(DEFAULT_T2_CHECKPOINT_REL).is_file()
+    and not (
+        Path(__file__).resolve().parents[3] / DEFAULT_T2_CHECKPOINT_REL
+    ).is_file(),
+    reason="default T2 checkpoint absent on disk",
+)
+def test_capture_tier2_checkpoint_raw_captures_matches_probe_metrics():
+    discovery = discover_t2_checkpoint()
+    assert discovery.checkpoint_present
+    checkpoint_path = str(discovery.checkpoint_path)
+    bundle = capture_tier2_checkpoint_raw_captures(checkpoint_path=checkpoint_path)
+    wrapper = run_tier2_checkpoint_capture(checkpoint_path=checkpoint_path)
+    spec = default_dry_run_rank_vote_spec()
+    assert bundle.provenance.get("capture_seam_id") == "capture_tier2_checkpoint_raw_captures"
+    assert sorted(bundle.per_key_captures.keys()) == sorted(wrapper.per_key_metrics.keys())
+    for key, capture in bundle.per_key_captures.items():
+        direct = _probe_key_from_captures(
+            state_key=key,
+            inputs=capture.inputs,
+            grad_outputs=capture.grad_outputs,
+            weight_shape=capture.weight_shape,
+            q_levels_flat=capture.q_levels_flat,
+            spec=spec,
+        )
+        wrapped = wrapper.per_key_metrics[key]
+        assert direct.move_candidate_count == wrapped.move_candidate_count
+        assert direct.measurement_valid == wrapped.measurement_valid
+        assert direct.rank_positions_match_rate == pytest.approx(
+            wrapped.rank_positions_match_rate
+        )
+        assert direct.events_match_rate == pytest.approx(wrapped.events_match_rate)
+        assert direct.branch_id == wrapped.branch_id
+    assert wrapper.capture_provenance["tensor_keys_probed"] == bundle.provenance[
+        "tensor_keys_probed"
+    ]
 
 
 def test_verdict_metrics_use_full_candidate_set_not_receipt_cap():
