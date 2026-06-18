@@ -14,7 +14,16 @@ import torch
 
 from calm.hrm_text_158.native_full_stack.bounded_delta_learner import _as_bsi
 
-INTEGER_MARGINAL_ATTRIBUTION_LAW_ID = "einsum_q15q16_int32_v0"
+INTEGER_MARGINAL_ATTRIBUTION_LAW_ID_V0 = "einsum_q15q16_int32_v0"
+INTEGER_MARGINAL_ATTRIBUTION_LAW_ID_V1 = "einsum_q15q16_rescale_q24_v1"
+INTEGER_MARGINAL_ATTRIBUTION_PRODUCTION_LAW_ID = INTEGER_MARGINAL_ATTRIBUTION_LAW_ID_V1
+
+# Backward-compatible alias: historical tests and explicit v0 regression use this id.
+INTEGER_MARGINAL_ATTRIBUTION_LAW_ID = INTEGER_MARGINAL_ATTRIBUTION_LAW_ID_V0
+
+ATTRIBUTION_RESCALE_SHIFT_V0 = 31
+ATTRIBUTION_RESCALE_SHIFT_V1 = 24
+ATTRIBUTION_RESCALE_SHIFT = ATTRIBUTION_RESCALE_SHIFT_V1
 
 INPUT_Q15_SCALE = 2**15
 GRAD_Q16_SCALE = 2**16
@@ -104,19 +113,40 @@ def _quantize_to_int32(values: torch.Tensor, *, scale: int) -> torch.Tensor:
     return as_int64.to(torch.int32)
 
 
-def _rescale_accumulator_to_attribution_q31(accumulator: torch.Tensor) -> torch.Tensor:
-    """Map q15*q16 product sums back to q31 attribution integers (~fp_grad * 2^31)."""
+def _attribution_rescale_shift_for_law(law_id: str) -> int:
+    if law_id == INTEGER_MARGINAL_ATTRIBUTION_LAW_ID_V0:
+        return ATTRIBUTION_RESCALE_SHIFT_V0
+    if law_id == INTEGER_MARGINAL_ATTRIBUTION_LAW_ID_V1:
+        return ATTRIBUTION_RESCALE_SHIFT_V1
+    raise ValueError(f"unsupported law_id: {law_id!r}")
+
+
+def _rescale_accumulator_to_attribution_q(
+    accumulator: torch.Tensor,
+    *,
+    shift: int,
+) -> torch.Tensor:
+    """Map q15*q16 accumulator to int32 attribution with parameterized right-shift."""
 
     values = accumulator.to(torch.int64)
-    shift = 31
-    half = 1 << (shift - 1)
+    shift_i = int(shift)
+    half = 1 << (shift_i - 1)
     positive = values >= 0
     abs_values = values.abs()
-    rounded = (abs_values + half) >> shift
+    rounded = (abs_values + half) >> shift_i
     rescaled = torch.where(positive, rounded, -rounded)
     if bool((rescaled < INT32_MIN).any().item()) or bool((rescaled > INT32_MAX).any().item()):
         raise ValueError("integer marginal attribution accumulation overflowed int32 range")
     return rescaled.to(torch.int32)
+
+
+def _rescale_accumulator_to_attribution_q31(accumulator: torch.Tensor) -> torch.Tensor:
+    """Banked v0 rescale (>>31) retained for regression."""
+
+    return _rescale_accumulator_to_attribution_q(
+        accumulator,
+        shift=ATTRIBUTION_RESCALE_SHIFT_V0,
+    )
 
 
 def _accumulate_cpu_reference_dense_int32_scratch(
@@ -152,11 +182,14 @@ def integer_marginal_attribution_from_captures(
     grad_outputs: Sequence[torch.Tensor],
     *,
     weight_shape: Sequence[int],
-    law_id: str = INTEGER_MARGINAL_ATTRIBUTION_LAW_ID,
+    law_id: str = INTEGER_MARGINAL_ATTRIBUTION_PRODUCTION_LAW_ID,
     index_set_policy: str = INDEX_SET_ALL_STRUCTURALLY_TOUCHED,
     reference_flat_indices: torch.Tensor | None = None,
 ) -> IntegerMarginalAttributionEvents:
-    if law_id != INTEGER_MARGINAL_ATTRIBUTION_LAW_ID:
+    if law_id not in {
+        INTEGER_MARGINAL_ATTRIBUTION_LAW_ID_V0,
+        INTEGER_MARGINAL_ATTRIBUTION_LAW_ID_V1,
+    }:
         raise ValueError(f"unsupported law_id: {law_id!r}")
     if index_set_policy not in {
         INDEX_SET_ALL_STRUCTURALLY_TOUCHED,
@@ -179,7 +212,10 @@ def integer_marginal_attribution_from_captures(
         grad_outputs_reversed,
         weight_shape=weight_dims,
     )
-    attribution_dense = _rescale_accumulator_to_attribution_q31(accumulator)
+    attribution_dense = _rescale_accumulator_to_attribution_q(
+        accumulator,
+        shift=_attribution_rescale_shift_for_law(law_id),
+    )
 
     if index_set_policy == INDEX_SET_ALL_STRUCTURALLY_TOUCHED:
         flat = attribution_dense.reshape(-1)

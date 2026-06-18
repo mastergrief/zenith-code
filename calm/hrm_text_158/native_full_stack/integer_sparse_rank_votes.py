@@ -37,7 +37,9 @@ from calm.hrm_text_158.native_full_stack.integer_marginal_attribution import (
 from calm.hrm_text_158.native_full_stack.sparse_vote_events import SparseVoteEvents
 
 CREDIT_LAW_NEG_ATTRIBUTION_Q31_V0 = "credit_neg_attribution_q31_v0"
+CREDIT_LAW_NEG_ATTRIBUTION_Q31_V1 = "credit_neg_attribution_q31_v1"
 CREDIT_LAW_POW2_BUCKET_INTEGER_V0 = "credit_pow2_bucket_integer_v0"
+INTEGER_SPARSE_RANK_PRODUCTION_CREDIT_LAW_ID = CREDIT_LAW_NEG_ATTRIBUTION_Q31_V1
 
 BRANCH_3C_B_PARITY_PASS_CPU = "BR-3C-B-PARITY-PASS-CPU"
 BRANCH_3C_B_PARITY_FAIL = "BR-3C-B-PARITY-FAIL"
@@ -102,9 +104,12 @@ def _fail_closed_int32_cast(values: torch.Tensor) -> torch.Tensor:
 def credit_q31_from_attribution(
     attribution_q31: torch.Tensor,
     *,
-    credit_law_id: str = CREDIT_LAW_NEG_ATTRIBUTION_Q31_V0,
+    credit_law_id: str = INTEGER_SPARSE_RANK_PRODUCTION_CREDIT_LAW_ID,
 ) -> torch.Tensor:
-    if credit_law_id == CREDIT_LAW_NEG_ATTRIBUTION_Q31_V0:
+    if credit_law_id in {
+        CREDIT_LAW_NEG_ATTRIBUTION_Q31_V0,
+        CREDIT_LAW_NEG_ATTRIBUTION_Q31_V1,
+    }:
         if bool((attribution_q31 == INT32_MIN).any().item()):
             raise ValueError("attribution_q31 contains INT32_MIN; negation would overflow int32")
         return (-attribution_q31).to(torch.int32)
@@ -126,7 +131,7 @@ def sparse_rank_bucketed_vote_events_from_integer_credit(
     flat_indices: torch.Tensor,
     spec: RankVoteSpec,
     *,
-    credit_law_id: str = CREDIT_LAW_NEG_ATTRIBUTION_Q31_V0,
+    credit_law_id: str = INTEGER_SPARSE_RANK_PRODUCTION_CREDIT_LAW_ID,
 ) -> SparseVoteEvents:
     spec.validate()
     _validate_candidate_aligned(credit_q31, projected_moves, flat_indices)
@@ -161,7 +166,7 @@ def sparse_rank_votes_from_attribution_events(
     projected_moves: torch.Tensor,
     spec: RankVoteSpec,
     *,
-    credit_law_id: str = CREDIT_LAW_NEG_ATTRIBUTION_Q31_V0,
+    credit_law_id: str = INTEGER_SPARSE_RANK_PRODUCTION_CREDIT_LAW_ID,
 ) -> SparseVoteEvents:
     events.validate()
     if int(projected_move_indices.numel()) != int(projected_moves.numel()):
@@ -211,7 +216,7 @@ def compare_sparse_rank_to_fp_dense_reference(
     fp_moves_dense: torch.Tensor,
     spec: RankVoteSpec,
     *,
-    credit_law_id: str = CREDIT_LAW_NEG_ATTRIBUTION_Q31_V0,
+    credit_law_id: str = INTEGER_SPARSE_RANK_PRODUCTION_CREDIT_LAW_ID,
 ) -> IntegerSparseRankVoteResult:
     spec.validate()
     _validate_candidate_aligned(credit_q31, projected_moves, flat_indices)
@@ -250,7 +255,7 @@ def sparse_rank_votes_from_captures_reference(
     weight_shape: Sequence[int],
     q_levels_flat: torch.Tensor,
     spec: RankVoteSpec | None = None,
-    credit_law_id: str = CREDIT_LAW_NEG_ATTRIBUTION_Q31_V0,
+    credit_law_id: str = INTEGER_SPARSE_RANK_PRODUCTION_CREDIT_LAW_ID,
 ) -> IntegerSparseRankVoteResult:
     if spec is None:
         spec = default_dry_run_rank_vote_spec()

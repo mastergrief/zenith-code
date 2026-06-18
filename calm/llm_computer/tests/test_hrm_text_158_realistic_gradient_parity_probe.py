@@ -53,6 +53,12 @@ from calm.hrm_text_158.native_full_stack.realistic_gradient_parity_probe import 
 from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     default_dry_run_rank_vote_spec,
 )
+from calm.hrm_text_158.native_full_stack.integer_marginal_attribution import (
+    INTEGER_MARGINAL_ATTRIBUTION_LAW_ID_V0,
+)
+from calm.hrm_text_158.native_full_stack.integer_sparse_rank_votes import (
+    CREDIT_LAW_NEG_ATTRIBUTION_Q31_V0,
+)
 from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
     derive_trainer_sub2_authority_states,
     select_trainer_eligible_bitlinears,
@@ -382,10 +388,14 @@ def test_verdict_metrics_use_full_candidate_set_not_receipt_cap():
         )
         uncapped_records, uncapped_summary = build_per_candidate_parity_records(
             **common,
+            attribution_law_id=INTEGER_MARGINAL_ATTRIBUTION_LAW_ID_V0,
+            credit_law_id=CREDIT_LAW_NEG_ATTRIBUTION_Q31_V0,
             max_records=10_000,
         )
         capped_records, capped_summary = build_per_candidate_parity_records(
             **common,
+            attribution_law_id=INTEGER_MARGINAL_ATTRIBUTION_LAW_ID_V0,
+            credit_law_id=CREDIT_LAW_NEG_ATTRIBUTION_Q31_V0,
             max_records=8,
         )
     assert uncapped_summary["move_candidate_count"] > MAX_PER_CANDIDATE_RECORDS_PER_KEY

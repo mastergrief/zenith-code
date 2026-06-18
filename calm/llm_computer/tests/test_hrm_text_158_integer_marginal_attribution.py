@@ -21,6 +21,8 @@ from calm.hrm_text_158.native_full_stack.integer_marginal_attribution import (
     INDEX_SET_ALL_STRUCTURALLY_TOUCHED,
     INDEX_SET_PROJECTED_MOVE_REFERENCE_ONLY,
     INTEGER_MARGINAL_ATTRIBUTION_LAW_ID,
+    INTEGER_MARGINAL_ATTRIBUTION_LAW_ID_V0,
+    INTEGER_MARGINAL_ATTRIBUTION_PRODUCTION_LAW_ID,
     IntegerMarginalAttributionEvents,
     dense_int32_scratch_is_reference_only_not_row_flip_evidence,
     integer_marginal_attribution_from_captures,
@@ -173,7 +175,7 @@ def test_law_metadata_present():
         captures["grad_outputs"],
         weight_shape=weight_shape,
     )
-    assert events.law_id == INTEGER_MARGINAL_ATTRIBUTION_LAW_ID
+    assert events.law_id == INTEGER_MARGINAL_ATTRIBUTION_PRODUCTION_LAW_ID
     assert events.index_set_policy == INDEX_SET_ALL_STRUCTURALLY_TOUCHED
     assert events.is_production_oracle() is True
 

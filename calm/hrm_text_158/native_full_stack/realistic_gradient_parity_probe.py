@@ -26,11 +26,12 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     weighted_grad_from_captures,
 )
 from calm.hrm_text_158.native_full_stack.integer_marginal_attribution import (
+    INTEGER_MARGINAL_ATTRIBUTION_PRODUCTION_LAW_ID,
     integer_marginal_attribution_from_captures,
     projected_moves_from_integer_attribution,
 )
 from calm.hrm_text_158.native_full_stack.integer_sparse_rank_votes import (
-    CREDIT_LAW_NEG_ATTRIBUTION_Q31_V0,
+    INTEGER_SPARSE_RANK_PRODUCTION_CREDIT_LAW_ID,
     compare_sparse_rank_to_fp_dense_reference,
     credit_q31_from_attribution,
 )
@@ -464,7 +465,8 @@ def build_per_candidate_parity_records(
     weight_shape: Sequence[int],
     q_levels_flat: torch.Tensor,
     spec: RankVoteSpec,
-    credit_law_id: str = CREDIT_LAW_NEG_ATTRIBUTION_Q31_V0,
+    attribution_law_id: str = INTEGER_MARGINAL_ATTRIBUTION_PRODUCTION_LAW_ID,
+    credit_law_id: str = INTEGER_SPARSE_RANK_PRODUCTION_CREDIT_LAW_ID,
     max_records: int = MAX_PER_CANDIDATE_RECORDS_PER_KEY,
 ) -> tuple[list[PerCandidateParityRecord], dict[str, Any]]:
     weight_dims = tuple(int(dim) for dim in weight_shape)
@@ -472,6 +474,7 @@ def build_per_candidate_parity_records(
         inputs,
         grad_outputs,
         weight_shape=weight_dims,
+        law_id=attribution_law_id,
     )
     move_indices, moves = projected_moves_from_integer_attribution(
         attribution_events,
@@ -908,6 +911,7 @@ def run_tier2_checkpoint_capture(
     rank_spec: RankVoteSpec | None = None,
     device: torch.device | str = "cpu",
     curriculum_seed: int = 158,
+    batch_size: int = 4,
 ) -> TierProbeResult:
     if not Path(checkpoint_path).is_file():
         raise FileNotFoundError(checkpoint_path)
@@ -941,7 +945,7 @@ def run_tier2_checkpoint_capture(
     batch, _batch_proof = build_identity_full_batch(
         tok=tok,
         max_len=int(ckpt.get("config", {}).get("max_len", 32)),
-        batch_size=1,
+        batch_size=int(batch_size),
         curriculum_seed=int(curriculum_seed),
         device=torch_device,
     )
@@ -979,8 +983,12 @@ def run_tier2_checkpoint_capture(
         "checkpoint_path": str(checkpoint_path),
         "checkpoint_sha256": str(blob_sha),
         "routing": str(load_result.routing),
-        "batch_size": 1,
+        "batch_size": int(batch_size),
         "curriculum_seed": int(curriculum_seed),
+        "enriched_capture": True,
+        "attribution_law_id": INTEGER_MARGINAL_ATTRIBUTION_PRODUCTION_LAW_ID,
+        "credit_law_id": INTEGER_SPARSE_RANK_PRODUCTION_CREDIT_LAW_ID,
+        "tensor_keys_probed": sorted(per_key_metrics.keys()),
     }
     return _finalize_tier_probe_result(
         tier_id="T2",
@@ -1051,6 +1059,7 @@ def run_realistic_gradient_parity_probe(
     rank_spec: RankVoteSpec | None = None,
     device: torch.device | str = "cpu",
     run_t2: bool | None = None,
+    t2_batch_size: int = 4,
 ) -> RealisticGradientParityProbeReceipt:
     discovery = discover_t2_checkpoint(checkpoint_path=checkpoint_path)
     tier_results: dict[str, TierProbeResult] = {}
@@ -1067,6 +1076,7 @@ def run_realistic_gradient_parity_probe(
             checkpoint_sha256=discovery.checkpoint_sha256,
             rank_spec=rank_spec,
             device=device,
+            batch_size=int(t2_batch_size),
         )
         tier_results["T2"] = tier2
         tiers_executed.append("T2")
