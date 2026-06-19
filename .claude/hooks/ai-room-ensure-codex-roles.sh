@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # SessionStart helper: idempotently ensure the standing co-lead +
 # worker lanes are live for the derived channel — codex_co_lead via the
-# proven ensure-co-lead CLI path, plus training-dev (standing plan/review
-# lane), trainer-implement (standing bounded implementation executor lane),
-# and test-operator (standing deterministic proof-runner lane) in THIS
-# channel via lease-backed auto codex_N handles.
+# proven ensure-co-lead CLI path, plus plan-dev (standing plan/review +
+# bounded implementation lane) and test-operator (standing deterministic
+# proof-runner lane) in THIS channel via lease-backed auto codex_N handles.
 #
 # Idempotent: a role whose live-lease codex_home basename already matches is
 # skipped, so repeated session starts never stack duplicate workers.
@@ -12,9 +11,9 @@
 # are logged and never break Claude startup. Backgrounded by .claude/settings.json.
 # All output → the log; stdout stays clean.
 #
-# Role safety: training-dev, trainer-implement, and test-operator are spawned
+# Role safety: plan-dev and test-operator are spawned
 # IDLE in this channel — standing workers, NOT auto-dispatched work.
-# training-dev planning/review, trainer-implement bounded edits (require a
+# plan-dev planning/review, plan-dev bounded edits (require a
 # persisted Claude `+1 implement`), and any test-operator proof run still
 # require an explicit Claude task/approval (or launch) gate per
 # .claude/rules/CLAUDEX_ORCHESTRATION.md. test-operator full access is
@@ -48,9 +47,9 @@ echo "channel=$CHANNEL cwd=$PROJECT_DIR"
 ai-room ensure-co-lead --channel "$CHANNEL" --cwd "$PROJECT_DIR" \
   || echo "WARN ensure-co-lead failed (non-fatal)"
 
-# 2. Standing claudex lanes (training-dev plan/review + trainer-implement
-#    bounded implementation + test-operator deterministic proof-runner) in
-#    THIS channel on PINNED handles (codex / codex_1 / codex_2) so the
+# 2. Standing claudex lanes (plan-dev plan/review/bounded implementation
+#    + test-operator deterministic proof-runner) in
+#    THIS channel on PINNED handles (codex / codex_2) so the
 #    role↔handle mapping stays stable across sessions (codex_co_lead is
 #    pinned the same way by ensure-co-lead). Any other role is
 #    explicit-dispatch only, not a SessionStart standing role. Skip a role
@@ -64,8 +63,7 @@ CWD = os.environ["AI_ROOM_CWD"]
 # (role, pinned_handle): stable mapping across sessions; handles must match
 # the auto-codex pattern accepted by _spawn_claudex_core's collision guard.
 ROLES = [
-    ("training-dev", "codex"),
-    ("trainer-implement", "codex_1"),
+    ("plan-dev", "codex"),
     ("test-operator", "codex_2"),
 ]
 SPAWN_TIMEOUT = 120.0

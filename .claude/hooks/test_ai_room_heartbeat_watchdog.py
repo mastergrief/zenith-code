@@ -349,6 +349,84 @@ def test_emit_success_uses_channel_and_logs_msg_id():
     assert "POSTED action=stall wake=True channel=claw-code msg_id=1780494000000-deadbeef" in out, out
 
 
+@extra_test("gate_rewake_body_no_parallel_report_to")
+def test_gate_rewake_body_no_parallel_report_to():
+    wd = load_watchdog_module()
+    decision = wd.decide_gate(
+        {"worker": "codex", "gate_id": "g-test", "deadline_secs": 300},
+        n_rewakes=0,
+        n_escalates=0,
+    )
+    body = decision["body"]
+    assert decision["to"] == ["codex"]
+    assert "REPORT_TO: [claude, codex_co_lead]" not in body
+    assert "CROSS_THREAD_REQUIRED: yes" not in body
+
+
+@extra_test("emit_default_targets_claude_only")
+def test_emit_default_targets_claude_only():
+    wd = load_watchdog_module()
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return SimpleNamespace(returncode=0, stdout="posted id=x from=watchdog\n", stderr="")
+
+    orig_run = wd.subprocess.run
+    wd.subprocess.run = fake_run
+    try:
+        wd.emit({"action": "stall", "wake": False, "kind": "status_update", "body": "x"}, False, "")
+    finally:
+        wd.subprocess.run = orig_run
+    assert calls, "expected subprocess"
+    to_args = [calls[0][i + 1] for i, tok in enumerate(calls[0]) if tok == "--to"]
+    assert to_args == ["claude"], to_args
+
+
+@extra_test("heartbeat_routing_targets_claude_only")
+def test_heartbeat_routing_targets_claude_only():
+    wd = load_watchdog_module()
+    hb = {
+        "worker": "codex",
+        "hb_id": "hbZ",
+        "hb_ts": wd._parse_ts(T_HB),
+        "due": wd._parse_ts(DUE_EXP),
+        "phase": "cpu-proof",
+        "artifact": "",
+        "artifact_path": "",
+        "run_dir": "",
+        "task_id": TASK,
+        "metadata_present": True,
+    }
+    ev = {
+        "phase": "cpu-proof",
+        "moved": True,
+        "file_fresh": True,
+        "proc_correlated": False,
+        "gpu_used_mib": None,
+        "fresh_since": hb["hb_ts"],
+    }
+    extend = wd.decide(hb, ev, 0, 0, 0)
+    assert extend["to"] == ["claude"]
+    ev["moved"] = False
+    stall = wd.decide(hb, ev, 0, 0, 0)
+    assert stall["to"] == ["claude"]
+    assert stall.get("requires_from") == "claude"
+
+
+@extra_test("gate_escalate_keeps_both_requires_claude")
+def test_gate_escalate_keeps_both_requires_claude():
+    wd = load_watchdog_module()
+    decision = wd.decide_gate(
+        {"worker": "codex", "gate_id": "g-esc", "deadline_secs": 300},
+        n_rewakes=2,
+        n_escalates=0,
+    )
+    assert decision["action"] == "gate_escalate"
+    assert decision["to"] == ["claude", "codex_co_lead"]
+    assert decision["requires_from"] == "claude"
+
+
 def main():
     failures = 0
     for name, log_lines, now, ff, pc, expect in CASES:

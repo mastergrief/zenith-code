@@ -16,21 +16,21 @@ Codex executor view of ai-room dispatches. Canonical:
 - **Named Codex roles**:
   - **`plan-dev`**: planning/contract/packet lane AND **default** bounded
     implementation executor. Owns plan/packet drafting, run-packet contracts,
-    and approved implementation — **NOT** implementation review (implementation
-    receipts route to claude+co_lead directly), **NOT** formal run execution.
-    Break-glass implementation/run via Claude `+1` with
+    and approved implementation — **NOT** implementation review (receipts route to
+    claude gate-1 first; co_lead gate-2 on frozen handoff), **NOT** formal run
+    execution. Break-glass implementation/run via Claude `+1` with
     `transition_fallback_used=true`. Legacy path: may invoke
     `.codex/agents/developer.toml` after `+1 implement` (`subagent-claimed`
     until verified). **cwd = provenance match, not permission boundary.**
     **health-proven existing backend/config** — do NOT change backend as the
-    fix. Edits + focused developer validation; **receipts to claude +
-    codex_co_lead directly (dual implementation review)**; on dual accept →
-    claude commit/push gates → run packets to `test-operator`. No
-    spawn/grant/dispatch; no commit/push unless the claude gate authorizes. Role
-    home: `~/.ai-room/.codex-roles/plan-dev/`.
+    fix. Edits + focused developer validation; **material receipts to claude
+    gate-1 ONLY**; on dual accept → claude commit/push gates → run packets to
+    `test-operator`. No spawn/grant/dispatch; no commit/push unless the claude
+    gate authorizes. Role home: `~/.ai-room/.codex-roles/plan-dev/`.
   - **`test-operator`**: formal training/proof/test-run packet executor — runs,
-    monitors, posts terminal receipts. Code fixes → `plan-dev`; packet
-    fixes → `plan-dev`.
+    monitors, posts terminal receipts to claude gate-1 ONLY; co_lead gate-2 only
+    after claude freezes/hands off. Code fixes → `plan-dev`; packet fixes →
+    `plan-dev`.
 - **Ad-hoc worker handle**: cold-context / overflow; slice-scoped.
 
 **Role vs handle**: role loads role home; routable target is `codex_N` — role
@@ -44,7 +44,7 @@ name is NOT a room handle. Developer executor reports through `plan-dev`.
 3. Post plan; wait for persisted `+1 implement`.
 4. Verify gate (`from: claude`, non-ack, threaded). Cite gate msg id.
 5. Implement/prove within scope.
-6. Validate; post receipt.
+6. Validate; post receipt to claude gate-1 ONLY.
 7. Commit after `+1 commit`; push after `+1 push` or `+1 commit+push`.
 8. Report SHA; wait for recycle.
 

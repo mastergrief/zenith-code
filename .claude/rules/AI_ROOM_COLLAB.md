@@ -36,14 +36,22 @@ or break-glass reason.
     invoke `.codex/agents/developer.toml` (`subagent-claimed` until verified;
     no gate on that receipt alone). **health-proven existing backend/config**
     — do NOT change backend as the fix. Edits + focused developer validation in
-    scope; **receipts to claude FIRST (gate-1)**; include `codex_co_lead` in
-    `REPORT_TO` for audit visibility — co_lead ignores in-flight unless claude
-    requests ideation/blocker-triage. On dual accept proceed to claude commit/
+    scope; **receipts to claude gate-1 FIRST** (material sink). co_lead gate-2
+    reviews only claude's frozen handoff — not in parallel on the raw receipt.
+    On dual accept proceed to claude commit/
     push gates, then run packets route to `test-operator`. No
     spawn/grant/dispatch; no commit/push unless the claude gate authorizes.
   - **`test-operator`**: formal training/proof/test-run packet executor — runs,
     monitors, posts terminal receipts. Code fixes → `plan-dev`; packet
     fixes → `plan-dev`.
+
+**Active codex room roster (this repo):** `codex_co_lead`, `plan-dev`,
+`test-operator` only. Retired spawnable role names (`training-dev`,
+`trainer-implement`, `trainer-dev`, `codex-dev`, `codex-explore`,
+`codex-terminal`, `tmux-tester`, `curriculum-dev`, and similar legacy lanes)
+are not standing roles here. `.codex/agents/developer.toml` is plan-dev's
+bounded executor template — not a fourth room role. Claude-side Explore-agent
+fan-out is orchestration, not a codex role.
 
 ## Cross-thread at thinking boundaries
 
@@ -141,9 +149,15 @@ direct addressed post citing the task_update msg id.
 
 ## Review gate glossary
 
-**REPORT_TO** = audit/provenance visibility (not parallel review). **REVIEW_ORDER**
-= gate sequencing. Freeze discipline: immutable filename per version; on-disk
-sha self-verify before any frozen claim; no in-flight artifact review.
+**UNIFYING RULE:** routine material receipts (plan/packet/validation/diff/proof/
+launch) → **claude gate-1 sink ONLY**. co_lead gate-2 follows claude's frozen
+handoff. Only **safety/liveness escalations** (stall, commit/push/launch safety
+blockers) may cc both co-leads, with **claude as the sole required responder**.
+
+**REPORT_TO** on worker dispatches = `claude` only for routing (not parallel
+co_lead review). **REVIEW_ORDER** = gate sequencing. Freeze discipline: immutable
+filename per version; on-disk sha self-verify before any frozen claim; no
+in-flight artifact review. **Passive-wait-don't-poll** at gates.
 
 ## Fast Training Launch Contract
 

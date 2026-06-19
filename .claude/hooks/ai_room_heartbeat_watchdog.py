@@ -390,6 +390,7 @@ def prove_liveness(hb, last_check_ts):
 def decide(hb, ev, n_extends, n_stalls, n_retired):
     if ev["moved"]:
         return {"action": "extend", "kind": "status_update", "wake": False,
+                "to": ["claude"],
                 "body": (
                     f"WATCHDOG_HEARTBEAT_EXTEND — task {hb.get('task_id') or '?'} "
                     f"worker {hb['worker']} OVERDUE (hb {hb.get('hb_id')}, phase "
@@ -404,6 +405,7 @@ def decide(hb, ev, n_extends, n_stalls, n_retired):
         # heartbeat post supersedes this one (find_active_heartbeats takes latest-per-worker).
         if n_retired == 0:
             return {"action": "retire", "kind": "status_update", "wake": False,
+                    "to": ["claude"],
                     "body": (
                         f"WATCHDOG_RETIRED — worker {hb['worker']} heartbeat "
                         f"{hb.get('hb_id')} (phase {ev['phase'] or '?'}) retired after "
@@ -418,6 +420,7 @@ def decide(hb, ev, n_extends, n_stalls, n_retired):
                  f"extends={n_extends} stalls={n_stalls}).") if escalate else
                 "RECOMMEND re-drive (1st miss, no fresh movement) — verify wedge then recycle.")
     return {"action": "stall", "kind": "status_update", "wake": True,
+            "to": ["claude"], "requires_from": "claude",
             "body": (
                 f"WATCHDOG_STALL — heartbeat_overdue. task {hb.get('task_id') or '?'} "
                 f"worker {hb['worker']}; last hb {hb.get('hb_id')} phase "
@@ -541,8 +544,7 @@ def decide_gate(gate, n_rewakes, n_escalates):
                     f"terminal validation_receipt threaded to the gate. If the work is "
                     f"already done, post the terminal receipt citing the gate id "
                     f"immediately. Silence past this re-wake escalates to claude. "
-                    f"Non-destructive watchdog; no state touched. "
-                    f"REPORT_TO: [claude, codex_co_lead] CROSS_THREAD_REQUIRED: yes")}
+                    f"Non-destructive watchdog; no state touched.")}
     return {"action": "gate_escalate", "kind": "status_update", "wake": True,
             "to": ["claude", "codex_co_lead"], "requires_from": "claude",
             "deadline": STALL_RESPONSE_DEADLINE, "worker": worker,
@@ -596,7 +598,7 @@ def emit(decision, dry_run, channel=""):
     if channel:
         cmd += ["--channel", channel]
     cmd += ["post", WATCHDOG_FROM]
-    for target in decision.get("to") or ["claude", "codex_co_lead"]:
+    for target in decision.get("to") or ["claude"]:
         cmd += ["--to", target]
     cmd += ["--kind", decision["kind"]]
     if decision["wake"]:

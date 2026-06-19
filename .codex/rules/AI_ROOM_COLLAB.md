@@ -12,9 +12,10 @@ charter: `.claude/rules/AI_ROOM_COLLAB.md`. **Not a subagent pattern.**
 operations/orchestration lead.
 
 Gabe seeds → claude+codex co-hypothesize → `plan-dev` writes the
-plan/packet AND bounded-implements after +1 → claude+co_lead review the
-implementation receipt directly → claude commit/push gates → `test-operator`
-owns formal run execution → gate → iterate. Claude+co_lead review/audit, NOT execute.
+plan/packet AND bounded-implements after +1 → **claude gate-1 → co_lead gate-2
+on frozen handoff** (sequential dual accept) → claude commit/push gates →
+`test-operator` owns formal run execution → gate → iterate. Thinking stays
+parallel; artifact review gates are sequential. Claude+co_lead review/audit, NOT execute.
 
 - **Gabe**: seeds, picks risk/cost/goal, final human gates.
 - **Claude + codex**: hypothesis quality, gate design, counter-cases, audit.
@@ -25,19 +26,26 @@ owns formal run execution → gate → iterate. Claude+co_lead review/audit, NOT
 - **Named Codex roles**:
   - **`plan-dev`**: planning/contract/packet lane AND **default** bounded
     implementation executor. Owns plan/packet drafting, run-packet contracts,
-    and approved implementation — **NOT** implementation review (implementation
-    receipts route to claude+co_lead directly), **NOT** formal run execution.
-    Break-glass implementation/run only via Claude `+1` with
+    and approved implementation — **NOT** implementation review (receipts route to
+    claude gate-1 first; co_lead gate-2 on frozen handoff), **NOT** formal run
+    execution. Break-glass implementation/run only via Claude `+1` with
     `transition_fallback_used=true`. Legacy path: may invoke
     `.codex/agents/developer.toml` after `+1 implement` (`subagent-claimed`
     until verified). **health-proven existing backend/config** — do NOT change
-    backend as the fix. Edits + focused developer validation; **receipts to
-    claude + codex_co_lead directly (dual implementation review)**; on dual
-    accept → claude commit/push gates → run packets to `test-operator`. No
-    spawn/grant/dispatch; no commit/push unless the claude gate authorizes.
+    backend as the fix. Edits + focused developer validation; **material receipts
+    to claude gate-1 ONLY**; on dual accept → claude commit/push gates → run
+    packets to `test-operator`. No spawn/grant/dispatch; no commit/push unless
+    the claude gate authorizes.
   - **`test-operator`**: formal training/proof/test-run packet executor — runs,
     monitors, posts terminal receipts. Code fixes → `plan-dev`; packet
     fixes → `plan-dev`.
+
+**Active codex room roster (this repo):** `codex_co_lead`, `plan-dev`,
+`test-operator` only. Retired spawnable role names (`training-dev`,
+`trainer-implement`, `trainer-dev`, `codex-dev`, `codex-explore`,
+`codex-terminal`, `tmux-tester`, `curriculum-dev`, and similar legacy lanes)
+are not standing roles here. `.codex/agents/developer.toml` is plan-dev's
+bounded executor template — not a fourth room role.
 
 ## Cross-thread at thinking boundaries
 

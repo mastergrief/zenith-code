@@ -221,6 +221,10 @@ Train-perfect with held-recombination failure is a useful null: answer-only rows
 
 ## Long-running training supervision
 
+**Review routing (ai-room):** thinking stays parallel; artifact review gates are
+sequential (claude gate-1 → co_lead gate-2 on frozen handoff). **Passive-wait-
+don't-poll** at gates — no inbox polling or sleep-recheck loops on healthy peers.
+
 Foreground-session + Monitor pattern:
 ```bash
 # In a dedicated shell/session, run the job as the foreground process
