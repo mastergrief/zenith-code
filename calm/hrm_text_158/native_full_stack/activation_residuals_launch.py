@@ -15,7 +15,6 @@ from calm.hrm_text_158.native_full_stack.activation_relief import (
     compute_canonical_launch_artifact_sha256,
     compute_gpu_identity_sha256,
     compute_launch_manifest_sha256,
-    compute_proof_env_hash_sha256,
     validate_activation_relief_measurement,
 )
 from calm.hrm_text_158.native_full_stack.activation_relief import (
@@ -72,12 +71,14 @@ R2AL_PROOF_ENV_HASH_KEYS = (
     "R2AL_W6_PARENT_PATH",
     "R2AL_P1_RECEIPT_JSON",
     "R2AL_R1L_RECEIPT_JSON",
+    "R2AL_GIT_REPO_ROOT",
     "TORCH_CUDA_ALLOC_CONF",
     "CUBLAS_WORKSPACE_CONFIG",
 )
 REQUIRED_R2AL_PROOF_ENV_KEYS = (
     "PYTHONDONTWRITEBYTECODE",
     "PYTHONPATH",
+    "R2AL_GIT_REPO_ROOT",
     "R2AL_LAUNCH_RECEIPT_JSON",
     "R2AL_LAUNCH_LOG",
     "R2AL_W6_PARENT_PATH",
@@ -276,7 +277,54 @@ def sha256_file_bytes(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _resolve_r2al_repo_root() -> Path:
+def compute_r2al_proof_env_hash_sha256(env_embedded: Mapping[str, str]) -> str:
+    payload = {key: str(env_embedded.get(key, "")) for key in R2AL_PROOF_ENV_HASH_KEYS}
+    return _canonical_json_sha256(payload)
+
+
+def _proof_env_embedded_mapping(value: object, *, field_name: str) -> dict[str, str]:
+    embedded = _embedded_mapping(
+        value,
+        field_name=field_name,
+        required_keys=REQUIRED_R2AL_PROOF_ENV_KEYS,
+    )
+    empty = [
+        key
+        for key in REQUIRED_R2AL_PROOF_ENV_KEYS
+        if not str(embedded.get(key, "")).strip()
+    ]
+    if empty:
+        raise ValueError(f"{field_name} missing required keys: {', '.join(empty)}")
+    return embedded
+
+
+def _require_nonempty_proof_env_keys(
+    env_embedded: Mapping[str, str],
+    *,
+    field_name: str,
+) -> None:
+    missing_or_empty = [
+        key
+        for key in REQUIRED_R2AL_PROOF_ENV_KEYS
+        if not str(env_embedded.get(key, "")).strip()
+    ]
+    if missing_or_empty:
+        raise ValueError(
+            f"{field_name} missing required keys: {', '.join(missing_or_empty)}"
+        )
+
+
+def _resolve_r2al_repo_root(*, proof_env: Mapping[str, str] | None = None) -> Path:
+    raw = ""
+    if proof_env is not None:
+        raw = str(proof_env.get("R2AL_GIT_REPO_ROOT", "")).strip()
+    if not raw:
+        raw = os.environ.get("R2AL_GIT_REPO_ROOT", "").strip()
+    if raw:
+        root = Path(raw)
+        if not root.exists():
+            raise ValueError(f"R2AL_GIT_REPO_ROOT does not exist: {raw!r}")
+        return root.resolve()
     return Path(__file__).resolve().parents[3]
 
 
@@ -457,6 +505,7 @@ def validate_r2al_live_base_preflight(
     verify_r2al_banked_p1_ancestor_preflight(
         p1_receipt=p1_receipt,
         launch_source_commit_sha=receipt.launch_source_commit_sha,
+        repo_root=_resolve_r2al_repo_root(proof_env=receipt.proof_env_embedded),
     )
     validate_trainer_sub2_authority_live_conversion_receipt(
         p1_receipt,
@@ -598,7 +647,7 @@ def launch_runtime_activation_residuals_receipt_from_dict(
             field_name="launch_manifest_embedded",
             required_keys=R2AL_LAUNCH_MANIFEST_EMBEDDED_KEYS,
         ),
-        proof_env_embedded=_embedded_mapping(
+        proof_env_embedded=_proof_env_embedded_mapping(
             payload.get("proof_env_embedded"),
             field_name="proof_env_embedded",
         ),
@@ -774,6 +823,7 @@ def build_launch_runtime_activation_residuals_validation_receipt(
 ) -> LaunchRuntimeActivationResidualsValidationReceipt:
     manifest = dict(launch_manifest_embedded)
     env = dict(proof_env_embedded)
+    _require_nonempty_proof_env_keys(env, field_name="proof_env_embedded")
     if manifest.get("r2a_cpu_base_commit_sha") != r2a_cpu_base_commit_sha:
         raise ValueError("launch manifest r2a_cpu_base_commit_sha mismatch")
     if r2a_cpu_base_commit_sha != R2A_CPU_BASE_COMMIT_SHA:
@@ -781,6 +831,7 @@ def build_launch_runtime_activation_residuals_validation_receipt(
     ancestry_verified_at_launch_preflight = verify_r2al_banked_p1_ancestor_preflight(
         p1_receipt=p1_receipt,
         launch_source_commit_sha=launch_source_commit_sha,
+        repo_root=_resolve_r2al_repo_root(proof_env=env),
     )
     live_base = derive_r2al_live_base_fields(p1_receipt=p1_receipt, r1l_receipt=r1l_receipt)
     cuda_delta = (
@@ -829,7 +880,7 @@ def build_launch_runtime_activation_residuals_validation_receipt(
         launch_manifest_embedded=manifest,
         proof_env_embedded=env,
         proof_command_argv=tuple(str(arg) for arg in proof_command_argv),
-        proof_env_hash_sha256=compute_proof_env_hash_sha256(env),
+        proof_env_hash_sha256=compute_r2al_proof_env_hash_sha256(env),
         clean_run_dir_sha256=clean_run_dir_sha256,
         w6_parent_path=w6_parent_path,
         w6_parent_sha256_before=w6_parent_sha256,
@@ -948,11 +999,11 @@ def validate_launch_runtime_activation_residuals_receipt(
         raise ValueError("R2-A-L launch receipt launch_source_commit_sha mismatch")
     if receipt.launch_manifest_sha256 != compute_launch_manifest_sha256(manifest_embedded):
         raise ValueError("R2-A-L launch receipt launch_manifest_sha256 mismatch")
-    env_embedded = _embedded_mapping(
+    env_embedded = _proof_env_embedded_mapping(
         receipt.proof_env_embedded,
         field_name="proof_env_embedded",
     )
-    if receipt.proof_env_hash_sha256 != compute_proof_env_hash_sha256(env_embedded):
+    if receipt.proof_env_hash_sha256 != compute_r2al_proof_env_hash_sha256(env_embedded):
         raise ValueError("R2-A-L launch receipt proof_env_hash_sha256 mismatch")
     if not receipt.proof_command_argv:
         raise ValueError("R2-A-L launch receipt requires proof_command_argv")
@@ -1064,7 +1115,8 @@ def validate_launch_runtime_activation_residuals_artifacts(
     if not isinstance(env_payload, dict):
         raise ValueError("R2-A-L env snapshot bytes must decode to an object")
     env_embedded = {str(key): str(value) for key, value in env_payload.items()}
-    if compute_proof_env_hash_sha256(env_embedded) != receipt.proof_env_hash_sha256:
+    _require_nonempty_proof_env_keys(env_embedded, field_name="proof_env_embedded")
+    if compute_r2al_proof_env_hash_sha256(env_embedded) != receipt.proof_env_hash_sha256:
         raise ValueError("R2-A-L env snapshot proof_env_hash_sha256 mismatch")
     if log_bytes is None or not log_bytes:
         raise ValueError("R2-A-L launch log snapshot bytes are required")
@@ -1377,6 +1429,7 @@ def run_r2al_gpu_launch_proof(
     verify_r2al_banked_p1_ancestor_preflight(
         p1_receipt=p1_receipt,
         launch_source_commit_sha=launch_source_commit_sha,
+        repo_root=_resolve_r2al_repo_root(proof_env=proof_env_embedded),
     )
     derive_r2al_live_base_fields(p1_receipt=p1_receipt, r1l_receipt=r1l_receipt)
 

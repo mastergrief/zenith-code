@@ -16,13 +16,16 @@ from calm.hrm_text_158.native_full_stack.activation_residuals_launch import (
     LAUNCH_RUNTIME_ACTIVATION_RESIDUALS_NON_CLAIMS,
     LaunchRuntimeActivationResidualsValidationReceipt,
     R2A_CPU_BASE_COMMIT_SHA,
+    R2alLaunchProofAbort,
     R2alLaunchProofMeasurements,
+    _resolve_r2al_repo_root,
     build_launch_runtime_activation_residuals_validation_receipt,
     canonicalize_base_sub2_surface_ids,
     derive_r2al_live_base_fields,
     launch_runtime_activation_residuals_receipt_from_dict,
     validate_launch_runtime_activation_residuals_receipt,
     validate_r2al_live_base_preflight,
+    verify_git_commit_is_ancestor,
     verify_r2al_banked_p1_ancestor_preflight,
 )
 from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
@@ -75,9 +78,26 @@ def _valid_synthetic_measurements(**overrides) -> R2alLaunchProofMeasurements:
     return base
 
 
-def _write_receipt_json(path: Path, payload: dict[str, object]) -> None:
+def _repo_git_root() -> str:
+    return str(Path(__file__).resolve().parents[3])
+
+
+def _write_receipt_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _r2al_env(tmp_path: Path, *, p1_path: Path, r1l_path: Path) -> dict[str, str]:
+    return {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONPATH": ".",
+        "R2AL_GIT_REPO_ROOT": _repo_git_root(),
+        "R2AL_LAUNCH_RECEIPT_JSON": str(tmp_path / "receipts" / "r2al_launch_runtime_receipt.json"),
+        "R2AL_LAUNCH_LOG": str(tmp_path / "logs" / "r2al_launch.log"),
+        "R2AL_W6_PARENT_PATH": str(tmp_path / "artifacts" / "w6_parent_readonly.pt"),
+        "R2AL_P1_RECEIPT_JSON": str(p1_path),
+        "R2AL_R1L_RECEIPT_JSON": str(r1l_path),
+    }
 
 
 def _setup_r2al_receipt_paths(tmp_path: Path) -> dict[str, Path]:
@@ -103,15 +123,7 @@ def _mint_valid_r2al_launch_receipt(tmp_path: Path) -> LaunchRuntimeActivationRe
         "archive_created_at_utc": "2026-06-19T00:00:00Z",
         "archive_method": "git_archive_HEAD",
     }
-    env = {
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "PYTHONPATH": ".",
-        "R2AL_LAUNCH_RECEIPT_JSON": str(tmp_path / "receipts" / "r2al_launch_runtime_receipt.json"),
-        "R2AL_LAUNCH_LOG": str(tmp_path / "logs" / "r2al_launch.log"),
-        "R2AL_W6_PARENT_PATH": str(tmp_path / "artifacts" / "w6_parent_readonly.pt"),
-        "R2AL_P1_RECEIPT_JSON": str(paths["p1_path"]),
-        "R2AL_R1L_RECEIPT_JSON": str(paths["r1l_path"]),
-    }
+    env = _r2al_env(tmp_path, p1_path=paths["p1_path"], r1l_path=paths["r1l_path"])
     (tmp_path / "logs").mkdir(parents=True, exist_ok=True)
     (tmp_path / "logs" / "r2al_launch.log").write_bytes(b"R2-A-L launch proof log\n")
     return build_launch_runtime_activation_residuals_validation_receipt(
@@ -148,15 +160,7 @@ def test_r2al_receipt_roundtrip_and_validator(tmp_path):
 
 def test_r2al_validator_rejects_missing_r1l_base(tmp_path):
     paths = _setup_r2al_receipt_paths(tmp_path)
-    env = {
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "PYTHONPATH": ".",
-        "R2AL_LAUNCH_RECEIPT_JSON": str(tmp_path / "receipts" / "r2al_launch_runtime_receipt.json"),
-        "R2AL_LAUNCH_LOG": str(tmp_path / "logs" / "r2al_launch.log"),
-        "R2AL_W6_PARENT_PATH": str(tmp_path / "artifacts" / "w6_parent_readonly.pt"),
-        "R2AL_P1_RECEIPT_JSON": str(paths["p1_path"]),
-        "R2AL_R1L_RECEIPT_JSON": str(tmp_path / "missing_r1l.json"),
-    }
+    env = _r2al_env(tmp_path, p1_path=paths["p1_path"], r1l_path=tmp_path / "missing_r1l.json")
     from calm.hrm_text_158.native_full_stack.activation_residuals_launch import (
         load_r2al_base_receipts_from_env,
     )
@@ -364,15 +368,7 @@ def test_r2al_banked_ancestor_p1_passes_derive_preflight_and_applier(tmp_path):
         "archive_created_at_utc": "2026-06-19T00:00:00Z",
         "archive_method": "git_archive_HEAD",
     }
-    env = {
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "PYTHONPATH": ".",
-        "R2AL_LAUNCH_RECEIPT_JSON": str(tmp_path / "receipts" / "r2al_launch_runtime_receipt.json"),
-        "R2AL_LAUNCH_LOG": str(tmp_path / "logs" / "r2al_launch.log"),
-        "R2AL_W6_PARENT_PATH": str(tmp_path / "artifacts" / "w6_parent_readonly.pt"),
-        "R2AL_P1_RECEIPT_JSON": str(p1_path),
-        "R2AL_R1L_RECEIPT_JSON": str(r1l_path),
-    }
+    env = _r2al_env(tmp_path, p1_path=p1_path, r1l_path=r1l_path)
     (tmp_path / "logs").mkdir(parents=True, exist_ok=True)
     (tmp_path / "logs" / "r2al_launch.log").write_bytes(b"R2-A-L launch proof log\n")
     receipt = build_launch_runtime_activation_residuals_validation_receipt(
@@ -435,4 +431,185 @@ def test_r2al_non_ancestor_p1_fails_preflight(monkeypatch):
         verify_r2al_banked_p1_ancestor_preflight(
             p1_receipt=p1_receipt,
             launch_source_commit_sha="f" * 40,
+        )
+
+
+def test_r2al_git_repo_root_missing_path_fails_closed(monkeypatch):
+    monkeypatch.setenv("R2AL_GIT_REPO_ROOT", "/nonexistent/r2al/git/root/path")
+    with pytest.raises(ValueError, match="R2AL_GIT_REPO_ROOT does not exist"):
+        _resolve_r2al_repo_root()
+
+
+def test_r2al_git_repo_root_env_override_uses_provided_cwd(monkeypatch):
+    real_repo = _repo_git_root()
+    monkeypatch.setenv("R2AL_GIT_REPO_ROOT", real_repo)
+    seen: dict[str, object] = {}
+
+    def _fake_run(cmd, cwd=None, **kwargs):
+        seen["cwd"] = cwd
+
+        class _Result:
+            returncode = 0
+            stderr = ""
+
+        return _Result()
+
+    verify_git_commit_is_ancestor(
+        "3936d74966f3e9c1b0688d74b56b6aa598ebddcd",
+        "dacac0a7557738f678392011dc4c281904782db8",
+        subprocess_run=_fake_run,
+    )
+    assert str(seen["cwd"]) == real_repo
+
+
+def test_r2al_verify_head_matches_uses_env_root(monkeypatch):
+    import subprocess
+
+    real_repo = _repo_git_root()
+    launch_source = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"],
+        cwd=real_repo,
+        text=True,
+    ).strip()
+    monkeypatch.setenv("R2AL_GIT_REPO_ROOT", real_repo)
+    p1_receipt = replace(
+        _mint_live_conversion_receipt(),
+        source_commit_sha=R2A_CPU_BASE_COMMIT_SHA,
+    )
+    assert verify_r2al_banked_p1_ancestor_preflight(
+        p1_receipt=p1_receipt,
+        launch_source_commit_sha=launch_source,
+        verify_head_matches_launch_source=True,
+    )
+
+
+def test_r2al_proof_env_requires_git_repo_root(tmp_path, monkeypatch):
+    from calm.hrm_text_158.native_full_stack.activation_residuals_launch import (
+        _read_r2al_proof_env_embedded,
+    )
+
+    env_path = tmp_path / "proof_env.json"
+    env_path.write_text(
+        json.dumps(
+            {
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONPATH": ".",
+                "R2AL_LAUNCH_RECEIPT_JSON": str(tmp_path / "receipt.json"),
+                "R2AL_LAUNCH_LOG": str(tmp_path / "launch.log"),
+                "R2AL_W6_PARENT_PATH": str(tmp_path / "w6.pt"),
+                "R2AL_P1_RECEIPT_JSON": str(tmp_path / "p1.json"),
+                "R2AL_R1L_RECEIPT_JSON": str(tmp_path / "r1l.json"),
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("R2AL_LAUNCH_ENV_JSON", str(env_path))
+    with pytest.raises(R2alLaunchProofAbort, match="R2AL_GIT_REPO_ROOT"):
+        _read_r2al_proof_env_embedded()
+
+
+def test_r2al_validator_rejects_proof_env_missing_git_repo_root(tmp_path):
+    receipt = _mint_valid_r2al_launch_receipt(tmp_path)
+    env = dict(receipt.proof_env_embedded)
+    del env["R2AL_GIT_REPO_ROOT"]
+    forged = replace(receipt, proof_env_embedded=env)
+    with pytest.raises(ValueError, match="proof_env_embedded missing required keys.*R2AL_GIT_REPO_ROOT"):
+        validate_launch_runtime_activation_residuals_receipt(forged)
+
+
+def test_r2al_validator_rejects_proof_env_empty_git_repo_root(tmp_path):
+    receipt = _mint_valid_r2al_launch_receipt(tmp_path)
+    env = dict(receipt.proof_env_embedded)
+    env["R2AL_GIT_REPO_ROOT"] = ""
+    forged = replace(receipt, proof_env_embedded=env)
+    with pytest.raises(ValueError, match="proof_env_embedded missing required keys.*R2AL_GIT_REPO_ROOT"):
+        validate_launch_runtime_activation_residuals_receipt(forged)
+
+
+def test_r2al_receipt_from_dict_rejects_proof_env_missing_git_repo_root(tmp_path):
+    receipt = _mint_valid_r2al_launch_receipt(tmp_path)
+    payload = receipt.to_dict()
+    env = dict(payload["proof_env_embedded"])
+    del env["R2AL_GIT_REPO_ROOT"]
+    payload["proof_env_embedded"] = env
+    with pytest.raises(ValueError, match="proof_env_embedded missing required keys.*R2AL_GIT_REPO_ROOT"):
+        launch_runtime_activation_residuals_receipt_from_dict(payload)
+
+
+def test_r2al_receipt_from_dict_rejects_proof_env_empty_git_repo_root(tmp_path):
+    receipt = _mint_valid_r2al_launch_receipt(tmp_path)
+    payload = receipt.to_dict()
+    env = dict(payload["proof_env_embedded"])
+    env["R2AL_GIT_REPO_ROOT"] = "  "
+    payload["proof_env_embedded"] = env
+    with pytest.raises(ValueError, match="proof_env_embedded missing required keys.*R2AL_GIT_REPO_ROOT"):
+        launch_runtime_activation_residuals_receipt_from_dict(payload)
+
+
+def test_r2al_artifact_validator_rejects_proof_env_missing_git_repo_root(tmp_path):
+    from calm.hrm_text_158.native_full_stack.activation_residuals_launch import (
+        validate_launch_runtime_activation_residuals_artifacts,
+    )
+
+    receipt = _mint_valid_r2al_launch_receipt(tmp_path)
+    manifest_bytes = (
+        json.dumps(dict(receipt.launch_manifest_embedded), indent=2, sort_keys=True) + "\n"
+    ).encode()
+    receipt = replace(
+        receipt,
+        launch_manifest_sha256=hashlib.sha256(manifest_bytes).hexdigest(),
+    )
+    env = dict(receipt.proof_env_embedded)
+    del env["R2AL_GIT_REPO_ROOT"]
+    env_snapshot_bytes = json.dumps(env, sort_keys=True).encode()
+    log_bytes = b"R2-A-L launch proof log\n"
+    with pytest.raises(ValueError, match="proof_env_embedded missing required keys.*R2AL_GIT_REPO_ROOT"):
+        validate_launch_runtime_activation_residuals_artifacts(
+            receipt,
+            launch_manifest_bytes=manifest_bytes,
+            env_snapshot_bytes=env_snapshot_bytes,
+            log_bytes=log_bytes,
+        )
+
+
+def test_r2al_build_receipt_rejects_proof_env_missing_git_repo_root(tmp_path, monkeypatch):
+    paths = _setup_r2al_receipt_paths(tmp_path)
+    from calm.llm_computer.tests.test_hrm_text_158_trainer_sub2_authority_live_checkpoint import (
+        _repo_head_sha,
+    )
+
+    launch_source = _repo_head_sha()
+    env = _r2al_env(tmp_path, p1_path=paths["p1_path"], r1l_path=paths["r1l_path"])
+    del env["R2AL_GIT_REPO_ROOT"]
+    monkeypatch.delenv("R2AL_GIT_REPO_ROOT", raising=False)
+    manifest = {
+        "r2a_cpu_base_commit_sha": R2A_CPU_BASE_COMMIT_SHA,
+        "launch_source_commit_sha": launch_source,
+        "archive_created_at_utc": "2026-06-19T00:00:00Z",
+        "archive_method": "git_archive_HEAD",
+    }
+    (tmp_path / "logs").mkdir(parents=True, exist_ok=True)
+    with pytest.raises(ValueError, match="proof_env_embedded missing required keys.*R2AL_GIT_REPO_ROOT"):
+        build_launch_runtime_activation_residuals_validation_receipt(
+            launch_source_commit_sha=launch_source,
+            launch_manifest_embedded=manifest,
+            proof_env_embedded=env,
+            proof_command_argv=("pytest", "r2al-launch"),
+            clean_run_dir_sha256="a" * 64,
+            w6_parent_path=str(tmp_path / "artifacts" / "w6_parent_readonly.pt"),
+            w6_parent_sha256="9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec",
+            gpu_name="synthetic-gpu",
+            gpu_uuid="gpu-uuid-r2al-test",
+            driver_version="550.00",
+            cuda_version="12.4",
+            torch_version="2.5.0",
+            model_config_digest_sha256="b" * 64,
+            proof_batch_digest_sha256="c" * 64,
+            retained_support_digest_sha256=hashlib.sha256(b"[]").hexdigest(),
+            p1_receipt=_mint_live_conversion_receipt(),
+            r1l_receipt=_mint_valid_launch_receipt(),
+            p1_receipt_path=paths["p1_path"],
+            r1l_receipt_path=paths["r1l_path"],
+            measurements=_valid_synthetic_measurements(),
+            log_artifact_sha256=hashlib.sha256(b"R2-A-L launch proof log\n").hexdigest(),
         )
