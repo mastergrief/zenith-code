@@ -1126,6 +1126,16 @@ def apply_live_activation_residuals_surface_overrides(
         raise ValueError(
             "CPU production seam observation receipt cannot flip live scaffold"
         )
+    from calm.hrm_text_158.native_full_stack.activation_residuals_m1_remat import (
+        TrainerActivationResidualsLosslessEquivalenceReceipt,
+        validate_trainer_activation_residuals_lossless_equivalence_receipt,
+    )
+
+    if isinstance(receipt, TrainerActivationResidualsLosslessEquivalenceReceipt):
+        validate_trainer_activation_residuals_lossless_equivalence_receipt(receipt)
+        raise ValueError(
+            "CPU lossless equivalence receipt cannot flip live scaffold"
+        )
     raise TypeError(
         "activation/residual live flip requires a future launch-runtime receipt; "
         f"got {type(receipt).__name__}"

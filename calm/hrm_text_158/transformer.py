@@ -48,24 +48,71 @@ class TransformerBlock(nn.Module):
     def norm(self, x: Tensor) -> Tensor:
         return F.rms_norm(x, (x.shape[-1],), eps=self._norm_eps)
 
-    def forward(self, x: Tensor, **seq_info) -> Tensor:
+    def forward(
+        self,
+        x: Tensor,
+        *,
+        cos_sin=None,
+        sep_positions: Tensor | None = None,
+        **seq_info,
+    ) -> Tensor:
         activation_codec_seam = seq_info.get("activation_codec_seam")
         if self._norm_type == "pre":
-            x = x + self.attn(self.norm(x), **seq_info)
+            x_prev = x
+            x = x + self.attn(self.norm(x), cos_sin=cos_sin, sep_positions=sep_positions, **seq_info)
             if activation_codec_seam is not None:
-                x = activation_codec_seam("residual.post_attn", x)
+                x = activation_codec_seam(
+                    "residual.post_attn",
+                    x,
+                    producing_inputs=(x_prev,),
+                    seq_kwargs=seq_info,
+                    module=self,
+                    block="post_attn",
+                    cos_sin=cos_sin,
+                    sep_positions=sep_positions,
+                )
+            x_after_attn = x
             x = x + self.mlp(self.norm(x))
             if activation_codec_seam is not None:
-                x = activation_codec_seam("residual.post_mlp", x)
+                x = activation_codec_seam(
+                    "residual.post_mlp",
+                    x,
+                    producing_inputs=(x_after_attn,),
+                    seq_kwargs=seq_info,
+                    module=self,
+                    block="post_mlp",
+                    cos_sin=cos_sin,
+                    sep_positions=sep_positions,
+                )
             return x
         elif self._norm_type == "post":
-            x = x + self.attn(x, **seq_info)
+            x_prev = x
+            x = x + self.attn(x, cos_sin=cos_sin, sep_positions=sep_positions, **seq_info)
             if activation_codec_seam is not None:
-                x = activation_codec_seam("residual.post_attn", x)
+                x = activation_codec_seam(
+                    "residual.post_attn",
+                    x,
+                    producing_inputs=(x_prev,),
+                    seq_kwargs=seq_info,
+                    module=self,
+                    block="post_attn",
+                    cos_sin=cos_sin,
+                    sep_positions=sep_positions,
+                )
+            x_after_attn = x
             x = self.norm(x)
             x = x + self.mlp(x)
             if activation_codec_seam is not None:
-                x = activation_codec_seam("residual.post_mlp", x)
+                x = activation_codec_seam(
+                    "residual.post_mlp",
+                    x,
+                    producing_inputs=(x_after_attn,),
+                    seq_kwargs=seq_info,
+                    module=self,
+                    block="post_mlp",
+                    cos_sin=cos_sin,
+                    sep_positions=sep_positions,
+                )
             return self.norm(x)
         else:
             raise NotImplementedError(f"norm_type={self._norm_type!r}")

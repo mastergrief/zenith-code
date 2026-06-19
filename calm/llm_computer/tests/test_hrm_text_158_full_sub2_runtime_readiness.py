@@ -1311,3 +1311,37 @@ def test_live_r2a_applier_rejects_fixture_fail_closed_receipt():
 def test_live_r2a_applier_rejects_cpu_seam_receipt():
     with pytest.raises(ValueError, match="CPU production seam observation"):
         apply_live_activation_residuals_surface_overrides(_mint_r2a_cpu_seam_receipt())
+
+
+def _mint_r2a_cpu_m1_lossless_equiv_receipt():
+    from calm.hrm_text_158.native_full_stack.activation_residuals_m1_remat import (
+        build_trainer_activation_residuals_lossless_equivalence_receipt,
+    )
+    from calm.llm_computer.tests.test_hrm_text_158_trainer_activation_residuals_m1_equiv import (
+        _run_hrm_with_codec,
+    )
+
+    codec = _run_hrm_with_codec()
+    from calm.hrm_text_158.native_full_stack.activation_relief import (
+        zL_init_observation_from_hrm_module,
+    )
+    from calm.hrm_text_158.hrm import HierarchicalReasoningModel
+    from calm.llm_computer.tests.test_hrm_text_158_activation_relief import _tiny_config
+
+    hrm = HierarchicalReasoningModel(_tiny_config())
+    return build_trainer_activation_residuals_lossless_equivalence_receipt(
+        source_commit_sha="abc123",
+        proof_command_argv=("test",),
+        seam_events=codec.seam_events,
+        zL_init_observation=zL_init_observation_from_hrm_module(hrm),
+        telemetry=codec.telemetry(),
+        main_path_proven=True,
+        main_autograd_path_differs_from_baseline=True,
+    )
+
+
+def test_live_r2a_applier_rejects_cpu_lossless_equiv_receipt():
+    with pytest.raises(ValueError, match="CPU lossless equivalence receipt"):
+        apply_live_activation_residuals_surface_overrides(
+            _mint_r2a_cpu_m1_lossless_equiv_receipt()
+        )

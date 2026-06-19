@@ -184,7 +184,7 @@ def _activation_residual_live_tensor_proof():
     pos = torch.arange(16, dtype=torch.long).unsqueeze(0).expand(2, -1)
     events: list[dict[str, object]] = []
 
-    def seam(family: str, tensor: torch.Tensor) -> torch.Tensor:
+    def seam(family: str, tensor: torch.Tensor, **_: object) -> torch.Tensor:
         if family in ACTIVATION_RESIDUAL_TARGET_FAMILIES:
             events.append(
                 {

@@ -107,7 +107,7 @@ def _attention_kv_live_tensor_events():
     pos = torch.arange(16, dtype=torch.long).unsqueeze(0).expand(2, -1)
     events: list[dict[str, object]] = []
 
-    def seam(family: str, tensor: torch.Tensor) -> torch.Tensor:
+    def seam(family: str, tensor: torch.Tensor, **_: object) -> torch.Tensor:
         if family in ATTENTION_KV_ALLOWED_OBSERVED_FAMILIES:
             events.append(
                 {

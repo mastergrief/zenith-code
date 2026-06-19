@@ -646,6 +646,12 @@ def _summarize_activation_residual_live_tensor_families(
                 requires_grad_values=tuple(
                     sorted({bool(event.get("requires_grad", False)) for event in events})
                 ),
+                mechanism=str(
+                    events[0].get(
+                        "mechanism",
+                        "observer_returns_original_tensor",
+                    )
+                ),
             )
         )
     return tuple(observations)
@@ -756,8 +762,26 @@ def validate_activation_residuals_fail_closed_receipt(
     for observation in receipt.observed_families:
         if observation.observed_count <= 0:
             raise ValueError(f"{observation.family} must have at least one live tensor")
-        if observation.mechanism != "observer_returns_original_tensor":
-            raise ValueError("Step 3A2 accepts only observer-returned original tensors")
+        if observation.mechanism not in (
+            "observer_returns_original_tensor",
+            "tier1_lossless_seam_saved_tensor_hook_remat",
+        ):
+            raise ValueError("Step 3A2 accepts only observer or M1 remat mechanisms")
+        if (
+            observation.mechanism == "tier1_lossless_seam_saved_tensor_hook_remat"
+            and not receipt.real_sub2_or_remat_or_offload_mechanism_present
+        ):
+            raise ValueError("M1 remat mechanism requires real_sub2 gate")
+        if (
+            observation.mechanism != "observer_returns_original_tensor"
+            and not receipt.no_hidden_bf16_authority_proven
+        ):
+            raise ValueError("non-observer mechanism requires no-hidden gate")
+        if (
+            observation.mechanism == "observer_returns_original_tensor"
+            and receipt.real_sub2_or_remat_or_offload_mechanism_present
+        ):
+            raise ValueError("observer mechanism incompatible with real_sub2 gate")
         if not observation.shapes or not observation.dtypes or not observation.devices:
             raise ValueError(f"{observation.family} is missing tensor metadata")
     zL = receipt.zL_init_non_claim
@@ -875,7 +899,7 @@ def build_production_activation_codec_seam_collector() -> tuple[
 
     events: list[dict[str, object]] = []
 
-    def seam(family: str, tensor: object) -> object:
+    def seam(family: str, tensor: object, **_: object) -> object:
         if family in ACTIVATION_RESIDUAL_TARGET_FAMILIES:
             import torch
 

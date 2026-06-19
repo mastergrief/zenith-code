@@ -176,6 +176,7 @@ class HierarchicalReasoningModel(nn.Module):
                             "kv_cache_level": "L",
                             "kv_cache_rec_idx": k,
                         }
+                    z_L_in, z_H_in = z_L, z_H
                     if should_checkpoint_recurrence(
                         relief_policy,
                         module_training=self.training,
@@ -197,7 +198,14 @@ class HierarchicalReasoningModel(nn.Module):
                     else:
                         z_L = self.L_level(z_L, z_H, **L_kwargs)
                     if activation_codec_seam is not None:
-                        z_L = activation_codec_seam("recurrent.z_L_update", z_L)
+                        z_L = activation_codec_seam(
+                            "recurrent.z_L_update",
+                            z_L,
+                            producing_inputs=(z_L_in, z_H_in),
+                            seq_kwargs=L_kwargs,
+                            module=self,
+                            block="L_level",
+                        )
             outer_grad_enabled = torch.is_grad_enabled()
             h_grad_enabled = outer_grad_enabled and (i >= self.H_cycles - H_bp_steps)
             with torch.set_grad_enabled(h_grad_enabled):
@@ -208,6 +216,7 @@ class HierarchicalReasoningModel(nn.Module):
                         "kv_cache_level": "H",
                         "kv_cache_rec_idx": i,
                     }
+                z_H_in, z_L_at_h = z_H, z_L
                 if should_checkpoint_recurrence(
                     relief_policy,
                     module_training=self.training,
@@ -229,7 +238,14 @@ class HierarchicalReasoningModel(nn.Module):
                 else:
                     z_H = self.H_level(z_H, z_L, **H_kwargs)
                 if activation_codec_seam is not None:
-                    z_H = activation_codec_seam("recurrent.z_H_update", z_H)
+                    z_H = activation_codec_seam(
+                        "recurrent.z_H_update",
+                        z_H,
+                        producing_inputs=(z_H_in, z_L_at_h),
+                        seq_kwargs=H_kwargs,
+                        module=self,
+                        block="H_level",
+                    )
         return None, z_H
 
     def compute_train_extra_args(self, step: int, total_steps: int) -> dict:

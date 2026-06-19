@@ -779,6 +779,8 @@ def train(
     # R2-A default-off: CPU production activation/residual seam observation proof;
     # exits before optimizer step. No live readiness row flip.
     activation_residuals_fail_closed_proof: bool = False,
+    # R2-A-M1 default-off: CPU lossless equivalence proof with saved-tensor-hook remat.
+    activation_residuals_lossless_equivalence_proof: bool = False,
     # Diagnostic ONLY (codex msg 1779652915624): when True, build the training
     # DataLoader WITHOUT the explicit seeded generator (pre-1656ead global-RNG
     # shuffle order). Default False keeps the deterministic seeded generator.
@@ -1360,6 +1362,20 @@ def train(
             "--activation-residuals-fail-closed-proof is mutually exclusive with "
             "activation-relief R1 proof flags"
         )
+    if activation_residuals_lossless_equivalence_proof and any(_sub2_proof_flags):
+        raise ValueError(
+            "--activation-residuals-lossless-equivalence-proof is mutually exclusive "
+            "with sub2 authority proof flags"
+        )
+    if activation_residuals_lossless_equivalence_proof and (
+        activation_relief_lossless_recompute_wiring_proof
+        or activation_relief_lossless_recompute_launch_proof
+        or activation_residuals_fail_closed_proof
+    ):
+        raise ValueError(
+            "--activation-residuals-lossless-equivalence-proof is mutually exclusive "
+            "with R1 and R2-A seam proof flags"
+        )
     if sub2_authority_live_checkpoint and any(_sub2_proof_flags):
         raise ValueError(
             "--sub2-authority-live-checkpoint is mutually exclusive with "
@@ -1707,6 +1723,169 @@ def train(
         )
         print(
             "[hrm158] R1-L launch proof: EXITING before optimizer step",
+            flush=True,
+        )
+        return
+
+    if activation_residuals_lossless_equivalence_proof:
+        import json
+        import os
+        import subprocess
+        import sys
+
+        from calm.hrm_text_158.native_full_stack.activation_relief import (
+            ACTIVATION_RESIDUAL_TARGET_FAMILIES,
+            zL_init_observation_from_hrm_module,
+        )
+        from calm.hrm_text_158.native_full_stack.activation_residuals_m1_remat import (
+            build_tier1_lossless_seam_saved_tensor_hook_remat_codec_v5,
+            build_trainer_activation_residuals_lossless_equivalence_receipt,
+        )
+
+        repo_root = Path(__file__).resolve().parents[1]
+        proof_batch = next(iter(loader))
+        proof_step = 1
+        proof_total_steps = max(1, epochs * len(loader))
+        extras_base = m.compute_train_extra_args(proof_step, proof_total_steps)
+
+        def _proof_child_batch(batch):
+            inputs = batch["inputs"].to(device)
+            labels = batch["labels"].to(device)
+            sep_positions = batch["sep_positions"].to(device)
+            bsz, seq_len = inputs.shape
+            position_ids = torch.arange(
+                seq_len, dtype=torch.long, device=device
+            ).unsqueeze(0).expand(bsz, -1)
+            return {
+                "inputs": inputs,
+                "labels": labels,
+                "sep_positions": sep_positions,
+                "position_ids": position_ids,
+            }
+
+        child_batch = _proof_child_batch(proof_batch)
+        shared_state = {
+            k: v.detach().clone()
+            for k, v in m.state_dict().items()
+        }
+
+        def _named_grads(model) -> dict[str, torch.Tensor]:
+            return {
+                name: param.grad.detach().clone()
+                for name, param in model.named_parameters()
+                if param.grad is not None
+            }
+
+        def _run_baseline_arm():
+            m.load_state_dict(shared_state, strict=True)
+            m.train()
+            m.zero_grad(set_to_none=True)
+            _new_carry, loss_main, metrics = m(
+                None, child_batch, return_logits=True, **extras_base
+            )
+            if not torch.isfinite(loss_main):
+                raise RuntimeError(
+                    f"R2-A-M1 baseline loss non-finite: {loss_main.item()}"
+                )
+            logits = metrics.get("logits")
+            loss_main.backward()
+            return loss_main.detach(), logits.detach(), _named_grads(m)
+
+        def _run_m1_arm():
+            m.load_state_dict(shared_state, strict=True)
+            m.train()
+            codec = build_tier1_lossless_seam_saved_tensor_hook_remat_codec_v5(
+                model=m.model,
+            )
+            extras = {**extras_base, "activation_codec_seam": codec}
+            m.zero_grad(set_to_none=True)
+            with codec.saved_tensor_hook_scope():
+                _new_carry, loss_main, metrics = m(
+                    None, child_batch, return_logits=True, **extras
+                )
+                if not torch.isfinite(loss_main):
+                    raise RuntimeError(
+                        f"R2-A-M1 remat loss non-finite: {loss_main.item()}"
+                    )
+                logits = metrics.get("logits")
+                loss_main.backward()
+            return loss_main.detach(), logits.detach(), _named_grads(m), codec
+
+        baseline_loss, baseline_logits, baseline_grads = _run_baseline_arm()
+        m1_loss, m1_logits, m1_grads, codec = _run_m1_arm()
+        torch.testing.assert_close(baseline_loss, m1_loss, atol=0.0, rtol=0.0)
+        if baseline_logits is not None and m1_logits is not None:
+            torch.testing.assert_close(baseline_logits, m1_logits, atol=0.0, rtol=0.0)
+        for name in baseline_grads:
+            torch.testing.assert_close(
+                baseline_grads[name],
+                m1_grads[name],
+                atol=0.0,
+                rtol=0.0,
+            )
+
+        telemetry = codec.telemetry()
+        observed_families = {event["family"] for event in codec.seam_events}
+        missing = [
+            family
+            for family in ACTIVATION_RESIDUAL_TARGET_FAMILIES
+            if family not in observed_families
+        ]
+        if missing:
+            raise RuntimeError(
+                "R2-A-M1 proof missing required families: " + ", ".join(missing)
+            )
+        if int(telemetry["m1_seam_remat_unpack_recompute_count_total"]) <= 0:
+            raise RuntimeError("R2-A-M1 proof requires unpack recompute count > 0")
+        if int(telemetry["registered_seam_tensor_full_pack_count"]) != 0:
+            raise RuntimeError("R2-A-M1 proof requires zero full tensor packs")
+
+        source_commit_sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            text=True,
+        ).strip()
+        receipt = build_trainer_activation_residuals_lossless_equivalence_receipt(
+            source_commit_sha=source_commit_sha,
+            proof_command_argv=tuple(sys.argv),
+            seam_events=codec.seam_events,
+            zL_init_observation=zL_init_observation_from_hrm_module(m.model),
+            telemetry=telemetry,
+            main_path_proven=True,
+            main_autograd_path_differs_from_baseline=True,
+        )
+        fail_closed = receipt.fail_closed_receipt
+        print(
+            "[hrm158] R2-A-M1 activation/residual lossless equivalence proof: "
+            f"proof_kind={receipt.proof_kind} "
+            f"mechanism_id={receipt.mechanism_id} "
+            f"unpack_total={receipt.m1_seam_remat_unpack_recompute_count_total} "
+            f"gate_a={fail_closed.real_sub2_or_remat_or_offload_mechanism_present} "
+            f"gate_b={fail_closed.no_hidden_bf16_authority_proven} "
+            f"gate_c={fail_closed.gpu_memory_receipt_present} "
+            f"ready_to_flip={fail_closed.ready_to_flip} "
+            f"live_flip_authorized={receipt.live_readiness_row_flip_authorized}",
+            flush=True,
+        )
+        receipt_json_path = os.environ.get(
+            "R2A_M1_LOSSLESS_EQUIV_RECEIPT_JSON",
+            "",
+        ).strip()
+        if receipt_json_path:
+            out_path = Path(receipt_json_path)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(
+                json.dumps(receipt.to_dict(), indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            print(
+                "[hrm158] R2-A-M1 lossless equivalence proof: "
+                f"receipt_json={out_path}",
+                flush=True,
+            )
+        print(
+            "[hrm158] R2-A-M1 lossless equivalence proof: "
+            "EXITING before optimizer step",
             flush=True,
         )
         return
@@ -2754,6 +2933,11 @@ if __name__ == "__main__":
                          "activation_codec_seam families and mint a fail-closed "
                          "ActivationResiduals receipt; exit before optimizer step. "
                          "No live readiness row flip.")
+    ap.add_argument("--activation-residuals-lossless-equivalence-proof",
+                    action="store_true",
+                    help="R2-A-M1 proof-only, default-off: CPU lossless equivalence "
+                         "with saved-tensor-hook seam remat; earns gate (a)+(b) only; "
+                         "exit before optimizer step. No live readiness row flip.")
     ap.add_argument("--legacy-loader-shuffle", action="store_true",
                     help="DIAGNOSTIC ONLY (not recipe-default): build the training "
                          "DataLoader without the explicit seeded generator, restoring "
@@ -2853,6 +3037,9 @@ if __name__ == "__main__":
         ),
         activation_residuals_fail_closed_proof=(
             args.activation_residuals_fail_closed_proof
+        ),
+        activation_residuals_lossless_equivalence_proof=(
+            args.activation_residuals_lossless_equivalence_proof
         ),
         legacy_loader_shuffle=args.legacy_loader_shuffle,
         dry_run=args.dry_run,
