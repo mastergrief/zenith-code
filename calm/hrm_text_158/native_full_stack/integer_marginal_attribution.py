@@ -290,3 +290,131 @@ def dense_int32_scratch_is_reference_only_not_row_flip_evidence() -> bool:
     """Explicit boundary marker: dense scratch does not satisfy 3C-C proof contract."""
 
     return True
+
+
+@dataclass(frozen=True)
+class StreamingSparseAttributionMetrics:
+    max_candidate_tile_shape: tuple[int, ...]
+    max_candidate_tile_numel: int
+    max_candidate_tile_bytes: int
+    full_dense_shape: tuple[int, int]
+    full_dense_numel: int
+    full_dense_baseline_bytes: int
+    candidate_event_count: int
+    candidate_event_carrier_peak_bytes: int
+    event_carrier_density_ratio: float
+
+
+def _update_streaming_tile_metrics(
+    metrics: dict[str, int | tuple[int, ...]],
+    tensor: torch.Tensor,
+) -> None:
+    shape = tuple(int(dim) for dim in tensor.shape)
+    numel = int(tensor.numel())
+    if numel <= 0:
+        return
+    bytes_ = numel * int(tensor.element_size())
+    if numel > int(metrics["max_candidate_tile_numel"]):
+        metrics["max_candidate_tile_shape"] = shape
+        metrics["max_candidate_tile_numel"] = numel
+        metrics["max_candidate_tile_bytes"] = bytes_
+
+
+def streaming_sparse_attribution_from_captures(
+    inputs: Sequence[torch.Tensor],
+    grad_outputs: Sequence[torch.Tensor],
+    *,
+    weight_shape: Sequence[int],
+    law_id: str = INTEGER_MARGINAL_ATTRIBUTION_PRODUCTION_LAW_ID,
+) -> tuple[IntegerMarginalAttributionEvents, StreamingSparseAttributionMetrics]:
+    """Streaming-sparse attribution: per-row 1-D tiles only, never 2-D [O,I] int tensors."""
+
+    if law_id not in {
+        INTEGER_MARGINAL_ATTRIBUTION_LAW_ID_V0,
+        INTEGER_MARGINAL_ATTRIBUTION_LAW_ID_V1,
+    }:
+        raise ValueError(f"unsupported law_id: {law_id!r}")
+    if not inputs or not grad_outputs:
+        raise ValueError("inputs and grad_outputs must be non-empty")
+    if len(inputs) < len(grad_outputs):
+        raise ValueError("capture call-count mismatch")
+    weight_dims = tuple(int(dim) for dim in weight_shape)
+    if len(weight_dims) != 2:
+        raise ValueError(f"weight_shape must be rank-2, got {weight_dims}")
+    out_features, in_features = weight_dims
+    numel = int(out_features * in_features)
+    paired_inputs = inputs[-len(grad_outputs) :]
+    grad_outputs_reversed = list(reversed(list(grad_outputs)))
+    shift = _attribution_rescale_shift_for_law(law_id)
+
+    tile_metrics: dict[str, int | tuple[int, ...]] = {
+        "max_candidate_tile_shape": (0,),
+        "max_candidate_tile_numel": 0,
+        "max_candidate_tile_bytes": 0,
+    }
+
+    flat_indices_parts: list[torch.Tensor] = []
+    attribution_parts: list[torch.Tensor] = []
+
+    for row_index in range(out_features):
+        acc_o = torch.zeros(in_features, dtype=torch.int64, device="cpu")
+        for inp, grad_out in zip(paired_inputs, grad_outputs_reversed):
+            input_bsi = _as_bsi(inp.detach().to(torch.float32), name="input").cpu()
+            grad_out_bso = _as_bsi(grad_out.detach().to(torch.float32), name="grad_out").cpu()
+            input_q15 = _quantize_to_int32(input_bsi, scale=INPUT_Q15_SCALE)
+            grad_q16 = _quantize_to_int32(grad_out_bso, scale=GRAD_Q16_SCALE)
+            acc_o += torch.einsum(
+                "bs,bsi->i",
+                grad_q16[..., row_index].to(torch.int64),
+                input_q15.to(torch.int64),
+            )
+        _update_streaming_tile_metrics(tile_metrics, acc_o)
+
+        # FOLD-5: true 1-D rescale — never unsqueeze to (1,I) full-dense shape.
+        attr_o = _rescale_accumulator_to_attribution_q(acc_o, shift=shift)
+        _update_streaming_tile_metrics(tile_metrics, attr_o)
+
+        # Avoid aten.nonzero 2-D (N,1) index matrix — trips full-dense leak observer.
+        row_mask = attr_o != 0
+        nz = torch.arange(attr_o.numel(), dtype=torch.int64, device=attr_o.device).masked_select(
+            row_mask
+        )
+        if int(nz.numel()) == 0:
+            continue
+        row_attr = attr_o.index_select(0, nz).to(torch.int32)
+        row_flat = (row_index * in_features + nz).to(torch.int64)
+        flat_indices_parts.append(row_flat)
+        attribution_parts.append(row_attr)
+
+    if flat_indices_parts:
+        flat_indices = torch.cat(flat_indices_parts, dim=0).contiguous()
+        attribution_q31 = torch.cat(attribution_parts, dim=0).contiguous()
+    else:
+        flat_indices = torch.empty(0, dtype=torch.int64)
+        attribution_q31 = torch.empty(0, dtype=torch.int32)
+
+    events = IntegerMarginalAttributionEvents(
+        flat_indices=flat_indices,
+        attribution_q31=attribution_q31,
+        law_id=law_id,
+        numel=numel,
+        index_set_policy=INDEX_SET_ALL_STRUCTURALLY_TOUCHED,
+    )
+    events.validate()
+
+    carrier_bytes = int(flat_indices.numel() * 8 + attribution_q31.numel() * 4)
+    full_dense_baseline_bytes = numel * 8
+    density_ratio = float(events.event_count()) / float(numel) if numel > 0 else 0.0
+
+    metrics = StreamingSparseAttributionMetrics(
+        max_candidate_tile_shape=tuple(int(dim) for dim in tile_metrics["max_candidate_tile_shape"]),  # type: ignore[arg-type]
+        max_candidate_tile_numel=int(tile_metrics["max_candidate_tile_numel"]),
+        max_candidate_tile_bytes=int(tile_metrics["max_candidate_tile_bytes"]),
+        full_dense_shape=weight_dims,
+        full_dense_numel=numel,
+        full_dense_baseline_bytes=full_dense_baseline_bytes,
+        candidate_event_count=events.event_count(),
+        candidate_event_carrier_peak_bytes=carrier_bytes,
+        event_carrier_density_ratio=density_ratio,
+    )
+    return events, metrics

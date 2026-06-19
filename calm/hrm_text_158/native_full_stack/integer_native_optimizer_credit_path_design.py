@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
+import math
 from typing import Any, Iterator, Mapping, Sequence
 from unittest import mock
 
@@ -638,3 +639,450 @@ def validate_integer_native_optimizer_credit_path_design_receipt(
         raise ValueError(
             "candidate_alloc_guard_pass cannot be true when dense integer scratch observed"
         )
+
+
+# --- BR-3C-E streaming-sparse attribution subcontract (Step-0 observer + receipt) ---
+
+from calm.hrm_text_158.native_full_stack.integer_marginal_attribution import (  # noqa: E402
+    StreamingSparseAttributionMetrics,
+    streaming_sparse_attribution_from_captures,
+)
+from torch.utils._python_dispatch import TorchDispatchMode  # noqa: E402
+
+STREAMING_SPARSE_ATTRIBUTION_SUBCONTRACT_SCHEMA_VERSION = (
+    "hrm_text_158_streaming_sparse_attribution_subcontract/v1"
+)
+STREAMING_SPARSE_ATTRIBUTION_SUBCONTRACT_TARGET_NAME = (
+    "optimizer_credit_state_streaming_sparse_attribution_subcontract"
+)
+
+STREAMING_SPARSE_ATTRIBUTION_SUBCONTRACT_NON_CLAIMS = (
+    *OPTIMIZER_CREDIT_STATE_FAIL_CLOSED_NON_CLAIMS,
+    "attribution subcontract receipt only; ranking subcontract NOT evaluated here",
+    (
+        "strict-integer-only ranking is a separate deferred slice, REQUIRED before "
+        "any real_native_integer_credit_ranking / BR-D-INTEGER-VIABLE / GPU-flip claim"
+    ),
+    "does NOT invoke branch-8 classifier or claim BR-D-INTEGER-VIABLE",
+    "does NOT prove GPU memory relief or subquadratic compute",
+    "does NOT flip optimizer_credit_state sub2 row or set readiness flags",
+    "1-D event carrier approaching O*I bytes is a RECORDED caveat, NOT a green",
+    "CPU win = no 2-D [O,I] materialization + exact full-support parity only",
+    "tile-peak reduction is separate from event-carrier density; dense carrier is not a miss",
+)
+
+STREAMING_SPARSE_FULL_DENSE_BASELINE_ITEMSIZE = 8
+STREAMING_SPARSE_EVENT_CARRIER_INDEX_BYTES = 8
+STREAMING_SPARSE_EVENT_CARRIER_ATTR_BYTES = 4
+STREAMING_SPARSE_EVENT_CARRIER_BYTES_PER_EVENT = (
+    STREAMING_SPARSE_EVENT_CARRIER_INDEX_BYTES + STREAMING_SPARSE_EVENT_CARRIER_ATTR_BYTES
+)
+STREAMING_SPARSE_DENSITY_RATIO_TOLERANCE = 1e-9
+STREAMING_SPARSE_INT_TILE_ITEMSIZE_OPTIONS = (4, 8)
+
+FORBIDDEN_STREAMING_SPARSE_SUBCONTRACT_FIELDS = (
+    "ready_to_flip",
+    "optimizer_credit_state_sub2_claim",
+    "readiness_row_flip_authorized",
+    "real_native_integer_attribution_present",
+    "real_native_integer_credit_ranking_present",
+    "gpu_runtime_receipt_present",
+    "fp_exception_laundering_claim",
+    "branch_d_integer_viable_claimed",
+    "optimizer_state_eligible_exclusion_proven",
+    "br_3c_c_audit_pass_cpu",
+)
+
+
+@dataclass(frozen=True)
+class CandidateDenseIntegerDispatchObservation:
+    weight_shape: tuple[int, int]
+    full_dense_numel: int
+    int64_accum_observed: bool
+    int32_attr_observed: bool
+    max_candidate_tile_shape: tuple[int, ...]
+    max_candidate_tile_numel: int
+    max_candidate_tile_bytes: int
+
+    @property
+    def candidate_dense_integer_scratch_observed(self) -> bool:
+        return self.int64_accum_observed or self.int32_attr_observed
+
+    @property
+    def candidate_dense_integer_scratch_surfaces(self) -> tuple[str, ...]:
+        surfaces: list[str] = []
+        if self.int64_accum_observed:
+            surfaces.append(AUDIT_NO_DENSE_INT_ACCUM)
+        if self.int32_attr_observed:
+            surfaces.append(AUDIT_NO_DENSE_INT_ATTR)
+        return tuple(surfaces)
+
+
+class CandidateDenseIntegerDispatchObserver(TorchDispatchMode):
+    """Inspect all ATen op outputs; flag full-size 2-D int32/int64 tensors (FOLD-1/2)."""
+
+    def __init__(self, weight_shape: tuple[int, int]) -> None:
+        super().__init__()
+        self.weight_shape = tuple(int(dim) for dim in weight_shape)
+        self.full_dense_numel = int(self.weight_shape[0] * self.weight_shape[1])
+        self.int64_accum_observed = False
+        self.int32_attr_observed = False
+        self.max_candidate_tile_shape: tuple[int, ...] = (0,)
+        self.max_candidate_tile_numel = 0
+        self.max_candidate_tile_bytes = 0
+
+    def _is_full_dense_integer_leak(self, tensor: torch.Tensor) -> bool:
+        if tensor.dtype not in (torch.int32, torch.int64):
+            return False
+        if int(tensor.ndim) != 2:
+            return False
+        return int(tensor.numel()) == self.full_dense_numel
+
+    def _record_tensor(self, tensor: torch.Tensor) -> None:
+        if not isinstance(tensor, torch.Tensor):
+            return
+        if self._is_full_dense_integer_leak(tensor):
+            if tensor.dtype == torch.int64:
+                self.int64_accum_observed = True
+            elif tensor.dtype == torch.int32:
+                self.int32_attr_observed = True
+            return
+        numel = int(tensor.numel())
+        if numel <= 0:
+            return
+        if tensor.dtype in (torch.int32, torch.int64):
+            shape = tuple(int(dim) for dim in tensor.shape)
+            bytes_ = numel * int(tensor.element_size())
+            if numel > self.max_candidate_tile_numel:
+                self.max_candidate_tile_numel = numel
+                self.max_candidate_tile_shape = shape
+                self.max_candidate_tile_bytes = bytes_
+
+    def _inspect_nested(self, obj: Any) -> None:
+        if isinstance(obj, torch.Tensor):
+            self._record_tensor(obj)
+        elif isinstance(obj, (tuple, list)):
+            for item in obj:
+                self._inspect_nested(item)
+
+    def __torch_dispatch__(self, func, types, args=(), kwargs=None):  # type: ignore[no-untyped-def]
+        kwargs = kwargs or {}
+        result = func(*args, **kwargs)
+        self._inspect_nested(result)
+        return result
+
+    def observation(self) -> CandidateDenseIntegerDispatchObservation:
+        return CandidateDenseIntegerDispatchObservation(
+            weight_shape=self.weight_shape,
+            full_dense_numel=self.full_dense_numel,
+            int64_accum_observed=self.int64_accum_observed,
+            int32_attr_observed=self.int32_attr_observed,
+            max_candidate_tile_shape=self.max_candidate_tile_shape,
+            max_candidate_tile_numel=self.max_candidate_tile_numel,
+            max_candidate_tile_bytes=self.max_candidate_tile_bytes,
+        )
+
+
+@contextmanager
+def candidate_dense_integer_dispatch_observation(
+    weight_shape: tuple[int, int],
+) -> Iterator[CandidateDenseIntegerDispatchObserver]:
+    observer = CandidateDenseIntegerDispatchObserver(weight_shape)
+    with observer:
+        yield observer
+
+
+@dataclass(frozen=True)
+class StreamingSparseAttributionSubcontractReceipt:
+    schema_version: str
+    target_name: str
+    attribution_subcontract_mode: str
+    max_candidate_tile_shape: tuple[int, ...]
+    max_candidate_tile_numel: int
+    max_candidate_tile_bytes: int
+    full_dense_shape: tuple[int, int]
+    full_dense_numel: int
+    full_dense_baseline_bytes: int
+    candidate_event_count: int
+    candidate_event_carrier_peak_bytes: int
+    event_carrier_density_ratio: float
+    candidate_dense_integer_scratch_observed: bool
+    candidate_dense_integer_scratch_surfaces: tuple[str, ...]
+    full_support_parity_pass: bool
+    comparable_set_id: str
+    reference_oracle_run_id: str
+    candidate_run_id: str
+    fp_exception_caveat: str
+    non_claims: tuple[str, ...]
+    ready_to_flip: bool = False
+    optimizer_credit_state_sub2_claim: bool = False
+    readiness_row_flip_authorized: bool = False
+    real_native_integer_attribution_present: bool = False
+    real_native_integer_credit_ranking_present: bool = False
+    gpu_runtime_receipt_present: bool = False
+    fp_exception_laundering_claim: bool = False
+    branch_d_integer_viable_claimed: bool = False
+    optimizer_state_eligible_exclusion_proven: bool = False
+    br_3c_c_audit_pass_cpu: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "target_name": self.target_name,
+            "attribution_subcontract_mode": self.attribution_subcontract_mode,
+            "max_candidate_tile_shape": list(self.max_candidate_tile_shape),
+            "max_candidate_tile_numel": self.max_candidate_tile_numel,
+            "max_candidate_tile_bytes": self.max_candidate_tile_bytes,
+            "full_dense_shape": list(self.full_dense_shape),
+            "full_dense_numel": self.full_dense_numel,
+            "full_dense_baseline_bytes": self.full_dense_baseline_bytes,
+            "candidate_event_count": self.candidate_event_count,
+            "candidate_event_carrier_peak_bytes": self.candidate_event_carrier_peak_bytes,
+            "event_carrier_density_ratio": self.event_carrier_density_ratio,
+            "candidate_dense_integer_scratch_observed": (
+                self.candidate_dense_integer_scratch_observed
+            ),
+            "candidate_dense_integer_scratch_surfaces": list(
+                self.candidate_dense_integer_scratch_surfaces
+            ),
+            "full_support_parity_pass": self.full_support_parity_pass,
+            "comparable_set_id": self.comparable_set_id,
+            "reference_oracle_run_id": self.reference_oracle_run_id,
+            "candidate_run_id": self.candidate_run_id,
+            "fp_exception_caveat": self.fp_exception_caveat,
+            "non_claims": list(self.non_claims),
+            **{
+                field: getattr(self, field)
+                for field in FORBIDDEN_STREAMING_SPARSE_SUBCONTRACT_FIELDS
+            },
+        }
+
+
+def streaming_sparse_attribution_subcontract_hard_false_snapshot() -> dict[str, bool]:
+    return {field: False for field in FORBIDDEN_STREAMING_SPARSE_SUBCONTRACT_FIELDS}
+
+
+def _validate_dispatch_observation_matches_metrics(
+    metrics: StreamingSparseAttributionMetrics,
+    dispatch_observation: CandidateDenseIntegerDispatchObservation,
+) -> None:
+    if dispatch_observation.weight_shape != metrics.full_dense_shape:
+        raise ValueError(
+            "dispatch_observation.weight_shape must match metrics.full_dense_shape"
+        )
+    if dispatch_observation.full_dense_numel != metrics.full_dense_numel:
+        raise ValueError(
+            "dispatch_observation.full_dense_numel must match metrics.full_dense_numel"
+        )
+
+
+def _validate_streaming_sparse_attribution_metric_invariants(
+    *,
+    max_candidate_tile_shape: tuple[int, ...],
+    max_candidate_tile_numel: int,
+    max_candidate_tile_bytes: int,
+    full_dense_shape: tuple[int, int],
+    full_dense_numel: int,
+    full_dense_baseline_bytes: int,
+    candidate_event_count: int,
+    candidate_event_carrier_peak_bytes: int,
+    event_carrier_density_ratio: float,
+) -> None:
+    if full_dense_numel <= 0:
+        raise ValueError("full_dense_numel must be > 0")
+    if math.prod(full_dense_shape) != full_dense_numel:
+        raise ValueError("prod(full_dense_shape) must equal full_dense_numel")
+    expected_baseline = full_dense_numel * STREAMING_SPARSE_FULL_DENSE_BASELINE_ITEMSIZE
+    if full_dense_baseline_bytes != expected_baseline:
+        raise ValueError(
+            "full_dense_baseline_bytes must equal full_dense_numel * baseline itemsize"
+        )
+    if candidate_event_count < 0 or candidate_event_count > full_dense_numel:
+        raise ValueError("candidate_event_count must be in [0, full_dense_numel]")
+    expected_carrier = (
+        candidate_event_count * STREAMING_SPARSE_EVENT_CARRIER_BYTES_PER_EVENT
+    )
+    if candidate_event_carrier_peak_bytes != expected_carrier:
+        raise ValueError(
+            "candidate_event_carrier_peak_bytes must equal event_count * carrier bytes"
+        )
+    expected_density = candidate_event_count / float(full_dense_numel)
+    if (
+        abs(event_carrier_density_ratio - expected_density)
+        > STREAMING_SPARSE_DENSITY_RATIO_TOLERANCE
+    ):
+        raise ValueError(
+            "event_carrier_density_ratio must equal event_count / full_dense_numel"
+        )
+    if max_candidate_tile_numel < 0:
+        raise ValueError("max_candidate_tile_numel must be >= 0")
+    if max_candidate_tile_numel == 0:
+        if max_candidate_tile_bytes != 0:
+            raise ValueError(
+                "max_candidate_tile_bytes must be 0 when max_candidate_tile_numel is 0"
+            )
+        return
+    if math.prod(max_candidate_tile_shape) != max_candidate_tile_numel:
+        raise ValueError(
+            "prod(max_candidate_tile_shape) must equal max_candidate_tile_numel"
+        )
+    if max_candidate_tile_bytes % max_candidate_tile_numel != 0:
+        raise ValueError(
+            "max_candidate_tile_bytes must be divisible by max_candidate_tile_numel"
+        )
+    tile_itemsize = max_candidate_tile_bytes // max_candidate_tile_numel
+    if tile_itemsize not in STREAMING_SPARSE_INT_TILE_ITEMSIZE_OPTIONS:
+        raise ValueError(
+            "max_candidate_tile_bytes must equal max_candidate_tile_numel * itemsize"
+        )
+
+
+def events_bit_identical(
+    oracle: IntegerMarginalAttributionEvents,
+    candidate: IntegerMarginalAttributionEvents,
+) -> bool:
+    return (
+        oracle.law_id == candidate.law_id
+        and oracle.numel == candidate.numel
+        and oracle.flat_indices.equal(candidate.flat_indices)
+        and oracle.attribution_q31.equal(candidate.attribution_q31)
+    )
+
+
+def prove_streaming_sparse_attribution_subcontract(
+    inputs: Sequence[torch.Tensor],
+    grad_outputs: Sequence[torch.Tensor],
+    *,
+    weight_shape: Sequence[int],
+    comparable_set_id: str,
+    reference_oracle_run_id: str,
+    candidate_run_id: str,
+    law_id: str = INTEGER_MARGINAL_ATTRIBUTION_PRODUCTION_LAW_ID,
+) -> StreamingSparseAttributionSubcontractReceipt:
+    weight_dims = tuple(int(dim) for dim in weight_shape)
+    oracle = integer_marginal_attribution_from_captures(
+        inputs,
+        grad_outputs,
+        weight_shape=weight_dims,
+        law_id=law_id,
+    )
+    with candidate_dense_integer_dispatch_observation(weight_dims) as observer:
+        candidate, metrics = streaming_sparse_attribution_from_captures(
+            inputs,
+            grad_outputs,
+            weight_shape=weight_dims,
+            law_id=law_id,
+        )
+    dispatch_obs = observer.observation()
+    parity_pass = events_bit_identical(oracle, candidate)
+    return build_streaming_sparse_attribution_subcontract_receipt(
+        metrics=metrics,
+        dispatch_observation=dispatch_obs,
+        full_support_parity_pass=parity_pass,
+        comparable_set_id=comparable_set_id,
+        reference_oracle_run_id=reference_oracle_run_id,
+        candidate_run_id=candidate_run_id,
+    )
+
+
+def build_streaming_sparse_attribution_subcontract_receipt(
+    *,
+    metrics: StreamingSparseAttributionMetrics,
+    dispatch_observation: CandidateDenseIntegerDispatchObservation,
+    full_support_parity_pass: bool,
+    comparable_set_id: str,
+    reference_oracle_run_id: str,
+    candidate_run_id: str,
+) -> StreamingSparseAttributionSubcontractReceipt:
+    _validate_dispatch_observation_matches_metrics(metrics, dispatch_observation)
+    _validate_streaming_sparse_attribution_metric_invariants(
+        max_candidate_tile_shape=metrics.max_candidate_tile_shape,
+        max_candidate_tile_numel=metrics.max_candidate_tile_numel,
+        max_candidate_tile_bytes=metrics.max_candidate_tile_bytes,
+        full_dense_shape=metrics.full_dense_shape,
+        full_dense_numel=metrics.full_dense_numel,
+        full_dense_baseline_bytes=metrics.full_dense_baseline_bytes,
+        candidate_event_count=metrics.candidate_event_count,
+        candidate_event_carrier_peak_bytes=metrics.candidate_event_carrier_peak_bytes,
+        event_carrier_density_ratio=metrics.event_carrier_density_ratio,
+    )
+    receipt = StreamingSparseAttributionSubcontractReceipt(
+        schema_version=STREAMING_SPARSE_ATTRIBUTION_SUBCONTRACT_SCHEMA_VERSION,
+        target_name=STREAMING_SPARSE_ATTRIBUTION_SUBCONTRACT_TARGET_NAME,
+        attribution_subcontract_mode=ATTRIBUTION_SUBCONTRACT_MODE_STREAMING_SPARSE,
+        max_candidate_tile_shape=metrics.max_candidate_tile_shape,
+        max_candidate_tile_numel=metrics.max_candidate_tile_numel,
+        max_candidate_tile_bytes=metrics.max_candidate_tile_bytes,
+        full_dense_shape=metrics.full_dense_shape,
+        full_dense_numel=metrics.full_dense_numel,
+        full_dense_baseline_bytes=metrics.full_dense_baseline_bytes,
+        candidate_event_count=metrics.candidate_event_count,
+        candidate_event_carrier_peak_bytes=metrics.candidate_event_carrier_peak_bytes,
+        event_carrier_density_ratio=metrics.event_carrier_density_ratio,
+        candidate_dense_integer_scratch_observed=(
+            dispatch_observation.candidate_dense_integer_scratch_observed
+        ),
+        candidate_dense_integer_scratch_surfaces=(
+            dispatch_observation.candidate_dense_integer_scratch_surfaces
+        ),
+        full_support_parity_pass=full_support_parity_pass,
+        comparable_set_id=comparable_set_id,
+        reference_oracle_run_id=reference_oracle_run_id,
+        candidate_run_id=candidate_run_id,
+        fp_exception_caveat=OPTIMIZER_CREDIT_STATE_FP_EXCEPTION_CAVEAT,
+        non_claims=STREAMING_SPARSE_ATTRIBUTION_SUBCONTRACT_NON_CLAIMS,
+    )
+    validate_streaming_sparse_attribution_subcontract_receipt(receipt)
+    return receipt
+
+
+def validate_streaming_sparse_attribution_subcontract_receipt(
+    receipt: StreamingSparseAttributionSubcontractReceipt,
+) -> None:
+    if receipt.schema_version != STREAMING_SPARSE_ATTRIBUTION_SUBCONTRACT_SCHEMA_VERSION:
+        raise ValueError("streaming sparse attribution subcontract schema mismatch")
+    if receipt.target_name != STREAMING_SPARSE_ATTRIBUTION_SUBCONTRACT_TARGET_NAME:
+        raise ValueError("streaming sparse attribution subcontract target mismatch")
+    if receipt.attribution_subcontract_mode != ATTRIBUTION_SUBCONTRACT_MODE_STREAMING_SPARSE:
+        raise ValueError(
+            "streaming sparse attribution subcontract mode must be streaming_sparse"
+        )
+    if receipt.fp_exception_caveat != OPTIMIZER_CREDIT_STATE_FP_EXCEPTION_CAVEAT:
+        raise ValueError(
+            "streaming sparse attribution subcontract must keep exact FP-exception caveat"
+        )
+    if receipt.non_claims != STREAMING_SPARSE_ATTRIBUTION_SUBCONTRACT_NON_CLAIMS:
+        raise ValueError(
+            "streaming sparse attribution subcontract non_claims must be exact"
+        )
+    for field in FORBIDDEN_STREAMING_SPARSE_SUBCONTRACT_FIELDS:
+        if bool(getattr(receipt, field)):
+            raise ValueError(f"{field} is forbidden on streaming sparse subcontract receipt")
+    if receipt.reference_oracle_run_id == receipt.candidate_run_id:
+        raise ValueError("reference_oracle_run_id must differ from candidate_run_id")
+    int_surfaces = tuple(receipt.candidate_dense_integer_scratch_surfaces)
+    if receipt.candidate_dense_integer_scratch_observed != bool(int_surfaces):
+        raise ValueError(
+            "candidate_dense_integer_scratch_observed must match surfaces tuple"
+        )
+    if not receipt.full_support_parity_pass:
+        raise ValueError("full_support_parity_pass must be true for a valid subcontract receipt")
+    if receipt.candidate_dense_integer_scratch_observed:
+        raise ValueError(
+            "candidate_dense_integer_scratch_observed must be false for streaming_sparse pass"
+        )
+    if receipt.max_candidate_tile_bytes > receipt.full_dense_baseline_bytes:
+        raise ValueError(
+            "max_candidate_tile_bytes must not exceed full_dense_baseline_bytes"
+        )
+    _validate_streaming_sparse_attribution_metric_invariants(
+        max_candidate_tile_shape=receipt.max_candidate_tile_shape,
+        max_candidate_tile_numel=receipt.max_candidate_tile_numel,
+        max_candidate_tile_bytes=receipt.max_candidate_tile_bytes,
+        full_dense_shape=receipt.full_dense_shape,
+        full_dense_numel=receipt.full_dense_numel,
+        full_dense_baseline_bytes=receipt.full_dense_baseline_bytes,
+        candidate_event_count=receipt.candidate_event_count,
+        candidate_event_carrier_peak_bytes=receipt.candidate_event_carrier_peak_bytes,
+        event_carrier_density_ratio=receipt.event_carrier_density_ratio,
+    )
