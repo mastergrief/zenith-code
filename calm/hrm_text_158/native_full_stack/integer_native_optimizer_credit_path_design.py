@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
+import hashlib
 import math
 from typing import Any, Iterator, Mapping, Sequence
 from unittest import mock
@@ -1086,3 +1087,247 @@ def validate_streaming_sparse_attribution_subcontract_receipt(
         candidate_event_carrier_peak_bytes=receipt.candidate_event_carrier_peak_bytes,
         event_carrier_density_ratio=receipt.event_carrier_density_ratio,
     )
+
+
+# --- BR-3C-F strict-integer ranking subcontract receipt ---
+
+from calm.hrm_text_158.native_full_stack.integer_sparse_rank_votes import (  # noqa: E402
+    BR_F_RANKING_INTEGER_EXACT,
+    INTEGER_SPARSE_RANK_PRODUCTION_CREDIT_LAW_ID,
+    PRODUCTION_STRICT_INTEGER_CREDIT_LAW_IDS,
+    StrictIntegerRankingComparisonResult,
+    compare_strict_integer_ranking_to_float32_reference,
+)
+from calm.hrm_text_158.native_full_stack.bounded_delta_learner import RankVoteSpec  # noqa: E402
+
+RANKING_SUBCONTRACT_SCHEMA_VERSION = "hrm_text_158_strict_integer_ranking_subcontract/v1"
+RANKING_SUBCONTRACT_TARGET_NAME = "optimizer_credit_state_strict_integer_ranking_subcontract"
+RANKING_SUBCONTRACT_MODE_STRICT_INTEGER = "strict_integer"
+
+RANKING_SUBCONTRACT_NON_CLAIMS = (
+    *OPTIMIZER_CREDIT_STATE_FAIL_CLOSED_NON_CLAIMS,
+    "ranking subcontract receipt only; attribution subcontract evaluated separately",
+    "does NOT invoke branch-8 classifier or claim BR-D-INTEGER-VIABLE",
+    "does NOT prove GPU memory relief or subquadratic compute",
+    "does NOT flip optimizer_credit_state sub2 row or set readiness flags",
+    "pow2 credit law strict-integer path is OUT OF SCOPE for this subcontract",
+    "divergence branches are terminal science; drop-in float32 parity may be false",
+    "CPU strict-integer ranking candidate only; not real_native_integer_credit_ranking_present",
+)
+
+FORBIDDEN_RANKING_SUBCONTRACT_FIELDS = (
+    "ready_to_flip",
+    "optimizer_credit_state_sub2_claim",
+    "readiness_row_flip_authorized",
+    "real_native_integer_attribution_present",
+    "real_native_integer_credit_ranking_present",
+    "gpu_runtime_receipt_present",
+    "fp_exception_laundering_claim",
+    "branch_d_integer_viable_claimed",
+    "optimizer_state_eligible_exclusion_proven",
+    "br_3c_c_audit_pass_cpu",
+)
+
+
+@dataclass(frozen=True)
+class RankingSubcontractReceipt:
+    schema_version: str
+    target_name: str
+    ranking_subcontract_mode: str
+    credit_law_id: str
+    rank_method: str
+    rank_bin_spec_canonical_tuple: tuple[tuple[int, int, int, int, int, bool], ...]
+    rank_bin_spec_sha256: str
+    candidate_count: int
+    credit_q31_count: int
+    projected_move_count: int
+    flat_index_count: int
+    emitted_event_count: int
+    integer_vs_float_rank_mismatch_count: int
+    vote_mismatch_count: int
+    measurement_invalid_count: int
+    representation_limit_count: int
+    partial_coverage_count: int
+    bin_boundary_divergence_count: int
+    precision_divergence_count: int
+    tie_group_divergence_count: int
+    drop_in_float32_parity_pass: bool
+    strict_integer_self_consistency_pass: bool
+    branch_id: str
+    comparable_set_id: str
+    reference_float32_run_id: str
+    candidate_strict_run_id: str
+    fp_exception_caveat: str
+    non_claims: tuple[str, ...]
+    ready_to_flip: bool = False
+    optimizer_credit_state_sub2_claim: bool = False
+    readiness_row_flip_authorized: bool = False
+    real_native_integer_attribution_present: bool = False
+    real_native_integer_credit_ranking_present: bool = False
+    gpu_runtime_receipt_present: bool = False
+    fp_exception_laundering_claim: bool = False
+    branch_d_integer_viable_claimed: bool = False
+    optimizer_state_eligible_exclusion_proven: bool = False
+    br_3c_c_audit_pass_cpu: bool = False
+
+
+def ranking_subcontract_hard_false_snapshot() -> dict[str, bool]:
+    return {field: False for field in FORBIDDEN_RANKING_SUBCONTRACT_FIELDS}
+
+
+def _validate_ranking_dual_pass_coupling(receipt: RankingSubcontractReceipt) -> None:
+    if receipt.branch_id == BR_F_RANKING_INTEGER_EXACT:
+        if not receipt.drop_in_float32_parity_pass:
+            raise ValueError("INTEGER-EXACT requires drop_in_float32_parity_pass=true")
+        if not receipt.strict_integer_self_consistency_pass:
+            raise ValueError("INTEGER-EXACT requires strict_integer_self_consistency_pass=true")
+        return
+    if receipt.branch_id in {
+        "BR-F-RANKING-BIN-BOUNDARY-DIVERGENCE",
+        "BR-F-RANKING-TIE-GROUP-DIVERGENCE",
+        "BR-F-RANKING-PRECISION-DIVERGENCE",
+    }:
+        if receipt.drop_in_float32_parity_pass:
+            raise ValueError("divergence branch requires drop_in_float32_parity_pass=false")
+        return
+    if receipt.drop_in_float32_parity_pass or receipt.strict_integer_self_consistency_pass:
+        raise ValueError("measurement/representation/partial branches require both pass booleans false")
+
+
+def _validate_ranking_branch_id_coupling(receipt: RankingSubcontractReceipt) -> None:
+    divergence_total = (
+        receipt.bin_boundary_divergence_count
+        + receipt.precision_divergence_count
+        + receipt.tie_group_divergence_count
+        + receipt.measurement_invalid_count
+        + receipt.representation_limit_count
+        + receipt.partial_coverage_count
+    )
+    if receipt.branch_id == BR_F_RANKING_INTEGER_EXACT:
+        if divergence_total != 0:
+            raise ValueError("INTEGER-EXACT requires all divergence counts zero")
+        if receipt.integer_vs_float_rank_mismatch_count != 0:
+            raise ValueError("INTEGER-EXACT requires zero rank mismatches")
+        if receipt.vote_mismatch_count != 0:
+            raise ValueError("INTEGER-EXACT requires zero vote mismatches")
+        return
+    if divergence_total != 1:
+        raise ValueError("non-INTEGER-EXACT branch requires exactly one divergence count")
+
+
+def _validate_ranking_metric_invariants(receipt: RankingSubcontractReceipt) -> None:
+    if receipt.candidate_count < 0:
+        raise ValueError("candidate_count must be >= 0")
+    if receipt.emitted_event_count > receipt.candidate_count:
+        raise ValueError("emitted_event_count must be <= candidate_count")
+    if receipt.credit_q31_count != receipt.candidate_count:
+        raise ValueError("credit_q31_count must equal candidate_count")
+    if receipt.projected_move_count != receipt.candidate_count:
+        raise ValueError("projected_move_count must equal candidate_count")
+    if receipt.flat_index_count != receipt.candidate_count:
+        raise ValueError("flat_index_count must equal candidate_count")
+    expected_sha = canonical_rank_bin_spec_sha256_from_tuple(receipt.rank_bin_spec_canonical_tuple)
+    if receipt.rank_bin_spec_sha256 != expected_sha:
+        raise ValueError("rank_bin_spec_sha256 must match canonical tuple")
+
+
+def canonical_rank_bin_spec_sha256_from_tuple(
+    canonical_tuple: tuple[tuple[int, int, int, int, int, bool], ...],
+) -> str:
+    return hashlib.sha256(repr(canonical_tuple).encode("utf-8")).hexdigest()
+
+
+def build_ranking_subcontract_receipt(
+    comparison: StrictIntegerRankingComparisonResult,
+    *,
+    comparable_set_id: str,
+    reference_float32_run_id: str,
+    candidate_strict_run_id: str,
+) -> RankingSubcontractReceipt:
+    if comparison.credit_law_id not in PRODUCTION_STRICT_INTEGER_CREDIT_LAW_IDS:
+        raise ValueError("ranking subcontract requires production neg-attribution credit law")
+    if comparison.rank_bin_spec_sha256 != canonical_rank_bin_spec_sha256_from_tuple(
+        comparison.rank_bin_spec_canonical_tuple
+    ):
+        raise ValueError("comparison rank_bin_spec_sha256 must match canonical tuple")
+    receipt = RankingSubcontractReceipt(
+        schema_version=RANKING_SUBCONTRACT_SCHEMA_VERSION,
+        target_name=RANKING_SUBCONTRACT_TARGET_NAME,
+        ranking_subcontract_mode=RANKING_SUBCONTRACT_MODE_STRICT_INTEGER,
+        credit_law_id=comparison.credit_law_id,
+        rank_method=comparison.rank_method,
+        rank_bin_spec_canonical_tuple=comparison.rank_bin_spec_canonical_tuple,
+        rank_bin_spec_sha256=comparison.rank_bin_spec_sha256,
+        candidate_count=comparison.candidate_count,
+        credit_q31_count=comparison.credit_q31_count,
+        projected_move_count=comparison.projected_move_count,
+        flat_index_count=comparison.flat_index_count,
+        emitted_event_count=comparison.emitted_event_count,
+        integer_vs_float_rank_mismatch_count=comparison.integer_vs_float_rank_mismatch_count,
+        vote_mismatch_count=comparison.vote_mismatch_count,
+        measurement_invalid_count=comparison.measurement_invalid_count,
+        representation_limit_count=comparison.representation_limit_count,
+        partial_coverage_count=comparison.partial_coverage_count,
+        bin_boundary_divergence_count=comparison.bin_boundary_divergence_count,
+        precision_divergence_count=comparison.precision_divergence_count,
+        tie_group_divergence_count=comparison.tie_group_divergence_count,
+        drop_in_float32_parity_pass=comparison.drop_in_float32_parity_pass,
+        strict_integer_self_consistency_pass=comparison.strict_integer_self_consistency_pass,
+        branch_id=comparison.branch_id,
+        comparable_set_id=comparable_set_id,
+        reference_float32_run_id=reference_float32_run_id,
+        candidate_strict_run_id=candidate_strict_run_id,
+        fp_exception_caveat=OPTIMIZER_CREDIT_STATE_FP_EXCEPTION_CAVEAT,
+        non_claims=RANKING_SUBCONTRACT_NON_CLAIMS,
+    )
+    validate_ranking_subcontract_receipt(receipt)
+    return receipt
+
+
+def prove_strict_integer_ranking_subcontract(
+    credit_q31: torch.Tensor,
+    projected_moves: torch.Tensor,
+    flat_indices: torch.Tensor,
+    spec: RankVoteSpec,
+    *,
+    comparable_set_id: str,
+    reference_float32_run_id: str,
+    candidate_strict_run_id: str,
+    credit_law_id: str = INTEGER_SPARSE_RANK_PRODUCTION_CREDIT_LAW_ID,
+) -> RankingSubcontractReceipt:
+    comparison = compare_strict_integer_ranking_to_float32_reference(
+        credit_q31,
+        projected_moves,
+        flat_indices,
+        spec,
+        credit_law_id=credit_law_id,
+    )
+    return build_ranking_subcontract_receipt(
+        comparison,
+        comparable_set_id=comparable_set_id,
+        reference_float32_run_id=reference_float32_run_id,
+        candidate_strict_run_id=candidate_strict_run_id,
+    )
+
+
+def validate_ranking_subcontract_receipt(receipt: RankingSubcontractReceipt) -> None:
+    if receipt.schema_version != RANKING_SUBCONTRACT_SCHEMA_VERSION:
+        raise ValueError("ranking subcontract schema mismatch")
+    if receipt.target_name != RANKING_SUBCONTRACT_TARGET_NAME:
+        raise ValueError("ranking subcontract target mismatch")
+    if receipt.ranking_subcontract_mode != RANKING_SUBCONTRACT_MODE_STRICT_INTEGER:
+        raise ValueError("ranking subcontract mode must be strict_integer")
+    if receipt.credit_law_id not in PRODUCTION_STRICT_INTEGER_CREDIT_LAW_IDS:
+        raise ValueError("ranking subcontract credit_law_id must be production neg-attribution")
+    if receipt.fp_exception_caveat != OPTIMIZER_CREDIT_STATE_FP_EXCEPTION_CAVEAT:
+        raise ValueError("ranking subcontract must keep exact FP-exception caveat")
+    if receipt.non_claims != RANKING_SUBCONTRACT_NON_CLAIMS:
+        raise ValueError("ranking subcontract non_claims must be exact")
+    for field in FORBIDDEN_RANKING_SUBCONTRACT_FIELDS:
+        if bool(getattr(receipt, field)):
+            raise ValueError(f"{field} is forbidden on ranking subcontract receipt")
+    if receipt.reference_float32_run_id == receipt.candidate_strict_run_id:
+        raise ValueError("reference_float32_run_id must differ from candidate_strict_run_id")
+    _validate_ranking_metric_invariants(receipt)
+    _validate_ranking_branch_id_coupling(receipt)
+    _validate_ranking_dual_pass_coupling(receipt)
