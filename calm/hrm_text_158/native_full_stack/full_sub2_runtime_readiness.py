@@ -7,6 +7,7 @@ kernel, checkpoint path, or acquisition proof.
 from __future__ import annotations
 
 from dataclasses import dataclass, fields, replace
+from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from calm.hrm_text_158.native_full_stack.activation_relief import (
@@ -1111,9 +1112,19 @@ def apply_live_activation_residuals_surface_overrides(
 
     from calm.hrm_text_158.native_full_stack.activation_relief import (
         ActivationResidualsFailClosedReceipt,
+        LaunchRuntimeBackwardValidationReceipt,
         TrainerActivationResidualsSeamProofReceipt,
         validate_activation_residuals_fail_closed_receipt,
         validate_trainer_activation_residuals_seam_proof_receipt,
+    )
+    from calm.hrm_text_158.native_full_stack.activation_residuals_launch import (
+        AUTHORIZED_R2A_L_SURFACE_TUPLE,
+        LaunchRuntimeActivationResidualsValidationReceipt,
+        PROOF_KIND_LAUNCH_RUNTIME_ACTIVATION_RESIDUALS,
+        canonicalize_base_sub2_surface_ids,
+        load_r2al_base_receipts_from_env,
+        validate_launch_runtime_activation_residuals_receipt,
+        validate_r2al_live_base_preflight,
     )
 
     if isinstance(receipt, ActivationResidualsFailClosedReceipt):
@@ -1136,10 +1147,101 @@ def apply_live_activation_residuals_surface_overrides(
         raise ValueError(
             "CPU lossless equivalence receipt cannot flip live scaffold"
         )
-    raise TypeError(
-        "activation/residual live flip requires a future launch-runtime receipt; "
-        f"got {type(receipt).__name__}"
+    if isinstance(receipt, LaunchRuntimeBackwardValidationReceipt):
+        raise ValueError(
+            "R1-L backward launch receipt cannot flip activations_residuals row"
+        )
+
+    proof_kind = getattr(receipt, "proof_kind", None)
+    if proof_kind != PROOF_KIND_LAUNCH_RUNTIME_ACTIVATION_RESIDUALS:
+        raise ValueError(
+            "only launch_runtime_activation_residuals receipts may flip activations row"
+        )
+    if not isinstance(receipt, LaunchRuntimeActivationResidualsValidationReceipt):
+        raise TypeError(
+            "launch runtime activation/residual receipt must be "
+            "LaunchRuntimeActivationResidualsValidationReceipt"
+        )
+    validate_launch_runtime_activation_residuals_receipt(receipt)
+    p1_receipt, r1l_receipt = load_r2al_base_receipts_from_env(receipt.proof_env_embedded)
+    p1_path = Path(receipt.proof_env_embedded["R2AL_P1_RECEIPT_JSON"])
+    r1l_path = Path(receipt.proof_env_embedded["R2AL_R1L_RECEIPT_JSON"])
+    validate_r2al_live_base_preflight(
+        receipt,
+        p1_receipt=p1_receipt,
+        r1l_receipt=r1l_receipt,
+        p1_receipt_path=p1_path,
+        r1l_receipt_path=r1l_path,
     )
+
+    if base_surfaces is None:
+        live_base = live_r1_backward_launch_surfaces(r1l_receipt, p1_receipt)
+        surfaces = list(live_base.surfaces)
+    else:
+        surfaces = list(base_surfaces)
+        live_base = live_r1_backward_launch_surfaces(r1l_receipt, p1_receipt)
+        live_ids = {
+            surface.surface_id: surface.classification
+            for surface in live_base.surfaces
+        }
+        provided_sub2 = canonicalize_base_sub2_surface_ids(
+            surface.surface_id
+            for surface in surfaces
+            if surface.classification == RUNTIME_CLASS_SUB2
+        )
+        if provided_sub2 != tuple(receipt.base_sub2_surface_ids):
+            raise ValueError(
+                "provided base_surfaces do not match live P1+R1-L base sub2 ids"
+            )
+        for surface in surfaces:
+            if live_ids.get(surface.surface_id) != surface.classification:
+                raise ValueError(
+                    "provided base_surfaces classification mismatch vs live P1+R1-L base"
+                )
+
+    base_by_id = {surface.surface_id: surface for surface in surfaces}
+    reason = (
+        f"{GATED_LOSSLESS_RECOMPUTE_REASON}; R2-A-L launch/runtime validation "
+        f"launch_source_commit_sha={receipt.launch_source_commit_sha}; "
+        "M1 saved-tensor-hook remat proves handle-pack authority replacement "
+        "with GPU memory measurement on proven P1+R1-L live base"
+    )
+    proof_test = (
+        "calm/llm_computer/tests/test_hrm_text_158_r2al_launch_schema.py::"
+        "test_r2al_applier_changes_exactly_one_surface"
+    )
+    flipped = _with_surface(
+        tuple(surfaces),
+        SURFACE_ACTIVATIONS_RESIDUALS,
+        classification=RUNTIME_CLASS_SUB2,
+        reason=reason,
+        source_anchor="calm/hrm_text_158/native_full_stack/activation_residuals_m1_remat.py:24",
+        proof_artifact_or_test=proof_test,
+    )
+    for surface in flipped:
+        if surface.surface_id == SURFACE_ACTIVATIONS_RESIDUALS:
+            continue
+        if surface.classification != base_by_id[surface.surface_id].classification:
+            raise ValueError(
+                "launch runtime flip changed more than activations_residuals"
+            )
+
+    result = build_full_sub2_runtime_ready_for_science(flipped)
+    if result.ready_for_main_science:
+        raise ValueError("launch runtime flip must not set ready_for_main_science")
+    if not result.ready_for_pre_full_stack_diagnostic:
+        raise ValueError(
+            "launch runtime flip must set ready_for_pre_full_stack_diagnostic"
+        )
+    if tuple(receipt.applier_flipped_surface_ids) != AUTHORIZED_R2A_L_SURFACE_TUPLE:
+        raise ValueError("launch runtime authorized surface tuple mismatch")
+    if SURFACE_ACTIVATIONS_RESIDUALS not in {
+        surface.surface_id
+        for surface in flipped
+        if surface.classification == RUNTIME_CLASS_SUB2
+    }:
+        raise ValueError("launch runtime flip must set activations_residuals row to sub2")
+    return flipped
 
 
 def live_r1_backward_launch_surfaces(
