@@ -781,6 +781,8 @@ def train(
     activation_residuals_fail_closed_proof: bool = False,
     # R2-A-M1 default-off: CPU lossless equivalence proof with saved-tensor-hook remat.
     activation_residuals_lossless_equivalence_proof: bool = False,
+    # R2-A-L default-off: GPU launch/runtime validation mint gate for M1 remat.
+    activation_residuals_m1_launch_proof: bool = False,
     # Diagnostic ONLY (codex msg 1779652915624): when True, build the training
     # DataLoader WITHOUT the explicit seeded generator (pre-1656ead global-RNG
     # shuffle order). Default False keeps the deterministic seeded generator.
@@ -1376,6 +1378,21 @@ def train(
             "--activation-residuals-lossless-equivalence-proof is mutually exclusive "
             "with R1 and R2-A seam proof flags"
         )
+    if activation_residuals_m1_launch_proof and any(_sub2_proof_flags):
+        raise ValueError(
+            "--activation-residuals-m1-launch-proof is mutually exclusive with "
+            "sub2 authority proof flags"
+        )
+    if activation_residuals_m1_launch_proof and (
+        activation_relief_lossless_recompute_wiring_proof
+        or activation_relief_lossless_recompute_launch_proof
+        or activation_residuals_fail_closed_proof
+        or activation_residuals_lossless_equivalence_proof
+    ):
+        raise ValueError(
+            "--activation-residuals-m1-launch-proof is mutually exclusive with "
+            "R1 and R2-A CPU proof flags"
+        )
     if sub2_authority_live_checkpoint and any(_sub2_proof_flags):
         raise ValueError(
             "--sub2-authority-live-checkpoint is mutually exclusive with "
@@ -1723,6 +1740,76 @@ def train(
         )
         print(
             "[hrm158] R1-L launch proof: EXITING before optimizer step",
+            flush=True,
+        )
+        return
+
+    if activation_residuals_m1_launch_proof:
+        import json
+        import os
+        import sys
+
+        from calm.hrm_text_158.native_full_stack.activation_residuals_launch import (
+            R2alLaunchProofAbort,
+            run_r2al_gpu_launch_proof,
+        )
+
+        if active_supports:
+            raise RuntimeError(
+                "R2-A-L launch proof v1 is main-only; retained supports must be empty"
+            )
+        if not torch.cuda.is_available():
+            raise RuntimeError("R2-A-L launch proof requires CUDA")
+
+        w6_parent_path = os.environ.get("R2AL_W6_PARENT_PATH", "").strip()
+        if not w6_parent_path:
+            raise RuntimeError(
+                "R2-A-L launch proof requires R2AL_W6_PARENT_PATH in the environment"
+            )
+
+        launch_device = torch.device("cuda")
+        m = m.to(launch_device)
+
+        try:
+            receipt = run_r2al_gpu_launch_proof(
+                model=m,
+                loader=loader,
+                device=launch_device,
+                hidden_size=hidden_size,
+                cfg=cfg,
+                epochs=epochs,
+                proof_command_argv=tuple(sys.argv),
+                w6_parent_path=w6_parent_path,
+            )
+        except R2alLaunchProofAbort as exc:
+            print(f"[hrm158] R2-A-L launch proof: NO-MINT — {exc}", flush=True)
+            raise SystemExit(1) from exc
+
+        receipt_json_path = os.environ.get("R2AL_LAUNCH_RECEIPT_JSON", "").strip()
+        if not receipt_json_path:
+            raise RuntimeError(
+                "R2-A-L launch proof requires R2AL_LAUNCH_RECEIPT_JSON in the environment"
+            )
+        out_path = Path(receipt_json_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(
+            json.dumps(receipt.to_dict(), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        print(
+            "[hrm158] R2-A-L launch proof: "
+            f"proof_kind={receipt.proof_kind} "
+            f"m1_handle_pack={receipt.m1_seam_handle_pack_count} "
+            f"cuda_delta={receipt.cuda_peak_allocated_bytes_delta_median} "
+            f"live_flip_authorized={receipt.live_readiness_row_flip_authorized}",
+            flush=True,
+        )
+        print(
+            f"[hrm158] R2-A-L launch proof: receipt_json={out_path}",
+            flush=True,
+        )
+        print(
+            "[hrm158] R2-A-L launch proof: EXITING before optimizer step",
             flush=True,
         )
         return
@@ -2938,6 +3025,11 @@ if __name__ == "__main__":
                     help="R2-A-M1 proof-only, default-off: CPU lossless equivalence "
                          "with saved-tensor-hook seam remat; earns gate (a)+(b) only; "
                          "exit before optimizer step. No live readiness row flip.")
+    ap.add_argument("--activation-residuals-m1-launch-proof",
+                    action="store_true",
+                    help="R2-A-L proof-only, default-off: gate for GPU launch/runtime "
+                         "validation receipt mint for M1 remat. Reads R2AL_W6_PARENT_PATH "
+                         "and banked P1/R1-L receipt paths. Main-only v1.")
     ap.add_argument("--legacy-loader-shuffle", action="store_true",
                     help="DIAGNOSTIC ONLY (not recipe-default): build the training "
                          "DataLoader without the explicit seeded generator, restoring "
@@ -3041,6 +3133,7 @@ if __name__ == "__main__":
         activation_residuals_lossless_equivalence_proof=(
             args.activation_residuals_lossless_equivalence_proof
         ),
+        activation_residuals_m1_launch_proof=args.activation_residuals_m1_launch_proof,
         legacy_loader_shuffle=args.legacy_loader_shuffle,
         dry_run=args.dry_run,
     )
