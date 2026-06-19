@@ -895,6 +895,34 @@ def test_validate_live_conversion_rejects_stale_source_commit_sha():
         validate_trainer_sub2_authority_live_conversion_receipt(receipt)
 
 
+def test_validate_live_conversion_banked_mode_skips_only_head_check():
+    receipt = replace(
+        _mint_live_conversion_receipt(),
+        source_commit_sha="deadbeef" * 5,
+    )
+    validate_trainer_sub2_authority_live_conversion_receipt(
+        receipt,
+        require_source_at_head=False,
+    )
+
+
+def test_validate_live_conversion_banked_mode_still_rejects_bad_parity():
+    receipt = _mint_live_conversion_receipt()
+    bad_parity = dict(receipt.parity_max_abs_diff_by_site)
+    bad_parity["main_kl"] = 1.0
+    bad = replace(
+        receipt,
+        source_commit_sha="deadbeef" * 5,
+        parity_max_abs_diff_by_site=bad_parity,
+        parity_pass=False,
+    )
+    with pytest.raises(ValueError, match="parity"):
+        validate_trainer_sub2_authority_live_conversion_receipt(
+            bad,
+            require_source_at_head=False,
+        )
+
+
 def test_validate_live_conversion_rejects_parity_over_threshold():
     receipt = _mint_live_conversion_receipt()
     bad_parity = dict(receipt.parity_max_abs_diff_by_site)

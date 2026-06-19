@@ -19,9 +19,11 @@ from calm.hrm_text_158.native_full_stack.activation_residuals_launch import (
     R2alLaunchProofMeasurements,
     build_launch_runtime_activation_residuals_validation_receipt,
     canonicalize_base_sub2_surface_ids,
+    derive_r2al_live_base_fields,
     launch_runtime_activation_residuals_receipt_from_dict,
     validate_launch_runtime_activation_residuals_receipt,
     validate_r2al_live_base_preflight,
+    verify_r2al_banked_p1_ancestor_preflight,
 )
 from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
     RUNTIME_CLASS_PRE_FULL_STACK_DIAGNOSTIC,
@@ -90,7 +92,11 @@ def _setup_r2al_receipt_paths(tmp_path: Path) -> dict[str, Path]:
 
 def _mint_valid_r2al_launch_receipt(tmp_path: Path) -> LaunchRuntimeActivationResidualsValidationReceipt:
     paths = _setup_r2al_receipt_paths(tmp_path)
-    launch_source = R2A_CPU_BASE_COMMIT_SHA
+    from calm.llm_computer.tests.test_hrm_text_158_trainer_sub2_authority_live_checkpoint import (
+        _repo_head_sha,
+    )
+
+    launch_source = _repo_head_sha()
     manifest = {
         "r2a_cpu_base_commit_sha": R2A_CPU_BASE_COMMIT_SHA,
         "launch_source_commit_sha": launch_source,
@@ -300,7 +306,7 @@ def test_r2al_validator_rejects_r1_only_manifest(tmp_path):
     receipt = _mint_valid_r2al_launch_receipt(tmp_path)
     forged_manifest = {
         "r2a_cpu_base_commit_sha": R1_CPU_BASE_COMMIT_SHA,
-        "launch_source_commit_sha": R2A_CPU_BASE_COMMIT_SHA,
+        "launch_source_commit_sha": receipt.launch_source_commit_sha,
         "archive_created_at_utc": "2026-06-19T00:00:00Z",
         "archive_method": "git_archive_HEAD",
     }
@@ -335,3 +341,98 @@ def test_r2al_applier_rejects_mismatched_p1_receipt_sha(tmp_path):
     )
     with pytest.raises(ValueError, match="p1_live_conversion_receipt_sha256 mismatch"):
         apply_live_activation_residuals_surface_overrides(forged)
+
+
+def test_r2al_banked_ancestor_p1_passes_derive_preflight_and_applier(tmp_path):
+    from calm.llm_computer.tests.test_hrm_text_158_trainer_sub2_authority_live_checkpoint import (
+        _repo_head_sha,
+    )
+
+    launch_source = _repo_head_sha()
+    banked_p1_sha = R2A_CPU_BASE_COMMIT_SHA
+    p1_receipt = replace(_mint_live_conversion_receipt(), source_commit_sha=banked_p1_sha)
+    r1l_receipt = _mint_valid_launch_receipt()
+    derive_r2al_live_base_fields(p1_receipt=p1_receipt, r1l_receipt=r1l_receipt)
+
+    p1_path = tmp_path / "receipts" / "banked_p1_live_conversion_receipt.json"
+    r1l_path = tmp_path / "receipts" / "r1l_launch_runtime_receipt.json"
+    _write_receipt_json(p1_path, p1_receipt.to_dict())
+    _write_receipt_json(r1l_path, r1l_receipt.to_dict())
+    manifest = {
+        "r2a_cpu_base_commit_sha": R2A_CPU_BASE_COMMIT_SHA,
+        "launch_source_commit_sha": launch_source,
+        "archive_created_at_utc": "2026-06-19T00:00:00Z",
+        "archive_method": "git_archive_HEAD",
+    }
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONPATH": ".",
+        "R2AL_LAUNCH_RECEIPT_JSON": str(tmp_path / "receipts" / "r2al_launch_runtime_receipt.json"),
+        "R2AL_LAUNCH_LOG": str(tmp_path / "logs" / "r2al_launch.log"),
+        "R2AL_W6_PARENT_PATH": str(tmp_path / "artifacts" / "w6_parent_readonly.pt"),
+        "R2AL_P1_RECEIPT_JSON": str(p1_path),
+        "R2AL_R1L_RECEIPT_JSON": str(r1l_path),
+    }
+    (tmp_path / "logs").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "logs" / "r2al_launch.log").write_bytes(b"R2-A-L launch proof log\n")
+    receipt = build_launch_runtime_activation_residuals_validation_receipt(
+        launch_source_commit_sha=launch_source,
+        launch_manifest_embedded=manifest,
+        proof_env_embedded=env,
+        proof_command_argv=("pytest", "r2al-launch"),
+        clean_run_dir_sha256="a" * 64,
+        w6_parent_path=str(tmp_path / "artifacts" / "w6_parent_readonly.pt"),
+        w6_parent_sha256="9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec",
+        gpu_name="synthetic-gpu",
+        gpu_uuid="gpu-uuid-r2al-test",
+        driver_version="550.00",
+        cuda_version="12.4",
+        torch_version="2.5.0",
+        model_config_digest_sha256="b" * 64,
+        proof_batch_digest_sha256="c" * 64,
+        retained_support_digest_sha256=hashlib.sha256(b"[]").hexdigest(),
+        p1_receipt=p1_receipt,
+        r1l_receipt=r1l_receipt,
+        p1_receipt_path=p1_path,
+        r1l_receipt_path=r1l_path,
+        measurements=_valid_synthetic_measurements(),
+        log_artifact_sha256=hashlib.sha256(b"R2-A-L launch proof log\n").hexdigest(),
+    )
+    assert receipt.ancestry_verified_at_launch_preflight is True
+    validate_r2al_live_base_preflight(
+        receipt,
+        p1_receipt=p1_receipt,
+        r1l_receipt=r1l_receipt,
+        p1_receipt_path=p1_path,
+        r1l_receipt_path=r1l_path,
+    )
+    base = live_r1_backward_launch_surfaces(
+        r1l_receipt,
+        p1_receipt,
+        require_source_at_head=False,
+    ).surfaces
+    flipped = apply_live_activation_residuals_surface_overrides(receipt, base_surfaces=base)
+    activations = next(
+        surface for surface in flipped if surface.surface_id == SURFACE_ACTIVATIONS_RESIDUALS
+    )
+    assert activations.classification == RUNTIME_CLASS_SUB2
+
+
+def test_r2al_non_ancestor_p1_fails_preflight(monkeypatch):
+    p1_receipt = replace(
+        _mint_live_conversion_receipt(),
+        source_commit_sha="deadbeef" * 5,
+    )
+
+    def _reject_ancestry(*_args, **_kwargs):
+        raise ValueError("P1 source_commit_sha deadbeefdeadbeefdeadbeefdeadbeefdeadbeef is not an ancestor")
+
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.activation_residuals_launch.verify_git_commit_is_ancestor",
+        _reject_ancestry,
+    )
+    with pytest.raises(ValueError, match="not an ancestor"):
+        verify_r2al_banked_p1_ancestor_preflight(
+            p1_receipt=p1_receipt,
+            launch_source_commit_sha="f" * 40,
+        )

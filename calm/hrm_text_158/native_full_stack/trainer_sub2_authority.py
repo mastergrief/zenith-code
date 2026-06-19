@@ -2474,6 +2474,8 @@ def _resolve_live_conversion_source_commit_sha() -> str:
 
 def validate_trainer_sub2_authority_live_conversion_receipt(
     receipt: TrainerSub2AuthorityLiveConversionReceipt,
+    *,
+    require_source_at_head: bool = True,
 ) -> None:
     if receipt.schema_version != TRAINER_SUB2_LIVE_CONVERSION_SCHEMA_VERSION:
         raise ValueError("P1b live conversion schema version mismatch")
@@ -2487,8 +2489,9 @@ def validate_trainer_sub2_authority_live_conversion_receipt(
         raise ValueError("P1b cannot write banked parent checkpoints")
     if not str(receipt.source_commit_sha).strip():
         raise ValueError("P1b missing source_commit_sha")
-    if receipt.source_commit_sha != _resolve_live_conversion_source_commit_sha():
-        raise ValueError("P1b stale source_commit_sha")
+    if require_source_at_head:
+        if receipt.source_commit_sha != _resolve_live_conversion_source_commit_sha():
+            raise ValueError("P1b stale source_commit_sha")
     for field_name in (
         "p1_envelope_sha256",
         "inner_authoritative_state_payload_sha256",

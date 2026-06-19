@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import subprocess
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -275,6 +276,93 @@ def sha256_file_bytes(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _resolve_r2al_repo_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
+def verify_git_commit_is_ancestor(
+    ancestor_sha: str,
+    descendant_sha: str,
+    *,
+    repo_root: Path | None = None,
+    subprocess_run: Callable[..., Any] | None = None,
+) -> None:
+    """Fail-closed: ancestor_sha must be an ancestor of descendant_sha in git."""
+    run = subprocess_run or subprocess.run
+    root = repo_root or _resolve_r2al_repo_root()
+    ancestor = str(ancestor_sha).strip()
+    descendant = str(descendant_sha).strip()
+    if len(ancestor) != 40 or len(descendant) != 40:
+        raise ValueError(
+            "git ancestry check requires full 40-char shas "
+            f"(ancestor={ancestor!r}, descendant={descendant!r})"
+        )
+    result = run(
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        return
+    if result.returncode == 1:
+        raise ValueError(
+            f"P1 source_commit_sha {ancestor} is not an ancestor of "
+            f"launch source {descendant}"
+        )
+    stderr = (result.stderr or "").strip()
+    raise ValueError(
+        "git ancestry check failed-closed "
+        f"(rc={result.returncode}): {stderr or 'missing object/shallow/no-git'}"
+    )
+
+
+def verify_r2al_banked_p1_ancestor_preflight(
+    *,
+    p1_receipt: Any,
+    launch_source_commit_sha: str,
+    repo_root: Path | None = None,
+    git_is_ancestor_fn: Callable[..., None] | None = None,
+    resolve_head_sha_fn: Callable[[], str] | None = None,
+    verify_head_matches_launch_source: bool = False,
+) -> bool:
+    """Verify banked P1 source is an ancestor of launch source during preflight."""
+    p1_sha = str(p1_receipt.source_commit_sha).strip()
+    launch_sha = str(launch_source_commit_sha).strip()
+    if not p1_sha:
+        raise ValueError("P1b missing source_commit_sha for ancestry preflight")
+    if not launch_sha:
+        raise ValueError("R2-A-L launch_source_commit_sha required for ancestry preflight")
+    if verify_head_matches_launch_source:
+        if resolve_head_sha_fn is None:
+            head_result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repo_root or _resolve_r2al_repo_root(),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if head_result.returncode != 0:
+                stderr = (head_result.stderr or "").strip()
+                raise ValueError(
+                    "git HEAD resolve failed-closed "
+                    f"(rc={head_result.returncode}): {stderr or 'no-git'}"
+                )
+            head_sha = head_result.stdout.strip()
+        else:
+            head_sha = str(resolve_head_sha_fn()).strip()
+        if head_sha != launch_sha:
+            raise ValueError(
+                f"HEAD {head_sha} != launch_source_commit_sha {launch_sha}"
+            )
+    check = git_is_ancestor_fn or verify_git_commit_is_ancestor
+    if git_is_ancestor_fn is not None:
+        check(p1_sha, launch_sha)
+    else:
+        check(p1_sha, launch_sha, repo_root=repo_root)
+    return True
+
+
 def canonicalize_base_sub2_surface_ids(
     surface_ids: Sequence[str],
 ) -> tuple[str, ...]:
@@ -297,7 +385,11 @@ def derive_r2al_live_base_fields(
         live_r1_backward_launch_surfaces,
     )
 
-    base = live_r1_backward_launch_surfaces(r1l_receipt, p1_receipt)
+    base = live_r1_backward_launch_surfaces(
+        r1l_receipt,
+        p1_receipt,
+        require_source_at_head=False,
+    )
     sub2_ids = canonicalize_base_sub2_surface_ids(
         surface.surface_id
         for surface in base.surfaces
@@ -362,7 +454,14 @@ def validate_r2al_live_base_preflight(
         validate_trainer_sub2_authority_live_conversion_receipt,
     )
 
-    validate_trainer_sub2_authority_live_conversion_receipt(p1_receipt)
+    verify_r2al_banked_p1_ancestor_preflight(
+        p1_receipt=p1_receipt,
+        launch_source_commit_sha=receipt.launch_source_commit_sha,
+    )
+    validate_trainer_sub2_authority_live_conversion_receipt(
+        p1_receipt,
+        require_source_at_head=False,
+    )
     validate_launch_runtime_backward_receipt(r1l_receipt)
     if p1_receipt_path is not None:
         if sha256_file_bytes(p1_receipt_path) != receipt.p1_live_conversion_receipt_sha256:
@@ -371,7 +470,11 @@ def validate_r2al_live_base_preflight(
         if sha256_file_bytes(r1l_receipt_path) != receipt.r1l_launch_runtime_receipt_sha256:
             raise ValueError("r1l_launch_runtime_receipt_sha256 mismatch")
 
-    base = live_r1_backward_launch_surfaces(r1l_receipt, p1_receipt)
+    base = live_r1_backward_launch_surfaces(
+        r1l_receipt,
+        p1_receipt,
+        require_source_at_head=False,
+    )
     if compute_base_readiness_receipt_sha256(base) != receipt.base_readiness_receipt_sha256:
         raise ValueError("base_readiness_receipt_sha256 mismatch")
     if int(base.sub2_surface_count) != 4:
@@ -667,7 +770,6 @@ def build_launch_runtime_activation_residuals_validation_receipt(
     measurements: R2alLaunchProofMeasurements,
     log_artifact_sha256: str,
     r2a_cpu_base_commit_sha: str = R2A_CPU_BASE_COMMIT_SHA,
-    ancestry_verified_at_launch_preflight: bool = True,
     live_base_preflight_pass: bool = True,
 ) -> LaunchRuntimeActivationResidualsValidationReceipt:
     manifest = dict(launch_manifest_embedded)
@@ -676,6 +778,10 @@ def build_launch_runtime_activation_residuals_validation_receipt(
         raise ValueError("launch manifest r2a_cpu_base_commit_sha mismatch")
     if r2a_cpu_base_commit_sha != R2A_CPU_BASE_COMMIT_SHA:
         raise ValueError("r2a_cpu_base_commit_sha must match R2A_CPU_BASE_COMMIT_SHA")
+    ancestry_verified_at_launch_preflight = verify_r2al_banked_p1_ancestor_preflight(
+        p1_receipt=p1_receipt,
+        launch_source_commit_sha=launch_source_commit_sha,
+    )
     live_base = derive_r2al_live_base_fields(p1_receipt=p1_receipt, r1l_receipt=r1l_receipt)
     cuda_delta = (
         measurements.cuda_peak_allocated_bytes_baseline_median
@@ -1268,6 +1374,10 @@ def run_r2al_gpu_launch_proof(
     p1_receipt, r1l_receipt = load_r2al_base_receipts_from_env(proof_env_embedded)
     p1_path = Path(proof_env_embedded["R2AL_P1_RECEIPT_JSON"])
     r1l_path = Path(proof_env_embedded["R2AL_R1L_RECEIPT_JSON"])
+    verify_r2al_banked_p1_ancestor_preflight(
+        p1_receipt=p1_receipt,
+        launch_source_commit_sha=launch_source_commit_sha,
+    )
     derive_r2al_live_base_fields(p1_receipt=p1_receipt, r1l_receipt=r1l_receipt)
 
     if measurement_runner is None:

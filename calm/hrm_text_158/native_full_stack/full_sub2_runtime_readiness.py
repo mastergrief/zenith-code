@@ -917,6 +917,7 @@ def apply_live_p1_conversion_surface_overrides(
     receipt: Any,
     *,
     base_surfaces: Sequence[FullSub2RuntimeSurfaceReceipt] | None = None,
+    require_source_at_head: bool = True,
 ) -> tuple[FullSub2RuntimeSurfaceReceipt, ...]:
     from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
         AUTHORIZED_P1B_SURFACE_TUPLE,
@@ -924,7 +925,10 @@ def apply_live_p1_conversion_surface_overrides(
         validate_trainer_sub2_authority_live_conversion_receipt,
     )
 
-    validate_trainer_sub2_authority_live_conversion_receipt(receipt)
+    validate_trainer_sub2_authority_live_conversion_receipt(
+        receipt,
+        require_source_at_head=require_source_at_head,
+    )
     if not receipt.readiness_row_flip_authorized:
         raise ValueError("P1b receipt does not authorize readiness row flips")
     authorized = tuple(receipt.readiness_row_flip_authorized_surface_names)
@@ -996,8 +1000,13 @@ def live_p1_authority_conversion_surfaces(
 
 def post_p1_live_scaffold_surfaces(
     p1_receipt: Any,
+    *,
+    require_source_at_head: bool = True,
 ) -> tuple[FullSub2RuntimeSurfaceReceipt, ...]:
-    return apply_live_p1_conversion_surface_overrides(p1_receipt)
+    return apply_live_p1_conversion_surface_overrides(
+        p1_receipt,
+        require_source_at_head=require_source_at_head,
+    )
 
 
 def apply_live_r1_backward_wiring_surface_overrides(
@@ -1175,11 +1184,19 @@ def apply_live_activation_residuals_surface_overrides(
     )
 
     if base_surfaces is None:
-        live_base = live_r1_backward_launch_surfaces(r1l_receipt, p1_receipt)
+        live_base = live_r1_backward_launch_surfaces(
+            r1l_receipt,
+            p1_receipt,
+            require_source_at_head=False,
+        )
         surfaces = list(live_base.surfaces)
     else:
         surfaces = list(base_surfaces)
-        live_base = live_r1_backward_launch_surfaces(r1l_receipt, p1_receipt)
+        live_base = live_r1_backward_launch_surfaces(
+            r1l_receipt,
+            p1_receipt,
+            require_source_at_head=False,
+        )
         live_ids = {
             surface.surface_id: surface.classification
             for surface in live_base.surfaces
@@ -1247,8 +1264,13 @@ def apply_live_activation_residuals_surface_overrides(
 def live_r1_backward_launch_surfaces(
     r1l_receipt: Any,
     p1_receipt: Any,
+    *,
+    require_source_at_head: bool = True,
 ) -> FullSub2RuntimeReadyForScienceReceipt:
-    base = post_p1_live_scaffold_surfaces(p1_receipt)
+    base = post_p1_live_scaffold_surfaces(
+        p1_receipt,
+        require_source_at_head=require_source_at_head,
+    )
     return live_r1_backward_wiring_surfaces(
         r1l_receipt,
         base_surfaces=base,
