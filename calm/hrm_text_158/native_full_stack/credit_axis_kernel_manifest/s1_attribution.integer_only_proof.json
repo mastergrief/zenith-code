@@ -1,0 +1,23 @@
+{
+  "allowed_dtypes": [
+    "int8",
+    "int16",
+    "int32",
+    "int64"
+  ],
+  "forbidden_op_patterns": [
+    "fp32",
+    "bf16",
+    "fp64",
+    "sitofp",
+    "fptosi",
+    "fptoui",
+    "uitofp"
+  ],
+  "kernel_name": "_credit_axis_attribution_row_tile_kernel",
+  "pass": true,
+  "source_sha256": "37d9354ea80c35a0232c448e72d4227f1d37937ae6379847dfb10c4068e51c8c",
+  "source_violations": [],
+  "stage": "s1_attribution",
+  "ttir_violations": []
+}

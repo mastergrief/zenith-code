@@ -1,0 +1,259 @@
+{
+  "schema_version": "hrm_text_158_credit_axis_kernel_manifest/v0",
+  "source_sha256": "37d9354ea80c35a0232c448e72d4227f1d37937ae6379847dfb10c4068e51c8c",
+  "stages": {
+    "s1_attribution": {
+      "allowed_dtypes": [
+        "int8",
+        "int16",
+        "int32",
+        "int64"
+      ],
+      "forbidden_op_patterns": [
+        "fp32",
+        "bf16",
+        "fp64",
+        "sitofp",
+        "fptosi",
+        "fptoui",
+        "uitofp"
+      ],
+      "kernel_name": "_credit_axis_attribution_row_tile_kernel",
+      "pass": true,
+      "source_sha256": "37d9354ea80c35a0232c448e72d4227f1d37937ae6379847dfb10c4068e51c8c",
+      "source_violations": [],
+      "stage": "s1_attribution",
+      "ttir_violations": []
+    },
+    "s1_attribution_rescale": {
+      "allowed_dtypes": [
+        "int8",
+        "int16",
+        "int32",
+        "int64"
+      ],
+      "forbidden_op_patterns": [
+        "fp32",
+        "bf16",
+        "fp64",
+        "sitofp",
+        "fptosi",
+        "fptoui",
+        "uitofp"
+      ],
+      "kernel_name": "_credit_axis_attribution_rescale_kernel",
+      "pass": true,
+      "source_sha256": "37d9354ea80c35a0232c448e72d4227f1d37937ae6379847dfb10c4068e51c8c",
+      "source_violations": [],
+      "stage": "s1_attribution_rescale",
+      "ttir_violations": []
+    },
+    "s1_prefix_sum_exclusive": {
+      "allowed_dtypes": [
+        "int8",
+        "int16",
+        "int32",
+        "int64"
+      ],
+      "forbidden_op_patterns": [
+        "fp32",
+        "bf16",
+        "fp64",
+        "sitofp",
+        "fptosi",
+        "fptoui",
+        "uitofp"
+      ],
+      "kernel_name": "_credit_axis_prefix_sum_exclusive_kernel",
+      "pass": true,
+      "source_sha256": "37d9354ea80c35a0232c448e72d4227f1d37937ae6379847dfb10c4068e51c8c",
+      "source_violations": [],
+      "stage": "s1_prefix_sum_exclusive",
+      "ttir_violations": []
+    },
+    "s1_row_compact_scatter": {
+      "allowed_dtypes": [
+        "int8",
+        "int16",
+        "int32",
+        "int64"
+      ],
+      "forbidden_op_patterns": [
+        "fp32",
+        "bf16",
+        "fp64",
+        "sitofp",
+        "fptosi",
+        "fptoui",
+        "uitofp"
+      ],
+      "kernel_name": "_credit_axis_row_compact_scatter_kernel",
+      "pass": true,
+      "source_sha256": "37d9354ea80c35a0232c448e72d4227f1d37937ae6379847dfb10c4068e51c8c",
+      "source_violations": [],
+      "stage": "s1_row_compact_scatter",
+      "ttir_violations": []
+    },
+    "s1_row_nz_count": {
+      "allowed_dtypes": [
+        "int8",
+        "int16",
+        "int32",
+        "int64"
+      ],
+      "forbidden_op_patterns": [
+        "fp32",
+        "bf16",
+        "fp64",
+        "sitofp",
+        "fptosi",
+        "fptoui",
+        "uitofp"
+      ],
+      "kernel_name": "_credit_axis_row_nz_count_kernel",
+      "pass": true,
+      "source_sha256": "37d9354ea80c35a0232c448e72d4227f1d37937ae6379847dfb10c4068e51c8c",
+      "source_violations": [],
+      "stage": "s1_row_nz_count",
+      "ttir_violations": []
+    },
+    "s2_dense_compact_scatter": {
+      "allowed_dtypes": [
+        "int8",
+        "int16",
+        "int32",
+        "int64"
+      ],
+      "forbidden_op_patterns": [
+        "fp32",
+        "bf16",
+        "fp64",
+        "sitofp",
+        "fptosi",
+        "fptoui",
+        "uitofp"
+      ],
+      "kernel_name": "_credit_axis_dense_compact_scatter_kernel",
+      "pass": true,
+      "source_sha256": "37d9354ea80c35a0232c448e72d4227f1d37937ae6379847dfb10c4068e51c8c",
+      "source_violations": [],
+      "stage": "s2_dense_compact_scatter",
+      "ttir_violations": []
+    },
+    "s2_project_moves": {
+      "allowed_dtypes": [
+        "int8",
+        "int16",
+        "int32",
+        "int64"
+      ],
+      "forbidden_op_patterns": [
+        "fp32",
+        "bf16",
+        "fp64",
+        "sitofp",
+        "fptosi",
+        "fptoui",
+        "uitofp"
+      ],
+      "kernel_name": "_credit_axis_project_moves_dense_kernel",
+      "pass": true,
+      "source_sha256": "37d9354ea80c35a0232c448e72d4227f1d37937ae6379847dfb10c4068e51c8c",
+      "source_violations": [],
+      "stage": "s2_project_moves",
+      "ttir_violations": []
+    },
+    "s3_credit_q31": {
+      "allowed_dtypes": [
+        "int8",
+        "int16",
+        "int32",
+        "int64"
+      ],
+      "forbidden_op_patterns": [
+        "fp32",
+        "bf16",
+        "fp64",
+        "sitofp",
+        "fptosi",
+        "fptoui",
+        "uitofp"
+      ],
+      "kernel_name": "_credit_axis_credit_q31_kernel",
+      "pass": true,
+      "source_sha256": "37d9354ea80c35a0232c448e72d4227f1d37937ae6379847dfb10c4068e51c8c",
+      "source_violations": [],
+      "stage": "s3_credit_q31",
+      "ttir_violations": []
+    },
+    "s3_gather_credit_q31": {
+      "allowed_dtypes": [
+        "int8",
+        "int16",
+        "int32",
+        "int64"
+      ],
+      "forbidden_op_patterns": [
+        "fp32",
+        "bf16",
+        "fp64",
+        "sitofp",
+        "fptosi",
+        "fptoui",
+        "uitofp"
+      ],
+      "kernel_name": "_credit_axis_gather_attribution_kernel",
+      "pass": true,
+      "source_sha256": "37d9354ea80c35a0232c448e72d4227f1d37937ae6379847dfb10c4068e51c8c",
+      "source_violations": [],
+      "stage": "s3_gather_credit_q31",
+      "ttir_violations": []
+    },
+    "s4_assign_bins_votes": {
+      "allowed_dtypes": [
+        "int8",
+        "int16",
+        "int32",
+        "int64"
+      ],
+      "forbidden_op_patterns": [
+        "fp32",
+        "bf16",
+        "fp64",
+        "sitofp",
+        "fptosi",
+        "fptoui",
+        "uitofp"
+      ],
+      "kernel_name": "_credit_axis_assign_bins_votes_kernel",
+      "pass": true,
+      "source_sha256": "37d9354ea80c35a0232c448e72d4227f1d37937ae6379847dfb10c4068e51c8c",
+      "source_violations": [],
+      "stage": "s4_assign_bins_votes",
+      "ttir_violations": []
+    },
+    "s4_rank_votes": {
+      "allowed_dtypes": [
+        "int8",
+        "int16",
+        "int32",
+        "int64"
+      ],
+      "forbidden_op_patterns": [
+        "fp32",
+        "bf16",
+        "fp64",
+        "sitofp",
+        "fptosi",
+        "fptoui",
+        "uitofp"
+      ],
+      "kernel_name": "_credit_axis_grouped_bisect_right_rank_kernel",
+      "pass": true,
+      "source_sha256": "37d9354ea80c35a0232c448e72d4227f1d37937ae6379847dfb10c4068e51c8c",
+      "source_violations": [],
+      "stage": "s4_rank_votes",
+      "ttir_violations": []
+    }
+  }
+}

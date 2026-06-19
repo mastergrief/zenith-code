@@ -20,6 +20,10 @@ from calm.hrm_text_158.native_full_stack.integer_native_optimizer_credit_path_de
     canonical_tensor_payload_sha256,
     validate_integer_credit_axis_integration_receipt,
 )
+from calm.hrm_text_158.native_full_stack.integer_sparse_rank_votes import (
+    CanonicalRankVoteBin,
+    strict_integer_sparse_rank_bucketed_vote_events_from_credit,
+)
 from calm.hrm_text_158.native_full_stack.optimizer_credit_state import (
     OPTIMIZER_CREDIT_STATE_FP_EXCEPTION_CAVEAT,
     OPTIMIZER_CREDIT_STATE_FAIL_CLOSED_NON_CLAIMS,
@@ -117,6 +121,39 @@ class CreditAxisKernelBoundaryViolation(RuntimeError):
 
 
 @dataclass(frozen=True)
+class CreditAxisStageNativeEvidence:
+    s1_native: bool = False
+    s2_native: bool = False
+    s3_native: bool = False
+    s4_native: bool = False
+
+    @property
+    def whole_pipeline_native(self) -> bool:
+        return self.s1_native and self.s2_native and self.s3_native and self.s4_native
+
+
+def torch_cuda_reference_only_from_stage_evidence(
+    evidence: CreditAxisStageNativeEvidence,
+) -> bool:
+    return not evidence.whole_pipeline_native
+
+
+def _recompute_torch_cuda_reference_only(
+    *,
+    torch_cuda_reference_only: bool,
+    stage_native_evidence: CreditAxisStageNativeEvidence | None,
+) -> bool:
+    if stage_native_evidence is None:
+        return torch_cuda_reference_only
+    recomputed = torch_cuda_reference_only_from_stage_evidence(stage_native_evidence)
+    if torch_cuda_reference_only != recomputed:
+        raise ValueError(
+            "torch_cuda_reference_only disagrees with stage_native_evidence recompute"
+        )
+    return recomputed
+
+
+@dataclass(frozen=True)
 class CreditAxisGpuKernelRuntimeEvidence:
     liveness_fail: bool = False
     hot_loop_kernel_invoked: bool = False
@@ -129,6 +166,7 @@ class CreditAxisGpuKernelRuntimeEvidence:
     cpu_oracle_payload_hashes: Mapping[str, str] | None = None
     device_residency_cuda: bool = False
     hot_loop_integer_only: bool = False
+    stage_native_evidence: CreditAxisStageNativeEvidence | None = None
 
 
 @dataclass(frozen=True)
@@ -187,6 +225,92 @@ def cpu_oracle_payload_hashes_from_integration_receipt(
         "projected_move_indices_hash": receipt.projected_move_indices_hash,
         "projected_moves_hash": receipt.projected_moves_hash,
         "credit_q31_hash": receipt.credit_q31_hash,
+    }
+
+
+@dataclass(frozen=True)
+class CpuOraclePayloadHashesForGpuParity:
+    """All 5 keys required for GPU parity / CLEAN gate."""
+
+    attribution_events_hash: str
+    projected_move_indices_hash: str
+    projected_moves_hash: str
+    credit_q31_hash: str
+    sparse_vote_events_hash: str
+    integration_data_digest_sha256: str
+    integration_branch_id: str
+    sparse_oracle_source: str
+
+
+def attribution_events_payload_sha256(
+    flat_indices: torch.Tensor,
+    attribution_q31: torch.Tensor,
+) -> str:
+    flat_hash = canonical_tensor_payload_sha256(flat_indices)
+    attr_hash = canonical_tensor_payload_sha256(attribution_q31)
+    return hashlib.sha256((flat_hash + attr_hash).encode("utf-8")).hexdigest()
+
+
+def sparse_vote_events_payload_sha256(
+    indices: torch.Tensor,
+    values: torch.Tensor,
+) -> str:
+    idx_hash = canonical_tensor_payload_sha256(indices)
+    val_hash = canonical_tensor_payload_sha256(values)
+    return hashlib.sha256((idx_hash + val_hash).encode("utf-8")).hexdigest()
+
+
+def build_cpu_oracle_payload_hashes_for_gpu_parity(
+    *,
+    integration_receipt: IntegerCreditAxisIntegrationReceipt,
+    credit_q31: torch.Tensor,
+    projected_moves: torch.Tensor,
+    projected_move_indices: torch.Tensor,
+    rank_bin_spec_canonical: tuple[CanonicalRankVoteBin, ...],
+    credit_law_id: str = "credit_neg_attribution_q31_v1",
+) -> CpuOraclePayloadHashesForGpuParity:
+    validate_integer_credit_axis_integration_receipt(integration_receipt)
+    if integration_receipt.branch_id != BRANCH_D_INTEGER_VIABLE:
+        raise ValueError("integration receipt branch_id must be BR-D-INTEGER-VIABLE")
+    sparse = strict_integer_sparse_rank_bucketed_vote_events_from_credit(
+        credit_q31=credit_q31,
+        projected_moves=projected_moves,
+        flat_indices=projected_move_indices,
+        canonical_bins=rank_bin_spec_canonical,
+        credit_law_id=credit_law_id,
+    )
+    sparse_hash = sparse_vote_events_payload_sha256(sparse.indices, sparse.values)
+    return CpuOraclePayloadHashesForGpuParity(
+        attribution_events_hash=integration_receipt.attribution_events_hash,
+        projected_move_indices_hash=integration_receipt.projected_move_indices_hash,
+        projected_moves_hash=integration_receipt.projected_moves_hash,
+        credit_q31_hash=integration_receipt.credit_q31_hash,
+        sparse_vote_events_hash=sparse_hash,
+        integration_data_digest_sha256=integration_receipt.integration_data_digest_sha256,
+        integration_branch_id=integration_receipt.branch_id,
+        sparse_oracle_source="strict_integer_sparse_rank_bucketed_vote_events_from_credit",
+    )
+
+
+def cpu_oracle_payload_hashes_from_gpu_parity(
+    oracle: CpuOraclePayloadHashesForGpuParity,
+) -> dict[str, str]:
+    return {
+        "attribution_events_hash": oracle.attribution_events_hash,
+        "projected_move_indices_hash": oracle.projected_move_indices_hash,
+        "projected_moves_hash": oracle.projected_moves_hash,
+        "credit_q31_hash": oracle.credit_q31_hash,
+        "sparse_vote_events_hash": oracle.sparse_vote_events_hash,
+    }
+
+
+def pipeline_result_to_live_gpu_tensors(result: Any) -> dict[str, torch.Tensor | tuple[torch.Tensor, torch.Tensor]]:
+    return {
+        "attribution_events_hash": (result.flat_indices, result.attribution_q31),
+        "projected_move_indices_hash": result.projected_move_indices,
+        "projected_moves_hash": result.projected_moves,
+        "credit_q31_hash": result.credit_q31,
+        "sparse_vote_events_hash": (result.sparse_vote_indices, result.sparse_vote_values),
     }
 
 
@@ -345,14 +469,33 @@ class CreditAxisKernelBoundaryGuard(TorchDispatchMode):
         return result
 
 
+def _payload_hash_for_live_tensor_key(
+    key: str,
+    value: torch.Tensor | tuple[torch.Tensor, torch.Tensor],
+) -> str:
+    if key == "attribution_events_hash":
+        if not isinstance(value, tuple) or len(value) != 2:
+            raise ValueError("attribution_events_hash requires (flat_indices, attribution_q31)")
+        return attribution_events_payload_sha256(value[0], value[1])
+    if key == "sparse_vote_events_hash":
+        if not isinstance(value, tuple) or len(value) != 2:
+            raise ValueError("sparse_vote_events_hash requires (indices, values)")
+        return sparse_vote_events_payload_sha256(value[0], value[1])
+    if not isinstance(value, torch.Tensor):
+        raise ValueError(f"payload key {key} requires a tensor live carrier")
+    return canonical_tensor_payload_sha256(value)
+
+
 def _recompute_gpu_payload_hashes_from_live_tensors(
-    live_gpu_tensors: Mapping[str, torch.Tensor],
+    live_gpu_tensors: Mapping[str, torch.Tensor | tuple[torch.Tensor, torch.Tensor]],
 ) -> dict[str, str]:
     recomputed: dict[str, str] = {}
     for key in GPU_PAYLOAD_HASH_KEYS:
         if key not in live_gpu_tensors:
             raise ValueError(f"missing live GPU tensor for payload key {key}")
-        recomputed[key] = canonical_tensor_payload_sha256(live_gpu_tensors[key])
+        recomputed[key] = _payload_hash_for_live_tensor_key(
+            key, live_gpu_tensors[key]
+        )
     return recomputed
 
 
@@ -361,7 +504,10 @@ def build_credit_axis_gpu_kernel_validation_receipt(
     cpu_integration_receipt: IntegerCreditAxisIntegrationReceipt,
     runtime_evidence: CreditAxisGpuKernelRuntimeEvidence,
     gpu_payload_hashes: Mapping[str, str] | None = None,
-    live_gpu_tensors: Mapping[str, torch.Tensor] | None = None,
+    live_gpu_tensors: Mapping[str, torch.Tensor | tuple[torch.Tensor, torch.Tensor]] | None = None,
+    cpu_oracle_payload_hashes: Mapping[str, str] | None = None,
+    rank_bin_spec_canonical: tuple[CanonicalRankVoteBin, ...] | None = None,
+    credit_law_id: str = "credit_neg_attribution_q31_v1",
 ) -> CreditAxisGpuKernelValidationReceipt:
     validate_integer_credit_axis_integration_receipt(cpu_integration_receipt)
     if not _is_br_d_branch_id(cpu_integration_receipt.branch_id):
@@ -370,10 +516,28 @@ def build_credit_axis_gpu_kernel_validation_receipt(
         gpu_payload_hashes = _recompute_gpu_payload_hashes_from_live_tensors(
             live_gpu_tensors
         )
+    if cpu_oracle_payload_hashes is None:
+        if rank_bin_spec_canonical is None:
+            raise ValueError(
+                "gate-grade receipt requires rank_bin_spec_canonical for 5-key oracle"
+            )
+        oracle_5 = build_cpu_oracle_payload_hashes_for_gpu_parity(
+            integration_receipt=cpu_integration_receipt,
+            credit_q31=cpu_integration_receipt.bound_credit_q31,
+            projected_moves=cpu_integration_receipt.bound_projected_moves,
+            projected_move_indices=cpu_integration_receipt.bound_projected_move_indices,
+            rank_bin_spec_canonical=rank_bin_spec_canonical,
+            credit_law_id=credit_law_id,
+        )
+        cpu_oracle_payload_hashes = cpu_oracle_payload_hashes_from_gpu_parity(oracle_5)
+    torch_cuda_reference_only = _recompute_torch_cuda_reference_only(
+        torch_cuda_reference_only=runtime_evidence.torch_cuda_reference_only,
+        stage_native_evidence=runtime_evidence.stage_native_evidence,
+    )
     evidence = CreditAxisGpuKernelRuntimeEvidence(
         liveness_fail=runtime_evidence.liveness_fail,
         hot_loop_kernel_invoked=runtime_evidence.hot_loop_kernel_invoked,
-        torch_cuda_reference_only=runtime_evidence.torch_cuda_reference_only,
+        torch_cuda_reference_only=torch_cuda_reference_only,
         hidden_fp_violation_count=runtime_evidence.hidden_fp_violation_count,
         boundary_or_manifest_dtype_violation=(
             runtime_evidence.boundary_or_manifest_dtype_violation
@@ -381,11 +545,10 @@ def build_credit_axis_gpu_kernel_validation_receipt(
         overflow_guard_tripped=runtime_evidence.overflow_guard_tripped,
         gpu_output_repeat_stable=runtime_evidence.gpu_output_repeat_stable,
         gpu_payload_hashes=gpu_payload_hashes,
-        cpu_oracle_payload_hashes=cpu_oracle_payload_hashes_from_integration_receipt(
-            cpu_integration_receipt
-        ),
+        cpu_oracle_payload_hashes=cpu_oracle_payload_hashes,
         device_residency_cuda=runtime_evidence.device_residency_cuda,
         hot_loop_integer_only=runtime_evidence.hot_loop_integer_only,
+        stage_native_evidence=runtime_evidence.stage_native_evidence,
     )
     gpu_validation_branch_id = classify_credit_axis_gpu_runtime_branch(evidence)
     if gpu_validation_branch_id == BR_H_NATIVE_INTEGER_PARITY_CLEAN:
@@ -395,12 +558,9 @@ def build_credit_axis_gpu_kernel_validation_receipt(
     if _is_br_d_branch_id(gpu_validation_branch_id):
         raise ValueError("gpu_validation_branch_id must be BR-H namespace")
     carried_hashes = dict(gpu_payload_hashes or {})
-    cpu_oracle_hashes = cpu_oracle_payload_hashes_from_integration_receipt(
-        cpu_integration_receipt
-    )
     parity_pass = _all_payload_hashes_match(
         gpu_payload_hashes=carried_hashes if carried_hashes else None,
-        cpu_oracle_payload_hashes=cpu_oracle_hashes,
+        cpu_oracle_payload_hashes=cpu_oracle_payload_hashes,
     )
     receipt = CreditAxisGpuKernelValidationReceipt(
         schema_version=CREDIT_AXIS_GPU_KERNEL_VALIDATION_SCHEMA_VERSION,
@@ -417,7 +577,7 @@ def build_credit_axis_gpu_kernel_validation_receipt(
         parity_pass=parity_pass,
         authority_level=AUTHORITY_GPU_EVIDENCE_ONLY,
         hot_loop_kernel_invoked=runtime_evidence.hot_loop_kernel_invoked,
-        torch_cuda_reference_only=runtime_evidence.torch_cuda_reference_only,
+        torch_cuda_reference_only=torch_cuda_reference_only,
         hidden_fp_violation_count=runtime_evidence.hidden_fp_violation_count,
         device_residency_cuda=runtime_evidence.device_residency_cuda,
         hot_loop_integer_only=runtime_evidence.hot_loop_integer_only,
@@ -429,6 +589,8 @@ def build_credit_axis_gpu_kernel_validation_receipt(
         receipt,
         cpu_integration_receipt=cpu_integration_receipt,
         live_gpu_tensors=live_gpu_tensors,
+        rank_bin_spec_canonical=rank_bin_spec_canonical,
+        credit_law_id=credit_law_id,
     )
     return receipt
 
@@ -487,31 +649,54 @@ def validate_credit_axis_gpu_kernel_validation_receipt(
     receipt: CreditAxisGpuKernelValidationReceipt,
     *,
     cpu_integration_receipt: IntegerCreditAxisIntegrationReceipt | None = None,
-    live_gpu_tensors: Mapping[str, torch.Tensor] | None = None,
+    live_gpu_tensors: Mapping[str, torch.Tensor | tuple[torch.Tensor, torch.Tensor]] | None = None,
+    rank_bin_spec_canonical: tuple[CanonicalRankVoteBin, ...] | None = None,
+    credit_law_id: str = "credit_neg_attribution_q31_v1",
+    stage_native_evidence: CreditAxisStageNativeEvidence | None = None,
 ) -> None:
     if cpu_integration_receipt is None:
         raise ValueError("gate-grade validation requires cpu_integration_receipt bind")
     validate_credit_axis_gpu_kernel_validation_receipt_shape_only(receipt)
     _validate_credit_axis_gpu_kernel_oracle_bind(receipt, cpu_integration_receipt)
+    if rank_bin_spec_canonical is None:
+        raise ValueError("gate-grade validation requires rank_bin_spec_canonical for 5-key oracle")
+    cpu_oracle_hashes = cpu_oracle_payload_hashes_from_gpu_parity(
+        build_cpu_oracle_payload_hashes_for_gpu_parity(
+            integration_receipt=cpu_integration_receipt,
+            credit_q31=cpu_integration_receipt.bound_credit_q31,
+            projected_moves=cpu_integration_receipt.bound_projected_moves,
+            projected_move_indices=cpu_integration_receipt.bound_projected_move_indices,
+            rank_bin_spec_canonical=rank_bin_spec_canonical,
+            credit_law_id=credit_law_id,
+        )
+    )
     if live_gpu_tensors is not None:
         recomputed = _recompute_gpu_payload_hashes_from_live_tensors(live_gpu_tensors)
         for key, value in recomputed.items():
             if receipt.gpu_payload_hashes.get(key) != value:
                 raise ValueError(f"gpu_payload_hashes[{key}] mismatch vs live tensor")
+    recomputed_torch_ref = receipt.torch_cuda_reference_only
+    if stage_native_evidence is not None:
+        recomputed_torch_ref = torch_cuda_reference_only_from_stage_evidence(
+            stage_native_evidence
+        )
+        if receipt.torch_cuda_reference_only != recomputed_torch_ref:
+            raise ValueError(
+                "torch_cuda_reference_only disagrees with stage_native_evidence recompute"
+            )
     evidence = CreditAxisGpuKernelRuntimeEvidence(
         liveness_fail=False,
         hot_loop_kernel_invoked=receipt.hot_loop_kernel_invoked,
-        torch_cuda_reference_only=receipt.torch_cuda_reference_only,
+        torch_cuda_reference_only=recomputed_torch_ref,
         hidden_fp_violation_count=receipt.hidden_fp_violation_count,
         boundary_or_manifest_dtype_violation=False,
         overflow_guard_tripped=receipt.overflow_guard_tripped,
         gpu_output_repeat_stable=receipt.gpu_output_repeat_stable,
         gpu_payload_hashes=receipt.gpu_payload_hashes or None,
-        cpu_oracle_payload_hashes=cpu_oracle_payload_hashes_from_integration_receipt(
-            cpu_integration_receipt
-        ),
+        cpu_oracle_payload_hashes=cpu_oracle_hashes,
         device_residency_cuda=receipt.device_residency_cuda,
         hot_loop_integer_only=receipt.hot_loop_integer_only,
+        stage_native_evidence=stage_native_evidence,
     )
     recomputed_branch = classify_credit_axis_gpu_runtime_branch(evidence)
     if receipt.gpu_validation_branch_id != recomputed_branch:
@@ -530,9 +715,6 @@ def validate_credit_axis_gpu_kernel_validation_receipt(
         if receipt.hidden_fp_violation_count > 0:
             raise ValueError("CLEAN requires hidden_fp_violation_count=0")
         recomputed = _recompute_gpu_payload_hashes_from_live_tensors(live_gpu_tensors)
-        cpu_oracle_hashes = cpu_oracle_payload_hashes_from_integration_receipt(
-            cpu_integration_receipt
-        )
         for key in GPU_PAYLOAD_HASH_KEYS:
             if receipt.gpu_payload_hashes.get(key) != recomputed.get(key):
                 raise ValueError(
@@ -546,8 +728,6 @@ def validate_credit_axis_gpu_kernel_validation_receipt(
     if receipt.parity_pass:
         if not _all_payload_hashes_match(
             gpu_payload_hashes=receipt.gpu_payload_hashes or None,
-            cpu_oracle_payload_hashes=cpu_oracle_payload_hashes_from_integration_receipt(
-                cpu_integration_receipt
-            ),
+            cpu_oracle_payload_hashes=cpu_oracle_hashes,
         ):
             raise ValueError("parity_pass mismatch vs cpu oracle hashes")
