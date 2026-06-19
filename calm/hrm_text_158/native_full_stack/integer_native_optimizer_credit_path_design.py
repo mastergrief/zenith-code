@@ -1331,3 +1331,705 @@ def validate_ranking_subcontract_receipt(receipt: RankingSubcontractReceipt) -> 
     _validate_ranking_metric_invariants(receipt)
     _validate_ranking_branch_id_coupling(receipt)
     _validate_ranking_dual_pass_coupling(receipt)
+
+
+# --- BR-3C-G integer credit-axis CPU integration (frozen PLAN v2) ---
+
+import numpy as np  # noqa: E402
+
+from calm.hrm_text_158.native_full_stack.integer_marginal_attribution import (  # noqa: E402
+    projected_moves_from_integer_attribution,
+)
+from calm.hrm_text_158.native_full_stack.integer_sparse_rank_votes import (  # noqa: E402
+    credit_q31_from_attribution,
+)
+
+INTEGER_CREDIT_AXIS_INTEGRATION_SCHEMA_VERSION = (
+    "hrm_text_158_integer_credit_axis_integration/v2"
+)
+INTEGER_CREDIT_AXIS_INTEGRATION_TARGET_NAME = (
+    "optimizer_credit_state_native_integer_candidate_integration"
+)
+INTEGRATION_AUTHORITY_CPU_EVIDENCE_ONLY = "cpu_evidence_only"
+INTEGRATION_HASH_BYTE_ORDER = "little_endian"
+
+INTEGER_CREDIT_AXIS_INTEGRATION_NON_CLAIMS = (
+    *OPTIMIZER_CREDIT_STATE_FAIL_CLOSED_NON_CLAIMS,
+    "CPU integration evidence only; optimizer_credit_state row flip deferred to GPU runtime receipt",
+    "BR-D-INTEGER-VIABLE on integration receipt is branch-8 CPU evidence, not readiness flip authority",
+    "ranking subcontract evaluated under BR-F INTEGER-EXACT gate; attribution under streaming_sparse gate",
+)
+
+FORBIDDEN_INTEGRATION_RECEIPT_FIELDS = (
+    "ready_to_flip",
+    "optimizer_credit_state_sub2_claim",
+    "readiness_row_flip_authorized",
+    "real_native_integer_attribution_present",
+    "real_native_integer_credit_ranking_present",
+    "gpu_runtime_receipt_present",
+    "fp_exception_laundering_claim",
+    "branch_d_integer_viable_claimed",
+    "optimizer_state_eligible_exclusion_proven",
+    "br_3c_c_audit_pass_cpu",
+    "persistent_carrier_width_claim",
+)
+
+
+@dataclass(frozen=True)
+class BoundCandidateAttributionEvents:
+    law_id: str
+    numel: int
+    flat_indices: torch.Tensor
+    attribution_q31: torch.Tensor
+
+    def validate(self) -> None:
+        if int(self.flat_indices.numel()) != int(self.attribution_q31.numel()):
+            raise ValueError("bound attribution events length mismatch")
+
+    def as_integer_marginal_attribution_events(self) -> IntegerMarginalAttributionEvents:
+        return IntegerMarginalAttributionEvents(
+            law_id=self.law_id,
+            numel=self.numel,
+            flat_indices=self.flat_indices,
+            attribution_q31=self.attribution_q31,
+        )
+
+
+@dataclass(frozen=True)
+class IntegerCreditAxisIntegrationReceipt:
+    schema_version: str
+    target_name: str
+    branch_id: str
+    integration_authority_level: str
+    attribution_subcontract_pass: bool
+    ranking_subcontract_pass: bool
+    attribution_subcontract_snapshot: StreamingSparseAttributionSubcontractReceipt
+    ranking_subcontract_snapshot: RankingSubcontractReceipt
+    bound_candidate_attribution_events: BoundCandidateAttributionEvents
+    bound_q_levels_flat: torch.Tensor
+    bound_projected_move_indices: torch.Tensor
+    bound_projected_moves: torch.Tensor
+    bound_credit_q31: torch.Tensor
+    candidate_alloc_guard_pass: bool
+    candidate_dense_surfaces_observed: tuple[str, ...]
+    candidate_dense_integer_scratch_observed: bool
+    candidate_dense_integer_scratch_surfaces: tuple[str, ...]
+    capture_transient_discriminator_pass: bool
+    capture_retained_fp_tensor_count: int
+    capture_stashed_in_closure_or_registry_count: int
+    comparable_set_complete: bool
+    partial_coverage_only: bool
+    attribution_events_hash: str
+    projected_move_indices_hash: str
+    projected_moves_hash: str
+    credit_q31_hash: str
+    q_levels_hash: str
+    rank_bin_spec_hash: str
+    comparable_set_id_hash: str
+    candidate_run_id_hash: str
+    reference_oracle_run_id_hash: str
+    integration_data_digest_sha256: str
+    hash_byte_order: str
+    comparable_set_id: str
+    candidate_run_id: str
+    reference_oracle_run_id: str
+    fp_exception_caveat: str
+    non_claims: tuple[str, ...]
+    ready_to_flip: bool = False
+    optimizer_credit_state_sub2_claim: bool = False
+    readiness_row_flip_authorized: bool = False
+    real_native_integer_attribution_present: bool = False
+    real_native_integer_credit_ranking_present: bool = False
+    gpu_runtime_receipt_present: bool = False
+    fp_exception_laundering_claim: bool = False
+    branch_d_integer_viable_claimed: bool = False
+    optimizer_state_eligible_exclusion_proven: bool = False
+    br_3c_c_audit_pass_cpu: bool = False
+    persistent_carrier_width_claim: bool = False
+
+
+def integer_credit_axis_integration_hard_false_snapshot() -> dict[str, bool]:
+    return {field: False for field in FORBIDDEN_INTEGRATION_RECEIPT_FIELDS}
+
+
+def _numpy_little_endian_array(tensor: torch.Tensor) -> np.ndarray:
+    t = tensor.detach().cpu().contiguous()
+    arr = t.numpy()
+    if arr.dtype.byteorder == ">":
+        le_dtype = np.dtype(arr.dtype.str).newbyteorder("<")
+        return arr.astype(le_dtype, copy=False)
+    if arr.dtype.byteorder == "=" and not np.little_endian:
+        le_dtype = np.dtype(arr.dtype.str).newbyteorder("<")
+        return arr.astype(le_dtype, copy=False)
+    return arr
+
+
+def canonical_tensor_payload_sha256(tensor: torch.Tensor) -> str:
+    t = tensor.detach().cpu().contiguous()
+    meta = (
+        f"{str(t.dtype)}|{tuple(int(x) for x in t.shape)}|{INTEGRATION_HASH_BYTE_ORDER}|"
+    ).encode("utf-8")
+    return hashlib.sha256(meta + _numpy_little_endian_array(t).tobytes()).hexdigest()
+
+
+def canonical_attribution_events_payload_sha256(
+    events: BoundCandidateAttributionEvents,
+) -> str:
+    flat_hash = canonical_tensor_payload_sha256(events.flat_indices)
+    attr_hash = canonical_tensor_payload_sha256(events.attribution_q31)
+    return hashlib.sha256((flat_hash + attr_hash).encode("utf-8")).hexdigest()
+
+
+def canonical_utf8_payload_sha256(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def integration_data_digest_sha256_from_payload_hashes(
+    *,
+    attribution_events_hash: str,
+    projected_move_indices_hash: str,
+    projected_moves_hash: str,
+    credit_q31_hash: str,
+    q_levels_hash: str,
+    rank_bin_spec_hash: str,
+    comparable_set_id_hash: str,
+    candidate_run_id_hash: str,
+    reference_oracle_run_id_hash: str,
+) -> str:
+    joined = (
+        attribution_events_hash
+        + projected_move_indices_hash
+        + projected_moves_hash
+        + credit_q31_hash
+        + q_levels_hash
+        + rank_bin_spec_hash
+        + comparable_set_id_hash
+        + candidate_run_id_hash
+        + reference_oracle_run_id_hash
+    )
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()
+
+
+def _attribution_selected_for_moves(
+    events: IntegerMarginalAttributionEvents | BoundCandidateAttributionEvents,
+    move_indices: torch.Tensor,
+) -> torch.Tensor:
+    index_to_pos = {
+        int(index): pos for pos, index in enumerate(events.flat_indices.tolist())
+    }
+    return torch.tensor(
+        [
+            int(events.attribution_q31[index_to_pos[int(index)]].item())
+            for index in move_indices.tolist()
+        ],
+        dtype=torch.int32,
+    )
+
+
+def _bound_attribution_events_from_candidate(
+    candidate_events: IntegerMarginalAttributionEvents,
+) -> BoundCandidateAttributionEvents:
+    return BoundCandidateAttributionEvents(
+        law_id=candidate_events.law_id,
+        numel=candidate_events.numel,
+        flat_indices=candidate_events.flat_indices.detach().cpu().contiguous().clone(),
+        attribution_q31=candidate_events.attribution_q31.detach().cpu().contiguous().clone(),
+    )
+
+
+def _cross_bind_ranking_tensors_from_bound_events(
+    bound_events: BoundCandidateAttributionEvents,
+    q_levels_flat: torch.Tensor,
+    *,
+    credit_law_id: str,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    events = bound_events.as_integer_marginal_attribution_events()
+    move_indices, moves = projected_moves_from_integer_attribution(events, q_levels_flat)
+    attribution_selected = _attribution_selected_for_moves(events, move_indices)
+    credit_q31 = credit_q31_from_attribution(
+        attribution_selected,
+        credit_law_id=credit_law_id,
+    )
+    return (
+        move_indices.contiguous(),
+        moves.contiguous(),
+        credit_q31.contiguous(),
+    )
+
+
+def _compute_attribution_subcontract_pass(
+    snapshot: StreamingSparseAttributionSubcontractReceipt,
+    *,
+    candidate_run_id: str,
+    comparable_set_id: str,
+) -> bool:
+    try:
+        validate_streaming_sparse_attribution_subcontract_receipt(snapshot)
+    except ValueError:
+        return False
+    return (
+        snapshot.full_support_parity_pass is True
+        and snapshot.attribution_subcontract_mode == ATTRIBUTION_SUBCONTRACT_MODE_STREAMING_SPARSE
+        and snapshot.candidate_dense_integer_scratch_observed is False
+        and snapshot.candidate_run_id == candidate_run_id
+        and snapshot.comparable_set_id == comparable_set_id
+    )
+
+
+def _compute_ranking_subcontract_pass(
+    snapshot: RankingSubcontractReceipt,
+    *,
+    candidate_run_id: str,
+    comparable_set_id: str,
+) -> bool:
+    try:
+        validate_ranking_subcontract_receipt(snapshot)
+    except ValueError:
+        return False
+    return (
+        snapshot.branch_id == BR_F_RANKING_INTEGER_EXACT
+        and snapshot.drop_in_float32_parity_pass is True
+        and snapshot.strict_integer_self_consistency_pass is True
+        and snapshot.integer_vs_float_rank_mismatch_count == 0
+        and snapshot.vote_mismatch_count == 0
+        and snapshot.candidate_strict_run_id == candidate_run_id
+        and snapshot.comparable_set_id == comparable_set_id
+    )
+
+
+def _recompute_integration_branch_id(
+    *,
+    attribution_subcontract_snapshot: StreamingSparseAttributionSubcontractReceipt,
+    attribution_subcontract_pass: bool,
+    ranking_subcontract_pass: bool,
+    capture_retained_fp_tensor_count: int,
+    capture_stashed_in_closure_or_registry_count: int,
+    comparable_set_complete: bool,
+    measurement_complete: bool = True,
+    partial_coverage_only: bool = False,
+    wire_shape_only_pass: bool = False,
+) -> str:
+    capture_transient_discriminator_pass = evaluate_capture_transient_discriminator(
+        capture_retained_fp_tensor_count=capture_retained_fp_tensor_count,
+        capture_stashed_in_closure_or_registry_count=capture_stashed_in_closure_or_registry_count,
+    )
+    scratch_observed = attribution_subcontract_snapshot.candidate_dense_integer_scratch_observed
+    scratch_surfaces = tuple(
+        attribution_subcontract_snapshot.candidate_dense_integer_scratch_surfaces
+    )
+    return classify_integer_native_optimizer_credit_path_branch(
+        candidate_alloc_guard_pass=not scratch_observed,
+        candidate_dense_surfaces_observed=scratch_surfaces,
+        candidate_dense_integer_scratch_observed=scratch_observed,
+        capture_transient_discriminator_pass=capture_transient_discriminator_pass,
+        attribution_subcontract_mode=attribution_subcontract_snapshot.attribution_subcontract_mode,
+        attribution_subcontract_pass=attribution_subcontract_pass,
+        ranking_subcontract_pass=ranking_subcontract_pass,
+        comparable_set_complete=comparable_set_complete,
+        measurement_complete=measurement_complete,
+        partial_coverage_only=partial_coverage_only,
+        wire_shape_only_pass=wire_shape_only_pass,
+    )
+
+
+def _validate_integration_hash_bindings(
+    receipt: IntegerCreditAxisIntegrationReceipt,
+    *,
+    credit_law_id: str,
+) -> None:
+    if receipt.hash_byte_order != INTEGRATION_HASH_BYTE_ORDER:
+        raise ValueError("integration receipt hash_byte_order must be little_endian")
+    bound_events = receipt.bound_candidate_attribution_events
+    bound_events.validate()
+    expected_attribution_hash = canonical_attribution_events_payload_sha256(bound_events)
+    if receipt.attribution_events_hash != expected_attribution_hash:
+        raise ValueError("attribution_events_hash mismatch")
+    q_levels = receipt.bound_q_levels_flat.detach().cpu().contiguous()
+    if receipt.q_levels_hash != canonical_tensor_payload_sha256(q_levels):
+        raise ValueError("q_levels_hash mismatch")
+    move_indices, moves, credit_q31 = _cross_bind_ranking_tensors_from_bound_events(
+        bound_events,
+        q_levels,
+        credit_law_id=credit_law_id,
+    )
+    if not torch.equal(move_indices, receipt.bound_projected_move_indices):
+        raise ValueError("bound projected_move_indices cross-bind mismatch")
+    if not torch.equal(moves, receipt.bound_projected_moves):
+        raise ValueError("bound projected_moves cross-bind mismatch")
+    if not torch.equal(credit_q31, receipt.bound_credit_q31):
+        raise ValueError("bound credit_q31 cross-bind mismatch")
+    if receipt.projected_move_indices_hash != canonical_tensor_payload_sha256(move_indices):
+        raise ValueError("projected_move_indices_hash mismatch")
+    if receipt.projected_moves_hash != canonical_tensor_payload_sha256(moves):
+        raise ValueError("projected_moves_hash mismatch")
+    if receipt.credit_q31_hash != canonical_tensor_payload_sha256(credit_q31):
+        raise ValueError("credit_q31_hash mismatch")
+    expected_rank_spec_hash = canonical_rank_bin_spec_sha256_from_tuple(
+        receipt.ranking_subcontract_snapshot.rank_bin_spec_canonical_tuple
+    )
+    if receipt.rank_bin_spec_hash != expected_rank_spec_hash:
+        raise ValueError("rank_bin_spec_hash mismatch")
+    if (
+        receipt.ranking_subcontract_snapshot.rank_bin_spec_sha256
+        != receipt.rank_bin_spec_hash
+    ):
+        raise ValueError("ranking snapshot rank_bin_spec_sha256 bind mismatch")
+    if receipt.comparable_set_id_hash != canonical_utf8_payload_sha256(
+        receipt.comparable_set_id
+    ):
+        raise ValueError("comparable_set_id_hash mismatch")
+    if receipt.candidate_run_id_hash != canonical_utf8_payload_sha256(
+        receipt.candidate_run_id
+    ):
+        raise ValueError("candidate_run_id_hash mismatch")
+    if receipt.reference_oracle_run_id_hash != canonical_utf8_payload_sha256(
+        receipt.reference_oracle_run_id
+    ):
+        raise ValueError("reference_oracle_run_id_hash mismatch")
+    expected_digest = integration_data_digest_sha256_from_payload_hashes(
+        attribution_events_hash=receipt.attribution_events_hash,
+        projected_move_indices_hash=receipt.projected_move_indices_hash,
+        projected_moves_hash=receipt.projected_moves_hash,
+        credit_q31_hash=receipt.credit_q31_hash,
+        q_levels_hash=receipt.q_levels_hash,
+        rank_bin_spec_hash=receipt.rank_bin_spec_hash,
+        comparable_set_id_hash=receipt.comparable_set_id_hash,
+        candidate_run_id_hash=receipt.candidate_run_id_hash,
+        reference_oracle_run_id_hash=receipt.reference_oracle_run_id_hash,
+    )
+    if receipt.integration_data_digest_sha256 != expected_digest:
+        raise ValueError("integration_data_digest_sha256 mismatch")
+
+
+def build_integer_credit_axis_integration_receipt(
+    *,
+    candidate_events: IntegerMarginalAttributionEvents,
+    q_levels_flat: torch.Tensor,
+    bound_projected_move_indices: torch.Tensor,
+    bound_projected_moves: torch.Tensor,
+    bound_credit_q31: torch.Tensor,
+    attribution_subcontract_snapshot: StreamingSparseAttributionSubcontractReceipt,
+    ranking_subcontract_snapshot: RankingSubcontractReceipt,
+    rank_spec: RankVoteSpec,
+    comparable_set_id: str,
+    reference_oracle_run_id: str,
+    candidate_run_id: str,
+    credit_law_id: str = INTEGER_SPARSE_RANK_PRODUCTION_CREDIT_LAW_ID,
+    capture_retained_fp_tensor_count: int = 0,
+    capture_stashed_in_closure_or_registry_count: int = 0,
+    comparable_set_complete: bool | None = None,
+    partial_coverage_only: bool = False,
+    wire_shape_only_pass: bool = False,
+    measurement_complete: bool = True,
+) -> IntegerCreditAxisIntegrationReceipt:
+    if reference_oracle_run_id == candidate_run_id:
+        raise ValueError("reference_oracle_run_id must differ from candidate_run_id")
+    bound_events = _bound_attribution_events_from_candidate(candidate_events)
+    if not events_bit_identical(
+        candidate_events,
+        bound_events.as_integer_marginal_attribution_events(),
+    ):
+        raise ValueError("bound candidate attribution events must be bit-identical to source")
+    validate_streaming_sparse_attribution_subcontract_receipt(attribution_subcontract_snapshot)
+    validate_ranking_subcontract_receipt(ranking_subcontract_snapshot)
+    attribution_subcontract_pass = _compute_attribution_subcontract_pass(
+        attribution_subcontract_snapshot,
+        candidate_run_id=candidate_run_id,
+        comparable_set_id=comparable_set_id,
+    )
+    ranking_subcontract_pass = _compute_ranking_subcontract_pass(
+        ranking_subcontract_snapshot,
+        candidate_run_id=candidate_run_id,
+        comparable_set_id=comparable_set_id,
+    )
+    if attribution_subcontract_snapshot.candidate_run_id != candidate_run_id:
+        raise ValueError("attribution snapshot candidate_run_id bind mismatch")
+    if attribution_subcontract_snapshot.comparable_set_id != comparable_set_id:
+        raise ValueError("attribution snapshot comparable_set_id bind mismatch")
+    if ranking_subcontract_snapshot.candidate_strict_run_id != candidate_run_id:
+        raise ValueError("ranking snapshot candidate_strict_run_id bind mismatch")
+    if ranking_subcontract_snapshot.comparable_set_id != comparable_set_id:
+        raise ValueError("ranking snapshot comparable_set_id bind mismatch")
+    if ranking_subcontract_snapshot.reference_float32_run_id != reference_oracle_run_id:
+        raise ValueError("ranking snapshot reference_float32_run_id bind mismatch")
+    if (
+        attribution_subcontract_snapshot.candidate_event_count
+        != int(bound_events.flat_indices.numel())
+    ):
+        raise ValueError("attribution snapshot event count bind mismatch")
+    bound_q_levels = q_levels_flat.detach().cpu().contiguous().reshape(-1)
+    if int(bound_q_levels.numel()) != int(bound_events.numel):
+        raise ValueError("bound q_levels_flat numel mismatch")
+    re_move_indices, re_moves, re_credit_q31 = _cross_bind_ranking_tensors_from_bound_events(
+        bound_events,
+        bound_q_levels,
+        credit_law_id=credit_law_id,
+    )
+    if not torch.equal(re_move_indices, bound_projected_move_indices.contiguous()):
+        raise ValueError("builder projected_move_indices must match bound re-derivation")
+    if not torch.equal(re_moves, bound_projected_moves.contiguous()):
+        raise ValueError("builder projected_moves must match bound re-derivation")
+    if not torch.equal(re_credit_q31, bound_credit_q31.contiguous()):
+        raise ValueError("builder credit_q31 must match bound re-derivation")
+    if comparable_set_complete is None:
+        comparable_set_complete = (
+            attribution_subcontract_pass
+            and ranking_subcontract_pass
+            and int(ranking_subcontract_snapshot.candidate_count)
+            == int(bound_projected_move_indices.numel())
+        )
+    branch_id = _recompute_integration_branch_id(
+        attribution_subcontract_snapshot=attribution_subcontract_snapshot,
+        attribution_subcontract_pass=attribution_subcontract_pass,
+        ranking_subcontract_pass=ranking_subcontract_pass,
+        capture_retained_fp_tensor_count=capture_retained_fp_tensor_count,
+        capture_stashed_in_closure_or_registry_count=(
+            capture_stashed_in_closure_or_registry_count
+        ),
+        comparable_set_complete=comparable_set_complete,
+        measurement_complete=measurement_complete,
+        partial_coverage_only=partial_coverage_only,
+        wire_shape_only_pass=wire_shape_only_pass,
+    )
+    attribution_events_hash = canonical_attribution_events_payload_sha256(bound_events)
+    projected_move_indices_hash = canonical_tensor_payload_sha256(re_move_indices)
+    projected_moves_hash = canonical_tensor_payload_sha256(re_moves)
+    credit_q31_hash = canonical_tensor_payload_sha256(re_credit_q31)
+    q_levels_hash = canonical_tensor_payload_sha256(bound_q_levels)
+    rank_bin_spec_hash = canonical_rank_bin_spec_sha256_from_tuple(
+        ranking_subcontract_snapshot.rank_bin_spec_canonical_tuple
+    )
+    comparable_set_id_hash = canonical_utf8_payload_sha256(comparable_set_id)
+    candidate_run_id_hash = canonical_utf8_payload_sha256(candidate_run_id)
+    reference_oracle_run_id_hash = canonical_utf8_payload_sha256(reference_oracle_run_id)
+    integration_digest = integration_data_digest_sha256_from_payload_hashes(
+        attribution_events_hash=attribution_events_hash,
+        projected_move_indices_hash=projected_move_indices_hash,
+        projected_moves_hash=projected_moves_hash,
+        credit_q31_hash=credit_q31_hash,
+        q_levels_hash=q_levels_hash,
+        rank_bin_spec_hash=rank_bin_spec_hash,
+        comparable_set_id_hash=comparable_set_id_hash,
+        candidate_run_id_hash=candidate_run_id_hash,
+        reference_oracle_run_id_hash=reference_oracle_run_id_hash,
+    )
+    scratch_observed = attribution_subcontract_snapshot.candidate_dense_integer_scratch_observed
+    scratch_surfaces = tuple(
+        attribution_subcontract_snapshot.candidate_dense_integer_scratch_surfaces
+    )
+    capture_transient_discriminator_pass = evaluate_capture_transient_discriminator(
+        capture_retained_fp_tensor_count=capture_retained_fp_tensor_count,
+        capture_stashed_in_closure_or_registry_count=(
+            capture_stashed_in_closure_or_registry_count
+        ),
+    )
+    receipt = IntegerCreditAxisIntegrationReceipt(
+        schema_version=INTEGER_CREDIT_AXIS_INTEGRATION_SCHEMA_VERSION,
+        target_name=INTEGER_CREDIT_AXIS_INTEGRATION_TARGET_NAME,
+        branch_id=branch_id,
+        integration_authority_level=INTEGRATION_AUTHORITY_CPU_EVIDENCE_ONLY,
+        attribution_subcontract_pass=attribution_subcontract_pass,
+        ranking_subcontract_pass=ranking_subcontract_pass,
+        attribution_subcontract_snapshot=attribution_subcontract_snapshot,
+        ranking_subcontract_snapshot=ranking_subcontract_snapshot,
+        bound_candidate_attribution_events=bound_events,
+        bound_q_levels_flat=bound_q_levels,
+        bound_projected_move_indices=re_move_indices,
+        bound_projected_moves=re_moves,
+        bound_credit_q31=re_credit_q31,
+        candidate_alloc_guard_pass=not scratch_observed,
+        candidate_dense_surfaces_observed=scratch_surfaces,
+        candidate_dense_integer_scratch_observed=scratch_observed,
+        candidate_dense_integer_scratch_surfaces=scratch_surfaces,
+        capture_transient_discriminator_pass=capture_transient_discriminator_pass,
+        capture_retained_fp_tensor_count=int(capture_retained_fp_tensor_count),
+        capture_stashed_in_closure_or_registry_count=int(
+            capture_stashed_in_closure_or_registry_count
+        ),
+        comparable_set_complete=comparable_set_complete,
+        partial_coverage_only=partial_coverage_only,
+        attribution_events_hash=attribution_events_hash,
+        projected_move_indices_hash=projected_move_indices_hash,
+        projected_moves_hash=projected_moves_hash,
+        credit_q31_hash=credit_q31_hash,
+        q_levels_hash=q_levels_hash,
+        rank_bin_spec_hash=rank_bin_spec_hash,
+        comparable_set_id_hash=comparable_set_id_hash,
+        candidate_run_id_hash=candidate_run_id_hash,
+        reference_oracle_run_id_hash=reference_oracle_run_id_hash,
+        integration_data_digest_sha256=integration_digest,
+        hash_byte_order=INTEGRATION_HASH_BYTE_ORDER,
+        comparable_set_id=comparable_set_id,
+        candidate_run_id=candidate_run_id,
+        reference_oracle_run_id=reference_oracle_run_id,
+        fp_exception_caveat=OPTIMIZER_CREDIT_STATE_FP_EXCEPTION_CAVEAT,
+        non_claims=INTEGER_CREDIT_AXIS_INTEGRATION_NON_CLAIMS,
+    )
+    validate_integer_credit_axis_integration_receipt(receipt, credit_law_id=credit_law_id)
+    return receipt
+
+
+def prove_integer_credit_axis_integration(
+    inputs: Sequence[torch.Tensor],
+    grad_outputs: Sequence[torch.Tensor],
+    *,
+    weight_shape: Sequence[int],
+    q_levels_flat: torch.Tensor,
+    rank_spec: RankVoteSpec,
+    comparable_set_id: str,
+    reference_oracle_run_id: str,
+    candidate_run_id: str,
+    law_id: str = INTEGER_MARGINAL_ATTRIBUTION_PRODUCTION_LAW_ID,
+    credit_law_id: str = INTEGER_SPARSE_RANK_PRODUCTION_CREDIT_LAW_ID,
+    capture_retained_fp_tensor_count: int = 0,
+    capture_stashed_in_closure_or_registry_count: int = 0,
+    comparable_set_complete: bool | None = None,
+    partial_coverage_only: bool = False,
+) -> IntegerCreditAxisIntegrationReceipt:
+    weight_dims = tuple(int(dim) for dim in weight_shape)
+    oracle_events = integer_marginal_attribution_from_captures(
+        inputs,
+        grad_outputs,
+        weight_shape=weight_dims,
+        law_id=law_id,
+    )
+    with candidate_dense_integer_dispatch_observation(weight_dims) as observer:
+        candidate_events, sparse_metrics = streaming_sparse_attribution_from_captures(
+            inputs,
+            grad_outputs,
+            weight_shape=weight_dims,
+            law_id=law_id,
+        )
+    dispatch_obs = observer.observation()
+    parity_pass = events_bit_identical(oracle_events, candidate_events)
+    attribution_snapshot = build_streaming_sparse_attribution_subcontract_receipt(
+        metrics=sparse_metrics,
+        dispatch_observation=dispatch_obs,
+        full_support_parity_pass=parity_pass,
+        comparable_set_id=comparable_set_id,
+        reference_oracle_run_id=reference_oracle_run_id,
+        candidate_run_id=candidate_run_id,
+    )
+    move_indices, moves = projected_moves_from_integer_attribution(
+        candidate_events,
+        q_levels_flat,
+    )
+    attribution_selected = _attribution_selected_for_moves(candidate_events, move_indices)
+    credit_q31 = credit_q31_from_attribution(
+        attribution_selected,
+        credit_law_id=credit_law_id,
+    )
+    ranking_snapshot = prove_strict_integer_ranking_subcontract(
+        credit_q31,
+        moves,
+        move_indices,
+        rank_spec,
+        comparable_set_id=comparable_set_id,
+        reference_float32_run_id=reference_oracle_run_id,
+        candidate_strict_run_id=candidate_run_id,
+        credit_law_id=credit_law_id,
+    )
+    return build_integer_credit_axis_integration_receipt(
+        candidate_events=candidate_events,
+        q_levels_flat=q_levels_flat,
+        bound_projected_move_indices=move_indices,
+        bound_projected_moves=moves,
+        bound_credit_q31=credit_q31,
+        attribution_subcontract_snapshot=attribution_snapshot,
+        ranking_subcontract_snapshot=ranking_snapshot,
+        rank_spec=rank_spec,
+        comparable_set_id=comparable_set_id,
+        reference_oracle_run_id=reference_oracle_run_id,
+        candidate_run_id=candidate_run_id,
+        credit_law_id=credit_law_id,
+        capture_retained_fp_tensor_count=capture_retained_fp_tensor_count,
+        capture_stashed_in_closure_or_registry_count=(
+            capture_stashed_in_closure_or_registry_count
+        ),
+        comparable_set_complete=comparable_set_complete,
+        partial_coverage_only=partial_coverage_only,
+    )
+
+
+def validate_integer_credit_axis_integration_receipt(
+    receipt: IntegerCreditAxisIntegrationReceipt,
+    *,
+    credit_law_id: str = INTEGER_SPARSE_RANK_PRODUCTION_CREDIT_LAW_ID,
+) -> None:
+    if receipt.schema_version != INTEGER_CREDIT_AXIS_INTEGRATION_SCHEMA_VERSION:
+        raise ValueError("integer credit axis integration schema mismatch")
+    if receipt.target_name != INTEGER_CREDIT_AXIS_INTEGRATION_TARGET_NAME:
+        raise ValueError("integer credit axis integration target mismatch")
+    if receipt.integration_authority_level != INTEGRATION_AUTHORITY_CPU_EVIDENCE_ONLY:
+        raise ValueError("integration_authority_level must be cpu_evidence_only")
+    if receipt.fp_exception_caveat != OPTIMIZER_CREDIT_STATE_FP_EXCEPTION_CAVEAT:
+        raise ValueError("integration receipt must keep exact FP-exception caveat")
+    if receipt.non_claims != INTEGER_CREDIT_AXIS_INTEGRATION_NON_CLAIMS:
+        raise ValueError("integration receipt non_claims must be exact")
+    for field in FORBIDDEN_INTEGRATION_RECEIPT_FIELDS:
+        if bool(getattr(receipt, field)):
+            raise ValueError(f"{field} is forbidden on integration receipt")
+    validate_streaming_sparse_attribution_subcontract_receipt(
+        receipt.attribution_subcontract_snapshot
+    )
+    validate_ranking_subcontract_receipt(receipt.ranking_subcontract_snapshot)
+    if receipt.attribution_subcontract_snapshot.comparable_set_id != receipt.comparable_set_id:
+        raise ValueError("attribution snapshot comparable_set_id bind mismatch")
+    if receipt.attribution_subcontract_snapshot.candidate_run_id != receipt.candidate_run_id:
+        raise ValueError("attribution snapshot candidate_run_id bind mismatch")
+    if receipt.ranking_subcontract_snapshot.comparable_set_id != receipt.comparable_set_id:
+        raise ValueError("ranking snapshot comparable_set_id bind mismatch")
+    if receipt.ranking_subcontract_snapshot.candidate_strict_run_id != receipt.candidate_run_id:
+        raise ValueError("ranking snapshot candidate_strict_run_id bind mismatch")
+    if (
+        receipt.ranking_subcontract_snapshot.reference_float32_run_id
+        != receipt.reference_oracle_run_id
+    ):
+        raise ValueError("ranking snapshot reference_float32_run_id bind mismatch")
+    recomputed_attribution_pass = _compute_attribution_subcontract_pass(
+        receipt.attribution_subcontract_snapshot,
+        candidate_run_id=receipt.candidate_run_id,
+        comparable_set_id=receipt.comparable_set_id,
+    )
+    if receipt.attribution_subcontract_pass != recomputed_attribution_pass:
+        raise ValueError("attribution_subcontract_pass mismatch vs carried snapshot")
+    recomputed_ranking_pass = _compute_ranking_subcontract_pass(
+        receipt.ranking_subcontract_snapshot,
+        candidate_run_id=receipt.candidate_run_id,
+        comparable_set_id=receipt.comparable_set_id,
+    )
+    if receipt.ranking_subcontract_pass != recomputed_ranking_pass:
+        raise ValueError("ranking_subcontract_pass mismatch vs carried snapshot")
+    _validate_integration_hash_bindings(receipt, credit_law_id=credit_law_id)
+    scratch_observed = receipt.attribution_subcontract_snapshot.candidate_dense_integer_scratch_observed
+    scratch_surfaces = tuple(
+        receipt.attribution_subcontract_snapshot.candidate_dense_integer_scratch_surfaces
+    )
+    if receipt.candidate_dense_integer_scratch_observed != scratch_observed:
+        raise ValueError("candidate_dense_integer_scratch_observed snapshot mismatch")
+    if receipt.candidate_dense_integer_scratch_surfaces != scratch_surfaces:
+        raise ValueError("candidate_dense_integer_scratch_surfaces snapshot mismatch")
+    if receipt.candidate_alloc_guard_pass != (not scratch_observed):
+        raise ValueError("candidate_alloc_guard_pass snapshot mismatch")
+    if receipt.candidate_dense_surfaces_observed != scratch_surfaces:
+        raise ValueError("candidate_dense_surfaces_observed snapshot mismatch")
+    recomputed_branch = _recompute_integration_branch_id(
+        attribution_subcontract_snapshot=receipt.attribution_subcontract_snapshot,
+        attribution_subcontract_pass=recomputed_attribution_pass,
+        ranking_subcontract_pass=recomputed_ranking_pass,
+        capture_retained_fp_tensor_count=receipt.capture_retained_fp_tensor_count,
+        capture_stashed_in_closure_or_registry_count=(
+            receipt.capture_stashed_in_closure_or_registry_count
+        ),
+        comparable_set_complete=receipt.comparable_set_complete,
+        partial_coverage_only=receipt.partial_coverage_only,
+    )
+    if receipt.branch_id != recomputed_branch:
+        raise ValueError("integration branch_id mismatch vs recomputed evidence")
+    if receipt.branch_id == BRANCH_D_INTEGER_VIABLE:
+        if not recomputed_attribution_pass or not recomputed_ranking_pass:
+            raise ValueError("INTEGER-VIABLE requires both subcontract passes")
+        if not receipt.comparable_set_complete:
+            raise ValueError("INTEGER-VIABLE requires comparable_set_complete")
+        if receipt.integration_authority_level != INTEGRATION_AUTHORITY_CPU_EVIDENCE_ONLY:
+            raise ValueError("INTEGER-VIABLE requires cpu_evidence_only authority")
