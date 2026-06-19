@@ -797,6 +797,175 @@ def validate_activation_residuals_fail_closed_receipt(
         raise ValueError("activation/residual receipt non-claims must be exact")
 
 
+TRAINER_ACTIVATION_RESIDUALS_SEAM_PROOF_SCHEMA_VERSION = (
+    "hrm_text_158_activation_residuals_seam_proof/v0.cpu_production_observation"
+)
+TRAINER_ACTIVATION_RESIDUALS_SEAM_PROOF_TARGET_NAME = (
+    "r2a_activation_residuals_production_seam_observation"
+)
+PROOF_KIND_CPU_PRODUCTION_SEAM_OBSERVATION = "cpu_production_seam_observation"
+TRAINER_ACTIVATION_RESIDUALS_SEAM_PROOF_NON_CLAIMS = (
+    "proves production-path activation_codec_seam observation only",
+    "does not authorize activations_residuals row flip on live scaffold",
+    "does not substitute for GPU memory measurement or no-hidden-BF16 audit",
+    "does not claim learning, acquisition, retention, throughput, or .pt mutation",
+    "zL_init persistent FP-exception non-claim remains outside the four-family allowlist",
+)
+
+
+@dataclass(frozen=True)
+class TrainerActivationResidualsSeamProofReceipt:
+    """R2-A CPU receipt for production trainer seam observation proof."""
+
+    schema_version: str
+    target_name: str
+    proof_kind: str
+    source_commit_sha: str
+    proof_command_argv: tuple[str, ...]
+    activation_residuals_fail_closed_proof_flag: bool
+    fail_closed_receipt: ActivationResidualsFailClosedReceipt
+    live_readiness_row_flip_authorized: bool
+    readiness_row_flip_authorized_surface_names: tuple[str, ...]
+    optimizer_step_called: bool
+    non_claims: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema_version": self.schema_version,
+            "target_name": self.target_name,
+            "proof_kind": self.proof_kind,
+            "source_commit_sha": self.source_commit_sha,
+            "proof_command_argv": list(self.proof_command_argv),
+            "activation_residuals_fail_closed_proof_flag": (
+                self.activation_residuals_fail_closed_proof_flag
+            ),
+            "fail_closed_receipt": self.fail_closed_receipt.to_dict(),
+            "live_readiness_row_flip_authorized": self.live_readiness_row_flip_authorized,
+            "readiness_row_flip_authorized_surface_names": list(
+                self.readiness_row_flip_authorized_surface_names
+            ),
+            "optimizer_step_called": self.optimizer_step_called,
+            "non_claims": list(self.non_claims),
+        }
+
+
+def zL_init_observation_from_hrm_module(hrm: object) -> dict[str, object]:
+    """Build the Step 3A2 zL_init non-claim observation from a live HRM module."""
+
+    zL_init = getattr(hrm, "zL_init", None)
+    if zL_init is None:
+        raise ValueError("HRM module is missing zL_init buffer")
+    named_buffers = dict(getattr(hrm, "named_buffers", lambda: [])())
+    return {
+        "name": "zL_init",
+        "classification": ZL_INIT_FP_EXCEPTION_CLASSIFICATION,
+        "registry_anchor": ZL_INIT_FP_EXCEPTION_REGISTRY_ANCHOR,
+        "source_anchor": ZL_INIT_HRM_SOURCE_ANCHOR,
+        "dtype": str(zL_init.dtype),
+        "shape": tuple(zL_init.shape),
+        "persistent": "zL_init" in named_buffers,
+    }
+
+
+def build_production_activation_codec_seam_collector() -> tuple[
+    Callable[[str, Any], Any],
+    list[dict[str, object]],
+]:
+    """Return an activation_codec_seam callback and its collected event list."""
+
+    events: list[dict[str, object]] = []
+
+    def seam(family: str, tensor: object) -> object:
+        if family in ACTIVATION_RESIDUAL_TARGET_FAMILIES:
+            import torch
+
+            if not isinstance(tensor, torch.Tensor):
+                raise TypeError(
+                    f"activation_codec_seam expected torch.Tensor for {family!r}"
+                )
+            events.append(
+                {
+                    "family": family,
+                    "shape": tuple(tensor.shape),
+                    "dtype": str(tensor.dtype),
+                    "device": str(tensor.device),
+                    "requires_grad": bool(tensor.requires_grad),
+                }
+            )
+        return tensor
+
+    return seam, events
+
+
+def build_trainer_activation_residuals_seam_proof_receipt(
+    *,
+    source_commit_sha: str,
+    proof_command_argv: Sequence[str],
+    seam_events: Sequence[Mapping[str, object]],
+    zL_init_observation: Mapping[str, object],
+) -> TrainerActivationResidualsSeamProofReceipt:
+    """Build the R2-A CPU production seam observation receipt."""
+
+    fail_closed = build_activation_residuals_fail_closed_receipt(
+        seam_events=seam_events,
+        zL_init_observation=zL_init_observation,
+    )
+    receipt = TrainerActivationResidualsSeamProofReceipt(
+        schema_version=TRAINER_ACTIVATION_RESIDUALS_SEAM_PROOF_SCHEMA_VERSION,
+        target_name=TRAINER_ACTIVATION_RESIDUALS_SEAM_PROOF_TARGET_NAME,
+        proof_kind=PROOF_KIND_CPU_PRODUCTION_SEAM_OBSERVATION,
+        source_commit_sha=_require_nonempty_string(
+            source_commit_sha,
+            field_name="source_commit_sha",
+        ),
+        proof_command_argv=tuple(str(arg) for arg in proof_command_argv),
+        activation_residuals_fail_closed_proof_flag=True,
+        fail_closed_receipt=fail_closed,
+        live_readiness_row_flip_authorized=False,
+        readiness_row_flip_authorized_surface_names=(),
+        optimizer_step_called=False,
+        non_claims=TRAINER_ACTIVATION_RESIDUALS_SEAM_PROOF_NON_CLAIMS,
+    )
+    validate_trainer_activation_residuals_seam_proof_receipt(receipt)
+    return receipt
+
+
+def validate_trainer_activation_residuals_seam_proof_receipt(
+    receipt: TrainerActivationResidualsSeamProofReceipt,
+) -> None:
+    if receipt.schema_version != TRAINER_ACTIVATION_RESIDUALS_SEAM_PROOF_SCHEMA_VERSION:
+        raise ValueError("trainer activation/residual seam proof schema mismatch")
+    if receipt.target_name != TRAINER_ACTIVATION_RESIDUALS_SEAM_PROOF_TARGET_NAME:
+        raise ValueError("trainer activation/residual seam proof target mismatch")
+    if receipt.proof_kind != PROOF_KIND_CPU_PRODUCTION_SEAM_OBSERVATION:
+        raise ValueError(
+            "trainer activation/residual seam proof requires cpu seam observation kind"
+        )
+    if not receipt.activation_residuals_fail_closed_proof_flag:
+        raise ValueError(
+            "trainer activation/residual seam proof requires fail-closed proof flag"
+        )
+    validate_activation_residuals_fail_closed_receipt(receipt.fail_closed_receipt)
+    if receipt.fail_closed_receipt.ready_to_flip:
+        raise ValueError("CPU seam proof cannot mint ready_to_flip=true")
+    if receipt.fail_closed_receipt.activations_residuals_sub2_claim:
+        raise ValueError("CPU seam proof cannot claim activations_residuals sub2")
+    if receipt.fail_closed_receipt.real_sub2_or_remat_or_offload_mechanism_present:
+        raise ValueError("CPU seam proof cannot claim remat/offload mechanism")
+    if receipt.fail_closed_receipt.no_hidden_bf16_authority_proven:
+        raise ValueError("CPU seam proof cannot claim no-hidden-BF16 authority")
+    if receipt.fail_closed_receipt.gpu_memory_receipt_present:
+        raise ValueError("CPU seam proof cannot claim GPU memory receipt")
+    if receipt.live_readiness_row_flip_authorized:
+        raise ValueError("CPU seam proof cannot authorize live readiness row flip")
+    if receipt.readiness_row_flip_authorized_surface_names:
+        raise ValueError("CPU seam proof must keep authorized surface list empty")
+    if receipt.optimizer_step_called:
+        raise ValueError("CPU seam proof must not call optimizer step")
+    if receipt.non_claims != TRAINER_ACTIVATION_RESIDUALS_SEAM_PROOF_NON_CLAIMS:
+        raise ValueError("trainer activation/residual seam proof non-claims must be exact")
+
+
 def validate_activation_relief_measurement(
     receipt: Mapping[str, object],
 ) -> None:

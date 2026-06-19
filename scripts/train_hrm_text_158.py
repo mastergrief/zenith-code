@@ -776,6 +776,9 @@ def train(
     # R1-L default-off: GPU launch/runtime validation mint gate; SCHEMA slice exits
     # before GPU until R1-L-LAUNCH packet authorizes the run.
     activation_relief_lossless_recompute_launch_proof: bool = False,
+    # R2-A default-off: CPU production activation/residual seam observation proof;
+    # exits before optimizer step. No live readiness row flip.
+    activation_residuals_fail_closed_proof: bool = False,
     # Diagnostic ONLY (codex msg 1779652915624): when True, build the training
     # DataLoader WITHOUT the explicit seeded generator (pre-1656ead global-RNG
     # shuffle order). Default False keeps the deterministic seeded generator.
@@ -1344,6 +1347,19 @@ def train(
             "--activation-relief-lossless-recompute-wiring-proof and "
             "--activation-relief-lossless-recompute-launch-proof are mutually exclusive"
         )
+    if activation_residuals_fail_closed_proof and any(_sub2_proof_flags):
+        raise ValueError(
+            "--activation-residuals-fail-closed-proof is mutually exclusive with "
+            "sub2 authority proof flags"
+        )
+    if activation_residuals_fail_closed_proof and (
+        activation_relief_lossless_recompute_wiring_proof
+        or activation_relief_lossless_recompute_launch_proof
+    ):
+        raise ValueError(
+            "--activation-residuals-fail-closed-proof is mutually exclusive with "
+            "activation-relief R1 proof flags"
+        )
     if sub2_authority_live_checkpoint and any(_sub2_proof_flags):
         raise ValueError(
             "--sub2-authority-live-checkpoint is mutually exclusive with "
@@ -1691,6 +1707,103 @@ def train(
         )
         print(
             "[hrm158] R1-L launch proof: EXITING before optimizer step",
+            flush=True,
+        )
+        return
+
+    if activation_residuals_fail_closed_proof:
+        import json
+        import os
+        import subprocess
+        import sys
+
+        from calm.hrm_text_158.native_full_stack.activation_relief import (
+            ACTIVATION_RESIDUAL_TARGET_FAMILIES,
+            build_production_activation_codec_seam_collector,
+            build_trainer_activation_residuals_seam_proof_receipt,
+            zL_init_observation_from_hrm_module,
+        )
+
+        repo_root = Path(__file__).resolve().parents[1]
+        proof_batch = next(iter(loader))
+        proof_step = 1
+        proof_total_steps = max(1, epochs * len(loader))
+        extras_base = m.compute_train_extra_args(proof_step, proof_total_steps)
+        seam, seam_events = build_production_activation_codec_seam_collector()
+        extras = {**extras_base, "activation_codec_seam": seam}
+
+        def _proof_child_batch(batch):
+            inputs = batch["inputs"].to(device)
+            labels = batch["labels"].to(device)
+            sep_positions = batch["sep_positions"].to(device)
+            bsz, seq_len = inputs.shape
+            position_ids = torch.arange(
+                seq_len, dtype=torch.long, device=device
+            ).unsqueeze(0).expand(bsz, -1)
+            return {
+                "inputs": inputs,
+                "labels": labels,
+                "sep_positions": sep_positions,
+                "position_ids": position_ids,
+            }
+
+        child_batch = _proof_child_batch(proof_batch)
+        m.train()
+        _new_carry, loss_main, _metrics = m(None, child_batch, **extras)
+        if not torch.isfinite(loss_main):
+            raise RuntimeError(
+                f"R2-A seam proof main loss non-finite: {loss_main.item()}"
+            )
+        observed_families = {event["family"] for event in seam_events}
+        missing = [
+            family
+            for family in ACTIVATION_RESIDUAL_TARGET_FAMILIES
+            if family not in observed_families
+        ]
+        if missing:
+            raise RuntimeError(
+                "R2-A seam proof missing required families: " + ", ".join(missing)
+            )
+
+        source_commit_sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            text=True,
+        ).strip()
+        receipt = build_trainer_activation_residuals_seam_proof_receipt(
+            source_commit_sha=source_commit_sha,
+            proof_command_argv=tuple(sys.argv),
+            seam_events=seam_events,
+            zL_init_observation=zL_init_observation_from_hrm_module(m.model),
+        )
+        fail_closed = receipt.fail_closed_receipt
+        print(
+            "[hrm158] R2-A activation/residual seam proof: "
+            f"proof_kind={receipt.proof_kind} "
+            f"families={list(fail_closed.target_families)} "
+            f"ready_to_flip={fail_closed.ready_to_flip} "
+            f"live_flip_authorized={receipt.live_readiness_row_flip_authorized}",
+            flush=True,
+        )
+        receipt_json_path = os.environ.get(
+            "R2A_ACTIVATION_RESIDUALS_RECEIPT_JSON",
+            "",
+        ).strip()
+        if receipt_json_path:
+            out_path = Path(receipt_json_path)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(
+                json.dumps(receipt.to_dict(), indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            print(
+                "[hrm158] R2-A activation/residual seam proof: "
+                f"receipt_json={out_path}",
+                flush=True,
+            )
+        print(
+            "[hrm158] R2-A activation/residual seam proof: "
+            "EXITING before optimizer step",
             flush=True,
         )
         return
@@ -2635,6 +2748,12 @@ if __name__ == "__main__":
                     help="R1-L proof-only, default-off: gate for GPU launch/runtime "
                          "validation receipt mint. Reads R1L_W6_PARENT_PATH. This "
                          "SCHEMA slice exits before GPU; full mint is R1-L-LAUNCH.")
+    ap.add_argument("--activation-residuals-fail-closed-proof",
+                    action="store_true",
+                    help="R2-A proof-only, default-off: observe production "
+                         "activation_codec_seam families and mint a fail-closed "
+                         "ActivationResiduals receipt; exit before optimizer step. "
+                         "No live readiness row flip.")
     ap.add_argument("--legacy-loader-shuffle", action="store_true",
                     help="DIAGNOSTIC ONLY (not recipe-default): build the training "
                          "DataLoader without the explicit seeded generator, restoring "
@@ -2731,6 +2850,9 @@ if __name__ == "__main__":
         ),
         activation_relief_lossless_recompute_launch_proof=(
             args.activation_relief_lossless_recompute_launch_proof
+        ),
+        activation_residuals_fail_closed_proof=(
+            args.activation_residuals_fail_closed_proof
         ),
         legacy_loader_shuffle=args.legacy_loader_shuffle,
         dry_run=args.dry_run,

@@ -1102,6 +1102,36 @@ def live_r1_backward_wiring_surfaces(
     return build_full_sub2_runtime_ready_for_science(overridden)
 
 
+def apply_live_activation_residuals_surface_overrides(
+    receipt: Any,
+    *,
+    base_surfaces: Sequence[FullSub2RuntimeSurfaceReceipt] | None = None,
+) -> tuple[FullSub2RuntimeSurfaceReceipt, ...]:
+    """Fail-closed: no CPU/fixture receipt may flip activations_residuals live row."""
+
+    from calm.hrm_text_158.native_full_stack.activation_relief import (
+        ActivationResidualsFailClosedReceipt,
+        TrainerActivationResidualsSeamProofReceipt,
+        validate_activation_residuals_fail_closed_receipt,
+        validate_trainer_activation_residuals_seam_proof_receipt,
+    )
+
+    if isinstance(receipt, ActivationResidualsFailClosedReceipt):
+        validate_activation_residuals_fail_closed_receipt(receipt)
+        raise ValueError(
+            "fixture activation/residual fail-closed receipt cannot flip live scaffold"
+        )
+    if isinstance(receipt, TrainerActivationResidualsSeamProofReceipt):
+        validate_trainer_activation_residuals_seam_proof_receipt(receipt)
+        raise ValueError(
+            "CPU production seam observation receipt cannot flip live scaffold"
+        )
+    raise TypeError(
+        "activation/residual live flip requires a future launch-runtime receipt; "
+        f"got {type(receipt).__name__}"
+    )
+
+
 def live_r1_backward_launch_surfaces(
     r1l_receipt: Any,
     p1_receipt: Any,

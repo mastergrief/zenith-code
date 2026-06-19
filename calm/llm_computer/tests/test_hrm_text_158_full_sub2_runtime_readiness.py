@@ -46,6 +46,7 @@ from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
     FullSub2RuntimeSurfaceReceipt,
     apply_live_p1_conversion_surface_overrides,
     apply_live_r1_backward_wiring_surface_overrides,
+    apply_live_activation_residuals_surface_overrides,
     build_full_sub2_runtime_ready_for_science,
     current_repo_scaffold_surfaces,
     fixture_full_sub2_runtime_ready_for_science,
@@ -1271,3 +1272,42 @@ def test_current_repo_scaffold_unchanged_by_cpu_wiring_receipt():
     assert backward.classification == RUNTIME_CLASS_MISSING
     with pytest.raises(ValueError, match="CPU production autograd wiring"):
         apply_live_r1_backward_wiring_surface_overrides(_mint_cpu_wiring_receipt())
+
+
+def _mint_r2a_cpu_seam_receipt():
+    from calm.hrm_text_158.native_full_stack.activation_relief import (
+        build_trainer_activation_residuals_seam_proof_receipt,
+    )
+    from calm.llm_computer.tests.test_hrm_text_158_activation_relief import (
+        _activation_residual_live_tensor_proof,
+    )
+
+    events, zL_init_observation = _activation_residual_live_tensor_proof()
+    return build_trainer_activation_residuals_seam_proof_receipt(
+        source_commit_sha="abc123",
+        proof_command_argv=("test",),
+        seam_events=events,
+        zL_init_observation=zL_init_observation,
+    )
+
+
+def test_live_r2a_applier_rejects_fixture_fail_closed_receipt():
+    from calm.hrm_text_158.native_full_stack.activation_relief import (
+        build_activation_residuals_fail_closed_receipt,
+    )
+    from calm.llm_computer.tests.test_hrm_text_158_activation_relief import (
+        _activation_residual_live_tensor_proof,
+    )
+
+    events, zL_init_observation = _activation_residual_live_tensor_proof()
+    fixture_receipt = build_activation_residuals_fail_closed_receipt(
+        seam_events=events,
+        zL_init_observation=zL_init_observation,
+    )
+    with pytest.raises(ValueError, match="fixture activation/residual fail-closed"):
+        apply_live_activation_residuals_surface_overrides(fixture_receipt)
+
+
+def test_live_r2a_applier_rejects_cpu_seam_receipt():
+    with pytest.raises(ValueError, match="CPU production seam observation"):
+        apply_live_activation_residuals_surface_overrides(_mint_r2a_cpu_seam_receipt())
