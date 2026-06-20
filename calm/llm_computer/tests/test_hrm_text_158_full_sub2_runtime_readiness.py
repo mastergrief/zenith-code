@@ -863,9 +863,11 @@ def test_cli_gated_native_kernelized_hot_path_blocked_expect_ready_emits_blocker
     assert "fail-closed native kernelized hot-path harness" in native["reason"]
     assert "standalone q_acc_apply apply-kernel proven (B2-3)" in native["reason"]
     assert "qacc_kernelized=false" in native["reason"]
-    assert "composition paths still call torch-CUDA q_acc_apply" in native["reason"]
+    assert "composition paths still call torch-CUDA q_acc_apply" not in native["reason"]
+    assert "composed-path q_acc_apply APPLY parity proven (B2-4)" in native["reason"]
+    assert "cap SELECTION" in native["reason"]
     assert "device=cuda" in native["reason"]
-    assert "CPU row materialization" in native["reason"]
+    assert "hot-loop residency" in native["reason"]
     assert set(payload["blocker_surface_names"]) == {
         SURFACE_ACTIVATIONS_RESIDUALS,
         SURFACE_ATTENTION_KV_ATTENTION_BUFFERS,
@@ -1021,7 +1023,9 @@ def test_gated_native_kernelized_hot_path_blocked_fixture_updates_only_native_fi
     assert "standalone q_acc_apply apply-kernel proven (B2-3)" in native_after["reason"]
     assert "qacc_kernelized=false" in native_after["reason"]
     assert "Triton preplan" in native_after["reason"]
-    assert "composition paths still call torch-CUDA q_acc_apply" in native_after["reason"]
+    assert "composition paths still call torch-CUDA q_acc_apply" not in native_after["reason"]
+    assert "composed-path q_acc_apply APPLY parity proven (B2-4)" in native_after["reason"]
+    assert "cap SELECTION" in native_after["reason"]
     assert "MARGIN-only/default-off reference" in native_after["reason"]
     assert "native custom kernel speed claim" in native_after["reason"]
     assert "device=cuda" in native_after["reason"]

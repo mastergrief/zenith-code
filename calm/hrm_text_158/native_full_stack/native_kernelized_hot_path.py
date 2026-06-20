@@ -12,7 +12,7 @@ from typing import Any, Mapping, Sequence
 
 NATIVE_KERNELIZED_HOT_PATH_FAIL_CLOSED_RECEIPT_SCHEMA_VERSION = (
     "hrm_text_158_native_kernelized_hot_path_fail_closed/"
-    "v2.composition_evidence_fields_default_false"
+    "v3.composition_apply_proven_gate_partial"
 )
 NATIVE_KERNELIZED_HOT_PATH_FAIL_CLOSED_TARGET_NAME = (
     "step4a_native_kernelized_hot_path_fail_closed"
@@ -23,11 +23,15 @@ B2_3_STANDALONE_QACC_APPLY_COMMIT_SHA = (
 )
 B2_3_STANDALONE_QACC_APPLY_GPU_RECEIPT_MSG_ID = "1781972683995"
 
+B2_4_COMPOSITION_QACC_APPLY_COMMIT_SHA = (
+    "99727af5dc7b9eac989096b34bdfb46586fe6c12"
+)
+B2_4_COMPOSITION_GPU_RECEIPT_MSG_ID = "1781979673113"
+
 NATIVE_KERNELIZED_HOT_PATH_REQUIRED_BLOCKER_ANCHORS = (
     "qacc_kernelized_false",
     "qacc_update_vote_selection_apply_cpu_reference",
     "triton_preplan_only",
-    "composition_paths_still_call_torch_cuda_apply",
     "global_cap_margin_only_reference_default_off",
     "full_loop_reference_stitch_no_native_speed_claim",
     "device_cuda_not_hot_loop_residency",
@@ -40,9 +44,9 @@ NATIVE_KERNELIZED_HOT_PATH_BLOCKED_REASON = (
     "fail-closed native kernelized hot-path harness only; standalone q_acc_apply "
     "apply-kernel proven (B2-3), but qacc_kernelized=false, qacc update/"
     "vote-selection remain CPU-reference in the strict scaffold, Triton preplan "
-    "is elementwise-only, composition paths still call torch-CUDA q_acc_apply, "
-    "global cap is MARGIN-only/default-off reference, and the full-loop receipt "
-    "is a reference stitch with no native custom kernel speed claim"
+    "is elementwise-only, global cap is MARGIN-only/default-off reference, and "
+    "the full-loop receipt is a reference stitch with no native custom kernel "
+    "speed claim"
 )
 NATIVE_KERNELIZED_HOT_PATH_DEVICE_LAUNDERING_CAVEAT = (
     "device=cuda, VRAM residency, torch-CUDA reference tensors, or CPU row "
@@ -53,7 +57,7 @@ NATIVE_KERNELIZED_HOT_PATH_FAIL_CLOSED_NON_CLAIMS = (
     "device=cuda and VRAM residency are not hot-loop residency or kernelization proof",
     "torch-CUDA reference seams are blocker evidence, not native custom kernel readiness",
     "CPU row materialization before q/acc apply keeps the hot loop blocked",
-    "standalone q_acc_apply native proof (B2-3) does not prove composed-path or hot-loop residency",
+    "composed-path q_acc_apply APPLY parity is proven (B2-4); cap SELECTION, full-loop, and hot-loop residency are not",
     "this receipt does not launch GPU, acquire a resource lane, write checkpoints, or mutate .pt artifacts",
 )
 
@@ -72,18 +76,6 @@ _DEFAULT_BLOCKER_ANCHORS = (
         "anchor_name": "triton_preplan_only",
         "source_anchor": "calm/hrm_text_158/native_full_stack/vote_update.py:705",
         "evidence": "Triton preplan covers decayed+vote/candidate/direction only; ordering, veto residuals, and q mutation remain CPU reference",
-    },
-    {
-        "anchor_name": "composition_paths_still_call_torch_cuda_apply",
-        "source_anchor": (
-            "calm/hrm_text_158/native_full_stack/global_rate_cap_gpu.py:835;"
-            " calm/hrm_text_158/native_full_stack/full_loop_receipt.py:579/700"
-        ),
-        "evidence": (
-            "composition seams still invoke "
-            "q_acc_apply_mutation_torch_cuda_reference_under_cap_rows and "
-            "apply_global_rate_cap_torch_cuda_reference_under_margin"
-        ),
     },
     {
         "anchor_name": "global_cap_margin_only_reference_default_off",
@@ -284,25 +276,24 @@ def build_native_kernelized_hot_path_fail_closed_receipt(
     vote_selection_cpu_reference: bool = True,
     q_acc_apply_cpu_reference: bool = True,
     triton_preplan_only: bool = True,
-    q_acc_apply_final_row_torch_cuda_reference: bool = True,
+    q_acc_apply_final_row_torch_cuda_reference: bool = False,
     global_cap_margin_only_reference: bool = True,
     full_loop_native_custom_kernel_speed_claim: bool = False,
     real_device_resident_kernelized_hot_loop_present: bool = False,
     exact_cpu_oracle_parity_present: bool = False,
     gpu_runtime_receipt_present: bool = False,
-    no_cpu_row_materialization_before_apply: bool = False,
+    no_cpu_row_materialization_before_apply: bool = True,
     standalone_qacc_apply_native_proven: bool = True,
     standalone_qacc_apply_exact_parity_present: bool = True,
     standalone_qacc_apply_gpu_receipt_present: bool = True,
-    composition_qacc_apply_native_proven: bool = False,
-    composition_exact_parity_present: bool = False,
-    composition_gpu_receipt_present: bool = False,
+    composition_qacc_apply_native_proven: bool = True,
+    composition_exact_parity_present: bool = True,
+    composition_gpu_receipt_present: bool = True,
     ready_to_flip: bool = False,
     smallest_missing_proof: str = (
-        "composed-path q_acc_apply with exact CPU-oracle parity, no CPU row "
-        "materialization before apply, vote-selection + triton-preplan + "
-        "global-cap + full-loop native proof, and reviewed GPU receipt for the "
-        "full hot loop"
+        "composed-path cap SELECTION native proof, full-loop native proof + "
+        "speed claim, vote-selection + triton-preplan + qacc kernelization, "
+        "and reviewed GPU receipt for the full hot loop"
     ),
 ) -> NativeKernelizedHotPathFailClosedReceipt:
     """Build the Step 4A fail-closed native hot-path blocker receipt."""
@@ -424,10 +415,24 @@ def validate_native_kernelized_hot_path_fail_closed_receipt(
         receipt.composition_exact_parity_present,
         receipt.composition_gpu_receipt_present,
     )
+    composition_conjuncts_flipped = (
+        not receipt.q_acc_apply_final_row_torch_cuda_reference
+        and receipt.no_cpu_row_materialization_before_apply
+    )
     if receipt.composition_qacc_apply_native_proven:
         if not all(composition_evidence):
             raise ValueError(
                 "composition_qacc_apply_native_proven requires coupled evidence fields"
+            )
+        if receipt.q_acc_apply_final_row_torch_cuda_reference:
+            raise ValueError(
+                "composition_qacc_apply_native_proven requires "
+                "q_acc_apply_final_row_torch_cuda_reference is False"
+            )
+        if not receipt.no_cpu_row_materialization_before_apply:
+            raise ValueError(
+                "composition_qacc_apply_native_proven requires "
+                "no_cpu_row_materialization_before_apply is True"
             )
         laundering_flags = (
             receipt.ready_to_flip,
@@ -444,6 +449,11 @@ def validate_native_kernelized_hot_path_fail_closed_receipt(
         raise ValueError(
             "partial composition q_acc_apply evidence without "
             "composition_qacc_apply_native_proven is invalid"
+        )
+    elif composition_conjuncts_flipped:
+        raise ValueError(
+            "flipped composition conjuncts without "
+            "composition_qacc_apply_native_proven evidence is invalid"
         )
 
     future_proof_gate = _future_proof_gate(receipt)
