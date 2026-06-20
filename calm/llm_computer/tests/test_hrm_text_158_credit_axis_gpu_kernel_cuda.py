@@ -201,7 +201,7 @@ def test_gpu_five_key_oracle_payload_hashes_match_cpu(monkeypatch) -> None:
 
 def test_gpu_five_key_oracle_bxS_capture(monkeypatch) -> None:
     torch.manual_seed(1599)
-    inputs, grad_outputs, shape = _bxs_captures(batch=2, seq=3, in_features=3, out_features=2)
+    inputs, grad_outputs, shape = _bxs_captures(batch=2, seq=3, in_features=4, out_features=2)
     q_levels_flat = torch.zeros(shape[0] * shape[1], dtype=torch.int8)
     bins = canonical_rank_vote_spec(default_dry_run_rank_vote_spec())
     integration = prove_integer_credit_axis_integration(
