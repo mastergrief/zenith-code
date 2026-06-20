@@ -816,6 +816,25 @@ from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_packed
 from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_scaffold_dispatch import (
     select_global_rate_cap_rows_under_margin,
 )
+from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_step0_budget import (
+    TRITON_SINGLE_BLOCK_ROW_CEILING,
+    GlobalRateCapMarginSelectionStep0BudgetReceipt,
+    Step0BudgetDecision,
+    Step0FixtureMeasurement,
+    build_global_rate_cap_margin_selection_step0_budget_receipt,
+    measure_step0_fixture,
+    run_step0_budget_fixture_suite,
+    validate_global_rate_cap_margin_selection_step0_budget_receipt,
+)
+from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_step0_budget_receipt import (
+    GLOBAL_RATE_CAP_MARGIN_SELECTION_STEP0_BUDGET_SCHEMA_VERSION,
+    GLOBAL_RATE_CAP_MARGIN_SELECTION_STEP0_NON_CLAIMS,
+    STAGE2_MECHANISM_BUDGET_INFEASIBLE,
+    STAGE2_MECHANISM_EMPTY_ROWS,
+    STAGE2_MECHANISM_FULL_PACKED_KEY,
+    STAGE2_MECHANISM_KEY_PAYLOAD_COPERMUTE,
+    STAGE2_MECHANISM_MULTIBLOCK_DEFERRED,
+)
 
 __all__ = [
     "ACQUISITION_GATE_DEFERRED",
@@ -1504,4 +1523,19 @@ __all__ = [
     "GLOBAL_RATE_CAP_MARGIN_SELECTION_SCAFFOLD_SCHEMA_VERSION",
     "select_global_rate_cap_rows_margin_scaffold",
     "select_global_rate_cap_rows_under_margin",
+    "GLOBAL_RATE_CAP_MARGIN_SELECTION_STEP0_BUDGET_SCHEMA_VERSION",
+    "GLOBAL_RATE_CAP_MARGIN_SELECTION_STEP0_NON_CLAIMS",
+    "GlobalRateCapMarginSelectionStep0BudgetReceipt",
+    "Step0BudgetDecision",
+    "Step0FixtureMeasurement",
+    "TRITON_SINGLE_BLOCK_ROW_CEILING",
+    "STAGE2_MECHANISM_BUDGET_INFEASIBLE",
+    "STAGE2_MECHANISM_EMPTY_ROWS",
+    "STAGE2_MECHANISM_FULL_PACKED_KEY",
+    "STAGE2_MECHANISM_KEY_PAYLOAD_COPERMUTE",
+    "STAGE2_MECHANISM_MULTIBLOCK_DEFERRED",
+    "build_global_rate_cap_margin_selection_step0_budget_receipt",
+    "measure_step0_fixture",
+    "run_step0_budget_fixture_suite",
+    "validate_global_rate_cap_margin_selection_step0_budget_receipt",
 ]
