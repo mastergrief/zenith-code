@@ -796,6 +796,27 @@ from calm.hrm_text_158.native_full_stack.vote_update import (
     vote_update_preplan_triton,
 )
 
+from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_feasibility_receipt import (
+    GLOBAL_RATE_CAP_MARGIN_SELECTION_FEASIBILITY_SCHEMA_VERSION,
+    GLOBAL_RATE_CAP_MARGIN_SELECTION_FEASIBILITY_NON_CLAIMS,
+    GlobalRateCapMarginSelectionFeasibilityReceipt,
+    GlobalRateCapSelectionScaffoldToken,
+    build_global_rate_cap_margin_selection_feasibility_receipt,
+    canonical_tensor_payload_sha256,
+    new_selection_token,
+    validate_global_rate_cap_margin_selection_feasibility_receipt,
+)
+from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_packed_key_scaffold import (
+    GLOBAL_RATE_CAP_MARGIN_SELECTION_SCAFFOLD_SCOPE,
+    GLOBAL_RATE_CAP_MARGIN_SELECTION_SCAFFOLD_SCHEMA_VERSION,
+    RUN_GPU_GLOBAL_RATE_CAP_SCAFFOLD_ENV,
+    GlobalRateCapMarginSelectionFeasibilityNull,
+    select_global_rate_cap_rows_margin_scaffold,
+)
+from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_scaffold_dispatch import (
+    select_global_rate_cap_rows_under_margin,
+)
+
 __all__ = [
     "ACQUISITION_GATE_DEFERRED",
     "ACTIVE_HRM_REPO_ROOT",
@@ -1469,4 +1490,18 @@ __all__ = [
     "validate_trainer_sub2_authority_live_conversion_receipt",
     "validate_trainer_sub2_authority_local_update_receipt",
     "validate_trainer_sub2_authority_roundtrip_receipt",
+    "GLOBAL_RATE_CAP_MARGIN_SELECTION_FEASIBILITY_SCHEMA_VERSION",
+    "GLOBAL_RATE_CAP_MARGIN_SELECTION_FEASIBILITY_NON_CLAIMS",
+    "GlobalRateCapMarginSelectionFeasibilityReceipt",
+    "GlobalRateCapSelectionScaffoldToken",
+    "build_global_rate_cap_margin_selection_feasibility_receipt",
+    "canonical_tensor_payload_sha256",
+    "new_selection_token",
+    "validate_global_rate_cap_margin_selection_feasibility_receipt",
+    "GlobalRateCapMarginSelectionFeasibilityNull",
+    "RUN_GPU_GLOBAL_RATE_CAP_SCAFFOLD_ENV",
+    "GLOBAL_RATE_CAP_MARGIN_SELECTION_SCAFFOLD_SCOPE",
+    "GLOBAL_RATE_CAP_MARGIN_SELECTION_SCAFFOLD_SCHEMA_VERSION",
+    "select_global_rate_cap_rows_margin_scaffold",
+    "select_global_rate_cap_rows_under_margin",
 ]
