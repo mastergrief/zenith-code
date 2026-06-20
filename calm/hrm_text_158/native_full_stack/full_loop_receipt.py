@@ -31,6 +31,10 @@ from calm.hrm_text_158.native_full_stack.global_rate_cap_gpu import (
     GLOBAL_RATE_CAP_TORCH_CUDA_REFERENCE_SCOPE,
     RUN_GPU_GLOBAL_RATE_CAP_ENV,
     apply_global_rate_cap_torch_cuda_reference_under_margin,
+    select_global_rate_cap_rows_torch_cuda_reference,
+)
+from calm.hrm_text_158.native_full_stack.qacc_apply_composition_dispatch import (
+    apply_cap_row_mutation_with_device_rows,
 )
 from calm.hrm_text_158.native_full_stack.persistent_state_budget import (
     PHYSICAL_SUB2_NOT_ACHIEVED_STATEMENT,
@@ -50,7 +54,6 @@ from calm.hrm_text_158.native_full_stack.vote_update import (
     VoteUpdatePlan,
     VoteUpdateSpec,
     VoteUpdateState,
-    q_acc_apply_mutation_torch_cuda_reference_under_cap_rows,
     plan_integer_vote_update_reference,
 )
 
@@ -558,11 +561,19 @@ def _apply_cap_rows_on_cuda(
     qscale_states: dict[str, QScaleWeightState],
     accumulators: dict[str, torch.Tensor],
     plans: dict[str, VoteUpdatePlan],
-    cap_result: GlobalRateCapResult,
+    cap_inputs: list[GlobalRateCapTensorInput],
+    spec: GlobalRateCapSpec,
     cpu_oracle: GlobalRateCapResult,
-    device: torch.device,
+    tensor_offsets: dict[str, int],
+    deferred_backlog: dict[str, dict[int, dict[str, int]]] | None,
 ) -> tuple[dict[str, QScaleWeightState], dict[str, torch.Tensor], bool, dict[str, int]]:
-    accepted_rows_by_state = _rows_by_state(cap_result.accepted_rows)
+    selection = select_global_rate_cap_rows_torch_cuda_reference(
+        cap_inputs,
+        spec,
+        tensor_offsets=tensor_offsets,
+        deferred_backlog=deferred_backlog,
+        materialize_cpu_telemetry=False,
+    )
     oracle_by_state = {result.state_key: result for result in cpu_oracle.tensor_results}
     out_states: dict[str, QScaleWeightState] = {}
     out_accumulators: dict[str, torch.Tensor] = {}
@@ -571,26 +582,24 @@ def _apply_cap_rows_on_cuda(
 
     for key in _TENSOR_ORDER:
         plan = plans[key]
-        accepted, directions, thresholds = _accepted_row_tensors(
-            plan,
-            accepted_rows_by_state.get(key, ()),
-            device=device,
-        )
-        result = q_acc_apply_mutation_torch_cuda_reference_under_cap_rows(
+        state_rows = selection.rows_by_state[key]
+        result = apply_cap_row_mutation_with_device_rows(
             q_levels=qscale_states[key].q_levels,
             new_accumulators=plan.new_acc_i32,
-            accepted_indices=accepted,
-            accepted_directions=directions,
-            accepted_thresholds=thresholds,
+            state_rows=state_rows,
             replay_veto_indices=plan.replay_ce_veto_indices,
             replay_veto_directions=plan.replay_veto_directions,
             replay_veto_thresholds=plan.replay_veto_thresholds,
             mutate_outputs=True,
             original_accumulators=accumulators[key],
+            scope=GLOBAL_RATE_CAP_TORCH_CUDA_REFERENCE_SCOPE,
         )
         oracle = oracle_by_state[key]
         q_match = torch.equal(result.q_levels.detach().cpu(), oracle.q_levels.detach().cpu())
-        acc_match = torch.equal(result.accumulators.detach().cpu(), oracle.accumulators.detach().cpu())
+        acc_match = torch.equal(
+            result.accumulators.detach().cpu(),
+            oracle.accumulators.detach().cpu(),
+        )
         parity_ok = parity_ok and q_match and acc_match
         out_states[key] = QScaleWeightState(
             q_levels=result.q_levels,
@@ -671,9 +680,11 @@ def _run_cap_path_for_step(
         qscale_states=qscale_states,
         accumulators=accumulators,
         plans={item.state_key: item.plan for item in cap_inputs},
-        cap_result=cpu_selection,
+        cap_inputs=cap_inputs,
+        spec=spec_mutating,
         cpu_oracle=cpu_oracle,
-        device=next(iter(qscale_states.values())).q_levels.device,
+        tensor_offsets=tensor_offsets,
+        deferred_backlog=incoming_deferred_backlog,
     )
     return _cap_step_result_from_cpu_selection(
         qscale_states=out_states,
@@ -879,7 +890,7 @@ def _backlog_keys(
     }
 
 
-def _accepted_row_tensors(
+def _legacy_accepted_row_tensors_python_list(
     plan: VoteUpdatePlan,
     rows: tuple[GlobalRateCapRow, ...],
     *,

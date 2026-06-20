@@ -27,7 +27,9 @@ from calm.hrm_text_158.native_full_stack.global_rate_cap import (
 )
 from calm.hrm_text_158.native_full_stack.vote_update import (
     RUN_GPU_Q_ACC_APPLY_ENV,
-    q_acc_apply_mutation_torch_cuda_reference_under_cap_rows,
+)
+from calm.hrm_text_158.native_full_stack.qacc_apply_composition_dispatch import (
+    apply_cap_row_mutation_with_device_rows,
 )
 
 
@@ -832,12 +834,10 @@ def apply_global_rate_cap_torch_cuda_reference_under_margin(
     total_q_changed = 0
     for item in inputs:
         state_rows = selection.rows_by_state[item.state_key]
-        apply_result = q_acc_apply_mutation_torch_cuda_reference_under_cap_rows(
+        apply_result = apply_cap_row_mutation_with_device_rows(
             q_levels=item.state.q_levels,
             new_accumulators=item.plan.new_acc_i32,
-            accepted_indices=state_rows.accepted_indices,
-            accepted_directions=state_rows.accepted_directions,
-            accepted_thresholds=state_rows.accepted_thresholds,
+            state_rows=state_rows,
             replay_veto_indices=item.plan.replay_ce_veto_indices,
             replay_veto_directions=item.plan.replay_veto_directions,
             replay_veto_thresholds=item.plan.replay_veto_thresholds,
@@ -864,8 +864,22 @@ def apply_global_rate_cap_torch_cuda_reference_under_margin(
                 "global_rate_cap_deferred_global_indices_sha256": _tensor_sha256(
                     state_rows.deferred_global_flat_indices
                 ),
-                "accepted_row_source": "device_selection_result.rows_by_state",
-                "python_row_lists_materialized_before_q_acc_apply": False,
+                "accepted_row_source": apply_result.stats.get(
+                    "accepted_row_source",
+                    "device_selection_result.rows_by_state",
+                ),
+                "cpu_selected_rows_materialized_before_q_acc_apply": bool(
+                    apply_result.stats.get(
+                        "cpu_selected_rows_materialized_before_q_acc_apply",
+                        False,
+                    )
+                ),
+                "python_row_lists_materialized_before_q_acc_apply": bool(
+                    apply_result.stats.get(
+                        "python_row_lists_materialized_before_q_acc_apply",
+                        False,
+                    )
+                ),
                 "q_acc_apply_env_required": RUN_GPU_Q_ACC_APPLY_ENV,
                 "ternary_mutation_enabled": bool(spec.mutate_outputs),
                 "ternary_mutation_frozen": not bool(spec.mutate_outputs),
@@ -890,7 +904,16 @@ def apply_global_rate_cap_torch_cuda_reference_under_margin(
         **selection_with_telemetry.stats,
         "q_changed_count": total_q_changed,
         "accepted_row_source": "device_selection_result.rows_by_state",
-        "python_row_lists_materialized_before_q_acc_apply": False,
+        "cpu_selected_rows_materialized_before_q_acc_apply": any(
+            bool(result.stats.get("cpu_selected_rows_materialized_before_q_acc_apply", False))
+            for result in tensor_results
+        ),
+        "python_row_lists_materialized_before_q_acc_apply": any(
+            bool(
+                result.stats.get("python_row_lists_materialized_before_q_acc_apply", False)
+            )
+            for result in tensor_results
+        ),
         "q_acc_apply_env_required": RUN_GPU_Q_ACC_APPLY_ENV,
     }
     return DeviceGlobalRateCapApplyResult(

@@ -758,6 +758,21 @@ from calm.hrm_text_158.native_full_stack.source_pointers import (
     PHASE0_SOURCE_POINTERS,
     SourcePointer,
 )
+from calm.hrm_text_158.native_full_stack.qacc_apply_composition_dispatch import (
+    RUN_GPU_Q_ACC_APPLY_NATIVE_ENV,
+    apply_cap_row_mutation_with_device_rows,
+    q_acc_apply_mutation_under_cap_rows,
+)
+from calm.hrm_text_158.native_full_stack.qacc_apply_composition_native_parity_receipt import (
+    QaccApplyCompositionNativeParityReceipt,
+    validate_qacc_apply_composition_native_parity_receipt,
+)
+from calm.hrm_text_158.native_full_stack.qacc_apply_residency_guard import (
+    QAccApplyInputRowGuard,
+    QAccApplyResidencyReport,
+    QAccApplyResidencyViolation,
+    composition_apply_residency_guard,
+)
 from calm.hrm_text_158.native_full_stack.vote_update import (
     DEFERRED_GLOBAL_CAP,
     INT16_ACC_TRANSITIONAL_NOTE,
@@ -948,6 +963,15 @@ __all__ = [
     "QScaleLinearConfig",
     "QScaleWeightFormat",
     "QScaleWeightState",
+    "QAccApplyInputRowGuard",
+    "QAccApplyResidencyReport",
+    "QAccApplyResidencyViolation",
+    "QaccApplyCompositionNativeParityReceipt",
+    "RUN_GPU_Q_ACC_APPLY_NATIVE_ENV",
+    "apply_cap_row_mutation_with_device_rows",
+    "composition_apply_residency_guard",
+    "q_acc_apply_mutation_under_cap_rows",
+    "validate_qacc_apply_composition_native_parity_receipt",
     "Q_ACC_APPLY_MUTATION_TORCH_CUDA_REFERENCE_SCOPE",
     "QAccApplyMutationResult",
     "RECURRENT_STATE_BUFFER_SCHEMA_VERSION",

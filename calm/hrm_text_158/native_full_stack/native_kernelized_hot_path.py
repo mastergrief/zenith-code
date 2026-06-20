@@ -12,7 +12,7 @@ from typing import Any, Mapping, Sequence
 
 NATIVE_KERNELIZED_HOT_PATH_FAIL_CLOSED_RECEIPT_SCHEMA_VERSION = (
     "hrm_text_158_native_kernelized_hot_path_fail_closed/"
-    "v1.standalone_apply_proven_composition_blocked"
+    "v2.composition_evidence_fields_default_false"
 )
 NATIVE_KERNELIZED_HOT_PATH_FAIL_CLOSED_TARGET_NAME = (
     "step4a_native_kernelized_hot_path_fail_closed"
@@ -144,6 +144,9 @@ class NativeKernelizedHotPathFailClosedReceipt:
     standalone_qacc_apply_native_proven: bool
     standalone_qacc_apply_exact_parity_present: bool
     standalone_qacc_apply_gpu_receipt_present: bool
+    composition_qacc_apply_native_proven: bool
+    composition_exact_parity_present: bool
+    composition_gpu_receipt_present: bool
     ready_to_flip: bool
     blocked_reason: str
     blocker_anchors: tuple[NativeKernelizedHotPathBlockerObservation, ...]
@@ -180,6 +183,9 @@ class NativeKernelizedHotPathFailClosedReceipt:
             "standalone_qacc_apply_gpu_receipt_present": (
                 self.standalone_qacc_apply_gpu_receipt_present
             ),
+            "composition_qacc_apply_native_proven": self.composition_qacc_apply_native_proven,
+            "composition_exact_parity_present": self.composition_exact_parity_present,
+            "composition_gpu_receipt_present": self.composition_gpu_receipt_present,
             "ready_to_flip": self.ready_to_flip,
             "blocked_reason": self.blocked_reason,
             "blocker_anchors": [anchor.to_dict() for anchor in self.blocker_anchors],
@@ -288,6 +294,9 @@ def build_native_kernelized_hot_path_fail_closed_receipt(
     standalone_qacc_apply_native_proven: bool = True,
     standalone_qacc_apply_exact_parity_present: bool = True,
     standalone_qacc_apply_gpu_receipt_present: bool = True,
+    composition_qacc_apply_native_proven: bool = False,
+    composition_exact_parity_present: bool = False,
+    composition_gpu_receipt_present: bool = False,
     ready_to_flip: bool = False,
     smallest_missing_proof: str = (
         "composed-path q_acc_apply with exact CPU-oracle parity, no CPU row "
@@ -334,6 +343,9 @@ def build_native_kernelized_hot_path_fail_closed_receipt(
         standalone_qacc_apply_gpu_receipt_present=bool(
             standalone_qacc_apply_gpu_receipt_present
         ),
+        composition_qacc_apply_native_proven=bool(composition_qacc_apply_native_proven),
+        composition_exact_parity_present=bool(composition_exact_parity_present),
+        composition_gpu_receipt_present=bool(composition_gpu_receipt_present),
         ready_to_flip=bool(ready_to_flip),
         blocked_reason=NATIVE_KERNELIZED_HOT_PATH_BLOCKED_REASON,
         blocker_anchors=_summarize_native_hot_path_blocker_anchors(blocker_anchors),
@@ -406,6 +418,32 @@ def validate_native_kernelized_hot_path_fail_closed_receipt(
         raise ValueError(
             "partial standalone q_acc_apply evidence without "
             "standalone_qacc_apply_native_proven is invalid"
+        )
+
+    composition_evidence = (
+        receipt.composition_exact_parity_present,
+        receipt.composition_gpu_receipt_present,
+    )
+    if receipt.composition_qacc_apply_native_proven:
+        if not all(composition_evidence):
+            raise ValueError(
+                "composition_qacc_apply_native_proven requires coupled evidence fields"
+            )
+        laundering_flags = (
+            receipt.ready_to_flip,
+            receipt.native_kernelized_hot_path_claim,
+            receipt.hot_loop_residency_claim,
+            receipt.readiness_row_flip_authorized,
+        )
+        if any(laundering_flags):
+            raise ValueError(
+                "composition_qacc_apply_native_proven cannot coexist with "
+                "ready_to_flip or hot-path laundering claims"
+            )
+    elif any(composition_evidence):
+        raise ValueError(
+            "partial composition q_acc_apply evidence without "
+            "composition_qacc_apply_native_proven is invalid"
         )
 
     future_proof_gate = _future_proof_gate(receipt)

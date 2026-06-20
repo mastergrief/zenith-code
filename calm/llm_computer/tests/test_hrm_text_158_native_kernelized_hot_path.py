@@ -68,6 +68,9 @@ def test_native_kernelized_hot_path_receipt_enumerates_current_blockers_without_
     assert receipt.standalone_qacc_apply_native_proven is True
     assert receipt.standalone_qacc_apply_exact_parity_present is True
     assert receipt.standalone_qacc_apply_gpu_receipt_present is True
+    assert receipt.composition_qacc_apply_native_proven is False
+    assert receipt.composition_exact_parity_present is False
+    assert receipt.composition_gpu_receipt_present is False
     assert receipt.native_kernelized_hot_path_claim is False
     assert receipt.hot_loop_residency_claim is False
     assert receipt.device_cuda_laundering_claim is False
@@ -158,6 +161,27 @@ def test_standalone_proven_requires_coupled_evidence_fields():
         build_native_kernelized_hot_path_fail_closed_receipt(
             standalone_qacc_apply_gpu_receipt_present=False,
         )
+
+
+def test_ledger_v2_default_builder_preserves_all_gate_conjuncts() -> None:
+    receipt = build_native_kernelized_hot_path_fail_closed_receipt()
+
+    assert receipt.composition_qacc_apply_native_proven is False
+    assert receipt.composition_exact_parity_present is False
+    assert receipt.composition_gpu_receipt_present is False
+    assert receipt.q_acc_apply_final_row_torch_cuda_reference is True
+    assert receipt.no_cpu_row_materialization_before_apply is False
+    assert receipt.exact_cpu_oracle_parity_present is False
+    assert receipt.gpu_runtime_receipt_present is False
+    assert receipt.q_acc_apply_cpu_reference is True
+    assert receipt.qacc_kernelized is False
+    assert receipt.qacc_update_over_64_cpu_reference is True
+    assert receipt.vote_selection_cpu_reference is True
+    assert receipt.triton_preplan_only is True
+    assert receipt.global_cap_margin_only_reference is True
+    assert receipt.full_loop_native_custom_kernel_speed_claim is False
+    assert receipt.real_device_resident_kernelized_hot_loop_present is False
+    assert _future_proof_gate(receipt) is False
 
 
 def test_native_kernelized_hot_path_rejects_missing_unknown_and_laundering_claims():
