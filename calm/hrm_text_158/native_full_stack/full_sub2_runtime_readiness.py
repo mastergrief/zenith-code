@@ -851,7 +851,8 @@ def gated_sub2_checkpoint_path_native_kernelized_hot_path_blocked_surfaces() -> 
         SURFACE_NATIVE_KERNELIZED_HOT_PATH,
         classification=RUNTIME_CLASS_PRE_FULL_STACK_DIAGNOSTIC,
         reason=(
-            f"{NATIVE_KERNELIZED_HOT_PATH_BLOCKED_REASON}; device=cuda/VRAM "
+            f"{NATIVE_KERNELIZED_HOT_PATH_BLOCKED_REASON}; standalone B2-3 proof "
+            "does not open composed-path or hot-loop residency; device=cuda/VRAM "
             "residency is not hot-loop residency, and CPU row materialization "
             "before q/acc apply keeps the native hot path blocked"
         ),

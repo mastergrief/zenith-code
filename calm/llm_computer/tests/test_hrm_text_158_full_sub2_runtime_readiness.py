@@ -861,7 +861,9 @@ def test_cli_gated_native_kernelized_hot_path_blocked_expect_ready_emits_blocker
     assert payload["ready_for_pre_full_stack_diagnostic"] is True
     assert native["classification"] == RUNTIME_CLASS_PRE_FULL_STACK_DIAGNOSTIC
     assert "fail-closed native kernelized hot-path harness" in native["reason"]
+    assert "standalone q_acc_apply apply-kernel proven (B2-3)" in native["reason"]
     assert "qacc_kernelized=false" in native["reason"]
+    assert "composition paths still call torch-CUDA q_acc_apply" in native["reason"]
     assert "device=cuda" in native["reason"]
     assert "CPU row materialization" in native["reason"]
     assert set(payload["blocker_surface_names"]) == {
@@ -1016,9 +1018,10 @@ def test_gated_native_kernelized_hot_path_blocked_fixture_updates_only_native_fi
         "source_anchor",
     }
     assert "fail-closed native kernelized hot-path harness" in native_after["reason"]
+    assert "standalone q_acc_apply apply-kernel proven (B2-3)" in native_after["reason"]
     assert "qacc_kernelized=false" in native_after["reason"]
     assert "Triton preplan" in native_after["reason"]
-    assert "final-row torch-CUDA reference" in native_after["reason"]
+    assert "composition paths still call torch-CUDA q_acc_apply" in native_after["reason"]
     assert "MARGIN-only/default-off reference" in native_after["reason"]
     assert "native custom kernel speed claim" in native_after["reason"]
     assert "device=cuda" in native_after["reason"]

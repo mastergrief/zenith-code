@@ -11,17 +11,23 @@ from typing import Any, Mapping, Sequence
 
 
 NATIVE_KERNELIZED_HOT_PATH_FAIL_CLOSED_RECEIPT_SCHEMA_VERSION = (
-    "hrm_text_158_native_kernelized_hot_path_fail_closed/v0.device_vs_hot_loop"
+    "hrm_text_158_native_kernelized_hot_path_fail_closed/"
+    "v1.standalone_apply_proven_composition_blocked"
 )
 NATIVE_KERNELIZED_HOT_PATH_FAIL_CLOSED_TARGET_NAME = (
     "step4a_native_kernelized_hot_path_fail_closed"
 )
 
+B2_3_STANDALONE_QACC_APPLY_COMMIT_SHA = (
+    "5d9064322d86158801ac80a931082f75c69cfda4"
+)
+B2_3_STANDALONE_QACC_APPLY_GPU_RECEIPT_MSG_ID = "1781972683995"
+
 NATIVE_KERNELIZED_HOT_PATH_REQUIRED_BLOCKER_ANCHORS = (
     "qacc_kernelized_false",
     "qacc_update_vote_selection_apply_cpu_reference",
     "triton_preplan_only",
-    "q_acc_apply_final_row_torch_cuda_reference",
+    "composition_paths_still_call_torch_cuda_apply",
     "global_cap_margin_only_reference_default_off",
     "full_loop_reference_stitch_no_native_speed_claim",
     "device_cuda_not_hot_loop_residency",
@@ -31,12 +37,12 @@ NATIVE_KERNELIZED_HOT_PATH_ALLOWED_BLOCKER_ANCHORS = (
 )
 
 NATIVE_KERNELIZED_HOT_PATH_BLOCKED_REASON = (
-    "fail-closed native kernelized hot-path harness only; qacc_kernelized=false, "
-    "qacc update/vote-selection/apply remain CPU-reference in the strict "
-    "scaffold, Triton preplan is elementwise-only, q_acc_apply is a final-row "
-    "torch-CUDA reference, global cap is MARGIN-only/default-off reference, "
-    "and the full-loop receipt is a reference stitch with no native custom "
-    "kernel speed claim"
+    "fail-closed native kernelized hot-path harness only; standalone q_acc_apply "
+    "apply-kernel proven (B2-3), but qacc_kernelized=false, qacc update/"
+    "vote-selection remain CPU-reference in the strict scaffold, Triton preplan "
+    "is elementwise-only, composition paths still call torch-CUDA q_acc_apply, "
+    "global cap is MARGIN-only/default-off reference, and the full-loop receipt "
+    "is a reference stitch with no native custom kernel speed claim"
 )
 NATIVE_KERNELIZED_HOT_PATH_DEVICE_LAUNDERING_CAVEAT = (
     "device=cuda, VRAM residency, torch-CUDA reference tensors, or CPU row "
@@ -47,6 +53,7 @@ NATIVE_KERNELIZED_HOT_PATH_FAIL_CLOSED_NON_CLAIMS = (
     "device=cuda and VRAM residency are not hot-loop residency or kernelization proof",
     "torch-CUDA reference seams are blocker evidence, not native custom kernel readiness",
     "CPU row materialization before q/acc apply keeps the hot loop blocked",
+    "standalone q_acc_apply native proof (B2-3) does not prove composed-path or hot-loop residency",
     "this receipt does not launch GPU, acquire a resource lane, write checkpoints, or mutate .pt artifacts",
 )
 
@@ -67,9 +74,16 @@ _DEFAULT_BLOCKER_ANCHORS = (
         "evidence": "Triton preplan covers decayed+vote/candidate/direction only; ordering, veto residuals, and q mutation remain CPU reference",
     },
     {
-        "anchor_name": "q_acc_apply_final_row_torch_cuda_reference",
-        "source_anchor": "calm/hrm_text_158/native_full_stack/vote_update.py:520",
-        "evidence": "q_acc_apply CUDA path is a final cap-row torch-CUDA reference with global_cap_gpu_native=False and packed_state=False",
+        "anchor_name": "composition_paths_still_call_torch_cuda_apply",
+        "source_anchor": (
+            "calm/hrm_text_158/native_full_stack/global_rate_cap_gpu.py:835;"
+            " calm/hrm_text_158/native_full_stack/full_loop_receipt.py:579/700"
+        ),
+        "evidence": (
+            "composition seams still invoke "
+            "q_acc_apply_mutation_torch_cuda_reference_under_cap_rows and "
+            "apply_global_rate_cap_torch_cuda_reference_under_margin"
+        ),
     },
     {
         "anchor_name": "global_cap_margin_only_reference_default_off",
@@ -127,6 +141,9 @@ class NativeKernelizedHotPathFailClosedReceipt:
     exact_cpu_oracle_parity_present: bool
     gpu_runtime_receipt_present: bool
     no_cpu_row_materialization_before_apply: bool
+    standalone_qacc_apply_native_proven: bool
+    standalone_qacc_apply_exact_parity_present: bool
+    standalone_qacc_apply_gpu_receipt_present: bool
     ready_to_flip: bool
     blocked_reason: str
     blocker_anchors: tuple[NativeKernelizedHotPathBlockerObservation, ...]
@@ -156,6 +173,13 @@ class NativeKernelizedHotPathFailClosedReceipt:
             "exact_cpu_oracle_parity_present": self.exact_cpu_oracle_parity_present,
             "gpu_runtime_receipt_present": self.gpu_runtime_receipt_present,
             "no_cpu_row_materialization_before_apply": self.no_cpu_row_materialization_before_apply,
+            "standalone_qacc_apply_native_proven": self.standalone_qacc_apply_native_proven,
+            "standalone_qacc_apply_exact_parity_present": (
+                self.standalone_qacc_apply_exact_parity_present
+            ),
+            "standalone_qacc_apply_gpu_receipt_present": (
+                self.standalone_qacc_apply_gpu_receipt_present
+            ),
             "ready_to_flip": self.ready_to_flip,
             "blocked_reason": self.blocked_reason,
             "blocker_anchors": [anchor.to_dict() for anchor in self.blocker_anchors],
@@ -170,6 +194,25 @@ def _require_nonempty_string(value: object, *, field_name: str) -> str:
     if not text.strip():
         raise ValueError(f"{field_name} must be non-empty")
     return text
+
+
+def _future_proof_gate(receipt: NativeKernelizedHotPathFailClosedReceipt) -> bool:
+    """Evaluate the composed hot-loop gate (standalone evidence excluded)."""
+
+    return (
+        receipt.real_device_resident_kernelized_hot_loop_present
+        and receipt.exact_cpu_oracle_parity_present
+        and receipt.gpu_runtime_receipt_present
+        and receipt.no_cpu_row_materialization_before_apply
+        and receipt.qacc_kernelized
+        and not receipt.qacc_update_over_64_cpu_reference
+        and not receipt.vote_selection_cpu_reference
+        and not receipt.q_acc_apply_cpu_reference
+        and not receipt.triton_preplan_only
+        and not receipt.q_acc_apply_final_row_torch_cuda_reference
+        and not receipt.global_cap_margin_only_reference
+        and receipt.full_loop_native_custom_kernel_speed_claim
+    )
 
 
 def _summarize_native_hot_path_blocker_anchors(
@@ -242,10 +285,15 @@ def build_native_kernelized_hot_path_fail_closed_receipt(
     exact_cpu_oracle_parity_present: bool = False,
     gpu_runtime_receipt_present: bool = False,
     no_cpu_row_materialization_before_apply: bool = False,
+    standalone_qacc_apply_native_proven: bool = True,
+    standalone_qacc_apply_exact_parity_present: bool = True,
+    standalone_qacc_apply_gpu_receipt_present: bool = True,
     ready_to_flip: bool = False,
     smallest_missing_proof: str = (
-        "real device-resident kernelized qacc hot loop with exact CPU-oracle "
-        "parity, no CPU row materialization before apply, and reviewed GPU receipt"
+        "composed-path q_acc_apply with exact CPU-oracle parity, no CPU row "
+        "materialization before apply, vote-selection + triton-preplan + "
+        "global-cap + full-loop native proof, and reviewed GPU receipt for the "
+        "full hot loop"
     ),
 ) -> NativeKernelizedHotPathFailClosedReceipt:
     """Build the Step 4A fail-closed native hot-path blocker receipt."""
@@ -278,6 +326,13 @@ def build_native_kernelized_hot_path_fail_closed_receipt(
         gpu_runtime_receipt_present=bool(gpu_runtime_receipt_present),
         no_cpu_row_materialization_before_apply=bool(
             no_cpu_row_materialization_before_apply
+        ),
+        standalone_qacc_apply_native_proven=bool(standalone_qacc_apply_native_proven),
+        standalone_qacc_apply_exact_parity_present=bool(
+            standalone_qacc_apply_exact_parity_present
+        ),
+        standalone_qacc_apply_gpu_receipt_present=bool(
+            standalone_qacc_apply_gpu_receipt_present
         ),
         ready_to_flip=bool(ready_to_flip),
         blocked_reason=NATIVE_KERNELIZED_HOT_PATH_BLOCKED_REASON,
@@ -326,20 +381,34 @@ def validate_native_kernelized_hot_path_fail_closed_receipt(
                 f"{anchor.anchor_name} must remain classified as hot-loop blocker evidence"
             )
 
-    future_proof_gate = (
-        receipt.real_device_resident_kernelized_hot_loop_present
-        and receipt.exact_cpu_oracle_parity_present
-        and receipt.gpu_runtime_receipt_present
-        and receipt.no_cpu_row_materialization_before_apply
-        and receipt.qacc_kernelized
-        and not receipt.qacc_update_over_64_cpu_reference
-        and not receipt.vote_selection_cpu_reference
-        and not receipt.q_acc_apply_cpu_reference
-        and not receipt.triton_preplan_only
-        and not receipt.q_acc_apply_final_row_torch_cuda_reference
-        and not receipt.global_cap_margin_only_reference
-        and receipt.full_loop_native_custom_kernel_speed_claim
+    standalone_evidence = (
+        receipt.standalone_qacc_apply_exact_parity_present,
+        receipt.standalone_qacc_apply_gpu_receipt_present,
     )
+    if receipt.standalone_qacc_apply_native_proven:
+        if not all(standalone_evidence):
+            raise ValueError(
+                "standalone_qacc_apply_native_proven requires coupled exact-parity "
+                "and GPU-receipt evidence fields"
+            )
+        laundering_flags = (
+            receipt.ready_to_flip,
+            receipt.native_kernelized_hot_path_claim,
+            receipt.hot_loop_residency_claim,
+            receipt.readiness_row_flip_authorized,
+        )
+        if any(laundering_flags):
+            raise ValueError(
+                "standalone_qacc_apply_native_proven cannot coexist with "
+                "ready_to_flip or hot-path laundering claims"
+            )
+    elif any(standalone_evidence):
+        raise ValueError(
+            "partial standalone q_acc_apply evidence without "
+            "standalone_qacc_apply_native_proven is invalid"
+        )
+
+    future_proof_gate = _future_proof_gate(receipt)
     laundering_claims = {
         "native_kernelized_hot_path_claim": (
             receipt.native_kernelized_hot_path_claim

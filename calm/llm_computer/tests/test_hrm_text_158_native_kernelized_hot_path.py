@@ -7,6 +7,8 @@ import pytest
 
 import calm.hrm_text_158.native_full_stack as native_full_stack
 from calm.hrm_text_158.native_full_stack.native_kernelized_hot_path import (
+    B2_3_STANDALONE_QACC_APPLY_COMMIT_SHA,
+    B2_3_STANDALONE_QACC_APPLY_GPU_RECEIPT_MSG_ID,
     NATIVE_KERNELIZED_HOT_PATH_ALLOWED_BLOCKER_ANCHORS,
     NATIVE_KERNELIZED_HOT_PATH_BLOCKED_REASON,
     NATIVE_KERNELIZED_HOT_PATH_DEVICE_LAUNDERING_CAVEAT,
@@ -15,6 +17,7 @@ from calm.hrm_text_158.native_full_stack.native_kernelized_hot_path import (
     NATIVE_KERNELIZED_HOT_PATH_FAIL_CLOSED_TARGET_NAME,
     NATIVE_KERNELIZED_HOT_PATH_REQUIRED_BLOCKER_ANCHORS,
     NativeKernelizedHotPathFailClosedReceipt,
+    _future_proof_gate,
     build_native_kernelized_hot_path_fail_closed_receipt,
     validate_native_kernelized_hot_path_fail_closed_receipt,
 )
@@ -57,11 +60,14 @@ def test_native_kernelized_hot_path_receipt_enumerates_current_blockers_without_
         "qacc_kernelized_false",
         "qacc_update_vote_selection_apply_cpu_reference",
         "triton_preplan_only",
-        "q_acc_apply_final_row_torch_cuda_reference",
+        "composition_paths_still_call_torch_cuda_apply",
         "global_cap_margin_only_reference_default_off",
         "full_loop_reference_stitch_no_native_speed_claim",
         "device_cuda_not_hot_loop_residency",
     )
+    assert receipt.standalone_qacc_apply_native_proven is True
+    assert receipt.standalone_qacc_apply_exact_parity_present is True
+    assert receipt.standalone_qacc_apply_gpu_receipt_present is True
     assert receipt.native_kernelized_hot_path_claim is False
     assert receipt.hot_loop_residency_claim is False
     assert receipt.device_cuda_laundering_claim is False
@@ -80,17 +86,78 @@ def test_native_kernelized_hot_path_receipt_enumerates_current_blockers_without_
     assert receipt.no_cpu_row_materialization_before_apply is False
     assert receipt.ready_to_flip is False
     assert "fail-closed native kernelized hot-path harness" in receipt.blocked_reason
+    assert "standalone q_acc_apply apply-kernel proven (B2-3)" in receipt.blocked_reason
     assert "qacc_kernelized=false" in receipt.blocked_reason
     assert "CPU-reference" in receipt.blocked_reason
     assert "Triton preplan" in receipt.blocked_reason
-    assert "final-row torch-CUDA reference" in receipt.blocked_reason
+    assert "composition paths still call torch-CUDA q_acc_apply" in receipt.blocked_reason
     assert "native custom kernel speed claim" in receipt.blocked_reason
+    assert "composed-path" in receipt.smallest_missing_proof
     assert "device=cuda" in receipt.device_laundering_caveat
     assert "hot-loop residency" in receipt.device_laundering_caveat
     assert any("resource lane" in non_claim for non_claim in receipt.non_claims)
     assert any("device=cuda" in non_claim for non_claim in receipt.non_claims)
+    assert any(
+        "standalone q_acc_apply native proof (B2-3)" in non_claim
+        for non_claim in receipt.non_claims
+    )
     assert receipt.non_claims == NATIVE_KERNELIZED_HOT_PATH_FAIL_CLOSED_NON_CLAIMS
     assert receipt.to_dict()["ready_to_flip"] is False
+    assert B2_3_STANDALONE_QACC_APPLY_COMMIT_SHA.startswith("5d90643")
+    assert B2_3_STANDALONE_QACC_APPLY_GPU_RECEIPT_MSG_ID == "1781972683995"
+
+
+def test_future_proof_gate_remains_false_with_standalone_proven():
+    receipt = build_native_kernelized_hot_path_fail_closed_receipt()
+
+    assert receipt.standalone_qacc_apply_native_proven is True
+    assert _future_proof_gate(receipt) is False
+    assert receipt.ready_to_flip is False
+    assert receipt.native_kernelized_hot_path_claim is False
+    assert receipt.hot_loop_residency_claim is False
+    assert receipt.readiness_row_flip_authorized is False
+
+
+@pytest.mark.parametrize(
+    "flag_name",
+    (
+        "ready_to_flip",
+        "native_kernelized_hot_path_claim",
+        "hot_loop_residency_claim",
+        "readiness_row_flip_authorized",
+    ),
+)
+def test_standalone_proven_rejects_laundering_claims(flag_name: str):
+    with pytest.raises(ValueError, match="standalone_qacc_apply_native_proven cannot coexist"):
+        build_native_kernelized_hot_path_fail_closed_receipt(**{flag_name: True})
+
+
+def test_standalone_proven_rejects_partial_evidence_without_native_flag():
+    with pytest.raises(ValueError, match="partial standalone q_acc_apply evidence"):
+        build_native_kernelized_hot_path_fail_closed_receipt(
+            standalone_qacc_apply_native_proven=False,
+            standalone_qacc_apply_exact_parity_present=True,
+            standalone_qacc_apply_gpu_receipt_present=False,
+        )
+
+    with pytest.raises(ValueError, match="partial standalone q_acc_apply evidence"):
+        build_native_kernelized_hot_path_fail_closed_receipt(
+            standalone_qacc_apply_native_proven=False,
+            standalone_qacc_apply_exact_parity_present=False,
+            standalone_qacc_apply_gpu_receipt_present=True,
+        )
+
+
+def test_standalone_proven_requires_coupled_evidence_fields():
+    with pytest.raises(ValueError, match="requires coupled exact-parity"):
+        build_native_kernelized_hot_path_fail_closed_receipt(
+            standalone_qacc_apply_exact_parity_present=False,
+        )
+
+    with pytest.raises(ValueError, match="requires coupled exact-parity"):
+        build_native_kernelized_hot_path_fail_closed_receipt(
+            standalone_qacc_apply_gpu_receipt_present=False,
+        )
 
 
 def test_native_kernelized_hot_path_rejects_missing_unknown_and_laundering_claims():
@@ -100,6 +167,15 @@ def test_native_kernelized_hot_path_rejects_missing_unknown_and_laundering_claim
                 anchor
                 for anchor in _blocker_anchors()
                 if anchor["anchor_name"] != "triton_preplan_only"
+            ]
+        )
+
+    with pytest.raises(ValueError, match="missing required blocker anchors"):
+        build_native_kernelized_hot_path_fail_closed_receipt(
+            blocker_anchors=[
+                anchor
+                for anchor in _blocker_anchors()
+                if anchor["anchor_name"] != "composition_paths_still_call_torch_cuda_apply"
             ]
         )
 
@@ -115,7 +191,12 @@ def test_native_kernelized_hot_path_rejects_missing_unknown_and_laundering_claim
     )
     for flag_name in claim_flags:
         with pytest.raises(ValueError, match=flag_name):
-            build_native_kernelized_hot_path_fail_closed_receipt(**{flag_name: True})
+            build_native_kernelized_hot_path_fail_closed_receipt(
+                standalone_qacc_apply_native_proven=False,
+                standalone_qacc_apply_exact_parity_present=False,
+                standalone_qacc_apply_gpu_receipt_present=False,
+                **{flag_name: True},
+            )
 
     with pytest.raises(ValueError, match="device_cuda_laundering_claim"):
         build_native_kernelized_hot_path_fail_closed_receipt(
@@ -123,16 +204,27 @@ def test_native_kernelized_hot_path_rejects_missing_unknown_and_laundering_claim
         )
 
     with pytest.raises(ValueError, match="ready_to_flip cannot be true"):
-        build_native_kernelized_hot_path_fail_closed_receipt(ready_to_flip=True)
+        build_native_kernelized_hot_path_fail_closed_receipt(
+            standalone_qacc_apply_native_proven=False,
+            standalone_qacc_apply_exact_parity_present=False,
+            standalone_qacc_apply_gpu_receipt_present=False,
+            ready_to_flip=True,
+        )
 
 
 def test_native_kernelized_hot_path_rejects_cuda_looking_partial_proof_without_hot_loop():
+    no_standalone = dict(
+        standalone_qacc_apply_native_proven=False,
+        standalone_qacc_apply_exact_parity_present=False,
+        standalone_qacc_apply_gpu_receipt_present=False,
+    )
     with pytest.raises(ValueError, match="native_kernelized_hot_path_claim"):
         build_native_kernelized_hot_path_fail_closed_receipt(
             native_kernelized_hot_path_claim=True,
             gpu_runtime_receipt_present=True,
             exact_cpu_oracle_parity_present=True,
             qacc_kernelized=True,
+            **no_standalone,
         )
 
     with pytest.raises(ValueError, match="hot_loop_residency_claim"):
@@ -141,6 +233,7 @@ def test_native_kernelized_hot_path_rejects_cuda_looking_partial_proof_without_h
             real_device_resident_kernelized_hot_loop_present=True,
             gpu_runtime_receipt_present=True,
             exact_cpu_oracle_parity_present=True,
+            **no_standalone,
         )
 
 
