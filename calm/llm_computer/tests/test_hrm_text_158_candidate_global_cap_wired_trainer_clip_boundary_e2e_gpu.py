@@ -5,6 +5,18 @@ APPLY within the flag-ON wired trainer path == CPU seam reference (q/acc/backlog
 cap-summary + clamp counters) at accumulator clip-boundary, with non-vacuous
 mutate_outputs=True accepted-row mutation.
 
+Per-tensor stats schema divergence (documented, NOT a compat claim): CPU reference
+per-tensor stats emit ``global_rate_cap_applied_count`` and plain
+``global_rate_cap_accepted_indices`` (global_rate_cap.py:765-784). GPU per-tensor
+stats omit those keys and instead emit ``q_changed_count``,
+``global_rate_cap_accepted_count``, and global_indices_sha fields
+(global_rate_cap_gpu.py:848-887). R1 non-vacuity uses path-neutral
+``BoundedDeltaLearnerStepResult`` surfaces only (flattened q-flip set,
+``deferred_backlog`` exact keys, ``global_summary`` counts, tensor state values).
+
+Fixture index 5 is the Stage A accumulator-clip witness (126+6→127 via q[5]=1
+blocking threshold crossing). The only global-cap deferred row is index 2.
+
 Uses env-gated CUDA REFERENCE q/acc apply on seam-built cap_inputs — NOT native
 q/acc Triton proof. NOT full-trainer-on-GPU / native-candidate-GPU / readiness /
 acquisition / selection_parity_pass / optimizer_credit_state /
@@ -346,6 +358,7 @@ def _assert_clip_boundary_fixture_semantics(
     )
     telemetry = _compute_clip_boundary_telemetry(seam_result, cap_inputs)
     assert telemetry["magnitude_regime"] == "clip_boundary_reconciliation"
+    # Index 5: Stage A accumulator-clip witness (126+6→127); not a global-cap row.
     assert 5 in telemetry["accumulator_clip_hit_rows"]
     assert telemetry["pinned_accepted_candidate_clamp"] == {
         "pre_residual": 10,
@@ -361,6 +374,16 @@ def _assert_clip_boundary_fixture_semantics(
     return telemetry
 
 
+def _q_flip_indices(prior_q: torch.Tensor, post_q: torch.Tensor) -> set[int]:
+    prior_flat = prior_q.flatten()
+    post_flat = post_q.flatten()
+    return {
+        int(index)
+        for index in range(int(prior_flat.numel()))
+        if int(prior_flat[index].item()) != int(post_flat[index].item())
+    }
+
+
 def _assert_clip_boundary_mutation_non_vacuity(
     step_result,
     *,
@@ -372,16 +395,15 @@ def _assert_clip_boundary_mutation_non_vacuity(
 ) -> str:
     assert step_result.global_summary.get("ternary_mutation_enabled") is True
     summary = step_result.global_summary
-    stats = step_result.tensor_stats[CLIP_BOUNDARY_STATE_KEY]
-    assert int(summary["global_rate_cap_applied_count"]) == int(
-        summary["global_rate_cap_accepted_count"],
-    )
-    assert int(summary["global_rate_cap_applied_count"]) == int(summary["q_changed_count"])
-    assert int(summary["global_rate_cap_applied_count"]) >= 1
-    assert int(stats["global_rate_cap_applied_count"]) == int(stats["q_changed_count"]) >= 1
+    assert int(summary["global_rate_cap_applied_count"]) == 1
+    assert int(summary["global_rate_cap_accepted_count"]) == 1
+    assert int(summary["q_changed_count"]) == 1
+    assert int(summary["global_rate_cap_deferred_count"]) == 1
 
-    accepted_indices = [int(x) for x in stats["global_rate_cap_accepted_indices"]]
-    assert accepted_indices == [pinned_accepted[1]]
+    deferred_backlog_keys = set(
+        step_result.deferred_backlog.get(CLIP_BOUNDARY_STATE_KEY, {}),
+    )
+    assert deferred_backlog_keys == {pinned_deferred[1]}
 
     post_state = step_result.tensor_states[CLIP_BOUNDARY_STATE_KEY]
     prior_q = prior_tensor.q_levels
@@ -389,30 +411,40 @@ def _assert_clip_boundary_mutation_non_vacuity(
     post_q = post_state.q_levels
     post_acc = post_state.exact_accumulator_shadow
     assert post_acc is not None
+
+    q_flip_indices = _q_flip_indices(prior_q, post_q)
+    assert q_flip_indices == {pinned_accepted[1]}
+    accepted_identities = {
+        (CLIP_BOUNDARY_STATE_KEY, int(index)) for index in q_flip_indices
+    }
+
+    prior_q_flat = prior_q.flatten()
+    prior_acc_flat = prior_acc.flatten()
+    post_q_flat = post_q.flatten()
+    post_acc_flat = post_acc.flatten()
     mutation_hits = _mutation_hit_identities(
-        prior_q=prior_q,
-        prior_acc=prior_acc,
-        post_q=post_q,
-        post_acc=post_acc,
+        prior_q=prior_q_flat,
+        prior_acc=prior_acc_flat,
+        post_q=post_q_flat,
+        post_acc=post_acc_flat,
         state_key=CLIP_BOUNDARY_STATE_KEY,
     )
-    accepted_identities = {pinned_accepted}
     assert pinned_accepted in mutation_hits
     assert accepted_identities & mutation_hits
 
     accepted_idx = pinned_accepted[1]
     deferred_idx = pinned_deferred[1]
-    assert int(post_q[accepted_idx].item()) == 1
-    assert int(prior_q[accepted_idx].item()) == 0
-    assert int(post_acc[accepted_idx].item()) == 9
-    assert int(prior_acc[accepted_idx].item()) == 18
+    assert int(post_q_flat[accepted_idx].item()) == 1
+    assert int(prior_q_flat[accepted_idx].item()) == 0
+    assert int(post_acc_flat[accepted_idx].item()) == 9
+    assert int(prior_acc_flat[accepted_idx].item()) == 18
 
     cap_item = next(item for item in cap_inputs if item.state_key == CLIP_BOUNDARY_STATE_KEY)
     plan_new_acc = cap_item.plan.new_acc_i32.flatten()
-    assert int(post_q[deferred_idx].item()) == int(prior_q[deferred_idx].item())
-    assert int(post_acc[deferred_idx].item()) == int(plan_new_acc[deferred_idx].item())
-    assert int(post_q[deferred_idx].item()) == 0
-    assert int(post_acc[deferred_idx].item()) == -19
+    assert int(post_q_flat[deferred_idx].item()) == int(prior_q_flat[deferred_idx].item())
+    assert int(post_acc_flat[deferred_idx].item()) == int(plan_new_acc[deferred_idx].item())
+    assert int(post_q_flat[deferred_idx].item()) == 0
+    assert int(post_acc_flat[deferred_idx].item()) == -19
 
     identity_sha = _accepted_clamp_mutation_identity_sha256(
         accepted_identities,
@@ -652,6 +684,7 @@ def test_clip_boundary_fixture_semantics_and_mutation_non_vacuity_cpu() -> None:
         cap_inputs=cap_inputs,
         label="cpu_oracle",
     )
+    assert "global_rate_cap_applied_count" in cpu_oracle.tensor_stats[CLIP_BOUNDARY_STATE_KEY]
     assert CLIP_BOUNDARY_E2E_PROOF["gpu_clip_boundary_wired_trainer_parity_proven"] is False
 
 
