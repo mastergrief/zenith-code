@@ -476,7 +476,10 @@ def test_seam_module_byte_frozen_import_only():
 
 
 @pytest.mark.skip(
-    reason="B-lite native shape-compat proof is owned by Step-1b-(3b) GPU lane",
+    reason=(
+        "B-lite shape compat: "
+        "test_hrm_text_158_candidate_global_cap_b_lite_native_shape_compat_gpu.py (Step-1b-3b)"
+    ),
 )
 def test_b_lite_native_shape_compat_deferred_to_3b_gpu():
     """Placeholder: native vs CPU selection on seam cap_inputs runs in 3b only."""
