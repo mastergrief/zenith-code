@@ -864,6 +864,16 @@ from calm.hrm_text_158.native_full_stack.candidate_global_cap_contract_step0_rec
     build_candidate_global_cap_contract_step0_receipt,
     validate_candidate_global_cap_contract_step0_receipt,
 )
+from calm.hrm_text_158.native_full_stack.candidate_global_cap_bridge_facade import (
+    run_candidate_global_cap_bridge_suite,
+)
+from calm.hrm_text_158.native_full_stack.candidate_global_cap_bridge_receipt import (
+    CANDIDATE_GLOBAL_CAP_BRIDGE_NON_CLAIMS,
+    CANDIDATE_GLOBAL_CAP_BRIDGE_SCHEMA_VERSION,
+    CandidateGlobalCapBridgeReceipt,
+    build_candidate_global_cap_bridge_receipt,
+    validate_candidate_global_cap_bridge_receipt,
+)
 from calm.hrm_text_158.native_full_stack.optimizer_credit_state_global_cap_consumer_step0_facade import (
     run_optimizer_credit_state_global_cap_consumer_step0_suite,
 )
@@ -1645,6 +1655,12 @@ __all__ = [
     "build_candidate_global_cap_contract_step0_receipt",
     "run_candidate_global_cap_contract_step0_suite",
     "validate_candidate_global_cap_contract_step0_receipt",
+    "CANDIDATE_GLOBAL_CAP_BRIDGE_NON_CLAIMS",
+    "CANDIDATE_GLOBAL_CAP_BRIDGE_SCHEMA_VERSION",
+    "CandidateGlobalCapBridgeReceipt",
+    "build_candidate_global_cap_bridge_receipt",
+    "run_candidate_global_cap_bridge_suite",
+    "validate_candidate_global_cap_bridge_receipt",
     "REALISTIC_ROW_COUNTS",
     "WIDER_SINGLE_BLOCK_SORT_PADDED_N",
     "GlobalRateCapMarginSelectionMultiblockStep0BudgetReceipt",
