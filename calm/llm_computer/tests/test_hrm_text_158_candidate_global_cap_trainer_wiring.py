@@ -484,3 +484,14 @@ def test_seam_module_byte_frozen_import_only():
 def test_b_lite_native_shape_compat_deferred_to_3b_gpu():
     """Placeholder: native vs CPU selection on seam cap_inputs runs in 3b only."""
     pytest.skip("3b GPU lane required")
+
+
+@pytest.mark.skip(
+    reason=(
+        "Wired-trainer GPU e2e: "
+        "test_hrm_text_158_candidate_global_cap_wired_trainer_e2e_gpu.py (Step-1b-3c)"
+    ),
+)
+def test_wired_trainer_e2e_deferred_to_3c_gpu():
+    """Placeholder: flag-on wired-trainer GPU e2e parity runs in 3c only."""
+    pytest.skip("3c GPU lane required")

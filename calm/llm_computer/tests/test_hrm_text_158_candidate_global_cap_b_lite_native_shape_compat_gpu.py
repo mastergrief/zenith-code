@@ -5,7 +5,8 @@ on CUDA with CPU-oracle identity + ordering parity. NOT selection_parity_pass /
 readiness / training-success / optimizer_credit_state / global_cap_margin_only.
 
 CPU boxes: GPU body skips cleanly (no false pass). GPU execution is a separate +1
-on hrm_text_158_gpu0 after the 3b diff gate.
+on hrm_text_158_gpu0 after the 3b diff gate. Step-1b-(3c) wired-trainer GPU e2e:
+test_hrm_text_158_candidate_global_cap_wired_trainer_e2e_gpu.py
 """
 from __future__ import annotations
 
