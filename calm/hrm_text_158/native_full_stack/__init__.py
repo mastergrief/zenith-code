@@ -853,6 +853,18 @@ from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_step0_
     STAGE2_MECHANISM_KEY_PAYLOAD_COPERMUTE,
     STAGE2_MECHANISM_MULTIBLOCK_DEFERRED,
 )
+from calm.hrm_text_158.native_full_stack.optimizer_credit_state_global_cap_consumer_step0_facade import (
+    run_optimizer_credit_state_global_cap_consumer_step0_suite,
+)
+from calm.hrm_text_158.native_full_stack.optimizer_credit_state_global_cap_consumer_step0_receipt import (
+    OPTIMIZER_CREDIT_STATE_GLOBAL_CAP_CONSUMER_STEP0_NON_CLAIMS,
+    OPTIMIZER_CREDIT_STATE_GLOBAL_CAP_CONSUMER_STEP0_SCHEMA_VERSION,
+    ConsumerStep0BranchId,
+    OptimizerCreditStateGlobalCapConsumerStep0Receipt,
+    build_optimizer_credit_state_global_cap_consumer_step0_receipt,
+    classify_aggregate_branch,
+    validate_optimizer_credit_state_global_cap_consumer_step0_receipt,
+)
 from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_native_dispatch import (
     GLOBAL_RATE_CAP_MARGIN_SELECTION_NATIVE_SCOPE,
     GLOBAL_RATE_CAP_MARGIN_SELECTION_NATIVE_WIDER_SCOPE,
@@ -1607,6 +1619,14 @@ __all__ = [
     "measure_step0_fixture",
     "run_step0_budget_fixture_suite",
     "validate_global_rate_cap_margin_selection_step0_budget_receipt",
+    "OPTIMIZER_CREDIT_STATE_GLOBAL_CAP_CONSUMER_STEP0_NON_CLAIMS",
+    "OPTIMIZER_CREDIT_STATE_GLOBAL_CAP_CONSUMER_STEP0_SCHEMA_VERSION",
+    "ConsumerStep0BranchId",
+    "OptimizerCreditStateGlobalCapConsumerStep0Receipt",
+    "build_optimizer_credit_state_global_cap_consumer_step0_receipt",
+    "classify_aggregate_branch",
+    "run_optimizer_credit_state_global_cap_consumer_step0_suite",
+    "validate_optimizer_credit_state_global_cap_consumer_step0_receipt",
     "REALISTIC_ROW_COUNTS",
     "WIDER_SINGLE_BLOCK_SORT_PADDED_N",
     "GlobalRateCapMarginSelectionMultiblockStep0BudgetReceipt",
