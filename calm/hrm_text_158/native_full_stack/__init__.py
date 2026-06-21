@@ -853,6 +853,17 @@ from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_step0_
     STAGE2_MECHANISM_KEY_PAYLOAD_COPERMUTE,
     STAGE2_MECHANISM_MULTIBLOCK_DEFERRED,
 )
+from calm.hrm_text_158.native_full_stack.candidate_global_cap_contract_step0_facade import (
+    run_candidate_global_cap_contract_step0_suite,
+)
+from calm.hrm_text_158.native_full_stack.candidate_global_cap_contract_step0_receipt import (
+    CANDIDATE_GLOBAL_CAP_CONTRACT_STEP0_NON_CLAIMS,
+    CANDIDATE_GLOBAL_CAP_CONTRACT_STEP0_SCHEMA_VERSION,
+    CandidateGlobalCapContractBranchId,
+    CandidateGlobalCapContractStep0Receipt,
+    build_candidate_global_cap_contract_step0_receipt,
+    validate_candidate_global_cap_contract_step0_receipt,
+)
 from calm.hrm_text_158.native_full_stack.optimizer_credit_state_global_cap_consumer_step0_facade import (
     run_optimizer_credit_state_global_cap_consumer_step0_suite,
 )
@@ -1627,6 +1638,13 @@ __all__ = [
     "classify_aggregate_branch",
     "run_optimizer_credit_state_global_cap_consumer_step0_suite",
     "validate_optimizer_credit_state_global_cap_consumer_step0_receipt",
+    "CANDIDATE_GLOBAL_CAP_CONTRACT_STEP0_NON_CLAIMS",
+    "CANDIDATE_GLOBAL_CAP_CONTRACT_STEP0_SCHEMA_VERSION",
+    "CandidateGlobalCapContractBranchId",
+    "CandidateGlobalCapContractStep0Receipt",
+    "build_candidate_global_cap_contract_step0_receipt",
+    "run_candidate_global_cap_contract_step0_suite",
+    "validate_candidate_global_cap_contract_step0_receipt",
     "REALISTIC_ROW_COUNTS",
     "WIDER_SINGLE_BLOCK_SORT_PADDED_N",
     "GlobalRateCapMarginSelectionMultiblockStep0BudgetReceipt",
