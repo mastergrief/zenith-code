@@ -1,19 +1,20 @@
-"""B2-5c Step-1b-(3c) wired GPU trainer END-TO-END parity vs CPU seam reference.
+"""B2-5c Step-1b-(3c) wired trainer GPU cap-apply parity vs CPU seam reference.
 
-Equivalence/compat-only on F_TWO_TENSOR_GLOBAL: flag-ON apply_bounded_delta_vote_step
-with CUDA-mirrored inputs equals CPU wired/seam oracle (q/acc, backlog, cap summary).
+Equivalence/compat-only on F_TWO_TENSOR_GLOBAL: GPU-routed global-cap APPLY within
+the flag-ON wired trainer path == CPU seam reference (q/acc/backlog/cap-summary).
+Candidate+bridge stay CPU reference computations (frozen device contract).
 
-Uses env-gated CUDA REFERENCE q/acc apply — NOT native q/acc Triton proof.
-NOT readiness / acquisition / training-success / selection_parity_pass /
-optimizer_credit_state / global_cap_margin_only mint.
+Uses env-gated CUDA REFERENCE q/acc apply on seam-built cap_inputs — NOT native
+q/acc Triton proof. NOT full-trainer-on-GPU / native-candidate-GPU / readiness /
+acquisition / selection_parity_pass / optimizer_credit_state /
+global_cap_margin_only mint.
 
-GPU execution is a separate +1 on hrm_text_158_gpu0 after the 3c diff gate.
+GPU execution is a separate +1 on hrm_text_158_gpu0 after the 3c-fix diff gate.
 """
 from __future__ import annotations
 
 import copy
 import os
-from dataclasses import replace
 
 import pytest
 import torch
@@ -22,7 +23,6 @@ import calm.hrm_text_158.native_full_stack.candidate_global_cap_production_seam 
 import calm.hrm_text_158.native_full_stack.global_rate_cap as grc_module
 import calm.hrm_text_158.native_full_stack.global_rate_cap_gpu as gpu_mod
 from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
-    BoundedDeltaTensorState,
     apply_bounded_delta_vote_step,
     tensor_sha256,
 )
@@ -65,8 +65,13 @@ WIRED_E2E_TELEMETRY: dict[str, int] = {
     "cuda_inputs_observed": 0,
 }
 
+WIRED_E2E_CAPTURED: dict[str, list[GlobalRateCapTensorInput] | None] = {
+    "wrapper_cap_inputs_cpu": None,
+}
+
 WIRED_E2E_NON_CLAIMS: tuple[str, ...] = (
-    "B2-5c Step-1b-(3c) is wired GPU trainer step == CPU seam reference (equivalence/compat-only)",
+    "B2-5c Step-1b-(3c) is GPU-routed global-cap APPLY within wired trainer path == CPU seam reference (equivalence/compat-only)",
+    "B2-5c Step-1b-(3c) candidate+bridge are CPU reference computations (frozen); only seam cap_inputs mirror to CUDA",
     "B2-5c Step-1b-(3c) uses env-gated CUDA REFERENCE q/acc apply, NOT native q/acc Triton proof",
     "B2-5c Step-1b-(3c) does NOT mint selection_parity_pass",
     "B2-5c Step-1b-(3c) does NOT flip readiness / acquisition / training-success rows",
@@ -81,6 +86,9 @@ _FORBIDDEN_MINT_TERMS: tuple[str, ...] = (
     "global_cap_margin_only_reference_flipped",
     "training_success",
     "HRM_TEXT_158_RUN_GPU_Q_ACC_APPLY_NATIVE",
+    "CUDA-mirrored trainer inputs",
+    "full-trainer-on-GPU",
+    "native-candidate-GPU",
 )
 
 
@@ -91,6 +99,10 @@ def _reset_wired_e2e_proof() -> None:
 def _reset_wired_e2e_telemetry() -> None:
     for key in WIRED_E2E_TELEMETRY:
         WIRED_E2E_TELEMETRY[key] = 0
+
+
+def _reset_wired_e2e_captured() -> None:
+    WIRED_E2E_CAPTURED["wrapper_cap_inputs_cpu"] = None
 
 
 def _require_wired_e2e_gpu_lane_or_skip() -> None:
@@ -272,90 +284,29 @@ def _mirror_cap_inputs_to_cuda(
     return mirrored
 
 
-def _gpu_routing_cap_reference(
-    inputs: list[GlobalRateCapTensorInput],
-    spec: GlobalRateCapSpec,
-    *,
-    deferred_backlog: dict[str, dict[int, dict[str, int]]] | None = None,
-    tensor_offsets: dict[str, int] | None = None,
-    tie_rule_mode: str = grc_module.EXACT_GLOBAL_CAP_TIE_RULE_MODE,
-    contract_name: str | None = None,
-) -> GlobalRateCapResult:
-    WIRED_E2E_TELEMETRY["seam_cap_reference_wrapper_calls"] += 1
-    routed_inputs = inputs
-    if any(item.state.q_levels.device.type == "cuda" for item in inputs):
-        routed_inputs = _mirror_cap_inputs_to_cuda(inputs)
-    if _inputs_on_cuda(routed_inputs):
-        WIRED_E2E_TELEMETRY["cuda_inputs_observed"] += 1
-        WIRED_E2E_TELEMETRY["gpu_apply_calls"] += 1
-        gpu_apply = gpu_mod.apply_global_rate_cap_torch_cuda_reference_under_margin(
-            routed_inputs,
-            spec,
-            tensor_offsets=tensor_offsets,
-            deferred_backlog=deferred_backlog,
-        )
-        return _adapt_gpu_apply_to_global_rate_cap_result(
-            gpu_apply,
-            spec,
-            tie_rule_mode=tie_rule_mode,
-            contract_name=contract_name,
-        )
-    WIRED_E2E_TELEMETRY["cpu_fallback_count"] += 1
-    return seam_module._wired_e2e_real_apply_global_rate_cap_reference(
-        inputs,
-        spec,
-        deferred_backlog=deferred_backlog,
-        tensor_offsets=tensor_offsets,
-        tie_rule_mode=tie_rule_mode,
-        contract_name=contract_name,
-    )
+def _applied_new_acc_fingerprint(plan: VoteUpdatePlan) -> str:
+    idx = plan.applied_indices.to(torch.int64)
+    vals = plan.new_acc_i32.gather(0, idx)
+    return tensor_sha256(vals)
 
 
-def _install_gpu_cap_route_patch() -> None:
-    if not hasattr(seam_module, "_wired_e2e_real_apply_global_rate_cap_reference"):
-        seam_module._wired_e2e_real_apply_global_rate_cap_reference = (
-            seam_module.apply_global_rate_cap_reference
-        )
-    seam_module.apply_global_rate_cap_reference = _gpu_routing_cap_reference
+def _cap_input_identity_fingerprint(item: GlobalRateCapTensorInput) -> dict[str, str]:
+    return {
+        "state_key": item.state_key,
+        "q_i16_sha": tensor_sha256(item.plan.q_i16),
+        "applied_indices_sha": tensor_sha256(item.plan.applied_indices),
+        "applied_directions_sha": tensor_sha256(item.plan.applied_directions),
+        "applied_thresholds_sha": tensor_sha256(item.plan.applied_thresholds),
+        "new_acc_at_applied_sha": _applied_new_acc_fingerprint(item.plan),
+    }
 
 
-def _restore_cpu_cap_route_patch() -> None:
-    if hasattr(seam_module, "_wired_e2e_real_apply_global_rate_cap_reference"):
-        seam_module.apply_global_rate_cap_reference = (
-            seam_module._wired_e2e_real_apply_global_rate_cap_reference
-        )
-
-
-def _mirror_tensor_states_to_cuda(
-    tensor_states: dict[str, BoundedDeltaTensorState],
-) -> dict[str, BoundedDeltaTensorState]:
-    device = torch.device("cuda")
-    mirrored: dict[str, BoundedDeltaTensorState] = {}
-    for state_key, state in tensor_states.items():
-        shadow = state.exact_accumulator_shadow
-        mirrored[state_key] = replace(
-            state,
-            q_levels=state.q_levels.to(device),
-            frozen_scale=state.frozen_scale.to(device),
-            exact_accumulator_shadow=shadow.to(device) if shadow is not None else None,
-        )
-    return mirrored
-
-
-def _assert_trainer_states_on_cuda(tensor_states: dict[str, BoundedDeltaTensorState]) -> None:
-    for state in tensor_states.values():
-        assert state.q_levels.device.type == "cuda"
-        assert state.frozen_scale.device.type == "cuda"
-        if state.exact_accumulator_shadow is not None:
-            assert state.exact_accumulator_shadow.device.type == "cuda"
-
-
-def _assert_fixture_semantics_from_trainer_inputs(
-    tensor_states: dict[str, BoundedDeltaTensorState],
+def _rebuild_independent_seam_cap_inputs(
+    tensor_states,
     vote_specs,
     sparse_events,
     global_cap_spec: GlobalRateCapSpec,
-) -> None:
+) -> list[GlobalRateCapTensorInput]:
     from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
         encode_budget_capped_hybrid_reference,
         execute_direct_bounded_local_vote_update_candidate,
@@ -384,9 +335,79 @@ def _assert_fixture_semantics_from_trainer_inputs(
             candidate_result=candidate_result,
             vote_spec=vote_specs[state_key],
         )
-    cap_inputs = []
     seam = seam_module.apply_candidate_global_cap_production_seam(entries, global_cap_spec)
-    cap_inputs = list(seam.cap_inputs)
+    return list(seam.cap_inputs)
+
+
+def _assert_cap_inputs_identity_match(
+    captured: list[GlobalRateCapTensorInput],
+    rebuilt: list[GlobalRateCapTensorInput],
+) -> None:
+    captured_by_key = {item.state_key: item for item in captured}
+    rebuilt_by_key = {item.state_key: item for item in rebuilt}
+    assert set(captured_by_key) == set(rebuilt_by_key)
+    for state_key in sorted(captured_by_key):
+        assert _cap_input_identity_fingerprint(captured_by_key[state_key]) == (
+            _cap_input_identity_fingerprint(rebuilt_by_key[state_key])
+        )
+
+
+def _gpu_routing_cap_reference(
+    inputs: list[GlobalRateCapTensorInput],
+    spec: GlobalRateCapSpec,
+    *,
+    deferred_backlog: dict[str, dict[int, dict[str, int]]] | None = None,
+    tensor_offsets: dict[str, int] | None = None,
+    tie_rule_mode: str = grc_module.EXACT_GLOBAL_CAP_TIE_RULE_MODE,
+    contract_name: str | None = None,
+) -> GlobalRateCapResult:
+    WIRED_E2E_TELEMETRY["seam_cap_reference_wrapper_calls"] += 1
+    WIRED_E2E_CAPTURED["wrapper_cap_inputs_cpu"] = copy.deepcopy(inputs)
+    routed_inputs = _mirror_cap_inputs_to_cuda(inputs)
+    assert _inputs_on_cuda(routed_inputs), "mirrored seam cap_inputs must be on CUDA"
+    WIRED_E2E_TELEMETRY["cuda_inputs_observed"] += 1
+    WIRED_E2E_TELEMETRY["gpu_apply_calls"] += 1
+    gpu_apply = gpu_mod.apply_global_rate_cap_torch_cuda_reference_under_margin(
+        routed_inputs,
+        spec,
+        tensor_offsets=tensor_offsets,
+        deferred_backlog=deferred_backlog,
+    )
+    return _adapt_gpu_apply_to_global_rate_cap_result(
+        gpu_apply,
+        spec,
+        tie_rule_mode=tie_rule_mode,
+        contract_name=contract_name,
+    )
+
+
+def _install_gpu_cap_route_patch() -> None:
+    if not hasattr(seam_module, "_wired_e2e_real_apply_global_rate_cap_reference"):
+        seam_module._wired_e2e_real_apply_global_rate_cap_reference = (
+            seam_module.apply_global_rate_cap_reference
+        )
+    seam_module.apply_global_rate_cap_reference = _gpu_routing_cap_reference
+
+
+def _restore_cpu_cap_route_patch() -> None:
+    if hasattr(seam_module, "_wired_e2e_real_apply_global_rate_cap_reference"):
+        seam_module.apply_global_rate_cap_reference = (
+            seam_module._wired_e2e_real_apply_global_rate_cap_reference
+        )
+
+
+def _assert_fixture_semantics_from_trainer_inputs(
+    tensor_states,
+    vote_specs,
+    sparse_events,
+    global_cap_spec: GlobalRateCapSpec,
+) -> None:
+    cap_inputs = _rebuild_independent_seam_cap_inputs(
+        tensor_states,
+        vote_specs,
+        sparse_events,
+        global_cap_spec,
+    )
     assert global_cap_spec.normalized_ordering_mode == GlobalRateCapOrderingMode.MARGIN
     offsets = tensor_offsets_for_vote_update_states(cap_inputs)
     oracle_rows, _, _ = select_global_rate_cap_rows(
@@ -431,6 +452,7 @@ def _assert_wired_e2e_parity(cpu_oracle, gpu_wired) -> None:
 def _wired_trainer_gpu_e2e_body() -> None:
     _require_wired_e2e_gpu_lane_or_skip()
     _reset_wired_e2e_telemetry()
+    _reset_wired_e2e_captured()
     tensor_states, vote_specs, sparse_events, global_cap_spec = _build_two_tensor_trainer_inputs()
     _assert_fixture_semantics_from_trainer_inputs(
         tensor_states,
@@ -447,13 +469,11 @@ def _wired_trainer_gpu_e2e_body() -> None:
             seam_enabled=True,
         ),
     )
-    cuda_states = _mirror_tensor_states_to_cuda(tensor_states)
-    _assert_trainer_states_on_cuda(cuda_states)
     _install_gpu_cap_route_patch()
     try:
         gpu_wired = apply_bounded_delta_vote_step(
             **_candidate_sparse_kwargs(
-                cuda_states,
+                tensor_states,
                 vote_specs,
                 sparse_events,
                 global_cap_spec=global_cap_spec,
@@ -467,6 +487,17 @@ def _wired_trainer_gpu_e2e_body() -> None:
     assert WIRED_E2E_TELEMETRY["cuda_inputs_observed"] == 1
     assert WIRED_E2E_TELEMETRY["gpu_apply_calls"] == 1
     assert WIRED_E2E_TELEMETRY["cpu_fallback_count"] == 0
+
+    captured = WIRED_E2E_CAPTURED["wrapper_cap_inputs_cpu"]
+    assert captured is not None
+    rebuilt = _rebuild_independent_seam_cap_inputs(
+        tensor_states,
+        vote_specs,
+        sparse_events,
+        global_cap_spec,
+    )
+    _assert_cap_inputs_identity_match(captured, rebuilt)
+
     provenance = gpu_wired.global_summary.get("wired_e2e_adapter_provenance") or {}
     assert provenance.get("summary_source") == "gpu_selection_tensors"
     assert provenance.get("global_cap_gpu_native") is True
@@ -516,6 +547,7 @@ def _assert_gpu_body_skips_without_seam_call(
     _install_seam_cap_sentinel(monkeypatch, sentinel_calls)
     _reset_wired_e2e_proof()
     _reset_wired_e2e_telemetry()
+    _reset_wired_e2e_captured()
 
     with pytest.raises(outcomes.Skipped):
         _wired_trainer_gpu_e2e_body()
@@ -529,8 +561,9 @@ def test_wired_e2e_non_claims_frozen() -> None:
     joined = "\n".join(WIRED_E2E_NON_CLAIMS)
     for term in _FORBIDDEN_MINT_TERMS:
         assert term not in joined
-    assert "equivalence/compat-only" in WIRED_E2E_NON_CLAIMS[0]
-    assert "CUDA REFERENCE q/acc apply" in WIRED_E2E_NON_CLAIMS[1]
+    assert "GPU-routed global-cap APPLY" in WIRED_E2E_NON_CLAIMS[0]
+    assert "CPU reference computations" in WIRED_E2E_NON_CLAIMS[1]
+    assert "CUDA REFERENCE q/acc apply" in WIRED_E2E_NON_CLAIMS[2]
 
 
 def test_wired_e2e_fixture_semantics_cpu() -> None:
@@ -566,11 +599,30 @@ def test_wired_e2e_cpu_proves_gpu_body_unexecuted_lane_env_missing(
     )
 
 
-def test_wired_e2e_device_mirror_cuda_audit() -> None:
+def test_wired_e2e_cap_inputs_mirror_cuda_audit() -> None:
     _require_wired_e2e_gpu_lane_or_skip()
-    tensor_states, _, _, _ = _build_two_tensor_trainer_inputs()
-    cuda_states = _mirror_tensor_states_to_cuda(tensor_states)
-    _assert_trainer_states_on_cuda(cuda_states)
+    tensor_states, vote_specs, sparse_events, global_cap_spec = _build_two_tensor_trainer_inputs()
+    cap_inputs_cpu = _rebuild_independent_seam_cap_inputs(
+        tensor_states,
+        vote_specs,
+        sparse_events,
+        global_cap_spec,
+    )
+    cap_inputs_cuda = _mirror_cap_inputs_to_cuda(cap_inputs_cpu)
+    assert _inputs_on_cuda(cap_inputs_cuda)
+    for item in cap_inputs_cuda:
+        tensors = (
+            item.state.q_levels,
+            item.state.accumulators,
+            item.plan.q_i16,
+            item.plan.new_acc_i32,
+            item.plan.applied_indices,
+            item.plan.applied_directions,
+            item.plan.applied_thresholds,
+        )
+        assert len(tensors) == 7
+        for tensor in tensors:
+            assert tensor.device.type == "cuda"
 
 
 def test_wired_e2e_f_two_tensor_global_flag_on_parity() -> None:
