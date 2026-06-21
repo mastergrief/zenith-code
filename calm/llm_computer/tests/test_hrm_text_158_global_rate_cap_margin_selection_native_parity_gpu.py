@@ -28,7 +28,21 @@ from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_packed
 )
 from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_native_parity_receipt import (
     NativeSelectionParityProof,
+    RuntimeSortKeyProof,
     apply_native_selection_parity_proof,
+    apply_runtime_sort_key_proof,
+    build_global_rate_cap_margin_selection_native_parity_receipt,
+    new_native_selection_token,
+    validate_global_rate_cap_margin_selection_native_parity_receipt,
+)
+from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_wider_single_block_triton_kernel import (
+    build_runtime_sort_key_proof,
+)
+from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_multiblock_step0_budget_receipt import (
+    REALISTIC_ROW_COUNTS,
+)
+from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_wider_single_block_fixtures import (
+    build_realistic_fixture_inputs_on_device,
 )
 from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_step0_budget import (
     build_upper_bound_fixture_inputs,
@@ -106,15 +120,16 @@ def test_legacy_native_env_fail_closed(monkeypatch) -> None:
         select_global_rate_cap_rows_margin_native(inputs, spec)
 
 
-def test_row_count_gt_block_refusal_cpu(monkeypatch) -> None:
+def test_row_count_gt_wider_ceiling_defer_cpu(monkeypatch) -> None:
     monkeypatch.setenv(RUN_GPU_GLOBAL_RATE_CAP_ENV, "1")
     monkeypatch.setenv(RUN_GPU_GLOBAL_RATE_CAP_NATIVE_SELECTION_ENV, "1")
-    inputs = build_upper_bound_fixture_inputs(numel=4096, max_abs_per_tensor=256, num_states=8)
+    inputs = build_upper_bound_fixture_inputs(numel=4096, max_abs_per_tensor=256, num_states=16)
     spec = GlobalRateCapSpec(cap=512, step=1, ordering_mode=GlobalRateCapOrderingMode.MARGIN)
     _, receipt = select_global_rate_cap_rows_margin_native(inputs, spec)
     assert receipt.multiblock_deferred is True
     assert receipt.selection_parity_pass is False
-    assert receipt.row_count > 1024
+    assert receipt.row_count > 2048
+    assert receipt.wider_single_block_regime is True
 
 
 def test_sentinel_case_b_budget_infeasible() -> None:
@@ -167,6 +182,77 @@ def test_gpu_parity_cross_tie_fail_not_skip_contract() -> None:
     )
     assert receipt.selection_parity_pass is True
     assert receipt.single_block_regime is True
+    assert receipt.native_path_audit_pass is True
+
+
+def _apply_derived_parity_proof(selection, receipt, oracle_rows, accepted_rows, deferred_rows):
+    oracle_global = [r.global_flat_index for r in oracle_rows]
+    native_global = selection.row_global_flat_indices.detach().cpu().tolist()
+    accepted_oracle = {r.global_flat_index for r in accepted_rows}
+    deferred_oracle = {r.global_flat_index for r in deferred_rows}
+    accepted_native = set(
+        selection.row_global_flat_indices[selection.accepted_positions].detach().cpu().tolist()
+    )
+    deferred_native = set(
+        selection.row_global_flat_indices[selection.deferred_positions].detach().cpu().tolist()
+        if selection.deferred_positions.numel() > 0
+        else []
+    )
+    ordered_global_indices_match = native_global == oracle_global
+    accepted_positions_match = accepted_native == accepted_oracle
+    deferred_positions_match = deferred_native == deferred_oracle
+    parity_ok = (
+        ordered_global_indices_match
+        and accepted_positions_match
+        and deferred_positions_match
+    )
+    proof = NativeSelectionParityProof(
+        parity_ok=parity_ok,
+        ordered_global_indices_match=ordered_global_indices_match,
+        accepted_positions_match=accepted_positions_match,
+        deferred_positions_match=deferred_positions_match,
+    )
+    assert receipt.token is not None
+    realistic = receipt.wider_single_block_regime
+    if realistic:
+        sort_proof = build_runtime_sort_key_proof(
+            device=selection.row_global_flat_indices.device,
+            sort_padded_n=receipt.sort_padded_n,
+            n_rows=receipt.row_count,
+            seed=receipt.row_count,
+        )
+        receipt = apply_runtime_sort_key_proof(
+            receipt, runtime_sort_key_proof=sort_proof
+        )
+    return apply_native_selection_parity_proof(
+        receipt,
+        parity_proof=proof,
+        token=receipt.token,
+        realistic_size_proven=realistic,
+    )
+
+
+@pytest.mark.parametrize("row_count", REALISTIC_ROW_COUNTS)
+def test_gpu_parity_realistic_size_fail_not_skip_contract(row_count: int) -> None:
+    _require_gpu_lane_or_fail()
+    device = torch.device("cuda")
+    inputs = build_realistic_fixture_inputs_on_device(target_row_count=row_count, device=device)
+    spec = GlobalRateCapSpec(cap=512, step=1, ordering_mode=GlobalRateCapOrderingMode.MARGIN)
+    oracle_rows, accepted_rows, deferred_rows = select_global_rate_cap_rows(inputs, spec)
+    selection, receipt = select_global_rate_cap_rows_margin_native(inputs, spec)
+    assert receipt.selection_parity_pass is False
+    assert receipt.parity_proof is None
+    assert receipt.wider_single_block_regime is True
+    assert receipt.single_block_regime is False
+    assert receipt.multiblock_deferred is False
+    assert receipt.row_count == row_count
+    native_global = selection.row_global_flat_indices.detach().cpu().tolist()
+    assert native_global == [r.global_flat_index for r in oracle_rows]
+    receipt = _apply_derived_parity_proof(
+        selection, receipt, oracle_rows, accepted_rows, deferred_rows
+    )
+    assert receipt.selection_parity_pass is True
+    assert receipt.realistic_size_proven is True
     assert receipt.native_path_audit_pass is True
 
 

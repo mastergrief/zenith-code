@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
+import hashlib
+import inspect
 from pathlib import Path
 import re
 from typing import Iterable
@@ -17,6 +19,20 @@ from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_native
 from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_triton_kernel import (
     KernelBufferProvenance,
     MarginSelectionSingleBlockTileResult,
+    _margin_selection_gather_rows_kernel,
+)
+from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_wider_single_block_compose import (
+    MarginSelectionWiderSingleBlockResult,
+)
+from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_wider_single_block_triton_kernel import (
+    WIDER_BITONIC_KERNEL_SYMBOL,
+    _margin_selection_bitonic_ce_wider_stage_kernel,
+)
+
+WIDER_SORTED_KEYS_BUFFER_ROLE = "sorted_keys"
+WIDER_KERNEL_BUFFER_ROLES: tuple[str, ...] = (
+    WIDER_SORTED_KEYS_BUFFER_ROLE,
+    *ROW_TENSOR_BUFFER_ROLES,
 )
 
 _STATIC_DENYLIST_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
@@ -42,6 +58,50 @@ _STATIC_DENYLIST_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
 
 _SLICE_REF_NAMES = frozenset({"order", "sorted_pos", "perm", "positions"})
 _SORT_PATH_NAMES = frozenset({"perm", "positions", "order", "sorted_pos"})
+
+_KERNEL_SYMBOL_OBJECTS: dict[str, object] = {}
+if _margin_selection_gather_rows_kernel is not None:
+    _KERNEL_SYMBOL_OBJECTS[_margin_selection_gather_rows_kernel.__name__] = (
+        _margin_selection_gather_rows_kernel
+    )
+if _margin_selection_bitonic_ce_wider_stage_kernel is not None:
+    _KERNEL_SYMBOL_OBJECTS[WIDER_BITONIC_KERNEL_SYMBOL] = (
+        _margin_selection_bitonic_ce_wider_stage_kernel
+    )
+
+
+def _sha256_for_kernel_object(kernel_obj: object) -> str:
+    module = inspect.getmodule(kernel_obj)
+    if module is not None and getattr(module, "__file__", None):
+        return hashlib.sha256(Path(module.__file__).read_bytes()).hexdigest()
+    source_file = inspect.getsourcefile(kernel_obj) or inspect.getfile(kernel_obj)
+    return hashlib.sha256(Path(source_file).read_bytes()).hexdigest()
+
+
+def _expected_kernel_source_sha256_for_symbol(kernel_symbol: str) -> str | None:
+    kernel_obj = _KERNEL_SYMBOL_OBJECTS.get(kernel_symbol)
+    if kernel_obj is None:
+        return None
+    return _sha256_for_kernel_object(kernel_obj)
+
+
+def audit_kernel_buffer_provenance_entry(
+    entry: KernelBufferProvenance,
+) -> tuple[bool, str]:
+    """Return (ok, detail) for a single provenance entry's symbol/hash fidelity."""
+
+    if not entry.kernel_symbol or not entry.kernel_source_sha256:
+        return False, "incomplete provenance"
+    expected = _expected_kernel_source_sha256_for_symbol(entry.kernel_symbol)
+    if expected is None:
+        return False, f"unknown kernel_symbol={entry.kernel_symbol}"
+    if entry.kernel_source_sha256 != expected:
+        return (
+            False,
+            f"{entry.buffer_role}: {entry.kernel_symbol} hash mismatch "
+            f"(recorded={entry.kernel_source_sha256[:8]}… expected={expected[:8]}…)",
+        )
+    return True, ""
 
 
 @dataclass(frozen=True)
@@ -270,13 +330,96 @@ def audit_dynamic_kernel_output_buffers(
     return dynamic_complete, False, tuple(findings)
 
 
+def audit_dynamic_wider_kernel_output_buffers(
+    wider: MarginSelectionWiderSingleBlockResult | None,
+) -> tuple[bool, bool, tuple[NativePathAuditFinding, ...]]:
+    if wider is None or wider.row_count == 0:
+        return True, False, ()
+
+    findings: list[NativePathAuditFinding] = []
+    provenance = wider.kernel_output_provenance
+    for role in WIDER_KERNEL_BUFFER_ROLES:
+        if role not in provenance:
+            findings.append(
+                NativePathAuditFinding(
+                    file="dynamic",
+                    line=0,
+                    kind="missing_kernel_buffer_provenance",
+                    detail=role,
+                )
+            )
+            continue
+        entry: KernelBufferProvenance = provenance[role]
+        if not entry.kernel_symbol or not entry.kernel_source_sha256:
+            findings.append(
+                NativePathAuditFinding(
+                    file="dynamic",
+                    line=0,
+                    kind="incomplete_provenance",
+                    detail=role,
+                )
+            )
+            continue
+        ok, detail = audit_kernel_buffer_provenance_entry(entry)
+        if not ok:
+            findings.append(
+                NativePathAuditFinding(
+                    file="dynamic",
+                    line=0,
+                    kind="provenance_symbol_hash_mismatch",
+                    detail=detail or role,
+                )
+            )
+
+    buffers = {
+        "sorted_keys": wider.sorted_keys,
+        "row_state_ids": wider.row_state_ids,
+        "row_flat_indices": wider.row_flat_indices,
+        "row_local_positions": wider.row_local_positions,
+        "row_global_flat_indices": wider.row_global_flat_indices,
+        "row_abs_new_acc": wider.row_abs_new_acc,
+        "row_thresholds": wider.row_thresholds,
+        "row_directions": wider.row_directions,
+    }
+    for role, tensor in buffers.items():
+        if tensor is None:
+            findings.append(
+                NativePathAuditFinding(
+                    file="dynamic",
+                    line=0,
+                    kind="buffer_shape",
+                    detail=f"{role} missing",
+                )
+            )
+            continue
+        expected_numel = wider.row_count
+        if int(tensor.numel()) != expected_numel:
+            findings.append(
+                NativePathAuditFinding(
+                    file="dynamic",
+                    line=0,
+                    kind="buffer_shape",
+                    detail=f"{role} numel mismatch",
+                )
+            )
+
+    dynamic_complete = len(findings) == 0
+    return dynamic_complete, False, tuple(findings)
+
+
 def run_full_native_path_audit(
     *,
     module_paths: Iterable[Path],
     tile: MarginSelectionSingleBlockTileResult | None = None,
+    wider: MarginSelectionWiderSingleBlockResult | None = None,
 ) -> NativePathAuditResult:
     static = audit_native_path_modules(module_paths)
-    dynamic_complete, post_perm, dynamic_findings = audit_dynamic_kernel_output_buffers(tile)
+    if wider is not None:
+        dynamic_complete, post_perm, dynamic_findings = audit_dynamic_wider_kernel_output_buffers(
+            wider
+        )
+    else:
+        dynamic_complete, post_perm, dynamic_findings = audit_dynamic_kernel_output_buffers(tile)
     native_pass = static.static_clean and dynamic_complete and not post_perm
     return NativePathAuditResult(
         static_clean=static.static_clean,
@@ -291,7 +434,11 @@ def run_full_native_path_audit(
 __all__ = [
     "NativePathAuditFinding",
     "NativePathAuditResult",
+    "WIDER_KERNEL_BUFFER_ROLES",
+    "WIDER_SORTED_KEYS_BUFFER_ROLE",
     "audit_dynamic_kernel_output_buffers",
+    "audit_dynamic_wider_kernel_output_buffers",
+    "audit_kernel_buffer_provenance_entry",
     "audit_native_path_module_source",
     "audit_native_path_modules",
     "run_full_native_path_audit",

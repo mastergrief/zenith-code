@@ -816,6 +816,24 @@ from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_packed
 from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_scaffold_dispatch import (
     select_global_rate_cap_rows_under_margin,
 )
+from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_multiblock_step0_budget import (
+    GLOBAL_RATE_CAP_MARGIN_SELECTION_MULTIBLOCK_STEP0_BUDGET_SCHEMA_VERSION,
+    REALISTIC_ROW_COUNTS,
+    WIDER_SINGLE_BLOCK_SORT_PADDED_N,
+    GlobalRateCapMarginSelectionMultiblockStep0BudgetReceipt,
+    MultiblockStep0Decision,
+    build_global_rate_cap_margin_selection_multiblock_step0_budget_receipt,
+    build_realistic_fixture_inputs,
+    measure_multiblock_step0_fixture,
+    run_multiblock_step0_budget_suite,
+    validate_global_rate_cap_margin_selection_multiblock_step0_budget_receipt,
+)
+from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_multiblock_step0_budget_receipt import (
+    GLOBAL_RATE_CAP_MARGIN_SELECTION_MULTIBLOCK_STEP0_NON_CLAIMS,
+    STAGE_B_MECHANISM_BUDGET_INFEASIBLE,
+    STAGE_B_MECHANISM_MULTIBLOCK_MERGE,
+    STAGE_B_MECHANISM_WIDER_SINGLE_BLOCK,
+)
 from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_step0_budget import (
     TRITON_SINGLE_BLOCK_ROW_CEILING,
     GlobalRateCapMarginSelectionStep0BudgetReceipt,
@@ -837,8 +855,21 @@ from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_step0_
 )
 from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_native_dispatch import (
     GLOBAL_RATE_CAP_MARGIN_SELECTION_NATIVE_SCOPE,
+    GLOBAL_RATE_CAP_MARGIN_SELECTION_NATIVE_WIDER_SCOPE,
     RUN_GPU_GLOBAL_RATE_CAP_NATIVE_SELECTION_ENV,
     select_global_rate_cap_rows_margin_native,
+)
+from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_wider_single_block_compose import (
+    WIDER_SINGLE_BLOCK_COMPOSE_SEAM,
+    MarginSelectionWiderSingleBlockDeferred,
+    MarginSelectionWiderSingleBlockResult,
+    margin_selection_wider_single_block_compose,
+)
+from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_wider_single_block_triton_kernel import (
+    WIDER_BITONIC_KERNEL_SYMBOL,
+    WIDER_SINGLE_BLOCK_ROW_CEILING,
+    bitonic_sort_single_writer_reference_wide,
+    verify_runtime_sort_key_exactness,
 )
 from calm.hrm_text_158.native_full_stack.global_rate_cap_margin_selection_native_parity_receipt import (
     GLOBAL_RATE_CAP_MARGIN_SELECTION_NATIVE_NON_CLAIMS,
@@ -1559,6 +1590,8 @@ __all__ = [
     "GLOBAL_RATE_CAP_MARGIN_SELECTION_SCAFFOLD_SCHEMA_VERSION",
     "select_global_rate_cap_rows_margin_scaffold",
     "select_global_rate_cap_rows_under_margin",
+    "GLOBAL_RATE_CAP_MARGIN_SELECTION_MULTIBLOCK_STEP0_BUDGET_SCHEMA_VERSION",
+    "GLOBAL_RATE_CAP_MARGIN_SELECTION_MULTIBLOCK_STEP0_NON_CLAIMS",
     "GLOBAL_RATE_CAP_MARGIN_SELECTION_STEP0_BUDGET_SCHEMA_VERSION",
     "GLOBAL_RATE_CAP_MARGIN_SELECTION_STEP0_NON_CLAIMS",
     "GlobalRateCapMarginSelectionStep0BudgetReceipt",
@@ -1574,9 +1607,30 @@ __all__ = [
     "measure_step0_fixture",
     "run_step0_budget_fixture_suite",
     "validate_global_rate_cap_margin_selection_step0_budget_receipt",
+    "REALISTIC_ROW_COUNTS",
+    "WIDER_SINGLE_BLOCK_SORT_PADDED_N",
+    "GlobalRateCapMarginSelectionMultiblockStep0BudgetReceipt",
+    "MultiblockStep0Decision",
+    "STAGE_B_MECHANISM_BUDGET_INFEASIBLE",
+    "STAGE_B_MECHANISM_MULTIBLOCK_MERGE",
+    "STAGE_B_MECHANISM_WIDER_SINGLE_BLOCK",
+    "build_global_rate_cap_margin_selection_multiblock_step0_budget_receipt",
+    "build_realistic_fixture_inputs",
+    "measure_multiblock_step0_fixture",
+    "run_multiblock_step0_budget_suite",
+    "validate_global_rate_cap_margin_selection_multiblock_step0_budget_receipt",
     "GLOBAL_RATE_CAP_MARGIN_SELECTION_NATIVE_SCOPE",
+    "GLOBAL_RATE_CAP_MARGIN_SELECTION_NATIVE_WIDER_SCOPE",
     "RUN_GPU_GLOBAL_RATE_CAP_NATIVE_SELECTION_ENV",
     "select_global_rate_cap_rows_margin_native",
+    "WIDER_SINGLE_BLOCK_COMPOSE_SEAM",
+    "MarginSelectionWiderSingleBlockDeferred",
+    "MarginSelectionWiderSingleBlockResult",
+    "margin_selection_wider_single_block_compose",
+    "WIDER_BITONIC_KERNEL_SYMBOL",
+    "WIDER_SINGLE_BLOCK_ROW_CEILING",
+    "bitonic_sort_single_writer_reference_wide",
+    "verify_runtime_sort_key_exactness",
     "GLOBAL_RATE_CAP_MARGIN_SELECTION_NATIVE_NON_CLAIMS",
     "GLOBAL_RATE_CAP_MARGIN_SELECTION_NATIVE_PARITY_SCHEMA_VERSION",
     "GlobalRateCapMarginSelectionNativeParityReceipt",
