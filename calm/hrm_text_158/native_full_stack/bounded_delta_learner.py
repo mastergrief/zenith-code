@@ -1591,6 +1591,7 @@ def apply_bounded_delta_vote_step(
     local_selection_ordering_mode: str = LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
     local_selection_ordering_seed: int = 0,
     local_selection_ordering_step: int = 0,
+    candidate_global_cap_production_seam_enabled: bool = False,
 ) -> BoundedDeltaLearnerStepResult:
     expected_keys = set(tensor_states)
     _validate_sparse_vote_authority_only_gate(
@@ -1643,7 +1644,7 @@ def apply_bounded_delta_vote_step(
             raise ValueError("candidate_mode local vote-update proof does not cover alternate local ordering")
         if front_c_identity_observer is not None:
             raise ValueError("candidate_mode does not cover front_c live identity observation")
-        if global_cap_spec is not None:
+        if global_cap_spec is not None and not candidate_global_cap_production_seam_enabled:
             raise ValueError("candidate_mode local vote-update proof does not cover global cap")
         if deferred_backlog is not None:
             raise ValueError("candidate_mode local vote-update proof does not cover deferred backlog")
@@ -1658,6 +1659,10 @@ def apply_bounded_delta_vote_step(
         next_states: dict[str, BoundedDeltaTensorState] = {}
         tensor_stats: dict[str, dict[str, Any]] = {}
         proof_by_key: dict[str, dict[str, Any]] = {}
+        candidate_result_by_key: dict[str, Any] = {}
+        seam_wiring_active = (
+            candidate_global_cap_production_seam_enabled and global_cap_spec is not None
+        )
         for state_key, prior_state in sorted(tensor_states.items()):
             candidate_result = execute_direct_bounded_local_vote_update_candidate(
                 state_key=state_key,
@@ -1669,6 +1674,7 @@ def apply_bounded_delta_vote_step(
                 ),
                 vote_spec=vote_specs_by_key[state_key],
             )
+            candidate_result_by_key[state_key] = candidate_result
             next_state = make_candidate_authority_tensor_state(
                 prior_state,
                 candidate_result.next_q_levels,
@@ -1761,34 +1767,124 @@ def apply_bounded_delta_vote_step(
                         }
                     )
 
-            next_states[state_key] = next_state
-            tensor_stats[state_key] = {
-                "state_key": state_key,
-                "candidate_mode": candidate_mode,
-                "bounded_update_attribution": BOUNDED_UPDATE_ATTRIBUTION,
-                "q_sha256_before": tensor_sha256(prior_state.q_levels),
-                "q_sha256_after": tensor_sha256(next_state.q_levels),
-                "bounded_accumulator_fresh_for_exact_shadow": False,
-                "bounded_accumulator_rebuilt_for_parity": False,
-                "bounded_decode_parity_checked": False,
-                "candidate_scoped_label": proof.get("scoped_label"),
-                "candidate_terminal_classification": proof.get("terminal_classification"),
-                "candidate_dense_decode_used": bool(proof.get("candidate_dense_decode_used")),
-                "candidate_accumulator_transient_over2_used": bool(
-                    proof.get("candidate_accumulator_transient_over2_used")
-                ),
-                "candidate_vote_transient_over2_used": bool(
-                    proof.get("candidate_vote_transient_over2_used")
-                ),
-                "candidate_dense_vote_authority_used": bool(
-                    proof.get("candidate_dense_vote_authority_used")
-                ),
-                "coverage_domain": dict(proof.get("coverage_domain") or {}),
-                "dense_oracle_control_used": bool(proof.get("dense_oracle_control_used")),
-                "candidate_local_update_pass": bool(proof.get("pass")),
-                "candidate_local_update_domain_gap_dimension": proof.get("domain_gap_dimension"),
-            }
+            if not seam_wiring_active:
+                next_states[state_key] = next_state
+                tensor_stats[state_key] = {
+                    "state_key": state_key,
+                    "candidate_mode": candidate_mode,
+                    "bounded_update_attribution": BOUNDED_UPDATE_ATTRIBUTION,
+                    "q_sha256_before": tensor_sha256(prior_state.q_levels),
+                    "q_sha256_after": tensor_sha256(next_state.q_levels),
+                    "bounded_accumulator_fresh_for_exact_shadow": False,
+                    "bounded_accumulator_rebuilt_for_parity": False,
+                    "bounded_decode_parity_checked": False,
+                    "candidate_scoped_label": proof.get("scoped_label"),
+                    "candidate_terminal_classification": proof.get("terminal_classification"),
+                    "candidate_dense_decode_used": bool(proof.get("candidate_dense_decode_used")),
+                    "candidate_accumulator_transient_over2_used": bool(
+                        proof.get("candidate_accumulator_transient_over2_used")
+                    ),
+                    "candidate_vote_transient_over2_used": bool(
+                        proof.get("candidate_vote_transient_over2_used")
+                    ),
+                    "candidate_dense_vote_authority_used": bool(
+                        proof.get("candidate_dense_vote_authority_used")
+                    ),
+                    "coverage_domain": dict(proof.get("coverage_domain") or {}),
+                    "dense_oracle_control_used": bool(proof.get("dense_oracle_control_used")),
+                    "candidate_local_update_pass": bool(proof.get("pass")),
+                    "candidate_local_update_domain_gap_dimension": proof.get("domain_gap_dimension"),
+                }
             proof_by_key[state_key] = proof
+
+        if seam_wiring_active:
+            from calm.hrm_text_158.native_full_stack.candidate_global_cap_production_seam import (
+                CandidateGlobalCapSeamEntry,
+                apply_candidate_global_cap_production_seam,
+            )
+
+            assert global_cap_spec is not None
+            seam_entries = {
+                state_key: CandidateGlobalCapSeamEntry(
+                    prior_state=prior_state.vote_update_state(),
+                    candidate_result=candidate_result_by_key[state_key],
+                    vote_spec=vote_specs_by_key[state_key],
+                )
+                for state_key, prior_state in sorted(tensor_states.items())
+            }
+            seam_result = apply_candidate_global_cap_production_seam(
+                seam_entries,
+                global_cap_spec,
+                tie_rule_mode=global_cap_tie_rule_mode,
+                contract_name=global_cap_contract_name,
+            )
+            backlog = seam_result.cap_result.deferred_backlog
+            summary = dict(seam_result.summary)
+            summary["candidate_mode"] = candidate_mode
+            summary["candidate_global_cap_production_seam_enabled"] = True
+            summary["candidate_local_update_pass"] = all(
+                bool(proof.get("pass")) for proof in proof_by_key.values()
+            )
+            summary["candidate_local_update_proof_by_key"] = proof_by_key
+            if sparse_vote_authority_only:
+                summary.update(
+                    {
+                        "sparse_vote_authority_only": True,
+                        "dense_vote_authority_skipped": True,
+                        "parity_contract_mode": "SPARSE_EVENT_SHAPE_ONLY",
+                        "pass_receipt": False,
+                    }
+                )
+            hot_by_key = hot_exact_indices_by_key or {}
+            seam_next_states: dict[str, BoundedDeltaTensorState] = {}
+            seam_tensor_stats: dict[str, dict[str, Any]] = {}
+            for state_key, prior_state in sorted(tensor_states.items()):
+                q_out, acc_out, stats = seam_result.q_acc_by_key[state_key]
+                rebuilt_for_step_parity = False
+                next_state = make_live_shadow_tensor_state(
+                    prior_state,
+                    q_out,
+                    acc_out,
+                    hot_exact_indices=hot_by_key.get(state_key),
+                    cold_default_value=cold_default_value,
+                )
+                if parity_check:
+                    next_state = next_state.with_fresh_bounded_accumulator()
+                    rebuilt_for_step_parity = True
+                seam_next_states[state_key] = next_state
+                stats_out = {
+                    **dict(stats),
+                    "state_key": state_key,
+                    "projection_law": S1_PROJECTION_LAW,
+                    "vote_law": S1_RANK_BUCKET_VOTE_LAW,
+                    "bounded_update_attribution": BOUNDED_UPDATE_ATTRIBUTION,
+                    "q_sha256_before": tensor_sha256(prior_state.q_levels),
+                    "q_sha256_after": tensor_sha256(q_out),
+                    "exact_accumulator_shadow_sha256_after": tensor_sha256(acc_out),
+                    "bounded_accumulator_fresh_for_exact_shadow": bool(
+                        next_state.bounded_accumulator_fresh_for_exact_shadow
+                    ),
+                    "bounded_accumulator_rebuilt_for_parity": bool(rebuilt_for_step_parity),
+                    "bounded_decode_parity_checked": bool(parity_check),
+                    "candidate_global_cap_production_seam_enabled": True,
+                }
+                if votes_by_key is not None:
+                    stats_out["votes_sha256"] = _votes_sha(votes_by_key[state_key])
+                if parity_check:
+                    parity = next_state.bounded_decode_parity_report(fail_on_mismatch=True)
+                    stats_out["bounded_accumulator_decoded_sha256_after"] = parity[
+                        "bounded_accumulator_decoded_sha256"
+                    ]
+                    stats_out["bounded_decode_matches_exact_shadow"] = parity[
+                        "exact_shadow_matches_bounded_decode"
+                    ]
+                seam_tensor_stats[state_key] = stats_out
+            return BoundedDeltaLearnerStepResult(
+                tensor_states=seam_next_states,
+                tensor_stats=seam_tensor_stats,
+                deferred_backlog=backlog,
+                global_summary=summary,
+            )
 
         summary = {
             "global_rate_cap_enabled": False,
