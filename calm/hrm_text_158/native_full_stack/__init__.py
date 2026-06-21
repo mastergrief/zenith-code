@@ -874,6 +874,14 @@ from calm.hrm_text_158.native_full_stack.candidate_global_cap_bridge_receipt imp
     build_candidate_global_cap_bridge_receipt,
     validate_candidate_global_cap_bridge_receipt,
 )
+from calm.hrm_text_158.native_full_stack.candidate_global_cap_production_seam import (
+    PRODUCTION_SEAM_HARD_FALSE_FIELDS,
+    PRODUCTION_SEAM_NON_CLAIMS,
+    CandidateGlobalCapProductionSeamResult,
+    CandidateGlobalCapSeamEntry,
+    apply_candidate_global_cap_production_seam,
+    apply_candidate_global_cap_production_seam_single,
+)
 from calm.hrm_text_158.native_full_stack.optimizer_credit_state_global_cap_consumer_step0_facade import (
     run_optimizer_credit_state_global_cap_consumer_step0_suite,
 )
@@ -1661,6 +1669,12 @@ __all__ = [
     "build_candidate_global_cap_bridge_receipt",
     "run_candidate_global_cap_bridge_suite",
     "validate_candidate_global_cap_bridge_receipt",
+    "PRODUCTION_SEAM_HARD_FALSE_FIELDS",
+    "PRODUCTION_SEAM_NON_CLAIMS",
+    "CandidateGlobalCapProductionSeamResult",
+    "CandidateGlobalCapSeamEntry",
+    "apply_candidate_global_cap_production_seam",
+    "apply_candidate_global_cap_production_seam_single",
     "REALISTIC_ROW_COUNTS",
     "WIDER_SINGLE_BLOCK_SORT_PADDED_N",
     "GlobalRateCapMarginSelectionMultiblockStep0BudgetReceipt",
