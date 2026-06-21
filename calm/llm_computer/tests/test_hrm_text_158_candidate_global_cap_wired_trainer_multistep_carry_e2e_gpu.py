@@ -156,6 +156,18 @@ _FORBIDDEN_MINT_TERMS: tuple[str, ...] = (
     "backlog-carry",
 )
 
+# Measured under lane patch (full-body probe, gate-1 1782070510150):
+# per GPU-loop step: 2 fixture-semantics + 1 wired apply + 1 anti-hollow rebuild = 4
+# patched calls/step (assertion machinery only; not asserted — brittle if structure changes).
+# Meaningful witness: wired apply delta == PATCHED_REFERENCE_CALLS_WIRED_APPLY_PER_STEP per step.
+PATCHED_REFERENCE_CALLS_WIRED_APPLY_PER_STEP = 1
+
+_WIRED_TELEMETRY_STEP_KEYS: tuple[str, ...] = (
+    "seam_cap_reference_wrapper_calls",
+    "cuda_inputs_observed",
+    "gpu_apply_calls",
+)
+
 
 def _reset_multistep_carry_e2e_proof() -> None:
     MULTISTEP_CARRY_E2E_PROOF["gpu_multistep_carry_wired_trainer_parity_proven"] = False
@@ -165,6 +177,24 @@ def _reset_wired_telemetry() -> None:
     for key in WIRED_E2E_TELEMETRY:
         WIRED_E2E_TELEMETRY[key] = 0
     WIRED_E2E_CAPTURED["wrapper_cap_inputs_cpu"] = None
+
+
+def _wired_telemetry_snapshot() -> dict[str, int]:
+    return {key: int(WIRED_E2E_TELEMETRY[key]) for key in _WIRED_TELEMETRY_STEP_KEYS}
+
+
+def _assert_wired_telemetry_step_delta(
+    before: Mapping[str, int],
+    after: Mapping[str, int],
+    *,
+    step: int,
+) -> None:
+    for key in _WIRED_TELEMETRY_STEP_KEYS:
+        delta = int(after[key]) - int(before[key])
+        assert delta == PATCHED_REFERENCE_CALLS_WIRED_APPLY_PER_STEP, (
+            f"step {step}: {key} delta != {PATCHED_REFERENCE_CALLS_WIRED_APPLY_PER_STEP} "
+            f"({before[key]} -> {after[key]})"
+        )
 
 
 def _build_multistep_carry_bridge_spec(state_key: str) -> BridgeFixtureSpec:
@@ -611,6 +641,7 @@ def _multistep_carry_gpu_e2e_body() -> None:
     gpu_input_fingerprints.append(_state_chain_fingerprint(gpu_states))
 
     _install_gpu_cap_route_patch()
+    wired_apply_telemetry_total = {key: 0 for key in _WIRED_TELEMETRY_STEP_KEYS}
     try:
         for step in MULTISTEP_CARRY_STEPS:
             if step > 1:
@@ -640,12 +671,14 @@ def _multistep_carry_gpu_e2e_body() -> None:
                 sparse_events=sparse_events,
                 global_cap_spec=global_cap_spec,
             )
+            telemetry_before = _wired_telemetry_snapshot()
             gpu_out = _run_bounded_delta_step(
                 gpu_states,
                 vote_specs,
                 sparse_events,
                 global_cap_spec,
             )
+            telemetry_after = _wired_telemetry_snapshot()
 
             cpu_oracle = cpu_traj[step - 1]
             _assert_step_wired_parity(cpu_oracle, gpu_out)
@@ -657,9 +690,15 @@ def _multistep_carry_gpu_e2e_body() -> None:
                 label="gpu_wired",
             )
 
-            assert WIRED_E2E_TELEMETRY["seam_cap_reference_wrapper_calls"] == int(step)
-            assert WIRED_E2E_TELEMETRY["cuda_inputs_observed"] == int(step)
-            assert WIRED_E2E_TELEMETRY["gpu_apply_calls"] == int(step)
+            _assert_wired_telemetry_step_delta(
+                telemetry_before,
+                telemetry_after,
+                step=step,
+            )
+            for key in _WIRED_TELEMETRY_STEP_KEYS:
+                wired_apply_telemetry_total[key] += (
+                    int(telemetry_after[key]) - int(telemetry_before[key])
+                )
             assert WIRED_E2E_TELEMETRY["cpu_fallback_count"] == 0
 
             captured = WIRED_E2E_CAPTURED["wrapper_cap_inputs_cpu"]
@@ -676,6 +715,10 @@ def _multistep_carry_gpu_e2e_body() -> None:
             gpu_states = gpu_out.tensor_states
     finally:
         _restore_cpu_cap_route_patch()
+
+    expected_wired_apply_total = len(MULTISTEP_CARRY_STEPS)
+    for key in _WIRED_TELEMETRY_STEP_KEYS:
+        assert wired_apply_telemetry_total[key] == expected_wired_apply_total
 
     provenance = gpu_out.global_summary.get("wired_e2e_adapter_provenance") or {}
     assert provenance.get("summary_source") == "gpu_selection_tensors"
