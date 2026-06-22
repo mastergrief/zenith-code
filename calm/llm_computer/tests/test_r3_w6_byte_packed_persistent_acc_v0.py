@@ -137,6 +137,10 @@ def test_ledger_rejects_int16_input_and_counts_real_bytes() -> None:
     assert report.r3_actual_acc_payload_bytes == payload.packed_data_bytes
     assert report.r3_artifact_overhead_bytes >= 0
     assert report.r3_ledger_pass is True
+    assert "int16 vote-acc remains" not in report.receipt_statement
+    assert "W6 / 6 bpw" in report.receipt_statement
+    assert "q stays int8 = 8 bpw" in report.receipt_statement
+    assert "inclusive checkpoint ~14 bpw" in report.receipt_statement
 
 
 def test_checkpoint_roundtrip_byte_packed_flag_gated(monkeypatch: pytest.MonkeyPatch) -> None:

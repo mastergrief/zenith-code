@@ -42,6 +42,12 @@ R3_Q_INT8_BITS_PER_WEIGHT = 8.0
 R3_LEDGER_PASS_INCLUSIVE_BPW_CEILING = 15.0
 R3_ACC_BPW_TOLERANCE = 0.25
 R3_W6_BYTE_PACKED_SCHEMA = "w6_lanes_byte_packed/v0"
+R3_W6_BYTEPACKED_NOT_SUB2_STATEMENT = (
+    "physical persistent sub-2-bit NOT achieved yet; serialized vote accumulator = "
+    "W6 / 6 bpw (reduced from int16); NOT sub-2 because q stays int8 = 8 bpw and "
+    "inclusive checkpoint ~14 bpw; remaining sub-2 levers = q-pack (rung-4) + "
+    "vote-acc width."
+)
 
 
 @dataclass(frozen=True)
@@ -238,7 +244,7 @@ def measure_r3_persistent_state_budget(
         r3_artifact_bytes_total=int(artifact_total),
         r3_artifact_overhead_bytes=int(overhead_bytes),
         r3_ledger_pass=bool(ledger_pass),
-        receipt_statement=PHYSICAL_SUB2_NOT_ACHIEVED_STATEMENT,
+        receipt_statement=R3_W6_BYTEPACKED_NOT_SUB2_STATEMENT,
     )
 
 
