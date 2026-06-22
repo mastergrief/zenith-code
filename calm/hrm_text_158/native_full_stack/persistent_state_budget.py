@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, fields
 import math
-from typing import Sequence
+from typing import Any, Sequence
 
 import torch
 
@@ -34,6 +34,14 @@ TARGET_PHYSICAL_BITS_PER_WEIGHT = 2.0
 # schema/format/padding header, plus int64 per logical shape dimension.
 PACKED_TERNARY_METADATA_HEADER_BYTES = 16
 PACKED_TERNARY_METADATA_BYTES_PER_DIM = 8
+
+R3_PERSISTENT_STATE_BUDGET_SCHEMA_VERSION = "hrm_text_158_persistent_state_budget/v0.r3_w6_byte_packed"
+R3_PERSISTENT_STATE_BUDGET_LABEL = "r3_w6_byte_packed_checkpoint_ledger_not_sub2"
+R3_ACC_PHYSICAL_BITS_PER_WEIGHT = 6.0
+R3_Q_INT8_BITS_PER_WEIGHT = 8.0
+R3_LEDGER_PASS_INCLUSIVE_BPW_CEILING = 15.0
+R3_ACC_BPW_TOLERANCE = 0.25
+R3_W6_BYTE_PACKED_SCHEMA = "w6_lanes_byte_packed/v0"
 
 
 @dataclass(frozen=True)
@@ -114,6 +122,133 @@ class PersistentStateBudgetReport:
 
     def to_dict(self) -> dict[str, int | float | bool | str]:
         return {field.name: getattr(self, field.name) for field in fields(self)}
+
+
+@dataclass(frozen=True)
+class R3PersistentStateBudgetReport:
+    """Byte-derived R3 checkpoint ledger for W6-packed accumulator payloads."""
+
+    schema_version: str
+    label: str
+    eligible_weight_count: int
+    q_state_count: int
+    accumulator_payload_count: int
+    r3_q_int8_bits_per_weight: float
+    r3_acc_logical_lane_bits: float
+    r3_acc_physical_bits_per_weight: float
+    r3_checkpoint_inclusive_physical_bits_per_weight: float
+    r3_actual_acc_payload_bytes: int
+    r3_frozen_scale_fp32_bits: int
+    r3_artifact_bytes_total: int
+    r3_artifact_overhead_bytes: int
+    r3_ledger_pass: bool
+    receipt_statement: str
+
+    def to_dict(self) -> dict[str, int | float | bool | str]:
+        return {field.name: getattr(self, field.name) for field in fields(self)}
+
+
+def _reject_int16_tensor_as_packed_acc(value: torch.Tensor, *, context: str) -> None:
+    if value.dtype == torch.int16:
+        raise ValueError(
+            f"{context} must be a real uint8 byte payload with schema "
+            f"{R3_W6_BYTE_PACKED_SCHEMA!r}, not torch.int16"
+        )
+    if value.element_size() > 1:
+        raise ValueError(
+            f"{context} physical payload must be 1-byte elements, got "
+            f"element_size={value.element_size()}"
+        )
+
+
+def _validate_r3_packed_payloads(
+    packed_acc_payloads: Sequence[Any],
+    *,
+    eligible_weight_count: int,
+) -> int:
+    if len(packed_acc_payloads) == 0:
+        raise ValueError("at least one byte-packed accumulator payload is required for R3 ledger")
+    total_lanes = 0
+    total_payload_bytes = 0
+    for payload in packed_acc_payloads:
+        schema = str(getattr(payload, "schema", ""))
+        if schema != R3_W6_BYTE_PACKED_SCHEMA:
+            raise ValueError(
+                f"R3 ledger requires schema {R3_W6_BYTE_PACKED_SCHEMA!r}, got {schema!r}"
+            )
+        packed = getattr(payload, "packed")
+        _reject_int16_tensor_as_packed_acc(packed, context="R3 packed acc payload")
+        if packed.dtype != torch.uint8:
+            raise ValueError(f"R3 packed acc payload must be torch.uint8, got {packed.dtype}")
+        total_lanes += int(getattr(payload, "logical_numel"))
+        total_payload_bytes += int(getattr(payload, "packed_data_bytes"))
+    if total_lanes != int(eligible_weight_count):
+        raise ValueError(
+            "sum(packed_acc.logical_numel) must match eligible q entries; "
+            f"got packed_lanes={total_lanes}, eligible={eligible_weight_count}"
+        )
+    return int(total_payload_bytes)
+
+
+def measure_r3_persistent_state_budget(
+    qscale_states: Sequence[QScaleWeightState],
+    packed_acc_payloads: Sequence[Any],
+    *,
+    artifact_bytes_total: int | None = None,
+) -> R3PersistentStateBudgetReport:
+    """Measure R3 checkpoint ledger from real uint8 accumulator payload bytes."""
+
+    if len(qscale_states) == 0:
+        raise ValueError("at least one qscale state is required for R3 persistent-state accounting")
+
+    eligible_weight_count = 0
+    scale_bits = 0
+    for qscale_state in qscale_states:
+        q_levels, _scale, _ = validate_qscale_weight_state(qscale_state)
+        eligible_weight_count += int(q_levels.numel())
+        scale_bits += 32
+
+    actual_acc_payload_bytes = _validate_r3_packed_payloads(
+        packed_acc_payloads,
+        eligible_weight_count=eligible_weight_count,
+    )
+    acc_physical_bpw = _bits_per_weight(actual_acc_payload_bytes * 8, eligible_weight_count)
+    scale_bpw = _bits_per_weight(scale_bits, eligible_weight_count)
+    inclusive_bpw = float(R3_Q_INT8_BITS_PER_WEIGHT) + float(acc_physical_bpw) + float(scale_bpw)
+    artifact_total = int(actual_acc_payload_bytes if artifact_bytes_total is None else artifact_bytes_total)
+    if artifact_total < actual_acc_payload_bytes:
+        raise ValueError("r3_artifact_bytes_total must be >= r3_actual_acc_payload_bytes")
+    overhead_bytes = int(artifact_total - actual_acc_payload_bytes)
+    ledger_pass = (
+        abs(float(acc_physical_bpw) - R3_ACC_PHYSICAL_BITS_PER_WEIGHT) <= R3_ACC_BPW_TOLERANCE
+        and float(inclusive_bpw) <= R3_LEDGER_PASS_INCLUSIVE_BPW_CEILING
+    )
+    return R3PersistentStateBudgetReport(
+        schema_version=R3_PERSISTENT_STATE_BUDGET_SCHEMA_VERSION,
+        label=R3_PERSISTENT_STATE_BUDGET_LABEL,
+        eligible_weight_count=int(eligible_weight_count),
+        q_state_count=int(len(qscale_states)),
+        accumulator_payload_count=int(len(packed_acc_payloads)),
+        r3_q_int8_bits_per_weight=float(R3_Q_INT8_BITS_PER_WEIGHT),
+        r3_acc_logical_lane_bits=float(R3_ACC_PHYSICAL_BITS_PER_WEIGHT),
+        r3_acc_physical_bits_per_weight=float(acc_physical_bpw),
+        r3_checkpoint_inclusive_physical_bits_per_weight=float(inclusive_bpw),
+        r3_actual_acc_payload_bytes=int(actual_acc_payload_bytes),
+        r3_frozen_scale_fp32_bits=int(scale_bits),
+        r3_artifact_bytes_total=int(artifact_total),
+        r3_artifact_overhead_bytes=int(overhead_bytes),
+        r3_ledger_pass=bool(ledger_pass),
+        receipt_statement=PHYSICAL_SUB2_NOT_ACHIEVED_STATEMENT,
+    )
+
+
+def reject_int16_tensors_for_r3_ledger(
+    accumulator_tensors: Sequence[torch.Tensor],
+) -> None:
+    """Fail-closed: R3 ledger must never accept int16 tensors as packed acc."""
+
+    for acc in accumulator_tensors:
+        _reject_int16_tensor_as_packed_acc(acc, context="R3 ledger accumulator input")
 
 
 def _numel_from_shape(shape: Sequence[int]) -> int:

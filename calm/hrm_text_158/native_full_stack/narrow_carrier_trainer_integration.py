@@ -85,6 +85,20 @@ PACKED_W6_STATE_FIELD_MARKERS: tuple[str, ...] = (
     "w6_packed",
     "narrow_carrier_packed",
 )
+AUTHORIZED_W6_BYTE_PACKED_FIELD_MARKERS: tuple[str, ...] = (
+    "w6_byte_packed_accumulator_persisted",
+    "w6_byte_packed_payload",
+    "w6_byte_packed_schema",
+    "w6_byte_packed_logical_shape",
+    "w6_byte_packed_logical_numel",
+    "w6_byte_packed_persistent_accumulator_saved",
+)
+
+
+def persistent_w6_byte_packed_enabled(*, enabled: bool | None = None) -> bool:
+    if enabled is not None:
+        return bool(enabled)
+    return os.environ.get("HRM_TEXT_158_PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED") == "1"
 
 
 def narrow_carrier_w6_enabled(*, enabled: bool | None = None) -> bool:
@@ -166,13 +180,24 @@ def count_int16_vs_w6_crossing_mismatches(
     return mismatches
 
 
-def assert_no_packed_w6_state_leak(payload: Mapping[str, Any]) -> None:
+def assert_no_packed_w6_state_leak(
+    payload: Mapping[str, Any],
+    *,
+    byte_packed_enabled: bool | None = None,
+) -> None:
     """B4 helper: reject durable packed-W6 fields in serializable trainer state."""
+
+    authorized = persistent_w6_byte_packed_enabled(enabled=byte_packed_enabled)
 
     def _walk(value: Any, *, path: str) -> None:
         if isinstance(value, Mapping):
             for key, child in value.items():
                 key_text = str(key).lower()
+                if any(marker in key_text for marker in AUTHORIZED_W6_BYTE_PACKED_FIELD_MARKERS):
+                    if not authorized:
+                        raise ValueError(f"packed W6 state leak at {path}.{key}")
+                    _walk(child, path=f"{path}.{key}")
+                    continue
                 if any(marker in key_text for marker in PACKED_W6_STATE_FIELD_MARKERS):
                     raise ValueError(f"packed W6 state leak at {path}.{key}")
                 _walk(child, path=f"{path}.{key}")

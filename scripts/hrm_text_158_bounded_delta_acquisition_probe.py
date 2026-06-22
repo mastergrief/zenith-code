@@ -66,6 +66,9 @@ from calm.hrm_text_158.native_full_stack.global_rate_cap import (
     named_global_cap_contract_receipt,
     resolve_named_global_cap_spec,
 )
+from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
+    decode_bounded_accumulator_to_i16,
+)
 from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     BOUNDED_DELTA_CHECKPOINT_SCHEMA_VERSION,
     BOUNDED_DELTA_LEARNER_SCHEMA_VERSION,
@@ -150,6 +153,17 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     TIE_POLICY_CURRENT_MARGIN_INDEX,
     TIE_POLICY_DETERMINISTIC_HASH_MATCHED,
     oracle_screen_budget_max_seconds,
+)
+from calm.hrm_text_158.native_full_stack.narrow_accumulator_codec import (
+    pack_w6_lanes_to_bytes,
+)
+from calm.hrm_text_158.native_full_stack.persistent_state_budget import (
+    measure_r3_persistent_state_budget,
+)
+from calm.hrm_text_158.native_full_stack.qscale_linear import QScaleWeightState
+from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
+    PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV,
+    persistent_w6_byte_packed_enabled,
 )
 from calm.hrm_text_158.native_full_stack.two_tier_transient_selection import (
     FORBIDDEN_PERSIST_SELECTOR_SURFACES,
@@ -3098,6 +3112,53 @@ def select_eligible_bitlinears(model: torch.nn.Module, *, eligible_scope: str) -
     raise ValueError(f"unsupported eligible_scope {eligible_scope!r}")
 
 
+def build_r3_persistent_ledger_receipt(
+    tensor_states: Mapping[str, Any],
+    *,
+    byte_packed_enabled: bool,
+) -> dict[str, Any]:
+    """Emit byte-derived R3 ledger fields for one first-bitlinear module per arm."""
+
+    if not bool(byte_packed_enabled):
+        return {"enabled": False}
+    qscale_states: list[QScaleWeightState] = []
+    packed_payloads = []
+    for _state_key, state in sorted(tensor_states.items()):
+        qscale_states.append(
+            QScaleWeightState(
+                q_levels=state.q_levels.detach().cpu().contiguous(),
+                scale=state.frozen_scale.detach().cpu().contiguous(),
+            )
+        )
+        decoded_i16 = decode_bounded_accumulator_to_i16(state.bounded_accumulator)
+        packed_payloads.append(pack_w6_lanes_to_bytes(decoded_i16))
+    artifact_blob = {
+        "schema": "r3_w6_byte_packed_checkpoint_artifact_probe/v0",
+        "tensor_payloads": [
+            {
+                "logical_shape": list(payload.logical_shape),
+                "logical_numel": int(payload.logical_numel),
+                "packed_bytes": payload.packed.detach().cpu().tolist(),
+            }
+            for payload in packed_payloads
+        ],
+    }
+    artifact_bytes_total = len(
+        json.dumps(artifact_blob, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    )
+    ledger = measure_r3_persistent_state_budget(
+        qscale_states,
+        packed_payloads,
+        artifact_bytes_total=artifact_bytes_total,
+    )
+    return {
+        "enabled": True,
+        "eligible_module_count": len(tensor_states),
+        "persistent_accumulator_w6_byte_packed": True,
+        **ledger.to_dict(),
+    }
+
+
 def native_ternary_effective_weight(module: BitLinear) -> torch.Tensor:
     scale = module.weight.detach().abs().mean().clamp(min=module._SCALE_EPS)
     q = (module.weight.detach().to(torch.float32) / scale).round().clamp(-1.0, 1.0)
@@ -5712,6 +5773,7 @@ def run_c2p1_probe(
     two_tier_carry_w6_enabled: bool = False,
     checkpoint_states_dump: Path | None = None,
     receipt_emit_profile: str = RECEIPT_EMIT_PROFILE_FULL,
+    persistent_accumulator_w6_byte_packed: bool = False,
 ) -> dict[str, Any]:
     oracle_screen_budget = int(oracle_screen_max_sampled_candidates)
     if oracle_screen_budget not in ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES:
@@ -5720,6 +5782,10 @@ def run_c2p1_probe(
             f"{ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES}"
         )
     assert_default_off(enabled)
+    if bool(persistent_accumulator_w6_byte_packed):
+        os.environ[PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV] = "1"
+    elif PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV in os.environ:
+        os.environ.pop(PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV, None)
     if oracle_screen_mode is not None and str(oracle_screen_mode) not in ORACLE_SCREEN_MODE_CHOICES:
         raise ValueError(
             f"oracle_screen_mode must be one of {ORACLE_SCREEN_MODE_CHOICES}, got {oracle_screen_mode!r}"
@@ -6620,6 +6686,11 @@ def run_c2p1_probe(
         "phase_telemetry": phase_progress.to_dict(),
         "b2b_sequential_capture": b2b_capture_receipt,
         "receipt_emit_profile": str(receipt_emit_profile),
+        "persistent_accumulator_w6_byte_packed": bool(persistent_accumulator_w6_byte_packed),
+        "r3_persistent_ledger": build_r3_persistent_ledger_receipt(
+            tensor_states,
+            byte_packed_enabled=bool(persistent_accumulator_w6_byte_packed),
+        ),
     }
     if slim_receipt_emit:
         assert headroom_wiring_sidecar_path is not None
@@ -6937,6 +7008,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     ap.add_argument(
+        "--persistent-accumulator-w6-byte-packed",
+        action="store_true",
+        help=(
+            "Default-off checkpoint seam: persist vote accumulators as real "
+            "uint8 W6 byte payloads (separate from trainer-boundary W6 flag)."
+        ),
+    )
+    ap.add_argument(
         "--receipt-emit-profile",
         choices=list(RECEIPT_EMIT_PROFILE_CHOICES),
         default=RECEIPT_EMIT_PROFILE_FULL,
@@ -7010,6 +7089,10 @@ def main(argv: list[str] | None = None) -> int:
         enabled=args.enable_bounded_delta_probe,
         allow_gpu_launch=args.allow_gpu_launch,
         receipt_emit_profile=args.receipt_emit_profile,
+        persistent_accumulator_w6_byte_packed=bool(
+            args.persistent_accumulator_w6_byte_packed
+            or persistent_w6_byte_packed_enabled()
+        ),
     )
     print(json.dumps(receipt, indent=2, sort_keys=True), flush=True)
     return 0

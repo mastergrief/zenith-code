@@ -1,6 +1,7 @@
 """Int16 vote-acc → 6-bit signed-lane accumulator codec seam (scalar + tensor paths)."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -188,6 +189,132 @@ def clip_then_pack_w6_tensor(acc: torch.Tensor) -> torch.Tensor:
     """Replay-only clip-then-pack; separate from strict pack_w6_tensor."""
 
     return pack_w6_tensor(clip_to_w6_tensor(acc))
+
+
+W6_BYTE_PACKED_SCHEMA = "w6_lanes_byte_packed/v0"
+
+
+@dataclass(frozen=True)
+class PackedW6AccumulatorPayload:
+    """Physical uint8 byte payload for 6-bit signed accumulator lanes."""
+
+    packed: torch.Tensor
+    logical_shape: tuple[int, ...]
+    logical_numel: int
+    lane_bits: int = W6_WIDTH_BITS
+    schema: str = W6_BYTE_PACKED_SCHEMA
+
+    def __post_init__(self) -> None:
+        _validate_packed_w6_payload_metadata(self)
+
+    @property
+    def packed_data_bytes(self) -> int:
+        return int(self.packed.numel() * self.packed.element_size())
+
+    @property
+    def expected_packed_data_bytes(self) -> int:
+        return int((int(self.logical_numel) * int(self.lane_bits) + 7) // 8)
+
+
+def _numel_from_shape(shape: Sequence[int]) -> int:
+    numel = 1
+    for dim in shape:
+        if int(dim) < 0:
+            raise ValueError(f"logical_shape dims must be non-negative, got {tuple(shape)}")
+        numel *= int(dim)
+    return int(numel)
+
+
+def reject_int16_tensor_as_packed_acc(
+    value: torch.Tensor,
+    *,
+    context: str = "accumulator",
+) -> None:
+    """Fail-closed guard: W6-valued int16 containers are not physical byte packing."""
+
+    if value.dtype == torch.int16:
+        raise ValueError(
+            f"{context} must be a real uint8 byte payload with schema "
+            f"{W6_BYTE_PACKED_SCHEMA!r}, not torch.int16"
+        )
+    if value.element_size() > 1:
+        raise ValueError(
+            f"{context} physical payload must be 1-byte elements, got "
+            f"element_size={value.element_size()}"
+        )
+
+
+def _validate_packed_w6_payload_metadata(payload: PackedW6AccumulatorPayload) -> None:
+    if str(payload.schema) != W6_BYTE_PACKED_SCHEMA:
+        raise ValueError(
+            f"packed acc schema must be {W6_BYTE_PACKED_SCHEMA!r}, got {payload.schema!r}"
+        )
+    reject_int16_tensor_as_packed_acc(payload.packed, context="packed acc payload")
+    if payload.packed.dtype != torch.uint8:
+        raise ValueError(f"packed acc payload must be torch.uint8, got {payload.packed.dtype}")
+    if payload.packed.ndim != 1:
+        raise ValueError(f"packed acc payload must be 1-D bytes, got shape {tuple(payload.packed.shape)}")
+    if int(payload.logical_numel) <= 0:
+        raise ValueError("logical_numel must be positive")
+    if int(payload.lane_bits) != W6_WIDTH_BITS:
+        raise ValueError(f"lane_bits must be {W6_WIDTH_BITS}, got {payload.lane_bits}")
+    if _numel_from_shape(payload.logical_shape) != int(payload.logical_numel):
+        raise ValueError("logical_shape product must match logical_numel")
+    expected_bytes = payload.expected_packed_data_bytes
+    if int(payload.packed.numel()) != expected_bytes:
+        raise ValueError(
+            "packed byte length must equal ceil(logical_numel * lane_bits / 8); "
+            f"got {int(payload.packed.numel())}, expected {expected_bytes}"
+        )
+
+
+def pack_w6_lanes_to_bytes(acc: torch.Tensor) -> PackedW6AccumulatorPayload:
+    """Pack in-domain int16 lanes into a real uint8 payload of ceil(N*6/8) bytes."""
+
+    lane_tensor = pack_w6_tensor(acc)
+    logical_shape = tuple(int(dim) for dim in acc.shape)
+    logical_numel = int(acc.numel())
+    lane_values = (lane_tensor.reshape(-1).to(torch.int64) & W6_PACK_MASK).tolist()
+    total_bits = int(logical_numel * W6_WIDTH_BITS)
+    nbytes = (total_bits + 7) // 8
+    out = bytearray(nbytes)
+    bit_pos = 0
+    for lane in lane_values:
+        unsigned_lane = int(lane) & W6_PACK_MASK
+        for bit_idx in range(W6_WIDTH_BITS):
+            if (unsigned_lane >> bit_idx) & 1:
+                byte_idx = bit_pos // 8
+                bit_in_byte = bit_pos % 8
+                out[byte_idx] |= 1 << bit_in_byte
+            bit_pos += 1
+    packed = torch.tensor(list(out), dtype=torch.uint8).contiguous()
+    payload = PackedW6AccumulatorPayload(
+        packed=packed,
+        logical_shape=logical_shape,
+        logical_numel=logical_numel,
+    )
+    _validate_packed_w6_payload_metadata(payload)
+    return payload
+
+
+def unpack_w6_lanes_from_bytes(payload: PackedW6AccumulatorPayload) -> torch.Tensor:
+    """Decode a byte-packed W6 payload back to torch.int16 in-step lanes."""
+
+    _validate_packed_w6_payload_metadata(payload)
+    packed = payload.packed.to(torch.int64)
+    logical_numel = int(payload.logical_numel)
+    signed_lanes: list[int] = []
+    bit_pos = 0
+    for _lane_idx in range(logical_numel):
+        unsigned_lane = 0
+        for bit_idx in range(W6_WIDTH_BITS):
+            byte_idx = bit_pos // 8
+            bit_in_byte = bit_pos % 8
+            bit = int((packed[byte_idx] >> bit_in_byte) & 1)
+            unsigned_lane |= bit << bit_idx
+            bit_pos += 1
+        signed_lanes.append(unpack_w6(unsigned_lane))
+    return torch.tensor(signed_lanes, dtype=torch.int16).view(payload.logical_shape).contiguous()
 
 
 def default_vote_spec() -> VoteSpecParsed:

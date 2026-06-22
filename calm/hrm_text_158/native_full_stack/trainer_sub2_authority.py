@@ -12,6 +12,7 @@ import hashlib
 import inspect
 import json
 import math
+import os
 from typing import Any, Callable, Mapping, Sequence
 
 import torch
@@ -19,6 +20,7 @@ import torch
 from calm.hrm_text_158.bit_linear import BitLinear
 from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
     BoundedDeltaAccumulatorState,
+    decode_bounded_accumulator_to_i16,
 )
 from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
@@ -37,6 +39,13 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     validate_authoritative_resume_payload,
 )
 from calm.hrm_text_158.native_full_stack.sparse_vote_events import SparseVoteEvents
+from calm.hrm_text_158.native_full_stack.narrow_accumulator_codec import (
+    PackedW6AccumulatorPayload,
+    W6_BYTE_PACKED_SCHEMA,
+    pack_w6_lanes_to_bytes,
+    reject_int16_tensor_as_packed_acc,
+    unpack_w6_lanes_from_bytes,
+)
 from calm.hrm_text_158.native_full_stack.vote_update import (
     VoteUpdateInputs,
     VoteUpdateResult,
@@ -509,8 +518,104 @@ def _roundtrip_payload_sha256(payload: Mapping[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _tensor_state_roundtrip_payload(state: BoundedDeltaTensorState) -> dict[str, Any]:
+TRAINER_SUB2_ROUNDTRIP_TARGET_NAME = "step2c4a_trainer_authority_checkpoint_roundtrip"
+PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV = (
+    "HRM_TEXT_158_PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED"
+)
+W6_BYTE_PACKED_ACCUMULATOR_PERSISTED_KEY = "w6_byte_packed_accumulator_persisted"
+W6_BYTE_PACKED_PAYLOAD_KEY = "w6_byte_packed_payload"
+W6_BYTE_PACKED_SCHEMA_KEY = "w6_byte_packed_schema"
+W6_BYTE_PACKED_LOGICAL_SHAPE_KEY = "w6_byte_packed_logical_shape"
+W6_BYTE_PACKED_LOGICAL_NUMEL_KEY = "w6_byte_packed_logical_numel"
+
+
+def persistent_w6_byte_packed_enabled(*, enabled: bool | None = None) -> bool:
+    if enabled is not None:
+        return bool(enabled)
+    return os.environ.get(PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV) == "1"
+
+
+def _bounded_accumulator_from_decoded_i16(
+    acc: torch.Tensor,
+    *,
+    cold_default_value: int,
+    candidate_name: str,
+) -> BoundedDeltaAccumulatorState:
+    flat = acc.detach().cpu().flatten().to(torch.int16)
+    numel = int(flat.numel())
+    default = int(cold_default_value)
+    hot_indices: list[int] = []
+    hot_values: list[int] = []
+    for index in range(numel):
+        value = int(flat[index].item())
+        if value != default:
+            hot_indices.append(index)
+            hot_values.append(value)
+    return BoundedDeltaAccumulatorState(
+        logical_shape=tuple(int(dim) for dim in acc.shape),
+        cold_default_value=default,
+        hot_exact_indices=tuple(hot_indices),
+        hot_exact_values=tuple(hot_values),
+        cold_exception_indices=(),
+        cold_exception_values=(),
+        candidate_name=str(candidate_name),
+        raw_arrays_included=False,
+    )
+
+
+def _tensor_state_roundtrip_payload(
+    state: BoundedDeltaTensorState,
+    *,
+    byte_packed_enabled: bool | None = None,
+) -> dict[str, Any]:
     bounded = state.bounded_accumulator
+    bounded_payload: dict[str, Any] = {
+        "logical_shape": tuple(int(dim) for dim in bounded.logical_shape),
+        "cold_default_value": int(bounded.cold_default_value),
+        "hot_exact_indices": tuple(int(item) for item in bounded.hot_exact_indices),
+        "hot_exact_values": tuple(int(item) for item in bounded.hot_exact_values),
+        "cold_exception_indices": tuple(int(item) for item in bounded.cold_exception_indices),
+        "cold_exception_values": tuple(int(item) for item in bounded.cold_exception_values),
+        "candidate_name": str(bounded.candidate_name),
+        "raw_arrays_serialized_for_resume_only": True,
+        "dense_int16_accumulator_persisted": False,
+        W6_BYTE_PACKED_ACCUMULATOR_PERSISTED_KEY: False,
+        "hot_exact_indices_sha256": _identity_sha256(
+            state.state_key,
+            tuple(int(item) for item in bounded.hot_exact_indices),
+        ),
+        "hot_exact_values_sha256": _ordered_value_sha256(
+            state.state_key,
+            "hot_exact_value",
+            {
+                int(index): int(value)
+                for index, value in zip(bounded.hot_exact_indices, bounded.hot_exact_values)
+            },
+        ),
+        "cold_exception_indices_sha256": _identity_sha256(
+            state.state_key,
+            tuple(int(item) for item in bounded.cold_exception_indices),
+        ),
+        "cold_exception_values_sha256": _ordered_value_sha256(
+            state.state_key,
+            "cold_exception_value",
+            {
+                int(index): int(value)
+                for index, value in zip(
+                    bounded.cold_exception_indices,
+                    bounded.cold_exception_values,
+                )
+            },
+        ),
+    }
+    if persistent_w6_byte_packed_enabled(enabled=byte_packed_enabled):
+        decoded_i16 = decode_bounded_accumulator_to_i16(bounded)
+        packed_payload = pack_w6_lanes_to_bytes(decoded_i16)
+        bounded_payload[W6_BYTE_PACKED_ACCUMULATOR_PERSISTED_KEY] = True
+        bounded_payload[W6_BYTE_PACKED_SCHEMA_KEY] = str(packed_payload.schema)
+        bounded_payload[W6_BYTE_PACKED_PAYLOAD_KEY] = packed_payload.packed.detach().cpu().contiguous()
+        bounded_payload[W6_BYTE_PACKED_LOGICAL_SHAPE_KEY] = list(packed_payload.logical_shape)
+        bounded_payload[W6_BYTE_PACKED_LOGICAL_NUMEL_KEY] = int(packed_payload.logical_numel)
     return {
         "state_key": str(state.state_key),
         "q_levels": state.q_levels.detach().cpu().to(torch.int8).contiguous(),
@@ -519,61 +624,63 @@ def _tensor_state_roundtrip_payload(state: BoundedDeltaTensorState) -> dict[str,
         "frozen_scale_sha256": tensor_sha256(
             state.frozen_scale.detach().cpu().to(torch.float32).contiguous()
         ),
-        "bounded_accumulator": {
-            "logical_shape": tuple(int(dim) for dim in bounded.logical_shape),
-            "cold_default_value": int(bounded.cold_default_value),
-            "hot_exact_indices": tuple(int(item) for item in bounded.hot_exact_indices),
-            "hot_exact_values": tuple(int(item) for item in bounded.hot_exact_values),
-            "cold_exception_indices": tuple(int(item) for item in bounded.cold_exception_indices),
-            "cold_exception_values": tuple(int(item) for item in bounded.cold_exception_values),
-            "candidate_name": str(bounded.candidate_name),
-            "raw_arrays_serialized_for_resume_only": True,
-            "dense_int16_accumulator_persisted": False,
-            "hot_exact_indices_sha256": _identity_sha256(
-                state.state_key,
-                tuple(int(item) for item in bounded.hot_exact_indices),
-            ),
-            "hot_exact_values_sha256": _ordered_value_sha256(
-                state.state_key,
-                "hot_exact_value",
-                {
-                    int(index): int(value)
-                    for index, value in zip(bounded.hot_exact_indices, bounded.hot_exact_values)
-                },
-            ),
-            "cold_exception_indices_sha256": _identity_sha256(
-                state.state_key,
-                tuple(int(item) for item in bounded.cold_exception_indices),
-            ),
-            "cold_exception_values_sha256": _ordered_value_sha256(
-                state.state_key,
-                "cold_exception_value",
-                {
-                    int(index): int(value)
-                    for index, value in zip(
-                        bounded.cold_exception_indices,
-                        bounded.cold_exception_values,
-                    )
-                },
-            ),
-        },
+        "bounded_accumulator": bounded_payload,
         "exact_accumulator_shadow_saved": False,
         "exact_accumulator_shadow_sha256": _tensor_sha_or_none(state.exact_accumulator_shadow),
     }
 
 
-def _state_from_roundtrip_payload(payload: Mapping[str, Any]) -> BoundedDeltaTensorState:
+def _state_from_roundtrip_payload(
+    payload: Mapping[str, Any],
+    *,
+    byte_packed_enabled: bool | None = None,
+) -> BoundedDeltaTensorState:
     bounded_payload = dict(payload.get("bounded_accumulator") or {})
-    bounded = BoundedDeltaAccumulatorState(
-        logical_shape=tuple(int(dim) for dim in bounded_payload["logical_shape"]),
-        cold_default_value=int(bounded_payload["cold_default_value"]),
-        hot_exact_indices=tuple(int(item) for item in bounded_payload["hot_exact_indices"]),
-        hot_exact_values=tuple(int(item) for item in bounded_payload["hot_exact_values"]),
-        cold_exception_indices=tuple(int(item) for item in bounded_payload["cold_exception_indices"]),
-        cold_exception_values=tuple(int(item) for item in bounded_payload["cold_exception_values"]),
-        candidate_name=str(bounded_payload["candidate_name"]),
-        raw_arrays_included=False,
-    )
+    byte_packed_saved = bool(bounded_payload.get(W6_BYTE_PACKED_ACCUMULATOR_PERSISTED_KEY))
+    flag_enabled = persistent_w6_byte_packed_enabled(enabled=byte_packed_enabled)
+    if byte_packed_saved and not flag_enabled:
+        raise ValueError(
+            "2C4a sidecar contains byte-packed W6 accumulator payload but "
+            f"{PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV}=1 is not enabled"
+        )
+    if flag_enabled and byte_packed_saved:
+        packed_tensor = bounded_payload.get(W6_BYTE_PACKED_PAYLOAD_KEY)
+        if not isinstance(packed_tensor, torch.Tensor):
+            raise ValueError("2C4a byte-packed sidecar missing w6_byte_packed_payload tensor")
+        packed_cpu = packed_tensor.detach().cpu().contiguous()
+        reject_int16_tensor_as_packed_acc(
+            packed_cpu,
+            context="2C4a byte-packed accumulator sidecar payload",
+        )
+        packed_payload = PackedW6AccumulatorPayload(
+            packed=packed_cpu,
+            logical_shape=tuple(
+                int(dim) for dim in bounded_payload[W6_BYTE_PACKED_LOGICAL_SHAPE_KEY]
+            ),
+            logical_numel=int(bounded_payload[W6_BYTE_PACKED_LOGICAL_NUMEL_KEY]),
+            schema=str(bounded_payload.get(W6_BYTE_PACKED_SCHEMA_KEY, W6_BYTE_PACKED_SCHEMA)),
+        )
+        decoded_i16 = unpack_w6_lanes_from_bytes(packed_payload)
+        bounded = _bounded_accumulator_from_decoded_i16(
+            decoded_i16,
+            cold_default_value=int(bounded_payload["cold_default_value"]),
+            candidate_name=str(bounded_payload["candidate_name"]),
+        )
+    else:
+        bounded = BoundedDeltaAccumulatorState(
+            logical_shape=tuple(int(dim) for dim in bounded_payload["logical_shape"]),
+            cold_default_value=int(bounded_payload["cold_default_value"]),
+            hot_exact_indices=tuple(int(item) for item in bounded_payload["hot_exact_indices"]),
+            hot_exact_values=tuple(int(item) for item in bounded_payload["hot_exact_values"]),
+            cold_exception_indices=tuple(
+                int(item) for item in bounded_payload["cold_exception_indices"]
+            ),
+            cold_exception_values=tuple(
+                int(item) for item in bounded_payload["cold_exception_values"]
+            ),
+            candidate_name=str(bounded_payload["candidate_name"]),
+            raw_arrays_included=False,
+        )
     q_levels = payload["q_levels"].detach().cpu().to(torch.int8).contiguous()
     frozen_scale = payload["frozen_scale"].detach().cpu().to(torch.float32).contiguous()
     if tensor_sha256(q_levels) != str(payload.get("q_sha256")):
@@ -584,6 +691,20 @@ def _state_from_roundtrip_payload(payload: Mapping[str, Any]) -> BoundedDeltaTen
         raise ValueError("2C4a sidecar must not save dense exact accumulator shadows")
     if bool(bounded_payload.get("dense_int16_accumulator_persisted")):
         raise ValueError("2C4a sidecar must not persist dense int16 accumulators")
+    if (
+        flag_enabled
+        and not byte_packed_saved
+        and any(
+            key in bounded_payload
+            for key in (
+                W6_BYTE_PACKED_PAYLOAD_KEY,
+                W6_BYTE_PACKED_SCHEMA_KEY,
+                W6_BYTE_PACKED_LOGICAL_SHAPE_KEY,
+                W6_BYTE_PACKED_LOGICAL_NUMEL_KEY,
+            )
+        )
+    ):
+        raise ValueError("2C4a byte-packed metadata present without persisted flag")
     return BoundedDeltaTensorState(
         state_key=str(payload["state_key"]),
         q_levels=q_levels,
@@ -600,6 +721,7 @@ def build_trainer_sub2_authority_checkpoint_blob(
     eligible_modules: Mapping[str, BitLinear],
     tensor_states: Mapping[str, BoundedDeltaTensorState],
     step: int = 0,
+    byte_packed_enabled: bool | None = None,
 ) -> dict[str, Any]:
     """Build a 2C4a reconstructable sidecar checkpoint blob.
 
@@ -618,9 +740,16 @@ def build_trainer_sub2_authority_checkpoint_blob(
         if str(key) not in set(eligible_weight_keys)
     }
     tensor_payloads = {
-        str(key): _tensor_state_roundtrip_payload(tensor_states[str(key)])
+        str(key): _tensor_state_roundtrip_payload(
+            tensor_states[str(key)],
+            byte_packed_enabled=byte_packed_enabled,
+        )
         for key in sorted(eligible_modules)
     }
+    byte_packed_saved = any(
+        bool((payload.get("bounded_accumulator") or {}).get(W6_BYTE_PACKED_ACCUMULATOR_PERSISTED_KEY))
+        for payload in tensor_payloads.values()
+    )
     sidecar = {
         "schema_version": TRAINER_SUB2_ROUNDTRIP_SCHEMA_VERSION,
         "artifact_role": "trainer_sub2_authoritative_sidecar",
@@ -630,6 +759,7 @@ def build_trainer_sub2_authority_checkpoint_blob(
         "tensor_payloads": tensor_payloads,
         "eligible_fp_masters_authoritative": False,
         "dense_int16_persistent_accumulator_saved": False,
+        "w6_byte_packed_persistent_accumulator_saved": bool(byte_packed_saved),
         "normal_bitlinear_weight_forward_not_claimed": True,
     }
     sidecar["authoritative_state_payload_sha256"] = _roundtrip_payload_sha256(sidecar)
@@ -652,6 +782,7 @@ def load_trainer_sub2_authority_checkpoint_blob(
     *,
     eligible_modules: Mapping[str, BitLinear],
     device: torch.device | str = "cpu",
+    byte_packed_enabled: bool | None = None,
 ) -> dict[str, BoundedDeltaTensorState]:
     if blob.get("schema_version") != TRAINER_SUB2_ROUNDTRIP_SCHEMA_VERSION:
         raise ValueError("2C4a checkpoint blob schema mismatch")
@@ -676,13 +807,23 @@ def load_trainer_sub2_authority_checkpoint_blob(
         raise ValueError("2C4a sidecar schema mismatch")
     if bool(sidecar.get("dense_int16_persistent_accumulator_saved")):
         raise ValueError("2C4a sidecar must not save dense int16 persistent accumulators")
+    if bool(sidecar.get("w6_byte_packed_persistent_accumulator_saved")) and not persistent_w6_byte_packed_enabled(
+        enabled=byte_packed_enabled
+    ):
+        raise ValueError(
+            "2C4a sidecar contains byte-packed W6 persistent accumulators but "
+            f"{PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV}=1 is not enabled"
+        )
     declared_hash = str(sidecar.get("authoritative_state_payload_sha256"))
     sidecar_without_hash = dict(sidecar)
     sidecar_without_hash.pop("authoritative_state_payload_sha256", None)
     if declared_hash != _roundtrip_payload_sha256(sidecar_without_hash):
         raise ValueError("2C4a sidecar authoritative payload hash mismatch")
     states = {
-        str(key): _state_from_roundtrip_payload(payload)
+        str(key): _state_from_roundtrip_payload(
+            payload,
+            byte_packed_enabled=byte_packed_enabled,
+        )
         for key, payload in sorted((sidecar.get("tensor_payloads") or {}).items())
     }
     if set(states) != set(eligible_modules):
