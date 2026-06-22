@@ -1,16 +1,19 @@
 """R3.0 fail-closed proofs for real uint8 W6 accumulator byte packing."""
 from __future__ import annotations
 
+import ast
 import copy
 import json
 import math
 import os
+from pathlib import Path
 
 import pytest
 import torch
 
 from calm.hrm_text_158.bit_linear import BitLinear
 from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
+    BoundedDeltaAccumulatorState,
     decode_bounded_accumulator_to_i16,
 )
 from calm.hrm_text_158.native_full_stack.narrow_accumulator_codec import (
@@ -41,6 +44,13 @@ from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
     load_trainer_sub2_authority_checkpoint_blob,
     persistent_w6_byte_packed_enabled,
     select_trainer_eligible_bitlinears,
+)
+from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
+    BoundedDeltaTensorState,
+    make_live_shadow_tensor_state,
+)
+from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+    build_r3_persistent_ledger_receipt,
 )
 
 
@@ -249,6 +259,105 @@ def test_authorized_packed_fields_allowed_only_when_flag_on(
         assert_no_packed_w6_state_leak(payload, byte_packed_enabled=False)
     monkeypatch.setenv(PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV, "1")
     assert_no_packed_w6_state_leak(payload, byte_packed_enabled=True)
+
+
+def _state_map_with_uniform_cold_default(
+    base_states: dict[str, BoundedDeltaTensorState],
+    *,
+    cold_default: int,
+) -> dict[str, BoundedDeltaTensorState]:
+    out: dict[str, BoundedDeltaTensorState] = {}
+    for key, state in base_states.items():
+        acc = state.bounded_accumulator
+        bounded = BoundedDeltaAccumulatorState(
+            logical_shape=tuple(acc.logical_shape),
+            cold_default_value=int(cold_default),
+            hot_exact_indices=(),
+            hot_exact_values=(),
+        )
+        out[key] = BoundedDeltaTensorState(
+            state_key=state.state_key,
+            q_levels=state.q_levels,
+            frozen_scale=state.frozen_scale,
+            bounded_accumulator=bounded,
+            exact_accumulator_shadow=None,
+            bounded_accumulator_fresh_for_exact_shadow=False,
+        )
+    return out
+
+
+def test_build_r3_persistent_ledger_receipt_value_sensitive_across_state_maps() -> None:
+    model = _TinyTernary()
+    eligible = select_trainer_eligible_bitlinears(model, use_ternary_bulk=True)
+    base = derive_trainer_sub2_authority_states(eligible)
+    initial = _state_map_with_uniform_cold_default(base, cold_default=0)
+    final = _state_map_with_uniform_cold_default(base, cold_default=31)
+    ledger_initial = build_r3_persistent_ledger_receipt(initial, byte_packed_enabled=True)
+    ledger_final = build_r3_persistent_ledger_receipt(final, byte_packed_enabled=True)
+    assert ledger_initial["r3_acc_physical_bits_per_weight"] == pytest.approx(6.0, abs=0.25)
+    assert ledger_final["r3_acc_physical_bits_per_weight"] == pytest.approx(6.0, abs=0.25)
+    assert ledger_initial["r3_artifact_bytes_total"] != ledger_final["r3_artifact_bytes_total"]
+
+
+def test_probe_r3_ledger_call_passes_final_states_as_first_positional_arg() -> None:
+    probe_path = (
+        Path(__file__).resolve().parents[3]
+        / "scripts"
+        / "hrm_text_158_bounded_delta_acquisition_probe.py"
+    )
+    tree = ast.parse(probe_path.read_text(encoding="utf-8"))
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "build_r3_persistent_ledger_receipt"
+    ]
+    assert len(calls) == 1
+    assert calls[0].args, "build_r3_persistent_ledger_receipt must have positional args"
+    first_arg = calls[0].args[0]
+    assert isinstance(first_arg, ast.Name)
+    assert first_arg.id == "final_states"
+
+
+def test_build_r3_persistent_ledger_receipt_uses_exact_shadow_when_bounded_stale() -> None:
+    model = _TinyTernary()
+    eligible = select_trainer_eligible_bitlinears(model, use_ternary_bulk=True)
+    base = derive_trainer_sub2_authority_states(eligible)
+    key = next(iter(base))
+    stale_prior = _state_map_with_uniform_cold_default(base, cold_default=0)[key]
+    shadow_i16 = torch.full(tuple(stale_prior.q_levels.shape), 31, dtype=torch.int16)
+    live_shadow = make_live_shadow_tensor_state(
+        stale_prior,
+        stale_prior.q_levels,
+        shadow_i16,
+    )
+    assert live_shadow.bounded_accumulator_fresh_for_exact_shadow is False
+    rebuilt = live_shadow.decoded_accumulators(rebuild_if_stale=True)
+    assert torch.equal(rebuilt, shadow_i16)
+    stale_decode = decode_bounded_accumulator_to_i16(live_shadow.bounded_accumulator)
+    assert not torch.equal(rebuilt, stale_decode)
+
+    ledger_live = build_r3_persistent_ledger_receipt(
+        {key: live_shadow},
+        byte_packed_enabled=True,
+    )
+    ledger_shadow_authority = build_r3_persistent_ledger_receipt(
+        _state_map_with_uniform_cold_default(base, cold_default=31),
+        byte_packed_enabled=True,
+    )
+    ledger_stale_bounded = build_r3_persistent_ledger_receipt(
+        _state_map_with_uniform_cold_default(base, cold_default=0),
+        byte_packed_enabled=True,
+    )
+    assert (
+        ledger_live["r3_artifact_bytes_total"]
+        == ledger_shadow_authority["r3_artifact_bytes_total"]
+    )
+    assert (
+        ledger_live["r3_artifact_bytes_total"]
+        != ledger_stale_bounded["r3_artifact_bytes_total"]
+    )
 
 
 def test_lane_domain_pack_w6_tensor_unchanged() -> None:

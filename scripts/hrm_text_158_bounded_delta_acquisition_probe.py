@@ -3130,7 +3130,7 @@ def build_r3_persistent_ledger_receipt(
                 scale=state.frozen_scale.detach().cpu().contiguous(),
             )
         )
-        decoded_i16 = decode_bounded_accumulator_to_i16(state.bounded_accumulator)
+        decoded_i16 = state.decoded_accumulators(rebuild_if_stale=True)
         packed_payloads.append(pack_w6_lanes_to_bytes(decoded_i16))
     artifact_blob = {
         "schema": "r3_w6_byte_packed_checkpoint_artifact_probe/v0",
@@ -6688,7 +6688,7 @@ def run_c2p1_probe(
         "receipt_emit_profile": str(receipt_emit_profile),
         "persistent_accumulator_w6_byte_packed": bool(persistent_accumulator_w6_byte_packed),
         "r3_persistent_ledger": build_r3_persistent_ledger_receipt(
-            tensor_states,
+            final_states,
             byte_packed_enabled=bool(persistent_accumulator_w6_byte_packed),
         ),
     }
