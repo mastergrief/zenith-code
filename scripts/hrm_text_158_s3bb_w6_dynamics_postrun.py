@@ -21,6 +21,27 @@ TREATMENT_ARM_DIR = "w6_carrier_flag_on"
 SUMMARY_FILENAME = "s3bb_headroom_summary.json"
 
 
+def preflight_arm_receipt_dirs(
+    run_root: Path,
+    *,
+    oracle_arm_dir: str,
+    treatment_arm_dir: str,
+) -> None:
+    """Fail-closed: both arm receipt.json paths must exist before classifier compare."""
+
+    missing: list[str] = []
+    for label, arm_dir in (("oracle", oracle_arm_dir), ("treatment", treatment_arm_dir)):
+        receipt_path = run_root / arm_dir / "receipt.json"
+        if not receipt_path.is_file():
+            missing.append(f"{label}={receipt_path}")
+    if missing:
+        raise FileNotFoundError(
+            "postrun arm receipt preflight failed; missing: "
+            + "; ".join(missing)
+            + f" (oracle_arm_dir={oracle_arm_dir!r}, treatment_arm_dir={treatment_arm_dir!r})"
+        )
+
+
 def _load_arm_receipt(run_root: Path, arm_dir: str) -> dict[str, Any]:
     receipt_path = run_root / arm_dir / "receipt.json"
     if not receipt_path.is_file():
@@ -69,6 +90,8 @@ def _collect_harness_failures(
 def build_s3bb_headroom_summary(
     *,
     run_root: Path,
+    oracle_arm_dir: str,
+    treatment_arm_dir: str,
     oracle_receipt: dict[str, Any],
     treatment_receipt: dict[str, Any],
     harness_failures: list[str],
@@ -82,8 +105,8 @@ def build_s3bb_headroom_summary(
     return {
         "slice_id": "w6_gpu_dynamics_parity_run_s3bb_v0",
         "run_root": str(run_root),
-        "oracle_arm": ORACLE_ARM_DIR,
-        "treatment_arm": TREATMENT_ARM_DIR,
+        "oracle_arm": str(oracle_arm_dir),
+        "treatment_arm": str(treatment_arm_dir),
         "oracle_steps_completed": int(oracle_receipt.get("steps_completed") or 0),
         "treatment_steps_completed": int(treatment_receipt.get("steps_completed") or 0),
         "treatment_stop_reason": str(treatment_receipt.get("stop_reason") or ""),
@@ -93,12 +116,25 @@ def build_s3bb_headroom_summary(
     }
 
 
-def run_postrun(*, run_root: Path, json_out: Path) -> dict[str, Any]:
-    oracle_receipt = _load_arm_receipt(run_root, ORACLE_ARM_DIR)
-    treatment_receipt = _load_arm_receipt(run_root, TREATMENT_ARM_DIR)
+def run_postrun(
+    *,
+    run_root: Path,
+    json_out: Path,
+    oracle_arm_dir: str = ORACLE_ARM_DIR,
+    treatment_arm_dir: str = TREATMENT_ARM_DIR,
+) -> dict[str, Any]:
+    preflight_arm_receipt_dirs(
+        run_root,
+        oracle_arm_dir=str(oracle_arm_dir),
+        treatment_arm_dir=str(treatment_arm_dir),
+    )
+    oracle_receipt = _load_arm_receipt(run_root, str(oracle_arm_dir))
+    treatment_receipt = _load_arm_receipt(run_root, str(treatment_arm_dir))
     harness_failures = _collect_harness_failures(oracle_receipt, treatment_receipt)
     summary = build_s3bb_headroom_summary(
         run_root=run_root,
+        oracle_arm_dir=str(oracle_arm_dir),
+        treatment_arm_dir=str(treatment_arm_dir),
         oracle_receipt=oracle_receipt,
         treatment_receipt=treatment_receipt,
         harness_failures=harness_failures,
@@ -128,9 +164,24 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--run-root", required=True, type=Path)
     parser.add_argument("--json-out", required=True, type=Path)
+    parser.add_argument(
+        "--oracle-arm-dir",
+        default=ORACLE_ARM_DIR,
+        help=f"Oracle arm scratch subdirectory under --run-root (default: {ORACLE_ARM_DIR})",
+    )
+    parser.add_argument(
+        "--treatment-arm-dir",
+        default=TREATMENT_ARM_DIR,
+        help=f"Treatment arm scratch subdirectory under --run-root (default: {TREATMENT_ARM_DIR})",
+    )
     args = parser.parse_args(argv)
 
-    receipt = run_postrun(run_root=args.run_root, json_out=args.json_out)
+    receipt = run_postrun(
+        run_root=args.run_root,
+        json_out=args.json_out,
+        oracle_arm_dir=str(args.oracle_arm_dir),
+        treatment_arm_dir=str(args.treatment_arm_dir),
+    )
     if receipt.get("primary_classifier") == CLASSIFIER_HEADROOM_BREACH:
         return 0
     return 0

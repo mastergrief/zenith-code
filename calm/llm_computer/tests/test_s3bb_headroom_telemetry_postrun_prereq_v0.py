@@ -35,7 +35,12 @@ from calm.hrm_text_158.native_full_stack.s3bb_headroom_telemetry import (
 from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     attach_s3bb_headroom_telemetry_to_step_report,
 )
-from scripts.hrm_text_158_s3bb_w6_dynamics_postrun import run_postrun
+from scripts.hrm_text_158_s3bb_w6_dynamics_postrun import (
+    ORACLE_ARM_DIR,
+    TREATMENT_ARM_DIR,
+    preflight_arm_receipt_dirs,
+    run_postrun,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -236,6 +241,97 @@ def test_t9_postrun_cli_schema(tmp_path: Path) -> None:
         (tmp_path / "classifier_receipt_cli.json").read_text(encoding="utf-8")
     )
     assert "primary_classifier" in cli_payload
+
+
+def test_postrun_explicit_r4_arm_dirs(tmp_path: Path) -> None:
+    oracle, treatment = _build_parity_receipts(steps=MEASURED_STEPS_REQUIRED)
+    oracle_dir = tmp_path / "w6_on_q_off_oracle"
+    treatment_dir = tmp_path / "w6_on_q_on_treatment"
+    oracle_dir.mkdir(parents=True)
+    treatment_dir.mkdir(parents=True)
+    oracle_dir.joinpath("receipt.json").write_text(
+        json.dumps(oracle, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    treatment_dir.joinpath("receipt.json").write_text(
+        json.dumps(treatment, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    classifier_path = tmp_path / "classifier_receipt.json"
+    receipt = run_postrun(
+        run_root=tmp_path,
+        json_out=classifier_path,
+        oracle_arm_dir="w6_on_q_off_oracle",
+        treatment_arm_dir="w6_on_q_on_treatment",
+    )
+    assert receipt["primary_classifier"] == CLASSIFIER_W6_HEADROOM_SUFFICIENT_PARITY_OK
+    summary = json.loads((tmp_path / "s3bb_headroom_summary.json").read_text(encoding="utf-8"))
+    assert summary["oracle_arm"] == "w6_on_q_off_oracle"
+    assert summary["treatment_arm"] == "w6_on_q_on_treatment"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "hrm_text_158_s3bb_w6_dynamics_postrun.py"),
+            "--run-root",
+            str(tmp_path),
+            "--json-out",
+            str(tmp_path / "classifier_receipt_cli_r4.json"),
+            "--oracle-arm-dir",
+            "w6_on_q_off_oracle",
+            "--treatment-arm-dir",
+            "w6_on_q_on_treatment",
+        ],
+        cwd=str(REPO_ROOT),
+        env={**os.environ, "PYTHONPATH": str(REPO_ROOT)},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0
+
+
+def test_postrun_default_legacy_arm_dir_names(tmp_path: Path) -> None:
+    oracle, treatment = _build_parity_receipts(steps=MEASURED_STEPS_REQUIRED)
+    (tmp_path / ORACLE_ARM_DIR).mkdir(parents=True)
+    (tmp_path / TREATMENT_ARM_DIR).mkdir(parents=True)
+    (tmp_path / ORACLE_ARM_DIR / "receipt.json").write_text(
+        json.dumps(oracle, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    (tmp_path / TREATMENT_ARM_DIR / "receipt.json").write_text(
+        json.dumps(treatment, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    receipt = run_postrun(
+        run_root=tmp_path,
+        json_out=tmp_path / "classifier_receipt.json",
+    )
+    assert receipt["primary_classifier"] == CLASSIFIER_W6_HEADROOM_SUFFICIENT_PARITY_OK
+    summary = json.loads((tmp_path / "s3bb_headroom_summary.json").read_text(encoding="utf-8"))
+    assert summary["oracle_arm"] == ORACLE_ARM_DIR
+    assert summary["treatment_arm"] == TREATMENT_ARM_DIR
+
+
+def test_postrun_preflight_raises_on_missing_arm_dir(tmp_path: Path) -> None:
+    oracle, _treatment = _build_parity_receipts(steps=MEASURED_STEPS_REQUIRED)
+    (tmp_path / ORACLE_ARM_DIR).mkdir(parents=True)
+    (tmp_path / ORACLE_ARM_DIR / "receipt.json").write_text(
+        json.dumps(oracle, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    with pytest.raises(FileNotFoundError, match="postrun arm receipt preflight failed"):
+        preflight_arm_receipt_dirs(
+            tmp_path,
+            oracle_arm_dir=ORACLE_ARM_DIR,
+            treatment_arm_dir=TREATMENT_ARM_DIR,
+        )
+    with pytest.raises(FileNotFoundError, match="postrun arm receipt preflight failed"):
+        run_postrun(
+            run_root=tmp_path,
+            json_out=tmp_path / "classifier_receipt.json",
+        )
 
 
 def test_t10_boundary_catch_path_s3bb_phase() -> None:
