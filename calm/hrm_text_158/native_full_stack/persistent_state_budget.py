@@ -52,6 +52,21 @@ R3_W6_BYTEPACKED_NOT_SUB2_STATEMENT = (
 )
 R3_ARTIFACT_BYTES_SEMANTICS_ACTUAL_PAYLOAD = "actual_packed_payload_bytes"
 
+R4_PERSISTENT_STATE_BUDGET_SCHEMA_VERSION = (
+    "hrm_text_158_persistent_state_budget/v0.r4_q_ternary_byte_packed"
+)
+R4_PERSISTENT_STATE_BUDGET_LABEL = "r4_q_ternary_byte_packed_checkpoint_ledger_not_sub2"
+R4_Q_PHYSICAL_BITS_PER_WEIGHT = 2.0
+R4_ACC_PHYSICAL_BITS_PER_WEIGHT = 6.0
+R4_LEDGER_PASS_INCLUSIVE_BPW_CEILING = 8.5
+R4_Q_BPW_TOLERANCE = 0.25
+R4_ACC_BPW_TOLERANCE = 0.25
+R4_Q_TERNARY_BYTEPACKED_NOT_SUB2_STATEMENT = (
+    "R4 q-state/q-term packing: serialized q = ternary 2-bit / ~2 bpw data; "
+    "serialized acc = W6 / 6 bpw; inclusive checkpoint ~8 bpw; still NOT sub-2, "
+    "NOT readiness, NOT hot-path, NOT mid-run resume."
+)
+
 
 @dataclass(frozen=True)
 class PackedTernaryQState:
@@ -152,6 +167,32 @@ class R3PersistentStateBudgetReport:
     r3_artifact_overhead_bytes: int
     r3_packed_payload_content_sha256: str
     r3_ledger_pass: bool
+    receipt_statement: str
+
+    def to_dict(self) -> dict[str, int | float | bool | str]:
+        return {field.name: getattr(self, field.name) for field in fields(self)}
+
+
+@dataclass(frozen=True)
+class R4PersistentStateBudgetReport:
+    """Byte-derived R4 checkpoint ledger for packed-q + W6-packed acc payloads."""
+
+    schema_version: str
+    label: str
+    eligible_weight_count: int
+    q_state_count: int
+    accumulator_payload_count: int
+    r4_q_physical_bits_per_weight: float
+    r4_q_metadata_bits_per_weight: float
+    r4_acc_physical_bits_per_weight: float
+    r4_checkpoint_inclusive_physical_bits_per_weight: float
+    r4_actual_q_payload_bytes: int
+    r4_actual_q_metadata_bytes: int
+    r4_actual_acc_payload_bytes: int
+    r4_frozen_scale_fp32_bits: int
+    r4_q_packed_content_sha256: str
+    r4_acc_packed_content_sha256: str
+    r4_ledger_pass: bool
     receipt_statement: str
 
     def to_dict(self) -> dict[str, int | float | bool | str]:
@@ -322,6 +363,161 @@ def reject_int16_tensors_for_r3_ledger(
         _reject_int16_tensor_as_packed_acc(acc, context="R3 ledger accumulator input")
 
 
+def _reject_int8_tensor_as_packed_q(value: torch.Tensor, *, context: str) -> None:
+    if value.dtype == torch.int8:
+        raise ValueError(
+            f"{context} must be a real uint8 byte payload with schema "
+            f"{PACKED_TERNARY_Q_FORMAT!r}, not torch.int8"
+        )
+    if value.element_size() > 1:
+        raise ValueError(
+            f"{context} physical payload must be 1-byte elements, got "
+            f"element_size={value.element_size()}"
+        )
+
+
+def _validate_r4_packed_q_payloads(
+    packed_q_payloads: Sequence[PackedTernaryQState],
+    *,
+    eligible_weight_count: int,
+) -> tuple[int, int]:
+    if len(packed_q_payloads) == 0:
+        raise ValueError("at least one byte-packed q payload is required for R4 ledger")
+    total_lanes = 0
+    total_payload_bytes = 0
+    total_metadata_bytes = 0
+    for payload in packed_q_payloads:
+        _validate_packed_state_metadata(payload)
+        _reject_int8_tensor_as_packed_q(payload.packed, context="R4 packed q payload")
+        if payload.packed.dtype != torch.uint8:
+            raise ValueError(f"R4 packed q payload must be torch.uint8, got {payload.packed.dtype}")
+        total_lanes += int(payload.logical_numel)
+        total_payload_bytes += int(payload.packed_data_bytes)
+        total_metadata_bytes += int(payload.metadata_bytes)
+    if total_lanes != int(eligible_weight_count):
+        raise ValueError(
+            "sum(packed_q.logical_numel) must match eligible q entries; "
+            f"got packed_lanes={total_lanes}, eligible={eligible_weight_count}"
+        )
+    return int(total_payload_bytes), int(total_metadata_bytes)
+
+
+def build_r4_per_module_q_rows(
+    state_keys: Sequence[str],
+    packed_q_payloads: Sequence[PackedTernaryQState],
+) -> list[dict[str, int | float | str | list[int]]]:
+    if len(state_keys) != len(packed_q_payloads):
+        raise ValueError("state_keys length must match packed_q_payloads")
+    rows: list[dict[str, int | float | str | list[int]]] = []
+    for state_key, payload in sorted(zip(state_keys, packed_q_payloads), key=lambda item: item[0]):
+        lanes = int(payload.logical_numel)
+        payload_bytes = int(payload.packed_data_bytes)
+        packed = payload.packed.detach().cpu().contiguous()
+        rows.append(
+            {
+                "state_key": str(state_key),
+                "logical_shape": [int(dim) for dim in payload.logical_shape],
+                "lanes": lanes,
+                "payload_bytes": payload_bytes,
+                "metadata_bytes": int(payload.metadata_bytes),
+                "padding_values": int(payload.padding_values),
+                "q_bpw": _bits_per_weight(payload_bytes * 8, lanes),
+                "payload_sha256": _sha256_hex(packed.numpy().tobytes()),
+            }
+        )
+    return rows
+
+
+def canonical_r4_q_packed_content_sha256(
+    per_module_rows: Sequence[Mapping[str, Any]],
+) -> str:
+    digest = hashlib.sha256()
+    for row in per_module_rows:
+        digest.update(
+            json.dumps(dict(row), sort_keys=True, separators=(",", ":")).encode("utf-8")
+        )
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def reject_int8_tensors_for_r4_ledger(
+    q_tensors: Sequence[torch.Tensor],
+) -> None:
+    """Fail-closed: R4 ledger must never accept int8 tensors as packed q."""
+
+    for q in q_tensors:
+        _reject_int8_tensor_as_packed_q(q, context="R4 ledger q input")
+
+
+def measure_r4_persistent_state_budget(
+    qscale_states: Sequence[QScaleWeightState],
+    packed_q_payloads: Sequence[PackedTernaryQState],
+    packed_acc_payloads: Sequence[Any],
+    *,
+    state_keys: Sequence[str] | None = None,
+) -> R4PersistentStateBudgetReport:
+    """Measure R4 checkpoint ledger from real uint8 q + acc payload bytes."""
+
+    if len(qscale_states) == 0:
+        raise ValueError("at least one qscale state is required for R4 persistent-state accounting")
+
+    eligible_weight_count = 0
+    scale_bits = 0
+    for qscale_state in qscale_states:
+        q_levels, _scale, _ = validate_qscale_weight_state(qscale_state)
+        eligible_weight_count += int(q_levels.numel())
+        scale_bits += 32
+
+    actual_q_payload_bytes, actual_q_metadata_bytes = _validate_r4_packed_q_payloads(
+        packed_q_payloads,
+        eligible_weight_count=eligible_weight_count,
+    )
+    actual_acc_payload_bytes = _validate_r3_packed_payloads(
+        packed_acc_payloads,
+        eligible_weight_count=eligible_weight_count,
+    )
+    effective_state_keys = (
+        list(state_keys)
+        if state_keys is not None
+        else [f"payload_{index}" for index in range(len(packed_q_payloads))]
+    )
+    if len(effective_state_keys) != len(packed_q_payloads):
+        raise ValueError("state_keys length must match packed_q_payloads")
+    q_rows = build_r4_per_module_q_rows(effective_state_keys, packed_q_payloads)
+    acc_rows = build_r3_per_module_payload_rows(effective_state_keys, packed_acc_payloads)
+    q_content_sha256 = canonical_r4_q_packed_content_sha256(q_rows)
+    acc_content_sha256 = canonical_r3_packed_payload_content_sha256(acc_rows)
+    q_physical_bpw = _bits_per_weight(actual_q_payload_bytes * 8, eligible_weight_count)
+    q_metadata_bpw = _bits_per_weight(actual_q_metadata_bytes * 8, eligible_weight_count)
+    acc_physical_bpw = _bits_per_weight(actual_acc_payload_bytes * 8, eligible_weight_count)
+    scale_bpw = _bits_per_weight(scale_bits, eligible_weight_count)
+    inclusive_bpw = float(q_physical_bpw + q_metadata_bpw + acc_physical_bpw + scale_bpw)
+    ledger_pass = (
+        abs(float(q_physical_bpw) - R4_Q_PHYSICAL_BITS_PER_WEIGHT) <= R4_Q_BPW_TOLERANCE
+        and abs(float(acc_physical_bpw) - R4_ACC_PHYSICAL_BITS_PER_WEIGHT) <= R4_ACC_BPW_TOLERANCE
+        and float(inclusive_bpw) <= R4_LEDGER_PASS_INCLUSIVE_BPW_CEILING
+    )
+    return R4PersistentStateBudgetReport(
+        schema_version=R4_PERSISTENT_STATE_BUDGET_SCHEMA_VERSION,
+        label=R4_PERSISTENT_STATE_BUDGET_LABEL,
+        eligible_weight_count=int(eligible_weight_count),
+        q_state_count=int(len(qscale_states)),
+        accumulator_payload_count=int(len(packed_acc_payloads)),
+        r4_q_physical_bits_per_weight=float(q_physical_bpw),
+        r4_q_metadata_bits_per_weight=float(q_metadata_bpw),
+        r4_acc_physical_bits_per_weight=float(acc_physical_bpw),
+        r4_checkpoint_inclusive_physical_bits_per_weight=float(inclusive_bpw),
+        r4_actual_q_payload_bytes=int(actual_q_payload_bytes),
+        r4_actual_q_metadata_bytes=int(actual_q_metadata_bytes),
+        r4_actual_acc_payload_bytes=int(actual_acc_payload_bytes),
+        r4_frozen_scale_fp32_bits=int(scale_bits),
+        r4_q_packed_content_sha256=str(q_content_sha256),
+        r4_acc_packed_content_sha256=str(acc_content_sha256),
+        r4_ledger_pass=bool(ledger_pass),
+        receipt_statement=R4_Q_TERNARY_BYTEPACKED_NOT_SUB2_STATEMENT,
+    )
+
+
 def _numel_from_shape(shape: Sequence[int]) -> int:
     numel = 1
     for dim in shape:
@@ -372,6 +568,7 @@ def pack_ternary_q_2bit_reference(q_levels: torch.Tensor) -> PackedTernaryQState
 
 
 def _validate_packed_state_metadata(state: PackedTernaryQState) -> None:
+    _reject_int8_tensor_as_packed_q(state.packed, context="packed q payload")
     if state.format != PACKED_TERNARY_Q_FORMAT:
         raise ValueError(f"packed q format must be {PACKED_TERNARY_Q_FORMAT!r}, got {state.format!r}")
     if state.packed.dtype != torch.uint8:

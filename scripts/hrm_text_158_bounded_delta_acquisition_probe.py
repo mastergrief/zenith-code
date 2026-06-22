@@ -160,11 +160,16 @@ from calm.hrm_text_158.native_full_stack.narrow_accumulator_codec import (
 from calm.hrm_text_158.native_full_stack.persistent_state_budget import (
     R3_ARTIFACT_BYTES_SEMANTICS_ACTUAL_PAYLOAD,
     build_r3_per_module_payload_rows,
+    build_r4_per_module_q_rows,
     measure_r3_persistent_state_budget,
+    measure_r4_persistent_state_budget,
+    pack_ternary_q_2bit_reference,
 )
 from calm.hrm_text_158.native_full_stack.qscale_linear import QScaleWeightState
 from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
     PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV,
+    PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV,
+    persistent_q_ternary_byte_packed_enabled,
     persistent_w6_byte_packed_enabled,
 )
 from calm.hrm_text_158.native_full_stack.two_tier_transient_selection import (
@@ -3152,6 +3157,51 @@ def build_r3_persistent_ledger_receipt(
     }
 
 
+def build_r4_persistent_ledger_receipt(
+    tensor_states: Mapping[str, Any],
+    *,
+    q_packed_enabled: bool,
+    acc_byte_packed_enabled: bool,
+) -> dict[str, Any]:
+    """Emit byte-derived R4 ledger fields for packed-q + W6-packed acc states."""
+
+    if not bool(q_packed_enabled) or not bool(acc_byte_packed_enabled):
+        return {"enabled": False}
+    state_keys: list[str] = []
+    qscale_states: list[QScaleWeightState] = []
+    packed_q_payloads = []
+    packed_acc_payloads = []
+    for state_key, state in sorted(tensor_states.items()):
+        state_keys.append(str(state_key))
+        q_levels = state.q_levels.detach().cpu().contiguous()
+        qscale_states.append(
+            QScaleWeightState(
+                q_levels=q_levels,
+                scale=state.frozen_scale.detach().cpu().contiguous(),
+            )
+        )
+        packed_q_payloads.append(pack_ternary_q_2bit_reference(q_levels))
+        decoded_i16 = state.decoded_accumulators(rebuild_if_stale=True)
+        packed_acc_payloads.append(pack_w6_lanes_to_bytes(decoded_i16))
+    q_rows = build_r4_per_module_q_rows(state_keys, packed_q_payloads)
+    acc_rows = build_r3_per_module_payload_rows(state_keys, packed_acc_payloads)
+    ledger = measure_r4_persistent_state_budget(
+        qscale_states,
+        packed_q_payloads,
+        packed_acc_payloads,
+        state_keys=state_keys,
+    )
+    return {
+        "enabled": True,
+        "eligible_module_count": len(tensor_states),
+        "persistent_q_ternary_byte_packed": True,
+        "persistent_accumulator_w6_byte_packed": True,
+        "r4_per_module_q_rows": q_rows,
+        "r4_per_module_acc_rows": acc_rows,
+        **ledger.to_dict(),
+    }
+
+
 def native_ternary_effective_weight(module: BitLinear) -> torch.Tensor:
     scale = module.weight.detach().abs().mean().clamp(min=module._SCALE_EPS)
     q = (module.weight.detach().to(torch.float32) / scale).round().clamp(-1.0, 1.0)
@@ -5767,6 +5817,7 @@ def run_c2p1_probe(
     checkpoint_states_dump: Path | None = None,
     receipt_emit_profile: str = RECEIPT_EMIT_PROFILE_FULL,
     persistent_accumulator_w6_byte_packed: bool = False,
+    persistent_q_ternary_byte_packed: bool = False,
 ) -> dict[str, Any]:
     oracle_screen_budget = int(oracle_screen_max_sampled_candidates)
     if oracle_screen_budget not in ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES:
@@ -5779,6 +5830,10 @@ def run_c2p1_probe(
         os.environ[PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV] = "1"
     elif PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV in os.environ:
         os.environ.pop(PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV, None)
+    if bool(persistent_q_ternary_byte_packed):
+        os.environ[PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV] = "1"
+    elif PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV in os.environ:
+        os.environ.pop(PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV, None)
     if oracle_screen_mode is not None and str(oracle_screen_mode) not in ORACLE_SCREEN_MODE_CHOICES:
         raise ValueError(
             f"oracle_screen_mode must be one of {ORACLE_SCREEN_MODE_CHOICES}, got {oracle_screen_mode!r}"
@@ -6684,6 +6739,12 @@ def run_c2p1_probe(
             final_states,
             byte_packed_enabled=bool(persistent_accumulator_w6_byte_packed),
         ),
+        "persistent_q_ternary_byte_packed": bool(persistent_q_ternary_byte_packed),
+        "r4_persistent_ledger": build_r4_persistent_ledger_receipt(
+            final_states,
+            q_packed_enabled=bool(persistent_q_ternary_byte_packed),
+            acc_byte_packed_enabled=bool(persistent_accumulator_w6_byte_packed),
+        ),
     }
     if slim_receipt_emit:
         assert headroom_wiring_sidecar_path is not None
@@ -7009,6 +7070,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     ap.add_argument(
+        "--persistent-q-ternary-byte-packed",
+        action="store_true",
+        help=(
+            "Default-off checkpoint seam: persist q levels as real uint8 "
+            "2-bit ternary byte payloads (in-step int8 hot path retained)."
+        ),
+    )
+    ap.add_argument(
         "--receipt-emit-profile",
         choices=list(RECEIPT_EMIT_PROFILE_CHOICES),
         default=RECEIPT_EMIT_PROFILE_FULL,
@@ -7085,6 +7154,10 @@ def main(argv: list[str] | None = None) -> int:
         persistent_accumulator_w6_byte_packed=bool(
             args.persistent_accumulator_w6_byte_packed
             or persistent_w6_byte_packed_enabled()
+        ),
+        persistent_q_ternary_byte_packed=bool(
+            args.persistent_q_ternary_byte_packed
+            or persistent_q_ternary_byte_packed_enabled()
         ),
     )
     print(json.dumps(receipt, indent=2, sort_keys=True), flush=True)

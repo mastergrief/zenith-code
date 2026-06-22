@@ -93,12 +93,28 @@ AUTHORIZED_W6_BYTE_PACKED_FIELD_MARKERS: tuple[str, ...] = (
     "w6_byte_packed_logical_numel",
     "w6_byte_packed_persistent_accumulator_saved",
 )
+AUTHORIZED_Q_TERNARY_BYTE_PACKED_FIELD_MARKERS: tuple[str, ...] = (
+    "q_ternary_byte_packed_persisted",
+    "q_ternary_packed_payload",
+    "q_ternary_packed_schema",
+    "q_ternary_logical_shape",
+    "q_ternary_logical_numel",
+    "q_ternary_padding_values",
+    "q_ternary_byte_packed_persisted_saved",
+)
+RAW_Q_LEVELS_FIELD = "q_levels"
 
 
 def persistent_w6_byte_packed_enabled(*, enabled: bool | None = None) -> bool:
     if enabled is not None:
         return bool(enabled)
     return os.environ.get("HRM_TEXT_158_PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED") == "1"
+
+
+def persistent_q_ternary_byte_packed_enabled(*, enabled: bool | None = None) -> bool:
+    if enabled is not None:
+        return bool(enabled)
+    return os.environ.get("HRM_TEXT_158_PERSISTENT_Q_TERNARY_BYTE_PACKED") == "1"
 
 
 def narrow_carrier_w6_enabled(*, enabled: bool | None = None) -> bool:
@@ -206,6 +222,31 @@ def assert_no_packed_w6_state_leak(
                 _walk(child, path=f"{path}[{index}]")
 
     _walk(dict(payload), path="payload")
+
+
+def assert_no_raw_int8_q_dual_persistence(
+    payload: Mapping[str, Any],
+    *,
+    q_packed_enabled: bool | None = None,
+) -> None:
+    """Fail-closed: byte-packed q checkpoints must not retain raw int8 q_levels."""
+
+    authorized = persistent_q_ternary_byte_packed_enabled(enabled=q_packed_enabled)
+    sidecar = payload.get("trainer_sub2_authority")
+    if not isinstance(sidecar, Mapping):
+        return
+    for module_key, module_payload in sorted((sidecar.get("tensor_payloads") or {}).items()):
+        if not isinstance(module_payload, Mapping):
+            continue
+        q_saved = bool(module_payload.get("q_ternary_byte_packed_persisted"))
+        if q_saved and RAW_Q_LEVELS_FIELD in module_payload:
+            raise ValueError(
+                f"raw int8 q_levels dual-persistence in checkpoint payload at {module_key}"
+            )
+        if q_saved and not authorized:
+            raise ValueError(
+                f"q-pack payload present without authorization at {module_key}"
+            )
 
 
 def emit_s2_classifier_receipt(
