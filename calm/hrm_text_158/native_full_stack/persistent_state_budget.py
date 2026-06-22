@@ -7,8 +7,10 @@ budget without claiming accumulator compression or sub-2-bit persistent state.
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
+import hashlib
+import json
 import math
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 import torch
 
@@ -48,6 +50,7 @@ R3_W6_BYTEPACKED_NOT_SUB2_STATEMENT = (
     "inclusive checkpoint ~14 bpw; remaining sub-2 levers = q-pack (rung-4) + "
     "vote-acc width."
 )
+R3_ARTIFACT_BYTES_SEMANTICS_ACTUAL_PAYLOAD = "actual_packed_payload_bytes"
 
 
 @dataclass(frozen=True)
@@ -147,6 +150,7 @@ class R3PersistentStateBudgetReport:
     r3_frozen_scale_fp32_bits: int
     r3_artifact_bytes_total: int
     r3_artifact_overhead_bytes: int
+    r3_packed_payload_content_sha256: str
     r3_ledger_pass: bool
     receipt_statement: str
 
@@ -196,11 +200,59 @@ def _validate_r3_packed_payloads(
     return int(total_payload_bytes)
 
 
+def _sha256_hex(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def build_r3_per_module_payload_rows(
+    state_keys: Sequence[str],
+    packed_acc_payloads: Sequence[Any],
+) -> list[dict[str, int | float | str | list[int]]]:
+    """Build sorted per-module R3 payload witness rows without raw byte lists."""
+
+    if len(state_keys) != len(packed_acc_payloads):
+        raise ValueError("state_keys length must match packed_acc_payloads")
+    rows: list[dict[str, int | float | str | list[int]]] = []
+    for state_key, payload in sorted(
+        zip(state_keys, packed_acc_payloads),
+        key=lambda item: item[0],
+    ):
+        lanes = int(getattr(payload, "logical_numel"))
+        payload_bytes = int(getattr(payload, "packed_data_bytes"))
+        packed = getattr(payload, "packed").detach().cpu().contiguous()
+        rows.append(
+            {
+                "state_key": str(state_key),
+                "logical_shape": [int(dim) for dim in getattr(payload, "logical_shape")],
+                "lanes": lanes,
+                "payload_bytes": payload_bytes,
+                "acc_bpw": _bits_per_weight(payload_bytes * 8, lanes),
+                "payload_sha256": _sha256_hex(packed.numpy().tobytes()),
+            }
+        )
+    return rows
+
+
+def canonical_r3_packed_payload_content_sha256(
+    per_module_rows: Sequence[Mapping[str, Any]],
+) -> str:
+    """Canonical aggregate sha256 over sorted per-module payload witness rows."""
+
+    digest = hashlib.sha256()
+    for row in per_module_rows:
+        digest.update(
+            json.dumps(dict(row), sort_keys=True, separators=(",", ":")).encode("utf-8")
+        )
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
 def measure_r3_persistent_state_budget(
     qscale_states: Sequence[QScaleWeightState],
     packed_acc_payloads: Sequence[Any],
     *,
     artifact_bytes_total: int | None = None,
+    state_keys: Sequence[str] | None = None,
 ) -> R3PersistentStateBudgetReport:
     """Measure R3 checkpoint ledger from real uint8 accumulator payload bytes."""
 
@@ -218,6 +270,18 @@ def measure_r3_persistent_state_budget(
         packed_acc_payloads,
         eligible_weight_count=eligible_weight_count,
     )
+    effective_state_keys = (
+        list(state_keys)
+        if state_keys is not None
+        else [f"payload_{index}" for index in range(len(packed_acc_payloads))]
+    )
+    if len(effective_state_keys) != len(packed_acc_payloads):
+        raise ValueError("state_keys length must match packed_acc_payloads")
+    per_module_rows = build_r3_per_module_payload_rows(
+        effective_state_keys,
+        packed_acc_payloads,
+    )
+    content_sha256 = canonical_r3_packed_payload_content_sha256(per_module_rows)
     acc_physical_bpw = _bits_per_weight(actual_acc_payload_bytes * 8, eligible_weight_count)
     scale_bpw = _bits_per_weight(scale_bits, eligible_weight_count)
     inclusive_bpw = float(R3_Q_INT8_BITS_PER_WEIGHT) + float(acc_physical_bpw) + float(scale_bpw)
@@ -243,6 +307,7 @@ def measure_r3_persistent_state_budget(
         r3_frozen_scale_fp32_bits=int(scale_bits),
         r3_artifact_bytes_total=int(artifact_total),
         r3_artifact_overhead_bytes=int(overhead_bytes),
+        r3_packed_payload_content_sha256=str(content_sha256),
         r3_ledger_pass=bool(ledger_pass),
         receipt_statement=R3_W6_BYTEPACKED_NOT_SUB2_STATEMENT,
     )

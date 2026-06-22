@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 import copy
+import hashlib
 import json
 import math
 import os
@@ -30,6 +31,7 @@ from calm.hrm_text_158.native_full_stack.narrow_carrier_trainer_integration impo
     assert_no_packed_w6_state_leak,
 )
 from calm.hrm_text_158.native_full_stack.persistent_state_budget import (
+    canonical_r3_packed_payload_content_sha256,
     measure_r3_persistent_state_budget,
     reject_int16_tensors_for_r3_ledger,
 )
@@ -137,6 +139,26 @@ def test_ledger_rejects_int16_input_and_counts_real_bytes() -> None:
     assert report.r3_actual_acc_payload_bytes == payload.packed_data_bytes
     assert report.r3_artifact_overhead_bytes >= 0
     assert report.r3_ledger_pass is True
+    assert report.r3_packed_payload_content_sha256
+    assert (
+        report.r3_packed_payload_content_sha256
+        == canonical_r3_packed_payload_content_sha256(
+            [
+                {
+                    "state_key": "payload_0",
+                    "logical_shape": list(payload.logical_shape),
+                    "lanes": int(payload.logical_numel),
+                    "payload_bytes": int(payload.packed_data_bytes),
+                    "acc_bpw": 8.0 * int(payload.packed_data_bytes) / int(payload.logical_numel),
+                    "payload_sha256": hashlib.sha256(
+                        payload.packed.detach().cpu().numpy().tobytes()
+                    ).hexdigest(),
+                }
+            ]
+        )
+    )
+    assert report.r3_artifact_bytes_total == report.r3_actual_acc_payload_bytes
+    assert report.r3_artifact_overhead_bytes == 0
     assert "int16 vote-acc remains" not in report.receipt_statement
     assert "W6 / 6 bpw" in report.receipt_statement
     assert "q stays int8 = 8 bpw" in report.receipt_statement
@@ -300,7 +322,14 @@ def test_build_r3_persistent_ledger_receipt_value_sensitive_across_state_maps() 
     ledger_final = build_r3_persistent_ledger_receipt(final, byte_packed_enabled=True)
     assert ledger_initial["r3_acc_physical_bits_per_weight"] == pytest.approx(6.0, abs=0.25)
     assert ledger_final["r3_acc_physical_bits_per_weight"] == pytest.approx(6.0, abs=0.25)
-    assert ledger_initial["r3_artifact_bytes_total"] != ledger_final["r3_artifact_bytes_total"]
+    assert (
+        ledger_initial["r3_packed_payload_content_sha256"]
+        != ledger_final["r3_packed_payload_content_sha256"]
+    )
+    assert (
+        ledger_initial["r3_artifact_bytes_total"]
+        == ledger_final["r3_artifact_bytes_total"]
+    )
 
 
 def test_probe_r3_ledger_call_passes_final_states_as_first_positional_arg() -> None:
@@ -355,12 +384,12 @@ def test_build_r3_persistent_ledger_receipt_uses_exact_shadow_when_bounded_stale
         byte_packed_enabled=True,
     )
     assert (
-        ledger_live["r3_artifact_bytes_total"]
-        == ledger_shadow_authority["r3_artifact_bytes_total"]
+        ledger_live["r3_packed_payload_content_sha256"]
+        == ledger_shadow_authority["r3_packed_payload_content_sha256"]
     )
     assert (
-        ledger_live["r3_artifact_bytes_total"]
-        != ledger_stale_bounded["r3_artifact_bytes_total"]
+        ledger_live["r3_packed_payload_content_sha256"]
+        != ledger_stale_bounded["r3_packed_payload_content_sha256"]
     )
 
 

@@ -158,6 +158,8 @@ from calm.hrm_text_158.native_full_stack.narrow_accumulator_codec import (
     pack_w6_lanes_to_bytes,
 )
 from calm.hrm_text_158.native_full_stack.persistent_state_budget import (
+    R3_ARTIFACT_BYTES_SEMANTICS_ACTUAL_PAYLOAD,
+    build_r3_per_module_payload_rows,
     measure_r3_persistent_state_budget,
 )
 from calm.hrm_text_158.native_full_stack.qscale_linear import QScaleWeightState
@@ -3117,13 +3119,15 @@ def build_r3_persistent_ledger_receipt(
     *,
     byte_packed_enabled: bool,
 ) -> dict[str, Any]:
-    """Emit byte-derived R3 ledger fields for one first-bitlinear module per arm."""
+    """Emit byte-derived R3 ledger fields for eligible tensor states."""
 
     if not bool(byte_packed_enabled):
         return {"enabled": False}
+    state_keys: list[str] = []
     qscale_states: list[QScaleWeightState] = []
     packed_payloads = []
-    for _state_key, state in sorted(tensor_states.items()):
+    for state_key, state in sorted(tensor_states.items()):
+        state_keys.append(str(state_key))
         qscale_states.append(
             QScaleWeightState(
                 q_levels=state.q_levels.detach().cpu().contiguous(),
@@ -3132,29 +3136,18 @@ def build_r3_persistent_ledger_receipt(
         )
         decoded_i16 = state.decoded_accumulators(rebuild_if_stale=True)
         packed_payloads.append(pack_w6_lanes_to_bytes(decoded_i16))
-    artifact_blob = {
-        "schema": "r3_w6_byte_packed_checkpoint_artifact_probe/v0",
-        "tensor_payloads": [
-            {
-                "logical_shape": list(payload.logical_shape),
-                "logical_numel": int(payload.logical_numel),
-                "packed_bytes": payload.packed.detach().cpu().tolist(),
-            }
-            for payload in packed_payloads
-        ],
-    }
-    artifact_bytes_total = len(
-        json.dumps(artifact_blob, separators=(",", ":"), sort_keys=True).encode("utf-8")
-    )
+    per_module_rows = build_r3_per_module_payload_rows(state_keys, packed_payloads)
     ledger = measure_r3_persistent_state_budget(
         qscale_states,
         packed_payloads,
-        artifact_bytes_total=artifact_bytes_total,
+        state_keys=state_keys,
     )
     return {
         "enabled": True,
         "eligible_module_count": len(tensor_states),
         "persistent_accumulator_w6_byte_packed": True,
+        "r3_artifact_bytes_semantics": R3_ARTIFACT_BYTES_SEMANTICS_ACTUAL_PAYLOAD,
+        "r3_per_module_payload_rows": per_module_rows,
         **ledger.to_dict(),
     }
 
