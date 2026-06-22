@@ -66,6 +66,13 @@ from calm.hrm_text_158.native_full_stack.global_rate_cap import (
     named_global_cap_contract_receipt,
     resolve_named_global_cap_spec,
 )
+from calm.hrm_text_158.native_full_stack.r7_cap_defer_pressure_instrumentation import (
+    R7_SIDECAR_FILENAME,
+    append_step_chunk,
+    build_step_chunk,
+    optional_selection_scores_from_step_result_compact,
+    pressure_mass_from_tensor_states,
+)
 from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
     decode_bounded_accumulator_to_i16,
 )
@@ -4024,6 +4031,20 @@ def _bounded_delta_vote_step_two_tier_kwargs(
     }
 
 
+def resolve_r7_deferred_backlog_vote_step_kwargs(
+    *,
+    r7_deferred_backlog_carry_enabled: bool,
+    carry_backlog: dict[str, dict[int, dict[str, int]]] | None,
+) -> dict[str, Any]:
+    if not r7_deferred_backlog_carry_enabled:
+        if carry_backlog is not None:
+            raise ValueError(
+                "r7_deferred_backlog_carry_enabled is false but carry_backlog is non-None"
+            )
+        return {}
+    return {"deferred_backlog": carry_backlog}
+
+
 def _materialize_selector_rows_for_crossing_coverage(
     *,
     votes: torch.Tensor,
@@ -4809,6 +4830,9 @@ def run_bounded_delta_steps(
     phase: str = "c2p1-real-model-smoke",
     snapshot_mode: str = SNAPSHOT_MODE_FULL,
     headroom_wiring_sidecar_path: Path | None = None,
+    r7_cap_defer_pressure_instrumentation_enabled: bool = False,
+    r7_deferred_backlog_carry_enabled: bool = False,
+    r7_cap_defer_pressure_sidecar_path: Path | None = None,
 ) -> tuple[
     dict[str, Any],
     dict[str, Any],
@@ -5033,6 +5057,8 @@ def run_bounded_delta_steps(
     stop_reason = "max_steps_completed"
     steps_completed = 0
     prior_applied_by_state_key: dict[str, list[int]] = {}
+    carry_backlog: dict[str, dict[int, dict[str, int]]] | None = None
+    prior_pressure_mass: int | None = None
     for step in range(1, int(steps) + 1):
         with progress.phase("step", step=int(step)):
             step_timing_start = _timing_start(device)
@@ -5343,6 +5369,12 @@ def run_bounded_delta_steps(
                         local_selection_ordering_step=int(step),
                         front_c_identity_observer=front_c_identity_observer,
                         **two_tier_vote_step_kwargs,
+                        **resolve_r7_deferred_backlog_vote_step_kwargs(
+                            r7_deferred_backlog_carry_enabled=bool(
+                                r7_deferred_backlog_carry_enabled
+                            ),
+                            carry_backlog=carry_backlog,
+                        ),
                     )
 
                 if str(phase) == S3BB_W6_HEADROOM_DIAGNOSTIC_PHASE:
@@ -5403,6 +5435,8 @@ def run_bounded_delta_steps(
                 else:
                     step_result = _materialize_bounded_delta_vote_step()
                 states = step_result.tensor_states
+                if r7_deferred_backlog_carry_enabled:
+                    carry_backlog = step_result.deferred_backlog
                 q_changed_count = int(step_result.global_summary.get("q_changed_count", 0))
                 if b2b_sequential_capture_enabled and b2b_step_capture is not None:
                     assert b2b_sequential_capture_out is not None
@@ -5502,6 +5536,31 @@ def run_bounded_delta_steps(
                     prior_applied_by_state_key,
                     step_result_compact,
                 )
+                if (
+                    r7_cap_defer_pressure_instrumentation_enabled
+                    and r7_cap_defer_pressure_sidecar_path is not None
+                ):
+                    pressure_mass = pressure_mass_from_tensor_states(pre_apply_states)
+                    pressure_mass_delta = (
+                        int(pressure_mass) - int(prior_pressure_mass)
+                        if prior_pressure_mass is not None
+                        else None
+                    )
+                    append_step_chunk(
+                        r7_cap_defer_pressure_sidecar_path,
+                        build_step_chunk(
+                            step=int(step),
+                            global_summary=step_result.global_summary,
+                            pressure_mass=pressure_mass,
+                            pressure_mass_delta=pressure_mass_delta,
+                            optional_selection_scores=(
+                                optional_selection_scores_from_step_result_compact(
+                                    step_result_compact
+                                )
+                            ),
+                        ),
+                    )
+                    prior_pressure_mass = pressure_mass
                 if device.type == "cuda":
                     step_cuda_memory_snapshots.append(
                         capture_cuda_phase_memory_snapshot(
@@ -5818,6 +5877,8 @@ def run_c2p1_probe(
     receipt_emit_profile: str = RECEIPT_EMIT_PROFILE_FULL,
     persistent_accumulator_w6_byte_packed: bool = False,
     persistent_q_ternary_byte_packed: bool = False,
+    r7_cap_defer_pressure_instrumentation_enabled: bool = False,
+    r7_deferred_backlog_carry_enabled: bool = False,
 ) -> dict[str, Any]:
     oracle_screen_budget = int(oracle_screen_max_sampled_candidates)
     if oracle_screen_budget not in ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES:
@@ -5984,6 +6045,11 @@ def run_c2p1_probe(
     )
     headroom_wiring_sidecar_path = (
         scratch_root / HEADROOM_WIRING_SIDECAR_FILENAME if slim_receipt_emit else None
+    )
+    r7_cap_defer_pressure_sidecar_path = (
+        scratch_root / R7_SIDECAR_FILENAME
+        if bool(r7_cap_defer_pressure_instrumentation_enabled)
+        else None
     )
     run_log_path = install_probe_durable_run_log(scratch_root)
     cuda_memory_snapshots_jsonl_path = install_probe_cuda_memory_snapshot_jsonl(
@@ -6532,6 +6598,11 @@ def run_c2p1_probe(
             phase=str(phase),
             snapshot_mode=str(snapshot_mode),
             headroom_wiring_sidecar_path=headroom_wiring_sidecar_path,
+            r7_cap_defer_pressure_instrumentation_enabled=bool(
+                r7_cap_defer_pressure_instrumentation_enabled
+            ),
+            r7_deferred_backlog_carry_enabled=bool(r7_deferred_backlog_carry_enabled),
+            r7_cap_defer_pressure_sidecar_path=r7_cap_defer_pressure_sidecar_path,
         )
     prior_audit_final_reports: dict[str, dict[str, Any]] = {}
     if prior_support_sets:
@@ -6750,6 +6821,14 @@ def run_c2p1_probe(
         assert headroom_wiring_sidecar_path is not None
         receipt["headroom_wiring_sidecar_path"] = str(headroom_wiring_sidecar_path)
         receipt["headroom_wiring_sidecar_schema"] = HEADROOM_WIRING_SIDECAR_SCHEMA_VERSION
+    if r7_cap_defer_pressure_instrumentation_enabled:
+        assert r7_cap_defer_pressure_sidecar_path is not None
+        receipt["r7_cap_defer_pressure_instrumentation_enabled"] = True
+        receipt["r7_cap_defer_pressure_sidecar_path"] = str(
+            r7_cap_defer_pressure_sidecar_path
+        )
+    if r7_deferred_backlog_carry_enabled:
+        receipt["r7_deferred_backlog_carry_enabled"] = True
     if b2_full_verdict_mode:
         assert b2_full_verdict_receipt is not None
         receipt.update(
@@ -7097,6 +7176,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "explicitly authorizes running without this guard."
         ),
     )
+    ap.add_argument(
+        "--r7-cap-defer-pressure-instrumentation",
+        action="store_true",
+        help=(
+            "Default-off R7 cap/defer pressure instrumentation. When enabled, "
+            "append compact per-step chunks to r7_cap_defer_pressure_sidecar.jsonl."
+        ),
+    )
+    ap.add_argument(
+        "--r7-deferred-backlog-carry",
+        action="store_true",
+        help=(
+            "Default-off cross-step deferred_backlog carry on the existing "
+            "non-candidate global-cap path. Required for R7 age falsifiability."
+        ),
+    )
     return ap
 
 
@@ -7159,6 +7254,10 @@ def main(argv: list[str] | None = None) -> int:
             args.persistent_q_ternary_byte_packed
             or persistent_q_ternary_byte_packed_enabled()
         ),
+        r7_cap_defer_pressure_instrumentation_enabled=bool(
+            args.r7_cap_defer_pressure_instrumentation
+        ),
+        r7_deferred_backlog_carry_enabled=bool(args.r7_deferred_backlog_carry),
     )
     print(json.dumps(receipt, indent=2, sort_keys=True), flush=True)
     return 0
