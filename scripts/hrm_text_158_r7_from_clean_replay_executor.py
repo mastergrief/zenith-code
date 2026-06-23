@@ -27,7 +27,12 @@ MOCK_FLAG_SCRIPTS = frozenset(
         "hrm_text_158_r7_resource_lane_release.py",
     }
 )
-SKIP_POST_SCRIPT = "hrm_text_158_r7_ai_room_terminal_post.py"
+SKIP_POST_SCRIPTS = frozenset(
+    {
+        "hrm_text_158_r7_ai_room_terminal_post.py",
+        "hrm_text_158_r8_ai_room_terminal_post.py",
+    }
+)
 
 
 def resolve_head(cwd: Path) -> str:
@@ -77,7 +82,7 @@ def append_executor_flags(argv: list[str], *, mock_lane: bool, skip_ai_room_post
     if mock_lane and target and Path(target).name in MOCK_FLAG_SCRIPTS:
         if "--mock" not in out:
             out.append("--mock")
-    if skip_ai_room_post and target and Path(target).name == SKIP_POST_SCRIPT:
+    if skip_ai_room_post and target and Path(target).name in SKIP_POST_SCRIPTS:
         if "--skip-post" not in out:
             out.append("--skip-post")
     return out
