@@ -5,12 +5,23 @@ import json
 from pathlib import Path
 
 import pytest
+import torch
 
+from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
+    encode_budget_capped_hybrid_reference,
+)
+from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
+    BoundedDeltaTensorState,
+    make_bounded_tensor_state,
+)
 from calm.hrm_text_158.native_full_stack.r7_cap_defer_pressure_instrumentation import (
+    HIGH_PRESSURE_ABS,
     R7_STEP_CHUNK_SCHEMA_VERSION,
     build_step_chunk,
+    pressure_mass_from_tensor_states,
     validate_accounting_invariant,
 )
+from calm.hrm_text_158.native_full_stack.vote_update import VoteUpdateState
 from calm.hrm_text_158.native_full_stack.r7_mechanism_classifier_probe import (
     BRANCH_ARTIFACT_INSUFFICIENT,
     BRANCH_CAP_DEFER,
@@ -241,6 +252,40 @@ def test_r7_backlog_carry_off_rejects_non_none_outside_contract() -> None:
             r7_deferred_backlog_carry_enabled=False,
             carry_backlog={"mod": {0: {"first_step": 1, "last_deferred_step": 1, "defer_count": 1}}},
         )
+
+
+def test_pressure_mass_from_bounded_delta_tensor_state_production_type() -> None:
+    q = torch.zeros((2, 3), dtype=torch.int8)
+    acc = torch.tensor([[5, 10, 15], [20, -3, 12]], dtype=torch.int16)
+    state = make_bounded_tensor_state("layer0", q, 1.0, acc)
+    expected = int(torch.sum(acc.abs() >= HIGH_PRESSURE_ABS).item())
+    assert expected == 4
+    assert pressure_mass_from_tensor_states({"layer0": state}) == expected
+
+
+def test_pressure_mass_from_vote_update_state_compat() -> None:
+    q = torch.zeros(4, dtype=torch.int8)
+    acc = torch.tensor([9, 10, -10, 3], dtype=torch.int16)
+    state = VoteUpdateState(q_levels=q, accumulators=acc)
+    assert pressure_mass_from_tensor_states({"x": state}) == 2
+
+
+def test_pressure_mass_bounded_without_exact_shadow_decodes() -> None:
+    q = torch.zeros((2,), dtype=torch.int8)
+    acc = torch.tensor([5, 15], dtype=torch.int16)
+    bounded = encode_budget_capped_hybrid_reference(
+        VoteUpdateState(q_levels=q, accumulators=acc),
+        hot_exact_indices=(0, 1),
+    )
+    state = BoundedDeltaTensorState(
+        state_key="no_shadow",
+        q_levels=q,
+        frozen_scale=torch.tensor(1.0, dtype=torch.float32),
+        bounded_accumulator=bounded,
+        exact_accumulator_shadow=None,
+        bounded_accumulator_fresh_for_exact_shadow=False,
+    )
+    assert pressure_mass_from_tensor_states({"no_shadow": state}) == 1
 
 
 def test_classifier_receipt_json_roundtrip(tmp_path: Path) -> None:

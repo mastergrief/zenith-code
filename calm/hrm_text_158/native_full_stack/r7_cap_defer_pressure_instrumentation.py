@@ -11,6 +11,10 @@ import torch
 from calm.hrm_text_158.native_full_stack.acc_width_recorded_row_sweep import (
     CANONICAL_VOTE_UPDATE_THRESHOLD_ABS,
 )
+from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
+    BoundedDeltaTensorState,
+)
+from calm.hrm_text_158.native_full_stack.vote_update import VoteUpdateState
 
 R7_STEP_CHUNK_SCHEMA_VERSION = "hrm_text_158_r7_cap_defer_pressure_step_chunk/v1"
 R7_SIDECAR_FILENAME = "r7_cap_defer_pressure_sidecar.jsonl"
@@ -31,10 +35,27 @@ REQUIRED_CAP_FIELDS: tuple[str, ...] = (
 )
 
 
+def _accumulator_i16_flat(state: Any) -> torch.Tensor:
+    if isinstance(state, BoundedDeltaTensorState):
+        return (
+            state.decoded_accumulators(rebuild_if_stale=True)
+            .detach()
+            .cpu()
+            .flatten()
+            .to(torch.int16)
+        )
+    if isinstance(state, VoteUpdateState):
+        return state.accumulators.detach().cpu().flatten().to(torch.int16)
+    raise TypeError(
+        "pressure_mass_from_tensor_states: unsupported tensor state type "
+        f"{type(state)!r}; expected BoundedDeltaTensorState or VoteUpdateState"
+    )
+
+
 def pressure_mass_from_tensor_states(tensor_states: Mapping[str, Any]) -> int:
     total = 0
     for state in tensor_states.values():
-        acc = state.accumulators.detach().cpu().flatten().to(torch.int16)
+        acc = _accumulator_i16_flat(state)
         total += int(torch.sum(acc.abs() >= HIGH_PRESSURE_ABS).item())
     return total
 
