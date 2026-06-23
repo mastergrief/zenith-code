@@ -81,6 +81,10 @@ def post_terminal_to_ai_room(
         indent=2,
         sort_keys=True,
     )
+    post_command = (
+        f"R7 from-clean terminal validation_receipt "
+        f"run_root={run_root} branch={terminal.get('primary_branch')}"
+    )
     raw = tool_post(
         handle,
         {
@@ -88,7 +92,9 @@ def post_terminal_to_ai_room(
             "to": "claude",
             "kind": "validation_receipt",
             "scope": "R7 from-clean cap/defer diagnostic terminal",
+            "command": post_command,
             "result": f"primary_branch={terminal.get('primary_branch')}",
+            "artifact_paths": [str(terminal_path), str(payload_path)],
         },
     )
     msg_id = None

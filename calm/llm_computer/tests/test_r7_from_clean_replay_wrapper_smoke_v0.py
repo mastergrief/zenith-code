@@ -144,6 +144,7 @@ class TestReplayCommandClassAudit:
         assert "tool_post" in source
         assert "ai_room_post_witness.json" in source
         assert "msg_id" in source
+        assert '"command"' in source
 
 
 class TestReplayExecutorDryRun:
@@ -583,3 +584,89 @@ class TestPrelaunchPersistenceWitness:
         witness = run_prelaunch_persistence_witness(tmp_path)
         assert witness["prelaunch_persistence_witness_pass"] is False
         assert any("step_n_plus_1_max_age_steps" in f for f in witness["failures"])
+
+
+class TestTerminalAutoPostDefectE:
+    def test_e1_real_post_passes_non_empty_command_and_writes_witness_with_msg_id(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        import types
+
+        import scripts.hrm_text_158_r7_ai_room_terminal_post as post_mod
+
+        run_root = tmp_path / "run"
+        run_root.mkdir()
+        terminal = {
+            "primary_branch": "R7_CAP_DEFER_BINDING",
+            "next_action": "COLLECT",
+            "steps_observed": 8,
+            "run_metrics": {"steps_observed": 8},
+            "classifier_receipt_sha256": "abc123",
+            "explicit_non_claims": ["no_mechanism_proof"],
+        }
+        terminal_path = run_root / "terminal_receipt.json"
+        terminal_path.write_text(json.dumps(terminal), encoding="utf-8")
+
+        captured: dict = {}
+        messages_mod = types.ModuleType("mcp_server_lib.tools.messages")
+        messages_mod.tool_post = lambda handle, payload: (
+            captured.update({"handle": handle, "payload": payload})
+            or "posted id=e1-test-msg-id"
+        )
+        monkeypatch.setitem(sys.modules, "mcp_server_lib.tools.messages", messages_mod)
+        monkeypatch.setattr(post_mod, "_init_ai_room", lambda: None)
+
+        witness = post_mod.post_terminal_to_ai_room(run_root, skip_post=False)
+        payload = captured["payload"]
+        assert isinstance(payload["command"], str)
+        assert payload["command"].strip()
+        assert "R7 from-clean terminal validation_receipt" in payload["command"]
+        assert payload["kind"] == "validation_receipt" if "kind" in payload else True
+        assert witness["msg_id"] == "e1-test-msg-id"
+        witness_path = run_root / "post_gpu" / "ai_room_post_witness.json"
+        assert witness_path.is_file()
+        on_disk = json.loads(witness_path.read_text(encoding="utf-8"))
+        assert on_disk["msg_id"] == "e1-test-msg-id"
+        assert on_disk["post_skipped"] is False
+
+    def test_e2_post_failure_nonzero_exit_release_still_runs_terminal_preserved(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        calls: list[str] = []
+        run_root = tmp_path / "run"
+        run_root.mkdir()
+        terminal_path = run_root / "terminal_receipt.json"
+        terminal_path.write_text(
+            json.dumps({"primary_branch": "R7_CAP_DEFER_BINDING", "steps_observed": 8}),
+            encoding="utf-8",
+        )
+
+        e2_replay = dict(MINIMAL_FINALIZE_REPLAY)
+        e2_replay["ai_room_post_terminal"] = "false"
+
+        def fake_run_command(command: str, **kwargs) -> int:
+            calls.append(command)
+            if command == "false":
+                return 1
+            return 0
+
+        monkeypatch.setattr(replay_executor, "run_command", fake_run_command)
+        replay_path = tmp_path / "replay_e2.json"
+        replay_path.write_text(json.dumps(e2_replay), encoding="utf-8")
+
+        rc = replay_executor.run_replay(
+            replay_path,
+            run_root,
+            "chain-e2",
+            skip_gpu=True,
+            mock_lane=True,
+            skip_ai_room_post=False,
+        )
+        assert rc != 0
+        assert calls.count("echo release") == 1
+        assert terminal_path.is_file()
+        classifier_idx = calls.index("echo classifier")
+        compose_idx = calls.index("echo compose")
+        post_idx = calls.index("false")
+        release_idx = calls.index("echo release")
+        assert classifier_idx < compose_idx < post_idx < release_idx

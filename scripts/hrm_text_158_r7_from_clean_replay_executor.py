@@ -130,18 +130,27 @@ def finalize_terminal_path(
     cwd: Path,
     mock_lane: bool,
     skip_ai_room_post: bool,
-) -> None:
+) -> int:
+    terminal_failure = 0
     for key in TERMINAL_ORDER:
         cmd = substitute_placeholders(
             resolve_command(replay, key), run_root, chain_id, head
         )
-        run_command(
+        rc = run_command(
             cmd,
             cwd=cwd,
             mock_lane=mock_lane,
             skip_ai_room_post=skip_ai_room_post,
             use_shell=False,
         )
+        if rc != 0:
+            print(
+                f"R7_TERMINAL_STEP_FAIL key={key} rc={rc}",
+                file=sys.stderr,
+            )
+            if terminal_failure == 0:
+                terminal_failure = rc
+    return terminal_failure
 
 
 def release_lane_once(
@@ -178,11 +187,11 @@ def finalize_and_release_once(
     mock_lane: bool,
     skip_ai_room_post: bool,
     finalized: set[str],
-) -> None:
+) -> int:
     if finalized:
-        return
+        return 0
     finalized.add("done")
-    finalize_terminal_path(
+    terminal_failure = finalize_terminal_path(
         replay,
         run_root=run_root,
         chain_id=chain_id,
@@ -200,6 +209,7 @@ def finalize_and_release_once(
         mock_lane=mock_lane,
         skip_ai_room_post=skip_ai_room_post,
     )
+    return terminal_failure
 
 
 def run_replay(
@@ -258,7 +268,7 @@ def run_replay(
             )
             return step_failure
 
-    finalize_and_release_once(
+    terminal_failure = finalize_and_release_once(
         replay,
         run_root=run_root_str,
         chain_id=chain_id,
@@ -268,6 +278,8 @@ def run_replay(
         skip_ai_room_post=skip_ai_room_post,
         finalized=finalized,
     )
+    if terminal_failure != 0:
+        return terminal_failure
     return step_failure
 
 
