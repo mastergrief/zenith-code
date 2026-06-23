@@ -45,6 +45,12 @@ C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME = (
 )
 C1_BANKED_FAITHFUL_LONG_RUN_FINITE_SCHEDULE_SOURCE = (512, 512, 256, 256)
 C1_BANKED_FAITHFUL_LONG_RUN_TRANSLATION = "steps 1..2 cap=512; steps >=3 cap=256"
+GLOBAL_CAP_RELAX_512_CONTRACT_NAME = "global_cap_relax_512"
+GLOBAL_CAP_RELAX_512_CAP = 512
+GLOBAL_CAP_RELAX_512_FINITE_SCHEDULE_SOURCE = (512,)
+GLOBAL_CAP_RELAX_512_TRANSLATION = (
+    "all measured steps cap=512 (relax vs c1 step>=3 cap=256)"
+)
 
 
 class GlobalRateCapOrderingMode(str, Enum):
@@ -178,6 +184,30 @@ def c1_banked_faithful_long_run_global_cap_contract() -> dict[str, Any]:
     }
 
 
+def global_cap_relax_512_for_step(step: int) -> int:
+    step_i = int(step)
+    if step_i < 1:
+        raise ValueError(f"step must be >=1 for global_cap_relax_512 contract, got {step}")
+    return GLOBAL_CAP_RELAX_512_CAP
+
+
+def global_cap_relax_512_contract() -> dict[str, Any]:
+    return {
+        "schema": "global_cap_relax_512_contract/v1",
+        "name": GLOBAL_CAP_RELAX_512_CONTRACT_NAME,
+        "helper": "global_cap_relax_512_for_step",
+        "enabled": True,
+        "experimental": True,
+        "active_runtime_control": False,
+        "finite_schedule_source": list(GLOBAL_CAP_RELAX_512_FINITE_SCHEDULE_SOURCE),
+        "long_run_translation": GLOBAL_CAP_RELAX_512_TRANSLATION,
+        "per_step_assertions": [
+            "step >= 1 implies global_rate_cap_cap == 512",
+            "q_changed_count == global_rate_cap_applied_count",
+        ],
+    }
+
+
 def named_global_cap_contract_receipt(contract_name: str) -> dict[str, Any]:
     name = str(contract_name)
     if name == GLOBAL_CAP_CONTRACT_OFF:
@@ -188,6 +218,8 @@ def named_global_cap_contract_receipt(contract_name: str) -> dict[str, Any]:
         }
     if name == C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME:
         return c1_banked_faithful_long_run_global_cap_contract()
+    if name == GLOBAL_CAP_RELAX_512_CONTRACT_NAME:
+        return global_cap_relax_512_contract()
     raise ValueError(f"unknown global cap contract {contract_name!r}")
 
 
@@ -202,6 +234,11 @@ def resolve_named_global_cap_spec(
     if name == C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME:
         return GlobalRateCapSpec(
             cap=c1_banked_faithful_long_run_global_cap_for_step(int(step)),
+            step=int(step),
+        )
+    if name == GLOBAL_CAP_RELAX_512_CONTRACT_NAME:
+        return GlobalRateCapSpec(
+            cap=global_cap_relax_512_for_step(int(step)),
             step=int(step),
         )
     raise ValueError(f"unknown global cap contract {contract_name!r}")

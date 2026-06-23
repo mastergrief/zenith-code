@@ -20,12 +20,15 @@ from calm.hrm_text_158.native_full_stack.global_rate_cap import (
     DEFER_ALL_NO_BACKFILL_TIE_RULE_MODE,
     EXACT_GLOBAL_CAP_TIE_RULE_MODE,
     GLOBAL_CAP_CONTRACT_OFF,
+    GLOBAL_CAP_RELAX_512_CONTRACT_NAME,
     GlobalRateCapOrderingMode,
     GlobalRateCapSpec,
     GlobalRateCapTensorInput,
     apply_global_rate_cap_reference,
     c1_banked_faithful_long_run_global_cap_contract,
     c1_banked_faithful_long_run_global_cap_for_step,
+    global_cap_relax_512_contract,
+    global_cap_relax_512_for_step,
     named_global_cap_contract_receipt,
     resolve_named_global_cap_spec,
     scratch_s1_global_cap_contract,
@@ -138,6 +141,26 @@ def test_c1_banked_faithful_long_run_contract_schedule_and_named_resolution():
     assert resolved.cap == 256
     assert resolved.step == 4
     assert resolve_named_global_cap_spec(GLOBAL_CAP_CONTRACT_OFF, step=4) is None
+
+
+def test_global_cap_relax_512_contract_schedule_and_named_resolution():
+    for step in (1, 3, 10):
+        assert global_cap_relax_512_for_step(step) == 512
+    with pytest.raises(ValueError, match="step must be >=1"):
+        global_cap_relax_512_for_step(0)
+
+    contract = global_cap_relax_512_contract()
+    assert contract["name"] == GLOBAL_CAP_RELAX_512_CONTRACT_NAME
+    assert contract["finite_schedule_source"] == [512]
+    assert "relax vs c1 step>=3 cap=256" in contract["long_run_translation"]
+
+    named_receipt = named_global_cap_contract_receipt(GLOBAL_CAP_RELAX_512_CONTRACT_NAME)
+    assert named_receipt["name"] == GLOBAL_CAP_RELAX_512_CONTRACT_NAME
+
+    resolved = resolve_named_global_cap_spec(GLOBAL_CAP_RELAX_512_CONTRACT_NAME, step=3)
+    assert resolved is not None
+    assert resolved.cap == 512
+    assert c1_banked_faithful_long_run_global_cap_for_step(3) == 256
 
 
 def test_ordering_modes_match_live_static_dispatch():

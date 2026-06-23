@@ -1,0 +1,20 @@
+{
+  "schema": "r8_cap_relax_fixture/v0",
+  "note": "Synthetic prior_audit fragment for CAP_RELAX_DESTABILIZES branch tests.",
+  "prior_audit": {
+    "enabled": true,
+    "requested_supports": ["L0b", "math_a0", "L0c1"],
+    "deltas": {
+      "math_a0": {
+        "new_strict_failure_row_ids": ["math_a0:row_42"],
+        "new_parsed_failure_row_ids": ["math_a0:parsed_only"]
+      }
+    },
+    "start_reports": {
+      "math_a0": {"audit_mismatch": false, "strict_failure_row_ids": []}
+    },
+    "final_reports": {
+      "math_a0": {"audit_mismatch": false, "strict_failure_row_ids": ["math_a0:row_42"]}
+    }
+  }
+}
