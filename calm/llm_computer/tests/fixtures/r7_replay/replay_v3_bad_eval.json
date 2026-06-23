@@ -1,0 +1,12 @@
+{
+  "schema": "hrm_text_158_r7_replay_fixture_v3_bad_eval/v1",
+  "argv_validation_command": "PYTHONPATH=. python3 -c \"\\nimport json, sys\\nfrom pathlib import Path\\nrun_root = Path(sys.argv[1])\\n\" \"{run_root}\" 284899b9cbf4fe664581bf3bbc01d345373e20cd",
+  "execution_wrapper_command": "set -uo pipefail\ncmd=\"python3 -c print(1)\"\neval \"$cmd\"",
+  "terminal_receipt_compose_command": "PYTHONPATH=. python3 - \"{run_root}\" <<'PY'\nimport json\nprint(json.dumps({}))\nPY",
+  "ai_room_post_terminal": "PYTHONPATH=. python3 - \"{run_root}\" <<'PY'\nprint('heredoc')\nPY",
+  "test_operator_execution_order": [
+    "argv_validation_command",
+    "terminal_receipt_compose_command",
+    "ai_room_post_terminal"
+  ]
+}
