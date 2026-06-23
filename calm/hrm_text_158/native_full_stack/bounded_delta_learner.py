@@ -818,7 +818,12 @@ class BoundedDeltaTensorState:
             "exact_shadow_matches_bounded_decode": matches,
         }
 
-    def vote_update_state(self, *, device: torch.device | str | None = None) -> VoteUpdateState:
+    def vote_update_state(
+        self,
+        *,
+        device: torch.device | str | None = None,
+        two_tier_carry_w6_enabled: bool = False,
+    ) -> VoteUpdateState:
         if self.exact_accumulator_shadow is None:
             raise ValueError(
                 "dense oracle/control vote_update_state is unavailable for a bounded-only "
@@ -828,11 +833,12 @@ class BoundedDeltaTensorState:
             self.exact_accumulator_shadow.to(device=device).contiguous()
             if device is not None else self.exact_accumulator_shadow.contiguous()
         )
-        from calm.hrm_text_158.native_full_stack.narrow_carrier_trainer_integration import (
-            apply_trainer_boundary_narrow_carrier,
-        )
+        if not two_tier_carry_w6_enabled:
+            from calm.hrm_text_158.native_full_stack.narrow_carrier_trainer_integration import (
+                apply_trainer_boundary_narrow_carrier,
+            )
 
-        accumulators = apply_trainer_boundary_narrow_carrier(accumulators)
+            accumulators = apply_trainer_boundary_narrow_carrier(accumulators)
         return VoteUpdateState(
             q_levels=self.q_levels.to(device=device).contiguous() if device is not None else self.q_levels,
             accumulators=accumulators,
@@ -1928,7 +1934,9 @@ def apply_bounded_delta_vote_step(
     plans_by_key = {}
     cap_inputs: list[GlobalRateCapTensorInput] = []
     for state_key, state in sorted(tensor_states.items()):
-        vu_state = state.vote_update_state()
+        vu_state = state.vote_update_state(
+            two_tier_carry_w6_enabled=bool(two_tier_carry_w6_enabled),
+        )
         votes = votes_by_key[state_key].detach().cpu().to(torch.int16).contiguous()
         local_loss_delta = None
         if two_tier_carry_w6_enabled:

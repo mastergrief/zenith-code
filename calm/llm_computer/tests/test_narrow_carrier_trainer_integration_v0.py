@@ -101,6 +101,57 @@ def test_enabled_trainer_boundary_rejects_out_of_domain_accumulator() -> None:
         roundtrip_int16_values_through_trainer_boundary([100], enabled=True)
 
 
+def test_c1_two_tier_skips_strict_narrow_carrier_on_overflow_accumulator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Combined narrow-carrier ON + two_tier_carry_w6: overflow must not strict-reject pre-plan."""
+
+    monkeypatch.setenv(RUN_NARROW_CARRIER_W6_TRAINER_INTEGRATION_ENV, "1")
+    overflow_acc = torch.tensor([[50, -40]], dtype=torch.int16)
+    state = make_bounded_tensor_state(
+        "toy.proj",
+        torch.tensor([[0, 0]], dtype=torch.int8),
+        0.5,
+        overflow_acc,
+    )
+    # Without two_tier deferral, strict W6 boundary rejects overflow.
+    with pytest.raises(ValueError, match="pack_w6 requires value"):
+        state.vote_update_state(two_tier_carry_w6_enabled=False)
+
+    vu = state.vote_update_state(two_tier_carry_w6_enabled=True)
+    assert torch.equal(vu.accumulators, overflow_acc)
+
+    from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
+        apply_bounded_delta_vote_step,
+    )
+    from calm.hrm_text_158.native_full_stack.vote_update import (
+        LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
+        VoteUpdateSpec,
+    )
+
+    result = apply_bounded_delta_vote_step(
+        tensor_states={"toy.proj": state},
+        votes_by_key={"toy.proj": torch.tensor([[3, -3]], dtype=torch.int16)},
+        vote_specs_by_key={
+            "toy.proj": VoteUpdateSpec(
+                threshold_abs=10,
+                accumulator_clip_min=-127,
+                accumulator_clip_max=127,
+                max_abs_per_tensor=8,
+            )
+        },
+        local_loss_delta_by_key={
+            "toy.proj": torch.tensor([[0.5, 0.5]], dtype=torch.float32),
+        },
+        two_tier_carry_w6_enabled=True,
+        local_selection_ordering_mode=LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
+        parity_check=True,
+    )
+    post_acc = result.tensor_states["toy.proj"].exact_accumulator_shadow
+    assert post_acc is not None
+    assert int(post_acc.abs().max()) <= 127
+
+
 def test_replay_clip_helper_is_separate_from_trainer_boundary() -> None:
     assert roundtrip_replay_clip_int16_value(100) == 31
     assert roundtrip_replay_clip_int16_value(-100) == -31

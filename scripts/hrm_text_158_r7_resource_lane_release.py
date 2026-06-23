@@ -7,6 +7,20 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any, Mapping
+
+
+def release_lane_request(holding: Mapping[str, Any]) -> tuple[str, str | None]:
+    """Return (lane_name, token) for resource_lane_release from a holding witness."""
+
+    acquire = holding.get("acquire_result") or {}
+    token = acquire.get("token")
+    lane_name = (
+        holding.get("request_alias")
+        or acquire.get("request_alias")
+        or "gpu:hrm-text-158"
+    )
+    return str(lane_name), token if token is None else str(token)
 
 
 def release_resource_lane(run_root: Path, *, mock: bool = False) -> dict:
@@ -16,17 +30,12 @@ def release_resource_lane(run_root: Path, *, mock: bool = False) -> dict:
         print(json.dumps(witness))
         return witness
     holding = json.loads(holding_path.read_text(encoding="utf-8"))
-    acquire = holding.get("acquire_result") or {}
-    token = acquire.get("token")
+    lane_name, token = release_lane_request(holding)
     if not token:
         witness = {"released": False, "reason": "no_token_in_holding"}
         print(json.dumps(witness))
         return witness
-    lane_name = (
-        acquire.get("canonical_name")
-        or acquire.get("physical_key")
-        or holding.get("request_alias", "gpu:hrm-text-158")
-    )
+    acquire = holding.get("acquire_result") or {}
     if mock or holding.get("mock"):
         result = {"released": True, "mock": True}
     else:

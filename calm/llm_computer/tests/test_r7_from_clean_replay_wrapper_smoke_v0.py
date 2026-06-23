@@ -19,6 +19,7 @@ V4_GOOD = FIXTURE_DIR / "replay_v4_good_scripts.json"
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from calm.hrm_text_158.native_full_stack.box_lane import EXIT_CODE_CURRENCY_MISMATCH
 from scripts import hrm_text_158_r7_from_clean_replay_executor as replay_executor
 from scripts.hrm_text_158_r7_prelaunch_persistence_witness import run_prelaunch_persistence_witness
 
@@ -174,6 +175,76 @@ class TestReplayExecutorDryRun:
             (run_root / "prelaunch" / "argv_validation.json").read_text(encoding="utf-8")
         )
         assert argv_validation["all_parse_ok"] is True
+
+    def test_dry_run_fixture_substitutes_current_head_at_runtime(self, tmp_path: Path) -> None:
+        run_root = tmp_path / "run"
+        run_root.mkdir()
+        current_head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(REPO_ROOT / "scripts/hrm_text_158_r7_from_clean_replay_executor.py"),
+                "--replay-json",
+                str(V4_GOOD),
+                "--run-root",
+                str(run_root),
+                "--chain-id",
+                "r7-head-subst-smoke",
+                "--dry-run-prelaunch",
+                "--mock-lane",
+                "--skip-ai-room-post",
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        assert proc.returncode == 0, proc.stderr + proc.stdout
+        preflight = json.loads(
+            (run_root / "prelaunch" / "box_code_currency_preflight.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert preflight["head_sha"] == current_head
+        assert preflight["head_now"] == current_head
+        assert preflight["code_currency_pass"] is True
+        argv_validation = json.loads(
+            (run_root / "prelaunch" / "argv_validation.json").read_text(encoding="utf-8")
+        )
+        assert argv_validation["head_pin"] == current_head
+
+    def test_stale_launch_packet_head_pin_fails_code_currency_fail_closed(
+        self, tmp_path: Path
+    ) -> None:
+        stale_head = "0000000000000000000000000000000000000000"
+        out_path = tmp_path / "box_code_currency_preflight.json"
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(REPO_ROOT / "scripts/box_lane_code_currency_preflight.py"),
+                "--skip-fetch",
+                "--chain-id",
+                "r7-stale-head-pin",
+                "--head-expected",
+                stale_head,
+                "--output",
+                str(out_path),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert proc.returncode == EXIT_CODE_CURRENCY_MISMATCH
+        payload = json.loads(out_path.read_text(encoding="utf-8"))
+        assert payload["code_currency_pass"] is False
+        assert "HEAD_NOW_MISMATCH" in payload["mismatches"]
 
     @pytest.mark.skipif(
         not Path(
@@ -341,6 +412,127 @@ class TestHarnessFailClosedTerminalChain:
         assert witness["terminal_receipt_sha256"] == hashlib.sha256(
             terminal_path.read_bytes()
         ).hexdigest()
+
+
+class TestCrashedDiagnosticTerminalChain:
+    def test_real_classifier_compose_post_with_cap_defer_branch_no_diagnostic_receipt(
+        self, tmp_path: Path
+    ) -> None:
+        from calm.hrm_text_158.native_full_stack.r7_cap_defer_pressure_instrumentation import (
+            build_step_chunk,
+        )
+
+        run_root = tmp_path / "run"
+        diagnostic = run_root / "diagnostic"
+        diagnostic.mkdir(parents=True)
+        sidecar = diagnostic / "r7_cap_defer_pressure_sidecar.jsonl"
+        chunks = []
+        for step in range(1, 9):
+            candidate = 100
+            deferred = 60
+            accepted = 40
+            summary = {
+                "global_rate_cap_enabled": True,
+                "global_pre_cap_would_apply_count": candidate,
+                "global_rate_cap_accepted_count": accepted,
+                "global_rate_cap_deferred_count": deferred,
+                "global_rate_cap_cap": 40,
+                "global_rate_cap_saturated": True,
+                "q_changed_count": accepted,
+                "deferred_backlog_size": deferred,
+                "deferred_backlog_max_age_steps": 1 if step > 1 else 0,
+                "deferred_backlog_max_defer_count": 1 if step > 1 else 0,
+                "accepted_from_prior_deferred_count": 0,
+                "accepted_fresh_count": accepted,
+            }
+            pressure = 10 + step * 2
+            chunks.append(
+                build_step_chunk(
+                    step=step,
+                    global_summary=summary,
+                    pressure_mass=pressure,
+                    pressure_mass_delta=None if step == 1 else pressure - chunks[-1]["pressure_mass"],
+                )
+            )
+        sidecar.write_text("\n".join(json.dumps(c) for c in chunks) + "\n", encoding="utf-8")
+
+        head = "2105cb5b72c3446a7018429c3629ed03d5db4721"
+        classifier_out = run_root / "r7_mechanism_classifier_receipt.json"
+        classifier_proc = subprocess.run(
+            [
+                sys.executable,
+                str(REPO_ROOT / "scripts/hrm_text_158_r7_mechanism_classifier_probe.py"),
+                "--run-root",
+                str(diagnostic),
+                "--head-sha256",
+                head,
+                "--json-out",
+                str(classifier_out),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert classifier_proc.returncode == 0, classifier_proc.stderr + classifier_proc.stdout
+
+        compose_proc = subprocess.run(
+            [
+                sys.executable,
+                str(REPO_ROOT / "scripts/hrm_text_158_r7_terminal_receipt_compose.py"),
+                str(run_root),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert compose_proc.returncode == 0, compose_proc.stderr + compose_proc.stdout
+        terminal_path = run_root / "terminal_receipt.json"
+        assert terminal_path.is_file()
+
+        post_proc = subprocess.run(
+            [
+                sys.executable,
+                str(REPO_ROOT / "scripts/hrm_text_158_r7_ai_room_terminal_post.py"),
+                str(run_root),
+                "--skip-post",
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert post_proc.returncode == 0, post_proc.stderr + post_proc.stdout
+        witness_path = run_root / "post_gpu" / "ai_room_post_witness.json"
+        assert witness_path.is_file()
+
+        classifier = json.loads(classifier_out.read_text(encoding="utf-8"))
+        terminal = json.loads(terminal_path.read_text(encoding="utf-8"))
+        assert classifier["branch_selection"]["branch"] == "R7_CAP_DEFER_BINDING"
+        assert terminal["primary_branch"] == "R7_CAP_DEFER_BINDING"
+        assert terminal["run_incomplete"] is True
+        assert terminal["diagnostic_crashed"] is True
+        assert terminal["diagnostic_receipt_missing"] is True
+        assert terminal["diagnostic_receipt_path"] is None
+        assert int(terminal["steps_observed"]) >= 8
+
+
+class TestResourceLaneReleaseAlias:
+    def test_release_lane_request_prefers_request_alias_over_canonical(self) -> None:
+        from scripts.hrm_text_158_r7_resource_lane_release import release_lane_request
+
+        holding = {
+            "request_alias": "gpu:hrm-text-158",
+            "acquire_result": {
+                "token": "tok-abc",
+                "canonical_name": "gpu:TheRig:uuid:GPU-4c376502-9cde-e181-ec2b-9773b307342e",
+            },
+        }
+        lane_name, token = release_lane_request(holding)
+        assert lane_name == "gpu:hrm-text-158"
+        assert token == "tok-abc"
+        assert lane_name != holding["acquire_result"]["canonical_name"]
 
 
 class TestPrelaunchPersistenceWitness:

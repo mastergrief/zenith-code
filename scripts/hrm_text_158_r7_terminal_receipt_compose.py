@@ -32,10 +32,12 @@ def compose_terminal_receipt(run_root: Path) -> dict:
     harness_fail_branch = branch_name == BRANCH_HARNESS_FAIL
 
     diag_receipt: dict | None = None
-    if diag_receipt_path.is_file():
+    diagnostic_complete = diag_receipt_path.is_file()
+    if diagnostic_complete:
         diag_receipt = json.loads(diag_receipt_path.read_text(encoding="utf-8"))
-    elif not harness_fail_branch:
-        raise SystemExit("R7_TERMINAL_COMPOSE_FAIL:missing_diagnostic_receipt")
+
+    run_incomplete = not diagnostic_complete and not harness_fail_branch
+    diagnostic_crashed = run_incomplete
 
     required = [
         "steps_observed",
@@ -47,11 +49,11 @@ def compose_terminal_receipt(run_root: Path) -> dict:
         "q_transition_mass_ratio",
     ]
     missing = [k for k in required if k not in run_metrics]
-    if missing and not harness_fail_branch:
+    if missing and not harness_fail_branch and diagnostic_complete:
         raise SystemExit("R7_TERMINAL_COMPOSE_FAIL:missing_run_metrics_keys:" + ",".join(missing))
 
     steps_obs = int(run_metrics.get("steps_observed", 0))
-    if steps_obs < 8 and not harness_fail_branch:
+    if steps_obs < 8 and not harness_fail_branch and diagnostic_complete:
         branch_sel = {
             "branch": "R7_ARTIFACT_INSUFFICIENT",
             "next_action": "instrumentation_not_interpretation",
@@ -90,6 +92,10 @@ def compose_terminal_receipt(run_root: Path) -> dict:
     if harness_fail_branch and diag_receipt is None:
         terminal["harness_fail_without_diagnostic_receipt"] = True
         terminal["diagnostic_never_launched"] = True
+    if run_incomplete:
+        terminal["run_incomplete"] = True
+        terminal["diagnostic_crashed"] = diagnostic_crashed
+        terminal["diagnostic_receipt_missing"] = True
     out = run_root / "terminal_receipt.json"
     out.write_text(json.dumps(terminal, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return terminal

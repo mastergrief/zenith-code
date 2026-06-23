@@ -30,8 +30,25 @@ MOCK_FLAG_SCRIPTS = frozenset(
 SKIP_POST_SCRIPT = "hrm_text_158_r7_ai_room_terminal_post.py"
 
 
-def substitute_placeholders(command: str, run_root: str, chain_id: str) -> str:
-    return command.replace("{run_root}", run_root).replace("{chain_id}", chain_id)
+def resolve_head(cwd: Path) -> str:
+    proc = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return proc.stdout.strip()
+
+
+def substitute_placeholders(
+    command: str, run_root: str, chain_id: str, head: str
+) -> str:
+    return (
+        command.replace("{run_root}", run_root)
+        .replace("{chain_id}", chain_id)
+        .replace("{head}", head)
+    )
 
 
 def parse_env_and_argv(command: str) -> tuple[dict[str, str], list[str]]:
@@ -109,12 +126,15 @@ def finalize_terminal_path(
     *,
     run_root: str,
     chain_id: str,
+    head: str,
     cwd: Path,
     mock_lane: bool,
     skip_ai_room_post: bool,
 ) -> None:
     for key in TERMINAL_ORDER:
-        cmd = substitute_placeholders(resolve_command(replay, key), run_root, chain_id)
+        cmd = substitute_placeholders(
+            resolve_command(replay, key), run_root, chain_id, head
+        )
         run_command(
             cmd,
             cwd=cwd,
@@ -129,6 +149,7 @@ def release_lane_once(
     *,
     run_root: str,
     chain_id: str,
+    head: str,
     cwd: Path,
     mock_lane: bool,
     skip_ai_room_post: bool,
@@ -137,6 +158,7 @@ def release_lane_once(
         resolve_command(replay, RELEASE_KEY),
         run_root,
         chain_id,
+        head,
     )
     run_command(
         release_cmd,
@@ -151,6 +173,7 @@ def finalize_and_release_once(
     *,
     run_root: str,
     chain_id: str,
+    head: str,
     cwd: Path,
     mock_lane: bool,
     skip_ai_room_post: bool,
@@ -163,6 +186,7 @@ def finalize_and_release_once(
         replay,
         run_root=run_root,
         chain_id=chain_id,
+        head=head,
         cwd=cwd,
         mock_lane=mock_lane,
         skip_ai_room_post=skip_ai_room_post,
@@ -171,6 +195,7 @@ def finalize_and_release_once(
         replay,
         run_root=run_root,
         chain_id=chain_id,
+        head=head,
         cwd=cwd,
         mock_lane=mock_lane,
         skip_ai_room_post=skip_ai_room_post,
@@ -190,6 +215,7 @@ def run_replay(
     replay = load_replay(replay_path)
     cwd = REPO_ROOT
     run_root_str = str(run_root)
+    head = resolve_head(cwd)
     step_failure = 0
     finalized: set[str] = set()
 
@@ -197,7 +223,9 @@ def run_replay(
         if key in LOOP_SKIP_KEYS:
             continue
         if dry_run_prelaunch and key == PRELAUNCH_STOP_KEY:
-            cmd = substitute_placeholders(resolve_command(replay, key), run_root_str, chain_id)
+            cmd = substitute_placeholders(
+                resolve_command(replay, key), run_root_str, chain_id, head
+            )
             return run_command(
                 cmd,
                 cwd=cwd,
@@ -206,7 +234,9 @@ def run_replay(
             )
         if skip_gpu and key in GPU_KEYS:
             continue
-        cmd = substitute_placeholders(resolve_command(replay, key), run_root_str, chain_id)
+        cmd = substitute_placeholders(
+            resolve_command(replay, key), run_root_str, chain_id, head
+        )
         rc = run_command(
             cmd,
             cwd=cwd,
@@ -220,6 +250,7 @@ def run_replay(
                 replay,
                 run_root=run_root_str,
                 chain_id=chain_id,
+                head=head,
                 cwd=cwd,
                 mock_lane=mock_lane,
                 skip_ai_room_post=skip_ai_room_post,
@@ -231,6 +262,7 @@ def run_replay(
         replay,
         run_root=run_root_str,
         chain_id=chain_id,
+        head=head,
         cwd=cwd,
         mock_lane=mock_lane,
         skip_ai_room_post=skip_ai_room_post,
