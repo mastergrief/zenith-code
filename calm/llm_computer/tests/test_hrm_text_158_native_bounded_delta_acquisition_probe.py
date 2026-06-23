@@ -146,6 +146,7 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     build_probe_stdout_liveness_receipt,
     build_prior_audit_support_batches,
     build_prior_audit_support_rows,
+    build_prior_audit_support_sets,
     compare_module_output_fidelity,
     compute_forward_level_init_fidelity,
     cuda_memory_receipt,
@@ -629,7 +630,11 @@ def test_prior_audit_support_builders_pin_counts_hashes_and_l0c1_metadata():
     tok = BroadTokenizer()
 
     for support in B1_PRIOR_AUDIT_SUPPORTS:
-        rows, proof = build_prior_audit_support_rows(support, curriculum_seed=17)
+        rows, proof = build_prior_audit_support_rows(
+            support,
+            run_curriculum_seed=17,
+            use_fixed_audit_seed=True,
+        )
         pins = B1_PRIOR_AUDIT_PINS[support]
 
         assert len(rows) == pins["expected_count"]
@@ -637,6 +642,9 @@ def test_prior_audit_support_builders_pin_counts_hashes_and_l0c1_metadata():
         assert proof["support_hash16"] == pins["expected_hash16"]
         assert proof["builder_path"] == pins["builder_path"]
         assert proof["pinned_count_hash_pass"] is True
+        assert proof["audit_seed"] == 17
+        assert proof["run_curriculum_seed"] == 17
+        assert "seed" not in proof
         assert proof["direct_kl"] is False
         assert proof["replay_pc"] == "OUT"
         assert proof["target_parent_kl"] is False
@@ -646,8 +654,9 @@ def test_prior_audit_support_builders_pin_counts_hashes_and_l0c1_metadata():
         tok=tok,
         max_len=TINY_ARCH["max_len"],
         batch_size=64,
-        curriculum_seed=17,
+        run_curriculum_seed=17,
         device=torch.device("cpu"),
+        use_fixed_audit_seed=True,
     )
 
     assert l0c1["proof"]["expected_count"] == 121
@@ -660,6 +669,43 @@ def test_prior_audit_support_builders_pin_counts_hashes_and_l0c1_metadata():
     }
     assert l0c1["proof"]["batch_count"] == 2
     assert sum(batch["metadata"]["row_count"] for batch in l0c1["batches"]) == 121
+
+
+def test_prior_audit_support_builders_use_fixed_audit_seed_with_run_seed_44():
+    tok = BroadTokenizer()
+    expected_hashes = {
+        "L0b": "89174273d21845bc",
+        "math_a0": "56e64266357b793d",
+        "L0c1": "7bc8cd771daab878",
+    }
+
+    for support in B1_PRIOR_AUDIT_SUPPORTS:
+        rows, proof = build_prior_audit_support_rows(
+            support,
+            run_curriculum_seed=44,
+            use_fixed_audit_seed=True,
+        )
+        pins = B1_PRIOR_AUDIT_PINS[support]
+        assert len(rows) == pins["expected_count"]
+        assert proof["support_hash16"] == expected_hashes[support]
+        assert proof["support_hash16"] == pins["expected_hash16"]
+        assert proof["audit_seed"] == 17
+        assert proof["run_curriculum_seed"] == 44
+        assert "seed" not in proof
+
+    support_sets = build_prior_audit_support_sets(
+        B1_PRIOR_AUDIT_SUPPORTS,
+        tok=tok,
+        max_len=TINY_ARCH["max_len"],
+        batch_size=64,
+        run_curriculum_seed=44,
+        device=torch.device("cpu"),
+    )
+    for support in B1_PRIOR_AUDIT_SUPPORTS:
+        proof = support_sets[support]["proof"]
+        assert proof["audit_seed"] == 17
+        assert proof["run_curriculum_seed"] == 44
+        assert proof["support_hash16"] == B1_PRIOR_AUDIT_PINS[support]["expected_hash16"]
 
 
 def test_prior_audit_support_parser_rejects_unknowns_and_duplicates():

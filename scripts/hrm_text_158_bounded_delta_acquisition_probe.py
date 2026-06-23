@@ -367,6 +367,7 @@ DEFAULT_PARENT = (
 )
 IDENTITY_FULL_RUNG = "L0c2-K1-identity-2digit-full"
 B1_PRIOR_AUDIT_SUPPORTS: tuple[str, ...] = ("L0b", "math_a0", "L0c1")
+B1_PRIOR_AUDIT_FIXED_SEED = 17
 B1_PRIOR_AUDIT_PINS: dict[str, dict[str, Any]] = {
     "L0b": {
         "expected_count": 230,
@@ -752,10 +753,14 @@ def _prior_support_sorted_rows(name: str, curriculum_seed: int) -> list[tuple[st
 def build_prior_audit_support_rows(
     name: str,
     *,
-    curriculum_seed: int,
+    run_curriculum_seed: int,
+    use_fixed_audit_seed: bool = False,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     pins = B1_PRIOR_AUDIT_PINS[name]
-    sorted_rows = _prior_support_sorted_rows(name, int(curriculum_seed))
+    construction_seed = (
+        B1_PRIOR_AUDIT_FIXED_SEED if use_fixed_audit_seed else int(run_curriculum_seed)
+    )
+    sorted_rows = _prior_support_sorted_rows(name, int(construction_seed))
     row_count = len(sorted_rows)
     support_hash16 = hashlib.sha256(repr(sorted_rows).encode("utf-8")).hexdigest()[:16]
     if row_count != int(pins["expected_count"]) or support_hash16 != pins["expected_hash16"]:
@@ -782,7 +787,8 @@ def build_prior_audit_support_rows(
         "schema": B1_PRIOR_SUPPORT_SCHEMA_VERSION,
         "support": name,
         "support_role": pins["support_role"],
-        "seed": int(curriculum_seed),
+        "audit_seed": int(construction_seed),
+        "run_curriculum_seed": int(run_curriculum_seed),
         "builder_path": pins["builder_path"],
         "row_count": row_count,
         "expected_count": int(pins["expected_count"]),
@@ -810,14 +816,16 @@ def build_prior_audit_support_batches(
     tok: Any,
     max_len: int,
     batch_size: int,
-    curriculum_seed: int,
+    run_curriculum_seed: int,
     device: torch.device,
+    use_fixed_audit_seed: bool = False,
 ) -> dict[str, Any]:
     if int(batch_size) <= 0:
         raise ValueError("batch_size must be positive")
     rows, proof = build_prior_audit_support_rows(
         support,
-        curriculum_seed=int(curriculum_seed),
+        run_curriculum_seed=int(run_curriculum_seed),
+        use_fixed_audit_seed=use_fixed_audit_seed,
     )
     usable_rows = _identity_full_usable_rows(rows, tok=tok, max_len=int(max_len))
     dataset = HrmTextGsm8kDataset(
@@ -895,7 +903,7 @@ def build_prior_audit_support_sets(
     tok: Any,
     max_len: int,
     batch_size: int,
-    curriculum_seed: int,
+    run_curriculum_seed: int,
     device: torch.device,
 ) -> dict[str, dict[str, Any]]:
     return {
@@ -904,8 +912,9 @@ def build_prior_audit_support_sets(
             tok=tok,
             max_len=int(max_len),
             batch_size=int(batch_size),
-            curriculum_seed=int(curriculum_seed),
+            run_curriculum_seed=int(run_curriculum_seed),
             device=device,
+            use_fixed_audit_seed=True,
         )
         for support in supports
     }
@@ -930,7 +939,7 @@ def build_b2_retained_support_sets(
             tok=tok,
             max_len=int(max_len),
             batch_size=batch_size,
-            curriculum_seed=int(curriculum_seed),
+            run_curriculum_seed=int(curriculum_seed),
             device=device,
         )
         proof = dict(support_set["proof"])
@@ -6122,7 +6131,7 @@ def run_c2p1_probe(
                 tok=tok,
                 max_len=int(max_len or ckpt["config"]["max_seq_len"]),
                 batch_size=int(batch_size),
-                curriculum_seed=int(curriculum_seed),
+                run_curriculum_seed=int(curriculum_seed),
                 device=torch_device,
             )
     b2_retained_support_sets: dict[str, dict[str, Any]] = {}
