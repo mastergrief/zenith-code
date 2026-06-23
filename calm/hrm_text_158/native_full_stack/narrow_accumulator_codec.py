@@ -268,18 +268,17 @@ def _validate_packed_w6_payload_metadata(payload: PackedW6AccumulatorPayload) ->
         )
 
 
-def pack_w6_lanes_to_bytes(acc: torch.Tensor) -> PackedW6AccumulatorPayload:
-    """Pack in-domain int16 lanes into a real uint8 payload of ceil(N*6/8) bytes."""
+def _pack_w6_lanes_to_bytes_scalar_reference(lanes: Sequence[int]) -> bytes:
+    """Frozen scalar packer: lane bits 0..5, global LSB-first by bit_pos%8."""
 
-    lane_tensor = pack_w6_tensor(acc)
-    logical_shape = tuple(int(dim) for dim in acc.shape)
-    logical_numel = int(acc.numel())
-    lane_values = (lane_tensor.reshape(-1).to(torch.int64) & W6_PACK_MASK).tolist()
-    total_bits = int(logical_numel * W6_WIDTH_BITS)
+    lane_count = len(lanes)
+    if lane_count <= 0:
+        return b""
+    total_bits = int(lane_count * W6_WIDTH_BITS)
     nbytes = (total_bits + 7) // 8
     out = bytearray(nbytes)
     bit_pos = 0
-    for lane in lane_values:
+    for lane in lanes:
         unsigned_lane = int(lane) & W6_PACK_MASK
         for bit_idx in range(W6_WIDTH_BITS):
             if (unsigned_lane >> bit_idx) & 1:
@@ -287,7 +286,53 @@ def pack_w6_lanes_to_bytes(acc: torch.Tensor) -> PackedW6AccumulatorPayload:
                 bit_in_byte = bit_pos % 8
                 out[byte_idx] |= 1 << bit_in_byte
             bit_pos += 1
-    packed = torch.tensor(list(out), dtype=torch.uint8).contiguous()
+    return bytes(out)
+
+
+def _pack_w6_lanes_to_bytes_vectorized(lanes_u8: torch.Tensor) -> torch.Tensor:
+    """Memory-bounded vector pack: 4 lanes -> 3 bytes, scalar tail for r<=3."""
+
+    lanes_flat = lanes_u8.reshape(-1).contiguous()
+    lane_count = int(lanes_flat.numel())
+    nbytes = (lane_count * W6_WIDTH_BITS + 7) // 8
+    out = torch.zeros(nbytes, dtype=torch.uint8)
+
+    full_lane_count = (lane_count // 4) * 4
+    if full_lane_count > 0:
+        groups = lanes_flat[:full_lane_count].view(-1, 4).to(torch.int32)
+        packed24 = (
+            groups[:, 0]
+            | (groups[:, 1] << 6)
+            | (groups[:, 2] << 12)
+            | (groups[:, 3] << 18)
+        )
+        group_count = full_lane_count // 4
+        packed_bytes = torch.empty(group_count * 3, dtype=torch.uint8)
+        packed_bytes[0::3] = (packed24 & 0xFF).to(torch.uint8)
+        packed_bytes[1::3] = ((packed24 >> 8) & 0xFF).to(torch.uint8)
+        packed_bytes[2::3] = ((packed24 >> 16) & 0xFF).to(torch.uint8)
+        out[: group_count * 3] = packed_bytes
+
+    tail_count = lane_count - full_lane_count
+    if tail_count > 0:
+        tail_lanes = lanes_flat[full_lane_count:].tolist()
+        tail_bytes = _pack_w6_lanes_to_bytes_scalar_reference(tail_lanes)
+        start_byte = full_lane_count * W6_WIDTH_BITS // 8
+        out[start_byte : start_byte + len(tail_bytes)] = torch.tensor(
+            list(tail_bytes),
+            dtype=torch.uint8,
+        )
+    return out.contiguous()
+
+
+def pack_w6_lanes_to_bytes(acc: torch.Tensor) -> PackedW6AccumulatorPayload:
+    """Pack in-domain int16 lanes into a real uint8 payload of ceil(N*6/8) bytes."""
+
+    lane_tensor = pack_w6_tensor(acc)
+    logical_shape = tuple(int(dim) for dim in acc.shape)
+    logical_numel = int(acc.numel())
+    lanes_u8 = (lane_tensor.reshape(-1) & W6_PACK_MASK).to(torch.uint8)
+    packed = _pack_w6_lanes_to_bytes_vectorized(lanes_u8)
     payload = PackedW6AccumulatorPayload(
         packed=packed,
         logical_shape=logical_shape,
