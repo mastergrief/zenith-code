@@ -82,6 +82,20 @@ R4B_Q_TERNARY_BYTEPACKED_NOT_SUB2_STATEMENT = (
     "bytes per format tag; base-3 inclusive q+scale must stay strictly below 2.0 bpw."
 )
 
+PACKED_EVENT_CODED_ACC_FORMAT = "event_coded_crossing_residual_log_reference"
+EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA = "event_coded_acc_checkpoint/v0"
+EVENT_CODED_ACC_METADATA_HEADER_BYTES = 24
+R4V_EVENT_CODED_ACC_BUDGET_SCHEMA_VERSION = (
+    "hrm_text_158_persistent_state_budget/v0.r4v_event_coded_acc"
+)
+R4V_EVENT_CODED_ACC_BUDGET_LABEL = "r4v_event_coded_acc_checkpoint_ledger"
+R4V_ACC_PHYSICAL_BITS_PER_WEIGHT_CEILING = 2.0
+R4V_ACC_BPW_TOLERANCE = 0.25
+R4V_EVENT_CODED_ACC_NOT_SUB2_STATEMENT = (
+    "R4v event-coded acc checkpoint ledger: acc-term measured from actual saved "
+    "event/backlog bytes plus metadata; q-pack and scale reported separately."
+)
+
 R5_PERSISTENT_STATE_BUDGET_SCHEMA_VERSION = (
     "hrm_text_158_persistent_state_budget/v0.r5_w5_byte_packed_decision_parity"
 )
@@ -280,6 +294,189 @@ class R5PersistentStateBudgetReport:
 
     def to_dict(self) -> dict[str, int | float | bool | str]:
         return {field.name: getattr(self, field.name) for field in fields(self)}
+
+
+@dataclass(frozen=True)
+class R4vEventCodedAccBudgetReport:
+    """Byte-derived R4v event-coded acc checkpoint ledger (acc-term only)."""
+
+    schema_version: str
+    label: str
+    eligible_weight_count: int
+    q_state_count: int
+    event_payload_count: int
+    r4v_acc_physical_bits_per_weight: float
+    r4v_acc_metadata_bits_per_weight: float
+    r4v_acc_inclusive_physical_bits_per_weight: float
+    r4v_actual_events_payload_bytes: int
+    r4v_actual_backlog_payload_bytes: int
+    r4v_actual_acc_metadata_bytes: int
+    r4v_event_payload_content_sha256: str
+    r4v_ledger_pass: bool
+    receipt_statement: str
+
+    def to_dict(self) -> dict[str, int | float | bool | str]:
+        return {field.name: getattr(self, field.name) for field in fields(self)}
+
+
+def _reject_missing_event_coded_payload_field(payload: Any, field_name: str) -> Any:
+    if not hasattr(payload, field_name):
+        raise ValueError(f"event-coded acc payload missing {field_name}")
+    return getattr(payload, field_name)
+
+
+def _validate_r4v_event_coded_acc_payload_metadata(payload: Any) -> None:
+    schema_tag = str(_reject_missing_event_coded_payload_field(payload, "schema"))
+    if schema_tag != EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA:
+        raise ValueError(
+            f"unknown event-coded acc checkpoint schema {schema_tag!r}; "
+            f"expected {EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA!r}"
+        )
+    format_tag = str(_reject_missing_event_coded_payload_field(payload, "format"))
+    if format_tag != PACKED_EVENT_CODED_ACC_FORMAT:
+        raise ValueError(f"unknown event-coded acc format {format_tag!r}")
+    events_packed = _reject_missing_event_coded_payload_field(payload, "events_packed")
+    backlog_packed = _reject_missing_event_coded_payload_field(payload, "backlog_packed")
+    if not isinstance(events_packed, torch.Tensor):
+        raise ValueError("events_packed must be a torch.Tensor")
+    if not isinstance(backlog_packed, torch.Tensor):
+        raise ValueError("backlog_packed must be a torch.Tensor")
+    if events_packed.dtype != torch.uint8:
+        raise ValueError(f"events_packed must be torch.uint8, got {events_packed.dtype}")
+    if backlog_packed.dtype != torch.uint8:
+        raise ValueError(f"backlog_packed must be torch.uint8, got {backlog_packed.dtype}")
+    if events_packed.ndim != 1:
+        raise ValueError("events_packed must be 1-D bytes")
+    if backlog_packed.ndim != 1:
+        raise ValueError("backlog_packed must be 1-D bytes")
+    logical_numel = int(_reject_missing_event_coded_payload_field(payload, "logical_numel"))
+    if logical_numel <= 0:
+        raise ValueError("logical_numel must be positive")
+    event_count = int(_reject_missing_event_coded_payload_field(payload, "event_count"))
+    backlog_entry_count = int(
+        _reject_missing_event_coded_payload_field(payload, "backlog_entry_count")
+    )
+    if event_count < 0 or backlog_entry_count < 0:
+        raise ValueError("event_count and backlog_entry_count must be non-negative")
+    if event_count == 0 and int(events_packed.numel()) != 0:
+        raise ValueError("event_count mismatch for events_packed payload")
+    if backlog_entry_count == 0 and int(backlog_packed.numel()) != 0:
+        raise ValueError("backlog_entry_count mismatch for backlog_packed payload")
+    if event_count > 0 and int(events_packed.numel()) < event_count:
+        raise ValueError("packed byte length must match format-specific ceiling")
+    metadata_bytes = int(_reject_missing_event_coded_payload_field(payload, "metadata_bytes"))
+    if metadata_bytes < int(EVENT_CODED_ACC_METADATA_HEADER_BYTES):
+        raise ValueError("metadata_bytes below event-coded acc header minimum")
+
+
+def _validate_r4v_event_coded_acc_payloads(
+    event_payloads: Sequence[Any],
+    *,
+    eligible_weight_count: int,
+) -> tuple[int, int, int]:
+    if len(event_payloads) == 0:
+        raise ValueError("at least one event-coded acc payload is required for R4v ledger")
+    total_lanes = 0
+    total_events_bytes = 0
+    total_backlog_bytes = 0
+    total_metadata_bytes = 0
+    for payload in event_payloads:
+        _validate_r4v_event_coded_acc_payload_metadata(payload)
+        total_lanes += int(payload.logical_numel)
+        events_packed = payload.events_packed
+        backlog_packed = payload.backlog_packed
+        total_events_bytes += int(events_packed.numel() * events_packed.element_size())
+        total_backlog_bytes += int(backlog_packed.numel() * backlog_packed.element_size())
+        total_metadata_bytes += int(payload.metadata_bytes)
+    if total_lanes != int(eligible_weight_count):
+        raise ValueError(
+            "sum(event_payload.logical_numel) must match eligible q entries; "
+            f"got event_lanes={total_lanes}, eligible={eligible_weight_count}"
+        )
+    return int(total_events_bytes), int(total_backlog_bytes), int(total_metadata_bytes)
+
+
+def canonical_r4v_event_payload_content_sha256(
+    state_keys: Sequence[str],
+    event_payloads: Sequence[Any],
+) -> str:
+    rows: list[dict[str, Any]] = []
+    for state_key, payload in zip(state_keys, event_payloads):
+        events_packed = payload.events_packed.detach().cpu().contiguous()
+        backlog_packed = payload.backlog_packed.detach().cpu().contiguous()
+        rows.append(
+            {
+                "state_key": str(state_key),
+                "schema": str(payload.schema),
+                "format": str(payload.format),
+                "logical_numel": int(payload.logical_numel),
+                "event_count": int(payload.event_count),
+                "backlog_entry_count": int(payload.backlog_entry_count),
+                "events_payload_sha256": hashlib.sha256(
+                    events_packed.numpy().tobytes()
+                ).hexdigest(),
+                "backlog_payload_sha256": hashlib.sha256(
+                    backlog_packed.numpy().tobytes()
+                ).hexdigest(),
+                "metadata_bytes": int(payload.metadata_bytes),
+            }
+        )
+    canonical = json.dumps(rows, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def measure_r4v_event_coded_acc_budget(
+    qscale_states: Sequence[QScaleWeightState],
+    event_payloads: Sequence[Any],
+    *,
+    state_keys: Sequence[str] | None = None,
+) -> R4vEventCodedAccBudgetReport:
+    """Measure R4v acc-term ledger from actual saved event-coded bytes."""
+
+    if len(qscale_states) == 0:
+        raise ValueError("at least one qscale state is required for R4v event-coded accounting")
+
+    eligible_weight_count = 0
+    for qscale_state in qscale_states:
+        q_levels, _scale, _ = validate_qscale_weight_state(qscale_state)
+        eligible_weight_count += int(q_levels.numel())
+
+    events_bytes, backlog_bytes, metadata_bytes = _validate_r4v_event_coded_acc_payloads(
+        event_payloads,
+        eligible_weight_count=eligible_weight_count,
+    )
+    effective_state_keys = (
+        list(state_keys)
+        if state_keys is not None
+        else [f"payload_{index}" for index in range(len(event_payloads))]
+    )
+    if len(effective_state_keys) != len(event_payloads):
+        raise ValueError("state_keys length must match event_payloads")
+    payload_sha256 = canonical_r4v_event_payload_content_sha256(
+        effective_state_keys,
+        event_payloads,
+    )
+    actual_acc_payload_bytes = int(events_bytes + backlog_bytes)
+    acc_physical_bpw = _bits_per_weight(actual_acc_payload_bytes * 8, eligible_weight_count)
+    acc_metadata_bpw = _bits_per_weight(metadata_bytes * 8, eligible_weight_count)
+    acc_inclusive_bpw = float(acc_physical_bpw + acc_metadata_bpw)
+    ledger_pass = float(acc_inclusive_bpw) < float(R4V_ACC_PHYSICAL_BITS_PER_WEIGHT_CEILING)
+    return R4vEventCodedAccBudgetReport(
+        schema_version=R4V_EVENT_CODED_ACC_BUDGET_SCHEMA_VERSION,
+        label=R4V_EVENT_CODED_ACC_BUDGET_LABEL,
+        eligible_weight_count=int(eligible_weight_count),
+        q_state_count=int(len(qscale_states)),
+        event_payload_count=int(len(event_payloads)),
+        r4v_acc_physical_bits_per_weight=float(acc_physical_bpw),
+        r4v_acc_metadata_bits_per_weight=float(acc_metadata_bpw),
+        r4v_acc_inclusive_physical_bits_per_weight=float(acc_inclusive_bpw),
+        r4v_actual_events_payload_bytes=int(events_bytes),
+        r4v_actual_backlog_payload_bytes=int(backlog_bytes),
+        r4v_actual_acc_metadata_bytes=int(metadata_bytes),
+        r4v_event_payload_content_sha256=str(payload_sha256),
+        r4v_ledger_pass=bool(ledger_pass),
+        receipt_statement=R4V_EVENT_CODED_ACC_NOT_SUB2_STATEMENT,
+    )
 
 
 def _reject_int16_tensor_as_packed_acc(value: torch.Tensor, *, context: str) -> None:

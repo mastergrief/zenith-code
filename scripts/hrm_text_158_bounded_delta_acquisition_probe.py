@@ -4969,6 +4969,8 @@ def run_bounded_delta_steps(
     r7_cap_defer_pressure_instrumentation_enabled: bool = False,
     r7_deferred_backlog_carry_enabled: bool = False,
     r7_cap_defer_pressure_sidecar_path: Path | None = None,
+    votes_emit_enabled: bool = False,
+    votes_emit_root: Path | None = None,
 ) -> tuple[
     dict[str, Any],
     dict[str, Any],
@@ -5007,6 +5009,15 @@ def run_bounded_delta_steps(
         weight_decay=0.0,
     )
     states = dict(tensor_states)
+    votes_emit_collector = None
+    if bool(votes_emit_enabled):
+        if votes_emit_root is None:
+            raise ValueError("votes_emit_enabled requires votes_emit_root")
+        from calm.hrm_text_158.native_full_stack.votes_emit_collector import (
+            VotesEmitCollector,
+        )
+
+        votes_emit_collector = VotesEmitCollector(Path(votes_emit_root))
     step_reports: dict[str, Any] = {}
     audit_reports: dict[str, Any] = {}
     grad_proxy_ingress_crossing_eligible_count_by_step: list[int] = []
@@ -5513,6 +5524,25 @@ def run_bounded_delta_steps(
                         ),
                     )
 
+                if votes_emit_collector is not None:
+                    from calm.hrm_text_158.native_full_stack.votes_emit_collector import (
+                        maybe_emit_votes_step_record,
+                    )
+
+                    maybe_emit_votes_step_record(
+                        root=Path(votes_emit_root),
+                        enabled=True,
+                        optimizer_step_index=int(step),
+                        tensor_states=pre_apply_states,
+                        votes_by_key=votes_by_key,
+                        vote_specs_by_key=vote_specs,
+                        max_abs_per_tensor=int(max_abs_per_tensor),
+                        collector=votes_emit_collector,
+                        two_tier_carry_w6_enabled=bool(two_tier_carry_w6_enabled),
+                        local_loss_delta_by_key=local_loss_delta_by_key,
+                        local_selection_ordering_seed=SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
+                    )
+
                 if str(phase) == S3BB_W6_HEADROOM_DIAGNOSTIC_PHASE:
                     materialization = run_vote_materialization_with_s3bb_boundary_catch(
                         phase=str(phase),
@@ -6017,6 +6047,8 @@ def run_c2p1_probe(
     persistent_q_ternary_base3_codec: bool = False,
     r7_cap_defer_pressure_instrumentation_enabled: bool = False,
     r7_deferred_backlog_carry_enabled: bool = False,
+    votes_emit_enabled: bool = False,
+    votes_emit_root: Path | None = None,
 ) -> dict[str, Any]:
     oracle_screen_budget = int(oracle_screen_max_sampled_candidates)
     if oracle_screen_budget not in ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES:
@@ -6757,6 +6789,8 @@ def run_c2p1_probe(
             ),
             r7_deferred_backlog_carry_enabled=bool(r7_deferred_backlog_carry_enabled),
             r7_cap_defer_pressure_sidecar_path=r7_cap_defer_pressure_sidecar_path,
+            votes_emit_enabled=bool(votes_emit_enabled),
+            votes_emit_root=votes_emit_root,
         )
     prior_audit_final_reports: dict[str, dict[str, Any]] = {}
     if prior_support_sets:
@@ -7373,6 +7407,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     ap.add_argument(
+        "--votes-emit-enabled",
+        action="store_true",
+        help=(
+            "Default-off per-step votes observables sidecar emission for "
+            "dynamics-proof instrumentation."
+        ),
+    )
+    ap.add_argument(
         "--r7-deferred-backlog-carry",
         action="store_true",
         help=(
@@ -7454,6 +7496,10 @@ def main(argv: list[str] | None = None) -> int:
             args.r7_cap_defer_pressure_instrumentation
         ),
         r7_deferred_backlog_carry_enabled=bool(args.r7_deferred_backlog_carry),
+        votes_emit_enabled=bool(args.votes_emit_enabled),
+        votes_emit_root=(
+            Path(args.scratch_root) if bool(args.votes_emit_enabled) else None
+        ),
     )
     print(json.dumps(receipt, indent=2, sort_keys=True), flush=True)
     return 0
