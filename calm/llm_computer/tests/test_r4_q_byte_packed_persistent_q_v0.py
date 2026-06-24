@@ -23,6 +23,7 @@ from calm.hrm_text_158.native_full_stack.persistent_state_budget import (
     PackedTernaryQState,
     canonical_r4_q_packed_content_sha256,
     measure_r4_persistent_state_budget,
+    measure_r4b_persistent_state_budget,
     pack_ternary_q_2bit_reference,
     reject_int8_tensors_for_r4_ledger,
     unpack_ternary_q_2bit_reference,
@@ -160,6 +161,7 @@ def test_ledger_rejects_int8_input_and_counts_real_bytes_at_real_numel() -> None
 def test_checkpoint_roundtrip_q_pack_flag_gated_with_seam_traversal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """T1 legacy 2-bit load roundtrip."""
     model = _TinyTernary()
     eligible = select_trainer_eligible_bitlinears(model, use_ternary_bulk=True)
     states = derive_trainer_sub2_authority_states(eligible)
@@ -232,6 +234,7 @@ def test_rejects_int8_q_packed_sidecar_on_load_with_recomputed_hash(
 
 
 def test_rejects_raw_q_dual_persistence_on_save_shape() -> None:
+    """T4 raw-q guard."""
     payload = {
         "trainer_sub2_authority": {
             "tensor_payloads": {
@@ -287,3 +290,81 @@ def test_build_r4_persistent_ledger_receipt_disabled_without_flags() -> None:
     assert ledger["r4_ledger_pass"] is True
     assert ledger["r4_per_module_q_rows"][0]["lanes"] == 1_048_576
     assert "r3_q_int8_bits_per_weight" not in ledger
+
+
+def test_t6_measure_r4_legacy_ledger_unchanged_for_2bit_payloads() -> None:
+    q = _large_q_for_inclusive_gate()
+    acc = torch.zeros_like(q, dtype=torch.int16)
+    packed_q = pack_ternary_q_2bit_reference(q)
+    packed_acc = pack_w6_lanes_to_bytes(acc)
+    qstate = QScaleWeightState(
+        q_levels=q,
+        scale=torch.tensor(1.0, dtype=torch.float32),
+    )
+    report_a = measure_r4_persistent_state_budget(
+        [qstate],
+        [packed_q],
+        [packed_acc],
+        state_keys=["proj"],
+    )
+    report_b = measure_r4_persistent_state_budget(
+        [qstate],
+        [packed_q],
+        [packed_acc],
+        state_keys=["proj"],
+    )
+    assert report_a == report_b
+    assert report_a.r4_q_physical_bits_per_weight == pytest.approx(2.0, abs=0.25)
+    assert report_a.r4_ledger_pass is True
+
+
+def test_t9_r4_receipt_uses_saved_bytes() -> None:
+    q = _large_q_for_inclusive_gate()
+    acc = torch.zeros_like(q, dtype=torch.int16)
+    from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
+        BoundedDeltaAccumulatorState,
+        BoundedDeltaTensorState,
+    )
+
+    bounded = BoundedDeltaAccumulatorState(
+        logical_shape=tuple(q.shape),
+        cold_default_value=0,
+        hot_exact_indices=(),
+        hot_exact_values=(),
+        cold_exception_indices=(),
+        cold_exception_values=(),
+        candidate_name="cold_default",
+        raw_arrays_included=False,
+    )
+    state = BoundedDeltaTensorState(
+        state_key="proj",
+        q_levels=q,
+        frozen_scale=torch.tensor(1.0, dtype=torch.float32),
+        bounded_accumulator=bounded,
+        exact_accumulator_shadow=acc,
+        bounded_accumulator_fresh_for_exact_shadow=False,
+    )
+    ledger = build_r4_persistent_ledger_receipt(
+        {"proj": state},
+        q_packed_enabled=True,
+        acc_byte_packed_enabled=True,
+    )
+    packed_q = pack_ternary_q_2bit_reference(q)
+    assert ledger["r4_actual_q_payload_bytes"] == packed_q.packed_data_bytes
+    assert ledger["r4_ledger_pass"] is True
+
+
+def test_t11_import_smoke_paths() -> None:
+    import inspect
+
+    import calm.hrm_text_158.native_full_stack.persistent_state_budget as psb
+    import calm.hrm_text_158.native_full_stack.q_entropy_packing as qep
+    import calm.hrm_text_158.native_full_stack.trainer_sub2_authority as tsa
+    import scripts.hrm_text_158_bounded_delta_acquisition_probe as probe
+
+    assert "q_entropy_packing" not in inspect.getsource(psb)
+    assert hasattr(psb, "measure_r4b_persistent_state_budget")
+    assert hasattr(qep, "pack_ternary_q_base3_5perbyte_reference")
+    assert hasattr(tsa, "_pack_q_for_checkpoint")
+    assert hasattr(probe, "build_r4b_persistent_ledger_receipt")
+    assert measure_r4b_persistent_state_budget is psb.measure_r4b_persistent_state_budget

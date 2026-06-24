@@ -67,6 +67,21 @@ R4_Q_TERNARY_BYTEPACKED_NOT_SUB2_STATEMENT = (
     "NOT readiness, NOT hot-path, NOT mid-run resume."
 )
 
+PACKED_BASE3_TERNARY_Q_FORMAT = "packed_base3_5ternary_uint8_reference"
+BASE3_Q_PACK_GROUP_SIZE = 5
+R4B_PERSISTENT_STATE_BUDGET_SCHEMA_VERSION = (
+    "hrm_text_158_persistent_state_budget/v0.r4b_format_agnostic_q"
+)
+R4B_PERSISTENT_STATE_BUDGET_LABEL = "r4b_format_agnostic_q_checkpoint_ledger"
+R4B_Q_PHYSICAL_BITS_PER_WEIGHT_2BIT = 2.0
+R4B_Q_PHYSICAL_BITS_PER_WEIGHT_BASE3 = 8.0 / 5.0
+R4B_Q_BPW_TOLERANCE = 0.25
+R4B_Q_SCALE_INCLUSIVE_BPW_CEILING = 2.0
+R4B_Q_TERNARY_BYTEPACKED_NOT_SUB2_STATEMENT = (
+    "R4b format-agnostic q-state packing: serialized q measured from actual saved "
+    "bytes per format tag; base-3 inclusive q+scale must stay strictly below 2.0 bpw."
+)
+
 R5_PERSISTENT_STATE_BUDGET_SCHEMA_VERSION = (
     "hrm_text_158_persistent_state_budget/v0.r5_w5_byte_packed_decision_parity"
 )
@@ -208,6 +223,33 @@ class R4PersistentStateBudgetReport:
     r4_q_packed_content_sha256: str
     r4_acc_packed_content_sha256: str
     r4_ledger_pass: bool
+    receipt_statement: str
+
+    def to_dict(self) -> dict[str, int | float | bool | str]:
+        return {field.name: getattr(self, field.name) for field in fields(self)}
+
+
+@dataclass(frozen=True)
+class R4bPersistentStateBudgetReport:
+    """Byte-derived R4b checkpoint ledger for format-tagged packed-q payloads."""
+
+    schema_version: str
+    label: str
+    eligible_weight_count: int
+    q_state_count: int
+    accumulator_payload_count: int
+    r4b_q_physical_bits_per_weight: float
+    r4b_q_metadata_bits_per_weight: float
+    r4b_acc_physical_bits_per_weight: float
+    r4b_checkpoint_inclusive_physical_bits_per_weight: float
+    r4b_q_scale_inclusive_physical_bits_per_weight: float
+    r4b_actual_q_payload_bytes: int
+    r4b_actual_q_metadata_bytes: int
+    r4b_actual_acc_payload_bytes: int
+    r4b_frozen_scale_fp32_bits: int
+    r4b_q_packed_content_sha256: str
+    r4b_acc_packed_content_sha256: str
+    r4b_ledger_pass: bool
     receipt_statement: str
 
     def to_dict(self) -> dict[str, int | float | bool | str]:
@@ -585,6 +627,154 @@ def measure_r4_persistent_state_budget(
         r4_acc_packed_content_sha256=str(acc_content_sha256),
         r4_ledger_pass=bool(ledger_pass),
         receipt_statement=R4_Q_TERNARY_BYTEPACKED_NOT_SUB2_STATEMENT,
+    )
+
+
+def _r4b_q_physical_target_for_format(format_tag: str) -> float:
+    if format_tag == PACKED_TERNARY_Q_FORMAT:
+        return float(R4B_Q_PHYSICAL_BITS_PER_WEIGHT_2BIT)
+    if format_tag == PACKED_BASE3_TERNARY_Q_FORMAT:
+        return float(R4B_Q_PHYSICAL_BITS_PER_WEIGHT_BASE3)
+    raise ValueError(f"unknown packed q format {format_tag!r}")
+
+
+def _validate_r4b_packed_q_payload_metadata(payload: Any) -> None:
+    format_tag = str(getattr(payload, "format", ""))
+    packed = payload.packed
+    _reject_int8_tensor_as_packed_q(packed, context="R4b packed q payload")
+    if packed.dtype != torch.uint8:
+        raise ValueError(f"R4b packed q payload must be torch.uint8, got {packed.dtype}")
+    if packed.ndim != 1:
+        raise ValueError(f"R4b packed q payload must be 1-D bytes, got shape {tuple(packed.shape)}")
+    logical_numel = int(payload.logical_numel)
+    if logical_numel <= 0:
+        raise ValueError("logical_numel must be positive")
+    if _numel_from_shape(payload.logical_shape) != logical_numel:
+        raise ValueError("logical_shape product must match logical_numel")
+    if format_tag == PACKED_TERNARY_Q_FORMAT:
+        expected_padding = (-logical_numel) % 4
+        expected_bytes = (logical_numel + 3) // 4
+    elif format_tag == PACKED_BASE3_TERNARY_Q_FORMAT:
+        expected_padding = (-logical_numel) % BASE3_Q_PACK_GROUP_SIZE
+        expected_bytes = (logical_numel + BASE3_Q_PACK_GROUP_SIZE - 1) // BASE3_Q_PACK_GROUP_SIZE
+    else:
+        raise ValueError(f"unknown packed q format {format_tag!r}")
+    if int(payload.padding_values) != expected_padding:
+        raise ValueError("padding_values must match logical_numel for packed q format")
+    if int(packed.numel()) != expected_bytes:
+        raise ValueError("packed byte length must match format-specific ceiling")
+
+
+def _validate_r4b_packed_q_payloads(
+    packed_q_payloads: Sequence[Any],
+    *,
+    eligible_weight_count: int,
+) -> tuple[int, int]:
+    if len(packed_q_payloads) == 0:
+        raise ValueError("at least one byte-packed q payload is required for R4b ledger")
+    total_lanes = 0
+    total_payload_bytes = 0
+    total_metadata_bytes = 0
+    for payload in packed_q_payloads:
+        _validate_r4b_packed_q_payload_metadata(payload)
+        total_lanes += int(payload.logical_numel)
+        total_payload_bytes += int(payload.packed.numel() * payload.packed.element_size())
+        total_metadata_bytes += int(payload.metadata_bytes)
+    if total_lanes != int(eligible_weight_count):
+        raise ValueError(
+            "sum(packed_q.logical_numel) must match eligible q entries; "
+            f"got packed_lanes={total_lanes}, eligible={eligible_weight_count}"
+        )
+    return int(total_payload_bytes), int(total_metadata_bytes)
+
+
+def measure_r4b_persistent_state_budget(
+    qscale_states: Sequence[QScaleWeightState],
+    packed_q_payloads: Sequence[Any],
+    packed_acc_payloads: Sequence[Any],
+    *,
+    state_keys: Sequence[str] | None = None,
+) -> R4bPersistentStateBudgetReport:
+    """Measure R4b checkpoint ledger from actual saved bytes per format tag."""
+
+    if len(qscale_states) == 0:
+        raise ValueError("at least one qscale state is required for R4b persistent-state accounting")
+
+    eligible_weight_count = 0
+    scale_bits = 0
+    for qscale_state in qscale_states:
+        q_levels, _scale, _ = validate_qscale_weight_state(qscale_state)
+        eligible_weight_count += int(q_levels.numel())
+        scale_bits += 32
+
+    actual_q_payload_bytes, actual_q_metadata_bytes = _validate_r4b_packed_q_payloads(
+        packed_q_payloads,
+        eligible_weight_count=eligible_weight_count,
+    )
+    actual_acc_payload_bytes = _validate_r3_packed_payloads(
+        packed_acc_payloads,
+        eligible_weight_count=eligible_weight_count,
+    )
+    effective_state_keys = (
+        list(state_keys)
+        if state_keys is not None
+        else [f"payload_{index}" for index in range(len(packed_q_payloads))]
+    )
+    if len(effective_state_keys) != len(packed_q_payloads):
+        raise ValueError("state_keys length must match packed_q_payloads")
+    q_rows = build_r4_per_module_q_rows(effective_state_keys, packed_q_payloads)
+    acc_rows = build_r3_per_module_payload_rows(effective_state_keys, packed_acc_payloads)
+    q_content_sha256 = canonical_r4_q_packed_content_sha256(q_rows)
+    acc_content_sha256 = canonical_r3_packed_payload_content_sha256(acc_rows)
+    q_physical_bpw = _bits_per_weight(actual_q_payload_bytes * 8, eligible_weight_count)
+    q_metadata_bpw = _bits_per_weight(actual_q_metadata_bytes * 8, eligible_weight_count)
+    acc_physical_bpw = _bits_per_weight(actual_acc_payload_bytes * 8, eligible_weight_count)
+    scale_bpw = _bits_per_weight(scale_bits, eligible_weight_count)
+    inclusive_bpw = float(q_physical_bpw + q_metadata_bpw + acc_physical_bpw + scale_bpw)
+    q_scale_inclusive_bpw = float(q_physical_bpw + q_metadata_bpw + scale_bpw)
+
+    per_format_pass = True
+    has_base3 = False
+    for payload in packed_q_payloads:
+        format_tag = str(payload.format)
+        if format_tag == PACKED_BASE3_TERNARY_Q_FORMAT:
+            has_base3 = True
+        lanes = int(payload.logical_numel)
+        payload_bytes = int(payload.packed.numel() * payload.packed.element_size())
+        module_q_bpw = _bits_per_weight(payload_bytes * 8, lanes)
+        target = _r4b_q_physical_target_for_format(format_tag)
+        if abs(float(module_q_bpw) - target) > R4B_Q_BPW_TOLERANCE:
+            per_format_pass = False
+
+    base3_ceiling_pass = True
+    if has_base3:
+        base3_ceiling_pass = float(q_scale_inclusive_bpw) < float(R4B_Q_SCALE_INCLUSIVE_BPW_CEILING)
+
+    ledger_pass = (
+        per_format_pass
+        and base3_ceiling_pass
+        and abs(float(acc_physical_bpw) - R4_ACC_PHYSICAL_BITS_PER_WEIGHT) <= R4_ACC_BPW_TOLERANCE
+        and float(q_scale_inclusive_bpw) < float(R4B_Q_SCALE_INCLUSIVE_BPW_CEILING)
+    )
+    return R4bPersistentStateBudgetReport(
+        schema_version=R4B_PERSISTENT_STATE_BUDGET_SCHEMA_VERSION,
+        label=R4B_PERSISTENT_STATE_BUDGET_LABEL,
+        eligible_weight_count=int(eligible_weight_count),
+        q_state_count=int(len(qscale_states)),
+        accumulator_payload_count=int(len(packed_acc_payloads)),
+        r4b_q_physical_bits_per_weight=float(q_physical_bpw),
+        r4b_q_metadata_bits_per_weight=float(q_metadata_bpw),
+        r4b_acc_physical_bits_per_weight=float(acc_physical_bpw),
+        r4b_checkpoint_inclusive_physical_bits_per_weight=float(inclusive_bpw),
+        r4b_q_scale_inclusive_physical_bits_per_weight=float(q_scale_inclusive_bpw),
+        r4b_actual_q_payload_bytes=int(actual_q_payload_bytes),
+        r4b_actual_q_metadata_bytes=int(actual_q_metadata_bytes),
+        r4b_actual_acc_payload_bytes=int(actual_acc_payload_bytes),
+        r4b_frozen_scale_fp32_bits=int(scale_bits),
+        r4b_q_packed_content_sha256=str(q_content_sha256),
+        r4b_acc_packed_content_sha256=str(acc_content_sha256),
+        r4b_ledger_pass=bool(ledger_pass),
+        receipt_statement=R4B_Q_TERNARY_BYTEPACKED_NOT_SUB2_STATEMENT,
     )
 
 

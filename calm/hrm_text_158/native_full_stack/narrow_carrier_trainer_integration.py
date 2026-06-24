@@ -122,6 +122,8 @@ AUTHORIZED_Q_TERNARY_BYTE_PACKED_FIELD_MARKERS: tuple[str, ...] = (
     "q_ternary_byte_packed_persisted_saved",
 )
 RAW_Q_LEVELS_FIELD = "q_levels"
+PERSISTENT_Q_TERNARY_BASE3_CODEC_ENV = "HRM_TEXT_158_PERSISTENT_Q_TERNARY_BASE3_CODEC"
+Q_CODEC_SELECTOR_BASE3 = "base3"
 
 
 def persistent_w6_byte_packed_enabled(*, enabled: bool | None = None) -> bool:
@@ -140,6 +142,25 @@ def persistent_q_ternary_byte_packed_enabled(*, enabled: bool | None = None) -> 
     if enabled is not None:
         return bool(enabled)
     return os.environ.get("HRM_TEXT_158_PERSISTENT_Q_TERNARY_BYTE_PACKED") == "1"
+
+
+def persistent_q_ternary_base3_codec_enabled(*, enabled: bool | None = None) -> bool:
+    if enabled is not None:
+        return bool(enabled)
+    return os.environ.get(PERSISTENT_Q_TERNARY_BASE3_CODEC_ENV) == "1"
+
+
+def resolve_q_codec_selector(*, q_codec_selector: str | None = None) -> str:
+    if q_codec_selector is not None:
+        selector = str(q_codec_selector)
+        if selector not in ("2bit", Q_CODEC_SELECTOR_BASE3):
+            raise ValueError(
+                f"q_codec_selector must be '2bit' or {Q_CODEC_SELECTOR_BASE3!r}, got {selector!r}"
+            )
+        return selector
+    if persistent_q_ternary_base3_codec_enabled():
+        return Q_CODEC_SELECTOR_BASE3
+    return "2bit"
 
 
 def narrow_carrier_w6_enabled(*, enabled: bool | None = None) -> bool:
@@ -309,10 +330,17 @@ def assert_no_raw_int8_q_dual_persistence(
     payload: Mapping[str, Any],
     *,
     q_packed_enabled: bool | None = None,
+    q_codec_selector: str | None = None,
 ) -> None:
     """Fail-closed: byte-packed q checkpoints must not retain raw int8 q_levels."""
 
     authorized = persistent_q_ternary_byte_packed_enabled(enabled=q_packed_enabled)
+    selector = resolve_q_codec_selector(q_codec_selector=q_codec_selector)
+    if selector == Q_CODEC_SELECTOR_BASE3 and not authorized:
+        raise ValueError(
+            "base-3 q codec selector requires "
+            "HRM_TEXT_158_PERSISTENT_Q_TERNARY_BYTE_PACKED=1 before checkpoint save"
+        )
     sidecar = payload.get("trainer_sub2_authority")
     if not isinstance(sidecar, Mapping):
         return

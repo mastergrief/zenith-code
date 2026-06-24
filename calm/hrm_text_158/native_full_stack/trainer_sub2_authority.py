@@ -57,6 +57,12 @@ from calm.hrm_text_158.native_full_stack.persistent_state_budget import (
     pack_ternary_q_2bit_reference,
     unpack_ternary_q_2bit_reference,
 )
+from calm.hrm_text_158.native_full_stack.q_entropy_packing import (
+    BASE3_Q_FORMAT,
+    PackedBase3TernaryQState,
+    pack_ternary_q_base3_5perbyte_reference,
+    unpack_ternary_q_base3_5perbyte_reference,
+)
 from calm.hrm_text_158.native_full_stack.vote_update import (
     VoteUpdateInputs,
     VoteUpdateResult,
@@ -554,6 +560,10 @@ Q_TERNARY_LOGICAL_SHAPE_KEY = "q_ternary_logical_shape"
 Q_TERNARY_LOGICAL_NUMEL_KEY = "q_ternary_logical_numel"
 Q_TERNARY_PADDING_VALUES_KEY = "q_ternary_padding_values"
 Q_TERNARY_BYTE_PACKED_PERSISTED_SAVED_KEY = "q_ternary_byte_packed_persisted_saved"
+PERSISTENT_Q_TERNARY_BASE3_CODEC_ENV = "HRM_TEXT_158_PERSISTENT_Q_TERNARY_BASE3_CODEC"
+Q_CODEC_SELECTOR_2BIT = "2bit"
+Q_CODEC_SELECTOR_BASE3 = "base3"
+RAW_Q_LEVELS_FIELD = "q_levels"
 
 
 def persistent_w6_byte_packed_enabled(*, enabled: bool | None = None) -> bool:
@@ -572,6 +582,211 @@ def persistent_q_ternary_byte_packed_enabled(*, enabled: bool | None = None) -> 
     if enabled is not None:
         return bool(enabled)
     return os.environ.get(PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV) == "1"
+
+
+def persistent_q_ternary_base3_codec_enabled(*, enabled: bool | None = None) -> bool:
+    if enabled is not None:
+        return bool(enabled)
+    return os.environ.get(PERSISTENT_Q_TERNARY_BASE3_CODEC_ENV) == "1"
+
+
+def resolve_q_codec_selector(*, q_codec_selector: str | None = None) -> str:
+    if q_codec_selector is not None:
+        selector = str(q_codec_selector)
+        if selector not in (Q_CODEC_SELECTOR_2BIT, Q_CODEC_SELECTOR_BASE3):
+            raise ValueError(
+                f"q_codec_selector must be {Q_CODEC_SELECTOR_2BIT!r} or "
+                f"{Q_CODEC_SELECTOR_BASE3!r}, got {selector!r}"
+            )
+        return selector
+    if persistent_q_ternary_base3_codec_enabled():
+        return Q_CODEC_SELECTOR_BASE3
+    return Q_CODEC_SELECTOR_2BIT
+
+
+def _pack_q_for_checkpoint(
+    q_levels_logical: torch.Tensor,
+    *,
+    q_packed_enabled: bool | None,
+    q_codec_selector: str | None = None,
+) -> dict[str, Any]:
+    selector = resolve_q_codec_selector(q_codec_selector=q_codec_selector)
+    master_enabled = persistent_q_ternary_byte_packed_enabled(enabled=q_packed_enabled)
+    if selector == Q_CODEC_SELECTOR_BASE3 and not master_enabled:
+        raise ValueError(
+            "base-3 q codec selector requires "
+            f"{PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV}=1 before checkpoint save"
+        )
+    if not master_enabled:
+        return {
+            RAW_Q_LEVELS_FIELD: q_levels_logical,
+            Q_TERNARY_BYTE_PACKED_PERSISTED_KEY: False,
+        }
+    if selector == Q_CODEC_SELECTOR_BASE3:
+        packed_q = pack_ternary_q_base3_5perbyte_reference(q_levels_logical)
+    else:
+        packed_q = pack_ternary_q_2bit_reference(q_levels_logical)
+    return {
+        Q_TERNARY_BYTE_PACKED_PERSISTED_KEY: True,
+        Q_TERNARY_PACKED_SCHEMA_KEY: str(packed_q.format),
+        Q_TERNARY_PACKED_PAYLOAD_KEY: packed_q.packed.detach().cpu().contiguous(),
+        Q_TERNARY_LOGICAL_SHAPE_KEY: list(packed_q.logical_shape),
+        Q_TERNARY_LOGICAL_NUMEL_KEY: int(packed_q.logical_numel),
+        Q_TERNARY_PADDING_VALUES_KEY: int(packed_q.padding_values),
+    }
+
+
+def _unpack_q_from_checkpoint(
+    payload: Mapping[str, Any],
+    *,
+    q_packed_enabled: bool | None,
+) -> torch.Tensor:
+    q_flag_enabled = persistent_q_ternary_byte_packed_enabled(enabled=q_packed_enabled)
+    q_packed_saved = bool(payload.get(Q_TERNARY_BYTE_PACKED_PERSISTED_KEY))
+    if q_packed_saved and not q_flag_enabled:
+        raise ValueError(
+            "2C4a sidecar contains byte-packed q payload but "
+            f"{PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV}=1 is not enabled"
+        )
+    if q_flag_enabled and q_packed_saved:
+        if RAW_Q_LEVELS_FIELD in payload:
+            raise ValueError(
+                "2C4a byte-packed q sidecar must not retain raw int8 q_levels "
+                "alongside packed payload"
+            )
+        packed_tensor = payload.get(Q_TERNARY_PACKED_PAYLOAD_KEY)
+        if not isinstance(packed_tensor, torch.Tensor):
+            raise ValueError("2C4a byte-packed q sidecar missing q_ternary_packed_payload tensor")
+        packed_cpu = packed_tensor.detach().cpu().contiguous()
+        _reject_int8_tensor_as_packed_q(
+            packed_cpu,
+            context="2C4a byte-packed q sidecar payload",
+        )
+        format_tag = payload.get(Q_TERNARY_PACKED_SCHEMA_KEY)
+        if not isinstance(format_tag, str) or not format_tag:
+            raise ValueError("2C4a byte-packed q sidecar missing q packed format tag")
+        logical_shape = tuple(int(dim) for dim in payload[Q_TERNARY_LOGICAL_SHAPE_KEY])
+        logical_numel = int(payload[Q_TERNARY_LOGICAL_NUMEL_KEY])
+        padding_values = int(payload[Q_TERNARY_PADDING_VALUES_KEY])
+        if format_tag == PACKED_TERNARY_Q_FORMAT:
+            packed_q = PackedTernaryQState(
+                packed=packed_cpu,
+                logical_shape=logical_shape,
+                logical_numel=logical_numel,
+                padding_values=padding_values,
+                format=format_tag,
+            )
+            return unpack_ternary_q_2bit_reference(packed_q)
+        if format_tag == BASE3_Q_FORMAT:
+            packed_q = PackedBase3TernaryQState(
+                packed=packed_cpu,
+                logical_shape=logical_shape,
+                logical_numel=logical_numel,
+                padding_values=padding_values,
+                format=format_tag,
+            )
+            return unpack_ternary_q_base3_5perbyte_reference(packed_q)
+        raise ValueError(f"2C4a byte-packed q sidecar has unknown format tag {format_tag!r}")
+    if any(
+        key in payload
+        for key in (
+            Q_TERNARY_PACKED_PAYLOAD_KEY,
+            Q_TERNARY_PACKED_SCHEMA_KEY,
+            Q_TERNARY_LOGICAL_SHAPE_KEY,
+            Q_TERNARY_LOGICAL_NUMEL_KEY,
+            Q_TERNARY_PADDING_VALUES_KEY,
+        )
+    ):
+        raise ValueError("2C4a byte-packed q metadata present without persisted flag")
+    if RAW_Q_LEVELS_FIELD not in payload:
+        raise ValueError("2C4a sidecar missing authoritative int8 q_levels payload")
+    return payload[RAW_Q_LEVELS_FIELD].detach().cpu().to(torch.int8).contiguous()
+
+
+def _distinct_q_format_tags_from_tensor_payloads(
+    tensor_payloads: Mapping[str, Mapping[str, Any]],
+) -> set[str]:
+    tags: set[str] = set()
+    for payload in tensor_payloads.values():
+        if not bool(payload.get(Q_TERNARY_BYTE_PACKED_PERSISTED_KEY)):
+            continue
+        format_tag = payload.get(Q_TERNARY_PACKED_SCHEMA_KEY)
+        if not isinstance(format_tag, str) or not format_tag:
+            raise ValueError("2C4a byte-packed q sidecar missing q packed format tag")
+        tags.add(format_tag)
+    return tags
+
+
+def _assert_uniform_checkpoint_q_formats(
+    tensor_payloads: Mapping[str, Mapping[str, Any]],
+) -> None:
+    tags = _distinct_q_format_tags_from_tensor_payloads(tensor_payloads)
+    if len(tags) > 1:
+        raise ValueError(
+            "2C4a checkpoint contains mixed q packed formats across modules: "
+            f"{sorted(tags)}"
+        )
+
+
+def packed_q_state_from_roundtrip_q_payload(
+    payload: Mapping[str, Any],
+) -> PackedTernaryQState | PackedBase3TernaryQState:
+    if not bool(payload.get(Q_TERNARY_BYTE_PACKED_PERSISTED_KEY)):
+        raise ValueError("roundtrip payload is not byte-packed q")
+    packed_tensor = payload.get(Q_TERNARY_PACKED_PAYLOAD_KEY)
+    if not isinstance(packed_tensor, torch.Tensor):
+        raise ValueError("roundtrip payload missing q_ternary_packed_payload tensor")
+    packed_cpu = packed_tensor.detach().cpu().contiguous()
+    _reject_int8_tensor_as_packed_q(
+        packed_cpu,
+        context="roundtrip byte-packed q payload",
+    )
+    format_tag = payload.get(Q_TERNARY_PACKED_SCHEMA_KEY)
+    if not isinstance(format_tag, str) or not format_tag:
+        raise ValueError("roundtrip payload missing q packed format tag")
+    logical_shape = tuple(int(dim) for dim in payload[Q_TERNARY_LOGICAL_SHAPE_KEY])
+    logical_numel = int(payload[Q_TERNARY_LOGICAL_NUMEL_KEY])
+    padding_values = int(payload[Q_TERNARY_PADDING_VALUES_KEY])
+    if format_tag == PACKED_TERNARY_Q_FORMAT:
+        return PackedTernaryQState(
+            packed=packed_cpu,
+            logical_shape=logical_shape,
+            logical_numel=logical_numel,
+            padding_values=padding_values,
+            format=format_tag,
+        )
+    if format_tag == BASE3_Q_FORMAT:
+        return PackedBase3TernaryQState(
+            packed=packed_cpu,
+            logical_shape=logical_shape,
+            logical_numel=logical_numel,
+            padding_values=padding_values,
+            format=format_tag,
+        )
+    raise ValueError(f"roundtrip payload has unknown q packed format tag {format_tag!r}")
+
+
+def packed_w6_acc_payload_from_roundtrip_bounded_payload(
+    bounded_payload: Mapping[str, Any],
+) -> PackedW6AccumulatorPayload:
+    if not bool(bounded_payload.get(W6_BYTE_PACKED_ACCUMULATOR_PERSISTED_KEY)):
+        raise ValueError("roundtrip bounded payload is not W6 byte-packed")
+    packed_tensor = bounded_payload.get(W6_BYTE_PACKED_PAYLOAD_KEY)
+    if not isinstance(packed_tensor, torch.Tensor):
+        raise ValueError("roundtrip bounded payload missing w6_byte_packed_payload tensor")
+    packed_cpu = packed_tensor.detach().cpu().contiguous()
+    reject_int16_tensor_as_packed_acc(
+        packed_cpu,
+        context="roundtrip W6 byte-packed accumulator payload",
+    )
+    return PackedW6AccumulatorPayload(
+        packed=packed_cpu,
+        logical_shape=tuple(
+            int(dim) for dim in bounded_payload[W6_BYTE_PACKED_LOGICAL_SHAPE_KEY]
+        ),
+        logical_numel=int(bounded_payload[W6_BYTE_PACKED_LOGICAL_NUMEL_KEY]),
+        schema=str(bounded_payload.get(W6_BYTE_PACKED_SCHEMA_KEY, W6_BYTE_PACKED_SCHEMA)),
+    )
 
 
 def _bounded_accumulator_from_decoded_i16(
@@ -608,6 +823,7 @@ def _tensor_state_roundtrip_payload(
     byte_packed_enabled: bool | None = None,
     w5_byte_packed_enabled: bool | None = None,
     q_packed_enabled: bool | None = None,
+    q_codec_selector: str | None = None,
 ) -> dict[str, Any]:
     bounded = state.bounded_accumulator
     bounded_payload: dict[str, Any] = {
@@ -682,16 +898,13 @@ def _tensor_state_roundtrip_payload(
         "exact_accumulator_shadow_sha256": _tensor_sha_or_none(state.exact_accumulator_shadow),
         Q_TERNARY_BYTE_PACKED_PERSISTED_KEY: False,
     }
-    if persistent_q_ternary_byte_packed_enabled(enabled=q_packed_enabled):
-        packed_q = pack_ternary_q_2bit_reference(q_levels_logical)
-        payload[Q_TERNARY_BYTE_PACKED_PERSISTED_KEY] = True
-        payload[Q_TERNARY_PACKED_SCHEMA_KEY] = str(packed_q.format)
-        payload[Q_TERNARY_PACKED_PAYLOAD_KEY] = packed_q.packed.detach().cpu().contiguous()
-        payload[Q_TERNARY_LOGICAL_SHAPE_KEY] = list(packed_q.logical_shape)
-        payload[Q_TERNARY_LOGICAL_NUMEL_KEY] = int(packed_q.logical_numel)
-        payload[Q_TERNARY_PADDING_VALUES_KEY] = int(packed_q.padding_values)
-    else:
-        payload["q_levels"] = q_levels_logical
+    payload.update(
+        _pack_q_for_checkpoint(
+            q_levels_logical,
+            q_packed_enabled=q_packed_enabled,
+            q_codec_selector=q_codec_selector,
+        )
+    )
     return payload
 
 
@@ -780,49 +993,7 @@ def _state_from_roundtrip_payload(
             candidate_name=str(bounded_payload["candidate_name"]),
             raw_arrays_included=False,
         )
-    q_flag_enabled = persistent_q_ternary_byte_packed_enabled(enabled=q_packed_enabled)
-    q_packed_saved = bool(payload.get(Q_TERNARY_BYTE_PACKED_PERSISTED_KEY))
-    if q_packed_saved and not q_flag_enabled:
-        raise ValueError(
-            "2C4a sidecar contains byte-packed q payload but "
-            f"{PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV}=1 is not enabled"
-        )
-    if q_flag_enabled and q_packed_saved:
-        if "q_levels" in payload:
-            raise ValueError(
-                "2C4a byte-packed q sidecar must not retain raw int8 q_levels alongside packed payload"
-            )
-        packed_tensor = payload.get(Q_TERNARY_PACKED_PAYLOAD_KEY)
-        if not isinstance(packed_tensor, torch.Tensor):
-            raise ValueError("2C4a byte-packed q sidecar missing q_ternary_packed_payload tensor")
-        packed_cpu = packed_tensor.detach().cpu().contiguous()
-        _reject_int8_tensor_as_packed_q(
-            packed_cpu,
-            context="2C4a byte-packed q sidecar payload",
-        )
-        packed_q = PackedTernaryQState(
-            packed=packed_cpu,
-            logical_shape=tuple(int(dim) for dim in payload[Q_TERNARY_LOGICAL_SHAPE_KEY]),
-            logical_numel=int(payload[Q_TERNARY_LOGICAL_NUMEL_KEY]),
-            padding_values=int(payload[Q_TERNARY_PADDING_VALUES_KEY]),
-            format=str(payload.get(Q_TERNARY_PACKED_SCHEMA_KEY, PACKED_TERNARY_Q_FORMAT)),
-        )
-        q_levels = unpack_ternary_q_2bit_reference(packed_q)
-    else:
-        if any(
-            key in payload
-            for key in (
-                Q_TERNARY_PACKED_PAYLOAD_KEY,
-                Q_TERNARY_PACKED_SCHEMA_KEY,
-                Q_TERNARY_LOGICAL_SHAPE_KEY,
-                Q_TERNARY_LOGICAL_NUMEL_KEY,
-                Q_TERNARY_PADDING_VALUES_KEY,
-            )
-        ):
-            raise ValueError("2C4a byte-packed q metadata present without persisted flag")
-        if "q_levels" not in payload:
-            raise ValueError("2C4a sidecar missing authoritative int8 q_levels payload")
-        q_levels = payload["q_levels"].detach().cpu().to(torch.int8).contiguous()
+    q_levels = _unpack_q_from_checkpoint(payload, q_packed_enabled=q_packed_enabled)
     frozen_scale = payload["frozen_scale"].detach().cpu().to(torch.float32).contiguous()
     if tensor_sha256(q_levels) != str(payload.get("q_sha256")):
         raise ValueError("2C4a q sidecar hash mismatch on load")
@@ -879,6 +1050,7 @@ def build_trainer_sub2_authority_checkpoint_blob(
     byte_packed_enabled: bool | None = None,
     w5_byte_packed_enabled: bool | None = None,
     q_packed_enabled: bool | None = None,
+    q_codec_selector: str | None = None,
 ) -> dict[str, Any]:
     """Build a 2C4a reconstructable sidecar checkpoint blob.
 
@@ -902,6 +1074,7 @@ def build_trainer_sub2_authority_checkpoint_blob(
             byte_packed_enabled=byte_packed_enabled,
             w5_byte_packed_enabled=w5_byte_packed_enabled,
             q_packed_enabled=q_packed_enabled,
+            q_codec_selector=q_codec_selector,
         )
         for key in sorted(eligible_modules)
     }
@@ -1003,6 +1176,8 @@ def load_trainer_sub2_authority_checkpoint_blob(
     sidecar_without_hash.pop("authoritative_state_payload_sha256", None)
     if declared_hash != _roundtrip_payload_sha256(sidecar_without_hash):
         raise ValueError("2C4a sidecar authoritative payload hash mismatch")
+    tensor_payloads = dict(sidecar.get("tensor_payloads") or {})
+    _assert_uniform_checkpoint_q_formats(tensor_payloads)
     states = {
         str(key): _state_from_roundtrip_payload(
             payload,
@@ -1010,7 +1185,7 @@ def load_trainer_sub2_authority_checkpoint_blob(
             w5_byte_packed_enabled=w5_byte_packed_enabled,
             q_packed_enabled=q_packed_enabled,
         )
-        for key, payload in sorted((sidecar.get("tensor_payloads") or {}).items())
+        for key, payload in sorted(tensor_payloads.items())
     }
     if set(states) != set(eligible_modules):
         raise ValueError("2C4a sidecar state keys do not match eligible modules")

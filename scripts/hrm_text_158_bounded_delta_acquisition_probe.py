@@ -178,15 +178,23 @@ from calm.hrm_text_158.native_full_stack.persistent_state_budget import (
     build_r4_per_module_q_rows,
     measure_r3_persistent_state_budget,
     measure_r4_persistent_state_budget,
+    measure_r4b_persistent_state_budget,
     measure_r5_persistent_state_budget,
     pack_ternary_q_2bit_reference,
+)
+from calm.hrm_text_158.native_full_stack.q_entropy_packing import (
+    pack_ternary_q_base3_5perbyte_reference,
 )
 from calm.hrm_text_158.native_full_stack.qscale_linear import QScaleWeightState
 from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
     PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV,
+    PERSISTENT_Q_TERNARY_BASE3_CODEC_ENV,
     PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV,
+    Q_CODEC_SELECTOR_BASE3,
+    persistent_q_ternary_base3_codec_enabled,
     persistent_q_ternary_byte_packed_enabled,
     persistent_w6_byte_packed_enabled,
+    resolve_q_codec_selector,
 )
 from calm.hrm_text_158.native_full_stack.two_tier_transient_selection import (
     FORBIDDEN_PERSIST_SELECTOR_SURFACES,
@@ -3228,6 +3236,70 @@ def build_r4_persistent_ledger_receipt(
     }
 
 
+def build_r4b_persistent_ledger_receipt(
+    tensor_states: Mapping[str, Any],
+    *,
+    q_packed_enabled: bool,
+    acc_byte_packed_enabled: bool,
+    q_codec_selector: str | None = None,
+) -> dict[str, Any]:
+    """Emit byte-derived R4b ledger fields from serialized SAVE-path sidecar payloads."""
+
+    if not bool(q_packed_enabled) or not bool(acc_byte_packed_enabled):
+        return {"enabled": False}
+    from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
+        _tensor_state_roundtrip_payload,
+        packed_q_state_from_roundtrip_q_payload,
+        packed_w6_acc_payload_from_roundtrip_bounded_payload,
+    )
+
+    selector = resolve_q_codec_selector(q_codec_selector=q_codec_selector)
+    state_keys: list[str] = []
+    qscale_states: list[QScaleWeightState] = []
+    packed_q_payloads = []
+    packed_acc_payloads = []
+    for state_key, state in sorted(tensor_states.items()):
+        state_keys.append(str(state_key))
+        q_levels = state.q_levels.detach().cpu().contiguous()
+        qscale_states.append(
+            QScaleWeightState(
+                q_levels=q_levels,
+                scale=state.frozen_scale.detach().cpu().contiguous(),
+            )
+        )
+        roundtrip_payload = _tensor_state_roundtrip_payload(
+            state,
+            byte_packed_enabled=bool(acc_byte_packed_enabled),
+            q_packed_enabled=bool(q_packed_enabled),
+            q_codec_selector=selector,
+        )
+        packed_q_payloads.append(packed_q_state_from_roundtrip_q_payload(roundtrip_payload))
+        packed_acc_payloads.append(
+            packed_w6_acc_payload_from_roundtrip_bounded_payload(
+                dict(roundtrip_payload.get("bounded_accumulator") or {})
+            )
+        )
+    q_rows = build_r4_per_module_q_rows(state_keys, packed_q_payloads)
+    acc_rows = build_r3_per_module_payload_rows(state_keys, packed_acc_payloads)
+    ledger = measure_r4b_persistent_state_budget(
+        qscale_states,
+        packed_q_payloads,
+        packed_acc_payloads,
+        state_keys=state_keys,
+    )
+    return {
+        "enabled": True,
+        "eligible_module_count": len(tensor_states),
+        "persistent_q_ternary_byte_packed": True,
+        "persistent_q_ternary_base3_codec": selector == Q_CODEC_SELECTOR_BASE3,
+        "q_codec_selector": selector,
+        "persistent_accumulator_w6_byte_packed": True,
+        "r4b_per_module_q_rows": q_rows,
+        "r4b_per_module_acc_rows": acc_rows,
+        **ledger.to_dict(),
+    }
+
+
 def build_r5_persistent_ledger_receipt(
     tensor_states: Mapping[str, Any],
     *,
@@ -5942,6 +6014,7 @@ def run_c2p1_probe(
     persistent_accumulator_w6_byte_packed: bool = False,
     persistent_accumulator_w5_byte_packed: bool = False,
     persistent_q_ternary_byte_packed: bool = False,
+    persistent_q_ternary_base3_codec: bool = False,
     r7_cap_defer_pressure_instrumentation_enabled: bool = False,
     r7_deferred_backlog_carry_enabled: bool = False,
 ) -> dict[str, Any]:
@@ -5972,6 +6045,10 @@ def run_c2p1_probe(
         os.environ[PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV] = "1"
     elif PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV in os.environ:
         os.environ.pop(PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV, None)
+    if bool(persistent_q_ternary_base3_codec):
+        os.environ[PERSISTENT_Q_TERNARY_BASE3_CODEC_ENV] = "1"
+    elif PERSISTENT_Q_TERNARY_BASE3_CODEC_ENV in os.environ:
+        os.environ.pop(PERSISTENT_Q_TERNARY_BASE3_CODEC_ENV, None)
     if oracle_screen_mode is not None and str(oracle_screen_mode) not in ORACLE_SCREEN_MODE_CHOICES:
         raise ValueError(
             f"oracle_screen_mode must be one of {ORACLE_SCREEN_MODE_CHOICES}, got {oracle_screen_mode!r}"
@@ -6889,10 +6966,21 @@ def run_c2p1_probe(
             byte_packed_enabled=bool(persistent_accumulator_w6_byte_packed),
         ),
         "persistent_q_ternary_byte_packed": bool(persistent_q_ternary_byte_packed),
+        "persistent_q_ternary_base3_codec": bool(persistent_q_ternary_base3_codec),
         "r4_persistent_ledger": build_r4_persistent_ledger_receipt(
             final_states,
             q_packed_enabled=bool(persistent_q_ternary_byte_packed),
             acc_byte_packed_enabled=bool(persistent_accumulator_w6_byte_packed),
+        ),
+        "r4b_persistent_ledger": build_r4b_persistent_ledger_receipt(
+            final_states,
+            q_packed_enabled=bool(persistent_q_ternary_byte_packed),
+            acc_byte_packed_enabled=bool(persistent_accumulator_w6_byte_packed),
+            q_codec_selector=(
+                Q_CODEC_SELECTOR_BASE3
+                if bool(persistent_q_ternary_base3_codec)
+                else "2bit"
+            ),
         ),
         "r5_persistent_ledger": build_r5_persistent_ledger_receipt(
             final_states,
@@ -7245,7 +7333,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "Default-off checkpoint seam: persist q levels as real uint8 "
-            "2-bit ternary byte payloads (in-step int8 hot path retained)."
+            "ternary byte payloads (codec selected by base-3 selector; in-step int8 hot path retained)."
+        ),
+    )
+    ap.add_argument(
+        "--persistent-q-ternary-base3-codec",
+        action="store_true",
+        help=(
+            "Default-off checkpoint seam: when q byte-packing is enabled, use the "
+            "base-3 5-per-byte codec instead of the legacy 2-bit reference codec."
         ),
     )
     ap.add_argument(
@@ -7349,6 +7445,10 @@ def main(argv: list[str] | None = None) -> int:
         persistent_q_ternary_byte_packed=bool(
             args.persistent_q_ternary_byte_packed
             or persistent_q_ternary_byte_packed_enabled()
+        ),
+        persistent_q_ternary_base3_codec=bool(
+            args.persistent_q_ternary_base3_codec
+            or persistent_q_ternary_base3_codec_enabled()
         ),
         r7_cap_defer_pressure_instrumentation_enabled=bool(
             args.r7_cap_defer_pressure_instrumentation
