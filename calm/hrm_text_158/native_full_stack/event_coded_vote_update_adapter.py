@@ -19,6 +19,7 @@ from calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier import (
     DEFAULT_DECAY_NUMERATOR,
     EventCodedAccLiveState,
     hot_risk_proxy_indices,
+    observed_surfaces_dict,
 )
 from calm.hrm_text_158.native_full_stack.two_tier_carry_reducers import (
     DEFAULT_CROSSING_THRESHOLD_ABS,
@@ -479,6 +480,9 @@ def apply_event_coded_integer_vote_update_reference(
             persistent_dense_accumulator_materialized_numel=persistent_dense,
         )
     )
+    stats["logical_numel"] = int(state.q_levels.numel())
+    if carrier.step_records:
+        stats["v4_live_observed_surfaces"] = observed_surfaces_dict(carrier.step_records[-1])
     stats["flip_count"] = int(plan.applied_indices.numel())
     stats["q_changed_count"] = int((q_out != state.q_levels).sum().item())
     return EventCodedVoteUpdateResult(

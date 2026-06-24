@@ -185,6 +185,7 @@ from calm.hrm_text_158.native_full_stack.persistent_state_budget import (
     measure_r3_persistent_state_budget,
     measure_r4_persistent_state_budget,
     measure_r4b_persistent_state_budget,
+    measure_r4v_event_coded_acc_budget,
     measure_r5_persistent_state_budget,
     pack_ternary_q_2bit_reference,
 )
@@ -3303,6 +3304,74 @@ def build_r4b_persistent_ledger_receipt(
         "r4b_per_module_q_rows": q_rows,
         "r4b_per_module_acc_rows": acc_rows,
         **ledger.to_dict(),
+    }
+
+
+def build_r4v_persistent_ledger_receipt(
+    tensor_states: Mapping[str, Any],
+    *,
+    event_coded_live_enabled: bool,
+) -> dict[str, Any]:
+    """Emit byte-derived R4v ledger fields from serialized SAVE-path event-coded payloads."""
+
+    if not bool(event_coded_live_enabled):
+        return {"enabled": False}
+    from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
+        _packed_event_coded_from_roundtrip_payload,
+        _tensor_state_roundtrip_payload,
+    )
+
+    state_keys: list[str] = []
+    qscale_states: list[QScaleWeightState] = []
+    event_payloads = []
+    per_module_rows: list[dict[str, int | float | str]] = []
+    for state_key, state in sorted(tensor_states.items()):
+        if state.event_coded_live_carrier is None:
+            raise ValueError(
+                f"{state_key} missing event_coded_live_carrier for R4v ledger receipt"
+            )
+        state_keys.append(str(state_key))
+        q_levels = state.q_levels.detach().cpu().contiguous()
+        qscale_states.append(
+            QScaleWeightState(
+                q_levels=q_levels,
+                scale=state.frozen_scale.detach().cpu().contiguous(),
+            )
+        )
+        roundtrip_payload = _tensor_state_roundtrip_payload(
+            state,
+            byte_packed_enabled=False,
+            w5_byte_packed_enabled=False,
+            q_packed_enabled=False,
+        )
+        packed = _packed_event_coded_from_roundtrip_payload(roundtrip_payload)
+        event_payloads.append(packed)
+        events_bytes = int(packed.events_packed.numel())
+        backlog_bytes = int(packed.backlog_packed.numel())
+        hot_exact_bytes = int(packed.hot_exact_packed.numel())
+        logical_numel = int(packed.logical_numel)
+        per_module_rows.append(
+            {
+                "state_key": str(state_key),
+                "logical_numel": logical_numel,
+                "r4v_actual_events_payload_bytes": events_bytes,
+                "r4v_actual_backlog_payload_bytes": backlog_bytes,
+                "r4v_actual_hot_exact_payload_bytes": hot_exact_bytes,
+            }
+        )
+    ledger = measure_r4v_event_coded_acc_budget(
+        qscale_states,
+        event_payloads,
+        state_keys=state_keys,
+    )
+    return {
+        "enabled": True,
+        "eligible_module_count": len(tensor_states),
+        "persistent_accumulator_event_coded_live": True,
+        "r4v_per_module_acc_rows": per_module_rows,
+        **ledger.to_dict(),
+        "ledger_pass": bool(ledger.r4v_ledger_pass),
+        "content_sha256": str(ledger.r4v_event_payload_content_sha256),
     }
 
 
@@ -7058,6 +7127,10 @@ def run_c2p1_probe(
             final_states,
             q_packed_enabled=bool(persistent_q_ternary_byte_packed),
             acc_w5_byte_packed_enabled=bool(persistent_accumulator_w5_byte_packed),
+        ),
+        "r4v_persistent_ledger": build_r4v_persistent_ledger_receipt(
+            final_states,
+            event_coded_live_enabled=bool(persistent_accumulator_event_coded_live),
         ),
     }
     if slim_receipt_emit:

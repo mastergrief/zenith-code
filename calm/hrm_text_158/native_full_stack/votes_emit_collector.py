@@ -118,6 +118,20 @@ def _hash_flat_indices_payload(payload: Sequence[Mapping[str, Any]]) -> str:
     return _sha256_text(_canonical_json(list(payload)))
 
 
+def _sparse_vote_inputs_by_state_key(
+    votes_by_key: Mapping[str, torch.Tensor],
+) -> dict[str, dict[str, int]]:
+    sparse: dict[str, dict[str, int]] = {}
+    for state_key in sorted(votes_by_key):
+        vote_flat = votes_by_key[state_key].detach().cpu().flatten()
+        sparse[str(state_key)] = {
+            str(index): int(value)
+            for index, value in enumerate(vote_flat.tolist())
+            if int(value) != 0
+        }
+    return sparse
+
+
 def _applied_flat_indices_hash_from_plans(plans_by_key: Mapping[str, Any]) -> str:
     payload: list[dict[str, Any]] = []
     for state_key in sorted(plans_by_key):
@@ -295,6 +309,7 @@ def build_votes_emit_step_record(
         "applied_flat_indices_hash": applied_flat_indices_hash,
         "cap_order_summary": cap_order_summary,
         "pre_update_state_hash": hash_bounded_delta_tensor_states_pre_update(tensor_states),
+        "sparse_vote_inputs_by_state_key": _sparse_vote_inputs_by_state_key(votes_by_key),
         "threshold_semantics": frozen_threshold_semantics_block(),
         "sampled_candidate_table": sampled_candidate_table,
         "sampled_candidate_count": int(len(sampled_candidate_table)),

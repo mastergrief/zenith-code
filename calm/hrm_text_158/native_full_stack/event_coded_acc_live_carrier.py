@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Iterable, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 from calm.hrm_text_158.native_full_stack.event_coded_acc_checkpoint_codec import (
     EventCodedAccEvent,
@@ -278,6 +278,16 @@ def _decisive_q_snapshot(record: StepSurfaceRecord) -> dict[int, int]:
 
     indices = set(record.applied_indices) | set(record.crossing_indices)
     return {int(index): int(record.q_levels.get(int(index), 0)) for index in sorted(indices)}
+
+
+def observed_surfaces_dict(record: StepSurfaceRecord) -> dict[str, Any]:
+    return {
+        "crossing_flat_indices": [int(value) for value in record.crossing_indices],
+        "applied_flat_indices": [int(value) for value in record.applied_indices],
+        "decisive_q_snapshot": {
+            str(key): int(value) for key, value in _decisive_q_snapshot(record).items()
+        },
+    }
 
 
 def decisive_surface_drift_count(
