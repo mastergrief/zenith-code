@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # SessionStart helper: idempotently ensure the standing co-lead +
-# worker lanes are live for the derived channel — codex_co_lead via the
+# worker lane are live for the derived channel — codex_co_lead via the
 # proven ensure-co-lead CLI path, plus plan-dev (standing plan/review +
-# bounded implementation lane) and test-operator (standing deterministic
-# proof-runner lane) in THIS channel via lease-backed auto codex_N handles.
+# bounded implementation lane) in THIS channel via lease-backed auto codex_N
+# handles. test-operator is spawned on-demand as a haiku subagent, not
+# SessionStart-ensured.
 #
 # Idempotent: a role whose live-lease codex_home basename already matches is
 # skipped, so repeated session starts never stack duplicate workers.
@@ -11,13 +12,12 @@
 # are logged and never break Claude startup. Backgrounded by .claude/settings.json.
 # All output → the log; stdout stays clean.
 #
-# Role safety: plan-dev and test-operator are spawned
-# IDLE in this channel — standing workers, NOT auto-dispatched work.
-# plan-dev planning/review, plan-dev bounded edits (require a
-# persisted Claude `+1 implement`), and any test-operator proof run still
-# require an explicit Claude task/approval (or launch) gate per
-# .claude/rules/CLAUDEX_ORCHESTRATION.md. test-operator full access is
-# temp/log/artifact/tmux only, never source authority.
+# Role safety: plan-dev is spawned IDLE in this channel — a standing
+# worker, NOT auto-dispatched work. plan-dev planning/review and bounded
+# edits (require a persisted Claude `+1 implement`) still require an
+# explicit Claude task/approval gate per .claude/rules/CLAUDEX_ORCHESTRATION.md.
+# test-operator proof runs are on-demand haiku subagents (not SessionStart-
+# ensured); full access is temp/log/artifact/tmux only, never source authority.
 #
 # Coupling note: the role-spawn block loads ~/.ai-room/mcp-server.py as a parity
 # module and calls its claudex spawn internals (init_room / ensure_room /
@@ -47,14 +47,13 @@ echo "channel=$CHANNEL cwd=$PROJECT_DIR"
 ai-room ensure-co-lead --channel "$CHANNEL" --cwd "$PROJECT_DIR" \
   || echo "WARN ensure-co-lead failed (non-fatal)"
 
-# 2. Standing claudex lanes (plan-dev plan/review/bounded implementation
-#    + test-operator deterministic proof-runner) in
-#    THIS channel on PINNED handles (codex / codex_2) so the
-#    role↔handle mapping stays stable across sessions (codex_co_lead is
-#    pinned the same way by ensure-co-lead). Any other role is
-#    explicit-dispatch only, not a SessionStart standing role. Skip a role
-#    if already live (on any handle); log-and-skip if its pinned handle is
-#    occupied by a different role (never evict).
+# 2. Standing claudex lane (plan-dev plan/review/bounded implementation)
+#    in THIS channel on PINNED handle codex so the role↔handle mapping stays
+#    stable across sessions (codex_co_lead is pinned the same way by
+#    ensure-co-lead). test-operator is on-demand haiku subagent spawn, not
+#    SessionStart-ensured. Any other role is explicit-dispatch only. Skip a
+#    role if already live (on any handle); log-and-skip if its pinned handle
+#    is occupied by a different role (never evict).
 AI_ROOM_CHANNEL="$CHANNEL" AI_ROOM_CWD="$PROJECT_DIR" python3 - <<'PY' || echo "WARN role-spawn block failed (non-fatal)"
 import importlib.util, json, os, pathlib, sys
 
@@ -64,7 +63,6 @@ CWD = os.environ["AI_ROOM_CWD"]
 # the auto-codex pattern accepted by _spawn_claudex_core's collision guard.
 ROLES = [
     ("plan-dev", "codex"),
-    ("test-operator", "codex_2"),
 ]
 SPAWN_TIMEOUT = 120.0
 
