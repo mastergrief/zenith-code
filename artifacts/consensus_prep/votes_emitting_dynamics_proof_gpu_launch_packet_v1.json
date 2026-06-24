@@ -1,0 +1,223 @@
+{
+  "artifact_binding_dag": {
+    "binding_scheme": "dag_leaf_companion",
+    "main_packet_version": "v1",
+    "replay_commands_artifact": "artifacts/consensus_prep/votes_emitting_dynamics_proof_gpu_launch_packet_v1_replay_commands.json",
+    "replay_commands_sha256": "TBD_AT_GATE",
+    "supersedes_main_packet_sha256": null,
+    "supersedes_main_packet_version": null
+  },
+  "branch_classifier_preregistered": {
+    "authority": "calm/hrm_text_158/native_full_stack/votes_emit_dynamics_replay.py",
+    "branches": [
+      "INTRINSIC_WIDE_CONFIRMED",
+      "STATIC_PROXY_ARTIFACT",
+      "REDUCIBLE_UNDER_DYNAMICS",
+      "MISSING_OBSERVABLES_OR_INVALID_WINDOW",
+      "RUN_HEALTH_FAIL"
+    ],
+    "precedence": [
+      "RUN_HEALTH_FAIL",
+      "MISSING_OBSERVABLES_OR_INVALID_WINDOW",
+      "REDUCIBLE_UNDER_DYNAMICS",
+      "INTRINSIC_WIDE_CONFIRMED",
+      "STATIC_PROXY_ARTIFACT"
+    ],
+    "reducible_capable_arms": ["V4"],
+    "reducible_requires": [
+      "arm_mode=live-altered-dynamics",
+      "arm_id=V4",
+      "event_coded_crossing_residual_log LIVE carrier",
+      "measure_r4v acc-term ledger_pass (<2.0 saved bytes)",
+      "votes_emit_section6_complete"
+    ],
+    "intrinsic_requires": [
+      "from_clean_contiguous",
+      "live_evidence",
+      "all_live_variants_failed_sub2",
+      "votes_emit_section6_complete"
+    ],
+    "replay_only_caps": [
+      "R-static and R-dynamics replay modes cannot bank REDUCIBLE_UNDER_DYNAMICS or INTRINSIC_WIDE_CONFIRMED"
+    ]
+  },
+  "claim_scope": {
+    "claims_this_run": [
+      "Votes-emitting dynamics-proof bounded run with §6-complete emitter",
+      "Per-arm LIVE or replay-only classification over preregistered 5-way branches",
+      "Acc-term separated from q-pack and scale saved-byte ledgers",
+      "From-clean contiguous window (no deferred-backlog intrinsic claim)"
+    ],
+    "does_not_claim_this_run": [
+      "no_commit_on_packet_author",
+      "no_gpu_launch_on_packet_author",
+      "no_sub2_win",
+      "no_combined_q_acc_scale_sub2_claim_unless_each_term_clears",
+      "no_intrinsic_from_resumed_or_pre_backlog_window"
+    ],
+    "run_class": "votes_emitting_dynamics_proof"
+  },
+  "code_pins": {
+    "branch": "feature/hrm-text-1.58",
+    "head_at_packet": "TBD_AT_GATE",
+    "head_required": "TBD_AT_GATE",
+    "repo": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+    "pinned_surfaces": [
+      "calm/hrm_text_158/native_full_stack/votes_emit_collector.py",
+      "calm/hrm_text_158/native_full_stack/votes_emit_dynamics_replay.py",
+      "calm/hrm_text_158/native_full_stack/event_coded_acc_checkpoint_codec.py",
+      "calm/hrm_text_158/native_full_stack/persistent_state_budget.py",
+      "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+      "scripts/hrm_text_158_votes_emit_dynamics_replay.py"
+    ]
+  },
+  "dispatch_msg_id": "TBD_AT_LAUNCH",
+  "dynamics_proof_arms": {
+    "V0": {
+      "label": "baseline_int16_w6_crossing",
+      "arm_mode": "live-altered-dynamics",
+      "replay_modes": ["r-static", "r-dynamics"],
+      "reducible_capable": false,
+      "persistent_acc_carrier": "int16_dense",
+      "notes": "Canonical baseline; density-floor reference"
+    },
+    "V1": {
+      "label": "w6_byte_packed_carry_6bpw",
+      "arm_mode": "live-altered-dynamics",
+      "replay_modes": ["r-static"],
+      "reducible_capable": false,
+      "persistent_acc_carrier": "w6_byte_packed",
+      "notes": "Density-floor / observable-preservation only"
+    },
+    "V2": {
+      "label": "w5_decision_parity_5bpw",
+      "arm_mode": "live-altered-dynamics",
+      "replay_modes": ["r-static"],
+      "reducible_capable": false,
+      "persistent_acc_carrier": "w5_byte_packed",
+      "notes": "Density-floor / static-proxy falsification only"
+    },
+    "V3": {
+      "label": "w6_decay_clamp_grid",
+      "arm_mode": "replay-only",
+      "replay_modes": ["r-dynamics"],
+      "reducible_capable": false,
+      "persistent_acc_carrier": "w6_class",
+      "notes": "Replay-first dynamics grid; cannot bank REDUCIBLE"
+    },
+    "V4": {
+      "label": "event_coded_crossing_residual_log",
+      "arm_mode": "live-altered-dynamics",
+      "replay_modes": ["r-static"],
+      "reducible_capable": true,
+      "persistent_acc_carrier": "event_coded_acc_checkpoint/v0",
+      "notes": "SOLE REDUCIBLE-capable arm; LIVE event-sparse carrier"
+    }
+  },
+  "fail_closed_constraints": {
+    "banked_pt_read_only": true,
+    "bounded_steps_max": 1500,
+    "contiguous_from_clean_parent": true,
+    "executor_test_operator_haiku_only": true,
+    "fresh_run_root_required": true,
+    "from_clean_no_resume": true,
+    "no_commit_on_packet_author": true,
+    "no_gpu_launch_on_packet_author": true,
+    "no_mid_run_reload": true,
+    "packet_only": true,
+    "r7_deferred_backlog_carry_enabled": false,
+    "votes_emit_section6_required": true,
+    "votes_emit_section6_contract_fields": [
+      "applied_flat_indices_hash",
+      "cap_order_summary",
+      "pre_update_state_hash"
+    ],
+    "votes_emit_section6_absent_caps_classifier_at": [
+      "STATIC_PROXY_ARTIFACT",
+      "MISSING_OBSERVABLES_OR_INVALID_WINDOW"
+    ],
+    "votes_emit_section6_absent_forbids": [
+      "REDUCIBLE_UNDER_DYNAMICS",
+      "INTRINSIC_WIDE_CONFIRMED"
+    ]
+  },
+  "fast_training_launch_contract": {
+    "chain_id_pattern": "votes_emit_dynamics_proof_seed44_43_{run_id}",
+    "entrypoint": "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+    "executor": "test-operator",
+    "executor_variant": "haiku",
+    "fresh_run_id_required": true,
+    "gpu_device": "cuda:0",
+    "run_root_pattern": "/home/gabe/claw-code-creditdir/transient_fp_credit/votes_emit_dynamics_proof_seed44_43_{run_id}/",
+    "schema": "hrm_text_158_votes_emitting_dynamics_proof_gpu_launch/v1",
+    "terminal_receipt_must_ai_room_post": true,
+    "terminal_receipt_must_ai_room_post_even_on_harness_fail": true
+  },
+  "hypothesis": "With q-pack ledger <2.0 landed, determine whether int16 vote-accumulator width is intrinsic or reducible under event-coded LIVE dynamics (V4) using §6-complete votes-emit observables.",
+  "launch_ready": false,
+  "ledger_separation": {
+    "q_pack_term": "measure_r4b; frozen witness <2.0 from 73891ed",
+    "scale_term": "reported separately; not folded into acc claim",
+    "acc_term": "measure_r4v on event-coded saved bytes for V4; int16/w6/w5 arms use arm-specific reducers",
+    "combined_q_acc_scale": "diagnostic_only_not_primary_classifier"
+  },
+  "packet_sha": "TBD_AT_GATE",
+  "packet_version": "v1",
+  "parent_checkpoint_pin": {
+    "banked_pt_read_only": true,
+    "from_clean_init": "carry_backlog=None at step 0; no resume",
+    "not_committed": true,
+    "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+    "sha256": "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec"
+  },
+  "prelaunch_persistence_contract": {
+    "load_bearing": true,
+    "persisted_outputs": [
+      {
+        "artifact": "{run_root}/prelaunch/sub2_readiness_receipt.json",
+        "producer_command_key": "sub2_readiness_command",
+        "witness_assert": "ready_for_pre_full_stack_diagnostic==true AND ready_for_main_science==false AND main_science_launch_blocked==true"
+      },
+      {
+        "artifact": "{run_root}/prelaunch/votes_emit_section6_contract_witness.json",
+        "producer_command_key": "votes_emit_section6_contract_witness_command",
+        "witness_assert": "section6_complete==true"
+      }
+    ],
+    "schema": "hrm_text_158_prelaunch_persistence_contract/v1.votes_emit_dynamics",
+    "witness_artifact": "{run_root}/prelaunch/prelaunch_persistence_witness.json",
+    "witness_command_key": "prelaunch_persistence_witness_command"
+  },
+  "provenance": {
+    "design_dual_accept": [
+      "1782324297294",
+      "1782324384968"
+    ],
+    "gabe_directive": "standing auto-research directive",
+    "measurement_infra_commit": "3b0486c",
+    "q_pack_commit": "73891ed"
+  },
+  "sub2_first_gate": {
+    "exception_name": "votes_emitting_dynamics_proof",
+    "command": "PYTHONPATH=. python3 scripts/hrm_text_158_full_sub2_runtime_readiness.py --fixture pre_full_stack_diagnostic --json-out {run_root}/prelaunch/sub2_readiness_receipt.json",
+    "assertions": {
+      "ready_for_pre_full_stack_diagnostic": true,
+      "ready_for_main_science": false,
+      "main_science_launch_blocked": true
+    },
+    "forbidden": ["--expect-ready"]
+  },
+  "votes_emit_contract": {
+    "emitter_module": "calm/hrm_text_158/native_full_stack/votes_emit_collector.py",
+    "minimum_section6_fields": [
+      "applied_flat_indices_hash",
+      "cap_order_summary",
+      "pre_update_state_hash"
+    ],
+    "applied_flip_count_authority": "preview_non_authoritative",
+    "applied_mask_authority": "applied_flat_indices_hash",
+    "cap_order_authority": "cap_order_summary",
+    "manifest_path": "{run_root}/votes_emit/v1/manifest.json",
+    "per_step_path_pattern": "{run_root}/votes_emit/v1/per_step/{step:05d}.json"
+  }
+}
