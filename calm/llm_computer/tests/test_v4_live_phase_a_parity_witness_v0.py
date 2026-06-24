@@ -427,3 +427,117 @@ def test_v4_launch_packet_contract_and_bindings() -> None:
     assert assertions["ready_for_main_science"] is False
     assert assertions["main_science_launch_blocked"] is True
     assert "--expect-ready" not in str(companion["sub2_readiness_command"])
+
+    # code_pins currency: per-file shas are authoritative; head is advisory
+    code_pins = packet["code_pins"]
+    assert code_pins["preflight_authority"] == "file_content_sha256_at_head"
+    assert code_pins["head_required_advisory"] is True
+    assert code_pins["head_mismatch_fail_closed"] is False
+    assert code_pins["file_content_sha_mismatch_fail_closed"] is True
+    assert code_pins["head_required"] == "2abfd51110689e81a821ee83219f7081145435fd"
+    pinned_paths = list(code_pins["file_content_sha256_at_head"].keys())
+    assert any(p.endswith("v4_live_phase_a_parity_witness.py") for p in pinned_paths)
+    assert "scripts/hrm_text_158_v4_live_phase_a_parity_witness.py" in code_pins[
+        "file_content_sha256_at_head"
+    ]
+    assert "scripts/hrm_text_158_v4_file_content_pin_witness.py" in code_pins[
+        "file_content_sha256_at_head"
+    ]
+    assert (
+        code_pins["file_content_sha256_at_head"][
+            "scripts/hrm_text_158_bounded_delta_acquisition_probe.py"
+        ]
+        == "87a82f657e51cf82034d561aeef1fda10ba7a30bd43c010daa2aedbc71ce3fa8"
+    )
+    for rel_path, expected_sha in code_pins["file_content_sha256_at_head"].items():
+        on_disk_sha = hashlib.sha256(Path(rel_path).read_bytes()).hexdigest()
+        assert on_disk_sha == expected_sha, f"stale pin for {rel_path}: {expected_sha} != {on_disk_sha}"
+
+    assert companion.get("preflight_authority") == "file_content_sha256_at_head"
+    assert "file_content_pin_witness_command" in companion
+    assert companion.get("head_pin_advisory") is True
+    witness_cmd = str(companion["file_content_pin_witness_command"])
+    assert "hrm_text_158_v4_file_content_pin_witness.py" in witness_cmd
+    assert "--packet" in witness_cmd
+    assert "--json-out" in witness_cmd
+    import py_compile
+
+    py_compile.compile(
+        "scripts/hrm_text_158_v4_file_content_pin_witness.py",
+        doraise=True,
+    )
+
+
+def test_file_content_pin_witness_passes_when_pins_match_disk(tmp_path: Path) -> None:
+    import subprocess
+
+    out_path = tmp_path / "prelaunch" / "file_content_pin_witness.json"
+    proc = subprocess.run(
+        [
+            "python3",
+            "scripts/hrm_text_158_v4_file_content_pin_witness.py",
+            "--packet",
+            str(V4_LAUNCH_PACKET_MAIN),
+            "--json-out",
+            str(out_path),
+        ],
+        cwd=Path("."),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload["file_content_pin_pass"] is True
+    assert payload["all_match"] is True
+    assert payload["mismatch_count"] == 0
+    assert out_path.is_file()
+
+
+def test_file_content_pin_witness_fails_on_tampered_pin(tmp_path: Path) -> None:
+    from scripts.hrm_text_158_v4_file_content_pin_witness import run_file_content_pin_witness
+
+    packet = json.loads(V4_LAUNCH_PACKET_MAIN.read_text(encoding="utf-8"))
+    pins = dict(packet["code_pins"]["file_content_sha256_at_head"])
+    first_path = sorted(pins.keys())[0]
+    pins[first_path] = "0" * 64
+    out_path = tmp_path / "prelaunch" / "file_content_pin_witness.json"
+    payload = run_file_content_pin_witness(
+        packet_path=V4_LAUNCH_PACKET_MAIN,
+        json_out=out_path,
+        pins_override=pins,
+    )
+    assert payload["file_content_pin_pass"] is False
+    assert payload["all_match"] is False
+    assert payload["mismatch_count"] >= 1
+
+
+def test_file_content_pin_witness_cli_fails_on_tampered_pin(tmp_path: Path) -> None:
+    import subprocess
+
+    packet = json.loads(V4_LAUNCH_PACKET_MAIN.read_text(encoding="utf-8"))
+    tampered = dict(packet)
+    pins = dict(packet["code_pins"]["file_content_sha256_at_head"])
+    first_path = sorted(pins.keys())[0]
+    pins[first_path] = "f" * 64
+    tampered["code_pins"]["file_content_sha256_at_head"] = pins
+    tampered_packet = tmp_path / "tampered_packet.json"
+    tampered_packet.write_text(json.dumps(tampered, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    out_path = tmp_path / "prelaunch" / "file_content_pin_witness.json"
+    proc = subprocess.run(
+        [
+            "python3",
+            "scripts/hrm_text_158_v4_file_content_pin_witness.py",
+            "--packet",
+            str(tampered_packet),
+            "--json-out",
+            str(out_path),
+        ],
+        cwd=Path("."),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode != 0
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload["file_content_pin_pass"] is False

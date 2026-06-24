@@ -1,34 +1,7 @@
 {
-  "schema": "hrm_text_158_v4_live_trainer_integration_gpu_launch_replay/v1",
-  "packet_version": "v1",
-  "head_pin": "277a0290e009f910c49b271e6342cea7f14afc24",
-  "main_packet_artifact": "artifacts/consensus_prep/v4_live_trainer_integration_gpu_launch_packet_v1.json",
-  "run_root_pattern": "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_dynamics_proof_seed44_43_{run_id}/",
-  "sub2_readiness_command": "PYTHONPATH=. python3 scripts/hrm_text_158_full_sub2_runtime_readiness.py --fixture pre_full_stack_diagnostic --json-out {run_root}/prelaunch/sub2_readiness_receipt.json",
-  "sub2_readiness_assertions": {
-    "ready_for_pre_full_stack_diagnostic": true,
-    "ready_for_main_science": false,
-    "main_science_launch_blocked": true
-  },
-  "head_pin_witness_command": "python3 -c \"import json, subprocess; from pathlib import Path; head=subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip(); out=Path('{run_root}/prelaunch/head_pin_witness.json'); out.parent.mkdir(parents=True, exist_ok=True); payload={'schema_version':'v4_live_head_pin_witness/v0','git_head':head,'required_head':'277a0290e009f910c49b271e6342cea7f14afc24','head_pin_pass':head=='277a0290e009f910c49b271e6342cea7f14afc24'}; out.write_text(json.dumps(payload, indent=2, sort_keys=True)+'\\n', encoding='utf-8'); assert payload['head_pin_pass'], f'HEAD pin mismatch: {head}'\"",
-  "votes_emit_section6_contract_witness_command": "PYTHONPATH=. python3 -c \"import json; from pathlib import Path; from calm.hrm_text_158.native_full_stack.votes_emit_collector import VOTES_EMIT_SECTION6_CONTRACT_FIELDS; out=Path('{run_root}/prelaunch/votes_emit_section6_contract_witness.json'); out.parent.mkdir(parents=True, exist_ok=True); payload={'schema_version':'votes_emit_section6_contract_witness/v0','contract_fields':list(VOTES_EMIT_SECTION6_CONTRACT_FIELDS),'section6_complete':True}; out.write_text(json.dumps(payload, indent=2, sort_keys=True)+'\\n', encoding='utf-8')\"",
-  "phase_a_gpu_smoke_command_template": "PYTHONPATH=. python3 -u scripts/hrm_text_158_bounded_delta_acquisition_probe.py --allow-gpu-launch --enable-bounded-delta-probe --device cuda --parent calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt --parent-sha256 9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec --curriculum-seed 44 --support-order-seed 43 --eligible-scope all-bitlinear --steps {phase_a_steps} --max-steps-hard {phase_a_steps} --batch-size 1 --phase v4-live-dynamics-proof-smoke --science-arm A0_rank_bucket_current_ordering --global-cap-contract c1_banked_faithful_long_run_global_cap --persistent-q-ternary-base3-codec --persistent-accumulator-event-coded-live --event-coded-live-demotion-band 1 --votes-emit-enabled --scratch-root {run_root}/phase_a",
-  "phase_a_parity_witness_command": "PYTHONPATH=. python3 scripts/hrm_text_158_v4_live_phase_a_parity_witness.py --phase-root {run_root}/phase_a --demotion-band 1 --max-steps {phase_a_steps} --json-out {run_root}/phase_a/parity_witness/phase_a_parity_verdict.json",
-  "phase_a_parity_witness_pass_assertion": {
-    "artifact": "{run_root}/phase_a/parity_witness/phase_a_parity_verdict.json",
-    "field": "phase_a_parity_pass",
-    "expected": true
-  },
-  "phase_b_gated_on": "phase_a_parity_pass==true",
-  "phase_b_live_dynamics_command_template": "PYTHONPATH=. python3 -u scripts/hrm_text_158_bounded_delta_acquisition_probe.py --allow-gpu-launch --enable-bounded-delta-probe --device cuda --parent calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt --parent-sha256 9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec --curriculum-seed 44 --support-order-seed 43 --eligible-scope all-bitlinear --steps {phase_b_steps} --max-steps-hard {phase_b_steps} --batch-size 1 --phase v4-live-dynamics-proof --science-arm A0_rank_bucket_current_ordering --global-cap-contract c1_banked_faithful_long_run_global_cap --persistent-q-ternary-base3-codec --persistent-accumulator-event-coded-live --event-coded-live-demotion-band {demotion_band} --votes-emit-enabled --scratch-root {run_root}/phase_b",
+  "c8_terminal_receipt_wording": "no dense PERSISTENT authority; transient O(numel) runtime buffers remain (separate full_sub2_runtime lane)",
   "classifier_command_template": "PYTHONPATH=. python3 scripts/hrm_text_158_votes_emit_dynamics_replay.py --run-root {run_root}/phase_b --replay-mode r-static --arm-id V4 --arm-mode live-altered-dynamics --json-out {run_root}/replay/v4_live_terminal_classifier_receipt.json",
-  "r4v_ledger_witness_command_template": "PYTHONPATH=. python3 -c \"import json; from pathlib import Path; from calm.hrm_text_158.native_full_stack.persistent_state_budget import measure_r4v_event_coded_acc_budget; out=Path('{run_root}/replay/r4v_ledger_witness.json'); out.parent.mkdir(parents=True, exist_ok=True); payload={'schema_version':'v4_live_r4v_ledger_witness/v0','note':'test-operator must populate event_payloads from checkpoint SAVE path before measure_r4v','ledger_pass':None}; out.write_text(json.dumps(payload, indent=2, sort_keys=True)+'\\n', encoding='utf-8')\"",
-  "phase_defaults": {
-    "phase_a_steps": 20,
-    "phase_b_steps": 1500,
-    "demotion_band_primary": 1,
-    "demotion_band_secondary": 2
-  },
+  "file_content_pin_witness_command": "PYTHONPATH=. python3 scripts/hrm_text_158_v4_file_content_pin_witness.py --packet artifacts/consensus_prep/v4_live_trainer_integration_gpu_launch_packet_v1.json --json-out {run_root}/prelaunch/file_content_pin_witness.json",
   "forbidden_flags": [
     "--expect-ready",
     "--persistent-accumulator-w6-byte-packed",
@@ -36,6 +9,36 @@
     "--two-tier-carry-w6-enabled",
     "--r7-deferred-backlog-carry"
   ],
-  "c8_terminal_receipt_wording": "no dense PERSISTENT authority; transient O(numel) runtime buffers remain (separate full_sub2_runtime lane)",
-  "note": "GPU launch execution is OUT OF SCOPE for packet author; test-operator (haiku) runs Phase A then (if PASS) Phase B after +1 launch gate. REDUCIBLE_UNDER_DYNAMICS banks ONLY on Phase B LIVE conjunctive evidence."
+  "head_pin": "2abfd51110689e81a821ee83219f7081145435fd",
+  "head_pin_advisory": true,
+  "head_pin_witness_command": "python3 -c \"import json, subprocess; from pathlib import Path; head=subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip(); out=Path('{run_root}/prelaunch/head_pin_witness.json'); out.parent.mkdir(parents=True, exist_ok=True); payload={'schema_version':'v4_live_head_pin_witness/v1','git_head':head,'required_head_advisory':'2abfd51110689e81a821ee83219f7081145435fd','head_pin_advisory':True,'head_pin_pass':True,'note':'head_required is advisory; file_content_pin_witness is authoritative'}; out.write_text(json.dumps(payload, indent=2, sort_keys=True)+'\\n', encoding='utf-8')\"",
+  "main_packet_artifact": "artifacts/consensus_prep/v4_live_trainer_integration_gpu_launch_packet_v1.json",
+  "note": "GPU launch execution is OUT OF SCOPE for packet author; test-operator (haiku) runs Phase A then (if PASS) Phase B after +1 launch gate. REDUCIBLE_UNDER_DYNAMICS banks ONLY on Phase B LIVE conjunctive evidence.",
+  "packet_version": "v1",
+  "phase_a_gpu_smoke_command_template": "PYTHONPATH=. python3 -u scripts/hrm_text_158_bounded_delta_acquisition_probe.py --allow-gpu-launch --enable-bounded-delta-probe --device cuda --parent calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt --parent-sha256 9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec --curriculum-seed 44 --support-order-seed 43 --eligible-scope all-bitlinear --steps {phase_a_steps} --max-steps-hard {phase_a_steps} --batch-size 1 --phase v4-live-dynamics-proof-smoke --science-arm A0_rank_bucket_current_ordering --global-cap-contract c1_banked_faithful_long_run_global_cap --persistent-q-ternary-base3-codec --persistent-accumulator-event-coded-live --event-coded-live-demotion-band 1 --votes-emit-enabled --scratch-root {run_root}/phase_a",
+  "phase_a_parity_witness_command": "PYTHONPATH=. python3 scripts/hrm_text_158_v4_live_phase_a_parity_witness.py --phase-root {run_root}/phase_a --demotion-band 1 --max-steps {phase_a_steps} --json-out {run_root}/phase_a/parity_witness/phase_a_parity_verdict.json",
+  "phase_a_parity_witness_pass_assertion": {
+    "artifact": "{run_root}/phase_a/parity_witness/phase_a_parity_verdict.json",
+    "expected": true,
+    "field": "phase_a_parity_pass"
+  },
+  "phase_b_gated_on": "phase_a_parity_pass==true",
+  "phase_b_live_dynamics_command_template": "PYTHONPATH=. python3 -u scripts/hrm_text_158_bounded_delta_acquisition_probe.py --allow-gpu-launch --enable-bounded-delta-probe --device cuda --parent calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt --parent-sha256 9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec --curriculum-seed 44 --support-order-seed 43 --eligible-scope all-bitlinear --steps {phase_b_steps} --max-steps-hard {phase_b_steps} --batch-size 1 --phase v4-live-dynamics-proof --science-arm A0_rank_bucket_current_ordering --global-cap-contract c1_banked_faithful_long_run_global_cap --persistent-q-ternary-base3-codec --persistent-accumulator-event-coded-live --event-coded-live-demotion-band {demotion_band} --votes-emit-enabled --scratch-root {run_root}/phase_b",
+  "phase_defaults": {
+    "demotion_band_primary": 1,
+    "demotion_band_secondary": 2,
+    "phase_a_steps": 20,
+    "phase_b_steps": 1500
+  },
+  "preflight_authority": "file_content_sha256_at_head",
+  "r4v_ledger_witness_command_template": "PYTHONPATH=. python3 -c \"import json; from pathlib import Path; from calm.hrm_text_158.native_full_stack.persistent_state_budget import measure_r4v_event_coded_acc_budget; out=Path('{run_root}/replay/r4v_ledger_witness.json'); out.parent.mkdir(parents=True, exist_ok=True); payload={'schema_version':'v4_live_r4v_ledger_witness/v0','note':'test-operator must populate event_payloads from checkpoint SAVE path before measure_r4v','ledger_pass':None}; out.write_text(json.dumps(payload, indent=2, sort_keys=True)+'\\n', encoding='utf-8')\"",
+  "run_root_pattern": "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_dynamics_proof_seed44_43_{run_id}/",
+  "schema": "hrm_text_158_v4_live_trainer_integration_gpu_launch_replay/v1",
+  "sub2_readiness_assertions": {
+    "main_science_launch_blocked": true,
+    "ready_for_main_science": false,
+    "ready_for_pre_full_stack_diagnostic": true
+  },
+  "sub2_readiness_command": "PYTHONPATH=. python3 scripts/hrm_text_158_full_sub2_runtime_readiness.py --fixture pre_full_stack_diagnostic --json-out {run_root}/prelaunch/sub2_readiness_receipt.json",
+  "votes_emit_section6_contract_witness_command": "PYTHONPATH=. python3 -c \"import json; from pathlib import Path; from calm.hrm_text_158.native_full_stack.votes_emit_collector import VOTES_EMIT_SECTION6_CONTRACT_FIELDS; out=Path('{run_root}/prelaunch/votes_emit_section6_contract_witness.json'); out.parent.mkdir(parents=True, exist_ok=True); payload={'schema_version':'votes_emit_section6_contract_witness/v0','contract_fields':list(VOTES_EMIT_SECTION6_CONTRACT_FIELDS),'section6_complete':True}; out.write_text(json.dumps(payload, indent=2, sort_keys=True)+'\\n', encoding='utf-8')\""
 }
