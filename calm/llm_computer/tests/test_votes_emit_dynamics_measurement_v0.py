@@ -134,10 +134,10 @@ def test_event_coded_acc_checkpoint_v0_schema_literal_is_exact() -> None:
         logical_numel=packed.logical_numel,
         event_count=packed.event_count,
         backlog_entry_count=packed.backlog_entry_count,
-        schema="event_coded_acc_checkpoint/v1",
+        schema="event_coded_acc_checkpoint/v2",
         format=packed.format,
     )
-    with pytest.raises(ValueError, match="event_coded_acc_checkpoint/v0"):
+    with pytest.raises(ValueError, match="event_coded_acc_checkpoint"):
         unpack_event_coded_acc_checkpoint_reference(bad)
 
 
@@ -152,14 +152,14 @@ def test_measure_r4v_rejects_wrong_payload_schema() -> None:
         logical_numel=packed.logical_numel,
         event_count=packed.event_count,
         backlog_entry_count=packed.backlog_entry_count,
-        schema="event_coded_acc_checkpoint/v1",
+        schema="event_coded_acc_checkpoint/v2",
         format=packed.format,
     )
     qstate = QScaleWeightState(
         q_levels=torch.tensor([[0, 1, -1]], dtype=torch.int8),
         scale=torch.tensor(1.0, dtype=torch.float32),
     )
-    with pytest.raises(ValueError, match="event_coded_acc_checkpoint/v0"):
+    with pytest.raises(ValueError, match="event_coded_acc_checkpoint"):
         measure_r4v_event_coded_acc_budget([qstate], [bad], state_keys=["proj"])
 
 

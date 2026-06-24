@@ -1,13 +1,14 @@
 """Event-coded accumulator checkpoint codec (V4 saved-byte carrier)."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Sequence
 
 import torch
 
 from calm.hrm_text_158.native_full_stack.persistent_state_budget import (
     EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA,
+    EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA_V1,
     EVENT_CODED_ACC_METADATA_HEADER_BYTES,
     PACKED_EVENT_CODED_ACC_FORMAT,
 )
@@ -30,6 +31,10 @@ class PackedEventCodedAccState:
   backlog_entry_count: int
   schema: str = EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA
   format: str = PACKED_EVENT_CODED_ACC_FORMAT
+  hot_exact_packed: torch.Tensor = field(
+      default_factory=lambda: torch.tensor([], dtype=torch.uint8)
+  )
+  hot_exact_row_count: int = 0
 
   @property
   def metadata_bytes(self) -> int:
@@ -136,6 +141,55 @@ def decode_event_coded_acc_events(
   return tuple(decoded)
 
 
+def encode_hot_exact_rows(
+    indices: Sequence[int],
+    values: Sequence[int],
+) -> bytes:
+  if len(indices) != len(values):
+    raise ValueError("hot_exact index/value count mismatch")
+  payload = bytearray()
+  for flat_index, value in zip(indices, values):
+    payload.extend(_encode_varint(int(flat_index)))
+    signed = int(value)
+    if signed < -32768 or signed > 32767:
+      raise ValueError("hot_exact value must fit int16")
+    payload.extend(int(signed).to_bytes(2, byteorder="little", signed=True))
+  return bytes(payload)
+
+
+def decode_hot_exact_rows(
+  hot_exact_packed: torch.Tensor,
+  *,
+  hot_exact_row_count: int,
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+  if hot_exact_packed.dtype != torch.uint8:
+    raise ValueError("hot_exact_packed must be torch.uint8")
+  if hot_exact_packed.ndim != 1:
+    raise ValueError("hot_exact_packed must be 1-D")
+  expected = int(hot_exact_row_count)
+  if expected == 0:
+    if int(hot_exact_packed.numel()) != 0:
+      raise ValueError("hot_exact_row_count mismatch for hot_exact_packed payload")
+    return (), ()
+  data = bytes(hot_exact_packed.detach().cpu().contiguous().tolist())
+  indices: list[int] = []
+  values: list[int] = []
+  offset = 0
+  while offset < len(data) and len(indices) < expected:
+    flat_index, offset = _decode_varint(data, offset)
+    if offset + 2 > len(data):
+      raise ValueError("packed byte length must match format-specific ceiling")
+    signed = int.from_bytes(data[offset : offset + 2], byteorder="little", signed=True)
+    offset += 2
+    indices.append(int(flat_index))
+    values.append(int(signed))
+  if len(indices) != expected:
+    raise ValueError("hot_exact_row_count mismatch for hot_exact_packed payload")
+  if offset != len(data):
+    raise ValueError("packed byte length must match format-specific ceiling")
+  return tuple(indices), tuple(values)
+
+
 def encode_event_coded_backlog_indices(indices: Sequence[int]) -> bytes:
   payload = bytearray()
   for flat_index in indices:
@@ -191,14 +245,50 @@ def pack_event_coded_acc_checkpoint_reference(
   )
 
 
+def pack_event_coded_acc_checkpoint_v1(
+  *,
+  logical_numel: int,
+  events: Sequence[EventCodedAccEvent],
+  backlog_indices: Sequence[int] | None = None,
+  hot_exact_indices: Sequence[int] | None = None,
+  hot_exact_values: Sequence[int] | None = None,
+) -> PackedEventCodedAccState:
+  logical = int(logical_numel)
+  if logical <= 0:
+    raise ValueError("logical_numel must be positive")
+  event_list = tuple(events)
+  backlog = tuple(int(item) for item in (backlog_indices or ()))
+  hot_indices = tuple(int(item) for item in (hot_exact_indices or ()))
+  hot_values = tuple(int(item) for item in (hot_exact_values or ()))
+  if len(hot_indices) != len(hot_values):
+    raise ValueError("hot_exact index/value count mismatch")
+  events_bytes = encode_event_coded_acc_events(event_list)
+  backlog_bytes = encode_event_coded_backlog_indices(backlog)
+  hot_bytes = encode_hot_exact_rows(hot_indices, hot_values)
+  return PackedEventCodedAccState(
+    events_packed=torch.tensor(list(events_bytes), dtype=torch.uint8),
+    backlog_packed=torch.tensor(list(backlog_bytes), dtype=torch.uint8),
+    logical_numel=logical,
+    event_count=len(event_list),
+    backlog_entry_count=len(backlog),
+    schema=EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA_V1,
+    hot_exact_packed=torch.tensor(list(hot_bytes), dtype=torch.uint8),
+    hot_exact_row_count=len(hot_indices),
+  )
+
+
 def unpack_event_coded_acc_checkpoint_reference(
   state: PackedEventCodedAccState | Any,
 ) -> tuple[tuple[EventCodedAccEvent, ...], tuple[int, ...]]:
   schema_tag = str(getattr(state, "schema", ""))
-  if schema_tag != EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA:
+  if schema_tag not in (
+      EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA,
+      EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA_V1,
+  ):
     raise ValueError(
       f"unknown event-coded acc checkpoint schema {schema_tag!r}; "
-      f"expected {EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA!r}"
+      f"expected {EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA!r} or "
+      f"{EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA_V1!r}"
     )
   if str(getattr(state, "format", "")) != PACKED_EVENT_CODED_ACC_FORMAT:
     raise ValueError(f"unknown event-coded acc format {getattr(state, 'format', '')!r}")
@@ -211,3 +301,27 @@ def unpack_event_coded_acc_checkpoint_reference(
     backlog_entry_count=int(state.backlog_entry_count),
   )
   return events, backlog
+
+
+def unpack_event_coded_acc_checkpoint_v1(
+  state: PackedEventCodedAccState | Any,
+) -> tuple[
+  tuple[EventCodedAccEvent, ...],
+  tuple[int, ...],
+  tuple[int, ...],
+  tuple[int, ...],
+]:
+  schema_tag = str(getattr(state, "schema", ""))
+  if schema_tag != EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA_V1:
+    raise ValueError(
+      f"unknown event-coded acc checkpoint schema {schema_tag!r}; "
+      f"expected {EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA_V1!r}"
+    )
+  events, backlog = unpack_event_coded_acc_checkpoint_reference(state)
+  hot_exact_packed = getattr(state, "hot_exact_packed")
+  hot_exact_row_count = int(getattr(state, "hot_exact_row_count", 0))
+  hot_indices, hot_values = decode_hot_exact_rows(
+    hot_exact_packed,
+    hot_exact_row_count=hot_exact_row_count,
+  )
+  return events, backlog, hot_indices, hot_values

@@ -84,6 +84,13 @@ R4B_Q_TERNARY_BYTEPACKED_NOT_SUB2_STATEMENT = (
 
 PACKED_EVENT_CODED_ACC_FORMAT = "event_coded_crossing_residual_log_reference"
 EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA = "event_coded_acc_checkpoint/v0"
+EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA_V1 = "event_coded_acc_checkpoint/v1"
+ACCEPTED_EVENT_CODED_ACC_CHECKPOINT_SCHEMAS = frozenset(
+    {
+        EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA,
+        EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA_V1,
+    }
+)
 EVENT_CODED_ACC_METADATA_HEADER_BYTES = 24
 R4V_EVENT_CODED_ACC_BUDGET_SCHEMA_VERSION = (
     "hrm_text_158_persistent_state_budget/v0.r4v_event_coded_acc"
@@ -93,7 +100,7 @@ R4V_ACC_PHYSICAL_BITS_PER_WEIGHT_CEILING = 2.0
 R4V_ACC_BPW_TOLERANCE = 0.25
 R4V_EVENT_CODED_ACC_NOT_SUB2_STATEMENT = (
     "R4v event-coded acc checkpoint ledger: acc-term measured from actual saved "
-    "event/backlog bytes plus metadata; q-pack and scale reported separately."
+    "event/backlog/hot_exact bytes plus metadata; q-pack and scale reported separately."
 )
 
 R5_PERSISTENT_STATE_BUDGET_SCHEMA_VERSION = (
@@ -310,6 +317,7 @@ class R4vEventCodedAccBudgetReport:
     r4v_acc_inclusive_physical_bits_per_weight: float
     r4v_actual_events_payload_bytes: int
     r4v_actual_backlog_payload_bytes: int
+    r4v_actual_hot_exact_payload_bytes: int
     r4v_actual_acc_metadata_bytes: int
     r4v_event_payload_content_sha256: str
     r4v_ledger_pass: bool
@@ -325,12 +333,76 @@ def _reject_missing_event_coded_payload_field(payload: Any, field_name: str) -> 
     return getattr(payload, field_name)
 
 
+def _decode_r4v_varint(data: bytes, offset: int) -> tuple[int, int]:
+    value = 0
+    shift = 0
+    index = int(offset)
+    while index < len(data):
+        byte = int(data[index])
+        index += 1
+        value |= (byte & 0x7F) << shift
+        if not (byte & 0x80):
+            return int(value), int(index)
+        shift += 7
+        if shift > 63:
+            raise ValueError("varint overflow")
+    raise ValueError("truncated varint")
+
+
+def _validate_v1_hot_exact_packed_exact_consumption(
+    hot_exact_packed: torch.Tensor,
+    *,
+    hot_exact_row_count: int,
+) -> int:
+    """Self-contained fail-closed walk for v1 hot_exact saved-byte accounting."""
+
+    if hot_exact_packed.dtype != torch.uint8:
+        raise ValueError(f"hot_exact_packed must be torch.uint8, got {hot_exact_packed.dtype}")
+    if hot_exact_packed.ndim != 1:
+        raise ValueError("hot_exact_packed must be 1-D bytes")
+    expected = int(hot_exact_row_count)
+    data = bytes(hot_exact_packed.detach().cpu().contiguous().tolist())
+    if expected == 0:
+        if len(data) != 0:
+            raise ValueError("hot_exact_row_count mismatch for hot_exact_packed payload")
+        return 0
+    offset = 0
+    decoded_rows = 0
+    while decoded_rows < expected:
+        if offset >= len(data):
+            raise ValueError("packed byte length must match format-specific ceiling")
+        _flat_index, offset = _decode_r4v_varint(data, offset)
+        if offset + 2 > len(data):
+            raise ValueError("packed byte length must match format-specific ceiling")
+        offset += 2
+        decoded_rows += 1
+    if decoded_rows != expected:
+        raise ValueError("hot_exact_row_count mismatch for hot_exact_packed payload")
+    if offset != len(data):
+        raise ValueError("packed byte length must match format-specific ceiling")
+    return int(len(data))
+
+
+def _hot_exact_payload_bytes(payload: Any) -> int:
+    hot_exact_packed = getattr(payload, "hot_exact_packed", None)
+    if hot_exact_packed is None:
+        return 0
+    if not isinstance(hot_exact_packed, torch.Tensor):
+        raise ValueError("hot_exact_packed must be a torch.Tensor when present")
+    if hot_exact_packed.dtype != torch.uint8:
+        raise ValueError(f"hot_exact_packed must be torch.uint8, got {hot_exact_packed.dtype}")
+    if hot_exact_packed.ndim != 1:
+        raise ValueError("hot_exact_packed must be 1-D bytes")
+    return int(hot_exact_packed.numel() * hot_exact_packed.element_size())
+
+
 def _validate_r4v_event_coded_acc_payload_metadata(payload: Any) -> None:
     schema_tag = str(_reject_missing_event_coded_payload_field(payload, "schema"))
-    if schema_tag != EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA:
+    if schema_tag not in ACCEPTED_EVENT_CODED_ACC_CHECKPOINT_SCHEMAS:
+        accepted = sorted(ACCEPTED_EVENT_CODED_ACC_CHECKPOINT_SCHEMAS)
         raise ValueError(
             f"unknown event-coded acc checkpoint schema {schema_tag!r}; "
-            f"expected {EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA!r}"
+            f"expected one of {accepted!r}"
         )
     format_tag = str(_reject_missing_event_coded_payload_field(payload, "format"))
     if format_tag != PACKED_EVENT_CODED_ACC_FORMAT:
@@ -367,6 +439,19 @@ def _validate_r4v_event_coded_acc_payload_metadata(payload: Any) -> None:
     metadata_bytes = int(_reject_missing_event_coded_payload_field(payload, "metadata_bytes"))
     if metadata_bytes < int(EVENT_CODED_ACC_METADATA_HEADER_BYTES):
         raise ValueError("metadata_bytes below event-coded acc header minimum")
+    if schema_tag == EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA_V1:
+        hot_exact_packed = _reject_missing_event_coded_payload_field(payload, "hot_exact_packed")
+        hot_exact_row_count = int(
+            _reject_missing_event_coded_payload_field(payload, "hot_exact_row_count")
+        )
+        if hot_exact_row_count < 0:
+            raise ValueError("hot_exact_row_count must be non-negative")
+        if not isinstance(hot_exact_packed, torch.Tensor):
+            raise ValueError("hot_exact_packed must be a torch.Tensor when present")
+        _validate_v1_hot_exact_packed_exact_consumption(
+            hot_exact_packed,
+            hot_exact_row_count=hot_exact_row_count,
+        )
 
 
 def _validate_r4v_event_coded_acc_payloads(
@@ -379,6 +464,7 @@ def _validate_r4v_event_coded_acc_payloads(
     total_lanes = 0
     total_events_bytes = 0
     total_backlog_bytes = 0
+    total_hot_exact_bytes = 0
     total_metadata_bytes = 0
     for payload in event_payloads:
         _validate_r4v_event_coded_acc_payload_metadata(payload)
@@ -387,13 +473,19 @@ def _validate_r4v_event_coded_acc_payloads(
         backlog_packed = payload.backlog_packed
         total_events_bytes += int(events_packed.numel() * events_packed.element_size())
         total_backlog_bytes += int(backlog_packed.numel() * backlog_packed.element_size())
+        total_hot_exact_bytes += int(_hot_exact_payload_bytes(payload))
         total_metadata_bytes += int(payload.metadata_bytes)
     if total_lanes != int(eligible_weight_count):
         raise ValueError(
             "sum(event_payload.logical_numel) must match eligible q entries; "
             f"got event_lanes={total_lanes}, eligible={eligible_weight_count}"
         )
-    return int(total_events_bytes), int(total_backlog_bytes), int(total_metadata_bytes)
+    return (
+        int(total_events_bytes),
+        int(total_backlog_bytes),
+        int(total_hot_exact_bytes),
+        int(total_metadata_bytes),
+    )
 
 
 def canonical_r4v_event_payload_content_sha256(
@@ -418,6 +510,15 @@ def canonical_r4v_event_payload_content_sha256(
                 "backlog_payload_sha256": hashlib.sha256(
                     backlog_packed.numpy().tobytes()
                 ).hexdigest(),
+                "hot_exact_payload_sha256": hashlib.sha256(
+                    getattr(payload, "hot_exact_packed", torch.tensor([], dtype=torch.uint8))
+                    .detach()
+                    .cpu()
+                    .contiguous()
+                    .numpy()
+                    .tobytes()
+                ).hexdigest(),
+                "hot_exact_row_count": int(getattr(payload, "hot_exact_row_count", 0)),
                 "metadata_bytes": int(payload.metadata_bytes),
             }
         )
@@ -441,9 +542,11 @@ def measure_r4v_event_coded_acc_budget(
         q_levels, _scale, _ = validate_qscale_weight_state(qscale_state)
         eligible_weight_count += int(q_levels.numel())
 
-    events_bytes, backlog_bytes, metadata_bytes = _validate_r4v_event_coded_acc_payloads(
-        event_payloads,
-        eligible_weight_count=eligible_weight_count,
+    events_bytes, backlog_bytes, hot_exact_bytes, metadata_bytes = (
+        _validate_r4v_event_coded_acc_payloads(
+            event_payloads,
+            eligible_weight_count=eligible_weight_count,
+        )
     )
     effective_state_keys = (
         list(state_keys)
@@ -456,7 +559,7 @@ def measure_r4v_event_coded_acc_budget(
         effective_state_keys,
         event_payloads,
     )
-    actual_acc_payload_bytes = int(events_bytes + backlog_bytes)
+    actual_acc_payload_bytes = int(events_bytes + backlog_bytes + hot_exact_bytes)
     acc_physical_bpw = _bits_per_weight(actual_acc_payload_bytes * 8, eligible_weight_count)
     acc_metadata_bpw = _bits_per_weight(metadata_bytes * 8, eligible_weight_count)
     acc_inclusive_bpw = float(acc_physical_bpw + acc_metadata_bpw)
@@ -472,6 +575,7 @@ def measure_r4v_event_coded_acc_budget(
         r4v_acc_inclusive_physical_bits_per_weight=float(acc_inclusive_bpw),
         r4v_actual_events_payload_bytes=int(events_bytes),
         r4v_actual_backlog_payload_bytes=int(backlog_bytes),
+        r4v_actual_hot_exact_payload_bytes=int(hot_exact_bytes),
         r4v_actual_acc_metadata_bytes=int(metadata_bytes),
         r4v_event_payload_content_sha256=str(payload_sha256),
         r4v_ledger_pass=bool(ledger_pass),
