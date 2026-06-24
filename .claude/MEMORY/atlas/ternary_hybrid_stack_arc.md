@@ -167,6 +167,31 @@ science-identical to the dual-accepted artifact; embedded `tool_source_sha256`
 differs only due to the `:436` hygiene fix),
 `10dd04872201bce0201b02c96d1358e73cd3e0e52d4316aef5aa347c42fe13ff` (csv).
 
+### 2026-06-24 — q-ledger reframe + base-3 q-pack storage feasibility (Q_DENSE_PACK_LEDGER_WIN)
+
+**Reframe (directional):** with the current banked 2-bit q-pack, strict sub-2
+persistent state is blocked at the **q-ledger floor** even if accumulator
+persistence is removed; the binding constraint is now **q-pack density**.
+(`persistent_state_budget.py`: q `packed_2bit_ternary_reference` = 2.0 bpw,
+target 2.0, `required_acc_physical ≤ 0`.)
+
+**Q_DENSE_PACK_LEDGER_WIN:** existing base-3 5-trit/byte codec
+(`q_entropy_packing.py:250` `pack_ternary_q_base3_5perbyte_reference`;
+storage-only, **NOT checkpoint-wired**) gives inclusive q+scale
+**1.600318 bpw < 2.0** on live 32-module / 29,360,128-lane surface; bit-exact
+roundtrip **32/32**. 2-bit reference inclusive = **2.000314 bpw**. Acc headroom
+≈ **0.40 bpw** at target 2.0 with acc omitted; metadata+scale ≈ **0.0003 bpw**
+(not blocker). Parent `9b4e311a` read-only unchanged.
+
+**Explicitly NOT banked:** not checkpoint-wired (2-bit seam remains
+`trainer_sub2_authority.py:685/:790`; integration = separate gated build); not
+full sub-2 persistent (acc non-persistence = separate gate); no
+readiness/dynamics claim.
+
+Provenance: reframe dual-accept `1782317459187` / `1782317569754`; q-pack win
+dual-accept `1782318183500` / `1782318397500`; grounding receipt
+`1782317965284-4964b8f6`.
+
 ## Origin
 
 Lane separated from `hrm-158.md` so the curriculum lane (90/90 bank gate,
