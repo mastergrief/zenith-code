@@ -142,6 +142,31 @@ Run root:
 Dual-accept: claude gate-1 `1782311411143` + co_lead gate-2 `1782311514192`;
 board null synthesis `1782311588173`; co_lead concurrence `1782311605313`.
 
+### 2026-06-24 — R5 offline falsification-screen → FIXED_ACC_REPRESENTATION_NULL (static_proxy)
+
+Verdict: current fixed-accumulator representation/sparsity and this static
+threshold/decay proxy do not yield a sub-2 persistent accumulator state.
+(`FIXED_ACC_REPRESENTATION_NULL`, `static_proxy` only.)
+
+Evidence (35-regime sweep over R5.1 W6-oracle sidecars, steps 3–10, 32
+modules): sparse-hot min **36.56** bpw ≫ W6 6.0 reference; min domain
+**4.86** bpw; min entropy **3.82** bits/lane; **0/35** `sub2_target_hit`
+(target 2.0 bpw); `min_distance_from_2bpw` **2.865**. Crossing factual:
+several regimes preserve crossing=1.0 while acc-term drops to ~5.3–5.7 bpw;
+none approach sub-2; deeper threshold/decay cuts degrade crossing.
+
+Explicitly NOT banked: "wide accumulator intrinsic to threshold-damped voting"
+— needs votes-emitting dynamics-proof run. Honesty: `static_proxy`; applied-mask,
+cap-order (`abs(new_acc)` ranking), and q-trajectory unscoreable (sidecars lack
+per-lane votes/applied_indices).
+
+Provenance: dual-accept `1782315588269` / `1782315687533`; run root
+`r5_1_w5_decision_parity_tier1_20260624_151005`; artifacts
+`d49ae333c58baa627eb54375c9f92fc9e254e6f3da19feb3b446511f721c6c5c` (json;
+science-identical to the dual-accepted artifact; embedded `tool_source_sha256`
+differs only due to the `:436` hygiene fix),
+`10dd04872201bce0201b02c96d1358e73cd3e0e52d4316aef5aa347c42fe13ff` (csv).
+
 ## Origin
 
 Lane separated from `hrm-158.md` so the curriculum lane (90/90 bank gate,
