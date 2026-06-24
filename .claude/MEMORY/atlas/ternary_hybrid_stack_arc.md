@@ -103,6 +103,45 @@ Receipts:
   `calm/hrm_text_158/native_full_stack/activation_credit_ceiling_audit.py` and
   CLI `scripts/hrm_text_158_activation_credit_ceiling_audit.py`.
 
+### 2026-06-24 — R5.1 W5 branch-C decision-parity Tier-1 smoke → informative NULL
+
+Question: does dense W5 byte-packed vote-accumulator ([-15,15], 5-bit signed)
+preserve decision-parity dynamics vs W6 oracle on banked R4.1 parent geometry
+during a 10-step all-bitlinear diagnostic?
+
+Path note: HRM code/receipts on `origin/feature/hrm-text-1.58` at commit
+`785402b` (W5 codec + decision-parity classifier); packet
+`artifacts/consensus_prep/r5_1_w5_decision_parity_tensorwide_gpu_launch_packet_v1.json`
+sha `1f79d2a8cd3b4e0d8e6d04a3f034d55e16bfbd8c502f44e0ab7a67e58358763b`.
+
+- **Verdict:** informative NULL — dense W5 is **domain/headroom-insufficient**
+  for this diagnostic. Fail-closed codec (`narrow_accumulator_codec.py:419`)
+  correctly raised at post-10-step ledger emit; treatment receipt never written.
+- **W6 oracle trajectory** (per-step `global_max_abs_accumulator`): 4→8→12
+  (≤step3), **16 at step4** (26/32 modules >15), 32/32 >15 by step6, **29 at
+  step10** (0/32 >31; W6 [-31,31] held). Parent pt `9b4e311a` unchanged.
+- **3-ledger (target vs actual):** forward 1.585 bpw unchanged; persistent
+  oracle ≈8.0 bpw (q 2.0 + W6 6.0); treatment target ≈7.0 bpw (q 2.0 + W5
+  5.0) — **not reached** (ledger emit blocked). NOT sub-2, NOT lossless.
+- **Classifier:** receipt-level `R5_1_HARNESS_OR_LIVENESS_FAIL` (mechanically
+  correct); science-level `R5_1_DOMAIN_OR_HEADROOM_FAIL`.
+- **Honesty:** NO bank/`.pt`/sub-2/lossless/readiness/sub2_win.
+  `R5_W5_BYTEPACKED_DECISION_PARITY_NOT_SUB2_STATEMENT`. W5 decision-parity
+  not directly scored; ~50% max-range clip across all modules = strong indirect
+  evidence against dense W5 on live geometry.
+
+Claim boundary: W5 dense-width branch **CLOSED** for this lane. W6 =
+practical dense-accumulator floor (corroborates prior R5 lossless null from the
+domain angle). Do NOT run W4. Pivot = **sparse/structured vote representation
+or changed vote law**, NOT narrower dense width. Clip-and-record observe-mode
+optional future plan-dev packet only.
+
+Run root:
+`/home/gabe/claw-code-creditdir/transient_fp_credit/r5_1_w5_decision_parity_tier1_20260624_151005`.
+
+Dual-accept: claude gate-1 `1782311411143` + co_lead gate-2 `1782311514192`;
+board null synthesis `1782311588173`; co_lead concurrence `1782311605313`.
+
 ## Origin
 
 Lane separated from `hrm-158.md` so the curriculum lane (90/90 bank gate,
