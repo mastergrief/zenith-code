@@ -48,7 +48,17 @@ from calm.hrm_text_158.native_full_stack.two_tier_threshold_semantics import (
 from calm.hrm_text_158.native_full_stack.two_tier_transient_selection import (
     LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
 )
-from calm.hrm_text_158.native_full_stack.sparse_vote_events import SparseVoteEvents
+from calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier import (
+    EventCodedAccLiveState,
+)
+from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
+    EventCodedVoteUpdateState,
+    C8_PERSISTENT_AUTHORITY_SCOPE_KEY,
+    C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY,
+    event_coded_live_carrier_enabled,
+    measure_persistent_dense_accumulator_materialized_numel,
+    tensor_states_use_event_coded_live_carrier,
+)
 from calm.hrm_text_158.native_full_stack.vote_update import (
     LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
     VoteUpdateInputs,
@@ -727,6 +737,7 @@ class BoundedDeltaTensorState:
     bounded_accumulator_fresh_for_exact_shadow: bool = True
     bounded_accumulator_rebuild_hot_exact_indices: tuple[int, ...] | None = None
     bounded_accumulator_rebuild_cold_default_value: int | None = None
+    event_coded_live_carrier: EventCodedAccLiveState | None = None
 
     def __post_init__(self) -> None:
         if not self.state_key:
@@ -737,6 +748,14 @@ class BoundedDeltaTensorState:
             raise ValueError("frozen_scale must be a floating scalar tensor")
         if tuple(self.bounded_accumulator.logical_shape) != tuple(self.q_levels.shape):
             raise ValueError("bounded accumulator shape must match q_levels")
+        if self.event_coded_live_carrier is not None:
+            if self.exact_accumulator_shadow is not None:
+                raise ValueError(
+                    "event_coded_live_carrier and exact_accumulator_shadow are mutually exclusive"
+                )
+            if int(self.event_coded_live_carrier.logical_numel) != int(self.q_levels.numel()):
+                raise ValueError("event_coded_live_carrier logical_numel must match q_levels.numel")
+            return
         if self.exact_accumulator_shadow is not None:
             if self.exact_accumulator_shadow.dtype != torch.int16:
                 raise ValueError(
@@ -823,7 +842,16 @@ class BoundedDeltaTensorState:
         *,
         device: torch.device | str | None = None,
         two_tier_carry_w6_enabled: bool = False,
-    ) -> VoteUpdateState:
+    ) -> VoteUpdateState | EventCodedVoteUpdateState:
+        if self.event_coded_live_carrier is not None:
+            if two_tier_carry_w6_enabled:
+                raise ValueError("event-coded live carrier path does not support two_tier_carry_w6")
+            q = (
+                self.q_levels.to(device=device).contiguous()
+                if device is not None
+                else self.q_levels.contiguous()
+            )
+            return EventCodedVoteUpdateState(q_levels=q, carrier=self.event_coded_live_carrier)
         if self.exact_accumulator_shadow is None:
             raise ValueError(
                 "dense oracle/control vote_update_state is unavailable for a bounded-only "
@@ -1012,6 +1040,73 @@ def make_live_shadow_tensor_state(
         bounded_accumulator_fresh_for_exact_shadow=False,
         bounded_accumulator_rebuild_hot_exact_indices=rebuild_hot,
         bounded_accumulator_rebuild_cold_default_value=rebuild_default,
+    )
+
+
+def make_live_event_coded_tensor_state(
+    prior_state: BoundedDeltaTensorState,
+    q_levels: torch.Tensor,
+    carrier: EventCodedAccLiveState,
+) -> BoundedDeltaTensorState:
+    if prior_state.event_coded_live_carrier is None:
+        raise ValueError("make_live_event_coded_tensor_state requires prior V4 carrier state")
+    q = q_levels.detach().cpu().to(torch.int8).contiguous()
+    if tuple(prior_state.bounded_accumulator.logical_shape) != tuple(q.shape):
+        raise ValueError("live event-coded update cannot change bounded accumulator logical shape")
+    if int(carrier.logical_numel) != int(q.numel()):
+        raise ValueError("carrier logical_numel must match q_levels.numel")
+    scale = prior_state.frozen_scale.detach().cpu().to(torch.float32).reshape(())
+    return BoundedDeltaTensorState(
+        state_key=prior_state.state_key,
+        q_levels=q,
+        frozen_scale=scale,
+        bounded_accumulator=prior_state.bounded_accumulator,
+        exact_accumulator_shadow=None,
+        bounded_accumulator_fresh_for_exact_shadow=False,
+        bounded_accumulator_rebuild_hot_exact_indices=prior_state.rebuild_hot_exact_indices(),
+        bounded_accumulator_rebuild_cold_default_value=prior_state.rebuild_cold_default_value(),
+        event_coded_live_carrier=carrier,
+    )
+
+
+def make_event_coded_live_tensor_state(
+    state_key: str,
+    q_levels: torch.Tensor,
+    frozen_scale: torch.Tensor | float,
+    *,
+    demotion_band: int = 1,
+    carrier: EventCodedAccLiveState | None = None,
+) -> BoundedDeltaTensorState:
+    q = q_levels.detach().cpu().to(torch.int8).contiguous()
+    scale = (
+        torch.tensor(float(frozen_scale), dtype=torch.float32)
+        if not isinstance(frozen_scale, torch.Tensor)
+        else frozen_scale.detach().cpu().to(torch.float32).reshape(())
+    )
+    numel = int(q.numel())
+    live_carrier = carrier or EventCodedAccLiveState(
+        logical_numel=numel,
+        demotion_band=int(demotion_band),
+    )
+    if int(live_carrier.logical_numel) != numel:
+        raise ValueError("carrier logical_numel must match q_levels.numel")
+    bounded = encode_budget_capped_hybrid_reference(
+        VoteUpdateState(
+            q_levels=q,
+            accumulators=torch.zeros_like(q, dtype=torch.int16),
+        ),
+        hot_exact_indices=(),
+        cold_default_value=int(live_carrier.cold_default),
+        cold_exception_indices=(),
+    )
+    return BoundedDeltaTensorState(
+        state_key=str(state_key),
+        q_levels=q,
+        frozen_scale=scale,
+        bounded_accumulator=bounded,
+        exact_accumulator_shadow=None,
+        bounded_accumulator_fresh_for_exact_shadow=False,
+        event_coded_live_carrier=live_carrier,
     )
 
 
@@ -1570,6 +1665,182 @@ def _validate_sparse_vote_authority_only_gate(
         )
 
 
+def _apply_bounded_delta_vote_step_event_coded_live(
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+    votes_by_key: Mapping[str, torch.Tensor],
+    vote_specs_by_key: Mapping[str, VoteUpdateSpec],
+    *,
+    global_cap_spec: GlobalRateCapSpec | None = None,
+    global_cap_tie_rule_mode: str = EXACT_GLOBAL_CAP_TIE_RULE_MODE,
+    global_cap_contract_name: str | None = None,
+    deferred_backlog: dict[str, dict[int, dict[str, int]]] | None = None,
+    local_selection_ordering_mode: str = LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+    local_selection_ordering_seed: int = 0,
+    local_selection_ordering_step: int = 0,
+) -> BoundedDeltaLearnerStepResult:
+    from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
+        EventCodedVoteUpdateState,
+        apply_event_coded_cap_mutations,
+        apply_event_coded_integer_vote_update_reference,
+        plan_event_coded_integer_vote_update_reference,
+    )
+
+    event_states: dict[str, EventCodedVoteUpdateState] = {}
+    inputs_by_key: dict[str, VoteUpdateInputs] = {}
+    plans_by_key: dict[str, VoteUpdatePlan] = {}
+    cap_inputs: list[GlobalRateCapTensorInput] = []
+
+    for state_key, state in sorted(tensor_states.items()):
+        vu = state.vote_update_state()
+        if not isinstance(vu, EventCodedVoteUpdateState):
+            raise ValueError(f"{state_key} missing event_coded_live_carrier on V4 path")
+        votes = votes_by_key[state_key].detach().cpu().to(torch.int16).contiguous()
+        inputs = VoteUpdateInputs(votes=votes)
+        plan = plan_event_coded_integer_vote_update_reference(
+            vu,
+            inputs,
+            vote_specs_by_key[state_key],
+            local_selection_ordering_mode=str(local_selection_ordering_mode),
+            local_selection_ordering_seed=int(local_selection_ordering_seed),
+            local_selection_ordering_step=int(local_selection_ordering_step),
+        )
+        event_states[state_key] = vu
+        inputs_by_key[state_key] = inputs
+        plans_by_key[state_key] = plan
+        cap_inputs.append(
+            GlobalRateCapTensorInput(
+                state_key=state_key,
+                state=vu.to_vote_update_state(),
+                plan=plan,
+                vote_inputs=inputs,
+            )
+        )
+
+    carriers_by_key: dict[str, EventCodedAccLiveState] = {}
+    q_by_key: dict[str, torch.Tensor] = {}
+    stats_by_key: dict[str, dict[str, Any]] = {}
+
+    if global_cap_spec is not None:
+        cap_result = apply_global_rate_cap_reference(
+            cap_inputs,
+            global_cap_spec,
+            deferred_backlog=deferred_backlog,
+            tie_rule_mode=global_cap_tie_rule_mode,
+            contract_name=global_cap_contract_name,
+        )
+        backlog = cap_result.deferred_backlog
+        summary = dict(cap_result.step_summary)
+        summary["global_rate_cap_enabled"] = True
+        summary["event_coded_live_carrier_enabled"] = True
+        for item in cap_result.tensor_results:
+            state_key = str(item.state_key)
+            prior = tensor_states[state_key]
+            vu = event_states[state_key]
+            plan = plans_by_key[state_key]
+            accepted_flat = tuple(
+                int(row.flat_index)
+                for row in cap_result.accepted_rows
+                if row.state_key == state_key
+            )
+            local_result = apply_event_coded_integer_vote_update_reference(
+                vu,
+                inputs_by_key[state_key],
+                vote_specs_by_key[state_key],
+                local_selection_ordering_mode=str(local_selection_ordering_mode),
+                local_selection_ordering_seed=int(local_selection_ordering_seed),
+                local_selection_ordering_step=int(local_selection_ordering_step),
+                step_index=int(local_selection_ordering_step),
+            )
+            q_out, carrier = apply_event_coded_cap_mutations(
+                local_result.carrier,
+                local_result.q_levels,
+                plan,
+                accepted_flat,
+                step_index=int(local_selection_ordering_step),
+            )
+            carriers_by_key[state_key] = carrier
+            q_by_key[state_key] = q_out
+            stats = dict(local_result.stats)
+            stats["live_authority"] = "event_coded_live_carrier"
+            stats["exact_accumulator_shadow_sha256_after"] = None
+            stats_by_key[state_key] = stats
+    else:
+        backlog = deferred_backlog or {}
+        summary = {
+            "global_rate_cap_enabled": False,
+            "event_coded_live_carrier_enabled": True,
+        }
+        for state_key, prior in sorted(tensor_states.items()):
+            result = apply_event_coded_integer_vote_update_reference(
+                event_states[state_key],
+                inputs_by_key[state_key],
+                vote_specs_by_key[state_key],
+                local_selection_ordering_mode=str(local_selection_ordering_mode),
+                local_selection_ordering_seed=int(local_selection_ordering_seed),
+                local_selection_ordering_step=int(local_selection_ordering_step),
+                step_index=int(local_selection_ordering_step),
+            )
+            carriers_by_key[state_key] = result.carrier
+            q_by_key[state_key] = result.q_levels
+            stats = dict(result.stats)
+            stats["live_authority"] = "event_coded_live_carrier"
+            stats["exact_accumulator_shadow_sha256_after"] = None
+            stats_by_key[state_key] = stats
+        summary["q_changed_count"] = sum(
+            int(stats.get("q_changed_count", 0)) for stats in stats_by_key.values()
+        )
+
+    next_states: dict[str, BoundedDeltaTensorState] = {}
+    tensor_stats: dict[str, dict[str, Any]] = {}
+    for state_key, prior_state in sorted(tensor_states.items()):
+        next_state = make_live_event_coded_tensor_state(
+            prior_state,
+            q_by_key[state_key],
+            carriers_by_key[state_key],
+        )
+        next_states[state_key] = next_state
+        persistent_dense = measure_persistent_dense_accumulator_materialized_numel(
+            exact_accumulator_shadow=next_state.exact_accumulator_shadow,
+            event_coded_live_carrier=next_state.event_coded_live_carrier,
+            eligible_numel=int(next_state.q_levels.numel()),
+        )
+        if persistent_dense != 0:
+            raise ValueError(
+                "C8 outbound guard failed: V4 next_states must not carry dense persistent "
+                "accumulator authority"
+            )
+        stats_out = {
+            **stats_by_key[state_key],
+            "state_key": state_key,
+            "projection_law": S1_PROJECTION_LAW,
+            "vote_law": S1_RANK_BUCKET_VOTE_LAW,
+            "bounded_update_attribution": BOUNDED_UPDATE_ATTRIBUTION,
+            "q_sha256_before": tensor_sha256(prior_state.q_levels),
+            "q_sha256_after": tensor_sha256(q_by_key[state_key]),
+            "event_coded_live_carrier_content_sha256_after": stats_by_key[state_key].get(
+                "event_coded_live_carrier_content_sha256_after"
+            ),
+            "bounded_accumulator_fresh_for_exact_shadow": False,
+            "bounded_accumulator_rebuilt_for_parity": False,
+            "bounded_decode_parity_checked": False,
+            C8_PERSISTENT_AUTHORITY_SCOPE_KEY: stats_by_key[state_key].get(
+                C8_PERSISTENT_AUTHORITY_SCOPE_KEY
+            ),
+            C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY: stats_by_key[state_key].get(
+                C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY
+            ),
+            "dense_accumulator_materialized_numel": int(persistent_dense),
+        }
+        tensor_stats[state_key] = stats_out
+
+    return BoundedDeltaLearnerStepResult(
+        tensor_states=next_states,
+        tensor_stats=tensor_stats,
+        deferred_backlog=backlog,
+        global_summary=summary,
+    )
+
+
 def apply_bounded_delta_vote_step(
     tensor_states: Mapping[str, BoundedDeltaTensorState],
     votes_by_key: Mapping[str, torch.Tensor] | None,
@@ -1642,6 +1913,31 @@ def apply_bounded_delta_vote_step(
         raise ValueError(
             "global_cap_tie_rule_mode requires an active global_cap_spec; "
             "non-global paths must stay exact_global_cap"
+        )
+    if tensor_states_use_event_coded_live_carrier(tensor_states):
+        if votes_by_key is None:
+            raise ValueError("votes_by_key is required for event-coded live carrier path")
+        if two_tier_carry_w6_enabled:
+            raise ValueError("event-coded live carrier path does not support two_tier_carry_w6")
+        if candidate_mode is not None:
+            raise ValueError("event-coded live carrier path does not support candidate_mode")
+        if replay_ce_veto_votes_by_key is not None or replay_ce_veto_moves_by_key is not None:
+            raise ValueError("event-coded live carrier path does not support replay veto maps")
+        if pc_aux_votes_by_key is not None or pc_aux_moves_by_key is not None:
+            raise ValueError("event-coded live carrier path does not support pc_aux maps")
+        if front_c_identity_observer is not None:
+            raise ValueError("event-coded live carrier path does not cover front_c observer")
+        return _apply_bounded_delta_vote_step_event_coded_live(
+            tensor_states,
+            votes_by_key,
+            vote_specs_by_key,
+            global_cap_spec=global_cap_spec,
+            global_cap_tie_rule_mode=global_cap_tie_rule_mode,
+            global_cap_contract_name=global_cap_contract_name,
+            deferred_backlog=deferred_backlog,
+            local_selection_ordering_mode=str(local_selection_ordering_mode),
+            local_selection_ordering_seed=int(local_selection_ordering_seed),
+            local_selection_ordering_step=int(local_selection_ordering_step),
         )
     if candidate_mode is not None:
         if candidate_mode != ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE:

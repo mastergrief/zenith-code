@@ -68,6 +68,7 @@ class VoteUpdateQFormat(str, Enum):
 class VoteUpdateAccumulatorFormat(str, Enum):
     INT16_ACCUMULATORS = "int16_accumulators"
     COMPRESSED_ACCUMULATORS = "compressed_accumulators"
+    EVENT_CODED_LIVE_CARRIER = "event_coded_live_carrier"
 
 
 class VoteUpdateVoteFormat(str, Enum):
@@ -226,6 +227,10 @@ def _validate_future_formats(state: VoteUpdateState, inputs: VoteUpdateInputs) -
     if state.normalized_q_format != VoteUpdateQFormat.INT8_LEVELS:
         raise NotImplementedError("future packed q formats are named but not implemented in Slice 2A")
     if state.normalized_accumulator_format != VoteUpdateAccumulatorFormat.INT16_ACCUMULATORS:
+        if state.normalized_accumulator_format == VoteUpdateAccumulatorFormat.EVENT_CODED_LIVE_CARRIER:
+            raise ValueError(
+                "event-coded live carrier must use event_coded_vote_update_adapter plan/apply path"
+            )
         raise NotImplementedError("compressed accumulator formats are named but not implemented in Slice 2A")
     if inputs.normalized_vote_format != VoteUpdateVoteFormat.INT16_VOTES:
         raise NotImplementedError("compressed vote formats are named but not implemented in Slice 2A")
@@ -365,10 +370,22 @@ def _apply_replay_veto_residual_clamp(
     new_acc_i32[vetoed] = torch.minimum(torch.maximum(residual, low), high)
 
 
+def _reject_event_coded_on_dense_vote_path(state: VoteUpdateState, *, site: str) -> None:
+    if state.normalized_accumulator_format == VoteUpdateAccumulatorFormat.EVENT_CODED_LIVE_CARRIER:
+        raise ValueError(
+            f"{site} forbidden on event-coded live carrier path; "
+            "use event_coded_vote_update_adapter plan/apply"
+        )
+
+
 def _materialize_two_tier_rows(
     state: VoteUpdateState,
     inputs: VoteUpdateInputs,
 ) -> list[dict[str, Any]]:
+    if state.normalized_accumulator_format == VoteUpdateAccumulatorFormat.EVENT_CODED_LIVE_CARRIER:
+        raise ValueError(
+            "full-numel two_tier row materialization forbidden on event-coded live carrier path"
+        )
     q_levels = state.q_levels.flatten()
     accumulators = state.accumulators.flatten()
     votes = inputs.votes.flatten()
@@ -651,6 +668,7 @@ def plan_two_tier_vote_update_reference(
     local_selection_ordering_step: int = 0,
     warmup: bool = False,
 ) -> VoteUpdatePlan:
+    _reject_event_coded_on_dense_vote_path(state, site="plan_two_tier_vote_update_reference")
     validate_vote_update_contract(state, inputs, spec, validate_q_levels=validate_q_levels)
     if str(local_selection_ordering_mode) != LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA:
         raise ValueError(
@@ -774,6 +792,7 @@ def apply_two_tier_vote_update_reference(
     local_selection_ordering_step: int = 0,
     warmup: bool = False,
 ) -> VoteUpdateResult:
+    _reject_event_coded_on_dense_vote_path(state, site="apply_two_tier_vote_update_reference")
     plan = plan_two_tier_vote_update_reference(
         state,
         inputs,
@@ -921,6 +940,7 @@ def plan_integer_vote_update_reference(
             local_selection_ordering_seed=int(local_selection_ordering_seed),
             local_selection_ordering_step=int(local_selection_ordering_step),
         )
+    _reject_event_coded_on_dense_vote_path(state, site="plan_integer_vote_update_reference")
     # === OFF body unchanged below this line ===
     validate_vote_update_contract(state, inputs, spec, validate_q_levels=validate_q_levels)
     q_levels = state.q_levels
@@ -1057,6 +1077,7 @@ def apply_integer_vote_update_reference(
 ) -> VoteUpdateResult:
     """Apply the exact local update law to copies and return new q/acc tensors."""
 
+    _reject_event_coded_on_dense_vote_path(state, site="apply_integer_vote_update_reference")
     if two_tier_carry_w6_enabled:
         return apply_two_tier_vote_update_reference(
             state,
@@ -1378,6 +1399,8 @@ def vote_update_preplan_triton(
     if _vote_update_preplan_kernel is None:
         raise RuntimeError("vote_update_preplan_triton requires Triton")
     validate_vote_update_contract(state, inputs, spec)
+    if state.normalized_accumulator_format == VoteUpdateAccumulatorFormat.EVENT_CODED_LIVE_CARRIER:
+        raise ValueError("vote_update_preplan_triton forbidden on event-coded live carrier path")
     if state.q_levels.device.type != "cuda":
         raise ValueError("vote_update_preplan_triton requires CUDA q/acc/votes tensors")
     if block <= 0:

@@ -38,6 +38,20 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     tensor_sha256,
     validate_authoritative_resume_payload,
 )
+from calm.hrm_text_158.native_full_stack.event_coded_acc_checkpoint_codec import (
+    PackedEventCodedAccState,
+)
+from calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier import (
+    EventCodedAccLiveState,
+)
+from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
+    event_coded_live_carrier_enabled,
+    hydrate_event_coded_live_carrier_from_packed,
+)
+from calm.hrm_text_158.native_full_stack.persistent_state_budget import (
+    EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA_V1,
+    PACKED_EVENT_CODED_ACC_FORMAT,
+)
 from calm.hrm_text_158.native_full_stack.sparse_vote_events import SparseVoteEvents
 from calm.hrm_text_158.native_full_stack.narrow_accumulator_codec import (
     PackedW5AccumulatorPayload,
@@ -552,6 +566,18 @@ W5_BYTE_PACKED_PAYLOAD_KEY = "w5_byte_packed_payload"
 W5_BYTE_PACKED_SCHEMA_KEY = "w5_byte_packed_schema"
 W5_BYTE_PACKED_LOGICAL_SHAPE_KEY = "w5_byte_packed_logical_shape"
 W5_BYTE_PACKED_LOGICAL_NUMEL_KEY = "w5_byte_packed_logical_numel"
+EVENT_CODED_LIVE_CARRIER_PERSISTED_KEY = "event_coded_live_carrier_persisted"
+EVENT_CODED_LIVE_CARRIER_SAVED_KEY = "event_coded_live_carrier_saved"
+EVENT_CODED_LIVE_CARRIER_SCHEMA_KEY = "event_coded_live_carrier_schema"
+EVENT_CODED_LIVE_CARRIER_FORMAT_KEY = "event_coded_live_carrier_format"
+EVENT_CODED_EVENTS_PACKED_KEY = "event_coded_events_packed"
+EVENT_CODED_BACKLOG_PACKED_KEY = "event_coded_backlog_packed"
+EVENT_CODED_HOT_EXACT_PACKED_KEY = "event_coded_hot_exact_packed"
+EVENT_CODED_EVENT_COUNT_KEY = "event_coded_event_count"
+EVENT_CODED_BACKLOG_COUNT_KEY = "event_coded_backlog_entry_count"
+EVENT_CODED_HOT_EXACT_ROW_COUNT_KEY = "event_coded_hot_exact_row_count"
+EVENT_CODED_LOGICAL_NUMEL_KEY = "event_coded_logical_numel"
+EVENT_CODED_DEMOTION_BAND_KEY = "event_coded_demotion_band"
 PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV = "HRM_TEXT_158_PERSISTENT_Q_TERNARY_BYTE_PACKED"
 Q_TERNARY_BYTE_PACKED_PERSISTED_KEY = "q_ternary_byte_packed_persisted"
 Q_TERNARY_PACKED_PAYLOAD_KEY = "q_ternary_packed_payload"
@@ -588,6 +614,57 @@ def persistent_q_ternary_base3_codec_enabled(*, enabled: bool | None = None) -> 
     if enabled is not None:
         return bool(enabled)
     return os.environ.get(PERSISTENT_Q_TERNARY_BASE3_CODEC_ENV) == "1"
+
+
+def _event_coded_live_carrier_payload_from_state(
+    carrier: EventCodedAccLiveState,
+) -> dict[str, Any]:
+    packed = carrier.to_checkpoint_payload()
+    if str(packed.schema) != EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA_V1:
+        raise ValueError(
+            "event-coded live carrier checkpoint requires schema "
+            f"{EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA_V1!r}"
+        )
+    return {
+        EVENT_CODED_LIVE_CARRIER_PERSISTED_KEY: True,
+        EVENT_CODED_LIVE_CARRIER_SCHEMA_KEY: str(packed.schema),
+        EVENT_CODED_LIVE_CARRIER_FORMAT_KEY: str(packed.format),
+        EVENT_CODED_EVENTS_PACKED_KEY: packed.events_packed.detach().cpu().contiguous(),
+        EVENT_CODED_BACKLOG_PACKED_KEY: packed.backlog_packed.detach().cpu().contiguous(),
+        EVENT_CODED_HOT_EXACT_PACKED_KEY: packed.hot_exact_packed.detach().cpu().contiguous(),
+        EVENT_CODED_EVENT_COUNT_KEY: int(packed.event_count),
+        EVENT_CODED_BACKLOG_COUNT_KEY: int(packed.backlog_entry_count),
+        EVENT_CODED_HOT_EXACT_ROW_COUNT_KEY: int(packed.hot_exact_row_count),
+        EVENT_CODED_LOGICAL_NUMEL_KEY: int(packed.logical_numel),
+        EVENT_CODED_DEMOTION_BAND_KEY: int(carrier.demotion_band),
+    }
+
+
+def _packed_event_coded_from_roundtrip_payload(
+    payload: Mapping[str, Any],
+) -> PackedEventCodedAccState:
+    events_packed = payload.get(EVENT_CODED_EVENTS_PACKED_KEY)
+    backlog_packed = payload.get(EVENT_CODED_BACKLOG_PACKED_KEY)
+    hot_exact_packed = payload.get(EVENT_CODED_HOT_EXACT_PACKED_KEY)
+    if not isinstance(events_packed, torch.Tensor):
+        raise ValueError("2C4a event-coded sidecar missing event_coded_events_packed tensor")
+    if not isinstance(backlog_packed, torch.Tensor):
+        raise ValueError("2C4a event-coded sidecar missing event_coded_backlog_packed tensor")
+    if not isinstance(hot_exact_packed, torch.Tensor):
+        raise ValueError("2C4a event-coded sidecar missing event_coded_hot_exact_packed tensor")
+    return PackedEventCodedAccState(
+        events_packed=events_packed.detach().cpu().contiguous(),
+        backlog_packed=backlog_packed.detach().cpu().contiguous(),
+        logical_numel=int(payload[EVENT_CODED_LOGICAL_NUMEL_KEY]),
+        event_count=int(payload[EVENT_CODED_EVENT_COUNT_KEY]),
+        backlog_entry_count=int(payload[EVENT_CODED_BACKLOG_COUNT_KEY]),
+        schema=str(payload[EVENT_CODED_LIVE_CARRIER_SCHEMA_KEY]),
+        format=str(
+            payload.get(EVENT_CODED_LIVE_CARRIER_FORMAT_KEY, PACKED_EVENT_CODED_ACC_FORMAT)
+        ),
+        hot_exact_packed=hot_exact_packed.detach().cpu().contiguous(),
+        hot_exact_row_count=int(payload[EVENT_CODED_HOT_EXACT_ROW_COUNT_KEY]),
+    )
 
 
 def resolve_q_codec_selector(*, q_codec_selector: str | None = None) -> str:
@@ -870,8 +947,17 @@ def _tensor_state_roundtrip_payload(
     use_w6 = persistent_w6_byte_packed_enabled(enabled=byte_packed_enabled)
     if use_w5 and use_w6:
         raise ValueError("W5 and W6 persistent accumulator byte-packing are mutually exclusive")
+    if state.event_coded_live_carrier is not None and (use_w5 or use_w6):
+        raise ValueError(
+            "event-coded live carrier is mutually exclusive with W5/W6 byte-packed accumulators"
+        )
     decoded_i16 = decode_bounded_accumulator_to_i16(bounded)
-    if use_w5:
+    event_coded_payload: dict[str, Any] = {}
+    if state.event_coded_live_carrier is not None:
+        event_coded_payload = _event_coded_live_carrier_payload_from_state(
+            state.event_coded_live_carrier
+        )
+    elif use_w5:
         packed_payload = pack_w5_lanes_to_bytes(decoded_i16)
         bounded_payload[W5_BYTE_PACKED_ACCUMULATOR_PERSISTED_KEY] = True
         bounded_payload[W5_BYTE_PACKED_SCHEMA_KEY] = str(packed_payload.schema)
@@ -905,6 +991,7 @@ def _tensor_state_roundtrip_payload(
             q_codec_selector=q_codec_selector,
         )
     )
+    payload.update(event_coded_payload)
     return payload
 
 
@@ -914,6 +1001,7 @@ def _state_from_roundtrip_payload(
     byte_packed_enabled: bool | None = None,
     w5_byte_packed_enabled: bool | None = None,
     q_packed_enabled: bool | None = None,
+    event_coded_enabled: bool | None = None,
 ) -> BoundedDeltaTensorState:
     bounded_payload = dict(payload.get("bounded_accumulator") or {})
     w5_saved = bool(bounded_payload.get(W5_BYTE_PACKED_ACCUMULATOR_PERSISTED_KEY))
@@ -1003,6 +1091,36 @@ def _state_from_roundtrip_payload(
         raise ValueError("2C4a sidecar must not save dense exact accumulator shadows")
     if bool(bounded_payload.get("dense_int16_accumulator_persisted")):
         raise ValueError("2C4a sidecar must not persist dense int16 accumulators")
+    event_saved = bool(payload.get(EVENT_CODED_LIVE_CARRIER_PERSISTED_KEY))
+    event_flag = event_coded_live_carrier_enabled(enabled=event_coded_enabled)
+    if event_saved:
+        if w5_saved or w6_saved:
+            raise ValueError(
+                "2C4a sidecar cannot combine event-coded live carrier with W5/W6 acc payloads"
+            )
+        if not event_flag:
+            from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
+                RUN_EVENT_CODED_ACC_LIVE_CARRIER_ENV,
+            )
+
+            raise ValueError(
+                "2C4a sidecar contains event-coded live carrier payload but "
+                f"{RUN_EVENT_CODED_ACC_LIVE_CARRIER_ENV}=1 is not enabled"
+            )
+        packed = _packed_event_coded_from_roundtrip_payload(payload)
+        carrier = hydrate_event_coded_live_carrier_from_packed(
+            packed,
+            demotion_band=int(payload.get(EVENT_CODED_DEMOTION_BAND_KEY, 1)),
+        )
+        return BoundedDeltaTensorState(
+            state_key=str(payload["state_key"]),
+            q_levels=q_levels,
+            frozen_scale=frozen_scale,
+            bounded_accumulator=bounded,
+            exact_accumulator_shadow=None,
+            bounded_accumulator_fresh_for_exact_shadow=False,
+            event_coded_live_carrier=carrier,
+        )
     if (
         w6_flag
         and not w6_saved
@@ -1089,6 +1207,10 @@ def build_trainer_sub2_authority_checkpoint_blob(
     q_packed_saved = any(
         bool(payload.get(Q_TERNARY_BYTE_PACKED_PERSISTED_KEY)) for payload in tensor_payloads.values()
     )
+    event_coded_saved = any(
+        bool(payload.get(EVENT_CODED_LIVE_CARRIER_PERSISTED_KEY))
+        for payload in tensor_payloads.values()
+    )
     sidecar = {
         "schema_version": TRAINER_SUB2_ROUNDTRIP_SCHEMA_VERSION,
         "artifact_role": "trainer_sub2_authoritative_sidecar",
@@ -1100,6 +1222,7 @@ def build_trainer_sub2_authority_checkpoint_blob(
         "dense_int16_persistent_accumulator_saved": False,
         "w6_byte_packed_persistent_accumulator_saved": bool(w6_byte_packed_saved),
         "w5_byte_packed_persistent_accumulator_saved": bool(w5_byte_packed_saved),
+        EVENT_CODED_LIVE_CARRIER_SAVED_KEY: bool(event_coded_saved),
         Q_TERNARY_BYTE_PACKED_PERSISTED_SAVED_KEY: bool(q_packed_saved),
         "normal_bitlinear_weight_forward_not_claimed": True,
     }
@@ -1126,6 +1249,7 @@ def load_trainer_sub2_authority_checkpoint_blob(
     byte_packed_enabled: bool | None = None,
     w5_byte_packed_enabled: bool | None = None,
     q_packed_enabled: bool | None = None,
+    event_coded_enabled: bool | None = None,
 ) -> dict[str, BoundedDeltaTensorState]:
     if blob.get("schema_version") != TRAINER_SUB2_ROUNDTRIP_SCHEMA_VERSION:
         raise ValueError("2C4a checkpoint blob schema mismatch")
@@ -1171,6 +1295,17 @@ def load_trainer_sub2_authority_checkpoint_blob(
             "2C4a sidecar contains byte-packed q persistent payloads but "
             f"{PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV}=1 is not enabled"
         )
+    if bool(sidecar.get(EVENT_CODED_LIVE_CARRIER_SAVED_KEY)) and not event_coded_live_carrier_enabled(
+        enabled=event_coded_enabled
+    ):
+        from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
+            RUN_EVENT_CODED_ACC_LIVE_CARRIER_ENV,
+        )
+
+        raise ValueError(
+            "2C4a sidecar contains event-coded live carrier payloads but "
+            f"{RUN_EVENT_CODED_ACC_LIVE_CARRIER_ENV}=1 is not enabled"
+        )
     declared_hash = str(sidecar.get("authoritative_state_payload_sha256"))
     sidecar_without_hash = dict(sidecar)
     sidecar_without_hash.pop("authoritative_state_payload_sha256", None)
@@ -1184,6 +1319,7 @@ def load_trainer_sub2_authority_checkpoint_blob(
             byte_packed_enabled=byte_packed_enabled,
             w5_byte_packed_enabled=w5_byte_packed_enabled,
             q_packed_enabled=q_packed_enabled,
+            event_coded_enabled=event_coded_enabled,
         )
         for key, payload in sorted(tensor_payloads.items())
     }
@@ -1199,6 +1335,7 @@ def load_trainer_sub2_authority_checkpoint_blob(
             bounded_accumulator=state.bounded_accumulator,
             exact_accumulator_shadow=None,
             bounded_accumulator_fresh_for_exact_shadow=False,
+            event_coded_live_carrier=state.event_coded_live_carrier,
         )
         for key, state in states.items()
     }

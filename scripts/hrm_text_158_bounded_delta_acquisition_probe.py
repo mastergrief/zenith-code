@@ -98,6 +98,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     derive_bounded_tensor_state_from_weight,
     file_sha256,
     make_bounded_tensor_state,
+    make_event_coded_live_tensor_state,
     project_s1_gradient_to_moves,
     prove_eligible_master_identity_after_optimizer_step,
     rank_bucketed_int16_votes,
@@ -166,11 +167,16 @@ from calm.hrm_text_158.native_full_stack.narrow_accumulator_codec import (
     pack_w5_lanes_to_bytes,
     pack_w6_lanes_to_bytes,
 )
+from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
+    RUN_EVENT_CODED_ACC_LIVE_CARRIER_ENV,
+    c8_runtime_guard_stats,
+)
 from calm.hrm_text_158.native_full_stack.narrow_carrier_trainer_integration import (
     PERSISTENT_ACCUMULATOR_W5_BYTE_PACKED_ENV,
     RUN_NARROW_CARRIER_W5_TRAINER_INTEGRATION_ENV,
     RUN_NARROW_CARRIER_W6_TRAINER_INTEGRATION_ENV,
     persistent_w5_byte_packed_enabled,
+    resolve_live_acc_carrier_selector,
 )
 from calm.hrm_text_158.native_full_stack.persistent_state_budget import (
     R3_ARTIFACT_BYTES_SEMANTICS_ACTUAL_PAYLOAD,
@@ -6049,6 +6055,8 @@ def run_c2p1_probe(
     r7_deferred_backlog_carry_enabled: bool = False,
     votes_emit_enabled: bool = False,
     votes_emit_root: Path | None = None,
+    persistent_accumulator_event_coded_live: bool = False,
+    event_coded_live_demotion_band: int = 1,
 ) -> dict[str, Any]:
     oracle_screen_budget = int(oracle_screen_max_sampled_candidates)
     if oracle_screen_budget not in ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES:
@@ -6062,6 +6070,22 @@ def run_c2p1_probe(
             "persistent_accumulator_w6_byte_packed and persistent_accumulator_w5_byte_packed "
             "are mutually exclusive"
         )
+    if bool(persistent_accumulator_event_coded_live):
+        if bool(persistent_accumulator_w6_byte_packed) or bool(
+            persistent_accumulator_w5_byte_packed
+        ):
+            raise ValueError(
+                "persistent_accumulator_event_coded_live is mutually exclusive with "
+                "W5/W6 byte-packed accumulators"
+            )
+        resolve_live_acc_carrier_selector(
+            v4_enabled=True,
+            w5_enabled=bool(persistent_accumulator_w5_byte_packed),
+            w6_enabled=bool(persistent_accumulator_w6_byte_packed),
+        )
+        os.environ[RUN_EVENT_CODED_ACC_LIVE_CARRIER_ENV] = "1"
+    elif RUN_EVENT_CODED_ACC_LIVE_CARRIER_ENV in os.environ:
+        os.environ.pop(RUN_EVENT_CODED_ACC_LIVE_CARRIER_ENV, None)
     if bool(persistent_accumulator_w6_byte_packed):
         os.environ[PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV] = "1"
     elif PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV in os.environ:
@@ -6340,6 +6364,16 @@ def run_c2p1_probe(
             eligible,
             threshold=float(init_fidelity_atol),
         )
+        if bool(persistent_accumulator_event_coded_live):
+            tensor_states = {
+                state_key: make_event_coded_live_tensor_state(
+                    state_key,
+                    state.q_levels,
+                    state.frozen_scale,
+                    demotion_band=int(event_coded_live_demotion_band),
+                )
+                for state_key, state in tensor_states.items()
+            }
     if not init_fidelity["all_pass"]:
         raise RuntimeError("weight-level init-fidelity allclose failed")
 
@@ -6995,6 +7029,10 @@ def run_c2p1_probe(
         "receipt_emit_profile": str(receipt_emit_profile),
         "persistent_accumulator_w6_byte_packed": bool(persistent_accumulator_w6_byte_packed),
         "persistent_accumulator_w5_byte_packed": bool(persistent_accumulator_w5_byte_packed),
+        "persistent_accumulator_event_coded_live": bool(
+            persistent_accumulator_event_coded_live
+        ),
+        "event_coded_live_demotion_band": int(event_coded_live_demotion_band),
         "r3_persistent_ledger": build_r3_persistent_ledger_receipt(
             final_states,
             byte_packed_enabled=bool(persistent_accumulator_w6_byte_packed),
@@ -7415,6 +7453,20 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     ap.add_argument(
+        "--persistent-accumulator-event-coded-live",
+        action="store_true",
+        help=(
+            "Default-off V4-LIVE event-coded accumulator carrier on the trainer "
+            "vote-update path (mutually exclusive with W5/W6 narrow carriers)."
+        ),
+    )
+    ap.add_argument(
+        "--event-coded-live-demotion-band",
+        type=int,
+        default=1,
+        help="Demotion band for V4-LIVE event-coded carrier (default 1).",
+    )
+    ap.add_argument(
         "--r7-deferred-backlog-carry",
         action="store_true",
         help=(
@@ -7500,6 +7552,10 @@ def main(argv: list[str] | None = None) -> int:
         votes_emit_root=(
             Path(args.scratch_root) if bool(args.votes_emit_enabled) else None
         ),
+        persistent_accumulator_event_coded_live=bool(
+            args.persistent_accumulator_event_coded_live
+        ),
+        event_coded_live_demotion_band=int(args.event_coded_live_demotion_band),
     )
     print(json.dumps(receipt, indent=2, sort_keys=True), flush=True)
     return 0

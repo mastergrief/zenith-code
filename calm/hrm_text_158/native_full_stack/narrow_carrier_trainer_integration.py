@@ -175,6 +175,23 @@ def narrow_carrier_w5_enabled(*, enabled: bool | None = None) -> bool:
     return os.environ.get(RUN_NARROW_CARRIER_W5_TRAINER_INTEGRATION_ENV) == "1"
 
 
+def resolve_live_acc_carrier_selector(
+    *,
+    v4_enabled: bool | None = None,
+    w5_enabled: bool | None = None,
+    w6_enabled: bool | None = None,
+) -> str:
+    from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
+        resolve_live_acc_carrier_selector as _resolve,
+    )
+
+    return _resolve(
+        v4_enabled=v4_enabled,
+        w5_enabled=w5_enabled,
+        w6_enabled=w6_enabled,
+    )
+
+
 def roundtrip_clip_w5_int16_value_through_trainer_boundary(value: int) -> int:
     return unpack_w5(clip_then_pack_w5(int(value)))
 
@@ -209,9 +226,18 @@ def apply_trainer_boundary_narrow_carrier(
     enabled: bool | None = None,
     w5_enabled: bool | None = None,
     w6_enabled: bool | None = None,
+    v4_enabled: bool | None = None,
 ) -> torch.Tensor:
     """Default-off trainer boundary: identity int16 when off; W5 clip roundtrip or W6 strict."""
 
+    from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
+        event_coded_live_carrier_enabled,
+    )
+
+    if event_coded_live_carrier_enabled(enabled=v4_enabled):
+        raise ValueError(
+            "apply_trainer_boundary_narrow_carrier is disabled when V4-LIVE event-coded carrier is on"
+        )
     if accumulators.dtype != torch.int16:
         raise ValueError(f"accumulators must be torch.int16, got {accumulators.dtype}")
     use_w5 = narrow_carrier_w5_enabled(enabled=w5_enabled)
