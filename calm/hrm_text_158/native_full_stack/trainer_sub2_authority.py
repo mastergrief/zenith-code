@@ -40,10 +40,14 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
 )
 from calm.hrm_text_158.native_full_stack.sparse_vote_events import SparseVoteEvents
 from calm.hrm_text_158.native_full_stack.narrow_accumulator_codec import (
+    PackedW5AccumulatorPayload,
     PackedW6AccumulatorPayload,
+    W5_BYTE_PACKED_SCHEMA,
     W6_BYTE_PACKED_SCHEMA,
+    pack_w5_lanes_to_bytes,
     pack_w6_lanes_to_bytes,
     reject_int16_tensor_as_packed_acc,
+    unpack_w5_lanes_from_bytes,
     unpack_w6_lanes_from_bytes,
 )
 from calm.hrm_text_158.native_full_stack.persistent_state_budget import (
@@ -529,11 +533,19 @@ TRAINER_SUB2_ROUNDTRIP_TARGET_NAME = "step2c4a_trainer_authority_checkpoint_roun
 PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV = (
     "HRM_TEXT_158_PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED"
 )
+PERSISTENT_ACCUMULATOR_W5_BYTE_PACKED_ENV = (
+    "HRM_TEXT_158_PERSISTENT_ACCUMULATOR_W5_BYTE_PACKED"
+)
 W6_BYTE_PACKED_ACCUMULATOR_PERSISTED_KEY = "w6_byte_packed_accumulator_persisted"
 W6_BYTE_PACKED_PAYLOAD_KEY = "w6_byte_packed_payload"
 W6_BYTE_PACKED_SCHEMA_KEY = "w6_byte_packed_schema"
 W6_BYTE_PACKED_LOGICAL_SHAPE_KEY = "w6_byte_packed_logical_shape"
 W6_BYTE_PACKED_LOGICAL_NUMEL_KEY = "w6_byte_packed_logical_numel"
+W5_BYTE_PACKED_ACCUMULATOR_PERSISTED_KEY = "w5_byte_packed_accumulator_persisted"
+W5_BYTE_PACKED_PAYLOAD_KEY = "w5_byte_packed_payload"
+W5_BYTE_PACKED_SCHEMA_KEY = "w5_byte_packed_schema"
+W5_BYTE_PACKED_LOGICAL_SHAPE_KEY = "w5_byte_packed_logical_shape"
+W5_BYTE_PACKED_LOGICAL_NUMEL_KEY = "w5_byte_packed_logical_numel"
 PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV = "HRM_TEXT_158_PERSISTENT_Q_TERNARY_BYTE_PACKED"
 Q_TERNARY_BYTE_PACKED_PERSISTED_KEY = "q_ternary_byte_packed_persisted"
 Q_TERNARY_PACKED_PAYLOAD_KEY = "q_ternary_packed_payload"
@@ -548,6 +560,12 @@ def persistent_w6_byte_packed_enabled(*, enabled: bool | None = None) -> bool:
     if enabled is not None:
         return bool(enabled)
     return os.environ.get(PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV) == "1"
+
+
+def persistent_w5_byte_packed_enabled(*, enabled: bool | None = None) -> bool:
+    if enabled is not None:
+        return bool(enabled)
+    return os.environ.get(PERSISTENT_ACCUMULATOR_W5_BYTE_PACKED_ENV) == "1"
 
 
 def persistent_q_ternary_byte_packed_enabled(*, enabled: bool | None = None) -> bool:
@@ -588,6 +606,7 @@ def _tensor_state_roundtrip_payload(
     state: BoundedDeltaTensorState,
     *,
     byte_packed_enabled: bool | None = None,
+    w5_byte_packed_enabled: bool | None = None,
     q_packed_enabled: bool | None = None,
 ) -> dict[str, Any]:
     bounded = state.bounded_accumulator
@@ -602,6 +621,7 @@ def _tensor_state_roundtrip_payload(
         "raw_arrays_serialized_for_resume_only": True,
         "dense_int16_accumulator_persisted": False,
         W6_BYTE_PACKED_ACCUMULATOR_PERSISTED_KEY: False,
+        W5_BYTE_PACKED_ACCUMULATOR_PERSISTED_KEY: False,
         "hot_exact_indices_sha256": _identity_sha256(
             state.state_key,
             tuple(int(item) for item in bounded.hot_exact_indices),
@@ -630,8 +650,19 @@ def _tensor_state_roundtrip_payload(
             },
         ),
     }
-    if persistent_w6_byte_packed_enabled(enabled=byte_packed_enabled):
-        decoded_i16 = decode_bounded_accumulator_to_i16(bounded)
+    use_w5 = persistent_w5_byte_packed_enabled(enabled=w5_byte_packed_enabled)
+    use_w6 = persistent_w6_byte_packed_enabled(enabled=byte_packed_enabled)
+    if use_w5 and use_w6:
+        raise ValueError("W5 and W6 persistent accumulator byte-packing are mutually exclusive")
+    decoded_i16 = decode_bounded_accumulator_to_i16(bounded)
+    if use_w5:
+        packed_payload = pack_w5_lanes_to_bytes(decoded_i16)
+        bounded_payload[W5_BYTE_PACKED_ACCUMULATOR_PERSISTED_KEY] = True
+        bounded_payload[W5_BYTE_PACKED_SCHEMA_KEY] = str(packed_payload.schema)
+        bounded_payload[W5_BYTE_PACKED_PAYLOAD_KEY] = packed_payload.packed.detach().cpu().contiguous()
+        bounded_payload[W5_BYTE_PACKED_LOGICAL_SHAPE_KEY] = list(packed_payload.logical_shape)
+        bounded_payload[W5_BYTE_PACKED_LOGICAL_NUMEL_KEY] = int(packed_payload.logical_numel)
+    elif use_w6:
         packed_payload = pack_w6_lanes_to_bytes(decoded_i16)
         bounded_payload[W6_BYTE_PACKED_ACCUMULATOR_PERSISTED_KEY] = True
         bounded_payload[W6_BYTE_PACKED_SCHEMA_KEY] = str(packed_payload.schema)
@@ -668,17 +699,50 @@ def _state_from_roundtrip_payload(
     payload: Mapping[str, Any],
     *,
     byte_packed_enabled: bool | None = None,
+    w5_byte_packed_enabled: bool | None = None,
     q_packed_enabled: bool | None = None,
 ) -> BoundedDeltaTensorState:
     bounded_payload = dict(payload.get("bounded_accumulator") or {})
-    byte_packed_saved = bool(bounded_payload.get(W6_BYTE_PACKED_ACCUMULATOR_PERSISTED_KEY))
-    flag_enabled = persistent_w6_byte_packed_enabled(enabled=byte_packed_enabled)
-    if byte_packed_saved and not flag_enabled:
+    w5_saved = bool(bounded_payload.get(W5_BYTE_PACKED_ACCUMULATOR_PERSISTED_KEY))
+    w6_saved = bool(bounded_payload.get(W6_BYTE_PACKED_ACCUMULATOR_PERSISTED_KEY))
+    w5_flag = persistent_w5_byte_packed_enabled(enabled=w5_byte_packed_enabled)
+    w6_flag = persistent_w6_byte_packed_enabled(enabled=byte_packed_enabled)
+    if w5_saved and w6_saved:
+        raise ValueError("2C4a sidecar contains both W5 and W6 byte-packed accumulator payloads")
+    if w5_saved and not w5_flag:
+        raise ValueError(
+            "2C4a sidecar contains byte-packed W5 accumulator payload but "
+            f"{PERSISTENT_ACCUMULATOR_W5_BYTE_PACKED_ENV}=1 is not enabled"
+        )
+    if w6_saved and not w6_flag:
         raise ValueError(
             "2C4a sidecar contains byte-packed W6 accumulator payload but "
             f"{PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV}=1 is not enabled"
         )
-    if flag_enabled and byte_packed_saved:
+    if w5_flag and w5_saved:
+        packed_tensor = bounded_payload.get(W5_BYTE_PACKED_PAYLOAD_KEY)
+        if not isinstance(packed_tensor, torch.Tensor):
+            raise ValueError("2C4a byte-packed sidecar missing w5_byte_packed_payload tensor")
+        packed_cpu = packed_tensor.detach().cpu().contiguous()
+        reject_int16_tensor_as_packed_acc(
+            packed_cpu,
+            context="2C4a byte-packed W5 accumulator sidecar payload",
+        )
+        packed_payload = PackedW5AccumulatorPayload(
+            packed=packed_cpu,
+            logical_shape=tuple(
+                int(dim) for dim in bounded_payload[W5_BYTE_PACKED_LOGICAL_SHAPE_KEY]
+            ),
+            logical_numel=int(bounded_payload[W5_BYTE_PACKED_LOGICAL_NUMEL_KEY]),
+            schema=str(bounded_payload.get(W5_BYTE_PACKED_SCHEMA_KEY, W5_BYTE_PACKED_SCHEMA)),
+        )
+        decoded_i16 = unpack_w5_lanes_from_bytes(packed_payload)
+        bounded = _bounded_accumulator_from_decoded_i16(
+            decoded_i16,
+            cold_default_value=int(bounded_payload["cold_default_value"]),
+            candidate_name=str(bounded_payload["candidate_name"]),
+        )
+    elif w6_flag and w6_saved:
         packed_tensor = bounded_payload.get(W6_BYTE_PACKED_PAYLOAD_KEY)
         if not isinstance(packed_tensor, torch.Tensor):
             raise ValueError("2C4a byte-packed sidecar missing w6_byte_packed_payload tensor")
@@ -769,8 +833,8 @@ def _state_from_roundtrip_payload(
     if bool(bounded_payload.get("dense_int16_accumulator_persisted")):
         raise ValueError("2C4a sidecar must not persist dense int16 accumulators")
     if (
-        flag_enabled
-        and not byte_packed_saved
+        w6_flag
+        and not w6_saved
         and any(
             key in bounded_payload
             for key in (
@@ -782,6 +846,20 @@ def _state_from_roundtrip_payload(
         )
     ):
         raise ValueError("2C4a byte-packed metadata present without persisted flag")
+    if (
+        w5_flag
+        and not w5_saved
+        and any(
+            key in bounded_payload
+            for key in (
+                W5_BYTE_PACKED_PAYLOAD_KEY,
+                W5_BYTE_PACKED_SCHEMA_KEY,
+                W5_BYTE_PACKED_LOGICAL_SHAPE_KEY,
+                W5_BYTE_PACKED_LOGICAL_NUMEL_KEY,
+            )
+        )
+    ):
+        raise ValueError("2C4a W5 byte-packed metadata present without persisted flag")
     return BoundedDeltaTensorState(
         state_key=str(payload["state_key"]),
         q_levels=q_levels,
@@ -799,6 +877,7 @@ def build_trainer_sub2_authority_checkpoint_blob(
     tensor_states: Mapping[str, BoundedDeltaTensorState],
     step: int = 0,
     byte_packed_enabled: bool | None = None,
+    w5_byte_packed_enabled: bool | None = None,
     q_packed_enabled: bool | None = None,
 ) -> dict[str, Any]:
     """Build a 2C4a reconstructable sidecar checkpoint blob.
@@ -821,12 +900,17 @@ def build_trainer_sub2_authority_checkpoint_blob(
         str(key): _tensor_state_roundtrip_payload(
             tensor_states[str(key)],
             byte_packed_enabled=byte_packed_enabled,
+            w5_byte_packed_enabled=w5_byte_packed_enabled,
             q_packed_enabled=q_packed_enabled,
         )
         for key in sorted(eligible_modules)
     }
-    byte_packed_saved = any(
+    w6_byte_packed_saved = any(
         bool((payload.get("bounded_accumulator") or {}).get(W6_BYTE_PACKED_ACCUMULATOR_PERSISTED_KEY))
+        for payload in tensor_payloads.values()
+    )
+    w5_byte_packed_saved = any(
+        bool((payload.get("bounded_accumulator") or {}).get(W5_BYTE_PACKED_ACCUMULATOR_PERSISTED_KEY))
         for payload in tensor_payloads.values()
     )
     q_packed_saved = any(
@@ -841,7 +925,8 @@ def build_trainer_sub2_authority_checkpoint_blob(
         "tensor_payloads": tensor_payloads,
         "eligible_fp_masters_authoritative": False,
         "dense_int16_persistent_accumulator_saved": False,
-        "w6_byte_packed_persistent_accumulator_saved": bool(byte_packed_saved),
+        "w6_byte_packed_persistent_accumulator_saved": bool(w6_byte_packed_saved),
+        "w5_byte_packed_persistent_accumulator_saved": bool(w5_byte_packed_saved),
         Q_TERNARY_BYTE_PACKED_PERSISTED_SAVED_KEY: bool(q_packed_saved),
         "normal_bitlinear_weight_forward_not_claimed": True,
     }
@@ -866,6 +951,7 @@ def load_trainer_sub2_authority_checkpoint_blob(
     eligible_modules: Mapping[str, BitLinear],
     device: torch.device | str = "cpu",
     byte_packed_enabled: bool | None = None,
+    w5_byte_packed_enabled: bool | None = None,
     q_packed_enabled: bool | None = None,
 ) -> dict[str, BoundedDeltaTensorState]:
     if blob.get("schema_version") != TRAINER_SUB2_ROUNDTRIP_SCHEMA_VERSION:
@@ -898,6 +984,13 @@ def load_trainer_sub2_authority_checkpoint_blob(
             "2C4a sidecar contains byte-packed W6 persistent accumulators but "
             f"{PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV}=1 is not enabled"
         )
+    if bool(sidecar.get("w5_byte_packed_persistent_accumulator_saved")) and not persistent_w5_byte_packed_enabled(
+        enabled=w5_byte_packed_enabled
+    ):
+        raise ValueError(
+            "2C4a sidecar contains byte-packed W5 persistent accumulators but "
+            f"{PERSISTENT_ACCUMULATOR_W5_BYTE_PACKED_ENV}=1 is not enabled"
+        )
     if bool(sidecar.get(Q_TERNARY_BYTE_PACKED_PERSISTED_SAVED_KEY)) and not persistent_q_ternary_byte_packed_enabled(
         enabled=q_packed_enabled
     ):
@@ -914,6 +1007,7 @@ def load_trainer_sub2_authority_checkpoint_blob(
         str(key): _state_from_roundtrip_payload(
             payload,
             byte_packed_enabled=byte_packed_enabled,
+            w5_byte_packed_enabled=w5_byte_packed_enabled,
             q_packed_enabled=q_packed_enabled,
         )
         for key, payload in sorted((sidecar.get("tensor_payloads") or {}).items())

@@ -11,9 +11,14 @@ from typing import Any, Mapping, Sequence
 import torch
 
 from calm.hrm_text_158.native_full_stack.narrow_accumulator_codec import (
+    clip_then_pack_w5,
+    clip_then_pack_w5_tensor,
+    clip_then_roundtrip_w5_tensor,
     clip_then_pack_w6,
+    pack_w5,
     pack_w6,
     strict_roundtrip_w6_tensor,
+    unpack_w5,
     unpack_w6,
 )
 from calm.hrm_text_158.native_full_stack.two_tier_carry_reducers import (
@@ -25,6 +30,12 @@ from calm.hrm_text_158.native_full_stack.two_tier_carry_reducers import (
 
 RUN_NARROW_CARRIER_W6_TRAINER_INTEGRATION_ENV = (
     "HRM_TEXT_158_RUN_NARROW_CARRIER_W6_TRAINER_INTEGRATION"
+)
+RUN_NARROW_CARRIER_W5_TRAINER_INTEGRATION_ENV = (
+    "HRM_TEXT_158_RUN_NARROW_CARRIER_W5_TRAINER_INTEGRATION"
+)
+PERSISTENT_ACCUMULATOR_W5_BYTE_PACKED_ENV = (
+    "HRM_TEXT_158_PERSISTENT_ACCUMULATOR_W5_BYTE_PACKED"
 )
 
 CLASSIFIER_S2_HARNESS_FAIL = "S2_HARNESS_FAIL"
@@ -93,6 +104,14 @@ AUTHORIZED_W6_BYTE_PACKED_FIELD_MARKERS: tuple[str, ...] = (
     "w6_byte_packed_logical_numel",
     "w6_byte_packed_persistent_accumulator_saved",
 )
+AUTHORIZED_W5_BYTE_PACKED_FIELD_MARKERS: tuple[str, ...] = (
+    "w5_byte_packed_accumulator_persisted",
+    "w5_byte_packed_payload",
+    "w5_byte_packed_schema",
+    "w5_byte_packed_logical_shape",
+    "w5_byte_packed_logical_numel",
+    "w5_byte_packed_persistent_accumulator_saved",
+)
 AUTHORIZED_Q_TERNARY_BYTE_PACKED_FIELD_MARKERS: tuple[str, ...] = (
     "q_ternary_byte_packed_persisted",
     "q_ternary_packed_payload",
@@ -111,6 +130,12 @@ def persistent_w6_byte_packed_enabled(*, enabled: bool | None = None) -> bool:
     return os.environ.get("HRM_TEXT_158_PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED") == "1"
 
 
+def persistent_w5_byte_packed_enabled(*, enabled: bool | None = None) -> bool:
+    if enabled is not None:
+        return bool(enabled)
+    return os.environ.get(PERSISTENT_ACCUMULATOR_W5_BYTE_PACKED_ENV) == "1"
+
+
 def persistent_q_ternary_byte_packed_enabled(*, enabled: bool | None = None) -> bool:
     if enabled is not None:
         return bool(enabled)
@@ -121,6 +146,16 @@ def narrow_carrier_w6_enabled(*, enabled: bool | None = None) -> bool:
     if enabled is not None:
         return bool(enabled)
     return os.environ.get(RUN_NARROW_CARRIER_W6_TRAINER_INTEGRATION_ENV) == "1"
+
+
+def narrow_carrier_w5_enabled(*, enabled: bool | None = None) -> bool:
+    if enabled is not None:
+        return bool(enabled)
+    return os.environ.get(RUN_NARROW_CARRIER_W5_TRAINER_INTEGRATION_ENV) == "1"
+
+
+def roundtrip_clip_w5_int16_value_through_trainer_boundary(value: int) -> int:
+    return unpack_w5(clip_then_pack_w5(int(value)))
 
 
 def strict_roundtrip_int16_value_through_trainer_boundary(value: int) -> int:
@@ -151,14 +186,22 @@ def apply_trainer_boundary_narrow_carrier(
     accumulators: torch.Tensor,
     *,
     enabled: bool | None = None,
+    w5_enabled: bool | None = None,
+    w6_enabled: bool | None = None,
 ) -> torch.Tensor:
-    """Default-off trainer boundary: identity int16 when off; strict W6 roundtrip when on."""
+    """Default-off trainer boundary: identity int16 when off; W5 clip roundtrip or W6 strict."""
 
     if accumulators.dtype != torch.int16:
         raise ValueError(f"accumulators must be torch.int16, got {accumulators.dtype}")
-    if not narrow_carrier_w6_enabled(enabled=enabled):
-        return accumulators
-    return strict_roundtrip_w6_tensor(accumulators.detach())
+    use_w5 = narrow_carrier_w5_enabled(enabled=w5_enabled)
+    use_w6 = narrow_carrier_w6_enabled(enabled=w6_enabled if w6_enabled is not None else enabled)
+    if use_w5 and use_w6:
+        raise ValueError("W5 and W6 narrow-carrier trainer integration are mutually exclusive")
+    if use_w5:
+        return clip_then_roundtrip_w5_tensor(accumulators.detach())
+    if use_w6:
+        return strict_roundtrip_w6_tensor(accumulators.detach())
+    return accumulators
 
 
 def count_int16_vs_w6_crossing_mismatches(
@@ -222,6 +265,44 @@ def assert_no_packed_w6_state_leak(
                 _walk(child, path=f"{path}[{index}]")
 
     _walk(dict(payload), path="payload")
+
+
+def assert_no_packed_w5_state_leak(
+    payload: Mapping[str, Any],
+    *,
+    byte_packed_enabled: bool | None = None,
+) -> None:
+    authorized = persistent_w5_byte_packed_enabled(enabled=byte_packed_enabled)
+
+    def _walk(value: Any, *, path: str) -> None:
+        if isinstance(value, Mapping):
+            for key, child in value.items():
+                key_text = str(key).lower()
+                if any(marker in key_text for marker in AUTHORIZED_W5_BYTE_PACKED_FIELD_MARKERS):
+                    if not authorized:
+                        raise ValueError(f"packed W5 state leak at {path}.{key}")
+                    _walk(child, path=f"{path}.{key}")
+                    continue
+                if "packed_w5" in key_text or "w5_packed" in key_text:
+                    raise ValueError(f"packed W5 state leak at {path}.{key}")
+                _walk(child, path=f"{path}.{key}")
+        elif isinstance(value, (list, tuple)):
+            for index, child in enumerate(value):
+                _walk(child, path=f"{path}[{index}]")
+
+    _walk(dict(payload), path="payload")
+
+
+def assert_no_dual_persistent_acc_byte_packing(
+    bounded_payload: Mapping[str, Any],
+) -> None:
+    w5 = bool(bounded_payload.get("w5_byte_packed_accumulator_persisted"))
+    w6 = bool(bounded_payload.get("w6_byte_packed_accumulator_persisted"))
+    dense = bool(bounded_payload.get("dense_int16_accumulator_persisted"))
+    if sum(int(flag) for flag in (w5, w6, dense)) > 1:
+        raise ValueError(
+            "dual persistent accumulator encoding: at most one of W5/W6/dense int16 may be saved"
+        )
 
 
 def assert_no_raw_int8_q_dual_persistence(

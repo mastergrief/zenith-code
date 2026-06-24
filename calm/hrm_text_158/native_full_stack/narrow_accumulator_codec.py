@@ -362,6 +362,197 @@ def unpack_w6_lanes_from_bytes(payload: PackedW6AccumulatorPayload) -> torch.Ten
     return torch.tensor(signed_lanes, dtype=torch.int16).view(payload.logical_shape).contiguous()
 
 
+W5_WIDTH_BITS = 5
+W5_SIGNED_MIN = -signed_w_max(W5_WIDTH_BITS)
+W5_SIGNED_MAX = signed_w_max(W5_WIDTH_BITS)
+W5_PACK_MASK = (1 << W5_WIDTH_BITS) - 1
+W5_PACKED_MIN = 0
+W5_PACKED_MAX = W5_PACK_MASK
+W5_SIGN_BIT = 1 << (W5_WIDTH_BITS - 1)
+W5_SIGN_EXTEND_OFFSET = 1 << W5_WIDTH_BITS
+W5_BYTE_PACKED_SCHEMA = "w5_lanes_byte_packed/v0"
+
+
+class NarrowCarrierW5DomainBreach(ValueError):
+    """W5 narrow-carrier boundary rejection (out-of-domain accumulator lane)."""
+
+
+def pack_w5(value: int) -> int:
+    v = int(value)
+    if v < W5_SIGNED_MIN or v > W5_SIGNED_MAX:
+        raise NarrowCarrierW5DomainBreach(
+            f"pack_w5 requires value in [{W5_SIGNED_MIN}, {W5_SIGNED_MAX}], got {value}"
+        )
+    return v & W5_PACK_MASK
+
+
+def unpack_w5(packed: int) -> int:
+    raw = int(packed)
+    if raw < W5_PACKED_MIN or raw > W5_PACKED_MAX:
+        raise ValueError(
+            f"unpack_w5 requires packed in [{W5_PACKED_MIN}, {W5_PACKED_MAX}], got {packed}"
+        )
+    if raw >= W5_SIGN_BIT:
+        return raw - (1 << W5_WIDTH_BITS)
+    return raw
+
+
+def clip_to_w5(value: int) -> int:
+    clip_min, clip_max = effective_clip_bounds(
+        W5_WIDTH_BITS,
+        VOTE_UPDATE_SOURCE_CLIP_MIN,
+        VOTE_UPDATE_SOURCE_CLIP_MAX,
+    )
+    return max(clip_min, min(clip_max, int(value)))
+
+
+def clip_then_pack_w5(value: int) -> int:
+    return pack_w5(clip_to_w5(value))
+
+
+def pack_w5_tensor(acc: torch.Tensor) -> torch.Tensor:
+    if acc.dtype != torch.int16:
+        raise ValueError(f"pack_w5_tensor requires torch.int16, got {acc.dtype}")
+    values = acc.to(dtype=torch.int32)
+    out_of_domain = (values < W5_SIGNED_MIN) | (values > W5_SIGNED_MAX)
+    if int(out_of_domain.max()) > 0:
+        raise NarrowCarrierW5DomainBreach(
+            f"pack_w5_tensor requires all values in [{W5_SIGNED_MIN}, {W5_SIGNED_MAX}]"
+        )
+    return (values & W5_PACK_MASK).to(torch.int16)
+
+
+def unpack_w5_tensor(packed: torch.Tensor) -> torch.Tensor:
+    if packed.dtype != torch.int16:
+        raise ValueError(f"unpack_w5_tensor requires torch.int16, got {packed.dtype}")
+    values = packed.to(dtype=torch.int32)
+    out_of_domain = (values < W5_PACKED_MIN) | (values > W5_PACKED_MAX)
+    if int(out_of_domain.max()) > 0:
+        raise ValueError(
+            f"unpack_w5_tensor requires packed lanes in [{W5_PACKED_MIN}, {W5_PACKED_MAX}]"
+        )
+    unsigned = values & W5_PACK_MASK
+    signed = torch.where(
+        unsigned >= W5_SIGN_BIT,
+        unsigned - W5_SIGN_EXTEND_OFFSET,
+        unsigned,
+    )
+    return signed.to(torch.int16)
+
+
+def clip_to_w5_tensor(acc: torch.Tensor) -> torch.Tensor:
+    clip_min, clip_max = effective_clip_bounds(
+        W5_WIDTH_BITS,
+        VOTE_UPDATE_SOURCE_CLIP_MIN,
+        VOTE_UPDATE_SOURCE_CLIP_MAX,
+    )
+    return torch.clamp(acc.to(torch.int32), clip_min, clip_max).to(torch.int16)
+
+
+def clip_then_pack_w5_tensor(acc: torch.Tensor) -> torch.Tensor:
+    return pack_w5_tensor(clip_to_w5_tensor(acc))
+
+
+def clip_then_roundtrip_w5_tensor(acc: torch.Tensor) -> torch.Tensor:
+    return unpack_w5_tensor(clip_then_pack_w5_tensor(acc))
+
+
+@dataclass(frozen=True)
+class PackedW5AccumulatorPayload:
+    packed: torch.Tensor
+    logical_shape: tuple[int, ...]
+    logical_numel: int
+    lane_bits: int = W5_WIDTH_BITS
+    schema: str = W5_BYTE_PACKED_SCHEMA
+
+    def __post_init__(self) -> None:
+        _validate_packed_w5_payload_metadata(self)
+
+    @property
+    def packed_data_bytes(self) -> int:
+        return int(self.packed.numel() * self.packed.element_size())
+
+    @property
+    def expected_packed_data_bytes(self) -> int:
+        return int((int(self.logical_numel) * int(self.lane_bits) + 7) // 8)
+
+
+def _validate_packed_w5_payload_metadata(payload: PackedW5AccumulatorPayload) -> None:
+    if str(payload.schema) != W5_BYTE_PACKED_SCHEMA:
+        raise ValueError(
+            f"packed acc schema must be {W5_BYTE_PACKED_SCHEMA!r}, got {payload.schema!r}"
+        )
+    reject_int16_tensor_as_packed_acc(payload.packed, context="packed W5 acc payload")
+    if payload.packed.dtype != torch.uint8:
+        raise ValueError(f"packed W5 acc payload must be torch.uint8, got {payload.packed.dtype}")
+    if payload.packed.ndim != 1:
+        raise ValueError(f"packed W5 acc payload must be 1-D bytes, got shape {tuple(payload.packed.shape)}")
+    if int(payload.logical_numel) <= 0:
+        raise ValueError("logical_numel must be positive")
+    if int(payload.lane_bits) != W5_WIDTH_BITS:
+        raise ValueError(f"lane_bits must be {W5_WIDTH_BITS}, got {payload.lane_bits}")
+    if _numel_from_shape(payload.logical_shape) != int(payload.logical_numel):
+        raise ValueError("logical_shape product must match logical_numel")
+    expected_bytes = payload.expected_packed_data_bytes
+    if int(payload.packed.numel()) != expected_bytes:
+        raise ValueError(
+            "packed byte length must equal ceil(logical_numel * lane_bits / 8); "
+            f"got {int(payload.packed.numel())}, expected {expected_bytes}"
+        )
+
+
+def _pack_w5_lanes_to_bytes_scalar_reference(lanes: Sequence[int]) -> bytes:
+    lane_count = len(lanes)
+    if lane_count <= 0:
+        return b""
+    nbytes = (lane_count * W5_WIDTH_BITS + 7) // 8
+    out = bytearray(nbytes)
+    bit_pos = 0
+    for lane in lanes:
+        unsigned_lane = int(lane) & W5_PACK_MASK
+        for bit_idx in range(W5_WIDTH_BITS):
+            if (unsigned_lane >> bit_idx) & 1:
+                byte_idx = bit_pos // 8
+                bit_in_byte = bit_pos % 8
+                out[byte_idx] |= 1 << bit_in_byte
+            bit_pos += 1
+    return bytes(out)
+
+
+def pack_w5_lanes_to_bytes(acc: torch.Tensor) -> PackedW5AccumulatorPayload:
+    lane_tensor = pack_w5_tensor(acc)
+    logical_shape = tuple(int(dim) for dim in acc.shape)
+    logical_numel = int(acc.numel())
+    lanes_u8 = (lane_tensor.reshape(-1) & W5_PACK_MASK).to(torch.uint8)
+    packed_bytes = _pack_w5_lanes_to_bytes_scalar_reference(lanes_u8.tolist())
+    packed = torch.tensor(list(packed_bytes), dtype=torch.uint8)
+    payload = PackedW5AccumulatorPayload(
+        packed=packed,
+        logical_shape=logical_shape,
+        logical_numel=logical_numel,
+    )
+    _validate_packed_w5_payload_metadata(payload)
+    return payload
+
+
+def unpack_w5_lanes_from_bytes(payload: PackedW5AccumulatorPayload) -> torch.Tensor:
+    _validate_packed_w5_payload_metadata(payload)
+    packed = payload.packed.to(torch.int64)
+    logical_numel = int(payload.logical_numel)
+    signed_lanes: list[int] = []
+    bit_pos = 0
+    for _lane_idx in range(logical_numel):
+        unsigned_lane = 0
+        for bit_idx in range(W5_WIDTH_BITS):
+            byte_idx = bit_pos // 8
+            bit_in_byte = bit_pos % 8
+            bit = int((packed[byte_idx] >> bit_in_byte) & 1)
+            unsigned_lane |= bit << bit_idx
+            bit_pos += 1
+        signed_lanes.append(unpack_w5(unsigned_lane))
+    return torch.tensor(signed_lanes, dtype=torch.int16).view(payload.logical_shape).contiguous()
+
+
 def default_vote_spec() -> VoteSpecParsed:
     return VoteSpecParsed(
         threshold_abs=CANONICAL_VOTE_UPDATE_THRESHOLD_ABS,

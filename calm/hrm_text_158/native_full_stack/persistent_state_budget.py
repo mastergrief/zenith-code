@@ -67,6 +67,21 @@ R4_Q_TERNARY_BYTEPACKED_NOT_SUB2_STATEMENT = (
     "NOT readiness, NOT hot-path, NOT mid-run resume."
 )
 
+R5_PERSISTENT_STATE_BUDGET_SCHEMA_VERSION = (
+    "hrm_text_158_persistent_state_budget/v0.r5_w5_byte_packed_decision_parity"
+)
+R5_PERSISTENT_STATE_BUDGET_LABEL = (
+    "r5_w5_byte_packed_decision_parity_checkpoint_ledger_not_sub2"
+)
+R5_ACC_PHYSICAL_BITS_PER_WEIGHT = 5.0
+R5_LEDGER_PASS_INCLUSIVE_BPW_CEILING = 7.5
+R5_ACC_BPW_TOLERANCE = 0.25
+R5_W5_BYTE_PACKED_SCHEMA = "w5_lanes_byte_packed/v0"
+R5_W5_BYTEPACKED_DECISION_PARITY_NOT_SUB2_STATEMENT = (
+    "R5 W5 vote-acc byte-pack: serialized acc = W5 / 5 bpw (lossy clip, decision-parity lane); "
+    "with q 2-bit packed inclusive ~7 bpw; NOT lossless, NOT sub-2-inclusive, NOT readiness."
+)
+
 
 @dataclass(frozen=True)
 class PackedTernaryQState:
@@ -199,6 +214,32 @@ class R4PersistentStateBudgetReport:
         return {field.name: getattr(self, field.name) for field in fields(self)}
 
 
+@dataclass(frozen=True)
+class R5PersistentStateBudgetReport:
+    """Byte-derived R5 checkpoint ledger for packed-q + W5-packed acc (decision-parity)."""
+
+    schema_version: str
+    label: str
+    eligible_weight_count: int
+    q_state_count: int
+    accumulator_payload_count: int
+    r5_q_physical_bits_per_weight: float
+    r5_q_metadata_bits_per_weight: float
+    r5_acc_physical_bits_per_weight: float
+    r5_checkpoint_inclusive_physical_bits_per_weight: float
+    r5_actual_q_payload_bytes: int
+    r5_actual_q_metadata_bytes: int
+    r5_actual_acc_payload_bytes: int
+    r5_frozen_scale_fp32_bits: int
+    r5_q_packed_content_sha256: str
+    r5_acc_packed_content_sha256: str
+    r5_ledger_pass: bool
+    receipt_statement: str
+
+    def to_dict(self) -> dict[str, int | float | bool | str]:
+        return {field.name: getattr(self, field.name) for field in fields(self)}
+
+
 def _reject_int16_tensor_as_packed_acc(value: torch.Tensor, *, context: str) -> None:
     if value.dtype == torch.int16:
         raise ValueError(
@@ -231,6 +272,35 @@ def _validate_r3_packed_payloads(
         _reject_int16_tensor_as_packed_acc(packed, context="R3 packed acc payload")
         if packed.dtype != torch.uint8:
             raise ValueError(f"R3 packed acc payload must be torch.uint8, got {packed.dtype}")
+        total_lanes += int(getattr(payload, "logical_numel"))
+        total_payload_bytes += int(getattr(payload, "packed_data_bytes"))
+    if total_lanes != int(eligible_weight_count):
+        raise ValueError(
+            "sum(packed_acc.logical_numel) must match eligible q entries; "
+            f"got packed_lanes={total_lanes}, eligible={eligible_weight_count}"
+        )
+    return int(total_payload_bytes)
+
+
+def _validate_r5_packed_acc_payloads(
+    packed_acc_payloads: Sequence[Any],
+    *,
+    eligible_weight_count: int,
+) -> int:
+    if len(packed_acc_payloads) == 0:
+        raise ValueError("at least one byte-packed W5 accumulator payload is required for R5 ledger")
+    total_lanes = 0
+    total_payload_bytes = 0
+    for payload in packed_acc_payloads:
+        schema = str(getattr(payload, "schema", ""))
+        if schema != R5_W5_BYTE_PACKED_SCHEMA:
+            raise ValueError(
+                f"R5 ledger requires schema {R5_W5_BYTE_PACKED_SCHEMA!r}, got {schema!r}"
+            )
+        packed = getattr(payload, "packed")
+        _reject_int16_tensor_as_packed_acc(packed, context="R5 packed acc payload")
+        if packed.dtype != torch.uint8:
+            raise ValueError(f"R5 packed acc payload must be torch.uint8, got {packed.dtype}")
         total_lanes += int(getattr(payload, "logical_numel"))
         total_payload_bytes += int(getattr(payload, "packed_data_bytes"))
     if total_lanes != int(eligible_weight_count):
@@ -515,6 +585,75 @@ def measure_r4_persistent_state_budget(
         r4_acc_packed_content_sha256=str(acc_content_sha256),
         r4_ledger_pass=bool(ledger_pass),
         receipt_statement=R4_Q_TERNARY_BYTEPACKED_NOT_SUB2_STATEMENT,
+    )
+
+
+def measure_r5_persistent_state_budget(
+    qscale_states: Sequence[QScaleWeightState],
+    packed_q_payloads: Sequence[PackedTernaryQState],
+    packed_acc_payloads: Sequence[Any],
+    *,
+    state_keys: Sequence[str] | None = None,
+) -> R5PersistentStateBudgetReport:
+    """Measure R5 checkpoint ledger from real uint8 q + W5 acc payload bytes."""
+
+    if len(qscale_states) == 0:
+        raise ValueError("at least one qscale state is required for R5 persistent-state accounting")
+
+    eligible_weight_count = 0
+    scale_bits = 0
+    for qscale_state in qscale_states:
+        q_levels, _scale, _ = validate_qscale_weight_state(qscale_state)
+        eligible_weight_count += int(q_levels.numel())
+        scale_bits += 32
+
+    actual_q_payload_bytes, actual_q_metadata_bytes = _validate_r4_packed_q_payloads(
+        packed_q_payloads,
+        eligible_weight_count=eligible_weight_count,
+    )
+    actual_acc_payload_bytes = _validate_r5_packed_acc_payloads(
+        packed_acc_payloads,
+        eligible_weight_count=eligible_weight_count,
+    )
+    effective_state_keys = (
+        list(state_keys)
+        if state_keys is not None
+        else [f"payload_{index}" for index in range(len(packed_q_payloads))]
+    )
+    if len(effective_state_keys) != len(packed_q_payloads):
+        raise ValueError("state_keys length must match packed_q_payloads")
+    q_rows = build_r4_per_module_q_rows(effective_state_keys, packed_q_payloads)
+    acc_rows = build_r3_per_module_payload_rows(effective_state_keys, packed_acc_payloads)
+    q_content_sha256 = canonical_r4_q_packed_content_sha256(q_rows)
+    acc_content_sha256 = canonical_r3_packed_payload_content_sha256(acc_rows)
+    q_physical_bpw = _bits_per_weight(actual_q_payload_bytes * 8, eligible_weight_count)
+    q_metadata_bpw = _bits_per_weight(actual_q_metadata_bytes * 8, eligible_weight_count)
+    acc_physical_bpw = _bits_per_weight(actual_acc_payload_bytes * 8, eligible_weight_count)
+    scale_bpw = _bits_per_weight(scale_bits, eligible_weight_count)
+    inclusive_bpw = float(q_physical_bpw + q_metadata_bpw + acc_physical_bpw + scale_bpw)
+    ledger_pass = (
+        abs(float(q_physical_bpw) - R4_Q_PHYSICAL_BITS_PER_WEIGHT) <= R4_Q_BPW_TOLERANCE
+        and abs(float(acc_physical_bpw) - R5_ACC_PHYSICAL_BITS_PER_WEIGHT) <= R5_ACC_BPW_TOLERANCE
+        and float(inclusive_bpw) <= R5_LEDGER_PASS_INCLUSIVE_BPW_CEILING
+    )
+    return R5PersistentStateBudgetReport(
+        schema_version=R5_PERSISTENT_STATE_BUDGET_SCHEMA_VERSION,
+        label=R5_PERSISTENT_STATE_BUDGET_LABEL,
+        eligible_weight_count=int(eligible_weight_count),
+        q_state_count=int(len(qscale_states)),
+        accumulator_payload_count=int(len(packed_acc_payloads)),
+        r5_q_physical_bits_per_weight=float(q_physical_bpw),
+        r5_q_metadata_bits_per_weight=float(q_metadata_bpw),
+        r5_acc_physical_bits_per_weight=float(acc_physical_bpw),
+        r5_checkpoint_inclusive_physical_bits_per_weight=float(inclusive_bpw),
+        r5_actual_q_payload_bytes=int(actual_q_payload_bytes),
+        r5_actual_q_metadata_bytes=int(actual_q_metadata_bytes),
+        r5_actual_acc_payload_bytes=int(actual_acc_payload_bytes),
+        r5_frozen_scale_fp32_bits=int(scale_bits),
+        r5_q_packed_content_sha256=str(q_content_sha256),
+        r5_acc_packed_content_sha256=str(acc_content_sha256),
+        r5_ledger_pass=bool(ledger_pass),
+        receipt_statement=R5_W5_BYTEPACKED_DECISION_PARITY_NOT_SUB2_STATEMENT,
     )
 
 
