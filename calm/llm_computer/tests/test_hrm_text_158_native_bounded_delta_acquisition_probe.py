@@ -4003,3 +4003,59 @@ def test_tier_a_staging_fail_closed_mismatched_post_cap_indices() -> None:
             applied_indices=[0],
             global_rate_cap_enabled=True,
         )
+
+
+def test_control_arm_staging_receipt_uses_post_cap_indices() -> None:
+    from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
+        make_bounded_tensor_state,
+    )
+
+    state = make_bounded_tensor_state(
+        "toy.proj",
+        torch.tensor([0], dtype=torch.int8),
+        0.5,
+        torch.zeros(1, dtype=torch.int16),
+    )
+    votes = torch.tensor([12], dtype=torch.int16)
+    spec = VoteUpdateSpec(
+        threshold_abs=10,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=1,
+    )
+    fixture_compact = {
+        "schema": "hrm_text_158_c2p0_bounded_delta_step_result/v0.compact",
+        "tensor_stats": {
+            "toy.proj": {
+                "replay_ce_veto_count": 0,
+                "global_rate_cap_enabled": True,
+                "post_veto_would_apply_pre_cap_count": 1,
+                "post_veto_applied_flip_count": 1,
+                "post_veto_applied_indices": [42],
+                "q_changed_count": 1,
+            }
+        },
+        "global_summary": {
+            "global_rate_cap_enabled": True,
+            "q_changed_count": 1,
+            "local_selection_ordering_mode": probe_module.LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+        },
+    }
+    attached = probe_module._attach_control_arm_index_surfaces_to_compact(
+        fixture_compact,
+        tensor_states={"toy.proj": state},
+        votes_by_key={"toy.proj": votes},
+        vote_specs_by_key={"toy.proj": spec},
+        replay_ce_veto_votes_by_key=None,
+        replay_ce_veto_moves_by_key=None,
+        pc_aux_votes_by_key=None,
+        pc_aux_moves_by_key=None,
+        pc_aux_mode="telemetry",
+        local_selection_ordering_mode=probe_module.LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+        local_selection_ordering_seed=probe_module.SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
+        local_selection_ordering_step=1,
+    )
+    stats = attached["tensor_stats"]["toy.proj"]
+    assert stats["post_veto_would_apply_pre_cap_indices"] == [0]
+    assert stats["applied_indices"] == [42]
+    assert stats["applied_indices"] != stats["post_veto_would_apply_pre_cap_indices"]

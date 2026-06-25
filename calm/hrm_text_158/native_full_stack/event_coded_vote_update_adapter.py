@@ -446,11 +446,13 @@ def plan_event_coded_integer_vote_update_reference(
             inputs,
         )
 
+    applied_count = int(applied.numel())
     stats = {
         "event_coded_live_carrier_plan": True,
         "candidate_count": int(candidate_idx.numel()),
         "pre_veto_selected_count": int(pre_veto_selected.numel()),
-        "post_veto_applied_flip_count": int(applied.numel()),
+        "post_veto_would_apply_pre_cap_count": applied_count,
+        "post_veto_applied_flip_count": applied_count,
     }
     return VoteUpdatePlan(
         q_i16=q_i16.view_as(q_levels),

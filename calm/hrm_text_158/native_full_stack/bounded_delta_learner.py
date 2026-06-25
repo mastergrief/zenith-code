@@ -53,8 +53,11 @@ from calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier import (
 )
 from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
     EventCodedVoteUpdateState,
+    C8_DENSE_ACCUMULATOR_MATERIALIZED_NUMEL_KEY,
+    C8_FULL_NUMEL_FLATTEN_COUNT_KEY,
     C8_PERSISTENT_AUTHORITY_SCOPE_KEY,
     C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY,
+    C8_VOTE_UPDATE_PREPLAN_TRITON_INVOKED_KEY,
     event_coded_live_carrier_enabled,
     measure_persistent_dense_accumulator_materialized_numel,
     tensor_states_use_event_coded_live_carrier,
@@ -68,6 +71,38 @@ from calm.hrm_text_158.native_full_stack.vote_update import (
     apply_integer_vote_update_reference,
     plan_integer_vote_update_reference,
 )
+
+
+_EVENT_CODED_CAP_STAT_OVERLAY_KEYS = frozenset(
+    {
+        "live_authority",
+        "exact_accumulator_shadow_sha256_after",
+        "event_coded_live_carrier_plan",
+        "event_coded_live_carrier_content_sha256_after",
+        "logical_numel",
+        "v4_live_observed_surfaces",
+        C8_PERSISTENT_AUTHORITY_SCOPE_KEY,
+        C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY,
+        C8_DENSE_ACCUMULATOR_MATERIALIZED_NUMEL_KEY,
+        C8_FULL_NUMEL_FLATTEN_COUNT_KEY,
+        C8_VOTE_UPDATE_PREPLAN_TRITON_INVOKED_KEY,
+    }
+)
+
+
+def _merge_event_coded_cap_tensor_stats(
+    cap_item_stats: Mapping[str, Any],
+    local_stats: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Merge global-cap stats (post-cap authority) with event-coded-only overlays."""
+
+    stats = dict(cap_item_stats)
+    for key in _EVENT_CODED_CAP_STAT_OVERLAY_KEYS:
+        if key in local_stats:
+            stats[key] = local_stats[key]
+    stats["live_authority"] = "event_coded_live_carrier"
+    stats["exact_accumulator_shadow_sha256_after"] = None
+    return stats
 
 
 RUN_BOUNDED_DELTA_LEARNER_ENV = "HRM_TEXT_158_RUN_BOUNDED_DELTA_LEARNER"
@@ -1760,10 +1795,10 @@ def _apply_bounded_delta_vote_step_event_coded_live(
             )
             carriers_by_key[state_key] = carrier
             q_by_key[state_key] = q_out
-            stats = dict(local_result.stats)
-            stats["live_authority"] = "event_coded_live_carrier"
-            stats["exact_accumulator_shadow_sha256_after"] = None
-            stats_by_key[state_key] = stats
+            stats_by_key[state_key] = _merge_event_coded_cap_tensor_stats(
+                item.stats,
+                local_result.stats,
+            )
     else:
         backlog = deferred_backlog or {}
         summary = {

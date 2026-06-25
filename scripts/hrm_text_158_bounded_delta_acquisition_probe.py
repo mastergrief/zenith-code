@@ -4602,7 +4602,13 @@ def _attach_control_arm_index_surfaces_to_compact(
             int(value)
             for value in plan.pre_veto_selected_indices.detach().cpu().tolist()
         ]
-        stats["applied_indices"] = applied_indices
+        if cap_enabled:
+            stats["post_veto_would_apply_pre_cap_indices"] = list(applied_indices)
+            stats["applied_indices"] = [
+                int(value) for value in stats["post_veto_applied_indices"]
+            ]
+        else:
+            stats["applied_indices"] = applied_indices
         stats["replay_ce_veto_indices"] = replay_ce_veto_indices
         tensor_stats[state_key] = stats
     compact["tensor_stats"] = tensor_stats
