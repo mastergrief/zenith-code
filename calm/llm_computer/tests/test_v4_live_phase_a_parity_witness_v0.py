@@ -451,7 +451,11 @@ def test_v4_launch_packet_contract_and_bindings() -> None:
         code_pins["file_content_sha256_at_head"][
             "scripts/hrm_text_158_bounded_delta_acquisition_probe.py"
         ]
-        == "87a82f657e51cf82034d561aeef1fda10ba7a30bd43c010daa2aedbc71ce3fa8"
+        == "f93c051f1332b427d284a2db45b7631e803414fb75233daf498879321d3b7368"
+    )
+    assert len(code_pins["file_content_sha256_at_head"]) == 16
+    assert set(code_pins["pinned_surfaces"]) == set(
+        code_pins["file_content_sha256_at_head"].keys()
     )
     for rel_path, expected_sha in code_pins["file_content_sha256_at_head"].items():
         on_disk_sha = hashlib.sha256(Path(rel_path).read_bytes()).hexdigest()
