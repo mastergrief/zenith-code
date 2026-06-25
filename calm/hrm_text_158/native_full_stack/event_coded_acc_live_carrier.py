@@ -564,13 +564,22 @@ class EventCodedAccLiveState:
             else:
                 proxy_indices = np.empty(0, dtype=np.int32)
             if touched_arr.size:
+                # touched_arr is unioned into active_sorted above, so positions are in-bounds.
                 touched_positions = np.searchsorted(active_sorted, touched_arr)
-                for idx, pos in zip(touched_arr.tolist(), touched_positions.tolist()):
-                    if pos < active_sorted.size and int(active_sorted[pos]) == int(idx):
-                        if abs(int(pre_arr[pos])) >= int(promote_at):
-                            proxy_indices = np.concatenate(
-                                [proxy_indices, np.array([int(idx)], dtype=np.int32)]
-                            )
+                valid = (touched_positions < active_sorted.size) & (
+                    active_sorted[touched_positions] == touched_arr
+                )
+                if valid.any():
+                    pos = touched_positions[valid]
+                    idx = touched_arr[valid]
+                    near = np.abs(pre_arr[pos].astype(np.int32)) >= int(promote_at)
+                    if near.any():
+                        extra = idx[near].astype(np.int32)
+                        proxy_indices = (
+                            _union_sorted_int32(proxy_indices, extra)
+                            if proxy_indices.size
+                            else np.sort(extra)
+                        )
         touched_set = set(vote_map)
         vote_arr = np.zeros(active_sorted.shape[0], dtype=np.int32)
         if touched_arr.size:

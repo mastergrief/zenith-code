@@ -16,6 +16,7 @@ from calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier import (
     _PackedHotTable,
     _apply_step_dict_impl,
     apply_step_dict_reference,
+    promotion_carry_threshold,
 )
 from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
     _votes_dict_from_tensor,
@@ -272,6 +273,97 @@ def test_b2_cold_non_voted_override_matches_oracle() -> None:
     assert _record_tuple(fast_record) == _record_tuple(oracle_record)
     assert dict(fast.hot_exact) == dict(oracle_carrier.hot_exact)
     assert carrier_content_sha256(fast) == carrier_content_sha256(oracle_carrier)
+
+
+def _non_override_near_threshold_fixture(
+    *,
+    numel: int,
+    k_touched: int,
+) -> tuple[EventCodedAccLiveState, dict[int, int]]:
+    """Build exactly k_touched unique touched lanes: half near-threshold hot, half cold below."""
+    promote_at = promotion_carry_threshold()
+    near_count = k_touched // 2
+    below_count = k_touched - near_count
+    hot_count = near_count
+    hot_exact = {int(i * 19): int(promote_at) for i in range(hot_count)}
+    hot_keys = sorted(hot_exact)
+    votes: dict[int, int] = {}
+    for offset in range(near_count):
+        votes[int(hot_keys[offset])] = 1 if offset % 2 == 0 else -1
+    cold_base = hot_count * 19 + 1000
+    for offset in range(below_count):
+        votes[int(cold_base + offset * 3 + 1)] = 1
+    carrier = EventCodedAccLiveState.with_hot_exact(
+        logical_numel=int(numel),
+        demotion_band=3,
+        hot_exact=hot_exact,
+    )
+    return carrier, votes
+
+
+def _assert_non_override_fixture_shape(
+    carrier: EventCodedAccLiveState,
+    votes: dict[int, int],
+    *,
+    k_touched: int,
+) -> tuple[int, int]:
+    promote_at = promotion_carry_threshold()
+    assert len(votes) == k_touched
+    near_unique = 0
+    below_unique = 0
+    for flat_index in votes:
+        pre = int(carrier.reconstruct_lane(int(flat_index)))
+        if abs(pre) >= int(promote_at):
+            near_unique += 1
+        else:
+            below_unique += 1
+    expected_near = k_touched // 2
+    expected_below = k_touched - expected_near
+    assert near_unique == expected_near, (near_unique, expected_near)
+    assert below_unique == expected_below, (below_unique, expected_below)
+    assert near_unique > 0 and below_unique > 0
+    return near_unique, below_unique
+
+
+@pytest.mark.parametrize("k_touched", [1_000, 50_000, 200_000])
+def test_non_override_near_threshold_touched_proxy_equivalence(k_touched: int) -> None:
+    carrier, votes = _non_override_near_threshold_fixture(
+        numel=2_000_000,
+        k_touched=k_touched,
+    )
+    _assert_non_override_fixture_shape(carrier, votes, k_touched=k_touched)
+    fast = carrier.cow_copy()
+    fast_record = fast.apply_step(0, votes=votes, hot_risk_override=None)
+    oracle_carrier = carrier.cow_copy()
+    oracle_record = _apply_step_dict_impl(
+        oracle_carrier,
+        0,
+        votes=votes,
+        hot_risk_override=None,
+    )
+    assert _record_tuple(fast_record) == _record_tuple(oracle_record)
+    assert carrier_content_sha256(fast) == carrier_content_sha256(oracle_carrier)
+
+
+@pytest.mark.slow
+def test_non_override_proxy_build_sub_budget() -> None:
+    carrier, votes = _non_override_near_threshold_fixture(
+        numel=2_000_000,
+        k_touched=200_000,
+    )
+    near_unique, below_unique = _assert_non_override_fixture_shape(
+        carrier,
+        votes,
+        k_touched=200_000,
+    )
+    assert len(votes) == 200_000
+    assert near_unique == 100_000
+    assert below_unique == 100_000
+    fast = carrier.cow_copy()
+    t0 = time.perf_counter()
+    fast.apply_step(0, votes=votes, hot_risk_override=None)
+    elapsed = time.perf_counter() - t0
+    assert elapsed < 2.0, f"full apply_step at K=200k took {elapsed:.3f}s"
 
 
 def test_cow_fork_isolates_mutations() -> None:
