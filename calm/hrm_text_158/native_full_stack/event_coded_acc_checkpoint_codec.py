@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Sequence
 
+import numpy as np
 import torch
 
 from calm.hrm_text_158.native_full_stack.persistent_state_budget import (
@@ -145,6 +146,8 @@ def encode_hot_exact_rows(
     indices: Sequence[int],
     values: Sequence[int],
 ) -> bytes:
+  if isinstance(indices, np.ndarray) and isinstance(values, np.ndarray):
+    return encode_hot_exact_rows_from_arrays(indices, values)
   if len(indices) != len(values):
     raise ValueError("hot_exact index/value count mismatch")
   payload = bytearray()
@@ -154,6 +157,30 @@ def encode_hot_exact_rows(
     if signed < -32768 or signed > 32767:
       raise ValueError("hot_exact value must fit int16")
     payload.extend(int(signed).to_bytes(2, byteorder="little", signed=True))
+  return bytes(payload)
+
+
+def encode_hot_exact_rows_from_arrays(
+    indices: np.ndarray,
+    values: np.ndarray,
+) -> bytes:
+  idx = np.ascontiguousarray(indices, dtype=np.uint32).ravel()
+  val = np.ascontiguousarray(values, dtype=np.int16).ravel()
+  if idx.size != val.size:
+    raise ValueError("hot_exact index/value count mismatch")
+  payload = bytearray()
+  append = payload.append
+  extend = payload.extend
+  for i in range(idx.size):
+    v = int(idx[i])
+    while v > 0x7F:
+      append((v & 0x7F) | 0x80)
+      v >>= 7
+    append(v)
+    signed = int(val[i])
+    if signed < -32768 or signed > 32767:
+      raise ValueError("hot_exact value must fit int16")
+    extend(int(signed).to_bytes(2, byteorder="little", signed=True))
   return bytes(payload)
 
 
@@ -258,13 +285,22 @@ def pack_event_coded_acc_checkpoint_v1(
     raise ValueError("logical_numel must be positive")
   event_list = tuple(events)
   backlog = tuple(int(item) for item in (backlog_indices or ()))
-  hot_indices = tuple(int(item) for item in (hot_exact_indices or ()))
-  hot_values = tuple(int(item) for item in (hot_exact_values or ()))
+  hot_indices = hot_exact_indices
+  hot_values = hot_exact_values
+  if isinstance(hot_exact_indices, np.ndarray) and isinstance(hot_exact_values, np.ndarray):
+    hot_indices = tuple(int(item) for item in hot_exact_indices.tolist())
+    hot_values = tuple(int(item) for item in hot_exact_values.tolist())
+  else:
+    hot_indices = tuple(int(item) for item in (hot_exact_indices or ()))
+    hot_values = tuple(int(item) for item in (hot_exact_values or ()))
   if len(hot_indices) != len(hot_values):
     raise ValueError("hot_exact index/value count mismatch")
   events_bytes = encode_event_coded_acc_events(event_list)
   backlog_bytes = encode_event_coded_backlog_indices(backlog)
-  hot_bytes = encode_hot_exact_rows(hot_indices, hot_values)
+  if isinstance(hot_exact_indices, np.ndarray) and isinstance(hot_exact_values, np.ndarray):
+    hot_bytes = encode_hot_exact_rows_from_arrays(hot_exact_indices, hot_exact_values)
+  else:
+    hot_bytes = encode_hot_exact_rows(hot_indices, hot_values)
   return PackedEventCodedAccState(
     events_packed=torch.tensor(list(events_bytes), dtype=torch.uint8),
     backlog_packed=torch.tensor(list(backlog_bytes), dtype=torch.uint8),

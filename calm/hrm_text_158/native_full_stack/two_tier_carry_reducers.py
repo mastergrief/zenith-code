@@ -1,6 +1,8 @@
 """Pure carry reducers for two-tier accumulator width semantics."""
 from __future__ import annotations
 
+import numpy as np
+
 VOTE_UPDATE_SOURCE_CLIP_MIN = -127
 VOTE_UPDATE_SOURCE_CLIP_MAX = 127
 DEFAULT_CARRY_WIDTH = 6
@@ -126,6 +128,38 @@ def crossing_bool_w6(
         current_q_level=int(q),
         threshold_abs=threshold_abs,
     )
+
+
+def vectorized_carry_self_update_row(
+    pre_acc: np.ndarray,
+    vote: np.ndarray,
+    *,
+    width: int = DEFAULT_CARRY_WIDTH,
+    source_clip_min: int = VOTE_UPDATE_SOURCE_CLIP_MIN,
+    source_clip_max: int = VOTE_UPDATE_SOURCE_CLIP_MAX,
+    decay_numerator: int = 1,
+    decay_denominator: int = 1,
+) -> np.ndarray:
+    clip_min, clip_max = effective_clip_bounds(
+        width,
+        source_clip_min,
+        source_clip_max,
+    )
+    decayed = (pre_acc.astype(np.int64) * int(decay_numerator)) // int(decay_denominator)
+    post = decayed + vote.astype(np.int64)
+    return np.clip(post, clip_min, clip_max).astype(np.int32)
+
+
+def vectorized_crosses_threshold(
+    new_acc: np.ndarray,
+    q: np.ndarray,
+    *,
+    threshold_abs: int = DEFAULT_CROSSING_THRESHOLD_ABS,
+) -> np.ndarray:
+    q_arr = q.astype(np.int32)
+    acc = new_acc.astype(np.int32)
+    threshold = int(threshold_abs)
+    return ((acc >= threshold) & (q_arr < 1)) | ((acc <= -threshold) & (q_arr > -1))
 
 
 def _validate_post_flip_residual_domain(

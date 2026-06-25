@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import hashlib
 import os
-import copy
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
+import numpy as np
 import torch
 
 from calm.hrm_text_158.native_full_stack.event_coded_acc_checkpoint_codec import (
@@ -18,7 +18,9 @@ from calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier import (
     DEFAULT_DECAY_DENOMINATOR,
     DEFAULT_DECAY_NUMERATOR,
     EventCodedAccLiveState,
+    _PackedHotTable,
     hot_risk_proxy_indices,
+    merge_hot_table_arrays,
     observed_surfaces_dict,
 )
 from calm.hrm_text_158.native_full_stack.two_tier_carry_reducers import (
@@ -174,11 +176,16 @@ class EventCodedVoteUpdateResult:
 
 
 def carrier_content_sha256(carrier: EventCodedAccLiveState) -> str:
-    payload = carrier.to_checkpoint_payload()
-    packed = bytes(payload.events_packed.detach().cpu().tolist())
-    packed += bytes(payload.backlog_packed.detach().cpu().tolist())
-    packed += bytes(payload.hot_exact_packed.detach().cpu().tolist())
-    return hashlib.sha256(packed).hexdigest()
+    from calm.hrm_text_158.native_full_stack.event_coded_acc_checkpoint_codec import (
+        encode_event_coded_acc_events,
+        encode_event_coded_backlog_indices,
+    )
+
+    packed = bytearray()
+    packed += encode_event_coded_acc_events(tuple(carrier.events))
+    packed += encode_event_coded_backlog_indices(tuple(sorted(carrier.backlog)))
+    packed += carrier.hot_packed_bytes()
+    return hashlib.sha256(bytes(packed)).hexdigest()
 
 
 def c8_runtime_guard_stats(
@@ -237,7 +244,7 @@ def hydrate_event_coded_live_carrier_from_packed(
         cold_default=int(cold_default),
         threshold_abs=int(threshold_abs),
         demotion_band=int(demotion_band),
-        hot_exact=hot_exact,
+        _hot=_PackedHotTable.from_dict(hot_exact),
         events=list(events),
         backlog=set(int(item) for item in backlog),
     )
@@ -473,11 +480,12 @@ def plan_event_coded_integer_vote_update_reference(
 
 def _votes_dict_from_tensor(votes: torch.Tensor) -> dict[int, int]:
     vote_flat = votes.detach().cpu().flatten()
-    return {
-        int(index): int(value)
-        for index, value in enumerate(vote_flat.tolist())
-        if int(value) != 0
-    }
+    vote_nz = torch.nonzero(vote_flat != 0, as_tuple=False).flatten()
+    if vote_nz.numel() == 0:
+        return {}
+    indices = vote_nz.to(torch.int64).tolist()
+    values = vote_flat[vote_nz].tolist()
+    return {int(index): int(value) for index, value in zip(indices, values)}
 
 
 def _sync_q_levels_tensor(
@@ -522,7 +530,7 @@ def apply_event_coded_integer_vote_update_reference(
         local_selection_ordering_step=int(local_selection_ordering_step),
         observation=observation,
     )
-    carrier = copy.deepcopy(state.carrier)
+    carrier = state.carrier.cow_copy()
     vote_map = _votes_dict_from_tensor(inputs.votes)
     apply_event_coded_carrier_step(carrier, votes=vote_map, step_index=int(step_index))
 
@@ -576,13 +584,15 @@ def apply_event_coded_cap_mutations(
 
     if not accepted_indices:
         return q_levels, carrier
-    updated = copy.deepcopy(carrier)
+    updated = carrier.cow_copy()
     q_out = q_levels.detach().cpu().clone().to(torch.int8)
     q_flat = q_out.flatten()
     threshold_flat = plan.applied_thresholds.detach().cpu().flatten()
     direction_flat = plan.applied_directions.detach().cpu().flatten()
     applied_flat = plan.applied_indices.detach().cpu().flatten()
     index_by_pos = {int(idx): pos for pos, idx in enumerate(applied_flat.tolist())}
+    cap_indices: list[int] = []
+    cap_values: list[int] = []
     for flat_index in accepted_indices:
         idx = int(flat_index)
         pos = index_by_pos.get(idx)
@@ -593,7 +603,20 @@ def apply_event_coded_cap_mutations(
         updated.q_levels[idx] = int(q_flat[idx].item())
         carry = int(updated.reconstruct_lane(idx))
         residual = carry - direction * int(threshold_flat[pos].item())
-        updated.hot_exact[idx] = int(residual)
+        cap_indices.append(idx)
+        cap_values.append(int(residual))
+    if cap_indices:
+        cap_idx = np.array(cap_indices, dtype=np.int32)
+        cap_val = np.array(cap_values, dtype=np.int16)
+        hot_idx, hot_val = merge_hot_table_arrays(
+            updated._hot.indices_array(),
+            updated._hot.values_array(),
+            np.empty(0, dtype=np.int32),
+            cap_idx,
+            cap_val,
+        )
+        updated._hot.replace_arrays(hot_idx, hot_val)
+        updated._invalidate_packed_caches()
     apply_event_coded_carrier_step(
         updated,
         votes={},
