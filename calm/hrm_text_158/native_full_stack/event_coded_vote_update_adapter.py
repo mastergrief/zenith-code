@@ -22,9 +22,13 @@ from calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier import (
     observed_surfaces_dict,
 )
 from calm.hrm_text_158.native_full_stack.two_tier_carry_reducers import (
+    DEFAULT_CARRY_WIDTH,
     DEFAULT_CROSSING_THRESHOLD_ABS,
+    VOTE_UPDATE_SOURCE_CLIP_MIN,
+    VOTE_UPDATE_SOURCE_CLIP_MAX,
     carry_self_update_row,
     crossing_bool_w6,
+    effective_clip_bounds,
 )
 from calm.hrm_text_158.native_full_stack.vote_update import (
     LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
@@ -239,20 +243,40 @@ def hydrate_event_coded_live_carrier_from_packed(
     )
 
 
+def carrier_pre_accumulator_i32_flat(
+    carrier: EventCodedAccLiveState,
+    numel: int,
+) -> torch.Tensor:
+    pre_full = torch.full((int(numel),), int(carrier.cold_default), dtype=torch.int32)
+    if carrier.hot_exact:
+        hot_keys = torch.tensor(list(carrier.hot_exact.keys()), dtype=torch.int64)
+        hot_vals = torch.tensor(list(carrier.hot_exact.values()), dtype=torch.int32)
+        pre_full[hot_keys] = hot_vals
+    return pre_full
+
+
+def _active_lane_index_tensor(
+    carrier: EventCodedAccLiveState,
+    votes: torch.Tensor,
+) -> torch.Tensor:
+    vote_flat = votes.detach().cpu().flatten()
+    vote_nz = torch.nonzero(vote_flat != 0, as_tuple=False).flatten().to(torch.int64)
+    if not carrier.hot_exact:
+        return vote_nz
+    hot_idx = torch.tensor(list(carrier.hot_exact.keys()), dtype=torch.int64)
+    if vote_nz.numel() == 0:
+        return hot_idx
+    return torch.unique(torch.cat([hot_idx, vote_nz]))
+
+
 def _active_lane_indices(
     carrier: EventCodedAccLiveState,
     votes: torch.Tensor,
 ) -> set[int]:
-    vote_flat = votes.detach().cpu().flatten()
-    touched = {
-        int(index)
-        for index, value in enumerate(vote_flat.tolist())
-        if int(value) != 0
-    }
-    return set(carrier.hot_exact) | touched
+    return {int(index) for index in _active_lane_index_tensor(carrier, votes).tolist()}
 
 
-def build_sparse_new_acc_i32_from_carrier(
+def build_sparse_new_acc_i32_from_carrier_reference(
     carrier: EventCodedAccLiveState,
     q_levels: torch.Tensor,
     votes: torch.Tensor,
@@ -280,6 +304,47 @@ def build_sparse_new_acc_i32_from_carrier(
             min(int(spec.accumulator_clip_max), int(post)),
         )
         new_acc[int(flat_index)] = int(post)
+    return new_acc.view_as(q_levels)
+
+
+def build_sparse_new_acc_i32_from_carrier(
+    carrier: EventCodedAccLiveState,
+    q_levels: torch.Tensor,
+    votes: torch.Tensor,
+    spec: VoteUpdateSpec,
+    *,
+    observation: C8StepObservation | None = None,
+) -> torch.Tensor:
+    numel = int(q_levels.numel())
+    if observation is not None:
+        observation.record_transient_dense(numel)
+    new_acc = torch.zeros(numel, dtype=torch.int32)
+    active_idx = _active_lane_index_tensor(carrier, votes)
+    if active_idx.numel() == 0:
+        return new_acc.view_as(q_levels)
+
+    vote_flat = votes.detach().cpu().flatten().to(torch.int32)
+    pre_full = carrier_pre_accumulator_i32_flat(carrier, numel)
+    pre_active = pre_full[active_idx]
+    vote_active = vote_flat[active_idx]
+
+    eff_min, eff_max = effective_clip_bounds(
+        DEFAULT_CARRY_WIDTH,
+        VOTE_UPDATE_SOURCE_CLIP_MIN,
+        VOTE_UPDATE_SOURCE_CLIP_MAX,
+    )
+    decay_num = int(spec.decay_numerator)
+    decay_den = int(spec.decay_denominator)
+    if decay_den <= 0:
+        raise ValueError("decay_denominator must be > 0")
+    decayed = (pre_active * decay_num) // decay_den
+    post = torch.clamp(decayed + vote_active, eff_min, eff_max)
+    post = torch.clamp(
+        post,
+        int(spec.accumulator_clip_min),
+        int(spec.accumulator_clip_max),
+    )
+    new_acc[active_idx] = post.to(torch.int32)
     return new_acc.view_as(q_levels)
 
 

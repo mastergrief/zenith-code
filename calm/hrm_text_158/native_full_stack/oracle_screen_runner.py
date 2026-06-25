@@ -17,6 +17,7 @@ from statistics import median
 import time
 from typing import Any, Callable, Mapping, Sequence
 
+import numpy as np
 import torch
 
 from calm.hrm_text_158 import LMHead
@@ -105,6 +106,7 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
 from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
     EventCodedVoteUpdateState,
     carrier_content_sha256,
+    carrier_pre_accumulator_i32_flat,
 )
 from calm.hrm_text_158.native_full_stack.vote_update_emit_routing import (
     plan_vote_update_for_emit,
@@ -436,6 +438,63 @@ def _compute_baseline_votes(
     return float(loss.detach().cpu().item()), votes_by_key
 
 
+def _order_candidates_from_plan(
+    *,
+    plan: Any,
+    state: VoteUpdateState,
+    ordering_mode: str,
+) -> tuple[list[int], list[int], torch.Tensor]:
+    candidate_idx = plan.candidate_indices.detach().cpu().to(torch.int64)
+    if candidate_idx.numel() == 0:
+        return [], [], plan.new_acc_i32.detach().cpu().to(torch.int32).flatten()
+    new_acc = plan.new_acc_i32.detach().cpu().to(torch.int32).flatten()
+    order = _local_selection_order(
+        candidate_idx=candidate_idx,
+        new_acc_i32=new_acc,
+        numel=int(state.q_levels.numel()),
+        mode=str(ordering_mode),
+        ordering_seed=ORACLE_SCREEN_ORDERING_SEED,
+        ordering_step=ORACLE_SCREEN_ORDERING_STEP,
+    )
+    ordered = candidate_idx[order].detach().cpu().to(torch.int64).tolist()
+    unordered = candidate_idx.detach().cpu().to(torch.int64).tolist()
+    return [int(index) for index in ordered], [int(index) for index in unordered], new_acc
+
+
+def _ordered_candidate_indices_pair(
+    *,
+    state: VoteUpdateState,
+    votes: torch.Tensor,
+    spec: VoteUpdateSpec,
+) -> tuple[list[int], list[int], list[int], list[int], torch.Tensor]:
+    plan = plan_vote_update_for_emit(
+        state,
+        VoteUpdateInputs(votes=votes),
+        spec,
+        local_selection_ordering_mode=LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+        local_selection_ordering_seed=ORACLE_SCREEN_ORDERING_SEED,
+        local_selection_ordering_step=ORACLE_SCREEN_ORDERING_STEP,
+        two_tier_carry_w6_enabled=False,
+    )
+    current_ordered, unordered, new_acc = _order_candidates_from_plan(
+        plan=plan,
+        state=state,
+        ordering_mode=LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+    )
+    deterministic_ordered, deterministic_unordered, _ = _order_candidates_from_plan(
+        plan=plan,
+        state=state,
+        ordering_mode=LOCAL_SELECTION_ORDER_DETERMINISTIC_HASH_MATCHED,
+    )
+    return (
+        current_ordered,
+        unordered,
+        deterministic_ordered,
+        deterministic_unordered,
+        new_acc,
+    )
+
+
 def _ordered_candidate_indices(
     *,
     state: VoteUpdateState,
@@ -452,21 +511,11 @@ def _ordered_candidate_indices(
         local_selection_ordering_step=ORACLE_SCREEN_ORDERING_STEP,
         two_tier_carry_w6_enabled=False,
     )
-    candidate_idx = plan.candidate_indices.detach().cpu().to(torch.int64)
-    if candidate_idx.numel() == 0:
-        return [], [], plan.new_acc_i32.detach().cpu().to(torch.int32).flatten()
-    new_acc = plan.new_acc_i32.detach().cpu().to(torch.int32).flatten()
-    order = _local_selection_order(
-        candidate_idx=candidate_idx,
-        new_acc_i32=new_acc,
-        numel=int(state.q_levels.numel()),
-        mode=str(ordering_mode),
-        ordering_seed=ORACLE_SCREEN_ORDERING_SEED,
-        ordering_step=ORACLE_SCREEN_ORDERING_STEP,
+    return _order_candidates_from_plan(
+        plan=plan,
+        state=state,
+        ordering_mode=str(ordering_mode),
     )
-    ordered = candidate_idx[order].detach().cpu().to(torch.int64).tolist()
-    unordered = candidate_idx.detach().cpu().to(torch.int64).tolist()
-    return [int(index) for index in ordered], [int(index) for index in unordered], new_acc
 
 
 def _sample_candidate_ids(
@@ -2157,15 +2206,249 @@ def build_compact_within_tie_band_sampled_table_rows(
     ]
 
 
-def build_within_tie_band_candidate_universe_from_votes(
+def _deterministic_hash_digest_table(
+    numel: int,
+    *,
+    ordering_seed: int,
+    ordering_step: int,
+) -> np.ndarray:
+    cache_key = (int(numel), int(ordering_seed), int(ordering_step))
+    cached = _DETERMINISTIC_HASH_DIGEST_TABLE.get(cache_key)
+    if cached is not None:
+        return cached
+    prefix = (
+        f"hrm_text_158_local_selection_order|seed={int(ordering_seed)}|"
+        f"step={int(ordering_step)}|index="
+    )
+    table = np.empty(int(numel), dtype=object)
+    for index in range(int(numel)):
+        table[index] = hashlib.sha256(f"{prefix}{index}".encode("utf-8")).digest()
+    _DETERMINISTIC_HASH_DIGEST_TABLE[cache_key] = table
+    return table
+
+
+_DETERMINISTIC_HASH_DIGEST_TABLE: dict[tuple[int, int, int], np.ndarray] = {}
+
+
+def _deterministic_selection_order_cached(
+    candidate_idx: torch.Tensor,
+    *,
+    numel: int,
+    ordering_seed: int,
+    ordering_step: int,
+) -> torch.Tensor:
+    indices = candidate_idx.detach().cpu().to(torch.int64).numpy()
+    positions = np.arange(indices.size, dtype=np.int64)
+    digest_table = _deterministic_hash_digest_table(
+        int(numel),
+        ordering_seed=int(ordering_seed),
+        ordering_step=int(ordering_step),
+    )
+    void_digests = np.asarray(digest_table[indices], dtype=np.dtype("V32"))
+    byte_cols = void_digests.view(np.uint8).reshape(indices.size, 32)
+    order = np.lexsort(
+        (
+            positions,
+            *tuple(byte_cols[:, byte_index] for byte_index in range(31, -1, -1)),
+        )
+    )
+    return torch.tensor(order, dtype=torch.int64, device=candidate_idx.device)
+
+
+def _order_candidates_from_plan_cached(
+    *,
+    plan: Any,
+    state: VoteUpdateState,
+    ordering_mode: str,
+) -> tuple[np.ndarray, np.ndarray, torch.Tensor]:
+    candidate_idx = plan.candidate_indices.detach().cpu().to(torch.int64)
+    if candidate_idx.numel() == 0:
+        return (
+            np.asarray([], dtype=np.int64),
+            np.asarray([], dtype=np.int64),
+            plan.new_acc_i32.detach().cpu().to(torch.int32).flatten(),
+        )
+    new_acc = plan.new_acc_i32.detach().cpu().to(torch.int32).flatten()
+    if str(ordering_mode) == LOCAL_SELECTION_ORDER_DETERMINISTIC_HASH_MATCHED:
+        order = _deterministic_selection_order_cached(
+            candidate_idx,
+            numel=int(state.q_levels.numel()),
+            ordering_seed=ORACLE_SCREEN_ORDERING_SEED,
+            ordering_step=ORACLE_SCREEN_ORDERING_STEP,
+        )
+    else:
+        order = _local_selection_order(
+            candidate_idx=candidate_idx,
+            new_acc_i32=new_acc,
+            numel=int(state.q_levels.numel()),
+            mode=str(ordering_mode),
+            ordering_seed=ORACLE_SCREEN_ORDERING_SEED,
+            ordering_step=ORACLE_SCREEN_ORDERING_STEP,
+        )
+    ordered = candidate_idx[order].detach().cpu().numpy().astype(np.int64, copy=False)
+    unordered = candidate_idx.detach().cpu().numpy().astype(np.int64, copy=False)
+    return ordered, unordered, new_acc
+
+
+def _ordered_candidate_indices_pair_cached(
+    *,
+    state: VoteUpdateState,
+    votes: torch.Tensor,
+    spec: VoteUpdateSpec,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, torch.Tensor]:
+    plan = plan_vote_update_for_emit(
+        state,
+        VoteUpdateInputs(votes=votes),
+        spec,
+        local_selection_ordering_mode=LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+        local_selection_ordering_seed=ORACLE_SCREEN_ORDERING_SEED,
+        local_selection_ordering_step=ORACLE_SCREEN_ORDERING_STEP,
+        two_tier_carry_w6_enabled=False,
+    )
+    current_ordered, unordered, new_acc = _order_candidates_from_plan_cached(
+        plan=plan,
+        state=state,
+        ordering_mode=LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+    )
+    deterministic_ordered, deterministic_unordered, _ = _order_candidates_from_plan_cached(
+        plan=plan,
+        state=state,
+        ordering_mode=LOCAL_SELECTION_ORDER_DETERMINISTIC_HASH_MATCHED,
+    )
+    return (
+        current_ordered,
+        unordered,
+        deterministic_ordered,
+        deterministic_unordered,
+        new_acc,
+    )
+
+
+def _materialize_within_tie_band_candidate_row(
+    *,
+    state_key: str,
+    flat_index: int,
+    vote_value: int,
+    new_acc_signed: int,
+    current_rank_position: int,
+    deterministic_hash_rank_position: int,
+    current_q_level: int,
+    pre_accumulator_i16: int,
+    state_candidate_count: int,
+    tensor_numel: int,
+    base_spec: VoteUpdateSpec,
+) -> dict[str, Any]:
+    current_margin_abs = int(abs(new_acc_signed))
+    abs_vote_value = int(abs(vote_value))
+    proposal_direction = _sign_int(new_acc_signed)
+    threshold_residual_signed = int(
+        new_acc_signed - proposal_direction * int(base_spec.threshold_abs)
+    )
+    proximity_to_threshold = int(
+        abs(abs(new_acc_signed) - int(base_spec.threshold_abs))
+    )
+    candidate_id = _candidate_id(state_key, int(flat_index))
+    return {
+        "candidate_id": candidate_id,
+        "state_key": state_key,
+        "flat_index": int(flat_index),
+        "vote_value": int(vote_value),
+        "abs_vote_value": abs_vote_value,
+        "current_rank_position": int(current_rank_position),
+        "deterministic_hash_rank_position": int(deterministic_hash_rank_position),
+        "current_margin_abs": current_margin_abs,
+        "tie_band_id": _pivot_tie_band_id(
+            abs_vote_value=abs_vote_value,
+            current_margin_abs=current_margin_abs,
+        ),
+        "current_q_level": int(current_q_level),
+        "pre_accumulator_i16": int(pre_accumulator_i16),
+        "new_acc_i32_signed": int(new_acc_signed),
+        "proposal_direction": proposal_direction,
+        "threshold_residual_signed": threshold_residual_signed,
+        "proximity_to_threshold": proximity_to_threshold,
+        "tensor_numel": int(tensor_numel),
+        "state_candidate_count": int(state_candidate_count),
+        "current_rank_fraction_within_state": _ordinal_fraction(
+            int(current_rank_position),
+            state_candidate_count,
+        ),
+        "current_rank_quartile_within_state": _quartile_index(
+            int(current_rank_position),
+            state_candidate_count,
+        ),
+        "flat_index_fraction": _ordinal_fraction(
+            int(flat_index),
+            tensor_numel,
+        ),
+        "flat_index_quartile": _quartile_index(
+            int(flat_index),
+            tensor_numel,
+        ),
+        "transition_class": f"q{int(current_q_level)}|dir{proposal_direction}",
+    }
+
+
+def _collect_state_within_tie_band_crossings(
+    *,
+    state_key: str,
+    state: BoundedDeltaTensorState,
+    votes: torch.Tensor,
+    base_spec: VoteUpdateSpec,
+) -> dict[str, Any] | None:
+    vote_state = state.vote_update_state()
+    (
+        current_ordered,
+        unordered,
+        deterministic_ordered,
+        deterministic_unordered,
+        new_acc,
+    ) = _ordered_candidate_indices_pair_cached(
+        state=vote_state,
+        votes=votes,
+        spec=base_spec,
+    )
+    if not np.array_equal(unordered, deterministic_unordered):
+        raise RuntimeError(
+            "within-tie-band candidate set drifted across scheduler orderings"
+        )
+    if unordered.size == 0:
+        return None
+    vote_flat = votes.flatten().to(torch.int32)
+    q_flat = vote_state.q_levels.flatten().to(torch.int32)
+    state_candidate_count = int(unordered.size)
+    tensor_numel = int(vote_state.q_levels.numel())
+    if isinstance(vote_state, EventCodedVoteUpdateState):
+        pre_full = carrier_pre_accumulator_i32_flat(vote_state.carrier, tensor_numel)
+    else:
+        pre_full = vote_state.accumulators.flatten().to(torch.int32)
+    idx_tensor = torch.from_numpy(unordered.copy())
+    return {
+        "state_key": state_key,
+        "unordered": unordered,
+        "current_ordered": current_ordered,
+        "deterministic_ordered": deterministic_ordered,
+        "vote_flat": vote_flat,
+        "q_flat": q_flat,
+        "pre_full": pre_full,
+        "new_acc": new_acc,
+        "state_candidate_count": state_candidate_count,
+        "tensor_numel": tensor_numel,
+        "idx_tensor": idx_tensor,
+        "vote_values": vote_flat[idx_tensor],
+        "new_acc_signeds": new_acc[idx_tensor],
+        "pre_accumulators": pre_full[idx_tensor],
+        "q_levels_candidates": q_flat[idx_tensor],
+    }
+
+
+def _build_within_tie_band_universe_reference(
     *,
     tensor_states: Mapping[str, BoundedDeltaTensorState],
     votes_by_key: Mapping[str, torch.Tensor],
     max_abs_per_tensor: int,
     max_sampled_candidates: int,
 ) -> dict[str, Any]:
-    """Build within_tie_band candidate metadata from pre-update votes (same-vote path)."""
-
     base_spec = VoteUpdateSpec(
         threshold_abs=1,
         accumulator_clip_min=-127,
@@ -2174,103 +2457,39 @@ def build_within_tie_band_candidate_universe_from_votes(
     )
     candidate_by_id: dict[str, dict[str, Any]] = {}
     for state_key, state in sorted(tensor_states.items()):
-        vote_state = state.vote_update_state()
-        votes = votes_by_key[state_key]
-        current_ordered, unordered, new_acc = _ordered_candidate_indices(
-            state=vote_state,
-            votes=votes,
-            spec=base_spec,
-            ordering_mode=LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+        crossing = _collect_state_within_tie_band_crossings(
+            state_key=state_key,
+            state=state,
+            votes=votes_by_key[state_key],
+            base_spec=base_spec,
         )
-        deterministic_ordered, deterministic_unordered, _ = _ordered_candidate_indices(
-            state=vote_state,
-            votes=votes,
-            spec=base_spec,
-            ordering_mode=LOCAL_SELECTION_ORDER_DETERMINISTIC_HASH_MATCHED,
-        )
-        if unordered != deterministic_unordered:
-            raise RuntimeError(
-                "within-tie-band candidate set drifted across scheduler orderings"
-            )
+        if crossing is None:
+            continue
         current_rank = {
             int(flat_index): int(position)
-            for position, flat_index in enumerate(current_ordered)
+            for position, flat_index in enumerate(np.asarray(crossing["current_ordered"]))
         }
         deterministic_rank = {
             int(flat_index): int(position)
-            for position, flat_index in enumerate(deterministic_ordered)
+            for position, flat_index in enumerate(np.asarray(crossing["deterministic_ordered"]))
         }
-        vote_flat = votes.flatten().to(torch.int32)
-        q_flat = vote_state.q_levels.flatten().to(torch.int32)
-        state_candidate_count = len(unordered)
-        tensor_numel = int(vote_state.q_levels.numel())
-        if isinstance(vote_state, EventCodedVoteUpdateState):
-            carrier = vote_state.carrier
-
-            def _pre_accumulator_i16(flat_index: int) -> int:
-                return int(carrier.reconstruct_lane(int(flat_index)))
-
-        else:
-            acc_flat = vote_state.accumulators.flatten().to(torch.int32)
-
-            def _pre_accumulator_i16(flat_index: int) -> int:
-                return int(acc_flat[int(flat_index)].item())
-
-        for flat_index in unordered:
-            vote_value = int(vote_flat[int(flat_index)].item())
-            new_acc_signed = int(new_acc[int(flat_index)].item())
-            current_margin_abs = int(abs(new_acc_signed))
-            abs_vote_value = int(abs(vote_value))
-            current_rank_position = int(current_rank[int(flat_index)])
-            current_q_level = int(q_flat[int(flat_index)].item())
-            pre_accumulator_i16 = _pre_accumulator_i16(int(flat_index))
-            proposal_direction = _sign_int(new_acc_signed)
-            threshold_residual_signed = int(
-                new_acc_signed - proposal_direction * int(base_spec.threshold_abs)
+        for offset, flat_index in enumerate(np.asarray(crossing["unordered"])):
+            candidate_row = _materialize_within_tie_band_candidate_row(
+                state_key=state_key,
+                flat_index=int(flat_index),
+                vote_value=int(crossing["vote_values"][offset].item()),
+                new_acc_signed=int(crossing["new_acc_signeds"][offset].item()),
+                current_rank_position=int(current_rank[int(flat_index)]),
+                deterministic_hash_rank_position=int(
+                    deterministic_rank[int(flat_index)]
+                ),
+                current_q_level=int(crossing["q_levels_candidates"][offset].item()),
+                pre_accumulator_i16=int(crossing["pre_accumulators"][offset].item()),
+                state_candidate_count=int(crossing["state_candidate_count"]),
+                tensor_numel=int(crossing["tensor_numel"]),
+                base_spec=base_spec,
             )
-            proximity_to_threshold = int(
-                abs(abs(new_acc_signed) - int(base_spec.threshold_abs))
-            )
-            candidate_id = _candidate_id(state_key, int(flat_index))
-            candidate_by_id[candidate_id] = {
-                "candidate_id": candidate_id,
-                "state_key": state_key,
-                "flat_index": int(flat_index),
-                "vote_value": vote_value,
-                "abs_vote_value": abs_vote_value,
-                "current_rank_position": current_rank_position,
-                "deterministic_hash_rank_position": deterministic_rank[int(flat_index)],
-                "current_margin_abs": current_margin_abs,
-                "tie_band_id": _pivot_tie_band_id(
-                    abs_vote_value=abs_vote_value,
-                    current_margin_abs=current_margin_abs,
-                ),
-                "current_q_level": current_q_level,
-                "pre_accumulator_i16": pre_accumulator_i16,
-                "new_acc_i32_signed": new_acc_signed,
-                "proposal_direction": proposal_direction,
-                "threshold_residual_signed": threshold_residual_signed,
-                "proximity_to_threshold": proximity_to_threshold,
-                "tensor_numel": tensor_numel,
-                "state_candidate_count": state_candidate_count,
-                "current_rank_fraction_within_state": _ordinal_fraction(
-                    current_rank_position,
-                    state_candidate_count,
-                ),
-                "current_rank_quartile_within_state": _quartile_index(
-                    current_rank_position,
-                    state_candidate_count,
-                ),
-                "flat_index_fraction": _ordinal_fraction(
-                    int(flat_index),
-                    tensor_numel,
-                ),
-                "flat_index_quartile": _quartile_index(
-                    int(flat_index),
-                    tensor_numel,
-                ),
-                "transition_class": f"q{current_q_level}|dir{proposal_direction}",
-            }
+            candidate_by_id[candidate_row["candidate_id"]] = candidate_row
     current_ordered_ids = [
         candidate["candidate_id"]
         for candidate in sorted(
@@ -2307,6 +2526,196 @@ def build_within_tie_band_candidate_universe_from_votes(
     }
 
 
+def _sample_candidate_ids_from_global_orders(
+    current_order: np.ndarray,
+    deterministic_order: np.ndarray,
+    *,
+    global_candidate_id: Callable[[int], str],
+    max_sampled_candidates: int,
+) -> list[str]:
+    if max_sampled_candidates <= 0:
+        return []
+    if len(current_order) <= max_sampled_candidates:
+        return [global_candidate_id(int(index)) for index in current_order]
+    sampled: list[str] = []
+    seen: set[str] = set()
+    max_len = max(len(current_order), len(deterministic_order))
+    for index in range(max_len):
+        for order in (current_order, deterministic_order):
+            if index >= len(order):
+                continue
+            candidate_id = global_candidate_id(int(order[index]))
+            if candidate_id in seen:
+                continue
+            seen.add(candidate_id)
+            sampled.append(candidate_id)
+            if len(sampled) >= max_sampled_candidates:
+                return sampled
+    return sampled
+
+
+def _build_within_tie_band_universe_fast(
+    *,
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+    votes_by_key: Mapping[str, torch.Tensor],
+    max_abs_per_tensor: int,
+    max_sampled_candidates: int,
+) -> dict[str, Any]:
+    base_spec = VoteUpdateSpec(
+        threshold_abs=1,
+        accumulator_clip_min=-127,
+        accumulator_clip_max=127,
+        max_abs_per_tensor=int(max_abs_per_tensor),
+    )
+    state_key_lex_order = {
+        key: rank for rank, key in enumerate(sorted(tensor_states.keys()))
+    }
+    max_numel = max(
+        int(state.q_levels.numel()) for state in tensor_states.values()
+    )
+    _deterministic_hash_digest_table(
+        max_numel,
+        ordering_seed=ORACLE_SCREEN_ORDERING_SEED,
+        ordering_step=ORACLE_SCREEN_ORDERING_STEP,
+    )
+    crossings: list[dict[str, Any]] = []
+    flat_chunks: list[np.ndarray] = []
+    current_rank_chunks: list[np.ndarray] = []
+    deterministic_rank_chunks: list[np.ndarray] = []
+    state_key_lex_chunks: list[np.ndarray] = []
+    for state_key, state in sorted(tensor_states.items()):
+        crossing = _collect_state_within_tie_band_crossings(
+            state_key=state_key,
+            state=state,
+            votes=votes_by_key[state_key],
+            base_spec=base_spec,
+        )
+        if crossing is None:
+            continue
+        crossings.append(crossing)
+        tensor_numel = int(crossing["tensor_numel"])
+        idx_arr = np.asarray(crossing["unordered"], dtype=np.int64)
+        current_ordered_arr = np.asarray(crossing["current_ordered"], dtype=np.int64)
+        deterministic_ordered_arr = np.asarray(crossing["deterministic_ordered"], dtype=np.int64)
+        rank_full_current = np.full(tensor_numel, -1, dtype=np.int64)
+        rank_full_deterministic = np.full(tensor_numel, -1, dtype=np.int64)
+        if current_ordered_arr.size:
+            rank_full_current[current_ordered_arr] = np.arange(
+                current_ordered_arr.size, dtype=np.int64
+            )
+        if deterministic_ordered_arr.size:
+            rank_full_deterministic[deterministic_ordered_arr] = np.arange(
+                deterministic_ordered_arr.size, dtype=np.int64
+            )
+        flat_chunks.append(idx_arr)
+        current_rank_chunks.append(rank_full_current[idx_arr])
+        deterministic_rank_chunks.append(rank_full_deterministic[idx_arr])
+        state_key_lex_chunks.append(
+            np.full(int(crossing["unordered"].size), state_key_lex_order[state_key], dtype=np.int64)
+        )
+    if not crossings:
+        return {
+            "base_spec": base_spec,
+            "one_flip_spec": _single_flip_spec(base_spec),
+            "votes_by_key": votes_by_key,
+            "candidate_by_id": {},
+            "sampled_ids": [],
+        }
+    flat_indices = np.concatenate(flat_chunks)
+    current_ranks = np.concatenate(current_rank_chunks)
+    deterministic_ranks = np.concatenate(deterministic_rank_chunks)
+    state_key_lex = np.concatenate(state_key_lex_chunks)
+    current_order = np.lexsort((flat_indices, state_key_lex, current_ranks))
+    deterministic_order = np.lexsort(
+        (flat_indices, state_key_lex, deterministic_ranks)
+    )
+    crossing_index_chunks = [
+        np.full(int(crossing["unordered"].size), crossing_index, dtype=np.int64)
+        for crossing_index, crossing in enumerate(crossings)
+    ]
+    crossing_index_per_global = np.concatenate(crossing_index_chunks)
+
+    def global_candidate_id(global_index: int) -> str:
+        crossing_index = int(crossing_index_per_global[global_index])
+        return _candidate_id(
+            crossings[crossing_index]["state_key"],
+            int(flat_indices[global_index]),
+        )
+
+    sampled_ids = _sample_candidate_ids_from_global_orders(
+        current_order,
+        deterministic_order,
+        global_candidate_id=global_candidate_id,
+        max_sampled_candidates=int(max_sampled_candidates),
+    )
+    candidate_by_id: dict[str, dict[str, Any]] = {}
+    for candidate_id in sampled_ids:
+        state_key, flat_text = candidate_id.split(":", 1)
+        flat_index = int(flat_text)
+        crossing_index = next(
+            index
+            for index, crossing in enumerate(crossings)
+            if crossing["state_key"] == state_key
+        )
+        crossing = crossings[crossing_index]
+        unordered_array = np.asarray(crossing["unordered"], dtype=np.int64)
+        row_offset = int(np.flatnonzero(unordered_array == flat_index)[0])
+        current_rank = {
+            int(index): int(position)
+            for position, index in enumerate(np.asarray(crossing["current_ordered"]))
+        }
+        deterministic_rank = {
+            int(index): int(position)
+            for position, index in enumerate(np.asarray(crossing["deterministic_ordered"]))
+        }
+        candidate_row = _materialize_within_tie_band_candidate_row(
+            state_key=str(crossing["state_key"]),
+            flat_index=flat_index,
+            vote_value=int(crossing["vote_values"][row_offset].item()),
+            new_acc_signed=int(crossing["new_acc_signeds"][row_offset].item()),
+            current_rank_position=int(current_rank[flat_index]),
+            deterministic_hash_rank_position=int(deterministic_rank[flat_index]),
+            current_q_level=int(crossing["q_levels_candidates"][row_offset].item()),
+            pre_accumulator_i16=int(crossing["pre_accumulators"][row_offset].item()),
+            state_candidate_count=int(crossing["state_candidate_count"]),
+            tensor_numel=int(crossing["tensor_numel"]),
+            base_spec=base_spec,
+        )
+        candidate_by_id[candidate_id] = candidate_row
+    return {
+        "base_spec": base_spec,
+        "one_flip_spec": _single_flip_spec(base_spec),
+        "votes_by_key": votes_by_key,
+        "candidate_by_id": candidate_by_id,
+        "sampled_ids": sampled_ids,
+    }
+
+
+def build_within_tie_band_candidate_universe_from_votes(
+    *,
+    tensor_states: Mapping[str, BoundedDeltaTensorState],
+    votes_by_key: Mapping[str, torch.Tensor],
+    max_abs_per_tensor: int,
+    max_sampled_candidates: int,
+    materialize_full_candidate_by_id: bool = True,
+) -> dict[str, Any]:
+    """Build within_tie_band candidate metadata from pre-update votes (same-vote path)."""
+
+    if materialize_full_candidate_by_id:
+        return _build_within_tie_band_universe_reference(
+            tensor_states=tensor_states,
+            votes_by_key=votes_by_key,
+            max_abs_per_tensor=max_abs_per_tensor,
+            max_sampled_candidates=max_sampled_candidates,
+        )
+    return _build_within_tie_band_universe_fast(
+        tensor_states=tensor_states,
+        votes_by_key=votes_by_key,
+        max_abs_per_tensor=max_abs_per_tensor,
+        max_sampled_candidates=max_sampled_candidates,
+    )
+
+
 def capture_b2b_sequential_pre_update_step(
     *,
     model: LMHead,
@@ -2335,6 +2744,7 @@ def capture_b2b_sequential_pre_update_step(
         votes_by_key=votes_by_key,
         max_abs_per_tensor=int(max_abs_per_tensor),
         max_sampled_candidates=int(max_sampled_candidates),
+        materialize_full_candidate_by_id=False,
     )
     if len(universe["sampled_ids"]) < int(max_sampled_candidates):
         raise RuntimeError(

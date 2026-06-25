@@ -126,11 +126,19 @@ def _sparse_vote_inputs_by_state_key(
     sparse: dict[str, dict[str, int]] = {}
     for state_key in sorted(votes_by_key):
         vote_flat = votes_by_key[state_key].detach().cpu().flatten()
-        sparse[str(state_key)] = {
-            str(index): int(value)
-            for index, value in enumerate(vote_flat.tolist())
-            if int(value) != 0
-        }
+        vote_nz = torch.nonzero(vote_flat != 0, as_tuple=False).flatten()
+        if vote_nz.numel() == 0:
+            sparse[str(state_key)] = {}
+            continue
+        values = vote_flat[vote_nz]
+        indices = vote_nz.numpy()
+        values_np = values.numpy()
+        sparse[str(state_key)] = dict(
+            zip(
+                map(str, indices.tolist()),
+                map(int, values_np.tolist()),
+            )
+        )
     return sparse
 
 
@@ -267,6 +275,7 @@ def build_votes_emit_step_record(
         votes_by_key=votes_by_key,
         max_abs_per_tensor=int(max_abs_per_tensor),
         max_sampled_candidates=int(VOTES_EMIT_MAX_SAMPLED_ROWS),
+        materialize_full_candidate_by_id=False,
     )
     sampled_candidates = _deterministic_sampled_candidates(universe)
     for candidate in sampled_candidates:
@@ -342,7 +351,7 @@ class VotesEmitCollector:
         payload = dict(record)
         canonical = _canonical_json(payload)
         step_hash = _sha256_text(canonical)
-        step_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        step_path.write_text(canonical + "\n", encoding="utf-8")
         self._step_hashes[step_name] = step_hash
         elapsed_ms = (time.perf_counter() - start) * 1000.0
         self._emit_timings_ms.append(float(elapsed_ms))
