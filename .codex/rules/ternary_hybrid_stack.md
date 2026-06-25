@@ -32,16 +32,26 @@ Always report FP-free claims as three separate ledgers; never collapse them.
 | Ledger | bits/eligible weight | carrier |
 |---|---|---|
 | Effective **forward** (logical ternary) | **1.585** (`log2(3)`) | `q_int8.float32 × frozen_scale` |
-| Physical **persistent** train-state | **~24** | int8 q (8) + **int16 vote-acc (16)** + FP32 scale (~0) |
+| Physical **persistent** train-state **(LIVE)** | **~24** | int8 q (8) + **int16 vote-acc (16)** + FP32 scale (~0) |
 | Eval / **export** | n/a | non-authoritative probe export; regeneration recipe only |
 
 - **The win is real and specific**: no FP master weights, no Adam moments for
   the eligible bulk (eligible optimizer state entries = 0). State it that
   precisely — "FP-master-free for eligible bulk", not bare "FP-free".
-- **It is NOT sub-2-bit persistent.** The **int16 vote accumulator** (the
-  moment replacement) dominates persistent bits and is the next reduction
-  target (int16 → narrower / sparser vote rep). Never upgrade "native ternary
-  effective-weight training" into "fully FP-free persistent state."
+- **NOT (yet) sub-2-bit persistent TOTAL; the LIVE row ≠ the saved-byte q
+  ledger** — keep them separate. **Saved-byte checkpoint q** is banked below
+  2.0: base-3 `packed_base3_5ternary_uint8` = **8/5 = 1.6 bpw** physical
+  (q+scale-inclusive enforced **< 2.0**; the 2-bit pack sits at the 2.0
+  boundary). The **int16 vote accumulator is now the dominator / next target**
+  (→ narrower / sparser vote rep); full persistent sub-2 stays **unbanked**
+  until the accumulator term, its live-carrier authority, AND base-3
+  checkpoint-wiring all clear. Never upgrade this into "fully FP-free persistent
+  state."
+- **Event-coded live carrier = the active accumulator-drain lane** (sparse
+  `hot_exact` + cold default) at the int16 dominator — **no dense persistent
+  authority yet, UNPROVEN until the V4-LIVE dynamics screen**; no readiness /
+  full-sub2 claim (transient activation/KV buffers are a *separate*
+  `full_sub2_runtime` surface — see below — not this drain).
 - **3-ledger = weight-persistent train-state accounting; activations/KV are full-sub2-runtime target surfaces with separate levers.** Activations/residuals, attention-KV buffers, and backward-saved tensors are FP today under the D2.1 BitLinear contract (weights ternarized, activations not), and remain required `full_sub2_runtime` surfaces currently blocking main science. Their path is forward/runtime activation-KV quantization or recompute/compression (separately scoped), NOT the weight vote-accumulator: activations are transient, KV has no trainable optimizer state, no persistent votes to accumulate. Do not conflate the persistent-weight drain (int16 vote-acc) with total-runtime memory (activations/KV scale with batch×seqlen, distinct levers).
 - **Two bit-width axes stay separate.** Persistent train-state WIDTH (q / int16 vote-acc carrier → the sub-2 weight target) is distinct from decision/eligibility QUANTIZATION (ranking discrimination). A decision/receipt-family collapse or null is a representation limit, NOT evidence against persistent-width reduction; decision-family discrimination is a separate axis and B5b/H1 nulls do not close the persistent-width lane.
 
