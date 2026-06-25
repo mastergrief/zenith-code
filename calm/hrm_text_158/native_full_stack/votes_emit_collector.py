@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -28,12 +29,19 @@ from calm.hrm_text_158.native_full_stack.two_tier_threshold_semantics import (
 from calm.hrm_text_158.native_full_stack.vote_update_emit_routing import (
     plan_vote_update_for_emit,
 )
+from calm.hrm_text_158.native_full_stack.sparse_vote_inputs_svp1 import (
+    build_sparse_vote_inputs_stub,
+    encode_sparse_vote_inputs_svp1,
+    inline_sparse_vote_inputs_by_state_key,
+    write_sidecar_atomically,
+)
 from calm.hrm_text_158.native_full_stack.vote_update import (
     VoteUpdateInputs,
     VoteUpdateSpec,
 )
 
 
+_SVP1_SIDECAR_BYTES_KEY = "_svp1_sidecar_bytes"
 VOTES_EMIT_SCHEMA_VERSION = "hrm_text_158_votes_emit/v0"
 VOTES_EMIT_MAX_SAMPLED_ROWS = 32
 VOTES_EMIT_ENABLED_ENV = "HRM_TEXT_158_VOTES_EMIT_ENABLED"
@@ -123,23 +131,7 @@ def _hash_flat_indices_payload(payload: Sequence[Mapping[str, Any]]) -> str:
 def _sparse_vote_inputs_by_state_key(
     votes_by_key: Mapping[str, torch.Tensor],
 ) -> dict[str, dict[str, int]]:
-    sparse: dict[str, dict[str, int]] = {}
-    for state_key in sorted(votes_by_key):
-        vote_flat = votes_by_key[state_key].detach().cpu().flatten()
-        vote_nz = torch.nonzero(vote_flat != 0, as_tuple=False).flatten()
-        if vote_nz.numel() == 0:
-            sparse[str(state_key)] = {}
-            continue
-        values = vote_flat[vote_nz]
-        indices = vote_nz.numpy()
-        values_np = values.numpy()
-        sparse[str(state_key)] = dict(
-            zip(
-                map(str, indices.tolist()),
-                map(int, values_np.tolist()),
-            )
-        )
-    return sparse
+    return inline_sparse_vote_inputs_by_state_key(votes_by_key)
 
 
 def _applied_flat_indices_hash_from_plans(plans_by_key: Mapping[str, Any]) -> str:
@@ -310,6 +302,14 @@ def build_votes_emit_step_record(
     )
     applied_flat_indices_hash = str(cap_order_summary["accepted_flat_indices_hash"])
     table_hash = _sha256_text(_canonical_json(sampled_candidate_table))
+    step_name = f"{int(optimizer_step_index):05d}"
+    sidecar_bytes, per_state, nonzero_total = encode_sparse_vote_inputs_svp1(votes_by_key)
+    sparse_stub = build_sparse_vote_inputs_stub(
+        step_name=step_name,
+        per_state=per_state,
+        total=nonzero_total,
+        sidecar_sha256="",
+    )
     return {
         "schema_version": VOTES_EMIT_SCHEMA_VERSION,
         "optimizer_step_index": int(optimizer_step_index),
@@ -320,7 +320,8 @@ def build_votes_emit_step_record(
         "applied_flat_indices_hash": applied_flat_indices_hash,
         "cap_order_summary": cap_order_summary,
         "pre_update_state_hash": hash_bounded_delta_tensor_states_pre_update(tensor_states),
-        "sparse_vote_inputs_by_state_key": _sparse_vote_inputs_by_state_key(votes_by_key),
+        "sparse_vote_inputs_by_state_key": sparse_stub,
+        _SVP1_SIDECAR_BYTES_KEY: sidecar_bytes,
         "threshold_semantics": frozen_threshold_semantics_block(),
         "sampled_candidate_table": sampled_candidate_table,
         "sampled_candidate_count": int(len(sampled_candidate_table)),
@@ -349,15 +350,28 @@ class VotesEmitCollector:
         step_name = f"{int(optimizer_step_index):05d}"
         step_path = self.per_step_dir / f"{step_name}.json"
         payload = dict(record)
+        sidecar_bytes = payload.pop(_SVP1_SIDECAR_BYTES_KEY, None)
+        if sidecar_bytes is None:
+            raise ValueError("votes emit record missing SVP1 sidecar bytes")
+        sidecar_path = self.per_step_dir / f"{step_name}_sparse_votes.svp1"
+        write_sidecar_atomically(sidecar_path, bytes(sidecar_bytes))
+        sidecar_sha256 = hashlib.sha256(sidecar_bytes).hexdigest()
+        sparse_stub = dict(payload["sparse_vote_inputs_by_state_key"])
+        sparse_stub["sidecar_sha256"] = sidecar_sha256
+        payload["sparse_vote_inputs_by_state_key"] = sparse_stub
         canonical = _canonical_json(payload)
         step_hash = _sha256_text(canonical)
-        step_path.write_text(canonical + "\n", encoding="utf-8")
+        with open(step_path, "w", encoding="utf-8") as handle:
+            handle.write(canonical + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
         self._step_hashes[step_name] = step_hash
         elapsed_ms = (time.perf_counter() - start) * 1000.0
         self._emit_timings_ms.append(float(elapsed_ms))
         manifest = self.write_manifest()
         return {
             "step_path": str(step_path),
+            "sidecar_path": str(sidecar_path),
             "step_hash": step_hash,
             "manifest_path": str(self.emit_root / "manifest.json"),
             "manifest_hash": manifest["manifest_sha256"],

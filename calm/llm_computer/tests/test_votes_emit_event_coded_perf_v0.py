@@ -239,13 +239,6 @@ def test_votes_emit_full_step_scale_smoke_32x1m_sparse128(tmp_path: Path) -> Non
 
 
 @pytest.mark.slow
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "73.98s > 30s full-step budget; pending Slice A sparse_vote_inputs "
-        "serialization (parity-witness-consumed surface, separately gated)"
-    ),
-)
 def test_votes_emit_full_step_scale_smoke_32x1m_mixed66(tmp_path: Path) -> None:
     _run_full_step_scale_smoke(tmp_path, density=0.667, label="mixed66")
 
@@ -254,8 +247,9 @@ def test_votes_emit_full_step_scale_smoke_32x1m_mixed66(tmp_path: Path) -> None:
 @pytest.mark.xfail(
     strict=True,
     reason=(
-        "464.60s > 30s full-step budget; pending Slice A sparse_vote_inputs "
-        "serialization (parity-witness-consumed surface, separately gated)"
+        "42.58s > 30s full-step budget; measured decomposition: "
+        "build_within_tie_band/universe-ordering ~94% (39.3s), svp1_encode ~0.6% "
+        "(0.23s); universe-ordering follow-on OUT of Slice A scope"
     ),
 )
 def test_votes_emit_full_step_scale_smoke_32x1m_qzero100(tmp_path: Path) -> None:

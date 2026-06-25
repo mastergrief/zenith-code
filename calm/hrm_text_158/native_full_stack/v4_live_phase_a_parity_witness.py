@@ -18,6 +18,10 @@ from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import 
     C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY,
     carrier_content_sha256,
 )
+from calm.hrm_text_158.native_full_stack.sparse_vote_inputs_svp1 import (
+    SPARSE_VOTE_PAIRS_ENCODING,
+    sparse_votes_from_emit_record as load_sparse_votes_from_emit_record,
+)
 from calm.hrm_text_158.native_full_stack.votes_emit_collector import (
     VOTES_EMIT_SECTION6_CONTRACT_FIELDS,
 )
@@ -49,27 +53,44 @@ def surfaces_dict_to_record(step_index: int, payload: Mapping[str, Any]) -> Step
     )
 
 
-def sparse_votes_from_emit_record(record: Mapping[str, Any]) -> dict[str, dict[int, int]]:
-    raw = dict(record.get("sparse_vote_inputs_by_state_key", {}))
-    votes_by_key: dict[str, dict[int, int]] = {}
-    for state_key in sorted(raw):
-        lane_map = {
-            int(flat_index): int(vote)
-            for flat_index, vote in dict(raw[state_key]).items()
-            if int(vote) != 0
-        }
-        votes_by_key[str(state_key)] = lane_map
-    return votes_by_key
+def sparse_votes_from_emit_record(
+    record: Mapping[str, Any],
+    *,
+    votes_emit_root: Path | None = None,
+    emit_path: Path | None = None,
+) -> dict[str, dict[int, int]]:
+    return load_sparse_votes_from_emit_record(
+        record,
+        votes_emit_root=votes_emit_root,
+        emit_path=emit_path,
+    )
 
 
 SPARSE_VOTE_INPUTS_FIELD = "sparse_vote_inputs_by_state_key"
+
+
+def _sparse_field_shape_valid(sparse: Any) -> bool:
+    if not isinstance(sparse, Mapping) or not sparse:
+        return False
+    encoding = sparse.get("encoding")
+    if encoding is None:
+        return True
+    if str(encoding) != SPARSE_VOTE_PAIRS_ENCODING:
+        return False
+    required = (
+        "sidecar_relpath",
+        "sidecar_sha256",
+        "nonzero_entry_count",
+        "per_state",
+    )
+    return all(key in sparse for key in required)
 
 
 def section6_complete(record: Mapping[str, Any]) -> bool:
     if not all(str(field) in record for field in VOTES_EMIT_SECTION6_CONTRACT_FIELDS):
         return False
     sparse = record.get(SPARSE_VOTE_INPUTS_FIELD)
-    return isinstance(sparse, Mapping) and bool(sparse)
+    return _sparse_field_shape_valid(sparse)
 
 
 def _c8_scope_wording_valid(scope: Any) -> bool:
@@ -180,13 +201,30 @@ def run_phase_a_parity_witness(
                     },
                 }
             )
+        raw_sparse = emit_record.get(SPARSE_VOTE_INPUTS_FIELD)
+        if not isinstance(raw_sparse, Mapping) or not raw_sparse:
+            sparse_vote_failures.append(int(step_index))
+            section6_failures.append(int(step_index))
+            continue
+        try:
+            votes_by_key = sparse_votes_from_emit_record(
+                emit_record,
+                votes_emit_root=votes_emit_root,
+                emit_path=emit_path,
+            )
+        except ValueError as exc:
+            sparse_vote_failures.append(int(step_index))
+            per_step_mismatches.append(
+                {
+                    "step_index": int(step_index),
+                    "state_key": "*",
+                    "reason": "sparse_vote_inputs_integrity_failure",
+                    "detail": {"error": str(exc)},
+                }
+            )
+            continue
         if not section6_complete(emit_record):
             section6_failures.append(int(step_index))
-        raw_sparse = emit_record.get(SPARSE_VOTE_INPUTS_FIELD)
-        if not isinstance(raw_sparse, Mapping):
-            sparse_vote_failures.append(int(step_index))
-
-        votes_by_key = sparse_votes_from_emit_record(emit_record)
         if not votes_by_key or all(not lane_votes for lane_votes in votes_by_key.values()):
             zero_vote_step_failures.append(int(step_index))
             continue
