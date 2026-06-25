@@ -72,7 +72,7 @@
     "file_content_sha256_at_head": {
       "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": "832d004201a97413ea0c14526a51b53c701c35f471c378f3c797fc5fe2b99a06",
       "calm/hrm_text_158/native_full_stack/event_coded_acc_checkpoint_codec.py": "dbe9886aea3956cd90e374879a0fc91b1e45eabe5c06175841d6f8db96300381",
-      "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py": "107458f9efe074f9795b3a3820b3293714de8aded42f49211df3c615ecdeeb72",
+      "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py": "f61670076d9317d1441c86d448592b38ea75b86550b91e6acac3e40b1fe72cb1",
       "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py": "52a6c201a004f0e41b4120cf3432a7ab1c9d58b65603276ef4dc55e9cd537a69",
       "calm/hrm_text_158/native_full_stack/narrow_carrier_trainer_integration.py": "67b36ecd33003fd3acce503d0ebb39ff9724d9d012da496b18640b642ef2c2de",
       "calm/hrm_text_158/native_full_stack/oracle_screen_runner.py": "5f41568dd7ca8d18d7b70003afd467734b10dacebd17d6fdceb378b47489b0b3",
@@ -178,7 +178,7 @@
     "runtime_activation_lane": "transient_dense_compute_numel disclosed; separate from persistent sub-2 ledger",
     "scale_term": "reported separately; not folded into acc claim"
   },
-  "packet_sha": "d917a2168c757714a26b24fde2eb3fd022e890431ea79a0e924105b83aa3ccbd",
+  "packet_sha": "b32dc42f9c399cf6388e19e09261839ff450f0c97c57a13b0d31961c49294d83",
   "packet_version": "v1",
   "parent_checkpoint_pin": {
     "banked_pt_read_only": true,
