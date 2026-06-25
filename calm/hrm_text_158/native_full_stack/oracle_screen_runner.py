@@ -102,6 +102,13 @@ from calm.hrm_text_158.native_full_stack.optimizer_update_law_science import (
     classify_candidate_set_viability_oracle_screen,
     oracle_screen_budget_max_seconds,
 )
+from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
+    EventCodedVoteUpdateState,
+    carrier_content_sha256,
+)
+from calm.hrm_text_158.native_full_stack.vote_update_emit_routing import (
+    plan_vote_update_for_emit,
+)
 from calm.hrm_text_158.native_full_stack.vote_update import (
     LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
     LOCAL_SELECTION_ORDER_DETERMINISTIC_HASH_MATCHED,
@@ -436,13 +443,14 @@ def _ordered_candidate_indices(
     spec: VoteUpdateSpec,
     ordering_mode: str,
 ) -> tuple[list[int], list[int], torch.Tensor]:
-    plan = plan_integer_vote_update_reference(
+    plan = plan_vote_update_for_emit(
         state,
         VoteUpdateInputs(votes=votes),
         spec,
         local_selection_ordering_mode=str(ordering_mode),
         local_selection_ordering_seed=ORACLE_SCREEN_ORDERING_SEED,
         local_selection_ordering_step=ORACLE_SCREEN_ORDERING_STEP,
+        two_tier_carry_w6_enabled=False,
     )
     candidate_idx = plan.candidate_indices.detach().cpu().to(torch.int64)
     if candidate_idx.numel() == 0:
@@ -2076,6 +2084,16 @@ def hash_bounded_delta_tensor_states_pre_update(
         q_digest = hashlib.sha256(
             vote_state.q_levels.detach().cpu().numpy().tobytes()
         ).hexdigest()[:16]
+        if isinstance(vote_state, EventCodedVoteUpdateState):
+            carrier_digest = carrier_content_sha256(vote_state.carrier)[:16]
+            payload.append(
+                {
+                    "state_key": str(state_key),
+                    "q_levels_hash16": q_digest,
+                    "event_coded_carrier_hash16": carrier_digest,
+                }
+            )
+            continue
         acc_digest = hashlib.sha256(
             vote_state.accumulators.detach().cpu().numpy().tobytes()
         ).hexdigest()[:16]
@@ -2184,9 +2202,20 @@ def build_within_tie_band_candidate_universe_from_votes(
         }
         vote_flat = votes.flatten().to(torch.int32)
         q_flat = vote_state.q_levels.flatten().to(torch.int32)
-        acc_flat = vote_state.accumulators.flatten().to(torch.int32)
         state_candidate_count = len(unordered)
         tensor_numel = int(vote_state.q_levels.numel())
+        if isinstance(vote_state, EventCodedVoteUpdateState):
+            carrier = vote_state.carrier
+
+            def _pre_accumulator_i16(flat_index: int) -> int:
+                return int(carrier.reconstruct_lane(int(flat_index)))
+
+        else:
+            acc_flat = vote_state.accumulators.flatten().to(torch.int32)
+
+            def _pre_accumulator_i16(flat_index: int) -> int:
+                return int(acc_flat[int(flat_index)].item())
+
         for flat_index in unordered:
             vote_value = int(vote_flat[int(flat_index)].item())
             new_acc_signed = int(new_acc[int(flat_index)].item())
@@ -2194,7 +2223,7 @@ def build_within_tie_band_candidate_universe_from_votes(
             abs_vote_value = int(abs(vote_value))
             current_rank_position = int(current_rank[int(flat_index)])
             current_q_level = int(q_flat[int(flat_index)].item())
-            pre_accumulator_i16 = int(acc_flat[int(flat_index)].item())
+            pre_accumulator_i16 = _pre_accumulator_i16(int(flat_index))
             proposal_direction = _sign_int(new_acc_signed)
             threshold_residual_signed = int(
                 new_acc_signed - proposal_direction * int(base_spec.threshold_abs)

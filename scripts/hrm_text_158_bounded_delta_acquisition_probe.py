@@ -220,6 +220,9 @@ from calm.hrm_text_158.native_full_stack.s3bb_headroom_telemetry import (
     attach_s3bb_headroom_telemetry_to_step_report,
     run_vote_materialization_with_s3bb_boundary_catch,
 )
+from calm.hrm_text_158.native_full_stack.vote_update_emit_routing import (
+    plan_vote_update_for_emit,
+)
 from calm.hrm_text_158.native_full_stack.vote_update import (
     LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
     LOCAL_SELECTION_ORDER_DETERMINISTIC_HASH_MATCHED,
@@ -4531,7 +4534,7 @@ def _plan_integer_vote_update_for_control_arm_surfaces(
             ),
             pc_aux_mode=str(pc_aux_mode),
         )
-        plans_by_key[state_key] = plan_integer_vote_update_reference(
+        plans_by_key[state_key] = plan_vote_update_for_emit(
             vu_state,
             inputs,
             vote_specs_by_key[state_key],

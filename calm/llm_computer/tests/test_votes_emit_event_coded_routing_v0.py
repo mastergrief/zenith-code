@@ -12,10 +12,18 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     BoundedDeltaTensorState,
     make_event_coded_live_tensor_state,
 )
+from calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier import (
+    EventCodedAccLiveState,
+)
+from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
+    build_within_tie_band_candidate_universe_from_votes,
+    hash_bounded_delta_tensor_states_pre_update,
+)
 from calm.hrm_text_158.native_full_stack.vote_update import VoteUpdateSpec
 from calm.hrm_text_158.native_full_stack.votes_emit_collector import (
     _collect_vote_plans_by_key,
     _preview_warmup_tags,
+    build_votes_emit_step_record,
 )
 
 
@@ -158,3 +166,54 @@ def test_dense_collect_vote_plans_uses_dense_planner() -> None:
     )
     plan = plans["proj"]
     assert plan.stats.get("event_coded_live_carrier_plan") is not True
+
+
+def test_event_coded_candidate_universe_uses_carrier_pre_accumulator() -> None:
+    state, votes = _event_coded_fixture()
+    universe = build_within_tie_band_candidate_universe_from_votes(
+        tensor_states={"proj": state},
+        votes_by_key={"proj": votes},
+        max_abs_per_tensor=4096,
+        max_sampled_candidates=32,
+    )
+    assert universe["candidate_by_id"]
+    for candidate in universe["candidate_by_id"].values():
+        flat_index = int(candidate["flat_index"])
+        expected = int(state.event_coded_live_carrier.reconstruct_lane(flat_index))
+        assert int(candidate["pre_accumulator_i16"]) == expected
+
+
+def test_event_coded_build_votes_emit_step_record_end_to_end() -> None:
+    state, votes = _event_coded_fixture()
+    spec = _vote_spec()
+    record = build_votes_emit_step_record(
+        optimizer_step_index=0,
+        tensor_states={"proj": state},
+        votes_by_key={"proj": votes},
+        vote_specs_by_key={"proj": spec},
+        max_abs_per_tensor=4096,
+        two_tier_carry_w6_enabled=False,
+    )
+    assert record["applied_flat_indices_hash"]
+    assert record["cap_order_summary"]["accepted_flat_indices_hash"]
+    assert record["pre_update_state_hash"]
+    assert record["sampled_candidate_count"] >= 0
+
+
+def test_event_coded_pre_update_hash_varies_with_carrier_content() -> None:
+    numel = 64
+    side = 8
+    q = torch.zeros((side, side), dtype=torch.int8)
+    state_a = make_event_coded_live_tensor_state("proj", q, 1.0, demotion_band=1)
+    carrier_b = EventCodedAccLiveState(logical_numel=numel, demotion_band=1)
+    carrier_b.apply_step(0, votes={0: 5})
+    state_b = make_event_coded_live_tensor_state(
+        "proj",
+        q,
+        1.0,
+        demotion_band=1,
+        carrier=carrier_b,
+    )
+    hash_a = hash_bounded_delta_tensor_states_pre_update({"proj": state_a})
+    hash_b = hash_bounded_delta_tensor_states_pre_update({"proj": state_b})
+    assert hash_a != hash_b

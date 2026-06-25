@@ -25,15 +25,12 @@ from calm.hrm_text_158.native_full_stack.two_tier_step_orchestrator import (
 from calm.hrm_text_158.native_full_stack.two_tier_threshold_semantics import (
     frozen_threshold_semantics_block,
 )
-from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
-    EventCodedVoteUpdateState,
-    plan_event_coded_integer_vote_update_reference,
+from calm.hrm_text_158.native_full_stack.vote_update_emit_routing import (
+    plan_vote_update_for_emit,
 )
 from calm.hrm_text_158.native_full_stack.vote_update import (
     VoteUpdateInputs,
     VoteUpdateSpec,
-    VoteUpdatePlan,
-    plan_integer_vote_update_reference,
 )
 
 
@@ -85,41 +82,6 @@ def _deterministic_sampled_candidates(
     return sampled_candidates[: int(max_sampled_rows)]
 
 
-def _plan_vote_update_for_emit(
-    vote_state: Any,
-    inputs: VoteUpdateInputs,
-    spec: VoteUpdateSpec,
-    *,
-    local_selection_ordering_mode: str,
-    local_selection_ordering_seed: int,
-    local_selection_ordering_step: int,
-    two_tier_carry_w6_enabled: bool,
-) -> VoteUpdatePlan:
-    if isinstance(vote_state, EventCodedVoteUpdateState):
-        if two_tier_carry_w6_enabled:
-            raise ValueError(
-                "two_tier_carry_w6_enabled forbidden on event-coded live carrier votes-emit path"
-            )
-        return plan_event_coded_integer_vote_update_reference(
-            vote_state,
-            inputs,
-            spec,
-            local_selection_ordering_mode=str(local_selection_ordering_mode),
-            local_selection_ordering_seed=int(local_selection_ordering_seed),
-            local_selection_ordering_step=int(local_selection_ordering_step),
-            observation=None,
-        )
-    return plan_integer_vote_update_reference(
-        vote_state,
-        inputs,
-        spec,
-        local_selection_ordering_mode=str(local_selection_ordering_mode),
-        local_selection_ordering_seed=int(local_selection_ordering_seed),
-        local_selection_ordering_step=int(local_selection_ordering_step),
-        two_tier_carry_w6_enabled=bool(two_tier_carry_w6_enabled),
-    )
-
-
 def _collect_vote_plans_by_key(
     *,
     tensor_states: Mapping[str, BoundedDeltaTensorState],
@@ -142,7 +104,7 @@ def _collect_vote_plans_by_key(
                 else None
             ),
         )
-        plans_by_key[state_key] = _plan_vote_update_for_emit(
+        plans_by_key[state_key] = plan_vote_update_for_emit(
             vote_state,
             inputs,
             vote_specs_by_key[state_key],
@@ -254,7 +216,7 @@ def _preview_warmup_tags(
                 else None
             ),
         )
-        plan = _plan_vote_update_for_emit(
+        plan = plan_vote_update_for_emit(
             vote_state,
             inputs,
             vote_specs_by_key[state_key],
