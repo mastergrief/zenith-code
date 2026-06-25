@@ -4,6 +4,9 @@ from __future__ import annotations
 import json
 import math
 import os
+import signal
+import subprocess
+import textwrap
 from dataclasses import asdict
 from pathlib import Path
 import sys
@@ -163,12 +166,19 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     parse_b2_retained_supports,
     parse_prior_audit_supports,
     record_b2_full_prior_snapshot,
-    register_probe_faulthandler,
+    flush_probe_terminal_artifacts,
+    clear_probe_terminal_flush_context,
+    set_probe_terminal_flush_context,
+    ProbeTerminalFlushContext,
+    PROBE_EXIT_CODE_ARTIFACT_NAME,
+    PARENT_CHECKPOINT_POSTHASH_ARTIFACT_NAME,
+    _parent_checkpoint_posthash_path,
     reset_cuda_memory_stats,
     resolve_max_silent_phase_seconds,
     resolve_phase_heartbeat_seconds,
     resolve_phase_timeout_exemptions,
     recommended_watch_wrap_heartbeat_seconds,
+    register_probe_faulthandler,
     run_c2p1_probe,
     score_strict_exact_and_parsed_from_logits,
     select_eligible_bitlinears,
@@ -2205,7 +2215,7 @@ def test_register_probe_faulthandler_reports_signal_paths_without_signalling():
     assert report["signals"]["SIGABRT"]["status"] == "handled_by_faulthandler_enable"
     if getattr(probe_module.signal, "SIGQUIT", None) is not None:
         assert report["signals"]["SIGQUIT"]["status"] == "registered"
-        assert any(call[0] == "register" for call in calls)
+        assert report["signals"]["SIGQUIT"]["handler"] == "probe_sigquit_flush_then_exit"
 
 
 def test_tiny_real_model_cpu_step_receipt_is_scratch_only(tmp_path: Path):
@@ -4059,3 +4069,261 @@ def test_control_arm_staging_receipt_uses_post_cap_indices() -> None:
     assert stats["post_veto_would_apply_pre_cap_indices"] == [0]
     assert stats["applied_indices"] == [42]
     assert stats["applied_indices"] != stats["post_veto_would_apply_pre_cap_indices"]
+
+
+def test_flush_probe_terminal_artifacts_writes_exit_code_and_posthash(tmp_path) -> None:
+    scratch_root = tmp_path / "phase_a"
+    scratch_root.mkdir(parents=True)
+    parent_path = tmp_path / "parent.pt"
+    parent_bytes = b"banked-parent-checkpoint-bytes"
+    parent_path.write_bytes(parent_bytes)
+    parent_hash_before = file_sha256(parent_path)
+    set_probe_terminal_flush_context(
+        ProbeTerminalFlushContext(
+            scratch_root=scratch_root,
+            parent_checkpoint_path=parent_path,
+            parent_hash_before=parent_hash_before,
+        )
+    )
+    try:
+        flush_probe_terminal_artifacts(exit_code=1, flush_reason="test_flush")
+        exit_path = tmp_path / PROBE_EXIT_CODE_ARTIFACT_NAME
+        posthash_path = _parent_checkpoint_posthash_path(scratch_root)
+        assert exit_path.read_text(encoding="utf-8").strip() == "1"
+        payload = json.loads(posthash_path.read_text(encoding="utf-8"))
+        assert payload["parent_hash_before"] == parent_hash_before
+        assert payload["parent_hash_after"] == parent_hash_before
+        assert payload["parent_hash_unchanged"] is True
+        assert payload["flush_reason"] == "test_flush"
+        flush_probe_terminal_artifacts(exit_code=99, flush_reason="idempotent")
+        assert exit_path.read_text(encoding="utf-8").strip() == "1"
+        assert json.loads(posthash_path.read_text(encoding="utf-8"))["flush_reason"] == "test_flush"
+    finally:
+        clear_probe_terminal_flush_context()
+
+
+def test_flush_probe_terminal_artifacts_normal_zero_step(tmp_path) -> None:
+    scratch_root = tmp_path / "phase_a"
+    scratch_root.mkdir(parents=True)
+    parent_path = tmp_path / "parent.pt"
+    parent_path.write_bytes(b"banked-parent-checkpoint-bytes")
+    parent_hash_before = file_sha256(parent_path)
+    set_probe_terminal_flush_context(
+        ProbeTerminalFlushContext(
+            scratch_root=scratch_root,
+            parent_checkpoint_path=parent_path,
+            parent_hash_before=parent_hash_before,
+        )
+    )
+    try:
+        flush_probe_terminal_artifacts(exit_code=0, flush_reason="normal_completion")
+        exit_path = tmp_path / PROBE_EXIT_CODE_ARTIFACT_NAME
+        assert exit_path.read_text(encoding="utf-8").strip() == "0"
+        payload = json.loads(_parent_checkpoint_posthash_path(scratch_root).read_text(encoding="utf-8"))
+        assert payload["parent_hash_unchanged"] is True
+        assert payload["flush_reason"] == "normal_completion"
+    finally:
+        clear_probe_terminal_flush_context()
+
+
+def _probe_terminal_subprocess_env(tmp_path: Path) -> dict[str, str]:
+    scratch_root = tmp_path / "phase_a"
+    scratch_root.mkdir(parents=True)
+    parent_path = tmp_path / "parent.pt"
+    parent_path.write_bytes(b"banked-parent-checkpoint-bytes")
+    return {
+        **os.environ,
+        "PYTHONPATH": ".",
+        "PROBE_SCRATCH_ROOT": str(scratch_root),
+        "PROBE_PARENT_PATH": str(parent_path),
+        "PROBE_PARENT_HASH_BEFORE": file_sha256(parent_path),
+        "PROBE_RUN_ROOT": str(tmp_path),
+    }
+
+
+def test_wrapper_captures_artifacts_after_gil_held_phase_progress_faulthandler_exit(
+    tmp_path: Path,
+) -> None:
+    """C-faulthandler + wrapper: GIL-held tight loop; artifacts from wrapper post-os._exit."""
+    repo_root = Path(__file__).resolve().parents[3]
+    run_root = tmp_path
+    scratch_root = run_root / "phase_a"
+    scratch_root.mkdir(parents=True)
+    stderr_path = scratch_root / "probe.stderr.log"
+    parent_path = run_root / "parent.pt"
+    parent_path.write_bytes(b"banked-parent-checkpoint-bytes")
+    parent_hash_before = file_sha256(parent_path)
+    child_script = run_root / "gil_held_child.py"
+    child_script.write_text(
+        textwrap.dedent(
+            """
+            import faulthandler
+            import sys
+
+            import torch
+
+            from scripts.hrm_text_158_bounded_delta_acquisition_probe import PhaseProgress
+
+            faulthandler.enable(file=sys.stderr, all_threads=True)
+            progress = PhaseProgress(
+                enabled=False,
+                device=torch.device("cpu"),
+                silent_phase_timeout_seconds=0.5,
+                arm_faulthandler_timer=True,
+            )
+            with progress.phase("step_update", step=1):
+                while True:
+                    pass
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    wrapper_sh = run_root / "run_wrapper.sh"
+    wrapper_sh.write_text(
+        textwrap.dedent(
+            f"""\
+            #!/bin/bash
+            set -e
+            cd "{repo_root}"
+            RUN_ROOT="{run_root}"
+            PARENT_PT="{parent_path}"
+            PARENT_HASH_BEFORE="{parent_hash_before}"
+            : >"{stderr_path}"
+            set +e
+            PYTHONPATH=. python3 -u "{child_script}" 2>>"{stderr_path}"
+            EXIT_CODE=$?
+            set -e
+            echo "$EXIT_CODE" > "$RUN_ROOT/probe.exit_code.txt"
+            mkdir -p "$RUN_ROOT/prelaunch"
+            PARENT_HASH_AFTER=$(sha256sum "$PARENT_PT" | awk '{{print $1}}')
+            python3 - <<PY
+            import json
+            from pathlib import Path
+            payload = {{
+                "schema": "hrm_text_158_parent_checkpoint_posthash/v0",
+                "parent_checkpoint_path": "{parent_path}",
+                "parent_sha256": "$PARENT_HASH_AFTER",
+                "parent_hash_before": "{parent_hash_before}",
+                "parent_hash_after": "$PARENT_HASH_AFTER",
+                "parent_hash_unchanged": "{parent_hash_before}" == "$PARENT_HASH_AFTER",
+                "flush_reason": "wrapper_post_exit",
+            }}
+            Path("{run_root}/prelaunch/parent_checkpoint_posthash.json").write_text(
+                json.dumps(payload, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+            PY
+            exit $EXIT_CODE
+            """
+        ),
+        encoding="utf-8",
+    )
+    wrapper_sh.chmod(0o755)
+    result = subprocess.run(
+        [str(wrapper_sh)],
+        capture_output=True,
+        text=True,
+        timeout=20.0,
+    )
+    assert result.returncode != 0
+    stderr = stderr_path.read_text(encoding="utf-8")
+    assert "most recent call first" in stderr or "Traceback" in stderr
+    exit_path = run_root / PROBE_EXIT_CODE_ARTIFACT_NAME
+    assert exit_path.is_file()
+    assert exit_path.read_text(encoding="utf-8").strip() != "0"
+    posthash_path = run_root / "prelaunch" / PARENT_CHECKPOINT_POSTHASH_ARTIFACT_NAME
+    payload = json.loads(posthash_path.read_text(encoding="utf-8"))
+    assert payload["parent_hash_unchanged"] is True
+    assert payload["flush_reason"] == "wrapper_post_exit"
+
+
+@pytest.mark.skipif(getattr(signal, "SIGQUIT", None) is None, reason="SIGQUIT unavailable")
+def test_probe_sigquit_handler_flushes_artifacts(tmp_path: Path) -> None:
+    script = textwrap.dedent(
+        """
+        import os
+        import signal
+        import sys
+        import time
+        from pathlib import Path
+
+        import faulthandler
+
+        from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+            ProbeTerminalFlushContext,
+            register_probe_faulthandler,
+            set_probe_terminal_flush_context,
+        )
+
+        faulthandler.enable(file=sys.stderr, all_threads=True)
+        scratch_root = Path(os.environ["PROBE_SCRATCH_ROOT"])
+        parent_path = Path(os.environ["PROBE_PARENT_PATH"])
+        set_probe_terminal_flush_context(
+            ProbeTerminalFlushContext(
+                scratch_root=scratch_root,
+                parent_checkpoint_path=parent_path,
+                parent_hash_before=os.environ["PROBE_PARENT_HASH_BEFORE"],
+            )
+        )
+        register_probe_faulthandler()
+        signal.raise_signal(signal.SIGQUIT)
+        time.sleep(60.0)
+        """
+    ).strip()
+    proc = subprocess.Popen(
+        [sys.executable, "-u", "-c", script],
+        cwd=str(Path(__file__).resolve().parents[3]),
+        env=_probe_terminal_subprocess_env(tmp_path),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=10.0)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.communicate(timeout=5.0)
+    assert proc.returncode == 128 + int(signal.SIGQUIT)
+    assert "Current thread" in stderr or "Traceback" in stderr
+    exit_path = tmp_path / PROBE_EXIT_CODE_ARTIFACT_NAME
+    assert exit_path.read_text(encoding="utf-8").strip() == str(128 + int(signal.SIGQUIT))
+    payload = json.loads(_parent_checkpoint_posthash_path(tmp_path / "phase_a").read_text(encoding="utf-8"))
+    assert payload["flush_reason"] == "sigquit"
+
+
+def test_wrapper_post_exit_terminal_artifacts_are_authoritative(tmp_path: Path) -> None:
+    run_root = tmp_path
+    scratch_root = run_root / "phase_a"
+    scratch_root.mkdir(parents=True)
+    parent_path = tmp_path / "parent.pt"
+    parent_bytes = b"banked-parent-checkpoint-bytes"
+    parent_path.write_bytes(parent_bytes)
+    parent_hash_before = file_sha256(parent_path)
+    exit_code = 1
+    exit_path = run_root / PROBE_EXIT_CODE_ARTIFACT_NAME
+    exit_path.write_text(f"{int(exit_code)}\n", encoding="utf-8")
+    posthash_path = run_root / "prelaunch" / PARENT_CHECKPOINT_POSTHASH_ARTIFACT_NAME
+    posthash_path.parent.mkdir(parents=True, exist_ok=True)
+    parent_hash_after = file_sha256(parent_path)
+    posthash_path.write_text(
+        json.dumps(
+            {
+                "schema": probe_module.C2P2_PARENT_CHECKPOINT_POSTHASH_SCHEMA_VERSION,
+                "parent_checkpoint_path": str(parent_path),
+                "parent_sha256": parent_hash_after,
+                "parent_hash_before": parent_hash_before,
+                "parent_hash_after": parent_hash_after,
+                "parent_hash_unchanged": parent_hash_before == parent_hash_after,
+                "flush_reason": "wrapper_post_exit",
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    assert exit_path.read_text(encoding="utf-8").strip() == "1"
+    payload = json.loads(posthash_path.read_text(encoding="utf-8"))
+    assert payload["parent_hash_unchanged"] is True
+    assert payload["flush_reason"] == "wrapper_post_exit"

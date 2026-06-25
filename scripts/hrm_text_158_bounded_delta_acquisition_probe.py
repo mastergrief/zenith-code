@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import ExitStack, contextmanager, redirect_stderr, redirect_stdout
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 import faulthandler
 import hashlib
 import json
@@ -276,6 +276,11 @@ PHASE_TIMEOUT_EXEMPTION_CONTRACT_CHOICES = (
 )
 BOUNDED_STEPS_AGGREGATE_PHASE = "bounded_steps"
 PROBE_RUN_LOG_NAME = "run.log"
+PROBE_EXIT_CODE_ARTIFACT_NAME = "probe.exit_code.txt"
+PARENT_CHECKPOINT_POSTHASH_ARTIFACT_NAME = "parent_checkpoint_posthash.json"
+C2P2_PARENT_CHECKPOINT_POSTHASH_SCHEMA_VERSION = (
+    "hrm_text_158_parent_checkpoint_posthash/v0"
+)
 C2P2_NULL_TAXONOMY = (
     "no-q-move",
     "q-move-no-accuracy",
@@ -1608,11 +1613,23 @@ def register_probe_faulthandler(
     if sigquit is None:
         report["signals"]["SIGQUIT"] = {"status": "unavailable"}
     else:
+        def _probe_sigquit_handler(signum: int, frame: Any) -> None:
+            try:
+                faulthandler.dump_traceback(all_threads=True)
+            except Exception:
+                pass
+            flush_probe_terminal_artifacts(
+                exit_code=128 + int(signum),
+                flush_reason="sigquit",
+            )
+            raise SystemExit(128 + int(signum))
+
         try:
-            register(sigquit, file=sys.stderr, all_threads=True, chain=False)
+            signal.signal(sigquit, _probe_sigquit_handler)
             report["signals"]["SIGQUIT"] = {
                 "status": "registered",
                 "signal": int(sigquit),
+                "handler": "probe_sigquit_flush_then_exit",
             }
         except Exception as exc:
             report["signals"]["SIGQUIT"] = {
@@ -1663,6 +1680,71 @@ def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
         encoding="utf-8",
     )
     tmp_path.replace(path)
+
+
+@dataclass
+class ProbeTerminalFlushContext:
+    scratch_root: Path
+    parent_checkpoint_path: Path
+    parent_hash_before: str
+    _exit_code_written: bool = False
+    _posthash_written: bool = False
+
+
+_PROBE_TERMINAL_FLUSH_CTX: ProbeTerminalFlushContext | None = None
+
+
+def set_probe_terminal_flush_context(ctx: ProbeTerminalFlushContext) -> None:
+    global _PROBE_TERMINAL_FLUSH_CTX
+    _PROBE_TERMINAL_FLUSH_CTX = ctx
+
+
+def clear_probe_terminal_flush_context() -> None:
+    global _PROBE_TERMINAL_FLUSH_CTX
+    _PROBE_TERMINAL_FLUSH_CTX = None
+
+
+def _probe_run_root_from_scratch(scratch_root: Path) -> Path:
+    return scratch_root.parent
+
+
+def _parent_checkpoint_posthash_path(scratch_root: Path) -> Path:
+    return (
+        _probe_run_root_from_scratch(scratch_root)
+        / "prelaunch"
+        / PARENT_CHECKPOINT_POSTHASH_ARTIFACT_NAME
+    )
+
+
+def flush_probe_terminal_artifacts(
+    *,
+    exit_code: int,
+    flush_reason: str,
+) -> None:
+    ctx = _PROBE_TERMINAL_FLUSH_CTX
+    if ctx is None:
+        return
+    scratch_root = Path(ctx.scratch_root)
+    run_root = _probe_run_root_from_scratch(scratch_root)
+    exit_path = run_root / PROBE_EXIT_CODE_ARTIFACT_NAME
+    if not ctx._exit_code_written:
+        exit_path.parent.mkdir(parents=True, exist_ok=True)
+        exit_path.write_text(f"{int(exit_code)}\n", encoding="utf-8")
+        ctx._exit_code_written = True
+    if not ctx._posthash_written:
+        parent_hash_after = file_sha256(ctx.parent_checkpoint_path)
+        payload = {
+            "schema": C2P2_PARENT_CHECKPOINT_POSTHASH_SCHEMA_VERSION,
+            "parent_checkpoint_path": str(ctx.parent_checkpoint_path),
+            "parent_sha256": str(parent_hash_after),
+            "parent_hash_before": str(ctx.parent_hash_before),
+            "parent_hash_after": str(parent_hash_after),
+            "parent_hash_unchanged": str(ctx.parent_hash_before)
+            == str(parent_hash_after),
+            "flush_reason": str(flush_reason),
+        }
+        _write_json_atomic(_parent_checkpoint_posthash_path(scratch_root), payload)
+        ctx._posthash_written = True
 
 
 def assert_probe_device_ready(device: torch.device) -> dict[str, Any]:
@@ -6382,6 +6464,13 @@ def run_c2p1_probe(
 
     with phase_progress.phase("load"):
         ckpt, parent_hash_before = load_parent_checkpoint(parent, expected_sha256=parent_sha256)
+    set_probe_terminal_flush_context(
+        ProbeTerminalFlushContext(
+            scratch_root=scratch_root,
+            parent_checkpoint_path=Path(parent),
+            parent_hash_before=str(parent_hash_before),
+        )
+    )
     with phase_progress.phase("build_model"):
         model, tok, cfg = build_model_from_checkpoint(ckpt, torch_device)
     b2_parent_model = None
@@ -7640,16 +7729,28 @@ def main(argv: list[str] | None = None) -> int:
         event_coded_live_demotion_band=int(args.event_coded_live_demotion_band),
     )
     print(json.dumps(receipt, indent=2, sort_keys=True), flush=True)
+    flush_probe_terminal_artifacts(exit_code=0, flush_reason="normal_completion")
     return 0
 
 
 def _cli_main(argv: list[str] | None = None) -> int:
+    exit_code = 1
     with activation_credit_env_log_capture():
         try:
-            return main(argv)
+            exit_code = int(main(argv))
+            return exit_code
         except Exception:
             traceback.print_exc()
+            flush_probe_terminal_artifacts(
+                exit_code=1,
+                flush_reason="uncaught_exception",
+            )
             return 1
+        finally:
+            flush_probe_terminal_artifacts(
+                exit_code=exit_code,
+                flush_reason="cli_finally",
+            )
 
 
 if __name__ == "__main__":
