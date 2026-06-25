@@ -3,7 +3,7 @@
     "binding_scheme": "dag_leaf_companion",
     "main_packet_version": "v1",
     "replay_commands_artifact": "artifacts/consensus_prep/v4_live_trainer_integration_gpu_launch_packet_v1_replay_commands.json",
-    "replay_commands_sha256": "c34125fbe3765b7f0a57ef1f318af3869f13712cb3edacf8cf4d2bd0d9d28833",
+    "replay_commands_sha256": "9e86348a3be5fe7eb7c44e2cd8471184c72800ccd51f88bd1c63aafe63513540",
     "supersedes_main_packet_sha256": null,
     "supersedes_main_packet_version": null
   },
@@ -72,8 +72,8 @@
     "file_content_sha256_at_head": {
       "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": "832d004201a97413ea0c14526a51b53c701c35f471c378f3c797fc5fe2b99a06",
       "calm/hrm_text_158/native_full_stack/event_coded_acc_checkpoint_codec.py": "dbe9886aea3956cd90e374879a0fc91b1e45eabe5c06175841d6f8db96300381",
-      "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py": "f61670076d9317d1441c86d448592b38ea75b86550b91e6acac3e40b1fe72cb1",
-      "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py": "52a6c201a004f0e41b4120cf3432a7ab1c9d58b65603276ef4dc55e9cd537a69",
+      "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py": "36ed438e4d4e6a3b262d41114d942652cc1954813e46220c90c886b78785205c",
+      "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py": "70e2f30e6573c9311e8f06faa175657c8ce514c9c02deaaf86f81db7bb0bff48",
       "calm/hrm_text_158/native_full_stack/narrow_carrier_trainer_integration.py": "67b36ecd33003fd3acce503d0ebb39ff9724d9d012da496b18640b642ef2c2de",
       "calm/hrm_text_158/native_full_stack/oracle_screen_runner.py": "5f41568dd7ca8d18d7b70003afd467734b10dacebd17d6fdceb378b47489b0b3",
       "calm/hrm_text_158/native_full_stack/persistent_state_budget.py": "af455d4f37af4ddaa4873cadc8cfe042eaf825ba99ed59c4f985aa7b46e32f19",
@@ -84,17 +84,17 @@
       "calm/hrm_text_158/native_full_stack/vote_update_emit_routing.py": "557be5548566debdb3ba65d4757555bfe2aa4169138c22a5a8f49fbfd8424bc8",
       "calm/hrm_text_158/native_full_stack/votes_emit_collector.py": "f28fa88a8613b393835fa3605054859e995a8265d43cab734071eba9ee9f8124",
       "calm/hrm_text_158/native_full_stack/votes_emit_dynamics_replay.py": "8ce412e676e7e3a97167209070d5195591907b812e34001bafd2d65e8fc42708",
-      "scripts/hrm_text_158_bounded_delta_acquisition_probe.py": "57f3570470c48b8811e4da0caf74397a64b7d2d7135c11b7691dea59f3625ccd",
+      "scripts/hrm_text_158_bounded_delta_acquisition_probe.py": "e0b2784141068dfc23e6aa3da458d9189d74af75ea749f5729d0c26d7ada6867",
       "scripts/hrm_text_158_v4_file_content_pin_witness.py": "20ca1f130de7cb56138500dab72eb4d8ae4fbbcbe7b92161e28a53b0b4331a96",
       "scripts/hrm_text_158_v4_live_phase_a_parity_witness.py": "e3a481f7257c6d47de407020e0dfc85ce81569129d9a5cc17fecdd59504d8a32"
     },
     "file_content_sha_mismatch_fail_closed": true,
-    "head_at_packet": "2abfd51110689e81a821ee83219f7081145435fd",
+    "head_at_packet": "2189e7201671d91ac367efb1d3fd7bf030bf1ff6",
     "head_mismatch_fail_closed": false,
-    "head_required": "2abfd51110689e81a821ee83219f7081145435fd",
+    "head_required": "2189e7201671d91ac367efb1d3fd7bf030bf1ff6",
     "head_required_advisory": true,
     "integration_commit": "277a029",
-    "launch_deps_commit": "2abfd51",
+    "launch_deps_commit": "2189e72",
     "pinned_surfaces": [
       "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
       "calm/hrm_text_158/native_full_stack/event_coded_acc_checkpoint_codec.py",
@@ -165,7 +165,7 @@
   "hypothesis": "V4-LIVE event-coded carrier can bank REDUCIBLE_UNDER_DYNAMICS on LIVE GPU evidence: acc-term <2.0 saved bytes (measure_r4v) AND decisive-surface parity vs dense reference AND retention, with no dense PERSISTENT authority (transient O(numel) runtime buffers disclosed separately).",
   "launch_preflight": {
     "file_content_sha_mismatch_abort": true,
-    "head_required": "2abfd51110689e81a821ee83219f7081145435fd",
+    "head_required": "2189e7201671d91ac367efb1d3fd7bf030bf1ff6",
     "head_required_advisory": true,
     "note": "Per-file content shas are authoritative; head_required is informational authored-against commit. Packet-only follow-on commits do not invalidate pins if code files unchanged.",
     "preflight_authority": "file_content_sha256_at_head"
@@ -178,7 +178,7 @@
     "runtime_activation_lane": "transient_dense_compute_numel disclosed; separate from persistent sub-2 ledger",
     "scale_term": "reported separately; not folded into acc claim"
   },
-  "packet_sha": "b32dc42f9c399cf6388e19e09261839ff450f0c97c57a13b0d31961c49294d83",
+  "packet_sha": "36d05f0d52f11794fa34afa6a9c25f75bd33fadf6b9905a1285d57a5bfe7275c",
   "packet_version": "v1",
   "parent_checkpoint_pin": {
     "banked_pt_read_only": true,

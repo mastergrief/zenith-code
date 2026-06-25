@@ -9,9 +9,9 @@
     "--two-tier-carry-w6-enabled",
     "--r7-deferred-backlog-carry"
   ],
-  "head_pin": "2abfd51110689e81a821ee83219f7081145435fd",
+  "head_pin": "2189e7201671d91ac367efb1d3fd7bf030bf1ff6",
   "head_pin_advisory": true,
-  "head_pin_witness_command": "python3 -c \"import json, subprocess; from pathlib import Path; head=subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip(); out=Path('{run_root}/prelaunch/head_pin_witness.json'); out.parent.mkdir(parents=True, exist_ok=True); payload={'schema_version':'v4_live_head_pin_witness/v1','git_head':head,'required_head_advisory':'2abfd51110689e81a821ee83219f7081145435fd','head_pin_advisory':True,'head_pin_pass':True,'note':'head_required is advisory; file_content_pin_witness is authoritative'}; out.write_text(json.dumps(payload, indent=2, sort_keys=True)+'\\n', encoding='utf-8')\"",
+  "head_pin_witness_command": "python3 -c \"import json, subprocess; from pathlib import Path; head=subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip(); out=Path('{run_root}/prelaunch/head_pin_witness.json'); out.parent.mkdir(parents=True, exist_ok=True); payload={'schema_version':'v4_live_head_pin_witness/v1','git_head':head,'required_head_advisory':'2189e7201671d91ac367efb1d3fd7bf030bf1ff6','head_pin_advisory':True,'head_pin_pass':True,'note':'head_required is advisory; file_content_pin_witness is authoritative'}; out.write_text(json.dumps(payload, indent=2, sort_keys=True)+'\\n', encoding='utf-8')\"",
   "main_packet_artifact": "artifacts/consensus_prep/v4_live_trainer_integration_gpu_launch_packet_v1.json",
   "note": "GPU launch execution is OUT OF SCOPE for packet author; test-operator (haiku) runs Phase A then (if PASS) Phase B after +1 launch gate. REDUCIBLE_UNDER_DYNAMICS banks ONLY on Phase B LIVE conjunctive evidence.",
   "packet_version": "v1",

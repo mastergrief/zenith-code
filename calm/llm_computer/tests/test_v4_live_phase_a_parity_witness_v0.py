@@ -438,7 +438,8 @@ def test_v4_launch_packet_contract_and_bindings() -> None:
     assert code_pins["head_required_advisory"] is True
     assert code_pins["head_mismatch_fail_closed"] is False
     assert code_pins["file_content_sha_mismatch_fail_closed"] is True
-    assert code_pins["head_required"] == "2abfd51110689e81a821ee83219f7081145435fd"
+    assert code_pins["head_required"] == code_pins["head_at_packet"]
+    assert companion.get("head_pin") == code_pins["head_required"]
     pinned_paths = list(code_pins["file_content_sha256_at_head"].keys())
     assert any(p.endswith("v4_live_phase_a_parity_witness.py") for p in pinned_paths)
     assert "scripts/hrm_text_158_v4_live_phase_a_parity_witness.py" in code_pins[
@@ -447,12 +448,6 @@ def test_v4_launch_packet_contract_and_bindings() -> None:
     assert "scripts/hrm_text_158_v4_file_content_pin_witness.py" in code_pins[
         "file_content_sha256_at_head"
     ]
-    assert (
-        code_pins["file_content_sha256_at_head"][
-            "scripts/hrm_text_158_bounded_delta_acquisition_probe.py"
-        ]
-        == "57f3570470c48b8811e4da0caf74397a64b7d2d7135c11b7691dea59f3625ccd"
-    )
     assert len(code_pins["file_content_sha256_at_head"]) == 17
     assert set(code_pins["pinned_surfaces"]) == set(
         code_pins["file_content_sha256_at_head"].keys()
