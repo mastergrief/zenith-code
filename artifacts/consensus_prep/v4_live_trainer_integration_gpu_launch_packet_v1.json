@@ -71,9 +71,9 @@
     "branch": "feature/hrm-text-1.58",
     "file_content_sha256_at_head": {
       "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": "832d004201a97413ea0c14526a51b53c701c35f471c378f3c797fc5fe2b99a06",
-      "calm/hrm_text_158/native_full_stack/event_coded_acc_checkpoint_codec.py": "9f3426966404b459927ead857bc2c34cff76c8a97c6460e2219303e94212a113",
-      "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py": "44b7689786fe638a7f2e5d195a0fc3078bbf5a3f4b7f5724006e3aab2e805f29",
-      "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py": "58ec9619ffe9b749aaa86aef1313cbb4514f55033ab0d99b616129d3a9055a8c",
+      "calm/hrm_text_158/native_full_stack/event_coded_acc_checkpoint_codec.py": "dbe9886aea3956cd90e374879a0fc91b1e45eabe5c06175841d6f8db96300381",
+      "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py": "107458f9efe074f9795b3a3820b3293714de8aded42f49211df3c615ecdeeb72",
+      "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py": "52a6c201a004f0e41b4120cf3432a7ab1c9d58b65603276ef4dc55e9cd537a69",
       "calm/hrm_text_158/native_full_stack/narrow_carrier_trainer_integration.py": "67b36ecd33003fd3acce503d0ebb39ff9724d9d012da496b18640b642ef2c2de",
       "calm/hrm_text_158/native_full_stack/oracle_screen_runner.py": "5f41568dd7ca8d18d7b70003afd467734b10dacebd17d6fdceb378b47489b0b3",
       "calm/hrm_text_158/native_full_stack/persistent_state_budget.py": "af455d4f37af4ddaa4873cadc8cfe042eaf825ba99ed59c4f985aa7b46e32f19",
@@ -178,7 +178,7 @@
     "runtime_activation_lane": "transient_dense_compute_numel disclosed; separate from persistent sub-2 ledger",
     "scale_term": "reported separately; not folded into acc claim"
   },
-  "packet_sha": "2b080caa53de0bd1ad3d74a38a2fcc40979db7a6f552e29677e3c3a263284ba4",
+  "packet_sha": "d917a2168c757714a26b24fde2eb3fd022e890431ea79a0e924105b83aa3ccbd",
   "packet_version": "v1",
   "parent_checkpoint_pin": {
     "banked_pt_read_only": true,
