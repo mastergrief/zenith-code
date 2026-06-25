@@ -90,17 +90,26 @@
   ],
   "fresh_root_guard": {
     "body_verbatim": "if [ -e \"$RUN_ROOT\" ] && [ -n \"$(ls -A \"$RUN_ROOT\" 2>/dev/null)\" ]; then echo \"FRESHNESS_FAIL: run_root exists/non-empty: $RUN_ROOT\" >&2; exit 1; fi",
+    "execution_authority": "external_launcher_outside_run_root",
     "load_bearing": true,
     "occupied_science_roots_never_rm": [
       "370cdd2002",
       "370cdd2001",
       "d6db8f9001",
       "07c8023001",
-      "88f29a8001"
+      "88f29a8001",
+      "2189e72001"
     ],
-    "prelaunch_order": "P-0 freshness guard + witness BEFORE any probe launch or writes under RUN_ROOT",
+    "prelaunch_order": [
+      "1_external_freshness_guard_before_any_run_root_writes",
+      "2_mkdir_prelaunch_and_phase_a",
+      "3_emit_prelaunch_run_root_freshness_witness_json",
+      "4_emit_prelaunch_parent_checkpoint_prehash_json",
+      "5_run_probe_child_stdout_stderr_separate_set_plus_e",
+      "6_wrapper_post_exit_probe_exit_code_txt_and_parent_checkpoint_posthash_json"
+    ],
     "witness_artifact": "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72001/prelaunch/run_root_freshness_witness.json",
-    "witness_assert": "run_root_fresh_pass == true"
+    "witness_assert": "run_root_fresh_pass == true AND witness_emitted_before_probe_launch == true"
   },
   "harness_contract": {
     "external_per_phase_no_progress_seconds": null,
@@ -162,9 +171,9 @@
     "parser_rule": "MAX active_phase_elapsed_seconds among JSON lines where event==heartbeat AND phase==step_update"
   },
   "launch_ready": false,
-  "packet_sha": "6877ddaf6588a9a9e677c74803763d6633bd97cc479650fe9b336d87d7358c52",
+  "packet_sha": "155b4c2b24b4aec3d891f70e9499916600f1a3aaf85bd1c3886273329672384d",
   "packet_status": "draft_pending_gate1",
-  "packet_version": "tier1_v4_rescreen",
+  "packet_version": "tier1_v4_rescreen_bootstrap_v1",
   "parent_checkpoint_pin": {
     "banked_pt_read_only": true,
     "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
@@ -181,28 +190,43 @@
     "second_cli_delta_required": false
   },
   "phase_a_wrapper_contract": {
+    "authority": "external_launcher_outside_run_root",
+    "bootstrap_order": [
+      "1_external_freshness_guard_before_any_run_root_writes",
+      "2_mkdir_prelaunch_and_phase_a",
+      "3_emit_prelaunch_run_root_freshness_witness_json",
+      "4_emit_prelaunch_parent_checkpoint_prehash_json",
+      "5_run_probe_child_stdout_stderr_separate_set_plus_e",
+      "6_wrapper_post_exit_probe_exit_code_txt_and_parent_checkpoint_posthash_json"
+    ],
     "classification_authority": {
       "C_elapsed": "heartbeat JSON in run.log and/or probe.stdout.log",
       "C_stack": "probe.stderr.log",
       "phase_label_only": "last_active_phase.json"
     },
+    "external_launcher_cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+    "external_launcher_script_path": "/home/gabe/claw-code-creditdir/transient_fp_credit/_launch_scripts/v4_live_diagnostic_tier1_seed44_43_2189e72001_launch.sh",
+    "external_launcher_template": "#!/bin/bash\nset -euo pipefail\nREPO_ROOT=\"/mnt/c/Users/gabes/projects/claw-code-hrm-text-158\"\ncd \"$REPO_ROOT\"\nRUN_ROOT=\"/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72001/\"\nPARENT_PT=\"calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt\"\nPARENT_HASH_BEFORE=\"9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec\"\n\n# Step 1: freshness guard from OUTSIDE run_root (no prior writes)\nif [ -e \"$RUN_ROOT\" ] && [ -n \"$(ls -A \"$RUN_ROOT\" 2>/dev/null)\" ]; then\n  echo \"FRESHNESS_FAIL: run_root exists/non-empty: $RUN_ROOT\" >&2\n  exit 1\nfi\n\n# Step 2: create run_root skeleton (first writes under run_root)\nmkdir -p \"$RUN_ROOT/prelaunch\" \"$RUN_ROOT/phase_a\"\n\n# Step 3: freshness witness (before probe launch)\npython3 - <<'PY'\nimport json\nfrom pathlib import Path\nrun_root = Path(\"/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72001/\")\npayload = {\n    \"schema\": \"hrm_text_158_run_root_freshness_witness/v0\",\n    \"run_root\": str(run_root),\n    \"run_root_fresh_pass\": True,\n    \"witness_emitted_before_probe_launch\": True,\n}\nout = run_root / \"prelaunch\" / \"run_root_freshness_witness.json\"\nout.write_text(json.dumps(payload, indent=2, sort_keys=True) + \"\\n\", encoding=\"utf-8\")\nPY\n\n# Step 4: parent prehash (banked read-only)\npython3 - <<'PY'\nimport json\nimport subprocess\nfrom pathlib import Path\nrun_root = Path(\"/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72001/\")\nparent_pt = \"calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt\"\nparent_hash_before = \"9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec\"\nparent_hash_at_launch = subprocess.check_output([\"sha256sum\", parent_pt], text=True).split()[0]\npayload = {\n    \"schema\": \"hrm_text_158_parent_checkpoint_prehash/v0\",\n    \"parent_checkpoint_path\": parent_pt,\n    \"parent_sha256\": parent_hash_at_launch,\n    \"parent_hash_before\": parent_hash_before,\n    \"parent_hash_at_launch\": parent_hash_at_launch,\n    \"parent_hash_unchanged\": parent_hash_before == parent_hash_at_launch,\n    \"banked_pt_read_only\": True,\n}\nout = run_root / \"prelaunch\" / \"parent_checkpoint_prehash.json\"\nout.write_text(json.dumps(payload, indent=2, sort_keys=True) + \"\\n\", encoding=\"utf-8\")\nPY\n\n# Step 5: probe child (stdout/stderr separate; set +e around child)\n: >\"$RUN_ROOT/phase_a/probe.stderr.log\"\necho \"=== PHASE A DIAGNOSTIC TIER1 START ===\" >> \"$RUN_ROOT/phase_a/probe.stdout.log\"\necho \"Time: $(date -u +%Y-%m-%dT%H:%M:%SZ)\" >> \"$RUN_ROOT/phase_a/probe.stdout.log\"\nset +e\nPYTHONPATH=. HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1 python3 -u scripts/hrm_text_158_bounded_delta_acquisition_probe.py --allow-gpu-launch --enable-bounded-delta-probe --device cuda --parent calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt --parent-sha256 9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec --curriculum-seed 44 --support-order-seed 43 --eligible-scope all-bitlinear --steps 20 --max-steps-hard 20 --batch-size 1 --phase v4-live-dynamics-proof-smoke --science-arm A0_rank_bucket_current_ordering --global-cap-contract c1_banked_faithful_long_run_global_cap --persistent-q-ternary-base3-codec --persistent-accumulator-event-coded-live --event-coded-live-demotion-band 1 --votes-emit-enabled --scratch-root \"/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72001/phase_a\" --emit-progress >> \"$RUN_ROOT/phase_a/probe.stdout.log\" 2>>\"$RUN_ROOT/phase_a/probe.stderr.log\"\nEXIT_CODE=$?\nset -e\necho \"Probe exit code: $EXIT_CODE\" >> \"$RUN_ROOT/phase_a/probe.stdout.log\"\necho \"Time: $(date -u +%Y-%m-%dT%H:%M:%SZ)\" >> \"$RUN_ROOT/phase_a/probe.stdout.log\"\n\n# Step 6: wrapper post-exit artifacts (authoritative; survives child os._exit)\necho \"$EXIT_CODE\" > \"$RUN_ROOT/probe.exit_code.txt\"\npython3 - <<'PY'\nimport json\nimport subprocess\nfrom pathlib import Path\nrun_root = Path(\"/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72001/\")\nparent_pt = \"calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt\"\nparent_hash_before = \"9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec\"\nparent_hash_after = subprocess.check_output([\"sha256sum\", parent_pt], text=True).split()[0]\npayload = {\n    \"schema\": \"hrm_text_158_parent_checkpoint_posthash/v0\",\n    \"parent_checkpoint_path\": parent_pt,\n    \"parent_sha256\": parent_hash_after,\n    \"parent_hash_before\": parent_hash_before,\n    \"parent_hash_after\": parent_hash_after,\n    \"parent_hash_unchanged\": parent_hash_before == parent_hash_after,\n    \"flush_reason\": \"wrapper_post_exit\",\n}\nout = run_root / \"prelaunch\" / \"parent_checkpoint_posthash.json\"\nout.write_text(json.dumps(payload, indent=2, sort_keys=True) + \"\\n\", encoding=\"utf-8\")\nPY\nexit \"$EXIT_CODE\"\n",
     "forbidden_redirect": "DO NOT merge stderr into stdout via 2>&1",
+    "forbidden_under_run_root_before_guard": [
+      "run_probe.sh or any bootstrap script under RUN_ROOT/phase_a before external guard+mkdir"
+    ],
     "probe_internal_run_log": "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72001/phase_a/run.log",
-    "script_path": "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72001/phase_a/run_probe.sh",
     "stderr_sink": "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72001/phase_a/probe.stderr.log",
     "stdout_sink": "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72001/phase_a/probe.stdout.log",
     "terminal_artifact_contract": {
       "authority": "wrapper_post_exit",
-      "belt_and_suspenders": "probe-internal flush_probe_terminal_artifacts on breach/SIGQUIT/_cli_main finally; survives only when Python exit path runs",
+      "belt_and_suspenders": "probe-internal flush_probe_terminal_artifacts on cooperative SIGQUIT/_cli_main finally only",
       "c_confirmed_requires": "RUN_ROOT/probe.exit_code.txt with explicit nonzero integer (not absent)",
       "missing_any_artifact": "harness_invalid or artifact_incomplete",
       "paths": {
         "exit_code": "{RUN_ROOT}/probe.exit_code.txt",
-        "parent_posthash": "{RUN_ROOT}/prelaunch/parent_checkpoint_posthash.json"
+        "freshness_witness": "{RUN_ROOT}/prelaunch/run_root_freshness_witness.json",
+        "parent_posthash": "{RUN_ROOT}/prelaunch/parent_checkpoint_posthash.json",
+        "parent_prehash": "{RUN_ROOT}/prelaunch/parent_checkpoint_prehash.json"
       },
-      "probe_faulthandler_exit_authority": "faulthandler.dump_traceback_later(exit=True) remains C-authoritative terminator; wrapper emits artifacts after child exit"
-    },
-    "wrapper_template": "#!/bin/bash\nset -e\ncd /mnt/c/Users/gabes/projects/claw-code-hrm-text-158\nRUN_ROOT=\"/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72001/\"\n\nif [ -e \"$RUN_ROOT\" ] && [ -n \"$(ls -A \"$RUN_ROOT\" 2>/dev/null)\" ]; then echo \"FRESHNESS_FAIL: run_root exists/non-empty: $RUN_ROOT\" >&2; exit 1; fi\n\n: >\"$RUN_ROOT\"phase_a/probe.stderr.log\necho \"=== PHASE A DIAGNOSTIC TIER1 START ===\" >> \"$RUN_ROOT\"phase_a/probe.stdout.log\necho \"Time: $(date)\" >> \"$RUN_ROOT\"phase_a/probe.stdout.log\n\nset +e\nPYTHONPATH=. HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1 python3 -u scripts/hrm_text_158_bounded_delta_acquisition_probe.py \\\n  --allow-gpu-launch \\\n  --enable-bounded-delta-probe \\\n  --device cuda \\\n  --parent calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt \\\n  --parent-sha256 9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec \\\n  --curriculum-seed 44 \\\n  --support-order-seed 43 \\\n  --eligible-scope all-bitlinear \\\n  --steps 20 \\\n  --max-steps-hard 20 \\\n  --batch-size 1 \\\n  --phase v4-live-dynamics-proof-smoke \\\n  --science-arm A0_rank_bucket_current_ordering \\\n  --global-cap-contract c1_banked_faithful_long_run_global_cap \\\n  --persistent-q-ternary-base3-codec \\\n  --persistent-accumulator-event-coded-live \\\n  --event-coded-live-demotion-band 1 \\\n  --votes-emit-enabled \\\n  --scratch-root \"$RUN_ROOT\"phase_a \\\n  --emit-progress \\\n  >> \"$RUN_ROOT\"phase_a/probe.stdout.log 2>>\"$RUN_ROOT\"phase_a/probe.stderr.log\n\nEXIT_CODE=$?\nset -e\necho \"Probe exit code: $EXIT_CODE\" >> \"$RUN_ROOT\"phase_a/probe.stdout.log\necho \"Time: $(date)\" >> \"$RUN_ROOT\"phase_a/probe.stdout.log\nPARENT_PT=\"calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt\"\nPARENT_HASH_BEFORE=\"9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec\"\necho \"$EXIT_CODE\" > \"$RUN_ROOT/probe.exit_code.txt\"\nmkdir -p \"$RUN_ROOT/prelaunch\"\nPARENT_HASH_AFTER=$(sha256sum \"$PARENT_PT\" | awk '{print $1}')\npython3 - <<'PY'\nimport json\nfrom pathlib import Path\nrun_root = Path(\"/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72001/\")\nparent_pt = \"calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt\"\nparent_hash_before = \"9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec\"\nparent_hash_after = __import__(\"subprocess\").check_output([\"sha256sum\", parent_pt], text=True).split()[0]\npayload = {\n    \"schema\": \"hrm_text_158_parent_checkpoint_posthash/v0\",\n    \"parent_checkpoint_path\": parent_pt,\n    \"parent_sha256\": parent_hash_after,\n    \"parent_hash_before\": parent_hash_before,\n    \"parent_hash_after\": parent_hash_after,\n    \"parent_hash_unchanged\": parent_hash_before == parent_hash_after,\n    \"flush_reason\": \"wrapper_post_exit\",\n}\npath = run_root / \"prelaunch\" / \"parent_checkpoint_posthash.json\"\npath.parent.mkdir(parents=True, exist_ok=True)\npath.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding=\"utf-8\")\nPY\nexit $EXIT_CODE"
+      "probe_faulthandler_exit_authority": "faulthandler.dump_traceback_later(exit=True) remains C-authoritative terminator; external launcher emits artifacts after child exit"
+    }
   },
   "prior_failure_run": {
     "investigation_receipt": "1782408321237",
@@ -218,10 +242,11 @@
       "S1 adapter/carrier vectorization banked at bfb3af6 (carrier 36ed438e\u2026, adapter 70e2f30e\u2026)",
       "S2 probe terminal artifact hardening banked at 2189e72 (probe e0b27841\u2026)",
       "run_id 2189e72001; source_packet_sha 36d05f0d",
-      "Expected B_confirmed (20 steps, no hang); C = new residual evidence only"
+      "Expected B_confirmed (20 steps, no hang); C = new residual evidence only",
+      "External launcher bootstrap fix (co_lead 1782421329677): guard+witness+mkdir outside run_root; parent prehash before probe"
     ],
     "from": "tier1_v3_rescreen (88f29a8001)",
-    "revision_msg_id": "1782420310932-4077dcd7",
+    "revision_msg_id": "1782421437269-a615bd36",
     "source_edit": true
   },
   "run_id": "2189e72001",
