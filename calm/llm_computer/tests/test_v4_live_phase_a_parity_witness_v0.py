@@ -410,6 +410,7 @@ def test_v4_launch_packet_contract_and_bindings() -> None:
     phase_a_cmd = str(companion["phase_a_gpu_smoke_command_template"])
     phase_b_cmd = str(companion["phase_b_live_dynamics_command_template"])
     for cmd in (phase_a_cmd, phase_b_cmd):
+        assert "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1" in cmd
         assert "--persistent-accumulator-event-coded-live" in cmd
         assert "--event-coded-live-demotion-band" in cmd
         assert "--votes-emit-enabled" in cmd
@@ -427,6 +428,9 @@ def test_v4_launch_packet_contract_and_bindings() -> None:
     assert assertions["ready_for_main_science"] is False
     assert assertions["main_science_launch_blocked"] is True
     assert "--expect-ready" not in str(companion["sub2_readiness_command"])
+
+    required_gpu_env = packet["fail_closed_constraints"]["required_gpu_launch_env"]
+    assert required_gpu_env == {"HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH": "1"}
 
     # code_pins currency: per-file shas are authoritative; head is advisory
     code_pins = packet["code_pins"]

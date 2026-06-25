@@ -3,7 +3,7 @@
     "binding_scheme": "dag_leaf_companion",
     "main_packet_version": "v1",
     "replay_commands_artifact": "artifacts/consensus_prep/v4_live_trainer_integration_gpu_launch_packet_v1_replay_commands.json",
-    "replay_commands_sha256": "8b3f14a23f90a34c00fbe5571665d3d6988421f5f073e12c710c0a4900227b90",
+    "replay_commands_sha256": "c34125fbe3765b7f0a57ef1f318af3869f13712cb3edacf8cf4d2bd0d9d28833",
     "supersedes_main_packet_sha256": null,
     "supersedes_main_packet_version": null
   },
@@ -133,6 +133,9 @@
     "no_mid_run_reload": true,
     "packet_only": true,
     "r7_deferred_backlog_carry_enabled": false,
+    "required_gpu_launch_env": {
+      "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH": "1"
+    },
     "votes_emit_section6_contract_fields": [
       "applied_flat_indices_hash",
       "cap_order_summary",
@@ -169,7 +172,7 @@
     "runtime_activation_lane": "transient_dense_compute_numel disclosed; separate from persistent sub-2 ledger",
     "scale_term": "reported separately; not folded into acc claim"
   },
-  "packet_sha": "8927de5e8e43dccb31de46220a070fa306b00581cd30b61bd5de8cc6347a120b",
+  "packet_sha": "aff46ec629244e402958925afff6a31e2073a2d32815b8f55e76a088e9dd3092",
   "packet_version": "v1",
   "parent_checkpoint_pin": {
     "banked_pt_read_only": true,
