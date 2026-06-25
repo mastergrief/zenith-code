@@ -149,6 +149,10 @@ class EventCodedVoteUpdateState:
     q_levels: torch.Tensor
     carrier: EventCodedAccLiveState
 
+    @property
+    def normalized_accumulator_format(self) -> VoteUpdateAccumulatorFormat:
+        return VoteUpdateAccumulatorFormat.EVENT_CODED_LIVE_CARRIER
+
     def to_vote_update_state(self) -> VoteUpdateState:
         return VoteUpdateState(
             q_levels=self.q_levels,
