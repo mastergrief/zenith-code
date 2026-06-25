@@ -453,7 +453,7 @@ def test_v4_launch_packet_contract_and_bindings() -> None:
         ]
         == "f93c051f1332b427d284a2db45b7631e803414fb75233daf498879321d3b7368"
     )
-    assert len(code_pins["file_content_sha256_at_head"]) == 16
+    assert len(code_pins["file_content_sha256_at_head"]) == 17
     assert set(code_pins["pinned_surfaces"]) == set(
         code_pins["file_content_sha256_at_head"].keys()
     )
