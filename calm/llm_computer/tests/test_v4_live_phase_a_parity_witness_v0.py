@@ -451,7 +451,7 @@ def test_v4_launch_packet_contract_and_bindings() -> None:
         code_pins["file_content_sha256_at_head"][
             "scripts/hrm_text_158_bounded_delta_acquisition_probe.py"
         ]
-        == "f93c051f1332b427d284a2db45b7631e803414fb75233daf498879321d3b7368"
+        == "57f3570470c48b8811e4da0caf74397a64b7d2d7135c11b7691dea59f3625ccd"
     )
     assert len(code_pins["file_content_sha256_at_head"]) == 17
     assert set(code_pins["pinned_surfaces"]) == set(

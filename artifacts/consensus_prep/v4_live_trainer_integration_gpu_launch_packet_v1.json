@@ -70,10 +70,10 @@
   "code_pins": {
     "branch": "feature/hrm-text-1.58",
     "file_content_sha256_at_head": {
-      "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": "976a423d026819a3a4f4e511f2cd15ba98b2a89fae5398ab092eaac3e14174e4",
+      "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": "832d004201a97413ea0c14526a51b53c701c35f471c378f3c797fc5fe2b99a06",
       "calm/hrm_text_158/native_full_stack/event_coded_acc_checkpoint_codec.py": "9f3426966404b459927ead857bc2c34cff76c8a97c6460e2219303e94212a113",
       "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py": "44b7689786fe638a7f2e5d195a0fc3078bbf5a3f4b7f5724006e3aab2e805f29",
-      "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py": "e18563ebbefcee115527aad0841ec16f61f67e56b747e5acb6a5769ff1471bab",
+      "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py": "58ec9619ffe9b749aaa86aef1313cbb4514f55033ab0d99b616129d3a9055a8c",
       "calm/hrm_text_158/native_full_stack/narrow_carrier_trainer_integration.py": "67b36ecd33003fd3acce503d0ebb39ff9724d9d012da496b18640b642ef2c2de",
       "calm/hrm_text_158/native_full_stack/oracle_screen_runner.py": "5f41568dd7ca8d18d7b70003afd467734b10dacebd17d6fdceb378b47489b0b3",
       "calm/hrm_text_158/native_full_stack/persistent_state_budget.py": "af455d4f37af4ddaa4873cadc8cfe042eaf825ba99ed59c4f985aa7b46e32f19",
@@ -84,7 +84,7 @@
       "calm/hrm_text_158/native_full_stack/vote_update_emit_routing.py": "557be5548566debdb3ba65d4757555bfe2aa4169138c22a5a8f49fbfd8424bc8",
       "calm/hrm_text_158/native_full_stack/votes_emit_collector.py": "f28fa88a8613b393835fa3605054859e995a8265d43cab734071eba9ee9f8124",
       "calm/hrm_text_158/native_full_stack/votes_emit_dynamics_replay.py": "8ce412e676e7e3a97167209070d5195591907b812e34001bafd2d65e8fc42708",
-      "scripts/hrm_text_158_bounded_delta_acquisition_probe.py": "f93c051f1332b427d284a2db45b7631e803414fb75233daf498879321d3b7368",
+      "scripts/hrm_text_158_bounded_delta_acquisition_probe.py": "57f3570470c48b8811e4da0caf74397a64b7d2d7135c11b7691dea59f3625ccd",
       "scripts/hrm_text_158_v4_file_content_pin_witness.py": "20ca1f130de7cb56138500dab72eb4d8ae4fbbcbe7b92161e28a53b0b4331a96",
       "scripts/hrm_text_158_v4_live_phase_a_parity_witness.py": "e3a481f7257c6d47de407020e0dfc85ce81569129d9a5cc17fecdd59504d8a32"
     },
@@ -178,7 +178,7 @@
     "runtime_activation_lane": "transient_dense_compute_numel disclosed; separate from persistent sub-2 ledger",
     "scale_term": "reported separately; not folded into acc claim"
   },
-  "packet_sha": "3893bc55709cb7c4e5c30d2900a4ea4ae8b28165cb22407d7fd2592610173e40",
+  "packet_sha": "2b080caa53de0bd1ad3d74a38a2fcc40979db7a6f552e29677e3c3a263284ba4",
   "packet_version": "v1",
   "parent_checkpoint_pin": {
     "banked_pt_read_only": true,
