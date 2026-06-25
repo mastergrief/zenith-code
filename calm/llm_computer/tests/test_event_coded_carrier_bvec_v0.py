@@ -22,6 +22,7 @@ from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import 
     _votes_dict_from_tensor,
     apply_event_coded_cap_mutations,
     carrier_content_sha256,
+    pre_accumulator_i32_for_indices,
 )
 from calm.hrm_text_158.native_full_stack.vote_update import VoteUpdatePlan
 
@@ -481,3 +482,22 @@ def test_full_cap_path_scale_smoke_600k_x32_under_30s() -> None:
         f"second_demotion_cross={second_rec.demotion_on_crossing_count}"
     )
     assert elapsed < 30.0, f"full cap-path scale-smoke exceeded 30s budget: {elapsed:.2f}s"
+
+
+def test_hot_lane_tensor_accessors_match_hot_exact() -> None:
+    carrier = EventCodedAccLiveState.with_hot_exact(
+        logical_numel=512,
+        demotion_band=1,
+        hot_exact={1: 3, 7: -2, 42: 11},
+    )
+    idx = carrier.hot_lane_indices_tensor()
+    val = carrier.hot_lane_values_tensor()
+    assert idx.dtype == torch.int64
+    assert val.dtype == torch.int32
+    assert idx.numel() == 3
+    assert val.numel() == 3
+    for flat_index, expected in carrier.hot_exact.items():
+        pos = int((idx == int(flat_index)).nonzero(as_tuple=False).item())
+        assert int(val[pos].item()) == int(expected)
+    gathered = pre_accumulator_i32_for_indices(carrier, idx)
+    assert torch.equal(gathered, val)

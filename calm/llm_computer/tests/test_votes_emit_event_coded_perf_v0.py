@@ -19,6 +19,7 @@ from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import 
     _active_lane_index_tensor,
     build_sparse_new_acc_i32_from_carrier,
     build_sparse_new_acc_i32_from_carrier_reference,
+    carrier_pre_accumulator_i32_flat,
 )
 from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
     _build_within_tie_band_universe_fast,
@@ -147,7 +148,7 @@ def test_build_sparse_matches_reference_all_zero_votes() -> None:
 
 
 def test_build_sparse_matches_reference_hot_exact_only() -> None:
-    carrier = EventCodedAccLiveState(
+    carrier = EventCodedAccLiveState.with_hot_exact(
         logical_numel=256,
         demotion_band=1,
         hot_exact={3: 5, 17: -4},
@@ -158,7 +159,7 @@ def test_build_sparse_matches_reference_hot_exact_only() -> None:
 
 
 def test_build_sparse_matches_reference_hot_exact_plus_sparse_vote() -> None:
-    carrier = EventCodedAccLiveState(
+    carrier = EventCodedAccLiveState.with_hot_exact(
         logical_numel=256,
         demotion_band=1,
         hot_exact={3: 5},
@@ -173,7 +174,7 @@ def test_build_sparse_matches_reference_sparse_and_dense() -> None:
     spec = _vote_spec()
     for numel in (64, 1024, 8192):
         q = torch.zeros(numel, dtype=torch.int8)
-        carrier = EventCodedAccLiveState(
+        carrier = EventCodedAccLiveState.with_hot_exact(
             logical_numel=numel,
             demotion_band=1,
             hot_exact={1: 3, numel // 2: -8},
@@ -188,7 +189,7 @@ def test_build_sparse_matches_reference_sparse_and_dense() -> None:
 
 
 def test_active_lane_index_tensor_matches_set_semantics() -> None:
-    carrier = EventCodedAccLiveState(
+    carrier = EventCodedAccLiveState.with_hot_exact(
         logical_numel=128,
         demotion_band=1,
         hot_exact={4: 1, 9: 2},
@@ -213,7 +214,7 @@ def test_sparse_vote_inputs_uses_nonzero_only() -> None:
 def test_build_within_tie_band_pre_accumulator_matches_carrier_authority() -> None:
     numel = 64
     q = torch.zeros((8, 8), dtype=torch.int8)
-    carrier = EventCodedAccLiveState(
+    carrier = EventCodedAccLiveState.with_hot_exact(
         logical_numel=numel,
         demotion_band=1,
         hot_exact={5: 11, 17: -6},
@@ -373,3 +374,61 @@ def test_within_tie_band_full_path_preserves_candidate_count_semantics() -> None
     assert candidate_count > sampled_count
     assert sampled_count == 32
     assert bool(candidate_count > sampled_count)
+
+
+def _carrier_with_k_hot(numel: int, k_hot: int) -> EventCodedAccLiveState:
+    hot = {int(i): int((i % 17) - 8) for i in range(int(k_hot))}
+    return EventCodedAccLiveState.with_hot_exact(
+        logical_numel=int(numel),
+        demotion_band=3,
+        hot_exact=hot,
+    )
+
+
+def test_carrier_pre_accumulator_i32_flat_matches_hot_exact_reference() -> None:
+    numel = 1024
+    carrier = _carrier_with_k_hot(numel, 128)
+    via_accessor = carrier_pre_accumulator_i32_flat(carrier, numel)
+    reference = torch.full((numel,), int(carrier.cold_default), dtype=torch.int32)
+    if carrier.hot_exact:
+        hot_keys = torch.tensor(list(carrier.hot_exact.keys()), dtype=torch.int64)
+        hot_vals = torch.tensor(list(carrier.hot_exact.values()), dtype=torch.int32)
+        reference[hot_keys] = hot_vals
+    assert torch.equal(via_accessor, reference)
+
+
+@pytest.mark.parametrize("k_hot", (200_000, 500_000, 800_000))
+def test_build_sparse_matches_reference_at_representative_k_hot(k_hot: int) -> None:
+    numel = max(k_hot + 16, 1_048_576)
+    carrier = _carrier_with_k_hot(numel, k_hot)
+    votes = _votes_at_density(numel, density=0.667, seed=13)
+    q = torch.zeros(numel, dtype=torch.int8)
+    _assert_build_sparse_equivalent(carrier, q, votes, _vote_spec())
+
+
+@pytest.mark.slow
+def test_control_arm_replan_build_sparse_scale_smoke_32x800k() -> None:
+    numel = 1_048_576
+    k_hot = 800_000
+    state_numels = [numel] * 32
+    carrier = _carrier_with_k_hot(numel, k_hot)
+    votes = _votes_at_density(numel, density=0.667, seed=17)
+    q = torch.zeros(numel, dtype=torch.int8)
+    spec = _vote_spec()
+    start = time.perf_counter()
+    for _ in range(32):
+        build_sparse_new_acc_i32_from_carrier(
+            carrier,
+            q,
+            votes,
+            spec,
+            observation=None,
+        )
+    elapsed = time.perf_counter() - start
+    print(
+        "control_arm_build_sparse_scale_smoke "
+        f"elapsed={elapsed:.2f}s k_hot={k_hot} "
+        f"state_numels={state_numels} aggregate_states=32"
+    )
+    assert state_numels == [1_048_576] * 32
+    assert elapsed < 30.0, f"32x build_sparse @ K=800k took {elapsed:.2f}s"

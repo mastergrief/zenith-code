@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
+import torch
 
 from calm.hrm_text_158.native_full_stack.event_coded_acc_checkpoint_codec import (
     EventCodedAccEvent,
@@ -404,6 +405,20 @@ class EventCodedAccLiveState:
                 self._hot.values_array(),
             )
         return self._hot_packed_bytes_cache
+
+    def hot_lane_indices_tensor(self) -> torch.Tensor:
+        """Read-only packed hot lane indices (no dict/list round-trip)."""
+        idx = self._hot.indices_array()
+        if idx.size == 0:
+            return torch.empty(0, dtype=torch.int64)
+        return torch.from_numpy(np.ascontiguousarray(idx, dtype=np.int64))
+
+    def hot_lane_values_tensor(self) -> torch.Tensor:
+        """Read-only packed hot lane values aligned to hot_lane_indices_tensor()."""
+        val = self._hot.values_array()
+        if val.size == 0:
+            return torch.empty(0, dtype=torch.int32)
+        return torch.from_numpy(np.ascontiguousarray(val, dtype=np.int32))
 
     @classmethod
     def with_hot_exact(

@@ -250,14 +250,43 @@ def hydrate_event_coded_live_carrier_from_packed(
     )
 
 
+def _hot_indices_int64_tensor(carrier: EventCodedAccLiveState) -> torch.Tensor:
+    return carrier.hot_lane_indices_tensor()
+
+
+def pre_accumulator_i32_for_indices(
+    carrier: EventCodedAccLiveState,
+    indices: torch.Tensor,
+) -> torch.Tensor:
+    if indices.numel() == 0:
+        return torch.empty(0, dtype=torch.int32)
+    idx_np = indices.detach().cpu().numpy().astype(np.int64, copy=False)
+    hot_idx_t = carrier.hot_lane_indices_tensor()
+    hot_val_t = carrier.hot_lane_values_tensor()
+    cold = int(carrier.cold_default)
+    if hot_idx_t.numel() == 0:
+        return torch.full((int(idx_np.size),), cold, dtype=torch.int32)
+    hot_idx = hot_idx_t.detach().cpu().numpy().astype(np.int64, copy=False)
+    hot_val = hot_val_t.detach().cpu().numpy().astype(np.int32, copy=False)
+    pos = np.searchsorted(hot_idx, idx_np)
+    in_bounds = pos < hot_idx.size
+    matched = np.zeros(idx_np.shape[0], dtype=bool)
+    if in_bounds.any():
+        matched[in_bounds] = hot_idx[pos[in_bounds]] == idx_np[in_bounds]
+    out = np.full(idx_np.shape[0], cold, dtype=np.int32)
+    if matched.any():
+        out[matched] = hot_val[pos[matched]]
+    return torch.from_numpy(out)
+
+
 def carrier_pre_accumulator_i32_flat(
     carrier: EventCodedAccLiveState,
     numel: int,
 ) -> torch.Tensor:
     pre_full = torch.full((int(numel),), int(carrier.cold_default), dtype=torch.int32)
-    if carrier.hot_exact:
-        hot_keys = torch.tensor(list(carrier.hot_exact.keys()), dtype=torch.int64)
-        hot_vals = torch.tensor(list(carrier.hot_exact.values()), dtype=torch.int32)
+    hot_keys = carrier.hot_lane_indices_tensor()
+    hot_vals = carrier.hot_lane_values_tensor()
+    if hot_keys.numel() > 0:
         pre_full[hot_keys] = hot_vals
     return pre_full
 
@@ -268,9 +297,9 @@ def _active_lane_index_tensor(
 ) -> torch.Tensor:
     vote_flat = votes.detach().cpu().flatten()
     vote_nz = torch.nonzero(vote_flat != 0, as_tuple=False).flatten().to(torch.int64)
-    if not carrier.hot_exact:
+    hot_idx = carrier.hot_lane_indices_tensor()
+    if hot_idx.numel() == 0:
         return vote_nz
-    hot_idx = torch.tensor(list(carrier.hot_exact.keys()), dtype=torch.int64)
     if vote_nz.numel() == 0:
         return hot_idx
     return torch.unique(torch.cat([hot_idx, vote_nz]))
@@ -331,8 +360,7 @@ def build_sparse_new_acc_i32_from_carrier(
         return new_acc.view_as(q_levels)
 
     vote_flat = votes.detach().cpu().flatten().to(torch.int32)
-    pre_full = carrier_pre_accumulator_i32_flat(carrier, numel)
-    pre_active = pre_full[active_idx]
+    pre_active = pre_accumulator_i32_for_indices(carrier, active_idx)
     vote_active = vote_flat[active_idx]
 
     eff_min, eff_max = effective_clip_bounds(
