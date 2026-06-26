@@ -215,18 +215,12 @@ def assert_c8_runtime_guards(
     observation: C8StepObservation,
     persistent_dense_accumulator_materialized_numel: int,
 ) -> None:
-    stats = c8_runtime_guard_stats(
-        carrier,
-        observation=observation,
-        persistent_dense_accumulator_materialized_numel=int(
-            persistent_dense_accumulator_materialized_numel
-        ),
-    )
-    if int(stats[C8_DENSE_ACCUMULATOR_MATERIALIZED_NUMEL_KEY]) != 0:
+    del carrier  # assert path checks authority flags only; content sha is site #3 stats.
+    if int(persistent_dense_accumulator_materialized_numel) != 0:
         raise ValueError(
             "C8 guard failed: dense persistent accumulator authority must be 0 on V4-LIVE path"
         )
-    if bool(stats[C8_VOTE_UPDATE_PREPLAN_TRITON_INVOKED_KEY]):
+    if bool(observation.vote_update_preplan_triton_invoked):
         raise ValueError("C8 guard failed: Triton preplan forbidden on V4-LIVE path")
 
 
