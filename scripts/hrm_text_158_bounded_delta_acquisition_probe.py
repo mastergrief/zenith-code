@@ -228,6 +228,7 @@ from calm.hrm_text_158.native_full_stack.s3bb_headroom_telemetry import (
     SNAPSHOT_MODE_AGGREGATE_ONLY,
     SNAPSHOT_MODE_FULL,
     attach_s3bb_headroom_telemetry_to_step_report,
+    initialize_headroom_wiring_sidecar_for_probe_session,
     run_vote_materialization_with_s3bb_boundary_catch,
 )
 from calm.hrm_text_158.native_full_stack.vote_update_emit_routing import (
@@ -6476,6 +6477,8 @@ def run_c2p1_probe(
     headroom_wiring_sidecar_path = (
         scratch_root / HEADROOM_WIRING_SIDECAR_FILENAME if slim_receipt_emit else None
     )
+    if headroom_wiring_sidecar_path is not None:
+        initialize_headroom_wiring_sidecar_for_probe_session(headroom_wiring_sidecar_path)
     r7_cap_defer_pressure_sidecar_path = (
         scratch_root / R7_SIDECAR_FILENAME
         if bool(r7_cap_defer_pressure_instrumentation_enabled)

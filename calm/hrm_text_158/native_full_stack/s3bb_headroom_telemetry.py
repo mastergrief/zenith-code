@@ -254,6 +254,22 @@ def append_headroom_wiring_sidecar_chunk(
         handle.write("\n")
 
 
+def initialize_headroom_wiring_sidecar_for_probe_session(
+    sidecar_path: Path | str,
+) -> Path:
+    """Truncate any prior slim sidecar so each probe invocation starts fresh.
+
+    Retry onto an existing scratch_root must not append duplicate (step,state_key)
+    rows from a prior partial session.
+    """
+
+    path = Path(sidecar_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        path.unlink()
+    return path
+
+
 def headroom_telemetry_emit_enabled(phase: str) -> bool:
     """True when the phase should emit headroom telemetry / wiring sidecar chunks."""
 
