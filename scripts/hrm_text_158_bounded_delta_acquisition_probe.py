@@ -209,6 +209,10 @@ from calm.hrm_text_158.native_full_stack.two_tier_transient_selection import (
     LOCAL_SELECTION_ORDER_TRANSIENT_LOCAL_LOSS_DELTA,
     crossing_eligible_flat_indices,
 )
+from calm.hrm_text_158.native_full_stack.receipt_compactness_guard import (
+    compact_probe_receipt_for_banking,
+    validate_bankable_probe_receipt,
+)
 from calm.hrm_text_158.native_full_stack.s3bb_headroom_telemetry import (
     HEADROOM_WIRING_SIDECAR_FILENAME,
     HEADROOM_WIRING_SIDECAR_SCHEMA_VERSION,
@@ -7298,6 +7302,14 @@ def run_c2p1_probe(
     )
     with phase_progress.phase("receipt_write", path=str(receipt_path)):
         receipt["phase_telemetry"] = phase_progress.to_dict()
+        if not slim_receipt_emit:
+            compact_probe_receipt_for_banking(receipt)
+            compactness_failures = validate_bankable_probe_receipt(receipt)
+            if compactness_failures:
+                raise RuntimeError(
+                    "probe receipt failed bankable compactness guard: "
+                    + "; ".join(compactness_failures)
+                )
         if slim_receipt_emit:
             receipt_text = json.dumps(receipt, separators=(",", ":"), sort_keys=True)
         else:

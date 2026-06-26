@@ -1,0 +1,117 @@
+{
+  "banking_note": "Raw phase_a/receipt.json is runtime-only and non-bankable due to inline tier-A index arrays in step_reports; this manifest is the committable evidence surface.",
+  "classification": "B_CLEAN_DIAGNOSTIC+V4_EVENT_CODED_DRAIN_NOT_REDUCIBLE",
+  "dynamics": {
+    "baseline_run_id": "2189e72003",
+    "emit_sample_count": 20,
+    "final_step_update_seconds": 269.49514775900025,
+    "step_count": 20,
+    "step_update_duration_seconds_by_step": {
+      "1": 77.625,
+      "10": 162.648,
+      "11": 179.771,
+      "12": 196.04,
+      "13": 193.644,
+      "14": 206.404,
+      "15": 214.005,
+      "16": 215.806,
+      "17": 227.298,
+      "18": 228.544,
+      "19": 241.252,
+      "2": 103.614,
+      "20": 269.495,
+      "3": 98.399,
+      "4": 103.181,
+      "5": 121.22,
+      "6": 127.453,
+      "7": 139.92,
+      "8": 145.063,
+      "9": 158.456
+    },
+    "step_update_ratio_vs_baseline_by_matched_step": {
+      "1": 1.1381,
+      "10": 0.8828,
+      "11": 0.9068,
+      "12": 0.9614,
+      "13": 0.912,
+      "14": 0.8573,
+      "15": 0.8878,
+      "16": 0.8789,
+      "17": 0.8639,
+      "18": 0.8676,
+      "2": 1.0649,
+      "3": 1.0165,
+      "4": 1.0037,
+      "5": 1.0416,
+      "6": 0.9674,
+      "7": 0.9531,
+      "8": 0.9277,
+      "9": 0.9027
+    }
+  },
+  "provenance": {
+    "exit_code": 0,
+    "head_commit": "9bcc0086da38d2999e2289c752e456f8f44b5a3c",
+    "launcher_done_marker_present": true,
+    "packet_sha": "936460b7c49b1c32c4cce14fc7345cbe6a99d2705fd5c48c95e3847effacd8a0",
+    "parent_hash_after": "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec",
+    "parent_hash_before": "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec",
+    "parent_hash_unchanged": true,
+    "run_id": "2189e72004",
+    "run_root": "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72004"
+  },
+  "r4v_persistent_ledger": {
+    "content_sha256": "dc8e1890087731982553e3c82171466dbace117d085819f74e057713cb39f761",
+    "eligible_module_count": 32,
+    "eligible_weight_count": 29360128,
+    "enabled": true,
+    "event_payload_count": 32,
+    "label": "r4v_event_coded_acc_checkpoint_ledger",
+    "ledger_pass": false,
+    "per_module_acc_rows_summary": {
+      "backlog_payload_bytes": {
+        "max": 0,
+        "min": 0,
+        "sum": 0
+      },
+      "count": 32,
+      "events_payload_bytes": {
+        "max": 10743901,
+        "min": 1723268,
+        "sum": 197387970
+      },
+      "hot_exact_payload_bytes": {
+        "max": 6265242,
+        "min": 963136,
+        "sum": 114932199
+      }
+    },
+    "persistent_accumulator_event_coded_live": true,
+    "q_state_count": 32,
+    "r4v_acc_inclusive_physical_bits_per_weight": 85.10070174080985,
+    "r4v_acc_physical_bits_per_weight": 85.10049247741699,
+    "r4v_actual_acc_metadata_bytes": 768,
+    "r4v_actual_backlog_payload_bytes": 0,
+    "r4v_actual_events_payload_bytes": 197387970,
+    "r4v_actual_hot_exact_payload_bytes": 114932199,
+    "r4v_event_payload_content_sha256": "dc8e1890087731982553e3c82171466dbace117d085819f74e057713cb39f761",
+    "r4v_ledger_pass": false,
+    "receipt_statement": "R4v event-coded acc checkpoint ledger: acc-term measured from actual saved event/backlog/hot_exact bytes plus metadata; q-pack and scale reported separately.",
+    "schema_version": "hrm_text_158_persistent_state_budget/v0.r4v_event_coded_acc"
+  },
+  "schema": "hrm_text_158_v4_phase_a_evidence_manifest/v0",
+  "source_artifacts": {
+    "extraction_method": "ijson_stream + stdout_line_scan (no whole-file load)",
+    "receipt_json_bytes": 4022089428,
+    "receipt_json_sha256": "4c1e08b5f98b1f8ac3119920ddfd147ca47bfa2b7a6e26954a68e9b5dd2d9793",
+    "votes_emit_manifest_sha256": "6122304405fcc0bae08896bf34cc3f8fbb2564b0a4682d2f4e4bac0af38ce6a9"
+  },
+  "terminal_status": {
+    "classification_source": "receipt_fields+wrapper_rc+stdout_phase_end",
+    "planned_return_code": 0,
+    "producer_clean_completion": true,
+    "steps_completed": 20,
+    "steps_requested": 20,
+    "stop_reason": "max_steps_completed"
+  }
+}
