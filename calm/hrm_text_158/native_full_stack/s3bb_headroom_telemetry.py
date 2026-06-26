@@ -19,6 +19,13 @@ from calm.hrm_text_158.native_full_stack.two_tier_carry_reducers import (
 )
 
 S3BB_W6_HEADROOM_DIAGNOSTIC_PHASE = "s3bb-w6-headroom-diagnostic"
+W7_DENSE_ACC_IN_VIVO_CONFIRMATION_PHASE = "w7-dense-acc-in-vivo-confirmation"
+_HEADROOM_TELEMETRY_EMIT_PHASES = frozenset(
+    {
+        S3BB_W6_HEADROOM_DIAGNOSTIC_PHASE,
+        W7_DENSE_ACC_IN_VIVO_CONFIRMATION_PHASE,
+    }
+)
 HEADROOM_TELEMETRY_SCHEMA_VERSION = "hrm_text_158_s3bb_headroom_telemetry/v0"
 W6_HEADROOM_K_DEFAULT = 2
 
@@ -246,6 +253,12 @@ def append_headroom_wiring_sidecar_chunk(
         handle.write("\n")
 
 
+def headroom_telemetry_emit_enabled(phase: str) -> bool:
+    """True when the phase should emit headroom telemetry / wiring sidecar chunks."""
+
+    return str(phase) in _HEADROOM_TELEMETRY_EMIT_PHASES
+
+
 def attach_s3bb_headroom_telemetry_to_step_report(
     step_report: dict[str, Any],
     *,
@@ -255,9 +268,9 @@ def attach_s3bb_headroom_telemetry_to_step_report(
     headroom_wiring_sidecar_path: Path | None = None,
     step: int | None = None,
 ) -> dict[str, Any]:
-    """Phase-gated hook: append headroom_telemetry only for S3bb diagnostic phase."""
+    """Phase-gated hook: append headroom_telemetry for allowed diagnostic phases."""
 
-    if str(phase) != S3BB_W6_HEADROOM_DIAGNOSTIC_PHASE:
+    if not headroom_telemetry_emit_enabled(phase):
         return step_report
     step_report["headroom_telemetry"] = aggregate_headroom_telemetry_for_tensor_states(
         post_update_states,
