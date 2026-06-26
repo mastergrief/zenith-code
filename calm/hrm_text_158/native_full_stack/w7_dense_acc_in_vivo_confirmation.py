@@ -37,6 +37,23 @@ CLASSIFIER_W7_IN_VIVO_CONFIRMED = "W7_IN_VIVO_CONFIRMED"
 CLASSIFIER_LIVE_FLOOR_MUCH_BELOW_W7 = "LIVE_FLOOR_MUCH_BELOW_W7"
 CLASSIFIER_ENVELOPE_UNDER_PRESSED = "ENVELOPE_UNDER_PRESSED"
 
+S3BB_PARITY_OK_PRIMARIES: frozenset[str] = frozenset(
+    {
+        "DECISION_PARITY_OK",
+        "W6_HEADROOM_SUFFICIENT_PARITY_OK",
+        "W5_DECISION_PARITY_OK",
+        "PARITY_OK",
+    }
+)
+S3BB_SCIENCE_PARITY_BREAK_PRIMARIES: frozenset[str] = frozenset(
+    {
+        "DECISION_MISMATCH",
+        "FLIP_EQUIVALENT_DYNAMICS_DRIFT",
+    }
+)
+S3BB_HARNESS_HEALTH_PRIMARIES: frozenset[str] = frozenset({"HARNESS_OR_LIVENESS_FAIL"})
+S3BB_DOMAIN_HEALTH_PRIMARIES: frozenset[str] = frozenset({"DOMAIN_OR_HEADROOM_FAIL"})
+
 CLASSIFIER_PRECEDENCE: tuple[str, ...] = (
     CLASSIFIER_RUN_HEALTH_FAIL,
     CLASSIFIER_OBSERVER_TOO_EXPENSIVE,
@@ -224,6 +241,92 @@ def live_reachable_peak_estimate(*, threshold_abs: int, max_vote_abs_observed: i
     return int(threshold_abs) - 1 + int(max_vote_abs_observed)
 
 
+def derive_w7_parity_inputs(
+    s3bb_primary: str,
+    s3bb_stats: Mapping[str, Any],
+    sidecar_coverage: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Map S3BB decision-parity stats to W7 structural/parity bridge inputs."""
+
+    coverage = dict(sidecar_coverage)
+    if coverage.get("structural_fail"):
+        return {
+            "structural_fail": True,
+            "structural_reason": str(
+                coverage.get("structural_reason") or "sidecar_structural_coverage_fail"
+            ),
+            "parity_break": False,
+            "parity_break_driving_keys": [],
+            "sidecar_coverage_diagnostics": coverage,
+            "s3bb_primary_classifier": str(s3bb_primary),
+        }
+
+    primary = str(s3bb_primary)
+    if primary in S3BB_HARNESS_HEALTH_PRIMARIES:
+        return {
+            "structural_fail": True,
+            "structural_reason": "s3bb_harness_or_liveness_fail",
+            "parity_break": False,
+            "parity_break_driving_keys": [],
+            "sidecar_coverage_diagnostics": coverage,
+            "s3bb_primary_classifier": primary,
+        }
+    if primary in S3BB_DOMAIN_HEALTH_PRIMARIES:
+        return {
+            "structural_fail": True,
+            "structural_reason": "s3bb_domain_or_headroom_fail",
+            "parity_break": False,
+            "parity_break_driving_keys": [],
+            "sidecar_coverage_diagnostics": coverage,
+            "s3bb_primary_classifier": primary,
+        }
+    if (
+        primary not in S3BB_PARITY_OK_PRIMARIES
+        and primary not in S3BB_SCIENCE_PARITY_BREAK_PRIMARIES
+    ):
+        return {
+            "structural_fail": True,
+            "structural_reason": "s3bb_unenumerated_primary_fail",
+            "parity_break": False,
+            "parity_break_driving_keys": [],
+            "sidecar_coverage_diagnostics": coverage,
+            "s3bb_primary_classifier": primary,
+        }
+
+    driving_keys: list[str] = []
+    if primary in S3BB_SCIENCE_PARITY_BREAK_PRIMARIES:
+        driving_keys.append(f"s3bb_primary:{primary}")
+
+    crossing = s3bb_stats.get("crossing_parity") or {}
+    if int(crossing.get("per_step_crossing_bool_disagreement_count") or 0) > 0:
+        driving_keys.append("per_step_crossing_bool_disagreement_count")
+
+    applied = s3bb_stats.get("applied_mask_parity") or {}
+    if int(applied.get("applied_mask_mismatch_count") or 0) > 0:
+        driving_keys.append("applied_mask_mismatch_count")
+
+    q_traj = s3bb_stats.get("q_trajectory_parity") or {}
+    if int(q_traj.get("q_sha256_after_mismatch_count") or 0) > 0:
+        driving_keys.append("q_sha256_after_mismatch_count")
+    if q_traj.get("q_changed_count_mismatch_steps"):
+        driving_keys.append("q_changed_count_mismatch_steps")
+    if bool(q_traj.get("steps_completed_mismatch")):
+        driving_keys.append("steps_completed_mismatch")
+    if bool(q_traj.get("stop_reason_mismatch")):
+        driving_keys.append("stop_reason_mismatch")
+    if bool(q_traj.get("final_metrics_mismatch")):
+        driving_keys.append("final_metrics_mismatch")
+
+    return {
+        "structural_fail": False,
+        "structural_reason": None,
+        "parity_break": bool(driving_keys),
+        "parity_break_driving_keys": driving_keys,
+        "sidecar_coverage_diagnostics": coverage,
+        "s3bb_primary_classifier": str(s3bb_primary),
+    }
+
+
 def classify_w7_in_vivo_dual_arm(
     *,
     oracle_receipt: Mapping[str, Any],
@@ -232,9 +335,13 @@ def classify_w7_in_vivo_dual_arm(
     observer_too_expensive: bool = False,
     harness_failures: Sequence[str] = (),
     parity_break: bool = False,
+    structural_fail: bool = False,
+    structural_reason: str | None = None,
     confirmed_vote_acc_floor_width: int | None = None,
 ) -> dict[str, Any]:
     failures = list(harness_failures)
+    if structural_fail:
+        failures.append(str(structural_reason or "sidecar_structural_coverage_fail"))
     if envelope is None:
         failures.append("missing_confirmation_envelope")
     elif str(oracle_receipt.get("envelope_id") or "") != envelope.envelope_id:
@@ -256,6 +363,8 @@ def classify_w7_in_vivo_dual_arm(
             treatment_receipt=treatment_receipt,
             failures=failures,
             confirmed_vote_acc_floor_width=confirmed_vote_acc_floor_width,
+            structural_fail=structural_fail,
+            structural_reason=structural_reason,
             oracle_pressure=oracle_pressure,
             treatment_pressure=treatment_pressure,
         )
@@ -268,6 +377,8 @@ def classify_w7_in_vivo_dual_arm(
             treatment_receipt=treatment_receipt,
             failures=[],
             confirmed_vote_acc_floor_width=confirmed_vote_acc_floor_width,
+            structural_fail=structural_fail,
+            structural_reason=structural_reason,
             oracle_pressure=oracle_pressure,
             treatment_pressure=treatment_pressure,
         )
@@ -307,6 +418,8 @@ def classify_w7_in_vivo_dual_arm(
         live_reachable_peak_estimate=peak_obs,
         confirmed_vote_acc_floor_width=confirmed_vote_acc_floor_width,
         parity_break=parity_break,
+        structural_fail=structural_fail,
+        structural_reason=structural_reason,
         oracle_pressure=oracle_pressure,
         treatment_pressure=treatment_pressure,
     )
@@ -323,6 +436,8 @@ def _classifier_payload(
     live_reachable_peak_estimate: int | None = None,
     confirmed_vote_acc_floor_width: int | None = None,
     parity_break: bool = False,
+    structural_fail: bool = False,
+    structural_reason: str | None = None,
     oracle_pressure: ObservedVotePressure | None = None,
     treatment_pressure: ObservedVotePressure | None = None,
 ) -> dict[str, Any]:
@@ -396,6 +511,8 @@ def _classifier_payload(
         "native_loop_injection_confirmation": NATIVE_LOOP_INJECTION_CONFIRMATION_PENDING,
         "rules_promotion_unlock_predicate": bool(rules_promotion_unlock_predicate),
         "parity_break": bool(parity_break),
+        "structural_fail": bool(structural_fail),
+        "structural_reason": structural_reason,
         "harness_failures": list(failures),
         "dry_run_peak_reference": dry_run_rank_vote_peak_reachable(threshold_abs=1),
         "wired_envelope_peak_reference": (

@@ -16,6 +16,8 @@ from calm.hrm_text_158.native_full_stack.s3bb_headroom_telemetry import (
     _treatment_headroom_breach,
     compare_arm_wiring_guards,
     crossing_bool_w6,
+    diagnose_sidecar_coverage,
+    resolve_headroom_wiring_sidecar_path,
 )
 
 CLASSIFIER_DOMAIN_OR_HEADROOM_FAIL = "DOMAIN_OR_HEADROOM_FAIL"
@@ -74,49 +76,68 @@ def _compare_crossing_with_own_q(
     treatment_receipt: Mapping[str, Any],
     *,
     threshold_abs: int = DEFAULT_CROSSING_THRESHOLD_ABS,
+    sidecar_coverage: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     from calm.hrm_text_158.native_full_stack.s3bb_headroom_telemetry import (
-        _iter_sidecar_records,
-        _sidecar_record_key,
-        resolve_headroom_wiring_sidecar_path,
+        _index_sidecar_file,
     )
 
     oracle_path = resolve_headroom_wiring_sidecar_path(oracle_receipt)
     treatment_path = resolve_headroom_wiring_sidecar_path(treatment_receipt)
     if oracle_path is None or treatment_path is None:
-        raise ValueError("decision-parity crossing compare requires both wiring sidecars")
+        return {
+            "per_step_crossing_bool_disagreement_count": 0,
+            "total_lane_count": 0,
+            "crossing_q_policy": CROSSING_Q_POLICY,
+            "measured_step_count": 0,
+            "sidecar_missing": True,
+        }
 
     measured = _shared_measured_step_ids(oracle_receipt, treatment_receipt)
+    if sidecar_coverage is None:
+        sidecar_coverage = diagnose_sidecar_coverage(oracle_path, treatment_path)
+    else:
+        sidecar_coverage = dict(sidecar_coverage)
+    if sidecar_coverage.get("structural_fail"):
+        return {
+            "per_step_crossing_bool_disagreement_count": 0,
+            "total_lane_count": 0,
+            "crossing_q_policy": CROSSING_Q_POLICY,
+            "measured_step_count": int(len(measured)),
+            "sidecar_coverage_diagnostics": sidecar_coverage,
+            "structural_compare_skipped": True,
+        }
+
+    oracle_keyed, _, _ = _index_sidecar_file(oracle_path)
+    treatment_keyed, _, _ = _index_sidecar_file(treatment_path)
+    shared_keys = sorted(set(oracle_keyed).intersection(treatment_keyed))
+
     crossing_disagreements = 0
     total_lanes = 0
 
-    oracle_iter = _iter_sidecar_records(oracle_path)
-    treatment_iter = _iter_sidecar_records(treatment_path)
-    oracle_record = next(oracle_iter, None)
-    treatment_record = next(treatment_iter, None)
-    while oracle_record is not None or treatment_record is not None:
-        if oracle_record is None or treatment_record is None:
-            raise ValueError("oracle and treatment sidecar record counts differ")
-        step_id, _ = _sidecar_record_key(oracle_record)
-        if int(step_id) > WARMUP_STEPS:
-            o_vals = [int(v) for v in oracle_record["accumulator_lanes"]]
-            t_vals = [int(v) for v in treatment_record["accumulator_lanes"]]
-            o_q = [int(v) for v in oracle_record["q_lanes"]]
-            t_q = [int(v) for v in treatment_record["q_lanes"]]
-            for o_val, t_val, o_qv, t_qv in zip(o_vals, t_vals, o_q, t_q, strict=True):
-                total_lanes += 1
-                o_cross = crossing_bool_w6(int(o_val), int(o_qv), threshold_abs=int(threshold_abs))
-                t_cross = crossing_bool_w6(int(t_val), int(t_qv), threshold_abs=int(threshold_abs))
-                if o_cross != t_cross:
-                    crossing_disagreements += 1
-        oracle_record = next(oracle_iter, None)
-        treatment_record = next(treatment_iter, None)
+    for key in shared_keys:
+        step_id, _ = key
+        if int(step_id) <= WARMUP_STEPS:
+            continue
+        oracle_record = oracle_keyed[key]
+        treatment_record = treatment_keyed[key]
+        o_vals = [int(v) for v in oracle_record["accumulator_lanes"]]
+        t_vals = [int(v) for v in treatment_record["accumulator_lanes"]]
+        o_q = [int(v) for v in oracle_record["q_lanes"]]
+        t_q = [int(v) for v in treatment_record["q_lanes"]]
+        for o_val, t_val, o_qv, t_qv in zip(o_vals, t_vals, o_q, t_q, strict=True):
+            total_lanes += 1
+            o_cross = crossing_bool_w6(int(o_val), int(o_qv), threshold_abs=int(threshold_abs))
+            t_cross = crossing_bool_w6(int(t_val), int(t_qv), threshold_abs=int(threshold_abs))
+            if o_cross != t_cross:
+                crossing_disagreements += 1
 
     return {
         "per_step_crossing_bool_disagreement_count": int(crossing_disagreements),
         "total_lane_count": int(total_lanes),
         "crossing_q_policy": CROSSING_Q_POLICY,
         "measured_step_count": int(len(measured)),
+        "sidecar_coverage_diagnostics": sidecar_coverage,
     }
 
 
@@ -389,9 +410,50 @@ def classify_s3bb_decision_parity_run(
     failures = list(dict.fromkeys(harness_failures or ()))
     coverage_failures, coverage_stats = audit_observable_coverage(oracle_receipt, treatment_receipt)
     failures.extend(coverage_failures)
+    oracle_path = resolve_headroom_wiring_sidecar_path(oracle_receipt)
+    treatment_path = resolve_headroom_wiring_sidecar_path(treatment_receipt)
+    if oracle_path is None or treatment_path is None:
+        sidecar_coverage = {
+            "structural_fail": True,
+            "structural_reason": "missing_sidecar_paths",
+            "structural_reasons": ["missing_sidecar_paths"],
+        }
+    else:
+        sidecar_coverage = diagnose_sidecar_coverage(oracle_path, treatment_path)
+    if sidecar_coverage.get("structural_fail"):
+        failures.append(
+            str(sidecar_coverage.get("structural_reason") or "sidecar_structural_coverage_fail")
+        )
     failures = list(dict.fromkeys(failures))
-    bit_equality_diagnostics = compare_arm_wiring_guards(oracle_receipt, treatment_receipt)
-    crossing_stats = _compare_crossing_with_own_q(oracle_receipt, treatment_receipt)
+    measured_step_count = int(len(_shared_measured_step_ids(oracle_receipt, treatment_receipt)))
+    if sidecar_coverage.get("structural_fail"):
+        bit_equality_diagnostics = {
+            "sidecar_coverage_diagnostics": sidecar_coverage,
+            "structural_compare_skipped": True,
+            "measured_step_count": measured_step_count,
+        }
+        crossing_stats = {
+            "per_step_crossing_bool_disagreement_count": 0,
+            "total_lane_count": 0,
+            "crossing_q_policy": CROSSING_Q_POLICY,
+            "measured_step_count": measured_step_count,
+            "sidecar_coverage_diagnostics": sidecar_coverage,
+            "structural_compare_skipped": True,
+        }
+    else:
+        bit_equality_diagnostics = compare_arm_wiring_guards(
+            oracle_receipt,
+            treatment_receipt,
+            sidecar_coverage=sidecar_coverage,
+        )
+        if "sidecar_coverage_diagnostics" not in bit_equality_diagnostics:
+            bit_equality_diagnostics = dict(bit_equality_diagnostics)
+            bit_equality_diagnostics["sidecar_coverage_diagnostics"] = sidecar_coverage
+        crossing_stats = _compare_crossing_with_own_q(
+            oracle_receipt,
+            treatment_receipt,
+            sidecar_coverage=sidecar_coverage,
+        )
     applied_mask_stats = compare_arm_applied_mask_parity(oracle_receipt, treatment_receipt)
     q_trajectory_stats = compare_arm_q_trajectory_parity(
         oracle_receipt,
@@ -400,6 +462,7 @@ def classify_s3bb_decision_parity_run(
     )
     decision_parity_stats = {
         "observable_coverage": coverage_stats,
+        "sidecar_coverage_diagnostics": sidecar_coverage,
         "bit_equality_diagnostics": bit_equality_diagnostics,
         "crossing_parity": crossing_stats,
         "applied_mask_parity": applied_mask_stats,

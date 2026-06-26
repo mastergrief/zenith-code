@@ -12,6 +12,7 @@ from calm.hrm_text_158.native_full_stack.s3bb_decision_parity import (
 )
 from calm.hrm_text_158.native_full_stack.w7_dense_acc_in_vivo_confirmation import (
     classify_w7_in_vivo_dual_arm,
+    derive_w7_parity_inputs,
     resolve_confirmation_envelope,
     verify_dual_arm_w7_configuration,
 )
@@ -41,15 +42,15 @@ def emit_w7_in_vivo_classifier_receipt(
     treatment_receipt = _load_arm_receipt(run_root, treatment_arm_dir)
     envelope_id = str(oracle_receipt.get("envelope_id") or "")
     envelope = resolve_confirmation_envelope(envelope_id or None)
-    parity_primary, parity = classify_s3bb_decision_parity_run(oracle_receipt, treatment_receipt)
-    parity_break = str(parity_primary) not in {
-        "W6_HEADROOM_SUFFICIENT_PARITY_OK",
-        "W5_DECISION_PARITY_OK",
-        "PARITY_OK",
-    } and bool(
-        parity.get("crossing_parity", {}).get("per_step_crossing_bool_disagreement_count", 0)
-        or parity.get("applied_mask_parity", {}).get("mismatch_count", 0)
-        or parity.get("q_trajectory_parity", {}).get("mismatch_count", 0)
+    parity_primary, parity_stats = classify_s3bb_decision_parity_run(
+        oracle_receipt,
+        treatment_receipt,
+    )
+    sidecar_coverage = parity_stats.get("sidecar_coverage_diagnostics") or {}
+    parity_inputs = derive_w7_parity_inputs(
+        parity_primary,
+        parity_stats,
+        sidecar_coverage,
     )
     floor_width, arm_failures = verify_dual_arm_w7_configuration(
         oracle_receipt=oracle_receipt,
@@ -61,14 +62,20 @@ def emit_w7_in_vivo_classifier_receipt(
         envelope=envelope,
         observer_too_expensive=observer_too_expensive,
         harness_failures=arm_failures,
-        parity_break=parity_break,
+        parity_break=bool(parity_inputs["parity_break"]),
+        structural_fail=bool(parity_inputs["structural_fail"]),
+        structural_reason=parity_inputs.get("structural_reason"),
         confirmed_vote_acc_floor_width=floor_width,
     )
     classifier["run_root"] = str(run_root)
     classifier["oracle_arm_dir"] = oracle_arm_dir
     classifier["treatment_arm_dir"] = treatment_arm_dir
     classifier["s3bb_parity_primary_classifier"] = parity_primary
-    classifier["s3bb_parity_receipt"] = parity
+    classifier["s3bb_parity_receipt"] = parity_stats
+    classifier["w7_parity_bridge"] = parity_inputs
+    classifier["sidecar_coverage_diagnostics"] = parity_inputs.get(
+        "sidecar_coverage_diagnostics"
+    )
     return classifier
 
 
@@ -88,7 +95,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     args.json_out.parent.mkdir(parents=True, exist_ok=True)
     args.json_out.write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
-    print(json.dumps({"output": str(args.json_out), "primary_classifier": receipt["primary_classifier"]}))
+    print(
+        json.dumps(
+            {
+                "output": str(args.json_out),
+                "primary_classifier": receipt["primary_classifier"],
+                "structural_fail": receipt.get("structural_fail"),
+                "parity_break": receipt.get("parity_break"),
+            }
+        )
+    )
     return 0
 
 

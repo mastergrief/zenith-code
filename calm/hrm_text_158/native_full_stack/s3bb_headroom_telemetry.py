@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Sequence
@@ -493,6 +494,131 @@ def _sidecar_record_key(record: Mapping[str, Any]) -> tuple[int, str]:
     return int(record["step"]), str(record["state_key"])
 
 
+_SIDECAR_KEY_TAIL_RE = re.compile(
+    r'"state_key"\s*:\s*"([^"]*)"\s*,\s*"step"\s*:\s*(\d+)\s*\}'
+)
+
+
+def _scan_sidecar_file_keys(
+    path: Path,
+) -> tuple[set[tuple[int, str]], list[tuple[int, str]], int]:
+    """Fast keyed coverage scan — lane arrays are not JSON-parsed."""
+
+    keyed: set[tuple[int, str]] = set()
+    duplicate_keys: list[tuple[int, str]] = []
+    row_count = 0
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            row_count += 1
+            match = _SIDECAR_KEY_TAIL_RE.search(stripped)
+            if match is None:
+                raise ValueError(
+                    f"sidecar record missing trailing state_key/step metadata at {path}:{line_number}"
+                )
+            key = (int(match.group(2)), str(match.group(1)))
+            if key in keyed:
+                duplicate_keys.append(key)
+            keyed.add(key)
+    return keyed, duplicate_keys, row_count
+
+
+def _index_sidecar_file(
+    path: Path,
+) -> tuple[dict[tuple[int, str], dict[str, Any]], list[tuple[int, str]], int]:
+    keyed: dict[tuple[int, str], dict[str, Any]] = {}
+    duplicate_keys: list[tuple[int, str]] = []
+    row_count = 0
+    for record in _iter_sidecar_records(path):
+        row_count += 1
+        key = _sidecar_record_key(record)
+        if key in keyed:
+            duplicate_keys.append(key)
+        keyed[key] = dict(record)
+    return keyed, duplicate_keys, row_count
+
+
+def diagnose_sidecar_coverage(
+    oracle_sidecar_path: Path | str,
+    treatment_sidecar_path: Path | str,
+) -> dict[str, Any]:
+    """Keyed sidecar coverage audit — structural failures never raise."""
+
+    oracle_path = Path(oracle_sidecar_path)
+    treatment_path = Path(treatment_sidecar_path)
+    if not oracle_path.is_file():
+        return {
+            "structural_fail": True,
+            "structural_reason": "missing_oracle_sidecar",
+            "structural_reasons": ["missing_oracle_sidecar"],
+            "oracle_row_count": 0,
+            "treatment_row_count": 0,
+        }
+    if not treatment_path.is_file():
+        return {
+            "structural_fail": True,
+            "structural_reason": "missing_treatment_sidecar",
+            "structural_reasons": ["missing_treatment_sidecar"],
+            "oracle_row_count": 0,
+            "treatment_row_count": 0,
+        }
+
+    oracle_keys, oracle_dups, oracle_rows = _scan_sidecar_file_keys(oracle_path)
+    treatment_keys, treatment_dups, treatment_rows = _scan_sidecar_file_keys(treatment_path)
+    oracle_only = sorted(oracle_keys - treatment_keys)
+    treatment_only = sorted(treatment_keys - oracle_keys)
+    shared_keys = oracle_keys & treatment_keys
+
+    per_step_oracle: dict[int, int] = {}
+    per_step_treatment: dict[int, int] = {}
+    for step_id, _state_key in oracle_keys:
+        per_step_oracle[int(step_id)] = per_step_oracle.get(int(step_id), 0) + 1
+    for step_id, _state_key in treatment_keys:
+        per_step_treatment[int(step_id)] = per_step_treatment.get(int(step_id), 0) + 1
+    per_step_skew_steps = sorted(
+        step_id
+        for step_id in set(per_step_oracle) | set(per_step_treatment)
+        if per_step_oracle.get(step_id, 0) != per_step_treatment.get(step_id, 0)
+    )
+
+    structural_reasons: list[str] = []
+    if oracle_dups:
+        structural_reasons.append("oracle_duplicate_keys")
+    if treatment_dups:
+        structural_reasons.append("treatment_duplicate_keys")
+    if oracle_only:
+        structural_reasons.append("oracle_only_keys")
+    if treatment_only:
+        structural_reasons.append("treatment_only_keys")
+    if per_step_skew_steps:
+        structural_reasons.append("per_step_count_skew")
+
+    return {
+        "structural_fail": bool(structural_reasons),
+        "structural_reason": "+".join(structural_reasons) if structural_reasons else None,
+        "structural_reasons": structural_reasons,
+        "oracle_row_count": int(oracle_rows),
+        "treatment_row_count": int(treatment_rows),
+        "oracle_duplicate_key_count": int(len(set(oracle_dups))),
+        "treatment_duplicate_key_count": int(len(set(treatment_dups))),
+        "oracle_duplicate_keys_sample": [
+            [int(step_id), str(state_key)] for step_id, state_key in sorted(set(oracle_dups))[:8]
+        ],
+        "treatment_duplicate_keys_sample": [
+            [int(step_id), str(state_key)] for step_id, state_key in sorted(set(treatment_dups))[:8]
+        ],
+        "oracle_only_keys_count": int(len(oracle_only)),
+        "treatment_only_keys_count": int(len(treatment_only)),
+        "symmetric_diff_key_count": int(len(oracle_only) + len(treatment_only)),
+        "shared_key_count": int(len(shared_keys)),
+        "per_step_oracle_counts": {str(k): int(v) for k, v in sorted(per_step_oracle.items())},
+        "per_step_treatment_counts": {str(k): int(v) for k, v in sorted(per_step_treatment.items())},
+        "per_step_count_skew_steps": [int(v) for v in per_step_skew_steps],
+    }
+
+
 def compare_arm_wiring_guards_streaming(
     oracle_receipt: Mapping[str, Any],
     treatment_receipt: Mapping[str, Any],
@@ -500,8 +626,9 @@ def compare_arm_wiring_guards_streaming(
     oracle_sidecar_path: Path | str,
     treatment_sidecar_path: Path | str,
     threshold_abs: int = DEFAULT_CROSSING_THRESHOLD_ABS,
+    sidecar_coverage: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Lockstep streaming wiring guards from chunked sidecars (no receipt hydration)."""
+    """Keyed streaming wiring guards from chunked sidecars (no receipt hydration)."""
 
     oracle_path = Path(oracle_sidecar_path)
     treatment_path = Path(treatment_sidecar_path)
@@ -512,53 +639,65 @@ def compare_arm_wiring_guards_streaming(
 
     measured = _shared_measured_step_ids(oracle_receipt, treatment_receipt)
     skip_steps = _wiring_guard_skip_steps(oracle_receipt, treatment_receipt)
+    if sidecar_coverage is None:
+        sidecar_coverage = diagnose_sidecar_coverage(oracle_path, treatment_path)
+    else:
+        sidecar_coverage = dict(sidecar_coverage)
+
+    if sidecar_coverage.get("structural_fail"):
+        stats = _finalize_wiring_guard_stats(
+            l1_max=0.0,
+            crossing_disagreements=0,
+            equal_lanes=0,
+            total_lanes=0,
+            measured_step_count=len(measured),
+        )
+        stats["sidecar_coverage_diagnostics"] = dict(sidecar_coverage)
+        stats["structural_compare_skipped"] = True
+        return stats
+
+    oracle_keyed, _, _ = _index_sidecar_file(oracle_path)
+    treatment_keyed, _, _ = _index_sidecar_file(treatment_path)
+    shared_keys = sorted(set(oracle_keyed).intersection(treatment_keyed))
 
     l1_max = 0.0
     crossing_disagreements = 0
     total_lanes = 0
     equal_lanes = 0
 
-    oracle_iter = _iter_sidecar_records(oracle_path)
-    treatment_iter = _iter_sidecar_records(treatment_path)
-    oracle_record = next(oracle_iter, None)
-    treatment_record = next(treatment_iter, None)
+    for key in shared_keys:
+        step_id, _state_key = key
+        if int(step_id) in skip_steps or int(step_id) <= WARMUP_STEPS:
+            continue
+        oracle_record = oracle_keyed[key]
+        treatment_record = treatment_keyed[key]
+        o_vals = [int(v) for v in oracle_record["accumulator_lanes"]]
+        t_vals = [int(v) for v in treatment_record["accumulator_lanes"]]
+        o_q = [int(v) for v in oracle_record["q_lanes"]]
+        t_q = [int(v) for v in treatment_record["q_lanes"]]
+        chunk_l1, chunk_cross, chunk_equal, chunk_total = _compare_lane_chunks(
+            o_vals,
+            t_vals,
+            o_q,
+            t_q,
+            threshold_abs=int(threshold_abs),
+        )
+        l1_max = max(l1_max, chunk_l1)
+        crossing_disagreements += chunk_cross
+        equal_lanes += chunk_equal
+        total_lanes += chunk_total
 
-    while oracle_record is not None or treatment_record is not None:
-        if oracle_record is None or treatment_record is None:
-            raise ValueError("oracle and treatment sidecar record counts differ")
-        oracle_key = _sidecar_record_key(oracle_record)
-        treatment_key = _sidecar_record_key(treatment_record)
-        if oracle_key != treatment_key:
-            raise ValueError(
-                f"sidecar key mismatch at lockstep compare: {oracle_key} vs {treatment_key}"
-            )
-        step_id, _state_key = oracle_key
-        if int(step_id) not in skip_steps and int(step_id) > WARMUP_STEPS:
-            o_vals = [int(v) for v in oracle_record["accumulator_lanes"]]
-            t_vals = [int(v) for v in treatment_record["accumulator_lanes"]]
-            o_q = [int(v) for v in oracle_record["q_lanes"]]
-            t_q = [int(v) for v in treatment_record["q_lanes"]]
-            chunk_l1, chunk_cross, chunk_equal, chunk_total = _compare_lane_chunks(
-                o_vals,
-                t_vals,
-                o_q,
-                t_q,
-                threshold_abs=int(threshold_abs),
-            )
-            l1_max = max(l1_max, chunk_l1)
-            crossing_disagreements += chunk_cross
-            equal_lanes += chunk_equal
-            total_lanes += chunk_total
-        oracle_record = next(oracle_iter, None)
-        treatment_record = next(treatment_iter, None)
-
-    return _finalize_wiring_guard_stats(
+    stats = _finalize_wiring_guard_stats(
         l1_max=l1_max,
         crossing_disagreements=crossing_disagreements,
         equal_lanes=equal_lanes,
         total_lanes=total_lanes,
         measured_step_count=len(measured),
     )
+    sidecar_coverage = dict(sidecar_coverage)
+    sidecar_coverage["matched_key_compared_lane_count"] = int(total_lanes)
+    stats["sidecar_coverage_diagnostics"] = sidecar_coverage
+    return stats
 
 
 def resolve_headroom_wiring_sidecar_path(
@@ -581,6 +720,7 @@ def compare_arm_wiring_guards(
     threshold_abs: int = DEFAULT_CROSSING_THRESHOLD_ABS,
     oracle_sidecar_path: Path | str | None = None,
     treatment_sidecar_path: Path | str | None = None,
+    sidecar_coverage: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Dispatch inline full-mode or streaming sidecar wiring guards."""
 
@@ -613,6 +753,7 @@ def compare_arm_wiring_guards(
         oracle_sidecar_path=oracle_path,
         treatment_sidecar_path=treatment_path,
         threshold_abs=int(threshold_abs),
+        sidecar_coverage=sidecar_coverage,
     )
 
 
