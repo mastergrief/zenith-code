@@ -27,7 +27,7 @@
     "schema_version": "hrm_text_158_carrier_growth_summary/v0",
     "placement": "{votes_emit_root}/v1/carrier_growth/per_step/{step:05d}.json",
     "optional_rollup": "{votes_emit_root}/v1/carrier_growth/per_step/{step:05d}_rollup.json",
-    "emit_gate": "votes_emit_enabled (same gate as existing observables)",
+    "emit_gate": "--carrier-growth-enabled (default-off; fail-closed requires votes_emit_enabled + votes_emit_root)",
     "summary_only_proof": "JSON contains scalars + fixed-bucket histograms only — zero raw flat_index arrays",
     "hard_cap_bytes_per_step": 10240,
     "q_externality": {
@@ -203,6 +203,28 @@
       "calm/llm_computer/tests/test_carrier_growth_production_wire_v0.py",
       "artifacts/consensus_prep/v4_live_phase_a_joint_drain_envelope_packet_v1_draft.json"
     ]
+  },
+  "phase_2_projector": {
+    "module": "calm/hrm_text_158/native_full_stack/carrier_envelope_projector.py",
+    "cli": "scripts/build_joint_drain_envelope_verdict.py",
+    "verdict_artifact": "artifacts/consensus_prep/v4_live_joint_drain_envelope_verdict_2189e72004.json",
+    "manifest_only_decisive_path": true,
+    "classification_basis": "NOT_REACHABLE under available parity evidence (manifest anchors + EVENT_FOLD_LOAD_SAFE + synthetic f=0)",
+    "real_pack_gate": "not_applicable when decisive NOT_REACHABLE on CPU",
+    "anti_overclaim": {
+      "forbidden_claims": [
+        "intrinsic-wide",
+        "closed-impossibility",
+        "cannot bridge 31 to 2 gap"
+      ],
+      "required_residual_fields": [
+        "flip_to_2p0_bpw_fraction_gt",
+        "flip_to_1p75_bpw_fraction_gt",
+        "synthetic_available_fraction",
+        "terminal_hot_band_parity_measured",
+        "terminal_hot_band_parity_note"
+      ]
+    }
   },
   "implementation_sequencing": [
     {

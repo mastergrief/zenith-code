@@ -1,0 +1,132 @@
+{
+  "band_sweep": {
+    "max_hot_reduction_fraction": 0.0,
+    "qualifying_bands": [
+      1,
+      2,
+      3
+    ],
+    "rows": [
+      {
+        "decisive_surface_drift_count": 0,
+        "demotion_band": 1,
+        "hot_exact_row_count_p95": 2.0,
+        "ledger_pass": true,
+        "parity_safe": true,
+        "r4v_acc_inclusive_physical_bits_per_weight": 0.25
+      },
+      {
+        "decisive_surface_drift_count": 0,
+        "demotion_band": 2,
+        "hot_exact_row_count_p95": 2.0,
+        "ledger_pass": true,
+        "parity_safe": true,
+        "r4v_acc_inclusive_physical_bits_per_weight": 0.25
+      },
+      {
+        "decisive_surface_drift_count": 0,
+        "demotion_band": 3,
+        "hot_exact_row_count_p95": 2.0,
+        "ledger_pass": true,
+        "parity_safe": true,
+        "r4v_acc_inclusive_physical_bits_per_weight": 0.25
+      },
+      {
+        "decisive_surface_drift_count": 6,
+        "demotion_band": 4,
+        "hot_exact_row_count_p95": 2.0,
+        "ledger_pass": true,
+        "parity_safe": false,
+        "r4v_acc_inclusive_physical_bits_per_weight": 0.25
+      },
+      {
+        "decisive_surface_drift_count": 6,
+        "demotion_band": 5,
+        "hot_exact_row_count_p95": 2.0,
+        "ledger_pass": true,
+        "parity_safe": false,
+        "r4v_acc_inclusive_physical_bits_per_weight": 0.25
+      },
+      {
+        "decisive_surface_drift_count": 12,
+        "demotion_band": 6,
+        "hot_exact_row_count_p95": 2.0,
+        "ledger_pass": true,
+        "parity_safe": false,
+        "r4v_acc_inclusive_physical_bits_per_weight": 0.25
+      }
+    ],
+    "source": "calm.hrm_text_158.native_full_stack.v4_live_band_sweep.run_band_sweep"
+  },
+  "classification": "JOINT_DRAIN_ENVELOPE_NOT_REACHABLE",
+  "classification_basis": "NOT_REACHABLE under available parity evidence: measured manifest hot floor after EVENT_FOLD_LOAD_SAFE event clear exceeds sub-2 budget; synthetic parity-safe hot reduction fraction is zero.",
+  "next_action": "Bank STRUCTURALLY_NOT_SUB2 envelope receipt; no GPU drain-screen; real-pack confirmation not_applicable under decisive NOT_REACHABLE.",
+  "optimistic_upper_bound": {
+    "backlog_bytes": 0,
+    "events_bytes": 0,
+    "gap_vs_sub2_budget_multiple": 15.658374105181013,
+    "hot_bytes": 114932199,
+    "inclusive_bpw": 31.316748210362025,
+    "metadata_bytes": 768,
+    "total_bytes": 114932967
+  },
+  "path": "B_STRUCTURALLY_NOT_SUB2",
+  "provenance": {
+    "head_commit": "a6ec875018a6128688082c8acbcf2478339b5f1b",
+    "manifest_path": "artifacts/consensus_prep/v4_live_phase_a_diagnostic_tier1_run_2189e72004_evidence_manifest.json",
+    "manifest_sha256": "9de7e6a6f69b7a916734bb72cb59ac4863a1c5bb460d02311f62865e200ece4d",
+    "packet_sha": "not_applicable",
+    "parent_hash": "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec"
+  },
+  "residual_hot_reduction": {
+    "flip_to_1p75_bpw_fraction_gt": 0.9441256666462982,
+    "flip_to_1p75_bpw_percent_gt": 94.41256666462982,
+    "flip_to_2p0_bpw_fraction_gt": 0.9361426644242663,
+    "flip_to_2p0_bpw_percent_gt": 93.61426644242663,
+    "strongest_leg": "Measured 31.32 bpw hot floor from manifest 2189e72004 after EVENT_FOLD_LOAD_SAFE full event clear.",
+    "synthetic_available_fraction": 0.0,
+    "terminal_hot_band_parity_measured": false,
+    "terminal_hot_band_parity_note": "Synthetic numel=1024 adversarial band sweep does not model the terminal ~115MB hot_exact geometry from run 2189e72004."
+  },
+  "schema_version": "hrm_text_158_joint_drain_envelope_verdict/v0",
+  "sub2_budget": {
+    "bpw_ceiling": 2.0,
+    "bytes": 7340032,
+    "reachable_threshold_bpw": 1.75,
+    "tolerance_bpw": 0.25
+  },
+  "terminal_anchors": {
+    "backlog_bytes": 0,
+    "eligible_weight_count": 29360128,
+    "events_bytes": 197387970,
+    "hot_bytes": 114932199,
+    "metadata_bytes": 768,
+    "run_id": "2189e72004",
+    "terminal_inclusive_bpw": 85.10070174080985
+  },
+  "transform_bpw": {
+    "V1_band_b": 85.10070174080985,
+    "V2_coalesce": {
+      "reason": "requires in-vivo rollup; not computable from manifest anchors alone",
+      "status": "not_applicable"
+    },
+    "V5_max": {
+      "reason": "requires in-vivo rollup; not computable from manifest anchors alone",
+      "status": "not_applicable"
+    },
+    "V5_stable_q_clear": {
+      "reason": "requires in-vivo rollup; not computable from manifest anchors alone",
+      "status": "not_applicable"
+    },
+    "baseline": 85.10070174080985,
+    "best_combined_oracle": {
+      "reason": "requires in-vivo rollup; not computable from manifest anchors alone",
+      "status": "not_applicable"
+    },
+    "events_floor_only": 53.78416279384068,
+    "full_event_clear": 31.316748210362025,
+    "hot_floor_only": 31.316748210362025,
+    "optimistic_upper_bound": 31.316748210362025
+  },
+  "transform_bpw_basis": "Decisive bound = optimistic_upper_bound (full event clear + parity-safe hot); rollup-based transforms are not_applicable without in-vivo rollup."
+}

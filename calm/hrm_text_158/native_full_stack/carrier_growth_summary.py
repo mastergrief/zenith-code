@@ -289,21 +289,18 @@ def project_best_combined_oracle_bpw(
     metadata_bytes: int = DEFAULT_R4V_METADATA_BYTES,
     v1_max_hot_reduction_fraction: float = 0.0,
 ) -> float:
-    """Phase 2 envelope projector stub — compact rollup + manifest anchors only."""
+    """Delegate to the Phase 2 envelope projector facade."""
 
-    events_bytes = int(rollup["est_events_payload_bytes"])
-    hot_bytes = int(rollup["est_hot_exact_payload_bytes"])
-    v5_saved = int(rollup["est_saved_bytes_v5_clear"])
-    v2_saved = int(rollup["est_saved_bytes_v2_coalesce"])
-    v5_max = int(rollup["events_on_q_locked_not_hot"]) * EST_BYTES_PER_EVENT
-    event_saved = max(v5_saved, v2_saved, v5_max)
-    events_oracle = max(0, events_bytes - event_saved)
-    hot_oracle = max(
-        0,
-        int(round(float(hot_bytes) * (1.0 - float(v1_max_hot_reduction_fraction)))),
+    from calm.hrm_text_158.native_full_stack.carrier_envelope_projector import (
+        project_best_combined_oracle_bpw as _project_best_combined_oracle_bpw,
     )
-    total_bytes = int(events_oracle + hot_oracle + int(metadata_bytes))
-    return (float(total_bytes) * 8.0) / float(int(eligible_weight_count))
+
+    return _project_best_combined_oracle_bpw(
+        rollup,
+        eligible_weight_count=int(eligible_weight_count),
+        metadata_bytes=int(metadata_bytes),
+        v1_max_hot_reduction_fraction=float(v1_max_hot_reduction_fraction),
+    )
 
 
 class CarrierGrowthCollector:
