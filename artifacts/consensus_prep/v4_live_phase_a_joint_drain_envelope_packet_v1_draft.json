@@ -163,6 +163,47 @@
       "next_action": "Redesign sidecar or Path B without telemetry"
     }
   ],
+  "phase_1_wiring": {
+    "gate_authority": {
+      "plan_msg_id": "1782487345193",
+      "implement_msg_id": "1782487637231-9ba7895d"
+    },
+    "cli_flag": "--carrier-growth-enabled",
+    "default_off": true,
+    "fail_closed_gate": "requires votes_emit_enabled + votes_emit_root",
+    "wire_point": "probe.py POST-apply after states = step_result.tensor_states (5775)",
+    "artifact_root": "{scratch_root}/votes_emit/v1/carrier_growth/per_step/{step:05d}.json",
+    "compact_emission": "rollup + module_digest_sha256 only (no modules[])",
+    "diagnostic_only": true,
+    "terminal_screen": {
+      "fixture_module": "calm/llm_computer/tests/carrier_growth_terminal_fixture_v0.py",
+      "manifest_calibration": "artifacts/consensus_prep/v4_live_phase_a_diagnostic_tier1_run_2189e72004_evidence_manifest.json L78-86",
+      "geometry": "32 modules x terminal-history fixture x 1 step (sequential build)",
+      "event_count_target": 2685975,
+      "hot_row_count_target": 1253048,
+      "logical_numel": 2695975,
+      "isolated_hook_wall_seconds_cap": 180.0,
+      "sidecar_bytes_cap": 10240,
+      "index_receipt_fields": [
+        "event_count_target",
+        "hot_row_count_target",
+        "logical_numel",
+        "max_hot_index",
+        "max_event_index",
+        "all_indices_lt_logical_numel"
+      ]
+    },
+    "compact_consumer_test": "calm/llm_computer/tests/test_carrier_growth_compact_consumer_phase2_v0.py",
+    "tracked_files": [
+      "calm/hrm_text_158/native_full_stack/carrier_growth_summary.py",
+      "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+      "calm/llm_computer/tests/carrier_growth_terminal_fixture_v0.py",
+      "calm/llm_computer/tests/test_carrier_growth_sidecar_32module_terminal_screen_v0.py",
+      "calm/llm_computer/tests/test_carrier_growth_compact_consumer_phase2_v0.py",
+      "calm/llm_computer/tests/test_carrier_growth_production_wire_v0.py",
+      "artifacts/consensus_prep/v4_live_phase_a_joint_drain_envelope_packet_v1_draft.json"
+    ]
+  },
   "implementation_sequencing": [
     {
       "phase": 0,
@@ -181,9 +222,10 @@
     },
     {
       "phase": 1,
-      "gate": "dual-accept on Phase 0 receipt",
+      "gate": "+1 implement (1782487637231)",
       "artifacts": [
-        "wire emitter into votes_emit hook"
+        "carrier_growth_summary.py collector + probe POST-apply wire",
+        "terminal fixture + compact consumer + production wire tests"
       ]
     },
     {

@@ -5143,6 +5143,7 @@ def run_bounded_delta_steps(
     r7_cap_defer_pressure_sidecar_path: Path | None = None,
     votes_emit_enabled: bool = False,
     votes_emit_root: Path | None = None,
+    carrier_growth_enabled: bool = False,
 ) -> tuple[
     dict[str, Any],
     dict[str, Any],
@@ -5190,6 +5191,17 @@ def run_bounded_delta_steps(
         )
 
         votes_emit_collector = VotesEmitCollector(Path(votes_emit_root))
+    carrier_growth_collector = None
+    if bool(carrier_growth_enabled):
+        if not bool(votes_emit_enabled) or votes_emit_root is None:
+            raise ValueError(
+                "carrier_growth_enabled requires votes_emit_enabled and votes_emit_root"
+            )
+        from calm.hrm_text_158.native_full_stack.carrier_growth_summary import (
+            CarrierGrowthCollector,
+        )
+
+        carrier_growth_collector = CarrierGrowthCollector(Path(votes_emit_root))
     step_reports: dict[str, Any] = {}
     audit_reports: dict[str, Any] = {}
     grad_proxy_ingress_crossing_eligible_count_by_step: list[int] = []
@@ -5773,6 +5785,19 @@ def run_bounded_delta_steps(
                 else:
                     step_result = _materialize_bounded_delta_vote_step()
                 states = step_result.tensor_states
+                if carrier_growth_collector is not None:
+                    from calm.hrm_text_158.native_full_stack.carrier_growth_summary import (
+                        maybe_emit_carrier_growth_step_record,
+                    )
+
+                    maybe_emit_carrier_growth_step_record(
+                        enabled=True,
+                        collector=carrier_growth_collector,
+                        optimizer_step_index=int(step),
+                        tensor_states=states,
+                        votes_by_key=votes_by_key,
+                        tensor_stats_by_key=step_result.tensor_stats,
+                    )
                 if r7_deferred_backlog_carry_enabled:
                     carry_backlog = step_result.deferred_backlog
                 q_changed_count = int(step_result.global_summary.get("q_changed_count", 0))
@@ -6221,6 +6246,7 @@ def run_c2p1_probe(
     r7_deferred_backlog_carry_enabled: bool = False,
     votes_emit_enabled: bool = False,
     votes_emit_root: Path | None = None,
+    carrier_growth_enabled: bool = False,
     persistent_accumulator_event_coded_live: bool = False,
     event_coded_live_demotion_band: int = 1,
 ) -> dict[str, Any]:
@@ -6998,6 +7024,7 @@ def run_c2p1_probe(
             r7_cap_defer_pressure_sidecar_path=r7_cap_defer_pressure_sidecar_path,
             votes_emit_enabled=bool(votes_emit_enabled),
             votes_emit_root=votes_emit_root,
+            carrier_growth_enabled=bool(carrier_growth_enabled),
         )
     prior_audit_final_reports: dict[str, dict[str, Any]] = {}
     if prior_support_sets:
@@ -7638,6 +7665,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     ap.add_argument(
+        "--carrier-growth-enabled",
+        action="store_true",
+        help=(
+            "Default-off diagnostic carrier growth summary sidecar. Requires "
+            "--votes-emit-enabled; writes to votes_emit/v1/carrier_growth/ only."
+        ),
+    )
+    ap.add_argument(
         "--persistent-accumulator-event-coded-live",
         action="store_true",
         help=(
@@ -7737,6 +7772,7 @@ def main(argv: list[str] | None = None) -> int:
         votes_emit_root=(
             Path(args.scratch_root) if bool(args.votes_emit_enabled) else None
         ),
+        carrier_growth_enabled=bool(args.carrier_growth_enabled),
         persistent_accumulator_event_coded_live=bool(
             args.persistent_accumulator_event_coded_live
         ),
