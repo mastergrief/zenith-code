@@ -1,0 +1,205 @@
+{
+  "packet_id": "tier1_v4_joint_drain_envelope_v1",
+  "schema_version": "v4_live_phase_a_joint_drain_envelope_packet/v1",
+  "authority": {
+    "gate_1_freeze_msg_id": "1782482612919",
+    "co_lead_gate_2_msg_id": "1782482806735",
+    "dual_accept_dispatch_msg_id": "1782482852976-5c305fd0",
+    "task_id": "1782323554349-4fe03e24"
+  },
+  "purpose": "Bounded falsification of whether joint event+hot drain can approach R4v sub-2 (<2.0 bpw) without parity break — not an open-ended drain chase. Path B (STRUCTURALLY_NOT_SUB2) pre-registered only if envelope fails or hot-drain is not parity-safe.",
+  "anchors": {
+    "terminal_run_id": "2189e72004",
+    "terminal_inclusive_bpw": 85.1,
+    "terminal_events_mb": 197,
+    "terminal_hot_exact_mb": 115,
+    "event_fold_safety_msg_id": "1782482263697",
+    "sub2_acc_budget_mb": 7.34,
+    "terminal_acc_mb": 312,
+    "budget_shortfall_multiple": 43,
+    "events_only_floor_bpw": 53.8,
+    "hot_only_floor_bpw": 31.3,
+    "r4v_acc_ceiling_bpw": 2.0,
+    "r4v_acc_bpw_tolerance": 0.25,
+    "reachable_oracle_bpw_threshold": 1.75
+  },
+  "sidecar_spec": {
+    "schema_version": "hrm_text_158_carrier_growth_summary/v0",
+    "placement": "{votes_emit_root}/v1/carrier_growth/per_step/{step:05d}.json",
+    "optional_rollup": "{votes_emit_root}/v1/carrier_growth/per_step/{step:05d}_rollup.json",
+    "emit_gate": "votes_emit_enabled (same gate as existing observables)",
+    "summary_only_proof": "JSON contains scalars + fixed-bucket histograms only — zero raw flat_index arrays",
+    "hard_cap_bytes_per_step": 10240,
+    "q_externality": {
+      "resume_assembly": "trainer_sub2_authority.py:1115-1122",
+      "hydrate": "adapter.py:227-244",
+      "note": "Sidecar never serializes q tensor bytes; hydrate loads events/backlog/hot only"
+    },
+    "per_module_fields": [
+      "state_key",
+      "logical_numel",
+      "event_count_after",
+      "hot_exact_row_count_after",
+      "backlog_count_after",
+      "new_crossing_events",
+      "demotion_on_crossing_count",
+      "demotion_on_decay_count",
+      "promotion_count",
+      "cap_accepted_rows",
+      "q_changed_rows",
+      "events_on_q_locked_not_hot",
+      "event_dup_lanes_gt1",
+      "event_dup_max_per_lane",
+      "event_dup_p95_per_lane",
+      "hot_carry_abs_bucket_counts",
+      "hot_rows_vote_touched",
+      "hot_rows_in_proxy",
+      "hot_rows_in_backlog",
+      "est_events_payload_bytes",
+      "est_hot_exact_payload_bytes",
+      "est_saved_bytes_v5_clear",
+      "est_saved_bytes_v2_coalesce",
+      "active_lane_count"
+    ],
+    "byte_estimator_policy": {
+      "phase_0_stub": "ROLLING O(1) estimates only in per-step path",
+      "est_events_payload_bytes": "event_count * 4",
+      "est_hot_exact_payload_bytes": "hot_row_count * 5",
+      "forbidden_per_step": [
+        "encode_event_coded_acc_events",
+        "carrier.hot_packed_bytes"
+      ],
+      "real_pack_confirmation": "ONE actual encode at chosen oracle grid point required before GPU drain-screen (REACHABLE is PROVISIONAL on estimators alone)"
+    },
+    "hot_carry_buckets": [
+      "0",
+      "1",
+      "2_3",
+      "4_6",
+      "7_9",
+      "10_plus"
+    ],
+    "rollup_fields": [
+      "module_count",
+      "event_count_after",
+      "hot_exact_row_count_after",
+      "backlog_count_after",
+      "new_crossing_events",
+      "events_on_q_locked_not_hot",
+      "est_events_payload_bytes",
+      "est_hot_exact_payload_bytes",
+      "est_saved_bytes_v5_clear",
+      "est_saved_bytes_v2_coalesce",
+      "sidecar_bytes"
+    ]
+  },
+  "phase_0_scale_smoke": {
+    "geometry": "1 module x 1,048,576 numel x 20 steps",
+    "vote_density_sweep": [
+      "sparse128",
+      "mixed66"
+    ],
+    "test_path": "calm/llm_computer/tests/test_carrier_growth_sidecar_scale_smoke_v0.py",
+    "stub_module": "calm/hrm_text_158/native_full_stack/carrier_growth_summary.py",
+    "pass_criteria": {
+      "sidecar_bytes_per_step_lte": 10240,
+      "emit_wall_seconds_per_step_lte": 2.0,
+      "measurement_scope": "sidecar hook ALONE (isolated from full-step budget)",
+      "deterministic_replay": "two runs produce identical per-step sidecar sha256",
+      "no_receipt_bloat": "no receipt.json / step_reports expansion beyond existing compact guard",
+      "no_raw_indices": true
+    },
+    "fail_classification": "OBSERVER_TOO_EXPENSIVE"
+  },
+  "envelope_projector": {
+    "phase": 2,
+    "input": "scale-smoke sidecar series + terminal anchor from 2189e72004 evidence manifest",
+    "transform_library": {
+      "baseline": "0 saved bytes",
+      "V2_coalesce": "sum(est_events - unique_lanes_with_events) * ~4B",
+      "V5_stable_q_clear": "sum(est_saved_bytes_v5_clear)",
+      "V5_max": "all events_on_q_locked_not_hot bytes",
+      "V1_band_b": "hot bytes * (1 - hot_p95_band_b / hot_p95_band_1) for parity-safe band b",
+      "full_event_clear": "all events bytes (dynamics-safe per fold-safety)",
+      "hot_floor_only": "events cleared, hot unchanged (~31.3 bpw anchor)",
+      "events_floor_only": "hot cleared, events unchanged (~53.8 bpw anchor)"
+    },
+    "best_combined_oracle": {
+      "formula": "bytes_oracle = events_bytes - max(V5_saved, V2_saved) - max_V1_safe_hot_reduction_bytes; repeat coalesce on remainder",
+      "inclusive_bpw_oracle": "(bytes_oracle + hot_bytes_oracle + metadata) * 8 / eligible_weights",
+      "reachable_if": "inclusive_bpw_oracle < 2.0 - 0.25"
+    }
+  },
+  "hot_drain_parity_safety": {
+    "harness": "v4_live_band_sweep.py",
+    "criteria": [
+      "decisive_surface_drift_count == 0 vs dict oracle for demotion_band candidate",
+      "reconstruct_lane identical on active indices before/after synthetic hot-only reduction",
+      "next-step crossing_indices, applied_indices, q_levels unchanged under paired apply",
+      "checkpoint hydrate roundtrip with external q tensor preserves hot-index reconstruct"
+    ],
+    "scope_note": "Applies to hot-term reductions only; event-fold already load-safe"
+  },
+  "decision_table": [
+    {
+      "outcome": "JOINT_DRAIN_ENVELOPE_REACHABLE",
+      "criteria": "BEST-COMBINED-ORACLE < 1.75 bpw AND hot band parity-safe AND one real pack confirms estimator projection at chosen grid point",
+      "next_action": "+1 implement joint drain variant -> GPU drain-screen (fresh run_id)",
+      "provisional_note": "REACHABLE on byte-estimator projection alone is PROVISIONAL until ONE real pack at chosen oracle grid point"
+    },
+    {
+      "outcome": "JOINT_DRAIN_ENVELOPE_NOT_REACHABLE",
+      "criteria": "Oracle >= 1.75 bpw even with V5_max + best parity-safe V1",
+      "next_action": "Path B: bank STRUCTURALLY_NOT_SUB2 (after envelope receipt)"
+    },
+    {
+      "outcome": "HOT_DRAIN_NOT_PARITY_SAFE",
+      "criteria": "Material hot reduction breaks decisive surfaces",
+      "next_action": "Path B (hot irreducible carry authority)"
+    },
+    {
+      "outcome": "OBSERVER_TOO_EXPENSIVE",
+      "criteria": "Phase 0 scale-smoke fails size/time/determinism",
+      "next_action": "Redesign sidecar or Path B without telemetry"
+    }
+  ],
+  "implementation_sequencing": [
+    {
+      "phase": 0,
+      "gate": "+1 implement (this slice)",
+      "artifacts": [
+        "calm/hrm_text_158/native_full_stack/carrier_growth_summary.py",
+        "calm/llm_computer/tests/test_carrier_growth_sidecar_scale_smoke_v0.py",
+        "artifacts/consensus_prep/v4_live_phase_a_joint_drain_envelope_packet_v1_draft.json"
+      ],
+      "explicitly_out": [
+        "probe.py / maybe_emit_votes_step_record wiring",
+        "Phase 2 envelope projector script",
+        "GPU",
+        "carrier dynamics / R4v math changes"
+      ]
+    },
+    {
+      "phase": 1,
+      "gate": "dual-accept on Phase 0 receipt",
+      "artifacts": [
+        "wire emitter into votes_emit hook"
+      ]
+    },
+    {
+      "phase": 2,
+      "gate": "CPU projector on smoke + manifest",
+      "artifacts": [
+        "envelope terminal classification"
+      ]
+    },
+    {
+      "phase": "GPU",
+      "gate": "separate launch gate",
+      "artifacts": [
+        "drain-screen only if REACHABLE after real-pack confirmation"
+      ]
+    }
+  ],
+  "tracked_hrm_repo": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158"
+}
