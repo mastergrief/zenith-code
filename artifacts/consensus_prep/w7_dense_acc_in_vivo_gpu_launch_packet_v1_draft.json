@@ -1,0 +1,65 @@
+{
+  "schema_version": "hrm_text_158_w7_dense_acc_in_vivo_launch_packet/v1",
+  "packet_kind": "w7_dense_acc_in_vivo_confirmation_gpu",
+  "scope": "W7_in_vivo_confirmation_only",
+  "head_at_packet": "727a9b6",
+  "confirmation_envelope": {
+    "envelope_id": "canonical_t10_prereg_v24",
+    "confirmation_vote_path": "rank_bucketed_acquisition_canonical",
+    "live_threshold_abs": 10,
+    "wired_max_vote_abs": 24,
+    "live_reachable_peak_estimate": 33,
+    "native_loop_injection_confirmation": "pending"
+  },
+  "parent_checkpoint": {
+    "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+    "sha256": "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec",
+    "read_only": true
+  },
+  "dual_arm": {
+    "oracle_arm": "int16_oracle_flag_off",
+    "treatment_arm": "w7_dense_acc_treatment",
+    "oracle_env": {
+      "HRM_TEXT_158_RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION": "0"
+    },
+    "treatment_env": {
+      "HRM_TEXT_158_RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION": "1"
+    },
+    "shared_argv": [
+      "--confirmation-envelope",
+      "canonical_t10_prereg_v24",
+      "--science-arm",
+      "A0_rank_bucket_current_ordering",
+      "--receipt-emit-profile",
+      "s3bb_headroom_diagnostic_slim",
+      "--votes-emit-enabled",
+      "--global-cap-contract",
+      "c1_banked_faithful_long_run_global_cap",
+      "--steps",
+      "10",
+      "--max-steps-hard",
+      "10"
+    ],
+    "treatment_only_argv": [
+      "--dense-accumulator-w7-clip"
+    ]
+  },
+  "classifier_labels": {
+    "W7_IN_VIVO_CONFIRMED": "requires confirmed_vote_acc_floor_width==7 and live_reachable_peak_estimate>=33",
+    "W7_BREAKS_LIVE_PARITY": "O1-O4 mismatch under meaningful pressure",
+    "W7_FLOOR_RISES_WITH_LIVE_VOTE_MAX": "T_live-1+max_vote_abs_observed>63",
+    "ENVELOPE_UNDER_PRESSED": "observed peak below meaningful parity pressure",
+    "LIVE_FLOOR_MUCH_BELOW_W7": "honest small-floor follow-up",
+    "OBSERVER_TOO_EXPENSIVE": "votes-emit/cap observer over budget",
+    "RUN_HEALTH_FAIL": "harness or envelope mismatch"
+  },
+  "explicit_non_claims": [
+    "dynamics_only_clip_boundary_not_byte_pack",
+    "not_native_loop_injection_confirmation",
+    "not_rules_promotion_unlock_in_code_readiness_slice",
+    "not_saved_byte_ledger_claim",
+    "not_inclusive_sub2"
+  ],
+  "postrun_module": "scripts/hrm_text_158_w7_dense_acc_in_vivo_postrun.py",
+  "replay_commands_artifact": "artifacts/consensus_prep/w7_dense_acc_in_vivo_gpu_launch_packet_v1_replay_commands.json"
+}

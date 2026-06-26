@@ -14,6 +14,7 @@ from calm.hrm_text_158.native_full_stack.narrow_accumulator_codec import (
     clip_then_pack_w5,
     clip_then_pack_w5_tensor,
     clip_then_roundtrip_w5_tensor,
+    clip_then_roundtrip_w7_tensor,
     clip_then_pack_w6,
     pack_w5,
     pack_w6,
@@ -33,6 +34,9 @@ RUN_NARROW_CARRIER_W6_TRAINER_INTEGRATION_ENV = (
 )
 RUN_NARROW_CARRIER_W5_TRAINER_INTEGRATION_ENV = (
     "HRM_TEXT_158_RUN_NARROW_CARRIER_W5_TRAINER_INTEGRATION"
+)
+RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION_ENV = (
+    "HRM_TEXT_158_RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION"
 )
 PERSISTENT_ACCUMULATOR_W5_BYTE_PACKED_ENV = (
     "HRM_TEXT_158_PERSISTENT_ACCUMULATOR_W5_BYTE_PACKED"
@@ -175,11 +179,18 @@ def narrow_carrier_w5_enabled(*, enabled: bool | None = None) -> bool:
     return os.environ.get(RUN_NARROW_CARRIER_W5_TRAINER_INTEGRATION_ENV) == "1"
 
 
+def narrow_carrier_w7_enabled(*, enabled: bool | None = None) -> bool:
+    if enabled is not None:
+        return bool(enabled)
+    return os.environ.get(RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION_ENV) == "1"
+
+
 def resolve_live_acc_carrier_selector(
     *,
     v4_enabled: bool | None = None,
     w5_enabled: bool | None = None,
     w6_enabled: bool | None = None,
+    w7_enabled: bool | None = None,
 ) -> str:
     from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
         resolve_live_acc_carrier_selector as _resolve,
@@ -189,6 +200,7 @@ def resolve_live_acc_carrier_selector(
         v4_enabled=v4_enabled,
         w5_enabled=w5_enabled,
         w6_enabled=w6_enabled,
+        w7_enabled=w7_enabled,
     )
 
 
@@ -226,9 +238,10 @@ def apply_trainer_boundary_narrow_carrier(
     enabled: bool | None = None,
     w5_enabled: bool | None = None,
     w6_enabled: bool | None = None,
+    w7_enabled: bool | None = None,
     v4_enabled: bool | None = None,
 ) -> torch.Tensor:
-    """Default-off trainer boundary: identity int16 when off; W5 clip roundtrip or W6 strict."""
+    """Default-off trainer boundary: identity int16 when off; W5/W6/W7 clip paths."""
 
     from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
         event_coded_live_carrier_enabled,
@@ -242,12 +255,16 @@ def apply_trainer_boundary_narrow_carrier(
         raise ValueError(f"accumulators must be torch.int16, got {accumulators.dtype}")
     use_w5 = narrow_carrier_w5_enabled(enabled=w5_enabled)
     use_w6 = narrow_carrier_w6_enabled(enabled=w6_enabled if w6_enabled is not None else enabled)
-    if use_w5 and use_w6:
-        raise ValueError("W5 and W6 narrow-carrier trainer integration are mutually exclusive")
+    use_w7 = narrow_carrier_w7_enabled(enabled=w7_enabled)
+    enabled_count = sum(int(flag) for flag in (use_w5, use_w6, use_w7))
+    if enabled_count > 1:
+        raise ValueError("W5, W6, and W7 narrow-carrier trainer integration are mutually exclusive")
     if use_w5:
         return clip_then_roundtrip_w5_tensor(accumulators.detach())
     if use_w6:
         return strict_roundtrip_w6_tensor(accumulators.detach())
+    if use_w7:
+        return clip_then_roundtrip_w7_tensor(accumulators.detach())
     return accumulators
 
 

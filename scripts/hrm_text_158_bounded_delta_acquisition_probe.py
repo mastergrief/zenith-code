@@ -175,8 +175,13 @@ from calm.hrm_text_158.native_full_stack.narrow_carrier_trainer_integration impo
     PERSISTENT_ACCUMULATOR_W5_BYTE_PACKED_ENV,
     RUN_NARROW_CARRIER_W5_TRAINER_INTEGRATION_ENV,
     RUN_NARROW_CARRIER_W6_TRAINER_INTEGRATION_ENV,
+    RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION_ENV,
     persistent_w5_byte_packed_enabled,
     resolve_live_acc_carrier_selector,
+)
+from calm.hrm_text_158.native_full_stack.w7_dense_acc_in_vivo_confirmation import (
+    CONFIRMATION_ENVELOPE_CANONICAL_T10_PREREG_V24,
+    resolve_confirmation_envelope,
 )
 from calm.hrm_text_158.native_full_stack.persistent_state_budget import (
     R3_ARTIFACT_BYTES_SEMANTICS_ACTUAL_PAYLOAD,
@@ -5144,6 +5149,7 @@ def run_bounded_delta_steps(
     votes_emit_enabled: bool = False,
     votes_emit_root: Path | None = None,
     carrier_growth_enabled: bool = False,
+    confirmation_envelope: str | None = None,
 ) -> tuple[
     dict[str, Any],
     dict[str, Any],
@@ -5159,8 +5165,15 @@ def run_bounded_delta_steps(
     if str(science_arm) not in SCIENCE_ARM_CHOICES:
         raise ValueError(f"science_arm must be one of {SCIENCE_ARM_CHOICES}, got {science_arm!r}")
     progress = phase_progress or PhaseProgress(enabled=False, device=device)
-    rank_spec = default_dry_run_rank_vote_spec()
-    vote_spec = default_vote_update_spec(max_abs_per_tensor)
+    envelope = resolve_confirmation_envelope(confirmation_envelope)
+    rank_spec = (
+        envelope.rank_spec if envelope is not None else default_dry_run_rank_vote_spec()
+    )
+    vote_spec = (
+        envelope.vote_update_spec(max_abs_per_tensor=int(max_abs_per_tensor))
+        if envelope is not None
+        else default_vote_update_spec(max_abs_per_tensor)
+    )
     vote_specs = {key: vote_spec for key in tensor_states}
     updater_config = {
         "rank_vote_spec": rank_spec.to_live_dict(),
@@ -6249,6 +6262,8 @@ def run_c2p1_probe(
     carrier_growth_enabled: bool = False,
     persistent_accumulator_event_coded_live: bool = False,
     event_coded_live_demotion_band: int = 1,
+    confirmation_envelope: str | None = None,
+    dense_accumulator_w7_clip: bool = False,
 ) -> dict[str, Any]:
     oracle_screen_budget = int(oracle_screen_max_sampled_candidates)
     if oracle_screen_budget not in ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES:
@@ -6262,18 +6277,25 @@ def run_c2p1_probe(
             "persistent_accumulator_w6_byte_packed and persistent_accumulator_w5_byte_packed "
             "are mutually exclusive"
         )
+    if bool(dense_accumulator_w7_clip) and (
+        bool(persistent_accumulator_w6_byte_packed) or bool(persistent_accumulator_w5_byte_packed)
+    ):
+        raise ValueError(
+            "dense_accumulator_w7_clip is mutually exclusive with W5/W6 byte-packed accumulators"
+        )
     if bool(persistent_accumulator_event_coded_live):
         if bool(persistent_accumulator_w6_byte_packed) or bool(
             persistent_accumulator_w5_byte_packed
-        ):
+        ) or bool(dense_accumulator_w7_clip):
             raise ValueError(
                 "persistent_accumulator_event_coded_live is mutually exclusive with "
-                "W5/W6 byte-packed accumulators"
+                "W5/W6 byte-packed accumulators and W7 clip boundary"
             )
         resolve_live_acc_carrier_selector(
             v4_enabled=True,
             w5_enabled=bool(persistent_accumulator_w5_byte_packed),
             w6_enabled=bool(persistent_accumulator_w6_byte_packed),
+            w7_enabled=bool(dense_accumulator_w7_clip),
         )
         os.environ[RUN_EVENT_CODED_ACC_LIVE_CARRIER_ENV] = "1"
     elif RUN_EVENT_CODED_ACC_LIVE_CARRIER_ENV in os.environ:
@@ -6289,6 +6311,12 @@ def run_c2p1_probe(
     elif PERSISTENT_ACCUMULATOR_W5_BYTE_PACKED_ENV in os.environ:
         os.environ.pop(PERSISTENT_ACCUMULATOR_W5_BYTE_PACKED_ENV, None)
         os.environ.pop(RUN_NARROW_CARRIER_W5_TRAINER_INTEGRATION_ENV, None)
+    if bool(dense_accumulator_w7_clip):
+        os.environ[RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION_ENV] = "1"
+        os.environ.pop(RUN_NARROW_CARRIER_W5_TRAINER_INTEGRATION_ENV, None)
+        os.environ.pop(RUN_NARROW_CARRIER_W6_TRAINER_INTEGRATION_ENV, None)
+    elif RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION_ENV in os.environ:
+        os.environ.pop(RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION_ENV, None)
     if bool(persistent_q_ternary_byte_packed):
         os.environ[PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV] = "1"
     elif PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV in os.environ:
@@ -7025,6 +7053,7 @@ def run_c2p1_probe(
             votes_emit_enabled=bool(votes_emit_enabled),
             votes_emit_root=votes_emit_root,
             carrier_growth_enabled=bool(carrier_growth_enabled),
+            confirmation_envelope=confirmation_envelope,
         )
     prior_audit_final_reports: dict[str, dict[str, Any]] = {}
     if prior_support_sets:
@@ -7041,9 +7070,18 @@ def run_c2p1_probe(
                 total_steps=max(1, int(steps)),
             )
     if not updater_config:
+        envelope = resolve_confirmation_envelope(confirmation_envelope)
+        rank_spec = (
+            envelope.rank_spec if envelope is not None else default_dry_run_rank_vote_spec()
+        )
+        vote_spec = (
+            envelope.vote_update_spec(max_abs_per_tensor=int(max_abs_per_tensor))
+            if envelope is not None
+            else default_vote_update_spec(max_abs_per_tensor)
+        )
         updater_config = {
-            "rank_vote_spec": default_dry_run_rank_vote_spec().to_live_dict(),
-            "vote_update_spec": asdict(default_vote_update_spec(max_abs_per_tensor)),
+            "rank_vote_spec": rank_spec.to_live_dict(),
+            "vote_update_spec": asdict(vote_spec),
             "projection_law": S1_PROJECTION_LAW,
             "vote_law": S1_RANK_BUCKET_VOTE_LAW,
         }
@@ -7229,6 +7267,7 @@ def run_c2p1_probe(
         "receipt_emit_profile": str(receipt_emit_profile),
         "persistent_accumulator_w6_byte_packed": bool(persistent_accumulator_w6_byte_packed),
         "persistent_accumulator_w5_byte_packed": bool(persistent_accumulator_w5_byte_packed),
+        "dense_accumulator_w7_clip": bool(dense_accumulator_w7_clip),
         "persistent_accumulator_event_coded_live": bool(
             persistent_accumulator_event_coded_live
         ),
@@ -7264,6 +7303,9 @@ def run_c2p1_probe(
             event_coded_live_enabled=bool(persistent_accumulator_event_coded_live),
         ),
     }
+    envelope = resolve_confirmation_envelope(confirmation_envelope)
+    if envelope is not None:
+        receipt.update(envelope.receipt_fields())
     if slim_receipt_emit:
         assert headroom_wiring_sidecar_path is not None
         receipt["headroom_wiring_sidecar_path"] = str(headroom_wiring_sidecar_path)
@@ -7694,6 +7736,23 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "non-candidate global-cap path. Required for R7 age falsifiability."
         ),
     )
+    ap.add_argument(
+        "--confirmation-envelope",
+        choices=[CONFIRMATION_ENVELOPE_CANONICAL_T10_PREREG_V24],
+        default=None,
+        help=(
+            "Opt-in confirmation envelope for W7 in-vivo runs. "
+            f"{CONFIRMATION_ENVELOPE_CANONICAL_T10_PREREG_V24} wires T=10 + prereg vote bins."
+        ),
+    )
+    ap.add_argument(
+        "--dense-accumulator-w7-clip",
+        action="store_true",
+        help=(
+            "Enable W7 clip-only dense accumulator trainer boundary (±63 via effective_clip_bounds). "
+            "Mutually exclusive with W5/W6 byte-pack and V4 event-coded carrier."
+        ),
+    )
     return ap
 
 
@@ -7777,6 +7836,8 @@ def main(argv: list[str] | None = None) -> int:
             args.persistent_accumulator_event_coded_live
         ),
         event_coded_live_demotion_band=int(args.event_coded_live_demotion_band),
+        confirmation_envelope=args.confirmation_envelope,
+        dense_accumulator_w7_clip=bool(args.dense_accumulator_w7_clip),
     )
     print(json.dumps(receipt, indent=2, sort_keys=True), flush=True)
     flush_probe_terminal_artifacts(exit_code=0, flush_reason="normal_completion")

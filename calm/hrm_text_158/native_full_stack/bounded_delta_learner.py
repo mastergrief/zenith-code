@@ -224,6 +224,33 @@ def default_dry_run_rank_vote_spec() -> RankVoteSpec:
     )
 
 
+def canonical_acquisition_rank_vote_spec() -> RankVoteSpec:
+    """Prereg-aligned acquisition magnitudes {12,16,24} for W7 confirmation envelope."""
+
+    return RankVoteSpec(
+        rank_bins=(
+            RankVoteBin(0.0, 0.5, 12),
+            RankVoteBin(0.5, 0.75, 16),
+            RankVoteBin(0.75, 1.0, 24, include_hi=True),
+        ),
+    )
+
+
+def max_vote_abs_for_rank_spec(spec: RankVoteSpec) -> int:
+    spec.validate()
+    return max(int(item.vote_abs) for item in spec.rank_bins)
+
+
+def dry_run_rank_vote_peak_reachable(threshold_abs: int = 1) -> int:
+    return int(threshold_abs) - 1 + max_vote_abs_for_rank_spec(default_dry_run_rank_vote_spec())
+
+
+def canonical_acquisition_peak_reachable(*, threshold_abs: int = 10) -> int:
+    return int(threshold_abs) - 1 + max_vote_abs_for_rank_spec(
+        canonical_acquisition_rank_vote_spec()
+    )
+
+
 def _cpu_float32_rank_fraction(rank_position: int, count: int) -> float:
     rank = torch.tensor(rank_position, dtype=torch.int64).to(torch.float32)
     return float((rank / float(count)).item())

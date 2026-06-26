@@ -457,6 +457,41 @@ def clip_then_roundtrip_w5_tensor(acc: torch.Tensor) -> torch.Tensor:
     return unpack_w5_tensor(clip_then_pack_w5_tensor(acc))
 
 
+W7_WIDTH_BITS = 7
+W7_SIGNED_MIN = -signed_w_max(W7_WIDTH_BITS)
+W7_SIGNED_MAX = signed_w_max(W7_WIDTH_BITS)
+
+
+def clip_to_w7(value: int) -> int:
+    clip_min, clip_max = effective_clip_bounds(
+        W7_WIDTH_BITS,
+        VOTE_UPDATE_SOURCE_CLIP_MIN,
+        VOTE_UPDATE_SOURCE_CLIP_MAX,
+    )
+    return max(clip_min, min(clip_max, int(value)))
+
+
+def clip_to_w7_tensor(acc: torch.Tensor) -> torch.Tensor:
+    clip_min, clip_max = effective_clip_bounds(
+        W7_WIDTH_BITS,
+        VOTE_UPDATE_SOURCE_CLIP_MIN,
+        VOTE_UPDATE_SOURCE_CLIP_MAX,
+    )
+    return torch.clamp(acc.to(torch.int32), clip_min, clip_max).to(torch.int16)
+
+
+def clip_then_roundtrip_w7_tensor(acc: torch.Tensor) -> torch.Tensor:
+    """Clip-only W7 trainer boundary (int16 storage, effective clip ±63)."""
+
+    return clip_to_w7_tensor(acc)
+
+
+def count_w7_clip_events_tensor(before: torch.Tensor, after: torch.Tensor) -> int:
+    if before.shape != after.shape:
+        raise ValueError("count_w7_clip_events_tensor requires matching shapes")
+    return int((before.to(torch.int32) != after.to(torch.int32)).sum().item())
+
+
 @dataclass(frozen=True)
 class PackedW5AccumulatorPayload:
     packed: torch.Tensor

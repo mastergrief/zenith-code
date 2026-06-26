@@ -48,6 +48,7 @@ RUN_EVENT_CODED_ACC_LIVE_CARRIER_ENV = "HRM_TEXT_158_RUN_EVENT_CODED_ACC_LIVE_CA
 LIVE_ACC_CARRIER_V4_LIVE = "v4_live"
 LIVE_ACC_CARRIER_W5 = "w5"
 LIVE_ACC_CARRIER_W6 = "w6"
+LIVE_ACC_CARRIER_W7 = "w7"
 LIVE_ACC_CARRIER_NONE = "none"
 
 C8_DENSE_ACCUMULATOR_MATERIALIZED_NUMEL_KEY = "dense_accumulator_materialized_numel"
@@ -108,19 +109,22 @@ def resolve_live_acc_carrier_selector(
     v4_enabled: bool | None = None,
     w5_enabled: bool | None = None,
     w6_enabled: bool | None = None,
+    w7_enabled: bool | None = None,
 ) -> str:
     from calm.hrm_text_158.native_full_stack.narrow_carrier_trainer_integration import (
         narrow_carrier_w5_enabled,
         narrow_carrier_w6_enabled,
+        narrow_carrier_w7_enabled,
     )
 
     use_v4 = event_coded_live_carrier_enabled(enabled=v4_enabled)
     use_w5 = narrow_carrier_w5_enabled(enabled=w5_enabled)
     use_w6 = narrow_carrier_w6_enabled(enabled=w6_enabled)
-    selected = sum(int(flag) for flag in (use_v4, use_w5, use_w6))
+    use_w7 = narrow_carrier_w7_enabled(enabled=w7_enabled)
+    selected = sum(int(flag) for flag in (use_v4, use_w5, use_w6, use_w7))
     if selected > 1:
         raise ValueError(
-            "V4-LIVE event-coded carrier is mutually exclusive with W5/W6 narrow carriers"
+            "V4-LIVE event-coded carrier is mutually exclusive with W5/W6/W7 narrow carriers"
         )
     if use_v4:
         return LIVE_ACC_CARRIER_V4_LIVE
@@ -128,6 +132,8 @@ def resolve_live_acc_carrier_selector(
         return LIVE_ACC_CARRIER_W5
     if use_w6:
         return LIVE_ACC_CARRIER_W6
+    if use_w7:
+        return LIVE_ACC_CARRIER_W7
     return LIVE_ACC_CARRIER_NONE
 
 
