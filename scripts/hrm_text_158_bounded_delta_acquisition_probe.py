@@ -197,6 +197,7 @@ from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
     PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV,
     PERSISTENT_Q_TERNARY_BASE3_CODEC_ENV,
     PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV,
+    Q_CODEC_SELECTOR_2BIT,
     Q_CODEC_SELECTOR_BASE3,
     persistent_q_ternary_base3_codec_enabled,
     persistent_q_ternary_byte_packed_enabled,
@@ -3428,6 +3429,7 @@ def build_r4v_persistent_ledger_receipt(
             byte_packed_enabled=False,
             w5_byte_packed_enabled=False,
             q_packed_enabled=False,
+            q_codec_selector=Q_CODEC_SELECTOR_2BIT,
         )
         packed = _packed_event_coded_from_roundtrip_payload(roundtrip_payload)
         event_payloads.append(packed)

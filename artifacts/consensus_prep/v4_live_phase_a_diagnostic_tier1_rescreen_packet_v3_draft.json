@@ -1,0 +1,413 @@
+{
+  "artifact_surface_table": {
+    "creditdir_runtime_only": [
+      "/home/gabe/claw-code-creditdir/transient_fp_credit/_launch_scripts/v4_live_diagnostic_tier1_seed44_43_2189e72003_kick.sh",
+      "/home/gabe/claw-code-creditdir/transient_fp_credit/_launch_scripts/v4_live_diagnostic_tier1_seed44_43_2189e72003_launch.sh",
+      "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72003"
+    ],
+    "harness_repo_untracked": [
+      "/mnt/c/Users/gabes/projects/claw-code/bin/watch-wrap"
+    ],
+    "tracked_files": [
+      "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+      "artifacts/consensus_prep/v4_live_phase_a_diagnostic_tier1_rescreen_packet_v3_draft.json",
+      "calm/llm_computer/tests/test_r4v_base3_env_roundtrip_isolation_v0.py",
+      "calm/llm_computer/tests/test_launcher_done_marker_nonzero_exit_v0.py"
+    ],
+    "tracked_hrm_repo": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158"
+  },
+  "chain_id": "v4_live_diagnostic_tier1_seed44_43_2189e72003",
+  "claim_scope": {
+    "claims_this_run": [
+      "Re-screen after P0 proxy-build O(K^2) fix: verify step-6 step_update hang cleared",
+      "Classify B (20 steps complete) vs C (new residual hot-path with durable stack + heartbeat-elapsed proof)"
+    ],
+    "does_not_claim_this_run": [
+      "no_science_reducible_intrinsic_verdict",
+      "no_auto_bank_REDUCIBLE_on_B_confirmed",
+      "no_phase_a_proof_gate_pass",
+      "no_phase_b",
+      "no_perf_fix",
+      "no_auto_claim_P0_fixed_without_B_confirmed"
+    ],
+    "run_class": "v4_live_phase_a_diagnostic_instrumentation"
+  },
+  "co_lead_bindings": {
+    "C_requires": "max step_update heartbeat active_phase_elapsed_seconds>=250 AND durable stack in probe.stderr.log",
+    "authority_msg_ids": [
+      "1782405544465",
+      "1782405588454",
+      "1782406028915"
+    ],
+    "exit_143_before_guard": "harness_invalid NOT C",
+    "last_active_phase_role": "phase LABEL / last-entered only; NOT the C elapsed gate",
+    "tier1_B_confirmed": "confirms external false-kill only; does NOT auto-bank REDUCIBLE/science"
+  },
+  "code_pins": {
+    "file_content_sha256_at_head": {
+      "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": "832d004201a97413ea0c14526a51b53c701c35f471c378f3c797fc5fe2b99a06",
+      "calm/hrm_text_158/native_full_stack/event_coded_acc_checkpoint_codec.py": "dbe9886aea3956cd90e374879a0fc91b1e45eabe5c06175841d6f8db96300381",
+      "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py": "36ed438e4d4e6a3b262d41114d942652cc1954813e46220c90c886b78785205c",
+      "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py": "70e2f30e6573c9311e8f06faa175657c8ce514c9c02deaaf86f81db7bb0bff48",
+      "calm/hrm_text_158/native_full_stack/narrow_carrier_trainer_integration.py": "67b36ecd33003fd3acce503d0ebb39ff9724d9d012da496b18640b642ef2c2de",
+      "calm/hrm_text_158/native_full_stack/oracle_screen_runner.py": "5f41568dd7ca8d18d7b70003afd467734b10dacebd17d6fdceb378b47489b0b3",
+      "calm/hrm_text_158/native_full_stack/persistent_state_budget.py": "af455d4f37af4ddaa4873cadc8cfe042eaf825ba99ed59c4f985aa7b46e32f19",
+      "calm/hrm_text_158/native_full_stack/sparse_vote_inputs_svp1.py": "b3603ed4933f29ed7a41d4f279b91bb23002fc2caf8649ff74a382437920afcc",
+      "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py": "bba99785c591bb9a8a406b4a5c035201db4bdd8040b6cd54d2ed0e5b8a95a57c",
+      "calm/hrm_text_158/native_full_stack/v4_live_phase_a_parity_witness.py": "76205555e6e20de2382e8de8e0e8953a19b3b336fc86ab9fc1d9b1471fc9c939",
+      "calm/hrm_text_158/native_full_stack/vote_update.py": "2d39e8c9e484b18d4427d3b98be01ac167b7d4df96b2fe5170825c3b30ac6065",
+      "calm/hrm_text_158/native_full_stack/vote_update_emit_routing.py": "557be5548566debdb3ba65d4757555bfe2aa4169138c22a5a8f49fbfd8424bc8",
+      "calm/hrm_text_158/native_full_stack/votes_emit_collector.py": "f28fa88a8613b393835fa3605054859e995a8265d43cab734071eba9ee9f8124",
+      "calm/hrm_text_158/native_full_stack/votes_emit_dynamics_replay.py": "8ce412e676e7e3a97167209070d5195591907b812e34001bafd2d65e8fc42708",
+      "scripts/hrm_text_158_bounded_delta_acquisition_probe.py": "8fcc727c6fd8c43e948a25c11140d81acf738bbb9332e215580d91e788ca8b69",
+      "scripts/hrm_text_158_v4_file_content_pin_witness.py": "20ca1f130de7cb56138500dab72eb4d8ae4fbbcbe7b92161e28a53b0b4331a96",
+      "scripts/hrm_text_158_v4_live_phase_a_parity_witness.py": "e3a481f7257c6d47de407020e0dfc85ce81569129d9a5cc17fecdd59504d8a32"
+    },
+    "file_content_sha_mismatch_fail_closed": true,
+    "note": "probe.py pin updated for R4v q_codec_selector=2BIT one-liner; other 16 pins unchanged at implement head.",
+    "pin_count": 17,
+    "pinned_surfaces": [
+      "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+      "calm/hrm_text_158/native_full_stack/event_coded_acc_checkpoint_codec.py",
+      "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py",
+      "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py",
+      "calm/hrm_text_158/native_full_stack/narrow_carrier_trainer_integration.py",
+      "calm/hrm_text_158/native_full_stack/oracle_screen_runner.py",
+      "calm/hrm_text_158/native_full_stack/persistent_state_budget.py",
+      "calm/hrm_text_158/native_full_stack/sparse_vote_inputs_svp1.py",
+      "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py",
+      "calm/hrm_text_158/native_full_stack/v4_live_phase_a_parity_witness.py",
+      "calm/hrm_text_158/native_full_stack/vote_update.py",
+      "calm/hrm_text_158/native_full_stack/vote_update_emit_routing.py",
+      "calm/hrm_text_158/native_full_stack/votes_emit_collector.py",
+      "calm/hrm_text_158/native_full_stack/votes_emit_dynamics_replay.py",
+      "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+      "scripts/hrm_text_158_v4_file_content_pin_witness.py",
+      "scripts/hrm_text_158_v4_live_phase_a_parity_witness.py"
+    ],
+    "preflight_authority": "file_content_sha256_at_head",
+    "repo": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+    "source_packet": "artifacts/consensus_prep/v4_live_trainer_integration_gpu_launch_packet_v1.json",
+    "source_packet_sha": "36d05f0d52f11794fa34afa6a9c25f75bd33fadf6b9905a1285d57a5bfe7275c"
+  },
+  "diagnostic_assertions": {
+    "B_confirmed": {
+      "conjunctive": [
+        "probe_exit_code == 0",
+        "phase_a/receipt.json exists",
+        "phase_a/votes_emit/v1/manifest.json step_count == 20",
+        "parent posthash sha256 == 9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec"
+      ],
+      "interpretation": "external false-kill confirmed; probe healthy; does NOT auto-bank REDUCIBLE"
+    },
+    "C_confirmed": {
+      "conjunctive": [
+        "probe.exit_code.txt exists at RUN_ROOT with explicit nonzero integer content",
+        "probe_exit_code != 0",
+        "MAX active_phase_elapsed_seconds among heartbeat events with phase==step_update in phase_a/run.log OR phase_a/probe.stdout.log >= 250",
+        "phase_a/probe.stderr.log exists and contains durable Python traceback for step_update hot path"
+      ],
+      "interpretation": "real in-phase hang with elapsed proof + stack; missing probe.exit_code.txt => harness_invalid/artifact_incomplete"
+    },
+    "C_non_decisive_fail_closed_tier2_trigger": {
+      "action": "+1 Tier 2 implement then re-launch",
+      "conjunctive": [
+        "C_elapsed_signature: MAX step_update heartbeat active_phase_elapsed_seconds >= 250",
+        "phase_a/probe.stderr.log missing durable Python stack in step_update body"
+      ],
+      "validation": "FAIL CLOSED"
+    },
+    "config_incomplete": {
+      "conjunctive": [
+        "phase_a/votes_emit/v1/manifest.json emit_sample_count == 20",
+        "probe.exit_code.txt exists with nonzero integer",
+        "phase_a/probe.stderr.log contains durable config/receipt ValueError",
+        "parent_checkpoint_posthash.json present"
+      ],
+      "interpretation": "science steps completed but post-dynamics receipt/config failed"
+    },
+    "harness_invalid": {
+      "disjunctive": [
+        "probe_exit_code == 143 AND MAX step_update heartbeat active_phase_elapsed_seconds < 250",
+        "probe_exit_code != 0 AND (no step_update heartbeat events OR MAX step_update heartbeat active_phase_elapsed_seconds < 250) AND elapsed_since_start_seconds < 600 AND probe.stderr.log empty"
+      ],
+      "interpretation": "premature/bare SIGTERM or harness misconfig; NOT C"
+    },
+    "launcher_done_missing_after_artifacts": {
+      "conjunctive": [
+        "probe.exit_code.txt exists",
+        "parent_checkpoint_posthash.json exists",
+        "LAUNCHER_DONE.marker absent AND launch log missing LAUNCHER_DONE line"
+      ],
+      "interpretation": "wrapper artifacts present but terminal watch authority missing"
+    },
+    "run_health_fail": {
+      "conjunctive": [
+        "probe.exit_code.txt exists with nonzero integer",
+        "NOT config_incomplete signature",
+        "NOT C_confirmed signature"
+      ],
+      "interpretation": "probe unhealthy without config_incomplete or genuine-C classification"
+    }
+  },
+  "dispatch_msg_id": "TBD_AT_RESCREEN_GATE",
+  "dryrun_fixture": {
+    "path": "calm/llm_computer/tests/test_v4_live_phase_a_tmux_detach_survival_v0.py",
+    "proof_requirements": [
+      "tmux server PID not descendant of kicker",
+      "kill -- -$KICKER_PGID mid-run",
+      "probe.exit_code.txt and parent_checkpoint_posthash.json written",
+      "LAUNCHER_DONE in launch log"
+    ],
+    "required": true,
+    "test_name": "test_tmux_detach_survives_full_kicker_subtree_kill"
+  },
+  "dual_accept_msg_ids": [
+    "1782464286723",
+    "1782464425714"
+  ],
+  "expected_outcome": {
+    "if_C_confirmed": "classify new hot frame; do NOT widen committed P0 slice",
+    "primary": "B_confirmed",
+    "rationale": "S1 fixes control-arm dense materialization at step-13; S2 ensures wrapper captures exit_code+posthash on faulthandler breach; full apply_step hot path healthy at K=200k"
+  },
+  "fast_training_launch_contract": {
+    "executor": "test-operator",
+    "executor_variant": "haiku",
+    "gpu_device": "cuda:0",
+    "kicker_receipt_route": "claude gate-1 kick receipt only",
+    "terminal_receipt_route": "claude gate-1"
+  },
+  "forbidden": [
+    "phase_b",
+    "REDUCIBLE",
+    "perf_source_fix",
+    "bare_sigterm_as_first_kill_action",
+    "reuse_run_root_370cdd2002",
+    "reuse_run_root_370cdd2001",
+    "reuse_run_root_2189e72001",
+    "setsid",
+    "nohup",
+    "disown",
+    "run_in_background_true",
+    "file_path_stop_on_in_watch_wrap",
+    "reuse_run_root_2189e72002"
+  ],
+  "fresh_root_guard": {
+    "body_verbatim": "if [ -e \"$RUN_ROOT\" ] && [ -n \"$(ls -A \"$RUN_ROOT\" 2>/dev/null)\" ]; then echo \"FRESHNESS_FAIL: run_root exists/non-empty: $RUN_ROOT\" >&2; exit 1; fi",
+    "execution_authority": "external_launcher_outside_run_root",
+    "load_bearing": true,
+    "occupied_science_roots_never_rm": [
+      "07c8023001",
+      "2189e72001",
+      "2189e72002",
+      "370cdd2001",
+      "370cdd2002",
+      "88f29a8001",
+      "d6db8f9001"
+    ],
+    "prelaunch_order": [
+      "1_external_freshness_guard_before_any_run_root_writes",
+      "2_mkdir_prelaunch_and_phase_a",
+      "3_emit_prelaunch_run_root_freshness_witness_json",
+      "4_emit_prelaunch_parent_checkpoint_prehash_json",
+      "5_run_probe_child_stdout_stderr_separate_set_plus_e",
+      "6_wrapper_post_exit_probe_exit_code_txt_and_parent_checkpoint_posthash_json"
+    ],
+    "witness_artifact": "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72003/prelaunch/run_root_freshness_witness.json",
+    "witness_assert": "run_root_fresh_pass == true AND witness_emitted_before_probe_launch == true"
+  },
+  "frozen_plan_msg_id": "1782464191713",
+  "harness_contract": {
+    "external_per_phase_no_progress_seconds": null,
+    "external_wall_seconds_min": 7200,
+    "forbid_bare_sigterm": true,
+    "liveness_authority": "probe_faulthandler_dump_traceback_later_300s_to_stderr",
+    "probe_silent_phase_guard_seconds": 300,
+    "sigquit_backstop": {
+      "anchor": "probe.py:1612",
+      "sequence": [
+        "SIGQUIT first",
+        "wait >=10s",
+        "capture probe.stderr.log",
+        "SIGTERM only if still alive",
+        "NEVER bare-SIGTERM first"
+      ]
+    }
+  },
+  "head_at_packet": "2f0c19baf9fecc2a8072348e0ab3eea08b7a8c7b",
+  "heartbeat_dependency_proof": {
+    "chain": [
+      {
+        "behavior": "if emit_progress and phase_heartbeat_seconds is None -> return C2P2_DEFAULT_PHASE_HEARTBEAT_INTERVAL_SECONDS (30.0 at :264)",
+        "file": "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+        "lines": "1387-1396",
+        "step": "resolve_phase_heartbeat_seconds"
+      },
+      {
+        "behavior": "resolved_phase_heartbeat_seconds passed to PhaseProgress(phase_heartbeat_interval_seconds=...); enabled=emit_progress",
+        "file": "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+        "lines": "6358-6377",
+        "step": "main wiring"
+      },
+      {
+        "behavior": "if enabled and interval>0: start _run_phase_heartbeat_loop daemon thread per phase()",
+        "file": "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+        "lines": "1961-1973",
+        "step": "heartbeat thread start"
+      },
+      {
+        "behavior": "_run_phase_heartbeat_loop -> mark(phase,'heartbeat', active_phase_elapsed_seconds=elapsed, **fields)",
+        "file": "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+        "lines": "1883-1902",
+        "step": "heartbeat emission"
+      },
+      {
+        "behavior": "mark() prints JSON to stdout when enabled; install_probe_durable_run_log mirrors to phase_a/run.log; shell redirect also captures probe.stdout.log",
+        "file": "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+        "lines": "1753-1766",
+        "step": "durable stdout"
+      }
+    ],
+    "conclusion": "--emit-progress ALONE arms 30s intra-phase heartbeat; no --phase-heartbeat-seconds required",
+    "load_bearing": true,
+    "observable_paths_for_C_elapsed": [
+      "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72003/phase_a/run.log",
+      "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72003/phase_a/probe.stdout.log"
+    ],
+    "parser_rule": "MAX active_phase_elapsed_seconds among JSON lines where event==heartbeat AND phase==step_update"
+  },
+  "implement_gate_msg_id": "1782464455375-78d89667",
+  "kicker_contract": {
+    "invoke": "bash /home/gabe/claw-code-creditdir/transient_fp_credit/_launch_scripts/v4_live_diagnostic_tier1_seed44_43_2189e72003_kick.sh once foreground",
+    "on_poll_fail": "HARNESS_AMBIGUOUS; do NOT SIGTERM tmux",
+    "on_success": "write /tmp/v4_diag_2189e72003_kick.json; exit 0",
+    "poll_seconds_max": 60,
+    "poll_success": [
+      "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72003/prelaunch/run_root_freshness_witness.json run_root_fresh_pass=true",
+      "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72003/phase_a/probe.stdout.log byte growth OR heartbeat JSON"
+    ]
+  },
+  "launch_mode": "tmux_detached_session",
+  "launch_ready": false,
+  "packet_sha": "961f792c5a4a9add34e0fe0f501dd97e821c9ceee672af8ae358a9da5b01ac59",
+  "packet_status": "draft_pending_launch_gate",
+  "packet_version": "tier1_v4_rescreen_fix_v3",
+  "parent_checkpoint_pin": {
+    "banked_pt_read_only": true,
+    "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+    "rehash_before_and_after": true,
+    "sha256": "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec"
+  },
+  "parent_task": "1782323554349-4fe03e24",
+  "phase_a_probe_command": {
+    "byte_match_reference": "run #4 370cdd2001 except diagnostic deltas",
+    "cli_deltas_from_run4": [
+      "--emit-progress"
+    ],
+    "concrete_command": "PYTHONPATH=. HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1 python3 -u scripts/hrm_text_158_bounded_delta_acquisition_probe.py --allow-gpu-launch --enable-bounded-delta-probe --device cuda --parent calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt --parent-sha256 9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec --curriculum-seed 44 --support-order-seed 43 --eligible-scope all-bitlinear --steps 20 --max-steps-hard 20 --batch-size 1 --phase v4-live-dynamics-proof-smoke --science-arm A0_rank_bucket_current_ordering --global-cap-contract c1_banked_faithful_long_run_global_cap --persistent-q-ternary-base3-codec --persistent-accumulator-event-coded-live --event-coded-live-demotion-band 1 --votes-emit-enabled --scratch-root /home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72003/phase_a --emit-progress",
+    "second_cli_delta_required": false
+  },
+  "phase_a_wrapper_contract": {
+    "authority": "external_launcher_outside_run_root",
+    "bootstrap_order": [
+      "1_external_freshness_guard_before_any_run_root_writes",
+      "2_mkdir_prelaunch_and_phase_a",
+      "3_emit_prelaunch_run_root_freshness_witness_json",
+      "4_emit_prelaunch_parent_checkpoint_prehash_json",
+      "5_run_probe_child_stdout_stderr_separate_set_plus_e",
+      "6_wrapper_post_exit_probe_exit_code_txt_and_parent_checkpoint_posthash_json"
+    ],
+    "classification_authority": {
+      "C_elapsed": "heartbeat JSON in run.log and/or probe.stdout.log",
+      "C_stack": "probe.stderr.log",
+      "phase_label_only": "last_active_phase.json"
+    },
+    "external_kick_script_path": "/home/gabe/claw-code-creditdir/transient_fp_credit/_launch_scripts/v4_live_diagnostic_tier1_seed44_43_2189e72003_kick.sh",
+    "external_launcher_cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+    "external_launcher_script_path": "/home/gabe/claw-code-creditdir/transient_fp_credit/_launch_scripts/v4_live_diagnostic_tier1_seed44_43_2189e72003_launch.sh",
+    "forbidden_redirect": "DO NOT merge stderr into stdout via 2>&1",
+    "forbidden_under_run_root_before_guard": [
+      "run_probe.sh or any bootstrap script under RUN_ROOT/phase_a before external guard+mkdir"
+    ],
+    "kick_receipt": "/tmp/v4_diag_2189e72003_kick.json",
+    "kick_script_path": "/home/gabe/claw-code-creditdir/transient_fp_credit/_launch_scripts/v4_live_diagnostic_tier1_seed44_43_2189e72003_kick.sh",
+    "kick_script_sha256": "ad6cbc32a630db37e124fc73569c6c6f855049135589a5e79a1ab9e1277ae727",
+    "launch_log": "/tmp/v4_diag_2189e72003_launch.log",
+    "launch_script_path": "/home/gabe/claw-code-creditdir/transient_fp_credit/_launch_scripts/v4_live_diagnostic_tier1_seed44_43_2189e72003_launch.sh",
+    "launch_script_sha256": "60e3bf84bbcfc5331faf4b0a9a7b127a9f063a4e36ebd3d444ef1a6982ae704a",
+    "launcher_authority": "on_disk_script_path_sha_pinned",
+    "launcher_done_contract": {
+      "emitted_only_after": [
+        "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72003/probe.exit_code.txt",
+        "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72003/prelaunch/parent_checkpoint_posthash.json"
+      ],
+      "forbidden_stop_on": "file-path regex in watch-wrap --stop-on",
+      "log_line_literal": "LAUNCHER_DONE",
+      "marker_path": "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72003/prelaunch/LAUNCHER_DONE.marker",
+      "primary_authority": "marker_file"
+    },
+    "launcher_done_marker_path": "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72003/prelaunch/LAUNCHER_DONE.marker",
+    "probe_internal_run_log": "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72003/phase_a/run.log",
+    "stderr_sink": "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72003/phase_a/probe.stderr.log",
+    "stdout_sink": "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72003/phase_a/probe.stdout.log",
+    "terminal_artifact_contract": {
+      "authority": "wrapper_post_exit",
+      "belt_and_suspenders": "probe-internal flush_probe_terminal_artifacts on cooperative SIGQUIT/_cli_main finally only",
+      "c_confirmed_requires": "RUN_ROOT/probe.exit_code.txt with explicit nonzero integer (not absent)",
+      "missing_any_artifact": "harness_invalid or artifact_incomplete",
+      "paths": {
+        "exit_code": "{RUN_ROOT}/probe.exit_code.txt",
+        "freshness_witness": "{RUN_ROOT}/prelaunch/run_root_freshness_witness.json",
+        "parent_posthash": "{RUN_ROOT}/prelaunch/parent_checkpoint_posthash.json",
+        "parent_prehash": "{RUN_ROOT}/prelaunch/parent_checkpoint_prehash.json"
+      },
+      "probe_faulthandler_exit_authority": "faulthandler.dump_traceback_later(exit=True) remains C-authoritative terminator; external launcher emits artifacts after child exit"
+    },
+    "tmux_session_name": "v4_diag_2189e72003"
+  },
+  "prior_failure_run": {
+    "note": "config_incomplete: 20/20 votes_emit but R4v receipt-build ValueError; LAUNCHER_DONE tee race",
+    "run_id": "2189e72002",
+    "run_root": "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72002/",
+    "terminal_class": "config_incomplete"
+  },
+  "repo_cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+  "revision_notes": {
+    "changes": [
+      "R4v roundtrip q_codec_selector=2BIT isolates from global BASE3 env",
+      "LAUNCHER_DONE.marker primary terminal authority",
+      "run_id 2189e72003 fresh root",
+      "config_incomplete decision table additions",
+      "two CPU regressions"
+    ],
+    "from": "tier1_v4_rescreen_tmux_v2 (2189e72002)",
+    "revision_msg_id": "1782464191713",
+    "source_edit": true
+  },
+  "run_id": "2189e72003",
+  "run_kind": "phase_a_diagnostic_instrumentation_v1",
+  "run_root": "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72003/",
+  "schema": "hrm_text_158_v4_live_phase_a_diagnostic_launch/v1",
+  "sequencing": {
+    "tier": 1,
+    "tier2_fallback_packet": "artifacts/consensus_prep/v4_live_phase_a_diagnostic_tier2_implement_packet_v1_draft.json",
+    "tier2_trigger": "C_elapsed_signature (max step_update heartbeat active_phase_elapsed_seconds>=250) AND probe.stderr.log missing durable Python stack (FAIL CLOSED)"
+  },
+  "terminal_receipt_owner": "claude",
+  "terminal_watch_contract": {
+    "classifier_owner": "claude after post-stop artifact poll",
+    "launcher_done_marker_path": "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72003/prelaunch/LAUNCHER_DONE.marker",
+    "launcher_monitor": "/mnt/c/Users/gabes/projects/claw-code/bin/watch-wrap --log /tmp/v4_diag_2189e72003_launch.log --success 'LAUNCHER_DONE' --stop-on '^LAUNCHER_DONE' --error 'FRESHNESS_FAIL|BLOCKER' --pid <launcher_pid from prelaunch/launcher_session_witness.json>",
+    "owner": "claude",
+    "post_stop_poll_required": [
+      "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72003/probe.exit_code.txt",
+      "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72003/prelaunch/parent_checkpoint_posthash.json",
+      "/home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72003/prelaunch/LAUNCHER_DONE.marker"
+    ],
+    "probe_stderr_monitor": "/mnt/c/Users/gabes/projects/claw-code/bin/watch-wrap --log /home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72003/phase_a/probe.stderr.log --error 'Traceback|Killed|OOM|CUDA|assert'",
+    "probe_stdout_monitor": "/mnt/c/Users/gabes/projects/claw-code/bin/watch-wrap --log /home/gabe/claw-code-creditdir/transient_fp_credit/v4_live_diagnostic_tier1_seed44_43_2189e72003/phase_a/probe.stdout.log --progress 'heartbeat|PHASE A|Probe exit code' --heartbeat 180"
+  },
+  "terminal_watch_owner": "claude",
+  "test_operator_receipt_class": "kick_only"
+}
