@@ -192,6 +192,48 @@ Provenance: reframe dual-accept `1782317459187` / `1782317569754`; q-pack win
 dual-accept `1782318183500` / `1782318397500`; grounding receipt
 `1782317965284-4964b8f6`.
 
+### 2026-06-26 — V4-LIVE event-coded-drain envelope closure (JOINT_DRAIN_NOT_REACHABLE)
+
+**Question:** can joint event+hot drain on the event-coded live carrier reach
+R4v sub-2 (<2.0 bpw inclusive acc) at terminal Phase-A geometry?
+
+**Verdict (bounded):** `JOINT_DRAIN_ENVELOPE_NOT_REACHABLE` **under available
+parity evidence** → Path B `STRUCTURALLY_NOT_SUB2` as a **sub-2 mechanism at
+terminal Phase-A geometry**. Event-coded-drain is **worse than dense int16** at
+terminal (acc-term comparison below). This does **NOT** claim all
+event-coded mechanisms or all accumulator alternatives are impossible — only
+that this drain path cannot close the sub-2 gap on the measured terminal surface.
+
+**Terminal measurements (run `2189e72004`, manifest-backed):**
+- R4v inclusive acc: **85.10 bpw** vs dense int16 LIVE row **~24 bpw** (~3.5× worse)
+- Events-floor: **53.78 bpw**; hot-floor: **31.32 bpw**; optimistic upper bound
+  (full event clear + max parity-safe hot reduction): **31.32 bpw**
+- Sub-2 acc budget: **7.34 MB**; optimistic total **~115 MB** → gap **15.66×**
+- Residual: flip-to-2.0 needs **>93.6%** parity-safe hot reduction; flip-to-1.75
+  needs **>94.4%**; synthetic band-sweep available fraction **0.0**; terminal
+  hot-band parity at 115MB geometry **unmeasured** (numel=1024 sweep only)
+
+**Harness / classification path:**
+- V4-LIVE Phase-A diagnostic clean terminal (20/20 steps, parent `9b4e311a` unchanged)
+- M2 cProfile → assert-path hash dedup (`9bcc008`) → R4v codec fix (`847704c`) →
+  post-dedup rescreen (`2189e72004`) → joint-drain envelope CPU projector (`efcebf7`)
+- Envelope verdict: `not_applicable` rollup transforms on manifest-only path;
+  decisive bound = `optimistic_upper_bound`
+
+**Artifacts (HRM repo `claw-code-hrm-text-158`):**
+- Evidence manifest: `artifacts/consensus_prep/v4_live_phase_a_diagnostic_tier1_run_2189e72004_evidence_manifest.json`
+- Envelope verdict: `artifacts/consensus_prep/v4_live_joint_drain_envelope_verdict_2189e72004.json` (sha `92b4cefe…`)
+- Projector: `calm/hrm_text_158/native_full_stack/carrier_envelope_projector.py`
+
+**Provenance (commits on HRM `feature/hrm-text-1.58`):**
+- `fbabd34` — Phase 0 carrier-growth stub + scale-smoke
+- `a6ec875` — Phase 1 production sidecar wire + terminal screen
+- `efcebf7` — Phase 2 envelope projector + bankable verdict
+- Parent checkpoint read-only: `9b4e311a`
+
+**Next (explicitly NOT closed here):** dense-acc-width investigation / int16
+vote-acc dominator alternatives (co_lead refinement `1782491192366`).
+
 ## Origin
 
 Lane separated from `hrm-158.md` so the curriculum lane (90/90 bank gate,
