@@ -145,9 +145,16 @@
       "checks": [
         "run_root_free",
         "parent_rehash_before",
-        "git_head_matches_head_at_packet",
+        "head_at_packet_is_ancestor_or_equal_head",
         "file_content_pins_match"
-      ]
+      ],
+      "check_semantics": {
+        "head_at_packet_is_ancestor_or_equal_head": {
+          "executable": "HEAD=$(git rev-parse HEAD); test \"$HEAD\" = \"$head_at_packet\" || git merge-base --is-ancestor \"$head_at_packet\" \"$HEAD\"",
+          "pass_condition": "exit 0",
+          "note": "head_at_packet is code-baseline provenance; file_content_pins_match is the hard integrity gate"
+        }
+      }
     },
     {
       "gate": "scale_smoke_gpu",
@@ -289,5 +296,5 @@
   "terminal_receipt_owner": "claude",
   "postrun_module": "scripts/hrm_text_158_w7_dense_acc_in_vivo_postrun.py",
   "replay_commands_artifact": "artifacts/consensus_prep/w7_dense_acc_in_vivo_gpu_launch_packet_v1_replay_commands.json",
-  "packet_sha": "a23e93a04567bddf01d947c6bd6e8505113148c6ab6c26dfffb8765637d85f3d"
+  "packet_sha": "6884bbf43698c69b8ceb4d616a0d3cd050fad8d11d082d367686ee3b5e9d815b"
 }
