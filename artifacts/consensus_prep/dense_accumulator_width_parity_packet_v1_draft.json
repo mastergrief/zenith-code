@@ -1,0 +1,103 @@
+{
+  "schema_version": "hrm_text_158_dense_accumulator_width_parity_packet/v1",
+  "packet_kind": "dense_accumulator_width_parity_phase0_cpu",
+  "scope": "C3_dense_width_only",
+  "scope_note": "Phase-0 tests C3 dense-width sweep only; C5/C6/C7 separately gated; C8 event-coded closed negative. bpw figures are vote-accumulator term scope unless explicitly labeled inclusive persistent.",
+  "sub2_scope_caveat": "bpw_reduction_at_structural_floor is vote-accumulator term only (16->7 bits); does NOT achieve sub-2 inclusive persistent — int8 q (~8b) and FP32 scale remain; at W7 structural floor persistent state is ~15 bits/weight. Narrows the int16 vote-acc dominator only; q term + scale must be addressed for sub-2.",
+  "head_at_packet": "efcebf70e26c6a414402ed9a61b57f813862b2f7",
+  "width_grid_mandatory": [16, 8, 7, 6, 5, 4],
+  "width_grid_optional": [12, 10],
+  "width_regimes": {
+    "16": "reference",
+    "8": "source_clip_lossless",
+    "7": "clip_exceeds_reachable_range",
+    "6": "sub_floor_boundary_tested",
+    "5": "sub_floor_boundary_tested",
+    "4": "below_threshold_trivial"
+  },
+  "effective_clip_bounds_anchor": "calm/hrm_text_158/native_full_stack/two_tier_carry_reducers.py:28",
+  "r5_probe_cli": "scripts/hrm_text_158_r5_acc_term_measurement_probe.py",
+  "r5_probe_module": "calm/hrm_text_158/native_full_stack/r5_acc_term_measurement_probe.py",
+  "decision_parity_contract": {
+    "O1": "crossing_set_timing",
+    "O2": "applied_flip_stream",
+    "O3": "post_flip_residual_band",
+    "O4": "q_trajectory",
+    "O5": "global_cap_order_topk_via_apply_global_rate_cap_reference",
+    "O6": "resume_parent_deferred",
+    "O7": "saved_byte_ledger"
+  },
+  "mandatory_scenarios": [
+    "delayed_crossing_sparse_votes",
+    "decay_only",
+    "oscillation",
+    "sub_threshold_staircase",
+    "near_saturation_carry",
+    "boundary_overshoot_positive",
+    "boundary_overshoot_negative",
+    "boundary_overshoot_oscillation_past_clip",
+    "boundary_overshoot_canonical_vote24"
+  ],
+  "boundary_overshoot_scenarios": [
+    "boundary_overshoot_positive",
+    "boundary_overshoot_negative",
+    "boundary_overshoot_oscillation_past_clip",
+    "boundary_overshoot_canonical_vote24"
+  ],
+  "reachable_range_structural_fact": {
+    "threshold_abs": 10,
+    "canonical_max_rank_vote_abs": 24,
+    "dry_run_max_rank_vote_abs": 4,
+    "reachable_pre_crossing_peak": 33,
+    "structural_floor_formula": "T-1 + max_vote_abs",
+    "vote_source": "accumulator_real_dynamics_verdict.PRE_REGISTERED_VOTE_PRESSURE_SCHEDULE vote_abs up to 24",
+    "w5_clip": 15,
+    "w6_clip": 31,
+    "w7_clip": 63,
+    "w6_class": "sub_floor_boundary_tested (clip 31 < peak 33; passes current overshoot battery)",
+    "w7_class": "clip_exceeds_reachable_range (clip 63 >= peak 33)",
+    "w5_class": "sub_floor_boundary_tested; breaks O3 on all 4 overshoot scenarios"
+  },
+  "reducibility_floor": {
+    "structural_clip_floor_width": 7,
+    "minimum_safe_width_empirical": 6,
+    "vote_acc_bpw_reduction_at_structural_floor_fraction": 0.5625,
+    "bpw_reduction_at_structural_floor_fraction": 0.5625,
+    "bpw_reduction_scope": "vote_accumulator_term_only_not_inclusive_persistent",
+    "persistent_state_bpw_at_w7_floor_estimate": 15,
+    "persistent_state_ledger_components_bpw": {
+      "q_term_int8": 8,
+      "vote_acc_term_at_w7_floor": 7,
+      "fp32_scale_estimate": 0
+    },
+    "sub_floor_breaking_widths": [5],
+    "sub_floor_parity_safe_widths": [6],
+    "structural_law": "floor = T-1 + max_vote_abs; any width with clip_abs < floor can break O3 residual parity; if max_vote_abs rises in vivo the floor rises (less reducible)"
+  },
+  "sub_threshold_staircase_spec": "+1 x8 then +2",
+  "classifier_labels": {
+    "C3_RUN_HEALTH_FAIL": "incomplete screen or missing mandatory width",
+    "C3_MISSING_OBSERVABLES": "O5 fixture not constructible CPU-side",
+    "C3_INT16_STORAGE_OVERWIDE": "W8 source-clip shrink only; not narrow-dynamics reducible",
+    "C3_DENSE_WIDTH_REDUCIBLE": "all sub-floor widths parity-safe on overshoot and bpw reduction target met",
+    "C3_DENSE_WIDTH_REDUCIBLE_TO_FLOOR": "reducible to structural clip floor W7 (~56% bpw off int16 vote-acc term only, not inclusive persistent budget); W5 breaks O3 on overshoot",
+    "C3_NARROW_WIDTH_BREAKS_DECISION_PARITY": "sub-floor width drifts on boundary overshoot scenarios (O1-O4)",
+    "C3_DENSE_WIDTH_INTRINSIC_UNDER_CONTRACT": "complete C3 grid; non-trivial variants break or miss byte target",
+    "C3_CLIP_EXCEEDS_REACHABLE_RANGE": "vote distribution never stresses sub-floor clip under documented bounds"
+  },
+  "fail_closed_rules": [
+    "incomplete screen never selects intrinsic",
+    "missing O5 never selects full-contract pass",
+    "W4 excluded from parity_failure_count",
+    "W8 alone never selects DENSE_WIDTH_REDUCIBLE",
+    "W6/W7 structurally lossless only when clip_abs >= reachable_peak"
+  ],
+  "o5_fixture": {
+    "module": "calm/hrm_text_158/native_full_stack/dense_accumulator_width_parity_screen.py",
+    "apply_fn": "apply_global_rate_cap_reference",
+    "apply_fn_path": "calm/hrm_text_158/native_full_stack/global_rate_cap.py:661",
+    "density_module_not_sufficient": "measure_accumulator_decision_density uses W16 plans only (accumulator_decision_density.py:443)"
+  },
+  "facade_module": "calm/hrm_text_158/native_full_stack/dense_accumulator_width_parity_screen.py",
+  "cpu_wall_budget_seconds": 120
+}
