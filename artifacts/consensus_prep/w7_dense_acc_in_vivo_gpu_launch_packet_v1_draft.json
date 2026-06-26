@@ -1,21 +1,178 @@
 {
-  "schema_version": "hrm_text_158_w7_dense_acc_in_vivo_launch_packet/v1",
+  "schema_version": "hrm_text_158_w7_dense_acc_in_vivo_launch_packet/v2",
   "packet_kind": "w7_dense_acc_in_vivo_confirmation_gpu",
   "scope": "W7_in_vivo_confirmation_only",
-  "head_at_packet": "727a9b6",
+  "head_at_packet": "1da952446d246c35db8f9ab93c6a32ba69731b2a",
+  "run_id": "2189e72005",
+  "run_root": "/home/gabe/claw-code-creditdir/transient_fp_credit/w7_dense_acc_in_vivo_seed43_43_2189e72005/",
+  "scale_smoke_steps": 3,
+  "confirmation_steps": 10,
+  "file_content_pins": {
+    "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": "ac9e456e076e62f0e67eb4b1b82851ab15102238eeee6c382b23bf8179e1b917",
+    "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py": "d4138b2f11d95fdad721468dc64b7a0ef792e4184612c37120d0e356e5780552",
+    "calm/hrm_text_158/native_full_stack/narrow_accumulator_codec.py": "23df16367f28e43ff526b0e1b0e21344be0da8e5d2ba09d61a7547b209250ddb",
+    "calm/hrm_text_158/native_full_stack/narrow_carrier_trainer_integration.py": "072296d4499d4bbfed864f78bbf1a95e8d6a71a4b9b2a74feb5012fa591d1192",
+    "calm/hrm_text_158/native_full_stack/w7_dense_acc_in_vivo_confirmation.py": "488421d01cb6082e5d49adb7246bb963c9c1064d7fe251c1b35346d52695bfcd",
+    "calm/llm_computer/tests/test_w7_confirmation_envelope_v0.py": "e9c03607d903db2bd1130603d9a05337d24cf980cca03bd859f54908cc1a3caa",
+    "calm/llm_computer/tests/test_w7_dense_acc_trainer_integration_v0.py": "2cac86c9dc75e6b357870b9d21a661fb939dd42952ee453dcac17262b777d265",
+    "scripts/hrm_text_158_bounded_delta_acquisition_probe.py": "12da013b19e9d95758a4961af23f36fb1609026ed07b1d7f371c89b9685fd679",
+    "scripts/hrm_text_158_w7_dense_acc_in_vivo_postrun.py": "90b6cd29fbe718a457e6d6e8ae4224dcacabb403e1b58e3ecb9d78eba99d375c"
+  },
+  "occupied_science_roots_never_rm": [
+    "2189e72001",
+    "2189e72002",
+    "2189e72003",
+    "2189e72004"
+  ],
   "confirmation_envelope": {
     "envelope_id": "canonical_t10_prereg_v24",
     "confirmation_vote_path": "rank_bucketed_acquisition_canonical",
     "live_threshold_abs": 10,
     "wired_max_vote_abs": 24,
-    "live_reachable_peak_estimate": 33,
+    "wired_reachable_peak_estimate": 33,
     "native_loop_injection_confirmation": "pending"
   },
   "parent_checkpoint": {
     "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
     "sha256": "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec",
-    "read_only": true
+    "read_only": true,
+    "rehash_before_launch": true,
+    "rehash_after_each_arm": true
   },
+  "scale_smoke": {
+    "required_before_dual_arm": true,
+    "scale_smoke_steps": 3,
+    "confirmation_steps": 10,
+    "geometry": {
+      "eligible_scope": "all-bitlinear",
+      "batch_size": 1,
+      "curriculum_seed": 43,
+      "support_order_seed": 43,
+      "confirmation_envelope": "canonical_t10_prereg_v24",
+      "receipt_emit_profile": "s3bb_headroom_diagnostic_slim",
+      "science_arm": "A0_rank_bucket_current_ordering",
+      "global_cap_contract": "c1_banked_faithful_long_run_global_cap",
+      "device": "cuda"
+    },
+    "default_posture": "treatment_w7_on",
+    "posture_rationale": "W7-ON (HRM_TEXT_158_RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION=1 + --dense-accumulator-w7-clip) is the conservative observer-cost measurement for the confirmation treatment arm.",
+    "proof_method": "direct_gpu_probe_argv",
+    "explicitly_not_proof": "scripts/hrm_text_158_votes_emit_scale_smoke.py CPU first-bitlinear/batch-8 helper",
+    "profiles": {
+      "baseline_observer_off": {
+        "description": "W7-ON, votes-emit OFF \u2014 headroom sidecar + step_reports.vote_pressure only",
+        "env": {
+          "HRM_TEXT_158_RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION": "1"
+        },
+        "argv": [
+          "--dense-accumulator-w7-clip"
+        ],
+        "votes_emit_enabled": false,
+        "scratch_subdir": "scale_smoke/baseline_observer_off"
+      },
+      "full_observer_on": {
+        "description": "W7-ON, votes-emit ON \u2014 full observer stack under test",
+        "env": {
+          "HRM_TEXT_158_RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION": "1"
+        },
+        "argv": [
+          "--dense-accumulator-w7-clip",
+          "--votes-emit-enabled"
+        ],
+        "votes_emit_enabled": true,
+        "scratch_subdir": "scale_smoke/full_observer_on"
+      },
+      "fallback_observer": {
+        "description": "W7-ON, votes-emit OFF \u2014 launchable only after separate fallback smoke PASS",
+        "env": {
+          "HRM_TEXT_158_RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION": "1"
+        },
+        "argv": [
+          "--dense-accumulator-w7-clip"
+        ],
+        "votes_emit_enabled": false,
+        "requires_separate_smoke_pass": true,
+        "scratch_subdir": "scale_smoke/fallback_observer"
+      }
+    },
+    "ceilings": {
+      "votes_emit_overhead_fraction_max": 0.15,
+      "step_update_wall_p95_seconds_max": 120,
+      "votes_emit_bytes_per_step_max": 51200,
+      "receipt_json_bytes_max": 10485760,
+      "silent_phase_budget_exceed_forbidden": true
+    },
+    "measurement_surfaces": [
+      "phase_telemetry per-phase wall",
+      "votes_emit/v1/manifest.json emit_timings_ms (full_observer_on only)",
+      "receipt.json byte size",
+      "headroom_wiring_sidecar.jsonl bytes/step",
+      "step_reports.vote_pressure presence"
+    ],
+    "receipt_artifact": "{run_root}/prelaunch/scale_smoke_receipt.json",
+    "on_full_observer_fail": "STOP dual-arm launch OR separately smoke-pass fallback_observer then re-gate with fallback argv",
+    "observer_too_expensive_semantics": {
+      "is_launchable_mode": false,
+      "blocks_rules_promotion_unlock": true,
+      "dual_arm_forbidden_when_true": true,
+      "postrun_flag_meaning": "classifier non-confirming only; never launch anyway"
+    }
+  },
+  "gpu_phase_budgets": {
+    "liveness_rule": "heartbeat != hot-loop progress; active-phase wall exceed = liveness failure",
+    "global_silent_phase_seconds_default": 300,
+    "heartbeat_interval_seconds": 30,
+    "per_phase_seconds_max": {
+      "step_forward_backward": {
+        "scale_smoke": 60,
+        "confirmation": 60
+      },
+      "step_update": {
+        "scale_smoke": 120,
+        "confirmation": 180
+      },
+      "votes_emit_headroom_flush": {
+        "scale_smoke": 30,
+        "confirmation": 30
+      },
+      "artifact_flush_terminal": 60
+    },
+    "on_exceed": "stack-sample \u2192 classify RUN_HEALTH_FAIL; do not wait for total timeout"
+  },
+  "launch_gate_sequence": [
+    {
+      "gate": "preflight",
+      "checks": [
+        "run_root_free",
+        "parent_rehash_before",
+        "git_head_matches_head_at_packet",
+        "file_content_pins_match"
+      ]
+    },
+    {
+      "gate": "scale_smoke_gpu",
+      "steps": 3,
+      "profiles": [
+        "baseline_observer_off",
+        "full_observer_on"
+      ],
+      "on_fail": "STOP or fallback_smoke_then_separate_regate"
+    },
+    {
+      "gate": "dual_arm_gpu",
+      "steps": 10,
+      "arms": [
+        "int16_oracle_flag_off",
+        "w7_dense_acc_treatment"
+      ],
+      "argv_profile": "full_observer_on unless fallback_observer separately smoke-passed"
+    },
+    {
+      "gate": "postrun_classifier",
+      "module": "scripts/hrm_text_158_w7_dense_acc_in_vivo_postrun.py",
+      "artifact": "{run_root}/classifier_receipt.json"
+    }
+  ],
   "dual_arm": {
     "oracle_arm": "int16_oracle_flag_off",
     "treatment_arm": "w7_dense_acc_treatment",
@@ -32,34 +189,105 @@
       "A0_rank_bucket_current_ordering",
       "--receipt-emit-profile",
       "s3bb_headroom_diagnostic_slim",
-      "--votes-emit-enabled",
       "--global-cap-contract",
       "c1_banked_faithful_long_run_global_cap",
       "--steps",
       "10",
       "--max-steps-hard",
-      "10"
+      "10",
+      "--batch-size",
+      "1",
+      "--eligible-scope",
+      "all-bitlinear",
+      "--emit-progress"
     ],
     "treatment_only_argv": [
       "--dense-accumulator-w7-clip"
+    ],
+    "votes_emit_argv_when_full_observer": [
+      "--votes-emit-enabled"
     ]
   },
   "classifier_labels": {
-    "W7_IN_VIVO_CONFIRMED": "requires confirmed_vote_acc_floor_width==7 and live_reachable_peak_estimate>=33",
-    "W7_BREAKS_LIVE_PARITY": "O1-O4 mismatch under meaningful pressure",
-    "W7_FLOOR_RISES_WITH_LIVE_VOTE_MAX": "T_live-1+max_vote_abs_observed>63",
-    "ENVELOPE_UNDER_PRESSED": "observed peak below meaningful parity pressure",
-    "LIVE_FLOOR_MUCH_BELOW_W7": "honest small-floor follow-up",
-    "OBSERVER_TOO_EXPENSIVE": "votes-emit/cap observer over budget",
-    "RUN_HEALTH_FAIL": "harness or envelope mismatch"
+    "W7_IN_VIVO_CONFIRMED": "confirmed_vote_acc_floor_width==7 AND live_max_vote_abs_source==step_reports.vote_pressure AND live_reachable_peak_estimate>=33 AND parity OK",
+    "W7_BREAKS_LIVE_PARITY": "O1-O4 mismatch under meaningful pressure (crossing/applied-mask/q/final parity)",
+    "W7_FLOOR_RISES_WITH_LIVE_VOTE_MAX": "observed T_live-1+max_vote_abs_observed>63",
+    "LIVE_FLOOR_MUCH_BELOW_W7": "non-confirming; 15<=observed_peak<33; schedule/step re-scope; 10\u219220 requires SEPARATE gate",
+    "ENVELOPE_UNDER_PRESSED": "non-confirming; observed_peak<15; distinct from LIVE_FLOOR_MUCH_BELOW_W7; schedule/step re-scope",
+    "OBSERVER_TOO_EXPENSIVE": "scale-smoke ceilings exceeded; NOT launchable; blocks unlock",
+    "RUN_HEALTH_FAIL": "harness, envelope, arm-flag, or missing observed vote_pressure failure"
+  },
+  "outcome_routing": {
+    "W7_IN_VIVO_CONFIRMED": {
+      "confirming": true,
+      "action": "dispatch held eager-tier rules/atlas update (cite live peak/floor NUMBERs) + open q-term/scale fork"
+    },
+    "W7_BREAKS_LIVE_PARITY": {
+      "confirming": false,
+      "action": "re-scope dense floor (W8/source-clip or hybrid tail); NOT q/scale"
+    },
+    "W7_FLOOR_RISES_WITH_LIVE_VOTE_MAX": {
+      "confirming": false,
+      "action": "re-derive floor at live max vote_abs"
+    },
+    "LIVE_FLOOR_MUCH_BELOW_W7": {
+      "confirming": false,
+      "peak_band": "[15,33)",
+      "action": "non-confirming evidence; step/schedule re-scope; any confirmation_steps 10\u219220 bump behind SEPARATE gate"
+    },
+    "ENVELOPE_UNDER_PRESSED": {
+      "confirming": false,
+      "peak_band": "[0,15)",
+      "action": "non-confirming evidence; step/schedule re-scope; distinct from LIVE_FLOOR_MUCH_BELOW_W7"
+    },
+    "OBSERVER_TOO_EXPENSIVE": {
+      "confirming": false,
+      "launchable": false,
+      "action": "STOP or separately smoke-pass fallback_observer; NEVER dual-arm under observer_too_expensive=true"
+    },
+    "RUN_HEALTH_FAIL": {
+      "confirming": false,
+      "action": "harness fix slice; no science claim"
+    }
+  },
+  "scoped_non_claims": {
+    "O5_global_cap": "W7 slice confirms vote-acc WIDTH only; missing global-cap parity alone does not block W7_IN_VIVO_CONFIRMED; cap perturbation of O1-O4/crossing/applied-mask/q/final parity still blocks via W7_BREAKS_LIVE_PARITY or RUN_HEALTH_FAIL"
   },
   "explicit_non_claims": [
     "dynamics_only_clip_boundary_not_byte_pack",
     "not_native_loop_injection_confirmation",
-    "not_rules_promotion_unlock_in_code_readiness_slice",
+    "not_rules_promotion_unlock_in_launch_packet_slice",
     "not_saved_byte_ledger_claim",
-    "not_inclusive_sub2"
+    "not_inclusive_sub2",
+    "not_gpu_launch_in_packet_finalization_slice"
   ],
+  "terminal_watch_contract": {
+    "owner": "claude",
+    "classifier_owner": "claude after postrun classifier_receipt.json",
+    "scale_smoke_stdout_monitor": "/mnt/c/Users/gabes/projects/claw-code/bin/watch-wrap --log {run_root}/scale_smoke/full_observer_on/probe.stdout.log --progress 'heartbeat|step_update' --heartbeat 60 --error 'Traceback|Killed|OOM|CUDA|assert'",
+    "oracle_arm_stdout_monitor": "/mnt/c/Users/gabes/projects/claw-code/bin/watch-wrap --log {run_root}/int16_oracle_flag_off/probe.stdout.log --progress 'heartbeat|step_update' --heartbeat 60 --error 'Traceback|Killed|OOM|CUDA|assert'",
+    "treatment_arm_stdout_monitor": "/mnt/c/Users/gabes/projects/claw-code/bin/watch-wrap --log {run_root}/w7_dense_acc_treatment/probe.stdout.log --progress 'heartbeat|step_update' --heartbeat 60 --error 'Traceback|Killed|OOM|CUDA|assert'",
+    "oracle_arm_stderr_monitor": "/mnt/c/Users/gabes/projects/claw-code/bin/watch-wrap --log {run_root}/int16_oracle_flag_off/probe.stderr.log --error 'Traceback|Killed|OOM|CUDA|assert'",
+    "treatment_arm_stderr_monitor": "/mnt/c/Users/gabes/projects/claw-code/bin/watch-wrap --log {run_root}/w7_dense_acc_treatment/probe.stderr.log --error 'Traceback|Killed|OOM|CUDA|assert'",
+    "post_stop_poll_required": [
+      "{run_root}/classifier_receipt.json",
+      "{run_root}/int16_oracle_flag_off/receipt.json",
+      "{run_root}/w7_dense_acc_treatment/receipt.json",
+      "{run_root}/prelaunch/scale_smoke_receipt.json"
+    ],
+    "watch_to_classifier_map": {
+      "RUN_HEALTH_FAIL": "harness/envelope/parent rehash/steps incomplete/phase budget exceed",
+      "OBSERVER_TOO_EXPENSIVE": "scale_smoke_receipt FAIL or postrun observer_too_expensive=true",
+      "W7_FLOOR_RISES_WITH_LIVE_VOTE_MAX": "classifier_receipt primary + live_reachable_peak_estimate>63",
+      "W7_BREAKS_LIVE_PARITY": "classifier_receipt parity_break=true",
+      "LIVE_FLOOR_MUCH_BELOW_W7": "classifier_receipt primary; 15<=peak<33",
+      "ENVELOPE_UNDER_PRESSED": "classifier_receipt primary; peak<15",
+      "W7_IN_VIVO_CONFIRMED": "classifier_receipt rules_promotion_unlock_predicate=true"
+    }
+  },
+  "test_operator_receipt_class": "kick_only",
+  "terminal_receipt_owner": "claude",
   "postrun_module": "scripts/hrm_text_158_w7_dense_acc_in_vivo_postrun.py",
-  "replay_commands_artifact": "artifacts/consensus_prep/w7_dense_acc_in_vivo_gpu_launch_packet_v1_replay_commands.json"
+  "replay_commands_artifact": "artifacts/consensus_prep/w7_dense_acc_in_vivo_gpu_launch_packet_v1_replay_commands.json",
+  "packet_sha": "a23e93a04567bddf01d947c6bd6e8505113148c6ab6c26dfffb8765637d85f3d"
 }
