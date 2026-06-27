@@ -21,10 +21,12 @@ from calm.hrm_text_158.native_full_stack.two_tier_carry_reducers import (
 
 S3BB_W6_HEADROOM_DIAGNOSTIC_PHASE = "s3bb-w6-headroom-diagnostic"
 W7_DENSE_ACC_IN_VIVO_CONFIRMATION_PHASE = "w7-dense-acc-in-vivo-confirmation"
+W8_DENSE_ACC_IN_VIVO_CONFIRMATION_PHASE = "w8-dense-acc-in-vivo-confirmation"
 _HEADROOM_TELEMETRY_EMIT_PHASES = frozenset(
     {
         S3BB_W6_HEADROOM_DIAGNOSTIC_PHASE,
         W7_DENSE_ACC_IN_VIVO_CONFIRMATION_PHASE,
+        W8_DENSE_ACC_IN_VIVO_CONFIRMATION_PHASE,
     }
 )
 HEADROOM_TELEMETRY_SCHEMA_VERSION = "hrm_text_158_s3bb_headroom_telemetry/v0"

@@ -76,22 +76,23 @@
     "oracle_127_plateau_is_storage_clamp_saturation_not_free_headroom",
     "cpu_lane1_lane2_static_proof_does_not_replace_live_feedback_loop_gpu_increment",
     "not_gpu_launch_until_plus1_launch_gate",
-    "hygiene_asserts_launch_ready_at_rev4"
+    "hygiene_asserts_launch_ready_at_rev5_sidecar_emit_fix"
   ],
   "file_content_pins": {
     "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": "ac9e456e076e62f0e67eb4b1b82851ab15102238eeee6c382b23bf8179e1b917",
     "calm/hrm_text_158/native_full_stack/narrow_accumulator_codec.py": "6e8a07480b3b39621c306e80ad2d679ac7bb9158ad8a4e21d4cc3e95421ec0ca",
     "calm/hrm_text_158/native_full_stack/narrow_carrier_trainer_integration.py": "3b0ec140b65a91bd64dd78a8d649045518f2c7e95989847ec035a1b12cc86502",
     "calm/hrm_text_158/native_full_stack/s3bb_decision_parity.py": "b907266bf2a3eb3d9a5b140a4132c4a16ccf328d52e8b6405aa026f75b2eb8d5",
-    "calm/hrm_text_158/native_full_stack/s3bb_headroom_telemetry.py": "6b8725b6adeba770e71dda644309e47e383f20a7d9936ce5ea032865bdd2645d",
+    "calm/hrm_text_158/native_full_stack/s3bb_headroom_telemetry.py": "926090d49bd020125ea6ff9f48007ef032e4441867d64cb280a106c3da2aad85",
     "calm/hrm_text_158/native_full_stack/w7_dense_acc_in_vivo_confirmation.py": "4aec056a0ac870128fc0998cf612677216a1cd12b8f690370ec662c0fd479d82",
     "calm/hrm_text_158/native_full_stack/w7_launch_hygiene.py": "9c7f771618d13ffee30233e5b66cef0d2d4114bfe66ed31e9cedbf7c68e05096",
     "calm/hrm_text_158/native_full_stack/w8_dense_acc_in_vivo_confirmation.py": "76bb82860ddbd7b67eda74f8abdb76e559b03f01276399ea8d0330d4fa403183",
     "calm/hrm_text_158/native_full_stack/w8_launch_hygiene.py": "1a93fcbfdc61ab2cc736e4b1ab798c082f57c7a404ded5b0517ec582ac27f928",
+    "calm/llm_computer/tests/test_w8_headroom_telemetry_sidecar_phase_v0.py": "5d7d2d316cac96c2c388779ff453841afd5bbe59472692ac036028cd8226fe55",
     "scripts/hrm_text_158_bounded_delta_acquisition_probe.py": "d8080ebaf5460c9b0abfde47fea09bc21117db9631ef1922971166f7367d5bf3",
     "scripts/hrm_text_158_w8_dense_acc_in_vivo_postrun.py": "11a04b9690b22c90799d570f4dce2f6aaa8a0bef3b95c8f755f7d2a8180d014c"
   },
-  "file_content_pins_note": "rev4: W8 hygiene replay asserts adapted (w8_launch_hygiene.py); lane-3 CPU at 3aa4f52. Pins refreshed post-hygiene-adapt slice.",
+  "file_content_pins_note": "rev5: W8 phase added to _HEADROOM_TELEMETRY_EMIT_PHASES (additive only); sidecar emission gap fix; run_id 2189e72010; 2189e72009 quarantined HARNESS_INVALID.",
   "gpu_hold": true,
   "gpu_phase_budgets": {
     "global_silent_phase_seconds_default": 300,
@@ -173,7 +174,8 @@
     "2189e72005",
     "2189e72006",
     "2189e72007",
-    "2189e72008"
+    "2189e72008",
+    "2189e72009"
   ],
   "outcome_routing": {
     "W8_BREAKS_LIVE_PARITY": {
@@ -196,8 +198,8 @@
     }
   },
   "packet_kind": "w8_dense_acc_in_vivo_confirmation_gpu",
-  "packet_revision": "v1_rev4_w8_hygiene_adapt",
-  "packet_sha": "88fb04974a8bb74e61b260999f1fafcdddeda83907e949f8f85d9f2b786c8514",
+  "packet_revision": "v1_rev5_w8_sidecar_emit_fix",
+  "packet_sha": "80bb26bc2133a08b4b1ef3363f2de23dbd2ded14de69e384ad0afc31d29d4db9",
   "parent_checkpoint": {
     "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
     "read_only": true,
@@ -225,12 +227,24 @@
     },
     "votes_emit_enabled": false
   },
+  "prior_occupied_run_relabels": {
+    "2189e72009": {
+      "confirming": false,
+      "launchable": false,
+      "notes": {
+        "HARNESS_INVALID": "scale-smoke hygiene gate: headroom_wiring_sidecar.jsonl NOT emitted \u2014 W8 phase missing from _HEADROOM_TELEMETRY_EMIT_PHASES allowlist; dual-arm NOT run; emission fix rev5 additive allowlist"
+      },
+      "terminal_classifiers": [
+        "HARNESS_INVALID"
+      ]
+    }
+  },
   "replay_commands_artifact": "artifacts/consensus_prep/w8_dense_acc_in_vivo_gpu_launch_packet_v1_replay_commands.json",
-  "replay_commands_sha256": "cc5fec088de7adbb2f47f417d23a2312c5e0ce4e580cb34f1d4986d1d12789de",
-  "replay_provenance": "hand_authored_json_hygiene_adapt_slice",
-  "run_id": "2189e72009",
-  "run_id_policy": "FREE \u2014 do NOT reuse 2189e72001..08 (occupied W7 arc + canonical negative 2189e72008)",
-  "run_root": "/home/gabe/claw-code-creditdir/transient_fp_credit/w8_dense_acc_in_vivo_seed43_43_2189e72009/",
+  "replay_commands_sha256": "1446b2be5bdbb638b0ffdb4329506125134e1ba22b67672afb8393615c8f188d",
+  "replay_provenance": "hand_authored_json_sidecar_emit_fix_slice",
+  "run_id": "2189e72010",
+  "run_id_policy": "FREE \u2014 do NOT reuse 2189e72001..09 (occupied W7/W8 arc + HARNESS_INVALID 2189e72009)",
+  "run_root": "/home/gabe/claw-code-creditdir/transient_fp_credit/w8_dense_acc_in_vivo_seed43_43_2189e72010/",
   "scale_smoke": {
     "failure_terminals": {
       "code_pin_mismatch": "HARNESS_INVALID",
