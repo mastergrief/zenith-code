@@ -1,0 +1,459 @@
+{
+  "schema_version": "hrm_text_158_w7_dense_acc_in_vivo_launch_packet/v4",
+  "packet_revision": "v3b_post_fix_sidecar_hygiene_gate",
+  "packet_kind": "w7_dense_acc_in_vivo_confirmation_gpu",
+  "scope": "W7_in_vivo_confirmation_only",
+  "head_at_packet": "b54c21eb7890589cfbff1fa7f2fb7b3dc28cae70",
+  "run_id": "2189e72007",
+  "run_root": "/home/gabe/claw-code-creditdir/transient_fp_credit/w7_dense_acc_in_vivo_seed43_43_2189e72007/",
+  "scale_smoke_steps": 3,
+  "confirmation_steps": 10,
+  "confirmation_phase": "w7-dense-acc-in-vivo-confirmation",
+  "file_content_pins": {
+    "scripts/hrm_text_158_bounded_delta_acquisition_probe.py": "fad254da27afda5225b438aef5e536cbeec3f1d56c2e806a8a852e77cf24e150",
+    "calm/hrm_text_158/native_full_stack/s3bb_headroom_telemetry.py": "6b8725b6adeba770e71dda644309e47e383f20a7d9936ce5ea032865bdd2645d",
+    "calm/hrm_text_158/native_full_stack/s3bb_decision_parity.py": "b907266bf2a3eb3d9a5b140a4132c4a16ccf328d52e8b6405aa026f75b2eb8d5",
+    "calm/hrm_text_158/native_full_stack/w7_dense_acc_in_vivo_confirmation.py": "6c2edea86c0d057de344ee1e4783a1ad072482a19f787989e9d5d08249c857e2",
+    "scripts/hrm_text_158_w7_dense_acc_in_vivo_postrun.py": "a717b20778e88bc2cd8e23c0f9e826864769ea7bd3c03ccd892d9b10cb939314",
+    "calm/hrm_text_158/native_full_stack/narrow_carrier_trainer_integration.py": "072296d4499d4bbfed864f78bbf1a95e8d6a71a4b9b2a74feb5012fa591d1192",
+    "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": "ac9e456e076e62f0e67eb4b1b82851ab15102238eeee6c382b23bf8179e1b917",
+    "calm/hrm_text_158/native_full_stack/narrow_accumulator_codec.py": "23df16367f28e43ff526b0e1b0e21344be0da8e5d2ba09d61a7547b209250ddb",
+    "calm/llm_computer/tests/test_w7_headroom_sidecar_session_hygiene_v0.py": "45edb1e7f06a1304efeae6bc713e42580bf312a63ba3a8a5b71986b37cabd084",
+    "calm/llm_computer/tests/test_w7_postrun_sidecar_classifier_v0.py": "9f68903b305c222fc1c8d071b64b77b7d50d9225d92f7713e26ba04e8c37bd9e"
+  },
+  "occupied_science_roots_never_rm": [
+    "2189e72001",
+    "2189e72002",
+    "2189e72003",
+    "2189e72004",
+    "2189e72005",
+    "2189e72006"
+  ],
+  "prior_occupied_run_relabels": {
+    "2189e72005": {
+      "terminal_classifiers": [
+        "OBSERVER_TOO_EXPENSIVE",
+        "HARNESS_INVALID"
+      ],
+      "launchable": false,
+      "confirming": false,
+      "notes": {
+        "OBSERVER_TOO_EXPENSIVE": "full_observer scale-smoke step_update_max 155.85s > 120s ceiling",
+        "HARNESS_INVALID": "dual-arm ran on fallback argv without sidecar; postrun FileNotFoundError",
+        "partial_diagnostic_only": "vote_pressure max=24 envelope-audit only; NOT W7 confirmation"
+      }
+    },
+    "2189e72006": {
+      "terminal_classifiers": [
+        "RUN_HEALTH_FAIL"
+      ],
+      "launchable": false,
+      "confirming": false,
+      "notes": {
+        "RUN_HEALTH_FAIL": "postrun classifier structural_fail oracle_duplicate_keys (384 rows, 128 bit-identical dups steps 3-6); dual-arm in-contract but oracle cross-session retry double-emit",
+        "partial_science_preserved": "vote_pressure max=24 peak=33 on both arms; envelope wiring live; NOT W7 parity adjudication",
+        "emission_fix_required": "b54c21e probe-start fresh sidecar truncate"
+      }
+    }
+  },
+  "session_hygiene": {
+    "load_bearing": true,
+    "single_probe_session_per_arm": true,
+    "scratch_wipe_before_each_arm_launch": true,
+    "probe_start_fresh_sidecar_commit": "b54c21e",
+    "expected_sidecar_rows_per_arm": 256,
+    "expected_sidecar_rows_formula": "(confirmation_steps - WARMUP_STEPS) * eligible_module_count = (10 - 2) * 32",
+    "expected_duplicate_keys_per_arm": 0,
+    "bounded_steps_start_count_per_arm": 1,
+    "run_log_session_marker": "phase_telemetry event=start phase=bounded_steps",
+    "on_violation": "TERMINAL RUN_HEALTH_FAIL or HARNESS_INVALID; no W7 science verdict"
+  },
+  "primary_confirmation_profile": {
+    "track": "cheap_complete",
+    "phase": "w7-dense-acc-in-vivo-confirmation",
+    "receipt_emit_profile": "s3bb_headroom_diagnostic_slim",
+    "confirmation_envelope": "canonical_t10_prereg_v24",
+    "votes_emit_enabled": false,
+    "treatment_env": {
+      "HRM_TEXT_158_RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION": "1"
+    },
+    "treatment_argv": [
+      "--dense-accumulator-w7-clip"
+    ],
+    "delivers": [
+      "O1_headroom_wiring_sidecar",
+      "O2_O4_step_reports",
+      "peak_floor_step_reports.vote_pressure"
+    ],
+    "phase_gate_note": "sidecar emission is phase-gated at s3bb_headroom_telemetry.py attach hook; probe-start fresh sidecar at b54c21e prevents cross-session append duplicates"
+  },
+  "confirmation_envelope": {
+    "envelope_id": "canonical_t10_prereg_v24",
+    "confirmation_vote_path": "rank_bucketed_acquisition_canonical",
+    "live_threshold_abs": 10,
+    "wired_max_vote_abs": 24,
+    "wired_reachable_peak_estimate": 33,
+    "native_loop_injection_confirmation": "pending"
+  },
+  "parent_checkpoint": {
+    "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+    "sha256": "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec",
+    "read_only": true,
+    "rehash_before_launch": true,
+    "rehash_after_each_arm": true
+  },
+  "scale_smoke": {
+    "gate_name": "post_fix_sidecar_hygiene_gate",
+    "gate_alias": "cheap_complete_scale_smoke",
+    "gate_role": "POST-FIX SIDECAR-HYGIENE GATE \u2014 proves b54c21e emission fix on real GPU runtime path before dual-arm",
+    "required_before_dual_arm": true,
+    "proves_emission_fix_commit": "b54c21e",
+    "scale_smoke_steps": 3,
+    "confirmation_steps": 10,
+    "geometry": {
+      "eligible_scope": "all-bitlinear",
+      "batch_size": 1,
+      "curriculum_seed": 43,
+      "support_order_seed": 43,
+      "confirmation_envelope": "canonical_t10_prereg_v24",
+      "receipt_emit_profile": "s3bb_headroom_diagnostic_slim",
+      "science_arm": "A0_rank_bucket_current_ordering",
+      "global_cap_contract": "c1_banked_faithful_long_run_global_cap",
+      "device": "cuda",
+      "phase": "w7-dense-acc-in-vivo-confirmation"
+    },
+    "default_posture": "cheap_complete_w7_on",
+    "posture_rationale": "W7-ON + slim receipt emit + votes-emit OFF delivers O1 sidecar + step_reports vote_pressure within ceiling; emission-fix b54c21e ensures single-session sidecar hygiene.",
+    "proof_method": "direct_gpu_probe_argv",
+    "explicitly_not_proof": "scripts/hrm_text_158_votes_emit_scale_smoke.py CPU first-bitlinear/batch-8 helper",
+    "profiles": {
+      "cheap_complete_w7_on": {
+        "description": "PRIMARY: W7-ON, votes-emit OFF, honest W7 confirmation phase",
+        "env": {
+          "HRM_TEXT_158_RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION": "1"
+        },
+        "argv": [
+          "--dense-accumulator-w7-clip"
+        ],
+        "votes_emit_enabled": false,
+        "phase": "w7-dense-acc-in-vivo-confirmation",
+        "scratch_subdir": "scale_smoke/cheap_complete_w7_on",
+        "scratch_wipe_before_launch": true
+      }
+    },
+    "load_bearing_assertions": {
+      "all_required": true,
+      "any_failure_full_stop_no_dual_arm": true,
+      "checks": [
+        {
+          "id": "sidecar_absent_or_empty_before_probe_session",
+          "artifact": "headroom_wiring_sidecar.jsonl",
+          "when": "after_scratch_wipe_before_probe_launch",
+          "predicate": "file absent OR zero bytes"
+        },
+        {
+          "id": "single_probe_session_in_run_log",
+          "artifact": "run.log",
+          "predicate": "bounded_steps start event count == 1"
+        },
+        {
+          "id": "sidecar_row_count_formula",
+          "formula": "(steps_completed - WARMUP_STEPS) * eligible_module_count",
+          "warmup_steps": 2,
+          "eligible_module_count_source": "receipt.eligible_module_count",
+          "steps_completed_source": "receipt.steps_completed",
+          "predicate": "oracle_row_count == expected_rows"
+        },
+        {
+          "id": "sidecar_duplicate_key_count_zero",
+          "predicate": "duplicate (step,state_key) count == 0"
+        },
+        {
+          "id": "parent_checkpoint_unchanged",
+          "parent_sha256": "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec",
+          "predicate": "re-hash after gate matches expected"
+        },
+        {
+          "id": "step_update_max_within_ceiling",
+          "field": "phase_telemetry.events[phase=step_update].duration_seconds",
+          "predicate": "max <= 120",
+          "ceiling_seconds": 120
+        },
+        {
+          "id": "headroom_wiring_sidecar_nonempty_after_session",
+          "artifact": "headroom_wiring_sidecar.jsonl",
+          "predicate": "exists and non-empty after probe completes"
+        },
+        {
+          "id": "step_reports_vote_pressure_present",
+          "field": "step_reports[*].vote_pressure",
+          "predicate": "present on every completed step"
+        }
+      ]
+    },
+    "failure_terminals": {
+      "stale_or_nonempty_sidecar_before_session": "HARNESS_INVALID",
+      "duplicate_key": "HARNESS_INVALID",
+      "second_session_or_retry": "HARNESS_INVALID",
+      "sidecar_row_count_mismatch": "HARNESS_INVALID",
+      "parent_hash_change": "RUN_HEALTH_FAIL",
+      "code_pin_mismatch": "HARNESS_INVALID",
+      "step_update_ceiling_miss": "OBSERVER_TOO_EXPENSIVE",
+      "missing_vote_pressure": "HARNESS_INVALID"
+    },
+    "ceilings": {
+      "step_update_wall_p95_seconds_max": 120,
+      "step_update_wall_max_seconds_max": 120,
+      "receipt_json_bytes_max": 10485760,
+      "silent_phase_budget_exceed_forbidden": true
+    },
+    "on_fail": "FULL STOP \u2014 dual-arm forbidden. Hygiene fail \u2192 TERMINAL HARNESS_INVALID; ceiling fail \u2192 TERMINAL OBSERVER_TOO_EXPENSIVE; parent rehash fail \u2192 TERMINAL RUN_HEALTH_FAIL. No same-gate fallback continuation."
+  },
+  "optional_addon_profiles": {
+    "full_observer_on": {
+      "description": "OPTIONAL separate profile: W7-ON + votes-emit ON; NOT in primary launch_sequence",
+      "env": {
+        "HRM_TEXT_158_RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION": "1"
+      },
+      "argv": [
+        "--dense-accumulator-w7-clip",
+        "--votes-emit-enabled"
+      ],
+      "votes_emit_enabled": true,
+      "phase": "w7-dense-acc-in-vivo-confirmation",
+      "on_ceiling_fail": "TERMINAL OBSERVER_TOO_EXPENSIVE",
+      "auto_continue_forbidden": true,
+      "dual_arm_forbidden_on_fail": true,
+      "scratch_subdir": "optional_addon/full_observer_on"
+    }
+  },
+  "forbidden_launch_patterns": [
+    "full_observer_fail_then_fallback_then_dual_arm_in_same_gate",
+    "dual_arm_under_observer_too_expensive_without_separate_regate",
+    "dual_arm_on_fallback_argv_without_sidecar_contract",
+    "retry_probe_onto_existing_arm_scratch_without_wipe",
+    "multiple_bounded_steps_start_in_same_arm_run_log"
+  ],
+  "gpu_phase_budgets": {
+    "liveness_rule": "heartbeat != hot-loop progress; active-phase wall exceed = liveness failure",
+    "global_silent_phase_seconds_default": 300,
+    "heartbeat_interval_seconds": 30,
+    "per_phase_seconds_max": {
+      "step_forward_backward": {
+        "scale_smoke": 60,
+        "confirmation": 60
+      },
+      "step_update": {
+        "scale_smoke": 120,
+        "confirmation": 180
+      },
+      "votes_emit_headroom_flush": {
+        "scale_smoke": 30,
+        "confirmation": 30
+      },
+      "artifact_flush_terminal": 60
+    },
+    "on_exceed": "stack-sample \u2192 classify RUN_HEALTH_FAIL; do not wait for total timeout"
+  },
+  "launch_gate_sequence": [
+    {
+      "gate": "preflight",
+      "checks": [
+        "run_root_free",
+        "parent_rehash_before",
+        "head_at_packet_is_ancestor_or_equal_head",
+        "file_content_pins_match"
+      ],
+      "check_semantics": {
+        "head_at_packet_is_ancestor_or_equal_head": {
+          "executable": "HEAD=$(git rev-parse HEAD); test \"$HEAD\" = \"$head_at_packet\" || git merge-base --is-ancestor \"$head_at_packet\" \"$HEAD\"",
+          "pass_condition": "exit 0",
+          "note": "head_at_packet is code-baseline provenance; file_content_pins_match is the hard integrity gate"
+        }
+      }
+    },
+    {
+      "gate": "post_fix_sidecar_hygiene_gate",
+      "gate_alias": "cheap_complete_scale_smoke",
+      "steps": 3,
+      "profile": "cheap_complete_w7_on",
+      "scratch_wipe_before_launch": true,
+      "pre_probe_assertions": [
+        "sidecar_absent_or_empty_after_scratch_wipe"
+      ],
+      "post_probe_assertions": [
+        "single_bounded_steps_session_in_run_log",
+        "sidecar_row_count_formula_from_receipt",
+        "sidecar_duplicate_key_count_equals_0",
+        "parent_rehash_unchanged",
+        "step_update_max_within_120s",
+        "sidecar_nonempty_after_session",
+        "vote_pressure_present_all_steps"
+      ],
+      "on_pass": "dual_arm_gpu",
+      "on_fail": "FULL STOP \u2014 NO dual_arm_gpu"
+    },
+    {
+      "gate": "dual_arm_gpu",
+      "steps": 10,
+      "argv_profile": "cheap_complete_w7_on",
+      "scratch_wipe_before_each_arm": true,
+      "single_probe_session_per_arm": true,
+      "arms": [
+        "int16_oracle_flag_off",
+        "w7_dense_acc_treatment"
+      ],
+      "votes_emit_enabled": false,
+      "post_arm_assertions": [
+        "parent_rehash_after_arm",
+        "single_bounded_steps_session_in_run_log",
+        "sidecar_row_count_equals_256",
+        "sidecar_duplicate_key_count_equals_0"
+      ]
+    },
+    {
+      "gate": "postrun_classifier",
+      "module": "scripts/hrm_text_158_w7_dense_acc_in_vivo_postrun.py",
+      "artifact": "{run_root}/classifier_receipt.json",
+      "expected_clean_run_terminals": [
+        "W7_IN_VIVO_CONFIRMED",
+        "W7_BREAKS_LIVE_PARITY",
+        "W7_FLOOR_RISES_WITH_LIVE_VOTE_MAX",
+        "LIVE_FLOOR_MUCH_BELOW_W7",
+        "ENVELOPE_UNDER_PRESSED"
+      ],
+      "structural_run_health_fail_on_clean_run_means_emission_fix_failed": true
+    }
+  ],
+  "dual_arm": {
+    "oracle_arm": "int16_oracle_flag_off",
+    "treatment_arm": "w7_dense_acc_treatment",
+    "argv_profile": "cheap_complete_w7_on",
+    "votes_emit_enabled": false,
+    "phase": "w7-dense-acc-in-vivo-confirmation",
+    "oracle_env": {
+      "HRM_TEXT_158_RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION": "0"
+    },
+    "treatment_env": {
+      "HRM_TEXT_158_RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION": "1"
+    },
+    "shared_argv": [
+      "--confirmation-envelope",
+      "canonical_t10_prereg_v24",
+      "--science-arm",
+      "A0_rank_bucket_current_ordering",
+      "--receipt-emit-profile",
+      "s3bb_headroom_diagnostic_slim",
+      "--global-cap-contract",
+      "c1_banked_faithful_long_run_global_cap",
+      "--phase",
+      "w7-dense-acc-in-vivo-confirmation",
+      "--steps",
+      "10",
+      "--max-steps-hard",
+      "10",
+      "--batch-size",
+      "1",
+      "--eligible-scope",
+      "all-bitlinear",
+      "--emit-progress"
+    ],
+    "treatment_only_argv": [
+      "--dense-accumulator-w7-clip"
+    ]
+  },
+  "classifier_labels": {
+    "W7_IN_VIVO_CONFIRMED": "confirmed_vote_acc_floor_width==7 AND live_max_vote_abs_source==step_reports.vote_pressure AND live_reachable_peak_estimate>=33 AND parity OK AND NOT structural_fail",
+    "W7_BREAKS_LIVE_PARITY": "O1-O4 mismatch under meaningful pressure (crossing/applied-mask/q/final parity) on clean sidecars",
+    "W7_FLOOR_RISES_WITH_LIVE_VOTE_MAX": "observed T_live-1+max_vote_abs_observed>63",
+    "LIVE_FLOOR_MUCH_BELOW_W7": "non-confirming; 15<=observed_peak<33; schedule/step re-scope; 10\u219220 requires SEPARATE gate",
+    "ENVELOPE_UNDER_PRESSED": "non-confirming; observed_peak<15; distinct from LIVE_FLOOR_MUCH_BELOW_W7; schedule/step re-scope",
+    "OBSERVER_TOO_EXPENSIVE": "scale-smoke ceilings exceeded; NOT launchable; blocks unlock",
+    "HARNESS_INVALID": "harness ran out-of-contract (session hygiene / sidecar shape violation)",
+    "RUN_HEALTH_FAIL": "harness, envelope, arm-flag, structural sidecar, or missing observed vote_pressure failure \u2014 on clean run post b54c21e indicates emission fix did not take"
+  },
+  "outcome_routing": {
+    "W7_IN_VIVO_CONFIRMED": {
+      "confirming": true,
+      "action": "dispatch held eager-tier rules/atlas update (cite live peak/floor NUMBERs) + open q-term/scale fork"
+    },
+    "W7_BREAKS_LIVE_PARITY": {
+      "confirming": false,
+      "action": "re-scope dense floor (W8/source-clip or hybrid tail); NOT q/scale; genuine science divergence on clean sidecars"
+    },
+    "W7_FLOOR_RISES_WITH_LIVE_VOTE_MAX": {
+      "confirming": false,
+      "action": "re-derive floor at live max vote_abs"
+    },
+    "LIVE_FLOOR_MUCH_BELOW_W7": {
+      "confirming": false,
+      "peak_band": "[15,33)",
+      "action": "non-confirming evidence; step/schedule re-scope"
+    },
+    "ENVELOPE_UNDER_PRESSED": {
+      "confirming": false,
+      "peak_band": "[0,15)",
+      "action": "non-confirming evidence; step/schedule re-scope"
+    },
+    "OBSERVER_TOO_EXPENSIVE": {
+      "confirming": false,
+      "launchable": false,
+      "action": "TERMINAL on scale-smoke ceiling fail; NEVER dual-arm under observer_too_expensive=true"
+    },
+    "HARNESS_INVALID": {
+      "confirming": false,
+      "launchable": false,
+      "action": "harness fix slice; session hygiene or sidecar shape violation"
+    },
+    "RUN_HEALTH_FAIL": {
+      "confirming": false,
+      "action": "harness fix slice; structural sidecar duplicate or missing session hygiene \u2014 NOT bankable W7 science on clean run"
+    }
+  },
+  "scoped_non_claims": {
+    "O5_global_cap": "W7 slice confirms vote-acc WIDTH only; missing global-cap parity alone does not block W7_IN_VIVO_CONFIRMED; cap perturbation of O1-O4 still blocks via W7_BREAKS_LIVE_PARITY or RUN_HEALTH_FAIL"
+  },
+  "explicit_non_claims": [
+    "dynamics_only_clip_boundary_not_byte_pack",
+    "not_native_loop_injection_confirmation",
+    "not_rules_promotion_unlock_in_launch_packet_slice",
+    "not_saved_byte_ledger_claim",
+    "not_inclusive_sub2",
+    "not_gpu_launch_in_packet_draft_slice",
+    "not_w6_phase_reuse_for_w7_confirmation"
+  ],
+  "terminal_watch_contract": {
+    "owner": "claude",
+    "classifier_owner": "claude after postrun classifier_receipt.json",
+    "scale_smoke_stdout_monitor": "/mnt/c/Users/gabes/projects/claw-code/bin/watch-wrap --log {run_root}/scale_smoke/cheap_complete_w7_on/probe.stdout.log --progress 'heartbeat|step_update' --heartbeat 60 --error 'Traceback|Killed|OOM|CUDA|assert'",
+    "oracle_arm_stdout_monitor": "/mnt/c/Users/gabes/projects/claw-code/bin/watch-wrap --log {run_root}/int16_oracle_flag_off/probe.stdout.log --progress 'heartbeat|step_update' --heartbeat 60 --error 'Traceback|Killed|OOM|CUDA|assert'",
+    "treatment_arm_stdout_monitor": "/mnt/c/Users/gabes/projects/claw-code/bin/watch-wrap --log {run_root}/w7_dense_acc_treatment/probe.stdout.log --progress 'heartbeat|step_update' --heartbeat 60 --error 'Traceback|Killed|OOM|CUDA|assert'",
+    "oracle_arm_stderr_monitor": "/mnt/c/Users/gabes/projects/claw-code/bin/watch-wrap --log {run_root}/int16_oracle_flag_off/probe.stderr.log --error 'Traceback|Killed|OOM|CUDA|assert'",
+    "treatment_arm_stderr_monitor": "/mnt/c/Users/gabes/projects/claw-code/bin/watch-wrap --log {run_root}/w7_dense_acc_treatment/probe.stderr.log --error 'Traceback|Killed|OOM|CUDA|assert'",
+    "post_stop_poll_required": [
+      "{run_root}/classifier_receipt.json",
+      "{run_root}/int16_oracle_flag_off/receipt.json",
+      "{run_root}/w7_dense_acc_treatment/receipt.json",
+      "{run_root}/prelaunch/scale_smoke_sidecar_hygiene_receipt.json",
+      "{run_root}/prelaunch/scale_smoke_receipt.json",
+      "{run_root}/prelaunch/oracle_arm_hygiene_receipt.json",
+      "{run_root}/prelaunch/treatment_arm_hygiene_receipt.json"
+    ],
+    "watch_to_classifier_map": {
+      "RUN_HEALTH_FAIL": "harness/envelope/structural sidecar/session hygiene/parent rehash/steps incomplete",
+      "HARNESS_INVALID": "out-of-contract session hygiene or sidecar shape violation",
+      "OBSERVER_TOO_EXPENSIVE": "scale_smoke FAIL step_update>120s",
+      "W7_FLOOR_RISES_WITH_LIVE_VOTE_MAX": "classifier_receipt primary + live_reachable_peak_estimate>63",
+      "W7_BREAKS_LIVE_PARITY": "classifier_receipt parity_break=true on clean sidecars",
+      "LIVE_FLOOR_MUCH_BELOW_W7": "classifier_receipt primary; 15<=peak<33",
+      "ENVELOPE_UNDER_PRESSED": "classifier_receipt primary; peak<15",
+      "W7_IN_VIVO_CONFIRMED": "classifier_receipt rules_promotion_unlock_predicate=true"
+    }
+  },
+  "test_operator_receipt_class": "kick_only",
+  "terminal_receipt_owner": "claude",
+  "postrun_module": "scripts/hrm_text_158_w7_dense_acc_in_vivo_postrun.py",
+  "replay_commands_artifact": "artifacts/consensus_prep/w7_dense_acc_in_vivo_gpu_launch_packet_v3_replay_commands.json",
+  "replay_commands_sha256": "7bb2871a00f938a2d69423d54424a301ae0c81d5509d0b5693c330e5dd8f6edb",
+  "packet_sha": "cbb62c03c94688b0aa8b1300a7ae52a8dd5f0954ec36d3c52f54113f5a3330e1"
+}
