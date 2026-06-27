@@ -1,0 +1,301 @@
+{
+  "classifier_labels": {
+    "ENVELOPE_UNDER_PRESSED": "peak<15 non-confirming",
+    "HARNESS_INVALID": "session hygiene / sidecar shape violation",
+    "LIVE_FLOOR_MUCH_BELOW_W8": "15<=peak<33 non-confirming",
+    "OBSERVER_TOO_EXPENSIVE": "scale-smoke step_update>120s",
+    "RUN_HEALTH_FAIL": "harness/envelope/structural/parent rehash failure",
+    "W8_BREAKS_LIVE_PARITY": "O1-O4 mismatch (crossing/applied-mask/q/final) on clean sidecars",
+    "W8_FLOOR_RISES_WITH_LIVE_VOTE_MAX": "live_reachable_peak_estimate>127",
+    "W8_IN_VIVO_CONFIRMED": "parity OK + floor_width==8 + live_reachable_peak>=33 + clean sidecars \u2014 banks W8-carrier faithfulness to CURRENT +/-127-clamped production dynamics (NOT universal transparency); eager_tier_rules_unlock=false",
+    "W8_IN_VIVO_TRANSPARENT": "parity OK + sidecar max<=127 + O1-O4 pass below confirmed peak band \u2014 informative_only; does NOT bank transparency"
+  },
+  "confirmation_envelope": {
+    "confirmation_vote_path": "rank_bucketed_acquisition_canonical",
+    "envelope_id": "canonical_t10_prereg_v24",
+    "live_threshold_abs": 10,
+    "native_loop_injection_confirmation": "pending",
+    "oracle_terminal_max_abs_expected": 127,
+    "w8_clip_abs": 127,
+    "wired_max_vote_abs": 24,
+    "wired_reachable_peak_estimate": 33
+  },
+  "confirmation_phase": "w8-dense-acc-in-vivo-confirmation",
+  "confirmation_steps": 10,
+  "design_only": false,
+  "dual_arm": {
+    "argv_profile": "cheap_complete_w8_on",
+    "clamp_vs_clamp_note": "Oracle int16 WITHOUT W8 trainer clip; BOTH arms share vote_update +/-127 storage clamp. Comparison is W8-carrier faithfulness to current +/-127-clamped production dynamics \u2014 NOT universal transparency.",
+    "feedback_loop_increment": "GPU proves 10-step live int8-roundtrip feedback into vote_update/crossing/applied-mask \u2014 beyond CPU lane-1/2 static codec replay",
+    "oracle_arm": "int16_oracle_flag_off",
+    "oracle_env": {
+      "HRM_TEXT_158_RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION": "0"
+    },
+    "phase": "w8-dense-acc-in-vivo-confirmation",
+    "shared_argv": [
+      "--confirmation-envelope",
+      "canonical_t10_prereg_v24",
+      "--science-arm",
+      "A0_rank_bucket_current_ordering",
+      "--receipt-emit-profile",
+      "s3bb_headroom_diagnostic_slim",
+      "--global-cap-contract",
+      "c1_banked_faithful_long_run_global_cap",
+      "--phase",
+      "w8-dense-acc-in-vivo-confirmation",
+      "--steps",
+      "10",
+      "--max-steps-hard",
+      "10",
+      "--batch-size",
+      "1",
+      "--eligible-scope",
+      "all-bitlinear",
+      "--emit-progress"
+    ],
+    "treatment_arm": "w8_dense_acc_treatment",
+    "treatment_env": {
+      "HRM_TEXT_158_RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION": "1"
+    },
+    "treatment_only_argv": [
+      "--dense-accumulator-w8-clip"
+    ],
+    "votes_emit_enabled": false
+  },
+  "explicit_non_claims": [
+    "w8_transparency_banked_only_on_w8_in_vivo_confirmed_not_transparent",
+    "w8_confirmed_is_carrier_faithfulness_to_current_plus_minus_127_clamped_production_not_universal_transparency",
+    "oracle_and_treatment_both_share_vote_update_plus_minus_127_storage_clamp",
+    "clamp_vs_clamp_comparison_not_unclamped_int16_vs_w8",
+    "accumulator_not_naturally_sub_128",
+    "if_production_clamp_widens_w8_breaks_like_w7",
+    "w8_2x_dominator_reduction_not_sub2_inclusive",
+    "not_held_rules_unlock",
+    "canonical_w7_negative_2189e72008_stands",
+    "not_gpu_launch_in_planning_packet",
+    "not_commit_in_planning_packet",
+    "s3bb_w5_w6_semantics_frozen",
+    "oracle_127_plateau_is_storage_clamp_saturation_not_free_headroom",
+    "cpu_lane1_lane2_static_proof_does_not_replace_live_feedback_loop_gpu_increment"
+  ],
+  "file_content_pins": {
+    "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": "ac9e456e076e62f0e67eb4b1b82851ab15102238eeee6c382b23bf8179e1b917",
+    "calm/hrm_text_158/native_full_stack/narrow_accumulator_codec.py": "6e8a07480b3b39621c306e80ad2d679ac7bb9158ad8a4e21d4cc3e95421ec0ca",
+    "calm/hrm_text_158/native_full_stack/narrow_carrier_trainer_integration.py": "3b0ec140b65a91bd64dd78a8d649045518f2c7e95989847ec035a1b12cc86502",
+    "calm/hrm_text_158/native_full_stack/s3bb_decision_parity.py": "b907266bf2a3eb3d9a5b140a4132c4a16ccf328d52e8b6405aa026f75b2eb8d5",
+    "calm/hrm_text_158/native_full_stack/s3bb_headroom_telemetry.py": "6b8725b6adeba770e71dda644309e47e383f20a7d9936ce5ea032865bdd2645d",
+    "calm/hrm_text_158/native_full_stack/w7_dense_acc_in_vivo_confirmation.py": "4aec056a0ac870128fc0998cf612677216a1cd12b8f690370ec662c0fd479d82",
+    "calm/hrm_text_158/native_full_stack/w7_launch_hygiene.py": "9c7f771618d13ffee30233e5b66cef0d2d4114bfe66ed31e9cedbf7c68e05096",
+    "calm/hrm_text_158/native_full_stack/w8_dense_acc_in_vivo_confirmation.py": "76bb82860ddbd7b67eda74f8abdb76e559b03f01276399ea8d0330d4fa403183",
+    "scripts/hrm_text_158_bounded_delta_acquisition_probe.py": "d8080ebaf5460c9b0abfde47fea09bc21117db9631ef1922971166f7367d5bf3",
+    "scripts/hrm_text_158_w8_dense_acc_in_vivo_postrun.py": "11a04b9690b22c90799d570f4dce2f6aaa8a0bef3b95c8f755f7d2a8180d014c"
+  },
+  "file_content_pins_note": "Lane-3 CPU code landed at +1 implement: probe --dense-accumulator-w8-clip + w8_dense_acc_in_vivo_confirmation.py + w8 postrun + guard tests. Lane-1/2 files pinned at c4d9721 except probe refresh.",
+  "gpu_hold": true,
+  "gpu_phase_budgets": {
+    "global_silent_phase_seconds_default": 300,
+    "heartbeat_interval_seconds": 30,
+    "liveness_rule": "heartbeat != hot-loop progress; active-phase wall exceed = liveness failure",
+    "on_exceed": "stack-sample \u2192 classify RUN_HEALTH_FAIL",
+    "per_phase_seconds_max": {
+      "artifact_flush_terminal": 60,
+      "step_forward_backward": {
+        "confirmation": 60,
+        "scale_smoke": 60
+      },
+      "step_update": {
+        "confirmation": 180,
+        "scale_smoke": 120
+      },
+      "votes_emit_headroom_flush": {
+        "confirmation": 30,
+        "scale_smoke": 30
+      }
+    }
+  },
+  "head_at_packet": "c4d9721d76e64f3b839adc6738f35eca09d519e2",
+  "launch_gate_sequence": [
+    {
+      "checks": [
+        "run_root_free",
+        "parent_rehash_before",
+        "sub2_first_launch_gate_receipt_emitted",
+        "w8_vote_update_source_clip_contract_assert",
+        "head_at_packet_is_ancestor_or_equal_head",
+        "file_content_pins_match"
+      ],
+      "gate": "preflight",
+      "w8_vote_update_source_clip_contract_assert": {
+        "artifact": "{run_root}/prelaunch/w8_vote_update_source_clip_contract_receipt.json",
+        "executable": "PYTHONPATH=. python3 -c \"import json; from pathlib import Path; from calm.hrm_text_158.native_full_stack.narrow_accumulator_codec import assert_w8_source_clip_contract; from calm.hrm_text_158.native_full_stack.accumulator_real_dynamics_verdict import default_vote_update_spec; spec=default_vote_update_spec(); assert_w8_source_clip_contract(); receipt={'schema':'hrm_text_158_w8_vote_update_source_clip_contract_receipt/v1','pass':True,'accumulator_clip_min':int(spec.accumulator_clip_min),'accumulator_clip_max':int(spec.accumulator_clip_max),'w8_bounds':[-127,127]}; out=Path('{run_root}/prelaunch/w8_vote_update_source_clip_contract_receipt.json'); out.parent.mkdir(parents=True, exist_ok=True); out.write_text(json.dumps(receipt, indent=2)+'\\n'); print(json.dumps(receipt))\"",
+        "fail_closed": true,
+        "load_bearing": true,
+        "on_fail": "FULL STOP HARNESS_INVALID",
+        "predicate": "default_vote_update_spec accumulator_clip [-127,+127] == W8 bounds; W8 logical excludes -128"
+      }
+    },
+    {
+      "gate": "post_fix_sidecar_hygiene_gate",
+      "on_fail": "FULL STOP",
+      "on_pass": "dual_arm_gpu",
+      "profile": "cheap_complete_w8_on",
+      "steps": 3
+    },
+    {
+      "arms": [
+        "int16_oracle_flag_off",
+        "w8_dense_acc_treatment"
+      ],
+      "gate": "dual_arm_gpu",
+      "steps": 10,
+      "votes_emit_enabled": false
+    },
+    {
+      "artifact": "{run_root}/classifier_receipt.json",
+      "expected_clean_run_terminals": [
+        "W8_IN_VIVO_CONFIRMED",
+        "W8_IN_VIVO_TRANSPARENT",
+        "W8_BREAKS_LIVE_PARITY",
+        "W8_FLOOR_RISES_WITH_LIVE_VOTE_MAX",
+        "LIVE_FLOOR_MUCH_BELOW_W8",
+        "ENVELOPE_UNDER_PRESSED"
+      ],
+      "gate": "postrun_classifier",
+      "module": "scripts/hrm_text_158_w8_dense_acc_in_vivo_postrun.py"
+    }
+  ],
+  "occupied_science_roots_never_rm": [
+    "2189e72001",
+    "2189e72002",
+    "2189e72003",
+    "2189e72004",
+    "2189e72005",
+    "2189e72006",
+    "2189e72007",
+    "2189e72008"
+  ],
+  "outcome_routing": {
+    "W8_BREAKS_LIVE_PARITY": {
+      "action": "Pivot sparser-rep or wider-than-8; genuine science divergence",
+      "confirming": false
+    },
+    "W8_IN_VIVO_CONFIRMED": {
+      "action": "Bank W8-carrier faithfulness at acquisition pressure under current +/-127 storage law; cite live peak/floor NUMBERs; does NOT auto-unlock eager-tier ternary rules; does NOT claim universal transparency",
+      "banks_transparency": true,
+      "banks_w8_carrier_faithfulness": true,
+      "conditional_on_production_clamp": "[-127,+127]",
+      "confirming": true,
+      "rules_unlock": false
+    },
+    "W8_IN_VIVO_TRANSPARENT": {
+      "action": "Informative below-acquisition-pressure parity signal; does NOT bank transparency \u2014 re-scope for CONFIRMED band",
+      "banks_transparency": false,
+      "confirming": false,
+      "informative_only": true
+    }
+  },
+  "packet_kind": "w8_dense_acc_in_vivo_confirmation_gpu",
+  "packet_revision": "v1_rev3_plus1_impl_pins",
+  "packet_sha": "a7b3d5b2dfd9498e418724162e87ccdab49eec8ab1bcd61df4ddfcdd2caa8985",
+  "parent_checkpoint": {
+    "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+    "read_only": true,
+    "rehash_after_each_arm": true,
+    "rehash_before_launch": true,
+    "sha256": "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec"
+  },
+  "plan_artifact": "artifacts/consensus_prep/w8_dense_acc_in_vivo_lane3_plan_v1_draft.json",
+  "postrun_module": "scripts/hrm_text_158_w8_dense_acc_in_vivo_postrun.py",
+  "primary_confirmation_profile": {
+    "confirmation_envelope": "canonical_t10_prereg_v24",
+    "delivers": [
+      "O1_headroom_wiring_sidecar",
+      "O2_O4_step_reports",
+      "peak_floor_step_reports.vote_pressure"
+    ],
+    "phase": "w8-dense-acc-in-vivo-confirmation",
+    "receipt_emit_profile": "s3bb_headroom_diagnostic_slim",
+    "track": "cheap_complete",
+    "treatment_argv": [
+      "--dense-accumulator-w8-clip"
+    ],
+    "treatment_env": {
+      "HRM_TEXT_158_RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION": "1"
+    },
+    "votes_emit_enabled": false
+  },
+  "replay_commands_artifact": "artifacts/consensus_prep/w8_dense_acc_in_vivo_gpu_launch_packet_v1_replay_commands.json",
+  "replay_commands_sha256": "034f94fd24acab7797d2a891569dd52a5bf7e7718e7ffd69608a21879f1ec1f8",
+  "replay_provenance": "hand_authored_json_planning_slice_no_gpu",
+  "run_id": "2189e72009",
+  "run_id_policy": "FREE \u2014 do NOT reuse 2189e72001..08 (occupied W7 arc + canonical negative 2189e72008)",
+  "run_root": "/home/gabe/claw-code-creditdir/transient_fp_credit/w8_dense_acc_in_vivo_seed43_43_2189e72009/",
+  "scale_smoke": {
+    "failure_terminals": {
+      "code_pin_mismatch": "HARNESS_INVALID",
+      "duplicate_key": "HARNESS_INVALID",
+      "missing_vote_pressure": "HARNESS_INVALID",
+      "parent_hash_change": "RUN_HEALTH_FAIL",
+      "sidecar_row_count_mismatch": "HARNESS_INVALID",
+      "stale_or_nonempty_sidecar_before_session": "HARNESS_INVALID",
+      "step_update_ceiling_miss": "OBSERVER_TOO_EXPENSIVE"
+    },
+    "gate_alias": "cheap_complete_scale_smoke",
+    "gate_name": "post_fix_sidecar_hygiene_gate",
+    "on_fail": "FULL STOP \u2014 dual-arm forbidden",
+    "profiles": {
+      "cheap_complete_w8_on": {
+        "argv": [
+          "--dense-accumulator-w8-clip"
+        ],
+        "description": "PRIMARY: W8-ON, votes-emit OFF",
+        "env": {
+          "HRM_TEXT_158_RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION": "1"
+        },
+        "phase": "w8-dense-acc-in-vivo-confirmation",
+        "scratch_subdir": "scale_smoke/cheap_complete_w8_on",
+        "scratch_wipe_before_launch": true,
+        "votes_emit_enabled": false
+      }
+    },
+    "required_before_dual_arm": true,
+    "scale_smoke_steps": 3
+  },
+  "scale_smoke_steps": 3,
+  "schema_version": "hrm_text_158_w8_dense_acc_in_vivo_launch_packet/v1",
+  "scope": "W8_in_vivo_transparency_only",
+  "scoped_non_claims": {
+    "O5_global_cap": "W8 slice confirms vote-acc WIDTH transparency only; cap perturbation of O1-O4 blocks via W8_BREAKS_LIVE_PARITY or RUN_HEALTH_FAIL"
+  },
+  "session_hygiene": {
+    "bounded_steps_start_count_per_arm": 1,
+    "expected_duplicate_keys_per_arm": 0,
+    "expected_sidecar_rows_formula": "(confirmation_steps - WARMUP_STEPS) * eligible_module_count = (10 - 2) * 32",
+    "expected_sidecar_rows_per_arm": 256,
+    "load_bearing": true,
+    "on_violation": "TERMINAL RUN_HEALTH_FAIL or HARNESS_INVALID; no W8 science verdict",
+    "probe_start_fresh_sidecar_commit": "b54c21e",
+    "run_log_session_marker": "phase_telemetry event=start phase=bounded_steps",
+    "scratch_wipe_before_each_arm_launch": true,
+    "single_probe_session_per_arm": true
+  },
+  "sub2_first_launch_gate": {
+    "checker": "full_sub2_runtime_ready_for_science",
+    "fixture": "current_repo_scaffold",
+    "passes_full_sub2_runtime_ready_for_science": false,
+    "preflight_emit_command": "PYTHONPATH=. python3 scripts/hrm_text_158_full_sub2_runtime_readiness.py --fixture current_repo_scaffold --json-out {run_root}/prelaunch/sub2_first_launch_gate_receipt.json",
+    "reason": "W8 width transparency diagnostic \u2014 NOT main-stack sub-2 readiness science",
+    "resolution": "named_pre_full_stack_diagnostic_exception",
+    "why_cheaper_than_full_stack": "Bounded dual-arm 10-step slim S3bb tests W8 lever before activations/KV/backward/native-kernel completion"
+  },
+  "terminal_receipt_owner": "claude",
+  "terminal_watch_contract": {
+    "classifier_owner": "claude after postrun classifier_receipt.json",
+    "oracle_arm_stdout_monitor": "/mnt/c/Users/gabes/projects/claw-code/bin/watch-wrap --log {run_root}/int16_oracle_flag_off/probe.stdout.log --progress 'heartbeat|step_update' --heartbeat 60 --error 'Traceback|Killed|OOM|CUDA|assert'",
+    "owner": "claude",
+    "scale_smoke_stdout_monitor": "/mnt/c/Users/gabes/projects/claw-code/bin/watch-wrap --log {run_root}/scale_smoke/cheap_complete_w8_on/probe.stdout.log --progress 'heartbeat|step_update' --heartbeat 60 --error 'Traceback|Killed|OOM|CUDA|assert'",
+    "test_operator_receipt_class": "kick_only",
+    "treatment_arm_stdout_monitor": "/mnt/c/Users/gabes/projects/claw-code/bin/watch-wrap --log {run_root}/w8_dense_acc_treatment/probe.stdout.log --progress 'heartbeat|step_update' --heartbeat 60 --error 'Traceback|Killed|OOM|CUDA|assert'"
+  },
+  "test_operator_receipt_class": "kick_only"
+}

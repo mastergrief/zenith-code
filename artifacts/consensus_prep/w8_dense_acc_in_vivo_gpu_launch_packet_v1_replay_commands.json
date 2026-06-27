@@ -1,0 +1,59 @@
+{
+  "binds_main_packet": "artifacts/consensus_prep/w8_dense_acc_in_vivo_gpu_launch_packet_v1_draft.json",
+  "forbidden_launch_sequence_patterns": [
+    "gpu_launch_before_plus1_implement_probe_w8_flag",
+    "dual_arm_without_post_fix_sidecar_hygiene_gate_pass",
+    "reuse_run_id_2189e72001_through_08",
+    "s3bb_edit_for_w8_domain"
+  ],
+  "gpu_hold": true,
+  "launch_sequence": [
+    "parent_checkpoint_rehash_command",
+    "sub2_first_gate_command",
+    "w8_vote_update_source_clip_contract_command",
+    "scratch_wipe_commands.scale_smoke_cheap_complete_w8_on",
+    "scale_smoke_commands.cheap_complete_w8_on",
+    "post_scale_smoke_sidecar_hygiene_assert_command",
+    "parent_checkpoint_rehash_after_scale_smoke_command",
+    "scratch_wipe_commands.int16_oracle_flag_off",
+    "per_arm_launch_commands.int16_oracle_flag_off",
+    "post_arm_hygiene_assert_command.oracle",
+    "parent_checkpoint_rehash_after_oracle_command",
+    "scratch_wipe_commands.w8_dense_acc_treatment",
+    "per_arm_launch_commands.w8_dense_acc_treatment",
+    "post_arm_hygiene_assert_command.treatment",
+    "parent_checkpoint_rehash_after_treatment_command",
+    "postrun_command"
+  ],
+  "note": "Probe --dense-accumulator-w8-clip + W8 postrun/classifier landed at +1 implement. Hygiene assert commands still mirror W7 v3c placeholders \u2014 adapt before GPU launch gate.",
+  "packet_revision": "v1_rev3_plus1_impl_pins",
+  "parent_checkpoint_rehash_after_oracle_command": "PYTHONPATH=. python3 -c \"import hashlib,json; from pathlib import Path; p=Path('calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt'); e='9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec'; a=hashlib.sha256(p.read_bytes()).hexdigest(); o=Path('{run_root}/prelaunch/parent_checkpoint_rehash_after_oracle.json'); o.parent.mkdir(parents=True, exist_ok=True); o.write_text(json.dumps({'expected_sha256':e,'actual_sha256':a,'match':a==e,'path':str(p),'when':'after_oracle_arm'}, indent=2)); assert a==e, f'rehash mismatch {a}'\"",
+  "parent_checkpoint_rehash_after_scale_smoke_command": "PYTHONPATH=. python3 -c \"import hashlib,json; from pathlib import Path; p=Path('calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt'); e='9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec'; a=hashlib.sha256(p.read_bytes()).hexdigest(); o=Path('{run_root}/prelaunch/parent_checkpoint_rehash_after_scale_smoke.json'); o.parent.mkdir(parents=True, exist_ok=True); o.write_text(json.dumps({'expected_sha256':e,'actual_sha256':a,'match':a==e,'path':str(p),'when':'after_post_fix_sidecar_hygiene_gate'}, indent=2)); assert a==e, f'rehash mismatch {a}'\"",
+  "parent_checkpoint_rehash_after_treatment_command": "PYTHONPATH=. python3 -c \"import hashlib,json; from pathlib import Path; p=Path('calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt'); e='9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec'; a=hashlib.sha256(p.read_bytes()).hexdigest(); o=Path('{run_root}/prelaunch/parent_checkpoint_rehash_after_treatment.json'); o.parent.mkdir(parents=True, exist_ok=True); o.write_text(json.dumps({'expected_sha256':e,'actual_sha256':a,'match':a==e,'path':str(p),'when':'after_treatment_arm'}, indent=2)); assert a==e, f'rehash mismatch {a}'\"",
+  "parent_checkpoint_rehash_command": "PYTHONPATH=. python3 -c \"import hashlib,json; from pathlib import Path; p=Path('calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt'); e='9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec'; a=hashlib.sha256(p.read_bytes()).hexdigest(); o=Path('{run_root}/prelaunch/parent_checkpoint_rehash.json'); o.parent.mkdir(parents=True, exist_ok=True); o.write_text(json.dumps({'expected_sha256':e,'actual_sha256':a,'match':a==e,'path':str(p),'when':'before_launch'}, indent=2)); assert a==e, f'rehash mismatch {a}'\"",
+  "per_arm_launch_commands": {
+    "int16_oracle_flag_off": "PYTHONPATH=. HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1 HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE=1 HRM_TEXT_158_RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION=0 python3 -u scripts/hrm_text_158_bounded_delta_acquisition_probe.py --allow-gpu-launch --enable-bounded-delta-probe --device cuda --parent calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt --parent-sha256 9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec --curriculum-seed 43 --support-order-seed 43 --eligible-scope all-bitlinear --steps 10 --max-steps-hard 10 --batch-size 1 --phase w8-dense-acc-in-vivo-confirmation --science-arm A0_rank_bucket_current_ordering --global-cap-contract c1_banked_faithful_long_run_global_cap --receipt-emit-profile s3bb_headroom_diagnostic_slim --confirmation-envelope canonical_t10_prereg_v24 --emit-progress --scratch-root {run_root}/int16_oracle_flag_off",
+    "w8_dense_acc_treatment": "PYTHONPATH=. HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1 HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE=1 HRM_TEXT_158_RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION=1 python3 -u scripts/hrm_text_158_bounded_delta_acquisition_probe.py --allow-gpu-launch --enable-bounded-delta-probe --device cuda --parent calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt --parent-sha256 9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec --curriculum-seed 43 --support-order-seed 43 --eligible-scope all-bitlinear --steps 10 --max-steps-hard 10 --batch-size 1 --phase w8-dense-acc-in-vivo-confirmation --science-arm A0_rank_bucket_current_ordering --global-cap-contract c1_banked_faithful_long_run_global_cap --receipt-emit-profile s3bb_headroom_diagnostic_slim --confirmation-envelope canonical_t10_prereg_v24 --dense-accumulator-w8-clip --emit-progress --scratch-root {run_root}/w8_dense_acc_treatment"
+  },
+  "planning_only": false,
+  "post_arm_hygiene_assert_command": {
+    "oracle": "MIRROR w7 v3c post_arm_hygiene with arm int16_oracle_flag_off",
+    "treatment": "MIRROR w7 v3c post_arm_hygiene with arm w8_dense_acc_treatment"
+  },
+  "post_scale_smoke_sidecar_hygiene_assert_command": "MIRROR w7 v3c post_scale_smoke_sidecar_hygiene_assert_command with scratch path scale_smoke/cheap_complete_w8_on and schema hrm_text_158_w8_post_fix_sidecar_hygiene_gate_receipt/v1 \u2014 implement at +1 implement by adapting w7 replay embedded script",
+  "postrun_command": "PYTHONPATH=. python3 scripts/hrm_text_158_w8_dense_acc_in_vivo_postrun.py --run-root {run_root} --json-out {run_root}/classifier_receipt.json",
+  "primary_track": "cheap_complete",
+  "scale_smoke_commands": {
+    "cheap_complete_w8_on": "PYTHONPATH=. HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1 HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE=1 HRM_TEXT_158_RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION=1 python3 -u scripts/hrm_text_158_bounded_delta_acquisition_probe.py --allow-gpu-launch --enable-bounded-delta-probe --device cuda --parent calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt --parent-sha256 9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec --curriculum-seed 43 --support-order-seed 43 --eligible-scope all-bitlinear --batch-size 1 --steps 3 --max-steps-hard 3 --phase w8-dense-acc-in-vivo-confirmation --science-arm A0_rank_bucket_current_ordering --global-cap-contract c1_banked_faithful_long_run_global_cap --receipt-emit-profile s3bb_headroom_diagnostic_slim --confirmation-envelope canonical_t10_prereg_v24 --dense-accumulator-w8-clip --emit-progress --scratch-root {run_root}/scale_smoke/cheap_complete_w8_on"
+  },
+  "schema": "hrm_text_158_w8_dense_acc_in_vivo_launch_packet_v1_replay_commands/v1",
+  "scratch_wipe_commands": {
+    "int16_oracle_flag_off": "rm -rf {run_root}/int16_oracle_flag_off && mkdir -p {run_root}/int16_oracle_flag_off",
+    "scale_smoke_cheap_complete_w8_on": "rm -rf {run_root}/scale_smoke/cheap_complete_w8_on && mkdir -p {run_root}/scale_smoke/cheap_complete_w8_on",
+    "w8_dense_acc_treatment": "rm -rf {run_root}/w8_dense_acc_treatment && mkdir -p {run_root}/w8_dense_acc_treatment"
+  },
+  "shared_gpu_env": "PYTHONPATH=. HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1 HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE=1",
+  "shared_probe_argv": "--allow-gpu-launch --enable-bounded-delta-probe --device cuda --parent calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt --parent-sha256 9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec --curriculum-seed 43 --support-order-seed 43 --eligible-scope all-bitlinear --batch-size 1 --science-arm A0_rank_bucket_current_ordering --global-cap-contract c1_banked_faithful_long_run_global_cap --receipt-emit-profile s3bb_headroom_diagnostic_slim --confirmation-envelope canonical_t10_prereg_v24 --phase w8-dense-acc-in-vivo-confirmation --emit-progress",
+  "sub2_first_gate_command": "PYTHONPATH=. python3 scripts/hrm_text_158_full_sub2_runtime_readiness.py --fixture current_repo_scaffold --json-out {run_root}/prelaunch/sub2_first_launch_gate_receipt.json",
+  "w8_vote_update_source_clip_contract_command": "PYTHONPATH=. python3 -c \"import json; from pathlib import Path; from calm.hrm_text_158.native_full_stack.narrow_accumulator_codec import assert_w8_source_clip_contract; from calm.hrm_text_158.native_full_stack.accumulator_real_dynamics_verdict import default_vote_update_spec; spec=default_vote_update_spec(); assert_w8_source_clip_contract(); receipt={'schema':'hrm_text_158_w8_vote_update_source_clip_contract_receipt/v1','pass':True,'accumulator_clip_min':int(spec.accumulator_clip_min),'accumulator_clip_max':int(spec.accumulator_clip_max),'w8_bounds':[-127,127]}; out=Path('{run_root}/prelaunch/w8_vote_update_source_clip_contract_receipt.json'); out.parent.mkdir(parents=True, exist_ok=True); out.write_text(json.dumps(receipt, indent=2)+'\\n'); print(json.dumps(receipt))\""
+}

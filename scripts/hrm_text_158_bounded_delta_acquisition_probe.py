@@ -176,6 +176,7 @@ from calm.hrm_text_158.native_full_stack.narrow_carrier_trainer_integration impo
     RUN_NARROW_CARRIER_W5_TRAINER_INTEGRATION_ENV,
     RUN_NARROW_CARRIER_W6_TRAINER_INTEGRATION_ENV,
     RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION_ENV,
+    RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION_ENV,
     persistent_w5_byte_packed_enabled,
     resolve_live_acc_carrier_selector,
 )
@@ -6265,6 +6266,7 @@ def run_c2p1_probe(
     event_coded_live_demotion_band: int = 1,
     confirmation_envelope: str | None = None,
     dense_accumulator_w7_clip: bool = False,
+    dense_accumulator_w8_clip: bool = False,
 ) -> dict[str, Any]:
     oracle_screen_budget = int(oracle_screen_max_sampled_candidates)
     if oracle_screen_budget not in ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES:
@@ -6284,19 +6286,37 @@ def run_c2p1_probe(
         raise ValueError(
             "dense_accumulator_w7_clip is mutually exclusive with W5/W6 byte-packed accumulators"
         )
+    if bool(dense_accumulator_w8_clip) and (
+        bool(persistent_accumulator_w6_byte_packed) or bool(persistent_accumulator_w5_byte_packed)
+    ):
+        raise ValueError(
+            "dense_accumulator_w8_clip is mutually exclusive with W5/W6 byte-packed accumulators"
+        )
+    narrow_clip_count = sum(
+        bool(flag)
+        for flag in (
+            dense_accumulator_w7_clip,
+            dense_accumulator_w8_clip,
+        )
+    )
+    if narrow_clip_count > 1:
+        raise ValueError(
+            "dense_accumulator_w7_clip and dense_accumulator_w8_clip are mutually exclusive"
+        )
     if bool(persistent_accumulator_event_coded_live):
         if bool(persistent_accumulator_w6_byte_packed) or bool(
             persistent_accumulator_w5_byte_packed
-        ) or bool(dense_accumulator_w7_clip):
+        ) or bool(dense_accumulator_w7_clip) or bool(dense_accumulator_w8_clip):
             raise ValueError(
                 "persistent_accumulator_event_coded_live is mutually exclusive with "
-                "W5/W6 byte-packed accumulators and W7 clip boundary"
+                "W5/W6 byte-packed accumulators and W7/W8 clip boundaries"
             )
         resolve_live_acc_carrier_selector(
             v4_enabled=True,
             w5_enabled=bool(persistent_accumulator_w5_byte_packed),
             w6_enabled=bool(persistent_accumulator_w6_byte_packed),
             w7_enabled=bool(dense_accumulator_w7_clip),
+            w8_enabled=bool(dense_accumulator_w8_clip),
         )
         os.environ[RUN_EVENT_CODED_ACC_LIVE_CARRIER_ENV] = "1"
     elif RUN_EVENT_CODED_ACC_LIVE_CARRIER_ENV in os.environ:
@@ -6316,8 +6336,16 @@ def run_c2p1_probe(
         os.environ[RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION_ENV] = "1"
         os.environ.pop(RUN_NARROW_CARRIER_W5_TRAINER_INTEGRATION_ENV, None)
         os.environ.pop(RUN_NARROW_CARRIER_W6_TRAINER_INTEGRATION_ENV, None)
+        os.environ.pop(RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION_ENV, None)
     elif RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION_ENV in os.environ:
         os.environ.pop(RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION_ENV, None)
+    if bool(dense_accumulator_w8_clip):
+        os.environ[RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION_ENV] = "1"
+        os.environ.pop(RUN_NARROW_CARRIER_W5_TRAINER_INTEGRATION_ENV, None)
+        os.environ.pop(RUN_NARROW_CARRIER_W6_TRAINER_INTEGRATION_ENV, None)
+        os.environ.pop(RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION_ENV, None)
+    elif RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION_ENV in os.environ:
+        os.environ.pop(RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION_ENV, None)
     if bool(persistent_q_ternary_byte_packed):
         os.environ[PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV] = "1"
     elif PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV in os.environ:
@@ -7271,6 +7299,7 @@ def run_c2p1_probe(
         "persistent_accumulator_w6_byte_packed": bool(persistent_accumulator_w6_byte_packed),
         "persistent_accumulator_w5_byte_packed": bool(persistent_accumulator_w5_byte_packed),
         "dense_accumulator_w7_clip": bool(dense_accumulator_w7_clip),
+        "dense_accumulator_w8_clip": bool(dense_accumulator_w8_clip),
         "persistent_accumulator_event_coded_live": bool(
             persistent_accumulator_event_coded_live
         ),
@@ -7753,7 +7782,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "Enable W7 clip-only dense accumulator trainer boundary (±63 via effective_clip_bounds). "
-            "Mutually exclusive with W5/W6 byte-pack and V4 event-coded carrier."
+            "Mutually exclusive with W5/W6 byte-pack, W8 clip, and V4 event-coded carrier."
+        ),
+    )
+    ap.add_argument(
+        "--dense-accumulator-w8-clip",
+        action="store_true",
+        help=(
+            "Enable W8 clip-only dense accumulator trainer boundary (±127 source-clip-lossless). "
+            "Mutually exclusive with W5/W6 byte-pack, W7 clip, and V4 event-coded carrier."
         ),
     )
     return ap
@@ -7841,6 +7878,7 @@ def main(argv: list[str] | None = None) -> int:
         event_coded_live_demotion_band=int(args.event_coded_live_demotion_band),
         confirmation_envelope=args.confirmation_envelope,
         dense_accumulator_w7_clip=bool(args.dense_accumulator_w7_clip),
+        dense_accumulator_w8_clip=bool(args.dense_accumulator_w8_clip),
     )
     print(json.dumps(receipt, indent=2, sort_keys=True), flush=True)
     flush_probe_terminal_artifacts(exit_code=0, flush_reason="normal_completion")
