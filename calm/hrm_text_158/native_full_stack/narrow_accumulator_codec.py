@@ -566,6 +566,21 @@ def clip_then_roundtrip_w8_tensor(acc: torch.Tensor) -> torch.Tensor:
     return clipped.to(torch.int8).to(torch.int16)
 
 
+def decode_w8_logical_lane_from_int8(raw: int) -> int:
+    """Strict ingest-only decode for persisted int8 W8 lanes (not per vote-step clip)."""
+
+    value = int(raw)
+    if value == W8_INT8_EXCLUDED_LOGICAL:
+        raise W8NarrowCarrierContractInvalid(
+            "W8 logical lane decode rejects raw int8 -128; use lenient clip seam at trainer boundary only"
+        )
+    if value < W8_LOGICAL_MIN or value > W8_LOGICAL_MAX:
+        raise W8NarrowCarrierContractInvalid(
+            f"W8 logical lane out of symmetric range [{W8_LOGICAL_MIN}, {W8_LOGICAL_MAX}]: {value}"
+        )
+    return value
+
+
 def count_w8_clip_events_tensor(before: torch.Tensor, after: torch.Tensor) -> int:
     if before.shape != after.shape:
         raise ValueError("count_w8_clip_events_tensor requires matching shapes")

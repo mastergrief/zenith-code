@@ -11,6 +11,7 @@ from calm.hrm_text_158.native_full_stack.accumulator_real_dynamics_verdict impor
     default_vote_update_spec,
 )
 from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
+    LIVE_ACC_CARRIER_W8,
     resolve_live_acc_carrier_selector,
 )
 from calm.hrm_text_158.native_full_stack.narrow_accumulator_codec import (
@@ -26,10 +27,7 @@ from calm.hrm_text_158.native_full_stack.narrow_accumulator_codec import (
     clip_to_w8,
     clip_to_w8_tensor,
     count_w8_clip_events_tensor,
-)
-from calm.hrm_text_158.native_full_stack.narrow_carrier_trainer_integration import (
-    apply_trainer_boundary_narrow_carrier,
-    narrow_carrier_w8_enabled,
+    decode_w8_logical_lane_from_int8,
 )
 from calm.hrm_text_158.native_full_stack.two_tier_carry_reducers import (
     effective_clip_bounds,
@@ -105,23 +103,23 @@ def test_w8_recorded_in_vivo_sidecar_lanes_lossless_roundtrip() -> None:
     assert torch.equal(out, tensor)
 
 
-def test_w8_trainer_boundary_default_off_even_when_flag_set() -> None:
-    """Lane 1: W8 materialization wiring deferred; enabled flag is identity until lane 2."""
-
-    acc = torch.tensor([120, -96, 127], dtype=torch.int16)
-    out = apply_trainer_boundary_narrow_carrier(acc, w8_enabled=True)
-    assert torch.equal(out, acc)
-    assert narrow_carrier_w8_enabled(enabled=True) is True
+def test_w8_strict_ingest_decode_accepts_symmetric_range() -> None:
+    for value in (-127, -126, 0, 126, 127):
+        assert decode_w8_logical_lane_from_int8(value) == value
 
 
-def test_w8_mutually_exclusive_with_w5_w6_w7() -> None:
-    acc = torch.tensor([10], dtype=torch.int16)
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        apply_trainer_boundary_narrow_carrier(acc, w5_enabled=True, w8_enabled=True)
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        apply_trainer_boundary_narrow_carrier(acc, w6_enabled=True, w8_enabled=True)
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        apply_trainer_boundary_narrow_carrier(acc, w7_enabled=True, w8_enabled=True)
+def test_w8_strict_ingest_decode_rejects_minus_128() -> None:
+    with pytest.raises(W8NarrowCarrierContractInvalid, match="rejects raw int8 -128"):
+        decode_w8_logical_lane_from_int8(-128)
+
+
+def test_w8_strict_ingest_decode_rejects_out_of_logical_range() -> None:
+    with pytest.raises(W8NarrowCarrierContractInvalid, match="out of symmetric range"):
+        decode_w8_logical_lane_from_int8(128)
+
+
+def test_w8_selector_returns_w8_label() -> None:
+    assert resolve_live_acc_carrier_selector(w8_enabled=True) == LIVE_ACC_CARRIER_W8
 
 
 def test_w8_mutually_exclusive_with_v4() -> None:

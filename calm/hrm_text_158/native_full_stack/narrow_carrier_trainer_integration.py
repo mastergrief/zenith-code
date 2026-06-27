@@ -15,6 +15,7 @@ from calm.hrm_text_158.native_full_stack.narrow_accumulator_codec import (
     clip_then_pack_w5_tensor,
     clip_then_roundtrip_w5_tensor,
     clip_then_roundtrip_w7_tensor,
+    clip_then_roundtrip_w8_tensor,
     clip_then_pack_w6,
     pack_w5,
     pack_w6,
@@ -253,7 +254,7 @@ def apply_trainer_boundary_narrow_carrier(
     w8_enabled: bool | None = None,
     v4_enabled: bool | None = None,
 ) -> torch.Tensor:
-    """Default-off trainer boundary: identity int16 when off; W5/W6/W7 clip paths."""
+    """Default-off trainer boundary: identity int16 when off; W5/W6/W7/W8 clip paths."""
 
     from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
         event_coded_live_carrier_enabled,
@@ -280,6 +281,8 @@ def apply_trainer_boundary_narrow_carrier(
         return strict_roundtrip_w6_tensor(accumulators.detach())
     if use_w7:
         return clip_then_roundtrip_w7_tensor(accumulators.detach())
+    if use_w8:
+        return clip_then_roundtrip_w8_tensor(accumulators.detach())
     return accumulators
 
 

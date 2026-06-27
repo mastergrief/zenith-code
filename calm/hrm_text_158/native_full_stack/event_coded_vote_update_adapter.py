@@ -49,6 +49,7 @@ LIVE_ACC_CARRIER_V4_LIVE = "v4_live"
 LIVE_ACC_CARRIER_W5 = "w5"
 LIVE_ACC_CARRIER_W6 = "w6"
 LIVE_ACC_CARRIER_W7 = "w7"
+LIVE_ACC_CARRIER_W8 = "w8"
 LIVE_ACC_CARRIER_NONE = "none"
 
 C8_DENSE_ACCUMULATOR_MATERIALIZED_NUMEL_KEY = "dense_accumulator_materialized_numel"
@@ -137,6 +138,8 @@ def resolve_live_acc_carrier_selector(
         return LIVE_ACC_CARRIER_W6
     if use_w7:
         return LIVE_ACC_CARRIER_W7
+    if use_w8:
+        return LIVE_ACC_CARRIER_W8
     return LIVE_ACC_CARRIER_NONE
 
 
