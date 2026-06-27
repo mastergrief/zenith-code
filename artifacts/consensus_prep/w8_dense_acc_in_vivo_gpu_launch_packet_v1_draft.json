@@ -76,7 +76,7 @@
     "oracle_127_plateau_is_storage_clamp_saturation_not_free_headroom",
     "cpu_lane1_lane2_static_proof_does_not_replace_live_feedback_loop_gpu_increment",
     "not_gpu_launch_until_plus1_launch_gate",
-    "hygiene_asserts_launch_ready_at_rev5_sidecar_emit_fix"
+    "hygiene_asserts_launch_ready_at_rev6_b1_o1_witness_pins"
   ],
   "file_content_pins": {
     "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": "ac9e456e076e62f0e67eb4b1b82851ab15102238eeee6c382b23bf8179e1b917",
@@ -86,13 +86,14 @@
     "calm/hrm_text_158/native_full_stack/s3bb_headroom_telemetry.py": "926090d49bd020125ea6ff9f48007ef032e4441867d64cb280a106c3da2aad85",
     "calm/hrm_text_158/native_full_stack/w7_dense_acc_in_vivo_confirmation.py": "4aec056a0ac870128fc0998cf612677216a1cd12b8f690370ec662c0fd479d82",
     "calm/hrm_text_158/native_full_stack/w7_launch_hygiene.py": "9c7f771618d13ffee30233e5b66cef0d2d4114bfe66ed31e9cedbf7c68e05096",
-    "calm/hrm_text_158/native_full_stack/w8_dense_acc_in_vivo_confirmation.py": "76bb82860ddbd7b67eda74f8abdb76e559b03f01276399ea8d0330d4fa403183",
+    "calm/hrm_text_158/native_full_stack/w8_dense_acc_in_vivo_confirmation.py": "8b8b8a8de0c6731922edb54e15cccd3b1bdb17c63c25aa8a6510205e151d48ea",
     "calm/hrm_text_158/native_full_stack/w8_launch_hygiene.py": "1a93fcbfdc61ab2cc736e4b1ab798c082f57c7a404ded5b0517ec582ac27f928",
     "calm/llm_computer/tests/test_w8_headroom_telemetry_sidecar_phase_v0.py": "5d7d2d316cac96c2c388779ff453841afd5bbe59472692ac036028cd8226fe55",
     "scripts/hrm_text_158_bounded_delta_acquisition_probe.py": "d8080ebaf5460c9b0abfde47fea09bc21117db9631ef1922971166f7367d5bf3",
-    "scripts/hrm_text_158_w8_dense_acc_in_vivo_postrun.py": "11a04b9690b22c90799d570f4dce2f6aaa8a0bef3b95c8f755f7d2a8180d014c"
+    "scripts/hrm_text_158_w8_dense_acc_in_vivo_postrun.py": "11a04b9690b22c90799d570f4dce2f6aaa8a0bef3b95c8f755f7d2a8180d014c",
+    "calm/hrm_text_158/native_full_stack/w8_o1_lane_equality_witness.py": "8624923dd82135fc5ba9dce2404207499e79c91e4f71d55bb134b07c2fe41f8b"
   },
-  "file_content_pins_note": "rev5: W8 phase added to _HEADROOM_TELEMETRY_EMIT_PHASES (additive only); sidecar emission gap fix; run_id 2189e72010; 2189e72009 quarantined HARNESS_INVALID.",
+  "file_content_pins_note": "rev6: B1 o1-witness (72d79b1) \u2014 refreshed w8_dense_acc_in_vivo_confirmation pin + added w8_o1_lane_equality_witness hard pin; run_id 2189e72011; 2189e72010 quarantined RUN_HEALTH_FAIL.",
   "gpu_hold": true,
   "gpu_phase_budgets": {
     "global_silent_phase_seconds_default": 300,
@@ -112,10 +113,12 @@
       "votes_emit_headroom_flush": {
         "confirmation": 30,
         "scale_smoke": 30
-      }
-    }
+      },
+      "postrun_classifier": 900
+    },
+    "postrun_phase_budget_note": "postrun indexes ~1.3GB sidecars/arm + W8 O1 streaming witness over ~234M lanes/arm; 120s bound timed out on 2189e72010 reclassify; replay postrun_command wrapped in timeout 900"
   },
-  "head_at_packet": "3aa4f525fa7d802a424219c06ea63ff85f5312eb",
+  "head_at_packet": "72d79b12d448c5e38a7636115f33301acacea0c9",
   "launch_gate_sequence": [
     {
       "checks": [
@@ -163,7 +166,10 @@
         "ENVELOPE_UNDER_PRESSED"
       ],
       "gate": "postrun_classifier",
-      "module": "scripts/hrm_text_158_w8_dense_acc_in_vivo_postrun.py"
+      "module": "scripts/hrm_text_158_w8_dense_acc_in_vivo_postrun.py",
+      "phase_budget_seconds_max": 900,
+      "executable_timeout_wrapper_seconds": 900,
+      "postrun_command": "timeout 900 bash -c 'PYTHONPATH=. python3 scripts/hrm_text_158_w8_dense_acc_in_vivo_postrun.py --run-root {run_root} --json-out {run_root}/classifier_receipt.json'"
     }
   ],
   "occupied_science_roots_never_rm": [
@@ -175,7 +181,8 @@
     "2189e72006",
     "2189e72007",
     "2189e72008",
-    "2189e72009"
+    "2189e72009",
+    "2189e72010"
   ],
   "outcome_routing": {
     "W8_BREAKS_LIVE_PARITY": {
@@ -198,8 +205,8 @@
     }
   },
   "packet_kind": "w8_dense_acc_in_vivo_confirmation_gpu",
-  "packet_revision": "v1_rev5_w8_sidecar_emit_fix",
-  "packet_sha": "80bb26bc2133a08b4b1ef3363f2de23dbd2ded14de69e384ad0afc31d29d4db9",
+  "packet_revision": "v1_rev6_b1_o1_witness_pin_refresh",
+  "packet_sha": "80de7eedee2e9aa431c5aac416b0fe16f71d3b4a53b29b0872af19062b1f16ea",
   "parent_checkpoint": {
     "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
     "read_only": true,
@@ -237,14 +244,24 @@
       "terminal_classifiers": [
         "HARNESS_INVALID"
       ]
+    },
+    "2189e72010": {
+      "confirming": false,
+      "launchable": false,
+      "notes": {
+        "RUN_HEALTH_FAIL": "dual-arm completed; O2/O3 clean; O1 vacuous under W6 would_strict_raise skip \u2192 o1_missing_evidence; fixed by B1 w8_o1_lane_equality_witness (72d79b1); NOT relaunchable"
+      },
+      "terminal_classifiers": [
+        "RUN_HEALTH_FAIL"
+      ]
     }
   },
   "replay_commands_artifact": "artifacts/consensus_prep/w8_dense_acc_in_vivo_gpu_launch_packet_v1_replay_commands.json",
-  "replay_commands_sha256": "1446b2be5bdbb638b0ffdb4329506125134e1ba22b67672afb8393615c8f188d",
-  "replay_provenance": "hand_authored_json_sidecar_emit_fix_slice",
-  "run_id": "2189e72010",
-  "run_id_policy": "FREE \u2014 do NOT reuse 2189e72001..09 (occupied W7/W8 arc + HARNESS_INVALID 2189e72009)",
-  "run_root": "/home/gabe/claw-code-creditdir/transient_fp_credit/w8_dense_acc_in_vivo_seed43_43_2189e72010/",
+  "replay_commands_sha256": "763a13e5e459a30b8a6e86d0cbadcd2f199eaa0894a4ccec7d02ae08b4ddcdd9",
+  "replay_provenance": "hand_authored_json_b1_o1_witness_pin_refresh_slice",
+  "run_id": "2189e72011",
+  "run_id_policy": "FREE \u2014 do NOT reuse 2189e72001..10 (occupied W7/W8 arc + HARNESS_INVALID 2189e72009 + RUN_HEALTH_FAIL 2189e72010 o1_missing_evidence)",
+  "run_root": "/home/gabe/claw-code-creditdir/transient_fp_credit/w8_dense_acc_in_vivo_seed43_43_2189e72011/",
   "scale_smoke": {
     "failure_terminals": {
       "code_pin_mismatch": "HARNESS_INVALID",
