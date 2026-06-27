@@ -32,12 +32,16 @@ from calm.hrm_text_158.native_full_stack.w8_dense_acc_in_vivo_confirmation impor
 )
 
 
-def _step_report(*, step_id: str, vote_abs_max: int = 24) -> dict:
+def _step_report(*, step_id: str, vote_abs_max: int = 24, would_strict_raise: bool = False) -> dict:
     return {
         "step_id": step_id,
         "q_changed_count": 2,
         "metrics": {"loss": 0.5, "accuracy": 0.25},
         "vote_pressure": {"tiny.proj": {"vote_abs_max": int(vote_abs_max)}},
+        "headroom_telemetry": {
+            "would_strict_raise_step": bool(would_strict_raise),
+            "out_of_domain_lane_count": 1 if would_strict_raise else 0,
+        },
         "step_result": {
             "tensor_stats": {
                 "tiny.proj": {
@@ -56,11 +60,16 @@ def _dual_arm_receipts(
     oracle_acc: list[int],
     treatment_acc: list[int],
     vote_abs_max: int = 24,
+    would_strict_raise: bool = False,
 ) -> tuple[dict, dict]:
     oracle_path = tmp_path / "oracle_sidecar.jsonl"
     treatment_path = tmp_path / "treatment_sidecar.jsonl"
     step_reports = {
-        str(step): _step_report(step_id=str(step), vote_abs_max=vote_abs_max)
+        str(step): _step_report(
+            step_id=str(step),
+            vote_abs_max=vote_abs_max,
+            would_strict_raise=would_strict_raise,
+        )
         for step in range(1, MEASURED_STEPS_REQUIRED + 1)
     }
     for step in range(1, MEASURED_STEPS_REQUIRED + 1):
@@ -114,22 +123,19 @@ def test_w8_domain_bypass_when_treatment_lane_exceeds_w5_not_w8(tmp_path: Path) 
     )
     assert bridge["s3bb_w5w6_domain_primary_inapplicable"] is True
     assert bridge["structural_fail"] is False
+    assert bridge["o1_lane_equality_load_bearing"] is True
     assert bridge["s3bb_w5w6_domain_primary_recorded"] == CLASSIFIER_DOMAIN_OR_HEADROOM_FAIL
 
 
-def test_vacuous_o1_without_o2_o4_signals_is_run_health_fail(tmp_path: Path) -> None:
+def test_w8_o1_load_bearing_equality_without_o2_o4_signals_is_adjudicable(tmp_path: Path) -> None:
     oracle, treatment = _dual_arm_receipts(
         tmp_path,
         oracle_acc=[5, -9, 10],
         treatment_acc=[5, -9, 10],
+        would_strict_raise=True,
     )
     primary, stats = classify_s3bb_decision_parity_run(oracle, treatment)
     stats = dict(stats)
-    stats["bit_equality_diagnostics"] = {
-        "total_lane_count": 0,
-        "vote_update_state_accumulator_equality_rate": 1.0,
-        "sidecar_coverage_diagnostics": stats["sidecar_coverage_diagnostics"],
-    }
     stats["crossing_parity"] = {
         "per_step_crossing_bool_disagreement_count": 0,
         "total_lane_count": 0,
@@ -150,6 +156,29 @@ def test_vacuous_o1_without_o2_o4_signals_is_run_health_fail(tmp_path: Path) -> 
         oracle_receipt=oracle,
         treatment_receipt=treatment,
     )
+    assert bridge["o1_lane_equality_vacuous"] is False
+    assert bridge["o1_lane_equality_load_bearing"] is True
+    assert bridge["structural_fail"] is False
+    assert bridge["prereg_o1_o4_adjudicable"] is True
+    assert bridge["o1_witness_domain"] == "w8_signed_max_127"
+    assert bridge["o1_skip_policy"] == "warmup_only_not_w6_strict_raise"
+
+
+def test_vacuous_o1_without_o2_o4_signals_is_run_health_fail() -> None:
+    sidecar_coverage = {"structural_fail": False, "shared_key_count": 0}
+    stats = {
+        "sidecar_coverage_diagnostics": sidecar_coverage,
+        "crossing_parity": {"per_step_crossing_bool_disagreement_count": 0},
+        "applied_mask_parity": {"applied_mask_mismatch_count": 0},
+        "q_trajectory_parity": {"q_sha256_after_mismatch_count": 0},
+    }
+    bridge = derive_w8_parity_inputs(
+        "DECISION_PARITY_OK",
+        stats,
+        sidecar_coverage,
+        oracle_receipt=None,
+        treatment_receipt=None,
+    )
     assert bridge["o1_lane_equality_vacuous"] is True
     assert bridge["structural_fail"] is True
     assert bridge["structural_reason"] == STRUCTURAL_REASON_O1_MISSING_EVIDENCE
@@ -165,12 +194,6 @@ def test_vacuous_o1_with_applied_mask_mismatch_allows_breaks(tmp_path: Path) -> 
         1
     ]
     primary, stats = classify_s3bb_decision_parity_run(oracle, treatment)
-    stats = dict(stats)
-    stats["bit_equality_diagnostics"] = {
-        "total_lane_count": 0,
-        "vote_update_state_accumulator_equality_rate": 1.0,
-        "sidecar_coverage_diagnostics": stats["sidecar_coverage_diagnostics"],
-    }
     bridge = derive_w8_parity_inputs(
         primary,
         stats,
@@ -178,7 +201,7 @@ def test_vacuous_o1_with_applied_mask_mismatch_allows_breaks(tmp_path: Path) -> 
         oracle_receipt=oracle,
         treatment_receipt=treatment,
     )
-    assert bridge["o1_lane_equality_vacuous"] is True
+    assert bridge["o1_lane_equality_load_bearing"] is True
     assert bridge["prereg_o1_o4_adjudicable"] is True
     assert bridge["structural_fail"] is False
     assert bridge["parity_break"] is True

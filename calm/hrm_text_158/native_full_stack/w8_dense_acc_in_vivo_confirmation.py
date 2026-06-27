@@ -105,18 +105,19 @@ W8_ACCUMULATOR_CLIP_CONTRACT: dict[str, Any] = {
 }
 
 
-def _bit_equality_lane_witness(s3bb_stats: Mapping[str, Any]) -> dict[str, Any]:
-    bit_equality = s3bb_stats.get("bit_equality_diagnostics") or {}
-    total_lane_count = int(bit_equality.get("total_lane_count") or 0)
+def _bit_equality_lane_witness(w8_o1_stats: Mapping[str, Any]) -> dict[str, Any]:
+    total_lane_count = int(w8_o1_stats.get("total_lane_count") or 0)
     matched_key_compared_lane_count = int(
-        (bit_equality.get("sidecar_coverage_diagnostics") or {}).get(
+        (w8_o1_stats.get("sidecar_coverage_diagnostics") or {}).get(
             "matched_key_compared_lane_count"
         )
         or 0
     )
     if matched_key_compared_lane_count == 0:
         matched_key_compared_lane_count = total_lane_count
-    equality_rate = float(bit_equality.get("vote_update_state_accumulator_equality_rate") or 0.0)
+    equality_rate = float(
+        w8_o1_stats.get("vote_update_state_accumulator_equality_rate") or 0.0
+    )
     vacuous = total_lane_count <= 0
     return {
         "total_lane_count": total_lane_count,
@@ -124,7 +125,49 @@ def _bit_equality_lane_witness(s3bb_stats: Mapping[str, Any]) -> dict[str, Any]:
         "vote_update_state_accumulator_equality_rate": equality_rate,
         "o1_lane_equality_vacuous": bool(vacuous),
         "o1_lane_equality_load_bearing": not vacuous,
+        "o1_witness_domain": w8_o1_stats.get("o1_witness_domain"),
+        "o1_skip_policy": w8_o1_stats.get("o1_skip_policy"),
     }
+
+
+def _compute_w8_o1_lane_stats(
+    *,
+    oracle_receipt: Mapping[str, Any] | None,
+    treatment_receipt: Mapping[str, Any] | None,
+    sidecar_coverage: Mapping[str, Any],
+) -> dict[str, Any]:
+    from calm.hrm_text_158.native_full_stack.s3bb_headroom_telemetry import (
+        resolve_headroom_wiring_sidecar_path,
+    )
+    from calm.hrm_text_158.native_full_stack.w8_o1_lane_equality_witness import (
+        compare_w8_o1_lane_equality_streaming,
+    )
+
+    if oracle_receipt is None or treatment_receipt is None:
+        return {
+            "total_lane_count": 0,
+            "vote_update_state_accumulator_equality_rate": 0.0,
+            "sidecar_coverage_diagnostics": dict(sidecar_coverage),
+            "o1_witness_domain": "w8_signed_max_127",
+            "o1_skip_policy": "warmup_only_not_w6_strict_raise",
+        }
+    oracle_path = resolve_headroom_wiring_sidecar_path(oracle_receipt)
+    treatment_path = resolve_headroom_wiring_sidecar_path(treatment_receipt)
+    if oracle_path is None or treatment_path is None:
+        return {
+            "total_lane_count": 0,
+            "vote_update_state_accumulator_equality_rate": 0.0,
+            "sidecar_coverage_diagnostics": dict(sidecar_coverage),
+            "o1_witness_domain": "w8_signed_max_127",
+            "o1_skip_policy": "warmup_only_not_w6_strict_raise",
+        }
+    return compare_w8_o1_lane_equality_streaming(
+        oracle_receipt,
+        treatment_receipt,
+        oracle_sidecar_path=oracle_path,
+        treatment_sidecar_path=treatment_path,
+        sidecar_coverage=sidecar_coverage,
+    )
 
 
 def extract_w8_parity_signals(s3bb_stats: Mapping[str, Any]) -> dict[str, Any]:
@@ -281,11 +324,42 @@ def derive_w8_parity_inputs(
             "prereg_o1_o4_adjudicable": False,
         }
 
-    o1_lane_witness = _bit_equality_lane_witness(s3bb_stats)
+    w8_o1_stats = _compute_w8_o1_lane_stats(
+        oracle_receipt=oracle_receipt,
+        treatment_receipt=treatment_receipt,
+        sidecar_coverage=coverage,
+    )
+    if w8_o1_stats.get("structural_fail"):
+        return {
+            **base,
+            "structural_fail": True,
+            "structural_reason": str(
+                w8_o1_stats.get("structural_reason") or "w8_o1_lane_witness_structural_fail"
+            ),
+            "parity_break": False,
+            "parity_break_driving_keys": [],
+            "o1_lane_equality_vacuous": True,
+            "o1_lane_equality_load_bearing": False,
+            "prereg_o1_o4_adjudicable": False,
+            "w8_o1_lane_stats": dict(w8_o1_stats),
+        }
+
+    o1_lane_witness = _bit_equality_lane_witness(w8_o1_stats)
     parity_signals = extract_w8_parity_signals(s3bb_stats)
     driving_keys = list(parity_signals["parity_break_driving_keys"])
     if primary in S3BB_SCIENCE_PARITY_BREAK_PRIMARIES:
         driving_keys.insert(0, f"s3bb_primary:{primary}")
+    if (
+        bool(o1_lane_witness.get("o1_lane_equality_load_bearing"))
+        and float(o1_lane_witness.get("vote_update_state_accumulator_equality_rate") or 0.0)
+        < 1.0
+    ):
+        driving_keys.insert(0, "o1_accumulator_lane_inequality")
+    parity_signals = {
+        **parity_signals,
+        "parity_break": bool(driving_keys),
+        "parity_break_driving_keys": driving_keys,
+    }
 
     adjudicable = prereg_o1_o4_adjudicable(
         o1_lane_witness=o1_lane_witness,
@@ -325,6 +399,7 @@ def derive_w8_parity_inputs(
         "prereg_o1_o4_adjudicable": True,
         "oracle_max_sidecar_abs": oracle_max_abs,
         "treatment_max_sidecar_abs": treatment_max_abs,
+        "w8_o1_lane_stats": dict(w8_o1_stats),
         **o1_lane_witness,
         **parity_signals,
     }
