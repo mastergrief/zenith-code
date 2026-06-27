@@ -492,6 +492,86 @@ def count_w7_clip_events_tensor(before: torch.Tensor, after: torch.Tensor) -> in
     return int((before.to(torch.int32) != after.to(torch.int32)).sum().item())
 
 
+W8_WIDTH_BITS = 8
+W8_SIGNED_MIN = -signed_w_max(W8_WIDTH_BITS)
+W8_SIGNED_MAX = signed_w_max(W8_WIDTH_BITS)
+W8_LOGICAL_MIN = W8_SIGNED_MIN
+W8_LOGICAL_MAX = W8_SIGNED_MAX
+W8_INT8_EXCLUDED_LOGICAL = -128
+
+
+class W8NarrowCarrierContractInvalid(ValueError):
+    """Fail-closed when production vote-update clip law diverges from W8 bounds."""
+
+
+def assert_w8_source_clip_contract() -> None:
+    """Fail-closed: W8 is valid only when source clip is exactly ±127."""
+
+    from calm.hrm_text_158.native_full_stack.accumulator_real_dynamics_verdict import (
+        default_vote_update_spec,
+    )
+
+    if int(signed_w_max(W8_WIDTH_BITS)) != 127:
+        raise W8NarrowCarrierContractInvalid(
+            f"signed_w_max(8) must be 127, got {signed_w_max(W8_WIDTH_BITS)}"
+        )
+    clip_min, clip_max = effective_clip_bounds(
+        W8_WIDTH_BITS,
+        VOTE_UPDATE_SOURCE_CLIP_MIN,
+        VOTE_UPDATE_SOURCE_CLIP_MAX,
+    )
+    if (int(clip_min), int(clip_max)) != (-127, 127):
+        raise W8NarrowCarrierContractInvalid(
+            "effective_clip_bounds(8,-127,127) must be (-127,127); "
+            f"source clip law widened or narrowed to ({clip_min}, {clip_max})"
+        )
+    spec = default_vote_update_spec()
+    if int(spec.accumulator_clip_min) != -127 or int(spec.accumulator_clip_max) != 127:
+        raise W8NarrowCarrierContractInvalid(
+            "production default vote spec accumulator_clip must remain [-127,127]; "
+            f"got [{spec.accumulator_clip_min}, {spec.accumulator_clip_max}]"
+        )
+
+
+def clip_to_w8(value: int) -> int:
+    assert_w8_source_clip_contract()
+    clip_min, clip_max = effective_clip_bounds(
+        W8_WIDTH_BITS,
+        VOTE_UPDATE_SOURCE_CLIP_MIN,
+        VOTE_UPDATE_SOURCE_CLIP_MAX,
+    )
+    clipped = max(clip_min, min(clip_max, int(value)))
+    if int(clipped) == W8_INT8_EXCLUDED_LOGICAL:
+        raise W8NarrowCarrierContractInvalid(
+            "W8 logical lanes exclude -128; clip produced invalid logical value"
+        )
+    return int(clipped)
+
+
+def clip_to_w8_tensor(acc: torch.Tensor) -> torch.Tensor:
+    assert_w8_source_clip_contract()
+    clip_min, clip_max = effective_clip_bounds(
+        W8_WIDTH_BITS,
+        VOTE_UPDATE_SOURCE_CLIP_MIN,
+        VOTE_UPDATE_SOURCE_CLIP_MAX,
+    )
+    clipped = torch.clamp(acc.to(torch.int32), clip_min, clip_max).to(torch.int16)
+    return clipped
+
+
+def clip_then_roundtrip_w8_tensor(acc: torch.Tensor) -> torch.Tensor:
+    """Clip-only W8 trainer boundary (int16 storage, int8 lossless logical roundtrip)."""
+
+    clipped = clip_to_w8_tensor(acc)
+    return clipped.to(torch.int8).to(torch.int16)
+
+
+def count_w8_clip_events_tensor(before: torch.Tensor, after: torch.Tensor) -> int:
+    if before.shape != after.shape:
+        raise ValueError("count_w8_clip_events_tensor requires matching shapes")
+    return int((before.to(torch.int32) != after.to(torch.int32)).sum().item())
+
+
 @dataclass(frozen=True)
 class PackedW5AccumulatorPayload:
     packed: torch.Tensor

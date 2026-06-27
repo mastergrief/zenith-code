@@ -110,21 +110,24 @@ def resolve_live_acc_carrier_selector(
     w5_enabled: bool | None = None,
     w6_enabled: bool | None = None,
     w7_enabled: bool | None = None,
+    w8_enabled: bool | None = None,
 ) -> str:
     from calm.hrm_text_158.native_full_stack.narrow_carrier_trainer_integration import (
         narrow_carrier_w5_enabled,
         narrow_carrier_w6_enabled,
         narrow_carrier_w7_enabled,
+        narrow_carrier_w8_enabled,
     )
 
     use_v4 = event_coded_live_carrier_enabled(enabled=v4_enabled)
     use_w5 = narrow_carrier_w5_enabled(enabled=w5_enabled)
     use_w6 = narrow_carrier_w6_enabled(enabled=w6_enabled)
     use_w7 = narrow_carrier_w7_enabled(enabled=w7_enabled)
-    selected = sum(int(flag) for flag in (use_v4, use_w5, use_w6, use_w7))
+    use_w8 = narrow_carrier_w8_enabled(enabled=w8_enabled)
+    selected = sum(int(flag) for flag in (use_v4, use_w5, use_w6, use_w7, use_w8))
     if selected > 1:
         raise ValueError(
-            "V4-LIVE event-coded carrier is mutually exclusive with W5/W6/W7 narrow carriers"
+            "V4-LIVE event-coded carrier is mutually exclusive with W5/W6/W7/W8 narrow carriers"
         )
     if use_v4:
         return LIVE_ACC_CARRIER_V4_LIVE

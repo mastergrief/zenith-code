@@ -274,3 +274,24 @@ def test_w8_lossless_matches_w16_trajectory_on_delayed_crossing() -> None:
     assert ref.crossing_steps == w8.crossing_steps
     assert ref.q_history == w8.q_history
     assert ref.acc_history == w8.acc_history
+
+
+def test_w8_in_vivo_reachable_peak_127_structural_floor() -> None:
+    """Distinct from peak=33 structural-floor claim — in-vivo accumulator ceiling."""
+
+    in_vivo_accumulator_peak = 127
+    assert structural_clip_floor_width(
+        MANDATORY_WIDTH_GRID, reachable_peak=in_vivo_accumulator_peak
+    ) == 8
+    assert is_structurally_lossless_width(8, reachable_peak=in_vivo_accumulator_peak)
+    assert (
+        width_regime_label(8, reachable_peak=in_vivo_accumulator_peak)
+        == "source_clip_lossless"
+    )
+    assert not is_structurally_lossless_width(7, reachable_peak=in_vivo_accumulator_peak)
+    # Preserve canonical crossing-peak structural floor (separate claim).
+    canonical_peak = reachable_pre_crossing_accumulator_peak(
+        max_vote_abs=CANONICAL_MAX_RANK_VOTE_ABS
+    )
+    assert canonical_peak == 33
+    assert structural_clip_floor_width(MANDATORY_WIDTH_GRID, reachable_peak=canonical_peak) == 7
