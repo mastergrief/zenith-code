@@ -1,0 +1,342 @@
+{
+  "cheap_observer_preflight": {
+    "checks": [
+      "emit hot-loop functions contain no decoded_accumulators(rebuild_if_stale=True)",
+      "emit hot-loop functions contain no with_fresh_bounded_accumulator",
+      "emit hot-loop functions contain no to_schema_dict(parity_check=True)",
+      "spy pytest tests pass (never_calls_decoded_accumulators_rebuild / never_rebuilds)"
+    ],
+    "gate_name": "cheap_observer_no_rebuild_if_stale_on_hot_loop",
+    "on_fail": "FULL STOP \u2014 launch forbidden",
+    "receipt": "{run_root}/prelaunch/cheap_observer_no_rebuild_if_stale_on_hot_loop_receipt.json"
+  },
+  "classifier_labels": {
+    "D_NEEDS_UPDATE_LAW_REDESIGN": "promoted_fork when unbounded_at_scale under decay=1/1 \u2014 VALUABLE direction gate; exploratory K* logged but NOT authoritative redesign sizing from this sample",
+    "D_RECOMPUTE_UNBOUNDED_OR_UNOBSERVABLE": "worst-case K* reaches available history OR parity failures \u2014 expected primary under dense no-decay on falsifier sample",
+    "D_RECOMPUTE_WINDOW_LEAD": "bounded K* + inclusive bpw pass + parity pass on falsifier sample \u2014 requires stratified same-family follow-up before mechanism claim",
+    "HARNESS_INVALID": "code pins / missing log / session hygiene / DObserver shadow errors (out-of-range or unavailable)",
+    "MISSING_OBSERVABLES_OR_INVALID_WINDOW": "empty/malformed recompute_window_log or insufficient observables",
+    "NO_CARRIER_FAMILY_VIABLE_ON_EXISTING_ARTIFACTS": "no lead/unbounded signals",
+    "OBSERVER_TOO_EXPENSIVE": "step_update budget exceeded",
+    "RUN_HEALTH_FAIL": "parent rehash / incomplete steps / crash / liveness"
+  },
+  "classifier_receipt_contract": {
+    "artifact": "{run_root}/classifier_receipt.json",
+    "postrun_timeout_exit_code": 124,
+    "postrun_timeout_terminal": "OBSERVER_TOO_EXPENSIVE",
+    "required_fields": [
+      "selected_state_keys",
+      "numel_by_key",
+      "sampled_lane_count_by_key",
+      "jsonl_row_count",
+      "numel_basis_source",
+      "postrun_duration_seconds",
+      "postrun_timeout_classification"
+    ]
+  },
+  "confirmation_envelope": {
+    "confirmation_vote_path": "rank_bucketed_acquisition_canonical",
+    "envelope_id": "canonical_t10_prereg_v24",
+    "live_threshold_abs": 10,
+    "oracle_terminal_max_abs_expected": 127,
+    "w8_clip_abs": 127,
+    "wired_max_vote_abs": 24,
+    "wired_reachable_peak_estimate": 33
+  },
+  "confirmation_launch_rc_capture": {
+    "artifact": "{run_root}/prelaunch/confirmation_launch_rc.txt",
+    "hygiene_always_runs_after_confirmation": true,
+    "wrapper_exits_zero": true
+  },
+  "confirmation_phase": "d-recompute-window-feasibility",
+  "confirmation_steps": 10,
+  "design_only": false,
+  "dispatch_msg_id": "1782584057710-9a2d69a2",
+  "explicit_non_claims": [
+    "not_sub2_total",
+    "not_held_rules_unlock",
+    "canonical_w7_negative_2189e72008_stands",
+    "w8_confirmed_carrier_faithfulness_only_not_universal_transparency",
+    "d_acc_leg_only",
+    "live_q_remains_int8",
+    "b_annex_forbidden_terminal_from_d_fields",
+    "not_gpu_launch_until_plus1_launch_gate",
+    "honest_unbounded_terminal_is_valuable_not_failure",
+    "not_redesign_sizing_from_this_sample",
+    "k_star_distribution_exploratory_not_authoritative_sizing",
+    "auto_two_smallest_not_representative_subset"
+  ],
+  "file_content_pins": {
+    "calm/hrm_text_158/native_full_stack/d_recompute_window_emit.py": "e5837d58c8d4c257eca0b1126c6589837d5335d863797d32c5e8a3626a53960d",
+    "calm/hrm_text_158/native_full_stack/d_recompute_window_feasibility_analyzer.py": "1f080d90e7469102eacfd9d1dde5bbbc48f26583cee988471cefc4a372ac01ff",
+    "calm/hrm_text_158/native_full_stack/w7_launch_hygiene.py": "9c7f771618d13ffee30233e5b66cef0d2d4114bfe66ed31e9cedbf7c68e05096",
+    "calm/llm_computer/tests/test_d_recompute_window_cheap_observer_v0.py": "b1a845ec015a831de67fe67056434a52e4dbcb2f5c33d8a03270cb23b7a5cbfb",
+    "calm/llm_computer/tests/test_d_recompute_window_feasibility_v0.py": "6e21fb970d1bf32169888ecf5cfd9db42e26af5818a9068cb2e47e79f2d6a377",
+    "scripts/hrm_text_158_bounded_delta_acquisition_probe.py": "82b66e56254e0a973992c5a472b3d9acf1827072a134e32fa17ae9db0a5bf23e"
+  },
+  "file_content_pins_note": "rev3c_harness_repro @ ba141a8: +w7_launch_hygiene pin for hygiene JSON counter import",
+  "gpu_hold": true,
+  "gpu_phase_budgets": {
+    "global_silent_phase_seconds_default": 300,
+    "heartbeat_interval_seconds": 30,
+    "liveness_rule": "heartbeat != hot-loop progress; active-phase wall exceed = liveness failure",
+    "on_exceed": "stack-sample \u2192 classify RUN_HEALTH_FAIL",
+    "per_phase_seconds_max": {
+      "artifact_flush_terminal": 60,
+      "postrun_classifier": 900,
+      "step_forward_backward": {
+        "confirmation": 60,
+        "scale_smoke": 60
+      },
+      "step_update": {
+        "confirmation": 300,
+        "scale_smoke": 120
+      }
+    },
+    "postrun_phase_budget_note": "D log is small; 900s budget mirrors W8 rev6 lesson (120s postrun timeout @ 2189e72010 reclassify)"
+  },
+  "head_at_packet": "ba141a8ab6d444817c2b2eda0407cbe1a01e58a5",
+  "honest_prereg_terminal": {
+    "expected_if_bounded_k_star_reaches_history": "D_NEEDS_UPDATE_LAW_REDESIGN becomes licensable (Branch B)",
+    "expected_if_still_expensive": "OBSERVER_TOO_EXPENSIVE \u2192 STOP + reclassify (unexpected after cheap-observer fix)",
+    "expected_primary_falsifier_null": "D_RECOMPUTE_UNBOUNDED_OR_UNOBSERVABLE",
+    "expected_promoted_fork": "D_NEEDS_UPDATE_LAW_REDESIGN",
+    "expected_success_path": "bounded step_update (<300s/phase) through all 10 steps \u2192 postrun 900s \u2192 K* distribution emitted",
+    "k_star_distribution_exploratory_descriptive_only": true,
+    "k_star_distribution_is_primary_science_deliverable": false,
+    "redesign_sizing_from_this_run": false,
+    "valuable_not_failure": true
+  },
+  "instrumented_module_subset": {
+    "expected_jsonl_rows": 20,
+    "expected_lane_measurements_max": 128,
+    "justification": "Bounded falsifier on auto-two-smallest-numel non-representative sample; NOT sizing authority",
+    "max_instrumented_state_keys": 2,
+    "non_representative_falsifier_only": true,
+    "sampled_lanes_per_step": 64,
+    "selection": "emitter_auto_two_smallest_numel"
+  },
+  "launch_gate_sequence": [
+    {
+      "checks": [
+        "run_root_free",
+        "parent_rehash_before",
+        "sub2_first_launch_gate_receipt_emitted",
+        "cheap_observer_no_rebuild_preflight_receipt_emitted",
+        "head_at_packet_is_ancestor_or_equal_head",
+        "file_content_pins_match"
+      ],
+      "gate": "preflight"
+    },
+    {
+      "gate": "scale_smoke_liveness",
+      "on_fail": "FULL STOP",
+      "on_pass": "confirmation_gpu",
+      "profile": "post_w8_production_row_no_d_instrumentation",
+      "steps": 3
+    },
+    {
+      "arm": "d_recompute_window_diagnostic",
+      "gate": "confirmation_gpu",
+      "requires": [
+        "--d-recompute-window-instrumentation"
+      ],
+      "steps": 10
+    },
+    {
+      "checks": [
+        "confirmation_launch_rc_recorded",
+        "observer_exception_scan_run_log_and_probe_stdout",
+        "recompute_window_log_nonempty_or_classified_missing",
+        "parent_rehash_after_confirmation"
+      ],
+      "gate": "post_confirmation_hygiene"
+    },
+    {
+      "artifact": "{run_root}/classifier_receipt.json",
+      "executable_timeout_wrapper_seconds": 900,
+      "gate": "postrun_classifier",
+      "module": "inline_analyze_recompute_window_log",
+      "phase_budget_seconds_max": 900
+    }
+  ],
+  "observer_exception_terminal_mapping": {
+    "DObserverOutOfRangeShadowError": "HARNESS_INVALID",
+    "DObserverShadowUnavailableError": "HARNESS_INVALID",
+    "empty_or_missing_recompute_window_log_without_observer_exception": "MISSING_OBSERVABLES_OR_INVALID_WINDOW",
+    "evidence_sources": [
+      "d_recompute_window_diagnostic/run.log",
+      "d_recompute_window_diagnostic/probe.stdout.log"
+    ],
+    "note": "Executable via post_confirmation_hygiene_assert_command; does NOT depend on observer_exception_receipt.json"
+  },
+  "observer_mode": "cheap_shadow_lane_sampling_raw_exact_failclosed_out_of_range",
+  "occupied_science_roots_never_rm": [
+    "2189e72001",
+    "2189e72002",
+    "2189e72003",
+    "2189e72004",
+    "2189e72005",
+    "2189e72006",
+    "2189e72007",
+    "2189e72008",
+    "2189e72009",
+    "2189e72010",
+    "2189e72011",
+    "2189e72012",
+    "2189e72013"
+  ],
+  "outcome_routing": {
+    "D_NEEDS_UPDATE_LAW_REDESIGN": {
+      "action": "Open update-law redesign DIRECTION; log exploratory K* distribution for context only \u2014 NOT authoritative sizing from this non-representative falsifier sample",
+      "confirming": true,
+      "redesign_sizing_from_this_run": false,
+      "valuable_outcome": true
+    },
+    "D_RECOMPUTE_UNBOUNDED_OR_UNOBSERVABLE": {
+      "action": "Inspect parity_fail_count vs missing flip authority before fork promotion",
+      "confirming": false
+    },
+    "D_RECOMPUTE_WINDOW_LEAD": {
+      "action": "Falsifier-positive bounded signal \u2014 schedule stratified same-family confirmation before mechanism claim; do NOT bank redesign sizing",
+      "confirming": true,
+      "requires_follow_up": "stratified_same_family_confirmation",
+      "surprise": true
+    },
+    "MISSING_OBSERVABLES_OR_INVALID_WINDOW": {
+      "action": "Harness/instrumentation failure \u2014 fix emit path",
+      "confirming": false,
+      "launchable": false
+    }
+  },
+  "packet_kind": "d_recompute_window_feasibility_gpu",
+  "packet_revision": "v1_rev3c_harness_repro",
+  "parent_checkpoint": {
+    "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+    "read_only": true,
+    "rehash_after_confirmation": true,
+    "rehash_before_launch": true,
+    "sha256": "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec"
+  },
+  "plan_artifact": "artifacts/consensus_prep/d_recompute_window_feasibility_plan_v1_draft.json",
+  "prior_occupied_run_relabels": {
+    "2189e72012": {
+      "never_rm": true,
+      "reason": "Branch A observer forced full bounded-accumulator rebuild per key per step; K* unmeasured",
+      "terminal": "OBSERVER_TOO_EXPENSIVE"
+    },
+    "2189e72013": {
+      "never_rm": true,
+      "reason": "CPU salvage D_NEEDS_UPDATE_LAW_REDESIGN; gated pipeline HARNESS_INVALID on receipt compactness",
+      "terminal": "D_RECOMPUTE_UNBOUNDED_OR_UNOBSERVABLE"
+    }
+  },
+  "replay_commands_artifact": "artifacts/consensus_prep/d_recompute_window_feasibility_gpu_launch_packet_v1_replay_commands.json",
+  "replay_commands_sha256": "2a6ed0a709f0a7f54f536ed11830601cd095e061a201171a5ad946aa4324930c",
+  "replay_provenance": "hand_authored_json_d_feasibility_diagnostic_v1_rev3c_harness_repro",
+  "run_id": "2189e72014",
+  "run_id_policy": "FREE \u2014 do NOT reuse 2189e72001..13 (occupied W7/W8 arc + D predecessor runs)",
+  "run_root": "/home/gabe/claw-code-creditdir/transient_fp_credit/d_recompute_window_feasibility_seed43_43_2189e72014/",
+  "scale_smoke": {
+    "failure_terminals": {
+      "parent_hash_change": "RUN_HEALTH_FAIL",
+      "probe_crash": "RUN_HEALTH_FAIL",
+      "step_update_ceiling_miss": "OBSERVER_TOO_EXPENSIVE"
+    },
+    "gate_name": "scale_smoke_liveness",
+    "on_fail": "FULL STOP \u2014 confirmation forbidden",
+    "profiles": {
+      "post_w8_production_row_no_d_instrumentation": {
+        "argv": [
+          "--dense-accumulator-w8-clip"
+        ],
+        "description": "Liveness + parent hygiene only; D instrumentation OFF",
+        "env": {
+          "HRM_TEXT_158_RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION": "1"
+        },
+        "omit_argv": [
+          "--d-recompute-window-instrumentation"
+        ],
+        "phase": "d-recompute-window-feasibility",
+        "scratch_subdir": "scale_smoke/post_w8_production_row",
+        "scratch_wipe_before_launch": true
+      }
+    },
+    "scale_smoke_steps": 3
+  },
+  "schema_version": "hrm_text_158_d_recompute_window_feasibility_launch_packet/v1",
+  "science_posture": {
+    "k_star_distribution_exploratory_not_authoritative_sizing": true,
+    "note": "Science posture DISTINCT from sub2_first_launch_gate executable_runtime_class pre_full_stack_diagnostic",
+    "redesign_sizing_from_this_run": false,
+    "sampled_pre_full_stack_diagnostic_falsifier": true
+  },
+  "session_hygiene": {
+    "bounded_steps_start_count_per_session": 1,
+    "expected_recompute_window_log_min_rows": 1,
+    "expected_recompute_window_log_rows_formula": "steps_completed * MAX_INSTRUMENTED_STATE_KEYS (typically 10 * 2 = 20)",
+    "load_bearing": true,
+    "on_violation": "TERMINAL RUN_HEALTH_FAIL or HARNESS_INVALID",
+    "scratch_wipe_before_confirmation_launch": true,
+    "single_probe_session_confirmation": true
+  },
+  "single_arm": {
+    "argv_profile": "post_w8_production_row_d_instrumentation_on",
+    "env": {
+      "HRM_TEXT_158_RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION": "1"
+    },
+    "label": "d_recompute_window_diagnostic",
+    "phase": "d-recompute-window-feasibility",
+    "primary_artifact": "recompute_window_log.jsonl",
+    "shared_argv": [
+      "--confirmation-envelope",
+      "canonical_t10_prereg_v24",
+      "--science-arm",
+      "A0_rank_bucket_current_ordering",
+      "--receipt-emit-profile",
+      "s3bb_headroom_diagnostic_slim",
+      "--global-cap-contract",
+      "c1_banked_faithful_long_run_global_cap",
+      "--phase",
+      "d-recompute-window-feasibility",
+      "--steps",
+      "10",
+      "--max-steps-hard",
+      "10",
+      "--batch-size",
+      "1",
+      "--eligible-scope",
+      "all-bitlinear",
+      "--emit-progress",
+      "--d-recompute-window-instrumentation",
+      "--dense-accumulator-w8-clip"
+    ],
+    "votes_emit_enabled": false
+  },
+  "sub2_first_launch_gate": {
+    "checker": "full_sub2_runtime_ready_for_science",
+    "executable_runtime_class": "pre_full_stack_diagnostic",
+    "fixture": "current_repo_scaffold",
+    "not_runtime_class": "sub2",
+    "passes_full_sub2_runtime_ready_for_science": false,
+    "preflight_emit_command": "PYTHONPATH=. python3 scripts/hrm_text_158_full_sub2_runtime_readiness.py --fixture current_repo_scaffold --json-out {run_root}/prelaunch/sub2_first_launch_gate_receipt.json",
+    "reason": "D recompute-window feasibility diagnostic \u2014 NOT main-stack sub-2 readiness science",
+    "resolution": "named_pre_full_stack_diagnostic_exception",
+    "why_cheaper_than_full_stack": "Bounded 10-step emit+log+CPU K* classify decides carrier-reconstruction viability before activations/KV/backward/native-kernel completion"
+  },
+  "task_id": "1782582485934-f1ffd057",
+  "terminal_receipt_owner": "claude",
+  "terminal_watch_contract": {
+    "classifier_owner": "claude after postrun classifier_receipt.json",
+    "confirmation_stdout_monitor": "/mnt/c/Users/gabes/projects/claw-code/bin/watch-wrap --log {run_root}/d_recompute_window_diagnostic/probe.stdout.log --progress 'heartbeat|step_update' --heartbeat 60 --error 'Traceback|Killed|OOM|CUDA|assert'",
+    "owner": "claude",
+    "scale_smoke_stdout_monitor": "/mnt/c/Users/gabes/projects/claw-code/bin/watch-wrap --log {run_root}/scale_smoke/post_w8_production_row/probe.stdout.log --progress 'heartbeat|step_update' --heartbeat 60 --error 'Traceback|Killed|OOM|CUDA|assert'",
+    "stop_conditions": [
+      "postrun terminal classification",
+      "liveness_failure",
+      "parent_sha256_mismatch"
+    ],
+    "test_operator_receipt_class": "kick_only"
+  },
+  "test_operator_receipt_class": "kick_only"
+}
