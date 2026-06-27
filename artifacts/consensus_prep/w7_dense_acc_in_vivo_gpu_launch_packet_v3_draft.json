@@ -1,11 +1,11 @@
 {
   "schema_version": "hrm_text_158_w7_dense_acc_in_vivo_launch_packet/v4",
-  "packet_revision": "v3b_post_fix_sidecar_hygiene_gate",
+  "packet_revision": "v3c_run_log_dict_guard",
   "packet_kind": "w7_dense_acc_in_vivo_confirmation_gpu",
   "scope": "W7_in_vivo_confirmation_only",
   "head_at_packet": "b54c21eb7890589cfbff1fa7f2fb7b3dc28cae70",
-  "run_id": "2189e72007",
-  "run_root": "/home/gabe/claw-code-creditdir/transient_fp_credit/w7_dense_acc_in_vivo_seed43_43_2189e72007/",
+  "run_id": "2189e72008",
+  "run_root": "/home/gabe/claw-code-creditdir/transient_fp_credit/w7_dense_acc_in_vivo_seed43_43_2189e72008/",
   "scale_smoke_steps": 3,
   "confirmation_steps": 10,
   "confirmation_phase": "w7-dense-acc-in-vivo-confirmation",
@@ -19,7 +19,9 @@
     "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": "ac9e456e076e62f0e67eb4b1b82851ab15102238eeee6c382b23bf8179e1b917",
     "calm/hrm_text_158/native_full_stack/narrow_accumulator_codec.py": "23df16367f28e43ff526b0e1b0e21344be0da8e5d2ba09d61a7547b209250ddb",
     "calm/llm_computer/tests/test_w7_headroom_sidecar_session_hygiene_v0.py": "45edb1e7f06a1304efeae6bc713e42580bf312a63ba3a8a5b71986b37cabd084",
-    "calm/llm_computer/tests/test_w7_postrun_sidecar_classifier_v0.py": "9f68903b305c222fc1c8d071b64b77b7d50d9225d92f7713e26ba04e8c37bd9e"
+    "calm/llm_computer/tests/test_w7_postrun_sidecar_classifier_v0.py": "9f68903b305c222fc1c8d071b64b77b7d50d9225d92f7713e26ba04e8c37bd9e",
+    "calm/hrm_text_158/native_full_stack/w7_launch_hygiene.py": "9c7f771618d13ffee30233e5b66cef0d2d4114bfe66ed31e9cedbf7c68e05096",
+    "calm/llm_computer/tests/test_w7_run_log_hygiene_scalar_guard_v0.py": "03dfa8a5481af9754fd8f6168e649878ea0c33953568fb574fe2321a16e87975"
   },
   "occupied_science_roots_never_rm": [
     "2189e72001",
@@ -27,7 +29,8 @@
     "2189e72003",
     "2189e72004",
     "2189e72005",
-    "2189e72006"
+    "2189e72006",
+    "2189e72007"
   ],
   "prior_occupied_run_relabels": {
     "2189e72005": {
@@ -53,6 +56,17 @@
         "RUN_HEALTH_FAIL": "postrun classifier structural_fail oracle_duplicate_keys (384 rows, 128 bit-identical dups steps 3-6); dual-arm in-contract but oracle cross-session retry double-emit",
         "partial_science_preserved": "vote_pressure max=24 peak=33 on both arms; envelope wiring live; NOT W7 parity adjudication",
         "emission_fix_required": "b54c21e probe-start fresh sidecar truncate"
+      }
+    },
+    "2189e72007": {
+      "terminal_classifiers": [
+        "HARNESS_INVALID"
+      ],
+      "launchable": false,
+      "confirming": false,
+      "notes": {
+        "HARNESS_INVALID": "post_scale_smoke hygiene assert AttributeError on scalar JSON lines in run.log tee (unguarded rec.get); dual-arm NOT run; emission fix b54c21e sidecar hygiene OK underneath",
+        "verifier_fix_required": "v3c_run_log_dict_guard w7_launch_hygiene.py dict guard"
       }
     }
   },
@@ -454,6 +468,7 @@
   "terminal_receipt_owner": "claude",
   "postrun_module": "scripts/hrm_text_158_w7_dense_acc_in_vivo_postrun.py",
   "replay_commands_artifact": "artifacts/consensus_prep/w7_dense_acc_in_vivo_gpu_launch_packet_v3_replay_commands.json",
-  "replay_commands_sha256": "7bb2871a00f938a2d69423d54424a301ae0c81d5509d0b5693c330e5dd8f6edb",
-  "packet_sha": "cbb62c03c94688b0aa8b1300a7ae52a8dd5f0954ec36d3c52f54113f5a3330e1"
+  "replay_commands_sha256": "9cfe93ca46c62b70c4a4fd2c02021140af0395d631f7df560728742b3533bee8",
+  "packet_sha": "1f559a744bbdfd7852666decab9fb15aae3686f88ceee6ddec1c7a119da85c95",
+  "replay_provenance": "hand_authored_json_no_tracked_python_generator"
 }
