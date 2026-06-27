@@ -234,6 +234,57 @@ that this drain path cannot close the sub-2 gap on the measured terminal surface
 **Next (explicitly NOT closed here):** dense-acc-width investigation / int16
 vote-acc dominator alternatives (co_lead refinement `1782491192366`).
 
+### 2026-06-27 — W8 dense vote-acc in-vivo carrier faithfulness CONFIRMED (option-2 width step)
+
+**Question:** at `canonical_t10_prereg_v24`, is int16→int8 (W8 ±127) vote-accumulator
+materialization bit-faithful to the current ±127-clamped production dynamics in vivo?
+
+**Verdict:** `W8_IN_VIVO_CONFIRMED` — W8-carrier faithfulness to the **current**
+vote_update ±127 storage clamp confirmed in vivo (conditional on that clamp staying
+`[-127,+127]`; not universal transparency beyond the current production law).
+
+**Run/chain:** `2189e72011` (occupied/never-rm); parent `9b4e311a`; packet
+`v1_rev6` @ HRM HEAD `1aff549`; code chain `2412732`/`c4d9721`/`3aa4f52`/`09fc278`/`5c3dc89`/`72d79b1`/`1aff549`.
+
+**Evidence (classifier receipt off disk):**
+- O1 load-bearing: **234,881,024** compared lanes, `equality_rate=1.0` (W8 ±127
+  witness, warmup-only skip; B1 fix `72d79b1`)
+- O2–O4 clean: applied_mask 0/256, crossing per-step disagreement 0
+- `banks_w8_transparency=true` only under the current ±127-clamped production
+  dynamics (faithfulness to the existing storage law, not unbounded transparency)
+
+**3-ledger (LIVE row):** int16 acc (16b) → W8 (8b) = **2× dominator reduction**;
+LIVE ~24→16 bpw (33% row reduction). q int8 + scale unchanged. Saved-byte q ledger
+(~1.6 bpw) is separate.
+
+**Prior never-rm runs (diagnosed + fixed on path to CONFIRM):**
+- `2189e72008` — canonical W7 negative (`W7_BREAKS_LIVE_PARITY` @ ±63)
+- `2189e72009` — `HARNESS_INVALID` (W8 sidecar emit gap; fixed `5c3dc89`)
+- `2189e72010` — `RUN_HEALTH_FAIL` (`o1_missing_evidence`; W6 ±31 O1 skip
+  mis-scoped for W8 ±127 question; fixed B1 `72d79b1`)
+
+**B1 fix lesson:** the O1 wiring-guard skip was keyed to the W6 ±31 domain
+(`would_strict_raise`) and mis-scoped the W8 ±127 question → O1 vacuous on
+`2189e72010`. B1 (`72d79b1`) added a W8-only O1 witness on the ±127 domain
+(warmup-only skip) → load-bearing O1 → CONFIRM on `2189e72011`.
+
+**Dense-width closure:** W7 negative (`2189e72008`) + W8 positive characterize the
+**dense** vote-acc width floor as **8 bits** (W8 ±127 lossless under the current
+clamp; W7 ±63 breaks) at `canonical_t10_prereg_v24`.
+
+**BOUNDED non-claims (verbatim load-bearing):**
+- NOT universal transparency — conditional on production clip staying `[-127,+127]`
+- NOT sub-2 inclusive persistent TOTAL — q int8 + FP32 scale remain
+- NOT a held-rules unlock — canonical W7 negative stands
+- Sub-2 persistent needs sparser/event-coded vote rep (separate open arc; event-coded
+  live carrier prior CLOSED NEGATIVE at terminal Phase-A geometry)
+
+Provenance: option-2 arc dual-accept chain through lane-1 codec (`2412732`), lane-2
+trainer-boundary (`c4d9721`), lane-3 CPU bridge (`3aa4f52`), hygiene adapt
+(`09fc278`), sidecar emit fix (`5c3dc89`), B1 O1 witness (`72d79b1`), rev6 packet
+(`1aff549`); terminal GPU dual-arm `2189e72011`; co_lead terminal PASS
+`1782573715084`; atlas dispatch dual-accept `1782574001245` / `1782574187814`.
+
 ## Origin
 
 Lane separated from `hrm-158.md` so the curriculum lane (90/90 bank gate,
