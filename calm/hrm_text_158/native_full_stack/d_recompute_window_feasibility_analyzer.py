@@ -84,6 +84,38 @@ EXPLICIT_NON_CLAIMS: tuple[str, ...] = (
 FORBIDDEN_B_TERMINAL_FROM_D_FIELDS = "B_APPROX_DENSE_LEAD"
 
 
+def _build_log_inventory(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    numel_for_bpw: int | None,
+    numel_basis_source: str | None,
+    state_numel_by_key: Mapping[str, int] | None = None,
+) -> dict[str, Any]:
+    selected_state_keys = sorted({str(record["state_key"]) for record in records})
+    sampled_lane_count_by_key: dict[str, int] = {}
+    for key in selected_state_keys:
+        first = next(record for record in records if str(record["state_key"]) == key)
+        sampled_lane_count_by_key[key] = len(first.get("lane_indices") or [])
+    per_key_numel: dict[str, int] = {}
+    if state_numel_by_key is not None:
+        for key in selected_state_keys:
+            if key in state_numel_by_key:
+                per_key_numel[key] = int(state_numel_by_key[key])
+    if numel_basis_source:
+        basis_source = str(numel_basis_source)
+    elif numel_for_bpw is not None:
+        basis_source = "caller_numel_for_bpw"
+    else:
+        basis_source = "lane_group_count_fallback"
+    return {
+        "selected_state_keys": selected_state_keys,
+        "sampled_lane_count_by_key": sampled_lane_count_by_key,
+        "jsonl_row_count": len(records),
+        "numel_basis_source": basis_source,
+        "per_key_numel": per_key_numel,
+    }
+
+
 @dataclass(frozen=True)
 class LaneKStarMeasurement:
     lane_index: int
@@ -394,6 +426,8 @@ def analyze_recompute_window_log(
     log_path: Path | str,
     *,
     numel_for_bpw: int | None = None,
+    numel_basis_source: str | None = None,
+    state_numel_by_key: Mapping[str, int] | None = None,
 ) -> dict[str, Any]:
     path = Path(log_path)
     records = iter_recompute_window_log_records(path)
@@ -403,8 +437,20 @@ def analyze_recompute_window_log(
             "primary_classifier": CLASSIFIER_MISSING_OBSERVABLES_OR_INVALID_WINDOW,
             "structural_fail": True,
             "structural_reason": "empty_recompute_window_log",
+            "log_inventory": _build_log_inventory(
+                [],
+                numel_for_bpw=numel_for_bpw,
+                numel_basis_source=numel_basis_source,
+                state_numel_by_key=state_numel_by_key,
+            ),
             "explicit_non_claims": list(EXPLICIT_NON_CLAIMS),
         }
+    log_inventory = _build_log_inventory(
+        records,
+        numel_for_bpw=numel_for_bpw,
+        numel_basis_source=numel_basis_source,
+        state_numel_by_key=state_numel_by_key,
+    )
     missing_fields = [
         field
         for field in REQUIRED_LOG_FIELDS
@@ -417,6 +463,7 @@ def analyze_recompute_window_log(
             "structural_fail": True,
             "structural_reason": "missing_required_log_fields",
             "missing_fields": missing_fields,
+            "log_inventory": log_inventory,
             "explicit_non_claims": list(EXPLICIT_NON_CLAIMS),
         }
     replay = ReplayConstants(**dict(records[0]["replay_constants"]))
@@ -513,9 +560,11 @@ def analyze_recompute_window_log(
         "inclusive_bpw": {
             "stream_bytes": stream_bytes,
             "numel_basis": effective_numel,
+            "numel_basis_source": log_inventory["numel_basis_source"],
             "acc_term_bpw": acc_term_bpw,
             "passes_acc_budget_under_base3_q": inclusive_pass,
         },
+        "log_inventory": log_inventory,
         "dual_booleans": dual_booleans,
         "b_annex": {
             "authoritative": False,

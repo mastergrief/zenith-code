@@ -602,3 +602,44 @@ def test_real_emit_shape_flip_residual_present_and_absent(tmp_path: Path) -> Non
         CLASSIFIER_D_RECOMPUTE_UNBOUNDED_OR_UNOBSERVABLE,
         CLASSIFIER_MISSING_OBSERVABLES_OR_INVALID_WINDOW,
     }
+
+
+def test_log_inventory_per_key_numel(tmp_path: Path) -> None:
+    replay = _replay()
+    log_path = tmp_path / D_RECOMPUTE_WINDOW_LOG_FILENAME
+    initialize_recompute_window_log_for_probe_session(log_path)
+    for step in (1, 2):
+        append_recompute_window_log_chunk(
+            log_path,
+            _full_step_entry(
+                step=step,
+                state_key="tiny.proj",
+                replay=replay,
+                acc_before=[10],
+                acc_after=[10],
+                vote_lanes=[0],
+            ),
+        )
+        append_recompute_window_log_chunk(
+            log_path,
+            _full_step_entry(
+                step=step,
+                state_key="tiny.other",
+                replay=replay,
+                acc_before=[5],
+                acc_after=[5],
+                vote_lanes=[0],
+            ),
+        )
+    state_numel_by_key = {"tiny.other": 2048, "tiny.proj": 4096}
+    receipt = analyze_recompute_window_log(
+        log_path,
+        numel_for_bpw=sum(state_numel_by_key.values()),
+        numel_basis_source="parent_checkpoint_tensor_state_numel",
+        state_numel_by_key=state_numel_by_key,
+    )
+    inventory = receipt["log_inventory"]
+    assert inventory["per_key_numel"] == state_numel_by_key
+    assert set(inventory["per_key_numel"]) == set(inventory["selected_state_keys"])
+    assert inventory["jsonl_row_count"] == 4
+    assert inventory["sampled_lane_count_by_key"]["tiny.proj"] == 1
