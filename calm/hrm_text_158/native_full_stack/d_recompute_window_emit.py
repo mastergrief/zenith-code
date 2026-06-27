@@ -43,6 +43,14 @@ FORBIDDEN_BOOTSTRAP_FIELDS: frozenset[str] = frozenset(
 MAX_INSTRUMENTED_STATE_KEYS = 2
 DEFAULT_SAMPLED_LANE_COUNT = 64
 
+
+class DObserverShadowUnavailableError(ValueError):
+    """Fail-closed when exact_accumulator_shadow is missing or invalid for sampling."""
+
+
+class DObserverOutOfRangeShadowError(ValueError):
+    """Fail-closed when a sampled shadow lane violates production clip bounds."""
+
 REQUIRED_REPLAY_CONSTANT_KEYS: tuple[str, ...] = (
     "threshold_abs",
     "accumulator_clip_min",
@@ -129,6 +137,8 @@ def validate_bootstrap_record(record: Mapping[str, Any]) -> list[str]:
 
 
 def _accumulator_i32_flat(state: Any) -> torch.Tensor:
+    """Test-only parity oracle: decoded bounded carrier via rebuild_if_stale=True."""
+
     if isinstance(state, BoundedDeltaTensorState):
         return (
             state.decoded_accumulators(rebuild_if_stale=True)
@@ -140,6 +150,52 @@ def _accumulator_i32_flat(state: Any) -> torch.Tensor:
     if isinstance(state, VoteUpdateState):
         return state.accumulators.detach().cpu().flatten().to(torch.int32)
     raise TypeError(f"unsupported tensor state type {type(state)!r}")
+
+
+def _shadow_numel(state: Any) -> int:
+    if isinstance(state, BoundedDeltaTensorState):
+        if state.exact_accumulator_shadow is not None:
+            return int(state.exact_accumulator_shadow.numel())
+        return int(state.q_levels.numel())
+    if isinstance(state, VoteUpdateState):
+        return int(state.accumulators.numel())
+    raise TypeError(f"unsupported tensor state type {type(state)!r}")
+
+
+def _sample_accumulator_lanes(
+    state: Any,
+    lane_indices: Sequence[int],
+    *,
+    replay_constants: ReplayConstants,
+) -> list[int]:
+    clip_min = int(replay_constants.accumulator_clip_min)
+    clip_max = int(replay_constants.accumulator_clip_max)
+    if isinstance(state, VoteUpdateState):
+        flat = state.accumulators.detach().cpu().flatten().to(torch.int32)
+        values = [int(flat[int(index)].item()) for index in lane_indices]
+    elif isinstance(state, BoundedDeltaTensorState):
+        shadow = state.exact_accumulator_shadow
+        if shadow is None:
+            raise DObserverShadowUnavailableError("exact_accumulator_shadow is None")
+        if shadow.dtype != torch.int16:
+            raise DObserverShadowUnavailableError(
+                f"exact_accumulator_shadow must be torch.int16, got {shadow.dtype}"
+            )
+        if tuple(shadow.shape) != tuple(state.q_levels.shape):
+            raise DObserverShadowUnavailableError(
+                "exact_accumulator_shadow shape must match q_levels.shape"
+            )
+        flat = shadow.detach().cpu().flatten()
+        values = [int(flat[int(index)].item()) for index in lane_indices]
+    else:
+        raise TypeError(f"unsupported tensor state type {type(state)!r}")
+    for value in values:
+        if int(value) < clip_min or int(value) > clip_max:
+            raise DObserverOutOfRangeShadowError(
+                "sampled accumulator lane "
+                f"{int(value)} outside production clip [{clip_min}, {clip_max}]"
+            )
+    return values
 
 
 def _q_i16_flat(state: Any) -> torch.Tensor:
@@ -157,7 +213,7 @@ def select_instrumentation_state_keys(
 ) -> list[str]:
     ranked = sorted(
         tensor_states.keys(),
-        key=lambda key: int(_accumulator_i32_flat(tensor_states[key]).numel()),
+        key=lambda key: int(_shadow_numel(tensor_states[key])),
     )
     return list(ranked[: int(max_keys)])
 
@@ -374,15 +430,21 @@ def maybe_emit_d_recompute_window_step_records(
     for state_key in state_keys:
         pre_state = pre_update_states[state_key]
         post_state = post_update_states[state_key]
-        acc_before_tensor = _accumulator_i32_flat(pre_state)
-        acc_after_tensor = _accumulator_i32_flat(post_state)
         q_before_tensor = _q_i16_flat(pre_state)
         q_after_tensor = _q_i16_flat(post_state)
         votes_tensor = votes_by_key[state_key].detach().cpu().flatten().to(torch.int32)
-        lane_indices = _sample_lane_indices(int(acc_before_tensor.numel()))
+        lane_indices = _sample_lane_indices(int(_shadow_numel(pre_state)))
         vote_lanes = [int(votes_tensor[index].item()) for index in lane_indices]
-        acc_before_lanes = [int(acc_before_tensor[index].item()) for index in lane_indices]
-        acc_after_lanes = [int(acc_after_tensor[index].item()) for index in lane_indices]
+        acc_before_lanes = _sample_accumulator_lanes(
+            pre_state,
+            lane_indices,
+            replay_constants=replay_constants,
+        )
+        acc_after_lanes = _sample_accumulator_lanes(
+            post_state,
+            lane_indices,
+            replay_constants=replay_constants,
+        )
         q_before_lanes = [int(q_before_tensor[index].item()) for index in lane_indices]
         q_after_lanes = [int(q_after_tensor[index].item()) for index in lane_indices]
         flip_residual_applied_lanes: list[bool] = []
