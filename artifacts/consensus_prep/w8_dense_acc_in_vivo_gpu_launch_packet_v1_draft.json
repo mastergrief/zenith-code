@@ -72,11 +72,11 @@
     "w8_2x_dominator_reduction_not_sub2_inclusive",
     "not_held_rules_unlock",
     "canonical_w7_negative_2189e72008_stands",
-    "not_gpu_launch_in_planning_packet",
-    "not_commit_in_planning_packet",
     "s3bb_w5_w6_semantics_frozen",
     "oracle_127_plateau_is_storage_clamp_saturation_not_free_headroom",
-    "cpu_lane1_lane2_static_proof_does_not_replace_live_feedback_loop_gpu_increment"
+    "cpu_lane1_lane2_static_proof_does_not_replace_live_feedback_loop_gpu_increment",
+    "not_gpu_launch_until_plus1_launch_gate",
+    "hygiene_asserts_launch_ready_at_rev4"
   ],
   "file_content_pins": {
     "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": "ac9e456e076e62f0e67eb4b1b82851ab15102238eeee6c382b23bf8179e1b917",
@@ -87,10 +87,11 @@
     "calm/hrm_text_158/native_full_stack/w7_dense_acc_in_vivo_confirmation.py": "4aec056a0ac870128fc0998cf612677216a1cd12b8f690370ec662c0fd479d82",
     "calm/hrm_text_158/native_full_stack/w7_launch_hygiene.py": "9c7f771618d13ffee30233e5b66cef0d2d4114bfe66ed31e9cedbf7c68e05096",
     "calm/hrm_text_158/native_full_stack/w8_dense_acc_in_vivo_confirmation.py": "76bb82860ddbd7b67eda74f8abdb76e559b03f01276399ea8d0330d4fa403183",
+    "calm/hrm_text_158/native_full_stack/w8_launch_hygiene.py": "1a93fcbfdc61ab2cc736e4b1ab798c082f57c7a404ded5b0517ec582ac27f928",
     "scripts/hrm_text_158_bounded_delta_acquisition_probe.py": "d8080ebaf5460c9b0abfde47fea09bc21117db9631ef1922971166f7367d5bf3",
     "scripts/hrm_text_158_w8_dense_acc_in_vivo_postrun.py": "11a04b9690b22c90799d570f4dce2f6aaa8a0bef3b95c8f755f7d2a8180d014c"
   },
-  "file_content_pins_note": "Lane-3 CPU code landed at +1 implement: probe --dense-accumulator-w8-clip + w8_dense_acc_in_vivo_confirmation.py + w8 postrun + guard tests. Lane-1/2 files pinned at c4d9721 except probe refresh.",
+  "file_content_pins_note": "rev4: W8 hygiene replay asserts adapted (w8_launch_hygiene.py); lane-3 CPU at 3aa4f52. Pins refreshed post-hygiene-adapt slice.",
   "gpu_hold": true,
   "gpu_phase_budgets": {
     "global_silent_phase_seconds_default": 300,
@@ -113,7 +114,7 @@
       }
     }
   },
-  "head_at_packet": "c4d9721d76e64f3b839adc6738f35eca09d519e2",
+  "head_at_packet": "3aa4f525fa7d802a424219c06ea63ff85f5312eb",
   "launch_gate_sequence": [
     {
       "checks": [
@@ -195,8 +196,8 @@
     }
   },
   "packet_kind": "w8_dense_acc_in_vivo_confirmation_gpu",
-  "packet_revision": "v1_rev3_plus1_impl_pins",
-  "packet_sha": "a7b3d5b2dfd9498e418724162e87ccdab49eec8ab1bcd61df4ddfcdd2caa8985",
+  "packet_revision": "v1_rev4_w8_hygiene_adapt",
+  "packet_sha": "88fb04974a8bb74e61b260999f1fafcdddeda83907e949f8f85d9f2b786c8514",
   "parent_checkpoint": {
     "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
     "read_only": true,
@@ -225,8 +226,8 @@
     "votes_emit_enabled": false
   },
   "replay_commands_artifact": "artifacts/consensus_prep/w8_dense_acc_in_vivo_gpu_launch_packet_v1_replay_commands.json",
-  "replay_commands_sha256": "034f94fd24acab7797d2a891569dd52a5bf7e7718e7ffd69608a21879f1ec1f8",
-  "replay_provenance": "hand_authored_json_planning_slice_no_gpu",
+  "replay_commands_sha256": "cc5fec088de7adbb2f47f417d23a2312c5e0ce4e580cb34f1d4986d1d12789de",
+  "replay_provenance": "hand_authored_json_hygiene_adapt_slice",
   "run_id": "2189e72009",
   "run_id_policy": "FREE \u2014 do NOT reuse 2189e72001..08 (occupied W7 arc + canonical negative 2189e72008)",
   "run_root": "/home/gabe/claw-code-creditdir/transient_fp_credit/w8_dense_acc_in_vivo_seed43_43_2189e72009/",
