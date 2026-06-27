@@ -51,6 +51,8 @@ def emit_w7_in_vivo_classifier_receipt(
         parity_primary,
         parity_stats,
         sidecar_coverage,
+        oracle_receipt=oracle_receipt,
+        treatment_receipt=treatment_receipt,
     )
     floor_width, arm_failures = verify_dual_arm_w7_configuration(
         oracle_receipt=oracle_receipt,
@@ -76,6 +78,20 @@ def emit_w7_in_vivo_classifier_receipt(
     classifier["sidecar_coverage_diagnostics"] = parity_inputs.get(
         "sidecar_coverage_diagnostics"
     )
+    classifier["w7_accumulator_clip_contract"] = parity_inputs.get("w7_accumulator_clip_contract")
+    classifier["o1_lane_equality_vacuous"] = parity_inputs.get("o1_lane_equality_vacuous")
+    classifier["o1_lane_equality_load_bearing"] = parity_inputs.get("o1_lane_equality_load_bearing")
+    classifier["prereg_o1_o4_adjudicable"] = parity_inputs.get("prereg_o1_o4_adjudicable")
+    classifier["prereg_w7_breaks_parity_citation"] = parity_inputs.get(
+        "prereg_w7_breaks_parity_citation"
+    )
+    classifier["s3bb_w5w6_domain_primary_inapplicable"] = parity_inputs.get(
+        "s3bb_w5w6_domain_primary_inapplicable"
+    )
+    classifier["s3bb_w5w6_domain_primary_recorded"] = parity_inputs.get(
+        "s3bb_w5w6_domain_primary_recorded"
+    )
+    classifier["divergence_characterization"] = parity_inputs.get("divergence_characterization")
     return classifier
 
 

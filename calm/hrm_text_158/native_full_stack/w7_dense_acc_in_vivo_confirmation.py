@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from calm.hrm_text_158.native_full_stack.accumulator_real_dynamics_verdict import (
@@ -77,6 +78,49 @@ EXPLICIT_NON_CLAIMS: tuple[str, ...] = (
     "not_inclusive_sub2",
     "not_gpu_launch_in_code_readiness_slice",
 )
+
+PREREG_PACKET_W7_BREAKS_PARITY_CITATION = (
+    "artifacts/consensus_prep/w7_dense_acc_in_vivo_gpu_launch_packet_v3_draft.json:"
+    "classifier_labels.W7_BREAKS_LIVE_PARITY"
+)
+PREREG_W7_BREAKS_PARITY_PREDICATES = (
+    "crossing/applied-mask/q/final parity on clean sidecars"
+)
+STRUCTURAL_REASON_O1_MISSING_EVIDENCE = "o1_missing_evidence"
+DIVERGENCE_ONSET_STATE_KEY = "model.H_level.core.layers.0.attn.gqkv_proj"
+DIVERGENCE_CHARACTERIZATION_W7_READ_CLAMP_ASYMMETRY = (
+    "dynamics_drift_from_w7_read_clamp_asymmetry"
+)
+
+W7_ACCUMULATOR_CLIP_CONTRACT_C: dict[str, Any] = {
+    "contract_id": "C_hybrid_read_clamp_write_spec",
+    "read_boundary": {
+        "operation": "clip_to_w7_tensor per int16 lane",
+        "bounds": "±63",
+        "site": "vote_update_state via apply_trainer_boundary_narrow_carrier",
+        "citations": [
+            "narrow_accumulator_codec.py:474-486",
+            "narrow_carrier_trainer_integration.py:266-267",
+            "bounded_delta_learner.py:926-931",
+        ],
+    },
+    "write_storage": {
+        "operation": "vote_update (decay+vote).clamp(±127) into exact_accumulator_shadow",
+        "bounds": "±127 vote_update spec",
+        "no_w7_reclip_on_write": True,
+        "citations": [
+            "vote_update.py:968-970",
+            "accumulator_real_dynamics_verdict.py:560-561",
+            "bounded_delta_learner.py:1080,1101",
+        ],
+    },
+    "o1_sidecar_observable": (
+        "post-step exact_accumulator_shadow lanes in headroom_wiring_sidecar "
+        "(not post-boundary W7-re-clipped storage)"
+    ),
+    "w7_floor_witness": "vote-derived live_reachable_peak_estimate (not raw sidecar max)",
+    "packet_non_claim": "dynamics_only_clip_boundary_not_byte_pack",
+}
 
 
 @dataclass(frozen=True)
@@ -241,62 +285,32 @@ def live_reachable_peak_estimate(*, threshold_abs: int, max_vote_abs_observed: i
     return int(threshold_abs) - 1 + int(max_vote_abs_observed)
 
 
-def derive_w7_parity_inputs(
-    s3bb_primary: str,
-    s3bb_stats: Mapping[str, Any],
-    sidecar_coverage: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Map S3BB decision-parity stats to W7 structural/parity bridge inputs."""
+def _bit_equality_lane_witness(s3bb_stats: Mapping[str, Any]) -> dict[str, Any]:
+    bit_equality = s3bb_stats.get("bit_equality_diagnostics") or {}
+    total_lane_count = int(bit_equality.get("total_lane_count") or 0)
+    matched_key_compared_lane_count = int(
+        (bit_equality.get("sidecar_coverage_diagnostics") or {}).get(
+            "matched_key_compared_lane_count"
+        )
+        or 0
+    )
+    if matched_key_compared_lane_count == 0:
+        matched_key_compared_lane_count = total_lane_count
+    equality_rate = float(bit_equality.get("vote_update_state_accumulator_equality_rate") or 0.0)
+    vacuous = total_lane_count <= 0
+    return {
+        "total_lane_count": total_lane_count,
+        "matched_key_compared_lane_count": matched_key_compared_lane_count,
+        "vote_update_state_accumulator_equality_rate": equality_rate,
+        "o1_lane_equality_vacuous": bool(vacuous),
+        "o1_lane_equality_load_bearing": not vacuous,
+    }
 
-    coverage = dict(sidecar_coverage)
-    if coverage.get("structural_fail"):
-        return {
-            "structural_fail": True,
-            "structural_reason": str(
-                coverage.get("structural_reason") or "sidecar_structural_coverage_fail"
-            ),
-            "parity_break": False,
-            "parity_break_driving_keys": [],
-            "sidecar_coverage_diagnostics": coverage,
-            "s3bb_primary_classifier": str(s3bb_primary),
-        }
 
-    primary = str(s3bb_primary)
-    if primary in S3BB_HARNESS_HEALTH_PRIMARIES:
-        return {
-            "structural_fail": True,
-            "structural_reason": "s3bb_harness_or_liveness_fail",
-            "parity_break": False,
-            "parity_break_driving_keys": [],
-            "sidecar_coverage_diagnostics": coverage,
-            "s3bb_primary_classifier": primary,
-        }
-    if primary in S3BB_DOMAIN_HEALTH_PRIMARIES:
-        return {
-            "structural_fail": True,
-            "structural_reason": "s3bb_domain_or_headroom_fail",
-            "parity_break": False,
-            "parity_break_driving_keys": [],
-            "sidecar_coverage_diagnostics": coverage,
-            "s3bb_primary_classifier": primary,
-        }
-    if (
-        primary not in S3BB_PARITY_OK_PRIMARIES
-        and primary not in S3BB_SCIENCE_PARITY_BREAK_PRIMARIES
-    ):
-        return {
-            "structural_fail": True,
-            "structural_reason": "s3bb_unenumerated_primary_fail",
-            "parity_break": False,
-            "parity_break_driving_keys": [],
-            "sidecar_coverage_diagnostics": coverage,
-            "s3bb_primary_classifier": primary,
-        }
+def extract_w7_parity_signals(s3bb_stats: Mapping[str, Any]) -> dict[str, Any]:
+    """Prereg O1-O4 parity keys: crossing, applied_mask, q_trajectory, final_metrics."""
 
     driving_keys: list[str] = []
-    if primary in S3BB_SCIENCE_PARITY_BREAK_PRIMARIES:
-        driving_keys.append(f"s3bb_primary:{primary}")
-
     crossing = s3bb_stats.get("crossing_parity") or {}
     if int(crossing.get("per_step_crossing_bool_disagreement_count") or 0) > 0:
         driving_keys.append("per_step_crossing_bool_disagreement_count")
@@ -318,12 +332,212 @@ def derive_w7_parity_inputs(
         driving_keys.append("final_metrics_mismatch")
 
     return {
+        "parity_break": bool(driving_keys),
+        "parity_break_driving_keys": driving_keys,
+        "crossing_parity": dict(crossing) if isinstance(crossing, Mapping) else {},
+        "applied_mask_parity": dict(applied) if isinstance(applied, Mapping) else {},
+        "q_trajectory_parity": dict(q_traj) if isinstance(q_traj, Mapping) else {},
+    }
+
+
+def prereg_o1_o4_adjudicable(
+    *,
+    o1_lane_witness: Mapping[str, Any],
+    parity_signals: Mapping[str, Any],
+) -> bool:
+    """REQ-1: packet :381 allows BREAKS on enumerated O1-O4 predicates without lane-equality."""
+
+    if bool(o1_lane_witness.get("o1_lane_equality_load_bearing")):
+        return True
+    return bool(parity_signals.get("parity_break_driving_keys"))
+
+
+def characterize_accumulator_divergence(
+    oracle_receipt: Mapping[str, Any],
+    treatment_receipt: Mapping[str, Any],
+    *,
+    focus_state_key: str = DIVERGENCE_ONSET_STATE_KEY,
+) -> dict[str, Any] | None:
+    from calm.hrm_text_158.native_full_stack.s3bb_headroom_telemetry import (
+        _index_sidecar_file,
+        resolve_headroom_wiring_sidecar_path,
+    )
+
+    oracle_path = resolve_headroom_wiring_sidecar_path(oracle_receipt)
+    treatment_path = resolve_headroom_wiring_sidecar_path(treatment_receipt)
+    if oracle_path is None or treatment_path is None:
+        return None
+    if not Path(oracle_path).is_file() or not Path(treatment_path).is_file():
+        return None
+
+    oracle_keyed, _, _ = _index_sidecar_file(oracle_path)
+    treatment_keyed, _, _ = _index_sidecar_file(treatment_path)
+    shared_keys = sorted(
+        key
+        for key in set(oracle_keyed).intersection(treatment_keyed)
+        if key[1] == focus_state_key
+    )
+    if not shared_keys:
+        return None
+
+    per_step: list[dict[str, Any]] = []
+    onset_step: int | None = None
+    for step_id, _state_key in shared_keys:
+        oracle_lanes = [int(v) for v in oracle_keyed[(step_id, focus_state_key)]["accumulator_lanes"]]
+        treatment_lanes = [
+            int(v) for v in treatment_keyed[(step_id, focus_state_key)]["accumulator_lanes"]
+        ]
+        if len(oracle_lanes) != len(treatment_lanes):
+            continue
+        lane_count = len(oracle_lanes)
+        diff_count = sum(1 for o_val, t_val in zip(oracle_lanes, treatment_lanes, strict=True) if o_val != t_val)
+        row = {
+            "step": int(step_id),
+            "lane_count": int(lane_count),
+            "diff_count": int(diff_count),
+            "diff_fraction": float(diff_count) / float(lane_count) if lane_count else 0.0,
+            "oracle_max_abs": int(max(abs(v) for v in oracle_lanes)) if oracle_lanes else 0,
+            "treatment_max_abs": int(max(abs(v) for v in treatment_lanes)) if treatment_lanes else 0,
+        }
+        per_step.append(row)
+        if onset_step is None and diff_count > 0:
+            onset_step = int(step_id)
+
+    if not per_step:
+        return None
+
+    per_step.sort(key=lambda row: int(row["step"]))
+    terminal = per_step[-1]
+    return {
+        "focus_state_key": focus_state_key,
+        "characterization": DIVERGENCE_CHARACTERIZATION_W7_READ_CLAMP_ASYMMETRY,
+        "onset_step": onset_step,
+        "per_step_series": per_step,
+        "terminal_step": int(terminal["step"]),
+        "terminal_diff_count": int(terminal["diff_count"]),
+        "terminal_diff_fraction": float(terminal["diff_fraction"]),
+        "terminal_oracle_max_abs": int(terminal["oracle_max_abs"]),
+        "terminal_treatment_max_abs": int(terminal["treatment_max_abs"]),
+        "treatment_plateau_max_abs": int(
+            max(int(row["treatment_max_abs"]) for row in per_step)
+        ),
+    }
+
+
+def derive_w7_parity_inputs(
+    s3bb_primary: str,
+    s3bb_stats: Mapping[str, Any],
+    sidecar_coverage: Mapping[str, Any],
+    *,
+    oracle_receipt: Mapping[str, Any] | None = None,
+    treatment_receipt: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Map S3BB decision-parity stats to W7 structural/parity bridge inputs."""
+
+    coverage = dict(sidecar_coverage)
+    base: dict[str, Any] = {
+        "sidecar_coverage_diagnostics": coverage,
+        "s3bb_primary_classifier": str(s3bb_primary),
+        "w7_accumulator_clip_contract": dict(W7_ACCUMULATOR_CLIP_CONTRACT_C),
+        "prereg_w7_breaks_parity_citation": PREREG_PACKET_W7_BREAKS_PARITY_CITATION,
+        "prereg_w7_breaks_parity_predicates": PREREG_W7_BREAKS_PARITY_PREDICATES,
+        "s3bb_w5w6_domain_primary_inapplicable": False,
+        "s3bb_w5w6_domain_primary_recorded": None,
+    }
+
+    if coverage.get("structural_fail"):
+        return {
+            **base,
+            "structural_fail": True,
+            "structural_reason": str(
+                coverage.get("structural_reason") or "sidecar_structural_coverage_fail"
+            ),
+            "parity_break": False,
+            "parity_break_driving_keys": [],
+            "o1_lane_equality_vacuous": True,
+            "o1_lane_equality_load_bearing": False,
+            "prereg_o1_o4_adjudicable": False,
+            "divergence_characterization": None,
+        }
+
+    primary = str(s3bb_primary)
+    if primary in S3BB_HARNESS_HEALTH_PRIMARIES:
+        return {
+            **base,
+            "structural_fail": True,
+            "structural_reason": "s3bb_harness_or_liveness_fail",
+            "parity_break": False,
+            "parity_break_driving_keys": [],
+            "o1_lane_equality_vacuous": True,
+            "o1_lane_equality_load_bearing": False,
+            "prereg_o1_o4_adjudicable": False,
+            "divergence_characterization": None,
+        }
+
+    domain_inapplicable = primary in S3BB_DOMAIN_HEALTH_PRIMARIES
+    if domain_inapplicable:
+        base["s3bb_w5w6_domain_primary_inapplicable"] = True
+        base["s3bb_w5w6_domain_primary_recorded"] = primary
+    elif (
+        primary not in S3BB_PARITY_OK_PRIMARIES
+        and primary not in S3BB_SCIENCE_PARITY_BREAK_PRIMARIES
+    ):
+        return {
+            **base,
+            "structural_fail": True,
+            "structural_reason": "s3bb_unenumerated_primary_fail",
+            "parity_break": False,
+            "parity_break_driving_keys": [],
+            "o1_lane_equality_vacuous": True,
+            "o1_lane_equality_load_bearing": False,
+            "prereg_o1_o4_adjudicable": False,
+            "divergence_characterization": None,
+        }
+
+    o1_lane_witness = _bit_equality_lane_witness(s3bb_stats)
+    parity_signals = extract_w7_parity_signals(s3bb_stats)
+    driving_keys = list(parity_signals["parity_break_driving_keys"])
+    if primary in S3BB_SCIENCE_PARITY_BREAK_PRIMARIES:
+        driving_keys.insert(0, f"s3bb_primary:{primary}")
+
+    adjudicable = prereg_o1_o4_adjudicable(
+        o1_lane_witness=o1_lane_witness,
+        parity_signals=parity_signals,
+    )
+    if not adjudicable:
+        return {
+            **base,
+            "structural_fail": True,
+            "structural_reason": STRUCTURAL_REASON_O1_MISSING_EVIDENCE,
+            "parity_break": False,
+            "parity_break_driving_keys": [],
+            "o1_lane_equality_vacuous": bool(o1_lane_witness["o1_lane_equality_vacuous"]),
+            "o1_lane_equality_load_bearing": False,
+            "prereg_o1_o4_adjudicable": False,
+            "divergence_characterization": None,
+            **o1_lane_witness,
+            **parity_signals,
+        }
+
+    divergence_characterization = None
+    if oracle_receipt is not None and treatment_receipt is not None:
+        divergence_characterization = characterize_accumulator_divergence(
+            oracle_receipt,
+            treatment_receipt,
+        )
+
+    return {
+        **base,
         "structural_fail": False,
         "structural_reason": None,
         "parity_break": bool(driving_keys),
         "parity_break_driving_keys": driving_keys,
-        "sidecar_coverage_diagnostics": coverage,
-        "s3bb_primary_classifier": str(s3bb_primary),
+        "o1_lane_equality_vacuous": bool(o1_lane_witness["o1_lane_equality_vacuous"]),
+        "o1_lane_equality_load_bearing": bool(o1_lane_witness["o1_lane_equality_load_bearing"]),
+        "prereg_o1_o4_adjudicable": True,
+        "divergence_characterization": divergence_characterization,
+        **o1_lane_witness,
+        **parity_signals,
     }
 
 

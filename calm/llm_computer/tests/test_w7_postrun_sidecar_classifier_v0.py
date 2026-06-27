@@ -126,7 +126,13 @@ def _w7_dual_arm_receipts(
 def _classify_w7_end_to_end(oracle: dict, treatment: dict) -> dict:
     primary, stats = classify_s3bb_decision_parity_run(oracle, treatment)
     coverage = stats["sidecar_coverage_diagnostics"]
-    bridge = derive_w7_parity_inputs(primary, stats, coverage)
+    bridge = derive_w7_parity_inputs(
+        primary,
+        stats,
+        coverage,
+        oracle_receipt=oracle,
+        treatment_receipt=treatment,
+    )
     envelope = resolve_confirmation_envelope(CONFIRMATION_ENVELOPE_CANONICAL_T10_PREREG_V24)
     floor_width, arm_failures = verify_dual_arm_w7_configuration(
         oracle_receipt=oracle,
@@ -326,7 +332,7 @@ def test_zero_shared_measured_steps_clean_sidecar_is_run_health_fail(tmp_path: P
     assert classifier["w7_parity_bridge"]["parity_break"] is False
 
 
-def test_domain_primary_clean_sidecar_is_run_health_fail(tmp_path: Path) -> None:
+def test_domain_primary_w7_scoped_not_structural_short_circuit(tmp_path: Path) -> None:
     oracle, treatment = _w7_dual_arm_receipts(tmp_path, vote_abs_max=24)
     treatment_sidecar = Path(treatment["headroom_wiring_sidecar_path"])
     treatment_sidecar.unlink(missing_ok=True)
@@ -341,11 +347,10 @@ def test_domain_primary_clean_sidecar_is_run_health_fail(tmp_path: Path) -> None
     classifier = _classify_w7_end_to_end(oracle, treatment)
     assert classifier["s3bb_parity_primary_classifier"] == CLASSIFIER_DOMAIN_OR_HEADROOM_FAIL
     bridge = classifier["w7_parity_bridge"]
-    assert bridge["structural_fail"] is True
-    assert bridge["parity_break"] is False
-    assert bridge["structural_reason"] == "s3bb_domain_or_headroom_fail"
-    assert classifier["primary_classifier"] == CLASSIFIER_RUN_HEALTH_FAIL
-    assert classifier["primary_classifier"] != CLASSIFIER_W7_BREAKS_LIVE_PARITY
+    assert bridge["s3bb_w5w6_domain_primary_inapplicable"] is True
+    assert bridge["structural_fail"] is False
+    assert bridge["structural_reason"] is None
+    assert classifier["primary_classifier"] != CLASSIFIER_RUN_HEALTH_FAIL
 
 
 def test_unenumerated_s3bb_primary_clean_sidecar_is_run_health_fail(tmp_path: Path) -> None:
