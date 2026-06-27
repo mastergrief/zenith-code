@@ -74,6 +74,12 @@ from calm.hrm_text_158.native_full_stack.r7_cap_defer_pressure_instrumentation i
     optional_selection_scores_from_step_result_compact,
     pressure_mass_from_tensor_states,
 )
+from calm.hrm_text_158.native_full_stack.d_recompute_window_emit import (
+    D_RECOMPUTE_WINDOW_LOG_FILENAME,
+    ReplayConstants,
+    initialize_recompute_window_log_for_probe_session,
+    maybe_emit_d_recompute_window_step_records,
+)
 from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
     decode_bounded_accumulator_to_i16,
 )
@@ -5148,6 +5154,8 @@ def run_bounded_delta_steps(
     r7_cap_defer_pressure_instrumentation_enabled: bool = False,
     r7_deferred_backlog_carry_enabled: bool = False,
     r7_cap_defer_pressure_sidecar_path: Path | None = None,
+    d_recompute_window_instrumentation_enabled: bool = False,
+    d_recompute_window_log_path: Path | None = None,
     votes_emit_enabled: bool = False,
     votes_emit_root: Path | None = None,
     carrier_growth_enabled: bool = False,
@@ -5939,6 +5947,20 @@ def run_bounded_delta_steps(
                         ),
                     )
                     prior_pressure_mass = pressure_mass
+                if (
+                    d_recompute_window_instrumentation_enabled
+                    and d_recompute_window_log_path is not None
+                ):
+                    maybe_emit_d_recompute_window_step_records(
+                        enabled=True,
+                        log_path=d_recompute_window_log_path,
+                        step=int(step),
+                        pre_update_states=pre_apply_states,
+                        post_update_states=states,
+                        votes_by_key=votes_by_key,
+                        replay_constants=ReplayConstants.from_vote_update_spec(vote_spec),
+                        global_summary=step_result.global_summary,
+                    )
                 if device.type == "cuda":
                     step_cuda_memory_snapshots.append(
                         capture_cuda_phase_memory_snapshot(
@@ -6259,6 +6281,7 @@ def run_c2p1_probe(
     persistent_q_ternary_base3_codec: bool = False,
     r7_cap_defer_pressure_instrumentation_enabled: bool = False,
     r7_deferred_backlog_carry_enabled: bool = False,
+    d_recompute_window_instrumentation_enabled: bool = False,
     votes_emit_enabled: bool = False,
     votes_emit_root: Path | None = None,
     carrier_growth_enabled: bool = False,
@@ -6512,6 +6535,13 @@ def run_c2p1_probe(
         if bool(r7_cap_defer_pressure_instrumentation_enabled)
         else None
     )
+    d_recompute_window_log_path = (
+        scratch_root / D_RECOMPUTE_WINDOW_LOG_FILENAME
+        if bool(d_recompute_window_instrumentation_enabled)
+        else None
+    )
+    if d_recompute_window_log_path is not None:
+        initialize_recompute_window_log_for_probe_session(d_recompute_window_log_path)
     run_log_path = install_probe_durable_run_log(scratch_root)
     cuda_memory_snapshots_jsonl_path = install_probe_cuda_memory_snapshot_jsonl(
         scratch_root
@@ -7081,6 +7111,10 @@ def run_c2p1_probe(
             ),
             r7_deferred_backlog_carry_enabled=bool(r7_deferred_backlog_carry_enabled),
             r7_cap_defer_pressure_sidecar_path=r7_cap_defer_pressure_sidecar_path,
+            d_recompute_window_instrumentation_enabled=bool(
+                d_recompute_window_instrumentation_enabled
+            ),
+            d_recompute_window_log_path=d_recompute_window_log_path,
             votes_emit_enabled=bool(votes_emit_enabled),
             votes_emit_root=votes_emit_root,
             carrier_growth_enabled=bool(carrier_growth_enabled),
@@ -7348,6 +7382,10 @@ def run_c2p1_probe(
         receipt["r7_cap_defer_pressure_sidecar_path"] = str(
             r7_cap_defer_pressure_sidecar_path
         )
+    if d_recompute_window_instrumentation_enabled:
+        assert d_recompute_window_log_path is not None
+        receipt["d_recompute_window_instrumentation_enabled"] = True
+        receipt["d_recompute_window_log_path"] = str(d_recompute_window_log_path)
     if r7_deferred_backlog_carry_enabled:
         receipt["r7_deferred_backlog_carry_enabled"] = True
     if b2_full_verdict_mode:
@@ -7731,6 +7769,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     ap.add_argument(
+        "--d-recompute-window-instrumentation",
+        action="store_true",
+        help=(
+            "Default-off D recompute-window instrumentation. When enabled, append "
+            "bounded per-step vote/acc/q snapshots to recompute_window_log.jsonl."
+        ),
+    )
+    ap.add_argument(
         "--votes-emit-enabled",
         action="store_true",
         help=(
@@ -7867,6 +7913,9 @@ def main(argv: list[str] | None = None) -> int:
             args.r7_cap_defer_pressure_instrumentation
         ),
         r7_deferred_backlog_carry_enabled=bool(args.r7_deferred_backlog_carry),
+        d_recompute_window_instrumentation_enabled=bool(
+            args.d_recompute_window_instrumentation
+        ),
         votes_emit_enabled=bool(args.votes_emit_enabled),
         votes_emit_root=(
             Path(args.scratch_root) if bool(args.votes_emit_enabled) else None
