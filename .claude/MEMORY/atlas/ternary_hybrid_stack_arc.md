@@ -285,6 +285,62 @@ trainer-boundary (`c4d9721`), lane-3 CPU bridge (`3aa4f52`), hygiene adapt
 (`1aff549`); terminal GPU dual-arm `2189e72011`; co_lead terminal PASS
 `1782573715084`; atlas dispatch dual-accept `1782574001245` / `1782574187814`.
 
+### 2026-06-28 — Arc #2b D-recompute window horizon sizing + B1 H=200 de-censor (envelope-only)
+
+**Chain (HRM repo `claw-code-hrm-text-158`, `feature/hrm-text-1.58`):**
+- H=100 worst-case run (`2189e72015`): right-censored INCONCLUSIVE at sizing horizon
+  H=100 (`growth_branch=RIGHT_CENSORED_LOWER_BOUND`, kworst_weighted=100).
+- STEP-1 classifier↔packet input-manifest bind (`0357e8a`).
+- STEP-1b run_root-local-log preference + fail-closed guards (`7f77640`).
+- Slice-A distributional p99 `quantile_acc_sizing` (`e48a5bb`):
+  `D_RECOMPUTE_QUANTILE_SUB2_CANDIDATE`, envelope ~0.000278 bpw; faithful-cap caveat:
+  99.8%-deferred so it sizes the APPLIED persistent footprint, NOT worst-case.
+- B1 H=200 de-censor wiring (`556623e`): `GROWTH_DECENSORED_SIZED_AT_HORIZON`,
+  packet-driven `horizon_ladder=[25,50,100,200]`, `sizing_horizon_h=200`.
+
+**Liveness-failure incident (run `2189e72016`, code HEAD `556623e`):**
+- Died at step 73/200 — CPU/materialization liveness failure (step_update hang >300s,
+  fail-closed faulthandler; traceback lost to mirrored-stderr fileno bypass).
+- Root cause: `emit.py:503` full-population `vote_lane_values` `.item()` loop
+  (O(numel)/key/step) built unconditionally then discarded under
+  `STRESS_TAIL_POLICY_HORIZON_FIXED` (horizon-fixed selector reads manifest lanes only;
+  `selector.py:477-485`).
+- Fix = Slice-1 (`5cc8fb9`): emit.py horizon-fixed lane-first skip + survivability
+  S1-S4 (stderr/faulthandler tee to run_root, phase stack dump on breach,
+  faulthandler on run.log fd).
+- Relaunch packet `2189e72017` + ancestor-checked generic driver (`95340d3`).
+- Dead `2189e72016` archived (`mv`, never rm) as
+  `..._2189e72016_DEAD_liveness_step73` forensic record.
+
+**B1 verdict (run `2189e72017`, dual-accepted gate-1 `1782679725046` + co_lead
+gate-2 `1782679899343`) — EXACT language, no upgrade:**
+
+B1 de-censor succeeded at H=200 (worst-case K* no longer right-censored;
+kworst_weighted=180<200, right_censor_rate=0.0, parity_fail_count=0,
+gapped_lane_count=0; k99=112, k95=39). The envelope model sizes the worst-case acc
+footprint inclusive_acc_bpw=0.00064237 at window_k=180, strictly under the
+effective_acc_budget_bpw=0.4. BUT in-vivo validation is
+INCONCLUSIVE_REAL_DENSITY_EXCEEDS_ENVELOPE (peak_backlog_depth=130816,
+total_global_rate_cap_deferred=26,162,688 vs accepted=51,712, total_flip_events=1) →
+final_sizing_verdict=SIZED_WINDOW_ONLY_NOT_SUB2,
+final_verdict_scope=envelope_model_only, recommended_law_eligible=false,
+primary_classifier=D_RECOMPUTE_SIZED_NOT_SUB2, requires_slice5_live_validation=true.
+quantile_sub2_candidate=false (growth_branch_not_right_censored_lower_bound). NOT
+sub-2, NOT recommended-law, NOT in-vivo-bound, NOT physical-persistent-sub-2.
+
+**Liveness fix validated on relaunch:** step 73=11.45s; 200/200 clean @~13s/step;
+no breach (`last_active_phase.json` liveness_failure=false, guard_event=cleared).
+
+**Run integrity:** bind PASS spec_sha `4f368336`, log run_root-local, jsonl 3600
+lines, parent .pt `9b4e311a` read-only match ×4.
+
+**Instrumentation nit (Slice-2 cleanup, not science):** the armed-guard pre-registered
+dump writes `failure_class="LIVENESS_FAILURE"` on `guard_event="enter"` — misleading
+nomenclature (distinguish armed vs fired).
+
+**Next rung:** Slice-5 in-vivo live validation (route to a real, non-envelope
+worst-case sub-2 claim).
+
 ## Origin
 
 Lane separated from `hrm-158.md` so the curriculum lane (90/90 bank gate,
