@@ -36,10 +36,12 @@ GROWTH_RIGHT_CENSORED_LOWER_BOUND = "RIGHT_CENSORED_LOWER_BOUND"
 GROWTH_PLATEAU_SIZED = "PLATEAU_SIZED"
 GROWTH_LINEAR_SIZED_WITH_DECAY = "LINEAR_SIZED_WITH_DECAY"
 GROWTH_ACCELERATING_OR_RIGHT_CENSORED = "ACCELERATING_OR_RIGHT_CENSORED"
+GROWTH_DECENSORED_SIZED_AT_HORIZON = "GROWTH_DECENSORED_SIZED_AT_HORIZON"
 
 GROWTH_BRANCH_PRECEDENCE: tuple[str, ...] = (
     GROWTH_INCONCLUSIVE_COST_OR_COVERAGE,
     GROWTH_RIGHT_CENSORED_LOWER_BOUND,
+    GROWTH_DECENSORED_SIZED_AT_HORIZON,
     GROWTH_PLATEAU_SIZED,
     GROWTH_LINEAR_SIZED_WITH_DECAY,
     GROWTH_ACCELERATING_OR_RIGHT_CENSORED,
@@ -479,18 +481,20 @@ def classify_k_star_growth(
     stress_tail_policy: str | None = None,
     coverage_tier: str | None = None,
     gapped_lane_fraction_max: float = GAPPED_LANE_FRACTION_MAX,
+    classification_horizon_h: int = 100,
 ) -> dict[str, Any]:
     horizons = sorted(int(h) for h in summaries_by_h.keys())
-    h100 = summaries_by_h.get(100)
-    if h100 is None:
+    h_class_h = int(classification_horizon_h)
+    h_class = summaries_by_h.get(h_class_h)
+    if h_class is None:
         return {
             "growth_branch": GROWTH_INCONCLUSIVE_COST_OR_COVERAGE,
-            "reason": "missing_h100_summary",
+            "reason": f"missing_h{h_class_h}_summary",
         }
 
-    lane_count = int(h100.get("lane_count", 0))
+    lane_count = int(h_class.get("lane_count", 0))
     gapped_fraction = (
-        float(h100.get("gapped_lane_count", 0)) / float(lane_count)
+        float(h_class.get("gapped_lane_count", 0)) / float(lane_count)
         if lane_count > 0
         else 1.0
     )
@@ -508,7 +512,7 @@ def classify_k_star_growth(
             "growth_branch": GROWTH_INCONCLUSIVE_COST_OR_COVERAGE,
             "reason": "pilot_coverage_tier",
         }
-    if int(h100.get("parity_fail_count", 0)) > 0:
+    if int(h_class.get("parity_fail_count", 0)) > 0:
         return {
             "growth_branch": GROWTH_INCONCLUSIVE_COST_OR_COVERAGE,
             "reason": "parity_failures",
@@ -520,10 +524,31 @@ def classify_k_star_growth(
             "gapped_lane_fraction": float(gapped_fraction),
         }
 
-    if _is_right_censored_at_horizon(h100):
+    if _is_right_censored_at_horizon(h_class):
         return {
             "growth_branch": GROWTH_RIGHT_CENSORED_LOWER_BOUND,
-            "reason": "right_censored_at_h100",
+            "reason": f"right_censored_at_h{h_class_h}",
+        }
+
+    if h_class_h != 100:
+        eligible_lane_count = int(h_class.get("eligible_lane_count", 0))
+        if (
+            int(h_class.get("parity_fail_count", 0)) == 0
+            and int(h_class.get("gapped_lane_count", 0)) == 0
+            and eligible_lane_count > 0
+            and not _is_right_censored_at_horizon(h_class)
+        ):
+            return {
+                "growth_branch": GROWTH_DECENSORED_SIZED_AT_HORIZON,
+                "reason": "decensored_worst_case_at_classification_horizon",
+                "classification_horizon_h": h_class_h,
+            }
+
+    h100 = summaries_by_h.get(100)
+    if h100 is None:
+        return {
+            "growth_branch": GROWTH_INCONCLUSIVE_COST_OR_COVERAGE,
+            "reason": "missing_h100_summary",
         }
 
     if 50 in summaries_by_h and 100 in summaries_by_h:
@@ -606,6 +631,7 @@ def analyze_horizon_k_star_growth(
     measurement_start_step: int = 1,
     stress_tail_policy: str | None = None,
     coverage_tier: str | None = None,
+    classification_horizon_h: int = 100,
 ) -> dict[str, Any]:
     summaries = {
         int(horizon_h): summarize_k_star_at_horizon_prefix(
@@ -621,6 +647,7 @@ def analyze_horizon_k_star_growth(
         summaries,
         stress_tail_policy=stress_tail_policy,
         coverage_tier=coverage_tier,
+        classification_horizon_h=int(classification_horizon_h),
     )
     return {
         "schema_version": HORIZON_ANALYZER_SCHEMA_VERSION,

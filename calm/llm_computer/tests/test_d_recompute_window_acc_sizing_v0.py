@@ -23,6 +23,7 @@ from calm.hrm_text_158.native_full_stack.d_recompute_window_acc_sizing import (
 )
 from calm.hrm_text_158.native_full_stack.d_recompute_window_horizon_analyzer import (
     GROWTH_INCONCLUSIVE_COST_OR_COVERAGE,
+    GROWTH_DECENSORED_SIZED_AT_HORIZON,
     GROWTH_LINEAR_SIZED_WITH_DECAY,
     GROWTH_PLATEAU_SIZED,
     GROWTH_RIGHT_CENSORED_LOWER_BOUND,
@@ -467,3 +468,41 @@ def test_quantile_sizing_fails_closed_gapped_lane_at_horizon() -> None:
     )
     assert result["quantile_sub2_candidate"] is False
     assert result["reason"] == "gapped_lanes_at_sizing_horizon"
+
+
+def test_h200_decensored_branch_reaches_budget_mapping() -> None:
+    horizon_growth = {
+        "growth_branch": GROWTH_DECENSORED_SIZED_AT_HORIZON,
+        "summaries_by_h": {
+            100: _sized_summary(kworst=100.0, k99=76.0, horizon_h=100),
+            200: _sized_summary(kworst=150.0, k99=140.0, horizon_h=200),
+        },
+    }
+    result = size_acc_bpw_from_horizon_growth(
+        horizon_growth,
+        numel_for_bpw=1024,
+        sizing_horizon_h=200,
+    )
+    assert result["sizing_verdict"] in {
+        SIZING_VERDICT_RECOMMENDED_LAW,
+        SIZING_VERDICT_SIZED_NOT_SUB2,
+        SIZING_VERDICT_INCONCLUSIVE,
+    }
+    assert result["reason"] != "growth_branch_not_sized"
+    assert result["window_k"] == 150
+
+
+def test_h200_still_censored_worst_case_inconclusive() -> None:
+    horizon_growth = {
+        "growth_branch": GROWTH_RIGHT_CENSORED_LOWER_BOUND,
+        "summaries_by_h": {
+            200: _sized_summary(kworst=200.0, k99=180.0, horizon_h=200),
+        },
+    }
+    result = size_acc_bpw_from_horizon_growth(
+        horizon_growth,
+        numel_for_bpw=1024,
+        sizing_horizon_h=200,
+    )
+    assert result["sizing_verdict"] == SIZING_VERDICT_INCONCLUSIVE
+    assert result["reason"] == "right_censored_growth_branch"

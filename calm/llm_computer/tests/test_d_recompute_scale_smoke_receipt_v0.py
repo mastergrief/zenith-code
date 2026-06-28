@@ -93,3 +93,34 @@ def test_d_off_baseline_not_used_as_launch_gate_flag_present(tmp_path: Path) -> 
     )
     assert receipt["launch_gate"]["d_off_baseline_smoke_not_launch_gate"] is True
     assert "v1_d_off_smoke_mitigation" in receipt["launch_gate"]
+
+
+def test_scale_smoke_receipt_cli_h200_extrapolated_caps(tmp_path: Path) -> None:
+    diagnostic = tmp_path / "d_recompute_window_diagnostic"
+    diagnostic.mkdir(parents=True)
+    smoke_steps = 5
+    per_step_receipt = DEFAULT_RECEIPT_BYTES_PER_STEP_MAX // 4
+    (diagnostic / "receipt.json").write_text("x" * (per_step_receipt * smoke_steps), encoding="utf-8")
+    (diagnostic / "recompute_window_log.jsonl").write_text(
+        "x" * (DEFAULT_RECOMPUTE_LOG_BYTES_PER_STEP_MAX // 4 * smoke_steps),
+        encoding="utf-8",
+    )
+    runner = _fixture_nvidia_smi_runner("0, 2048, 8192\n")
+    process_dead_proof = {"pgrep_exit_code": 1, "matches": [], "process_dead": True}
+    with patch(
+        "scripts.hrm_text_158_d_recompute_scale_smoke_receipt._gpu_process_dead",
+        return_value=process_dead_proof,
+    ):
+        receipt = build_scale_smoke_receipt(
+            run_root=tmp_path,
+            smoke_steps=smoke_steps,
+            confirmation_steps=200,
+            extrapolated_h100_receipt_bytes_max=104857600,
+            extrapolated_h100_recompute_log_bytes_max=67108864,
+            min_free_memory_bytes=DEFAULT_MIN_FREE_MEMORY_BYTES,
+            nvidia_smi_runner=runner,
+        )
+    assert receipt["confirmation_steps"] == 200
+    caps = receipt["byte_projection"]["caps"]
+    assert caps["extrapolated_h100_receipt_bytes_max"] == 104857600
+    assert caps["extrapolated_h100_recompute_log_bytes_max"] == 67108864

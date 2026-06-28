@@ -1,0 +1,156 @@
+{
+  "byte_caps": {
+    "extrapolated_h100_receipt_bytes_max": 104857600,
+    "extrapolated_h100_recompute_log_bytes_max": 67108864,
+    "receipt_bytes_per_step_max": 524288,
+    "recompute_log_bytes_per_step_max": 327680
+  },
+  "calibration_policy": {
+    "calibrated_manifest_artifact": "{run_root}/prelaunch/calibrated_selector_manifest.json",
+    "calibration_discarded_before_measurement": true,
+    "calibration_seed": 43,
+    "candidate_superset": "same_family_eligible_bulk",
+    "measurement_start_step": 1,
+    "policy_id": "horizon_fixed_warmup_calibrated_v0",
+    "reset_semantics": "discard_calibration_state_before_measurement",
+    "scoring_scheme": "stress_tail_score_v1",
+    "support_order_seed": 43,
+    "warmup_observations_artifact": "{run_root}/prelaunch/calibration_warmup_observations.json",
+    "warmup_steps": 5
+  },
+  "classification_horizon_h": 200,
+  "confirmation_steps": 200,
+  "d_diagnostic_compact_step_reports": true,
+  "design_only": false,
+  "expected_native_input_manifest_spec": {
+    "artifact_allowlist": [
+      "d_recompute_window_diagnostic/receipt.json",
+      "d_recompute_window_diagnostic/recompute_window_log.jsonl",
+      "prelaunch/calibrated_selector_manifest.json",
+      "prelaunch/calibration_prepass_receipt.json",
+      "prelaunch/scale_smoke_receipt.json",
+      "prelaunch/post_confirmation_hygiene_receipt.json",
+      "prelaunch/parent_checkpoint_rehash.json",
+      "prelaunch/parent_checkpoint_rehash_after_calibration_warmup.json",
+      "prelaunch/parent_checkpoint_rehash_after_scale_smoke.json",
+      "prelaunch/parent_checkpoint_rehash_after_confirmation.json"
+    ],
+    "calibrated_selector_manifest_rel": "prelaunch/calibrated_selector_manifest.json",
+    "diagnostic_receipt_rel": "d_recompute_window_diagnostic/receipt.json",
+    "doc": "GAP-A/GAP-B two-phase first-classification bind. No produced hashes here; the bind step writes live hashes AFTER the run and the classifier re-hashes observed artifacts live. NO driver_summary.json (not emitted; circular). spec_sha256 excludes itself from the digest.",
+    "log_artifact_rel": "d_recompute_window_diagnostic/recompute_window_log.jsonl",
+    "packet_revision": "v2_rev4d_h200_decensor",
+    "row_count_check": {
+      "log_artifact_rel": "d_recompute_window_diagnostic/recompute_window_log.jsonl",
+      "mode": "equals_steps_x_keys"
+    },
+    "run_id": "2189e72016",
+    "selector_internal_sha_cross_check": true,
+    "selector_log_key_alignment_check": true,
+    "spec_schema": "hrm_text_158_d_recompute_input_manifest_spec/v0",
+    "spec_sha256": "e0b009f1d73bb6cef77ff2366faf1c5e4391357f4ad95923781c5f3cd705935c"
+  },
+  "explicit_non_claims": [
+    "sizes_representative_same_family_strata_only_not_global_sub2_proof",
+    "recommended_law_requires_in_vivo_validated_and_strict_lt_budget",
+    "envelope_model_only_never_launch_eligible_for_sub2_claim",
+    "min_free_memory_bytes_provisional_until_d_on_smoke_calibrates",
+    "not_gpu_launch_until_plus1_launch_gate",
+    "still_right_censored_at_h200_is_diagnostic_not_promoted_fork"
+  ],
+  "gpu_hold": true,
+  "head_at_packet": "AUTHORING_BASE_SUPERSEDED__RUN_TARGET_HEAD_PINNED_AT_LAUNCH_DISPATCH",
+  "horizon_ladder": [
+    25,
+    50,
+    100,
+    200
+  ],
+  "in_vivo_alignment_checklist": {
+    "backlog_hot_dedup_single_numel_space_verify_at_postrun": true,
+    "manifest_selected_keys_must_match_emitted_log_state_keys": true,
+    "note": "5A2 watch \u2014 exact-coverage gate requires manifest/log key alignment at real run"
+  },
+  "min_free_memory_bytes": 1610612736,
+  "min_free_memory_bytes_label": "PROVISIONAL_UNTIL_D_ON_SMOKE_CALIBRATES",
+  "never_rm_run_ids": {
+    "2189e72014": {
+      "never_rm": true,
+      "reason": "v1 rev3d diagnostic run"
+    },
+    "2189e72015": {
+      "never_rm": true,
+      "reason": "v2 stratified horizon sizing run"
+    },
+    "2189e72016": {
+      "never_rm": true,
+      "reason": "v2 H=200 de-censor run"
+    }
+  },
+  "packet_revision": "v2_rev4d_h200_decensor",
+  "postrun_timeout_seconds": 1800,
+  "quantile_acc_sizing_policy": {
+    "censor_mass_max": 0.01,
+    "claim_scope": "distributional_quantile",
+    "not_worst_case_bound": true,
+    "quantile": 0.99,
+    "requires": [
+      "growth_branch_right_censored_lower_bound",
+      "parity_fail_count_zero",
+      "gapped_lane_count_zero",
+      "nonzero_eligible_lane_count",
+      "coverage_tier_representative",
+      "selector_log_key_aligned",
+      "weighted_quantile_uncensored_proof",
+      "strict_less_than_budget"
+    ],
+    "tail_policy": "worst_case_right_censored"
+  },
+  "redesign_sizing_from_this_run": true,
+  "replay_commands_artifact": "artifacts/consensus_prep/d_recompute_window_feasibility_gpu_launch_packet_v2_h200_replay_commands.json",
+  "run_id": "2189e72016",
+  "run_id_policy": "FREE \u2014 do NOT reuse 2189e72001..16 (occupied predecessors + v2 H=100/H=200 runs)",
+  "run_root": "/home/gabe/claw-code-creditdir/transient_fp_credit/d_recompute_window_feasibility_seed43_43_2189e72016/",
+  "run_target_head_pin": {
+    "authoritative_source": "claude_launch_dispatch",
+    "doc": "H=200 run requires post-B1-wire code. head_at_packet is non-authoritative; test-operator verifies git rev-parse HEAD matches the B1-commit HEAD pinned in the launch dispatch.",
+    "verified_at": "launch_dispatch"
+  },
+  "scale_smoke": {
+    "d_on_required": true,
+    "gate_name": "scale_smoke_d_on_launch_eligibility",
+    "manifest_bound_required": true,
+    "on_fail": "FULL STOP \u2014 confirmation forbidden",
+    "profiles": {
+      "baseline_liveness_telemetry_d_off": {
+        "description": "Optional D-OFF baseline telemetry ONLY \u2014 never launch gate",
+        "not_launch_gate": true,
+        "omit_argv": [
+          "--d-recompute-window-instrumentation"
+        ],
+        "scratch_subdir": "baseline_liveness_telemetry/post_w8_production_row"
+      },
+      "d_on_manifest_bound_launch_gate": {
+        "description": "D-ON manifest-bound launch eligibility smoke (byte + memory.free gate)",
+        "required_argv": [
+          "--d-recompute-window-instrumentation",
+          "--d-recompute-selector-manifest",
+          "--d-diagnostic-compact-step-reports",
+          "--receipt-emit-profile",
+          "s3bb_headroom_diagnostic_slim"
+        ],
+        "scratch_subdir": "d_recompute_window_diagnostic"
+      }
+    },
+    "scale_smoke_steps": 5,
+    "v1_mitigation_note": "v1 used D-OFF scale-smoke without recompute_window_log.jsonl; v2 compact D-receipt byte caps + D-ON smoke + memory.free gate validate H=100 before confirmation."
+  },
+  "schema_version": "hrm_text_158_d_recompute_window_feasibility_launch_packet/v2",
+  "sizing_horizon_h": 200,
+  "sub2_first_launch_gate": {
+    "checker": "full_sub2_runtime_ready_for_science",
+    "executable_runtime_class": "pre_full_stack_diagnostic",
+    "fixture": "current_repo_scaffold",
+    "resolution": "named_pre_full_stack_diagnostic_exception"
+  }
+}

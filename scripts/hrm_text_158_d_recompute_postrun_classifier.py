@@ -303,15 +303,36 @@ def _resolve_v2_input_manifest(
     return collect_observed_artifact_hashes(run_root, spec)
 
 
+def _timeout_receipt_metadata_from_packet(
+    packet_path: Path | None,
+) -> tuple[str, str, str, str]:
+    if packet_path is None or not packet_path.is_file():
+        return (
+            "2189e72014",
+            PACKET_REVISION,
+            CLASSIFIER_RECEIPT_SCHEMA,
+            REPRODUCTION_MODE,
+        )
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    run_id = str(packet.get("run_id") or "2189e72014")
+    packet_revision = str(packet.get("packet_revision") or PACKET_REVISION)
+    use_v2 = _is_v2_packet_revision(packet_revision)
+    schema = CLASSIFIER_RECEIPT_SCHEMA_V2 if use_v2 else CLASSIFIER_RECEIPT_SCHEMA
+    reproduction_mode = REPRODUCTION_MODE_V2 if use_v2 else REPRODUCTION_MODE
+    return run_id, packet_revision, schema, reproduction_mode
+
+
 def emit_timeout_classifier_receipt(
     *,
     run_root: Path,
     run_id: str,
     timeout_seconds: float,
     packet_revision: str = PACKET_REVISION,
+    schema: str = CLASSIFIER_RECEIPT_SCHEMA,
+    reproduction_mode: str = REPRODUCTION_MODE,
 ) -> dict[str, Any]:
     receipt = {
-        "schema": CLASSIFIER_RECEIPT_SCHEMA,
+        "schema": schema,
         "run_id": run_id,
         "run_root": str(run_root),
         "packet_revision": packet_revision,
@@ -324,7 +345,7 @@ def emit_timeout_classifier_receipt(
         "jsonl_row_count": None,
         "numel_basis_source": "postrun_timeout",
         "fallback_fired": True,
-        "reproduction_mode": REPRODUCTION_MODE,
+        "reproduction_mode": reproduction_mode,
         "input_artifact_hashes": {},
         "primary_classifier": "OBSERVER_TOO_EXPENSIVE",
         "promoted_fork": None,
@@ -355,6 +376,31 @@ def _packet_revision_from_path(packet_path: Path | None) -> str:
         return PACKET_REVISION
     packet = json.loads(packet_path.read_text(encoding="utf-8"))
     return str(packet.get("packet_revision") or PACKET_REVISION)
+
+
+def _arc2b_config_from_packet(packet_path: Path | None) -> dict[str, Any]:
+    defaults: dict[str, Any] = {
+        "horizon_ladder": (25, 50, 100),
+        "sizing_horizon_h": 100,
+        "classification_horizon_h": 100,
+    }
+    if packet_path is None or not packet_path.is_file():
+        return defaults
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    sizing_horizon_h = int(packet.get("sizing_horizon_h", defaults["sizing_horizon_h"]))
+    ladder = packet.get("horizon_ladder")
+    if isinstance(ladder, list) and ladder:
+        horizon_ladder = tuple(int(h) for h in ladder)
+    else:
+        horizon_ladder = defaults["horizon_ladder"]
+    classification_horizon_h = int(
+        packet.get("classification_horizon_h", sizing_horizon_h)
+    )
+    return {
+        "horizon_ladder": horizon_ladder,
+        "sizing_horizon_h": sizing_horizon_h,
+        "classification_horizon_h": classification_horizon_h,
+    }
 
 
 def _is_v2_packet_revision(packet_revision: str) -> bool:
@@ -448,10 +494,14 @@ def emit_d_recompute_window_classifier_receipt(
             raise FileNotFoundError(
                 f"missing calibrated selector manifest under {run_root / CALIBRATED_MANIFEST_REL}"
             )
+        arc2b_config = _arc2b_config_from_packet(packet_path)
         arc2b_analysis = run_postrun_arc2b_analysis(
             records,
             manifest=selector_manifest,
             numel_for_bpw=numel_for_bpw,
+            sizing_horizon_h=int(arc2b_config["sizing_horizon_h"]),
+            horizons=arc2b_config["horizon_ladder"],
+            classification_horizon_h=int(arc2b_config["classification_horizon_h"]),
         )
         inventory = {
             "selected_state_keys": logged_keys,
@@ -557,14 +607,16 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.emit_timeout_receipt:
-        run_id = "2189e72014"
-        if args.packet is not None and args.packet.is_file():
-            packet = json.loads(args.packet.read_text(encoding="utf-8"))
-            run_id = str(packet.get("run_id") or run_id)
+        run_id, packet_revision, schema, reproduction_mode = (
+            _timeout_receipt_metadata_from_packet(args.packet)
+        )
         emit_timeout_classifier_receipt(
             run_root=args.run_root,
             run_id=run_id,
             timeout_seconds=float(args.timeout_seconds),
+            packet_revision=packet_revision,
+            schema=schema,
+            reproduction_mode=reproduction_mode,
         )
         print(
             json.dumps(

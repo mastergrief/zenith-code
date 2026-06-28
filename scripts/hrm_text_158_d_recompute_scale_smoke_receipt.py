@@ -227,12 +227,36 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_MIN_FREE_MEMORY_BYTES,
         help=f"Default {DEFAULT_MIN_FREE_MEMORY_BYTES} bytes ({DEFAULT_MIN_FREE_MEMORY_MIB} MiB, PROVISIONAL).",
     )
+    parser.add_argument(
+        "--receipt-bytes-per-step-max",
+        type=int,
+        default=DEFAULT_RECEIPT_BYTES_PER_STEP_MAX,
+    )
+    parser.add_argument(
+        "--recompute-log-bytes-per-step-max",
+        type=int,
+        default=DEFAULT_RECOMPUTE_LOG_BYTES_PER_STEP_MAX,
+    )
+    parser.add_argument(
+        "--extrapolated-receipt-bytes-max",
+        type=int,
+        default=DEFAULT_EXTRAPOLATED_H100_RECEIPT_BYTES_MAX,
+    )
+    parser.add_argument(
+        "--extrapolated-recompute-log-bytes-max",
+        type=int,
+        default=DEFAULT_EXTRAPOLATED_H100_RECOMPUTE_LOG_BYTES_MAX,
+    )
     args = parser.parse_args(argv)
     started = time.monotonic()
     receipt = build_scale_smoke_receipt(
         run_root=args.run_root,
         smoke_steps=int(args.smoke_steps),
         confirmation_steps=int(args.confirmation_steps),
+        receipt_bytes_per_step_max=int(args.receipt_bytes_per_step_max),
+        recompute_log_bytes_per_step_max=int(args.recompute_log_bytes_per_step_max),
+        extrapolated_h100_receipt_bytes_max=int(args.extrapolated_receipt_bytes_max),
+        extrapolated_h100_recompute_log_bytes_max=int(args.extrapolated_recompute_log_bytes_max),
         min_free_memory_bytes=int(args.min_free_memory_bytes),
     )
     receipt["duration_seconds"] = float(time.monotonic() - started)

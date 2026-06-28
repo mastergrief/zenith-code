@@ -11,6 +11,7 @@ from calm.hrm_text_158.native_full_stack.d_recompute_window_emit import (
 )
 from calm.hrm_text_158.native_full_stack.d_recompute_window_horizon_analyzer import (
     GROWTH_ACCELERATING_OR_RIGHT_CENSORED,
+    GROWTH_DECENSORED_SIZED_AT_HORIZON,
     GROWTH_INCONCLUSIVE_COST_OR_COVERAGE,
     GROWTH_LINEAR_SIZED_WITH_DECAY,
     GROWTH_PLATEAU_SIZED,
@@ -410,3 +411,90 @@ def test_weighted_quantile_censor_mass_is_weighted_not_count() -> None:
         horizon_h=100,
     )
     assert float(proof["censored_weight_fraction"]) > 0.5
+
+
+def _summary_at_h(
+    *,
+    horizon_h: int,
+    kworst: float,
+    k99: float | None = None,
+    parity_fail_count: int = 0,
+    gapped_lane_count: int = 0,
+    eligible_lane_count: int = 4,
+) -> dict:
+    if k99 is None:
+        k99 = kworst
+    return {
+        "horizon_h": int(horizon_h),
+        "lane_count": 4,
+        "gapped_lane_count": int(gapped_lane_count),
+        "parity_fail_count": int(parity_fail_count),
+        "eligible_lane_count": int(eligible_lane_count),
+        "right_censor_rate": 0.0 if float(kworst) < horizon_h else 1.0,
+        "k99_weighted": float(k99),
+        "kworst_weighted": float(kworst),
+        "lane_rows": [{"k_star": int(kworst), "gapped": False, "parity_pass": True}],
+    }
+
+
+def test_h200_decensored_branch_sizes_at_classification_horizon() -> None:
+    summaries = {
+        100: _summary_at_h(horizon_h=100, kworst=100.0, k99=76.0),
+        200: _summary_at_h(horizon_h=200, kworst=150.0, k99=140.0),
+    }
+    result = classify_k_star_growth(
+        summaries,
+        stress_tail_policy=STRESS_TAIL_POLICY_HORIZON_FIXED,
+        coverage_tier=COVERAGE_TIER_REPRESENTATIVE,
+        classification_horizon_h=200,
+    )
+    assert result["growth_branch"] == GROWTH_DECENSORED_SIZED_AT_HORIZON
+    assert result["reason"] == "decensored_worst_case_at_classification_horizon"
+
+
+def test_h200_still_censored_returns_right_censored_lower_bound() -> None:
+    summaries = {
+        100: _summary_at_h(horizon_h=100, kworst=100.0, k99=76.0),
+        200: _summary_at_h(horizon_h=200, kworst=200.0, k99=180.0),
+    }
+    result = classify_k_star_growth(
+        summaries,
+        stress_tail_policy=STRESS_TAIL_POLICY_HORIZON_FIXED,
+        coverage_tier=COVERAGE_TIER_REPRESENTATIVE,
+        classification_horizon_h=200,
+    )
+    assert result["growth_branch"] == GROWTH_RIGHT_CENSORED_LOWER_BOUND
+    assert result["reason"] == "right_censored_at_h200"
+
+
+def test_h200_parity_fail_closed_at_classification_horizon() -> None:
+    summaries = {
+        100: _summary_at_h(horizon_h=100, kworst=100.0, k99=76.0),
+        200: _summary_at_h(
+            horizon_h=200,
+            kworst=150.0,
+            k99=140.0,
+            parity_fail_count=1,
+        ),
+    }
+    result = classify_k_star_growth(
+        summaries,
+        stress_tail_policy=STRESS_TAIL_POLICY_HORIZON_FIXED,
+        coverage_tier=COVERAGE_TIER_REPRESENTATIVE,
+        classification_horizon_h=200,
+    )
+    assert result["growth_branch"] == GROWTH_INCONCLUSIVE_COST_OR_COVERAGE
+    assert result["reason"] == "parity_failures"
+
+
+def test_h100_default_classification_horizon_unchanged_right_censor_reason() -> None:
+    summaries = {
+        100: _summary_at_h(horizon_h=100, kworst=100.0, k99=76.0),
+    }
+    result = classify_k_star_growth(
+        summaries,
+        stress_tail_policy=STRESS_TAIL_POLICY_HORIZON_FIXED,
+        coverage_tier=COVERAGE_TIER_REPRESENTATIVE,
+    )
+    assert result["growth_branch"] == GROWTH_RIGHT_CENSORED_LOWER_BOUND
+    assert result["reason"] == "right_censored_at_h100"

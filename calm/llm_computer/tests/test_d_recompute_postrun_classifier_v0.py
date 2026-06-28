@@ -66,6 +66,10 @@ V2_REPLAY = (
     REPO_ROOT
     / "artifacts/consensus_prep/d_recompute_window_feasibility_gpu_launch_packet_v2_replay_commands.json"
 )
+V2_H200_DRAFT = (
+    REPO_ROOT
+    / "artifacts/consensus_prep/d_recompute_window_feasibility_gpu_launch_packet_v2_h200_draft.json"
+)
 V2_COMMITTED_PACKET_REL = (
     "artifacts/consensus_prep/d_recompute_window_feasibility_gpu_launch_packet_v2_draft.json"
 )
@@ -317,6 +321,36 @@ def test_emit_timeout_receipt_fallback_fired() -> None:
         assert receipt["fallback_fired"] is True
         assert receipt["primary_classifier"] == "OBSERVER_TOO_EXPENSIVE"
         assert receipt["postrun_timeout_classification"] == "OBSERVER_TOO_EXPENSIVE"
+
+
+def test_emit_timeout_receipt_h200_packet_derives_run_metadata() -> None:
+    with tempfile.TemporaryDirectory(prefix="d_postrun_timeout_h200_") as tmp:
+        run_root = Path(tmp)
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(HELPER_SCRIPT),
+                "--run-root",
+                str(run_root),
+                "--packet",
+                str(V2_H200_DRAFT),
+                "--emit-timeout-receipt",
+                "--timeout-seconds",
+                "1800",
+            ],
+            cwd=str(REPO_ROOT),
+            env={**dict(__import__("os").environ), "PYTHONPATH": "."},
+            capture_output=True,
+            text=True,
+        )
+        assert proc.returncode == 0, proc.stderr
+        receipt = json.loads((run_root / "classifier_receipt.json").read_text(encoding="utf-8"))
+        assert receipt["run_id"] == "2189e72016"
+        assert receipt["packet_revision"] == "v2_rev4d_h200_decensor"
+        assert receipt["schema"] == CLASSIFIER_RECEIPT_SCHEMA_V2
+        assert receipt["reproduction_mode"] == REPRODUCTION_MODE_V2
+        assert receipt["run_id"] != "2189e72014"
+        assert receipt["packet_revision"] != PACKET_REVISION
 
 
 def test_input_drift_blocked_nonzero() -> None:
@@ -1063,3 +1097,15 @@ def test_packet_quantile_policy_matches_code_constants() -> None:
         packet["expected_native_input_manifest_spec"]["spec_sha256"]
         == "43679329fa1db51190a4906109207dde694728ecf82cc5cd18bf9069b27d2a31"
     )
+
+
+def test_arc2b_config_from_h200_packet() -> None:
+    from scripts.hrm_text_158_d_recompute_postrun_classifier import _arc2b_config_from_packet
+
+    h200 = REPO_ROOT / (
+        "artifacts/consensus_prep/d_recompute_window_feasibility_gpu_launch_packet_v2_h200_draft.json"
+    )
+    config = _arc2b_config_from_packet(h200)
+    assert config["sizing_horizon_h"] == 200
+    assert config["classification_horizon_h"] == 200
+    assert config["horizon_ladder"] == (25, 50, 100, 200)

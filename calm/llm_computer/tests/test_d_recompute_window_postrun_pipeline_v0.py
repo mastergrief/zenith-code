@@ -97,4 +97,25 @@ def test_arc2b_verdict_unchanged_with_quantile_block() -> None:
     assert "quantile_acc_sizing" in result
     assert result["final_sizing_verdict"] == "INCONCLUSIVE_BUDGET_MAPPING_MISSING"
     assert result["arc2b_verdict"]["final_sizing_verdict"] == result["final_sizing_verdict"]
+
+
+def test_postrun_pipeline_h200_wire_passes_horizons_and_sizing_horizon() -> None:
+    manifest = _minimal_manifest()
+    records = [
+        _make_record(step=step, state_key="key.a", lane_indices=[0], flip_positions={0})
+        for step in range(1, 201)
+    ] + [
+        _make_record(step=step, state_key="key.b", lane_indices=[0], flip_positions=set())
+        for step in range(1, 201)
+    ]
+    result = run_postrun_arc2b_analysis(
+        records,
+        manifest=manifest,
+        numel_for_bpw=16,
+        sizing_horizon_h=200,
+        horizons=(25, 50, 100, 200),
+        classification_horizon_h=200,
+    )
+    assert result["horizon_growth_summary"]["summaries_by_h"]["200"] is not None
+    assert "quantile_acc_sizing" in result
     assert result["quantile_acc_sizing"]["quantile_sub2_candidate"] is False

@@ -54,6 +54,7 @@ import torch
 
 from calm.hrm_text_158.native_full_stack.d_recompute_window_horizon_analyzer import (
     GROWTH_ACCELERATING_OR_RIGHT_CENSORED,
+    GROWTH_DECENSORED_SIZED_AT_HORIZON,
     GROWTH_INCONCLUSIVE_COST_OR_COVERAGE,
     GROWTH_LINEAR_SIZED_WITH_DECAY,
     GROWTH_PLATEAU_SIZED,
@@ -135,6 +136,7 @@ SIZED_GROWTH_BRANCHES: frozenset[str] = frozenset(
     {
         GROWTH_PLATEAU_SIZED,
         GROWTH_LINEAR_SIZED_WITH_DECAY,
+        GROWTH_DECENSORED_SIZED_AT_HORIZON,
     }
 )
 

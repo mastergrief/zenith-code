@@ -172,14 +172,32 @@ def run_postrun_arc2b_analysis(
     numel_for_bpw: int,
     measured_q_scale_bpw: float | None = None,
     sizing_horizon_h: int = 100,
+    horizons: Sequence[int] | None = None,
+    classification_horizon_h: int | None = None,
     measurement_start_step: int = 1,
 ) -> dict[str, Any]:
+    from calm.hrm_text_158.native_full_stack.d_recompute_window_horizon_analyzer import (
+        DEFAULT_HORIZON_LADDER,
+    )
+
+    resolved_horizons = (
+        tuple(int(h) for h in horizons)
+        if horizons is not None
+        else DEFAULT_HORIZON_LADDER
+    )
+    resolved_classification_h = (
+        int(classification_horizon_h)
+        if classification_horizon_h is not None
+        else int(sizing_horizon_h)
+    )
     horizon_growth = analyze_horizon_k_star_growth(
         records,
         stratum_weights=manifest.stratum_weights,
+        horizons=resolved_horizons,
         stress_tail_policy=str(manifest.manifest_spec.get("stress_tail_policy") or ""),
         coverage_tier=str(manifest.coverage_tier),
         measurement_start_step=int(measurement_start_step),
+        classification_horizon_h=resolved_classification_h,
     )
     acc_sizing = size_acc_bpw_from_horizon_growth(
         horizon_growth,
