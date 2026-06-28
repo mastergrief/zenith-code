@@ -84,6 +84,9 @@ from calm.hrm_text_158.native_full_stack.d_recompute_window_receipt_compact impo
     compact_d_diagnostic_step_result,
     should_apply_d_diagnostic_receipt_compaction,
 )
+from calm.hrm_text_158.native_full_stack.d_recompute_window_calibration_collector import (
+    CalibrationWarmupCollector,
+)
 from calm.hrm_text_158.native_full_stack.d_recompute_window_stratified_selector import (
     StratifiedSelectorManifest,
     load_stratified_selector_manifest,
@@ -5167,6 +5170,7 @@ def run_bounded_delta_steps(
     d_recompute_selector_manifest: StratifiedSelectorManifest | None = None,
     receipt_emit_profile: str = RECEIPT_EMIT_PROFILE_FULL,
     d_diagnostic_compact_step_reports: bool = False,
+    calibration_warmup_collector: CalibrationWarmupCollector | None = None,
     votes_emit_enabled: bool = False,
     votes_emit_root: Path | None = None,
     carrier_growth_enabled: bool = False,
@@ -5983,6 +5987,13 @@ def run_bounded_delta_steps(
                         global_summary=step_result.global_summary,
                         selector_manifest=d_recompute_selector_manifest,
                     )
+                if calibration_warmup_collector is not None:
+                    calibration_warmup_collector.record_step(
+                        step=int(step),
+                        pre_update_states=pre_apply_states,
+                        votes_by_key=votes_by_key,
+                        replay_constants=ReplayConstants.from_vote_update_spec(vote_spec),
+                    )
                 if device.type == "cuda":
                     step_cuda_memory_snapshots.append(
                         capture_cuda_phase_memory_snapshot(
@@ -6306,6 +6317,7 @@ def run_c2p1_probe(
     d_recompute_window_instrumentation_enabled: bool = False,
     d_recompute_selector_manifest_path: Path | None = None,
     d_diagnostic_compact_step_reports: bool = False,
+    d_recompute_calibration_warmup_out: Path | None = None,
     votes_emit_enabled: bool = False,
     votes_emit_root: Path | None = None,
     carrier_growth_enabled: bool = False,
@@ -6693,6 +6705,26 @@ def run_c2p1_probe(
     if d_recompute_selector_manifest_path is not None:
         d_recompute_selector_manifest = load_stratified_selector_manifest(
             d_recompute_selector_manifest_path
+        )
+
+    calibration_warmup_collector: CalibrationWarmupCollector | None = None
+    if d_recompute_calibration_warmup_out is not None:
+        if not d_recompute_window_instrumentation_enabled:
+            raise ValueError(
+                "d_recompute_calibration_warmup_out requires "
+                "d_recompute_window_instrumentation_enabled"
+            )
+        from scripts.hrm_text_158_d_recompute_calibration_prepass import (
+            default_calibration_policy,
+        )
+
+        warmup_observations_path = Path(d_recompute_calibration_warmup_out)
+        if not warmup_observations_path.is_absolute():
+            warmup_observations_path = scratch_root.parent / warmup_observations_path
+        calibration_warmup_collector = CalibrationWarmupCollector(
+            output_path=warmup_observations_path,
+            pre_warmup_parent_sha256=str(parent_hash_before),
+            policy=default_calibration_policy(),
         )
 
     front_c_identity_collector = None
@@ -7148,11 +7180,15 @@ def run_c2p1_probe(
             d_recompute_selector_manifest=d_recompute_selector_manifest,
             receipt_emit_profile=str(receipt_emit_profile),
             d_diagnostic_compact_step_reports=bool(d_diagnostic_compact_step_reports),
+            calibration_warmup_collector=calibration_warmup_collector,
             votes_emit_enabled=bool(votes_emit_enabled),
             votes_emit_root=votes_emit_root,
             carrier_growth_enabled=bool(carrier_growth_enabled),
             confirmation_envelope=confirmation_envelope,
         )
+    if calibration_warmup_collector is not None:
+        with phase_progress.phase("calibration_warmup_observations_write"):
+            calibration_warmup_collector.write()
     prior_audit_final_reports: dict[str, dict[str, Any]] = {}
     if prior_support_sets:
         with phase_progress.phase("prior_final_audit", step=int(steps_completed)):
@@ -7427,6 +7463,12 @@ def run_c2p1_probe(
                 receipt["d_recompute_selector_manifest_path"] = str(
                     d_recompute_selector_manifest_path
                 )
+    if calibration_warmup_collector is not None:
+        receipt["d_recompute_calibration_warmup_observations_path"] = str(
+            calibration_warmup_collector.output_path
+        )
+        receipt["pre_warmup_banked_state_sha256"] = str(parent_hash_before)
+        receipt["calibration_discarded_before_measurement"] = True
     if r7_deferred_backlog_carry_enabled:
         receipt["r7_deferred_backlog_carry_enabled"] = True
     if b2_full_verdict_mode:
@@ -7828,6 +7870,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     ap.add_argument(
+        "--d-recompute-calibration-warmup-out",
+        type=Path,
+        default=None,
+        help=(
+            "Session-boundary path for bounded D-ON calibration warmup observations "
+            "JSON. Requires --d-recompute-window-instrumentation. Warmup state is "
+            "discarded at session end; parent checkpoint file is not mutated."
+        ),
+    )
+    ap.add_argument(
         "--d-diagnostic-compact-step-reports",
         action="store_true",
         help=(
@@ -7978,6 +8030,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
         d_recompute_selector_manifest_path=args.d_recompute_selector_manifest,
         d_diagnostic_compact_step_reports=bool(args.d_diagnostic_compact_step_reports),
+        d_recompute_calibration_warmup_out=args.d_recompute_calibration_warmup_out,
         votes_emit_enabled=bool(args.votes_emit_enabled),
         votes_emit_root=(
             Path(args.scratch_root) if bool(args.votes_emit_enabled) else None

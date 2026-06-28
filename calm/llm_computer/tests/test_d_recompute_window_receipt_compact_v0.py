@@ -157,8 +157,27 @@ def test_scale_smoke_receipt_harness_on_fixture(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    from scripts.hrm_text_158_d_recompute_scale_smoke_receipt import build_scale_smoke_receipt
+    import subprocess
+    from unittest.mock import patch
 
-    smoke_receipt = build_scale_smoke_receipt(run_root=run_root, smoke_steps=5)
+    from scripts.hrm_text_158_d_recompute_scale_smoke_receipt import (
+        DEFAULT_MIN_FREE_MEMORY_BYTES,
+        build_scale_smoke_receipt,
+    )
+
+    def _fixture_nvidia_smi_runner(argv: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(argv, 0, "0, 2048, 8192\n", "")
+
+    process_dead_proof = {"pgrep_exit_code": 1, "matches": [], "process_dead": True}
+    with patch(
+        "scripts.hrm_text_158_d_recompute_scale_smoke_receipt._gpu_process_dead",
+        return_value=process_dead_proof,
+    ):
+        smoke_receipt = build_scale_smoke_receipt(
+            run_root=run_root,
+            smoke_steps=5,
+            min_free_memory_bytes=DEFAULT_MIN_FREE_MEMORY_BYTES,
+            nvidia_smi_runner=_fixture_nvidia_smi_runner,
+        )
     assert smoke_receipt["pass"] is True
     assert smoke_receipt["byte_projection"]["launch_allowed"] is True
