@@ -24,7 +24,8 @@ if TYPE_CHECKING:
     )
 
 D_RECOMPUTE_WINDOW_LOG_FILENAME = "recompute_window_log.jsonl"
-D_RECOMPUTE_WINDOW_SCHEMA_VERSION = "hrm_text_158_recompute_window_log/v0"
+D_RECOMPUTE_WINDOW_SCHEMA_VERSION = "hrm_text_158_recompute_window_log/v1"
+D_RECOMPUTE_WINDOW_SCHEMA_VERSION_V0 = "hrm_text_158_recompute_window_log/v0"
 
 BOOTSTRAP_KNOWN_ZERO = "known_zero"
 BOOTSTRAP_KNOWN_SATURATED_POSITIVE = "known_saturated_positive"
@@ -117,6 +118,38 @@ def _lane_vector_hash(values: Sequence[int]) -> str:
 def _digest_mapping(payload: Mapping[str, Any]) -> str:
     encoded = json.dumps(dict(payload), sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _optional_raw_global_summary_int(
+    global_summary: Mapping[str, Any] | None,
+    key: str,
+) -> int | None:
+    if global_summary is None:
+        return None
+    if key not in global_summary:
+        return None
+    value = global_summary.get(key)
+    if value is None:
+        return None
+    return int(value)
+
+
+def read_global_rate_cap_accepted_count(record: Mapping[str, Any]) -> int | None:
+    if "global_rate_cap_accepted_count" not in record:
+        return None
+    value = record.get("global_rate_cap_accepted_count")
+    if value is None:
+        return None
+    return int(value)
+
+
+def read_global_rate_cap_deferred_count(record: Mapping[str, Any]) -> int | None:
+    if "global_rate_cap_deferred_count" not in record:
+        return None
+    value = record.get("global_rate_cap_deferred_count")
+    if value is None:
+        return None
+    return int(value)
 
 
 def validate_bootstrap_record(record: Mapping[str, Any]) -> list[str]:
@@ -312,6 +345,8 @@ def build_step_log_entry(
     residual_authority_lanes: Sequence[str] | None = None,
     backlog_depth: int | None = None,
     horizon_steps_available: int | None = None,
+    global_rate_cap_accepted_count: int | None = None,
+    global_rate_cap_deferred_count: int | None = None,
 ) -> dict[str, Any]:
     entry: dict[str, Any] = {
         "schema_version": D_RECOMPUTE_WINDOW_SCHEMA_VERSION,
@@ -357,6 +392,16 @@ def build_step_log_entry(
         "vote_source_digest": vote_source_digest,
         "backlog_depth": backlog_depth,
         "horizon_steps_available": horizon_steps_available,
+        "global_rate_cap_accepted_count": (
+            None
+            if global_rate_cap_accepted_count is None
+            else int(global_rate_cap_accepted_count)
+        ),
+        "global_rate_cap_deferred_count": (
+            None
+            if global_rate_cap_deferred_count is None
+            else int(global_rate_cap_deferred_count)
+        ),
         "bootstrap_state": None,
         "saturated_sign_proof": None,
     }
@@ -523,5 +568,13 @@ def maybe_emit_d_recompute_window_step_records(
             if global_summary is not None
             else None,
             horizon_steps_available=int(step),
+            global_rate_cap_accepted_count=_optional_raw_global_summary_int(
+                global_summary,
+                "global_rate_cap_accepted_count",
+            ),
+            global_rate_cap_deferred_count=_optional_raw_global_summary_int(
+                global_summary,
+                "global_rate_cap_deferred_count",
+            ),
         )
         append_recompute_window_log_chunk(log_path, entry)
