@@ -80,6 +80,10 @@ from calm.hrm_text_158.native_full_stack.d_recompute_window_emit import (
     initialize_recompute_window_log_for_probe_session,
     maybe_emit_d_recompute_window_step_records,
 )
+from calm.hrm_text_158.native_full_stack.d_recompute_window_receipt_compact import (
+    compact_d_diagnostic_step_result,
+    should_apply_d_diagnostic_receipt_compaction,
+)
 from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
     decode_bounded_accumulator_to_i16,
 )
@@ -5156,6 +5160,8 @@ def run_bounded_delta_steps(
     r7_cap_defer_pressure_sidecar_path: Path | None = None,
     d_recompute_window_instrumentation_enabled: bool = False,
     d_recompute_window_log_path: Path | None = None,
+    receipt_emit_profile: str = RECEIPT_EMIT_PROFILE_FULL,
+    d_diagnostic_compact_step_reports: bool = False,
     votes_emit_enabled: bool = False,
     votes_emit_root: Path | None = None,
     carrier_growth_enabled: bool = False,
@@ -5922,6 +5928,16 @@ def run_bounded_delta_steps(
                     prior_applied_by_state_key,
                     step_result_compact,
                 )
+                if should_apply_d_diagnostic_receipt_compaction(
+                    phase=str(phase),
+                    receipt_emit_profile=str(receipt_emit_profile),
+                    d_diagnostic_compact_step_reports=bool(
+                        d_diagnostic_compact_step_reports
+                    ),
+                ):
+                    step_result_compact = compact_d_diagnostic_step_result(
+                        step_result_compact
+                    )
                 if (
                     r7_cap_defer_pressure_instrumentation_enabled
                     and r7_cap_defer_pressure_sidecar_path is not None
@@ -6282,6 +6298,7 @@ def run_c2p1_probe(
     r7_cap_defer_pressure_instrumentation_enabled: bool = False,
     r7_deferred_backlog_carry_enabled: bool = False,
     d_recompute_window_instrumentation_enabled: bool = False,
+    d_diagnostic_compact_step_reports: bool = False,
     votes_emit_enabled: bool = False,
     votes_emit_root: Path | None = None,
     carrier_growth_enabled: bool = False,
@@ -7115,6 +7132,8 @@ def run_c2p1_probe(
                 d_recompute_window_instrumentation_enabled
             ),
             d_recompute_window_log_path=d_recompute_window_log_path,
+            receipt_emit_profile=str(receipt_emit_profile),
+            d_diagnostic_compact_step_reports=bool(d_diagnostic_compact_step_reports),
             votes_emit_enabled=bool(votes_emit_enabled),
             votes_emit_root=votes_emit_root,
             carrier_growth_enabled=bool(carrier_growth_enabled),
@@ -7777,6 +7796,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     ap.add_argument(
+        "--d-diagnostic-compact-step-reports",
+        action="store_true",
+        help=(
+            "Default-off D-feasibility receipt compaction. When enabled with "
+            "--phase d-recompute-window-feasibility and slim receipt emit, drop "
+            "raw per-module tensor_stats arrays before receipt write."
+        ),
+    )
+    ap.add_argument(
         "--votes-emit-enabled",
         action="store_true",
         help=(
@@ -7916,6 +7944,7 @@ def main(argv: list[str] | None = None) -> int:
         d_recompute_window_instrumentation_enabled=bool(
             args.d_recompute_window_instrumentation
         ),
+        d_diagnostic_compact_step_reports=bool(args.d_diagnostic_compact_step_reports),
         votes_emit_enabled=bool(args.votes_emit_enabled),
         votes_emit_root=(
             Path(args.scratch_root) if bool(args.votes_emit_enabled) else None
