@@ -10,6 +10,11 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     BoundedDeltaTensorState,
     make_bounded_tensor_state,
 )
+from calm.hrm_text_158.native_full_stack.d_recompute_window_stratified_selector import (
+    STRESS_TAIL_POLICY_HORIZON_FIXED,
+    StratifiedKeyEntry,
+    StratifiedSelectorManifest,
+)
 from calm.hrm_text_158.native_full_stack.d_recompute_window_emit import (
     D_RECOMPUTE_WINDOW_SCHEMA_VERSION,
     D_RECOMPUTE_WINDOW_SCHEMA_VERSION_V0,
@@ -229,3 +234,104 @@ def test_old_v0_jsonl_remains_parseable(tmp_path: Path) -> None:
     assert len(records) == 1
     assert read_global_rate_cap_accepted_count(records[0]) is None
     assert read_global_rate_cap_deferred_count(records[0]) is None
+
+
+def _horizon_fixed_manifest(*, state_key: str = "tiny.proj", numel: int = 4096) -> StratifiedSelectorManifest:
+    uniform = list(range(0, numel, max(1, numel // 16)))[:16]
+    stress = list(range(numel - 16, numel))
+    lane_indices = list(uniform) + [index for index in stress if index not in set(uniform)]
+    entry = StratifiedKeyEntry(
+        state_key=state_key,
+        level="L",
+        layer_idx=0,
+        role="proj",
+        depth_tercile="low",
+        numel_band="tiny",
+        numel=int(numel),
+        uniform_lanes=tuple(int(index) for index in uniform),
+        stress_tail_lanes=tuple(int(index) for index in stress),
+        lane_indices=tuple(int(index) for index in lane_indices),
+        stratum_weight=1.0,
+    )
+    return StratifiedSelectorManifest(
+        schema_version="hrm_text_158_d_recompute_window_stratified_selector/v0",
+        manifest_sha256="test",
+        coverage_tier="REPRESENTATIVE",
+        selected_key_count=1,
+        stratum_weights={"L_low": 1.0},
+        entries=(entry,),
+        manifest_spec={"stress_tail_policy": STRESS_TAIL_POLICY_HORIZON_FIXED},
+    )
+
+
+def test_horizon_fixed_emit_no_full_population_before_lane_sample(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    replay = _replay()
+    numel = 10_000
+    acc = torch.zeros(100, 100, dtype=torch.int16)
+    q = torch.zeros_like(acc, dtype=torch.int8)
+    state = make_bounded_tensor_state("tiny.proj", q, 1.0, acc)
+    states = {"tiny.proj": state}
+    votes = {"tiny.proj": torch.zeros(100, 100, dtype=torch.int32)}
+    manifest = _horizon_fixed_manifest(numel=numel)
+    log_path = tmp_path / "recompute_window_log.jsonl"
+    largest_range = {"n": 0}
+    original_range = range
+
+    def tracking_range(*args: int, **kwargs: int):
+        values = original_range(*args, **kwargs)
+        length = len(values)
+        if length > largest_range["n"]:
+            largest_range["n"] = length
+        return values
+
+    monkeypatch.setattr("builtins.range", tracking_range)
+    maybe_emit_d_recompute_window_step_records(
+        enabled=True,
+        log_path=log_path,
+        step=1,
+        pre_update_states=states,
+        post_update_states=states,
+        votes_by_key=votes,
+        replay_constants=replay,
+        selector_manifest=manifest,
+    )
+    assert largest_range["n"] <= 256
+
+
+def test_horizon_fixed_emit_golden_schema_matches_banked_slice(tmp_path: Path) -> None:
+    banked_log = Path(
+        "/home/gabe/claw-code-creditdir/transient_fp_credit/"
+        "d_recompute_window_feasibility_seed43_43_2189e72015/"
+        "d_recompute_window_diagnostic/recompute_window_log.jsonl"
+    )
+    if not banked_log.is_file():
+        pytest.skip("banked H=100 recompute_window_log unavailable")
+    banked_record = json.loads(banked_log.read_text(encoding="utf-8").splitlines()[0])
+
+    replay = _replay()
+    numel = 4096
+    acc = torch.zeros(64, 64, dtype=torch.int16)
+    q = torch.zeros_like(acc, dtype=torch.int8)
+    state = make_bounded_tensor_state("tiny.proj", q, 1.0, acc)
+    states = {"tiny.proj": state}
+    votes = {"tiny.proj": torch.zeros(64, 64, dtype=torch.int32)}
+    manifest = _horizon_fixed_manifest(numel=numel)
+    log_path = tmp_path / "recompute_window_log.jsonl"
+    maybe_emit_d_recompute_window_step_records(
+        enabled=True,
+        log_path=log_path,
+        step=1,
+        pre_update_states=states,
+        post_update_states=states,
+        votes_by_key=votes,
+        replay_constants=replay,
+        selector_manifest=manifest,
+    )
+    emitted = iter_recompute_window_log_records(log_path)[0]
+    assert set(emitted.keys()) == set(banked_record.keys())
+    assert emitted["schema_version"] == banked_record["schema_version"]
+    assert emitted["lane_indices"] == list(manifest.entries[0].lane_indices)
+

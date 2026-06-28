@@ -500,19 +500,28 @@ def maybe_emit_d_recompute_window_step_records(
         q_before_tensor = _q_i16_flat(pre_state)
         q_after_tensor = _q_i16_flat(post_state)
         votes_tensor = votes_by_key[state_key].detach().cpu().flatten().to(torch.int32)
-        vote_lane_values = [int(votes_tensor[index].item()) for index in range(votes_tensor.numel())]
         if manifest_entries is not None:
-            lane_indices = sample_lanes_for_key(
-                pre_state,
-                manifest_entry=manifest_entries[state_key],
-                vote_values=(
-                    vote_lane_values
-                    if stress_tail_policy != STRESS_TAIL_POLICY_HORIZON_FIXED
-                    else None
-                ),
-                replay_constants=replay_constants,
-                stress_tail_policy=stress_tail_policy or None,
-            )
+            manifest_entry = manifest_entries[state_key]
+            if stress_tail_policy == STRESS_TAIL_POLICY_HORIZON_FIXED:
+                lane_indices = sample_lanes_for_key(
+                    pre_state,
+                    manifest_entry=manifest_entry,
+                    vote_values=None,
+                    replay_constants=replay_constants,
+                    stress_tail_policy=stress_tail_policy or None,
+                )
+            else:
+                vote_lane_values = [
+                    int(votes_tensor[index].item())
+                    for index in range(votes_tensor.numel())
+                ]
+                lane_indices = sample_lanes_for_key(
+                    pre_state,
+                    manifest_entry=manifest_entry,
+                    vote_values=vote_lane_values,
+                    replay_constants=replay_constants,
+                    stress_tail_policy=stress_tail_policy or None,
+                )
         else:
             lane_indices = _sample_lane_indices(int(_shadow_numel(pre_state)))
         vote_lanes = [int(votes_tensor[index].item()) for index in lane_indices]

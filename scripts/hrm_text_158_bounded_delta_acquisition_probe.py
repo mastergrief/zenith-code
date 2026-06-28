@@ -359,9 +359,33 @@ def install_probe_durable_run_log(scratch_root: Path) -> Path:
     log_path = Path(scratch_root) / PROBE_RUN_LOG_NAME
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_file = log_path.open("a", encoding="utf-8", buffering=1)
-    sys.stdout = _MirrorTextStream(sys.stdout, log_file, fileno_stream=sys.stdout)
-    sys.stderr = _MirrorTextStream(sys.stderr, log_file, fileno_stream=sys.stderr)
+    sys.stdout = _MirrorTextStream(
+        sys.stdout,
+        log_file,
+        fileno_stream=log_file,
+    )
+    sys.stderr = _MirrorTextStream(
+        sys.stderr,
+        log_file,
+        fileno_stream=log_file,
+    )
     return log_path
+
+
+def _write_liveness_stack_dump(
+    *,
+    dump_path: Path,
+    guard_event: str,
+    phase: str,
+    payload: Mapping[str, Any],
+) -> None:
+    dump_path.parent.mkdir(parents=True, exist_ok=True)
+    with dump_path.open("w", encoding="utf-8") as dump_file:
+        dump_file.write(f"guard_event={guard_event}\n")
+        dump_file.write(f"phase={phase}\n")
+        dump_file.write(json.dumps(dict(payload), sort_keys=True, default=str))
+        dump_file.write("\n")
+        faulthandler.dump_traceback(file=dump_file, all_threads=True)
 
 
 @contextmanager
@@ -1615,6 +1639,7 @@ def validate_b2b_phase_timeout_launch_requirements(
 
 def register_probe_faulthandler(
     *,
+    run_log_path: Path | None = None,
     enable_fn: Callable[..., Any] | None = None,
     register_fn: Callable[..., Any] | None = None,
     is_enabled_fn: Callable[[], bool] | None = None,
@@ -1626,10 +1651,15 @@ def register_probe_faulthandler(
         "schema": C2P2_FAULTHANDLER_SCHEMA_VERSION,
         "enabled_before": bool(is_enabled()),
         "signals": {},
+        "traceback_target": "stderr",
     }
-    if not report["enabled_before"]:
+    traceback_file: Any = sys.stderr
+    if run_log_path is not None:
+        traceback_file = Path(run_log_path).open("a", encoding="utf-8", buffering=1)
+        report["traceback_target"] = str(run_log_path)
+    if run_log_path is not None or not report["enabled_before"]:
         try:
-            enable(file=sys.stderr, all_threads=True)
+            enable(file=traceback_file, all_threads=True)
         except Exception as exc:
             report["enable_error"] = {
                 "type": type(exc).__name__,
@@ -1933,6 +1963,16 @@ class PhaseProgress:
         payload = self._active_phase_payload(record, guard_event=guard_event)
         self._last_active_phase_payload = payload
         self._write_last_active_phase(payload)
+        if self.last_active_phase_path is not None:
+            try:
+                _write_liveness_stack_dump(
+                    dump_path=self.last_active_phase_path.parent / "liveness_stack_dump.txt",
+                    guard_event=str(guard_event),
+                    phase=str(record["phase"]),
+                    payload=payload,
+                )
+            except Exception:
+                pass
         if not self.arm_faulthandler_timer:
             return
         try:
@@ -6582,7 +6622,7 @@ def run_c2p1_probe(
     cuda_memory_snapshots_jsonl_path = install_probe_cuda_memory_snapshot_jsonl(
         scratch_root
     )
-    faulthandler_report = register_probe_faulthandler()
+    faulthandler_report = register_probe_faulthandler(run_log_path=run_log_path)
     silent_phase_timeout_seconds = resolve_max_silent_phase_seconds(
         allow_gpu_launch=bool(allow_gpu_launch),
         max_silent_phase_seconds=max_silent_phase_seconds,

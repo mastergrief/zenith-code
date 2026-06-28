@@ -130,3 +130,4 @@ def test_launch_packet_v2_h200_replay_wires_caps_and_timeout() -> None:
         )
     )["launch_sequence"]
     assert "--steps 200 --max-steps-hard 200" in replay["confirmation_launch_command"]
+    assert "confirmation_stderr.log" in replay["confirmation_launch_command"]
