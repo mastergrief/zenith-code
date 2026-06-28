@@ -405,9 +405,17 @@ def emit_d_recompute_window_classifier_receipt(
     if not receipt_path.is_file():
         raise FileNotFoundError(f"missing diagnostic receipt: {receipt_path}")
     diagnostic_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-    log_path = Path(
-        diagnostic_receipt.get("d_recompute_window_log_path") or (scratch / "recompute_window_log.jsonl")
-    )
+    # Prefer the run_root-local log so offline reclassification over a COPY reads
+    # the copy-local log, not the (possibly source-absolute) embedded path. For
+    # the in-situ case the run_root-local path == the embedded path, so behavior
+    # is unchanged. Applies to both v1 and v2 read paths.
+    run_root_local_log = scratch / "recompute_window_log.jsonl"
+    if run_root_local_log.is_file():
+        log_path = run_root_local_log
+    else:
+        log_path = Path(
+            diagnostic_receipt.get("d_recompute_window_log_path") or run_root_local_log
+        )
     records = iter_recompute_window_log_records(log_path)
     logged_keys = sorted({str(r["state_key"]) for r in records})
     if len(logged_keys) < 2:

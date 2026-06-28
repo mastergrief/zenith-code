@@ -216,6 +216,15 @@ def verify_input_manifest_against_spec(
     if str(bound_manifest.get("run_id")) != str(spec.get("run_id")):
         failures.append("run_id_mismatch")
 
+    # Catch a spec lifted from a different run/revision: the embedded spec's
+    # run_id / packet_revision must agree with the packet's top-level fields.
+    top_run_id = packet.get("run_id")
+    if top_run_id is not None and str(spec.get("run_id")) != str(top_run_id):
+        failures.append("packet_toplevel_run_id_vs_spec_mismatch")
+    top_revision = packet.get("packet_revision")
+    if top_revision is not None and str(spec.get("packet_revision")) != str(top_revision):
+        failures.append("packet_toplevel_packet_revision_vs_spec_mismatch")
+
     allowlist = list(spec["artifact_allowlist"])
     allowlist_set = set(allowlist)
     bound_allowlist = set(bound_manifest.get("artifact_allowlist") or [])
@@ -275,7 +284,10 @@ def verify_input_manifest_against_spec(
         selected_key_count = None
         if selector_path.is_file():
             selected_key_count = len(_selector_entry_keys(selector_path))
-        if live_row_count is not None and steps is not None and selected_key_count:
+        # Fail closed: the row-count source must be present, never silently skip.
+        if steps is None:
+            failures.append("row_count_source_missing:steps_completed")
+        elif live_row_count is not None and selected_key_count:
             expected_rows = int(steps) * int(selected_key_count)
             if live_row_count != expected_rows:
                 failures.append(

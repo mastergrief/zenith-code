@@ -828,3 +828,110 @@ def test_v2_committed_packet_spec_matches_reconciled_constant() -> None:
     assert tuple(spec["artifact_allowlist"]) == V2_RECONCILED_ALLOWLIST
     assert "driver_summary.json" not in spec["artifact_allowlist"]
     assert compute_spec_sha256(spec) == spec["spec_sha256"]
+
+
+# ---------------------------------------------------------------------------
+# STEP-1b hardening: run_root-local log preference + fail-closed source checks
+# ---------------------------------------------------------------------------
+
+_DELETE = object()
+
+
+def _set_diag_field(run_root: Path, **fields) -> None:
+    receipt_path = run_root / "d_recompute_window_diagnostic" / "receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    for key, value in fields.items():
+        if value is _DELETE:
+            receipt.pop(key, None)
+        else:
+            receipt[key] = value
+    _write_json(receipt_path, receipt)
+
+
+def test_v2_reclassify_over_copy_reads_run_root_local_log(tmp_path: Path) -> None:
+    base = tmp_path / "run"
+    _build_full_v2_fixture(base)
+    run_root_local = base / "d_recompute_window_diagnostic" / "recompute_window_log.jsonl"
+    # Decoy "source" log with a single key -> if the classifier read the embedded
+    # path it would see <2 keys and fail; reading run_root-local sees 2 keys.
+    decoy = tmp_path / "source_box" / "recompute_window_log.jsonl"
+    _write_jsonl(decoy, [_make_v2_log_record(step=1, state_key="only.proj", flip_positions=set())])
+    _set_diag_field(base, d_recompute_window_log_path=str(decoy))
+    packet_path = tmp_path / "packet_v2.json"
+    _write_json(packet_path, _v2_packet_with_spec())
+    receipt = emit_d_recompute_window_classifier_receipt(
+        run_root=base,
+        packet_path=packet_path,
+        skip_input_drift_check=True,
+    )
+    assert receipt["log_path"] == str(run_root_local)
+    assert sorted(receipt["selected_state_keys"]) == ["other.proj", "tiny.proj"]
+    assert receipt["primary_classifier"] != CLASSIFIER_INPUT_DRIFT_BLOCKED
+
+
+def test_v2_fallback_to_embedded_log_path_when_run_root_local_absent(tmp_path: Path) -> None:
+    base = tmp_path / "run"
+    _build_full_v2_fixture(base)
+    run_root_local = base / "d_recompute_window_diagnostic" / "recompute_window_log.jsonl"
+    moved = tmp_path / "external_box" / "recompute_window_log.jsonl"
+    moved.parent.mkdir(parents=True, exist_ok=True)
+    moved.write_text(run_root_local.read_text(encoding="utf-8"), encoding="utf-8")
+    run_root_local.unlink()
+    _set_diag_field(base, d_recompute_window_log_path=str(moved))
+    packet_path = tmp_path / "packet_v2.json"
+    _write_json(packet_path, _v2_packet_with_spec())
+    receipt = emit_d_recompute_window_classifier_receipt(
+        run_root=base,
+        packet_path=packet_path,
+        skip_input_drift_check=True,
+    )
+    assert receipt["log_path"] == str(moved)
+    assert sorted(receipt["selected_state_keys"]) == ["other.proj", "tiny.proj"]
+
+
+def test_v2_row_count_source_absent_fails_closed(tmp_path: Path) -> None:
+    base = tmp_path / "run"
+    _build_full_v2_fixture(base)
+    _set_diag_field(base, steps_completed=_DELETE)
+    packet = _v2_packet_with_spec()
+    packet_path = tmp_path / "packet_v2.json"
+    _write_json(packet_path, packet)
+    manifest = build_input_manifest(base, packet)
+    im = tmp_path / "im.json"
+    _write_json(im, manifest)
+    proc = _run_classifier(base, packet_path, input_manifest=im)
+    assert proc.returncode != 0
+    receipt = _blocked_receipt(base)
+    assert "row_count_source_missing:steps_completed" in receipt["drift_failures"]
+
+
+def test_v2_packet_toplevel_vs_spec_run_id_mismatch_fails_closed(tmp_path: Path) -> None:
+    base = tmp_path / "run"
+    _build_full_v2_fixture(base)
+    packet = _v2_packet_with_spec()
+    packet["run_id"] = "different_top_level_run"
+    packet_path = tmp_path / "packet_v2.json"
+    _write_json(packet_path, packet)
+    manifest = build_input_manifest(base, packet)
+    im = tmp_path / "im.json"
+    _write_json(im, manifest)
+    proc = _run_classifier(base, packet_path, input_manifest=im)
+    assert proc.returncode != 0
+    receipt = _blocked_receipt(base)
+    assert "packet_toplevel_run_id_vs_spec_mismatch" in receipt["drift_failures"]
+
+
+def test_v2_packet_toplevel_vs_spec_revision_mismatch_fails_closed(tmp_path: Path) -> None:
+    base = tmp_path / "run"
+    _build_full_v2_fixture(base)
+    packet = _v2_packet_with_spec()
+    packet["packet_revision"] = "v2_rev_other_lifted"
+    packet_path = tmp_path / "packet_v2.json"
+    _write_json(packet_path, packet)
+    manifest = build_input_manifest(base, packet)
+    im = tmp_path / "im.json"
+    _write_json(im, manifest)
+    proc = _run_classifier(base, packet_path, input_manifest=im)
+    assert proc.returncode != 0
+    receipt = _blocked_receipt(base)
+    assert "packet_toplevel_packet_revision_vs_spec_mismatch" in receipt["drift_failures"]
