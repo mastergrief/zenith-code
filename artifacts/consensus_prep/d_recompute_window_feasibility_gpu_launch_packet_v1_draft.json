@@ -66,15 +66,40 @@
     "k_star_distribution_exploratory_not_authoritative_sizing",
     "auto_two_smallest_not_representative_subset"
   ],
+  "expected_native_input_manifest": {
+    "d_recompute_window_diagnostic/receipt.json": {
+      "sha256": "5a8c5d2e40eb4e405cd8eb08f0365be29f44a9de33cf1745c304a44331580f1e"
+    },
+    "d_recompute_window_diagnostic/recompute_window_log.jsonl": {
+      "jsonl_row_count": 20,
+      "sha256": "c61970f5aca7b67da15547da67f675427896faeb93c269b5c3693716be17fa5e"
+    },
+    "driver_summary.json": {
+      "sha256": "d4f417e03aaf181e66fa27f03fe69f82d92646109caf4aa2b7763bb0d10951c3"
+    },
+    "prelaunch/parent_checkpoint_rehash.json": {
+      "sha256": "eac2a74967805afde2b09702f91f411b42f119b23078398850ab6d00d3a8fc77"
+    },
+    "prelaunch/parent_checkpoint_rehash_after_confirmation.json": {
+      "sha256": "d38bbbc50e35b1028c9ef84fd1373107cf8d8ceaf85c59b019fe52807b8c6132"
+    },
+    "prelaunch/parent_checkpoint_rehash_after_scale_smoke.json": {
+      "sha256": "de9402b20bb165d6b621ea9459e6f2b30739cc85cfab988665538549e6e1f8c1"
+    },
+    "prelaunch/post_confirmation_hygiene_receipt.json": {
+      "sha256": "f160bf912e499ac716a1c9e8954b7c53cb7f8b9b17f85ae8d7591addd47a8296"
+    }
+  },
   "file_content_pins": {
     "calm/hrm_text_158/native_full_stack/d_recompute_window_emit.py": "e5837d58c8d4c257eca0b1126c6589837d5335d863797d32c5e8a3626a53960d",
     "calm/hrm_text_158/native_full_stack/d_recompute_window_feasibility_analyzer.py": "1f080d90e7469102eacfd9d1dde5bbbc48f26583cee988471cefc4a372ac01ff",
     "calm/hrm_text_158/native_full_stack/w7_launch_hygiene.py": "9c7f771618d13ffee30233e5b66cef0d2d4114bfe66ed31e9cedbf7c68e05096",
     "calm/llm_computer/tests/test_d_recompute_window_cheap_observer_v0.py": "b1a845ec015a831de67fe67056434a52e4dbcb2f5c33d8a03270cb23b7a5cbfb",
     "calm/llm_computer/tests/test_d_recompute_window_feasibility_v0.py": "6e21fb970d1bf32169888ecf5cfd9db42e26af5818a9068cb2e47e79f2d6a377",
-    "scripts/hrm_text_158_bounded_delta_acquisition_probe.py": "82b66e56254e0a973992c5a472b3d9acf1827072a134e32fa17ae9db0a5bf23e"
+    "scripts/hrm_text_158_bounded_delta_acquisition_probe.py": "82b66e56254e0a973992c5a472b3d9acf1827072a134e32fa17ae9db0a5bf23e",
+    "scripts/hrm_text_158_d_recompute_postrun_classifier.py": "31c9592016d9b53a125fda6b7893892f62aa54c08fbdbaf1f7392fc7e887e654"
   },
-  "file_content_pins_note": "rev3c_harness_repro @ ba141a8: +w7_launch_hygiene pin for hygiene JSON counter import",
+  "file_content_pins_note": "rev3d_postrun_classifier_extract: +postrun helper pin; rev3c pins unchanged @ ba141a8",
   "gpu_hold": true,
   "gpu_phase_budgets": {
     "global_silent_phase_seconds_default": 300,
@@ -210,7 +235,7 @@
     }
   },
   "packet_kind": "d_recompute_window_feasibility_gpu",
-  "packet_revision": "v1_rev3c_harness_repro",
+  "packet_revision": "v1_rev3d_postrun_classifier_extract",
   "parent_checkpoint": {
     "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
     "read_only": true,
@@ -232,8 +257,8 @@
     }
   },
   "replay_commands_artifact": "artifacts/consensus_prep/d_recompute_window_feasibility_gpu_launch_packet_v1_replay_commands.json",
-  "replay_commands_sha256": "2a6ed0a709f0a7f54f536ed11830601cd095e061a201171a5ad946aa4324930c",
-  "replay_provenance": "hand_authored_json_d_feasibility_diagnostic_v1_rev3c_harness_repro",
+  "replay_commands_sha256": "5d57ed78d63f2f97ec057d2b03df4e44931337d325df550d016f2603ce4307b5",
+  "replay_provenance": "hand_authored_json_d_feasibility_diagnostic_v1_rev3d_postrun_classifier_extract",
   "run_id": "2189e72014",
   "run_id_policy": "FREE \u2014 do NOT reuse 2189e72001..13 (occupied W7/W8 arc + D predecessor runs)",
   "run_root": "/home/gabe/claw-code-creditdir/transient_fp_credit/d_recompute_window_feasibility_seed43_43_2189e72014/",
