@@ -48,3 +48,19 @@ def test_replay_declares_calibration_warmup_producer_command() -> None:
     assert sequence.index("calibration_warmup_command") < sequence.index(
         "calibration_prepass_command"
     )
+
+
+def test_v2_postrun_consumes_bound_manifest_produced_by_bind_step() -> None:
+    replay = _load_replay()
+    # Full closure still passes with the new bind->postrun edge.
+    assert validate_launch_sequence_artifact_closure(replay) == []
+    # Removing the bind step leaves postrun consuming an unproduced manifest.
+    broken = copy.deepcopy(replay)
+    broken["launch_sequence"] = [
+        step
+        for step in replay["launch_sequence"]
+        if step != "postrun_input_manifest_bind_command"
+    ]
+    failures = validate_launch_sequence_artifact_closure(broken)
+    assert failures
+    assert any("postrun_input_manifest.json" in failure for failure in failures)

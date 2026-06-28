@@ -28,6 +28,34 @@
     "min_free_memory_bytes_provisional_until_d_on_smoke_calibrates",
     "not_gpu_launch_until_plus1_launch_gate"
   ],
+  "expected_native_input_manifest_spec": {
+    "artifact_allowlist": [
+      "d_recompute_window_diagnostic/receipt.json",
+      "d_recompute_window_diagnostic/recompute_window_log.jsonl",
+      "prelaunch/calibrated_selector_manifest.json",
+      "prelaunch/calibration_prepass_receipt.json",
+      "prelaunch/scale_smoke_receipt.json",
+      "prelaunch/post_confirmation_hygiene_receipt.json",
+      "prelaunch/parent_checkpoint_rehash.json",
+      "prelaunch/parent_checkpoint_rehash_after_calibration_warmup.json",
+      "prelaunch/parent_checkpoint_rehash_after_scale_smoke.json",
+      "prelaunch/parent_checkpoint_rehash_after_confirmation.json"
+    ],
+    "calibrated_selector_manifest_rel": "prelaunch/calibrated_selector_manifest.json",
+    "diagnostic_receipt_rel": "d_recompute_window_diagnostic/receipt.json",
+    "doc": "GAP-A/GAP-B two-phase first-classification bind. No produced hashes here; the bind step writes live hashes AFTER the run and the classifier re-hashes observed artifacts live. NO driver_summary.json (not emitted; circular). spec_sha256 excludes itself from the digest.",
+    "log_artifact_rel": "d_recompute_window_diagnostic/recompute_window_log.jsonl",
+    "packet_revision": "v2_rev4c_stratified_horizon_sizing",
+    "row_count_check": {
+      "log_artifact_rel": "d_recompute_window_diagnostic/recompute_window_log.jsonl",
+      "mode": "equals_steps_x_keys"
+    },
+    "run_id": "2189e72015",
+    "selector_internal_sha_cross_check": true,
+    "selector_log_key_alignment_check": true,
+    "spec_schema": "hrm_text_158_d_recompute_input_manifest_spec/v0",
+    "spec_sha256": "43679329fa1db51190a4906109207dde694728ecf82cc5cd18bf9069b27d2a31"
+  },
   "gpu_hold": true,
   "head_at_packet": "a40a31e",
   "in_vivo_alignment_checklist": {

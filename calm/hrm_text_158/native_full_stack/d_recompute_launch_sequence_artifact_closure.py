@@ -48,6 +48,18 @@ COMMAND_ARTIFACT_IO: dict[str, dict[str, list[str]]] = {
             _artifact(f"{RUN_ROOT_TOKEN}/prelaunch/calibrated_selector_manifest.json"),
         ],
     },
+    "postrun_input_manifest_bind_command": {
+        "produces": [
+            _artifact(f"{RUN_ROOT_TOKEN}/prelaunch/postrun_input_manifest.json"),
+        ],
+        "consumes": [],
+    },
+    "postrun_command": {
+        "produces": [],
+        "consumes": [
+            _artifact(f"{RUN_ROOT_TOKEN}/prelaunch/postrun_input_manifest.json"),
+        ],
+    },
 }
 
 

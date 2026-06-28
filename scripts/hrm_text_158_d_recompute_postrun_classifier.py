@@ -10,6 +10,11 @@ import time
 from pathlib import Path
 from typing import Any
 
+from calm.hrm_text_158.native_full_stack.d_recompute_input_manifest_bind import (
+    collect_observed_artifact_hashes,
+    load_packet_spec,
+    verify_input_manifest_against_spec,
+)
 from calm.hrm_text_158.native_full_stack.d_recompute_window_emit import (
     iter_recompute_window_log_records,
 )
@@ -166,12 +171,13 @@ def _emit_input_drift_blocked_receipt(
     run_id: str | None,
     input_artifact_hashes: dict[str, Any],
     drift_failures: list[str],
+    packet_revision: str = PACKET_REVISION,
 ) -> None:
     drift_receipt = {
         "schema": CLASSIFIER_RECEIPT_SCHEMA,
         "run_id": run_id or "unknown",
         "run_root": str(run_root),
-        "packet_revision": PACKET_REVISION,
+        "packet_revision": packet_revision,
         "helper_script_sha256": helper_script_sha256(),
         "primary_classifier": CLASSIFIER_INPUT_DRIFT_BLOCKED,
         "promoted_fork": None,
@@ -224,6 +230,76 @@ def _resolve_packet_manifest(
             drift_failures=drift_failures,
         )
     return manifest, input_artifact_hashes
+
+
+def _resolve_v2_input_manifest(
+    *,
+    run_root: Path,
+    packet_path: Path | None,
+    input_manifest_path: Path | None,
+    skip_input_drift_check: bool,
+    run_id: str | None,
+    packet_revision: str,
+) -> dict[str, Any]:
+    """Two-phase v2 drift guard: bound manifest must prove packet-spec provenance
+    AND survive a live re-hash. Returns the live observed hashes for the receipt
+    echo, or fails closed via INPUT_DRIFT_BLOCKED. ``--skip-input-drift-check``
+    is fixture-only and bypasses the guard entirely."""
+    if skip_input_drift_check:
+        return {}
+
+    packet_label = str(packet_path) if packet_path is not None else "None"
+    if packet_path is None or not packet_path.is_file():
+        _emit_input_drift_blocked_receipt(
+            run_root=run_root,
+            run_id=run_id,
+            input_artifact_hashes={},
+            drift_failures=[f"missing_packet_manifest:{packet_label}"],
+            packet_revision=packet_revision,
+        )
+
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    try:
+        spec = load_packet_spec(packet)
+    except (ValueError, TypeError) as exc:
+        _emit_input_drift_blocked_receipt(
+            run_root=run_root,
+            run_id=run_id,
+            input_artifact_hashes={},
+            drift_failures=[f"missing_packet_spec:{exc}"],
+            packet_revision=packet_revision,
+        )
+
+    if input_manifest_path is None or not input_manifest_path.is_file():
+        _emit_input_drift_blocked_receipt(
+            run_root=run_root,
+            run_id=run_id,
+            input_artifact_hashes={},
+            drift_failures=[f"missing_input_manifest:{input_manifest_path}"],
+            packet_revision=packet_revision,
+        )
+
+    try:
+        bound_manifest = json.loads(input_manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        _emit_input_drift_blocked_receipt(
+            run_root=run_root,
+            run_id=run_id,
+            input_artifact_hashes={},
+            drift_failures=[f"invalid_input_manifest:{input_manifest_path}:{exc}"],
+            packet_revision=packet_revision,
+        )
+
+    failures = verify_input_manifest_against_spec(run_root, packet, bound_manifest)
+    if failures:
+        _emit_input_drift_blocked_receipt(
+            run_root=run_root,
+            run_id=run_id,
+            input_artifact_hashes={},
+            drift_failures=failures,
+            packet_revision=packet_revision,
+        )
+    return collect_observed_artifact_hashes(run_root, spec)
 
 
 def emit_timeout_classifier_receipt(
@@ -301,17 +377,29 @@ def emit_d_recompute_window_classifier_receipt(
     skip_input_drift_check: bool = False,
     run_id: str | None = None,
     manifest_path: Path | None = None,
+    input_manifest_path: Path | None = None,
 ) -> dict[str, Any]:
     started = time.monotonic()
     packet_revision = _packet_revision_from_path(packet_path)
     use_v2 = _is_v2_packet_revision(packet_revision)
     scratch = run_root / DIAGNOSTIC_SUBDIR
-    manifest, input_artifact_hashes = _resolve_packet_manifest(
-        run_root=run_root,
-        packet_path=packet_path,
-        skip_input_drift_check=skip_input_drift_check,
-        run_id=run_id,
-    )
+    if use_v2:
+        manifest = None
+        input_artifact_hashes = _resolve_v2_input_manifest(
+            run_root=run_root,
+            packet_path=packet_path,
+            input_manifest_path=input_manifest_path,
+            skip_input_drift_check=skip_input_drift_check,
+            run_id=run_id,
+            packet_revision=packet_revision,
+        )
+    else:
+        manifest, input_artifact_hashes = _resolve_packet_manifest(
+            run_root=run_root,
+            packet_path=packet_path,
+            skip_input_drift_check=skip_input_drift_check,
+            run_id=run_id,
+        )
 
     receipt_path = scratch / "receipt.json"
     if not receipt_path.is_file():
@@ -433,6 +521,12 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Calibrated selector manifest JSON (v2 packets)",
     )
+    parser.add_argument(
+        "--input-manifest",
+        type=Path,
+        default=None,
+        help="Bound postrun input manifest JSON (v2 two-phase drift guard)",
+    )
     args = parser.parse_args(argv)
 
     if args.emit_timeout_receipt:
@@ -462,6 +556,7 @@ def main(argv: list[str] | None = None) -> int:
             packet_path=args.packet,
             skip_input_drift_check=bool(args.skip_input_drift_check),
             manifest_path=args.manifest,
+            input_manifest_path=args.input_manifest,
         )
     except SystemExit as exc:
         return int(exc.code) if isinstance(exc.code, int) else 1
