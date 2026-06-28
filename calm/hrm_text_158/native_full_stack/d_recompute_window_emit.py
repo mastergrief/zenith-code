@@ -413,6 +413,7 @@ def maybe_emit_d_recompute_window_step_records(
         return
     if selector_manifest is not None:
         from calm.hrm_text_158.native_full_stack.d_recompute_window_stratified_selector import (
+            STRESS_TAIL_POLICY_HORIZON_FIXED,
             sample_lanes_for_key,
             select_instrumentation_state_keys_from_manifest,
         )
@@ -422,9 +423,11 @@ def maybe_emit_d_recompute_window_step_records(
             selector_manifest,
         )
         manifest_entries = selector_manifest.entry_by_key()
+        stress_tail_policy = str(selector_manifest.manifest_spec.get("stress_tail_policy") or "")
     else:
         state_keys = select_instrumentation_state_keys(pre_update_states)
         manifest_entries = None
+        stress_tail_policy = ""
     cap_digest = None
     applied_digest = None
     if global_summary is not None:
@@ -457,8 +460,13 @@ def maybe_emit_d_recompute_window_step_records(
             lane_indices = sample_lanes_for_key(
                 pre_state,
                 manifest_entry=manifest_entries[state_key],
-                vote_values=vote_lane_values,
+                vote_values=(
+                    vote_lane_values
+                    if stress_tail_policy != STRESS_TAIL_POLICY_HORIZON_FIXED
+                    else None
+                ),
                 replay_constants=replay_constants,
+                stress_tail_policy=stress_tail_policy or None,
             )
         else:
             lane_indices = _sample_lane_indices(int(_shadow_numel(pre_state)))

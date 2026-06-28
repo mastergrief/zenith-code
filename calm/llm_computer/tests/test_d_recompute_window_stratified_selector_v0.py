@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 from unittest import mock
@@ -18,6 +19,9 @@ from calm.hrm_text_158.native_full_stack.d_recompute_window_emit import (
     select_instrumentation_state_keys,
 )
 from calm.hrm_text_158.native_full_stack.d_recompute_window_stratified_selector import (
+    STRESS_TAIL_POLICY_DYNAMIC,
+    STRESS_TAIL_POLICY_HORIZON_FIXED,
+    CalibrationWarmupStep,
     COVERAGE_TIER_PILOT,
     COVERAGE_TIER_REPRESENTATIVE,
     MAX_REPRESENTATIVE_KEYS,
@@ -26,8 +30,11 @@ from calm.hrm_text_158.native_full_stack.d_recompute_window_stratified_selector 
     UNIFORM_LANE_COUNT,
     _stress_tail_indices,
     _uniform_stride_indices,
+    build_calibrated_stratified_selector_manifest,
     build_stratified_selector_manifest,
+    extract_calibration_observation,
     load_stratified_selector_manifest,
+    rank_dynamic_stress_tail_lanes,
     sample_lanes_for_key,
     save_stratified_selector_manifest,
     select_instrumentation_state_keys_from_manifest,
@@ -194,6 +201,7 @@ def test_stress_tail_is_vote_sensitive_for_update_pressure_lanes() -> None:
         manifest_entry=entry,
         vote_values=vote_values,
         replay_constants=replay,
+        stress_tail_policy=STRESS_TAIL_POLICY_DYNAMIC,
     )
     stress_live = [index for index in live_lanes if index not in set(entry.uniform_lanes)]
     assert high_vote_lane in stress_live
@@ -272,3 +280,232 @@ def test_select_from_manifest_and_emit_back_compat_without_manifest(tmp_path: Pa
     assert log_path.is_file()
     lines = [line for line in log_path.read_text(encoding="utf-8").splitlines() if line]
     assert len(lines) >= 1 + len(manifest.entries)
+
+
+def _votes_tensor_for_state(state: BoundedDeltaTensorState, values: list[int]) -> torch.Tensor:
+    numel = int(state.q_levels.numel())
+    assert len(values) == numel
+    return torch.tensor(values, dtype=torch.int32).reshape(state.q_levels.shape)
+
+
+def _lane_indices_by_step(log_path: Path, state_key: str) -> dict[int, list[int]]:
+    by_step: dict[int, list[int]] = {}
+    for line in log_path.read_text(encoding="utf-8").splitlines():
+        if not line:
+            continue
+        record = json.loads(line)
+        if str(record.get("state_key")) != state_key:
+            continue
+        by_step[int(record["step"])] = [int(index) for index in record["lane_indices"]]
+    return by_step
+
+
+def _build_calibration_warmup_for_key(
+    state_key: str,
+    state: BoundedDeltaTensorState,
+    *,
+    replay: ReplayConstants,
+    step_votes: list[tuple[int, list[int]]],
+) -> list[CalibrationWarmupStep]:
+    samples: list[CalibrationWarmupStep] = []
+    for step, vote_values in step_votes:
+        observation = extract_calibration_observation(
+            state_key,
+            state,
+            _votes_tensor_for_state(state, vote_values),
+            replay_constants=replay,
+        )
+        samples.append(
+            CalibrationWarmupStep(
+                step=int(step),
+                observations={state_key: observation},
+            )
+        )
+    return samples
+
+
+def test_horizon_fixed_stress_lanes_stable_across_measured_steps(tmp_path: Path) -> None:
+    replay = _replay()
+    state_key = "model.H_level.core.layers.0.attn.o_proj"
+    state = _fresh_state(state_key, rows=8, cols=8, seed=42)
+    numel = 64
+    high_vote_lane = 6
+    assert high_vote_lane not in _uniform_stride_indices(numel, count=UNIFORM_LANE_COUNT)
+
+    warmup_votes = [0] * numel
+    warmup_votes[high_vote_lane] = 250
+    warmup = _build_calibration_warmup_for_key(
+        state_key,
+        state,
+        replay=replay,
+        step_votes=[(1, warmup_votes), (2, warmup_votes)],
+    )
+    manifest = build_calibrated_stratified_selector_manifest(
+        {state_key: state},
+        calibration_samples=warmup,
+        manifest_spec={"min_keys": 1, "max_keys": 1},
+    )
+    entry = manifest.entries[0]
+    assert high_vote_lane in entry.stress_tail_lanes
+
+    stale = _stale_state_from_fresh(state)
+    log_path = tmp_path / "recompute_window_log.jsonl"
+    measured_vote_patterns = [
+        [500 if index == 50 else 0 for index in range(numel)],
+        [500 if index == 51 else 0 for index in range(numel)],
+    ]
+    for step, vote_values in enumerate(measured_vote_patterns, start=1):
+        dynamic_lanes = sample_lanes_for_key(
+            stale,
+            manifest_entry=entry,
+            vote_values=vote_values,
+            replay_constants=replay,
+            stress_tail_policy=STRESS_TAIL_POLICY_DYNAMIC,
+        )
+        assert dynamic_lanes != list(entry.lane_indices)
+        maybe_emit_d_recompute_window_step_records(
+            enabled=True,
+            log_path=log_path,
+            step=step,
+            pre_update_states={state_key: stale},
+            post_update_states={state_key: stale},
+            votes_by_key={state_key: _votes_tensor_for_state(state, vote_values)},
+            replay_constants=replay,
+            selector_manifest=manifest,
+        )
+
+    lanes_by_step = _lane_indices_by_step(log_path, state_key)
+    assert lanes_by_step[1] == lanes_by_step[2] == list(entry.lane_indices)
+
+
+def test_calibrated_manifest_binds_policy_and_fixed_stress_lanes() -> None:
+    replay = _replay()
+    state_key = "model.H_level.core.layers.0.attn.o_proj"
+    state = _fresh_state(state_key, rows=8, cols=8, seed=7)
+    numel = 64
+    high_vote_lane = 6
+    warmup_votes = [0] * numel
+    warmup_votes[high_vote_lane] = 300
+    warmup = _build_calibration_warmup_for_key(
+        state_key,
+        state,
+        replay=replay,
+        step_votes=[(1, warmup_votes)],
+    )
+    manifest = build_calibrated_stratified_selector_manifest(
+        {state_key: state},
+        calibration_samples=warmup,
+        manifest_spec={"min_keys": 1, "max_keys": 1},
+    )
+    assert manifest.manifest_spec["stress_tail_policy"] == STRESS_TAIL_POLICY_HORIZON_FIXED
+    assert manifest.manifest_spec["calibration_warmup_steps"] == 1
+    assert manifest.manifest_spec["measurement_start_step"] == 1
+    assert manifest.manifest_spec["calibration_discarded_before_measurement"] is True
+
+    entry = manifest.entries[0]
+    assert high_vote_lane in entry.stress_tail_lanes
+    acc_only_manifest = build_stratified_selector_manifest(
+        {state_key: state},
+        manifest_spec={"min_keys": 1, "max_keys": 1},
+    )
+    acc_only_entry = acc_only_manifest.entries[0]
+    dynamic_stress = rank_dynamic_stress_tail_lanes(
+        state,
+        numel=numel,
+        exclude=set(acc_only_entry.uniform_lanes),
+        count=1,
+        replay_constants=replay,
+        vote_values=warmup_votes,
+    )
+    assert dynamic_stress == [high_vote_lane]
+    assert list(entry.stress_tail_lanes) == list(acc_only_entry.stress_tail_lanes) or (
+        high_vote_lane in entry.stress_tail_lanes
+    )
+
+
+def test_calibration_determinism_same_warmup_same_manifest_sha() -> None:
+    replay = _replay()
+    state_key = "model.H_level.core.layers.0.attn.o_proj"
+    state = _fresh_state(state_key, rows=8, cols=8, seed=11)
+    numel = 64
+    vote_values = [0] * numel
+    vote_values[9] = 180
+    warmup = _build_calibration_warmup_for_key(
+        state_key,
+        state,
+        replay=replay,
+        step_votes=[(1, vote_values), (2, vote_values)],
+    )
+    first = build_calibrated_stratified_selector_manifest(
+        {state_key: state},
+        calibration_samples=warmup,
+        manifest_spec={"min_keys": 1, "max_keys": 1},
+    )
+    second = build_calibrated_stratified_selector_manifest(
+        {state_key: state},
+        calibration_samples=warmup,
+        manifest_spec={"min_keys": 1, "max_keys": 1},
+    )
+    assert first.manifest_sha256 == second.manifest_sha256
+    assert first.entries[0].stress_tail_lanes == second.entries[0].stress_tail_lanes
+
+
+def test_calibration_warmup_discarded_before_measurement_window() -> None:
+    replay = _replay()
+    state_key = "model.H_level.core.layers.0.attn.o_proj"
+    state = _fresh_state(state_key, rows=8, cols=8, seed=3)
+    numel = 64
+    warmup_votes = [0] * numel
+    warmup_votes[6] = 220
+    warmup = _build_calibration_warmup_for_key(
+        state_key,
+        state,
+        replay=replay,
+        step_votes=[(1, warmup_votes)],
+    )
+    manifest = build_calibrated_stratified_selector_manifest(
+        {state_key: state},
+        calibration_samples=warmup,
+        manifest_spec={"min_keys": 1, "max_keys": 1},
+        measurement_start_step=1,
+    )
+    assert manifest.manifest_spec["calibration_discarded_before_measurement"] is True
+    assert manifest.manifest_spec["measurement_start_step"] == 1
+    assert all(sample.step >= 1 for sample in warmup)
+    measured_lanes = sample_lanes_for_key(
+        state,
+        manifest_entry=manifest.entries[0],
+        vote_values=[0] * numel,
+        replay_constants=replay,
+        stress_tail_policy=STRESS_TAIL_POLICY_HORIZON_FIXED,
+    )
+    assert measured_lanes == list(manifest.entries[0].lane_indices)
+
+
+def test_horizon_fixed_manifest_numel_mismatch_fails_closed() -> None:
+    replay = _replay()
+    state_key = "model.H_level.core.layers.0.attn.o_proj"
+    state = _fresh_state(state_key, rows=8, cols=8, seed=5)
+    numel = 64
+    warmup_votes = [0] * numel
+    warmup_votes[6] = 210
+    warmup = _build_calibration_warmup_for_key(
+        state_key,
+        state,
+        replay=replay,
+        step_votes=[(1, warmup_votes)],
+    )
+    manifest = build_calibrated_stratified_selector_manifest(
+        {state_key: state},
+        calibration_samples=warmup,
+        manifest_spec={"min_keys": 1, "max_keys": 1},
+    )
+    entry = manifest.entries[0]
+    mismatched_state = _fresh_state(state_key, rows=4, cols=4, seed=6)
+    with pytest.raises(ValueError, match="horizon-fixed selector manifest numel mismatch"):
+        sample_lanes_for_key(
+            mismatched_state,
+            manifest_entry=entry,
+            replay_constants=replay,
+            stress_tail_policy=STRESS_TAIL_POLICY_HORIZON_FIXED,
+        )

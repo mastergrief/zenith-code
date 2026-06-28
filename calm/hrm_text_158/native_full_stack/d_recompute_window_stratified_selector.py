@@ -35,6 +35,10 @@ UNIFORM_LANE_COUNT = 16
 STRESS_LANE_COUNT = 16
 PILOT_MIN_LANES_PER_KEY = 16
 
+STRESS_TAIL_POLICY_HORIZON_FIXED = "horizon_fixed_warmup_calibrated_v0"
+STRESS_TAIL_POLICY_DYNAMIC = "per_step_vote_aware_v0"
+DEFAULT_CALIBRATION_WARMUP_STEPS = 5
+
 EXCLUDED_KEY_FRAGMENTS: tuple[str, ...] = (
     ".embed",
     "embeddings",
@@ -59,6 +63,12 @@ ROLE_PATTERNS: tuple[tuple[str, str], ...] = (
 )
 
 _LAYER_IDX_RE = re.compile(r"\.layers\.(\d+)\.")
+
+
+@dataclass(frozen=True)
+class CalibrationWarmupStep:
+    step: int
+    observations: dict[str, tuple[tuple[int, ...], tuple[int, ...]]]
 
 
 @dataclass(frozen=True)
@@ -339,12 +349,123 @@ def _stress_tail_indices(
     return [index for _, index in scored[: int(count)]]
 
 
+def rank_dynamic_stress_tail_lanes(
+    state: Any,
+    *,
+    numel: int,
+    exclude: set[int],
+    count: int,
+    replay_constants: ReplayConstants,
+    vote_values: Sequence[int] | None = None,
+) -> list[int]:
+    """Per-step dynamic stress-tail ranking (calibration helper / pressure annotation)."""
+    return _stress_tail_indices(
+        state,
+        numel=numel,
+        exclude=exclude,
+        count=count,
+        replay_constants=replay_constants,
+        vote_values=vote_values,
+    )
+
+
+def extract_calibration_observation(
+    state_key: str,
+    state: Any,
+    vote_tensor: torch.Tensor,
+    *,
+    replay_constants: ReplayConstants,
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    acc_values = tuple(
+        _accumulator_lane_values(state, replay_constants=replay_constants)
+    )
+    votes_flat = vote_tensor.detach().cpu().flatten().to(torch.int32)
+    vote_values = tuple(int(votes_flat[index].item()) for index in range(votes_flat.numel()))
+    if len(acc_values) != len(vote_values):
+        raise ValueError(
+            f"calibration observation length mismatch for {state_key!r}: "
+            f"acc={len(acc_values)} vote={len(vote_values)}"
+        )
+    return acc_values, vote_values
+
+
+def _max_stress_score(
+    left: tuple[int, int, int, int, int],
+    right: tuple[int, int, int, int, int],
+) -> tuple[int, int, int, int, int]:
+    return left if left >= right else right
+
+
+def _aggregate_lane_stress_scores_for_key(
+    state_key: str,
+    *,
+    numel: int,
+    uniform_lanes: Sequence[int],
+    calibration_samples: Sequence[CalibrationWarmupStep],
+    replay_constants: ReplayConstants,
+) -> dict[int, tuple[int, int, int, int, int]]:
+    exclude = {int(index) for index in uniform_lanes}
+    threshold = int(replay_constants.threshold_abs)
+    aggregated: dict[int, tuple[int, int, int, int, int]] = {}
+    for sample in calibration_samples:
+        observation = sample.observations.get(state_key)
+        if observation is None:
+            continue
+        acc_values, vote_values = observation
+        if len(acc_values) != int(numel) or len(vote_values) != int(numel):
+            raise ValueError(
+                f"calibration sample step {sample.step} length mismatch for "
+                f"{state_key!r}: acc={len(acc_values)} vote={len(vote_values)} "
+                f"expected numel={numel}"
+            )
+        for index in range(int(numel)):
+            if index in exclude:
+                continue
+            score = _stress_tail_score(
+                int(acc_values[index]),
+                int(vote_values[index]),
+                threshold_abs=threshold,
+                index=index,
+            )
+            prior = aggregated.get(index)
+            aggregated[index] = score if prior is None else _max_stress_score(prior, score)
+    return aggregated
+
+
+def _fixed_stress_lanes_from_calibration(
+    state_key: str,
+    *,
+    numel: int,
+    uniform_lanes: Sequence[int],
+    calibration_samples: Sequence[CalibrationWarmupStep],
+    replay_constants: ReplayConstants,
+    count: int = STRESS_LANE_COUNT,
+) -> list[int]:
+    aggregated = _aggregate_lane_stress_scores_for_key(
+        state_key,
+        numel=numel,
+        uniform_lanes=uniform_lanes,
+        calibration_samples=calibration_samples,
+        replay_constants=replay_constants,
+    )
+    if not aggregated:
+        raise ValueError(
+            f"no calibration observations for {state_key!r}; cannot derive fixed stress lanes"
+        )
+    scored = sorted(
+        ((score, index) for index, score in aggregated.items()),
+        reverse=True,
+    )
+    return [int(index) for _, index in scored[: int(count)]]
+
+
 def sample_lanes_for_key(
     state: Any,
     *,
     manifest_entry: StratifiedKeyEntry,
     vote_values: Sequence[int] | None = None,
     replay_constants: ReplayConstants | None = None,
+    stress_tail_policy: str | None = None,
 ) -> list[int]:
     replay = replay_constants or default_production_replay_constants()
     numel = int(_shadow_numel(state))
@@ -352,14 +473,25 @@ def sample_lanes_for_key(
         uniform = _uniform_stride_indices(numel, count=UNIFORM_LANE_COUNT)
     else:
         uniform = list(manifest_entry.uniform_lanes)
-    stress = _stress_tail_indices(
-        state,
-        numel=numel,
-        exclude=set(uniform),
-        count=STRESS_LANE_COUNT,
-        replay_constants=replay,
-        vote_values=vote_values,
-    )
+
+    if stress_tail_policy == STRESS_TAIL_POLICY_HORIZON_FIXED:
+        if numel != int(manifest_entry.numel):
+            raise ValueError(
+                "horizon-fixed selector manifest numel mismatch for "
+                f"{manifest_entry.state_key!r}: live={numel} "
+                f"manifest={int(manifest_entry.numel)}; "
+                "fixed stress lanes cannot be rebound dynamically"
+            )
+        stress = list(manifest_entry.stress_tail_lanes)
+    else:
+        stress = rank_dynamic_stress_tail_lanes(
+            state,
+            numel=numel,
+            exclude=set(uniform),
+            count=STRESS_LANE_COUNT,
+            replay_constants=replay,
+            vote_values=vote_values,
+        )
     combined = list(uniform) + [index for index in stress if index not in set(uniform)]
     return [int(index) for index in combined]
 
@@ -529,6 +661,93 @@ def _coverage_tier(entries: Sequence[StratifiedKeyEntry]) -> str:
     if len(entries) < MIN_REPRESENTATIVE_KEYS:
         return COVERAGE_TIER_PILOT
     return COVERAGE_TIER_REPRESENTATIVE
+
+
+def _finalize_manifest_with_calibrated_stress_lanes(
+    manifest: StratifiedSelectorManifest,
+    *,
+    calibration_samples: Sequence[CalibrationWarmupStep],
+    replay_constants: ReplayConstants,
+    stress_tail_policy: str,
+    measurement_start_step: int = 1,
+) -> StratifiedSelectorManifest:
+    spec = dict(manifest.manifest_spec)
+    spec["stress_tail_policy"] = str(stress_tail_policy)
+    spec["calibration_warmup_steps"] = len(calibration_samples)
+    spec["measurement_start_step"] = int(measurement_start_step)
+    spec["calibration_discarded_before_measurement"] = True
+
+    new_entries: list[StratifiedKeyEntry] = []
+    for entry in manifest.entries:
+        fixed_stress = _fixed_stress_lanes_from_calibration(
+            entry.state_key,
+            numel=entry.numel,
+            uniform_lanes=entry.uniform_lanes,
+            calibration_samples=calibration_samples,
+            replay_constants=replay_constants,
+        )
+        lane_indices = list(entry.uniform_lanes) + [
+            index for index in fixed_stress if index not in set(entry.uniform_lanes)
+        ]
+        new_entries.append(
+            StratifiedKeyEntry(
+                state_key=entry.state_key,
+                level=entry.level,
+                layer_idx=entry.layer_idx,
+                role=entry.role,
+                depth_tercile=entry.depth_tercile,
+                numel_band=entry.numel_band,
+                numel=entry.numel,
+                uniform_lanes=entry.uniform_lanes,
+                stress_tail_lanes=tuple(int(index) for index in fixed_stress),
+                lane_indices=tuple(int(index) for index in lane_indices),
+                stratum_weight=entry.stratum_weight,
+            )
+        )
+
+    coverage_tier = _coverage_tier(new_entries)
+    stratum_weights = {entry.state_key: float(entry.stratum_weight) for entry in new_entries}
+    body_without_digest = {
+        "schema_version": manifest.schema_version,
+        "coverage_tier": coverage_tier,
+        "selected_key_count": len(new_entries),
+        "stratum_weights": stratum_weights,
+        "entries": [entry.to_dict() for entry in new_entries],
+        "manifest_spec": spec,
+    }
+    manifest_sha256 = _manifest_digest(body_without_digest)
+    return StratifiedSelectorManifest(
+        schema_version=manifest.schema_version,
+        manifest_sha256=manifest_sha256,
+        coverage_tier=coverage_tier,
+        selected_key_count=len(new_entries),
+        stratum_weights=stratum_weights,
+        entries=tuple(new_entries),
+        manifest_spec=spec,
+    )
+
+
+def build_calibrated_stratified_selector_manifest(
+    tensor_states: Mapping[str, Any],
+    *,
+    calibration_samples: Sequence[CalibrationWarmupStep],
+    manifest_spec: Mapping[str, Any] | None = None,
+    replay_constants: ReplayConstants | None = None,
+    measurement_start_step: int = 1,
+) -> StratifiedSelectorManifest:
+    replay = replay_constants or default_production_replay_constants()
+    base = build_stratified_selector_manifest(
+        tensor_states,
+        manifest_spec=manifest_spec,
+        replay_constants=replay,
+    )
+    return _finalize_manifest_with_calibrated_stress_lanes(
+        base,
+        calibration_samples=calibration_samples,
+        replay_constants=replay,
+        stress_tail_policy=STRESS_TAIL_POLICY_HORIZON_FIXED,
+        measurement_start_step=measurement_start_step,
+    )
 
 
 def build_stratified_selector_manifest(
