@@ -84,6 +84,10 @@ from calm.hrm_text_158.native_full_stack.d_recompute_window_receipt_compact impo
     compact_d_diagnostic_step_result,
     should_apply_d_diagnostic_receipt_compaction,
 )
+from calm.hrm_text_158.native_full_stack.d_recompute_window_stratified_selector import (
+    StratifiedSelectorManifest,
+    load_stratified_selector_manifest,
+)
 from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
     decode_bounded_accumulator_to_i16,
 )
@@ -5160,6 +5164,7 @@ def run_bounded_delta_steps(
     r7_cap_defer_pressure_sidecar_path: Path | None = None,
     d_recompute_window_instrumentation_enabled: bool = False,
     d_recompute_window_log_path: Path | None = None,
+    d_recompute_selector_manifest: StratifiedSelectorManifest | None = None,
     receipt_emit_profile: str = RECEIPT_EMIT_PROFILE_FULL,
     d_diagnostic_compact_step_reports: bool = False,
     votes_emit_enabled: bool = False,
@@ -5976,6 +5981,7 @@ def run_bounded_delta_steps(
                         votes_by_key=votes_by_key,
                         replay_constants=ReplayConstants.from_vote_update_spec(vote_spec),
                         global_summary=step_result.global_summary,
+                        selector_manifest=d_recompute_selector_manifest,
                     )
                 if device.type == "cuda":
                     step_cuda_memory_snapshots.append(
@@ -6298,6 +6304,7 @@ def run_c2p1_probe(
     r7_cap_defer_pressure_instrumentation_enabled: bool = False,
     r7_deferred_backlog_carry_enabled: bool = False,
     d_recompute_window_instrumentation_enabled: bool = False,
+    d_recompute_selector_manifest_path: Path | None = None,
     d_diagnostic_compact_step_reports: bool = False,
     votes_emit_enabled: bool = False,
     votes_emit_root: Path | None = None,
@@ -6681,6 +6688,12 @@ def run_c2p1_probe(
             }
     if not init_fidelity["all_pass"]:
         raise RuntimeError("weight-level init-fidelity allclose failed")
+
+    d_recompute_selector_manifest: StratifiedSelectorManifest | None = None
+    if d_recompute_selector_manifest_path is not None:
+        d_recompute_selector_manifest = load_stratified_selector_manifest(
+            d_recompute_selector_manifest_path
+        )
 
     front_c_identity_collector = None
     if front_c_identity_emission_artifact is not None:
@@ -7132,6 +7145,7 @@ def run_c2p1_probe(
                 d_recompute_window_instrumentation_enabled
             ),
             d_recompute_window_log_path=d_recompute_window_log_path,
+            d_recompute_selector_manifest=d_recompute_selector_manifest,
             receipt_emit_profile=str(receipt_emit_profile),
             d_diagnostic_compact_step_reports=bool(d_diagnostic_compact_step_reports),
             votes_emit_enabled=bool(votes_emit_enabled),
@@ -7405,6 +7419,14 @@ def run_c2p1_probe(
         assert d_recompute_window_log_path is not None
         receipt["d_recompute_window_instrumentation_enabled"] = True
         receipt["d_recompute_window_log_path"] = str(d_recompute_window_log_path)
+        if d_recompute_selector_manifest is not None:
+            receipt["d_recompute_selector_manifest_sha256"] = str(
+                d_recompute_selector_manifest.manifest_sha256
+            )
+            if d_recompute_selector_manifest_path is not None:
+                receipt["d_recompute_selector_manifest_path"] = str(
+                    d_recompute_selector_manifest_path
+                )
     if r7_deferred_backlog_carry_enabled:
         receipt["r7_deferred_backlog_carry_enabled"] = True
     if b2_full_verdict_mode:
@@ -7796,6 +7818,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     ap.add_argument(
+        "--d-recompute-selector-manifest",
+        type=Path,
+        default=None,
+        help=(
+            "Optional deterministic stratified selector manifest JSON for D "
+            "recompute-window instrumentation. When set, emit uses manifest "
+            "keys/lanes instead of the default smallest-numel selector."
+        ),
+    )
+    ap.add_argument(
         "--d-diagnostic-compact-step-reports",
         action="store_true",
         help=(
@@ -7944,6 +7976,7 @@ def main(argv: list[str] | None = None) -> int:
         d_recompute_window_instrumentation_enabled=bool(
             args.d_recompute_window_instrumentation
         ),
+        d_recompute_selector_manifest_path=args.d_recompute_selector_manifest,
         d_diagnostic_compact_step_reports=bool(args.d_diagnostic_compact_step_reports),
         votes_emit_enabled=bool(args.votes_emit_enabled),
         votes_emit_root=(

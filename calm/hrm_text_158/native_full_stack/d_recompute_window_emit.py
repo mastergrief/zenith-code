@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 import torch
 
@@ -17,6 +17,11 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     BoundedDeltaTensorState,
 )
 from calm.hrm_text_158.native_full_stack.vote_update import VoteUpdateSpec, VoteUpdateState
+
+if TYPE_CHECKING:
+    from calm.hrm_text_158.native_full_stack.d_recompute_window_stratified_selector import (
+        StratifiedSelectorManifest,
+    )
 
 D_RECOMPUTE_WINDOW_LOG_FILENAME = "recompute_window_log.jsonl"
 D_RECOMPUTE_WINDOW_SCHEMA_VERSION = "hrm_text_158_recompute_window_log/v0"
@@ -402,10 +407,24 @@ def maybe_emit_d_recompute_window_step_records(
     replay_constants: ReplayConstants,
     global_summary: Mapping[str, Any] | None = None,
     resume_generation: int = 0,
+    selector_manifest: StratifiedSelectorManifest | None = None,
 ) -> None:
     if not enabled or log_path is None:
         return
-    state_keys = select_instrumentation_state_keys(pre_update_states)
+    if selector_manifest is not None:
+        from calm.hrm_text_158.native_full_stack.d_recompute_window_stratified_selector import (
+            sample_lanes_for_key,
+            select_instrumentation_state_keys_from_manifest,
+        )
+
+        state_keys = select_instrumentation_state_keys_from_manifest(
+            pre_update_states,
+            selector_manifest,
+        )
+        manifest_entries = selector_manifest.entry_by_key()
+    else:
+        state_keys = select_instrumentation_state_keys(pre_update_states)
+        manifest_entries = None
     cap_digest = None
     applied_digest = None
     if global_summary is not None:
@@ -433,7 +452,16 @@ def maybe_emit_d_recompute_window_step_records(
         q_before_tensor = _q_i16_flat(pre_state)
         q_after_tensor = _q_i16_flat(post_state)
         votes_tensor = votes_by_key[state_key].detach().cpu().flatten().to(torch.int32)
-        lane_indices = _sample_lane_indices(int(_shadow_numel(pre_state)))
+        vote_lane_values = [int(votes_tensor[index].item()) for index in range(votes_tensor.numel())]
+        if manifest_entries is not None:
+            lane_indices = sample_lanes_for_key(
+                pre_state,
+                manifest_entry=manifest_entries[state_key],
+                vote_values=vote_lane_values,
+                replay_constants=replay_constants,
+            )
+        else:
+            lane_indices = _sample_lane_indices(int(_shadow_numel(pre_state)))
         vote_lanes = [int(votes_tensor[index].item()) for index in lane_indices]
         acc_before_lanes = _sample_accumulator_lanes(
             pre_state,
