@@ -58,6 +58,7 @@ from calm.hrm_text_158.native_full_stack.d_recompute_window_horizon_analyzer imp
     GROWTH_LINEAR_SIZED_WITH_DECAY,
     GROWTH_PLATEAU_SIZED,
     GROWTH_RIGHT_CENSORED_LOWER_BOUND,
+    weighted_quantile_uncensored_proof,
 )
 from calm.hrm_text_158.native_full_stack.event_coded_acc_checkpoint_codec import (
     EventCodedAccEvent,
@@ -80,11 +81,41 @@ from calm.hrm_text_158.native_full_stack.sub2_carrier_family_discriminator impor
 from calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier import (
     promotion_carry_threshold,
 )
+from calm.hrm_text_158.native_full_stack.d_recompute_window_stratified_selector import (
+    COVERAGE_TIER_REPRESENTATIVE,
+)
 from calm.hrm_text_158.native_full_stack.two_tier_carry_reducers import (
     DEFAULT_CROSSING_THRESHOLD_ABS,
 )
 
 ACC_SIZING_SCHEMA_VERSION = "hrm_text_158_d_recompute_window_acc_sizing/v0"
+
+QUANTILE_DEFAULT = 0.99
+CENSOR_MASS_MAX = 0.01
+CLAIM_SCOPE_DISTRIBUTIONAL_QUANTILE = "distributional_quantile"
+TAIL_POLICY_WORST_CASE_RIGHT_CENSORED = "worst_case_right_censored"
+
+QUANTILE_SIZING_VERDICT_DETERMINATE_SUB2_CANDIDATE = "DETERMINATE_SUB2_CANDIDATE"
+QUANTILE_SIZING_VERDICT_DETERMINATE_NOT_UNDER_BUDGET = "DETERMINATE_NOT_UNDER_BUDGET"
+QUANTILE_SIZING_VERDICT_INCONCLUSIVE = "INCONCLUSIVE"
+
+QUANTILE_ACC_SIZING_POLICY: dict[str, Any] = {
+    "quantile": QUANTILE_DEFAULT,
+    "censor_mass_max": CENSOR_MASS_MAX,
+    "claim_scope": CLAIM_SCOPE_DISTRIBUTIONAL_QUANTILE,
+    "tail_policy": TAIL_POLICY_WORST_CASE_RIGHT_CENSORED,
+    "not_worst_case_bound": True,
+    "requires": [
+        "growth_branch_right_censored_lower_bound",
+        "parity_fail_count_zero",
+        "gapped_lane_count_zero",
+        "nonzero_eligible_lane_count",
+        "coverage_tier_representative",
+        "selector_log_key_aligned",
+        "weighted_quantile_uncensored_proof",
+        "strict_less_than_budget",
+    ],
+}
 
 VERDICT_SCOPE_ENVELOPE_MODEL_ONLY = "envelope_model_only"
 
@@ -507,4 +538,202 @@ def size_acc_bpw_from_horizon_growth(
         "grid_rows": grid_rows,
         "best_grid_row": dict(best_row),
         "strict_less_than_budget": bool(strict_pass),
+    }
+
+
+def _quantile_fail(
+    base: dict[str, Any],
+    *,
+    reason: str,
+    **extra: Any,
+) -> dict[str, Any]:
+    return base | {
+        "quantile_sizing_verdict": QUANTILE_SIZING_VERDICT_INCONCLUSIVE,
+        "quantile_sub2_candidate": False,
+        "quantile_uncensored": False,
+        "reason": str(reason),
+        **extra,
+    }
+
+
+def quantile_size_acc_bpw_from_horizon_growth(
+    horizon_growth: Mapping[str, Any],
+    *,
+    quantile: float = QUANTILE_DEFAULT,
+    measured_q_scale_bpw: float | None = None,
+    decay_grid: Sequence[tuple[int, int]] = DEFAULT_DECAY_GRID,
+    sizing_horizon_h: int = 100,
+    numel_for_bpw: int,
+    selector_log_key_aligned: bool,
+    stratum_weights: Mapping[str, float] | None = None,
+    state_key: str = "quantile.envelope.acc",
+) -> dict[str, Any]:
+    growth_branch = str(horizon_growth.get("growth_branch", ""))
+    coverage_tier = str(horizon_growth.get("coverage_tier") or "")
+    summaries = dict(horizon_growth.get("summaries_by_h") or {})
+    summary = summaries.get(int(sizing_horizon_h))
+    weights = {str(key): float(value) for key, value in dict(stratum_weights or {}).items()}
+    q_scale_bpw = (
+        float(DECLARED_Q_BPW_BASE3)
+        if measured_q_scale_bpw is None
+        else float(measured_q_scale_bpw)
+    )
+    budget_bpw = effective_acc_budget_bpw(measured_q_scale_bpw=float(q_scale_bpw))
+    censor_mass_allowance = float(CENSOR_MASS_MAX)
+
+    base: dict[str, Any] = {
+        "claim_scope": CLAIM_SCOPE_DISTRIBUTIONAL_QUANTILE,
+        "quantile": float(quantile),
+        "censor_mass_max": float(CENSOR_MASS_MAX),
+        "tail_policy": TAIL_POLICY_WORST_CASE_RIGHT_CENSORED,
+        "not_worst_case_bound": True,
+        "growth_branch": growth_branch,
+        "coverage_tier": coverage_tier,
+        "sizing_horizon_h": int(sizing_horizon_h),
+        "measured_q_scale_bpw": float(q_scale_bpw),
+        "effective_acc_budget_bpw": float(budget_bpw),
+        "numel_for_bpw": int(numel_for_bpw),
+        "selector_log_key_aligned": bool(selector_log_key_aligned),
+        "decay_grid": [list(item) for item in decay_grid],
+        "verdict_scope": VERDICT_SCOPE_ENVELOPE_MODEL_ONLY,
+        "not_in_vivo_bound": True,
+        "requires_slice5_live_validation": True,
+    }
+
+    if growth_branch != GROWTH_RIGHT_CENSORED_LOWER_BOUND:
+        return _quantile_fail(
+            base,
+            reason="growth_branch_not_right_censored_lower_bound",
+        )
+    if summary is None:
+        return _quantile_fail(base, reason="missing_sizing_horizon_summary")
+    parity_fail_count = int(summary.get("parity_fail_count", 0))
+    gapped_lane_count = int(summary.get("gapped_lane_count", 0))
+    eligible_lane_count = int(summary.get("eligible_lane_count", 0))
+    base = base | {
+        "parity_fail_count": parity_fail_count,
+        "gapped_lane_count": gapped_lane_count,
+        "eligible_lane_count": eligible_lane_count,
+    }
+    if parity_fail_count > 0:
+        return _quantile_fail(base, reason="parity_failures_at_sizing_horizon")
+    if gapped_lane_count > 0:
+        return _quantile_fail(base, reason="gapped_lanes_at_sizing_horizon")
+    if eligible_lane_count <= 0:
+        return _quantile_fail(base, reason="no_eligible_lanes_at_sizing_horizon")
+    if coverage_tier != COVERAGE_TIER_REPRESENTATIVE:
+        return _quantile_fail(base, reason="coverage_not_representative")
+    if not bool(selector_log_key_aligned):
+        return _quantile_fail(base, reason="selector_log_key_mismatch")
+
+    lane_rows = list(summary.get("lane_rows") or [])
+    proof = weighted_quantile_uncensored_proof(
+        lane_rows,
+        weights,
+        quantile=float(quantile),
+        horizon_h=int(sizing_horizon_h),
+    )
+    quantile_k = proof.get("quantile_value")
+    censored_weight_fraction = proof.get("censored_weight_fraction")
+    selected_lane_censored = proof.get("selected_lane_censored")
+    base = base | {
+        "quantile_k": quantile_k,
+        "censored_weight_fraction": censored_weight_fraction,
+        "selected_state_key": proof.get("selected_state_key"),
+        "quantile_proof": {
+            key: proof.get(key)
+            for key in (
+                "total_weight",
+                "target_weight",
+                "selected_state_key",
+            )
+        },
+    }
+    if quantile_k is None or float(quantile_k) >= float(sizing_horizon_h):
+        return _quantile_fail(
+            base,
+            reason="censored_or_missing_quantile_k_at_horizon",
+            quantile_uncensored=False,
+        )
+    if censored_weight_fraction is None or float(censored_weight_fraction) >= float(
+        censor_mass_allowance
+    ):
+        return _quantile_fail(
+            base,
+            reason="censor_mass_at_or_above_allowance",
+            quantile_uncensored=False,
+        )
+    if bool(selected_lane_censored):
+        return _quantile_fail(
+            base,
+            reason="selected_lane_censored",
+            quantile_uncensored=False,
+        )
+
+    quantile_window_k = int(math.ceil(float(quantile_k)))
+    base = base | {
+        "quantile_window_k": int(quantile_window_k),
+        "quantile_uncensored": True,
+    }
+
+    grid_rows: list[dict[str, Any]] = []
+    mapping_ok = True
+    for decay_num, decay_den in decay_grid:
+        try:
+            row = measure_envelope_inclusive_bpw(
+                window_k=int(quantile_window_k),
+                decay_num=int(decay_num),
+                decay_den=int(decay_den),
+                numel=int(numel_for_bpw),
+                state_key=str(state_key),
+            )
+        except (ValueError, TypeError) as exc:
+            mapping_ok = False
+            row = {
+                "decay_num": int(decay_num),
+                "decay_den": int(decay_den),
+                "mapping_error": str(exc),
+            }
+        grid_rows.append(row)
+
+    if not mapping_ok:
+        return _quantile_fail(
+            base,
+            reason="budget_mapping_failed",
+            grid_rows=grid_rows,
+        )
+
+    measurable = [
+        row
+        for row in grid_rows
+        if "inclusive_acc_bpw" in row and row.get("mapping_error") is None
+    ]
+    if not measurable:
+        return _quantile_fail(
+            base,
+            reason="budget_mapping_missing",
+            grid_rows=grid_rows,
+        )
+
+    best_row = min(measurable, key=lambda row: float(row["inclusive_acc_bpw"]))
+    strict_pass = any(
+        float(row["inclusive_acc_bpw"]) < float(budget_bpw) for row in measurable
+    )
+    if not strict_pass:
+        return base | {
+            "quantile_sizing_verdict": QUANTILE_SIZING_VERDICT_DETERMINATE_NOT_UNDER_BUDGET,
+            "quantile_sub2_candidate": False,
+            "reason": "sized_quantile_bpw_at_or_above_effective_budget",
+            "strict_less_than_budget": False,
+            "grid_rows": grid_rows,
+            "best_grid_row": dict(best_row),
+        }
+
+    return base | {
+        "quantile_sizing_verdict": QUANTILE_SIZING_VERDICT_DETERMINATE_SUB2_CANDIDATE,
+        "quantile_sub2_candidate": True,
+        "reason": "inclusive_acc_bpw_strictly_under_effective_budget",
+        "strict_less_than_budget": True,
+        "grid_rows": grid_rows,
+        "best_grid_row": dict(best_row),
     }

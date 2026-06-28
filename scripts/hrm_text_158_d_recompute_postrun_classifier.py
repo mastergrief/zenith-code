@@ -8,7 +8,7 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from calm.hrm_text_158.native_full_stack.d_recompute_input_manifest_bind import (
     collect_observed_artifact_hashes,
@@ -36,6 +36,7 @@ PACKET_REVISION_V2 = "v2_rev4b_stratified_horizon_sizing"
 CLASSIFIER_D_RECOMPUTE_SUB2_RECOMMENDED_LAW = "D_RECOMPUTE_SUB2_RECOMMENDED_LAW"
 CLASSIFIER_D_RECOMPUTE_SIZED_NOT_SUB2 = "D_RECOMPUTE_SIZED_NOT_SUB2"
 CLASSIFIER_D_RECOMPUTE_IN_VIVO_INCONCLUSIVE = "D_RECOMPUTE_IN_VIVO_INCONCLUSIVE"
+CLASSIFIER_D_RECOMPUTE_QUANTILE_SUB2_CANDIDATE = "D_RECOMPUTE_QUANTILE_SUB2_CANDIDATE"
 REPRODUCTION_MODE = "postrun_only_over_native_rev3c_artifacts"
 REPRODUCTION_MODE_V2 = "postrun_arc2b_pipeline_v2"
 DIAGNOSTIC_SUBDIR = "d_recompute_window_diagnostic"
@@ -370,6 +371,19 @@ def _primary_classifier_from_arc2b(arc2b: dict[str, Any]) -> str:
     return CLASSIFIER_D_RECOMPUTE_IN_VIVO_INCONCLUSIVE
 
 
+def _apply_quantile_classifier_refinement(
+    primary_classifier: str,
+    quantile_acc_sizing: Mapping[str, Any] | None,
+) -> str:
+    if primary_classifier != CLASSIFIER_D_RECOMPUTE_IN_VIVO_INCONCLUSIVE:
+        return primary_classifier
+    if not isinstance(quantile_acc_sizing, Mapping):
+        return primary_classifier
+    if quantile_acc_sizing.get("quantile_sub2_candidate") is True:
+        return CLASSIFIER_D_RECOMPUTE_QUANTILE_SUB2_CANDIDATE
+    return primary_classifier
+
+
 def emit_d_recompute_window_classifier_receipt(
     *,
     run_root: Path,
@@ -453,6 +467,10 @@ def emit_d_recompute_window_classifier_receipt(
         primary_classifier = _primary_classifier_from_arc2b(
             dict(arc2b_analysis.get("arc2b_verdict") or {})
         )
+        primary_classifier = _apply_quantile_classifier_refinement(
+            primary_classifier,
+            arc2b_analysis.get("quantile_acc_sizing"),
+        )
         promoted_fork = None
     else:
         analysis = analyze_recompute_window_log(
@@ -502,6 +520,7 @@ def emit_d_recompute_window_classifier_receipt(
         classifier_receipt["arc2b_verdict"] = arc2b_analysis.get("arc2b_verdict")
         classifier_receipt["final_sizing_verdict"] = arc2b_analysis.get("final_sizing_verdict")
         classifier_receipt["final_verdict_scope"] = arc2b_analysis.get("final_verdict_scope")
+        classifier_receipt["quantile_acc_sizing"] = arc2b_analysis.get("quantile_acc_sizing")
     out = run_root / "classifier_receipt.json"
     out.write_text(json.dumps(classifier_receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return classifier_receipt

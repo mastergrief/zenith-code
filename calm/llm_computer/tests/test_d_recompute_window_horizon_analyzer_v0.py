@@ -20,6 +20,7 @@ from calm.hrm_text_158.native_full_stack.d_recompute_window_horizon_analyzer imp
     classify_k_star_growth,
     resolve_lane_position,
     summarize_k_star_at_horizon_prefix,
+    weighted_quantile_uncensored_proof,
 )
 from calm.hrm_text_158.native_full_stack.d_recompute_window_stratified_selector import (
     COVERAGE_TIER_PILOT,
@@ -349,3 +350,63 @@ def test_branch_routing_accelerating_requires_three_uncensored_horizons() -> Non
         coverage_tier=COVERAGE_TIER_REPRESENTATIVE,
     )
     assert result["growth_branch"] == GROWTH_ACCELERATING_OR_RIGHT_CENSORED
+
+
+def _proof_lane_row(
+    *,
+    state_key: str,
+    k_star: int,
+    right_censored: bool = False,
+) -> dict:
+    return {
+        "state_key": state_key,
+        "lane_index": 0,
+        "k_star": int(k_star),
+        "parity_pass": True,
+        "gapped": False,
+        "right_censored": bool(right_censored),
+    }
+
+
+def test_weighted_quantile_uncensored_proof_selects_uncensored_lane() -> None:
+    rows = [_proof_lane_row(state_key=f"key.{index}", k_star=5) for index in range(100)]
+    rows.append(_proof_lane_row(state_key="tail.key", k_star=100, right_censored=True))
+    weights = {row["state_key"]: (0.001 if row["state_key"] == "tail.key" else 1.0) for row in rows}
+    proof = weighted_quantile_uncensored_proof(
+        rows,
+        weights,
+        quantile=0.99,
+        horizon_h=100,
+    )
+    assert proof["quantile_value"] == pytest.approx(5.0)
+    assert proof["selected_lane_censored"] is False
+    assert float(proof["censored_weight_fraction"]) < 0.01
+
+
+def test_weighted_quantile_proof_detects_censored_selection() -> None:
+    rows = [_proof_lane_row(state_key=f"key.{index}", k_star=5) for index in range(50)]
+    rows.extend(
+        _proof_lane_row(state_key=f"cens.{index}", k_star=100, right_censored=True)
+        for index in range(50)
+    )
+    weights = {row["state_key"]: 1.0 for row in rows}
+    proof = weighted_quantile_uncensored_proof(
+        rows,
+        weights,
+        quantile=0.99,
+        horizon_h=100,
+    )
+    assert proof["selected_lane_censored"] is True
+
+
+def test_weighted_quantile_censor_mass_is_weighted_not_count() -> None:
+    rows = [_proof_lane_row(state_key=f"key.{index}", k_star=5) for index in range(99)]
+    rows.append(_proof_lane_row(state_key="heavy.cens", k_star=100, right_censored=True))
+    weights = {row["state_key"]: (100.0 if row["state_key"] == "heavy.cens" else 1.0) for row in rows}
+    proof = weighted_quantile_uncensored_proof(
+        rows,
+        weights,
+        quantile=0.99,
+        horizon_h=100,
+    )
+    assert float(proof["censored_weight_fraction"]) > 0.5

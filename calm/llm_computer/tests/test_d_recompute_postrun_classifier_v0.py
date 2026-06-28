@@ -16,6 +16,15 @@ from calm.hrm_text_158.native_full_stack.d_recompute_input_manifest_bind import 
     compute_spec_sha256,
     load_packet_spec,
 )
+from calm.hrm_text_158.native_full_stack.d_recompute_window_acc_sizing import (
+    QUANTILE_ACC_SIZING_POLICY,
+    SIZING_VERDICT_RECOMMENDED_LAW,
+    SIZING_VERDICT_SIZED_NOT_SUB2,
+    VERDICT_SCOPE_ENVELOPE_MODEL_ONLY,
+)
+from calm.hrm_text_158.native_full_stack.d_recompute_window_in_vivo_bound_validator import (
+    VERDICT_SCOPE_IN_VIVO_VALIDATED,
+)
 from calm.hrm_text_158.native_full_stack.d_recompute_window_emit import (
     D_RECOMPUTE_WINDOW_SCHEMA_VERSION,
     build_step_log_entry,
@@ -28,6 +37,9 @@ from calm.hrm_text_158.native_full_stack.d_recompute_window_stratified_selector 
 )
 from scripts.hrm_text_158_d_recompute_postrun_classifier import (
     CLASSIFIER_D_RECOMPUTE_IN_VIVO_INCONCLUSIVE,
+    CLASSIFIER_D_RECOMPUTE_QUANTILE_SUB2_CANDIDATE,
+    CLASSIFIER_D_RECOMPUTE_SIZED_NOT_SUB2,
+    CLASSIFIER_D_RECOMPUTE_SUB2_RECOMMENDED_LAW,
     CLASSIFIER_INPUT_DRIFT_BLOCKED,
     CLASSIFIER_RECEIPT_SCHEMA,
     CLASSIFIER_RECEIPT_SCHEMA_V2,
@@ -35,6 +47,7 @@ from scripts.hrm_text_158_d_recompute_postrun_classifier import (
     PACKET_REVISION_V2,
     REPRODUCTION_MODE,
     REPRODUCTION_MODE_V2,
+    _apply_quantile_classifier_refinement,
     emit_d_recompute_window_classifier_receipt,
     helper_script_sha256,
 )
@@ -935,3 +948,118 @@ def test_v2_packet_toplevel_vs_spec_revision_mismatch_fails_closed(tmp_path: Pat
     assert proc.returncode != 0
     receipt = _blocked_receipt(base)
     assert "packet_toplevel_packet_revision_vs_spec_mismatch" in receipt["drift_failures"]
+
+
+def test_quantile_candidate_refines_only_inconclusive() -> None:
+    quantile_block = {"quantile_sub2_candidate": True}
+    assert (
+        _apply_quantile_classifier_refinement(
+            CLASSIFIER_D_RECOMPUTE_IN_VIVO_INCONCLUSIVE,
+            quantile_block,
+        )
+        == CLASSIFIER_D_RECOMPUTE_QUANTILE_SUB2_CANDIDATE
+    )
+    assert (
+        _apply_quantile_classifier_refinement(
+            CLASSIFIER_D_RECOMPUTE_SIZED_NOT_SUB2,
+            quantile_block,
+        )
+        == CLASSIFIER_D_RECOMPUTE_SIZED_NOT_SUB2
+    )
+
+
+def test_quantile_block_does_not_upgrade_recommended_or_sized() -> None:
+    quantile_block = {"quantile_sub2_candidate": True}
+    assert (
+        _apply_quantile_classifier_refinement(
+            CLASSIFIER_D_RECOMPUTE_SUB2_RECOMMENDED_LAW,
+            quantile_block,
+        )
+        == CLASSIFIER_D_RECOMPUTE_SUB2_RECOMMENDED_LAW
+    )
+    assert (
+        _apply_quantile_classifier_refinement(
+            CLASSIFIER_D_RECOMPUTE_SIZED_NOT_SUB2,
+            quantile_block,
+        )
+        == CLASSIFIER_D_RECOMPUTE_SIZED_NOT_SUB2
+    )
+
+
+def test_quantile_inconclusive_keeps_inconclusive() -> None:
+    assert (
+        _apply_quantile_classifier_refinement(
+            CLASSIFIER_D_RECOMPUTE_IN_VIVO_INCONCLUSIVE,
+            {"quantile_sub2_candidate": False},
+        )
+        == CLASSIFIER_D_RECOMPUTE_IN_VIVO_INCONCLUSIVE
+    )
+
+
+def test_v2_receipt_carries_quantile_acc_sizing_block(tmp_path: Path) -> None:
+    base = tmp_path / "run"
+    _build_full_v2_fixture(base)
+    packet_path = tmp_path / "packet_v2.json"
+    _write_json(packet_path, _v2_packet_with_spec())
+    manifest = build_input_manifest(base, _v2_packet_with_spec())
+    im = tmp_path / "im.json"
+    _write_json(im, manifest)
+    proc = _run_classifier(base, packet_path, input_manifest=im)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    receipt = json.loads((base / "classifier_receipt.json").read_text(encoding="utf-8"))
+    assert "quantile_acc_sizing" in receipt
+    assert "quantile_sub2_candidate" in receipt["quantile_acc_sizing"]
+
+
+def test_classifier_no_quantile_label_on_inconclusive_growth_branch() -> None:
+    assert (
+        _apply_quantile_classifier_refinement(
+            CLASSIFIER_D_RECOMPUTE_IN_VIVO_INCONCLUSIVE,
+            {
+                "growth_branch": "INCONCLUSIVE_COST_OR_COVERAGE",
+                "quantile_sub2_candidate": False,
+            },
+        )
+        == CLASSIFIER_D_RECOMPUTE_IN_VIVO_INCONCLUSIVE
+    )
+
+
+def test_classifier_no_quantile_label_on_parity_fail() -> None:
+    assert (
+        _apply_quantile_classifier_refinement(
+            CLASSIFIER_D_RECOMPUTE_IN_VIVO_INCONCLUSIVE,
+            {
+                "parity_fail_count": 1,
+                "quantile_sub2_candidate": False,
+            },
+        )
+        == CLASSIFIER_D_RECOMPUTE_IN_VIVO_INCONCLUSIVE
+    )
+
+
+def test_classifier_no_quantile_label_on_gapped_lane() -> None:
+    assert (
+        _apply_quantile_classifier_refinement(
+            CLASSIFIER_D_RECOMPUTE_IN_VIVO_INCONCLUSIVE,
+            {
+                "gapped_lane_count": 1,
+                "quantile_sub2_candidate": False,
+            },
+        )
+        == CLASSIFIER_D_RECOMPUTE_IN_VIVO_INCONCLUSIVE
+    )
+
+
+def test_packet_quantile_policy_matches_code_constants() -> None:
+    packet = json.loads(V2_DRAFT.read_text(encoding="utf-8"))
+    policy = packet["quantile_acc_sizing_policy"]
+    assert policy["quantile"] == QUANTILE_ACC_SIZING_POLICY["quantile"]
+    assert policy["censor_mass_max"] == QUANTILE_ACC_SIZING_POLICY["censor_mass_max"]
+    assert policy["claim_scope"] == QUANTILE_ACC_SIZING_POLICY["claim_scope"]
+    assert policy["tail_policy"] == QUANTILE_ACC_SIZING_POLICY["tail_policy"]
+    assert policy["not_worst_case_bound"] == QUANTILE_ACC_SIZING_POLICY["not_worst_case_bound"]
+    assert policy["requires"] == QUANTILE_ACC_SIZING_POLICY["requires"]
+    assert (
+        packet["expected_native_input_manifest_spec"]["spec_sha256"]
+        == "43679329fa1db51190a4906109207dde694728ecf82cc5cd18bf9069b27d2a31"
+    )

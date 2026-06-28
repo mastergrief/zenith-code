@@ -14,6 +14,9 @@ from calm.hrm_text_158.native_full_stack.d_recompute_window_postrun_pipeline imp
     merge_postrun_verdict,
     run_postrun_arc2b_analysis,
 )
+from calm.hrm_text_158.native_full_stack.d_recompute_window_postrun_pipeline import (
+    run_postrun_arc2b_analysis,
+)
 from calm.llm_computer.tests.test_d_recompute_window_in_vivo_bound_validator_v0 import (
     _make_record,
     _minimal_manifest,
@@ -74,3 +77,24 @@ def test_pipeline_returns_compact_arc2b_block() -> None:
     assert "in_vivo_validation" in result
     assert "arc2b_verdict" in result
     assert "lane_indices" not in str(result)
+
+
+def test_arc2b_verdict_unchanged_with_quantile_block() -> None:
+    manifest = _minimal_manifest()
+    records = [
+        _make_record(step=step, state_key="key.a", lane_indices=[0], flip_positions={0})
+        for step in range(1, 101)
+    ] + [
+        _make_record(step=step, state_key="key.b", lane_indices=[0], flip_positions=set())
+        for step in range(1, 101)
+    ]
+    result = run_postrun_arc2b_analysis(
+        records,
+        manifest=manifest,
+        numel_for_bpw=16,
+        sizing_horizon_h=100,
+    )
+    assert "quantile_acc_sizing" in result
+    assert result["final_sizing_verdict"] == "INCONCLUSIVE_BUDGET_MAPPING_MISSING"
+    assert result["arc2b_verdict"]["final_sizing_verdict"] == result["final_sizing_verdict"]
+    assert result["quantile_acc_sizing"]["quantile_sub2_candidate"] is False

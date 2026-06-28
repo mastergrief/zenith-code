@@ -253,6 +253,85 @@ def _weighted_percentile(
     return float(ordered[-1][0])
 
 
+def weighted_quantile_uncensored_proof(
+    lane_rows: Sequence[Mapping[str, Any]],
+    weights: Mapping[str, float],
+    *,
+    quantile: float,
+    horizon_h: int,
+) -> dict[str, Any]:
+    """Weighted quantile with explicit uncensored-tail proof fields.
+
+    Reuses the same sorted-cumulative-weight selection as ``_weighted_percentile``
+    but also returns which lane was selected and the weighted censored mass.
+    """
+
+    pct = float(quantile) * 100.0 if float(quantile) <= 1.0 else float(quantile)
+    eligible = [
+        row
+        for row in lane_rows
+        if row.get("k_star") is not None
+        and not bool(row.get("gapped"))
+        and bool(row.get("parity_pass"))
+    ]
+    if not eligible:
+        return {
+            "quantile_value": None,
+            "selected_lane_censored": None,
+            "censored_weight_fraction": None,
+            "total_weight": 0.0,
+            "target_weight": None,
+            "selected_state_key": None,
+            "horizon_h": int(horizon_h),
+            "quantile": float(quantile),
+        }
+
+    weighted_rows: list[tuple[int, float, Mapping[str, Any]]] = []
+    for row in eligible:
+        weight = float(weights.get(str(row["state_key"]), 1.0))
+        weighted_rows.append((int(row["k_star"]), weight, row))
+
+    total_weight = sum(weight for _, weight, _ in weighted_rows)
+    if total_weight <= 0:
+        return {
+            "quantile_value": None,
+            "selected_lane_censored": None,
+            "censored_weight_fraction": None,
+            "total_weight": 0.0,
+            "target_weight": None,
+            "selected_state_key": None,
+            "horizon_h": int(horizon_h),
+            "quantile": float(quantile),
+        }
+
+    censored_weight = sum(
+        weight for _, weight, row in weighted_rows if bool(row.get("right_censored"))
+    )
+    censored_weight_fraction = float(censored_weight) / float(total_weight)
+    ordered = sorted(weighted_rows, key=lambda item: item[0])
+    target_weight = float(total_weight) * (pct / 100.0)
+    cumulative = 0.0
+    selected_row = ordered[-1][2]
+    quantile_value = float(ordered[-1][0])
+    for value, weight, row in ordered:
+        cumulative += float(weight)
+        if cumulative >= target_weight:
+            quantile_value = float(value)
+            selected_row = row
+            break
+
+    return {
+        "quantile_value": quantile_value,
+        "selected_lane_censored": bool(selected_row.get("right_censored")),
+        "censored_weight_fraction": float(censored_weight_fraction),
+        "total_weight": float(total_weight),
+        "target_weight": float(target_weight),
+        "selected_state_key": str(selected_row["state_key"]),
+        "horizon_h": int(horizon_h),
+        "quantile": float(quantile),
+    }
+
+
 def summarize_k_star_at_horizon_prefix(
     records: Sequence[Mapping[str, Any]],
     horizon_h: int,

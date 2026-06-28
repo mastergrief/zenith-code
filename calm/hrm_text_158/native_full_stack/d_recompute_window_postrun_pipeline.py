@@ -8,6 +8,7 @@ from calm.hrm_text_158.native_full_stack.d_recompute_window_acc_sizing import (
     SIZING_VERDICT_RECOMMENDED_LAW,
     SIZING_VERDICT_SIZED_NOT_SUB2,
     VERDICT_SCOPE_ENVELOPE_MODEL_ONLY,
+    quantile_size_acc_bpw_from_horizon_growth,
     size_acc_bpw_from_horizon_growth,
 )
 from calm.hrm_text_158.native_full_stack.d_recompute_window_horizon_analyzer import (
@@ -72,6 +73,48 @@ def _compact_acc_sizing_summary(acc_sizing: Mapping[str, Any]) -> dict[str, Any]
         "strict_less_than_budget": acc_sizing.get("strict_less_than_budget"),
         "best_grid_row": compact_best,
     }
+
+
+def _compact_quantile_acc_sizing_summary(
+    quantile_acc_sizing: Mapping[str, Any],
+) -> dict[str, Any]:
+    best_row = quantile_acc_sizing.get("best_grid_row")
+    compact_best = None
+    if isinstance(best_row, Mapping):
+        compact_best = {
+            key: best_row.get(key)
+            for key in (
+                "decay_num",
+                "decay_den",
+                "window_k",
+                "inclusive_acc_bpw",
+            )
+        }
+    return {
+        key: quantile_acc_sizing.get(key)
+        for key in (
+            "claim_scope",
+            "quantile",
+            "quantile_k",
+            "quantile_window_k",
+            "quantile_uncensored",
+            "censored_weight_fraction",
+            "censor_mass_max",
+            "tail_policy",
+            "not_worst_case_bound",
+            "growth_branch",
+            "parity_fail_count",
+            "gapped_lane_count",
+            "eligible_lane_count",
+            "coverage_tier",
+            "selector_log_key_aligned",
+            "effective_acc_budget_bpw",
+            "strict_less_than_budget",
+            "quantile_sizing_verdict",
+            "quantile_sub2_candidate",
+            "reason",
+        )
+    } | {"best_grid_row": compact_best}
 
 
 def merge_postrun_verdict(
@@ -153,6 +196,17 @@ def run_postrun_arc2b_analysis(
         measurement_start_step=int(measurement_start_step),
         numel_for_bpw=int(numel_for_bpw),
     )
+    logged_keys = sorted({str(record["state_key"]) for record in records})
+    manifest_keys = sorted(manifest.entry_by_key().keys())
+    selector_log_key_aligned = set(logged_keys) == set(manifest_keys)
+    quantile_acc_sizing = quantile_size_acc_bpw_from_horizon_growth(
+        horizon_growth,
+        numel_for_bpw=int(numel_for_bpw),
+        measured_q_scale_bpw=measured_q_scale_bpw,
+        sizing_horizon_h=int(sizing_horizon_h),
+        selector_log_key_aligned=bool(selector_log_key_aligned),
+        stratum_weights=manifest.stratum_weights,
+    )
     merged = merge_postrun_verdict(
         horizon_growth=horizon_growth,
         acc_sizing=acc_sizing,
@@ -176,6 +230,7 @@ def run_postrun_arc2b_analysis(
             )
         },
         "arc2b_verdict": merged,
+        "quantile_acc_sizing": _compact_quantile_acc_sizing_summary(quantile_acc_sizing),
         "growth_branch": horizon_growth.get("growth_branch"),
         "final_sizing_verdict": merged["final_sizing_verdict"],
         "final_verdict_scope": merged["final_verdict_scope"],

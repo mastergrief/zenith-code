@@ -76,6 +76,23 @@
     }
   },
   "packet_revision": "v2_rev4c_stratified_horizon_sizing",
+  "quantile_acc_sizing_policy": {
+    "censor_mass_max": 0.01,
+    "claim_scope": "distributional_quantile",
+    "not_worst_case_bound": true,
+    "quantile": 0.99,
+    "requires": [
+      "growth_branch_right_censored_lower_bound",
+      "parity_fail_count_zero",
+      "gapped_lane_count_zero",
+      "nonzero_eligible_lane_count",
+      "coverage_tier_representative",
+      "selector_log_key_aligned",
+      "weighted_quantile_uncensored_proof",
+      "strict_less_than_budget"
+    ],
+    "tail_policy": "worst_case_right_censored"
+  },
   "redesign_sizing_from_this_run": true,
   "replay_commands_artifact": "artifacts/consensus_prep/d_recompute_window_feasibility_gpu_launch_packet_v2_replay_commands.json",
   "run_id": "2189e72015",

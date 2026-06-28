@@ -15,6 +15,10 @@ from calm.hrm_text_158.native_full_stack.d_recompute_window_acc_sizing import (
     effective_acc_budget_bpw,
     measure_envelope_inclusive_bpw,
     size_acc_bpw_from_horizon_growth,
+    quantile_size_acc_bpw_from_horizon_growth,
+    QUANTILE_SIZING_VERDICT_DETERMINATE_NOT_UNDER_BUDGET,
+    QUANTILE_SIZING_VERDICT_DETERMINATE_SUB2_CANDIDATE,
+    QUANTILE_SIZING_VERDICT_INCONCLUSIVE,
     simulate_decay_worst_case_surface,
 )
 from calm.hrm_text_158.native_full_stack.d_recompute_window_horizon_analyzer import (
@@ -22,6 +26,9 @@ from calm.hrm_text_158.native_full_stack.d_recompute_window_horizon_analyzer imp
     GROWTH_LINEAR_SIZED_WITH_DECAY,
     GROWTH_PLATEAU_SIZED,
     GROWTH_RIGHT_CENSORED_LOWER_BOUND,
+)
+from calm.hrm_text_158.native_full_stack.d_recompute_window_stratified_selector import (
+    COVERAGE_TIER_REPRESENTATIVE,
 )
 from calm.hrm_text_158.native_full_stack.persistent_state_budget import (
     R4B_Q_PHYSICAL_BITS_PER_WEIGHT_BASE3,
@@ -256,3 +263,207 @@ def test_consumes_horizon_growth_dict_without_recomputing_k_star() -> None:
     after = size_acc_bpw_from_horizon_growth(mutated, numel_for_bpw=128)
     assert before["window_k"] == 20
     assert after["sizing_verdict"] == SIZING_VERDICT_INCONCLUSIVE
+
+
+def _quantile_lane_row(*, state_key: str, k_star: int, right_censored: bool = False) -> dict:
+    return {
+        "state_key": state_key,
+        "lane_index": 0,
+        "k_star": int(k_star),
+        "parity_pass": True,
+        "gapped": False,
+        "right_censored": bool(right_censored),
+    }
+
+
+def _quantile_horizon_growth(
+    *,
+    growth_branch: str = GROWTH_RIGHT_CENSORED_LOWER_BOUND,
+    lane_rows: list[dict],
+    coverage_tier: str = COVERAGE_TIER_REPRESENTATIVE,
+    parity_fail_count: int = 0,
+    gapped_lane_count: int = 0,
+    eligible_lane_count: int | None = None,
+    kworst: float = 100.0,
+    k99: float = 76.0,
+) -> dict:
+    if eligible_lane_count is None:
+        eligible_lane_count = len(lane_rows)
+    return {
+        "growth_branch": growth_branch,
+        "coverage_tier": coverage_tier,
+        "summaries_by_h": {
+            100: {
+                "horizon_h": 100,
+                "kworst_weighted": float(kworst),
+                "k99_weighted": float(k99),
+                "parity_fail_count": int(parity_fail_count),
+                "gapped_lane_count": int(gapped_lane_count),
+                "eligible_lane_count": int(eligible_lane_count),
+                "lane_rows": lane_rows,
+            }
+        },
+    }
+
+
+def _favorable_quantile_lane_rows() -> list[dict]:
+    rows = [_quantile_lane_row(state_key=f"key.{index}", k_star=5) for index in range(100)]
+    rows.append(_quantile_lane_row(state_key="tail.key", k_star=100, right_censored=True))
+    return rows
+
+
+def _quantile_weights(lane_rows: list[dict]) -> dict[str, float]:
+    return {
+        row["state_key"]: (0.001 if row["state_key"] == "tail.key" else 1.0)
+        for row in lane_rows
+    }
+
+
+def test_quantile_sizing_determinate_candidate_when_under_budget() -> None:
+    lane_rows = _favorable_quantile_lane_rows()
+    result = quantile_size_acc_bpw_from_horizon_growth(
+        _quantile_horizon_growth(lane_rows=lane_rows),
+        numel_for_bpw=1024,
+        selector_log_key_aligned=True,
+        stratum_weights=_quantile_weights(lane_rows),
+        measured_q_scale_bpw=float(R4B_Q_PHYSICAL_BITS_PER_WEIGHT_BASE3),
+    )
+    assert result["quantile_sizing_verdict"] == QUANTILE_SIZING_VERDICT_DETERMINATE_SUB2_CANDIDATE
+    assert result["quantile_sub2_candidate"] is True
+    assert result["quantile_k"] == pytest.approx(5.0)
+    assert result["strict_less_than_budget"] is True
+
+
+def test_quantile_sizing_determinate_not_under_budget() -> None:
+    lane_rows = [
+        _quantile_lane_row(state_key=f"key.{index}", k_star=95) for index in range(100)
+    ]
+    result = quantile_size_acc_bpw_from_horizon_growth(
+        _quantile_horizon_growth(lane_rows=lane_rows, k99=95.0),
+        numel_for_bpw=64,
+        selector_log_key_aligned=True,
+        stratum_weights={row["state_key"]: 1.0 for row in lane_rows},
+        measured_q_scale_bpw=float(R4B_Q_PHYSICAL_BITS_PER_WEIGHT_BASE3),
+    )
+    assert result["quantile_sizing_verdict"] == QUANTILE_SIZING_VERDICT_DETERMINATE_NOT_UNDER_BUDGET
+    assert result["quantile_sub2_candidate"] is False
+
+
+def test_quantile_sizing_fails_closed_kq_ge_h() -> None:
+    lane_rows = [_quantile_lane_row(state_key=f"key.{index}", k_star=100, right_censored=True) for index in range(100)]
+    result = quantile_size_acc_bpw_from_horizon_growth(
+        _quantile_horizon_growth(lane_rows=lane_rows),
+        numel_for_bpw=256,
+        selector_log_key_aligned=True,
+        stratum_weights={row["state_key"]: 1.0 for row in lane_rows},
+    )
+    assert result["quantile_sub2_candidate"] is False
+    assert result["reason"] == "censored_or_missing_quantile_k_at_horizon"
+
+
+def test_quantile_sizing_fails_closed_censor_mass_over_allowance() -> None:
+    lane_rows = [_quantile_lane_row(state_key=f"key.{index}", k_star=76) for index in range(99)]
+    lane_rows.append(_quantile_lane_row(state_key="cens.tail", k_star=100, right_censored=True))
+    weights = {row["state_key"]: 1.0 for row in lane_rows}
+    result = quantile_size_acc_bpw_from_horizon_growth(
+        _quantile_horizon_growth(lane_rows=lane_rows, k99=76.0),
+        numel_for_bpw=256,
+        selector_log_key_aligned=True,
+        stratum_weights=weights,
+    )
+    assert result["quantile_sub2_candidate"] is False
+    assert result["reason"] == "censor_mass_at_or_above_allowance"
+
+
+def test_quantile_sizing_fails_closed_selected_lane_censored_low_rate() -> None:
+    lane_rows = [_quantile_lane_row(state_key=f"key.{index}", k_star=5) for index in range(50)]
+    lane_rows.extend(
+        _quantile_lane_row(state_key=f"cens.{index}", k_star=100, right_censored=True)
+        for index in range(50)
+    )
+    weights = {row["state_key"]: (10.0 if row["right_censored"] else 1.0) for row in lane_rows}
+    result = quantile_size_acc_bpw_from_horizon_growth(
+        _quantile_horizon_growth(lane_rows=lane_rows),
+        numel_for_bpw=256,
+        selector_log_key_aligned=True,
+        stratum_weights=weights,
+    )
+    assert result["quantile_sub2_candidate"] is False
+    assert result["reason"] in {
+        "censor_mass_at_or_above_allowance",
+        "selected_lane_censored",
+        "censored_or_missing_quantile_k_at_horizon",
+    }
+
+
+def test_quantile_sizing_fails_closed_coverage_not_representative() -> None:
+    lane_rows = _favorable_quantile_lane_rows()
+    result = quantile_size_acc_bpw_from_horizon_growth(
+        _quantile_horizon_growth(lane_rows=lane_rows, coverage_tier="PILOT"),
+        numel_for_bpw=1024,
+        selector_log_key_aligned=True,
+        stratum_weights=_quantile_weights(lane_rows),
+    )
+    assert result["quantile_sub2_candidate"] is False
+    assert result["reason"] == "coverage_not_representative"
+
+
+def test_quantile_sizing_fails_closed_key_set_mismatch() -> None:
+    lane_rows = _favorable_quantile_lane_rows()
+    result = quantile_size_acc_bpw_from_horizon_growth(
+        _quantile_horizon_growth(lane_rows=lane_rows),
+        numel_for_bpw=1024,
+        selector_log_key_aligned=False,
+        stratum_weights=_quantile_weights(lane_rows),
+    )
+    assert result["quantile_sub2_candidate"] is False
+    assert result["reason"] == "selector_log_key_mismatch"
+
+
+def test_worst_case_sizing_path_byte_unchanged() -> None:
+    growth = _horizon_growth(growth_branch=GROWTH_RIGHT_CENSORED_LOWER_BOUND)
+    before = size_acc_bpw_from_horizon_growth(growth, numel_for_bpw=256)
+    after = size_acc_bpw_from_horizon_growth(growth, numel_for_bpw=256)
+    assert before == after
+    assert before["sizing_verdict"] == SIZING_VERDICT_INCONCLUSIVE
+    assert before["reason"] == "right_censored_growth_branch"
+
+
+def test_quantile_sizing_fails_closed_growth_branch_not_right_censored() -> None:
+    lane_rows = _favorable_quantile_lane_rows()
+    result = quantile_size_acc_bpw_from_horizon_growth(
+        _quantile_horizon_growth(
+            growth_branch=GROWTH_INCONCLUSIVE_COST_OR_COVERAGE,
+            lane_rows=lane_rows,
+        ),
+        numel_for_bpw=1024,
+        selector_log_key_aligned=True,
+        stratum_weights=_quantile_weights(lane_rows),
+        measured_q_scale_bpw=float(R4B_Q_PHYSICAL_BITS_PER_WEIGHT_BASE3),
+    )
+    assert result["quantile_sub2_candidate"] is False
+    assert result["reason"] == "growth_branch_not_right_censored_lower_bound"
+
+
+def test_quantile_sizing_fails_closed_parity_fail_at_horizon() -> None:
+    lane_rows = _favorable_quantile_lane_rows()
+    result = quantile_size_acc_bpw_from_horizon_growth(
+        _quantile_horizon_growth(lane_rows=lane_rows, parity_fail_count=1),
+        numel_for_bpw=1024,
+        selector_log_key_aligned=True,
+        stratum_weights=_quantile_weights(lane_rows),
+    )
+    assert result["quantile_sub2_candidate"] is False
+    assert result["reason"] == "parity_failures_at_sizing_horizon"
+
+
+def test_quantile_sizing_fails_closed_gapped_lane_at_horizon() -> None:
+    lane_rows = _favorable_quantile_lane_rows()
+    result = quantile_size_acc_bpw_from_horizon_growth(
+        _quantile_horizon_growth(lane_rows=lane_rows, gapped_lane_count=1),
+        numel_for_bpw=1024,
+        selector_log_key_aligned=True,
+        stratum_weights=_quantile_weights(lane_rows),
+    )
+    assert result["quantile_sub2_candidate"] is False
+    assert result["reason"] == "gapped_lanes_at_sizing_horizon"
