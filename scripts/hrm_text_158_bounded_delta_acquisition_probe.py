@@ -123,7 +123,11 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     project_s1_gradient_to_moves,
     prove_eligible_master_identity_after_optimizer_step,
     rank_bucketed_int16_votes,
+    rank_bucketed_int16_votes_and_sparse_events,
     sign_pressure_int16_votes,
+    sign_pressure_int16_votes_and_sparse_events,
+    sparse_rank_bucketed_int16_vote_events,
+    sparse_sign_pressure_int16_vote_events,
     tensor_sha256,
     validate_authoritative_resume_payload,
 )
@@ -3954,10 +3958,12 @@ def _weighted_grads_to_science_arm_votes(
     rank_spec: Any,
     vote_spec: VoteUpdateSpec,
     science_arm: str,
+    sparse_events_out: dict[str, Any] | None = None,
 ) -> tuple[dict[str, torch.Tensor], dict[str, Any], bool]:
     if str(science_arm) not in SCIENCE_ARM_CHOICES:
         raise ValueError(f"science_arm must be one of {SCIENCE_ARM_CHOICES}, got {science_arm!r}")
     votes_by_key: dict[str, torch.Tensor] = {}
+    sparse_events_by_key: dict[str, Any] = {}
     pressure_by_key: dict[str, Any] = {}
     finite_weighted_grad = True
     inverted = str(science_arm) == ARM_INVERTED_SIGN_PRESSURE
@@ -3966,9 +3972,17 @@ def _weighted_grads_to_science_arm_votes(
         moves = project_s1_gradient_to_moves(weighted_grad, tensor_states[key].q_levels)
         if str(science_arm) in {ARM_A0_RANK_BUCKET_CURRENT, ARM_A1_RANK_BUCKET_ORDER_MATCHED}:
             credit = credit_from_weighted_grad(weighted_grad)
-            votes = rank_bucketed_int16_votes(credit, moves, rank_spec)
+            votes, sparse_events_by_key[key] = rank_bucketed_int16_votes_and_sparse_events(
+                credit,
+                moves,
+                rank_spec,
+            )
         else:
-            votes = sign_pressure_int16_votes(moves, vote_spec, inverted=inverted)
+            votes, sparse_events_by_key[key] = sign_pressure_int16_votes_and_sparse_events(
+                moves,
+                vote_spec,
+                inverted=inverted,
+            )
         votes_by_key[key] = votes
         pressure_entry: dict[str, Any] = {
             "state_key": key,
@@ -3984,6 +3998,9 @@ def _weighted_grads_to_science_arm_votes(
                 rank_spec,
             )
         pressure_by_key[key] = pressure_entry
+    if sparse_events_out is not None:
+        sparse_events_out.clear()
+        sparse_events_out.update(sparse_events_by_key)
     return votes_by_key, pressure_by_key, finite_weighted_grad
 
 
@@ -5611,12 +5628,14 @@ def run_bounded_delta_steps(
                     "target_rows_excluded_from_pc": True,
                 }
             with progress.phase("step_update", step=int(step)):
+                sparse_events_by_key: dict[str, Any] = {}
                 votes_by_key, vote_pressure_by_key, finite_weighted_grad = _weighted_grads_to_science_arm_votes(
                     weighted_grads,
                     states,
                     rank_spec=rank_spec,
                     vote_spec=vote_spec,
                     science_arm=str(science_arm),
+                    sparse_events_out=sparse_events_by_key,
                 )
                 front_c_identity_observer = make_front_c_identity_observer_for_step(
                     front_c_identity_collector,
@@ -5783,6 +5802,7 @@ def run_bounded_delta_steps(
                         local_selection_ordering_seed=SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
                         local_selection_ordering_step=int(step),
                         front_c_identity_observer=front_c_identity_observer,
+                        candidate_sparse_vote_events_by_key=sparse_events_by_key,
                         **two_tier_vote_step_kwargs,
                         **resolve_r7_deferred_backlog_vote_step_kwargs(
                             r7_deferred_backlog_carry_enabled=bool(

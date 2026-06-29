@@ -318,22 +318,22 @@ def project_s1_gradient_to_moves(grad: torch.Tensor, q_levels: torch.Tensor) -> 
     return moves
 
 
-def rank_bucketed_int16_votes(
+def _compute_rank_bucketed_candidate_votes(
     credit: torch.Tensor,
     projected_moves: torch.Tensor,
     spec: RankVoteSpec,
-) -> torch.Tensor:
-    """Port S1 rank-bucketed integer vote mapping over explicit in-repo bins."""
-
+) -> tuple[torch.Tensor, torch.Tensor]:
     spec.validate()
     if credit.shape != projected_moves.shape:
         raise ValueError("credit/projected_moves tensor shape mismatch")
     flat_credit = credit.detach().flatten().to(torch.float32)
     flat_moves = projected_moves.detach().flatten().to(torch.int8)
-    votes = torch.zeros_like(flat_moves, dtype=torch.int16)
     candidate_idx = torch.nonzero(flat_moves != 0, as_tuple=False).flatten()
     if candidate_idx.numel() == 0:
-        return votes.view_as(projected_moves)
+        return (
+            torch.empty(0, dtype=torch.int64),
+            torch.empty(0, dtype=torch.int16),
+        )
     abs_values = flat_credit[candidate_idx].abs()
     if spec.rank_method == "grouped_bisect_right":
         rank_positions = _bisect_right_rank_positions_by_equal_value_group(abs_values)
@@ -364,8 +364,88 @@ def rank_bucketed_int16_votes(
         matched |= mask
     if not bool(matched.all().item()):
         raise ValueError("rank-bucket vote mapping left unmatched candidates")
-    votes[candidate_idx] = (flat_moves[candidate_idx].to(torch.int16) * vote_abs).to(torch.int16)
+    candidate_votes = (flat_moves[candidate_idx].to(torch.int16) * vote_abs).to(torch.int16)
+    return candidate_idx.to(torch.int64), candidate_votes
+
+
+def _dense_int16_votes_from_candidates(
+    projected_moves: torch.Tensor,
+    candidate_idx: torch.Tensor,
+    candidate_votes: torch.Tensor,
+) -> torch.Tensor:
+    flat_moves = projected_moves.detach().flatten().to(torch.int8)
+    votes = torch.zeros_like(flat_moves, dtype=torch.int16)
+    if candidate_idx.numel() == 0:
+        return votes.view_as(projected_moves)
+    votes[candidate_idx] = candidate_votes
     return votes.view_as(projected_moves)
+
+
+def rank_bucketed_int16_votes_and_sparse_events(
+    credit: torch.Tensor,
+    projected_moves: torch.Tensor,
+    spec: RankVoteSpec,
+) -> tuple[torch.Tensor, Any]:
+    """Single candidate scan → dense votes + sparse events (probe hot path)."""
+
+    from calm.hrm_text_158.native_full_stack.sparse_vote_events import SparseVoteEvents
+
+    candidate_idx, candidate_votes = _compute_rank_bucketed_candidate_votes(
+        credit,
+        projected_moves,
+        spec,
+    )
+    votes = _dense_int16_votes_from_candidates(
+        projected_moves,
+        candidate_idx,
+        candidate_votes,
+    )
+    sparse = SparseVoteEvents(
+        indices=candidate_idx.detach().cpu().contiguous(),
+        values=candidate_votes.detach().cpu().contiguous(),
+    )
+    return votes, sparse
+
+
+def sparse_rank_bucketed_int16_vote_events(
+    credit: torch.Tensor,
+    projected_moves: torch.Tensor,
+    spec: RankVoteSpec,
+):
+    """Sparse vote events from moves candidate lanes (no votes-tensor nonzero)."""
+
+    from calm.hrm_text_158.native_full_stack.sparse_vote_events import SparseVoteEvents
+
+    candidate_idx, candidate_votes = _compute_rank_bucketed_candidate_votes(
+        credit,
+        projected_moves,
+        spec,
+    )
+    return SparseVoteEvents(
+        indices=candidate_idx.detach().cpu().contiguous(),
+        values=candidate_votes.detach().cpu().contiguous(),
+    )
+
+
+def rank_bucketed_int16_votes(
+    credit: torch.Tensor,
+    projected_moves: torch.Tensor,
+    spec: RankVoteSpec,
+) -> torch.Tensor:
+    """Port S1 rank-bucketed integer vote mapping over explicit in-repo bins."""
+
+    flat_moves = projected_moves.detach().flatten().to(torch.int8)
+    votes = torch.zeros_like(flat_moves, dtype=torch.int16)
+    candidate_idx, candidate_votes = _compute_rank_bucketed_candidate_votes(
+        credit,
+        projected_moves,
+        spec,
+    )
+    return _dense_int16_votes_from_candidates(
+        projected_moves,
+        candidate_idx,
+        candidate_votes,
+    )
 
 
 def _as_bsi(tensor: torch.Tensor, *, name: str) -> torch.Tensor:
@@ -560,6 +640,78 @@ def credit_from_weighted_grad(weighted_grad: torch.Tensor, *, scheme: str = "ful
     raise ValueError(f"unsupported credit scheme {scheme!r}")
 
 
+def _compute_sign_pressure_candidate_votes(
+    projected_moves: torch.Tensor,
+    vote_spec: VoteUpdateSpec,
+    *,
+    inverted: bool = False,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    vote_spec.validate()
+    if projected_moves.dtype != torch.int8:
+        raise ValueError(f"projected_moves must be torch.int8, got {projected_moves.dtype}")
+    threshold = int(vote_spec.threshold_abs)
+    direction = -1 if bool(inverted) else 1
+    flat_moves = projected_moves.detach().flatten().to(torch.int8)
+    candidate_idx = torch.nonzero(flat_moves != 0, as_tuple=False).flatten()
+    if candidate_idx.numel() == 0:
+        return (
+            torch.empty(0, dtype=torch.int64),
+            torch.empty(0, dtype=torch.int16),
+        )
+    candidate_votes = (
+        flat_moves[candidate_idx].to(torch.int16) * int(direction) * threshold
+    ).to(torch.int16)
+    return candidate_idx.to(torch.int64), candidate_votes
+
+
+def sign_pressure_int16_votes_and_sparse_events(
+    projected_moves: torch.Tensor,
+    vote_spec: VoteUpdateSpec,
+    *,
+    inverted: bool = False,
+) -> tuple[torch.Tensor, Any]:
+    """Single candidate scan → dense votes + sparse events (probe hot path)."""
+
+    from calm.hrm_text_158.native_full_stack.sparse_vote_events import SparseVoteEvents
+
+    candidate_idx, candidate_votes = _compute_sign_pressure_candidate_votes(
+        projected_moves,
+        vote_spec,
+        inverted=inverted,
+    )
+    votes = _dense_int16_votes_from_candidates(
+        projected_moves,
+        candidate_idx,
+        candidate_votes,
+    )
+    sparse = SparseVoteEvents(
+        indices=candidate_idx.detach().cpu().contiguous(),
+        values=candidate_votes.detach().cpu().contiguous(),
+    )
+    return votes, sparse
+
+
+def sparse_sign_pressure_int16_vote_events(
+    projected_moves: torch.Tensor,
+    vote_spec: VoteUpdateSpec,
+    *,
+    inverted: bool = False,
+):
+    """Sparse vote events from moves candidate lanes (no votes-tensor nonzero)."""
+
+    from calm.hrm_text_158.native_full_stack.sparse_vote_events import SparseVoteEvents
+
+    candidate_idx, candidate_votes = _compute_sign_pressure_candidate_votes(
+        projected_moves,
+        vote_spec,
+        inverted=inverted,
+    )
+    return SparseVoteEvents(
+        indices=candidate_idx.detach().cpu().contiguous(),
+        values=candidate_votes.detach().cpu().contiguous(),
+    )
+
+
 def sign_pressure_int16_votes(
     projected_moves: torch.Tensor,
     vote_spec: VoteUpdateSpec,
@@ -568,16 +720,18 @@ def sign_pressure_int16_votes(
 ) -> torch.Tensor:
     """Rank-free diagnostic votes: every nonzero move crosses by threshold_abs."""
 
-    vote_spec.validate()
-    if projected_moves.dtype != torch.int8:
-        raise ValueError(f"projected_moves must be torch.int8, got {projected_moves.dtype}")
-    threshold = int(vote_spec.threshold_abs)
-    direction = -1 if bool(inverted) else 1
     flat_moves = projected_moves.detach().flatten().to(torch.int16)
     votes = torch.zeros_like(flat_moves, dtype=torch.int16)
-    nonzero = flat_moves != 0
-    votes[nonzero] = (flat_moves[nonzero] * int(direction) * threshold).to(torch.int16)
-    return votes.view_as(projected_moves)
+    candidate_idx, candidate_votes = _compute_sign_pressure_candidate_votes(
+        projected_moves,
+        vote_spec,
+        inverted=inverted,
+    )
+    return _dense_int16_votes_from_candidates(
+        projected_moves,
+        candidate_idx,
+        candidate_votes,
+    )
 
 
 def _rank_bin_candidate_counts(
@@ -2789,9 +2943,13 @@ __all__ = [
     "project_s1_gradient_to_moves",
     "prove_eligible_master_identity_after_optimizer_step",
     "rank_bucketed_int16_votes",
+    "rank_bucketed_int16_votes_and_sparse_events",
+    "sparse_rank_bucketed_int16_vote_events",
     "reanchor_s1_oracle_hash",
     "run_c2_bounded_delta_cpu_dry_run",
     "sign_pressure_int16_votes",
+    "sign_pressure_int16_votes_and_sparse_events",
+    "sparse_sign_pressure_int16_vote_events",
     "snapshot_eligible_master_sha256",
     "tensor_sha256",
     "ternarize_weight_to_q_scale",
