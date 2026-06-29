@@ -176,6 +176,7 @@ class VoteUpdateInputs:
     vote_format: VoteUpdateVoteFormat | str = VoteUpdateVoteFormat.INT16_VOTES
     local_loss_delta: Optional[torch.Tensor] = None
     vote_active_flat_indices: Optional[torch.Tensor] = None
+    sparse_vote_events: Any = None
 
     @property
     def normalized_vote_format(self) -> VoteUpdateVoteFormat:

@@ -662,15 +662,32 @@ class EventCodedAccLiveState:
         self,
         step_index: int,
         *,
-        votes: Mapping[int, int],
+        votes: Mapping[int, int] | None = None,
+        sparse_vote_indices: np.ndarray | torch.Tensor | None = None,
+        sparse_vote_values: np.ndarray | torch.Tensor | None = None,
         hot_risk_override: Iterable[int] | None = None,
     ) -> StepSurfaceRecord:
-        vote_map = {int(k): int(v) for k, v in votes.items()}
-        touched_arr = (
-            np.array(sorted(vote_map), dtype=np.int32)
-            if vote_map
-            else np.array([], dtype=np.int32)
-        )
+        vote_values_sorted: np.ndarray | None = None
+        if sparse_vote_indices is not None:
+            idx_np = np.asarray(sparse_vote_indices, dtype=np.int64).reshape(-1)
+            val_np = np.asarray(sparse_vote_values, dtype=np.int32).reshape(-1)
+            if idx_np.size == 0:
+                return self.apply_step(step_index, votes={})
+            if idx_np.size == 1 or np.all(idx_np[1:] >= idx_np[:-1]):
+                touched_arr = idx_np.astype(np.int32)
+                vote_values_sorted = val_np.astype(np.int32)
+            else:
+                order = np.argsort(idx_np)
+                touched_arr = idx_np[order].astype(np.int32)
+                vote_values_sorted = val_np[order].astype(np.int32)
+            vote_map: dict[int, int] | None = None
+        else:
+            vote_map = {int(k): int(v) for k, v in (votes or {}).items()}
+            touched_arr = (
+                np.array(sorted(vote_map), dtype=np.int32)
+                if vote_map
+                else np.array([], dtype=np.int32)
+            )
         hot_indices = self._hot.indices_array()
         hot_values = self._hot.values_array()
         if hot_risk_override is not None:
@@ -736,18 +753,24 @@ class EventCodedAccLiveState:
                             if proxy_indices.size
                             else np.sort(extra)
                         )
-        touched_set = set(vote_map)
+        touched_set = set(vote_map) if vote_map is not None else set()
         vote_arr = np.zeros(active_sorted.shape[0], dtype=np.int32)
+        vote_touched_mask = np.zeros(active_sorted.shape[0], dtype=bool)
         if touched_arr.size:
             vote_positions = np.searchsorted(active_sorted, touched_arr)
             vote_valid = (vote_positions < active_sorted.size) & (
                 active_sorted[vote_positions] == touched_arr
             )
             if vote_valid.any():
-                vote_arr[vote_positions[vote_valid]] = np.array(
-                    [int(vote_map[int(i)]) for i in touched_arr[vote_valid]],
-                    dtype=np.int32,
-                )
+                vote_touched_mask[vote_positions[vote_valid]] = True
+                if vote_values_sorted is not None:
+                    vote_arr[vote_positions[vote_valid]] = vote_values_sorted[vote_valid]
+                else:
+                    assert vote_map is not None
+                    vote_arr[vote_positions[vote_valid]] = np.array(
+                        [int(vote_map[int(i)]) for i in touched_arr[vote_valid]],
+                        dtype=np.int32,
+                    )
         post_arr = vectorized_carry_self_update_row(
             pre_arr,
             vote_arr,
@@ -763,11 +786,6 @@ class EventCodedAccLiveState:
                 in_hot[np.where(hot_match)[0][matched]] = True
         else:
             in_hot = np.zeros(active_sorted.shape[0], dtype=bool)
-        vote_touched_mask = (
-            np.isin(active_sorted, touched_arr)
-            if touched_arr.size
-            else np.zeros(active_sorted.shape[0], dtype=bool)
-        )
         in_proxy_mask = (
             np.isin(active_sorted, proxy_indices)
             if proxy_indices.size

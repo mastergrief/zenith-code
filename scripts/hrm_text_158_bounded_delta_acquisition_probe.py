@@ -114,6 +114,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     compact_pressure_shape_summary,
     build_pressure_shape_summary_v1,
     compact_vote_pressure_summary,
+    compact_sparse_vote_pressure_summary,
     credit_from_weighted_grad,
     default_dry_run_rank_vote_spec,
     derive_bounded_tensor_state_from_weight,
@@ -127,6 +128,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     sign_pressure_int16_votes,
     sign_pressure_int16_votes_and_sparse_events,
     sparse_rank_bucketed_int16_vote_events,
+    sparse_rank_bucketed_int16_vote_events_from_weighted_grad,
     sparse_sign_pressure_int16_vote_events,
     tensor_sha256,
     validate_authoritative_resume_payload,
@@ -3959,7 +3961,8 @@ def _weighted_grads_to_science_arm_votes(
     vote_spec: VoteUpdateSpec,
     science_arm: str,
     sparse_events_out: dict[str, Any] | None = None,
-) -> tuple[dict[str, torch.Tensor], dict[str, Any], bool]:
+    sparse_construction_only: bool = False,
+) -> tuple[dict[str, torch.Tensor] | None, dict[str, Any], bool]:
     if str(science_arm) not in SCIENCE_ARM_CHOICES:
         raise ValueError(f"science_arm must be one of {SCIENCE_ARM_CHOICES}, got {science_arm!r}")
     votes_by_key: dict[str, torch.Tensor] = {}
@@ -3967,40 +3970,115 @@ def _weighted_grads_to_science_arm_votes(
     pressure_by_key: dict[str, Any] = {}
     finite_weighted_grad = True
     inverted = str(science_arm) == ARM_INVERTED_SIGN_PRESSURE
-    for key, weighted_grad in weighted_grads.items():
-        finite_weighted_grad = finite_weighted_grad and bool(torch.isfinite(weighted_grad).all().item())
-        moves = project_s1_gradient_to_moves(weighted_grad, tensor_states[key].q_levels)
-        if str(science_arm) in {ARM_A0_RANK_BUCKET_CURRENT, ARM_A1_RANK_BUCKET_ORDER_MATCHED}:
-            credit = credit_from_weighted_grad(weighted_grad)
-            votes, sparse_events_by_key[key] = rank_bucketed_int16_votes_and_sparse_events(
-                credit,
-                moves,
-                rank_spec,
-            )
-        else:
-            votes, sparse_events_by_key[key] = sign_pressure_int16_votes_and_sparse_events(
-                moves,
-                vote_spec,
-                inverted=inverted,
-            )
-        votes_by_key[key] = votes
-        pressure_entry: dict[str, Any] = {
-            "state_key": key,
-            "science_arm": str(science_arm),
-            "vote_law": _science_arm_vote_law(str(science_arm)),
-            "tie_policy_id": _science_arm_tie_policy(str(science_arm)),
-            **compact_vote_pressure_summary(votes),
-        }
-        if str(science_arm) in {ARM_A0_RANK_BUCKET_CURRENT, ARM_A1_RANK_BUCKET_ORDER_MATCHED}:
-            pressure_entry["pressure_shape_summary"] = build_pressure_shape_summary_v1(
-                credit,
-                moves,
-                rank_spec,
-            )
-        pressure_by_key[key] = pressure_entry
+    if bool(sparse_construction_only) and len(weighted_grads) > 1:
+        import os
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _init_sparse_worker() -> None:
+            torch.set_num_threads(1)
+            try:
+                torch.set_num_interop_threads(1)
+            except RuntimeError:
+                pass
+
+        def _sparse_events_for_key(item: tuple[str, torch.Tensor]) -> tuple[str, Any]:
+            key, weighted_grad = item
+            with torch.inference_mode():
+                if str(science_arm) in {ARM_A0_RANK_BUCKET_CURRENT, ARM_A1_RANK_BUCKET_ORDER_MATCHED}:
+                    sparse_events = sparse_rank_bucketed_int16_vote_events_from_weighted_grad(
+                        weighted_grad,
+                        tensor_states[key].q_levels,
+                        rank_spec,
+                    )
+                else:
+                    moves = project_s1_gradient_to_moves(weighted_grad, tensor_states[key].q_levels)
+                    sparse_events = sparse_sign_pressure_int16_vote_events(
+                        moves,
+                        vote_spec,
+                        inverted=inverted,
+                    )
+            return key, sparse_events
+
+        cpu_workers = os.cpu_count() or 4
+        max_workers = min(cpu_workers, len(weighted_grads))
+        with ThreadPoolExecutor(max_workers=max_workers, initializer=_init_sparse_worker) as pool:
+            for key, sparse_events in pool.map(
+                _sparse_events_for_key,
+                weighted_grads.items(),
+                chunksize=max(1, (len(weighted_grads) + max_workers - 1) // max_workers),
+            ):
+                sparse_events_by_key[key] = sparse_events
+                pressure_by_key[key] = {
+                    "state_key": key,
+                    "science_arm": str(science_arm),
+                    "vote_law": _science_arm_vote_law(str(science_arm)),
+                    "tie_policy_id": _science_arm_tie_policy(str(science_arm)),
+                    "vote_nonzero_count": int(sparse_events.event_count()),
+                    "raw_per_proposal_arrays_included": False,
+                }
+    else:
+        for key, weighted_grad in weighted_grads.items():
+            finite_weighted_grad = finite_weighted_grad and bool(torch.isfinite(weighted_grad).all().item())
+            if str(science_arm) in {ARM_A0_RANK_BUCKET_CURRENT, ARM_A1_RANK_BUCKET_ORDER_MATCHED}:
+                if bool(sparse_construction_only):
+                    sparse_events_by_key[key] = sparse_rank_bucketed_int16_vote_events_from_weighted_grad(
+                        weighted_grad,
+                        tensor_states[key].q_levels,
+                        rank_spec,
+                    )
+                else:
+                    moves = project_s1_gradient_to_moves(weighted_grad, tensor_states[key].q_levels)
+                    credit = credit_from_weighted_grad(weighted_grad)
+                    votes, sparse_events_by_key[key] = rank_bucketed_int16_votes_and_sparse_events(
+                        credit,
+                        moves,
+                        rank_spec,
+                    )
+                    votes_by_key[key] = votes
+            else:
+                moves = project_s1_gradient_to_moves(weighted_grad, tensor_states[key].q_levels)
+                if bool(sparse_construction_only):
+                    sparse_events_by_key[key] = sparse_sign_pressure_int16_vote_events(
+                        moves,
+                        vote_spec,
+                        inverted=inverted,
+                    )
+                else:
+                    votes, sparse_events_by_key[key] = sign_pressure_int16_votes_and_sparse_events(
+                        moves,
+                        vote_spec,
+                        inverted=inverted,
+                    )
+                    votes_by_key[key] = votes
+            if bool(sparse_construction_only):
+                pressure_entry = {
+                    "state_key": key,
+                    "science_arm": str(science_arm),
+                    "vote_law": _science_arm_vote_law(str(science_arm)),
+                    "tie_policy_id": _science_arm_tie_policy(str(science_arm)),
+                    "vote_nonzero_count": int(sparse_events_by_key[key].event_count()),
+                    "raw_per_proposal_arrays_included": False,
+                }
+            else:
+                pressure_entry = {
+                    "state_key": key,
+                    "science_arm": str(science_arm),
+                    "vote_law": _science_arm_vote_law(str(science_arm)),
+                    "tie_policy_id": _science_arm_tie_policy(str(science_arm)),
+                    **compact_vote_pressure_summary(votes_by_key[key]),
+                }
+                if str(science_arm) in {ARM_A0_RANK_BUCKET_CURRENT, ARM_A1_RANK_BUCKET_ORDER_MATCHED}:
+                    pressure_entry["pressure_shape_summary"] = build_pressure_shape_summary_v1(
+                        credit,
+                        moves,
+                        rank_spec,
+                    )
+            pressure_by_key[key] = pressure_entry
     if sparse_events_out is not None:
         sparse_events_out.clear()
         sparse_events_out.update(sparse_events_by_key)
+    if bool(sparse_construction_only):
+        return None, pressure_by_key, finite_weighted_grad
     return votes_by_key, pressure_by_key, finite_weighted_grad
 
 

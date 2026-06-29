@@ -51,6 +51,7 @@ from calm.hrm_text_158.native_full_stack.two_tier_transient_selection import (
 from calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier import (
     EventCodedAccLiveState,
 )
+from calm.hrm_text_158.native_full_stack.sparse_vote_events import SparseVoteEvents
 from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
     EventCodedVoteUpdateState,
     C8_DENSE_ACCUMULATOR_MATERIALIZED_NUMEL_KEY,
@@ -285,8 +286,12 @@ def _rank_bin_bounds(count: int, bin_spec: RankVoteBin) -> tuple[int, int]:
     return lo_rank, hi_limit
 
 
-def _bisect_right_rank_positions_by_equal_value_group(abs_values: torch.Tensor) -> torch.Tensor:
-    if not bool(torch.isfinite(abs_values).all().item()):
+def _bisect_right_rank_positions_by_equal_value_group(
+    abs_values: torch.Tensor,
+    *,
+    assume_finite: bool = False,
+) -> torch.Tensor:
+    if not assume_finite and not bool(torch.isfinite(abs_values).all().item()):
         raise ValueError("rank bucket credit contains non-finite values")
     abs_bits = abs_values.contiguous().view(torch.int32)
     sorted_bits, order = torch.sort(abs_bits)
@@ -318,34 +323,67 @@ def project_s1_gradient_to_moves(grad: torch.Tensor, q_levels: torch.Tensor) -> 
     return moves
 
 
-def _compute_rank_bucketed_candidate_votes(
-    credit: torch.Tensor,
-    projected_moves: torch.Tensor,
-    spec: RankVoteSpec,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    spec.validate()
-    if credit.shape != projected_moves.shape:
-        raise ValueError("credit/projected_moves tensor shape mismatch")
-    flat_credit = credit.detach().flatten().to(torch.float32)
-    flat_moves = projected_moves.detach().flatten().to(torch.int8)
-    candidate_idx = torch.nonzero(flat_moves != 0, as_tuple=False).flatten()
+def _project_s1_gradient_sparse_candidate_lanes(
+    grad: torch.Tensor,
+    q_levels: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Candidate (index, move, abs_credit) lanes without full-numel moves/credit tensors."""
+
+    if grad.shape != q_levels.shape:
+        raise ValueError("grad and q_levels must have identical shapes")
+    if q_levels.dtype != torch.int8:
+        raise ValueError(f"q_levels must be torch.int8, got {q_levels.dtype}")
+    flat_q = q_levels.view(-1)
+    flat_g = grad.view(-1)
+    mask = (
+        ((flat_q < 0) & (flat_g < 0))
+        | ((flat_q == 0) & (flat_g != 0))
+        | ((flat_q > 0) & (flat_g > 0))
+    )
+    candidate_idx = torch.nonzero(mask, as_tuple=False).flatten().to(torch.int64)
     if candidate_idx.numel() == 0:
         return (
-            torch.empty(0, dtype=torch.int64),
-            torch.empty(0, dtype=torch.int16),
+            candidate_idx,
+            torch.empty(0, dtype=torch.int8),
+            torch.empty(0, dtype=torch.float32),
         )
-    abs_values = flat_credit[candidate_idx].abs()
+    q_at = flat_q[candidate_idx]
+    g_at = flat_g[candidate_idx]
+    moves_at = torch.zeros(candidate_idx.numel(), dtype=torch.int8)
+    zero_lane = q_at == 0
+    moves_at[zero_lane & (g_at < 0)] = 1
+    moves_at[zero_lane & (g_at > 0)] = -1
+    moves_at[(q_at < 0) & (g_at < 0)] = 1
+    moves_at[(q_at > 0) & (g_at > 0)] = -1
+    abs_credit = g_at.neg().abs().to(torch.float32)
+    return candidate_idx, moves_at, abs_credit
+
+
+def _rank_bucket_candidate_votes_from_abs_credit(
+    candidate_idx: torch.Tensor,
+    candidate_moves: torch.Tensor,
+    abs_credit: torch.Tensor,
+    spec: RankVoteSpec,
+    *,
+    assume_finite: bool = False,
+) -> torch.Tensor:
+    spec.validate()
+    if candidate_idx.numel() == 0:
+        return torch.empty(0, dtype=torch.int16)
     if spec.rank_method == "grouped_bisect_right":
-        rank_positions = _bisect_right_rank_positions_by_equal_value_group(abs_values)
+        rank_positions = _bisect_right_rank_positions_by_equal_value_group(
+            abs_credit,
+            assume_finite=bool(assume_finite),
+        )
         ranks = None
     else:
-        sorted_abs = torch.sort(abs_values).values
-        ranks = torch.searchsorted(sorted_abs, abs_values, right=True).to(torch.float32) / float(
+        sorted_abs = torch.sort(abs_credit).values
+        ranks = torch.searchsorted(sorted_abs, abs_credit, right=True).to(torch.float32) / float(
             candidate_idx.numel()
         )
         rank_positions = None
-    vote_abs = torch.zeros(candidate_idx.numel(), dtype=torch.int16, device=flat_credit.device)
-    matched = torch.zeros(candidate_idx.numel(), dtype=torch.bool, device=flat_credit.device)
+    vote_abs = torch.zeros(candidate_idx.numel(), dtype=torch.int16, device=abs_credit.device)
+    matched = torch.zeros(candidate_idx.numel(), dtype=torch.bool, device=abs_credit.device)
     for item in spec.rank_bins:
         if spec.rank_method == "grouped_bisect_right":
             assert rank_positions is not None
@@ -364,7 +402,32 @@ def _compute_rank_bucketed_candidate_votes(
         matched |= mask
     if not bool(matched.all().item()):
         raise ValueError("rank-bucket vote mapping left unmatched candidates")
-    candidate_votes = (flat_moves[candidate_idx].to(torch.int16) * vote_abs).to(torch.int16)
+    return (candidate_moves.to(torch.int16) * vote_abs).to(torch.int16)
+
+
+def _compute_rank_bucketed_candidate_votes(
+    credit: torch.Tensor,
+    projected_moves: torch.Tensor,
+    spec: RankVoteSpec,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    spec.validate()
+    if credit.shape != projected_moves.shape:
+        raise ValueError("credit/projected_moves tensor shape mismatch")
+    flat_credit = credit.detach().flatten().to(torch.float32)
+    flat_moves = projected_moves.detach().flatten().to(torch.int8)
+    candidate_idx = torch.nonzero(flat_moves != 0, as_tuple=False).flatten()
+    if candidate_idx.numel() == 0:
+        return (
+            torch.empty(0, dtype=torch.int64),
+            torch.empty(0, dtype=torch.int16),
+        )
+    abs_values = flat_credit[candidate_idx].abs()
+    candidate_votes = _rank_bucket_candidate_votes_from_abs_credit(
+        candidate_idx.to(torch.int64),
+        flat_moves[candidate_idx],
+        abs_values,
+        spec,
+    )
     return candidate_idx.to(torch.int64), candidate_votes
 
 
@@ -422,8 +485,39 @@ def sparse_rank_bucketed_int16_vote_events(
         spec,
     )
     return SparseVoteEvents(
-        indices=candidate_idx.detach().cpu().contiguous(),
-        values=candidate_votes.detach().cpu().contiguous(),
+        indices=candidate_idx if candidate_idx.is_cpu and candidate_idx.is_contiguous() else candidate_idx.detach().cpu().contiguous(),
+        values=candidate_votes if candidate_votes.is_cpu and candidate_votes.is_contiguous() else candidate_votes.detach().cpu().contiguous(),
+    )
+
+
+def sparse_rank_bucketed_int16_vote_events_from_weighted_grad(
+    weighted_grad: torch.Tensor,
+    q_levels: torch.Tensor,
+    spec: RankVoteSpec,
+):
+    """Fused grad→sparse rank votes (no full-numel moves/credit tensors)."""
+
+    from calm.hrm_text_158.native_full_stack.sparse_vote_events import SparseVoteEvents
+
+    candidate_idx, candidate_moves, abs_credit = _project_s1_gradient_sparse_candidate_lanes(
+        weighted_grad,
+        q_levels,
+    )
+    if candidate_idx.numel() == 0:
+        return SparseVoteEvents(
+            indices=torch.empty(0, dtype=torch.int64),
+            values=torch.empty(0, dtype=torch.int16),
+        )
+    candidate_votes = _rank_bucket_candidate_votes_from_abs_credit(
+        candidate_idx,
+        candidate_moves,
+        abs_credit,
+        spec,
+        assume_finite=True,
+    )
+    return SparseVoteEvents(
+        indices=candidate_idx if candidate_idx.is_cpu and candidate_idx.is_contiguous() else candidate_idx.detach().cpu().contiguous(),
+        values=candidate_votes if candidate_votes.is_cpu and candidate_votes.is_contiguous() else candidate_votes.detach().cpu().contiguous(),
     )
 
 
@@ -707,8 +801,8 @@ def sparse_sign_pressure_int16_vote_events(
         inverted=inverted,
     )
     return SparseVoteEvents(
-        indices=candidate_idx.detach().cpu().contiguous(),
-        values=candidate_votes.detach().cpu().contiguous(),
+        indices=candidate_idx if candidate_idx.is_cpu and candidate_idx.is_contiguous() else candidate_idx.detach().cpu().contiguous(),
+        values=candidate_votes if candidate_votes.is_cpu and candidate_votes.is_contiguous() else candidate_votes.detach().cpu().contiguous(),
     )
 
 
@@ -943,6 +1037,30 @@ def compact_vote_pressure_summary(votes: torch.Tensor) -> dict[str, Any]:
         },
     )
     return summary
+
+
+def compact_sparse_vote_pressure_summary(sparse_events: SparseVoteEvents) -> dict[str, Any]:
+    values = sparse_events.values.detach().cpu().to(torch.int16)
+    if values.numel() == 0:
+        return {
+            "vote_nonzero_count": 0,
+            "vote_positive_count": 0,
+            "vote_negative_count": 0,
+            "vote_abs_min": 0,
+            "vote_abs_median": 0.0,
+            "vote_abs_max": 0,
+            "raw_per_proposal_arrays_included": False,
+        }
+    abs_values = values.abs().to(torch.float32)
+    return {
+        "vote_nonzero_count": int(values.numel()),
+        "vote_positive_count": int((values > 0).sum().item()),
+        "vote_negative_count": int((values < 0).sum().item()),
+        "vote_abs_min": int(abs_values.min().item()),
+        "vote_abs_median": float(abs_values.median().item()),
+        "vote_abs_max": int(abs_values.max().item()),
+        "raw_per_proposal_arrays_included": False,
+    }
 
 
 @dataclass(frozen=True)
@@ -1857,12 +1975,28 @@ def _front_c_cloned_observation(
 def _validate_sparse_vote_authority_only_gate(
     *,
     sparse_vote_authority_only: bool,
+    event_coded_sparse_vote_authority: bool,
     votes_by_key: Mapping[str, torch.Tensor] | None,
     candidate_mode: str | None,
     candidate_oracle_control_enabled: bool,
     candidate_sparse_vote_events_by_key: Mapping[str, SparseVoteEvents | Mapping[int, int]] | None,
     tensor_state_keys: set[str],
 ) -> None:
+    if bool(event_coded_sparse_vote_authority):
+        if votes_by_key is not None:
+            raise ValueError("event_coded_sparse_vote_authority requires votes_by_key=None")
+        if candidate_sparse_vote_events_by_key is None:
+            raise ValueError(
+                "event_coded_sparse_vote_authority requires candidate_sparse_vote_events_by_key"
+            )
+        sparse_keys = set(candidate_sparse_vote_events_by_key)
+        if sparse_keys != tensor_state_keys:
+            raise ValueError(
+                "candidate_sparse_vote_events_by_key keys must match tensor_states exactly: "
+                f"missing={sorted(tensor_state_keys - sparse_keys)} "
+                f"extra={sorted(sparse_keys - tensor_state_keys)}"
+            )
+        return
     if not sparse_vote_authority_only:
         if votes_by_key is None:
             raise ValueError(
@@ -1916,7 +2050,7 @@ def _vote_active_flat_indices_for_event_coded_inputs(
 
 def _apply_bounded_delta_vote_step_event_coded_live(
     tensor_states: Mapping[str, BoundedDeltaTensorState],
-    votes_by_key: Mapping[str, torch.Tensor],
+    votes_by_key: Mapping[str, torch.Tensor] | None,
     vote_specs_by_key: Mapping[str, VoteUpdateSpec],
     *,
     global_cap_spec: GlobalRateCapSpec | None = None,
@@ -1927,16 +2061,20 @@ def _apply_bounded_delta_vote_step_event_coded_live(
     local_selection_ordering_seed: int = 0,
     local_selection_ordering_step: int = 0,
     candidate_sparse_vote_events_by_key: Mapping[str, SparseVoteEvents | Mapping[int, int]] | None = None,
+    event_coded_sparse_vote_authority: bool = False,
 ) -> BoundedDeltaLearnerStepResult:
     from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
         C8StepObservation,
         C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY,
         EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY,
         EventCodedVoteUpdateState,
+        _shape_stub_int16_votes,
         apply_event_coded_cap_mutations,
         apply_event_coded_integer_vote_update_from_plan,
         densify_new_acc_i32_at_cap_boundary,
         plan_event_coded_integer_vote_update,
+        prepare_event_coded_plan_for_sparse_cap,
+        validate_event_coded_sparse_cap_cold_default,
     )
 
     event_states: dict[str, EventCodedVoteUpdateState] = {}
@@ -1947,20 +2085,60 @@ def _apply_bounded_delta_vote_step_event_coded_live(
         vu = state.vote_update_state()
         if not isinstance(vu, EventCodedVoteUpdateState):
             raise ValueError(f"{state_key} missing event_coded_live_carrier on V4 path")
-        votes = votes_by_key[state_key].detach().cpu().to(torch.int16).contiguous()
-        sparse_events = (
-            candidate_sparse_vote_events_by_key.get(state_key)
-            if candidate_sparse_vote_events_by_key is not None
-            else None
-        )
-        vote_active_idx = _vote_active_flat_indices_for_event_coded_inputs(
-            votes,
-            sparse_events,
-        )
-        inputs = VoteUpdateInputs(
-            votes=votes,
-            vote_active_flat_indices=vote_active_idx,
-        )
+        if bool(event_coded_sparse_vote_authority):
+            if candidate_sparse_vote_events_by_key is None:
+                raise ValueError(
+                    "event_coded_sparse_vote_authority requires candidate_sparse_vote_events_by_key"
+                )
+            sparse_events = candidate_sparse_vote_events_by_key.get(state_key)
+            if sparse_events is None:
+                raise ValueError(
+                    f"missing sparse vote events for {state_key!r} on sparse authority path"
+                )
+            carrier = state.event_coded_live_carrier
+            if carrier is None:
+                raise ValueError(f"{state_key} missing event_coded_live_carrier on sparse authority path")
+            validate_event_coded_sparse_cap_cold_default(
+                carrier,
+                vote_specs_by_key[state_key],
+            )
+            sparse_obj = (
+                sparse_events
+                if isinstance(sparse_events, SparseVoteEvents)
+                else SparseVoteEvents.from_dict(sparse_events)
+            )
+            votes = _shape_stub_int16_votes(vu.q_levels)
+            vote_active_idx = sparse_obj.indices.detach().cpu().to(torch.int64)
+            inputs = VoteUpdateInputs(
+                votes=votes,
+                vote_active_flat_indices=vote_active_idx,
+                sparse_vote_events=sparse_obj,
+            )
+        else:
+            if votes_by_key is None:
+                raise ValueError("votes_by_key is required unless event_coded_sparse_vote_authority=True")
+            votes = votes_by_key[state_key].detach().cpu().to(torch.int16).contiguous()
+            sparse_events = (
+                candidate_sparse_vote_events_by_key.get(state_key)
+                if candidate_sparse_vote_events_by_key is not None
+                else None
+            )
+            vote_active_idx = _vote_active_flat_indices_for_event_coded_inputs(
+                votes,
+                sparse_events,
+            )
+            sparse_obj = None
+            if sparse_events is not None:
+                sparse_obj = (
+                    sparse_events
+                    if isinstance(sparse_events, SparseVoteEvents)
+                    else SparseVoteEvents.from_dict(sparse_events)
+                )
+            inputs = VoteUpdateInputs(
+                votes=votes,
+                vote_active_flat_indices=vote_active_idx,
+                sparse_vote_events=sparse_obj,
+            )
         plan = plan_event_coded_integer_vote_update(
             vu,
             inputs,
@@ -1981,11 +2159,17 @@ def _apply_bounded_delta_vote_step_event_coded_live(
         cap_boundary_obs = C8StepObservation()
         cap_inputs: list[GlobalRateCapTensorInput] = []
         for state_key, vu in sorted(event_states.items()):
-            plan = densify_new_acc_i32_at_cap_boundary(
-                plans_by_key[state_key],
-                vu.q_levels,
-                cap_boundary_obs,
-            )
+            if bool(event_coded_sparse_vote_authority):
+                plan = prepare_event_coded_plan_for_sparse_cap(
+                    plans_by_key[state_key],
+                    vu.q_levels,
+                )
+            else:
+                plan = densify_new_acc_i32_at_cap_boundary(
+                    plans_by_key[state_key],
+                    vu.q_levels,
+                    cap_boundary_obs,
+                )
             plans_by_key[state_key] = plan
             cap_inputs.append(
                 GlobalRateCapTensorInput(
@@ -2001,21 +2185,33 @@ def _apply_bounded_delta_vote_step_event_coded_live(
             deferred_backlog=deferred_backlog,
             tie_rule_mode=global_cap_tie_rule_mode,
             contract_name=global_cap_contract_name,
+            event_coded_sparse_cap_enabled=bool(event_coded_sparse_vote_authority),
         )
         backlog = cap_result.deferred_backlog
         summary = dict(cap_result.step_summary)
         summary["global_rate_cap_enabled"] = True
         summary["event_coded_live_carrier_enabled"] = True
-        cap_boundary_transient = int(cap_boundary_obs.transient_dense_compute_numel)
-        for item in cap_result.tensor_results:
+        summary["event_coded_sparse_vote_authority"] = bool(event_coded_sparse_vote_authority)
+        summary["event_coded_sparse_cap_enabled"] = bool(event_coded_sparse_vote_authority)
+        cap_boundary_transient = (
+            0
+            if bool(event_coded_sparse_vote_authority)
+            else int(cap_boundary_obs.transient_dense_compute_numel)
+        )
+        summary[C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY] = int(cap_boundary_transient)
+        accepted_flat_by_key = {
+            str(item.state_key): tuple(
+                int(row.flat_index)
+                for row in cap_result.accepted_rows
+                if row.state_key == item.state_key
+            )
+            for item in cap_result.tensor_results
+        }
+
+        def _apply_cap_tensor_result(item: Any) -> tuple[str, EventCodedAccLiveState, torch.Tensor, dict[str, Any]]:
             state_key = str(item.state_key)
             vu = event_states[state_key]
             plan = plans_by_key[state_key]
-            accepted_flat = tuple(
-                int(row.flat_index)
-                for row in cap_result.accepted_rows
-                if row.state_key == state_key
-            )
             local_result = apply_event_coded_integer_vote_update_from_plan(
                 vu,
                 inputs_by_key[state_key],
@@ -2023,20 +2219,51 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 plan,
                 step_index=int(local_selection_ordering_step),
                 cap_boundary_transient_dense=cap_boundary_transient,
+                lightweight_runtime_stats=bool(event_coded_sparse_vote_authority),
             )
             q_out, carrier = apply_event_coded_cap_mutations(
                 local_result.carrier,
                 local_result.q_levels,
                 plan,
-                accepted_flat,
+                accepted_flat_by_key[state_key],
                 step_index=int(local_selection_ordering_step),
             )
-            carriers_by_key[state_key] = carrier
-            q_by_key[state_key] = q_out
-            stats_by_key[state_key] = _merge_event_coded_cap_tensor_stats(
+            stats = _merge_event_coded_cap_tensor_stats(
                 item.stats,
                 local_result.stats,
             )
+            return state_key, carrier, q_out, stats
+
+        if bool(event_coded_sparse_vote_authority) and len(cap_result.tensor_results) > 1:
+            import os
+            from concurrent.futures import ThreadPoolExecutor
+
+            def _init_sparse_cap_worker() -> None:
+                torch.set_num_threads(1)
+                try:
+                    torch.set_num_interop_threads(1)
+                except RuntimeError:
+                    pass
+
+            cpu_workers = os.cpu_count() or 4
+            max_workers = min(cpu_workers, len(cap_result.tensor_results))
+            with ThreadPoolExecutor(
+                max_workers=max_workers,
+                initializer=_init_sparse_cap_worker,
+            ) as pool:
+                for state_key, carrier, q_out, stats in pool.map(
+                    _apply_cap_tensor_result,
+                    cap_result.tensor_results,
+                ):
+                    carriers_by_key[state_key] = carrier
+                    q_by_key[state_key] = q_out
+                    stats_by_key[state_key] = stats
+        else:
+            for item in cap_result.tensor_results:
+                state_key, carrier, q_out, stats = _apply_cap_tensor_result(item)
+                carriers_by_key[state_key] = carrier
+                q_by_key[state_key] = q_out
+                stats_by_key[state_key] = stats
     else:
         backlog = deferred_backlog or {}
         summary = {
@@ -2139,6 +2366,7 @@ def apply_bounded_delta_vote_step(
     candidate_sparse_vote_events_by_key: Mapping[str, SparseVoteEvents | Mapping[int, int]] | None = None,
     candidate_oracle_control_enabled: bool = True,
     sparse_vote_authority_only: bool = False,
+    event_coded_sparse_vote_authority: bool = False,
     local_selection_ordering_mode: str = LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
     local_selection_ordering_seed: int = 0,
     local_selection_ordering_step: int = 0,
@@ -2147,6 +2375,7 @@ def apply_bounded_delta_vote_step(
     expected_keys = set(tensor_states)
     _validate_sparse_vote_authority_only_gate(
         sparse_vote_authority_only=bool(sparse_vote_authority_only),
+        event_coded_sparse_vote_authority=bool(event_coded_sparse_vote_authority),
         votes_by_key=votes_by_key,
         candidate_mode=candidate_mode,
         candidate_oracle_control_enabled=bool(candidate_oracle_control_enabled),
@@ -2189,7 +2418,18 @@ def apply_bounded_delta_vote_step(
             "non-global paths must stay exact_global_cap"
         )
     if tensor_states_use_event_coded_live_carrier(tensor_states):
-        if votes_by_key is None:
+        if bool(event_coded_sparse_vote_authority):
+            if votes_by_key is not None:
+                raise ValueError("event_coded_sparse_vote_authority requires votes_by_key=None")
+            if candidate_sparse_vote_events_by_key is None:
+                raise ValueError(
+                    "event_coded_sparse_vote_authority requires candidate_sparse_vote_events_by_key"
+                )
+            if global_cap_tie_rule_mode != EXACT_GLOBAL_CAP_TIE_RULE_MODE:
+                raise ValueError(
+                    "event_coded_sparse_vote_authority supports exact_global_cap tie rule only"
+                )
+        elif votes_by_key is None:
             raise ValueError("votes_by_key is required for event-coded live carrier path")
         if two_tier_carry_w6_enabled:
             raise ValueError("event-coded live carrier path does not support two_tier_carry_w6")
@@ -2213,6 +2453,7 @@ def apply_bounded_delta_vote_step(
             local_selection_ordering_seed=int(local_selection_ordering_seed),
             local_selection_ordering_step=int(local_selection_ordering_step),
             candidate_sparse_vote_events_by_key=candidate_sparse_vote_events_by_key,
+            event_coded_sparse_vote_authority=bool(event_coded_sparse_vote_authority),
         )
     if candidate_mode is not None:
         if candidate_mode != ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE:

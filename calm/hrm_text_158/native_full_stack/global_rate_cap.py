@@ -300,7 +300,11 @@ def _deferred_age_summary(
     }
 
 
-def validate_global_rate_cap_inputs(inputs: list[GlobalRateCapTensorInput]) -> None:
+def validate_global_rate_cap_inputs(
+    inputs: list[GlobalRateCapTensorInput],
+    *,
+    event_coded_sparse_cap_enabled: bool = False,
+) -> None:
     if not inputs:
         raise ValueError("global rate cap requires at least one tensor input")
     seen: set[str] = set()
@@ -314,10 +318,23 @@ def validate_global_rate_cap_inputs(inputs: list[GlobalRateCapTensorInput]) -> N
             raise ValueError(f"q/accumulator shape mismatch for {item.state_key}")
         if item.plan.q_i16.shape != item.state.q_levels.shape:
             raise ValueError(f"plan q shape mismatch for {item.state_key}")
-        if item.plan.new_acc_i32.shape != item.state.accumulators.shape:
-            raise ValueError(f"plan accumulator shape mismatch for {item.state_key}")
-        if item.vote_inputs is not None and item.vote_inputs.votes.shape != item.state.q_levels.shape:
+        if not event_coded_sparse_cap_enabled:
+            if item.plan.new_acc_i32.shape != item.state.accumulators.shape:
+                raise ValueError(f"plan accumulator shape mismatch for {item.state_key}")
+        if (
+            not event_coded_sparse_cap_enabled
+            and item.vote_inputs is not None
+            and item.vote_inputs.votes.shape != item.state.q_levels.shape
+        ):
             raise ValueError(f"vote input shape mismatch for {item.state_key}")
+        if event_coded_sparse_cap_enabled:
+            if (
+                item.plan.event_coded_sparse_active_idx is None
+                or item.plan.event_coded_sparse_post_active_i32 is None
+            ):
+                raise ValueError(
+                    f"event-coded sparse cap requires sparse plan backing for {item.state_key}"
+                )
         if item.plan.applied_indices.numel() != item.plan.applied_directions.numel():
             raise ValueError(f"applied index/direction mismatch for {item.state_key}")
         if item.plan.applied_indices.numel() != item.plan.applied_thresholds.numel():
@@ -328,20 +345,40 @@ def global_rate_cap_priority_rows(
     inputs: list[GlobalRateCapTensorInput],
     *,
     tensor_offsets: dict[str, int],
+    event_coded_sparse_cap_enabled: bool = False,
 ) -> list[GlobalRateCapRow]:
-    validate_global_rate_cap_inputs(inputs)
+    validate_global_rate_cap_inputs(
+        inputs,
+        event_coded_sparse_cap_enabled=event_coded_sparse_cap_enabled,
+    )
+    if event_coded_sparse_cap_enabled:
+        from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
+            event_coded_new_acc_values_at,
+        )
+
     rows: list[GlobalRateCapRow] = []
     for item in inputs:
         if item.state_key not in tensor_offsets:
             raise ValueError(f"missing tensor offset for {item.state_key!r}")
         offset = int(tensor_offsets[item.state_key])
-        flat_new_acc = item.plan.new_acc_i32.flatten()
         indices = item.plan.applied_indices.to(torch.int64)
         thresholds = item.plan.applied_thresholds.to(torch.int64)
-        for local_pos, raw_idx in enumerate(indices.tolist()):
+        if event_coded_sparse_cap_enabled:
+            abs_values = event_coded_new_acc_values_at(
+                item.plan,
+                indices,
+                fail_closed=True,
+            ).abs()
+        else:
+            flat_new_acc = item.plan.new_acc_i32.flatten()
+            abs_values = flat_new_acc[indices.to(torch.int64)].abs()
+        flat_indices = indices.tolist()
+        threshold_list = thresholds.tolist()
+        abs_list = abs_values.tolist()
+        for local_pos, raw_idx in enumerate(flat_indices):
             flat_index = int(raw_idx)
-            abs_new_acc = int(flat_new_acc[flat_index].abs().item())
-            threshold_abs = int(thresholds[local_pos].item())
+            abs_new_acc = int(abs_list[local_pos])
+            threshold_abs = int(threshold_list[local_pos])
             rows.append(
                 GlobalRateCapRow(
                     state_key=item.state_key,
@@ -430,10 +467,15 @@ def select_global_rate_cap_rows(
     spec: GlobalRateCapSpec,
     *,
     tensor_offsets: dict[str, int] | None = None,
+    event_coded_sparse_cap_enabled: bool = False,
 ) -> tuple[list[GlobalRateCapRow], list[GlobalRateCapRow], list[GlobalRateCapRow]]:
     spec.validate()
     offsets = tensor_offsets or tensor_offsets_for_vote_update_states(inputs)
-    rows = global_rate_cap_priority_rows(inputs, tensor_offsets=offsets)
+    rows = global_rate_cap_priority_rows(
+        inputs,
+        tensor_offsets=offsets,
+        event_coded_sparse_cap_enabled=event_coded_sparse_cap_enabled,
+    )
     rows = order_global_rate_cap_rows(
         rows,
         mode=spec.normalized_ordering_mode,
@@ -666,6 +708,7 @@ def apply_global_rate_cap_reference(
     tensor_offsets: dict[str, int] | None = None,
     tie_rule_mode: str = EXACT_GLOBAL_CAP_TIE_RULE_MODE,
     contract_name: str | None = None,
+    event_coded_sparse_cap_enabled: bool = False,
 ) -> GlobalRateCapResult:
     """Apply cap-bounded global selection to copies of q/acc tensors.
 
@@ -677,10 +720,15 @@ def apply_global_rate_cap_reference(
     spec.validate()
     offsets = tensor_offsets or tensor_offsets_for_vote_update_states(inputs)
     tie_mode = validate_global_tie_rule_mode(tie_rule_mode)
+    if event_coded_sparse_cap_enabled and tie_mode != EXACT_GLOBAL_CAP_TIE_RULE_MODE:
+        raise ValueError(
+            "event-coded sparse global cap supports exact_global_cap tie rule only"
+        )
     rows, accepted_rows, deferred_rows = select_global_rate_cap_rows(
         inputs,
         spec,
         tensor_offsets=offsets,
+        event_coded_sparse_cap_enabled=event_coded_sparse_cap_enabled,
     )
     shadow_summary = {
         "pre_cap_demand_sha256": _row_global_index_sha(rows),
@@ -738,7 +786,6 @@ def apply_global_rate_cap_reference(
         deferred_set = deferred_by_key.get(item.state_key, set())
         plan = item.plan
         q_i16 = plan.q_i16.flatten().clone()
-        new_acc_i32 = plan.new_acc_i32.flatten().clone().to(torch.int32)
         pre_cap_indices = plan.applied_indices.to(torch.int64)
         pre_cap_directions = plan.applied_directions.to(torch.int16)
         pre_cap_thresholds = plan.applied_thresholds.to(torch.int32)
@@ -749,33 +796,47 @@ def apply_global_rate_cap_reference(
         accepted_indices = pre_cap_indices[accepted_mask]
         accepted_directions = pre_cap_directions[accepted_mask]
         accepted_thresholds = pre_cap_thresholds[accepted_mask]
-        if spec.mutate_outputs and accepted_indices.numel() > 0:
-            q_i16[accepted_indices] = (
-                q_i16[accepted_indices] + accepted_directions
-            ).clamp(-1, 1)
+        if event_coded_sparse_cap_enabled:
+            if spec.mutate_outputs and accepted_indices.numel() > 0:
+                q_out = item.state.q_levels.detach().cpu().clone().to(torch.int8)
+                q_flat = q_out.flatten()
+                q_flat[accepted_indices] = (
+                    q_flat[accepted_indices] + accepted_directions.to(torch.int8)
+                ).clamp(-1, 1)
+            elif spec.mutate_outputs:
+                q_out = item.state.q_levels.detach().cpu().clone().contiguous()
+            else:
+                q_out = item.state.q_levels.detach().clone().contiguous()
+            acc_out = item.state.accumulators.detach().clone().contiguous()
+        else:
+            new_acc_i32 = plan.new_acc_i32.flatten().clone().to(torch.int32)
+            if spec.mutate_outputs and accepted_indices.numel() > 0:
+                q_i16[accepted_indices] = (
+                    q_i16[accepted_indices] + accepted_directions
+                ).clamp(-1, 1)
+                _apply_threshold_residual(
+                    new_acc_i32,
+                    accepted_indices,
+                    accepted_directions,
+                    accepted_thresholds,
+                )
+
+            replay_indices = plan.replay_ce_veto_indices.to(torch.int64)
+            replay_directions = plan.replay_veto_directions.to(torch.int16)
+            replay_thresholds = plan.replay_veto_thresholds.to(torch.int32)
             _apply_threshold_residual(
                 new_acc_i32,
-                accepted_indices,
-                accepted_directions,
-                accepted_thresholds,
+                replay_indices,
+                replay_directions,
+                replay_thresholds,
             )
 
-        replay_indices = plan.replay_ce_veto_indices.to(torch.int64)
-        replay_directions = plan.replay_veto_directions.to(torch.int16)
-        replay_thresholds = plan.replay_veto_thresholds.to(torch.int32)
-        _apply_threshold_residual(
-            new_acc_i32,
-            replay_indices,
-            replay_directions,
-            replay_thresholds,
-        )
-
-        if spec.mutate_outputs:
-            q_out = q_i16.view_as(item.state.q_levels).to(torch.int8).contiguous()
-            acc_out = new_acc_i32.view_as(item.state.accumulators).to(torch.int16).contiguous()
-        else:
-            q_out = item.state.q_levels.detach().clone().contiguous()
-            acc_out = item.state.accumulators.detach().clone().contiguous()
+            if spec.mutate_outputs:
+                q_out = q_i16.view_as(item.state.q_levels).to(torch.int8).contiguous()
+                acc_out = new_acc_i32.view_as(item.state.accumulators).to(torch.int16).contiguous()
+            else:
+                q_out = item.state.q_levels.detach().clone().contiguous()
+                acc_out = item.state.accumulators.detach().clone().contiguous()
         q_changed = int((q_out != item.state.q_levels).sum().item())
         total_q_changed += q_changed
         deferred_indices = torch.tensor(sorted(deferred_set), dtype=torch.int64)

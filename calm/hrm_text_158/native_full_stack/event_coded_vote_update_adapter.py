@@ -63,6 +63,7 @@ C8_PERSISTENT_AUTHORITY_SCOPE_VALUE = (
 )
 EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY = "event_coded_planner_transient_dense_numel"
 EVENT_CODED_CAP_BOUNDARY_DENSIFIED_KEY = "event_coded_cap_boundary_densified"
+_SPARSE_CARRIER_BULK_VOTE_APPLY_MAX_EVENTS = 65_536
 C8_LIVE_AUTHORITY_TAG = "event_coded_live_carrier"
 
 
@@ -208,8 +209,9 @@ def c8_runtime_guard_stats(
     observation: C8StepObservation,
     persistent_dense_accumulator_materialized_numel: int,
     planner_transient_dense_numel: int = 0,
+    include_carrier_content_sha256: bool = True,
 ) -> dict[str, Any]:
-    return {
+    stats = {
         C8_DENSE_ACCUMULATOR_MATERIALIZED_NUMEL_KEY: int(
             persistent_dense_accumulator_materialized_numel
         ),
@@ -221,8 +223,12 @@ def c8_runtime_guard_stats(
         EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY: int(planner_transient_dense_numel),
         C8_PERSISTENT_AUTHORITY_SCOPE_KEY: C8_PERSISTENT_AUTHORITY_SCOPE_VALUE,
         "live_authority": C8_LIVE_AUTHORITY_TAG,
-        "event_coded_live_carrier_content_sha256_after": carrier_content_sha256(carrier),
     }
+    if include_carrier_content_sha256:
+        stats["event_coded_live_carrier_content_sha256_after"] = carrier_content_sha256(
+            carrier
+        )
+    return stats
 
 
 def assert_c8_runtime_guards(
@@ -421,6 +427,69 @@ def _validate_event_coded_vote_inputs(
                 raise ValueError("q_levels must be in {-1,0,1}")
 
 
+def _shape_stub_int16_votes(q_levels: torch.Tensor) -> torch.Tensor:
+    """Shape-compatible int16 votes placeholder; values come from sparse events."""
+
+    flat = torch.zeros(1, dtype=torch.int16, device=q_levels.device).expand(
+        int(q_levels.numel())
+    )
+    return flat.view_as(q_levels)
+
+
+def event_coded_cold_default_sparse_cap_unsafe(
+    cold_default: int,
+    spec: VoteUpdateSpec,
+) -> bool:
+    """True when decayed cold_default could cross threshold for some q in {-1,0,1}."""
+
+    decayed = (int(cold_default) * int(spec.decay_numerator)) // int(
+        spec.decay_denominator
+    )
+    decayed = max(
+        int(spec.accumulator_clip_min),
+        min(int(spec.accumulator_clip_max), int(decayed)),
+    )
+    threshold = int(spec.threshold_abs)
+    for q in (-1, 0, 1):
+        if (decayed >= threshold and q < 1) or (decayed <= -threshold and q > -1):
+            return True
+    return False
+
+
+def validate_event_coded_sparse_cap_cold_default(
+    carrier: EventCodedAccLiveState,
+    spec: VoteUpdateSpec,
+) -> None:
+    if event_coded_cold_default_sparse_cap_unsafe(int(carrier.cold_default), spec):
+        raise ValueError(
+            "event-coded sparse global cap unsafe cold_default: decayed cold lane "
+            f"can satisfy flip predicate (cold_default={int(carrier.cold_default)}, "
+            f"threshold_abs={int(spec.threshold_abs)})"
+        )
+
+
+def _vote_active_values_at_indices(
+    active_idx: torch.Tensor,
+    votes: torch.Tensor,
+    *,
+    sparse_vote_events: Any | None = None,
+) -> torch.Tensor:
+    if sparse_vote_events is not None and int(sparse_vote_events.event_count()) > 0:
+        sparse_idx = sparse_vote_events.indices.detach().cpu().to(torch.int64)
+        sparse_val = sparse_vote_events.values.detach().cpu().to(torch.int32)
+        positions = torch.searchsorted(sparse_idx, active_idx)
+        in_bounds = positions < sparse_idx.numel()
+        matched = torch.zeros(active_idx.numel(), dtype=torch.bool)
+        if in_bounds.any():
+            matched[in_bounds] = sparse_idx[positions[in_bounds]] == active_idx[in_bounds]
+        vote_active = torch.zeros(active_idx.numel(), dtype=torch.int32)
+        if matched.any():
+            vote_active[matched] = sparse_val[positions[matched]]
+        return vote_active
+    vote_flat_view = votes.detach().cpu().view(-1).to(torch.int32)
+    return vote_flat_view[active_idx]
+
+
 def _shape_stub_q_i16(q_levels: torch.Tensor) -> torch.Tensor:
     """Shape-compatible placeholder; materialized at cap boundary when cap is enabled."""
 
@@ -446,6 +515,7 @@ def _compute_active_lane_post_acc_tensors(
     spec: VoteUpdateSpec,
     *,
     vote_active_flat_indices: torch.Tensor | None = None,
+    sparse_vote_events: Any | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     active_idx = _active_lane_index_tensor(
         carrier,
@@ -455,9 +525,27 @@ def _compute_active_lane_post_acc_tensors(
     if active_idx.numel() == 0:
         return active_idx, torch.empty(0, dtype=torch.int32)
 
-    vote_flat_view = votes.detach().cpu().view(-1).to(torch.int32)
     pre_active = pre_accumulator_i32_for_indices(carrier, active_idx)
-    vote_active = vote_flat_view[active_idx]
+    if (
+        sparse_vote_events is not None
+        and vote_active_flat_indices is not None
+        and int(carrier.hot_lane_indices_tensor().numel()) == 0
+    ):
+        vote_nz = vote_active_flat_indices.detach().cpu().to(torch.int64)
+        if active_idx.numel() == vote_nz.numel() and torch.equal(active_idx, vote_nz):
+            vote_active = sparse_vote_events.values.detach().cpu().to(torch.int32)
+        else:
+            vote_active = _vote_active_values_at_indices(
+                active_idx,
+                votes,
+                sparse_vote_events=sparse_vote_events,
+            )
+    else:
+        vote_active = _vote_active_values_at_indices(
+            active_idx,
+            votes,
+            sparse_vote_events=sparse_vote_events,
+        )
 
     eff_min, eff_max = effective_clip_bounds(
         DEFAULT_CARRY_WIDTH,
@@ -511,6 +599,8 @@ def _local_selection_order_active(
 def event_coded_new_acc_values_at(
     plan: VoteUpdatePlan,
     flat_indices: torch.Tensor | Sequence[int],
+    *,
+    fail_closed: bool = False,
 ) -> torch.Tensor:
     if isinstance(flat_indices, torch.Tensor):
         indices = flat_indices.detach().cpu().to(torch.int64).flatten()
@@ -525,13 +615,48 @@ def event_coded_new_acc_values_at(
         active_idx = plan.event_coded_sparse_active_idx.detach().cpu().to(torch.int64)
         post_active = plan.event_coded_sparse_post_active_i32.detach().cpu().to(torch.int32)
         positions = torch.searchsorted(active_idx, indices)
-        matched = active_idx[positions] == indices
+        in_bounds = positions < active_idx.numel()
+        matched = torch.zeros(indices.numel(), dtype=torch.bool)
+        if in_bounds.any():
+            matched[in_bounds] = active_idx[positions[in_bounds]] == indices[in_bounds]
+        if fail_closed and not bool(matched.all().item()):
+            missing = indices[~matched].tolist()
+            raise ValueError(
+                "event-coded sparse abs_new_acc lookup miss: flat_index not in "
+                f"event_coded_sparse_active_idx (missing={missing})"
+            )
         out = torch.zeros(indices.numel(), dtype=torch.int32)
         if matched.any():
             out[matched] = post_active[positions[matched]]
         return out
     flat_new_acc = plan.new_acc_i32.detach().cpu().flatten()
     return flat_new_acc[indices.to(torch.int64)].to(torch.int32)
+
+
+def event_coded_sparse_abs_new_acc_at(plan: VoteUpdatePlan, flat_index: int) -> int:
+    values = event_coded_new_acc_values_at(
+        plan,
+        [int(flat_index)],
+        fail_closed=True,
+    )
+    return int(values[0].abs().item())
+
+
+def prepare_event_coded_plan_for_sparse_cap(
+    plan: VoteUpdatePlan,
+    q_levels: torch.Tensor,
+) -> VoteUpdatePlan:
+    """Cap-ON sparse path: shape-stub q_i16 without full-numel new_acc densify."""
+
+    stats = dict(plan.stats)
+    stats[EVENT_CODED_CAP_BOUNDARY_DENSIFIED_KEY] = False
+    stats[C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY] = 0
+    stats[EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY] = 0
+    return replace(
+        plan,
+        q_i16=_shape_stub_q_i16(q_levels),
+        stats=stats,
+    )
 
 
 def materialize_event_coded_plan_new_acc_for_indexing(
@@ -740,6 +865,7 @@ def plan_event_coded_integer_vote_update(
         votes,
         spec,
         vote_active_flat_indices=inputs.vote_active_flat_indices,
+        sparse_vote_events=inputs.sparse_vote_events,
     )
 
     candidate_idx = active_idx[:0]
@@ -853,10 +979,22 @@ def _sync_q_levels_tensor(
 def apply_event_coded_carrier_step(
     carrier: EventCodedAccLiveState,
     *,
-    votes: Mapping[int, int],
+    votes: Mapping[int, int] | None = None,
+    sparse_vote_events: Any | None = None,
     step_index: int,
 ) -> None:
-    carrier.apply_step(int(step_index), votes=dict(votes))
+    if sparse_vote_events is not None:
+        from calm.hrm_text_158.native_full_stack.sparse_vote_events import SparseVoteEvents
+
+        if not isinstance(sparse_vote_events, SparseVoteEvents):
+            sparse_vote_events = SparseVoteEvents.from_dict(sparse_vote_events)
+        carrier.apply_step(
+            int(step_index),
+            sparse_vote_indices=sparse_vote_events.indices.detach().cpu().numpy(),
+            sparse_vote_values=sparse_vote_events.values.detach().cpu().numpy(),
+        )
+        return
+    carrier.apply_step(int(step_index), votes=dict(votes or {}))
 
 
 def apply_event_coded_integer_vote_update_from_plan(
@@ -868,6 +1006,7 @@ def apply_event_coded_integer_vote_update_from_plan(
     validate_q_levels: bool = True,
     step_index: int = 0,
     cap_boundary_transient_dense: int = 0,
+    lightweight_runtime_stats: bool = False,
 ) -> EventCodedVoteUpdateResult:
     _validate_event_coded_vote_inputs(
         state.q_levels,
@@ -879,8 +1018,23 @@ def apply_event_coded_integer_vote_update_from_plan(
     observation.record_flatten()
     observation.transient_dense_compute_numel = int(cap_boundary_transient_dense)
     carrier = state.carrier.cow_copy()
-    vote_map = _votes_dict_from_tensor(inputs.votes)
-    apply_event_coded_carrier_step(carrier, votes=vote_map, step_index=int(step_index))
+    vote_map = (
+        inputs.sparse_vote_events
+        if inputs.sparse_vote_events is not None
+        else _votes_dict_from_tensor(inputs.votes)
+    )
+    if inputs.sparse_vote_events is not None:
+        apply_event_coded_carrier_step(
+            carrier,
+            sparse_vote_events=inputs.sparse_vote_events,
+            step_index=int(step_index),
+        )
+    else:
+        apply_event_coded_carrier_step(
+            carrier,
+            votes=vote_map,
+            step_index=int(step_index),
+        )
 
     applied_set = {int(item) for item in plan.applied_indices.detach().cpu().tolist()}
     for flat_index in applied_set:
@@ -894,11 +1048,12 @@ def apply_event_coded_integer_vote_update_from_plan(
         event_coded_live_carrier=carrier,
         eligible_numel=int(state.q_levels.numel()),
     )
-    assert_c8_runtime_guards(
-        carrier,
-        observation=observation,
-        persistent_dense_accumulator_materialized_numel=persistent_dense,
-    )
+    if not bool(lightweight_runtime_stats):
+        assert_c8_runtime_guards(
+            carrier,
+            observation=observation,
+            persistent_dense_accumulator_materialized_numel=persistent_dense,
+        )
     planner_transient = int(
         plan.stats.get(EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY, 0)
     )
@@ -913,6 +1068,7 @@ def apply_event_coded_integer_vote_update_from_plan(
             observation=observation,
             persistent_dense_accumulator_materialized_numel=persistent_dense,
             planner_transient_dense_numel=planner_transient,
+            include_carrier_content_sha256=not bool(lightweight_runtime_stats),
         )
     )
     stats["logical_numel"] = int(state.q_levels.numel())
