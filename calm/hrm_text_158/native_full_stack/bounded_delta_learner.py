@@ -2048,6 +2048,26 @@ def _vote_active_flat_indices_for_event_coded_inputs(
     ).flatten().to(torch.int64)
 
 
+def _emit_sparse_cap_submilestone(
+    emitter: Any,
+    *,
+    sub_phase_id: str,
+    milestone_kind: str,
+    optimizer_step_index: int,
+) -> bool:
+    if emitter is None:
+        return False
+    record = getattr(emitter, "record_sparse_cap_sub_phase", None)
+    if not callable(record):
+        return False
+    record(
+        str(sub_phase_id),
+        optimizer_step_index=int(optimizer_step_index),
+        milestone_kind=str(milestone_kind),
+    )
+    return True
+
+
 def _apply_bounded_delta_vote_step_event_coded_live(
     tensor_states: Mapping[str, BoundedDeltaTensorState],
     votes_by_key: Mapping[str, torch.Tensor] | None,
@@ -2062,6 +2082,7 @@ def _apply_bounded_delta_vote_step_event_coded_live(
     local_selection_ordering_step: int = 0,
     candidate_sparse_vote_events_by_key: Mapping[str, SparseVoteEvents | Mapping[int, int]] | None = None,
     event_coded_sparse_vote_authority: bool = False,
+    sparse_cap_submilestone_emit: Any = None,
 ) -> BoundedDeltaLearnerStepResult:
     from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
         C8StepObservation,
@@ -2154,6 +2175,9 @@ def _apply_bounded_delta_vote_step_event_coded_live(
     carriers_by_key: dict[str, EventCodedAccLiveState] = {}
     q_by_key: dict[str, torch.Tensor] = {}
     stats_by_key: dict[str, dict[str, Any]] = {}
+    cap_selection_recorded = False
+    post_cap_sync_recorded = False
+    boundary_normalize_recorded = False
 
     if global_cap_spec is not None:
         if bool(event_coded_sparse_vote_authority):
@@ -2201,6 +2225,15 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                     plan=plan,
                     vote_inputs=inputs_by_key[state_key],
                 )
+            )
+        if bool(event_coded_sparse_vote_authority) and any(
+            state.q_levels.device.type == "cuda" for state in tensor_states.values()
+        ):
+            cap_selection_recorded = _emit_sparse_cap_submilestone(
+                sparse_cap_submilestone_emit,
+                sub_phase_id="cap_selection_cpu_copy",
+                milestone_kind="cap_reference_cpu_shim_done",
+                optimizer_step_index=int(local_selection_ordering_step),
             )
         cap_result = apply_global_rate_cap_reference(
             cap_inputs,
@@ -2297,6 +2330,13 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 carriers_by_key[state_key] = carrier
                 q_by_key[state_key] = q_out
                 stats_by_key[state_key] = stats
+        if bool(event_coded_sparse_vote_authority):
+            post_cap_sync_recorded = _emit_sparse_cap_submilestone(
+                sparse_cap_submilestone_emit,
+                sub_phase_id="post_cap_apply_sync",
+                milestone_kind="module_cap_sync_done",
+                optimizer_step_index=int(local_selection_ordering_step),
+            )
     else:
         backlog = deferred_backlog or {}
         summary = {
@@ -2367,6 +2407,23 @@ def _apply_bounded_delta_vote_step_event_coded_live(
         }
         tensor_stats[state_key] = stats_out
 
+    if bool(event_coded_sparse_vote_authority) and global_cap_spec is not None:
+        boundary_normalize_recorded = _emit_sparse_cap_submilestone(
+            sparse_cap_submilestone_emit,
+            sub_phase_id="boundary_normalize",
+            milestone_kind="module_boundary_normalize_done",
+            optimizer_step_index=int(local_selection_ordering_step),
+        )
+        summary["sparse_cap_submilestone_cap_selection_recorded"] = bool(
+            cap_selection_recorded
+        )
+        summary["sparse_cap_submilestone_post_cap_sync_recorded"] = bool(
+            post_cap_sync_recorded
+        )
+        summary["sparse_cap_submilestone_boundary_normalize_recorded"] = bool(
+            boundary_normalize_recorded
+        )
+
     return BoundedDeltaLearnerStepResult(
         tensor_states=next_states,
         tensor_stats=tensor_stats,
@@ -2404,6 +2461,7 @@ def apply_bounded_delta_vote_step(
     local_selection_ordering_seed: int = 0,
     local_selection_ordering_step: int = 0,
     candidate_global_cap_production_seam_enabled: bool = False,
+    sparse_cap_submilestone_emit: Any = None,
 ) -> BoundedDeltaLearnerStepResult:
     expected_keys = set(tensor_states)
     _validate_sparse_vote_authority_only_gate(
@@ -2487,6 +2545,7 @@ def apply_bounded_delta_vote_step(
             local_selection_ordering_step=int(local_selection_ordering_step),
             candidate_sparse_vote_events_by_key=candidate_sparse_vote_events_by_key,
             event_coded_sparse_vote_authority=bool(event_coded_sparse_vote_authority),
+            sparse_cap_submilestone_emit=sparse_cap_submilestone_emit,
         )
     if candidate_mode is not None:
         if candidate_mode != ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE:

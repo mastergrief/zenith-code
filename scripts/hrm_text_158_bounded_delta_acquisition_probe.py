@@ -281,6 +281,21 @@ C2P2_SUPPORT_CYCLER_SCHEMA_VERSION = "hrm_text_158_c2p2_identity_full_support_cy
 C2P2_TIMING_SCHEMA_VERSION = "hrm_text_158_c2p2_calibration_timing_summary/v0"
 C2P2_PHASE_TELEMETRY_SCHEMA_VERSION = "hrm_text_158_c2p2_phase_telemetry/v0"
 PHASE_MILESTONE_COUNTER_SCHEMA = "hrm_text_158_phase_milestone_counter/v1"
+MILESTONE_SPARSE_CAP_SUB_PHASE_IDS = frozenset({
+    "cap_selection_cpu_copy",
+    "post_cap_apply_sync",
+    "boundary_normalize",
+})
+SPARSE_CAP_SUB_PHASE_MILESTONE_KINDS = {
+    "cap_selection_cpu_copy": "cap_reference_cpu_shim_done",
+    "post_cap_apply_sync": "module_cap_sync_done",
+    "boundary_normalize": "module_boundary_normalize_done",
+}
+SPARSE_CAP_SUB_PHASE_JSONL_NAMES = {
+    "cap_selection_cpu_copy": "sparse_cap_apply_cap_selection_cpu_copy.jsonl",
+    "post_cap_apply_sync": "sparse_cap_apply_post_cap_apply_sync.jsonl",
+    "boundary_normalize": "sparse_cap_apply_boundary_normalize.jsonl",
+}
 MILESTONE_BUDGETED_PHASE_IDS = frozenset({
     "step_forward_backward",
     "sparse_vote_construction",
@@ -1875,6 +1890,90 @@ class PhaseMilestoneEmitter:
         }
         with out_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, sort_keys=True) + "\n")
+
+    def record_sparse_cap_sub_phase(
+        self,
+        sub_phase_id: str,
+        *,
+        optimizer_step_index: int | None,
+        milestone_kind: str,
+        elapsed_since_phase_enter_seconds: float = 0.0,
+    ) -> None:
+        if not self.enabled:
+            return
+        sub_phase = str(sub_phase_id)
+        if sub_phase not in MILESTONE_SPARSE_CAP_SUB_PHASE_IDS:
+            return
+        counter_key = f"sparse_cap_apply_{sub_phase}"
+        counter = int(self._counters.get(counter_key, 0)) + 1
+        self._counters[counter_key] = counter
+        jsonl_name = SPARSE_CAP_SUB_PHASE_JSONL_NAMES[sub_phase]
+        out_path = self.root / "liveness_milestones" / jsonl_name
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            "schema": PHASE_MILESTONE_COUNTER_SCHEMA,
+            "phase_id": "sparse_cap_apply",
+            "parent_phase_id": "sparse_cap_apply",
+            "sub_phase_id": sub_phase,
+            "optimizer_step_index": optimizer_step_index,
+            "milestone_counter": counter,
+            "milestone_kind": str(milestone_kind),
+            "device": str(self.device),
+            "elapsed_since_phase_enter_seconds": round(
+                float(elapsed_since_phase_enter_seconds),
+                6,
+            ),
+        }
+        with out_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, sort_keys=True) + "\n")
+
+
+def run_submilestone_emit_contract_witness() -> dict[str, Any]:
+    """Static preflight: sub-phase milestone hooks present and O(1)-safe."""
+    probe_src = Path(__file__).read_text(encoding="utf-8")
+    learner_path = Path("calm/hrm_text_158/native_full_stack/bounded_delta_learner.py")
+    learner_src = learner_path.read_text(encoding="utf-8")
+    failures: list[str] = []
+    for sub_phase_id in sorted(MILESTONE_SPARSE_CAP_SUB_PHASE_IDS):
+        jsonl_name = SPARSE_CAP_SUB_PHASE_JSONL_NAMES[sub_phase_id]
+        if jsonl_name not in probe_src:
+            failures.append(f"missing_jsonl_path_template:{sub_phase_id}")
+        if sub_phase_id not in learner_src:
+            failures.append(f"missing_learner_sub_phase_marker:{sub_phase_id}")
+    required_probe_markers = [
+        "def record_sparse_cap_sub_phase",
+        "parent_phase_id",
+        "sparse_cap_submilestone_emit",
+    ]
+    for marker in required_probe_markers:
+        if marker not in probe_src:
+            failures.append(f"missing_probe_marker:{marker}")
+    required_learner_markers = [
+        "def _emit_sparse_cap_submilestone",
+        "sparse_cap_submilestone_cap_selection_recorded",
+        "sparse_cap_submilestone_post_cap_sync_recorded",
+        "sparse_cap_submilestone_boundary_normalize_recorded",
+    ]
+    for marker in required_learner_markers:
+        if marker not in learner_src:
+            failures.append(f"missing_learner_marker:{marker}")
+    if "from scripts.hrm_text_158_bounded_delta_acquisition_probe" in learner_src:
+        failures.append("learner_must_not_import_probe")
+    hook_regions = [
+        probe_src.split("def record_sparse_cap_sub_phase", 1)[-1].split("def run_submilestone_emit_contract_witness", 1)[0],
+        learner_src.split("def _emit_sparse_cap_submilestone", 1)[-1].split("def _apply_bounded_delta_vote_step_event_coded_live", 1)[0],
+    ]
+    for region_name, region in zip(("probe_hook", "learner_hook"), hook_regions, strict=True):
+        if ".tolist(" in region:
+            failures.append(f"forbidden_tolist_in_{region_name}")
+        if "torch.zeros(" in region and "numel" in region:
+            failures.append(f"forbidden_zeros_numel_in_{region_name}")
+    return {
+        "schema": "hrm_text_158_slice5_submilestone_emit_contract_witness/v1",
+        "pass": not failures,
+        "failures": failures,
+        "sub_phase_ids": sorted(MILESTONE_SPARSE_CAP_SUB_PHASE_IDS),
+    }
 
 
 @dataclass
@@ -6029,6 +6128,12 @@ def run_bounded_delta_steps(
                         candidate_sparse_vote_events_by_key=sparse_events_by_key,
                         event_coded_sparse_vote_authority=bool(
                             event_coded_sparse_vote_authority
+                        ),
+                        sparse_cap_submilestone_emit=(
+                            progress.milestone_emitter
+                            if bool(event_coded_sparse_vote_authority)
+                            and progress.milestone_emitter is not None
+                            else None
                         ),
                         **two_tier_vote_step_kwargs,
                         **resolve_r7_deferred_backlog_vote_step_kwargs(
