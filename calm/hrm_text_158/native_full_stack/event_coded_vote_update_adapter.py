@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Mapping, Sequence
 
 import numpy as np
@@ -58,9 +58,11 @@ C8_VOTE_UPDATE_PREPLAN_TRITON_INVOKED_KEY = "vote_update_preplan_triton_invoked"
 C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY = "transient_dense_compute_numel"
 C8_PERSISTENT_AUTHORITY_SCOPE_KEY = "c8_persistent_authority_scope"
 C8_PERSISTENT_AUTHORITY_SCOPE_VALUE = (
-    "no_dense_persistent_authority; transient O(numel) runtime buffers remain "
-    "(separate full_sub2_runtime lane)"
+    "no_dense_persistent_authority; transient planner numel-free; cap-ON densifies at "
+    "global_rate_cap boundary only (separate full_sub2_runtime lane)"
 )
+EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY = "event_coded_planner_transient_dense_numel"
+EVENT_CODED_CAP_BOUNDARY_DENSIFIED_KEY = "event_coded_cap_boundary_densified"
 C8_LIVE_AUTHORITY_TAG = "event_coded_live_carrier"
 
 
@@ -205,6 +207,7 @@ def c8_runtime_guard_stats(
     *,
     observation: C8StepObservation,
     persistent_dense_accumulator_materialized_numel: int,
+    planner_transient_dense_numel: int = 0,
 ) -> dict[str, Any]:
     return {
         C8_DENSE_ACCUMULATOR_MATERIALIZED_NUMEL_KEY: int(
@@ -215,6 +218,7 @@ def c8_runtime_guard_stats(
             observation.vote_update_preplan_triton_invoked
         ),
         C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY: int(observation.transient_dense_compute_numel),
+        EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY: int(planner_transient_dense_numel),
         C8_PERSISTENT_AUTHORITY_SCOPE_KEY: C8_PERSISTENT_AUTHORITY_SCOPE_VALUE,
         "live_authority": C8_LIVE_AUTHORITY_TAG,
         "event_coded_live_carrier_content_sha256_after": carrier_content_sha256(carrier),
@@ -300,9 +304,14 @@ def carrier_pre_accumulator_i32_flat(
 def _active_lane_index_tensor(
     carrier: EventCodedAccLiveState,
     votes: torch.Tensor,
+    *,
+    vote_active_flat_indices: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    vote_flat = votes.detach().cpu().flatten()
-    vote_nz = torch.nonzero(vote_flat != 0, as_tuple=False).flatten().to(torch.int64)
+    if vote_active_flat_indices is not None:
+        vote_nz = vote_active_flat_indices.detach().cpu().flatten().to(torch.int64)
+    else:
+        vote_flat = votes.detach().cpu().flatten()
+        vote_nz = torch.nonzero(vote_flat != 0, as_tuple=False).flatten().to(torch.int64)
     hot_idx = carrier.hot_lane_indices_tensor()
     if hot_idx.numel() == 0:
         return vote_nz
@@ -404,12 +413,180 @@ def _validate_event_coded_vote_inputs(
     if q_levels.shape != votes.shape:
         raise ValueError("q_levels and votes must have identical shapes")
     if validate_q_levels:
-        allowed = torch.tensor([-1, 0, 1], dtype=torch.int8, device=q_levels.device)
-        if not bool(torch.isin(q_levels, allowed).all().item()):
-            raise ValueError("q_levels must be in {-1,0,1}")
+        q_flat = q_levels.view(-1)
+        if q_flat.numel() > 0:
+            min_q = int(q_flat.min().item())
+            max_q = int(q_flat.max().item())
+            if min_q < -1 or max_q > 1:
+                raise ValueError("q_levels must be in {-1,0,1}")
 
 
-def plan_event_coded_integer_vote_update_reference(
+def _shape_stub_q_i16(q_levels: torch.Tensor) -> torch.Tensor:
+    """Shape-compatible placeholder; materialized at cap boundary when cap is enabled."""
+
+    flat = torch.zeros(1, dtype=torch.int16, device=q_levels.device).expand(
+        int(q_levels.numel())
+    )
+    return flat.view_as(q_levels)
+
+
+def _shape_stub_new_acc_i32(q_levels: torch.Tensor) -> torch.Tensor:
+    """Shape-compatible placeholder; must not be read before cap-boundary densify."""
+
+    flat = torch.zeros(1, dtype=torch.int32, device=q_levels.device).expand(
+        int(q_levels.numel())
+    )
+    return flat.view_as(q_levels)
+
+
+def _compute_active_lane_post_acc_tensors(
+    carrier: EventCodedAccLiveState,
+    q_levels: torch.Tensor,
+    votes: torch.Tensor,
+    spec: VoteUpdateSpec,
+    *,
+    vote_active_flat_indices: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    active_idx = _active_lane_index_tensor(
+        carrier,
+        votes,
+        vote_active_flat_indices=vote_active_flat_indices,
+    ).to(torch.int64)
+    if active_idx.numel() == 0:
+        return active_idx, torch.empty(0, dtype=torch.int32)
+
+    vote_flat_view = votes.detach().cpu().view(-1).to(torch.int32)
+    pre_active = pre_accumulator_i32_for_indices(carrier, active_idx)
+    vote_active = vote_flat_view[active_idx]
+
+    eff_min, eff_max = effective_clip_bounds(
+        DEFAULT_CARRY_WIDTH,
+        VOTE_UPDATE_SOURCE_CLIP_MIN,
+        VOTE_UPDATE_SOURCE_CLIP_MAX,
+    )
+    decay_num = int(spec.decay_numerator)
+    decay_den = int(spec.decay_denominator)
+    if decay_den <= 0:
+        raise ValueError("decay_denominator must be > 0")
+    decayed = (pre_active * decay_num) // decay_den
+    post_active = torch.clamp(decayed + vote_active, eff_min, eff_max)
+    post_active = torch.clamp(
+        post_active,
+        int(spec.accumulator_clip_min),
+        int(spec.accumulator_clip_max),
+    ).to(torch.int32)
+    return active_idx, post_active
+
+
+def _local_selection_order_active(
+    *,
+    candidate_idx: torch.Tensor,
+    active_idx: torch.Tensor,
+    post_active: torch.Tensor,
+    numel: int,
+    mode: str,
+    ordering_seed: int,
+    ordering_step: int,
+) -> torch.Tensor:
+    if candidate_idx.numel() == 0:
+        return candidate_idx[:0]
+    positions = torch.searchsorted(active_idx, candidate_idx.to(torch.int64))
+    post_at_candidates = post_active[positions]
+    normalized_mode = str(mode)
+    if normalized_mode == LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX:
+        abs_score = post_at_candidates.abs().to(torch.int64)
+        idx64 = candidate_idx.to(torch.int64)
+        composite = abs_score * (int(numel) + 1) + (int(numel) - idx64)
+        return torch.argsort(composite, descending=True)
+    return _local_selection_order(
+        candidate_idx=candidate_idx,
+        new_acc_i32=post_at_candidates,
+        numel=int(numel),
+        mode=normalized_mode,
+        ordering_seed=int(ordering_seed),
+        ordering_step=int(ordering_step),
+    )
+
+
+def event_coded_new_acc_values_at(
+    plan: VoteUpdatePlan,
+    flat_indices: torch.Tensor | Sequence[int],
+) -> torch.Tensor:
+    if isinstance(flat_indices, torch.Tensor):
+        indices = flat_indices.detach().cpu().to(torch.int64).flatten()
+    else:
+        indices = torch.tensor([int(item) for item in flat_indices], dtype=torch.int64)
+    if indices.numel() == 0:
+        return torch.empty(0, dtype=torch.int32)
+    if (
+        plan.event_coded_sparse_active_idx is not None
+        and plan.event_coded_sparse_post_active_i32 is not None
+    ):
+        active_idx = plan.event_coded_sparse_active_idx.detach().cpu().to(torch.int64)
+        post_active = plan.event_coded_sparse_post_active_i32.detach().cpu().to(torch.int32)
+        positions = torch.searchsorted(active_idx, indices)
+        matched = active_idx[positions] == indices
+        out = torch.zeros(indices.numel(), dtype=torch.int32)
+        if matched.any():
+            out[matched] = post_active[positions[matched]]
+        return out
+    flat_new_acc = plan.new_acc_i32.detach().cpu().flatten()
+    return flat_new_acc[indices.to(torch.int64)].to(torch.int32)
+
+
+def materialize_event_coded_plan_new_acc_for_indexing(
+    plan: VoteUpdatePlan,
+    q_levels: torch.Tensor,
+) -> VoteUpdatePlan:
+    """Emit/indexing helper: scatter sparse backing into a dense view without planner debt."""
+
+    if (
+        plan.event_coded_sparse_active_idx is None
+        or plan.event_coded_sparse_post_active_i32 is None
+    ):
+        return plan
+    numel = int(q_levels.numel())
+    dense = torch.zeros(numel, dtype=torch.int32)
+    active_idx = plan.event_coded_sparse_active_idx.detach().cpu().to(torch.int64)
+    post_active = plan.event_coded_sparse_post_active_i32.detach().cpu().to(torch.int32)
+    if active_idx.numel() > 0:
+        dense[active_idx] = post_active
+    return replace(plan, new_acc_i32=dense.view_as(q_levels))
+
+
+def densify_new_acc_i32_at_cap_boundary(
+    plan: VoteUpdatePlan,
+    q_levels: torch.Tensor,
+    observation: C8StepObservation | None = None,
+) -> VoteUpdatePlan:
+    """The only site allowed to record planner/cap transient dense numel for cap-ON."""
+
+    obs = observation if observation is not None else C8StepObservation()
+    numel = int(q_levels.numel())
+    obs.record_transient_dense(numel)
+    dense = torch.zeros(numel, dtype=torch.int32)
+    q_i16 = q_levels.detach().cpu().flatten().to(torch.int16).contiguous().view_as(q_levels)
+    if (
+        plan.event_coded_sparse_active_idx is not None
+        and plan.event_coded_sparse_post_active_i32 is not None
+        and plan.event_coded_sparse_active_idx.numel() > 0
+    ):
+        active_idx = plan.event_coded_sparse_active_idx.detach().cpu().to(torch.int64)
+        post_active = plan.event_coded_sparse_post_active_i32.detach().cpu().to(torch.int32)
+        dense[active_idx] = post_active
+    stats = dict(plan.stats)
+    stats[EVENT_CODED_CAP_BOUNDARY_DENSIFIED_KEY] = True
+    stats[C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY] = int(obs.transient_dense_compute_numel)
+    stats[EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY] = 0
+    return replace(
+        plan,
+        q_i16=q_i16,
+        new_acc_i32=dense.view_as(q_levels),
+        stats=stats,
+    )
+
+
+def plan_event_coded_integer_vote_update_dense_oracle(
     state: EventCodedVoteUpdateState,
     inputs: VoteUpdateInputs,
     spec: VoteUpdateSpec,
@@ -512,6 +689,146 @@ def plan_event_coded_integer_vote_update_reference(
     )
 
 
+def plan_event_coded_integer_vote_update_reference(
+    state: EventCodedVoteUpdateState,
+    inputs: VoteUpdateInputs,
+    spec: VoteUpdateSpec,
+    *,
+    validate_q_levels: bool = True,
+    local_selection_ordering_mode: str = LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+    local_selection_ordering_seed: int = 0,
+    local_selection_ordering_step: int = 0,
+    observation: C8StepObservation | None = None,
+) -> VoteUpdatePlan:
+    return plan_event_coded_integer_vote_update_dense_oracle(
+        state,
+        inputs,
+        spec,
+        validate_q_levels=validate_q_levels,
+        local_selection_ordering_mode=str(local_selection_ordering_mode),
+        local_selection_ordering_seed=int(local_selection_ordering_seed),
+        local_selection_ordering_step=int(local_selection_ordering_step),
+        observation=observation,
+    )
+
+
+def plan_event_coded_integer_vote_update(
+    state: EventCodedVoteUpdateState,
+    inputs: VoteUpdateInputs,
+    spec: VoteUpdateSpec,
+    *,
+    validate_q_levels: bool = True,
+    local_selection_ordering_mode: str = LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+    local_selection_ordering_seed: int = 0,
+    local_selection_ordering_step: int = 0,
+) -> VoteUpdatePlan:
+    q_levels = state.q_levels
+    votes = inputs.votes
+    _validate_event_coded_vote_inputs(
+        q_levels,
+        votes,
+        spec,
+        validate_q_levels=validate_q_levels,
+    )
+    threshold = int(spec.threshold_abs)
+    numel = int(q_levels.numel())
+    max_flips = spec.max_flips(numel)
+
+    active_idx, post_active = _compute_active_lane_post_acc_tensors(
+        state.carrier,
+        q_levels,
+        votes,
+        spec,
+        vote_active_flat_indices=inputs.vote_active_flat_indices,
+    )
+
+    candidate_idx = active_idx[:0]
+    pre_veto_selected = candidate_idx[:0]
+    applied = candidate_idx[:0]
+    applied_directions = torch.zeros_like(candidate_idx[:0], dtype=torch.int16)
+    applied_thresholds = torch.zeros_like(candidate_idx[:0], dtype=torch.int32)
+    replay_ce_vetoed = candidate_idx[:0]
+    replay_veto_directions = torch.zeros_like(candidate_idx[:0], dtype=torch.int16)
+    replay_veto_thresholds = torch.zeros_like(candidate_idx[:0], dtype=torch.int32)
+    pc_aux_negative = candidate_idx[:0]
+    pc_aux_vetoed = candidate_idx[:0]
+
+    if active_idx.numel() > 0:
+        q_active = q_levels.detach().cpu().view(-1)[active_idx].to(torch.int16)
+        candidate_mask = ((post_active >= threshold) & (q_active < 1)) | (
+            (post_active <= -threshold) & (q_active > -1)
+        )
+        candidate_idx = active_idx[candidate_mask]
+        if candidate_idx.numel() > 0 and max_flips > 0:
+            order = _local_selection_order_active(
+                candidate_idx=candidate_idx,
+                active_idx=active_idx,
+                post_active=post_active,
+                numel=numel,
+                mode=str(local_selection_ordering_mode),
+                ordering_seed=int(local_selection_ordering_seed),
+                ordering_step=int(local_selection_ordering_step),
+            )
+            pre_veto_selected = candidate_idx[order[:max_flips]]
+            selected_thresholds = torch.full_like(pre_veto_selected, threshold, dtype=torch.int32)
+            positions = torch.searchsorted(active_idx, pre_veto_selected.to(torch.int64))
+            post_selected = post_active[positions]
+            directions = torch.where(post_selected >= threshold, 1, -1).to(torch.int16)
+            (
+                applied,
+                applied_directions,
+                applied_thresholds,
+                replay_ce_vetoed,
+                replay_veto_directions,
+                replay_veto_thresholds,
+                pc_aux_negative,
+                pc_aux_vetoed,
+            ) = _partition_pre_veto_by_replay_and_pc_veto(
+                pre_veto_selected,
+                directions,
+                selected_thresholds,
+                inputs,
+            )
+
+    applied_count = int(applied.numel())
+    stats: dict[str, int | float | bool | str] = {
+        "event_coded_live_carrier_plan": True,
+        "candidate_count": int(candidate_idx.numel()),
+        "pre_veto_selected_count": int(pre_veto_selected.numel()),
+        "post_veto_would_apply_pre_cap_count": applied_count,
+        "post_veto_applied_flip_count": applied_count,
+        EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY: 0,
+        EVENT_CODED_CAP_BOUNDARY_DENSIFIED_KEY: False,
+    }
+    sparse_active = (
+        active_idx.detach().cpu().clone().contiguous()
+        if active_idx.numel() > 0
+        else torch.empty(0, dtype=torch.int64)
+    )
+    sparse_post = (
+        post_active.detach().cpu().clone().contiguous()
+        if post_active.numel() > 0
+        else torch.empty(0, dtype=torch.int32)
+    )
+    return VoteUpdatePlan(
+        q_i16=_shape_stub_q_i16(q_levels),
+        new_acc_i32=_shape_stub_new_acc_i32(q_levels),
+        candidate_indices=candidate_idx,
+        pre_veto_selected_indices=pre_veto_selected,
+        applied_indices=applied,
+        applied_directions=applied_directions,
+        applied_thresholds=applied_thresholds,
+        replay_ce_veto_indices=replay_ce_vetoed,
+        replay_veto_directions=replay_veto_directions,
+        replay_veto_thresholds=replay_veto_thresholds,
+        pc_aux_negative_indices=pc_aux_negative,
+        pc_aux_veto_indices=pc_aux_vetoed,
+        stats=stats,
+        event_coded_sparse_active_idx=sparse_active,
+        event_coded_sparse_post_active_i32=sparse_post,
+    )
+
+
 def _votes_dict_from_tensor(votes: torch.Tensor) -> dict[int, int]:
     vote_flat = votes.detach().cpu().flatten()
     vote_nz = torch.nonzero(vote_flat != 0, as_tuple=False).flatten()
@@ -542,6 +859,75 @@ def apply_event_coded_carrier_step(
     carrier.apply_step(int(step_index), votes=dict(votes))
 
 
+def apply_event_coded_integer_vote_update_from_plan(
+    state: EventCodedVoteUpdateState,
+    inputs: VoteUpdateInputs,
+    spec: VoteUpdateSpec,
+    plan: VoteUpdatePlan,
+    *,
+    validate_q_levels: bool = True,
+    step_index: int = 0,
+    cap_boundary_transient_dense: int = 0,
+) -> EventCodedVoteUpdateResult:
+    _validate_event_coded_vote_inputs(
+        state.q_levels,
+        inputs.votes,
+        spec,
+        validate_q_levels=validate_q_levels,
+    )
+    observation = C8StepObservation()
+    observation.record_flatten()
+    observation.transient_dense_compute_numel = int(cap_boundary_transient_dense)
+    carrier = state.carrier.cow_copy()
+    vote_map = _votes_dict_from_tensor(inputs.votes)
+    apply_event_coded_carrier_step(carrier, votes=vote_map, step_index=int(step_index))
+
+    applied_set = {int(item) for item in plan.applied_indices.detach().cpu().tolist()}
+    for flat_index in applied_set:
+        if flat_index not in carrier.q_levels:
+            carry = int(carrier.reconstruct_lane(flat_index))
+            carrier.q_levels[int(flat_index)] = 1 if carry >= 0 else -1
+
+    q_out = _sync_q_levels_tensor(carrier, state.q_levels)
+    persistent_dense = measure_persistent_dense_accumulator_materialized_numel(
+        exact_accumulator_shadow=None,
+        event_coded_live_carrier=carrier,
+        eligible_numel=int(state.q_levels.numel()),
+    )
+    assert_c8_runtime_guards(
+        carrier,
+        observation=observation,
+        persistent_dense_accumulator_materialized_numel=persistent_dense,
+    )
+    planner_transient = int(
+        plan.stats.get(EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY, 0)
+    )
+    stats = {
+        key: value
+        for key, value in plan.stats.items()
+        if not isinstance(value, torch.Tensor)
+    }
+    stats.update(
+        c8_runtime_guard_stats(
+            carrier,
+            observation=observation,
+            persistent_dense_accumulator_materialized_numel=persistent_dense,
+            planner_transient_dense_numel=planner_transient,
+        )
+    )
+    stats["logical_numel"] = int(state.q_levels.numel())
+    if carrier.step_records:
+        stats["v4_live_observed_surfaces"] = observed_surfaces_dict(carrier.step_records[-1])
+    stats["flip_count"] = int(plan.applied_indices.numel())
+    stats["q_changed_count"] = int((q_out != state.q_levels).sum().item())
+    return EventCodedVoteUpdateResult(
+        q_levels=q_out,
+        carrier=carrier,
+        plan=plan,
+        stats=stats,
+    )
+
+
 def apply_event_coded_integer_vote_update_reference(
     state: EventCodedVoteUpdateState,
     inputs: VoteUpdateInputs,
@@ -554,7 +940,7 @@ def apply_event_coded_integer_vote_update_reference(
     step_index: int = 0,
 ) -> EventCodedVoteUpdateResult:
     observation = C8StepObservation()
-    plan = plan_event_coded_integer_vote_update_reference(
+    plan = plan_event_coded_integer_vote_update_dense_oracle(
         state,
         inputs,
         spec,
@@ -585,12 +971,21 @@ def apply_event_coded_integer_vote_update_reference(
         observation=observation,
         persistent_dense_accumulator_materialized_numel=persistent_dense,
     )
-    stats = dict(plan.stats)
+    stats = {
+        key: value
+        for key, value in plan.stats.items()
+        if not isinstance(value, torch.Tensor)
+    }
     stats.update(
         c8_runtime_guard_stats(
             carrier,
             observation=observation,
             persistent_dense_accumulator_materialized_numel=persistent_dense,
+            planner_transient_dense_numel=int(
+                plan.stats.get(EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY, 0)
+            )
+            if EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY in plan.stats
+            else int(observation.transient_dense_compute_numel),
         )
     )
     stats["logical_numel"] = int(state.q_levels.numel())

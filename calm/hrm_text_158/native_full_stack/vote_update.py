@@ -175,6 +175,7 @@ class VoteUpdateInputs:
     pc_aux_mode: PcAuxMode | str = PcAuxMode.TELEMETRY
     vote_format: VoteUpdateVoteFormat | str = VoteUpdateVoteFormat.INT16_VOTES
     local_loss_delta: Optional[torch.Tensor] = None
+    vote_active_flat_indices: Optional[torch.Tensor] = None
 
     @property
     def normalized_vote_format(self) -> VoteUpdateVoteFormat:
@@ -200,6 +201,8 @@ class VoteUpdatePlan:
     pc_aux_negative_indices: torch.Tensor
     pc_aux_veto_indices: torch.Tensor
     stats: dict[str, int | float | bool | str]
+    event_coded_sparse_active_idx: torch.Tensor | None = None
+    event_coded_sparse_post_active_i32: torch.Tensor | None = None
 
 
 @dataclass(frozen=True)

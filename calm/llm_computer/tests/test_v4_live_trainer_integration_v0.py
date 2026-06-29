@@ -18,6 +18,8 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
 from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
     RUN_EVENT_CODED_ACC_LIVE_CARRIER_ENV,
     C8_PERSISTENT_AUTHORITY_SCOPE_KEY,
+    C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY,
+    EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY,
     C8StepObservation,
     assert_c8_runtime_guards,
     carrier_content_sha256,
@@ -100,11 +102,10 @@ def test_c8_dense_accumulator_materialized_numel_zero_on_v4_path() -> None:
     assert int(stats["dense_accumulator_materialized_numel"]) == 0
     assert stats.get("live_authority") == "event_coded_live_carrier"
     assert int(stats["full_numel_flatten_count"]) >= 1
-    assert int(stats["transient_dense_compute_numel"]) == 16
+    assert int(stats["transient_dense_compute_numel"]) == 0
+    assert int(stats[EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY]) == 0
     assert stats.get(C8_PERSISTENT_AUTHORITY_SCOPE_KEY) is not None
-    assert "transient O(numel) runtime buffers remain" in str(
-        stats.get(C8_PERSISTENT_AUTHORITY_SCOPE_KEY)
-    )
+    assert "transient planner numel-free" in str(stats.get(C8_PERSISTENT_AUTHORITY_SCOPE_KEY))
 
 
 def test_c8_persistent_dense_authority_guard_trips_on_shadow() -> None:
@@ -243,6 +244,9 @@ def test_o5_global_cap_writes_through_event_coded_carrier() -> None:
         global_cap_spec=cap_spec,
     )
     assert result.global_summary.get("event_coded_live_carrier_enabled") is True
+    stats = result.tensor_stats["toy.proj"]
+    assert int(stats[EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY]) == 0
+    assert int(stats[C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY]) == 16
     next_state = result.tensor_states["toy.proj"]
     assert next_state.event_coded_live_carrier is not None
 
@@ -270,6 +274,8 @@ def test_o5b_global_cap_event_coded_stats_include_post_cap_indices() -> None:
     assert len(post_cap_indices) == 1
     assert stats["post_veto_applied_flip_count"] != stats["post_veto_would_apply_pre_cap_count"]
     assert stats.get("live_authority") == "event_coded_live_carrier"
+    assert int(stats[EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY]) == 0
+    assert int(stats[C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY]) == 16
     assert stats.get("event_coded_live_carrier_content_sha256_after") is not None
     assert stats.get(C8_PERSISTENT_AUTHORITY_SCOPE_KEY) is not None
 
@@ -290,6 +296,7 @@ def test_merge_event_coded_cap_stats_prefers_post_cap_over_pre_cap_local() -> No
         "event_coded_live_carrier_content_sha256_after": "abc123",
         C8_PERSISTENT_AUTHORITY_SCOPE_KEY: "event_coded_live_carrier_only",
         "transient_dense_compute_numel": 16,
+        EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY: 0,
     }
     merged = _merge_event_coded_cap_tensor_stats(cap_stats, local_stats)
     assert merged["post_veto_applied_flip_count"] == 1
@@ -300,6 +307,7 @@ def test_merge_event_coded_cap_stats_prefers_post_cap_over_pre_cap_local() -> No
     assert merged["exact_accumulator_shadow_sha256_after"] is None
     assert merged[C8_PERSISTENT_AUTHORITY_SCOPE_KEY] == "event_coded_live_carrier_only"
     assert merged["transient_dense_compute_numel"] == 16
+    assert merged[EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY] == 0
 
 
 def test_o6_disabled_dense_path_byte_stable() -> None:

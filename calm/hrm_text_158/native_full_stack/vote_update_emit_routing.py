@@ -5,7 +5,8 @@ from typing import Any
 
 from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
     EventCodedVoteUpdateState,
-    plan_event_coded_integer_vote_update_reference,
+    materialize_event_coded_plan_new_acc_for_indexing,
+    plan_event_coded_integer_vote_update,
 )
 from calm.hrm_text_158.native_full_stack.vote_update import (
     VoteUpdateInputs,
@@ -30,15 +31,15 @@ def plan_vote_update_for_emit(
             raise ValueError(
                 "two_tier_carry_w6_enabled forbidden on event-coded live carrier votes-emit path"
             )
-        return plan_event_coded_integer_vote_update_reference(
+        plan = plan_event_coded_integer_vote_update(
             vote_state,
             inputs,
             spec,
             local_selection_ordering_mode=str(local_selection_ordering_mode),
             local_selection_ordering_seed=int(local_selection_ordering_seed),
             local_selection_ordering_step=int(local_selection_ordering_step),
-            observation=None,
         )
+        return materialize_event_coded_plan_new_acc_for_indexing(plan, vote_state.q_levels)
     return plan_integer_vote_update_reference(
         vote_state,
         inputs,
