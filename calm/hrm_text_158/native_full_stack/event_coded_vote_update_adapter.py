@@ -969,10 +969,22 @@ def _sync_q_levels_tensor(
     carrier: EventCodedAccLiveState,
     q_levels: torch.Tensor,
 ) -> torch.Tensor:
-    q_out = q_levels.detach().cpu().clone().to(torch.int8)
+    q_out = q_levels.detach().clone().to(torch.int8)
+    if not carrier.q_levels:
+        return q_out.contiguous()
+    hot_items = sorted(carrier.q_levels.items(), key=lambda item: int(item[0]))
+    flat_indices = torch.tensor(
+        [int(index) for index, _ in hot_items],
+        device=q_out.device,
+        dtype=torch.int64,
+    )
+    flat_values = torch.tensor(
+        [int(level) for _, level in hot_items],
+        device=q_out.device,
+        dtype=torch.int8,
+    )
     flat = q_out.flatten()
-    for flat_index, level in carrier.q_levels.items():
-        flat[int(flat_index)] = int(level)
+    flat.index_put_((flat_indices,), flat_values)
     return flat.view_as(q_levels).contiguous()
 
 

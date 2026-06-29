@@ -751,3 +751,206 @@ def test_probe_hot_path_m3_combined_marginal_over_dense_sweep(capsys) -> None:
     # Contract exit proof: medians recorded for receipt (no silent lowering).
     assert medians[1_000_000]["combined"] > 0.0
     assert medians[10_000_000]["dense_only"] > 0.0
+
+
+def _event_coded_state_on_device(state, device: str):
+    from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
+        BoundedDeltaTensorState,
+    )
+
+    return BoundedDeltaTensorState(
+        state_key=state.state_key,
+        q_levels=state.q_levels.to(device),
+        frozen_scale=state.frozen_scale,
+        bounded_accumulator=state.bounded_accumulator,
+        exact_accumulator_shadow=state.exact_accumulator_shadow,
+        bounded_accumulator_fresh_for_exact_shadow=state.bounded_accumulator_fresh_for_exact_shadow,
+        bounded_accumulator_rebuild_hot_exact_indices=state.bounded_accumulator_rebuild_hot_exact_indices,
+        bounded_accumulator_rebuild_cold_default_value=state.bounded_accumulator_rebuild_cold_default_value,
+        event_coded_live_carrier=state.event_coded_live_carrier,
+    )
+
+
+def _two_module_sparse_cap_fixture():
+    credit, moves, rank_spec = _rank_fixture()
+    sparse_a = sparse_rank_bucketed_int16_vote_events(credit, moves, rank_spec)
+    sparse_b = sparse_rank_bucketed_int16_vote_events(credit, moves, rank_spec)
+    q_a = torch.tensor([[0, 1, -1, 0]], dtype=torch.int8)
+    q_b = torch.tensor([[1, 0, 0, -1]], dtype=torch.int8)
+    spec = _vote_spec(threshold_abs=8)
+    cap = GlobalRateCapSpec(cap=4, step=1, mutate_outputs=True)
+    states = {
+        "mod.a": make_event_coded_live_tensor_state("mod.a", q_a, 0.25, demotion_band=1),
+        "mod.b": make_event_coded_live_tensor_state("mod.b", q_b, 0.25, demotion_band=1),
+    }
+    sparse_by_key = {"mod.a": sparse_a, "mod.b": sparse_b}
+    vote_specs = {"mod.a": spec, "mod.b": spec}
+    return states, sparse_by_key, vote_specs, cap
+
+
+def test_sync_q_levels_tensor_sparse_matches_dense_oracle() -> None:
+    from calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier import (
+        EventCodedAccLiveState,
+    )
+    from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
+        _sync_q_levels_tensor,
+    )
+
+    q = torch.tensor([[0, 1, -1, 0, 1, 0, -1, 0]], dtype=torch.int8)
+    carrier = EventCodedAccLiveState(
+        logical_numel=8,
+        cold_default=0,
+        threshold_abs=8,
+        demotion_band=1,
+    )
+    carrier.q_levels[1] = 1
+    carrier.q_levels[4] = -1
+    dense_oracle = q.detach().cpu().clone().to(torch.int8)
+    flat = dense_oracle.flatten()
+    for flat_index, level in carrier.q_levels.items():
+        flat[int(flat_index)] = int(level)
+    dense_oracle = flat.view_as(q).contiguous()
+    sparse_out = _sync_q_levels_tensor(carrier, q)
+    assert torch.equal(sparse_out.cpu(), dense_oracle)
+
+
+def test_sync_q_levels_tensor_sparse_no_full_numel_cpu_clone(monkeypatch) -> None:
+    from calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier import (
+        EventCodedAccLiveState,
+    )
+    from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
+        _sync_q_levels_tensor,
+    )
+
+    numel = 10_000
+    q = torch.zeros(numel, dtype=torch.int8)
+    carrier = EventCodedAccLiveState(
+        logical_numel=numel,
+        cold_default=0,
+        threshold_abs=8,
+        demotion_band=1,
+    )
+    carrier.q_levels[3] = 1
+    carrier.q_levels[9999] = -1
+    full_numel_cpu_calls: list[int] = []
+    original_cpu = torch.Tensor.cpu
+
+    def _tracking_cpu(self, *args, **kwargs):
+        if int(self.numel()) >= numel:
+            full_numel_cpu_calls.append(int(self.numel()))
+        return original_cpu(self, *args, **kwargs)
+
+    monkeypatch.setattr(torch.Tensor, "cpu", _tracking_cpu)
+    out = _sync_q_levels_tensor(carrier, q)
+    assert out.shape == q.shape
+    assert full_numel_cpu_calls == []
+
+
+def test_sparse_cap_apply_serial_on_cuda_device(monkeypatch) -> None:
+    if not torch.cuda.is_available():
+        pytest.fail("R2/F1 cuda regression requires a CUDA device (4070 dev box)")
+    device = "cuda:0"
+    states, sparse_by_key, vote_specs, cap = _two_module_sparse_cap_fixture()
+    states_cuda = {key: _event_coded_state_on_device(state, device) for key, state in states.items()}
+    constructed: list[int] = []
+    import concurrent.futures
+
+    class _TrackingExecutor:
+        def __init__(self, *args, **kwargs):
+            constructed.append(1)
+            raise AssertionError("ThreadPoolExecutor must not be used on cuda sparse cap apply")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(concurrent.futures, "ThreadPoolExecutor", _TrackingExecutor)
+    result = apply_bounded_delta_vote_step(
+        states_cuda,
+        None,
+        vote_specs,
+        candidate_sparse_vote_events_by_key=sparse_by_key,
+        global_cap_spec=cap,
+        event_coded_sparse_vote_authority=True,
+    )
+    assert constructed == []
+    assert result.global_summary.get("sparse_cap_apply_parallel_mode") == "serial_cuda"
+
+
+def test_sparse_cap_apply_parallel_on_cpu_device(monkeypatch) -> None:
+    states, sparse_by_key, vote_specs, cap = _two_module_sparse_cap_fixture()
+    constructed: list[int] = []
+    import concurrent.futures
+
+    original_executor = concurrent.futures.ThreadPoolExecutor
+
+    class _TrackingExecutor(original_executor):
+        def __init__(self, *args, **kwargs):
+            constructed.append(1)
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(concurrent.futures, "ThreadPoolExecutor", _TrackingExecutor)
+    result = apply_bounded_delta_vote_step(
+        states,
+        None,
+        vote_specs,
+        candidate_sparse_vote_events_by_key=sparse_by_key,
+        global_cap_spec=cap,
+        event_coded_sparse_vote_authority=True,
+    )
+    assert constructed == [1]
+    assert result.global_summary.get("sparse_cap_apply_parallel_mode") == "parallel_cpu"
+
+
+def test_sparse_cap_apply_mixed_device_states_fail_closed() -> None:
+    if not torch.cuda.is_available():
+        pytest.fail("mixed-device fail-close test requires CUDA to construct cuda/cpu pair")
+    states, sparse_by_key, vote_specs, cap = _two_module_sparse_cap_fixture()
+    states_mixed = {
+        "mod.a": _event_coded_state_on_device(states["mod.a"], "cuda:0"),
+        "mod.b": states["mod.b"],
+    }
+    with pytest.raises(ValueError, match="consistent q_levels devices"):
+        apply_bounded_delta_vote_step(
+            states_mixed,
+            None,
+            vote_specs,
+            candidate_sparse_vote_events_by_key=sparse_by_key,
+            global_cap_spec=cap,
+            event_coded_sparse_vote_authority=True,
+        )
+
+
+def test_sparse_cap_apply_q_out_downstream_boundary_cuda() -> None:
+    if not torch.cuda.is_available():
+        pytest.fail("R2 downstream boundary test must EXECUTE on 4070 (cuda required, not skip)")
+    from calm.hrm_text_158.native_full_stack.bounded_delta_learner import tensor_sha256
+
+    device = "cuda:0"
+    states, sparse_by_key, vote_specs, cap = _two_module_sparse_cap_fixture()
+    states_cuda = {key: _event_coded_state_on_device(state, device) for key, state in states.items()}
+    q_sha_before = {
+        key: tensor_sha256(states_cuda[key].q_levels) for key in sorted(states_cuda)
+    }
+    result = apply_bounded_delta_vote_step(
+        states_cuda,
+        None,
+        vote_specs,
+        candidate_sparse_vote_events_by_key=sparse_by_key,
+        global_cap_spec=cap,
+        event_coded_sparse_vote_authority=True,
+    )
+    assert result.global_summary.get("sparse_cap_apply_parallel_mode") == "serial_cuda"
+    for key, prior in states_cuda.items():
+        next_state = result.tensor_states[key]
+        assert next_state.q_levels.device.type == "cpu"
+        assert next_state.q_levels.dtype == torch.int8
+        assert next_state.q_levels.is_contiguous()
+        assert tuple(next_state.q_levels.shape) == tuple(prior.q_levels.shape)
+        stats = result.tensor_stats[key]
+        assert stats.get("q_sha256_before")
+        assert stats.get("q_sha256_after")
+        assert stats["q_sha256_before"] == q_sha_before[key]
+        assert tensor_sha256(next_state.q_levels)
