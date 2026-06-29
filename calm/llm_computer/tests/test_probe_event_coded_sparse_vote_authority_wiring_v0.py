@@ -39,8 +39,10 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
     PhaseMilestoneEmitter,
     _plan_integer_vote_update_for_control_arm_surfaces,
     _validate_event_coded_sparse_vote_authority_config,
+    build_arg_parser,
     build_model_from_checkpoint,
     file_sha256,
+    main,
     run_c2p1_probe,
     select_eligible_bitlinears,
 )
@@ -410,6 +412,82 @@ def test_sparse_authority_startup_fail_close(overrides: dict[str, Any], match: s
     base.update(overrides)
     with pytest.raises(ValueError, match=match):
         _validate_event_coded_sparse_vote_authority_config(**base)
+
+
+def test_cli_event_coded_sparse_vote_authority_parse_roundtrip() -> None:
+    parser = build_arg_parser()
+    absent = parser.parse_args(["--enable-bounded-delta-probe"])
+    assert hasattr(absent, "event_coded_sparse_vote_authority")
+    assert absent.event_coded_sparse_vote_authority is False
+
+    present = parser.parse_args(
+        [
+            "--enable-bounded-delta-probe",
+            "--persistent-accumulator-event-coded-live",
+            "--event-coded-sparse-vote-authority",
+        ]
+    )
+    assert present.event_coded_sparse_vote_authority is True
+
+
+def test_cli_main_kwargs_access_no_attribute_error() -> None:
+    parser = build_arg_parser()
+    args = parser.parse_args(["--enable-bounded-delta-probe"])
+    assert hasattr(args, "event_coded_sparse_vote_authority")
+    assert bool(args.event_coded_sparse_vote_authority) is False
+
+
+def test_cli_main_passes_sparse_authority_kwarg_to_run_c2p1_probe() -> None:
+    captured: dict[str, Any] = {}
+
+    def _capture_run_c2p1_probe(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {"ok": True}
+
+    argv = [
+        "--enable-bounded-delta-probe",
+        "--persistent-accumulator-event-coded-live",
+        "--event-coded-sparse-vote-authority",
+    ]
+    with mock.patch(
+        "scripts.hrm_text_158_bounded_delta_acquisition_probe.run_c2p1_probe",
+        side_effect=_capture_run_c2p1_probe,
+    ):
+        exit_code = main(argv)
+    assert exit_code == 0
+    assert captured["event_coded_sparse_vote_authority"] is True
+    assert captured["persistent_accumulator_event_coded_live"] is True
+
+
+def test_cli_sparse_authority_without_event_coded_live_raises() -> None:
+    args = build_arg_parser().parse_args(
+        [
+            "--enable-bounded-delta-probe",
+            "--event-coded-sparse-vote-authority",
+        ]
+    )
+    assert args.event_coded_sparse_vote_authority is True
+    assert args.persistent_accumulator_event_coded_live is False
+    with pytest.raises(ValueError, match="requires --persistent-accumulator-event-coded-live"):
+        _validate_event_coded_sparse_vote_authority_config(
+            event_coded_sparse_vote_authority=bool(args.event_coded_sparse_vote_authority),
+            persistent_accumulator_event_coded_live=bool(
+                args.persistent_accumulator_event_coded_live
+            ),
+            two_tier_carry_w6_enabled=False,
+            b2b_sequential_capture_enabled=False,
+            votes_emit_enabled=False,
+            carrier_growth_enabled=False,
+            d_recompute_window_instrumentation_enabled=False,
+            d_recompute_calibration_warmup_out=None,
+        )
+
+
+def test_cli_sparse_authority_argparse_main_cross_check() -> None:
+    probe_src = Path(__file__).resolve().parents[3] / "scripts" / "hrm_text_158_bounded_delta_acquisition_probe.py"
+    src = probe_src.read_text(encoding="utf-8")
+    assert "--event-coded-sparse-vote-authority" in src
+    assert "event_coded_sparse_vote_authority=bool(args.event_coded_sparse_vote_authority)" in src
 
 
 def test_control_arm_planner_requires_dense_votes_by_key() -> None:

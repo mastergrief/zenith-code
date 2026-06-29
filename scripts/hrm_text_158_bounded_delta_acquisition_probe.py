@@ -8303,6 +8303,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Demotion band for V4-LIVE event-coded carrier (default 1).",
     )
     ap.add_argument(
+        "--event-coded-sparse-vote-authority",
+        action="store_true",
+        help=(
+            "Default-off M4 sparse-authority hot path: SparseVoteEvents construction "
+            "+ event_coded_sparse_vote_authority apply (requires "
+            "--persistent-accumulator-event-coded-live). OFF = byte-identical dense."
+        ),
+    )
+    ap.add_argument(
         "--r7-deferred-backlog-carry",
         action="store_true",
         help=(
