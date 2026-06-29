@@ -35,7 +35,7 @@
       "name": "cpu_missing_cap_selection_expected"
     }
   ],
-  "co_lead_revise_msg_id": "1782765351774",
+  "co_lead_revise_msg_id": "1782766412389",
   "cpu_m4_witness": {
     "c8_transient_dense_compute_numel": 0,
     "gpu_liveness_fix_head": "0d39d850b0755a21bb6a76cc4d30cbb606d01de3",
@@ -179,7 +179,8 @@
     "synthetic_268435456_logical_numel_cpu_receipt_scale"
   ],
   "gpu_hold": true,
-  "head_pin": "82cfdc6d261f3e4a7a659a7ab707184ff466fc5b",
+  "head_pin_policy": "ancestor_plus_content_not_exact_sha",
+  "launch_checkout_head": "commit_sha_agnostic",
   "m4_gpu_sparse_cap_liveness_commit": "0d39d850b0755a21bb6a76cc4d30cbb606d01de3",
   "m4_probe_cli_arg_commit": "848edfb0c7098205df1185d051745f31f070a3bf",
   "m4_probe_gpu_wire_commit": "5d581141e759ca8551b257039585578b57beb082",
@@ -281,12 +282,20 @@
   },
   "not_gpu_launch_until_plus1_launch": true,
   "packet_kind": "slice5_step2a_live_carrier_gpu_scale_smoke",
-  "packet_revision": "v6_re_m4_post_submilestone_emit",
+  "packet_revision": "v6b_re_m4_head_pin_ancestor_content",
   "packet_self_validation": {
     "classifier_before_receipt_ordering": {
       "fail_if_v5_order_preserved": true,
       "receipt_reads_classifier_artifact": "prelaunch/milestone_stall_classifier_receipt.json",
       "rule": "launch_sequence index(milestone_stall_classifier_command) < index(live_carrier_scale_smoke_receipt_command)"
+    },
+    "head_pin_contradiction_guard": {
+      "forbidden_fields_at_source_base_value": [
+        "required_head",
+        "head_pin"
+      ],
+      "required_policy": "ancestor_plus_content_not_exact_sha",
+      "rule": "forbid exact-HEAD pin equal to source_base_head when launch is commit-SHA-agnostic"
     }
   },
   "phase_budgets_and_watcher": {
@@ -448,6 +457,13 @@
     "steps": 10
   },
   "schema_version": "hrm_text_158_slice5_step2a_live_carrier_gpu_scale_smoke_launch_packet/v1",
+  "source_base_head": "82cfdc6d261f3e4a7a659a7ab707184ff466fc5b",
+  "source_pins_at_launch": {
+    "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": "729e849df5e5445869e4e18c3cef587093084b38e3e95f82ae780669554aa2ac",
+    "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py": "e59d946b560b933097150f99e7642c86aca6e9509824396ee2f0e5219d86779e",
+    "calm/llm_computer/tests/test_m4_probe_sparse_vote_ingress_v0.py": "d6cc4a86c0f57959d7ea7c6841c50f52be9822605f6f212df36ca88c23850fc5",
+    "scripts/hrm_text_158_bounded_delta_acquisition_probe.py": "1a7799737f3581f6b48116ef754266835798dbd183f3e4f191b14d6cccfae1e4"
+  },
   "sparse_cap_apply_submilestone_liveness": {
     "authority": "co_lead REVISE 1782765351774 + slice-1 commit 82cfdc6d",
     "parent_coarse_rollup": "liveness_milestones/sparse_cap_apply.jsonl",
